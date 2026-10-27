@@ -138,6 +138,34 @@ $B1: {  # root
     EXPECT_EQ(expect, str());
 }
 
+TEST_F(IR_PrepareImmediateDataTests, InternalImmediateData_OffsetOverflow) {
+    PrepareImmediateDataConfig config;
+    // 0xFFFFFFFC + 4 = 0 (overflows to 0 in uint32_t)
+    ASSERT_EQ(config.AddInternalImmediateData(0xFFFFFFFCu, mod.symbols.New("overflow"), ty.i32()),
+              Success);
+    auto result = PrepareImmediateData(mod, config);
+    EXPECT_NE(result, Success);
+}
+
+TEST_F(IR_PrepareImmediateDataTests, UserImmediateData_TooLarge) {
+    auto* v = b.Var("v", ty.ptr<immediate>(ty.array<i32, 0x1000>()));
+    mod.root_block->Append(v);
+
+    PrepareImmediateDataConfig config;
+    ASSERT_EQ(config.AddInternalImmediateData(0u, mod.symbols.New("overflow"), ty.i32()), Success);
+    auto result = PrepareImmediateData(mod, config);
+    EXPECT_NE(result, Success);
+}
+
+TEST_F(IR_PrepareImmediateDataTests, UserImmediateData_TooLarge_NoInternal) {
+    auto* v = b.Var("v", ty.ptr<immediate>(ty.array<i32, 0x1000>()));
+    mod.root_block->Append(v);
+
+    PrepareImmediateDataConfig config;
+    auto result = PrepareImmediateData(mod, config);
+    EXPECT_NE(result, Success);
+}
+
 TEST_F(IR_PrepareImmediateDataTests, NoUserImmediateData_MultipleInternalImmediateData) {
     auto* v = b.Var("v", ty.ptr<private_, i32>());
     mod.root_block->Append(v);

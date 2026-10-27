@@ -17,19 +17,15 @@
 
 #include <jni.h>
 
-#include "ink/color/color_space.h"
+#include <cstdint>
 
 namespace ink::jni {
 
-// Color space ID constants.
-//
-// These should match the platform constants in ColorExtensions.kt.
-constexpr jint kJniColorSpaceIdSrgb = 0;
-constexpr jint kJniColorSpaceIdDisplayP3 = 1;
-
-ColorSpace JIntToColorSpace(jint color_space_id);
-jint ColorSpaceToJInt(ColorSpace color_space);
-bool ColorSpaceIsSupportedInJetpack(ColorSpace color_space);
+// Converts an Ink `Color` into a Kotlin `ColorLong`, suitable for use from
+// C-compatible Kotlin native interface.
+int64_t ComposeColorLongFromComponentsCallback(
+    void* jni_env, int color_space_id, float red_gamma_corrected,
+    float green_gamma_corrected, float blue_gamma_corrected, float alpha);
 
 }  // namespace ink::jni
 

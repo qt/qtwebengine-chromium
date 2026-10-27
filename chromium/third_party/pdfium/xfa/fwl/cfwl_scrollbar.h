@@ -29,6 +29,7 @@ class CFWL_ScrollBar final : public CFWL_Widget,
   ~CFWL_ScrollBar() override;
 
   // CFWL_Widget:
+  void PreFinalize() override;
   FWL_Type GetClassID() const override;
   void Update() override;
   void DrawWidget(CFGAS_GEGraphics* pGraphics,

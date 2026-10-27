@@ -14,14 +14,17 @@
 namespace contextual_tasks {
 
 BASE_DECLARE_FEATURE(kContextualTasks);
+BASE_DECLARE_FEATURE(kContextualTasksExtraOauthScopes);
 BASE_DECLARE_FEATURE(kEnableContextualTasksPinButtonInToolbar);
-// When enabled, it should instead request the kSearchResultsOAuth2Scope instead
-// of the kChromeSyncOAuth2Scope
-BASE_DECLARE_FEATURE(kContextualTasksScopeChange);
 BASE_DECLARE_FEATURE(kContextualTasksContext);
+BASE_DECLARE_FEATURE(
+    kContextualTasksContextSmartTabSharingDefaultOnAvailability);
 BASE_DECLARE_FEATURE(kContextualTasksContextLibrary);
 BASE_DECLARE_FEATURE(kContextualTasksContextLogging);
 BASE_DECLARE_FEATURE(kContextualTasksShowOnboardingTooltip);
+
+// Enables prefetching of cookies for contextual tasks.
+BASE_DECLARE_FEATURE(kContextualTasksCookiePrefetch);
 
 // Overrides the value of EntryPointEligibilitymanager::IsEligible to true.
 BASE_DECLARE_FEATURE(kContextualTasksForceEntryPointEligibility);
@@ -48,6 +51,10 @@ BASE_DECLARE_FEATURE(kEnableNotifyZeroStateRenderedCapability);
 // requests initiated from within an embedded Co-Browse <webview>.
 BASE_DECLARE_FEATURE(kContextualTasksSendFullVersionListEnabled);
 
+// If enabled, AIM will send the ContextualInputUploadType enum on
+// ContextualInputs.
+BASE_DECLARE_FEATURE(kContextualTasksSendContextualInputUploadType);
+
 // When contextual tasks is disabled and this flag is enabled, intecept the
 // contextual tasks URL and redirect to aim URL.
 BASE_DECLARE_FEATURE(kContextualTasksUrlRedirectToAimUrl);
@@ -64,6 +71,9 @@ BASE_DECLARE_FEATURE(kEnergyEffectInNextbox);
 // Fixes the composebox jump.
 BASE_DECLARE_FEATURE(kContextualTasksComposeboxJumpFix);
 
+// Switches the Contextual Tasks composebox to the forked embedder element.
+BASE_DECLARE_FEATURE(kContextualTasksComposeboxFork);
+
 // Enables the use of a rounded clip-path for the composebox.
 BASE_DECLARE_FEATURE(kContextualTasksRoundedClipPath);
 
@@ -71,8 +81,8 @@ BASE_DECLARE_FEATURE(kContextualTasksRoundedClipPath);
 // panel. The menu is still shown for lens flows.
 BASE_DECLARE_FEATURE(kContextualTasksHideMenuOnAiPage);
 
-// Enables updating the model from URL parameters on every inner navigation.
-BASE_DECLARE_FEATURE(kContextualTasksUpdateModelOnNavigation);
+// Enables hiding the close button when in vertical tabs or immersive mode.
+BASE_DECLARE_FEATURE(kContextualTasksHideCloseButtonInVerticalTabs);
 
 // Enables intercepting YouTube links with timestamps to seek video instead of
 // navigating.
@@ -82,6 +92,9 @@ BASE_DECLARE_FEATURE(kContextualTasksVideoCitations);
 // navigating.
 BASE_DECLARE_FEATURE(kContextualTasksPdfCitations);
 
+// When enabled, the back button can expand the side panel.
+BASE_DECLARE_FEATURE(kContextualTasksBackButtonExpandsSidePanel);
+
 // Enables lazy fetching of cluster info for multimodal queries.
 BASE_DECLARE_FEATURE(kContextualTasksLazyFetchClusterInfo);
 
@@ -89,18 +102,34 @@ BASE_DECLARE_FEATURE(kContextualTasksLazyFetchClusterInfo);
 // flow.
 BASE_DECLARE_FEATURE(kContextualTasksWebpageApcComparison);
 
-bool GetIsContextualTasksUpdateModeOnNavigationEnabled();
+// Enables the Java implementation of the Contextual Tasks Fusebox. Android
+// only.
+BASE_DECLARE_FEATURE(kContextualTasksJavaFusebox);
+
+// Enables overriding side panel to show Bottom Sheet on demand.
+BASE_DECLARE_FEATURE(kContextualTasksOverrideShowBottomSheetOnLargeScreen);
+
+// When enabled, AIM must send the browser a message to initiate the cobrowse
+// experience for link clicks.
+BASE_DECLARE_FEATURE(kAimTriggeredThreadLinks);
+
+// Enables window tracking for Contextual Tasks.
+BASE_DECLARE_FEATURE(kContextualTasksWindowTracking);
+
+// Enables upload chunking for Contextual Tasks.
+BASE_DECLARE_FEATURE(kContextualTasksUploadChunking);
 
 bool GetIsContextualTasksPdfCitationsEnabled();
 
 bool GetIsContextualTasksLazyFetchClusterInfoEnabled();
 
+bool GetIsContextualTasksWindowTrackingEnabled();
+
+bool GetIsContextualTasksUploadChunkingEnabled();
+
 // Enum denoting which entry point can show when enabled.
 enum class EntryPointOption {
   kNoEntryPoint,
-  kPageActionRevisit,
-  kToolbarRevisit,
-  kToolbarPermanent,
   kToolbarEphemeralBranded,
 };
 
@@ -112,10 +141,54 @@ enum class ExpandButtonOption {
 
 // Whether to only consider titles for similarity.
 extern const base::FeatureParam<bool> kOnlyUseTitlesForSimilarity;
+// Whether to deduplicate relevant tabs by URL.
+extern const base::FeatureParam<bool> kDeduplicateRelevantTabsByUrl;
 // Minimum score to consider a tab relevant.
 extern const base::FeatureParam<double> kTabSelectionScoreThreshold;
 // Minimum score required for a tab to be considered visible.
 extern const base::FeatureParam<double> kContentVisibilityThreshold;
+
+// Whether to use the immediately previous visited tab as the active tab signal
+// fallback.
+extern const base::FeatureParam<bool> kEnablePreviousTabFallback;
+// Recency threshold for using the previous visited tab as active tab signal.
+extern const base::FeatureParam<base::TimeDelta> kPreviousTabRecencyThreshold;
+
+// Whether Smart Tab Sharing is enabled for the ContextualTasksContext feature.
+extern const base::FeatureParam<bool> kContextualTasksContextSmartTabSharing;
+
+// Option for smart tab sharing IPH first time prompt.
+enum class SmartTabSharingIphFirstTimePromptOption {
+  kIphFirstTimePromptV1,
+  kIphFirstTimePromptV2,
+};
+extern const base::FeatureParam<SmartTabSharingIphFirstTimePromptOption>
+    kSmartTabSharingIphFirstTimePromptOption;
+
+// Option for smart tab sharing IPH default on variants.
+enum class SmartTabSharingIphDefaultOnOption {
+  kIphDefaultOnV1,
+  kIphDefaultOnV2,
+};
+extern const base::FeatureParam<SmartTabSharingIphDefaultOnOption>
+    kSmartTabSharingIphDefaultOnOption;
+
+// Option for smart tab sharing IPH try it promo variants.
+enum class SmartTabSharingIphTryItPromoOption {
+  kIphTryItPromoV1,
+  kIphTryItPromoV2,
+};
+extern const base::FeatureParam<SmartTabSharingIphTryItPromoOption>
+    kSmartTabSharingIphTryItPromoOption;
+
+// Option for smart tab sharing megaplus string.
+enum class SmartTabSharingMegaplusStringOption {
+  kMegaplusV1,
+  kMegaplusV2,
+  kMegaplusV3,
+};
+extern const base::FeatureParam<SmartTabSharingMegaplusStringOption>
+    kSmartTabSharingMegaplusStringOption;
 
 // Task string to use for formatting the query embedding.
 extern const base::FeatureParam<std::string> kQueryEmbeddingTask;
@@ -123,6 +196,13 @@ extern const base::FeatureParam<std::string> kQueryEmbeddingTask;
 // The sample rate for logging contextual tasks context quality.
 extern const base::FeatureParam<double>
     kContextualTasksContextLoggingSampleRate;
+
+// Controls whether we set the upload type in CreateSearchUrl.
+extern const base::FeatureParam<bool> kSendContextualInputUploadTypeInSearchUrl;
+
+// Controls whether we set the upload type in CreateClientToAimRequest.
+extern const base::FeatureParam<bool>
+    kSendContextualInputUploadTypeInAimRequest;
 
 // Controls whether the contextual task page action should show
 extern const base::FeatureParam<EntryPointOption, true> kShowEntryPoint;
@@ -146,6 +226,9 @@ extern const base::FeatureParam<int> kContextualTasksNextboxMaxFileSize;
 
 // The user agent suffix to use for requests from the contextual tasks UI.
 extern const base::FeatureParam<std::string> kContextualTasksUserAgentSuffix;
+
+// Extra OAuth scopes separated by commas for contextual tasks.
+extern const base::FeatureParam<std::string> kContextualTasksOAuthScopes;
 
 // The URL for the help center article from the toolbar.
 extern const base::FeatureParam<std::string> kContextualTasksHelpUrl;
@@ -220,9 +303,6 @@ extern std::vector<std::string> GetContextualTasksSignInDomains();
 // Whether the suggestions are enabled for Nextbox.
 extern bool GetIsContextualTasksSuggestionsEnabled();
 
-// Whether Smart Tab Sharing is enabled for the ContextualTasksContext feature.
-extern bool GetIsSmartTabSharingEnabled();
-
 // Returns the timeout for smart tab sharing tab selection.
 extern base::TimeDelta GetSmartTabSharingTabSelectionTimeout();
 
@@ -268,9 +348,6 @@ extern bool GetEnableContextualTasksSmartCompose();
 // zero state suggestions are enabled for Contextual Tasks.
 extern bool GetEnableNativeZeroStateSuggestions();
 
-// Returns whether the kSearchResultsOAuth2Scope should be used instead of the
-// kChromeSyncOAuth2Scope.
-extern bool ShouldUseSearchResultsScope();
 
 // Returns whether basic mode should be enabled.
 extern bool GetIsBasicModeEnabled();
@@ -320,6 +397,15 @@ extern const char kContextualTasksContextName[];
 extern const char kContextualTasksContextDescription[];
 extern const char kContextualTasksSuggestionsEnabledName[];
 extern const char kContextualTasksSuggestionsEnabledDescription[];
+extern const char kContextualTasksJavaFuseboxName[];
+extern const char kContextualTasksJavaFuseboxDescription[];
+extern const char kContextualTasksBackButtonExpandsSidePanelName[];
+extern const char kContextualTasksBackButtonExpandsSidePanelDescription[];
+extern const char kContextualTasksOverrideShowBottomSheetOnLargeScreenName[];
+extern const char
+    kContextualTasksOverrideShowBottomSheetOnLargeScreenDescription[];
+extern const char kContextualTasksCookiePrefetchName[];
+extern const char kContextualTasksCookiePrefetchDescription[];
 
 }  // namespace flag_descriptions
 

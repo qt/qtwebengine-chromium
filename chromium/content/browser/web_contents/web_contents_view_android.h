@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_WEB_CONTENTS_WEB_CONTENTS_VIEW_ANDROID_H_
 
 #include <memory>
+#include <optional>
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -205,6 +206,12 @@ class CONTENT_EXPORT WebContentsViewAndroid : public WebContentsView,
   void OnDragEnded();
   virtual void OnSystemDragEnded(RenderWidgetHost* source_rwh);
 
+  // Clears internal and system drag-and-drop state when a drag attempt fails to
+  // start (e.g. due to drag failures from system/OS errors during
+  // initiation). Unlike `OnDragEnded`, this does not dispatch a final `dragend`
+  // event since the drag never officially started
+  void ClearDragStateOnStartFailure(RenderWidgetHost* source_rwh);
+
   SelectPopup* GetSelectPopup();
 
   // Returns the current `SelectionPopupController` from the current
@@ -255,8 +262,6 @@ class CONTENT_EXPORT WebContentsViewAndroid : public WebContentsView,
 
   // Source RenderWidgetHost when dragging out of this WebContents.
   base::WeakPtr<RenderWidgetHostImpl> current_source_rwh_for_drag_;
-  // base::FeatureList::IsEnabled(features::kAndroidDragDropOopif).
-  bool drag_drop_oopif_enabled_ = false;
   // Current drop data set on drop event.
   std::unique_ptr<DropData> drop_data_;
   // Metadata for the current drag.

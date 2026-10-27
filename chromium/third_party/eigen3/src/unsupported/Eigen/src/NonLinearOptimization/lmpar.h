@@ -1,4 +1,10 @@
 // IWYU pragma: private
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
+#ifndef EIGEN_NONLINEAROPTIMIZATION_LMPAR_H
+#define EIGEN_NONLINEAROPTIMIZATION_LMPAR_H
+
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {
@@ -261,3 +267,5 @@ void lmpar2(const ColPivHouseholderQR<Matrix<Scalar, Dynamic, Dynamic> > &qr, co
 }  // end namespace internal
 
 }  // end namespace Eigen
+
+#endif  // EIGEN_NONLINEAROPTIMIZATION_LMPAR_H

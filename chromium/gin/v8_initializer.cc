@@ -229,7 +229,7 @@ class V8FeatureVisitor : public base::FeatureVisitor {
  public:
   void Visit(const std::string& feature_name,
              base::FeatureList::OverrideState override_state,
-             const std::map<std::string, std::string>& params,
+             const base::FieldTrialParams& params,
              const std::string& trial_name,
              const std::string& group_name) override {
     std::string_view feature_name_view(feature_name);
@@ -392,6 +392,9 @@ void SetFeatureFlags() {
   SetV8FlagsIfOverridden(features::kV8ConcurrentMaglevHighPriorityThreads,
                          "--concurrent-maglev-high-priority-threads",
                          "--no-concurrent-maglev-high-priority-threads");
+  if (base::FeatureList::IsEnabled(features::kV8MaxValidPolymorphicMapCount)) {
+    SetV8FlagsFormatted("--max-valid-polymorphic-map-count=10");
+  }
   if (base::FeatureList::IsEnabled(features::kV8MemoryReducer)) {
     SetV8FlagsFormatted("--memory-reducer-gc-count=%i",
                         features::kV8MemoryReducerGCCount.Get());

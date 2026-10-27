@@ -3,16 +3,16 @@
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
 //
-// 1. Redistributions of source code must retain the above copyright notice, this
-//    list of conditions and the following disclaimer.
+//  1. Redistributions of source code must retain the above copyright notice, this
+//     list of conditions and the following disclaimer.
 //
-// 2. Redistributions in binary form must reproduce the above copyright notice,
-//    this list of conditions and the following disclaimer in the documentation
-//    and/or other materials provided with the distribution.
+//  2. Redistributions in binary form must reproduce the above copyright notice,
+//     this list of conditions and the following disclaimer in the documentation
+//     and/or other materials provided with the distribution.
 //
-// 3. Neither the name of the copyright holder nor the names of its
-//    contributors may be used to endorse or promote products derived from
-//    this software without specific prior written permission.
+//  3. Neither the name of the copyright holder nor the names of its
+//     contributors may be used to endorse or promote products derived from
+//     this software without specific prior written permission.
 //
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -187,7 +187,8 @@ func populateSourceFiles(p *Project, fsReaderWriter oswrapper.FilesystemReaderWr
 					"*/**.h",
 					"*/**.inl",
 					"*/**.mm",
-					"*/**.proto"
+					"*/**.proto",
+					"*/**.tmpl"
 				]
 			},
 			{
@@ -203,15 +204,26 @@ func populateSourceFiles(p *Project, fsReaderWriter oswrapper.FilesystemReaderWr
 	for _, filepath := range paths {
 		filepath = CanonicalizePath(filepath)
 		dir, name := path.Split(filepath)
+
+		// Strip the .tmpl suffix if present for target kind determination.
+		name = strings.TrimSuffix(name, ".tmpl")
+
 		if kind := targetKindFromFilename(name); kind != targetInvalid {
 			directory := p.AddDirectory(dir)
 			target := p.AddTarget(directory, kind)
-			target.AddSourceFile(p.AddFile(filepath))
+
+			if strings.HasSuffix(filepath, ".tmpl") {
+				target.GeneratedSourcePaths.Add(path.Join(dir, name))
+				target.AddTemplateFile(p.AddFile(filepath))
+				p.AllTemplatePaths.Add(filepath)
+			} else {
+				target.AddSourceFile(p.AddFile(filepath))
+			}
 
 			if kind == targetProto {
 				noExt, _ := fileutils.SplitExt(filepath)
-				target.AddGeneratedFile(p.AddGeneratedFile(noExt + ".pb.h"))
-				target.AddGeneratedFile(p.AddGeneratedFile(noExt + ".pb.cc"))
+				target.AddGeneratedProtobufSource(p.AddGeneratedProtobufSource(noExt + ".pb.h"))
+				target.AddGeneratedProtobufSource(p.AddGeneratedProtobufSource(noExt + ".pb.cc"))
 			}
 		}
 	}
@@ -235,7 +247,7 @@ func scanSourceFiles(p *Project, fsReaderWriter oswrapper.FilesystemReaderWriter
 	// parseFile parses the source file at 'path' represented by 'file'
 	// As this is run concurrently, it must not modify any shared state (including file)
 	parseFile := func(path string, file *File) (string, *ParsedFile, error) {
-		if file.IsGenerated {
+		if file.IsGeneratedProtobufSource {
 			return "", nil, nil
 		}
 
@@ -324,7 +336,7 @@ func scanSourceFiles(p *Project, fsReaderWriter oswrapper.FilesystemReaderWriter
 	// For each file, of each target, of each directory...
 	for _, dir := range p.Directories {
 		for _, target := range dir.Targets() {
-			for _, file := range target.SourceFiles() {
+			for _, file := range append(target.SourceFiles(), target.TemplateFiles()...) {
 				// Retrieve the parsed file information
 				parsed := parsedFiles[file.Path()]
 
@@ -537,7 +549,10 @@ func buildDependencies(p *Project, fsReaderWriter oswrapper.FilesystemReaderWrit
 
 					includeFile := p.File(path)
 					if includeFile == nil {
-						return fmt.Errorf(`%v:%v includes non-existent file '%v'`, file.Path(), include.Line, path)
+						includeFile = p.File(path + ".tmpl")
+						if includeFile == nil {
+							return fmt.Errorf(`%v:%v includes non-existent file '%v'`, file.Path(), include.Line, path)
+						}
 					}
 
 					if !isValidDependency(file.Target.Kind, includeFile.Target.Kind) {
@@ -764,6 +779,22 @@ func emitBuildFiles(p *Project, fsReaderWriter oswrapper.FilesystemReaderWriter)
 		}
 	}
 
+	// Generate files that contain the inputs and/or outputs of the build-time source generation.
+	generatedSources := p.AllTemplatePaths.List()
+	for i, v := range generatedSources {
+		generatedSources[i] = "src/tint/" + strings.TrimSuffix(v, ".tmpl")
+	}
+	depsForGeneratedSources, err := glob.Scan(p.Root, glob.MustParseConfig(`{
+		"paths": [{"include": ["**/*.def"]}]
+	}`), fsReaderWriter)
+	if err != nil {
+		return err
+	}
+	depsForGeneratedSources = append(depsForGeneratedSources, p.AllTemplatePaths.List()...)
+	if err := emitGeneratedSourceListForBazel(p, fsReaderWriter, generatedSources, depsForGeneratedSources); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -805,6 +836,49 @@ func emitDotFile(p *Project, kind TargetKind, fsWriter oswrapper.FilesystemWrite
 
 	g.GenerateDOT(file)
 	return nil
+}
+
+func emitGeneratedSourceListForBazel(p *Project, fsReaderWriter oswrapper.FilesystemReaderWriter, generatedSources []string, depsForGeneratedSources []string) error {
+	bzlPath := path.Join(p.Root, "generated_sources.bzl")
+	sb := &strings.Builder{}
+	sb.WriteString(common.Header("", "", "#"))
+	sb.WriteString("\n")
+
+	emitList(sb, generatedSources, "tint_generated_sources = [\n", "]\n\n", "    \"gen/", "\",\n")
+
+	// Convert the list of dependencies into Bazel labels.
+	var labels []string
+	for _, dep := range depsForGeneratedSources {
+		dir, base := path.Split(dep)
+		dir = strings.TrimSuffix(dir, "/")
+		labels = append(labels, fmt.Sprintf("//src/tint/%s:%s", dir, base))
+	}
+	emitList(sb, labels, "tint_generation_dependencies = [\n", "]\n", "    \"", "\",\n")
+
+	return writeFileIfStale(p, fsReaderWriter, bzlPath, sb.String())
+}
+
+func writeFileIfStale(p *Project, fsReaderWriter oswrapper.FilesystemReaderWriter, filepath string, content string) error {
+	existing, _ := fsReaderWriter.ReadFile(filepath)
+	if string(existing) != content {
+		if p.cfg.Flags.CheckStale {
+			return common.StaleFiles{filepath}
+		}
+		if err := fsReaderWriter.WriteFile(filepath, []byte(content), 0666); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func emitList(sb *strings.Builder, items []string, prefix, suffix, itemPrefix, itemSuffix string) {
+	sb.WriteString(prefix)
+	for _, item := range items {
+		sb.WriteString(itemPrefix)
+		sb.WriteString(item)
+		sb.WriteString(itemSuffix)
+	}
+	sb.WriteString(suffix)
 }
 
 var (

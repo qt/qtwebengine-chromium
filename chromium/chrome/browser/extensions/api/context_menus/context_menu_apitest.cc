@@ -8,6 +8,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/scoped_feature_list.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/extensions/context_menu_matcher.h"
 #include "chrome/browser/extensions/extension_apitest.h"
@@ -25,7 +26,9 @@
 #include "extensions/browser/extension_action.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/buildflags/buildflags.h"
+#include "extensions/common/extension_features.h"
 #include "extensions/common/extension_id.h"
+#include "extensions/test/extension_test_message_listener.h"
 #include "extensions/test/result_catcher.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "ui/base/models/menu_model.h"
@@ -37,6 +40,9 @@
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
 #include "chrome/browser/renderer_context_menu/render_view_context_menu_test_util.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+#include "chrome/browser/ui/tabs/tab_menu_model.h"
+#include "chrome/browser/ui/views/tabs/tab/tab_context_menu_controller.h"
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
@@ -60,7 +66,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuApiTest, Count) {
   ASSERT_TRUE(RunExtensionTest("context_menus/count")) << message_;
 }
 
-// crbug.com/51436 -- creating context menus from multiple script contexts
+// crbug.com/41190960 -- creating context menus from multiple script contexts
 // should work.
 IN_PROC_BROWSER_TEST_F(ExtensionContextMenuApiTest,
                        ContextMenusFromMultipleContexts) {
@@ -90,6 +96,169 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuApiTest,
 IN_PROC_BROWSER_TEST_F(ExtensionContextMenuApiTest, ContextMenusBasics) {
   ASSERT_TRUE(RunExtensionTest("context_menus/basics")) << message_;
 }
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+class ExtensionTabContextMenuApiTest : public ExtensionContextMenuApiTest {
+ public:
+  ExtensionTabContextMenuApiTest() {
+    feature_list_.InitAndEnableFeature(
+        extensions_features::kExtensionTabContextMenu);
+  }
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+};
+
+IN_PROC_BROWSER_TEST_F(ExtensionTabContextMenuApiTest, ContextMenusTabContext) {
+  // Wait for the extension to signal that it has created the menu item.
+  ExtensionTestMessageListener listener("created");
+
+  ResultCatcher catcher;
+
+  // Load the extension which calls chrome.contextMenus.create.
+  const Extension* extension =
+      LoadExtension(test_data_dir_.AppendASCII("context_menus/tab_context"));
+  ASSERT_TRUE(extension);
+
+  // Wait until the extension has completed the menu item creation call.
+  ASSERT_TRUE(listener.WaitUntilSatisfied());
+
+  // Verify the menu model. We create a TabMenuModel for the active tab
+  // to inspect its contents.
+  TabStripModel* tab_strip = browser()->tab_strip_model();
+  int index = tab_strip->active_index();
+  TabMenuModel menu(nullptr, nullptr, tab_strip, index);
+
+  // Iterate through the menu items to count how many times the
+  // extension-provided item is present. This ensures that exactly one such item
+  // has been added, validating against duplicates or missing items.
+  int match_count = 0;
+  size_t item_index = 0;
+  for (size_t i = 0; i < menu.GetItemCount(); ++i) {
+    if (menu.GetLabelAt(i) == u"Test Tab Item") {
+      match_count++;
+      item_index = i;
+    }
+  }
+  ASSERT_EQ(1, match_count);
+
+  EXPECT_TRUE(menu.IsVisibleAt(item_index));
+  EXPECT_TRUE(menu.IsEnabledAt(item_index));
+  // Tap on the context menu item. This will trigger the background script's
+  // onClicked listener.
+  menu.ActivatedAt(item_index);
+
+  // Wait for the extension to verify it received the onClicked event, which it
+  // indicates via success in the test.
+  ASSERT_TRUE(catcher.GetNextResult());
+}
+
+class FakeTabContextMenuControllerDelegate
+    : public TabContextMenuController::Delegate {
+ public:
+  bool IsContextMenuCommandChecked(
+      TabStripModel::ContextMenuCommand command_id) override {
+    return false;
+  }
+
+  bool IsContextMenuCommandEnabled(
+      tabs::TabInterface* tab,
+      TabStripModel::ContextMenuCommand command_id) override {
+    return true;
+  }
+
+  bool IsContextMenuCommandAlerted(
+      TabStripModel::ContextMenuCommand command_id) override {
+    return false;
+  }
+
+  void ExecuteContextMenuCommand(tabs::TabInterface* tab,
+                                 TabStripModel::ContextMenuCommand command_id,
+                                 int event_flags) override {}
+  bool GetContextMenuAccelerator(int command_id,
+                                 ui::Accelerator* accelerator) override {
+    return false;
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(ExtensionTabContextMenuApiTest,
+                       ContextMenusTabContextMultipleItems) {
+  // Wait for the extension to signal that it has created the menu items.
+  ExtensionTestMessageListener listener("created");
+
+  ResultCatcher catcher;
+
+  // Load the extension which calls chrome.contextMenus.create multiple times.
+  const Extension* extension = LoadExtension(
+      test_data_dir_.AppendASCII("context_menus/tab_context_multiple"));
+  ASSERT_TRUE(extension);
+
+  // Wait until the extension has completed the menu item creation calls.
+  ASSERT_TRUE(listener.WaitUntilSatisfied());
+
+  // Verify the menu model. We create a TabMenuModel for the active tab
+  // to inspect its contents.
+  TabStripModel* tab_strip = browser()->tab_strip_model();
+  int index = tab_strip->active_index();
+  TabMenuModel menu(nullptr, nullptr, tab_strip, index);
+
+  // Because there are multiple items, ContextMenuMatcher must group them inside
+  // a submenu. Find the index of the extension-named submenu item.
+  size_t submenu_index = menu.GetItemCount();
+  for (size_t i = 0; i < menu.GetItemCount(); ++i) {
+    if (menu.GetLabelAt(i) == base::UTF8ToUTF16(extension->name())) {
+      submenu_index = i;
+      break;
+    }
+  }
+  ASSERT_LT(submenu_index, menu.GetItemCount());
+  ASSERT_EQ(menu.GetTypeAt(submenu_index), ui::MenuModel::TYPE_SUBMENU);
+
+  // Verify that both items are present.
+  ui::MenuModel* submenu = menu.GetSubmenuModelAt(submenu_index);
+  ASSERT_TRUE(submenu);
+  ASSERT_EQ(2u, submenu->GetItemCount());
+
+  FakeTabContextMenuControllerDelegate fake_delegate;
+
+  // Instantiate the TabContextMenuController to wrap the model, matching the
+  // real UI delegate.
+  auto context_menu_controller = std::make_unique<TabContextMenuController>(
+      tab_strip->GetTabAtIndex(index)->GetHandle(), &fake_delegate);
+
+  auto tab_menu_model = std::make_unique<TabMenuModel>(
+      context_menu_controller.get(), nullptr, tab_strip, index);
+  TabMenuModel* tab_menu_model_ptr = tab_menu_model.get();
+  context_menu_controller->LoadModel(std::move(tab_menu_model),
+                                     tab_menu_model_ptr);
+
+  TabMenuModel* loaded_model = context_menu_controller->GetTabMenuModel();
+  size_t loaded_submenu_index = loaded_model->GetItemCount();
+  for (size_t i = 0; i < loaded_model->GetItemCount(); ++i) {
+    if (loaded_model->GetLabelAt(i) == base::UTF8ToUTF16(extension->name())) {
+      loaded_submenu_index = i;
+      break;
+    }
+  }
+  ASSERT_LT(loaded_submenu_index, loaded_model->GetItemCount());
+  ui::MenuModel* loaded_submenu =
+      loaded_model->GetSubmenuModelAt(loaded_submenu_index);
+  ASSERT_TRUE(loaded_submenu);
+
+  // Verify that querying the submenu item states routes successfully without
+  // crashes.
+  EXPECT_TRUE(loaded_submenu->IsVisibleAt(0));
+  EXPECT_TRUE(loaded_submenu->IsEnabledAt(0));
+  EXPECT_FALSE(loaded_submenu->IsItemCheckedAt(0));
+
+  // Simulate user clicking the first submenu item.
+  loaded_submenu->ActivatedAt(0);
+
+  // Wait for the extension background script to receive the click event and
+  // succeed.
+  ASSERT_TRUE(catcher.GetNextResult());
+}
+#endif
 
 IN_PROC_BROWSER_TEST_F(ExtensionContextMenuApiTest, ContextMenusNoPerms) {
   ASSERT_TRUE(RunExtensionTest("context_menus/no_perms")) << message_;

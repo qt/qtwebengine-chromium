@@ -29,6 +29,7 @@
  *   Selfadjoint matrix-vector product functionality based on ?SYMV/HEMV.
  ********************************************************************************
 */
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef EIGEN_SELFADJOINT_MATRIX_VECTOR_BLAS_H
 #define EIGEN_SELFADJOINT_MATRIX_VECTOR_BLAS_H
@@ -56,10 +57,11 @@ struct selfadjoint_matrix_vector_product_symv
                                            Specialized> {                                                            \
     static void run(Index size, const Scalar* lhs, Index lhsStride, const Scalar* _rhs, Scalar* res, Scalar alpha) { \
       enum { IsColMajor = StorageOrder == ColMajor };                                                                \
-      if (IsColMajor == ConjugateLhs) {                                                                              \
+      EIGEN_IF_CONSTEXPR(IsColMajor == ConjugateLhs) {                                                               \
         selfadjoint_matrix_vector_product<Scalar, Index, StorageOrder, UpLo, ConjugateLhs, ConjugateRhs,             \
                                           BuiltIn>::run(size, lhs, lhsStride, _rhs, res, alpha);                     \
-      } else {                                                                                                       \
+      }                                                                                                              \
+      else {                                                                                                         \
         selfadjoint_matrix_vector_product_symv<Scalar, Index, StorageOrder, UpLo, ConjugateLhs, ConjugateRhs>::run(  \
             size, lhs, lhsStride, _rhs, res, alpha);                                                                 \
       }                                                                                                              \

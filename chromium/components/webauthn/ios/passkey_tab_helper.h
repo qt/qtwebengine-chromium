@@ -9,6 +9,10 @@
 #import <variant>
 
 #import "base/memory/weak_ptr.h"
+#import "base/scoped_observation.h"
+#import "base/time/time.h"
+#import "components/password_manager/core/browser/password_store/password_store_consumer.h"
+#import "components/password_manager/core/browser/password_store/password_store_interface.h"
 #import "components/webauthn/core/browser/passkey_model.h"
 #import "components/webauthn/core/browser/remote_validation.h"
 #import "components/webauthn/ios/ios_passkey_client.h"
@@ -31,11 +35,15 @@ class WebFrame;
 
 namespace webauthn {
 
+class IOSWebAuthnCredentialsDelegate;
+
 // Handles script messages received from PasskeyJavaScriptFeature related to
 // interactions with WebAuthn credentials and for now logs appropriate metrics.
 class PasskeyTabHelper : public web::WebStateObserver,
                          public web::WebStateUserData<PasskeyTabHelper>,
-                         public web::WebFramesManager::Observer {
+                         public web::WebFramesManager::Observer,
+                         public password_manager::PasswordStoreConsumer,
+                         public PasskeyModel::Observer {
  public:
   // These values are logged to UMA. Entries should not be renumbered and
   // numeric values should never be reused.
@@ -103,6 +111,10 @@ class PasskeyTabHelper : public web::WebStateObserver,
   // have a username.
   std::string UsernameForRequest(const std::string& request_id);
 
+  // Returns the relying party identifier associated with the current request ID
+  // or an empty string if the request is not found.
+  std::string RelyingPartyIdForRequest(const std::string& request_id);
+
   // Sets the passkey command handler.
   void SetIOSPasskeyClientCommandsHandler(id<IOSPasskeyClientCommands> handler);
 
@@ -127,9 +139,17 @@ class PasskeyTabHelper : public web::WebStateObserver,
   using PendingRequest =
       std::variant<AssertionRequestParams, RegistrationRequestParams>;
 
-  explicit PasskeyTabHelper(web::WebState* web_state,
-                            PasskeyModel* passkey_model,
-                            std::unique_ptr<IOSPasskeyClient> client);
+  // Information about the frame hierarchy.
+  struct FrameHierarchy {
+    url::Origin top_origin;
+    bool is_cross_origin_iframe;
+  };
+
+  explicit PasskeyTabHelper(
+      web::WebState* web_state,
+      PasskeyModel* passkey_model,
+      scoped_refptr<password_manager::PasswordStoreInterface> password_store,
+      std::unique_ptr<IOSPasskeyClient> client);
 
   // Handles passkey assertion requests. Defers if the rp ID is invalid.
   void HandleGetRequestedEvent(web::WebFrame* web_frame,
@@ -182,9 +202,16 @@ class PasskeyTabHelper : public web::WebStateObserver,
   // Handles passkey assertion request after it passes validation.
   void HandleAssertion(AssertionRequestParams params);
 
+  // Callback invoked when the WebAuthn credentials delegate is resolved for an
+  // assertion request.
+  void OnWebAuthnCredentialsDelegateResolved(
+      AssertionRequestParams params,
+      IOSWebAuthnCredentialsDelegate* delegate);
+
   // Whether automatic passkey upgrade is allowed.
   bool CanPerformAutomaticPasskeyUpgrade(
-      const RegistrationRequestParams& params) const;
+      const RegistrationRequestParams& params,
+      const std::vector<password_manager::StoredCredential>& logins) const;
 
   // Handles passkey registration requests after it passes validation.
   void HandleRegistration(RegistrationRequestParams params);
@@ -219,6 +246,11 @@ class PasskeyTabHelper : public web::WebStateObserver,
   std::optional<RegistrationRequestParams>
   ExtractParamsFromRegistrationRequestsMap(std::string request_id);
 
+  // Determines the frame hierarchy for the given `web_frame`. Returns the top
+  // origin and whether the frame is a cross-origin iframe relative to the main
+  // frame.
+  FrameHierarchy GetFrameHierarchy(web::WebFrame* web_frame) const;
+
   // Returns a web frame from a web frame id. May return null.
   web::WebFrame* GetWebFrame(const std::string& frame_id) const;
 
@@ -229,11 +261,25 @@ class PasskeyTabHelper : public web::WebStateObserver,
   void WebFrameBecameAvailable(web::WebFramesManager* web_frames_manager,
                                web::WebFrame* web_frame) override;
 
+  // PasswordStoreConsumer:
+  void OnGetPasswordStoreResultsOrErrorFrom(
+      password_manager::PasswordStoreInterface* store,
+      password_manager::LoginsResultOrError results_or_error) override;
+
+  // PasskeyModel::Observer:
+  void OnPasskeysChanged(
+      const std::vector<PasskeyModelChange>& changes) override;
+  void OnPasskeyModelShuttingDown() override;
+  void OnPasskeyModelIsReady(bool is_ready) override;
+
   // Gets a weak pointer to this object.
   base::WeakPtr<PasskeyTabHelper> AsWeakPtr();
 
   // Provides access to stored WebAuthn credentials.
   const raw_ref<PasskeyModel> passkey_model_;
+
+  // Provides access to the account password store.
+  scoped_refptr<password_manager::PasswordStoreInterface> password_store_;
 
   // The WebState with which this object is associated.
   base::WeakPtr<web::WebState> web_state_;
@@ -248,11 +294,22 @@ class PasskeyTabHelper : public web::WebStateObserver,
   absl::flat_hash_map<std::string, RegistrationRequestParams>
       registration_requests_;
 
+  // Requests that are waiting for the passkey model to be ready.
+  std::vector<PendingRequest> requests_waiting_for_passkey_model_;
+
+  // Requests that are waiting for the web frame to be available.
   absl::flat_hash_map<std::string, std::vector<PendingRequest>>
-      pending_requests_by_frame_;
+      requests_waiting_for_web_frame_;
 
   // Map of request IDs to their ongoing remote validation loaders.
   absl::flat_hash_map<std::string, std::unique_ptr<RemoteValidation>> loaders_;
+
+  // Manages the observation of the passkey model.
+  base::ScopedObservation<PasskeyModel, PasskeyModel::Observer>
+      passkey_model_observation_{this};
+
+  // Flag to avoid duplicate queries to the password store.
+  bool is_querying_password_store_ = false;
 
   // This is necessary because this object could be deleted during any callback,
   // and we don't want to risk a UAF if that happens.

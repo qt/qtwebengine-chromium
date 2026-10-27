@@ -10,6 +10,7 @@
 
 #include <assert.h>
 #include <limits.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -17,11 +18,13 @@
 
 #include "./vpx_config.h"
 #include "vpx/vpx_encoder.h"
+#include "vpx/vpx_image.h"
 #include "vpx/vpx_ext_ratectrl.h"
 #include "vpx_dsp/psnr.h"
 #include "vpx_dsp/vpx_dsp_common.h"
 #include "vpx_ports/static_assert.h"
 #include "vpx_ports/system_state.h"
+#include "vpx_scale/yv12config.h"
 #include "vpx_util/vpx_timestamp.h"
 #include "vpx/internal/vpx_codec_internal.h"
 #include "./vpx_version.h"
@@ -72,7 +75,7 @@ typedef struct vp9_extracfg {
   unsigned int row_mt;
   unsigned int motion_vector_unit_test;
   int delta_q_uv;
-  unsigned int validate_input_hbd;
+  unsigned int validate_hbd_input;
 } vp9_extracfg;
 
 static struct vp9_extracfg default_extra_cfg = {
@@ -113,7 +116,7 @@ static struct vp9_extracfg default_extra_cfg = {
   0,                     // row_mt
   0,                     // motion_vector_unit_test
   0,                     // delta_q_uv
-  1,                     // validate_input_hbd
+  1,                     // validate_hbd_input
 };
 
 struct vpx_codec_alg_priv {
@@ -295,6 +298,8 @@ static vpx_codec_err_t validate_config(vpx_codec_alg_priv_t *ctx,
   RANGE_CHECK(extra_cfg, cq_level, 0, 63);
   RANGE_CHECK(cfg, g_bit_depth, VPX_BITS_8, VPX_BITS_12);
   RANGE_CHECK(cfg, g_input_bit_depth, 8, 12);
+  if (cfg->g_input_bit_depth > (unsigned int)cfg->g_bit_depth)
+    ERROR("Input bit-depth must not exceed codec bit-depth");
   RANGE_CHECK(extra_cfg, content, VP9E_CONTENT_DEFAULT,
               VP9E_CONTENT_INVALID - 1);
 
@@ -312,7 +317,7 @@ static vpx_codec_err_t validate_config(vpx_codec_alg_priv_t *ctx,
 
     if (cfg->ss_number_layers > 1 || cfg->ts_number_layers > 1) {
       int i;
-      unsigned int n_packets_per_layer[VPX_SS_MAX_LAYERS] = { 0 };
+      int n_packets_per_layer[VPX_SS_MAX_LAYERS] = { 0 };
 
       stats = cfg->rc_twopass_stats_in.buf;
       for (i = 0; i < n_packets; ++i) {
@@ -334,9 +339,11 @@ static vpx_codec_err_t validate_config(vpx_codec_alg_priv_t *ctx,
                 n_packets - cfg->ss_number_layers + i;
         layer_id = (int)stats->spatial_layer_id;
 
+        const double count_rounded = stats->count + 0.5;
         if (layer_id >= cfg->ss_number_layers ||
-            (unsigned int)(stats->count + 0.5) !=
-                n_packets_per_layer[layer_id] - 1)
+            !isfinite((float)stats->count) || stats->count < 0.0 ||
+            count_rounded > (double)INT_MAX ||
+            (int)count_rounded != n_packets_per_layer[layer_id] - 1)
           ERROR("rc_twopass_stats_in missing EOS stats packet");
       }
     } else {
@@ -346,7 +353,10 @@ static vpx_codec_err_t validate_config(vpx_codec_alg_priv_t *ctx,
       stats =
           (const FIRSTPASS_STATS *)cfg->rc_twopass_stats_in.buf + n_packets - 1;
 
-      if ((int)(stats->count + 0.5) != n_packets - 1)
+      const double count_rounded = stats->count + 0.5;
+      if (!isfinite((float)stats->count) || stats->count < 0.0 ||
+          count_rounded > (double)INT_MAX ||
+          (int)count_rounded != n_packets - 1)
         ERROR("rc_twopass_stats_in missing EOS stats packet");
     }
   }
@@ -360,9 +370,6 @@ static vpx_codec_err_t validate_config(vpx_codec_alg_priv_t *ctx,
   if (cfg->g_profile <= (unsigned int)PROFILE_1 &&
       cfg->g_bit_depth > VPX_BITS_8) {
     ERROR("Codec high bit-depth not supported in profile < 2");
-  }
-  if (cfg->g_profile <= (unsigned int)PROFILE_1 && cfg->g_input_bit_depth > 8) {
-    ERROR("Source high bit-depth not supported in profile < 2");
   }
   if (cfg->g_profile > (unsigned int)PROFILE_1 &&
       cfg->g_bit_depth == VPX_BITS_8) {
@@ -431,14 +438,30 @@ static vpx_codec_err_t validate_img(vpx_codec_alg_priv_t *ctx,
     ERROR("Image U/V strides must match");
 
 #if CONFIG_VP9_HIGHBITDEPTH
-  if (ctx->extra_cfg.validate_input_hbd &&
+  // The following checks ensure that the image format matches the encoder's
+  // high bit-depth setting. Currently, libvpx overwrites function pointers if
+  // use_highbitdepth is set to 1, but there is no other way around if the
+  // internal flag gets reset to 0.
+  if (ctx->oxcf.use_highbitdepth && !(img->fmt & VPX_IMG_FMT_HIGHBITDEPTH)) {
+    ERROR(
+        "Encoder initialized with VPX_CODEC_USE_HIGHBITDEPTH requires a "
+        "high-bit-depth image format (e.g. VPX_IMG_FMT_I42016)");
+  }
+  if (!ctx->oxcf.use_highbitdepth && (img->fmt & VPX_IMG_FMT_HIGHBITDEPTH)) {
+    ERROR(
+        "Non-high-bit-depth encoder cannot accept a high-bit-depth image "
+        "format");
+  }
+
+  if (ctx->extra_cfg.validate_hbd_input &&
       (img->fmt & VPX_IMG_FMT_HIGHBITDEPTH)) {
     const unsigned int h = img->d_h;
     const unsigned int w = img->d_w;
-    const unsigned int bit_depth = ctx->oxcf.input_bit_depth;
+    const unsigned int bit_depth = ctx->cfg.g_bit_depth;
     const int max_val = 1 << bit_depth;
     for (int plane = 0; plane < 3; ++plane) {
       const unsigned short *src = (const unsigned short *)img->planes[plane];
+      if (!src) return VPX_CODEC_INVALID_PARAM;
       const unsigned int stride = img->stride[plane] / 2;
       const unsigned int ph =
           (plane == 0) ? h : (h + img->y_chroma_shift) >> img->y_chroma_shift;
@@ -447,7 +470,7 @@ static vpx_codec_err_t validate_img(vpx_codec_alg_priv_t *ctx,
       for (unsigned int i = 0; i < ph; ++i) {
         for (unsigned int j = 0; j < pw; ++j) {
           if (src[j] >= max_val) {
-            return VPX_CODEC_INVALID_PARAM;
+            ERROR("Input pixel value out of range for encoder bit depth");
           }
         }
         src += stride;
@@ -494,12 +517,14 @@ static void config_target_level(VP9EncoderConfig *oxcf) {
   if (oxcf->ss_number_layers == 1 && oxcf->pass != 0)
     oxcf->ss_target_bitrate[0] = (int)oxcf->target_bandwidth;
 
-  // Adjust max over-shoot percentage.
-  max_over_shoot_pct =
-      (int)((max_average_bitrate * 1.10 - (double)oxcf->target_bandwidth) *
-            100 / (double)(oxcf->target_bandwidth));
-  if (oxcf->over_shoot_pct > max_over_shoot_pct)
-    oxcf->over_shoot_pct = max_over_shoot_pct;
+  // Adjust max over-shoot percentage (only when target_bandwidth > 0).
+  if (oxcf->target_bandwidth > 0) {
+    max_over_shoot_pct =
+        (int)((max_average_bitrate * 1.10 - (double)oxcf->target_bandwidth) *
+              100 / (double)(oxcf->target_bandwidth));
+    if (oxcf->over_shoot_pct > max_over_shoot_pct)
+      oxcf->over_shoot_pct = max_over_shoot_pct;
+  }
 
   // Adjust worst allowed quantizer.
   oxcf->worst_allowed_q = vp9_quantizer_to_qindex(63);
@@ -674,6 +699,12 @@ static vpx_codec_err_t set_encoder_config(
   oxcf->ts_number_layers = cfg->ts_number_layers;
   oxcf->temporal_layering_mode =
       (enum vp9e_temporal_layering_mode)cfg->temporal_layering_mode;
+  if (oxcf->temporal_layering_mode == VP9E_TEMPORAL_LAYERING_MODE_NOLAYERING) {
+    if (oxcf->ts_number_layers == 2)
+      oxcf->temporal_layering_mode = VP9E_TEMPORAL_LAYERING_MODE_0101;
+    else if (oxcf->ts_number_layers == 3)
+      oxcf->temporal_layering_mode = VP9E_TEMPORAL_LAYERING_MODE_0212;
+  }
 
   oxcf->target_level = extra_cfg->target_level;
 
@@ -1012,10 +1043,10 @@ static vpx_codec_err_t ctrl_set_keyframe_filtering(vpx_codec_alg_priv_t *ctx,
   return update_extra_cfg(ctx, &extra_cfg);
 }
 
-static vpx_codec_err_t ctrl_set_validate_input_hbd(vpx_codec_alg_priv_t *ctx,
+static vpx_codec_err_t ctrl_set_validate_hbd_input(vpx_codec_alg_priv_t *ctx,
                                                    va_list args) {
   struct vp9_extracfg extra_cfg = ctx->extra_cfg;
-  extra_cfg.validate_input_hbd = CAST(VP9E_SET_VALIDATE_INPUT_HBD, args);
+  extra_cfg.validate_hbd_input = CAST(VP9E_SET_VALIDATE_HBD_INPUT, args);
   return update_extra_cfg(ctx, &extra_cfg);
 }
 static vpx_codec_err_t ctrl_set_arnr_max_frames(vpx_codec_alg_priv_t *ctx,
@@ -1277,7 +1308,6 @@ static int write_superframe_index(vpx_codec_alg_priv_t *ctx) {
   unsigned int mask;
   int mag, index_sz;
 
-  assert(ctx->pending_frame_count);
   assert(ctx->pending_frame_count <= 8);
 
   // Add the number of frames to the marker byte
@@ -1656,7 +1686,8 @@ static vpx_codec_err_t encoder_encode(vpx_codec_alg_priv_t *ctx,
           ctx->pending_cx_data_sz += size;
           // write the superframe only for the case when the callback function
           // for getting per-layer packets is not registered.
-          if (!ctx->output_cx_pkt_cb.output_cx_pkt) {
+          if (!ctx->output_cx_pkt_cb.output_cx_pkt &&
+              ctx->pending_frame_count > 0) {
             size += write_superframe_index(ctx);
             assert(size <= cx_data_sz);
           }
@@ -1860,23 +1891,13 @@ static vpx_codec_err_t ctrl_set_scale_mode(vpx_codec_alg_priv_t *ctx,
 static vpx_codec_err_t ctrl_set_svc(vpx_codec_alg_priv_t *ctx, va_list args) {
   int data = va_arg(args, int);
   const vpx_codec_enc_cfg_t *cfg = &ctx->cfg;
-  // Both one-pass and two-pass RC are supported now.
-  // User setting this has to make sure of the following.
-  // In two-pass setting: either (but not both)
-  //      cfg->ss_number_layers > 1, or cfg->ts_number_layers > 1
-  // In one-pass setting:
-  //      either or both cfg->ss_number_layers > 1, or cfg->ts_number_layers > 1
-
-  vp9_set_svc(ctx->cpi, data);
-
+  // SVC is only supported for one-pass.
   if (data == 1 &&
-      (cfg->g_pass == VPX_RC_FIRST_PASS || cfg->g_pass == VPX_RC_LAST_PASS) &&
-      cfg->ss_number_layers > 1 && cfg->ts_number_layers > 1) {
+      (cfg->g_pass == VPX_RC_FIRST_PASS || cfg->g_pass == VPX_RC_LAST_PASS)) {
     return VPX_CODEC_INVALID_PARAM;
   }
-
+  vp9_set_svc(ctx->cpi, data);
   vp9_set_row_mt(ctx->cpi);
-
   return VPX_CODEC_OK;
 }
 
@@ -1934,6 +1955,12 @@ static vpx_codec_err_t ctrl_set_svc_parameters(vpx_codec_alg_priv_t *ctx,
       const int layer =
           LAYER_IDS_TO_IDX(sl, tl, cpi->svc.number_temporal_layers);
       LAYER_CONTEXT *lc = &cpi->svc.layer_context[layer];
+      if (params->max_quantizers[layer] < 0 ||
+          params->max_quantizers[layer] > 63 ||
+          params->min_quantizers[layer] < 0 ||
+          params->min_quantizers[layer] > params->max_quantizers[layer]) {
+        return VPX_CODEC_INVALID_PARAM;
+      }
       lc->max_q = params->max_quantizers[layer];
       lc->min_q = params->min_quantizers[layer];
       // Checks on valid scale factors.
@@ -1989,6 +2016,7 @@ static vpx_codec_err_t ctrl_set_svc_ref_frame_config(vpx_codec_alg_priv_t *ctx,
     cpi->svc.alt_fb_idx[sl] = data->alt_fb_idx[sl];
     cpi->svc.duration[sl] = data->duration[sl];
   }
+  cpi->svc.temporal_layering_mode = VP9E_TEMPORAL_LAYERING_MODE_BYPASS;
   return VPX_CODEC_OK;
 }
 
@@ -2185,7 +2213,7 @@ static vpx_codec_ctrl_fn_map_t encoder_ctrl_maps[] = {
   { VP9E_SET_TILE_ROWS, ctrl_set_tile_rows },
   { VP9E_SET_TPL, ctrl_set_tpl_model },
   { VP9E_SET_KEY_FRAME_FILTERING, ctrl_set_keyframe_filtering },
-  { VP9E_SET_VALIDATE_INPUT_HBD, ctrl_set_validate_input_hbd },
+  { VP9E_SET_VALIDATE_HBD_INPUT, ctrl_set_validate_hbd_input },
   { VP8E_SET_ARNR_MAXFRAMES, ctrl_set_arnr_max_frames },
   { VP8E_SET_ARNR_STRENGTH, ctrl_set_arnr_strength },
   { VP8E_SET_ARNR_TYPE, ctrl_set_arnr_type },

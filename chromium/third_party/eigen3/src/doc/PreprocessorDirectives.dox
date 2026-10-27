@@ -53,15 +53,17 @@ the information provided by the compiler.
 
  - \b EIGEN_MAX_CPP_VER - disables usage of C++ features requiring a version greater than EIGEN_MAX_CPP_VER.
    Possible values are: 14, 17, etc. If not defined (the default), %Eigen enables all features supported
-   by the compiler.
+   by the compiler. For instance, one might limit the C++ version to C++14 by defining
+   EIGEN_MAX_CPP_VER=14.
 
 Individual features can be explicitly enabled or disabled by defining the following token to 0 or 1 respectively.
-For instance, one might limit the C++ version to C++14 by defining EIGEN_MAX_CPP_VER=14, but still enable C99 math
-functions by defining EIGEN_HAS_C99_MATH=1.
+For instance, one might disable use of \c std::invoke_result by defining
+EIGEN_HAS_STD_INVOKE_RESULT=0.
 
- - \b EIGEN_HAS_C99_MATH - controls the usage of C99 math functions such as erf, erfc, lgamma, etc.
  - \b EIGEN_HAS_STD_INVOKE_RESULT - controls the usage of \c std::invoke_result (C++17). When disabled,
    \c std::result_of is used as a fallback.
+ - \b EIGEN_HAS_C99_MATH - Deprecated and ignored. Defined to 1 by default for compatibility with downstream code
+   that checks this token; defining it has no effect on %Eigen.
  - \b EIGEN_NO_IO - Disables any usage and support for `<iostreams>`.
 
 \section TopicPreprocessorDirectivesAssertions Assertions

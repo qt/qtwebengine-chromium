@@ -1,4 +1,6 @@
 # Powershell script to set up MSVC environment.
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 param ($EIGEN_CI_MSVC_ARCH, $EIGEN_CI_MSVC_VER)
 function Get-ScriptDirectory { Split-Path $MyInvocation.ScriptName }

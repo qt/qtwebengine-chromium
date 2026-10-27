@@ -56,8 +56,12 @@ void SimulateAccountImageFetch(signin::IdentityManager*,
 // Retrieves and caches GAIA information about Google Accounts.
 class AccountTrackerService {
  public:
-  typedef base::RepeatingCallback<void(const AccountInfo& info)>
-      AccountInfoCallback;
+  using AccountInfoCallback =
+      base::RepeatingCallback<void(const AccountInfo& info)>;
+  // std::string is used instead of GaiaId for migration purposes (in the past
+  // accounts were saved using email as the identifier).
+  // TODO(crbug.com/503729501): Remove this after migration is finished.
+  using GaiaIdMightBeEmail = std::string;
 
 #if BUILDFLAG(IS_CHROMEOS)
   // Possible values for the kAccountIdMigrationState preference.
@@ -75,7 +79,11 @@ class AccountTrackerService {
   };
 #endif
 
-  AccountTrackerService();
+  // Initializes the list of accounts from `pref_service` and loads images from
+  // `user_data_dir`. If `user_data_dir` is empty, images will not be saved to
+  // nor loaded from disk.
+  AccountTrackerService(PrefService* pref_service,
+                        base::FilePath user_data_dir);
 
   AccountTrackerService(const AccountTrackerService&) = delete;
   AccountTrackerService& operator=(const AccountTrackerService&) = delete;
@@ -84,11 +92,6 @@ class AccountTrackerService {
 
   // Registers the preferences used by AccountTrackerService.
   static void RegisterPrefs(PrefRegistrySimple* registry);
-
-  // Initializes the list of accounts from |pref_service| and load images from
-  // |user_data_dir|. If |user_data_dir| is empty, images will not be saved to
-  // nor loaded from disk.
-  void Initialize(PrefService* pref_service, base::FilePath user_data_dir);
 
   // Returns the list of known accounts and for which gaia IDs
   // have been fetched.
@@ -149,10 +152,6 @@ class AccountTrackerService {
   // this function does not block on disk IO.
   void CommitPendingAccountChanges();
 
-  // Only used in tests to simulate a restart of the service. Accounts are
-  // reloaded.
-  void ResetForTesting();
-
  protected:
   // Available to be called in tests.
   void SetAccountInfoFromUserInfo(const CoreAccountId& account_id,
@@ -202,10 +201,11 @@ class AccountTrackerService {
   base::DictValue* FindOrCreateDictForAccount(ScopedListPrefUpdate& update,
                                               const CoreAccountId& account_id);
 
-  void RemoveFromPrefs(const AccountInfo& account);
+  void RemoveFromPrefs(const GaiaIdMightBeEmail& account_id);
 
   // Used to load/save account images from/to disc.
-  base::FilePath GetImagePathFor(const CoreAccountId& account_id);
+  base::FilePath GetImagePathFor(const GaiaIdMightBeEmail& account_id);
+
   void OnAccountImageLoaded(const CoreAccountId& account_id, gfx::Image image);
   void LoadAccountImagesFromDisk();
   void SaveAccountImageToDisk(const CoreAccountId& account_id,
@@ -214,7 +214,7 @@ class AccountTrackerService {
   void OnAccountImageUpdated(const CoreAccountId& account_id,
                              const std::string& image_url_with_size,
                              bool success);
-  void RemoveAccountImageFromDisk(const CoreAccountId& account_id);
+  void RemoveAccountImageFromDisk(const GaiaIdMightBeEmail& account_id);
 
   // Returns whether the accounts are all keyed by gaia id. This should
   // be the case when the migration state is set to MIGRATION_DONE.
@@ -245,9 +245,10 @@ class AccountTrackerService {
   bool UpdateAccountInfoChildStatus(AccountInfo& account_info,
                                     bool is_child_account);
 
-  raw_ptr<PrefService> pref_service_ = nullptr;  // Not owned.
+  const raw_ptr<PrefService> pref_service_ = nullptr;  // Not owned.
+  const base::FilePath user_data_dir_;
+
   std::map<CoreAccountId, AccountInfo> accounts_;
-  base::FilePath user_data_dir_;
 
   AccountInfoCallback on_account_updated_callback_;
   AccountInfoCallback on_account_removed_callback_;

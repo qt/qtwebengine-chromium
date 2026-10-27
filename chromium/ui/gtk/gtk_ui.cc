@@ -289,22 +289,23 @@ bool IsValidSchema(ui::LinuxUiBackend backend) {
   return true;
 }
 
-bool IsValidIconThemeName(const std::string& theme) {
-  base::FilePath theme_path(theme);
-  return !theme.empty() && theme != "." && !theme_path.IsAbsolute() &&
-         !theme_path.ReferencesParent() && theme_path.BaseName() == theme_path;
+std::string GetSettingsStringProperty(const char* property_name) {
+  gchar* prop_value = nullptr;
+  g_object_get(gtk_settings_get_default(), property_name, &prop_value, nullptr);
+  std::string prop_string;
+  if (prop_value) {
+    prop_string = prop_value;
+    g_free(prop_value);
+  }
+  return prop_string;
 }
 
 std::string GetIconThemeName() {
-  gchar* theme = nullptr;
-  g_object_get(gtk_settings_get_default(), "gtk-icon-theme-name", &theme,
-               nullptr);
-  std::string theme_string;
-  if (theme) {
-    theme_string = theme;
-    g_free(theme);
-  }
-  return theme_string;
+  return GetSettingsStringProperty("gtk-icon-theme-name");
+}
+
+std::string GetThemeName() {
+  return GetSettingsStringProperty("gtk-theme-name");
 }
 
 }  // namespace
@@ -365,6 +366,14 @@ bool GtkUi::Initialize() {
 
   GtkSettings* settings = gtk_settings_get_default();
   SanitizeIconThemeName();
+  SanitizeThemeName();
+  InstallGtkSettingsInterceptor();
+
+  if (!GtkCheckVersion(4)) {
+    SanitizeKeyThemeName();
+    connect(settings, "notify::gtk-key-theme-name",
+            &GtkUi::OnKeyThemeNameChanged);
+  }
   connect(settings, "notify::gtk-theme-name", &GtkUi::OnThemeChanged);
   connect(settings, "notify::gtk-icon-theme-name", &GtkUi::OnThemeChanged);
   connect(settings, "notify::gtk-application-prefer-dark-theme",
@@ -515,7 +524,8 @@ void GtkUi::GetInactiveSelectionFgColor(SkColor* color) const {
 gfx::Image GtkUi::GetIconForContentType(const std::string& content_type,
                                         int dip_size,
                                         float scale) const {
-  if (!IsValidIconThemeName(GetIconThemeName())) {
+  if (!IsValidThemeName(ThemeProperty::kIconThemeName,
+                        GetIconThemeName().c_str())) {
     return gfx::Image();
   }
 
@@ -703,17 +713,20 @@ void GtkUi::RemoveWindowButtonOrderObserver(
   window_button_order_observer_list_.RemoveObserver(observer);
 }
 
-std::unique_ptr<ui::NavButtonProvider> GtkUi::CreateNavButtonProvider() {
-  return std::make_unique<gtk::NavButtonProviderGtk>();
+std::unique_ptr<ui::NavButtonProvider> GtkUi::CreateNavButtonProvider(
+    ui::FrameType type) {
+  return std::make_unique<gtk::NavButtonProviderGtk>(type);
 }
 
-ui::WindowFrameProvider* GtkUi::GetWindowFrameProvider(bool solid_frame,
+ui::WindowFrameProvider* GtkUi::GetWindowFrameProvider(ui::FrameType type,
+                                                       bool solid_frame,
                                                        bool tiled,
                                                        bool maximized) {
-  auto& provider = frame_providers_[solid_frame][tiled][maximized];
+  auto& provider =
+      frame_providers_[static_cast<int>(type)][solid_frame][tiled][maximized];
   if (!provider) {
-    provider = std::make_unique<gtk::WindowFrameProviderGtk>(solid_frame, tiled,
-                                                             maximized);
+    provider = std::make_unique<gtk::WindowFrameProviderGtk>(type, solid_frame,
+                                                             tiled, maximized);
   }
   return provider.get();
 }
@@ -795,12 +808,43 @@ std::string GtkUi::GetCursorThemeName() {
 
 bool GtkUi::SanitizeIconThemeName() {
   std::string theme = GetIconThemeName();
-  if (!IsValidIconThemeName(theme)) {
+  if (!IsValidThemeName(ThemeProperty::kIconThemeName, theme.c_str())) {
     g_object_set(gtk_settings_get_default(), "gtk-icon-theme-name", "hicolor",
                  nullptr);
     return true;
   }
   return false;
+}
+
+bool GtkUi::SanitizeThemeName() {
+  std::string theme = GetThemeName();
+  if (!IsValidThemeName(ThemeProperty::kThemeName, theme.c_str())) {
+    g_object_set(gtk_settings_get_default(), "gtk-theme-name", "Adwaita",
+                 nullptr);
+    return true;
+  }
+  return false;
+}
+
+bool GtkUi::SanitizeKeyThemeName() {
+  gchar* name = nullptr;
+  g_object_get(gtk_settings_get_default(), "gtk-key-theme-name", &name,
+               nullptr);
+  std::string name_str;
+  if (name) {
+    name_str = name;
+    g_free(name);
+  }
+  if (!IsValidThemeName(ThemeProperty::kKeyThemeName, name_str.c_str())) {
+    g_object_set(gtk_settings_get_default(), "gtk-key-theme-name", nullptr,
+                 nullptr);
+    return true;
+  }
+  return false;
+}
+
+void GtkUi::OnKeyThemeNameChanged(GtkSettings* settings, GtkParamSpec* param) {
+  SanitizeKeyThemeName();
 }
 
 int GtkUi::GetCursorThemeSize() {
@@ -853,7 +897,7 @@ gfx::Size GtkUi::GetPdfPaperSize(printing::PrintingContextLinux* context) {
 #endif
 
 void GtkUi::OnThemeChanged(GtkSettings* settings, GtkParamSpec* param) {
-  if (SanitizeIconThemeName()) {
+  if (SanitizeIconThemeName() || SanitizeThemeName()) {
     return;  // Exit early; modifying the setting re-triggered this function
   }
   colors_.clear();

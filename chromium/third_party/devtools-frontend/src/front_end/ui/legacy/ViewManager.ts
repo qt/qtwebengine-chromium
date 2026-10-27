@@ -9,13 +9,15 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
-import type * as Root from '../../core/root/root.js';
+import * as Root from '../../core/root/root.js';
 import type * as Foundation from '../../foundation/foundation.js';
 import {createIcon, type Icon} from '../kit/kit.js';
+import {render, type TemplateResult} from '../lit/lit.js';
 import * as VisualLogging from '../visual_logging/visual_logging.js';
 
 import * as ARIAUtils from './ARIAUtils.js';
 import type {ContextMenu} from './ContextMenu.js';
+import * as PlusButton from './PlusButton.js';
 import {type EventData, Events as TabbedPaneEvents, TabbedPane} from './TabbedPane.js';
 import {type ItemsProvider, type ToolbarItem, ToolbarMenuButton} from './Toolbar.js';
 import {createTextChild} from './UIUtils.js';
@@ -34,7 +36,7 @@ import {
   ViewPersistence,
   type ViewRegistration,
 } from './ViewRegistration.js';
-import {VBox, type Widget} from './Widget.js';
+import {type AnyWidget, VBox, type Widget} from './Widget.js';
 
 const UIStrings = {
   /**
@@ -56,7 +58,7 @@ type TabbedPaneFactory = () => TabbedPane;
 export class PreRegisteredView implements View {
   private readonly viewRegistration: ViewRegistration;
   private readonly universe?: Foundation.Universe.Universe;
-  private widgetPromise: Promise<Widget>|null;
+  private widgetPromise: Promise<AnyWidget>|null;
 
   constructor(viewRegistration: ViewRegistration, universe?: Foundation.Universe.Universe) {
     this.viewRegistration = viewRegistration;
@@ -119,7 +121,7 @@ export class PreRegisteredView implements View {
     return this.viewRegistration.persistence;
   }
 
-  async toolbarItems(): Promise<ToolbarItem[]> {
+  async toolbarItems(): Promise<ToolbarItem[]|TemplateResult> {
     if (!this.viewRegistration.hasToolbar) {
       return [];
     }
@@ -127,7 +129,7 @@ export class PreRegisteredView implements View {
     return provider.toolbarItems();
   }
 
-  widget(): Promise<Widget> {
+  widget(): Promise<AnyWidget> {
     if (this.widgetPromise === null) {
       if (!this.universe) {
         throw new Error('Creating views via ViewManager requires a Foundation.Universe');
@@ -244,13 +246,18 @@ export class ViewManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
     viewManagerInstance = undefined;
   }
 
-  static createToolbar(toolbarItems: ToolbarItem[]): Element|null {
-    if (!toolbarItems.length) {
+  static createToolbar(toolbarItems: ToolbarItem[]|TemplateResult): Element|null {
+    if (Array.isArray(toolbarItems) && !toolbarItems.length) {
       return null;
     }
     const toolbar = document.createElement('devtools-toolbar');
-    for (const item of toolbarItems) {
-      toolbar.appendToolbarItem(item);
+    if (Array.isArray(toolbarItems)) {
+      for (const item of toolbarItems) {
+        toolbar.appendToolbarItem(item);
+      }
+    } else {
+      // eslint-disable-next-line @devtools/no-lit-render-outside-of-view
+      render(toolbarItems, toolbar);
     }
     return toolbar;
   }
@@ -332,12 +339,12 @@ export class ViewManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
     return view;
   }
 
-  materializedWidget(viewId: string): Widget|null {
-    const view = this.view(viewId);
+  materializedWidget<T extends HTMLElement|DocumentFragment = HTMLElement>(viewId: string): Widget<T>|null {
+    const view = this.views.get(viewId);
     if (!view) {
       return null;
     }
-    return widgetForView.get(view) || null;
+    return (widgetForView.get(view) as Widget<T>| undefined) || null;
   }
 
   hasView(viewId: string): boolean {
@@ -391,11 +398,8 @@ export class ViewManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
 
   createTabbedLocation(
       revealCallback: (() => void), location: string, restoreSelection?: boolean, allowReorder?: boolean,
-      defaultTab?: string|null, isLocationVisible?: (() => boolean),
-      tabbedPaneFactory?: TabbedPaneFactory): TabbedViewLocation {
-    return new TabbedLocation(
-        this, revealCallback, location, restoreSelection, allowReorder, defaultTab, isLocationVisible,
-        tabbedPaneFactory);
+      options?: TabbedLocationOptions): TabbedViewLocation {
+    return new TabbedLocation(this, revealCallback, location, restoreSelection, allowReorder, options);
   }
 
   createStackLocation(revealCallback?: (() => void), location?: string, jslogContext?: string): ViewLocation {
@@ -417,7 +421,7 @@ export class ViewManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
   }
 }
 
-const widgetForView = new WeakMap<View, Widget>();
+const widgetForView = new WeakMap<View, AnyWidget>();
 
 export class ContainerWidget extends VBox {
   private readonly view: View;
@@ -479,7 +483,7 @@ class ExpandableContainerWidget extends VBox {
   private titleElement: HTMLDivElement;
   private readonly titleExpandIcon: Icon;
   private readonly view: View;
-  private widget?: Widget;
+  private widget?: AnyWidget;
   private materializePromise?: Promise<void>;
 
   constructor(view: View) {
@@ -603,15 +607,15 @@ const expandableContainerForView = new WeakMap<View, ExpandableContainerWidget>(
 class Location {
   protected readonly manager: ViewManager;
   private readonly revealCallback: (() => void)|undefined;
-  readonly #widget: Widget;
+  readonly #widget: AnyWidget;
 
-  constructor(manager: ViewManager, widget: Widget, revealCallback?: (() => void)) {
+  constructor(manager: ViewManager, widget: AnyWidget, revealCallback?: (() => void)) {
     this.manager = manager;
     this.revealCallback = revealCallback;
     this.#widget = widget;
   }
 
-  widget(): Widget {
+  widget(): AnyWidget {
     return this.#widget;
   }
 
@@ -642,6 +646,17 @@ type CloseableTabSetting = Record<string, boolean>;
 
 type TabOrderSetting = Record<string, number>;
 
+export interface TabbedLocationOptions {
+  defaultTab?: string|null;
+  isLocationVisible?: () => boolean;
+  tabbedPaneFactory?: TabbedPaneFactory;
+  /**
+   * Installed into the `TabbedPane`'s `trailing-button` slot before any
+   * tabs are appended, so the very first layout pass reserves width for it.
+   */
+  plusButton?: PlusButton.PlusButtonOptions;
+}
+
 class TabbedLocation extends Location implements TabbedViewLocation {
   #tabbedPane: TabbedPane;
   private readonly location: string;
@@ -655,9 +670,8 @@ class TabbedLocation extends Location implements TabbedViewLocation {
 
   constructor(
       manager: ViewManager, revealCallback: (() => void), location: string, restoreSelection?: boolean,
-      allowReorder?: boolean, defaultTab?: string|null, isLocationVisible?: (() => boolean),
-      tabbedPaneFactory?: TabbedPaneFactory) {
-    const tabbedPane = tabbedPaneFactory ? tabbedPaneFactory() : new TabbedPane();
+      allowReorder?: boolean, options?: TabbedLocationOptions) {
+    const tabbedPane = options?.tabbedPaneFactory ? options.tabbedPaneFactory() : new TabbedPane();
     if (allowReorder) {
       tabbedPane.setAllowTabReorder(true);
     }
@@ -681,8 +695,27 @@ class TabbedLocation extends Location implements TabbedViewLocation {
     if (restoreSelection) {
       this.lastSelectedTabSetting = Common.Settings.Settings.instance().createSetting(location + '-selected-tab', '');
     }
-    this.defaultTab = defaultTab;
-    this.isLocationVisible = isLocationVisible;
+    this.defaultTab = options?.defaultTab;
+    this.isLocationVisible = options?.isLocationVisible;
+
+    // Install before `appendApplicableItems` so the very first layout pass
+    // reserves width for the button and we avoid a reflow that snaps the
+    // last tab into the overflow menu.
+    if (options?.plusButton && Root.Runtime.hostConfig.devToolsPlusButton?.enabled) {
+      PlusButton.installPlusButton(
+          {
+            tabbedPane: this.#tabbedPane,
+            location: this.location,
+            // Use the local `views` map (not `manager.viewsForLocation`) so
+            // cross-location moves added via `appendView` are reflected.
+            views: () => this.views.values(),
+            manager: this.manager,
+            showView: view => {
+              this.showView(view, undefined, /* userGesture */ true).catch(err => console.error(err));
+            },
+          },
+          options.plusButton);
+    }
 
     if (location) {
       this.appendApplicableItems(location);
@@ -699,7 +732,7 @@ class TabbedLocation extends Location implements TabbedViewLocation {
     this.closeableTabSetting.set(newClosable);
   }
 
-  override widget(): Widget {
+  override widget(): AnyWidget {
     return this.#tabbedPane;
   }
 

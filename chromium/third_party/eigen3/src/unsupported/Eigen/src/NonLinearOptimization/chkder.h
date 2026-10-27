@@ -1,3 +1,9 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
+#ifndef EIGEN_NONLINEAROPTIMIZATION_CHKDER_H
+#define EIGEN_NONLINEAROPTIMIZATION_CHKDER_H
+
 #define chkder_log10e 0.43429448190325182765
 #define chkder_factor 100.
 
@@ -55,3 +61,5 @@ void chkder(const Matrix<Scalar, Dynamic, 1> &x, const Matrix<Scalar, Dynamic, 1
 }  // end namespace internal
 
 }  // end namespace Eigen
+
+#endif  // EIGEN_NONLINEAROPTIMIZATION_CHKDER_H

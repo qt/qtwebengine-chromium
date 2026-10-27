@@ -7,6 +7,28 @@ if (is_android) {
   import("//build/config/android/rules.gni")
   import("//chrome/browser/buildflags.gni")
 
+  source_set("lens") {
+    public = [ "android/lens_prefs.h" ]
+  }
+
+  source_set("impl") {
+    sources = [
+      "android/lens_policy_utils.cc",
+      "android/lens_prefs.cc",
+    ]
+
+    public_deps = [
+      ":lens",
+      "//chrome/browser:browser_public_dependencies",
+    ]
+
+    deps = [
+      "//chrome/android:jni_headers",
+      "//components/policy/core/common:common_constants",
+      "//components/prefs",
+    ]
+  }
+
   android_library("java") {
     sources =
         [ "java/src/org/chromium/chrome/browser/lens/LensController.java" ]
@@ -51,6 +73,7 @@ if (is_android) {
   android_library("util_java") {
     sources = [
       "java/src/org/chromium/chrome/browser/lens/LensEntryPoint.java",
+      "java/src/org/chromium/chrome/browser/lens/LensIdentityUtils.java",
       "java/src/org/chromium/chrome/browser/lens/LensIntentParams.java",
       "java/src/org/chromium/chrome/browser/lens/LensMetrics.java",
       "java/src/org/chromium/chrome/browser/lens/LensQueryParams.java",
@@ -59,6 +82,9 @@ if (is_android) {
     deps = [
       "//base:base_java",
       "//chrome/browser/flags:java",
+      "//chrome/browser/profiles/android:java",
+      "//chrome/browser/signin/services/android:java",
+      "//components/signin/public/android:java",
       "//content/public/android:content_java",
       "//third_party/androidx:androidx_annotation_annotation_java",
     ]

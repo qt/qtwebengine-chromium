@@ -9,8 +9,8 @@ let instance: Prototypes|null = null;
 
 export interface GreenDevSettings {
   aiAnnotations: Common.Settings.Setting<boolean>;
-  copyToGemini: Common.Settings.Setting<boolean>;
-  breakpointDebuggerAgent: Common.Settings.Setting<boolean>;
+  beyondStylingGemini: Common.Settings.Setting<boolean>;
+  beyondStylingAntigravity: Common.Settings.Setting<boolean>;
   emulationCapabilities: Common.Settings.Setting<boolean>;
 }
 
@@ -42,12 +42,15 @@ export class Prototypes {
         false,
         Common.Settings.SettingStorageType.LOCAL,
     );
-    const copyToGemini =
-        settings.createSetting('greendev-copy-to-gemini-enabled', false, Common.Settings.SettingStorageType.LOCAL);
-    const breakpointDebuggerAgent = settings.createSetting(
-        'greendev-breakpoint-debugger-agent-enabled',
+    const beyondStylingGemini = settings.createSetting(
+        'greendev-beyond-styling-gemini-enabled',
         false,
-        Common.Settings.SettingStorageType.LOCAL,
+        Common.Settings.SettingStorageType.GLOBAL,
+    );
+    const beyondStylingAntigravity = settings.createSetting(
+        'greendev-beyond-styling-antigravity-enabled',
+        false,
+        Common.Settings.SettingStorageType.GLOBAL,
     );
     const emulationCapabilities = settings.createSetting(
         'greendev-emulation-capabilities-enabled',
@@ -55,6 +58,11 @@ export class Prototypes {
         Common.Settings.SettingStorageType.LOCAL,
     );
 
-    return {aiAnnotations, copyToGemini, breakpointDebuggerAgent, emulationCapabilities};
+    return {
+      aiAnnotations,
+      beyondStylingGemini,
+      beyondStylingAntigravity,
+      emulationCapabilities
+    };
   }
 }

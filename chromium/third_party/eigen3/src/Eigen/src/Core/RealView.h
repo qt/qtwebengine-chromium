@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_REALVIEW_H
 #define EIGEN_REALVIEW_H
@@ -56,8 +57,8 @@ struct traits<RealView<Xpr>> : public traits<Xpr> {
   static constexpr int MaxRowsAtCompileTime = double_size(Base::MaxRowsAtCompileTime, !IsRowMajor);
   static constexpr int MaxColsAtCompileTime = double_size(Base::MaxColsAtCompileTime, IsRowMajor);
   static constexpr int MaxSizeAtCompileTime = size_at_compile_time(MaxRowsAtCompileTime, MaxColsAtCompileTime);
-  static constexpr int OuterStrideAtCompileTime = double_size(outer_stride_at_compile_time<Xpr>::ret, true);
-  static constexpr int InnerStrideAtCompileTime = inner_stride_at_compile_time<Xpr>::ret;
+  static constexpr int OuterStrideAtCompileTime = double_size(outer_stride_at_compile_time<Xpr>::value, true);
+  static constexpr int InnerStrideAtCompileTime = inner_stride_at_compile_time<Xpr>::value;
 };
 
 template <typename Xpr>

@@ -1,6 +1,3 @@
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_cc//cc:cc_test.bzl", "cc_test")
-
 # Copyright 2023 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,11 +11,15 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//fcp:config.bzl", "FCP_COPTS")
 
 package(
+    default_applicable_licenses = ["//fcp:license"],
     default_visibility = ["//fcp:internal"],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 cc_library(
@@ -31,7 +32,8 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_protobuf//src/google/protobuf/io",
     ],
 )
 
@@ -48,8 +50,9 @@ cc_test(
         ":client_payload",
         "//fcp/testing",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -66,11 +69,13 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//fcp/base",
-        "//fcp/protos/confidentialcompute:windowing_schedule_proto_cc",
+        "//fcp/protos/confidentialcompute:windowing_schedule_cc_proto",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
+        "@com_google_googleapis//google/type:date_cc_proto",
+        "@com_google_googleapis//google/type:timeofday_cc_proto",
     ],
 )
 
@@ -83,10 +88,12 @@ cc_test(
     visibility = ["//visibility:public"],
     deps = [
         ":time_window_utilities",
-        "//fcp/protos/confidentialcompute:windowing_schedule_proto_cc",
-        "//fcp/testing",
+        "//fcp/protos/confidentialcompute:windowing_schedule_cc_proto",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/time",
+        "@com_google_googleapis//google/type:date_cc_proto",
+        "@com_google_googleapis//google/type:timeofday_cc_proto",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -103,6 +110,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
         "@libcppbor",
     ],
@@ -115,11 +123,13 @@ cc_test(
         ":cose",
         "//fcp/testing",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:struct_cc_proto",
     ],
 )
 
@@ -153,14 +163,15 @@ cc_test(
         ":crypto_test_util",
         "//fcp/base",
         "//fcp/protos/confidentialcompute:key_cc_proto",
-        "//fcp/testing",
         "@boringssl//:crypto",
-        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:struct_cc_proto",
     ],
 )
 
@@ -174,9 +185,9 @@ cc_library(
         ":crypto",
         "//fcp/base",
         "@boringssl//:crypto",
-        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -188,7 +199,7 @@ cc_test(
         ":crypto_test_util",
         "//fcp/testing",
         "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 Vector3d v = Vector3d::Random();
 Projective3d P(Matrix4d::Random());
 cout << "v                                   = [" << v.transpose() << "]^T" << endl;

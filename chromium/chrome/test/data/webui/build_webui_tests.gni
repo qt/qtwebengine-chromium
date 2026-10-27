@@ -104,6 +104,9 @@ template("build_webui_tests") {
     if (defined(invoker.ts_path_mappings)) {
       path_mappings += invoker.ts_path_mappings
     }
+    path_mappings += [ "//webui-test/*|" +
+                       rebase_path("$root_gen_dir/chrome/test/data/webui/tsc/*",
+                                   target_gen_dir) ]
     if (defined(invoker.is_chrome_untrusted) && invoker.is_chrome_untrusted) {
       path_mappings += [ "chrome-untrusted://webui-test/*|" + rebase_path(
                              "$root_gen_dir/chrome/test/data/webui/tsc/*",
@@ -146,6 +149,28 @@ template("build_webui_tests") {
       invoker.enable_type_aware_eslint_checks
 
   if (enable_type_aware_eslint_checks) {
+    if (is_chromeos) {
+      # Folders hosting Ash-only WebUIs. Should be kept in sync with
+      # //tools/typescript/path_utils.py. This is used to differentiate
+      # eslint_ts() configurations.
+      ash_folders = [
+        "//chrome/test/data/webui/chromeos",
+        "//chrome/test/data/webui/cr_components/chromeos",
+      ]
+    }
+
+    # Determine whether the current invocation corresponds to an Ash WebUI.
+    is_ash_webui = false
+    if (is_chromeos) {
+      target_dir = get_label_info(":build_ts", "dir")
+
+      foreach(prefix, ash_folders) {
+        if (!is_ash_webui) {
+          is_ash_webui = string_replace(target_dir, prefix, "") != target_dir
+        }
+      }
+    }
+
     eslint_ts("lint") {
       visibility = [ ":build_grdp" ]
       in_folder = preprocess_dir
@@ -155,6 +180,31 @@ template("build_webui_tests") {
         ":build_ts",
         ":preprocess",
       ]
+
+      no_explicit_any_exceptions = [
+        # Note: DO NOT add new entries to the list below.
+        # TODO(crbug.com/494464740): Fix all violations below and turn on this
+        # check by default.
+        "//chrome/test/data/webui/contextual_tasks",
+        "//chrome/test/data/webui/cr_components/composebox",
+        "//chrome/test/data/webui/cr_components/searchbox",
+        "//chrome/test/data/webui/glic",
+        "//chrome/test/data/webui/print_preview",
+        "//chrome/test/data/webui/webui_toolbar",
+      ]
+
+      if (is_android) {
+        no_explicit_any_exceptions +=
+            [ "//chrome/test/data/webui/guest_view_shared" ]
+      }
+
+      if (!is_ash_webui && filter_include([ get_label_info(":lint", "dir") ],
+                                          no_explicit_any_exceptions) == []) {
+        enable_no_explicit_any = true
+      } else {
+        # Prevent GN from throwing an error.
+        not_needed([ "no_explicit_any_exceptions" ])
+      }
     }
   }
 

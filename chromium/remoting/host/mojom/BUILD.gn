@@ -30,6 +30,10 @@ mojom("mojom") {
     {
       types = [
         {
+          mojom = "remoting.mojom.AudioSampleInfo"
+          cpp = "::remoting::protocol::AudioSampleInfo"
+        },
+        {
           mojom = "remoting.mojom.AudioPacket"
           cpp = "::std::unique_ptr<::remoting::AudioPacket>"
           move_only = true
@@ -111,6 +115,10 @@ mojom("mojom") {
           cpp = "::remoting::protocol::LayoutKeyFunction"
         },
         {
+          mojom = "remoting.mojom.MicrophoneControl"
+          cpp = "::remoting::protocol::MicrophoneControl"
+        },
+        {
           mojom = "remoting.mojom.MouseButton"
           cpp = "::remoting::protocol::MouseEvent::MouseButton"
         },
@@ -173,6 +181,12 @@ mojom("mojom") {
         {
           mojom = "remoting.mojom.VideoTrackLayout"
           cpp = "::remoting::protocol::VideoTrackLayout"
+        },
+        {
+          mojom = "remoting.mojom.IpcFifoBufferReader"
+          cpp = "::std::unique_ptr<::remoting::IpcFifoBufferReader>"
+          move_only = true
+          nullable_is_same_type = true
         },
       ]
       traits_headers = [ "remoting_mojom_traits.h" ]

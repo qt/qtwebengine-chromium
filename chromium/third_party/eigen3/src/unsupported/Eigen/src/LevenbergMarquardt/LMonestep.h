@@ -10,6 +10,7 @@
 //
 // This Source Code Form is subject to the terms of the Minpack license
 // (a BSD-like license) described in the campaigned CopyrightMINPACK.txt file.
+// SPDX-License-Identifier: MPL-2.0 AND LicenseRef-MINPACK
 
 #ifndef EIGEN_LMONESTEP_H
 #define EIGEN_LMONESTEP_H

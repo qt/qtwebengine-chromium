@@ -22,6 +22,7 @@ import './site_permissions/site_permissions.js';
 import './site_permissions/site_permissions_by_site.js';
 import './toolbar.js';
 
+import {ColorChangeUpdater, COLORS_CSS_SELECTOR} from 'chrome://resources/cr_components/color_change_listener/colors_css_updater.js';
 import {getToastManager} from 'chrome://resources/cr_elements/cr_toast/cr_toast_manager.js';
 import type {CrViewManagerElement} from 'chrome://resources/cr_elements/cr_view_manager/cr_view_manager.js';
 import {I18nMixinLit} from 'chrome://resources/cr_elements/i18n_mixin_lit.js';
@@ -211,9 +212,15 @@ export class ExtensionsManagerElement extends ExtensionsManagerElementBase {
   override connectedCallback() {
     super.connectedCallback();
 
+    const enableWebuiRefresh2026 =
+        loadTimeData.getString('webuiRefresh2026') !== '';
+    if (enableWebuiRefresh2026) {
+      this.addThemedColors_();
+      ColorChangeUpdater.forDocument().start();
+    }
+
     document.documentElement.classList.remove('loading');
-    // https://github.com/microsoft/TypeScript/issues/13569
-    (document as any).fonts.load('bold 12px Roboto');
+    document.fonts.load('bold 12px Roboto');
 
     this.navigationListener_ = navigation.addListener(newPage => {
       this.changePage_(newPage);
@@ -359,8 +366,6 @@ export class ExtensionsManagerElement extends ExtensionsManagerElementBase {
         this.updateItem_(
             'extensions_', index,
             Object.assign({}, this.getData_(eventData.item_id), {
-              didAcknowledgeMV2DeprecationNotice:
-                  eventData.extensionInfo?.didAcknowledgeMV2DeprecationNotice,
               safetyCheckText: eventData.extensionInfo?.safetyCheckText,
             }));
         break;
@@ -512,7 +517,7 @@ export class ExtensionsManagerElement extends ExtensionsManagerElementBase {
   // When an item is removed while on the 'item list' page, move focus to the
   // next item in the list with `listId` if available. If no items are in that
   // list, focus to the search bar as a fallback.
-  // This is a fix for crbug.com/1416324 which causes focus to linger on a
+  // This is a fix for crbug.com/40063067 which causes focus to linger on a
   // deleted element, which is then read by the screen reader.
   private focusAfterItemRemoved_(listId: string, index: number) {
     // A timeout is used so elements are focused after the DOM is updated.
@@ -755,6 +760,15 @@ export class ExtensionsManagerElement extends ExtensionsManagerElementBase {
         chrome.developerPrivate.ExtensionState.DISABLED &&
         extensionInfo.location === chrome.developerPrivate.Location.UNPACKED &&
         extensionInfo.disableReasons.unsupportedDeveloperExtension;
+  }
+
+  // TODO(crub.com/509908129): Add static stylesheet in extensions.html
+  private addThemedColors_() {
+    assert(document.body.querySelector(COLORS_CSS_SELECTOR) === null);
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'chrome://theme/colors.css?sets=ui,chrome';
+    document.body.appendChild(link);
   }
 }
 

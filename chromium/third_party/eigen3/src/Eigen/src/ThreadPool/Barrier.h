@@ -6,12 +6,13 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 // Barrier is an object that allows one or more threads to wait until
 // Notify has been called a specified number of times.
 
-#ifndef EIGEN_CXX11_THREADPOOL_BARRIER_H
-#define EIGEN_CXX11_THREADPOOL_BARRIER_H
+#ifndef EIGEN_THREADPOOL_BARRIER_H
+#define EIGEN_THREADPOOL_BARRIER_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -67,4 +68,4 @@ struct Notification : Barrier {
 
 }  // namespace Eigen
 
-#endif  // EIGEN_CXX11_THREADPOOL_BARRIER_H
+#endif  // EIGEN_THREADPOOL_BARRIER_H

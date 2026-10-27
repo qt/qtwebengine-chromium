@@ -278,7 +278,7 @@ void VideoCaptureController::AddClient(
   // client.
   controller_clients_.push_back(std::move(client));
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   if (stream_type_ == blink::mojom::MediaStreamType::DISPLAY_VIDEO_CAPTURE) {
     const auto desktop_media_id = DesktopMediaID::Parse(device_id_);
     if (desktop_media_id.type == DesktopMediaID::TYPE_SCREEN) {
@@ -304,7 +304,7 @@ base::UnguessableToken VideoCaptureController::RemoveClient(
   if (!client)
     return base::UnguessableToken();
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   if (stream_type_ == blink::mojom::MediaStreamType::DISPLAY_VIDEO_CAPTURE) {
     const auto desktop_media_id = DesktopMediaID::Parse(device_id_);
     if (desktop_media_id.type == DesktopMediaID::TYPE_SCREEN) {
@@ -401,7 +401,7 @@ void VideoCaptureController::StopSession(
   }
 }
 
-void VideoCaptureController::ReturnBuffer(
+bool VideoCaptureController::ReturnBuffer(
     const VideoCaptureControllerID& id,
     VideoCaptureControllerEventHandler* event_handler,
     int buffer_id,
@@ -410,15 +410,21 @@ void VideoCaptureController::ReturnBuffer(
 
   ControllerClient* client = FindClient(id, event_handler);
   if (!client) {
-    return;
+    // This should probably return false, but for consistency with
+    // existing FindClient() calls, don't turn a missing client into
+    // a BadMessage call.
+    return true;
   }
 
   auto buffers_in_use_entry_iter =
       std::ranges::find(client->buffers_in_use, buffer_id);
-  CHECK(buffers_in_use_entry_iter != std::end(client->buffers_in_use));
+  if (buffers_in_use_entry_iter == std::end(client->buffers_in_use)) {
+    return false;
+  }
   client->buffers_in_use.erase(buffers_in_use_entry_iter);
 
   OnClientFinishedConsumingBuffer(client, buffer_id, feedback);
+  return true;
 }
 
 const std::optional<media::VideoCaptureFormat>

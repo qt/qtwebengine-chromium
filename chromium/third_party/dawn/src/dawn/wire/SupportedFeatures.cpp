@@ -25,7 +25,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/wire/SupportedFeatures.h"
+#include "src/dawn/wire/SupportedFeatures.h"
 
 namespace dawn::wire {
 
@@ -42,7 +42,6 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_DawnFormatCapabilities:
         case WGPUFeatureName_DawnDrmFormatCapabilities:
         case WGPUFeatureName_RenderPassRenderArea:
-        case WGPUFeatureName_DawnNativeSpontaneousQueueEvents:
         case WGPUFeatureName_AdapterPropertiesDrm:
             return false;
         // NOTE: SharedTextureMemory/SharedFence are not actually intended
@@ -126,7 +125,7 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_PrimitiveIndex:
         case WGPUFeatureName_AdapterPropertiesWGPU:
         case WGPUFeatureName_ChromiumExperimentalSamplingResourceTable:
-        case WGPUFeatureName_ChromiumExperimentalSubgroupSizeControl:
+        case WGPUFeatureName_SubgroupSizeControl:
         case WGPUFeatureName_AtomicVec2uMinMax:
         case WGPUFeatureName_Unorm16FormatsForExternalTexture:
         case WGPUFeatureName_OpaqueYCbCrAndroidForExternalTexture:

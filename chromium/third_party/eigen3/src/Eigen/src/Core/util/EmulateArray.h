@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_EMULATE_ARRAY_H
 #define EIGEN_EMULATE_ARRAY_H
@@ -222,7 +223,7 @@ struct array_size<const array<T, N>&> {
 
 #else
 
-// The compiler supports c++11, and we're not targeting cuda: use std::array as Eigen::array
+// Not targeting cuda: use std::array as Eigen::array.
 #include <array>
 
 namespace Eigen {

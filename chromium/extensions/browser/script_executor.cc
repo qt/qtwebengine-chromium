@@ -123,9 +123,9 @@ class Handler : public content::WebContentsObserver {
       // as the for loop will mutate `pending_render_frames_`.
       const size_t requested_frame_count = pending_render_frames_.size();
       for (size_t i = 0; i < requested_frame_count; ++i) {
-        pending_render_frames_.at(i)->ForEachRenderFrameHost(
+        pending_render_frames_.at(i)->ForEachRenderFrameHostWithAction(
             [this, extension, tab_id](content::RenderFrameHost* frame) {
-              MaybeAddSubFrame(frame, extension, tab_id);
+              return MaybeAddSubFrame(frame, extension, tab_id);
             });
       }
     }
@@ -206,6 +206,16 @@ class Handler : public content::WebContentsObserver {
     if (!frame->IsRenderFrameLive() ||
         std::ranges::contains(pending_render_frames_, frame)) {
       return content::RenderFrameHost::FrameIterationAction::kContinue;
+    }
+
+    // Avoid injecting into error documents (e.g. frames blocked by CSP) and
+    // their subtrees, matching the explicit-frameId execution path validation.
+    // This prevents compromised renderers from tricking ScriptInjectionTracker
+    // into believing an extension is executing scripts inside an
+    // attacker-controlled process.
+    // See https://crbug.com/517153117.
+    if (frame->IsErrorDocument()) {
+      return content::RenderFrameHost::FrameIterationAction::kSkipChildren;
     }
 
     if (!is_web_view_ &&

@@ -5,9 +5,13 @@
 
 import '../../core/sdk/sdk-meta.js';
 import '../../models/workspace/workspace-meta.js';
+import '../../models/logs/logs-meta.js';
 import '../../panels/sensors/sensors-meta.js';
+import '../../panels/sources/sources-meta.js';
 import '../../entrypoints/inspector_main/inspector_main-meta.js';
 import '../../entrypoints/main/main-meta.js';
+import '../../ui/legacy/components/source_frame/source_frame-meta.js';
+import '../../ui/components/markdown_view/markdown_view.js';
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -19,7 +23,10 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as Foundation from '../../foundation/foundation.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as AiAssistance from '../../models/ai_assistance/ai_assistance.js';
+import * as Greendev from '../../models/greendev/greendev.js';
 import type {SyncMessage} from '../../panels/greendev/GreenDevShared.js';
+import * as Marked from '../../third_party/marked/marked.js';
+import * as MarkdownView from '../../ui/components/markdown_view/markdown_view.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
 
@@ -33,11 +40,14 @@ class GreenDevFloaty {
   #textField!: HTMLInputElement;
   #playButton!: HTMLButtonElement;
   #node?: SDK.DOMModel.DOMNode;
-  #agent?: AiAssistance.StylingAgent.StylingAgent;
+  #agent?: AiAssistance.GreenDevAgent.GreenDevAgent|AiAssistance.StylingAgent.StylingAgent;
   #nodeContext?: AiAssistance.StylingAgent.NodeContext;
   #backendNodeId?: Protocol.DOM.BackendNodeId;
   #syncChannel: BroadcastChannel;
   #isFloatyWindow: boolean;
+  #socketClient:
+      AiAssistance.GreenDevAgentAntigravityCliSocketClient.GreenDevAgentAntigravityCliSocketClient|
+      AiAssistance.GreenDevAgentGeminiCliSocketClient.GreenDevAgentGeminiCliSocketClient;
 
   constructor(document: Document) {
     const params = new URLSearchParams(window.location.hash.substring(1));
@@ -50,6 +60,12 @@ class GreenDevFloaty {
     };
 
     this.#initFloatyMode(document);
+    if (Greendev.Prototypes.instance().isEnabled('beyondStylingAntigravity')) {
+      this.#socketClient =
+          new AiAssistance.GreenDevAgentAntigravityCliSocketClient.GreenDevAgentAntigravityCliSocketClient();
+    } else {
+      this.#socketClient = new AiAssistance.GreenDevAgentGeminiCliSocketClient.GreenDevAgentGeminiCliSocketClient();
+    }
   }
 
   #initFloatyMode(doc: Document): void {
@@ -92,7 +108,7 @@ class GreenDevFloaty {
         const msg = JSON.stringify({
           id: 9999,
           method: 'Overlay.setShowInspectedElementAnchor',
-          params: {inspectedElementAnchorConfig: {backendNodeId: this.#backendNodeId}}
+          params: {inspectedElementAnchorConfig: {backendNodeId: this.#backendNodeId}},
         });
         Host.InspectorFrontendHost.InspectorFrontendHostInstance.sendMessageToBackend(msg);
       }
@@ -112,7 +128,7 @@ class GreenDevFloaty {
       type: 'full-state',
       messages: this.#getMessages(),
       sessionId: this.#backendNodeId,
-      nodeDescription: document.querySelector('.green-dev-floaty-dialog-node-description')?.textContent
+      nodeDescription: document.querySelector('.green-dev-floaty-dialog-node-description')?.textContent,
     };
     this.#syncChannel.postMessage(state);
   }
@@ -143,10 +159,7 @@ class GreenDevFloaty {
     }
   }
 
-  static instance(opts: {
-    forceNew: boolean|null,
-    document: Document,
-  } = {forceNew: null, document}): GreenDevFloaty {
+  static instance(opts: {forceNew: boolean|null, document: Document} = {forceNew: null, document}): GreenDevFloaty {
     const {forceNew, document} = opts;
     if (!greenDevFloatyInstance || forceNew) {
       greenDevFloatyInstance = new GreenDevFloaty(document);
@@ -235,7 +248,7 @@ class GreenDevFloaty {
       const msg = JSON.stringify({
         id: 9999,
         method: 'Overlay.setShowInspectedElementAnchor',
-        params: {inspectedElementAnchorConfig: {backendNodeId: this.#backendNodeId}}
+        params: {inspectedElementAnchorConfig: {backendNodeId: this.#backendNodeId}},
       });
       Host.InspectorFrontendHost.InspectorFrontendHostInstance.sendMessageToBackend(msg);
     }
@@ -265,45 +278,241 @@ class GreenDevFloaty {
     const query = this.#textField.value || this.#textField.placeholder;
     this.#textField.value = '';
 
+    const useAntigravity = Greendev.Prototypes.instance().isEnabled('beyondStylingAntigravity');
+    const useGemini = Greendev.Prototypes.instance().isEnabled('beyondStylingGemini');
+    const useGreenDevAgent = useAntigravity || useGemini;
+    const isAntigravity = useAntigravity;
+
     if (!this.#agent) {
       const aidaClient = new AidaClient();
-      this.#agent = new AiAssistance.StylingAgent.StylingAgent({aidaClient});
-      this.#nodeContext = new AiAssistance.StylingAgent.NodeContext(this.#node);
+      if (useGreenDevAgent) {
+        if (isAntigravity) {
+          this.#socketClient =
+              new AiAssistance.GreenDevAgentAntigravityCliSocketClient.GreenDevAgentAntigravityCliSocketClient();
+        } else {
+          this.#socketClient = new AiAssistance.GreenDevAgentGeminiCliSocketClient.GreenDevAgentGeminiCliSocketClient();
+        }
+
+        this.#agent = new AiAssistance.GreenDevAgent.GreenDevAgent({aidaClient});
+        this.#agent.addEventListener(
+            AiAssistance.GreenDevAgent.Events.CLI_PROMPT_REQUESTED,
+            async (
+                event: Common.EventTarget.EventTargetEvent<
+                    AiAssistance.GreenDevAgent.EventTypes[AiAssistance.GreenDevAgent.Events.CLI_PROMPT_REQUESTED]>) => {
+              const {prompt} = event.data;
+              const remoteName = isAntigravity ? 'Antigravity' : 'Gemini';
+              const aiContent =
+                  this.#addMessageInternal(`Fix has been submitted to ${remoteName} CLI, please wait...`, false);
+
+              if (isAntigravity) {
+                let fullResponse = '';
+                void (
+                    this.#socketClient as
+                    AiAssistance.GreenDevAgentAntigravityCliSocketClient.GreenDevAgentAntigravityCliSocketClient)
+                    .sendPrompt(prompt, (chunk: string) => {
+                      fullResponse += chunk;
+                      const responseText = `Antigravity CLI responds: ${fullResponse}`;
+                      const markdown = new MarkdownView.MarkdownView.MarkdownView();
+                      markdown.data = {
+                        tokens: Marked.Marked.lexer(responseText),
+                      };
+
+                      const style = document.createElement('style');
+                      style.textContent =
+                          '.message { font-size: 1.0rem; } .message code { font-size: 1.0rem; font-family: \'Roboto Mono\', ' +
+                          'monospace; color: green; } .message ul { margin-left: 20px; }';
+                      markdown.shadowRoot?.appendChild(style);
+
+                      this.#updateAiMessage(aiContent, markdown, responseText);
+                    });
+              } else {
+                const response =
+                    await (this.#socketClient as
+                           AiAssistance.GreenDevAgentGeminiCliSocketClient.GreenDevAgentGeminiCliSocketClient)
+                        .sendPrompt(prompt);
+
+                const responseText = `Gemini CLI responds: ${response}`;
+                const markdown = new MarkdownView.MarkdownView.MarkdownView();
+                markdown.data = {
+                  tokens: Marked.Marked.lexer(responseText),
+                };
+                this.#updateAiMessage(aiContent, markdown, responseText);
+              }
+            });
+      } else {
+        this.#agent = new AiAssistance.StylingAgent.StylingAgent({aidaClient});
+        this.#nodeContext = new AiAssistance.StylingAgent.NodeContext(this.#node);
+      }
     }
 
     this.#addMessageInternal(query, true);
-    this.#syncChannel.postMessage({
-      type: 'new-message',
-      text: query,
-      isUser: true,
-      sessionId: this.#backendNodeId,
-      nodeDescription: document.querySelector('.green-dev-floaty-dialog-node-description')?.textContent,
-    });
-
     const aiContent = this.#addMessageInternal('Thinking...', false);
-    this.#syncChannel.postMessage({
-      type: 'new-message',
-      text: 'Thinking...',
-      isUser: false,
-      sessionId: this.#backendNodeId,
-      nodeDescription: document.querySelector('.green-dev-floaty-dialog-node-description')?.textContent,
-    });
 
+    let agentFinished = false;
+    let steps = 0;
     try {
-      if (!this.#nodeContext) {
-        throw new Error('Node context not found.');
+      let results;
+      if (useGreenDevAgent && this.#agent instanceof AiAssistance.GreenDevAgent.GreenDevAgent) {
+        const target = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
+        if (!target) {
+          return;
+        }
+
+        // --- Get the Accessibility Tree ---
+        const accessibilityModel = target.model(SDK.AccessibilityModel.AccessibilityModel);
+        let axTree = '';
+        if (accessibilityModel) {
+          await accessibilityModel.resumeModel();
+          const axResponse = await accessibilityModel.agent.invoke_getFullAXTree({});
+          if (!axResponse.getError()) {
+            axTree = JSON.stringify(axResponse.nodes);
+          } else {
+            console.error('Failed to capture Accessibility Tree:', axResponse.getError());
+          }
+        }
+
+        // --- Get the most recent network requests ---
+        const allNetworkRequests = await AiAssistance.GreenDevAgent.GreenDevAgent.getNetworkContextData(target);
+        const networkResourcesMax = 50;
+        const startNetworkIndex = Math.max(0, allNetworkRequests.length - networkResourcesMax);
+        const lastNetworkRequests = allNetworkRequests.slice(startNetworkIndex);
+        let formattedNetworkContext = lastNetworkRequests.map(req => req.string).join('\n');
+
+        if (!formattedNetworkContext) {
+          formattedNetworkContext = 'No network requests found.';
+        } else {
+          const footer = allNetworkRequests.length > lastNetworkRequests.length ?
+              `${
+                  allNetworkRequests.length -
+                  lastNetworkRequests.length} additional requests are available (network requests shown are capped at ${
+                  networkResourcesMax} requests).` :
+              'No further network requests are available.';
+
+          formattedNetworkContext = `Showing network requests with indices ${startNetworkIndex}-${
+              startNetworkIndex + lastNetworkRequests.length - 1}:\n\n${formattedNetworkContext}\n\n${footer}`;
+        }
+
+        // --- Get the most recent console messages ---
+        const consoleModel = target.model(SDK.ConsoleModel.ConsoleModel);
+        const allConsoleMessages = consoleModel ? consoleModel.messages() : [];
+        const consoleMsgLimit = 50;
+        const startIndex = Math.max(0, allConsoleMessages.length - consoleMsgLimit);
+        const lastConsoleMessages = allConsoleMessages.slice(startIndex);
+        let formattedConsoleMessages =
+            lastConsoleMessages
+                .map(
+                    (entry: SDK.ConsoleModel.ConsoleMessage, i: number) =>
+                        AiAssistance.GreenDevAgent.GreenDevAgent.formatConsoleMessage(entry, startIndex + i))
+                .join('\n');
+        formattedConsoleMessages = formattedConsoleMessages.trimEnd();
+
+        if (!formattedConsoleMessages) {
+          formattedConsoleMessages = 'No console messages found.';
+        } else {
+          const footer = allConsoleMessages.length > lastConsoleMessages.length ?
+              `${
+                  allConsoleMessages.length -
+                  lastConsoleMessages.length} additional messages are available (errors shown are capped at ${
+                  consoleMsgLimit} most recent).` :
+              'No further console messages are available.';
+
+          formattedConsoleMessages = `Showing console messages with indices ${startIndex}-${
+              startIndex + lastConsoleMessages.length - 1}:\n\n${formattedConsoleMessages}\n\n${footer}`;
+        }
+
+        const mainUrl = target.inspectedURL();
+
+        // --- Get the React Props for the selected node (if available) ---
+        const reactComponentProps = this.#backendNodeId ?
+            await this.#agent.getReactComponentProps(this.#backendNodeId, false) :
+            'Could not get the backendNodeId for the selected element.';
+
+        // --- Get some context information about the selected node ---
+        const elementContext = await AiAssistance.StylingAgent.StylingAgent.describeElement(this.#node);
+
+        // Now construct the full context.
+        const context = `# Page URL
+
+${mainUrl}
+
+# User-selected node
+
+${elementContext}
+
+# React component props:
+
+${reactComponentProps}
+
+# Recent network requests
+
+${formattedNetworkContext}
+
+# Recent console messages
+
+${formattedConsoleMessages}
+
+# Accessibility tree
+
+${axTree}`;
+
+        const nodeContext = new AiAssistance.GreenDevAgent.GreenDevContext(context);
+        results = this.#agent.run(query, {selected: nodeContext});
+      } else if (this.#agent instanceof AiAssistance.StylingAgent.StylingAgent) {
+        if (!this.#nodeContext) {
+          throw new Error('Node context not found.');
+        }
+        results = this.#agent.run(query, {selected: this.#nodeContext});
+      } else {
+        throw new Error('Agent not initialized correctly');
       }
-      for await (const result of this.#agent.run(query, {selected: this.#nodeContext})) {
+
+      for await (const result of results) {
         switch (result.type) {
-          case ResponseType.ANSWER:
-            aiContent.textContent = result.text;
-            this.#syncChannel.postMessage(
-                {type: 'update-last-message', text: result.text, sessionId: this.#backendNodeId});
+          case ResponseType.QUERYING:
+            steps++;
             break;
+          case ResponseType.ANSWER: {
+            aiContent.textContent = '';
+            // Add a space in the protocol, which prevents links from being linkified in
+            // the markup. Why? Because there's an exception thrown if the links don't match the
+            // allowlist in getMarkdownLink(). Need to figure out later.
+            let sanitizedText = result.text.replace(/https:\/\//g, 'https: //');
+            sanitizedText = sanitizedText.replace(/http:\/\//g, 'http: //');
+            const markdown = new MarkdownView.MarkdownView.MarkdownView();
+            markdown.data = {
+              tokens: Marked.Marked.lexer(sanitizedText),
+            };
+            this.#updateAiMessage(aiContent, markdown, result.text);
+
+            void new Promise(resolve => setTimeout(resolve, 0)).then(() => {
+              const style = document.createElement('style');
+              style.textContent =
+                  '.message { font-size: 1.0rem; } .message code { font-size: 1.0rem; font-family: \'Roboto Mono\', ' +
+                  'monospace; color: green; } .message ul { margin-left: 20px; }';
+              markdown.shadowRoot?.appendChild(style);
+
+              const codeBlocks = markdown.shadowRoot?.querySelectorAll('devtools-code-block');
+              if (codeBlocks) {
+                for (const codeBlock of codeBlocks) {
+                  const style = document.createElement('style');
+                  style.textContent = `
+.heading { color: black; background-color: #f2f6ff; font-family: 'Roboto Mono', monospace; padding: 2px 4px;
+           border-top-left-radius: 8px; border-top-right-radius: 8px; margin-bottom: 3px; }
+.code { background-color: #f8f9fa; font-family: 'Roboto Mono', monospace; padding: 5px;
+        border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; }
+.editor-wrapper { margin-left: 20px; }
+                  `;
+                  codeBlock.shadowRoot?.appendChild(style);
+                }
+              }
+            });
+            agentFinished = true;
+            break;
+          }
           case ResponseType.ERROR:
-            aiContent.textContent = this.#formatError(result.error);
-            this.#syncChannel.postMessage(
-                {type: 'update-last-message', text: this.#formatError(result.error), sessionId: this.#backendNodeId});
+            this.#updateAiMessage(
+                aiContent, document.createTextNode(this.#formatError(result.error)), this.#formatError(result.error));
+            agentFinished = true;
             break;
           case ResponseType.SIDE_EFFECT:
             result.confirm(true);
@@ -317,6 +526,14 @@ class GreenDevFloaty {
       }
     } catch (e) {
       aiContent.textContent = `Exception: ${e instanceof Error ? e.message : String(e)}`;
+      agentFinished = true;
+    }
+
+    const MAX_AGENT_STEPS = AiAssistance.AiAgent.MAX_STEPS;
+    if (!agentFinished && steps >= MAX_AGENT_STEPS) {
+      aiContent.textContent = `The agent has reached its internal limit of ${MAX_AGENT_STEPS} steps per turn before
+      finding an answer. Please try again with a more specific query or say 'continue' (to get ${MAX_AGENT_STEPS}
+      more steps and continue trying).`;
     }
   };
 
@@ -333,7 +550,22 @@ class GreenDevFloaty {
       this.#chatContainer.appendChild(messageElement);
       this.#chatContainer.scrollTop = this.#chatContainer.scrollHeight;
     }
+
+    this.#syncChannel.postMessage({
+      type: 'new-message',
+      text,
+      isUser,
+      sessionId: this.#backendNodeId,
+      nodeDescription: document.querySelector('.green-dev-floaty-dialog-node-description')?.textContent,
+    });
+
     return content;
+  }
+
+  #updateAiMessage(aiContentElement: HTMLDivElement, newContent: Node, newText: string): void {
+    aiContentElement.textContent = '';
+    aiContentElement.append(newContent);
+    this.#syncChannel.postMessage({type: 'update-last-message', text: newText, sessionId: this.#backendNodeId});
   }
 }
 
@@ -359,16 +591,10 @@ async function init(): Promise<void> {
     Object.assign(Root.Runtime.hostConfig, config);
 
     safeRegisterExperiment(
-        Root.ExperimentNames.ExperimentName.CAPTURE_NODE_CREATION_STACKS, 'Capture node creation stacks');
-    safeRegisterExperiment(
         Root.ExperimentNames.ExperimentName.INSTRUMENTATION_BREAKPOINTS, 'Enable instrumentation breakpoints');
     safeRegisterExperiment(
         Root.ExperimentNames.ExperimentName.USE_SOURCE_MAP_SCOPES, 'Use scope information from source maps');
-    safeRegisterExperiment(Root.ExperimentNames.ExperimentName.LIVE_HEAP_PROFILE, 'Live heap profile');
     safeRegisterExperiment(Root.ExperimentNames.ExperimentName.PROTOCOL_MONITOR, 'Protocol Monitor');
-    safeRegisterExperiment(
-        Root.ExperimentNames.ExperimentName.SAMPLING_HEAP_PROFILER_TIMELINE, 'Sampling heap profiler timeline');
-    safeRegisterExperiment(Root.ExperimentNames.ExperimentName.APCA, 'APCA');
 
     const hostUnsyncedStorage: Common.Settings.SettingsBackingStore = {
       register: (name: string) =>

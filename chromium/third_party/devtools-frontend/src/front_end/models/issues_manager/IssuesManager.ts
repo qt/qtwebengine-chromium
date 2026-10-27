@@ -17,6 +17,7 @@ import {CorsIssue} from './CorsIssue.js';
 import {CrossOriginEmbedderPolicyIssue, isCrossOriginEmbedderPolicyIssue} from './CrossOriginEmbedderPolicyIssue.js';
 import {DeprecationIssue} from './DeprecationIssue.js';
 import {ElementAccessibilityIssue} from './ElementAccessibilityIssue.js';
+import {EmailVerificationRequestIssue} from './EmailVerificationRequestIssue.js';
 import {FederatedAuthRequestIssue} from './FederatedAuthRequestIssue.js';
 import {GenericIssue} from './GenericIssue.js';
 import {HeavyAdIssue} from './HeavyAdIssue.js';
@@ -106,6 +107,10 @@ const issueCodeHandlers = new Map<
     ClientHintIssue.fromInspectorIssue,
   ],
   [
+    Protocol.Audits.InspectorIssueCode.EmailVerificationRequestIssue,
+    EmailVerificationRequestIssue.fromInspectorIssue,
+  ],
+  [
     Protocol.Audits.InspectorIssueCode.FederatedAuthRequestIssue,
     FederatedAuthRequestIssue.fromInspectorIssue,
   ],
@@ -154,6 +159,10 @@ const issueCodeHandlers = new Map<
     SelectivePermissionsInterventionIssue.fromInspectorIssue,
   ],
 ]);
+
+export function isIssueCodeSupported(code: Protocol.Audits.InspectorIssueCode): boolean {
+  return issueCodeHandlers.has(code);
+}
 
 /**
  * Each issue reported by the backend can result in multiple `Issue` instances.
@@ -431,12 +440,11 @@ export class IssuesManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes
     // In case a user wants to hide a specific issue, the issue code is added to "code" section
     // of our setting and its value is set to IssueStatus.Hidden. Then issue then gets hidden.
     if (values?.[code]) {
-      if (values[code] === IssueStatus.HIDDEN) {
-        issue.setHidden(true);
-        return;
+      const isHidden = values[code] === IssueStatus.HIDDEN;
+      if (issue.isHidden() !== isHidden) {
+        issue.setHidden(isHidden);
+        this.dispatchEventToListeners(Events.ISSUE_HIDDEN_STATUS_UPDATED, {issue});
       }
-      issue.setHidden(false);
-      return;
     }
   }
 
@@ -467,7 +475,10 @@ export class IssuesManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes
 
   unhideAllIssues(): void {
     for (const issue of this.#allIssues.values()) {
-      issue.setHidden(false);
+      if (issue.isHidden()) {
+        issue.setHidden(false);
+        this.dispatchEventToListeners(Events.ISSUE_HIDDEN_STATUS_UPDATED, {issue});
+      }
     }
     this.hideIssueSetting?.set(defaultHideIssueByCodeSetting());
   }
@@ -482,10 +493,15 @@ export interface IssueAddedEvent {
   issue: Issue;
 }
 
+export interface IssueHiddenStatusUpdatedEvent {
+  issue: Issue;
+}
+
 export interface EventTypes {
   [Events.ISSUES_COUNT_UPDATED]: void;
   [Events.FULL_UPDATE_REQUIRED]: void;
   [Events.ISSUE_ADDED]: IssueAddedEvent;
+  [Events.ISSUE_HIDDEN_STATUS_UPDATED]: IssueHiddenStatusUpdatedEvent;
 }
 
 // @ts-expect-error

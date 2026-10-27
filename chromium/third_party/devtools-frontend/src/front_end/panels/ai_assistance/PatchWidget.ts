@@ -13,7 +13,6 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
-import * as GreenDev from '../../models/greendev/greendev.js';
 import * as Persistence from '../../models/persistence/persistence.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as WorkspaceDiff from '../../models/workspace_diff/workspace_diff.js';
@@ -273,20 +272,6 @@ const DEFAULT_VIEW: View = (input, output, target) => {
             nothing}`;
   }
 
-  function renderCopyPrompt(changedCode?: string): LitTemplate {
-    if (!GreenDev.Prototypes.instance().isEnabled('copyToGemini') || !changedCode) {
-      return nothing;
-    }
-
-    // clang-format off
-    return html`<devtools-widget class="copy-to-prompt"
-      ${widget(PanelCommon.CopyChangesToPrompt, {
-        workspaceDiff: input.workspaceDiff,
-        patchAgentCSSChange: changedCode,
-      })}></devtools-widget>`;
-    // clang-format on
-  }
-
   function renderFooter(): LitTemplate {
     if (input.savedToDisk) {
       return nothing;
@@ -357,7 +342,6 @@ const DEFAULT_VIEW: View = (input, output, target) => {
               </div>
             ` :
             html`
-               ${renderCopyPrompt(input.changeSummary)}
                 <devtools-button
                 @click=${input.onApplyToWorkspace}
                 .jslogContext=${'patch-widget.apply-to-workspace'}
@@ -435,7 +419,7 @@ export class PatchWidget extends UI.Widget.Widget {
   #project?: Workspace.Workspace.Project;
   #patchSources?: string;
   #savedToDisk?: boolean;
-  #noLogging: boolean;  // Whether the enterprise setting is `ALLOW_WITHOUT_LOGGING` or not.
+  #loggingEnabled: boolean;  // Whether the enterprise setting is `ALLOW_WITHOUT_LOGGING` or not.
   #patchSuggestionState = PatchSuggestionState.INITIAL;
   #workspaceDiff = WorkspaceDiff.WorkspaceDiff.workspaceDiff();
   #workspace = Workspace.Workspace.WorkspaceImpl.instance();
@@ -450,7 +434,7 @@ export class PatchWidget extends UI.Widget.Widget {
   }) {
     super(element);
     this.#aidaClient = opts?.aidaClient ?? new Host.AidaClient.AidaClient();
-    this.#noLogging = Root.Runtime.hostConfig.aidaAvailability?.enterprisePolicyValue ===
+    this.#loggingEnabled = Root.Runtime.hostConfig.aidaAvailability?.enterprisePolicyValue !==
         Root.Runtime.GenAiEnterprisePolicyValue.ALLOW_WITHOUT_LOGGING;
     this.#view = view;
 
@@ -514,9 +498,9 @@ export class PatchWidget extends UI.Widget.Widget {
           projectPath,
           projectType: this.#getSelectedProjectType(projectPath),
           savedToDisk: this.#savedToDisk,
-          applyToWorkspaceTooltipText: this.#noLogging ?
-              lockedString(UIStringsNotTranslate.applyToWorkspaceTooltipNoLogging) :
-              lockedString(UIStringsNotTranslate.applyToWorkspaceTooltip),
+          applyToWorkspaceTooltipText: this.#loggingEnabled ?
+              lockedString(UIStringsNotTranslate.applyToWorkspaceTooltip) :
+              lockedString(UIStringsNotTranslate.applyToWorkspaceTooltipNoLogging),
           onLearnMoreTooltipClick: this.#onLearnMoreTooltipClick.bind(this),
           onApplyToWorkspace: this.#onApplyToWorkspace.bind(this),
           onCancel: () => {
@@ -566,8 +550,8 @@ export class PatchWidget extends UI.Widget.Widget {
         },
         {
           iconName: 'google',
-          content: this.#noLogging ? lockedString(UIStringsNotTranslate.freDisclaimerTextPrivacyNoLogging) :
-                                     lockedString(UIStringsNotTranslate.freDisclaimerTextPrivacy),
+          content: this.#loggingEnabled ? lockedString(UIStringsNotTranslate.freDisclaimerTextPrivacy) :
+                                          lockedString(UIStringsNotTranslate.freDisclaimerTextPrivacyNoLogging),
         },
         {
           iconName: 'warning',

@@ -4,20 +4,21 @@
 
 import type {TokenMojoType} from '//resources/mojo/mojo/public/mojom/base/token.mojom-webui.js';
 
-import type {Container, Node, SessionSplitTab, SessionTab, SessionTabGroup, SessionWindow, SplitTabVisualData, Tab, TabGroupVisualData, TabRestoreEntry, TabRestoreGroup, TabRestoreTab, TabRestoreWindow, WindowNode} from './tab_strip_internals.mojom-webui.js';
+import type {TabGroupVisualData} from './tab_strip_api_data_model.mojom-webui.js';
+import type {Container, Node, SessionSplitTab, SessionTab, SessionTabGroup, SessionWindow, SplitTabVisualData, Tab, TabRestoreEntry, TabRestoreGroup, TabRestoreSplit, TabRestoreTab, TabRestoreWindow, WindowNode} from './tab_strip_internals.mojom-webui.js';
 
 /**
  * Model layer: Represents a UI node used by the ViewModel to build a semantic
  * hierarchy of tab structures.
  */
-export interface ModelNode {
+export interface ModelNode<T = unknown> {
   /**
    * Unique path identifier for this node within the tab hierarchy
    * (e.g.'Container.windows[0].tabs[1]').
    */
   path: string;
   /** Reference to the raw Mojo data. */
-  value: unknown;
+  value: T;
   /** List of child nodes. Empty if no children. */
   children: ModelNode[];
   /**
@@ -40,8 +41,8 @@ export class DataModelAdapter {
   /**
    * Build a tree of ModelNode from the given Container.
    */
-  static build(container: Container): ModelNode {
-    const root: ModelNode = {
+  static build(container: Container): ModelNode<Container> {
+    const root: ModelNode<Container> = {
       path: 'Container',
       value: container,
       children: [],
@@ -64,8 +65,9 @@ export class DataModelAdapter {
   /**
    * Build a sub-tree representing the current TabStrip tree.
    */
-  private static buildTabStripTree(tree: Container['tabstripTree']): ModelNode {
-    const node: ModelNode = {
+  private static buildTabStripTree(tree: Container['tabstripTree']):
+      ModelNode<Container['tabstripTree']> {
+    const node: ModelNode<Container['tabstripTree']> = {
       path: 'Container.tabstripTree',
       value: tree,
       children: [],
@@ -74,7 +76,7 @@ export class DataModelAdapter {
     };
 
     tree.windows.forEach((window: WindowNode, idx: number) => {
-      const winNode: ModelNode = {
+      const winNode: ModelNode<WindowNode> = {
         path: `${node.path}.windows[${idx}]`,
         value: window,
         children: [],
@@ -165,8 +167,9 @@ export class DataModelAdapter {
   /**
    * Build a sub-tree representing the recently closed tabs (TabRestore data).
    */
-  private static buildTabRestore(restore: Container['tabRestore']): ModelNode {
-    const node: ModelNode = {
+  private static buildTabRestore(restore: Container['tabRestore']):
+      ModelNode<Container['tabRestore']> {
+    const node: ModelNode<Container['tabRestore']> = {
       path: 'Container.tabRestore',
       value: restore,
       children: [],
@@ -186,7 +189,7 @@ export class DataModelAdapter {
         });
       } else if ('window' in entry) {
         const window = entry.window as TabRestoreWindow;
-        const windowNode: ModelNode = {
+        const windowNode: ModelNode<TabRestoreWindow> = {
           path: `${node.path}.entries[${i}]`,
           value: window,
           children: [],
@@ -216,53 +219,48 @@ export class DataModelAdapter {
 
         for (const [groupKey, groupTabs] of groupedTabs.entries()) {
           const visual = groupVisuals.get(groupKey) as TabGroupVisualData;
-          const groupNode: ModelNode = {
+          const groupNode: ModelNode<TabGroupVisualData> = {
             path: `${windowNode.path}.groups[${groupKey}]`,
             value: visual,
             children: [],
             label: this.formatGroupLabel(visual),
             displayName: visual.title,
           };
-          groupTabs.forEach(
-              (tab: TabRestoreTab, index: number) => groupNode.children.push({
-                path: `${groupNode.path}.tabs[${index}]`,
-                value: tab,
-                children: [],
-                label: this.formatTabLabel(tab),
-                displayName: tab.title,
-              }),
-          );
+          this.appendRestoreTabs(groupTabs, groupNode);
           windowNode.children.push(groupNode);
         }
-        ungroupedTabs.forEach(
-            (tab: TabRestoreTab, index: number) => windowNode.children.push({
-              path: `${windowNode.path}.tabs[${index}]`,
-              value: tab,
-              children: [],
-              label: this.formatTabLabel(tab),
-              displayName: tab.title,
-            }),
-        );
+        this.appendRestoreTabs(ungroupedTabs, windowNode);
         node.children.push(windowNode);
       } else if ('group' in entry) {
         const group = entry.group as TabRestoreGroup;
-        const groupNode: ModelNode = {
+        const groupNode: ModelNode<TabRestoreGroup> = {
           path: `${node.path}.entries[${i}]`,
           value: group,
           children: [],
           label: this.formatGroupLabel(group.visualData),
           displayName: group.visualData.title,
         };
-        group.tabs.forEach((tab: TabRestoreTab, index: number) => {
-          groupNode.children.push({
-            path: `${groupNode.path}.tabs[${index}]`,
+        this.appendRestoreTabs(group.tabs, groupNode);
+        node.children.push(groupNode);
+      } else if ('split' in entry) {
+        const split = entry.split as TabRestoreSplit;
+        const splitNode: ModelNode<TabRestoreSplit> = {
+          path: `${node.path}.entries[${i}]`,
+          value: split,
+          children: [],
+          label: this.formatSplitLabel(split.visualData),
+          displayName: 'Split',
+        };
+        split.tabs.forEach((tab: TabRestoreTab, index: number) => {
+          splitNode.children.push({
+            path: `${splitNode.path}.tabs[${index}]`,
             value: tab,
             children: [],
             label: this.formatTabLabel(tab),
             displayName: tab.title,
           });
         });
-        node.children.push(groupNode);
+        node.children.push(splitNode);
       }
     });
     return node;
@@ -274,23 +272,25 @@ export class DataModelAdapter {
    */
   private static buildSessionRestore(
       session: Container['restoredSession']|Container['savedSession'],
-      label: string): ModelNode {
+      label: string):
+      ModelNode<Container['restoredSession']|Container['savedSession']> {
     // Regex removes whitespaces from label to build path string.
     const labelToPathStr = label.replace(/\s+/g, '').toLowerCase();
-    const node: ModelNode = {
-      path: `Container.${labelToPathStr}`,
-      value: session,
-      children: [],
-      label: label,
-      displayName: label,
-    };
+    const node:
+        ModelNode<Container['restoredSession']|Container['savedSession']> = {
+          path: `Container.${labelToPathStr}`,
+          value: session,
+          children: [],
+          label: label,
+          displayName: label,
+        };
 
     if (!session || !session.entries?.length) {
       return node;
     }
 
     session.entries.forEach((window: SessionWindow, windowIndex: number) => {
-      const windowNode: ModelNode = {
+      const windowNode: ModelNode<SessionWindow> = {
         path: `${node.path}.entries[${windowIndex}]`,
         value: window,
         children: [],
@@ -316,8 +316,8 @@ export class DataModelAdapter {
       }
 
       // Building group as you go along.
-      const groupNodes = new Map<string, ModelNode>();
-      const splitNodes = new Map<string, ModelNode>();
+      const groupNodes = new Map<string, ModelNode<TabGroupVisualData>>();
+      const splitNodes = new Map<string, ModelNode<SplitTabVisualData>>();
 
       for (const tab of tabs) {
         // Convert TokenMojoType to a string representation to use it as the
@@ -393,6 +393,59 @@ export class DataModelAdapter {
     });
 
     return node;
+  }
+
+  /**
+   * Appends TabRestoreTabs to a parent ModelNode's children, automatically
+   * grouping them into nested Split nodes where splitId is present.
+   */
+  private static appendRestoreTabs(tabs: TabRestoreTab[], parent: ModelNode):
+      void {
+    const splitNodes = new Map<string, ModelNode<Partial<TabRestoreSplit>>>();
+    tabs.forEach((tab: TabRestoreTab, index: number) => {
+      if (tab.splitId) {
+        const splitKey = this.tokenToString_(tab.splitId);
+        let splitNode = splitNodes.get(splitKey);
+        if (!splitNode) {
+          const split: Partial<TabRestoreSplit> = {
+            splitId: tab.splitId,
+            visualData: tab.splitVisualData || {
+              layout: 0,  // kSideBySide
+              splitRatio: 0.5,
+            },
+            tabs: [],
+          };
+          splitNode = {
+            path: `${parent.path}.synthetic_split_${splitKey}`,
+            value: split,
+            children: [],
+            label:
+                this.formatSplitLabel(split.visualData as SplitTabVisualData),
+            displayName: 'Split',
+          };
+          splitNodes.set(splitKey, splitNode);
+          parent.children.push(splitNode);
+        }
+        if (splitNode.value.tabs) {
+          splitNode.value.tabs.push(tab);
+        }
+        splitNode.children.push({
+          path: `${splitNode.path}.tabs[${splitNode.children.length}]`,
+          value: tab,
+          children: [],
+          label: this.formatTabLabel(tab),
+          displayName: tab.title,
+        });
+      } else {
+        parent.children.push({
+          path: `${parent.path}.tabs[${index}]`,
+          value: tab,
+          children: [],
+          label: this.formatTabLabel(tab),
+          displayName: tab.title,
+        });
+      }
+    });
   }
 
   private static formatTabLabel(tab: Partial<Tab|TabRestoreTab|SessionTab>):

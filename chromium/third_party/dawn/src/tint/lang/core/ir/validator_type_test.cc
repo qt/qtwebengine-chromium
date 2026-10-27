@@ -50,12 +50,21 @@ namespace tint::mock {
 /// A mock non-core type used for testing the non-core type validation rule.
 class NonCoreType final : public Castable<NonCoreType, core::type::Type> {
   public:
-    NonCoreType() : Base(0u, core::type::Flags{}) {}
-    bool Equals(const UniqueNode& other) const override { return other.Is<NonCoreType>(); }
-    std::string FriendlyName() const override { return "NonCoreType"; }
-    core::type::Type* Clone(core::type::CloneContext& ctx) const override {
-        return ctx.dst.mgr->Get<NonCoreType>();
+    explicit NonCoreType(uint32_t align = 0u) : Base(0u, core::type::Flags{}), align_(align) {}
+    bool Equals(const UniqueNode& other) const override {
+        if (auto* other_nc = other.As<NonCoreType>()) {
+            return other_nc->align_ == align_;
+        }
+        return false;
     }
+    std::string FriendlyName() const override { return "NonCoreType"; }
+    uint32_t Align() const override { return align_ == 0u ? Base::Align() : align_; }
+    core::type::Type* Clone(core::type::CloneContext& ctx) const override {
+        return ctx.dst.mgr->Get<NonCoreType>(align_);
+    }
+
+  private:
+    uint32_t align_;
 };
 }  // namespace tint::mock
 
@@ -65,20 +74,6 @@ namespace tint::core::ir {
 
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
-
-namespace {
-template <typename T>
-static const core::type::Type* TypeBuilder(core::type::Manager& m) {
-    return m.Get<T>();
-}
-
-template <typename T>
-static const core::type::Type* RefTypeBuilder(core::type::Manager& m) {
-    return m.ref<AddressSpace::kFunction, T>();
-}
-
-using TypeBuilderFn = decltype(&TypeBuilder<i32>);
-}  // namespace
 
 // Note: Just parameterizing abstract int vs float doesn't significantly reduce
 // the code size of these tests, and made the code less readable.
@@ -289,13 +284,33 @@ TEST_F(IR_ValidatorTest, StructMember_AlignZero) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, StructMember_AlignNotDivisibleByTypeAlignment) {
+TEST_F(IR_ValidatorTest, StructMember_AlignNotPowerOfTwo) {
     core::IOAttributes attrs = {};
     tint::Vector<const core::type::StructMember*, 4> members;
     members.Push(ty.Get<core::type::StructMember>(mod.symbols.New("v"), ty.u32(), 0u, 0u,
-                                                  /* align */ 10u, 16u, std::move(attrs)));
+                                                  /* align */ 3u, 16u, std::move(attrs)));
     auto* str_ty = ty.Get<core::type::Struct>(mod.symbols.New("MyStruct"), std::move(members),
-                                              tint::RoundUp(0u, 16u));
+                                              tint::RoundUp(3u, 16u));
+
+    auto* v = b.Var(ty.ptr(private_, str_ty));
+    mod.root_block->Append(v);
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(R"(:6:3 error: var: struct member alignment must be a power of 2
+  %1:ptr<private, MyStruct, read_write> = var undef
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, StructMember_AlignNotDivisibleByTypeAlignment) {
+    core::IOAttributes attrs = {};
+    tint::Vector<const core::type::StructMember*, 4> members;
+    members.Push(ty.Get<core::type::StructMember>(mod.symbols.New("v"), ty.vec3<f32>(), 0u, 0u,
+                                                  /* align */ 8u, 16u, std::move(attrs)));
+    auto* str_ty = ty.Get<core::type::Struct>(mod.symbols.New("MyStruct"), std::move(members),
+                                              tint::RoundUp(8u, 16u));
 
     auto* v = b.Var(ty.ptr(private_, str_ty));
     mod.root_block->Append(v);
@@ -305,38 +320,64 @@ TEST_F(IR_ValidatorTest, StructMember_AlignNotDivisibleByTypeAlignment) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:6:3 error: var: struct member alignment (10) must be divisible by type alignment (4)
+            R"(:6:3 error: var: struct member alignment (8) must be divisible by type alignment (16)
   %1:ptr<private, MyStruct, read_write> = var undef
   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Structure_LargePaddingSizeAtEnd) {
-    auto* str_ty =
-        ty.Struct(mod.symbols.New("S"),
-                  Vector{
-                      ty.Get<type::StructMember>(mod.symbols.New("a"), ty.array<u32, 3>(), 0u, 0u,
-                                                 4u, 4'000'000'000u, IOAttributes{}),
-                  });
-    mod.root_block->Append(b.Var("my_struct", private_, str_ty));
+TEST_F(IR_ValidatorTest, StructMember_TypeAlignZero) {
+    core::IOAttributes attrs = {};
+    tint::Vector<const core::type::StructMember*, 4> members;
+    members.Push(ty.Get<core::type::StructMember>(mod.symbols.New("v"),
+                                                  ty.Get<tint::mock::NonCoreType>(), 0u, 0u,
+                                                  /* align */ 4u, 4u, std::move(attrs)));
+    auto* str_ty = ty.Get<core::type::Struct>(mod.symbols.New("MyStruct"), std::move(members),
+                                              tint::RoundUp(0u, 16u));
 
-    auto* fn = b.Function("F", ty.void_());
-    b.Append(fn->Block(), [&] { b.Return(fn); });
+    auto* v = b.Var(ty.ptr(private_, str_ty));
+    mod.root_block->Append(v);
 
-    auto res = ir::Validate(mod);
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowNonCoreTypes});
     ASSERT_NE(res, Success);
-    EXPECT_THAT(res.Failure().reason,
-                testing::HasSubstr("struct padding (3999999988) is larger then the max (10485760)"))
-        << res.Failure();
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(R"(:6:3 error: var: struct member type must not have an alignment of 0
+  %1:ptr<private, MyStruct, read_write> = var undef
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, StructMember_TypeAlignNotPowerOfTwo) {
+    core::IOAttributes attrs = {};
+    tint::Vector<const core::type::StructMember*, 4> members;
+    members.Push(ty.Get<core::type::StructMember>(
+        mod.symbols.New("v"), ty.Get<tint::mock::NonCoreType>(/* align */ 5u), 0u, 0u,
+        /* align */ 8u, 8u, std::move(attrs)));
+    auto* str_ty = ty.Get<core::type::Struct>(mod.symbols.New("MyStruct"), std::move(members),
+                                              tint::RoundUp(0u, 16u));
+
+    auto* v = b.Var(ty.ptr(private_, str_ty));
+    mod.root_block->Append(v);
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowNonCoreTypes});
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(R"(:6:3 error: var: struct member type alignment must be a power of 2
+  %1:ptr<private, MyStruct, read_write> = var undef
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, Structure_MemberAlignmentCausesSizeOverflow) {
-    auto* str_ty =
-        ty.Struct(mod.symbols.New("S"),
-                  Vector{
-                      ty.Get<type::StructMember>(mod.symbols.New("a"), ty.u32(), 0u, 0u,
-                                                 u32::kHighestValue - 63, 128u, IOAttributes{}),
-                  });
+    core::IOAttributes attrs = {};
+    tint::Vector<const core::type::StructMember*, 4> members;
+    members.Push(ty.Get<core::type::StructMember>(mod.symbols.New("a"), ty.u32(), 0u, 0u,
+                                                  /* align */ 4u, 4u, std::move(attrs)));
+    auto* str_ty = ty.Get<core::type::Struct>(mod.symbols.New("S"), std::move(members),
+                                              /* size */ 0u);
+
     mod.root_block->Append(b.Var("my_struct", private_, str_ty));
 
     auto* fn = b.Function("F", ty.void_());
@@ -347,28 +388,6 @@ TEST_F(IR_ValidatorTest, Structure_MemberAlignmentCausesSizeOverflow) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr("struct size (0) is smaller than the end of the last member (4)"))
-        << res.Failure();
-}
-
-TEST_F(IR_ValidatorTest, StructureMember_LargePaddingSize) {
-    auto* str_ty =
-        ty.Struct(mod.symbols.New("S"),
-                  Vector{
-                      ty.Get<type::StructMember>(mod.symbols.New("a"), ty.array<u32, 3>(), 0u, 0u,
-                                                 4u, 40'000'000u, IOAttributes{}),
-                      ty.Get<type::StructMember>(mod.symbols.New("b"), ty.array<u32, 3>(), 0u, 0u,
-                                                 4u, 16u, IOAttributes{}),
-                  });
-    mod.root_block->Append(b.Var("my_struct", private_, str_ty));
-
-    auto* fn = b.Function("F", ty.void_());
-    b.Append(fn->Block(), [&] { b.Return(fn); });
-
-    auto res = ir::Validate(mod);
-    ASSERT_NE(res, Success);
-    EXPECT_THAT(
-        res.Failure().reason,
-        testing::HasSubstr("struct member padding (4294967284) is larger then the max (10485760)"))
         << res.Failure();
 }
 
@@ -563,6 +582,24 @@ TEST_F(IR_ValidatorTest, StructMember_Sampler) {
 )")) << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, StructMember_InvalidBuiltinType_Unused) {
+    core::IOAttributes attr;
+    attr.builtin = core::BuiltinValue::kPrimitiveIndex;
+    auto* s = ty.Struct(mod.symbols.New("S"), {
+                                                  {
+                                                      mod.symbols.New("m"),
+                                                      ty.f16(),
+                                                      attr,
+                                                  },
+                                              });
+
+    mod.root_block->Append(b.Var("v", ty.ptr<uniform, read>(s)));
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr("primitive_index must be an u32"));
+}
+
 TEST_F(IR_ValidatorTest, StructMember_Sampler_WithCapability) {
     auto* str_ty =
         ty.Struct(mod.symbols.New("MyStruct"), {
@@ -749,6 +786,20 @@ TEST_F(IR_ValidatorTest, LargeArrays) {
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, Array_ZeroSize) {
+    auto* fn = b.Function("my_func", ty.void_());
+    b.Append(fn->Block(), [&] {
+        b.Var("v", function, ty.array(ty.u32(), 0u));
+        b.Return(fn);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr("3:5 error: var: array requires a constant array size > 0"))
+        << res.Failure();
+}
+
 using Type_VectorElements = TypeTest;
 
 TEST_P(Type_VectorElements, Test) {
@@ -901,6 +952,34 @@ INSTANTIATE_TEST_SUITE_P(IR_ValidatorTest,
                                          std::make_tuple(false, TypeBuilder<core::type::Bool>),
                                          std::make_tuple(false, TypeBuilder<core::type::Void>)));
 
+using Type_SubgroupMatrixInvalidAddressSpace = IRTestParamHelper<AddressSpace>;
+
+TEST_P(Type_SubgroupMatrixInvalidAddressSpace, Test) {
+    auto addr = GetParam();
+    auto* fn = b.Function("my_func", ty.void_());
+    b.Append(fn->Block(), [&] {
+        b.Var("m", addr, ty.subgroup_matrix_result(ty.f32(), 8u, 8u));
+        b.Return(fn);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr("3:5 error: var: invalid address space for subgroup matrix : " +
+                                   std::string(ToString(addr))))
+        << res.Failure();
+}
+
+// Note: AddressSpace::kHandle is not tested, because a different check will fail before reaching
+// the branch of interest for this test
+INSTANTIATE_TEST_SUITE_P(IR_ValidatorTest,
+                         Type_SubgroupMatrixInvalidAddressSpace,
+                         testing::Values(AddressSpace::kPrivate,
+                                         AddressSpace::kWorkgroup,
+                                         AddressSpace::kUniform,
+                                         AddressSpace::kStorage,
+                                         AddressSpace::kImmediate));
+
 using Type_SampledTextureSampledType = TypeTest;
 
 TEST_P(Type_SampledTextureSampledType, Test) {
@@ -978,21 +1057,85 @@ TEST_F(IR_ValidatorTest, BindingArrayNonSampledTexture) {
   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^)"));
 }
 
-TEST_F(IR_ValidatorTest, BindingArrayInvalidAddressSpace) {
+TEST_F(IR_ValidatorTest, BindingArray_AllowedNonSampledTextureWithCapability) {
     b.Append(mod.root_block, [&] {
-        b.Var("m", AddressSpace::kWorkgroup,
-              ty.binding_array(ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()), 4));
+        auto* var = b.Var("m", AddressSpace::kHandle, ty.binding_array(ty.external_texture(), 5));
+        var->SetBindingPoint(0, 0);
+    });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowNonCoreTypes});
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, BindingArray_ZeroSize) {
+    b.Append(mod.root_block, [&] {
+        auto* var = b.Var("m", AddressSpace::kHandle,
+                          ty.Get<core::type::BindingArray>(
+                              ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()),
+                              ty.Get<core::type::ConstantArrayCount>(0u)));
+        var->SetBindingPoint(0, 0);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
-        testing::HasSubstr(
-            R"(:2:3 error: var: handle types can only be declared in the 'handle' address space
-  %m:ptr<workgroup, binding_array<texture_2d<f32>, 4>, read_write> = var undef
-  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^)"));
+        testing::HasSubstr("2:3 error: var: binding array requires a constant array size > 0"))
+        << res.Failure();
 }
+
+using Type_BindingArrayInvalidAddressSpace = IRTestParamHelper<AddressSpace>;
+
+TEST_P(Type_BindingArrayInvalidAddressSpace, Test) {
+    auto addr = GetParam();
+    if (addr == AddressSpace::kFunction) {
+        auto* fn = b.Function("my_func", ty.void_());
+        b.Append(fn->Block(), [&] {
+            b.Var("m", addr, ty.binding_array(ty.u32(), 4));
+            b.Return(fn);
+        });
+    } else {
+        b.Append(mod.root_block, [&] { b.Var("m", addr, ty.binding_array(ty.u32(), 4)); });
+    }
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowNonCoreTypes});
+    ASSERT_NE(res, Success);
+    if (addr == AddressSpace::kFunction) {
+        EXPECT_THAT(res.Failure().reason,
+                    testing::HasSubstr(
+                        ":3:5 error: var: invalid address space for binding_array : function"))
+            << res.Failure();
+    } else {
+        EXPECT_THAT(
+            res.Failure().reason,
+            testing::HasSubstr("2:3 error: var: invalid address space for binding_array : " +
+                               std::string(ToString(addr))))
+            << res.Failure();
+    }
+}
+
+TEST_P(Type_BindingArrayInvalidAddressSpace, AllowedWithCapability) {
+    auto addr = GetParam();
+    if (addr == AddressSpace::kFunction) {
+        auto* fn = b.Function("my_func", ty.void_());
+        b.Append(fn->Block(), [&] {
+            b.Var("m", addr, ty.binding_array(ty.u32(), 4));
+            b.Return(fn);
+        });
+    } else {
+        b.Append(mod.root_block, [&] { b.Var("m", addr, ty.binding_array(ty.u32(), 4)); });
+    }
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kMslAllowEntryPointInterface,
+                                              Capability::kAllowNonCoreTypes});
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+// Note: kUniform, kStorage, and kImmediate are not tested here because they will still trigger a
+// different check
+INSTANTIATE_TEST_SUITE_P(IR_ValidatorTest,
+                         Type_BindingArrayInvalidAddressSpace,
+                         testing::Values(AddressSpace::kFunction, AddressSpace::kPrivate));
 
 using Type_MultisampledTextureTypeAndDimension =
     IRTestParamHelper<std::tuple<std::tuple<
@@ -1454,7 +1597,7 @@ TEST_F(IR_ValidatorTest, Int8Type_InstructionOperand_NotAllowed) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Int8Type_InstructionOperand_Allowed) {
+TEST_F(IR_ValidatorTest, Int8Type_InstructionOperand_AllowedWithCapability) {
     auto* fn = b.Function("my_func", ty.void_());
     b.Append(fn->Block(), [&] {
         b.Let("l", u8(1));
@@ -1462,6 +1605,31 @@ TEST_F(IR_ValidatorTest, Int8Type_InstructionOperand_Allowed) {
     });
 
     auto res = ir::Validate(mod, Capabilities{Capability::kAllow8BitIntegers});
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Int16Type_NotAllowed) {
+    auto* fn = b.Function("my_func", ty.void_());
+    b.Append(fn->Block(), [&] {
+        b.Var("v", function, ty.Get<core::type::U16>());
+        b.Return(fn);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr("3:5 error: var: 16-bit integer types are not permitted"))
+        << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Int16Type_AllowedWithCapability) {
+    auto* fn = b.Function("my_func", ty.void_());
+    b.Append(fn->Block(), [&] {
+        b.Var("v", function, ty.Get<core::type::U16>());
+        b.Return(fn);
+    });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllow16BitIntegers});
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
@@ -1596,7 +1764,7 @@ TEST_F(IR_ValidatorTest, Int64Type_InstructionOperand_NotAllowed) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, Int64Type_InstructionOperand_Allowed) {
+TEST_F(IR_ValidatorTest, Int64Type_InstructionOperand_AllowedWithCapability) {
     auto* fn = b.Function("my_func", ty.void_());
     b.Append(fn->Block(), [&] {
         b.Let("l", u64(1));
@@ -1612,22 +1780,22 @@ using AddressSpace_AccessMode = IRTestParamHelper<std::tuple<
     /* access mode */ core::Access>>;
 
 TEST_P(AddressSpace_AccessMode, Test) {
-    auto aspace = std::get<0>(GetParam());
+    auto addr = std::get<0>(GetParam());
     auto access = std::get<1>(GetParam());
 
-    if (aspace == AddressSpace::kFunction) {
+    if (addr == AddressSpace::kFunction) {
         auto* fn = b.Function("my_func", ty.void_());
         b.Append(fn->Block(), [&] {
-            b.Var("v", aspace, ty.u32(), access);
+            b.Var("v", addr, ty.u32(), access);
             b.Return(fn);
         });
     } else {
         const core::type::Type* sampler_ty = ty.sampler();
         const core::type::Type* u32_ty = ty.u32();
-        auto* type = aspace == AddressSpace::kHandle ? sampler_ty : u32_ty;
-        auto* v = b.Var("v", aspace, type, access);
-        if (aspace != AddressSpace::kPrivate && aspace != AddressSpace::kWorkgroup &&
-            aspace != AddressSpace::kImmediate) {
+        auto* type = addr == AddressSpace::kHandle ? sampler_ty : u32_ty;
+        auto* v = b.Var("v", addr, type, access);
+        if (addr != AddressSpace::kPrivate && addr != AddressSpace::kWorkgroup &&
+            addr != AddressSpace::kImmediate) {
             v->SetBindingPoint(0, 0);
         }
         mod.root_block->Append(v);
@@ -1636,26 +1804,26 @@ TEST_P(AddressSpace_AccessMode, Test) {
     const char* expected_error = nullptr;
     switch (access) {
         case core::Access::kWrite:
-            if (aspace == AddressSpace::kUniform || aspace == AddressSpace::kHandle) {
+            if (addr == AddressSpace::kUniform || addr == AddressSpace::kHandle) {
                 expected_error = "uniform and handle pointers must be read access";
-            } else if (aspace == AddressSpace::kWorkgroup) {
+            } else if (addr == AddressSpace::kWorkgroup) {
                 expected_error = "workgroup pointers must be read_write access";
-            } else if (aspace == AddressSpace::kStorage) {
+            } else if (addr == AddressSpace::kStorage) {
                 expected_error =
                     "vars in the 'storage' address space must have access 'read' or 'read-write'";
-            } else if (aspace == AddressSpace::kImmediate) {
+            } else if (addr == AddressSpace::kImmediate) {
                 expected_error = "immediate pointers must be read access";
             }
             break;
         case core::Access::kReadWrite:
-            if (aspace == AddressSpace::kUniform || aspace == AddressSpace::kHandle) {
+            if (addr == AddressSpace::kUniform || addr == AddressSpace::kHandle) {
                 expected_error = "uniform and handle pointers must be read access";
-            } else if (aspace == AddressSpace::kImmediate) {
+            } else if (addr == AddressSpace::kImmediate) {
                 expected_error = "immediate pointers must be read access";
             }
             break;
         case core::Access::kRead:
-            if (aspace == AddressSpace::kWorkgroup) {
+            if (addr == AddressSpace::kWorkgroup) {
                 expected_error = "workgroup pointers must be read_write access";
             }
             break;

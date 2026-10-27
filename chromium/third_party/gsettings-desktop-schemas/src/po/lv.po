@@ -1,0 +1,3588 @@
+# Latvian translation for gsettings-desktop-schemas.
+# Copyright (C) 2012 gsettings-desktop-schemas's COPYRIGHT HOLDER
+# This file is distributed under the same license as the gsettings-desktop-schemas package.
+#
+# SPDX-FileCopyrightText: 2012, 2013, 2014, 2016, 2017, 2018, 2024 Rūdolfs Mazurs <rudolfs.mazurs@gmail.com>
+msgid ""
+msgstr ""
+"Project-Id-Version: gsettings-desktop-schemas master\n"
+"Report-Msgid-Bugs-To: https://gitlab.gnome.org/GNOME/gsettings-desktop-schemas"
+"/issues/\n"
+"POT-Creation-Date: 2024-02-29 21:03+0000\n"
+"PO-Revision-Date: 2024-03-08 22:56+0200\n"
+"Last-Translator: Rūdolfs Mazurs <rudolfs.mazurs@gmail.com>\n"
+"Language-Team: Latvian <lata-l10n@googlegroups.com>\n"
+"Language: lv\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n != 0 ? 1 :"
+" 2);\n"
+"X-Generator: Lokalize 23.08.1\n"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:6
+msgid "On-screen keyboard"
+msgstr "Ekrāna tastatūra"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:7
+msgid "Whether the on-screen keyboard is turned on."
+msgstr "Vai ir ieslēgta ekrāna tastatūra"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:11
+msgid "Screen magnifier"
+msgstr "Ekrāna palielinātājs"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:12
+msgid "Whether the screen magnifier is turned on."
+msgstr "Vai ir ieslēgts ekrāna palielinātājs"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:16
+msgid "Screen reader"
+msgstr "Ekrāna lasītājs"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:17
+msgid "Whether the screen reader is turned on."
+msgstr "Vai ir ieslēgts ekrāna lasītājs"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:6
+msgid "Always show the Universal Access status icon"
+msgstr "Vienmēr rādīt universālās piekļuves statusa ikonu"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:7
+msgid ""
+"This key overrides the automatic hiding of the Universal Access status icon "
+"when no accessibility features are enabled."
+msgstr ""
+"Šī atslēga pārraksta universālās piekļuves statusa ikonas automātisko "
+"slēpšanu, ja nav ieslēgtas pieejamības iespējas."
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:14
+msgid "Always show the text caret"
+msgstr "Vienmēr rādīt teksta kursoru"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:15
+msgid ""
+"This key overrides the hiding of the text caret in noneditable text in "
+"applications."
+msgstr ""
+"Šī atslēgra pārraksta teksta kursora slēpšanu nerediģējamā tektā lietotnēs."
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:6
+msgid "High contrast"
+msgstr "Augsts kontrasts"
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:7
+msgid "Whether to use the high contrast style."
+msgstr "Vai izmantot augsta kontrasta stilu."
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:13
+msgid "Show status shapes"
+msgstr "Rādīt statusa formas"
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:14
+msgid ""
+"Whether to use shapes to indicate status in addition or instead of color."
+msgstr ""
+"Vai izmantot formas, lai norādītu statusu, kombinācijā ar krāsām, vai to "
+"vietā."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:6
+msgid "Enable accessibility keyboard shortcuts"
+msgstr "Ieslēgt pieejamības tastatūras saīsnes"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:10
+msgid "Beep when a keyboard accessibility feature changes"
+msgstr "Pīkstēt, kad mainās tastatūras pieejamības iespēja"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:11
+msgid ""
+"Whether to beep when a keyboard accessibility feature is enabled or disabled."
+msgstr ""
+"Vai pīkstēt, kad mainās tastatūras pieejamības iespēja ir ieslēgta vai "
+"izslēgta."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:15
+msgid "Disable keyboard accessibility after a timeout"
+msgstr "Izslēgt tastatūras pieejamību pēc kāda laika"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:16
+msgid ""
+"Whether to disable keyboard accessibility after a timeout, useful for shared "
+"machines."
+msgstr ""
+"Vai izslēgt tastatūras pieejamību pēc kāda laika. Noder koplietotiem "
+"datoriem."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:20
+msgid "Duration of the disabling timeout"
+msgstr "Izslēgšanas noildzes laiks"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:21
+msgid "Duration of the timeout before disabling the keyboard accessibility."
+msgstr "Laiks, pirms tiek izslēgtas tastatūras pieejamības iespējas."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:25
+msgid "Enable “Bounce Keys”"
+msgstr "Ieslēgt “atlecošos taustiņus”"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:26
+msgid "Whether the “Bounce Keys” keyboard accessibility feature is turned on."
+msgstr "Vai “atlecošo taustiņu” tastatūras pieejamības iespēja ir ieslēgta."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:30
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:65
+msgid "Minimum interval in milliseconds"
+msgstr "Minimālais intervāls milisekundēs."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:31
+msgid "Ignore multiple presses of the same key within this many milliseconds."
+msgstr "Ignorēt atkārtotu tā paša taustiņa nospiešanu šo milisekunžu laikā."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:35
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:80
+msgid "Beep when a key is rejected"
+msgstr "Pīkstēt, kad taustiņš tiek noraidīts"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:36
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:81
+msgid "Whether to beep when a key is rejected."
+msgstr "Vai pīkstēt, kad taustiņš tiek noraidīts."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:40
+msgid "Enable “Mouse Keys”"
+msgstr "Ieslēgt “peles taustiņus”"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:41
+msgid "Whether the “Mouse Keys” accessibility feature is turned on."
+msgstr "Vai “peles taustiņu” pieejamības iespēja ir ieslēgta."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:45
+msgid "Pixels per seconds"
+msgstr "Pikseļi sekundē"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:46
+msgid "How many pixels per second to move at the maximum speed."
+msgstr "Cik pikseļus sekundē pārvietot pie maksimālā ātruma."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:50
+msgid "How long to accelerate in milliseconds"
+msgstr "Cik ilgi paātrināt, milisekundēs"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:51
+msgid "How many milliseconds it takes to go from 0 to maximum speed."
+msgstr "Cik milisekundēs var tikt no 0 līdz maksimālajam ātrumam."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:55
+msgid "Initial delay in milliseconds"
+msgstr "Sākotnējā aizkave milisekundēs"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:56
+msgid ""
+"How many milliseconds to wait before mouse movement keys start to operate."
+msgstr "Cik milisekundes gaidīt, pirms peles kustības taustiņi sāk darboties."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:60
+msgid "Enable “Slow Keys”"
+msgstr "Ieslēgt “lēnos taustiņus”"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:61
+msgid "Whether the “Slow Keys” accessibility feature is turned on."
+msgstr "Vai “lēno taustiņu” pieejamības iespēja ir ieslēgta."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:66
+msgid ""
+"Do not accept a key as being pressed unless held for this many milliseconds."
+msgstr ""
+"Nepieņemt taustiņa piespiešanu, kamēr tas nav turēts piespiests tik daudz "
+"milisekunžu."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:70
+msgid "Beep when a key is first pressed"
+msgstr "Pīkstēt, kad taustiņš ir nospiests pirmo reizi"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:71
+msgid "Whether to beep when a key is first pressed."
+msgstr "Vai pīkstēt, kad taustiņš ir nospiests pirmo reizi."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:75
+msgid "Beep when a key is accepted"
+msgstr "Pīkstēt, kad taustiņš tiek pieņemts"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:76
+msgid "Whether to beep when a key is accepted."
+msgstr "Vai pīkstēt, kad taustiņš tiek pieņemts."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:85
+msgid "Enable sticky keys"
+msgstr "Ieslēgt lipīgos taustiņus"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:86
+msgid "Whether the sticky keys accessibility feature is turned on."
+msgstr "Vai lipīgo taustiņu pieejamības iespēja ir ieslēgta."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:90
+msgid "Disable when two keys are pressed at the same time"
+msgstr "Izslēgt, kad divi taustiņi nospiesti reizē"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:91
+msgid ""
+"Whether to disable sticky keys if two keys are pressed at the same time."
+msgstr "Vai izslēgt lipīgos taustiņus, kad divi taustiņi ir piespiesti reizē."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:95
+msgid "Beep when a modifier is pressed."
+msgstr "Pīkstēt, kad ir piespiests modifikatora taustiņš."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:96
+msgid "Whether to beep when a modifier key is pressed."
+msgstr "Vai pīkstēt, kad ir piespiests modifikatora taustiņš."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:100
+msgid "Enable “Toggle Keys”"
+msgstr "Ieslēgt “pārslēgšanas taustiņus”"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:101
+msgid "Whether the “Toggle Keys” accessibility feature is turned on."
+msgstr "Vai “pārslēgšanas taustiņu” pieejamības iespēja ir ieslēgta."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:8
+msgid "Mouse Tracking Mode"
+msgstr "Peles sekošanas režīms"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:9
+msgid ""
+"Determines the position of the magnified mouse image within the magnified "
+"view and how it reacts to system mouse movement. The values are • none: no "
+"mouse tracking; • centered: the mouse image is displayed at the center of "
+"the zoom region (which also represents the point under the system mouse) and "
+"the magnified contents are scrolled as the system mouse moves; • "
+"proportional: the position of the magnified mouse in the zoom region is "
+"proportionally the same as the position of the system mouse on screen; • "
+"push: when the magnified mouse intersects a boundary of the zoom region, the "
+"contents are scrolled into view."
+msgstr ""
+"Nosaka palielinātās peles attēla novietojumu palielinātajā laukā, un kā tas "
+"reaģē uz peles kustību. Vērības ir • none: nesekot pelei; • centered: peles "
+"attēls tiek rādīts tuvinātā reģiona vidū (kas arī apzīmē punktu zem sistēmas "
+"peles) un palielinātais saturs tiek ritināts līdz ar sistēmas peles kustību; "
+"• proportional: palielinātās peles novietojums palielinātajā reģionā ir "
+"proporcionāli tāds pats kā sistēmas peles novietojums uz ekrāna; • push: kad "
+"palielinātā pele šķērso palielinājuma reģiona robežu, saturs tiek ieritināts "
+"skatā."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:26
+msgid "Focus Tracking Mode"
+msgstr "Fokusa sekošanas režīms"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:27
+msgid ""
+"Determines the position of the focused widget within magnified view. The "
+"values are: • none: no focus tracking • centered: the focused image is "
+"displayed at the center of the zoom region (which also represents the point "
+"under the system focus) and the magnified contents are scrolled as the "
+"system focus moves • proportional: the position of the magnified focus in "
+"the zoom region is proportionally the same as the position of the system "
+"focus on screen • push: when the magnified focus intersects a boundary of "
+"the zoom region, the contents are scrolled into view"
+msgstr ""
+"Nosaka fokusētās logdaļas novietojumu palielinātajā laukā. Vērības ir: • "
+"none: nesekot fokusam • centered: fokusētais attēls tiek rādīts tuvinātā "
+"reģiona vidū (kas arī apzīmē punktu zem sistēmas fokusa) un palielinātais "
+"saturs tiek ritināts līdz ar sistēmas fokusa kustību • proportional: "
+"palielinātā fokusa novietojums palielinātajā reģionā ir proporcionāli tāds "
+"pats kā sistēmas fokusa novietojums uz ekrāna • push: kad palielinātais "
+"fokus šķērso palielinājuma reģiona robežu, saturs tiek ieritināts skatā."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:46
+msgid "Caret Tracking Mode"
+msgstr "Kursora sekošanas režīms"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:47
+msgid ""
+"Determines the position of the caret within magnified view. The values are: "
+"• none: no caret tracking • centered: the image of the caret is displayed at "
+"the center of the zoom region (which also represents the point under the "
+"system caret) and the magnified contents are scrolled as the system caret "
+"moves • proportional: the position of the magnified caret in the zoom region "
+"is proportionally the same as the position of the system caret on screen • "
+"push: when the magnified caret intersects a boundary of the zoom region, the "
+"contents are scrolled into view"
+msgstr ""
+"Nosaka kursora novietojumu palielinātajā laukā. Vērības ir • none: nesekot "
+"kursoram • centered: kursora attēls tiek rādīts tuvinātā reģiona vidū (kas "
+"arī apzīmē punktu zem sistēmas kursora) un palielinātais saturs tiek "
+"ritināts līdz ar sistēmas kursora kustību • proportional: palielinātā "
+"kursora novietojums palielinātajā reģionā ir proporcionāli tāds pats kā "
+"sistēmas kursora novietojums uz ekrāna • push: kad palielinātais kursors "
+"šķērso palielinājuma reģiona robežu, saturs tiek ieritināts skatā."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:64
+msgid "Screen position"
+msgstr "Ekrāna novietojums"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:65
+msgid ""
+"The magnified view either fills the entire screen, or occupies the top-half, "
+"bottom-half, left-half, or right-half of the screen."
+msgstr ""
+"Palielinātais skats vai nu aizpilda visu ekrānu, vai aizņem augšējo pusi, "
+"apakšējo pusi, kreiso pusi vai labo pusi ekrānam."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:73
+msgid "Magnification factor"
+msgstr "Palielinājuma koeficients"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:74
+msgid ""
+"The power of the magnification. A value of 1.0 means no magnification. A "
+"value of 2.0 doubles the size."
+msgstr ""
+"Palielinājuma pakāpe. Vērtība 1.0 nozīmē, ka nav palielinājuma. Vērtība 2.0 "
+"dubulto izmēru."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:81
+msgid "Enable lens mode"
+msgstr "Ieslēgt lupas režīmu"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:82
+msgid ""
+"Whether the magnified view should be centered over the location of the "
+"system mouse and move with it."
+msgstr ""
+"Vai palielinājuma skatam vajadzētu būt centrētam virs peles un pārvietoties "
+"ar to."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:89
+msgid "Scroll magnified contents beyond the edges of the desktop"
+msgstr "Ritināt palielināto saturu pāri darbvirsmas malām."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:92
+msgid ""
+"For centered mouse tracking, when the system pointer is at or near the edge "
+"of the screen, the magnified contents continue to scroll such that the "
+"screen edge moves into the magnified view."
+msgstr ""
+"Centrētai peles izsekošanai, kad sistēmas rādītājs ir tuvu ekrāna malai, "
+"palielinātais saturs turpinās ritināties tā, ka ekrāna malas pārvietosies uz "
+"palielināto skatu."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:102
+msgid "Show or hide crosshairs"
+msgstr "Rādīt vai slēpt krustiņu"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:103
+msgid ""
+"Enables/disables display of crosshairs centered on the magnified mouse "
+"sprite."
+msgstr ""
+"Ieslēdz / izslēdz krustiņa rādīšanu, kas ir centrēts uz peles rādītāja."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:110
+msgid "Thickness of the crosshairs in pixels"
+msgstr "Krustiņa biezums pikseļos"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:111
+msgid ""
+"Width in pixels of the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr ""
+"Platums pikseļos horizontālajām un vertikālajām līnijām, kas veido krustiņu."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:117
+msgid "Color of the crosshairs"
+msgstr "Krustiņa krāsa"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:118
+msgid ""
+"The color of the the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr "Krāsa horizontālajām un vertikālajām līnijām, kas veido krustiņu."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:126
+msgid "Opacity of the crosshairs"
+msgstr "Krustiņu blīvums"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:127
+msgid ""
+"Determines the transparency of the crosshairs, from fully opaque to fully "
+"transparent."
+msgstr ""
+"Nosaka krustiņa caurspīdīgumu, no pilnīgi necaurredzama līdz pilnīgi "
+"caurspīdīgam."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:135
+msgid "Length of the crosshairs in pixels"
+msgstr "Krustiņa garums pikseļos"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:136
+msgid ""
+"Determines the length in pixels of the vertical and horizontal lines that "
+"make up the crosshairs."
+msgstr ""
+"Nosaka garumu pikseļos horizontālajām un vertikālajām līnijām, kas veido "
+"krustiņu."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:143
+msgid "Clip the crosshairs at the center"
+msgstr "Apraut krustiņu vidū"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:144
+msgid ""
+"Determines whether the crosshairs intersect the magnified mouse sprite, or "
+"are clipped such that the ends of the horizontal and vertical lines surround "
+"the mouse image."
+msgstr ""
+"Nosaka, vai krustiņš pārklājas ar palielināto peles rādītāju, vai arī tiek "
+"aprauts tādā veidā, ka horizontālās un vertikālās līnijas iekļauj peles "
+"attēlu."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:152
+msgid "Inverse lightness"
+msgstr "Apgriezts gaišums"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:153
+msgid ""
+"Determines whether the lightness values are inverted: darker colors become "
+"lighter and vice versa, and white and black are interchanged."
+msgstr ""
+"Nosaka, vai gaišuma vērtības tiek apgrieztas — tumšākas vērtības kļūst "
+"gaišākas un otrādi. Baltās un melnās vērtības tiek mainītas vietām."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:161
+msgid "Color Saturation"
+msgstr "Krāsu piesātinājums"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:162
+msgid ""
+"Represents a change to the color saturation, from 0.0 (grayscale) to 1.0 "
+"(full color)."
+msgstr ""
+"Attēlo izmaiņas krāsu piesātinājumā, no 0.0 (pelēktoņu) uz 1.0 (visas "
+"krāsas)."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:170
+msgid "Change brightness of red"
+msgstr "Mainīt sarkanā gaišumu"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:171
+msgid ""
+"Represents a change to the default brightness of the red component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Attēlo izmaiņas noklusējuma gaišumam sarkanajai komponentei. Nulle nozīmē "
+"bez izmaiņām, vērtības zem nulles norāda samazinājumu, bet vērtības virs "
+"nulles norāda palielinājumu."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:180
+msgid "Change brightness of green"
+msgstr "Mainīt zaļā gaišumu"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:181
+msgid ""
+"Represents a change to the default brightness for the green component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Attēlo izmaiņas noklusējuma gaišumam zaļajai komponentei. Nulle nozīmē bez "
+"izmaiņām, vērtības zem nulles norāda samazinājumu, bet vērtības virs nulles "
+"norāda palielinājumu."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:190
+msgid "Change brightness of blue"
+msgstr "Mainīt zilā gaišumu"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:191
+msgid ""
+"Represents a change to the default brightness for the blue component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Attēlo izmaiņas noklusējuma gaišumam zilajai komponentei. Nulle nozīmē bez "
+"izmaiņām, vērtības zem nulles norāda samazinājumu, bet vērtības virs nulles "
+"norāda palielinājumu."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:200
+msgid "Change contrast of red"
+msgstr "Mainīt sarkanā kontrastu"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:201
+msgid ""
+"Represents a change to the default contrast of the red component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Attēlo izmaiņas noklusējuma kontrastam sarkanajai komponentei. Nulle nozīmē "
+"bez kontrasta izmaiņām, vērtības zem nulles norāda samazinājumu, bet "
+"vērtības virs nulles norāda palielinājumu."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:210
+msgid "Change contrast of green"
+msgstr "Mainīt zaļā kontrastu"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:211
+msgid ""
+"Represents a change to the default contrast of the green component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Attēlo izmaiņas noklusējuma kontrastam zaļajai komponentei. Nulle nozīmē bez "
+"kontrasta izmaiņām, vērtības zem nulles norāda samazinājumu, bet vērtības "
+"virs nulles norāda palielinājumu."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:220
+msgid "Change contrast of blue"
+msgstr "Mainīt zilā kontrastu"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:221
+msgid ""
+"Represents a change to the default contrast of the blue component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Attēlo izmaiņas noklusējuma kontrastam zilajai komponentei. Nulle nozīmē bez "
+"kontrasta izmaiņām, vērtības zem nulles norāda samazinājumu, bet vērtības "
+"virs nulles norāda palielinājumu."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:6
+msgid "Dwell click time"
+msgstr "Apstājas klikšķa laiks"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:7
+msgid "Time in seconds before a click is triggered."
+msgstr "Laiks sekundēs, pirms tiek aktivizēts klikšķis."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:11
+msgid "Movement threshold"
+msgstr "Kustības slieksnis"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:12
+msgid "Distance in pixels before movement will be recognized."
+msgstr "Attālums pikseļos, pirms tiek atpazīta kustība."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:16
+msgid "Gesture single click"
+msgstr "Viena klikšķa mājiens"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:17
+msgid "Direction to perform a single click (“left”, “right”, “up”, “down”)."
+msgstr "Virziens, kurā veic vienu klikšķi (“left”, “right”, “up”, “down”)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:21
+msgid "Gesture double click"
+msgstr "Dubultklikšķa mājiens"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:22
+msgid "Direction to perform a double click (“left”, “right”, “up”, “down”)."
+msgstr "Virziens, kurā veic dubultklikšķi (“left”, “right”, “up”, “down”)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:26
+msgid "Gesture drag click"
+msgstr "Vilkšanas klikšķa mājiens"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:27
+msgid "Direction to perform dragging (“left”, “right”, “up”, “down”)."
+msgstr "Virziens, kurā veic vilkšanu (“left”, “right”, “up”, “down”)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:31
+msgid "Gesture secondary click"
+msgstr "Sekundārā klikšķa mājiens"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:32
+msgid "Direction to perform a secondary click (“left”, “right”, “up”, “down”)."
+msgstr "Virziens, kurā veic sekundāro klikšķi (“left”, “right”, “up”, “down”)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:36
+msgid "Dwell click mode"
+msgstr "Apstājas klikšķa režīms"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:37
+msgid ""
+"The active dwell click mode. Possible values are “window” and “gesture”."
+msgstr ""
+"Aktīvā apstājas klikšķa režīms. Iespējamās vērtības ir “window” un “gesture”."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:41
+msgid "Show click type window"
+msgstr "Rādīt klikšķa veida logu"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:42
+msgid "Show click type window."
+msgstr "Rādīt klikšķa veida logu."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:46
+msgid "Enable dwell clicks"
+msgstr "Ieslēgt apstājas klikšķus"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:47
+msgid "Enable dwell clicks."
+msgstr "Ieslēgt apstājas klikšķus."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:51
+msgid "Secondary click enabled"
+msgstr "Sekundārais klikšķis ieslēgts"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:52
+msgid "Enable simulated secondary clicks"
+msgstr "Ieslēgt simulētos sekundāros klikšķus"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:56
+msgid "Secondary click time"
+msgstr "Sekundārā klikšķa laiks"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:57
+msgid "Time in seconds before a simulated secondary click is triggered."
+msgstr "Laiks sekundēs, pirms tiek aktivizēts simulētais sekundārais klikšķis."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:6
+msgid "Folder children"
+msgstr "Mapes bērni"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:7
+msgid ""
+"List of relative settings paths at which app-folders are stored. Each folder "
+"uses the org.gnome.desktop.app-folders.folder schema."
+msgstr ""
+"Saraksts ar relatīvajiem iestatījumu ceļiem, kur tiek glabātas lietotņu "
+"mapes. Katra mape izmanto org.gnome.desktop.app-folders.folder shēmu."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:15
+msgid "Folder name"
+msgstr "Mapes nosaukums"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:16
+msgid "The name of the application folder."
+msgstr "Lietotnes mapes nosaukums."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:20
+msgid "Translate the name"
+msgstr "Tulkot nosaukumu"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:21
+msgid ""
+"Whether the name key is a filename to be looked up in /usr/share/desktop-"
+"directories."
+msgstr ""
+"Vai nosaukuma atslēga ir datnes nosaukums, kas jāuzmeklē /usr/share/desktop-"
+"directories."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:26
+msgid "Applications"
+msgstr "Lietotnes"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:27
+msgid ""
+"The list of IDs of applications that are explicitly included in this folder."
+msgstr "Saraksts ar lietotņu ID, kas ir skaidri iekļauti šajā mapē."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:32
+msgid "Categories"
+msgstr "Kategorijas"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:33
+msgid ""
+"A list of categories for which apps will be placed into this folder by "
+"default, in addition to the apps that are listed in the apps key."
+msgstr ""
+"Saraksts ar kategorijām, kurām lietotnes tiks ievietotas šajā mapē pēc "
+"noklusējuma. Klāt pie lietotnēm, kas ir uzskaitītas lietotņu atslēgā."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:39
+msgid "Excluded applications"
+msgstr "Izslēgtās lietotnes"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:40
+msgid ""
+"A list of IDs of applications that are excluded from this folder. This can "
+"be used to remove applications that would otherwise be included by category."
+msgstr ""
+"Saraksts ar lietotņu ID, kas tiek izslēgts no šīs mapes. To var izmantot, "
+"lai izņemtu lietotnes, kas citādāk tiktu iekļautas pēc kategorijas."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:6
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:90
+msgid "Picture Options"
+msgstr "Attēla opcijas"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:7
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:91
+msgid ""
+"Determines how the image set by wallpaper_filename is rendered. Possible "
+"values are “none”, “wallpaper”, “centered”, “scaled”, “stretched”, “zoom”, "
+"“spanned”."
+msgstr ""
+"Nosaka, kā attēlot attēlu, ko iestata wallpaper_filename. Iespējamās "
+"vērtības ir “none”, “wallpaper”, “centered”, “scaled”, “stretched”, “zoom”, "
+"“spanned”."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:15
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:99
+msgid "Picture URI"
+msgstr "Attēla URI"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:16
+#: schemas/org.gnome.desktop.background.gschema.xml.in:24
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:100
+msgid ""
+"URI to use for the background image. Note that the backend only supports "
+"local (file://) URIs."
+msgstr ""
+"URI, ko izmantot fona attēlam. Ņemiet vērā, ka aizmugure atbalsta tikai "
+"lokālos (file://) URIs."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:23
+msgid "Picture URI (dark)"
+msgstr "Attēla URI (tumšs)"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:32
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:108
+msgid "Picture Opacity"
+msgstr "Attēla blīvums"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:33
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:109
+msgid "Opacity with which to draw the background picture."
+msgstr "Blīvums, ar kādu zīmēt fona attēlu."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:39
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:115
+msgid "Primary Color"
+msgstr "Primārā krāsa"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:40
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:116
+msgid "Left or Top color when drawing gradients, or the solid color."
+msgstr "Kreisā vai augšējā krāsa, kad zīmē krāsu pārejas, vai vienlaidu krāsa."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:46
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:122
+msgid "Secondary Color"
+msgstr "Sekundārā krāsa"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:47
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:123
+msgid "Right or Bottom color when drawing gradients, not used for solid color."
+msgstr ""
+"Labā vai apakšējā krāsa, kad zīmē krāsu pārejas, netiek izmantota vienlaidu "
+"krāsām."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:53
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:129
+msgid "Color Shading Type"
+msgstr "Krāsu ēnošanas tips"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:54
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:130
+msgid ""
+"How to shade the background color. Possible values are “horizontal”, "
+"“vertical”, and “solid”."
+msgstr ""
+"Kā ēnot fona krāsu. Iespējamās vērtības ir “horizontal”, “vertical” un "
+"“solid”."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:61
+msgid "Have file manager handle the desktop"
+msgstr "Likt datņu pārvaldniekam apstrādāt darbvirsmu"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:62
+msgid "If set to true, then file manager will draw the icons on the desktop."
+msgstr ""
+"Ja iestatīts uz “patiess”, datņu pārvaldnieks zīmēs ikonas uz darbvirsmas."
+
+#: schemas/org.gnome.desktop.calendar.gschema.xml.in:6
+msgid "Show the week date in the calendar"
+msgstr "Kalendārā rādīt nedēļas datumu"
+
+#: schemas/org.gnome.desktop.calendar.gschema.xml.in:7
+msgid "If true, display the ISO week date in the calendar."
+msgstr "Ja patiess, kalendārā rādīt ISO nedēļas datumus."
+
+#: schemas/org.gnome.desktop.datetime.gschema.xml.in:6
+msgid "Automatically update timezone"
+msgstr "Automātiski atjaunināt laika joslas"
+
+#: schemas/org.gnome.desktop.datetime.gschema.xml.in:7
+msgid "Whether to automatically update the timezone using geolocation."
+msgstr "Vai automātiski atjaunināt laika joslas, izmantojot geolokāciju."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:14
+msgid "Default calendar"
+msgstr "Noklusējuma kalendārs"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:15
+msgid ""
+"Default calendar application DEPRECATED: This key is deprecated and ignored. "
+"The preferred calendar application is the application handling the text/"
+"calendar mime type."
+msgstr ""
+"Noklusējuma kalendāra lietotne NOVECOJIS: Šī atslēga ir novecojusi un tiek "
+"ignorēta. Vēlamā kalendāra lietotne ir tā, kas apstrādā text/calendar mime "
+"tipu."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:24
+msgid "Calendar needs terminal"
+msgstr "Kalendāram vajag termināli"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:25
+msgid ""
+"Whether the default calendar application needs a terminal to run. "
+"DEPRECATED: This key is deprecated and ignored. The preferred calendar "
+"application is the application handling the text/calendar mime type, whether "
+"it needs a terminal is taken from its desktop file."
+msgstr ""
+"Vai noklusējuma kalendāra lietotnei ir vajadzīgs terminālis. NOVECOJIS: Šī "
+"atslēga ir novecojusi un tiek ignorēta. Vēlamā kalendāra lietotne ir tā, kas "
+"apstrādā text/calendar mime tipu; to, vai tai ir vajadzīgs terminālis, tā "
+"uzzina no darbvirsmas datnes."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:37
+msgid "Default tasks"
+msgstr "Noklusējuma uzdevumi"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:38
+msgid "Default tasks application."
+msgstr "Noklusējuma uzdevumu lietotne."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:44
+msgid "Tasks needs terminal"
+msgstr "Uzdevumiem vajag termināli"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:45
+msgid "Whether the default tasks application needs a terminal to run."
+msgstr "Vai noklusējuma uzdevumu lietotnei darbam vajag termināli."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:53
+msgid "Terminal application"
+msgstr "Termināļa lietotne"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:54
+msgid ""
+"Terminal program to use when starting applications that require one. "
+"DEPRECATED: This key is deprecated and ignored. The default terminal is "
+"handled in GIO."
+msgstr ""
+"Termināļa programma, ko lietot, kad tiek palaistas lietotnes, kam vajadzīgs "
+"terminālis. NOVECOJIS: Šī atslēga ir novecojusi un tiek ignorēta. "
+"Noklusējuma terminālis tiek apstrādāts iekš GIO."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:63
+msgid "Exec Arguments"
+msgstr "Exec parametri"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:64
+msgid ""
+"Argument used to execute programs in the terminal defined by the “exec” key. "
+"DEPRECATED: This key is deprecated and ignored. The default terminal and how "
+"to invoke it is handled in GIO."
+msgstr ""
+"Parametri, ko izmantot, lai izpildītu programmas terminālī, ko nosaka “exec” "
+"atslēga. NOVECOJIS: Šī atslēga ir novecojusi un tiek ignorēta. Noklusējuma "
+"terminālis  un kā to izsauc tiek apstrādāts iekš GIO."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:7
+msgid "Current input source"
+msgstr "Pašreizējais ievades avots"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:8
+msgid ""
+"The zero-based index into the input sources list specifying the current one "
+"in effect. The value is automatically capped to remain in the range [0, "
+"sources_length) as long as the sources list isn’t empty. DEPRECATED: This "
+"key is deprecated and ignored."
+msgstr ""
+"Uz nulles balstīts indekss ievades avotu sarakstā, kas nosaka, kurš tagad ir "
+"aktīvs. Vērtība tiek automātiski ierobežota, lai paliktu intervālā [0;"
+"avotu_garums), kamēr vien avotu saraksts nav tukšs. NOVECOJIS: šī atslēga ir "
+"novecojusi un tiek ignorēta."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:19
+msgid "List of input sources"
+msgstr "Ievades avotu saraksts"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:20
+msgid ""
+"List of input source identifiers available. Each source is specified as a "
+"tuple of 2 strings. The first string is the type and can be one of “xkb” or "
+"“ibus”. For “xkb” sources the second string is “xkb_layout+xkb_variant” or "
+"just “xkb_layout” if a XKB variant isn’t needed. For “ibus” sources the "
+"second string is the IBus engine name. An empty list means that the X "
+"server’s current XKB layout and variant won’t be touched and IBus won’t be "
+"used."
+msgstr ""
+"Saraksts ar pieejamajiem ievades avotu identifikatoriem. Katru avotu apzīmē "
+"ar vidu virkņu kortežu. Pirmā virkne ir tips un var būt “xkb” vai “ibus”. "
+"“xkb” avotiem sekundārā virkne ir “xkb_layout+xkb_variant” vai vienkārši "
+"“xkb_layout”, ja XKB variants nav vajadzīgs. “ibus” avotiem sekundārā virkne "
+"ir IBus dziņa nosaukums. Tukšs saraksts nozīmē to, ka X servera pašreizējais "
+"XKB izkārtojums un variants netiks aiztikts un IBus netiks izmantots."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:33
+msgid "List of most recently used input sources"
+msgstr "Nesen izmantoto ievades avotu saraksts"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:34
+msgid ""
+"List of most recently used input sources. The value is in the same format as "
+"the available sources list."
+msgstr ""
+"Nesen izmantoto ievades avotu saraksts. Vērtība ir tādā pat formātā, kā "
+"pieejamo avotu saraksts."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:41
+msgid "List of XKB options"
+msgstr "Saraksts ar XKB opcijām"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:42
+msgid ""
+"List of XKB options. Each option is an XKB option string as defined by "
+"xkeyboard-config’s rules files."
+msgstr ""
+"Saraksts ar XKB opcijām. Katra opcija ir XKB opciju virkne, kā to nosaka "
+"xkeyboard-config kārtulu datne."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:49
+msgid "XKB model to use"
+msgstr "Izmantojamais XKB modelis"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:50
+msgid ""
+"The XKB model to use. The value is the same identifier as defined by "
+"xkeyboard-config’s geometry files."
+msgstr ""
+"Izmantojamais XKB modelis. Vērtība ir tas pats identifikators, kas noteikts "
+"xkeyboard-config ģeometrijas datnēs."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:57
+msgid "Show all installed input sources"
+msgstr "Rādīt visus instalētos ievades avotus"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:58
+msgid ""
+"Makes all installed input sources available for choosing in System Settings."
+msgstr ""
+"Padara visus instalēto ievažu avotus pieejamus izvēlei sistēmas iestatījumos."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:65
+msgid "Use different input sources for each window"
+msgstr "Lietot dažādus ievades avotus katram logam"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:66
+msgid ""
+"When enabled, input sources get attached to the currently focused window "
+"when activated."
+msgstr ""
+"Kad ieslēgts, ievades avoti tiek piesaistīti pašlaik fokusētajam logam, kad "
+"ieslēgts."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:6
+msgid "Enable Toolkit Accessibility"
+msgstr "Ieslēgt rīkkopas pieejamību"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:7
+msgid "Whether toolkits should load accessibility related modules."
+msgstr "Vai rīkkopām vajadzētu ielādēt ar pieejamību saistītus moduļus."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:13
+msgid "Enable Animations"
+msgstr "Ieslēgt animācijas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:14
+msgid ""
+"Whether animations should be displayed. Note: This is a global key, it "
+"changes the behaviour of the window manager, the panel etc."
+msgstr ""
+"Vai vajadzētu attēlot animācijas. Piezīme — šī ir globāla atslēga, tā maina "
+"loga pārvaldnieka, paneļa u.c. uzvedību."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:21
+msgid "Menus Have Tearoff"
+msgstr "Izvēlnes var noplēst"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:22
+msgid "Whether menus should have a tearoff."
+msgstr "Vai izvēlnēm jābūt noplēšamām."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:28
+msgid "Can Change Accels"
+msgstr "Var mainīt paātrinātājus"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:29
+msgid ""
+"Whether the user can dynamically type a new accelerator when positioned over "
+"an active menuitem."
+msgstr ""
+"Vai lietotājs var dinamiski ierakstīt jaunu paātrinātāju, kad ir novietots "
+"virs aktīvā izvēlnes vienuma."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:36
+msgid "Toolbar Style"
+msgstr "Rīkjoslas stils"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:37
+msgid ""
+"Toolbar Style. Valid values are “both”, “both-horiz”, “icons”, and “text”."
+msgstr ""
+"Rīkjoslas stils. Derīgās vērtības ir  “both”, “both-horiz”, “icons” un "
+"“text”."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:44
+msgid "Menubar Detachable"
+msgstr "Atdalāma izvēļņu josla"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:45
+msgid "Whether the user can detach menubars and move them around."
+msgstr "Vai lietotājs var atdalīt izvēļņu joslas un tās pārvietot."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:51
+msgid "Toolbar Detachable"
+msgstr "Atdalāma rīkjosla"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:52
+msgid "Whether the user can detach toolbars and move them around."
+msgstr "Vai lietotājs var atvienot rīkjoslas un tās pārvietot."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:58
+msgid "Toolbar Icon Size"
+msgstr "Rīkjoslas ikonu izmērs"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:59
+msgid "Size of icons in toolbars, either “small” or “large”."
+msgstr "Ikonu izmērs rīkjoslās, vai nu “small” vai “large”."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:65
+msgid "Cursor Blink"
+msgstr "Kursora mirgošana"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:66
+msgid "Whether the cursor should blink."
+msgstr "Vai kursoram būtu jāmirgo."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:73
+msgid "Cursor Blink Time"
+msgstr "Kursora mirgošanas laiks"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:74
+msgid "Length of the cursor blink cycle, in milliseconds."
+msgstr "Kursora mirgošanas cikla garums, milisekundēs."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:81
+msgid "Cursor Blink Timeout"
+msgstr "Kursora mirgošanas noildze"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:82
+msgid "Time after which the cursor stops blinking, in seconds."
+msgstr "Laiks, pēc kura kursors beidz mirgot, sekundēs."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:88
+msgid "Icon Theme"
+msgstr "Ikonu motīvs"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:89
+msgid "Icon theme to use for the panel, nautilus etc."
+msgstr "Ikonu motīvs, ko izmantot panelim, nautilus utt."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:95
+msgid "Gtk+ Theme"
+msgstr "Gtk+ motīvs"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:96
+msgid "Basename of the default theme used by gtk+."
+msgstr "Bāzes nosaukums noklusējuma motīvam, ko izmanto gtk+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:102
+msgid "Gtk+ Keybinding Theme"
+msgstr "Gtk+ taustiņu sasaistes motīvs"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:103
+msgid "Basename of the default keybinding theme used by gtk+."
+msgstr ""
+"Bāzes nosaukums noklusējuma taustiņu sasaistes motīvam, ko izmanto gtk+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:109
+msgid "Default font"
+msgstr "Noklusējuma fonts"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:110
+msgid "Name of the default font used by gtk+."
+msgstr "Nosaukums noklusējuma fontam, ko izmanto gtk+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:116
+msgid "Directories with avatar faces"
+msgstr "Direktoriji ar avatāru sejām"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:117
+msgid ""
+"Directories to override the default avatar faces installed by gnome-control-"
+"center."
+msgstr ""
+"Direktoriji, lai ignorētu noklusējuma avatāru sejas, ko instalējis gnome-"
+"control-center."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:124
+msgid "Text scaling factor"
+msgstr "Teksta mēroga koeficients"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:125
+msgid ""
+"Factor used to enlarge or reduce text display, without changing font size."
+msgstr ""
+"Koeficients, ko izmanto, lai palielinātu vai samazinātu teksta attēlošanu, "
+"nemainot fonta izmēru."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:131
+msgid "Window scaling factor"
+msgstr "Loga mēroga koeficients"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:132
+msgid ""
+"Integer factor used to scale windows by. For use on high-dpi screens. 0 "
+"means pick automatically based on monitor."
+msgstr ""
+"Vesels koeficients, par kādu mērogot logu. Paredzēts augstas izšķirtspējas "
+"(dpi) ekrāniem. 0 nozīmē izvēlēties automātiski, nosakot pēc monitora."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:139
+msgid "GTK IM Preedit Style"
+msgstr "GTK TZ pirmsrediģēšanas stils"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:140
+msgid "Name of the GTK+ input method Preedit Style used by gtk+."
+msgstr ""
+"GTK+ ievades metodes nosaukums pirmsrediģēšanas stilam, ko izmanto gtk+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:146
+msgid "GTK IM Status Style"
+msgstr "GTK TZ statusa stils"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:147
+msgid "Name of the GTK+ input method Status Style used by gtk+."
+msgstr "GTK+ ievades metodes nosaukums statusa stilam, ko izmanto gtk+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:153
+msgid "GTK IM Module"
+msgstr "GTK TZ modulis"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:154
+msgid "Name of the input method module used by GTK+."
+msgstr "Ievades metodes moduļa nosaukums, ko izmanto gtk+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:160
+msgid "Document font"
+msgstr "Dokumenta fonts"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:161
+msgid "Name of the default font used for reading documents."
+msgstr "Nosaukums noklusējuma fontam, ko izmanto dokumentu lasīšanai."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:167
+msgid "Monospace font"
+msgstr "Fiksēta platuma fonts"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:168
+msgid ""
+"Name of a monospaced (fixed-width) font for use in locations like terminals."
+msgstr ""
+"Nosaukums fiksēta platuma fontam, ko izmantot tādās vietās, kā termināļi."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:175
+msgid "Menubar accelerator"
+msgstr "Izvēļņu joslu paātrinātāji"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:176
+msgid "Keyboard shortcut to open the menu bars."
+msgstr "Īsinājumtaustiņš izvēļņu joslu atvēršanai."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:182
+msgid "Cursor theme"
+msgstr "Kursora motīvs"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:183
+msgid ""
+"Cursor theme name. Used only by Xservers that support the Xcursor extension."
+msgstr ""
+"Kursora motīva nosaukums. To izmanto Xservers, kas atbalsta Xcursor "
+"paplašinājumu."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:187
+msgid "Cursor size"
+msgstr "Kursora izmērs"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:188
+msgid "Size of the cursor used as cursor theme."
+msgstr "Kursora izmērs, ko lieto kursora motīvs."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:192
+msgid "Timeout before click repeat"
+msgstr "Noildze pirms tiek atkārtots klikšķis"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:193
+msgid ""
+"Timeout in milliseconds before a click starts repeating (on spinner buttons "
+"for example)."
+msgstr ""
+"Noildze milisekundēs, pirms klikšķis sāk atkārtoties (piemēram, uz ritenīša "
+"pogas)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:197
+msgid "Timeout between click repeats"
+msgstr "Noildze starp atkārtotiem klikšķiem"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:198
+msgid ""
+"Timeout in milliseconds between repeated clicks when a button is left "
+"pressed."
+msgstr ""
+"Noildze milisekundēs starp atkārtotiem klikšķiem, kad poga tiek turēta "
+"piespiesta."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:202
+msgid "Palette used in the color selector"
+msgstr "Palete, ko lieto krāsu selektorā"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:203
+msgid ""
+"Palette used in the color selector as defined by the “gtk-color-palette” "
+"setting"
+msgstr ""
+"Palete, ko lieto krāsu selektorā, kā to nosaka “gtk-color-palette” "
+"iestatījums"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:207
+msgid "List of symbolic names and color equivalents"
+msgstr "Saraksts ar simboliskajiem nosaukumiem un krāsu ekvivalentiem"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:208
+msgid ""
+"A “\\n” separated list of “name:color” as defined by the “gtk-color-scheme” "
+"setting"
+msgstr ""
+"Ar “\\n” atdalīts saraksts no “name:color”, kā to nosaka “gtk-color-scheme” "
+"iestatījums"
+
+#. TRANSLATORS: select your locale's default clock format, this should be '12h' or '24h' (with the quotes!)
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:212
+msgid "'24h'"
+msgstr "'24h'"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:213
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:214
+msgid "Whether the clock displays in 24h or 12h format"
+msgstr "Vai pulkstenis rāda laiku 24 vai 12 stundu formātā"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:220
+msgid "Whether the clock shows seconds"
+msgstr "Vai pulkstenis rāda sekundes"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:221
+msgid "If true, display seconds in the clock."
+msgstr "Ja patiess, rādīt pulkstenī sekundes."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:227
+msgid "Show date in clock"
+msgstr "Pie pulksteņa rādīt datumu"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:228
+msgid "If true, display date in the clock, in addition to time."
+msgstr "Ja patiess, rādīt pulkstenī arī datumu, ne tikai laiku."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:234
+msgid "Show weekday in clock"
+msgstr "Pie pulksteņa rādīt nedēļas dienu"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:235
+msgid "If true, display weekday in the clock, in addition to time."
+msgstr "Ja patiess, rādīt pulkstenī arī nedēļas dienu, ne tikai laiku."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:241
+msgid "Enable hot corners"
+msgstr "Ieslēgt karstos stūrus"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:242
+msgid ""
+"If true, the activities overview can be accessed by moving the mouse to the "
+"top-left corner."
+msgstr ""
+"Ja patiess, aktivitāšu pārskatam var piekļūt, pārvietojot peli uz augšējo "
+"kreiso stūri."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:249
+msgid "Show battery percentage"
+msgstr "Rādīt baterijas procentus"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:250
+msgid ""
+"If true, display battery percentage in the status menu, in addition to the "
+"icon."
+msgstr ""
+"Ja “patiess”, attēlot baterijas procentus statusa izvēlnē, klāt pie ikonas."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:256
+msgid "Enable the primary paste selection"
+msgstr "Ieslēgt primāro atlases ielīmēšanu"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:257
+msgid ""
+"If true, gtk+ uses the primary paste selection, usually triggered by a "
+"middle mouse button click."
+msgstr ""
+"Ja patiess, gtk+ izmantos primāro atlases ielīmēšanu, ko parasti izsauc "
+"peles vidējās pogas klikšķis."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:263
+msgid "Allow overlay scrolling"
+msgstr "Atļaut pārklājuma ritināšanu"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:264
+msgid ""
+"Whether scrollbars should be overlayed as indicators. Depending on input "
+"devices in use, permanent scrollbars may still be displayed."
+msgstr ""
+"Vai ritjoslas ir jāpārklāj kā indikatori. Atkarībā no izmantotajām "
+"ievadierīcēm joprojām var tikt rādītas pastāvīgas ritjoslas."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:272
+msgid "Highlights the current location of the pointer."
+msgstr "Izceļ rādītāja pašreizējo atrašanās vietu."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:273
+msgid ""
+"If true, pressing a key will highlight the current pointer location on "
+"screen."
+msgstr ""
+"Ja patiess, nospiežot taustiņu, ekrānā tiks izcelta pašreizējā rādītāja "
+"atrašanās vieta."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:279
+msgid "Antialiasing"
+msgstr "Nogludināšana"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:280
+msgid ""
+"The type of antialiasing to use when rendering fonts. Possible values are: "
+"“none” for no antialiasing, “grayscale” for standard grayscale antialiasing, "
+"and “rgba” for subpixel antialiasing (LCD screens only)."
+msgstr ""
+"Kāda veida nogludināšanu izmantot, kad renderē fontus. Iespējamās vērtības "
+"ir: “none”, lai neizmantotu nogludināšanu, “grayscale” standarta pelēktoņu "
+"nogludināšanai, un “rgba” apakšpikseļu nogludināšanai (tikai LCD ekrāniem)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:286
+msgid "Hinting"
+msgstr "Norādīšana"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:287
+msgid ""
+"The type of hinting to use when rendering fonts. Possible values are: “none” "
+"for no hinting and “slight” for fitting only to the Y-axis like Microsoft’s "
+"ClearType, DirectWrite and Adobe’s proprietary font rendering engine. "
+"Ignores native hinting within the font, generates hints algorithmically. "
+"Used on Ubuntu by default. Recommended. The meaning of “medium” and “full” "
+"depends on the font format (.ttf, .otf, .pfa/.pfb) and the installed version "
+"of FreeType. They usually try to fit glyphs to both the X and the Y axis "
+"(except for .otf: Y-only). This can lead to distortion and/or inconsistent "
+"rendering depending on the quality of the font, the font format and the "
+"state of FreeType’s font engines."
+msgstr ""
+"Kādu norādīšanu (hinting) izmantot, kad attēlo fontus. Iespējamās vērtības "
+"ir “none”, lai neizmantotu norādīšanu; “slight”, lai piemērotu tikai pie Y "
+"ass, kā Microsoft ClearType, DirectWrite un Adobe slēgtie fontu attēlošanas "
+"dziņi. Ignorē fontā iekļautās norādes un tās ģenerē automātiski. Ubuntu "
+"izmanto pēc noklusējuma. Ir ieteicams. Tas, ko nozīmē “medium” un “full” ir "
+"atkarīgs no fontu formāta (.ttf, .otf, .pfa/.pfb) un instalētās FreeType "
+"versijas. Tie parasti mēģina piemērot glifus X un Y asīm (izņemto .otf: "
+"tikai Y). Tas var radīt kropļojumus un/vai nekonsekventu attēlošanu, "
+"atkarībā no fontu kvalitātes, fontu formāta un FreeType fontu dzinēja "
+"stāvokļa."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:293
+msgid "RGBA order"
+msgstr "RGBA secība"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:294
+msgid ""
+"The order of subpixel elements on an LCD screen; only used when antialiasing "
+"is set to “rgba”. Possible values are: “rgb” for red on left (most common), "
+"“bgr” for blue on left, “vrgb” for red on top, “vbgr” for red on bottom."
+msgstr ""
+"Apakšpikseļu secība LCD ekrānā; tiek izmantots tikai, kad nogludināšana ir "
+"iestatīta uz “rgba”. Iespējamās  vērtības ir “rgb”, kad pa kreisi ir sarkanā "
+"(visizplatītākā), “bgr”, kad pa kreisi ir zilā, “vbgr”, kad sarkanā ir "
+"apakšā."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:300
+msgid "Color scheme"
+msgstr "Krāsu shēma"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:301
+msgid ""
+"The preferred color scheme for the user interface. Valid values are "
+"“default”, “prefer-dark”, “prefer-light”."
+msgstr ""
+"Vēlamā krāsu shēma lietotāja saskarnei. Derīgās vērtības ir “default”, "
+"“prefer-dark”, “prefer-light”."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:6
+msgid "Disable command line"
+msgstr "Izslēgt komandrindu"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:7
+msgid ""
+"Prevent the user from accessing the terminal or specifying a command line to "
+"be executed. For example, this would disable access to the panel’s “Run "
+"Application” dialog."
+msgstr ""
+"Liegt lietotājam piekļūt terminālim vai norādīt komandrindu, ko izpildīt. "
+"Piemēram, tas liegtu pieeju paneļa dialoglodziņam “Palaist lietotni”."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:15
+msgid "Disable saving files to disk"
+msgstr "Izslēgt datņu saglabāšanu diskā"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:16
+msgid ""
+"Prevent the user from saving files to disk. For example, this would disable "
+"access to all applications’ “Save as” dialogs."
+msgstr ""
+"Liegt lietotājam saglabāt datnes diskā. Piemēram, tas visām lietotnēm liegtu "
+"pieeju dialoglodziņam “Saglabāt kā”."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:23
+msgid "Disable printing"
+msgstr "Izslēgt drukāšanu"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:24
+msgid ""
+"Prevent the user from printing. For example, this would disable access to "
+"all applications’ “Print” dialogs."
+msgstr ""
+"Liegt lietotājam drukāt. Piemēram, tas visām lietotnēm liegtu pieeju "
+"dialoglodziņam “Drukāt”."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:31
+msgid "Disable print setup"
+msgstr "Izslēgt drukāšanas iestatīšanu"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:32
+msgid ""
+"Prevent the user from modifying print settings. For example, this would "
+"disable access to all applications’ “Print Setup” dialogs."
+msgstr ""
+"Liegt lietotājam mainīt drukāšanas iestatījumus. Piemēram, tas visām "
+"lietotnēm liegtu pieeju dialoglodziņam “Drukas iestatījumi”."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:39
+msgid "Disable user switching"
+msgstr "Izslēgt lietotāju pārslēgšanu"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:40
+msgid ""
+"Prevent the user from switching to another account while his session is "
+"active."
+msgstr ""
+"Liegt lietotājam pārslēgties uz citu kontu, kamēr viņa sesija ir aktīva."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:47
+msgid "Disable lock screen"
+msgstr "Izslēgt ekrāna bloķēšanu"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:48
+msgid "Prevent the user to lock his screen."
+msgstr "Liegt lietotājam bloķēt savu ekrānu."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:54
+msgid "Disable URL and MIME type handlers"
+msgstr "Izslēgt URL un MIME tipu apstrādātājus"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:55
+msgid "Prevent running any URL or MIME type handler applications."
+msgstr "Liegt palaist jebkādu URL vai MIME tipa apstrādātāja lietotni."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:61
+msgid "Disable log out"
+msgstr "Izslēgt izrakstīšanos"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:62
+msgid "Prevent the user from logging out."
+msgstr "Liegt lietotājam izrakstīties no savas sesijas."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:68
+msgid "Disable user administration"
+msgstr "Izslēgt lietotāju administrēšanu"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:69
+msgid ""
+"Stop the user from modifying user accounts. By default, we allow adding and "
+"removing users, as well as changing other users settings."
+msgstr ""
+"Neļaut lietotājam modificēt lietotāju kontus. Pēc noklusējuma, mēs ļaujam "
+"pievienot un izņemt lietotājus, kā arī mainīt citu lietotāju iestatījumus."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:76
+msgid "Mount removable storage devices as read-only"
+msgstr "Montēt noņemamās atmiņas ierīces kā tikai lasāmas"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:77
+msgid ""
+"Prevent users from writing or modifying files on removable storage devices "
+"(i.e. flash disks, mobile phones, cameras)."
+msgstr ""
+"Neļaut lietotājiem rakstīt vai mainīt datnes noņemamās atmiņas ierīcēs (t."
+"i., zibatmiņas diskos, mobilajos tālruņos, kamerās)."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:84
+msgid "Disable password showing"
+msgstr "Izslēgt paroļu rādīšanu"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:85
+msgid "Disable the \"Show Password\" menu item in password entries."
+msgstr "Paroles ierakstos izslēgt izvēlnes vienumu “Rādīt paroli”."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:6
+msgid "Whether to automatically mount media"
+msgstr "Vai automātiski montēt datu nesējus"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:7
+msgid ""
+"If set to true, then Nautilus will automatically mount media such as user-"
+"visible hard disks and removable media on start-up and media insertion."
+msgstr ""
+"Ja iestatīts kā patiess, Nautilus automātiski montēs datu nesējus, piemēram, "
+"lietotājam redzamos cietos diskus un izņemamos datu nesējus, tad, kad tie "
+"tiek ievietoti vai sistēmas palaišanās laikā."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:11
+msgid "Whether to automatically open a folder for automounted media"
+msgstr "Vai automātiski atvērt mapi automātiski montētajiem datu nesējiem"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:12
+msgid ""
+"If set to true, then Nautilus will automatically open a folder when media is "
+"automounted. This only applies to media where no known x-content/* type was "
+"detected; for media where a known x-content type is detected, the user "
+"configurable action will be taken instead."
+msgstr ""
+"Ja iestatīts kā patiess, Nautilus automātiski atvērs mapi, kad ir "
+"automātiski montēts datu nesējs. Tas attiecas tikai uz datu nesējiem, kuram "
+"nav atklāts zināms x-content/* tips. Datu nesējiem, kuriem ir zināms x-"
+"content tips, tiks veikta lietotāja noteiktā darbība."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:16
+msgid "Never prompt or autorun/autostart programs when media are inserted"
+msgstr ""
+"Nekad neprasīt automātiski palaist / startēt programmas, kad tiek ievietots "
+"datu nesējs"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:17
+msgid ""
+"If set to true, then Nautilus will never prompt nor autorun/autostart "
+"programs when a medium is inserted."
+msgstr ""
+"Ja iestatīts kā patiess, Nautilus nekad neprasīs automātiski palaists / "
+"startēt programmas, kad tiek ievietots datu nesējs."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:21
+msgid ""
+"List of x-content/* types where the preferred application will be launched"
+msgstr "Saraksts ar x-content/* tipiem, kur tiks palaista vēlamā lietotne"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:22
+msgid ""
+"List of x-content/* types for which the user have chosen to start an "
+"application in the preference capplet. The preferred application for the "
+"given type will be started on insertion on media matching these types."
+msgstr ""
+"Saraksts ar x-content/* tipiem, kuriem lietotājs ir norādījis palaižamo "
+"lietotni iestatījumu sīklietotnē. Vēlamā lietotne dotajam tipam tiks "
+"palaista, kad ir ievietots datu nesējs, kas atbilst šiem tipiem."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:26
+msgid "List of x-content/* types set to “Do Nothing”"
+msgstr "Saraksts ar x-content/* tipiem, kam iestatīts “Nedarīt neko”"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:27
+msgid ""
+"List of x-content/* types for which the user have chosen “Do Nothing” in the "
+"preference capplet. No prompt will be shown nor will any matching "
+"application be started on insertion of media matching these types."
+msgstr ""
+"Saraksts ar x-content/* tipiem, kuriem lietotājs ir norādījis “Nedarīt neko” "
+"iestatījumu sīklietotnē. Kad ievietos datu nesēju, kas atbilst šiem tipiem, "
+"lietotājam netiks vaicāts, ko darīt."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:31
+msgid "List of x-content/* types set to “Open Folder”"
+msgstr "Saraksts ar x-content/* tipiem, kam iestatīts “Atvērt mapi”"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:32
+msgid ""
+"List of x-content/* types for which the user have chosen “Open Folder” in "
+"the preferences capplet. A folder window will be opened on insertion of "
+"media matching these types."
+msgstr ""
+"Saraksts ar x-content/* tipiem, kuriem lietotājs ir norādījis “Atvērt mapi” "
+"iestatījumu sīklietotnē. Kad ievietos datu nesēju, kas atbilst šiem tipiem, "
+"tiks atvērts mapes logs."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:6
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:55
+msgid "Show notification banners"
+msgstr "Rādīt paziņojumu lentas"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:7
+msgid "Whether notification banners are visible for application notifications."
+msgstr "Vai lietotņu paziņojumu lentas ir redzamas."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:14
+msgid "Show notifications in the lock screen"
+msgstr "Bloķēšanas ekrānā rādīt paziņojumus"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:15
+msgid "Whether notifications are shown in the lock screen or not."
+msgstr "Vai bloķēšanas ekrānā tiek rādīti paziņojumi."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:31
+msgid "Application ID"
+msgstr "Lietotnes ID"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:32
+msgid "The application that this policy is for."
+msgstr "Lietotne, uz ko attiecas šī politika."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:39
+msgid "Enable notifications"
+msgstr "Ieslēgt paziņojumus"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:40
+msgid "Whether notifications are globally enabled for this application."
+msgstr "Vai šai lietotnei paziņojumi ir globāli ieslēgti."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:47
+msgid "Enable sound alerts"
+msgstr "Ieslēgt skaņas paziņojumus"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:48
+msgid "Whether notifications should be accompanied by sound alerts."
+msgstr "Vai paziņojumi ir jāpavada ar skaņu."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:56
+msgid ""
+"Whether notification banners for this application are shown or not. Does not "
+"affect clicking on message tray buttons."
+msgstr ""
+"Vai šai lietotnei rādīt paziņojumu lentu. Neietekmē spiešanu uz ziņojumu "
+"paplātes pogām."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:64
+msgid "Force automatic expanding of banners"
+msgstr "Uzspiest automātisku lenšu izvēršanu"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:65
+msgid ""
+"Whether notifications from this application are expanded automatically when "
+"in banner mode."
+msgstr ""
+"Vai šīs lietotnes paziņojumus izvērst automātiski, kad atrodas lenšu režīmā."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:72
+msgid "Show in the lock screen"
+msgstr "Rādīt bloķēšanas ekrānā"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:73
+msgid ""
+"Whether notifications from this application are shown when the screen is "
+"locked."
+msgstr "Vai šīs lietotnes paziņojumi tiek rādīti, kad ir bloķēts ekrāns."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:80
+msgid "Show details in the lock screen"
+msgstr "Bloķēšanas ekrānā rādīt sīkāku informāciju"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:81
+msgid ""
+"Whether the summary and body of notifications from this application will be "
+"visible in the locked screen."
+msgstr ""
+"Vai šīs lietotnes paziņojumu kopsavilkums un pamatteksts būs redzams bloķētā "
+"ekrānā."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:15
+msgid "Whether edge scrolling is enabled"
+msgstr "Vai ir ieslēgta malu ritināšana"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:16
+msgid ""
+"When enabled, touchpads that support edge scrolling will have that feature "
+"enabled."
+msgstr ""
+"Ja ieslēgts, skārienpaliktņiem, kuri atbalsta malu ritināšanu, šī iespēja "
+"būs izslēgta."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:20
+msgid "Whether two-finger scrolling is enabled"
+msgstr "Vai ir ieslēgta divu pirkstu ritināšana"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:21
+msgid ""
+"When enabled, touchpads that support two-finger scrolling will have that "
+"feature enabled."
+msgstr ""
+"Ja ieslēgts, skārienpaliktņiem, kuri atbalsta divu pirkstu ritināšanu, šī "
+"iespēja būs izslēgta."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:25
+msgid "Whether to disable the touchpad while typing"
+msgstr "Vai rakstīšanas laikā izslēgt skārienpaliktni"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:26
+msgid "When enabled, touchpads will be disabled while typing on the keyboard."
+msgstr ""
+"Kad ieslēgts, skārienpaliktnis tiks izslēgts, kad raksta uz tastatūras."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:30
+msgid "Enable mouse clicks with touchpad"
+msgstr "Ieslēgt peles klikšķināšanu ar skārienpaliktni"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:31
+msgid ""
+"Set this to TRUE to be able to send mouse clicks by tapping on the touchpad."
+msgstr ""
+"Iestatiet to uz “patiess”, lai varētu sūtīt peles klikšķus, uzsitot uz "
+"skārienpaliktņa."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:35
+msgid "Tap Button Map"
+msgstr "Uzsišanas pogu karte"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:36
+msgid ""
+"Defines the mapping between the number of fingers and touchpad buttons. The "
+"default is to have a 1, 2 and 3 finger tap to map to the left, right and "
+"middle button (\"lrm\"), respectively."
+msgstr ""
+"Nosaka attēlojumu starp pirkstu skaitu un skārienpaliktņa pogām. Pēc "
+"noklusējuma ir jāpieskaras ar 1, 2 un 3 pirkstiem, lai attēlotu attiecīgi "
+"kreiso, labo un vidējo pogu (\"lrm\")."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:40
+msgid "Enable tap-and-drag with touchpad"
+msgstr "Ieslēgt “uzsist un vilkt” ar skārienpaliktni"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:41
+msgid ""
+"Set this to TRUE to be able to start a drag by tapping and immediately "
+"moving the finger that’s now pressed on the touchpad."
+msgstr ""
+"Iestatiet to uz “patiess”, lai varētu sākt vilkt, uzsitot un uzreiz "
+"pārvietojot pirkstu, kas ir uzlikts uz skārienpaliktņa."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:45
+msgid "Enable tap-and-drag-lock with touchpad"
+msgstr "Ieslēgt “uzsist un vilkt ar fiksēšanu” ar skārienpaliktni"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:46
+msgid ""
+"Set this to TRUE to lock the dragging process within a short timeout when "
+"the finger is lifted on the touchpad and the tap-and-drag setting is enabled."
+msgstr ""
+"Iestatiet šo vērtību uz “patiess”, lai īsas noildzes laikā bloķētu vilkšanas "
+"procesu, kad pirksts tiek pacelts virs skārienpaliktņa un ir ieslēgts "
+"“uzsist un vilkt” iestatījums."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:50
+msgid "Touchpad enabled"
+msgstr "Skārienpaliktnis ir ieslēgts"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:51
+msgid "Defines the situations in which the touchpad is enabled."
+msgstr "Nosaka situācijas, kurās skārienpaliktnis ir ieslēgts."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:55
+msgid "Touchpad button orientation"
+msgstr "Skārienpaliktņa pogu orientācija."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:56
+msgid ""
+"Swap left and right mouse buttons for left-handed mice with “left”, “right” "
+"for right-handed, “mouse” to follow the mouse setting."
+msgstr ""
+"Apmainīt vietām labo un kreiso peles pogu kreisās rokas pelēm ar “left”, "
+"“right” labās rokas pelēm, “mouse”, lai izmantotu peles iestatījumus."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:60
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:131
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:236
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:254
+msgid "Acceleration profile"
+msgstr "Paātrināšanas profils"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:61
+msgid ""
+"Acceleration profile used for connected touchpads. The acceleration profile "
+"can be set to either default (“default”) which uses the default acceleration "
+"profile for each device, flat (“flat”), which accelerates by a device "
+"specific constant factor derived from the configured pointer speed, or "
+"adaptive (“adaptive”) which adapts the acceleration depending on the mouse "
+"movement. If a touchpad doesn’t support the configured profile, “default” "
+"will be used."
+msgstr ""
+"Paātrināšanas profils, ko izmanto pievienotie skārienpaliktņi. Paātrināšanas "
+"profils var tikt iestatīts uz noklusējuma  (”default“), kas izmanto "
+"noklusējuma paātrināšans profilu katrai ierīcei, palkans (“flat”), kas "
+"paātrina pēc ierīcei specifiska konstanta koeficienta, ko nosaka pēc "
+"rādītāja ātruma, vai adaptīvais (“adaptive”), kas pielāgojas paātrinājumam "
+"atkarībā no peles kustības. Ja skārienpaliktnis neatbalsta konfigurēto "
+"profilu, tiks izmantots noklusējuma profils."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:65
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:120
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:248
+msgid "Pointer speed"
+msgstr "Rādītāja ātrums"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:66
+msgid ""
+"Pointer speed for the touchpad. Accepted values are in the [-1..1] range "
+"(from “unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Rādītāja ātrums skārienpaliktnim. Pieņemamās vērtības ir apgabalā [-1..1] "
+"(no “nepaātrināts” līdz “ātrs”). Vērtība 0 ir sistēmas noklusējuma."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:71
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:126
+msgid "Natural scrolling"
+msgstr "Dabiskā ritināšana"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:72
+msgid "Set this to TRUE to enable natural (reverse) scrolling for touchpads."
+msgstr ""
+"Iestatiet šo uz “patiess”, lai ieslēgtu dabisko (pretējo) ritināšanu "
+"skārienpaliktņiem."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:76
+msgid "Click method"
+msgstr "Klikšķa metode"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:77
+msgid ""
+"How to generate software-emulated buttons, either disabled (“none”), through "
+"specific areas (“areas”), number of fingers (“fingers”) or left as hardware "
+"default (“default”)."
+msgstr ""
+"Kā ģenerēt programmatūras emulētas pogas, vai nu izslēgts (“none”), "
+"noteiktās vietās (“areas”), pirkstu skaits (“fingers”) vai atstāt aparatūras "
+"noklusējumus (“default”)."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:81
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:136
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:241
+msgid "Emulate middle click"
+msgstr "Emulēt vidējo klikšķi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:82
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:137
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:242
+msgid ""
+"Set this to TRUE to enable middle click during simultaneous left and right "
+"click."
+msgstr ""
+"Iestatiet uz “patiess”, lai izpildītu vidējo klikšķi, kad ir vienlaicīgi "
+"veikti kreisais un labais klikšķis."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:88
+msgid "Keyboard repeat"
+msgstr "Tastatūras atkārtošana"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:89
+msgid "Set this to TRUE to enable keyboard repeat."
+msgstr "Iestatiet uz “patiess”, lai ieslēgtu tastatūras atkārtošanu."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:93
+msgid "Key Repeat Interval"
+msgstr "Taustiņu atkārtošanas intervāls"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:94
+msgid "Delay between repeats in milliseconds."
+msgstr "Aizkave starp atkārtojumiem, milisekundēs."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:98
+msgid "Initial Key Repeat Delay"
+msgstr "Sākotnējā taustiņu atkārtošanas aizkave"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:99
+msgid "Initial key repeat delay in milliseconds."
+msgstr "Sākotnējā taustiņu atkārtošanas aizkave, milisekundēs."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:103
+msgid "Remember NumLock state"
+msgstr "Atcerēties NumLock stāvokli"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:104
+msgid ""
+"When set to true, GNOME will remember the state of the NumLock LED between "
+"sessions."
+msgstr ""
+"Kad iestatīts uz PATIESS, GNOME atcerēsies NumLock LED stāvokli starp "
+"sesijām."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:108
+msgid "NumLock state"
+msgstr "NumLock stāvoklis"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:109
+msgid "The remembered state of the NumLock LED."
+msgstr "Atcerēties NumLock LED stāvokli."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:115
+msgid "Mouse button orientation"
+msgstr "Peles pogu orientācija"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:116
+msgid "Swap left and right mouse buttons for left-handed mice."
+msgstr "Apmainīt vietām kreiso un labo peles pogu kreiļu pelēm."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:121
+msgid ""
+"Pointer speed for mice. Accepted values are in the [-1..1] range (from "
+"“unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Rādītāja ātrums pelēm. Pieņemamās vērtības ir apgabalā [-1..1] (no "
+"“nepaātrināts” līdz “ātrs”). Vērtība 0 ir sistēmas noklusējuma."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:127
+msgid "Set this to TRUE to enable natural (reverse) scrolling for mice."
+msgstr ""
+"Iestatiet šo uz “patiess”, lai ieslēgtu dabisko (pretējo) ritināšanu pelēm."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:132
+msgid ""
+"Acceleration profile used for connected mice. The acceleration profile can "
+"be set to either default (“default”) which uses the default acceleration "
+"profile for each device, flat (“flat”), which accelerates by a device "
+"specific constant factor derived from the configured pointer speed, or "
+"adaptive (“adaptive”) which adapts the acceleration depending on the mouse "
+"movement. If a mouse doesn’t support the configured profile, “default” will "
+"be used."
+msgstr ""
+"Paātrināšanas profils, ko izmanto pievienotās peles. Paātrināšanas profils "
+"var tikt iestatīts uz noklusējuma  (”default“), kas izmanto noklusējuma "
+"paātrināšans profilu katrai ierīcei, palkans (“flat”), kas paātrina pēc "
+"ierīcei specifiska konstanta koeficienta, ko nosaka pēc rādītāja ātruma, vai "
+"adaptīvais (“adaptive”), kas pielāgojas paātrinājumam atkarībā no peles "
+"kustības. Ja pele neatbalsta konfigurēto profilu, tiks izmantots noklusējuma "
+"profils."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:141
+msgid "Double click time"
+msgstr "Dubultklikšķa laiks"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:142
+msgid "Length of a double click in milliseconds."
+msgstr "Dubultklikšķa ilgums milisekundēs."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:146
+msgid "Drag threshold"
+msgstr "Vilkšanas aizture"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:147
+msgid "Distance before a drag is started."
+msgstr "Attālums, pirms tiek sākta vilkšana."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:153
+msgid "Drawing tablet mapping"
+msgstr "Zīmēšanas planšetes kartēšana"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:154
+msgid ""
+"EDID information of the output the tablet is mapped to. Must be in the "
+"format [vendor, product, serial]. [\"\",\"\",\"\"] relies on automatic "
+"mapping."
+msgstr ""
+"EDID informācija par izvadi, uz kā ir attēlota planšete. Jābūt formātā "
+"[ražotājs, produkts, sērija]. [\"\",\"\",\"\"] paļaujas uz  automātisku "
+"attēlojumu."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:158
+msgid "Tablet mapping"
+msgstr "Planšetes kartēšana"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:159
+msgid "How input affects the pointer on the screen"
+msgstr "Kā ievade ietekmē rādītāju uz ekrāna"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:163
+msgid "Tablet area"
+msgstr "Grafiskās planšetes laukums"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:164
+msgid ""
+"Dead area padding around the active area, in percentages. Respectively "
+"applied to left,right,top and bottom sides."
+msgstr ""
+"Neizmantotā laukuma apmale ap aktīvo laukumu, procentos. Attiecīgi "
+"pielietots kreisajai, labajai, augšējai un apakšējai malai."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:168
+msgid "Tablet aspect ratio"
+msgstr "Planšetes izmēru attiecība"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:169
+msgid ""
+"Enable this to restrict the tablet area to match the aspect ratio of the "
+"output."
+msgstr ""
+"Ieslēdziet šo, lai ierobežotu planšetes laukumu, lai tas atbilstu izvades "
+"izmēru attiecībai."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:173
+msgid "Tablet left-handed mode"
+msgstr "Planšetes kreiļu režīms"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:174
+msgid ""
+"Enable this to allow physically rotating the tablet for left-handed setups"
+msgstr "Ļauj fiziski pagriezt planšeti, lai to lietotu ar kreiso roku"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:180
+msgid "Stylus pressure curve"
+msgstr "Irbuļa spiediena līkne"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:181
+msgid ""
+"Set this to x1, y1 and x2, y2 of the pressure curve applied to the stylus."
+msgstr ""
+"Iestatiet šo uz x1, y1 un x2, y2 spiediena līknei, kas tiek piemērota "
+"irbulim."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:185
+msgid "Eraser pressure curve"
+msgstr "Dzēšgumijas spiediena līkne"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:186
+msgid ""
+"Set this to x1, y1 and x2, y2 of the pressure curve applied to the eraser."
+msgstr ""
+"Iestatiet šo uz x1, y1 un x2, y2 spiediena līknei, kas tiek piemērota "
+"dzēšgumijai."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:190
+msgid "Button action"
+msgstr "Pogas darbība"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:191
+msgid "Stylus button action, this button is located along the pen handle."
+msgstr "Irbuļa pogas darbība, šī poga ir novietota gar spalvas rokturi."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:195
+msgid "Secondary button action"
+msgstr "Sekundārās pogas darbība"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:196
+msgid ""
+"Secondary stylus button action, this button is located along the pen handle "
+"on some styli like the Grip Pen. Other styli like the Airbrush Pen or the "
+"Inking Pen only have one button, this setting is ineffective on those."
+msgstr ""
+"Sekundārās irbuļa pogas darbība, šī poga ir dažiem irbuļiem, piemēram, Grip "
+"Pen, un tā ir novietota gar spalvas rokturi. Citiem irbuļiem, piemēram "
+"Airbrush Pen vai Inking Pen ir tikai viena poga, un šie iestatījumi šīm "
+"ierīcēm nedarbosies."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:200
+msgid "Tertiary button action"
+msgstr "Terciārās pogas darbība"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:201
+msgid ""
+"Tertiary stylus button action, this button is located along the pen handle "
+"on some styli like the 3D Pen. Other styli like the Grip Pen only have two "
+"buttons, this setting is ineffective on those."
+msgstr ""
+"Terciāra irbuļa pogas darbība, šī poga ir dažiem irbuļiem, piemēram, 3D Pen, "
+"un tā ir novietota gar spalvas rokturi. Citiem irbuļiem, piemēram Grip Pen "
+"ir tikai divas pogas, un šie iestatījumi šīm ierīcēm nedarbosies."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:207
+msgid "Pad button action type"
+msgstr "Skārienpaliktņa pogu darbības veids"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:208
+msgid "The type of action triggered by the button being pressed."
+msgstr "Darbības veids, ko izsauc pogas nospiešana."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:212
+msgid "Key combination for the custom action"
+msgstr "Taustiņu kombinācija pielāgotajai darbībai"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:213
+msgid ""
+"The keyboard shortcut generated when the button is pressed for custom "
+"actions."
+msgstr "Taustiņu kombinācija, kas izmanto pogu pielāgotajām darbībām."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:219
+msgid "Touchscreen output mapping"
+msgstr "Skārienekrāna izvades kartēšana"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:220
+msgid ""
+"EDID information of the output the touchscreen is mapped to. Must be in the "
+"format [vendor, product, serial]. [\"\",\"\",\"\"] relies on automatic "
+"mapping."
+msgstr ""
+"EDID informācija par izvadi, uz kā ir attēlots skārienpaliktnis. Jābūt "
+"formātā [ražotājs, produkts, sērija]. [\"\",\"\",\"\"] paļaujas uz  "
+"automātisku attēlojumu."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:227
+msgid "Mouse wheel emulation button. 0 to disable the feature."
+msgstr "Peles riteņa emulācijas poga. 0 izslēdz šo iespēju."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:231
+msgid "Mouse wheel emulation button lock"
+msgstr "Peles riteņa emulācijas poga"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:232
+msgid ""
+"Set this to TRUE to enable button locking for the wheel emulation button. If "
+"enabled, the first click of the button enables scrolling, the second click "
+"disables scrolling again."
+msgstr ""
+"Iestatiet šo vērtību uz “patiess”, lai ieslēgtu pogu bloķēšanu ritenīša "
+"emulācijas pogai. Ja tas ir ieslēgts, pirmais klikšķis uz pogas ieslēdz "
+"ritināšanu, otrais klikšķis atkal izslēdz ritināšanu."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:237
+msgid ""
+"Acceleration profile used for the trackball. The acceleration profile can be "
+"set to either default (“default”) which uses the default acceleration "
+"profile, flat (“flat”), which accelerates by a device specific constant "
+"factor derived from the configured speed, or adaptive (“adaptive”) which "
+"adapts the acceleration depending on the movement. If the trackball doesn’t "
+"support the configured profile, “default” will be used."
+msgstr ""
+"Paātrināšanas profils, ko izmanto pievienotās kursorbumbas. Paātrināšanas "
+"profils var tikt iestatīts uz noklusējuma  (”default“), kas izmanto "
+"noklusējuma paātrināšans profilu katrai ierīcei, palkans (“flat”), kas "
+"paātrina pēc ierīcei specifiska konstanta koeficienta, ko nosaka pēc "
+"rādītāja ātruma, vai adaptīvais (“adaptive”), kas pielāgojas paātrinājumam "
+"atkarībā no kursorbumbas kustības. Ja kursorbumbas neatbalsta konfigurēto "
+"profilu, tiks izmantots noklusējuma profils."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:249
+msgid ""
+"Pointer speed for pointing sticks. Accepted values are in the [-1..1] range "
+"(from “unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Rādītāja ātrums rādīšanas svirai. Pieņemamās vērtības ir apgabalā [-1..1] "
+"(no “nepaātrināts” līdz “ātrs”). Vērtība 0 ir sistēmas noklusējuma."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:255
+msgid ""
+"Acceleration profile used for the pointing stick. The acceleration profile "
+"can be set to either default (“default”) which uses the default acceleration "
+"profile, flat (“flat”), which accelerates by a device specific constant "
+"factor derived from the configured speed, or adaptive (“adaptive”) which "
+"adapts the acceleration depending on the movement. If the pointing stick "
+"doesn’t support the configured profile, “default” will be used."
+msgstr ""
+"Paātrināšanas profils, ko izmanto rādīšanas svira. Paātrināšanas profils var "
+"tikt iestatīts uz noklusējuma  (”default“), kas izmanto noklusējuma "
+"paātrināšans profilu katrai ierīcei, palkans (“flat”), kas paātrina pēc "
+"ierīcei specifiska konstanta koeficienta, ko nosaka pēc rādītāja ātruma, vai "
+"adaptīvais (“adaptive”), kas pielāgojas paātrinājumam atkarībā no "
+"kursorbumbas kustības. Ja rādīšanas svira neatbalsta konfigurēto profilu, "
+"tiks izmantots noklusējuma profils."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:259
+msgid "Scrolling method"
+msgstr "Ritināšanas metode"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:260
+msgid ""
+"Scrolling method used for pointing sticks. The scrolling method can be set "
+"to either default (“default”) which uses the default method, none (“none”), "
+"which disables scrolling, or middle-button (“on-button-down”) which enables "
+"scrolling whilst the middle button is held down."
+msgstr ""
+"Ritināšanas metode, ko izmanto rādītāju sviras. Ritināšanas metodi var "
+"iestatīt uz noklusējuma (“default”), kas izmanto noklusējuma metodi, neviena "
+"(“none”), kas izslēdz ritināšanu, vai vidējo pogu (“on-button-down”), kas "
+"ļauj ritināt, kamēr ritināšana poga tiek turēta nospiesta."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:6
+msgid "Controls visibility of personal information"
+msgstr "Nosaka personīgās informācijas redzamību"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:7
+msgid ""
+"If set to true, the system will make an effort to not divulge the user’s "
+"identity on screen or on the network."
+msgstr ""
+"Ja iestata uz PATIESS, sistēma mēģinās neizpaust lietotāja identitāti uz "
+"ekrāna vai tīklā."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:12
+msgid "Show full name in the user menu"
+msgstr "Lietotāju izvēlnē rādīt pilnu vārdu"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:13
+msgid "Whether the users full name is shown in the user menu or not."
+msgstr "Vai lietotāju izvēlnē ir redzami lietotāju pilnie vārdi."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:17
+msgid "Whether to remove old files from the trash automatically"
+msgstr "Vai no miskastes automātiski izņemt vecās datnes"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:18
+msgid ""
+"If TRUE, automatically remove files from the trash when they are older than "
+"“old-files-age” days."
+msgstr ""
+"Ja PATIESS, automātiski izņem datnes no miskastes, kad tās ir vecākas par "
+"“old-files-age” dienām."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:23
+msgid "Whether to remove old temporary files automatically"
+msgstr "Vai automātiski izņemt vecās pagaidu datnes"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:24
+msgid ""
+"If TRUE, automatically remove temporary files when they are older than “old-"
+"files-age” days."
+msgstr ""
+"Ja PATIESS, automātiski izņem pagaidu datnes, kad tās ir vecākas par “old-"
+"files-age” dienām."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:29
+msgid "Number of days to keep trash and temporary files"
+msgstr "Dienu skaits, cik ilgi paturēt pagaidu un miskastes datnes"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:30
+msgid "Consider trash and temporary files old after this many days."
+msgstr ""
+"Izskatīt miskastes un pagaidu datnes, kad ir vecākas par tik daudz dienām."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:35
+msgid "Whether to remember recently used files"
+msgstr "Vai atcerēties nesen lietotās datnes"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:36
+msgid "If FALSE, applications will not remember recently used files."
+msgstr "Ja PATIESS, lietotnes neatcerēsies nesen lietotās datnes."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:41
+msgid "Number of days to remember recently used files for"
+msgstr "Dienu skaits, cik ilgi atcerēties nesen lietotās datnes"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:42
+msgid ""
+"Recently used files will be remembered for this many days. If set to 0, "
+"recent files will not be remembered; if set to -1, they will be retained "
+"indefinitely."
+msgstr ""
+"Nesen lietotās datnes atcerēsies tik daudz dienas. Ja iestatīts uz 0, nesen "
+"lietotās datnes neatcerēsies; ja iestatīts uz -1, tās tiks paturētas "
+"nenoteikti ilgi."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:48
+msgid "Whether to remember application usage"
+msgstr "Vai atcerēties lietotnes izmantojumu"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:49
+msgid "If FALSE, application usage will not be monitored and recorded."
+msgstr "Ja APLAMS, lietotņu izmantošana netiks uzraudzīta un ierakstīta."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:54
+msgid "Send statistics when applications are removed or installed"
+msgstr "Sūta statistiku par to, kād lietotnes tiek izņemtas vai instalētas"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:55
+msgid ""
+"If FALSE, no anonymous installation or removal information will be sent to "
+"the vendor."
+msgstr ""
+"Ja APLAMS, ražotājam netiks sūtīta anonīma informācija par instalēšanu vai "
+"izņemšanu."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:59
+msgid "Send reports of technical problems to the vendor"
+msgstr "Sūta ziņojumus par tehniskām problēmām izstrādātājam"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:60
+msgid "If TRUE, anonymized reports will be sent automatically to the vendor."
+msgstr "Ja “patiess”, ražotājam tiks automātiski sūtīta anonīmi pārskati."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:64
+msgid "Don’t allow applications to access the microphone"
+msgstr "Neļaujiet lietotnēm piekļūt mikrofonam"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:65
+msgid "If TRUE, applications should not use the microphone."
+msgstr "Ja “patiess”, lietotnēm nevajadzētu izmantot mikrofonu."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:69
+msgid "Don’t allow applications to access the camera"
+msgstr "Neļaujiet lietotnēm piekļūt kamerai"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:70
+msgid "If TRUE, applications should not use the camera."
+msgstr "Ja “patiess”, lietotnēm nevajadzētu izmantot kameru."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:74
+msgid "Don’t allow applications to output sound"
+msgstr "Neļaujiet lietotnēm izvadīt skaņu"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:75
+msgid "If TRUE, applications should not make sound."
+msgstr "Ja “patiess”, lietotnēm nevajadzētu radīt skaņu."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:79
+msgid "Whether to protect USB devices"
+msgstr "Vai aizsargāt USB ierīces"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:80
+msgid ""
+"If the USBGuard service is present and this setting is enabled, USB devices "
+"will be protected as configured in the usb-protection-level setting."
+msgstr ""
+"Ja ir pieejams pakalpojums USBGuard un šis iestatījums ir ieslēgts, USB "
+"ierīces tiks aizsargātas, kā konfigurēts usb aizsardzības līmeņa iestatījumā."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:87
+msgid "When USB devices should be rejected"
+msgstr "Kad USB ierīci vajadzētu noraidīt"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:88
+msgid ""
+"If set to “lockscreen”, only when the lock screen is present new USB devices "
+"will be rejected; if set to “always”, all new USB devices will always be "
+"rejected."
+msgstr ""
+"Ja iestatīts uz bloķēts ekrāns (“lockscreen”), jaunas USB ierīces tiks "
+"noraidītas tikai tad, ja ir bloķēšanas ekrāns; ja iestatīts uz vienmēr "
+"(“always”), visas jaunās USB ierīces vienmēr tiks noraidītas."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:95
+msgid "Whether the privacy screen is enabled"
+msgstr "Vai ir ieslēgts privātuma ekrāns"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:96
+msgid ""
+"If the underlying hardware has privacy screen support and this setting is "
+"enabled, the panels supporting this technology will be obscured from lateral "
+"view."
+msgstr ""
+"Ja pamatā esošajai aparatūrai ir privātuma ekrāna atbalsts un šis "
+"iestatījums ir ieslēgts, paneļi, kas atbalsta šo tehnoloģiju, tiks aizsegti "
+"no sānskata."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:6
+msgid "Activate when idle"
+msgstr "Aktivizēt, kad dīkstāvē"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:7
+msgid ""
+"Set this to TRUE to activate the screensaver when the session is idle. "
+"DEPRECATED: This key is deprecated and ignored. Set org.gnome.desktop."
+"session idle-delay to 0 if you do not want to activate the screensaver."
+msgstr ""
+"Iestatiet šo uz PATIESS, lai aktivētu ekrānsaudzētāju, kad sesija ir "
+"dīkstāvē. NOVECOJIS: Šī atslēga ir novecojusi un tiek ignorēta. Iestatiet "
+"org.gnome.desktop.session.idle-delay uz 0, ja nevēlaties aktivizēt "
+"ekrānsaudzētāju."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:16
+msgid "Lock on activation"
+msgstr "Bloķēt aktivizējot"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:17
+msgid "Set this to TRUE to lock the screen when the screensaver goes active."
+msgstr ""
+"Iestatiet uz ”patiess“, lai bloķētu ekrānu, kad ekrānsaudzētājs kļūst aktīvs."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:21
+msgid "Time before locking"
+msgstr "Laiks pirms bloķēšanas"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:22
+msgid ""
+"The number of seconds after screensaver activation before locking the screen."
+msgstr ""
+"Laiks sekundēs pēc ekrānsaudzētāja aktivēšanas, pirms tiek bloķēts ekrāns."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:26
+msgid "Show full name in the lock screen"
+msgstr "Bloķēšanas ekrānā rādīt pilnu vārdu"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:27
+msgid ""
+"Whether the user’s full name is shown in the lock screen or not. This only "
+"affects the screen shield, the name is always shown in the unlock dialog."
+msgstr ""
+"Vai bloķēšanas ekrānā tiek rādīts lietotāja pilnais vārds. Tas ietekmē tikai "
+"ekrāna aizsegu, vārds vienmēr būs redzams atbloķēšanas dialoglodziņā."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:31
+msgid "Allow embedding a keyboard into the window"
+msgstr "Ļaut iegult tastatūru logā"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:32
+msgid ""
+"Set this to TRUE to allow embedding a keyboard into the window when trying "
+"to unlock. The “keyboard_command” key must be set with the appropriate "
+"command. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Iestatiet uz “patiess”, lai ļautu iegult tastatūru logā, kad raksta, lai "
+"atbloķētu. Atslēgai “keyboard_command” ir jābūt iestatītai uz atbilstošo "
+"komandu. NOVECOJIS: Šī atslēga ir novecojusi un tiek ignorēta."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:40
+msgid "Embedded keyboard command"
+msgstr "Iegultās tastatūras komanda"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:41
+msgid ""
+"The command that will be run, if the “embedded_keyboard_enabled” key is set "
+"to TRUE, to embed a keyboard widget into the window. This command should "
+"implement an XEMBED plug interface and output a window XID on the standard "
+"output. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Komanda, ko palaidīs, ja atslēga “embedded_keyboard_enabled” ir iestatīta uz "
+"“patiess”, lai iegultu tastatūru logā. Šai komandai ir jārealizē XEMBED "
+"spraudņa saskarne un jāspēj izvadīt XID standarta izvadē. NOVECOJIS: Šī "
+"atslēga ir novecojusi un tiek ignorēta."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:49
+msgid "Allow logout"
+msgstr "Ļaut izrakstīties"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:50
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to allow logging "
+"out after a delay. The delay is specified in the “logout_delay” key. "
+"DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Iestatiet uz ”patiess“, lai atbloķēšanas dialoglodziņā piedāvātu opciju "
+"izrakstīties pēc kāda laiciņa. Šo aizturi norāda atslēgā “logout_delay”. "
+"NOVECOJIS: Šī atslēga ir novecojusi un tiek ignorēta."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:58
+msgid "Time before logout option"
+msgstr "Laiks pirms izrakstīšanās opcijas"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:59
+msgid ""
+"The number of seconds after the screensaver activation before a logout "
+"option will appear in the unlock dialog. This key has effect only if the "
+"“logout_enable” key is set to TRUE. DEPRECATED: This key is deprecated and "
+"ignored"
+msgstr ""
+"Sekunžu skaits pēc ekrānsaudzētāja aktivizēšanas, pirms atbloķēšanas "
+"dialoglodziņā parādīsies izrakstīšanās opcija. Šai atslēgai ir jēga tikai "
+"tad, ja atslēga “logout_enable” ir iestatīta uz “patiess”. NOVECOJIS: Šī "
+"atslēga ir novecojusi un tiek ignorēta."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:67
+msgid "Logout command"
+msgstr "Izrakstīšanās komanda"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:68
+msgid ""
+"The command to invoke when the logout button is clicked. This command should "
+"simply log the user out without any interaction. This key has effect only if "
+"the “logout_enable” key is set to TRUE. DEPRECATED: This key is deprecated "
+"and ignored."
+msgstr ""
+"Komanda, kuru izsaukt, kad ir piespiesta izrakstīšanās poga. Šai komandai "
+"vajadzētu izrakstīt lietotāju bez jebkādas mijiedarbības. Šai atslēgai ir "
+"jēga tikai tad, ja atslēga “logout_enable” ir iestatīta uz “patiess”. "
+"NOVECOJIS: Šī atslēga ir novecojusi un tiek ignorēta."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:76
+msgid "Allow user switching"
+msgstr "Atļaut pārslēgt lietotājus"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:77
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to switch to a "
+"different user account."
+msgstr ""
+"Iestatiet uz ”patiess“, lai piedāvātu opciju bloķēšanas dialoglodziņā "
+"pārslēgties uz cita lietotāja kontu."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:81
+msgid "Allow the session status message to be displayed"
+msgstr "Atļaut rādīt sesijas statusa ziņojumu"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:82
+msgid ""
+"Allow the session status message to be displayed when the screen is locked. "
+"DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Atļaut rādīt sesijas statusa ziņojumu, kad ir bloķēts ekrāns. NOVECOJIS: Šī "
+"atslēga ir novecojusi un tiek ignorēta."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:7
+msgid "Disable all external search providers"
+msgstr "Izslēgt visus ārējos meklēšanas pakalpojuma sniedzējus"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:8
+msgid ""
+"Set to true to disable all external search provider programs, whether or not "
+"they are independently disabled or enabled. External search providers are "
+"installed by applications in $XDG_DATA_DIR/gnome-shell/search-providers."
+msgstr ""
+"Iestatiet uz patiess, lai izslēgtu visas ārējās meklēšanas pakalpojumu "
+"sniedzošās programmas, neatkarīgi no tā, vai tās ir ieslēgtas vai izslēgtas. "
+"Ārējos meklēšanas pakalpojuma sniedzējus instalē lietotnes direktorijā "
+"$XDG_DATA_DIR/gnome-shell/search-providers."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:18
+msgid ""
+"List of desktop file IDs for which the associated default-enabled search "
+"provider should be disabled"
+msgstr ""
+"Saraksts ar darbvirsmas datņu ID, kuriem vajadzētu izslēgt saistīto, pēc "
+"noklusējuma ieslēgto, meklēšanas pakalpojuma sniedzēju"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:22
+msgid ""
+"Results for applications contained in this list will not be displayed when "
+"searching."
+msgstr "Meklējot netiks rādīti rezultāti lietotnēm, kas ir šajā sarakstā."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:30
+msgid ""
+"List of desktop file IDs for which the associated default-disabled search "
+"provider should be enabled"
+msgstr ""
+"Saraksts ar darbvirsmas datņu ID, kuriem vajadzētu ieslēgt saistīto, pēc "
+"noklusējuma izslēgto, meklēšanas pakalpojuma sniedzēju"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:34
+msgid ""
+"Results for applications contained in this list will be displayed when "
+"searching."
+msgstr "Meklējot tiks rādīti rezultāti lietotnēm, kas ir šajā sarakstā."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:42
+msgid "List of desktop file IDs for search providers sort order"
+msgstr ""
+"Saraksts ar darbvirsmas datņu ID meklēšanas pakalpojuma sniedzēju kārtošanas "
+"secībai"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:43
+msgid ""
+"Results for applications contained in this list will be displayed in the "
+"specified order. Results for applications not specified in this list will be "
+"displayed last, sorted alphabetically."
+msgstr ""
+"Rezultāti lietotnēm, kas ir šajā sarakstā, tiks attēloti norādītajā secībā. "
+"Rezultāti lietotnēm, kas nav šajā sarakstā, tiks rādīti pēdējie, sakārtoti "
+"alfabētiski."
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:6
+msgid "Time before session is considered idle"
+msgstr "Laiks pirms sesija tiek uzskatīta par dīku."
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:7
+msgid ""
+"The number of seconds of inactivity before the session is considered idle."
+msgstr "Mijiedarbības sekunžu skaits, pirms sesija tiek uzskatīta par dīku."
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:11
+msgid "Session type"
+msgstr "Sesijas tips"
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:12
+msgid "The name of the session to use. Known value is “gnome”."
+msgstr "Nosaukums sesijai, kuru izmantot. Zināma vērtība ir “gnome”."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:6
+msgid "Sounds for events"
+msgstr "Notikumu skaņas"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:7
+msgid "Whether to play sounds on user events."
+msgstr "Vai lietotāja notikumiem atskaņot skaņas."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:11
+msgid "Sound theme name"
+msgstr "Skaņu motīva nosaukums"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:12
+msgid "The XDG sound theme to use for event sounds."
+msgstr "XDG skaņu motīvs, ko izmantot notikumu skaņām."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:16
+msgid "Input feedback sounds"
+msgstr "Ievades atgriezeniskās saites skaņas"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:17
+msgid "Whether to play sounds on input events."
+msgstr "Vai ievades notikumiem atskaņot skaņas."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:21
+msgid "Allow volume above 100%"
+msgstr "Atļaut skaļumu virs 100%"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:22
+msgid "Whether volume can be set above 100%, using software amplification."
+msgstr ""
+"Vai skaļumu var iestatīt virs 100%, izmantojot programmatūras pastiprināšanu."
+
+#: schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in:6
+msgid ""
+"Maximum age for thumbnails in the cache, in days. Set to -1 to disable "
+"cleaning."
+msgstr ""
+"Maksimālais sīktēlu vecums kešatmiņā, izteikts dienās. Iestatiet -1, lai "
+"izslēgtu tīrīšanu."
+
+#: schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in:10
+msgid ""
+"Maximum size of the thumbnail cache, in megabytes. Set to -1 to disable "
+"cleaning."
+msgstr ""
+"Maksimālais sīktēlu keša izmērs, izteikts megabaitos. Iestatiet -1, lai "
+"izslēgtu tīrīšanu."
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:6
+msgid "Disable all external thumbnailers"
+msgstr "Izslēgt visus ārējos sīktēlu veidotājus"
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:7
+msgid ""
+"Set to true to disable all external thumbnailer programs, independent on "
+"whether they are independently disabled/enabled."
+msgstr ""
+"Iestatiet uz “patiess“, lai izslēgtu visas ārējās sīktēlu veidošanas "
+"programmas, neskatoties uz to, vai viņas pašas saka, vai ir ieslēgtas vai "
+"izslēgtas."
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:15
+msgid ""
+"List of mime-types for which external thumbnailer programs will be disabled"
+msgstr ""
+"Saraksts ar mime tipiem, kuriem sīktēlu veidošanas programmas tiks izslēgtas"
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:19
+msgid ""
+"Thumbnails will not be created for files whose mime-type is contained in the "
+"list."
+msgstr "Sīktēli netiks veidoti datnēm, kuru mime tipi ir sarakstā."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:8
+msgid "Switch to workspace 1"
+msgstr "Pārslēgties uz 1. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:12
+msgid "Switch to workspace 2"
+msgstr "Pārslēgties uz 2. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:16
+msgid "Switch to workspace 3"
+msgstr "Pārslēgties uz 3. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:20
+msgid "Switch to workspace 4"
+msgstr "Pārslēgties uz 4. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:24
+msgid "Switch to workspace 5"
+msgstr "Pārslēgties uz 5. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:28
+msgid "Switch to workspace 6"
+msgstr "Pārslēgties uz 6. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:32
+msgid "Switch to workspace 7"
+msgstr "Pārslēgties uz 7. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:36
+msgid "Switch to workspace 8"
+msgstr "Pārslēgties uz 8. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:40
+msgid "Switch to workspace 9"
+msgstr "Pārslēgties uz 9. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:44
+msgid "Switch to workspace 10"
+msgstr "Pārslēgties uz 10. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:48
+msgid "Switch to workspace 11"
+msgstr "Pārslēgties uz 11. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:52
+msgid "Switch to workspace 12"
+msgstr "Pārslēgties uz 12. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:56
+msgid "Switch to workspace left"
+msgstr "Pārslēgties darbvietu pa kreisi"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:60
+msgid "Switch to workspace right"
+msgstr "Pārslēgties darbvietu pa labi"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:64
+msgid "Switch to workspace above"
+msgstr "Pārslēgties darbvietu uz augšu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:68
+msgid "Switch to workspace below"
+msgstr "Pārslēgties darbvietu uz leju"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:72
+msgid "Switch to last workspace"
+msgstr "Pārslēgties uz pēdējo darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:76
+msgid "Switch windows of an application"
+msgstr "Pārslēgt lietotnes logus"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:80
+msgid "Reverse switch windows of an application"
+msgstr "Apgrieztu pārslēgt lietotnes logus"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:84
+msgid "Switch applications"
+msgstr "Pārslēgt lietotnes"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:88
+msgid "Reverse switch applications"
+msgstr "Apgriezti pārslēgt lietotnes"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:92
+msgid "Switch windows"
+msgstr "Pārslēgt logus"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:96
+msgid "Reverse switch windows"
+msgstr "Apgriezti pārslēgties starp logiem"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:100
+msgid "Switch system controls"
+msgstr "Pārslēgt sistēmas vadīklas"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:104
+msgid "Reverse switch system controls"
+msgstr "Apgriezti pārslēgt sistēmas vadīklas"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:108
+msgid "Switch windows of an app directly"
+msgstr "Pārslēgties starp lietotnes logiem tieši"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:112
+msgid "Reverse switch windows of an app directly"
+msgstr "Apgriezti pārslēgties starp lietotnes logiem tieši"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:116
+msgid "Switch windows directly"
+msgstr "Pārslēgties starp logiem tieši"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:120
+msgid "Reverse switch windows directly"
+msgstr "Apgriezti pārslēgties starp logiem tieši"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:124
+msgid "Switch system controls directly"
+msgstr "Pārslēgt sistēmas vadīklas tieši"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:128
+msgid "Reverse switch system controls directly"
+msgstr "Apgriezti pārslēgt sistēmas vadīklas tieši"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:132
+msgid "Hide all normal windows"
+msgstr "Slēpt visus parastos logus"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:136
+msgid "DEPRECATED: This key is deprecated and ignored."
+msgstr "NOVECOJIS: Šī atslēga ir novecojusi un tiek ignorēta."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:140
+msgid "Show the run command prompt"
+msgstr "Rādīt palaišanas komandrindu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:144
+msgid "Don’t use"
+msgstr "Nelietot"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:148
+msgid "Activate the window menu"
+msgstr "Aktivizēt loga izvēlni"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:152
+msgid "Toggle fullscreen mode"
+msgstr "Pārslēgt pilnekrāna režīmu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:156
+msgid "Toggle maximization state"
+msgstr "Pārslēgt maksimizācijas stāvokli"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:160
+msgid "Toggle window always appearing on top"
+msgstr "Pārslēgt loga režīmu “Vienmēr virspusē”"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:164
+msgid "Maximize window"
+msgstr "Maksimizēt logu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:168
+msgid "Restore window"
+msgstr "Atjaunot logu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:172
+msgid "Minimize window"
+msgstr "Minimizēt logu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:176
+msgid "Close window"
+msgstr "Aizvērt logu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:180
+msgid "Move window"
+msgstr "Pārvietot logu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:184
+msgid "Resize window"
+msgstr "Mainīt loga izmēru"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:188
+msgid "Toggle window on all workspaces or one"
+msgstr "Pārslēgt, vai logam jābūt visās darbvietās vai vienā"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:192
+msgid "Move window to workspace 1"
+msgstr "Pārvietot logu uz 1. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:196
+msgid "Move window to workspace 2"
+msgstr "Pārvietot logu uz 2. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:200
+msgid "Move window to workspace 3"
+msgstr "Pārvietot logu uz 3. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:204
+msgid "Move window to workspace 4"
+msgstr "Pārvietot logu uz 4. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:208
+msgid "Move window to workspace 5"
+msgstr "Pārvietot logu uz 5. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:212
+msgid "Move window to workspace 6"
+msgstr "Pārvietot logu uz 6. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:216
+msgid "Move window to workspace 7"
+msgstr "Pārvietot logu uz 7. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:220
+msgid "Move window to workspace 8"
+msgstr "Pārvietot logu uz 8. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:224
+msgid "Move window to workspace 9"
+msgstr "Pārvietot logu uz 9. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:228
+msgid "Move window to workspace 10"
+msgstr "Pārvietot logu uz 10. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:232
+msgid "Move window to workspace 11"
+msgstr "Pārvietot logu uz 11. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:236
+msgid "Move window to workspace 12"
+msgstr "Pārvietot logu uz 12. darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:240
+msgid "Move window to last workspace"
+msgstr "Pārvietot logu uz pēdējo darbvietu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:244
+msgid "Move window one workspace to the left"
+msgstr "Pārvietot logu uz darbvietu pa kreisi"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:248
+msgid "Move window one workspace to the right"
+msgstr "Pārvietot logu uz darbvietu pa labi"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:252
+msgid "Move window one workspace up"
+msgstr "Pārvietot logu uz darbvietu augšup"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:256
+msgid "Move window one workspace down"
+msgstr "Pārvietot logu uz darbvietu lejup"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:260
+msgid "Move window to the next monitor on the left"
+msgstr "Pārvietot logu uz nākamo monitoru pa kreisi"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:264
+msgid "Move window to the next monitor on the right"
+msgstr "Pārvietot logu uz nākamo monitoru pa labi"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:268
+msgid "Move window to the next monitor above"
+msgstr "Pārvietot logu uz nākamo monitoru augšā"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:272
+msgid "Move window to the next monitor below"
+msgstr "Pārvietot logu uz nākamo monitoru apakšā"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:276
+msgid "Raise window if covered, otherwise lower it"
+msgstr "Pacelt logu, ja to aizsedz, citādi pazemināt"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:280
+msgid "Raise window above other windows"
+msgstr "Pacelt logu virs citiem logiem"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:284
+msgid "Lower window below other windows"
+msgstr "Pazemināt logu zem citiem logiem"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:288
+msgid "Maximize window vertically"
+msgstr "Maksimizēt logu vertikāli"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:292
+msgid "Maximize window horizontally"
+msgstr "Maksimizēt logu horizontāli"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:296
+msgid "Move window to top left corner"
+msgstr "Pārvietot logu uz augšējo kreiso stūri"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:300
+msgid "Move window to top right corner"
+msgstr "Pārvietot logu uz augšējo labo stūri"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:304
+msgid "Move window to bottom left corner"
+msgstr "Pārvietot logu uz apakšējo kreiso stūri"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:308
+msgid "Move window to bottom right corner"
+msgstr "Pārvietot logu uz apakšējo labo stūri"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:312
+msgid "Move window to top edge of screen"
+msgstr "Pārvietot logu uz augšējo ekrāna malu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:316
+msgid "Move window to bottom edge of screen"
+msgstr "Pārvietot logu uz apakšējo ekrāna malu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:320
+msgid "Move window to right side of screen"
+msgstr "Pārvietot logu uz kreiso ekrāna sānu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:324
+msgid "Move window to left side of screen"
+msgstr "Pārvietot logu uz labo ekrāna sānu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:328
+msgid "Move window to center of screen"
+msgstr "Pārvietot logu uz ekrāna vidu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:332
+msgid "Switch input source"
+msgstr "Pārslēgt ievades avotu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:333
+msgid "Binding to select the next input source"
+msgstr "Sasaiste, lai izvēlētos nākamo ievades avotu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:337
+msgid "Switch input source backward"
+msgstr "Nomainīt izvades avota aizmuguri"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:338
+msgid "Binding to select the previous input source"
+msgstr "Sasaiste, lai izvēlētos iepriekšējo ievades avotu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:342
+msgid "Toggle window to be always on top"
+msgstr "Pārslēgt loga režīmu uz “Vienmēr virspusē”"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:343
+msgid "Set or unset window to appear always on top"
+msgstr "Pārslēgt, vai loga režīms ir “Vienmēr virspusē”"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:8
+msgid "Modifier to use for modified window click actions"
+msgstr "Modifikators, ko izmantot modificēto logu klikšķināšanas darbībām"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:9
+msgid ""
+"Clicking a window while holding down this modifier key will move the window "
+"(left click), resize the window (middle click), or show the window menu "
+"(right click). The middle and right click operations may be swapped using "
+"the “resize-with-right-button” key. Modifier is expressed as “<Alt>” or "
+"“<Super>” for example."
+msgstr ""
+"Klikšķināšana uz loga, kamēr ir piespiest šis modifikatora taustiņš, "
+"pārvietos logu (kreisais klikšķis), mainīs loga izmēru (vidējais klikšķis), "
+"vai rādīs loga izvēlni (labais klikšķis). Vidējā un labā klikšķa darbības "
+"var samainīt vietām, izmantojot “resize-with-right-button” atslēgu. "
+"Modifikatoru izsaka kā “<Alt>” vai “<Super>”,  piemēram."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:19
+msgid "Whether to resize with the right button"
+msgstr "Vai mainīt izmēru ar labo pogu"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:20
+msgid ""
+"Set this to true to resize with the right button and show a menu with the "
+"middle button while holding down the key given in “mouse-button-modifier”; "
+"set it to false to make it work the opposite way around."
+msgstr ""
+"Iestatiet šo uz “patiess”, lai mainītu izmēru ar labo pogu un parādītu "
+"izvēlni ar vidējo pogu, kamēr tur piespiestu taustiņu, kas ir norādīts "
+"“mouse-button-modifier”. Iestatiet to uz “aplams”, lai tas darbotos pretēji."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:29
+msgid "Arrangement of buttons on the titlebar"
+msgstr "Pogu izkārtojums virsraksta joslā"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:30
+msgid ""
+"Arrangement of buttons on the titlebar. The value should be a string, such "
+"as “menu:minimize,maximize,spacer,close”; the colon separates the left "
+"corner of the window from the right corner, and the button names are comma-"
+"separated. Duplicate buttons are not allowed. Unknown button names are "
+"silently ignored so that buttons can be added in future metacity versions "
+"without breaking older versions. A special spacer tag can be used to insert "
+"some space between two adjacent buttons."
+msgstr ""
+"Pogu izkārtojums virsraksta joslā. Vērtībām ir jābūt virknei, piemēram, "
+"“menu:minimize,maximize,spacer,close”. Kols atdala loga kreiso stūri no labā "
+"un pogu nosaukumus atdala ar komatiem. Nav atļautas dublējošās pogas. "
+"Nezināmie pogu nosaukumi tiks klusām ignorēti, lai tos varētu pievienot "
+"turpmākajām metacity versijām, nesalaužot vecākas versijas. Var izmantot "
+"īpašu atstarpju birku, lai palielinātu atstarpi starp divām blakus esošām "
+"pogām."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:43
+msgid "Window focus mode"
+msgstr "Loga fokusēšanas režīms"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:44
+msgid ""
+"The window focus mode indicates how windows are activated. It has three "
+"possible values; “click” means windows must be clicked in order to focus "
+"them, “sloppy” means windows are focused when the mouse enters the window, "
+"and “mouse” means windows are focused when the mouse enters the window and "
+"unfocused when the mouse leaves the window."
+msgstr ""
+"Loga fokusa režīms norāda, kā logi tiek aktivēti. Tam ir trīs iespējamās "
+"vērtības — “click” nozīmē, ka uz loga ir jāuzklikšķina, lai uz to fokusētos; "
+"“sloppy” nozīmē, ka uz loga fokusējas, kad pele ieiet logā; “mouse” nozīmē, "
+"ka uz logu fokusējas, kad pele ieiet logā, un fokuss pazūd, kad pele iziet "
+"no loga."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:55
+msgid "Control how new windows get focus"
+msgstr "Kontrolēt, kā logs saņems fokusu"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:56
+msgid ""
+"This option provides additional control over how newly created windows get "
+"focus. It has two possible values; “smart” applies the user’s normal focus "
+"mode, and “strict” results in new windows not being given focus "
+"automatically."
+msgstr ""
+"Šī iespēja dod papildu kontroli pār to, kā jaunizveidotie logu saņem fokusu. "
+"Tam ir divas iespējamās vērtības — “smart” izmanto parasto lietotāja "
+"fokusēšanās režīmu; “strict” nozīmē, ka jauniem logiem netiek automātiski "
+"dots fokuss."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:65
+msgid "Whether windows should be raised when their client area is clicked"
+msgstr ""
+"Vai logiem vajadzētu būt paceltiem, kad ir uzklikšķināts un klienta laukuma"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:68
+msgid ""
+"The default, true, indicates that a window will be raised whenever its "
+"client area or its frame is clicked. Setting this to false means that a "
+"window will not be raised if it is clicked on the client area. To raise it, "
+"one can click anywhere in the window’s frame, or Super-click on any part of "
+"the window. This mode is useful if one uses many overlapping windows."
+msgstr ""
+"Noklusējums “patiess” norāda, ka logs tiks pacelts, ja tiks uzklikšķināts un "
+"klienta laukuma vai ietvara. Šīs opcijas iestatīšana uz “aplams” nozīmēs, ka "
+"logs netiks pacelts, ja uzklikšķinās uz klienta laukuma. Lai to paceltu, "
+"jāuzklikšķina jebkur uz loga rāmja vai jāspiež Super+klikšķis uz jebkuras "
+"loga daļas. Šis režīms noder, ja izmantojat vairākus logus, kas pārklājas."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:82
+msgid "Action on title bar double-click"
+msgstr "Darbība, ko veikt pēc dubultklikšķa uz virsraksta joslas"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:83
+msgid ""
+"This option determines the effects of double-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Šī opcija nosaka dubultklikšķa ietekmi uz virsraksta joslu. Pašlaik derīgās "
+"opcijas ir “toggle-maximize”, kas maksimizēs vai atjaunos logu; “toggle-"
+"maximize-horizontally” un “toggle-maximize-vertically” maksimizēs vai "
+"atjaunos logu tikai attiecīgajā virzienā; “minimize”, kas minimizēs logu; "
+"“menu”, kas parādīs loga izvēlni; “lower”, kas novietos logu aiz visiem "
+"pārējiem; ”none“, kas neko nedarīs."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:105
+msgid "Action on title bar middle-click"
+msgstr "Darbība, ko veikt pēc vidējā klikšķa uz virsraksta joslas"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:106
+msgid ""
+"This option determines the effects of middle-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Šī opcija nosaka vidējā klikšķa ietekmi uz virsraksta joslu. Pašlaik derīgās "
+"opcijas ir “toggle-maximize”, kas maksimizēs vai atjaunos logu; “toggle-"
+"maximize-horizontally” un “toggle-maximize-vertically” maksimizēs vai "
+"atjaunos logu tikai attiecīgajā virzienā; “minimize”, kas minimizēs logu; "
+"“menu”, kas parādīs loga izvēlni; “lower”, kas novietos logu aiz visiem "
+"pārējiem; ”none“, kas neko nedarīs."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:129
+msgid "Action on title bar right-click"
+msgstr "Darbība, ko veikt pēc labā klikšķa uz virsraksta joslas"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:130
+msgid ""
+"This option determines the effects of right-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Šī opcija nosaka labā klikšķa ietekmi uz virsraksta joslu. Pašlaik derīgās "
+"opcijas ir “toggle-maximize”, kas maksimizēs vai atjaunos logu; “toggle-"
+"maximize-horizontally” un “toggle-maximize-vertically” maksimizēs vai "
+"atjaunos logu tikai attiecīgajā virzienā; “minimize”, kas minimizēs logu; "
+"“menu”, kas parādīs loga izvēlni; “lower”, kas novietos logu aiz visiem "
+"pārējiem; ”none“, kas neko nedarīs."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:152
+msgid "Automatically raises the focused window"
+msgstr "Automātiski paceļ fokusētu logu"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:153
+msgid ""
+"If set to true, and the focus mode is either “sloppy” or “mouse” then the "
+"focused window will be automatically raised after a delay specified by the "
+"auto-raise-delay key. This is not related to clicking on a window to raise "
+"it, nor to entering a window during drag-and-drop."
+msgstr ""
+"Ja iestatīts kā “patiess” un fokusa režīms ir “sloppy” vai “mouse“, tad "
+"fokusētais logs tiks automātiski pacelts pēc aizkaves, ko norāda auto-raise-"
+"delay atslēga. Tas neattiecas uz klikšķināšanu uz loga, lai to paceltu, nedz "
+"ieiešanu logā, kad notiek vilkšana un mešana."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:163
+msgid "Delay in milliseconds for the auto raise option"
+msgstr "Aizture automātiskās logu pacelšanas opcijai, izteikts milisekundēs"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:164
+msgid ""
+"The time delay before raising a window if auto-raise is set to true. The "
+"delay is given in thousandths of a second."
+msgstr ""
+"Laika aizkave, pirms loga pacelšanas, ja uto-raise ir iestatīts uz "
+"“patiess”. Aizkave tiek norādīta sekundes tūkstošdaļās."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:171
+msgid "Current theme"
+msgstr "Pašreizējais motīvs"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:172
+msgid ""
+"The theme determines the appearance of window borders, titlebar, and so "
+"forth. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Motīvs nosaka logu malu izskatu, virsrakstu joslu un tā tālāk. NOVECOJIS: Šī "
+"atslēga ir novecojusi un tiek ignorēta."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:181
+msgid "Use standard system font in window titles"
+msgstr "Logu virsrakstos lietot standarta sistēmas fontu"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:182
+msgid ""
+"If true, ignore the titlebar-font option, and use the standard application "
+"font for window titles."
+msgstr ""
+"Ja “patiess”, ignorēt titlebar-font opciju un izmantot standarta lietotņu "
+"fontu logu virsrakstiem."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:189
+msgid "Window title font"
+msgstr "Loga virsraksta fonts"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:190
+msgid ""
+"A font description string describing a font for window titlebars. The size "
+"from the description will only be used if the titlebar-font-size option is "
+"set to 0. Also, this option is disabled if the titlebar-uses-desktop-font "
+"option is set to true."
+msgstr ""
+"Fonta apraksta virkne, kas apraksta fontu, ko izmantot virsrakstu joslās. "
+"Izmērs no apraksta tiks izmantots tikai, ja titlebar-font-size opcija ir "
+"iestatīta uz 0. Šī opcija tiek izslēgta, ja titlebar-uses-desktop-font "
+"opcija ir iestatīta uz “patiess”."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:200
+msgid "Number of workspaces"
+msgstr "Darbvietu skaits"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:201
+msgid ""
+"Number of workspaces. Must be more than zero, and has a fixed maximum to "
+"prevent making the desktop unusable by accidentally asking for too many "
+"workspaces."
+msgstr ""
+"Darbvirsmu skaits. Jābūt lielākam par nulli un tam ir fiksēts maksimums, lai "
+"neļautu netīšām padarīt darbvirsmu nelietojamu, pieprasot pārāk daudz "
+"darbvirsmu."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:209
+msgid "System Bell is Audible"
+msgstr "Sistēmas zvans ir sadzirdams"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:210
+msgid ""
+"Determines whether applications or the system can generate audible “beeps”; "
+"may be used in conjunction with “visual bell” to allow silent “beeps”."
+msgstr ""
+"Nosaka, vai lietotnes un sistēma var ģenerēt dzirdamus pīkstienus. Var "
+"izmantot kopā ar vizuālajiem zvaniem, lai ļautu klusos pīkstienus."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:218
+msgid "Enable Visual Bell"
+msgstr "Ieslēgt vizuālo zvanu"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:219
+msgid ""
+"Turns on a visual indication when an application or the system issues a "
+"“bell” or “beep”; useful for the hard-of-hearing and for use in noisy "
+"environments."
+msgstr ""
+"Ieslēdz vizuālus indikatorus, kad lietotne vai sistēma izdod zvanu vai "
+"pīkstienu. Noder tiem, kam ir grūtības dzirdēt vai strādā trokšņainā vidē."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:228
+msgid "Visual Bell Type"
+msgstr "Vizuālā zvana tips"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:229
+msgid ""
+"Tells the WM how to implement the visual indication that the system bell or "
+"another application “bell” indicator has been rung. Currently there are two "
+"valid values, “fullscreen-flash”, which causes a fullscreen white-black "
+"flash, and “frame-flash” which causes the titlebar of the application which "
+"sent the bell signal to flash. If the application which sent the bell is "
+"unknown (as is usually the case for the default “system beep”), the "
+"currently focused window’s titlebar is flashed."
+msgstr ""
+"Pasaka logu pārvaldniekam, kā implementēt vizuālos indikatorus, ka sistēmas "
+"zvans vai citas lietotnes zvana indikators ir nozvanījis. Pašlaik ir divas "
+"derīgas vērtības — “fullscreen-flash”, kas liek visam ekrānam nozibsnīt ar "
+"melns-balts zibsni; un “frame-flash”, kas liek nozibsnīt virsraksta joslai "
+"tai lietotnei, kas ir izsaukusi zvanu.Ja pamatā esošajai aparatūrai ir "
+"privātuma ekrāna atbalsts un šis iestatījums ir iespējots, paneļi, kas "
+"atbalsta šo tehnoloģiju, tiks aizsegti no sānskata. Ja nav zināma lietotne, "
+"kas nosūtīja zvanu (parasti tas nozīmē, ka tika izsaukts noklusējuma "
+"“sistēmas zvans”), tiek nozibsnīta pašlaik fokusētā loga virsraksta josla."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:250
+msgid "Disable misfeatures that are required by old or broken applications"
+msgstr "Izslēgt sliktās iespējas, ko pieprasa vecas vai bojātas lietotnes"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:253
+msgid ""
+"Some applications disregard specifications in ways that result in window "
+"manager misfeatures. This option puts the WM in a rigorously correct mode, "
+"which gives a more consistent user interface, provided one does not need to "
+"run any misbehaving applications."
+msgstr ""
+"Dažas lietotnes atmet specifikāciju tādos veidos, kas beidzas ar loga "
+"pārvaldnieka sliktu uzvedību. Šī opcija ieliek logu pārvaldnieku strikti "
+"pareizā režīmā, kas dod konsekventāku lietotāja saskarni, ja vien nevajag "
+"darbināt lietotnes,kas slikti uzvedās."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:263
+msgid "The names of the workspaces"
+msgstr "Darbvietu nosaukumi"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:264
+msgid ""
+"Defines the names that should be assigned to workspaces. If the list is too "
+"long for the current number of workspaces, names in excess will be ignored. "
+"If the list is too short, or includes empty names, missing values will be "
+"replaced with the default (“Workspace N”)."
+msgstr ""
+"Definē nosaukums, kas jāpiešķir darbvirsmām. Ja saraksts ir pārāk garš "
+"dotajam darbvietu skaitam, liekie nosaukumi tiks ignorēti. Ja saraksts ir "
+"pārāk īss vai arī iekļauj tukšus nosaukums, trūkstošās vērtības tiks "
+"aizstātas ar noklusējuma (“Darbvirsma N”)."
+
+#: schemas/org.gnome.system.locale.gschema.xml.in:6
+msgid "The locale to use for dates / numbers formats"
+msgstr "Lokāle, ko izmantot datumu / skaitļu formātiem"
+
+#: schemas/org.gnome.system.locale.gschema.xml.in:7
+msgid ""
+"Specify the locale to be used for displaying dates, times and numbers "
+"formats."
+msgstr ""
+"Norāda lokāli, ko izmantot, attēlojot datumu, laiku un skaitļu formātus."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:7
+msgid "Geolocation services are enabled."
+msgstr "Ģeolokācijas pakalpojums ir ieslēgts."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:8
+msgid "If true, applications are allowed to access location information."
+msgstr "Ja patiess, lietotnes drīkst piekļūt informācijai par atrašanās vietu."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:14
+msgid "The maximum accuracy level of location."
+msgstr "Maksimālais vietas precizitātes līmenis."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:15
+msgid ""
+"Configures the maximum level of location accuracy applications are allowed "
+"to see. Valid options are “country”, “city”, “neighborhood”, “street”, and "
+"“exact” (typically requires GPS receiver). Please keep in mind that this "
+"only controls what GeoClue will allow applications to see and they can find "
+"user’s location on their own using network resources (albeit with street-"
+"level accuracy at best)."
+msgstr ""
+"Konfigurē maksimālo atrašanās vietas precizitātes līmeni, kādu drīkst redzēt "
+"lietotnes. Derīgās opcijas ir “country”, “city”, “neighborhood”, “street” un "
+"“exact” (parasti vajag GPS uztvērēju). Paturiet prātā, ka tas nosaka tikai "
+"to, kādu informāciju GeoClue ļaus redzēt lietotnēm, jo tās var pašas noteikt "
+"lietotāja atrašanās vietu, izmantojot tīkla resursus (tiesa, labākajā "
+"gadījumā tas dos precizitāti līdz ielai)."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:10
+msgid "Proxy configuration mode"
+msgstr "Starpnieka konfigurācijas režīms"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:11
+msgid ""
+"Select the proxy configuration mode. Supported values are “none”, “manual”, "
+"“auto”. If this is “none”, then proxies are not used. If it is “auto”, the "
+"autoconfiguration URL described by the “autoconfig-url” key is used. If it "
+"is “manual”, then the proxies described by “/system/proxy/http”, “/system/"
+"proxy/https”, “/system/proxy/ftp” and “/system/proxy/socks” will be used. "
+"Each of the 4 proxy types is enabled if its “host” key is non-empty and its "
+"“port” key is non-0. If an http proxy is configured, but an https proxy is "
+"not, then the http proxy is also used for https. If a SOCKS proxy is "
+"configured, it is used for all protocols, except that the http, https, and "
+"ftp proxy settings override it for those protocols only."
+msgstr ""
+"Izvēlieties starpnieka konfigurēšanas režīmu. Atbalstītās vērtības ir "
+"“none”, “manual”, “auto”. Ja tā ir “none”, starpnieks netiks izmantots. Ja "
+"tā ir “auto”, tiks izmantots automātiskās konfigurēšanas URL, kas ir "
+"aprakstīts atslēgā “autoconfig-url“. Ja  tā ir “manual”, tiks izmantos "
+"starpnieks, kas ir aprakstīti “/system/proxy/http”, “/system/proxy/https”, “/"
+"system/proxy/ftp” and “/system/proxy/socks”. Katrs no 4 starpniekiem tiks "
+"aktivēts, ja “host” atslēga nav tukša un “port” atslēga nav 0. Ja ir "
+"konfigurēts http starpnieks, bet ne https, tad http starpnieks tiks "
+"izmantots arī https protokolam. Ja ir konfigurēts SOCKS starpnieks, tas tiks "
+"izmantots visiem protokoliem, izņemot http, https un ftp starpnieka "
+"iestatījumi tos pārraksta tikai tiem protokoliem."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:36
+msgid "Automatic proxy configuration URL"
+msgstr "Automātiskās starpnieka konfigurācijas URL"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:37
+msgid ""
+"URL that provides proxy configuration values. When mode is “auto”, this URL "
+"is used to look up proxy information for all protocols."
+msgstr ""
+"URL, kurā ir starpnieka konfigurācijas vērtības. Kad režīms ir “auto”, šis "
+"URL tiks izmantots, lai uzmeklētu starpnieka informāciju par visiem "
+"protokoliem."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:45
+msgid "Non-proxy hosts"
+msgstr "Ne starpnieku resursdatori"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:46
+msgid ""
+"This key contains a list of hosts which are connected to directly, rather "
+"than via the proxy (if it is active). The values can be hostnames, domains "
+"(using an initial wildcard like *.foo.com), IP host addresses (both IPv4 and "
+"IPv6) and network addresses with a netmask (something like 192.168.0.0/24)."
+msgstr ""
+"Šī atslēga satur datoru sarakstu, ar kuriem savienoties tieši, nevis caur "
+"starpnieku (ja tās ir). Vērtības var būt datoru vārdi, domēni (izmantojot "
+"sākotnējo aizstājējzīmi, piemēram, *.foo.com), IP adreses (gan IPv4, gan "
+"IPv6) un tīkla adreses ar tīkla masku (teiksim 192.168.0.0/24)."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:56
+msgid "Use HTTP proxy for all protocols"
+msgstr "Izmantot HTTP starpnieku visiem protokoliem"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:57
+msgid "Whether to use the HTTP proxy for all protocols or not."
+msgstr "Vai izmantot HTTP starpnieku visiem protokoliem."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:65
+msgid "Unused; ignore"
+msgstr "Nelietots; ignorēt"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:66
+msgid ""
+"This key is not used; HTTP proxying is enabled when the host key is non-"
+"empty and the port is non-0."
+msgstr ""
+"Šī atslēga netiek izmantota; HTTP starpniecība ir ieslēgta, kad “host” "
+"atslēga nav tukša un “port” nav 0."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:73
+msgid "HTTP proxy host name"
+msgstr "HTTP starpniekservera nosaukums"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:74
+msgid "The machine name to proxy HTTP through."
+msgstr "Datora nosaukums, caur kuru sūtīt HTTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:81
+msgid "HTTP proxy port"
+msgstr "HTTP starpnieka ports"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:82
+msgid ""
+"The port on the machine defined by “/system/proxy/http/host” that you proxy "
+"through."
+msgstr "Starpnieka datora ports, kurš ir noteikts “/system/proxy/http/host”."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:89
+msgid "Authenticate proxy server connections"
+msgstr "Autentificēt starpnieka servera savienojumus"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:90
+msgid ""
+"If true, then connections to the proxy server require authentication. The "
+"username/password combo is defined by “/system/proxy/http/authentication-"
+"user” and “/system/proxy/http/authentication-password”. This applies only to "
+"the http proxy; when using a separate https proxy, there is currently no way "
+"to specify that it should use authentication."
+msgstr ""
+"Ja patiess, savienojums ar starpniekserveri pieprasa autentificēšanos. "
+"Lietotājvārda un paroles kombināciju nosaka “/system/proxy/http/"
+"authentication-user” un “/system/proxy/http/authentication-password”. Tas "
+"attiecas tikai uz http starpnieku. Ja izmanto atsevišķu https starpnieku, "
+"pašlaik nav veida, kā norādīt, ka jāizmanto autentificēšanās."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:103
+msgid "HTTP proxy username"
+msgstr "HTTP starpnieka lietotājvārds"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:104
+msgid "User name to pass as authentication when doing HTTP proxying."
+msgstr ""
+"Lietotājvārds, lai tiktu cauri autentifikācijai, kad izmanto HTTP starpnieku."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:110
+msgid "HTTP proxy password"
+msgstr "HTTP starpnieka parole"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:111
+msgid "Password to pass as authentication when doing HTTP proxying."
+msgstr "Parole, lai tiktu cauri autentifikācijai, kad izmanto HTTP starpnieku."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:119
+msgid "Secure HTTP proxy host name"
+msgstr "Drošā HTTP starpniekservera nosaukums"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:120
+msgid "The machine name to proxy secure HTTP through."
+msgstr "Datora nosaukums, caur kuru sūtīt drošo HTTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:127
+msgid "Secure HTTP proxy port"
+msgstr "Drošā HTTP starpnieka ports"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:128
+msgid ""
+"The port on the machine defined by “/system/proxy/https/host” that you proxy "
+"through."
+msgstr "Starpnieka datora ports, kurš ir noteikts “/system/proxy/https/host”."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:137
+msgid "FTP proxy host name"
+msgstr "FTP starpniekservera nosaukums"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:138
+msgid "The machine name to proxy FTP through."
+msgstr "Datora vārds, caur kuru sūtīt FTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:145
+msgid "FTP proxy port"
+msgstr "FTP starpnieka ports"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:146
+msgid ""
+"The port on the machine defined by “/system/proxy/ftp/host” that you proxy "
+"through."
+msgstr "Starpnieka datora ports, kurš ir noteikts “/system/proxy/ftp/host”."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:155
+msgid "SOCKS proxy host name"
+msgstr "SOCKS starpniekservera nosaukums"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:156
+msgid "The machine name to use as a SOCKS proxy."
+msgstr "Datora nosaukums, ko izmantot kā SOCKS starpnieku."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:163
+msgid "SOCKS proxy port"
+msgstr "SOCKS starpnieka ports"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:164
+msgid ""
+"The port on the machine defined by “/system/proxy/socks/host” that you proxy "
+"through."
+msgstr "Starpnieka datora ports, kurš ir noteikts “/system/proxy/socks/host”."
+
+#~ msgid "Show the activities overview"
+#~ msgstr "Rādīt aktivitāšu pārskatu"
+
+#~ msgid "Toggle shaded state"
+#~ msgstr "Pārslēgt ēnoto stāvokli"
+
+#~ msgid "This key is not used, and should not be read or modified."
+#~ msgstr "Šī atslēga netiek izmantota un to nevajadzētu lasīt vai modificēt."
+

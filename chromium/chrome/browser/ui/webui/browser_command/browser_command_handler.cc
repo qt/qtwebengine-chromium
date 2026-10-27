@@ -22,12 +22,11 @@
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_navigator.h"
-#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/customize_chrome/side_panel_controller.h"
+#include "chrome/browser/ui/navigator/browser_navigator.h"
 #include "chrome/browser/ui/tabs/public/tab_features.h"
 #include "chrome/browser/ui/tabs/split_tab_metrics.h"
 #include "chrome/browser/ui/tabs/tab_group_model.h"
@@ -282,7 +281,8 @@ void BrowserCommandHandler::OnTutorialStarted(
 }
 
 void BrowserCommandHandler::StartTutorial(StartTutorialInPage::Params params) {
-  BrowserWindowInterface* browser = chrome::FindBrowserWithProfile(profile_);
+  BrowserWindowInterface* browser =
+      ProfileBrowserCollection::GetForProfile(profile_)->GetLastActiveBrowser();
   StartTutorialInPage::Start(browser->GetBrowserForMigrationOnly(),
                              std::move(params));
 }
@@ -294,7 +294,8 @@ bool BrowserCommandHandler::TutorialServiceExists() {
 }
 
 bool BrowserCommandHandler::BrowserSupportsTabGroups() {
-  BrowserWindowInterface* browser = chrome::FindBrowserWithProfile(profile_);
+  BrowserWindowInterface* browser =
+      ProfileBrowserCollection::GetForProfile(profile_)->GetLastActiveBrowser();
   return browser->GetTabStripModel()->SupportsTabGroups();
 }
 
@@ -312,17 +313,19 @@ void BrowserCommandHandler::StartTabGroupTutorial() {
 
 void BrowserCommandHandler::NavigateToEnhancedProtectionSetting() {
   chrome::ShowSafeBrowsingEnhancedProtectionWithIph(
-      chrome::FindBrowserWithProfile(profile_),
+      ProfileBrowserCollection::GetForProfile(profile_)->GetLastActiveBrowser(),
       safe_browsing::SafeBrowsingSettingReferralMethod::kPromoSlingerReferral);
 }
 
 void BrowserCommandHandler::OpenPasswordManager() {
-  chrome::ShowPasswordManager(chrome::FindBrowserWithProfile(profile_));
+  chrome::ShowPasswordManager(ProfileBrowserCollection::GetForProfile(profile_)
+                                  ->GetLastActiveBrowser());
 }
 
 void BrowserCommandHandler::OpenAISettings() {
-  chrome::ShowSettingsSubPage(chrome::FindBrowserWithProfile(profile_),
-                              chrome::kExperimentalAISettingsSubPage);
+  chrome::ShowSettingsSubPage(
+      ProfileBrowserCollection::GetForProfile(profile_)->GetLastActiveBrowser(),
+      chrome::kExperimentalAISettingsSubPage);
 }
 
 bool BrowserCommandHandler::DefaultSearchProviderIsGoogle() {
@@ -330,7 +333,8 @@ bool BrowserCommandHandler::DefaultSearchProviderIsGoogle() {
 }
 
 bool BrowserCommandHandler::BrowserSupportsSavedTabGroups() {
-  BrowserWindowInterface* browser = chrome::FindBrowserWithProfile(profile_);
+  BrowserWindowInterface* browser =
+      ProfileBrowserCollection::GetForProfile(profile_)->GetLastActiveBrowser();
 
   // Duplicated from chrome/browser/ui/views/bookmarks/bookmark_bar_view.cc
   // Which cannot be included here
@@ -345,7 +349,7 @@ void BrowserCommandHandler::OpenNTPAndStartCustomizeChromeTutorial() {
     params.tutorial_id = tutorial_id;
     params.callback = base::BindOnce(&BrowserCommandHandler::OnTutorialStarted,
                                      base::Unretained(this), tutorial_id);
-    params.target_url = GURL(chrome::kChromeUINewTabPageURL);
+    params.target_url = chrome::ChromeUINewTabPageURLAsGURL();
     StartTutorial(std::move(params));
   }
 }
@@ -380,8 +384,7 @@ void BrowserCommandHandler::OpenGlic() {
   auto* browser_window = webui::GetBrowserWindowInterface(web_contents_);
 
   glic_service->ToggleUI(browser_window, /*prevent_close=*/false,
-                         glic::mojom::InvocationSource::kWhatsNew,
-                         /*prompt_suggestion=*/std::nullopt);
+                         glic::mojom::InvocationSource::kWhatsNew);
 }
 
 void BrowserCommandHandler::OpenGlicSettings() {
@@ -400,13 +403,7 @@ void BrowserCommandHandler::OpenGlicSettings() {
       return;
     }
 
-    std::string ks_param;
-#if BUILDFLAG(IS_WIN)
-    ks_param = "chrome_ks_win";
-#elif BUILDFLAG(IS_MAC)
-    ks_param = "chrome_ks_mac";
-#endif
-    NavigateToURL(net::AppendOrReplaceQueryParameter(GURL(url), "p", ks_param),
+    NavigateToURL(glic::GetHelpCenterUrl(url),
                   WindowOpenDisposition::SINGLETON_TAB);
   }
 }
@@ -416,6 +413,7 @@ void BrowserCommandHandler::OpenSplitView() {
       tabs::TabInterface::MaybeGetFromContents(web_contents_);
   if (tab && !tab->IsSplit()) {
     chrome::NewSplitTab(tab->GetBrowserWindowInterface(),
+                        split_tabs::SplitTabLayout::kSideBySide,
                         split_tabs::SplitTabCreatedSource::kWhatsNew);
   }
 }

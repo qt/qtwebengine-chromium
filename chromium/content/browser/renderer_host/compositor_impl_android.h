@@ -19,9 +19,7 @@
 #include "cc/paint/element_id.h"
 #include "cc/slim/layer_tree.h"
 #include "cc/slim/layer_tree_client.h"
-#include "cc/trees/layer_tree_host_client.h"
-#include "cc/trees/layer_tree_host_single_thread_client.h"
-#include "cc/trees/paint_holding_commit_trigger.h"
+#include "cc/trees/layer_tree_host_single_thread_delegate.h"
 #include "cc/trees/paint_holding_reason.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
@@ -74,7 +72,9 @@ class CONTENT_EXPORT CompositorImpl : public Compositor,
                                       public viz::HostFrameSinkClient,
                                       public display::DisplayObserver {
  public:
-  CompositorImpl(CompositorClient* client, gfx::NativeWindow root_window);
+  CompositorImpl(CompositorClient* client,
+                 gfx::NativeWindow root_window,
+                 bool is_offscreen_rendering);
 
   CompositorImpl(const CompositorImpl&) = delete;
   CompositorImpl& operator=(const CompositorImpl&) = delete;
@@ -126,6 +126,7 @@ class CONTENT_EXPORT CompositorImpl : public Compositor,
   const gfx::Size& GetWindowBounds() override;
   void SetRequiresAlphaChannel(bool flag) override;
   void SetNeedsComposite() override;
+  void SetDrawPaused(bool paused) override;
   base::WeakPtr<ui::UIResourceProvider> GetUIResourceProvider() override;
   ui::ResourceManager& GetResourceManager() override;
   void CacheBackBufferForCurrentSurface() override;
@@ -220,6 +221,7 @@ class CONTENT_EXPORT CompositorImpl : public Compositor,
       const PendingSurfaceCopyId& scoped_keep_surface_alive_id);
 
   viz::FrameSinkId frame_sink_id_;
+  const bool is_offscreen_rendering_;
 
   // root_layer_ is the persistent internal root layer, while subroot_layer_
   // is the one attached by the compositor client.
@@ -245,6 +247,8 @@ class CONTENT_EXPORT CompositorImpl : public Compositor,
 
   // Whether we need to update animations on the next composite.
   bool needs_animate_;
+
+  bool draw_paused_ = false;
 
   // The number of SubmitFrame calls that have not returned and ACK'd from
   // the GPU thread.

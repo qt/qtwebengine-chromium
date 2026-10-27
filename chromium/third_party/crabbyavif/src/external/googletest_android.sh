@@ -27,7 +27,7 @@ if [ $# -ne 1 ]; then
   exit 1
 fi
 
-git clone -b v1.13.0 --depth 1 https://github.com/google/googletest.git
+git clone -b v1.16.0 --depth 1 https://github.com/google/googletest.git
 
 cd googletest
 

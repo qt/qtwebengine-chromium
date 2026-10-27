@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
-
 assert(is_chromeos)
 
 static_library("login") {
@@ -20,6 +18,7 @@ static_library("login") {
     "//base",
     "//chrome/browser:browser_process",
     "//chrome/browser/ash/policy/core",
+    "//chrome/browser/net",
     "//chromeos/dbus/power",
     "//components/policy:generated",
     "//components/policy/core/browser",

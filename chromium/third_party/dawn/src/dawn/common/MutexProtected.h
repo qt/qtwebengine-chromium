@@ -32,16 +32,17 @@
 #include <condition_variable>
 #include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <type_traits>
 #include <utility>
 
-#include "dawn/common/Compiler.h"
-#include "dawn/common/Defer.h"
-#include "dawn/common/Mutex.h"
-#include "dawn/common/NonMovable.h"
-#include "dawn/common/Ref.h"
-#include "dawn/common/StackAllocated.h"
-#include "dawn/common/Time.h"
+#include "src/dawn/common/Compiler.h"
+#include "src/dawn/common/Defer.h"
+#include "src/dawn/common/Mutex.h"
+#include "src/dawn/common/Ref.h"
+#include "src/dawn/common/StackAllocated.h"
+#include "src/dawn/common/Time.h"
+#include "src/utils/non_movable.h"
 
 namespace dawn {
 
@@ -64,6 +65,7 @@ namespace detail {
 template <typename T>
 struct MutexProtectedTraits {
     using MutexType = std::mutex;
+    template <typename Unused>
     using LockType = std::unique_lock<std::mutex>;
     using ObjectType = T;
 
@@ -74,8 +76,8 @@ struct MutexProtectedTraits {
     static ObjectType* GetObj(T* const obj) { return obj; }
     static const ObjectType* GetObj(const T* const obj) { return obj; }
 
-    static std::optional<LockType> TryLock(MutexType& mutex) {
-        LockType lock(GetMutex(mutex), std::try_to_lock);
+    static std::optional<LockType<T>> TryLock(MutexType& mutex) {
+        LockType<T> lock(GetMutex(mutex), std::try_to_lock);
         if (!lock.owns_lock()) {
             return std::nullopt;
         }
@@ -86,6 +88,7 @@ struct MutexProtectedTraits {
 template <typename T>
 struct MutexProtectedTraits<Ref<T>> {
     using MutexType = Ref<Mutex>;
+    template <typename Unused>
     using LockType = Mutex::AutoLock;
     using ObjectType = T;
 
@@ -100,6 +103,7 @@ struct MutexProtectedTraits<Ref<T>> {
 template <typename T>
 struct MutexRefProtectedTraits {
     using MutexType = Ref<Mutex>;
+    template <typename Unused>
     using LockType = Mutex::AutoLock;
     using ObjectType = T;
 
@@ -107,6 +111,21 @@ struct MutexRefProtectedTraits {
 
     static MutexType CreateMutex() { return AcquireRef(new Mutex()); }
     static Mutex* GetMutex(MutexType& m) { return m.Get(); }
+    static ObjectType* GetObj(T* const obj) { return obj; }
+    static const ObjectType* GetObj(const T* const obj) { return obj; }
+};
+
+template <typename T>
+struct MutexRWProtectedTraits {
+    using MutexType = std::shared_mutex;
+    template <typename U>
+    using LockType = std::conditional_t<std::is_const_v<U>,
+                                        std::shared_lock<std::shared_mutex>,
+                                        std::unique_lock<std::shared_mutex>>;
+    using ObjectType = T;
+
+    static MutexType CreateMutex() { return std::shared_mutex(); }
+    static std::shared_mutex& GetMutex(MutexType& m) { return m; }
     static ObjectType* GetObj(T* const obj) { return obj; }
     static const ObjectType* GetObj(const T* const obj) { return obj; }
 };
@@ -134,7 +153,7 @@ class DAWN_SCOPED_LOCKABLE Guard : public NonMovable, StackAllocated {
     Guard() : mLock() {}
     Guard(T* obj, typename Traits::MutexType& mutex, class Defer* defer = nullptr)
         : mLock(Traits::GetMutex(mutex)), mObj(obj), mDefer(defer) {}
-    Guard(T* obj, Traits::LockType&& lock, class Defer* defer = nullptr)
+    Guard(T* obj, typename Traits::template LockType<T>&& lock, class Defer* defer = nullptr)
         : mLock(std::move(lock)), mObj(obj), mDefer(defer) {}
     Guard(Guard&& other)
         : mLock(std::move(other.mLock)),
@@ -169,7 +188,7 @@ class DAWN_SCOPED_LOCKABLE Guard : public NonMovable, StackAllocated {
     friend class CondVarGuard<T, Traits, NotifyType::One>;
     friend class CondVarGuard<T, Traits, NotifyType::None>;
 
-    typename Traits::LockType mLock;
+    typename Traits::template LockType<T> mLock;
     T* mObj = nullptr;
     class Defer* mDefer = nullptr;
 };
@@ -345,6 +364,10 @@ class MutexProtected {
 // A moveable version of MutexProtected.
 template <typename T>
 using MutexRefProtected = MutexProtected<T, detail::Guard, detail::MutexRefProtectedTraits<T>>;
+
+// A read-write version of MutexProtected.
+template <typename T>
+using MutexRWProtected = MutexProtected<T, detail::Guard, detail::MutexRWProtectedTraits<T>>;
 
 // Wrapping class for object members to provide the protections with a mutex of a MutexProtected
 // with some additional helpers to allow waiting with a conditional variable as well. The general

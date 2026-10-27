@@ -10,7 +10,6 @@ import * as SDK from '../../../core/sdk/sdk.js';
 import * as Lit from '../../../ui/lit/lit.js';
 import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 
-import type {DOMNode} from './Helper.js';
 import queryContainerStyles from './queryContainer.css.js';
 
 const {render, html} = Lit;
@@ -24,7 +23,7 @@ export class QueriedSizeRequestedEvent extends Event {
 }
 
 export interface QueryContainerData {
-  container: DOMNode;
+  container: SDK.DOMModel.DOMNode;
   queryName?: string;
   onContainerLinkClick: (event: Event) => void;
 }
@@ -32,7 +31,7 @@ export interface QueryContainerData {
 export class QueryContainer extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
   #queryName?: string;
-  #container?: DOMNode;
+  #container?: SDK.DOMModel.DOMNode;
   #onContainerLinkClick?: (event: Event) => void;
   #isContainerLinkHovered = false;
   #queriedSizeDetails?: SDK.CSSContainerQuery.ContainerQueriedSizeDetails;
@@ -50,13 +49,13 @@ export class QueryContainer extends HTMLElement {
   }
 
   async #onContainerLinkMouseEnter(): Promise<void> {
-    this.#container?.highlightNode('container-outline');
+    this.#container?.highlight('container-outline');
     this.#isContainerLinkHovered = true;
     this.dispatchEvent(new QueriedSizeRequestedEvent());
   }
 
   #onContainerLinkMouseLeave(): void {
-    this.#container?.clearHighlight();
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
     this.#isContainerLinkHovered = false;
     this.#render();
   }
@@ -72,7 +71,7 @@ export class QueryContainer extends HTMLElement {
       classesToDisplay = this.#container.getAttribute('class')?.split(/\s+/).filter(Boolean);
     }
 
-    const nodeTitle = this.#queryName || this.#container.nodeNameNicelyCased;
+    const nodeTitle = this.#queryName || this.#container.nodeNameInCorrectCase();
 
     // Disabled until https://crbug.com/1079231 is fixed.
     // clang-format off

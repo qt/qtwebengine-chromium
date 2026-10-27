@@ -99,7 +99,9 @@ class CFX_DIBBase : public Retainable {
                                       int* left,
                                       int* top) const;
   RetainPtr<CFX_DIBitmap> SwapXY(bool bXFlip, bool bYFlip) const;
+#if BUILDFLAG(IS_WIN) || defined(PDF_ENABLE_XFA)
   RetainPtr<CFX_DIBitmap> FlipImage(bool bXFlip, bool bYFlip) const;
+#endif
 
   RetainPtr<CFX_DIBitmap> CloneAlphaMask() const;
 

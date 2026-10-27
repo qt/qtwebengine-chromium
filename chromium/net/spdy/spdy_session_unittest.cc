@@ -31,6 +31,7 @@
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/network_anonymization_key.h"
+#include "net/base/network_handle.h"
 #include "net/base/privacy_mode.h"
 #include "net/base/proxy_chain.h"
 #include "net/base/proxy_delegate.h"
@@ -210,7 +211,8 @@ class SpdySessionTest : public PlatformTest, public WithTaskEnvironment {
              SocketTag(),
              NetworkAnonymizationKey(),
              SecureDnsPolicy::kAllow,
-             /*disable_cert_verification_network_fetches=*/false),
+             /*disable_cert_verification_network_fetches=*/false,
+             handles::kInvalidNetworkHandle),
         ssl_(SYNCHRONOUS, OK) {
     feature_list_.InitAndDisableFeature(
         features::kTcpSocketPoolLimitRandomization);
@@ -3771,12 +3773,14 @@ TEST_F(SpdySessionTest, CloseOneIdleConnectionWithAlias) {
                       PRIVACY_MODE_DISABLED, ProxyChain::Direct(),
                       SessionUsage::kDestination, SocketTag(),
                       NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
-                      /*disable_cert_verification_network_fetches=*/false);
+                      /*disable_cert_verification_network_fetches=*/false,
+                      handles::kInvalidNetworkHandle);
   SpdySessionKey key2(HostPortPair("mail.example.org", 80),
                       PRIVACY_MODE_DISABLED, ProxyChain::Direct(),
                       SessionUsage::kDestination, SocketTag(),
                       NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
-                      /*disable_cert_verification_network_fetches=*/false);
+                      /*disable_cert_verification_network_fetches=*/false,
+                      handles::kInvalidNetworkHandle);
 
   // Create an idle SPDY session.
   base::WeakPtr<SpdySession> session1 =
@@ -3956,12 +3960,14 @@ TEST_F(SpdySessionTest, SpdySessionKeyPrivacyMode) {
       host_port_pair, PRIVACY_MODE_ENABLED, ProxyChain::Direct(),
       SessionUsage::kDestination, SocketTag(), NetworkAnonymizationKey(),
       SecureDnsPolicy::kAllow,
-      /*disable_cert_verification_network_fetches=*/false);
+      /*disable_cert_verification_network_fetches=*/false,
+      handles::kInvalidNetworkHandle);
   SpdySessionKey key_privacy_disabled(
       host_port_pair, PRIVACY_MODE_DISABLED, ProxyChain::Direct(),
       SessionUsage::kDestination, SocketTag(), NetworkAnonymizationKey(),
       SecureDnsPolicy::kAllow,
-      /*disable_cert_verification_network_fetches=*/false);
+      /*disable_cert_verification_network_fetches=*/false,
+      handles::kInvalidNetworkHandle);
 
   EXPECT_FALSE(HasSpdySession(spdy_session_pool_, key_privacy_enabled));
   EXPECT_FALSE(HasSpdySession(spdy_session_pool_, key_privacy_disabled));
@@ -6337,7 +6343,8 @@ TEST_F(AltSvcFrameTest,
                         ProxyChain::Direct(), SessionUsage::kDestination,
                         SocketTag(), kNetworkAnonymizationKey1,
                         SecureDnsPolicy::kAllow,
-                        /*disable_cert_verification_network_fetches=*/false);
+                        /*disable_cert_verification_network_fetches=*/false,
+                        handles::kInvalidNetworkHandle);
 
   spdy::SpdyAltSvcIR altsvc_ir(/* stream_id = */ 1);
   altsvc_ir.add_altsvc(alternative_service_);
@@ -6772,11 +6779,11 @@ TEST(CanPoolTest, CanPoolWithAcceptablePins) {
   ssl_info.cert = ImportCertFromFile(GetTestCertsDirectory(),
                                      "spdy_pooling.pem");
   ssl_info.is_issued_by_known_root = true;
-  HashValue hash_value;
   // The expected value of GoodPin1 used by |scoped_security_state_source|.
-  ASSERT_TRUE(hash_value.FromString(
-      "sha256/Nn8jk5By4Vkq6BeOVZ7R7AC6XUUBZsWmUbJR1f1Y5FY="));
-  ssl_info.public_key_hashes.push_back(hash_value.sha256hashvalue());
+  std::optional<HashValue> hash_value = HashValue::FromString(
+      "sha256/Nn8jk5By4Vkq6BeOVZ7R7AC6XUUBZsWmUbJR1f1Y5FY=");
+  ASSERT_TRUE(hash_value.has_value());
+  ssl_info.public_key_hashes.push_back(hash_value->sha256hashvalue());
 
   EXPECT_TRUE(SpdySession::CanPool(&tss, ssl_info, ssl_config_service,
                                    "www.example.org", "mail.example.org"));

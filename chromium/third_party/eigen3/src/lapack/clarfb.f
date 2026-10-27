@@ -192,6 +192,8 @@
 *> \endverbatim
 *>
 *  =====================================================================
+*> SPDX-FileCopyrightText: The Eigen Authors
+*> SPDX-License-Identifier: BSD-3-Clause
       SUBROUTINE CLARFB( SIDE, TRANS, DIRECT, STOREV, M, N, K, V, LDV,
      $                   T, LDT, C, LDC, WORK, LDWORK )
 *

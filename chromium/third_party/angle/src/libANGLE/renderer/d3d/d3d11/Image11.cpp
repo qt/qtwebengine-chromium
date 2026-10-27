@@ -193,14 +193,17 @@ angle::Result Image11::recoverFromAssociatedStorage(const gl::Context *context)
 {
     if (mRecoverFromStorage)
     {
-        ANGLE_TRY(createStagingTexture(context));
+        TextureStorage11 *storage = mAssociatedStorage;
+        gl::ImageIndex imageIndex = mAssociatedImageIndex;
+        storage->verifyAssociatedImageValid(imageIndex, this);
+        disassociateStorage();
 
-        mAssociatedStorage->verifyAssociatedImageValid(mAssociatedImageIndex, this);
+        ANGLE_TRY(createStagingTexture(context));
 
         // CopySubResource from the Storage to the Staging texture
         gl::Box region(0, 0, 0, mWidth, mHeight, mDepth);
-        ANGLE_TRY(mAssociatedStorage->copySubresourceLevel(
-            context, mStagingTexture, mStagingSubresource, mAssociatedImageIndex, region));
+        ANGLE_TRY(storage->copySubresourceLevel(context, mStagingTexture, mStagingSubresource,
+                                                imageIndex, region));
         mRecoveredFromStorageCount += 1;
 
         // Reset all the recovery parameters, even if the texture storage association is broken.
@@ -281,16 +284,13 @@ angle::Result Image11::loadData(const gl::Context *context,
     Context11 *context11 = GetImplAs<Context11>(context);
 
     const gl::InternalFormat &formatInfo = gl::GetSizedInternalFormatInfo(mInternalFormat);
-    GLuint inputRowPitch                 = 0;
-    ANGLE_CHECK_GL_MATH(context11, formatInfo.computeRowPitch(type, area.width, unpack.alignment,
-                                                              unpack.rowLength, &inputRowPitch));
+
+    GLuint inputRowPitch   = 0;
     GLuint inputDepthPitch = 0;
-    ANGLE_CHECK_GL_MATH(context11, formatInfo.computeDepthPitch(area.height, unpack.imageHeight,
-                                                                inputRowPitch, &inputDepthPitch));
     GLuint inputSkipBytes = 0;
-    ANGLE_CHECK_GL_MATH(context11,
-                        formatInfo.computeSkipBytes(type, inputRowPitch, inputDepthPitch, unpack,
-                                                    applySkipImages, &inputSkipBytes));
+    ANGLE_CHECK_GL_MATH(context11, formatInfo.computeRowDepthSkipBytes(
+                                       type, area.width, area.height, unpack, applySkipImages,
+                                       &inputRowPitch, &inputDepthPitch, &inputSkipBytes));
 
     const d3d11::DXGIFormatSize &dxgiFormatInfo = d3d11::GetDXGIFormatSizeInfo(mDXGIFormat);
     GLuint outputPixelSize                      = dxgiFormatInfo.pixelBytes;
@@ -389,15 +389,16 @@ angle::Result Image11::copyFromFramebuffer(const gl::Context *context,
     const auto &d3d11Format =
         d3d11::Format::Get(sourceInternalFormat, mRenderer->getRenderer11DeviceCaps());
 
-    if (d3d11Format.texFormat == mDXGIFormat && sourceInternalFormat == mInternalFormat)
+    RenderTarget11 *rt11 = nullptr;
+    ANGLE_TRY(srcAttachment->getRenderTarget(context, 0, &rt11));
+    ASSERT(rt11->getTexture().get());
+
+    TextureHelper11 textureHelper  = rt11->getTexture();
+    unsigned int sourceSubResource = rt11->getSubresourceIndex();
+
+    if (d3d11Format.texFormat == mDXGIFormat && sourceInternalFormat == mInternalFormat &&
+        textureHelper.is3D() == (mType == gl::TextureType::_3D))
     {
-        RenderTarget11 *rt11 = nullptr;
-        ANGLE_TRY(srcAttachment->getRenderTarget(context, 0, &rt11));
-        ASSERT(rt11->getTexture().get());
-
-        TextureHelper11 textureHelper  = rt11->getTexture();
-        unsigned int sourceSubResource = rt11->getSubresourceIndex();
-
         const int z = textureHelper.is3D() ? srcAttachment->layer() : 0;
         gl::Box sourceBox(sourceArea.x, sourceArea.y, z, sourceArea.width, sourceArea.height, 1);
         return copyWithoutConversion(context, destOffset, sourceBox, textureHelper,
@@ -427,10 +428,12 @@ angle::Result Image11::copyFromFramebuffer(const gl::Context *context,
     {
         size_t bufferSize = destFormatInfo.pixelBytes * sourceArea.width * sourceArea.height;
         angle::MemoryBuffer *memoryBuffer = nullptr;
-        result = mRenderer->getScratchMemoryBuffer(context11, bufferSize, &memoryBuffer);
-
-        if (result == angle::Result::Continue)
+        if (context->getScratchBuffer(bufferSize, &memoryBuffer))
         {
+            // Initialize the buffer to 0. readFromAttachment will not write to any out-of-bounds
+            // pixels from the source framebuffer.
+            memoryBuffer->fill(0);
+
             GLuint memoryBufferRowPitch = destFormatInfo.pixelBytes * sourceArea.width;
 
             result = mRenderer->readFromAttachment(
@@ -441,6 +444,10 @@ angle::Result Image11::copyFromFramebuffer(const gl::Context *context,
                                       sourceArea.height, 1, memoryBuffer->data(),
                                       memoryBufferRowPitch, 0, dataOffset, mappedImage.RowPitch,
                                       mappedImage.DepthPitch);
+        }
+        else
+        {
+            result = angle::Result::Stop;
         }
     }
     else
@@ -530,7 +537,6 @@ angle::Result Image11::getStagingTexture(const gl::Context *context,
 void Image11::releaseStagingTexture()
 {
     mStagingTexture.reset();
-    mStagingTextureSubresourceVerifier.reset();
 }
 
 angle::Result Image11::createStagingTexture(const gl::Context *context)
@@ -588,7 +594,6 @@ angle::Result Image11::createStagingTexture(const gl::Context *context)
 
             mStagingTexture.setInternalName("Image11::StagingTexture3D");
             mStagingSubresource = D3D11CalcSubresource(lodOffset, 0, lodOffset + 1);
-            mStagingTextureSubresourceVerifier.setDesc(desc);
         }
         break;
 
@@ -627,7 +632,6 @@ angle::Result Image11::createStagingTexture(const gl::Context *context)
 
             mStagingTexture.setInternalName("Image11::StagingTexture2D");
             mStagingSubresource = D3D11CalcSubresource(lodOffset, 0, lodOffset + 1);
-            mStagingTextureSubresourceVerifier.setDesc(desc);
         }
         break;
 
@@ -655,17 +659,6 @@ angle::Result Image11::map(const gl::Context *context,
     ANGLE_TRY(
         mRenderer->mapResource(context, stagingTexture->get(), subresourceIndex, mapType, 0, map));
 
-    if (!mStagingTextureSubresourceVerifier.wrap(mapType, map))
-    {
-        ID3D11DeviceContext *deviceContext = mRenderer->getDeviceContext();
-        deviceContext->Unmap(mStagingTexture.get(), mStagingSubresource);
-        Context11 *context11 = GetImplAs<Context11>(context);
-        context11->handleError(GL_OUT_OF_MEMORY,
-                               "Failed to allocate staging texture mapping verifier buffer.",
-                               __FILE__, ANGLE_FUNCTION, __LINE__);
-        return angle::Result::Stop;
-    }
-
     mDirty = true;
 
     return angle::Result::Continue;
@@ -675,7 +668,6 @@ void Image11::unmap()
 {
     if (mStagingTexture.valid())
     {
-        mStagingTextureSubresourceVerifier.unwrap();
         ID3D11DeviceContext *deviceContext = mRenderer->getDeviceContext();
         deviceContext->Unmap(mStagingTexture.get(), mStagingSubresource);
     }

@@ -26,7 +26,8 @@ TensorImplOrt::TensorImplOrt(
     : WebNNTensorImpl(std::move(receiver), context, std::move(tensor_info)),
       device_allocator_((std::move(device_allocator))),
       tensor_(std::move(tensor)),
-      size_(size) {
+      size_(size),
+      can_access_on_cpu_(can_access_on_cpu) {
   // Initialize the tensor with zeros, otherwise, reading uninitialized memory
   // will get random values.
   // TODO(crbug.com/461303833): check whether fast HW clears can be used
@@ -53,7 +54,11 @@ TensorImplOrt::TensorImplOrt(
 TensorImplOrt::~TensorImplOrt() = default;
 
 base::span<uint8_t> TensorImplOrt::AsSpan() const {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // For non-CPU device tensors (e.g. WebGPU EP), `GetTensorMutableData()`
+  // returns an opaque device handle, not a CPU-dereferenceable address.
+  // Any read or write through it is undefined behavior.
+  CHECK(can_access_on_cpu_);
 
   void* ort_tensor_raw_data = nullptr;
   CHECK_STATUS(
@@ -67,7 +72,7 @@ base::span<uint8_t> TensorImplOrt::AsSpan() const {
 }
 
 void TensorImplOrt::ReadTensorImpl(ReadTensorCallback callback) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   base::span<const uint8_t> buffer_span = AsSpan();
   CHECK_EQ(PackedByteLength(), buffer_span.size());
@@ -76,13 +81,13 @@ void TensorImplOrt::ReadTensorImpl(ReadTensorCallback callback) {
 }
 
 void TensorImplOrt::WriteTensorImpl(mojo_base::BigBuffer src_buffer) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   context_->ReadDataFromBigBufferOrDataPipe(std::move(src_buffer), AsSpan());
 }
 
 bool TensorImplOrt::ImportTensorImpl(ScopedAccessPtr access) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // No synchronization needed if there is no fence to acquire.
   scoped_refptr<gfx::D3DSharedFence> d3d_write_fence =
@@ -115,7 +120,7 @@ bool TensorImplOrt::ImportTensorImpl(ScopedAccessPtr access) {
 }
 
 void TensorImplOrt::ExportTensorImpl(ScopedAccessPtr access) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // Since we wait for all WebNN operations to complete, we only need to release
   // the ScopedAccess to end WebNN access.

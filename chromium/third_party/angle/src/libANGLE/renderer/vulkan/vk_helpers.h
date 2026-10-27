@@ -92,6 +92,7 @@ class Context : public ErrorContext
     void onForeignImageUse(ImageHelper *image);
     void finalizeForeignImage(ImageHelper *image);
     void finalizeAllForeignImages();
+    void forgetAllForeignImagesOnError() { mForeignImagesInUse.clear(); }
 
     bool hasForeignImagesToTransition() const
     {
@@ -841,6 +842,16 @@ class PipelineBarrierArray final
 
     void addDiagnosticsString(std::ostringstream &out) const;
 
+    bool isEmpty() const { return mBarrierMask.none(); }
+    void reset()
+    {
+        for (auto &barrier : mBarriers)
+        {
+            barrier.reset();
+        }
+        mBarrierMask.reset();
+    }
+
   private:
     angle::PackedEnumMap<PipelineStage, PipelineBarrier> mBarriers;
     PipelineStagesMask mBarrierMask;
@@ -1023,9 +1034,19 @@ class BufferHelper : public ReadWriteResource
 
     void initializeBarrierTracker(ErrorContext *context);
 
-    bool isLastAccessShaderWriteOnly() const
+    // There is only one case we can skip barrier for shader SSBO write barrier: when prior access
+    // is also shader write and both are same type of shaders, i.e. both are graphics or both are
+    // compute. GLES spec requires app to issue glMemoryBarrier if needed.
+    bool canShaderWriteBarrierSkipped(const gl::ShaderBitSet newShaderWriteStages) const
     {
-        return mCurrentReadAccess == 0 && (mCurrentWriteAccess & VK_ACCESS_SHADER_WRITE_BIT) != 0;
+        if (mCurrentReadAccess == 0 && (mCurrentWriteAccess & VK_ACCESS_SHADER_WRITE_BIT) != 0)
+        {
+            bool isCurrentWriteComputeShader =
+                mCurrentWriteStages & VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            bool isNewWriteComputeShader = newShaderWriteStages.test(gl::ShaderType::Compute);
+            return isCurrentWriteComputeShader == isNewWriteComputeShader;
+        }
+        return false;
     }
 
   private:
@@ -1577,6 +1598,8 @@ class OutsideRenderPassCommandBufferHelper final : public CommandBufferHelperCom
 
     angle::Result reset(ErrorContext *context,
                         SecondaryCommandBufferCollector *commandBufferCollector);
+    // abandon is the reset under error handling situation.
+    void abandon(ErrorContext *context, SecondaryCommandBufferCollector *commandBufferCollector);
 
     static constexpr bool ExecutesInline()
     {
@@ -1812,6 +1835,8 @@ class RenderPassCommandBufferHelper final : public CommandBufferHelperCommon
 
     angle::Result reset(ErrorContext *context,
                         SecondaryCommandBufferCollector *commandBufferCollector);
+    // abandon is the reset under error handling situation.
+    void abandon(ErrorContext *context, SecondaryCommandBufferCollector *commandBufferCollector);
 
     static constexpr bool ExecutesInline() { return RenderPassCommandBuffer::ExecutesInline(); }
 
@@ -2564,12 +2589,19 @@ class ImageHelper final : public Resource, public angle::Subject
     void removeStagedUpdates(ErrorContext *context,
                              gl::LevelIndex levelGLStart,
                              gl::LevelIndex levelGLEnd);
+    void redefineLevels(ErrorContext *context,
+                        gl::LevelIndex levelGLStart,
+                        gl::LevelIndex levelGLEnd);
+    void redefineSingleSubresource(ContextVk *contextVk,
+                                   gl::LevelIndex levelIndexGL,
+                                   uint32_t layerIndex,
+                                   uint32_t layerCount);
 
     angle::Result stagePartialClear(ContextVk *contextVk,
                                     const gl::Box &clearArea,
                                     const ClearTextureMode clearMode,
                                     gl::TextureType textureType,
-                                    uint32_t levelIndex,
+                                    uint32_t levelIndexGL,
                                     uint32_t layerIndex,
                                     uint32_t layerCount,
                                     GLenum type,
@@ -2941,7 +2973,8 @@ class ImageHelper final : public Resource, public angle::Subject
                                           uint32_t layerCount);
     angle::Result reformatStagedBufferUpdates(ContextVk *contextVk,
                                               angle::FormatID srcFormatID,
-                                              angle::FormatID dstFormatID);
+                                              angle::FormatID dstFormatID,
+                                              gl::TextureType dstTextureType);
     bool hasStagedImageUpdatesWithMismatchedFormat(gl::LevelIndex levelStart,
                                                    gl::LevelIndex levelEnd,
                                                    angle::FormatID formatID) const;
@@ -3002,6 +3035,7 @@ class ImageHelper final : public Resource, public angle::Subject
         }
         VkImageAspectFlags aspectFlags;
         VkClearValue value;
+        // Note: The level index is a GL level (gl::LevelIndex)
         uint32_t levelIndex;
         uint32_t layerIndex;
         uint32_t layerCount;
@@ -3018,6 +3052,7 @@ class ImageHelper final : public Resource, public angle::Subject
         }
         VkImageAspectFlags aspectFlags;
         VkClearValue clearValue;
+        // Note: The level index is a GL level (gl::LevelIndex)
         uint32_t levelIndex;
         uint32_t layerIndex;
         uint32_t layerCount;
@@ -3030,11 +3065,13 @@ class ImageHelper final : public Resource, public angle::Subject
     struct BufferUpdate
     {
         BufferHelper *bufferHelper;
+        // Note: copyRegion.imageSubresource.mipLevel is a GL level (gl::LevelIndex)
         VkBufferImageCopy copyRegion;
         angle::FormatID formatID;
     };
     struct ImageUpdate
     {
+        // Note: copyRegion.src/dstSubresource.mipLevel are GL levels (gl::LevelIndex)
         VkImageCopy copyRegion;
         angle::FormatID formatID;
     };
@@ -3077,8 +3114,11 @@ class ImageHelper final : public Resource, public angle::Subject
         void release(Renderer *renderer);
 
         // Returns true if the update's layer range exact matches [layerIndex,
-        // layerIndex+layerCount) range
-        bool matchesLayerRange(uint32_t layerIndex, uint32_t layerCount) const;
+        // layerIndex+layerCount) range.  To support VK_REMAINING_ARRAY_LAYERS, the number of layers
+        // in the image is also passed in.
+        bool matchesLayerRange(uint32_t layerIndex,
+                               uint32_t layerCount,
+                               uint32_t imageLayerCount) const;
         // Returns true if the update is to any layer within range of [layerIndex,
         // layerIndex+layerCount)
         bool intersectsLayerRange(uint32_t layerIndex,
@@ -3256,7 +3296,8 @@ class ImageHelper final : public Resource, public angle::Subject
                                         const PruneReason reason);
     void pruneSupersededUpdatesForLevelImpl(ContextVk *contextVk,
                                             const gl::LevelIndex level,
-                                            const gl::Box &upcomingUpdateBoundingBox);
+                                            const gl::Box &upcomingUpdateBoundingBox,
+                                            const PruneReason reason);
 
     // Whether there are any updates in [start, end).
     bool hasStagedUpdatesInLevels(gl::LevelIndex levelStart, gl::LevelIndex levelEnd) const;
@@ -3711,46 +3752,46 @@ class ImageViewHelper final : angle::NonCopyable
                 mWriteColorspace == vk::ImageViewColorspace::Linear);
     }
 
-    void updateStaticTexelFetch(const ImageHelper &image, bool staticTexelFetchAccess) const
+    void updateStaticTexelFetch(const angle::Format &imageFormat, bool staticTexelFetchAccess) const
     {
         if (mColorspaceState.hasStaticTexelFetchAccess != staticTexelFetchAccess)
         {
             mColorspaceState.hasStaticTexelFetchAccess = staticTexelFetchAccess;
-            updateColorspace(image);
+            updateColorspace(imageFormat);
         }
     }
-    void updateSrgbDecode(const ImageHelper &image, gl::SrgbDecode srgbDecode) const
+    void updateSrgbDecode(const angle::Format &imageFormat, gl::SrgbDecode srgbDecode) const
     {
         if (mColorspaceState.srgbDecode != srgbDecode)
         {
             mColorspaceState.srgbDecode = srgbDecode;
-            updateColorspace(image);
+            updateColorspace(imageFormat);
         }
     }
-    void updateSrgbOverride(const ImageHelper &image, gl::SrgbOverride srgbOverride) const
+    void updateSrgbOverride(const angle::Format &imageFormat, gl::SrgbOverride srgbOverride) const
     {
         if (mColorspaceState.srgbOverride != srgbOverride)
         {
             mColorspaceState.srgbOverride = srgbOverride;
-            updateColorspace(image);
+            updateColorspace(imageFormat);
         }
     }
-    void updateSrgbWriteControlMode(const ImageHelper &image,
+    void updateSrgbWriteControlMode(const angle::Format &imageFormat,
                                     gl::SrgbWriteControlMode srgbWriteControl) const
     {
         if (mColorspaceState.srgbWriteControl != srgbWriteControl)
         {
             mColorspaceState.srgbWriteControl = srgbWriteControl;
-            updateColorspace(image);
+            updateColorspace(imageFormat);
         }
     }
-    void updateEglImageColorspace(const ImageHelper &image,
+    void updateEglImageColorspace(const angle::Format &imageFormat,
                                   egl::ImageColorspace eglImageColorspace) const
     {
         if (mColorspaceState.eglImageColorspace != eglImageColorspace)
         {
             mColorspaceState.eglImageColorspace = eglImageColorspace;
-            updateColorspace(image);
+            updateColorspace(imageFormat);
         }
     }
 
@@ -3839,7 +3880,7 @@ class ImageViewHelper final : angle::NonCopyable
                                                  VkImageUsageFlags imageUsageFlags,
                                                  GLenum astcDecodePrecision);
 
-    void updateColorspace(const ImageHelper &image) const;
+    void updateColorspace(const angle::Format &imageFormat) const;
 
     angle::FormatID getColorspaceOverrideFormatImpl(ImageViewColorspace colorspace,
                                                     angle::FormatID format) const;
@@ -3955,21 +3996,18 @@ class ShaderProgramHelper : angle::NonCopyable
         const PipelineLayout &pipelineLayout,
         PipelineSource source,
         const GraphicsPipelineDesc &pipelineDesc,
-        const SpecializationConstants &specConsts,
         const GraphicsPipelineDesc **descPtrOut,
         PipelineHelper **pipelineOut) const
     {
         return graphicsPipelines->createPipeline(
             context, pipelineCache, compatibleRenderPass, pipelineLayout,
-            GraphicsPipelineShadersInfo(&mShaders, &specConsts), source, pipelineDesc, descPtrOut,
-            pipelineOut);
+            GraphicsPipelineShadersInfo(&mShaders), source, pipelineDesc, descPtrOut, pipelineOut);
     }
 
     void createMonolithicPipelineCreationTask(vk::ErrorContext *context,
                                               PipelineCacheAccess *pipelineCache,
                                               const GraphicsPipelineDesc &desc,
                                               const PipelineLayout &pipelineLayout,
-                                              const SpecializationConstants &specConsts,
                                               PipelineHelper *pipeline) const;
 
     angle::Result getOrCreateComputePipeline(vk::ErrorContext *context,
@@ -4099,8 +4137,10 @@ class CommandResources : angle::NonCopyable
                          ImageHelper *image)
     {
         ASSERT(image->canTransferFrom() && image->canTransferTo());
+        // aspectFlags maybe a subset of image->getAspectFlags(). Image layout change must include
+        // all aspectFlags without separateDepthStencilLayouts feature enabled.
         onImageReadSubresources(readLevelStart, readLevelCount, readLayerStart, readLayerCount,
-                                aspectFlags, ImageAccess::TransferSrcDst, image);
+                                image->getAspectFlags(), ImageAccess::TransferSrcDst, image);
         onImageWrite(writeLevelStart, writeLevelCount, writeLayerStart, writeLayerCount,
                      aspectFlags, ImageAccess::TransferSrcDst, image);
     }

@@ -108,6 +108,10 @@ V8OffscreenRenderingContext* GPUCanvasContext::AsV8OffscreenRenderingContext() {
   return MakeGarbageCollected<V8OffscreenRenderingContext>(this);
 }
 
+bool GPUCanvasContext::IsOpaque() const {
+  return GetAlphaType() == kOpaque_SkAlphaType;
+}
+
 SkAlphaType GPUCanvasContext::GetAlphaType() const {
   if (!swap_buffers_) {
     return kPremul_SkAlphaType;
@@ -261,7 +265,7 @@ GPUCanvasContext::PaintRenderingResultsToSnapshot(
     SkColor4f color = alpha_mode_ == V8GPUCanvasAlphaMode::Enum::kOpaque
                           ? SkColors::kBlack
                           : SkColors::kTransparent;
-    return resource_provider->DoExternalDrawAndSnapshot(
+    return resource_provider->DoExternalOverdrawAndSnapshot(
         [color](cc::PaintCanvas& canvas) { canvas.clear(color); },
         ImageOrientationEnum::kDefault);
   }
@@ -375,7 +379,8 @@ ImageBitmap* GPUCanvasContext::TransferToImageBitmap(
   return MakeGarbageCollected<ImageBitmap>(
       AcceleratedStaticBitmapImage::CreateFromCanvasSharedImage(
           std::move(client_si), sk_image_sync_token, kPremul_SkAlphaType,
-          GetContextProviderWeakPtr(), base::PlatformThread::CurrentRef(),
+          swap_buffers_->GetHDRMetadata(), GetContextProviderWeakPtr(),
+          base::PlatformThread::CurrentRef(),
           ThreadScheduler::Current()->CleanupTaskRunner(),
           std::move(release_callback)));
 }
@@ -918,8 +923,7 @@ bool GPUCanvasContext::CopyTextureToResourceProvider(
   }
 
   gpu::SyncToken sync_token;
-  auto dst_client_si =
-      resource_provider->BeginExternalWrite(sync_token, /*is_overwrite=*/true);
+  auto dst_client_si = resource_provider->BeginExternalOverwrite(sync_token);
   if (!dst_client_si) {
     return false;
   }

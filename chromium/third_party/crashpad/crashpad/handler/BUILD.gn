@@ -111,7 +111,8 @@ if (!crashpad_is_ios) {
     ]
 
     if (crashpad_is_win) {
-      cflags = [ "/wd4201" ]  # nonstandard extension used : nameless struct/union
+      cflags =
+          [ "/wd4201" ]  # nonstandard extension used : nameless struct/union
     }
   }
 
@@ -230,6 +231,7 @@ if (crashpad_is_android) {
       # libunwind. The coverage wrapper similarly requires an unwinder, as
       # well as a few other bits from libc++abi. There are some issues with pgo
       # as well.
+      import("//build/config/compiler/compiler.gni")
       import("//build/config/compiler/pgo/pgo.gni")
       import("//build/config/coverage/coverage.gni")
       import("//build/config/sanitizers/sanitizers.gni")
@@ -263,8 +265,8 @@ if (crashpad_is_win) {
     sources = [ "main.cc" ]
 
     # Avoid .exp, .ilk, and .lib file collisions with crashpad_handler.exe by
-    # having this target produce crashpad_handler_com.com. Don’t use this target
-    # directly. Instead, use crashpad_handler_console.
+    # having this target produce crashpad_handler_com.com. Don’t use this
+    # target directly. Instead, use crashpad_handler_console.
     output_extension = "com"
 
     deps = [

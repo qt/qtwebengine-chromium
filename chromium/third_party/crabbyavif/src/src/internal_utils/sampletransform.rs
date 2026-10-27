@@ -124,7 +124,7 @@ impl SampleTransformToken {
     pub(crate) fn apply(
         &self,
         stack: &mut Vec<StackItem>,
-        extra_inputs: &[Image],
+        extra_inputs: &[&Image],
         plane: Plane,
         y: u32,
         width: usize,
@@ -142,12 +142,12 @@ impl SampleTransformToken {
                     StackItem::Constant(c) => StackItem::Constant(op.apply(c, bounds)),
                     StackItem::ImageItem(item_idx) => {
                         if extra_inputs[item_idx].depth == 8 {
-                            let row8 = extra_inputs[item_idx].row_exact(plane, y)?;
+                            let row8 = extra_inputs[item_idx].row(plane, y)?;
                             StackItem::Values(
                                 row8.iter().map(|v| op.apply(*v as i64, bounds)).collect(),
                             )
                         } else {
-                            let row16 = extra_inputs[item_idx].row16_exact(plane, y)?;
+                            let row16 = extra_inputs[item_idx].row16(plane, y)?;
                             StackItem::Values(
                                 row16.iter().map(|v| op.apply(*v as i64, bounds)).collect(),
                             )
@@ -290,7 +290,7 @@ impl SampleTransformToken {
 }
 
 impl SampleTransform {
-    pub(crate) fn apply(&self, extra_inputs: &[Image], output: &mut Image) -> AvifResult<()> {
+    pub(crate) fn apply(&self, extra_inputs: &[&Image], output: &mut Image) -> AvifResult<()> {
         let max_stack_size = self.tokens.len().div_ceil(2);
         let mut stack: Vec<StackItem> = create_vec_exact(max_stack_size)?;
         for plane in if output.has_alpha() { ALL_PLANES.as_slice() } else { YUV_PLANES.as_slice() }
@@ -304,7 +304,7 @@ impl SampleTransform {
     pub(crate) fn apply_to_planes(
         &self,
         category: Category,
-        extra_inputs: &[Image],
+        extra_inputs: &[&Image],
         output: &mut Image,
     ) -> AvifResult<()> {
         let max_stack_size = self.tokens.len().div_ceil(2);
@@ -321,7 +321,7 @@ impl SampleTransform {
     fn apply_internal(
         &self,
         plane: Plane,
-        extra_inputs: &[Image],
+        extra_inputs: &[&Image],
         output: &mut Image,
         stack: &mut Vec<StackItem>,
     ) -> AvifResult<()> {
@@ -375,13 +375,13 @@ impl SampleTransform {
                 }
                 StackItem::Constant(c) => {
                     if output.depth == 8 {
-                        let output_row8 = output.row_exact_mut(plane, y)?;
+                        let output_row8 = output.row_mut(plane, y)?;
                         let c8 = c.clamp(output_min as i64, output_max as i64) as u8;
                         for v in output_row8.iter_mut() {
                             *v = c8;
                         }
                     } else {
-                        let output_row16 = output.row16_exact_mut(plane, y)?;
+                        let output_row16 = output.row16_mut(plane, y)?;
                         let c16 = c.clamp(output_min as i64, output_max as i64) as u16;
                         for v in output_row16.iter_mut() {
                             *v = c16;
@@ -392,12 +392,12 @@ impl SampleTransform {
                     if output.depth == extra_inputs[item_idx].depth {
                         if output.depth == 8 {
                             output
-                                .row_exact_mut(plane, y)?
-                                .copy_from_slice(extra_inputs[item_idx].row_exact(plane, y)?);
+                                .row_mut(plane, y)?
+                                .copy_from_slice(extra_inputs[item_idx].row(plane, y)?);
                         } else {
                             output
-                                .row16_exact_mut(plane, y)?
-                                .copy_from_slice(extra_inputs[item_idx].row16_exact(plane, y)?);
+                                .row16_mut(plane, y)?
+                                .copy_from_slice(extra_inputs[item_idx].row16(plane, y)?);
                         }
                     } else if output.depth == 8 && extra_inputs[item_idx].depth > 8 {
                         let input_row16 = extra_inputs[item_idx].row16(plane, y)?;
@@ -481,7 +481,7 @@ impl SampleTransform {
 
     pub(crate) fn allocate_planes_and_apply(
         &self,
-        extra_inputs: &[Image],
+        extra_inputs: &[&Image],
         output: &mut Image,
     ) -> AvifResult<()> {
         output.allocate_planes(Category::Color)?;
@@ -627,7 +627,7 @@ mod tests {
         };
         output.allocate_planes(Category::Color)?;
 
-        sample_transform.apply(&extra_inputs, &mut output)?;
+        sample_transform.apply(&extra_inputs.iter().collect::<Vec<&Image>>(), &mut output)?;
 
         if output_depth == 8 {
             assert_eq!(
@@ -701,7 +701,7 @@ mod tests {
         input_image.row_mut(Plane::A, 0)?.copy_from_slice(&[7, 8]);
         extra_inputs.push(input_image);
 
-        sample_transform.apply(&extra_inputs, &mut output)?;
+        sample_transform.apply(&extra_inputs.iter().collect::<Vec<&Image>>(), &mut output)?;
 
         assert_eq!(output.row(Plane::Y, 0), Ok::<&[u8], _>(&[21, 42]));
         assert_eq!(output.row(Plane::U, 0), Ok::<&[u8], _>(&[63, 84]));
@@ -759,7 +759,7 @@ mod tests {
         }
         extra_inputs.push(input_image);
 
-        sample_transform.apply(&extra_inputs, &mut output)?;
+        sample_transform.apply(&extra_inputs.iter().collect::<Vec<&Image>>(), &mut output)?;
 
         if output_bit_depth == 8 {
             assert_eq!(output.row(Plane::Y, 0), Ok::<&[u8], _>(&[10, 20]));

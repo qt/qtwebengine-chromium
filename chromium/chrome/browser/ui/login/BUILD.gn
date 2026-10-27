@@ -31,6 +31,7 @@ source_set("impl") {
 
   deps = [
     ":login",
+    "//chrome/browser/password_manager",
     "//chrome/browser/preloading/prefetch/no_state_prefetch",
     "//chrome/browser/tab_contents",
     "//components/autofill/core/browser",
@@ -65,6 +66,7 @@ if (!is_android) {
       ":login",
       "//base/test:test_support",
       "//chrome/browser:browser_process",
+      "//chrome/browser:chrome_content_browser_client",
       "//chrome/browser/profiles:profile",
       "//chrome/browser/ui/browser_window",
       "//chrome/browser/ui/tabs:tab_enums",

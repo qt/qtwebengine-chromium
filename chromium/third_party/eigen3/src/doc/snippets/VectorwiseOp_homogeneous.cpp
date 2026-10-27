@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 Matrix3Xd M = Matrix3Xd::Random(3, 5);
 Projective3d P(Matrix4d::Random());
 cout << "The matrix M is:" << endl << M << endl << endl;

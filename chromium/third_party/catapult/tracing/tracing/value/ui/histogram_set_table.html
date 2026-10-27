@@ -60,6 +60,8 @@ tr.exportTo('tr.v.ui', function() {
 
     ready() {
       this.$.table.zebra = true;
+      this.$.table.rowHighlightStyle =
+          tr.ui.b.TableFormat.HighlightStyle.OUTLINE;
       this.addEventListener('sort-column-changed',
           this.sortColumnChangedListener_);
       this.addEventListener('requestSelectionChange',

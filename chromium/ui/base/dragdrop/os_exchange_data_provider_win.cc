@@ -34,6 +34,7 @@
 #include "base/functional/callback.h"
 #include "base/i18n/file_util_icu.h"
 #include "base/json/json_writer.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/no_destructor.h"
 #include "base/notreached.h"
 #include "base/pickle.h"
@@ -72,6 +73,7 @@ constexpr STGMEDIUM kNullStorageMedium = {.tymed = TYMED_NULL,
 // owns the resulting object. The "Bytes" version does not NULL terminate, the
 // string version does.
 STGMEDIUM CreateStorageForBytes(const void* data, size_t bytes);
+STGMEDIUM CreateStorageForIStream(const void* data, size_t bytes);
 STGMEDIUM CreateStorageForString(std::string_view data);
 STGMEDIUM CreateStorageForString(std::u16string_view data);
 STGMEDIUM CreateIdListStorageForFileName(const base::FilePath& path);
@@ -83,7 +85,7 @@ const ClipboardFormatType& GetRendererTaintFormatType();
 const ClipboardFormatType& GetFromPrivilegedFormatType();
 const ClipboardFormatType& GetIgnoreFileContentsFormatType();
 // Creates the contents of an Internet Shortcut file for the given URL.
-std::string GetInternetShortcutFileContents(const GURL& url);
+std::vector<uint8_t> GetInternetShortcutFileContents(const GURL& url);
 // Creates a valid file name given a suggested title and URL.
 std::wstring CreateValidFileNameFromTitle(const GURL& url,
                                           const std::wstring& title);
@@ -393,7 +395,7 @@ void OSExchangeDataProviderWin::SetURLs(
   if (!HasFileContents()) {
     std::wstring valid_file_name = CreateValidFileNameFromTitle(
         url_infos.front().url, base::AsWString(url_infos.front().title));
-    std::string shortcut_url_file_contents =
+    std::vector<uint8_t> shortcut_url_file_contents =
         GetInternetShortcutFileContents(url_infos.front().url);
     SetFileContents(base::FilePath(valid_file_name),
                     shortcut_url_file_contents);
@@ -469,7 +471,7 @@ std::optional<GURL> OSExchangeDataProviderWin::GetPlainTextURL() const {
 }
 
 void OSExchangeDataProviderWin::SetVirtualFileContentsForTesting(
-    const std::vector<std::pair<base::FilePath, std::string>>&
+    const std::vector<std::pair<base::FilePath, base::span<const uint8_t>>>&
         filenames_and_contents,
     DWORD tymed,
     bool show_cfhdrop_without_data) {
@@ -506,12 +508,9 @@ void OSExchangeDataProviderWin::SetVirtualFileContentsForTesting(
               std::min(file_name.size(), static_cast<size_t>(MAX_PATH - 1u)));
 
     // Add the contents of each file as CFSTR_FILECONTENTS.
-    base::span<const uint8_t> data_buffer =
-        base::span(reinterpret_cast<const uint8_t*>(
-                       filenames_and_contents[i].second.data()),
-                   filenames_and_contents[i].second.length());
-    SetVirtualFileContentAtIndexForTesting(data_buffer, tymed,  // IN-TEST
-                                           static_cast<LONG>(i));
+    SetVirtualFileContentAtIndexForTesting(filenames_and_contents[i].second,
+                                           tymed,
+                                           static_cast<LONG>(i));  // IN-TEST
   }
 
   // This simulates ZIP Shell Folder behavior where data is available via format
@@ -602,18 +601,30 @@ void OSExchangeDataProviderWin::SetPickledData(
 
 void OSExchangeDataProviderWin::SetFileContents(
     const base::FilePath& filename,
-    const std::string& file_contents) {
+    base::span<const uint8_t> file_contents) {
   // Add CFSTR_FILEDESCRIPTORW.
   STGMEDIUM storage = CreateStorageForFileDescriptor(filename);
   data_->contents_.push_back(DataObjectImpl::StoredDataInfo::TakeStorageMedium(
       ClipboardFormatType::FileDescriptorType().ToFormatEtc(), storage));
 
-  // Add CFSTR_FILECONTENTS.
+  // Add CFSTR_FILECONTENTS as TYMED_ISTREAM.
   STGMEDIUM storage_contents =
-      CreateStorageForBytes(file_contents.data(), file_contents.length());
+      CreateStorageForIStream(file_contents.data(), file_contents.size());
+  if (storage_contents.tymed == TYMED_NULL) {
+    return;
+  }
+  // TODO(https://crbug.com/41451800): add support for TYMED_ISTORAGE (e.g. Drag
+  // multiple mail attachments out of Outlook Web).
+  FORMATETC file_content_format =
+      ClipboardFormatType::FileContentAtIndexType(0).ToFormatEtc();
+  // Advertise both TYMED_ISTREAM and TYMED_HGLOBAL. GetData() converts
+  // TYMED_ISTREAM to TYMED_HGLOBAL on-the-fly to remain backward compatible
+  // with older Chromium versions that request only TYMED_HGLOBAL.
+  // TODO(https://crbug.com/41451800): Remove TYMED_HGLOBAL once confirmed no
+  // app requires it.
+  file_content_format.tymed = TYMED_ISTREAM | TYMED_HGLOBAL;
   data_->contents_.push_back(DataObjectImpl::StoredDataInfo::TakeStorageMedium(
-      ClipboardFormatType::FileContentZeroType().ToFormatEtc(),
-      storage_contents));
+      file_content_format, storage_contents));
 }
 
 void OSExchangeDataProviderWin::SetHtml(const std::u16string& html,
@@ -735,7 +746,7 @@ OSExchangeDataProviderWin::GetFileContents() const {
   }
 
   std::wstring filename_str;
-  std::string file_contents;
+  std::vector<uint8_t> file_contents;
   if (!clipboard_util::GetFileContents(source_object_.Get(), &filename_str,
                                        &file_contents) ||
       filename_str.empty()) {
@@ -911,10 +922,22 @@ static STGMEDIUM DuplicateMedium(CLIPFORMAT clipformat,
       copied.lpszFileName = static_cast<LPOLESTR>(
           OleDuplicateData(storage.lpszFileName, clipformat, 0));
       break;
-    case TYMED_ISTREAM:
-      copied.pstm = storage.pstm;
-      copied.pstm->AddRef();
+    case TYMED_ISTREAM: {
+      // Clone the stream so each GetData() caller gets an independent seek
+      // pointer into the same underlying bytes. This avoids concurrent-read
+      // interference that would occur if we shared the same IStream pointer.
+      IStream* cloned = nullptr;
+      if (SUCCEEDED(storage.pstm->Clone(&cloned)) && cloned) {
+        copied.pstm = cloned;
+      } else {
+        // Fallback for streams that don't support Clone(): share the pointer.
+        copied.pstm = storage.pstm;
+        copied.pstm->AddRef();
+      }
+      const LARGE_INTEGER zero = {};
+      copied.pstm->Seek(zero, STREAM_SEEK_SET, nullptr);
       break;
+    }
     case TYMED_ISTORAGE:
       copied.pstg = storage.pstg;
       copied.pstg->AddRef();
@@ -1015,6 +1038,42 @@ HRESULT DataObjectImpl::GetData(FORMATETC* format_etc, STGMEDIUM* medium) {
         (content->format_etc.tymed & format_etc->tymed)) {
       // If medium is NULL, delay-rendering will be used.
       if (content->medium.tymed != TYMED_NULL) {
+        // If the drop target requests TYMED_HGLOBAL specifically but the stored
+        // medium is TYMED_ISTREAM, convert the stream to HGLOBAL on the fly.
+        // This supports older native apps that only accept TYMED_HGLOBAL.
+        if (format_etc->tymed == TYMED_HGLOBAL &&
+            content->medium.tymed == TYMED_ISTREAM) {
+          base::UmaHistogramBoolean(
+              "Windows.DragDrop.FileContents.HGlobalConversionUsed", true);
+          IStream* stream = content->medium.pstm;
+          STATSTG stat = {};
+          if (FAILED(stream->Stat(&stat, STATFLAG_NONAME))) {
+            return DV_E_FORMATETC;
+          }
+          const SIZE_T size = static_cast<SIZE_T>(stat.cbSize.QuadPart);
+          HGLOBAL hdata = ::GlobalAlloc(GHND, size);
+          if (!hdata) {
+            return DV_E_FORMATETC;
+          }
+          const LARGE_INTEGER zero = {};
+          stream->Seek(zero, STREAM_SEEK_SET, nullptr);
+          bool read_ok = false;
+          {
+            base::win::ScopedHGlobal<char*> locked(hdata);
+            ULONG bytes_read = 0;
+            HRESULT hr = stream->Read(
+                locked.data(), base::checked_cast<ULONG>(size), &bytes_read);
+            read_ok = SUCCEEDED(hr) && bytes_read == size;
+          }
+          if (!read_ok) {
+            ::GlobalFree(hdata);
+            return DV_E_FORMATETC;
+          }
+          medium->tymed = TYMED_HGLOBAL;
+          medium->hGlobal = hdata;
+          medium->pUnkForRelease = nullptr;
+          return S_OK;
+        }
         *medium =
             DuplicateMedium(content->format_etc.cfFormat, content->medium);
         return S_OK;
@@ -1199,6 +1258,17 @@ STGMEDIUM CreateStorageForBytes(const void* data, size_t bytes) {
       .tymed = TYMED_HGLOBAL, .hGlobal = handle, .pUnkForRelease = nullptr};
 }
 
+STGMEDIUM CreateStorageForIStream(const void* data, size_t bytes) {
+  IStream* stream = ::SHCreateMemStream(static_cast<const BYTE*>(data),
+                                        base::checked_cast<UINT>(bytes));
+  if (!stream) {
+    return kNullStorageMedium;
+  }
+
+  return STGMEDIUM{
+      .tymed = TYMED_ISTREAM, .pstm = stream, .pUnkForRelease = nullptr};
+}
+
 STGMEDIUM CreateStorageForString(std::string_view data) {
   HANDLE handle = GlobalAlloc(GPTR, data.size() + 1);
   if (handle) {
@@ -1340,11 +1410,13 @@ const ClipboardFormatType& GetIgnoreFileContentsFormatType() {
   return *format;
 }
 
-std::string GetInternetShortcutFileContents(const GURL& url) {
+std::vector<uint8_t> GetInternetShortcutFileContents(const GURL& url) {
   static constexpr char kInternetShortcutFileStart[] =
       "[InternetShortcut]\r\nURL=";
   static constexpr char kInternetShortcutFileEnd[] = "\r\n";
-  return kInternetShortcutFileStart + url.spec() + kInternetShortcutFileEnd;
+  std::string contents =
+      kInternetShortcutFileStart + url.spec() + kInternetShortcutFileEnd;
+  return base::ToVector(base::as_bytes(base::span(std::string_view(contents))));
 }
 
 std::wstring CreateValidFileNameFromTitle(const GURL& url,

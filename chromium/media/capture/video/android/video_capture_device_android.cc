@@ -20,14 +20,18 @@
 #include "base/check_op.h"
 #include "base/containers/heap_array.h"
 #include "base/dcheck_is_on.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/power_monitor/power_monitor.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/system/system_monitor.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/trace_event.h"
+#include "gpu/ipc/client/gpu_channel_host.h"
+#include "gpu/vulkan/init/vulkan_factory.h"
 #include "media/base/media_switches.h"
 #include "media/capture/mojom/image_capture_types.h"
 #include "media/capture/video/android/photo_capabilities.h"
@@ -132,6 +136,43 @@ gfx::ColorSpace ColorSpaceFromADataSpace(int32_t dataspace) {
   }
 }
 
+std::optional<gpu::VulkanYCbCrInfo> GetVulkanYCbCrInfo(
+    base::android::ScopedHardwareBufferHandle ahb_handle) {
+  auto vulkan_implementation = gpu::CreateVulkanImplementation(false, false);
+  if (!vulkan_implementation ||
+      !vulkan_implementation->InitializeVulkanInstance(
+          /*using_surface=*/true)) {
+    return std::nullopt;
+  }
+
+  auto vulkan_device_queue = gpu::CreateVulkanDeviceQueue(
+      vulkan_implementation.get(),
+      gpu::VulkanDeviceQueue::DeviceQueueOption::GRAPHICS_QUEUE_FLAG);
+  if (!vulkan_device_queue) {
+    return std::nullopt;
+  }
+
+  std::optional<gpu::VulkanYCbCrInfo> result = std::nullopt;
+  gpu::VulkanYCbCrInfo info;
+  if (vulkan_implementation->GetSamplerYcbcrConversionInfo(
+          vulkan_device_queue->GetVulkanDevice(), std::move(ahb_handle),
+          &info)) {
+    // Mimic Dawn's AHB format feature sanitization so our descriptor strictly
+    // matches the fulfillment texture descriptor generated in the GPU process.
+    uint32_t sanitized_features = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+    if (info.format_features &
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT) {
+      sanitized_features |=
+          VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT;
+    }
+    info.format_features = sanitized_features;
+    result = info;
+  }
+
+  vulkan_device_queue->Destroy();
+  return result;
+}
+
 }  // anonymous namespace
 
 VideoCaptureDeviceAndroid::VideoCaptureDeviceAndroid(
@@ -170,13 +211,15 @@ void VideoCaptureDeviceAndroid::AllocateAndStart(
 
   bool enable_hardware_buffer_capture =
       media::IsAndroidZeroCopyVideoCaptureEnabled(gpu_workarounds_);
+  bool enable_background_media_capturing = base::FeatureList::IsEnabled(
+      media::kAndroidEnableBackgroundMediaCapturing);
 
   JNIEnv* env = AttachCurrentThread();
   bool ret = Java_VideoCapture_allocate(
       env, j_capture_, params.requested_format.frame_size.width(),
       params.requested_format.frame_size.height(),
       params.requested_format.frame_rate, params.enable_face_detection,
-      enable_hardware_buffer_capture);
+      enable_hardware_buffer_capture, enable_background_media_capturing);
   if (!ret) {
     SetErrorState(media::VideoCaptureError::kAndroidFailedToAllocate, FROM_HERE,
                   "failed to allocate");
@@ -343,21 +386,26 @@ void VideoCaptureDeviceAndroid::OnI420FrameAvailable(
   const int y_plane_length = width * height;
   const int uv_plane_length = y_plane_length / 4;
   const int buffer_length = y_plane_length + uv_plane_length * 2;
-  auto buffer = base::HeapArray<uint8_t>::Uninit(
-      base::checked_cast<size_t>(buffer_length));
+  const size_t unsigned_buffer_length =
+      base::checked_cast<size_t>(buffer_length);
 
-  auto dst_y_span = buffer.subspan(0, y_plane_length);
-  auto dst_u_span = buffer.subspan(y_plane_length, uv_plane_length);
+  if (i420_buffer_.size() < unsigned_buffer_length) {
+    i420_buffer_ = base::HeapArray<uint8_t>::Uninit(unsigned_buffer_length);
+  }
+
+  auto dst_y_span = i420_buffer_.subspan(0, y_plane_length);
+  auto dst_u_span = i420_buffer_.subspan(y_plane_length, uv_plane_length);
   auto dst_v_span =
-      buffer.subspan(y_plane_length + uv_plane_length, uv_plane_length);
+      i420_buffer_.subspan(y_plane_length + uv_plane_length, uv_plane_length);
 
   libyuv::Android420ToI420(y_src, y_stride, u_src, uv_row_stride, v_src,
                            uv_row_stride, uv_pixel_stride, dst_y_span.data(),
                            width, dst_u_span.data(), width / 2,
                            dst_v_span.data(), width / 2, width, height);
 
-  SendIncomingDataToClient(buffer.data(), buffer_length, rotation, current_time,
-                           capture_time, ColorSpaceFromADataSpace(data_space));
+  SendIncomingDataToClient(i420_buffer_.data(), buffer_length, rotation,
+                           current_time, capture_time,
+                           ColorSpaceFromADataSpace(data_space));
 }
 
 void VideoCaptureDeviceAndroid::OnHardwareBufferAvailableOnMainThread(
@@ -403,6 +451,29 @@ void VideoCaptureDeviceAndroid::OnHardwareBufferAvailableOnMainThread(
   VideoCaptureFormat format(gfx::Size(desc.width, desc.height),
                             capture_format_.frame_rate, video_pixel_format);
 
+  if (!need_ycbcr_info_.has_value()) {
+    scoped_refptr<gpu::GpuChannelHost> gpu_channel_host =
+        VideoCaptureGpuChannelHost::GetInstance().GetGpuChannel();
+
+    if (gpu_channel_host) {
+      auto skia_backend = gpu_channel_host->gpu_info().skia_backend_type;
+      need_ycbcr_info_ =
+          (skia_backend == gpu::SkiaBackendType::kGraphiteDawnVulkan);
+    } else {
+      need_ycbcr_info_ = false;
+    }
+  }
+
+  if (*need_ycbcr_info_ && !ycbcr_info_) {
+    ycbcr_info_ = GetVulkanYCbCrInfo(ahb_handle.Clone());
+    if (!ycbcr_info_) {
+      LOG(ERROR) << "Failed to get Vulkan YCbCr info for zero-copy capture.";
+      SetErrorState(media::VideoCaptureError::kAndroidFailedToStartCapture,
+                    FROM_HERE, "Failed to get Vulkan YCbCr info.");
+      return;
+    }
+  }
+
   auto sii =
       VideoCaptureGpuChannelHost::GetInstance().GetSharedImageInterface();
   if (!sii) {
@@ -440,10 +511,13 @@ void VideoCaptureDeviceAndroid::OnHardwareBufferAvailableOnMainThread(
     return;
   }
 
-  client_->OnIncomingCapturedImage(std::move(shared_image), format, rotation,
-                                   current_time, capture_time,
-                                   /*capture_begin_timestamp=*/{},
-                                   /*metadata=*/{});
+  VideoFrameMetadata metadata;
+  metadata.ycbcr_info = ycbcr_info_;
+
+  client_->OnIncomingCapturedImage(
+      std::move(shared_image), format, rotation, current_time, capture_time,
+      /*capture_begin_timestamp=*/{}, format.frame_size, metadata,
+      /*frame_feedback_id=*/0);
 }
 
 void VideoCaptureDeviceAndroid::OnHardwareBufferAvailable(
@@ -745,6 +819,27 @@ void VideoCaptureDeviceAndroid::SendIncomingDataToClient(
       data, length, capture_format_, color_space, rotation, false /* flip_y */,
       reference_time, timestamp,
       /*capture_begin_timestamp=*/std::nullopt, /*metadata=*/std::nullopt);
+}
+
+void VideoCaptureDeviceAndroid::OnInteractiveStateChanged(JNIEnv* env,
+                                                          bool is_interactive) {
+  main_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          &VideoCaptureDeviceAndroid::OnInteractiveStateChangedOnMainThread,
+          weak_ptr_factory_.GetWeakPtr(), is_interactive));
+}
+
+void VideoCaptureDeviceAndroid::OnInteractiveStateChangedOnMainThread(
+    bool is_interactive) {
+  DCHECK(main_task_runner_->BelongsToCurrentThread());
+
+  JNIEnv* env = AttachCurrentThread();
+  if (is_interactive) {
+    Java_VideoCapture_startCaptureMaybeAsync(env, j_capture_);
+  } else {
+    Java_VideoCapture_stopCaptureAndBlockUntilStopped(env, j_capture_);
+  }
 }
 
 VideoPixelFormat VideoCaptureDeviceAndroid::GetPixelFormat() {

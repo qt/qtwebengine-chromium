@@ -29,8 +29,12 @@
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "components/back_forward_cache/disabled_reason_id.h"
+#include "content/browser/back_forward_cache/back_forward_cache_can_store_document_result.h"
+#include "content/browser/back_forward_cache/back_forward_cache_disable.h"
+#include "content/browser/back_forward_cache/back_forward_cache_metrics.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/devtools/devtools_agent_host_impl.h"
+#include "content/browser/devtools/devtools_session.h"
 #include "content/browser/devtools/protocol/browser_handler.h"
 #include "content/browser/devtools/protocol/devtools_mhtml_helper.h"
 #include "content/browser/devtools/protocol/emulation_handler.h"
@@ -38,9 +42,6 @@
 #include "content/browser/devtools/protocol/page.h"
 #include "content/browser/manifest/manifest_manager_host.h"
 #include "content/browser/preloading/prerender/prerender_final_status.h"
-#include "content/browser/renderer_host/back_forward_cache_can_store_document_result.h"
-#include "content/browser/renderer_host/back_forward_cache_disable.h"
-#include "content/browser/renderer_host/back_forward_cache_metrics.h"
 #include "content/browser/renderer_host/frame_tree.h"
 #include "content/browser/renderer_host/navigation_entry_impl.h"
 #include "content/browser/renderer_host/navigation_request.h"
@@ -751,6 +752,79 @@ Response PageHandler::Close() {
   host_->DispatchBeforeUnload(RenderFrameHostImpl::BeforeUnloadType::TAB_CLOSE,
                               false);
   return Response::Success();
+}
+
+Response PageHandler::AddScriptToEvaluateOnNewDocumentInternal(
+    const std::string& source,
+    std::optional<std::string> world_name,
+    std::optional<bool> include_command_line_api,
+    std::string* identifier) {
+  blink::mojom::BrowserOriginatingSessionState* state =
+      session()->browser_agent_state();
+
+  // Generate identifier. This currently uses an id that is 1 higher than the
+  // largest existent id, but is subject to change in the future. The clients
+  // should assume the id is an opaque string and should not presume anything
+  // about string content being a number or assume any other allocation logic.
+  int id = 1;
+  for (const auto& entry : state->scripts_to_evaluate_on_new_document) {
+    int entry_id = 0;
+    if (base::StringToInt(entry.first, &entry_id)) {
+      id = std::max(id, entry_id + 1);
+    }
+  }
+  *identifier = base::NumberToString(id);
+
+  auto script = blink::mojom::ScriptToEvaluateOnNewDocument::New();
+  script->source = source;
+  script->world_name = world_name.value_or("");
+  script->include_command_line_api = include_command_line_api.value_or(false);
+  state->scripts_to_evaluate_on_new_document[*identifier] = script.Clone();
+
+  return Response::Success();
+}
+
+Response PageHandler::RemoveScriptToEvaluateOnNewDocument(
+    const std::string& identifier) {
+  blink::mojom::BrowserOriginatingSessionState* state =
+      session()->browser_agent_state();
+
+  auto it = state->scripts_to_evaluate_on_new_document.find(identifier);
+  if (it == state->scripts_to_evaluate_on_new_document.end()) {
+    return Response::ServerError("Script not found");
+  }
+  state->scripts_to_evaluate_on_new_document.erase(it);
+
+  return Response::FallThrough();
+}
+
+Response PageHandler::AddScriptToEvaluateOnNewDocument(
+    const std::string& source,
+    std::optional<std::string> world_name,
+    std::optional<bool> include_command_line_api,
+    std::optional<bool> run_immediately,
+    std::string* identifier) {
+  Response response = AddScriptToEvaluateOnNewDocumentInternal(
+      source, world_name, include_command_line_api, identifier);
+  if (response.IsError()) {
+    return response;
+  }
+  return Response::FallThrough(*identifier);
+}
+
+Response PageHandler::AddScriptToEvaluateOnLoad(const std::string& source,
+                                                std::string* identifier) {
+  Response response = AddScriptToEvaluateOnNewDocumentInternal(
+      source, std::nullopt, std::nullopt, identifier);
+  if (response.IsError()) {
+    return response;
+  }
+  return Response::FallThrough(*identifier);
+}
+
+Response PageHandler::RemoveScriptToEvaluateOnLoad(
+    const std::string& identifier) {
+  return RemoveScriptToEvaluateOnNewDocument(identifier);
 }
 
 void PageHandler::Reload(std::optional<bool> bypassCache,
@@ -2238,6 +2312,9 @@ DisableForRenderFrameHostReasonToProtocol(
             kExtensionSentMessageToCachedFrame:
           return Page::BackForwardCacheNotRestoredReasonEnum::
               EmbedderExtensionSentMessageToCachedFrame;
+        case back_forward_cache::DisabledReasonId::kExtensionFrame:
+          return Page::BackForwardCacheNotRestoredReasonEnum::
+              EmbedderExtensionFrame;
         case back_forward_cache::DisabledReasonId::kRequestedByWebViewClient:
           return Page::BackForwardCacheNotRestoredReasonEnum::
               RequestedByWebViewClient;

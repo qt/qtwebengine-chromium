@@ -9,6 +9,7 @@
 
 #include "chrome/browser/accessibility_annotator/accessibility_annotator_backend_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/accessibility_annotator/core/content_annotator/content_annotations_data.h"
 #include "components/accessibility_annotator/core/logging/accessibility_annotator_internals.mojom.h"
 #include "components/accessibility_annotator/core/storage/accessibility_annotator_backend.h"
 
@@ -21,10 +22,47 @@ ContentAnnotatorInternalsPageHandler::ContentAnnotatorInternalsPageHandler(
     Profile* profile)
     : receiver_(this, std::move(receiver)),
       page_(std::move(page)),
-      profile_(profile) {}
+      profile_(profile) {
+  accessibility_annotator::AccessibilityAnnotatorBackend* backend =
+      AccessibilityAnnotatorBackendFactory::GetForProfile(profile_);
+  if (backend) {
+    backend_observation_.Observe(backend);
+  }
+}
 
 ContentAnnotatorInternalsPageHandler::~ContentAnnotatorInternalsPageHandler() =
     default;
+
+void ContentAnnotatorInternalsPageHandler::OnContentAnnotationsAdded(
+    history::VisitID visit_id,
+    const accessibility_annotator::ContentAnnotationsData& annotation_data) {
+  NotifyPageWithAnnotations();
+}
+
+void ContentAnnotatorInternalsPageHandler::OnContentAnnotationsDeleted(
+    base::span<const history::VisitID> visit_ids) {
+  NotifyPageWithAnnotations();
+}
+
+void ContentAnnotatorInternalsPageHandler::OnContentAnnotationsCleared() {
+  page_->OnContentAnnotationsCleared();
+}
+
+void ContentAnnotatorInternalsPageHandler::NotifyPageWithAnnotations() {
+  accessibility_annotator::AccessibilityAnnotatorBackend* backend =
+      AccessibilityAnnotatorBackendFactory::GetForProfile(profile_);
+  if (!backend) {
+    return;
+  }
+  backend->GetAnnotationsForDebugUI(base::BindOnce(
+      [](base::WeakPtr<ContentAnnotatorInternalsPageHandler> handler,
+         base::Value data) {
+        if (handler) {
+          handler->page_->OnContentAnnotationsChanged(std::move(data));
+        }
+      },
+      weak_ptr_factory_.GetWeakPtr()));
+}
 
 void ContentAnnotatorInternalsPageHandler::GetAnnotatedContent(
     GetAnnotatedContentCallback callback) {
@@ -34,7 +72,30 @@ void ContentAnnotatorInternalsPageHandler::GetAnnotatedContent(
     std::move(callback).Run(base::Value());
     return;
   }
-  std::move(callback).Run(backend->GetDebugUICacheData());
+  backend->GetAnnotationsForDebugUI(std::move(callback));
+}
+
+void ContentAnnotatorInternalsPageHandler::ClearAnnotatedContent(
+    ClearAnnotatedContentCallback callback) {
+  accessibility_annotator::AccessibilityAnnotatorBackend* backend =
+      AccessibilityAnnotatorBackendFactory::GetForProfile(profile_);
+  if (!backend) {
+    std::move(callback).Run(false);
+    return;
+  }
+  backend->ClearAllContentAnnotations(std::move(callback));
+}
+
+void ContentAnnotatorInternalsPageHandler::DeleteAnnotatedContent(
+    const std::vector<int64_t>& visit_ids,
+    DeleteAnnotatedContentCallback callback) {
+  accessibility_annotator::AccessibilityAnnotatorBackend* backend =
+      AccessibilityAnnotatorBackendFactory::GetForProfile(profile_);
+  if (!backend) {
+    std::move(callback).Run(false);
+    return;
+  }
+  backend->DeleteContentAnnotations(visit_ids, std::move(callback));
 }
 
 }  // namespace content_annotator_internals

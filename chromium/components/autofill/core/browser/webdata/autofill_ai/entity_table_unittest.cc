@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "base/files/scoped_temp_dir.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/test/gtest_util.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
@@ -18,6 +19,7 @@
 #include "components/autofill/core/browser/webdata/autofill_table_utils.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/os_crypt/async/browser/test_utils.h"
+#include "components/os_crypt/async/common/encryptor.h"
 #include "components/webdata/common/web_database.h"
 #include "sql/statement.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -38,21 +40,26 @@ using ::testing::UnorderedElementsAreArray;
 // Test fixture for synchronous database operations.
 class EntityTableTest : public testing::Test {
  public:
+  EntityTableTest() {
+    scoped_feature_list_.InitWithFeatures(
+        {features::kAutofillAiWithDataSchema,
+         features::kAutofillAiWalletPrivatePasses},
+        {});
+  }
   void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     db_.AddTable(&table_);
     ASSERT_EQ(sql::INIT_OK,
               db_.Init(temp_dir_.GetPath().AppendASCII("TestWebDatabase"),
-                       &encryptor_));
+                       encryptor_));
   }
 
   EntityTable& table() { return table_; }
 
  private:
-  base::test::ScopedFeatureList scoped_feature_list_{
-      features::kAutofillAiWithDataSchema};
+  base::test::ScopedFeatureList scoped_feature_list_;
   base::ScopedTempDir temp_dir_;
-  const os_crypt_async::Encryptor encryptor_ =
+  scoped_refptr<const os_crypt_async::Encryptor> encryptor_ =
       os_crypt_async::GetTestEncryptorForTesting();
   EntityTable table_;
   WebDatabase db_;
@@ -429,7 +436,7 @@ TEST_F(EntityTableTest, GetEntityType) {
 TEST_F(EntityTableTest, NoUnmaskedServerEntities) {
   EntityInstance server_pp = GetPassportEntityInstance(
       {.record_type = EntityInstance::RecordType::kServerWallet});
-  ASSERT_TRUE(server_pp.IsUnmaskedServerEntity());
+  ASSERT_TRUE(server_pp.IsUnmaskedEntity());
   EXPECT_CHECK_DEATH(table().AddOrUpdateEntityInstance(server_pp));
 }
 
@@ -438,12 +445,27 @@ TEST_F(EntityTableTest, NoUnmaskedServerEntities) {
 TEST_F(EntityTableTest, GetEntityInstanceMaskedServerEntity) {
   EntityInstance masked_pp = test::MaskEntityInstance(GetPassportEntityInstance(
       {.record_type = EntityInstance::RecordType::kServerWallet}));
-  ASSERT_TRUE(masked_pp.IsMaskedServerEntity());
+  ASSERT_TRUE(masked_pp.IsMaskedEntity());
 
   EXPECT_TRUE(table().AddOrUpdateEntityInstance(masked_pp));
   std::vector<EntityInstance> entities = table().GetEntityInstances();
   ASSERT_THAT(entities, ElementsAre(masked_pp));
-  EXPECT_TRUE(entities[0].IsMaskedServerEntity());
+  EXPECT_TRUE(entities[0].IsMaskedEntity());
+}
+
+// Tests that when private passes support is disabled (for example, because a
+// user got un-enrolled from the experiment), the table doesn't return any
+// Wallet private passes that were previously created.
+// Note that this data will get wiped during the next sync GetUpdates.
+TEST_F(EntityTableTest, SuppressWalletPrivatePasses) {
+  EntityInstance pass = test::MaskEntityInstance(GetPassportEntityInstance(
+      {.record_type = EntityInstance::RecordType::kServerWallet}));
+  ASSERT_TRUE(table().AddOrUpdateEntityInstance(pass));
+  ASSERT_THAT(table().GetEntityInstances(), ElementsAre(pass));
+  // Simulate disabling the feature flag after adding the pass.
+  base::test::ScopedFeatureList feature;
+  feature.InitAndDisableFeature(features::kAutofillAiWalletPrivatePasses);
+  EXPECT_THAT(table().GetEntityInstances(), IsEmpty());
 }
 
 }  // namespace

@@ -15,6 +15,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/threading/thread_restrictions.h"
+#include "build/build_config.h"
 #include "components/bookmarks/common/bookmark_features.h"
 #include "components/browser_sync/browser_sync_switches.h"
 #include "components/prefs/testing_pref_service.h"
@@ -35,6 +36,8 @@
 
 namespace browser_sync {
 namespace {
+
+#if !BUILDFLAG(IS_IOS)
 
 // Parameter controlling whether to use the synchronous or asynchronous
 // version of MaybeMigrateSyncingUserToSignedIn(...) function.
@@ -669,13 +672,21 @@ TEST_P(SyncToSigninMigrationMetricsTest, SyncAndAllDataTypesActive) {
   histograms.ExpectUniqueSample(
       "Sync.SyncToSigninMigration.MigrationType",
       IsMigrationEnabled() ? /*kMigrated*/ 1 : /*kNotMigratedYet*/ 3, 1);
+
   if (IsMigrationEnabled()) {
     histograms.ExpectTotalCount("Sync.SyncToSigninMigrationOutcome", 1);
     histograms.ExpectTotalCount("Sync.SyncToSigninMigrationTime", 1);
+    histograms.ExpectUniqueSample(
+        "Sync.SyncToSigninMigrationExecutionMode",
+        IsBlockingAllowed()
+            ? /*SyncToSigninMigrationExecutionMode::kSynchronous*/ 0
+            : /*SyncToSigninMigrationExecutionMode::kAsynchronous*/ 1,
+        1);
 
   } else {
     histograms.ExpectTotalCount("Sync.SyncToSigninMigrationOutcome", 0);
     histograms.ExpectTotalCount("Sync.SyncToSigninMigrationTime", 0);
+    histograms.ExpectTotalCount("Sync.SyncToSigninMigrationExecutionMode", 0);
   }
   // All the data type migrations should run - in "DryRun" mode if the feature
   // flag is disabled.
@@ -2480,6 +2491,8 @@ TEST_F(SyncSetupIncompleteMigrationTest, ShouldNotMigrateIfFlagDisabled) {
   }
 }
 #endif  // !BUILDFLAG(IS_CHROMEOS)
+
+#endif  // !BUILDFLAG(IS_IOS)
 
 }  // namespace
 }  // namespace browser_sync

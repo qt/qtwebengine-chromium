@@ -1,4 +1,6 @@
 # Find Visual Studio installation directory.
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 $VS_INSTALL_DIR = &"${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
 
 # Run VCVarsAll.bat initialization script and extract environment variables.

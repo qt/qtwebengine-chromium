@@ -3,6 +3,8 @@
 // Tests C.selfadjointView<Lower>().rankUpdate(v, alpha) which computes
 // C += alpha * v * v^T, updating only the lower (or upper) triangle.
 // Exercises SelfadjointProduct.h / selfadjoint_rank1_update.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>

@@ -6,6 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+
+#ifndef EIGEN_FFT_KISSFFT_IMPL_H
+#define EIGEN_FFT_KISSFFT_IMPL_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -295,7 +299,7 @@ struct kissfft_impl {
     m_realTwiddles.clear();
   }
 
-  inline void fwd(Complex *dst, const Complex *src, int nfft) { get_plan(nfft, false).work(0, dst, src, 1, 1); }
+  inline void fwd(Complex *dst, const Complex *src, int nfft) { run_c2c(dst, src, nfft, /*inverse=*/false); }
 
   inline void fwd2(Complex *dst, const Complex *src, int n0, int n1) {
     EIGEN_UNUSED_VARIABLE(dst);
@@ -346,7 +350,7 @@ struct kissfft_impl {
   }
 
   // inverse complex-to-complex
-  inline void inv(Complex *dst, const Complex *src, int nfft) { get_plan(nfft, true).work(0, dst, src, 1, 1); }
+  inline void inv(Complex *dst, const Complex *src, int nfft) { run_c2c(dst, src, nfft, /*inverse=*/true); }
 
   // half-complex to scalar
   inline void inv(Scalar *dst, const Complex *src, int nfft) {
@@ -398,6 +402,18 @@ struct kissfft_impl {
     return pd;
   }
 
+  // work() writes dst while reading src, so an in-place call must stage src
+  // through a scratch buffer first.
+  inline void run_c2c(Complex *dst, const Complex *src, int nfft, bool inverse) {
+    if (dst == src) {
+      ei_declare_aligned_stack_constructed_variable(Complex, scratch, nfft, 0);
+      std::copy(src, src + nfft, scratch);
+      get_plan(nfft, inverse).work(0, dst, scratch, 1, 1);
+      return;
+    }
+    get_plan(nfft, inverse).work(0, dst, src, 1, 1);
+  }
+
   inline Complex *real_twiddles(int ncfft2) {
     using std::acos;
     std::vector<Complex> &twidref = m_realTwiddles[ncfft2];  // creates new if not there
@@ -414,3 +430,5 @@ struct kissfft_impl {
 }  // end namespace internal
 
 }  // end namespace Eigen
+
+#endif  // EIGEN_FFT_KISSFFT_IMPL_H

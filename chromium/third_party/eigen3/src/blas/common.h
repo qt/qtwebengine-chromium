@@ -6,17 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_BLAS_COMMON_H
 #define EIGEN_BLAS_COMMON_H
-
-#ifdef __GNUC__
-#if __GNUC__ < 5
-// GCC < 5.0 does not like the global Scalar typedef
-// we just keep shadow-warnings disabled permanently
-#define EIGEN_PERMANENTLY_DISABLE_STUPID_WARNINGS
-#endif
-#endif
 
 #include "../Eigen/Core"
 #include "../Eigen/Jacobi"

@@ -63,7 +63,8 @@ InputSyncWriter::InputSyncWriter(
     uint32_t shared_memory_segment_count,
     const media::AudioParameters& params,
     std::unique_ptr<InputGlitchCounter> glitch_counter)
-    : log_callback_(std::move(log_callback)),
+    : id_(base::UnguessableToken::Create()),
+      log_callback_(std::move(log_callback)),
       socket_(std::move(socket)),
       shared_memory_region_(std::move(shared_memory)),
       shared_memory_mapping_(shared_memory_region_.Map()),
@@ -303,9 +304,8 @@ bool InputSyncWriter::PushDataToFifo(
               (number_of_filled_segments_ + overflow_data_.size()) *
                   dropped_buffer_glitch_.duration);
   if (overflow_data_.size() == kMaxOverflowBusesSize) {
-    TRACE_EVENT_INSTANT0(
-        "audio", "InputSyncWriter::PushDataToFifo - overflow - dropped data",
-        TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT(
+        "audio", "InputSyncWriter::PushDataToFifo - overflow - dropped data");
     if (fifo_full_count_ <= 50 && fifo_full_count_ % 10 == 0) {
       SendLogMessage("%s => (WARNING: no room in FIFO)", __func__);
       if (fifo_full_count_ == 50) {
@@ -377,9 +377,8 @@ bool InputSyncWriter::SignalDataWrittenAndUpdateCounters() {
       had_socket_error_ = true;
       SendLogMessage("%s => (WARNING: no room in socket buffer, dropped data)",
                      __func__);
-      TRACE_EVENT_INSTANT0(
-          "audio", "InputSyncWriter: No room in socket buffer - dropped data",
-          TRACE_EVENT_SCOPE_THREAD);
+      TRACE_EVENT_INSTANT(
+          "audio", "InputSyncWriter: No room in socket buffer - dropped data");
     }
     return false;
   }
@@ -408,8 +407,7 @@ void InputSyncWriter::SendLogMessage(const char* format, ...) {
   va_start(args, format);
   log_callback_.Run(
       base::StrCat({"AISW::", UNSAFE_TODO(base::StringPrintV(format, args)),
-                    base::StringPrintf(" [this=0x%" PRIXPTR "]",
-                                       reinterpret_cast<uintptr_t>(this))}));
+                    base::StringPrintf(" [id=%s]", id_.ToString().c_str())}));
   va_end(args);
 }
 

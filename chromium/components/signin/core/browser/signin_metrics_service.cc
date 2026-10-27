@@ -60,12 +60,14 @@ constexpr char kWebSigninAccountStartTimesPref[] =
 
 // These values are persisted to logs. Entries should not be renumbered and
 // numeric values should never be reused.
+// LINT.IfChange(PendingResolutionSource)
 enum class PendingResolutionSource {
   kReauth = 0,
   kSignout = 1,
 
   kMaxValue = kSignout,
 };
+// LINT.ThenChange(//tools/metrics/histograms/metadata/signin/enums.xml:PendingResolutionSource)
 
 void RecordPendingResolutionTime(const char* histogram_base_name,
                                  PendingResolutionSource resolution,
@@ -124,6 +126,7 @@ void MaybeRecordWebSigninToChromeSigninTimes(
     case signin_metrics::AccessPoint::kMenu:
     case signin_metrics::AccessPoint::kSettings:
     case signin_metrics::AccessPoint::kSettingsYourSavedInfo:
+    case signin_metrics::AccessPoint::kSettingsAutofillAndPasswords:
     case signin_metrics::AccessPoint::kExtensionInstallBubble:
     case signin_metrics::AccessPoint::kExtensions:
     case signin_metrics::AccessPoint::kBookmarkManager:
@@ -171,6 +174,7 @@ void MaybeRecordWebSigninToChromeSigninTimes(
     case signin_metrics::AccessPoint::kDriveFilePickerIos:
     case signin_metrics::AccessPoint::kCollaborationShareTabGroup:
     case signin_metrics::AccessPoint::kGlicLaunchButton:
+    case signin_metrics::AccessPoint::kIndigo:
     case signin_metrics::AccessPoint::kHistoryPage:
     case signin_metrics::AccessPoint::kCollaborationJoinTabGroup:
     case signin_metrics::AccessPoint::kHistorySyncOptinExpansionPillOnStartup:
@@ -196,7 +200,11 @@ void MaybeRecordWebSigninToChromeSigninTimes(
     case signin_metrics::AccessPoint::kAvatarPillExpandPromo:
     case signin_metrics::AccessPoint::kSearchAIModeBubble:
     case signin_metrics::AccessPoint::kIosAppBar:
+    case signin_metrics::AccessPoint::kIosGeminiButtonToolbar:
     case signin_metrics::AccessPoint::kIosPageActionMenu:
+    case signin_metrics::AccessPoint::kDeepLinkDefault:
+    case signin_metrics::AccessPoint::kAgeMismatchSignout:
+    case signin_metrics::AccessPoint::kOverflowMenu:
       return;
   }
 

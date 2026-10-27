@@ -7,8 +7,10 @@ import '//resources/cr_elements/cr_tabs/cr_tabs.js';
 
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 
-import {ActuationEligibility, AllowedInflightNavigation, FreOverride, InternalsPageHandlerFactory, InternalsPageHandlerRemote, InvocationSource} from '../glic.mojom-webui.js';
-import type {InternalsDataPayload} from '../glic.mojom-webui.js';
+import {ActuationEligibility, ActuationTarget, FreOverride, InvocationSource} from '../glic.mojom-webui.js';
+import {FeatureMode} from '../glic_enums.mojom-webui.js';
+import {InternalsPageHandlerFactory, InternalsPageHandlerRemote} from '../glic_internals.mojom-webui.js';
+import type {InternalsDataPayload, TriggerInvokeFromInternalsOptions} from '../glic_internals.mojom-webui.js';
 
 import {getCss} from './glic_internals_app.css.js';
 import {getHtml} from './glic_internals_app.html.js';
@@ -33,10 +35,22 @@ export class GlicInternalsAppElement extends CrLitElement {
       invokePrompt_: {type: String},
       invokeAutoSubmit_: {type: Boolean},
       invokeFreOverride_: {type: Number},
+      invokeFeatureMode_: {type: Number},
+      invokeInvocationSource_: {type: Number},
       invokeWaitForPanelOpen_: {type: Boolean},
       invokeLogs_: {type: Array},
+      invokeSurfaceType_: {type: String},
+      invokeZssOverride_: {type: Boolean},
+      invokeZssAdditionalContent_: {type: String},
+      invokeOpenInForeground_: {type: Boolean},
+      invokeActuationTarget_: {type: Number},
+      actuationTargetEnumValues_: {type: Array},
+      invokeShowPanel_: {type: Boolean},
+      invokePayloadUniversalCartMetadata_: {type: String},
+
       selectedTabIndex_: {type: Number},
       tabNames_: {type: Array},
+      featureModeEnumValues_: {type: Array},
     };
   }
 
@@ -44,10 +58,32 @@ export class GlicInternalsAppElement extends CrLitElement {
   protected accessor invokePrompt_: string = '';
   protected accessor invokeAutoSubmit_: boolean = true;
   protected accessor invokeFreOverride_: FreOverride = FreOverride.kUnspecified;
+  protected accessor invokeFeatureMode_: FeatureMode = FeatureMode.kUnspecified;
+  protected accessor invokeInvocationSource_: InvocationSource =
+      InvocationSource.kOsButton;
   protected accessor invokeWaitForPanelOpen_: boolean = false;
   protected accessor invokeLogs_: string[] = [];
+  protected accessor invokeSurfaceType_: string = 'default';
+  protected accessor invokeZssOverride_: boolean = false;
+  protected accessor invokeZssAdditionalContent_: string = '';
+  protected accessor invokeOpenInForeground_: boolean = true;
+  protected accessor invokeActuationTarget_: ActuationTarget =
+      ActuationTarget.kAgentDecides;
+  protected accessor invokeShowPanel_: boolean = true;
+  protected accessor invokePayloadUniversalCartMetadata_: string = '';
+
   protected accessor selectedTabIndex_: number = 0;
   protected accessor tabNames_: string[] = ['General', 'Debug Controls'];
+  protected accessor featureModeEnumValues_:
+      Array<{name: string, value: number}> =
+          Object.entries(FeatureMode)
+              .filter(([key]) => isNaN(Number(key)))
+              .map(([name, value]) => ({name, value: value as number}));
+  protected accessor actuationTargetEnumValues_:
+      Array<{name: string, value: number}> =
+          Object.entries(ActuationTarget)
+              .filter(([key]) => isNaN(Number(key)))
+              .map(([name, value]) => ({name, value: value as number}));
 
 
 
@@ -58,9 +94,20 @@ export class GlicInternalsAppElement extends CrLitElement {
     InternalsPageHandlerFactory.getRemote().createInternalsPageHandler(
         this.pageHandler_.$.bindNewPipeAndPassReceiver());
 
-    this.pageHandler_.getInternalsDataPayload().then(({internalsData}) => {
-      this.data_ = internalsData;
-    });
+    this.pageHandler_.getInternalsDataPayload().then(
+        ({internalsData}: {internalsData: InternalsDataPayload}) => {
+          this.data_ = internalsData;
+        });
+  }
+
+  protected onShowErrorAllowedChange(e: Event) {
+    const allowed = (e.target as HTMLInputElement).checked;
+    this.data_!.showErrorAllowed = allowed;
+    this.pageHandler_.setShowErrorAllowed(allowed);
+  }
+
+  protected onExperimentalOptInClick_() {
+    this.pageHandler_.showExperimentalOptIn();
   }
 
   protected onAutopushInputChange(e: Event) {
@@ -150,54 +197,60 @@ export class GlicInternalsAppElement extends CrLitElement {
     return [
       {
         label: 'Enabled by Chrome Flags',
-        value: !this.data_.enablement.featureDisabled,
+        value: this.data_.enablement.featureEnabled,
       },
       {
         label: 'Regular profile',
-        value: !this.data_.enablement.notRegularProfile,
+        value: this.data_.enablement.isRegularProfile,
       },
       {
         label: 'Pref or flag based rollout (flag or pref) applies',
-        value: !this.data_.enablement.notRolledOut,
+        value: this.data_.enablement.isRolledOut,
       },
       {
         label: 'Account exists and has the Gemini in Chrome capability',
-        value: !this.data_.enablement.primaryAccountNotCapable,
+        value: this.data_.enablement.primaryAccountIsCapable,
       },
       {
         label: 'Account exists and is fully signed-in',
-        value: !this.data_.enablement.primaryAccountNotFullySignedIn,
+        value: this.data_.enablement.primaryAccountIsFullySignedIn,
       },
       {
         label:
             'Chrome Enterprise policy allows this feature (or doesn\'t apply)',
-        value: !this.data_.enablement.disallowedByChromePolicy,
+        value: this.data_.enablement.allowedByChromePolicy,
       },
       {
         label: 'Server side admin allows this feature',
-        value: !this.data_.enablement.disallowedByRemoteAdmin,
+        value: this.data_.enablement.allowedByRemoteAdmin,
       },
       {
         label: 'Server side allows this feature (Not admin policy)',
-        value: !this.data_.enablement.disallowedByRemoteOther,
+        value: this.data_.enablement.allowedByRemoteOther,
       },
       {
         label: 'User did pass the FRE',
-        value: !this.data_.enablement.notConsented,
+        value: this.data_.enablement.freIsConsented,
       },
       {
         label: 'User accepted actuation consent',
-        value: !this.data_.enablement.actuationNotConsented,
+        value: this.data_.enablement.actuationIsConsented,
       },
       {
         label: 'Passed country filter',
-        value: !this.data_.enablement.disallowedByCountryFilter,
+        value: this.data_.enablement.allowedByCountryFilter,
       },
       {
         label: 'Passed locale filter',
-        value: !this.data_.enablement.disallowedByLocaleFilter,
+        value: this.data_.enablement.allowedByLocaleFilter,
       },
     ];
+  }
+
+  protected getInvocationSourceOptions_() {
+    return Object.entries(InvocationSource)
+        .filter(([_, value]) => typeof value === 'number')
+        .map(([key, value]) => ({name: key, value: value}));
   }
 
   protected onInvokePromptInput_(e: Event) {
@@ -212,32 +265,93 @@ export class GlicInternalsAppElement extends CrLitElement {
     this.invokeFreOverride_ = Number((e.target as HTMLSelectElement).value);
   }
 
+  protected onInvokeFeatureModeChange_(e: Event) {
+    this.invokeFeatureMode_ = Number((e.target as HTMLSelectElement).value);
+  }
+
+  protected onInvokeInvocationSourceChange_(e: Event) {
+    this.invokeInvocationSource_ =
+        Number((e.target as HTMLSelectElement).value);
+  }
   protected onInvokeWaitForPanelOpenChange_(e: Event) {
     this.invokeWaitForPanelOpen_ = (e.target as HTMLInputElement).checked;
+  }
+
+  protected onPayloadUniversalCartMetadataInput_(e: Event) {
+    this.invokePayloadUniversalCartMetadata_ =
+        (e.target as HTMLInputElement).value;
+  }
+
+  protected onInvokeSurfaceTypeChange_(e: Event) {
+    this.invokeSurfaceType_ = (e.target as HTMLSelectElement).value;
+  }
+
+  protected onInvokeZssOverrideChange_(e: Event) {
+    this.invokeZssOverride_ = (e.target as HTMLInputElement).checked;
+  }
+
+  protected onInvokeZssAdditionalContentInput_(e: Event) {
+    this.invokeZssAdditionalContent_ = (e.target as HTMLInputElement).value;
+  }
+
+  protected onInvokeOpenInForegroundChange(e: Event) {
+    this.invokeOpenInForeground_ = (e.target as HTMLInputElement).checked;
+  }
+
+  protected onInvokeActuationTargetChange_(e: Event) {
+    this.invokeActuationTarget_ = Number((e.target as HTMLSelectElement).value);
+  }
+
+  protected onInvokeShowPanelChange_(e: Event) {
+    this.invokeShowPanel_ = (e.target as HTMLInputElement).checked;
   }
   protected onTriggerInvokeClick_() {
     this.invokeLogs_ =
         [`[${new Date().toLocaleTimeString()}] TRIGGERING INVOKE...`];
     console.info(this.invokeLogs_[0]);
 
-    const options = {
-      invocationSource: InvocationSource.kOsButton,
+    const surface = this.invokeSurfaceType_ === 'newTab' ?
+        {newTab: {openInForeground: this.invokeOpenInForeground_}} :
+        {defaultSurface: {}};
+
+    let payload = null;
+    if (this.invokeInvocationSource_ === InvocationSource.kUniversalCart) {
+      const bytes = this.invokePayloadUniversalCartMetadata_ ?
+          Array.from(
+              atob(this.invokePayloadUniversalCartMetadata_),
+              c => c.charCodeAt(0)) :
+          [];
+      payload = {
+        universalCart: {
+          serializedMetadata: bytes,
+        },
+      };
+    }
+
+    const options: TriggerInvokeFromInternalsOptions = {
+      invocationSource: this.invokeInvocationSource_,
       prompts: this.invokePrompt_ ? [this.invokePrompt_] : [],
       additionalContext: null,
       conversation: {defaultConversation: {}},
-      featureMode: null,
+      featureMode: this.invokeFeatureMode_,
       disableZss: false,
+      zssConfig: this.invokeZssOverride_ ?
+          {additionalContent: this.invokeZssAdditionalContent_ || null} :
+          null,
       skillId: null,
       errorMessage: null,
       timeout: null,
-      allowedInflightNavigation: AllowedInflightNavigation.kNone,
       autoSubmit: this.invokeAutoSubmit_,
       freOverride: this.invokeFreOverride_,
       waitForPanelOpen: this.invokeWaitForPanelOpen_,
+      surface: surface,
+      actuationTarget: this.invokeActuationTarget_,
+      showPanel: this.invokeAutoSubmit_ ? this.invokeShowPanel_ : null,
+      payload: payload,
     };
 
     this.pageHandler_.triggerInvokeFromInternalsAction(options).then(
-        ({success, errorMessage}) => {
+        ({success, errorMessage}: {success: boolean, errorMessage: string}) => {
           const timestamp = new Date().toLocaleTimeString();
           const logEntry = `[${timestamp}] ${
               success ? 'SUCCESS' : 'ERROR: ' + errorMessage}`;

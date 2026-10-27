@@ -263,6 +263,7 @@ class MockV4l2GpuClient : public VideoCaptureDevice::Client {
       base::TimeTicks reference_time,
       base::TimeDelta timestamp,
       std::optional<base::TimeTicks> capture_begin_time,
+      const gfx::Size& natural_size,
       const std::optional<VideoFrameMetadata>& metadata,
       int frame_feedback_id = 0) override {}
 
@@ -272,6 +273,7 @@ class MockV4l2GpuClient : public VideoCaptureDevice::Client {
       base::TimeDelta timestamp,
       std::optional<base::TimeTicks> capture_begin_time,
       const gfx::Rect& visible_rect,
+      const gfx::Size& natural_size,
       const std::optional<media::VideoFrameMetadata>&) override {}
 
   void OnCaptureConfigurationChanged() override {}

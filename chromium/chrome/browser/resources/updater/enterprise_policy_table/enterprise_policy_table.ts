@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import './enterprise_policy_table_section.js';
+import '//resources/cr_elements/cr_button/cr_button.js';
 
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
@@ -33,15 +34,18 @@ export class EnterprisePolicyTableElement extends CrLitElement {
     return {
       policies: {type: Object},
       appId: {type: String},
+      hasOnlyDefaultValues: {type: Boolean},
+      updaterPolicies: {type: Array},
+      appPolicies: {type: Object},
     };
   }
 
   accessor policies: PolicySet|undefined = undefined;
   accessor appId: string|undefined = undefined;
 
-  protected hasOnlyDefaultValues = true;
-  protected updaterPolicies: RowData[] = [];
-  protected appPolicies: {[label: string]: RowData[]} = {};
+  protected accessor hasOnlyDefaultValues = true;
+  protected accessor updaterPolicies: RowData[] = [];
+  protected accessor appPolicies: {[label: string]: RowData[]} = {};
 
   override willUpdate(changedProperties: PropertyValues<this>) {
     super.willUpdate(changedProperties);

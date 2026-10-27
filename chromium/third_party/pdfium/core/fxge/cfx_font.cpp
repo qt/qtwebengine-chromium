@@ -19,6 +19,7 @@
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/unowned_ptr.h"
+#include "core/fxge/cfx_cttgsubtable.h"
 #include "core/fxge/cfx_face.h"
 #include "core/fxge/cfx_fontmapper.h"
 #include "core/fxge/cfx_fontmgr.h"
@@ -175,6 +176,13 @@ CFX_Font::~CFX_Font() {
 #endif
 }
 
+std::unique_ptr<CFX_CTTGSUBTable> CFX_Font::ParseGSUBTable() const {
+  if (!face_) {
+    return nullptr;
+  }
+  return face_->ParseGSUBTable();
+}
+
 bool CFX_Font::LoadFaceZeroFromSpan(pdfium::span<const uint8_t> src_span,
                                     bool force_vertical,
                                     uint64_t object_tag) {
@@ -243,6 +251,14 @@ bool CFX_Font::IsTTFont() const {
   return face_ && face_->IsTtOt();
 }
 
+int CFX_Font::GetCharIndex(uint32_t code) const {
+  return face_ ? face_->GetCharIndex(code) : 0;
+}
+
+int CFX_Font::GetNameIndex(const char* name) const {
+  return face_ ? face_->GetNameIndex(name) : 0;
+}
+
 int CFX_Font::GetAscent() const {
   if (!face_) {
     return 0;
@@ -262,6 +278,14 @@ std::optional<FX_RECT> CFX_Font::GetGlyphBBox(uint32_t glyph_index) {
     return std::nullopt;
   }
   return face_->GetFontGlyphBBox(glyph_index);
+}
+
+std::optional<FX_RECT> CFX_Font::GetCharBBox(uint32_t code,
+                                             uint32_t glyph_index) {
+  if (!face_) {
+    return std::nullopt;
+  }
+  return face_->GetCharBBox(code, glyph_index);
 }
 
 bool CFX_Font::IsItalic() const {

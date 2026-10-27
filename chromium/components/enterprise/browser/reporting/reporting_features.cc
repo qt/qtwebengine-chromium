@@ -8,9 +8,18 @@
 
 namespace enterprise_reporting {
 
-BASE_FEATURE(kSaasUsageReporting, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kSaasUsageReporting, base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kGeminiInChromeUsageReporting, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kBrowserLaunchMetadataReporting,
              base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kCbcmAndroidPackageNameIdentifier,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+#if BUILDFLAG(IS_IOS)
+BASE_FEATURE(kIOSSignalSharingEnabled, base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_IOS)
 
 }  // namespace enterprise_reporting

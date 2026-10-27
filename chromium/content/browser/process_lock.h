@@ -7,6 +7,7 @@
 
 #include <optional>
 
+#include "content/browser/embedder_isolation_info.h"
 #include "content/browser/site_info.h"
 #include "content/browser/url_info.h"
 #include "content/browser/web_exposed_isolation_info.h"
@@ -52,7 +53,7 @@ class CONTENT_EXPORT ProcessLock {
       const WebExposedIsolationInfo& web_exposed_isolation_info,
       const std::optional<AgentClusterKey::CrossOriginIsolationKey>&
           cross_origin_isolation_key,
-      const std::string& browser_context_id);
+      const base::UnguessableToken& browser_context_id);
 
   // Create a lock for a specific UrlInfo. This method can be called from both
   // the UI and IO threads. Locks created with the same parameters must always
@@ -135,6 +136,14 @@ class CONTENT_EXPORT ProcessLock {
 
   // Returns whether this ProcessLock is specific to PDF contents.
   bool is_pdf() const { return site_info_.has_value() && site_info_->is_pdf(); }
+
+  // Returns the embedder-specified process isolation policy of the SiteInfo
+  // associated with this lock. See
+  // //content/browser/embedder_isolation_info.h.
+  EmbedderIsolationInfo embedder_isolation_info() const {
+    return site_info_.has_value() ? site_info_->embedder_isolation_info()
+                                  : EmbedderIsolationInfo::CreateNone();
+  }
 
   // Returns whether this ProcessLock can only be used for error pages.
   bool is_error_page() const {

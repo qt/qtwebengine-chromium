@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_GENERAL_MATRIX_MATRIX_H
 #define EIGEN_GENERAL_MATRIX_MATRIX_H
@@ -52,6 +53,9 @@ struct general_matrix_matrix_product<Index, LhsScalar, LhsStorageOrder, Conjugat
   static void run(Index rows, Index cols, Index depth, const LhsScalar* lhs_, Index lhsStride, const RhsScalar* rhs_,
                   Index rhsStride, ResScalar* res_, Index resIncr, Index resStride, ResScalar alpha,
                   level3_blocking<LhsScalar, RhsScalar>& blocking, GemmParallelInfo<Index>* info = 0) {
+    // BLAS contract: if alpha == 0, the result is unchanged (and lhs/rhs need not be read).
+    if (numext::is_exactly_zero(alpha)) return;
+
     typedef const_blas_data_mapper<LhsScalar, Index, LhsStorageOrder> LhsMapper;
     typedef const_blas_data_mapper<RhsScalar, Index, RhsStorageOrder> RhsMapper;
     typedef blas_data_mapper<typename Traits::ResScalar, Index, ColMajor, Unaligned, ResInnerStride> ResMapper;

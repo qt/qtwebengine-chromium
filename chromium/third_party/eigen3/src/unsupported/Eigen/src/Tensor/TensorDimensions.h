@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_DIMENSIONS_H
-#define EIGEN_CXX11_TENSOR_TENSOR_DIMENSIONS_H
+#ifndef EIGEN_TENSOR_TENSOR_DIMENSIONS_H
+#define EIGEN_TENSOR_TENSOR_DIMENSIONS_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -19,8 +20,14 @@ namespace Eigen {
 namespace internal {
 
 template <std::ptrdiff_t n, typename Dimension>
-struct dget {
-  static constexpr std::ptrdiff_t value = get<n, Dimension>::value;
+struct dget;
+
+template <std::ptrdiff_t n, typename T, T first, T... rest>
+struct dget<n, std::integer_sequence<T, first, rest...>> : dget<n - 1, std::integer_sequence<T, rest...>> {};
+
+template <typename T, T first, T... rest>
+struct dget<0, std::integer_sequence<T, first, rest...>> {
+  static constexpr T value = first;
 };
 
 template <typename Index, std::ptrdiff_t NumIndices, std::ptrdiff_t n, bool RowMajor>
@@ -49,7 +56,7 @@ struct fixed_size_tensor_index_extraction_helper {
   template <typename Dimensions>
   constexpr EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Index run(const Index index, const Dimensions& dimensions) {
     const Index mult = (index == n - 1) ? 1 : 0;
-    return array_get<n - 1>(dimensions) * mult +
+    return dget<n - 1, Dimensions>::value * mult +
            fixed_size_tensor_index_extraction_helper<Index, n - 1>::run(index, dimensions);
   }
 };
@@ -66,7 +73,7 @@ struct fixed_size_tensor_index_extraction_helper<Index, 0> {
 
 /** \internal
  *
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Fixed dimensions of a Tensor.
  *
@@ -78,12 +85,12 @@ struct fixed_size_tensor_index_extraction_helper<Index, 0> {
  */
 template <typename std::ptrdiff_t... Indices>
 struct Sizes {
-  typedef internal::numeric_list<std::ptrdiff_t, Indices...> Base;
+  typedef std::integer_sequence<std::ptrdiff_t, Indices...> Base;
   const Base t = Base();
   static constexpr std::ptrdiff_t total_size = internal::arg_prod(Indices...);
-  static constexpr ptrdiff_t count = Base::count;
+  static constexpr ptrdiff_t count = sizeof...(Indices);
 
-  constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE std::ptrdiff_t rank() const { return Base::count; }
+  constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE std::ptrdiff_t rank() const { return count; }
 
   static constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE std::ptrdiff_t TotalSize() {
     return internal::arg_prod(Indices...);
@@ -91,7 +98,7 @@ struct Sizes {
 
   constexpr EIGEN_DEVICE_FUNC Sizes() {}
   template <typename DenseIndex>
-  explicit constexpr EIGEN_DEVICE_FUNC Sizes(const array<DenseIndex, Base::count>& /*indices*/) {
+  explicit constexpr EIGEN_DEVICE_FUNC Sizes(const array<DenseIndex, count>& /*indices*/) {
     // TODO: Add assertion.
   }
   template <typename... DenseIndex>
@@ -107,20 +114,18 @@ struct Sizes {
   }
 
   constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE std::ptrdiff_t operator[](const std::ptrdiff_t index) const {
-    return internal::fixed_size_tensor_index_extraction_helper<std::ptrdiff_t, Base::count>::run(index, t);
+    return internal::fixed_size_tensor_index_extraction_helper<std::ptrdiff_t, count>::run(index, t);
   }
 
   template <typename DenseIndex>
   constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE ptrdiff_t
-  IndexOfColMajor(const array<DenseIndex, Base::count>& indices) const {
-    return internal::fixed_size_tensor_index_linearization_helper<DenseIndex, Base::count, Base::count, false>::run(
-        indices, t);
+  IndexOfColMajor(const array<DenseIndex, count>& indices) const {
+    return internal::fixed_size_tensor_index_linearization_helper<DenseIndex, count, count, false>::run(indices, t);
   }
   template <typename DenseIndex>
   constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE ptrdiff_t
-  IndexOfRowMajor(const array<DenseIndex, Base::count>& indices) const {
-    return internal::fixed_size_tensor_index_linearization_helper<DenseIndex, Base::count, Base::count, true>::run(
-        indices, t);
+  IndexOfRowMajor(const array<DenseIndex, count>& indices) const {
+    return internal::fixed_size_tensor_index_linearization_helper<DenseIndex, count, count, true>::run(indices, t);
   }
 };
 
@@ -157,7 +162,7 @@ struct tensor_index_linearization_helper<Index, NumIndices, 0, RowMajor> {
 
 /** \internal
  *
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Dynamic dimensions of a Tensor.
  *
@@ -200,10 +205,9 @@ struct DSizes : array<DenseIndex, NumDims> {
   template <typename OtherIndex>
   EIGEN_DEVICE_FUNC explicit DSizes(
       const array<OtherIndex, NumDims>& other,
-      // Default template parameters require c++11.
       std::enable_if_t<
-          internal::is_same<DenseIndex, typename internal::promote_index_type<DenseIndex, OtherIndex>::type>::value,
-          void*> = 0) {
+          std::is_same<DenseIndex, typename internal::promote_index_type<DenseIndex, OtherIndex>::type>::value, void*> =
+          0) {
     for (int i = 0; i < NumDims; ++i) {
       (*this)[i] = static_cast<DenseIndex>(other[i]);
     }
@@ -301,7 +305,7 @@ struct array_size<Sizes<Indices...> > {
 };
 template <std::ptrdiff_t n, typename std::ptrdiff_t... Indices>
 constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE std::ptrdiff_t array_get(const Sizes<Indices...>&) {
-  return get<n, internal::numeric_list<std::ptrdiff_t, Indices...> >::value;
+  return dget<n, typename Sizes<Indices...>::Base>::value;
 }
 template <std::ptrdiff_t n>
 EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE std::ptrdiff_t array_get(const Sizes<>&) {
@@ -335,4 +339,4 @@ EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE bool dimensions_match(const Dims1& dims1, 
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_DIMENSIONS_H
+#endif  // EIGEN_TENSOR_TENSOR_DIMENSIONS_H

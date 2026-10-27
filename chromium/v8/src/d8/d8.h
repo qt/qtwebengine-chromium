@@ -16,10 +16,13 @@
 #include <vector>
 
 #include "include/v8-array-buffer.h"
+#include "include/v8-data.h"
+#include "include/v8-external.h"
 #include "include/v8-isolate.h"
 #include "include/v8-script.h"
 #include "include/v8-value-serializer.h"
 #include "src/base/once.h"
+#include "src/base/platform/platform.h"
 #include "src/base/platform/time.h"
 #include "src/base/platform/wrappers.h"
 #include "src/base/vector.h"
@@ -38,7 +41,7 @@ class D8Console;
 class Message;
 class TryCatch;
 
-enum class ModuleType { kJavaScript, kJSON, kWebAssembly, kInvalid };
+enum class ModuleType { kJavaScript, kJSON, kWebAssembly, kText, kInvalid };
 
 namespace internal {
 class CancelableTaskManager;
@@ -372,6 +375,7 @@ class PerIsolateData {
   bool ignore_unhandled_promises_;
   std::vector<std::tuple<Global<Promise>, Global<Message>, Global<Value>>>
       unhandled_promises_;
+  std::vector<int> realm_stack_;
   AsyncHooks* async_hooks_wrapper_;
   std::unordered_set<DynamicImportData*> import_data_;
   Global<FunctionTemplate> test_api_object_ctor_;
@@ -390,9 +394,22 @@ class PerIsolateData {
   int RealmIndexOrThrow(const v8::FunctionCallbackInfo<v8::Value>& info,
                         int arg_offset);
   int RealmFind(Local<Context> context);
+
+  static constexpr int kMainRealmIndex = 0;
 };
 
 extern bool check_d8_flag_contradictions;
+extern bool exit_on_flag_contradictions;
+
+inline void ReportFlagError(const char* format, const char* name) {
+  if (exit_on_flag_contradictions) {
+    base::OS::PrintError(format, name);
+    base::OS::PrintError("\n");
+    base::OS::ExitProcess(-1);
+  } else {
+    FATAL(format, name);
+  }
+}
 
 class ShellOptions {
  public:
@@ -420,11 +437,11 @@ class ShellOptions {
       if (check_d8_flag_contradictions) {
         if (kAllowIdenticalAssignment) {
           if (specified_ && value_ != value) {
-            FATAL("Contradictory values for d8 flag --%s", name_);
+            ReportFlagError("Contradictory values for d8 flag --%s", name_);
           }
         } else {
           if (specified_) {
-            FATAL("Repeated specification of d8 flag --%s", name_);
+            ReportFlagError("Repeated specification of d8 flag --%s", name_);
           }
         }
       }
@@ -445,6 +462,8 @@ class ShellOptions {
   };
   DisallowReassignment<bool> can_block = {"can_block", true};
   DisallowReassignment<const char*> d8_path = {"d8-path", ""};
+  DisallowReassignment<std::string> cwd = {"C", ""};
+  int post_filtering_cwd_index = -1;
   DisallowReassignment<bool> fuzzilli_coverage_statistics = {
       "fuzzilli-coverage-statistics", false};
   DisallowReassignment<bool> fuzzilli_enable_builtins_coverage = {
@@ -536,6 +555,7 @@ class ShellOptions {
   DisallowReassignment<bool> flush_denormals = {"flush-denormals", false};
   DisallowReassignment<size_t> max_serializer_memory = {"max-serializer-memory",
                                                         1 * i::MB};
+  DisallowReassignment<bool> bundle = {"bundle", false};
 };
 
 class Shell : public i::AllStatic {
@@ -551,10 +571,34 @@ class Shell : public i::AllStatic {
   };
   enum class CodeType { kFileName, kString, kFunction, kInvalid, kNone };
 
+  class Source {
+   public:
+    enum class Type { kString, kFile };
+    static Source FromString(Local<String> string) {
+      return Source(Type::kString, string, nullptr);
+    }
+    static Source FromFile(const char* filename) {
+      return Source(Type::kFile, Local<String>(), filename);
+    }
+
+    Type type() const { return type_; }
+    Local<String> string() const { return string_; }
+    const char* filename() const { return filename_; }
+    MaybeLocal<String> ConvertToString(Isolate* isolate) const;
+
+   private:
+    Source(Type type, Local<String> string, const char* filename)
+        : type_(type), string_(string), filename_(filename) {}
+
+    Type type_;
+    Local<String> string_;
+    const char* filename_;
+  };
+
   // Boolean return values (for any method below) typically denote "success".
   // We return `false` on uncaught exceptions, except for termination
   // exceptions.
-  static bool ExecuteString(Isolate* isolate, Local<String> source,
+  static bool ExecuteSource(Isolate* isolate, const Source& source,
                             Local<String> name,
                             ReportExceptions report_exceptions,
                             Global<Value>* out_result = nullptr);
@@ -694,8 +738,14 @@ class Shell : public i::AllStatic {
   static void ReadLine(const v8::FunctionCallbackInfo<v8::Value>& info);
   static void WriteChars(const char* name, uint8_t* buffer, size_t buffer_size);
   static void ExecuteFile(const v8::FunctionCallbackInfo<v8::Value>& info);
+  static void FileExists(const v8::FunctionCallbackInfo<v8::Value>& info);
+#if defined(V8_OS_WIN)
+  static void PreProcessUnicodeFilenameArg(char* argv[], int i);
+  static void FreeUnicodeFilenameArgs();
+#endif
   static void SetTimeout(const v8::FunctionCallbackInfo<v8::Value>& info);
-  static void ReadCodeTypeAndArguments(
+  // Returns false if any exception occurred. Otherwise returns true.
+  static bool ReadCodeTypeAndArguments(
       const v8::FunctionCallbackInfo<v8::Value>& info, int index,
       CodeType* code_type, Local<Value>* arguments = nullptr);
   static bool FunctionAndArgumentsToString(Local<Function> function,
@@ -733,7 +783,8 @@ class Shell : public i::AllStatic {
 
   // os.chdir(dir) changes directory to the given directory.  Throws an
   // exception/ on error.
-  static void ChangeDirectory(const v8::FunctionCallbackInfo<v8::Value>& info);
+  static void ChangeDirectoryCallback(
+      const v8::FunctionCallbackInfo<v8::Value>& info);
 
   // os.setenv(variable, value) sets an environment variable.  Repeated calls to
   // this method leak memory due to the API of setenv in the standard C library.
@@ -781,10 +832,8 @@ class Shell : public i::AllStatic {
   static void Fuzzilli(const v8::FunctionCallbackInfo<v8::Value>& info);
 #endif  // V8_FUZZILLI
 
-  // Data is of type DynamicImportData*. We use void* here to be able
-  // to conform with MicrotaskCallback interface and enqueue this
-  // function in the microtask queue.
-  static void DoHostImportModuleDynamically(void* data);
+  // Data is of type DynamicImportData* wrapped in v8::External.
+  static void DoHostImportModuleDynamically(v8::Local<v8::Data> data);
   static void AddOSMethods(v8::Isolate* isolate,
                            Local<ObjectTemplate> os_template);
 
@@ -797,6 +846,8 @@ class Shell : public i::AllStatic {
   static base::OwnedVector<char> ReadCharsFromTcpPort(const char* name);
 
   static void set_script_executed() { script_executed_.store(true); }
+  static bool ChangeWorkingDirectory(const std::string& path,
+                                     bool print_error = true);
   static bool use_interactive_shell() {
     return (options.interactive_shell || !script_executed_.load()) &&
            !options.test_shell;
@@ -849,7 +900,10 @@ class Shell : public i::AllStatic {
   static std::atomic<bool> script_executed_;
   static std::atomic<bool> valid_fuzz_script_;
 
-  static void WriteIgnitionDispatchCountersFile(v8::Isolate* isolate);
+  static bool ValidateRealmIndex(Isolate* isolate, PerIsolateData* data,
+                                 int index);
+  static bool ValidateRestrictedRealmIndex(Isolate* isolate,
+                                           PerIsolateData* data, int index);
   // Append LCOV coverage data to file.
   static void WriteLcovData(v8::Isolate* isolate, const char* file);
   static Counter* GetCounter(const char* name, bool is_histogram);
@@ -890,10 +944,12 @@ class Shell : public i::AllStatic {
 
   static MaybeLocal<Value> JSONModuleEvaluationSteps(Local<Context> context,
                                                      Local<Module> module);
+  static MaybeLocal<Value> TextModuleEvaluationSteps(Local<Context> context,
+                                                     Local<Module> module);
 
   template <class T>
-  static MaybeLocal<T> CompileString(Isolate* isolate, Local<Context> context,
-                                     Local<String> source,
+  static MaybeLocal<T> CompileSource(Isolate* isolate, Local<Context> context,
+                                     const Source& source,
                                      const ScriptOrigin& origin);
 
   static ScriptCompiler::CachedData* LookupCodeCache(Isolate* isolate,

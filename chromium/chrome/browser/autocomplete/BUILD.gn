@@ -42,17 +42,14 @@ source_set("autocomplete") {
   if (enable_extensions_core) {
     sources += [
       "keyword_extensions_delegate_impl.h",
+      "shortcuts_extensions_manager.h",
       "unscoped_extension_provider_delegate_impl.h",
     ]
     public_deps += [
+      "//extensions/browser",
       "//extensions/buildflags",
       "//extensions/common",
     ]
-  }
-
-  if (enable_extensions) {
-    sources += [ "shortcuts_extensions_manager.h" ]
-    public_deps += [ "//extensions/browser" ]
   }
 }
 
@@ -76,6 +73,7 @@ source_set("impl") {
     ":autocomplete",
     "//chrome/app:command_ids",
     "//chrome/browser:browser_process",
+    "//chrome/browser:browser_process_platform_part",
     "//chrome/browser:global_features",
     "//chrome/browser/bitmap_fetcher",
     "//chrome/browser/bookmarks",
@@ -84,6 +82,8 @@ source_set("impl") {
     "//chrome/browser/history",
     "//chrome/browser/history_clusters",
     "//chrome/browser/history_embeddings",
+    "//chrome/browser/lifetime",
+    "//chrome/browser/omnibox",
     "//chrome/browser/optimization_guide",
     "//chrome/browser/prefs",
     "//chrome/browser/preloading/prefetch/search_prefetch",
@@ -145,6 +145,7 @@ source_set("impl") {
   if (enable_extensions_core) {
     sources += [
       "keyword_extensions_delegate_impl.cc",
+      "shortcuts_extensions_manager.cc",
       "unscoped_extension_provider_delegate_impl.cc",
     ]
     deps += [
@@ -153,10 +154,6 @@ source_set("impl") {
       "//chrome/browser/omnibox",
       "//extensions/browser",
     ]
-  }
-
-  if (enable_extensions) {
-    sources += [ "shortcuts_extensions_manager.cc" ]
   }
 
   public_deps = [ "//chrome/browser:browser_public_dependencies" ]
@@ -190,6 +187,11 @@ source_set("aim_eligibility_service") {
     "//services/network/public/cpp",
     "//third_party/blink/public/common:headers",
   ]
+
+  if (is_android) {
+    sources += [ "aim_eligibility_service_factory_android.cc" ]
+    deps += [ "//chrome/browser/search_engines/android:jni_headers" ]
+  }
 }
 
 if (!is_android) {
@@ -263,7 +265,9 @@ source_set("unit_tests") {
     ":autocomplete",
     "//base",
     "//chrome/browser",
+    "//chrome/browser/content_settings:content_settings_factory",
     "//chrome/browser/history",
+    "//chrome/browser/omnibox",
     "//chrome/browser/profiles:test_support",
     "//chrome/browser/search_engines",
     "//chrome/common:constants",
@@ -297,16 +301,17 @@ source_set("unit_tests") {
     "//url",
   ]
 
-  if (enable_extensions) {
-    sources += [ "keyword_extensions_delegate_impl_unittest.cc" ]
-  }
-
   if (enable_extensions_core) {
+    sources += [ "keyword_extensions_delegate_impl_unittest.cc" ]
     deps += [
       "//extensions:test_support",
       "//extensions/browser",
       "//extensions/common",
     ]
+  }
+
+  if (is_android) {
+    deps += [ "//components/location/android:test_support" ]
   }
 
   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and

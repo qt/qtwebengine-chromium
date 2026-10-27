@@ -27,6 +27,7 @@ DEFAULT_FEATURE_SET.enable('DevToolsGlobalAiButton', {
   promotion_enabled: false,
 });
 DEFAULT_FEATURE_SET.enable('DevToolsAiCodeCompletion');
+DEFAULT_FEATURE_SET.enable('DevToolsAiCodeCompletionStyles');
 DEFAULT_FEATURE_SET.enable('DevToolsAiCodeGeneration');
 DEFAULT_FEATURE_SET.enable('DevToolsAiAssistancePerformanceAgent', {
   insights_enabled: true,
@@ -42,6 +43,7 @@ DEFAULT_FEATURE_SET.enable('DevToolsVerticalDrawer');
 DEFAULT_FEATURE_SET.enable('DevToolsAiPromptApi');
 DEFAULT_FEATURE_SET.enable('DevToolsAiAssistanceContextSelectionAgent');
 DEFAULT_FEATURE_SET.enable('DevToolsAiAssistanceAccessibilityAgent');
+DEFAULT_FEATURE_SET.enable('DevToolsAiAssistanceStorageAgent');
 DEFAULT_FEATURE_SET.enable('DevToolsAiAssistanceV2');
 DEFAULT_FEATURE_SET.enable('DevToolsUseGcaApi');
 

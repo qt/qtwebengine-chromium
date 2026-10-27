@@ -124,7 +124,6 @@ void Assembler::emit_optional_rex_8(Register reg, Operand op) {
   }
 }
 
-#ifdef V8_ENABLE_APX_F
 void Assembler::emit_rex2_prefix(Register reg, Register rm_reg, Rex2MapID m,
                                  Rex2W w) {
   emit(0xD5);
@@ -230,7 +229,6 @@ void Assembler::emit_legacy_extended_evex_byte3(Register dst,
   uint8_t v4 = (dst.code() < 16) ? 0x8 : 0;
   emit(nd | v4 | nf);
 }
-#endif  // V8_ENABLE_APX_F
 
 // byte 1 of 3-byte VEX
 void Assembler::emit_vex3_byte1(XMMRegister reg, XMMRegister rm,
@@ -410,7 +408,7 @@ int RelocInfo::target_address_size() {
   }
 }
 
-Tagged<HeapObject> RelocInfo::target_object(PtrComprCageBase cage_base) {
+Tagged<HeapObject> RelocInfo::target_object() {
   DCHECK(IsCodeTarget(rmode_) || IsEmbeddedObjectMode(rmode_));
   if (IsCompressedEmbeddedObject(rmode_)) {
     Tagged_t compressed = ReadUnalignedValue<Tagged_t>(pc_);

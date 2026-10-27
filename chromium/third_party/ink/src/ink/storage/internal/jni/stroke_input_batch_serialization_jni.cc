@@ -20,22 +20,22 @@
 #include "absl/status/statusor.h"
 #include "ink/jni/internal/jni_defines.h"
 #include "ink/jni/internal/jni_proto_util.h"
-#include "ink/jni/internal/jni_throw_util.h"
+#include "ink/jni/internal/status_jni_helper.h"
 #include "ink/storage/proto/stroke_input_batch.pb.h"
 #include "ink/storage/stroke_input_batch.h"
 #include "ink/strokes/input/stroke_input_batch.h"
-#include "ink/strokes/internal/jni/stroke_input_jni_helper.h"
+#include "ink/strokes/internal/jni/stroke_input_batch_native_helper.h"
 
 namespace {
 
 using ::ink::DecodeStrokeInputBatch;
 using ::ink::EncodeStrokeInputBatch;
 using ::ink::StrokeInputBatch;
-using ::ink::jni::CastToStrokeInputBatch;
-using ::ink::jni::NewNativeStrokeInputBatch;
 using ::ink::jni::ParseProtoFromEither;
 using ::ink::jni::SerializeProto;
 using ::ink::jni::ThrowExceptionFromStatus;
+using ::ink::native::CastToStrokeInputBatch;
+using ::ink::native::NewNativeStrokeInputBatch;
 using ::ink::proto::CodedStrokeInputBatch;
 
 }  // namespace

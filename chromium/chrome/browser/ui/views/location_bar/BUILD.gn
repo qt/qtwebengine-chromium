@@ -24,15 +24,16 @@ source_set("location_bar") {
       "location_bar_view.h",
       "location_icon_state_helper.h",
       "location_icon_view.h",
-      "merchant_trust_chip_button_controller.h",
       "omnibox_chip_button.h",
       "omnibox_chip_theme.h",
       "omnibox_popup_file_selector.h",
       "record_replay_page_action_controller.h",
       "selected_keyword_view.h",
       "star_view.h",
+      "webui_content_setting_image_control.h",
       "webui_location_bar.h",
       "zoom_bubble_coordinator.h",
+      "zoom_bubble_manager.h",
       "zoom_bubble_view.h",
     ]
 
@@ -47,9 +48,12 @@ source_set("location_bar") {
       "//chrome/browser/ui/page_action:icon_type",
       "//chrome/browser/ui/views/frame:immersive_mode_controller",
       "//chrome/browser/ui/views/page_action",
+      "//components/browser_apis/ui_controllers/toolbar:mojom",
       "//components/browser_apis/ui_controllers/toolbar:mojom_data_model",
+      "//components/browser_apis/ui_controllers/toolbar:types",
       "//components/omnibox/browser:location_bar",
       "//components/page_info/core",
+      "//components/record_replay/core/browser",
       "//components/sessions:session_id",
       "//content/public/browser",
       "//extensions/browser",
@@ -68,6 +72,7 @@ source_set("impl") {
   deps = [
     ":icon_label_bubble",
     ":location_bar",
+    "//chrome/browser:defaults",
     "//chrome/browser/ui/dialogs",
     "//chrome/browser/ui/select_file_policy",
   ]
@@ -86,14 +91,16 @@ source_set("impl") {
       "location_bar_view.cc",
       "location_icon_state_helper.cc",
       "location_icon_view.cc",
-      "merchant_trust_chip_button_controller.cc",
       "omnibox_chip_button.cc",
       "omnibox_popup_file_selector.cc",
       "record_replay_page_action_controller.cc",
       "selected_keyword_view.cc",
       "star_view.cc",
+      "webui_content_setting_image_control.cc",
       "webui_location_bar.cc",
       "zoom_bubble_coordinator.cc",
+      "zoom_bubble_manager_views.cc",
+      "zoom_bubble_manager_views.h",
       "zoom_bubble_view.cc",
     ]
 
@@ -144,7 +151,6 @@ source_set("impl") {
       "//chrome/browser/ui/webui/cr_components/composebox",
       "//chrome/browser/web_applications",
       "//chrome/browser/web_applications:features",
-      "//chrome/common/record_replay",
       "//components/autofill/core/common:features",
       "//components/commerce/core:feature_list",
       "//components/contextual_search:public",
@@ -158,6 +164,8 @@ source_set("impl") {
       "//components/omnibox/browser:vector_icons",
       "//components/omnibox/common",
       "//components/performance_manager",
+      "//components/record_replay/core/browser",
+      "//components/record_replay/core/common",
       "//components/safe_browsing/core/common:features",
       "//components/search",
       "//components/security_interstitials/content:security_interstitial_page",
@@ -167,6 +175,9 @@ source_set("impl") {
       "//components/user_education/common",
       "//components/zoom",
       "//extensions:extensions_browser_resources",
+      "//extensions/browser",
+      "//extensions/common",
+      "//extensions/common:extension_features",
       "//third_party/blink/public/common",
       "//ui/accessibility",
       "//ui/actions",
@@ -242,6 +253,7 @@ source_set("browser_tests") {
   ]
   deps = [
     ":location_bar",
+    "//chrome/browser:chrome_content_browser_client",
     "//chrome/browser/apps/app_service",
     "//chrome/browser/apps/app_service:app_registry_cache_waiter",
     "//chrome/browser/apps/link_capturing",
@@ -278,6 +290,7 @@ source_set("unit_tests") {
     "icon_label_bubble_view_unittest.cc",
     "location_icon_state_helper_unittest.cc",
     "location_icon_view_unittest.cc",
+    "webui_content_setting_image_control_unittest.cc",
   ]
   deps = [
     ":icon_label_bubble",
@@ -287,6 +300,9 @@ source_set("unit_tests") {
     "//components/omnibox/browser",
     "//components/omnibox/browser:vector_icons",
     "//components/strings:components_strings",
+    "//content/test:test_support",
+    "//extensions/common:extension_features",
+    "//testing/gmock",
     "//testing/gtest",
     "//ui/events:gesture_detection",
     "//ui/events:test_support",
@@ -299,14 +315,16 @@ source_set("interactive_ui_tests") {
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
   sources = [
     "content_setting_image_view_interactive_uitest.cc",
+    "content_setting_interactive_uitest.cc",
     "find_bar_interactive_uitest.cc",
     "lens_overlay_homework_page_action_icon_view_interactive_uitest.cc",
     "lens_overlay_page_action_icon_view_interactive_uitest.cc",
     "location_icon_view_interactive_uitest.cc",
-    "merchant_trust_chip_button_interactive_uitest.cc",
+    "record_replay_page_action_controller_interactive_uitest.cc",
     "selected_keyword_view_interactive_uitest.cc",
     "star_view_interactive_uitest.cc",
   ]
+
   deps = [
     ":location_bar",
     "//chrome/browser/ui:ui_features",

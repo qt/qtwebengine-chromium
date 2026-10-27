@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/byte_size.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
@@ -58,6 +59,7 @@
 #include "net/test/test_data_directory.h"
 #include "net/test/test_with_task_environment.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+#include "net/url_request/device_bound_session_mode.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_builder.h"
@@ -112,6 +114,10 @@ const std::string_view kSimpleHeadMockWrite =
 
 const char kTrustAnchorRequestHistogram[] =
     "Net.Certificate.TrustAnchor.Request";
+#if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+const char kTrustAnchorRequestHistogram2[] =
+    "Net.Certificate.TrustAnchor2.Request";
+#endif
 
 // Inherit from URLRequestHttpJob to expose the priority and some
 // other hidden functions.
@@ -258,8 +264,8 @@ TEST_F(URLRequestHttpJobWithProxyTest, TestFailureWithoutProxy) {
   EXPECT_THAT(delegate.request_status(), IsError(ERR_CONNECTION_RESET));
   EXPECT_EQ(ProxyChain::Direct(), request->proxy_chain());
   EXPECT_EQ(0, request->received_response_content_length());
-  EXPECT_EQ(CountWriteBytes(writes), request->GetTotalSentBytes());
-  EXPECT_EQ(CountReadBytes(reads), request->GetTotalReceivedBytes());
+  EXPECT_EQ(CountWriteByteSize(writes), request->GetTotalSentBytes());
+  EXPECT_EQ(CountReadByteSize(reads), request->GetTotalReceivedBytes());
 }
 
 // Tests that when one proxy chain is in use and the connection to a proxy
@@ -306,8 +312,8 @@ TEST_F(URLRequestHttpJobWithProxyTest, TestSuccessfulWithOneProxy) {
   // still be set on the `request`.
   EXPECT_EQ(proxy_chain, request->proxy_chain());
   EXPECT_EQ(0, request->received_response_content_length());
-  EXPECT_EQ(CountWriteBytes(writes), request->GetTotalSentBytes());
-  EXPECT_EQ(0, request->GetTotalReceivedBytes());
+  EXPECT_EQ(CountWriteByteSize(writes), request->GetTotalSentBytes());
+  EXPECT_EQ(base::ByteSize(0), request->GetTotalReceivedBytes());
 }
 
 // Tests that when two proxy chains are in use and the connection to a proxy
@@ -354,8 +360,8 @@ TEST_F(URLRequestHttpJobWithProxyTest,
   EXPECT_THAT(delegate.request_status(), IsOk());
   EXPECT_EQ(ProxyChain::Direct(), request->proxy_chain());
   EXPECT_EQ(12, request->received_response_content_length());
-  EXPECT_EQ(CountWriteBytes(writes), request->GetTotalSentBytes());
-  EXPECT_EQ(CountReadBytes(reads), request->GetTotalReceivedBytes());
+  EXPECT_EQ(CountWriteByteSize(writes), request->GetTotalSentBytes());
+  EXPECT_EQ(CountReadByteSize(reads), request->GetTotalReceivedBytes());
 }
 
 class URLRequestHttpJobTest : public TestWithTaskEnvironment {
@@ -429,8 +435,8 @@ TEST_F(URLRequestHttpJobWithMockSocketsTest,
 
   EXPECT_THAT(delegate.request_status(), IsOk());
   EXPECT_EQ(12, request->received_response_content_length());
-  EXPECT_EQ(CountWriteBytes(writes), request->GetTotalSentBytes());
-  EXPECT_EQ(CountReadBytes(reads), request->GetTotalReceivedBytes());
+  EXPECT_EQ(CountWriteByteSize(writes), request->GetTotalSentBytes());
+  EXPECT_EQ(CountReadByteSize(reads), request->GetTotalReceivedBytes());
 }
 
 // Tests a successful HEAD request.
@@ -455,8 +461,8 @@ TEST_F(URLRequestHttpJobWithMockSocketsTest, TestSuccessfulHead) {
 
   EXPECT_THAT(delegate.request_status(), IsOk());
   EXPECT_EQ(0, request->received_response_content_length());
-  EXPECT_EQ(CountWriteBytes(writes), request->GetTotalSentBytes());
-  EXPECT_EQ(CountReadBytes(reads), request->GetTotalReceivedBytes());
+  EXPECT_EQ(CountWriteByteSize(writes), request->GetTotalSentBytes());
+  EXPECT_EQ(CountReadByteSize(reads), request->GetTotalReceivedBytes());
 }
 
 // Similar to above test but tests that even if response body is there in the
@@ -482,8 +488,9 @@ TEST_F(URLRequestHttpJobWithMockSocketsTest, TestSuccessfulHeadWithContent) {
 
   EXPECT_THAT(delegate.request_status(), IsOk());
   EXPECT_EQ(0, request->received_response_content_length());
-  EXPECT_EQ(CountWriteBytes(writes), request->GetTotalSentBytes());
-  EXPECT_EQ(CountReadBytes(reads) - 12, request->GetTotalReceivedBytes());
+  EXPECT_EQ(CountWriteByteSize(writes), request->GetTotalSentBytes());
+  EXPECT_EQ(CountReadByteSize(reads) - base::ByteSize(12),
+            request->GetTotalReceivedBytes());
 }
 
 TEST_F(URLRequestHttpJobWithMockSocketsTest, TestSuccessfulCachedHeadRequest) {
@@ -514,8 +521,8 @@ TEST_F(URLRequestHttpJobWithMockSocketsTest, TestSuccessfulCachedHeadRequest) {
 
     EXPECT_THAT(delegate.request_status(), IsOk());
     EXPECT_EQ(12, request->received_response_content_length());
-    EXPECT_EQ(CountWriteBytes(writes), request->GetTotalSentBytes());
-    EXPECT_EQ(CountReadBytes(reads), request->GetTotalReceivedBytes());
+    EXPECT_EQ(CountWriteByteSize(writes), request->GetTotalSentBytes());
+    EXPECT_EQ(CountReadByteSize(reads), request->GetTotalReceivedBytes());
   }
 
   // Send a HEAD request for the cached response.
@@ -543,8 +550,8 @@ TEST_F(URLRequestHttpJobWithMockSocketsTest, TestSuccessfulCachedHeadRequest) {
 
     EXPECT_THAT(delegate.request_status(), IsOk());
     EXPECT_EQ(0, request->received_response_content_length());
-    EXPECT_EQ(0, request->GetTotalSentBytes());
-    EXPECT_EQ(0, request->GetTotalReceivedBytes());
+    EXPECT_EQ(base::ByteSize(0), request->GetTotalSentBytes());
+    EXPECT_EQ(base::ByteSize(0), request->GetTotalReceivedBytes());
   }
 }
 
@@ -568,8 +575,8 @@ TEST_F(URLRequestHttpJobWithMockSocketsTest,
 
   EXPECT_THAT(delegate.request_status(), IsOk());
   EXPECT_EQ(12, request->received_response_content_length());
-  EXPECT_EQ(CountWriteBytes(writes), request->GetTotalSentBytes());
-  EXPECT_EQ(CountReadBytes(reads), request->GetTotalReceivedBytes());
+  EXPECT_EQ(CountWriteByteSize(writes), request->GetTotalSentBytes());
+  EXPECT_EQ(CountReadByteSize(reads), request->GetTotalReceivedBytes());
 }
 
 TEST_F(URLRequestHttpJobWithMockSocketsTest, TestContentLengthFailedRequest) {
@@ -593,8 +600,8 @@ TEST_F(URLRequestHttpJobWithMockSocketsTest, TestContentLengthFailedRequest) {
 
   EXPECT_THAT(delegate.request_status(), IsError(ERR_FAILED));
   EXPECT_EQ(12, request->received_response_content_length());
-  EXPECT_EQ(CountWriteBytes(writes), request->GetTotalSentBytes());
-  EXPECT_EQ(CountReadBytes(reads), request->GetTotalReceivedBytes());
+  EXPECT_EQ(CountWriteByteSize(writes), request->GetTotalSentBytes());
+  EXPECT_EQ(CountReadByteSize(reads), request->GetTotalReceivedBytes());
 }
 
 TEST_F(URLRequestHttpJobWithMockSocketsTest,
@@ -619,8 +626,8 @@ TEST_F(URLRequestHttpJobWithMockSocketsTest,
 
   EXPECT_THAT(delegate.request_status(), IsError(ERR_ABORTED));
   EXPECT_EQ(12, request->received_response_content_length());
-  EXPECT_EQ(CountWriteBytes(writes), request->GetTotalSentBytes());
-  EXPECT_EQ(CountReadBytes(reads), request->GetTotalReceivedBytes());
+  EXPECT_EQ(CountWriteByteSize(writes), request->GetTotalSentBytes());
+  EXPECT_EQ(CountReadByteSize(reads), request->GetTotalReceivedBytes());
 }
 
 TEST_F(URLRequestHttpJobWithMockSocketsTest,
@@ -660,8 +667,8 @@ TEST_F(URLRequestHttpJobWithMockSocketsTest,
   EXPECT_THAT(delegate.request_status(), IsOk());
   EXPECT_EQ(12, request->received_response_content_length());
   // Should not include the redirect.
-  EXPECT_EQ(CountWriteBytes(final_writes), request->GetTotalSentBytes());
-  EXPECT_EQ(CountReadBytes(final_reads), request->GetTotalReceivedBytes());
+  EXPECT_EQ(CountWriteByteSize(final_writes), request->GetTotalSentBytes());
+  EXPECT_EQ(CountReadByteSize(final_reads), request->GetTotalReceivedBytes());
 }
 
 TEST_F(URLRequestHttpJobWithMockSocketsTest,
@@ -682,8 +689,8 @@ TEST_F(URLRequestHttpJobWithMockSocketsTest,
 
   EXPECT_THAT(delegate.request_status(), IsError(ERR_ABORTED));
   EXPECT_EQ(0, request->received_response_content_length());
-  EXPECT_EQ(CountWriteBytes(writes), request->GetTotalSentBytes());
-  EXPECT_EQ(CountReadBytes(reads), request->GetTotalReceivedBytes());
+  EXPECT_EQ(CountWriteByteSize(writes), request->GetTotalSentBytes());
+  EXPECT_EQ(CountReadByteSize(reads), request->GetTotalReceivedBytes());
 }
 
 TEST_F(URLRequestHttpJobWithMockSocketsTest,
@@ -702,8 +709,8 @@ TEST_F(URLRequestHttpJobWithMockSocketsTest,
 
   EXPECT_THAT(delegate.request_status(), IsError(ERR_ABORTED));
   EXPECT_EQ(0, request->received_response_content_length());
-  EXPECT_EQ(0, request->GetTotalSentBytes());
-  EXPECT_EQ(0, request->GetTotalReceivedBytes());
+  EXPECT_EQ(base::ByteSize(0), request->GetTotalSentBytes());
+  EXPECT_EQ(base::ByteSize(0), request->GetTotalReceivedBytes());
 }
 
 TEST_F(URLRequestHttpJobWithMockSocketsTest, TestHttpTimeToFirstByte) {
@@ -785,6 +792,68 @@ TEST_F(URLRequestHttpJobWithMockSocketsTest,
                                 priority + 1);
   }
 }
+
+#if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+TEST_F(URLRequestHttpJobWithMockSocketsTest,
+       TestHttpJobRecordsCrsTrustAnchorHistograms) {
+  SSLSocketDataProvider ssl_socket_data(net::ASYNC, net::OK);
+  ssl_socket_data.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "ok_cert.pem");
+
+  const int32_t kFakeCrsID = 8379;
+  ssl_socket_data.ssl_info.crs_root_id = kFakeCrsID;
+
+  socket_factory_.AddSSLSocketDataProvider(&ssl_socket_data);
+
+  MockWrite writes[] = {MockWrite(kSimpleGetMockWrite)};
+  MockRead reads[] = {MockRead("HTTP/1.1 200 OK\r\n"
+                               "Content-Length: 12\r\n\r\n"),
+                      MockRead("Test Content")};
+  StaticSocketDataProvider socket_data(reads, writes);
+  socket_factory_.AddSocketDataProvider(&socket_data);
+
+  base::HistogramTester histograms;
+  TestDelegate delegate;
+  std::unique_ptr<URLRequest> request = context_->CreateRequest(
+      GURL("https://www.example.com/"), DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS);
+  request->Start();
+  delegate.RunUntilComplete();
+  EXPECT_THAT(delegate.request_status(), IsOk());
+
+  histograms.ExpectUniqueSample(kTrustAnchorRequestHistogram2, kFakeCrsID, 1);
+}
+
+TEST_F(URLRequestHttpJobWithMockSocketsTest,
+       TestHttpJobDoesNotRecordCrsTrustAnchorHistogramsWhenNoNetworkLoad) {
+  SSLSocketDataProvider ssl_socket_data(net::ASYNC, net::OK);
+  ssl_socket_data.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "ok_cert.pem");
+  // Simulate a request loaded from a non-network source, such as a disk
+  // cache.
+  ssl_socket_data.ssl_info.crs_root_id = std::nullopt;
+
+  socket_factory_.AddSSLSocketDataProvider(&ssl_socket_data);
+
+  MockWrite writes[] = {MockWrite(kSimpleGetMockWrite)};
+  MockRead reads[] = {MockRead("HTTP/1.1 200 OK\r\n"
+                               "Content-Length: 12\r\n\r\n"),
+                      MockRead("Test Content")};
+  StaticSocketDataProvider socket_data(reads, writes);
+  socket_factory_.AddSocketDataProvider(&socket_data);
+
+  base::HistogramTester histograms;
+  TestDelegate delegate;
+  std::unique_ptr<URLRequest> request = context_->CreateRequest(
+      GURL("https://www.example.com/"), DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS);
+  request->Start();
+  delegate.RunUntilComplete();
+  EXPECT_THAT(delegate.request_status(), IsOk());
+
+  histograms.ExpectTotalCount(kTrustAnchorRequestHistogram2, 0);
+}
+#endif
 
 TEST_F(URLRequestHttpJobWithMockSocketsTest,
        TestHttpJobRecordsTrustAnchorHistograms) {
@@ -950,8 +1019,8 @@ TEST_F(URLRequestHttpJobWithMockSocketsTest, EncodingAdvertisementOnRange) {
 
   EXPECT_THAT(delegate.request_status(), IsOk());
   EXPECT_EQ(12, request->received_response_content_length());
-  EXPECT_EQ(CountWriteBytes(writes), request->GetTotalSentBytes());
-  EXPECT_EQ(CountReadBytes(reads), request->GetTotalReceivedBytes());
+  EXPECT_EQ(CountWriteByteSize(writes), request->GetTotalSentBytes());
+  EXPECT_EQ(CountReadByteSize(reads), request->GetTotalReceivedBytes());
 }
 
 TEST_F(URLRequestHttpJobWithMockSocketsTest, RangeRequestOverrideEncoding) {
@@ -989,8 +1058,8 @@ TEST_F(URLRequestHttpJobWithMockSocketsTest, RangeRequestOverrideEncoding) {
 
   EXPECT_THAT(delegate.request_status(), IsOk());
   EXPECT_EQ(12, request->received_response_content_length());
-  EXPECT_EQ(CountWriteBytes(writes), request->GetTotalSentBytes());
-  EXPECT_EQ(CountReadBytes(reads), request->GetTotalReceivedBytes());
+  EXPECT_EQ(CountWriteByteSize(writes), request->GetTotalSentBytes());
+  EXPECT_EQ(CountReadByteSize(reads), request->GetTotalReceivedBytes());
 }
 
 TEST_F(URLRequestHttpJobTest, TestCancelWhileReadingCookies) {
@@ -1366,7 +1435,8 @@ class URLRequestHttpJobWithMockSocketsDeviceBoundSessionServiceTest
     request_ = context_->CreateRequest(GURL("https://www.example.com"),
                                        DEFAULT_PRIORITY, &delegate_,
                                        TRAFFIC_ANNOTATION_FOR_TESTS);
-    request_->set_allows_device_bound_sessions(true);
+    request_->set_device_bound_session_mode(
+        net::DeviceBoundSessionMode::kAllowed);
   }
 
   device_bound_sessions::SessionServiceMock& GetMockService() {
@@ -1766,7 +1836,7 @@ TEST_F(URLRequestHttpJobWithMockSocketsDeviceBoundSessionServiceTest,
   std::unique_ptr<URLRequest> request = context_->CreateRequest(
       GURL("wss://www.example.com"), DEFAULT_PRIORITY, &delegate_,
       TRAFFIC_ANNOTATION_FOR_TESTS, /*is_for_websockets=*/true);
-  request->set_allows_device_bound_sessions(true);
+  request->set_device_bound_session_mode(net::DeviceBoundSessionMode::kAllowed);
   HttpRequestHeaders headers = WebSocketCommonTestHeaders();
   request->SetExtraRequestHeaders(headers);
 
@@ -2104,8 +2174,8 @@ TEST_F(URLRequestHttpJobWithBrotliSupportTest, NoBrotliAdvertisementOverHttp) {
 
   EXPECT_THAT(delegate.request_status(), IsOk());
   EXPECT_EQ(12, request->received_response_content_length());
-  EXPECT_EQ(CountWriteBytes(writes), request->GetTotalSentBytes());
-  EXPECT_EQ(CountReadBytes(reads), request->GetTotalReceivedBytes());
+  EXPECT_EQ(CountWriteByteSize(writes), request->GetTotalSentBytes());
+  EXPECT_EQ(CountReadByteSize(reads), request->GetTotalReceivedBytes());
 }
 
 TEST_F(URLRequestHttpJobWithBrotliSupportTest, BrotliAdvertisement) {
@@ -2138,8 +2208,8 @@ TEST_F(URLRequestHttpJobWithBrotliSupportTest, BrotliAdvertisement) {
 
   EXPECT_THAT(delegate.request_status(), IsOk());
   EXPECT_EQ(12, request->received_response_content_length());
-  EXPECT_EQ(CountWriteBytes(writes), request->GetTotalSentBytes());
-  EXPECT_EQ(CountReadBytes(reads), request->GetTotalReceivedBytes());
+  EXPECT_EQ(CountWriteByteSize(writes), request->GetTotalSentBytes());
+  EXPECT_EQ(CountReadByteSize(reads), request->GetTotalReceivedBytes());
 }
 
 TEST_F(URLRequestHttpJobWithBrotliSupportTest, DefaultAcceptEncodingOverriden) {
@@ -2380,12 +2450,19 @@ bool CreateAndSetCookie(CookieStore* cs,
   }
   DCHECK(cs);
   ResultSavingCookieCallback<CookieAccessResult> callback;
-  cs->SetCanonicalCookieAsync(std::move(cookie), url,
-                              CookieOptions::MakeAllInclusive(),
-                              callback.MakeCallback());
+  cs->SetCanonicalCookieAsync(
+      std::move(cookie), url, CookieOptions::MakeAllInclusive(),
+      callback.MakeCallback(), /*cookie_access_result=*/std::nullopt);
   callback.WaitUntilDone();
   return callback.result().status.IsInclude();
 }
+
+class SameSiteBypassNetworkDelegate : public TestNetworkDelegate {
+ public:
+  bool OnShouldForceIgnoreSiteForCookies(const URLRequest&) override {
+    return true;
+  }
+};
 
 void RunRequest(URLRequestContext* context, const GURL& url) {
   TestDelegate delegate;
@@ -2937,6 +3014,293 @@ TEST_F(URLRequestHttpJobTest, IgnoreUnsafeMethodForSameSiteLax) {
     delegate.RunUntilComplete();
     EXPECT_EQ("name=value", delegate.data_received());
   }
+}
+
+TEST_F(URLRequestHttpJobTest, ForceIgnoreSiteForCookiesFromNetworkDelegate) {
+  EmbeddedTestServer https_test(EmbeddedTestServer::TYPE_HTTPS);
+  https_test.AddDefaultHandlers(base::FilePath());
+  ASSERT_TRUE(https_test.Start());
+
+  auto context_builder = CreateTestURLRequestContextBuilder();
+  context_builder->SetCookieStore(
+      std::make_unique<CookieMonster>(/*store=*/nullptr, /*net_log=*/nullptr));
+  context_builder->set_network_delegate(
+      std::make_unique<SameSiteBypassNetworkDelegate>());
+  auto context = context_builder->Build();
+
+  const url::Origin kCrossSiteOrigin =
+      url::Origin::Create(GURL("https://www.toplevelsite.com"));
+  auto create_cross_site_request = [&](const GURL& url,
+                                       TestDelegate& delegate) {
+    std::unique_ptr<URLRequest> req = context->CreateRequest(
+        url, DEFAULT_PRIORITY, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS);
+    req->set_site_for_cookies(SiteForCookies::FromOrigin(kCrossSiteOrigin));
+    req->set_initiator(kCrossSiteOrigin);
+    return req;
+  };
+
+  {
+    TestDelegate delegate;
+    std::unique_ptr<URLRequest> req = create_cross_site_request(
+        https_test.GetURL(
+            "/set-cookie?strict=value;SameSite=Strict;Secure;Path=/"),
+        delegate);
+    req->Start();
+    delegate.RunUntilComplete();
+    EXPECT_THAT(delegate.request_status(), IsOk());
+  }
+
+  {
+    TestDelegate delegate;
+    std::unique_ptr<URLRequest> req = create_cross_site_request(
+        https_test.GetURL("/echoheader?Cookie"), delegate);
+    req->Start();
+    delegate.RunUntilComplete();
+
+    EXPECT_THAT(delegate.request_status(), IsOk());
+    EXPECT_EQ("strict=value", delegate.data_received());
+  }
+}
+
+TEST_F(URLRequestHttpJobTest,
+       PlatformLocalNetworkAccessPermissionGranted_Sync) {
+  MockConnect mock_connect(SYNCHRONOUS, ERR_LOCAL_NETWORK_PERMISSION_MISSING);
+  StaticSocketDataProvider socket_data;
+  socket_data.set_connect_data(mock_connect);
+
+  MockRead reads[] = {MockRead("HTTP/1.1 200 OK\r\n"
+                               "Content-Length: 7\r\n\r\n"),
+                      MockRead("Success")};
+  StaticSocketDataProvider success_data(reads, base::span<MockWrite>());
+
+  MockClientSocketFactory socket_factory;
+  socket_factory.AddSocketDataProvider(&socket_data);
+  socket_factory.AddSocketDataProvider(&success_data);
+
+  auto context_builder = CreateTestURLRequestContextBuilder();
+  context_builder->set_client_socket_factory_for_testing(&socket_factory);
+  context_builder->DisableHttpCache();
+  auto context = context_builder->Build();
+
+  TestDelegate delegate;
+  delegate.set_platform_network_access_behavior(
+      TestDelegate::PlatformNetworkAccessBehavior::kGrant);
+
+  std::unique_ptr<URLRequest> req(
+      context->CreateRequest(GURL("http://www.example.com"), DEFAULT_PRIORITY,
+                             &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+  req->Start();
+
+  // The request should not have completed yet because
+  // SetPlatformLocalNetworkAccessGranted() posts a task to call
+  // OnStartCompleted() when the restart completes synchronously.
+  EXPECT_FALSE(delegate.response_completed());
+
+  delegate.RunUntilComplete();
+
+  EXPECT_EQ("Success", delegate.data_received());
+  EXPECT_EQ(OK, delegate.request_status());
+}
+
+TEST_F(URLRequestHttpJobTest, PlatformLocalNetworkAccessPermissionDenied_Sync) {
+  MockConnect mock_connect(SYNCHRONOUS, ERR_LOCAL_NETWORK_PERMISSION_MISSING);
+  StaticSocketDataProvider socket_data;
+  socket_data.set_connect_data(mock_connect);
+
+  MockClientSocketFactory socket_factory;
+  socket_factory.AddSocketDataProvider(&socket_data);
+
+  auto context_builder = CreateTestURLRequestContextBuilder();
+  context_builder->set_client_socket_factory_for_testing(&socket_factory);
+  context_builder->DisableHttpCache();
+  auto context = context_builder->Build();
+
+  TestDelegate delegate;
+  delegate.set_platform_network_access_behavior(
+      TestDelegate::PlatformNetworkAccessBehavior::kDeny);
+
+  std::unique_ptr<URLRequest> req(
+      context->CreateRequest(GURL("http://www.example.com"), DEFAULT_PRIORITY,
+                             &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+  req->Start();
+  delegate.RunUntilComplete();
+
+  EXPECT_THAT(delegate.request_status(),
+              IsError(ERR_LOCAL_NETWORK_PERMISSION_MISSING));
+}
+
+TEST_F(URLRequestHttpJobTest,
+       PlatformLocalNetworkAccessPermissionGranted_Async) {
+  MockConnect mock_connect(ASYNC, ERR_LOCAL_NETWORK_PERMISSION_MISSING);
+  StaticSocketDataProvider socket_data;
+  socket_data.set_connect_data(mock_connect);
+
+  MockRead reads[] = {MockRead("HTTP/1.1 200 OK\r\n"
+                               "Content-Length: 7\r\n\r\n"),
+                      MockRead("Success")};
+  StaticSocketDataProvider success_data(reads, base::span<MockWrite>());
+
+  MockClientSocketFactory socket_factory;
+  socket_factory.AddSocketDataProvider(&socket_data);
+  socket_factory.AddSocketDataProvider(&success_data);
+
+  auto context_builder = CreateTestURLRequestContextBuilder();
+  context_builder->set_client_socket_factory_for_testing(&socket_factory);
+  context_builder->DisableHttpCache();
+  auto context = context_builder->Build();
+
+  TestDelegate delegate;
+  delegate.set_platform_network_access_behavior(
+      TestDelegate::PlatformNetworkAccessBehavior::kGrant);
+  delegate.set_async_platform_local_network_access_decision(true);
+
+  std::unique_ptr<URLRequest> req(
+      context->CreateRequest(GURL("http://www.example.com"), DEFAULT_PRIORITY,
+                             &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+  req->Start();
+  delegate.RunUntilComplete();
+
+  EXPECT_EQ("Success", delegate.data_received());
+  EXPECT_EQ(OK, delegate.request_status());
+}
+
+TEST_F(URLRequestHttpJobTest,
+       PlatformLocalNetworkAccessPermissionDenied_Async) {
+  MockConnect mock_connect(ASYNC, ERR_LOCAL_NETWORK_PERMISSION_MISSING);
+  StaticSocketDataProvider socket_data;
+  socket_data.set_connect_data(mock_connect);
+
+  MockClientSocketFactory socket_factory;
+  socket_factory.AddSocketDataProvider(&socket_data);
+
+  auto context_builder = CreateTestURLRequestContextBuilder();
+  context_builder->set_client_socket_factory_for_testing(&socket_factory);
+  context_builder->DisableHttpCache();
+  auto context = context_builder->Build();
+
+  TestDelegate delegate;
+  delegate.set_platform_network_access_behavior(
+      TestDelegate::PlatformNetworkAccessBehavior::kDeny);
+  delegate.set_async_platform_local_network_access_decision(true);
+
+  std::unique_ptr<URLRequest> req(
+      context->CreateRequest(GURL("http://www.example.com"), DEFAULT_PRIORITY,
+                             &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+  req->Start();
+  delegate.RunUntilComplete();
+
+  EXPECT_THAT(delegate.request_status(),
+              IsError(ERR_LOCAL_NETWORK_PERMISSION_MISSING));
+}
+
+TEST_F(URLRequestHttpJobTest, PlatformLocalNetworkAccessDefault_Sync) {
+  MockConnect mock_connect(SYNCHRONOUS, ERR_LOCAL_NETWORK_PERMISSION_MISSING);
+  StaticSocketDataProvider socket_data;
+  socket_data.set_connect_data(mock_connect);
+
+  MockClientSocketFactory socket_factory;
+  socket_factory.AddSocketDataProvider(&socket_data);
+
+  auto context_builder = CreateTestURLRequestContextBuilder();
+  context_builder->set_client_socket_factory_for_testing(&socket_factory);
+  context_builder->DisableHttpCache();
+  auto context = context_builder->Build();
+
+  TestDelegate delegate;
+  // TestDelegate::OnPlatformLocalNetworkAccessPermissionRequired will call the
+  // default implementation when behavior is kDefault.
+  delegate.set_platform_network_access_behavior(
+      TestDelegate::PlatformNetworkAccessBehavior::kDefault);
+
+  std::unique_ptr<URLRequest> req(
+      context->CreateRequest(GURL("http://www.example.com"), DEFAULT_PRIORITY,
+                             &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+  req->Start();
+  delegate.RunUntilComplete();
+
+  EXPECT_THAT(delegate.request_status(),
+              IsError(ERR_LOCAL_NETWORK_PERMISSION_MISSING));
+}
+
+TEST_F(URLRequestHttpJobTest, PlatformLocalNetworkAccessDefault_Async) {
+  MockConnect mock_connect(ASYNC, ERR_LOCAL_NETWORK_PERMISSION_MISSING);
+  StaticSocketDataProvider socket_data;
+  socket_data.set_connect_data(mock_connect);
+
+  MockClientSocketFactory socket_factory;
+  socket_factory.AddSocketDataProvider(&socket_data);
+
+  auto context_builder = CreateTestURLRequestContextBuilder();
+  context_builder->set_client_socket_factory_for_testing(&socket_factory);
+  context_builder->DisableHttpCache();
+  auto context = context_builder->Build();
+
+  TestDelegate delegate;
+  delegate.set_platform_network_access_behavior(
+      TestDelegate::PlatformNetworkAccessBehavior::kDefault);
+  delegate.set_async_platform_local_network_access_decision(true);
+
+  std::unique_ptr<URLRequest> req(
+      context->CreateRequest(GURL("http://www.example.com"), DEFAULT_PRIORITY,
+                             &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
+  req->Start();
+  delegate.RunUntilComplete();
+
+  EXPECT_THAT(delegate.request_status(),
+              IsError(ERR_LOCAL_NETWORK_PERMISSION_MISSING));
+}
+
+TEST_F(URLRequestHttpJobWithMockSocketsTest,
+       TestHttpTimeToFirstByteServerPadding) {
+  base::HistogramTester histograms;
+  MockWrite writes[] = {MockWrite(kSimpleGetMockWrite)};
+  MockRead reads[] = {MockRead("HTTP/1.1 200 OK\r\n"
+                               "Content-Length: 12\r\n\r\n"),
+                      MockRead("Test Content")};
+
+  StaticSocketDataProvider socket_data(reads, writes);
+  socket_factory_.AddSocketDataProvider(&socket_data);
+  SSLSocketDataProvider ssl_data(ASYNC, OK);
+  ssl_data.ssl_info.server_padding_received = true;
+  socket_factory_.AddSSLSocketDataProvider(&ssl_data);
+
+  TestDelegate delegate;
+  std::unique_ptr<URLRequest> request =
+      context_->CreateRequest(GURL("https://www.example.com"), DEFAULT_PRIORITY,
+                              &delegate, TRAFFIC_ANNOTATION_FOR_TESTS);
+  histograms.ExpectTotalCount("Net.HttpTimeToFirstByte.ServerPadding", 0);
+
+  request->Start();
+  delegate.RunUntilComplete();
+
+  EXPECT_THAT(delegate.request_status(), IsOk());
+  histograms.ExpectTotalCount("Net.HttpTimeToFirstByte.ServerPadding", 1);
+}
+
+TEST_F(URLRequestHttpJobWithMockSocketsTest,
+       TestHttpTimeToFirstByteServerPaddingNotSent) {
+  base::HistogramTester histograms;
+  MockWrite writes[] = {MockWrite(kSimpleGetMockWrite)};
+  MockRead reads[] = {MockRead("HTTP/1.1 200 OK\r\n"
+                               "Content-Length: 12\r\n\r\n"),
+                      MockRead("Test Content")};
+
+  StaticSocketDataProvider socket_data(reads, writes);
+  socket_factory_.AddSocketDataProvider(&socket_data);
+  SSLSocketDataProvider ssl_data(ASYNC, OK);
+  socket_factory_.AddSSLSocketDataProvider(&ssl_data);
+
+  TestDelegate delegate;
+  std::unique_ptr<URLRequest> request =
+      context_->CreateRequest(GURL("https://www.example.com"), DEFAULT_PRIORITY,
+                              &delegate, TRAFFIC_ANNOTATION_FOR_TESTS);
+  histograms.ExpectTotalCount("Net.HttpTimeToFirstByte.ServerPadding", 0);
+
+  request->Start();
+  delegate.RunUntilComplete();
+
+  EXPECT_THAT(delegate.request_status(), IsOk());
+  histograms.ExpectTotalCount("Net.HttpTimeToFirstByte.ServerPadding", 0);
 }
 
 }  // namespace net

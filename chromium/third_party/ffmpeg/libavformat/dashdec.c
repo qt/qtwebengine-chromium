@@ -21,6 +21,7 @@
  */
 #include <libxml/parser.h>
 #include <time.h>
+#include "libavutil/avassert.h"
 #include "libavutil/bprint.h"
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
@@ -87,8 +88,11 @@ struct representation {
     char *id;
     char *lang;
     int bandwidth;
+    char *dependencyid;
+    char *codecs;
     AVRational framerate;
-    AVStream *assoc_stream; /* demuxer stream associated with this representation */
+    AVStream **assoc_stream; /* demuxer streams associated with this representation */
+    int nb_assoc_stream;
 
     int n_fragments;
     struct fragment **fragments; /* VOD list of fragment for profile */
@@ -260,6 +264,7 @@ static int64_t get_segment_start_time_based_on_timeline(struct representation *p
     int64_t j = 0;
     int64_t num = 0;
 
+    cur_seq_no -= pls->first_seq_no;
     if (pls->n_timelines) {
         for (i = 0; i < pls->n_timelines; i++) {
             if (pls->timelines[i]->starttime > 0) {
@@ -315,7 +320,7 @@ static int64_t calc_next_seg_no_from_timelines(struct representation *pls, int64
     return -1;
 
 finish:
-    return num;
+    return num + pls->first_seq_no;
 }
 
 static void free_fragment(struct fragment **seg)
@@ -363,8 +368,11 @@ static void free_representation(struct representation *pls)
         avformat_close_input(&pls->ctx);
     }
 
+    av_freep(&pls->assoc_stream);
     av_freep(&pls->url_template);
     av_freep(&pls->lang);
+    av_freep(&pls->dependencyid);
+    av_freep(&pls->codecs);
     av_freep(&pls->id);
     av_freep(&pls);
 }
@@ -447,7 +455,7 @@ static int open_url(AVFormatContext *s, AVIOContext **pb, const char *url,
     av_freep(pb);
     av_dict_copy(&tmp, *opts, 0);
     av_dict_copy(&tmp, opts2, 0);
-    ret = ffio_open_whitelist(pb, url, AVIO_FLAG_READ, c->interrupt_callback, &tmp, s->protocol_whitelist, s->protocol_blacklist);
+    ret = s->io_open(s, pb, url, AVIO_FLAG_READ, &tmp);
     if (ret >= 0) {
         // update cookies on http response with setcookies.
         char *new_cookies = NULL;
@@ -908,6 +916,8 @@ static int parse_manifest_representation(AVFormatContext *s, const char *url,
     xmlNodePtr baseurl_nodes[4];
     xmlNodePtr representation_node = node;
     char *rep_bandwidth_val;
+    char *rep_codecs_val;
+    char *rep_dependencyid_val;
     enum AVMediaType type = AVMEDIA_TYPE_UNKNOWN;
 
     // try get information from representation
@@ -942,6 +952,10 @@ static int parse_manifest_representation(AVFormatContext *s, const char *url,
     representation_baseurl_node = find_child_node_by_name(representation_node, "BaseURL");
     representation_segmentlist_node = find_child_node_by_name(representation_node, "SegmentList");
     rep_bandwidth_val = xmlGetProp(representation_node, "bandwidth");
+    rep_dependencyid_val = xmlGetProp(representation_node, "dependencyId");
+    rep_codecs_val = xmlGetProp(representation_node, "codecs");
+    if (!rep_codecs_val)
+        rep_codecs_val = xmlGetProp(adaptionset_node, "codecs");
     val               = xmlGetProp(representation_node, "id");
     if (val) {
         rep->id = av_strdup(val);
@@ -1094,6 +1108,20 @@ static int parse_manifest_representation(AVFormatContext *s, const char *url,
     if (rep->fragment_duration > 0 && !rep->fragment_timescale)
         rep->fragment_timescale = 1;
     rep->bandwidth = rep_bandwidth_val ? atoi(rep_bandwidth_val) : 0;
+    if (rep_dependencyid_val) {
+        rep->dependencyid = av_strdup(rep_dependencyid_val);
+        if (!rep->dependencyid) {
+            xmlFree(rep_dependencyid_val);
+            goto enomem;
+        }
+    }
+    if (rep_codecs_val) {
+        rep->codecs = av_strdup(rep_codecs_val);
+        if (!rep->codecs) {
+            xmlFree(rep_codecs_val);
+            goto enomem;
+        }
+    }
     rep->framerate = av_make_q(0, 0);
     if (type == AVMEDIA_TYPE_VIDEO) {
         char *rep_framerate_val = xmlGetProp(representation_node, "frameRate");
@@ -1122,6 +1150,10 @@ static int parse_manifest_representation(AVFormatContext *s, const char *url,
 end:
     if (rep_bandwidth_val)
         xmlFree(rep_bandwidth_val);
+    if (rep_dependencyid_val)
+        xmlFree(rep_dependencyid_val);
+    if (rep_codecs_val)
+        xmlFree(rep_codecs_val);
 
     return ret;
 enomem:
@@ -1255,7 +1287,7 @@ static int parse_manifest(AVFormatContext *s, const char *url, AVIOContext *in)
         close_in = 1;
 
         av_dict_copy(&opts, c->avio_opts, 0);
-        ret = ffio_open_whitelist(&in, url, AVIO_FLAG_READ, c->interrupt_callback, &opts, s->protocol_whitelist, s->protocol_blacklist);
+        ret = s->io_open(s, &in, url, AVIO_FLAG_READ, &opts);
         av_dict_free(&opts);
         if (ret < 0)
             return ret;
@@ -1398,7 +1430,7 @@ cleanup:
 
     av_bprint_finalize(&buf, NULL);
     if (close_in) {
-        avio_close(in);
+        ff_format_io_close(s, &in);
     }
     return ret;
 }
@@ -1419,8 +1451,6 @@ static int64_t calc_cur_seg_no(AVFormatContext *s, struct representation *pls)
             num = calc_next_seg_no_from_timelines(pls, start_time_offset);
             if (num == -1)
                 num = pls->first_seq_no;
-            else
-                num += pls->first_seq_no;
         } else if (pls->fragment_duration){
             av_log(s, AV_LOG_TRACE, "in fragment_duration mode fragment_timescale = %"PRId64", presentation_timeoffset = %"PRId64"\n", pls->fragment_timescale, pls->presentation_timeoffset);
             if (pls->presentation_timeoffset) {
@@ -1975,11 +2005,13 @@ static int open_demux_for_component(AVFormatContext *s, struct representation *p
 
     for (i = 0; i < pls->ctx->nb_streams; i++) {
         AVStream *st = avformat_new_stream(s, NULL);
-        AVStream *ist = pls->ctx->streams[i];
+        FFStream *sti = ffstream(st);
+        const AVStream *ist = pls->ctx->streams[i];
+        const FFStream *isti = cffstream(ist);
         if (!st)
             return AVERROR(ENOMEM);
 
-        st->id = i;
+        st->id = i + pls->stream_index;
 
         ret = avcodec_parameters_copy(st->codecpar, ist->codecpar);
         if (ret < 0)
@@ -1989,6 +2021,45 @@ static int open_demux_for_component(AVFormatContext *s, struct representation *p
 
         // copy disposition
         st->disposition = ist->disposition;
+        sti->need_parsing = isti->need_parsing;
+    }
+
+    for (i = 0; i < pls->ctx->nb_stream_groups; i++) {
+        AVStreamGroup *istg = pls->ctx->stream_groups[i];
+        AVStreamGroup *stg;
+
+        if (istg->type != AV_STREAM_GROUP_PARAMS_LCEVC)
+            continue;
+
+        stg = avformat_stream_group_create(s, istg->type, NULL);
+        if (!stg)
+            return AVERROR(ENOMEM);
+
+        stg->id = s->nb_stream_groups;
+
+        for (int j = 0; j < istg->nb_streams; j++) {
+            AVStream *ist = istg->streams[j];
+            AVStream *st = s->streams[ist->index + pls->stream_index];
+            ret = avformat_stream_group_add_stream(stg, st);
+            if (ret < 0)
+                return ret;
+        }
+
+        switch (stg->type) {
+        case AV_STREAM_GROUP_PARAMS_LCEVC: {
+            AVStreamGroupLCEVC *ilcevc = istg->params.lcevc;
+            AVStreamGroupLCEVC *lcevc = stg->params.lcevc;
+            ret = av_opt_copy(lcevc, ilcevc);
+            if (ret < 0)
+                return ret;
+            break;
+        }
+        default:
+            av_unreachable("Unsupported Stream Group type should have been checked above");
+        }
+
+        // copy disposition
+        stg->disposition = istg->disposition;
     }
 
     return 0;
@@ -2051,7 +2122,7 @@ static int dash_read_header(AVFormatContext *s)
     AVProgram *program;
     int ret = 0;
     int stream_index = 0;
-    int i;
+    int i, j;
 
     c->interrupt_callback = &s->interrupt_callback;
 
@@ -2080,12 +2151,12 @@ static int dash_read_header(AVFormatContext *s)
             if (ret < 0)
                 return ret;
         }
+        rep->stream_index = stream_index;
         ret = open_demux_for_component(s, rep);
 
         if (ret)
             return ret;
-        rep->stream_index = stream_index;
-        ++stream_index;
+        stream_index += rep->ctx->nb_streams;
     }
 
     if(c->n_audios)
@@ -2098,12 +2169,12 @@ static int dash_read_header(AVFormatContext *s)
             if (ret < 0)
                 return ret;
         }
+        rep->stream_index = stream_index;
         ret = open_demux_for_component(s, rep);
 
         if (ret)
             return ret;
-        rep->stream_index = stream_index;
-        ++stream_index;
+        stream_index += rep->ctx->nb_streams;
     }
 
     if (c->n_subtitles)
@@ -2116,12 +2187,12 @@ static int dash_read_header(AVFormatContext *s)
             if (ret < 0)
                 return ret;
         }
+        rep->stream_index = stream_index;
         ret = open_demux_for_component(s, rep);
 
         if (ret)
             return ret;
-        rep->stream_index = stream_index;
-        ++stream_index;
+        stream_index += rep->ctx->nb_streams;
     }
 
     if (!stream_index)
@@ -2134,27 +2205,79 @@ static int dash_read_header(AVFormatContext *s)
 
     for (i = 0; i < c->n_videos; i++) {
         rep = c->videos[i];
-        av_program_add_stream_index(s, 0, rep->stream_index);
-        rep->assoc_stream = s->streams[rep->stream_index];
+        rep->assoc_stream = av_malloc_array(rep->ctx->nb_streams, sizeof(*rep->assoc_stream));
+        if (!rep->assoc_stream)
+            return AVERROR(ENOMEM);
+        rep->nb_assoc_stream = rep->ctx->nb_streams;
+        for (int j = 0; j < rep->ctx->nb_streams; j++) {
+            av_program_add_stream_index(s, 0, rep->stream_index + j);
+            rep->assoc_stream[j] = s->streams[rep->stream_index + j];
+        }
         if (rep->bandwidth > 0)
-            av_dict_set_int(&rep->assoc_stream->metadata, "variant_bitrate", rep->bandwidth, 0);
-        move_metadata(rep->assoc_stream, "id", &rep->id);
+            av_dict_set_int(&rep->assoc_stream[0]->metadata, "variant_bitrate", rep->bandwidth, 0);
+        move_metadata(rep->assoc_stream[0], "id", &rep->id);
     }
     for (i = 0; i < c->n_audios; i++) {
         rep = c->audios[i];
-        av_program_add_stream_index(s, 0, rep->stream_index);
-        rep->assoc_stream = s->streams[rep->stream_index];
+        rep->assoc_stream = av_malloc_array(rep->ctx->nb_streams, sizeof(*rep->assoc_stream));
+        if (!rep->assoc_stream)
+            return AVERROR(ENOMEM);
+        rep->nb_assoc_stream = rep->ctx->nb_streams;
+        for (int j = 0; j < rep->ctx->nb_streams; j++) {
+            av_program_add_stream_index(s, 0, rep->stream_index + j);
+            rep->assoc_stream[j] = s->streams[rep->stream_index + j];
+        }
         if (rep->bandwidth > 0)
-            av_dict_set_int(&rep->assoc_stream->metadata, "variant_bitrate", rep->bandwidth, 0);
-        move_metadata(rep->assoc_stream, "id", &rep->id);
-        move_metadata(rep->assoc_stream, "language", &rep->lang);
+            av_dict_set_int(&rep->assoc_stream[0]->metadata, "variant_bitrate", rep->bandwidth, 0);
+        move_metadata(rep->assoc_stream[0], "id", &rep->id);
+        move_metadata(rep->assoc_stream[0], "language", &rep->lang);
     }
     for (i = 0; i < c->n_subtitles; i++) {
         rep = c->subtitles[i];
-        av_program_add_stream_index(s, 0, rep->stream_index);
-        rep->assoc_stream = s->streams[rep->stream_index];
-        move_metadata(rep->assoc_stream, "id", &rep->id);
-        move_metadata(rep->assoc_stream, "language", &rep->lang);
+        rep->assoc_stream = av_malloc_array(rep->ctx->nb_streams, sizeof(*rep->assoc_stream));
+        if (!rep->assoc_stream)
+            return AVERROR(ENOMEM);
+        rep->nb_assoc_stream = rep->ctx->nb_streams;
+        for (int j = 0; j < rep->ctx->nb_streams; j++) {
+            av_program_add_stream_index(s, 0, rep->stream_index + j);
+            rep->assoc_stream[j] = s->streams[rep->stream_index + j];
+        }
+        move_metadata(rep->assoc_stream[0], "id", &rep->id);
+        move_metadata(rep->assoc_stream[0], "language", &rep->lang);
+    }
+
+    /* Create stream groups if needed */
+    for (i = 0; i < c->n_videos; i++) {
+        struct representation *ref;
+        rep = c->videos[i];
+        if (!rep->dependencyid || !rep->nb_assoc_stream)
+            continue;
+        for (j = 0; j < c->n_videos; j++) {
+            if (j == i)
+                continue;
+            ref = c->videos[j];
+            if (!ref->nb_assoc_stream)
+                continue;
+            const AVDictionaryEntry *id = av_dict_get(ref->assoc_stream[0]->metadata, "id", NULL, AV_DICT_MATCH_CASE);
+            if (!strcmp(rep->dependencyid, id->value))
+                break;
+        }
+        if (j >= c->n_videos || !av_strstart(rep->codecs, "lvc1", NULL) ||
+            rep->assoc_stream[0]->codecpar->codec_id != AV_CODEC_ID_LCEVC)
+            continue;
+        AVStreamGroup *stg = avformat_stream_group_create(s, AV_STREAM_GROUP_PARAMS_LCEVC, NULL);
+        if (!stg)
+            return AVERROR(ENOMEM);
+        stg->params.lcevc->width  = rep->assoc_stream[0]->codecpar->width;
+        stg->params.lcevc->height = rep->assoc_stream[0]->codecpar->height;
+        ret = avformat_stream_group_add_stream(stg, ref->assoc_stream[0]);
+        if (ret < 0)
+            return ret;
+        ret = avformat_stream_group_add_stream(stg, rep->assoc_stream[0]);
+        if (ret < 0)
+            return ret;
+        stg->id = stg->index;
+        stg->params.lcevc->lcevc_index = stg->nb_streams - 1;
     }
 
     return 0;
@@ -2166,7 +2289,10 @@ static void recheck_discard_flags(AVFormatContext *s, struct representation **p,
 
     for (i = 0; i < n; i++) {
         struct representation *pls = p[i];
-        int needed = !pls->assoc_stream || pls->assoc_stream->discard < AVDISCARD_ALL;
+        int needed = !pls->nb_assoc_stream;
+
+        for (int j = 0; j < pls->nb_assoc_stream; j++)
+            needed |= pls->assoc_stream[j]->discard < AVDISCARD_ALL;
 
         if (needed && !pls->ctx) {
             pls->cur_seg_offset = 0;
@@ -2234,7 +2360,7 @@ static int dash_read_packet(AVFormatContext *s, AVPacket *pkt)
         if (ret >= 0) {
             /* If we got a packet, return it */
             cur->cur_timestamp = av_rescale(pkt->pts, (int64_t)cur->ctx->streams[0]->time_base.num * 90000, cur->ctx->streams[0]->time_base.den);
-            pkt->stream_index = cur->stream_index;
+            pkt->stream_index += cur->stream_index;
             return 0;
         }
         if (cur->is_restart_needed) {

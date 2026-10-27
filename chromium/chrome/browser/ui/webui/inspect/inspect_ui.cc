@@ -26,7 +26,7 @@
 #include "chrome/browser/devtools/features.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_navigator_params.h"
+#include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/chrome_paths.h"
@@ -666,6 +666,9 @@ void InspectUI::Open(const std::string& source_id,
 void InspectUI::Pause(const std::string& source_id,
                       const std::string& target_id) {
   scoped_refptr<DevToolsAgentHost> target = FindTarget(source_id, target_id);
+  if (!target) {
+    return;
+  }
   content::WebContents* web_contents = target->GetWebContents();
   if (web_contents) {
     DevToolsWindow::OpenDevToolsWindow(web_contents,

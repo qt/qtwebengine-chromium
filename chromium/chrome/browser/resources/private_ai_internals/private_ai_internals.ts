@@ -11,6 +11,13 @@ import {PrivateAiInternalsBrowserProxyImpl} from './private_ai_internals_browser
 
 const proxy = PrivateAiInternalsBrowserProxyImpl.getInstance();
 
+const ZERO_STATE_SUGGESTION_FEATURE_NAME =
+    'FEATURE_NAME_CHROME_ZERO_STATE_SUGGESTION';
+const FORMS_AI_FEATURE_NAME = 'FEATURE_NAME_CHROME_FORMS_AI';
+const GENERATE_CONTENT_FEATURE_NAME =
+    'FEATURE_NAME_DEMO_GEMINI_GENERATE_CONTENT';
+const CONTEXTUAL_CUE_FEATURE_NAME = 'FEATURE_NAME_CHROME_CONTEXTUAL_CUEING';
+
 function registerOnLogMessageListener() {
   const logsContainer = document.getElementById('logs-container');
   proxy.getCallbackRouter().onLogMessage.addListener(
@@ -110,67 +117,58 @@ function registerOnCreateConnectionButtonListener() {
 function registerOnSendButtonListener() {
   const sendButton = document.getElementById('send-button');
   sendButton?.addEventListener('click', () => {
-    onRequestSend();
+    sendRequest(GENERATE_CONTENT_FEATURE_NAME, 'Text');
   });
   const sendZssButton = document.getElementById('send-zss-button');
   sendZssButton?.addEventListener('click', () => {
-    onZssRequestSend();
+    sendRequest(ZERO_STATE_SUGGESTION_FEATURE_NAME, 'ZSS');
+  });
+  const sendFormsAiButton = document.getElementById('send-forms-ai-button');
+  sendFormsAiButton?.addEventListener('click', () => {
+    sendRequest(FORMS_AI_FEATURE_NAME, 'FormsAI');
+  });
+  const sendContextualCueButton =
+      document.getElementById('send-contextual-cue-button');
+  sendContextualCueButton?.addEventListener('click', () => {
+    sendRequest(CONTEXTUAL_CUE_FEATURE_NAME, 'ContextualCue');
   });
 }
 
-function onRequestSend() {
+function addMsgToConsoleContainer(msg: string) {
   const consoleContainer = document.getElementById('console-container');
+
+  const msgElement = document.createElement('div');
+  msgElement.textContent = msg;
+  consoleContainer?.appendChild(msgElement);
+}
+
+function addErrorToConsoleContainer(error: string) {
+  const consoleContainer = document.getElementById('console-container');
+
+  const errorElement = document.createElement('div');
+  errorElement.textContent = error;
+  errorElement.style.color = 'red';
+  consoleContainer?.appendChild(errorElement);
+}
+
+function sendRequest(featureName: string, prefix: string) {
   const requestInput =
       document.getElementById('request-input') as HTMLInputElement;
 
   const request = requestInput.value;
-  if (request.trim() === '') {
-    return;
-  }
 
   // Display user's request.
-  const userRequestElement = document.createElement('div');
-  userRequestElement.textContent = 'Request: ' + request;
-  consoleContainer?.appendChild(userRequestElement);
+  const requestLabel = prefix ? `${prefix} Request` : 'Request';
+  const responseLabel = prefix ? `${prefix} Response` : 'Response';
+  addMsgToConsoleContainer(`${requestLabel}: ${request || '<empty request>'}`);
 
   // Send request to the Private AI client and get a response.
-  proxy.sendRequest(loadTimeData.getString('default_feature_name'), request)
-      .then((response) => {
-        const serverResponseElement = document.createElement('div');
-        serverResponseElement.textContent = 'Response: ' + response.response;
-        consoleContainer?.appendChild(serverResponseElement);
-      });
-
-  // Clear the input field and refocus.
-  requestInput.value = '';
-  requestInput.focus();
-}
-
-function onZssRequestSend() {
-  const consoleContainer = document.getElementById('console-container');
-  const requestInput =
-      document.getElementById('request-input') as HTMLInputElement;
-
-  const text = requestInput.value;
-  if (text.trim() === '') {
-    return;
-  }
-
-  // Display user's request.
-  const userRequestElement = document.createElement('div');
-  userRequestElement.textContent = 'ZSS Request: ' + text;
-  consoleContainer?.appendChild(userRequestElement);
-
-  // Send ZSS request to the Private AI client and get a response.
-  proxy.sendZssRequest(text).then((response) => {
-    const serverResponseElement = document.createElement('div');
-    if (response.error) {
-      serverResponseElement.textContent = 'Error: ' + response.error;
-      serverResponseElement.style.color = 'red';
+  proxy.sendRequest(featureName, request).then((response) => {
+    if (response.response) {
+      addMsgToConsoleContainer(`${responseLabel}: ${response.response}`);
     } else {
-      serverResponseElement.textContent = 'ZSS Response: ' + response.response;
+      addErrorToConsoleContainer('Error: ' + response.error);
     }
-    consoleContainer?.appendChild(serverResponseElement);
   });
 
   // Clear the input field and refocus.

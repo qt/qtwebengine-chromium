@@ -64,7 +64,9 @@ WebSocketSpdyStreamAdapter::WebSocketSpdyStreamAdapter(
     base::WeakPtr<SpdyStream> stream,
     Delegate* delegate,
     NetLogWithSource net_log)
-    : stream_(stream), delegate_(delegate), net_log_(net_log) {
+    : stream_(std::move(stream)),
+      delegate_(delegate),
+      net_log_(std::move(net_log)) {
   stream_->SetDelegate(this);
 }
 
@@ -165,8 +167,12 @@ void WebSocketSpdyStreamAdapter::OnDataReceived(
   }
 
   read_data_.Enqueue(std::move(buffer));
-  if (read_callback_)
-    std::move(read_callback_).Run(CopySavedReadDataIntoBuffer());
+  if (read_callback_) {
+    // Avoid UAF due to C++17 sequencing rules. See crbug.com/499194333.
+    auto callback = std::move(read_callback_);
+    int rv = CopySavedReadDataIntoBuffer();
+    std::move(callback).Run(rv);
+  }
 }
 
 void WebSocketSpdyStreamAdapter::OnDataSent() {

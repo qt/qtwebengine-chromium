@@ -1852,4 +1852,58 @@ TEST_F(SyntheticResponseContentSecurityPolicyTest,
                 kSyntheticResponseBlockedResourceCountHistogramName),
             2);
 }
+
+TEST_F(ContentSecurityPolicyTest, IsNonceableElement) {
+  auto dummy = std::make_unique<DummyPageHolder>();
+  auto* window = dummy->GetFrame().DomWindow();
+
+  struct TestCase {
+    const char* tag;
+    const char* attr_name;
+    const char* attr_value;
+    bool expected_nonceable;
+  } cases[] = {
+      {"script", "src", "https://example.com/js", true},
+      {"script", "data-foo", "<script", false},
+      {"script", "<script", "foo", false},
+      {"script", "data-foo", "<style", false},
+      {"script", "<style", "foo", false},
+      {"script", "<link", "foo", false},
+      {"script", "data-foo", "<link", false},
+  };
+
+  for (const auto& test : cases) {
+    auto* element = window->document()->CreateRawElement(QualifiedName(
+        AtomicString(), AtomicString(test.tag), html_names::xhtmlNamespaceURI));
+    element->setAttribute(AtomicString(test.attr_name),
+                          AtomicString(test.attr_value));
+    element->setNonce(AtomicString("abc"));
+
+    EXPECT_EQ(test.expected_nonceable,
+              ContentSecurityPolicy::IsNonceableElement(element))
+        << "Tag: " << test.tag << ", Attr: " << test.attr_name << "=\""
+        << test.attr_value << "\"";
+  }
+}
+
+TEST_F(ContentSecurityPolicyTest, StaticAllowBaseURI) {
+  KURL allowed_base("https://example.test/");
+  KURL blocked_base("https://not-example.test/");
+
+  // Empty policies should allow everything.
+  Vector<network::mojom::blink::ContentSecurityPolicyPtr> empty_policies;
+  EXPECT_TRUE(
+      ContentSecurityPolicy::AllowBaseURI(allowed_base, empty_policies));
+  EXPECT_TRUE(
+      ContentSecurityPolicy::AllowBaseURI(blocked_base, empty_policies));
+
+  // Policy with base-uri 'self'.
+  Vector<network::mojom::blink::ContentSecurityPolicyPtr> policies =
+      ParseContentSecurityPolicies(
+          "base-uri 'self'", ContentSecurityPolicyType::kEnforce,
+          ContentSecurityPolicySource::kHTTP, *secure_origin);
+  EXPECT_TRUE(ContentSecurityPolicy::AllowBaseURI(allowed_base, policies));
+  EXPECT_FALSE(ContentSecurityPolicy::AllowBaseURI(blocked_base, policies));
+}
+
 }  // namespace blink

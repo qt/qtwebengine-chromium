@@ -1116,9 +1116,8 @@ DetermineGraphConstraintsFromOutputs(const MLNamedOperands& named_outputs) {
     const auto& name = output.first;
     const auto& operand = output.second;
     if (operand->Kind() != blink_mojom::Operand::Kind::kOutput) {
-      return base::unexpected(String::Format(
-          "The operand with name \"%s\" is not an output operand.",
-          name.Utf8().c_str()));
+      return base::unexpected(StrCat(
+          {"The operand with name \"", name, "\" is not an output operand."}));
     }
     // Setup resource info for this output operand.
     output_constraints.insert(name, operand->Descriptor());
@@ -1145,9 +1144,8 @@ DetermineGraphConstraintsFromOutputs(const MLNamedOperands& named_outputs) {
           }
           visited_input_operands.insert(operand);
           if (input_constraints.Contains(operand->Name())) {
-            return base::unexpected(
-                String::Format("The input name \"%s\" is duplicated.",
-                               operand->Name().Utf8().c_str()));
+            return base::unexpected(StrCat(
+                {"The input name \"", operand->Name(), "\" is duplicated."}));
           }
           input_constraints.insert(operand->Name(), operand->Descriptor());
           break;
@@ -1626,8 +1624,7 @@ MLGraphBuilder* MLGraphBuilder::Create(ScriptState* script_state,
 MLGraphBuilder::MLGraphBuilder(
     ExecutionContext* execution_context,
     MLContext* context,
-    mojo::PendingAssociatedRemote<blink_mojom::WebNNGraphBuilder>
-        pending_remote)
+    mojo::PendingRemote<blink_mojom::WebNNGraphBuilder> pending_remote)
     : execution_context_(execution_context),
       ml_context_(context),
       remote_(execution_context) {
@@ -3513,7 +3510,7 @@ void MLGraphBuilder::DidCreateWebNNGraph(
   }
   auto* graph = MakeGarbageCollected<MLGraph>(
       resolver->GetExecutionContext(), ml_context_,
-      std::move(success->graph_remote),
+      std::move(success->graph_remote), success->graph_token,
       std::move(input_and_output_constraints.first),
       std::move(input_and_output_constraints.second), std::move(devices),
       base::PassKey<MLGraphBuilder>());

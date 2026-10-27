@@ -1,4 +1,4 @@
-prefix=@CMAKE_INSTALL_PREFIX@
+prefix=${pcfiledir}/@PKGCONFIG_RELATIVE_PATH_TO_PREFIX@
 exec_prefix=${prefix}
 
 Name: Eigen3

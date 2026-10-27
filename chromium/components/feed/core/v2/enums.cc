@@ -20,26 +20,12 @@ std::ostream& operator<<(std::ostream& out, NetworkRequestType value) {
       return out << "kUploadActions";
     case NetworkRequestType::kNextPage:
       return out << "kNextPage";
-    case NetworkRequestType::kListWebFeeds:
-      return out << "kListWebFeeds";
-    case NetworkRequestType::kUnfollowWebFeed:
-      return out << "kUnfollowWebFeed";
-    case NetworkRequestType::kFollowWebFeed:
-      return out << "kFollowWebFeed";
-    case NetworkRequestType::kListRecommendedWebFeeds:
-      return out << "kListRecommendedWebFeeds";
-    case NetworkRequestType::kWebFeedListContents:
-      return out << "kWebFeedListContents";
     case NetworkRequestType::kQueryInteractiveFeed:
       return out << "kQueryInteractiveFeed";
     case NetworkRequestType::kQueryBackgroundFeed:
       return out << "kQueryBackgroundFeed";
     case NetworkRequestType::kQueryNextPage:
       return out << "kQueryNextPage";
-    case NetworkRequestType::kSingleWebFeedListContents:
-      return out << "kSingleWebFeedListContents";
-    case NetworkRequestType::kQueryWebFeed:
-      return out << "kQueryWebFeed";
   }
 #endif
   return out << (static_cast<int>(value));

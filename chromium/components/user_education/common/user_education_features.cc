@@ -67,7 +67,7 @@ inline constexpr char kNtpBrowserPromoMaxSessionsPerTermName[] =
 
 inline constexpr char kNtpBrowserPromoMaxTermsName[] = "max-terms";
 inline constexpr int kDefaultNtpBrowserPromoMaxTerms = 3;
-inline constexpr int kDefaultNtpBrowserPromoMaxSessionsPerTerm = 3;
+inline constexpr int kDefaultNtpBrowserPromoMaxSessionsPerTerm = 2;
 
 inline constexpr char kNtpBrowserPromoClickedHideDurationName[] =
     "clicked-duration";
@@ -171,7 +171,7 @@ base::TimeDelta GetPromoControllerPollingInterval() {
   return kDefaultPollingInterval;
 }
 
-BASE_FEATURE(kEnableNtpBrowserPromos, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kEnableNtpBrowserPromos, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE_ENUM_PARAM(NtpBrowserPromoType,
                         kNtpBrowserPromoType,

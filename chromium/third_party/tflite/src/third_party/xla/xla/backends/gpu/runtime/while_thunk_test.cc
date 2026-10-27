@@ -53,7 +53,6 @@ namespace xla::gpu {
 namespace {
 
 using ::testing::ElementsAre;
-using ::testing::NotNull;
 using ::testing::SizeIs;
 using ::tsl::proto_testing::EqualsProto;
 using ::tsl::proto_testing::ParseTextProtoOrDie;
@@ -106,6 +105,10 @@ class IterationLoggerThunk : public Thunk {
 
   const std::vector<std::optional<int64_t>>& logged_counters() const {
     return iteration_counters_;
+  }
+
+  absl::StatusOr<ThunkProto> ToProto() const override {
+    return absl::UnimplementedError("Not implemented");
   }
 
  private:
@@ -182,7 +185,6 @@ TEST_F(KnownTripCountWhileThunkTest, CurrentLoopIterationNestedTest) {
 TEST(WhileThunkTest, ToProto) {
   Thunk::ThunkInfo thunk_info;
   thunk_info.profile_annotation = "profile_annotation";
-  thunk_info.execution_stream_id = 123;
 
   BufferAllocation alloc(/*index=*/0, /*size=*/1024, /*color=*/0);
   BufferAllocation::Slice slice(&alloc, /*offset=*/0, /*size=*/256);
@@ -203,53 +205,28 @@ TEST(WhileThunkTest, ToProto) {
                        std::move(body_thunks), /*trip_count=*/10);
   TF_ASSERT_OK_AND_ASSIGN(ThunkProto proto, thunk.ToProto());
 
-  EXPECT_THAT(proto, EqualsProto(R"pb(
-                thunk_info {
-                  profile_annotation: "profile_annotation"
-                  execution_stream_id: 123
-                }
-                while_thunk {
-                  condition_result_buffer_index { size: 256 }
-                  condition_thunk_sequence {
-                    thunks {
-                      thunk_info {
-                        profile_annotation: "profile_annotation"
-                        execution_stream_id: 123
-                      }
-                    }
-                    thunks {
-                      thunk_info {
-                        profile_annotation: "profile_annotation"
-                        execution_stream_id: 123
-                      }
-                    }
-                  }
-                  body_thunk_sequence {
-                    thunks {
-                      thunk_info {
-                        profile_annotation: "profile_annotation"
-                        execution_stream_id: 123
-                      }
-                    }
-                    thunks {
-                      thunk_info {
-                        profile_annotation: "profile_annotation"
-                        execution_stream_id: 123
-                      }
-                    }
-                  }
-                  trip_count: 10
-                }
-              )pb"));
+  EXPECT_THAT(
+      proto, EqualsProto(R"pb(
+        thunk_info { profile_annotation: "profile_annotation" }
+        while_thunk {
+          condition_result_buffer_index { size: 256 }
+          condition_thunk_sequence {
+            thunks { thunk_info { profile_annotation: "profile_annotation" } }
+            thunks { thunk_info { profile_annotation: "profile_annotation" } }
+          }
+          body_thunk_sequence {
+            thunks { thunk_info { profile_annotation: "profile_annotation" } }
+            thunks { thunk_info { profile_annotation: "profile_annotation" } }
+          }
+          trip_count: 10
+        }
+      )pb"));
 }
 
 TEST(WhileThunkTest, FromProto) {
   ThunkProto proto = ParseTextProtoOrDie<ThunkProto>(
       R"pb(
-        thunk_info {
-          profile_annotation: "profile_annotation"
-          execution_stream_id: 123
-        }
+        thunk_info { profile_annotation: "profile_annotation" }
         while_thunk {
           condition_result_buffer_index {
             buffer_allocation_index: 1
@@ -257,32 +234,12 @@ TEST(WhileThunkTest, FromProto) {
             size: 256
           }
           condition_thunk_sequence {
-            thunks {
-              thunk_info {
-                profile_annotation: "profile_annotation"
-                execution_stream_id: 123
-              }
-            }
-            thunks {
-              thunk_info {
-                profile_annotation: "profile_annotation"
-                execution_stream_id: 123
-              }
-            }
+            thunks { thunk_info { profile_annotation: "profile_annotation" } }
+            thunks { thunk_info { profile_annotation: "profile_annotation" } }
           }
           body_thunk_sequence {
-            thunks {
-              thunk_info {
-                profile_annotation: "profile_annotation"
-                execution_stream_id: 123
-              }
-            }
-            thunks {
-              thunk_info {
-                profile_annotation: "profile_annotation"
-                execution_stream_id: 123
-              }
-            }
+            thunks { thunk_info { profile_annotation: "profile_annotation" } }
+            thunks { thunk_info { profile_annotation: "profile_annotation" } }
           }
           trip_count: 10
         }
@@ -290,7 +247,7 @@ TEST(WhileThunkTest, FromProto) {
 
   Thunk::ThunkInfo thunk_info;
   thunk_info.profile_annotation = "profile_annotation";
-  thunk_info.execution_stream_id = 123;
+
   std::vector<BufferAllocation> buffer_allocations = {
       BufferAllocation(/*index=*/0, /*size=*/1024, /*color=*/0),
       BufferAllocation(/*index=*/1, /*size=*/1024, /*color=*/0)};

@@ -2,3 +2,7 @@
 f38e16c193d489c278c189bc06b448a94adb45fb
 # Formatting of tests, examples, benchmarks, et cetera (https://gitlab.com/libeigen/eigen/-/merge_requests/1432).
 46e9cdb7fea25d7f7aef4332b9c3ead3857e213d
+# clang-format-17 cleanup of pre-existing drift (https://gitlab.com/libeigen/eigen/-/merge_requests/2510).
+203153504104fdc1698181e3f3405c24cf264282
+# Bulk SPDX-License-Identifier tagging across the tree (https://gitlab.com/libeigen/eigen/-/merge_requests/2509).
+8a3d61c790c5d87754695ac3ce518e5602f9a327

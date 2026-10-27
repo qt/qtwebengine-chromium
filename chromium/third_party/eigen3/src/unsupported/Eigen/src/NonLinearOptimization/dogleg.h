@@ -1,4 +1,10 @@
 // IWYU pragma: private
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
+#ifndef EIGEN_NONLINEAROPTIMIZATION_DOGLEG_H
+#define EIGEN_NONLINEAROPTIMIZATION_DOGLEG_H
+
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {
@@ -101,3 +107,5 @@ algo_end:
 }  // end namespace internal
 
 }  // end namespace Eigen
+
+#endif  // EIGEN_NONLINEAROPTIMIZATION_DOGLEG_H

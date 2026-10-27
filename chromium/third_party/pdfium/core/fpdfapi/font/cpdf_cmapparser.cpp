@@ -16,6 +16,7 @@
 #include "core/fxcrt/check.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
+#include "core/fxcrt/to_underlying.h"
 
 namespace {
 
@@ -23,7 +24,7 @@ ByteStringView CMap_GetString(ByteStringView word) {
   if (word.GetLength() <= 2) {
     return ByteStringView();
   }
-  return word.Last(word.GetLength() - 2);
+  return word.Substr(2);
 }
 
 }  // namespace
@@ -210,13 +211,13 @@ std::optional<CPDF_CMap::CodeRange> CPDF_CMapParser::GetCodeRange(
 
 // static
 CIDSet CPDF_CMapParser::CharsetFromOrdering(ByteStringView ordering) {
-  static const std::array<const char*, CIDSET_NUM_SETS> kCharsetNames = {
-      {nullptr, "GB1", "CNS1", "Japan1", "Korea1", "UCS"}};
+  static const std::array<const char*, fxcrt::to_underlying(CIDSet::kNumSets)>
+      kCharsetNames = {{nullptr, "GB1", "CNS1", "Japan1", "Korea1", "UCS"}};
 
   for (size_t charset = 1; charset < std::size(kCharsetNames); ++charset) {
     if (ordering == kCharsetNames[charset]) {
       return static_cast<CIDSet>(charset);
     }
   }
-  return CIDSET_UNKNOWN;
+  return CIDSet::kUnknown;
 }

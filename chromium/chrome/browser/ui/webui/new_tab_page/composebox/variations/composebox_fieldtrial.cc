@@ -62,7 +62,8 @@ omnibox::NTPComposeboxConfig GetNTPComposeboxConfig() {
       "image/avif,image/bmp,image/jpeg,image/png,image/webp,image/heif,"
       "image/heic");
   auto* attachment_upload = composebox->mutable_attachment_upload();
-  attachment_upload->set_max_size_bytes(200000000);
+  // File upload size limit: 100 MiB.
+  attachment_upload->set_max_size_bytes(100 * 1024 * 1024);
   attachment_upload->set_mime_types_allowed(".pdf,application/pdf");
 
   composebox->set_input_placeholder_text(
@@ -154,36 +155,6 @@ bool IsNtpComposeboxEnabled(Profile* profile) {
          aim_eligibility_service->IsFuseboxEligible();
 }
 
-bool IsDeepSearchEnabled(Profile* profile) {
-  if (!profile) {
-    return false;
-  }
-
-  if (!IsNtpComposeboxEnabled(profile)) {
-    return false;
-  }
-
-  AimEligibilityService* aim_eligibility_service =
-      AimEligibilityServiceFactory::GetForProfile(profile);
-  return aim_eligibility_service &&
-         aim_eligibility_service->IsDeepSearchEligible();
-}
-
-bool IsCreateImagesEnabled(Profile* profile) {
-  if (!profile) {
-    return false;
-  }
-
-  if (!IsNtpComposeboxEnabled(profile)) {
-    return false;
-  }
-
-  AimEligibilityService* aim_eligibility_service =
-      AimEligibilityServiceFactory::GetForProfile(profile);
-  return aim_eligibility_service &&
-         aim_eligibility_service->IsCreateImagesEligible();
-}
-
 std::unique_ptr<
     contextual_search::ContextualSearchContextController::ConfigParams>
 CreateQueryControllerConfigParams() {
@@ -239,14 +210,18 @@ const base::FeatureParam<int> kContextMenuMaxTabSuggestions(
 const base::FeatureParam<bool> kContextMenuEnableMultiTabSelection(
     &kNtpComposebox,
     "NtpComposeboxContextMenuEnableMultiTabSelection",
-    false);
+    true);
 
 const base::FeatureParam<bool> kEnableThreadsRail(&kNtpComposebox,
                                                   "EnableThreadsRail",
-                                                  true);
+                                                  false);
 const base::FeatureParam<bool> kEnableThreadsRailLogo(&kNtpComposebox,
                                                       "EnableThreadsRailLogo",
                                                       false);
+
+const base::FeatureParam<bool> kUseNtpComposeboxFork(&kNtpComposebox,
+                                                     "useNtpComposeboxFork",
+                                                     false);
 
 FeatureConfig::FeatureConfig() : config(GetNTPComposeboxConfig()) {}
 
@@ -312,5 +287,7 @@ const base::FeatureParam<bool> kMultiLineEnabled(&kNtpRealboxNext,
                                                  true);
 
 BASE_FEATURE(kNtpRealboxCyclingPlaceholders, base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kNtpRealboxDynamicAiModeButton, base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace ntp_realbox

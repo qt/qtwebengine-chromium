@@ -264,6 +264,10 @@ X11Window::~X11Window() {
   Close();
 }
 
+base::WeakPtr<X11Window> X11Window::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
+}
+
 void X11Window::Initialize(PlatformWindowInitProperties properties) {
   CreateXWindow(properties);
 
@@ -540,10 +544,16 @@ void X11Window::SetBoundsInPixels(const gfx::Rect& bounds) {
   gfx::Rect new_bounds_in_pixels(bounds.origin(),
                                  AdjustSizeForDisplay(bounds.size()));
 
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  const gfx::Rect current_bounds = GetBoundsInPixels();
+  if (!weak_this) {
+    return;
+  }
+
   const bool size_changed =
-      GetBoundsInPixels().size() != new_bounds_in_pixels.size();
+      current_bounds.size() != new_bounds_in_pixels.size();
   const bool origin_changed =
-      GetBoundsInPixels().origin() != new_bounds_in_pixels.origin();
+      current_bounds.origin() != new_bounds_in_pixels.origin();
 
   // Assume that the resize will go through as requested, which should be the
   // case if we're running without a window manager.  If there's a window
@@ -601,6 +611,10 @@ void X11Window::SetBoundsInPixels(const gfx::Rect& bounds) {
   platform_window_delegate_->OnBoundsChanged({origin_changed});
 }
 
+// Note: geometry_cache_->GetBoundsPx() can dispatch pending X server events
+// synchronously, which can trigger window destruction and invalidate `this`.
+// Callers should retrieve a WeakPtr before calling GetBoundsInPixels() and
+// check its validity afterward if they access any member of `this`.
 gfx::Rect X11Window::GetBoundsInPixels() const {
   return bounds_wm_sync_ || !geometry_cache_ ? last_set_bounds_px_
                                              : geometry_cache_->GetBoundsPx();
@@ -612,7 +626,12 @@ void X11Window::SetBoundsInDIP(const gfx::Rect& bounds_in_dip) {
 }
 
 gfx::Rect X11Window::GetBoundsInDIP() const {
-  return platform_window_delegate_->ConvertRectToDIP(GetBoundsInPixels());
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  const gfx::Rect bounds = GetBoundsInPixels();
+  if (!weak_this) {
+    return {};
+  }
+  return platform_window_delegate_->ConvertRectToDIP(bounds);
 }
 
 void X11Window::SetTitle(const std::u16string& title) {
@@ -702,7 +721,11 @@ void X11Window::SetFullscreen(bool fullscreen, int64_t target_display_id) {
   // - works around Flash content which expects to have the size updated
   //   synchronously.
   // See https://crbug.com/361408
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
   gfx::Rect new_bounds_px = GetBoundsInPixels();
+  if (!weak_this) {
+    return;
+  }
   if (fullscreen) {
     restored_bounds_in_pixels_ = new_bounds_px;
     if (x11_extension_delegate_) {
@@ -725,7 +748,11 @@ void X11Window::SetFullscreen(bool fullscreen, int64_t target_display_id) {
 
   // Pretend the bounds changed immediately, and wait for a WM sync to use the
   // server's bounds.
-  bool origin_changed = GetBoundsInPixels().origin() != new_bounds_px.origin();
+  const gfx::Rect current_bounds = GetBoundsInPixels();
+  if (!weak_this) {
+    return;
+  }
+  bool origin_changed = current_bounds.origin() != new_bounds_px.origin();
   SetBoundsWithWmSync(new_bounds_px);
 
   // This must be the final call in this function, as `this` may be deleted
@@ -734,26 +761,40 @@ void X11Window::SetFullscreen(bool fullscreen, int64_t target_display_id) {
 }
 
 void X11Window::Maximize() {
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
   if (IsFullscreen()) {
     // Unfullscreen the window if it is fullscreen.
     SetFullscreen(false, display::kInvalidDisplayId);
+    if (!weak_this) {
+      return;
+    }
 
     // Resize the window so that it does not have the same size as a monitor.
     // (Otherwise, some window managers immediately put the window back in
     // fullscreen mode).
     gfx::Rect bounds_in_pixels = GetBoundsInPixels();
+    if (!weak_this) {
+      return;
+    }
     gfx::Rect adjusted_bounds_in_pixels(
         bounds_in_pixels.origin(),
         AdjustSizeForDisplay(bounds_in_pixels.size()));
     if (adjusted_bounds_in_pixels != bounds_in_pixels) {
       SetBoundsInPixels(adjusted_bounds_in_pixels);
+      if (!weak_this) {
+        return;
+      }
     }
   }
 
   // When we are in the process of requesting to maximize a window, we can
   // accurately keep track of our restored bounds instead of relying on the
   // heuristics that are in the PropertyNotify and ConfigureNotify handlers.
-  restored_bounds_in_pixels_ = GetBoundsInPixels();
+  gfx::Rect bounds_in_pixels = GetBoundsInPixels();
+  if (!weak_this) {
+    return;
+  }
+  restored_bounds_in_pixels_ = bounds_in_pixels;
 
   // Some WMs do not respect maximization hints on unmapped windows, so we
   // save this one for later too.
@@ -783,11 +824,15 @@ void X11Window::Restore() {
   }
 }
 
-void X11Window::ShowWindowControlsMenu(const gfx::Point& point) {
+void X11Window::ShowWindowControlsMenu(const gfx::Point& point_in_dip) {
+  const gfx::Point point_in_pixels =
+      platform_window_delegate_->ConvertPointToPixels(point_in_dip);
+  const uint32_t x = static_cast<uint32_t>(point_in_pixels.x());
+  const uint32_t y = static_cast<uint32_t>(point_in_pixels.y());
+
   SendClientMessage(xwindow_, x_root_window_,
                     x11::GetAtom("_GTK_SHOW_WINDOW_MENU"),
-                    {/*device_id=*/0, base::bit_cast<uint32_t>(point.x()),
-                     base::bit_cast<uint32_t>(point.y()), 0, 0});
+                    {/*device_id=*/0, x, y, 0, 0});
 }
 
 PlatformWindowState X11Window::GetPlatformWindowState() const {
@@ -886,10 +931,15 @@ void X11Window::SetCursor(scoped_refptr<PlatformCursor> cursor) {
 }
 
 void X11Window::MoveCursorTo(const gfx::Point& location_px) {
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  const gfx::Rect bounds = GetBoundsInPixels();
+  if (!weak_this) {
+    return;
+  }
   connection_->WarpPointer(x11::WarpPointerRequest{
       .dst_window = x_root_window_,
-      .dst_x = static_cast<int16_t>(GetBoundsInPixels().x() + location_px.x()),
-      .dst_y = static_cast<int16_t>(GetBoundsInPixels().y() + location_px.y()),
+      .dst_x = static_cast<int16_t>(bounds.x() + location_px.x()),
+      .dst_y = static_cast<int16_t>(bounds.y() + location_px.y()),
   });
   // The cached cursor location is no longer valid.
   X11EventSource::GetInstance()->ClearLastCursorLocation();
@@ -902,7 +952,12 @@ void X11Window::ConfineCursorToBounds(const gfx::Rect& bounds) {
     return;
   }
 
-  gfx::Rect barrier = bounds + GetBoundsInPixels().OffsetFromOrigin();
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  const gfx::Vector2d offset = GetBoundsInPixels().OffsetFromOrigin();
+  if (!weak_this) {
+    return;
+  }
+  gfx::Rect barrier = bounds + offset;
 
   auto make_barrier = [&](uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2,
                           x11::XFixes::BarrierDirections directions) {
@@ -1282,7 +1337,11 @@ void X11Window::SetOverrideRedirect(bool override_redirect) {
       .override_redirect = x11::Bool32(override_redirect),
   });
   if (remap) {
+    auto weak_this = weak_ptr_factory_.GetWeakPtr();
     Map();
+    if (!weak_this) {
+      return;
+    }
     // We cannot regrab the pointer now since unmapping/mapping
     // happens asynchronously.  We must wait until the window is
     // mapped to issue a grab request.
@@ -1361,7 +1420,11 @@ uint32_t X11Window::DispatchEvent(const PlatformEvent& event) {
   auto& current_xevent = *connection_->dispatching_event();
 
   if (event->IsMouseEvent()) {
+    auto weak_this = weak_ptr_factory_.GetWeakPtr();
     X11WindowManager::GetInstance()->MouseOnWindow(this);
+    if (!weak_this) {
+      return POST_DISPATCH_STOP_PROPAGATION;
+    }
   }
 #if BUILDFLAG(USE_ATK)
   if (HandleAsAtkEvent(current_xevent)) {
@@ -1378,7 +1441,11 @@ void X11Window::DispatchUiEvent(ui::Event* event, const x11::Event& xev) {
   DCHECK(window_manager);
 
   // Process X11-specific bits
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
   HandleEvent(xev);
+  if (!weak_this) {
+    return;
+  }
 
   x11::Event last_xev;
   std::unique_ptr<ui::Event> last_motion;
@@ -1399,16 +1466,32 @@ void X11Window::DispatchUiEvent(ui::Event* event, const x11::Event& xev) {
   auto* located_events_grabber = window_manager->located_events_grabber();
   if (event->IsLocatedEvent() && located_events_grabber &&
       located_events_grabber != this) {
+    base::WeakPtr<X11Window> weak_grabber =
+        located_events_grabber->GetWeakPtr();
     if (event->IsMouseEvent() ||
         (event->IsTouchEvent() &&
          event->type() == ui::EventType::kTouchPressed)) {
       // Another X11Window has installed itself as capture. Translate the
       // event's location and dispatch to the other.
-      ConvertEventLocationToTargetWindowLocation(
-          located_events_grabber->GetBoundsInPixels().origin(),
-          GetBoundsInPixels().origin(), event->AsLocatedEvent());
+      const gfx::Point target_origin =
+          located_events_grabber->GetBoundsInPixels().origin();
+      if (!weak_this || !weak_grabber ||
+          window_manager->located_events_grabber() != weak_grabber.get()) {
+        return;
+      }
+      const gfx::Point current_origin = GetBoundsInPixels().origin();
+      if (!weak_this || !weak_grabber ||
+          window_manager->located_events_grabber() != weak_grabber.get()) {
+        return;
+      }
+      ConvertEventLocationToTargetWindowLocation(target_origin, current_origin,
+                                                 event->AsLocatedEvent());
     }
-    return located_events_grabber->DispatchUiEvent(event, xev);
+    if (weak_grabber &&
+        window_manager->located_events_grabber() == weak_grabber.get()) {
+      weak_grabber->DispatchUiEvent(event, xev);
+    }
+    return;
   }
 
   // If after CoalescePendingMotionEvents the type of xev is resolved to
@@ -1666,17 +1749,28 @@ int X11Window::UpdateDrag(const gfx::Point& connection_point) {
       XDragDropClient::GetForWindow(target_current_context->source_window());
   gfx::PointF local_point_in_dip =
       platform_window_delegate_->ConvertScreenPointToLocalDIP(connection_point);
+  base::WeakPtr<X11Window> alive = weak_ptr_factory_.GetWeakPtr();
   if (!notified_enter_) {
     drop_handler->OnDragEnter(local_point_in_dip, suggested_operations,
                               GetKeyModifiers(source_client));
+    if (!alive) {
+      return DragDropTypes::DRAG_NONE;
+    }
 
     // TODO(crbug.com/40073696): Factor DataFetched out of Enter callback.
     drop_handler->OnDragDataAvailable(std::move(data));
+    if (!alive) {
+      return DragDropTypes::DRAG_NONE;
+    }
 
     notified_enter_ = true;
   }
-  allowed_drag_operations_ = drop_handler->OnDragMotion(
+  int allowed_operations = drop_handler->OnDragMotion(
       local_point_in_dip, suggested_operations, GetKeyModifiers(source_client));
+  if (!alive) {
+    return DragDropTypes::DRAG_NONE;
+  }
+  allowed_drag_operations_ = allowed_operations;
   return allowed_drag_operations_;
 }
 
@@ -1700,7 +1794,11 @@ void X11Window::OnBeforeDragLeave() {
   if (!drop_handler) {
     return;
   }
+  base::WeakPtr<X11Window> alive = weak_ptr_factory_.GetWeakPtr();
   drop_handler->OnDragLeave();
+  if (!alive) {
+    return;
+  }
   notified_enter_ = false;
 }
 
@@ -1715,8 +1813,12 @@ DragOperation X11Window::PerformDrop() {
     return DragOperation::kNone;
   }
 
+  base::WeakPtr<X11Window> alive = weak_ptr_factory_.GetWeakPtr();
   drop_handler->OnDragDrop(GetKeyModifiers(
       XDragDropClient::GetForWindow(target_current_context->source_window())));
+  if (!alive) {
+    return DragOperation::kNone;
+  }
   notified_enter_ = false;
   return PreferredDragOperation(allowed_drag_operations_);
 }
@@ -1928,8 +2030,13 @@ void X11Window::Map(bool inactive) {
   x11::SizeHints size_hints = {};
   connection_->GetWmNormalHints(xwindow_, &size_hints);
   size_hints.flags |= x11::SIZE_HINT_P_POSITION;
-  size_hints.x = GetBoundsInPixels().x();
-  size_hints.y = GetBoundsInPixels().y();
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  const gfx::Rect bounds = GetBoundsInPixels();
+  if (!weak_this) {
+    return;
+  }
+  size_hints.x = bounds.x();
+  size_hints.y = bounds.y();
   // Set STATIC_GRAVITY so that the window position is not affected by the
   // frame width when running with window manager.
   size_hints.flags |= x11::SIZE_HINT_P_WIN_GRAVITY;
@@ -2006,7 +2113,11 @@ bool X11Window::IsFullscreen() const {
 }
 
 gfx::Rect X11Window::GetOuterBounds() const {
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
   gfx::Rect outer_bounds(GetBoundsInPixels());
+  if (!weak_this) {
+    return {};
+  }
   outer_bounds.Inset(-native_window_frame_borders_in_pixels_);
   return outer_bounds;
 }
@@ -2369,7 +2480,12 @@ void X11Window::OnWindowMapped() {
   // Some WMs only respect maximize hints after the window has been mapped.
   // Check whether we need to re-do a maximization.
   if (should_maximize_after_map_) {
+    // Maximize() may synchronously delete `this` via OnBoundsChanged().
+    auto weak_this = weak_ptr_factory_.GetWeakPtr();
     Maximize();
+    if (!weak_this) {
+      return;
+    }
     should_maximize_after_map_ = false;
   }
   if (should_grab_pointer_after_map_) {
@@ -2596,7 +2712,12 @@ void X11Window::SetBoundsWithWmSync(const gfx::Rect& bounds_px) {
 
 void X11Window::OnWmSynced() {
   bounds_wm_sync_.reset();
-  OnBoundsChanged(last_set_bounds_px_, GetBoundsInPixels());
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  const gfx::Rect current_bounds = GetBoundsInPixels();
+  if (!weak_this) {
+    return;
+  }
+  OnBoundsChanged(last_set_bounds_px_, current_bounds);
 }
 
 void X11Window::OnBoundsChanged(const std::optional<gfx::Rect>& old_bounds_px,

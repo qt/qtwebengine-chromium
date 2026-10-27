@@ -56,6 +56,7 @@ source_set("tab_groups") {
     "//ios/chrome/browser/share_kit/model:constants",
     "//ios/chrome/browser/share_kit/model:factory",
     "//ios/chrome/browser/shared/coordinator/chrome_coordinator",
+    "//ios/chrome/browser/shared/coordinator/scene:scene_state_header",
     "//ios/chrome/browser/shared/model/browser",
     "//ios/chrome/browser/shared/model/profile",
     "//ios/chrome/browser/shared/model/url:constants",
@@ -169,6 +170,7 @@ source_set("tab_groups_ui") {
   ]
   deps = [
     ":tab_group_consumer",
+    ":tab_group_edition_delegate",
     ":tab_group_mutator",
     ":tab_groups_constant",
     "//base",
@@ -182,6 +184,7 @@ source_set("tab_groups_ui") {
     "//ios/chrome/browser/saved_tab_groups/ui",
     "//ios/chrome/browser/share_kit/model",
     "//ios/chrome/browser/share_kit/model:constants",
+    "//ios/chrome/browser/shared/coordinator/scene/state",
     "//ios/chrome/browser/shared/model/web_state_list",
     "//ios/chrome/browser/shared/public/commands",
     "//ios/chrome/browser/shared/public/features",
@@ -296,6 +299,10 @@ source_set("tab_group_mutator") {
     "tab_group_mutator.h",
   ]
   deps = [ "//components/tab_groups" ]
+}
+
+source_set("tab_group_edition_delegate") {
+  sources = [ "tab_group_edition_delegate.h" ]
 }
 
 source_set("unit_tests") {

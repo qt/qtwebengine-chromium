@@ -14,6 +14,7 @@
 export class ReadabilityImageClassifier {
   static readonly INLINE_CLASS = 'distilled-inline-img';
   static readonly FULL_WIDTH_CLASS = 'distilled-full-width-img';
+  static readonly POSSIBLY_TRANSPARENT_CLASS = 'possibly-transparent-img';
   static readonly DOMINANT_IMAGE_MIN_VIEWPORT_RATIO = 0.8;
   static readonly SRC_CANDIDATES = [
     // Used by lazysizes and UI Frameworks like Bootstrap.
@@ -46,7 +47,10 @@ export class ReadabilityImageClassifier {
 
   constructor() {
     // Baseline thresholds in density-independent units (CSS pixels).
-    this.smallAreaUpperBoundDp = 64 * 64;
+    // 200px are roughly 2in which is small for desktop.
+    // TODO(crbug.com/515160078): We should classify based on the intended
+    // width and area of the developer based on the sizes attribute.
+    this.smallAreaUpperBoundDp = 200 * 200;
     this.inlineWidthFallbackUpperBoundDp = 300;
 
     // Matches common keywords for icons or mathematical formulas.
@@ -108,37 +112,44 @@ export class ReadabilityImageClassifier {
   // Checks if the image is the primary content of its container.
   private isDefinitelyFullWidth_(img: HTMLImageElement): boolean {
     // Image is in a <figure> with a <figcaption>.
-    const parent = img.parentElement;
-    if (parent && parent.tagName === 'FIGURE' &&
-        parent.querySelector('figcaption')) {
+    const figure = img.closest('figure');
+    if (figure && figure.querySelector('figcaption')) {
       return true;
     }
 
     // Image is the only significant content in its container.
-    let container: HTMLElement|null = parent;
+    let container: HTMLElement|null = img.parentElement;
     while (container &&
            !['P', 'DIV', 'FIGURE', 'BODY'].includes(container.tagName)) {
       container = container.parentElement;
     }
 
     if (container) {
-      for (const child of Array.from(container.childNodes)) {
-        // Skip insignificant nodes.
-        if (child === img) {
-          continue;
+      // Helper to check if a node (or any of its descendants) contains
+      // significant content other than the image itself.
+      const hasOtherSignificantContent = (node: Node): boolean => {
+        if (node === img) {
+          return false;
         }
-        if ((child as HTMLElement).tagName === 'BR') {
-          continue;
+        if (node.nodeType === Node.TEXT_NODE) {
+          return !!node.textContent?.trim();
         }
-        if (child.nodeType === Node.TEXT_NODE &&
-            child.textContent?.trim() === '') {
-          continue;
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          if ((node as HTMLElement).tagName === 'BR') {
+            return false;
+          }
+          return Array.from(node.childNodes).some(hasOtherSignificantContent);
         }
-
-        // If we reach this point, the node must be significant.
         return false;
+      };
+
+      for (const child of Array.from(container.childNodes)) {
+        if (hasOtherSignificantContent(child)) {
+          return false;
+        }
       }
-      // If we finish the loop, no significant siblings were found.
+      // If we finish the loop, no significant siblings or other content were
+      // found.
       return true;
     }
 
@@ -215,21 +226,58 @@ export class ReadabilityImageClassifier {
     return this.classifyByFallback_(img);
   }
 
-  // Post-processes all images in an element to apply classification classes.
+  imageMightBeTransparent(img: HTMLImageElement): boolean {
+    if (!img.src) {
+      return false;
+    }
+
+    const src = img.src.toLowerCase();
+    if (src.startsWith('data:image/')) {
+      return src.includes('image/png') || src.includes('image/svg+xml') ||
+          src.includes('image/webp') || src.includes('image/gif') ||
+          src.includes('image/avif');
+    }
+
+    const transparentExtensionRegex = /\.(png|svg|webp|gif|avif)(?:[\?#]|$)/i;
+    return transparentExtensionRegex.test(src);
+  }
+
+  // Post-processes all images in an element to apply classification classes
+  // and deduplicate images that appear multiple times due to layout artifacts.
   static processImagesIn(element: HTMLElement): void {
     const classifier = new ReadabilityImageClassifier();
-    const images = element.getElementsByTagName('img');
+
+    // Convert to Array because getElementsByTagName returns a LIVE collection.
+    // Modifying the DOM while iterating over a live collection can cause
+    // issues.
+    const images = Array.from(element.getElementsByTagName('img'));
 
     const applyClassification = (img: HTMLImageElement) => {
       const classification = classifier.classify(img);
       img.classList.add(classification);
     };
 
+    const applyTransparencyClassIfNeeded = (img: HTMLImageElement) => {
+      if (classifier.imageMightBeTransparent(img)) {
+        img.classList.add(
+            ReadabilityImageClassifier.POSSIBLY_TRANSPARENT_CLASS);
+      }
+    };
+
     // Type definition for the handler
     const imageLoadHandler = (event: Event) => {
       const img = event.currentTarget as HTMLImageElement;
       applyClassification(img);
+      applyTransparencyClassIfNeeded(img);
     };
+
+    // Track seen image sources and their indices to deduplicate.
+    // Key is "src ||| alt". Value is the index where it was first seen.
+    const seenImages = new Map<string, number>();
+    // Maximum distance in the images array to consider images as duplicates.
+    // This prevents deduplicating images that are legitimately repeated much
+    // later in a long article.
+    const PROXIMITY_THRESHOLD = 3;
 
     for (let i = 0; i < images.length; i++) {
       const img = images[i];
@@ -238,9 +286,37 @@ export class ReadabilityImageClassifier {
       }
 
       classifier.loadLazyImageAttributes_(img);
+
+      const src = img.src;
+      const alt = img.getAttribute('alt') || '';
+
+      if (src) {
+        const key = `${src} ||| ${alt}`;
+        const prevIndex = seenImages.get(key);
+
+        if (prevIndex !== undefined && (i - prevIndex) <= PROXIMITY_THRESHOLD) {
+          // Duplicate detected within proximity.
+          // If the image is inside a FIGURE, remove the FIGURE to also remove
+          // any duplicate captions.
+          let toRemove: HTMLElement = img;
+          if (img.parentElement && img.parentElement.tagName === 'FIGURE') {
+            toRemove = img.parentElement;
+          }
+          toRemove.remove();
+
+          // Update the index to allow chaining of duplicates
+          seenImages.set(key, i);
+          continue;
+        }
+
+        // Track the occurrence
+        seenImages.set(key, i);
+      }
+
       // If the image is already loaded (e.g., from cache), manually trigger.
       if (img.complete) {
         applyClassification(img);
+        applyTransparencyClassIfNeeded(img);
       } else {
         img.onload = imageLoadHandler;
       }

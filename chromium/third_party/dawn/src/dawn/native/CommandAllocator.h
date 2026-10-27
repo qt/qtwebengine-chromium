@@ -35,10 +35,11 @@
 #include <string_view>
 #include <vector>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/Math.h"
-#include "dawn/common/NonCopyable.h"
 #include "partition_alloc/pointers/raw_ptr_exclusion.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/Math.h"
+#include "src/utils/compiler.h"
+#include "src/utils/non_copyable.h"
 
 namespace dawn::native {
 
@@ -74,8 +75,8 @@ namespace dawn::native {
 // These are the lists of blocks, should not be used directly, only through CommandAllocator
 // and CommandIterator
 struct BlockDef {
-    size_t size;
-    std::unique_ptr<char[]> block;
+    size_t size = 0;
+    std::unique_ptr<char[]> block = nullptr;
 };
 using CommandBlocks = std::vector<BlockDef>;
 
@@ -125,14 +126,14 @@ class CommandIterator : public NonCopyable {
 
     DAWN_FORCE_INLINE bool NextCommandId(uint32_t* commandId) {
         char* idPtr = AlignPtr(mCurrentPtr, alignof(uint32_t));
-        DAWN_ASSERT(idPtr == reinterpret_cast<char*>(&mEndOfBlock) ||
-                    idPtr + sizeof(uint32_t) <=
-                        mBlocks[mCurrentBlock].block.get() + mBlocks[mCurrentBlock].size);
-
+        DAWN_UNSAFE_TODO(
+            DAWN_RELEASE_ASSUME(idPtr == reinterpret_cast<char*>(&mEndOfBlock) ||
+                                idPtr + sizeof(uint32_t) <= mBlocks[mCurrentBlock].block.get() +
+                                                                mBlocks[mCurrentBlock].size));
         uint32_t id = *reinterpret_cast<uint32_t*>(idPtr);
 
         if (id != detail::kEndOfBlock) {
-            mCurrentPtr = idPtr + sizeof(uint32_t);
+            mCurrentPtr = DAWN_UNSAFE_TODO(idPtr + sizeof(uint32_t));
             *commandId = id;
             return true;
         }
@@ -143,15 +144,16 @@ class CommandIterator : public NonCopyable {
 
     DAWN_FORCE_INLINE void* NextCommand(size_t commandSize, size_t commandAlignment) {
         char* commandPtr = AlignPtr(mCurrentPtr, commandAlignment);
-        DAWN_ASSERT(commandPtr + sizeof(commandSize) <=
-                    mBlocks[mCurrentBlock].block.get() + mBlocks[mCurrentBlock].size);
+        DAWN_UNSAFE_TODO(
+            DAWN_RELEASE_ASSUME(commandPtr + sizeof(commandSize) <=
+                                mBlocks[mCurrentBlock].block.get() + mBlocks[mCurrentBlock].size));
 
-        mCurrentPtr = commandPtr + commandSize;
+        mCurrentPtr = DAWN_UNSAFE_TODO(commandPtr + commandSize);
         return commandPtr;
     }
 
     DAWN_FORCE_INLINE void* NextData(size_t dataSize, size_t dataAlignment) {
-        uint32_t id;
+        uint32_t id = 0;
         bool hasId = NextCommandId(&id);
         DAWN_ASSERT(hasId);
         DAWN_ASSERT(id == detail::kAdditionalData);
@@ -204,7 +206,7 @@ class CommandAllocator : public NonCopyable {
             return nullptr;
         }
         for (size_t i = 0; i < count; i++) {
-            new (result + i) T;
+            new (DAWN_UNSAFE_TODO(result + i)) T;
         }
         return result;
     }
@@ -257,8 +259,9 @@ class CommandAllocator : public NonCopyable {
             uint32_t* idAlloc = reinterpret_cast<uint32_t*>(mCurrentPtr);
             *idAlloc = commandId;
 
-            char* commandAlloc = AlignPtr(mCurrentPtr + sizeof(uint32_t), commandAlignment);
-            mCurrentPtr = AlignPtr(commandAlloc + commandSize, alignof(uint32_t));
+            char* commandAlloc =
+                AlignPtr(DAWN_UNSAFE_TODO(mCurrentPtr + sizeof(uint32_t)), commandAlignment);
+            mCurrentPtr = AlignPtr(DAWN_UNSAFE_TODO(commandAlloc + commandSize), alignof(uint32_t));
 
             return commandAlloc;
         }
@@ -271,7 +274,7 @@ class CommandAllocator : public NonCopyable {
         return Allocate(detail::kAdditionalData, commandSize, commandAlignment);
     }
 
-    bool GetNewBlock(size_t minimumSize);
+    void AppendNewBlock(size_t minimumSize);
 
     void ResetPointers();
 
@@ -279,7 +282,7 @@ class CommandAllocator : public NonCopyable {
     size_t mLastAllocationSize = kDefaultBaseAllocationSize;
 
     // Data used for the block range at initialization so that the first call to Allocate sees
-    // there is not enough space and calls GetNewBlock. This avoids having to special case the
+    // there is not enough space and calls AppendNewBlock. This avoids having to special case the
     // initialization in Allocate.
     uint32_t mPlaceholderSpace[1] = {0};
 

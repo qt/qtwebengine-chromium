@@ -42,7 +42,7 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "build/chromecast_buildflags.h"
-#include "components/os_crypt/sync/os_crypt.h"
+#include "components/vrp_flags/buildflags.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/scoped_message_error_crash_key.h"
@@ -55,6 +55,7 @@
 #include "net/base/network_change_notifier.h"
 #include "net/base/network_change_notifier_passive.h"
 #include "net/base/port_util.h"
+#include "net/base/scheduler/net_task_scheduler.h"
 #include "net/cert/cert_database.h"
 #include "net/cert/ct_log_response_parser.h"
 #include "net/cert/internal/system_trust_store.h"
@@ -97,16 +98,10 @@
 #include "services/network/public/mojom/network_service_test.mojom.h"
 #include "services/network/public/mojom/system_dns_resolution.mojom-forward.h"
 #include "services/network/restricted_cookie_manager.h"
-#include "services/network/scheduler/network_service_task_scheduler.h"
-#include "services/network/tpcd/metadata/manager.h"
 #include "services/network/url_loader.h"
 
 #if BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_ARMEL)
 #include "third_party/boringssl/src/include/openssl/cpu.h"
-#endif
-
-#if BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CASTOS)
-#include "components/os_crypt/sync/key_storage_config_linux.h"
 #endif
 
 #if BUILDFLAG(IS_LINUX)
@@ -125,6 +120,11 @@
 #if BUILDFLAG(IS_CT_SUPPORTED)
 #include "services/network/sct_auditing/sct_auditing_cache.h"
 #endif
+
+#if BUILDFLAG(ENABLE_VRP_FLAGS)
+#include "components/vrp_flags/vrp_flags.h"       // nogncheck
+#include "components/vrp_flags/vrp_flags_impl.h"  // nogncheck
+#endif                                            // BUILDFLAG(ENABLE_VRP_FLAGS)
 
 namespace net {
 class FirstPartySetEntry;
@@ -388,8 +388,8 @@ NetworkService::NetworkService(
   DCHECK(!g_network_service);
   g_network_service = this;
 
-  if (base::FeatureList::IsEnabled(features::kNetworkServiceTaskScheduler)) {
-    NetworkServiceTaskScheduler::MaybeCreate();
+  if (base::FeatureList::IsEnabled(net::features::kNetTaskScheduler)) {
+    net::NetTaskScheduler::MaybeCreate();
   }
 
   ContentDecodingInterceptor::SetIsNetworkServiceRunningInTheCurrentProcess(
@@ -501,7 +501,6 @@ void NetworkService::Initialize(mojom::NetworkServiceParamsPtr params,
   first_party_sets_manager_ =
       std::make_unique<FirstPartySetsManager>(params->first_party_sets_enabled);
 
-  tpcd_metadata_manager_ = std::make_unique<network::tpcd::metadata::Manager>();
 
 #if BUILDFLAG(IS_CT_SUPPORTED)
   constexpr size_t kMaxSCTAuditingCacheEntries = 1024;
@@ -751,11 +750,21 @@ void NetworkService::ConfigureStubHostResolver(
     net::SecureDnsMode secure_dns_mode,
     const net::DnsOverHttpsConfig& dns_over_https_config,
     bool additional_dns_types_enabled,
-    const std::vector<net::IPEndPoint>& fallback_doh_nameservers) {
+    const std::vector<net::IPEndPoint>& fallback_doh_nameservers,
+    bool insecure_dns_via_platform_apis_enabled) {
   // Enable or disable the insecure part of DnsClient. "DnsClient" is the class
   // that implements the stub resolver.
+  net::HostResolverManager::InsecureDnsMode mode;
+  if (insecure_dns_client_enabled && insecure_dns_via_platform_apis_enabled) {
+    mode = net::HostResolverManager::InsecureDnsMode::kEnabledPlatform;
+  } else if (insecure_dns_client_enabled) {
+    mode = net::HostResolverManager::InsecureDnsMode::kEnabledBuiltIn;
+  } else {
+    mode = net::HostResolverManager::InsecureDnsMode::kDisabled;
+  }
+
   host_resolver_manager_->SetInsecureDnsClientEnabled(
-      insecure_dns_client_enabled, additional_dns_types_enabled);
+      mode, additional_dns_types_enabled);
 
   // Configure DNS over HTTPS.
   DCHECK(dns_config_overrides_set_by_ == FunctionTag::None ||
@@ -826,7 +835,8 @@ void NetworkService::SetRawHeadersAccess(
 
 void NetworkService::SetMaxConnectionsPerProxyChain(
     std::optional<uint32_t> max_connection_normal,
-    std::optional<uint32_t> max_connection_websocket) {
+    std::optional<uint32_t> max_connection_websocket,
+    bool allow_size_randomization) {
   // LINT.IfChange(SetMaxConnectionsPerProxyChain)
   // We set out explicit limits here because they are hard coded in the
   // enterprise policy MaxConnectionsPerProxy(ForWebSocket).
@@ -843,6 +853,8 @@ void NetworkService::SetMaxConnectionsPerProxyChain(
         net::HttpNetworkSession::SocketPoolType::kWebSocket, new_limit);
   }
   // LINT.ThenChange(/net/socket/client_socket_pool_manager.cc:set_max_sockets_per_proxy_chain)
+  net::ClientSocketPoolManager::set_allow_size_randomization_for_proxy(
+      allow_size_randomization);
 }
 
 bool NetworkService::HasRawHeadersAccess(
@@ -898,10 +910,6 @@ void NetworkService::OnTrustStoreChanged() {
 
 void NetworkService::OnClientCertStoreChanged() {
   net::CertDatabase::GetInstance()->NotifyObserversClientCertStoreChanged();
-}
-
-void NetworkService::SetEncryptionKey(const std::string& encryption_key) {
-  OSCrypt::SetRawEncryptionKey(encryption_key);
 }
 
 void NetworkService::OnPeerToPeerConnectionsCountChange(uint32_t count) {
@@ -1275,11 +1283,6 @@ NetworkService* NetworkService::GetNetworkServiceForTesting() {
   return g_network_service;
 }
 
-void NetworkService::SetTpcdMetadataGrants(
-    const std::vector<ContentSettingPatternSource>& settings) {
-  tpcd_metadata_manager_->SetGrants(settings);
-}
-
 void NetworkService::AddDurableMessageCollector(
     mojo::PendingReceiver<network::mojom::DurableMessageCollector> receiver) {
   if (!durable_message_collector_manager_) {
@@ -1304,6 +1307,20 @@ void NetworkService::CreateURLSessionURLLoaderAndStart(
   }
 }
 #endif
+
+#if BUILDFLAG(ENABLE_VRP_FLAGS)
+void NetworkService::GetVrpFlags(GetVrpFlagsCallback callback) {
+  mojo::PendingRemote<vrp_flags::mojom::VrpFlags> remote;
+  if (!vrp_flags::IsEnabled()) {
+    std::move(callback).Run(std::move(remote));
+    return;
+  }
+
+  vrp_flags::VrpFlagsImpl::GetInstance()->Bind(
+      remote.InitWithNewPipeAndPassReceiver());
+  std::move(callback).Run(std::move(remote));
+}
+#endif  // BUILDFLAG(ENABLE_VRP_FLAGS)
 
 std::unique_ptr<DevtoolsDurableMessageWriter>
 NetworkService::MaybeCreateDurableMessageWriter(

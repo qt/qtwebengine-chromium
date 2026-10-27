@@ -39,7 +39,6 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/default_clock.h"
-#include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "third_party/blink/public/common/features.h"
@@ -86,10 +85,10 @@
 #include "third_party/blink/renderer/core/timing/performance_paint_timing.h"
 #include "third_party/blink/renderer/core/timing/performance_resource_timing.h"
 #include "third_party/blink/renderer/core/timing/performance_server_timing.h"
+#include "third_party/blink/renderer/core/timing/performance_soft_navigation.h"
 #include "third_party/blink/renderer/core/timing/performance_user_timing.h"
 #include "third_party/blink/renderer/core/timing/profiler.h"
 #include "third_party/blink/renderer/core/timing/profiler_group.h"
-#include "third_party/blink/renderer/core/timing/soft_navigation_entry.h"
 #include "third_party/blink/renderer/core/timing/time_clamper.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
@@ -124,10 +123,9 @@ bool IsMeasureOptionsEmpty(const PerformanceMeasureOptions& options) {
          !options.hasDuration();
 }
 
-base::TimeDelta GetUnixAtZeroMonotonic(const base::Clock* clock,
-                                       const base::TickClock* tick_clock) {
+base::TimeDelta GetUnixAtZeroMonotonic(const base::Clock* clock) {
   base::TimeDelta unix_time_now = clock->Now() - base::Time::UnixEpoch();
-  base::TimeDelta time_since_origin = tick_clock->NowTicks().since_origin();
+  base::TimeDelta time_since_origin = base::TimeTicks::Now().since_origin();
   return unix_time_now - time_since_origin;
 }
 
@@ -281,7 +279,6 @@ Performance::Performance(
       element_timing_buffer_max_size_(kDefaultElementTimingBufferSize),
       user_timing_(nullptr),
       time_origin_(time_origin),
-      tick_clock_(base::DefaultTickClock::GetInstance()),
       cross_origin_isolated_capability_(cross_origin_isolated_capability),
       observer_filter_options_(PerformanceEntry::kInvalid),
       task_runner_(std::move(task_runner)),
@@ -293,7 +290,7 @@ Performance::Performance(
           this,
           &Performance::FireResourceTimingBufferFull) {
   unix_at_zero_monotonic_ =
-      GetUnixAtZeroMonotonic(base::DefaultClock::GetInstance(), tick_clock_);
+      GetUnixAtZeroMonotonic(base::DefaultClock::GetInstance());
   // |context| may be null in tests.
   if (context) {
     background_tracing_helper_ =
@@ -321,6 +318,10 @@ PerformanceNavigation* Performance::navigation() const {
 }
 
 MemoryInfo* Performance::memory(ScriptState*) const {
+  return nullptr;
+}
+
+SpeculationData* Performance::getSpeculations() {
   return nullptr;
 }
 
@@ -525,6 +526,12 @@ PerformanceEntryVector Performance::getEntriesByTypeInternal(
     // TaskAttribution & script entries are only associated to longtask entries.
     case PerformanceEntry::kTaskAttribution:
     case PerformanceEntry::kScript:
+      break;
+
+    // TODO(crbug.com/504094429): Scroll entries are not emitted yet. A
+    // follow-up CL will add scroll instrumentation that delivers entries
+    // through PerformanceObserver.
+    case PerformanceEntry::kScroll:
       break;
 
     case PerformanceEntry::kLayoutShift:
@@ -753,7 +760,7 @@ void Performance::AddInteractionContentfulPaint(
 }
 
 void Performance::AddSoftNavigationToPerformanceTimeline(
-    SoftNavigationEntry* entry) {
+    PerformanceSoftNavigation* entry) {
   probe::PerformanceEntryAdded(GetExecutionContext(), entry);
   if (soft_navigation_buffer_.size() < kDefaultSoftNavigationBufferSize) {
     InsertEntryIntoSortedBuffer(soft_navigation_buffer_, *entry);
@@ -1268,7 +1275,7 @@ DOMHighResTimeStamp Performance::MonotonicTimeToDOMHighResTimeStamp(
 }
 
 DOMHighResTimeStamp Performance::now() const {
-  return MonotonicTimeToDOMHighResTimeStamp(tick_clock_->NowTicks());
+  return MonotonicTimeToDOMHighResTimeStamp(base::TimeTicks::Now());
 }
 
 // static
@@ -1411,13 +1418,6 @@ V8Function* Performance::bind(V8Function* inner_function,
   return V8Function::Create(
       MakeGarbageCollected<UserEntryPoint>(inner_function, this_arg, bound_args)
           ->ToV8Function(inner_function->CallbackRelevantScriptState()));
-}
-
-void Performance::SetClocksForTesting(const base::Clock* clock,
-                                      const base::TickClock* tick_clock) {
-  tick_clock_ = tick_clock;
-  // Recompute |unix_at_zero_monotonic_|.
-  unix_at_zero_monotonic_ = GetUnixAtZeroMonotonic(clock, tick_clock_);
 }
 
 void Performance::ResetTimeOriginForTesting(base::TimeTicks time_origin) {

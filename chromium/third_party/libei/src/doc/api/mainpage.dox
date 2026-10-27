@@ -1,0 +1,100 @@
+/**
+@mainpage
+
+This is the libei/libeis/liboeffis API reference. For the protocol
+documentation see [here](https://libinput.pages.freedesktop.org/libei/).
+
+libei provides three different libraries, `libei` for clients that need to
+emulate or capture input events and `libeis` for servers that manage those
+input events (read: compositors). It also provides the `liboeffis` to
+abstract connecting to the XDG RemoteDesktop portal.
+
+A common setup looks like this:
+
+```
+                   +-----------------------+       +----------------+
+physical devices - | libinput | compositor | ----- | Wayland client |
+                   +----------+------------+   ^   +----------------+
+                              |   libeis   |   |
+                              +------------+   Wayland events
+                                    ||
+                                    || <-- EI events
+                                    ||
+                              +-------------+
+                              |    libei    |
+                              +-------------+
+                              | application |
+                              +-------------+
+```
+
+Notably, the process using `libeis` is **in control of all input devices**. A
+`libei` client can send events but it is up to the EIS implementation to
+process them.
+
+The two libraries are independently and usually a process uses either `libei` or
+`libeis` but not both.
+
+@section sec-ei 🥚 EI - the client implementation
+
+The `libei` library is the component used by clients that want to emulate
+input events. It provides the required methods to connect to an EIS
+implementation, query for input devices available to the client, and send
+input.
+
+The API documentation for EI is available at @ref libei.
+
+@section sec-eis 🍦 EIS - the server implementation
+
+The `libeis` library is the component used by processes that handle input
+events. It provides the required methods to set up seats and input devices,
+accept `libei` client connections, and receive input events from those
+clients.
+
+The API documentation for EI is available at @ref libeis.
+
+@section sec-oeffis 🚌 Oeffis - a XDG RemoteDesktop portal wrapper API
+
+liboeffis is a helper library for applications that do not want to or cannot
+interact with the XDG RemoteDesktop DBus portal directly. It abstracts the
+DBus connection handling into a small and simple API.
+
+The API documentation for EI is available at @ref oeffis.
+
+@section examples Examples
+
+Please see the [demo programs](https://gitlab.freedesktop.org/libinput/libei/-/tree/main/tools)
+in the git repository.
+
+The `eis-demo-client` is a minimal client that connects to an EIS
+implementation and sends events.
+
+The `eis-demo-server` is a minimal EIS implementation that accepts all
+requests and prints them to screen.
+
+The `oeffis-demo-tool` is a minimal implementation to connect to the XDG
+RemoteDesktop portal and request an fd that could then be passed to
+ei_setup_backend_fd().
+
+@section building_against Building against libei, libeis or liboeffis
+
+libei, libeis and liboeffis provide
+[pkg-config](https://www.freedesktop.org/wiki/Software/pkg-config/) files.
+Software that uses libei, libeis or liboeffis should use pkg-config and the
+`PKG_CHECK_MODULES` autoconf macro or the `dependency()` function in meson.
+
+Otherwise, the most rudimentary way to compile and link a program against
+libei, libeis or liboeffis is:
+
+@verbatim
+    gcc -o myprogram mylibeiclient.c `pkg-config --cflags --libs libei-1.0`
+    gcc -o myprogram myEISimplementation.c `pkg-config --cflags --libs libeis-1.0`
+    gcc -o myprogram myimpl.c `pkg-config --cflags --libs liboeffis-1.0`
+@endverbatim
+
+For further information on using pkgconfig see the pkg-config documentation.
+
+@section About
+
+Documentation generated from git commit [__GIT_VERSION__](https://gitlab.freedesktop.org/libinput/libei/commit/__GIT_VERSION__)
+
+*/

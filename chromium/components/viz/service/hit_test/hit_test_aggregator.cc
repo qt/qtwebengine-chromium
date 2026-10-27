@@ -4,6 +4,7 @@
 
 #include "components/viz/service/hit_test/hit_test_aggregator.h"
 
+#include "base/feature.h"
 #include "base/feature_list.h"
 #include "base/trace_event/trace_event.h"
 #include "base/types/expected.h"

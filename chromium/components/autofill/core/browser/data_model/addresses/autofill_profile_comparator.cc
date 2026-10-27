@@ -4,24 +4,31 @@
 
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile_comparator.h"
 
+#include <stddef.h>
+
 #include <algorithm>
-#include <memory>
 #include <optional>
+#include <set>
+#include <string>
 #include <string_view>
 #include <vector>
 
+#include "base/check.h"
+#include "base/check_op.h"
+#include "base/feature_list.h"
+#include "base/logging.h"
+#include "base/notreached.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/data_model/addresses/address.h"
-#include "components/autofill/core/browser/data_model/addresses/autofill_i18n_api.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_normalization_utils.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_structured_address_component.h"
-#include "components/autofill/core/browser/data_model/addresses/autofill_structured_address_name.h"
-#include "components/autofill/core/browser/data_model/addresses/autofill_structured_address_utils.h"
 #include "components/autofill/core/browser/data_model/addresses/contact_info.h"
+#include "components/autofill/core/browser/data_model/addresses/phone_number.h"
 #include "components/autofill/core/browser/data_model/transliterator.h"
 #include "components/autofill/core/browser/data_quality/autofill_data_util.h"
 #include "components/autofill/core/browser/field_type_utils.h"
@@ -31,28 +38,12 @@
 #include "components/autofill/core/common/autofill_l10n_util.h"
 #include "third_party/libphonenumber/phonenumber_api.h"
 
-using i18n::phonenumbers::PhoneNumberUtil;
-
 namespace autofill {
 namespace {
 
-constexpr char16_t kSpace[] = u" ";
+using ::i18n::phonenumbers::PhoneNumberUtil;
 
-std::ostream& operator<<(std::ostream& os,
-                         const ::i18n::phonenumbers::PhoneNumber& n) {
-  os << "country_code: " << n.country_code() << " "
-     << "national_number: " << n.national_number();
-  if (n.has_italian_leading_zero()) {
-    os << " italian_leading_zero: " << n.italian_leading_zero();
-  }
-  if (n.has_number_of_leading_zeros()) {
-    os << " number_of_leading_zeros: " << n.number_of_leading_zeros();
-  }
-  if (n.has_raw_input()) {
-    os << " raw_input: \"" << n.raw_input() << "\"";
-  }
-  return os;
-}
+constexpr char16_t kSpace[] = u" ";
 
 }  // namespace
 
@@ -149,6 +140,14 @@ bool AutofillProfileComparator::AreMergeable(const AutofillProfile& p1,
   // Emails go last, since their comparison logic triggers ICU code, which can
   // trigger the loading of locale-specific rules.
   DVLOG(1) << "Comparing profiles:\np1 = " << p1 << "\np2 = " << p2;
+
+  // Do not process `p1` if it is trivially unrelated to `p2` for having
+  // different source country code, for performance reasons.
+  if (!data_util::HaveNonConflictingCountryCodes(p1.GetAddressCountryCode(),
+                                                 p2.GetAddressCountryCode())) {
+    DVLOG(1) << "Different country codes.";
+    return false;
+  }
 
   if (!HaveMergeableCompanyNames(p1, p2)) {
     DVLOG(1) << "Different email company names.";
@@ -280,7 +279,9 @@ bool AutofillProfileComparator::MergePhoneNumbers(
   std::string region = base::UTF16ToUTF8(GetNonEmptyOf(
       new_profile, old_profile,
       AutofillType(ADDRESS_HOME_COUNTRY, /*is_country_code=*/true)));
-  if (region.empty()) {
+  // TODO(crbug.com/503704299): Remove this validation once profiles with
+  // invalid country codes are cleaned up.
+  if (region.empty() || !data_util::IsValidCountryCode(region)) {
     region = AutofillCountry::CountryCodeForLocale(app_locale_);
   }
 
@@ -341,11 +342,6 @@ bool AutofillProfileComparator::MergePhoneNumbers(
 
   std::string new_number;
   phone_util->Format(merged_number, format, &new_number);
-
-  DVLOG(2) << "n1 = {" << n1 << "}";
-  DVLOG(2) << "n2 = {" << n2 << "}";
-  DVLOG(2) << "merged_number = {" << merged_number << "}";
-  DVLOG(2) << "new_number = \"" << new_number << "\"";
 
   // Check if it's a North American number that's missing the area code.
   // Libphonenumber doesn't know how to format short numbers; it will still

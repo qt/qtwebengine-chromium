@@ -71,7 +71,7 @@ CBC_PDF417Writer::EncodeResult CBC_PDF417Writer::Encode(
     encoder.setDimensions(30, 1, row, row);
   }
   if (!encoder.GenerateBarcodeLogic(contents, error_correction_level())) {
-    return {DataVector<uint8_t>(), 0, 0};
+    return {};
   }
 
   CBC_BarcodeMatrix* barcodeMatrix = encoder.getBarcodeMatrix();
@@ -85,10 +85,3 @@ CBC_PDF417Writer::EncodeResult CBC_PDF417Writer::Encode(
   }
   return {std::move(matrix_data), matrix_width, matrix_height};
 }
-
-CBC_PDF417Writer::EncodeResult::EncodeResult(DataVector<uint8_t> data,
-                                             int32_t width,
-                                             int32_t height)
-    : data(std::move(data)), width(width), height(height) {}
-
-CBC_PDF417Writer::EncodeResult::~EncodeResult() = default;

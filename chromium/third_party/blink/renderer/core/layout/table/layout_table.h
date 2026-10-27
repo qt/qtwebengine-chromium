@@ -143,7 +143,7 @@ class CORE_EXPORT LayoutTable : public LayoutBlock {
     return "LayoutTable";
   }
 
-  void AddChild(LayoutObject* child,
+  void AddChild(LayoutObject* new_child,
                 LayoutObject* before_child = nullptr) override;
 
   void RemoveChild(LayoutObject*) override;
@@ -155,17 +155,11 @@ class CORE_EXPORT LayoutTable : public LayoutBlock {
   LayoutBox* CreateAnonymousBoxWithSameTypeAs(
       const LayoutObject* parent) const override;
 
-  LayoutUnit BorderTop() const override;
-  LayoutUnit BorderBottom() const override;
-  LayoutUnit BorderLeft() const override;
-  LayoutUnit BorderRight() const override;
+  PhysicalBoxStrut BorderOutsets() const override;
 
   // The collapsing border model disallows paddings on table.
   // See http://www.w3.org/TR/CSS2/tables.html#collapsing-borders.
-  LayoutUnit PaddingTop() const override;
-  LayoutUnit PaddingBottom() const override;
-  LayoutUnit PaddingLeft() const override;
-  LayoutUnit PaddingRight() const override;
+  PhysicalBoxStrut PaddingOutsets() const override;
 
   // TODO(1151101)
   // ClientLeft/Top are incorrect for tables, but cannot be fixed
@@ -202,6 +196,10 @@ class CORE_EXPORT LayoutTable : public LayoutBlock {
   unsigned EffectiveColumnCount() const;
 
  private:
+  void AddChildBeforeDescendant(LayoutObject* new_child,
+                                LayoutObject* before_descendant,
+                                bool can_be_direct_child);
+
   bool IsTable() const final {
     NOT_DESTROYED();
     return true;

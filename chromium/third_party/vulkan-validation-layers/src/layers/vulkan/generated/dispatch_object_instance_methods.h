@@ -286,6 +286,9 @@ void GetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM(
     VkPhysicalDevice physicalDevice,
     const VkPhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM* pQueueFamilyDataGraphProcessingEngineInfo,
     VkQueueFamilyDataGraphProcessingEnginePropertiesARM* pQueueFamilyDataGraphProcessingEngineProperties);
+VkResult GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+    const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, VkBaseOutStructure* pProperties);
 #ifdef VK_USE_PLATFORM_OHOS
 VkResult CreateSurfaceOHOS(VkInstance instance, const VkSurfaceCreateInfoOHOS* pCreateInfo, const VkAllocationCallbacks* pAllocator,
                            VkSurfaceKHR* pSurface);
@@ -298,6 +301,11 @@ VkResult EnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM(VkPhys
                                                                           VkPerformanceCounterDescriptionARM* pCounterDescriptions);
 VkResult EnumeratePhysicalDeviceShaderInstrumentationMetricsARM(VkPhysicalDevice physicalDevice, uint32_t* pDescriptionCount,
                                                                 VkShaderInstrumentationMetricDescriptionARM* pDescriptions);
+VkResult GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+    const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties,
+    const VkDataGraphOpticalFlowImageFormatInfoARM* pOpticalFlowImageFormatInfo, uint32_t* pFormatCount,
+    VkDataGraphOpticalFlowImageFormatPropertiesARM* pImageFormatProperties);
 #ifdef VK_USE_PLATFORM_UBM_SEC
 VkResult CreateUbmSurfaceSEC(VkInstance instance, const VkUbmSurfaceCreateInfoSEC* pCreateInfo,
                              const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);

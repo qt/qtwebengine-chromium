@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#if defined(EIGEN_USE_THREADS) && !defined(EIGEN_CXX11_TENSOR_TENSOR_DEVICE_THREAD_POOL_H)
-#define EIGEN_CXX11_TENSOR_TENSOR_DEVICE_THREAD_POOL_H
+#if defined(EIGEN_USE_THREADS) && !defined(EIGEN_TENSOR_TENSOR_DEVICE_THREAD_POOL_H)
+#define EIGEN_TENSOR_TENSOR_DEVICE_THREAD_POOL_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -55,11 +56,10 @@ struct ThreadPoolDevice {
     ::memcpy(dst, src, n);
 #else
     // TODO(rmlarsen): Align blocks on cache lines.
-    // We have observed that going beyond 4 threads usually just wastes
-    // CPU cycles due to the threads competing for memory bandwidth, so we
-    // statically schedule at most 4 block copies here.
     const size_t kMinBlockSize = 32768;
-    const size_t num_threads = CostModel::numThreads(n, TensorOpCost(1.0, 1.0, 0), 4);
+    // Pure memory op (zero compute) — the cost model's bandwidth saturation
+    // cap will limit threads appropriately.
+    const size_t num_threads = CostModel::numThreads(n, TensorOpCost(1.0, 1.0, 0), static_cast<int>(numThreads()));
     if (n <= kMinBlockSize || num_threads < 2) {
       ::memcpy(dst, src, n);
     } else {
@@ -67,14 +67,14 @@ struct ThreadPoolDevice {
       char* dst_ptr = static_cast<char*>(dst);
       const size_t blocksize = (n + (num_threads - 1)) / num_threads;
       Barrier barrier(static_cast<int>(num_threads - 1));
-      // Launch the last 3 blocks on worker threads.
+      // Schedule blocks 1..num_threads-1 on worker threads.
       for (size_t i = 1; i < num_threads; ++i) {
         pool_->Schedule([n, i, src_ptr, dst_ptr, blocksize, &barrier] {
           ::memcpy(dst_ptr + i * blocksize, src_ptr + i * blocksize, numext::mini(blocksize, n - (i * blocksize)));
           barrier.Notify();
         });
       }
-      // Launch the first block on the main thread.
+      // Run the first block on the calling thread.
       ::memcpy(dst_ptr, src_ptr, blocksize);
       barrier.Wait();
     }
@@ -120,14 +120,18 @@ struct ThreadPoolDevice {
 
   template <class Function, class... Args>
   EIGEN_STRONG_INLINE void enqueue(Function&& f, Args&&... args) const {
-#if EIGEN_COMP_CXXVER >= 20
-    if constexpr (sizeof...(args) > 0) {
-      auto run_f = [f = std::forward<Function>(f), ... args = std::forward<Args>(args)]() { f(args...); };
-#else
     if (sizeof...(args) > 0) {
-      auto run_f = [f = std::forward<Function>(f), &args...]() { f(args...); };
+#if EIGEN_COMP_CXXVER >= 20
+      // C++20 pack-expansion init capture decay-copies args into a lambda
+      // small enough to fit in std::function's SBO for typical arg counts.
+      pool_->Schedule([f = std::forward<Function>(f), ... args = std::forward<Args>(args)]() { f(args...); });
+#else
+      // Pre-C++20 fallback: std::bind decay-copies the arguments so they
+      // outlive the deferred call even when the caller passes temporaries.
+      // The closure exceeds std::function's SBO and forces a heap allocation
+      // that the C++20 path above avoids.
+      pool_->Schedule(std::bind(std::forward<Function>(f), std::forward<Args>(args)...));
 #endif
-      pool_->Schedule(std::move(run_f));
     } else {
       pool_->Schedule(std::forward<Function>(f));
     }
@@ -148,8 +152,9 @@ struct ThreadPoolDevice {
                    std::function<void(Index, Index)> f) const {
     if (EIGEN_PREDICT_FALSE(n <= 0)) {
       return;
-      // Compute small problems directly in the caller thread.
-    } else if (n == 1 || numThreads() == 1 || CostModel::numThreads(n, cost, static_cast<int>(numThreads())) == 1) {
+    }
+    // Compute small problems directly in the caller thread.
+    if (n == 1 || numThreads() == 1 || CostModel::numThreads(n, cost, static_cast<int>(numThreads())) == 1) {
       f(0, n);
       return;
     }
@@ -198,34 +203,17 @@ struct ThreadPoolDevice {
     // Compute block size and total count of blocks.
     ParallelForBlock block = CalculateParallelForBlock(n, cost, block_align);
 
-    ParallelForAsyncContext* const ctx = new ParallelForAsyncContext(block.count, std::move(f), std::move(done));
-
-    // Recursively divide size into halves until we reach block_size.
-    // Division code rounds mid to block_size, so we are guaranteed to get
-    // block_count leaves that do actual computations.
-    ctx->handle_range = [this, ctx, block](Index firstIdx, Index lastIdx) {
-      while (lastIdx - firstIdx > block.size) {
-        // Split into halves and schedule the second half on a different thread.
-        const Index midIdx = firstIdx + numext::div_ceil((lastIdx - firstIdx) / 2, block.size) * block.size;
-        pool_->Schedule([ctx, midIdx, lastIdx]() { ctx->handle_range(midIdx, lastIdx); });
-        lastIdx = midIdx;
-      }
-
-      // Single block or less, execute directly.
-      ctx->f(firstIdx, lastIdx);
-
-      // Delete async context if it was the last block.
-      if (ctx->count.fetch_sub(1) == 1) delete ctx;
-    };
+    ParallelForAsyncContext* const ctx =
+        new ParallelForAsyncContext(block.count, block.size, pool_, std::move(f), std::move(done));
 
     if (block.count <= numThreads()) {
       // Avoid a thread hop by running the root of the tree and one block on the
       // main thread.
-      ctx->handle_range(0, n);
+      handleRangeAsync(ctx, 0, n);
     } else {
       // Execute the root in the thread pool to avoid running work on more than
       // numThreads() threads.
-      pool_->Schedule([ctx, n]() { ctx->handle_range(0, n); });
+      pool_->Schedule([ctx, n]() { handleRangeAsync(ctx, 0, n); });
     }
   }
 
@@ -260,17 +248,29 @@ struct ThreadPoolDevice {
   // For parallelForAsync we must keep passed in closures on the heap, and
   // delete them only after `done` callback finished.
   struct ParallelForAsyncContext {
-    ParallelForAsyncContext(Index block_count, std::function<void(Index, Index)> block_f,
-                            std::function<void()> done_callback)
-        : count(block_count), f(std::move(block_f)), done(std::move(done_callback)) {}
+    ParallelForAsyncContext(Index block_count, Index block_size, ThreadPoolInterface* p,
+                            std::function<void(Index, Index)> block_f, std::function<void()> done_callback)
+        : count(block_count), granularity(block_size), pool(p), f(std::move(block_f)), done(std::move(done_callback)) {}
     ~ParallelForAsyncContext() { done(); }
 
     std::atomic<Index> count;
+    Index granularity;
+    ThreadPoolInterface* pool;
     std::function<void(Index, Index)> f;
     std::function<void()> done;
-
-    std::function<void(Index, Index)> handle_range;
   };
+
+  // Async counterpart of handleRange: no Barrier, deletes the heap-allocated
+  // context once the final block has run.
+  static void handleRangeAsync(ParallelForAsyncContext* ctx, Index firstIdx, Index lastIdx) {
+    while (lastIdx - firstIdx > ctx->granularity) {
+      const Index midIdx = firstIdx + numext::div_ceil((lastIdx - firstIdx) / 2, ctx->granularity) * ctx->granularity;
+      ctx->pool->Schedule([ctx, midIdx, lastIdx]() { handleRangeAsync(ctx, midIdx, lastIdx); });
+      lastIdx = midIdx;
+    }
+    ctx->f(firstIdx, lastIdx);
+    if (ctx->count.fetch_sub(1) == 1) delete ctx;
+  }
 
   struct ParallelForBlock {
     Index size;   // block size
@@ -343,4 +343,4 @@ struct ThreadPoolDevice {
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_DEVICE_THREAD_POOL_H
+#endif  // EIGEN_TENSOR_TENSOR_DEVICE_THREAD_POOL_H

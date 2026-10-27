@@ -356,6 +356,9 @@ uint32_t GetUnresolveFlags(uint32_t colorAttachmentCount,
         flags |= 1 << kDepthUnresolveFlagBit;
     }
 
+    // Note: regardless of whether unresolve of stencil happens via VK_EXT_shader_stencil_export or
+    // a special path, the shader is different if stencil is unresolved or not; the input attachment
+    // index of the color attachments is placed after the stencil attachment if any.
     if (unresolveStencil)
     {
         flags |= 1 << kStencilUnresolveFlagBit;
@@ -1599,8 +1602,7 @@ angle::Result UtilsVk::ensureImageCopyResourcesInitializedWithSampler(
     }
 
     vk::SharedSamplerPtr sampler;
-    ANGLE_TRY(
-        contextVk->getShareGroup()->getSamplerCache().getSampler(contextVk, samplerDesc, &sampler));
+    ANGLE_TRY(contextVk->getSamplerCache().getSampler(contextVk, samplerDesc, &sampler));
 
     vk::DescriptorSetLayoutDesc descriptorSetDesc;
     descriptorSetDesc.addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
@@ -1915,7 +1917,7 @@ angle::Result UtilsVk::setupGraphicsProgramWithLayout(
     {
         ANGLE_TRY(programAndPipelines->program.createGraphicsPipeline(
             contextVk, &programAndPipelines->pipelines, &pipelineCache, *compatibleRenderPass,
-            pipelineLayout, PipelineSource::Utils, *pipelineDesc, {}, &descPtr, &helper));
+            pipelineLayout, PipelineSource::Utils, *pipelineDesc, &descPtr, &helper));
     }
 
     contextVk->getStartedRenderPassCommands().retainResource(helper);
@@ -2226,6 +2228,14 @@ angle::Result UtilsVk::clearTexture(ContextVk *contextVk,
                                     vk::ImageHelper *dst,
                                     const ClearTextureParameters &params)
 {
+    // We can only have one image with tile memory. If new renderPass has a depthBuffer that uses
+    // tile memory, and it is different from the previous renderPass's depth buffer, we force dst
+    // image to fallback the regular device memory.
+    if (dst->useTileMemory() && contextVk->getImageWithTileMemory() != dst)
+    {
+        ANGLE_TRY(dst->fallbackFromTileMemory(contextVk));
+    }
+
     ANGLE_TRY(clearTextureNoFlush(contextVk, dst, params));
 
     // Close the render pass for this temporary framebuffer. If the render pass is not immediately
@@ -2539,8 +2549,41 @@ angle::Result UtilsVk::startRenderPass(ContextVk *contextVk,
 
     if (clearValue == nullptr)
     {
-        renderPassAttachmentOps.initWithLoadStore(vk::kAttachmentIndexZero, imageAccess,
-                                                  imageAccess);
+        renderPassAttachmentOps.setLayouts(vk::kAttachmentIndexZero, imageAccess, imageAccess);
+        if (aspectFlags == VK_IMAGE_ASPECT_COLOR_BIT ||
+            (aspectFlags & VK_IMAGE_ASPECT_DEPTH_BIT) != 0)
+        {
+            renderPassAttachmentOps.setOps(vk::kAttachmentIndexZero, vk::RenderPassLoadOp::Load,
+                                           vk::RenderPassStoreOp::Store);
+        }
+        else if (contextVk->getFeatures().supportsRenderPassLoadStoreOpNone.enabled)
+        {
+            renderPassAttachmentOps.setOps(vk::kAttachmentIndexZero, vk::RenderPassLoadOp::None,
+                                           vk::RenderPassStoreOp::None);
+        }
+        else
+        {
+            // DontCare is destructive, use Load/Store here to preserve the original data.
+            renderPassAttachmentOps.setOps(vk::kAttachmentIndexZero, vk::RenderPassLoadOp::Load,
+                                           vk::RenderPassStoreOp::Store);
+        }
+
+        if ((aspectFlags & VK_IMAGE_ASPECT_STENCIL_BIT) != 0)
+        {
+            renderPassAttachmentOps.setStencilOps(
+                vk::kAttachmentIndexZero, vk::RenderPassLoadOp::Load, vk::RenderPassStoreOp::Store);
+        }
+        else if (contextVk->getFeatures().supportsRenderPassLoadStoreOpNone.enabled)
+        {
+            renderPassAttachmentOps.setStencilOps(
+                vk::kAttachmentIndexZero, vk::RenderPassLoadOp::None, vk::RenderPassStoreOp::None);
+        }
+        else
+        {
+            // DontCare is destructive, use Load/Store here to preserve the original data.
+            renderPassAttachmentOps.setStencilOps(
+                vk::kAttachmentIndexZero, vk::RenderPassLoadOp::Load, vk::RenderPassStoreOp::Store);
+        }
     }
     else
     {
@@ -3202,17 +3245,20 @@ angle::Result UtilsVk::depthStencilBlitResolve(
                               contextVk->pipelineProtectedAccess());
 
     vk::ImageAccess srcImagelayout = vk::ImageAccess::DepthReadStencilReadFragmentShaderRead;
+    VkImageAspectFlags aspectFlags = 0;
 
     pipelineDesc.setColorWriteMasks(0, gl::DrawBufferMask(), gl::DrawBufferMask());
     pipelineDesc.setRenderPassDesc(*renderPassDesc);
     if (blitDepth)
     {
         SetDepthStateForWrite(renderer, &pipelineDesc);
+        aspectFlags |= VK_IMAGE_ASPECT_DEPTH_BIT;
     }
 
     if (blitStencil)
     {
         SetStencilStateForWrite(renderer, &pipelineDesc);
+        aspectFlags |= VK_IMAGE_ASPECT_STENCIL_BIT;
     }
 
     if (dstImage == srcImage)
@@ -3228,8 +3274,8 @@ angle::Result UtilsVk::depthStencilBlitResolve(
     else
     {
         ANGLE_TRY(startRenderPass(contextVk, &dstImageView, *renderPassDesc, params.renderArea,
-                                  dstImage->getAspectFlags(), nullptr,
-                                  vk::RenderPassSource::InternalUtils, &commandBuffer));
+                                  aspectFlags, nullptr, vk::RenderPassSource::InternalUtils,
+                                  &commandBuffer));
         ASSERT(commandBuffer != nullptr);
 
         contextVk->onDepthStencilDraw(dstImageLevel, dstImageLayer, 1, dstImage, nullptr);
@@ -3406,12 +3452,12 @@ angle::Result UtilsVk::stencilBlitResolveNoShaderExport(ContextVk *contextVk,
     {
         resources.onImageComputeShaderRead(srcImage->getAspectFlags(), srcImage);
         resources.onImageTransferWrite(dstLevelIndex, 1, dstLayerIndex, 1,
-                                       dstImage->getAspectFlags(), dstImage);
+                                       VK_IMAGE_ASPECT_STENCIL_BIT, dstImage);
     }
     else
     {
         resources.onImageSelfCopy(dstLevelIndex, 1, dstLayerIndex, 1, dstLevelIndex, 1,
-                                  params.srcLayer, 1, srcImage->getAspectFlags(), srcImage);
+                                  params.srcLayer, 1, VK_IMAGE_ASPECT_STENCIL_BIT, srcImage);
     }
     resources.onBufferComputeShaderWrite(&blitBuffer.get());
 
@@ -4826,7 +4872,7 @@ angle::Result UtilsVk::unresolve(ContextVk *contextVk,
 
         gl::DrawBuffersArray<UnresolveColorAttachmentType> colorAttachmentTypes;
         uint32_t flags = GetUnresolveFlags(colorAttachmentCount, colorSrc, params.unresolveDepth,
-                                           unresolveStencilWithShaderExport, &colorAttachmentTypes);
+                                           params.unresolveStencil, &colorAttachmentTypes);
 
         vk::ShaderModulePtr &fragmentShader = mUnresolveFragShaders[flags];
         ANGLE_TRY(GetUnresolveFrag(contextVk, colorAttachmentCount, colorAttachmentTypes,

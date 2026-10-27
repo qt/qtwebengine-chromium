@@ -103,9 +103,7 @@ class CONTENT_EXPORT ServiceWorkerNewScriptLoader final
 
   // network::mojom::URLLoader:
   void FollowRedirect(
-      const std::vector<std::string>& removed_headers,
-      const net::HttpRequestHeaders& modified_headers,
-      const net::HttpRequestHeaders& modified_cors_exempt_headers,
+      network::HttpRequestHeadersUpdateParams headers_update_params,
       const std::optional<GURL>& new_url) override;
   void SetPriority(net::RequestPriority priority,
                    int32_t intra_priority_value) override;
@@ -183,6 +181,7 @@ class CONTENT_EXPORT ServiceWorkerNewScriptLoader final
   const GURL request_url_;
 
   const bool is_main_script_;
+  const bool should_update_policy_container_;
 
   // Load options originally passed to this loader. The options passed to the
   // network loader might be different from this.

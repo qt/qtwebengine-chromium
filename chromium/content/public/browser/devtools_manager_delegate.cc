@@ -47,6 +47,11 @@ std::string DevToolsManagerDelegate::GetTargetDescription(WebContents* wc) {
   return std::string();
 }
 
+std::unique_ptr<base::DictValue> DevToolsManagerDelegate::GetTargetEmbedderData(
+    DevToolsAgentHost* agent_host) {
+  return nullptr;
+}
+
 bool DevToolsManagerDelegate::AllowInspectingRenderFrameHost(
     RenderFrameHost* rfh) {
   return true;
@@ -91,11 +96,16 @@ void DevToolsManagerDelegate::ClientAttached(
 void DevToolsManagerDelegate::ClientDetached(
     DevToolsAgentHostClientChannel* channel) {}
 
+bool DevToolsManagerDelegate::AllowInspectingTarget(
+    DevToolsAgentHost* agent_host) {
+  return true;
+}
+
 void DevToolsManagerDelegate::HandleCommand(
     DevToolsAgentHostClientChannel* channel,
     base::span<const uint8_t> message,
     NotHandledCallback callback) {
-  std::move(callback).Run(message);
+  callback.Run(message);
 }
 
 std::string DevToolsManagerDelegate::GetDiscoveryPageHTML() {

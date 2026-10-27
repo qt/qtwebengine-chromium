@@ -23,6 +23,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
+#include "absl/status/status_matchers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
@@ -816,7 +817,7 @@ TEST_P(PhaseLoggerImplTest, LogResultUploadStartedOpStatsDbCommitSucceeds) {
       .WillOnce(Return(absl::OkStatus()));
   EXPECT_CALL(mock_event_publisher_, PublishResultUploadStarted());
 
-  ASSERT_OK(phase_logger_->LogResultUploadStarted());
+  ABSL_ASSERT_OK(phase_logger_->LogResultUploadStarted());
 }
 
 TEST_P(PhaseLoggerImplTest, LogResultUploadStartedOpStatsDbCommitFails) {
@@ -830,7 +831,7 @@ TEST_P(PhaseLoggerImplTest, LogResultUploadStartedOpStatsDbCommitFails) {
       .WillOnce(Return(absl::InternalError("")));
 
   ASSERT_THAT(phase_logger_->LogResultUploadStarted(),
-              IsCode(absl::StatusCode::kInternal));
+              absl_testing::StatusIs(absl::StatusCode::kInternal));
 }
 
 TEST_P(PhaseLoggerImplTest, LogResultUploadIOError) {
@@ -931,7 +932,7 @@ TEST_P(PhaseLoggerImplTest, LogFailureUploadStartedOpstatsDbCommitSucceeds) {
   EXPECT_CALL(mock_opstats_logger_, CommitToStorage())
       .WillOnce(Return(absl::OkStatus()));
   EXPECT_CALL(mock_event_publisher_, PublishFailureUploadStarted());
-  ASSERT_OK(phase_logger_->LogFailureUploadStarted());
+  ABSL_ASSERT_OK(phase_logger_->LogFailureUploadStarted());
 }
 
 TEST_P(PhaseLoggerImplTest, LogFailureUploadStartedOpstatsDbCommitFails) {
@@ -944,7 +945,7 @@ TEST_P(PhaseLoggerImplTest, LogFailureUploadStartedOpstatsDbCommitFails) {
   EXPECT_CALL(mock_opstats_logger_, CommitToStorage())
       .WillOnce(Return(absl::InternalError("")));
   ASSERT_THAT(phase_logger_->LogFailureUploadStarted(),
-              IsCode(absl::StatusCode::kInternal));
+              absl_testing::StatusIs(absl::StatusCode::kInternal));
 }
 
 TEST_P(PhaseLoggerImplTest, LogFailureUploadIOError) {

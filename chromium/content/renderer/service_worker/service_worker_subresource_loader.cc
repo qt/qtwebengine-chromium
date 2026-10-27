@@ -82,10 +82,6 @@ network::mojom::URLResponseHeadPtr RewriteResponseHead(
   return response_head;
 }
 
-// A feature flag to enable the speculative fix for crbug.com/463388771.
-BASE_FEATURE(kCancelPendingCallbacksBeforeFetchRestart,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 // A wrapper URLLoaderClient that invokes the given RewriteHeaderCallback
 // whenever a response or redirect is received.
 class HeaderRewritingURLLoaderClient : public network::mojom::URLLoaderClient {
@@ -608,11 +604,9 @@ void ServiceWorkerSubresourceLoader::OnConnectionClosed() {
     }
   }
   fetch_request_restarted_ = true;
-  if (base::FeatureList::IsEnabled(kCancelPendingCallbacksBeforeFetchRestart)) {
-    // Invalidate weak pointers to cancel any pending callbacks from the
-    // previous fetch event dispatch.
-    weak_factory_.InvalidateWeakPtrs();
-  }
+  // Invalidate weak pointers to cancel any pending callbacks from the
+  // previous fetch event dispatch.
+  weak_factory_.InvalidateWeakPtrs();
 
   // Reset race network request related member variables and the dispatched
   // preload type to none so that the restarted fetch event won't be affected by
@@ -1212,9 +1206,7 @@ void ServiceWorkerSubresourceLoader::RecordStartToCompletedTiming(
 // ServiceWorkerSubresourceLoader: URLLoader implementation -----------------
 
 void ServiceWorkerSubresourceLoader::FollowRedirect(
-    const std::vector<std::string>& removed_headers,
-    const net::HttpRequestHeaders& modified_headers,
-    const net::HttpRequestHeaders& modified_cors_exempt_headers,
+    network::HttpRequestHeadersUpdateParams headers_update_params,
     const std::optional<GURL>& new_url) {
   TRACE_EVENT("ServiceWorker", "ServiceWorkerSubresourceLoader::FollowRedirect",
               perfetto::Flow::ProcessScoped(
@@ -1236,7 +1228,8 @@ void ServiceWorkerSubresourceLoader::FollowRedirect(
   // TODO(arthursonzogni, juncai): This seems to be correctly implemented, but
   // not used so far. Add tests and remove this DCHECK to support this feature
   // if needed. See https://crbug.com/845683.
-  DCHECK(modified_headers.IsEmpty() && modified_cors_exempt_headers.IsEmpty())
+  DCHECK(headers_update_params.modified_headers.IsEmpty() &&
+         headers_update_params.modified_cors_exempt_headers.IsEmpty())
       << "Redirect with modified headers is not supported yet. See "
          "https://crbug.com/845683";
   DCHECK(!new_url.has_value()) << "Redirect with modified url was not "
@@ -1245,11 +1238,14 @@ void ServiceWorkerSubresourceLoader::FollowRedirect(
   bool should_clear_upload = false;
   net::RedirectUtil::UpdateHttpRequest(
       resource_request_.url, resource_request_.method, *redirect_info_,
-      removed_headers, modified_headers, &resource_request_.headers,
+      headers_update_params.removed_headers,
+      headers_update_params.modified_headers, &resource_request_.headers,
       &should_clear_upload);
-  resource_request_.cors_exempt_headers.MergeFrom(modified_cors_exempt_headers);
-  for (const std::string& name : removed_headers)
+  resource_request_.cors_exempt_headers.MergeFrom(
+      headers_update_params.modified_cors_exempt_headers);
+  for (const std::string& name : headers_update_params.removed_headers) {
     resource_request_.cors_exempt_headers.RemoveHeader(name);
+  }
 
   if (should_clear_upload)
     resource_request_.request_body = nullptr;
@@ -1496,20 +1492,16 @@ void ServiceWorkerSubresourceLoader::DidCacheStorageMatch(
   auto& response = result.value()->get_response();
 
   // Block invalid responses from the static router.
-  if (response_head_->service_worker_router_info &&
-      response_head_->service_worker_router_info->matched_source_type ==
-          network::mojom::ServiceWorkerRouterSourceType::kCache) {
-    if (!IsValidStaticRouterResponse(
-            resource_request_, response,
-            controller_connector_->cross_origin_embedder_policy(),
-            controller_connector_->cross_origin_embedder_policy_reporter(),
-            controller_connector_->document_isolation_policy(),
-            controller_connector_->document_isolation_policy_reporter()) &&
-        base::FeatureList::IsEnabled(
-            features::kServiceWorkerStaticRouterOpaqueCheck)) {
-      CommitCompleted(net::ERR_FAILED, "Invalid response from static router");
-      return;
-    }
+  if (!IsValidStaticRouterResponse(
+          resource_request_, response,
+          controller_connector_->cross_origin_embedder_policy(),
+          controller_connector_->cross_origin_embedder_policy_reporter(),
+          controller_connector_->document_isolation_policy(),
+          controller_connector_->document_isolation_policy_reporter()) &&
+      base::FeatureList::IsEnabled(
+          features::kServiceWorkerStaticRouterOpaqueCheck)) {
+    CommitCompleted(net::ERR_FAILED, "Invalid response from static router");
+    return;
   }
 
   if (response->parsed_headers) {
@@ -1530,10 +1522,6 @@ void ServiceWorkerSubresourceLoader::DidCacheStorageMatch(
 }
 
 void ServiceWorkerSubresourceLoader::ValidateResponseSentToClient() {
-  SCOPED_CRASH_KEY_BOOL("crbug463388771", "fetch_restarted",
-                        fetch_request_restarted_);
-  SCOPED_CRASH_KEY_STRING1024("crbug463388771", "response_url",
-                              resource_request_.url.spec());
   CHECK(!response_sent_to_client_);
   response_sent_to_client_ = true;
 }

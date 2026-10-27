@@ -81,6 +81,24 @@ TEST_F(StatisticsDispatcherTest, DispatchEnqueueEvents) {
   EXPECT_EQ(events[2].key_frame, true);
 }
 
+TEST_F(StatisticsDispatcherTest, DispatchFrameDropEvent) {
+  const FrameId frame_id = FrameId::first();
+  const RtpTimeTicks rtp_timestamp(12345);
+  const Clock::time_point drop_time = clock_.now() + milliseconds(10);
+
+  dispatcher_.DispatchFrameDropEvent(StreamType::kVideo, frame_id,
+                                     rtp_timestamp, drop_time);
+
+  const std::vector<FrameEvent> events = collector_.TakeRecentFrameEvents();
+  ASSERT_EQ(1u, events.size());
+
+  EXPECT_EQ(events[0].type, StatisticsEvent::Type::kFrameDroppedByEncoder);
+  EXPECT_EQ(events[0].media_type, StatisticsEvent::MediaType::kVideo);
+  EXPECT_EQ(events[0].frame_id, frame_id);
+  EXPECT_EQ(events[0].rtp_timestamp, rtp_timestamp);
+  EXPECT_EQ(events[0].timestamp, drop_time);
+}
+
 TEST_F(StatisticsDispatcherTest, DispatchEnqueueEventsWithDefaultTimes) {
   EncodedFrame frame;
   frame.rtp_timestamp = RtpTimeTicks(12345);

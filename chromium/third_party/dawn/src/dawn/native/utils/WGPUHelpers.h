@@ -33,11 +33,12 @@
 #include <string>
 #include <vector>
 
-#include "dawn/common/NonCopyable.h"
-#include "dawn/common/Ref.h"
-#include "dawn/native/Error.h"
-#include "dawn/native/UsageValidationMode.h"
-#include "dawn/native/dawn_platform.h"
+#include "src/dawn/common/Ref.h"
+#include "src/dawn/native/Error.h"
+#include "src/dawn/native/UsageValidationMode.h"
+#include "src/dawn/native/dawn_platform.h"
+#include "src/utils/compiler.h"
+#include "src/utils/non_copyable.h"
 
 namespace tint::wgsl {
 enum class Extension : uint8_t;
@@ -170,7 +171,7 @@ void AllocateApiSeqFromStdVector(const T** apiData, size_t* apiSize, const std::
 
     if (size > 0) {
         T* mutableData = new T[size];
-        memcpy(mutableData, vector.data(), size * sizeof(T));
+        DAWN_UNSAFE_TODO(memcpy(mutableData, vector.data(), size * sizeof(T)));
         *apiData = mutableData;
     } else {
         *apiData = nullptr;

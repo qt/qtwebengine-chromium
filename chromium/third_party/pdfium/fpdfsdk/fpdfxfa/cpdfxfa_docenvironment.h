@@ -62,28 +62,7 @@ class CPDFXFA_DocEnvironment final : public CXFA_FFDoc::CallbackIface {
       CXFA_FFDoc* hDoc,
       const WideString& wsLink) override;
 
-#ifdef PDF_XFA_ELEMENT_SUBMIT_ENABLED
-  bool Submit(CXFA_FFDoc* hDoc, CXFA_Submit* submit) override;
-#endif  // PDF_XFA_ELEMENT_SUBMIT_ENABLED
-
  private:
-#ifdef PDF_XFA_ELEMENT_SUBMIT_ENABLED
-  bool MailToInfo(WideString& csURL,
-                  WideString& csToAddress,
-                  WideString& csCCAddress,
-                  WideString& csBCCAddress,
-                  WideString& csSubject,
-                  WideString& csMsg);
-  bool ExportSubmitFile(FPDF_FILEHANDLER* ppFileHandler,
-                        int fileType,
-                        FPDF_DWORD encodeType,
-                        FPDF_DWORD flag);
-  void ToXFAContentFlags(WideString csSrcContent, FPDF_DWORD& flag);
-  bool OnBeforeNotifySubmit();
-  void OnAfterNotifySubmit();
-  bool SubmitInternal(CXFA_FFDoc* hDoc, CXFA_Submit* submit);
-#endif  // PDF_XFA_ELEMENT_SUBMIT_ENABLED
-
   UnownedPtr<CPDFXFA_Context> const context_;
 };
 

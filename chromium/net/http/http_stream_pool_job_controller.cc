@@ -122,6 +122,7 @@ HttpStreamPool::JobController::CalculateAlternative(
       request_info.destination, request_info.privacy_mode,
       request_info.socket_tag, request_info.network_anonymization_key,
       request_info.secure_dns_policy, request_info.disable_cert_network_fetches,
+      request_info.target_network,
       request_info.alternative_service_info.alternative_service());
 
   quic::ParsedQuicVersion quic_version = quic::ParsedQuicVersion::Unsupported();
@@ -160,7 +161,8 @@ HttpStreamPool::JobController::JobController(
                          request_info.socket_tag,
                          request_info.network_anonymization_key,
                          request_info.secure_dns_policy,
-                         request_info.disable_cert_network_fetches),
+                         request_info.disable_cert_network_fetches,
+                         request_info.target_network),
       origin_quic_key_(origin_stream_key_.CalculateQuicSessionAliasKey()),
       alternative_(CalculateAlternative(pool,
                                         request_info,
@@ -608,6 +610,21 @@ HttpStreamPool::JobController::MaybeCreateStreamFromExistingQuicSessionInternal(
 
 bool HttpStreamPool::JobController::MaybeStartAlternativeJob() {
   if (!alternative_.has_value()) {
+    return false;
+  }
+
+  CHECK(alternative_->stream_key.alt_service().has_value());
+  if (!IsPortAllowedForScheme(
+          alternative_->stream_key.alt_service()->port,
+          alternative_->stream_key.destination().scheme())) {
+    net_log_.AddEvent(
+        NetLogEventType::
+            HTTP_STREAM_POOL_JOB_CONTROLLER_SKIPPED_ALTSVC_RESTRICTED_PORT,
+        [&] {
+          base::DictValue dict;
+          dict.Set("port", alternative_->stream_key.alt_service()->port);
+          return dict;
+        });
     return false;
   }
 

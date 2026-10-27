@@ -25,18 +25,19 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/webgpu/BufferWGPU.h"
+#include "src/dawn/native/webgpu/BufferWGPU.h"
 
 #include <algorithm>
 #include <string>
 #include <utility>
 
-#include "dawn/common/StringViewUtils.h"
-#include "dawn/native/Buffer.h"
-#include "dawn/native/webgpu/CaptureContext.h"
-#include "dawn/native/webgpu/DeviceWGPU.h"
-#include "dawn/native/webgpu/QueueWGPU.h"
-#include "dawn/native/webgpu/Serialization.h"
+#include "src/dawn/common/StringViewUtils.h"
+#include "src/dawn/native/Buffer.h"
+#include "src/dawn/native/webgpu/CaptureContext.h"
+#include "src/dawn/native/webgpu/DeviceWGPU.h"
+#include "src/dawn/native/webgpu/QueueWGPU.h"
+#include "src/dawn/native/webgpu/Serialization.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native::webgpu {
 
@@ -137,12 +138,13 @@ MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) 
     // The frontend asks that the pointer returned by GetMappedPointer is from the start of
     // the resource but WGPU gives us the pointer at offset. Remove the offset.
     if (bool{mode & wgpu::MapMode::Write}) {
-        mMappedData =
-            static_cast<uint8_t*>(wgpu.bufferGetMappedRange(mInnerHandle, offset, size)) - offset;
+        mMappedData = DAWN_UNSAFE_TODO(
+            static_cast<uint8_t*>(wgpu.bufferGetMappedRange(mInnerHandle, offset, size)) - offset);
     } else if (bool{mode & wgpu::MapMode::Read}) {
-        mMappedData = static_cast<uint8_t*>(const_cast<void*>(
-                          wgpu.bufferGetConstMappedRange(mInnerHandle, offset, size))) -
-                      offset;
+        mMappedData =
+            DAWN_UNSAFE_TODO(static_cast<uint8_t*>(const_cast<void*>(
+                                 wgpu.bufferGetConstMappedRange(mInnerHandle, offset, size))) -
+                             offset);
     } else {
         DAWN_UNREACHABLE();
     }

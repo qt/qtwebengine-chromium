@@ -32,7 +32,7 @@
 
 #include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/core/type/reference.h"
-#include "src/tint/lang/core/type/swizzle_view.h"
+#include "src/tint/lang/core/type/vector.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/resolver/dependency_graph.h"
 #include "src/tint/lang/wgsl/sem/block_statement.h"
@@ -67,23 +67,6 @@
 namespace tint::resolver {
 
 namespace {
-
-/// Unwraps `u->expr`'s chain of indirect (*) and address-of (&) expressions, returning the first
-/// expression that is neither of these.
-/// E.g. If `u` is `*(&(*(&p)))`, returns `p`.
-const ast::Expression* UnwrapIndirectAndAddressOfChain(const ast::UnaryOpExpression* u) {
-    auto* e = u->expr;
-    while (true) {
-        auto* unary = e->As<ast::UnaryOpExpression>();
-        if (unary &&
-            (unary->op == core::UnaryOp::kIndirection || unary->op == core::UnaryOp::kAddressOf)) {
-            e = unary->expr;
-        } else {
-            break;
-        }
-    }
-    return e;
-}
 
 /// Scope of uniformity analysis.
 enum class UniformityScope : uint8_t {
@@ -1278,12 +1261,8 @@ class UniformityGraph {
 
                     // Store if lhs is a partial pointer
                     if (sem_var->Type()->Is<core::type::Pointer>()) {
-                        auto* init = sem_.Get(decl->variable->initializer);
-                        if (auto* unary_init = init->Declaration()->As<ast::UnaryOpExpression>()) {
-                            auto* e = UnwrapIndirectAndAddressOfChain(unary_init);
-                            if (e->Is<ast::AccessorExpression>()) {
-                                current_function_->partial_ptrs.Add(sem_var);
-                            }
+                        if (IsPartialPointer(decl->variable->initializer)) {
+                            current_function_->partial_ptrs.Add(sem_var);
                         }
                     }
                 } else {
@@ -1543,26 +1522,29 @@ class UniformityGraph {
             TINT_ICE_ON_NO_MATCH);
     }
 
-    /// @param u unary expression with op == kIndirection
-    /// @returns true if `u` is an indirection unary expression that ultimately dereferences a
-    /// partial pointer, false otherwise.
-    bool IsDerefOfPartialPointer(const ast::UnaryOpExpression* u) {
-        TINT_ASSERT(u->op == core::UnaryOp::kIndirection);
-
-        // To determine if we're dereferencing a partial pointer, unwrap *&
-        // chains; if the final expression is an identifier, see if it's a
-        // partial pointer. If it's not an identifier, then it must be an
-        // index/member accessor expression, and thus a partial pointer.
-        auto* e = UnwrapIndirectAndAddressOfChain(u);
-        if (auto* var_user = sem_.Get<sem::VariableUser>(e)) {
-            if (current_function_->partial_ptrs.Contains(var_user->Variable())) {
-                return true;
+    /// @param expr expression
+    /// @returns true if `expr` is derived from a partial pointer, false otherwise.
+    bool IsPartialPointer(const ast::Expression* expr) {
+        // First unwraps the chain of indirect (*) and address-of (&) expressions, returning the
+        // first expression that is neither of these.
+        // e.g. If `expr` is `*(&(*(&p)))`, returns `p`.
+        while (true) {
+            auto* unary = expr->As<ast::UnaryOpExpression>();
+            if (unary && (unary->op == core::UnaryOp::kIndirection ||
+                          unary->op == core::UnaryOp::kAddressOf)) {
+                expr = unary->expr;
+            } else {
+                break;
             }
-        } else {
-            TINT_ASSERT(e->Is<ast::AccessorExpression>());
-            return true;
         }
-        return false;
+
+        // The final expression is a partial pointer iff either of the following are true:
+        //   * It is an identifier that has been marked as a partial pointer.
+        //   * It is an index/member accessor expression.
+        if (auto* var_user = sem_.Get<sem::VariableUser>(expr)) {
+            return current_function_->partial_ptrs.Contains(var_user->Variable());
+        }
+        return expr->Is<ast::AccessorExpression>();
     }
 
     /// LValue holds the Nodes returned by ProcessLValueExpression()
@@ -1674,8 +1656,28 @@ class UniformityGraph {
                 is_dereferencing =
                     is_dereferencing || sem_.GetVal(m->object)->Type()->Is<core::type::Pointer>();
 
+                // An assignment to a full swizzle view (which updates all components of the object
+                // vector) is a full assignment.
+                bool is_full_swizzle = false;
+                if (auto* swizzle = sem_.Get<sem::Swizzle>(m)) {
+                    // Collapse chained swizzles if necessary.
+                    sem::CollapsedSwizzle collapsed = sem::CollapseLhsSwizzle(swizzle);
+                    auto* vec_type =
+                        collapsed.vector->Type()->UnwrapPtrOrRef()->As<core::type::Vector>();
+                    TINT_ASSERT(vec_type);
+
+                    // Duplicated elements are not permitted on the LHS of a swizzle assignment, so
+                    // comparing lengths is sufficient to determine whether it is a full/partial
+                    // swizzle.
+                    if (collapsed.indices.Length() == vec_type->Width()) {
+                        is_full_swizzle = true;
+                    }
+                }
+
+                is_partial_reference = is_partial_reference || !is_full_swizzle;
+
                 return ProcessLValueExpression(cf, m->object, is_dereferencing,
-                                               /*is_partial_reference*/ true);
+                                               is_partial_reference);
             },
 
             [&](const ast::UnaryOpExpression* u) {
@@ -1683,12 +1685,19 @@ class UniformityGraph {
                     return ProcessLValueExpression(
                         cf, u->expr,
                         /* is_dereferencing */ true,
-                        /* is_partial_reference */ is_partial_reference ||
-                            IsDerefOfPartialPointer(u));
+                        /* is_partial_reference */ is_partial_reference || IsPartialPointer(u));
                 }
                 return ProcessLValueExpression(cf, u->expr,
                                                /* is_dereferencing */ false,
                                                /* is_partial_reference */ is_partial_reference);
+            },
+
+            [&](const ast::CallExpression* c) {
+                // This must be a bufferView/bufferArrayView call.
+                auto* sem = sem_.GetVal(c->args[0]);
+                auto* root_ident = sem->RootIdentifier();
+                auto [cf1, v1] = ProcessCall(cf, c);
+                return LValue{cf1, v1, root_ident};
             },
 
             TINT_ICE_ON_NO_MATCH);
@@ -1931,6 +1940,14 @@ class UniformityGraph {
                     // Update the current stored value for this pointer argument.
                     auto* root_ident = sem_arg->RootIdentifier();
                     TINT_ASSERT(root_ident);
+
+                    // Check if the argument is a partial pointer. If the previous contents were
+                    // non-uniform, a partial assignment will not make it uniform.
+                    auto* old_value = current_function_->variables.Get(root_ident);
+                    if (IsPartialPointer(call->args[i]) && old_value) {
+                        ptr_result->AddEdge(old_value);
+                    }
+
                     current_function_->variables.Set(root_ident, ptr_result);
                 }
             } else {

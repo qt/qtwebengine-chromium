@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_FIXED_SIZE_H
-#define EIGEN_CXX11_TENSOR_TENSOR_FIXED_SIZE_H
+#ifndef EIGEN_TENSOR_TENSOR_FIXED_SIZE_H
+#define EIGEN_TENSOR_TENSOR_FIXED_SIZE_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -16,7 +17,7 @@
 namespace Eigen {
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief The fixed sized version of the tensor class.
  *
@@ -198,19 +199,12 @@ class TensorFixedSize : public TensorBase<TensorFixedSize<Scalar_, Dimensions_, 
 
  protected:
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE bool checkIndexRange(const array<Index, NumIndices>& /*indices*/) const {
-    using internal::array_apply_and_reduce;
-    using internal::array_zip_and_reduce;
-    using internal::greater_equal_zero_op;
-    using internal::lesser_op;
-    using internal::logical_and_op;
-
     return true;
   }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index linearizedIndex(const array<Index, NumIndices>& indices) const {
-    if (Options & RowMajor) {
-      return m_storage.dimensions().IndexOfRowMajor(indices);
-    } else {
+    EIGEN_IF_CONSTEXPR(Options & RowMajor) { return m_storage.dimensions().IndexOfRowMajor(indices); }
+    else {
       return m_storage.dimensions().IndexOfColMajor(indices);
     }
   }
@@ -218,4 +212,4 @@ class TensorFixedSize : public TensorBase<TensorFixedSize<Scalar_, Dimensions_, 
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_FIXED_SIZE_H
+#endif  // EIGEN_TENSOR_TENSOR_FIXED_SIZE_H

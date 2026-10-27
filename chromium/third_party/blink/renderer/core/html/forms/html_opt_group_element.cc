@@ -87,8 +87,27 @@ FocusableState HTMLOptGroupElement::SupportsFocus(
   return HTMLElement::SupportsFocus(update_behavior);
 }
 
+// The :enabled and :disabled selectors have special behavior for option
+// elements which is separate from their normal disabledness state. The
+// selectors depend on whether the ancestor select is disabled, but the internal
+// state does not. See https://github.com/w3c/csswg-drafts/issues/13383
 bool HTMLOptGroupElement::MatchesEnabledPseudoClass() const {
-  return !IsDisabledFormControl();
+  if (!RuntimeEnabledFeatures::OptionDisablednessCheckAncestorsEnabled()) {
+    return !IsDisabledFormControl();
+  }
+  return !MatchesDisabledPseudoClass();
+}
+bool HTMLOptGroupElement::MatchesDisabledPseudoClass() const {
+  if (IsDisabledFormControl()) {
+    return true;
+  }
+  if (!RuntimeEnabledFeatures::OptionDisablednessCheckAncestorsEnabled()) {
+    return false;
+  }
+  if (owner_select_ && owner_select_->IsDisabledFormControl()) {
+    return true;
+  }
+  return false;
 }
 
 void HTMLOptGroupElement::ChildrenChanged(const ChildrenChange& change) {
@@ -125,8 +144,7 @@ Node::InsertionNotificationRequest HTMLOptGroupElement::InsertedInto(
     ContainerNode& insertion_point) {
   HTMLElement::InsertedInto(insertion_point);
 
-  owner_select_ =
-      HTMLSelectElement::AssociatedSelectAndOptgroupAndDatalist(*this).select;
+  owner_select_ = HTMLSelectElement::WalkAncestorsForRelatedParts(*this).select;
   if (owner_select_) {
     owner_select_->OptGroupInsertedOrRemoved(*this);
   }
@@ -142,7 +160,7 @@ Node::InsertionNotificationRequest HTMLOptGroupElement::InsertedInto(
 
 void HTMLOptGroupElement::RemovedFrom(ContainerNode& insertion_point) {
   HTMLSelectElement* new_ancestor_select =
-      HTMLSelectElement::AssociatedSelectAndOptgroupAndDatalist(*this).select;
+      HTMLSelectElement::WalkAncestorsForRelatedParts(*this).select;
   if (owner_select_ != new_ancestor_select) {
     // When removing, we can only lose an associated <select>
     CHECK(owner_select_);
@@ -180,8 +198,7 @@ HTMLSelectElement* HTMLOptGroupElement::OwnerSelectElement(
     bool skip_check) const {
   if (!skip_check) {
     DCHECK_EQ(owner_select_,
-              HTMLSelectElement::AssociatedSelectAndOptgroupAndDatalist(*this)
-                  .select);
+              HTMLSelectElement::WalkAncestorsForRelatedParts(*this).select);
   }
   return owner_select_;
 }

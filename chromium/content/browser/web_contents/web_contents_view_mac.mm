@@ -68,7 +68,7 @@ namespace {
 // stream.
 void PromiseWriterHelper(const DropData& drop_data, base::File file) {
   DCHECK(file.IsValid());
-  file.WriteAtCurrentPos(base::as_bytes(base::span(drop_data.file_contents)));
+  file.WriteAtCurrentPos(drop_data.file_contents);
 }
 
 WebContentsViewMac::RenderWidgetHostViewCreateFunction
@@ -226,26 +226,7 @@ void WebContentsViewMac::StartDragging(
   // processing events.
   base::CurrentThread::ScopedAllowApplicationTasksInNativeNestedLoop allow;
 
-  GURL source_url = web_contents_->GetPrimaryMainFrame()->GetLastCommittedURL();
-  ui::DataTransferEndpoint data_endpoint(
-      source_url,
-      {.notify_if_restricted = true,
-       .off_the_record = web_contents_->GetBrowserContext()->IsOffTheRecord()});
-
-  // TODO(crbug.com/410835513): Unify with other declarations of
-  // CreateClipboardEndpoint.
-  ClipboardEndpoint source_endpoint(
-      base::optional_ref<const ui::DataTransferEndpoint>(data_endpoint),
-      base::BindRepeating(
-          [](GlobalRenderFrameHostId rfh_id) -> BrowserContext* {
-            auto* rfh = RenderFrameHost::FromID(rfh_id);
-            if (!rfh) {
-              return nullptr;
-            }
-            return rfh->GetBrowserContext();
-          },
-          web_contents_->GetPrimaryMainFrame()->GetGlobalId()),
-      *web_contents_->GetPrimaryMainFrame());
+  ClipboardEndpoint source_endpoint = CreateClipboardEndpoint(source_rfh);
 
   // Checks if the drag operation is allowed by enterprise policies
   if (!GetContentClient()->browser()->IsDragAllowedByPolicy(source_endpoint,
@@ -666,10 +647,6 @@ bool WebContentsViewMac::DragPromisedFileTo(
         base::BindOnce(&PromiseWriterHelper, drop_data, std::move(file)));
   }
 
-  // The DragDownloadFile constructor may have altered the value of
-  // |*out_file_path| if, say, an existing file at the drop site has the same
-  // name. Return the actual name that was used to write the file.
-  *out_file_path = file_path;
   return true;
 }
 
@@ -697,7 +674,7 @@ void WebContentsViewMac::PerformEndDrag(uint32_t drag_operation,
   // non-root RenderWidgetHosts they need to be transformed.
   gfx::PointF transformed_point = local_point;
   gfx::PointF transformed_screen_point = screen_point;
-  if (drag_source_start_rwh_ && web_contents_->GetRenderWidgetHostView()) {
+  if (web_contents_->GetRenderWidgetHostView()) {
     content::RenderWidgetHostViewBase* contentsViewBase =
         static_cast<content::RenderWidgetHostViewBase*>(
             web_contents_->GetRenderWidgetHostView());

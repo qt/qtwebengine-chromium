@@ -660,7 +660,11 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   V8_TLS_DECLARE_GETTER(TryGetCurrent, Isolate*, g_current_isolate_)
 
   // Returns the isolate inside which the current thread is running.
-  V8_INLINE static Isolate* Current();
+  V8_INLINE static Isolate* Current() {
+    Isolate* isolate = TryGetCurrent();
+    DCHECK_NOT_NULL(isolate);
+    return isolate;
+  }
   static void SetCurrent(Isolate* isolate);
 
   inline bool IsCurrent() const;
@@ -793,6 +797,19 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   inline void clear_topmost_script_having_context();
   Tagged<Context>* topmost_script_having_context_address() {
     return &thread_local_top()->topmost_script_having_context_;
+  }
+
+  Tagged<NativeContext> last_entered_context() const {
+    return thread_local_top()->last_entered_context_;
+  }
+
+  void set_last_entered_context(Tagged<NativeContext> value) {
+    thread_local_top()->last_entered_context_ = value;
+  }
+
+  Address last_entered_context_address() {
+    return reinterpret_cast<Address>(
+        &thread_local_top()->last_entered_context_);
   }
 
   // Access to current thread id.
@@ -947,8 +964,10 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
                               PrintCurrentStackTraceFilterCallback
                                   should_include_frame_callback = nullptr);
   void PrintStack(StringStream* accumulator,
-                  PrintStackMode mode = kPrintStackVerbose);
-  void PrintStack(FILE* out, PrintStackMode mode = kPrintStackVerbose);
+                  PrintStackMode mode = kPrintStackVerbose,
+                  AllowAllocation allow_allocation = AllowAllocation::kYes);
+  void PrintStack(FILE* out, PrintStackMode mode = kPrintStackVerbose,
+                  AllowAllocation allow_allocation = AllowAllocation::kYes);
 
   // Prints minimal stack trace without allocating on the V8 heap (native
   // allocations are allowed). Used for printing the JS stack on OOM errors.
@@ -961,13 +980,15 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   DirectHandle<String> StackTraceString();
   // Stores a stack trace in a stack-allocated temporary buffer which will
   // end up in the minidump for debugging purposes.
-  V8_NOINLINE void PushStackTraceAndDie(
-      void* ptr1 = nullptr, void* ptr2 = nullptr, void* ptr3 = nullptr,
-      void* ptr4 = nullptr, void* ptr5 = nullptr, void* ptr6 = nullptr);
+  [[noreturn]] V8_NOINLINE void PushStackTraceAndDie(
+      const char* reason, void* ptr1 = nullptr, void* ptr2 = nullptr,
+      void* ptr3 = nullptr, void* ptr4 = nullptr, void* ptr5 = nullptr,
+      void* ptr6 = nullptr);
   // Similar to the above but without collecting the stack trace.
-  V8_NOINLINE void PushParamsAndDie(void* ptr1 = nullptr, void* ptr2 = nullptr,
-                                    void* ptr3 = nullptr, void* ptr4 = nullptr,
-                                    void* ptr5 = nullptr, void* ptr6 = nullptr);
+  [[noreturn]] V8_NOINLINE void PushParamsAndDie(
+      const char* reason, void* ptr1 = nullptr, void* ptr2 = nullptr,
+      void* ptr3 = nullptr, void* ptr4 = nullptr, void* ptr5 = nullptr,
+      void* ptr6 = nullptr);
   // Like PushStackTraceAndDie but uses DumpWithoutCrashing to continue
   // execution.
   V8_NOINLINE void PushStackTraceAndContinue(
@@ -1005,6 +1026,8 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   bool GetStackTraceLimit(Isolate* isolate, int* result);
 
   Address GetAbstractPC(int* line, int* column);
+  Address GetAbstractPCNoGC(int* line, int* column,
+                            DisallowGarbageCollection& no_gc);
 
   // Returns if the given context may access the given global object. If
   // the result is false, the exception is guaranteed to be
@@ -1019,7 +1042,8 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // Exception throwing support. The caller should use the result of Throw() as
   // its return value. Returns the Exception sentinel.
   Tagged<Object> Throw(Tagged<Object> exception,
-                       MessageLocation* location = nullptr);
+                       MessageLocation* location = nullptr,
+                       bool is_stack_overflow = false);
   Tagged<Object> ThrowAt(DirectHandle<JSObject> exception,
                          MessageLocation* location);
   Tagged<Object> ThrowIllegalOperation();
@@ -1459,10 +1483,21 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // TODO(jgruber): Consider removing it.
   std::vector<int>* regexp_indices() { return &regexp_indices_; }
 
-  size_t total_regexp_code_generated() const {
-    return total_regexp_code_generated_;
+#ifdef V8_ENABLE_REGEXP_DIAGNOSTICS
+  void PrintAndClearRegExpSubjectStrings();
+  int64_t& trace_regexp_exec_start_ticks() {
+    return trace_regexp_exec_start_ticks_;
   }
-  void IncreaseTotalRegexpCodeGenerated(DirectHandle<HeapObject> code);
+  int& trace_regexp_exec_nesting_level() {
+    return trace_regexp_exec_nesting_level_;
+  }
+  std::vector<int>& trace_regexp_exec_subject_indices() {
+    return trace_regexp_exec_subject_indices_;
+  }
+  std::unordered_map<uint32_t, int>& trace_regexp_exec_subject_hash_to_index() {
+    return trace_regexp_exec_subject_hash_to_index_;
+  }
+#endif  // V8_ENABLE_REGEXP_DIAGNOSTICS
 
   Debug* debug() const { return debug_; }
 
@@ -2874,7 +2909,14 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // always null.
   ManagedPtrDestructor* shared_managed_ptr_destructors_head_ = nullptr;
 
-  size_t total_regexp_code_generated_ = 0;
+#ifdef V8_ENABLE_REGEXP_DIAGNOSTICS
+  int64_t trace_regexp_exec_start_ticks_ = 0;
+  // -1 is used to print the csv header on first use.
+  int trace_regexp_exec_nesting_level_ = -1;
+  // Indices into EternalHandles for OOL subject strings.
+  std::vector<int> trace_regexp_exec_subject_indices_;
+  std::unordered_map<uint32_t, int> trace_regexp_exec_subject_hash_to_index_;
+#endif  // V8_ENABLE_REGEXP_DIAGNOSTICS
 
   size_t elements_deletion_counter_ = 0;
 
@@ -3026,7 +3068,7 @@ class V8_EXPORT_PRIVATE SaveAndSwitchContext : public SaveContext {
 class V8_NODISCARD NullContextScope : public SaveAndSwitchContext {
  public:
   explicit NullContextScope(Isolate* isolate)
-      : SaveAndSwitchContext(isolate, Context()) {}
+      : SaveAndSwitchContext(isolate, {}) {}
 };
 
 class AssertNoContextChange {

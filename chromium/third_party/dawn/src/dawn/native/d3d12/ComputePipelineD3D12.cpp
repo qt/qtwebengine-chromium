@@ -25,21 +25,21 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/d3d12/ComputePipelineD3D12.h"
+#include "src/dawn/native/d3d12/ComputePipelineD3D12.h"
 
 #include <memory>
 #include <utility>
 
-#include "dawn/native/CreatePipelineAsyncEvent.h"
-#include "dawn/native/Instance.h"
-#include "dawn/native/d3d/BlobD3D.h"
-#include "dawn/native/d3d/D3DError.h"
-#include "dawn/native/d3d12/DeviceD3D12.h"
-#include "dawn/native/d3d12/PipelineLayoutD3D12.h"
-#include "dawn/native/d3d12/PlatformFunctionsD3D12.h"
-#include "dawn/native/d3d12/ShaderModuleD3D12.h"
-#include "dawn/native/d3d12/UtilsD3D12.h"
-#include "dawn/platform/metrics/HistogramMacros.h"
+#include "src/dawn/native/CreatePipelineAsyncEvent.h"
+#include "src/dawn/native/Instance.h"
+#include "src/dawn/native/d3d/BlobD3D.h"
+#include "src/dawn/native/d3d/D3DError.h"
+#include "src/dawn/native/d3d12/DeviceD3D12.h"
+#include "src/dawn/native/d3d12/PipelineLayoutD3D12.h"
+#include "src/dawn/native/d3d12/PlatformFunctionsD3D12.h"
+#include "src/dawn/native/d3d12/ShaderModuleD3D12.h"
+#include "src/dawn/native/d3d12/UtilsD3D12.h"
+#include "src/dawn/platform/metrics/HistogramMacros.h"
 
 namespace dawn::native::d3d12 {
 
@@ -91,7 +91,7 @@ ResultOrError<Extent3D> ComputePipeline::InitializeImpl() {
     DAWN_TRY_ASSIGN(compiledShader, module->Compile(computeStage, SingleShaderStage::Compute,
                                                     ToBackend(GetLayout()), compileFlags,
                                                     /* usedInterstageVariables */ {}));
-    d3dDesc.CS = {compiledShader.shaderBlob.Data(), compiledShader.shaderBlob.Size()};
+    d3dDesc.CS = {compiledShader.shaderBlob.DataPtr(), compiledShader.shaderBlob.Size()};
 
     StreamIn(&mCacheKey, d3dDesc, ToBackend(GetLayout())->GetRootSignatureBlob());
 
@@ -100,7 +100,7 @@ ResultOrError<Extent3D> ComputePipeline::InitializeImpl() {
     bool cacheHit = !blob.Empty();
     if (cacheHit) {
         // Cache hits, attach cached blob to descriptor.
-        d3dDesc.CachedPSO.pCachedBlob = blob.Data();
+        d3dDesc.CachedPSO.pCachedBlob = blob.DataPtr();
         d3dDesc.CachedPSO.CachedBlobSizeInBytes = blob.Size();
     }
 

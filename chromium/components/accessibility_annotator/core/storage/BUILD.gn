@@ -4,14 +4,13 @@
 
 source_set("storage") {
   sources = [
-    "accessibility_annotation_sync_bridge.cc",
-    "accessibility_annotation_sync_bridge.h",
-    "accessibility_annotator_backend.cc",
     "accessibility_annotator_backend.h",
     "accessibility_annotator_backend_impl.cc",
     "accessibility_annotator_backend_impl.h",
     "accessibility_annotator_database.cc",
     "accessibility_annotator_database.h",
+    "content_annotations_table.cc",
+    "content_annotations_table.h",
     "intent_table.cc",
     "intent_table.h",
   ]
@@ -19,12 +18,15 @@ source_set("storage") {
   public_deps = [
     "//base",
     "//components/accessibility_annotator/core:features",
+    "//components/accessibility_annotator/core/content_annotator",
     "//components/accessibility_annotator/core/data_models",
+    "//components/database_utils",
     "//components/history/core/browser",
     "//components/keyed_service/core",
     "//components/optimization_guide/proto:optimization_guide_proto",
-    "//components/sync/base",
-    "//components/sync/model",
+    "//components/optimization_guide/proto:optimization_guide_proto_extras",
+    "//components/os_crypt/async/browser",
+    "//components/os_crypt/async/common",
     "//sql",
   ]
 }
@@ -41,8 +43,8 @@ source_set("test_support") {
     ":storage",
     "//base",
     "//components/accessibility_annotator/core/data_models",
-    "//components/sync:test_support",
     "//components/version_info",
+    "//testing/gmock",
   ]
 }
 
@@ -50,9 +52,9 @@ source_set("unit_tests") {
   testonly = true
 
   sources = [
-    "accessibility_annotation_sync_bridge_unittest.cc",
     "accessibility_annotator_backend_unittest.cc",
     "accessibility_annotator_database_unittest.cc",
+    "content_annotations_table_unittest.cc",
     "intent_table_unittest.cc",
   ]
 
@@ -60,9 +62,7 @@ source_set("unit_tests") {
     ":storage",
     ":test_support",
     "//base/test:test_support",
-    "//components/sync:test_support",
-    "//components/sync/model",
-    "//components/sync/protocol",
+    "//components/os_crypt/async/browser:test_support",
     "//sql",
     "//sql:test_support",
     "//testing/gmock",

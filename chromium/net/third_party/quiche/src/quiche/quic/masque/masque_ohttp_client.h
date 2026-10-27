@@ -5,12 +5,14 @@
 #ifndef QUICHE_QUIC_MASQUE_MASQUE_OHTTP_CLIENT_H_
 #define QUICHE_QUIC_MASQUE_MASQUE_OHTTP_CLIENT_H_
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/base/nullability.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -24,8 +26,54 @@
 #include "quiche/oblivious_http/buffers/oblivious_http_request.h"
 #include "quiche/oblivious_http/common/oblivious_http_chunk_handler.h"
 #include "quiche/oblivious_http/oblivious_http_client.h"
+#include <zlib.h>
 
 namespace quic {
+
+// A class that decompresses gzip encoded data using zlib. This also supports
+// incremental decompression, enabling the caller to feed a stream of compressed
+// chunks into the decompressor one by one.
+class QUICHE_NO_EXPORT GzipDecompressor {
+ public:
+  // Not copyable.
+  GzipDecompressor(const GzipDecompressor&) = delete;
+  GzipDecompressor& operator=(const GzipDecompressor&) = delete;
+
+  // Destructor is needed to free the internal state
+  // allocated by zlib during `inflateInit2`.
+  ~GzipDecompressor() { EndDecompression(); }
+
+  static absl::StatusOr<std::unique_ptr<GzipDecompressor>> Create();
+
+  // Can be called multiple times with continuous input chunks. `end_stream`
+  // should be set to true when the input is confirmed to have the final chunk.
+  absl::StatusOr<std::string> Decompress(absl::string_view input,
+                                         bool end_stream);
+
+  bool IsFinished() const { return finished_; }
+
+  // This will free the internal state allocated by zlib. The decompressor
+  // should not be used after this is called.
+  void EndDecompression();
+
+ private:
+  struct DecompressedData {
+    int status_code;
+    std::string data;
+  };
+
+  explicit GzipDecompressor(std::unique_ptr<z_stream> stream)
+      : stream_(std::move(stream)) {}
+
+  // Decompresses data from the zlib stream.
+  // `flush` determines the flushing behavior for zlib (e.g., Z_NO_FLUSH for
+  // chunks, Z_FINISH for single non-chunked). Returns the decompressed data and
+  // the zlib return code (e.g., Z_OK, Z_STREAM_END).
+  absl::StatusOr<DecompressedData> InflateLoop(int flush);
+
+  std::unique_ptr<z_stream> stream_;
+  bool finished_ = false;
+};
 
 // A client that sends OHTTP requests through a relay/gateway to target URLs.
 class QUICHE_EXPORT MasqueOhttpClient
@@ -46,16 +94,15 @@ class QUICHE_EXPORT MasqueOhttpClient
       PerRequestConfig& operator=(PerRequestConfig&& other) = default;
 
       void SetPostData(const std::string& post_data) { post_data_ = post_data; }
+      void SetMethod(const std::string& method) { method_ = method; }
       absl::Status AddHeaders(const std::vector<std::string>& headers);
       absl::Status AddOuterHeaders(
           const std::vector<std::string>& outer_headers);
       absl::Status AddPrivateToken(const std::string& private_token);
-      void SetUseChunkedOhttp(bool use_chunked_ohttp) {
-        use_chunked_ohttp_ = use_chunked_ohttp;
-      }
-      void SetUseIndeterminateLength(
-          std::optional<bool> use_indeterminate_length) {
-        use_indeterminate_length_ = use_indeterminate_length;
+      void SetNumBhttpChunks(int num_chunks) { num_bhttp_chunks_ = num_chunks; }
+      void SetNumOhttpChunks(int num_chunks) { num_ohttp_chunks_ = num_chunks; }
+      void SetPingPongMode(bool ping_pong_mode) {
+        ping_pong_mode_ = ping_pong_mode;
       }
       void SetExpectedGatewayError(const std::string& expected_gateway_error) {
         expected_gateway_error_ = expected_gateway_error;
@@ -66,14 +113,14 @@ class QUICHE_EXPORT MasqueOhttpClient
       void SetExpectedEncapsulatedStatusCode(uint16_t status_code) {
         expected_encapsulated_status_code_ = status_code;
       }
-      void SetExpectedEncapsulatedResponseBody(
-          const std::string& expected_encapsulated_response_body) {
-        expected_encapsulated_response_body_ =
-            expected_encapsulated_response_body;
+      void SetEncapsulatedResponseBodyCallback(
+          std::function<absl::Status(absl::string_view)> callback) {
+        encapsulated_response_body_callback_ = std::move(callback);
       }
 
       std::string url() const { return url_; }
       std::string post_data() const { return post_data_; }
+      std::string method() const;
       const std::vector<std::pair<std::string, std::string>>& headers() const {
         return headers_;
       }
@@ -81,10 +128,9 @@ class QUICHE_EXPORT MasqueOhttpClient
           const {
         return outer_headers_;
       }
-      bool use_chunked_ohttp() const { return use_chunked_ohttp_; }
-      std::optional<bool> use_indeterminate_length() const {
-        return use_indeterminate_length_;
-      }
+      int num_bhttp_chunks() const { return num_bhttp_chunks_; }
+      int num_ohttp_chunks() const { return num_ohttp_chunks_; }
+      bool ping_pong_mode() const { return ping_pong_mode_; }
       std::optional<std::string> expected_gateway_error() const {
         return expected_gateway_error_;
       }
@@ -94,21 +140,25 @@ class QUICHE_EXPORT MasqueOhttpClient
       std::optional<uint16_t> expected_encapsulated_status_code() const {
         return expected_encapsulated_status_code_;
       }
-      std::optional<std::string> expected_encapsulated_response_body() const {
-        return expected_encapsulated_response_body_;
+      const std::function<absl::Status(absl::string_view)> absl_nullable&
+      encapsulated_response_body_callback() const {
+        return encapsulated_response_body_callback_;
       }
 
      private:
       std::string url_;
       std::string post_data_;
+      std::optional<std::string> method_;
       std::vector<std::pair<std::string, std::string>> headers_;
       std::vector<std::pair<std::string, std::string>> outer_headers_;
-      bool use_chunked_ohttp_ = false;
-      std::optional<bool> use_indeterminate_length_;
+      int num_ohttp_chunks_ = 0;
+      int num_bhttp_chunks_ = -1;
+      bool ping_pong_mode_ = false;
       std::optional<std::string> expected_gateway_error_;
       std::optional<uint16_t> expected_gateway_status_code_;
       std::optional<uint16_t> expected_encapsulated_status_code_;
-      std::optional<std::string> expected_encapsulated_response_body_;
+      std::function<absl::Status(absl::string_view)> absl_nullable
+      encapsulated_response_body_callback_ = nullptr;
     };
 
     explicit Config(const std::string& key_fetch_url,
@@ -138,6 +188,9 @@ class QUICHE_EXPORT MasqueOhttpClient
     void SetDnsConfig(const MasqueConnectionPool::DnsConfig& dns_config) {
       dns_config_ = dns_config;
     }
+    void SetHandleGzipResponse(bool handle_gzip_response) {
+      handle_gzip_response_ = handle_gzip_response;
+    }
     absl::Status AddKeyFetchHeaders(
         const std::vector<std::string>& key_fetch_headers);
     void AddPerRequestConfig(const PerRequestConfig& per_request_config) {
@@ -161,6 +214,8 @@ class QUICHE_EXPORT MasqueOhttpClient
         const {
       return key_fetch_headers_;
     }
+    bool handle_gzip_response() const { return handle_gzip_response_; }
+    bool skip_ohttp() const;
 
    private:
     std::string key_fetch_url_;
@@ -171,48 +226,92 @@ class QUICHE_EXPORT MasqueOhttpClient
     MasqueConnectionPool::DnsConfig dns_config_;
     std::vector<std::pair<std::string, std::string>> key_fetch_headers_;
     std::vector<PerRequestConfig> per_request_configs_;
+    bool handle_gzip_response_ = false;
   };
+
+  class ResponseVisitor {
+   public:
+    virtual ~ResponseVisitor() = default;
+    virtual void OnRequestStarted(RequestId request_id,
+                                  MasqueOhttpClient* client) = 0;
+    virtual void OnResponseChunk(RequestId request_id,
+                                 absl::string_view chunk) = 0;
+    virtual void OnResponseDone(RequestId request_id,
+                                const Message& response) = 0;
+    virtual void OnError(RequestId request_id, absl::Status status) = 0;
+  };
+
+  void set_response_visitor(ResponseVisitor* visitor) {
+    response_visitor_ = visitor;
+  }
 
   // Starts by fetching the HPKE keys and then runs the client until all
   // requests are complete or aborted.
-  static absl::Status Run(Config config);
+  static absl::Status Run(Config config, absl::string_view info_string);
 
- protected:
+  // Sends a body chunk for a chunked OHTTP request.
+  absl::Status SendBodyChunk(RequestId request_id, absl::string_view chunk,
+                             bool is_final);
+
   // From quic::MasqueConnectionPool::Visitor.
   void OnPoolResponse(quic::MasqueConnectionPool* /*pool*/,
-                      RequestId request_id,
-                      absl::StatusOr<Message>&& response) override;
+                      RequestId request_id, absl::StatusOr<Message>&& response,
+                      bool end_stream) override;
+  void OnPoolData(quic::MasqueConnectionPool* /*pool*/, RequestId request_id,
+                  absl::string_view data, bool end_stream) override;
 
+  const std::string& info() const { return info_; }
+
+ private:
   // Fetch key from the key URL.
-  absl::Status StartKeyFetch(const std::string& url_string);
+  absl::Status StartKeyFetch();
 
-  // Handles the key response and starts the OHTTP request.
+  // Handles the key response.
   absl::Status HandleKeyResponse(const absl::StatusOr<Message>& response);
+
+  // Handles the key data and starts the OHTTP request.
+  absl::Status HandleKeyData(const std::string& key_data);
 
   // Sends the OHTTP request for the given URL.
   absl::Status SendOhttpRequest(
       const Config::PerRequestConfig& per_request_config);
 
+  // Sends a direct HTTP request (without OHTTP) for the given URL.
+  absl::Status SendDirectRequest(
+      const Config::PerRequestConfig& per_request_config);
+
   // Signals the client to abort.
   void Abort(absl::Status status);
 
- private:
   class QUICHE_NO_EXPORT ChunkHandler
       : public quiche::ObliviousHttpChunkHandler,
         public quiche::BinaryHttpResponse::IndeterminateLengthDecoder::
             MessageSectionHandler {
    public:
-    explicit ChunkHandler();
+    using ResponseChunkCallback = std::function<void(absl::string_view)>;
+
+    explicit ChunkHandler(bool handle_gzip_response,
+                          absl::string_view info_string)
+        : decoder_(this),
+          handle_gzip_response_(handle_gzip_response),
+          info_(info_string) {}
+    void SetResponseChunkCallback(ResponseChunkCallback callback) {
+      response_chunk_callback_ = std::move(callback);
+    }
     // Neither copyable nor movable to ensure pointer stability as required for
     // quiche::ObliviousHttpChunkHandler.
     ChunkHandler(const ChunkHandler& other) = delete;
     ChunkHandler& operator=(const ChunkHandler& other) = delete;
+
+    std::optional<quiche::ChunkedObliviousHttpClient>& chunked_client() {
+      return chunked_client_;
+    }
     ChunkHandler(ChunkHandler&& other) = delete;
     ChunkHandler& operator=(ChunkHandler&& other) = delete;
 
-    // Decrypts the full chunked response and returns the encapsulated response.
-    absl::StatusOr<Message> DecryptFullResponse(
-        absl::string_view encrypted_response);
+    // Decrypts a response chunk.
+    absl::Status DecryptChunk(absl::string_view encrypted_chunk,
+                              bool end_stream);
 
     void SetChunkedClient(quiche::ChunkedObliviousHttpClient chunked_client) {
       chunked_client_.emplace(std::move(chunked_client));
@@ -243,11 +342,19 @@ class QUICHE_EXPORT MasqueOhttpClient
     absl::Status OnTrailersDone() override;
 
    private:
+    ResponseChunkCallback response_chunk_callback_;
     std::optional<quiche::ChunkedObliviousHttpClient> chunked_client_;
     quiche::BinaryHttpResponse::IndeterminateLengthDecoder decoder_;
     Message response_;
     std::string buffered_binary_response_;
     std::optional<bool> is_chunked_response_;
+    size_t decrypted_chunk_count_ = 0;
+    size_t body_chunk_count_ = 0;
+    bool handle_gzip_response_ = false;
+    bool is_gzipped_ = false;
+    bool last_chunk_ended_without_newline_ = false;
+    std::unique_ptr<GzipDecompressor> decompressor_;
+    const std::string info_;
   };
 
   struct PendingRequest {
@@ -261,9 +368,12 @@ class QUICHE_EXPORT MasqueOhttpClient
     // std::unique_ptr to ensure pointer stability since this object is used as
     // a callback target.
     std::unique_ptr<ChunkHandler> chunk_handler;
+    std::optional<quiche::BinaryHttpRequest::IndeterminateLengthEncoder>
+        encoder;
   };
 
-  explicit MasqueOhttpClient(Config config, quic::QuicEventLoop* event_loop);
+  explicit MasqueOhttpClient(Config config, quic::QuicEventLoop* event_loop,
+                             absl::string_view info_string);
 
   // Starts fetching for the key and sends the OHTTP request.
   absl::Status Start();
@@ -275,18 +385,24 @@ class QUICHE_EXPORT MasqueOhttpClient
       RequestId request_id, quiche::ObliviousHttpRequest::Context& context,
       const Message& response);
   absl::Status ProcessOhttpResponse(RequestId request_id,
-                                    const absl::StatusOr<Message>& response);
+                                    absl::StatusOr<Message>& response,
+                                    bool end_stream);
+  absl::Status ProcessEncapsulatedResponse(
+      RequestId request_id, Message& response,
+      const Config::PerRequestConfig& per_request_config);
   absl::Status CheckStatusAndContentType(
       const Message& response, const std::string& content_type,
       std::optional<uint16_t> expected_status_code);
 
   Config config_;
+  const std::string info_;
   quic::MasqueConnectionPool connection_pool_;
   std::optional<RequestId> key_fetch_request_id_;
   absl::Status status_ = absl::OkStatus();
   std::optional<quiche::ObliviousHttpClient> ohttp_client_;
   quic::QuicUrl relay_url_;
   absl::flat_hash_map<RequestId, PendingRequest> pending_ohttp_requests_;
+  ResponseVisitor* response_visitor_ = nullptr;
 };
 }  // namespace quic
 

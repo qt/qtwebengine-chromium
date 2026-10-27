@@ -56,9 +56,28 @@ namespace cc::mojo_embedder {
 
 namespace {
 
+template <typename TreeType>
+void CheckPropertyTreeIndexValid(const TreeType& tree, int32_t index) {
+  CHECK_GE(index, 0);
+  CHECK_LT(index, static_cast<int32_t>(tree.size()));
+}
+
+template <typename TreeType>
+void CheckOptionalPropertyTreeIndexValid(const TreeType& tree, int32_t index) {
+  if (index == cc::kInvalidPropertyNodeId) {
+    return;
+  }
+  CheckPropertyTreeIndexValid(tree, index);
+}
+
 void AddTransformNodeUpdate(
+    const TransformTree& tree,
     const TransformNode& new_node,
     std::vector<viz::mojom::TransformNodePtr>& container) {
+  CheckPropertyTreeIndexValid(tree, new_node.id);
+  CheckOptionalPropertyTreeIndexValid(tree, new_node.parent_id);
+  CheckOptionalPropertyTreeIndexValid(tree, new_node.parent_frame_id);
+
   // TODO(https://crbug.com/40902503): This is a subset of the properties we
   // need to sync.
   auto wire = viz::mojom::TransformNode::New();
@@ -110,6 +129,7 @@ void AddTransformNodeUpdate(
 }
 
 void ComputePropertyTreeNodeUpdate(
+    const PropertyTrees& trees,
     const ClipNode* old_node,
     const ClipNode& new_node,
     std::vector<viz::mojom::ClipNodePtr>& container) {
@@ -121,6 +141,12 @@ void ComputePropertyTreeNodeUpdate(
     return;
   }
 
+  CheckPropertyTreeIndexValid(trees.clip_tree(), new_node.id);
+  CheckOptionalPropertyTreeIndexValid(trees.clip_tree(), new_node.parent_id);
+  CheckPropertyTreeIndexValid(trees.transform_tree(), new_node.transform_id);
+  CheckOptionalPropertyTreeIndexValid(trees.effect_tree(),
+                                      new_node.pixel_moving_filter_id);
+
   auto wire = viz::mojom::ClipNode::New();
   wire->id = new_node.id;
   wire->parent_id = new_node.parent_id;
@@ -131,6 +157,7 @@ void ComputePropertyTreeNodeUpdate(
 }
 
 void ComputePropertyTreeNodeUpdate(
+    const PropertyTrees& trees,
     const EffectNode* old_node,
     const EffectNode& new_node,
     std::vector<viz::mojom::EffectNodePtr>& container,
@@ -200,6 +227,21 @@ void ComputePropertyTreeNodeUpdate(
     return;
   }
 
+  CheckPropertyTreeIndexValid(trees.effect_tree(), new_node.id);
+  CheckOptionalPropertyTreeIndexValid(trees.effect_tree(), new_node.parent_id);
+  CheckPropertyTreeIndexValid(trees.transform_tree(), new_node.transform_id);
+  CheckPropertyTreeIndexValid(trees.clip_tree(), new_node.clip_id);
+  CheckPropertyTreeIndexValid(trees.effect_tree(), new_node.target_id);
+  CheckOptionalPropertyTreeIndexValid(
+      trees.effect_tree(),
+      new_node.closest_ancestor_with_cached_render_surface_id);
+  CheckOptionalPropertyTreeIndexValid(
+      trees.effect_tree(), new_node.closest_ancestor_with_copy_request_id);
+  CheckOptionalPropertyTreeIndexValid(
+      trees.effect_tree(), new_node.closest_ancestor_being_captured_id);
+  CheckOptionalPropertyTreeIndexValid(
+      trees.effect_tree(), new_node.closest_ancestor_with_shared_element_id);
+
   auto wire = viz::mojom::EffectNode::New();
   wire->id = new_node.id;
   wire->parent_id = new_node.parent_id;
@@ -254,6 +296,7 @@ void ComputePropertyTreeNodeUpdate(
 }
 
 void ComputePropertyTreeNodeUpdate(
+    const PropertyTrees& trees,
     const ScrollNode* old_node,
     const ScrollNode& new_node,
     std::vector<viz::mojom::ScrollNodePtr>& container) {
@@ -276,6 +319,11 @@ void ComputePropertyTreeNodeUpdate(
     return;
   }
 
+  CheckPropertyTreeIndexValid(trees.scroll_tree(), new_node.id);
+  CheckOptionalPropertyTreeIndexValid(trees.scroll_tree(), new_node.parent_id);
+  CheckOptionalPropertyTreeIndexValid(trees.transform_tree(),
+                                      new_node.transform_id);
+
   auto wire = viz::mojom::ScrollNode::New();
   wire->id = new_node.id;
   wire->parent_id = new_node.parent_id;
@@ -296,15 +344,18 @@ void ComputePropertyTreeNodeUpdate(
 }
 
 template <typename TreeType, typename ContainerType>
-void ComputePropertyTreeUpdate(const TreeType& old_tree,
+void ComputePropertyTreeUpdate(const PropertyTrees& trees,
+                               const TreeType& old_tree,
                                const TreeType& new_tree,
                                ContainerType& updates,
                                uint32_t& new_num_nodes) {
+  CHECK(!(new_tree.size() == 0 && old_tree.size() > 0));
   using NodeType = typename TreeType::NodeType;
   new_num_nodes = base::checked_cast<uint32_t>(new_tree.size());
   for (size_t i = 0; i < new_tree.size(); ++i) {
-    const NodeType* old_node = old_tree.size() > i ? old_tree.Node(i) : nullptr;
-    ComputePropertyTreeNodeUpdate(old_node, *new_tree.Node(i), updates);
+    const NodeType* old_node =
+        old_tree.size() > i ? &old_tree.Node(i) : nullptr;
+    ComputePropertyTreeNodeUpdate(trees, old_node, new_tree.Node(i), updates);
   }
 }
 
@@ -313,6 +364,7 @@ void ComputeTransformTreeUpdate(
     const TransformTree& new_tree,
     std::vector<viz::mojom::TransformNodePtr>& updates,
     uint32_t& new_num_nodes) {
+  CHECK(!(new_tree.size() == 0 && old_tree.size() > 0));
   new_num_nodes = base::checked_cast<uint32_t>(new_tree.size());
 
   const auto& new_nodes = new_tree.nodes();
@@ -334,7 +386,7 @@ void ComputeTransformTreeUpdate(
     }
 
     if (changed) {
-      AddTransformNodeUpdate(new_node, updates);
+      AddTransformNodeUpdate(new_tree, new_node, updates);
     }
   }
 
@@ -343,16 +395,18 @@ void ComputeTransformTreeUpdate(
   }
 }
 
-void ComputeEffectTreeUpdate(const EffectTree& old_tree,
+void ComputeEffectTreeUpdate(const PropertyTrees& trees,
+                             const EffectTree& old_tree,
                              EffectTree& new_tree,
                              std::vector<::viz::mojom::EffectNodePtr>& updates,
                              uint32_t& new_num_nodes) {
+  CHECK(!(new_tree.size() == 0 && old_tree.size() > 0));
   // Take any copy output requests from `new_tree` to push over the wire.
   auto copy_requests = new_tree.TakeCopyRequests();
 
   new_num_nodes = base::checked_cast<uint32_t>(new_tree.size());
   for (size_t i = 0; i < new_tree.size(); ++i) {
-    const auto* old_node = old_tree.size() > i ? old_tree.Node(i) : nullptr;
+    const auto* old_node = old_tree.size() > i ? &old_tree.Node(i) : nullptr;
 
     // Push any copy output requests for this node.
     auto range = copy_requests.equal_range(i);
@@ -361,15 +415,24 @@ void ComputeEffectTreeUpdate(const EffectTree& old_tree,
       copy_requests_for_node.push_back(std::move(it->second));
     }
 
-    ComputePropertyTreeNodeUpdate(old_node, *new_tree.Node(i), updates,
+    ComputePropertyTreeNodeUpdate(trees, old_node, new_tree.Node(i), updates,
                                   std::move(copy_requests_for_node));
   }
 }
 
 std::vector<viz::mojom::StickyPositionNodeDataPtr> SerializeStickyPositionData(
+    const ScrollTree& scroll_tree,
+    const TransformTree& transform_tree,
     const std::vector<StickyPositionNodeData>& entries) {
   std::vector<viz::mojom::StickyPositionNodeDataPtr> wire_data;
   for (const auto& data : entries) {
+    CheckOptionalPropertyTreeIndexValid(scroll_tree, data.x_scroll_ancestor);
+    CheckOptionalPropertyTreeIndexValid(scroll_tree, data.y_scroll_ancestor);
+    CheckOptionalPropertyTreeIndexValid(transform_tree,
+                                        data.nearest_node_shifting_sticky_box);
+    CheckOptionalPropertyTreeIndexValid(
+        transform_tree, data.nearest_node_shifting_containing_block);
+
     auto wire = viz::mojom::StickyPositionNodeData::New();
     wire->x_scroll_ancestor = data.x_scroll_ancestor;
     wire->y_scroll_ancestor = data.y_scroll_ancestor;
@@ -415,6 +478,7 @@ SerializeAnchorPositionScrollData(
 }
 
 viz::mojom::TransformTreeUpdatePtr ComputeTransformTreePropertiesUpdate(
+    const ScrollTree& scroll_tree,
     const TransformTree& old_tree,
     const TransformTree& new_tree) {
   if (old_tree.page_scale_factor() == new_tree.page_scale_factor() &&
@@ -444,12 +508,19 @@ viz::mojom::TransformTreeUpdatePtr ComputeTransformTreePropertiesUpdate(
       new_tree.device_transform_scale_factor();
   DUMP_WILL_BE_CHECK_GT(wire->device_transform_scale_factor, 0.f);
   DUMP_WILL_BE_CHECK(std::isfinite(wire->device_transform_scale_factor));
+  for (int id : new_tree.nodes_affected_by_outer_viewport_bounds_delta()) {
+    CheckOptionalPropertyTreeIndexValid(new_tree, id);
+  }
+  for (int id : new_tree.nodes_affected_by_safe_area_bottom()) {
+    CheckOptionalPropertyTreeIndexValid(new_tree, id);
+  }
+
   wire->nodes_affected_by_outer_viewport_bounds_delta =
       new_tree.nodes_affected_by_outer_viewport_bounds_delta();
   wire->nodes_affected_by_safe_area_bottom =
       new_tree.nodes_affected_by_safe_area_bottom();
-  wire->sticky_position_data =
-      SerializeStickyPositionData(new_tree.sticky_position_data());
+  wire->sticky_position_data = SerializeStickyPositionData(
+      scroll_tree, new_tree, new_tree.sticky_position_data());
   wire->anchor_position_scroll_data =
       SerializeAnchorPositionScrollData(new_tree.anchor_position_scroll_data());
   wire->drawn_elastic_overscroll = new_tree.drawn_elastic_overscroll();
@@ -883,6 +954,17 @@ void SerializeLayer(LayerImpl& layer,
       wire.type = mojom::LayerType::kSolidColor;
   }
 
+  const PropertyTrees& property_trees =
+      *layer.layer_tree_impl()->property_trees();
+  CheckOptionalPropertyTreeIndexValid(property_trees.transform_tree(),
+                                      layer.transform_tree_index());
+  CheckOptionalPropertyTreeIndexValid(property_trees.clip_tree(),
+                                      layer.clip_tree_index());
+  CheckOptionalPropertyTreeIndexValid(property_trees.effect_tree(),
+                                      layer.effect_tree_index());
+  CheckOptionalPropertyTreeIndexValid(property_trees.scroll_tree(),
+                                      layer.scroll_tree_index());
+
   wire.transform_tree_index = layer.transform_tree_index();
   wire.clip_tree_index = layer.clip_tree_index();
   wire.effect_tree_index = layer.effect_tree_index();
@@ -1228,7 +1310,8 @@ void SerializeAnimationCurve(const KeyframeModel& model,
   wire.playback_rate = model.playback_rate();
   wire.iterations = model.iterations();
   wire.iteration_start = model.iteration_start();
-  wire.time_offset = model.time_offset();
+  wire.start_delay = model.start_delay();
+  wire.hold_time = model.hold_time();
   wire.keyframes.reserve(curve.keyframes().size());
   for (const auto& keyframe : curve.keyframes()) {
     auto wire_keyframe = viz::mojom::AnimationKeyframe::New();
@@ -1378,12 +1461,15 @@ base::TimeTicks VizLayerContext::UpdateDisplayTreeFrom(
     gpu::SharedImageInterface* shared_image_interface,
     const gfx::Rect& viewport_damage_rect,
     bool frame_has_damage,
-    std::vector<ui::LatencyInfo> latency_info) {
+    bool is_flush,
+    std::vector<ui::LatencyInfo> latency_info,
+    viz::TrackedElementRects tracked_element_rects) {
   TRACE_EVENT0("viz", "VizLayerContext::UpdateDisplayTreeFrom");
 
   auto& property_trees = *tree.property_trees();
   auto update = viz::mojom::LayerTreeUpdate::New();
-  update->begin_frame_args = tree.CurrentBeginFrameArgs();
+  update->begin_frame_args =
+      is_flush ? viz::BeginFrameArgs() : tree.CurrentBeginFrameArgs();
   update->source_frame_number = tree.source_frame_number();
   update->trace_id = tree.trace_id().value();
   update->primary_main_frame_item_sequence_number =
@@ -1404,7 +1490,13 @@ base::TimeTicks VizLayerContext::UpdateDisplayTreeFrom(
   DUMP_WILL_BE_CHECK_GT(update->external_page_scale_factor, 0.f);
   DUMP_WILL_BE_CHECK(std::isfinite(update->external_page_scale_factor));
   update->frame_has_damage = frame_has_damage;
+
+  // The is_flush flag is propagated to Viz to indicate whether this is a
+  // synchronization-only update.
+  update->is_flush = is_flush;
+
   update->latency_info = std::move(latency_info);
+  update->tracked_element_rects = std::move(tracked_element_rects);
   update->device_viewport = tree.GetDeviceViewport();
   update->device_scale_factor = tree.device_scale_factor();
   DUMP_WILL_BE_CHECK_GT(update->device_scale_factor, 0.f);
@@ -1416,7 +1508,14 @@ base::TimeTicks VizLayerContext::UpdateDisplayTreeFrom(
   if (tree.local_surface_id_from_parent().is_valid()) {
     update->local_surface_id_from_parent = tree.local_surface_id_from_parent();
   }
-  update->current_local_surface_id = host_impl_->GetCurrentLocalSurfaceId();
+
+  // The current LocalSurfaceId is optional because an invalid LocalSurfaceId
+  // (specifically one with an empty UnguessableToken) cannot be serialized.
+  // We omit it here if invalid, and the service will verify its presence
+  // for non-flush updates.
+  if (host_impl_->GetCurrentLocalSurfaceId().is_valid()) {
+    update->current_local_surface_id = host_impl_->GetCurrentLocalSurfaceId();
+  }
   DCHECK_NE(host_impl_->next_frame_token(), viz::kInvalidFrameToken);
   update->next_frame_token = host_impl_->next_frame_token();
   update->send_frame_token_to_embedder =
@@ -1424,6 +1523,18 @@ base::TimeTicks VizLayerContext::UpdateDisplayTreeFrom(
   update->background_color = tree.background_color();
 
   const ViewportPropertyIds& property_ids = tree.viewport_property_ids();
+  CheckOptionalPropertyTreeIndexValid(
+      property_trees.transform_tree(),
+      property_ids.overscroll_elasticity_transform);
+  CheckOptionalPropertyTreeIndexValid(property_trees.transform_tree(),
+                                      property_ids.page_scale_transform);
+  CheckOptionalPropertyTreeIndexValid(property_trees.scroll_tree(),
+                                      property_ids.inner_scroll);
+  CheckOptionalPropertyTreeIndexValid(property_trees.clip_tree(),
+                                      property_ids.outer_clip);
+  CheckOptionalPropertyTreeIndexValid(property_trees.scroll_tree(),
+                                      property_ids.outer_scroll);
+
   update->overscroll_elasticity_transform =
       property_ids.overscroll_elasticity_transform;
   update->page_scale_transform = property_ids.page_scale_transform;
@@ -1434,12 +1545,17 @@ base::TimeTicks VizLayerContext::UpdateDisplayTreeFrom(
         std::make_unique<gfx::DelegatedInkMetadata>(
             *tree.delegated_ink_metadata());
   }
+
+  if (auto token = host_impl_->TakeScreenshotDestinationToken();
+      !token.is_empty()) {
+    update->screenshot_destination =
+        blink::SameDocNavigationScreenshotDestinationToken(token);
+  }
+
   update->may_throttle_if_undrawn_frames =
       host_impl_->may_throttle_if_undrawn_frames();
   update->is_viewport_mobile_optimized =
       host_impl_->viewport_mobile_optimized();
-  update->browser_controls_shrink_blink_size =
-      tree.browser_controls_shrink_blink_size();
   update->is_animating_hud_contents = tree.IsAnimatingHUDContents();
   update->max_safe_area_inset_bottom = tree.max_safe_area_inset_bottom();
   update->browser_controls_params = tree.browser_controls_params();
@@ -1452,15 +1568,38 @@ base::TimeTicks VizLayerContext::UpdateDisplayTreeFrom(
   update->inner_scroll = property_ids.inner_scroll;
   update->outer_clip = property_ids.outer_clip;
   update->outer_scroll = property_ids.outer_scroll;
+  update->inner_viewport_container_bounds_delta =
+      property_trees.inner_viewport_container_bounds_delta();
+  update->outer_viewport_container_bounds_delta =
+      property_trees.outer_viewport_container_bounds_delta();
 
-  update->viewport_damage_rect = viewport_damage_rect;
-  if (tree.RootRenderSurface()) {
+  // During a flush update, we don't want to propagate any damage to Viz,
+  // as the update is for synchronization only and won't trigger a draw.
+  update->viewport_damage_rect = is_flush ? gfx::Rect() : viewport_damage_rect;
+
+  // We only compute root layer damage if the tree is not empty and property
+  // trees are initialized. This prevents crashes or invalid damage reports
+  // during initialization or backgrounding.
+  // The property tree must have a size greater than kContentsRootPropertyNodeId
+  // (which is index 1) to ensure the content root node exists. An "empty" tree
+  // has a size of 1 (containing only the root node at index 0).
+  // The content root node at index 1 is the owner of the root render surface;
+  // if it doesn't exist, there is no root damage to compute.
+  // We also skip this for flushes, as Viz will ignore damage during a
+  // synchronization-only update.
+  if (!is_flush && !tree.LayerListIsEmpty() &&
+      property_trees.effect_tree().size() > cc::kContentsRootPropertyNodeId &&
+      tree.RootRenderSurface()) {
     // Store the damage rect of the root render surface in the update.  This
     // allows us to verify that it matches the viz service calculation.
     // Note: The client might report damage outside the root surface content
     // rect (e.g. from a filter), so we must intersect with the content rect.
-    gfx::Rect damage_rect = tree.RootRenderSurface()->GetDamageRect();
-    damage_rect.Intersect(tree.RootRenderSurface()->content_rect());
+    gfx::Rect damage_rect;
+    if (frame_has_damage) {
+      damage_rect = tree.RootRenderSurface()->GetDamageRect();
+      damage_rect.Subtract(viewport_damage_rect);
+      damage_rect.Intersect(tree.RootRenderSurface()->content_rect());
+    }
     update->root_layer_damage_rect = damage_rect;
   }
   update->full_tree_damaged = property_trees.full_tree_damaged();
@@ -1529,16 +1668,18 @@ base::TimeTicks VizLayerContext::UpdateDisplayTreeFrom(
         old_trees.transform_tree_mutable(), property_trees.transform_tree(),
         update->transform_nodes, update->num_transform_nodes);
 
-    ComputePropertyTreeUpdate(old_trees.clip_tree(), property_trees.clip_tree(),
-                              update->clip_nodes, update->num_clip_nodes);
-    ComputeEffectTreeUpdate(old_trees.effect_tree(),
+    ComputePropertyTreeUpdate(property_trees, old_trees.clip_tree(),
+                              property_trees.clip_tree(), update->clip_nodes,
+                              update->num_clip_nodes);
+    ComputeEffectTreeUpdate(property_trees, old_trees.effect_tree(),
                             property_trees.effect_tree_mutable(),
                             update->effect_nodes, update->num_effect_nodes);
-    ComputePropertyTreeUpdate(old_trees.scroll_tree(),
+    ComputePropertyTreeUpdate(property_trees, old_trees.scroll_tree(),
                               property_trees.scroll_tree(),
                               update->scroll_nodes, update->num_scroll_nodes);
     update->transform_tree_update = ComputeTransformTreePropertiesUpdate(
-        old_trees.transform_tree(), property_trees.transform_tree());
+        property_trees.scroll_tree(), old_trees.transform_tree(),
+        property_trees.transform_tree());
 
     update->scroll_tree_update = ComputeScrollTreePropertiesUpdate(
         old_trees.scroll_tree(), property_trees.scroll_tree());
@@ -1722,6 +1863,10 @@ VizLayerContext::MaybeSerializeAnimationTimeline(
   wire->new_animations = std::move(new_animations);
   wire->removed_animations = std::move(removed_animations);
   return wire;
+}
+
+void VizLayerContext::FlushReceiverForTesting() {
+  client_receiver_.FlushForTesting();  // IN-TEST
 }
 
 void VizLayerContext::OnMojoConnectionError(uint32_t custom_reason,

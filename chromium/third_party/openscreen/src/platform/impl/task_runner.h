@@ -17,6 +17,7 @@
 #include "platform/api/time.h"
 #include "platform/base/error.h"
 #include "util/trace_logging.h"
+#include "util/thread_annotations.h"
 
 namespace openscreen {
 
@@ -114,7 +115,7 @@ class TaskRunnerImpl : public TaskRunner {
   // there are no ready-to-run tasks, and `is_running_` is true, this method
   // will block waiting for new tasks. Returns true if any tasks were
   // transferred.
-  bool GrabMoreRunnableTasks();
+  bool GrabMoreRunnableTasks() OSP_NO_THREAD_SAFETY_ANALYSIS;
 
   const ClockNowFunctionPtr now_function_;
 
@@ -125,10 +126,9 @@ class TaskRunnerImpl : public TaskRunner {
   // This mutex is used for `tasks_` and `delayed_tasks_`, and also for
   // notifying the run loop to wake up when it is waiting for a task to be added
   // to the queue in `run_loop_wakeup_`.
-  // TODO(crbug.com/322734860): implement OSP_GUARDED_BY / better mutex support.
   std::mutex task_mutex_;
-  std::vector<TaskWithMetadata> tasks_;
-  std::multimap<Clock::time_point, TaskWithMetadata> delayed_tasks_;
+  std::vector<TaskWithMetadata> tasks_ OSP_GUARDED_BY(task_mutex_);
+  std::multimap<Clock::time_point, TaskWithMetadata> delayed_tasks_ OSP_GUARDED_BY(task_mutex_);
 
   // When `task_waiter_` is nullptr, `run_loop_wakeup_` is used for sleeping the
   // task runner.  Otherwise, `run_loop_wakeup_` isn't used and `task_waiter_`

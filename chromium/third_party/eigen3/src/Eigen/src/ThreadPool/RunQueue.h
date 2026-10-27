@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_THREADPOOL_RUNQUEUE_H
-#define EIGEN_CXX11_THREADPOOL_RUNQUEUE_H
+#ifndef EIGEN_THREADPOOL_RUNQUEUE_H
+#define EIGEN_THREADPOOL_RUNQUEUE_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -196,9 +197,8 @@ class RunQueue {
         std::atomic_thread_fence(std::memory_order_acquire);
         continue;
       }
-      if (NeedSizeEstimate) {
-        return CalculateSize(front, back);
-      } else {
+      EIGEN_IF_CONSTEXPR(NeedSizeEstimate) { return CalculateSize(front, back); }
+      else {
         // This value will be 0 if the queue is empty, and undefined otherwise.
         unsigned maybe_zero = ((front ^ back) & kMask2);
         // Queue size estimate must agree with maybe zero check on the queue
@@ -227,4 +227,4 @@ class RunQueue {
 
 }  // namespace Eigen
 
-#endif  // EIGEN_CXX11_THREADPOOL_RUNQUEUE_H
+#endif  // EIGEN_THREADPOOL_RUNQUEUE_H

@@ -31,6 +31,7 @@
 #include <xdg-decoration-unstable-v1-server-protocol.h>
 #include <xdg-shell-server-protocol.h>
 
+#include <array>
 #include <memory>
 #include <string>
 #include <utility>
@@ -169,9 +170,9 @@ bool Server::Open() {
   // Change permissions on the socket.
   struct group wayland_group;
   struct group* wayland_group_res = nullptr;
-  char buf[10000];
-  if (HANDLE_EINTR(getgrnam_r(kWaylandSocketGroup, &wayland_group, buf,
-                              sizeof(buf), &wayland_group_res)) < 0) {
+  std::array<char, 10000> buf;
+  if (HANDLE_EINTR(getgrnam_r(kWaylandSocketGroup, &wayland_group, buf.data(),
+                              buf.size(), &wayland_group_res)) < 0) {
     PLOG(ERROR) << "getgrnam_r";
     return false;
   }
@@ -292,16 +293,18 @@ void Server::Initialize() {
   wl_global_create(wl_display_.get(), &zcr_notification_shell_v1_interface,
                    /*version=*/1, display_, bind_notification_shell);
 
-  remote_shell_data_ = std::make_unique<WaylandRemoteShellData>(
-      display_,
-      WaylandRemoteShellData::OutputResourceProvider(base::BindRepeating(
-          &Server::GetOutputResource, base::Unretained(this))));
-  wl_global_create(wl_display_.get(), &zcr_remote_shell_v1_interface,
-                   kZcrRemoteShellVersion, remote_shell_data_.get(),
-                   bind_remote_shell);
-  wl_global_create(wl_display_.get(), &zcr_remote_shell_v2_interface,
-                   kZcrRemoteShellV2Version, remote_shell_data_.get(),
-                   bind_remote_shell_v2);
+  if (security_delegate_ && security_delegate_->CanAccessRemoteShell()) {
+    remote_shell_data_ = std::make_unique<WaylandRemoteShellData>(
+        display_,
+        WaylandRemoteShellData::OutputResourceProvider(base::BindRepeating(
+            &Server::GetOutputResource, base::Unretained(this))));
+    wl_global_create(wl_display_.get(), &zcr_remote_shell_v1_interface,
+                     kZcrRemoteShellVersion, remote_shell_data_.get(),
+                     bind_remote_shell);
+    wl_global_create(wl_display_.get(), &zcr_remote_shell_v2_interface,
+                     kZcrRemoteShellV2Version, remote_shell_data_.get(),
+                     bind_remote_shell_v2);
+  }
 
   wl_global_create(wl_display_.get(), &zcr_stylus_tools_v1_interface,
                    /*version=*/1, display_, bind_stylus_tools);

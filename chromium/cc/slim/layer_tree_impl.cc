@@ -16,6 +16,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/rand_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/timer/elapsed_timer.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/typed_macros.h"
@@ -295,7 +296,7 @@ bool LayerTreeImpl::BeginFrame(
   // Skip any delayed BeginFrame messages that arrive even after we no longer
   // need it.
   if (!NeedsDraw()) {
-    TRACE_EVENT_INSTANT0("cc", "EarlyOut_NotNeeded", TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT("cc", "EarlyOut_NotNeeded");
     ++begin_frame_not_needed_count_;
     num_begin_frames_with_no_draw_++;
     frame_sink_->SetNeedsBeginFrame(NeedsBeginFrames());
@@ -349,7 +350,7 @@ void LayerTreeImpl::DidPresentCompositorFrame(
   const bool success = !details.presentation_feedback.failed();
   for (auto itr = pending_presentation_callbacks_.begin();
        itr != pending_presentation_callbacks_.end();) {
-    if (viz::FrameTokenGT(itr->frame_token, frame_token)) {
+    if (itr->frame_token > frame_token) {
       break;
     }
     for (auto& callback : itr->presentation_callbacks) {
@@ -377,7 +378,6 @@ void LayerTreeImpl::DidPresentCompositorFrame(
 void LayerTreeImpl::DidLoseLayerTreeFrameSink() {
   client_->DidLoseLayerTreeFrameSink();
   MaybeReleaseResources();
-  frame_sink_.reset();
   MaybeRequestFrameSink();
 }
 
@@ -911,14 +911,13 @@ void LayerTreeImpl::Draw(Layer& layer,
   auto* quad =
       parent_pass.CreateAndAppendDrawQuad<viz::CompositorRenderPassDrawQuad>();
 
-  gfx::RectF tex_coord_rect(gfx::Rect(content_rect.size()));
   quad->SetAll(shared_quad_state, content_rect, content_rect,
                /*needs_blending=*/true, new_pass->id,
                /*mask_resource_id=*/viz::kInvalidResourceId,
                /*mask_uv_rect=*/gfx::RectF(),
                /*mask_texture_size=*/gfx::Size(),
                /*filters_scale=*/scale_to_new_pass,
-               /*filters_origin=*/gfx::PointF(), tex_coord_rect,
+               /*filters_origin=*/gfx::PointF(),
                /*force_anti_aliasing_off=*/false,
                /*backdrop_filter_quality=*/1.f,
                /*intersects_damage_under=*/true);

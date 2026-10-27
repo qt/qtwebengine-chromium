@@ -39,7 +39,6 @@
 #include "base/no_destructor.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
 #include "third_party/blink/renderer/platform/fonts/font_fallback_priority.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/icu_error.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_hash.h"
@@ -321,7 +320,7 @@ void InitializeScriptFontMap(ScriptToFontMap& script_font_map) {
 }
 
 UScriptCode GetScript(int ucs4) {
-  ICUError err;
+  IcuError err;
   UScriptCode script = uscript_getScript(ucs4, &err);
   // If script is invalid, common or inherited or there's an error,
   // infer a script based on the unicode block of a character.

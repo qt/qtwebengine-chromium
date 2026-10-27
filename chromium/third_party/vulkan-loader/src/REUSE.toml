@@ -1,0 +1,35 @@
+version = 1
+
+
+[[annotations]]
+path = "**"
+precedence = "closest"
+SPDX-FileCopyrightText = [
+    "The Khronos Group Inc.",
+]
+SPDX-License-Identifier = "Apache-2.0"
+
+
+[[annotations]]
+path = "loader/**"
+precedence = "closest"
+SPDX-FileCopyrightText = [
+    "The Khronos Group Inc.",
+    "Valve Corporation",
+    "LunarG, Inc.",
+]
+SPDX-License-Identifier = "Apache-2.0"
+
+
+[[annotations]]
+path = [
+    "tests/**",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = [
+    "The Khronos Group Inc.",
+    "Valve Corporation",
+    "LunarG, Inc.",
+]
+SPDX-License-Identifier = "MIT-Khronos-old"
+

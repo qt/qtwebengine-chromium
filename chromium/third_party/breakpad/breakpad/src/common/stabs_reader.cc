@@ -39,6 +39,9 @@
 
 #include <assert.h>
 #include <stab.h>
+#ifdef __APPLE__
+#include <mach-o/nlist.h>
+#endif
 #include <string.h>
 
 #include <string>

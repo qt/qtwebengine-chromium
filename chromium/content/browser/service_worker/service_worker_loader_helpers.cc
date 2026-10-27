@@ -19,6 +19,8 @@
 #include "content/browser/devtools/devtools_instrumentation.h"
 #include "content/browser/loader/browser_initiated_resource_request.h"
 #include "content/browser/service_worker/service_worker_consts.h"
+#include "content/browser/service_worker/service_worker_context_core.h"
+#include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/browser/service_worker/service_worker_synthetic_response_manager.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/common/features.h"
@@ -406,6 +408,34 @@ bool IsPathRestrictionSatisfiedWithoutHeader(const GURL& scope,
                                             std::nullopt, error_message);
 }
 
+ServiceWorkerMainScriptRequestValidationResult ValidateMainScriptRequest(
+    const network::ResourceRequest& resource_request,
+    const ServiceWorkerVersion& version) {
+  const bool is_url_match = (resource_request.url == version.script_url());
+  const bool is_dest_match =
+      (resource_request.destination ==
+       network::mojom::RequestDestination::kServiceWorker);
+  const bool is_mode_match =
+      (resource_request.mode == network::mojom::RequestMode::kSameOrigin);
+
+  if (is_dest_match) {
+    if (!is_mode_match) {
+      return ServiceWorkerMainScriptRequestValidationResult::kForgedMode;
+    }
+    if (!is_url_match) {
+      return ServiceWorkerMainScriptRequestValidationResult::kForgedUrl;
+    }
+    return ServiceWorkerMainScriptRequestValidationResult::kOk;
+  }
+
+  if (is_mode_match && is_url_match) {
+    return ServiceWorkerMainScriptRequestValidationResult::kForgedDestination;
+  }
+
+  // Not a main script request (or not forged in a way we track).
+  return ServiceWorkerMainScriptRequestValidationResult::kOk;
+}
+
 const base::flat_set<std::string> FetchHandlerBypassedHashStrings() {
   const static base::NoDestructor<base::flat_set<std::string>> result(
       base::SplitString(
@@ -479,9 +509,24 @@ bool IsSyntheticResponseDryRunModeEnabled() {
 }
 
 storage::mojom::ServiceWorkerFindRegistrationResultPtr
-GetOrCreateSyntheticRegistration(const GURL& client_url,
+GetOrCreateSyntheticRegistration(ServiceWorkerContextCore* context,
+                                 const GURL& client_url,
                                  const blink::StorageKey& key) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  // Extract the first path segment (e.g. "/foo" from
+  // "https://example.com/foo/bar") to establish a broader synthetic scope. This
+  // guarantees that subsequent navigations across different paths within the
+  // same search feature (e.g. "/foo/baz") successfully match the registration
+  // scope without triggering longest-scope mismatch crashes.
+  std::string_view path = client_url.path();
+  size_t second_slash = path.find('/', 1);
+  std::string first_path_segment(path.substr(0, second_slash));
+
+  GURL::Replacements replacements_for_scope;
+  replacements_for_scope.ClearQuery();
+  replacements_for_scope.SetPathStr(first_path_segment);
+  const auto kScope = client_url.ReplaceComponents(replacements_for_scope);
+
   // Cache registration IDs based on the StorageKey so that subsequent calls
   // for the same key return the same registration object. Using LRUCache to
   // prevent unbounded memory growth.
@@ -495,12 +540,27 @@ GetOrCreateSyntheticRegistration(const GURL& client_url,
   auto it = key_to_registration_id_map->Get(key);
   if (it != key_to_registration_id_map->end()) {
     registration_id = it->second;
-  } else {
+    // If an in-memory registration already exists but its scope does not match
+    // the requested synthetic scope (e.g. navigation across independent search
+    // paths like /foo vs /baz), evict the cached ID and allocate a new one.
+    // This prevents longest-scope mismatch crashes during navigation
+    // validation.
+    if (context) {
+      if (scoped_refptr<ServiceWorkerRegistration> live_reg =
+              context->GetLiveRegistration(registration_id);
+          live_reg && live_reg->scope() != kScope) {
+        key_to_registration_id_map->Erase(it);
+        it = key_to_registration_id_map->end();
+      }
+    }
+  }
+
+  if (it == key_to_registration_id_map->end()) {
     registration_id =
         blink::mojom::kSyntheticResponseServiceWorkerRegistrationId -
         synthetic_id_counter;
     synthetic_id_counter++;
-    key_to_registration_id_map->Put({key, registration_id});
+    key_to_registration_id_map->Put(key, registration_id);
   }
 
   GURL::Replacements replacements_for_script;
@@ -508,10 +568,6 @@ GetOrCreateSyntheticRegistration(const GURL& client_url,
   replacements_for_script.SetPathStr(
       "/service-worker-for-synthetic-response.js");
   const auto kScript = client_url.ReplaceComponents(replacements_for_script);
-
-  GURL::Replacements replacements_for_scope;
-  replacements_for_scope.ClearQuery();
-  const auto kScope = client_url.ReplaceComponents(replacements_for_scope);
 
   std::vector<storage::mojom::ServiceWorkerResourceRecordPtr> resources;
   {
@@ -529,7 +585,11 @@ GetOrCreateSyntheticRegistration(const GURL& client_url,
   data->script = kScript;
   data->script_type = blink::mojom::ScriptType::kModule;
   data->update_via_cache = blink::mojom::ServiceWorkerUpdateViaCache::kNone;
-  data->version_id = blink::mojom::kSyntheticResponseServiceWorkerVersionId;
+  // Use `registration_id` as `version_id` to ensure each distinct StorageKey
+  // gets its own unique ServiceWorkerVersion instance in memory, avoiding
+  // cross-origin collisions in ServiceWorkerContextCore::live_versions_
+  // (crbug.com/513205374).
+  data->version_id = registration_id;
   data->is_active = true;
   data->fetch_handler_type =
       blink::mojom::ServiceWorkerFetchHandlerType::kNoHandler;

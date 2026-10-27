@@ -32,6 +32,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/rand_util.h"
 #include "base/strings/strcat.h"
 #include "base/synchronization/lock.h"
 #include "base/task/sequenced_task_runner.h"
@@ -66,6 +67,7 @@
 #include "third_party/blink/renderer/core/loader/prefetched_signed_exchange_manager.h"
 #include "third_party/blink/renderer/core/loader/preload_helper.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
+#include "third_party/blink/renderer/core/sanitizer/sanitizer.h"
 #include "third_party/blink/renderer/core/script/html_parser_script_runner.h"
 #include "third_party/blink/renderer/platform/bindings/runtime_call_stats.h"
 #include "third_party/blink/renderer/platform/heap/cross_thread_handle.h"
@@ -344,6 +346,8 @@ class HTMLDocumentParser::PendingPreloads
 
 HTMLDocumentParser::HTMLDocumentParser(HTMLDocument& document,
                                        ParserSynchronizationPolicy sync_policy,
+                                       CustomElementRegistry* registry,
+                                       StreamingSanitizer* sanitizer,
                                        ParserPrefetchPolicy prefetch_policy)
     : HTMLDocumentParser(document,
                          kAllowScriptingContent,
@@ -357,7 +361,8 @@ HTMLDocumentParser::HTMLDocumentParser(HTMLDocument& document,
   bool include_shadow_roots = document.GetDeclarativeShadowRootAllowState() !=
                               Document::DeclarativeShadowRootAllowState::kDeny;
   tree_builder_ = MakeGarbageCollected<HTMLTreeBuilder>(
-      this, document, kAllowScriptingContent, options_, include_shadow_roots);
+      this, document, kAllowScriptingContent, options_, include_shadow_roots,
+      registry, sanitizer);
 }
 
 HTMLDocumentParser::HTMLDocumentParser(
@@ -558,7 +563,7 @@ void HTMLDocumentParser::PrepareToStopParsing() {
   AttemptToRunDeferredScriptsAndEnd();
 
   base::TimeDelta elapsed_time = timer.Elapsed();
-  if (metrics_sub_sampler_.ShouldSample(0.01)) {
+  if (base::ShouldRecordSubsampledMetric(0.01)) {
     base::UmaHistogramTimes("Blink.PrepareToStopParsingTime", elapsed_time);
   }
   if (metrics_reporter_) {
@@ -793,7 +798,7 @@ bool HTMLDocumentParser::PumpTokenizer() {
   }
 
   base::TimeDelta pump_tokenizer_elapsed_time = pump_tokenizer_timer.Elapsed();
-  if (metrics_sub_sampler_.ShouldSample(0.01)) {
+  if (base::ShouldRecordSubsampledMetric(0.01)) {
     base::UmaHistogramTimes("Blink.PumpTokenizerTime",
                             pump_tokenizer_elapsed_time);
   }
@@ -900,6 +905,7 @@ void HTMLDocumentParser::ConstructTreeFromToken(AtomicHTMLToken& atomic_token) {
   // Check whether we've exited the header.
   if (!task_runner_state_->HaveExitedHeader()) {
     if (GetDocument()->body()) {
+      TRACE_EVENT_INSTANT("blink", "HTMLDocumentParser::SetExitedHeader");
       task_runner_state_->SetExitedHeader();
     }
   }
@@ -1375,10 +1381,11 @@ void HTMLDocumentParser::ParseDocumentFragment(
     DocumentFragment* fragment,
     Element* context_element,
     CustomElementRegistry* registry,
-    ParserContentPolicy parser_content_policy) {
+    ParserContentPolicy parser_content_policy,
+    StreamingSanitizer* sanitizer) {
   auto* parser = MakeGarbageCollected<HTMLDocumentParser>(
       fragment, context_element, parser_content_policy,
-      ParserPrefetchPolicy::kAllowPrefetching, registry, /*sanitizer*/ nullptr);
+      ParserPrefetchPolicy::kAllowPrefetching, registry, sanitizer);
 
   parser->Append(source);
   parser->Finish();
@@ -1420,7 +1427,7 @@ void HTMLDocumentParser::DocumentElementAvailable() {
               perfetto::Flow::FromPointer(this));
   Document* document = GetDocument();
   DCHECK(document);
-  DCHECK(document->documentElement());
+  DCHECK(document->documentElement() || tree_builder_);
   Element* documentElement = GetDocument()->documentElement();
   if (documentElement->hasAttribute(AtomicString(u"\u26A1")) ||
       documentElement->hasAttribute(AtomicString("amp")) ||
@@ -1840,8 +1847,14 @@ bool HTMLDocumentParser::AllowPreloading() {
     }
 
     // Only allows preloads if all seen meta tags have been processed.
-    return static_cast<int>(csp->GetParsedPolicies().size()) ==
-           seen_csp_meta_tags_;
+    int processed_meta_policies = 0;
+    for (const auto& policy : csp->GetParsedPolicies()) {
+      if (policy->header->source ==
+          network::mojom::blink::ContentSecurityPolicySource::kMeta) {
+        ++processed_meta_policies;
+      }
+    }
+    return processed_meta_policies == seen_csp_meta_tags_;
   } else {
     return false;
   }

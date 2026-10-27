@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
+
 .test:linux:
   extends: .common:linux:cross
   stage: test
@@ -5,10 +8,7 @@
     - . ci/scripts/test.linux.script.sh
   after_script:
     - . ci/scripts/test.linux.after_script.sh
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_NAMESPACE == "libeigen"
-    - if: $CI_PIPELINE_SOURCE == "web" && $CI_PROJECT_NAMESPACE == "libeigen"
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_MERGE_REQUEST_LABELS =~ "/all-tests/"
+  rules: !reference [.rules:libeigen:all-tests, rules]
   tags:
     - saas-linux-2xlarge-amd64
   allow_failure:
@@ -90,6 +90,19 @@ test:linux:x86-64:gcc-10:avx512dq:unsupported:
   extends: .test:linux:x86-64:gcc-10:avx512dq
   variables:
     EIGEN_CI_CTEST_LABEL: Unsupported
+
+# GCC-13 for AVX512-FP16 (_Float16 support).
+.test:linux:x86-64:gcc-13:default:
+  extends: .test:linux:x86-64
+  needs: [ build:linux:cross:x86-64:gcc-13:default ]
+  variables:
+    EIGEN_CI_INSTALL: g++-13
+
+# The corresponding test jobs (test:linux:x86-64:gcc-13:avx512fp16:{official,
+# unsupported}) are intentionally omitted: we do not currently have a runner
+# whose CPU supports AVX512-FP16, so running them produces wholesale SIGILL
+# failures.  The build:linux:cross:x86-64:gcc-13:avx512fp16:* jobs remain so
+# that AVX512-FP16 code paths are still compile-checked.
 
 # Clang-14 (modern stable)
 .test:linux:x86-64:clang-14:default:
@@ -236,41 +249,86 @@ test:linux:x86-64:nvhpc-26.1:default:unsupported:
   allow_failure: true
   variables:
     EIGEN_CI_CTEST_LABEL: gpu
+  rules: !reference [.rules:libeigen:gpu, rules]
   tags:
     - saas-linux-medium-amd64-gpu-standard
 
-# GCC-10, CUDA-12.2
-test:linux:cuda-12.2:gcc-10:
+# ---- CUDA 11.5 + oldest supported compilers ---------------------------------
+
+# GCC-10, CUDA-11.5
+test:linux:cuda-11.5:gcc-10:
   extends: .test:linux:cuda
-  image: nvidia/cuda:12.2.0-devel-ubuntu20.04
-  needs: [ build:linux:cuda-12.2:gcc-10 ]
+  image: nvidia/cuda:11.5.2-devel-ubuntu20.04
+  needs: [ build:linux:cuda-11.5:gcc-10 ]
   variables:
+    EIGEN_CI_INSTALL: gcc-10 g++-10
+    EIGEN_CI_C_COMPILER: gcc-10
     EIGEN_CI_CXX_COMPILER: g++-10
-    EIGEN_CI_CC_COMPILER: gcc-10
 
-# Clang-12, CUDA-12.2
-test:linux:cuda-12.2:clang-12:
+# Clang-14, CUDA-11.5
+test:linux:cuda-11.5:clang-14:
   extends: .test:linux:cuda
-  image: nvidia/cuda:12.2.0-devel-ubuntu20.04
-  needs: [ build:linux:cuda-12.2:clang-12 ]
+  image: nvidia/cuda:11.5.2-devel-ubuntu20.04
+  needs: [ build:linux:cuda-11.5:clang-14 ]
+  before_script:
+    # Ubuntu 20.04 lacks clang-14.  Add the LLVM apt repo before
+    # the common before_script installs EIGEN_CI_INSTALL packages.
+    - apt-get update -y > /dev/null
+    - apt-get install -y --no-install-recommends wget gnupg > /dev/null
+    - wget -qO - https://apt.llvm.org/llvm-snapshot.gpg.key
+        | gpg --dearmor -o /usr/share/keyrings/llvm-archive-keyring.gpg
+    - echo 'deb [signed-by=/usr/share/keyrings/llvm-archive-keyring.gpg] http://apt.llvm.org/focal/ llvm-toolchain-focal-14 main'
+        > /etc/apt/sources.list.d/llvm-14.list
+    - apt-get update -y > /dev/null
+    - . ci/scripts/common.linux.before_script.sh
   variables:
-    EIGEN_CI_CXX_COMPILER: clang++-12
-    EIGEN_CI_CC_COMPILER: clang-12
+    EIGEN_CI_INSTALL: clang-14
+    EIGEN_CI_CXX_COMPILER: clang++-14
+    EIGEN_CI_C_COMPILER: clang-14
 
+# ---- New: latest CUDA -------------------------------------------------------
+
+# GCC-13, CUDA-12.6
+test:linux:cuda-12.6:gcc-13:
+  extends: .test:linux:cuda
+  image: nvidia/cuda:12.6.3-devel-ubuntu24.04
+  needs: [ build:linux:cuda-12.6:gcc-13 ]
+  variables:
+    EIGEN_CI_CXX_COMPILER: g++-13
+    EIGEN_CI_C_COMPILER: gcc-13
+
+# Clang-19, CUDA-12.6
+test:linux:cuda-12.6:clang-19:
+  extends: .test:linux:cuda
+  image: nvidia/cuda:12.6.3-devel-ubuntu24.04
+  needs: [ build:linux:cuda-12.6:clang-19 ]
+  variables:
+    EIGEN_CI_INSTALL: clang-19
+    EIGEN_CI_CXX_COMPILER: clang++-19
+    EIGEN_CI_C_COMPILER: clang-19
+
+
+##### qemu-emulated test base ##################################################
+
+# Shared base for cross-arch tests that run under qemu-user emulation
+# (arm, ppc64le, loongarch64).  Limits parallelism, raises the per-test
+# timeout, and skips tests that are too slow to be useful under qemu.
+.test:linux:qemu:
+  extends: .test:linux
+  variables:
+    EIGEN_CI_CTEST_ARGS: --timeout 2000
+    EIGEN_CI_CTEST_PARALLEL: "4"
+    EIGEN_CI_CTEST_EXCLUDE: tensor_thread_pool
+  tags:
+    - saas-linux-large-amd64
 
 ##### arm ######################################################################
 
 .test:linux:arm:
-  extends: .test:linux
+  extends: .test:linux:qemu
   variables:
     EIGEN_CI_TARGET_ARCH: arm
     EIGEN_CI_CROSS_TARGET_TRIPLE: arm-linux-gnueabihf
-    EIGEN_CI_CTEST_ARGS: --timeout 2000
-    EIGEN_CI_CTEST_PARALLEL: "4"
-    # Thread pool tests are too slow under qemu emulation.
-    EIGEN_CI_CTEST_EXCLUDE: tensor_thread_pool
-  tags:
-    - saas-linux-large-amd64
 
 .test:linux:arm:gcc-10:default:
   extends: .test:linux:arm
@@ -349,16 +407,10 @@ test:linux:aarch64:clang-14:default:unsupported:
 ##### ppc64le ##################################################################
 
 .test:linux:ppc64le:
-  extends: .test:linux
+  extends: .test:linux:qemu
   variables:
     EIGEN_CI_TARGET_ARCH: ppc64le
     EIGEN_CI_CROSS_TARGET_TRIPLE: powerpc64le-linux-gnu
-    EIGEN_CI_CTEST_ARGS: --timeout 2000
-    EIGEN_CI_CTEST_PARALLEL: "4"
-    # Thread pool tests are too slow under qemu emulation.
-    EIGEN_CI_CTEST_EXCLUDE: tensor_thread_pool
-  tags:
-    - saas-linux-large-amd64
 
 .test:linux:ppc64le:gcc-14:default:
   extends: .test:linux:ppc64le
@@ -395,17 +447,11 @@ test:linux:ppc64le:clang-16:default:unsupported:
 ##### loongarch64 ##############################################################
 
 .test:linux:loongarch64:
-  extends: .test:linux
+  extends: .test:linux:qemu
   variables:
     EIGEN_CI_TARGET_ARCH: loongarch64
     EIGEN_CI_CROSS_TARGET_TRIPLE: loongarch64-linux-gnu
     EIGEN_CI_CROSS_INSTALL: g++-14-loongarch64-linux-gnu qemu-user-static
-    EIGEN_CI_CTEST_ARGS: --timeout 2000
-    EIGEN_CI_CTEST_PARALLEL: "4"
-    # Thread pool tests are too slow under qemu emulation.
-    EIGEN_CI_CTEST_EXCLUDE: tensor_thread_pool
-  tags:
-    - saas-linux-large-amd64
 
 # GCC-14 (Ubuntu 24)
 .test:linux:loongarch64:gcc-14:default:
@@ -426,8 +472,10 @@ test:linux:loongarch64:gcc-14:default:unsupported:
 
 test:linux:x86-64:gcc-10:default:smoketest:
   extends: .test:linux:x86-64:gcc-10:default
+  image: ${EIGEN_CI_IMAGE_LINUX_AMD64_SMOKETEST_RUN}
   needs: [ build:linux:cross:x86-64:gcc-10:default:smoketest ]
   variables:
+    EIGEN_CI_SKIP_APT: "true"
     EIGEN_CI_CTEST_LABEL: smoketest
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -436,8 +484,10 @@ test:linux:x86-64:gcc-10:default:smoketest:
 
 test:linux:x86-64:clang-14:default:smoketest:
   extends: .test:linux:x86-64:clang-14:default
+  image: ${EIGEN_CI_IMAGE_LINUX_AMD64_SMOKETEST_RUN}
   needs: [ build:linux:cross:x86-64:clang-14:default:smoketest ]
   variables:
+    EIGEN_CI_SKIP_APT: "true"
     EIGEN_CI_CTEST_LABEL: smoketest
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -446,30 +496,24 @@ test:linux:x86-64:clang-14:default:smoketest:
 
 test:linux:aarch64:gcc-10:default:smoketest:
   extends: .test:linux:aarch64:gcc-10:default
+  image: ${EIGEN_CI_IMAGE_LINUX_ARM64_SMOKETEST_RUN}
   needs: [ build:linux:aarch64:gcc-10:default:smoketest ]
   variables:
+    EIGEN_CI_SKIP_APT: "true"
     EIGEN_CI_CTEST_LABEL: smoketest
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   tags:
-    - saas-linux-medium-arm64
+    - saas-linux-small-arm64
 
-##### Sanitizer Smoke Tests ####################################################
-
-test:linux:x86-64:clang-14:sanitizer:smoketest:
-  extends: .test:linux:x86-64:clang-14:default
-  needs: [ build:linux:cross:x86-64:clang-14:sanitizer:smoketest ]
+test:linux:aarch64:clang-14:default:smoketest:
+  extends: .test:linux:aarch64:clang-14:default
+  image: ${EIGEN_CI_IMAGE_LINUX_ARM64_SMOKETEST_RUN}
+  needs: [ build:linux:aarch64:clang-14:default:smoketest ]
   variables:
-    EIGEN_CI_INSTALL: clang-14 llvm-14 libclang-rt-14-dev
+    EIGEN_CI_SKIP_APT: "true"
     EIGEN_CI_CTEST_LABEL: smoketest
-    EIGEN_CI_CTEST_PARALLEL: "2"
-    EIGEN_CI_CTEST_ARGS: --timeout 120
-    ASAN_OPTIONS: "detect_leaks=0:halt_on_error=1:abort_on_error=1:allocator_may_return_null=1:print_stacktrace=1:detect_stack_use_after_return=0"
-    ASAN_SYMBOLIZER_PATH: "/usr/lib/llvm-14/bin/llvm-symbolizer"
-    UBSAN_OPTIONS: "halt_on_error=0:print_stacktrace=1"
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   tags:
-    - saas-linux-medium-amd64
-  allow_failure: true
-  timeout: 30m
+    - saas-linux-small-arm64

@@ -4,6 +4,7 @@
 
 #include "src/wasm/wasm-subtyping.h"
 
+#include "src/base/logging.h"
 #include "src/wasm/canonical-types.h"
 #include "src/wasm/wasm-module.h"
 
@@ -161,7 +162,9 @@ StandardType UpcastToStandardType(ValueTypeBase type) {
   /* exnref hierarchy */                                                       \
   V(NoExn, Exn)                                                                \
   /* cont hierarchy */                                                         \
-  V(NoCont, Cont)
+  V(NoCont, Cont)                                                              \
+  /* waitqueue hierarchy */                                                    \
+  V(NoWaitqueue, Waitqueue)
 
 static constexpr uint32_t kNumStandardTypes =
     value_type_impl::kNumberOfStandardTypes;
@@ -228,6 +231,7 @@ constexpr uint8_t ComputeCondensedIndex(StandardType type) {
     FOREACH_GENERIC_TYPE(CASE)
 #undef CASE
   }
+  UNREACHABLE();
 }
 constexpr StandardType ComputeStandardType(uint8_t condensed_index) {
 #define CASE(name, ...)                                                \
@@ -392,6 +396,7 @@ bool ValidSubtypeDefinition(ModuleTypeIndex subtype_index,
       return ValidContinuationSubtypeDefinition(subtype_index, supertype_index,
                                                 module);
   }
+  UNREACHABLE();
 }
 
 namespace {
@@ -400,8 +405,8 @@ std::optional<bool> IsSubtypeOf_CommonImpl(ValueTypeBase subtype,
                                            ValueTypeBase supertype) {
   DCHECK(!subtype.is_numeric() && !supertype.is_numeric());
 
-  if (subtype.is_shared() != supertype.is_shared()) return false;
   if (subtype.is_bottom()) return true;
+  if (subtype.is_shared() != supertype.is_shared()) return false;
   if (supertype.has_index()) {
     if (subtype.has_index()) {
       // Only exact types can possibly be subtypes of other exact types.

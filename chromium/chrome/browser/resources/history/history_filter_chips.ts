@@ -2,6 +2,10 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
+// <if expr="_google_chrome">
+import './internal/icons.html.js';
+// </if>
+
 import 'chrome://resources/cr_elements/cr_chip/cr_chip.js';
 import 'chrome://resources/cr_elements/cr_icon/cr_icon.js';
 import 'chrome://resources/cr_elements/icons.html.js';
@@ -32,6 +36,8 @@ export class HistoryFilterChipsElement extends CrLitElement {
     };
   }
 
+  // These values are used to filter the history query; true indicates that
+  // results for the respective value should be included.
   private accessor userVisits: boolean = true;
   private accessor actorVisits: boolean = true;
 
@@ -44,26 +50,16 @@ export class HistoryFilterChipsElement extends CrLitElement {
   }
 
   protected onUserVisitsClick_() {
-    // Toggle logic: If both are on, clicking one turns off the other.
-    if (this.userVisits && this.actorVisits) {
-      this.actorVisits = false;
-    } else {
-      this.userVisits = true;
-      this.actorVisits = true;
-    }
+    this.userVisits = true;
+    this.actorVisits = !this.actorVisits;
 
     this.recordMetrics_(this.userVisits, this.actorVisits);
     this.fireChange_(this.userVisits, this.actorVisits);
   }
 
   protected onActorVisitsClick_() {
-    // Toggle logic: If both are on, clicking one turns off the other.
-    if (this.userVisits && this.actorVisits) {
-      this.userVisits = false;
-    } else {
-      this.userVisits = true;
-      this.actorVisits = true;
-    }
+    this.actorVisits = true;
+    this.userVisits = !this.userVisits;
 
     this.recordMetrics_(this.userVisits, this.actorVisits);
     this.fireChange_(this.userVisits, this.actorVisits);
@@ -82,6 +78,22 @@ export class HistoryFilterChipsElement extends CrLitElement {
     if (action !== '') {
       BrowserServiceImpl.getInstance().recordAction(action);
     }
+  }
+
+  protected getUserVisitsIcon_(): string {
+    return this.isUserSelected() ? 'cr:check' : 'cr:person';
+  }
+
+  protected getActorVisitsIcon_(): string {
+    if (this.isActorSelected()) {
+      return 'cr:check';
+    }
+    // <if expr="_google_chrome">
+    return 'history-internal:screensaver-auto';
+    // </if>
+    // <if expr="not _google_chrome">
+    return '';
+    // </if>
   }
 
   private fireChange_(userVisits: boolean, actorVisits: boolean) {

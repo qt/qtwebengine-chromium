@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 SelfAdjointEigenSolver<MatrixXf> es(4);
 MatrixXf X = MatrixXf::Random(4, 4);
 MatrixXf A = X + X.transpose();

@@ -6,7 +6,7 @@ use std::mem;
 use std::sync::Arc;
 
 use crate::compiler::instructions::{
-    Instruction, Instructions, LOOP_FLAG_RECURSIVE, LOOP_FLAG_WITH_LOOP_VAR, MAX_LOCALS,
+    CompareOp, Instruction, Instructions, LOOP_FLAG_RECURSIVE, LOOP_FLAG_WITH_LOOP_VAR, MAX_LOCALS,
 };
 use crate::environment::Environment;
 use crate::error::{Error, ErrorKind};
@@ -280,6 +280,8 @@ impl<'env> Vm<'env> {
                 ($op:tt) => {{
                     b = stack.pop();
                     a = stack.pop();
+                    ctx_ok!(undefined_behavior.assert_value_not_undefined(&a));
+                    ctx_ok!(undefined_behavior.assert_value_not_undefined(&b));
                     stack.push(Value::from(a $op b));
                 }};
             }
@@ -464,15 +466,66 @@ impl<'env> Vm<'env> {
                 Instruction::StringConcat => {
                     a = stack.pop();
                     b = stack.pop();
+                    ctx_ok!(undefined_behavior.assert_value_not_undefined(&b));
+                    ctx_ok!(undefined_behavior.assert_value_not_undefined(&a));
                     stack.push(ops::string_concat(b, &a));
                 }
                 Instruction::In => {
                     a = stack.pop();
                     b = stack.pop();
-                    // the in-operator can fail if the value is undefined and
+                    // the in-operator can fail if either side is undefined and
                     // we are in strict mode.
                     ctx_ok!(state.undefined_behavior().assert_iterable(&a));
+                    ctx_ok!(state.undefined_behavior().assert_value_not_undefined(&b));
                     stack.push(ctx_ok!(ops::contains(&a, &b)));
+                }
+                Instruction::CompareAndPreserve(op) => {
+                    b = stack.pop();
+                    a = stack.pop();
+                    let result = match op {
+                        CompareOp::Eq => {
+                            ctx_ok!(undefined_behavior.assert_value_not_undefined(&a));
+                            ctx_ok!(undefined_behavior.assert_value_not_undefined(&b));
+                            a == b
+                        }
+                        CompareOp::Ne => {
+                            ctx_ok!(undefined_behavior.assert_value_not_undefined(&a));
+                            ctx_ok!(undefined_behavior.assert_value_not_undefined(&b));
+                            a != b
+                        }
+                        CompareOp::Lt => {
+                            ctx_ok!(undefined_behavior.assert_value_not_undefined(&a));
+                            ctx_ok!(undefined_behavior.assert_value_not_undefined(&b));
+                            a < b
+                        }
+                        CompareOp::Lte => {
+                            ctx_ok!(undefined_behavior.assert_value_not_undefined(&a));
+                            ctx_ok!(undefined_behavior.assert_value_not_undefined(&b));
+                            a <= b
+                        }
+                        CompareOp::Gt => {
+                            ctx_ok!(undefined_behavior.assert_value_not_undefined(&a));
+                            ctx_ok!(undefined_behavior.assert_value_not_undefined(&b));
+                            a > b
+                        }
+                        CompareOp::Gte => {
+                            ctx_ok!(undefined_behavior.assert_value_not_undefined(&a));
+                            ctx_ok!(undefined_behavior.assert_value_not_undefined(&b));
+                            a >= b
+                        }
+                        CompareOp::In | CompareOp::NotIn => {
+                            ctx_ok!(undefined_behavior.assert_iterable(&b));
+                            ctx_ok!(undefined_behavior.assert_value_not_undefined(&a));
+                            let contains = ctx_ok!(ops::contains(&b, &a)).is_true();
+                            if matches!(op, CompareOp::NotIn) {
+                                !contains
+                            } else {
+                                contains
+                            }
+                        }
+                    };
+                    stack.push(b);
+                    stack.push(Value::from(result));
                 }
                 Instruction::Neg => {
                     a = stack.pop();
@@ -713,7 +766,7 @@ impl<'env> Vm<'env> {
                 #[cfg(feature = "multi_template")]
                 Instruction::CallBlock(name) => {
                     if parent_instructions.is_none() && !out.is_discarding() {
-                        self.call_block(name, state, out)?;
+                        ctx_ok!(self.call_block(name, state, out));
                     }
                 }
                 #[cfg(feature = "macros")]
@@ -942,6 +995,12 @@ impl<'env> Vm<'env> {
         out: &mut Output,
     ) -> Result<Option<Value>, Error> {
         if let Some((name, block_stack)) = state.blocks.get_key_value(name) {
+            if block_stack.len() == 1 && block_stack.instructions().is_required_block() {
+                return Err(Error::new(
+                    ErrorKind::InvalidOperation,
+                    format!("Required block '{name}' not found"),
+                ));
+            }
             let old_block = state.current_block.replace(name);
             let old_instructions =
                 mem::replace(&mut state.instructions, block_stack.instructions());

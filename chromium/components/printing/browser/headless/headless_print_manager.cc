@@ -67,9 +67,8 @@ void HeadlessPrintManager::ScriptedPrint(
 }
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
-void HeadlessPrintManager::UpdatePrintSettings(
-    base::DictValue job_settings,
-    UpdatePrintSettingsCallback callback) {
+void HeadlessPrintManager::GetPrintPreviewParams(
+    GetPrintPreviewParamsCallback callback) {
   mojo::ReportBadMessage(kUnexpectedPrintManagerCall);
 }
 
@@ -79,7 +78,7 @@ void HeadlessPrintManager::SetupScriptedPrintPreview(
   std::move(callback).Run();
 }
 
-void HeadlessPrintManager::ShowScriptedPrintPreview(bool source_is_modifiable) {
+void HeadlessPrintManager::ShowScriptedPrintPreview() {
   DLOG(ERROR) << "Scripted print preview is not supported";
 }
 

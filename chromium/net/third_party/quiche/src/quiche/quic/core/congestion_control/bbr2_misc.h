@@ -66,6 +66,17 @@ QUICHE_EXPORT inline std::ostream& operator<<(std::ostream& os,
   return os << "[" << limits.Min() << ", " << limits.Max() << "]";
 }
 
+// Constants based on TCP defaults.
+// The minimum CWND to ensure delayed acks don't reduce bandwidth measurements.
+// Does not inflate the pacing rate.
+inline constexpr QuicByteCount kDefaultMinimumCongestionWindow =
+    4 * kMaxSegmentSize;
+inline constexpr float kInitialPacingGain = 2.885f;
+// The derived startup pacing gain for 2x growth: (4 * ln(2)) = 2.773.
+inline constexpr float kDerivedStartupPacingGain = 2.773f;
+// The derived startup CWND gain for 2x growth.  Also the default CWND gain.
+inline constexpr float kDerivedDefaultCwndGain = 2.0f;
+
 // Bbr2Params contains all parameters of a Bbr2Sender.
 struct QUICHE_EXPORT Bbr2Params {
   Bbr2Params(QuicByteCount cwnd_min, QuicByteCount cwnd_max)
@@ -76,9 +87,8 @@ struct QUICHE_EXPORT Bbr2Params {
    */
 
   // The gain for CWND in startup.
-  float startup_cwnd_gain = 2.0;
-  // TODO(wub): Maybe change to the newly derived value of 2.773 (4 * ln(2)).
-  float startup_pacing_gain = 2.885;
+  float startup_cwnd_gain = kDerivedDefaultCwndGain;
+  float startup_pacing_gain = kInitialPacingGain;
 
   // STARTUP or PROBE_UP are exited if the total bandwidth growth is less than
   // |full_bw_threshold| in the last |startup_full_bw_rounds| round trips.
@@ -89,6 +99,7 @@ struct QUICHE_EXPORT Bbr2Params {
   // Number of rounds to stay in STARTUP when there's a sufficient queue that
   // bytes_in_flight never drops below the target (1.75 * BDP).  0 indicates the
   // feature is disabled and we never exit due to queueing.
+  // NOT supported in BBR3.
   QuicRoundTripCount max_startup_queue_rounds = 0;
 
   // The minimum number of loss marking events to exit STARTUP.
@@ -101,14 +112,15 @@ struct QUICHE_EXPORT Bbr2Params {
 
   // If true, include extra acked during STARTUP and proactively reduce extra
   // acked when bandwidth increases.
+  // Always true in BBR3, so this value is ignored.
   bool startup_include_extra_acked = false;
 
 
   /*
    * DRAIN parameters.
    */
-  float drain_cwnd_gain = 2.0;
-  float drain_pacing_gain = 1.0 / 2.885;
+  float drain_cwnd_gain = kDerivedDefaultCwndGain;
+  float drain_pacing_gain = 1.0 / kInitialPacingGain;
 
   /*
    * PROBE_BW parameters.
@@ -142,7 +154,8 @@ struct QUICHE_EXPORT Bbr2Params {
   float probe_bw_probe_down_pacing_gain = 0.91;
   float probe_bw_default_pacing_gain = 1.0;
 
-  float probe_bw_cwnd_gain = 2.0;
+  float probe_bw_cwnd_gain = kDerivedDefaultCwndGain;
+  float probe_up_cwnd_gain = 2.25;  // For BBR3.
 
   /*
    * PROBE_UP parameters.
@@ -225,6 +238,21 @@ struct QUICHE_EXPORT Bbr2Params {
   // Set the pacing gain to 25% larger than the recent BW increase in STARTUP.
   bool decrease_startup_pacing_at_end_of_round = false;
 };
+
+enum class ProbePhase : uint8_t {
+  PROBE_NOT_STARTED,
+  PROBE_UP,
+  PROBE_DOWN,
+  PROBE_CRUISE,
+  PROBE_REFILL,
+};
+
+QUICHE_EXPORT const char* ProbePhaseToString(ProbePhase phase);
+
+QUICHE_EXPORT inline std::ostream& operator<<(std::ostream& os,
+                                              ProbePhase phase) {
+  return os << ProbePhaseToString(phase);
+}
 
 class QUICHE_EXPORT RoundTripCounter {
  public:
@@ -339,8 +367,8 @@ struct QUICHE_EXPORT Bbr2CongestionEvent {
 class QUICHE_EXPORT Bbr2NetworkModel {
  public:
   Bbr2NetworkModel(const Bbr2Params* params, QuicTime::Delta initial_rtt,
-                   QuicTime initial_rtt_timestamp, float cwnd_gain,
-                   float pacing_gain, const BandwidthSampler* old_sampler);
+                   QuicTime initial_rtt_timestamp,
+                   const BandwidthSampler* old_sampler);
 
   void OnPacketSent(QuicTime sent_time, QuicByteCount bytes_in_flight,
                     QuicPacketNumber packet_number, QuicByteCount bytes,
@@ -691,6 +719,51 @@ QUICHE_EXPORT inline QuicByteCount BytesInFlight(
   return send_state.total_bytes_sent - send_state.total_bytes_acked -
          send_state.total_bytes_lost;
 }
+
+// Bbr2DebugState contains most of the internal state of a Bbr2/Bbr3 sender.
+struct QUICHE_EXPORT Bbr2DebugState {
+  Bbr2Mode mode;
+
+  // Shared states.
+  QuicRoundTripCount round_trip_count;
+  QuicBandwidth bandwidth_hi = QuicBandwidth::Zero();
+  QuicBandwidth bandwidth_lo = QuicBandwidth::Zero();
+  QuicBandwidth bandwidth_est = QuicBandwidth::Zero();
+  QuicByteCount inflight_hi;
+  QuicByteCount inflight_lo;
+  QuicByteCount max_ack_height;
+  QuicTime::Delta min_rtt = QuicTime::Delta::Zero();
+  QuicTime min_rtt_timestamp = QuicTime::Zero();
+  QuicByteCount congestion_window;
+  QuicBandwidth pacing_rate = QuicBandwidth::Zero();
+  bool last_sample_is_app_limited;
+  QuicPacketNumber end_of_app_limited_phase;
+
+  // Mode-specific states.
+  struct QUICHE_EXPORT Startup {
+    bool full_bandwidth_reached = false;
+    QuicBandwidth full_bandwidth_baseline = QuicBandwidth::Zero();
+    QuicRoundTripCount round_trips_without_bandwidth_growth = 0;
+  } startup;
+
+  struct QUICHE_EXPORT Drain {
+    QuicByteCount drain_target = 0;
+  } drain;
+
+  struct QUICHE_EXPORT ProbeBw {
+    ProbePhase phase = ProbePhase::PROBE_NOT_STARTED;
+    QuicTime cycle_start_time = QuicTime::Zero();
+    QuicTime phase_start_time = QuicTime::Zero();
+  } probe_bw;
+
+  struct QUICHE_EXPORT ProbeRtt {
+    QuicByteCount inflight_target = 0;
+    QuicTime exit_time = QuicTime::Zero();
+  } probe_rtt;
+};
+
+QUICHE_EXPORT std::ostream& operator<<(std::ostream& os,
+                                       const Bbr2DebugState& state);
 
 }  // namespace quic
 

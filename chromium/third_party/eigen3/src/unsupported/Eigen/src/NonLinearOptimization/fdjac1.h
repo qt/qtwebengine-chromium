@@ -1,4 +1,10 @@
 // IWYU pragma: private
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
+#ifndef EIGEN_NONLINEAROPTIMIZATION_FDJAC1_H
+#define EIGEN_NONLINEAROPTIMIZATION_FDJAC1_H
+
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {
@@ -71,3 +77,5 @@ DenseIndex fdjac1(const FunctorType &Functor, Matrix<Scalar, Dynamic, 1> &x, Mat
 }  // end namespace internal
 
 }  // end namespace Eigen
+
+#endif  // EIGEN_NONLINEAROPTIMIZATION_FDJAC1_H

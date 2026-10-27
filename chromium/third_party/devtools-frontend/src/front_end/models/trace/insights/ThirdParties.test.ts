@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import {describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
 import {getFirstOrError, getInsightOrError, processTrace} from '../../../testing/InsightHelpers.js';
 
@@ -16,13 +18,11 @@ describeWithEnvironment('ThirdParties', function() {
 
     assert.deepEqual([...new Set(entityNames)], [
       'localhost',
-      'Google Fonts',
     ]);
     const summaryResult =
         insight.entitySummaries.map(s => [s.entity.name, s.transferSize, s.mainThreadTime.toFixed(2)]);
     assert.deepEqual(summaryResult, [
-      ['localhost', 1503, '24.95'],
-      ['Google Fonts', 25325, '0.00'],
+      ['localhost', 1435, '24.95'],
     ]);
   });
 
@@ -52,5 +52,16 @@ describeWithEnvironment('ThirdParties', function() {
       ['Disqus', 1551, '0.34'],
       ['Firebase', 2847, '0.00'],
     ]);
+  });
+
+  it('categorizes third party web requests (cached)', async function() {
+    const {data, insights} = await processTrace(this, 'cached-request-unpkg.json.gz');
+    assert.strictEqual(insights.size, 1);
+    const insight =
+        getInsightOrError('ThirdParties', insights, getFirstOrError(data.Meta.navigationsByNavigationId.values()));
+
+    const unpkgSummary = insight.entitySummaries.find(summary => summary.entity.name === 'Unpkg');
+    assert.exists(unpkgSummary);
+    assert.strictEqual(unpkgSummary.transferSize, 4784);
   });
 });

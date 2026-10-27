@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_GENERAL_MATRIX_VECTOR_H
 #define EIGEN_GENERAL_MATRIX_VECTOR_H
@@ -190,6 +191,9 @@ general_matrix_vector_product<Index, LhsScalar, LhsMapper, ColMajor, ConjugateLh
   EIGEN_UNUSED_VARIABLE(resIncr);
   eigen_internal_assert(resIncr == 1);
 
+  // BLAS contract: if alpha == 0, the result is unchanged (and lhs/rhs need not be read).
+  if (numext::is_exactly_zero(alpha)) return;
+
   // The following copy tells the compiler that lhs's attributes are not modified outside this function
   // This helps GCC to generate proper code.
   LhsMapper lhs(alhs);
@@ -200,7 +204,9 @@ general_matrix_vector_product<Index, LhsScalar, LhsMapper, ColMajor, ConjugateLh
   conj_helper<LhsPacketQuarter, RhsPacketQuarter, ConjugateLhs, ConjugateRhs> pcj_quarter;
 
   const Index lhsStride = lhs.stride();
-  // TODO: for padded aligned inputs, we could enable aligned reads
+  // LhsAlignment stays Unaligned; enabling aligned reads would require
+  // propagating the Mapper's Alignment through the run() template, and on
+  // modern x86 aligned/unaligned packet loads are equivalent anyway.
   enum {
     LhsAlignment = Unaligned,
     ResPacketSize = Traits::ResPacketSize,
@@ -219,8 +225,12 @@ general_matrix_vector_product<Index, LhsScalar, LhsMapper, ColMajor, ConjugateLh
   const Index n_half = rows - 1 * ResPacketSizeHalf + 1;
   const Index n_quarter = rows - 1 * ResPacketSizeQuarter + 1;
 
-  // TODO: improve the following heuristic:
-  const Index block_cols = cols < 128 ? cols : (lhsStride * Index(sizeof(LhsScalar)) < 32000 ? Index(16) : Index(4));
+  // Choose block_cols so that one column slice of the LHS roughly fits in L1.
+  // When it does not, fall back to a smaller batch to keep cache pressure down.
+  std::ptrdiff_t l1, l2, l3;
+  manage_caching_sizes(GetAction, &l1, &l2, &l3);
+  const Index block_cols =
+      cols < 128 ? cols : (lhsStride * Index(sizeof(LhsScalar)) < Index(l1) ? Index(16) : Index(4));
   ResPacket palpha = pset1<ResPacket>(alpha);
   ResPacketHalf palpha_half = pset1<ResPacketHalf>(alpha);
   ResPacketQuarter palpha_quarter = pset1<ResPacketQuarter>(alpha);
@@ -245,25 +255,29 @@ general_matrix_vector_product<Index, LhsScalar, LhsMapper, ColMajor, ConjugateLh
       process_rows<1>(i, j2, jend, lhs, rhs, res, palpha, pcj);
       i += ResPacketSize;
     }
-    if (HasHalf && i < n_half) {
-      ResPacketHalf c0 = pzero(ResPacketHalf{});
-      for (Index j = j2; j < jend; j += 1) {
-        RhsPacketHalf b0 = pset1<RhsPacketHalf>(rhs(j, 0));
-        c0 = pcj_half.pmadd(lhs.template load<LhsPacketHalf, LhsAlignment>(i + 0, j), b0, c0);
+    EIGEN_IF_CONSTEXPR(HasHalf) {
+      if (i < n_half) {
+        ResPacketHalf c0 = pzero(ResPacketHalf{});
+        for (Index j = j2; j < jend; j += 1) {
+          RhsPacketHalf b0 = pset1<RhsPacketHalf>(rhs(j, 0));
+          c0 = pcj_half.pmadd(lhs.template load<LhsPacketHalf, LhsAlignment>(i + 0, j), b0, c0);
+        }
+        pstoreu(res + i + ResPacketSizeHalf * 0,
+                pmadd(c0, palpha_half, ploadu<ResPacketHalf>(res + i + ResPacketSizeHalf * 0)));
+        i += ResPacketSizeHalf;
       }
-      pstoreu(res + i + ResPacketSizeHalf * 0,
-              pmadd(c0, palpha_half, ploadu<ResPacketHalf>(res + i + ResPacketSizeHalf * 0)));
-      i += ResPacketSizeHalf;
     }
-    if (HasQuarter && i < n_quarter) {
-      ResPacketQuarter c0 = pzero(ResPacketQuarter{});
-      for (Index j = j2; j < jend; j += 1) {
-        RhsPacketQuarter b0 = pset1<RhsPacketQuarter>(rhs(j, 0));
-        c0 = pcj_quarter.pmadd(lhs.template load<LhsPacketQuarter, LhsAlignment>(i + 0, j), b0, c0);
+    EIGEN_IF_CONSTEXPR(HasQuarter) {
+      if (i < n_quarter) {
+        ResPacketQuarter c0 = pzero(ResPacketQuarter{});
+        for (Index j = j2; j < jend; j += 1) {
+          RhsPacketQuarter b0 = pset1<RhsPacketQuarter>(rhs(j, 0));
+          c0 = pcj_quarter.pmadd(lhs.template load<LhsPacketQuarter, LhsAlignment>(i + 0, j), b0, c0);
+        }
+        pstoreu(res + i + ResPacketSizeQuarter * 0,
+                pmadd(c0, palpha_quarter, ploadu<ResPacketQuarter>(res + i + ResPacketSizeQuarter * 0)));
+        i += ResPacketSizeQuarter;
       }
-      pstoreu(res + i + ResPacketSizeQuarter * 0,
-              pmadd(c0, palpha_quarter, ploadu<ResPacketQuarter>(res + i + ResPacketSizeQuarter * 0)));
-      i += ResPacketSizeQuarter;
     }
     for (; i < rows; ++i) {
       ResScalar c0(0);
@@ -331,6 +345,9 @@ EIGEN_DEVICE_FUNC inline void
 general_matrix_vector_product<Index, LhsScalar, LhsMapper, RowMajor, ConjugateLhs, RhsScalar, RhsMapper, ConjugateRhs,
                               Version>::run(Index rows, Index cols, const LhsMapper& alhs, const RhsMapper& rhs,
                                             ResScalar* res, Index resIncr, ResScalar alpha) {
+  // BLAS contract: if alpha == 0, the result is unchanged (and lhs/rhs need not be read).
+  if (numext::is_exactly_zero(alpha)) return;
+
   // When cols < full packet size, the main vectorized loops are empty.
   // Dispatch to a separate noinline function to avoid polluting the icache.
   // Only dispatch when cols is large enough that half or quarter packets can be used;
@@ -359,13 +376,17 @@ general_matrix_vector_product<Index, LhsScalar, LhsMapper, RowMajor, ConjugateLh
   conj_helper<LhsPacketHalf, RhsPacketHalf, ConjugateLhs, ConjugateRhs> pcj_half;
   conj_helper<LhsPacketQuarter, RhsPacketQuarter, ConjugateLhs, ConjugateRhs> pcj_quarter;
 
-  // TODO: fine tune the following heuristic. The rationale is that if the matrix is very large,
-  //       processing 8 rows at once might be counter productive wrt cache.
-  const Index n8 = lhs.stride() * sizeof(LhsScalar) > 32000 ? 0 : rows - 7;
+  // Disable the 8-row inner unroll once a single column slice no longer fits in L1; with very
+  // large LHS strides each unrolled iteration evicts the previously-loaded rows from cache.
+  std::ptrdiff_t l1, l2, l3;
+  manage_caching_sizes(GetAction, &l1, &l2, &l3);
+  const Index n8 = lhs.stride() * Index(sizeof(LhsScalar)) > Index(l1) ? 0 : rows - 7;
   const Index n4 = rows - 3;
   const Index n2 = rows - 1;
 
-  // TODO: for padded aligned inputs, we could enable aligned reads
+  // LhsAlignment stays Unaligned; enabling aligned reads would require
+  // propagating the Mapper's Alignment through the run() template, and on
+  // modern x86 aligned/unaligned packet loads are equivalent anyway.
   enum {
     LhsAlignment = Unaligned,
     ResPacketSize = Traits::ResPacketSize,
@@ -490,14 +511,14 @@ general_matrix_vector_product<Index, LhsScalar, LhsMapper, RowMajor, ConjugateLh
       c0 = pcj.pmadd(lhs.template load<LhsPacket, LhsAlignment>(i, j), b0, c0);
     }
     ResScalar cc0 = predux(c0);
-    if (HasHalf) {
+    EIGEN_IF_CONSTEXPR(HasHalf) {
       for (Index j = fullColBlockEnd; j < halfColBlockEnd; j += LhsPacketSizeHalf) {
         RhsPacketHalf b0 = rhs.template load<RhsPacketHalf, Unaligned>(j, 0);
         c0_h = pcj_half.pmadd(lhs.template load<LhsPacketHalf, LhsAlignment>(i, j), b0, c0_h);
       }
       cc0 += predux(c0_h);
     }
-    if (HasQuarter) {
+    EIGEN_IF_CONSTEXPR(HasQuarter) {
       for (Index j = halfColBlockEnd; j < quarterColBlockEnd; j += LhsPacketSizeQuarter) {
         RhsPacketQuarter b0 = rhs.template load<RhsPacketQuarter, Unaligned>(j, 0);
         c0_q = pcj_quarter.pmadd(lhs.template load<LhsPacketQuarter, LhsAlignment>(i, j), b0, c0_q);
@@ -610,7 +631,7 @@ general_matrix_vector_product<Index, LhsScalar, LhsMapper, RowMajor, ConjugateLh
   using Unroll = gemv_small_cols_unroller<N - 1, N>;
 
   ResScalar cc[N] = {};
-  if (HasHalf) {
+  EIGEN_IF_CONSTEXPR(HasHalf) {
     ResPacketHalf h[N];
     Unroll::init_zero(h);
     for (Index j = 0; j < halfColBlockEnd; j += LhsPacketSizeHalf) {
@@ -619,7 +640,7 @@ general_matrix_vector_product<Index, LhsScalar, LhsMapper, RowMajor, ConjugateLh
     }
     Unroll::predux_accum(cc, h);
   }
-  if (HasQuarter) {
+  EIGEN_IF_CONSTEXPR(HasQuarter) {
     ResPacketQuarter q[N];
     Unroll::init_zero(q);
     for (Index j = halfColBlockEnd; j < quarterColBlockEnd; j += LhsPacketSizeQuarter) {
@@ -654,7 +675,11 @@ general_matrix_vector_product<Index, LhsScalar, LhsMapper, RowMajor, ConjugateLh
   const Index halfColBlockEnd = LhsPacketSizeHalf * (UnsignedIndex(cols) / LhsPacketSizeHalf);
   const Index quarterColBlockEnd = LhsPacketSizeQuarter * (UnsignedIndex(cols) / LhsPacketSizeQuarter);
 
-  const Index n8 = lhs.stride() * sizeof(LhsScalar) > 32000 ? 0 : rows - 7;
+  // Disable the 8-row inner unroll once a single column slice no longer fits in L1; with very
+  // large LHS strides each unrolled iteration evicts the previously-loaded rows from cache.
+  std::ptrdiff_t l1, l2, l3;
+  manage_caching_sizes(GetAction, &l1, &l2, &l3);
+  const Index n8 = lhs.stride() * Index(sizeof(LhsScalar)) > Index(l1) ? 0 : rows - 7;
   const Index n4 = rows - 3;
   const Index n2 = rows - 1;
 

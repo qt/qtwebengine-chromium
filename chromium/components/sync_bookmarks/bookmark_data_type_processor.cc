@@ -534,10 +534,6 @@ void BookmarkDataTypeProcessor::MigrateLegacyExceededLimitError(
 
 void BookmarkDataTypeProcessor::MaybeResetExceededLimitError(
     sync_pb::BookmarkModelMetadata* model_metadata) {
-  if (!base::FeatureList::IsEnabled(
-          syncer::kSyncResetBookmarksInitialMergeLimitExceededError)) {
-    return;
-  }
   if (!model_metadata
            ->has_initial_merge_remote_updates_exceeded_limit_timestamp_windows_epoch_micros()) {
     return;
@@ -910,7 +906,8 @@ void BookmarkDataTypeProcessor::ApplyFullUpdateAsIncrementalUpdate(
   for (const SyncedBookmarkTrackerEntity* entity :
        bookmark_tracker_->GetAllEntities()) {
     // Don't create deletions for permanent nodes.
-    if (entity->bookmark_node()->is_permanent_node()) {
+    if (entity->bookmark_node() &&
+        entity->bookmark_node()->is_permanent_node()) {
       continue;
     }
     if (entity->IsUnsyncedLocalCreation()) {

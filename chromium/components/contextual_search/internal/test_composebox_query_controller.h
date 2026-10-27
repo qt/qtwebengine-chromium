@@ -77,6 +77,8 @@ class TestComposeboxQueryController : public ComposeboxQueryController {
   ~TestComposeboxQueryController() override;
 
   using ComposeboxQueryController::ClearClusterInfo;
+  using ComposeboxQueryController::
+      CreateFileUploadRequestProtoWithImageDataAndContinue;
 
   // Mutators.
   void set_fake_cluster_info_response(
@@ -120,6 +122,15 @@ class TestComposeboxQueryController : public ComposeboxQueryController {
 
   const int& num_file_upload_requests_sent() const {
     return num_file_upload_requests_sent_;
+  }
+
+  const int& num_chunk_upload_requests_sent() const {
+    return num_chunk_upload_requests_sent_;
+  }
+
+  const std::vector<lens::LensOverlayUploadChunkRequest>&
+  sent_chunk_upload_requests() const {
+    return sent_chunk_upload_requests_;
   }
 
   QueryControllerState query_controller_state() const {
@@ -242,6 +253,10 @@ class TestComposeboxQueryController : public ComposeboxQueryController {
 
   // The sent interaction requests.
   std::vector<lens::LensOverlayServerRequest> sent_interaction_requests_;
+
+  // The sent chunk upload requests.
+  std::vector<lens::LensOverlayUploadChunkRequest> sent_chunk_upload_requests_;
+  int num_chunk_upload_requests_sent_ = 0;
 
   // The endpoint fetcher created callbacks.
   std::vector<EndpointFetcherCreatedCallback>

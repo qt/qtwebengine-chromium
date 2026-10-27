@@ -546,13 +546,13 @@ std::optional<WideString> CXFA_TextParser::GetEmbeddedObj(
     return std::nullopt;
   }
 
-  WideString wsAttr = pElement->GetAttribute(L"xfa:embed");
-  if (wsAttr.IsEmpty()) {
+  WideString embed_attr = pElement->GetAttribute(L"xfa:embed");
+  WideStringView embed_attr_view = embed_attr.AsStringView();
+  if (embed_attr_view.IsEmpty()) {
     return std::nullopt;
   }
-
-  if (wsAttr[0] == L'#') {
-    wsAttr.Delete(0);
+  if (embed_attr_view.Front() == L'#') {
+    embed_attr_view = embed_attr_view.Substr(1);
   }
 
   WideString ws =
@@ -567,7 +567,7 @@ std::optional<WideString> CXFA_TextParser::GetEmbeddedObj(
     return std::nullopt;
   }
 
-  return pTextProvider->GetEmbeddedObj(wsAttr);
+  return pTextProvider->GetEmbeddedObj(embed_attr_view);
 }
 
 CXFA_TextParser::Context* CXFA_TextParser::GetParseContextFromMap(

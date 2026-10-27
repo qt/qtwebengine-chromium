@@ -198,10 +198,10 @@ CXFA_Node* ResolveBreakTarget(CXFA_Node* pPageSetRoot,
     }
 
     bTargetAllFind = false;
-    if (wsExpr[0] == '#') {
+    if (wsExpr.Front() == '#') {
       CXFA_Node* pNode = document->GetNodeByID(
           ToNode(document->GetXFAObject(XFA_HASHCODE_Template)),
-          wsExpr.Last(wsExpr.GetLength() - 1).AsStringView());
+          wsExpr.Substr(1).AsStringView());
       if (pNode) {
         return pNode;
       }
@@ -1003,8 +1003,9 @@ bool CXFA_ViewLayoutProcessor::BreakOverflow(const CXFA_Node* pOverflowNode,
                                              bool bCreatePage,
                                              CXFA_Node** pLeaderTemplate,
                                              CXFA_Node** pTrailerTemplate) {
-  CXFA_Node* pContainer =
-      pOverflowNode->GetContainerParent()->GetTemplateNodeIfExists();
+  CXFA_Node* parent = pOverflowNode->GetContainerParent();
+  CXFA_Node* container = parent ? parent->GetTemplateNodeIfExists() : nullptr;
+
   if (pOverflowNode->GetElementType() == XFA_Element::Break) {
     WideString wsOverflowLeader =
         pOverflowNode->JSObject()->GetCData(XFA_Attribute::OverflowLeader);
@@ -1018,18 +1019,18 @@ bool CXFA_ViewLayoutProcessor::BreakOverflow(const CXFA_Node* pOverflowNode,
     }
 
     if (!wsOverflowTarget.IsEmpty() && bCreatePage && !create_over_flow_page_) {
-      CXFA_Node* pTarget =
+      CXFA_Node* target =
           ResolveBreakTarget(page_set_node_, true, &wsOverflowTarget);
-      if (pTarget) {
+      if (target) {
         create_over_flow_page_ = true;
-        switch (pTarget->GetElementType()) {
+        switch (target->GetElementType()) {
           case XFA_Element::PageArea:
             RunBreak(XFA_Element::Overflow, XFA_AttributeValue::PageArea,
-                     pTarget, true);
+                     target, true);
             break;
           case XFA_Element::ContentArea:
             RunBreak(XFA_Element::Overflow, XFA_AttributeValue::ContentArea,
-                     pTarget, true);
+                     target, true);
             break;
           default:
             break;
@@ -1037,10 +1038,9 @@ bool CXFA_ViewLayoutProcessor::BreakOverflow(const CXFA_Node* pOverflowNode,
       }
     }
     if (!bCreatePage) {
-      *pLeaderTemplate =
-          ResolveBreakTarget(pContainer, true, &wsOverflowLeader);
+      *pLeaderTemplate = ResolveBreakTarget(container, true, &wsOverflowLeader);
       *pTrailerTemplate =
-          ResolveBreakTarget(pContainer, true, &wsOverflowTrailer);
+          ResolveBreakTarget(container, true, &wsOverflowTrailer);
     }
     return true;
   }
@@ -1052,18 +1052,18 @@ bool CXFA_ViewLayoutProcessor::BreakOverflow(const CXFA_Node* pOverflowNode,
   WideString wsOverflowTarget =
       pOverflowNode->JSObject()->GetCData(XFA_Attribute::Target);
   if (!wsOverflowTarget.IsEmpty() && bCreatePage && !create_over_flow_page_) {
-    CXFA_Node* pTarget =
+    CXFA_Node* target =
         ResolveBreakTarget(page_set_node_, true, &wsOverflowTarget);
-    if (pTarget) {
+    if (target) {
       create_over_flow_page_ = true;
-      switch (pTarget->GetElementType()) {
+      switch (target->GetElementType()) {
         case XFA_Element::PageArea:
-          RunBreak(XFA_Element::Overflow, XFA_AttributeValue::PageArea, pTarget,
+          RunBreak(XFA_Element::Overflow, XFA_AttributeValue::PageArea, target,
                    true);
           break;
         case XFA_Element::ContentArea:
           RunBreak(XFA_Element::Overflow, XFA_AttributeValue::ContentArea,
-                   pTarget, true);
+                   target, true);
           break;
         default:
           break;
@@ -1075,8 +1075,8 @@ bool CXFA_ViewLayoutProcessor::BreakOverflow(const CXFA_Node* pOverflowNode,
         pOverflowNode->JSObject()->GetCData(XFA_Attribute::Leader);
     WideString wsTrailer =
         pOverflowNode->JSObject()->GetCData(XFA_Attribute::Trailer);
-    *pLeaderTemplate = ResolveBreakTarget(pContainer, true, &wsLeader);
-    *pTrailerTemplate = ResolveBreakTarget(pContainer, true, &wsTrailer);
+    *pLeaderTemplate = ResolveBreakTarget(container, true, &wsLeader);
+    *pTrailerTemplate = ResolveBreakTarget(container, true, &wsTrailer);
   }
   return true;
 }

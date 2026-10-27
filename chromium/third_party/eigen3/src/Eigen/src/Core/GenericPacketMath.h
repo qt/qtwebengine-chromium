@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_GENERIC_PACKET_MATH_H
 #define EIGEN_GENERIC_PACKET_MATH_H
@@ -155,10 +156,7 @@ struct unpacket_traits<const T> : unpacket_traits<T> {};
  * This is used to enable some generic packet implementations.
  */
 template <typename Packet>
-struct is_scalar {
-  using Scalar = typename unpacket_traits<Packet>::type;
-  enum { value = internal::is_same<Packet, Scalar>::value };
-};
+struct is_scalar : std::is_same<Packet, typename unpacket_traits<Packet>::type> {};
 
 // automatically and succinctly define combinations of pcast<SrcPacket,TgtPacket> when
 // 1) the packets are the same type, or
@@ -166,7 +164,7 @@ struct is_scalar {
 // In both of these cases, preinterpret (bit_cast) is equivalent to pcast (static_cast)
 template <typename SrcPacket, typename TgtPacket,
           bool Scalar = is_scalar<SrcPacket>::value && is_scalar<TgtPacket>::value>
-struct is_degenerate_helper : is_same<SrcPacket, TgtPacket> {};
+struct is_degenerate_helper : std::is_same<SrcPacket, TgtPacket> {};
 template <>
 struct is_degenerate_helper<int8_t, uint8_t, true> : std::true_type {};
 template <>
@@ -239,7 +237,7 @@ struct eigen_packet_wrapper {
   T m_val;
 };
 
-template <typename Target, typename Packet, bool IsSame = is_same<Target, Packet>::value>
+template <typename Target, typename Packet, bool IsSame = std::is_same<Target, Packet>::value>
 struct preinterpret_generic;
 
 template <typename Target, typename Packet>
@@ -351,7 +349,7 @@ EIGEN_DEVICE_FUNC inline Packet psub(const Packet& a, const Packet& b) {
 /** \internal \returns -a (coeff-wise) */
 template <typename Packet>
 EIGEN_DEVICE_FUNC inline Packet pnegate(const Packet& a) {
-  EIGEN_STATIC_ASSERT((!is_same<typename unpacket_traits<Packet>::type, bool>::value),
+  EIGEN_STATIC_ASSERT((!std::is_same<typename unpacket_traits<Packet>::type, bool>::value),
                       NEGATE IS NOT DEFINED FOR BOOLEAN TYPES)
   return numext::negate(a);
 }
@@ -527,8 +525,8 @@ struct bitwise_helper : public bytewise_bitwise_helper<T> {};
 
 // For integers or non-trivial scalars, use binary operators.
 template <typename T>
-struct bitwise_helper<T, typename std::enable_if_t<is_scalar<T>::value &&
-                                                   (NumTraits<T>::IsInteger || NumTraits<T>::RequireInitialization)>>
+struct bitwise_helper<
+    T, std::enable_if_t<is_scalar<T>::value && (NumTraits<T>::IsInteger || NumTraits<T>::RequireInitialization)>>
     : public operator_bitwise_helper<T> {};
 
 /** \internal \returns the bitwise and of \a a and \a b */
@@ -1450,10 +1448,10 @@ inline void pstore1(typename unpacket_traits<Packet>::type* to, const typename u
  * The pointer \a from must be aligned on a \a Alignment bytes boundary. */
 template <typename Packet, int Alignment>
 EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE Packet ploadt(const typename unpacket_traits<Packet>::type* from) {
-  if (Alignment >= unpacket_traits<Packet>::alignment)
-    return pload<Packet>(from);
-  else
+  EIGEN_IF_CONSTEXPR(Alignment >= unpacket_traits<Packet>::alignment) { return pload<Packet>(from); }
+  else {
     return ploadu<Packet>(from);
+  }
 }
 
 /** \internal \returns n elements of a packet version of \a *from.
@@ -1461,20 +1459,20 @@ EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE Packet ploadt(const typename unpacket_trai
 template <typename Packet, int Alignment>
 EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE Packet ploadt_partial(const typename unpacket_traits<Packet>::type* from,
                                                             const Index n, const Index offset = 0) {
-  if (Alignment >= unpacket_traits<Packet>::alignment)
-    return pload_partial<Packet>(from, n, offset);
-  else
+  EIGEN_IF_CONSTEXPR(Alignment >= unpacket_traits<Packet>::alignment) { return pload_partial<Packet>(from, n, offset); }
+  else {
     return ploadu_partial<Packet>(from, n, offset);
+  }
 }
 
 /** \internal copy the packet \a from to \a *to.
  * The pointer \a from must be aligned on a \a Alignment bytes boundary. */
 template <typename Scalar, typename Packet, int Alignment>
 EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void pstoret(Scalar* to, const Packet& from) {
-  if (Alignment >= unpacket_traits<Packet>::alignment)
-    pstore(to, from);
-  else
+  EIGEN_IF_CONSTEXPR(Alignment >= unpacket_traits<Packet>::alignment) { pstore(to, from); }
+  else {
     pstoreu(to, from);
+  }
 }
 
 /** \internal copy n elements of the packet \a from to \a *to.
@@ -1482,10 +1480,10 @@ EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void pstoret(Scalar* to, const Packet& fro
 template <typename Scalar, typename Packet, int Alignment>
 EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void pstoret_partial(Scalar* to, const Packet& from, const Index n,
                                                            const Index offset = 0) {
-  if (Alignment >= unpacket_traits<Packet>::alignment)
-    pstore_partial(to, from, n, offset);
-  else
+  EIGEN_IF_CONSTEXPR(Alignment >= unpacket_traits<Packet>::alignment) { pstore_partial(to, from, n, offset); }
+  else {
     pstoreu_partial(to, from, n, offset);
+  }
 }
 
 /** \internal \returns a packet version of \a *from.
@@ -1679,9 +1677,8 @@ template <typename Packet, int Alignment>
 EIGEN_DEVICE_FUNC inline Packet ploadtSegment(const typename unpacket_traits<Packet>::type* from, Index begin,
                                               Index count) {
   constexpr int RequiredAlignment = unpacket_traits<Packet>::alignment;
-  if (Alignment >= RequiredAlignment) {
-    return ploadSegment<Packet>(from, begin, count);
-  } else {
+  EIGEN_IF_CONSTEXPR(Alignment >= RequiredAlignment) { return ploadSegment<Packet>(from, begin, count); }
+  else {
     return ploaduSegment<Packet>(from, begin, count);
   }
 }
@@ -1691,9 +1688,8 @@ Elements outside of the range [begin, begin + count) are not defined.*/
 template <typename Scalar, typename Packet, int Alignment>
 EIGEN_DEVICE_FUNC inline void pstoretSegment(Scalar* to, const Packet& from, Index begin, Index count) {
   constexpr int RequiredAlignment = unpacket_traits<Packet>::alignment;
-  if (Alignment >= RequiredAlignment) {
-    pstoreSegment<Scalar, Packet>(to, from, begin, count);
-  } else {
+  EIGEN_IF_CONSTEXPR(Alignment >= RequiredAlignment) { pstoreSegment<Scalar, Packet>(to, from, begin, count); }
+  else {
     pstoreuSegment<Scalar, Packet>(to, from, begin, count);
   }
 }

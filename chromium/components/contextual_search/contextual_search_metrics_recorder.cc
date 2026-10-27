@@ -61,6 +61,28 @@ std::string UploadStatusToString(ContextUploadStatus status) {
       return "Unknown";
   }
 }
+
+std::string AttachmentButtonTypeToString(
+    ContextualSearchAttachmentButtonType button_type) {
+  switch (button_type) {
+    case ContextualSearchAttachmentButtonType::kCurrentTab:
+      return "CurrentTab";
+    case ContextualSearchAttachmentButtonType::kTabPicker:
+      return "TabPicker";
+    case ContextualSearchAttachmentButtonType::kCamera:
+      return "Camera";
+    case ContextualSearchAttachmentButtonType::kGallery:
+      return "Gallery";
+    case ContextualSearchAttachmentButtonType::kFiles:
+      return "Files";
+    case ContextualSearchAttachmentButtonType::kClipboard:
+      return "Clipboard";
+    case ContextualSearchAttachmentButtonType::kSuggestedTab:
+      return "SuggestedTab";
+    case ContextualSearchAttachmentButtonType::kRecentTab:
+      return "RecentTab";
+  }
+}
 }  // namespace
 
 SessionMetrics::SessionMetrics() = default;
@@ -147,7 +169,8 @@ void ContextualSearchMetricsRecorder::RecordQueryMetrics(
     bool has_tab_context,
     bool has_non_tab_context,
     int text_length,
-    int file_count) {
+    int file_count,
+    bool has_drive_context) {
   // Query text length metric.
   base::UmaHistogramCounts1M(
       base::StrCat({kContextualSearchQueryTextLength, ".", metrics_suffix_}),
@@ -189,6 +212,19 @@ void ContextualSearchMetricsRecorder::RecordQueryMetrics(
       base::StrCat(
           {"ContextualSearch.UserAction.SubmitQueryV2.", metrics_suffix_}),
       state);
+
+  if (has_drive_context) {
+    base::RecordAction(base::UserMetricsAction(
+        base::StrCat(
+            {"ContextualSearch.UserAction.SubmitQueryV2.WithDriveContext.",
+             metrics_suffix_})
+            .c_str()));
+
+    base::UmaHistogramEnumeration(
+        base::StrCat(
+            {"ContextualSearch.UserAction.SubmitQueryV2.", metrics_suffix_}),
+        ContextualSearchContextState::kWithDriveContext);
+  }
 
   if (text_length == 0 && file_count > 0) {
     base::RecordAction(base::UserMetricsAction(
@@ -248,6 +284,21 @@ void ContextualSearchMetricsRecorder::RecordFileSizeMetric(
                               file_size_bytes);
   base::UmaHistogramCounts10M(
       kContextualSearchFileSizePerType + metrics_suffix_, file_size_bytes);
+}
+
+void ContextualSearchMetricsRecorder::RecordTabPartsSizes(
+    uint64_t viewport_screenshot_size_bytes,
+    uint64_t page_contents_size_bytes) {
+  std::string tab_mime_type =
+      MimeTypeToString(lens::MimeType::kAnnotatedPageContent);
+  base::UmaHistogramCounts10M(
+      base::StrCat({kContextualSearchFileSizePerType, tab_mime_type,
+                    ".ViewportScreenshot.", metrics_suffix_}),
+      viewport_screenshot_size_bytes);
+  base::UmaHistogramCounts10M(
+      base::StrCat({kContextualSearchFileSizePerType, tab_mime_type,
+                    ".PageContents.", metrics_suffix_}),
+      page_contents_size_bytes);
 }
 
 void ContextualSearchMetricsRecorder::RecordFileDeletedMetrics(
@@ -318,10 +369,14 @@ void ContextualSearchMetricsRecorder::NotifyQuerySubmitted(
     bool has_tab_context,
     bool has_non_tab_context,
     int query_text_length,
-    int file_count) {
+    int file_count,
+    bool has_drive_context) {
+  if (query_text_length == 0 && file_count == 0) {
+    return;
+  }
   NotifySessionStateChanged(SessionState::kQuerySubmitted);
   RecordQueryMetrics(has_tab_context, has_non_tab_context, query_text_length,
-                     file_count);
+                     file_count, has_drive_context);
 }
 
 void ContextualSearchMetricsRecorder::RecordSessionAbandonedMetrics() {
@@ -523,6 +578,20 @@ std::string ContextualSearchMetricsRecorder::FileErrorToString(
       return "AbortedError";
     case ContextUploadErrorType::kImageProcessingError:
       return "ImageProcessingError";
+    case ContextUploadErrorType::kBrowserProcessingFileTooLargeError:
+      return "BrowserProcessingFileTooLargeError";
+    case ContextUploadErrorType::kBrowserProcessingFileEmptyError:
+      return "BrowserProcessingFileEmptyError";
+    case ContextUploadErrorType::kBrowserProcessingMaxFilesExceededError:
+      return "BrowserProcessingMaxFilesExceededError";
+    case ContextUploadErrorType::kBrowserProcessingUnsupportedFileTypeError:
+      return "BrowserProcessingUnsupportedFileTypeError";
+    case ContextUploadErrorType::kBrowserProcessingFileUploadNotAllowedError:
+      return "BrowserProcessingFileUploadNotAllowedError";
+    case ContextUploadErrorType::kBrowserProcessingMaxImagesExceededError:
+      return "BrowserProcessingMaxImagesExceededError";
+    case ContextUploadErrorType::kBrowserProcessingMaxPdfsExceededError:
+      return "BrowserProcessingMaxPdfsExceededError";
   }
 }
 
@@ -593,6 +662,67 @@ void ContextualSearchMetricsRecorder::RecordModelModeShown(
   base::UmaHistogramEnumeration(
       base::StrCat({"ContextualSearch.Models.Shown", ".", metrics_suffix_}),
       model_mode, static_cast<omnibox::ModelMode>(omnibox::ModelMode_MAX + 1));
+}
+
+void ContextualSearchMetricsRecorder::RecordFilePickedCount(
+    ContextualSearchAttachmentButtonType button_type,
+    int count) {
+  base::UmaHistogramCounts100(
+      base::StrCat({"ContextualSearch.File.PickedCount.",
+                    AttachmentButtonTypeToString(button_type), ".",
+                    metrics_suffix_}),
+      count);
+}
+
+void ContextualSearchMetricsRecorder::RecordAttachmentCountAtSubmission(
+    lens::MimeType mime_type,
+    int count) {
+  base::UmaHistogramCounts100(
+      base::StrCat({"ContextualSearch.Query.AttachmentCount.",
+                    MimeTypeToString(mime_type), ".", metrics_suffix_}),
+      count);
+}
+
+void ContextualSearchMetricsRecorder::RecordToolSelected(
+    omnibox::ToolMode tool_mode) {
+  base::UmaHistogramEnumeration(
+      base::StrCat({"ContextualSearch.Tools.Selected.", metrics_suffix_}),
+      tool_mode, static_cast<omnibox::ToolMode>(omnibox::ToolMode_MAX + 1));
+}
+
+void ContextualSearchMetricsRecorder::RecordModelSelected(
+    omnibox::ModelMode model_mode) {
+  base::UmaHistogramEnumeration(
+      base::StrCat({"ContextualSearch.Models.Selected.", metrics_suffix_}),
+      model_mode, static_cast<omnibox::ModelMode>(omnibox::ModelMode_MAX + 1));
+}
+
+void ContextualSearchMetricsRecorder::RecordAttachmentButtonShown(
+    ContextualSearchAttachmentButtonType button_type) {
+  base::UmaHistogramEnumeration(
+      base::StrCat(
+          {"ContextualSearch.AttachmentButtonShown.", metrics_suffix_}),
+      button_type,
+      static_cast<ContextualSearchAttachmentButtonType>(
+          static_cast<int>(ContextualSearchAttachmentButtonType::kMaxValue) +
+          1));
+}
+
+void ContextualSearchMetricsRecorder::RecordAttachmentButtonUsed(
+    ContextualSearchAttachmentButtonType button_type) {
+  base::UmaHistogramEnumeration(
+      base::StrCat({"ContextualSearch.AttachmentButtonUsed.", metrics_suffix_}),
+      button_type,
+      static_cast<ContextualSearchAttachmentButtonType>(
+          static_cast<int>(ContextualSearchAttachmentButtonType::kMaxValue) +
+          1));
+}
+
+void ContextualSearchMetricsRecorder::RecordAttachmentsMenuToggled(bool open) {
+  base::UmaHistogramBoolean(
+      base::StrCat(
+          {"ContextualSearch.AttachmentsMenuToggled.", metrics_suffix_}),
+      open);
 }
 
 void ContextualSearchMetricsRecorder::RecordFileTypesOnSessionEnd(
@@ -677,6 +807,32 @@ void ContextualSearchMetricsRecorder::RecordTypedSuggestNavigation(
       base::StrCat({"ContextualSearch.TypedSuggestNavigation.IsVerbatim.",
                     metrics_suffix_}),
       is_verbatim);
+}
+
+void ContextualSearchMetricsRecorder::RecordNoAcMatchSubmitQuery(
+    int text_length,
+    int file_count,
+    bool is_ac_match) {
+  ContextualSearchNoAcMatchState state;
+  if (is_ac_match) {
+    state = ContextualSearchNoAcMatchState::kAcMatch;
+  } else {
+    bool has_text = text_length > 0;
+    bool has_files = file_count > 0;
+    if (has_text && has_files) {
+      state = ContextualSearchNoAcMatchState::kTextAndContext;
+    } else if (has_text) {
+      state = ContextualSearchNoAcMatchState::kOnlyText;
+    } else if (has_files) {
+      state = ContextualSearchNoAcMatchState::kOnlyContext;
+    } else {
+      state = ContextualSearchNoAcMatchState::kNoTextOrContext;
+    }
+  }
+  base::UmaHistogramEnumeration(
+      base::StrCat(
+          {"ContextualSearch.NoAcMatch.SubmitQuery.", metrics_suffix_}),
+      state);
 }
 
 }  // namespace contextual_search

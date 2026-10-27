@@ -13,6 +13,7 @@
 #include "base/memory/shared_memory_mapping.h"
 #include "base/memory/unsafe_shared_memory_region.h"
 #include "base/system/sys_info.h"
+#include "components/capture_mode/capture_mode_util.h"
 #include "components/viz/common/gpu/context_lost_observer.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "gpu/command_buffer/client/client_shared_image.h"
@@ -36,12 +37,15 @@
 #endif
 
 #if BUILDFLAG(IS_MAC)
-#include "media/capture/video/apple/video_capture_device_factory_apple.h"
+#include "media/capture/video/apple/video_capture_device_factory_apple.h"  // nogncheck
 #endif
 
 namespace capture_mode {
 
 namespace {
+
+BASE_FEATURE(kCameraVideoFrameUseCorrectColorSpace,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // The `kGpuMemoryBuffer` type is requested only when running on an actual
 // device. This allows force-requesting them when testing in which case
@@ -92,22 +96,6 @@ bool IsFatalError(media::VideoCaptureError error) {
 }
 #endif
 
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-bool IsGpuRasterizationSupported(ui::ContextFactory* context_factory) {
-  DCHECK(context_factory);
-  auto provider = context_factory->SharedMainThreadRasterContextProvider();
-
-  if (!provider) {
-    return false;
-  }
-
-  const auto& gpu_feature_info = provider->GetGpuFeatureInfo();
-  return features::IsUiGpuRasterizationEnabled() &&
-         gpu_feature_info
-                 .status_values[gpu::GPU_FEATURE_TYPE_GPU_TILE_RASTERIZATION] ==
-             gpu::kGpuFeatureStatusEnabled;
-}
-#endif
 
 #if BUILDFLAG(IS_WIN)
 bool IsD3DSharedImageSupported(ui::ContextFactory* context_factory) {
@@ -326,9 +314,15 @@ class GpuMemoryBufferHandleHolder : public BufferHandleHolder,
     // to create the shared image. This way, the lifetime of our
     // `gpu_memory_buffer_handle_` remains tied to the lifetime of this object
     // (i.e. until `OnBufferRetired()` is called).
+    gfx::ColorSpace color_space = frame_info->color_space;
+    if (!color_space.IsValid() &&
+        base::FeatureList::IsEnabled(kCameraVideoFrameUseCorrectColorSpace)) {
+      color_space = format.is_multi_plane() ? gfx::ColorSpace::CreateREC709()
+                                            : gfx::ColorSpace::CreateSRGB();
+    }
     shared_image_ = shared_image_interface->CreateSharedImage(
-        {format, frame_info->coded_size, frame_info->color_space,
-         shared_image_usage, "CameraVideoFrame"},
+        {format, frame_info->coded_size, color_space, shared_image_usage,
+         "CameraVideoFrame"},
         gpu_memory_buffer_handle_.Clone());
     CHECK(shared_image_);
 

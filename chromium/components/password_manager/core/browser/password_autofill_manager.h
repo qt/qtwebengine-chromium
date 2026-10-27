@@ -6,6 +6,7 @@
 #define COMPONENTS_PASSWORD_MANAGER_CORE_BROWSER_PASSWORD_AUTOFILL_MANAGER_H_
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -81,6 +82,8 @@ class PasswordAutofillManager : public autofill::AutofillSuggestionDelegate,
   void OnSuggestionsShown(
       base::span<const autofill::Suggestion> suggestions) override;
   void OnSuggestionsHidden(autofill::SuggestionHidingReason reason) override;
+  bool OnFilterChanged(const std::u16string& filter) override;
+  bool OnSearchSubmitted(const std::u16string& filter) override;
   void DidSelectSuggestion(const autofill::Suggestion& suggestion) override;
   void DidAcceptSuggestion(const autofill::Suggestion& suggestion,
                            const SuggestionMetadata& metadata) override;
@@ -91,6 +94,7 @@ class PasswordAutofillManager : public autofill::AutofillSuggestionDelegate,
   void ClearPreviewedForm() override;
   autofill::FillingProduct GetMainFillingProduct() const override;
   void OnTabSelected(autofill::TabbedPaneTabType tab_type) override;
+  bool IsSearching() const override;
 
   // Invoked when a password mapping is added.
   void OnAddPasswordFillData(const autofill::PasswordFormFillData& fill_data);
@@ -255,6 +259,11 @@ class PasswordAutofillManager : public autofill::AutofillSuggestionDelegate,
   const raw_ptr<autofill::AutofillClient> autofill_client_;
 
   const raw_ptr<PasswordManagerClient> password_client_;
+
+  // The ID of the last ShowPopup() call. UpdatePopup() is a no-op if the
+  // current session ID isn't the same as the `last_session_id_`.
+  std::optional<autofill::AutofillClient::SuggestionUiSessionId>
+      last_session_id_;
 
   // The arguments of the last ShowPopup() call and UpdatePopup(), to be re-used
   // by OnUnlockReauthCompleted().

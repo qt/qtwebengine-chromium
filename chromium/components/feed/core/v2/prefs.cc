@@ -16,18 +16,7 @@
 
 namespace feed {
 namespace prefs {
-namespace {
 
-const char* RequestSchedulePrefName(RefreshTaskId task_id) {
-  switch (task_id) {
-    case feed::RefreshTaskId::kRefreshForYouFeed:
-      return kRequestSchedule;
-    case feed::RefreshTaskId::kRefreshWebFeed:
-      return kWebFeedsRequestSchedule;
-  }
-}
-
-}  // namespace
 std::vector<int> GetThrottlerRequestCounts(PrefService& pref_service) {
   std::vector<int> result;
   const auto& value_list =
@@ -67,17 +56,13 @@ void SetDebugStreamData(const DebugStreamData& data,
   pref_service.SetString(kDebugStreamData, SerializeDebugStreamData(data));
 }
 
-void SetRequestSchedule(RefreshTaskId task_id,
-                        const RequestSchedule& schedule,
+void SetRequestSchedule(const RequestSchedule& schedule,
                         PrefService& pref_service) {
-  pref_service.SetDict(RequestSchedulePrefName(task_id),
-                       RequestScheduleToDict(schedule));
+  pref_service.SetDict(kRequestSchedule, RequestScheduleToDict(schedule));
 }
 
-RequestSchedule GetRequestSchedule(RefreshTaskId task_id,
-                                   PrefService& pref_service) {
-  return RequestScheduleFromDict(
-      pref_service.GetDict(RequestSchedulePrefName(task_id)));
+RequestSchedule GetRequestSchedule(PrefService& pref_service) {
+  return RequestScheduleFromDict(pref_service.GetDict(kRequestSchedule));
 }
 
 void SetPersistentMetricsData(const PersistentMetricsData& data,
@@ -101,26 +86,6 @@ std::string GetClientInstanceId(PrefService& pref_service) {
 void ClearClientInstanceId(PrefService& pref_service) {
   pref_service.ClearPref(feed::prefs::kClientInstanceId);
 }
-
-void SetWebFeedContentOrder(PrefService& pref_service,
-                            ContentOrder content_order) {
-  pref_service.SetInteger(feed::prefs::kWebFeedContentOrder,
-                          static_cast<int>(content_order));
-}
-
-ContentOrder GetWebFeedContentOrder(const PrefService& pref_service) {
-  int order = pref_service.GetInteger(feed::prefs::kWebFeedContentOrder);
-  switch (order) {
-    case static_cast<int>(ContentOrder::kReverseChron):
-      return ContentOrder::kReverseChron;
-    case static_cast<int>(ContentOrder::kGrouped):
-      return ContentOrder::kGrouped;
-    default:
-      // Note: we need to handle invalid values gracefully.
-      return ContentOrder::kUnspecified;
-  }
-}
-
 }  // namespace prefs
 
 }  // namespace feed

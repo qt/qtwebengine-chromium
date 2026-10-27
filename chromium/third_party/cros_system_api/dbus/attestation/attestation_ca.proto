@@ -230,6 +230,9 @@ enum ResponseStatus {
   // id and reports the quota limit exceeded status when the number of reset
   // action in a specified time window is more than self reset limitation.
   QUOTA_LIMIT_EXCEEDED = 4;
+  // Only appears in signing response. The device is not in Verified mode or
+  // allowlisted.
+  UNAUTHORIZED = 5;
 }
 
 // The response from the attestation server for the enrollment request.

@@ -17,6 +17,8 @@
 #ifndef LIBGAV1_SRC_DSP_LOOP_RESTORATION_H_
 #define LIBGAV1_SRC_DSP_LOOP_RESTORATION_H_
 
+#include <utility>
+
 // Pull in LIBGAV1_DspXXX defines representing the implementation status
 // of each function. The resulting value of each can be used by each module to
 // determine whether an implementation is needed at compile time.

@@ -34,15 +34,23 @@ constexpr char kComicSansMS[] = "Comic Sans MS";
 class CFXFolderFontInfoTest : public ::testing::Test {
  public:
   CFXFolderFontInfoTest() {
-    AddDummyFont(kArial, CHARSET_FLAG_ANSI);
-    AddDummyFont(kCourierNew, CHARSET_FLAG_ANSI);
-    AddDummyFont(kTimesNewRoman, 0);
-    AddDummyFont(kBookshelfSymbol7, CHARSET_FLAG_SYMBOL);
-    AddDummyFont(kSymbol, CHARSET_FLAG_SYMBOL);
-    AddDummyFont(kTofuBold, CHARSET_FLAG_SYMBOL);
-    AddDummyFont(kLatoUltraBold, CHARSET_FLAG_ANSI);
-    AddDummyFont(kOxygenSansSansBold, CHARSET_FLAG_ANSI);
-    AddDummyFont(kComicSansMS, CHARSET_FLAG_ANSI);
+    AddDummyFont(kArial, CFX_FolderFontInfo::FontFaceInfo::CharsetFlag::kAnsi);
+    AddDummyFont(kCourierNew,
+                 CFX_FolderFontInfo::FontFaceInfo::CharsetFlag::kAnsi);
+    AddDummyFont(kTimesNewRoman,
+                 CFX_FolderFontInfo::FontFaceInfo::CharsetFlag::kNone);
+    AddDummyFont(kBookshelfSymbol7,
+                 CFX_FolderFontInfo::FontFaceInfo::CharsetFlag::kSymbol);
+    AddDummyFont(kSymbol,
+                 CFX_FolderFontInfo::FontFaceInfo::CharsetFlag::kSymbol);
+    AddDummyFont(kTofuBold,
+                 CFX_FolderFontInfo::FontFaceInfo::CharsetFlag::kSymbol);
+    AddDummyFont(kLatoUltraBold,
+                 CFX_FolderFontInfo::FontFaceInfo::CharsetFlag::kAnsi);
+    AddDummyFont(kOxygenSansSansBold,
+                 CFX_FolderFontInfo::FontFaceInfo::CharsetFlag::kAnsi);
+    AddDummyFont(kComicSansMS,
+                 CFX_FolderFontInfo::FontFaceInfo::CharsetFlag::kAnsi);
   }
 
   void* FindFont(int weight,
@@ -60,11 +68,12 @@ class CFXFolderFontInfoTest : public ::testing::Test {
   }
 
  private:
-  void AddDummyFont(const char* font_name, uint32_t charsets) {
+  void AddDummyFont(const char* font_name,
+                    CFX_FolderFontInfo::FontFaceInfo::CharsetFlag charset) {
     auto info = std::make_unique<CFX_FolderFontInfo::FontFaceInfo>(
         /*filePath=*/"", font_name, /*fontTables=*/"",
         /*fontOffset=*/0, /*fileSize=*/0);
-    info->charsets_ = charsets;
+    info->charsets_ = charset;
     font_info_.font_list_[font_name] = std::move(info);
   }
 

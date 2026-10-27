@@ -1196,6 +1196,15 @@
             "issue": "https://anglebug.com/42266070"
         },
         {
+            "name": "add_framebuffer_fetch_barrier_on_use_mid_render_pass",
+            "category": "Workarounds",
+            "description": [
+                "When framebuffer fetch is used during the render pass, a barrier ",
+                "is added to ensure correctness"
+            ],
+            "issue": "https://issuetracker.google.com/423086584"
+        },
+        {
             "name": "egl_colorspace_attribute_passthrough",
             "category": "Features",
             "description": [
@@ -1359,6 +1368,14 @@
                 "VkDevice supports the VK_EXT_surface_maintenance1 and VK_EXT_swapchain_maintenance1 extensions"
             ],
             "issue": "https://anglebug.com/42266319"
+        },
+        {
+            "name": "swapchain_deferred_memory_allocation",
+            "category": "Workarounds",
+            "description": [
+                "Enable the usage of the deferred memory allocation flag for swapchain creation"
+            ],
+            "issue": "https://anglebug.com/499347835"
         },
         {
             "name": "supports_get_memory_requirements2",
@@ -2214,6 +2231,13 @@
                 "VkDevice supports the VK_EXT_shader_demote_to_helper_invocation extension"
             ],
             "issue": "http://anglebug.com/490910899"
+        },
+        {
+            "name": "avoid_image_ghost_outside_render_pass",
+            "category": "Features",
+            "description": [
+                "Avoid ghosting the image if it is not used in an active render pass."
+            ]
         }
     ]
 }

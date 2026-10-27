@@ -39,6 +39,7 @@ cc_library(
     deps = [
         "//ink/brush:brush_paint",
         "//ink/geometry:mesh_format",
+        "//ink/rendering/common:stroke_attribute_helpers",
         "//ink/strokes/internal:stroke_vertex",
         "//ink/types:small_array",
         "@com_google_absl//absl/container:inlined_vector",

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 VectorXd v(10);
 v.resize(3);
 RowVector3d w;

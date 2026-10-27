@@ -3,6 +3,8 @@
 //
 // These are memory-bandwidth-bound for large vectors, so we report
 // bytes processed rather than FLOPS.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>

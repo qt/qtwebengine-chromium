@@ -39,6 +39,7 @@ class Encryptor;
 
 namespace password_manager {
 
+class AffiliatedMatchHelper;
 class LoginDatabase;
 class LoginDatabaseAsyncHelper;
 
@@ -50,11 +51,13 @@ class PasswordStoreBuiltInBackend : public PasswordStoreBackend,
  public:
   // The |login_db| must not have been Init()-ed yet. It will be initialized in
   // a deferred manner on the background sequence.
-  PasswordStoreBuiltInBackend(std::unique_ptr<LoginDatabase> login_db,
-                              syncer::WipeModelUponSyncDisabledBehavior
-                                  wipe_model_upon_sync_disabled_behavior,
-                              PrefService* prefs,
-                              os_crypt_async::OSCryptAsync* os_crypt_async);
+  PasswordStoreBuiltInBackend(
+      std::unique_ptr<LoginDatabase> login_db,
+      syncer::WipeModelUponSyncDisabledBehavior
+          wipe_model_upon_sync_disabled_behavior,
+      PrefService* prefs,
+      os_crypt_async::OSCryptAsync* os_crypt_async,
+      std::unique_ptr<AffiliatedMatchHelper> affiliated_match_helper);
 
   ~PasswordStoreBuiltInBackend() override;
 
@@ -65,38 +68,36 @@ class PasswordStoreBuiltInBackend : public PasswordStoreBackend,
   void NotifyCredentialsChangedForTesting(
       base::PassKey<class PasswordStoreBuiltInBackendPasswordLossMetricsTest>,
       const PasswordStoreChangeList& changes);
-  void NotifyDeletionsHaveSyncedForTesting(bool success);
 
  private:
   // Implements PasswordStoreBackend interface.
-  void InitBackend(AffiliatedMatchHelper* affiliated_match_helper,
-                   RemoteChangesReceived remote_form_changes_received,
+  void InitBackend(RemoteChangesReceived remote_form_changes_received,
                    base::RepeatingClosure sync_enabled_or_disabled_cb,
                    base::OnceCallback<void(bool)> completion) override;
   void Shutdown(base::OnceClosure shutdown_completed) override;
   ActionableError GetError() override;
-  void GetAllLoginsAsync(LoginsOrErrorReply callback) override;
+  void GetAllLoginsAsync(BackendLoginsOrErrorReply callback) override;
   void GetAllLoginsWithAffiliationAndBrandingAsync(
-      LoginsOrErrorReply callback) override;
-  void GetAutofillableLoginsAsync(LoginsOrErrorReply callback) override;
+      BackendLoginsOrErrorReply callback) override;
+  void GetAutofillableLoginsAsync(BackendLoginsOrErrorReply callback) override;
   void FillMatchingLoginsAsync(
-      LoginsOrErrorReply callback,
+      BackendLoginsOrErrorReply callback,
       bool include_psl,
       const std::vector<PasswordFormDigest>& forms) override;
-  void GetGroupedMatchingLoginsAsync(const PasswordFormDigest& form_digest,
-                                     LoginsOrErrorReply callback) override;
-  void AddLoginAsync(const PasswordForm& form,
+  void GetGroupedMatchingLoginsAsync(
+      const PasswordFormDigest& form_digest,
+      BackendLoginsOrErrorReply callback) override;
+  void AddLoginAsync(StoredCredential cred,
                      PasswordChangesOrErrorReply callback) override;
-  void UpdateLoginAsync(const PasswordForm& form,
+  void UpdateLoginAsync(StoredCredential cred,
                         PasswordChangesOrErrorReply callback) override;
   void RemoveLoginAsync(const base::Location& location,
-                        const PasswordForm& form,
+                        StoredCredential cred,
                         PasswordChangesOrErrorReply callback) override;
   void RemoveLoginsCreatedBetweenAsync(
       const base::Location& location,
       base::Time delete_begin,
       base::Time delete_end,
-      base::OnceCallback<void(bool)> sync_completion,
       PasswordChangesOrErrorReply callback) override;
   void DisableAutoSignInForOriginsAsync(
       const base::RepeatingCallback<bool(const GURL&)>& origin_filter,
@@ -124,13 +125,13 @@ class PasswordStoreBuiltInBackend : public PasswordStoreBackend,
   // invokes |callback| with it, as no forms could be fetched. Called on
   // the main sequence.
   void InjectAffiliationAndBrandingInformation(
-      LoginsOrErrorReply callback,
-      LoginsResultOrError forms_or_error);
+      BackendLoginsOrErrorReply callback,
+      BackendLoginsResultOrError forms_or_error);
 
   void OnEncryptorReceived(RemoteChangesReceived remote_form_changes_received,
                            base::RepeatingClosure sync_enabled_or_disabled_cb,
                            base::OnceCallback<void(bool)> completion,
-                           os_crypt_async::Encryptor encryptor);
+                           scoped_refptr<os_crypt_async::Encryptor> encryptor);
 
   void WritePasswordRemovalReasonPrefs(IsAccountStore is_account_store);
 
@@ -153,7 +154,7 @@ class PasswordStoreBuiltInBackend : public PasswordStoreBackend,
   std::unique_ptr<LoginDatabaseAsyncHelper> helper_
       GUARDED_BY_CONTEXT(sequence_checker_);
 
-  raw_ptr<AffiliatedMatchHelper> affiliated_match_helper_;
+  std::unique_ptr<AffiliatedMatchHelper> affiliated_match_helper_;
 
   // TaskRunner for all the background operations.
   scoped_refptr<base::SequencedTaskRunner> background_task_runner_

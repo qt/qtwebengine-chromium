@@ -25,12 +25,12 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/metal/QuerySetMTL.h"
+#include "src/dawn/native/metal/QuerySetMTL.h"
 
-#include "dawn/common/Math.h"
-#include "dawn/common/Platform.h"
-#include "dawn/native/metal/DeviceMTL.h"
-#include "dawn/native/metal/UtilsMetal.h"
+#include "src/dawn/common/Math.h"
+#include "src/dawn/native/metal/DeviceMTL.h"
+#include "src/dawn/native/metal/UtilsMetal.h"
+#include "src/utils/platform.h"
 
 namespace dawn::native::metal {
 
@@ -39,7 +39,7 @@ namespace {
 ResultOrError<id<MTLCounterSampleBuffer>> CreateCounterSampleBuffer(Device* device,
                                                                     NSString* label,
                                                                     MTLCommonCounterSet counterSet,
-                                                                    uint32_t count) {
+                                                                    QueryIndex count) {
     NSRef<MTLCounterSampleBufferDescriptor> descriptorRef =
         AcquireNSRef([MTLCounterSampleBufferDescriptor new]);
     MTLCounterSampleBufferDescriptor* descriptor = descriptorRef.Get();
@@ -57,7 +57,7 @@ ResultOrError<id<MTLCounterSampleBuffer>> CreateCounterSampleBuffer(Device* devi
     }
     DAWN_ASSERT(descriptor.counterSet != nullptr);
 
-    descriptor.sampleCount = static_cast<NSUInteger>(std::max(count, uint32_t(1u)));
+    descriptor.sampleCount = NSUInteger{std::max(count, QueryIndex(1))};
     descriptor.storageMode = MTLStorageModePrivate;
     if (device->IsToggleEnabled(Toggle::MetalUseSharedModeForCounterSampleBuffer)) {
         descriptor.storageMode = MTLStorageModeShared;
@@ -91,8 +91,7 @@ MaybeError QuerySet::Initialize() {
     switch (GetQueryType()) {
         case wgpu::QueryType::Occlusion: {
             // Create buffer for writing 64-bit results.
-            NSUInteger bufferSize =
-                static_cast<NSUInteger>(std::max(GetQueryCount() * sizeof(uint64_t), size_t(4u)));
+            NSUInteger bufferSize = std::max(ToQueryStorageSize(GetQueryCount()), 4u);
             mVisibilityBuffer = AcquireNSPRef([device->GetMTLDevice()
                 newBufferWithLength:bufferSize
                             options:MTLResourceStorageModePrivate]);

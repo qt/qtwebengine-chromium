@@ -340,7 +340,7 @@ class InternalStandardStatsObserver : public webrtc::RTCStatsCollectorCallback {
     // We're on the signaling thread.
     DCHECK(!main_thread_->BelongsToCurrentThread());
     PostCrossThreadTask(
-        *main_thread_.get(), FROM_HERE,
+        *main_thread_, FROM_HERE,
         CrossThreadBindOnce(
             &InternalStandardStatsObserver::OnStatsDeliveredOnMainThread,
             scoped_refptr<InternalStandardStatsObserver>(this), report));
@@ -1006,7 +1006,7 @@ void PeerConnectionTracker::TrackSessionId(RTCPeerConnectionHandler* pc_handler,
   String non_null_session_id =
       session_id.IsNull() ? g_empty_string : session_id;
   peer_connection_tracker_host_->OnPeerConnectionSessionIdSet(
-      local_id, non_null_session_id);
+      local_id, non_null_session_id, base::DoNothing());
 }
 
 void PeerConnectionTracker::TrackOnRenegotiationNeeded(

@@ -211,7 +211,6 @@ exempted_from_description_builders = {
         "ios-angle-intel",
         "ios-blink-rel-fyi",
         "ios-simulator-code-coverage",
-        "ios-webkit-tot",
         "ios18-beta-simulator",
         "ios26-beta-simulator",
         "ios18-sdk-simulator",
@@ -613,7 +612,6 @@ exempted_from_contact_builders = {
         "ios-simulator-code-coverage",
         "ios-simulator-full-configs",
         "ios-simulator-noncq",
-        "ios-webkit-tot",
         "ios18-beta-simulator",
         "ios26-beta-simulator",
         "ios18-sdk-simulator",
@@ -944,7 +942,6 @@ mega_cq_excluded_builders = [
     # TODO(crbug.com/40282196): Remove the following as trybots are
     # created for them.
     "android-arm64-archive-rel",
-    "linux-chromeos-archive-rel",
 ]
 
 mega_cq_excluded_gardener_rotations = [

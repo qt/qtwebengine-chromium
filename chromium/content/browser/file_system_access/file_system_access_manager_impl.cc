@@ -95,6 +95,9 @@ using HandleType = FileSystemAccessPermissionContext::HandleType;
 
 namespace {
 
+constexpr char kThirdPartyIframesNotAllowedToShowFilePicker[] =
+    "Third party iframes are not allowed to show a file picker.";
+
 // Holds resolved and validated frame objects. All pointers are guaranteed to be
 // non-null and active if this struct is returned.
 struct ResolvedFrame {
@@ -215,16 +218,19 @@ void ShowFilePickerOnUIThread(
     return;
   }
 
-  url::Origin embedding_origin = outermost_rfh->GetLastCommittedOrigin();
+  // Third party iframes are not allowed to show a file picker, unless the
+  // embedder explicitly grants this cross-origin subframe an exemption (e.g.,
+  // a MIME handler extension frame).
+  const url::Origin embedding_origin = outermost_rfh->GetLastCommittedOrigin();
   if (embedding_origin != requesting_origin &&
-      !GetContentClient()->IsFilePickerAllowedForCrossOriginSubframe(
-          requesting_origin)) {
-    // Third party iframes are not allowed to show a file picker.
-    std::move(callback).Run(
-        file_system_access_error::FromStatus(
-            FileSystemAccessStatus::kPermissionDenied,
-            "Third party iframes are not allowed to show a file picker."),
-        {});
+      !GetContentClient()
+           ->browser()
+           ->IsCrossOriginSubframeAllowedToShowFilePicker(rfh,
+                                                          requesting_origin)) {
+    std::move(callback).Run(file_system_access_error::FromStatus(
+                                FileSystemAccessStatus::kPermissionDenied,
+                                kThirdPartyIframesNotAllowedToShowFilePicker),
+                            {});
     return;
   }
 
@@ -287,10 +293,25 @@ void ShowFilePickerOnUIThread(
   }
 #endif
 
+  auto blocker =
+      web_contents->ForSecurityDropFullscreen(display::kInvalidDisplayId);
+
+  // `ForSecurityDropFullscreen()` can also run nested message loops. Re-resolve
+  // and re-validate the frame, and ensure the fullscreen blocker was
+  // successfully acquired.
+  auto post_fullscreen_resolved = ResolveAndValidateFrame(frame_id);
+  if (!post_fullscreen_resolved || !blocker) {
+    std::move(callback).Run(file_system_access_error::FromStatus(
+                                FileSystemAccessStatus::kOperationAborted),
+                            {});
+    return;
+  }
+  rfh = post_fullscreen_resolved->rfh;
+  web_contents = post_fullscreen_resolved->web_contents;
+  outermost_rfh = post_fullscreen_resolved->outermost_rfh;
+
   FileSystemChooser::ScopedObjects scoped_objects(
-      // Drop fullscreen mode so that the user sees the URL bar.
-      /*fullscreen_block=*/web_contents->ForSecurityDropFullscreen(
-          display::kInvalidDisplayId),
+      /*fullscreen_block=*/std::move(*blocker),
       // Maybe tuck the pip window so that it would not block the file picker
       // UI.
       /*pip_tucker=*/GetContentClient()
@@ -637,6 +658,25 @@ void FileSystemAccessManagerImpl::ChooseEntries(
     return;
   }
 
+  // Preflight the cross-origin subframe deny path so a denial does not burn
+  // the user gesture below. The full set of picker preconditions (active
+  // outer frame, fenced-frame check, etc.) is enforced again in
+  // `ShowFilePickerOnUIThread()`.
+  RenderFrameHost* outermost_rfh = rfh->GetOutermostMainFrame();
+  if (outermost_rfh && outermost_rfh->IsActive() &&
+      outermost_rfh->GetLastCommittedOrigin() != context.storage_key.origin() &&
+      !GetContentClient()
+           ->browser()
+           ->IsCrossOriginSubframeAllowedToShowFilePicker(
+               rfh, context.storage_key.origin())) {
+    std::move(callback).Run(
+        file_system_access_error::FromStatus(
+            FileSystemAccessStatus::kPermissionDenied,
+            kThirdPartyIframesNotAllowedToShowFilePicker),
+        std::vector<blink::mojom::FileSystemAccessEntryPtr>());
+    return;
+  }
+
   // Consume user activation to address this issue: crbug.com/40059071
   // TODO(crbug.com/411125804): Consider moving this user activation check to
   // the renderer process or informing the renderer that it lost user
@@ -645,9 +685,16 @@ void FileSystemAccessManagerImpl::ChooseEntries(
           ->browser()
           ->IsTransientActivationRequiredForShowFileOrDirectoryPicker(
               WebContents::FromRenderFrameHost(rfh))) {
-    FrameTreeNode::From(rfh)->UpdateUserActivationState(
-        blink::mojom::UserActivationUpdateType::kConsumeTransientActivation,
-        blink::mojom::UserActivationNotificationType::kNone);
+    if (!FrameTreeNode::From(rfh)->UpdateUserActivationState(
+            blink::mojom::UserActivationUpdateType::kConsumeTransientActivation,
+            blink::mojom::UserActivationNotificationType::kNone)) {
+      std::move(callback).Run(
+          file_system_access_error::FromStatus(
+              FileSystemAccessStatus::kPermissionDenied,
+              "User activation required."),
+          std::vector<blink::mojom::FileSystemAccessEntryPtr>());
+      return;
+    }
   }
 
   // Don't show the file picker if there is an already active file picker for

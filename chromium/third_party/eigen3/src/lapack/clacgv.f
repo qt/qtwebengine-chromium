@@ -72,6 +72,8 @@
 *> \ingroup complexOTHERauxiliary
 *
 *  =====================================================================
+*> SPDX-FileCopyrightText: The Eigen Authors
+*> SPDX-License-Identifier: BSD-3-Clause
       SUBROUTINE CLACGV( N, X, INCX )
 *
 *  -- LAPACK auxiliary routine (version 3.4.0) --

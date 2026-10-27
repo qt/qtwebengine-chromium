@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SUPERLUSUPPORT_H
 #define EIGEN_SUPERLUSUPPORT_H
@@ -154,14 +155,11 @@ struct SluMatrix : SuperMatrix {
 
   template <typename Scalar>
   void setScalarType() {
-    if (internal::is_same<Scalar, float>::value)
-      Dtype = SLU_S;
-    else if (internal::is_same<Scalar, double>::value)
-      Dtype = SLU_D;
-    else if (internal::is_same<Scalar, std::complex<float> >::value)
-      Dtype = SLU_C;
-    else if (internal::is_same<Scalar, std::complex<double> >::value)
-      Dtype = SLU_Z;
+    EIGEN_IF_CONSTEXPR((std::is_same<Scalar, float>::value))
+    Dtype = SLU_S;
+    else EIGEN_IF_CONSTEXPR((std::is_same<Scalar, double>::value)) Dtype = SLU_D;
+    else EIGEN_IF_CONSTEXPR((std::is_same<Scalar, std::complex<float> >::value)) Dtype = SLU_C;
+    else EIGEN_IF_CONSTEXPR((std::is_same<Scalar, std::complex<double> >::value)) Dtype = SLU_Z;
     else {
       eigen_assert(false && "Scalar type not supported by SuperLU");
     }
@@ -189,11 +187,12 @@ struct SluMatrix : SuperMatrix {
   static SluMatrix Map(SparseMatrixBase<MatrixType> &a_mat) {
     MatrixType &mat(a_mat.derived());
     SluMatrix res;
-    if ((MatrixType::Flags & RowMajorBit) == RowMajorBit) {
+    EIGEN_IF_CONSTEXPR((MatrixType::Flags & RowMajorBit) == RowMajorBit) {
       res.setStorageType(SLU_NR);
       res.nrow = internal::convert_index<int>(mat.cols());
       res.ncol = internal::convert_index<int>(mat.rows());
-    } else {
+    }
+    else {
       res.setStorageType(SLU_NC);
       res.nrow = internal::convert_index<int>(mat.rows());
       res.ncol = internal::convert_index<int>(mat.cols());
@@ -209,8 +208,8 @@ struct SluMatrix : SuperMatrix {
     res.setScalarType<typename MatrixType::Scalar>();
 
     // FIXME: the following type mapping is approximate.
-    if (int(MatrixType::Flags) & int(Upper)) res.Mtype = SLU_TRU;
-    if (int(MatrixType::Flags) & int(Lower)) res.Mtype = SLU_TRL;
+    EIGEN_IF_CONSTEXPR(int(MatrixType::Flags) & int(Upper)) res.Mtype = SLU_TRU;
+    EIGEN_IF_CONSTEXPR(int(MatrixType::Flags) & int(Lower)) res.Mtype = SLU_TRL;
 
     eigen_assert(((int(MatrixType::Flags) & int(SelfAdjoint)) == 0) &&
                  "SelfAdjoint matrix shape not supported by SuperLU");
@@ -240,11 +239,12 @@ template <typename Derived>
 struct SluMatrixMapHelper<SparseMatrixBase<Derived> > {
   typedef Derived MatrixType;
   static void run(MatrixType &mat, SluMatrix &res) {
-    if ((MatrixType::Flags & RowMajorBit) == RowMajorBit) {
+    EIGEN_IF_CONSTEXPR((MatrixType::Flags & RowMajorBit) == RowMajorBit) {
       res.setStorageType(SLU_NR);
       res.nrow = mat.cols();
       res.ncol = mat.rows();
-    } else {
+    }
+    else {
       res.setStorageType(SLU_NC);
       res.nrow = mat.rows();
       res.ncol = mat.cols();
@@ -260,8 +260,8 @@ struct SluMatrixMapHelper<SparseMatrixBase<Derived> > {
     res.setScalarType<typename MatrixType::Scalar>();
 
     // FIXME: the following type mapping is approximate.
-    if (MatrixType::Flags & Upper) res.Mtype = SLU_TRU;
-    if (MatrixType::Flags & Lower) res.Mtype = SLU_TRL;
+    EIGEN_IF_CONSTEXPR(MatrixType::Flags & Upper) res.Mtype = SLU_TRU;
+    EIGEN_IF_CONSTEXPR(MatrixType::Flags & Lower) res.Mtype = SLU_TRL;
 
     eigen_assert(((MatrixType::Flags & SelfAdjoint) == 0) && "SelfAdjoint matrix shape not supported by SuperLU");
   }

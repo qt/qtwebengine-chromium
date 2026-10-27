@@ -194,9 +194,14 @@ DWORD DeleteFileRecursive(const FilePath& path,
     DWORD this_result = ERROR_SUCCESS;
     if (info.IsDirectory()) {
       if (recursive) {
-        this_result = DeleteFileRecursive(current, pattern, true);
-        DCHECK_NE(static_cast<LONG>(this_result), ERROR_FILE_NOT_FOUND);
-        DCHECK_NE(static_cast<LONG>(this_result), ERROR_PATH_NOT_FOUND);
+        // Use `IsLink` to ensure fresh data is used to determine whether or not
+        // `current` is a mount point or similar.
+        if (!FeatureList::IsEnabled(features::kPreventReparsePointTraversal) ||
+            !IsLink(current)) {
+          this_result = DeleteFileRecursive(current, pattern, true);
+          DCHECK_NE(static_cast<LONG>(this_result), ERROR_FILE_NOT_FOUND);
+          DCHECK_NE(static_cast<LONG>(this_result), ERROR_PATH_NOT_FOUND);
+        }
         if (this_result == ERROR_SUCCESS &&
             !::RemoveDirectory(current.value().c_str())) {
           this_result = ReturnLastErrorOrSuccessOnNotFound();
@@ -397,7 +402,9 @@ DWORD DoDeleteFile(const FilePath& path, bool recursive) {
                : ReturnLastErrorOrSuccessOnNotFound();
   }
 
-  if (recursive) {
+  if (recursive &&
+      (!FeatureList::IsEnabled(features::kPreventReparsePointTraversal) ||
+       !IsLink(path))) {
     const DWORD error_code =
         DeleteFileRecursive(path, FILE_PATH_LITERAL("*"), true);
     DCHECK_NE(static_cast<LONG>(error_code), ERROR_FILE_NOT_FOUND);
@@ -772,15 +779,17 @@ FilePath GetHomeDir() {
   return FilePath(FILE_PATH_LITERAL("C:\\"));
 }
 
-File CreateAndOpenTemporaryFileInDir(const FilePath& dir, FilePath* temp_file) {
+File CreateAndOpenTemporaryFileInDir(const FilePath& dir,
+                                     FilePath* temp_file,
+                                     uint32_t additional_flags) {
   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
 
   // Open the file with exclusive r/w/d access, and allow the caller to decide
   // to mark it for deletion upon close after the fact.
-  constexpr uint32_t kFlags = File::FLAG_CREATE | File::FLAG_READ |
-                              File::FLAG_WRITE | File::FLAG_WIN_EXCLUSIVE_READ |
-                              File::FLAG_WIN_EXCLUSIVE_WRITE |
-                              File::FLAG_CAN_DELETE_ON_CLOSE;
+  uint32_t flags = File::FLAG_CREATE | File::FLAG_READ | File::FLAG_WRITE |
+                   File::FLAG_WIN_EXCLUSIVE_READ |
+                   File::FLAG_WIN_EXCLUSIVE_WRITE |
+                   File::FLAG_CAN_DELETE_ON_CLOSE | additional_flags;
 
   // Use GUID instead of ::GetTempFileName() to generate unique file names.
   // "Due to the algorithm used to generate file names, GetTempFileName can
@@ -797,7 +806,7 @@ File CreateAndOpenTemporaryFileInDir(const FilePath& dir, FilePath* temp_file) {
   for (int i = 0; i < 100; ++i) {
     temp_name = dir.Append(FormatTemporaryFileName(
         UTF8ToWide(Uuid::GenerateRandomV4().AsLowercaseString()), true));
-    file.Initialize(temp_name, kFlags);
+    file.Initialize(temp_name, flags);
     if (file.IsValid()) {
       break;
     }
@@ -1065,9 +1074,44 @@ bool CreateWinHardLink(const FilePath& to_file, const FilePath& from_file) {
                           nullptr);
 }
 
-// TODO(rkc): Work out if we want to handle NTFS junctions here or not, handle
-// them if we do decide to.
 bool IsLink(const FilePath& file_path) {
+  ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
+
+  DWORD attributes = ::GetFileAttributes(file_path.value().c_str());
+  if (attributes == INVALID_FILE_ATTRIBUTES ||
+      (attributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0) {
+    return false;
+  }
+
+  // Open a handle to the reparse point itself, not its target, requiring
+  // minimal permissions.
+  File file(::CreateFile(
+      file_path.value().c_str(),
+      FILE_READ_ATTRIBUTES,  // Does NOT require FILE_LIST_DIRECTORY
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+      OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+      nullptr));
+
+  if (!file.IsValid()) {
+    // Best-effort fallback for cases where CreateFile fails (e.g., sharing
+    // violation or access denied).
+    WIN32_FIND_DATA find_data;
+    HANDLE find_handle = ::FindFirstFile(file_path.value().c_str(), &find_data);
+    if (find_handle != INVALID_HANDLE_VALUE) {
+      ::FindClose(find_handle);
+      return IsReparseTagNameSurrogate(find_data.dwReserved0);
+    }
+    return false;
+  }
+
+  FILE_ATTRIBUTE_TAG_INFO info;
+  bool success = ::GetFileInformationByHandleEx(
+      file.GetPlatformFile(), FileAttributeTagInfo, &info, sizeof(info));
+
+  if (success) {
+    return IsReparseTagNameSurrogate(info.ReparseTag);
+  }
+
   return false;
 }
 

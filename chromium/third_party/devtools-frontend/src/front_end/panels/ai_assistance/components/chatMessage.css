@@ -9,10 +9,12 @@
     font-family: var(--default-font-family);
     width: 100%;
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
     margin-block: calc(-1 * var(--sys-size-3));
     margin-top: var(--sys-size-5);
+    overflow: hidden;
+    mask-image: linear-gradient(to right, var(--ref-palette-neutral0) calc(100% - var(--sys-size-15)), transparent 100%);
 
     &.not-v2 {
       /* Can be removed when AIv2 ships */
@@ -261,6 +263,7 @@
     align-items: center;
 
     .title {
+      margin: 0;
       text-overflow: ellipsis;
       white-space: nowrap;
       overflow: hidden;
@@ -350,6 +353,10 @@
     &[open] {
       width: auto;
 
+      summary {
+        margin-bottom: var(--sys-size-2);
+      }
+
       .summary .title {
         white-space: normal;
         overflow: unset;
@@ -366,6 +373,11 @@
 
     summary {
       border-radius: 16px;
+
+      &:focus-visible {
+        outline: var(--sys-size-2) solid var(--sys-color-state-focus-ring);
+        outline-offset: var(--sys-size-2);
+      }
     }
 
     .step-details {
@@ -450,10 +462,24 @@
 
     .widget-name {
       font: var(--sys-typescale-body4-regular);
+      margin: 0;
       max-width: 80%;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap; /* stop the titles going onto multiple lines */
+    }
+
+    /* This widget's title is some text + then a DOM node link, so it
+     * needs some extra styling */
+    .computed-style-title-wrapper {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: var(--sys-size-3);
+    }
+
+    .computed-style-title-prefix {
+      flex-shrink: 0;
     }
 
     .widget-reveal-container {

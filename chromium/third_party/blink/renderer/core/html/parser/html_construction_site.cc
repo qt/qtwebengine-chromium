@@ -295,21 +295,6 @@ static inline void ExecuteTakeAllChildrenTask(HTMLConstructionSiteTask& task) {
   task.parent->ParserTakeAllChildrenFrom(*task.OldParent());
 }
 
-static inline void ExecuteRemoveChildrenTask(HTMLConstructionSiteTask& task) {
-  DCHECK_EQ(task.operation, HTMLConstructionSiteTask::kRemoveChildren);
-
-  // Note that there is currently no special "ParserRemoveChildren" method, as
-  // removing children by patch templates has the same effect as removing them
-  // with a JS call.
-  task.parent->RemoveChildren();
-}
-
-static inline void ExecuteReplaceChildTask(HTMLConstructionSiteTask& task) {
-  DCHECK_EQ(task.operation, HTMLConstructionSiteTask::kReplaceChild);
-
-  task.parent->ParserReplaceChild(*task.child, *task.next_child);
-}
-
 void HTMLConstructionSite::ExecuteTask(HTMLConstructionSiteTask& task) {
   DCHECK(task_queue_.empty());
   if (task.operation == HTMLConstructionSiteTask::kInsert) {
@@ -334,14 +319,6 @@ void HTMLConstructionSite::ExecuteTask(HTMLConstructionSiteTask& task) {
 
   if (task.operation == HTMLConstructionSiteTask::kTakeAllChildren) {
     return ExecuteTakeAllChildrenTask(task);
-  }
-
-  if (task.operation == HTMLConstructionSiteTask::kRemoveChildren) {
-    return ExecuteRemoveChildrenTask(task);
-  }
-
-  if (task.operation == HTMLConstructionSiteTask::kReplaceChild) {
-    return ExecuteReplaceChildTask(task);
   }
 
   NOTREACHED();
@@ -439,37 +416,20 @@ void HTMLConstructionSite::QueueTask(HTMLConstructionSiteTask& task,
                                      bool flush_pending_text) {
   if (flush_pending_text)
     FlushPendingText();
-  if (SanitizeIfNeeded(task)) {
-    task_queue_.push_back(task);
-  }
-}
 
-bool HTMLConstructionSite::SanitizeIfNeeded(HTMLConstructionSiteTask& task) {
-  if (!RuntimeEnabledFeatures::NewHTMLSettingMethodsEnabled() || !task.child ||
-      !sanitizer_) {
-    return true;
-  }
-
-  // Sanitize the node itself, e.g. to remove forbidden attributes or to reject
-  // it if it is a forbidden element.
-  if (!sanitizer_->Sanitize(task.child)) {
-    return false;
-  }
-
-  HTMLStackItem* next = open_elements_.TopStackItem();
-
-  // Find the next item in stack that should not be replaced with children
-  // according to the sanitizer.
-  while (next && next->IsElementNode() &&
-         sanitizer_->ShouldReplaceWithChildren(next->GetNode())) {
-    next = next->NextItemInStack();
-    AdjustInsertionLocation(task, next);
-    if (!task.parent) {
-      return false;
+  if (sanitizer_ && task.child && task.parent &&
+      !task.parent->IsDocumentNode() &&
+      task.operation !=
+          HTMLConstructionSiteTask::Operation::kInsertAlreadyParsedChild &&
+      task.operation != HTMLConstructionSiteTask::Operation::kTakeAllChildren) {
+    CHECK(RuntimeEnabledFeatures::StreamingSanitizerEnabled());
+    if (!sanitizer_->Sanitize(task.child)) {
+      return;
     }
   }
 
-  return true;
+  AdjustInsertionLocation(task);
+  task_queue_.push_back(task);
 }
 
 void HTMLConstructionSite::AttachLater(InsertionLocation location,
@@ -637,6 +597,10 @@ void HTMLConstructionSite::MergeAttributesFromTokenIntoElement(
       element->setAttribute(token_attribute.GetName(), token_attribute.Value());
   }
 
+  if (sanitizer_) {
+    sanitizer_->Sanitize(element);
+  }
+
   element->HideNonce();
 }
 
@@ -653,6 +617,21 @@ void HTMLConstructionSite::InsertHTMLHtmlStartTagInBody(
 void HTMLConstructionSite::InsertHTMLBodyStartTagInBody(
     AtomicHTMLToken* token) {
   MergeAttributesFromTokenIntoElement(token, open_elements_.BodyElement());
+  // The customelementregistry attribute detection in CreateElement does not
+  // apply here because this path does not call CreateElement. This method is
+  // called when a <body> start tag is encountered while a body element already
+  // exists on the open elements stack (e.g., an implicit body was created by
+  // DefaultForAfterHead). In that case, the parser only merges attributes onto
+  // the existing body element rather than creating a new one, so we must
+  // handle the customelementregistry attribute explicitly.
+  if (RuntimeEnabledFeatures::ScopedCustomElementRegistryEnabled() &&
+      token->GetAttributeItem(html_names::kCustomelementregistryAttr)) {
+    Element* body = open_elements_.BodyElement();
+    body->SetCustomElementRegistry(nullptr);
+    if (document_) {
+      document_->SetScopedCustomElementRegistryUsed();
+    }
+  }
 }
 
 void HTMLConstructionSite::SetDefaultCompatibilityMode() {
@@ -872,14 +851,42 @@ HTMLConstructionSite::CurrentInsertionLocation() {
 }
 
 void HTMLConstructionSite::AdjustInsertionLocation(
-    HTMLConstructionSiteTask& task,
-    HTMLStackItem* stack_item) {
-  if (!stack_item->IsElementNode() && root_insertion_point_) {
-    task.parent = root_insertion_point_->target.Get();
-    task.next_child = root_insertion_point_->ref_node.Get();
-  } else {
-    task.parent = stack_item->GetNode();
+    HTMLConstructionSiteTask& task) {
+  if (!RuntimeEnabledFeatures::StreamingSanitizerEnabled()) {
+    return;
   }
+  if (IsEmpty()) {
+    return;
+  }
+  if (sanitizer_) {
+    // Find the first inclusive ancestor of task.parent that is not replaced
+    // with its children by the sanitizer.
+    // Using Find here as it might not be the topmost item due to foster
+    // parenting.
+    // TODO(nrosenthal): See if we can refactor this to be more efficient by
+    // doing this at the same time as foster parenting.
+    for (HTMLStackItem* parent_item =
+             open_elements_.Find(DynamicTo<Element>(task.parent.Get()));
+         parent_item && sanitizer_->ShouldReplaceWithChildren(task.parent);
+         parent_item = parent_item->NextItemInStack()) {
+      task.parent = parent_item->GetNode();
+    }
+
+    // This can happen if the reference node moved right before closing the
+    // stream, and the stream close has some side effects (e.g. <head>
+    // processing). In this case, ignore the reference node and append.
+    if (task.next_child && task.next_child->parentNode() != task.parent) {
+      task.next_child = nullptr;
+    }
+  }
+
+  if (task.parent != open_elements_.RootNode() || !root_insertion_point_) {
+    return;
+  }
+
+  CHECK(RuntimeEnabledFeatures::NewHTMLSettingMethodsEnabled());
+  task.parent = root_insertion_point_->target.Get();
+  task.next_child = root_insertion_point_->ref_node.Get();
 }
 
 void HTMLConstructionSite::InsertProcessingInstruction(AtomicHTMLToken* token) {
@@ -968,42 +975,52 @@ void HTMLConstructionSite::InsertHTMLTemplateElement(
   // to the DOM tree.
   auto* template_element = To<HTMLTemplateElement>(
       CreateElement(token, html_names::xhtmlNamespaceURI));
-  HTMLStackItem* template_stack_item =
-      HTMLStackItem::Create(template_element, token);
+
+  AtomicString patch_target =
+      RuntimeEnabledFeatures::DocumentPatchingEnabled()
+          ? template_element->FastGetAttribute(html_names::kForAttr)
+          : g_null_atom;
+
+  if (sanitizer_ &&
+      (!declarative_shadow_root_mode.IsNull() || !patch_target.IsNull())) {
+    CHECK(RuntimeEnabledFeatures::StreamingSanitizerEnabled());
+    bool ok = sanitizer_->Sanitize(template_element);
+    if (!ok ||
+        !template_element->FastHasAttribute(html_names::kShadowrootmodeAttr)) {
+      declarative_shadow_root_mode = String();
+    }
+    if (!ok || !template_element->FastHasAttribute(html_names::kForAttr)) {
+      patch_target = g_null_atom;
+    }
+  }
+
   bool should_attach_template = true;
 
   if (!declarative_shadow_root_mode.IsNull() &&
       IsA<Element>(open_elements_.TopStackItem()->GetNode())) {
-    auto focus_delegation = template_stack_item->GetAttributeItem(
+    auto focus_delegation = template_element->FastHasAttribute(
                                 html_names::kShadowrootdelegatesfocusAttr)
                                 ? FocusDelegation::kDelegateFocus
                                 : FocusDelegation::kNone;
     // TODO(crbug.com/1063157): Add an attribute for imperative slot
     // assignment.
     auto slot_assignment_mode = SlotAssignmentMode::kNamed;
-    bool serializable =
-        template_stack_item->GetAttributeItem(
-            html_names::kShadowrootserializableAttr);
-    bool clonable = template_stack_item->GetAttributeItem(
-        html_names::kShadowrootclonableAttr);
+    bool serializable = template_element->FastHasAttribute(
+        html_names::kShadowrootserializableAttr);
+    bool clonable =
+        template_element->FastHasAttribute(html_names::kShadowrootclonableAttr);
     Element* host = open_elements_.TopStackItem()->GetElement();
-    const auto* reference_target_attr =
+    AtomicString reference_target =
         RuntimeEnabledFeatures::ShadowRootReferenceTargetEnabled(
             host->GetDocument().GetExecutionContext())
-            ? template_stack_item->GetAttributeItem(
+            ? template_element->FastGetAttribute(
                   html_names::kShadowrootreferencetargetAttr)
-            : nullptr;
-    const auto& reference_target =
-        reference_target_attr ? reference_target_attr->Value() : g_null_atom;
-    const auto* adopted_stylesheets_attr =
-        template_stack_item->GetAttributeItem(
-            html_names::kShadowrootadoptedstylesheetsAttr);
-    const auto& adopted_stylesheets = adopted_stylesheets_attr
-                                          ? adopted_stylesheets_attr->Value()
-                                          : g_null_atom;
+            : g_null_atom;
+    AtomicString adopted_stylesheets = template_element->FastGetAttribute(
+        html_names::kShadowrootadoptedstylesheetsAttr);
     bool waiting_for_scoped_registry =
         RuntimeEnabledFeatures::ScopedCustomElementRegistryEnabled() &&
-        template_stack_item->GetAttributeItem(
+        template_element->FastHasAttribute(
             html_names::kShadowrootcustomelementregistryAttr);
 
     bool success = host->AttachDeclarativeShadowRoot(
@@ -1023,18 +1040,20 @@ void HTMLConstructionSite::InsertHTMLTemplateElement(
   }
 
   auto current_insertion_location = CurrentInsertionLocation();
-  open_elements_.Push(template_stack_item);
+  open_elements_.Push(HTMLStackItem::Create(template_element, token));
   if (!should_attach_template) {
     return;
   }
 
-  if (auto* patch = Patch::Prepare(
-          current_insertion_location.parent,
-          template_element->FastGetAttribute(html_names::kForAttr))) {
-    CHECK(RuntimeEnabledFeatures::DocumentPatchingEnabled());
-    UseCounter::Count(OwnerDocumentForCurrentNode(), WebFeature::kHTMLPatching);
-    template_element->SetPatch(patch);
-    return;
+  if (!patch_target.IsNull()) {
+    if (auto* patch =
+            Patch::Prepare(current_insertion_location.parent, patch_target)) {
+      CHECK(RuntimeEnabledFeatures::DocumentPatchingEnabled());
+      UseCounter::Count(OwnerDocumentForCurrentNode(),
+                        WebFeature::kHTMLPatching);
+      template_element->SetPatch(patch);
+      return;
+    }
   }
 
   AttachLater(current_insertion_location, template_element);
@@ -1094,7 +1113,10 @@ void HTMLConstructionSite::InsertScriptElement(AtomicHTMLToken* token) {
                          parser_content_policy_ !=
                              kAllowScriptingContentAndMarkAsParserInserted);
   HTMLScriptElement* element = nullptr;
-  if (const auto* is_attribute = token->GetAttributeItem(html_names::kIsAttr)) {
+  const auto* is_attribute = token->GetAttributeItem(html_names::kIsAttr);
+  bool sanitizer_allows_is_attribute =
+      !sanitizer_ || sanitizer_->AllowIsAttribute(html_names::kScriptTag);
+  if (is_attribute && sanitizer_allows_is_attribute) {
     element = To<HTMLScriptElement>(OwnerDocumentForCurrentNode().CreateElement(
         html_names::kScriptTag, flags, is_attribute->Value(),
         CustomElementRegistry::DefaultRegistry(OwnerDocumentForCurrentNode())));
@@ -1127,11 +1149,12 @@ void HTMLConstructionSite::InsertForeignElement(
 void HTMLConstructionSite::InsertTextNode(const StringView& string,
                                           WhitespaceMode whitespace_mode) {
   HTMLConstructionSiteTask dummy_task(HTMLConstructionSiteTask::kInsert);
-  AdjustInsertionLocation(dummy_task, CurrentStackItem());
+  dummy_task.parent = CurrentNode();
 
   if (ShouldFosterParent())
     FindFosterSite(dummy_task);
 
+  AdjustInsertionLocation(dummy_task);
   if (auto* template_element =
           DynamicTo<HTMLTemplateElement>(*dummy_task.parent)) {
     // If the Document was detached in the middle of parsing, the template
@@ -1269,7 +1292,13 @@ Element* HTMLConstructionSite::CreateElement(
            : QualifiedName(g_null_atom, token->GetName(), namespace_uri));
   // "5. Let is be the value of the "is" attribute in the given token ..." etc.
   const Attribute* is_attribute = token->GetAttributeItem(html_names::kIsAttr);
-  const AtomicString& is = is_attribute ? is_attribute->Value() : g_null_atom;
+  // If sanitizer_ is set and if santizer_ would not allow the "is" attribute,
+  // then we will just pretend to not have seen it.
+  bool sanitizer_allows_is_attribute =
+      !sanitizer_ || sanitizer_->AllowIsAttribute(tag_name);
+  const AtomicString& is = (is_attribute && sanitizer_allows_is_attribute)
+                               ? is_attribute->Value()
+                               : g_null_atom;
   // "6. Let registry be the result of looking up a custom element registry
   // given intended parent."
   CustomElementRegistry* registry = custom_element_registry_;
@@ -1278,16 +1307,40 @@ Element* HTMLConstructionSite::CreateElement(
     // intended parent is a template element, which means it will create a
     // document fragment, the custom element registry should be null.
     if (open_elements_.StackDepth() > 1) {
-      if (IsA<HTMLTemplateElement>(CurrentNode())) {
+      if (auto* tmpl =
+              DynamicTo<HTMLTemplateElement>(CurrentNode())) {
+        if (tmpl->IsShadowRootModeTemplate()) {
+          // For declarative shadow root templates, the insertion target is the
+          // shadow root itself. Use the shadow root's registry so elements get
+          // the correct tree scope registry (null for scoped-waiting, global
+          // for non-scoped).
+          registry =
+              To<ShadowRoot>(tmpl->InsertionTarget())->customElementRegistry();
+        } else {
+          // Regular <template> element: content goes into a template content
+          // document which has no browsing context, so no registry can exist.
+          registry = nullptr;
+        }
+      } else if (document.IsTemplateDocument()) {
+        // Template content documents have no browsing context, so no registry
+        // can exist. This covers deeper descendants inside template content.
         registry = nullptr;
-      } else {
+      } else if (is_parsing_fragment_ ||
+                 document.ScopedCustomElementRegistryUsed() ||
+                 &document != document_) {
+        // Only perform the per-element registry lookup when it may differ from
+        // the cached custom_element_registry_: during fragment parsing, when
+        // scoped registries are in use, or when a script has moved the current
+        // node to a different document mid-parse (stale cached registry).
         registry = CurrentElement()->customElementRegistry();
       }
     }
     // If the token has the "customelementregistry" content attribute, override
     // the registry to null. This allows declarative opt-out from the default
     // registry during parsing.
-    if (token->GetAttributeItem(html_names::kCustomelementregistryAttr)) {
+    if (registry &&
+        token->GetAttributeItem(html_names::kCustomelementregistryAttr)) {
+      document.SetScopedCustomElementRegistryUsed();
       registry = nullptr;
     }
   }
@@ -1353,7 +1406,7 @@ Element* HTMLConstructionSite::CreateElement(
       // to control this behavior of explicitly setting null registry.
       element = CustomElement::CreateUncustomizedOrUndefinedElement(
           document, tag_name, GetCreateElementFlags(), is, registry,
-          /*wait_for_registry=*/!registry && is_parsing_fragment_);
+          /*wait_for_registry=*/!registry);
     }
     // Definition for the created element does not exist here and it cannot be
     // custom, precustomized, or failed.
@@ -1515,7 +1568,7 @@ void HTMLConstructionSite::FindFosterSite(HTMLConstructionSiteTask& task) {
   }
 
   // 2.6, 2.7
-  task.parent = last_table->NextItemInStack()->GetElement();
+  task.parent = last_table->NextItemInStack()->GetNode();
 }
 
 bool HTMLConstructionSite::ShouldFosterParent() const {

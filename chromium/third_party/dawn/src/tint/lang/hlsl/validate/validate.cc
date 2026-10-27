@@ -58,6 +58,10 @@ TINT_END_DISABLE_ALL_WARNINGS();
 // the SUCCEEDED and FAILED macros that C-style cast to HRESULT.
 TINT_DISABLE_WARNING_OLD_STYLE_CAST
 
+// Helper macros to stringify text as a wide string literal.
+#define TINT_STRINGIFY_WIDE_INTERNAL(x) L## #x
+#define TINT_STRINGIFY_WIDE(x) TINT_STRINGIFY_WIDE_INTERNAL(x)
+
 namespace {
 using PFN_DXC_CREATE_INSTANCE = HRESULT(__stdcall*)(REFCLSID rclsid,
                                                     REFIID riid,
@@ -80,7 +84,7 @@ Result ValidateUsingDXC(const std::string& dxc_path,
                         const std::string& entry_point_name,
                         core::ir::Function::PipelineStage pipeline_stage,
                         bool require_16bit_types,
-                        uint32_t hlsl_shader_model) {
+                        HlslShaderModel hlsl_shader_model) {
     Result result;
 
     if (entry_point_name.empty()) {
@@ -89,15 +93,9 @@ Result ValidateUsingDXC(const std::string& dxc_path,
         return result;
     }
 
-    // Native 16-bit types, e.g. float16_t, require SM6.2. Otherwise we use SM6.0.
-    if (hlsl_shader_model < 60 || hlsl_shader_model > 66) {
-        result.output = "Invalid HLSL shader model " + std::to_string(hlsl_shader_model);
-        result.failed = true;
-        return result;
-    }
-    if (require_16bit_types && hlsl_shader_model < 62) {
-        result.output = "The HLSL shader model " + std::to_string(hlsl_shader_model) +
-                        " is not enough for float16_t.";
+    // Native 16-bit types, e.g. float16_t, require SM6.2.
+    if (require_16bit_types && hlsl_shader_model < HlslShaderModel::kSM_6_2) {
+        result.output = "The HLSL shader model needs to be at least 6.2 for float16_t.";
         result.failed = true;
         return result;
     }
@@ -172,22 +170,48 @@ Result ValidateUsingDXC(const std::string& dxc_path,
     }
 
     // Match Dawn's compile flags
+    // We always target HLSL 2021 here, which Dawn is in the process of migrating to.
     // See dawn\src\dawn_native\d3d12\RenderPipelineD3D12.cpp
     // and dawn_native\d3d\ShaderUtils.cpp (GetDXCArguments)
-    std::wstring shader_model_version =
-        std::to_wstring(hlsl_shader_model / 10) + L"_" + std::to_wstring(hlsl_shader_model % 10);
-    std::wstring profile = std::wstring(stage_prefix) + L"_" + shader_model_version;
+    std::wstring profile = std::wstring(stage_prefix) + L"_";
+    switch (hlsl_shader_model) {
+        case HlslShaderModel::kSM_6_0:
+            profile += L"6_0";
+            break;
+        case HlslShaderModel::kSM_6_2:
+            profile += L"6_2";
+            break;
+        case HlslShaderModel::kSM_6_4:
+            profile += L"6_4";
+            break;
+        case HlslShaderModel::kSM_6_6:
+            profile += L"6_6";
+            break;
+        case HlslShaderModel::kSM_6_10:
+            profile += L"6_10";
+            break;
+    }
     std::wstring entry_point = std::wstring(entry_point_name.begin(), entry_point_name.end());
     std::vector<const wchar_t*> args{
         L"-T",                                              // Profile
         profile.c_str(),                                    //
-        L"-HV 2018",                                        // Use HLSL 2018
+        L"-HV 2021",                                        // Use HLSL 2021
         L"-E",                                              // Entry point
         entry_point.c_str(),                                //
         L"/Zpr",                                            // D3DCOMPILE_PACK_MATRIX_ROW_MAJOR
         L"/Gis",                                            // D3DCOMPILE_IEEE_STRICTNESS
+        L"-I ",                                             //
+        TINT_STRINGIFY_WIDE(TINT_DXC_INCLUDE_DIR),          //
         require_16bit_types ? L"-enable-16bit-types" : L""  // Enable 16-bit if required
     };
+
+    // Create a default include handler which will load includes from the filesystem.
+    CComPtr<IDxcUtils> utils;
+    CComPtr<IDxcIncludeHandler> include_handler;
+    hr = dxc_create_instance(CLSID_DxcUtils, IID_PPV_ARGS(&utils));
+    CHECK_HR(hr, "Creating DXC utils failed");
+    hr = utils->CreateDefaultIncludeHandler(&include_handler);
+    CHECK_HR(hr, "Creating default include handler failed");
 
     DxcBuffer source_buffer;
     source_buffer.Ptr = source.c_str();
@@ -195,7 +219,7 @@ Result ValidateUsingDXC(const std::string& dxc_path,
     source_buffer.Encoding = DXC_CP_UTF8;
     CComPtr<IDxcResult> compile_result;
     hr = dxc_compiler->Compile(&source_buffer, args.data(), static_cast<UINT32>(args.size()),
-                               nullptr, IID_PPV_ARGS(&compile_result));
+                               include_handler, IID_PPV_ARGS(&compile_result));
     CHECK_HR(hr, "Compile call failed");
 
     HRESULT compile_status;

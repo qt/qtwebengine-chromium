@@ -49,7 +49,10 @@ class CONTENT_EXPORT PictureInPictureServiceImpl final
       bool show_play_pause_button,
       mojo::PendingRemote<blink::mojom::PictureInPictureSessionObserver>,
       const gfx::Rect& source_bounds,
+      blink::mojom::ImmersiveOptionsPtr immersive_options,
       StartSessionCallback) final;
+  void RequestImmersivePlaybackConfirmation(
+      RequestImmersivePlaybackConfirmationCallback) final;
 
  private:
   friend class PictureInPictureSession;

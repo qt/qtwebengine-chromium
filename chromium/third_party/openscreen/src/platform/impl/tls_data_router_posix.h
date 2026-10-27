@@ -13,6 +13,7 @@
 #include "platform/api/time.h"
 #include "platform/impl/socket_handle_waiter.h"
 #include "util/osp_logging.h"
+#include "util/thread_annotations.h"
 
 namespace openscreen {
 
@@ -93,7 +94,6 @@ class TlsDataRouterPosix : public SocketHandleWaiter::Subscriber {
   mutable std::mutex connections_mutex_;
 
   // Mutex guarding `accept_socket_mappings_`.
-  // TODO(crbug.com/322734860): implement OSP_GUARDED_BY / better mutex support.
   mutable std::mutex accept_socket_mutex_;
 
   // Function to get the current time.
@@ -101,12 +101,11 @@ class TlsDataRouterPosix : public SocketHandleWaiter::Subscriber {
 
   // Mapping from all sockets to the observer that should be called when the
   // socket recognizes an incoming connection.
-  // TODO(crbug.com/322734860): implement OSP_GUARDED_BY / better mutex support.
   std::unordered_map<StreamSocketPosix*, SocketObserver*>
-      accept_socket_mappings_;
+      accept_socket_mappings_ OSP_GUARDED_BY(accept_socket_mutex_);
 
   // Set of all TlsConnectionPosix objects currently registered.
-  std::vector<TlsConnectionPosix*> connections_;
+  std::vector<TlsConnectionPosix*> connections_ OSP_GUARDED_BY(connections_mutex_);
 
   // StreamSockets currently owned by this object, being watched for
   std::vector<std::unique_ptr<StreamSocketPosix>> accept_stream_sockets_;

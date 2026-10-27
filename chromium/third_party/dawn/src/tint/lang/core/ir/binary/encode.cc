@@ -37,6 +37,7 @@
 #include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/core/ir/access.h"
 #include "src/tint/lang/core/ir/break_if.h"
+#include "src/tint/lang/core/ir/constexpr_if.h"
 #include "src/tint/lang/core/ir/construct.h"
 #include "src/tint/lang/core/ir/continue.h"
 #include "src/tint/lang/core/ir/convert.h"
@@ -56,11 +57,13 @@
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/multi_in_block.h"
 #include "src/tint/lang/core/ir/next_iteration.h"
+#include "src/tint/lang/core/ir/override.h"
 #include "src/tint/lang/core/ir/return.h"
 #include "src/tint/lang/core/ir/store.h"
 #include "src/tint/lang/core/ir/store_vector_element.h"
 #include "src/tint/lang/core/ir/switch.h"
 #include "src/tint/lang/core/ir/swizzle.h"
+#include "src/tint/lang/core/ir/type/array_count.h"
 #include "src/tint/lang/core/ir/unreachable.h"
 #include "src/tint/lang/core/ir/user_call.h"
 #include "src/tint/lang/core/ir/var.h"
@@ -223,6 +226,9 @@ struct Encoder {
                 InstructionBuiltinCall(*inst_out.mutable_builtin_call(), i);
             },
             [&](const ir::CoreUnary* i) { InstructionUnary(*inst_out.mutable_unary(), i); },
+            [&](const ir::ConstExprIf* i) {
+                InstructionConstExprIf(*inst_out.mutable_const_expr_if(), i);
+            },
             [&](const ir::Construct* i) { InstructionConstruct(*inst_out.mutable_construct(), i); },
             [&](const ir::Continue* i) { InstructionContinue(*inst_out.mutable_continue_(), i); },
             [&](const ir::Convert* i) { InstructionConvert(*inst_out.mutable_convert(), i); },
@@ -242,6 +248,7 @@ struct Encoder {
             [&](const ir::NextIteration* i) {
                 InstructionNextIteration(*inst_out.mutable_next_iteration(), i);
             },
+            [&](const ir::Override* i) { InstructionOverride(*inst_out.mutable_override(), i); },
             [&](const ir::Return* i) { InstructionReturn(*inst_out.mutable_return_(), i); },
             [&](const ir::Store* i) { InstructionStore(*inst_out.mutable_store(), i); },
             [&](const ir::StoreVectorElement* i) {
@@ -297,6 +304,16 @@ struct Encoder {
         }
     }
 
+    void InstructionConstExprIf(pb::InstructionConstExprIf& const_expr_if_out,
+                                const ir::ConstExprIf* const_expr_if_in) {
+        if (auto* block = const_expr_if_in->True()) {
+            const_expr_if_out.set_true_(Block(block));
+        }
+        if (auto* block = const_expr_if_in->False()) {
+            const_expr_if_out.set_false_(Block(block));
+        }
+    }
+
     void InstructionDiscard(pb::InstructionDiscard&, const ir::Discard*) {}
 
     void InstructionExitIf(pb::InstructionExitIf&, const ir::ExitIf*) {}
@@ -323,6 +340,13 @@ struct Encoder {
     }
 
     void InstructionNextIteration(pb::InstructionNextIteration&, const ir::NextIteration*) {}
+
+    void InstructionOverride(pb::InstructionOverride& override_out,
+                             const ir::Override* override_in) {
+        if (auto id_in = override_in->OverrideId()) {
+            override_out.set_override_id(id_in.value().value);
+        }
+    }
 
     void InstructionReturn(pb::InstructionReturn&, const ir::Return*) {}
 
@@ -503,12 +527,20 @@ struct Encoder {
             array_in->Count(),  //
             [&](const core::type::ConstantArrayCount* c) {
                 array_out.set_count(c->value);
+                array_out.set_count_kind(pb::ArrayCountKind::Constant);
                 if (c->value >= internal_limits::kMaxArrayElementCount) {
                     err_ << "array count (" << c->value << ") must be less than "
                          << internal_limits::kMaxArrayElementCount << "\n";
                 }
             },
-            [&](const core::type::RuntimeArrayCount*) { array_out.set_count(0); },
+            [&](const core::type::RuntimeArrayCount*) {
+                array_out.set_count(0);
+                array_out.set_count_kind(pb::ArrayCountKind::Runtime);
+            },
+            [&](const core::ir::type::ValueArrayCount* c) {
+                array_out.set_count(Value(c->value));
+                array_out.set_count_kind(pb::ArrayCountKind::Override);
+            },
             TINT_ICE_ON_NO_MATCH);
     }
 
@@ -535,7 +567,6 @@ struct Encoder {
     void TypeSampledTexture(pb::TypeSampledTexture& texture_out,
                             const core::type::SampledTexture* texture_in) {
         texture_out.set_dimension(TextureDimension(texture_in->Dim()));
-        texture_out.set_filterable(pb::TextureFilterable(texture_in->Filterable()));
         texture_out.set_sub_type(Type(texture_in->Type()));
     }
 
@@ -572,7 +603,6 @@ struct Encoder {
 
     void TypeSampler(pb::TypeSampler& sampler_out, const core::type::Sampler* sampler_in) {
         sampler_out.set_kind(SamplerKind(sampler_in->Kind()));
-        sampler_out.set_filtering(pb::SamplerFiltering(sampler_in->Filtering()));
     }
 
     void TypeSubgroupMatrix(pb::TypeSubgroupMatrix& subgroup_matrix_out,
@@ -1123,6 +1153,8 @@ struct Encoder {
                 return pb::BuiltinFn::acos;
             case core::BuiltinFn::kAcosh:
                 return pb::BuiltinFn::acosh;
+            case core::BuiltinFn::kAddSat:
+                return pb::BuiltinFn::add_sat;
             case core::BuiltinFn::kAll:
                 return pb::BuiltinFn::all;
             case core::BuiltinFn::kAny:

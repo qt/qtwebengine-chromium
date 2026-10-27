@@ -435,7 +435,7 @@ std::vector<TextCharPos> CPDF_Font::GetCharPosList(
       text_char_pos.font_style_ = true;
     }
     WideString unicode = UnicodeFromCharCode(char_code);
-    text_char_pos.unicode_ = !unicode.IsEmpty() ? unicode[0] : char_code;
+    text_char_pos.unicode_ = !unicode.IsEmpty() ? unicode.Front() : char_code;
     text_char_pos.glyph_index_ =
         GlyphFromCharCode(char_code, &is_vertical_glyph);
     uint32_t glyph_id = text_char_pos.glyph_index_;
@@ -575,8 +575,8 @@ int CPDF_Font::FallbackGlyphFromCharcode(int fallbackFont, uint32_t charcode) {
   }
 
   WideString str = UnicodeFromCharCode(charcode);
-  uint32_t unicode = !str.IsEmpty() ? str[0] : charcode;
-  int glyph = font_fallbacks_[fallbackFont]->GetFace()->GetCharIndex(unicode);
+  uint32_t unicode = !str.IsEmpty() ? str.Front() : charcode;
+  int glyph = font_fallbacks_[fallbackFont]->GetCharIndex(unicode);
   if (glyph == 0) {
     return -1;
   }

@@ -366,9 +366,9 @@ class FormFieldData {
   }
 
   // The default value for text fields that have no maxlength attribute
-  // specified. We choose the maximum 32 bit, rather than 64 bit, number because
-  // so we don't need to worry about integer overflows when doing arithmetic
-  // with FormFieldData::max_length.
+  // specified. We choose the maximum 32 bit, rather than 64 bit, number so we
+  // don't need to worry about integer overflows when doing arithmetic with
+  // FormFieldData::max_length.
   static constexpr size_t kDefaultMaxLength =
       std::numeric_limits<uint32_t>::max();
 
@@ -456,9 +456,11 @@ class FormFieldData {
     label_source_ = label_source;
   }
 
-  // The bounds of this field in current frame coordinates at the
-  // form-extraction time. It is valid if not empty, will not be synced to the
-  // server side or be used for field comparison and isn't in serialize methods.
+  // The bounds of the field
+  // - in the browser process: in the outermost main frame's coordinate system;
+  // - in the renderer process: in the field's host frame's coordinate system.
+  // (The conversion happens in AutofillDriver.)
+  // It is not populated on Bling.
   const gfx::RectF& bounds() const { return bounds_; }
   void set_bounds(gfx::RectF bounds) { bounds_ = std::move(bounds); }
 
@@ -506,7 +508,7 @@ class FormFieldData {
   FormSignature host_form_signature_;
   url::Origin origin_;
   int32_t form_control_ax_id_ = 0;
-  uint64_t max_length_ = std::numeric_limits<uint32_t>::max();
+  uint64_t max_length_ = kDefaultMaxLength;
   bool is_autofilled_according_to_renderer_ = false;
   CheckStatus check_status_ = CheckStatus::kNotCheckable;
   bool is_focusable_ = true;
@@ -524,7 +526,8 @@ class FormFieldData {
   gfx::RectF bounds_;
   std::vector<SelectOption> datalist_options_;
   bool force_override_ = false;
-  // LINT.ThenChange(form_field_data.cc:IdenticalAndEquivalentDomElements)
+  // LINT.ThenChange(form_field_data.cc:IdenticalAndEquivalentDomElements,
+  // autofill_test_utils.cc:FormFieldDataEq)
 };
 
 // Structure containing necessary information to be sent from the browser to the

@@ -145,6 +145,7 @@ class ReadAloudAppModel {
   int GetCurrentTextEndIndex(const ui::AXNodeID& node_id);
 
   void ResetReadAloudState();
+  void ResetAndLogSingleSampleMetrics();
 
   // Returns a list of segments representing the next nodes and ranges
   // that should be spoken and highlighted with Read Aloud. The text ranges
@@ -343,7 +344,9 @@ class ReadAloudAppModel {
       {"Accessibility.ReadAnything.ReadAloudNextButtonSessionCount", 0},
       {"Accessibility.ReadAnything.ReadAloudPauseSessionCount", 0},
       {"Accessibility.ReadAnything.ReadAloudPlaySessionCount", 0},
+      {"Accessibility.ReadAnything.ReadAloudPlayFromSelectionSessionCount", 0},
       {"Accessibility.ReadAnything.ReadAloudPreviousButtonSessionCount", 0},
+      {"Accessibility.ReadAnything.ReadAloud.VoiceLanguageChange", 0},
   };
   std::map<std::string, std::unique_ptr<base::SingleSampleMetric>>
       metric_to_single_sample_;

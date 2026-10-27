@@ -6,6 +6,8 @@
 #   EIGEN_CI_BUILDDIR       - build directory containing results/
 #   EIGEN_CI_GIT_PUSH_URL   - authenticated git push URL
 #   CI_COMMIT_SHORT_SHA     - short commit hash
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 set -ex
 

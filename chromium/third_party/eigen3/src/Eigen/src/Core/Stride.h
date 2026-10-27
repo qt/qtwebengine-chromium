@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_STRIDE_H
 #define EIGEN_STRIDE_H
@@ -59,8 +60,6 @@ class Stride {
 
   /** Default constructor, for use when strides are fixed at compile time */
   EIGEN_DEVICE_FUNC constexpr Stride() : m_outer(OuterStrideAtCompileTime), m_inner(InnerStrideAtCompileTime) {
-    // FIXME: for Eigen 4 we should use DynamicIndex instead of Dynamic.
-    // FIXME: for Eigen 4 we should also unify this API with fix<>
     eigen_assert(InnerStrideAtCompileTime != Dynamic && OuterStrideAtCompileTime != Dynamic);
   }
 

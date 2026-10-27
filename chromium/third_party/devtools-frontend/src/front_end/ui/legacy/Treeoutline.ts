@@ -1752,7 +1752,8 @@ function removeNode(node: TreeElement, preserveParentExpandable = false): void {
  * @attribute hide-overflow
  */
 export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
-  static readonly observedAttributes = ['navigation-variant', 'hide-overflow', 'dense'];
+  static readonly observedAttributes =
+      ['navigation-variant', 'hide-overflow', 'dense', 'show-selection-on-keyboard-focus'];
   readonly #treeOutline = new TreeOutlineInShadow(undefined, this);
 
   constructor() {
@@ -1763,11 +1764,15 @@ export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
       }
     });
     this.#treeOutline.addEventListener(Events.ElementExpanded, event => {
+      // TODO(crbug.com/1166669): This is a stopgap. We can remove the global event once devtools-tree-wrapper is no longer needed.
+      this.dispatchEvent(new TreeViewElement.TreeElementExpandEvent(event.data, true));
       if (event.data instanceof TreeViewTreeElement) {
         event.data.listItemElement.dispatchEvent(new TreeViewElement.ExpandEvent({expanded: true}));
       }
     });
     this.#treeOutline.addEventListener(Events.ElementCollapsed, event => {
+      // TODO(crbug.com/1166669): This is a stopgap. We can remove the global event once devtools-tree-wrapper is no longer needed.
+      this.dispatchEvent(new TreeViewElement.TreeElementExpandEvent(event.data, false));
       if (event.data instanceof TreeViewTreeElement) {
         event.data.listItemElement.dispatchEvent(new TreeViewElement.ExpandEvent({expanded: false}));
       }
@@ -1914,6 +1919,9 @@ export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
       case 'dense':
         this.#treeOutline.setDense(booleanValueIsTrue);
         break;
+      case 'show-selection-on-keyboard-focus':
+        this.#treeOutline.setShowSelectionOnKeyboardFocus(booleanValueIsTrue);
+        break;
     }
   }
 }
@@ -1930,9 +1938,18 @@ export namespace TreeViewElement {
       super('expand', {detail});
     }
   }
+
+  /**
+   * @deprecated
+   */
+  export class TreeElementExpandEvent extends CustomEvent<{treeElement: TreeElement, expanded: boolean}> {
+    constructor(treeElement: TreeElement, expanded: boolean) {
+      super('treeelementexpand', {detail: {treeElement, expanded}});
+    }
+  }
 }
 
-export const ifExpanded = Lit.Directive.directive(class extends Lit.Directive.Directive {
+class IfExpandedDirective extends Lit.Directive.Directive {
   #partInfo: {type: Lit.Directive.PartType, startNode: Node};
   constructor(partInfo: Lit.Directive.PartInfo) {
     if (partInfo.type !== Lit.Directive.PartType.CHILD) {
@@ -1969,7 +1986,8 @@ export const ifExpanded = Lit.Directive.directive(class extends Lit.Directive.Di
     }
     return node.expanded;
   }
-});
+}
+export const ifExpanded = Lit.Directive.directive(IfExpandedDirective);
 
 export class TreeElementWrapper extends HTMLElement {
   #treeElement?: TreeElement;

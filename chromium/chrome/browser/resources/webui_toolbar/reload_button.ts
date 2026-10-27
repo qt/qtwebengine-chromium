@@ -18,7 +18,8 @@ import type {BrowserProxy, ReloadControlState} from './browser_proxy.js';
 import {MetricsRecorder} from './metrics_recorder.js';
 import {getCss} from './reload_button.css.js';
 import {getHtml} from './reload_button.html.js';
-import {BUTTON_LEFT, BUTTON_RIGHT, getClickDispositionFlags, getContextMenuPosition, PressHandler} from './toolbar_button.js';
+import {TimerHelper} from './timer_helper.js';
+import {BUTTON_LEFT, BUTTON_RIGHT, getContextMenuPosition, getEventDispositionFlags, PressHandler, roundedIconsEnabled} from './toolbar_button.js';
 
 // go/keep-sorted start
 const RELOAD_BUTTON_ACC_NAME_RELOAD = 'reloadButtonAccNameReload';
@@ -43,21 +44,59 @@ export class ReloadButtonElement extends CrLitElement {
 
   static override get properties() {
     return {
+      accName_: {type: String},
       state: {type: Object},
       tooltip: {type: String, reflect: true},
+      showStopIcon: {type: Boolean, reflect: true},
+      isDisabled: {type: Boolean, reflect: true},
+      touchUi: {type: Boolean},
     };
   }
 
   protected accessor state: ReloadControlState = {
+    // While this will be overwritten anyways, this matches the default value on
+    // some platforms.
+    doubleClickInterval: {microseconds: BigInt(500 * 1000)},
+
     canShowMenu: false,
     isNavigationLoading: false,
     isContextMenuVisible: false,
+    stateToken: 0,
   };
   protected accessor tooltip: string =
       loadTimeData.getString(RELOAD_BUTTON_TOOLTIP_RELOAD);
-  protected accName_: string =
+  protected accessor accName_: string =
       loadTimeData.getString(RELOAD_BUTTON_ACC_NAME_RELOAD);
   protected pressHandler_: PressHandler;
+
+  // True when the stop icon should be shown instead of the reload icon. In
+  // general, `showStopIcon` should match `state.isNavigationLoading`, except
+  // while one of the "debounce" timers is running.
+  protected accessor showStopIcon: boolean = false;
+
+  // Whether the reload button should be disabled. True only while the
+  // `disableStopIconTimer_` is running.
+  protected accessor isDisabled: boolean = false;
+
+  accessor touchUi: boolean = false;
+
+  // Timer started when the reload button is pressed while showing the reload
+  // icon. While running, the reload icon will continue to be displayed instead
+  // of the stop icon, and left clicks on the icon will be ignored. Once the
+  // timer expires or the load completes, the timer will stop and the updated
+  // icon will be displayed, and clicks will be respected again.
+  protected doubleClickReloadIconTimer_: TimerHelper = new TimerHelper();
+
+  // This is exposed so tests can modify it.
+  protected modeSwitchIntervalMs_: number = 1350;
+
+  // Timer started when the mouse is over the stop icon, and loading stops for
+  // any reason other than the user clicking the stop icon. During this time,
+  // the stop icon continues to be displayed, but is disabled. Once the timer
+  // expires, the mouse moves off the icon, or loading starts again for any
+  // reason, the timer will be stopped and the button will be enabled, leaving
+  // this state.
+  private disableStopIconTimer_: TimerHelper = new TimerHelper();
 
   private browserProxy_: BrowserProxy;
   private metricsRecorder_: MetricsRecorder;
@@ -67,8 +106,7 @@ export class ReloadButtonElement extends CrLitElement {
     this.browserProxy_ = BrowserProxyImpl.getInstance();
     this.metricsRecorder_ = new MetricsRecorder(this.browserProxy_);
     this.pressHandler_ = new PressHandler(
-        this.onLongPress_.bind(this), this.onShortPress_.bind(this),
-        /*enableMacContextClick=*/ false);
+        this.onLongPress_.bind(this), this.onShortPress_.bind(this));
     ColorChangeUpdater.forDocument().start();
   }
 
@@ -83,6 +121,11 @@ export class ReloadButtonElement extends CrLitElement {
     const isLeftClick = e.button === BUTTON_LEFT;
     // Handle the visible state changes only for left-click.
     if (isLeftClick && !e.metaKey) {
+      // Do nothing if timer is still running.
+      if (this.doubleClickReloadIconTimer_.isRunning()) {
+        return;
+      }
+
       this.metricsRecorder_.onChangeVisibleMode(
           MetricsRecorder.getVisibleMode(this.state.isNavigationLoading),
           MetricsRecorder.getVisibleMode(!this.state.isNavigationLoading));
@@ -95,13 +138,25 @@ export class ReloadButtonElement extends CrLitElement {
       // bypassed.
       this.browserProxy_.browserControlsHandler.reloadFromClick(
           /*bypass_cache=*/ e.shiftKey || e.ctrlKey,
-          getClickDispositionFlags(
+          getEventDispositionFlags(
               e, {ignoreCtrlKey: true, ignoreShiftKey: true}));
     }
 
     if (isLeftClick && !e.metaKey) {
       // Update the renderer in advance to avoid the delay.
       this.state.isNavigationLoading = !this.state.isNavigationLoading;
+
+      if (this.showStopIcon) {
+        // If the user clicked the stop button, immediately update to the reload
+        // button.
+        this.updateState_(/*force=*/ true);
+      } else {
+        // If the reload button was showing, start the click timer, which will
+        // cause future presses to be ignored until it expires.
+        this.doubleClickReloadIconTimer_.setTimeout(() => {
+          this.updateState_(/*force=*/ true);
+        }, Number(this.state.doubleClickInterval.microseconds) / 1000);
+      }
     }
   }
 
@@ -111,6 +166,52 @@ export class ReloadButtonElement extends CrLitElement {
     if (e.detail === 0) {
       this.onShortPress_(e);
     }
+  }
+
+  private updateState_(force: boolean) {
+    // If `force` was not passed in, and the pointer is hovering over the
+    // reload button, need to decide if can update the button immediately or
+    // not.
+    if (!force &&
+        this.renderRoot.querySelector('cr-icon-button')?.matches(':hover')) {
+      if (this.state.isNavigationLoading) {
+        // If the navigation is loading, and thus we want to be displaying the
+        // stop button, and we're still in the double-click period for clicking
+        // the reload button (which means the reload button is still displayed),
+        // ignore the message entirely. We'll start showing the stop button once
+        // the timer expires.
+        if (this.doubleClickReloadIconTimer_.isRunning()) {
+          return;
+        }
+
+        // If the click timer isn't running, then we'll immediately update.
+      } else {
+        // If not loading and the timer to show the reload button is still
+        // running, continue waiting on the timer.
+        if (this.disableStopIconTimer_.isRunning()) {
+          return;
+        }
+
+        // If we're showing the stop button, and should now show the reload
+        // button, disable the button and reenable it on a timer, to prevent
+        // accidentally triggering a reload.
+        if (this.showStopIcon) {
+          this.isDisabled = true;
+          this.disableStopIconTimer_.setTimeout(() => {
+            // This will conveniently delete `disableStopIconTimer_`.
+            this.updateState_(/*force=*/ true);
+          }, this.modeSwitchIntervalMs_);
+          return;
+        }
+      }
+    }
+
+    // Cancel any running timers, enable the button, and update the displayed
+    // icon.
+    this.doubleClickReloadIconTimer_.clearTimeout();
+    this.disableStopIconTimer_.clearTimeout();
+    this.isDisabled = false;
+    this.showStopIcon = this.state.isNavigationLoading;
   }
 
   /**
@@ -136,10 +237,13 @@ export class ReloadButtonElement extends CrLitElement {
   override willUpdate(changedProperties: PropertyValues<this>): void {
     super.willUpdate(changedProperties);
 
-    const props = changedProperties as Map<string, any>;
+    const changedPrivateProperties =
+        changedProperties as Map<PropertyKey, unknown>;
 
-    if (props.has('state')) {
-      const previousState = props.get('state') as typeof this.state | undefined;
+    if (changedPrivateProperties.has('state')) {
+      const previousState =
+          changedPrivateProperties.get('state') as ReloadControlState |
+          undefined;
       if (previousState) {
         this.metricsRecorder_.onChangeVisibleMode(
             MetricsRecorder.getVisibleMode(previousState.isNavigationLoading),
@@ -150,6 +254,26 @@ export class ReloadButtonElement extends CrLitElement {
               RELOAD_BUTTON_TOOLTIP_STOP :
               (this.state.canShowMenu ? RELOAD_BUTTON_TOOLTIP_RELOAD_WITH_MENU :
                                         RELOAD_BUTTON_TOOLTIP_RELOAD));
+      this.updateState_(/*force=*/ !previousState ||
+                        this.state.stateToken !== previousState.stateToken);
+    }
+  }
+
+  protected getIronIcon_(): string {
+    if (this.showStopIcon) {
+      if (roundedIconsEnabled()) {
+        return 'webui-toolbar:close';
+      } else {
+        return this.touchUi ? 'webui-toolbar:navigate_stop_touch_old' :
+                              'webui-toolbar:navigate_stop_chrome_refresh_old';
+      }
+    } else {
+      if (roundedIconsEnabled()) {
+        return 'webui-toolbar:refresh';
+      } else {
+        return this.touchUi ? 'webui-toolbar:reload_touch_old' :
+                              'webui-toolbar:reload_chrome_refresh_old';
+      }
     }
   }
 

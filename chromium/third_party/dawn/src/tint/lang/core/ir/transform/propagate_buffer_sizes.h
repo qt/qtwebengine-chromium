@@ -42,6 +42,7 @@ namespace tint::core::ir::transform {
 const Capabilities kPropagateBufferSizesCapabilities{
     Capability::kAllowDuplicateBindings,
     Capability::kAllow8BitIntegers,
+    Capability::kAllow16BitIntegers,
 };
 
 /// PropagateBufferSizes is a transform that propagates buffer sizes through the call tree.

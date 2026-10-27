@@ -21,10 +21,12 @@
 #include "components/password_manager/core/browser/credential_manager_utils.h"
 #include "components/password_manager/core/browser/form_fetcher_impl.h"
 #include "components/password_manager/core/browser/password_bubble_experiment.h"
+#include "components/password_manager/core/browser/password_feature_manager.h"
 #include "components/password_manager/core/browser/password_form.h"
 #include "components/password_manager/core/browser/password_manager_client.h"
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
 #include "components/password_manager/core/browser/password_manager_util.h"
+#include "components/password_manager/core/browser/password_store/password_form_converters.h"
 #include "components/password_manager/core/common/credential_manager_types.h"
 #include "net/cert/cert_status_flags.h"
 #include "url/gurl.h"
@@ -160,18 +162,18 @@ CredentialManagerPendingRequestTask::~CredentialManagerPendingRequestTask() {
 
 void CredentialManagerPendingRequestTask::OnFetchCompleted() {
   std::vector<std::unique_ptr<PasswordForm>> all_matches;
-  std::ranges::transform(form_fetcher_->GetFederatedMatches(),
-                         std::back_inserter(all_matches),
-                         [](const PasswordForm& form) {
-                           return std::make_unique<PasswordForm>(form);
-                         });
+  std::ranges::transform(
+      form_fetcher_->GetFederatedMatches(), std::back_inserter(all_matches),
+      [](const StoredCredential& form) {
+        return std::make_unique<PasswordForm>(ToPasswordForm(form));
+      });
   // GetFederatedMatches() comes with duplicates, filter them immediately.
   FilterDuplicatesInFederatedCredentials(all_matches);
-  std::ranges::transform(form_fetcher_->GetBestMatches(),
-                         std::back_inserter(all_matches),
-                         [](const PasswordForm& form) {
-                           return std::make_unique<PasswordForm>(form);
-                         });
+  std::ranges::transform(
+      form_fetcher_->GetBestMatches(), std::back_inserter(all_matches),
+      [](const StoredCredential& form) {
+        return std::make_unique<PasswordForm>(ToPasswordForm(form));
+      });
   FilterIrrelevantForms(all_matches, include_passwords_, federations_);
   ProcessForms(std::move(all_matches));
 }
@@ -194,7 +196,21 @@ void CredentialManagerPendingRequestTask::ProcessForms(
   //
   // Moreover, we only return such a credential if the user has opted-in via the
   // first-run experience.
+  const bool is_biometric_reauth_enabled =
+      delegate_->client()
+          ->GetPasswordFeatureManager()
+          ->IsBiometricAuthenticationBeforeFillingEnabled();
+
+  if (is_biometric_reauth_enabled &&
+      mediation_ == CredentialMediationRequirement::kSilent) {
+    LogCredentialManagerGetResult(
+        metrics_util::CredentialManagerGetResult::kNone, mediation_);
+    delegate_->SendCredential(std::move(send_callback_), CredentialInfo());
+    return;
+  }
+
   const bool can_use_autosignin =
+      !is_biometric_reauth_enabled &&
       mediation_ != CredentialMediationRequirement::kRequired &&
       results.size() == 1u && delegate_->IsZeroClickAllowed() &&
       IsFormValidForAutoSignIn(results[0].get());
@@ -224,13 +240,13 @@ void CredentialManagerPendingRequestTask::ProcessForms(
     }
 
     if (!results.empty()) {
-      std::vector<PasswordForm> non_federated_matches;
-      std::vector<PasswordForm> federated_matches;
+      std::vector<StoredCredential> non_federated_matches;
+      std::vector<StoredCredential> federated_matches;
       for (const auto& result : results) {
         if (result->IsFederatedCredential()) {
-          federated_matches.emplace_back(*result.get());
+          federated_matches.emplace_back(FromPasswordForm(*result.get()));
         } else {
-          non_federated_matches.emplace_back(*result.get());
+          non_federated_matches.emplace_back(FromPasswordForm(*result.get()));
         }
       }
       delegate_->client()->PasswordWasAutofilled(

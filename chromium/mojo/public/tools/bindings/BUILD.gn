@@ -108,6 +108,7 @@ action("precompile_templates") {
     "$mojom_generator_root/generators/ts_templates/module_definition.tmpl",
     "$mojom_generator_root/generators/ts_templates/struct_definition.tmpl",
     "$mojom_generator_root/generators/ts_templates/union_definition.tmpl",
+    "$mojom_generator_root/generators/ts_templates/webui_browser_proxy_definition.tmpl",
   ]
   script = mojom_generator_script
 
@@ -134,6 +135,7 @@ group("tests") {
     "checks/mojom_attributes_check_unittest.py",
     "checks/mojom_interface_feature_check_unittest.py",
     "checks/mojom_restrictions_checks_unittest.py",
+    "generators/mojom_rust_generator_unittest.py",
     "mojom_bindings_generator_unittest.py",
     "//third_party/markupsafe/",
   ]

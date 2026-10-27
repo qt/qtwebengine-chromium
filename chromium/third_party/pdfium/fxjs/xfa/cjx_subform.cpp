@@ -7,7 +7,7 @@
 #include "fxjs/xfa/cjx_subform.h"
 
 #include "core/fxcrt/span.h"
-#include "fxjs/cfx_v8.h"
+#include "fxjs/cfx_isolate_wrapper.h"
 #include "fxjs/fxv8.h"
 #include "fxjs/js_resources.h"
 #include "fxjs/xfa/cfxjse_engine.h"
@@ -40,8 +40,9 @@ CJS_Result CJX_Subform::execEvent(CFXJSE_Engine* runtime,
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  execSingleEventByName(runtime->ToWideString(params[0]).AsStringView(),
-                        XFA_Element::Subform);
+  execSingleEventByName(
+      runtime->ToWideStringReentrant(params[0]).AsStringView(),
+      XFA_Element::Subform);
   return CJS_Result::Success();
 }
 
@@ -125,8 +126,8 @@ void CJX_Subform::instanceManager(v8::Isolate* pIsolate,
     if (pNode->GetElementType() == XFA_Element::InstanceManager) {
       WideString wsInstMgrName =
           pNode->JSObject()->GetCData(XFA_Attribute::Name);
-      if (wsInstMgrName.GetLength() >= 1 && wsInstMgrName[0] == '_' &&
-          wsInstMgrName.Last(wsInstMgrName.GetLength() - 1) == wsName) {
+      if (wsInstMgrName.GetLength() >= 1 && wsInstMgrName.Front() == '_' &&
+          wsInstMgrName.Substr(1) == wsName) {
         pInstanceMgr = pNode;
       }
       break;

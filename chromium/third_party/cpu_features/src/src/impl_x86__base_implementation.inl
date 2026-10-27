@@ -166,6 +166,7 @@ typedef struct {
   Leaf leaf_80000002;  // brand string
   Leaf leaf_80000003;  // brand string
   Leaf leaf_80000004;  // brand string
+  Leaf leaf_80000021;  // AMD Extended Feature Identification 2
 } Leaves;
 
 static Leaves ReadLeaves(void) {
@@ -186,6 +187,7 @@ static Leaves ReadLeaves(void) {
       .leaf_80000002 = SafeCpuIdEx(max_cpuid_leaf_ext, 0x80000002, 0),
       .leaf_80000003 = SafeCpuIdEx(max_cpuid_leaf_ext, 0x80000003, 0),
       .leaf_80000004 = SafeCpuIdEx(max_cpuid_leaf_ext, 0x80000004, 0),
+      .leaf_80000021 = SafeCpuIdEx(max_cpuid_leaf_ext, 0x80000021, 0),
   };
 }
 
@@ -390,6 +392,7 @@ static void ParseCpuId(const Leaves* leaves, X86Info* info,
   features->fs_rep_cmpsb_scasb = IsBitSet(leaf_7_1.eax, 12);
   features->adx = IsBitSet(leaf_7.ebx, 19);
   features->lzcnt = IsBitSet(leaf_80000001.ecx, 5);
+  features->lam = IsBitSet(leaf_7_1.eax, 26);
 
   /////////////////////////////////////////////////////////////////////////////
   // The following section is devoted to Vector Extensions.
@@ -447,6 +450,7 @@ static void ParseCpuId(const Leaves* leaves, X86Info* info,
       features->amx_bf16 = IsBitSet(leaf_7.edx, 22);
       features->amx_tile = IsBitSet(leaf_7.edx, 24);
       features->amx_int8 = IsBitSet(leaf_7.edx, 25);
+      features->amx_fp16 = IsBitSet(leaf_7_1.eax, 21);
     }
   } else {
     // When XCR0 is not available (Atom based or older cpus) we need to defer to
@@ -462,6 +466,7 @@ static void ParseCpuId(const Leaves* leaves, X86Info* info,
 static void ParseExtraAMDCpuId(const Leaves* leaves, X86Info* info,
                                OsPreserves os_preserves) {
   const Leaf leaf_80000001 = leaves->leaf_80000001;
+  const Leaf leaf_80000021 = leaves->leaf_80000021;
 
   X86Features* const features = &info->features;
 
@@ -472,6 +477,8 @@ static void ParseExtraAMDCpuId(const Leaves* leaves, X86Info* info,
   if (os_preserves.avx_registers) {
     features->fma4 = IsBitSet(leaf_80000001.ecx, 16);
   }
+
+  features->uai = IsBitSet(leaf_80000021.eax, 7);
 }
 
 static const X86Info kEmptyX86Info;
@@ -504,7 +511,7 @@ X86Info GetX86Info(void) {
 // Microarchitecture
 ////////////////////////////////////////////////////////////////////////////////
 
-#define CPUID(FAMILY, MODEL) ((((FAMILY)&0xFF) << 8) | ((MODEL)&0xFF))
+#define CPUID(FAMILY, MODEL) ((((FAMILY) & 0xFF) << 8) | ((MODEL) & 0xFF))
 
 X86Microarchitecture GetX86Microarchitecture(const X86Info* info) {
   if (IsVendorByX86Info(info, CPU_FEATURES_VENDOR_GENUINE_INTEL)) {
@@ -641,6 +648,7 @@ X86Microarchitecture GetX86Microarchitecture(const X86Info* info) {
         }
       case CPUID(0x06, 0x97):
       case CPUID(0x06, 0x9A):
+      case CPUID(0x06, 0xBE):
         // https://en.wikichip.org/wiki/intel/microarchitectures/alder_lake
         return INTEL_ADL;
       case CPUID(0x06, 0xA5):
@@ -655,6 +663,14 @@ X86Microarchitecture GetX86Microarchitecture(const X86Info* info) {
       case CPUID(0x06, 0xBF):
         // https://en.wikichip.org/wiki/intel/microarchitectures/raptor_lake
         return INTEL_RPL;
+      case CPUID(0x06, 0xBD):
+        // https://github.com/torvalds/linux/blob/70eda68668d1476b459b64e69b8f36659fa9dfa8/arch/x86/include/asm/intel-family.h#L151
+        return INTEL_LNL;
+      case CPUID(0x06, 0xC5):
+      case CPUID(0x06, 0xC6):
+      case CPUID(0x06, 0xB5):
+        // https://github.com/torvalds/linux/blob/70eda68668d1476b459b64e69b8f36659fa9dfa8/arch/x86/include/asm/intel-family.h#L147
+        return INTEL_ARL;
       case CPUID(0x06, 0x85):
         // https://en.wikichip.org/wiki/intel/microarchitectures/knights_mill
         return INTEL_KNIGHTS_M;
@@ -811,6 +827,7 @@ X86Microarchitecture GetX86Microarchitecture(const X86Info* info) {
       case CPUID(0x17, 0x60):
       case CPUID(0x17, 0x68):
       case CPUID(0x17, 0x71):
+      case CPUID(0x17, 0x84):
       case CPUID(0x17, 0x90):
       case CPUID(0x17, 0x98):
       case CPUID(0x17, 0xA0):
@@ -827,9 +844,134 @@ X86Microarchitecture GetX86Microarchitecture(const X86Info* info) {
         // https://en.wikichip.org/wiki/amd/microarchitectures/zen_3
         return AMD_ZEN3;
       case CPUID(0x19, 0x10):
+      case CPUID(0x19, 0x11):
       case CPUID(0x19, 0x61):
+      case CPUID(0x19, 0x74):
         // https://en.wikichip.org/wiki/amd/microarchitectures/zen_4
         return AMD_ZEN4;
+      // Breithorn
+      case CPUID(0x1A, 0x00):
+      case CPUID(0x1A, 0x01):
+      case CPUID(0x1A, 0x02):
+      case CPUID(0x1A, 0x03):
+      case CPUID(0x1A, 0x04):
+      case CPUID(0x1A, 0x05):
+      case CPUID(0x1A, 0x06):
+      case CPUID(0x1A, 0x07):
+      case CPUID(0x1A, 0x08):
+      case CPUID(0x1A, 0x09):
+      case CPUID(0x1A, 0x0A):
+      case CPUID(0x1A, 0x0B):
+      case CPUID(0x1A, 0x0C):
+      case CPUID(0x1A, 0x0D):
+      case CPUID(0x1A, 0x0E):
+      case CPUID(0x1A, 0x0F):
+      // Breithorn-dense
+      case CPUID(0x1A, 0x10):
+      case CPUID(0x1A, 0x11):
+      case CPUID(0x1A, 0x12):
+      case CPUID(0x1A, 0x13):
+      case CPUID(0x1A, 0x14):
+      case CPUID(0x1A, 0x15):
+      case CPUID(0x1A, 0x16):
+      case CPUID(0x1A, 0x17):
+      case CPUID(0x1A, 0x18):
+      case CPUID(0x1A, 0x19):
+      case CPUID(0x1A, 0x1A):
+      case CPUID(0x1A, 0x1B):
+      case CPUID(0x1A, 0x1C):
+      case CPUID(0x1A, 0x1D):
+      case CPUID(0x1A, 0x1E):
+      case CPUID(0x1A, 0x1F):
+      // Strix 1
+      case CPUID(0x1A, 0x20):
+      case CPUID(0x1A, 0x21):
+      case CPUID(0x1A, 0x22):
+      case CPUID(0x1A, 0x23):
+      case CPUID(0x1A, 0x24):
+      case CPUID(0x1A, 0x25):
+      case CPUID(0x1A, 0x26):
+      case CPUID(0x1A, 0x27):
+      case CPUID(0x1A, 0x28):
+      case CPUID(0x1A, 0x29):
+      case CPUID(0x1A, 0x2A):
+      case CPUID(0x1A, 0x2B):
+      case CPUID(0x1A, 0x2C):
+      case CPUID(0x1A, 0x2D):
+      case CPUID(0x1A, 0x2E):
+      case CPUID(0x1A, 0x2F):
+      // Strix 2
+      case CPUID(0x1A, 0x30):
+      case CPUID(0x1A, 0x31):
+      case CPUID(0x1A, 0x32):
+      case CPUID(0x1A, 0x33):
+      case CPUID(0x1A, 0x34):
+      case CPUID(0x1A, 0x35):
+      case CPUID(0x1A, 0x36):
+      case CPUID(0x1A, 0x37):
+      // Strix 3
+      case CPUID(0x1A, 0x38):
+      case CPUID(0x1A, 0x39):
+      case CPUID(0x1A, 0x3A):
+      case CPUID(0x1A, 0x3B):
+      case CPUID(0x1A, 0x3C):
+      case CPUID(0x1A, 0x3D):
+      case CPUID(0x1A, 0x3E):
+      case CPUID(0x1A, 0x3F):
+      // Granite ridge
+      case CPUID(0x1A, 0x40):
+      case CPUID(0x1A, 0x41):
+      case CPUID(0x1A, 0x42):
+      case CPUID(0x1A, 0x43):
+      case CPUID(0x1A, 0x44):
+      case CPUID(0x1A, 0x45):
+      case CPUID(0x1A, 0x46):
+      case CPUID(0x1A, 0x47):
+      case CPUID(0x1A, 0x48):
+      case CPUID(0x1A, 0x49):
+      case CPUID(0x1A, 0x4A):
+      case CPUID(0x1A, 0x4B):
+      case CPUID(0x1A, 0x4C):
+      case CPUID(0x1A, 0x4D):
+      case CPUID(0x1A, 0x4E):
+      case CPUID(0x1A, 0x4F):
+      // Krackan1
+      case CPUID(0x1A, 0x60):
+      case CPUID(0x1A, 0x61):
+      case CPUID(0x1A, 0x62):
+      case CPUID(0x1A, 0x63):
+      case CPUID(0x1A, 0x64):
+      case CPUID(0x1A, 0x65):
+      case CPUID(0x1A, 0x66):
+      case CPUID(0x1A, 0x67):
+      case CPUID(0x1A, 0x68):
+      case CPUID(0x1A, 0x69):
+      case CPUID(0x1A, 0x6A):
+      case CPUID(0x1A, 0x6B):
+      case CPUID(0x1A, 0x6C):
+      case CPUID(0x1A, 0x6D):
+      case CPUID(0x1A, 0x6E):
+      case CPUID(0x1A, 0x6F):
+      // Sarlak
+      case CPUID(0x1A, 0x70):
+      case CPUID(0x1A, 0x71):
+      case CPUID(0x1A, 0x72):
+      case CPUID(0x1A, 0x73):
+      case CPUID(0x1A, 0x74):
+      case CPUID(0x1A, 0x75):
+      case CPUID(0x1A, 0x76):
+      case CPUID(0x1A, 0x77):
+      // Annapurna
+      case CPUID(0x1A, 0xD0):
+      case CPUID(0x1A, 0xD1):
+      case CPUID(0x1A, 0xD2):
+      case CPUID(0x1A, 0xD3):
+      case CPUID(0x1A, 0xD4):
+      case CPUID(0x1A, 0xD5):
+      case CPUID(0x1A, 0xD6):
+      case CPUID(0x1A, 0xD7):
+        // https://github.com/llvm/llvm-project/blob/c998fcb0d1757309656ee0dfe4f2aa8dcf06aecc/llvm/lib/TargetParser/Host.cpp#L1328
+        return AMD_ZEN5;
       default:
         return X86_UNKNOWN;
     }
@@ -1966,6 +2108,7 @@ CacheInfo GetX86CacheInfo(void) {
   LINE(X86_AMX_BF16, amx_bf16, , , )                       \
   LINE(X86_AMX_TILE, amx_tile, , , )                       \
   LINE(X86_AMX_INT8, amx_int8, , , )                       \
+  LINE(X86_AMX_FP16, amx_fp16, , , )                       \
   LINE(X86_PCLMULQDQ, pclmulqdq, , , )                     \
   LINE(X86_SMX, smx, , , )                                 \
   LINE(X86_SGX, sgx, , , )                                 \
@@ -1984,7 +2127,9 @@ CacheInfo GetX86CacheInfo(void) {
   LINE(X86_FS_REP_MOV, fs_rep_mov, , , )                   \
   LINE(X86_FZ_REP_MOVSB, fz_rep_movsb, , , )               \
   LINE(X86_FS_REP_STOSB, fs_rep_stosb, , , )               \
-  LINE(X86_FS_REP_CMPSB_SCASB, fs_rep_cmpsb_scasb, , , )
+  LINE(X86_FS_REP_CMPSB_SCASB, fs_rep_cmpsb_scasb, , , )   \
+  LINE(X86_LAM, lam, , , )                                 \
+  LINE(X86_UAI, uai, , , )
 #define INTROSPECTION_PREFIX X86
 #define INTROSPECTION_ENUM_PREFIX X86
 #include "define_introspection.inl"
@@ -2024,6 +2169,8 @@ CacheInfo GetX86CacheInfo(void) {
   LINE(INTEL_ADL)                   \
   LINE(INTEL_RCL)                   \
   LINE(INTEL_RPL)                   \
+  LINE(INTEL_LNL)                   \
+  LINE(INTEL_ARL)                   \
   LINE(INTEL_KNIGHTS_M)             \
   LINE(INTEL_KNIGHTS_L)             \
   LINE(INTEL_KNIGHTS_F)             \
@@ -2044,7 +2191,8 @@ CacheInfo GetX86CacheInfo(void) {
   LINE(AMD_ZEN_PLUS)                \
   LINE(AMD_ZEN2)                    \
   LINE(AMD_ZEN3)                    \
-  LINE(AMD_ZEN4)
+  LINE(AMD_ZEN4)                    \
+  LINE(AMD_ZEN5)
 
 const char* GetX86MicroarchitectureName(X86Microarchitecture value) {
 #define LINE(ENUM) [ENUM] = STRINGIZE(ENUM),

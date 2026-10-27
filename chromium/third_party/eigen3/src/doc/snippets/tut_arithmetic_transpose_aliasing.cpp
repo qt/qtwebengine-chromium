@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 Matrix2i a;
 a << 1, 2, 3, 4;
 cout << "Here is the matrix a:\n" << a << endl;

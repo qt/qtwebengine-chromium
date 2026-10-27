@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_EVALUATOR_H
-#define EIGEN_CXX11_TENSOR_TENSOR_EVALUATOR_H
+#ifndef EIGEN_TENSOR_TENSOR_EVALUATOR_H
+#define EIGEN_TENSOR_TENSOR_EVALUATOR_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -17,7 +18,7 @@ namespace Eigen {
 
 // Generic evaluator
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief The tensor evaluator class.
  *
@@ -119,18 +120,20 @@ struct TensorEvaluator {
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType coeff(const array<DenseIndex, NumCoords>& coords) const {
     eigen_assert(m_data != NULL);
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       return m_data[m_dims.IndexOfColMajor(coords)];
-    } else {
+    }
+    else {
       return m_data[m_dims.IndexOfRowMajor(coords)];
     }
   }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType& coeffRef(const array<DenseIndex, NumCoords>& coords) const {
     eigen_assert(m_data != NULL);
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       return m_data[m_dims.IndexOfColMajor(coords)];
-    } else {
+    }
+    else {
       return m_data[m_dims.IndexOfRowMajor(coords)];
     }
   }
@@ -175,7 +178,7 @@ EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE T loadConstant(const T* address) {
   return *address;
 }
 // Use the texture cache on CUDA devices whenever possible
-#if defined(EIGEN_CUDA_ARCH) && EIGEN_CUDA_ARCH >= 350
+#if defined(EIGEN_CUDA_ARCH)
 template <>
 EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE float loadConstant(const float* address) {
   return __ldg(address);
@@ -360,7 +363,12 @@ struct TensorEvaluator<const TensorCwiseNullaryOp<NullaryOp, ArgType>, Device> {
   }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorOpCost costPerCoeff(bool vectorized) const {
-    return TensorOpCost(sizeof(CoeffReturnType), 0, 0, vectorized, PacketType<CoeffReturnType, Device>::size);
+    // NullaryOps (constants, zero, identity, random) generate values from
+    // registers or minimal state — they do not load from memory.  Report
+    // zero bytes_loaded so the cost model correctly classifies expressions
+    // containing many constants (e.g. Horner polynomials) as compute-bound
+    // rather than memory-bound.
+    return TensorOpCost(0, 0, 0, vectorized, PacketType<CoeffReturnType, Device>::size);
   }
 
   EIGEN_DEVICE_FUNC EvaluatorPointerType data() const { return NULL; }
@@ -446,6 +454,17 @@ struct TensorEvaluator<const TensorCwiseUnaryOp<UnaryOp, ArgType>, Device> {
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorBlock block(TensorBlockDesc& desc, TensorBlockScratch& scratch,
                                                           bool /*root_of_expr_ast*/ = false) const {
+    // The forwarded destination buffer is sized for *our* output Scalar (the
+    // assign LHS), but the child block evaluator below us writes ArgScalar.
+    // For functors that change the scalar type (abs(complex)->real,
+    // isnan/isfinite->bool, ...) the buffer would be misinterpreted by any
+    // block-materializing child's prepareStorage (assert in debug, corruption
+    // in release). Drop the buffer in that case; the child falls back to
+    // scratch and writeBlock still lands the converted values in the LHS.
+    if (!std::is_same<std::remove_const_t<Scalar>,
+                      std::remove_const_t<typename TensorEvaluator<ArgType, Device>::Scalar>>::value) {
+      desc.DropDestinationBuffer();
+    }
     return TensorBlock(m_argImpl.block(desc, scratch), m_functor);
   }
 
@@ -603,18 +622,18 @@ struct TensorEvaluator<const TensorCwiseTernaryOp<TernaryOp, Arg1Type, Arg2Type,
                          internal::traits<XprType>::NumDimensions <= 1),
                         YOU_MADE_A_PROGRAMMING_MISTAKE);
 
-    EIGEN_STATIC_ASSERT((internal::is_same<typename internal::traits<Arg1Type>::StorageKind,
-                                           typename internal::traits<Arg2Type>::StorageKind>::value),
+    EIGEN_STATIC_ASSERT((std::is_same<typename internal::traits<Arg1Type>::StorageKind,
+                                      typename internal::traits<Arg2Type>::StorageKind>::value),
                         STORAGE_KIND_MUST_MATCH)
-    EIGEN_STATIC_ASSERT((internal::is_same<typename internal::traits<Arg1Type>::StorageKind,
-                                           typename internal::traits<Arg3Type>::StorageKind>::value),
+    EIGEN_STATIC_ASSERT((std::is_same<typename internal::traits<Arg1Type>::StorageKind,
+                                      typename internal::traits<Arg3Type>::StorageKind>::value),
                         STORAGE_KIND_MUST_MATCH)
-    EIGEN_STATIC_ASSERT((internal::is_same<typename internal::traits<Arg1Type>::Index,
-                                           typename internal::traits<Arg2Type>::Index>::value),
-                        STORAGE_INDEX_MUST_MATCH)
-    EIGEN_STATIC_ASSERT((internal::is_same<typename internal::traits<Arg1Type>::Index,
-                                           typename internal::traits<Arg3Type>::Index>::value),
-                        STORAGE_INDEX_MUST_MATCH)
+    EIGEN_STATIC_ASSERT(
+        (std::is_same<typename internal::traits<Arg1Type>::Index, typename internal::traits<Arg2Type>::Index>::value),
+        STORAGE_INDEX_MUST_MATCH)
+    EIGEN_STATIC_ASSERT(
+        (std::is_same<typename internal::traits<Arg1Type>::Index, typename internal::traits<Arg3Type>::Index>::value),
+        STORAGE_INDEX_MUST_MATCH)
 
     eigen_assert(dimensions_match(m_arg1Impl.dimensions(), m_arg2Impl.dimensions()) &&
                  dimensions_match(m_arg1Impl.dimensions(), m_arg3Impl.dimensions()));
@@ -856,4 +875,4 @@ struct cl::sycl::is_device_copyable<
     std::enable_if_t<!std::is_trivially_copyable<Eigen::TensorEvaluator<Derived, Device>>::value>> : std::true_type {};
 #endif
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_EVALUATOR_H
+#endif  // EIGEN_TENSOR_TENSOR_EVALUATOR_H

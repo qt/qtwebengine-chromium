@@ -8,10 +8,13 @@
 #include "components/permissions/android/nfc/nfc_system_level_setting.h"
 #include "components/permissions/contexts/nfc_permission_context.h"
 
+namespace content {
+struct PermissionResult;
+}
+
 namespace permissions {
 struct PermissionPromptDecision;
-
-class PermissionRequestID;
+struct PermissionRequestData;
 
 class NfcPermissionContextAndroid : public NfcPermissionContext {
  public:
@@ -27,14 +30,15 @@ class NfcPermissionContextAndroid : public NfcPermissionContext {
       const PermissionRequestData& request_data,
       BrowserPermissionCallback callback,
       bool persist,
+      const content::PermissionResult* permission_result,
       const permissions::PermissionPromptDecision& decision) override;
 
-  void OnNfcSystemLevelSettingPromptClosed(const PermissionRequestID& id,
-                                           const GURL& requesting_origin,
-                                           const GURL& embedding_origin,
-                                           BrowserPermissionCallback callback,
-                                           bool persist,
-                                           PermissionDecision decision);
+  void OnNfcSystemLevelSettingPromptClosed(
+      const PermissionRequestData& request_data,
+      BrowserPermissionCallback callback,
+      bool persist,
+      std::unique_ptr<content::PermissionResult> permission_result,
+      const permissions::PermissionPromptDecision& decision);
 
   // Overrides the NfcSystemLevelSetting object used to determine whether NFC is
   // enabled system-wide on the device.

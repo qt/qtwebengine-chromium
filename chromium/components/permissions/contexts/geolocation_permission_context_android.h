@@ -97,6 +97,7 @@ class GeolocationPermissionContextAndroid
       const PermissionRequestData& request_data,
       BrowserPermissionCallback callback,
       bool persist,
+      const content::PermissionResult* permission_result,
       const permissions::PermissionPromptDecision& decision) override;
   content::PermissionResult UpdatePermissionStatusWithDeviceStatus(
       content::WebContents* web_contents,
@@ -123,12 +124,11 @@ class GeolocationPermissionContextAndroid
 
   bool IsRequestingOriginDSE(const GURL& requesting_origin) const;
 
-  void HandleUpdateAndroidPermissions(const PermissionRequestID& id,
-                                      const GURL& requesting_frame_origin,
-                                      const GURL& embedding_origin,
-                                      const PromptOptions& prompt_options,
-                                      BrowserPermissionCallback callback,
-                                      bool permissions_updated);
+  void HandleUpdateAndroidPermissions(
+      std::unique_ptr<PermissionRequestData> request_data,
+      const PromptOptions& prompt_options,
+      BrowserPermissionCallback callback,
+      bool permissions_updated);
 
   // Will return true if the location settings dialog will be shown for the
   // given origins. This is true if the location setting is off, the dialog can
@@ -139,25 +139,21 @@ class GeolocationPermissionContextAndroid
                                      bool ignore_backoff) const;
 
   void OnLocationSettingsDialogShown(
-      const GURL& requesting_origin,
-      const GURL& embedding_origin,
+      const PermissionRequestData& request_data,
       bool persist,
+      std::unique_ptr<content::PermissionResult> permission_result,
       const permissions::PermissionPromptDecision& decision,
       LocationSettingsDialogOutcome prompt_outcome);
 
   void FinishNotifyPermissionSet(
-      const PermissionRequestID& id,
-      const GURL& requesting_origin,
-      const GURL& embedding_origin,
+      const PermissionRequestData& request_data,
       BrowserPermissionCallback callback,
       bool persist,
-      const permissions::PermissionPromptDecision& decision,
-      blink::mojom::EmbeddedPermissionRequestDescriptorPtr
-          embedded_permission_request_descriptor = nullptr);
+      const content::PermissionResult* permission_result,
+      const permissions::PermissionPromptDecision& decision);
 
   std::unique_ptr<LocationSettings> location_settings_;
 
-  PermissionRequestID location_settings_dialog_request_id_;
   BrowserPermissionCallback location_settings_dialog_callback_;
 
   std::vector<std::pair<std::unique_ptr<PermissionRequestData>,

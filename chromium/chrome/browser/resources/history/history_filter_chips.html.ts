@@ -9,23 +9,20 @@ import type {HistoryFilterChipsElement} from './history_filter_chips.js';
 export function getHtml(this: HistoryFilterChipsElement) {
   // clang-format off
   return html`<!--_html_template_start_-->
-    <div class="filter-chip-container">
+    <div class="filter-chip-container" role="group"
+        aria-label="$i18n{sourceFilterChipsAriaLabel}">
       <cr-chip
           id="userVisitsChip"
           ?selected="${this.isUserSelected()}"
           @click="${this.onUserVisitsClick_}">
-        ${this.isUserSelected() ? html`
-          <cr-icon icon="cr:check"></cr-icon>
-        ` : ''}
+        <cr-icon icon="${this.getUserVisitsIcon_()}"></cr-icon>
         $i18n{sourceFilterChipUser}
       </cr-chip>
       <cr-chip
           id="actorVisitsChip"
           ?selected="${this.isActorSelected()}"
           @click="${this.onActorVisitsClick_}">
-        ${this.isActorSelected() ? html`
-          <cr-icon icon="cr:check"></cr-icon>
-        ` : ''}
+        <cr-icon icon="${this.getActorVisitsIcon_()}"></cr-icon>
         $i18n{sourceFilterChipActor}
       </cr-chip>
     </div>

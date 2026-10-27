@@ -19,6 +19,5 @@ CXFA_EventParam& CXFA_EventParam::operator=(CXFA_EventParam&& other) noexcept =
     default;
 
 WideString CXFA_EventParam::GetNewText() const {
-  return prev_text_.First(sel_start_) + change_ +
-         prev_text_.Last(prev_text_.GetLength() - sel_end_);
+  return prev_text_.First(sel_start_) + change_ + prev_text_.Substr(sel_end_);
 }

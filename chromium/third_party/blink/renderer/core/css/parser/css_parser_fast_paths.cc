@@ -1355,6 +1355,8 @@ bool CSSParserFastPaths::IsValidKeywordPropertyAndValue(
              value_id == CSSValueID::kInternalTextareaAuto ||
              (RuntimeEnabledFeatures::CSSResizeAutoEnabled() &&
               value_id == CSSValueID::kAuto);
+    case CSSPropertyID::kScrollAxisLock:
+      return value_id == CSSValueID::kAuto || value_id == CSSValueID::kNone;
     case CSSPropertyID::kScrollTargetGroup:
       return value_id == CSSValueID::kNone || value_id == CSSValueID::kAuto;
     case CSSPropertyID::kScrollBehavior:
@@ -1620,8 +1622,6 @@ bool CSSParserFastPaths::IsValidKeywordPropertyAndValue(
              value_id == CSSValueID::kStart ||
              value_id == CSSValueID::kCenter ||
              value_id == CSSValueID::kSpaceBetween;
-    case CSSPropertyID::kRubyOverhang:
-      return value_id == CSSValueID::kAuto || value_id == CSSValueID::kNone;
     case CSSPropertyID::kWebkitRubyPosition:
       return value_id == CSSValueID::kBefore || value_id == CSSValueID::kAfter;
     case CSSPropertyID::kRubyPosition:
@@ -1703,7 +1703,10 @@ bool CSSParserFastPaths::IsValidKeywordPropertyAndValue(
     case CSSPropertyID::kOverscrollBehaviorX:
     case CSSPropertyID::kOverscrollBehaviorY:
       return value_id == CSSValueID::kAuto ||
-             value_id == CSSValueID::kContain || value_id == CSSValueID::kNone;
+             value_id == CSSValueID::kContain ||
+             value_id == CSSValueID::kNone ||
+             (value_id == CSSValueID::kChain &&
+              RuntimeEnabledFeatures::CSSOverscrollBehaviorChainEnabled());
     case CSSPropertyID::kOriginTrialTestProperty:
       return value_id == CSSValueID::kNormal || value_id == CSSValueID::kNone;
     case CSSPropertyID::kTextBoxTrim:
@@ -1714,11 +1717,11 @@ bool CSSParserFastPaths::IsValidKeywordPropertyAndValue(
     case CSSPropertyID::kInteractivity:
       return value_id == CSSValueID::kAuto || value_id == CSSValueID::kInert;
     case CSSPropertyID::kContinue:
-      return value_id == CSSValueID::kAuto ||
+      return value_id == CSSValueID::kNormal ||
              value_id == CSSValueID::kCollapse ||
              value_id == CSSValueID::kWebkitLegacy;
     case CSSPropertyID::kBlockEllipsis:
-      return value_id == CSSValueID::kAuto ||
+      return value_id == CSSValueID::kEllipsis ||
              value_id == CSSValueID::kNoEllipsis;
     case CSSPropertyID::kInternalOverscrollArea:
       return value_id == CSSValueID::kNone || value_id == CSSValueID::kAuto ||
@@ -1799,6 +1802,7 @@ CSSBitset CSSParserFastPaths::handled_by_keyword_fast_paths_properties_{{
     CSSPropertyID::kResize,
     CSSPropertyID::kRowRuleBreak,
     CSSPropertyID::kRowRuleVisibilityItems,
+    CSSPropertyID::kScrollAxisLock,
     CSSPropertyID::kScrollTargetGroup,
     CSSPropertyID::kScrollBehavior,
     CSSPropertyID::kOverscrollBehaviorInline,
@@ -1806,7 +1810,6 @@ CSSBitset CSSParserFastPaths::handled_by_keyword_fast_paths_properties_{{
     CSSPropertyID::kOverscrollBehaviorX,
     CSSPropertyID::kOverscrollBehaviorY,
     CSSPropertyID::kRubyAlign,
-    CSSPropertyID::kRubyOverhang,
     CSSPropertyID::kShapeRendering,
     CSSPropertyID::kSpeak,
     CSSPropertyID::kStrokeLinecap,

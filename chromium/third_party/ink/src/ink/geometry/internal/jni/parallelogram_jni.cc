@@ -14,72 +14,52 @@
 
 #include <jni.h>
 
-#include <array>
-#include <utility>
-
-#include "ink/geometry/angle.h"
-#include "ink/geometry/envelope.h"
-#include "ink/geometry/internal/jni/rect_jni_helper.h"
+#include "ink/geometry/internal/jni/box_jni_helper.h"
+#include "ink/geometry/internal/jni/parallelogram_native.h"
 #include "ink/geometry/internal/jni/vec_jni_helper.h"
-#include "ink/geometry/point.h"
-#include "ink/geometry/quad.h"
-#include "ink/geometry/vec.h"
 #include "ink/jni/internal/jni_defines.h"
 #include "ink/jni/internal/jni_jvm_interface.h"
 
-namespace {
-
-using ::ink::Angle;
-using ::ink::Envelope;
-using ::ink::Point;
-using ::ink::Quad;
-using ::ink::Vec;
 using ::ink::jni::ClassImmutableVec;
-using ::ink::jni::CreateJImmutableBoxFromRectOrThrow;
-using ::ink::jni::CreateJImmutableVecFromPointOrThrow;
-using ::ink::jni::CreateJImmutableVecFromVecOrThrow;
-using ::ink::jni::FillJMutableBoxFromRectOrThrow;
-using ::ink::jni::FillJMutableVecFromPointOrThrow;
-using ::ink::jni::FillJMutableVecFromVecOrThrow;
-
-}  // namespace
+using ::ink::jni::CreateJImmutableBoxOrThrow;
+using ::ink::jni::CreateJImmutableVecOrThrow;
+using ::ink::jni::FillJMutableBoxOrThrow;
+using ::ink::jni::FillJMutableVecOrThrow;
 
 extern "C" {
 
 JNI_METHOD(geometry, ParallelogramNative, jobject, createBoundingBox)
 (JNIEnv* env, jobject object, jfloat center_x, jfloat center_y, jfloat width,
  jfloat height, jfloat rotation_degrees, jfloat skew) {
-  Quad quad = Quad::FromCenterDimensionsRotationAndSkew(
-      {center_x, center_y}, width, height, Angle::Degrees(rotation_degrees),
-      skew);
-  return CreateJImmutableBoxFromRectOrThrow(env,
-                                            Envelope(quad).AsRect().value());
+  return CreateJImmutableBoxOrThrow(
+      env, ParallelogramNative_computeBoundingBox(
+               center_x, center_y, width, height, rotation_degrees, skew));
 }
 
 JNI_METHOD(geometry, ParallelogramNative, void, populateBoundingBox)
 (JNIEnv* env, jobject object, jfloat center_x, jfloat center_y, jfloat width,
  jfloat height, jfloat rotation_degrees, jfloat skew, jobject mutable_box) {
-  Quad quad = Quad::FromCenterDimensionsRotationAndSkew(
-      {center_x, center_y}, width, height, Angle::Degrees(rotation_degrees),
-      skew);
-  FillJMutableBoxFromRectOrThrow(env, mutable_box,
-                                 Envelope(quad).AsRect().value());
+  FillJMutableBoxOrThrow(
+      env,
+      ParallelogramNative_computeBoundingBox(center_x, center_y, width, height,
+                                             rotation_degrees, skew),
+      mutable_box);
 }
 
 JNI_METHOD(geometry, ParallelogramNative, jobjectArray, createSemiAxes)
 (JNIEnv* env, jobject object, jfloat center_x, jfloat center_y, jfloat width,
  jfloat height, jfloat rotation_degrees, jfloat skew,
  jclass immutable_vec_class) {
-  Quad quad = Quad::FromCenterDimensionsRotationAndSkew(
-      {center_x, center_y}, width, height, Angle::Degrees(rotation_degrees),
-      skew);
-  std::pair<Vec, Vec> axes = quad.SemiAxes();
+  ParallelogramNative_SemiAxes axes = ParallelogramNative_computeSemiAxes(
+      center_x, center_y, width, height, rotation_degrees, skew);
   jobjectArray vector_array =
       env->NewObjectArray(2, ClassImmutableVec(env), nullptr);
-  env->SetObjectArrayElement(
-      vector_array, 0, CreateJImmutableVecFromVecOrThrow(env, axes.first));
-  env->SetObjectArrayElement(
-      vector_array, 1, CreateJImmutableVecFromVecOrThrow(env, axes.second));
+  jobject axis1_vec = CreateJImmutableVecOrThrow(env, axes.first);
+  if (env->ExceptionCheck()) return nullptr;
+  env->SetObjectArrayElement(vector_array, 0, axis1_vec);
+  jobject axis2_vec = CreateJImmutableVecOrThrow(env, axes.second);
+  if (env->ExceptionCheck()) return nullptr;
+  env->SetObjectArrayElement(vector_array, 1, axis2_vec);
   return vector_array;
 }
 
@@ -87,29 +67,32 @@ JNI_METHOD(geometry, ParallelogramNative, void, populateSemiAxes)
 (JNIEnv* env, jobject object, jfloat center_x, jfloat center_y, jfloat width,
  jfloat height, jfloat rotation_degrees, jfloat skew, jobject out_axis1,
  jobject out_axis2) {
-  Quad quad = Quad::FromCenterDimensionsRotationAndSkew(
-      {center_x, center_y}, width, height, Angle::Degrees(rotation_degrees),
-      skew);
-  std::pair<Vec, Vec> axes = quad.SemiAxes();
-  FillJMutableVecFromVecOrThrow(env, out_axis1, axes.first);
+  ParallelogramNative_SemiAxes axes = ParallelogramNative_computeSemiAxes(
+      center_x, center_y, width, height, rotation_degrees, skew);
+  FillJMutableVecOrThrow(env, axes.first, out_axis1);
   if (env->ExceptionCheck()) return;
-  FillJMutableVecFromVecOrThrow(env, out_axis2, axes.second);
+  FillJMutableVecOrThrow(env, axes.second, out_axis2);
 }
 
 JNI_METHOD(geometry, ParallelogramNative, jobjectArray, createCorners)
 (JNIEnv* env, jobject object, jfloat center_x, jfloat center_y, jfloat width,
  jfloat height, jfloat rotation_degrees, jfloat skew) {
-  Quad quad = Quad::FromCenterDimensionsRotationAndSkew(
-      {center_x, center_y}, width, height, Angle::Degrees(rotation_degrees),
-      skew);
-  std::array<Point, 4> corners = quad.Corners();
+  ParallelogramNative_Corners corners = ParallelogramNative_computeCorners(
+      center_x, center_y, width, height, rotation_degrees, skew);
   jobjectArray vector_array =
       env->NewObjectArray(4, ClassImmutableVec(env), nullptr);
-  for (int i = 0; i < 4; ++i) {
-    jobject corner = CreateJImmutableVecFromPointOrThrow(env, corners[i]);
-    if (env->ExceptionCheck()) return nullptr;
-    env->SetObjectArrayElement(vector_array, i, corner);
-  }
+  jobject corner1 = CreateJImmutableVecOrThrow(env, corners.corner1);
+  if (env->ExceptionCheck()) return nullptr;
+  env->SetObjectArrayElement(vector_array, 0, corner1);
+  jobject corner2 = CreateJImmutableVecOrThrow(env, corners.corner2);
+  if (env->ExceptionCheck()) return nullptr;
+  env->SetObjectArrayElement(vector_array, 1, corner2);
+  jobject corner3 = CreateJImmutableVecOrThrow(env, corners.corner3);
+  if (env->ExceptionCheck()) return nullptr;
+  env->SetObjectArrayElement(vector_array, 2, corner3);
+  jobject corner4 = CreateJImmutableVecOrThrow(env, corners.corner4);
+  if (env->ExceptionCheck()) return nullptr;
+  env->SetObjectArrayElement(vector_array, 3, corner4);
   return vector_array;
 }
 
@@ -117,27 +100,23 @@ JNI_METHOD(geometry, ParallelogramNative, void, populateCorners)
 (JNIEnv* env, jobject object, jfloat center_x, jfloat center_y, jfloat width,
  jfloat height, jfloat rotation_degrees, jfloat skew, jobject out_corner1,
  jobject out_corner2, jobject out_corner3, jobject out_corner4) {
-  Quad quad = Quad::FromCenterDimensionsRotationAndSkew(
-      {center_x, center_y}, width, height, Angle::Degrees(rotation_degrees),
-      skew);
-  std::array<Point, 4> corners = quad.Corners();
-  FillJMutableVecFromPointOrThrow(env, out_corner1, corners[0]);
+  ParallelogramNative_Corners corners = ParallelogramNative_computeCorners(
+      center_x, center_y, width, height, rotation_degrees, skew);
+  FillJMutableVecOrThrow(env, corners.corner1, out_corner1);
   if (env->ExceptionCheck()) return;
-  FillJMutableVecFromPointOrThrow(env, out_corner2, corners[1]);
+  FillJMutableVecOrThrow(env, corners.corner2, out_corner2);
   if (env->ExceptionCheck()) return;
-  FillJMutableVecFromPointOrThrow(env, out_corner3, corners[2]);
+  FillJMutableVecOrThrow(env, corners.corner3, out_corner3);
   if (env->ExceptionCheck()) return;
-  FillJMutableVecFromPointOrThrow(env, out_corner4, corners[3]);
+  FillJMutableVecOrThrow(env, corners.corner4, out_corner4);
 }
 
 JNI_METHOD(geometry, ParallelogramNative, jboolean, contains)
 (JNIEnv* env, jobject object, jfloat center_x, jfloat center_y, jfloat width,
  jfloat height, jfloat rotation_degrees, jfloat skew, jfloat point_x,
  jfloat point_y) {
-  Quad quad = Quad::FromCenterDimensionsRotationAndSkew(
-      {center_x, center_y}, width, height, Angle::Degrees(rotation_degrees),
-      skew);
-  return quad.Contains({point_x, point_y});
+  return ParallelogramNative_contains(center_x, center_y, width, height,
+                                      rotation_degrees, skew, point_x, point_y);
 }
 
 }  // extern "C"

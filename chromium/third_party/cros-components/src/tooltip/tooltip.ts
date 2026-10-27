@@ -261,6 +261,17 @@ export class Tooltip extends LitElement {
     }, BLUR_OR_UNFOCUS_TIMEOUT_DURATION);
   }
 
+  /**
+   * Shifts the label to inline-start or inline-end, measures its width, and
+   * then resets the label back to its original position.
+   */
+  private shiftAndMeasureWidth(label: HTMLDivElement, shiftAttribute: string) {
+    label.toggleAttribute(shiftAttribute, true);
+    const width = label.getBoundingClientRect().width;
+    label.toggleAttribute(shiftAttribute, false);
+    return width;
+  }
+
   // The CSS Anchor Positioning API does not yet allow elements in a shadow DOM
   // to see anchor names defined in the outer tree scope. To work around this,
   // there is an internal anchor point (#tooltip-anchor-overlay) that we
@@ -285,47 +296,34 @@ export class Tooltip extends LitElement {
     // (start/center/end) to determine which alignment allows for the largest
     // tooltip width.
     requestAnimationFrame(() => {
+      const POSITION_TOLERANCE = 0.01;
       const label = this.labelElement;
 
       // Move the label back to its normal position, centered under the anchor
-      // element, and get its width + check if it's offscreen.
+      // element and get its dimensions.
       label.removeAttribute(ATTR_SHIFT_INLINE_START);
       label.removeAttribute(ATTR_SHIFT_INLINE_END);
-      const boundingClientRectWhenCentered = label.getBoundingClientRect();
-      const widthWhenInCenter = boundingClientRectWhenCentered.width;
-      const isOffscreenWhenInCenter =
-          boundingClientRectWhenCentered.x + widthWhenInCenter >
-              document.body.clientWidth ||
-          boundingClientRectWhenCentered.x < 0;
+      const labelRect = label.getBoundingClientRect();
+      const widthWhenInCenter = labelRect.width;
+      const labelCenter = labelRect.left + widthWhenInCenter / 2;
+      const anchorCenter = anchorRect.left + anchorRect.width / 2;
+      const isLabelCenteredToAnchor =
+          Math.abs(labelCenter - anchorCenter) < POSITION_TOLERANCE;
 
-      // Shift the label to the inline-end (i.e. right for ltr languages), and
-      // get its width.
-      label.setAttribute(ATTR_SHIFT_INLINE_END, '');
-      const widthWhenShiftedToEnd = label.getBoundingClientRect().width;
+      // Get the shifted label widths.
+      const widthWhenShiftedToEnd =
+          this.shiftAndMeasureWidth(label, ATTR_SHIFT_INLINE_END);
+      const widthWhenShiftedToStart =
+          this.shiftAndMeasureWidth(label, ATTR_SHIFT_INLINE_START);
 
-      // Shift the label to the inline-start (i.e. left for ltr languages), and
-      // get its width.
-      label.removeAttribute(ATTR_SHIFT_INLINE_END);
-      label.setAttribute(ATTR_SHIFT_INLINE_START, '');
-      const widthWhenShiftedToStart = label.getBoundingClientRect().width;
-
-      // Reset the label back to the center before applying the final
-      // adjustments.
-      label.removeAttribute(ATTR_SHIFT_INLINE_END);
-      label.removeAttribute(ATTR_SHIFT_INLINE_START);
-
-      if (!isOffscreenWhenInCenter &&
-          widthWhenInCenter >= widthWhenShiftedToStart &&
-          widthWhenInCenter >= widthWhenShiftedToEnd) {
-        // Keep the element in the center.
-        label.removeAttribute(ATTR_SHIFT_INLINE_START);
-        label.removeAttribute(ATTR_SHIFT_INLINE_END);
-      } else if (widthWhenShiftedToStart > widthWhenShiftedToEnd) {
-        // Shift the element to the start.
-        label.setAttribute(ATTR_SHIFT_INLINE_START, '');
-      } else {
-        // Shift the element to the end.
-        label.setAttribute(ATTR_SHIFT_INLINE_END, '');
+      if (!isLabelCenteredToAnchor ||
+          widthWhenInCenter < widthWhenShiftedToStart ||
+          widthWhenInCenter < widthWhenShiftedToEnd) {
+        if (widthWhenShiftedToStart > widthWhenShiftedToEnd) {
+          label.setAttribute(ATTR_SHIFT_INLINE_START, '');
+        } else {
+          label.setAttribute(ATTR_SHIFT_INLINE_END, '');
+        }
       }
     });
   }

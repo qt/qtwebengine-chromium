@@ -28,6 +28,7 @@
 #include "net/shared_dictionary/shared_dictionary_isolation_key.h"
 #include "net/url_request/url_request_context.h"
 #include "services/network/cors/cors_url_loader.h"
+#include "services/network/cors/cors_util.h"
 #include "services/network/cors/preflight_controller.h"
 #include "services/network/network_service.h"
 #include "services/network/prefetch_matching_url_loader_factory.h"
@@ -372,7 +373,7 @@ void CorsURLLoaderFactory::CreateLoaderAndStart(
   std::optional<base::ElapsedTimer> timer;
   std::optional<base::ElapsedThreadTimer> thread_timer;
 
-  if (metrics_subsampler_.ShouldSample(0.001)) {
+  if (base::ShouldRecordSubsampledMetric(0.001)) {
     timer.emplace();
     if (base::ThreadTicks::IsSupported()) {
       thread_timer.emplace();
@@ -426,21 +427,9 @@ void CorsURLLoaderFactory::CreateLoaderAndStart(
     isolation_info_ptr = &isolation_info.value();
   }
 
-  // Check if the initiator's network access has been revoked.
-  // This check is only relevant if there is a partition nonce in the
-  // isolation info. (All requests originating from a fenced frame have a
-  // nonce specified.)
-  if (isolation_info.has_value() && isolation_info->nonce().has_value() &&
-      !context_->IsNetworkForNonceAndUrlAllowed(
-          *isolation_info->nonce(), resource_request.url,
-          isolation_info->network_anonymization_key())) {
-    mojo::Remote<mojom::URLLoaderClient>(std::move(client))
-        ->OnComplete(
-            URLLoaderCompletionStatus(net::ERR_NETWORK_ACCESS_REVOKED));
-    return;
-  }
+  // Check if the initiator's network access has been restricted.
   if (network_restrictions_id_.has_value() &&
-      !context_->IsNetworkForNonceAndUrlAllowed(
+      !context_->IsNetworkForNetworkRestrictionsIdAndUrlAllowed(
           *network_restrictions_id_, resource_request.url,
           isolation_info_ptr->network_anonymization_key())) {
     // TODO(crbug.com/447954811): Perhaps change to a new error code and
@@ -583,7 +572,7 @@ bool CorsURLLoaderFactory::IsCorsPreflighLoadOptionAllowed() const {
 }
 
 bool CorsURLLoaderFactory::IsValidRequest(
-    const ResourceRequest& request,
+    ResourceRequest& request,
     uint32_t options,
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
   if (request.url.SchemeIs(url::kDataScheme)) {
@@ -863,6 +852,15 @@ bool CorsURLLoaderFactory::IsValidRequest(
     return false;
   }
 
+  const bool allow_unsafe_headers = cors::ShouldAllowUnsafeHeaders(
+      *origin_access_list_, request.request_initiator, request.url);
+  if (!process_id_.is_browser() && !allow_unsafe_headers &&
+      ContainsForbiddenSecurityHeader(request.headers)) {
+    mojo::ReportBadMessage(
+        "CorsURLLoaderFactory: Forbidden Sec- header from renderer");
+    return false;
+  }
+
   if (!AreRequestHeadersSafe(request.headers) ||
       !AreRequestHeadersSafe(request.cors_exempt_headers)) {
     return false;
@@ -987,30 +985,6 @@ net::handles::NetworkHandle CorsURLLoaderFactory::GetBoundNetworkForTesting()
     const {
   CHECK(!factory_override_);
   return network_loader_factory_->GetBoundNetworkForTesting();  // IN-TEST
-}
-
-void CorsURLLoaderFactory::CancelRequestsIfNonceMatchesAndUrlNotExempted(
-    const base::UnguessableToken& nonce,
-    const std::set<GURL>& exemptions) {
-  CHECK(!prevent_self_deletion_);
-  prevent_self_deletion_ = true;
-  auto iterate_over_set = [&nonce, &exemptions](auto& url_loaders) {
-    // Cancelling the request may cause the URL loader to be deleted from the
-    // data structure, invalidating the iterator if it is currently pointing to
-    // that element. So advance to the next element first and delete the
-    // previous one.
-    for (auto loader_it = url_loaders.begin(); loader_it != url_loaders.end();
-         /* iteration performed inside the loop */) {
-      auto* loader = loader_it->get();
-      ++loader_it;
-      loader->CancelRequestIfNonceMatchesAndUrlNotExempted(nonce, exemptions);
-    }
-  };
-
-  iterate_over_set(url_loaders_);
-  iterate_over_set(cors_url_loaders_);
-  prevent_self_deletion_ = false;
-  DeleteIfNeeded();
 }
 
 }  // namespace network::cors

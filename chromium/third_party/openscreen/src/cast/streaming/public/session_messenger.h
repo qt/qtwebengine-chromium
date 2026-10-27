@@ -34,6 +34,8 @@ class SessionMessenger : public MessagePort::Client {
                    ErrorCallback cb);
   ~SessionMessenger() override;
 
+  MessagePort& message_port() { return message_port_; }
+
  protected:
   // Barebones message sending method shared by both children.
   [[nodiscard]] Error SendMessage(const std::string& destination_id,
@@ -136,6 +138,18 @@ class ReceiverSessionMessenger final : public SessionMessenger {
   [[nodiscard]] Error SendMessage(const std::string& source_id,
                                   ReceiverMessage message);
 
+  // Send a raw string message to a custom namespace.
+  [[nodiscard]] Error SendMessage(std::string_view destination_id,
+                                  std::string_view message_namespace,
+                                  std::string_view message);
+
+  using CustomMessageCallback =
+      std::function<void(const std::string& /* source_id */,
+                         const std::string& /* message_namespace */,
+                         const std::string& /* message */)>;
+  void SetCustomMessageHandler(std::string_view message_namespace,
+                               CustomMessageCallback cb);
+
   // MessagePort::Client overrides
   void OnMessage(const std::string& source_id,
                  const std::string& message_namespace,
@@ -144,6 +158,8 @@ class ReceiverSessionMessenger final : public SessionMessenger {
 
  private:
   FlatMap<SenderMessage::Type, RequestCallback> callbacks_;
+  std::vector<std::pair<std::string, CustomMessageCallback>>
+      custom_message_handlers_;
 };
 
 }  // namespace openscreen::cast

@@ -173,7 +173,6 @@ android_resources("autofill_payments_java_resources") {
 android_resources("autofill_java_resources") {
   sources = [
     "java/res/layout/autofill_dropdown_item.xml",
-    "java/res/values/colors.xml",
     "java/res/values/dimens.xml",
   ]
   deps = [
@@ -187,7 +186,10 @@ android_resources("autofill_java_resources") {
 # //clank/components/autofill:java_resources target defines branded icons with
 # the same file names.
 android_resources("autofill_unbranded_browser_resources") {
-  sources = [ "browser/internal/java/res/drawable/google_wallet_24dp.xml" ]
+  sources = [
+    "browser/internal/java/res/drawable/google_wallet_24dp.xml",
+    "browser/internal/java/res/drawable/spark.xml",
+  ]
 }
 
 # This target is only used by the Chrome browser and not included into the
@@ -197,11 +199,12 @@ android_resources("autofill_browser_resources") {
     "browser/java/res/drawable/autofill_external_link.xml",
     "browser/java/res/drawable/directions_car.xml",
     "browser/java/res/drawable/flight.xml",
-    "browser/java/res/drawable/travel_trip.xml",
     "browser/java/res/drawable/id_card.xml",
     "browser/java/res/drawable/passport.xml",
     "browser/java/res/drawable/person_check.xml",
+    "browser/java/res/drawable/search_spark.xml",
     "browser/java/res/drawable/travel_luggage_and_bags.xml",
+    "browser/java/res/drawable/travel_trip.xml",
     "browser/java/res/drawable/work_logo.xml",
   ]
 }
@@ -210,7 +213,6 @@ java_cpp_enum("autofill_core_browser_java_enums") {
   sources = [
     "../core/browser/data_model/addresses/autofill_profile.h",
     "../core/browser/data_model/addresses/autofill_structured_address_component.h",
-    "../core/browser/data_model/payments/credit_card.h",
     "../core/browser/data_model/payments/iban.h",
     "../core/browser/field_types.h",
     "../core/browser/filling/filling_product.h",
@@ -254,6 +256,7 @@ android_library("main_autofill_java") {
     ":autofill_java_resources",
     ":payments_autofill_java",
     "//base:base_java",
+    "//components/autofill/core/browser/data_model/payments:mojo_bindings_java",
     "//content/public/android:content_java",
     "//third_party/androidx:androidx_annotation_annotation_java",
     "//third_party/androidx:androidx_appcompat_appcompat_resources_java",
@@ -349,6 +352,7 @@ android_library("payments_autofill_java") {
   ]
   deps = [
     ":payments_interfaces_java",
+    "//components/autofill/core/browser/data_model/payments:mojo_bindings_java",
     "//third_party/android_deps:guava_android_java",
     "//third_party/androidx:androidx_annotation_annotation_java",
     "//third_party/jni_zero:jni_zero_java",
@@ -361,7 +365,7 @@ android_library("payments_autofill_java") {
 }
 
 robolectric_library("payments_autofill_junit_tests") {
-  resources_package = "org.chromium.components.autofill"
+  resources_package = "org.chromium.components.autofill.payments"
 
   sources = [
     "junit/src/org/chromium/components/autofill/payments/AutofillSaveCardUiInfoTest.java",

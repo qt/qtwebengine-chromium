@@ -6,6 +6,7 @@
 
 load("@chromium-luci//builder_config.star", "builder_config")
 load("@chromium-luci//builders.star", "os")
+load("@chromium-luci//gn_args.star", "gn_args")
 load("@chromium-luci//try.star", "try_")
 load("//constants.star", "default_experiments", "siso")
 
@@ -40,7 +41,7 @@ try_.defaults.set(
 
 def apply_cq_builder_defaults(kwargs):
     kwargs.setdefault("max_concurrent_builds", 4)
-    kwargs.setdefault("tryjob", try_.job())
+    kwargs.setdefault("cq_settings", try_.cq_settings(on_default_cq = True))
     return kwargs
 
 def apply_linux_cq_builder_defaults(kwargs):
@@ -98,7 +99,70 @@ def angle_win_functional_cq_tester(**kwargs):
     kwargs = apply_win_cq_builder_defaults(kwargs)
     try_.builder(**kwargs)
 
+def angle_linux_presubmit_builder(**kwargs):
+    kwargs = apply_linux_cq_builder_defaults(kwargs)
+    try_.presubmit_builder(**kwargs)
+
 ## Functional testers
+
+angle_linux_functional_cq_tester(
+    name = "angle-cq-android-arm-dbg",
+    description_html = "Compiles all debug ANGLE targets for Android/arm. Blocks CL submission.",
+    mirrors = [
+        "ci/angle-android-arm-builder-dbg",
+    ],
+    gn_args = "ci/angle-android-arm-builder-dbg",
+)
+
+angle_linux_functional_cq_tester(
+    name = "angle-cq-android-arm-rel",
+    description_html = "Compiles all debug ANGLE targets for Android/arm. Blocks CL submission.",
+    mirrors = [
+        "ci/angle-android-arm-builder-rel",
+    ],
+    gn_args = "ci/angle-android-arm-builder-rel",
+)
+
+angle_linux_functional_cq_tester(
+    name = "angle-cq-android-arm64-dbg",
+    description_html = "Compiles all debug ANGLE targets for Android/arm64. Blocks CL submission.",
+    mirrors = [
+        "ci/angle-android-arm64-builder-dbg",
+    ],
+    gn_args = "ci/angle-android-arm64-builder-dbg",
+)
+
+angle_linux_functional_cq_tester(
+    name = "angle-cq-android-arm64-rel",
+    description_html = "Tests release ANGLE on Android/arm64 on multiple hardware configs. Blocks CL submission.",
+    mirrors = [
+        "ci/angle-android-arm64-builder-rel",
+        "ci/angle-android-arm64-google-pixel4-rel",
+        "ci/angle-android-arm64-google-pixel6-rel",
+    ],
+    gn_args = "ci/angle-android-arm64-builder-rel",
+)
+
+angle_linux_functional_cq_tester(
+    name = "angle-cq-linux-x64-asan",
+    description_html = ("Tests release ANGLE on Linux/x64 on multiple " +
+                        "hardware configs with ASan, LSan, and UBSan " +
+                        "enabled. Blocks CL submission."),
+    mirrors = [
+        "ci/angle-linux-x64-builder-asan",
+        "ci/angle-linux-x64-sws-asan",
+    ],
+    gn_args = "ci/angle-linux-x64-builder-asan",
+)
+
+angle_linux_functional_cq_tester(
+    name = "angle-cq-linux-x64-dbg",
+    description_html = "Compiles all debug ANGLE targets for Linux/x64. Blocks CL submission.",
+    mirrors = [
+        "ci/angle-linux-x64-builder-dbg",
+    ],
+    gn_args = "ci/angle-linux-x64-builder-dbg",
+)
 
 angle_linux_functional_cq_tester(
     name = "angle-cq-linux-x64-rel",
@@ -112,6 +176,17 @@ angle_linux_functional_cq_tester(
     gn_args = "ci/angle-linux-x64-builder-rel",
 )
 
+angle_linux_functional_cq_tester(
+    name = "angle-cq-linux-x64-tsan",
+    description_html = ("Tests release ANGLE on Linux/x64 on multiple hardware configs with TSan " +
+                        "enabled. Blocks CL submission."),
+    mirrors = [
+        "ci/angle-linux-x64-builder-tsan",
+        "ci/angle-linux-x64-sws-tsan",
+    ],
+    gn_args = "ci/angle-linux-x64-builder-tsan",
+)
+
 angle_mac_functional_cq_tester(
     name = "angle-cq-mac-arm64-rel",
     description_html = "Tests release ANGLE on Mac/arm64 on multiple hardware configs. Blocks CL submission.",
@@ -120,6 +195,15 @@ angle_mac_functional_cq_tester(
         "ci/angle-mac-arm64-builder-rel",
     ],
     gn_args = "ci/angle-mac-arm64-builder-rel",
+)
+
+angle_mac_functional_cq_tester(
+    name = "angle-cq-mac-x64-dbg",
+    description_html = "Compiles all debug ANGLE targets for Mac/x64. Blocks CL submission.",
+    mirrors = [
+        "ci/angle-mac-x64-builder-dbg",
+    ],
+    gn_args = "ci/angle-mac-x64-builder-dbg",
 )
 
 angle_mac_functional_cq_tester(
@@ -135,6 +219,15 @@ angle_mac_functional_cq_tester(
 )
 
 angle_win_functional_cq_tester(
+    name = "angle-cq-win-x64-dbg",
+    description_html = "Compiles all debug ANGLE targets for Win/x64. Blocks CL submission.",
+    mirrors = [
+        "ci/angle-win-x64-builder-dbg",
+    ],
+    gn_args = "ci/angle-win-x64-builder-dbg",
+)
+
+angle_win_functional_cq_tester(
     name = "angle-cq-win-x64-rel",
     description_html = "Tests release ANGLE on Win/x64 on multiple hardware configs. Blocks CL submission.",
     mirrors = [
@@ -145,6 +238,44 @@ angle_win_functional_cq_tester(
     gn_args = "ci/angle-win-x64-builder-rel",
 )
 
+angle_win_functional_cq_tester(
+    name = "angle-cq-win-x86-dbg",
+    description_html = "Compiles all debug ANGLE targets for Win/x86. Blocks CL submission.",
+    mirrors = [
+        "ci/angle-win-x86-builder-dbg",
+    ],
+    gn_args = "ci/angle-win-x86-builder-dbg",
+)
+
+angle_win_functional_cq_tester(
+    name = "angle-cq-win-x86-rel",
+    description_html = "Tests release ANGLE on Win/x86 on multiple hardware configs. Blocks CL submission.",
+    mirrors = [
+        "ci/angle-win-x86-builder-rel",
+        "ci/angle-win-x86-sws-rel",
+    ],
+    gn_args = "ci/angle-win-x86-builder-rel",
+)
+
+# Presubmit-only testers
+
+angle_linux_presubmit_builder(
+    name = "presubmit",
+    description_html = "Runs basic presubmit checks on Linux machines",
+    executable = "recipe:run_presubmit",
+    cq_settings = try_.cq_settings(
+        on_default_cq = True,
+    ),
+    properties = {
+        "repo_name": "angle",
+        "runhooks": True,
+    },
+    test_presentation = resultdb.test_presentation(
+        column_keys = ["v.gpu"],
+        grouping_keys = ["status", "v.test_suite"],
+    ),
+)
+
 ################################################################################
 # Optional Builders                                                            #
 ################################################################################
@@ -153,8 +284,8 @@ angle_win_functional_cq_tester(
 
 def apply_trace_tester_defaults(kwargs):
     kwargs.setdefault(
-        "tryjob",
-        try_.job(
+        "cq_settings",
+        try_.cq_settings(
             # Trace tests are only run on CQ if files in the capture folders change.
             location_filters = [
                 cq.location_filter(path_regexp = "DEPS"),
@@ -172,6 +303,10 @@ def angle_linux_trace_tester(**kwargs):
     kwargs = apply_trace_tester_defaults(kwargs)
     angle_linux_functional_cq_tester(**kwargs)
 
+def angle_win_trace_tester(**kwargs):
+    kwargs = apply_trace_tester_defaults(kwargs)
+    angle_win_functional_cq_tester(**kwargs)
+
 ## Trace testers
 
 angle_linux_trace_tester(
@@ -184,6 +319,18 @@ angle_linux_trace_tester(
         "run_trace_tests": True,
     },
     gn_args = "ci/angle-linux-x64-trace",
+)
+
+angle_win_trace_tester(
+    name = "angle-cq-win-x64-trace",
+    description_html = "Runs ANGLE GLES trace tests on Windows/x64 with SwiftShader. Blocks CL submission.",
+    mirrors = [
+        "ci/angle-win-x64-trace",
+    ],
+    properties = {
+        "run_trace_tests": True,
+    },
+    gn_args = "ci/angle-win-x64-trace",
 )
 
 ################################################################################
@@ -221,6 +368,110 @@ def angle_win_manual_builder(*, name, **kwargs):
     )
 
 ## Functional testers
+
+# This is effectively a copy of angle-cq-android-arm64-rel, but manual-only and
+# with the angle_ir GN arg config set. Mirroring is done in this way instead
+# of having CI builders because we do not have a need for the CI builders and
+# this keeps the tests in sync between the IR and non-IR builders.
+angle_linux_manual_builder(
+    name = "angle-try-android-arm64-ir-rel",
+    description_html = ("Tests release ANGLE on Android/arm64 on multiple hardware configs using " +
+                        "ANGLE's new intermediate representation for shaders. Manual only."),
+    mirrors = [
+        "ci/angle-android-arm64-builder-rel",
+        "ci/angle-android-arm64-google-pixel4-rel",
+        "ci/angle-android-arm64-google-pixel6-rel",
+    ],
+    gn_args = gn_args.config(
+        configs = [
+            "android_clang",
+            "android_static_analysis",
+            "angle_ir",
+            "arm64",
+            "capture",
+            "component",
+            "opencl",
+            "release_with_dchecks",
+        ],
+    ),
+)
+
+angle_linux_manual_builder(
+    name = "angle-try-android-arm64-google-pixel4-rel",
+    description_html = "Tests release ANGLE on Android/arm64 on Pixel 4 devices. Manual only.",
+    mirrors = [
+        "ci/angle-android-arm64-builder-rel",
+        "ci/angle-android-arm64-google-pixel4-rel",
+    ],
+    gn_args = "ci/angle-android-arm64-builder-rel",
+)
+
+angle_linux_manual_builder(
+    name = "angle-try-android-arm64-google-pixel6-exp-rel",
+    description_html = "Tests release ANGLE on Android/arm64 on experimental Pixel 6 devices. Manual only.",
+    mirrors = [
+        "ci/angle-android-arm64-builder-rel",
+        "ci/angle-android-arm64-google-pixel6-exp-rel",
+    ],
+    gn_args = "ci/angle-android-arm64-builder-rel",
+)
+
+angle_linux_manual_builder(
+    name = "angle-try-android-arm64-google-pixel6-rel",
+    description_html = "Tests release ANGLE on Android/arm64 on Pixel 6 devices. Manual only.",
+    mirrors = [
+        "ci/angle-android-arm64-builder-rel",
+        "ci/angle-android-arm64-google-pixel6-rel",
+    ],
+    gn_args = "ci/angle-android-arm64-builder-rel",
+)
+
+angle_linux_manual_builder(
+    name = "angle-try-android-arm64-google-pixel10-rel",
+    description_html = "Tests release ANGLE on Android/arm64 on Pixel 10 devices. Manual only.",
+    mirrors = [
+        "ci/angle-android-arm64-builder-rel",
+        "ci/angle-android-arm64-google-pixel10-rel",
+    ],
+    gn_args = "ci/angle-android-arm64-builder-rel",
+)
+
+angle_linux_manual_builder(
+    name = "angle-try-android-arm64-samsung-s24-rel",
+    description_html = "Tests release ANGLE on Android/arm64 on Samsung S24 devices. Manual only.",
+    mirrors = [
+        "ci/angle-android-arm64-builder-rel",
+        "ci/angle-android-arm64-samsung-s24-rel",
+    ],
+    gn_args = "ci/angle-android-arm64-builder-rel",
+)
+
+# This is effectively a copy of angle-cq-linux-x64-rel, but manual-only and
+# with the angle_ir GN arg config set. Mirroring is done in this way instead
+# of having CI builders because we do not have a need for the CI builders and
+# this keeps the tests in sync between the IR and non-IR builders.
+angle_linux_manual_builder(
+    name = "angle-try-linux-x64-ir-rel",
+    description_html = ("Tests release ANGLE on Linux/x64 on multiple hardware configs using " +
+                        "ANGLE's new intermediate representation for shaders. Manual only."),
+    mirrors = [
+        "ci/angle-linux-x64-builder-rel",
+        "ci/angle-linux-x64-intel-uhd630-rel",
+        "ci/angle-linux-x64-nvidia-gtx1660-rel",
+        "ci/angle-linux-x64-sws-rel",
+    ],
+    gn_args = gn_args.config(
+        configs = [
+            "angle_ir",
+            "capture",
+            "component",
+            "linux_clang",
+            "opencl",
+            "release_with_dchecks",
+            "x64",
+        ],
+    ),
+)
 
 angle_linux_manual_builder(
     name = "angle-try-linux-x64-amd-rx5500xt-rel",
@@ -280,6 +531,32 @@ angle_linux_manual_builder(
         "ci/angle-linux-x64-sws-rel",
     ],
     gn_args = "ci/angle-linux-x64-builder-rel",
+)
+
+# This is effectively a copy of angle-cq-mac-x64-rel, but manual-only and
+# with the angle_ir GN arg config set. Mirroring is done in this way instead
+# of having CI builders because we do not have a need for the CI builders and
+# this keeps the tests in sync between the IR and non-IR builders.
+angle_mac_manual_builder(
+    name = "angle-try-mac-x64-ir-rel",
+    description_html = ("Tests release ANGLE on Mac/x64 on multiple hardware configs using " +
+                        "ANGLE's new intermediate representation for shaders. Manual only."),
+    mirrors = [
+        "ci/angle-mac-x64-amd-5300m-rel",
+        "ci/angle-mac-x64-amd-555x-rel",
+        "ci/angle-mac-x64-builder-rel",
+        "ci/angle-mac-x64-intel-uhd630-rel",
+    ],
+    gn_args = gn_args.config(
+        configs = [
+            "angle_ir",
+            "capture",
+            "component",
+            "mac_clang",
+            "release_with_dchecks",
+            "x64",
+        ],
+    ),
 )
 
 angle_mac_manual_builder(
@@ -342,6 +619,32 @@ angle_mac_manual_builder(
     gn_args = "ci/angle-mac-x64-builder-rel",
 )
 
+# This is effectively a copy of angle-cq-win-x64-rel, but manual-only and
+# with the angle_ir GN arg config set. Mirroring is done in this way instead
+# of having CI builders because we do not have a need for the CI builders and
+# this keeps the tests in sync between the IR and non-IR builders.
+angle_win_manual_builder(
+    name = "angle-try-win-x64-ir-rel",
+    description_html = ("Tests release ANGLE on Win/x64 on multiple hardware configs using " +
+                        "ANGLE's new intermediate representation for shaders. Manual only."),
+    mirrors = [
+        "ci/angle-win-x64-builder-rel",
+        "ci/angle-win-x64-intel-uhd630-rel",
+        "ci/angle-win-x64-nvidia-gtx1660-rel",
+    ],
+    gn_args = gn_args.config(
+        configs = [
+            "angle_ir",
+            "capture",
+            "component",
+            "opencl",
+            "release_with_dchecks",
+            "win_clang",
+            "x64",
+        ],
+    ),
+)
+
 angle_win_manual_builder(
     name = "angle-try-win-x64-intel-uhd630-exp-rel",
     description_html = "Tests release ANGLE on Win/x64 on experimental configs of Intel UHD 630 GPUs. Manual only.",
@@ -390,4 +693,14 @@ angle_win_manual_builder(
         "ci/angle-win-x64-nvidia-gtx1660-rel",
     ],
     gn_args = "ci/angle-win-x64-builder-rel",
+)
+
+angle_win_manual_builder(
+    name = "angle-try-win-x86-sws-rel",
+    description_html = "Tests release ANGLE on Win/x86 with SwiftShader. Manual only.",
+    mirrors = [
+        "ci/angle-win-x86-builder-rel",
+        "ci/angle-win-x86-sws-rel",
+    ],
+    gn_args = "ci/angle-win-x86-builder-rel",
 )

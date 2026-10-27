@@ -29,7 +29,7 @@ std::ostream& operator<<(std::ostream& os, const MemoryAddress& mem) {
   return os << "MemoryAddress{base=" << mem.base << ", index=" << mem.index
             << ", offset=" << mem.offset << ", elem_size_log2="
             << static_cast<uint32_t>(mem.element_size_log2)
-            << ", size=" << static_cast<uint32_t>(mem.size) << "}";
+            << ", repr=" << mem.representation << "}";
 }
 
 void LateLoadEliminationAnalyzer::Run() {
@@ -294,6 +294,14 @@ void LateLoadEliminationAnalyzer::ProcessBlock(const Block& block,
 
         break;
     }
+    if (op.Effects().can_allocate && v8_flags.turbolev) {
+      // String maps can be invalidated by the GC. Unfortunately, there is no
+      // way to know if a particular load at offset 0 loads a string map or not.
+      // So, to be safe, we invalidate every load at offset 0 whenever we see an
+      // allocation.
+      memory_.InvalidatePotentialLoadedStringMaps();
+      WipeAllMaps();
+    }
   }
 
   FinishBlock(&block);
@@ -325,6 +333,13 @@ bool RepIsCompatible(RegisterRepresentation actual,
     return false;
   }
 
+  // Ideally, this should be a DCHECK, since MemoryRepresentation is part of
+  // MemoryAddress, and compatible MemoryRepresentations imply compatible
+  // RegisterRerpesentations. However, Turbofan sometimes creates an
+  // Int64Constant/Int32Constant to represent a Smi, and then stores it with
+  // Tagged MemoryRepresentation; thus we reach this point with incompatible
+  // RegisterRepresentations.
+  // TODO(manoskouk): Make this into a DCHECK in ProcessLoad when possible.
   return expected_reg_repr == actual;
 }
 
@@ -354,10 +369,6 @@ void LateLoadEliminationAnalyzer::ProcessLoad(OpIndex op_idx,
 
   if (OpIndex existing = memory_.Find(load); existing.valid()) {
     const Operation& replacement = graph_.Get(existing);
-    // We need to make sure that {load} and {replacement} have the same output
-    // representation. In particular, in unreachable code, it's possible that
-    // the two of them have incompatible representations (like one could be
-    // Tagged and the other one Float64).
     DCHECK_EQ(replacement.outputs_rep().size(), 1);
     DCHECK_EQ(load.outputs_rep().size(), 1);
     TRACE(">> Found potential replacement at offset " << existing);
@@ -407,6 +418,7 @@ void LateLoadEliminationAnalyzer::ProcessTrustedLoad(
     USE(replacement);
     // All trusted loads have the same representation and they can't alias with
     // any other loads.
+    DCHECK(replacement.Is<LoadTrustedPointerOp>());
     DCHECK_EQ(replacement.outputs_rep(), load.outputs_rep());
     TRACE(">> Found replacement at offset " << existing);
     replacements_[op_idx] = Replacement::LoadElimination(existing);
@@ -456,7 +468,7 @@ void LateLoadEliminationAnalyzer::ProcessStore(OpIndex op_idx,
   }
 
   // If we just stored a map, invalidate all object_maps_.
-  if (store.offset == HeapObject::kMapOffset && !store.index().valid()) {
+  if (store.offset == offsetof(HeapObject, map_) && !store.index().valid()) {
     // TODO(dmercadier): can we only do this for objects that are potentially
     // aliasing with the `base` (based on their maps and the maps of `base`)?
     // Also, it might be worth to record a new map if this is actually a map
@@ -464,9 +476,13 @@ void LateLoadEliminationAnalyzer::ProcessStore(OpIndex op_idx,
     // TODO(dmercadier): do this only if `value` is a Constant with kind
     // kHeapObject, since all map stores should store a known constant maps.
     TRACE(">> Wiping all maps\n");
-    for (auto it : object_maps_) {
-      object_maps_.Set(it.second, MapMaskAndOr{});
-    }
+    WipeAllMaps();
+  }
+}
+
+void LateLoadEliminationAnalyzer::WipeAllMaps() {
+  for (auto it : object_maps_) {
+    object_maps_.Set(it.second, MapMaskAndOr{});
   }
 }
 
@@ -534,6 +550,14 @@ void LateLoadEliminationAnalyzer::ProcessCall(OpIndex op_idx,
   // The call could modify arbitrary memory, so we invalidate every
   // potentially-aliasing object.
   memory_.InvalidateMaybeAliasing();
+
+  // This call could transition objects, thus invalidating their maps.
+  // TODO(dmercadier): we should only wipe unstable maps here, except that we
+  // don't know which maps are stable or not because we compact maps in
+  // MapMaskAndOr. I'm really not sure how much benefits this MapMaskAndOr
+  // structure brings, so we could instead consider to record exact maps, in
+  // which case we'd be able to only invalidate unstable ones.
+  WipeAllMaps();
 }
 
 // The only time an Allocate should flow into a WordBinop is for Smi checks

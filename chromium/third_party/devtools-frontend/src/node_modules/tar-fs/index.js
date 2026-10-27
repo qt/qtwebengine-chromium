@@ -222,7 +222,11 @@ exports.extract = function extract (cwd, opts) {
         const dst = path.resolve(path.dirname(name), header.linkname)
         if (!inCwd(dst) && validateSymLinks) return next(new Error(name + ' is not a valid symlink'))
 
-        xfs.symlink(header.linkname, name, stat)
+        validateNotSymlink(xfs, dst, path.join(cwd, '.'), function (err, valid) {
+          if (err) return next(err)
+          if (!valid && validateSymLinks) return next(new Error(name + ' is not a valid symlink'))
+          xfs.symlink(header.linkname, name, stat)
+        })
       })
     }
 
@@ -231,7 +235,7 @@ exports.extract = function extract (cwd, opts) {
       xfs.unlink(name, function () {
         const link = path.join(cwd, path.join('/', header.linkname))
 
-        fs.realpath(link, function (err, dst) {
+        xfs.realpath(link, function (err, dst) {
           if (err || !inCwd(dst)) return next(new Error(name + ' is not a valid hardlink'))
 
           xfs.link(dst, name, function (err) {
@@ -318,6 +322,17 @@ exports.extract = function extract (cwd, opts) {
       })
     })
   }
+}
+
+function validateNotSymlink (fs, name, root, cb) {
+  if (name === root) return cb(null, true)
+  if (!name.startsWith(root + path.sep)) return cb(null, false)
+
+  fs.lstat(name, function (err, st) {
+    if (err && err.code !== 'ENOENT' && err.code !== 'EPERM') return cb(err)
+    if (err || !st.isSymbolicLink()) return validateNotSymlink(fs, path.join(name, '..'), root, cb)
+    cb(null, false)
+  })
 }
 
 function validate (fs, name, root, cb) {

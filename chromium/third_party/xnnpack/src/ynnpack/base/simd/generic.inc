@@ -207,6 +207,19 @@ YNN_ALWAYS_INLINE vec<T, N> floor(vec<T, N> a) {
   return {floor(a.lo()), floor(a.hi())};
 }
 template <typename T, size_t N>
+YNN_ALWAYS_INLINE vec<T, N> floor_log2(vec<T, N> a) {
+  return {floor_log2(a.lo()), floor_log2(a.hi())};
+}
+
+template <typename T, size_t N>
+YNN_ALWAYS_INLINE vec<T, N> exp2_round(vec<T, N> a) {
+  return {exp2_round(a.lo()), exp2_round(a.hi())};
+}
+template <typename T, size_t N>
+YNN_ALWAYS_INLINE vec<T, N> copynan(vec<T, N> x, vec<T, N> nan) {
+  return {copynan(x.lo(), nan.lo()), copynan(x.hi(), nan.hi())};
+}
+template <typename T, size_t N>
 YNN_ALWAYS_INLINE vec<T, N> ceil(vec<T, N> a) {
   return {ceil(a.lo()), ceil(a.hi())};
 }
@@ -248,25 +261,9 @@ YNN_ALWAYS_INLINE vec<T, N*2> concat(vec<T, N> a, vec<T, N> b) {
   return {a, b};
 }
 
-template <typename T, size_t N>
-YNN_ALWAYS_INLINE vec<T, N> cast(vec<T, N> from, T) {
-  return from;
-}
 template <typename To, typename From, size_t N>
 YNN_ALWAYS_INLINE vec<To, N> cast(vec<From, N> from, To) {
   return {cast(from.lo(), To()), cast(from.hi(), To())};
-}
-
-template <typename To, typename From, size_t N>
-YNN_ALWAYS_INLINE vec<To, N> saturate_cast(vec<From, N> from, To) {
-  return {saturate_cast(from.lo(), To()),
-          saturate_cast(from.hi(), To())};
-}
-
-template <typename To, typename From, size_t N>
-YNN_ALWAYS_INLINE vec<To, N> round_float_to_int(vec<From, N> from, To) {
-  return {round_float_to_int(from.lo(), To()),
-          round_float_to_int(from.hi(), To())};
 }
 
 template <typename T, size_t N>
@@ -280,6 +277,19 @@ YNN_ALWAYS_INLINE T horizontal_min(vec<T, N> x) {
 template <typename T, size_t N>
 YNN_ALWAYS_INLINE T horizontal_max(vec<T, N> x) {
   return horizontal_max(max(x.lo(), x.hi()));
+}
+
+template <typename T, size_t N>
+YNN_ALWAYS_INLINE void kahan_sum(vec<T, N> a, vec<T, N>& acc,
+                                 vec<T, N>& error) {
+  vec<T, N / 2> acc_lo = acc.lo();
+  vec<T, N / 2> acc_hi = acc.hi();
+  vec<T, N / 2> error_lo = error.lo();
+  vec<T, N / 2> error_hi = error.hi();
+  kahan_sum(a.lo(), acc_lo, error_lo);
+  kahan_sum(a.hi(), acc_hi, error_hi);
+  acc = concat(acc_lo, acc_hi);
+  error = concat(error_lo, error_hi);
 }
 
 }  // namespace simd

@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_HOUSEHOLDER_H
 #define EIGEN_HOUSEHOLDER_H
@@ -18,17 +19,11 @@ namespace Eigen {
 
 namespace internal {
 template <int N>
-struct decrement_size {
-  static constexpr int ret = N - 1;
-};
+struct decrement_size : std::integral_constant<int, N - 1> {};
 template <>
-struct decrement_size<0> {
-  static constexpr int ret = 0;
-};
+struct decrement_size<0> : std::integral_constant<int, 0> {};
 template <>
-struct decrement_size<Dynamic> {
-  static constexpr int ret = Dynamic;
-};
+struct decrement_size<Dynamic> : std::integral_constant<int, Dynamic> {};
 }  // namespace internal
 
 /** Computes the elementary reflector H such that:
@@ -49,7 +44,8 @@ struct decrement_size<Dynamic> {
  */
 template <typename Derived>
 EIGEN_DEVICE_FUNC void MatrixBase<Derived>::makeHouseholderInPlace(Scalar& tau, RealScalar& beta) {
-  VectorBlock<Derived, internal::decrement_size<Base::SizeAtCompileTime>::ret> essentialPart(derived(), 1, size() - 1);
+  VectorBlock<Derived, internal::decrement_size<Base::SizeAtCompileTime>::value> essentialPart(derived(), 1,
+                                                                                               size() - 1);
   makeHouseholder(essentialPart, tau, beta);
 }
 

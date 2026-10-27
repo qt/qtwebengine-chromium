@@ -7,13 +7,14 @@
 #include "ash/constants/webui_url_constants.h"
 #include "ash/public/cpp/shelf_types.h"
 #include "ash/public/cpp/window_properties.h"
+#include "ash/strings/grit/ash_strings.h"
+#include "base/check_deref.h"
 #include "base/functional/callback_helpers.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ash/crostini/crostini_features.h"
 #include "chrome/browser/ash/crostini/crostini_manager.h"
 #include "chrome/browser/ui/webui/ash/crostini_installer/crostini_installer_ui.h"
 #include "chrome/grit/chrome_unscaled_resources.h"
-#include "chrome/grit/generated_resources.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -109,8 +110,9 @@ bool CrostiniInstallerDialog::OnDialogCloseRequested() {
 }
 
 void CrostiniInstallerDialog::OnDialogShown(content::WebUI* webui) {
-  installer_ui_ =
-      static_cast<CrostiniInstallerUI*>(webui->GetController())->GetWeakPtr();
+  auto* controller =
+      &CHECK_DEREF(webui->GetController()->GetAs<CrostiniInstallerUI>());
+  installer_ui_ = controller->GetWeakPtr();
   return SystemWebDialogDelegate::OnDialogShown(webui);
 }
 

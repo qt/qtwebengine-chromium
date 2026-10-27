@@ -97,6 +97,12 @@ class QUICHE_EXPORT TlsServerHandshaker : public TlsHandshaker,
   EncryptionLevel GetEncryptionLevelToSendCryptoDataOfSpace(
       PacketNumberSpace space) const override;
 
+  // Overrides to support cached info after ResetSsl is called in QUIC session.
+  absl::string_view Sni() const override;
+  const SSL_CIPHER* Ciphersuite() const override;
+  absl::string_view Alpn() const override;
+  uint16_t TlsGroupId() const override;
+
   // From QuicCryptoServerStreamBase and TlsHandshaker
   ssl_early_data_reason_t EarlyDataReason() const override;
   bool encryption_established() const override;
@@ -208,9 +214,6 @@ class QUICHE_EXPORT TlsServerHandshaker : public TlsHandshaker,
   void OnSelectCertificateDone(bool ok, bool is_sync, SSLConfig ssl_config,
                                absl::string_view ticket_encryption_key,
                                bool cert_matched_sni) override;
-  bool DoesOnSelectCertificateDoneExpectChains() const override {
-    return use_proof_source_get_cert_chains_;
-  }
 
   void OnComputeSignatureDone(
       bool ok, bool is_sync, std::string signature,
@@ -265,9 +268,7 @@ class QUICHE_EXPORT TlsServerHandshaker : public TlsHandshaker,
     // Close the handle. Cancel the pending signature operation, if any.
     void CloseHandle() override;
 
-    // Delegates to `proof_source_->GetCertChains()` when
-    // `handshaker_->use_proof_source_get_cert_chains()` is true. Otherwise,
-    // delegates to `proof_source_->GetCertChain()`.
+    // Delegates to `proof_source_->GetCertChains()`.
     //
     // Returns `QUIC_SUCCESS` or `QUIC_FAILURE`. Never returns `QUIC_PENDING`.
     QuicAsyncStatus SelectCertificate(
@@ -402,10 +403,6 @@ class QUICHE_EXPORT TlsServerHandshaker : public TlsHandshaker,
   // True if new ALPS codepoint in the ClientHello.
   bool alps_new_codepoint_received_ = false;
 
-  // The value of the reloadable flag `quic_use_proof_source_get_cert_chains` at
-  // the time of construction.
-  const bool use_proof_source_get_cert_chains_;
-
   // nullopt means select cert hasn't started.
   std::optional<QuicAsyncStatus> select_cert_status_;
 
@@ -421,10 +418,13 @@ class QUICHE_EXPORT TlsServerHandshaker : public TlsHandshaker,
   struct CachedSSLInfo {
     bool is_resumption = false;
     bool is_zero_rtt = false;
+    uint16_t tls_group_id = 0;
     ssl_early_data_reason_t early_data_reason = ssl_early_data_unknown;
     // Note SSL_get_current_cipher returns a static allocated pointer and as a
     // result it is safe to cache a raw pointer here.
     const SSL_CIPHER* cipher = nullptr;
+    std::string alpn;
+    std::string sni;
   };
   std::optional<CachedSSLInfo> cached_ssl_info_;
 

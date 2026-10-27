@@ -5,8 +5,15 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_INTEGRATORS_AUTOFILL_AI_AUTOFILL_AI_MANAGER_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_INTEGRATORS_AUTOFILL_AI_AUTOFILL_AI_MANAGER_H_
 
+#include <stddef.h>
+
+#include <memory>
+#include <optional>
+#include <vector>
+
 #include "base/containers/lru_cache.h"
-#include "base/functional/callback_forward.h"
+#include "base/containers/span.h"
+#include "base/memory/raw_ref.h"
 #include "base/memory/weak_ptr.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
 #include "components/autofill/core/browser/field_types.h"
@@ -15,9 +22,10 @@
 #include "components/autofill/core/browser/strike_databases/autofill_ai/autofill_ai_save_strike_database_by_attribute.h"
 #include "components/autofill/core/browser/strike_databases/autofill_ai/autofill_ai_save_strike_database_by_host.h"
 #include "components/autofill/core/browser/strike_databases/autofill_ai/autofill_ai_update_strike_database.h"
-#include "components/autofill/core/browser/suggestions/suggestion_type.h"
 #include "components/autofill/core/common/dense_set.h"
+#include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/unique_ids.h"
+#include "components/strike_database/strike_database_base.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "url/gurl.h"
 
@@ -69,6 +77,8 @@ class AutofillAiManager {
       base::span<const Suggestion> shown_suggestions,
       ukm::SourceId ukm_source_id);
   virtual void OnFormSeen(const FormStructure& form);
+  virtual void OnFormInteracted(const FormStructure& form,
+                                ukm::SourceId ukm_source_id);
   virtual void OnDidFillSuggestion(
       const EntityInstance& entity,
       const FormStructure& form,
@@ -191,6 +201,7 @@ class AutofillAiManager {
       ukm::SourceId ukm_source_id,
       AutofillClient::AutofillAiImportPromptType prompt_type,
       AutofillClient::AutofillAiBubbleResult result,
+      std::optional<EntityInstance> edited_entity,
       const AutofillClient::EntityImportUIContext& ui_context);
 
   // Handles the fallback UI and storage logic when a Wallet save is
@@ -227,6 +238,15 @@ class AutofillAiManager {
   base::LRUCache<FormGlobalId, UserSuggestionInteractionDetails>
       user_suggestion_interactions_per_form_{
           kSuggestionInteractionCacheMaxSize};
+
+  // Tracks the UKM source ID for which the suggestions shown timing metric was
+  // last logged, ensuring it is logged at most once per page.
+  ukm::SourceId last_logged_ukm_source_id_ = ukm::kInvalidSourceId;
+
+  // Tracks the UKM source ID for which the first interaction timing metric was
+  // last logged, ensuring it is logged at most once per page.
+  ukm::SourceId last_logged_ukm_source_id_for_interaction_ =
+      ukm::kInvalidSourceId;
 
   base::WeakPtrFactory<AutofillAiManager> weak_ptr_factory_{this};
 };

@@ -5,22 +5,30 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_METRICS_FORM_EVENTS_CREDIT_CARD_FORM_EVENT_LOGGER_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_METRICS_FORM_EVENTS_CREDIT_CARD_FORM_EVENT_LOGGER_H_
 
-#include <string>
+#include <stddef.h>
+
+#include <optional>
 #include <vector>
 
+#include "base/containers/flat_set.h"
+#include "base/containers/span.h"
 #include "base/memory/raw_ptr.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/autofill_trigger_source.h"
 #include "components/autofill/core/browser/data_manager/personal_data_manager.h"
 #include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/form_structure.h"
+#include "components/autofill/core/browser/form_types.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/metrics/form_events/form_event_logger_base.h"
 #include "components/autofill/core/browser/metrics/form_events/form_events.h"
 #include "components/autofill/core/browser/metrics/payments/card_metadata_metrics.h"
 #include "components/autofill/core/browser/suggestions/payments/payments_suggestion_generator_util.h"
+#include "components/autofill/core/browser/suggestions/suggestion_util.h"
+#include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/signatures.h"
+#include "components/autofill/core/common/unique_ids.h"
 
 namespace autofill {
 
@@ -65,6 +73,10 @@ class CreditCardFormEventLogger : public FormEventLoggerBase {
   // suggestions contains card info retrieval enrolled card.
   // `with_pay_later_tab_suggestion` indicates that whether at least one of the
   // suggestions is for the Pay Later tab.
+  // `with_externally_saved_card` indicates whether at least one of the
+  // suggestions was added through other Google services outside of Chrome.
+  // `with_never_used_card` indicates whether at least one of the suggestions
+  // contains a card that has not been used before.
   // `is_virtual_card_standalone_cvc_field` indicates whether the `suggestions`
   // are fetched for a virtual card standalone CVC field.
   // `metadata_logging_context` contains information about whether any card has
@@ -74,6 +86,8 @@ class CreditCardFormEventLogger : public FormEventLoggerBase {
       bool with_cvc,
       bool with_card_info_retrieval_enrolled,
       bool with_pay_later_tab_suggestion,
+      bool with_externally_saved_card,
+      bool with_never_used_card,
       bool is_virtual_card_standalone_cvc_field,
       CardMetadataLoggingContext metadata_logging_context);
 
@@ -184,7 +198,6 @@ class CreditCardFormEventLogger : public FormEventLoggerBase {
   FormEvent GetCardNumberStatusFormEvent(const CreditCard& credit_card);
   void RecordCardUnmaskFlowEvent(UnmaskAuthFlowType flow,
                                  UnmaskAuthFlowEvent event);
-  bool DoesCardHaveOffer(const CreditCard& credit_card);
   // Returns whether the shown suggestions included a virtual credit card.
   bool DoSuggestionsIncludeVirtualCard();
 
@@ -258,6 +271,22 @@ class CreditCardFormEventLogger : public FormEventLoggerBase {
   // If true, the Save and Fill suggestion has already been logged as accepted
   // and should not be logged again.
   bool has_logged_save_and_fill_suggestion_accepted_ = false;
+  // If true, one of the cards in the suggestions fetched is externally-saved.
+  bool suggestion_contains_externally_saved_card_ = false;
+  // If true, an externally-saved card suggestion shown is logged and should not
+  // be logged again.
+  bool has_logged_suggestion_for_externally_saved_card_shown_ = false;
+  // If true, an externally-saved card suggestion selected is logged and should
+  // not be logged again.
+  bool has_logged_suggestion_for_externally_saved_card_selected_ = false;
+  // If true, one of the cards in the suggestions fetched has never been used.
+  bool suggestion_contains_never_used_card_ = false;
+  // If true, a never used card suggestion shown is logged and should not be
+  // logged again.
+  bool has_logged_suggestion_for_never_used_card_shown_ = false;
+  // If true, a never used card suggestion selected is logged and should not be
+  // logged again.
+  bool has_logged_suggestion_for_never_used_card_selected_ = false;
 
   CardMetadataLoggingContext metadata_logging_context_;
   // Captures the `metadata_logging_context_` at the time of form filling. Used

@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_AUTODIFF_SCALAR_H
 #define EIGEN_AUTODIFF_SCALAR_H
@@ -94,13 +95,13 @@ inline AutoDiffScalar<NewDerType> MakeAutoDiffScalar(const typename NewDerType::
 template <typename DerivativeType>
 class AutoDiffScalar
     : public internal::auto_diff_special_op<
-          DerivativeType, !internal::is_same<typename internal::traits<internal::remove_all_t<DerivativeType>>::Scalar,
-                                             typename NumTraits<typename internal::traits<
-                                                 internal::remove_all_t<DerivativeType>>::Scalar>::Real>::value> {
+          DerivativeType, !std::is_same<typename internal::traits<internal::remove_all_t<DerivativeType>>::Scalar,
+                                        typename NumTraits<typename internal::traits<
+                                            internal::remove_all_t<DerivativeType>>::Scalar>::Real>::value> {
  public:
   typedef internal::auto_diff_special_op<
       DerivativeType,
-      !internal::is_same<
+      !std::is_same<
           typename internal::traits<internal::remove_all_t<DerivativeType>>::Scalar,
           typename NumTraits<typename internal::traits<internal::remove_all_t<DerivativeType>>::Scalar>::Real>::value>
       Base;
@@ -135,8 +136,8 @@ class AutoDiffScalar
 #ifndef EIGEN_PARSED_BY_DOXYGEN
       ,
       std::enable_if_t<
-          internal::is_same<Scalar, typename internal::traits<internal::remove_all_t<OtherDerType>>::Scalar>::value &&
-              internal::is_convertible<OtherDerType, DerType>::value,
+          std::is_same<Scalar, typename internal::traits<internal::remove_all_t<OtherDerType>>::Scalar>::value &&
+              std::is_convertible<OtherDerType, DerType>::value,
           void*> = 0
 #endif
       )
@@ -335,7 +336,7 @@ namespace internal {
 template <typename DerivativeType>
 struct auto_diff_special_op<DerivativeType, true>
 //   : auto_diff_scalar_op<DerivativeType, typename NumTraits<Scalar>::Real,
-//                            is_same<Scalar,typename NumTraits<Scalar>::Real>::value>
+//                            std::is_same<Scalar,typename NumTraits<Scalar>::Real>::value>
 {
   typedef remove_all_t<DerivativeType> DerType;
   typedef typename traits<DerType>::Scalar Scalar;
@@ -445,7 +446,8 @@ inline typename CleanedUpDerType<DerType>::type(max)(const T& x, const AutoDiffS
 template <typename DerType>
 inline
     typename CleanedUpDerType<DerType>::type(min)(const AutoDiffScalar<DerType>& x, const AutoDiffScalar<DerType>& y) {
-  return (x.value() < y.value() ? x : y);
+  // Match std::min / max(ADS, ADS): on tie, return the first argument.
+  return (x.value() <= y.value() ? x : y);
 }
 template <typename DerType>
 inline

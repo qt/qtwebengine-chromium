@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_CONVERSION_H
-#define EIGEN_CXX11_TENSOR_TENSOR_CONVERSION_H
+#ifndef EIGEN_TENSOR_TENSOR_CONVERSION_H
+#define EIGEN_TENSOR_TENSOR_CONVERSION_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -156,7 +157,7 @@ struct PacketConverter<TensorEvaluator, SrcPacket, TgtPacket, 1, TgtCoeffRatio> 
 };
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Tensor conversion class. This class makes it possible to vectorize
  * type casting operations when the number of scalars per packet in the source
@@ -304,7 +305,7 @@ struct TensorEvaluator<const TensorConversionOp<TargetType, ArgType>, Device> {
   typedef typename PacketType<CoeffReturnType, Device>::type PacketReturnType;
   typedef typename PacketType<SrcType, Device>::type PacketSourceType;
   static constexpr int PacketSize = PacketType<CoeffReturnType, Device>::size;
-  static constexpr bool IsSameType = internal::is_same<TargetType, SrcType>::value;
+  static constexpr bool IsSameType = std::is_same<TargetType, SrcType>::value;
   typedef StorageMemory<CoeffReturnType, Device> Storage;
   typedef typename Storage::Type EvaluatorPointerType;
 
@@ -373,9 +374,10 @@ struct TensorEvaluator<const TensorConversionOp<TargetType, ArgType>, Device> {
     // If we are not going to do the cast, we just need to check that base
     // TensorEvaluator has packet access. Otherwise we also need to make sure,
     // that we have an implementation of vectorized cast.
-    const bool Vectorizable = IsSameType ? TensorEvaluator<ArgType, Device>::PacketAccess
-                                         : int(TensorEvaluator<ArgType, Device>::PacketAccess) &
-                                               int(internal::type_casting_traits<SrcType, TargetType>::VectorizedCast);
+    constexpr bool Vectorizable = IsSameType
+                                      ? TensorEvaluator<ArgType, Device>::PacketAccess
+                                      : int(TensorEvaluator<ArgType, Device>::PacketAccess) &
+                                            int(internal::type_casting_traits<SrcType, TargetType>::VectorizedCast);
 
     return internal::PacketConv<PacketSourceType, PacketReturnType, LoadMode, Vectorizable, IsSameType>::run(m_impl,
                                                                                                              index);
@@ -399,6 +401,15 @@ struct TensorEvaluator<const TensorConversionOp<TargetType, ArgType>, Device> {
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorBlock block(TensorBlockDesc& desc, TensorBlockScratch& scratch,
                                                           bool /*root_of_expr_ast*/ = false) const {
+    // The forwarded destination buffer is sized for TargetType (the assign
+    // LHS); the child block evaluator below us writes SrcType. When the cast
+    // is non-degenerate the buffer would be misinterpreted by any
+    // block-materializing child's prepareStorage (assert in debug, corruption
+    // in release). Drop the buffer; the child falls back to scratch and
+    // writeBlock still lands the cast values in the LHS.
+    if (!IsSameType) {
+      desc.DropDestinationBuffer();
+    }
     return TensorBlock(m_impl.block(desc, scratch), TensorConversionOpBlockFactory());
   }
 
@@ -413,4 +424,4 @@ struct TensorEvaluator<const TensorConversionOp<TargetType, ArgType>, Device> {
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_CONVERSION_H
+#endif  // EIGEN_TENSOR_TENSOR_CONVERSION_H

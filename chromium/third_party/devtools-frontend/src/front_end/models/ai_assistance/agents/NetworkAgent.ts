@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import * as Common from '../../../core/common/common.js';
 import * as Host from '../../../core/host/host.js';
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Root from '../../../core/root/root.js';
@@ -116,7 +117,7 @@ export class RequestContext extends ConversationContext<SDK.NetworkRequest.Netwo
    * inspect all network requests that were made for that given target URL.
    */
   override getOrigin(): string {
-    return this.#request.documentURL;
+    return Common.ParsedURL.ParsedURL.extractOrigin(this.#request.documentURL);
   }
 
   override getItem(): SDK.NetworkRequest.NetworkRequest {
@@ -161,6 +162,12 @@ export class NetworkAgent extends AiAgent<SDK.NetworkRequest.NetworkRequest> {
     yield {
       type: ResponseType.CONTEXT,
       details: await createContextDetailsForNetworkAgent(selectedNetworkRequest),
+      widgets: [{
+        name: 'NETWORK_REQUEST_GENERAL_HEADERS',
+        data: {
+          request: selectedNetworkRequest.getItem(),
+        },
+      }],
     };
   }
 

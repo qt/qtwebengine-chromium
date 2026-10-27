@@ -95,6 +95,7 @@ class CAPTURE_EXPORT VideoCaptureDeviceClient
       base::TimeTicks reference_time,
       base::TimeDelta timestamp,
       std::optional<base::TimeTicks> capture_begin_timestamp,
+      const gfx::Size& natural_size,
       const std::optional<VideoFrameMetadata>& metadata,
       int frame_feedback_id) override;
 
@@ -105,6 +106,7 @@ class CAPTURE_EXPORT VideoCaptureDeviceClient
       base::TimeTicks reference_time,
       base::TimeDelta timestamp,
       std::optional<base::TimeTicks> capture_begin_timestamp,
+      const gfx::Size& natural_size,
       const std::optional<VideoFrameMetadata>& metadata,
       int frame_feedback_id);
   void OnIncomingCapturedExternalBuffer(
@@ -113,6 +115,7 @@ class CAPTURE_EXPORT VideoCaptureDeviceClient
       base::TimeDelta timestamp,
       std::optional<base::TimeTicks> capture_begin_timestamp,
       const gfx::Rect& visible_rect,
+      const gfx::Size& natural_size,
       const std::optional<VideoFrameMetadata>& metadata) override;
   ReserveResult ReserveOutputBuffer(const gfx::Size& dimensions,
                                     VideoPixelFormat format,
@@ -151,6 +154,7 @@ class CAPTURE_EXPORT VideoCaptureDeviceClient
       base::TimeDelta timestamp,
       std::optional<base::TimeTicks> capture_begin_timestamp,
       const gfx::Rect& visible_rect,
+      const gfx::Size& natural_size,
       const std::optional<VideoFrameMetadata>& metadata,
       ReadyFrameInBuffer* ready_buffer);
 

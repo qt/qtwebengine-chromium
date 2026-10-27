@@ -23,9 +23,7 @@
 namespace syncval {
 
 AcquiredImage::AcquiredImage(const PresentedImage& presented, ResourceUsageTag acq_tag)
-    : image(presented.image), generator(presented.range_gen), present_tag(presented.tag), acquire_tag(acq_tag) {}
-
-bool AcquiredImage::Invalid() const { return vvl::StateObject::Invalid(image); }
+    : image(presented.image), generator(presented.range_gen), acquire_tag(acq_tag), present_tag(presented.tag) {}
 
 SignalInfo::SignalInfo(const std::shared_ptr<const vvl::Semaphore>& semaphore_state, const BatchContextPtr& batch,
                        const SyncExecScope& exec_scope, uint64_t timeline_value)
@@ -73,13 +71,6 @@ bool SignalsUpdate::OnTimelineSignal(const vvl::Semaphore& semaphore_state, cons
     // Reject invalid signal
     if (!signals.empty() && submit_signal.value <= signals.back().timeline_value) {
         return false;  // [core validation check]: strictly increasing signal values
-    }
-
-    // Do not register signal for external semaphore - external wait-before-signals are skipped
-    // since there is no guarantee we can track the signal. Because of that it's possible that
-    // signals have no way to be released (resolving waits can be wait-before-signals and are skipped)
-    if (semaphore_state.Scope() != vvl::Semaphore::Scope::kInternal) {
-        return false;
     }
 
     // Register signal
@@ -472,6 +463,7 @@ void QueueBatchContext::ResolvePresentSemaphoreWait(const SignalInfo& signal_inf
                 const ApplySemaphoreBarrierAction noop_sem_op(signal_scope, noop_semaphore_scope);
                 access_context_.ResolveFromContext(noop_sem_op, from_context);
             }
+            last_synchronized_present.Merge(signal_info.batch->last_synchronized_present);
         }
     }
 }
@@ -711,9 +703,6 @@ std::vector<BatchContextPtr> QueueBatchContext::ResolveSubmitWaits(vvl::span<con
                 } else {
                     // Do not register wait-before-signal for external semaphore.
                     // We might not be able to track the signal. Just assume that wait is satified.
-                    // TODO: current support for external semaphores ensures resources are not
-                    // leaked. It is still possible to get false-positives. Improve how to silence
-                    // validation when signal cannot be tracked properly.
                     continue;
                 }
             }
@@ -801,10 +790,6 @@ void QueueState::SetLastBatch(BatchContextPtr&& last) {
         last->Trim();
         last_batch_ = std::move(last);
     }
-}
-
-void QueueState::SetUnresolvedBatches(std::vector<UnresolvedBatch>&& unresolved_batches) {
-    unresolved_batches_ = std::move(unresolved_batches);
 }
 
 void BatchAccessLog::Import(const BatchRecord& batch, const CommandBufferAccessContext& cb_access,
@@ -929,10 +914,12 @@ PresentedImage::PresentedImage(std::shared_ptr<vvl::Swapchain>&& swapchain, uint
 bool PresentedImage::Invalid() const { return vvl::StateObject::Invalid(image); }
 
 // Export uses move semantics...
-void PresentedImage::ExportToSwapchain(SyncValidator&) {  // Include this argument to prove the const cast is safe
+void PresentedImage::ExportToSwapchain() {
     // If the swapchain is dead just ignore the present
     auto swap_lock = swapchain_state.lock();
-    if (vvl::StateObject::Invalid(swap_lock)) return;
+    if (vvl::StateObject::Invalid(swap_lock)) {
+        return;
+    }
     auto& sub_state = SubState(*swap_lock);
     sub_state.RecordPresentedImage(std::move(*this));
 }
@@ -941,7 +928,9 @@ void PresentedImage::SetImage(uint32_t at_index) {
     image_index = at_index;
 
     auto swap_lock = swapchain_state.lock();
-    if (vvl::StateObject::Invalid(swap_lock)) return;
+    if (vvl::StateObject::Invalid(swap_lock)) {
+        return;
+    }
 
     image = std::static_pointer_cast<const vvl::Image>(swap_lock->GetSwapChainImageShared(image_index));
     if (Invalid()) {

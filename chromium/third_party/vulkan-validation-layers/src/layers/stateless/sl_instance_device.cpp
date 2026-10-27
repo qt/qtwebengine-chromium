@@ -16,11 +16,13 @@
  * limitations under the License.
  */
 
+#include <sstream>
 #include "generated/vk_extension_helper.h"
 #include "stateless/stateless_validation.h"
 #include "generated/enum_flag_bits.h"
 #include "generated/dispatch_functions.h"
 #include "containers/container_utils.h"
+#include "utils/image_utils.h"
 
 namespace stateless {
 // Traits objects to allow string_join to operate on collections of const char *
@@ -36,48 +38,10 @@ struct StringJoinSizeTrait<const char*> {
         return strlen(str);
     }
 };
-// Similar to perl/python join
-//    * String must support size, reserve, append, and be default constructable
-//    * StringCollection must support size, const forward iteration, and store
-//      strings compatible with String::append
-//    * Accessor trait can be set if default accessors (compatible with string
-//      and const char *) don't support size(StringCollection::value_type &)
-//
-// Return type based on sep type
-template <typename String = std::string, typename StringCollection = std::vector<String>,
-          typename Accessor = StringJoinSizeTrait<typename StringCollection::value_type>>
-static inline String string_join(const String& sep, const StringCollection& strings) {
-    String joined;
-    const size_t count = strings.size();
-    if (!count) return joined;
-
-    // Prereserved storage, s.t. we will execute in linear time (avoids reallocation copies)
-    size_t reserve = (count - 1) * sep.size();
-    for (const auto& str : strings) {
-        reserve += Accessor::size(str);  // abstracted to allow const char * type in StringCollection
-    }
-    joined.reserve(reserve + 1);
-
-    // Seps only occur *between* strings entries, so first is special
-    auto current = strings.cbegin();
-    joined.append(*current);
-    ++current;
-    for (; current != strings.cend(); ++current) {
-        joined.append(sep);
-        joined.append(*current);
-    }
-    return joined;
-}
-
-// Requires StringCollection::value_type has a const char * constructor and is compatible the string_join::String above
-template <typename StringCollection = std::vector<std::string>, typename SepString = std::string>
-static inline SepString string_join(const char* sep, const StringCollection& strings) {
-    return string_join<SepString, StringCollection>(SepString(sep), strings);
-}
 
 template <typename ExtensionState>
-bool Instance::ValidateExtensionReqs(const ExtensionState& extensions, const char* vuid, const char* extension_type,
-                                     vvl::Extension extension, const Location& extension_loc) const {
+bool Instance::ValidateExtensionReqs(const ExtensionState& extensions, bool is_instance, vvl::Extension extension,
+                                     const Location& extension_loc) const {
     bool skip = false;
     if (extension == vvl::Extension::Empty) {
         return skip;
@@ -96,12 +60,35 @@ bool Instance::ValidateExtensionReqs(const ExtensionState& extensions, const cha
         }
     }
 
-    // Report any missing requirements
-    if (missing.size()) {
-        std::string missing_joined_list = string_join(", ", missing);
-        skip |= LogError(vuid, instance, extension_loc, "Missing extension%s required by the %s extension %s: %s.",
-                         ((missing.size() > 1) ? "s" : ""), extension_type, String(extension), missing_joined_list.c_str());
+    if (missing.empty()) {
+        return skip;
     }
+
+    // Provide a better error message if instance or device (since device can depend on instance level extensions)
+    if (is_instance) {
+        std::ostringstream ss;
+        ss << "Missing extension" << ((missing.size() > 1) ? "s" : "") << " required to enable instance extension "
+           << String(extension) << ":\n";
+        for (auto missing_name : missing) {
+            ss << " - " << missing_name << "\n";
+        }
+        skip |= LogError("VUID-vkCreateInstance-ppEnabledExtensionNames-01388", instance, extension_loc, "%s", ss.str().c_str());
+
+    } else {
+        std::ostringstream ss;
+        ss << "Missing extension" << ((missing.size() > 1) ? "s" : "") << " required to enable device extension "
+           << String(extension) << ":\n";
+        for (auto missing_name : missing) {
+            ss << " - " << missing_name;
+            vvl::Extension missing_extension = GetExtension(missing_name);
+            if (IsInstanceExtension(missing_extension)) {
+                ss << " (instance extension, which needs to be added to VkInstanceCreateInfo::ppEnabledExtensionNames)";
+            }
+            ss << '\n';
+        }
+        skip |= LogError("VUID-vkCreateDevice-ppEnabledExtensionNames-01387", instance, extension_loc, "%s", ss.str().c_str());
+    }
+
     return skip;
 }
 
@@ -180,8 +167,7 @@ bool Instance::PreCallValidateCreateInstance(const VkInstanceCreateInfo* pCreate
 
     for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
         vvl::Extension extension = GetExtension(pCreateInfo->ppEnabledExtensionNames[i]);
-        skip |= ValidateExtensionReqs(instance_extensions, "VUID-vkCreateInstance-ppEnabledExtensionNames-01388", "instance",
-                                      extension, create_info_loc.dot(Field::ppEnabledExtensionNames, i));
+        skip |= ValidateExtensionReqs(instance_extensions, true, extension, create_info_loc.dot(Field::ppEnabledExtensionNames, i));
     }
     if (pCreateInfo->flags & VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR &&
         !instance_extensions.vk_khr_portability_enumeration) {
@@ -391,8 +377,7 @@ bool Instance::manual_PreCallValidateCreateDevice(VkPhysicalDevice physicalDevic
         skip |= context.ValidateString(create_info_loc.dot(Field::ppEnabledExtensionNames),
                                        "VUID-VkDeviceCreateInfo-ppEnabledExtensionNames-parameter",
                                        pCreateInfo->ppEnabledExtensionNames[i]);
-        skip |= ValidateExtensionReqs(extensions, "VUID-vkCreateDevice-ppEnabledExtensionNames-01387", "device", extension,
-                                      create_info_loc.dot(Field::ppEnabledExtensionNames, i));
+        skip |= ValidateExtensionReqs(extensions, false, extension, create_info_loc.dot(Field::ppEnabledExtensionNames, i));
         if (extension == vvl::Extension::_VK_KHR_portability_subset) {
             portability_requested = true;
         }
@@ -824,19 +809,6 @@ bool Instance::manual_PreCallValidateCreateDevice(VkPhysicalDevice physicalDevic
         }
     }
 
-    if (const auto* device_address_commands_features =
-            vku::FindStructInPNextChain<VkPhysicalDeviceDeviceAddressCommandsFeaturesKHR>(pCreateInfo->pNext)) {
-        if (const auto* acceleration_structure_features =
-                vku::FindStructInPNextChain<VkPhysicalDeviceAccelerationStructureFeaturesKHR>(pCreateInfo->pNext)) {
-            if (device_address_commands_features->deviceAddressCommands &&
-                acceleration_structure_features->accelerationStructureHostCommands) {
-                skip |= LogError("VUID-VkDeviceCreateInfo-deviceAddressCommands-13048", physicalDevice, error_obj.location,
-                                 "Cannot enable deviceAddressCommands and accelerationStructureHostCommands features "
-                                 "simultaneously.");
-            }
-        }
-    }
-
     if (const auto* shader_image_atomic_int64_features =
             vku::FindStructInPNextChain<VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT>(pCreateInfo->pNext)) {
         if (shader_image_atomic_int64_features->sparseImageInt64Atomics &&
@@ -909,16 +881,16 @@ bool Instance::manual_PreCallValidateGetPhysicalDeviceImageFormatProperties2(
 
     if (pImageFormatInfo != nullptr) {
         const Location format_info_loc = error_obj.location.dot(Field::pImageFormatInfo);
-        const auto image_stencil_struct = vku::FindStructInPNextChain<VkImageStencilUsageCreateInfo>(pImageFormatInfo->pNext);
-        if (image_stencil_struct != nullptr) {
-            if ((image_stencil_struct->stencilUsage & VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT) != 0) {
+        const auto stencil_usage = GetImageStencilUsageFlags(pImageFormatInfo->pNext);
+        if (stencil_usage.has_value()) {
+            if ((stencil_usage.value() & VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT) != 0) {
                 VkImageUsageFlags legal_flags = (VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
                 // No flags other than the legal attachment bits may be set
                 legal_flags |= VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
-                if ((image_stencil_struct->stencilUsage & ~legal_flags) != 0) {
+                if ((stencil_usage.value() & ~legal_flags) != 0) {
                     skip |= LogError("VUID-VkImageStencilUsageCreateInfo-stencilUsage-02539", physicalDevice,
                                      format_info_loc.pNext(Struct::VkImageStencilUsageCreateInfo, Field::stencilUsage), "is %s.",
-                                     string_VkImageUsageFlags(image_stencil_struct->stencilUsage).c_str());
+                                     string_VkImageUsageFlags(stencil_usage.value()).c_str());
                 }
             }
         }
@@ -934,11 +906,24 @@ bool Instance::manual_PreCallValidateGetPhysicalDeviceImageFormatProperties2(
             }
             if (image_drm_format->sharingMode == VK_SHARING_MODE_CONCURRENT) {
                 if (image_drm_format->queueFamilyIndexCount <= 1) {
-                    skip |=
-                        LogError("VUID-VkPhysicalDeviceImageDrmFormatModifierInfoEXT-sharingMode-02315", physicalDevice,
-                                 format_info_loc.pNext(Struct::VkPhysicalDeviceImageDrmFormatModifierInfoEXT, Field::sharingMode),
-                                 "is VK_SHARING_MODE_CONCURRENT, but queueFamilyIndexCount is %" PRIu32 ".",
-                                 image_drm_format->queueFamilyIndexCount);
+                    // The VU says the feature, but really is the extension. Some drivers will ignore vkGetPhysicalDeviceProperties2
+                    // pNext structs if the extension is not enabled
+                    if (IsExtSupported(extensions.vk_khr_maintenance11)) {
+                        if (image_drm_format->queueFamilyIndexCount == 0) {
+                            skip |= LogError(
+                                "VUID-VkPhysicalDeviceImageDrmFormatModifierInfoEXT-maintenance11-13351", physicalDevice,
+                                format_info_loc.pNext(Struct::VkPhysicalDeviceImageDrmFormatModifierInfoEXT, Field::sharingMode),
+                                "is VK_SHARING_MODE_CONCURRENT, but queueFamilyIndexCount is 0 (needs to be at least 1).");
+                        }
+                    } else if (image_drm_format->queueFamilyIndexCount <= 1) {
+                        skip |= LogError(
+                            "VUID-VkPhysicalDeviceImageDrmFormatModifierInfoEXT-sharingMode-02315", physicalDevice,
+                            format_info_loc.pNext(Struct::VkPhysicalDeviceImageDrmFormatModifierInfoEXT, Field::sharingMode),
+                            "is VK_SHARING_MODE_CONCURRENT, but queueFamilyIndexCount is %" PRIu32
+                            " (Needs to be at least 2)\nHint: queueFamilyIndexCount can be 1 if the VK_KHR_maintenance11 extension "
+                            "is supported on the device.",
+                            image_drm_format->queueFamilyIndexCount);
+                    }
                 } else if (!image_drm_format->pQueueFamilyIndices) {
                     skip |= LogError(
                         "VUID-VkPhysicalDeviceImageDrmFormatModifierInfoEXT-sharingMode-02314", physicalDevice,
@@ -975,7 +960,7 @@ bool Instance::manual_PreCallValidateGetPhysicalDeviceImageFormatProperties2(
             if (pImageFormatInfo->tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
                 skip |= LogError("VUID-VkPhysicalDeviceImageFormatInfo2-tiling-02249", physicalDevice,
                                  format_info_loc.dot(Field::tiling),
-                                 "is VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT, but pNext chain not include "
+                                 "is VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT, but pNext chain does not include "
                                  "VkPhysicalDeviceImageDrmFormatModifierInfoEXT.\n%s",
                                  PrintPNextChain(Struct::VkPhysicalDeviceImageFormatInfo2, pImageFormatInfo->pNext).c_str());
             }

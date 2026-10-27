@@ -39,11 +39,15 @@ FeatureStatus GetLanguageFeatureStatus(LanguageFeature f) {
         case LanguageFeature::kSizedBindingArray:
         case LanguageFeature::kTexelBuffers:
         case LanguageFeature::kFragmentDepth:
-        case LanguageFeature::kImmediateAddressSpace:
         case LanguageFeature::kBufferView:
-        case LanguageFeature::kFilteringParameters:
         case LanguageFeature::kSwizzleAssignment:
             return FeatureStatus::kUnsafeExperimental;
+
+            ////////////////////////////////////////////////////////////////////
+            // Shipped with killswitch features
+            ///////////////////////////////////////////////////////////////////
+        case LanguageFeature::kImmediateAddressSpace:
+            return FeatureStatus::kShippedWithKillswitch;
 
             ////////////////////////////////////////////////////////////////////
             // Chromium developer features

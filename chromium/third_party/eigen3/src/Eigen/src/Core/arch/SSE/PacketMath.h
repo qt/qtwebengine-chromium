@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_PACKET_MATH_SSE_H
 #define EIGEN_PACKET_MATH_SSE_H
@@ -55,36 +56,22 @@ typedef eigen_packet_wrapper<__m128i, 4> Packet4ui;
 typedef eigen_packet_wrapper<__m128i, 5> Packet2l;
 
 template <>
-struct is_arithmetic<__m128> {
-  enum { value = true };
-};
+struct is_arithmetic<__m128> : std::true_type {};
 template <>
-struct is_arithmetic<__m128i> {
-  enum { value = true };
-};
+struct is_arithmetic<__m128i> : std::true_type {};
 template <>
-struct is_arithmetic<__m128d> {
-  enum { value = true };
-};
+struct is_arithmetic<__m128d> : std::true_type {};
 template <>
-struct is_arithmetic<Packet4i> {
-  enum { value = true };
-};
+struct is_arithmetic<Packet4i> : std::true_type {};
 template <>
-struct is_arithmetic<Packet2l> {
-  enum { value = true };
-};
+struct is_arithmetic<Packet2l> : std::true_type {};
 // Note that `Packet4ui` uses the underlying type `__m128i`, which is
 // interpreted as a vector of _signed_ `int32`s, which breaks some arithmetic
 // operations used in `GenericPacketMath.h`.
 template <>
-struct is_arithmetic<Packet4ui> {
-  enum { value = false };
-};
+struct is_arithmetic<Packet4ui> : std::false_type {};
 template <>
-struct is_arithmetic<Packet16b> {
-  enum { value = true };
-};
+struct is_arithmetic<Packet16b> : std::true_type {};
 
 template <int p, int q, int r, int s>
 struct shuffle_mask {
@@ -385,13 +372,9 @@ struct unpacket_traits<Packet16b> {
 
 #ifndef EIGEN_VECTORIZE_AVX
 template <>
-struct scalar_div_cost<float, true> {
-  enum { value = 7 };
-};
+struct scalar_div_cost<float, true> : std::integral_constant<int, 7> {};
 template <>
-struct scalar_div_cost<double, true> {
-  enum { value = 8 };
-};
+struct scalar_div_cost<double, true> : std::integral_constant<int, 8> {};
 #endif
 
 template <>
@@ -1816,15 +1799,15 @@ EIGEN_STRONG_INLINE Packet2d pldexp<Packet2d>(const Packet2d& a, const Packet2d&
   // Convert e to integer and swizzle to low-order bits.
   const Packet4i ei = vec4i_swizzle1(_mm_cvtpd_epi32(e), 0, 3, 1, 3);
 
-  // Split 2^e into four factors and multiply:
+  // 4-way split + depth-3 multiply tree; see pldexp_generic for derivation.
   const Packet4i bias = _mm_set_epi32(0, 1023, 0, 1023);
-  Packet4i b = parithmetic_shift_right<2>(ei);                       // floor(e/4)
-  Packet2d c = _mm_castsi128_pd(_mm_slli_epi64(padd(b, bias), 52));  // 2^b
-  Packet2d out = pmul(pmul(pmul(a, c), c), c);                       // a * 2^(3b)
-  b = psub(psub(psub(ei, b), b), b);                                 // e - 3b
-  c = _mm_castsi128_pd(_mm_slli_epi64(padd(b, bias), 52));           // 2^(e - 3b)
-  out = pmul(out, c);                                                // a * 2^e
-  return out;
+  const Packet4i b = parithmetic_shift_right<2>(ei);                                  // floor(e/4)
+  const Packet4i b_remainder = psub(psub(ei, b), padd(b, b));                         // e - 3b (depth 2)
+  const Packet2d c1 = _mm_castsi128_pd(_mm_slli_epi64(padd(b, bias), 52));            // 2^b
+  const Packet2d c2 = _mm_castsi128_pd(_mm_slli_epi64(padd(b_remainder, bias), 52));  // 2^(e - 3b)
+  const Packet2d c1_squared = pmul(c1, c1);
+  const Packet2d a_c1 = pmul(a, c1);
+  return pmul(pmul(a_c1, c1_squared), c2);  // a * 2^e
 }
 
 // We specialize pldexp here, since the generic implementation uses Packet2l, which is not well

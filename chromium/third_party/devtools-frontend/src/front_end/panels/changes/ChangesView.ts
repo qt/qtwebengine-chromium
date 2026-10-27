@@ -6,15 +6,13 @@ import '../../ui/legacy/legacy.js';
 
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
-import * as GreenDev from '../../models/greendev/greendev.js';
 import type * as Workspace from '../../models/workspace/workspace.js';
 import * as WorkspaceDiff from '../../models/workspace_diff/workspace_diff.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Lit from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
-import * as PanelsCommon from '../common/common.js';
 
-import {ChangesSidebar, Events} from './ChangesSidebar.js';
+import {ChangesSidebar} from './ChangesSidebar.js';
 import changesViewStyles from './changesView.css.js';
 import * as CombinedDiffView from './CombinedDiffView.js';
 
@@ -41,15 +39,8 @@ interface ViewInput {
   onSelect(sourceCode: Workspace.UISourceCode.UISourceCode|null): void;
   workspaceDiff: WorkspaceDiff.WorkspaceDiff.WorkspaceDiffImpl;
 }
-type View = (input: ViewInput, output: object, target: HTMLElement) => void;
+type View = (input: ViewInput, output: object, target: DocumentFragment) => void;
 export const DEFAULT_VIEW: View = (input, _output, target) => {
-  const onSidebar = (sidebar: ChangesSidebar): void => {
-    sidebar.addEventListener(
-        Events.SELECTED_UI_SOURCE_CODE_CHANGED, () => input.onSelect(sidebar.selectedUISourceCode()));
-  };
-
-  const hasCopyToPrompt = GreenDev.Prototypes.instance().isEnabled('copyToGemini');
-
   render(
       // clang-format off
       html`
@@ -70,33 +61,25 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
                 workspaceDiff: input.workspaceDiff
             })}
           </div>
-          ${hasCopyToPrompt ? html`
-            <devtools-widget class="copy-to-prompt"
-              ${widget(PanelsCommon.CopyChangesToPrompt, {
-                workspaceDiff: input.workspaceDiff,
-                patchAgentCSSChange: null,
-              })}
-            ></devtools-widget>
-          ` : Lit.nothing}
         </div>
         <devtools-widget slot="sidebar" ${widget(ChangesSidebar, {workspaceDiff: input.workspaceDiff})}
-          ${UI.Widget.widgetRef(ChangesSidebar, onSidebar)}>
+          @SelectedUISourceCodeChanged=${(e: Event) => {
+            const sidebar = UI.Widget.Widget.get(e.target as HTMLElement) as ChangesSidebar;
+            input.onSelect(sidebar.selectedUISourceCode());
+          }}>
         </devtools-widget>
       </devtools-split-view>`,
       // clang-format on
-      target);
+      target, {container: {attributes: {jslog: `${VisualLogging.panel('changes').track({resize: true})}`}}});
 };
 
-export class ChangesView extends UI.Widget.VBox {
+export class ChangesView extends UI.Widget.VBox<ShadowRoot> {
   readonly #workspaceDiff: WorkspaceDiff.WorkspaceDiff.WorkspaceDiffImpl;
   #selectedUISourceCode: Workspace.UISourceCode.UISourceCode|null = null;
   readonly #view: View;
 
   constructor(target?: HTMLElement, view = DEFAULT_VIEW) {
-    super(target, {
-      jslog: `${VisualLogging.panel('changes').track({resize: true})}`,
-      useShadowDom: true,
-    });
+    super(target, {useShadowDom: 'pure'});
 
     this.#workspaceDiff = WorkspaceDiff.WorkspaceDiff.workspaceDiff();
     this.#view = view;

@@ -119,6 +119,8 @@ class Format final : private angle::NonCopyable
                                                          : mTextureLoadFunctions(type);
     }
 
+    static LoadFunctionMap GetRGB565TextureLoadFunction(const Renderer *renderer);
+
     // The actual Buffer format is used to implement the front-end format for Buffers.  This format
     // is used by vertex buffers as well as texture buffers.  Note that all formats required for
     // GL_EXT_texture_buffer have mandatory support for vertex buffers in Vulkan, so they won't be
@@ -265,6 +267,13 @@ VkImageCreateFlags GetMinimalImageCreateFlags(Renderer *renderer,
 bool HasFullTextureFormatSupport(vk::Renderer *renderer, angle::FormatID formatID);
 // Checks if a Vulkan format supports all the features except rendering.
 bool HasNonRenderableTextureFormatSupport(vk::Renderer *renderer, angle::FormatID formatID);
+// Checks if a Vulkan format supports all the features needed for a non-filterable texture.
+bool HasNonFilterableTextureFormatSupport(vk::Renderer *renderer, angle::FormatID formatID);
+// Checks if a Vulkan format supports all the features needed for a sample-only (no filtering, no
+// rendering) texture.
+bool HasSampleOnlyTextureFormatSupport(vk::Renderer *renderer, angle::FormatID formatID);
+// Checks if a format supports filtering.
+bool IsFilterableFormat(const angle::Format &format);
 // Checks if it is a ETC texture format
 bool IsETCFormat(angle::FormatID formatID);
 // Checks if it is an ASTC texture format

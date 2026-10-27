@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/webui/webui_toolbar/utils/toolbar_button_utils.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/web_contents.h"
+#include "url/url_constants.h"
 
 namespace browser_controls_api {
 
@@ -46,13 +47,20 @@ void BrowserControlsAdapterImpl::Forward(WindowOpenDisposition disposition) {
 }
 
 void BrowserControlsAdapterImpl::BackButtonHovered() {
-  browser_.get().GetActiveTabInterface()->GetContents()->BackNavigationLikely(
-      chrome_preloading_predictor::kBackButtonHover,
-      WindowOpenDisposition::CURRENT_TAB);
+  auto* const active_tab = browser_.get().GetActiveTabInterface();
+  if (!active_tab) {
+    return;
+  }
+  auto* const contents = active_tab->GetContents();
+  if (!contents) {
+    return;
+  }
+  contents->BackNavigationLikely(chrome_preloading_predictor::kBackButtonHover,
+                                 WindowOpenDisposition::CURRENT_TAB);
 }
 
 void BrowserControlsAdapterImpl::CreateNewSplitTab() {
-  chrome::NewSplitTab(&browser_.get(),
+  chrome::NewSplitTab(&browser_.get(), split_tabs::SplitTabLayout::kSideBySide,
                       split_tabs::SplitTabCreatedSource::kToolbarButton);
 }
 
@@ -61,14 +69,19 @@ void BrowserControlsAdapterImpl::NavigateHome(
   command_updater_->ExecuteCommandWithDisposition(IDC_HOME, disposition);
 }
 
+void BrowserControlsAdapterImpl::Navigate(const GURL& url) {
+  // Block javascript: URLs to prevent XSS / Self-XSS from dragged links.
+  if (url.SchemeIs(url::kJavaScriptScheme)) {
+    browser_.get().OpenGURL(GURL("about:blank#blocked"),
+                            WindowOpenDisposition::CURRENT_TAB);
+    return;
+  }
+  browser_.get().OpenGURL(url, WindowOpenDisposition::CURRENT_TAB);
+}
+
 webui_toolbar::TabSplitStatus
 BrowserControlsAdapterImpl::ComputeSplitTabStatus() {
   return webui_toolbar::ComputeTabSplitStatus(&browser_.get());
-}
-
-bool BrowserControlsAdapterImpl::IsButtonPinned(
-    toolbar_ui_api::mojom::ToolbarButtonType type) {
-  return webui_toolbar::IsButtonPinned(&browser_.get(), type);
 }
 
 }  // namespace browser_controls_api

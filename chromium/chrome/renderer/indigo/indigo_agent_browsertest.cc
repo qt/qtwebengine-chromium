@@ -42,20 +42,34 @@ class MockIndigoAgentHost : public chrome::mojom::IndigoAgentHost {
   }
 
   bool WaitForReplacementStarted() { return replacement_started_.Wait(); }
+  bool WaitForInvokeError() { return invoke_error_future_.Wait(); }
 
   // chrome::mojom::IndigoAgentHost:
   void StartImageReplacement(
       mojo::PendingRemote<blink::mojom::ImageReplacement> replacement,
+      bool is_primary,
       StartImageReplacementCallback callback) override {
+    last_is_primary_ = is_primary;
     replacements_.Add(std::move(replacement));
     replacement_started_.SetValue();
     std::move(callback).Run();
   }
 
+  void ReportInvokeError() override {
+    invoke_error_reported_ = true;
+    invoke_error_future_.SetValue();
+  }
+
+  bool last_is_primary() const { return last_is_primary_; }
+  bool invoke_error_reported() const { return invoke_error_reported_; }
+
  private:
   mojo::AssociatedReceiver<chrome::mojom::IndigoAgentHost> receiver_{this};
   mojo::RemoteSet<blink::mojom::ImageReplacement> replacements_;
   base::test::TestFuture<void> replacement_started_;
+  base::test::TestFuture<void> invoke_error_future_;
+  bool last_is_primary_ = false;
+  bool invoke_error_reported_ = false;
 };
 
 class IndigoAgentBrowserTest : public ChromeRenderViewTest {
@@ -95,7 +109,7 @@ class IndigoAgentBrowserTest : public ChromeRenderViewTest {
         frame->ExecuteScriptInIsolatedWorldAndReturnValue(
             ISOLATED_WORLD_ID_INDIGO,
             blink::WebScriptSource(
-                blink::WebString::FromUTF8(std::string(script))),
+                blink::WebString::FromUtf8(std::string(script))),
             blink::BackForwardCacheAware::kAllow);
     if (result.IsEmpty()) {
       return std::nullopt;
@@ -134,9 +148,8 @@ TEST_F(IndigoAgentBrowserTest, InjectScriptInIsolatedWorld) {
   blink::WebLocalFrame* frame = GetMainRenderFrame()->GetWebFrame();
   v8::Isolate* isolate = frame->GetAgentGroupScheduler()->Isolate();
   v8::HandleScope handle_scope(isolate);
-  v8::Local<v8::Value> main_result =
-      frame->ExecuteScriptAndReturnValue(blink::WebScriptSource(
-          blink::WebString::FromUTF8("window.indigo_test_var")));
+  v8::Local<v8::Value> main_result = frame->ExecuteScriptAndReturnValue(
+      blink::WebScriptSource(blink::WebString("window.indigo_test_var")));
   EXPECT_TRUE(main_result->IsUndefined());
 }
 
@@ -177,6 +190,46 @@ TEST_F(IndigoAgentBrowserTest, SetupAndInvoke) {
   remote->Invoke(invoke_done.GetCallback());
   ASSERT_TRUE(invoke_done.Wait());
 
+  EXPECT_EQ(2, EvaluateAs<int32_t>("window.invoked_count"));
+}
+
+TEST_F(IndigoAgentBrowserTest, InvokeResetInvoke) {
+  mojo::AssociatedRemote<chrome::mojom::IndigoAgent> remote = BindIndigoAgent();
+
+  // Inject a script that sets up the indigo agent.
+  const std::string kScript = R"(
+    window.invoked_count = 0;
+    window.reset_count = 0;
+    window.indigo.setup({
+      invoke: function() {
+        window.invoked_count++;
+      },
+      reset: function() {
+        window.reset_count++;
+      }
+    });
+  )";
+  const GURL kUrl("https://example.com/test.js");
+  const url::Origin kOrigin = url::Origin::Create(kUrl);
+
+  base::test::TestFuture<void> inject_done;
+  remote->InjectScript(kScript, kUrl, kOrigin, host_.BindAndPassRemote(),
+                       inject_done.GetCallback());
+  ASSERT_TRUE(inject_done.Wait());
+
+  base::test::TestFuture<void> done;
+  remote->Invoke(done.GetCallback());
+  ASSERT_TRUE(done.Wait());
+  EXPECT_EQ(1, EvaluateAs<int32_t>("window.invoked_count"));
+
+  done.Clear();
+  remote->Reset(done.GetCallback());
+  ASSERT_TRUE(done.Wait());
+  EXPECT_EQ(1, EvaluateAs<int32_t>("window.reset_count"));
+
+  done.Clear();
+  remote->Invoke(done.GetCallback());
+  ASSERT_TRUE(done.Wait());
   EXPECT_EQ(2, EvaluateAs<int32_t>("window.invoked_count"));
 }
 
@@ -239,6 +292,204 @@ TEST_F(IndigoAgentBrowserTest, StartImageReplacementWithValidElement) {
 
   // Verify that the host received the replacement start request.
   ASSERT_TRUE(host_.WaitForReplacementStarted());
+  EXPECT_TRUE(host_.last_is_primary());
+}
+
+TEST_F(IndigoAgentBrowserTest, StartImageReplacementWithPrimaryDisposition) {
+  mojo::AssociatedRemote<chrome::mojom::IndigoAgent> remote = BindIndigoAgent();
+
+  const std::string kScript = R"(
+    window.indigo.setup({
+      invoke: function() {
+        const img = document.createElement('img');
+        img.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=";
+        document.body.appendChild(img);
+        window.indigo.startImageReplacement(img, {disposition: 'primary'});
+      }
+    });
+  )";
+  const GURL kUrl("https://example.com/test.js");
+  const url::Origin kOrigin = url::Origin::Create(kUrl);
+
+  base::test::TestFuture<void> inject_done;
+  remote->InjectScript(kScript, kUrl, kOrigin, host_.BindAndPassRemote(),
+                       inject_done.GetCallback());
+  ASSERT_TRUE(inject_done.Wait());
+
+  base::test::TestFuture<void> invoke_done;
+  remote->Invoke(invoke_done.GetCallback());
+  ASSERT_TRUE(invoke_done.Wait());
+
+  ASSERT_TRUE(host_.WaitForReplacementStarted());
+  EXPECT_TRUE(host_.last_is_primary());
+}
+
+TEST_F(IndigoAgentBrowserTest, StartImageReplacementWithMirrorDisposition) {
+  mojo::AssociatedRemote<chrome::mojom::IndigoAgent> remote = BindIndigoAgent();
+
+  const std::string kScript = R"(
+    window.indigo.setup({
+      invoke: function() {
+        const img = document.createElement('img');
+        img.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=";
+        document.body.appendChild(img);
+        window.indigo.startImageReplacement(img, {disposition: 'mirror'});
+      }
+    });
+  )";
+  const GURL kUrl("https://example.com/test.js");
+  const url::Origin kOrigin = url::Origin::Create(kUrl);
+
+  base::test::TestFuture<void> inject_done;
+  remote->InjectScript(kScript, kUrl, kOrigin, host_.BindAndPassRemote(),
+                       inject_done.GetCallback());
+  ASSERT_TRUE(inject_done.Wait());
+
+  base::test::TestFuture<void> invoke_done;
+  remote->Invoke(invoke_done.GetCallback());
+  ASSERT_TRUE(invoke_done.Wait());
+
+  ASSERT_TRUE(host_.WaitForReplacementStarted());
+  EXPECT_FALSE(host_.last_is_primary());
+}
+
+TEST_F(IndigoAgentBrowserTest,
+       StartImageReplacementWithInvalidDispositionThrows) {
+  mojo::AssociatedRemote<chrome::mojom::IndigoAgent> remote = BindIndigoAgent();
+
+  const std::string kScript = R"(
+    window.indigo.setup({
+      invoke: function() {
+        try {
+          const img = document.createElement('img');
+          img.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=";
+          document.body.appendChild(img);
+          window.indigo.startImageReplacement(img, {disposition: 'invalid'});
+        } catch (e) {
+          window.exception_name = e.name;
+          window.exception_message = e.message;
+        }
+      }
+    });
+  )";
+  const GURL kUrl("https://example.com/test.js");
+  const url::Origin kOrigin = url::Origin::Create(kUrl);
+
+  base::test::TestFuture<void> inject_done;
+  remote->InjectScript(kScript, kUrl, kOrigin, host_.BindAndPassRemote(),
+                       inject_done.GetCallback());
+  ASSERT_TRUE(inject_done.Wait());
+
+  base::test::TestFuture<void> invoke_done;
+  remote->Invoke(invoke_done.GetCallback());
+  ASSERT_TRUE(invoke_done.Wait());
+
+  EXPECT_EQ("Error", EvaluateAs<std::string>("window.exception_name"));
+  EXPECT_EQ("Invalid disposition value \"invalid\".",
+            EvaluateAs<std::string>("window.exception_message"));
+}
+
+TEST_F(IndigoAgentBrowserTest,
+       StartImageReplacementWithInvalidParamsTypeThrows) {
+  mojo::AssociatedRemote<chrome::mojom::IndigoAgent> remote = BindIndigoAgent();
+
+  const std::string kScript = R"(
+    window.indigo.setup({
+      invoke: function() {
+        try {
+          const img = document.createElement('img');
+          img.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=";
+          document.body.appendChild(img);
+          window.indigo.startImageReplacement(img, 'not an object');
+        } catch (e) {
+          window.exception_name = e.name;
+          window.exception_message = e.message;
+        }
+      }
+    });
+  )";
+  const GURL kUrl("https://example.com/test.js");
+  const url::Origin kOrigin = url::Origin::Create(kUrl);
+
+  base::test::TestFuture<void> inject_done;
+  remote->InjectScript(kScript, kUrl, kOrigin, host_.BindAndPassRemote(),
+                       inject_done.GetCallback());
+  ASSERT_TRUE(inject_done.Wait());
+
+  base::test::TestFuture<void> invoke_done;
+  remote->Invoke(invoke_done.GetCallback());
+  ASSERT_TRUE(invoke_done.Wait());
+
+  EXPECT_EQ("TypeError", EvaluateAs<std::string>("window.exception_name"));
+  EXPECT_EQ("Invalid params object.",
+            EvaluateAs<std::string>("window.exception_message"));
+}
+
+TEST_F(IndigoAgentBrowserTest,
+       PrimaryImageReplacementFailureTriggersMojoCallback) {
+  mojo::AssociatedRemote<chrome::mojom::IndigoAgent> remote = BindIndigoAgent();
+
+  const std::string kScript = R"(
+    window.indigo.setup({
+      invoke: function() {
+        try {
+          const div = document.createElement('div');
+          document.body.appendChild(div);
+          window.indigo.startImageReplacement(div, {disposition: 'primary'});
+        } catch (e) {
+          window.exception_name = e.name;
+          window.exception_message = e.message;
+        }
+      }
+    });
+  )";
+  const GURL kUrl("https://example.com/test.js");
+  const url::Origin kOrigin = url::Origin::Create(kUrl);
+
+  base::test::TestFuture<void> inject_done;
+  remote->InjectScript(kScript, kUrl, kOrigin, host_.BindAndPassRemote(),
+                       inject_done.GetCallback());
+  ASSERT_TRUE(inject_done.Wait());
+
+  base::test::TestFuture<void> invoke_done;
+  remote->Invoke(invoke_done.GetCallback());
+  ASSERT_TRUE(invoke_done.Wait());
+
+  // Verify exception was thrown in the renderer.
+  EXPECT_EQ("Error", EvaluateAs<std::string>("window.exception_name"));
+  EXPECT_EQ("Not an HTMLImageElement",
+            EvaluateAs<std::string>("window.exception_message"));
+
+  // Verify that the host received the failure notification.
+  ASSERT_TRUE(host_.WaitForInvokeError());
+  EXPECT_TRUE(host_.invoke_error_reported());
+}
+
+TEST_F(IndigoAgentBrowserTest, NotifyNoPrimaryImageFoundTriggersMojoCallback) {
+  mojo::AssociatedRemote<chrome::mojom::IndigoAgent> remote = BindIndigoAgent();
+
+  const std::string kScript = R"(
+    window.indigo.setup({
+      invoke: function() {
+        window.indigo.notifyNoPrimaryImageFound();
+      }
+    });
+  )";
+  const GURL kUrl("https://example.com/test.js");
+  const url::Origin kOrigin = url::Origin::Create(kUrl);
+
+  base::test::TestFuture<void> inject_done;
+  remote->InjectScript(kScript, kUrl, kOrigin, host_.BindAndPassRemote(),
+                       inject_done.GetCallback());
+  ASSERT_TRUE(inject_done.Wait());
+
+  base::test::TestFuture<void> invoke_done;
+  remote->Invoke(invoke_done.GetCallback());
+  ASSERT_TRUE(invoke_done.Wait());
+
+  // Verify that the host received the failure notification.
+  ASSERT_TRUE(host_.WaitForInvokeError());
+  EXPECT_TRUE(host_.invoke_error_reported());
 }
 
 }  // namespace

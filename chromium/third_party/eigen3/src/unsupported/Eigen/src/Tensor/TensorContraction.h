@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_CONTRACTION_H
-#define EIGEN_CXX11_TENSOR_TENSOR_CONTRACTION_H
+#ifndef EIGEN_TENSOR_TENSOR_CONTRACTION_H
+#define EIGEN_TENSOR_TENSOR_CONTRACTION_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -337,7 +338,7 @@ struct NoOpOutputKernel {
 };
 
 /** Tensor contraction class.
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  */
 template <typename Indices, typename LhsXprType, typename RhsXprType,
           typename OutputKernelType = const NoOpOutputKernel>
@@ -375,6 +376,25 @@ class TensorContractionOp
   const Indices m_indices;
   const OutputKernelType m_output_kernel;
 };
+
+namespace internal {
+template <bool TypesMatch, int StorageOrder, bool MatrixIsRight>
+struct GemvDirectDispatcher {
+  template <typename Evaluator, typename Scalar>
+  static bool run(const Evaluator* self, Scalar* buffer) {
+    self->template evalGemvDirect<StorageOrder, MatrixIsRight>(buffer);
+    return true;
+  }
+};
+
+template <int StorageOrder, bool MatrixIsRight>
+struct GemvDirectDispatcher<false, StorageOrder, MatrixIsRight> {
+  template <typename Evaluator, typename Scalar>
+  static bool run(const Evaluator*, Scalar*) {
+    return false;
+  }
+};
+}  // namespace internal
 
 template <typename Derived>
 struct TensorContractionEvaluatorBase {
@@ -446,7 +466,7 @@ struct TensorContractionEvaluatorBase {
     DSizes<Index, LDims> eval_left_dims;
     DSizes<Index, RDims> eval_right_dims;
     array<IndexPair<Index>, ContractDims> eval_op_indices;
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       // For ColMajor, we keep using the existing dimensions
       for (int i = 0; i < LDims; i++) {
         eval_left_dims[i] = m_leftImpl.dimensions()[i];
@@ -459,7 +479,8 @@ struct TensorContractionEvaluatorBase {
         eval_op_indices[i].first = op.indices()[i].first;
         eval_op_indices[i].second = op.indices()[i].second;
       }
-    } else {
+    }
+    else {
       // For RowMajor, we need to reverse the existing dimensions
       for (int i = 0; i < LDims; i++) {
         eval_left_dims[i] = m_leftImpl.dimensions()[LDims - i - 1];
@@ -605,8 +626,23 @@ struct TensorContractionEvaluatorBase {
       }
     }
 
+    // After the sort above, eval_op_indices[*].first is in ascending order. The
+    // contracted LHS dims are the contiguous prefix of storage iff that prefix
+    // is exactly {0, 1, ..., ContractDims-1}. Similarly for the RHS — and we
+    // also detect the "contracted dims at the trailing end" case, which
+    // matters when LHS/RHS were swapped at the type level for RowMajor inputs.
+    m_lhs_contracted_dims_leading = true;
+    m_rhs_contracted_dims_leading = true;
+    m_rhs_contracted_dims_trailing = true;
+    const int rhs_trail_start = RDims - ContractDims;
+    for (int i = 0; i < ContractDims; i++) {
+      if (eval_op_indices[i].first != i) m_lhs_contracted_dims_leading = false;
+      if (eval_op_indices[i].second != i) m_rhs_contracted_dims_leading = false;
+      if (eval_op_indices[i].second != rhs_trail_start + i) m_rhs_contracted_dims_trailing = false;
+    }
+
     // If the layout is RowMajor, we need to reverse the m_dimensions
-    if (static_cast<int>(Layout) == static_cast<int>(RowMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(RowMajor)) {
       for (int i = 0, j = NumDims - 1; i < j; i++, j--) {
         numext::swap(m_dimensions[i], m_dimensions[j]);
       }
@@ -663,13 +699,51 @@ struct TensorContractionEvaluatorBase {
 
   template <bool lhs_inner_dim_contiguous, bool rhs_inner_dim_contiguous, bool rhs_inner_dim_reordered, int Alignment>
   void evalProductSequential(Scalar* buffer) const {
+    // Gemv-shape contractions (output is a vector) get a direct GEMV kernel
+    // call when the operand layout admits one. There are four shapes:
+    //
+    //   m_j_size == 1: ColMajor inputs. m_leftImpl is the matrix.
+    //     (A) lhs_inner_dim_contiguous: contracted dims at non-contiguous end
+    //         of LHS. Existing evalGemv via TensorContractionInputMapper.
+    //     (B) m_lhs_contracted_dims_leading: contracted dims at contiguous end.
+    //         RowMajor view of LHS via const_blas_data_mapper.
+    //
+    //   m_i_size == 1: RowMajor inputs (lines 407-414 swap LHS/RHS at the type
+    //         level, so the matrix is m_rightImpl).
+    //     (C) m_rhs_contracted_dims_leading: contracted dims at contiguous end
+    //         of (eval-)RHS. RowMajor view of m_rightImpl.
+    //     (D) m_rhs_contracted_dims_trailing: contracted dims at non-contiguous
+    //         end. ColMajor view of m_rightImpl.
+    //
+    // Cases B/C/D require direct memory (data() != nullptr) on both impls.
+    // Anything else falls back to evalGemm.
+    constexpr bool types_match = std::is_same<typename EvalLeftArgType::Scalar, Scalar>::value &&
+                                 std::is_same<typename EvalRightArgType::Scalar, Scalar>::value;
     if (this->m_j_size == 1) {
-      this->template evalGemv<lhs_inner_dim_contiguous, rhs_inner_dim_contiguous, rhs_inner_dim_reordered, Alignment>(
-          buffer);
-    } else {
-      this->template evalGemm<lhs_inner_dim_contiguous, rhs_inner_dim_contiguous, rhs_inner_dim_reordered, Alignment>(
-          buffer);
+      if (lhs_inner_dim_contiguous) {
+        this->template evalGemv<lhs_inner_dim_contiguous, rhs_inner_dim_contiguous, rhs_inner_dim_reordered, Alignment>(
+            buffer);
+        return;
+      }
+      if (m_lhs_contracted_dims_leading && m_leftImpl.data() != nullptr && m_rightImpl.data() != nullptr) {
+        if (internal::GemvDirectDispatcher<types_match, RowMajor, false>::run(this, buffer)) {
+          return;
+        }
+      }
+    } else if (this->m_i_size == 1 && m_leftImpl.data() != nullptr && m_rightImpl.data() != nullptr) {
+      if (m_rhs_contracted_dims_leading) {
+        if (internal::GemvDirectDispatcher<types_match, RowMajor, true>::run(this, buffer)) {
+          return;
+        }
+      }
+      if (m_rhs_contracted_dims_trailing) {
+        if (internal::GemvDirectDispatcher<types_match, ColMajor, true>::run(this, buffer)) {
+          return;
+        }
+      }
     }
+    this->template evalGemm<lhs_inner_dim_contiguous, rhs_inner_dim_contiguous, rhs_inner_dim_reordered, Alignment>(
+        buffer);
   }
 
   template <bool lhs_inner_dim_contiguous, bool rhs_inner_dim_contiguous, bool rhs_inner_dim_reordered, int Alignment>
@@ -687,8 +761,8 @@ struct TensorContractionEvaluatorBase {
     using RightEvaluator = TensorEvaluator<EvalRightArgType, Device>;
     const int lhs_packet_size = internal::unpacket_traits<typename LeftEvaluator::PacketReturnType>::size;
     const int rhs_packet_size = internal::unpacket_traits<typename RightEvaluator::PacketReturnType>::size;
-    const int lhs_alignment = LeftEvaluator::IsAligned ? Aligned : Unaligned;
-    const int rhs_alignment = RightEvaluator::IsAligned ? Aligned : Unaligned;
+    constexpr int lhs_alignment = LeftEvaluator::IsAligned ? Aligned : Unaligned;
+    constexpr int rhs_alignment = RightEvaluator::IsAligned ? Aligned : Unaligned;
     using LhsMapper = internal::TensorContractionInputMapper<LhsScalar, Index, internal::Lhs, LeftEvaluator,
                                                              left_nocontract_t, contract_t, lhs_packet_size,
                                                              lhs_inner_dim_contiguous, false, lhs_alignment>;
@@ -709,6 +783,52 @@ struct TensorContractionEvaluatorBase {
 
     internal::general_matrix_vector_product<Index, LhsScalar, LhsMapper, ColMajor, false, RhsScalar, RhsMapper,
                                             false>::run(rows, cols, lhs, rhs, buffer, resIncr, alpha);
+
+    using OutputMapper = internal::blas_data_mapper<Scalar, Index, ColMajor>;
+    m_output_kernel(OutputMapper(buffer, rows), m_tensor_contraction_params, static_cast<Index>(0),
+                    static_cast<Index>(0), rows, static_cast<Index>(1));
+  }
+
+  // Direct gemv fast path: drives the GEMV kernel against raw tensor memory via
+  // const_blas_data_mapper, bypassing TensorContractionInputMapper (which only
+  // delivers vectorized loads along the free dim) and the GEBP packing overhead
+  // of evalGemm.
+  //
+  // StorageOrder is the layout of the (rows × cols) matrix view in memory.
+  // MatrixIsRight selects which TensorEvaluator holds the matrix and which
+  // holds the vector — needed because the constructor swaps LHS/RHS for
+  // RowMajor inputs (lines 407-414), so the gemv shape lives in m_rightImpl
+  // there. Caller guarantees both impls expose direct memory.
+  template <int StorageOrder, bool MatrixIsRight>
+#if !defined(EIGEN_HIPCC)
+  EIGEN_DEVICE_FUNC
+#endif
+      void
+      evalGemvDirect(Scalar* buffer) const {
+    using MatScalar = std::remove_const_t<
+        std::conditional_t<MatrixIsRight, typename EvalRightArgType::Scalar, typename EvalLeftArgType::Scalar>>;
+    using VecScalar = std::remove_const_t<
+        std::conditional_t<MatrixIsRight, typename EvalLeftArgType::Scalar, typename EvalRightArgType::Scalar>>;
+
+    const Index rows = MatrixIsRight ? m_j_size : m_i_size;
+    const Index cols = m_k_size;
+    // For a row-major (rows × cols) view the row stride is cols; for a
+    // column-major view the column stride is rows.
+    const Index mat_stride = (StorageOrder == RowMajor) ? cols : rows;
+
+    const MatScalar* mat_data = MatrixIsRight ? m_rightImpl.data() : m_leftImpl.data();
+    const VecScalar* vec_data = MatrixIsRight ? m_leftImpl.data() : m_rightImpl.data();
+    eigen_assert(mat_data != nullptr && vec_data != nullptr);
+
+    using LhsMapper = internal::const_blas_data_mapper<MatScalar, Index, StorageOrder>;
+    using RhsMapper = internal::const_blas_data_mapper<VecScalar, Index, ColMajor>;
+    LhsMapper lhs(mat_data, mat_stride);
+    RhsMapper rhs(vec_data, /*stride=*/1);
+
+    m_device.fill(buffer, buffer + rows, Scalar(0));
+
+    internal::general_matrix_vector_product<Index, MatScalar, LhsMapper, StorageOrder, false, VecScalar, RhsMapper,
+                                            false>::run(rows, cols, lhs, rhs, buffer, /*resIncr=*/1, Scalar(1));
 
     using OutputMapper = internal::blas_data_mapper<Scalar, Index, ColMajor>;
     m_output_kernel(OutputMapper(buffer, rows), m_tensor_contraction_params, static_cast<Index>(0),
@@ -861,6 +981,17 @@ struct TensorContractionEvaluatorBase {
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE EvaluatorPointerType data() const { return m_result; }
 
+  // Required so a contraction can be composed with operators whose own
+  // getResourceRequirements() forwards into m_impl (TensorPaddingOp,
+  // TensorBroadcastingOp, etc.). Without this, e.g. an expression like
+  // `Tensor B = A.contract(C, dims).pad(p)` fails to compile because
+  // Pad's BlockAccess is gated on m_impl.RawAccess (which is true here)
+  // and instantiating Pad's getResourceRequirements then requires this
+  // method on the operand evaluator.
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE internal::TensorBlockResourceRequirements getResourceRequirements() const {
+    return internal::TensorBlockResourceRequirements::any();
+  }
+
  protected:
   Dimensions m_dimensions;
 
@@ -871,6 +1002,12 @@ struct TensorContractionEvaluatorBase {
   bool m_lhs_inner_dim_contiguous;
   bool m_rhs_inner_dim_contiguous;
   bool m_rhs_inner_dim_reordered;
+  // Set in the constructor; describe whether the contracted LHS/RHS dims
+  // form a contiguous block at the leading or trailing end of storage. Used
+  // by evalProductSequential to pick a direct GEMV path when applicable.
+  bool m_lhs_contracted_dims_leading;
+  bool m_rhs_contracted_dims_leading;
+  bool m_rhs_contracted_dims_trailing;
 
   left_nocontract_t m_i_strides{};
   right_nocontract_t m_j_strides{};
@@ -942,4 +1079,4 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_CONTRACTION_H
+#endif  // EIGEN_TENSOR_TENSOR_CONTRACTION_H

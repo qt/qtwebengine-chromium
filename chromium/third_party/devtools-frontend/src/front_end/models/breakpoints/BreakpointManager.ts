@@ -696,9 +696,19 @@ export class Breakpoint implements SDK.TargetManager.SDKModelObserver<SDK.Debugg
 
     // Do we need to do this? Not sure if bound locations will leak...
     if (this.bound()) {
+      const removedUILocations = new Map<string, Workspace.UISourceCode.UILocation>();
       for (const uiLocation of this.#uiLocations) {
         if (uiLocation.uiSourceCode === uiSourceCode) {
           this.#uiLocations.delete(uiLocation);
+          removedUILocations.set(uiLocation.id(), uiLocation);
+        }
+      }
+
+      for (const uiLocation of removedUILocations.values()) {
+        // Multiple physically distinct UILocations can map to the same logical location
+        // (same ID). We only notify the manager if all instances of this logical location are gone.
+        const isGoneLogically = !Array.from(this.#uiLocations).some(loc => loc.id() === uiLocation.id());
+        if (isGoneLogically) {
           this.breakpointManager.uiLocationRemoved(uiLocation);
         }
       }
@@ -730,14 +740,26 @@ export class Breakpoint implements SDK.TargetManager.SDKModelObserver<SDK.Debugg
       // This is our first bound location; remove all unbound locations
       this.removeAllUnboundLocations();
     }
+    // A single logical breakpoint can resolve to multiple raw locations (e.g. due to
+    // inlining or SSR/client template duplication) that map back to the same logical
+    // UILocation. We only notify the manager once per logical UILocation to avoid
+    // duplicate items/decorations in the UI.
+    const isNewLogicalLocation = !Array.from(this.#uiLocations).some(loc => loc.id() === uiLocation.id());
     this.#uiLocations.add(uiLocation);
-    this.breakpointManager.uiLocationAdded(this, uiLocation);
+    if (isNewLogicalLocation) {
+      this.breakpointManager.uiLocationAdded(this, uiLocation);
+    }
   }
 
   uiLocationRemoved(uiLocation: Workspace.UISourceCode.UILocation): void {
     if (this.#uiLocations.has(uiLocation)) {
       this.#uiLocations.delete(uiLocation);
-      this.breakpointManager.uiLocationRemoved(uiLocation);
+      // We only notify the manager if there are no other resolved locations left
+      // that map to this same logical UILocation (same ID).
+      const isGoneLogically = !Array.from(this.#uiLocations).some(loc => loc.id() === uiLocation.id());
+      if (isGoneLogically) {
+        this.breakpointManager.uiLocationRemoved(uiLocation);
+      }
       if (!this.bound() && !this.isRemoved) {
         this.addAllUnboundLocations();
       }
@@ -750,6 +772,36 @@ export class Breakpoint implements SDK.TargetManager.SDKModelObserver<SDK.Debugg
 
   bound(): boolean {
     return this.#uiLocations.size !== 0;
+  }
+
+  getClosestResolvedLocation(): Workspace.UISourceCode.UILocation|null {
+    if (this.#uiLocations.size === 0) {
+      return null;
+    }
+    let closestLocation: Workspace.UISourceCode.UILocation|null = null;
+    let minLineDiff = Infinity;
+    let minColDiff = Infinity;
+
+    const breakpointLine = this.lineNumber();
+    const breakpointColumn = this.columnNumber() ?? 0;
+
+    for (const uiLocation of this.#uiLocations) {
+      const lineDiff = Math.abs(uiLocation.lineNumber - breakpointLine);
+      const colDiff = Math.abs((uiLocation.columnNumber ?? 0) - breakpointColumn);
+
+      if (lineDiff < minLineDiff) {
+        minLineDiff = lineDiff;
+        minColDiff = colDiff;
+        closestLocation = uiLocation;
+      } else if (lineDiff === minLineDiff) {
+        if (colDiff < minColDiff) {
+          minColDiff = colDiff;
+          closestLocation = uiLocation;
+        }
+      }
+    }
+
+    return closestLocation;
   }
 
   setEnabled(enabled: boolean): void {

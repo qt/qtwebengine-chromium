@@ -9,9 +9,11 @@
 #error This header should only be included if WebAssembly is enabled.
 #endif  // !V8_ENABLE_WEBASSEMBLY
 
+#include <compare>
 #include <iosfwd>
 #include <string>
 
+#include "src/base/logging.h"
 #include "src/base/small-vector.h"
 #include "src/common/globals.h"
 // The feature flags are declared in their own header.
@@ -121,6 +123,7 @@ inline constexpr const char* name(WasmEnabledFeature feature) {
     return #feat;
     FOREACH_WASM_FEATURE_FLAG(NAME)
   }
+  UNREACHABLE();
 #undef NAME
 }
 
@@ -135,6 +138,7 @@ inline constexpr const char* name(WasmDetectedFeature feature) {
     return #feat;
     FOREACH_WASM_FEATURE(NAME)
   }
+  UNREACHABLE();
 #undef NAME
 }
 
@@ -186,11 +190,7 @@ class CompileTimeImports {
   }
   bool contains(CompileTimeImport imp) const { return bits_.contains(imp); }
 
-  int compare(const CompileTimeImports& other) const {
-    if (bits_.ToIntegral() < other.bits_.ToIntegral()) return -1;
-    if (bits_.ToIntegral() > other.bits_.ToIntegral()) return 1;
-    return constants_module_.compare(other.constants_module_);
-  }
+  auto operator<=>(const CompileTimeImports& other) const = default;
 
   void Add(CompileTimeImport imp) { bits_.Add(imp); }
   void Remove(CompileTimeImport imp) { bits_.Remove(imp); }
@@ -204,6 +204,11 @@ class CompileTimeImports {
   CompileTimeImportFlags bits_;
   std::string constants_module_;
 };
+
+inline std::ostream& operator<<(std::ostream& os,
+                                const CompileTimeImports& imports) {
+  return os << imports.flags() << " ['" << imports.constants_module() << "']";
+}
 
 }  // namespace v8::internal::wasm
 

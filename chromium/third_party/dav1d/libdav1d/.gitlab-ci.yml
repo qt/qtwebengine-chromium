@@ -4,14 +4,14 @@ stages:
     - test
 
 .debian-amd64-common:
-    image: registry.videolan.org/dav1d-debian-unstable:20260103195850
+    image: registry.videolan.org/dav1d-debian-unstable:20260505173944
     stage: build
     tags:
         - docker
         - amd64
 
 .debian-amd64-minimum:
-    image: registry.videolan.org/dav1d-debian-minimum:20250207200301
+    image: registry.videolan.org/dav1d-debian-minimum:20260422185248
     stage: build
     tags:
         - docker
@@ -366,11 +366,8 @@ build-debian-aarch64-clang:
         - ninja -C build
         - cd build && meson test -v
 
-build-macos:
+.build-macos-common:
     stage: build
-    tags:
-        - amd64
-        - macos
     script:
         - meson setup build --buildtype release
                             -Ddefault_library=both
@@ -378,6 +375,17 @@ build-macos:
                             --werror
         - ninja -C build
         - cd build && meson test -v
+
+build-macos-x86_64:
+    extends: .build-macos-common
+    tags:
+        - amd64
+        - macos
+
+build-macos-arm64:
+    extends: .build-macos-common
+    tags:
+        - macos-xcode26
 
 build-debian-werror:
     extends: .debian-aarch64-common

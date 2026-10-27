@@ -12,6 +12,7 @@
 #include "base/functional/bind.h"
 #include "build/build_config.h"
 #include "components/permissions/permission_util.h"
+#include "components/permissions/permissions_client.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/permission_controller.h"
 #include "content/public/browser/permission_descriptor_util.h"
@@ -99,7 +100,17 @@ void MediaStreamDevicesController::RequestPermissions(
     content::PermissionResult permission_result =
         permission_controller->GetPermissionResultForCurrentDocument(
             audio_descriptor, rfh);
-    if (permission_result.status == blink::mojom::PermissionStatus::DENIED) {
+    // Check if web contents has allowlisted capability to ignore the denied
+    // status and denied reason.
+    bool web_contents_has_allowlisted_permission =
+        permissions::PermissionsClient::
+            AllowEmbeddedPermissionPromptForAllowlistedSurfaces() &&
+        permissions::PermissionsClient::Get()
+            ->IsPrivilegedInternalWebUIOrNewTabPage(
+                web_contents, request.url_origin.GetURL(),
+                /*already_overrode_requester=*/false);
+    if (permission_result.status == blink::mojom::PermissionStatus::DENIED &&
+        !web_contents_has_allowlisted_permission) {
       controller->denial_reason_ = blink::mojom::MediaStreamRequestResult::
           PERMISSION_DENIED_BY_CONTROLLER;
       // If `rfh` is a fenced frame, it will have no permission policy as well.
@@ -162,7 +173,8 @@ void MediaStreamDevicesController::RequestPermissions(
   }
 
   content::PermissionRequestDescription permission_request_description{
-      std::move(permission_types), request.user_gesture};
+      std::move(permission_types), request.user_gesture,
+      request.security_origin};
   permission_request_description.requested_audio_capture_device_ids =
       requested_audio_capture_device_ids;
   permission_request_description.requested_video_capture_device_ids =
@@ -414,10 +426,11 @@ bool MediaStreamDevicesController::IsUserAcceptAllowedOnAndroid(
     }
   }
 
-  // Don't approve device requests if the tab was hidden.
-  // TODO(qinmin): Add a test for this. http://crbug.com/396869.
+  // Don't approve device requests if the tab was hidden, unless there is an
+  // active Picture-in-Picture document.
   // TODO(raymes): Shouldn't this apply to all permissions not just audio/video?
-  return web_contents_->GetRenderWidgetHostView()->IsShowing();
+  return web_contents_->GetRenderWidgetHostView()->IsShowing() ||
+         web_contents_->HasPictureInPictureDocument();
 }
 #endif
 

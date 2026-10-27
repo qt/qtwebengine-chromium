@@ -81,6 +81,8 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   // Preference to save data. When enabled, requests will contain the header
   // 'Save-Data: on'.
   bool data_saver_enabled = false;
+  bool battery_saver_enabled = false;
+  bool preloading_disabled = false;
   bool local_storage_enabled = false;
   bool tabs_to_links = true;
   bool disable_ipc_flooding_protection = false;
@@ -178,8 +180,7 @@ struct BLINK_COMMON_EXPORT WebPreferences {
 #else
       mojom::ViewportStyle::kDefault;
 #endif
-  bool always_show_context_menu_on_touch =
-      !(BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS));
+  bool always_show_context_menu_on_touch = !BUILDFLAG(IS_IOS);
   bool smooth_scroll_for_find_enabled =
       BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS);
   bool main_frame_resizes_are_orientation_changes =
@@ -241,22 +242,26 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   float text_track_margin_percentage = 0.0f;
 
   bool immersive_mode_enabled = false;
+  bool immersive_video_playback_enabled = false;
 
   bool double_tap_to_zoom_enabled =
       BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_APPLE);
 
   bool fullscreen_supported = true;
 
-  bool text_autosizing_enabled = BUILDFLAG(IS_ANDROID);
+  bool text_size_adjust_enabled = BUILDFLAG(IS_ANDROID);
 
   // Representation of the Web App Manifest scope if any.
   GURL web_app_scope;
+
+  // Whether this renderer is associated with the browser's initial ("Default")
+  // profile.
+  bool is_initial_profile = false;
 
 #if BUILDFLAG(IS_ANDROID)
   float font_scale_factor = 1.0f;
   int font_weight_adjustment = 0;
   int text_size_contrast_factor = 0;
-  float device_scale_adjustment = 1.0f;
   bool force_enable_zoom = false;
   bool enable_touchpad_overscroll_history_navigation = true;
   GURL default_video_poster_url;
@@ -404,6 +409,9 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   // See https://github.com/dtapuska/html-translate
   bool translate_service_available = false;
 
+  // Whether to highlight ads on the page.
+  bool highlight_ads = false;
+
   // A value other than
   // mojom::EffectiveConnectionType::kEffectiveConnectionUnknownType implies
   // that the network quality estimate related Web APIs are in the holdback
@@ -480,6 +488,10 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   // thread as a side-effect.
   bool should_screenshot_on_mainframe_same_doc_navigation = true;
 #endif  // BUILDFLAG(IS_ANDROID)
+
+  // Set if this is in a WebView for chrome/browser/indigo/onboarding/.
+  // Consumed only in chrome/renderer/ (not by Blink).
+  bool is_indigo_onboarding = false;
 
   // We try to keep the default values the same as the default values in
   // chrome, except for the cases where it would require lots of extra work for

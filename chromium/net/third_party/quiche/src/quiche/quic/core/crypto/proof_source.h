@@ -43,10 +43,32 @@ struct QUICHE_EXPORT CryptoBuffers {
   CryptoBuffers() = default;
   CryptoBuffers(const CryptoBuffers&) = delete;
   CryptoBuffers(CryptoBuffers&&) = default;
+  CryptoBuffers& operator=(const CryptoBuffers&) = delete;
+  CryptoBuffers& operator=(CryptoBuffers&&) = default;
   ~CryptoBuffers();
 
   std::vector<CRYPTO_BUFFER*> value;
 };
+
+// The ex_data for SSL_CREDENTIAL.
+struct QUICHE_EXPORT CredentialExData {
+  explicit CredentialExData(CryptoBuffers cert_chain)
+      : cert_chain_buffers(std::move(cert_chain)) {}
+  CryptoBuffers cert_chain_buffers;
+};
+
+// Sets ex_data for a SSL_CREDENTIAL.
+QUICHE_EXPORT void SetCredentialExData(
+    SSL_CREDENTIAL& credential, std::unique_ptr<CredentialExData> exdata);
+
+// Gets ex_data for a SSL_CREDENTIAL. Returns nullptr if not set.
+//
+// Note that the SSL_CREDENTIAL used by a handshake is deleted after the
+// handshake, so there is only a short window to get the ex_data from
+// SSL_get0_selected_credential(). See test `GetCredentialExData` in
+// `TlsServerHandshakerTest` for an example.
+QUICHE_EXPORT const CredentialExData* GetCredentialExData(
+    const SSL_CREDENTIAL& credential);
 
 // ProofSource is an interface by which a QUIC server can obtain certificate
 // chains and signatures that prove its identity.
@@ -76,6 +98,7 @@ class QUICHE_EXPORT ProofSource {
     bool chains_match_sni = false;
     std::vector<quiche::QuicheReferenceCountedPointer<Chain> absl_nonnull>
         chains;
+    std::optional<ssl_compliance_policy_t> ssl_compliance_policy = std::nullopt;
   };
 
   // Details is an abstract class which acts as a container for any
@@ -344,19 +367,10 @@ class QUICHE_EXPORT ProofSourceHandleCallback {
   //
   // When called asynchronously(is_sync=false), this method will be responsible
   // to continue the handshake from where it left off.
-  //
-  // Callers that pass a `LocalSSLConfig` in `ssl_config` must use the result of
-  // `DoesOnSelectCertificateDoneExpectChains()` to decide which fields to
-  // populate.
   virtual void OnSelectCertificateDone(bool ok, bool is_sync,
                                        SSLConfig ssl_config,
                                        absl::string_view ticket_encryption_key,
                                        bool cert_matched_sni) = 0;
-
-  // Returns true when `OnSelectCertificateDone()` reads the
-  // `LocalSSLConfig::chains` field. Otherwise, it may read
-  // `LocalSSLConfig::chain`.
-  virtual bool DoesOnSelectCertificateDoneExpectChains() const = 0;
 
   // Called when a ProofSourceHandle::ComputeSignature operation completes.
   virtual void OnComputeSignatureDone(

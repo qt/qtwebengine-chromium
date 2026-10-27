@@ -75,8 +75,8 @@ interface PerformanceMonitorOutput {
   width: number;
 }
 
-type PerformanceMonitorView = (input: PerformanceMonitorInput, output: PerformanceMonitorOutput, target: HTMLElement) =>
-    void;
+type PerformanceMonitorView =
+    (input: PerformanceMonitorInput, output: PerformanceMonitorOutput, target: DocumentFragment) => void;
 
 const DEFAULT_VIEW: PerformanceMonitorView = (input, output, target) => {
   // clang-format off
@@ -102,11 +102,11 @@ const DEFAULT_VIEW: PerformanceMonitorView = (input, output, target) => {
       <div class="perfmon-chart-suspend-overlay fill">
         <div>${i18nString(UIStrings.paused)}</div>
       </div>` : ''}`,
-    target);
+    target, {container: {attributes: {jslog: `${VisualLogging.pane('performance.monitor').track({resize: true})}`}}});
   // clang-format on
 };
 
-export class PerformanceMonitorImpl extends UI.Widget.HBox implements
+export class PerformanceMonitorImpl extends UI.Widget.HBox<ShadowRoot> implements
     SDK.TargetManager.SDKModelObserver<SDK.PerformanceMetricsModel.PerformanceMetricsModel> {
   private view: PerformanceMonitorView;
   private chartInfos: ChartInfo[] = [];
@@ -127,10 +127,7 @@ export class PerformanceMonitorImpl extends UI.Widget.HBox implements
   private graphRenderingContext: CanvasRenderingContext2D|null = null;
 
   constructor(pollIntervalMs = 500, view = DEFAULT_VIEW) {
-    super({
-      jslog: `${VisualLogging.panel('performance.monitor').track({resize: true})}`,
-      useShadowDom: true,
-    });
+    super({useShadowDom: 'pure'});
     this.view = view;
     this.registerRequiredCSS(performanceMonitorStyles);
 
@@ -504,7 +501,7 @@ export class PerformanceMonitorImpl extends UI.Widget.HBox implements
 
   private createChartInfos(): ChartInfo[] {
     const themeSupport = ThemeSupport.ThemeSupport.instance();
-    const elementForStyles = this.contentElement;
+    const elementForStyles = this.contentElement.firstElementChild;
 
     const defaults: Partial<ChartInfo> = {};
 
@@ -626,8 +623,9 @@ interface ControlPaneInput {
 type ControlPaneView = (input: ControlPaneInput, output: object, target: HTMLElement) => void;
 
 const CONTROL_PANE_DEFAULT_VIEW: ControlPaneView = (input, _output, target) => {
-  render(
-      input.chartsInfo.map(chartInfo => {
+  // clang-format off
+  render(html`
+    ${input.chartsInfo.map(chartInfo => {
         const chartName = chartInfo.metrics[0].name;
         const active = input.enabledCharts.has(chartName);
         const value = input.metricValues.get(chartName) || 0;
@@ -637,8 +635,9 @@ const CONTROL_PANE_DEFAULT_VIEW: ControlPaneView = (input, _output, target) => {
             value,
             (e: Event) => input.onCheckboxChange(chartName, e),
         );
-      }),
-      target);
+      })}
+    `, target, {container: {classes: ['perfmon-control-pane']}});
+  // clang-format on
 };
 
 export class ControlPane extends UI.Widget.VBox {
@@ -651,7 +650,7 @@ export class ControlPane extends UI.Widget.VBox {
   readonly #view: ControlPaneView;
 
   constructor(element: HTMLElement, view = CONTROL_PANE_DEFAULT_VIEW) {
-    super(element, {useShadowDom: false, classes: ['perfmon-control-pane']});
+    super(element, {useShadowDom: false});
     this.#view = view;
 
     this.#enabledChartsSetting = Common.Settings.Settings.instance().createSetting(

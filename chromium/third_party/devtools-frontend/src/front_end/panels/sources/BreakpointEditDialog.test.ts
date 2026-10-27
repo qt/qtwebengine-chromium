@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as SDK from '../../core/sdk/sdk.js';
 import {assertScreenshot, dispatchKeyDownEvent, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
@@ -133,7 +135,8 @@ describeWithEnvironment('BreakpointEditDialog', function() {
     assert.strictEqual(editor.state.doc.sliceString(0), 'x === 42');
   });
 
-  it('focuses the editor input field after changing the breakpoint type', async () => {
+  // Flaky
+  it.skip('[crbug.com/505352053] focuses the editor input field after changing the breakpoint type', async () => {
     const {dialog, editor} = await getDialogAndEditor(0, '', false, () => {});
     renderElementIntoDOM(dialog.contentElement);
 
@@ -141,7 +144,21 @@ describeWithEnvironment('BreakpointEditDialog', function() {
     await dialog.updateComplete;
 
     assert.isTrue(editor.hasFocus);
-
-    dialog.contentElement.remove();  // Cleanup.
   });
+
+  // Flaky
+  it.skip(
+      '[crbug.com/505352053] focuses the editor when focus() is called, even if it is not yet rendered', async () => {
+        const {dialog, editor} = await getDialogAndEditor(0, '', false, () => {});
+        renderElementIntoDOM(dialog.contentElement);
+        assert.isFalse(editor.hasFocus);
+
+        // Trigger an update to test the focus() method waiting for it.
+        dialog.editorLineNumber = 1;
+        dialog.focus();
+
+        await dialog.updateComplete;
+
+        assert.isTrue(editor.hasFocus);
+      });
 });

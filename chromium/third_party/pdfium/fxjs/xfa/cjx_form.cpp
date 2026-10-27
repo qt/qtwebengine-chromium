@@ -93,7 +93,7 @@ CJS_Result CJX_Form::recalculate(CFXJSE_Engine* runtime,
   }
 
   CXFA_FFNotify* pNotify = GetDocument()->GetNotify();
-  if (!pNotify || runtime->ToInt32(params[0]) != 0) {
+  if (!pNotify || runtime->ToInt32Reentrant(params[0]) != 0) {
     return CJS_Result::Success();
   }
 

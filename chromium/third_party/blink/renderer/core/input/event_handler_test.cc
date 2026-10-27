@@ -35,6 +35,7 @@
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
 #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_select_element.h"
 #include "third_party/blink/renderer/core/html/html_iframe_element.h"
 #include "third_party/blink/renderer/core/html/html_plugin_element.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
@@ -772,6 +773,70 @@ TEST_F(EventHandlerTest, CursorForRtlResizableTextArea) {
             // An south-west resize signals both horizontal and
             // vertical resizability when direction is RTL.
             ui::mojom::blink::CursorType::kSouthWestResize);
+}
+
+TEST_F(EventHandlerTest, ResizeListboxDoesNotAutoscroll) {
+  SetHtmlInnerHTML(R"HTML(
+    <style>body { margin: 0; }</style>
+    <select id='s' multiple style='resize:both; width:100px; height:100px;'>
+      <option>1</option><option>2</option><option>3</option><option>4</option>
+      <option>5</option><option>6</option><option>7</option><option>8</option>
+      <option>9</option><option>10</option><option>11</option><option>12</option>
+      <option>13</option><option>14</option><option>15</option>
+      <option>16</option><option>17</option><option>18</option>
+      <option>19</option><option>20</option><option>21</option>
+      <option>22</option><option>23</option><option>24</option>
+      <option>25</option><option>26</option><option>27</option>
+      <option>28</option><option>29</option><option>30</option>
+      <option>31</option><option>32</option><option>33</option>
+      <option>34</option><option>35</option><option>36</option>
+      <option>37</option><option>38</option><option>39</option>
+      <option>40</option><option>41</option><option>42</option>
+      <option>43</option><option>44</option><option>45</option>
+      <option>46</option><option>47</option><option>48</option>
+      <option>49</option><option>50</option>
+    </select>
+  )HTML");
+
+  auto* select =
+      To<HTMLSelectElement>(GetDocument().getElementById(AtomicString("s")));
+  ASSERT_TRUE(select);
+  EXPECT_EQ(0, select->scrollTop());
+
+  gfx::Point point =
+      select->GetLayoutObject()->AbsoluteBoundingBoxRect().bottom_right();
+  point.Offset(-2, -2);
+  gfx::Point drag_point = point;
+
+  WebMouseEvent mouse_down_event(WebInputEvent::Type::kMouseDown,
+                                 gfx::PointF(point), gfx::PointF(point),
+                                 WebPointerProperties::Button::kLeft, 1,
+                                 WebInputEvent::Modifiers::kLeftButtonDown,
+                                 WebInputEvent::GetStaticTimeStampForTests());
+  GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(
+      mouse_down_event);
+
+  for (int i = 1; i <= 60; ++i) {
+    drag_point = point + gfx::Vector2d(i, i);
+    WebMouseEvent mouse_move_event(
+        WebInputEvent::Type::kMouseMove, gfx::PointF(drag_point),
+        gfx::PointF(drag_point), WebPointerProperties::Button::kLeft, 1,
+        WebInputEvent::Modifiers::kLeftButtonDown,
+        WebInputEvent::GetStaticTimeStampForTests());
+    GetDocument().GetFrame()->GetEventHandler().HandleMouseMoveEvent(
+        mouse_move_event, Vector<WebMouseEvent>(), Vector<WebMouseEvent>());
+    GetPage().GetAutoscrollController().Animate();
+    GetPage().Animator().ServiceScriptedAnimations(base::TimeTicks::Now());
+  }
+
+  WebMouseEvent mouse_up_event(
+      WebInputEvent::Type::kMouseUp, gfx::PointF(drag_point),
+      gfx::PointF(drag_point), WebPointerProperties::Button::kLeft, 1,
+      WebInputEvent::kNoModifiers, WebInputEvent::GetStaticTimeStampForTests());
+  GetDocument().GetFrame()->GetEventHandler().HandleMouseReleaseEvent(
+      mouse_up_event);
+
+  EXPECT_EQ(0, select->scrollTop());
 }
 
 TEST_F(EventHandlerTest, CursorForInlineVerticalWritingMode) {
@@ -3771,5 +3836,60 @@ TEST_F(EventHandlerSimTest, LocalFrameFromPluginElementForTesting) {
       << "The LocalFrame should contain the document loaded in the object "
          "element";
 }
+
+#if BUILDFLAG(IS_ANDROID)
+TEST_F(EventHandlerSimTest, KeyboardScrollHomeEndWithCtrlAltOnAndroid) {
+  WebView().MainFrameViewWidget()->Resize(gfx::Size(800, 600));
+  SimRequest request("https://example.com/test.html", "text/html");
+  LoadURL("https://example.com/test.html");
+  request.Complete(R"HTML(
+    <!DOCTYPE html>
+    <div style='height:10000px'>
+    Tall text to create viewport scrollbar</div>
+  )HTML");
+
+  Compositor().BeginFrame();
+
+  EXPECT_FALSE(
+      GetDocument().IsUseCounted(WebFeature::kScrollByKeyboardHomeEndKeys));
+  EXPECT_EQ(0, GetDocument().View()->LayoutViewport()->GetScrollOffset().y());
+
+  WebKeyboardEvent e{WebInputEvent::Type::kKeyDown,
+                     WebInputEvent::kControlKey | WebInputEvent::kAltKey,
+                     WebInputEvent::GetStaticTimeStampForTests()};
+  e.dom_code = static_cast<int>(ui::DomCode::ARROW_DOWN);
+  e.dom_key = ui::DomKey::ARROW_DOWN;
+  e.native_key_code = e.windows_key_code = blink::VKEY_DOWN;
+  GetDocument().GetFrame()->GetEventHandler().KeyEvent(e);
+
+  // The first BeginFrame() creates the scroll animation.
+  Compositor().BeginFrame();
+  // The second BeginFrame() with a time delta advances the animation.
+  Compositor().BeginFrame(1.0);
+
+  GetDocument().View()->UpdateAllLifecyclePhasesForTest();
+  EXPECT_GT(GetDocument().View()->LayoutViewport()->GetScrollOffset().y(), 0);
+
+  EXPECT_TRUE(
+      GetDocument().IsUseCounted(WebFeature::kScrollByKeyboardHomeEndKeys));
+
+  // Now test scrolling back to the top (VKEY_UP).
+  WebKeyboardEvent e_up{WebInputEvent::Type::kKeyDown,
+                        WebInputEvent::kControlKey | WebInputEvent::kAltKey,
+                        WebInputEvent::GetStaticTimeStampForTests()};
+  e_up.dom_code = static_cast<int>(ui::DomCode::ARROW_UP);
+  e_up.dom_key = ui::DomKey::ARROW_UP;
+  e_up.native_key_code = e_up.windows_key_code = blink::VKEY_UP;
+  GetDocument().GetFrame()->GetEventHandler().KeyEvent(e_up);
+
+  // The first BeginFrame() creates the scroll animation.
+  Compositor().BeginFrame();
+  // The second BeginFrame() with a time delta advances the animation.
+  Compositor().BeginFrame(1.0);
+
+  GetDocument().View()->UpdateAllLifecyclePhasesForTest();
+  EXPECT_EQ(0, GetDocument().View()->LayoutViewport()->GetScrollOffset().y());
+}
+#endif
 
 }  // namespace blink

@@ -5,10 +5,10 @@
 import {assert} from 'chrome://resources/js/assert.js';
 import type {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
-import type {Setting, Settings} from '../data/model.js';
+import type {Settings} from '../data/model.js';
 import {getInstance} from '../data/model.js';
 import type {PrintPreviewModelElement} from '../data/model.js';
-import type {ChangeCallback} from '../data/observable.js';
+import type {ObserverChangeCallback} from '../data/observable.js';
 
 type Constructor<T> = new (...args: any[]) => T;
 
@@ -45,20 +45,22 @@ export const SettingsMixin = <T extends Constructor<CrLitElement>>(
       this.observers_ = [];
     }
 
-    addSettingObserver(path: string, callback: ChangeCallback) {
+    addSettingObserver<T>(path: string, callback: ObserverChangeCallback<T>) {
       const id = getInstance().observable.addObserver(path, callback);
       this.observers_.push(id);
     }
 
-    getSetting(settingName: keyof Settings): Setting {
+    getSetting<K extends keyof Settings>(settingName: K): Settings[K] {
       return getInstance().getSetting(settingName);
     }
 
-    getSettingValue(settingName: keyof Settings): any {
+    getSettingValue<K extends keyof Settings>(settingName: K):
+        Settings[K]['value'] {
       return getInstance().getSettingValue(settingName);
     }
 
-    setSetting(settingName: keyof Settings, value: any, noSticky?: boolean) {
+    setSetting<K extends keyof Settings>(
+        settingName: K, value: Settings[K]['value'], noSticky?: boolean) {
       getInstance().setSetting(settingName, value, noSticky);
     }
 
@@ -71,19 +73,21 @@ export const SettingsMixin = <T extends Constructor<CrLitElement>>(
 };
 
 export interface SettingsMixinInterface {
-  addSettingObserver(path: string, callback: ChangeCallback): void;
+  addSettingObserver<T>(path: string, callback: ObserverChangeCallback<T>):
+      void;
 
   /**
    * @param settingName Name of the setting to get.
    * @return The setting object.
    */
-  getSetting(settingName: keyof Settings): Setting;
+  getSetting<K extends keyof Settings>(settingName: K): Settings[K];
 
   /**
    * @param settingName Name of the setting to get the value for.
    * @return The value of the setting, accounting for availability.
    */
-  getSettingValue(settingName: keyof Settings): any;
+  getSettingValue<K extends keyof Settings>(settingName: K):
+      Settings[K]['value'];
 
   /**
    * Sets settings.settingName.value to |value|, unless updating the setting is
@@ -94,7 +98,8 @@ export interface SettingsMixinInterface {
    * @param value The value to set the setting to.
    * @param noSticky Whether to avoid stickying the setting. Defaults to false.
    */
-  setSetting(settingName: keyof Settings, value: any, noSticky?: boolean): void;
+  setSetting<K extends keyof Settings>(
+      settingName: K, value: Settings[K]['value'], noSticky?: boolean): void;
 
   /**
    * Sets the validity of |settingName| to |valid|. If the validity is changed,

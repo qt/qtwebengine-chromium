@@ -12,6 +12,7 @@ android_library("boundary_interface_java") {
     "src/org/chromium/support_lib_boundary/FeatureFlagHolderBoundaryInterface.java",
     "src/org/chromium/support_lib_boundary/IsomorphicObjectBoundaryInterface.java",
     "src/org/chromium/support_lib_boundary/JsReplyProxyBoundaryInterface.java",
+    "src/org/chromium/support_lib_boundary/NavigationParametersBoundaryInterface.java",
     "src/org/chromium/support_lib_boundary/NoVarySearchDataBoundaryInterface.java",
     "src/org/chromium/support_lib_boundary/OriginMatchedHeaderBoundaryInterface.java",
     "src/org/chromium/support_lib_boundary/PrefetchOperationCallbackBoundaryInterface.java",
@@ -59,7 +60,10 @@ android_library("boundary_interface_java") {
     "src/org/chromium/support_lib_boundary/util/Features.java",
   ]
 
-  proguard_configs = [ "proguard.flags" ]
+  proguard_configs = [
+    # Include rules that should not be copied to AndroidX.
+    "../proguard.flags",
+  ]
 
   # Our choice of deps is limited, because boundary_interfaces/ must continue to
   # build when we mirror this into AndroidX. We are only permitted to depend on

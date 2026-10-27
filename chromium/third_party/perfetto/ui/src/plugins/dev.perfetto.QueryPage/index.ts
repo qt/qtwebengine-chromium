@@ -12,20 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import './styles.scss';
 import m from 'mithril';
 import {z} from 'zod';
 import {runQueryForQueryTable} from '../../components/query_table/queries';
 import {InMemoryDataSource} from '../../components/widgets/datagrid/in_memory_data_source';
-import {DataSource} from '../../components/widgets/datagrid/data_source';
-import {Row} from '../../trace_processor/query_result';
+import type {DataSource} from '../../components/widgets/datagrid/data_source';
+import type {Row} from '../../trace_processor/query_result';
 import {QueryResultsTab} from './query_result_tab';
-import {ResultsData, ResultsTable} from './results_table';
+import {type ResultsData, ResultsTable} from './results_table';
 import {undoCommonChatAppReplacements} from '../../base/string_utils';
-import {App} from '../../public/app';
-import {PerfettoPlugin} from '../../public/plugin';
-import {Setting} from '../../public/settings';
-import {Trace} from '../../public/trace';
-import {QueryPage, QueryEditorTab} from './query_page';
+import type {App} from '../../public/app';
+import type {PerfettoPlugin} from '../../public/plugin';
+import type {Setting} from '../../public/settings';
+import type {Trace} from '../../public/trace';
+import {QueryPage, type QueryEditorTab} from './query_page';
 import {queryHistoryStorage} from '../../components/widgets/query_history';
 import SqlModulesPlugin from '../dev.perfetto.SqlModules';
 import {shortUuid} from '../../base/uuid';
@@ -92,6 +93,7 @@ export default class QueryPagePlugin implements PerfettoPlugin {
   static readonly dependencies = [SqlModulesPlugin];
 
   private static queryTabPersistenceSetting: Setting<boolean>;
+  private static sidebarVisibleSetting: Setting<boolean>;
 
   constructor(private readonly trace: Trace) {}
 
@@ -119,6 +121,14 @@ export default class QueryPagePlugin implements PerfettoPlugin {
         'Experimental: stored queries may be lost during version upgrades.',
       schema: z.boolean(),
       defaultValue: false,
+    });
+
+    QueryPagePlugin.sidebarVisibleSetting = app.settings.register({
+      id: `${QueryPagePlugin.id}#sidebarVisible`,
+      name: 'Query Page: Sidebar Visible',
+      description: 'Show the History/Tables sidebar on the Query page.',
+      schema: z.boolean(),
+      defaultValue: true,
     });
   }
 
@@ -337,6 +347,7 @@ export default class QueryPagePlugin implements PerfettoPlugin {
           onTabAdd,
           onTabRename,
           onTabReorder,
+          sidebarVisibleSetting: QueryPagePlugin.sidebarVisibleSetting,
         }),
     });
 

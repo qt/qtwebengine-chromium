@@ -94,7 +94,9 @@ class Language {
                         * const Java,
                         * const Swift,
                         * const Rust,
-                        * const Assembler;
+                        * const Assembler,
+                        * const ObjectiveC,
+                        * const ObjectiveCPlusPlus;
 };
 
 } // namespace google_breakpad

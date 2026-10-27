@@ -13,11 +13,14 @@
 // limitations under the License.
 
 import m from 'mithril';
+import {Engine} from 'syntaqlite';
+import {assetSrc} from '../../base/assets';
 import {Icons} from '../../base/semantic_icons';
-import {QueryResponse} from '../../components/query_table/queries';
+import type {QueryResponse} from '../../components/query_table/queries';
 import {InMemoryDataSource} from '../../components/widgets/datagrid/in_memory_data_source';
 import {QueryHistoryComponent} from '../../components/widgets/query_history';
-import {Trace} from '../../public/trace';
+import type {Setting} from '../../public/settings';
+import type {Trace} from '../../public/trace';
 import {Box} from '../../widgets/box';
 import {Button, ButtonVariant} from '../../widgets/button';
 import {Callout} from '../../widgets/callout';
@@ -27,10 +30,10 @@ import {EmptyState} from '../../widgets/empty_state';
 import {HotkeyGlyphs} from '../../widgets/hotkey_glyphs';
 import {Spinner} from '../../widgets/spinner';
 import {SplitPanel} from '../../widgets/split_panel';
-import {Tabs, TabsTab} from '../../widgets/tabs';
+import {Tabs, type TabsTab} from '../../widgets/tabs';
 import {Stack, StackAuto} from '../../widgets/stack';
 import {Anchor} from '../../widgets/anchor';
-import {DataSource} from '../../components/widgets/datagrid/data_source';
+import type {DataSource} from '../../components/widgets/datagrid/data_source';
 import SqlModulesPlugin from '../dev.perfetto.SqlModules';
 import {TableList} from './table_list';
 import {ResultsTable} from './results_table';
@@ -82,6 +85,8 @@ export interface QueryPageAttrs {
   // draggedTabId is the tab being moved, beforeTabId is the tab it should be
   // placed before (or undefined if moved to the end).
   onTabReorder?(draggedTabId: string, beforeTabId: string | undefined): void;
+
+  readonly sidebarVisibleSetting: Setting<boolean>;
 }
 
 export class QueryPage implements m.ClassComponent<QueryPageAttrs> {
@@ -91,8 +96,31 @@ export class QueryPage implements m.ClassComponent<QueryPageAttrs> {
   // Track previous query results to detect changes
   private prevQueryResults = new Map<string, QueryResponse | undefined>();
 
+  // Lazily-initialized SQL formatter engine, scoped to this component instance.
+  private formatterEnginePromise?: Promise<Engine>;
+
+  private getFormatterEngine(): Promise<Engine> {
+    if (this.formatterEnginePromise === undefined) {
+      const engine = new Engine({
+        runtimeJsPath: assetSrc('assets/syntaqlite-runtime.js'),
+        runtimeWasmPath: assetSrc('assets/syntaqlite-runtime.wasm'),
+      });
+      this.formatterEnginePromise = (async () => {
+        await engine.load();
+        const binding = await engine.loadDialectFromUrl(
+          assetSrc('assets/syntaqlite-perfetto.wasm'),
+          'syntaqlite_perfetto_dialect_template',
+        );
+        engine.setDialectPointer(binding.ptr);
+        return engine;
+      })();
+    }
+    return this.formatterEnginePromise;
+  }
+
   view({attrs}: m.CVnode<QueryPageAttrs>) {
     const {editorTabs, activeTabId} = attrs;
+    const sidebarVisible = attrs.sidebarVisibleSetting.get();
 
     // Update data sources for tabs whose results have changed
     for (const tab of editorTabs) {
@@ -140,7 +168,20 @@ export class QueryPage implements m.ClassComponent<QueryPageAttrs> {
       onTabClose: (key) => attrs.onTabClose?.(key),
       onTabReorder: (draggedKey, beforeKey) =>
         attrs.onTabReorder?.(draggedKey, beforeKey),
-      onNewTab: () => attrs.onTabAdd?.(),
+      newTabContent: [
+        m(Button, {
+          icon: 'add',
+          className: 'pf-tabs__new-tab-btn',
+          onclick: () => attrs.onTabAdd?.(),
+        }),
+        m('.pf-query-page__tab-spacer'),
+        m(Button, {
+          icon: sidebarVisible ? 'right_panel_close' : 'right_panel_open',
+          title: sidebarVisible ? 'Hide sidebar' : 'Show sidebar',
+          onclick: () => attrs.sidebarVisibleSetting.set(!sidebarVisible),
+          active: sidebarVisible,
+        }),
+      ],
     });
 
     const activeTab = editorTabs.find((t) => t.id === activeTabId);
@@ -175,6 +216,10 @@ export class QueryPage implements m.ClassComponent<QueryPageAttrs> {
         },
       ],
     });
+
+    if (!sidebarVisible) {
+      return m('.pf-query-page', leftPanel);
+    }
 
     return m(
       '.pf-query-page',
@@ -219,6 +264,12 @@ export class QueryPage implements m.ClassComponent<QueryPageAttrs> {
             m(HotkeyGlyphs, {hotkey: 'Mod+Enter'}),
           ),
           m(StackAuto), // The spacer pushes the following buttons to the right.
+          m(Button, {
+            label: 'Format',
+            icon: 'format_align_left',
+            title: 'Auto-format the SQL query',
+            onclick: () => this.formatSql(attrs, tab.id, tab.editorText),
+          }),
           trace.isInternalUser &&
             m(Button, {
               icon: 'wand_stars',
@@ -284,6 +335,7 @@ export class QueryPage implements m.ClassComponent<QueryPageAttrs> {
         text: tab.editorText,
         onUpdate: (content) => attrs.onEditorContentUpdate?.(tab.id, content),
         onExecute: (query) => attrs.onExecute?.(tab.id, query),
+        onFormat: (text) => this.formatSql(attrs, tab.id, text),
       }),
     ]);
 
@@ -361,5 +413,25 @@ export class QueryPage implements m.ClassComponent<QueryPageAttrs> {
 
   private hidePerfettoSqlAgentBanner() {
     localStorage.setItem(HIDE_PERFETTO_SQL_AGENT_BANNER_KEY, 'true');
+  }
+
+  private async formatSql(attrs: QueryPageAttrs, tabId: string, text: string) {
+    try {
+      const engine = await this.getFormatterEngine();
+      const result = engine.runFmt(text, {
+        lineWidth: 80,
+        indentWidth: 2,
+        keywordCase: 1,
+        semicolons: true,
+      });
+      if (result.ok) {
+        attrs.onEditorContentUpdate?.(tabId, result.text);
+        m.redraw();
+      } else {
+        console.error('SQL formatting failed', result.text);
+      }
+    } catch (e) {
+      console.error('SQL formatting failed', e);
+    }
   }
 }

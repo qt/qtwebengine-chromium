@@ -890,16 +890,12 @@ angle::Result TextureStorage11::setData(const gl::Context *context,
     const int height   = destBox ? destBox->height : static_cast<int>(image->getHeight());
     const int depth    = destBox ? destBox->depth : static_cast<int>(image->getDepth());
     GLuint srcRowPitch = 0;
-    ANGLE_CHECK_GL_MATH(context11,
-                        internalFormatInfo.computeRowPitch(type, width, unpack.alignment,
-                                                           unpack.rowLength, &srcRowPitch));
     GLuint srcDepthPitch = 0;
-    ANGLE_CHECK_GL_MATH(context11, internalFormatInfo.computeDepthPitch(
-                                       height, unpack.imageHeight, srcRowPitch, &srcDepthPitch));
     GLuint srcSkipBytes = 0;
-    ANGLE_CHECK_GL_MATH(
-        context11, internalFormatInfo.computeSkipBytes(type, srcRowPitch, srcDepthPitch, unpack,
-                                                       index.usesTex3D(), &srcSkipBytes));
+
+    ANGLE_CHECK_GL_MATH(context11, internalFormatInfo.computeRowDepthSkipBytes(
+                                       type, width, height, unpack, index.usesTex3D(), &srcRowPitch,
+                                       &srcDepthPitch, &srcSkipBytes));
 
     const d3d11::Format &d3d11Format =
         d3d11::Format::Get(image->getInternalFormat(), mRenderer->getRenderer11DeviceCaps());
@@ -930,8 +926,9 @@ angle::Result TextureStorage11::setData(const gl::Context *context,
         bufferRowPitch   = checkedBufferRowPitch.ValueOrDie<UINT>();
         bufferDepthPitch = checkedBufferDepthPitch.ValueOrDie<UINT>();
 
-        ANGLE_TRY(mRenderer->getScratchMemoryBuffer(
-            context11, checkedNeededSize.ValueOrDie<size_t>(), &conversionBuffer));
+        ANGLE_CHECK_GL_ALLOC(
+            context11,
+            context->getScratchBuffer(checkedNeededSize.ValueOrDie<size_t>(), &conversionBuffer));
         loadFunctionInfo.loadFunction(mRenderer->getDisplay()->getImageLoadContext(), width, height,
                                       depth, pixelData + srcSkipBytes, srcRowPitch, srcDepthPitch,
                                       conversionBuffer->data(), bufferRowPitch, bufferDepthPitch);
@@ -1091,6 +1088,7 @@ void TextureStorage11_2D::onLabelUpdate()
 
 angle::Result TextureStorage11_2D::onDestroy(const gl::Context *context)
 {
+    angle::Result result = angle::Result::Continue;
     for (unsigned i = 0; i < gl::IMPLEMENTATION_MAX_TEXTURE_LEVELS; i++)
     {
         if (mAssociatedImages[i] != nullptr)
@@ -1099,9 +1097,13 @@ angle::Result TextureStorage11_2D::onDestroy(const gl::Context *context)
 
             // We must let the Images recover their data before we delete it from the
             // TextureStorage.
-            ANGLE_TRY(mAssociatedImages[i]->recoverFromAssociatedStorage(context));
+            if (IsError(mAssociatedImages[i]->recoverFromAssociatedStorage(context)))
+            {
+                result = angle::Result::Stop;
+            }
         }
     }
+    ANGLE_TRY(result);
 
     if (mHasKeyedMutex)
     {
@@ -2216,6 +2218,7 @@ TextureStorage11_Cube::TextureStorage11_Cube(Renderer11 *renderer,
 
 angle::Result TextureStorage11_Cube::onDestroy(const gl::Context *context)
 {
+    angle::Result result = angle::Result::Continue;
     for (unsigned int level = 0; level < gl::IMPLEMENTATION_MAX_TEXTURE_LEVELS; level++)
     {
         for (unsigned int face = 0; face < gl::kCubeFaceCount; face++)
@@ -2226,12 +2229,15 @@ angle::Result TextureStorage11_Cube::onDestroy(const gl::Context *context)
 
                 // We must let the Images recover their data before we delete it from the
                 // TextureStorage.
-                ANGLE_TRY(mAssociatedImages[face][level]->recoverFromAssociatedStorage(context));
+                if (IsError(mAssociatedImages[face][level]->recoverFromAssociatedStorage(context)))
+                {
+                    result = angle::Result::Stop;
+                }
             }
         }
     }
 
-    return angle::Result::Continue;
+    return result;
 }
 
 TextureStorage11_Cube::~TextureStorage11_Cube() {}
@@ -2903,6 +2909,7 @@ TextureStorage11_3D::TextureStorage11_3D(Renderer11 *renderer,
 
 angle::Result TextureStorage11_3D::onDestroy(const gl::Context *context)
 {
+    angle::Result result = angle::Result::Continue;
     for (unsigned i = 0; i < gl::IMPLEMENTATION_MAX_TEXTURE_LEVELS; i++)
     {
         if (mAssociatedImages[i] != nullptr)
@@ -2911,11 +2918,14 @@ angle::Result TextureStorage11_3D::onDestroy(const gl::Context *context)
 
             // We must let the Images recover their data before we delete it from the
             // TextureStorage.
-            ANGLE_TRY(mAssociatedImages[i]->recoverFromAssociatedStorage(context));
+            if (IsError(mAssociatedImages[i]->recoverFromAssociatedStorage(context)))
+            {
+                result = angle::Result::Stop;
+            }
         }
     }
 
-    return angle::Result::Continue;
+    return result;
 }
 
 TextureStorage11_3D::~TextureStorage11_3D() {}
@@ -3279,6 +3289,7 @@ TextureStorage11_2DArray::TextureStorage11_2DArray(Renderer11 *renderer,
 
 angle::Result TextureStorage11_2DArray::onDestroy(const gl::Context *context)
 {
+    angle::Result result = angle::Result::Continue;
     for (auto iter : mAssociatedImages)
     {
         if (iter.second)
@@ -3287,12 +3298,15 @@ angle::Result TextureStorage11_2DArray::onDestroy(const gl::Context *context)
 
             // We must let the Images recover their data before we delete it from the
             // TextureStorage.
-            ANGLE_TRY(iter.second->recoverFromAssociatedStorage(context));
+            if (IsError(iter.second->recoverFromAssociatedStorage(context)))
+            {
+                result = angle::Result::Stop;
+            }
         }
     }
     mAssociatedImages.clear();
 
-    return angle::Result::Continue;
+    return result;
 }
 
 TextureStorage11_2DArray::~TextureStorage11_2DArray() {}

@@ -31,6 +31,7 @@
 #include <memory>
 
 #include "base/numerics/byte_conversions.h"
+#include "base/numerics/safe_conversions.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_names.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_buffer.h"
@@ -81,8 +82,8 @@ String TextCodecUtf16::Decode(base::span<const uint8_t> bytes,
                               bool,
                               bool& saw_error) {
   // For compatibility reasons, ignore flush from fetch EOF.
-  const bool really_flush = flush != FlushBehavior::kDoNotFlush &&
-                            flush != FlushBehavior::kFetchEOF;
+  const bool really_flush =
+      flush != FlushBehavior::kDoNotFlush && flush != FlushBehavior::kFetchEof;
 
   if (bytes.empty()) {
     if (really_flush && (have_lead_byte_ || have_lead_surrogate_)) {
@@ -93,7 +94,8 @@ String TextCodecUtf16::Decode(base::span<const uint8_t> bytes,
     return String();
   }
 
-  const wtf_size_t num_bytes = bytes.size() + have_lead_byte_;
+  const wtf_size_t num_bytes =
+      base::checked_cast<wtf_size_t>(bytes.size()) + have_lead_byte_;
   const bool will_have_extra_byte = num_bytes & 1;
   wtf_size_t num_chars_in = num_bytes / 2;
   const wtf_size_t max_chars_out =

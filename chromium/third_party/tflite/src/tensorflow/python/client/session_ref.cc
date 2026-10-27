@@ -26,6 +26,7 @@ limitations under the License.
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "absl/strings/str_format.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/lib/io/record_writer.h"
 #include "tensorflow/core/lib/strings/stringprintf.h"
@@ -405,7 +406,8 @@ SessionRef::~SessionRef() = default;
 
 absl::Status SessionRef::CheckNotClosed() {
   mutex_lock l(run_lock_);
-  if (session_ == nullptr) return errors::Cancelled("Session has been closed.");
+  if (session_ == nullptr)
+    return absl::CancelledError("Session has been closed.");
   return absl::OkStatus();
 }
 

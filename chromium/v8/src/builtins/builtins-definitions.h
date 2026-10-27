@@ -486,6 +486,8 @@ constexpr int kGearboxGenericBuiltinIdOffset = -2;
   TFS(DeleteProperty, NeedsContext::kYes, kObject, kKey, kLanguageMode)        \
   TFS(CopyDataProperties, NeedsContext::kYes, kTarget, kSource)                \
   TFS(SetDataProperties, NeedsContext::kYes, kTarget, kSource)                 \
+  TFS(ProxyGetPropertyFastPath, NeedsContext::kYes, kProxy, kName, kReceiver,  \
+      kHandler)                                                                \
   TFC(CopyDataPropertiesWithExcludedPropertiesOnStack,                         \
       CopyDataPropertiesWithExcludedPropertiesOnStack)                         \
   TFC(CopyDataPropertiesWithExcludedProperties,                                \
@@ -746,7 +748,6 @@ constexpr int kGearboxGenericBuiltinIdOffset = -2;
   CPP(FunctionConstructor, kDontAdaptArgumentsSentinel)                        \
   ASM(FunctionPrototypeApply, JSTrampoline)                                    \
   CPP(FunctionPrototypeBind, kDontAdaptArgumentsSentinel)                      \
-  IF_WASM(CPP, WebAssemblyFunctionPrototypeBind, kDontAdaptArgumentsSentinel)  \
   IF_WASM(TFJ, WasmConstructorWrapper, kDontAdaptArgumentsSentinel)            \
   IF_WASM(TFJ, WasmMethodWrapper, kDontAdaptArgumentsSentinel)                 \
   ASM(FunctionPrototypeCall, JSTrampoline)                                     \
@@ -772,7 +773,6 @@ constexpr int kGearboxGenericBuiltinIdOffset = -2;
   CPP(AsyncFunctionConstructor, kDontAdaptArgumentsSentinel)                   \
   TFC(SuspendGeneratorBaseline, SuspendGeneratorBaseline)                      \
   TFC(ResumeGeneratorBaseline, ResumeGeneratorBaseline)                        \
-  TFC(GeneratorNextLazyDeoptContinuation, GeneratorNextLazyDeoptContinuation)  \
                                                                                \
   /* Iterator Protocol */                                                      \
   TFC(GetIteratorWithFeedbackLazyDeoptContinuation, GetIteratorStackParameter) \
@@ -1175,7 +1175,7 @@ constexpr int kGearboxGenericBuiltinIdOffset = -2;
                                                                                \
   /* Wasm */                                                                   \
   IF_WASM_DRUMBRAKE(ASM, WasmInterpreterEntry, WasmDummy)                      \
-  IF_WASM_DRUMBRAKE(ASM, GenericJSToWasmInterpreterWrapper, JSTrampoline)      \
+  IF_WASM_DRUMBRAKE(ASM, JSToWasmInterpreterWrapperAsm, WasmJSToWasmWrapper)   \
   IF_WASM_DRUMBRAKE(ASM, WasmInterpreterCWasmEntry, WasmDummy)                 \
   IF_WASM_DRUMBRAKE(ASM, GenericWasmToJSInterpreterWrapper, WasmDummy)         \
                                                                                \
@@ -1517,8 +1517,7 @@ constexpr int kGearboxGenericBuiltinIdOffset = -2;
   TFC(FindNonDefaultConstructorOrConstruct,                                    \
       FindNonDefaultConstructorOrConstruct)                                    \
   TFS(OrdinaryGetOwnPropertyDescriptor, NeedsContext::kYes, kReceiver, kKey)   \
-  TFS(CheckMaglevType, NeedsContext::kNo, kObject, kType,                      \
-      kAllowWideningSmiToInt32)                                                \
+  TFS(CheckMaglevType, NeedsContext::kNo, kObject, kType)                      \
   IF_SHADOW_STACK(ASM, AdaptShadowStackForDeopt, Void)                         \
                                                                                \
   /* Trace */                                                                  \

@@ -45,10 +45,12 @@
 #include "third_party/blink/renderer/platform/wtf/text/character_visitor.h"
 #include "third_party/blink/renderer/platform/wtf/text/code_point_iterator.h"
 #include "third_party/blink/renderer/platform/wtf/text/copy_lchars_from_uchar_source.h"
+#include "third_party/blink/renderer/platform/wtf/text/integer_to_string_conversion.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_internal.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
 #include "third_party/blink/renderer/platform/wtf/text/unicode.h"
+#include "third_party/blink/renderer/platform/wtf/text/utf16.h"
 #include "third_party/blink/renderer/platform/wtf/text/utf8.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "third_party/perfetto/include/perfetto/tracing/traced_value.h"
@@ -95,10 +97,33 @@ String::size_type String::rfind(const StringView& value,
   return impl_ ? impl_->ReverseFind(value, start) : npos;
 }
 
+UChar32 String::CodePointAt(size_type i) const {
+  if (Is8Bit()) {
+    return Span8()[i];
+  }
+  return blink::CodePointAt(Span16(), i);
+}
+
 UChar32 String::CodePointAtOrZero(size_type i) const {
   if (!impl_ || i >= impl_->length())
     return 0;
   return impl_->CodePointAtOrZero(i);
+}
+
+UChar32 String::CodePointAtAndPrevious(size_type start_offset,
+                                       size_type& i) const {
+  DCHECK_LT(start_offset, i);
+  if (Is8Bit()) {
+    return Span8()[--i];
+  }
+  return blink::CodePointAtAndPrevious(Span16(), start_offset, i);
+}
+
+UChar32 String::CodePointAtAndNext(size_type& i) const {
+  if (Is8Bit()) {
+    return Span8()[i++];
+  }
+  return blink::CodePointAtAndNext(Span16(), i);
 }
 
 CodePointIterator String::begin() const {
@@ -129,7 +154,7 @@ String& String::erase(size_type pos, size_type len) {
   return *this;
 }
 
-String String::Substring(size_type pos, size_type len) const {
+String String::DeprecatedSubstring(size_type pos, size_type len) const {
   if (!impl_)
     return String();
   return impl_->Substring(pos, len);
@@ -274,6 +299,36 @@ String String::EncodeForDebugging() const {
   return StringView(*this).EncodeForDebugging();
 }
 
+String String::Number(int value) {
+  IntegerToStringConverter<int> converter(value);
+  return StringImpl::Create(converter.Span());
+}
+
+String String::Number(unsigned value) {
+  IntegerToStringConverter<unsigned> converter(value);
+  return StringImpl::Create(converter.Span());
+}
+
+String String::Number(long value) {
+  IntegerToStringConverter<long> converter(value);
+  return StringImpl::Create(converter.Span());
+}
+
+String String::Number(unsigned long value) {
+  IntegerToStringConverter<unsigned long> converter(value);
+  return StringImpl::Create(converter.Span());
+}
+
+String String::Number(long long value) {
+  IntegerToStringConverter<long long> converter(value);
+  return StringImpl::Create(converter.Span());
+}
+
+String String::Number(unsigned long long value) {
+  IntegerToStringConverter<unsigned long long> converter(value);
+  return StringImpl::Create(converter.Span());
+}
+
 String String::Number(float number) {
   return Number(static_cast<double>(number));
 }
@@ -283,7 +338,7 @@ String String::Number(double number, unsigned precision) {
   return String(converter.ToStringWithFixedPrecision(number, precision));
 }
 
-String String::NumberToStringECMAScript(double number) {
+String String::NumberToStringEcmaScript(double number) {
   DoubleToStringConverter converter;
   return String(converter.ToString(number));
 }
@@ -292,6 +347,11 @@ String String::NumberToStringFixedWidth(double number,
                                         unsigned decimal_places) {
   DoubleToStringConverter converter;
   return String(converter.ToStringWithFixedWidth(number, decimal_places));
+}
+
+String String::HexNumber(uint64_t value) {
+  IntegerToStringConverter<uint64_t, 16, false> converter(value);
+  return StringImpl::Create(converter.Span());
 }
 
 Vector<String> String::Split(const StringView& separator) const {
@@ -362,8 +422,9 @@ String String::Make16BitFrom8BitSource(base::span<const LChar> source) {
     return g_empty_string16_bit;
   }
 
+  const wtf_size_t length = base::checked_cast<wtf_size_t>(source.size());
   base::span<UChar> destination;
-  String result = String::CreateUninitialized(source.size(), destination);
+  String result = String::CreateUninitialized(length, destination);
 
   StringImpl::CopyChars(destination, source);
   return result;
@@ -385,9 +446,9 @@ String String::FromUtf8(base::span<const uint8_t> bytes) {
 
   Vector<UChar, 1024> buffer(length);
 
-  blink::unicode::ConversionResult result =
-      blink::unicode::ConvertUtf8ToUtf16(bytes, base::span(buffer));
-  if (result.status != blink::unicode::kConversionOK) {
+  unicode::ConversionResult result =
+      unicode::ConvertUtf8ToUtf16(bytes, base::span(buffer));
+  if (!result.IsSuccess()) {
     return String();
   }
 

@@ -19,7 +19,7 @@
 #include "base/memory/safety_checks.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "content/browser/renderer_host/back_forward_cache_metrics.h"
+#include "content/browser/back_forward_cache/back_forward_cache_metrics.h"
 #include "content/browser/renderer_host/frame_navigation_entry.h"
 #include "content/browser/renderer_host/navigation_transitions/navigation_transition_data.h"
 #include "content/browser/site_instance_impl.h"
@@ -182,6 +182,8 @@ class CONTENT_EXPORT NavigationEntryImpl : public NavigationEntry {
   bool IsRestored() const override;
   std::string GetExtraHeaders() const override;
   void AddExtraHeaders(const std::string& extra_headers) override;
+  bool GetRemoveExtraHeadersOnCrossOriginRedirect() const override;
+  void SetRemoveExtraHeadersOnCrossOriginRedirect(bool value) override;
   int64_t GetMainFrameDocumentSequenceNumber() const override;
 
   // Creates a copy of this NavigationEntryImpl that can be modified
@@ -557,14 +559,6 @@ class CONTENT_EXPORT NavigationEntryImpl : public NavigationEntry {
     return navigation_transition_data_;
   }
 
-  void set_remove_extra_headers_on_cross_origin_redirect(bool value) {
-    remove_extra_headers_on_cross_origin_redirect_ = value;
-  }
-
-  bool remove_extra_headers_on_cross_origin_redirect() const {
-    return remove_extra_headers_on_cross_origin_redirect_;
-  }
-
  private:
   std::unique_ptr<NavigationEntryImpl> CloneAndReplaceInternal(
       scoped_refptr<FrameNavigationEntry> frame_entry,
@@ -614,7 +608,9 @@ class CONTENT_EXPORT NavigationEntryImpl : public NavigationEntry {
   // compiler provided copy constructor.  Cleared in |ResetForCommit|.
   scoped_refptr<network::ResourceRequestBody> post_data_;
 
-  // This member is not persisted with session restore.
+  // Additional HTTP headers to be passed as part of the request.
+  // This member is not persisted with session restore, except in Android
+  // WebView when the kWebViewSaveStateIncludeHeaders feature is enabled.
   std::string extra_headers_;
 
   // If true, any extra headers provided will be removed on a cross-origin

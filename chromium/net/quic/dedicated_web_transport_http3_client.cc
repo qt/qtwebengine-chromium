@@ -349,12 +349,33 @@ void RecordNegotiatedWebTransportVersion(
       "Net.WebTransport.NegotiatedWebTransportVersion", negotiated);
 }
 
-void AdjustSendAlgorithm(quic::QuicConnection& connection) {
-  if (!base::FeatureList::IsEnabled(kWebTransportCongestionControl)) {
+void AdjustSendAlgorithm(quic::QuicConnection& connection,
+                         WebTransportParameters::CongestionControlHint hint) {
+  // First check if the global feature flag overrides everything.
+  if (base::FeatureList::IsEnabled(kWebTransportCongestionControl)) {
+    connection.sent_packet_manager().SetSendAlgorithm(
+        kWebTransportCongestionControlAlgorithm.Get());
     return;
   }
-  connection.sent_packet_manager().SetSendAlgorithm(
-      kWebTransportCongestionControlAlgorithm.Get());
+
+  // Otherwise, apply the per-connection hint from the application.
+  switch (hint) {
+    case WebTransportParameters::CongestionControlHint::kDefault:
+      // Keep the default algorithm (Cubic); no change needed.
+      break;
+    case WebTransportParameters::CongestionControlHint::kThroughput:
+      // BBRv2 provides improved bandwidth estimation and better coexistence
+      // with loss-based algorithms, making it well-suited for bulk transfers.
+      connection.sent_packet_manager().SetSendAlgorithm(quic::kBBRv2);
+      break;
+    case WebTransportParameters::CongestionControlHint::kLowLatency:
+      // TODO(crbug.com/501268547): Revisit algorithm choice for low-latency
+      // when a better option becomes available.
+      connection.sent_packet_manager().SetSendAlgorithm(quic::kBBRv2);
+      break;
+    default:
+      NOTREACHED();
+  }
 }
 
 }  // namespace
@@ -364,12 +385,15 @@ DedicatedWebTransportHttp3Client::DedicatedWebTransportHttp3Client(
     const url::Origin& origin,
     WebTransportClientVisitor* visitor,
     const NetworkAnonymizationKey& anonymization_key,
+    handles::NetworkHandle target_network,
     URLRequestContext* context,
     const WebTransportParameters& parameters)
     : url_(url),
       origin_(origin),
       anonymization_key_(anonymization_key),
+      target_network_(target_network),
       application_protocols_(parameters.application_protocols),
+      congestion_control_hint_(parameters.congestion_control_hint),
       context_(context),
       visitor_(visitor),
       quic_context_(context->quic_context()),
@@ -550,7 +574,8 @@ int DedicatedWebTransportHttp3Client::DoInit() {
 int DedicatedWebTransportHttp3Client::DoCheckProxy() {
   next_connect_state_ = CONNECT_STATE_CHECK_PROXY_COMPLETE;
   return context_->proxy_resolution_service()->ResolveProxy(
-      url_, /* method */ "CONNECT", anonymization_key_, &proxy_info_,
+      url_, /* method */ "CONNECT", anonymization_key_, target_network_,
+      &proxy_info_,
       base::BindOnce(&DedicatedWebTransportHttp3Client::DoLoop,
                      base::Unretained(this)),
       &proxy_resolution_request_, net_log_, DEFAULT_PRIORITY);
@@ -669,7 +694,7 @@ void DedicatedWebTransportHttp3Client::CreateConnection() {
   event_logger_ = std::make_unique<QuicEventLogger>(session_.get(), net_log_);
   connection_->set_debug_visitor(event_logger_.get());
   connection_->set_creator_debug_delegate(event_logger_.get());
-  AdjustSendAlgorithm(*connection_);
+  AdjustSendAlgorithm(*connection_, congestion_control_hint_);
 
   session_->Initialize();
   packet_reader_->StartReading();

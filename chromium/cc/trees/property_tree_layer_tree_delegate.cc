@@ -7,7 +7,7 @@
 #include "base/trace_event/trace_event.h"
 #include "cc/layers/heads_up_display_layer.h"
 #include "cc/trees/layer_tree_host.h"
-#include "cc/trees/mutator_host_client.h"
+#include "cc/trees/mutator_host_delegate.h"
 #include "cc/trees/property_tree_builder.h"
 
 namespace cc {
@@ -28,11 +28,11 @@ void PropertyTreeLayerTreeDelegate::UpdatePropertyTreesIfNeeded() {
   TRACE_EVENT0("cc",
                "PropertyTreeLayerTreeDelegate::UpdatePropertyTreesIfNeeded");
   PropertyTreeBuilder::BuildPropertyTrees(host());
-  TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
-                       "PropertyTreeLayerTreeDelegate::"
-                       "UpdatePropertyTreesIfNeeded_BuiltPropertyTrees",
-                       TRACE_EVENT_SCOPE_THREAD, "property_trees",
-                       host()->property_trees()->AsTracedValue());
+  TRACE_EVENT_INSTANT(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
+                      "PropertyTreeLayerTreeDelegate::"
+                      "UpdatePropertyTreesIfNeeded_BuiltPropertyTrees",
+                      "property_trees",
+                      host()->property_trees()->AsTracedValue());
 }
 
 void PropertyTreeLayerTreeDelegate::UpdateScrollOffsetFromImpl(
@@ -94,14 +94,17 @@ void PropertyTreeLayerTreeDelegate::OnElementOpacityMutated(
   DCHECK(layer);
   layer->OnOpacityAnimated(opacity);
 
-  if (EffectNode* node = host()->property_trees()->effect_tree_mutable().Node(
-          layer->effect_tree_index())) {
-    DCHECK_EQ(layer->effect_tree_index(), node->id);
-    if (node->opacity == opacity) {
+  int effect_tree_index = layer->effect_tree_index();
+  if (effect_tree_index != kInvalidPropertyNodeId) {
+    EffectNode& node =
+        host()->property_trees()->effect_tree_mutable().MutableNode(
+            effect_tree_index);
+    DCHECK_EQ(effect_tree_index, node.id);
+    if (node.opacity == opacity) {
       return;
     }
 
-    node->opacity = opacity;
+    node.opacity = opacity;
     host()->property_trees()->effect_tree_mutable().set_needs_update(true);
   }
 
@@ -117,16 +120,16 @@ void PropertyTreeLayerTreeDelegate::OnElementTransformMutated(
   layer->OnTransformAnimated(transform);
 
   if (layer->has_transform_node()) {
-    TransformNode* node =
-        host()->property_trees()->transform_tree_mutable().Node(
+    TransformNode& node =
+        host()->property_trees()->transform_tree_mutable().MutableNode(
             layer->transform_tree_index());
-    if (node->local == transform) {
+    if (node.local == transform) {
       return;
     }
 
-    node->local = transform;
-    node->needs_local_transform_update = true;
-    node->has_potential_animation = true;
+    node.local = transform;
+    node.needs_local_transform_update = true;
+    node.has_potential_animation = true;
     host()->property_trees()->transform_tree_mutable().set_needs_update(true);
   }
 

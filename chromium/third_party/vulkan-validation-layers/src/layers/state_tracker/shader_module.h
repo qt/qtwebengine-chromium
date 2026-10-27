@@ -99,7 +99,7 @@ struct DecorationBase {
 };
 
 // subset only for OpDecorate
-// Can't have nested structs with OpMemberDecorate, this class prevents accidently creating a 2nd level of member decorations,
+// Can't have nested structs with OpMemberDecorate, this class prevents accidentally creating a 2nd level of member decorations,
 struct DecorationSet : public DecorationBase {
     // For descriptors
     uint32_t set = kInvalidValue;
@@ -115,7 +115,6 @@ struct DecorationSet : public DecorationBase {
     bool HasAnyBuiltIn() const;
     bool HasInMember(FlagBit flag_bit) const;
     bool AllMemberHave(FlagBit flag_bit) const;
-    bool IsDescriptorSet() const { return set != kInvalidValue && binding != kInvalidValue; }
 };
 
 // Tracking of OpExecutionMode / OpExecutionModeId values
@@ -345,7 +344,7 @@ struct VariableBase {
     const VkShaderStageFlagBits stage;
     VariableBase(const Module &module_state, const Instruction &insn, VkShaderStageFlagBits stage, const ParsedInfo &parsed);
 
-    const Instruction* debug_global_variable;  // DebugGlobalVariable from NonSemantic.Shader.DebugInfo.100
+    const Instruction* debug_global_variable;  // DebugGlobalVariable from NonSemantic.Shader.DebugInfo.*
     // We need to store a std::string since the original SPIR-V string can be gone when we need to print this in an error message
     const std::string debug_name;  // OpName or OpString (empty if no debug info found)
 
@@ -373,6 +372,8 @@ struct VariableBase {
     bool IsImageAccessed() const { return access_mask & AccessBit::image_mask; }
 
     bool IsUntyped() const { return data_type_id != 0; }
+
+    bool HasInMember(DecorationSet::FlagBit flag_bit) const;
 
   private:
     static const Instruction* FindDebugGlobalVariable(const VariableBase& variable, const Module& module_state,
@@ -432,9 +433,6 @@ struct ResourceInterfaceVariable : public VariableBase {
     bool IsRuntimeArray() const { return array_length == kRuntimeArray; }
     bool IsArray() const { return array_length != 0; }
 
-    // OpTypeSampledImage (used for combined image samplers)
-    bool is_type_sampled_image;
-
     // The index of vector is index of image. (TODO - this doesn't work for GPU-AV)
     std::vector<vvl::unordered_set<SamplerUsedByImage>> samplers_used_by_image;
 
@@ -446,12 +444,8 @@ struct ResourceInterfaceVariable : public VariableBase {
     vvl::unordered_set<uint32_t> input_attachment_index_read;
 
     // Type once array/pointer are stripped
-    // most likely will be OpTypeImage, OpTypeStruct, OpTypeSampler, or OpTypeAccelerationStructureKHR
+    // most likely will be OpTypeImage, OpTypeStruct, OpTypeSampler, OpTypeSampledImage, or OpTypeAccelerationStructureKHR
     const Instruction &base_type;
-
-    // True if the Resource variable itself is runtime descriptor array
-    // Online example to showcase various arrays we do/don't care about here https://godbolt.org/z/h9jhsKaPn
-    bool is_runtime_descriptor_array;
 
     // "constant integral expressions" is fancy spec language to mean "you are not doing dynamic descriptor indexing into an array"
     // NOTE - This just checks if there is ANY non-costant access
@@ -476,7 +470,7 @@ struct ResourceInterfaceVariable : public VariableBase {
         // the width in bits of the 'Type' operand of OpTypeImage/OpTypeTensorARM (64 is the largest bit width in SPIR-V)
         uint8_t bit_width{0};
 
-        spv::Dim image_dim;
+        spv::Dim image_dim{spv::DimMax};
         bool is_image_array{false};
         bool is_multisampled{false};
 
@@ -495,19 +489,31 @@ struct ResourceInterfaceVariable : public VariableBase {
     // For non descriptor indexing usages, this hash allows use to skip re-validating because a different VkImageView bound will
     // result in the same outcome
     uint64_t descriptor_hash = 0;
-    bool IsImage() const { return base_type.Opcode() == spv::OpTypeImage; }
+    bool IsImage() const { return base_type.Opcode() == spv::OpTypeImage || base_type.Opcode() == spv::OpTypeSampledImage; }
 
     bool IsHeap() const;
     std::string DescribeDescriptor() const;
 
     // Type of resource type (vkspec.html#interfaces-resources-storage-class-correspondence)
+    // A resource variable is not a 1:1 mapping to a VkDescriptorType, it can be many different possible types. We capture all
+    // possible options and provide helper functions to get the information out depending what is actually needed
+    VkDescriptorType GetPotentialDescriptorType() const;
+    vvl::unordered_set<VkDescriptorType> GetAllDescriptorTypes() const;
+    bool is_storage_buffer{false};
+    bool is_uniform_buffer{false};
     bool is_storage_image{false};
+    bool is_uniform_texel_buffer{false};
     bool is_storage_texel_buffer{false};
-    const bool is_storage_buffer;
-    const bool is_uniform_buffer;
     bool is_input_attachment{false};
-    bool is_storage_tensor{false};
     bool is_sampler{false};
+    bool is_sampled_image{false};
+    bool is_combined_image_sampler{false};
+    bool is_acceleration_structure{false};
+    bool is_acceleration_structure_nv{false};
+    bool is_partitioned_acceleration_structure{false};
+    bool is_storage_tensor{false};
+    // Way to print out extra useful information
+    bool is_buffer_block{false};
 
     bool is_resource_heap{false};
     bool is_sampler_heap{false};
@@ -516,9 +522,7 @@ struct ResourceInterfaceVariable : public VariableBase {
                               const ParsedInfo &parsed);
 
   protected:
-    static const Instruction &FindBaseType(ResourceInterfaceVariable &variable, const Module &module_state);
-    static bool IsStorageBuffer(const ResourceInterfaceVariable &variable);
-    static bool IsUniformBuffer(const ResourceInterfaceVariable &variable);
+    static const Instruction& FindBaseType(ResourceInterfaceVariable& variable, const Module& module_state);
 };
 
 // Used to help detect if different variable is being used
@@ -729,7 +733,7 @@ struct Module {
         // ID from OpExtInstImport required to know if a OpExtInst is from it
         struct ExtendedInstructionSets {
             uint32_t glsl_std450 = 0;        // GLSL.std.450
-            uint32_t shader_debug_info = 0;  // NonSemantic.Shader.DebugInfo.100
+            uint32_t shader_debug_info = 0;  // NonSemantic.Shader.DebugInfo.*
             uint32_t tosa_001000_1 = 0;      // TOSA.001000.1
         } extended;
 
@@ -821,8 +825,6 @@ struct Module {
     NumericType GetNumericType(const Instruction &insn) const;
     bool IsTensorFormatCompatible(VkFormat format, const spirv::Instruction& type_inst) const;
     VkFormat GetTensorFormat(const spirv::Instruction& type_inst) const;
-
-    bool HasRuntimeArray(uint32_t type_id) const;
 
     // Instruction helpers that need the knowledge of the whole SPIR-V module
     uint32_t GetNumComponentsInBaseType(const Instruction *insn) const;

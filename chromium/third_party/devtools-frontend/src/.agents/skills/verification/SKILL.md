@@ -1,6 +1,6 @@
 ---
 name: devtools-verification
-description: MANDATORY: Activate this skill ANY TIME you need to build the project, run tests, or verify code health in DevTools. You MUST use this skill before executing commands like npm test, npm run build, autoninja, or linters, as it contains critical, repository-specific instructions on how to correctly format these commands, filter test runs, and interpret failures.
+description: "MANDATORY: Activate this skill ANY TIME you need to build the project, run tests, or verify code health in DevTools. You MUST use this skill before executing commands like npm test, npm run build, autoninja, or linters, as it contains critical, repository-specific instructions on how to correctly format these commands, filter test runs, and interpret failures."
 ---
 
 # Instructions on how to verify your changes
@@ -13,12 +13,7 @@ description: MANDATORY: Activate this skill ANY TIME you need to build the proje
 
 ## Building & compiling
 
-- Check for TypeScript or dependency issues in the build system by running `autoninja -C out/Default`.
-
-## Fast builds
-
-- If the `out/Fast` or `out/fast-build` directory exists, this means that a build that does not execute TypeScript is available to you which greatly decreases build time.
-- To use the fast build for tests, pass the `--target=Fast` (adjust the value based on the name of the directory) argument to `npm run test`.
+- Check for build issues by running `autoninja -C out/Default`.
 
 ## Linting
 
@@ -29,5 +24,5 @@ description: MANDATORY: Activate this skill ANY TIME you need to build the proje
 
 - Run tests often to verify your changes.
 - Prefer using a fast build, if it exists, to keep the feedback loop shorter.
-- Periodically compile with TypeScript to check for type errors.
-- Run linting at the end of your code changes.
+- Periodically build to check for errors.
+- Run `git cl presubmit -u` at the end of your code changes.

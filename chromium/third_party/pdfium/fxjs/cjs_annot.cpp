@@ -54,7 +54,7 @@ CJS_Result CJS_Annot::get_hidden(CJS_Runtime* pRuntime) {
 CJS_Result CJS_Annot::set_hidden(CJS_Runtime* pRuntime,
                                  v8::Local<v8::Value> vp) {
   // May invalidate annot_.
-  bool bHidden = pRuntime->ToBoolean(vp);
+  bool bHidden = pRuntime->ToBooleanReentrant(vp);
 
   CPDFSDK_BAAnnot* pBAAnnot = annot_.Get();
   if (!pBAAnnot) {
@@ -89,7 +89,7 @@ CJS_Result CJS_Annot::get_name(CJS_Runtime* pRuntime) {
 
 CJS_Result CJS_Annot::set_name(CJS_Runtime* pRuntime, v8::Local<v8::Value> vp) {
   // May invalidate annot_.
-  WideString annotName = pRuntime->ToWideString(vp);
+  WideString annotName = pRuntime->ToWideStringReentrant(vp);
 
   CPDFSDK_BAAnnot* pBAAnnot = annot_.Get();
   if (!pBAAnnot) {

@@ -28,25 +28,25 @@ import {classNames} from '../../base/classnames';
 import {DisposableStack} from '../../base/disposable_stack';
 import {findRef, toHTMLElement} from '../../base/dom_utils';
 import {
-  HorizontalBounds,
+  type HorizontalBounds,
   Rect2D,
-  Size2D,
+  type Size2D,
   Transform1D,
-  VerticalBounds,
+  type VerticalBounds,
 } from '../../base/geom';
 import {HighPrecisionTime} from '../../base/high_precision_time';
 import {HighPrecisionTimeSpan} from '../../base/high_precision_time_span';
 import {assertExists} from '../../base/assert';
-import {Time} from '../../base/time';
+import {Time, TimeSpan} from '../../base/time';
 import {TimeScale} from '../../base/time_scale';
 import {
-  DragEvent,
+  type DragEvent,
   ZonedInteractionHandler,
 } from '../../base/zoned_interaction_handler';
 import {PerfStats, runningStatStr} from '../../core/perf_stats';
-import {TraceImpl} from '../../core/trace_impl';
-import {TrackNode} from '../../public/workspace';
-import {SnapPoint} from '../../public/track';
+import type {TraceImpl} from '../../core/trace_impl';
+import type {TrackNode} from '../../public/workspace';
+import type {SnapPoint} from '../../public/track';
 import {VirtualOverlayCanvas} from '../../widgets/virtual_overlay_canvas';
 import {
   COLOR_ACCENT,
@@ -73,9 +73,9 @@ import {EmptyState} from '../../widgets/empty_state';
 import {Button, ButtonVariant} from '../../widgets/button';
 import {Intent} from '../../widgets/common';
 import {CursorTooltip} from '../../widgets/cursor_tooltip';
-import {CanvasColors} from '../../public/canvas_colors';
+import type {CanvasColors} from '../../public/canvas_colors';
 import {Icons} from '../../base/semantic_icons';
-import {Renderer} from '../../base/renderer';
+import type {Renderer} from '../../base/renderer';
 
 const VIRTUAL_TRACK_SCROLLING = featureFlags.register({
   id: 'virtualTrackScrolling',
@@ -319,7 +319,7 @@ export class TrackTreeView implements m.ClassComponent<TrackTreeViewAttrs> {
     return m(
       VirtualOverlayCanvas,
       {
-        onMount: (redrawCanvas) =>
+        onMount: ({redrawCanvas}) =>
           attrs.trace.raf.addCanvasRedrawCallback(redrawCanvas),
         disableCanvasRedrawOnMithrilUpdates: true,
         className: classNames(className, 'pf-track-tree'),
@@ -624,7 +624,11 @@ export class TrackTreeView implements m.ClassComponent<TrackTreeViewAttrs> {
               renderedTracks,
             );
 
-            this.handleDrag.currentTime = currentTime;
+            this.handleDrag.currentTime = currentTime.clamp(
+              trace.traceInfo.start,
+              trace.traceInfo.end,
+            );
+
             trace.timeline.selectedSpan = this.handleDrag
               .timeSpan()
               .toTimeSpan();
@@ -640,10 +644,15 @@ export class TrackTreeView implements m.ClassComponent<TrackTreeViewAttrs> {
               renderedTracks,
             );
 
+            const newAreaSelection = new TimeSpan(
+              Time.min(newStartTime.toTime('ceil'), areaSelection.end),
+              Time.max(newStartTime.toTime('ceil'), areaSelection.end),
+            ).clamp(trace.traceInfo.start, trace.traceInfo.end);
+
             trace.selection.selectArea({
               ...areaSelection,
-              end: Time.max(newStartTime.toTime('ceil'), areaSelection.end),
-              start: Time.min(newStartTime.toTime('ceil'), areaSelection.end),
+              start: newAreaSelection.start,
+              end: newAreaSelection.end,
             });
             trace.timeline.selectedSpan = undefined;
             this.handleDrag = undefined;
@@ -678,7 +687,10 @@ export class TrackTreeView implements m.ClassComponent<TrackTreeViewAttrs> {
               renderedTracks,
             );
 
-            this.handleDrag.currentTime = currentTime;
+            this.handleDrag.currentTime = currentTime.clamp(
+              trace.traceInfo.start,
+              trace.traceInfo.end,
+            );
             trace.timeline.selectedSpan = this.handleDrag
               .timeSpan()
               .toTimeSpan();
@@ -694,10 +706,14 @@ export class TrackTreeView implements m.ClassComponent<TrackTreeViewAttrs> {
               renderedTracks,
             );
 
+            const newAreaSelection = new TimeSpan(
+              Time.min(newEndTime.toTime('ceil'), areaSelection.start),
+              Time.max(newEndTime.toTime('ceil'), areaSelection.start),
+            ).clamp(trace.traceInfo.start, trace.traceInfo.end);
             trace.selection.selectArea({
               ...areaSelection,
-              end: Time.max(newEndTime.toTime('ceil'), areaSelection.start),
-              start: Time.min(newEndTime.toTime('ceil'), areaSelection.start),
+              end: newAreaSelection.end,
+              start: newAreaSelection.start,
             });
             trace.timeline.selectedSpan = undefined;
             this.handleDrag = undefined;
@@ -737,7 +753,10 @@ export class TrackTreeView implements m.ClassComponent<TrackTreeViewAttrs> {
             this.areaDrag.currentY = e.dragCurrent.y;
 
             this.trace.raf.scheduleCanvasRedraw();
-            trace.timeline.selectedSpan = this.areaDrag.timeSpan().toTimeSpan();
+            trace.timeline.selectedSpan = this.areaDrag
+              .timeSpan()
+              .toTimeSpan()
+              .clamp(trace.traceInfo.start, trace.traceInfo.end);
           },
           onDragEnd: (e) => {
             if (!this.areaDrag) {
@@ -768,7 +787,11 @@ export class TrackTreeView implements m.ClassComponent<TrackTreeViewAttrs> {
               .map((t) => t.uri)
               .filter((uri) => uri !== undefined);
 
-            const timeSpan = this.areaDrag.timeSpan().toTimeSpan();
+            const timeSpan = this.areaDrag
+              .timeSpan()
+              .toTimeSpan()
+              .clamp(trace.traceInfo.start, trace.traceInfo.end);
+
             trace.selection.selectArea({
               start: timeSpan.start,
               end: timeSpan.end,

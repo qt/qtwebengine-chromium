@@ -91,6 +91,10 @@ class CFX_DIBitmap final : public CFX_DIBBase {
   }
 
   bool ConvertFormat(FXDIB_Format format);
+  void Populate8bbpMaskFrom1bppSpan(pdfium::span<const uint8_t> src_span,
+                                    uint32_t src_pitch);
+  void PopulateFromSpan(pdfium::span<const uint8_t> src_span,
+                        uint32_t src_pitch);
   void Clear(uint32_t color);
 
 #if defined(PDF_USE_SKIA)
@@ -165,13 +169,18 @@ class CFX_DIBitmap final : public CFX_DIBBase {
                            int src_left,
                            int src_top);
 
+#if BUILDFLAG(IS_WIN) || defined(PDF_USE_AGG)
   bool CompositeRect(int dest_left,
                      int dest_top,
                      int width,
                      int height,
                      uint32_t color);
+#endif
 
-  void ConvertColorScale(uint32_t forecolor, uint32_t backcolor);
+  // When `is_white_on_black` is true, the foreground is white and the
+  // background is black. When `is_white_on_black` is false, the colors are
+  // flipped.
+  void ConvertColorScale(bool is_white_on_black);
 
   // |width| and |height| must be greater than 0.
   // |format| must have a valid bits per pixel count.
@@ -198,7 +207,6 @@ class CFX_DIBitmap final : public CFX_DIBBase {
   CFX_DIBitmap(const CFX_DIBitmap& src);
   ~CFX_DIBitmap() override;
 
-  void ConvertBGRColorScale(uint32_t forecolor, uint32_t backcolor);
   bool TransferWithUnequalFormats(FXDIB_Format dest_format,
                                   int dest_left,
                                   int dest_top,

@@ -9,7 +9,6 @@
 
 #include <stdint.h>
 
-#include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/widestring.h"
 #include "fxbarcode/BC_TwoDimWriter.h"
 
@@ -18,12 +17,9 @@ class CBC_QRCodeWriter final : public CBC_TwoDimWriter {
   CBC_QRCodeWriter();
   ~CBC_QRCodeWriter() override;
 
-  DataVector<uint8_t> Encode(WideStringView contents,
-                             int32_t ecLevel,
-                             int32_t* pOutWidth,
-                             int32_t* pOutHeight);
+  EncodeResult Encode(WideStringView contents, int32_t ecLevel);
 
-  // CBC_TwoDimWriter
+  // CBC_TwoDimWriter:
   bool SetErrorCorrectionLevel(int32_t level) override;
 };
 

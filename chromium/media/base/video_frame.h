@@ -44,10 +44,6 @@
 #include "base/files/scoped_file.h"
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 
-#if BUILDFLAG(IS_ANDROID)
-#include "gpu/vulkan/vulkan_ycbcr_info.h"
-#endif
-
 class SkPixmap;
 class SkYUVAInfo;
 
@@ -216,18 +212,6 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // Wraps a native texture shared image with a VideoFrame.
   // |shared_image_release_cb| will be called with a sync token as the
   // argument when the VideoFrame is to be destroyed.
-  static scoped_refptr<VideoFrame> WrapSharedImage(
-      VideoPixelFormat format,
-      scoped_refptr<gpu::ClientSharedImage> shared_image,
-      gpu::SyncToken sync_token,
-      ReleaseMailboxCB shared_image_release_cb,
-      const gfx::Size& coded_size,
-      const gfx::Rect& visible_rect,
-      const gfx::Size& natural_size,
-      base::TimeDelta timestamp);
-
-  // Overload of above method that does not take coded_size param and instead
-  // passes the coded_size from `shared_image`.
   static scoped_refptr<VideoFrame> WrapSharedImage(
       VideoPixelFormat format,
       scoped_refptr<gpu::ClientSharedImage> shared_image,
@@ -555,12 +539,14 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   int row_bytes(size_t plane) const;
   int rows(size_t plane) const;
 
-  // Similar to row_bytes() and rows(), but instead refers to the visible area.
-  int GetVisibleRowBytes(size_t plane) const;
-  int GetVisibleRows(size_t plane) const;
-
   // Returns the number of columns for a given plane.
   int columns(size_t plane) const;
+
+  // Similar to row_bytes(), rows(), and columns(), but instead refers to the
+  // visible area.
+  int GetVisibleColumns(size_t plane) const;
+  int GetVisibleRowBytes(size_t plane) const;
+  int GetVisibleRows(size_t plane) const;
 
   // Returns pointer to the buffer for a given plane, if HasDirectCpuAccess() is
   // true. The memory is owned by VideoFrame object and must not be freed by the
@@ -596,17 +582,6 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
     CHECK_NE(storage_type_, STORAGE_SHMEM);
     return const_cast<uint8_t*>(data(plane));
   }
-
-#if BUILDFLAG(IS_ANDROID)
-  const std::optional<gpu::VulkanYCbCrInfo>& ycbcr_info() const {
-    return wrapped_frame_ ? wrapped_frame_->ycbcr_info() : ycbcr_info_;
-  }
-
-  // Provide the sampler conversion information for the frame.
-  void set_ycbcr_info(const std::optional<gpu::VulkanYCbCrInfo>& ycbcr_info) {
-    ycbcr_info_ = ycbcr_info;
-  }
-#endif
 
   // Returns pointer to the data in the visible region of the frame, if
   // HasDirectCpuAccess() is true. The returned pointer is offset into the plane
@@ -869,11 +844,6 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
 
   gfx::ColorSpace color_space_;
   gfx::HDRMetadata hdr_metadata_;
-
-#if BUILDFLAG(IS_ANDROID)
-  // Sampler conversion information which is used in vulkan context for android.
-  std::optional<gpu::VulkanYCbCrInfo> ycbcr_info_;
-#endif
 
   // Allocation which makes up |data_| planes for self-allocated frames.
   std::unique_ptr<uint8_t, base::UncheckedFreeDeleter> private_data_;

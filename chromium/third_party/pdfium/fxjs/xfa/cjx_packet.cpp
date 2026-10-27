@@ -12,7 +12,7 @@
 #include "core/fxcrt/xml/cfx_xmldocument.h"
 #include "core/fxcrt/xml/cfx_xmlelement.h"
 #include "core/fxcrt/xml/cfx_xmltext.h"
-#include "fxjs/cfx_v8.h"
+#include "fxjs/cfx_isolate_wrapper.h"
 #include "fxjs/fxv8.h"
 #include "fxjs/js_resources.h"
 #include "v8/include/v8-primitive.h"
@@ -44,7 +44,8 @@ CJS_Result CJX_Packet::getAttribute(CFXJSE_Engine* runtime,
   WideString attributeValue;
   CFX_XMLElement* element = ToXMLElement(GetXFANode()->GetXMLMappingNode());
   if (element) {
-    attributeValue = element->GetAttribute(runtime->ToWideString(params[0]));
+    attributeValue =
+        element->GetAttribute(runtime->ToWideStringReentrant(params[0]));
   }
 
   return CJS_Result::Success(
@@ -59,8 +60,8 @@ CJS_Result CJX_Packet::setAttribute(CFXJSE_Engine* runtime,
 
   CFX_XMLElement* element = ToXMLElement(GetXFANode()->GetXMLMappingNode());
   if (element) {
-    element->SetAttribute(runtime->ToWideString(params[1]),
-                          runtime->ToWideString(params[0]));
+    element->SetAttribute(runtime->ToWideStringReentrant(params[1]),
+                          runtime->ToWideStringReentrant(params[0]));
   }
   return CJS_Result::Success(runtime->NewNull());
 }
@@ -74,7 +75,7 @@ CJS_Result CJX_Packet::removeAttribute(
 
   CFX_XMLElement* pElement = ToXMLElement(GetXFANode()->GetXMLMappingNode());
   if (pElement) {
-    pElement->RemoveAttribute(runtime->ToWideString(params[0]));
+    pElement->RemoveAttribute(runtime->ToWideStringReentrant(params[0]));
   }
 
   return CJS_Result::Success(runtime->NewNull());

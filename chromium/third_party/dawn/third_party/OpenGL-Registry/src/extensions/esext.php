@@ -711,4 +711,28 @@
 
     <br> <a href="extensions/EXT/EXT_fragment_shading_rate.txt">GL_EXT_fragment_shading_rate_primitive</a>
 </li>
+<li value=341><a href="extensions/EXT/EXT_framebuffer_blit_layers.txt">GL_EXT_framebuffer_blit_layers</a>
+</li>
+<li value=342><a href="extensions/QCOM/QCOM_texture_lod_bias.txt">GL_QCOM_texture_lod_bias</a>
+</li>
+<li value=343><a href="extensions/QCOM/QCOM_render_sRGB_R8_RG8.txt">GL_QCOM_render_sRGB_R8_RG8</a>
+</li>
+<li value=344><a href="extensions/MESA/MESA_sampler_objects.txt">GL_MESA_sampler_objects</a>
+</li>
+<li value=345><a href="extensions/ARM/ARM_shader_core_properties.txt">GL_ARM_shader_core_properties</a>
+</li>
+<li value=346><a href="extensions/QCOM/QCOM_ycbcr_degamma.txt">GL_QCOM_ycbcr_degamma</a>
+</li>
+<li value=347><a href="extensions/MESA/MESA_texture_const_bandwidth.txt">GL_MESA_texture_const_bandwidth</a>
+</li>
+<li value=348><a href="extensions/EXT/EXT_shader_clock.txt">GL_EXT_shader_clock</a>
+</li>
+<li value=349><a href="extensions/HUAWEI/HUAWEI_program_binary.txt">GL_HUAWEI_program_binary</a>
+</li>
+<li value=350><a href="extensions/HUAWEI/HUAWEI_shader_binary.txt">GL_HUAWEI_shader_binary</a>
+</li>
+<li value=351><a href="extensions/EXT/EXT_shader_realtime_clock.txt">GL_EXT_shader_realtime_clock</a>
+</li>
+<li value=352><a href="extensions/EXT/EXT_shader_texture_samples.txt">GL_EXT_shader_texture_samples</a>
+</li>
 </ol>

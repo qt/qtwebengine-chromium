@@ -28,7 +28,7 @@
 #ifndef SRC_DAWN_COMMON_COLORSPACE_H_
 #define SRC_DAWN_COMMON_COLORSPACE_H_
 
-#include "dawn/common/Algebra.h"
+#include "src/dawn/common/Algebra.h"
 
 namespace dawn {
 
@@ -111,6 +111,13 @@ namespace dawn {
 // The Khronos Data Format Specification that makes the ITU standards more approachable (it is
 // linked to many times below):
 // https://registry.khronos.org/DataFormat/specs/1.4/dataformat.1.4.html
+//
+// The CSS color module are another great reference:
+//
+//  - CSS Color Module Level 4 for the definition of many SDR color spaces:
+//    https://www.w3.org/TR/css-color-4/
+//  - CSS Color Module HDR Level 1 for the definition of HDR color spaces:
+//    https://www.w3.org/TR/css-color-hdr-1/
 //
 // The ITU specifications for the "source of truth" on many of the YCbCr colorspaces.
 //
@@ -274,6 +281,20 @@ inline constexpr TransferFunction kEOTF_SMPTE_170M = {
     .e = 0,
     .f = 0,
 };
+
+// Luminance values of various color spaces for the white of value "1" after the transfer function.
+
+// When SDR content is composited in HDR, it should be assumed to have a white at 203 nits, even if
+// the sRGB spec defines it as 80 nits. See
+// https://www.w3.org/TR/css-color-hdr-1/#Compositing-SDR-HDR
+inline constexpr float kSDRLuminanceOf1 = 203;
+
+// https://www.w3.org/TR/css-color-hdr-1/#valdef-color-rec2100-pq
+inline constexpr float kPQLuminanceOf1 = 10000;
+
+// https://www.w3.org/TR/css-color-hdr-1/#valdef-color-rec2100-hlg
+// The magic constant is used to place "media white" (so 1) at HLG value 0.75
+inline constexpr float kHLGLuminanceOf1 = 3.7743 * kSDRLuminanceOf1;
 
 }  // namespace dawn
 

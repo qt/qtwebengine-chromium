@@ -1,0 +1,21 @@
+# baseURL is required to have the menu.shortcuts resolve correctly, but if
+# we use the full URL (with trailing libei/) local builds no longer fin.
+# the files. But since we use relativeURLs everything else should work correctly
+# even with the wrong baseURL.
+baseURL = 'https://libinput.pages.freedesktop.org/'
+languageCode = 'en-us'
+title = 'ei protocol documentation'
+theme = 'hugo-theme-relearn'
+relativeURLs = true
+
+[[menu.shortcuts]]
+name = "<i class='fab fa-fw fa-git'></i> git Repository"
+identifier = "repo"
+url = "https://gitlab.freedesktop.org/libinput/libei"
+weight = 10
+
+[[menu.shortcuts]]
+name = "<i class='fas fa-bug'></i> Report a Bug"
+identifier = "bugs"
+url = "https://gitlab.freedesktop.org/libinput/libei/-/issues/"
+weight = 10

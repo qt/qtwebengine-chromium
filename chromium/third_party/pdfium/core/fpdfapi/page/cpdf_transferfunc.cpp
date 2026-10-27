@@ -32,9 +32,9 @@ CPDF_TransferFunc::CPDF_TransferFunc(bool bIdentify,
 CPDF_TransferFunc::~CPDF_TransferFunc() = default;
 
 FX_COLORREF CPDF_TransferFunc::TranslateColor(FX_COLORREF colorref) const {
-  return FXSYS_BGR(samples_b_.span()[FXSYS_GetBValue(colorref)],
-                   samples_g_.span()[FXSYS_GetGValue(colorref)],
-                   samples_r_.span()[FXSYS_GetRValue(colorref)]);
+  return FXSYS_BGR(GetSamplesB()[FXSYS_GetBValue(colorref)],
+                   GetSamplesG()[FXSYS_GetGValue(colorref)],
+                   GetSamplesR()[FXSYS_GetRValue(colorref)]);
 }
 
 RetainPtr<CFX_DIBBase> CPDF_TransferFunc::TranslateImage(
@@ -43,14 +43,17 @@ RetainPtr<CFX_DIBBase> CPDF_TransferFunc::TranslateImage(
                                                   pdfium::WrapRetain(this));
 }
 
-pdfium::span<const uint8_t> CPDF_TransferFunc::GetSamplesR() const {
-  return samples_r_;
+pdfium::span<const uint8_t, CPDF_TransferFunc::kChannelSampleSize>
+CPDF_TransferFunc::GetSamplesR() const {
+  return samples_r_.span().first<kChannelSampleSize>();
 }
 
-pdfium::span<const uint8_t> CPDF_TransferFunc::GetSamplesG() const {
-  return samples_g_;
+pdfium::span<const uint8_t, CPDF_TransferFunc::kChannelSampleSize>
+CPDF_TransferFunc::GetSamplesG() const {
+  return samples_g_.span().first<kChannelSampleSize>();
 }
 
-pdfium::span<const uint8_t> CPDF_TransferFunc::GetSamplesB() const {
-  return samples_b_;
+pdfium::span<const uint8_t, CPDF_TransferFunc::kChannelSampleSize>
+CPDF_TransferFunc::GetSamplesB() const {
+  return samples_b_.span().first<kChannelSampleSize>();
 }

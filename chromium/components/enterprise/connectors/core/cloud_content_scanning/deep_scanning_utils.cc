@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/string_number_conversions.h"
+#include "build/build_config.h"
 #include "components/crash/core/common/crash_key.h"
 #include "components/enterprise/connectors/core/cloud_content_scanning/binary_upload_request.h"
 #include "components/enterprise/connectors/core/common.h"
@@ -40,6 +41,8 @@ std::string MaybeGetUnscannedReason(ScanRequestUploadResult result) {
     case ScanRequestUploadResult::kFailedToGetToken:
     case ScanRequestUploadResult::kIncompleteResponse:
       return kServiceUnavailableUnscannedReason;
+    case ScanRequestUploadResult::kUserCancelled:
+      return kUserCancelledUnscannedReason;
   }
 }
 
@@ -180,7 +183,7 @@ void MaybeReportDeepScanningVerdict(
         GURL(content_analysis_info->url()), content_analysis_info->tab_url(),
         source, destination, file_name, sha256_or_cb, mime_type, trigger,
         response.request_token(), unscanned_reason, content_transfer_method,
-        content_size, event_result);
+        content_size, content_analysis_info->referrer_chain(), event_result);
   }
 
   if (result != ScanRequestUploadResult::kSuccess) {
@@ -200,7 +203,8 @@ void MaybeReportDeepScanningVerdict(
           GURL(content_analysis_info->url()), content_analysis_info->tab_url(),
           source, destination, file_name, sha256_or_cb, mime_type, trigger,
           response.request_token(), std::move(unscanned_reason),
-          content_transfer_method, content_size, event_result);
+          content_transfer_method, content_size,
+          content_analysis_info->referrer_chain(), event_result);
     } else if (response_result.triggered_rules_size() > 0) {
       reporting_event_router->OnAnalysisConnectorResult(
           GURL(content_analysis_info->url()), content_analysis_info->tab_url(),
@@ -337,6 +341,10 @@ void InitializeBinaryUploadRequest(BinaryUploadRequest* request,
   request->set_url(info.url());
   request->set_tab_url(info.tab_url());
 
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+  request->set_is_mobile(true);
+#endif
+
   for (const auto& tag : settings.tags) {
     request->add_tag(tag.first);
   }
@@ -347,7 +355,11 @@ void InitializeBinaryUploadRequest(BinaryUploadRequest* request,
 
 EventResult CalculateEventResult(const AnalysisSettings& settings,
                                  bool allowed_by_scan_result,
-                                 bool should_warn) {
+                                 bool should_warn,
+                                 ScanRequestUploadResult result) {
+  if (result == ScanRequestUploadResult::kUserCancelled) {
+    return EventResult::CANCELLED;
+  }
   bool wait_for_verdict =
       settings.block_until_verdict == BlockUntilVerdict::kBlock;
   return (allowed_by_scan_result || !wait_for_verdict)
@@ -368,6 +380,7 @@ bool ResultIsFailClosed(ScanRequestUploadResult result) {
     case ScanRequestUploadResult::kFileTooLarge:
     case ScanRequestUploadResult::kUnauthorized:
     case ScanRequestUploadResult::kFileEncrypted:
+    case ScanRequestUploadResult::kUserCancelled:
       return false;
   }
 }
@@ -405,6 +418,8 @@ bool ResultShouldAllowDataUse(const AnalysisSettings& settings,
 
     case ScanRequestUploadResult::kFileEncrypted:
       return !settings.block_password_protected_files;
+    case ScanRequestUploadResult::kUserCancelled:
+      return false;
   }
 }
 
@@ -444,6 +459,8 @@ RequestHandlerResult CalculateRequestHandlerResult(
     result.final_result = FinalContentAnalysisResult::LARGE_FILES;
   } else if (upload_result == ScanRequestUploadResult::kFileEncrypted) {
     result.final_result = FinalContentAnalysisResult::ENCRYPTED_FILES;
+  } else if (upload_result == ScanRequestUploadResult::kUserCancelled) {
+    result.final_result = FinalContentAnalysisResult::CANCELLED;
   } else {
     result.final_result = FinalContentAnalysisResult::FAILURE;
   }
@@ -560,6 +577,8 @@ std::string BinaryUploadServiceResultToString(
       return "TooManyRequests";
     case ScanRequestUploadResult::kIncompleteResponse:
       return "IncompleteResponse";
+    case ScanRequestUploadResult::kUserCancelled:
+      return "UserCancelled";
   }
 }
 
@@ -571,6 +590,31 @@ void IncrementCrashKey(ScanningCrashKey key, int delta) {
 void DecrementCrashKey(ScanningCrashKey key, int delta) {
   DCHECK_GE(delta, 0);
   ModifyKey(key, -delta);
+}
+
+DeepScanAccessPoint AccessPointFromRequest(
+    AnalysisConnector connector,
+    ContentAnalysisRequest::Reason reason) {
+  switch (connector) {
+    case FILE_DOWNLOADED:
+      return DeepScanAccessPoint::DOWNLOAD;
+    case FILE_ATTACHED:
+      if (reason == ContentAnalysisRequest::DRAG_AND_DROP) {
+        return DeepScanAccessPoint::DRAG_AND_DROP;
+      }
+      if (reason == ContentAnalysisRequest::CLIPBOARD_PASTE) {
+        return DeepScanAccessPoint::PASTE;
+      }
+      return DeepScanAccessPoint::UPLOAD;
+    case BULK_DATA_ENTRY:
+      return DeepScanAccessPoint::PASTE;
+    case PRINT:
+      return DeepScanAccessPoint::PRINT;
+    case FILE_TRANSFER:
+      return DeepScanAccessPoint::FILE_TRANSFER;
+    case ANALYSIS_CONNECTOR_UNSPECIFIED:
+      return DeepScanAccessPoint::UPLOAD;
+  }
 }
 
 }  // namespace enterprise_connectors

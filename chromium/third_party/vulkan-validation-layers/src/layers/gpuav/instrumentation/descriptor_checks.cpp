@@ -91,7 +91,7 @@ void DescriptorHeap::DeleteId(DescriptorId id) {
 }
 
 struct DescriptorChecksCbState {
-    vko::BufferRange last_bound_desc_sets_state_ssbo;
+    vko::BufferRange last_bound_desc_sets_ssbo;
 };
 
 void DescriptorChecksOnFinishDeviceSetup(Validator& gpuav) {
@@ -274,7 +274,7 @@ void RegisterDescriptorChecksValidation(Validator& gpuav, CommandBufferSubState&
                         const uint32_t byte_offset = error_record[kInst_LogError_ParameterOffset_1];
                         const uint32_t resource_size = error_record[kInst_LogError_ParameterOffset_2];
                         strm << " access out of bounds. The descriptor buffer (" << gpuav.FormatHandle(buffer_state->Handle())
-                             << ") size is " << buffer_state->create_info.size << " bytes, " << resource_size
+                             << ") size is " << buffer_state->GetSize() << " bytes, " << resource_size
                              << " bytes were bound, and the highest out of bounds access was at [" << byte_offset << "] bytes";
                     } else {
                         // This will only get called when using nullDescriptor without bindless
@@ -342,12 +342,12 @@ void RegisterDescriptorChecksValidation(Validator& gpuav, CommandBufferSubState&
     desc_set_bindings.on_update_bound_descriptor_sets.emplace_back(
         [](Validator& gpuav, CommandBufferSubState& cb, DescriptorSetBindings::BindingCommand& desc_binding_cmd) {
             DescriptorChecksCbState& dc_cb_state = cb.shared_resources_cache.GetOrCreate<DescriptorChecksCbState>();
-            dc_cb_state.last_bound_desc_sets_state_ssbo =
-                cb.gpu_resources_manager.GetHostCoherentBufferRange(sizeof(glsl::BoundDescriptorSetsStateSSBO));
-            dc_cb_state.last_bound_desc_sets_state_ssbo.Clear();
-            auto desc_state_ssbo =
-                static_cast<glsl::BoundDescriptorSetsStateSSBO*>(dc_cb_state.last_bound_desc_sets_state_ssbo.offset_mapped_ptr);
-            desc_state_ssbo->descriptor_init_status = gpuav.shared_resources_cache.Get<DescriptorHeap>().GetDeviceAddress();
+            dc_cb_state.last_bound_desc_sets_ssbo =
+                cb.gpu_resources_manager.GetHostCoherentBufferRange(sizeof(glsl::BoundDescriptorSetsSSBO));
+            dc_cb_state.last_bound_desc_sets_ssbo.Clear();
+            auto desc_sets_ssbo =
+                static_cast<glsl::BoundDescriptorSetsSSBO*>(dc_cb_state.last_bound_desc_sets_ssbo.offset_mapped_ptr);
+            desc_sets_ssbo->descriptor_init_status = gpuav.shared_resources_cache.Get<DescriptorHeap>().GetDeviceAddress();
 
             for (size_t bound_ds_i = 0; bound_ds_i < desc_binding_cmd.bound_descriptor_sets.size(); ++bound_ds_i) {
                 auto& bound_ds = desc_binding_cmd.bound_descriptor_sets[bound_ds_i];
@@ -359,11 +359,10 @@ void RegisterDescriptorChecksValidation(Validator& gpuav, CommandBufferSubState&
                 if (bound_ds->IsUpdateAfterBind()) {
                     continue;
                 }
-
-                desc_state_ssbo->descriptor_set_types[bound_ds_i] = SubState(*bound_ds).GetTypeAddress(gpuav);
+                desc_sets_ssbo->descriptor_encodings[bound_ds_i] = SubState(*bound_ds).GetDescriptorEncodingsAddress(gpuav);
             }
 
-            desc_binding_cmd.descritpor_state_ssbo = dc_cb_state.last_bound_desc_sets_state_ssbo;
+            desc_binding_cmd.bound_desc_sets_ssbo = dc_cb_state.last_bound_desc_sets_ssbo;
         });
 
     cb.on_instrumentation_common_desc_update_functions.emplace_back(
@@ -371,7 +370,7 @@ void RegisterDescriptorChecksValidation(Validator& gpuav, CommandBufferSubState&
                                                   CommonDescriptorUpdate& out_update) mutable {
             DescriptorChecksCbState* dc_cb_state = cb.shared_resources_cache.TryGet<DescriptorChecksCbState>();
             if (dc_cb_state) {
-                const vko::BufferRange& buffer_range = dc_cb_state->last_bound_desc_sets_state_ssbo;
+                const vko::BufferRange& buffer_range = dc_cb_state->last_bound_desc_sets_ssbo;
                 out_update.buffer = buffer_range.buffer;
                 out_update.offset = buffer_range.offset;
                 out_update.range = buffer_range.size;
@@ -395,20 +394,22 @@ void RegisterDescriptorChecksValidation(Validator& gpuav, CommandBufferSubState&
             out_update.binding = glsl::kBindingInstDescriptorIndexingOOB;
         });
 
-    // For every descriptor binding command, update a GPU buffer holding the type of each bound descriptor set
+    // For every descriptor binding command, and for each set bound by this command, update a GPU buffer holding its
+    // corresponding descriptor states
     cb.on_pre_cb_submission_functions.emplace_back([](Validator& gpuav, CommandBufferSubState& cb, VkCommandBuffer) {
         DescriptorSetBindings& desc_set_bindings = cb.shared_resources_cache.Get<DescriptorSetBindings>();
         for (DescriptorSetBindings::BindingCommand& desc_binding_cmd : desc_set_bindings.descriptor_set_binding_commands) {
-            auto desc_state_ssbo_ptr =
-                static_cast<glsl::BoundDescriptorSetsStateSSBO*>(desc_binding_cmd.descritpor_state_ssbo.offset_mapped_ptr);
+            auto desc_sets_ssbo_ptr =
+                static_cast<glsl::BoundDescriptorSetsSSBO*>(desc_binding_cmd.bound_desc_sets_ssbo.offset_mapped_ptr);
             for (size_t bound_ds_i = 0; bound_ds_i < desc_binding_cmd.bound_descriptor_sets.size(); ++bound_ds_i) {
                 auto& bound_ds = desc_binding_cmd.bound_descriptor_sets[bound_ds_i];
                 // Account for gaps in descriptor sets bindings
                 if (!bound_ds) {
                     continue;
                 }
+
                 DescriptorSetSubState& desc_set_state = SubState(*bound_ds);
-                desc_state_ssbo_ptr->descriptor_set_types[bound_ds_i] = desc_set_state.GetTypeAddress(gpuav);
+                desc_sets_ssbo_ptr->descriptor_encodings[bound_ds_i] = desc_set_state.GetDescriptorEncodingsAddress(gpuav);
             }
         }
     });

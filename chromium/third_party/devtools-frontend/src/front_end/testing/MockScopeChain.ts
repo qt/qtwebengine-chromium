@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import {assertNotNullOrUndefined} from '../core/platform/platform.js';
 import * as ProtocolClient from '../core/protocol_client/protocol_client.js';
 import * as SDK from '../core/sdk/sdk.js';
@@ -444,14 +446,13 @@ export class MockDebuggerBackend {
     this.cdpConnection.setHandler('Debugger.getScriptSource', this.#getScriptSourceHandler.bind(this));
     this.cdpConnection.setHandler('Runtime.getProperties', this.#getPropertiesHandler.bind(this));
     this.cdpConnection.setHandler('Debugger.setBreakpointByUrl', this.#setBreakpointByUrlHandler.bind(this));
-    this.cdpConnection.setHandler('Storage.getStorageKey', () => ({result: {storageKey: 'test-key'}}));
+    this.cdpConnection.setSuccessHandler('Storage.getStorageKey', () => ({storageKey: 'test-key'}));
     this.cdpConnection.setHandler('Debugger.removeBreakpoint', this.#removeBreakpointHandler.bind(this));
-    this.cdpConnection.setHandler('Debugger.resume', () => ({result: {}}));
-    this.cdpConnection.setHandler(
-        'Debugger.enable', () => ({result: {debuggerId: 'DEBUGGER_ID' as Protocol.Runtime.UniqueDebuggerId}}));
-    this.cdpConnection.setHandler(
-        'Debugger.setInstrumentationBreakpoint',
-        () => ({result: {} as Protocol.Debugger.SetInstrumentationBreakpointResponse}));
+    this.cdpConnection.setSuccessHandler('Debugger.resume', () => ({}));
+    this.cdpConnection.setSuccessHandler(
+        'Debugger.enable', () => ({debuggerId: 'DEBUGGER_ID' as Protocol.Runtime.UniqueDebuggerId}));
+    this.cdpConnection.setSuccessHandler(
+        'Debugger.setInstrumentationBreakpoint', () => ({} as Protocol.Debugger.SetInstrumentationBreakpointResponse));
     this.universe.pageResourceLoader;  // Eagerly trigger creation.
   }
 

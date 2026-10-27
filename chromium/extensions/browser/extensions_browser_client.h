@@ -19,6 +19,7 @@
 #include "components/safe_browsing/core/browser/db/v4_protocol_config.h"
 #include "content/public/browser/bluetooth_chooser.h"
 #include "content/public/browser/frame_tree_node_id.h"
+#include "content/public/common/child_process_id.h"
 #include "extensions/browser/extension_event_histogram_value.h"
 #include "extensions/browser/extension_prefs_observer.h"
 #include "extensions/browser/extensions_browser_api_provider.h"
@@ -34,11 +35,11 @@
 #include "url/gurl.h"
 
 class ExtensionFunctionRegistry;
-class PrefService;
 
 namespace base {
 class CommandLine;
 class FilePath;
+class Version;
 }  // namespace base
 
 namespace content {
@@ -52,6 +53,10 @@ class WebContents;
 namespace download {
 class DownloadItem;
 }  // namespace download
+
+namespace image_fetcher {
+class ImageDecoder;
+}  // namespace image_fetcher
 
 namespace mojo {
 template <typename>
@@ -205,7 +210,18 @@ class ExtensionsBrowserClient {
   // - if `context` is a System Profile: returns null.
   // - if `context` is Original: returns itself.
   // - if `context` is OTR: returns the associated parent context.
+  // - if `context` is ash internals: returns the associated parent context.
   virtual content::BrowserContext* GetContextRedirectedToOriginal(
+      content::BrowserContext* context) = 0;
+
+  // Similar to GetContextRedirectedToOriginal(), but additionally filters out
+  // ash-internal profiles.
+  // - if `context` is a System Profile: returns null.
+  // - if `context` is Original: returns itself.
+  // - if `context` is OTR: returns the associated parent context.
+  // - if `context` is ash internals: returns null.
+  virtual content::BrowserContext*
+  GetContextRedirectedToOriginalWithoutAshInternals(
       content::BrowserContext* context) = 0;
 
   // - if `context` is a System Profile: returns null.
@@ -244,6 +260,9 @@ class ExtensionsBrowserClient {
   virtual bool IsExtensionIncognitoEnabled(
       const ExtensionId& extension_id,
       content::BrowserContext* context) const = 0;
+  virtual bool IsExtensionIncognitoEnabled(
+      const Extension* extension,
+      content::BrowserContext* context) const = 0;
 
   // Returns true if `extension` can see events and data from another
   // sub-profile (incognito to original profile, or vice versa).
@@ -275,16 +294,12 @@ class ExtensionsBrowserClient {
       const network::ResourceRequest& request,
       network::mojom::RequestDestination destination,
       ui::PageTransition page_transition,
-      int child_id,
+      content::ChildProcessId child_id,
       bool is_incognito,
       const Extension* extension,
       const ExtensionSet& extensions,
       const ProcessMap& process_map,
       const GURL& upstream_url) = 0;
-
-  // Returns the PrefService associated with `context`.
-  virtual PrefService* GetPrefServiceForContext(
-      content::BrowserContext* context) = 0;
 
   // Populates a list of ExtensionPrefs observers to be attached to each
   // BrowserContext's ExtensionPrefs upon construction. These observers
@@ -478,6 +493,12 @@ class ExtensionsBrowserClient {
   virtual bool ShouldSchemeBypassNavigationChecks(
       const std::string& scheme) const;
 
+  // Checks whether the given `request_url` and `redirect_url` correspond to a
+  // Default Search Engine redirect.
+  virtual bool IsDefaultSearchEngineRedirect(content::BrowserContext* context,
+                                             const GURL& request_url,
+                                             const GURL& redirect_url) const;
+
   // Gets and sets the last save (download) path for a given context.
   virtual base::FilePath GetSaveFilePath(content::BrowserContext* context);
   virtual void SetLastSaveFilePath(content::BrowserContext* context,
@@ -664,6 +685,20 @@ class ExtensionsBrowserClient {
   virtual scoped_refptr<CrxInstaller> CreateCrxInstallerFromDownloadItem(
       content::BrowserContext* context,
       const download::DownloadItem& download);
+
+  // Creates an implementation of image_fetcher::ImageDecoder.
+  virtual std::unique_ptr<image_fetcher::ImageDecoder> CreateImageDecoder();
+
+  // Returns whether the given browser context is allowed to use non-component
+  // extensions.
+  virtual bool CanUseNonComponentExtensions(content::BrowserContext* context);
+
+  // Checks whether the extension can be installed based on policy.
+  virtual void CanInstallExtensionByPolicy(
+      content::BrowserContext* context,
+      const ExtensionId& extension_id,
+      const base::Version& extension_version,
+      base::OnceCallback<void(bool, std::u16string)> callback);
 
  protected:
   std::unique_ptr<ExtensionAssetsManager> assets_manager_;

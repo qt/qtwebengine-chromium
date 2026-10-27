@@ -2,6 +2,8 @@
 //
 // Tests y += triangularView(A) * x for various modes and sizes.
 // Exercises TriangularMatrixVector.h kernel.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>

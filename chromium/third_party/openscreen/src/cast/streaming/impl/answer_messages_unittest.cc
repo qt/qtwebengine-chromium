@@ -12,6 +12,7 @@
 #include "gtest/gtest.h"
 #include "util/chrono_helpers.h"
 #include "util/json/json_serialization.h"
+#include "util/no_destructor.h"
 
 namespace openscreen::cast {
 
@@ -67,38 +68,42 @@ constexpr char kValidAnswerJson[] = R"({
                     ["adaptive_playout_delay"]]
 })";
 
-const Answer kValidAnswer{
-    1234,                         // udp_port
-    std::vector<int>{1, 3},       // send_indexes
-    std::vector<Ssrc>{123, 456},  // ssrcs
-    std::optional<Constraints>(Constraints{
-        AudioConstraints{
-            96000,              // max_sample_rate
-            7,                  // max_channels
-            32000,              // min_bit_rate
-            96000,              // max_bit_rate
-            milliseconds(2000)  // max_delay
-        },                      // audio
-        VideoConstraints{
-            40000.0,  // max_pixels_per_second
-            std::optional<Dimensions>(
-                Dimensions{320, 480, SimpleFraction{15000, 101}}),
-            Dimensions{1920, 1080, SimpleFraction{288, 2}},
-            300000,             // min_bit_rate
-            144000000,          // max_bit_rate
-            milliseconds(3000)  // max_delay
-        }  // video
-    }),  // constraints
-    std::optional<DisplayDescription>(DisplayDescription{
-        std::optional<Dimensions>(Dimensions{640, 480, SimpleFraction{30, 1}}),
-        std::optional<AspectRatio>(AspectRatio{16, 9}),  // aspect_ratio
-        std::optional<AspectRatioConstraint>(
-            AspectRatioConstraint::kFixed),  // scaling
-    }),
-    std::vector<int>{7, 8, 9},  // receiver_rtcp_event_log
-    std::vector<int>{1, 3},     // receiver_rtcp_dscp
-    std::vector<std::vector<std::string>>{{"foo"}, {"bar"}}  // rtp_extensions
-};
+const Answer& GetValidAnswer() {
+  static const NoDestructor<Answer> kValidAnswer(
+      1234,                         // udp_port
+      std::vector<int>{1, 3},       // send_indexes
+      std::vector<Ssrc>{123, 456},  // ssrcs
+      std::optional<Constraints>(Constraints{
+          AudioConstraints{
+              96000,              // max_sample_rate
+              7,                  // max_channels
+              32000,              // min_bit_rate
+              96000,              // max_bit_rate
+              milliseconds(2000)  // max_delay
+          },                      // audio
+          VideoConstraints{
+              40000.0,  // max_pixels_per_second
+              std::optional<Dimensions>(
+                  Dimensions{320, 480, SimpleFraction{15000, 101}}),
+              Dimensions{1920, 1080, SimpleFraction{288, 2}},
+              300000,             // min_bit_rate
+              144000000,          // max_bit_rate
+              milliseconds(3000)  // max_delay
+          }  // video
+      }),  // constraints
+      std::optional<DisplayDescription>(DisplayDescription{
+          std::optional<Dimensions>(
+              Dimensions{640, 480, SimpleFraction{30, 1}}),
+          std::optional<AspectRatio>(AspectRatio{16, 9}),  // aspect_ratio
+          std::optional<AspectRatioConstraint>(
+              AspectRatioConstraint::kFixed),  // scaling
+      }),
+      std::vector<int>{7, 8, 9},  // receiver_rtcp_event_log
+      std::vector<int>{1, 3},     // receiver_rtcp_dscp
+      std::vector<std::vector<std::string>>{{"foo"}, {"bar"}}  // rtp_extensions
+  );
+  return *kValidAnswer;
+}
 
 constexpr int kValidMaxPixelsPerSecond = 1920 * 1080 * 30;
 constexpr Dimensions kValidDimensions{1920, 1080, SimpleFraction{60, 1}};
@@ -180,8 +185,8 @@ void ExpectSuccessOnParse(std::string_view raw_json, Answer* out = nullptr) {
 }  // anonymous namespace
 
 TEST(AnswerMessagesTest, ProperlyPopulatedAnswerSerializesProperly) {
-  ASSERT_TRUE(kValidAnswer.IsValid());
-  Json::Value root = kValidAnswer.ToJson();
+  ASSERT_TRUE(GetValidAnswer().IsValid());
+  Json::Value root = GetValidAnswer().ToJson();
   EXPECT_EQ(root["udpPort"], 1234);
 
   Json::Value sendIndexes = std::move(root["sendIndexes"]);
@@ -253,19 +258,19 @@ TEST(AnswerMessagesTest, ProperlyPopulatedAnswerSerializesProperly) {
 }
 
 TEST(AnswerMessagesTest, EmptyArraysOmitted) {
-  Answer missing_event_log = kValidAnswer;
+  Answer missing_event_log = GetValidAnswer();
   missing_event_log.receiver_rtcp_event_log.clear();
   ASSERT_TRUE(missing_event_log.IsValid());
   Json::Value root = missing_event_log.ToJson();
   EXPECT_FALSE(root["receiverRtcpEventLog"]);
 
-  Answer missing_rtcp_dscp = kValidAnswer;
+  Answer missing_rtcp_dscp = GetValidAnswer();
   missing_rtcp_dscp.receiver_rtcp_dscp.clear();
   ASSERT_TRUE(missing_rtcp_dscp.IsValid());
   root = missing_rtcp_dscp.ToJson();
   EXPECT_FALSE(root["receiverRtcpDscp"]);
 
-  Answer missing_extensions = kValidAnswer;
+  Answer missing_extensions = GetValidAnswer();
   missing_extensions.rtp_extensions.clear();
   ASSERT_TRUE(missing_extensions.IsValid());
   root = missing_extensions.ToJson();
@@ -273,32 +278,32 @@ TEST(AnswerMessagesTest, EmptyArraysOmitted) {
 }
 
 TEST(AnswerMessagesTest, InvalidDimensionsCauseInvalid) {
-  Answer invalid_dimensions = kValidAnswer;
+  Answer invalid_dimensions = GetValidAnswer();
   invalid_dimensions.display->dimensions->width = -1;
   EXPECT_FALSE(invalid_dimensions.IsValid());
 }
 
 TEST(AnswerMessagesTest, InvalidAudioConstraintsCauseError) {
-  Answer invalid_audio = kValidAnswer;
+  Answer invalid_audio = GetValidAnswer();
   invalid_audio.constraints->audio.max_bit_rate =
       invalid_audio.constraints->audio.min_bit_rate - 1;
   EXPECT_FALSE(invalid_audio.IsValid());
 }
 
 TEST(AnswerMessagesTest, InvalidVideoConstraintsCauseError) {
-  Answer invalid_video = kValidAnswer;
+  Answer invalid_video = GetValidAnswer();
   invalid_video.constraints->video.max_pixels_per_second = -1.0;
   EXPECT_FALSE(invalid_video.IsValid());
 }
 
 TEST(AnswerMessagesTest, InvalidDisplayDescriptionsCauseError) {
-  Answer invalid_display = kValidAnswer;
+  Answer invalid_display = GetValidAnswer();
   invalid_display.display->aspect_ratio = {0, 0};
   EXPECT_FALSE(invalid_display.IsValid());
 }
 
 TEST(AnswerMessagesTest, InvalidUdpPortsCauseError) {
-  Answer invalid_port = kValidAnswer;
+  Answer invalid_port = GetValidAnswer();
   invalid_port.udp_port = 65536;
   EXPECT_FALSE(invalid_port.IsValid());
 }
@@ -322,6 +327,17 @@ TEST(AnswerMessagesTest, SucceedsWithMissingRtpFields) {
 
 TEST(AnswerMessagesTest, ErrorOnEmptyAnswer) {
   ExpectFailureOnParse("{}");
+}
+
+TEST(AnswerMessagesTest, ErrorOnNonObjectAnswer) {
+  Json::Value array_val(Json::arrayValue);
+  EXPECT_TRUE(Answer::TryParse(array_val).is_error());
+
+  Json::Value string_val("string");
+  EXPECT_TRUE(Answer::TryParse(string_val).is_error());
+
+  Json::Value int_val(42);
+  EXPECT_TRUE(Answer::TryParse(int_val).is_error());
 }
 
 TEST(AnswerMessagesTest, ErrorOnMissingUdpPort) {

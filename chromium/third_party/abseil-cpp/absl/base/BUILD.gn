@@ -20,7 +20,6 @@ absl_source_set("errno_saver") {
 }
 
 absl_source_set("hardening") {
-  sources = [ "internal/hardening.cc" ]
   public = [ "internal/hardening.h" ]
   deps = [
     ":config",
@@ -397,6 +396,7 @@ absl_test("hardening_test") {
   sources = [ "internal/hardening_test.cc" ]
   deps = [
     ":config",
+    ":core_headers",
     ":hardening",
   ]
 }

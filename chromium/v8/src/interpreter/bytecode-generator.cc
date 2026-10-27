@@ -1620,12 +1620,13 @@ void BytecodeGenerator::AllocateDeferredConstants(IsolateT* isolate,
   for (std::pair<Call*, Scope*> call : eval_calls_) {
     Tagged<ScopeInfo> current;
     int index = call.first->eval_scope_info_index();
-    if (script->infos()->get(index).GetHeapObjectIfWeak(&current) &&
-        v8_flags.reuse_scope_infos) {
+    if (script->infos()
+            ->get(index, kAcquireLoad)
+            .GetHeapObjectIfWeak(&current)) {
       CHECK_EQ(current, *call.second->scope_info());
     } else {
       script->infos()->set(call.first->eval_scope_info_index(),
-                           MakeWeak(*call.second->scope_info()));
+                           MakeWeak(*call.second->scope_info()), kReleaseStore);
     }
   }
 
@@ -2230,11 +2231,12 @@ void BytecodeGenerator::VisitModuleNamespaceImports() {
   SourceTextModuleDescriptor* descriptor =
       closure_scope()->AsModuleScope()->module();
   for (auto entry : descriptor->namespace_imports()) {
+    Variable* var = closure_scope()->LookupInModule(entry.first);
+    if (!var->is_used()) continue;
     builder()
         ->LoadLiteral(Smi::FromInt(entry.second->module_request))
         .StoreAccumulatorInRegister(module_request)
         .CallRuntime(Runtime::kGetModuleNamespace, module_request);
-    Variable* var = closure_scope()->LookupInModule(entry.first);
     BuildVariableAssignment(var, Token::kInit, HoleCheckMode::kElided);
   }
 }
@@ -2580,29 +2582,17 @@ void BytecodeGenerator::VisitWithStatement(WithStatement* stmt) {
 
 namespace {
 
-bool IsSmiLiteralSwitchCaseValue(Expression* expr) {
-  if (expr->IsSmiLiteral() ||
-      (expr->IsLiteral() && expr->AsLiteral()->IsNumber() &&
-       expr->AsLiteral()->AsNumber() == 0.0)) {
-    return true;
-#ifdef DEBUG
-  } else if (expr->IsLiteral() && expr->AsLiteral()->IsNumber()) {
-    DCHECK(!IsSmiDouble(expr->AsLiteral()->AsNumber()));
-#endif
-  }
-  return false;
-}
-
-// Precondition: we called IsSmiLiteral to check this.
-inline int ReduceToSmiSwitchCaseValue(Expression* expr) {
-  if (V8_LIKELY(expr->IsSmiLiteral())) {
+inline std::optional<int> TryReduceToSmiSwitchCaseValue(Expression* expr) {
+  if (expr->IsSmiLiteral()) {
     return expr->AsLiteral()->AsSmiLiteral().value();
-  } else {
-    // Only the zero case is possible otherwise.
-    DCHECK(expr->IsLiteral() && expr->AsLiteral()->IsNumber() &&
-           expr->AsLiteral()->AsNumber() == -0.0);
+  }
+  if (expr->IsLiteral() && expr->AsLiteral()->IsNumber() &&
+      expr->AsLiteral()->AsNumber() == 0.0) {
     return 0;
   }
+  DCHECK_IMPLIES(expr->IsLiteral() && expr->AsLiteral()->IsNumber(),
+                 !IsSmiDouble(expr->AsLiteral()->AsNumber()));
+  return {};
 }
 
 // Is the range of Smi's small enough relative to number of cases?
@@ -2619,28 +2609,35 @@ struct SwitchInfo {
   SwitchInfo() { default_case = kDefaultNotFound; }
 
   bool DefaultExists() { return default_case != kDefaultNotFound; }
-  bool CaseExists(int j) {
+  bool CaseExists(int j) const {
     return covered_cases.find(j) != covered_cases.end();
   }
-  bool CaseExists(Expression* expr) {
-    return IsSmiLiteralSwitchCaseValue(expr)
-               ? CaseExists(ReduceToSmiSwitchCaseValue(expr))
-               : false;
+  bool CaseExists(Expression* expr) const {
+    std::optional<int> j = TryReduceToSmiSwitchCaseValue(expr);
+    if (!j) return false;
+    return CaseExists(*j);
   }
-  CaseClause* GetClause(int j) { return covered_cases[j]; }
 
-  bool IsDuplicate(CaseClause* clause) {
-    return IsSmiLiteralSwitchCaseValue(clause->label()) &&
-           CaseExists(clause->label()) &&
-           clause != GetClause(ReduceToSmiSwitchCaseValue(clause->label()));
+  // Returns true if this clause represents a case value, but there already
+  // exists another clause with the same case value.
+  bool IsDuplicate(CaseClause* clause) const {
+    std::optional<int> j = TryReduceToSmiSwitchCaseValue(clause->label());
+    if (!j) return false;
+    auto it = covered_cases.find(*j);
+    if (it == covered_cases.end()) return false;
+    return it->second != clause;
   }
-  int MinCase() {
-    return covered_cases.empty() ? INT_MAX : covered_cases.begin()->first;
+
+  int MinCase() const {
+    DCHECK(!covered_cases.empty());
+    return covered_cases.begin()->first;
   }
-  int MaxCase() {
-    return covered_cases.empty() ? INT_MIN : covered_cases.rbegin()->first;
+  int MaxCase() const {
+    DCHECK(!covered_cases.empty());
+    return covered_cases.rbegin()->first;
   }
-  void Print() {
+
+  void Print() const {
     std::cout << "Covered_cases: " << '\n';
     for (auto iter = covered_cases.begin(); iter != covered_cases.end();
          ++iter) {
@@ -2662,11 +2659,14 @@ bool IsSwitchOptimizable(SwitchStatement* stmt, SwitchInfo* info) {
       // Don't consider Smi cases after a non-literal, because we
       // need to evaluate the non-literal.
       break;
-    } else if (IsSmiLiteralSwitchCaseValue(clause->label())) {
-      int value = ReduceToSmiSwitchCaseValue(clause->label());
-      info->covered_cases.insert({value, clause});
+    } else if (auto maybe_value =
+                   TryReduceToSmiSwitchCaseValue(clause->label())) {
+      info->covered_cases.insert({*maybe_value, clause});
     }
   }
+
+  // This flag is not allowed to be <= 0.
+  DCHECK_GT(v8_flags.switch_table_min_cases, 0);
 
   // GCC also jump-table optimizes switch statements with 6 cases or more.
   if (static_cast<int>(info->covered_cases.size()) >=
@@ -2909,7 +2909,7 @@ void BytecodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
         } else {
           // Use jump table if this is not a duplicate label.
           switch_builder.BindCaseTargetForJumpTable(
-              ReduceToSmiSwitchCaseValue(clause->label()), clause);
+              *TryReduceToSmiSwitchCaseValue(clause->label()), clause);
         }
       }
     } else {
@@ -2945,6 +2945,8 @@ void BytecodeGenerator::BuildTryCatch(
   // that is intercepting 'throw' control commands.
   try_control_builder.BeginTry(context);
 
+  ThrowTrackingScope throw_tracker(builder());
+
   HoleCheckElisionMergeScope merge_elider(this);
 
   {
@@ -2964,16 +2966,18 @@ void BytecodeGenerator::BuildTryCatch(
     HoleCheckElisionMergeScope::Branch branch_elider(merge_elider);
     try_body_func();
   }
-  try_control_builder.EndTry();
 
-  {
+  bool emit_catch = throw_tracker.HasEmittedThrowingBytecode() ||
+                    block_coverage_builder_ != nullptr;
+  try_control_builder.EndTry(emit_catch);
+
+  if (emit_catch) {
     HoleCheckElisionMergeScope::Branch branch_elider(merge_elider);
     catch_body_func(context);
+    try_control_builder.EndCatch();
   }
 
   merge_elider.Merge();
-
-  try_control_builder.EndCatch();
 }
 
 template <typename TryBodyFunc, typename FinallyBodyFunc>
@@ -3355,9 +3359,8 @@ void BytecodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
   // exit, and the 'done' value in a dedicated register so that it can be
   // changed and accessed independently of the iteration result.
   IteratorRecord iterator = BuildGetIteratorRecord(stmt->type());
-  RegisterList output = register_allocator()->NewRegisterList(2);
-  Register next_result = output[0];
-  Register done = output[1];
+  Register next_result = register_allocator()->NewRegister();
+  Register done = register_allocator()->NewRegister();
   builder()->LoadFalse();
   builder()->StoreAccumulatorInRegister(done);
 
@@ -3384,16 +3387,18 @@ void BytecodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
           if (v8_flags.for_of_optimization &&
               iterator.type() != IteratorType::kAsync) {
             FeedbackSlot call_slot = feedback_spec()->AddCallICSlot();
+            feedback_spec()->AddLoadICSlot();  // iterated_object_slot
             feedback_spec()->AddLoadICSlot();  // value_slot
             feedback_spec()->AddLoadICSlot();  // done_slot
 
             builder()
-                ->ForOfNext(iterator.object(), iterator.next(), output,
+                ->ForOfNext(iterator.object(), iterator.next(),
                             feedback_index(call_slot))
-                .LoadAccumulatorWithRegister(done);
-            // TODO(rezvan): Perform ToBoolean conversion inside ForOfNext.
-            loop_builder.BreakIfTrue(ToBooleanMode::kConvertToBoolean);
+                .StoreAccumulatorInRegister(next_result);
 
+            // TODO(marja): Consider adding a BreakIfHole helper.
+            builder()->LoadTheHole().CompareReference(next_result);
+            loop_builder.BreakIfTrue(ToBooleanMode::kAlreadyBoolean);
           } else {
             BuildIteratorNext(iterator, next_result);
             builder()->LoadNamedProperty(
@@ -3406,13 +3411,15 @@ void BytecodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
                 ->LoadNamedProperty(
                     next_result, ast_string_constants()->value_string(),
                     feedback_index(feedback_spec()->AddLoadICSlot()));
-            // done = false, before the assignment to each happens, so that done
-            // is false if the assignment throws.
-            builder()
-                ->StoreAccumulatorInRegister(next_result)
-                .LoadFalse()
-                .StoreAccumulatorInRegister(done);
+            builder()->StoreAccumulatorInRegister(next_result);
           }
+
+          // done = false, before the assignment to each happens, so that done
+          // is false if the assignment throws.
+
+          // TODO(marja): consider removing "done" completely and passing
+          // next_result directly to BuildFinalizeIteration.
+          builder()->LoadFalse().StoreAccumulatorInRegister(done);
 
           // Assign to the 'each' target.
           builder()->SetExpressionAsStatementPosition(stmt->each());
@@ -5052,7 +5059,13 @@ void BytecodeGenerator::BuildVariableAssignment(
         }
         builder()->StoreContextSlot(context_reg, variable, depth);
       } else if (variable->throw_on_const_assignment(language_mode())) {
-        builder()->CallRuntime(Runtime::kThrowConstAssignError);
+        if (mode == VariableMode::kUsing) {
+          builder()->CallRuntime(Runtime::kThrowUsingAssignError);
+        } else if (mode == VariableMode::kAwaitUsing) {
+          builder()->CallRuntime(Runtime::kThrowAwaitUsingAssignError);
+        } else {
+          builder()->CallRuntime(Runtime::kThrowConstAssignError);
+        }
       }
       break;
     }
@@ -5064,8 +5077,14 @@ void BytecodeGenerator::BuildVariableAssignment(
     case VariableLocation::MODULE: {
       DCHECK(IsDeclaredVariableMode(mode));
 
-      if (mode == VariableMode::kConst && op != Token::kInit) {
-        builder()->CallRuntime(Runtime::kThrowConstAssignError);
+      if (IsImmutableLexicalVariableMode(mode) && op != Token::kInit) {
+        if (mode == VariableMode::kUsing) {
+          builder()->CallRuntime(Runtime::kThrowUsingAssignError);
+        } else if (mode == VariableMode::kAwaitUsing) {
+          builder()->CallRuntime(Runtime::kThrowAwaitUsingAssignError);
+        } else {
+          builder()->CallRuntime(Runtime::kThrowConstAssignError);
+        }
         break;
       }
 

@@ -17,6 +17,7 @@
 #include "base/test/test_future.h"
 #include "base/time/time.h"
 #include "components/password_manager/core/browser/password_form.h"
+#include "components/password_manager/core/browser/password_store/password_form_converters.h"
 #include "components/password_manager/core/browser/password_store/test_password_store.h"
 #include "components/signin/public/base/signin_switches.h"
 #include "components/sync/service/local_data_description.h"
@@ -86,7 +87,8 @@ std::vector<PasswordForm> CreatePasswordFormsInStore(int count,
     PasswordForm password = CreatePasswordForm(
         base::StringPrintf("http://%s%i.com", store_string, i));
     passwords.push_back(password);
-    store->AddLogin(password, wait_add.GetCallback());
+    store->AddLogin(password_manager::FromPasswordForm(password),
+                    wait_add.GetCallback());
     EXPECT_TRUE(wait_add.WaitAndClear());
   }
   return passwords;
@@ -95,8 +97,8 @@ std::vector<PasswordForm> CreatePasswordFormsInStore(int count,
 class PasswordLocalDataBatchUploaderTest : public ::testing::Test {
  public:
   PasswordLocalDataBatchUploaderTest() {
-    profile_store_->Init(/*affiliated_match_helper=*/nullptr);
-    account_store_->Init(/*affiliated_match_helper=*/nullptr);
+    profile_store_->Init();
+    account_store_->Init();
   }
 
   ~PasswordLocalDataBatchUploaderTest() override {
@@ -121,7 +123,8 @@ class PasswordLocalDataBatchUploaderTest : public ::testing::Test {
 
 TEST_F(PasswordLocalDataBatchUploaderTest, DescriptionEmptyIfAccountStoreNull) {
   base::test::TestFuture<void> wait_add;
-  profile_store()->AddLogin(CreatePasswordForm("http://local.com"),
+  profile_store()->AddLogin(password_manager::FromPasswordForm(
+                                CreatePasswordForm("http://local.com")),
                             wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordLocalDataBatchUploader uploader(profile_store(), nullptr);
@@ -136,7 +139,8 @@ TEST_F(PasswordLocalDataBatchUploaderTest, DescriptionEmptyIfAccountStoreNull) {
 // the test above.
 TEST_F(PasswordLocalDataBatchUploaderTest, DescriptionEmptyIfProfileStoreNull) {
   base::test::TestFuture<void> wait_add;
-  account_store()->AddLogin(CreatePasswordForm("http://account.com"),
+  account_store()->AddLogin(password_manager::FromPasswordForm(
+                                CreatePasswordForm("http://account.com")),
                             wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordLocalDataBatchUploader uploader(nullptr, account_store());
@@ -150,10 +154,12 @@ TEST_F(PasswordLocalDataBatchUploaderTest, DescriptionEmptyIfProfileStoreNull) {
 TEST_F(PasswordLocalDataBatchUploaderTest,
        DescriptionEmptyIfAccountStoreCannotSave) {
   base::test::TestFuture<void> wait_add;
-  profile_store()->AddLogin(CreatePasswordForm("http://local.com"),
+  profile_store()->AddLogin(password_manager::FromPasswordForm(
+                                CreatePasswordForm("http://local.com")),
                             wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
-  account_store()->AddLogin(CreatePasswordForm("http://account.com"),
+  account_store()->AddLogin(password_manager::FromPasswordForm(
+                                CreatePasswordForm("http://account.com")),
                             wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   account_store()->SetError(ActionableError::kInactionable);
@@ -168,10 +174,12 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
 TEST_F(PasswordLocalDataBatchUploaderTest,
        DescriptionContainsOnlyLocalPasswords) {
   base::test::TestFuture<void> wait_add;
-  profile_store()->AddLogin(CreatePasswordForm("http://local.com"),
+  profile_store()->AddLogin(password_manager::FromPasswordForm(
+                                CreatePasswordForm("http://local.com")),
                             wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
-  account_store()->AddLogin(CreatePasswordForm("http://account.com"),
+  account_store()->AddLogin(password_manager::FromPasswordForm(
+                                CreatePasswordForm("http://account.com")),
                             wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordLocalDataBatchUploader uploader(profile_store(), account_store());
@@ -196,10 +204,13 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
   // Add one local password and one account password.
   base::test::TestFuture<void> wait_add;
   PasswordForm local_password = CreatePasswordForm("http://local.com");
-  profile_store()->AddLogin(local_password, wait_add.GetCallback());
+  profile_store()->AddLogin(password_manager::FromPasswordForm(local_password),
+                            wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordForm account_password = CreatePasswordForm("http://account.com");
-  account_store()->AddLogin(account_password, wait_add.GetCallback());
+  account_store()->AddLogin(
+      password_manager::FromPasswordForm(account_password),
+      wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordLocalDataBatchUploader uploader(profile_store(), account_store());
   base::test::TestFuture<syncer::LocalDataDescription> first_description;
@@ -225,14 +236,15 @@ TEST_F(PasswordLocalDataBatchUploaderTest, MigrationNoOpsIfAccountStoreNull) {
   base::HistogramTester histogram_tester;
   base::test::TestFuture<void> wait_add;
   PasswordForm local_password = CreatePasswordForm("http://local.com");
-  profile_store()->AddLogin(local_password, wait_add.GetCallback());
+  profile_store()->AddLogin(password_manager::FromPasswordForm(local_password),
+                            wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordLocalDataBatchUploader uploader(profile_store(), nullptr);
 
   uploader.TriggerLocalDataMigration();
   RunUntilIdle();
 
-  EXPECT_THAT(profile_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(profile_store()),
               UnorderedElementsAre(
                   Pair(local_password.signon_realm,
                        UnorderedElementsAre(MatchesForm(local_password)))));
@@ -245,14 +257,16 @@ TEST_F(PasswordLocalDataBatchUploaderTest, MigrationNoOpsIfProfileStoreNull) {
   base::HistogramTester histogram_tester;
   base::test::TestFuture<void> wait_add;
   PasswordForm account_password = CreatePasswordForm("http://account.com");
-  account_store()->AddLogin(account_password, wait_add.GetCallback());
+  account_store()->AddLogin(
+      password_manager::FromPasswordForm(account_password),
+      wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordLocalDataBatchUploader uploader(nullptr, account_store());
 
   uploader.TriggerLocalDataMigration();
   RunUntilIdle();
 
-  EXPECT_THAT(account_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(account_store()),
               UnorderedElementsAre(
                   Pair(account_password.signon_realm,
                        UnorderedElementsAre(MatchesForm(account_password)))));
@@ -265,10 +279,13 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
   base::HistogramTester histogram_tester;
   base::test::TestFuture<void> wait_add;
   PasswordForm local_password = CreatePasswordForm("http://local.com");
-  profile_store()->AddLogin(local_password, wait_add.GetCallback());
+  profile_store()->AddLogin(password_manager::FromPasswordForm(local_password),
+                            wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordForm account_password = CreatePasswordForm("http://account.com");
-  account_store()->AddLogin(account_password, wait_add.GetCallback());
+  account_store()->AddLogin(
+      password_manager::FromPasswordForm(account_password),
+      wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   account_store()->SetError(ActionableError::kInactionable);
   PasswordLocalDataBatchUploader uploader(profile_store(), account_store());
@@ -276,11 +293,11 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
   uploader.TriggerLocalDataMigration();
   RunUntilIdle();
 
-  EXPECT_THAT(profile_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(profile_store()),
               UnorderedElementsAre(
                   Pair(local_password.signon_realm,
                        UnorderedElementsAre(MatchesForm(local_password)))));
-  EXPECT_THAT(account_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(account_store()),
               UnorderedElementsAre(
                   Pair(account_password.signon_realm,
                        UnorderedElementsAre(MatchesForm(account_password)))));
@@ -292,18 +309,21 @@ TEST_F(PasswordLocalDataBatchUploaderTest, MigrationUploadsLocalPassword) {
   base::HistogramTester histogram_tester;
   base::test::TestFuture<void> wait_add;
   PasswordForm local_password = CreatePasswordForm("http://local.com");
-  profile_store()->AddLogin(local_password, wait_add.GetCallback());
+  profile_store()->AddLogin(password_manager::FromPasswordForm(local_password),
+                            wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordForm account_password = CreatePasswordForm("http://account.com");
-  account_store()->AddLogin(account_password, wait_add.GetCallback());
+  account_store()->AddLogin(
+      password_manager::FromPasswordForm(account_password),
+      wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordLocalDataBatchUploader uploader(profile_store(), account_store());
 
   uploader.TriggerLocalDataMigration();
   RunUntilIdle();
 
-  EXPECT_THAT(profile_store()->stored_passwords(), IsEmpty());
-  EXPECT_THAT(account_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(profile_store()), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(account_store()),
               UnorderedElementsAre(
                   Pair(local_password.signon_realm,
                        UnorderedElementsAre(MatchesForm(local_password))),
@@ -318,10 +338,13 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
   base::HistogramTester histogram_tester;
   base::test::TestFuture<void> wait_add;
   PasswordForm local_password = CreatePasswordForm("http://local.com");
-  profile_store()->AddLogin(local_password, wait_add.GetCallback());
+  profile_store()->AddLogin(password_manager::FromPasswordForm(local_password),
+                            wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordForm account_password = CreatePasswordForm("http://account.com");
-  account_store()->AddLogin(account_password, wait_add.GetCallback());
+  account_store()->AddLogin(
+      password_manager::FromPasswordForm(account_password),
+      wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordLocalDataBatchUploader uploader(profile_store(), account_store());
   uploader.TriggerLocalDataMigration();
@@ -333,8 +356,8 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
 
   // The first migration should upload the local password, and second migration
   // should be ignored.
-  EXPECT_THAT(profile_store()->stored_passwords(), IsEmpty());
-  EXPECT_THAT(account_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(profile_store()), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(account_store()),
               UnorderedElementsAre(
                   Pair(local_password.signon_realm,
                        UnorderedElementsAre(MatchesForm(local_password))),
@@ -350,10 +373,13 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
   base::HistogramTester histogram_tester;
   base::test::TestFuture<void> wait_add;
   PasswordForm local_password = CreatePasswordForm("http://local.com");
-  profile_store()->AddLogin(local_password, wait_add.GetCallback());
+  profile_store()->AddLogin(password_manager::FromPasswordForm(local_password),
+                            wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordForm account_password = CreatePasswordForm("http://account.com");
-  account_store()->AddLogin(account_password, wait_add.GetCallback());
+  account_store()->AddLogin(
+      password_manager::FromPasswordForm(account_password),
+      wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordLocalDataBatchUploader uploader(profile_store(), account_store());
   uploader.TriggerLocalDataMigration();
@@ -374,17 +400,21 @@ TEST_F(PasswordLocalDataBatchUploaderTest, MigrationRemovesDuplicate) {
   base::HistogramTester histogram_tester;
   base::test::TestFuture<void> wait_add;
   PasswordForm duplicate_password = CreatePasswordForm("http://duplicate.com");
-  profile_store()->AddLogin(duplicate_password, wait_add.GetCallback());
+  profile_store()->AddLogin(
+      password_manager::FromPasswordForm(duplicate_password),
+      wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
-  account_store()->AddLogin(duplicate_password, wait_add.GetCallback());
+  account_store()->AddLogin(
+      password_manager::FromPasswordForm(duplicate_password),
+      wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordLocalDataBatchUploader uploader(profile_store(), account_store());
 
   uploader.TriggerLocalDataMigration();
   RunUntilIdle();
 
-  EXPECT_THAT(profile_store()->stored_passwords(), IsEmpty());
-  EXPECT_THAT(account_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(profile_store()), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(account_store()),
               UnorderedElementsAre(
                   Pair(duplicate_password.signon_realm,
                        UnorderedElementsAre(MatchesForm(duplicate_password)))));
@@ -400,20 +430,24 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
   PasswordForm old_local_password = CreatePasswordForm("http://conflict.com");
   old_local_password.password_value = u"older version";
   old_local_password.date_last_used = kDate;
-  profile_store()->AddLogin(old_local_password, wait_add.GetCallback());
+  profile_store()->AddLogin(
+      password_manager::FromPasswordForm(old_local_password),
+      wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordForm new_account_password = old_local_password;
   new_account_password.password_value = u"newer version";
   new_account_password.date_last_used = kDate + base::Days(1);
-  account_store()->AddLogin(new_account_password, wait_add.GetCallback());
+  account_store()->AddLogin(
+      password_manager::FromPasswordForm(new_account_password),
+      wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordLocalDataBatchUploader uploader(profile_store(), account_store());
 
   uploader.TriggerLocalDataMigration();
   RunUntilIdle();
 
-  EXPECT_THAT(profile_store()->stored_passwords(), IsEmpty());
-  EXPECT_THAT(account_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(profile_store()), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(account_store()),
               UnorderedElementsAre(Pair(
                   new_account_password.signon_realm,
                   UnorderedElementsAre(MatchesForm(new_account_password)))));
@@ -429,20 +463,24 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
   PasswordForm old_account_password = CreatePasswordForm("http://conflict.com");
   old_account_password.password_value = u"older version";
   old_account_password.date_last_used = kDate;
-  account_store()->AddLogin(old_account_password, wait_add.GetCallback());
+  account_store()->AddLogin(
+      password_manager::FromPasswordForm(old_account_password),
+      wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordForm new_local_password = old_account_password;
   new_local_password.password_value = u"newer version";
   new_local_password.date_last_used = kDate + base::Days(1);
-  profile_store()->AddLogin(new_local_password, wait_add.GetCallback());
+  profile_store()->AddLogin(
+      password_manager::FromPasswordForm(new_local_password),
+      wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordLocalDataBatchUploader uploader(profile_store(), account_store());
 
   uploader.TriggerLocalDataMigration();
   RunUntilIdle();
 
-  EXPECT_THAT(profile_store()->stored_passwords(), IsEmpty());
-  EXPECT_THAT(account_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(profile_store()), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(account_store()),
               UnorderedElementsAre(
                   Pair(new_local_password.signon_realm,
                        UnorderedElementsAre(MatchesForm(new_local_password)))));
@@ -459,20 +497,24 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
   PasswordForm old_account_password = CreatePasswordForm("http://conflict.com");
   old_account_password.password_value = u"older version";
   old_account_password.date_created = kDate;
-  account_store()->AddLogin(old_account_password, wait_add.GetCallback());
+  account_store()->AddLogin(
+      password_manager::FromPasswordForm(old_account_password),
+      wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordForm new_local_password = old_account_password;
   new_local_password.password_value = u"newer version";
   new_local_password.date_password_modified = kDate + base::Days(1);
-  profile_store()->AddLogin(new_local_password, wait_add.GetCallback());
+  profile_store()->AddLogin(
+      password_manager::FromPasswordForm(new_local_password),
+      wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordLocalDataBatchUploader uploader(profile_store(), account_store());
 
   uploader.TriggerLocalDataMigration();
   RunUntilIdle();
 
-  EXPECT_THAT(profile_store()->stored_passwords(), IsEmpty());
-  EXPECT_THAT(account_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(profile_store()), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(account_store()),
               UnorderedElementsAre(
                   Pair(new_local_password.signon_realm,
                        UnorderedElementsAre(MatchesForm(new_local_password)))));
@@ -483,13 +525,16 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
        MigrationUploadsMultiplePasswordsAndRecordsMetricOnce) {
   base::HistogramTester histogram_tester;
   base::test::TestFuture<void> wait_add;
-  profile_store()->AddLogin(CreatePasswordForm("http://local1.com"),
+  profile_store()->AddLogin(password_manager::FromPasswordForm(
+                                CreatePasswordForm("http://local1.com")),
                             wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
-  profile_store()->AddLogin(CreatePasswordForm("http://local2.com"),
+  profile_store()->AddLogin(password_manager::FromPasswordForm(
+                                CreatePasswordForm("http://local2.com")),
                             wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
-  profile_store()->AddLogin(CreatePasswordForm("http://local3.com"),
+  profile_store()->AddLogin(password_manager::FromPasswordForm(
+                                CreatePasswordForm("http://local3.com")),
                             wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordLocalDataBatchUploader uploader(profile_store(), account_store());
@@ -497,8 +542,8 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
   uploader.TriggerLocalDataMigration();
   RunUntilIdle();
 
-  EXPECT_THAT(profile_store()->stored_passwords(), IsEmpty());
-  EXPECT_THAT(account_store()->stored_passwords(), SizeIs(3));
+  EXPECT_THAT(GetAllLoginsSync(profile_store()), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(account_store()), SizeIs(3));
   histogram_tester.ExpectUniqueSample(kNumUploadsMetric, 3, 1);
 }
 
@@ -513,9 +558,9 @@ TEST_F(PasswordLocalDataBatchUploaderTest, MigrationUploadsEmptyKeys) {
   RunUntilIdle();
 
   // All passwords still in profile store.
-  EXPECT_THAT(profile_store()->stored_passwords(), SizeIs(3));
+  EXPECT_THAT(GetAllLoginsSync(profile_store()), SizeIs(3));
   // No password uploaded in account store.
-  EXPECT_THAT(account_store()->stored_passwords(), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(account_store()), IsEmpty());
   histogram_tester.ExpectUniqueSample(kNumUploadsMetric, 0, 1);
 }
 
@@ -534,12 +579,12 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
   RunUntilIdle();
 
   // Password 1 still in profile_store.
-  EXPECT_THAT(profile_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(profile_store()),
               UnorderedElementsAre(
                   Pair(passwords[1].signon_realm,
                        UnorderedElementsAre(MatchesForm(passwords[1])))));
   // Password 0 and 2 in account_store.
-  EXPECT_THAT(account_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(account_store()),
               UnorderedElementsAre(
                   Pair(passwords[0].signon_realm,
                        UnorderedElementsAre(MatchesForm(passwords[0]))),
@@ -562,8 +607,8 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
        PasswordFormUniqueKey(passwords[2])});
   RunUntilIdle();
 
-  EXPECT_THAT(profile_store()->stored_passwords(), IsEmpty());
-  EXPECT_THAT(account_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(profile_store()), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(account_store()),
               UnorderedElementsAre(
                   Pair(passwords[0].signon_realm,
                        UnorderedElementsAre(MatchesForm(passwords[0]))),
@@ -588,13 +633,13 @@ TEST_F(PasswordLocalDataBatchUploaderTest, MigrationUploadsPasswordsSameKey) {
   RunUntilIdle();
 
   // Only password 0 should be uploaded.
-  EXPECT_THAT(profile_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(profile_store()),
               UnorderedElementsAre(
                   Pair(passwords[1].signon_realm,
                        UnorderedElementsAre(MatchesForm(passwords[1]))),
                   Pair(passwords[2].signon_realm,
                        UnorderedElementsAre(MatchesForm(passwords[2])))));
-  EXPECT_THAT(account_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(account_store()),
               UnorderedElementsAre(
                   Pair(passwords[0].signon_realm,
                        UnorderedElementsAre(MatchesForm(passwords[0])))));
@@ -618,13 +663,13 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
   RunUntilIdle();
 
   // Only password 0 should be uploaded, `password_not_in_local_store` ignored.
-  EXPECT_THAT(profile_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(profile_store()),
               UnorderedElementsAre(
                   Pair(passwords[1].signon_realm,
                        UnorderedElementsAre(MatchesForm(passwords[1]))),
                   Pair(passwords[2].signon_realm,
                        UnorderedElementsAre(MatchesForm(passwords[2])))));
-  EXPECT_THAT(account_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(account_store()),
               UnorderedElementsAre(
                   Pair(passwords[0].signon_realm,
                        UnorderedElementsAre(MatchesForm(passwords[0])))));
@@ -650,14 +695,14 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
 
   // Only password 0 should be uploaded, `account_passwords[0]` should not be
   // duplicated and appear only once in account store.
-  EXPECT_THAT(profile_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(profile_store()),
               UnorderedElementsAre(
                   Pair(local_passwords[1].signon_realm,
                        UnorderedElementsAre(MatchesForm(local_passwords[1]))),
                   Pair(local_passwords[2].signon_realm,
                        UnorderedElementsAre(MatchesForm(local_passwords[2])))));
   EXPECT_THAT(
-      account_store()->stored_passwords(),
+      GetAllLoginsSync(account_store()),
       UnorderedElementsAre(
           Pair(local_passwords[0].signon_realm,
                UnorderedElementsAre(MatchesForm(local_passwords[0]))),
@@ -675,14 +720,16 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
   base::HistogramTester histogram_tester;
   base::test::TestFuture<void> wait_add;
   PasswordForm common_password = CreatePasswordForm("http://common.com");
-  profile_store()->AddLogin(common_password, wait_add.GetCallback());
+  profile_store()->AddLogin(password_manager::FromPasswordForm(common_password),
+                            wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
-  account_store()->AddLogin(common_password, wait_add.GetCallback());
+  account_store()->AddLogin(password_manager::FromPasswordForm(common_password),
+                            wait_add.GetCallback());
   ASSERT_TRUE(wait_add.WaitAndClear());
   PasswordLocalDataBatchUploader uploader(profile_store(), account_store());
 
   // Password to migrate already exists in the account store.
-  ASSERT_THAT(account_store()->stored_passwords(),
+  ASSERT_THAT(GetAllLoginsSync(account_store()),
               UnorderedElementsAre(
                   Pair(common_password.signon_realm,
                        UnorderedElementsAre(MatchesForm(common_password)))));
@@ -693,8 +740,8 @@ TEST_F(PasswordLocalDataBatchUploaderTest,
 
   // Common password should be removed from the profile store and not duplicated
   // in the account store.
-  EXPECT_THAT(profile_store()->stored_passwords(), IsEmpty());
-  EXPECT_THAT(account_store()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(profile_store()), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(account_store()),
               UnorderedElementsAre(
                   Pair(common_password.signon_realm,
                        UnorderedElementsAre(MatchesForm(common_password)))));

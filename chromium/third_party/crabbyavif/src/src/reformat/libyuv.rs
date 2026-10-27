@@ -203,6 +203,12 @@ fn find_conversion_function(
         (_, 10, Format::Rgba1010102, PixelFormat::Yuv420) => Some(
             ConversionFunction::YUVToAB30Matrix(I010ToAR30Matrix, AR30ToAB30),
         ),
+        (_, 10, Format::Rgba1010102, PixelFormat::Yuv422) => Some(
+            ConversionFunction::YUVToAB30Matrix(I210ToAR30Matrix, AR30ToAB30),
+        ),
+        (_, 10, Format::Rgba1010102, PixelFormat::Yuv444) => Some(
+            ConversionFunction::YUVToAB30Matrix(I410ToAR30Matrix, AR30ToAB30),
+        ),
         (_, 16, Format::Rgba, PixelFormat::AndroidP010) => Some(
             ConversionFunction::P010ToRGBMatrix(P010ToARGBMatrix, ARGBToABGR),
         ),
@@ -401,15 +407,9 @@ pub(crate) fn yuv_to_rgb(image: &image::Image, rgb: &mut rgb::Image) -> AvifResu
     if (rgb.depth != 8 && rgb.depth != 10) || !image.depth_valid() {
         return Ok(None); // Not implemented.
     }
-    if rgb.depth == 10
-        && (!matches!(
-            image.yuv_format,
-            PixelFormat::AndroidP010 | PixelFormat::Yuv420
-        ) || rgb.format != Format::Rgba1010102)
-    {
+    if rgb.depth == 10 && rgb.format != Format::Rgba1010102 {
         return Ok(None); // Not implemented.
     }
-
     let (matrix_yuv, matrix_yvu) = match find_constants(image) {
         Some((matrix_yuv, matrix_yvu)) => (matrix_yuv, matrix_yvu),
         None => return Ok(None), // Not implemented.

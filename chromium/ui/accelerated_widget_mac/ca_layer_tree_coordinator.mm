@@ -10,9 +10,11 @@
 #include "base/mac/mac_util.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/trace_event.h"
+#include "build/ios_buildflags.h"
 #include "ui/accelerated_widget_mac/ca_renderer_layer_tree.h"
 #include "ui/base/cocoa/animation_utils.h"
 #include "ui/base/cocoa/remote_layer_api.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/gfx/ca_layer_params.h"
 #include "ui/gfx/mac/mtl_shared_event_fence.h"
 #include "ui/gl/gl_context.h"
@@ -39,40 +41,16 @@ CALayerTreeCoordinator::CALayerTreeCoordinator(
       gl_make_current_callback_(gl_make_current_callback),
       metal_device_(metal_device),
       no_post_task_for_callback_(no_post_task_for_callback) {
-  if (allow_remote_layers_) {
-    root_ca_layer_ = [[CALayer alloc] init];
-#if BUILDFLAG(IS_MAC)
-    // iOS' UIKit has default coordinate system where the origin is at the upper
-    // left of the drawing area. In contrast, AppKit and Core Graphics that
-    // macOS uses has its origin at the lower left of the drawing area. Thus, we
-    // don't need to flip the coordinate system on iOS as it's already set the
-    // way we want it to be.
-    root_ca_layer_.geometryFlipped = YES;
-#endif
-    root_ca_layer_.opaque = YES;
-
-    // Create the CAContext to send this to the GPU process, and the layer for
-    // the context.
-#if BUILDFLAG(IS_MAC)
-    CGSConnectionID connection_id = CGSMainConnectionID();
-    ca_context_ = [CAContext contextWithCGSConnection:connection_id
-                                              options:@{}];
-#else
-    // Use a very large display ID to ensure that the context is never put
-    // on-screen without being explicitly parented.
-    ca_context_ = [CAContext remoteContextWithOptions:@{
-      kCAContextIgnoresHitTest : @YES,
-      kCAContextDisplayId : @10000
-    }];
-#endif
-    ca_context_.layer = root_ca_layer_;
-  }
 }
 
 CALayerTreeCoordinator::~CALayerTreeCoordinator() = default;
 
 void CALayerTreeCoordinator::Resize(const gfx::Size& pixel_size,
                                     float scale_factor) {
+#if BUILDFLAG(IS_MAC)
+  has_resized_since_last_swap_ |=
+      pixel_size != pixel_size_ || scale_factor_ != scale_factor;
+#endif
   pixel_size_ = pixel_size;
   scale_factor_ = scale_factor;
 }
@@ -170,6 +148,43 @@ void CALayerTreeCoordinator::Present(
   presented_frames_.push(std::move(frame));
 }
 
+void CALayerTreeCoordinator::EnsureCAContextAndRootLayer() {
+  if (!allow_remote_layers_) {
+    return;
+  }
+  if (!root_ca_layer_) {
+    root_ca_layer_ = [[CALayer alloc] init];
+#if BUILDFLAG(IS_MAC)
+    // iOS' UIKit has default coordinate system where the origin is at the
+    // upper left of the drawing area. In contrast, AppKit and Core Graphics
+    // that macOS uses has its origin at the lower left of the drawing area.
+    // Thus, we don't need to flip the coordinate system on iOS as it's
+    // already set the way we want it to be.
+    root_ca_layer_.geometryFlipped = YES;
+#endif
+    root_ca_layer_.opaque = YES;
+  }
+  if (!ca_context_) {
+#if !BUILDFLAG(IS_IOS) || BUILDFLAG(IS_IOS_TVOS)
+    // Create the CAContext to send this to the GPU process, and the layer
+    // for the context.
+#if BUILDFLAG(IS_MAC)
+    CGSConnectionID connection_id = CGSMainConnectionID();
+    ca_context_ = [CAContext contextWithCGSConnection:connection_id
+                                              options:@{}];
+#else
+    // Use a very large display ID to ensure that the context is never put
+    // on-screen without being explicitly parented.
+    ca_context_ = [CAContext remoteContextWithOptions:@{
+      kCAContextIgnoresHitTest : @YES,
+      kCAContextDisplayId : @10000
+    }];
+#endif
+    ca_context_.layer = root_ca_layer_;
+#endif  // !BUILDFLAG(IS_IOS) || BUILDFLAG(IS_IOS_TVOS)
+  }
+}
+
 void CALayerTreeCoordinator::CommitPresentedFrameToCA(
     base::TimeDelta frame_interval,
     base::TimeTicks display_time) {
@@ -191,6 +206,25 @@ void CALayerTreeCoordinator::CommitPresentedFrameToCA(
     return;
   }
 
+  gfx::CALayerParams params;
+#if BUILDFLAG(IS_MAC)
+  if (has_resized_since_last_swap_) {
+    // Create a new CAContext for the new size. This allows new frame update at
+    // the new size to be atomic with things like resizing the NSWindow.
+    if (base::FeatureList::IsEnabled(features::kCATransactionV2) &&
+        allow_remote_layers_) {
+      params.ca_context_fence_mach_port.reset([ca_context_ createFencePort]);
+      [ca_context_ setFencePort:params.ca_context_fence_mach_port.get()];
+      ca_context_.layer = nil;
+      ca_context_ = nil;
+      root_ca_layer_ = nil;
+      current_tree = nullptr;
+    }
+    has_resized_since_last_swap_ = false;
+  }
+#endif
+  EnsureCAContextAndRootLayer();
+
   // Get the frame to be committed.
   auto& frame = presented_frames_.front();
 
@@ -205,10 +239,10 @@ void CALayerTreeCoordinator::CommitPresentedFrameToCA(
   // Populate the CA layer parameters to send to the browser.
   // Send the swap parameters to the browser.
   if (frame.completion_callback) {
-    gfx::CALayerParams params;
-    TRACE_EVENT_INSTANT2("test_gpu", "SwapBuffers", TRACE_EVENT_SCOPE_THREAD,
-                         "GLImpl", static_cast<int>(gl::GetGLImplementation()),
-                         "width", pixel_size_.width());
+    TRACE_EVENT_INSTANT("test_gpu", "SwapBuffers", "GLImpl",
+                        static_cast<int>(gl::GetGLImplementation()), "width",
+                        pixel_size_.width());
+
     if (allow_remote_layers_) {
       params.ca_context_id = [ca_context_ contextId];
     } else {
@@ -220,22 +254,19 @@ void CALayerTreeCoordinator::CommitPresentedFrameToCA(
     }
     params.pixel_size = pixel_size_;
     params.scale_factor = scale_factor_;
-    params.is_empty = false;
 
     // |frame.completion_callback| will reach this function:
     // SkiaOutputDeviceBufferQueue::DoFinishSwapBuffers().
     if (no_post_task_for_callback_) {
       std::move(frame.completion_callback)
-          .Run(gfx::SwapCompletionResult(
-              gfx::SwapResult::SWAP_ACK,
-              std::make_unique<gfx::CALayerParams>(params)));
+          .Run(gfx::SwapCompletionResult(gfx::SwapResult::SWAP_ACK,
+                                         std::move(params)));
     } else {
       base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE,
           base::BindOnce(std::move(frame.completion_callback),
-                         gfx::SwapCompletionResult(
-                             gfx::SwapResult::SWAP_ACK,
-                             std::make_unique<gfx::CALayerParams>(params))));
+                         gfx::SwapCompletionResult(gfx::SwapResult::SWAP_ACK,
+                                                   std::move(params))));
     }
   }
 

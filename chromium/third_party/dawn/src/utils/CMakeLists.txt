@@ -27,8 +27,19 @@
 
 set(private_headers
     "compiler.h"
+    "force_crash.h"
+    "non_copyable.h"
+    "non_movable.h"
     "numeric.h"
+    "platform.h"
+    "underlying_type.h"
 )
+
+if (WIN32)
+    list(APPEND private_headers
+        "windows_with_undefs.h"
+    )
+endif()
 
 set(sources
     "placeholder.cc"

@@ -38,11 +38,13 @@ export abstract class Realm extends EventEmitter<{
   /** Emitted whenever the realm has updated. */
   updated: Realm;
   /** Emitted when the realm is destroyed. */
-  destroyed: {reason: string};
+  destroyed: string;
   /** Emitted when a dedicated worker is created in the realm. */
   worker: DedicatedWorkerRealm;
   /** Emitted when a shared worker is created in the realm. */
   sharedworker: SharedWorkerRealm;
+  /** Emitted whenever a log entry is added to the realm. */
+  log: Bidi.Log.Entry;
 }> {
   #reason?: string;
   protected readonly disposables = new DisposableStack();
@@ -137,7 +139,7 @@ export abstract class Realm extends EventEmitter<{
   override [disposeSymbol](): void {
     this.#reason ??=
       'Realm already destroyed, probably because all associated browsing contexts closed.';
-    this.emit('destroyed', {reason: this.#reason});
+    this.emit('destroyed', this.#reason);
 
     this.disposables.dispose();
     super[disposeSymbol]();
@@ -170,7 +172,7 @@ export class WindowRealm extends Realm {
     const browsingContextEmitter = this.disposables.use(
       new EventEmitter(this.browsingContext),
     );
-    browsingContextEmitter.on('closed', ({reason}) => {
+    browsingContextEmitter.on('closed', reason => {
       this.dispose(reason);
     });
 
@@ -206,6 +208,13 @@ export class WindowRealm extends Realm {
       });
 
       this.emit('worker', realm);
+    });
+
+    sessionEmitter.on('log.entryAdded', entry => {
+      if (entry.source.realm !== this.id) {
+        return;
+      }
+      this.emit('log', entry);
     });
   }
 
@@ -278,6 +287,13 @@ export class DedicatedWorkerRealm extends Realm {
 
       this.emit('worker', realm);
     });
+
+    sessionEmitter.on('log.entryAdded', entry => {
+      if (entry.source.realm !== this.id) {
+        return;
+      }
+      this.emit('log', entry);
+    });
   }
 
   override get session(): Session {
@@ -329,6 +345,13 @@ export class SharedWorkerRealm extends Realm {
       });
 
       this.emit('worker', realm);
+    });
+
+    sessionEmitter.on('log.entryAdded', entry => {
+      if (entry.source.realm !== this.id) {
+        return;
+      }
+      this.emit('log', entry);
     });
   }
 

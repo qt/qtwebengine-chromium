@@ -19,6 +19,7 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "components/user_prefs/user_prefs.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/color_chooser.h"
@@ -644,9 +645,7 @@ void AppWindow::SetFullscreen(FullscreenType type, bool enable) {
     // TODO(bartfab): Add a test once it becomes possible to simulate a user
     // gesture. http://crbug.com/40300937
     if (type != FULLSCREEN_TYPE_FORCED) {
-      PrefService* prefs =
-          ExtensionsBrowserClient::Get()->GetPrefServiceForContext(
-              browser_context());
+      PrefService* prefs = user_prefs::UserPrefs::Get(browser_context());
       if (!prefs->GetBoolean(pref_names::kAppFullscreenAllowed))
         return;
     }
@@ -854,7 +853,14 @@ void AppWindow::DidDownloadFavicon(
 }
 
 void AppWindow::SetNativeWindowFullscreen() {
+  // `SetFullscreen()` can trigger window closure (e.g. on macOS when spinning a
+  // nested run loop), destroying `this`. Use a WeakPtr to avoid Use-After-Free
+  // when calling RestoreAlwaysOnTop(). See crbug.com/516948486.
+  base::WeakPtr<AppWindow> weak_this = weak_ptr_factory_.GetWeakPtr();
   native_app_window_->SetFullscreen(fullscreen_types_);
+  if (!weak_this) {
+    return;
+  }
 
   RestoreAlwaysOnTop();
 }

@@ -25,15 +25,15 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/BuddyAllocator.h"
+#include "src/dawn/native/BuddyAllocator.h"
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/Math.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/Math.h"
 
 namespace dawn::native {
 
 BuddyAllocator::BuddyAllocator(uint64_t maxSize) : mMaxBlockSize(maxSize) {
-    DAWN_ASSERT(IsPowerOfTwo(maxSize));
+    DAWN_CHECK(IsPowerOfTwo(maxSize));
 
     mFreeLists.resize(Log2(mMaxBlockSize) + 1);
 
@@ -73,7 +73,7 @@ uint32_t BuddyAllocator::ComputeLevelFromBlockSize(uint64_t blockSize) const {
 
 uint64_t BuddyAllocator::GetNextFreeAlignedBlock(size_t allocationBlockLevel,
                                                  uint64_t alignment) const {
-    DAWN_ASSERT(IsPowerOfTwo(alignment));
+    DAWN_CHECK(IsPowerOfTwo(alignment));
     // The current level is the level that corresponds to the allocation size. The free list may
     // not contain a block at that level until a larger one gets allocated (and splits).
     // Continue to go up the tree until such a larger block exists.
@@ -111,7 +111,7 @@ uint64_t BuddyAllocator::GetNextFreeAlignedBlock(size_t allocationBlockLevel,
 // Note: Always insert into the head of the free-list. As when a larger free block at a lower
 // level was split, there were no smaller free blocks at a higher level to allocate.
 void BuddyAllocator::InsertFreeBlock(BuddyBlock* block, size_t level) {
-    DAWN_ASSERT(block->mState == BlockState::Free);
+    DAWN_CHECK(block->mState == BlockState::Free);
 
     // Inserted block is now the front (no prev).
     block->free.pPrev = nullptr;
@@ -129,7 +129,7 @@ void BuddyAllocator::InsertFreeBlock(BuddyBlock* block, size_t level) {
 }
 
 void BuddyAllocator::RemoveFreeBlock(BuddyBlock* block, size_t level) {
-    DAWN_ASSERT(block->mState == BlockState::Free);
+    DAWN_CHECK(block->mState == BlockState::Free);
 
     if (mFreeLists[level].head == block) {
         // Block is in HEAD position.
@@ -140,12 +140,12 @@ void BuddyAllocator::RemoveFreeBlock(BuddyBlock* block, size_t level) {
         BuddyBlock* pNext = block->free.pNext;
 
         DAWN_ASSERT(pPrev != nullptr);
-        DAWN_ASSERT(pPrev->mState == BlockState::Free);
+        DAWN_CHECK(pPrev->mState == BlockState::Free);
 
         pPrev->free.pNext = pNext;
 
         if (pNext != nullptr) {
-            DAWN_ASSERT(pNext->mState == BlockState::Free);
+            DAWN_CHECK(pNext->mState == BlockState::Free);
             pNext->free.pPrev = pPrev;
         }
     }
@@ -159,7 +159,7 @@ uint64_t BuddyAllocator::Allocate(uint64_t allocationSize, uint64_t alignment) {
     // Compute the level
     const uint32_t allocationSizeToLevel = ComputeLevelFromBlockSize(allocationSize);
 
-    DAWN_ASSERT(allocationSizeToLevel < mFreeLists.size());
+    DAWN_CHECK(allocationSizeToLevel < mFreeLists.size());
 
     uint64_t currBlockLevel = GetNextFreeAlignedBlock(allocationSizeToLevel, alignment);
 
@@ -174,7 +174,7 @@ uint64_t BuddyAllocator::Allocate(uint64_t allocationSize, uint64_t alignment) {
     BuddyBlock* currBlock = mFreeLists[currBlockLevel].head;
 
     for (; currBlockLevel < allocationSizeToLevel; currBlockLevel++) {
-        DAWN_ASSERT(currBlock->mState == BlockState::Free);
+        DAWN_CHECK(currBlock->mState == BlockState::Free);
 
         // Remove curr block (about to be split).
         RemoveFreeBlock(currBlock, currBlockLevel);
@@ -233,10 +233,10 @@ void BuddyAllocator::Deallocate(uint64_t offset) {
         currBlockLevel++;
     }
 
-    DAWN_ASSERT(curr->mState == BlockState::Allocated);
+    DAWN_CHECK(curr->mState == BlockState::Allocated);
 
     // Ensure the block is at the correct level
-    DAWN_ASSERT(currBlockLevel == ComputeLevelFromBlockSize(curr->mSize));
+    DAWN_CHECK(currBlockLevel == ComputeLevelFromBlockSize(curr->mSize));
 
     // Mark curr free so we can merge.
     curr->mState = BlockState::Free;

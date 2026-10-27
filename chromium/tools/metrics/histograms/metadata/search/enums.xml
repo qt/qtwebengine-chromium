@@ -25,6 +25,8 @@ chromium-metrics-reviews@google.com.
 
 <enums>
 
+<!-- LINT.IfChange(AmbientSearchEntryPoint) -->
+
 <enum name="AmbientSearchEntryPoint">
   <summary>
     The entry point that initiated an ambient search query. (e.g. Context Menu
@@ -83,6 +85,8 @@ chromium-metrics-reviews@google.com.
   <int value="29" label="Composebox"/>
 </enum>
 
+<!-- LINT.ThenChange(//components/lens/lens_metrics.h:AmbientSearchEntryPoint) -->
+
 <enum name="AuxiliarySearchRequestStatus">
   <int value="0" label="Sent (overall number of requests issued)"/>
   <int value="1" label="Processed, Successful (data accepted by recipient)"/>
@@ -99,6 +103,8 @@ chromium-metrics-reviews@google.com.
   <int value="0" label="Not Top Level"/>
   <int value="1" label="Top Level"/>
 </enum>
+
+<!-- LINT.IfChange(CameraOpenEntryPoint) -->
 
 <enum name="CameraOpenEntryPoint">
   <int value="0" label="Omnibox"/>
@@ -117,12 +123,18 @@ chromium-metrics-reviews@google.com.
   <int value="13" label="Composebox"/>
 </enum>
 
+<!-- LINT.ThenChange(//components/lens/lens_metrics.h:CameraOpenEntryPoint) -->
+
+<!-- LINT.IfChange(CameraResult) -->
+
 <enum name="CameraResult">
   <int value="0" label="Success (Camera)"/>
   <int value="1" label="Success (Gallery Image)"/>
   <int value="2" label="Success (QR/Bar Code)"/>
   <int value="3" label="Dismissed"/>
 </enum>
+
+<!-- LINT.ThenChange(//components/lens/lens_metrics.h:CameraResult) -->
 
 <enum name="ClickInfo">
   <summary>
@@ -230,6 +242,9 @@ chromium-metrics-reviews@google.com.
       label="Hash was not verified as decryption services were not available"/>
   <int value="5"
       label="Hash was not verified as hash verification is disabled"/>
+  <int value="6"
+      label="Hash was rejected as it was encrypted with a weak algorithm
+             (Added May 2026)"/>
 </enum>
 
 <!-- LINT.IfChange(LaunchOsChoiceScreenTapHandlingStatus) -->
@@ -241,6 +256,8 @@ chromium-metrics-reviews@google.com.
 </enum>
 
 <!-- LINT.ThenChange() -->
+
+<!-- LINT.IfChange(LensRegionSearchAspectRatio) -->
 
 <enum name="LensRegionSearchAspectRatio">
   <summary>
@@ -256,6 +273,10 @@ chromium-metrics-reviews@google.com.
   <int value="5" label="Very Tall Aspect Ratio"/>
 </enum>
 
+<!-- LINT.ThenChange(//components/lens/lens_metrics.h:LensRegionSearchAspectRatio) -->
+
+<!-- LINT.IfChange(LensRegionSearchCaptureResult) -->
+
 <enum name="LensRegionSearchCaptureResult">
   <summary>Result of Lens Region Search feature.</summary>
   <int value="0" label="Success"/>
@@ -269,6 +290,8 @@ chromium-metrics-reviews@google.com.
       label="User navigated away from the page while capture mode was open,
              closing the capture mode."/>
 </enum>
+
+<!-- LINT.ThenChange(//components/lens/lens_metrics.h:LensRegionSearchCaptureResult) -->
 
 <!-- LINT.IfChange(OsDefaultsChoiceDialogStatus) -->
 
@@ -308,43 +331,25 @@ chromium-metrics-reviews@google.com.
   <int value="3" label="StayPending">
     Intermediate state, the pending data processing will be re-attempted later
   </int>
+  <int value="4" label="ProgramMismatch">
+    Terminal state, the program has changed and the pending data will be wiped
+  </int>
 </enum>
 
 <!-- LINT.ThenChange(//components/search_engines/search_engine_choice/search_engine_choice_service.cc:PendingDisplayStateStatus) -->
-
-<enum name="QueryTilesGroupPruneReason">
-  <int value="0" label="Expired"/>
-  <int value="1" label="InvalidLocale"/>
-</enum>
-
-<enum name="QueryTilesGroupStatus">
-  <int value="0" label="Success"/>
-  <int value="1" label="Uninitialized"/>
-  <int value="2" label="FailureDbOperation"/>
-  <int value="3" label="NoTiles"/>
-</enum>
-
-<enum name="QueryTilesImageLoadingEvent">
-  <int value="0" label="Start in full browser mode"/>
-  <int value="1" label="Success in full browser mode"/>
-  <int value="2" label="Failure in full browser mode"/>
-  <int value="3" label="Start in reduced mode"/>
-  <int value="4" label="Success in reduced mode"/>
-  <int value="5" label="Failure in reduced mode"/>
-</enum>
-
-<enum name="QueryTilesRequestStatus">
-  <int value="0" label="Init"/>
-  <int value="1" label="Success"/>
-  <int value="2" label="Failure"/>
-  <int value="3" label="Suspend"/>
-</enum>
 
 <enum name="ScrollAndClickStatus">
   <int value="0" label="NO_SCROLL_NO_CLICK"/>
   <int value="1" label="NO_SCROLL_CLICKED"/>
   <int value="2" label="SCROLLED_NO_CLICK"/>
   <int value="3" label="SCROLLED_CLICKED"/>
+</enum>
+
+<enum name="SearchDuplicateKeyword">
+  <int value="0" label="No Duplicates"/>
+  <int value="1" label="Non-default keyword duplicated"/>
+  <int value="2" label="Default keyword duplicated"/>
+  <int value="3" label="Both Default and non-default duplicates"/>
 </enum>
 
 <enum name="SearchEngineChoiceDate">
@@ -506,6 +511,12 @@ chromium-metrics-reviews@google.com.
     offered on the choice screen set as default, while the program settings
     require to highlight the current default.
   </int>
+  <int value="24" label="UnavailableCurrentLocation">
+    The user's current location is unknown or invalid *and* the regional program
+    requires restricting to its associated countries. Note: it can be affected
+    by the client state (e.g. Desktop first run), leading to not emitting this
+    condition.
+  </int>
 </enum>
 
 <!-- LINT.ThenChange(/components/regional_capabilities/enums.h:SearchEngineChoiceScreenConditions) -->
@@ -573,6 +584,7 @@ chromium-metrics-reviews@google.com.
   <int value="6" label="Invalid choice metadata: Other"/>
   <int value="7" label="Missing default search engine"/>
   <int value="8" label="Choice remade after import"/>
+  <int value="9" label="Program changed"/>
 </enum>
 
 <!-- LINT.IfChange(SearchPolicyConflictType) -->
@@ -601,33 +613,6 @@ chromium-metrics-reviews@google.com.
   <int value="5" label="sourceid"/>
   <int value="6" label="t"/>
   <int value="7" label="tt"/>
-</enum>
-
-<enum name="SearchWidgetUseInfo">
-  <int value="0" label="defunct Present in partnership device"/>
-  <int value="1" label="defunct Not present in partnership device"/>
-  <int value="2" label="defunct Present in non-partnership device"/>
-  <int value="3" label="defunct Not present in non-partnership device"/>
-  <int value="4" label="Present in partnership device (Always available)"/>
-  <int value="5"
-      label="Present in partnership device (Added after first start)"/>
-  <int value="6" label="Not Present in partnership device (Never present)"/>
-  <int value="7"
-      label="Not Present in partnership device (Removed after first start)"/>
-  <int value="8" label="Present in non-partnership device (Always available)"/>
-  <int value="9"
-      label="Present in non-partnership device (Added after first start)"/>
-  <int value="10"
-      label="Not Present in non-partnership device (Never present)"/>
-  <int value="11"
-      label="Not Present in non-partnership device (Removed after first
-             start)"/>
-</enum>
-
-<enum name="TrendingTileEvent">
-  <int value="0" label="Tile was shown"/>
-  <int value="1" label="Tile was removed"/>
-  <int value="2" label="Tile was clicked"/>
 </enum>
 
 <!-- LINT.IfChange(UnknownCountryIdStored) -->

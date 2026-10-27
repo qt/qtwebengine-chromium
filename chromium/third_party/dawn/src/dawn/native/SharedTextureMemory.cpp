@@ -25,16 +25,17 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/SharedTextureMemory.h"
+#include "src/dawn/native/SharedTextureMemory.h"
 
 #include <utility>
 
-#include "dawn/common/WeakRef.h"
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/Device.h"
-#include "dawn/native/Queue.h"
-#include "dawn/native/SharedFence.h"
-#include "dawn/native/dawn_platform.h"
+#include "src/dawn/common/WeakRef.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/Device.h"
+#include "src/dawn/native/Queue.h"
+#include "src/dawn/native/SharedFence.h"
+#include "src/dawn/native/dawn_platform.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native {
 
@@ -223,7 +224,7 @@ SharedTextureMemoryContents* SharedTextureMemoryBase::GetContents() const {
 void APISharedTextureMemoryEndAccessStateFreeMembers(WGPUSharedTextureMemoryEndAccessState cState) {
     auto* state = reinterpret_cast<SharedTextureMemoryBase::EndAccessState*>(&cState);
     for (size_t i = 0; i < state->fenceCount; ++i) {
-        state->fences[i]->APIRelease();
+        DAWN_UNSAFE_TODO(state->fences[i])->APIRelease();
     }
     delete[] state->fences;
     delete[] state->signaledValues;

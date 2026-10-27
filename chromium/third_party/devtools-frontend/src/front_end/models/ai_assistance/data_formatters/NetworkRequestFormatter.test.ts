@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Platform from '../../../core/platform/platform.js';
 import * as SDK from '../../../core/sdk/sdk.js';
 import * as Protocol from '../../../generated/protocol.js';
@@ -226,7 +228,7 @@ describe('NetworkRequestFormatter', () => {
             corsErrorStatus: undefined,
             localizedFailDescription: null,
           }),
-          'Blocked reason: inspector\n');
+          'Blocked reason: a custom network condition in DevTools is blocking this request\n');
     });
 
     it('handles CORS error correctly', () => {

@@ -390,6 +390,12 @@ bool FlatlandSysmemBufferCollection::CreateVkImage(
     VkDeviceSize* mem_allocation_size) {
   DCHECK_CALLED_ON_VALID_THREAD(vulkan_thread_checker_);
 
+  if (buffer_index >= num_buffers()) {
+    DLOG(ERROR) << "Invalid buffer_index=" << buffer_index
+                << " (num_buffers=" << num_buffers() << ")";
+    return false;
+  }
+
   if (vk_device_ != vk_device) {
     DLOG(FATAL) << "Tried to import NativePixmap that was created for a "
                    "different VkDevice.";
@@ -426,6 +432,12 @@ bool FlatlandSysmemBufferCollection::CreateVkImage(
 
   uint32_t viable_memory_types =
       properties.memoryTypeBits & requirements.memoryTypeBits;
+  if (viable_memory_types == 0) {
+    DLOG(ERROR) << "No viable memory types found.";
+    vkDestroyImage(vk_device_, *vk_image, nullptr);
+    *vk_image = VK_NULL_HANDLE;
+    return false;
+  }
   uint32_t memory_type = std::countr_zero(viable_memory_types);
 
   VkMemoryDedicatedAllocateInfoKHR dedicated_allocate = {

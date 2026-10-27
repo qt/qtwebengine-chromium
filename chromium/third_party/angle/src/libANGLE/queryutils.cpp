@@ -298,6 +298,9 @@ void QueryTexParameterBase(const Context *context,
         case GL_TEXTURE_MAX_LEVEL:
             *params = CastFromGLintStateValue<ParamType>(pname, texture->getMaxLevel());
             break;
+        case GL_TEXTURE_LOD_BIAS_QCOM:
+            *params = CastFromStateValue<ParamType>(pname, texture->getLodBias());
+            break;
         case GL_TEXTURE_MIN_LOD:
             *params = CastFromSpecialValue<isGLfixed, ParamType>(pname, texture->getMinLod());
             break;
@@ -466,6 +469,9 @@ void SetTexParameterBase(Context *context, Texture *texture, GLenum pname, const
             texture->setMaxLevel(context,
                                  clampCast<GLuint>(CastQueryValueTo<GLint>(pname, params[0])));
             break;
+        case GL_TEXTURE_LOD_BIAS_QCOM:
+            texture->setLodBias(context, CastQueryValueTo<GLfloat>(pname, params[0]));
+            break;
         case GL_TEXTURE_MIN_LOD:
             texture->setMinLod(context, CastQueryValueTo<GLfloat>(pname, params[0]));
             break;
@@ -567,6 +573,9 @@ void QuerySamplerParameterBase(const Sampler *sampler,
         case SamplerParameter::SrgbDecode:
             *params = static_cast<ParamType>(sampler->getSRGBDecode());
             break;
+        case SamplerParameter::LodBiasQCOM:
+            *params = CastFromStateValue<ParamType>(0, sampler->getLodBias());
+            break;
         default:
             UNREACHABLE();
             break;
@@ -616,6 +625,9 @@ void SetSamplerParameterBase(Context *context,
             break;
         case SamplerParameter::SrgbDecode:
             sampler->setSRGBDecode(context, ConvertToGLenum(params[0]));
+            break;
+        case SamplerParameter::LodBiasQCOM:
+            sampler->setLodBias(context, static_cast<GLfloat>(params[0]));
             break;
         default:
             UNREACHABLE();
@@ -2881,6 +2893,7 @@ unsigned int GetTextureEnvParameterCount(TextureEnvParameter pname)
         case TextureEnvParameter::RgbScale:
         case TextureEnvParameter::AlphaScale:
         case TextureEnvParameter::PointCoordReplace:
+        case TextureEnvParameter::LodBias:
             return 1;
         case TextureEnvParameter::Color:
             return 4;
@@ -2901,6 +2914,7 @@ void ConvertTextureEnvFromInt(TextureEnvParameter pname, const GLint *input, GLf
     {
         case TextureEnvParameter::RgbScale:
         case TextureEnvParameter::AlphaScale:
+        case TextureEnvParameter::LodBias:
             output[0] = static_cast<GLfloat>(input[0]);
             break;
         case TextureEnvParameter::Color:
@@ -2927,6 +2941,7 @@ void ConvertTextureEnvFromFixed(TextureEnvParameter pname, const GLfixed *input,
     {
         case TextureEnvParameter::RgbScale:
         case TextureEnvParameter::AlphaScale:
+        case TextureEnvParameter::LodBias:
             output[0] = ConvertFixedToFloat(input[0]);
             break;
         case TextureEnvParameter::Color:
@@ -2953,6 +2968,7 @@ void ConvertTextureEnvToInt(TextureEnvParameter pname, const GLfloat *input, GLi
     {
         case TextureEnvParameter::RgbScale:
         case TextureEnvParameter::AlphaScale:
+        case TextureEnvParameter::LodBias:
             output[0] = static_cast<GLint>(input[0]);
             break;
         case TextureEnvParameter::Color:
@@ -2979,6 +2995,7 @@ void ConvertTextureEnvToFixed(TextureEnvParameter pname, const GLfloat *input, G
     {
         case TextureEnvParameter::RgbScale:
         case TextureEnvParameter::AlphaScale:
+        case TextureEnvParameter::LodBias:
             output[0] = ConvertFloatToFixed(input[0]);
             break;
         case TextureEnvParameter::Color:
@@ -3077,6 +3094,17 @@ void SetTextureEnv(unsigned int unit,
                     break;
             }
             break;
+        case TextureEnvTarget::TextureFilterControl:
+            switch (pname)
+            {
+                case TextureEnvParameter::LodBias:
+                    env.lodBias = params[0];
+                    break;
+                default:
+                    UNREACHABLE();
+                    break;
+            }
+            break;
         default:
             UNREACHABLE();
             break;
@@ -3160,6 +3188,17 @@ void GetTextureEnv(unsigned int unit,
             {
                 case TextureEnvParameter::PointCoordReplace:
                     *params = static_cast<GLfloat>(env.pointSpriteCoordReplace);
+                    break;
+                default:
+                    UNREACHABLE();
+                    break;
+            }
+            break;
+        case TextureEnvTarget::TextureFilterControl:
+            switch (pname)
+            {
+                case TextureEnvParameter::LodBias:
+                    *params = env.lodBias;
                     break;
                 default:
                     UNREACHABLE();
@@ -3886,6 +3925,13 @@ bool GetQueryParameterInfo(const State &glState,
         (pname == GL_FETCH_PER_SAMPLE_ARM || pname == GL_FRAGMENT_SHADER_FRAMEBUFFER_FETCH_MRT_ARM))
     {
         *type      = GL_BOOL;
+        *numParams = 1;
+        return true;
+    }
+
+    if (extensions.textureLodBiasEXT && pname == GL_MAX_TEXTURE_LOD_BIAS_EXT)
+    {
+        *type      = GL_FLOAT;
         *numParams = 1;
         return true;
     }

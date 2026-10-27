@@ -13,18 +13,21 @@
 # limitations under the License.
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
-load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
-load("@org_tensorflow//tensorflow/core/platform:build_config.bzl", "tf_proto_library")
+load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@com_google_protobuf//bazel:java_proto_library.bzl", "java_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@com_google_protobuf//bazel:py_proto_library.bzl", "py_proto_library")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//fcp:config.bzl", "FCP_COPTS")
 
 package(
+    default_applicable_licenses = ["//fcp:license"],
     default_visibility = [
         "//fcp:internal",
     ],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 # Interfaces used by the engine & protocol. These require platform specific
@@ -82,7 +85,7 @@ cc_library(
         "//fcp/protos:federated_api_cc_proto",
         "@com_google_absl//absl/random",
         "@com_google_absl//absl/time",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:duration_cc_proto",
     ],
 )
 
@@ -140,8 +143,6 @@ TF_OPTIONAL_DEFINES = select({
 })
 
 # This target only support example query plans, and it doesn't support TensorFlow based plans.
-# For TensorFlow based plans, make sure to also link in
-# //fcp/client/tensorflow:tensorflow_runner_impl_registration.
 cc_library(
     name = "fl_runner",
     srcs = ["fl_runner.cc"],
@@ -157,10 +158,8 @@ cc_library(
         ":federated_protocol",
         ":federated_select",
         ":fl_runner_cc_proto",
-        ":fl_runner_tensorflow_spec_result_cc_proto",
         ":interfaces",
         ":interruptible_runner",
-        ":parsing_utils",
         ":phase_logger",
         ":phase_logger_impl",
         ":runner_common",
@@ -200,7 +199,7 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:cord",
         "@com_google_absl//absl/time",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:duration_cc_proto",
     ],
 )
 
@@ -237,54 +236,16 @@ cc_test(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:cord",
         "@com_google_absl//absl/time",
         "@com_google_googleapis//google/type:datetime_cc_proto",
         "@com_google_googletest//:gtest_main",
-        "@com_google_protobuf//:protobuf",
-        "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@com_google_protobuf//:duration_cc_proto",
+        "@com_google_protobuf//:protobuf_lite",
     ],
-)
-
-cc_library(
-    name = "lc_runner",
-    srcs = ["lc_runner.cc"],
-    hdrs = [
-        "lc_runner.h",
-    ],
-    copts = FCP_COPTS,
-    defines = TF_OPTIONAL_DEFINES,
-    visibility = ["//visibility:public"],
-    deps = [
-        ":diag_codes_cc_proto",
-        ":example_iterator_query_recorder",
-        ":interfaces",
-        ":interruptible_runner",
-        ":phase_logger",
-        ":phase_logger_impl",
-        ":runner_common",
-        ":selector_context_cc_proto",
-        ":simple_task_environment",
-        "//fcp/base",
-        "//fcp/client/engine:common",
-        "//fcp/client/engine:example_iterator_factory",
-        "//fcp/client/engine:plan_engine_helpers",
-        "//fcp/client/engine:tflite_plan_engine",
-        "//fcp/client/opstats:opstats_example_store",
-        "//fcp/client/opstats:opstats_logger",
-        "//fcp/client/opstats:opstats_logger_impl",
-        "//fcp/protos:plan_cc_proto",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/time",
-        "@org_tensorflow//tensorflow/core:framework",
-        "@org_tensorflow//tensorflow/core:protos_all_cc",
-        "@org_tensorflow//tensorflow/core/platform:tstring",
-    ] + TF_OPTIONAL_DEPS,
 )
 
 cc_library(
@@ -313,9 +274,9 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:duration_cc_proto",
+        "@com_google_protobuf//:timestamp_cc_proto",
         "@com_googlesource_code_re2//:re2",
-        "@org_tensorflow//tensorflow/core:protos_all_cc",
     ],
 )
 
@@ -325,6 +286,7 @@ cc_test(
     deps = [
         ":diag_codes_cc_proto",
         ":eligibility_decider",
+        ":simple_task_environment",
         ":test_helpers",
         "//fcp/base:simulated_clock",
         "//fcp/client/engine:common",
@@ -334,12 +296,13 @@ cc_test(
         "//fcp/protos:population_eligibility_spec_cc_proto",
         "//fcp/testing",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
-        "@com_google_protobuf//:protobuf",
-        "@org_tensorflow//tensorflow/core/example:example_protos_cc",
+        "@com_google_protobuf//:duration_cc_proto",
+        "@com_google_protobuf//:timestamp_cc_proto",
     ],
 )
 
@@ -388,10 +351,11 @@ cc_test(
         "//fcp/protos:opstats_cc_proto",
         "//fcp/testing",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:time_util",
     ],
 )
 
@@ -437,14 +401,8 @@ cc_library(
         "@com_google_absl//absl/strings:cord",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:any_cc_proto",
     ],
-)
-
-cc_library(
-    name = "parsing_utils",
-    hdrs = ["parsing_utils.h"],
-    deps = ["@com_google_absl//absl/strings:cord"],
 )
 
 cc_test(
@@ -466,10 +424,11 @@ cc_test(
         "//fcp/protos:plan_cc_proto",
         "//fcp/testing",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:any_cc_proto",
     ],
 )
 
@@ -557,8 +516,8 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_googletest//:gtest_for_library",
+        "@com_google_protobuf//:any_cc_proto",
     ],
 )
 
@@ -574,9 +533,6 @@ cc_library(
         ":fake_event_publisher",
         ":fl_runner",
         "//fcp/base",
-        "//fcp/client/tensorflow:tensorflow_runner_impl_registration",
-        "//fcp/tensorflow:external_dataset_op_lib",
-        "//fcp/tensorflow:task_eligibility_info_ops_lib",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/flags:usage",
@@ -591,7 +547,6 @@ cc_binary(
     testonly = True,
     deps = [
         ":client_runner_main_lib",
-        "@org_tensorflow//tensorflow/core:tensorflow_opensource",
     ],
 )
 
@@ -604,7 +559,7 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:protobuf_lite",
         "@org_tensorflow_federated//tensorflow_federated/cc/core/impl/aggregation/core:tensor",
         "@org_tensorflow_federated//tensorflow_federated/cc/core/impl/aggregation/core:tensor_cc_proto",
     ],
@@ -634,7 +589,7 @@ cc_library(
         "//fcp/protos:plan_cc_proto",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/synchronization",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:any_cc_proto",
     ],
 )
 
@@ -649,7 +604,7 @@ cc_test(
         "//fcp/testing",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:any_cc_proto",
     ],
 )
 
@@ -693,8 +648,8 @@ cc_library(
         "@com_google_absl//absl/strings:cord",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
-        "@com_google_protobuf//:protobuf",
-        "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@com_google_protobuf//:duration_cc_proto",
+        "@com_google_protobuf//:protobuf_lite",
     ],
 )
 
@@ -738,30 +693,6 @@ cc_proto_library(
     name = "fl_runner_cc_proto",
     visibility = ["//visibility:public"],
     deps = [":fl_runner_proto"],
-)
-
-# Protocol buffers for testing FL Runner. These do not get serialized to disk.
-tf_proto_library(
-    name = "fl_runner_tensorflow_spec_result_proto",
-    srcs = ["fl_runner_tensorflow_spec_result.proto"],
-    protodeps = [
-        "//fcp/client/engine:engine_proto",
-        "@org_tensorflow//tensorflow/core:protos_all",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-java_proto_library(
-    name = "fl_runner_tensorflow_spec_result_java_proto",
-    visibility = ["//visibility:public"],
-    deps = [":fl_runner_tensorflow_spec_result_proto"],
-)
-
-# Allowing to refer to the cc library generated by the rule above in usual way:
-alias(
-    name = "fl_runner_tensorflow_spec_result_cc_proto",
-    actual = "fl_runner_tensorflow_spec_result_proto_cc",
-    visibility = ["//visibility:public"],
 )
 
 # Protocol buffers for logging. Those get serialized.

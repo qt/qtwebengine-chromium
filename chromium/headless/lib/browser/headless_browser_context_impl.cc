@@ -30,10 +30,6 @@
 #include "third_party/blink/public/common/origin_trials/trial_token_validator.h"
 #include "ui/base/resource/resource_bundle.h"
 
-#if defined(HEADLESS_USE_POLICY)
-#include "components/user_prefs/user_prefs.h"  // nogncheck
-#endif                                         // defined(HEADLESS_USE_POLICY)
-
 namespace headless {
 
 namespace {
@@ -81,10 +77,6 @@ HeadlessBrowserContextImpl::HeadlessBrowserContextImpl(
   profile_metrics::SetBrowserProfileType(
       this, IsOffTheRecord() ? profile_metrics::BrowserProfileType::kIncognito
                              : profile_metrics::BrowserProfileType::kRegular);
-#if defined(HEADLESS_USE_POLICY)
-  if (PrefService* pref_service = browser->GetPrefs())
-    user_prefs::UserPrefs::Set(this, pref_service);
-#endif  // defined(HEADLESS_USE_POLICY)
 
   // Ensure the delegate is initialized early to give it time to load its
   // persistence.
@@ -97,8 +89,11 @@ HeadlessBrowserContextImpl::~HeadlessBrowserContextImpl() {
   NotifyWillBeDestroyed();
 
   // Destroy all web contents before shutting down in process renderer and
-  // storage partitions.
-  web_contents_map_.clear();
+  // storage partitions. Note that web_contents_ container can't be "just"
+  // cleared as deleting one element may lead to other elements being deleted.
+  while (!web_contents_map_.empty()) {
+    web_contents_map_.erase(web_contents_map_.begin());
+  }
 
   // In single process mode we can only have one browser context, so it's
   // safe to shutdown the in-process renderer here.
@@ -151,6 +146,10 @@ HeadlessBrowserContextImpl::GetAllWebContents() {
 }
 
 void HeadlessBrowserContextImpl::Close() {
+  while (!web_contents_map_.empty()) {
+    auto it = web_contents_map_.begin();
+    it->second->Close();
+  }
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   browser_->DestroyBrowserContext(this);
 }

@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_XPRHELPER_H
 #define EIGEN_XPRHELPER_H
@@ -63,18 +64,10 @@ EIGEN_DEVICE_FUNC inline IndexDest convert_index(const IndexSrc& idx) {
   return convert_index_impl<IndexDest, IndexSrc>::run(idx);
 }
 
-// true if T can be considered as an integral index (i.e., and integral type or enum)
-template <typename T>
-struct is_valid_index_type {
-  enum { value = internal::is_integral<T>::value || std::is_enum<T>::value };
-};
-
 // true if both types are not valid index types
 template <typename RowIndices, typename ColIndices>
-struct valid_indexed_view_overload {
-  enum {
-    value = !(internal::is_valid_index_type<RowIndices>::value && internal::is_valid_index_type<ColIndices>::value)
-  };
+struct valid_indexed_view_overload : std::integral_constant<bool, !(internal::is_valid_index_type<RowIndices>::value &&
+                                                                    internal::is_valid_index_type<ColIndices>::value)> {
 };
 
 // promote_scalar_arg is an helper used in operation between an expression and a scalar, like:
@@ -101,7 +94,7 @@ struct promote_scalar_arg<S, T, true> {
 
 // Recursively check safe conversion to PromotedType, and then ExprScalar if they are different.
 template <typename ExprScalar, typename T, typename PromotedType,
-          bool ConvertibleToLiteral = internal::is_convertible<T, PromotedType>::value,
+          bool ConvertibleToLiteral = std::is_convertible<T, PromotedType>::value,
           bool IsSafe = NumTraits<T>::IsInteger || !NumTraits<PromotedType>::IsInteger>
 struct promote_scalar_arg_unsupported;
 
@@ -269,7 +262,7 @@ struct unpacket_traits;
 
 template <int Size, typename PacketType,
           bool Stop = Size == Dynamic || (Size % unpacket_traits<PacketType>::size) == 0 ||
-                      is_same<PacketType, typename unpacket_traits<PacketType>::half>::value>
+                      std::is_same<PacketType, typename unpacket_traits<PacketType>::half>::value>
 struct find_best_packet_helper;
 
 template <int Size, typename PacketType>
@@ -289,7 +282,7 @@ struct find_best_packet {
 
 template <int Size, typename PacketType,
           bool Stop = (Size == unpacket_traits<PacketType>::size) ||
-                      is_same<PacketType, typename unpacket_traits<PacketType>::half>::value>
+                      std::is_same<PacketType, typename unpacket_traits<PacketType>::half>::value>
 struct find_packet_by_size_helper;
 template <int Size, typename PacketType>
 struct find_packet_by_size_helper<Size, PacketType, true> {
@@ -332,14 +325,11 @@ constexpr int compute_default_alignment_helper(int ArrayBytes, int AlignmentByte
 #endif
 
 template <typename T, int Size>
-struct compute_default_alignment {
-  enum { value = compute_default_alignment_helper(Size * sizeof(T), EIGEN_MAX_STATIC_ALIGN_BYTES) };
-};
+struct compute_default_alignment
+    : std::integral_constant<int, compute_default_alignment_helper(Size * sizeof(T), EIGEN_MAX_STATIC_ALIGN_BYTES)> {};
 
 template <typename T>
-struct compute_default_alignment<T, Dynamic> {
-  enum { value = EIGEN_MAX_ALIGN_BYTES };
-};
+struct compute_default_alignment<T, Dynamic> : std::integral_constant<int, EIGEN_MAX_ALIGN_BYTES> {};
 
 template <typename Scalar_, int Rows_, int Cols_,
           int Options_ = AutoAlign | ((Rows_ == 1 && Cols_ != 1)   ? RowMajor
@@ -373,9 +363,9 @@ constexpr int size_at_compile_time(int rows, int cols) {
 }
 
 template <typename XprType>
-struct size_of_xpr_at_compile_time {
-  enum { ret = size_at_compile_time(traits<XprType>::RowsAtCompileTime, traits<XprType>::ColsAtCompileTime) };
-};
+struct size_of_xpr_at_compile_time
+    : std::integral_constant<int, size_at_compile_time(traits<XprType>::RowsAtCompileTime,
+                                                       traits<XprType>::ColsAtCompileTime)> {};
 
 /* plain_matrix_type : the difference from eval is that plain_matrix_type is always a plain matrix type,
  * whereas eval is a const reference in the case of a matrix
@@ -553,7 +543,7 @@ struct cast_return_type {
   using CurrentScalarType = typename XprType::Scalar;
   using CastType_ = remove_all_t<CastType>;
   using NewScalarType = typename CastType_::Scalar;
-  using type = std::conditional_t<is_same<CurrentScalarType, NewScalarType>::value, const XprType&, CastType>;
+  using type = std::conditional_t<std::is_same<CurrentScalarType, NewScalarType>::value, const XprType&, CastType>;
 };
 
 template <typename A, typename B>
@@ -614,22 +604,14 @@ struct cwise_promote_storage_type<Dense, Sparse, Functor> {
 };
 
 template <typename LhsKind, typename RhsKind, int LhsOrder, int RhsOrder>
-struct cwise_promote_storage_order {
-  enum { value = LhsOrder };
-};
+struct cwise_promote_storage_order : std::integral_constant<int, LhsOrder> {};
 
 template <typename LhsKind, int LhsOrder, int RhsOrder>
-struct cwise_promote_storage_order<LhsKind, Sparse, LhsOrder, RhsOrder> {
-  enum { value = RhsOrder };
-};
+struct cwise_promote_storage_order<LhsKind, Sparse, LhsOrder, RhsOrder> : std::integral_constant<int, RhsOrder> {};
 template <typename RhsKind, int LhsOrder, int RhsOrder>
-struct cwise_promote_storage_order<Sparse, RhsKind, LhsOrder, RhsOrder> {
-  enum { value = LhsOrder };
-};
+struct cwise_promote_storage_order<Sparse, RhsKind, LhsOrder, RhsOrder> : std::integral_constant<int, LhsOrder> {};
 template <int Order>
-struct cwise_promote_storage_order<Sparse, Sparse, Order, Order> {
-  enum { value = Order };
-};
+struct cwise_promote_storage_order<Sparse, Sparse, Order, Order> : std::integral_constant<int, Order> {};
 
 /** \internal Specify the "storage kind" of multiplying an expression of kind A with kind B.
  * The template parameter ProductTag permits to specialize the resulting storage kind wrt to
@@ -732,8 +714,8 @@ struct plain_row_type {
       Array<Scalar, 1, ExpressionType::ColsAtCompileTime, int(ExpressionType::PlainObject::Options) | int(RowMajor), 1,
             ExpressionType::MaxColsAtCompileTime>;
 
-  using type = std::conditional_t<is_same<typename traits<ExpressionType>::XprKind, MatrixXpr>::value, MatrixRowType,
-                                  ArrayRowType>;
+  using type = std::conditional_t<std::is_same<typename traits<ExpressionType>::XprKind, MatrixXpr>::value,
+                                  MatrixRowType, ArrayRowType>;
 };
 
 template <typename ExpressionType, typename Scalar = typename ExpressionType::Scalar>
@@ -744,8 +726,8 @@ struct plain_col_type {
   using ArrayColType = Array<Scalar, ExpressionType::RowsAtCompileTime, 1,
                              ExpressionType::PlainObject::Options & ~RowMajor, ExpressionType::MaxRowsAtCompileTime, 1>;
 
-  using type = std::conditional_t<is_same<typename traits<ExpressionType>::XprKind, MatrixXpr>::value, MatrixColType,
-                                  ArrayColType>;
+  using type = std::conditional_t<std::is_same<typename traits<ExpressionType>::XprKind, MatrixXpr>::value,
+                                  MatrixColType, ArrayColType>;
 };
 
 template <typename ExpressionType, typename Scalar = typename ExpressionType::Scalar>
@@ -758,8 +740,8 @@ struct plain_diag_type {
       Matrix<Scalar, diag_size, 1, ExpressionType::PlainObject::Options & ~RowMajor, max_diag_size, 1>;
   using ArrayDiagType = Array<Scalar, diag_size, 1, ExpressionType::PlainObject::Options & ~RowMajor, max_diag_size, 1>;
 
-  using type = std::conditional_t<is_same<typename traits<ExpressionType>::XprKind, MatrixXpr>::value, MatrixDiagType,
-                                  ArrayDiagType>;
+  using type = std::conditional_t<std::is_same<typename traits<ExpressionType>::XprKind, MatrixXpr>::value,
+                                  MatrixDiagType, ArrayDiagType>;
 };
 
 template <typename Expr, typename Scalar = typename Expr::Scalar>
@@ -772,45 +754,32 @@ struct plain_constant_type {
   using matrix_type = Matrix<Scalar, traits<Expr>::RowsAtCompileTime, traits<Expr>::ColsAtCompileTime, Options,
                              traits<Expr>::MaxRowsAtCompileTime, traits<Expr>::MaxColsAtCompileTime>;
 
-  using type = CwiseNullaryOp<
-      scalar_constant_op<Scalar>,
-      const std::conditional_t<is_same<typename traits<Expr>::XprKind, MatrixXpr>::value, matrix_type, array_type>>;
+  using type = CwiseNullaryOp<scalar_constant_op<Scalar>,
+                              const std::conditional_t<std::is_same<typename traits<Expr>::XprKind, MatrixXpr>::value,
+                                                       matrix_type, array_type>>;
 };
 
 template <typename ExpressionType>
-struct is_lvalue {
-  enum { value = (!bool(is_const<ExpressionType>::value)) && bool(traits<ExpressionType>::Flags & LvalueBit) };
-};
+struct is_lvalue : std::integral_constant<bool, (!bool(std::is_const<ExpressionType>::value)) &&
+                                                    bool((traits<ExpressionType>::Flags & LvalueBit))> {};
 
 template <typename T>
-struct is_diagonal {
-  enum { ret = false };
-};
+struct is_diagonal : std::false_type {};
 
 template <typename T>
-struct is_diagonal<DiagonalBase<T>> {
-  enum { ret = true };
-};
+struct is_diagonal<DiagonalBase<T>> : std::true_type {};
 
 template <typename T>
-struct is_diagonal<DiagonalWrapper<T>> {
-  enum { ret = true };
-};
+struct is_diagonal<DiagonalWrapper<T>> : std::true_type {};
 
 template <typename T, int S>
-struct is_diagonal<DiagonalMatrix<T, S>> {
-  enum { ret = true };
-};
+struct is_diagonal<DiagonalMatrix<T, S>> : std::true_type {};
 
 template <typename T>
-struct is_identity {
-  enum { value = false };
-};
+struct is_identity : std::false_type {};
 
 template <typename T>
-struct is_identity<CwiseNullaryOp<internal::scalar_identity_op<typename T::Scalar>, T>> {
-  enum { value = true };
-};
+struct is_identity<CwiseNullaryOp<internal::scalar_identity_op<typename T::Scalar>, T>> : std::true_type {};
 
 template <typename S1, typename S2>
 struct glue_shapes;
@@ -820,12 +789,9 @@ struct glue_shapes<DenseShape, TriangularShape> {
 };
 
 template <typename T1, typename T2>
-struct possibly_same_dense {
-  enum {
-    value = has_direct_access<T1>::ret && has_direct_access<T2>::ret &&
-            is_same<typename T1::Scalar, typename T2::Scalar>::value
-  };
-};
+struct possibly_same_dense
+    : std::integral_constant<bool, has_direct_access<T1>::value && has_direct_access<T2>::value &&
+                                       std::is_same<typename T1::Scalar, typename T2::Scalar>::value> {};
 
 template <typename T1, typename T2>
 EIGEN_DEVICE_FUNC bool is_same_dense(const T1& mat1, const T2& mat2,
@@ -842,27 +808,20 @@ EIGEN_DEVICE_FUNC bool is_same_dense(const T1&, const T2&, std::enable_if_t<!pos
 // Internal helper defining the cost of a scalar division for the type T.
 // The default heuristic can be specialized for each scalar type and architecture.
 template <typename T, bool Vectorized = false, typename EnableIf = void>
-struct scalar_div_cost {
-  enum { value = 8 * NumTraits<T>::MulCost };
-};
+struct scalar_div_cost : std::integral_constant<int, 8 * NumTraits<T>::MulCost> {};
 
 template <typename T, bool Vectorized>
-struct scalar_div_cost<T, Vectorized, std::enable_if_t<NumTraits<T>::IsComplex>> {
-  using RealScalar = typename NumTraits<T>::Real;
-  enum {
-    value =
-        2 * scalar_div_cost<RealScalar>::value + 6 * NumTraits<RealScalar>::MulCost + 3 * NumTraits<RealScalar>::AddCost
-  };
-};
+struct scalar_div_cost<T, Vectorized, std::enable_if_t<NumTraits<T>::IsComplex>>
+    : std::integral_constant<int, 2 * scalar_div_cost<typename NumTraits<T>::Real>::value +
+                                      6 * NumTraits<typename NumTraits<T>::Real>::MulCost +
+                                      3 * NumTraits<typename NumTraits<T>::Real>::AddCost> {};
 
 template <bool Vectorized>
-struct scalar_div_cost<signed long, Vectorized, std::conditional_t<sizeof(long) == 8, void, false_type>> {
-  enum { value = 24 };
-};
+struct scalar_div_cost<signed long, Vectorized, std::conditional_t<sizeof(long) == 8, void, std::false_type>>
+    : std::integral_constant<int, 24> {};
 template <bool Vectorized>
-struct scalar_div_cost<unsigned long, Vectorized, std::conditional_t<sizeof(long) == 8, void, false_type>> {
-  enum { value = 21 };
-};
+struct scalar_div_cost<unsigned long, Vectorized, std::conditional_t<sizeof(long) == 8, void, std::false_type>>
+    : std::integral_constant<int, 21> {};
 
 #ifdef EIGEN_DEBUG_ASSIGN
 std::string demangle_traversal(int t) {

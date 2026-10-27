@@ -90,8 +90,11 @@ namespace {
 ScrollableArea* ToScrollableArea(Node* node) {
   DCHECK(node);
   LayoutBox* scrolling_box = node->GetLayoutBox();
-  if (auto* element = DynamicTo<Element>(node))
-    scrolling_box = element->GetLayoutBoxForScrolling();
+  if (auto* element = DynamicTo<Element>(node)) {
+    auto* box = element->GetLayoutBoxForScrolling();
+    scrolling_box =
+        box && box->GetScrollableArea()->ScrollableAxes() ? box : nullptr;
+  }
   return scrolling_box ? scrolling_box->GetScrollableArea() : nullptr;
 }
 
@@ -235,8 +238,9 @@ class PagePopupChromeClient final : public EmptyChromeClient {
   }
 
   void ScheduleAnimation(const LocalFrameView*,
-                         base::TimeDelta delay = base::TimeDelta(),
-                         bool urgent = false) override {
+                         cc::BeginMainFrameReason reason,
+                         base::TimeDelta delay,
+                         bool urgent) override {
     if (!popup_) {
       // Script can reach this function even after ChromeDestroyed(),
       // see crbug.com/483589078.
@@ -259,11 +263,11 @@ class PagePopupChromeClient final : public EmptyChromeClient {
           popup_->popup_client_->OwnerElement().GetDocument();
       if (Page* page = opener_document.GetPage()) {
         page->GetChromeClient().ScheduleAnimation(
-            opener_document.GetFrame()->View(), delay);
+            opener_document.GetFrame()->View(), reason, delay, false);
       }
       return;
     }
-    popup_->widget_base_->RequestAnimationAfterDelay(delay, urgent);
+    popup_->widget_base_->RequestAnimationAfterDelay(reason, delay, urgent);
   }
 
   cc::AnimationHost* GetCompositorAnimationHost(LocalFrame&) const override {
@@ -391,7 +395,7 @@ WebPagePopupImpl::WebPagePopupImpl(
   }
 
   InitializeCompositing(screen_infos,
-                        /*settings=*/nullptr);
+                        /*settings=*/nullptr, {}, {}, {});
 
   popup_client_->AdjustSettings(page_->GetSettings());
   popup_client_->CreatePagePopupController(*page_, *this);
@@ -480,7 +484,14 @@ void WebPagePopupImpl::DidSetBounds() {
 
 void WebPagePopupImpl::InitializeCompositing(
     const display::ScreenInfos& screen_infos,
-    const cc::LayerTreeSettings* settings) {
+    const cc::LayerTreeSettings* settings,
+    CrossVariantMojoRemote<viz::mojom::blink::CompositorFrameSinkInterfaceBase>
+        initial_frame_sink,
+    CrossVariantMojoReceiver<
+        viz::mojom::blink::CompositorFrameSinkClientInterfaceBase>
+        initial_frame_sink_client,
+    CrossVariantMojoReceiver<mojom::blink::RenderInputRouterClientInterfaceBase>
+        initial_viz_rir_client) {
   // Careful Initialize() is called after InitializeCompositing, so don't do
   // much work here.
   widget_base_->InitializeCompositing(*page_->GetPageScheduler(), screen_infos,
@@ -967,8 +978,9 @@ void WebPagePopupImpl::FocusChanged(mojom::blink::FocusState focus_state) {
                                          mojom::blink::FocusState::kFocused);
 }
 
-void WebPagePopupImpl::ScheduleAnimation(bool urgent) {
-  widget_base_->LayerTreeHost()->SetNeedsAnimate(urgent);
+void WebPagePopupImpl::ScheduleAnimation(cc::BeginMainFrameReason reason,
+                                         bool urgent) {
+  widget_base_->LayerTreeHost()->SetNeedsAnimate(reason, urgent);
 }
 
 void WebPagePopupImpl::UpdateVisualProperties(
@@ -1020,6 +1032,15 @@ void WebPagePopupImpl::Close() {
     closing_ = true;
     // This should end up running ClosePopup() though the PopupClient.
     Cancel();
+    // Cancel() may have synchronously triggered ClosePopup() and destroyed
+    // page_.
+    if (page_) {
+      EventDispatchForbiddenScope::AllowUserAgentEvents allow_events;
+      if (auto* controller = PagePopupController::From(*page_)) {
+        controller->ClearPagePopupClient();
+      }
+      DestroyPage();
+    }
   }
 
   // TODO(dtapuska): WidgetBase shutdown should happen before Page is

@@ -67,6 +67,7 @@
 #include "extensions/common/switches.h"
 #include "extensions/common/user_scripts_allowed_state.h"
 #include "extensions/common/utils/extension_utils.h"
+#include "extensions/grit/extensions_renderer_generated_resources.h"
 #include "extensions/grit/extensions_renderer_resources.h"
 #include "extensions/renderer/api/messaging/native_renderer_messaging_service.h"
 #include "extensions/renderer/content_watcher.h"
@@ -829,8 +830,10 @@ void Dispatcher::DidCreateDocumentElement(blink::WebLocalFrame* frame) {
 
   if (extension &&
       (extension->is_extension() || extension->is_platform_app())) {
-    int resource_id = extension->is_platform_app() ? IDR_PLATFORM_APP_CSS
-                                                   : IDR_EXTENSION_FONTS_CSS;
+    int resource_id =
+        extension->is_platform_app()
+            ? IDR_EXTENSIONS_RENDERER_GENERATED_PLATFORM_APP_CSS
+            : IDR_EXTENSIONS_RENDERER_GENERATED_EXTENSION_FONTS_CSS;
     std::string stylesheet =
         ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(
             resource_id);
@@ -842,7 +845,7 @@ void Dispatcher::DidCreateDocumentElement(blink::WebLocalFrame* frame) {
     // Blink doesn't let us define an additional user agent stylesheet, so
     // we insert the default platform app or extension stylesheet into all
     // documents that are loaded in each app or extension.
-    frame->GetDocument().InsertStyleSheet(WebString::FromUTF8(stylesheet));
+    frame->GetDocument().InsertStyleSheet(WebString::FromUtf8(stylesheet));
   }
 
   // If this is an extension options page, and the extension has opted into
@@ -853,7 +856,7 @@ void Dispatcher::DidCreateDocumentElement(blink::WebLocalFrame* frame) {
     std::string extension_css =
         ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(
             IDR_EXTENSION_CSS);
-    frame->GetDocument().InsertStyleSheet(WebString::FromUTF8(extension_css));
+    frame->GetDocument().InsertStyleSheet(WebString::FromUtf8(extension_css));
   }
 }
 
@@ -1419,21 +1422,23 @@ void Dispatcher::UpdateOriginPermissions(const Extension& extension) {
       extension, IsExtensionActive(extension.id()), &allow_list);
   for (const auto& entry : allow_list) {
     WebSecurityPolicy::AddOriginAccessAllowListEntry(
-        extension.url(), WebString::FromUTF8(entry->protocol),
-        WebString::FromUTF8(entry->domain), entry->port,
+        extension.url(), WebString::FromUtf8(entry->protocol),
+        WebString::FromUtf8(entry->domain), entry->port,
         entry->domain_match_mode, entry->port_match_mode, entry->priority);
   }
 
   for (const auto& entry : CreateCorsOriginAccessBlockList(extension)) {
     WebSecurityPolicy::AddOriginAccessBlockListEntry(
-        extension.url(), WebString::FromUTF8(entry->protocol),
-        WebString::FromUTF8(entry->domain), entry->port,
+        extension.url(), WebString::FromUtf8(entry->protocol),
+        WebString::FromUtf8(entry->domain), entry->port,
         entry->domain_match_mode, entry->port_match_mode, entry->priority);
   }
 }
 
 void Dispatcher::EnableCustomElementAllowlist() {
+#if BUILDFLAG(IS_CHROMEOS)
   blink::WebCustomElement::AddEmbedderCustomElementName("appview");
+#endif
   blink::WebCustomElement::AddEmbedderCustomElementName("extensionoptions");
   blink::WebCustomElement::AddEmbedderCustomElementName("webview");
   for (const auto& api_provider : api_providers_) {
@@ -1518,7 +1523,7 @@ void Dispatcher::RequireGuestViewModules(ScriptContext* context) {
   // It would be better if there were a light way of detecting when a webview
   // or appview is created and only then set up the infrastructure.
 
-#if BUILDFLAG(ENABLE_PLATFORM_APPS)
+#if BUILDFLAG(IS_CHROMEOS)
   const bool app_view_permission_exists = is_platform_app;
   // Require AppView.
   if (context->GetAvailability("appViewEmbedderInternal").is_available()) {

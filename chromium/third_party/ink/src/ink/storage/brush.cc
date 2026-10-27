@@ -14,19 +14,22 @@
 
 #include "ink/storage/brush.h"
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
-#include <map>
 #include <optional>
 #include <string>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/container/inlined_vector.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "ink/brush/brush.h"
@@ -37,12 +40,15 @@
 #include "ink/brush/brush_tip.h"
 #include "ink/brush/color_function.h"
 #include "ink/brush/easing_function.h"
+#include "ink/brush/internal/brush_family_internal_accessor.h"
+#include "ink/brush/version.h"
 #include "ink/geometry/angle.h"
 #include "ink/geometry/point.h"
 #include "ink/geometry/vec.h"
 #include "ink/storage/color.h"
 #include "ink/storage/proto/brush.pb.h"
 #include "ink/storage/proto/brush_family.pb.h"
+#include "ink/storage/proto/options.pb.h"
 #include "ink/storage/proto/stroke_input_batch.pb.h"
 #include "ink/types/duration.h"
 
@@ -56,6 +62,16 @@ proto::BrushBehavior::BinaryOp EncodeBrushBehaviorBinaryOp(
       return proto::BrushBehavior::BINARY_OP_PRODUCT;
     case BrushBehavior::BinaryOp::kSum:
       return proto::BrushBehavior::BINARY_OP_SUM;
+    case BrushBehavior::BinaryOp::kMin:
+      return proto::BrushBehavior::BINARY_OP_MIN;
+    case BrushBehavior::BinaryOp::kMax:
+      return proto::BrushBehavior::BINARY_OP_MAX;
+    case BrushBehavior::BinaryOp::kAndThen:
+      return proto::BrushBehavior::BINARY_OP_AND_THEN;
+    case BrushBehavior::BinaryOp::kOrElse:
+      return proto::BrushBehavior::BINARY_OP_OR_ELSE;
+    case BrushBehavior::BinaryOp::kXorElse:
+      return proto::BrushBehavior::BINARY_OP_XOR_ELSE;
   }
   return proto::BrushBehavior::BINARY_OP_UNSPECIFIED;
 }
@@ -67,39 +83,49 @@ absl::StatusOr<BrushBehavior::BinaryOp> DecodeBrushBehaviorBinaryOp(
       return BrushBehavior::BinaryOp::kProduct;
     case proto::BrushBehavior::BINARY_OP_SUM:
       return BrushBehavior::BinaryOp::kSum;
+    case proto::BrushBehavior::BINARY_OP_MIN:
+      return BrushBehavior::BinaryOp::kMin;
+    case proto::BrushBehavior::BINARY_OP_MAX:
+      return BrushBehavior::BinaryOp::kMax;
+    case proto::BrushBehavior::BINARY_OP_AND_THEN:
+      return BrushBehavior::BinaryOp::kAndThen;
+    case proto::BrushBehavior::BINARY_OP_OR_ELSE:
+      return BrushBehavior::BinaryOp::kOrElse;
+    case proto::BrushBehavior::BINARY_OP_XOR_ELSE:
+      return BrushBehavior::BinaryOp::kXorElse;
     default:
       return absl::InvalidArgumentError(absl::StrCat(
           "invalid ink.proto.BrushBehavior.BinaryOp value: ", binary_op_proto));
   }
 }
 
-proto::BrushBehavior::DampingSource EncodeBrushBehaviorDampingSource(
-    BrushBehavior::DampingSource damping_source) {
+proto::BrushBehavior::ProgressDomain EncodeBrushBehaviorProgressDomain(
+    BrushBehavior::ProgressDomain damping_source) {
   switch (damping_source) {
-    case BrushBehavior::DampingSource::kDistanceInCentimeters:
-      return proto::BrushBehavior::DAMPING_SOURCE_DISTANCE_IN_CENTIMETERS;
-    case BrushBehavior::DampingSource::kDistanceInMultiplesOfBrushSize:
+    case BrushBehavior::ProgressDomain::kDistanceInCentimeters:
+      return proto::BrushBehavior::PROGRESS_DOMAIN_DISTANCE_IN_CENTIMETERS;
+    case BrushBehavior::ProgressDomain::kDistanceInMultiplesOfBrushSize:
       return proto::BrushBehavior::
-          DAMPING_SOURCE_DISTANCE_IN_MULTIPLES_OF_BRUSH_SIZE;
-    case BrushBehavior::DampingSource::kTimeInSeconds:
-      return proto::BrushBehavior::DAMPING_SOURCE_TIME_IN_SECONDS;
+          PROGRESS_DOMAIN_DISTANCE_IN_MULTIPLES_OF_BRUSH_SIZE;
+    case BrushBehavior::ProgressDomain::kTimeInSeconds:
+      return proto::BrushBehavior::PROGRESS_DOMAIN_TIME_IN_SECONDS;
   }
-  return proto::BrushBehavior::DAMPING_SOURCE_UNSPECIFIED;
+  return proto::BrushBehavior::PROGRESS_DOMAIN_UNSPECIFIED;
 }
 
-absl::StatusOr<BrushBehavior::DampingSource> DecodeBrushBehaviorDampingSource(
-    proto::BrushBehavior::DampingSource damping_source_proto) {
+absl::StatusOr<BrushBehavior::ProgressDomain> DecodeBrushBehaviorProgressDomain(
+    proto::BrushBehavior::ProgressDomain damping_source_proto) {
   switch (damping_source_proto) {
-    case proto::BrushBehavior::DAMPING_SOURCE_TIME_IN_SECONDS:
-      return BrushBehavior::DampingSource::kTimeInSeconds;
-    case proto::BrushBehavior::DAMPING_SOURCE_DISTANCE_IN_CENTIMETERS:
-      return BrushBehavior::DampingSource::kDistanceInCentimeters;
+    case proto::BrushBehavior::PROGRESS_DOMAIN_TIME_IN_SECONDS:
+      return BrushBehavior::ProgressDomain::kTimeInSeconds;
+    case proto::BrushBehavior::PROGRESS_DOMAIN_DISTANCE_IN_CENTIMETERS:
+      return BrushBehavior::ProgressDomain::kDistanceInCentimeters;
     case proto::BrushBehavior::
-        DAMPING_SOURCE_DISTANCE_IN_MULTIPLES_OF_BRUSH_SIZE:
-      return BrushBehavior::DampingSource::kDistanceInMultiplesOfBrushSize;
+        PROGRESS_DOMAIN_DISTANCE_IN_MULTIPLES_OF_BRUSH_SIZE:
+      return BrushBehavior::ProgressDomain::kDistanceInMultiplesOfBrushSize;
     default:
       return absl::InvalidArgumentError(
-          absl::StrCat("invalid ink.proto.BrushBehavior.DampingSource value: ",
+          absl::StrCat("invalid ink.proto.BrushBehavior.ProgressDomain value: ",
                        damping_source_proto));
   }
 }
@@ -167,23 +193,22 @@ proto::BrushBehavior::Source EncodeBrushBehaviorSource(
           SOURCE_DISTANCE_TRAVELED_IN_MULTIPLES_OF_BRUSH_SIZE;
     case BrushBehavior::Source::kTimeOfInputInSeconds:
       return proto::BrushBehavior::SOURCE_TIME_OF_INPUT_IN_SECONDS;
-    case BrushBehavior::Source::kTimeOfInputInMillis:
-      return proto::BrushBehavior::SOURCE_TIME_OF_INPUT_IN_MILLIS;
+    case BrushBehavior::Source::kTimeFromInputToStrokeEndInSeconds:
+      return proto::BrushBehavior::
+          SOURCE_TIME_FROM_INPUT_TO_STROKE_END_IN_SECONDS;
     case BrushBehavior::Source::
         kPredictedDistanceTraveledInMultiplesOfBrushSize:
       return proto::BrushBehavior::
           SOURCE_PREDICTED_DISTANCE_TRAVELED_IN_MULTIPLES_OF_BRUSH_SIZE;
     case BrushBehavior::Source::kPredictedTimeElapsedInSeconds:
       return proto::BrushBehavior::SOURCE_PREDICTED_TIME_ELAPSED_IN_SECONDS;
-    case BrushBehavior::Source::kPredictedTimeElapsedInMillis:
-      return proto::BrushBehavior::SOURCE_PREDICTED_TIME_ELAPSED_IN_MILLIS;
     case BrushBehavior::Source::kDistanceRemainingInMultiplesOfBrushSize:
       return proto::BrushBehavior::
           SOURCE_DISTANCE_REMAINING_IN_MULTIPLES_OF_BRUSH_SIZE;
     case BrushBehavior::Source::kTimeSinceInputInSeconds:
       return proto::BrushBehavior::SOURCE_TIME_SINCE_INPUT_IN_SECONDS;
-    case BrushBehavior::Source::kTimeSinceInputInMillis:
-      return proto::BrushBehavior::SOURCE_TIME_SINCE_INPUT_IN_MILLIS;
+    case BrushBehavior::Source::kTimeSinceStrokeEndInSeconds:
+      return proto::BrushBehavior::SOURCE_TIME_SINCE_STROKE_END_IN_SECONDS;
     case BrushBehavior::Source::
         kAccelerationInMultiplesOfBrushSizePerSecondSquared:
       return proto::BrushBehavior::
@@ -204,39 +229,34 @@ proto::BrushBehavior::Source EncodeBrushBehaviorSource(
         kAccelerationLateralInMultiplesOfBrushSizePerSecondSquared:
       return proto::BrushBehavior::
           SOURCE_ACCELERATION_LATERAL_IN_MULTIPLES_OF_BRUSH_SIZE_PER_SECOND_SQUARED;
-    case BrushBehavior::Source::kInputSpeedInCentimetersPerSecond:
-      return proto::BrushBehavior::SOURCE_INPUT_SPEED_IN_CENTIMETERS_PER_SECOND;
-    case BrushBehavior::Source::kInputVelocityXInCentimetersPerSecond:
+    case BrushBehavior::Source::kSpeedInCentimetersPerSecond:
+      return proto::BrushBehavior::SOURCE_SPEED_IN_CENTIMETERS_PER_SECOND;
+    case BrushBehavior::Source::kVelocityXInCentimetersPerSecond:
+      return proto::BrushBehavior::SOURCE_VELOCITY_X_IN_CENTIMETERS_PER_SECOND;
+    case BrushBehavior::Source::kVelocityYInCentimetersPerSecond:
+      return proto::BrushBehavior::SOURCE_VELOCITY_Y_IN_CENTIMETERS_PER_SECOND;
+    case BrushBehavior::Source::kDistanceTraveledInCentimeters:
+      return proto::BrushBehavior::SOURCE_DISTANCE_TRAVELED_IN_CENTIMETERS;
+    case BrushBehavior::Source::kPredictedDistanceTraveledInCentimeters:
       return proto::BrushBehavior::
-          SOURCE_INPUT_VELOCITY_X_IN_CENTIMETERS_PER_SECOND;
-    case BrushBehavior::Source::kInputVelocityYInCentimetersPerSecond:
+          SOURCE_PREDICTED_DISTANCE_TRAVELED_IN_CENTIMETERS;
+    case BrushBehavior::Source::kAccelerationInCentimetersPerSecondSquared:
       return proto::BrushBehavior::
-          SOURCE_INPUT_VELOCITY_Y_IN_CENTIMETERS_PER_SECOND;
-    case BrushBehavior::Source::kInputDistanceTraveledInCentimeters:
+          SOURCE_ACCELERATION_IN_CENTIMETERS_PER_SECOND_SQUARED;
+    case BrushBehavior::Source::kAccelerationXInCentimetersPerSecondSquared:
       return proto::BrushBehavior::
-          SOURCE_INPUT_DISTANCE_TRAVELED_IN_CENTIMETERS;
-    case BrushBehavior::Source::kPredictedInputDistanceTraveledInCentimeters:
+          SOURCE_ACCELERATION_X_IN_CENTIMETERS_PER_SECOND_SQUARED;
+    case BrushBehavior::Source::kAccelerationYInCentimetersPerSecondSquared:
       return proto::BrushBehavior::
-          SOURCE_PREDICTED_INPUT_DISTANCE_TRAVELED_IN_CENTIMETERS;
-    case BrushBehavior::Source::kInputAccelerationInCentimetersPerSecondSquared:
-      return proto::BrushBehavior::
-          SOURCE_INPUT_ACCELERATION_IN_CENTIMETERS_PER_SECOND_SQUARED;
+          SOURCE_ACCELERATION_Y_IN_CENTIMETERS_PER_SECOND_SQUARED;
     case BrushBehavior::Source::
-        kInputAccelerationXInCentimetersPerSecondSquared:
+        kAccelerationForwardInCentimetersPerSecondSquared:
       return proto::BrushBehavior::
-          SOURCE_INPUT_ACCELERATION_X_IN_CENTIMETERS_PER_SECOND_SQUARED;
+          SOURCE_ACCELERATION_FORWARD_IN_CENTIMETERS_PER_SECOND_SQUARED;
     case BrushBehavior::Source::
-        kInputAccelerationYInCentimetersPerSecondSquared:
+        kAccelerationLateralInCentimetersPerSecondSquared:
       return proto::BrushBehavior::
-          SOURCE_INPUT_ACCELERATION_Y_IN_CENTIMETERS_PER_SECOND_SQUARED;
-    case BrushBehavior::Source::
-        kInputAccelerationForwardInCentimetersPerSecondSquared:
-      return proto::BrushBehavior::
-          SOURCE_INPUT_ACCELERATION_FORWARD_IN_CENTIMETERS_PER_SECOND_SQUARED;
-    case BrushBehavior::Source::
-        kInputAccelerationLateralInCentimetersPerSecondSquared:
-      return proto::BrushBehavior::
-          SOURCE_INPUT_ACCELERATION_LATERAL_IN_CENTIMETERS_PER_SECOND_SQUARED;
+          SOURCE_ACCELERATION_LATERAL_IN_CENTIMETERS_PER_SECOND_SQUARED;
     case BrushBehavior::Source::kDistanceRemainingAsFractionOfStrokeLength:
       return proto::BrushBehavior::
           SOURCE_DISTANCE_REMAINING_AS_FRACTION_OF_STROKE_LENGTH;
@@ -245,8 +265,12 @@ proto::BrushBehavior::Source EncodeBrushBehaviorSource(
   return proto::BrushBehavior::SOURCE_UNSPECIFIED;
 }
 
+// Decodes a proto `Source` enum to a native `Source` enum. If the proto enum is
+// using deprecated units, this will mutate `source_value_range` to apply a
+// scaling factor to the units of the returned native enum.
 absl::StatusOr<BrushBehavior::Source> DecodeBrushBehaviorSource(
-    proto::BrushBehavior::Source source_proto) {
+    proto::BrushBehavior::Source source_proto,
+    std::array<float, 2>& source_value_range) {
   // NOLINTBEGIN(whitespace/line_length)
   switch (source_proto) {
     case proto::BrushBehavior::SOURCE_NORMALIZED_PRESSURE:
@@ -279,23 +303,17 @@ absl::StatusOr<BrushBehavior::Source> DecodeBrushBehaviorSource(
       return BrushBehavior::Source::kDistanceTraveledInMultiplesOfBrushSize;
     case proto::BrushBehavior::SOURCE_TIME_OF_INPUT_IN_SECONDS:
       return BrushBehavior::Source::kTimeOfInputInSeconds;
-    case proto::BrushBehavior::SOURCE_TIME_OF_INPUT_IN_MILLIS:
-      return BrushBehavior::Source::kTimeOfInputInMillis;
     case proto::BrushBehavior::
         SOURCE_PREDICTED_DISTANCE_TRAVELED_IN_MULTIPLES_OF_BRUSH_SIZE:
       return BrushBehavior::Source::
           kPredictedDistanceTraveledInMultiplesOfBrushSize;
     case proto::BrushBehavior::SOURCE_PREDICTED_TIME_ELAPSED_IN_SECONDS:
       return BrushBehavior::Source::kPredictedTimeElapsedInSeconds;
-    case proto::BrushBehavior::SOURCE_PREDICTED_TIME_ELAPSED_IN_MILLIS:
-      return BrushBehavior::Source::kPredictedTimeElapsedInMillis;
     case proto::BrushBehavior::
         SOURCE_DISTANCE_REMAINING_IN_MULTIPLES_OF_BRUSH_SIZE:
       return BrushBehavior::Source::kDistanceRemainingInMultiplesOfBrushSize;
     case proto::BrushBehavior::SOURCE_TIME_SINCE_INPUT_IN_SECONDS:
       return BrushBehavior::Source::kTimeSinceInputInSeconds;
-    case proto::BrushBehavior::SOURCE_TIME_SINCE_INPUT_IN_MILLIS:
-      return BrushBehavior::Source::kTimeSinceInputInMillis;
     case proto::BrushBehavior::SOURCE_DIRECTION_IN_RADIANS:
       return BrushBehavior::Source::kDirectionInRadians;
     case proto::BrushBehavior::SOURCE_DIRECTION_ABOUT_ZERO_IN_RADIANS:
@@ -320,43 +338,41 @@ absl::StatusOr<BrushBehavior::Source> DecodeBrushBehaviorSource(
         SOURCE_ACCELERATION_LATERAL_IN_MULTIPLES_OF_BRUSH_SIZE_PER_SECOND_SQUARED:
       return BrushBehavior::Source::
           kAccelerationLateralInMultiplesOfBrushSizePerSecondSquared;
-    case proto::BrushBehavior::SOURCE_INPUT_SPEED_IN_CENTIMETERS_PER_SECOND:
-      return BrushBehavior::Source::kInputSpeedInCentimetersPerSecond;
+    case proto::BrushBehavior::SOURCE_SPEED_IN_CENTIMETERS_PER_SECOND:
+      return BrushBehavior::Source::kSpeedInCentimetersPerSecond;
+    case proto::BrushBehavior::SOURCE_VELOCITY_X_IN_CENTIMETERS_PER_SECOND:
+      return BrushBehavior::Source::kVelocityXInCentimetersPerSecond;
+    case proto::BrushBehavior::SOURCE_VELOCITY_Y_IN_CENTIMETERS_PER_SECOND:
+      return BrushBehavior::Source::kVelocityYInCentimetersPerSecond;
+    case proto::BrushBehavior::SOURCE_DISTANCE_TRAVELED_IN_CENTIMETERS:
+      return BrushBehavior::Source::kDistanceTraveledInCentimeters;
     case proto::BrushBehavior::
-        SOURCE_INPUT_VELOCITY_X_IN_CENTIMETERS_PER_SECOND:
-      return BrushBehavior::Source::kInputVelocityXInCentimetersPerSecond;
+        SOURCE_PREDICTED_DISTANCE_TRAVELED_IN_CENTIMETERS:
+      return BrushBehavior::Source::kPredictedDistanceTraveledInCentimeters;
     case proto::BrushBehavior::
-        SOURCE_INPUT_VELOCITY_Y_IN_CENTIMETERS_PER_SECOND:
-      return BrushBehavior::Source::kInputVelocityYInCentimetersPerSecond;
-    case proto::BrushBehavior::SOURCE_INPUT_DISTANCE_TRAVELED_IN_CENTIMETERS:
-      return BrushBehavior::Source::kInputDistanceTraveledInCentimeters;
+        SOURCE_ACCELERATION_IN_CENTIMETERS_PER_SECOND_SQUARED:
+      return BrushBehavior::Source::kAccelerationInCentimetersPerSecondSquared;
     case proto::BrushBehavior::
-        SOURCE_PREDICTED_INPUT_DISTANCE_TRAVELED_IN_CENTIMETERS:
+        SOURCE_ACCELERATION_X_IN_CENTIMETERS_PER_SECOND_SQUARED:
+      return BrushBehavior::Source::kAccelerationXInCentimetersPerSecondSquared;
+    case proto::BrushBehavior::
+        SOURCE_ACCELERATION_Y_IN_CENTIMETERS_PER_SECOND_SQUARED:
+      return BrushBehavior::Source::kAccelerationYInCentimetersPerSecondSquared;
+    case proto::BrushBehavior::
+        SOURCE_ACCELERATION_FORWARD_IN_CENTIMETERS_PER_SECOND_SQUARED:
       return BrushBehavior::Source::
-          kPredictedInputDistanceTraveledInCentimeters;
+          kAccelerationForwardInCentimetersPerSecondSquared;
     case proto::BrushBehavior::
-        SOURCE_INPUT_ACCELERATION_IN_CENTIMETERS_PER_SECOND_SQUARED:
+        SOURCE_ACCELERATION_LATERAL_IN_CENTIMETERS_PER_SECOND_SQUARED:
       return BrushBehavior::Source::
-          kInputAccelerationInCentimetersPerSecondSquared;
-    case proto::BrushBehavior::
-        SOURCE_INPUT_ACCELERATION_X_IN_CENTIMETERS_PER_SECOND_SQUARED:
-      return BrushBehavior::Source::
-          kInputAccelerationXInCentimetersPerSecondSquared;
-    case proto::BrushBehavior::
-        SOURCE_INPUT_ACCELERATION_Y_IN_CENTIMETERS_PER_SECOND_SQUARED:
-      return BrushBehavior::Source::
-          kInputAccelerationYInCentimetersPerSecondSquared;
-    case proto::BrushBehavior::
-        SOURCE_INPUT_ACCELERATION_FORWARD_IN_CENTIMETERS_PER_SECOND_SQUARED:
-      return BrushBehavior::Source::
-          kInputAccelerationForwardInCentimetersPerSecondSquared;
-    case proto::BrushBehavior::
-        SOURCE_INPUT_ACCELERATION_LATERAL_IN_CENTIMETERS_PER_SECOND_SQUARED:
-      return BrushBehavior::Source::
-          kInputAccelerationLateralInCentimetersPerSecondSquared;
+          kAccelerationLateralInCentimetersPerSecondSquared;
     case proto::BrushBehavior::
         SOURCE_DISTANCE_REMAINING_AS_FRACTION_OF_STROKE_LENGTH:
       return BrushBehavior::Source::kDistanceRemainingAsFractionOfStrokeLength;
+    case proto::BrushBehavior::SOURCE_TIME_SINCE_STROKE_END_IN_SECONDS:
+      return BrushBehavior::Source::kTimeSinceStrokeEndInSeconds;
+    case proto::BrushBehavior::SOURCE_TIME_FROM_INPUT_TO_STROKE_END_IN_SECONDS:
+      return BrushBehavior::Source::kTimeFromInputToStrokeEndInSeconds;
     default:
       return absl::InvalidArgumentError(absl::StrCat(
           "invalid ink.proto.BrushBehavior.Source value: ", source_proto));
@@ -399,8 +415,8 @@ proto::BrushBehavior::Target EncodeBrushBehaviorTarget(
       return proto::BrushBehavior::TARGET_HUE_OFFSET_IN_RADIANS;
     case BrushBehavior::Target::kSaturationMultiplier:
       return proto::BrushBehavior::TARGET_SATURATION_MULTIPLIER;
-    case BrushBehavior::Target::kLuminosity:
-      return proto::BrushBehavior::TARGET_LUMINOSITY;
+    case BrushBehavior::Target::kLuminosityOffset:
+      return proto::BrushBehavior::TARGET_LUMINOSITY_OFFSET;
     case BrushBehavior::Target::kOpacityMultiplier:
       return proto::BrushBehavior::TARGET_OPACITY_MULTIPLIER;
   }
@@ -428,8 +444,8 @@ absl::StatusOr<BrushBehavior::Target> DecodeBrushBehaviorTarget(
       return BrushBehavior::Target::kHueOffsetInRadians;
     case proto::BrushBehavior::TARGET_SATURATION_MULTIPLIER:
       return BrushBehavior::Target::kSaturationMultiplier;
-    case proto::BrushBehavior::TARGET_LUMINOSITY:
-      return BrushBehavior::Target::kLuminosity;
+    case proto::BrushBehavior::TARGET_LUMINOSITY_OFFSET:
+      return BrushBehavior::Target::kLuminosityOffset;
     case proto::BrushBehavior::TARGET_OPACITY_MULTIPLIER:
       return BrushBehavior::Target::kOpacityMultiplier;
     case proto::BrushBehavior::
@@ -531,41 +547,6 @@ BrushBehavior::EnabledToolTypes DecodeBrushBehaviorEnabledToolTypes(
       .touch = (types & (1u << proto::CodedStrokeInputBatch::TOUCH)) != 0,
       .stylus = (types & (1u << proto::CodedStrokeInputBatch::STYLUS)) != 0,
   };
-}
-
-proto::BrushBehavior::OptionalInputProperty
-EncodeBrushBehaviorOptionalInputProperty(
-    BrushBehavior::OptionalInputProperty optional_input) {
-  switch (optional_input) {
-    case BrushBehavior::OptionalInputProperty::kPressure:
-      return proto::BrushBehavior::OPTIONAL_INPUT_PRESSURE;
-    case BrushBehavior::OptionalInputProperty::kTilt:
-      return proto::BrushBehavior::OPTIONAL_INPUT_TILT;
-    case BrushBehavior::OptionalInputProperty::kOrientation:
-      return proto::BrushBehavior::OPTIONAL_INPUT_ORIENTATION;
-    case BrushBehavior::OptionalInputProperty::kTiltXAndY:
-      return proto::BrushBehavior::OPTIONAL_INPUT_TILT_X_AND_Y;
-  }
-  return proto::BrushBehavior::OPTIONAL_INPUT_UNSPECIFIED;
-}
-
-absl::StatusOr<BrushBehavior::OptionalInputProperty>
-DecodeBrushBehaviorOptionalInputProperty(
-    proto::BrushBehavior::OptionalInputProperty optional_input_proto) {
-  switch (optional_input_proto) {
-    case proto::BrushBehavior::OPTIONAL_INPUT_PRESSURE:
-      return BrushBehavior::OptionalInputProperty::kPressure;
-    case proto::BrushBehavior::OPTIONAL_INPUT_TILT:
-      return BrushBehavior::OptionalInputProperty::kTilt;
-    case proto::BrushBehavior::OPTIONAL_INPUT_ORIENTATION:
-      return BrushBehavior::OptionalInputProperty::kOrientation;
-    case proto::BrushBehavior::OPTIONAL_INPUT_TILT_X_AND_Y:
-      return BrushBehavior::OptionalInputProperty::kTiltXAndY;
-    default:
-      return absl::InvalidArgumentError(absl::StrCat(
-          "invalid ink.proto.BrushBehavior.OptionalInputProperty value: ",
-          optional_input_proto));
-  }
 }
 
 void EncodeColorFunctionParameters(
@@ -791,14 +772,8 @@ void EncodeBrushBehaviorNode(const BrushBehavior::NoiseNode& node,
       node_proto_out.mutable_noise_node();
   noise_node_proto->set_seed(node.seed);
   noise_node_proto->set_vary_over(
-      EncodeBrushBehaviorDampingSource(node.vary_over));
+      EncodeBrushBehaviorProgressDomain(node.vary_over));
   noise_node_proto->set_base_period(node.base_period);
-}
-
-void EncodeBrushBehaviorNode(const BrushBehavior::FallbackFilterNode& node,
-                             proto::BrushBehavior::Node& node_proto_out) {
-  node_proto_out.mutable_fallback_filter_node()->set_is_fallback_for(
-      EncodeBrushBehaviorOptionalInputProperty(node.is_fallback_for));
 }
 
 void EncodeBrushBehaviorNode(const BrushBehavior::ToolTypeFilterNode& node,
@@ -812,7 +787,7 @@ void EncodeBrushBehaviorNode(const BrushBehavior::DampingNode& node,
   proto::BrushBehavior::DampingNode* damping_node_proto =
       node_proto_out.mutable_damping_node();
   damping_node_proto->set_damping_source(
-      EncodeBrushBehaviorDampingSource(node.damping_source));
+      EncodeBrushBehaviorProgressDomain(node.damping_source));
   damping_node_proto->set_damping_gap(node.damping_gap);
 }
 
@@ -839,6 +814,20 @@ void EncodeBrushBehaviorNode(const BrushBehavior::InterpolationNode& node,
       EncodeBrushBehaviorInterpolation(node.interpolation));
 }
 
+void EncodeBrushBehaviorNode(const BrushBehavior::IntegralNode& node,
+                             proto::BrushBehavior::Node& node_proto_out) {
+  proto::BrushBehavior::IntegralNode* integral_node_proto =
+      node_proto_out.mutable_integral_node();
+  integral_node_proto->set_integrate_over(
+      EncodeBrushBehaviorProgressDomain(node.integrate_over));
+  integral_node_proto->set_integral_out_of_range_behavior(
+      EncodeBrushBehaviorOutOfRange(node.integral_out_of_range_behavior));
+  integral_node_proto->set_integral_value_range_start(
+      node.integral_value_range[0]);
+  integral_node_proto->set_integral_value_range_end(
+      node.integral_value_range[1]);
+}
+
 void EncodeBrushBehaviorNode(const BrushBehavior::TargetNode& node,
                              proto::BrushBehavior::Node& node_proto_out) {
   proto::BrushBehavior::TargetNode* target_node_proto =
@@ -863,8 +852,12 @@ void EncodeBrushBehaviorNode(const BrushBehavior::PolarTargetNode& node,
 
 absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorSourceNode(
     const proto::BrushBehavior::SourceNode& node_proto) {
+  std::array<float, 2> source_value_range = {
+      node_proto.source_value_range_start(),
+      node_proto.source_value_range_end()};
+
   absl::StatusOr<BrushBehavior::Source> source =
-      DecodeBrushBehaviorSource(node_proto.source());
+      DecodeBrushBehaviorSource(node_proto.source(), source_value_range);
   if (!source.ok()) return source.status();
 
   absl::StatusOr<BrushBehavior::OutOfRange> source_out_of_range_behavior =
@@ -876,8 +869,7 @@ absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorSourceNode(
   return BrushBehavior::SourceNode{
       .source = *source,
       .source_out_of_range_behavior = *source_out_of_range_behavior,
-      .source_value_range = {node_proto.source_value_range_start(),
-                             node_proto.source_value_range_end()},
+      .source_value_range = source_value_range,
   };
 }
 
@@ -888,8 +880,8 @@ absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorConstantNode(
 
 absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorNoiseNode(
     const proto::BrushBehavior::NoiseNode& node_proto) {
-  absl::StatusOr<BrushBehavior::DampingSource> vary_over =
-      DecodeBrushBehaviorDampingSource(node_proto.vary_over());
+  absl::StatusOr<BrushBehavior::ProgressDomain> vary_over =
+      DecodeBrushBehaviorProgressDomain(node_proto.vary_over());
   if (!vary_over.ok()) return vary_over.status();
   return BrushBehavior::NoiseNode{
       .seed = node_proto.seed(),
@@ -932,14 +924,6 @@ absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorResponseNode(
   return BrushBehavior::ResponseNode{.response_curve = std::move(function)};
 }
 
-absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorFallbackFilterNode(
-    const proto::BrushBehavior::FallbackFilterNode& node_proto) {
-  absl::StatusOr<BrushBehavior::OptionalInputProperty> property =
-      DecodeBrushBehaviorOptionalInputProperty(node_proto.is_fallback_for());
-  if (!property.ok()) return property.status();
-  return BrushBehavior::FallbackFilterNode{.is_fallback_for = *property};
-}
-
 absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorToolTypeFilterNode(
     const proto::BrushBehavior::ToolTypeFilterNode& node_proto) {
   return BrushBehavior::ToolTypeFilterNode{
@@ -949,8 +933,8 @@ absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorToolTypeFilterNode(
 
 absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorDampingNode(
     const proto::BrushBehavior::DampingNode& node_proto) {
-  absl::StatusOr<BrushBehavior::DampingSource> damping_source =
-      DecodeBrushBehaviorDampingSource(node_proto.damping_source());
+  absl::StatusOr<BrushBehavior::ProgressDomain> damping_source =
+      DecodeBrushBehaviorProgressDomain(node_proto.damping_source());
   if (!damping_source.ok()) return damping_source.status();
 
   return BrushBehavior::DampingNode{
@@ -973,6 +957,27 @@ absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorInterpolationNode(
       DecodeBrushBehaviorInterpolation(node_proto.interpolation());
   if (!interpolation.ok()) return interpolation.status();
   return BrushBehavior::InterpolationNode{.interpolation = *interpolation};
+}
+
+absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorIntegralNode(
+    const proto::BrushBehavior::IntegralNode& node_proto) {
+  absl::StatusOr<BrushBehavior::ProgressDomain> integrate_over =
+      DecodeBrushBehaviorProgressDomain(node_proto.integrate_over());
+  if (!integrate_over.ok()) return integrate_over.status();
+
+  absl::StatusOr<BrushBehavior::OutOfRange> integral_out_of_range_behavior =
+      DecodeBrushBehaviorOutOfRange(
+          node_proto.integral_out_of_range_behavior());
+  if (!integral_out_of_range_behavior.ok()) {
+    return integral_out_of_range_behavior.status();
+  }
+
+  return BrushBehavior::IntegralNode{
+      .integrate_over = *integrate_over,
+      .integral_out_of_range_behavior = *integral_out_of_range_behavior,
+      .integral_value_range = {node_proto.integral_value_range_start(),
+                               node_proto.integral_value_range_end()},
+  };
 }
 
 absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorTargetNode(
@@ -1001,52 +1006,6 @@ absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorPolarTargetNode(
       .magnitude_range = {node_proto.magnitude_range_start(),
                           node_proto.magnitude_range_end()},
   };
-}
-
-void EncodeBrushBehavior(const BrushBehavior& behavior,
-                         proto::BrushBehavior& behavior_proto_out) {
-  behavior_proto_out.clear_nodes();
-  for (const BrushBehavior::Node& node : behavior.nodes) {
-    EncodeBrushBehaviorNode(node, *behavior_proto_out.add_nodes());
-  }
-}
-
-absl::StatusOr<BrushBehavior> DecodeBrushBehavior(
-    const proto::BrushBehavior& behavior_proto) {
-  std::vector<BrushBehavior::Node> nodes;
-  nodes.reserve(behavior_proto.nodes_size());
-  for (const proto::BrushBehavior::Node& node_proto : behavior_proto.nodes()) {
-    absl::StatusOr<BrushBehavior::Node> node =
-        DecodeBrushBehaviorNode(node_proto);
-    if (!node.ok()) return node.status();
-    nodes.push_back(*std::move(node));
-  }
-  return BrushBehavior{.nodes = std::move(nodes)};
-}
-
-proto::BrushPaint::TextureLayer::Mapping EncodeBrushPaintTextureMapping(
-    BrushPaint::TextureMapping mapping) {
-  switch (mapping) {
-    case BrushPaint::TextureMapping::kStamping:
-      return proto::BrushPaint::TextureLayer::MAPPING_STAMPING;
-    case BrushPaint::TextureMapping::kTiling:
-      return proto::BrushPaint::TextureLayer::MAPPING_TILING;
-  }
-  return proto::BrushPaint::TextureLayer::MAPPING_UNSPECIFIED;
-}
-
-absl::StatusOr<BrushPaint::TextureMapping> DecodeBrushPaintTextureMapping(
-    proto::BrushPaint::TextureLayer::Mapping mapping_proto) {
-  switch (mapping_proto) {
-    case proto::BrushPaint::TextureLayer::MAPPING_STAMPING:
-      return BrushPaint::TextureMapping::kStamping;
-    case proto::BrushPaint::TextureLayer::MAPPING_TILING:
-      return BrushPaint::TextureMapping::kTiling;
-    default:
-      return absl::InvalidArgumentError(absl::StrCat(
-          "invalid ink.proto.BrushPaint.TextureLayer.mapping value: ",
-          mapping_proto));
-  }
 }
 
 proto::BrushPaint::TextureLayer::Origin EncodeBrushPaintTextureOrigin(
@@ -1085,8 +1044,6 @@ proto::BrushPaint::TextureLayer::SizeUnit EncodeBrushPaintSizeUnit(
       return proto::BrushPaint::TextureLayer::SIZE_UNIT_BRUSH_SIZE;
     case BrushPaint::TextureSizeUnit::kStrokeCoordinates:
       return proto::BrushPaint::TextureLayer::SIZE_UNIT_STROKE_COORDINATES;
-    case BrushPaint::TextureSizeUnit::kStrokeSize:
-      return proto::BrushPaint::TextureLayer::SIZE_UNIT_UNSPECIFIED;
   }
   return proto::BrushPaint::TextureLayer::SIZE_UNIT_UNSPECIFIED;
 }
@@ -1202,31 +1159,45 @@ absl::StatusOr<BrushPaint::BlendMode> DecodeBrushPaintBlendMode(
   }
 }
 
-void EncodeBrushPaintTextureLayer(
-    const BrushPaint::TextureLayer& layer,
-    proto::BrushPaint::TextureLayer& layer_proto_out) {
+void EncodeBrushPaintTexture(const BrushPaint::TilingTexture& layer,
+                             proto::BrushPaint::TextureLayer& layer_proto_out) {
+  layer_proto_out.Clear();
+  layer_proto_out.set_mapping(proto::BrushPaint::TextureLayer::MAPPING_TILING);
   layer_proto_out.set_client_texture_id(layer.client_texture_id);
   layer_proto_out.set_size_unit(EncodeBrushPaintSizeUnit(layer.size_unit));
   layer_proto_out.set_wrap_x(EncodeBrushPaintWrap(layer.wrap_x));
   layer_proto_out.set_wrap_y(EncodeBrushPaintWrap(layer.wrap_y));
   layer_proto_out.set_size_x(layer.size.x);
   layer_proto_out.set_size_y(layer.size.y);
-  layer_proto_out.set_mapping(EncodeBrushPaintTextureMapping(layer.mapping));
   layer_proto_out.set_origin(EncodeBrushPaintTextureOrigin(layer.origin));
   layer_proto_out.set_offset_x(layer.offset.x);
   layer_proto_out.set_offset_y(layer.offset.y);
   layer_proto_out.set_rotation_in_radians(layer.rotation.ValueInRadians());
-  layer_proto_out.set_opacity(layer.opacity);
   layer_proto_out.set_blend_mode(EncodeBrushPaintBlendMode(layer.blend_mode));
 }
 
-absl::StatusOr<BrushPaint::TextureLayer> DecodeBrushPaintTextureLayer(
+void EncodeBrushPaintTexture(const BrushPaint::StampingTexture& layer,
+                             proto::BrushPaint::TextureLayer& layer_proto_out) {
+  layer_proto_out.Clear();
+  layer_proto_out.set_mapping(
+      proto::BrushPaint::TextureLayer::MAPPING_STAMPING);
+  layer_proto_out.set_client_texture_id(layer.client_texture_id);
+  layer_proto_out.set_blend_mode(EncodeBrushPaintBlendMode(layer.blend_mode));
+}
+
+void EncodeBrushPaintTextureLayer(
+    const BrushPaint::TextureLayer& layer,
+    proto::BrushPaint::TextureLayer& layer_proto_out) {
+  std::visit(
+      [&layer_proto_out](const auto& texture) {
+        EncodeBrushPaintTexture(texture, layer_proto_out);
+      },
+      layer);
+}
+
+absl::StatusOr<BrushPaint::TextureLayer> DecodeBrushPaintTilingTexture(
     const proto::BrushPaint::TextureLayer& layer_proto,
     ClientTextureIdProvider get_client_texture_id) {
-  auto mapping = DecodeBrushPaintTextureMapping(layer_proto.mapping());
-  if (!mapping.ok()) {
-    return mapping.status();
-  }
   auto origin = DecodeBrushPaintTextureOrigin(layer_proto.origin());
   if (!origin.ok()) {
     return origin.status();
@@ -1253,9 +1224,9 @@ absl::StatusOr<BrushPaint::TextureLayer> DecodeBrushPaintTextureLayer(
   if (!client_texture_id.ok()) {
     return client_texture_id.status();
   }
-  BrushPaint::TextureLayer texture_layer{
+
+  BrushPaint::TextureLayer texture_layer = {BrushPaint::TilingTexture{
       .client_texture_id = *client_texture_id,
-      .mapping = *mapping,
       .origin = *origin,
       .size_unit = *size_unit,
       .wrap_x = *wrap_x,
@@ -1263,14 +1234,57 @@ absl::StatusOr<BrushPaint::TextureLayer> DecodeBrushPaintTextureLayer(
       .size = {layer_proto.size_x(), layer_proto.size_y()},
       .offset = {layer_proto.offset_x(), layer_proto.offset_y()},
       .rotation = Angle::Radians(layer_proto.rotation_in_radians()),
-      .opacity = layer_proto.opacity(),
-      .blend_mode = *blend_mode};
+      .blend_mode = *blend_mode,
+  }};
   if (absl::Status status =
           brush_internal::ValidateBrushPaintTextureLayer(texture_layer);
       !status.ok()) {
     return status;
   }
   return std::move(texture_layer);
+}
+
+absl::StatusOr<BrushPaint::TextureLayer> DecodeBrushPaintStampingTexture(
+    const proto::BrushPaint::TextureLayer& layer_proto,
+    ClientTextureIdProvider get_client_texture_id) {
+  absl::StatusOr<BrushPaint::BlendMode> blend_mode =
+      DecodeBrushPaintBlendMode(layer_proto.blend_mode());
+  if (!blend_mode.ok()) {
+    return blend_mode.status();
+  }
+
+  absl::StatusOr<std::string> client_texture_id =
+      get_client_texture_id(layer_proto.client_texture_id());
+  if (!client_texture_id.ok()) {
+    return client_texture_id.status();
+  }
+
+  BrushPaint::TextureLayer texture_layer = {BrushPaint::StampingTexture{
+      .client_texture_id = *client_texture_id,
+      .blend_mode = *blend_mode,
+  }};
+  if (absl::Status status =
+          brush_internal::ValidateBrushPaintTextureLayer(texture_layer);
+      !status.ok()) {
+    return status;
+  }
+  return std::move(texture_layer);
+}
+
+absl::StatusOr<BrushPaint::TextureLayer> DecodeBrushPaintTextureLayer(
+    const proto::BrushPaint::TextureLayer& layer_proto,
+    ClientTextureIdProvider get_client_texture_id) {
+  switch (layer_proto.mapping()) {
+    case proto::BrushPaint::TextureLayer::MAPPING_STAMPING:
+      return DecodeBrushPaintStampingTexture(layer_proto,
+                                             get_client_texture_id);
+    case proto::BrushPaint::TextureLayer::MAPPING_TILING:
+      return DecodeBrushPaintTilingTexture(layer_proto, get_client_texture_id);
+    default:
+      return absl::InvalidArgumentError(absl::StrCat(
+          "invalid ink.proto.BrushPaint.TextureLayer.mapping value: ",
+          layer_proto.mapping()));
+  }
 }
 
 proto::BrushPaint::SelfOverlap EncodeBrushPaintSelfOverlap(
@@ -1303,15 +1317,9 @@ absl::StatusOr<BrushPaint::SelfOverlap> DecodeBrushPaintSelfOverlap(
 }
 
 void EncodeBrushFamilyInputModel(
-    const BrushFamily::SpringModel& model,
+    const BrushFamily::PassthroughModel& model,
     proto::BrushFamily::InputModel& model_proto_out) {
-  model_proto_out.mutable_spring_model();  // no fields to set
-}
-
-void EncodeBrushFamilyInputModel(
-    const BrushFamily::ExperimentalNaiveModel& model,
-    proto::BrushFamily::InputModel& model_proto_out) {
-  model_proto_out.mutable_experimental_naive_model();  // no fields to set
+  model_proto_out.mutable_passthrough_model();  // no fields to set
 }
 
 void EncodeBrushFamilyInputModel(
@@ -1337,10 +1345,8 @@ void EncodeBrushFamilyInputModel(
 absl::StatusOr<BrushFamily::InputModel> DecodeBrushFamilyInputModel(
     const proto::BrushFamily::InputModel& model_proto) {
   switch (model_proto.input_model_case()) {
-    case proto::BrushFamily::InputModel::kSpringModel:
-      return BrushFamily::SpringModel{};
-    case proto::BrushFamily::InputModel::kExperimentalNaiveModel:
-      return BrushFamily::ExperimentalNaiveModel{};
+    case proto::BrushFamily::InputModel::kPassthroughModel:
+      return BrushFamily::PassthroughModel{};
     case proto::BrushFamily::InputModel::kSlidingWindowModel:
       return BrushFamily::SlidingWindowModel{
           .window_size = Duration32::Seconds(
@@ -1379,9 +1385,6 @@ absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorNodeUnvalidated(
       return DecodeBrushBehaviorConstantNode(node_proto.constant_node());
     case proto::BrushBehavior::Node::kNoiseNode:
       return DecodeBrushBehaviorNoiseNode(node_proto.noise_node());
-    case proto::BrushBehavior::Node::kFallbackFilterNode:
-      return DecodeBrushBehaviorFallbackFilterNode(
-          node_proto.fallback_filter_node());
     case proto::BrushBehavior::Node::kToolTypeFilterNode:
       return DecodeBrushBehaviorToolTypeFilterNode(
           node_proto.tool_type_filter_node());
@@ -1394,6 +1397,8 @@ absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorNodeUnvalidated(
     case proto::BrushBehavior::Node::kInterpolationNode:
       return DecodeBrushBehaviorInterpolationNode(
           node_proto.interpolation_node());
+    case proto::BrushBehavior::Node::kIntegralNode:
+      return DecodeBrushBehaviorIntegralNode(node_proto.integral_node());
     case proto::BrushBehavior::Node::kTargetNode:
       return DecodeBrushBehaviorTargetNode(node_proto.target_node());
     case proto::BrushBehavior::Node::kPolarTargetNode:
@@ -1416,7 +1421,7 @@ absl::StatusOr<BrushBehavior::Node> DecodeBrushBehaviorNode(
       !status.ok()) {
     return status;
   }
-  return *node;
+  return *std::move(node);
 }
 
 void EncodeBrushPaint(const BrushPaint& paint,
@@ -1536,7 +1541,42 @@ absl::StatusOr<BrushTip> DecodeBrushTip(const proto::BrushTip& tip_proto) {
       !status.ok()) {
     return status;
   }
-  return tip;
+  return std::move(tip);
+}
+
+void EncodeBrushBehavior(const BrushBehavior& behavior,
+                         proto::BrushBehavior& behavior_proto_out) {
+  behavior_proto_out.clear_nodes();
+  for (const BrushBehavior::Node& node : behavior.nodes) {
+    EncodeBrushBehaviorNode(node, *behavior_proto_out.add_nodes());
+  }
+
+  if (behavior.developer_comment.empty()) {
+    behavior_proto_out.clear_developer_comment();
+  } else {
+    behavior_proto_out.set_developer_comment(behavior.developer_comment);
+  }
+}
+
+absl::StatusOr<BrushBehavior> DecodeBrushBehavior(
+    const proto::BrushBehavior& behavior_proto) {
+  std::vector<BrushBehavior::Node> nodes;
+  nodes.reserve(behavior_proto.nodes_size());
+  for (const proto::BrushBehavior::Node& node_proto : behavior_proto.nodes()) {
+    absl::StatusOr<BrushBehavior::Node> node =
+        DecodeBrushBehaviorNode(node_proto);
+    if (!node.ok()) return node.status();
+    nodes.push_back(*std::move(node));
+  }
+  BrushBehavior behavior = {
+      .nodes = std::move(nodes),
+      .developer_comment = behavior_proto.developer_comment(),
+  };
+  if (absl::Status status = brush_internal::ValidateBrushBehavior(behavior);
+      !status.ok()) {
+    return status;
+  }
+  return std::move(behavior);
 }
 
 void EncodeBrushCoat(const BrushCoat& coat, proto::BrushCoat& coat_proto_out) {
@@ -1547,17 +1587,6 @@ void EncodeBrushCoat(const BrushCoat& coat, proto::BrushCoat& coat_proto_out) {
   for (const BrushPaint& paint : coat.paint_preferences) {
     EncodeBrushPaint(paint, *coat_proto_out.add_paint_preferences());
   }
-  // Write the first paint preference to the deprecated paint field, so that
-  // older clients can still read the value. The older clients may render
-  // strokes in a strange way if the first paint preference is not compatible
-  // with the device or renderer, but that's pretty much equivalent to the
-  // library behavior before paint preferences were introduced.
-  // TODO: b/346530293 - Remove this once the paint field is deleted/reserved
-  //   rather than just deprecated.
-  if (!coat.paint_preferences.empty()) {
-    EncodeBrushPaint(coat.paint_preferences[0],
-                     *coat_proto_out.mutable_paint());
-  }
 }
 
 absl::StatusOr<BrushCoat> DecodeBrushCoat(
@@ -1567,24 +1596,22 @@ absl::StatusOr<BrushCoat> DecodeBrushCoat(
   if (!tip.ok()) {
     return tip.status();
   }
+
   absl::InlinedVector<BrushPaint, 1> paint_preferences;
   paint_preferences.reserve(coat_proto.paint_preferences_size());
-  // Treat the deprecated paint field as the only paint preference if the
-  // paint_preferences field is empty.
-  const proto::BrushPaint* deprecated_paint = &coat_proto.paint();
-  for (const proto::BrushPaint* paint_proto :
-       coat_proto.paint_preferences_size() != 0
-           ? absl::MakeConstSpan(coat_proto.paint_preferences().data(),
-                                 coat_proto.paint_preferences_size())
-           : absl::MakeConstSpan(&deprecated_paint, 1)) {
+  for (const proto::BrushPaint& paint_proto : coat_proto.paint_preferences()) {
     absl::StatusOr<BrushPaint> paint =
-        DecodeBrushPaint(*paint_proto, get_client_texture_id);
+        DecodeBrushPaint(paint_proto, get_client_texture_id);
     if (!paint.ok()) {
       return paint.status();
     }
-
     paint_preferences.push_back(*std::move(paint));
   }
+
+  if (paint_preferences.empty()) {
+    paint_preferences.push_back(BrushPaint{});
+  }
+
   auto coat = BrushCoat{.tip = *std::move(tip),
                         .paint_preferences = std::move(paint_preferences)};
   if (absl::Status status = brush_internal::ValidateBrushCoat(coat);
@@ -1596,7 +1623,7 @@ absl::StatusOr<BrushCoat> DecodeBrushCoat(
 
 void EncodeBrushFamilyTextureMap(
     const BrushFamily& family,
-    ::google::protobuf::Map<std::string, std::string>& texture_id_to_bitmap_out,
+    google::protobuf::Map<std::string, std::string>& texture_id_to_bitmap_out,
     TextureBitmapProvider get_bitmap) {
   texture_id_to_bitmap_out.clear();
   // The set of texture ids for which we have already called get_bitmap().
@@ -1604,25 +1631,30 @@ void EncodeBrushFamilyTextureMap(
   for (const BrushCoat& coat : family.GetCoats()) {
     for (const BrushPaint& paint : coat.paint_preferences) {
       for (const BrushPaint::TextureLayer& layer : paint.texture_layers) {
-        if (seen_ids.find(layer.client_texture_id) != seen_ids.end()) {
+        const std::string& client_texture_id = std::visit(
+            [](const auto& layer) { return layer.client_texture_id; }, layer);
+        if (seen_ids.find(client_texture_id) != seen_ids.end()) {
           continue;
         }
 
-        std::optional<std::string> bitmap = get_bitmap(layer.client_texture_id);
-        seen_ids.insert(layer.client_texture_id);
+        std::optional<std::string> bitmap = get_bitmap(client_texture_id);
+        seen_ids.insert(client_texture_id);
         if (!bitmap.has_value()) {
           continue;
         }
 
-        texture_id_to_bitmap_out.insert({layer.client_texture_id, *bitmap});
+        texture_id_to_bitmap_out.insert({client_texture_id, *bitmap});
       }
     }
   }
 }
 
-void EncodeBrushFamily(const BrushFamily& family,
-                       proto::BrushFamily& family_proto_out,
-                       TextureBitmapProvider get_bitmap) {
+// Explicitly does not inspect `opaque_decoded_proto_bytes_with_fallbacks`.
+// Nor does it populate `newer_brush_families`. This is the responsibility of
+// the caller, either `EncodeBrushFamily` or `EncodeMultipleBrushFamilies`.
+void EncodeSingleBrushFamily(const BrushFamily& family,
+                             proto::BrushFamily& family_proto_out,
+                             TextureBitmapProvider get_bitmap) {
   family_proto_out.Clear();
   EncodeBrushFamilyTextureMap(
       family, *family_proto_out.mutable_texture_id_to_bitmap(), get_bitmap);
@@ -1632,15 +1664,79 @@ void EncodeBrushFamily(const BrushFamily& family,
     EncodeBrushCoat(coat, *family_proto_out.add_coats());
   }
 
-  if (family.GetClientBrushFamilyId().empty()) {
+  EncodeBrushFamilyInputModel(family.GetInputModel(),
+                              *family_proto_out.mutable_input_model());
+
+  const BrushFamily::Metadata& metadata = family.GetMetadata();
+  if (metadata.client_brush_family_id.empty()) {
     family_proto_out.clear_client_brush_family_id();
   } else {
     family_proto_out.set_client_brush_family_id(
-        family.GetClientBrushFamilyId());
+        metadata.client_brush_family_id);
+  }
+  if (metadata.developer_comment.empty()) {
+    family_proto_out.clear_developer_comment();
+  } else {
+    family_proto_out.set_developer_comment(metadata.developer_comment);
   }
 
-  EncodeBrushFamilyInputModel(family.GetInputModel(),
-                              *family_proto_out.mutable_input_model());
+  // kDevelopment brush families are not portable. It is OK to serialize them,
+  // though, since they cannot be deserialized without opting in to the risk via
+  // `max_version`. Consumers of the serialization format may
+  // choose to accept development versions (with undefined behavior) or not.
+  family_proto_out.set_min_version(
+      family.CalculateMinimumRequiredVersion().value());
+}
+
+void EncodeMultipleBrushFamilies(const std::vector<BrushFamily>& families,
+                                 proto::BrushFamily& family_proto_out,
+                                 TextureBitmapProvider get_bitmap) {
+  if (families.empty()) {
+    return;
+  }
+  // First, serialize all the brush families into a vector of protos.
+  std::vector<proto::BrushFamily> family_protos;
+  family_protos.reserve(families.size());
+  absl::flat_hash_set<int32_t> seen_versions;
+  for (const BrushFamily& family : families) {
+    int32_t version = family.CalculateMinimumRequiredVersion().value();
+    if (!seen_versions.insert(version).second) {
+      // Skip duplicate versions.
+      continue;
+    }
+
+    proto::BrushFamily family_proto;
+    EncodeSingleBrushFamily(family, family_proto, get_bitmap);
+    family_protos.push_back(std::move(family_proto));
+  }
+  // Find the lowest versioned brush family, and pack the others into its
+  // `newer_brush_families` field, in order from lowest to highest version.
+  // Decoding does not depend on the order, but sorting ensures that a given set
+  // of brush families will always be serialized in exactly the same way.
+  std::sort(family_protos.begin(), family_protos.end(),
+            [](const proto::BrushFamily& a, const proto::BrushFamily& b) {
+              return a.min_version() < b.min_version();
+            });
+  family_proto_out = family_protos[0];
+  for (const proto::BrushFamily& family_proto : family_protos) {
+    // Don't pack the top-level brush family into itself.
+    if (family_proto.min_version() == family_proto_out.min_version()) {
+      continue;
+    }
+    *family_proto_out.add_newer_brush_families() = family_proto;
+  }
+}
+
+void EncodeBrushFamily(const BrushFamily& family,
+                       proto::BrushFamily& family_proto_out,
+                       TextureBitmapProvider get_bitmap) {
+  if (family.HasFallbacks() &&
+      family_proto_out.ParseFromString(
+          BrushFamilyInternalAccessor::GetOpaqueDecodedProtoBytesWithFallbacks(
+              family))) {
+    return;
+  }
+  EncodeSingleBrushFamily(family, family_proto_out, get_bitmap);
 }
 
 absl::StatusOr<std::vector<BrushCoat>> DecodeBrushFamilyCoats(
@@ -1660,16 +1756,33 @@ absl::StatusOr<std::vector<BrushCoat>> DecodeBrushFamilyCoats(
   return std::move(coats);
 }
 
-absl::StatusOr<BrushFamily> DecodeBrushFamily(
+// Explicitly does not inspect `newer_brush_families`. This is the
+// responsibility of the caller, either `DecodeBrushFamily` or
+// `DecodeMultipleBrushFamilies`.
+absl::StatusOr<BrushFamily> DecodeSingleBrushFamily(
     const proto::BrushFamily& family_proto,
-    ClientTextureIdProviderAndBitmapReceiver get_client_texture_id) {
+    ClientTextureIdProviderAndBitmapReceiver get_client_texture_id,
+    Version max_version) {
+  // Check that the BrushFamily proto is compatible with the current library
+  // version.
+  if (family_proto.has_min_version()) {
+    // The decoded version is not saved anywhere; we only care whether it's
+    // compatible with the current library version or not when deserializing.
+    if (family_proto.min_version() > max_version.value()) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Version must be less than or equal to ",
+                       max_version.ToFormattedString(), ", but was ",
+                       family_proto.min_version()));
+    }
+  }
+
   // ID map that also serves as a record of the IDs for which we've already
   // called `get_client_texture_id`.
-  std::map<std::string, std::string> old_to_new_id = {};
+  absl::flat_hash_map<std::string, std::string> old_to_new_id = {};
 
   ClientTextureIdProvider texture_callback =
       [&family_proto, &old_to_new_id, &get_client_texture_id](
-          const std::string& old_id) -> absl::StatusOr<std::string> {
+          absl::string_view old_id) -> absl::StatusOr<std::string> {
     if (auto it = old_to_new_id.find(old_id); it != old_to_new_id.end()) {
       // No need to call `get_client_texture_id` again.
       return it->second;
@@ -1685,7 +1798,7 @@ absl::StatusOr<BrushFamily> DecodeBrushFamily(
     if (!new_id.ok()) {
       return new_id.status();
     }
-    old_to_new_id.insert({old_id, *new_id});
+    old_to_new_id.insert({std::string(old_id), *new_id});
     return *new_id;
   };
 
@@ -1701,10 +1814,92 @@ absl::StatusOr<BrushFamily> DecodeBrushFamily(
     return input_model.status();
   }
 
+  BrushFamily::Metadata metadata = {
+      .client_brush_family_id = family_proto.client_brush_family_id(),
+      .developer_comment = family_proto.developer_comment(),
+  };
+
   // BrushFamily::Create() validates the BrushFamily.
-  return BrushFamily::Create(absl::MakeConstSpan(*coats),
-                             family_proto.client_brush_family_id(),
-                             *input_model);
+  return BrushFamily::Create(absl::MakeConstSpan(*coats), *input_model,
+                             metadata);
+}
+
+absl::StatusOr<BrushFamily> DecodeBrushFamily(
+    const proto::BrushFamily& family_proto, Version max_version) {
+  return DecodeBrushFamily(
+      family_proto,
+      // LINT.IfChange(decode_brush_family_get_client_texture_id)
+      [](absl::string_view encoded_id, absl::string_view bitmap) {
+        return std::string(encoded_id);
+      },
+      // LINT.ThenChange(brush.h:decode_brush_family_get_client_texture_id)
+      max_version);
+}
+
+absl::StatusOr<BrushFamily> DecodeBrushFamily(
+    const proto::BrushFamily& family_proto,
+    ClientTextureIdProviderAndBitmapReceiver get_client_texture_id,
+    Version max_version) {
+  // Check the versions of all available brush families, and decode the
+  // highest compatible version. If none are compatible, return an error.
+  // If the highest compatible version cannot be deserialized, return the
+  // status from that attempt.
+  const proto::BrushFamily* best_supported_family_proto = &family_proto;
+  for (const proto::BrushFamily& family : family_proto.newer_brush_families()) {
+    if (family.min_version() <= max_version.value() &&
+        family.min_version() > best_supported_family_proto->min_version()) {
+      best_supported_family_proto = &family;
+    }
+  }
+  absl::StatusOr<BrushFamily> best_supported_family = DecodeSingleBrushFamily(
+      *best_supported_family_proto, get_client_texture_id, max_version);
+  if (best_supported_family.ok() &&
+      !std::empty(family_proto.newer_brush_families())) {
+    BrushFamilyInternalAccessor::SetOpaqueDecodedProtoBytesWithFallbacks(
+        family_proto.SerializeAsString(), *best_supported_family);
+  }
+  return best_supported_family;
+}
+
+absl::StatusOr<std::vector<BrushFamily>> DecodeMultipleBrushFamilies(
+    const proto::BrushFamily& family_proto, Version max_version) {
+  return DecodeMultipleBrushFamilies(
+      family_proto,
+      // LINT.IfChange(decode_multiple_brush_families_get_client_texture_id)
+      [](absl::string_view encoded_id, absl::string_view bitmap) {
+        return std::string(encoded_id);
+      },
+      // LINT.ThenChange(brush.h:decode_multiple_brush_families_get_client_texture_id)
+      max_version);
+}
+
+absl::StatusOr<std::vector<BrushFamily>> DecodeMultipleBrushFamilies(
+    const proto::BrushFamily& family_proto,
+    ClientTextureIdProviderAndBitmapReceiver get_client_texture_id,
+    Version max_version) {
+  // Deserialize all of the brush families.
+  std::vector<BrushFamily> brush_families;
+  brush_families.reserve(family_proto.newer_brush_families_size() + 1);
+
+  // The top-level brush family.
+  absl::StatusOr<BrushFamily> family =
+      DecodeSingleBrushFamily(family_proto, get_client_texture_id, max_version);
+  if (!family.ok()) {
+    return family.status();
+  }
+  brush_families.push_back(*std::move(family));
+
+  // And the nested ones.
+  for (const proto::BrushFamily& newer_family_proto :
+       family_proto.newer_brush_families()) {
+    absl::StatusOr<BrushFamily> newer_family = DecodeSingleBrushFamily(
+        newer_family_proto, get_client_texture_id, max_version);
+    if (!newer_family.ok()) {
+      return newer_family.status();
+    }
+    brush_families.push_back(*std::move(newer_family));
+  }
+  return brush_families;
 }
 
 void EncodeBrush(const Brush& brush, proto::Brush& brush_proto_out,
@@ -1716,11 +1911,24 @@ void EncodeBrush(const Brush& brush, proto::Brush& brush_proto_out,
                     get_bitmap);
 }
 
+absl::StatusOr<Brush> DecodeBrush(const proto::Brush& brush_proto,
+                                  Version max_version) {
+  return DecodeBrush(
+      brush_proto,
+      // LINT.IfChange(decode_brush_get_client_texture_id)
+      [](absl::string_view encoded_id, absl::string_view bitmap) {
+        return std::string(encoded_id);
+      },
+      // LINT.ThenChange(brush.h:decode_brush_get_client_texture_id)
+      max_version);
+}
+
 absl::StatusOr<Brush> DecodeBrush(
     const proto::Brush& brush_proto,
-    ClientTextureIdProviderAndBitmapReceiver get_client_texture_id) {
-  absl::StatusOr<BrushFamily> brush_family =
-      DecodeBrushFamily(brush_proto.brush_family(), get_client_texture_id);
+    ClientTextureIdProviderAndBitmapReceiver get_client_texture_id,
+    Version max_version) {
+  absl::StatusOr<BrushFamily> brush_family = DecodeBrushFamily(
+      brush_proto.brush_family(), get_client_texture_id, max_version);
   if (!brush_family.ok()) {
     return brush_family.status();
   }

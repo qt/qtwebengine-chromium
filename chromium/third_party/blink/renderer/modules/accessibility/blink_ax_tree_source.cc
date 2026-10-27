@@ -6,7 +6,9 @@
 
 #include <stddef.h>
 
+#include "base/check_deref.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/html/forms/text_control_element.h"
 #include "third_party/blink/renderer/core/html/html_head_element.h"
 #include "third_party/blink/renderer/core/html/html_link_element.h"
 #include "third_party/blink/renderer/core/html/html_meta_element.h"
@@ -21,6 +23,20 @@
 #include "ui/accessibility/ax_tree_id.h"
 
 namespace blink {
+
+namespace {
+
+bool IsDescendantOf(const AXObject* child, const AXObject* parent) {
+  while (child) {
+    if (child == parent) {
+      return true;
+    }
+    child = child->ParentObjectIncludedInTree();
+  }
+  return false;
+}
+
+}  // namespace
 
 BlinkAXTreeSource::BlinkAXTreeSource(AXObjectCacheImpl& ax_object_cache)
     : ax_object_cache_(ax_object_cache) {}
@@ -62,15 +78,31 @@ void BlinkAXTreeSource::Selection(
   if (!focus || focus->IsDetached())
     return;
 
-  const auto ax_selection =
-      focus->IsAtomicTextField()
-          ? AXSelection::FromCurrentSelection(ToTextControl(*focus->GetNode()),
-                                              *ax_object_cache_)
-          : AXSelection::FromCurrentSelection(
-                *focus->GetDocument(), *ax_object_cache_,
-                AXSelectionBehavior::kExtendToValidRange);
-  if (!ax_selection)
+  AXSelection ax_selection = AXSelection::FromCurrentSelection(
+      *focus->GetDocument(), *ax_object_cache_,
+      AXSelectionBehavior::kExtendToValidRange);
+
+  // If focus is on an atomic text field, and the selection is invalid or it is
+  // completely on or within the focused atomic text field, we will ask the
+  // text field for its selection data and use it if it is valid.
+  // Atomic text fields use a user agent shadow DOM which is hidden from the
+  // accessibility layer and anchoring selection to these nodes will create
+  // downstream inconsistency.
+  if (focus->IsAtomicTextField() &&
+      (!ax_selection.IsValid() ||
+       (IsDescendantOf(ax_selection.Anchor().ContainerObject(), focus) &&
+        IsDescendantOf(ax_selection.Focus().ContainerObject(), focus)))) {
+    AXSelection textfield_selection = AXSelection::FromCurrentSelection(
+        ToTextControl(CHECK_DEREF(focus->GetNode())), *ax_object_cache_);
+    if (textfield_selection.IsValid()) {
+      ax_selection = textfield_selection;
+    } else {
+      DUMP_WILL_BE_NOTREACHED() << "Invalid selection on atomic text field";
+    }
+  }
+  if (!ax_selection.IsValid()) {
     return;
+  }
 
   const AXPosition base = ax_selection.Anchor();
   *anchor_object = base.ContainerObject();

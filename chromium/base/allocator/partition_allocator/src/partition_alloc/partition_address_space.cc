@@ -16,6 +16,7 @@
 #include "partition_alloc/build_config.h"
 #include "partition_alloc/buildflags.h"
 #include "partition_alloc/compressed_pointer.h"
+#include "partition_alloc/internal/page_allocator_internal.h"
 #include "partition_alloc/page_allocator.h"
 #include "partition_alloc/partition_alloc_base/bits.h"
 #include "partition_alloc/partition_alloc_base/compiler_specific.h"
@@ -96,6 +97,10 @@ MetadataInnerOffset(pool_handle pool) {
 
 PA_CONSTINIT PartitionAddressSpace::PoolSetup PartitionAddressSpace::setup_;
 
+#if PA_CONFIG(ENABLE_USER_SPACE_ZERO_SEGMENT)
+size_t PartitionAddressSpace::zero_segment_size_ = 0;
+#endif
+
 #if PA_CONFIG(MOVE_METADATA_OUT_OF_GIGACAGE)
 PA_CONSTINIT std::array<std::ptrdiff_t, kMaxPoolHandle>
     PartitionAddressSpace::offsets_to_metadata_ = {
@@ -117,6 +122,7 @@ size_t PartitionAddressSpace::metadata_region_size_ = 0;
 #if !PA_BUILDFLAG(IS_IOS)
 #error Dynamic pool size is only supported on iOS.
 #endif
+bool PartitionAddressSpace::is_core_pool_size_reduced_ = false;
 
 bool PartitionAddressSpace::IsIOSTestProcess() {
   // On iOS, only applications with the extended virtual addressing entitlement
@@ -157,25 +163,48 @@ void PartitionAddressSpace::Init() {
     return;
   }
 
-  const size_t core_pool_size = CorePoolSize();
+#if PA_CONFIG(ENABLE_USER_SPACE_ZERO_SEGMENT)
+  InitZeroSegment();
+#endif
+
+  size_t core_pool_size = CorePoolSize();
+  auto map_base_pages = [&](const size_t pool_size) {
+    uintptr_t new_base_address =
+        AllocPages(pool_size, pool_size,
+                   PageAccessibilityConfiguration(
+                       PageAccessibilityConfiguration::kInaccessible),
+                   PageTag::kPartitionAlloc);
+    return new_base_address;
+  };
 
   size_t glued_pool_sizes = core_pool_size * 2;
   // Note, BRP pool requires to be preceded by a "forbidden zone", which is
   // conveniently taken care of by the last guard page of the regular pool.
-  setup_.regular_pool_base_address_ =
-      AllocPages(glued_pool_sizes, glued_pool_sizes,
-                 PageAccessibilityConfiguration(
-                     PageAccessibilityConfiguration::kInaccessible),
-                 PageTag::kPartitionAlloc);
+  setup_.regular_pool_base_address_ = map_base_pages(glued_pool_sizes);
+
+#if PA_CONFIG(DYNAMICALLY_SELECT_POOL_SIZE)
+  // On iOS we attempt to decrease the pool size, so we can collect metrics on
+  // frequency and to "gracefully" handle such a situation, since we have
+  // evidence it sometimes occurs.
+  if (!setup_.regular_pool_base_address_) {
+    // We shouldn't ever fail to map on test processes.
+    PA_CHECK(!IsIOSTestProcess());
+    // As long as this isn't a test process we should be reducing the size here.
+    PA_CHECK(core_pool_size > kCorePoolSizeForIOSReducedPoolSize);
+    is_core_pool_size_reduced_ = true;
+    core_pool_size = CorePoolSize();
+    PA_CHECK(core_pool_size == kCorePoolSizeForIOSReducedPoolSize);
+    glued_pool_sizes = core_pool_size * 2;
+    setup_.regular_pool_base_address_ = map_base_pages(glued_pool_sizes);
+    // Nothing to free since we failed originally.
+  }
+#endif
+
 #if PA_BUILDFLAG(IS_ANDROID)
   // On Android, Adreno-GSL library fails to mmap if we snatch address
   // 0x400000000. Find a different address instead.
   if (setup_.regular_pool_base_address_ == 0x400000000) {
-    uintptr_t new_base_address =
-        AllocPages(glued_pool_sizes, glued_pool_sizes,
-                   PageAccessibilityConfiguration(
-                       PageAccessibilityConfiguration::kInaccessible),
-                   PageTag::kPartitionAlloc);
+    uintptr_t new_base_address = map_base_pages(glued_pool_sizes);
     FreePages(setup_.regular_pool_base_address_, glued_pool_sizes);
     setup_.regular_pool_base_address_ = new_base_address;
   }
@@ -232,6 +261,39 @@ void PartitionAddressSpace::Init() {
   InitMetadataRegionAndOffsets();
 #endif  // PA_CONFIG(MOVE_METADATA_OUT_OF_GIGACAGE)
 }
+
+#if PA_CONFIG(ENABLE_USER_SPACE_ZERO_SEGMENT)
+void PartitionAddressSpace::InitZeroSegment() {
+  if (zero_segment_size_) {
+    return;
+  }
+
+  zero_segment_size_ = GetZeroSegmentSizeFromOS();
+
+  const size_t min_zero_segment_size =
+      static_cast<size_t>(PA_CONFIG(USER_SPACE_ZERO_SEGMENT_SIZE_MB)) * 1024 *
+      1024;
+  // If the minimum zero segment returned from the OS is already big enough, we
+  // are good.
+  if (zero_segment_size_ >= min_zero_segment_size) {
+    return;
+  }
+
+  // Otherwise, try to allocate more pages trailing the OS parts.
+  const size_t allocation_size = min_zero_segment_size - zero_segment_size_;
+  const uintptr_t hint_address = zero_segment_size_;
+  const uintptr_t allocated_base =
+      AllocPages(hint_address, allocation_size, PageAllocationGranularity(),
+                 PageAccessibilityConfiguration(
+                     PageAccessibilityConfiguration::kInaccessible),
+                 PageTag::kPartitionAlloc);
+  if (allocated_base == hint_address) {
+    zero_segment_size_ += allocation_size;
+  } else if (allocated_base) {
+    FreePages(allocated_base, allocation_size);
+  }
+}
+#endif  // PA_CONFIG(ENABLE_USER_SPACE_ZERO_SEGMENT)
 
 void PartitionAddressSpace::InitConfigurablePool(uintptr_t pool_base,
                                                  size_t size) {
@@ -351,6 +413,7 @@ void PartitionAddressSpace::UninitForTesting() {
   metadata_region_start_ = kUninitializedPoolBaseAddress;
 #if PA_CONFIG(DYNAMICALLY_SELECT_POOL_SIZE)
   metadata_region_size_ = 0;
+  is_core_pool_size_reduced_ = false;
 #endif  // PA_CONFIG(DYNAMICALLY_SELECT_POOL_SIZE)
   for (size_t i = 0; i < kMaxPoolHandle; ++i) {
     offsets_to_metadata_[i] = SystemPageSize();

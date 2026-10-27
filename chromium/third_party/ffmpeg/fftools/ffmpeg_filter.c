@@ -27,6 +27,7 @@
 #include "libavfilter/buffersink.h"
 #include "libavfilter/buffersrc.h"
 
+#include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
@@ -1681,7 +1682,10 @@ static int configure_output_video_filter(FilterGraphPriv *fgp, AVFilterGraph *gr
         av_frame_side_data_remove(&ofp->side_data, &ofp->nb_side_data, AV_FRAME_DATA_DISPLAYMATRIX);
     }
 
-    if ((ofp->width || ofp->height) && (ofp->flags & OFILTER_FLAG_AUTOSCALE)) {
+    if ((ofp->width || ofp->height) && (ofp->flags & OFILTER_FLAG_AUTOSCALE) &&
+        // skip add scale for hardware format
+        !(ofp->format != AV_PIX_FMT_NONE &&
+          av_pix_fmt_desc_get(ofp->format)->flags & AV_PIX_FMT_FLAG_HWACCEL)) {
         char args[255];
         AVFilterContext *filter;
         const AVDictionaryEntry *e = NULL;
@@ -2569,6 +2573,7 @@ static void video_sync_process(OutputFilterPriv *ofp, AVFrame *frame,
             delta0 = 0;
             ofp->next_pts = llrint(sync_ipts);
         }
+        av_fallthrough;
     case VSYNC_CFR:
         // FIXME set to 0.5 after we fix some dts/pts bugs like in avidec.c
         if (frame_drop_threshold && delta < frame_drop_threshold && fps->frame_number) {
@@ -2836,8 +2841,10 @@ static int fg_output_step(OutputFilterPriv *ofp, FilterGraphThread *fgt,
     if (!fgt->got_frame) {
         ret = clone_side_data(&fd->side_data, &fd->nb_side_data,
                               ofp->side_data, ofp->nb_side_data, 0);
-        if (ret < 0)
+        if (ret < 0) {
+            av_frame_unref(frame);
             return ret;
+        }
     }
 
     fd->wallclock[LATENCY_PROBE_FILTER_POST] = av_gettime_relative();
@@ -3181,7 +3188,7 @@ static int send_frame(FilterGraph *fg, FilterGraphThread *fgt,
                 const char *color_space_name = av_color_space_name(frame->colorspace);
                 const char *color_range_name = av_color_range_name(frame->color_range);
                 const char *alpha_mode = av_alpha_mode_name(frame->alpha_mode);
-                av_bprintf(&reason, "video parameters changed to %s(%s, %s), %dx%d, %s alpha,",
+                av_bprintf(&reason, "video parameters changed to %s(%s, %s), %dx%d, %s alpha, ",
                         unknown_if_null(pixel_format_name), unknown_if_null(color_range_name),
                         unknown_if_null(color_space_name), frame->width, frame->height,
                         unknown_if_null(alpha_mode));
@@ -3334,8 +3341,6 @@ static int filter_thread(void *arg)
             goto read_frames;
         }
         av_assert0(input_status >= 0);
-
-        o = (intptr_t)fgt.frame->opaque;
 
         o = (intptr_t)fgt.frame->opaque;
 

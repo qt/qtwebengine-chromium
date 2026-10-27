@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SPARSE_LU_H
 #define EIGEN_SPARSE_LU_H
@@ -535,19 +536,21 @@ void SparseLU<MatrixType, OrderingType>::analyzePattern(const MatrixType& mat) {
   OrderingType ord;
   ord(m_mat, m_perm_c);
 
-  // Apply the permutation to the column of the input  matrix
+  // Apply the permutation to the column of the input matrix
   if (m_perm_c.size()) {
-    m_mat.uncompress();  // NOTE: The effect of this command is only to create the InnerNonzeros pointers. FIXME : This
-                         // vector is filled but not subsequently used.
-    // Then, permute only the column pointers
+    // Switch to uncompressed mode so innerNonZeroPtr() exists and can be
+    // permuted consistently with outerIndexPtr().
+    // Downstream sparse traversals may also rely on these per-column counts
+    // while m_mat remains uncompressed.
+    m_mat.uncompress();
+    // A compressed column-major input already exposes valid column pointers.
+    // Otherwise snapshot the internal column-major structure before permuting in place.
+    const bool useInputOuterIndex = !MatrixType::IsRowMajor && mat.isCompressed();
     ei_declare_aligned_stack_constructed_variable(
-        StorageIndex, outerIndexPtr, mat.cols() + 1,
-        mat.isCompressed() ? const_cast<StorageIndex*>(mat.outerIndexPtr()) : 0);
-
-    // If the input matrix 'mat' is uncompressed, then the outer-indices do not match the ones of m_mat, and a copy is
-    // thus needed.
-    if (!mat.isCompressed())
-      IndexVector::Map(outerIndexPtr, mat.cols() + 1) = IndexVector::Map(m_mat.outerIndexPtr(), mat.cols() + 1);
+        StorageIndex, outerIndexPtr, m_mat.cols() + 1,
+        useInputOuterIndex ? const_cast<StorageIndex*>(mat.outerIndexPtr()) : 0);
+    if (!useInputOuterIndex)
+      IndexVector::Map(outerIndexPtr, m_mat.cols() + 1) = IndexVector::Map(m_mat.outerIndexPtr(), m_mat.cols() + 1);
 
     // Apply the permutation and compute the nnz per column.
     for (Index i = 0; i < mat.cols(); i++) {
@@ -615,24 +618,27 @@ void SparseLU<MatrixType, OrderingType>::factorize(const MatrixType& matrix) {
 
   m_isInitialized = true;
 
+  // Reset state from any prior factorize() so info() and lastErrorMessage()
+  // describe this call's outcome, not the previous matrix's.
+  m_info = Success;
+  m_lastError.clear();
+
   // Apply the column permutation computed in analyzepattern()
   m_mat = matrix;
   if (m_perm_c.size()) {
-    m_mat.uncompress();  // NOTE: The effect of this command is only to create the InnerNonzeros pointers.
-    // Then, permute only the column pointers
-    const StorageIndex* outerIndexPtr;
-    if (matrix.isCompressed())
-      outerIndexPtr = matrix.outerIndexPtr();
-    else {
-      StorageIndex* outerIndexPtr_t = new StorageIndex[matrix.cols() + 1];
-      for (Index i = 0; i <= matrix.cols(); i++) outerIndexPtr_t[i] = m_mat.outerIndexPtr()[i];
-      outerIndexPtr = outerIndexPtr_t;
-    }
+    // Switch to uncompressed mode so innerNonZeroPtr() exists and can be
+    // permuted consistently with outerIndexPtr().
+    m_mat.uncompress();
+    const bool useInputOuterIndex = !MatrixType::IsRowMajor && matrix.isCompressed();
+    ei_declare_aligned_stack_constructed_variable(
+        StorageIndex, outerIndexPtr, m_mat.cols() + 1,
+        useInputOuterIndex ? const_cast<StorageIndex*>(matrix.outerIndexPtr()) : 0);
+    if (!useInputOuterIndex)
+      IndexVector::Map(outerIndexPtr, m_mat.cols() + 1) = IndexVector::Map(m_mat.outerIndexPtr(), m_mat.cols() + 1);
     for (Index i = 0; i < matrix.cols(); i++) {
       m_mat.outerIndexPtr()[m_perm_c.indices()(i)] = outerIndexPtr[i];
       m_mat.innerNonZeroPtr()[m_perm_c.indices()(i)] = outerIndexPtr[i + 1] - outerIndexPtr[i];
     }
-    if (!matrix.isCompressed()) delete[] outerIndexPtr;
   } else {  // FIXME This should not be needed if the empty permutation is handled transparently
     m_perm_c.resize(matrix.cols());
     for (StorageIndex i = 0; i < matrix.cols(); ++i) m_perm_c.indices()(i) = i;
@@ -776,11 +782,6 @@ void SparseLU<MatrixType, OrderingType>::factorize(const MatrixType& matrix) {
         m_factorizationIsOk = false;
         return;
       }
-
-      // Update the determinant of the row permutation matrix
-      // FIXME: the following test is not correct; it should account for iperm_c, and pivrow is not
-      // directly the row pivot.
-      if (pivrow != jj) m_detPermR = -m_detPermR;
 
       // Prune columns (0:jj-1) using column jj
       Base::pruneL(jj, m_perm_r.indices(), pivrow, nseg, segrep, repfnz_k, xprune, m_glu);

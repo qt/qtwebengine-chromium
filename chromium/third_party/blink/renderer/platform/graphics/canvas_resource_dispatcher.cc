@@ -18,6 +18,7 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_resource.h"
+#include "third_party/blink/renderer/platform/graphics/exported_canvas_resource.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/offscreen_canvas_placeholder.h"
 #include "third_party/blink/renderer/platform/graphics/resource_id_traits.h"
@@ -37,41 +38,6 @@ constexpr base::TimeDelta kSyntheticFrameDelay = base::Hertz(60);
 }  // namespace
 
 namespace blink {
-
-// Holds the ref and release callback for a CanvasResource that has been
-// exported to the compositor, to be released when either (a) the compositor
-// notifies CanvasResourceDispatcher that it no longer requires this resource,
-// or (b) the CanvasResourceDispatcher is torn down (e.g., because its owning
-// thread was torn down).
-struct CanvasResourceDispatcher::ExportedResource {
- public:
-  ExportedResource(scoped_refptr<CanvasResource> resource,
-                   CanvasResource::ReleaseCallback callback)
-      : resource_(std::move(resource)), release_callback_(std::move(callback)) {
-    CHECK(resource_);
-  }
-
-  void ReleaseResource(gpu::SharedImageExportResult shared_image_export_result,
-                       bool is_lost) {
-    auto sync_token = resource_->GetSharedImage()->EndExport(
-        std::move(shared_image_export_result));
-    ReleaseResource(sync_token, is_lost);
-  }
-
-  ~ExportedResource() { ReleaseResource(gpu::SyncToken(), /*is_lost=*/false); }
-
- private:
-  void ReleaseResource(const gpu::SyncToken& sync_token, bool is_lost) {
-    auto resource = std::move(resource_);
-    if (release_callback_) {
-      std::move(release_callback_)
-          .Run(std::move(resource), sync_token, is_lost);
-    }
-  }
-
-  scoped_refptr<CanvasResource> resource_;
-  CanvasResource::ReleaseCallback release_callback_;
-};
 
 CanvasResourceDispatcher::CanvasResourceDispatcher(
     CanvasResourceDispatcherClient* client,
@@ -116,19 +82,17 @@ CanvasResourceDispatcher::~CanvasResourceDispatcher() = default;
 
 namespace {
 
-void UpdatePlaceholderImage(
+static void UpdatePlaceholderImage(
     base::WeakPtr<CanvasResourceDispatcher> dispatcher,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
     int placeholder_canvas_id,
-    scoped_refptr<blink::CanvasResource>&& canvas_resource,
-    viz::ResourceId resource_id) {
+    scoped_refptr<blink::ExportedCanvasResource>&& canvas_resource) {
   DCHECK(IsMainThread());
   OffscreenCanvasPlaceholder* placeholder_canvas =
       OffscreenCanvasPlaceholder::GetPlaceholderCanvasById(
           placeholder_canvas_id);
   if (placeholder_canvas) {
-    placeholder_canvas->SetOffscreenCanvasResource(std::move(canvas_resource),
-                                                   resource_id);
+    placeholder_canvas->SetOffscreenCanvasResource(std::move(canvas_resource));
     task_runner->PostTask(
         FROM_HERE,
         base::BindOnce(&CanvasResourceDispatcher::OnMainThreadReceivedImage,
@@ -152,41 +116,33 @@ void UpdatePlaceholderDispatcher(
 }  // namespace
 
 void CanvasResourceDispatcher::PostImageToPlaceholderIfNotBlocked(
-    scoped_refptr<CanvasResource>&& canvas_resource,
-    viz::ResourceId resource_id) {
+    scoped_refptr<ExportedCanvasResource> exported_resource) {
   if (placeholder_canvas_id_ == kInvalidPlaceholderCanvasId ||
       // `agent_group_scheduler_compositor_task_runner_` may be null if this
       // was created from a SharedWorker.
       !agent_group_scheduler_compositor_task_runner_) {
-    // Inform the resource that the placeholder ref was released so it can do
-    // any appropriate cleanup/recycling.
-    CanvasResource::OnPlaceholderReleasedResource(std::move(canvas_resource));
+    exported_resource.reset();
     return;
   }
 
   // Determines whether the main thread may be blocked. If unblocked, post
   // |canvas_resource|. Otherwise, save it but do not post it.
   if (num_pending_placeholder_resources_ < kMaxPendingPlaceholderResources) {
-    PostImageToPlaceholder(std::move(canvas_resource), resource_id);
+    PostImageToPlaceholder(std::move(exported_resource));
     num_pending_placeholder_resources_++;
   } else {
     DCHECK(num_pending_placeholder_resources_ ==
            kMaxPendingPlaceholderResources);
 
     // The previous unposted resource becomes obsolete now.
-    // Inform the resource that the placeholder ref was released so it can do
-    // any appropriate cleanup/recycling.
-    CanvasResource::OnPlaceholderReleasedResource(
-        std::move(latest_unposted_resource_));
+    latest_unposted_resource_.reset();
 
-    latest_unposted_resource_ = std::move(canvas_resource);
-    latest_unposted_resource_id_ = resource_id;
+    latest_unposted_resource_ = std::move(exported_resource);
   }
 }
 
 void CanvasResourceDispatcher::PostImageToPlaceholder(
-    scoped_refptr<CanvasResource>&& canvas_resource,
-    viz::ResourceId resource_id) {
+    scoped_refptr<ExportedCanvasResource>&& canvas_resource) {
   // After this point, |canvas_resource| can only be used on the main thread,
   // until it is returned.
   canvas_resource->Transfer();
@@ -195,20 +151,33 @@ void CanvasResourceDispatcher::PostImageToPlaceholder(
   PostCrossThreadTask(
       *agent_group_scheduler_compositor_task_runner_, FROM_HERE,
       CrossThreadBindOnce(UpdatePlaceholderImage, GetWeakPtr(), task_runner_,
-                          placeholder_canvas_id_, std::move(canvas_resource),
-                          resource_id));
+                          placeholder_canvas_id_, std::move(canvas_resource)));
 }
 
 void CanvasResourceDispatcher::DispatchFrame(
     scoped_refptr<CanvasResource>&& canvas_resource,
-    const SkIRect& damage_rect,
+    const gfx::Rect& damage_rect,
     bool is_opaque) {
   TRACE_EVENT0("blink", "CanvasResourceDispatcher::DispatchFrame");
-  viz::CompositorFrame frame;
-  if (!PrepareFrame(std::move(canvas_resource), damage_rect, is_opaque,
-                    &frame)) {
+  if (!canvas_resource) {
     return;
   }
+
+  auto exported_resource =
+      base::MakeRefCounted<ExportedCanvasResource>(std::move(canvas_resource));
+
+  // This takes another ref and sends it to the placeholder. The
+  // ExternalCanvasResource will be destroyed when both display compositor and
+  // placeholder are done with it, returning underlying memory to the owner.
+  PostImageToPlaceholderIfNotBlocked(exported_resource);
+
+  // For frameless canvas, we don't get a valid frame_sink_id and should drop.
+  if (!frame_sink_id_.is_valid()) {
+    return;
+  }
+
+  viz::CompositorFrame frame;
+  PrepareFrame(std::move(exported_resource), damage_rect, is_opaque, &frame);
 
   pending_compositor_frames_++;
   sink_->SubmitCompositorFrame(
@@ -216,24 +185,12 @@ void CanvasResourceDispatcher::DispatchFrame(
       std::move(frame), std::nullopt, 0);
 }
 
-bool CanvasResourceDispatcher::PrepareFrame(
-    scoped_refptr<CanvasResource>&& canvas_resource,
-    const SkIRect& damage_rect,
+void CanvasResourceDispatcher::PrepareFrame(
+    scoped_refptr<ExportedCanvasResource>&& exported_resource,
+    const gfx::Rect& damage_rect,
     bool is_opaque,
     viz::CompositorFrame* frame) {
   TRACE_EVENT0("blink", "CanvasResourceDispatcher::PrepareFrame");
-  if (!canvas_resource) {
-    return false;
-  }
-
-  auto next_resource_id = id_generator_.GenerateNextId();
-
-  // For frameless canvas, we don't get a valid frame_sink_id and should drop.
-  if (!frame_sink_id_.is_valid()) {
-    PostImageToPlaceholderIfNotBlocked(std::move(canvas_resource),
-                                       next_resource_id);
-    return false;
-  }
 
   // TODO(crbug.com/652931): update the device_scale_factor
   frame->metadata.device_scale_factor = 1.0f;
@@ -261,10 +218,7 @@ bool CanvasResourceDispatcher::PrepareFrame(
   auto pass =
       viz::CompositorRenderPass::Create(/*shared_quad_state_list_size=*/1u,
                                         /*quad_list_size=*/1u);
-  pass->SetNew(kRenderPassId, bounds,
-               gfx::Rect(damage_rect.x(), damage_rect.y(), damage_rect.width(),
-                         damage_rect.height()),
-               gfx::Transform());
+  pass->SetNew(kRenderPassId, bounds, damage_rect, gfx::Transform());
 
   viz::SharedQuadState* sqs = pass->CreateAndAppendSharedQuadState();
   sqs->SetAll(gfx::Transform(), bounds, bounds, gfx::MaskFilterInfo(),
@@ -278,29 +232,20 @@ bool CanvasResourceDispatcher::PrepareFrame(
   // value will have no effect.
   const bool nearest_neighbor = false;
 
-  CanvasResource::ReleaseCallback release_callback;
-  canvas_resource->PrepareTransferableResource(
-      &resource, &release_callback,
+  exported_resource->PrepareTransferableResource(
+      &resource,
       /*needs_verified_synctoken=*/true);
 
-  const viz::ResourceId resource_id = next_resource_id;
+  const viz::ResourceId resource_id = id_generator_.GenerateNextId();
   resource.id = resource_id;
 
   const gfx::Size resource_size = resource.GetSize();
-
-  // Create a new ref on `canvas_resource` to pass to the placeholder, which
-  // will manage the lifetime of this ref.
-  auto resource_ref_for_placeholder = canvas_resource;
-  PostImageToPlaceholderIfNotBlocked(std::move(resource_ref_for_placeholder),
-                                     resource_id);
 
   // Now store our ref to ensure that the resource remains valid for the
   // duration of the compositor's usage (we'll drop our ref when the compositor
   // notifies us that it is no longer using the resource via
   // `ReclaimResources()`).
-  exported_resources_.insert(resource_id, std::make_unique<ExportedResource>(
-                                              std::move(canvas_resource),
-                                              std::move(release_callback)));
+  exported_resources_.insert(resource_id, std::move(exported_resource));
 
   frame->resource_list.push_back(std::move(resource));
 
@@ -324,8 +269,6 @@ bool CanvasResourceDispatcher::PrepareFrame(
         parent_local_surface_id_allocator_.GetCurrentLocalSurfaceId());
     change_size_for_next_commit_ = false;
   }
-
-  return true;
 }
 
 void CanvasResourceDispatcher::DidReceiveCompositorFrameAck(
@@ -365,6 +308,10 @@ void CanvasResourceDispatcher::SetAnimationState(
   }
   animation_state_ = animation_state;
   UpdateBeginFrameSource();
+
+  if (client_) {
+    client_->SetParentVisibility(!IsAnimationSuspended());
+  }
 }
 
 void CanvasResourceDispatcher::UpdateBeginFrameSource() {
@@ -446,8 +393,8 @@ void CanvasResourceDispatcher::ReclaimResources(
       continue;
     }
 
-    it->value->ReleaseResource(resource.shared_image_export_result,
-                               resource.lost);
+    it->value->EndDisplayCompositorAccess(
+        std::move(resource.shared_image_export_result), resource.lost);
     exported_resources_.erase(it);
   }
 }
@@ -460,13 +407,11 @@ void CanvasResourceDispatcher::OnMainThreadReceivedImage() {
   if (latest_unposted_resource_) {
     DCHECK(num_pending_placeholder_resources_ ==
            kMaxPendingPlaceholderResources - 1);
-    PostImageToPlaceholderIfNotBlocked(std::move(latest_unposted_resource_),
-                                       latest_unposted_resource_id_);
+    PostImageToPlaceholderIfNotBlocked(std::move(latest_unposted_resource_));
     // To make it safe to use/check latest_unposted_resource_ after using
     // std::move on it, we need to force a reset because the move above is
     // elide-able.
     latest_unposted_resource_.reset();
-    latest_unposted_resource_id_ = viz::kInvalidResourceId;
   }
 }
 

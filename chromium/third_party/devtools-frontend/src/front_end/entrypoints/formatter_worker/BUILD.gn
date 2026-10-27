@@ -39,10 +39,15 @@ devtools_foundation_module("formatter_worker") {
 devtools_entrypoint("bundle") {
   entrypoint = "formatter_worker.ts"
 
-  deps = [ ":formatter_worker" ]
+  deps = [
+    ":formatter_worker",
+    "../../third_party/codemirror",
+    "../../third_party/codemirror:codemirror-legacy-types",
+  ]
 
   visibility = [
     ":*",
+    "../../core/sdk/*",
     "../../panels/sources/*",
     "../../ui/legacy/components/source_frame",
   ]
@@ -58,6 +63,8 @@ devtools_entrypoint("formatter_actions") {
   visibility = [
     ":*",
     "../../models/formatter/*",
+    "../../panels/sources/*",
+    "../../ui/legacy/components/source_frame/*",
   ]
 
   visibility += devtools_entrypoints_visibility

@@ -114,16 +114,22 @@ class MODULES_EXPORT MLContext : public ScriptWrappable {
                 const MLNamedTensors& outputs,
                 ExceptionState& exception_state);
 
-  ScriptPromise<GPUBuffer> exportToGPU(ScriptState* script_state,
-                                       MLTensor* tensor,
-                                       ExceptionState& exception_state);
+  GPUBuffer* exportToGPU(ScriptState* script_state,
+                         MLTensor* tensor,
+                         ExceptionState& exception_state);
 
   MLGraphBuilder* CreateWebNNGraphBuilder(ScriptState* script_state,
                                           ExceptionState& exception_state);
 
+  gpu::SyncToken GenerateVerifiedReleaseToken();
+
   const MLOpSupportLimits* opSupportLimits(ScriptState* script_state);
 
   void OnGraphCreated(MLGraph* graph);
+
+  // Sends DestroyGraph through the context pipe to ensure ordering with
+  // Dispatch/ReadTensor/WriteTensor. Called by MLGraph::destroy().
+  void DestroyGraph(const blink::WebNNGraphToken& graph_token);
 
   const mojo::ScopedDataPipeProducerHandle& write_tensor_producer() const {
     return write_tensor_producer_;
@@ -170,6 +176,9 @@ class MODULES_EXPORT MLContext : public ScriptWrappable {
   HeapHashSet<WeakMember<MLGraph>> graphs_;
   HeapHashSet<WeakMember<MLGraphBuilder>> graph_builders_;
   HeapHashSet<WeakMember<MLTensor>> tensors_;
+
+  const gpu::CommandBufferId command_buffer_id_;
+  uint64_t last_sync_token_release_id_ = 0;
 };
 
 }  // namespace blink

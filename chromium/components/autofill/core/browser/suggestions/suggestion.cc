@@ -4,15 +4,29 @@
 
 #include "components/autofill/core/browser/suggestions/suggestion.h"
 
-#include <type_traits>
-#include <utility>
+#include <stddef.h>
 
+#include <map>
+#include <ostream>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include "base/containers/span.h"
 #include "base/containers/to_vector.h"
+#include "base/feature.h"
+#include "base/notreached.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_ostream_operators.h"
 #include "base/strings/utf_string_conversions.h"
-#include "components/autofill/core/browser/data_model/payments/credit_card.h"
+#include "build/buildflag.h"
+#include "components/accessibility_annotator/core/annotation_reducer/entry_type.h"
+#include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
+#include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/suggestions/suggestion_type.h"
+#include "url/gurl.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/jni_android.h"
@@ -112,12 +126,20 @@ std::string_view ConvertIconToPrintableString(Suggestion::Icon icon) {
       return "kScanCreditCard";
     case Suggestion::Icon::kSettings:
       return "kSettings";
+    case Suggestion::Icon::kSpark:
+      return "kSpark";
     case Suggestion::Icon::kUndo:
       return "kUndo";
     case Suggestion::Icon::kVehicle:
       return "kVehicle";
     case Suggestion::Icon::kWork:
       return "kWork";
+    case Suggestion::Icon::kGmail:
+      return "kGmail";
+    case Suggestion::Icon::kGooglePhotos:
+      return "kGooglePhotos";
+    case Suggestion::Icon::kGoogleCalendar:
+      return "kGoogleCalendar";
     case Suggestion::Icon::kCardGeneric:
       return "kCardGeneric";
     case Suggestion::Icon::kCardAmericanExpress:
@@ -144,8 +166,6 @@ std::string_view ConvertIconToPrintableString(Suggestion::Icon icon) {
       return "kCardVisa";
     case Suggestion::Icon::kIban:
       return "kIban";
-    case Suggestion::Icon::kPlusAddress:
-      return "kPlusAddress";
     case Suggestion::Icon::kNoIcon:
       return "kNoIcon";
     case Suggestion::Icon::kBnplGeneric:
@@ -162,6 +182,8 @@ std::string_view ConvertIconToPrintableString(Suggestion::Icon icon) {
       return "kSaveAndFill";
     case Suggestion::Icon::kAndroidMessages:
       return "kAndroidMessages";
+    case Suggestion::Icon::kSadTab:
+      return "kSadTab";
   }
   NOTREACHED();
 }
@@ -201,26 +223,6 @@ Suggestion::PasswordSuggestionDetails::operator=(PasswordSuggestionDetails&&) =
     default;
 Suggestion::PasswordSuggestionDetails::~PasswordSuggestionDetails() = default;
 
-Suggestion::PlusAddressPayload::PlusAddressPayload() = default;
-
-Suggestion::PlusAddressPayload::PlusAddressPayload(
-    std::optional<std::u16string> address)
-    : address(std::move(address)) {}
-
-Suggestion::PlusAddressPayload::PlusAddressPayload(const PlusAddressPayload&) =
-    default;
-
-Suggestion::PlusAddressPayload::PlusAddressPayload(PlusAddressPayload&&) =
-    default;
-
-Suggestion::PlusAddressPayload& Suggestion::PlusAddressPayload::operator=(
-    const PlusAddressPayload&) = default;
-
-Suggestion::PlusAddressPayload& Suggestion::PlusAddressPayload::operator=(
-    PlusAddressPayload&&) = default;
-
-Suggestion::PlusAddressPayload::~PlusAddressPayload() = default;
-
 Suggestion::AutofillAiPayload::AutofillAiPayload() = default;
 
 Suggestion::AutofillAiPayload::AutofillAiPayload(EntityInstance::EntityId guid,
@@ -242,11 +244,7 @@ Suggestion::AutofillAiPayload::~AutofillAiPayload() = default;
 
 Suggestion::AutofillProfilePayload::AutofillProfilePayload() = default;
 Suggestion::AutofillProfilePayload::AutofillProfilePayload(Guid guid)
-    : AutofillProfilePayload(std::move(guid), u"") {}
-Suggestion::AutofillProfilePayload::AutofillProfilePayload(
-    Guid guid,
-    std::u16string email_override)
-    : guid(std::move(guid)), email_override(std::move(email_override)) {}
+    : guid(std::move(guid)) {}
 
 Suggestion::AutofillProfilePayload::AutofillProfilePayload(
     const AutofillProfilePayload&) = default;
@@ -299,8 +297,10 @@ Suggestion::IdentityCredentialPayload::~IdentityCredentialPayload() = default;
 
 Suggestion::AtMemoryPayload::AtMemoryPayload() = default;
 
-Suggestion::AtMemoryPayload::AtMemoryPayload(std::u16string value)
-    : value(std::move(value)) {}
+Suggestion::AtMemoryPayload::AtMemoryPayload(
+    std::u16string value,
+    accessibility_annotator::EntryType entry_type)
+    : value(std::move(value)), entry_type(entry_type) {}
 
 Suggestion::AtMemoryPayload::AtMemoryPayload(const AtMemoryPayload&) = default;
 
@@ -313,6 +313,18 @@ Suggestion::AtMemoryPayload& Suggestion::AtMemoryPayload::operator=(
     AtMemoryPayload&&) = default;
 
 Suggestion::AtMemoryPayload::~AtMemoryPayload() = default;
+
+Suggestion::OpenGeminiPayload::OpenGeminiPayload() = default;
+Suggestion::OpenGeminiPayload::OpenGeminiPayload(std::u16string prompt)
+    : prompt(std::move(prompt)) {}
+Suggestion::OpenGeminiPayload::OpenGeminiPayload(const OpenGeminiPayload&) =
+    default;
+Suggestion::OpenGeminiPayload::OpenGeminiPayload(OpenGeminiPayload&&) = default;
+Suggestion::OpenGeminiPayload& Suggestion::OpenGeminiPayload::operator=(
+    const OpenGeminiPayload&) = default;
+Suggestion::OpenGeminiPayload& Suggestion::OpenGeminiPayload::operator=(
+    OpenGeminiPayload&&) = default;
+Suggestion::OpenGeminiPayload::~OpenGeminiPayload() = default;
 
 Suggestion::PaymentsPayload::PaymentsPayload() = default;
 

@@ -119,7 +119,8 @@ std::tuple<ComponentType, CompositionType> CalculateComponentAndComposition(
     return {componentType, compositionType};
 }
 
-ResourceBinding ConvertBufferToResourceBinding(const tint::sem::GlobalVariable* buffer) {
+ResourceBinding ConvertBufferToResourceBinding(const tint::sem::GlobalVariable* buffer,
+                                               std::optional<uint64_t> buffer_size = std::nullopt) {
     ResourceBinding result;
     result.bind_group = buffer->Attributes().binding_point->group;
     result.binding = buffer->Attributes().binding_point->binding;
@@ -127,6 +128,9 @@ ResourceBinding ConvertBufferToResourceBinding(const tint::sem::GlobalVariable* 
 
     auto* unwrapped_type = buffer->Type()->UnwrapRef();
     result.size = unwrapped_type->Size();
+    if (buffer_size) {
+        result.size = static_cast<uint32_t>(buffer_size.value());
+    }
     result.size_no_padding = result.size;
     if (auto* str = unwrapped_type->As<sem::Struct>()) {
         result.size_no_padding = str->SizeNoPadding();
@@ -473,9 +477,11 @@ std::vector<ResourceBinding> Inspector::GetResourceBindings(const std::string& e
                 continue;
 
             case core::AddressSpace::kUniform:
-            case core::AddressSpace::kStorage:
-                result.push_back(ConvertBufferToResourceBinding(global));
+            case core::AddressSpace::kStorage: {
+                auto size = func_sem->TransitivelyReferencedUnsizedBufferSize(global);
+                result.push_back(ConvertBufferToResourceBinding(global, size));
                 break;
+            }
             case core::AddressSpace::kHandle:
                 result.push_back(ConvertHandleToResourceBinding(global));
                 break;

@@ -76,7 +76,7 @@ void LayerTreeView::Initialize(
 
   cc::LayerTreeHost::InitParams params;
   params.client = this;
-  params.scheduling_client = this;
+  params.scheduling_delegate = this;
   params.settings = &settings;
   params.task_graph_runner = task_graph_runner;
   params.main_task_runner = std::move(main_thread);
@@ -130,8 +130,7 @@ void LayerTreeView::ClearPreviousDelegateAndReattachIfNeeded(
     layer_tree_host_->SetVisible(false);
   }
   layer_tree_host_->DetachInputDelegateAndRenderFrameObserver();
-  layer_tree_host_->StopDeferringCommits(
-      cc::PaintHoldingCommitTrigger::kWidgetSwapped);
+  layer_tree_host_->StopDeferringCommits();
   for (uint32_t i = 0;
        i <= static_cast<uint32_t>(cc::EventListenerClass::kLast); ++i) {
     layer_tree_host_->SetEventListenerProperties(
@@ -268,13 +267,11 @@ void LayerTreeView::OnCommitRequested() {
   delegate_->OnCommitRequested();
 }
 
-void LayerTreeView::OnDeferCommitsChanged(
-    bool status,
-    cc::PaintHoldingReason reason,
-    std::optional<cc::PaintHoldingCommitTrigger> trigger) {
+void LayerTreeView::OnDeferCommitsChanged(bool status,
+                                          cc::PaintHoldingReason reason) {
   if (!delegate_)
     return;
-  delegate_->OnDeferCommitsChanged(status, reason, trigger);
+  delegate_->OnDeferCommitsChanged(status, reason);
 }
 
 void LayerTreeView::BeginMainFrameNotExpectedSoon() {
@@ -419,8 +416,9 @@ void LayerTreeView::DidPresentCompositorFrame(
   }
   while (!presentation_callbacks_.empty()) {
     const auto& front = presentation_callbacks_.begin();
-    if (viz::FrameTokenGT(front->first, frame_token))
+    if (front->first > frame_token) {
       break;
+    }
     for (auto& callback : front->second)
       std::move(callback).Run(frame_timing_details);
     presentation_callbacks_.erase(front);
@@ -429,8 +427,9 @@ void LayerTreeView::DidPresentCompositorFrame(
 #if BUILDFLAG(IS_APPLE)
   while (!core_animation_error_code_callbacks_.empty()) {
     const auto& front = core_animation_error_code_callbacks_.begin();
-    if (viz::FrameTokenGT(front->first, frame_token))
+    if (front->first > frame_token) {
       break;
+    }
     for (auto& callback : front->second) {
       std::move(callback).Run(
           frame_timing_details.presentation_feedback.ca_layer_error_code);
@@ -538,7 +537,7 @@ void LayerTreeView::AddCallback(
       DCHECK_LE(previous.second.size(), 250u);
       return;
     }
-    DCHECK(viz::FrameTokenGT(frame_token, previous_frame_token));
+    DCHECK_GT(frame_token, previous_frame_token);
   }
   std::vector<Callback> new_callbacks;
   new_callbacks.push_back(std::move(callback));

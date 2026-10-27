@@ -10,6 +10,8 @@ source_set("password_change") {
     "annotated_page_content_capturer_impl.h",
     "button_click_helper.cc",
     "button_click_helper.h",
+    "change_password_form_filler.cc",
+    "change_password_form_filler.h",
     "change_password_form_filling_submission_helper.cc",
     "change_password_form_filling_submission_helper.h",
     "change_password_form_finder.cc",
@@ -20,18 +22,18 @@ source_set("password_change") {
     "cross_origin_navigation_observer.h",
     "detached_web_contents.cc",
     "detached_web_contents.h",
-    "form_filling_helper.cc",
-    "form_filling_helper.h",
+    "features.cc",
+    "features.h",
     "login_state_checker.cc",
     "login_state_checker.h",
     "model_quality_logs_uploader.cc",
     "model_quality_logs_uploader.h",
+    "password_change_logging_util.cc",
+    "password_change_logging_util.h",
     "password_change_page_stability_waiter.cc",
     "password_change_page_stability_waiter.h",
     "password_change_submission_verifier.cc",
     "password_change_submission_verifier.h",
-    "typing_helper.cc",
-    "typing_helper.h",
   ]
 
   deps = [
@@ -40,6 +42,10 @@ source_set("password_change") {
     "//chrome/browser/page_content_annotations:extraction_service",
     "//chrome/browser/profiles",
     "//chrome/browser/translate",
+    "//chrome/common",
+    "//chrome/common:mojo_bindings",
+    "//components/actor/core:task_id",
+    "//components/autofill/content/browser",
     "//components/optimization_guide/content/browser",
     "//components/optimization_guide/core",
     "//components/optimization_guide/proto:optimization_guide_proto",
@@ -55,6 +61,8 @@ source_set("password_change") {
     "//content/public/browser",
     "//services/metrics/public/cpp:metrics_cpp",
     "//ui/accessibility:ax_base",
+    "//ui/views",
+    "//ui/views/controls/webview",
   ]
 }
 
@@ -62,13 +70,13 @@ source_set("unit_tests") {
   testonly = true
   sources = [
     "annotated_page_content_capturer_unittest.cc",
+    "change_password_form_filler_unittest.cc",
     "change_password_form_filling_submission_helper_unittest.cc",
     "change_password_form_finder_unittest.cc",
     "change_password_form_waiter_unittest.cc",
     "cross_origin_navigation_observer_unittest.cc",
     "fake_annotated_page_content_capturer.cc",
     "fake_annotated_page_content_capturer.h",
-    "form_filling_helper_unittest.cc",
     "login_state_checker_unittest.cc",
     "model_quality_logs_uploader_unittest.cc",
     "password_change_page_stability_waiter_unittest.cc",
@@ -77,6 +85,7 @@ source_set("unit_tests") {
   deps = [
     ":password_change",
     "//chrome/browser/optimization_guide:test_support",
+    "//chrome/browser/password_manager",
     "//chrome/browser/password_manager/factories",
     "//chrome/browser/sync",
     "//chrome/browser/ui/autofill",
@@ -85,7 +94,6 @@ source_set("unit_tests") {
     "//components/autofill/content/browser:test_support",
     "//components/optimization_guide/core",
     "//components/optimization_guide/core:test_support",
-    "//components/os_crypt/sync:test_support",
     "//components/password_manager/content/browser",
     "//components/password_manager/core/browser",
     "//components/password_manager/core/browser:test_support",

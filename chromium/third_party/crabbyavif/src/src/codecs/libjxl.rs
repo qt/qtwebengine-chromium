@@ -370,7 +370,7 @@ impl Decoder for Libjxl {
         image: &mut Image,
         category: Category,
         item: Option<&Item>,
-        #[cfg(feature = "android_mediacodec")] _signal_eos: bool,
+        _signal_eos: bool,
     ) -> AvifResult<()> {
         // TODO: b/456440247 - Support tracks
         let item = if let Some(item) = item { item } else { return AvifError::not_implemented() };
@@ -543,6 +543,16 @@ impl Decoder for Libjxl {
         _grid_image_helper: &mut GridImageHelper,
     ) -> AvifResult<()> {
         AvifError::not_implemented() // TODO: b/456440247
+    }
+
+    fn get_last_image(
+        &mut self,
+        _payloads: &[Vec<u8>],
+        _spatial_id: u8,
+        _image: &mut Image,
+        _category: Category,
+    ) -> AvifResult<()> {
+        AvifError::not_implemented()
     }
 }
 
@@ -805,9 +815,11 @@ fn reconstruct_jxl_header(container: ContainerFeatures) -> AvifResult<Vec<u8>> {
 #[test]
 fn libjxl_enc_dec_test() -> Result<(), AvifError> {
     let mut encoder = Libjxl::default();
-    let mut config = EncoderConfig::default();
-    config.is_single_image = true;
-    config.quality = 100.0;
+    let config = EncoderConfig {
+        is_single_image: true,
+        quality: 100.0,
+        ..Default::default()
+    };
 
     let image = {
         let mut image = Image {
@@ -897,6 +909,7 @@ fn libjxl_enc_dec_test() -> Result<(), AvifError> {
         &mut decoded,
         Category::Color,
         Some(&item),
+        false,
     )?;
 
     assert!(are_images_equal(&image, &decoded)?);

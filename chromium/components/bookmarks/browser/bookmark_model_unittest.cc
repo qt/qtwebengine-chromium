@@ -18,6 +18,7 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/scoped_observation.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -30,6 +31,7 @@
 #include "base/test/test_future.h"
 #include "base/time/time.h"
 #include "base/uuid.h"
+#include "build/android_buildflags.h"
 #include "build/build_config.h"
 #include "components/bookmarks/browser/bookmark_model_observer.h"
 #include "components/bookmarks/browser/bookmark_node.h"
@@ -173,6 +175,32 @@ class TestBookmarkClientWithUndo : public TestBookmarkClient {
   std::unique_ptr<BookmarkNode> last_removed_node_;
 };
 
+// TestBookmarkClient that has harded-coded sync tokens.
+class TestBookmarkClientWithFixedSyncMetadata : public TestBookmarkClient {
+ public:
+  TestBookmarkClientWithFixedSyncMetadata(
+      os_crypt_async::OSCryptAsync* os_crypt_async,
+      std::string local_or_syncable_bookmark_sync_metadata,
+      std::string account_bookmark_sync_metadata)
+      : TestBookmarkClient(os_crypt_async),
+        local_or_syncable_bookmark_sync_metadata_(
+            local_or_syncable_bookmark_sync_metadata),
+        account_bookmark_sync_metadata_(account_bookmark_sync_metadata) {}
+  ~TestBookmarkClientWithFixedSyncMetadata() override = default;
+
+  std::string EncodeLocalOrSyncableBookmarkSyncMetadata() override {
+    return local_or_syncable_bookmark_sync_metadata_;
+  }
+
+  std::string EncodeAccountBookmarkSyncMetadata() override {
+    return account_bookmark_sync_metadata_;
+  }
+
+ private:
+  std::string local_or_syncable_bookmark_sync_metadata_;
+  std::string account_bookmark_sync_metadata_;
+};
+
 // Helper to get a mutable bookmark node.
 BookmarkNode* AsMutable(const BookmarkNode* node) {
   return const_cast<BookmarkNode*>(node);
@@ -303,9 +331,7 @@ class BookmarkModelTest : public testing::Test {
     model_->AddObserver(&mock_observer_);
   }
 
-  ~BookmarkModelTest() override {
-    model_->RemoveObserver(&mock_observer_);
-  }
+  ~BookmarkModelTest() override { model_->RemoveObserver(&mock_observer_); }
 
   BookmarkModelTest(const BookmarkModelTest&) = delete;
   BookmarkModelTest& operator=(const BookmarkModelTest&) = delete;
@@ -1334,11 +1360,10 @@ TEST_F(BookmarkModelTest, MoveWithUuidCollisionInDescendant) {
 
 // Tests the default node if no bookmarks have been added yet
 TEST_F(BookmarkModelTest, ParentForNewNodesWithEmptyModel) {
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-  EXPECT_EQ(model()->mobile_node(), GetParentForNewNodes(model()));
-#else
-  EXPECT_EQ(model()->other_node(), GetParentForNewNodes(model()));
-#endif
+  EXPECT_EQ(TestBookmarkClient::IsDesktopFormFactorByDefault()
+                ? model()->other_node()
+                : model()->mobile_node(),
+            GetParentForNewNodes(model()));
 }
 
 #if BUILDFLAG(IS_ANDROID)
@@ -1630,15 +1655,15 @@ TEST_F(BookmarkModelTest, ReorderCallWithSizeMismatch) {
 }
 
 TEST_F(BookmarkModelTest, NodeVisibility) {
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-  EXPECT_FALSE(model()->bookmark_bar_node()->IsVisible());
-  EXPECT_FALSE(model()->other_node()->IsVisible());
-  EXPECT_TRUE(model()->mobile_node()->IsVisible());
-#else
-  EXPECT_TRUE(model()->bookmark_bar_node()->IsVisible());
-  EXPECT_TRUE(model()->other_node()->IsVisible());
-  EXPECT_FALSE(model()->mobile_node()->IsVisible());
-#endif
+  if (TestBookmarkClient::IsDesktopFormFactorByDefault()) {
+    EXPECT_TRUE(model()->bookmark_bar_node()->IsVisible());
+    EXPECT_TRUE(model()->other_node()->IsVisible());
+    EXPECT_FALSE(model()->mobile_node()->IsVisible());
+  } else {
+    EXPECT_FALSE(model()->bookmark_bar_node()->IsVisible());
+    EXPECT_FALSE(model()->other_node()->IsVisible());
+    EXPECT_TRUE(model()->mobile_node()->IsVisible());
+  }
 
   // Arbitrary node should be visible
   TestNode bbn;
@@ -1657,11 +1682,10 @@ TEST_F(BookmarkModelTest, NodeVisibility) {
 }
 
 TEST_F(BookmarkModelTest, NodeVisibility_AddBookmarkToNonVisibleFolder) {
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-  const BookmarkPermanentNode* permanent_folder = model()->other_node();
-#else
-  const BookmarkPermanentNode* permanent_folder = model()->mobile_node();
-#endif
+  const BookmarkPermanentNode* permanent_folder =
+      TestBookmarkClient::IsDesktopFormFactorByDefault()
+          ? model()->mobile_node()
+          : model()->other_node();
 
   // This permanent folder is not visible when empty.
   ASSERT_FALSE(permanent_folder->IsVisible());
@@ -1690,7 +1714,8 @@ TEST_F(BookmarkModelTest, NodeVisibility_AddBookmarkToNonVisibleFolder) {
   EXPECT_TRUE(permanent_folder->IsVisible());
 }
 
-#if !(BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS))
+#if !((BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_DESKTOP_ANDROID)) || \
+      BUILDFLAG(IS_IOS))
 TEST_F(BookmarkModelTest, NodeVisibility_AddFirstLocalBookmarkToOtherFolder) {
   model()->CreateAccountPermanentFolders();
 
@@ -1803,14 +1828,14 @@ TEST_F(BookmarkModelTest, NodeVisibility_AddFirstLocalBookmarkToMobileFolder) {
                   model()->mobile_node(), model()->account_bookmark_bar_node(),
                   model()->account_other_node()));
 }
-#endif  // !(BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS))
+#endif  // !((BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_DESKTOP_ANDROID)) ||
+        // BUILDFLAG(IS_IOS))
 
 TEST_F(BookmarkModelTest, NodeVisibility_RemoveLastBookmarkFromVisibleFolder) {
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-  const BookmarkPermanentNode* permanent_folder = model()->other_node();
-#else
-  const BookmarkPermanentNode* permanent_folder = model()->mobile_node();
-#endif
+  const BookmarkPermanentNode* permanent_folder =
+      TestBookmarkClient::IsDesktopFormFactorByDefault()
+          ? model()->mobile_node()
+          : model()->other_node();
 
   // This permanent folder is not visible when empty; visible when non-empty.
   ASSERT_FALSE(permanent_folder->IsVisible());
@@ -1842,7 +1867,8 @@ TEST_F(BookmarkModelTest, NodeVisibility_RemoveLastBookmarkFromVisibleFolder) {
   EXPECT_FALSE(permanent_folder->IsVisible());
 }
 
-#if !(BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS))
+#if !((BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_DESKTOP_ANDROID)) || \
+      BUILDFLAG(IS_IOS))
 TEST_F(BookmarkModelTest,
        NodeVisibility_MoveBookmarkChangesVisibilityOfSourceFolder) {
   const BookmarkPermanentNode* source_folder = model()->mobile_node();
@@ -2107,18 +2133,19 @@ TEST_F(BookmarkModelTest, NodeVisibility_RemoveAccountPermanentFolders) {
   model()->RemoveAccountPermanentFolders();
   EXPECT_THAT(GetVisiblePermanentNodes(), ElementsAre(local_bb, local_other));
 }
-#endif  // !(BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS))
+#endif  // !((BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_DESKTOP_ANDROID)) ||
+        // BUILDFLAG(IS_IOS))
 
 TEST_F(BookmarkModelTest, NodeVisibility_AllBookmarksPhase0) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeature(
       bookmarks::kAllBookmarksBaselineFolderVisibility);
   ResetModelWithClient(std::make_unique<TestBookmarkClientWithUndo>());
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-  EXPECT_FALSE(model()->bookmark_bar_node()->IsVisible());
-#else
-  EXPECT_TRUE(model()->bookmark_bar_node()->IsVisible());
-#endif
+  if (TestBookmarkClient::IsDesktopFormFactorByDefault()) {
+    EXPECT_TRUE(model()->bookmark_bar_node()->IsVisible());
+  } else {
+    EXPECT_FALSE(model()->bookmark_bar_node()->IsVisible());
+  }
 
   EXPECT_TRUE(model()->other_node()->IsVisible());
   // EXPECT_FALSE(model()->mobile_node()->IsVisible());
@@ -3101,11 +3128,11 @@ void AssertSameFileContent(const base::FilePath& unencrypted_file_path,
       base::ReadFileToString(encrypted_file_path, &encrypted_file_content));
 
   std::string decrypted_file_content;
-  base::test::TestFuture<os_crypt_async::Encryptor> future;
+  base::test::TestFuture<scoped_refptr<os_crypt_async::Encryptor>> future;
   client->GetEncryptor(future.GetCallback());
-  os_crypt_async::Encryptor encryptor = future.Take();
-  ASSERT_TRUE(
-      encryptor.DecryptString(encrypted_file_content, &decrypted_file_content));
+  scoped_refptr<os_crypt_async::Encryptor> encryptor = future.Take();
+  ASSERT_TRUE(encryptor->DecryptString(encrypted_file_content,
+                                       &decrypted_file_content));
 
   EXPECT_FALSE(file_content.empty());
   EXPECT_EQ(file_content, decrypted_file_content);
@@ -3157,7 +3184,7 @@ class BookmarkModelStorageWithSecondayFileTest
     return GetParam() == BookmarkEncryptionStage::kWriteBothReadPreferEncrypted;
   }
 
- private:
+ protected:
   std::unique_ptr<os_crypt_async::OSCryptAsync> os_crypt_async_ =
       os_crypt_async::GetTestOSCryptAsyncForTesting();
   base::test::ScopedFeatureList feature_list_;
@@ -3286,6 +3313,77 @@ TEST_P(BookmarkModelStorageWithSecondayFileTest,
   // Reload the model and verify that the secondary files is recreated.
   base::HistogramTester histogram_tester;
   model = CreateBookmarkModel();
+  model->Load(tmp_dir.GetPath());
+  test::WaitForBookmarkModelToLoad(model.get());
+  task_environment.FastForwardUntilNoTasksRemain();
+
+  histogram_tester.ExpectUniqueSample(
+      GetPrimaryHistogramName(
+          "Bookmarks.BookmarksFileLoadResult.LocalOrSyncable"),
+      metrics::BookmarksFileLoadResult::kSuccess,
+      /*expected_bucket_count=*/1);
+  histogram_tester.ExpectUniqueSample(
+      GetSecondaryHistogramName(
+          "Bookmarks.BookmarksFileLoadResult.LocalOrSyncable"),
+      metrics::BookmarksFileLoadResult::kFileMissing,
+      /*expected_bucket_count=*/1);
+  AssertSameFileContent(
+      tmp_dir.GetPath().Append(kLocalOrSyncableBookmarksFileName),
+      tmp_dir.GetPath().Append(kEncryptedLocalOrSyncableBookmarksFileName),
+      model->client());
+
+  histogram_tester.ExpectUniqueSample(
+      GetPrimaryHistogramName("Bookmarks.BookmarksFileLoadResult.Account"),
+      metrics::BookmarksFileLoadResult::kSuccess, /*expected_bucket_count=*/1);
+  histogram_tester.ExpectUniqueSample(
+      GetSecondaryHistogramName("Bookmarks.BookmarksFileLoadResult.Account"),
+      metrics::BookmarksFileLoadResult::kFileMissing,
+      /*expected_bucket_count=*/1);
+  AssertSameFileContent(
+      tmp_dir.GetPath().Append(kAccountBookmarksFileName),
+      tmp_dir.GetPath().Append(kEncryptedAccountBookmarksFileName),
+      model->client());
+
+  histogram_tester.ExpectTotalCount(
+      base::StrCat({"ImportantFile.WriteDuration",
+                    GetSecondaryBookmarkStorageHistogramSuffix()}),
+      /*expected_count=*/2);
+}
+
+TEST_P(BookmarkModelStorageWithSecondayFileTest,
+       SecondaryBookmarksFileIsCreatedOnLoadWithMetadataIfMissing) {
+  base::test::ScopedFeatureList features{
+      switches::kSyncEnableBookmarksInTransportMode};
+
+  // First create the local-or-syncable and account bookmarks primary files with
+  // some sync metadata and delete any secondary files.
+  base::ScopedTempDir tmp_dir;
+  ASSERT_TRUE(tmp_dir.CreateUniqueTempDir());
+  base::test::TaskEnvironment task_environment{
+      base::test::TaskEnvironment::TimeSource::MOCK_TIME};
+  auto client = std::make_unique<TestBookmarkClientWithFixedSyncMetadata>(
+      os_crypt_async_.get(), "local_or_syncable_metadata1",
+      "account_metadata1");
+  auto model = std::make_unique<BookmarkModel>(std::move(client));
+  model->Load(tmp_dir.GetPath());
+  test::WaitForBookmarkModelToLoad(model.get());
+  model->AddURL(model->bookmark_bar_node(), 0, u"Foo", GURL("http://foo.com"));
+  task_environment.FastForwardUntilNoTasksRemain();
+  model->CreateAccountPermanentFolders();
+  task_environment.FastForwardUntilNoTasksRemain();
+  // Delete the secondary files.
+  ASSERT_TRUE(base::DeleteFile(
+      tmp_dir.GetPath().Append(GetLocalOrSyncableSecondaryFilename())));
+  ASSERT_TRUE(base::DeleteFile(
+      tmp_dir.GetPath().Append(GetAccountSecondaryFilename())));
+
+  // Reload the model, force a different sync metadata for the next encoding,
+  // verify that the secondary files are recreated and match the primary files.
+  base::HistogramTester histogram_tester;
+  client = std::make_unique<TestBookmarkClientWithFixedSyncMetadata>(
+      os_crypt_async_.get(), "local_or_syncable_metadata2",
+      "account_metadata2");
+  model = std::make_unique<BookmarkModel>(std::move(client));
   model->Load(tmp_dir.GetPath());
   test::WaitForBookmarkModelToLoad(model.get());
   task_environment.FastForwardUntilNoTasksRemain();
@@ -3733,16 +3831,15 @@ TEST_F(BookmarkModelTest, IsVisible) {
   EXPECT_TRUE(model()->root_node()->IsVisible());
 
   // Check per-platform visibility of empty permanent nodes.
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-  EXPECT_FALSE(model()->bookmark_bar_node()->IsVisible());
-  EXPECT_FALSE(model()->other_node()->IsVisible());
-  EXPECT_TRUE(model()->mobile_node()->IsVisible());
-#else
-  EXPECT_TRUE(model()->bookmark_bar_node()->IsVisible());
-  EXPECT_TRUE(model()->other_node()->IsVisible());
-  EXPECT_FALSE(model()->mobile_node()->IsVisible());
-#endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-
+  if (TestBookmarkClient::IsDesktopFormFactorByDefault()) {
+    EXPECT_TRUE(model()->bookmark_bar_node()->IsVisible());
+    EXPECT_TRUE(model()->other_node()->IsVisible());
+    EXPECT_FALSE(model()->mobile_node()->IsVisible());
+  } else {
+    EXPECT_FALSE(model()->bookmark_bar_node()->IsVisible());
+    EXPECT_FALSE(model()->other_node()->IsVisible());
+    EXPECT_TRUE(model()->mobile_node()->IsVisible());
+  }
   // Create empty account folders.
   model()->CreateAccountPermanentFolders();
 
@@ -3752,38 +3849,38 @@ TEST_F(BookmarkModelTest, IsVisible) {
   EXPECT_FALSE(model()->bookmark_bar_node()->IsVisible());
   EXPECT_FALSE(model()->other_node()->IsVisible());
 
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-  EXPECT_TRUE(model()->mobile_node()->IsVisible());
-#else
-  EXPECT_FALSE(model()->mobile_node()->IsVisible());
-#endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+  if (TestBookmarkClient::IsDesktopFormFactorByDefault()) {
+    EXPECT_FALSE(model()->mobile_node()->IsVisible());
+  } else {
+    EXPECT_TRUE(model()->mobile_node()->IsVisible());
+  }
 
   // Check per-platform visibility of empty account permanent nodes.
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-  EXPECT_FALSE(model()->account_bookmark_bar_node()->IsVisible());
-  EXPECT_FALSE(model()->account_other_node()->IsVisible());
-  EXPECT_TRUE(model()->account_mobile_node()->IsVisible());
-#else
-  EXPECT_TRUE(model()->account_bookmark_bar_node()->IsVisible());
-  EXPECT_TRUE(model()->account_other_node()->IsVisible());
-  EXPECT_FALSE(model()->account_mobile_node()->IsVisible());
-#endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+  if (TestBookmarkClient::IsDesktopFormFactorByDefault()) {
+    EXPECT_TRUE(model()->account_bookmark_bar_node()->IsVisible());
+    EXPECT_TRUE(model()->account_other_node()->IsVisible());
+    EXPECT_FALSE(model()->account_mobile_node()->IsVisible());
+  } else {
+    EXPECT_FALSE(model()->account_bookmark_bar_node()->IsVisible());
+    EXPECT_FALSE(model()->account_other_node()->IsVisible());
+    EXPECT_TRUE(model()->account_mobile_node()->IsVisible());
+  }
 
   // Make the local bookmark bar node non-empty. Nodes that were previously
   // hidden because there were no local bookmarks are now visible.
   model()->AddURL(model()->bookmark_bar_node(), 0, u"Chromium",
                   GURL("http://www.chromium.org"));
   EXPECT_TRUE(model()->bookmark_bar_node()->IsVisible());
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
-  // On mobile, the other node is always hidden when empty and the mobile node
-  // is always visible (so there is no change as a result of the bookmark bar
-  // becoming non-empty).
-  EXPECT_FALSE(model()->other_node()->IsVisible());
-  EXPECT_TRUE(model()->mobile_node()->IsVisible());
-#else
-  // On desktop, the other node was previously hidden and is now visible.
-  EXPECT_TRUE(model()->other_node()->IsVisible());
-#endif
+  if (TestBookmarkClient::IsDesktopFormFactorByDefault()) {
+    // On desktop, the other node was previously hidden and is now visible.
+    EXPECT_TRUE(model()->other_node()->IsVisible());
+  } else {
+    // On mobile, the other node is always hidden when empty and the mobile node
+    // is always visible (so there is no change as a result of the bookmark bar
+    // becoming non-empty).
+    EXPECT_FALSE(model()->other_node()->IsVisible());
+    EXPECT_TRUE(model()->mobile_node()->IsVisible());
+  }
 
   // Make the account mobile node folder non-empty. It is now visible.
   model()->AddURL(model()->account_mobile_node(), 0, u"Chromium",

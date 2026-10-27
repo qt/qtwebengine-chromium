@@ -12,6 +12,7 @@
 #include <string_view>
 
 #include "base/i18n/base_i18n_export.h"
+#include "base/i18n/time_formatting_types.h"
 #include "build/build_config.h"
 #include "third_party/icu/source/common/unicode/uversion.h"
 
@@ -23,36 +24,6 @@ namespace base {
 
 class Time;
 class TimeDelta;
-
-// Argument type used to specify the hour clock type.
-enum HourClockType {
-  k12HourClock,  // Uses 1-12. e.g., "3:07 PM"
-  k24HourClock,  // Uses 0-23. e.g., "15:07"
-};
-
-// Argument type used to specify whether or not to include AM/PM sign.
-enum AmPmClockType {
-  kDropAmPm,  // Drops AM/PM sign. e.g., "3:07"
-  kKeepAmPm,  // Keeps AM/PM sign. e.g., "3:07 PM"
-};
-
-// Should match UMeasureFormatWidth in measfmt.h; replicated here to avoid
-// requiring third_party/icu dependencies with this file.
-enum DurationFormatWidth {
-  DURATION_WIDTH_WIDE,    // "3 hours, 7 minutes"
-  DURATION_WIDTH_SHORT,   // "3 hr, 7 min"
-  DURATION_WIDTH_NARROW,  // "3h 7m"
-  DURATION_WIDTH_NUMERIC  // "3:07"
-};
-
-// Date formats from third_party/icu/source/i18n/unicode/udat.h. Add more as
-// necessary.
-enum DateFormat {
-  // November 2007
-  DATE_FORMAT_YEAR_MONTH,
-  // Tuesday, 7 November
-  DATE_FORMAT_MONTH_WEEKDAY_DAY,
-};
 
 // Returns the time of day, e.g., "3:07 PM".
 BASE_I18N_EXPORT std::u16string TimeFormatTimeOfDay(const Time& time);
@@ -177,12 +148,6 @@ BASE_I18N_EXPORT std::string TimeFormatHTTP(const Time& time);
     TimeDelta time,
     DurationFormatWidth width,
     std::u16string* out);
-
-// Formats a date interval into various formats, e.g. "2 December - 4 December"
-// or "March 2016 - December 2016". See DateFormat for details.
-BASE_I18N_EXPORT std::u16string DateIntervalFormat(const Time& begin_time,
-                                                   const Time& end_time,
-                                                   DateFormat format);
 
 // Gets the hour clock type of the current locale. e.g.
 // k12HourClock (en-US).

@@ -438,7 +438,7 @@ impl Encoder {
                             &bit_depth_extension_metadata
                         }
                     }
-                    Recipe::BitDepthExtension12b4b => {
+                    Recipe::BitDepthExtension12b4b | Recipe::BitDepthExtension12b8bOverlap4b => {
                         if item.is_sato() {
                             &self.image_metadata
                         } else {

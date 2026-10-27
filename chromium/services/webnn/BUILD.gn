@@ -31,13 +31,15 @@ source_set("webnn_switches") {
   ]
 }
 
-component("webnn_service") {
-  defines = [ "IS_WEBNN_SERVICE_IMPL" ]
+source_set("webnn_service_base") {
+  visibility = [ ":*" ]
 
   sources = [
     "error.h",
-    "scoped_gpu_sequence.cc",
-    "scoped_gpu_sequence.h",
+    "gpu_task_scheduler.cc",
+    "gpu_task_scheduler.h",
+    "graph_builder_context.cc",
+    "graph_builder_context.h",
     "sequence_deleter.cc",
     "sequence_deleter.h",
     "webnn_constant_operand.cc",
@@ -46,6 +48,8 @@ component("webnn_service") {
     "webnn_context_impl.h",
     "webnn_context_provider_impl.cc",
     "webnn_context_provider_impl.h",
+    "webnn_context_provider_in_renderer.cc",
+    "webnn_context_provider_in_renderer.h",
     "webnn_graph_builder_impl.cc",
     "webnn_graph_builder_impl.h",
     "webnn_graph_impl.cc",
@@ -72,41 +76,61 @@ component("webnn_service") {
     "//third_party/tflite:buildflags",
   ]
 
-  if (is_win) {
-    sources += [
-      "dml/adapter.cc",
-      "dml/adapter.h",
-      "dml/command_queue.cc",
-      "dml/command_queue.h",
-      "dml/command_recorder.cc",
-      "dml/command_recorder.h",
-      "dml/context_impl_dml.cc",
-      "dml/context_impl_dml.h",
-      "dml/context_provider_dml.cc",
-      "dml/context_provider_dml.h",
-      "dml/error.h",
-      "dml/graph_builder_dml.cc",
-      "dml/graph_builder_dml.h",
-      "dml/graph_impl_dml.cc",
-      "dml/graph_impl_dml.h",
-      "dml/platform_functions.cc",
-      "dml/platform_functions.h",
-      "dml/tensor_desc.cc",
-      "dml/tensor_desc.h",
-      "dml/tensor_impl_dml.cc",
-      "dml/tensor_impl_dml.h",
-      "dml/utils.cc",
-      "dml/utils.h",
-    ]
+  if (build_tflite_with_xnnpack) {
     deps += [
-      "//third_party/fp16",
-      "//third_party/microsoft_dxheaders:dxguids",
-      "//ui/gl",
-      "//ui/gl/init",
+      "//third_party/pthreadpool",
+      "//third_party/xnnpack",
+    ]
+  }
+
+  if (is_win) {
+    deps += [ "//services/webnn/public/cpp:win" ]
+  }
+
+  configs += [ "//build/config/compiler:prevent_unsafe_narrowing" ]
+
+  defines = [ "IS_WEBNN_SERVICE_IMPL" ]
+}
+
+if (is_apple || webnn_use_tflite || webnn_use_litert) {
+  source_set("webnn_service_resource_management") {
+    visibility = [ ":*" ]
+
+    sources = [
+      "queueable_resource_state.h",
+      "queueable_resource_state_base.cc",
+      "queueable_resource_state_base.h",
+      "resource_task.cc",
+      "resource_task.h",
     ]
 
-    libs = [ "dxgi.lib" ]
+    deps = [ "//base" ]
+
+    configs += [ "//build/config/compiler:prevent_unsafe_narrowing" ]
+
+    defines = [ "IS_WEBNN_SERVICE_IMPL" ]
   }
+}
+
+component("webnn_service") {
+  defines = [ "IS_WEBNN_SERVICE_IMPL" ]
+
+  sources = []
+
+  public_deps = [ ":webnn_service_base" ]
+
+  deps = [
+    ":buildflags",
+    ":webnn_switches",
+    "//base",
+    "//gpu/command_buffer/service",
+    "//gpu/command_buffer/service:gles2",
+    "//gpu/config",
+    "//mojo/public/cpp/bindings",
+    "//services/viz/privileged/mojom/gl",
+    "//services/webnn/public/mojom",
+    "//third_party/tflite:buildflags",
+  ]
 
   if (is_apple) {
     sources += [
@@ -170,11 +194,10 @@ component("webnn_service") {
     ]
 
     if (webnn_use_litert) {
-      deps += [ "//third_party/litert" ]
-    }
-
-    if (build_tflite_with_xnnpack) {
-      deps += [ "//third_party/xnnpack" ]
+      deps += [
+        "//third_party/litert",
+        "//third_party/litert:buildflags",
+      ]
     }
 
     if (enable_ml_internal) {
@@ -184,6 +207,8 @@ component("webnn_service") {
 
   if (is_win) {
     sources += [
+      "ort/compiler_context_impl_ort.cc",
+      "ort/compiler_context_impl_ort.h",
       "ort/context_impl_ort.cc",
       "ort/context_impl_ort.h",
       "ort/context_provider_ort.cc",
@@ -213,13 +238,15 @@ component("webnn_service") {
       "ort/scoped_ort_types.h",
       "ort/tensor_impl_ort.cc",
       "ort/tensor_impl_ort.h",
+      "webnn_compiler_service_impl.cc",
+      "webnn_compiler_service_impl.h",
     ]
     deps += [
       "//services/webnn/public/cpp:win",
       "//third_party/windows_app_sdk_headers",
     ]
 
-    libs += [ "runtimeobject.lib" ]
+    libs = [ "runtimeobject.lib" ]
 
     # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
     # enable the diagnostic by removing this line.
@@ -227,13 +254,7 @@ component("webnn_service") {
   }
 
   if (is_apple || webnn_use_tflite || webnn_use_litert) {
-    sources += [
-      "queueable_resource_state.h",
-      "queueable_resource_state_base.cc",
-      "queueable_resource_state_base.h",
-      "resource_task.cc",
-      "resource_task.h",
-    ]
+    deps += [ ":webnn_service_resource_management" ]
   }
 }
 
@@ -255,6 +276,12 @@ source_set("webnn_test_support") {
     "//services/webnn/host",
     "//services/webnn/public/mojom",
   ]
+
+  public_deps = [ ":buildflags" ]
+
+  if (webnn_use_tflite || webnn_use_litert) {
+    deps += [ "//services/webnn/public/cpp:in_process_context_provider" ]
+  }
 
   if (is_win) {
     deps += [
@@ -312,34 +339,99 @@ source_set("tests") {
   }
 }
 
-test("webnn_graph_impl_fuzzer") {
-  sources = [
-    "webnn_graph_impl_fuzzer.cc",
-    "webnn_test_utils.cc",
-    "webnn_test_utils.h",
-  ]
+# TODO(crbug.com/500747202): Re-enable in debug builds when timeout issues is
+# fixed.
+if (!is_debug) {
+  test("webnn_graph_impl_fuzzer") {
+    sources = [
+      "webnn_graph_impl_fuzzer.cc",
+      "webnn_test_utils.cc",
+      "webnn_test_utils.h",
+    ]
 
-  fuzztests = [
-    "WebNNGraphImplFuzzer_CPU.SingleOpConv2d",
-    "WebNNGraphImplFuzzer_GPU.SingleOpConv2d",
-    "WebNNGraphImplFuzzer_NPU.SingleOpConv2d",
-    "WebNNGraphImplFuzzer_CPU.SingleOpPool2d",
-    "WebNNGraphImplFuzzer_GPU.SingleOpPool2d",
-    "WebNNGraphImplFuzzer_NPU.SingleOpPool2d",
-  ]
+    fuzztests = [
+      "CPU.Concat",
+      "CPU.Conv2d",
+      "CPU.ElementWiseBinary",
+      "CPU.Expand",
+      "CPU.GatherND",
+      "CPU.Gemm",
+      "CPU.Lstm",
+      "CPU.Pad",
+      "CPU.Pool2d",
+      "CPU.Reduce",
+      "CPU.Resample2d",
+      "CPU.ScatterElements",
+      "CPU.DQConcatQ",
+      "CPU.DQConv2dQ",
+      "CPU.DQElementWiseBinaryQ",
+      "CPU.DQGemmQ",
+      "CPU.DQPadQ",
+      "CPU.DQPool2dQ",
+      "CPU.DQReduceQ",
+      "CPU.DQResample2dQ",
+      "GPU.Concat",
+      "GPU.Conv2d",
+      "GPU.ElementWiseBinary",
+      "GPU.Expand",
+      "GPU.GatherND",
+      "GPU.Gemm",
+      "GPU.Lstm",
+      "GPU.Pad",
+      "GPU.Pool2d",
+      "GPU.Reduce",
+      "GPU.Resample2d",
+      "GPU.ScatterElements",
+      "GPU.DQConcatQ",
+      "GPU.DQConv2dQ",
+      "GPU.DQElementWiseBinaryQ",
+      "GPU.DQGemmQ",
+      "GPU.DQPadQ",
+      "GPU.DQPool2dQ",
+      "GPU.DQReduceQ",
+      "GPU.DQResample2dQ",
+      "NPU.Concat",
+      "NPU.Conv2d",
+      "NPU.ElementWiseBinary",
+      "NPU.Expand",
+      "NPU.GatherND",
+      "NPU.Gemm",
+      "NPU.Lstm",
+      "NPU.Pad",
+      "NPU.Pool2d",
+      "NPU.Reduce",
+      "NPU.Resample2d",
+      "NPU.ScatterElements",
+      "NPU.DQConcatQ",
+      "NPU.DQConv2dQ",
+      "NPU.DQElementWiseBinaryQ",
+      "NPU.DQGemmQ",
+      "NPU.DQPadQ",
+      "NPU.DQPool2dQ",
+      "NPU.DQReduceQ",
+      "NPU.DQResample2dQ",
+    ]
 
-  deps = [
-    ":webnn_service",
-    ":webnn_test_support",
-    "//base",
-    "//base/test:test_support",
-    "//mojo/core/embedder",
-    "//mojo/public/cpp/bindings",
-    "//services/webnn/public/cpp",
-    "//services/webnn/public/mojom",
-    "//testing/gtest",
-    "//third_party/fuzztest:fuzztest_gtest_main",
-  ]
+    deps = [
+      ":webnn_service",
+      ":webnn_test_support",
+      "//base",
+      "//base/test:test_support",
+      "//mojo/core/embedder",
+      "//mojo/public/cpp/bindings",
+      "//services/webnn/public/cpp",
+      "//services/webnn/public/mojom",
+      "//testing/gtest",
+      "//third_party/fp16",
+      "//third_party/fuzztest:fuzztest_gtest_main",
+    ]
+
+    # ASan inflates stack frames significantly, and the fuzzer deep call chain
+    # overflows the default 1MB stack on Windows. Set to 8MB instead.
+    if (is_win) {
+      ldflags = [ "/STACK:0x800000" ]
+    }
+  }
 }
 
 mojolpm_fuzzer_test("webnn_graph_mojolpm_textproto_fuzzer") {

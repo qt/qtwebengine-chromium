@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 Matrix2i m = Matrix2i::Random();
 cout << "Here is the matrix m:" << endl << m << endl;
 cout << "Here is the transpose of m:" << endl << m.transpose() << endl;

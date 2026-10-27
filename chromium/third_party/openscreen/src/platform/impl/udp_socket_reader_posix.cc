@@ -58,7 +58,7 @@ void UdpSocketReaderPosix::OnDestroy(UdpSocket* socket) {
 void UdpSocketReaderPosix::OnDelete(UdpSocketPosix* socket,
                                     bool disable_locking_for_testing) {
   {
-    std::unique_lock<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     auto it = std::find(sockets_.begin(), sockets_.end(), socket);
     if (it != sockets_.end()) {
       sockets_.erase(it);
@@ -71,6 +71,7 @@ void UdpSocketReaderPosix::OnDelete(UdpSocketPosix* socket,
 
 bool UdpSocketReaderPosix::IsMappedReadForTesting(
     UdpSocketPosix* socket) const {
+  std::lock_guard<std::mutex> lock(mutex_);
   return Contains(sockets_, socket);
 }
 

@@ -10,6 +10,7 @@
 
 #include "components/desktop_to_mobile_promos/features.h"
 #include "components/sync/base/data_type.h"
+#include "components/sync/protocol/device_info_specifics.pb.h"
 #include "components/sync_device_info/device_info.h"
 
 namespace syncer {
@@ -54,6 +55,14 @@ class DeviceInfoSyncClient {
   virtual bool GetDesktopToIOSPromoReceivingEnabled() const = 0;
   virtual MobilePromoOnDesktopPromoTypeSet GetDesktopToIOSPromoReceivingTypes()
       const = 0;
+
+  // Returns the local Glic experimental triggering opt-in state.
+  virtual DeviceInfo::GlicExperimentalTriggeringState
+  GetGlicExperimentalTriggeringState() const = 0;
+
+  // Returns the local Glic experimental triggering protocol version supported
+  // by the current client, or std::nullopt if unavailable.
+  virtual std::optional<int> GetGlicExperimentalTriggeringVersion() const = 0;
 };
 
 }  // namespace syncer

@@ -29,9 +29,8 @@ limitations under the License.
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "xla/pjrt/c/pjrt_c_api.h"
-#include "xla/pjrt/c/pjrt_c_api_helpers.h"
+#include "xla/pjrt/c/pjrt_c_api_status_utils.h"
 #include "xla/tsl/platform/errors.h"
-#include "tsl/platform/platform.h"
 
 #if !defined(PLATFORM_WINDOWS)
 #include <dlfcn.h>
@@ -112,6 +111,7 @@ absl::StatusOr<const PJRT_Api*> LoadPjrtPlugin(absl::string_view device_type,
   PjrtApiInitFn init_fn;
   *reinterpret_cast<void**>(&init_fn) = dlsym(library, "GetPjrtApi");
   if (init_fn == nullptr) {
+    dlclose(library);
     return absl::NotFoundError(
         absl::StrCat("GetPjrtApi not found in ", library_path));
   }

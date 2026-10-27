@@ -28,6 +28,10 @@ export const UIStrings = {
   fontColumn: 'Font',
   /** Column for the amount of time wasted. */
   wastedTimeColumn: 'Wasted time',
+  /**
+   * @description Message shown when no fonts with suboptimal font-display are found.
+   */
+  noFonts: 'No fonts with suboptimal font-display found',
 } as const;
 
 const str_ = i18n.i18n.registerUIStrings('models/trace/insights/FontDisplay.ts', UIStrings);

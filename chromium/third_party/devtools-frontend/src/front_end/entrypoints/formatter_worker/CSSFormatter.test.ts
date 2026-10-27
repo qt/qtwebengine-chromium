@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as FormatterWorker from './formatter_worker.js';
 
 function formatCSS(text: string): string {
@@ -145,7 +147,7 @@ article {
 `);
   });
 
-  it('formats import rule with media query correctly', () => {
+  it('formats keyframes rule correctly', () => {
     const formattedCode = formatCSS(
         'p{animation-duration:3s;}@keyframes slidein{from{margin-left:100%;width:300%;}to{margin-left:0%;width:100%;}}p{animation-name:slidein}');
     assert.strictEqual(formattedCode, `p {

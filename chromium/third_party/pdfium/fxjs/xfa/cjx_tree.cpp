@@ -41,7 +41,7 @@ CJS_Result CJX_Tree::resolveNode(CFXJSE_Engine* runtime,
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  WideString wsExpression = runtime->ToWideString(params[0]);
+  WideString wsExpression = runtime->ToWideStringReentrant(params[0]);
   CXFA_Object* pRefNode = GetXFAObject();
   if (pRefNode->GetElementType() == XFA_Element::Xfa) {
     pRefNode = runtime->GetThisObject();
@@ -92,9 +92,9 @@ CJS_Result CJX_Tree::resolveNodes(CFXJSE_Engine* runtime,
       XFA_ResolveFlag::kChildren, XFA_ResolveFlag::kAttributes,
       XFA_ResolveFlag::kProperties, XFA_ResolveFlag::kParent,
       XFA_ResolveFlag::kSiblings};
-  return CJS_Result::Success(ResolveNodeList(runtime->GetIsolate(),
-                                             runtime->ToWideString(params[0]),
-                                             kFlags, ToNode(refNode)));
+  return CJS_Result::Success(ResolveNodeList(
+      runtime->GetIsolate(), runtime->ToWideStringReentrant(params[0]), kFlags,
+      ToNode(refNode)));
 }
 
 void CJX_Tree::all(v8::Isolate* pIsolate,

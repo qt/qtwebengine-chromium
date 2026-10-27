@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_COST_MODEL_H
-#define EIGEN_CXX11_TENSOR_TENSOR_COST_MODEL_H
+#ifndef EIGEN_TENSOR_TENSOR_COST_MODEL_H
+#define EIGEN_TENSOR_TENSOR_COST_MODEL_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -60,6 +61,7 @@ class TensorOpCost {
   constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE double bytes_loaded() const { return bytes_loaded_; }
   constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE double bytes_stored() const { return bytes_stored_; }
   constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE double compute_cycles() const { return compute_cycles_; }
+  constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE double total_bytes() const { return bytes_loaded_ + bytes_stored_; }
   constexpr EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE double total_cost(double load_cost, double store_cost,
                                                                     double compute_cost) const {
     return load_cost * bytes_loaded_ + store_cost * bytes_stored_ + compute_cost * compute_cycles_;
@@ -126,15 +128,16 @@ class TensorOpCost {
   double compute_cycles_;
 };
 
-// TODO(rmlarsen): Implement a policy that chooses an "optimal" number of threads
-// in [1:max_threads] instead of just switching multi-threading off for small
-// work units.
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief A cost model used to limit the number of threads used for evaluating
  * tensor expression.
  *
+ * Uses a roofline model: cost = max(memory_time, compute_time) instead of
+ * summing them. This avoids overestimating cost for balanced workloads.
+ * Memory-bound operations are capped at a limited number of threads to
+ * avoid wasting cycles competing for shared memory bandwidth.
  */
 template <typename Device>
 class TensorCostModel {
@@ -142,21 +145,74 @@ class TensorCostModel {
   // Scaling from Eigen compute cost to device cycles.
   static constexpr int kDeviceCyclesPerComputeCycle = 1;
 
-  // Costs in device cycles.
-  static constexpr int kStartupCycles = 100000;
-  static constexpr int kPerThreadCycles = 100000;
+  // Thread overhead in device cycles. ~8us at 3GHz.
+  // Minimum total work to justify thread pool dispatch.
+  static constexpr int kStartupCycles = 25000;
+  // Minimum work per thread to amortize dispatch and synchronization overhead.
+  static constexpr int kPerThreadCycles = 25000;
   static constexpr int kTaskSize = 40000;
+
+  // Memory bandwidth saturation: on typical multi-socket servers, 2-6 cores
+  // saturate DRAM bandwidth. 4 is a conservative default.
+  static constexpr int kMemBandwidthSaturationThreads = 4;
+
+  // If memory_time / compute_time exceeds this ratio, the op is memory-bound.
+  // With vectorized costs (AVX2, PacketSize=8), typical ratios are:
+  //   Add/Mul (2 loads + 1 store): mem/comp = 6.0
+  //   FMA (3 loads + 1 store):     mem/comp = 4.0
+  //   ReLU max(x,0) (1 load + 1 store): mem/comp = 4.0
+  //   Polynomial 3rd-order (3 loads + 1 store, 6 ops): mem/comp = 1.3
+  //   Exp (1 load + 1 store, ~8 ops): mem/comp = 0.5
+  // Threshold of 2.0 cleanly separates memory-bound (>=4) from compute-bound.
+  static constexpr double kMemBoundThreshold = 2.0;
+
+  // Data sets larger than this are assumed to be DRAM-resident.
+  // Below this threshold, data is likely L2-cache-resident and benefits from
+  // high per-core L2 bandwidth, so no bandwidth saturation cap is applied.
+  static constexpr double kDramThresholdBytes = 1024.0 * 1024.0;
 
   // Returns the number of threads in [1:max_threads] to use for
   // evaluating an expression with the given output size and cost per
   // coefficient.
   static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE int numThreads(double output_size, const TensorOpCost& cost_per_coeff,
                                                               int max_threads) {
-    double cost = totalCost(output_size, cost_per_coeff);
-    double threads = (cost - kStartupCycles) / kPerThreadCycles + 0.9;
-    // Make sure we don't invoke undefined behavior when we convert to an int.
+    if (max_threads <= 1) return 1;
+
+    double mem = memoryTime(cost_per_coeff);
+    double comp = computeTime(cost_per_coeff);
+    double per_coeff = numext::maxi(mem, comp);
+    double total = output_size * per_coeff;
+
+    // Not enough total work to justify thread pool dispatch.
+    if (total < kStartupCycles) return 1;
+
+    // Each thread needs at least kPerThreadCycles of work to
+    // amortize dispatch and synchronization overhead.
+    double threads = total / kPerThreadCycles;
+    // Guard against integer overflow.
     threads = numext::mini<double>(threads, GenericNumTraits<int>::highest());
-    return numext::mini(max_threads, numext::maxi<int>(1, static_cast<int>(threads)));
+    int candidate = numext::mini(max_threads, numext::maxi<int>(1, static_cast<int>(threads)));
+
+    // Memory-bound ops on DRAM-resident data: cap at bandwidth saturation.
+    // Cache-resident data has high per-core L2 bandwidth, so no cap needed.
+    //
+    // The total-traffic proxy below overestimates the working set whenever an
+    // operand is reused (e.g. broadcasted): every output coefficient charges a
+    // fresh load, so a 1xN broadcast can show up as MxN bytes even though the
+    // live data is N. A working-set-aware estimate would need each evaluator to
+    // surface its unique-operand footprint; until that exists we accept a small
+    // bias toward over-capping for reuse-heavy expressions.
+    const int mem_bandwidth_saturation_threads = kMemBandwidthSaturationThreads;
+    if (candidate > mem_bandwidth_saturation_threads) {
+      bool is_memory_bound = (comp > 0) ? (mem / comp > kMemBoundThreshold) : (mem > 0);
+      if (is_memory_bound) {
+        double total_bytes = output_size * cost_per_coeff.total_bytes();
+        if (total_bytes > kDramThresholdBytes) {
+          candidate = numext::mini(candidate, mem_bandwidth_saturation_threads);
+        }
+      }
+    }
+    return candidate;
   }
 
   // taskSize assesses parallel task size.
@@ -166,24 +222,30 @@ class TensorCostModel {
     return totalCost(output_size, cost_per_coeff) / kTaskSize;
   }
 
+  // Roofline model: cost is the max of memory time and compute time.
   static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE double totalCost(double output_size,
                                                                 const TensorOpCost& cost_per_coeff) {
-    // Cost of memory fetches from L2 cache. 64 is typical cache line size.
-    // 11 is L2 cache latency on Haswell.
-    // We don't know whether data is in L1, L2 or L3. But we are most interested
-    // in single-threaded computational time around 100us-10ms (smaller time
-    // is too small for parallelization, larger time is not interesting
-    // either because we are probably using all available threads already).
-    // And for the target time range, L2 seems to be what matters. Data set
-    // fitting into L1 is too small to take noticeable time. Data set fitting
-    // only into L3 presumably will take more than 10ms to load and process.
-    const double kLoadCycles = 1.0 / 64 * 11;
-    const double kStoreCycles = 1.0 / 64 * 11;
-    // Scaling from Eigen compute cost to device cycles.
-    return output_size * cost_per_coeff.total_cost(kLoadCycles, kStoreCycles, kDeviceCyclesPerComputeCycle);
+    double mem_cost = memoryTime(cost_per_coeff);
+    double comp_cost = computeTime(cost_per_coeff);
+    return output_size * numext::maxi(mem_cost, comp_cost);
+  }
+
+ private:
+  // Effective sustained bandwidth cost in cycles/byte.
+  // ~1/16 = 0.0625 cycles/byte represents L3/DRAM streaming bandwidth
+  // on modern CPUs (~16 bytes/cycle single-core sustained throughput).
+  // For L1/L2-resident data, compute typically dominates anyway.
+  static constexpr double kByteCost = 1.0 / 16.0;
+
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE double memoryTime(const TensorOpCost& cost) {
+    return cost.total_bytes() * kByteCost;
+  }
+
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE double computeTime(const TensorOpCost& cost) {
+    return cost.compute_cycles() * kDeviceCyclesPerComputeCycle;
   }
 };
 
 }  // namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_COST_MODEL_H
+#endif  // EIGEN_TENSOR_TENSOR_COST_MODEL_H

@@ -315,6 +315,19 @@ class FindTestTargetsTest(TestCase):
                                                  ['foo.cc'])
       self.assertEqual(['chrome/test:unit_tests'], targets)
       mock_pick.assert_called_once()
+      self.assertEqual(mock_pick.call_args[0][0], None)
+
+  def test_target_ambiguity_prompt_gemini_cli(self):
+    self.mock_run_command.return_value = """
+//chrome/test:unit_tests
+//chrome/test:browser_tests
+"""
+    with mock.patch('utils.IsGeminiCli', return_value=True) as mock_pick:
+      orig_paths = ['foo.cc']
+      with self.assertRaises(SystemExit):
+        target_finder.FindTestTargets(self.mock_cache,
+                                      self.out_dir, ['foo.cc'],
+                                      orig_paths=orig_paths)
 
   def test_target_index(self):
     self.mock_run_command.return_value = """
@@ -500,6 +513,34 @@ class FindRelatedTestFilesTest(TestCase):
     results = file_finder._FindRelatedTestFiles('foo.cc', remote_search=True)
     self.assertEqual([test_file], results)
     self.mock_run_command.assert_not_called()
+
+
+class SearchForTestsByNameTest(TestCase):
+
+  def setUp(self):
+    super().setUp()
+    self.setUpPyfakefs()
+    self.mock_run_command = mock.patch('utils.command_util.RunCommand').start()
+    self.addCleanup(mock.patch.stopall)
+
+  def test_class_method_syntax(self):
+    test_file = 'FooTest.java'
+    self.fs.create_file(test_file,
+                        contents='class FooTest { @Test void foo() {} }')
+
+    # Mock RunCommand for ripgrep to return the file
+    self.mock_run_command.return_value = test_file
+
+    files, filter = file_finder.SearchForTestsByName(['FooTest#testMethod'],
+                                                     quiet=True,
+                                                     remote_search=False)
+
+    self.assertEqual([test_file], files)
+    self.assertEqual('FooTest#testMethod', filter)
+
+    called_args = self.mock_run_command.call_args[0][0]
+    self.assertIn('(\\bFooTest\\b)', called_args)
+
 
 if __name__ == '__main__':
   unittest.main()

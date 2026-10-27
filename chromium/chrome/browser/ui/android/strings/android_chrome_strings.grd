@@ -261,8 +261,8 @@ CHAR_LIMIT guidelines:
         Browser
       </message>
       <!-- TODO(crbug.com/489124317): Update translation. -->
-      <message name="IDS_NOTIFICATION_CATEGORY_ACTOR" desc="Label for actor-related notifications, within a list of notification categories. [CHAR_LIMIT=32]" translateable="false">
-        Actor
+      <message name="IDS_NOTIFICATION_CATEGORY_ACTOR" desc="Label for actor-related notifications, within a list of notification categories. [CHAR_LIMIT=32]">
+        Gemini in Chrome
       </message>
       <message name="IDS_NOTIFICATION_CATEGORY_SCREEN_CAPTURE" desc="Label for notifications shown when screen is sharing or recording, within a list of notification categories. [CHAR_LIMIT=32]">
         Screen Capture
@@ -349,15 +349,6 @@ CHAR_LIMIT guidelines:
         Link Chrome and other Google services for personalization and other purposes
       </message>
       <!-- Unified consent preferences -->
-      <message name="IDS_SIGN_OUT_AND_TURN_OFF_SYNC" desc="The text for a preferences row that for signs out the user and turns off sync.">
-        Sign out and turn off sync
-      </message>
-      <message name="IDS_TURN_OFF_SYNC" desc="The text for a preferences row that turns off sync without signing the user out.">
-        Turn off sync
-      </message>
-      <message name="IDS_SYNC_CATEGORY_TITLE" desc="Title for the group of Sync-related entries in Settings. This group contains preferences for data tied to user's Google Account.">
-        Sync
-      </message>
       <message name="IDS_PREFS_GOOGLE_SERVICES" desc="Title for the group of preferences that control non-personalized Google services. This group contains preferences for data that is not tied to user's Google Account. [CHAR_LIMIT=40]">
         Google services
       </message>
@@ -502,7 +493,7 @@ For more settings that use data to improve your Chrome experience, go to <ph nam
         Keyboard shortcut
       </message>
       <message name="IDS_SITE_SEARCH_KEYBOARD_SHORTCUT_DESCRIPTION" desc="Explanation for the 'Keyboard Shortcut' section.">
-        In the address bar, use this keyboard shortcut with shortcuts for search engines and site search
+        In the address bar, use this keyboard shortcut with shortcuts for search engines and site search.
       </message>
       <message name="IDS_SITE_SEARCH_KEYBOARD_SHORTCUT_SPACE_OR_TAB" desc="Label for the 'Space or Tab' keyboard shortcut option.">
         Space or Tab
@@ -553,9 +544,18 @@ For more settings that use data to improve your Chrome experience, go to <ph nam
         Extensions
       </message>
       <message name="IDS_SITE_SEARCH_EXTENSIONS_DESCRIPTION" desc="Explanation for 'Extensions' section">
-        Some extensions can add search engines to Chrome
+        Some extensions can add search engines to Chrome.
       </message>
       <if expr="enable_extensions_core">
+        <message name="IDS_EXTENSIONS_REQUEST_ACCESS_MESSAGE_TITLE_SINGLE_EXTENSION" desc="The title of the request access message banner that appears on the toolbar when an extension requests access to the site" formatter_data="android_java">
+          Allow extension "<ph name="EXTENSION_NAME">%1$s</ph>"?
+        </message>
+        <message name="IDS_EXTENSIONS_REQUEST_ACCESS_MESSAGE_DESCRIPTION_SINGLE_EXTENSION" desc="The description of the request access message banner for a single extension" formatter_data="android_java">
+          <ph name="WEBSITE">%1$s</ph> needs your permission to run <ph name="EXTENSION_NAME">%2$s</ph>
+        </message>
+        <message name="IDS_EXTENSIONS_REQUEST_ACCESS_MESSAGE_DESCRIPTION_MULTIPLE_EXTENSIONS" desc="The description of the request access message banner for multiple extensions" formatter_data="android_java">
+          <ph name="WEBSITE">%1$s</ph> needs your permission to run <ph name="COUNT">%2$s</ph> extensions
+        </message>
         <message name="IDS_SITE_SEARCH_EXTENSIONS_MENU_MANAGE" desc="Menu item to manage extensions">
           Manage
         </message>
@@ -2075,6 +2075,20 @@ Your Google account may have other forms of browsing history like searches and a
         Download not recommended by your organization
       </message>
 
+      <!-- Non-dangerous download -->
+      <message name="IDS_NON_DANGEROUS_DOWNLOAD_DIALOG_CONFIRM_TEXT" desc="Text label for the confirm button on the download dialog asking users to confirm the download.">
+        Download
+      </message>
+      <message name="IDS_NON_DANGEROUS_DOWNLOAD_DIALOG_TITLE" desc="Title of the download dialog asking users to confirm a downloaded file.">
+        Download from this site?
+      </message>
+      <message name="IDS_NON_DANGEROUS_DOWNLOAD_DIALOG_TEXT" desc="Warning message shown on the download dialog asking users to validate the downloaded file.">
+        Make sure you trust this site
+      </message>
+      <message name="IDS_NON_DANGEROUS_DOWNLOAD_DIALOG_TEXT_WITH_DOMAIN" desc="Warning message shown on the download dialog asking users to validate the downloaded file, including the domain of the download.">
+        Make sure you trust <ph name="DOWNLOAD_DOMAIN">^1<ex>badsite.com</ex></ph>
+      </message>
+
       <!-- Mixed content download -->
       <message name="IDS_INSECURE_DOWNLOAD_DIALOG_TITLE" desc="Title of the dialog for asking user to confirm an insecure download">
         File can’t be downloaded securely
@@ -2315,26 +2329,8 @@ Your Google account may have other forms of browsing history like searches and a
       </message>
 
       <!-- Sync strings in account management dialog -->
-      <message name="IDS_SYNC_ON" desc="The text is displayed as a gray subtitle of a settings item titled 'Sync' and indicates that sync is on.">
-        On
-      </message>
-      <message name="IDS_SYNC_OFF" desc="The text is displayed as a gray subtitle of a settings item titled 'Sync' and indicates that sync is off.">
-        Off
-      </message>
-      <message name="IDS_SYNC_DATA_TYPES_OFF" desc="Message to show when all sync data types are off">
-        No data selected to sync
-      </message>
-      <message name="IDS_SYNC_SETTINGS_NOT_CONFIRMED" desc="The error message to display when sign-in was interrupted and the user didn't review the sync settings.">
-        Tap to set up sync
-      </message>
-      <message name="IDS_SYNC_IS_DISABLED_BY_ADMINISTRATOR" desc="Message to show when Chrome sync is disabled by administrator">
-        Sync is disabled by your administrator
-      </message>
       <message name="IDS_SYNC_NEED_PASSPHRASE" desc="Error message when a passphrase is needed for decrypting sync data.">
         Passphrase required
-      </message>
-      <message name="IDS_SYNC_SETUP_PROGRESS" desc="Message indicating that sync setup is in progress">
-        Setup in progress…
       </message>
 
       <!-- Legal information preferences -->
@@ -2370,30 +2366,6 @@ Your Google account may have other forms of browsing history like searches and a
       </message>
 
       <!-- Sign-in strings -->
-      <message name="IDS_SIGNOUT_TITLE" desc="The text is displayed as the title of a dialog to confirm if the user wants to sign out of Chrome. The user can cancel and stay signed in, or confirm and sign out.">
-        Sign out of Chrome?
-      </message>
-      <message name="IDS_TURN_OFF_SYNC_AND_SIGNOUT_TITLE" desc="Title for sign out of Chrome dialog [CHAR_LIMIT=40]">
-        Sign out and turn off sync?
-      </message>
-      <message name="IDS_TURN_OFF_SYNC_TITLE" desc="Title for turn off sync dialog [CHAR_LIMIT=40]">
-        Turn off sync?
-      </message>
-      <message name="IDS_SIGNOUT_MANAGED_ACCOUNT_TITLE" desc="Title for sign out of Chrome dialog for enterprise account [CHAR_LIMIT=40]">
-        Delete your Chrome data from this device?
-      </message>
-      <message name="IDS_SIGNOUT_MESSAGE" desc="The text is displayed as the message of a dialog to confirm whether the user wants to sign out of Chrome. The dialog is titled ‘Sign out of Chrome?’. The user can cancel and stay signed in, or confirm and sign out.">
-        Some Chrome features won\u2019t be available anymore
-      </message>
-      <message name="IDS_TURN_OFF_SYNC_AND_SIGNOUT_MESSAGE_WITHOUT_PASSWORDS" desc="Message to display in 'Sign out and turn off sync?' dialog, without explicitly mentioning passwords. Similar to IDS_TURN_OFF_SYNC_AND_SIGNOUT_MESSAGE">
-        Your bookmarks, history, and other Chrome data will no longer be synced to your Google Account
-      </message>
-      <message name="IDS_REMOVE_LOCAL_DATA" desc="Checkbox to delete all existing data in local device storage">
-        Also delete your Chrome data from this device
-      </message>
-      <message name="IDS_SIGNOUT_MANAGED_ACCOUNT_MESSAGE" desc="Message to display for sign out of Chrome dialog when the account has enterprise management, and all user data will be erased">
-        Because you're signing out of an account managed by <ph name="DOMAIN_NAME">%1$s<ex>google.com</ex></ph>, your Chrome data will be deleted from this device. It will remain in your Google Account.
-      </message>
       <message name="IDS_SIGN_OUT_SNACKBAR_MESSAGE" desc="Snackbar message shown after signing out from account settings">
         Signed out. Sign back in to use the bookmarks, passwords and more in your account.
       </message>
@@ -2438,50 +2410,11 @@ Your Google account may have other forms of browsing history like searches and a
       <message name="IDS_RECENT_TABS_SYNC_PROMO_ENABLE_CHROME_SYNC" desc="Text that displayed in a textview encouraging the user to enable sync.">
         To get your tabs from your other devices, turn on sync.
       </message>
-      <message name="IDS_NTP_RECENT_TABS_SYNC_PROMO_INSTRUCTIONS" desc="Information about sync displayed on the NTP when the user has signed in on mobile but not on desktop">
-        Tabs that you've opened in Chrome on your other devices will appear here.
-      </message>
       <message name="IDS_RECENT_TABS_NO_TABS_EMPTY_STATE" desc="Text appearing on an empty recent tab page that indicates that recently closed tabs will appear here">
         You’ll find your recent tabs here
       </message>
       <message name="IDS_RECENT_TABS_SIGN_IN_ON_OTHER_DEVICES" desc="Text appearing on an empty recent tab page that indicates user can see tabs from other devices here">
         To see your tabs from wherever you use Chrome, sign in on all your devices
-      </message>
-      <message name="IDS_SYNC_EVERYTHING_PREF" desc="Title for preference which enables sync'ing of all data types. [CHAR_LIMIT=32]">
-        Sync everything
-      </message>
-      <message name="IDS_SYNC_AUTOFILL" desc="Title for preference which enables sync'ing of autofill. [CHAR_LIMIT=32]">
-        Addresses and more
-      </message>
-      <message name="IDS_SYNC_BOOKMARKS" desc="Title for preference which enables sync'ing of bookmarks. [CHAR_LIMIT=32]">
-        Bookmarks
-      </message>
-      <message name="IDS_SYNC_EXTENSIONS" desc="Title for preference which enables sync'ing of Chrome browser extensions. [CHAR_LIMIT=32]">
-        Extensions
-      </message>
-      <message name="IDS_SYNC_HISTORY" desc="Title for preference which enables sync'ing of history data. [CHAR_LIMIT=32]">
-        History
-      </message>
-      <message name="IDS_SYNC_PASSWORDS" desc="Title for preference which enables sync'ing of passwords. [CHAR_LIMIT=32]">
-        Passwords
-      </message>
-      <message name="IDS_SYNC_READING_LIST" desc="Title for preference which enables sync'ing of reading list. [CHAR_LIMIT=32]">
-        Reading list
-      </message>
-      <message name="IDS_SYNC_RECENT_TABS" desc="Title for preference which enables sync'ing of open tabs. [CHAR_LIMIT=32]">
-        Open tabs
-      </message>
-      <message name="IDS_SYNC_SETTINGS" desc="Title for preference which enables sync'ing of settings. [CHAR_LIMIT=32]">
-        Settings
-      </message>
-      <message name="IDS_SYNC_APPS" desc="Title for preference which enables sync'ing of WebAPKs. [CHAR_LIMIT=32]">
-        Apps
-      </message>
-      <message name="IDS_SYNC_PAYMENTS_INTEGRATION" desc="Title for preference which enables import of Google Pay data for Autofill. 'Google Pay' should not be translated as it is the product name.">
-        Payment methods, offers, and addresses using Google Pay
-      </message>
-      <message name="IDS_SYNC_PAYMENTS_AND_INFO_INTEGRATION" desc="Title for preference which enables import of Google Wallet data for Autofill. 'Google Wallet' should not be translated as it is the product name.">
-        Payment methods and other info from Google Wallet
       </message>
       <message name="IDS_ACCOUNT_SETTINGS_TITLE" desc="Title for the account settings page. [CHAR_LIMIT=32]">
         Account
@@ -2518,6 +2451,9 @@ Your Google account may have other forms of browsing history like searches and a
       </message>
       <message name="IDS_ACCOUNT_SECTION_SETTINGS_TOGGLE" desc="Settings, one of the data types that we allow syncing. Shown on next to the toggle that controls whether Settings should be saved in the Google Account and synced across devices.">
         Settings
+      </message>
+      <message name="IDS_ACCOUNT_SECTION_THEMES_TOGGLE" desc="Themes, one of the data types that we allow syncing. Shown on next to the toggle that controls whether Themes should be saved in the Google Account and synced across devices.">
+        Themes
       </message>
       <message name="IDS_ACCOUNT_SECTION_FOOTER" desc="Footer below a section with toggles to control which types of data users can use and save in their Google Account (as opposed to saving them only on the device).">
         When on, use and save data in your Google Account. When off, data is saved only to this device.
@@ -2618,9 +2554,6 @@ Your Google account may have other forms of browsing history like searches and a
           =1 {Item saved in your Google Account, <ph name="ACCOUNT_EMAIL">%1$s<ex>elisa.g.beckett@gmail.com</ex></ph>.}
           other {Items saved in your Google Account, <ph name="ACCOUNT_EMAIL">%1$s<ex>elisa.g.beckett@gmail.com</ex></ph>.}}
       </message>
-      <message name="IDS_SYNC_REVIEW_DATA" desc="Title for link to https://chrome.google.com/data Dashboard to manage sync data.">
-        Review your synced data
-      </message>
       <message name="IDS_SYNC_PASSPHRASE_TYPE_TITLE" desc="Title of sync passphrase type dialog. [CHAR_LIMIT=24]">
         Encryption
       </message>
@@ -2639,10 +2572,6 @@ Your Google account may have other forms of browsing history like searches and a
       <message name="IDS_SYNC_ENCRYPTION_CREATE_PASSPHRASE"  desc="The message displayed when the signed in user needs to enter its sync passphrase.">
         Payment methods and addresses won’t be encrypted. Browsing history from Chrome won’t sync.
 Only someone with your passphrase can read your encrypted data. The passphrase is not sent to or stored by Google. If you forget your passphrase or want to change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>clear the Chrome data in your account<ph name="END_LINK">END_LINK</ph>.
-      </message>
-      <message name="IDS_LEGACY_SYNC_ENCRYPTION_CREATE_PASSPHRASE" desc="Prompt user to create a custom sync password.">
-        Payment methods and addresses from Google Pay won’t be encrypted. Browsing history from Chrome won’t sync.
-Only someone with your passphrase can read your encrypted data. The passphrase is not sent to or stored by Google. If you forget your passphrase or want to change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome data in your account<ph name="END_LINK">END_LINK</ph>.
       </message>
       <message name="IDS_SYNC_ENTER_CUSTOM_PASSPHRASE_HINT" desc="Hint for the passphrase field when user is to type in a passphrase. [CHAR_LIMIT=30]">
         Passphrase
@@ -2696,90 +2625,18 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_BOOKMARK_SYNC_LIMIT_ERROR_DESCRIPTION" desc="Description for the error when the user has too many bookmarks and sync is paused.">
         To save bookmarks in your account, delete your unused bookmarks
       </message>
-      <message name="IDS_PASSWORD_SYNC_ERROR_SUMMARY" desc="Short message shown in various UIs (e.g. Sync Error Card body) to inform that passwords can't be synced (due to missing trusted vault keys). [CHAR_LIMIT=32]">
-        Password sync isn't working
-      </message>
       <message name="IDS_PASSWORD_SYNC_TRUSTED_VAULT_ERROR_TITLE" desc="Short message shown in various UIs (e.g. Sync Error Card body) to inform that passwords stored in the user's Google Account can't be synced to the device (due to missing trusted vault keys). The message prompts the user to fix this issue.">
         Get all your passwords
       </message>
-      <message name="IDS_SYNC_SETTINGS_NOT_CONFIRMED_TITLE" desc="Title of the error message shown when sync setup was not complete. [CHAR_LIMIT=60]">
-        Initial sync setup not finished
-      </message>
-      <message name="IDS_SYNC_NEEDS_VERIFICATION_TITLE" desc="Title of the error message shown when sync needs to verify the user.">
-        Sync needs to verify it's you
-      </message>
-      <message name="IDS_HINT_SYNC_AUTH_ERROR_MODERN" desc="Hint message to resolve sync auth error updated to align with the UPM error message.">
-        Sign back in to start sync
-      </message>
-      <message name="IDS_HINT_SYNC_RECOVERABILITY_DEGRADED_FOR_EVERYTHING" desc="Hint message to resolve sync degraded recoverability, for users that have not chosen to encrypt all sync data">
-        Make sure you can always access your sync data
-      </message>
-      <message name="IDS_HINT_SYNC_RECOVERABILITY_DEGRADED_FOR_PASSWORDS" desc="Hint message to resolve sync degraded recoverability, for users that have chosen to encrypt all sync data.">
-        Make sure you can always access your saved passwords
-      </message>
-      <message name="IDS_HINT_SYNC_RETRIEVE_KEYS_FOR_EVERYTHING" desc="Hint message to resolve sync encryption error, required to resume sync.">
-        To start sync, verify it's you
-      </message>
-      <message name="IDS_HINT_SYNC_RETRIEVE_KEYS_FOR_PASSWORDS" desc="Hint message to resolve sync encryption error, required to resume syncing passwords.">
-        To sync your passwords, verify it's you
-      </message>
       <message name="IDS_PASSWORD_SYNC_TRUSTED_VAULT_ERROR_HINT" desc="Hint message that explains a sync error: Passwords stored in the user's Google Account can't be synced to the device (due to missing trusted vault keys).">
          Verify it’s you to get all your passwords on this device
-      </message>
-      <message name="IDS_HINT_PASSPHRASE_REQUIRED" desc="Hint message to resolve passphrase required error.">
-        To start sync, enter your passphrase
-      </message>
-      <message name="IDS_HINT_SYNC_SETTINGS_NOT_CONFIRMED_DESCRIPTION" desc="The error message to display when sign-in was interrupted and the user didn't review the sync settings.">
-        Choose what to sync below
-      </message>
-      <message name="IDS_HINT_OTHER_SYNC_ERRORS" desc="Hint message to resolve sync errors not listed independently.">
-        Try signing in again
-      </message>
-      <message name="IDS_HINT_CLIENT_OUT_OF_DATE" desc="Hint message to resolve sync protocol error for out-of-date client.">
-        Update <ph name="PRODUCT_NAME">%1$s<ex>Chrome</ex></ph> to start sync
       </message>
       <message name="IDS_SYNC_ERROR_CARD_OUTDATED_GMS" desc="Error message to update Google Play services to continue syncing passwords.">
         To save and use new passwords in your Google Account, update Google Play services
       </message>
 
-      <!-- Sync error card button strings -->
-      <message name="IDS_CLIENT_OUT_OF_DATE_ERROR_CARD_BUTTON" desc="Button text for client out of date error in sync error cards.">
-          Update <ph name="PRODUCT_NAME">%1$s<ex>Chrome</ex></ph>
-      </message>
-      <message name="IDS_PASSPHRASE_REQUIRED_ERROR_CARD_BUTTON" desc="Button text for passphrase required error in sync error cards.">
-        Enter passphrase
-      </message>
       <message name="IDS_AUTH_ERROR_CARD_BUTTON" desc="Button text for auth error in sync error cards.">
         Sign in again
-      </message>
-      <message name="IDS_TRUSTED_VAULT_ERROR_CARD_BUTTON" desc="Button text for trusted vault error in sync error cards.">
-        Verify it's you
-      </message>
-
-      <!-- Sync error strings -->
-      <message name="IDS_SYNC_ERROR_GENERIC" desc="Sync error string for generic error. [CHAR_LIMIT=80]">
-        Sync has stopped working
-      </message>
-      <message name="IDS_SYNC_ERROR_GA" desc="Sync error string for when the needs to update the sign-in details [CHAR_LIMIT=80]">
-        Please update your sign-in details.
-      </message>
-      <message name="IDS_SYNC_ERROR_CONNECTION" desc="Sync error string for network connection. [CHAR_LIMIT=80]">
-        Could not connect to the sync server.
-      </message>
-      <message name="IDS_SYNC_ERROR_UPGRADE_CLIENT" desc="Sync error string for out-of-date client. [CHAR_LIMIT=80]">
-        <ph name="PRODUCT_NAME">%1$s<ex>Chrome</ex></ph> is out of date.
-      </message>
-      <message name="IDS_SYNC_ERROR_SERVICE_UNAVAILABLE" desc="Sync error string for service unavailable. [CHAR_LIMIT=80]">
-        The service is not available; try again later.
-      </message>
-      <message name="IDS_WIPING_PROFILE_DATA_TITLE" desc="Title for the progress dialog shown while profile data is being wiped after signing out of an enterprise account">
-        Deleting account data
-      </message>
-      <message name="IDS_WIPING_PROFILE_DATA_MESSAGE" desc="Message for the progress dialog shown while profile data is being wiped after signing out of an enterprise account">
-        Please wait…
-      </message>
-      <message name="IDS_SYNC_ERROR_OUTDATED_GMS" desc="Sync error string for the Sync row in the main menu, and also the title for the sync error card, in case Google Play services needs to be updated to continue syncing passwords.">
-        Update Google Play services
       </message>
 
       <!-- Identity error card message strings -->
@@ -2946,6 +2803,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
         Download
       </message>
 
+      <!-- Page-level App Menu items -->
       <message name="IDS_MENU_TRANSLATE" desc="Menu item for triggering a page translation. The word 'Translate' should match the translation in TC ID 1613971242435858090. [CHAR_LIMIT=27]">
         Translate…
       </message>
@@ -2961,11 +2819,23 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
         Listen to this page with AI
       </message>
 
+      <message name="IDS_MENU_SEARCH_TAB_WITH_GOOGLE_LENS" desc="Text for the Lens overlay item in the app menu. [CHAR_LIMIT=35]">
+        Search tab with Google Lens
+      </message>
       <message name="IDS_MENU_PRINT" desc="Menu item for printing the current page. [CHAR_LIMIT=27]">
         Print…
       </message>
       <message name="IDS_MENU_SHARE_PAGE" desc="Menu item for sharing the current page. [CHAR_LIMIT=27]">
         Share…
+      </message>
+      <message name="IDS_MENU_COPY_LINK" desc="Menu item for copying the link to the current page. [CHAR_LIMIT=27]">
+        Copy link
+      </message>
+      <message name="IDS_MENU_SEND_TO_DEVICES" desc="Menu item for sending the page to another device. [CHAR_LIMIT=27]">
+        Send to devices
+      </message>
+      <message name="IDS_MENU_QR_CODE" desc="Menu item for generating a QR Code for the current page. [CHAR_LIMIT=27]">
+        QR code
       </message>
       <message name="IDS_MENU_BACK_BUTTON_IPH_TEXT" desc="Message on the generic text buble to educate users on the menu back button">
         Open the menu to go back
@@ -3014,6 +2884,9 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <!-- ContextMenu -->
       <message name="IDS_CONTEXTMENU_SAVE_PAGE" desc="This string is shown in the context menu for saving the current page. [CHAR_LIMIT=30]">
         Download
+      </message>
+      <message name="IDS_CONTEXTMENU_SEARCH_TAB_WITH_GOOGLE_LENS" desc="Context sensitive menu item for deep linking into google lens. [CHAR_LIMIT=35]">
+        Search tab with Google Lens
       </message>
       <message name="IDS_CONTEXTMENU_SHARE_PAGE" desc="This string is shown in the context menu for sharing the current page. [CHAR_LIMIT=30]">
         Share
@@ -3098,6 +2971,12 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       </message>
       <message name="IDS_CONTEXTMENU_SAVE_VIDEO" desc="Context sensitive menu item for saving the selected video. [CHAR_LIMIT=30]">
         Download video
+      </message>
+      <message name="IDS_CONTEXTMENU_COPY_VIDEO_FRAME" desc="The context menu item to copy the current video frame as an image. [CHAR_LIMIT=30]">
+        Copy video frame
+      </message>
+      <message name="IDS_CONTEXTMENU_DOWNLOAD_VIDEO_FRAME" desc="The context menu item to download the current video frame as an image. [CHAR_LIMIT=30]">
+        Download video frame
       </message>
       <message name="IDS_CONTEXTMENU_PICTURE_IN_PICTURE" desc="The context menu item to enter picture-in-picture mode for a video. [CHAR_LIMIT=30]">
         Picture in Picture
@@ -3245,6 +3124,9 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_PAGE_INFO_CONNECTION_LOCAL_PDF" desc="Message to display in the page info bubble when viewing a local pdf page.">
         You're viewing a local file
       </message>
+      <message name="IDS_PAGE_INFO_NOT_SECURE_DESCRIPTION" desc="Descriptive text announced by screen readers when focusing the Omnibox on a site with a non-secure connection.">
+        Connection is not secure
+      </message>
 
 <message name="IDS_PAGE_INFO_IPH" desc="Message to in InProductHelp bubble to make users aware of changing permissions in PageInfo.">
         Change your site settings here
@@ -3391,36 +3273,6 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       </message>
       <message name="IDS_REMAINING_DURATION_ONE_SECOND" desc="Message to show remaining duration in 1 second">
         1 sec left
-      </message>
-      <message name="IDS_PROCEED_OMA_DOWNLOAD_MESSAGE" desc="A message within a modal dialog that confirms the user want to download an OMA DRM file.">
-        Proceed to download the content?
-      </message>
-      <message name="IDS_OPEN_URL_POST_OMA_DOWNLOAD" desc="A message within a modal dialog to confirm that the user want to open the url specified in the OMA download descriptor.">
-        Open the suggested URL specified in the downloaded content?
-      </message>
-      <message name="IDS_OMA_DOWNLOAD_INSUFFICIENT_MEMORY" desc="Error message displayed when there are not enough memory to download the OMA DRM content.">
-        Insufficient memory to download the selected content.
-      </message>
-      <message name="IDS_OMA_DOWNLOAD_NON_ACCEPTABLE_CONTENT" desc="Error message displayed when the device cannot open the OMA DRM content.">
-        Device cannot open the content to be downloaded.
-      </message>
-      <message name="IDS_OMA_DOWNLOAD_FAILED" desc="Error message displayed when the device cannot download the OMA request.">
-        An error occurred while downloading the content.
-      </message>
-      <message name="IDS_OMA_DOWNLOAD_NAME_LABEL" desc="A text label to display the name of the OMA download.">
-        Name:
-      </message>
-      <message name="IDS_OMA_DOWNLOAD_VENDOR_LABEL" desc="A text label to display the vendor of the OMA download.">
-        Vendor:
-      </message>
-      <message name="IDS_OMA_DOWNLOAD_SIZE_LABEL" desc="A text label to display the size of the OMA download.">
-        Size:
-      </message>
-      <message name="IDS_OMA_DOWNLOAD_TYPE_LABEL" desc="A text label to display the MIME tyoe of the OMA download.">
-        Type:
-      </message>
-      <message name="IDS_OMA_DOWNLOAD_DESCRIPTION_LABEL" desc="A text label to display the description of the OMA download.">
-        Description:
       </message>
       <message name="IDS_OPEN_DOWNLOADED_LABEL" desc="A text label on the snackbar widget to open the downloaded file.">
         Open
@@ -3719,6 +3571,29 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
         Getting your stuff\u2026
       </message>
 
+      <!-- Deep link signin flow strings -->
+      <message name="IDS_SIGNIN_DEEP_LINK_FLOW_ALREADY_SIGNED_IN_TOAST_MESSAGE" desc="Text of the toast shown when a user attempts to sign in to Chrome via deep link to a account that is already signed in.">
+        You stayed signed in as <ph name="NAME_OR_EMAIL">%1$s<ex>John</ex></ph>.
+      </message>
+      <message name="IDS_SIGNIN_DEEP_LINK_FLOW_SIGNIN_TITLE" desc="Title of the screen shown when an signed-out user starts a sigin flow with a signin deep link.">
+        Pick up where you left off
+      </message>
+      <message name="IDS_SIGNIN_DEEP_LINK_FLOW_SIGNIN_SUBTITLE" desc="Subtitle of the screen shown when an signed-out user starts a sigin flow with a signin deep link.">
+        You scanned a QR code to sign in to Chrome. Confirm that you want to get the passwords, bookmarks, and more from this profile.
+      </message>
+      <message name="IDS_SIGNIN_DEEP_LINK_FLOW_SIGNIN_DISMISS_BUTTON" desc="Text of the dismiss button shown on the screen displayed when an signed-out user starts a sigin flow with a signin deep link.">
+        Stay signed out
+      </message>
+      <message name="IDS_SIGNIN_DEEP_LINK_FLOW_SWITCH_ACCOUNT_TITLE" desc="Title of the screen shown when a signed-in user starts a sigin flow with a signin deep link.">
+        Switch accounts?
+      </message>
+      <message name="IDS_SIGNIN_DEEP_LINK_FLOW_SWITCH_ACCOUNT_SUBTITLE" desc="Subtitle of the screen shown when a signed-in user starts a sigin flow with a signin deep link.">
+        You’re signed in as <ph name="FROM_EMAIL">%1$s<ex>from@gmail.com</ex></ph>.\n\nTo continue from your computer, switch to <ph name="TO_EMAIL">%2$s<ex>to@gmail.com</ex></ph>. You’ll get the passwords, bookmarks, and more from this account.
+      </message>
+      <message name="IDS_SIGNIN_DEEP_LINK_FLOW_SWITCH_ACCOUNT_DISMISS_BUTTON" desc="Text of the dismiss button shown on the screen displayed when a signed-in user starts a sigin flow with a signin deep link.">
+        No thanks
+      </message>
+
       <!-- Account Signin Strings -->
       <message name="IDS_SIGNIN_ADD_ACCOUNT_TO_DEVICE" desc="Text for adding another Google Account to device in the web sign-in flow and account picker dialog, users will be asked to add an account to his device when this text is tapped">
         Add account to device
@@ -3864,6 +3739,17 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
         Not <ph name="EMAIL">%1$s<ex>john.doe@example.com</ex></ph>?
       </message>
 
+      <!-- Strings for Web Signin Loading Dialog -->
+      <message name="IDS_SIGNIN_WEB_SIGNIN_LOADING_DIALOG_TITLE" desc="Title of the web signin loading dialog. When users need to sign in to access a link the web signin loading dialog is shown while cookies are being minted before being redirected to the link. Pressing cancel stops the redirection.">
+      Signing in
+      </message>
+      <message name="IDS_SIGNIN_WEB_SIGNIN_LOADING_DIALOG_LOADING_TEXT" desc="Text shown next to the progress spinner of the web signin loading dialog. When users need to sign in to access a link the web signin loading dialog is shown while cookies are being minted before being redirected to the link. Pressing cancel stops the redirection.">
+      This may take a few seconds
+      </message>
+      <message name="IDS_SIGNIN_WEB_SIGNIN_LOADING_DIALOG_CANCEL_BUTTON" desc="String for the cancel button of the web signin loading dialog. When users need to sign in to access a link the web signin loading dialog is shown while cookies are being minted before being redirected to the link. Pressing cancel stops the redirection.">
+      Cancel
+      </message>
+
       <!-- Strings for Seamless Sign-in -->
       <message name="IDS_SIGNIN_PROMO_TITLE_NTP_SIGN_IN_AS_BUTTON" desc="This string is the headline of a card that appears when the user visits Chrome's new tab page; the user isn't signed in to Chrome. The line below this string is ether 'To get your passwords and more on all your devices, sign in to Chrome' or 'To get your passwords and more on all your devices, sign in to Chrome as john.doe@example.com'.">
         Your Chrome, everywhere
@@ -3936,6 +3822,15 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_SIGNIN_PROMO_DESCRIPTION_BOOKMARKS" desc="This string is the title of a card that appears when the user opens Chrome's bookmarks; the user is signed out of Chrome. The headline above this string is 'Get all your bookmarks'. There's no character limit but try to keep the translation under 120 characters." meaning="This message means that the user can get the bookmarks from their computer on their phone, and their phone's bookmarks on their computer. We want users to read this card and tap the 'Continue' button and sign-in. The tone should be inviting.">
         Sign in to get your bookmarks and more on all your devices
       </message>
+      <message name="IDS_SIGNIN_PROMO_TITLE_AUTOFILL_AND_PASSWORDS" desc="This string is the headline of a card that appears in the Autofill and Passwords settings; the user is signed out of Chrome. The line below this string is 'Sign in to get your passwords and more on all your devices'. [CHAR_LIMIT=70]">
+        Get all your saved info
+      </message>
+      <message name="IDS_SIGNIN_PROMO_DESCRIPTION_AUTOFILL_AND_PASSWORDS" desc="This string is the description of a card that appears in the Autofill and Passwords settings; the user is signed out of Chrome. The headline above this string is 'Get all your saved info'. We want users to read this card and tap the 'Sign-in' button and sign-in. The tone should be inviting.">
+        Sign in to get your passwords and more on all your devices
+      </message>
+      <message name="IDS_SIGNIN_PROMO_DESCRIPTION_AUTOFILL_AND_PASSWORDS_SEAMLESS" desc="This string is the description of a card that appears in the Autofill and Passwords settings; the user is signed out of Chrome. The headline above this string is 'Sign in to Chrome'.">
+        Get your passwords and more on all your devices
+      </message>
       <message name="IDS_SIGNIN_PROMO_TITLE_NTP_FEED_TOP_PROMO" desc="This string is the headline of a card that appears when the user visits Chrome's new tab page; the user isn't signed in to Chrome. The line below this string is 'Sign in to get content based on your interests'. [CHAR_LIMIT=70]">
         Get better content
       </message>
@@ -3956,9 +3851,6 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       </message>
       <message name="IDS_SIGNIN_PROMO_CHOOSE_ANOTHER_ACCOUNT" desc="Button that the user can press if they want to select a different account before signing in. This button is shown below 'Continue as Joe Doe' button that signs user in with default account.">
         Choose another account
-      </message>
-      <message name="IDS_SYNC_PROMO_TURN_ON_SYNC" desc="Button that the user can press if they want to turn on sync with this account.">
-        Turn on sync
       </message>
       <message name="IDS_SIGNIN_PROMO_TURN_ON" desc="Button to turn on sync for history and tabs">
         Turn on
@@ -4050,36 +3942,6 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_SYNCED_SET_UP_SNACKBAR_REMOVED_CONFIRMATION" desc="The message text for the snackbar shown after preferences have been removed (a redo button is available).">
         Removed your appearance preferences
       </message>
-      <message name="IDS_CORMORANT_CREATOR_CONTENT_UNAVAILABLE_ERROR_TITLE" desc="Creator page error title when the creator has no content available.">
-        Nothing to show yet
-      </message>
-      <message name="IDS_CORMORANT_CREATOR_CONTENT_UNAVAILABLE_ERROR_DESCRIPTION" desc="Creator page error description when the creator has no content available.">
-        You'll see content when it becomes available
-      </message>
-      <message name="IDS_CORMORANT_CREATOR_GENERAL_ERROR_TITLE" desc="Creator page general error title when something goes wrong.">
-        Something went wrong
-      </message>
-      <message name="IDS_CORMORANT_CREATOR_GENERAL_ERROR_DESCRIPTION" desc="Creator page general error description when something goes wrong.">
-        Try again later
-      </message>
-      <message name="IDS_CORMORANT_CREATOR_FOLLOW_SUCCESS_SNACKBAR" desc="Creator page snackbar messsage after successfully following a particular site.">
-        Following <ph name="SITE_NAME">%1$s<ex>Reuters</ex></ph>
-      </message>
-      <message name="IDS_CORMORANT_CREATOR_FOLLOW_FAILURE_SNACKBAR" desc="Creator page snackbar messsage after a failing to follow a particular site but the reason for the failure is unknown.">
-        Can’t follow. Something went wrong.
-      </message>
-      <message name="IDS_CORMORANT_CREATOR_UNFOLLOW_SUCCESS_SNACKBAR" desc="Creator page snackbar messsage after successfully unfollowing a particular site.">
-        Unfollowed <ph name="SITE_NAME">%1$s<ex>Reuters</ex></ph>
-      </message>
-      <message name="IDS_CORMORANT_CREATOR_UNFOLLOW_FAILURE_SNACKBAR" desc="Creator page snackbar messsage after a failing to unfollow a particular site but the reason for the failure is unknown.">
-        Can’t unfollow. Something went wrong.
-      </message>
-      <message name="IDS_CORMORANT_CREATOR_OFFLINE_FAILURE_SNACKBAR" desc="Creator page snackbar messsage after a user take a follow/unfollow action while offline.">
-        You’re offline. Check your internet connection and try again.
-      </message>
-      <message name="IDS_CORMORANT_CREATOR_PREVIEW" desc="Accessibility readout for the title of a Creator feed, informing the user that it's the preview of the feed content from a particular website.">
-        <ph name="SITE_NAME">%1$s<ex>Reuters</ex></ph> Preview
-      </message>
       <message name="IDS_FEED_MANAGE_ACTIVITY" desc="Menu item to manage my activity from the feed header overflow menu.">
         Activity
       </message>
@@ -4117,12 +3979,6 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_DISCOVER_NO_CARDS_INSTRUCTIONS" desc="Message body for the article feed on the New Tab Page. Instructs the user to come back later when new feed content is available. Please translate 'stories' to match its use in TC ID 792300740424433300. Also see TC ID 7331961212006720987 for the corresponding message in Discover.">Check back later for new stories</message>
       <message name="IDS_DISCOVER_CANT_REFRESH" desc="Message title for the article feed on the New Tab Page. Shown when feed content is not available because there is no internet connection. Please use the branded term for Discover, as listed under Product Names in the Google Glossary Manager (TC ID 1799975766543019278). Also see TC ID 6114827482740570724 for the corresponding message in Discover.">Can't refresh Discover</message>
       <message name="IDS_DISCOVER_CANT_REFRESH_INSTRUCTIONS" desc="Message body for the article feed on the New Tab Page. Instructs the user to wait and try to refresh the feed once the internet connection returns. Please translate 'stories' to match its use in TC ID 792300740424433300. Also see TC ID 6114827482740570724 for the corresponding message in Discover.">Check back later for new stories</message>
-      <message name="IDS_WEB_FEED_NO_CARDS_TITLE" desc="Message title for the user-customizable web feed on the New Tab Page. Shown when the user either has not followed any websites or when the user has followed some websites but the sites do not have any new articles.">
-        Keep up with your favorite sites
-      </message>
-      <message name="IDS_WEB_FEED_NO_CARDS_INSTRUCTIONS" desc="Message body for the user-customizable web feed on the New Tab Page. Shown when the user either has not followed any websites or when the user has followed some websites but the sites do not have any new articles. Instructs the user to follow more sites or check back later. Please translate 'Follow' (with capital F) to match its use in TC ID 4108314971463891922.">
-        To follow a site, go to the site, open the Chrome menu, and tap Follow.
-      </message>
       <message name="IDS_FEED_SWIPE_REFRESH_IPH" desc="In-product help that prompts the user to use pull-down gesture to refresh the feed content.">
         For new stories, pull down to refresh
       </message>
@@ -4229,12 +4085,6 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_ADAPTIVE_TOOLBAR_BUTTON_PREFERENCE_READ_ALOUD" desc="Title name for the read aloud option in the preference.">
         Listen to this page
       </message>
-      <message name="IDS_ADAPTIVE_TOOLBAR_BUTTON_PREFERENCE_PAGE_SUMMARY" desc="Title name for the page_summary option in the preference.">
-        Summarize this page
-      </message>
-      <message name="IDS_ADAPTIVE_TOOLBAR_BUTTON_PREFERENCE_PAGE_SUMMARY_DESCRIPTION" desc="Description for the page_summary option in the preference.">
-        Invokes AI Assistant
-      </message>
       <message name="IDS_ADAPTIVE_TOOLBAR_BUTTON_PREFERENCE_BASED_ON_YOUR_USAGE" desc="Title name for the based on your usage option in the preference.">
         Based on your usage
       </message>
@@ -4280,12 +4130,6 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_ADAPTIVE_TOOLBAR_BUTTON_VOICE_SEARCH_IPH_SETTINGS" desc="An in-product-help message for the voice search button referring to toolbar settings.">
         Quickly search with your voice. To edit this shortcut, go to Settings.
       </message>
-      <message name="IDS_ADAPTIVE_TOOLBAR_BUTTON_PAGE_SUMMARY_IPH" desc="An in-product-help message for the page summary button.">
-        Summarize page with AI
-      </message>
-      <message name="IDS_ADAPTIVE_TOOLBAR_BUTTON_REVIEW_PDF_IPH" desc="An in-product-help message for the review PDF button.">
-        Review PDF with AI
-      </message>
       <message name="IDS_ADAPTIVE_TOOLBAR_MENU_EDIT_SHORTCUT" desc="The menu option for opening adaptive toolbar settings.">
         Edit shortcut
       </message>
@@ -4300,9 +4144,6 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       </message>
       <message name="IDS_TOOLBAR_COPY_LINK" desc="The menu option for copying link in the address bar.">
         Copy link
-      </message>
-      <message name="IDS_AI_ASSISTANT_SERVICE_ERROR_TOAST" desc="Text to be shown in a toast when unable to invoke an AI assistant">
-        Couldn’t open AI assistant. Try again.
       </message>
 
       <!-- Main menu items -->
@@ -4351,8 +4192,8 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_MENU_DOWNLOAD" desc="Tooltip for the button to download the current web page. [CHAR_LIMIT=27]">
         Download
       </message>
-      <message name="IDS_MENU_SAVE_AND_PRINT" desc="Parent menu item for items related to saving and printing page">
-        Save and print
+      <message name="IDS_MENU_SAVE_AND_SHARE" desc="Parent menu item for items related to saving and sharing the page. [CHAR_LIMIT=27]">
+        Save and share
       </message>
       <message name="IDS_MENU_DOWNLOAD_PAGE" desc="Menu item for downloading the current web page. [CHAR_LIMIT=27]">
         Download page
@@ -4381,6 +4222,36 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_MENU_BOOKMARKS" desc="Menu item for opening the bookmarks page that contains all the user's bookmarks. [CHAR_LIMIT=27]">
         Bookmarks
       </message>
+      <message name="IDS_MENU_BOOKMARK_THIS_PAGE" desc="Menu item for adding the page to the bookmarks. [CHAR_LIMIT=27]">
+        Bookmark this page
+      </message>
+      <message name="IDS_MENU_SHOW_BOOKMARKS_BAR" desc="Menu item for showing the bookmarks bar. [CHAR_LIMIT=27]">
+        Show bookmarks bar
+      </message>
+      <message name="IDS_MENU_HIDE_BOOKMARKS_BAR" desc="Menu item for hiding the bookmarks bar. [CHAR_LIMIT=27]">
+        Hide bookmarks bar
+      </message>
+      <message name="IDS_MENU_READING_LIST" desc="Menu item for showing items related to reading list. [CHAR_LIMIT=27]">
+        Reading list
+      </message>
+      <message name="IDS_MENU_ADD_TO_READING_LIST" desc="Menu item for adding the current tab to the reading list. [CHAR_LIMIT=27]">
+        Add tab to reading list
+      </message>
+      <message name="IDS_MENU_SHOW_READING_LIST" desc="Menu item for showing the reading list. [CHAR_LIMIT=27]">
+        Show reading list
+      </message>
+      <message name="IDS_MENU_MOBILE_BOOKMARKS" desc="Menu item for showing bookmarks stored in 'Mobile bookmarks'. [CHAR_LIMIT=27]">
+        Mobile bookmarks
+      </message>
+      <message name="IDS_MENU_OTHER_BOOKMARKS" desc="Menu item for showing bookmarks stored in 'Other bookmarks'. [CHAR_LIMIT=27]">
+        Other bookmarks
+      </message>
+      <message name="IDS_MENU_TAB_GROUPS" desc="Menu item for showing items related to tab groups. [CHAR_LIMIT=27]">
+        Tab groups
+      </message>
+      <message name="IDS_MENU_CREATE_NEW_TAB_GROUP" desc="Menu item for creating a new tab group. [CHAR_LIMIT=27]">
+        Create new tab group
+      </message>
       <message name="IDS_MENU_RECENT_TABS" desc="Menu item for opening the 'Recent tabs' page that shows recently closed tabs and pages the user has opened on his/her other devices. [CHAR_LIMIT=27]">
         Recent tabs
       </message>
@@ -4399,6 +4270,18 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_CHROME_HISTORY" desc="Menu item for opening the CCT history page. [CHAR_LIMIT=27]">
         Chrome history
       </message>
+      <message name="IDS_MENU_PASSWORDS_AND_AUTOFILL" desc="Menu item for showing menus related to passwords and autofill. [CHAR_LIMIT=27]">
+        Passwords and autofill
+      </message>
+      <message name="IDS_MENU_PAYMENT_METHODS" desc="Menu item for showing the payments page. [CHAR_LIMIT=27]">
+        Payment methods
+      </message>
+      <message name="IDS_MENU_ADDRESSES_AND_MORE" desc="Menu item for showing the 'Addresses and more' page. [CHAR_LIMIT=27]">
+        Addresses and more
+      </message>
+      <message name="IDS_MENU_GOOGLE_PASSWORD_MANAGER" desc="Menu item for opening the password manager. [CHAR_LIMIT=27]">
+        Google Password Manager
+      </message>
       <message name="IDS_MENU_HISTORY" desc="Menu item for opening the history page. [CHAR_LIMIT=27]">
         History
       </message>
@@ -4416,20 +4299,6 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       </message>
       <message name="IDS_MENU_FIND_IN_PAGE" desc="Menu item allowing users to find text within the current page. [CHAR_LIMIT=27]">
         Find in page
-      </message>
-      <message name="IDS_MENU_FOLLOW" desc="Menu item allowing users to follow the current website. [CHAR_LIMIT=27]">
-        Follow
-      </message>
-      <message name="IDS_MENU_FOLLOWING"
-        meaning="Toggle button text for something that is being followed."
-        desc="Menu item indicating the current website is followed, allowing users to unfollow the current website. [CHAR_LIMIT=27]">
-        Following
-      </message>
-      <message name="IDS_FOLLOW_ACCELERATOR" desc="IPH text for letting a user know that a website can be followed with minimal context. [CHAR_LIMIT=50]">
-        Follow this site here
-      </message>
-      <message name="IDS_ACCESSIBILITY_FOLLOW_ACCELERATOR_IPH" desc="In-product help that points at the menu icon for the news feed on Chrome's new tab page. This string informs the user about the  following feature.">
-        Adds the current web site to the list of web sites that you are following.
       </message>
       <message name="IDS_MENU_PAINT_PREVIEW_SHOW" desc="Menu item allowing users to capture and show a paint preview of a page. [CHAR_LIMIT=27]" translateable="false">
         Show Paint Preview
@@ -4490,10 +4359,10 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_MENU_STOP_IMAGE_DESCRIPTIONS" desc="Menu item to stop getting alt text accessibility image labels/descriptions [CHAR_LIMIT=27]">
         Stop image descriptions
       </message>
-      <message name="IDS_MENU_ADD_TAB_TO_GROUP" desc="Menu item for adding a tab to a tab group.">
+      <message name="IDS_MENU_ADD_TAB_TO_GROUP" desc="Menu item for adding a tab to a tab group. [CHAR_LIMIT=27]">
         Add tab to group
       </message>
-      <message name="IDS_MENU_ADD_TAB_TO_NEW_GROUP" desc="Menu item for adding a tab to a new tab group.">
+      <message name="IDS_MENU_ADD_TAB_TO_NEW_GROUP" desc="Menu item for adding a tab to a new tab group. [CHAR_LIMIT=27]">
         Add tab to new group
       </message>
       <message name="IDS_MENU_MOVE_TAB_TO_GROUP" desc="Menu item for moving a tab to another group.">
@@ -4501,12 +4370,6 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       </message>
       <message name="IDS_MENU_OPEN_WITH" desc="Menu item to open the content with another app.">
         Open with…
-      </message>
-      <message name="IDS_MENU_SUMMARIZE_WITH_AI" desc="Menu item to summarize a page with AI.">
-        Summarize with AI
-      </message>
-      <message name="IDS_MENU_REVIEW_PDF_WITH_AI" desc="Menu item to review a PDF file with AI.">
-        Review PDF with AI
       </message>
       <message name="IDS_MENU_ITEM_CONTENT_FILTER_HELP_CENTER_LINK" desc="Menu item to explain that the content filter is on and to direct the user to the help center article about content filters. Only available when the content filter is on.">
         Content filter is on
@@ -4525,6 +4388,18 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       </message>
       <message name="IDS_MENU_BOOKMARK_ALL_TABS" desc="Menu item for bookmarking all tabs.">
         Bookmark all tabs
+      </message>
+      <message name="IDS_MENU_ABOUT_CHROME" desc="Menu item for opening the 'About Chrome' page in the settings. [CHAR_LIMIT=27]">
+        About Chrome
+      </message>
+      <message name="IDS_MENU_HELP_CENTER" desc="Menu item for opening the help center. [CHAR_LIMIT=27]">
+        Help center
+      </message>
+      <message name="IDS_MENU_REPORT_ISSUE" desc="Menu item for reporting an issue. [CHAR_LIMIT=27]">
+        Report an issue...
+      </message>
+      <message name="IDS_MENU_EMPTY_SUBMENU" desc="Menu item to show when a folder doesn't contain any items.">
+        (empty)
       </message>
 
       <!-- Bookmarks strings -->
@@ -4846,8 +4721,11 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_READING_LIST_UNREAD" desc="The header for the unread section in the reading list UI.">
         Unread - Available offline
       </message>
-      <message name="IDS_READING_LIST_SAVED" desc="App-based message shown after user adds a new link to the reading list. [CHAR_LIMIT=32]">
+      <message name="IDS_READING_LIST_SAVED" desc="App-based message shown after user adds a new link to the reading list.">
         Added to reading list
+      </message>
+      <message name="IDS_READING_LIST_SAVED_PLURAL" desc="App-based message shown after user adds multiple links to the reading list.">
+        Pages added to reading list
       </message>
       <message name="IDS_READING_LIST_MARK_AS_READ" desc="The text for the action to mark the reading list as read.">
         Mark as read
@@ -4997,6 +4875,27 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_PDF_PAGE_DOWNLOAD_IPH_TEXT" desc="Text shown in the text bubble to inform users about the option to download a PDF when the PDF document is opened in Chrome.">
         You can download PDFs here
       </message>
+      <message name="IDS_PDF_TWO_PAGE_VIEW" desc="Menu option to enable two-page view in PDF.">
+        Two-page view
+      </message>
+      <message name="IDS_PDF_SINGLE_PAGE_VIEW" desc="Menu option to enable single page view in PDF.">
+        Single-page view
+      </message>
+      <message name="IDS_PDF_DOCUMENT_PROPERTIES" desc="Menu option to view PDF document properties.">
+        Document properties
+      </message>
+      <message name="IDS_PDF_DOWNLOAD" desc="Menu option to download the PDF document.">
+        Download
+      </message>
+      <message name="IDS_PDF_ROTATE" desc="Menu option to rotate the PDF document.">
+        Rotate
+      </message>
+      <message name="IDS_PDF_FIT_HEIGHT" desc="Menu option to fit the PDF page height to the screen.">
+        Fit to height
+      </message>
+      <message name="IDS_PDF_FIT_WIDTH" desc="Menu option to fit the PDF page width to the screen.">
+        Fit to width
+      </message>
 
       <!-- Accessibility -->
 
@@ -5086,12 +4985,6 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_ACCESSIBILITY_FIND_TOOLBAR_BTN_PREV" desc="Content description for the button to go to the previous find in page result.">
         Previous
       </message>
-
-      <if expr="enable_extensions_core">
-        <message name="IDS_ACCESSIBILITY_BTN_EXTENSIONS" desc="Content description for the extension button.">
-          Extensions
-        </message>
-      </if>
 
       <!-- Accessibility strings for tablet tab strip -->
       <message name="IDS_ACCESSIBILITY_TABSTRIP_BTN_INCOGNITO_TOGGLE_STANDARD" desc="Content description for the Incognito tabs toggle button when viewing standard tabs.">
@@ -5377,9 +5270,6 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_ACCESSIBILITY_OMNIBOX_SUGGESTED_ITEMS" desc="Announcement about the presence and volume of suggestions below the Omnibox.">
         <ph name="SUGGESTIONS_COUNT">%d<ex>12</ex></ph> suggested items in list below.
       </message>
-      <message name="IDS_ACCESSIBILITY_OMNIBOX_SUGGESTED_ITEMS_ABOVE" desc="Announcement about the presence and volume of suggestions below the Omnibox.">
-        <ph name="SUGGESTIONS_COUNT">%d<ex>12</ex></ph> suggested items in list above.
-      </message>
       <message name="IDS_ACCESSIBILITY_OMNIBOX_MOST_VISITED_TILE_SEARCH" desc="Announces that interacting with a Tile executes a specific search query.">
         Search: <ph name="SEARCH_QUERY">%s<ex>Weather in San Francisco</ex></ph>
       </message>
@@ -5395,11 +5285,11 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_ACCESSIBILITY_OMNIBOX_REMOVE_SUGGESTION" desc="Accessibility announcement when the close button for the suggestion is clicked.">
         Remove suggestion
       </message>
-      <message name="IDS_ACCESSIBILITY_OMNIBOX_OPEN_OR_CLOSE_CONTEXT_POPUP" desc="Accessibility announcement when the 'Add context' button in the omnibox is highlighted.">
-        Open or Close the context popup
+      <message name="IDS_ACCESSIBILITY_OMNIBOX_OPEN_CONTEXT_POPUP" desc="Accessibility announcement when the 'Add context' button in the omnibox is highlighted.">
+        Open the context popup
       </message>
-      <message name="IDS_ACCESSIBILITY_OMNIBOX_ENABLE_AI_MODE" desc="Accessibility announcement when the 'AI Mode' option in the Omnibox 'Add context' popup is highlighted.">
-        Enable AI Mode
+      <message name="IDS_ACCESSIBILITY_OMNIBOX_CONTEXT_POPUP_TITLE" desc="Accessibility description for the 'Add context' popup.">
+        Context popup window
       </message>
       <message name="IDS_ACCESSIBILITY_OMNIBOX_RESET_MODE" desc="Accessibility announcement when the 'Reset mode' button in the omnibox is highlighted.">
         Reset current mode <ph name="MODE_NAME">%1$s<ex>AI Mode</ex></ph> to Search
@@ -5415,9 +5305,6 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       </message>
       <message name="IDS_ACCESSIBILITY_OMNIBOX_ADD_TABS" desc="Accessibility announcement when the 'Tabs' option in the Omnibox 'Add context' popup is highlighted.">
         Attach tabs
-      </message>
-      <message name="IDS_ACCESSIBILITY_OMNIBOX_CREATE_IMAGE" desc="Accessibility announcement when the 'Create Image' option in the Omnibox 'Add context' popup is highlighted.">
-        Create image
       </message>
 
       <message name="IDS_ACCESSIBILITY_SHARE_SELECTED_ITEMS" desc="Content description for the button to share selected items. [ICU Syntax]">
@@ -5503,8 +5390,8 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_PRINT_SHARE_ACTIVITY_TITLE" desc="Title of the Print Share activity that will appear in the Android share dialog.">
         Print
       </message>
-      <message name="IDS_SEND_TAB_TO_SELF_SHARE_ACTIVITY_TITLE" desc="Title of the Send Tab To Self Share activity that will appear in the Android share dialog.">
-        Send to your devices
+      <message name="IDS_SEND_TAB_TO_SELF_CONTEXT_MENU_TITLE" desc="Title of the Send Tab To Self option in the tab context menu.">
+        Send to your device
       </message>
 
       <!-- Omnibox Suggestions -->
@@ -5580,6 +5467,17 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       </message>
       <message name="IDS_MAX_NUMBER_OF_WINDOWS_INSTANCE_SWITCHER_INACTIVE_TAB" desc="Message to notify the user thata window cannot be restored because the total number of persisted instances exceeds the window limit.">
         To restore a new window, reduce the total number of active windows to <ph name="MAX_WINDOW_COUNT_MINUS_ONE">%1$d</ph> or fewer. Inactive windows are deleted after 6 months.
+      </message>
+      <message name="IDS_CRASH_RECOVERY_DIALOG_TITLE" desc="Title of the crash recovery dialog that prompts the user to restore windows that were active during a crash.">
+        Restore all windows?
+      </message>
+      <message name="IDS_CRASH_RECOVERY_DIALOG_MESSAGE" desc="Message on the crash recovery dialog that prompts the user to restore windows that were active during a crash.">
+        Chrome didn’t shut down correctly and can try to restore your lost windows and tabs. Some windows may be minimized when restored.
+      </message>
+      <message name="IDS_CRASH_RECOVERY_DIALOG_POSITIVE_BUTTON_TEXT" desc="Positive button text on the crash recovery dialog. [ICU Syntax]">
+        {NUM_WINDOWS, plural,
+          =1 {Restore 1 window}
+          other {Restore # windows}}
       </message>
       <message name="IDS_TAB_DROPPED_DIFFERENT_MODEL" desc="Toast that appears when a tab is dropped into tab strip with a different profile (regular v.s. incognito).">
         You can find all open tabs in the tab switcher
@@ -5676,59 +5574,6 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       </message>
       <message name="IDS_GOOGLE_BOTTOM_BAR_SEARCHBOX_LENS_NOT_ENABLED_TOOLTIP_MESSAGE" desc="Tooltip message when lens button is not enabled">
       Lens is not available on this account.
-      </message>
-
-      <!-- WebFeed -->
-      <message name="IDS_WEB_FEED_FOLLOW_LOADING_DESCRIPTION" desc="The content description of the loading spinner after the user presses Follow and is waiting for a response.">
-        Following...
-      </message>
-      <message name="IDS_WEB_FEED_FOLLOW_SUCCESS_SNACKBAR_MESSAGE" desc="The snackbar message after a successful Web Feed follow request.">
-        Following <ph name="SITE_NAME">%1$s<ex>Reuters</ex></ph>
-      </message>
-      <message name="IDS_WEB_FEED_FOLLOW_SUCCESS_SNACKBAR_ACTION_GO_TO_FOLLOWING" desc="The snackbar action after a successful Web Feed follow request, that will take the user to the Following feed.">
-        Go to Following
-      </message>
-      <message name="IDS_WEB_FEED_FOLLOW_SUCCESS_SNACKBAR_ACTION_REFRESH" desc="The snackbar action after a successful Web Feed follow request, that will refresh the Following feed contents. [CHAR_LIMIT=20]">
-        Refresh
-      </message>
-      <message name="IDS_WEB_FEED_FOLLOW_GENERIC_FAILURE_SNACKBAR_MESSAGE" desc="The generic snackbar message after an unsuccessful Web Feed follow request.">
-        Can’t follow. Something went wrong.
-      </message>
-      <message name="IDS_WEB_FEED_UNFOLLOW_GENERIC_FAILURE_SNACKBAR_MESSAGE" desc="The generic snackbar message after an unsuccessful Web Feed unfollow request.">
-        Can’t unfollow. Something went wrong.
-      </message>
-      <message name="IDS_WEB_FEED_OFFLINE_FAILURE_SNACKBAR_MESSAGE" desc="The failure snackbar message after an unsuccessful Web Feed follow or unfollow request due to being offline.">
-        You're offline. Check your internet connection and try again.
-      </message>
-      <message name="IDS_WEB_FEED_GENERIC_FAILURE_SNACKBAR_ACTION" desc="The snackbar action after an unsuccessful Web Feed follow or unfollow request.">
-        Try again
-      </message>
-      <message name="IDS_WEB_FEED_UNFOLLOW_SUCCESS_SNACKBAR_MESSAGE" desc="The snackbar message after a successful Web Feed unfollow request.">
-        Unfollowed <ph name="SITE_NAME">%1$s<ex>Reuters</ex></ph>
-      </message>
-      <message name="IDS_WEB_FEED_UNFOLLOW_SUCCESS_SNACKBAR_ACTION" desc="The snackbar action after a successful Web Feed unfollow request.">
-        Refollow
-      </message>
-      <message name="IDS_WEB_FEED_POST_FOLLOW_DIALOG_TITLE" desc="The title of the dialog presented a few times after a successful Web Feed follow request.">
-        You’re following <ph name="SITE_NAME">%1$s<ex>Reuters</ex></ph>
-      </message>
-      <message name="IDS_WEB_FEED_POST_FOLLOW_DIALOG_STORIES_READY_DESCRIPTION" desc="The body text of the dialog presented a few times after a successful Web Feed follow request, when content from that Web Feed is immediately available. Please use the branded term for Discover, as listed under Product Names in the Google Glossary Manager (TC ID 1799975766543019278).">
-        You'll now see stories from <ph name="SITE_NAME">%1$s<ex>Reuters</ex></ph> when you open a new tab. Sites you follow are saved in your Google account. You can manage them in Discover settings.
-      </message>
-      <message name="IDS_WEB_FEED_POST_FOLLOW_DIALOG_STORIES_READY_DESCRIPTION_WITH_UI_UPDATE" desc="The body text of the dialog presented a few times after a successful Web Feed follow request, when content from that Web Feed is immediately available.">
-        You'll now see content from and about <ph name="SITE_NAME">%1$s<ex>Reuters</ex></ph> in Following. The sites and searches you follow are saved in your Google Account. You can manage your follows in settings at any time.
-      </message>
-      <message name="IDS_WEB_FEED_POST_FOLLOW_DIALOG_STORIES_NOT_READY_DESCRIPTION" desc="The body text of the dialog presented a few times after a successful Web Feed follow request, when content from that Web Feed is not readily available. Please use the branded term for Discover, as listed under Product Names in the Google Glossary Manager (TC ID 1799975766543019278).">
-        Soon, you’ll see stories from <ph name="SITE_NAME">%1$s<ex>Reuters</ex></ph> when you open a new tab. Sites you follow are saved in your Google account. You can manage them in Discover settings.
-      </message>
-      <message name="IDS_WEB_FEED_POST_FOLLOW_DIALOG_STORIES_NOT_READY_DESCRIPTION_WITH_UI_UPDATE" desc="The body text of the dialog presented a few times after a successful Web Feed follow request, when content from that Web Feed is not readily available.">
-        Soon, you'll see content from and about <ph name="SITE_NAME">%1$s<ex>Reuters</ex></ph> in Following. The sites and searches you follow are saved in your Google Account. You can manage your follows in settings at any time.
-      </message>
-      <message name="IDS_WEB_FEED_POST_FOLLOW_DIALOG_GO_TO_FOLLOWING" desc="The main action of the dialog presented a few times after a successful Web Feed follow request, when content from from that Web Feed is immediately available. It will take the user to the Following feed.">
-        Go to Following
-      </message>
-      <message name="IDS_WEB_FEED_POST_FOLLOW_DIALOG_GOT_IT" desc="The main action of the dialog presented a few times after a successful Web Feed follow request, when content from from that Web Feed is immediately available. The user is already at the Following feed so it will do nothing.">
-        Got it
       </message>
 
       <!-- Storage Preference UI strings for clearing storage. -->
@@ -5918,6 +5763,12 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       </message>
       <message name="IDS_KEYBOARD_SHORTCUT_SEARCH" desc="A text label that appears next to the keyboard that will focusa and clear the address bar on the screen. The shortcut description is shown in a system dialog along with all other supported shortcuts. [CHAR_LIMIT=55]">
         Start new search
+      </message>
+      <message name="IDS_KEYBOARD_SHORTCUT_SCROLL_TO_TOP" desc="A text label that appears next to the keyboard shortcut that will scroll to the top of the page. The shortcut description is shown in a system dialog along with all other supported shortcuts. [CHAR_LIMIT=55]">
+        Scroll to top of page
+      </message>
+      <message name="IDS_KEYBOARD_SHORTCUT_SCROLL_TO_BOTTOM" desc="A text label that appears next to the keyboard shortcut that will scroll to the bottom of the page. The shortcut description is shown in a system dialog along with all other supported shortcuts. [CHAR_LIMIT=55]">
+        Scroll to bottom of page
       </message>
       <message name="IDS_KEYBOARD_SHORTCUT_BOOKMARK_MANAGER" desc="A text label that appears next to the keyboard shortcut that will open the bookmarks manager in Chrome. On a tablet this is a new tab, on the phone this is a new activity. The shortcut description is shown in a system dialog along with all other supported shortcuts. [CHAR_LIMIT=55]">
         Open Bookmarks Manager
@@ -6129,10 +5980,10 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
 
       <!-- In-Product Help strings -->
       <message name="IDS_IPH_GLIC_PROMO_TEXT" desc="The in-product-help promotion message to try Glic.">
-        Try Gemini in Chrome to get answers, key takeaways and more.
+        Try Gemini in Chrome to get answers, key takeaways and more
       </message>
       <message name="IDS_IPH_GLIC_PROMO_ACCESSIBILITY_TEXT" desc="The in-product-help accessibility text to try Glic.">
-        Try Gemini in Chrome to get answers, key takeaways and more from the More Options button.
+        Gemini is now on your toolbar. To change your pinned tool anytime, long-press the icon.
       </message>
       <message name="IDS_IPH_DOWNLOAD_PAGE_FOR_OFFLINE_USAGE_TEXT" desc="The in-product-help message after a successful navigation prompting user to download the pages to view offline.">
         Download pages to use them offline
@@ -6153,7 +6004,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
         Manage your account
       </message>
       <message name="IDS_IPH_INSTANCE_SWITCHER_TEXT" desc="The in-product-help text prompting the user that app menu has a menu for managing multiple Chrome windows with instance switcher.">
-        Got many windows? You can manage them from here
+        You can manage your windows in Chrome's Window Manager
       </message>
       <message name="IDS_IPH_IDENTITY_DISC_ACCESSIBILITY_TEXT" desc="The in-product-help accessibility text prompting the user that tapping identity disc will navigate to 'Sync and Google services' settings page.">
         To manage your Google account, tap the "Manage account" button
@@ -6164,6 +6015,33 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_IPH_TAB_SWITCHER_ACCESSIBILITY_TEXT" desc="The in-product-help accessibility text to open the new tab page. The 'open tabs' button name should match TC 3108541343994525384">
         To open tabs and visit different pages at the same time, tap the open tabs button
       </message>
+      <message name="IDS_IPH_INCOGNITO_INDICATOR_CLOSE_ALL_WINDOWS_TEXT" desc="The in-product-help message to inform users that they can close all incognito windows by tapping the incognito indicator.">
+        Tap here to close all Incognito windows
+      </message>
+      <message name="IDS_IPH_INCOGNITO_INDICATOR_CLOSE_ALL_WINDOWS_ACCESSIBILITY_TEXT" desc="The in-product-help accessibility text to inform users that they can close all incognito windows by tapping the incognito indicator.">
+        To close all Incognito windows, tap the Incognito indicator
+      </message>
+
+      <!-- Bottom bar IPH strings. -->
+      <message name="IDS_IPH_ANDROID_BOTTOM_BAR_GLIC" desc="The in-product-help message for the GLIC button in the bottom bar.">
+        Ask Gemini to help with your tabs and tasks
+      </message>
+      <message name="IDS_IPH_ANDROID_BOTTOM_BAR_NEW_TAB" desc="The in-product-help message for the New Tab button in the bottom bar.">
+        Open a new tab
+      </message>
+      <message name="IDS_IPH_ANDROID_BOTTOM_BAR_DIALOG_TITLE" desc="Title for the in-product help dialog introducing Gemini in the bottom bar.">
+        Introducing Gemini in Chrome
+      </message>
+      <message name="IDS_IPH_ANDROID_BOTTOM_BAR_DIALOG_DESCRIPTION" desc="Description for the bottom bar Gemini introduction dialog.">
+        Some tools have moved to give you easy access to Gemini while you browse
+      </message>
+      <message name="IDS_IPH_ANDROID_BOTTOM_BAR_TRIGGER_IPH" desc="Text on the button that triggers the in-product-help sequence.">
+        Show me
+      </message>
+      <message name="IDS_IPH_ANDROID_BOTTOM_BAR_DIALOG_ACK" desc="Button text to acknowledge bottom bar changes and dismiss the dialog.">
+        Got it
+      </message>
+
       <message name="IDS_IPH_ANDROID_TAB_DECLUTTER_TEXT_WITH_TAB_GROUPS" desc="The in-product-help text for the android tab declutter feature.">
         Review your inactive tabs and groups here
       </message>
@@ -6194,6 +6072,9 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_IPH_TRANSLATE_MESSAGE_DISMISSED_ACCESSIBILITY_TEXT" desc="The in-product-help message spoken by screen readers after the prompt for the user to translate the current page has disappeared, in order to show the user how to bring the translate prompt back.">
         Translate pages from the More Options button
       </message>
+      <message name="IDS_IPH_SITE_CONTROLS_TEXT" desc="The in-product-help message to notify the user that Site Controls have moved to the app menu.">
+        View site information and permissions
+      </message>
       <message name="IDS_IPH_SHARED_HIGHLIGHTING_BUILDER" desc="The in-product-help message to notify the user that the share action can preemptively share a link-to-text.">
         New: share a link that scrolls to this text
       </message>
@@ -6203,11 +6084,23 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_IPH_TAB_TEARING_XR" desc="The in-product-help message to notify the user about the new tab switcher on an XR device.">
         Pinch, hold, and drag to open tabs in a new window
       </message>
-      <message name="IDS_IPH_GESTURE_USER_EDUCATION_TEXT_BUBBLE" desc="The in-product-help message to notify the user about edge swipe for navigation.">
-        Swipe from the edge to go back
+      <message name="IDS_IPH_GESTURE_USER_EDUCATION_LAYOUT_DESCRIPTION" desc="The in-product-help message to notify the user about edge swipe for navigation." translateable="false">
+        Gesture navigation in-product help
+      </message>
+      <message name="IDS_IPH_GESTURE_USER_EDUCATION_TEXT_BUBBLE_LEFT" desc="The in-product-help message to notify the user about edge swipe for navigation.">
+        Swipe from left edge to go back
+      </message>
+      <message name="IDS_IPH_GESTURE_USER_EDUCATION_TEXT_BUBBLE_RIGHT" desc="The in-product-help message to notify the user about edge swipe for navigation.">
+        Swipe from right edge to go back
       </message>
       <message name="IDS_IPH_GESTURE_USER_EDUCATION_TAP_TO_DISMISS" desc="The in-product-help message to notify users how to dismiss.">
         Tap to dismiss
+      </message>
+      <message name="IDS_EXTENSIONS_MENU_MANAGE_APP_MENU_IPH" desc="IPH message pointing to the Chrome app menu three-dot button shown after a user unpins the extensions menu puzzle piece explaining they can manage their extensions in the Chrome app menu.">
+        Manage your extensions in Chrome main menu
+      </message>
+      <message name="IDS_EXTENSIONS_MENU_MANAGE_TOOLBAR_IPH" desc="IPH message pointing to the extension puzzle piece shown after a user installs their first extension explaining they can manage their extensions in the toolbar.">
+        Manage your extensions in the toolbar
       </message>
 
       <!-- Search Widget strings -->
@@ -6268,6 +6161,15 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <!-- SendTabToSelf -->
       <message name="IDS_SEND_TAB_TO_SELF_TOAST" desc="Text for a toast indicating that the tab is being shared on the user's other synced devices.">
         Sending to <ph name="device_name">%1$s<ex>Tanya's Pixel 2</ex></ph>...
+      </message>
+      <message name="IDS_SEND_TAB_TO_SELF_MESSAGE_BANNER_TITLE" desc="The title for the message banner shown on Android when links are received in the background.">
+        Links received
+      </message>
+      <message name="IDS_SEND_TAB_TO_SELF_MESSAGE_BANNER_SUBTITLE" desc="The subtitle for the message banner shown on Android indicating the sender device.">
+        From <ph name="DEVICE_NAME">%1$s<ex>Tanya's Pixel 10a</ex></ph>
+      </message>
+      <message name="IDS_SEND_TAB_TO_SELF_MESSAGE_OPEN" desc="Label for the button to open a tab received from another device.">
+        Open
       </message>
       <message name="IDS_SEND_TAB_TO_SELF_NOTIFICATION_CONTEXT_TEXT" desc="Text displayed as the second line of a notification indicating the domain and the device the tab is shared from.">
         <ph name="DOMAIN">%1$s<ex>www.google.com</ex></ph> - Sent from <ph name="DEVICE_NAME">%2$s<ex>Tanya's Pixel 2XL</ex></ph>
@@ -6388,14 +6290,6 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
 
       <message name="IDS_DEV_UI_MODULE_TITLE" desc="Text shown when the Developer UI module is referenced in install start, success, failure UI (e.g. in IDS_MODULE_INSTALL_START_TEXT, which will expand to 'Installing Developer UI for Chrome…').">
         Developer UI
-      </message>
-
-      <message name="IDS_TEST_DUMMY_MODULE_TITLE"
-        translateable="false"
-        desc="Text shown when the test dummy module is referenced in install start, success,
-              failure UI (e.g. in IDS_MODULE_INSTALL_START_TEXT, which will expand to
-              'Installing Test Dummy for Chrome…').">
-        Test Dummy
       </message>
 
       <message name="IDS_STACK_UNWINDER_MODULE_TITLE"
@@ -6880,6 +6774,14 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       </message>
       <message name="IDS_ACCOUNT_SELECTION_MULTI_IDP_SHEET_TITLE_EXPLICIT_SIGNIN" desc="Header for sign in sheet. Sheet is shown to prompt user to sign in to a website using an account from one of several identity providers.">
         Sign in to <ph name="SITE_ETLD_PLUS_ONE">%1$s<ex>rp.example</ex></ph>
+      </message>
+
+      <!-- Settings Bottom Bar strings -->
+      <message name="IDS_SETTINGS_SHOW_GEMINI_IN_BOTTOM_BAR_TITLE" desc="Title for the settings toggle to show or hide Gemini in the bottom bar. [CHAR_LIMIT=32]">
+        Show Gemini in the bottom toolbar
+      </message>
+      <message name="IDS_SETTINGS_SHOW_GEMINI_IN_BOTTOM_BAR_SUMMARY" desc="Summary description for the settings toggle to show Gemini in the bottom bar.">
+        Quickly open Gemini when you need it
       </message>
 
       <!-- HTTPS-First Mode settings strings -->
@@ -7427,6 +7329,10 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
         Loading PDF…
       </message>
 
+      <message name="IDS_ACTIONBAR_TRANSLATE" desc="Contextual action bar item for translating the selected text.">
+        Translate
+      </message>
+
       <!-- Tab declutter -->
       <message name="IDS_ARCHIVED_TAB_CARD_TITLE" desc="Shown in the tab switcher to prompt the user to review their inactive tabs and tab groups. Indicates how many tabs and tab groups are inactive.">
         {ARCHIVED_TAB_COUNT, plural,
@@ -7449,9 +7355,6 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <!-- Hub search -->
       <message name="IDS_HUB_SEARCH_EMPTY_HINT" desc="The text displayed in the search box when it's empty.">
         Search your tabs
-      </message>
-      <message name="IDS_HUB_SEARCH_EMPTY_HINT_WITH_TAB_GROUPS" desc="The text displayed in the search box when it's empty.">
-        Search your tabs and groups
       </message>
       <message name="IDS_HUB_SEARCH_EMPTY_HINT_INCOGNITO" desc="The text displayed in the incognito search box when it's empty.">
         Search your Incognito tabs
@@ -7722,6 +7625,12 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       <message name="IDS_TIPS_OPT_IN_BOTTOM_SHEET_DESCRIPTION" desc="Description of the Tips Opt In bottom sheet promo.">
         Turn on notifications for useful tips to help you get the best of Chrome
       </message>
+      <message name="IDS_TIPS_OPT_IN_SNACKBAR_MESSAGE" desc="Snackbar message shown when the user opts in to receive tips notifications.">
+        Tips notifications turned on
+      </message>
+      <message name="IDS_TIPS_OPT_IN_SNACKBAR_ACTION_TEXT" desc="Action button of the Tips snackbar on user opt-in. [CHAR_LIMIT=10]">
+        Manage
+      </message>
 
       <!-- Caret Browsing -->
       <message name="IDS_CARET_BROWSING_DIALOG_TITLE" desc="Title of the caret browsing confirmation dialog" formatter_data="android_java">
@@ -7785,8 +7694,49 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
       </message>
 
     <!-- Glic strings -->
+      <message name="IDS_GLIC_BUTTON_ENTRYPOINT_OPEN_GEMINI_LABEL" desc="Label on the 3-dot menu item used to open Gemini in Chrome.">
+        Open Gemini
+      </message>
       <message name="IDS_GLIC_ACTOR_TASK_IN_PROGRESS" desc="Snackbar message shown when a Glic actor task is still in progress.">
         Your task is still in progress
+      </message>
+      <message name="IDS_GLIC_INCOGNITO_NOT_AVAILABLE" desc="Text displayed in a snackbar when clicking the Glic toolbar button in an Incognito tab.">
+        Gemini isn’t available in Incognito mode
+      </message>
+
+      <!-- Immersive Playback Confirmation strings -->
+      <message name="IDS_IMMERSIVE_PLAYBACK_CONFIRMATION_MESSAGE" desc="Message in the snackbar asking the user if they want to view the video in immersive mode." translateable="false">
+        View this video in immersive mode?
+      </message>
+      <message name="IDS_IMMERSIVE_PLAYBACK_CONFIRMATION_YES" desc="Text for the positive button in the snackbar to proceed to format selection." translateable="false">
+        Yes
+      </message>
+      <message name="IDS_IMMERSIVE_PLAYBACK_CONFIRMATION_FORMAT_TITLE" desc="Title of the dialog for selecting immersive playback format." translateable="false">
+        Format
+      </message>
+      <message name="IDS_IMMERSIVE_PLAYBACK_CONFIRMATION_OPTION_STANDARD" desc="Option for standard projection in the immersive playback confirmation dialog." translateable="false">
+        Standard
+      </message>
+      <message name="IDS_IMMERSIVE_PLAYBACK_CONFIRMATION_OPTION_STEREO_3D" desc="Option for stereoscopic 3D projection in the immersive playback confirmation dialog." translateable="false">
+        Stereoscopic (3D)
+      </message>
+      <message name="IDS_IMMERSIVE_PLAYBACK_CONFIRMATION_OPTION_VR180" desc="Option for VR 180 projection in the immersive playback confirmation dialog." translateable="false">
+        VR 180
+      </message>
+      <message name="IDS_IMMERSIVE_PLAYBACK_CONFIRMATION_OPTION_VR360" desc="Option for VR 360 projection in the immersive playback confirmation dialog." translateable="false">
+        VR 360
+      </message>
+      <message name="IDS_IMMERSIVE_PLAYBACK_CONFIRMATION_OK" desc="Text for the positive button in the format selection dialog." translateable="false">
+        OK
+      </message>
+      <message name="IDS_IMMERSIVE_PLAYBACK_CONFIRMATION_CANCEL" desc="Text for the negative button in the format selection dialog." translateable="false">
+        Cancel
+      </message>
+      <message name="IDS_ACCESSIBILITY_IMMERSIVE_VIDEO_FORMAT" desc="Content description for a button that opens the format selection popup in immersive video playback." translateable="false">
+        Select video format
+      </message>
+      <message name="IDS_ACCESSIBILITY_EXIT_IMMERSIVE_PLAYBACK" desc="Content description for a button that exits immersive video playback." translateable="false">
+        Exit immersive playback
       </message>
     </messages>
   </release>

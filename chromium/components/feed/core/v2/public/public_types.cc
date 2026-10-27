@@ -55,19 +55,12 @@ void WebFeedPageInformation::SetCanonicalUrl(const GURL& url) {
   clear_ref.ClearRef();
   canonical_url_ = url.ReplaceComponents(clear_ref);
 }
-void WebFeedPageInformation::SetRssUrls(const std::vector<GURL>& rss_urls) {
-  rss_urls_ = rss_urls;
-}
 
 std::ostream& operator<<(std::ostream& os,
                          const WebFeedPageInformation& value) {
   os << "{ " << value.url() << " ";
   if (value.canonical_url().is_valid()) {
     os << "canonical=" << value.canonical_url() << ' ';
-  }
-  os << "RSS:\n";
-  for (const GURL& url : value.GetRssUrls()) {
-    os << url << '\n';
   }
   os << "}";
   return os;
@@ -166,33 +159,6 @@ std::ostream& operator<<(std::ostream& out, const WebFeedMetadata& value) {
   if (value.subscription_status != WebFeedSubscriptionStatus::kUnknown)
     out << " status=" << value.subscription_status;
   return out << " }";
-}
-
-std::ostream& operator<<(std::ostream& out,
-                         WebFeedPageInformationRequestReason value) {
-  switch (value) {
-    case WebFeedPageInformationRequestReason::kUserRequestedFollow:
-      return out << "kUserRequestedFollow";
-    case WebFeedPageInformationRequestReason::kFollowRecommendation:
-      return out << "kFollowRecommendation";
-    case WebFeedPageInformationRequestReason::kMenuItemPresentation:
-      return out << "kMenuItemPresentation";
-  }
-}
-
-std::ostream& operator<<(std::ostream& out, SingleWebFeedEntryPoint value) {
-  switch (value) {
-    case SingleWebFeedEntryPoint::kMenu:
-      return out << "kMenu";
-    case SingleWebFeedEntryPoint::kAttribution:
-      return out << "kAttribution";
-    case SingleWebFeedEntryPoint::kRecommendation:
-      return out << "kRecommendation";
-    case SingleWebFeedEntryPoint::kGroupHeader:
-      return out << "kGroupHeader";
-    case SingleWebFeedEntryPoint::kOther:
-      return out << "kOther";
-  }
 }
 
 }  // namespace feed

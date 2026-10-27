@@ -22,6 +22,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/browser_apis/browser_controls/browser_controls_api.mojom.h"
+#include "components/browser_apis/ui_controllers/toolbar/toolbar_ui_api_data_model.mojom.h"
 #include "content/public/common/content_features.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/test_web_ui.h"
@@ -118,11 +119,54 @@ class MockToolbarUIDelegate
                const gfx::RectF& bounds,
                ui::mojom::MenuSourceType source),
               (override));
+  MOCK_METHOD(void,
+              ShowContentSettingsBubble,
+              (::toolbar_ui_api::mojom::ContentSettingImageType type,
+               ::toolbar_ui_api::mojom::ToolbarUIService::
+                   ShowContentSettingsBubbleCallback callback),
+              (override));
   MOCK_METHOD(void, OnPageInitialized, (), (override));
   MOCK_METHOD(void,
               InvokePinnedToolbarAction,
-              (toolbar_ui_api::mojom::PinnedToolbarAction action_id),
+              (toolbar_ui_api::mojom::PinnedToolbarAction),
               (override));
+  MOCK_METHOD(void,
+              OnLhsChipMousePressed,
+              (toolbar_ui_api::mojom::LhsChipIdentifier),
+              (override));
+  MOCK_METHOD(void,
+              OnLhsChipClicked,
+              (toolbar_ui_api::mojom::LhsChipIdentifier, bool),
+              (override));
+  MOCK_METHOD(void,
+              OnLhsChipPointerEntered,
+              (toolbar_ui_api::mojom::LhsChipIdentifier),
+              (override));
+  MOCK_METHOD(void,
+              OnLhsChipPointerExited,
+              (toolbar_ui_api::mojom::LhsChipIdentifier),
+              (override));
+  MOCK_METHOD(void,
+              OnLhsChipExpandAnimationEnded,
+              (toolbar_ui_api::mojom::LhsChipIdentifier),
+              (override));
+  MOCK_METHOD(void,
+              OnLhsChipCollapseAnimationEnded,
+              (toolbar_ui_api::mojom::LhsChipIdentifier),
+              (override));
+  MOCK_METHOD(void,
+              OnLhsChipDrag,
+              (toolbar_ui_api::mojom::LhsChipIdentifier,
+               ui::mojom::DragEventSource),
+              (override));
+  MOCK_METHOD(void, OnHomeButtonDropUrl, (const GURL&), (override));
+  MOCK_METHOD(void, OnHomeButtonDropFile, (const gfx::PointF&), (override));
+  MOCK_METHOD(void, OnToolbarDropFile, (const gfx::PointF&), (override));
+  MOCK_METHOD((base::expected<std::monostate, mojo_base::mojom::ErrorPtr>),
+              OnOmniboxAction,
+              (toolbar_ui_api::mojom::OmniboxActionPtr action_ptr),
+              (override));
+  MOCK_METHOD(void, ShowAvatarMenu, ());
 };
 
 // Test fixture for WebUIToolbarUI. These tests test the connectivity between
@@ -181,6 +225,11 @@ class WebUIToolbarUIBrowserTest : public InProcessBrowserTest,
         base::BindRepeating(
             [&] { return CreateValidNavigationControlsState(); }));
   }
+  std::unique_ptr<toolbar_ui_api::IconTableFetcher> GetIconTableFetcher()
+      override {
+    return std::make_unique<FakeIconTableFetcher>();
+  }
+
   CommandUpdater* GetCommandUpdater() override {
     return reinterpret_cast<CommandUpdater*>(
         webui::GetBrowserWindowInterface(web_ui()->GetWebContents())
@@ -226,13 +275,16 @@ IN_PROC_BROWSER_TEST_F(WebUIToolbarUIBrowserTest, SetReloadButtonState) {
 
   EXPECT_CALL(
       connection.mock_observer(),
-      OnNavigationControlsStateChanged(testing::Pointee(testing::Field(
-          &toolbar_ui_api::mojom::NavigationControlsState::reload_control_state,
-          testing::Pointee(testing::Field(
-              &toolbar_ui_api::mojom::ReloadControlState::is_navigation_loading,
-              true))))))
+      OnNavigationControlsStateChanged(
+          testing::_, testing::Pointee(testing::Field(
+                          &toolbar_ui_api::mojom::NavigationControlsState::
+                              reload_control_state,
+                          testing::Pointee(testing::Field(
+                              &toolbar_ui_api::mojom::ReloadControlState::
+                                  is_navigation_loading,
+                              true))))))
       .Times(1);
-  ui()->OnNavigationControlsStateChanged(std::move(state));
+  ui()->OnNavigationControlsStateChanged(*state);
   connection.mock_observer().FlushForTesting();
 }
 
@@ -321,7 +373,8 @@ IN_PROC_BROWSER_TEST_F(WebUIToolbarUIBrowserTest,
   auto source_it = config.sources.find(theme_origin);
   ASSERT_TRUE(source_it != config.sources.end());
 
-  auto resource_it = source_it->second->path_to_resource_map.find("colors.css");
+  auto resource_it =
+      source_it->second->path_to_resource_map.find("colors.css?sets=ui,chrome");
   ASSERT_TRUE(resource_it != source_it->second->path_to_resource_map.end());
   EXPECT_TRUE(resource_it->second->is_response_body());
 }

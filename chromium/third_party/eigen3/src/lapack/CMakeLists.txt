@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
+
 project(EigenLapack CXX)
 
 if(EIGEN_BUILD_LAPACK AND EIGEN_BUILD_BLAS)

@@ -146,7 +146,7 @@ class PressureServiceForDedicatedWorkerTest
     CHECK_EQ(rfh->GetLastCommittedOrigin(), rfh->GetStorageKey().origin());
     worker_host_ = std::make_unique<DedicatedWorkerHost>(
         &worker_service_, blink::DedicatedWorkerToken(), rfh->GetProcess(),
-        rfh->GetGlobalId(), rfh->GetGlobalId(), rfh->GetStorageKey(),
+        rfh->GetGlobalId(), rfh->GetGlobalId(), rfh->GetStorageKey().origin(),
         rfh->GetStorageKey(), rfh->GetStorageKey().origin(),
         rfh->GetIsolationInfoForSubresources(), rfh->BuildClientSecurityState(),
         rfh->policy_container_host()->policies(),
@@ -188,15 +188,13 @@ TEST_F(PressureServiceForDedicatedWorkerTest, AddClient) {
   ASSERT_EQ(future.Get(), device::mojom::PressureManagerAddClientResult::kOk);
 
   const base::TimeTicks time = base::TimeTicks::Now();
-  auto data = PressureData::New(/*cpu_utilization=*/0.2,
-                                /*own_contribution_estimate=*/0.20);
+  auto data = PressureData::New(/*cpu_utilization=*/0.2);
   PressureUpdate update(PressureSource::kCpu, std::move(data), time);
   pressure_manager_overrider_->UpdateClients(update);
   client.WaitForUpdate();
   ASSERT_EQ(client.updates().size(), 1u);
   EXPECT_EQ(client.updates()[0].source, update.source);
   EXPECT_EQ(client.updates()[0].state, device::mojom::PressureState::kNominal);
-  EXPECT_EQ(client.updates()[0].own_contribution_estimate, 0.20);
   EXPECT_EQ(client.updates()[0].timestamp, update.timestamp);
 }
 
@@ -271,10 +269,12 @@ class PressureServiceForSharedWorkerTest
     pressure_manager_.reset();
 
     auto* rfh = contents()->GetPrimaryMainFrame();
-    blink::StorageKey worker_storage_key =
-        CalculateWorkerStorageKey(kWorkerUrl, rfh->GetStorageKey());
-    url::Origin renderer_origin =
-        CalculateWorkerRendererOrigin(kWorkerUrl, worker_storage_key);
+    bool is_opaque_origin_enabled = base::FeatureList::IsEnabled(
+        blink::features::kDataUrlWorkerOpaqueOrigin);
+    blink::StorageKey worker_storage_key = CalculateWorkerStorageKey(
+        kWorkerUrl, rfh->GetStorageKey(), is_opaque_origin_enabled);
+    url::Origin renderer_origin = CalculateWorkerRendererOrigin(
+        kWorkerUrl, worker_storage_key, is_opaque_origin_enabled);
 
     SharedWorkerInstance instance(
         kWorkerUrl, blink::mojom::ScriptType::kClassic,
@@ -336,15 +336,13 @@ TEST_F(PressureServiceForSharedWorkerTest, AddClient) {
   ASSERT_EQ(future.Get(), device::mojom::PressureManagerAddClientResult::kOk);
 
   const base::TimeTicks time = base::TimeTicks::Now();
-  auto data = PressureData::New(/*cpu_utilization=*/0.4,
-                                /*own_contribution_estimate=*/0.20);
+  auto data = PressureData::New(/*cpu_utilization=*/0.4);
   PressureUpdate update(PressureSource::kCpu, std::move(data), time);
   pressure_manager_overrider_->UpdateClients(update);
   client.WaitForUpdate();
   ASSERT_EQ(client.updates().size(), 1u);
   EXPECT_EQ(client.updates()[0].source, update.source);
   EXPECT_EQ(client.updates()[0].state, device::mojom::PressureState::kNominal);
-  EXPECT_EQ(client.updates()[0].own_contribution_estimate, 0.20);
   EXPECT_EQ(client.updates()[0].timestamp, update.timestamp);
 }
 

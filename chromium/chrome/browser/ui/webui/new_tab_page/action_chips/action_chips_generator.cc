@@ -44,6 +44,7 @@
 #include "content/public/browser/web_contents.h"
 #include "third_party/omnibox_proto/groups.pb.h"
 #include "third_party/omnibox_proto/page_vertical.pb.h"
+#include "third_party/omnibox_proto/suggest_inventory.pb.h"
 #include "third_party/omnibox_proto/suggest_template_info.pb.h"
 #include "third_party/omnibox_proto/types.pb.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -76,6 +77,12 @@ void AssignMojoField(const T& source, std::optional<T>& dest) {
 template <typename ProtoEnum, typename MojoEnum>
   requires std::is_enum_v<ProtoEnum> && std::is_enum_v<MojoEnum>
 void AssignMojoField(const ProtoEnum& source, MojoEnum& dest) {
+  dest = static_cast<MojoEnum>(source);
+}
+
+template <typename ProtoEnum, typename MojoEnum>
+  requires std::is_enum_v<ProtoEnum> && std::is_enum_v<MojoEnum>
+void AssignMojoField(const ProtoEnum& source, std::optional<MojoEnum>& dest) {
   dest = static_cast<MojoEnum>(source);
 }
 
@@ -136,10 +143,12 @@ void SyncProtoToMojo<omnibox::SuggestTemplateInfo,
   if (a.has_secondary_text()) {
     AssignMojoField(a.secondary_text(), b->secondary_text);
   }
-  if (a.has_fusebox_action()) {
+  if (a.has_fusebox_action() && a.fusebox_action().has_preselected_tool()) {
     AssignMojoField(a.fusebox_action().preselected_tool(), b->preselected_tool);
-  } else {
-    b->preselected_tool = ToolMode::kUnspecified;
+  }
+  if (a.has_fusebox_action() && a.fusebox_action().has_preferred_inventory()) {
+    AssignMojoField(a.fusebox_action().preferred_inventory(),
+                    b->preferred_inventory);
   }
 }
 
@@ -255,6 +264,35 @@ std::optional<ActionChipPtr> CreateImageCreationChipIfEligible(
   return CreateImageCreationChip(suggestion);
 }
 
+ActionChipPtr CreateStarterChip() {
+  ActionChipPtr chip = ActionChip::New();
+  chip->suggestion = std::string();
+  chip->suggest_template_info = SuggestTemplateInfo::New();
+  chip->suggest_template_info->type_icon = IconType::kSearchLoopWithSparkle;
+  chip->suggest_template_info->primary_text =
+      action_chips::mojom::FormattedString::New();
+  chip->suggest_template_info->primary_text->text =
+      l10n_util::GetStringUTF8(IDS_NTP_ACTION_CHIP_STARTER_HEADING);
+  chip->suggest_template_info->secondary_text =
+      action_chips::mojom::FormattedString::New();
+  chip->suggest_template_info->secondary_text->text =
+      l10n_util::GetStringUTF8(IDS_NTP_ACTION_CHIP_STARTER_BODY);
+  chip->suggest_template_info->preferred_inventory =
+      omnibox::SUGGEST_INVENTORY_AIM_CONVERSATION_STARTERS;
+  return chip;
+}
+
+std::optional<ActionChipPtr> CreateStarterChipIfEligible(
+    std::string_view suggestion,
+    const AimEligibilityService* aim_eligibility_service) {
+  if (base::FeatureList::IsEnabled(ntp_features::kNtpStarterChip) &&
+      aim_eligibility_service &&
+      aim_eligibility_service->IsCreateImagesEligible()) {
+    return CreateStarterChip();
+  }
+  return std::nullopt;
+}
+
 ActionChipPtr CreateCanvasChip(std::string_view suggestion) {
   ActionChipPtr chip = ActionChip::New();
   chip->suggestion = std::string();
@@ -328,6 +366,7 @@ std::vector<ActionChipPtr> CreateChipsForSteadyState(
   using GeneratorFn = const base::FunctionRef<std::optional<ActionChipPtr>(
       std::string_view, const AimEligibilityService*)>;
   static const GeneratorFn kNewGenerators[] = {
+      &CreateStarterChipIfEligible,
       &CreateImageCreationChipIfEligible,
       &CreateCanvasChipIfEligible,
       &CreateDeepSearchChipIfEligible,
@@ -338,7 +377,8 @@ std::vector<ActionChipPtr> CreateChipsForSteadyState(
   };
 
   const base::span<GeneratorFn> generators =
-      base::FeatureList::IsEnabled(ntp_features::kNtpNextCanvasChip)
+      base::FeatureList::IsEnabled(ntp_features::kNtpNextCanvasChip) ||
+              base::FeatureList::IsEnabled(ntp_features::kNtpStarterChip)
           ? base::span<GeneratorFn>(kNewGenerators)
           : base::span<GeneratorFn>(kOldGenerators);
   for (const GeneratorFn generator : generators) {

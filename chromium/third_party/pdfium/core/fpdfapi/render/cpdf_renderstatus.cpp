@@ -61,6 +61,7 @@
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/stl_util.h"
 #include "core/fxcrt/unowned_ptr.h"
+#include "core/fxcrt/zip.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_gemodule.h"
@@ -1500,6 +1501,7 @@ RetainPtr<CFX_DIBitmap> CPDF_RenderStatus::LoadSMask(
     // Fill |transfers| with 0, 1, ... N.
     std::iota(transfers.begin(), transfers.end(), 0);
   }
+
   if (bLuminosity) {
     const int bytes_per_pixel = bitmap->GetBPP() / 8;
     for (int row = 0; row < height; row++) {
@@ -1514,15 +1516,18 @@ RetainPtr<CFX_DIBitmap> CPDF_RenderStatus::LoadSMask(
         });
       }
     }
-  } else if (pFunc) {
-    int size = dest_pitch * height;
-    for (int i = 0; i < size; i++) {
-      dest_buf[i] = transfers[src_buf[i]];
-    }
-  } else {
-    fxcrt::Copy(src_buf.first(static_cast<size_t>(dest_pitch * height)),
-                dest_buf);
+    return result_mask;
   }
+
+  src_buf = src_buf.first(Fx2DSizeOrDie(dest_pitch, height));
+  if (pFunc) {
+    for (auto [in, out] : fxcrt::Zip(src_buf, dest_buf)) {
+      out = transfers[in];
+    }
+    return result_mask;
+  }
+
+  fxcrt::Copy(src_buf, dest_buf);
   return result_mask;
 }
 
@@ -1572,7 +1577,7 @@ FX_ARGB CPDF_RenderStatus::GetBackgroundColor(
 
 FXDIB_Format CPDF_RenderStatus::GetCompatibleArgbFormat() const {
 #if defined(PDF_USE_SKIA)
-  if (device_->RenderCapPremultipliedAlpha()) {
+  if (device_->CanUseARGBPremul()) {
     return FXDIB_Format::kBgraPremul;
   }
 #endif

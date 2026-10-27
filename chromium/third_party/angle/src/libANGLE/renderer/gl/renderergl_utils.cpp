@@ -2172,9 +2172,10 @@ void GenerateCaps(const FunctionsGL *functions,
     extensions->logicOpANGLE = functions->isAtLeastGL(gl::Version(2, 0));
 
     // GL_EXT_clear_texture
-    extensions->clearTextureEXT = functions->isAtLeastGL(gl::Version(4, 4)) ||
-                                  functions->hasGLESExtension("GL_EXT_clear_texture") ||
-                                  functions->hasGLExtension("GL_ARB_clear_texture");
+    extensions->clearTextureEXT = !features.disableClearTexture.enabled &&
+                                  (functions->isAtLeastGL(gl::Version(4, 4)) ||
+                                   functions->hasGLESExtension("GL_EXT_clear_texture") ||
+                                   functions->hasGLExtension("GL_ARB_clear_texture"));
 
     // GL_QCOM_tiled_rendering
     extensions->tiledRenderingQCOM = !features.disableTiledRendering.enabled &&
@@ -2218,7 +2219,7 @@ void GenerateCaps(const FunctionsGL *functions,
 
     if (features.limitMaxBufferSizeTo1gb.enabled)
     {
-        limitations->bufferSizeLimit = 1 << 30;
+        limitations->maxBufferBytes = 1 << 30;
     }
 }
 
@@ -2725,9 +2726,11 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     // exposed.
     ANGLE_FEATURE_CONDITION(features, bgraTexImageFormatsBroken, !isMesa && isQualcomm);
 
-    // Recreate FBO upon flush/finish/fencesync under certain conditions to work around Qualcomm
-    // driver bugs.
-    ANGLE_FEATURE_CONDITION(features, recreateFboUponFlush,
+    // https://crbug.com/493747593
+    ANGLE_FEATURE_CONDITION(features, recreateFboUponFlush, false);
+
+    // https://crbug.com/520656244
+    ANGLE_FEATURE_CONDITION(features, reattachFboDepthStencilOnReallocation,
                             !isMesa && isQualcomm && qualcommVersion < 878);
 
     // http://crbug.com/507508103
@@ -2737,6 +2740,9 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     // glGenerateMipmap may silently fail on mesa, leaving mips that are expected to be recreated to
     // match the base level in their original shape, hidden from ANGLE and its validation.
     ANGLE_FEATURE_CONDITION(features, recreateMipmapLevelsBeforeGenerate, isMesa);
+
+    // http://crbug.com/498828605
+    ANGLE_FEATURE_CONDITION(features, expandFragmentOutputsToVec4, isAMD && isMesa);
 
     // https://github.com/flutter/flutter/issues/47164
     // https://github.com/flutter/flutter/issues/47804
@@ -2767,6 +2773,9 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     // IMG GL drivers crash in glClearTexImage on various format/type combinations such as packed
     // types, LUMA and depth stencil.
     ANGLE_FEATURE_CONDITION(features, disableClearTexImageForRobustInit, IsPowerVR(vendor));
+
+    // Disable EXT_clear_texture entirely on IMG as a speculative fix for driver crashes.
+    ANGLE_FEATURE_CONDITION(features, disableClearTexture, IsPowerVR(vendor));
 
     // IMG GL drivers crash while compiling shaders with more than the limit of uniform blocks.
     ANGLE_FEATURE_CONDITION(features, validateMaxPerStageUniformBlocksAtCompileTime,
@@ -3271,21 +3280,13 @@ std::vector<ContextCreationTry> GenerateContextCreationToTry(EGLint requestedTyp
 
         // On Mesa, do not try to create OpenGL context versions between 3.0 and
         // 3.2 because of compatibility problems. See crbug.com/659030
+        //
+        // The GL backend requires at least GL 3.2, so do not attempt to create
+        // any older contexts even in legacy profile.
         if (!isMesaGLX)
         {
             contextsToTry.emplace_back(kPlatformOpenGL, Type::DESKTOP_LEGACY, gl::Version(3, 2));
-            contextsToTry.emplace_back(kPlatformOpenGL, Type::DESKTOP_LEGACY, gl::Version(3, 1));
-            contextsToTry.emplace_back(kPlatformOpenGL, Type::DESKTOP_LEGACY, gl::Version(3, 0));
         }
-
-        contextsToTry.emplace_back(kPlatformOpenGL, Type::DESKTOP_LEGACY, gl::Version(2, 1));
-        contextsToTry.emplace_back(kPlatformOpenGL, Type::DESKTOP_LEGACY, gl::Version(2, 0));
-        contextsToTry.emplace_back(kPlatformOpenGL, Type::DESKTOP_LEGACY, gl::Version(1, 5));
-        contextsToTry.emplace_back(kPlatformOpenGL, Type::DESKTOP_LEGACY, gl::Version(1, 4));
-        contextsToTry.emplace_back(kPlatformOpenGL, Type::DESKTOP_LEGACY, gl::Version(1, 3));
-        contextsToTry.emplace_back(kPlatformOpenGL, Type::DESKTOP_LEGACY, gl::Version(1, 2));
-        contextsToTry.emplace_back(kPlatformOpenGL, Type::DESKTOP_LEGACY, gl::Version(1, 1));
-        contextsToTry.emplace_back(kPlatformOpenGL, Type::DESKTOP_LEGACY, gl::Version(1, 0));
     }
 
     if (requestedType == EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE ||

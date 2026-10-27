@@ -59,6 +59,7 @@ class AndroidProbesParser {
   StringId ToPermissionId(int32_t);
   StringId ToValuePickedFromId(int32_t);
   StringId ToStorageBackendId(int32_t);
+  StringId ToFlagTypeId(int32_t);
 
   TraceProcessorContext* const context_;
   AndroidProbesTracker* const tracker_;
@@ -89,7 +90,10 @@ class AndroidProbesParser {
   const StringId aflags_none_id_;
   const StringId aflags_aconfigd_id_;
   const StringId aflags_device_config_id_;
+  const StringId aflags_boolean_id_;
+  const StringId aflags_integer_id_;
   const StringId aflags_unspecified_id_;
+  const StringId android_logcat_;
 };
 }  // namespace perfetto::trace_processor
 

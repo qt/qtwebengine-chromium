@@ -418,7 +418,7 @@ TEST_F(CBCPDF417WriterTest, Encode) {
     CBC_PDF417Writer::EncodeResult result = writer.Encode(L"");
     ASSERT_EQ(kExpectedWidth, result.width);
     ASSERT_EQ(kExpectedHeight, result.height);
-    EXPECT_THAT(result.data, ElementsAreArray(kExpectedData));
+    EXPECT_THAT(result.code, ElementsAreArray(kExpectedData));
   }
   {
     static constexpr int kExpectedWidth = 579;
@@ -811,9 +811,9 @@ TEST_F(CBCPDF417WriterTest, Encode) {
         0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 1,
         1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 1};
     CBC_PDF417Writer::EncodeResult result = writer.Encode(L"hello world");
-    ASSERT_EQ(std::size(kExpectedData), result.data.size());
+    ASSERT_EQ(std::size(kExpectedData), result.code.size());
     ASSERT_EQ(kExpectedWidth, result.width);
     ASSERT_EQ(kExpectedHeight, result.height);
-    EXPECT_THAT(result.data, ElementsAreArray(kExpectedData));
+    EXPECT_THAT(result.code, ElementsAreArray(kExpectedData));
   }
 }

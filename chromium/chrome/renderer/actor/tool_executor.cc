@@ -16,7 +16,6 @@
 #include "base/time/time.h"
 #include "chrome/common/actor.mojom.h"
 #include "chrome/common/actor/action_result.h"
-#include "chrome/common/actor/journal_details_builder.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/renderer/actor/click_tool.h"
 #include "chrome/renderer/actor/drag_and_release_tool.h"
@@ -28,6 +27,8 @@
 #include "chrome/renderer/actor/select_tool.h"
 #include "chrome/renderer/actor/tool_utils.h"
 #include "chrome/renderer/actor/type_tool.h"
+#include "components/actor/core/journal_details_builder.h"
+#include "components/actor/public/mojom/actor_types.mojom.h"
 #include "content/public/renderer/render_frame.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/blink/public/web/web_node.h"
@@ -141,8 +142,9 @@ mojom::InitializeToolResultPtr ToolExecutor::InitializeToolImpl(
       // explicit async hook to know when the tool is done. Or having the
       // stabilization only delay until a new frame is produced.
       tool_ = std::make_unique<ScriptTool>(
-          frame_.get(), invocation->task_id, journal_.get(),
-          std::move(invocation->target), std::move(invocation->observed_target),
+          frame_.get(), invocation->task_id, invocation->execution_id.value(),
+          journal_.get(), std::move(invocation->target),
+          std::move(invocation->observed_target),
           std::move(invocation->action->get_script_tool()));
       break;
     }
@@ -268,11 +270,17 @@ void ToolExecutor::CancelTool(const actor::TaskId& task_id) {
   // The browser and renderer should agree on the active tool.
   CHECK_EQ(tool_->task_id(), task_id);
 
+  // tool_->Cancel() synchronously dispatches DOM events that might destroy the
+  // owning frame and this executor. Use a weak pointer to detect if `this` is
+  // still valid.
+  base::WeakPtr<ToolExecutor> weak_this = weak_ptr_factory_.GetWeakPtr();
   tool_->Cancel();
 
-  // The result code doesn't matter as it will be ignored by the browser
-  // process.
-  ToolFinished(MakeResult(mojom::ActionResultCode::kInvokeCanceled));
+  if (weak_this) {
+    // The result code doesn't matter as it will be ignored by the browser
+    // process.
+    ToolFinished(MakeResult(mojom::ActionResultCode::kInvokeCanceled));
+  }
 }
 
 void ToolExecutor::ToolFinished(mojom::ActionResultPtr result) {

@@ -59,6 +59,11 @@ export const SearchboxMixin = <T extends Constructor<CrLitElement>>(
         searchboxIcon: {
           type: String,
         },
+
+        showThumbnail: {
+          type: Boolean,
+          reflect: true,
+        },
       };
     }
     composeboxSource: string = loadTimeData.valueExists('composeboxSource') ?
@@ -66,17 +71,18 @@ export const SearchboxMixin = <T extends Constructor<CrLitElement>>(
         'Unknown';
     accessor searchboxAriaDescription: string = '';
     accessor dropdownIsVisible: boolean = false;
+    accessor lastQueriedInput: string|null = null;
     accessor multiLineEnabled: boolean = false;
     accessor result: AutocompleteResult|null = null;
     accessor selectedMatch: AutocompleteMatch|null = null;
     accessor selectedMatchIndex: number = -1;
     accessor inputAriaLive: string = '';
     accessor searchboxIcon: string = '';
+    accessor showThumbnail: boolean = false;
 
     initialInputScrollHeight: number = 0;
 
     private lastIgnoredEnterEvent_: KeyboardEvent|null = null;
-    private lastQueriedInput_: string|null = null;
 
     override willUpdate(changedProperties: PropertyValues<this>) {
       super.willUpdate(changedProperties);
@@ -89,6 +95,19 @@ export const SearchboxMixin = <T extends Constructor<CrLitElement>>(
       if (changedPrivateProperties.has('result') ||
           changedPrivateProperties.has('selectedMatchIndex')) {
         this.selectedMatch = this.computeSelectedMatch_();
+      }
+    }
+
+    override updated(changedProperties: PropertyValues<this>) {
+      super.updated(changedProperties);
+
+      const changedPrivateProperties =
+          changedProperties as Map<PropertyKey, unknown>;
+      if (changedPrivateProperties.has('showThumbnail')) {
+        const dropdown = this.getDropdownElement();
+        if (dropdown) {
+          dropdown.showThumbnail = this.showThumbnail;
+        }
       }
     }
 
@@ -118,17 +137,27 @@ export const SearchboxMixin = <T extends Constructor<CrLitElement>>(
       this.getDropdownElement().unselect();
       this.pageHandler().stopAutocomplete(/*clearResult=*/ true);
       // Autocomplete sends updates once it is stopped. Invalidate those results
-      // by setting the |this.lastQueriedInput_| to its default value.
-      this.lastQueriedInput_ = null;
+      // by setting the |this.lastQueriedInput| to its default value.
+      this.lastQueriedInput = null;
     }
 
     queryAutocomplete(
         input: string, preventInlineAutocomplete: boolean = false) {
-      this.lastQueriedInput_ = input;
+      this.lastQueriedInput = input;
 
       preventInlineAutocomplete = preventInlineAutocomplete ||
           this.getInputElement().preventInlineAutocomplete(input);
-      this.pageHandler().queryAutocomplete(input, preventInlineAutocomplete);
+      // Get the cursor position from the DOM. Since DOM updates are async in
+      // lit, if the input was set via code rather than user interaction, the
+      // cursor position fetched from the dom would be stale, so use the text
+      // length instead, since that's what the dom cursor position will be set
+      // to once the update propagates.
+      const cursorPosition =
+          this.getInputElement().inputElement.value === input ?
+          this.getInputElement().inputElement.selectionStart || 0 :
+          input.length;
+      this.pageHandler().queryAutocomplete(
+          input, preventInlineAutocomplete, cursorPosition);
 
       this.dispatchEvent(new CustomEvent('query-autocomplete', {
         bubbles: true,
@@ -154,9 +183,11 @@ export const SearchboxMixin = <T extends Constructor<CrLitElement>>(
       e.preventDefault();
     }
 
+    // TODO(b/519266700): Remove/refactor from mixin if only used by one
+    // embedder.
     async onAutocompleteResultChanged(result: AutocompleteResult) {
-      if (this.lastQueriedInput_ === null ||
-          this.lastQueriedInput_.trimStart() !== result.input) {
+      if (this.lastQueriedInput === null ||
+          this.lastQueriedInput.trimStart() !== result.input) {
         return;  // Stale result; ignore.
       }
 
@@ -187,7 +218,7 @@ export const SearchboxMixin = <T extends Constructor<CrLitElement>>(
         // Select the default match and update the input.
         this.getDropdownElement().selectFirst();
         this.getInputElement().setInput({
-          text: this.lastQueriedInput_,
+          text: this.lastQueriedInput,
           inline: firstMatch.inlineAutocompletion,
         });
 
@@ -252,7 +283,7 @@ export const SearchboxMixin = <T extends Constructor<CrLitElement>>(
         return;
       }
 
-      if (this.lastQueriedInput_ === '') {
+      if (this.lastQueriedInput === '') {
         // Clear the input as well as the matches if the input was empty when
         // the matches arrived.
         this.getInputElement().setInput({text: '', inline: ''});
@@ -367,7 +398,7 @@ export const SearchboxMixin = <T extends Constructor<CrLitElement>>(
           return;
         }
         const currentInput = this.result?.input;
-        const lastQueriedInput = this.lastQueriedInput_?.trimStart();
+        const lastQueriedInput = this.lastQueriedInput?.trimStart();
         if (currentInput !== undefined && lastQueriedInput !== undefined &&
             lastQueriedInput === currentInput) {
           if (this.selectedMatch) {
@@ -478,11 +509,13 @@ export interface SearchboxMixinInterface {
   dropdownIsVisible: boolean;
   initialInputScrollHeight: number;
   inputAriaLive: string;
+  lastQueriedInput: string|null;
   multiLineEnabled: boolean;
   result: AutocompleteResult|null;
   searchboxAriaDescription: string;
   selectedMatch: AutocompleteMatch|null;
   selectedMatchIndex: number;
+  showThumbnail: boolean;
 
   clearAutocompleteMatches(): void;
   getDropdownElement(): SearchboxDropdownElement;

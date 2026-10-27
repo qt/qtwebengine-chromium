@@ -75,9 +75,9 @@ enum class PrefetchRedirectNetworkContextTransition {
 // prefetch, and provide prefetched resources to URL loader interceptor when
 // needed.
 //
-// `PrefetchService` is an `PrefetchContainer::Observer` to `PrefetchContainer`s
+// `PrefetchService` is an `PrefetchContainerObserver` to `PrefetchContainer`s
 // in `owned_prefetches_`.
-class CONTENT_EXPORT PrefetchService : public PrefetchContainer::Observer {
+class CONTENT_EXPORT PrefetchService : public PrefetchContainerObserver {
  public:
   static PrefetchService* GetFromFrameTreeNodeId(
       FrameTreeNodeId frame_tree_node_id);
@@ -101,10 +101,6 @@ class CONTENT_EXPORT PrefetchService : public PrefetchContainer::Observer {
   }
   void SetPrefetchServiceDelegateForTesting(
       std::unique_ptr<PrefetchServiceDelegate> delegate);
-
-  PrefetchProxyConfigurator* GetPrefetchProxyConfigurator() const {
-    return prefetch_proxy_configurator_.get();
-  }
 
   virtual PrefetchOriginProber* GetPrefetchOriginProber() const;
   virtual void PrefetchUrl(base::WeakPtr<PrefetchContainer> prefetch_container);
@@ -138,9 +134,9 @@ class CONTENT_EXPORT PrefetchService : public PrefetchContainer::Observer {
   // Note: This is currently used for WebView initiated prefetches
   // so consideration should be taken if updating the
   // underlying implementation (or its dependencies).
-  bool IsPrefetchDuplicate(
-      const GURL& url,
-      const std::optional<net::HttpNoVarySearchData>& no_vary_search_hint);
+  bool IsPrefetchDuplicate(const GURL& url,
+                           const std::optional<net::HttpNoVarySearchData>&
+                               no_vary_search_hint) const;
 
   // Whether the prefetch attempt for `key` has failed or discarded.
   // Note: the semantics of this method is not super clear and thus is exposed
@@ -151,7 +147,9 @@ class CONTENT_EXPORT PrefetchService : public PrefetchContainer::Observer {
 
   // An interface to notify `PrefetchService` that the given `PrefetchContainer`
   // is no longer needed from outside of the service.
-  void MayReleasePrefetch(base::WeakPtr<PrefetchContainer> prefetch_container);
+  void MayReleasePrefetch(
+      base::WeakPtr<PrefetchContainer> prefetch_container,
+      std::optional<PrefetchStatus> prefetch_status_on_destruction);
 
   // Called by PrefetchDocumentManager when it finishes processing the latest
   // update of speculation candidates.
@@ -211,7 +209,7 @@ class CONTENT_EXPORT PrefetchService : public PrefetchContainer::Observer {
   // referring origin matches the storage_key_filter.
   void EvictPrefetchesForBrowsingDataRemoval(
       const StoragePartition::StorageKeyMatcherFunction& storage_key_filter,
-      PrefetchStatus status);
+      PrefetchStatus prefetch_status_on_destruction);
 
   // Returns candidate `PrefetchContainer`s and servable states for matching
   // process. Corresponds to 3.4. of
@@ -258,6 +256,14 @@ class CONTENT_EXPORT PrefetchService : public PrefetchContainer::Observer {
   mojo::Remote<network::mojom::NetworkContext>
   CreateIsolatedNetworkContextForTesting(
       bool is_proxy_required_when_cross_origin);
+
+  // Cancels unrelated prefetches.
+  //
+  // See `CancelUnrelatedPrefetchURLLoaderThrottle`.
+  void CancelUnrelatedPrefetchForNavigation();
+
+  const PrefetchContainer* GetPrefetchContainerForTesting(
+      const PrefetchKey& key) const;
 
   base::WeakPtr<PrefetchService> GetWeakPtr();
 
@@ -332,6 +338,12 @@ class CONTENT_EXPORT PrefetchService : public PrefetchContainer::Observer {
       std::unique_ptr<const PrefetchRequest> prefetch_request,
       std::unique_ptr<PrePrefetchContainer> pre_prefetch_container);
 
+  // Forces to create `PrefetchContainer` via the off-the-main-thread code path
+  // for testing.
+  base::WeakPtr<PrefetchContainer>
+  CreatePrefetchContainerFromPrePrefetchForTesting(
+      std::unique_ptr<const PrefetchRequest> prefetch_request);
+
   // The prefetch is reset after
   // `PrefetchContainerDefaultTtlInPrefetchService()`
   // or the overridden TTL duration. If
@@ -362,76 +374,21 @@ class CONTENT_EXPORT PrefetchService : public PrefetchContainer::Observer {
                           const net::RedirectInfo& redirect_info,
                           network::mojom::URLResponseHeadPtr redirect_head);
 
-  // Called when the response for |prefetch_container| has started. Based on
-  // |head|, returns a status to inform the |PrefetchStreamingURLLoader| whether
-  // the prefetch is servable. If servable, then `std::nullopt` will be
-  // returned, otherwise a failure status is returned.
-  std::optional<PrefetchErrorOnResponseReceived> OnPrefetchResponseStarted(
-      base::WeakPtr<PrefetchContainer> prefetch_container,
-      network::mojom::URLResponseHead* head);
-
-  // PrefetchContainer::Observer overrides:
+  // PrefetchContainerObserver overrides:
   void OnWillBeDestroyed(const PrefetchContainer& prefetch_container) override;
-  void OnGotInitialEligibility(const PrefetchContainer& prefetch_container,
-                               PreloadingEligibility eligibility) override;
+  void OnGotInitialEligibility(
+      const PrefetchContainer& prefetch_container) override;
   void OnDeterminedHead(const PrefetchContainer& prefetch_container) override;
   void OnPrefetchCompletedOrFailed(
-      const PrefetchContainer& prefetch_container,
-      const network::URLLoaderCompletionStatus& completion_status) override;
+      const PrefetchContainer& prefetch_container) override;
 
-  enum class HandlePrefetchContainerResult {
-    // No prefetch was available to be used.
-    kNotAvailable,
-    // There was a prefetch available but it is not usable.
-    kNotUsable,
-    // The prefetch will be served.
-    kToBeServed,
-    // The prefetch cannot be served because Cookies have changed.
-    kNotToBeServedCookiesChanged,
-    // The prefetch's head has not yet been received.
-    kWaitForHead
-  };
-
-  using FallbackToRegularNavigationWhenPrefetchNotUsable = base::StrongAlias<
-      class FallbackToRegularNavigationWhenPrefetchNotUsableTag,
-      bool>;
-  // Helper function for |GetPrefetchToServe| to return |prefetch_container| via
-  // |on_prefetch_to_serve_ready| callback in |prefetch_match_resolver|. Starts
-  // the cookie copy process for the given prefetch if needed, and updates its
-  // state.
-  HandlePrefetchContainerResult ReturnPrefetchToServe(
-      const PrefetchKey& key,
-      const GURL& prefetch_url,
-      PrefetchServingHandle serving_handle,
-      PrefetchMatchResolver& prefetch_match_resolver,
-      FallbackToRegularNavigationWhenPrefetchNotUsable
-          when_prefetch_not_used_fallback_to_regular_navigation =
-              FallbackToRegularNavigationWhenPrefetchNotUsable(true));
-
-  // Callback for non-blocking call `PrefetchContainer::StartBlockUntilHead()`.
-  // Waits non-redirect response header for No-Vary-Search to determine a
-  // potentially matching prefetch is a matching prefetch. Corresponds 3.6 in
-  // https://wicg.github.io/nav-speculation/prefetch.html#wait-for-a-matching-prefetch-record
-  //
-  // Once we make the decision to use a prefetch, call |PrepareToServe| and
-  // |GetPrefetchToServe| again in order to enforce that prefetches that are
-  // served are served from |prefetches_ready_to_serve_|.
-  void OnMaybeDeterminedHead(
-      const PrefetchKey& key,
-      base::WeakPtr<PrefetchMatchResolver> prefetch_match_resolver,
-      PrefetchContainer& prefetch_container);
-
-  // Helper function for |GetPrefetchToServe| which handles a
-  // |prefetch_container| that could potentially be served to the navigation.
-  HandlePrefetchContainerResult HandlePrefetchContainerToServe(
-      const PrefetchKey& key,
-      PrefetchContainer& prefetch_container,
-      PrefetchMatchResolver& prefetch_match_resolver);
-
+  // When `prefetch_status_on_destruction` has a value, it's set as the final
+  // `PrefetchStatus` of `prefetch_container` for metrics.
   // If `should_progress` is true, calls `PrefetchScheduler::ProgressAsync()`
   // (implicitly).
   void ResetPrefetchContainer(
       base::WeakPtr<PrefetchContainer> prefetch_container,
+      std::optional<PrefetchStatus> prefetch_status_on_destruction,
       bool should_progress = true);
 
   // Methods for scheduling
@@ -439,9 +396,11 @@ class CONTENT_EXPORT PrefetchService : public PrefetchContainer::Observer {
   void ScheduleAndProgressAsync(
       base::WeakPtr<PrefetchContainer> prefetch_container);
   void ResetPrefetchContainerAndProgressAsync(
-      base::WeakPtr<PrefetchContainer> prefetch_container);
+      base::WeakPtr<PrefetchContainer> prefetch_container,
+      std::optional<PrefetchStatus> prefetch_status_on_destruction);
   void ResetPrefetchContainersAndProgressAsync(
-      std::vector<base::WeakPtr<PrefetchContainer>> prefetch_containers);
+      std::vector<base::WeakPtr<PrefetchContainer>> prefetch_containers,
+      std::optional<PrefetchStatus> prefetch_status_on_destruction);
   // CAUTION: This doesn't call `ResetPrefetchContainer()` to preserve current
   // behavior.
   void RemoveFromSchedulerAndProgressAsync(

@@ -1,0 +1,786 @@
+Major changes in 48.0
+=====================
+- Translation updates
+
+Major changes in 48.rc
+======================
+- Switch to JPEG for background image
+- Translation updates
+
+Major changes in 48.beta
+========================
+- Switch to Adwaita Fonts
+- Split data recording and limits in time limits schema
+- Set more useful defaults on stylus buttons
+- Translation updates
+
+Major changes in 48.alpha
+=========================
+- Add screen limits schema
+- Fix gendered language in key descriptions
+
+Major changes in 47.1
+===================
+- meson: Fix project version
+
+Major changes in 47.0
+===================
+- Translation updates
+
+Major changes in 47.rc
+======================
+- Translation updates
+
+Major changes in 47.beta
+========================
+- Add break-reminder schema
+- Provide a new pressure range for styli
+- Add SwitchMonitor and Keybinding to the tablet stylus actions
+- Switch back to Cantarell font
+- Translation updates
+
+Major changes in 47.alpha
+=========================
+- Add key to tweak font rendering
+- Include Settings in sort order
+- Add key to pick accent color
+- Translation updates
+
+Major changes in 46.0
+=====================
+- Translation updates
+
+Major changes in 46.rc
+======================
+- Make default clock format overridable by translators
+- Translation updates
+
+Major changes in 46.beta
+========================
+- Add key to modify XKB options
+- Add key to indicate whether switches should indicate
+  state with shapes
+- Translation updates
+
+Major changes in 46.alpha
+=========================
+- Update default background file extension to jxl
+- Translation updates
+
+Major changes in 45.0
+=====================
+- Translation updates
+
+Major changes in 45.rc
+======================
+- Translation updates
+
+Major changes in 45.beta
+========================
+- Translation updates
+
+Major changes in 45.alpha
+=========================
+- Revert back to jpeg wallpapers
+- Update focus-new-window description to new behavior
+- Remove window shading
+- Change default to not autostart software from media
+- Translation updates
+
+Major changes in 44.0
+=====================
+- Translation updates
+
+Major changes in 44.beta
+========================
+- Build improvements
+- Translation updates
+
+Major changes in 43.0
+=====================
+- Translation updates
+
+Major changes in 43.rc.1
+========================
+- Update default background file extension to webp
+- Translation updates
+
+Major changes in 43.rc
+======================
+- Add setting for touchpad acceleration profiles
+- Add specific schema for trackpoint pointer devices
+- Translation updates
+
+Major changes in 43.alpha
+=========================
+- Fix description of use-same-proxy setting
+- Translation updates
+
+Major changes in 42.0
+=====================
+- Translation updates
+
+Major changes in 42.rc
+======================
+- Translation updates
+
+Major changes in 42.beta
+========================
+- Add setting to control privacy screen feature
+- Translation updates
+
+Major changes in 42.alpha
+=========================
+- Add color scheme setting and high-contrast preference
+- Translation updates
+
+Major changes in 41.0
+=====================
+- Translation updates
+
+Major changes in 41.rc
+======================
+- Stop setting legacy GNOME 2 shortcut by default
+- Translation updates
+
+Major changes in 41.alpha
+=========================
+- Add lockdown setting for revealing passwords
+- Translation updates
+
+Major changes in 40.0
+=====================
+- Translation updates
+
+Major changes in 40.rc
+======================
+- Translation updates
+
+Major changes in 40.beta
+========================
+- Use pgUp/Down shortcuts for horizontal workspace switching
+- Add super-based workspace navigation shortcuts
+- Remove “gnome-fallback” as a valid session name.
+- Fix summary of `two-finger-scroll-enabled` key
+- Translation updates
+
+Major changes in 40.alpha
+=========================
+- Add scroll button locking to trackballs
+- Move mouse drag-threshold/double-click settings here
+- Move antialiasing/hinting/rgba-order settings here
+- Translation updates
+
+Major changes in 3.38.0
+=======================
+- Translation updates
+
+Major changes in 3.37.92
+========================
+- Build gir even when cross-compiling
+- Translation updates
+
+Major changes in 3.37.2
+=======================
+- USB protection is enabled by default
+- Add tap-button-map and tap-drag-lock settings
+- Treat x-content/ostree-repository as software
+- Fix introspection on Visual Studio
+- Fix quotes in user strings to use HIG typography
+- Translation updates
+
+Major changes in 3.37.1
+=======================
+- Add 'avatar-directories' setting
+- Translation updates
+
+Major changes in 3.36.0
+=======================
+- Translation updates
+
+Major changes in 3.35.91
+========================
+- Add USB protection key
+- Translation updates
+
+Major changes in 3.34.0
+=======================
+- Translation updates
+
+Major changes in 3.33.92
+========================
+- Translation updates
+
+Major changes in 3.33.90
+========================
+- Add 'middle-click-emulation' setting
+- Translation updates
+
+Major changes in 3.33.1
+=======================
+- Add 'enable-hot-corners' setting
+- Translation updates
+
+Major changes in 3.33.0
+=======================
+- Add mount-removable-storage-devices-as-read-only lockdown option
+- Add setting for overlay scrolling
+- Add locate-pointer setting
+- Add settings to store numlock state
+- Translation updates
+
+Major changes in 3.32.0
+=======================
+- Translation updates
+
+Major changes in 3.31.92
+========================
+- Drop legacy build systems
+- Translation updates
+
+Major changes in 3.31.91
+========================
+- Translation updates
+
+Major changes in 3.31.90
+========================
+- Updated default monospace font
+- More meson build fixes
+- Translation updates
+
+Major changes in 3.31.0.2
+=========================
+- Fixed generation of enums XML on meson builds
+- Convert post-install script to python
+- Translation updates
+
+Major changes in 3.31.0.1
+=========================
+- Brown paper bag release, included several fixes to meson build
+
+Major changes in 3.31.0
+=======================
+- Add settings to inhibit microphone/camera
+- Change tablets'/touchscreens' "display" setting to "output" one
+  with different semantics.
+- Added meson build support
+- Changed default clock settings
+- Added XF86Keyboard keybinding to cycle the keyboard layout
+
+Major changes in 3.28.1
+=======================
+- Set default background image for screen lock to an existing one
+- Translation updates
+
+Major changes in 3.28.0
+=======================
+- Translation updates
+
+Major changes in 3.27.92
+========================
+- Translation updates
+
+Major changes in 3.27.90
+========================
+- Add setting about whether to allow volume above 100%
+- Change default click method for touchpads, from Windows-style
+  soft-button areas, to Mac-style two-finger right-click. This
+  does not change the settings for trackpoints or touchpads that
+  don't support multi-touch
+- Add tertiary button action for Wacom styli
+
+Major changes in 3.27.1
+=======================
+- Add a gsettings key to show/hide weekday
+- gschema: Fix gettext-domain
+- Translation updates
+
+Major changes in 3.24.1
+=======================
+- Update GConf convert scripts to cater for peripherals
+- Win32 build fixes
+- Translation updates
+
+Major changes in 3.24.0
+=======================
+- Translation updates
+
+Major changes in 3.23.90
+========================
+- Use more fancy characters in translatable strings
+- Fix "<super>s" shortcut being used for 2 separate actions
+
+Major changes in 3.23.3
+=======================
+- Add "Disable while typing" touchpad setting
+- Add a gsetting to back Gtk/EnablePrimaryPaste
+- Add "tap-and-drag" for touchpads
+
+Major changes in 3.22.0
+=======================
+- Translation updates
+
+Major changes in 3.21.4
+=======================
+ - Add tablet/stylus/pad schemas
+ - Add mouse/trackpad accel profile keys
+ - Translation updates
+
+Major changes in 3.21.3
+=======================
+
+ - Add a setting to store input sources MRU list
+ - Translation updates
+
+Major changes in 3.21.2
+=======================
+
+- Add a setting to enable weekdates in calendars
+- Translation updates
+
+Major changes in 3.20.0
+=======================
+
+- Translation updates
+
+Major changes in 3.19.92
+========================
+
+- Add a setting to enable caret mode
+- Translation updates
+
+Major changes in 3.19.90
+========================
+
+- Update desktop file IDs for search providers
+- Translation updates
+
+Major changes in 3.19.3
+=======================
+
+- Remove scroll-method key, and add edge-scroll-enabled key
+  for touchpads
+- Revert natural scrolling being applies to non-touchpad devices
+  by default
+- Translation updates
+
+Major changes in 3.19.2
+=======================
+
+- Add setting to show battery percentage
+- Translation updates
+
+Major changes in 3.18.1
+=======================
+
+- Add instructions and scripts for building on Win32
+- Translation updates
+
+Major changes in 3.18.0
+=======================
+
+- Translation updates
+
+Major changes in 3.17.92
+========================
+
+- Fix typographical errors
+- Translation updates
+
+Major changes in 3.16.1
+=======================
+
+- Use system font in titlebar by default
+- Translation updates
+
+Major changes in 3.16.0
+=======================
+
+- Translation updates
+
+Major changes in 3.15.92
+========================
+
+- Add a way to turn off "PC-style" right-click for touchpads
+- Translation updates
+
+Major changes in 3.15.90
+========================
+
+- Use intltool to translate GSettings schema files directly
+- Translation updates
+
+Major changes in 3.15.4
+=======================
+
+- Adopt peripherals' gschemas from gnome-settings-daemon
+- Change the default focus-tracking key
+- Update docs for org.gnome.desktop.wm.preferences.raise-on-click
+- Deprecate window manager theme key
+- Add report-technical-problems key to privacy
+
+Major changes in 3.14.1
+=======================
+
+- Disable default action on middle-click on titlebar
+- Translation updates
+
+Major changes in 3.14.0
+=======================
+
+- Disable location service by default
+- Translation updates
+
+Major changes in 3.13.92
+========================
+
+- Translation updates
+
+Major changes in 3.13.91
+========================
+
+- Add a whitelist in addition to a black list for search providers
+
+Major changes in 3.13.90
+========================
+* Add Location settings
+* Add default bindings for "backward" keyboard shortcuts
+* Windows build bug fix
+* Fix location of the default backgrounds
+
+Major changes in 3.13.2
+=======================
+* Switch default icon theme to Adwaita
+* Remove minimize and maximize from default button layout
+* Translation updates
+
+Major changes in 3.13.1
+========================
+* Add switch to last/first workspace keybindings
+* Translation updates
+
+Major changes in 3.12.0
+=======================
+* Translation updates
+
+Major changes in 3.11.91
+========================
+* Disable 'send-software-usage-stats' by default
+* Translation updates
+
+Major changes in 3.11.90
+========================
+* Add 'send-software-usage-stats' key
+* Translation updates
+
+Major changes in 3.11.5
+=======================
+* Extend app folder schema
+* Translation updates
+
+Major changes in 3.11.4
+=======================
+* Add an app folder setting
+* Translation updates
+
+Major changes in 3.11.3
+=======================
+* Add 'Always on Top' key
+* Add keybindings to move windows between monitors
+* Translation updates
+
+Major changes in 3.10.1
+=======================
+* New default lock screen background. Please update gnome-backgrounds
+  to 3.10.1 as well
+* Translation updates
+
+Major changes in 3.10.0
+=======================
+* Translation updates
+
+Major changes in 3.9.91
+=======================
+* Add datetime schema
+* Set a different lock screen background by default
+* Translation updates
+
+Major changes in 3.9.90
+=======================
+* Add settings for focus/caret tracking
+
+Major changes in 3.9.5
+======================
+* Remove settings for deprecated gtk-settings
+* Remove application-based option, deprecated in mutter
+
+Major changes in 3.9.3
+======================
+* Translation updates
+
+Major changes in 3.9.2
+======================
+* Add remember-app-usage key to privacy schema
+* Add alternative shortcut for toggling the overview
+* Add always-show-universal-access-status key to a11y schema
+* Translation updates
+
+Major changes in 3.8.2
+======================
+* Fix description of "sort-order" key in the search providers schema
+* Don't migrate metacity themes from GNOME 2.
+* Translation updates
+
+Major changes in 3.8.0
+======================
+* Translation updates
+
+Major changes in 3.7.92
+=======================
+* Translation updates
+
+Major changes in 3.7.91
+=======================
+* Add keys for the screensaver wallpaper
+* Remove the obsolete draw-background key
+* Translation updates
+
+Major changes in 3.7.90
+=======================
+* Add the IPv6 localhost to the default ignored hosts for proxy
+* Make Alt-Tab be synonymous with the default shell switcher
+* Lower default idle delay to 300 seconds
+
+Major changes in 3.7.5
+======================
+* Rename resident-in-lock-screen key
+* Use the Super key for workspace and application switcher shortcuts
+* Translation updates
+
+Major changes in 3.7.4
+======================
+
+* Clarify definition of resident-in-lock-screen
+* Add a 'per-window' key to the input sources schema
+* Use Super+H (for hide) as the default value for minimise
+* Add show-full-name-in-top-bar to privacy schemas
+* Rename show-full-name lock screen key to show-full-name-in-top-bar
+* Mark a number of keys as deprecated and obsolete
+
+Major changes in 3.7.3
+======================
+
+* Add lockdown mode key for user-accounts
+* Add trash, temp files and recent files related settings
+* Add schemas for notification filtering
+* Add new "switch-application" keybinding, so that
+  the "switch-windows" keybinding can be kept for the legacy mode
+* Add new switch-input-source keybinding
+
+Major changes in 3.7.2
+======================
+
+* Add a schema for desktop search providers (#687489)
+* Add a schema for privacy settings (#688578)
+* Add a show-full-name setting for the lock screen
+* Quote a11y feature names (#687292)
+* Remove unneeded XML escaping (#687291)
+* Fix a typo (#686861)
+* Translation updates
+
+Major changes in 3.6.0
+======================
+
+* Translation updates
+
+Major changes in 3.5.92
+=======================
+
+* Change default list of input sources to be empty, so the
+  default layout is inherited from the current settings
+* Translation updates
+
+Major changes in 3.5.91
+=======================
+
+* Add option to show all the available input sources in the UI
+* Translation updates
+
+Major changes in 3.5.90
+=======================
+
+* Add xkb-options key to input-sources
+* Translation updates
+
+Major changes in 3.5.4
+======================
+
+* Add colour saturation setting for the magnifier
+* Change default keyboard shortcut for "Maximise"
+* Translation updates
+
+Major changes in 3.5.3
+======================
+
+* Add show-notifications setting (#677640)
+* Translation updates
+
+Major changes in 3.5.2
+======================
+
+* Change the default mouse-button-modifier to Super (#607797)
+* Add brightness and contrast preferences (#645665)
+* Add input-sources schema (#676101)
+* Translation updates
+
+Major changes in 3.4.1
+======================
+
+* Translation updates
+
+Major changes in 3.4.0
+======================
+
+* Translation updates
+
+Major changes in 3.3.92
+=======================
+
+* Adjust default bindings for maximize/restore
+* Make evolution launch the correct component
+* Update default background URI
+* Updated translations
+
+Major changes in 3.3.90
+=======================
+
+* Update introspection dependency
+* Updated translations
+
+Major changes in 3.3.2
+======================
+
+* Add shared wm schemas
+* Updated translations
+
+Major changes in 3.2.0
+======================
+
+* Updated translations
+
+Major changes in 3.1.92
+=======================
+
+* Enable maintainer mode by default
+* Don't migrate the icon-theme from GConf
+* Updated translations
+
+Major changes in 3.1.91
+=======================
+
+* Add org.gnome.desktop.interface.{clock-show-seconds,clock-show-date}
+* Improve documentation for org.gnome.system.proxy
+* Updated translations
+
+Major changes in 3.1.3
+======================
+
+* Add org.gnome.system.locale schema
+* Remove org.gnome.desktop.default-applications.at remains
+* Add some ranges to magnifier schemas
+* Updated translations
+
+Major changes in 3.0.1
+======================
+
+* Don't migrate background-related keys
+* Don't migrate custom GTK+ color schemes and various GTK+ tweaks keys
+
+Major changes in 3.0.0
+======================
+* Added Japanese translation
+
+Major changes in 2.91.92
+========================
+
+* Use picture-uri instead of picture-filename (#633983)
+* Remove at mobility schema conversion
+* Use seconds instead of minutes in idle and lock times
+* Remove idle and screensaver settings form the conversion
+
+Major changes in 2.91.91
+========================
+
+* Disable toolkit-accessibility by default
+* Add "disable-log-out" to lockdown
+* Remove mobility configuration, we only support caribou's on-screen keyboard
+* Remove default-applications.browser schema from conversion script
+* Remove unused "use-custom-font" setting
+* Add "text-scaling-factor" key
+* Remove obsolete screensaver settings
+
+Major changes in 0.1.7
+======================
+
+* Change org.gnome.desktop.session/idle-delay to a uint
+* Use ACLOCAL_AMFLAGS when building
+* Move gnome-screensaver settings here
+* Remove "status-bar-meter-on-right" setting
+* Remove duplicated "idle-delay" key
+* Remove web browser default preference
+* Make sure all the schemas are translatable
+* Use Cantarell 11pt as the default UI font
+* Add magnifier schemas from gnome-shell
+* Fix schemas path in a11y schemas
+* Add "session-name" to org.gnome.desktop.session
+* Rename "accessibility" key to "toolkit-accessibility"
+* Remove AT visual preference, we only support orca as a screen reader
+* Remove the duplicate on-screen keyboard startup key
+
+Major changes in 0.1.5
+======================
+
+* Add org.gnome.desktop.session schema
+* Add automatic-mnemonics key to org.gnome.desktop.interface
+* Fix paths for org.gnome.desktop.default-applications.office settings
+
+Major changes in 0.1.4
+======================
+
+* Add thumbnailer schemas
+* Don't show icons on the desktop by default
+
+Major changes in 0.1.3
+======================
+
+* Add a key for the clock format
+* Disable migration of GTK+ and cursor themes
+* Change default background gradient colours
+
+Major changes in 0.1.2
+======================
+
+* Add new media-handling schemas taken from Nautilus
+
+Major changes in 0.1.1
+======================
+
+* Misc. schema updates
+
+Major changes in 0.1.0
+======================
+
+* Relicense to LGPLv2+
+* Set things up for translation
+* Add a GConf conversion script
+* Misc. schema updates
+
+
+=============
+Version 0.0.1
+=============
+
+This is the initial release of gsettings-desktop-schemas. The schemas shipped
+here are based on the GConf schemas from libgnome and gnome-vfs.
+
+Note that at this point, there is no guarantee on the stability of the schemas.

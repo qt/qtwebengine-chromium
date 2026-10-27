@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 
 // This file is part of Eigen, a lightweight C++ template library
 // for linear algebra.

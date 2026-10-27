@@ -5,15 +5,26 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_INTEGRATORS_AUTOFILL_AI_METRICS_AUTOFILL_AI_LOGGER_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_INTEGRATORS_AUTOFILL_AI_METRICS_AUTOFILL_AI_LOGGER_H_
 
+#include <algorithm>
 #include <map>
+#include <optional>
+#include <set>
+#include <utility>
 
+#include "base/containers/span.h"
 #include "base/memory/raw_ref.h"
+#include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/integrators/autofill_ai/metrics/autofill_ai_ukm_logger.h"
+#include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/unique_ids.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
+
+namespace metrics {
+class ProfileMetricsService;
+}
 
 namespace autofill {
 
@@ -145,6 +156,11 @@ class AutofillAiLogger {
       last_filled_entity_;
 
   AutofillAiUkmLogger ukm_logger_;
+  // This instance will outlive the object as it is a keyed service attached to
+  // a profile, whereas the object is indirectly owned by the client, which is
+  // itself owned by the Profile through the web contents. The keyed service
+  // will outlive the web contents.
+  const raw_ref<metrics::ProfileMetricsService> profile_metrics_service_;
 };
 
 }  // namespace autofill

@@ -26,9 +26,13 @@
 //* OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 {% set api = metadata.api.lower() %}
-#include "dawn/common/Assert.h"
-#include "dawn/common/Log.h"
 #include "mock_{{api}}.h"
+
+#include <algorithm>
+
+#include "dawn/dawn_version.h"
+#include "src/dawn/common/Log.h"
+#include "src/dawn/common/Assert.h"
 
 using namespace testing;
 
@@ -62,6 +66,8 @@ WGPUFuture ProcTableAsClass::GetLastFuture() {
 
 {% set Prefix = metadata.proc_table_prefix %}
 void ProcTableAsClass::GetProcTable({{Prefix}}ProcTable* table) {
+    std::ranges::copy(dawn::kDawnVersion, table->version);
+
     {% for type in by_category["object"] %}
         {% for method in c_methods(type) %}
             table->{{as_varName(type.name, method.name)}} = reinterpret_cast<{{as_cProc(type.name, method.name)}}>(Forward{{as_MethodSuffix(type.name, method.name)}});
@@ -82,7 +88,7 @@ void ProcTableAsClass::GetProcTable({{Prefix}}ProcTable* table) {
 {% for type in by_category["object"] %}
     {% for method in type.methods %}
         {% set Suffix = as_CppMethodSuffix(type.name, method.name) %}
-        {% if has_callbackInfoStruct(method) %}
+        {% if has_callbackInfoStruct(method.arguments) %}
             {{as_annotated_cType(method.returns)}} ProcTableAsClass::{{Suffix}}(
                 {{-as_cType(type.name)}} {{as_varName(type.name)}}
                 {%- for arg in method.arguments -%}

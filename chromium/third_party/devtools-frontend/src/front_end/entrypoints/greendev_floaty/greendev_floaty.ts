@@ -245,16 +245,10 @@ async function init(): Promise<void> {
 
     // Register necessary experiments to avoid "Unknown experiment" errors.
     Root.Runtime.experiments.register(
-        Root.ExperimentNames.ExperimentName.CAPTURE_NODE_CREATION_STACKS, 'Capture node creation stacks');
-    Root.Runtime.experiments.register(
         Root.ExperimentNames.ExperimentName.INSTRUMENTATION_BREAKPOINTS, 'Enable instrumentation breakpoints');
     Root.Runtime.experiments.register(
         Root.ExperimentNames.ExperimentName.USE_SOURCE_MAP_SCOPES, 'Use scope information from source maps');
-    Root.Runtime.experiments.register(Root.ExperimentNames.ExperimentName.LIVE_HEAP_PROFILE, 'Live heap profile');
     Root.Runtime.experiments.register(Root.ExperimentNames.ExperimentName.PROTOCOL_MONITOR, 'Protocol Monitor');
-    Root.Runtime.experiments.register(
-        Root.ExperimentNames.ExperimentName.SAMPLING_HEAP_PROFILER_TIMELINE, 'Sampling heap profiler timeline');
-    Root.Runtime.experiments.register(Root.ExperimentNames.ExperimentName.APCA, 'APCA');
 
     const WINDOW_LOCAL_STORAGE: Common.Settings.SettingsBackingStore = {
       register(_setting: string): void{},

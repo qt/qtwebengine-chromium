@@ -226,8 +226,8 @@ struct NamedDebugProxy : IndexedDebugProxy<T, id, Provider> {
     DirectHandle<Symbol> symbol =
         isolate->factory()->wasm_debug_proxy_names_symbol();
     DirectHandle<Object> table_or_undefined =
-        JSObject::GetProperty(isolate, holder, symbol).ToHandleChecked();
-    if (!IsUndefined(*table_or_undefined, isolate)) {
+        JSReceiver::GetProperty(isolate, holder, symbol).ToHandleChecked();
+    if (!IsUndefined(*table_or_undefined)) {
       return Cast<NameDictionary>(table_or_undefined);
     }
     auto provider = T::GetProvider(holder, isolate);
@@ -498,7 +498,7 @@ DirectHandle<FixedArray> GetOrCreateInstanceProxyCache(
   DirectHandle<Symbol> symbol =
       isolate->factory()->wasm_debug_proxy_cache_symbol();
   if (!Object::GetProperty(isolate, instance, symbol).ToHandle(&cache) ||
-      IsUndefined(*cache, isolate)) {
+      IsUndefined(*cache)) {
     cache = isolate->factory()->NewFixedArrayWithHoles(kNumInstanceProxies);
     Object::SetProperty(isolate, instance, symbol, cache).Check();
   }
@@ -618,13 +618,13 @@ class ContextProxy {
       for (auto delegate_name : kDelegateNames) {
         DirectHandle<JSAny> delegate;
         ASSIGN_RETURN_ON_EXCEPTION(isolate, delegate,
-                                   Cast<JSAny>(JSObject::GetProperty(
+                                   Cast<JSAny>(JSReceiver::GetProperty(
                                        isolate, receiver, delegate_name)));
-        if (!IsUndefined(*delegate, isolate)) {
+        if (!IsUndefined(*delegate)) {
           DirectHandle<Object> value;
           ASSIGN_RETURN_ON_EXCEPTION(
               isolate, value, Object::GetProperty(isolate, delegate, name));
-          if (!IsUndefined(*value, isolate)) return value;
+          if (!IsUndefined(*value)) return value;
         }
       }
     }
@@ -1025,12 +1025,6 @@ DirectHandle<WasmValueObject> WasmValueObject::New(
     case wasm::kS128: {
       t = isolate->factory()->InternalizeString(base::StaticCharVector("v128"));
       v = WasmSimd128ToString(isolate, value.to_s128_unchecked());
-      break;
-    }
-    case wasm::kWaitQueue: {
-      t = isolate->factory()->InternalizeString(
-          base::StaticCharVector("waitqueue"));
-      v = isolate->factory()->NewNumberFromInt(value.to_i32_unchecked());
       break;
     }
     case wasm::kRefNull:

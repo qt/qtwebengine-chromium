@@ -240,9 +240,8 @@ EXTRA_PROGRAMS = $(am__EXEEXT_1)
 @DISABLE_TOOLS_FALSE@@HAVE_MEMFD_CREATE_TRUE@@LINUX_HOST_TRUE@am__append_19 = \
 @DISABLE_TOOLS_FALSE@@HAVE_MEMFD_CREATE_TRUE@@LINUX_HOST_TRUE@	src/tools/linux/core_handler/core_handler
 
-@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@am__append_20 = \
-@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@	src/common/dumper_unittest \
-@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@	src/tools/linux/md2core/minidump_2_core_unittest
+@DISABLE_TOOLS_FALSE@am__append_20 = src/common/dumper_unittest
+@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@am__append_20 += src/tools/linux/md2core/minidump_2_core_unittest
 
 @DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@@X86_HOST_TRUE@am__append_21 = \
 @DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@@X86_HOST_TRUE@	src/common/mac/macho_reader_unittest
@@ -381,8 +380,8 @@ am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(libexecdir)" \
 @DISABLE_PROCESSOR_FALSE@@SELFTEST_TRUE@am__EXEEXT_7 = src/processor/stackwalker_selftest$(EXEEXT)
 @LINUX_HOST_TRUE@am__EXEEXT_8 = src/client/linux/linux_client_unittest$(EXEEXT) \
 @LINUX_HOST_TRUE@	src/common/linux/google_crashdump_uploader_test$(EXEEXT)
-@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@am__EXEEXT_9 = src/common/dumper_unittest$(EXEEXT) \
-@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@	src/tools/linux/md2core/minidump_2_core_unittest$(EXEEXT)
+@DISABLE_TOOLS_FALSE@am__EXEEXT_9 = src/common/dumper_unittest$(EXEEXT)
+@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@am__EXEEXT_9 += src/tools/linux/md2core/minidump_2_core_unittest$(EXEEXT)
 @DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@@X86_HOST_TRUE@am__EXEEXT_10 = src/common/mac/macho_reader_unittest$(EXEEXT)
 @DISABLE_TOOLS_FALSE@@HAVE_MEMFD_CREATE_TRUE@@LINUX_HOST_TRUE@am__EXEEXT_11 = src/tools/linux/core_handler/core_handler$(EXEEXT)
 PROGRAMS = $(bin_PROGRAMS) $(libexec_PROGRAMS) $(noinst_PROGRAMS)
@@ -799,24 +798,24 @@ am_src_common_dumper_unittest_OBJECTS =  \
 	src/common/dwarf/dumper_unittest-elf_reader.$(OBJEXT) \
 	src/common/dwarf/dumper_unittest-dwarf2reader_cfi_unittest.$(OBJEXT) \
 	src/common/dwarf/dumper_unittest-dwarf2reader_die_unittest.$(OBJEXT) \
-	src/common/linux/dumper_unittest-crc32.$(OBJEXT) \
-	src/common/linux/dumper_unittest-dump_symbols.$(OBJEXT) \
-	src/common/linux/dumper_unittest-dump_symbols_unittest.$(OBJEXT) \
-	src/common/linux/dumper_unittest-elf_core_dump.$(OBJEXT) \
-	src/common/linux/dumper_unittest-elf_core_dump_unittest.$(OBJEXT) \
-	src/common/linux/dumper_unittest-elf_symbols_to_module.$(OBJEXT) \
-	src/common/linux/dumper_unittest-elf_symbols_to_module_unittest.$(OBJEXT) \
-	src/common/linux/dumper_unittest-elfutils.$(OBJEXT) \
-	src/common/linux/dumper_unittest-file_id.$(OBJEXT) \
-	src/common/linux/dumper_unittest-file_id_unittest.$(OBJEXT) \
-	src/common/linux/dumper_unittest-linux_libc_support.$(OBJEXT) \
-	src/common/linux/dumper_unittest-memory_mapped_file.$(OBJEXT) \
-	src/common/linux/dumper_unittest-memory_mapped_file_unittest.$(OBJEXT) \
-	src/common/linux/dumper_unittest-safe_readlink.$(OBJEXT) \
-	src/common/linux/dumper_unittest-safe_readlink_unittest.$(OBJEXT) \
-	src/common/linux/dumper_unittest-synth_elf.$(OBJEXT) \
-	src/common/linux/dumper_unittest-synth_elf_unittest.$(OBJEXT) \
-	src/common/linux/tests/dumper_unittest-crash_generator.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-crc32.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-dump_symbols.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-dump_symbols_unittest.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-elf_core_dump.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-elf_core_dump_unittest.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-elf_symbols_to_module.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-elf_symbols_to_module_unittest.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-elfutils.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-file_id.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-file_id_unittest.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-linux_libc_support.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-memory_mapped_file.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-memory_mapped_file_unittest.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-safe_readlink.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-safe_readlink_unittest.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-synth_elf.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/dumper_unittest-synth_elf_unittest.$(OBJEXT) \
+@LINUX_HOST_TRUE@	src/common/linux/tests/dumper_unittest-crash_generator.$(OBJEXT) \
 	src/common/tests/dumper_unittest-file_utils.$(OBJEXT)
 src_common_dumper_unittest_OBJECTS =  \
 	$(am_src_common_dumper_unittest_OBJECTS)

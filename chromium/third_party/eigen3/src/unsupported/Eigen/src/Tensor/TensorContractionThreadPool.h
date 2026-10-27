@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_CONTRACTION_THREAD_POOL_H
-#define EIGEN_CXX11_TENSOR_TENSOR_CONTRACTION_THREAD_POOL_H
+#ifndef EIGEN_TENSOR_TENSOR_CONTRACTION_THREAD_POOL_H
+#define EIGEN_TENSOR_TENSOR_CONTRACTION_THREAD_POOL_H
 
 // evaluator for thread pool device
 #ifdef EIGEN_USE_THREADS
@@ -1507,7 +1508,7 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
     int num_threads = 1;
     double min_cost = total_parallel_cost;
     double kPerThreadOverHead = 3000;
-    double kFixedOverHead = 100000;
+    double kFixedOverHead = 20000;
     for (int nt = 2; nt <= this->m_device.numThreads(); nt += 2) {
       double sequential_cost = kFixedOverHead + nt * (reduction_cost + kPerThreadOverHead);
       double parallel_cost = total_parallel_cost / nt + sequential_cost;
@@ -1540,4 +1541,4 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
 }  // end namespace Eigen
 
 #endif  // EIGEN_USE_THREADS
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_CONTRACTION_THREAD_POOL_H
+#endif  // EIGEN_TENSOR_TENSOR_CONTRACTION_THREAD_POOL_H

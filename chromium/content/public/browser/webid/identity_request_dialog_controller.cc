@@ -69,9 +69,9 @@ void IdentityRequestDialogController::SetIsInterceptionEnabled(bool enabled) {
   is_interception_enabled_ = enabled;
 }
 
-void IdentityRequestDialogController::ShouldShowAccountsPassiveDialog(
-    ShouldShowAccountsPassiveDialogCallback cb) {
-  std::move(cb).Run(true);
+void IdentityRequestDialogController::GetPassiveDialogVolume(
+    GetPassiveDialogVolumeCallback cb) {
+  std::move(cb).Run(PassiveDialogVolume::kDefault);
 }
 
 bool IdentityRequestDialogController::ShowAccountsDialog(
@@ -173,9 +173,6 @@ WebContents* IdentityRequestDialogController::ShowModalDialog(
 }
 
 void IdentityRequestDialogController::CloseModalDialog() {}
-
-void IdentityRequestDialogController::OnFlowCompleted(
-    content::webid::FederatedLoginResult result) {}
 
 WebContents* IdentityRequestDialogController::GetRpWebContents() {
   return nullptr;

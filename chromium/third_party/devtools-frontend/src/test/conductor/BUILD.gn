@@ -16,6 +16,7 @@ node_ts_library("implementation") {
     "async-scope.ts",
     "commandline.ts",
     "custom-query-handlers.ts",
+    "diff-utils.ts",
     "events.ts",
     "frontend_tab.ts",
     "hooks.ts",

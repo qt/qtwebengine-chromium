@@ -25,26 +25,27 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/metal/PhysicalDeviceMTL.h"
+#include "src/dawn/native/metal/PhysicalDeviceMTL.h"
 
-#include "dawn/common/CoreFoundationRef.h"
-#include "dawn/common/GPUInfo.h"
-#include "dawn/common/Log.h"
-#include "dawn/common/NSRef.h"
-#include "dawn/common/Platform.h"
-#include "dawn/common/SystemUtils.h"
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/Instance.h"
 #include "dawn/native/MetalBackend.h"
-#include "dawn/native/metal/BufferMTL.h"
-#include "dawn/native/metal/DeviceMTL.h"
-#include "dawn/native/metal/UtilsMetal.h"
 #include "dawn/platform/DawnPlatform.h"
+#include "src/dawn/common/CoreFoundationRef.h"
+#include "src/dawn/common/GPUInfo.h"
+#include "src/dawn/common/Log.h"
+#include "src/dawn/common/NSRef.h"
+#include "src/dawn/common/SystemUtils.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/Instance.h"
+#include "src/dawn/native/metal/BufferMTL.h"
+#include "src/dawn/native/metal/DeviceMTL.h"
+#include "src/dawn/native/metal/UtilsMetal.h"
+#include "src/utils/compiler.h"
+#include "src/utils/platform.h"
 
 #if DAWN_PLATFORM_IS(MACOS)
 #import <IOKit/IOKitLib.h>
 
-#include "dawn/common/IOKitRef.h"
+#include "src/dawn/common/IOKitRef.h"
 #endif
 
 #include <string>
@@ -75,7 +76,7 @@ MaybeError GetVendorIdFromVendors(id<MTLDevice> device, PCIIDs* ids) {
     uint32_t vendorId = 0;
     const char* deviceName = [device.name UTF8String];
     for (const auto& it : kVendors) {
-        if (strstr(deviceName, it.trademark) != nullptr) {
+        if (DAWN_UNSAFE_TODO(strstr(deviceName, it.trademark)) != nullptr) {
             vendorId = it.vendorId;
             break;
         }
@@ -230,7 +231,7 @@ bool IsGPUCounterSupported(id<MTLDevice> device,
 }
 
 // https://developer.apple.com/documentation/metal/mtlgpufamily/apple9?language=objc
-enum class MTLGPUFamily {
+enum class MTLGPUFamily : uint8_t {
     Apple1,
     Apple2,
     Apple3,
@@ -424,6 +425,10 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         deviceToggles->Default(Toggle::DisableBaseInstance, !haveBaseVertexBaseInstance);
     }
 
+    // Metal queue events are, by default, triggered via the Metal threads, and so are always
+    // spontaneous.
+    deviceToggles->Default(Toggle::SpontaneousQueueEvents, true);
+
     // Vertex buffer robustness is implemented by using programmable vertex pulling. The
     // VertexPulling transform also handles non-4-byte aligned vertex buffer accesses.
     deviceToggles->Default(Toggle::MetalEnableVertexPulling, true);
@@ -547,6 +552,9 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         if ([*mDevice supportsFamily:static_cast<::MTLGPUFamily>(1008)]) {
             deviceToggles->Default(Toggle::MetalSerializeTimestampGenerationAndResolution, true);
         }
+
+        // TODO(517225032): Gate on macOS version when a fix is released.
+        deviceToggles->Default(Toggle::MetalFixU32DivMod, true);
     }
 
     // Local testing shows the workaround is needed on AMD Radeon HD 8870M (gcn-1) MacOS 12.1;
@@ -668,7 +676,6 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 #endif
 
     EnableFeature(Feature::DawnMultiPlanarFormats);
-    EnableFeature(Feature::DawnNativeSpontaneousQueueEvents);
     EnableFeature(Feature::MultiPlanarFormatP010);
     EnableFeature(Feature::MultiPlanarRenderTargets);
     EnableFeature(Feature::MultiPlanarFormatExtendedUsages);
@@ -1021,14 +1028,14 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
 
             mach_msg_type_number_t hostBasicInfoMsg = HOST_BASIC_INFO_COUNT;
             host_basic_info_data_t hostInfo{};
-            DAWN_CHECK(host_info(mach_host_self(), HOST_BASIC_INFO,
-                                 reinterpret_cast<host_info_t>(&hostInfo),
-                                 &hostBasicInfoMsg) == KERN_SUCCESS);
+            auto status = host_info(mach_host_self(), HOST_BASIC_INFO,
+                                    reinterpret_cast<host_info_t>(&hostInfo), &hostBasicInfoMsg);
+            DAWN_CHECK(status == KERN_SUCCESS);
 
-            heapInfo[1].properties = wgpu::HeapProperty::HostVisible |
-                                     wgpu::HeapProperty::HostCoherent |
-                                     wgpu::HeapProperty::HostCached;
-            heapInfo[1].size = hostInfo.max_mem;
+            DAWN_UNSAFE_TODO(heapInfo[1].properties) = wgpu::HeapProperty::HostVisible |
+                                                       wgpu::HeapProperty::HostCoherent |
+                                                       wgpu::HeapProperty::HostCached;
+            DAWN_UNSAFE_TODO(heapInfo[1].size) = hostInfo.max_mem;
 #else
             DAWN_UNREACHABLE();
 #endif
@@ -1047,11 +1054,11 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
         configs[0].N = 8;
         configs[0].K = 8;
 
-        configs[1].componentType = wgpu::SubgroupMatrixComponentType::F16;
-        configs[1].resultComponentType = wgpu::SubgroupMatrixComponentType::F16;
-        configs[1].M = 8;
-        configs[1].N = 8;
-        configs[1].K = 8;
+        DAWN_UNSAFE_TODO(configs[1].componentType) = wgpu::SubgroupMatrixComponentType::F16;
+        DAWN_UNSAFE_TODO(configs[1].resultComponentType) = wgpu::SubgroupMatrixComponentType::F16;
+        DAWN_UNSAFE_TODO(configs[1].M) = 8;
+        DAWN_UNSAFE_TODO(configs[1].N) = 8;
+        DAWN_UNSAFE_TODO(configs[1].K) = 8;
     }
 }
 }  // namespace dawn::native::metal

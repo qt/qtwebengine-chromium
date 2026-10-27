@@ -21,8 +21,7 @@ class CPDF_DeviceBuffer {
  public:
   static CFX_Matrix CalculateMatrix(CFX_RenderDevice* pDevice,
                                     const FX_RECT& rect,
-                                    int max_dpi,
-                                    bool scale);
+                                    int max_dpi);
 
   CPDF_DeviceBuffer(CPDF_RenderContext* context,
                     CFX_RenderDevice* pDevice,

@@ -16,6 +16,7 @@
 // Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_BDCSVD_H
 #define EIGEN_BDCSVD_H
@@ -87,8 +88,8 @@ class BDCSVD : public SVDBase<BDCSVD<MatrixType_, Options_> > {
   typedef typename Base::Index Index;
   enum {
     Options = Options_,
-    QRDecomposition = Options & internal::QRPreconditionerBits,
-    ComputationOptions = Options & internal::ComputationOptionsBits,
+    QRDecomposition = internal::get_qr_preconditioner(Options),
+    ComputationOptions = internal::get_computation_options(Options),
     RowsAtCompileTime = Base::RowsAtCompileTime,
     ColsAtCompileTime = Base::ColsAtCompileTime,
     DiagSizeAtCompileTime = Base::DiagSizeAtCompileTime,
@@ -256,6 +257,9 @@ class BDCSVD : public SVDBase<BDCSVD<MatrixType_, Options_> > {
   internal::UpperBidiagonalization<MatrixX> bid;
   MatrixX copyWorkspace;
   MatrixX reducedTriangle;
+  // Reused workspace for HouseholderSequence::applyThisOnTheLeft in copyUV().
+  // Without this, each apply allocates a fresh row vector.
+  Matrix<Scalar, 1, Dynamic, RowMajor> m_householderWorkspace;
 
   using Base::m_computationOptions;
   using Base::m_computeThinU;
@@ -363,9 +367,14 @@ EIGEN_DONT_INLINE BDCSVD<MatrixType, Options>& BDCSVD<MatrixType, Options>::comp
   //**** step 2 - Divide & Conquer
   m_impl.naiveU().setZero();
   m_impl.naiveV().setZero();
-  // FIXME: this line involves a temporary matrix.
-  m_impl.computed().topRows(diagSize()) = bid.bidiagonal().toDenseMatrix().transpose();
-  m_impl.computed().template bottomRows<1>().setZero();
+  // The transposed bidiagonal has only the main diagonal and one sub-diagonal;
+  // fill those directly instead of materializing a dense temporary.
+  // Note: BandMatrix::diagonal<N>() const has a latent type bug (returns
+  // Block<CoefficientsType, ...> instead of Block<const CoefficientsType, ...>),
+  // so use the index-based overload which is correctly const-qualified.
+  m_impl.computed().setZero();
+  m_impl.computed().topRows(diagSize()).diagonal() = bid.bidiagonal().diagonal();
+  m_impl.computed().topRows(diagSize()).template diagonal<-1>() = bid.bidiagonal().diagonal(1);
   m_impl.divide(0, diagSize() - 1, 0, 0, 0);
   m_info = m_impl.info();
   m_numIters = m_impl.numIters();
@@ -410,28 +419,33 @@ template <typename HouseholderU, typename HouseholderV, typename NaiveU, typenam
 EIGEN_DONT_INLINE void BDCSVD<MatrixType, Options>::copyUV(const HouseholderU& householderU,
                                                            const HouseholderV& householderV, const NaiveU& naiveU,
                                                            const NaiveV& naiveV) {
-  // Note exchange of U and V: m_matrixU is set from m_naiveV and vice versa
+  // Note exchange of U and V: m_matrixU is set from m_naiveV and vice versa.
+  // Cast the diagSize x diagSize block (rather than the full naive matrix) to avoid materializing
+  // a full-size temporary when Scalar != RealScalar; reuse m_householderWorkspace across the two
+  // applyThisOnTheLeft calls so each does not allocate a fresh row vector.
   if (computeU()) {
     Index Ucols = m_computeThinU ? diagSize() : rows();
     m_matrixU = MatrixX::Identity(rows(), Ucols);
     m_matrixU.topLeftCorner(diagSize(), diagSize()) =
-        naiveV.template cast<Scalar>().topLeftCorner(diagSize(), diagSize());
-    // FIXME: the following conditionals involve temporary buffers.
-    if (m_useQrDecomp)
-      m_matrixU.topLeftCorner(householderU.cols(), diagSize()).applyOnTheLeft(householderU);
-    else
-      m_matrixU.applyOnTheLeft(householderU);
+        naiveV.topLeftCorner(diagSize(), diagSize()).template cast<Scalar>();
+    if (m_useQrDecomp) {
+      auto sub = m_matrixU.topLeftCorner(householderU.cols(), diagSize());
+      householderU.applyThisOnTheLeft(sub, m_householderWorkspace);
+    } else {
+      householderU.applyThisOnTheLeft(m_matrixU, m_householderWorkspace);
+    }
   }
   if (computeV()) {
     Index Vcols = m_computeThinV ? diagSize() : cols();
     m_matrixV = MatrixX::Identity(cols(), Vcols);
     m_matrixV.topLeftCorner(diagSize(), diagSize()) =
-        naiveU.template cast<Scalar>().topLeftCorner(diagSize(), diagSize());
-    // FIXME: the following conditionals involve temporary buffers.
-    if (m_useQrDecomp)
-      m_matrixV.topLeftCorner(householderV.cols(), diagSize()).applyOnTheLeft(householderV);
-    else
-      m_matrixV.applyOnTheLeft(householderV);
+        naiveU.topLeftCorner(diagSize(), diagSize()).template cast<Scalar>();
+    if (m_useQrDecomp) {
+      auto sub = m_matrixV.topLeftCorner(householderV.cols(), diagSize());
+      householderV.applyThisOnTheLeft(sub, m_householderWorkspace);
+    } else {
+      householderV.applyThisOnTheLeft(m_matrixV, m_householderWorkspace);
+    }
   }
 }
 

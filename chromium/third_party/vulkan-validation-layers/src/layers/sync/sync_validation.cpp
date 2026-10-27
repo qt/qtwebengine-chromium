@@ -249,15 +249,12 @@ void SyncValidator::UpdateFenceHostSyncPoint(VkFence fence, FenceHostSyncPoint&&
 }
 
 void SyncValidator::WaitForFence(VkFence fence) {
-    auto fence_it = waitable_fences_.find(fence);
-    if (fence_it != waitable_fences_.end()) {
-        // The fence may no longer be waitable for several valid reasons.
+    if (auto fence_it = waitable_fences_.find(fence); fence_it != waitable_fences_.end()) {
         FenceHostSyncPoint& wait_for = fence_it->second;
-        if (wait_for.acquired.Invalid()) {
-            // This is just a normal fence wait
-            ApplyTaggedWait(wait_for.queue_id, wait_for.tag, {}, wait_for.queue_sync_tags);
-        } else {
-            // This a fence wait for a present operation
+        if (wait_for.queue_id != kQueueIdInvalid) {
+            const QueueState& queue_state = GetQueueState(wait_for.queue_id);
+            ApplyTaggedWait(wait_for.queue_id, wait_for.tag, queue_state.GetLastSynchronizedPresent(), wait_for.queue_sync_tags);
+        } else if (!vvl::StateObject::Invalid(wait_for.acquired.image)) {
             ApplyAcquireWait(wait_for.acquired);
         }
         waitable_fences_.erase(fence_it);
@@ -341,7 +338,7 @@ void SyncValidator::PreCallRecordDestroyBuffer(VkDevice device, VkBuffer buffer,
                                                const RecordObject& record_obj) {
     if (const auto buffer_state = Get<vvl::Buffer>(buffer)) {
         const VkDeviceSize base_address = ResourceBaseAddress(*buffer_state);
-        const AccessRange buffer_range(base_address, base_address + buffer_state->create_info.size);
+        const AccessRange buffer_range(base_address, base_address + buffer_state->GetSize());
         for (const auto& batch : GetAllQueueBatchContexts()) {
             batch->OnResourceDestroyed(buffer_range);
             batch->Trim();
@@ -1246,7 +1243,9 @@ bool SyncValidator::PreCallValidateCmdDrawIndirect(VkCommandBuffer commandBuffer
 
 void SyncValidator::PostCallRecordCmdDrawIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                   uint32_t drawCount, uint32_t stride, const RecordObject& record_obj) {
-    if (drawCount == 0) return;
+    if (drawCount == 0) {
+        return;
+    }
     auto cb_state = Get<vvl::CommandBuffer>(commandBuffer);
     auto* cb_access_context = GetAccessContext(*cb_state);
     const auto tag = cb_access_context->NextCommandTag(record_obj.location.function);
@@ -1987,7 +1986,9 @@ void SyncValidator::PostCallRecordCmdSetEvent2(VkCommandBuffer commandBuffer, Vk
                                                const VkDependencyInfo* pDependencyInfo, const RecordObject& record_obj) {
     auto cb_state = Get<vvl::CommandBuffer>(commandBuffer);
     auto* cb_context = GetAccessContext(*cb_state);
-    if (!pDependencyInfo) return;
+    if (!pDependencyInfo) {
+        return;
+    }
 
     cb_context->RecordSyncOp<SyncOpSetEvent>(record_obj.location.function, *this, cb_context->GetQueueFlags(), event,
                                              *pDependencyInfo, cb_context->GetCurrentAccessContext());
@@ -2006,7 +2007,9 @@ void SyncValidator::PostCallRecordCmdResetEvent(VkCommandBuffer commandBuffer, V
                                                 const RecordObject& record_obj) {
     auto cb_state = Get<vvl::CommandBuffer>(commandBuffer);
     assert(cb_state);
-    if (!cb_state) return;
+    if (!cb_state) {
+        return;
+    }
     auto* cb_context = GetAccessContext(*cb_state);
 
     cb_context->RecordSyncOp<SyncOpResetEvent>(record_obj.location.function, *this, cb_context->GetQueueFlags(), event, stageMask);
@@ -2109,19 +2112,13 @@ bool SyncValidator::PreCallValidateCmdWriteBufferMarker2AMD(VkCommandBuffer comm
     bool skip = false;
     const auto cb_state = Get<vvl::CommandBuffer>(commandBuffer);
     const auto* cb_access_context = GetAccessContext(*cb_state);
+    const AccessContext& context = *cb_access_context->GetCurrentAccessContext();
 
-    const auto* context = cb_access_context->GetCurrentAccessContext();
-    assert(context);
-    if (!context) return skip;
-
-    auto dst_buffer = Get<vvl::Buffer>(dstBuffer);
-
-    if (dst_buffer) {
+    if (auto dst_buffer = Get<vvl::Buffer>(dstBuffer)) {
         const AccessRange range = MakeRange(dstOffset, 4);
-        auto hazard = context->DetectHazard(*dst_buffer, SYNC_COPY_TRANSFER_WRITE, range);
+        auto hazard = context.DetectMarkerHazard(*dst_buffer, range);
         if (hazard.IsHazard()) {
             const std::string resource_description = "dstBuffer " + FormatHandle(dstBuffer);
-            // TODO: there are no tests for this error
             const auto error =
                 error_messages_.BufferError(hazard, *cb_access_context, error_obj.location.function, resource_description, range);
             skip |= SyncError(hazard.Hazard(), dstBuffer, error_obj.location, error);
@@ -2136,15 +2133,12 @@ void SyncValidator::PostCallRecordCmdWriteBufferMarker2AMD(VkCommandBuffer comma
     auto cb_state = Get<vvl::CommandBuffer>(commandBuffer);
     auto* cb_access_context = GetAccessContext(*cb_state);
     const auto tag = cb_access_context->NextCommandTag(record_obj.location.function);
-    auto* context = cb_access_context->GetCurrentAccessContext();
-    assert(context);
+    AccessContext& context = *cb_access_context->GetCurrentAccessContext();
 
-    auto dst_buffer = Get<vvl::Buffer>(dstBuffer);
-
-    if (dst_buffer) {
+    if (auto dst_buffer = Get<vvl::Buffer>(dstBuffer)) {
         const AccessRange range = MakeRange(dstOffset, 4);
         const ResourceUsageTagEx tag_ex = cb_access_context->AddCommandHandle(tag, dst_buffer->Handle());
-        context->UpdateAccessState(*dst_buffer, SYNC_COPY_TRANSFER_WRITE, range, tag_ex);
+        context.UpdateAccessState(*dst_buffer, SYNC_COPY_TRANSFER_WRITE, range, tag_ex, SyncFlag::kMarker);
     }
 }
 
@@ -2252,8 +2246,9 @@ void SyncValidator::PostCallRecordDeviceWaitIdle(VkDevice device, const RecordOb
     // The last signal is needed to represent the current timeline state.
     EnsureTimelineSignalsLimit(1);
 
-    // As we we've waited for everything on device, any waits are mooted. (except for acquires)
-    vvl::EraseIf(waitable_fences_, [](const auto& waitable) { return waitable.second.acquired.Invalid(); });
+    // Cleanup fence waits associated with queues. Acquire fence waits are preserved
+    auto is_queue_fence = [](const auto& waitable) { return waitable.second.queue_id != kQueueIdInvalid; };
+    vvl::EraseIf(waitable_fences_, is_queue_fence);
     host_waitable_semaphores_.clear();
 }
 
@@ -2316,7 +2311,7 @@ bool SyncValidator::ProcessQueuePresent(VkQueue queue, const VkPresentInfoKHR* p
         queue_state.SetLastBatch(std::move(batch));
         ApplySignalsUpdate(signals_update, queue_state.LastBatch());
         for (auto& presented : presented_images) {
-            presented.ExportToSwapchain(*this);
+            presented.ExportToSwapchain();
         }
     }
     return skip;
@@ -2344,32 +2339,44 @@ uint32_t SyncValidator::SetupPresentInfo(const VkPresentInfoKHR& present_info, B
 void SyncValidator::PostCallRecordAcquireNextImageKHR(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
                                                       VkSemaphore semaphore, VkFence fence, uint32_t* pImageIndex,
                                                       const RecordObject& record_obj) {
-    if (!syncval_settings.submit_time_validation) return;
+    if (!syncval_settings.submit_time_validation) {
+        return;
+    }
     RecordAcquireNextImageState(device, swapchain, timeout, semaphore, fence, pImageIndex, record_obj);
 }
 
 void SyncValidator::PostCallRecordAcquireNextImage2KHR(VkDevice device, const VkAcquireNextImageInfoKHR* pAcquireInfo,
                                                        uint32_t* pImageIndex, const RecordObject& record_obj) {
-    if (!syncval_settings.submit_time_validation) return;
+    if (!syncval_settings.submit_time_validation) {
+        return;
+    }
     RecordAcquireNextImageState(device, pAcquireInfo->swapchain, pAcquireInfo->timeout, pAcquireInfo->semaphore,
                                 pAcquireInfo->fence, pImageIndex, record_obj);
 }
 
 void SyncValidator::RecordAcquireNextImageState(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout, VkSemaphore semaphore,
                                                 VkFence fence, uint32_t* pImageIndex, const RecordObject& record_obj) {
-    if ((VK_SUCCESS != record_obj.result) && (VK_SUBOPTIMAL_KHR != record_obj.result)) return;
+    if ((VK_SUCCESS != record_obj.result) && (VK_SUBOPTIMAL_KHR != record_obj.result)) {
+        return;
+    }
 
     // Get the image out of the presented list and create apppropriate fences/semaphores.
     auto swapchain_base = Get<vvl::Swapchain>(swapchain);
-    if (vvl::StateObject::Invalid(swapchain_base)) return;  // Invalid acquire calls to be caught in CoreCheck/Parameter validation
+    if (vvl::StateObject::Invalid(swapchain_base)) {
+        return;
+    }  // Invalid acquire calls to be caught in CoreCheck/Parameter validation
 
     auto& swapchain_state = SubState(*swapchain_base);
 
     PresentedImage presented = swapchain_state.MovePresentedImage(*pImageIndex);
-    if (presented.Invalid()) return;
+    if (presented.Invalid()) {
+        return;
+    }
 
     // No way to make access safe, so nothing to record
-    if ((semaphore == VK_NULL_HANDLE) && (fence == VK_NULL_HANDLE)) return;
+    if ((semaphore == VK_NULL_HANDLE) && (fence == VK_NULL_HANDLE)) {
+        return;
+    }
 
     // We create a queue-less QBC for the Semaphore and fences to wait on
 
@@ -2409,7 +2416,7 @@ bool SyncValidator::PreCallValidateQueueSubmit(VkQueue queue, uint32_t submitCou
         return skip;
     }
 
-    SubmitInfoConverter submit_info(pSubmits, submitCount);
+    SubmitInfoArrayConverter submit_info(pSubmits, submitCount);
     const VkSubmitInfo2* submits = submit_info.submit_infos2.data();
 
     std::lock_guard lock_guard(queue_mutex_);
@@ -2525,9 +2532,7 @@ bool SyncValidator::ProcessQueueSubmit(VkQueue queue, uint32_t submitCount, cons
         queue_state.SetLastBatch(std::move(new_last_batch));
     }
     if (!new_unresolved_batches.empty() && !skip) {
-        auto unresolved_batches = queue_state.UnresolvedBatches();
-        vvl::Append(unresolved_batches, new_unresolved_batches);
-        queue_state.SetUnresolvedBatches(std::move(unresolved_batches));
+        vvl::Append(queue_state.UnresolvedBatches(), new_unresolved_batches);
     }
 
     // Check if timeline signals resolve existing wait-before-signal dependencies
@@ -2551,104 +2556,79 @@ bool SyncValidator::ProcessQueueSubmit(VkQueue queue, uint32_t submitCount, cons
 
 bool SyncValidator::PropagateTimelineSignals(SignalsUpdate& signals_update, const ErrorObject& error_obj) {
     bool skip = false;
-    // Initialize per-queue unresolved batches state.
-    std::vector<UnresolvedQueue> queues;
-    for (QueueState& queue_state : queue_states_) {
-        if (!queue_state.UnresolvedBatches().empty()) {
-            queues.emplace_back(UnresolvedQueue{&queue_state, queue_state.UnresolvedBatches()});
-        }
-    }
 
-    // Each iteration uses registered timeline signals to resolve existing unresolved batches.
-    // Each resolved batch can generate new timeline signals which can resolve more unresolved batches on the next iteration.
-    // This finishes when all unresolved batches are resolved or when iteration does not generate new timeline signals.
-    while (PropagateTimelineSignalsIteration(queues, signals_update, skip, error_obj)) {
-        ;
-    }
+    // The caller ensures we just registered new timeline signals
+    bool new_timeline_signals = true;
 
-    // Update unresolved state
-    for (UnresolvedQueue& queue : queues) {
-        if (queue.update_unresolved) {
-            queue.queue_state->SetUnresolvedBatches(std::move(queue.unresolved_batches));
+    // Each iteration uses registered timeline signals to resolve batches.
+    // If a resolved batch generates new timeline signals, the loop runs again
+    while (new_timeline_signals) {
+        new_timeline_signals = false;
+
+        for (QueueState& queue_state : queue_states_) {
+            auto& unresolved_batches = queue_state.UnresolvedBatches();
+            if (unresolved_batches.empty()) {
+                continue;
+            }
+            // Resolve waits that have matching signal
+            for (UnresolvedBatch& unresolved_batch : unresolved_batches) {
+                auto it = unresolved_batch.unresolved_waits.begin();
+                while (it != unresolved_batch.unresolved_waits.end()) {
+                    const VkSemaphoreSubmitInfo& wait_info = *it;
+                    auto resolving_signal = signals_update.OnTimelineWait(wait_info.semaphore, wait_info.value);
+                    if (!resolving_signal.has_value()) {
+                        ++it;
+                        continue;  // resolving signal not found, the wait stays unresolved
+                    }
+                    if (resolving_signal->batch) {  // null for host signals
+                        unresolved_batch.batch->ResolveSubmitSemaphoreWait(*resolving_signal, wait_info.stageMask);
+                        unresolved_batch.batch->ImportTags(*resolving_signal->batch);
+                        unresolved_batch.resolved_dependencies.emplace_back(resolving_signal->batch);
+                    }
+                    it = unresolved_batch.unresolved_waits.erase(it);
+                }
+            }
+
+            BatchContextPtr last_batch = queue_state.LastBatch();
+            const BatchContextPtr initial_last_batch = last_batch;
+
+            // Process batches that do not have unresolved waits anymore.
+            // Stop when find a batch with unresolved waits or when all the batches are processed.
+            while (!unresolved_batches.empty() && unresolved_batches.front().unresolved_waits.empty()) {
+                UnresolvedBatch& ready_batch = unresolved_batches.front();
+
+                // Import the previous batch information
+                if (last_batch && !vvl::Contains(ready_batch.resolved_dependencies, last_batch)) {
+                    ready_batch.batch->ResolveLastBatch(last_batch);
+                    ready_batch.resolved_dependencies.emplace_back(std::move(last_batch));
+                }
+
+                const auto async_batches = ready_batch.batch->RegisterAsyncContexts(ready_batch.resolved_dependencies);
+
+                skip |= ready_batch.batch->ValidateSubmit(ready_batch.command_buffers, ready_batch.submit_index,
+                                                          ready_batch.batch_index, ready_batch.label_stack, error_obj);
+
+                // Process signals. New timeline signals can resolve more batches on the next iteration
+                const auto submit_signals = vvl::make_span(ready_batch.signals.data(), ready_batch.signals.size());
+                new_timeline_signals |= signals_update.RegisterSignals(ready_batch.batch, submit_signals);
+
+                last_batch = ready_batch.batch;
+                unresolved_batches.erase(unresolved_batches.begin());
+                stats.RemoveUnresolvedBatch();
+            }
+
+            if (last_batch != initial_last_batch) {
+                queue_state.SetLastBatch(std::move(last_batch));
+            }
         }
     }
     return skip;
 }
 
-bool SyncValidator::PropagateTimelineSignalsIteration(std::vector<UnresolvedQueue>& queues, SignalsUpdate& signals_update,
-                                                      bool& skip, const ErrorObject& error_obj) const {
-    bool has_new_timeline_signals = false;
-    for (auto& queue : queues) {
-        if (queue.unresolved_batches.empty()) {
-            continue;  // all batches for this queue were resolved by previous iterations
-        }
-
-        BatchContextPtr last_batch = queue.queue_state->LastBatch();
-        const BatchContextPtr initial_last_batch = last_batch;
-
-        while (!queue.unresolved_batches.empty()) {
-            auto& unresolved_batch = queue.unresolved_batches.front();
-
-            has_new_timeline_signals |= ProcessUnresolvedBatch(unresolved_batch, signals_update, last_batch, skip, error_obj);
-
-            // Remove processed batch from the (local) unresolved list
-            queue.unresolved_batches.erase(queue.unresolved_batches.begin());
-
-            // Propagate change into the queue's (global) unresolved state
-            queue.update_unresolved = true;
-
-            stats.RemoveUnresolvedBatch();
-        }
-        if (last_batch != initial_last_batch) {
-            queue.queue_state->SetLastBatch(std::move(last_batch));
-        }
-    }
-    return has_new_timeline_signals;
-}
-
-bool SyncValidator::ProcessUnresolvedBatch(UnresolvedBatch& unresolved_batch, SignalsUpdate& signals_update,
-                                           BatchContextPtr& last_batch, bool& skip, const ErrorObject& error_obj) const {
-    // Resolve waits that have matching signal
-    auto it = unresolved_batch.unresolved_waits.begin();
-    while (it != unresolved_batch.unresolved_waits.end()) {
-        const VkSemaphoreSubmitInfo& wait_info = *it;
-        auto resolving_signal = signals_update.OnTimelineWait(wait_info.semaphore, wait_info.value);
-        if (!resolving_signal.has_value()) {
-            ++it;
-            continue;  // resolving signal not found, the wait stays unresolved
-        }
-        if (resolving_signal->batch) {  // null for host signals
-            unresolved_batch.batch->ResolveSubmitSemaphoreWait(*resolving_signal, wait_info.stageMask);
-            unresolved_batch.batch->ImportTags(*resolving_signal->batch);
-            unresolved_batch.resolved_dependencies.emplace_back(resolving_signal->batch);
-        }
-        it = unresolved_batch.unresolved_waits.erase(it);
-    }
-
-    // This batch still has unresolved waits
-    if (!unresolved_batch.unresolved_waits.empty()) {
-        return false;  // no new timeline signals were registered
-    }
-
-    // Process fully resolved batch
-    UnresolvedBatch& ready_batch = unresolved_batch;
-    if (last_batch && !vvl::Contains(ready_batch.resolved_dependencies, last_batch)) {
-        ready_batch.batch->ResolveLastBatch(last_batch);
-        ready_batch.resolved_dependencies.emplace_back(std::move(last_batch));
-    }
-    last_batch = ready_batch.batch;
-
-    const auto async_batches = ready_batch.batch->RegisterAsyncContexts(ready_batch.resolved_dependencies);
-
-    skip |= ready_batch.batch->ValidateSubmit(ready_batch.command_buffers, ready_batch.submit_index, ready_batch.batch_index,
-                                              ready_batch.label_stack, error_obj);
-
-    const auto submit_signals = vvl::make_span(ready_batch.signals.data(), ready_batch.signals.size());
-    return signals_update.RegisterSignals(ready_batch.batch, submit_signals);
-}
-
 void SyncValidator::PostCallRecordGetFenceStatus(VkDevice device, VkFence fence, const RecordObject& record_obj) {
-    if (!syncval_settings.submit_time_validation) return;
+    if (!syncval_settings.submit_time_validation) {
+        return;
+    }
     if (record_obj.result == VK_SUCCESS) {
         // fence is signalled, mark it as waited for
         WaitForFence(fence);
@@ -2657,7 +2637,9 @@ void SyncValidator::PostCallRecordGetFenceStatus(VkDevice device, VkFence fence,
 
 void SyncValidator::PostCallRecordWaitForFences(VkDevice device, uint32_t fenceCount, const VkFence* pFences, VkBool32 waitAll,
                                                 uint64_t timeout, const RecordObject& record_obj) {
-    if (!syncval_settings.submit_time_validation) return;
+    if (!syncval_settings.submit_time_validation) {
+        return;
+    }
     if ((record_obj.result == VK_SUCCESS) && ((VK_TRUE == waitAll) || (1 == fenceCount))) {
         // We can only know the pFences have signal if we waited for all of them, or there was only one of them
         for (uint32_t i = 0; i < fenceCount; i++) {

@@ -159,8 +159,6 @@ float DoInterpolation(double virtual_read_index,
 
 OscillatorHandler::OscillatorHandler(AudioNode& node,
                                      float sample_rate,
-                                     const String& oscillator_type,
-                                     PeriodicWaveImpl* wave_table,
                                      AudioParamHandler& frequency,
                                      AudioParamHandler& detune)
     : AudioScheduledSourceHandler(NodeType::kNodeTypeOscillator,
@@ -170,38 +168,37 @@ OscillatorHandler::OscillatorHandler(AudioNode& node,
       detune_(&detune),
       phase_increments_(GetDeferredTaskHandler().RenderQuantumFrames()),
       detune_values_(GetDeferredTaskHandler().RenderQuantumFrames()) {
-  if (wave_table) {
-    // A PeriodicWave overrides any value for the oscillator type,
-    // forcing the type to be "custom".
-    SetPeriodicWave(wave_table);
-  } else {
-    if (oscillator_type == "sine") {
-      SetType(SINE);
-    } else if (oscillator_type == "square") {
-      SetType(SQUARE);
-    } else if (oscillator_type == "sawtooth") {
-      SetType(SAWTOOTH);
-    } else if (oscillator_type == "triangle") {
-      SetType(TRIANGLE);
-    } else {
-      NOTREACHED();
-    }
-  }
-
   AddOutput(kNumberOfOutputChannels);
-
   Initialize();
+}
+
+bool OscillatorHandler::SetInitialType(const String& oscillator_type) {
+  if (oscillator_type == "sine") {
+    return SetType(SINE);
+  } else if (oscillator_type == "square") {
+    return SetType(SQUARE);
+  } else if (oscillator_type == "sawtooth") {
+    return SetType(SAWTOOTH);
+  } else if (oscillator_type == "triangle") {
+    return SetType(TRIANGLE);
+  } else {
+    NOTREACHED();
+  }
+}
+
+void OscillatorHandler::SetInitialPeriodicWave(
+    PeriodicWaveImpl* periodic_wave_impl) {
+  DCHECK(periodic_wave_impl);
+  SetPeriodicWave(periodic_wave_impl);
 }
 
 scoped_refptr<OscillatorHandler> OscillatorHandler::Create(
     AudioNode& node,
     float sample_rate,
-    const String& oscillator_type,
-    PeriodicWaveImpl* wave_table,
     AudioParamHandler& frequency,
     AudioParamHandler& detune) {
   return base::AdoptRef(new OscillatorHandler(
-      node, sample_rate, oscillator_type, wave_table, frequency, detune));
+      node, sample_rate, frequency, detune));
 }
 
 OscillatorHandler::~OscillatorHandler() {
@@ -273,6 +270,13 @@ bool OscillatorHandler::SetType(uint8_t type) {
       NOTREACHED();
   }
 
+  // Returns false if GetPeriodicWave failed to return a valid one, which
+  // can happen when memory allocation fails during the generation of
+  // the default band-limited tables.
+  if (!periodic_wave) {
+    return false;
+  }
+
   SetPeriodicWave(periodic_wave->impl());
   type_ = type;
   return true;
@@ -319,16 +323,15 @@ bool OscillatorHandler::CalculateSampleAccuratePhaseIncrements(
 
     // Convert from cents to rate scalar.
     float k = 1.0 / 1200;
-    vector_math::Vsmul(detune_values.data(), 1, &k, detune_values.data(), 1,
-                       frames_to_process);
+    vector_math::Vsmul(detune_values, k, detune_values, frames_to_process);
     for (unsigned i = 0; i < frames_to_process; ++i) {
       detune_values[i] = std::exp2(detune_values[i]);
     }
 
     if (has_frequency_changes) {
       // Multiply frequencies by detune scalings.
-      vector_math::Vmul(detune_values.data(), 1, phase_increments.data(), 1,
-                        phase_increments.data(), 1, frames_to_process);
+      vector_math::Vmul(detune_values, phase_increments, phase_increments,
+                        frames_to_process);
     }
   } else {
     // Handle ordinary parameter changes if there are no scheduled
@@ -341,8 +344,8 @@ bool OscillatorHandler::CalculateSampleAccuratePhaseIncrements(
   if (has_sample_accurate_values) {
     ClampFrequency(phase_increments, Context()->sampleRate() / 2);
     // Convert from frequency to wavetable increment.
-    vector_math::Vsmul(phase_increments.data(), 1, &final_scale,
-                       phase_increments.data(), 1, frames_to_process);
+    vector_math::Vsmul(phase_increments, final_scale, phase_increments,
+                       frames_to_process);
   }
 
   return has_sample_accurate_values;
@@ -738,7 +741,7 @@ void OscillatorHandler::Process(uint32_t frames_to_process) {
     ++destination_index;
     --n;
     virtual_read_index += (1 - start_frame_offset) * frequency * rate_scale;
-    DCHECK(virtual_read_index < periodic_wave_size);
+    DCHECK_LT(virtual_read_index, periodic_wave_size);
   } else if (start_frame_offset < 0) {
     virtual_read_index = -start_frame_offset * frequency * rate_scale;
   }

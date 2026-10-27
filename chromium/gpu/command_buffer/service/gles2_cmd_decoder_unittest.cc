@@ -408,13 +408,6 @@ TEST_P(GLES2DecoderManualInitTest, BindGeneratesResourceFalse) {
   EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
 }
 
-TEST_P(GLES2DecoderTest, EnableFeatureCHROMIUMBadBucket) {
-  const uint32_t kBadBucketId = 123;
-  cmds::EnableFeatureCHROMIUM cmd;
-  cmd.Init(kBadBucketId, shared_memory_id_, shared_memory_offset_);
-  EXPECT_NE(error::kNoError, ExecuteCmd(cmd));
-}
-
 TEST_P(GLES2DecoderTest, RequestExtensionCHROMIUMBadBucket) {
   const uint32_t kBadBucketId = 123;
   cmds::RequestExtensionCHROMIUM cmd;
@@ -1120,6 +1113,10 @@ TEST_P(GLES2DecoderManualInitTest, MemoryTrackerTexStorage2DEXT) {
   DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
   EXPECT_CALL(*gl_, TexStorage2DEXT(GL_TEXTURE_2D, 1, GL_RGBA8, 8, 4))
       .Times(1)
+      .RetiresOnSaturation();
+  EXPECT_CALL(*gl_, GetError())
+      .WillOnce(Return(GL_NO_ERROR))
+      .WillOnce(Return(GL_NO_ERROR))
       .RetiresOnSaturation();
   cmds::TexStorage2DEXT cmd;
   cmd.Init(GL_TEXTURE_2D, 1, GL_RGBA8, 8, 4);

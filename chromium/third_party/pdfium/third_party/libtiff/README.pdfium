@@ -20,3 +20,4 @@ Local Modifications:
 0031-safe_size_ingtStripContig.patch: return error if the size to read overflow from int32.
 0033-avail-out-overflow.patch: signed comparison in PixarLogDecode().
 0034-tiff-jpeg-overflow.patch: reject mismatched JPEG data precision.
+0035-ycbcr-tile-overflow.patch: prevent integer overflows in YCbCr tile decoding functions

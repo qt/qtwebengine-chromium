@@ -11,6 +11,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -551,6 +552,7 @@ public class EventForwarderTest {
                         eq(NATIVE_EVENT_FORWARDER_ID),
                         eq(moveEvent),
                         eq(eventTime2 * 1_000_000L),
+                        eq(MotionEvent.ACTION_MOVE),
                         eq(10.0f), // startX
                         eq(20.0f), // startY
                         eq(10.0f), // startRawX
@@ -679,7 +681,7 @@ public class EventForwarderTest {
                         eq(mimeTypes),
                         eq(""), // content
                         argThat(
-                                filenames -> {
+                                (String[][] filenames) -> {
                                     if (filenames.length != expectedFilenames.length) {
                                         return false;
                                     }
@@ -695,7 +697,9 @@ public class EventForwarderTest {
                                 }),
                         eq(expectedText),
                         eq(expectedHtml),
-                        eq(expectedUrl));
+                        eq(expectedUrl),
+                        isNull(),
+                        isNull());
         histograms.assertExpected();
         eventForwarder.destroy();
     }

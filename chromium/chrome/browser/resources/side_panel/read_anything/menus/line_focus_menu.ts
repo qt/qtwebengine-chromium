@@ -9,7 +9,7 @@ import {loadTimeData} from '//resources/js/load_time_data.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 
-import {DEFAULT_SETTINGS, getLineFocusValues, LineFocusMovement, LineFocusStyle, ToolbarEvent} from '../content/read_anything_types.js';
+import {DEFAULT_SETTINGS, LineFocusMovement, LineFocusStyle, ToolbarEvent} from '../content/read_anything_types.js';
 import type {SettingsPrefs, ShowAtConfigPrefs} from '../content/read_anything_types.js';
 import {ReadAnythingSettingsChange} from '../shared/metrics_browser_proxy.js';
 import {ReadAnythingLogger} from '../shared/read_anything_logger.js';
@@ -43,6 +43,7 @@ export class LineFocusMenuElement extends LineFocusMenuElementBase implements
       nonModal: {type: Boolean},
       lineFocusStyle: {type: Object},
       lineFocusMovement: {type: Number},
+      options_: {type: Array},
     };
   }
 
@@ -58,26 +59,31 @@ export class LineFocusMenuElement extends LineFocusMenuElementBase implements
         separator: false,
       },
       title: loadTimeData.getString('lineFocusOffTitle'),
+      ariaLabel: loadTimeData.getString('lineFocusOffAriaLabel'),
       data: LineFocusStyle.OFF,
       eventName: ToolbarEvent.LINE_FOCUS_STYLE,
     },
     {
       title: loadTimeData.getString('lineFocusUnderlineTitle'),
+      ariaLabel: loadTimeData.getString('lineFocusUnderlineAriaLabel'),
       data: LineFocusStyle.UNDERLINE,
       eventName: ToolbarEvent.LINE_FOCUS_STYLE,
     },
     {
       title: loadTimeData.getString('lineFocusOneLineTitle'),
+      ariaLabel: loadTimeData.getString('lineFocusOneLineAriaLabel'),
       data: LineFocusStyle.SMALL_WINDOW,
       eventName: ToolbarEvent.LINE_FOCUS_STYLE,
     },
     {
       title: loadTimeData.getString('lineFocusThreeLineTitle'),
+      ariaLabel: loadTimeData.getString('lineFocusThreeLineAriaLabel'),
       data: LineFocusStyle.MEDIUM_WINDOW,
       eventName: ToolbarEvent.LINE_FOCUS_STYLE,
     },
     {
       title: loadTimeData.getString('lineFocusFiveLineTitle'),
+      ariaLabel: loadTimeData.getString('lineFocusFiveLineAriaLabel'),
       data: LineFocusStyle.LARGE_WINDOW,
       eventName: ToolbarEvent.LINE_FOCUS_STYLE,
     },
@@ -90,27 +96,26 @@ export class LineFocusMenuElement extends LineFocusMenuElementBase implements
         separator: true,
       },
       title: loadTimeData.getString('lineFocusStaticTitle'),
+      ariaLabel: loadTimeData.getString('lineFocusStaticAriaLabel'),
       data: LineFocusMovement.STATIC,
       eventName: ToolbarEvent.LINE_FOCUS_MOVEMENT,
     },
     {
       title: loadTimeData.getString('lineFocusCursorLineTitle'),
+      ariaLabel: loadTimeData.getString('lineFocusCursorLineAriaLabel'),
       data: LineFocusMovement.CURSOR,
       eventName: ToolbarEvent.LINE_FOCUS_MOVEMENT,
     },
   ];
-  protected options_: Array<MenuStateItem<LineFocusStyle|LineFocusMovement>> = [
-    ...this.styleOptions_,
-    ...this.movementOptions_,
-  ];
+  protected accessor options_:
+      Array<MenuStateItem<LineFocusStyle|LineFocusMovement>> = [
+        ...this.styleOptions_,
+        ...this.movementOptions_,
+      ];
   private logger_: ReadAnythingLogger = ReadAnythingLogger.getInstance();
 
   override willUpdate(changedProperties: PropertyValues<this>) {
     super.willUpdate(changedProperties);
-
-    if (changedProperties.has('settingsPrefs')) {
-      this.restoreFromPrefs_();
-    }
 
     if (changedProperties.has('lineFocusStyle') &&
         this.lineFocusStyle !== null) {
@@ -135,19 +140,6 @@ export class LineFocusMenuElement extends LineFocusMenuElementBase implements
 
   close() {
     this.$.menu.close();
-  }
-
-  private restoreFromPrefs_(): void {
-    const lineFocusValues = getLineFocusValues();
-    const lineFocus = lineFocusValues[this.settingsPrefs['lineFocus']];
-    if (lineFocus) {
-      this.updateOptionsForStyle_(lineFocus.style);
-      this.updateOptionsForMovement_(lineFocus.movement);
-      this.options_ = [
-        ...this.styleOptions_,
-        ...this.movementOptions_,
-      ];
-    }
   }
 
   protected onLineFocusStyleChange_() {

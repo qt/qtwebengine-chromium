@@ -17,7 +17,7 @@ export class VersionController {
   static readonly SYNCED_VERSION_SETTING_NAME = 'syncedInspectorVersion';
   static readonly LOCAL_VERSION_SETTING_NAME = 'localInspectorVersion';
 
-  static readonly CURRENT_VERSION = 43;
+  static readonly CURRENT_VERSION = 46;
 
   readonly #settings: Settings;
   readonly #globalVersionSetting: Setting<number>;
@@ -247,12 +247,13 @@ export class VersionController {
 
   updateVersionFrom9To10(): void {
     // This one is localStorage specific, which is fine.
-    if (!window.localStorage) {
+    const localStorage = Platform.HostRuntime.HOST_RUNTIME.getLocalStorage();
+    if (!localStorage) {
       return;
     }
-    for (const key in window.localStorage) {
+    for (const key in localStorage) {
       if (key.startsWith('revision-history')) {
-        window.localStorage.removeItem(key);
+        localStorage.removeItem(key);
       }
     }
   }
@@ -848,6 +849,54 @@ export class VersionController {
     }
   }
 
+  updateVersionFrom43To44(): void {
+    const apcaExperimentEnabled =
+        Root.Runtime.experiments.getValueFromStorage('apca' as Root.ExperimentNames.ExperimentName);
+    if (apcaExperimentEnabled !== undefined) {
+      if (this.#settings.syncedStorage.has('apca')) {
+        return;  // Already migrated
+      }
+      try {
+        const apcaSetting = this.#settings.moduleSetting('apca');
+        apcaSetting.set(apcaExperimentEnabled);
+      } catch {
+        // If the setting is not registered yet (e.g. in tests), skip.
+      }
+    }
+  }
+
+  updateVersionFrom44To45(): void {
+    const timelineDebugModeExperimentEnabled =
+        Root.Runtime.experiments.getValueFromStorage('timeline-debug-mode' as Root.ExperimentNames.ExperimentName);
+    if (timelineDebugModeExperimentEnabled !== undefined) {
+      if (this.#settings.syncedStorage.has('timeline-debug-mode')) {
+        return;  // Already migrated
+      }
+      try {
+        const timelineDebugModeSetting = this.#settings.moduleSetting('timeline-debug-mode');
+        timelineDebugModeSetting.set(timelineDebugModeExperimentEnabled);
+      } catch {
+        // If the setting is not registered yet (e.g. in tests), skip.
+      }
+    }
+  }
+
+  updateVersionFrom45To46(): void {
+    const timelineInvalidationTrackingExperimentEnabled = Root.Runtime.experiments.getValueFromStorage(
+        'timeline-invalidation-tracking' as Root.ExperimentNames.ExperimentName);
+    if (timelineInvalidationTrackingExperimentEnabled !== undefined) {
+      if (this.#settings.syncedStorage.has('timeline-invalidation-tracking')) {
+        return;  // Already migrated
+      }
+      try {
+        const timelineInvalidationTrackingSetting = this.#settings.moduleSetting('timeline-invalidation-tracking');
+        timelineInvalidationTrackingSetting.set(timelineInvalidationTrackingExperimentEnabled);
+      } catch {
+        // If the setting is not registered yet (e.g. in tests), skip.
+      }
+    }
+  }
+
   /*
    * Any new migration should be added before this comment.
    *
@@ -872,16 +921,17 @@ export class VersionController {
       'workspaceExcludedFolders',
       'xhrBreakpoints',
     ]);
-    if (!window.localStorage) {
+    const localStorage = Platform.HostRuntime.HOST_RUNTIME.getLocalStorage();
+    if (!localStorage) {
       return;
     }
 
-    for (const key in window.localStorage) {
+    for (const key in localStorage) {
       if (localSettings.has(key)) {
         continue;
       }
-      const value = window.localStorage[key];
-      window.localStorage.removeItem(key);
+      const value = localStorage[key];
+      localStorage.removeItem(key);
       this.#settings.globalStorage.set(key, value);
     }
   }

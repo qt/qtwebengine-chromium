@@ -15,6 +15,7 @@
 #include "platform/api/time.h"
 #include "platform/base/error.h"
 #include "platform/impl/socket_handle.h"
+#include "util/thread_annotations.h"
 
 namespace openscreen {
 
@@ -79,7 +80,8 @@ class SocketHandleWaiter {
   // safely.
   void OnHandleDeletion(Subscriber* subscriber,
                         SocketHandleRef handle,
-                        bool disable_locking_for_testing = false);
+                        bool disable_locking_for_testing = false)
+      OSP_NO_THREAD_SAFETY_ANALYSIS;
 
   // Gets all socket handles to process, checks them for readable data, and
   // handles any changes that have occurred.
@@ -133,12 +135,12 @@ class SocketHandleWaiter {
 
   // Set of handles currently being deleted, for ensuring handle_deletion_block_
   // does not exit prematurely.
-  std::vector<SocketHandleRef> handles_being_deleted_;
+  std::vector<SocketHandleRef> handles_being_deleted_ OSP_GUARDED_BY(mutex_);
 
   // Set of all socket handles currently being watched, mapped to the subscriber
   // that is watching them.
   std::unordered_map<SocketHandleRef, SocketSubscription, SocketHandleHash>
-      handle_mappings_;
+      handle_mappings_ OSP_GUARDED_BY(mutex_);
 
   const ClockNowFunctionPtr now_function_;
 };

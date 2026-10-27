@@ -28,17 +28,41 @@ main {
 }
 
 #headerContainer {
-  padding-bottom: 24px;
   position: relative;
   width: 100%;
 }
 
+:host(:not([revamp-enabled])) #headerContainer,
+:host([revamp-enabled][app-mode='profile-picker']) #headerContainer {
+  padding-bottom: 24px;
+}
+
+:host([revamp-enabled][app-mode='first-run']) #headerContainer {
+  display: flex;
+  height: 200px;
+  justify-content: center;
+}
+
 #avatarContainer {
-  height: 92px;
+  --avatar-size: 92px;
+  height: var(--avatar-size);
+  width: var(--avatar-size);
+  z-index: 1;
+}
+
+:host(:not([revamp-enabled])) #avatarContainer,
+:host([revamp-enabled][app-mode='profile-picker']) #avatarContainer {
   margin-inline: auto;
   position: relative;
-  width: 92px;
-  z-index: 1;
+}
+
+:host([revamp-enabled][app-mode='first-run']) #avatarContainer {
+  position: absolute;
+  top: 40%;
+}
+
+#avatarAnimation {
+  pointer-events: none;
 }
 
 #avatar {
@@ -146,8 +170,11 @@ main {
 
 @media screen and ((max-width: 780px) or (max-height: 600px)) {
   #avatarContainer {
-    height: 64px;
-    width: 64px;
+    --avatar-size: 64px;
+  }
+
+  :host([revamp-enabled][app-mode='first-run']) #headerContainer {
+    height: 140px;
   }
 
   .title {

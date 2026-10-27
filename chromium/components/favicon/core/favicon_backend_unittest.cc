@@ -10,7 +10,6 @@
 #include "base/containers/lru_cache.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/test/metrics/histogram_tester.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "components/favicon/core/favicon_backend_delegate.h"
 #include "components/favicon/core/favicon_database.h"
@@ -1314,9 +1313,6 @@ TEST_F(FaviconBackendTest, GetFaviconsForUrlFallbackToHost) {
 // Test that GetFaviconsForUrl() falls back to the most recently visited URL for
 // an origin if the fallback candidates for the host are redirects.
 TEST_F(FaviconBackendTest, GetFaviconsForUrlFallbackToOriginOnRedirectOnly) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(kUseLastVisitedFallbackURLFavicon);
-
   const GURL kRedirectorPageNotInDatabase(
       "http://www.redirector.com/not_in_database");
   const GURL kRedirectorPageUrl1("http://www.redirector.com/1");
@@ -1337,9 +1333,8 @@ TEST_F(FaviconBackendTest, GetFaviconsForUrlFallbackToOriginOnRedirectOnly) {
   base::HistogramTester histogram_tester;
   // Query for a URL with no icon. With fallback_to_host=true, it should find
   // the redirect mapping, and then fallback to the last visited URL.
-  // Without the `kUseLastVisitedFallbackURLFavicon` feature, the result would
-  // be `kIconUrl1` because `kRedirectorPageUrl1` is alphabetically before
-  // `kRedirectorPageUrl2`. See http://crbug.com/453728022 for details.
+  // The result should be `kIconUrl2` because it's the most recently visited.
+  // See http://crbug.com/453728022 for details.
   ASSERT_LT(kRedirectorPageUrl1, kRedirectorPageUrl2);
   SetMostRecentlyVisitedURLForOrigin(kRedirectorPageUrl2Target);
   std::vector<favicon_base::FaviconRawBitmapResult> bitmap_results_out =
@@ -1364,9 +1359,6 @@ TEST_F(FaviconBackendTest, GetFaviconsForUrlFallbackToOriginOnRedirectOnly) {
 // regular (non-redirect) page URL is available, and does not use the most
 // recently visited URL.
 TEST_F(FaviconBackendTest, GetFaviconsForUrlFallbackToHostWithRegularPageUrl) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(kUseLastVisitedFallbackURLFavicon);
-
   const GURL kPageUrlNotInDatabase("http://www.google.com/maps");
   const GURL kPageUrlWithRegularIcon("http://www.google.com/");
   const GURL kPageUrlLastVisited("http://www.google.com/search");
@@ -1452,27 +1444,6 @@ TEST_F(FaviconBackendTest, GetFaviconsForUrlExpired) {
 
   EXPECT_EQ(1u, bitmap_results_out.size());
   EXPECT_TRUE(bitmap_results_out[0].expired);
-}
-
-// Tests that GetFaviconsForUrl() updates the IconSuccess histogram.
-TEST_F(FaviconBackendTest, GetFaviconsForUrlUpdateSizeHistogram) {
-  base::HistogramTester histogram_tester;
-  const GURL page_url("http://www.google.com/");
-  const GURL icon_url1("http://www.google.com/icon1.png");
-  std::vector<SkBitmap> bitmaps = {
-      gfx::test::CreateBitmap(kSmallEdgeSize, SK_ColorBLUE)};
-
-  std::vector<favicon_base::FaviconRawBitmapData> favicon_bitmap_data;
-  SetFavicons({page_url}, IconType::kFavicon, icon_url1, bitmaps);
-
-  std::vector<favicon_base::FaviconRawBitmapResult> bitmap_results_out =
-      backend_->GetFaviconsForUrl(page_url, {IconType::kFavicon},
-                                  GetEdgeSizesSmallAndLarge(), false);
-
-  EXPECT_EQ(1u, bitmap_results_out.size());
-  EXPECT_EQ(IconType::kFavicon, bitmap_results_out[0].icon_type);
-  EXPECT_EQ(icon_url1, bitmap_results_out[0].icon_url);
-  histogram_tester.ExpectBucketCount("Favicons.IconSuccess.16px", true, 1);
 }
 
 // Test that a favicon isn't loaded cross-origin.

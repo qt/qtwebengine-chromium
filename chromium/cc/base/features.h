@@ -65,6 +65,11 @@ CC_BASE_EXPORT extern const base::FeatureParam<double>
 // image map.
 CC_BASE_EXPORT BASE_DECLARE_FEATURE(kPreserveDiscardableImageMapQuality);
 
+// When enabled, the scroll jank v4 metric handles slow-path scrolls more
+// reliably. Specifically, we send GSEs to the main thread if the corresponding
+// GSUs were also routed to the main thread.
+CC_BASE_EXPORT BASE_DECLARE_FEATURE(kScrollEndRepaintFollowsScrollUpdate);
+
 // Kill switch for a bunch of optimizations for cc-slimming project.
 // Please see crbug.com/335450599 for more details.
 CC_BASE_EXPORT BASE_DECLARE_FEATURE(kCCSlimming);
@@ -149,6 +154,10 @@ CC_BASE_EXPORT BASE_DECLARE_FEATURE(kAllowLCDTextWithFilter);
 // explicitly via img.decode(), it will be decoded only once.
 CC_BASE_EXPORT BASE_DECLARE_FEATURE(kPreventDuplicateImageDecodes);
 
+// When enabled, HTMLImageElement::decode() promises resolve even if the image
+// is too large to fit into the image decode cache budget.
+CC_BASE_EXPORT BASE_DECLARE_FEATURE(kResolveLargeImageDecodes);
+
 // When enabled, fix bug where an image decode cache entry last use timestamp is
 // initialized to 0 instead of now.
 CC_BASE_EXPORT BASE_DECLARE_FEATURE(kInitImageDecodeLastUseTime);
@@ -180,11 +189,6 @@ CC_BASE_EXPORT void SetIsEligibleForThrottleMainFrameTo60Hz(bool is_eligible);
 // instead displays the properly constructed frame while at the same doing
 // capture.
 CC_BASE_EXPORT BASE_DECLARE_FEATURE(kViewTransitionCaptureAndDisplay);
-
-// When enabled, the view transition capture transform is floored instead of
-// rounded and we use the render surface pixel snapping to counteract the blurry
-// effect.
-CC_BASE_EXPORT BASE_DECLARE_FEATURE(kViewTransitionFloorTransform);
 
 // Allow the main thread to throttle the main frame rate.
 // Note that the composited animations will not be affected.
@@ -226,8 +230,13 @@ CC_BASE_EXPORT BASE_DECLARE_FEATURE(kSlimDirectReceiverIpc);
 // When enabled, the overscroll effect will display on non-root scrollers.
 CC_BASE_EXPORT BASE_DECLARE_FEATURE(kOverscrollEffectOnNonRootScrollers);
 
-// A kill switch in case skipping finish causes unexpected issues.
-CC_BASE_EXPORT BASE_DECLARE_FEATURE(kSkipFinishDuringReleaseLayerTreeFrameSink);
+// When enabled, scrolling to the end of a snap scroller has the same fling
+// curve as a regular scroller.
+CC_BASE_EXPORT BASE_DECLARE_FEATURE(kSnapFlingNearExtremes);
+
+// When enabled, SnapFlingController uses decay-based prediction for snap
+// flings.
+CC_BASE_EXPORT BASE_DECLARE_FEATURE(kSnapFlingDecayPrediction);
 
 // When enabled, the V4 scroll jank metric will be emitted.
 CC_BASE_EXPORT BASE_DECLARE_FEATURE(kScrollJankV4Metric);
@@ -243,14 +252,15 @@ CC_BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(
     double,
     kScrollJankV4MetricFlingContinuityThreshold);
 
-// When disabled, the scroll jank V4 metric orders scroll starts, updates and
-// ends within a single frame based on their
-// `EventMetrics::DispatchStage::kGenerated` timestamps. When enabled, it orders
-// them based on their
-// `EventMetrics::DispatchStage::kArrivedInRendererCompositor` timestamps
-// instead.
+// When disabled, `cc::ScrollJankV4FrameStageCalculator` relies on the
+// timestamps of arrival of individual `cc::ScrollEventMetrics` in the renderer
+// compositor (`scroll_event_metrics->GetDispatchStageTimestamp(
+// cc::EventMetrics::DispatchStage::kGenerated)`) when calculating the
+// `ScrollJankV4Frame::Stage`s that happened in a single frame. When enabled,
+// `cc::ScrollJankV4FrameStageCalculator` uses the scroll IDs
+// (`scroll_event_metrics->scroll_begin_arrival_timestamp()`) instead.
 CC_BASE_EXPORT BASE_DECLARE_FEATURE(
-    kOrderScrollJankV4EventMetricsByArrivedInRendererCompositor);
+    kUseScrollIdToCalculateScrollJankV4FrameStages);
 
 // When enabled, AsyncLayerTreeFrameSink will generate its own BeginFrameArgs
 // when auto_needs_begin_frame_ is enabled.
@@ -279,6 +289,17 @@ CC_BASE_EXPORT BASE_DECLARE_FEATURE(kBrowserControlsScrollSnapAnimation);
 // instead of a point sample near edge_end. This is a kill switch for
 // crbug.com/451833352.
 CC_BASE_EXPORT BASE_DECLARE_FEATURE(kSelectionEdgeVisibilityUsesFullEdge);
+
+// When enabled, ResourcePool will prioritize exact size matches when reusing
+// resources.
+CC_BASE_EXPORT BASE_DECLARE_FEATURE(kResourcePoolPreferExactSizeReuse);
+
+// When enabled, instructs the scheduler to act as though a new BeginMainFrame
+// signal has just occurred. This optimization is specific to the last frame of
+// the document renderer during a cross-document view transition and should
+// not occur otherwise.
+CC_BASE_EXPORT BASE_DECLARE_FEATURE(kSendEarlyFinalBeginMainFrame);
+CC_BASE_EXPORT bool SendEarlyFinalBeginMainFrameIsEnabled();
 
 }  // namespace features
 

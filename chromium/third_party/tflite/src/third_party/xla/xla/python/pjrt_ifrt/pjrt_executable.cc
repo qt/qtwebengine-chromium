@@ -27,6 +27,7 @@ limitations under the License.
 #include "absl/functional/function_ref.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
+#include "absl/log/vlog_is_on.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
@@ -214,6 +215,13 @@ std::vector<ShardingRef> MakeShardings(
       shardings.push_back(ifrt::HloSharding::Create(
           executable_devices, memory_kinds[i], (*hlo_shardings)[i]));
     }
+  } else if (executable_devices->size() == 1) {
+    // Prefer SingleDeviceSharding over ConcreteEvenSharding, as it supports
+    // more APIs, like IndexDomains().
+    for (int i = 0; i < memory_kinds.size(); ++i) {
+      shardings.push_back(ifrt::SingleDeviceSharding::Create(
+          executable_devices->devices()[0], memory_kinds[i]));
+    }
   } else {
     // Assume a traditional replication computation where tile shapes are the
     // same as global shapes.
@@ -223,7 +231,8 @@ std::vector<ShardingRef> MakeShardings(
       shardings.push_back(ifrt::ConcreteEvenSharding::Create(
           executable_devices, memory_kinds[i],
           /*shape=*/shapes[i],
-          /*shard_shape=*/shapes[i]));
+          /*shard_shape=*/shapes[i],
+          /*is_fully_replicated=*/false));
     }
   }
   return shardings;
@@ -822,7 +831,7 @@ PjRtLoadedExecutable::Execute(absl::Span<ArrayRef> args,
     if (!pjrt_array) {
       return InvalidArgument(
           "Only PjRtCompatibleArray is supported, but argument %d is %s", i,
-          pjrt_array->DebugString());
+          args[i] ? args[i]->DebugString() : "null");
     }
     int j = 0;
     // TODO(hyeontaek): Check pjrt_array->pjrt_buffers().size() ==
@@ -860,7 +869,7 @@ PjRtLoadedExecutable::Execute(absl::Span<ArrayRef> args,
   auto callbacks = std::make_unique<std::vector<void*>>();
   // Forward callbacks via FFI's ExecutionContext for CPU/GPU platforms only.
   if (platform_id == CpuId() || platform_id == CudaId() ||
-      platform_id == RocmId() || platform_id == SyclId()) {
+      platform_id == RocmId() || platform_id == OneapiId()) {
     for (const auto& loaded_host_callback : *all_loaded_host_callbacks_) {
       auto* ffi_loaded_host_callback =
           llvm::dyn_cast<PjRtFfiLoadedHostCallback>(loaded_host_callback.get());

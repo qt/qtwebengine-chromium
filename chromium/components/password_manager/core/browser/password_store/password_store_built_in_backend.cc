@@ -7,6 +7,7 @@
 #include <variant>
 
 #include "base/functional/bind.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/notreached.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
@@ -14,12 +15,14 @@
 #include "base/task/thread_pool.h"
 #include "base/types/pass_key.h"
 #include "components/os_crypt/async/browser/os_crypt_async.h"
+#include "components/os_crypt/async/common/encryptor.h"
 #include "components/password_manager/core/browser/affiliation/affiliated_match_helper.h"
 #include "components/password_manager/core/browser/features/password_features.h"
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
 #include "components/password_manager/core/browser/password_store/get_logins_with_affiliations_request_handler.h"
 #include "components/password_manager/core/browser/password_store/login_database.h"
 #include "components/password_manager/core/browser/password_store/login_database_async_helper.h"
+#include "components/password_manager/core/browser/password_store/password_form_converters.h"
 #include "components/password_manager/core/browser/password_store/password_store.h"
 #include "components/password_manager/core/browser/password_store/password_store_backend.h"
 #include "components/password_manager/core/browser/password_store/password_store_backend_metrics_recorder.h"
@@ -170,8 +173,11 @@ PasswordStoreBuiltInBackend::PasswordStoreBuiltInBackend(
     syncer::WipeModelUponSyncDisabledBehavior
         wipe_model_upon_sync_disabled_behavior,
     PrefService* prefs,
-    os_crypt_async::OSCryptAsync* os_crypt_async)
-    : pref_service_(prefs), os_crypt_async_(os_crypt_async) {
+    os_crypt_async::OSCryptAsync* os_crypt_async,
+    std::unique_ptr<AffiliatedMatchHelper> affiliated_match_helper)
+    : affiliated_match_helper_(std::move(affiliated_match_helper)),
+      pref_service_(prefs),
+      os_crypt_async_(os_crypt_async) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(os_crypt_async_);
 
@@ -203,22 +209,11 @@ void PasswordStoreBuiltInBackend::NotifyCredentialsChangedForTesting(
           changes));
 }
 
-void PasswordStoreBuiltInBackend::NotifyDeletionsHaveSyncedForTesting(
-    bool success) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  background_task_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(
-          &PasswordStoreSync::NotifyDeletionsHaveSynced,
-          base::Unretained(static_cast<PasswordStoreSync*>(helper_.get())),
-          success));
-}
-
 void PasswordStoreBuiltInBackend::Shutdown(
     base::OnceClosure shutdown_completed) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   weak_ptr_factory_.InvalidateWeakPtrs();
-  affiliated_match_helper_ = nullptr;
+  affiliated_match_helper_.reset();
   sync_observation_.Reset();
   if (helper_) {
     background_task_runner_->DeleteSoon(FROM_HERE, std::move(helper_));
@@ -237,13 +232,11 @@ ActionableError PasswordStoreBuiltInBackend::GetError() {
 }
 
 void PasswordStoreBuiltInBackend::InitBackend(
-    AffiliatedMatchHelper* affiliated_match_helper,
     RemoteChangesReceived remote_form_changes_received,
     base::RepeatingClosure sync_enabled_or_disabled_cb,
     base::OnceCallback<void(bool)> completion) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(helper_);
-  affiliated_match_helper_ = affiliated_match_helper;
   remote_form_changes_received_callback_ = remote_form_changes_received;
   sync_enabled_or_disabled_cb_ = sync_enabled_or_disabled_cb;
 
@@ -265,15 +258,12 @@ void PasswordStoreBuiltInBackend::InitBackend(
       weak_ptr_factory_.GetWeakPtr(), std::move(remote_form_changes_received),
       std::move(sync_enabled_or_disabled_cb), std::move(completion));
 
-  os_crypt_async_->GetInstance(
-      metrics_util::TimeCallback(
-          std::move(init_database_callback),
-          "PasswordManager.OsCryptAsync.GetInstanceTime"),
-      os_crypt_async::Encryptor::Option::kNone);
+  os_crypt_async_->GetInstance(std::move(init_database_callback),
+                               os_crypt_async::Encryptor::Option::kNone);
 }
 
 void PasswordStoreBuiltInBackend::GetAllLoginsAsync(
-    LoginsOrErrorReply callback) {
+    BackendLoginsOrErrorReply callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(helper_);
   background_task_runner_->PostTaskAndReplyWithResult(
@@ -281,13 +271,13 @@ void PasswordStoreBuiltInBackend::GetAllLoginsAsync(
       base::BindOnce(
           &LoginDatabaseAsyncHelper::GetAllLogins,
           base::Unretained(helper_.get())),  // Safe until `Shutdown()`.
-      ReportMetricsForResultCallback<LoginsResultOrError>(
+      ReportMetricsForResultCallback<StoredCredentialsResultOrError>(
           MethodName("GetAllLoginsAsync"))
           .Then(std::move(callback)));
 }
 
 void PasswordStoreBuiltInBackend::GetAllLoginsWithAffiliationAndBrandingAsync(
-    LoginsOrErrorReply callback) {
+    BackendLoginsOrErrorReply callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(helper_);
   auto affiliation_injection = base::BindOnce(
@@ -297,7 +287,7 @@ void PasswordStoreBuiltInBackend::GetAllLoginsWithAffiliationAndBrandingAsync(
 }
 
 void PasswordStoreBuiltInBackend::GetAutofillableLoginsAsync(
-    LoginsOrErrorReply callback) {
+    BackendLoginsOrErrorReply callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(helper_);
   background_task_runner_->PostTaskAndReplyWithResult(
@@ -305,19 +295,19 @@ void PasswordStoreBuiltInBackend::GetAutofillableLoginsAsync(
       base::BindOnce(
           &LoginDatabaseAsyncHelper::GetAutofillableLogins,
           base::Unretained(helper_.get())),  // Safe until `Shutdown()`.
-      ReportMetricsForResultCallback<LoginsResultOrError>(
+      ReportMetricsForResultCallback<StoredCredentialsResultOrError>(
           MethodName("GetAutofillableLoginsAsync"))
           .Then(std::move(callback)));
 }
 
 void PasswordStoreBuiltInBackend::FillMatchingLoginsAsync(
-    LoginsOrErrorReply callback,
+    BackendLoginsOrErrorReply callback,
     bool include_psl,
     const std::vector<PasswordFormDigest>& forms) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(helper_);
   if (forms.empty()) {
-    std::move(callback).Run(LoginsResult());
+    std::move(callback).Run(BackendLoginsResult());
     return;
   }
 
@@ -327,14 +317,14 @@ void PasswordStoreBuiltInBackend::FillMatchingLoginsAsync(
           &LoginDatabaseAsyncHelper::FillMatchingLogins,
           base::Unretained(helper_.get()),  // Safe until `Shutdown()`.
           forms, include_psl),
-      ReportMetricsForResultCallback<LoginsResultOrError>(
+      ReportMetricsForResultCallback<StoredCredentialsResultOrError>(
           MethodName("FillMatchingLoginsAsync"))
           .Then(std::move(callback)));
 }
 
 void PasswordStoreBuiltInBackend::GetGroupedMatchingLoginsAsync(
     const PasswordFormDigest& form_digest,
-    LoginsOrErrorReply callback) {
+    BackendLoginsOrErrorReply callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(helper_);
 
@@ -343,28 +333,28 @@ void PasswordStoreBuiltInBackend::GetGroupedMatchingLoginsAsync(
 }
 
 void PasswordStoreBuiltInBackend::AddLoginAsync(
-    const PasswordForm& form,
+    StoredCredential cred,
     PasswordChangesOrErrorReply callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(helper_);
   background_task_runner_->PostTaskAndReplyWithResult(
       FROM_HERE,
       base::BindOnce(&LoginDatabaseAsyncHelper::AddLogin,
-                     base::Unretained(helper_.get()), form),
+                     base::Unretained(helper_.get()), std::move(cred)),
       ReportMetricsForResultCallback<PasswordChangesOrError>(
           MethodName("AddLoginAsync"))
           .Then(std::move(callback)));
 }
 
 void PasswordStoreBuiltInBackend::UpdateLoginAsync(
-    const PasswordForm& form,
+    StoredCredential cred,
     PasswordChangesOrErrorReply callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(helper_);
   background_task_runner_->PostTaskAndReplyWithResult(
       FROM_HERE,
       base::BindOnce(&LoginDatabaseAsyncHelper::UpdateLogin,
-                     base::Unretained(helper_.get()), form),
+                     base::Unretained(helper_.get()), std::move(cred)),
       ReportMetricsForResultCallback<PasswordChangesOrError>(
           MethodName("UpdateLoginAsync"))
           .Then(std::move(callback)));
@@ -372,7 +362,7 @@ void PasswordStoreBuiltInBackend::UpdateLoginAsync(
 
 void PasswordStoreBuiltInBackend::RemoveLoginAsync(
     const base::Location& location,
-    const PasswordForm& form,
+    StoredCredential cred,
     PasswordChangesOrErrorReply callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(helper_);
@@ -381,7 +371,7 @@ void PasswordStoreBuiltInBackend::RemoveLoginAsync(
       base::BindOnce(
           &LoginDatabaseAsyncHelper::RemoveLogin,
           base::Unretained(helper_.get()),  // Safe until `Shutdown()`.
-          location, form),
+          location, std::move(cred)),
       ReportMetricsForResultCallback<PasswordChangesOrError>(
           MethodName("RemoveLoginAsync"))
           .Then(std::move(callback)));
@@ -391,7 +381,6 @@ void PasswordStoreBuiltInBackend::RemoveLoginsCreatedBetweenAsync(
     const base::Location& location,
     base::Time delete_begin,
     base::Time delete_end,
-    base::OnceCallback<void(bool)> sync_completion,
     PasswordChangesOrErrorReply callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(helper_);
@@ -400,7 +389,7 @@ void PasswordStoreBuiltInBackend::RemoveLoginsCreatedBetweenAsync(
       base::BindOnce(
           &LoginDatabaseAsyncHelper::RemoveLoginsCreatedBetween,
           base::Unretained(helper_.get()),  // Safe until `Shutdown()`.
-          location, delete_begin, delete_end, std::move(sync_completion)),
+          location, delete_begin, delete_end),
       ReportMetricsForResultCallback<PasswordChangesOrError>(
           MethodName("RemoveLoginsCreatedBetweenAsync"))
           .Then(std::move(callback)));
@@ -525,16 +514,17 @@ void PasswordStoreBuiltInBackend::RemoveStatisticsByOriginAndTime(
 }
 
 void PasswordStoreBuiltInBackend::InjectAffiliationAndBrandingInformation(
-    LoginsOrErrorReply callback,
-    LoginsResultOrError forms_or_error) {
+    BackendLoginsOrErrorReply callback,
+    BackendLoginsResultOrError result) {
   if (!affiliated_match_helper_ ||
-      std::holds_alternative<PasswordStoreBackendError>(forms_or_error) ||
-      std::get<LoginsResult>(forms_or_error).empty()) {
-    std::move(callback).Run(std::move(forms_or_error));
+      std::holds_alternative<PasswordStoreBackendError>(result) ||
+      std::get<BackendLoginsResult>(result).empty()) {
+    std::move(callback).Run(std::move(result));
     return;
   }
+
   affiliated_match_helper_->InjectAffiliationAndBrandingInformation(
-      std::move(std::get<LoginsResult>(forms_or_error)), std::move(callback));
+      std::get<BackendLoginsResult>(std::move(result)), std::move(callback));
 }
 
 void PasswordStoreBuiltInBackend::OnInitComplete(
@@ -548,7 +538,7 @@ void PasswordStoreBuiltInBackend::OnEncryptorReceived(
     RemoteChangesReceived remote_form_changes_received,
     base::RepeatingClosure sync_enabled_or_disabled_cb,
     base::OnceCallback<void(bool)> completion,
-    os_crypt_async::Encryptor encryptor) {
+    scoped_refptr<os_crypt_async::Encryptor> encryptor) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // Piggyback on |remote_form_changes_received| to record password deletion

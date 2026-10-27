@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SPARSE_BLOCK_H
 #define EIGEN_SPARSE_BLOCK_H
@@ -18,7 +19,7 @@ namespace Eigen {
 // Subset of columns or rows
 template <typename XprType, int BlockRows, int BlockCols>
 class BlockImpl<XprType, BlockRows, BlockCols, true, Sparse>
-    : public SparseMatrixBase<Block<XprType, BlockRows, BlockCols, true> > {
+    : public SparseCompressedBase<Block<XprType, BlockRows, BlockCols, true> > {
   typedef internal::remove_all_t<typename XprType::Nested> MatrixTypeNested_;
   typedef Block<XprType, BlockRows, BlockCols, true> BlockType;
 
@@ -27,7 +28,7 @@ class BlockImpl<XprType, BlockRows, BlockCols, true, Sparse>
 
  protected:
   enum { OuterSize = IsRowMajor ? BlockRows : BlockCols };
-  typedef SparseMatrixBase<BlockType> Base;
+  typedef SparseCompressedBase<BlockType> Base;
   using Base::convert_index;
 
  public:
@@ -203,10 +204,11 @@ class sparse_matrix_block_impl : public SparseCompressedBase<Block<SparseMatrixT
     }
 
     // update outer index pointers and innerNonZeros
-    if (IsVectorAtCompileTime) {
+    EIGEN_IF_CONSTEXPR(IsVectorAtCompileTime) {
       if (!m_matrix.isCompressed()) matrix.innerNonZeroPtr()[m_outerStart] = StorageIndex(nnz);
       matrix.outerIndexPtr()[m_outerStart] = StorageIndex(start);
-    } else {
+    }
+    else {
       StorageIndex p = StorageIndex(start);
       for (Index k = 0; k < m_outerSize.value(); ++k) {
         StorageIndex nnz_k = internal::convert_index<StorageIndex>(tmp.innerVector(k).nonZeros());

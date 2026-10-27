@@ -188,7 +188,9 @@ std::unique_ptr<HloModule> GetModule(absl::string_view lhs_dtype,
   )",
                        lhs_dtype, rhs_dtype, out_dtype, m, n, k, b);
 
-  auto parsed = ParseAndReturnUnverifiedModule(text);
+  HloModuleConfig config;
+  config.set_debug_options(GetDebugOptionsFromFlags());
+  auto parsed = ParseAndReturnUnverifiedModule(text, config);
   CHECK_OK(parsed.status());
   return *std::move(parsed);
 }
@@ -560,7 +562,7 @@ DeviceHloInstructionProfiles MatmulPerfTableGen::ComputeTable() {
     ReportProgress("Profiling progress", i + 1, specs.size());
   }
   std::string device_key =
-      gpu::HloOpProfiles::GetProfileName(device_description_);
+      gpu::HloOpProfiles::GetDeviceSpecificProfileName(device_description_);
   device_profiles.mutable_entries()->insert({device_key, profile_list});
   return device_profiles;
 }

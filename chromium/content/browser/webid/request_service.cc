@@ -586,8 +586,8 @@ void RequestService::RequestToken(
 
   CHECK(!unique_idps.empty());
   if (rp_mode_ == RpMode::kPassive && idp_order_.size() == 1u) {
-    request_dialog_controller_->ShouldShowAccountsPassiveDialog(
-        base::BindOnce(&RequestService::OnShouldShowAccountsPassiveDialogResult,
+    request_dialog_controller_->GetPassiveDialogVolume(
+        base::BindOnce(&RequestService::OnGetPassiveDialogVolume,
                        weak_ptr_factory_.GetWeakPtr(), std::move(unique_idps)));
     return;
   }
@@ -1133,7 +1133,6 @@ void RequestService::MaybeShowAccountsDialog() {
   bool is_auto_reauthn_setting_enabled = false;
   bool is_auto_reauthn_embargoed = false;
   bool is_auto_reauthn_blocked_by_embedder =
-      IsFedCmEmbedderCheckEnabled() &&
       auto_reauthn_permission_delegate_->IsAutoReauthnDisabledByEmbedder(
           WebContents::FromRenderFrameHost(&render_frame_host()));
 
@@ -1307,16 +1306,10 @@ void RequestService::MaybeShowAccountsDialog() {
   AfterAccountsDialogShown(did_succeed_for_at_least_one_idp);
 }
 
-void RequestService::OnShouldShowAccountsPassiveDialogResult(
+void RequestService::OnGetPassiveDialogVolume(
     const std::set<GURL>& unique_idps,
-    bool should_show) {
-  if (!should_show) {
-    CompleteRequestWithError(
-        FederatedAuthRequestResult::kSuppressedBySegmentationPlatform,
-        TokenStatus::kSuppressedBySegmentationPlatform,
-        /*should_delay_callback=*/true);
-    return;
-  }
+    IdentityRequestDialogController::PassiveDialogVolume dialog_volume) {
+  passive_dialog_volume_ = dialog_volume;
   FetchEndpointsForIdps(std::move(unique_idps));
 }
 
@@ -1349,6 +1342,23 @@ void RequestService::NotifyAutofillSuggestionAccepted(
     OnFederatedTokenReceivedCallback callback) {
   token_received_callback_for_autofill_ = std::move(callback);
 
+  auto get_info_it = token_request_get_infos_.find(idp);
+  auto idp_info_it = idp_infos_.find(idp);
+  bool is_account_id_valid =
+      std::ranges::any_of(accounts_, [&](const auto& account) {
+        return account->identity_provider->idp_metadata.config_url == idp &&
+               account->id == account_id;
+      });
+
+  if (get_info_it == token_request_get_infos_.end() ||
+      idp_info_it == idp_infos_.end() || !is_account_id_valid) {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE,
+        base::BindOnce(std::move(token_received_callback_for_autofill_),
+                       false));
+    return;
+  }
+
   // Currently the verified email flow opens a modal UI upon notification and
   // the autofill dropdown UI gets dismissed immediately. i.e. it doesn't need a
   // valid callback. However, if a user is presented a full federated account,
@@ -1364,14 +1374,6 @@ void RequestService::NotifyAutofillSuggestionAccepted(
   // know whether this is a sign-in or sign-up moment (e.g. wouldn't have a
   // approved_clients array). We should figure out how to reconcile these two
   // modes.
-  auto get_info_it = token_request_get_infos_.find(idp);
-  if (get_info_it == token_request_get_infos_.end()) {
-    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-        FROM_HERE,
-        base::BindOnce(std::move(token_received_callback_for_autofill_),
-                       false));
-    return;
-  }
 
   // TODO(crbug.com/412640661): Currently, in order to skip the account chooser
   // and go straight to the disclosure UI, we have to call ShowLoadingDialog()
@@ -1671,6 +1673,16 @@ void RequestService::OnDismissErrorDialog(
 
 void RequestService::OnDialogDismissed(
     IdentityRequestDialogController::DismissReason dismiss_reason) {
+  // If the request has already completed, ignore any subsequent dismissals.
+  if (!auth_request_token_callback_) {
+    return;
+  }
+
+  // Ignore dismissals triggered during the synchronous execution of RedirectTo.
+  if (in_redirect_to_) {
+    return;
+  }
+
   if (has_sent_token_request_) {
     verifying_dialog_result_ = identity_selection_type_ == kExplicit
                                    ? VerifyingDialogResult::kCancelExplicit
@@ -1891,12 +1903,11 @@ void RequestService::RedirectTo(const GURL& idp_config_url,
     params.extra_headers =
         "Content-Type: application/x-www-form-urlencoded\r\n";
   }
+  in_redirect_to_ = true;
   web_contents->GetController().LoadURLWithParams(params);
 
-  // TODO(crbug.com/474120843): Introduce a more specific success enum value
-  // rather than kSuccessUsingTokenInHttpResponse.
   CompleteRequest(FederatedAuthRequestResult::kSuccess,
-                  TokenStatus::kSuccessUsingTokenInHttpResponse,
+                  TokenStatus::kSuccessUsingRedirectTo,
                   /*token_error=*/std::nullopt, idp_config_url,
                   /*token_data=*/base::Value(),
                   /*should_delay_callback=*/false);
@@ -2099,8 +2110,12 @@ void RequestService::CompleteRequest(
     // Record metrics and console errors only the first time we complete the
     // request, even if the callback is delayed.
     RecordMetricsAndConsoleError(result, token_status, selected_idp_config_url);
-    request_dialog_controller_->OnFlowCompleted(
-        FederatedAuthRequestResultToFederatedLoginResult(result));
+
+    RenderFrameHostImpl::From(&render_frame_host())
+        ->delegate()
+        ->OnFedCmFederatedLogin(
+            FederatedAuthRequestResultToFederatedLoginResult(result));
+
     if (token_received_callback_for_autofill_) {
       std::move(token_received_callback_for_autofill_)
           .Run(result == FederatedAuthRequestResult::kSuccess);
@@ -2273,6 +2288,7 @@ void RequestService::CleanUp() {
   accounts_dialog_shown_time_ = std::nullopt;
   mismatch_dialog_shown_time_ = std::nullopt;
   has_shown_mismatch_ = false;
+  in_redirect_to_ = false;
   idp_accounts_.clear();
   accounts_.clear();
   idp_login_infos_.clear();
@@ -2669,7 +2685,6 @@ bool RequestService::ShouldFailBeforeFetchingAccounts(const GURL& config_url) {
   }
 
   bool is_auto_reauthn_blocked_by_embedder =
-      IsFedCmEmbedderCheckEnabled() &&
       auto_reauthn_permission_delegate_->IsAutoReauthnDisabledByEmbedder(
           WebContents::FromRenderFrameHost(&render_frame_host()));
   if (is_auto_reauthn_blocked_by_embedder) {
@@ -3030,8 +3045,15 @@ bool RequestService::HandlePendingRequestAndCancelNewRequest(
 }
 
 bool RequestService::IsUsingAmbient() const {
-  if (!IsFedCmAmbientUIEnabled() || rp_mode_ != RpMode::kPassive ||
-      idp_order_.size() != 1u) {
+  if (rp_mode_ != RpMode::kPassive || idp_order_.size() != 1u) {
+    return false;
+  }
+
+  bool is_ambient_enabled =
+      IsFedCmAmbientUIEnabled() ||
+      passive_dialog_volume_ ==
+          IdentityRequestDialogController::PassiveDialogVolume::kAmbient;
+  if (!is_ambient_enabled) {
     return false;
   }
 

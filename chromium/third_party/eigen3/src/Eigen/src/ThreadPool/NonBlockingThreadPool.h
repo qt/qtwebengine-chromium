@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_THREADPOOL_NONBLOCKING_THREAD_POOL_H
-#define EIGEN_CXX11_THREADPOOL_NONBLOCKING_THREAD_POOL_H
+#ifndef EIGEN_THREADPOOL_NONBLOCKING_THREAD_POOL_H
+#define EIGEN_THREADPOOL_NONBLOCKING_THREAD_POOL_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -239,6 +240,8 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
     eigen_plain_assert(start >= 0);
     eigen_plain_assert(start < end);  // non-zero sized partition
     eigen_plain_assert(end <= num_threads_);
+    (void)start;
+    (void)end;
   }
 
   inline void SetStealPartition(size_t i, unsigned val) {
@@ -584,4 +587,4 @@ typedef ThreadPoolTempl<StlThreadEnvironment> ThreadPool;
 
 }  // namespace Eigen
 
-#endif  // EIGEN_CXX11_THREADPOOL_NONBLOCKING_THREAD_POOL_H
+#endif  // EIGEN_THREADPOOL_NONBLOCKING_THREAD_POOL_H

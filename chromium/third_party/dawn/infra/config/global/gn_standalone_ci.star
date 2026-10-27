@@ -1555,6 +1555,7 @@ ci.thin_tester(
     ),
     targets = targets.bundle(
         targets = [
+            "real_hardware_win_gtests",
         ],
         mixins = [
             "win11_amd_rx_5500_xt_stable",

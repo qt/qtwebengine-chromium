@@ -43,6 +43,15 @@ chromium-metrics-reviews@google.com.
       label="A PIN change request is triggered because the user has no UV"/>
 </enum>
 
+<!-- LINT.IfChange(CmtgDeviceKeysResult) -->
+
+<enum name="CmtgDeviceKeysResult">
+  <int value="0" label="Success"/>
+  <int value="1" label="Network error"/>
+</enum>
+
+<!-- LINT.ThenChange(//components/webauthn/core/browser/cryptauth_cmtg_device_key_provider.cc:CmtgDeviceKeysResult) -->
+
 <!-- LINT.IfChange(CombinedSelectorAction) -->
 
 <enum name="CombinedSelectorAction">
@@ -163,6 +172,7 @@ chromium-metrics-reviews@google.com.
   <int value="43"
       label="Can not parse a vault and security domain member keys from a
              CBOR map"/>
+  <int value="44" label="Account mismatch in DoNextAction"/>
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/webauthn/enclave_manager.h:EnclaveManagerActionOutcome) -->
@@ -191,7 +201,7 @@ chromium-metrics-reviews@google.com.
 
 <!-- LINT.ThenChange(//components/webauthn/android/java/src/org/chromium/components/webauthn/GmsCoreGetCredentialsHelper.java:GmsCoreGetCredentialsResult) -->
 
-<!-- LINT.IfChange(GmsCoreCacheSkippedReason) -->
+<!-- LINT.IfChange(GmsCoreSkippedCacheReason) -->
 
 <enum name="GmsCoreSkippedCacheReason">
   <int value="0" label="GoogleRp">The request is for a Google passkey.</int>
@@ -201,8 +211,8 @@ chromium-metrics-reviews@google.com.
   <int value="2" label="ModalAllowListRequest">
     This is a modal WebAuthn request with an allow list.
   </int>
-  <int value="3" label="FeatureDisabled">
-    Use of the metadata cache is disabled in Chrome.
+  <int value="3" label="(obsolete) FeatureDisabled">
+    Use of the metadata cache is disabled in Chrome. Removed in M144.
   </int>
   <int value="4" label="OldGmsCoreVersion">
     The current GMS Core version does not support the metadata cache.
@@ -482,6 +492,7 @@ chromium-metrics-reviews@google.com.
   <int value="13" label="Timeout Occurred"/>
   <int value="14" label="Other Failure"/>
   <int value="15" label="Blocked by actor task"/>
+  <int value="16" label="Cross Device Fallback"/>
 </enum>
 
 <!-- LINT.IfChange(WebAuthenticationGPMCachedOpportunisticallyRetrievedKeyEvent) -->

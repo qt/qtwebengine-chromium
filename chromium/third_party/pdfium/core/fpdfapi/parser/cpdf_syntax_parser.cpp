@@ -598,7 +598,7 @@ RetainPtr<CPDF_Object> CPDF_SyntaxParser::GetObjectBodyInternal(
                ? std::move(pArray)
                : nullptr;
   }
-  if (word[0] == '/') {
+  if (word.Front() == '/') {
     auto word_span = pdfium::span(word_buffer_).first(word_size_);
     return pdfium::MakeRetain<CPDF_Name>(
         pool_, PDF_NameDecode(ByteStringView(word_span).Substr(1)));
@@ -622,7 +622,7 @@ RetainPtr<CPDF_Object> CPDF_SyntaxParser::GetObjectBodyInternal(
         pos_ = SavedPos;
         break;
       }
-      if (inner_word[0] != '/') {
+      if (inner_word.Front() != '/') {
         continue;
       }
 

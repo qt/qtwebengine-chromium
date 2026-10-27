@@ -21,6 +21,13 @@ interface SurfaceEmbed {
   // intrinsic size. However, this has also been observed on non-auto-resized
   // frames (e.g., www.nytimes.com) due to an unclear triggering condition.
   UpdateLocalSurfaceIdFromChild(viz.mojom.LocalSurfaceId local_surface_id);
+
+  // Called when the browser detects that the renderer process hosting the
+  // child this is embedding has crashed.
+  ChildProcessGone();
+
+  // Requests focus for the <embed> element.
+  RequestFocus();
 };
 
 // Implemented by SurfaceEmbedHost in the browser process.

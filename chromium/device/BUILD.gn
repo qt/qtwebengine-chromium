@@ -78,6 +78,7 @@ test("device_unittests") {
       "bluetooth/test/mock_bluetooth_cbservice_mac.mm",
       "bluetooth/test/mock_bluetooth_central_manager_mac.h",
       "bluetooth/test/mock_bluetooth_central_manager_mac.mm",
+      "gamepad/game_controller_gamepad_unittest.mm",
     ]
   }
 
@@ -107,6 +108,7 @@ test("device_unittests") {
       "bluetooth/bluetooth_task_manager_win_unittest.cc",
       "bluetooth/test/bluetooth_test_win.cc",
       "bluetooth/test/bluetooth_test_win.h",
+      "gamepad/gameinput_data_fetcher_unittest.cc",
       "gamepad/wgi_data_fetcher_win_unittest.cc",
     ]
   }
@@ -366,7 +368,9 @@ test("device_unittests") {
     ldflags = [ "-ObjC" ]
     frameworks = [
       "CoreBluetooth.framework",
+      "CoreHaptics.framework",
       "Foundation.framework",
+      "GameController.framework",
     ]
   }
 

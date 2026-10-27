@@ -7,9 +7,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_REDUCTION_H
-#define EIGEN_CXX11_TENSOR_TENSOR_REDUCTION_H
+#ifndef EIGEN_TENSOR_TENSOR_REDUCTION_H
+#define EIGEN_TENSOR_TENSOR_REDUCTION_H
 
 // clang is incompatible with the CUDA syntax wrt making a kernel a class friend,
 // so we'll use a macro to make clang happy.
@@ -453,7 +454,7 @@ template <int B, int N, typename S, typename R, typename I_>
 __global__ EIGEN_HIP_LAUNCH_BOUNDS_1024 void FullReductionKernel(R, const S, I_, typename S::CoeffReturnType*,
                                                                  unsigned int*);
 
-#if defined(EIGEN_HAS_GPU_FP16)
+#if defined(EIGEN_GPUCC)
 template <typename S, typename R, typename I_>
 __global__ EIGEN_HIP_LAUNCH_BOUNDS_1024 void ReductionInitFullReduxKernelHalfFloat(
     R, const S, I_, internal::packet_traits<half>::type*);
@@ -492,7 +493,7 @@ struct ReductionReturnType {
 }  // end namespace internal
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Tensor reduction class.
  *
@@ -555,10 +556,10 @@ struct TensorReductionEvaluatorBase<const TensorReductionOp<Op, Dims, ArgType, M
 
   // For full reductions
 #if defined(EIGEN_USE_GPU) && (defined(EIGEN_GPUCC))
-  static constexpr bool RunningOnGPU = internal::is_same<Device, Eigen::GpuDevice>::value;
+  static constexpr bool RunningOnGPU = std::is_same<Device, Eigen::GpuDevice>::value;
   static constexpr bool RunningOnSycl = false;
 #elif defined(EIGEN_USE_SYCL)
-  static constexpr bool RunningOnSycl = internal::is_same<internal::remove_all_t<Device>, Eigen::SyclDevice>::value;
+  static constexpr bool RunningOnSycl = std::is_same<internal::remove_all_t<Device>, Eigen::SyclDevice>::value;
   static constexpr bool RunningOnGPU = false;
 #else
   static constexpr bool RunningOnGPU = false;
@@ -606,13 +607,14 @@ struct TensorReductionEvaluatorBase<const TensorReductionOp<Op, Dims, ArgType, M
 
     // Precompute output strides.
     if (NumOutputDims > 0) {
-      if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+      EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
         m_outputStrides[0] = 1;
         for (int i = 1; i < NumOutputDims; ++i) {
           m_outputStrides[i] = m_outputStrides[i - 1] * m_dimensions[i - 1];
           m_fastOutputStrides[i] = internal::TensorIntDivisor<Index>(m_outputStrides[i]);
         }
-      } else {
+      }
+      else {
         m_outputStrides[static_cast<size_t>(NumOutputDims - 1)] = 1;
         for (int i = NumOutputDims - 2; i >= 0; --i) {
           m_outputStrides[i] = m_outputStrides[i + 1] * m_dimensions[i + 1];
@@ -624,12 +626,13 @@ struct TensorReductionEvaluatorBase<const TensorReductionOp<Op, Dims, ArgType, M
     // Precompute input strides.
     if (NumInputDims > 0) {
       array<Index, NumInputDims> input_strides;
-      if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+      EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
         input_strides[0] = 1;
         for (int i = 1; i < NumInputDims; ++i) {
           input_strides[i] = input_strides[i - 1] * input_dims[i - 1];
         }
-      } else {
+      }
+      else {
         input_strides.back() = 1;
         for (int i = NumInputDims - 2; i >= 0; --i) {
           input_strides[i] = input_strides[i + 1] * input_dims[i + 1];
@@ -659,6 +662,14 @@ struct TensorReductionEvaluatorBase<const TensorReductionOp<Op, Dims, ArgType, M
                           : (static_cast<int>(Layout) == static_cast<int>(ColMajor))
                               ? m_preservedStrides[0]
                               : m_preservedStrides[static_cast<size_t>(NumOutputDims - 1)];
+
+    // Runtime mirror of the static `ReducingInnerMostDims` predicate, set when
+    // the reduce dims aren't statically known (e.g. a plain std::array).
+    m_reducingInnerMostDims = (NumReducedDims > 0);
+    for (int i = 0; i < NumReducedDims && m_reducingInnerMostDims; ++i) {
+      const int axis = (static_cast<int>(Layout) == static_cast<int>(ColMajor)) ? i : NumInputDims - 1 - i;
+      if (!m_reduced[axis]) m_reducingInnerMostDims = false;
+    }
   }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const Dimensions& dimensions() const { return m_dimensions; }
@@ -684,9 +695,10 @@ struct TensorReductionEvaluatorBase<const TensorReductionOp<Op, Dims, ArgType, M
     else if ((RunningOnGPU && (m_device.majorDeviceVersion() >= 3)) || (RunningOnSycl)) {
       bool reducing_inner_dims = true;
       for (int i = 0; i < NumReducedDims; ++i) {
-        if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+        EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
           reducing_inner_dims &= m_reduced[i];
-        } else {
+        }
+        else {
           reducing_inner_dims &= m_reduced[NumInputDims - 1 - i];
         }
       }
@@ -721,9 +733,10 @@ struct TensorReductionEvaluatorBase<const TensorReductionOp<Op, Dims, ArgType, M
 
       bool preserving_inner_dims = true;
       for (int i = 0; i < NumReducedDims; ++i) {
-        if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+        EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
           preserving_inner_dims &= m_reduced[NumInputDims - 1 - i];
-        } else {
+        }
+        else {
           preserving_inner_dims &= m_reduced[i];
         }
       }
@@ -805,6 +818,9 @@ struct TensorReductionEvaluatorBase<const TensorReductionOp<Op, Dims, ArgType, M
                                              ? m_preservedStrides[0]
                                              : m_preservedStrides[NumPreservedStrides - 1];
       return internal::InnerMostDimReducer<Self, Op>::reduce(*this, firstInput(index), num_values_to_reduce, reducer);
+    } else if (m_reducingInnerMostDims) {
+      return internal::InnerMostDimReducer<Self, Op>::reduce(*this, index * m_numValuesToReduce, m_numValuesToReduce,
+                                                             reducer);
     } else {
       typename Self::CoeffReturnType accum = reducer.initialize();
       internal::GenericDimReducer<NumReducedDims - 1, Self, Op>::reduce(*this, firstInput(index), reducer, &accum);
@@ -834,7 +850,7 @@ struct TensorReductionEvaluatorBase<const TensorReductionOp<Op, Dims, ArgType, M
       }
     } else if (PreservingInnerMostDims) {
       const Index firstIndex = firstInput(index);
-      const int innermost_dim = (static_cast<int>(Layout) == static_cast<int>(ColMajor)) ? 0 : NumOutputDims - 1;
+      constexpr int innermost_dim = (static_cast<int>(Layout) == static_cast<int>(ColMajor)) ? 0 : NumOutputDims - 1;
       // TBD: extend this to the n innermost dimensions that we preserve.
       if (((firstIndex % m_dimensions[innermost_dim]) + PacketSize - 1) < m_dimensions[innermost_dim]) {
         Op reducer(m_reducer);
@@ -845,6 +861,15 @@ struct TensorReductionEvaluatorBase<const TensorReductionOp<Op, Dims, ArgType, M
         for (int i = 0; i < PacketSize; ++i) {
           values[i] = coeff(index + i);
         }
+      }
+    } else if (m_reducingInnerMostDims) {
+      // Mirror the static `ReducingInnerMostDims` packet path so we don't fall
+      // back to PS coeff() calls that route through the scalar GenericDimReducer.
+      const Index firstIndex = index * m_numValuesToReduce;
+      for (Index i = 0; i < PacketSize; ++i) {
+        Op reducer(m_reducer);
+        values[i] = internal::InnerMostDimReducer<Self, Op>::reduce(*this, firstIndex + i * m_numValuesToReduce,
+                                                                    m_numValuesToReduce, reducer);
       }
     } else {
       for (int i = 0; i < PacketSize; ++i) {
@@ -883,7 +908,7 @@ struct TensorReductionEvaluatorBase<const TensorReductionOp<Op, Dims, ArgType, M
 #if defined(EIGEN_USE_GPU) && (defined(EIGEN_GPUCC))
   template <int B, int N, typename S, typename R, typename I_>
   KERNEL_FRIEND void internal::FullReductionKernel(R, const S, I_, typename S::CoeffReturnType*, unsigned int*);
-#if defined(EIGEN_HAS_GPU_FP16)
+#if defined(EIGEN_GPUCC)
   template <typename S, typename R, typename I_>
   KERNEL_FRIEND void internal::ReductionInitFullReduxKernelHalfFloat(R, const S, I_,
                                                                      internal::packet_traits<Eigen::half>::type*);
@@ -921,15 +946,16 @@ struct TensorReductionEvaluatorBase<const TensorReductionOp<Op, Dims, ArgType, M
   // used to compute the reduction at output index "index".
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index firstInput(Index index) const {
     if (ReducingInnerMostDims) {
-      if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+      EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
         return index * m_preservedStrides[0];
-      } else {
+      }
+      else {
         return index * m_preservedStrides[NumPreservedStrides - 1];
       }
     }
     // TBD: optimize the case where we preserve the innermost dimensions.
     Index startInput = 0;
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = NumOutputDims - 1; i > 0; --i) {
         // This is index_i in the output tensor.
         const Index idx = index / m_outputStrides[i];
@@ -942,7 +968,8 @@ struct TensorReductionEvaluatorBase<const TensorReductionOp<Op, Dims, ArgType, M
       } else {
         startInput += index * m_preservedStrides[0];
       }
-    } else {
+    }
+    else {
       for (int i = 0; i < NumOutputDims - 1; ++i) {
         // This is index_i in the output tensor.
         const Index idx = index / m_outputStrides[i];
@@ -972,6 +999,9 @@ struct TensorReductionEvaluatorBase<const TensorReductionOp<Op, Dims, ArgType, M
   array<Index, (std::max)(NumOutputDims, 1)> m_output_to_input_dim_map;
   // How many values go into each reduction
   Index m_numValuesToReduce;
+
+  // Runtime mirror of `ReducingInnerMostDims` (set when Dims is non-static).
+  bool m_reducingInnerMostDims;
 
   // Subset of strides of the input tensor for the reduced dimensions.
   // Indexed by reduced dimensions.
@@ -1020,4 +1050,4 @@ struct TensorEvaluator<const TensorReductionOp<Op, Dims, ArgType, MakePointer_>,
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_REDUCTION_H
+#endif  // EIGEN_TENSOR_TENSOR_REDUCTION_H

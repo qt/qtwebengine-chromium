@@ -4,13 +4,22 @@
 
 #include "components/autofill/core/browser/ui/payments/select_bnpl_issuer_dialog_controller_impl.h"
 
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "base/check_deref.h"
+#include "base/feature_list.h"
+#include "base/functional/callback.h"
+#include "base/functional/callback_forward.h"
+#include "build/buildflag.h"
 #include "components/autofill/core/browser/data_model/payments/bnpl_issuer.h"
 #include "components/autofill/core/browser/metrics/payments/bnpl_metrics.h"
 #include "components/autofill/core/browser/payments/bnpl_util.h"
-#include "components/autofill/core/browser/payments/constants.h"
 #include "components/autofill/core/browser/payments/payments_autofill_client.h"
 #include "components/autofill/core/browser/ui/payments/select_bnpl_issuer_view.h"
+#include "components/autofill/core/common/autofill_payments_features.h"
 #include "components/strings/grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -86,30 +95,9 @@ u16string SelectBnplIssuerDialogControllerImpl::GetTitle() const {
   return GetStringUTF16(IDS_AUTOFILL_CARD_BNPL_SELECT_PROVIDER_TITLE);
 }
 
-// TODO(crbug.com/430575808): Remove `GetSelectionOptionText` and instead use
-// `GetBnplIssuerSelectionOptionText`.
-u16string SelectBnplIssuerDialogControllerImpl::GetSelectionOptionText(
-    IssuerId issuer_id) const {
-  return GetBnplIssuerSelectionOptionText(issuer_id, GetAppLocale(),
-                                          GetIssuerContexts());
-}
-
-// TODO(crbug.com/430575808): Remove `GetLinkText` and instead use
-// `GetBnplUiFooterText`.
-// TODO(crbug.com/405187652) Check if we want the selection dialog footer to
-// have multiple lines when the text doesn't fit into one line.
-TextWithLink SelectBnplIssuerDialogControllerImpl::GetLinkText() const {
-#if !BUILDFLAG(IS_ANDROID)
-  if (base::FeatureList::IsEnabled(
-          features::kAutofillEnableAiBasedAmountExtraction)) {
-    return GetBnplUiFooterTextForAi(client_->GetPaymentsDataManager());
-  } else {
-    return GetBnplUiFooterText();
-  }
-#else
-  // `GetBnplUiFooterText` on Android does not return a `TextWithLink`.
-  NOTREACHED();
-#endif  // !BUILDFLAG(IS_ANDROID)
+const PaymentsDataManager&
+SelectBnplIssuerDialogControllerImpl::GetPaymentsDataManager() const {
+  return client_->GetPaymentsDataManager();
 }
 
 }  // namespace autofill::payments

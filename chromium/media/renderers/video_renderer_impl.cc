@@ -596,24 +596,23 @@ void VideoRendererImpl::FrameReady(VideoDecoderStream::ReadResult result) {
       // Anything other than `kOk` or `kAborted` is treated as an error.
       DCHECK(!result.has_value());
 
-      PipelineStatus::Codes pipeline_status_code;
+      std::optional<PipelineStatus> status;
       switch (result.code()) {
         case DecoderStatus::Codes::kDisconnected:
-          pipeline_status_code = PIPELINE_ERROR_DISCONNECTED;
+          status = {PIPELINE_ERROR_DISCONNECTED, std::move(result).error()};
           break;
         case DecoderStatus::Codes::kOutOfMemory:
-          pipeline_status_code = PIPELINE_ERROR_OUT_OF_MEMORY;
+          status = {PIPELINE_ERROR_OUT_OF_MEMORY, std::move(result).error()};
           break;
         default:
-          pipeline_status_code = PIPELINE_ERROR_DECODE;
+          status = {PIPELINE_ERROR_DECODE, std::move(result).error()};
           break;
       }
-
-      PipelineStatus status = {pipeline_status_code, std::move(result).error()};
-      task_runner_->PostTask(
-          FROM_HERE,
-          base::BindOnce(&VideoRendererImpl::OnPlaybackError,
-                         weak_factory_.GetWeakPtr(), std::move(status)));
+      DCHECK(status.has_value());
+      task_runner_->PostTask(FROM_HERE,
+                             base::BindOnce(&VideoRendererImpl::OnPlaybackError,
+                                            weak_factory_.GetWeakPtr(),
+                                            std::move(status).value()));
       return;
   }
 
@@ -855,9 +854,8 @@ void VideoRendererImpl::UpdateStats_Locked(bool force_update) {
   }
 
   if (stats_.video_frames_dropped) {
-    TRACE_EVENT_INSTANT2("media", "VideoFramesDropped",
-                         TRACE_EVENT_SCOPE_THREAD, "count",
-                         stats_.video_frames_dropped, "id", player_id_);
+    TRACE_EVENT_INSTANT("media", "VideoFramesDropped", "count",
+                        stats_.video_frames_dropped, "id", player_id_);
   }
 
   const size_t memory_usage = algorithm_->GetMemoryUsage();

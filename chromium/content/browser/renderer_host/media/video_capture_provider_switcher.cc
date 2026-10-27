@@ -90,15 +90,28 @@ void VideoCaptureProviderSwitcher::OpenNativeScreenCapturePicker(
     base::OnceCallback<void(DesktopMediaID::Id)> created_callback,
     base::OnceCallback<void(webrtc::DesktopCapturer::Source)> picker_callback,
     base::OnceCallback<void()> cancel_callback,
-    base::OnceCallback<void()> error_callback) {
+    base::OnceCallback<void()> error_callback,
+    base::OnceCallback<void(DesktopMediaID::Id)> stop_audio_callback) {
   other_types_capture_provider_->OpenNativeScreenCapturePicker(
       type, std::move(created_callback), std::move(picker_callback),
-      std::move(cancel_callback), std::move(error_callback));
+      std::move(cancel_callback), std::move(error_callback),
+      std::move(stop_audio_callback));
 }
 
 void VideoCaptureProviderSwitcher::CloseNativeScreenCapturePicker(
     DesktopMediaID device_id) {
   other_types_capture_provider_->CloseNativeScreenCapturePicker(device_id);
 }
+
+#if BUILDFLAG(IS_MAC)
+void VideoCaptureProviderSwitcher::GetApplicationAudioCaptureId(
+    DesktopMediaID::Id session_id,
+    base::OnceCallback<
+        void(const std::optional<desktop_capture::ApplicationAudioCaptureId>&)>
+        callback) {
+  other_types_capture_provider_->GetApplicationAudioCaptureId(
+      session_id, std::move(callback));
+}
+#endif
 
 }  // namespace content

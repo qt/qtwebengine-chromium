@@ -1162,7 +1162,7 @@ TEST(CipherTest, GCMIncrementingIV) {
     ASSERT_NO_FATAL_FAILURE(expect_iv(ctx.get(), iv, /*enc=*/true));
   }
 
-    {
+  {
     // Same as above, but with a larger IV.
     const uint8_t kFixedIV[8] = {1, 2, 3, 4, 5, 6, 7, 8};
     ScopedEVP_CIPHER_CTX ctx;
@@ -1189,7 +1189,178 @@ TEST(CipherTest, GCMIncrementingIV) {
     EXPECT_EQ(CRYPTO_load_u64_be(counter2), CRYPTO_load_u64_be(counter) + 1);
     memcpy(iv + sizeof(kFixedIV), counter2, sizeof(counter2));
     ASSERT_NO_FATAL_FAILURE(expect_iv(ctx.get(), iv, /*enc=*/true));
+  }
+}
+
+TEST(CipherTest, SetIVLengthResets) {
+  const EVP_CIPHER *kCipher = EVP_aes_128_gcm();
+  static const uint8_t kKey[16] = {};
+  static const uint8_t kIV[12] = {};
+
+  {
+    // Set an IV...
+    ScopedEVP_CIPHER_CTX ctx;
+    ASSERT_TRUE(EVP_EncryptInit_ex(ctx.get(), kCipher, /*impl=*/nullptr,
+                                   /*key=*/nullptr, kIV));
+    // But then change the length, invalidating the IV.
+    ASSERT_TRUE(
+        EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_AEAD_SET_IVLEN, 64, nullptr));
+    // Configuring the key should not be enough...
+    ASSERT_TRUE(EVP_EncryptInit_ex(ctx.get(), /*cipher=*/nullptr,
+                                   /*impl=*/nullptr, kKey,
+                                   /*iv=*/nullptr));
+    // ...to perform any operation.
+    uint8_t in[1] = {0};
+    uint8_t out[1];
+    int out_len;
+    EXPECT_FALSE(EVP_EncryptUpdate(ctx.get(), out, &out_len, in, sizeof(in)));
+  }
+
+  {
+    // Changing IV length should also reset the unusual IV generation feature.
+    ScopedEVP_CIPHER_CTX ctx;
+    ASSERT_TRUE(EVP_EncryptInit_ex(ctx.get(), kCipher, /*impl=*/nullptr, kKey,
+                                   /*iv=*/nullptr));
+    ASSERT_TRUE(EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_AEAD_SET_IV_FIXED, 4,
+                                    const_cast<uint8_t *>(kIV)));
+    ASSERT_TRUE(
+        EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_AEAD_SET_IVLEN, 64, nullptr));
+    uint8_t counter[8];
+    EXPECT_FALSE(EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_IV_GEN,
+                                     sizeof(counter), counter));
+  }
+
+  {
+    // Set an IV...
+    ScopedEVP_CIPHER_CTX ctx;
+    ASSERT_TRUE(EVP_EncryptInit_ex(ctx.get(), kCipher, /*impl=*/nullptr,
+                                   /*key=*/nullptr, kIV));
+    // ...and then perform a no-op IV length change.
+    ASSERT_TRUE(
+        EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_AEAD_SET_IVLEN, 12, nullptr));
+    // This time the IV is left alone. Some applications expect this to work.
+    ASSERT_TRUE(EVP_EncryptInit_ex(ctx.get(), /*cipher=*/nullptr,
+                                   /*impl=*/nullptr, kKey,
+                                   /*iv=*/nullptr));
+    uint8_t in[1] = {0};
+    uint8_t out[1];
+    int out_len;
+    EXPECT_TRUE(EVP_EncryptUpdate(ctx.get(), out, &out_len, in, sizeof(in)));
+  }
+
+  {
+    // If GCM IV length is less than 8, SET_IV_FIXED(-1) is allowed to succeed,
+    // but a subsequent EVP_CTRL_GCM_IV_GEN call must fail rather than
+    // underflow.
+    ScopedEVP_CIPHER_CTX ctx;
+    ASSERT_TRUE(EVP_EncryptInit_ex(ctx.get(), kCipher, /*impl=*/nullptr, kKey,
+                                   /*iv=*/nullptr));
+    ASSERT_TRUE(
+        EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_AEAD_SET_IVLEN, 7, nullptr));
+    ASSERT_TRUE(EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_AEAD_SET_IV_FIXED, -1,
+                                    const_cast<uint8_t *>(kIV)));
+    uint8_t counter[8];
+    EXPECT_FALSE(EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_IV_GEN,
+                                     sizeof(counter), counter));
+  }
+}
+
+// EVP_CIPHER's buffer management for AES-GCM's variable-length IV is messy.
+// Ensure it is correct even if the caller encrypts in a contrived way.
+TEST(CipherTest, GCMRepeatedlyChangeIVLength) {
+  const uint8_t kKey[16] = {0, 1, 2,  3,  4,  5,  6,  7,
+                            8, 9, 10, 11, 12, 13, 14, 15};
+  const uint8_t kInput[] = {'h', 'e', 'l', 'l', 'o'};
+  const std::vector<int> kLengthSequences[] = {
+      // Keep making it bigger, all allocated.
+      {64, 128, 256},
+      // Keep making it bigger, all within the built-in buffer.
+      {12, 13, 14, 15, 16},
+      // Make it smaller, all allocated.
+      {256, 128, 64},
+      // Make it smaller, all within the built-in buffer.
+      {12, 11, 10, 9},
+      // As we go down and back up, don't lose track of which buffer it is.
+      {256, 128, 64, 32, 16, 8, 4, 8, 16},
+      {256, 128, 64, 32, 16, 8, 4, 8, 16, 32, 64, 128},
+  };
+  for (const auto &length_seq : kLengthSequences) {
+    SCOPED_TRACE(testing::PrintToString(length_seq));
+
+    // Compute the expected output.
+    UniquePtr<EVP_CIPHER_CTX> ctx(EVP_CIPHER_CTX_new());
+    ASSERT_TRUE(ctx);
+    ASSERT_TRUE(EVP_EncryptInit_ex(ctx.get(), EVP_aes_128_gcm(),
+                                   /*impl=*/nullptr, kKey,
+                                   /*iv=*/nullptr));
+    ASSERT_TRUE(EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_AEAD_SET_IVLEN,
+                                    length_seq.back(), nullptr));
+    std::vector<uint8_t> iv(length_seq.back());
+    ASSERT_TRUE(EVP_EncryptInit_ex(ctx.get(), /*cipher=*/nullptr,
+                                   /*impl=*/nullptr, /*key=*/nullptr,
+                                   iv.data()));
+    uint8_t expected_ciphertext[sizeof(kInput)];
+    size_t len;
+    ASSERT_TRUE(EVP_EncryptUpdate_ex(ctx.get(), expected_ciphertext, &len,
+                                     sizeof(expected_ciphertext), kInput,
+                                     sizeof(kInput)));
+    ASSERT_EQ(len, sizeof(expected_ciphertext));
+    ASSERT_TRUE(EVP_EncryptFinal_ex2(ctx.get(), nullptr, &len, 0));
+    uint8_t expected_tag[12];
+    ASSERT_TRUE(EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_AEAD_GET_TAG,
+                                    sizeof(expected_tag), expected_tag));
+
+    for (bool copy : {false, true}) {
+      SCOPED_TRACE(copy);
+
+      ctx.reset(EVP_CIPHER_CTX_new());
+      ASSERT_TRUE(ctx);
+      ASSERT_TRUE(EVP_EncryptInit_ex(ctx.get(), EVP_aes_128_gcm(),
+                                     /*impl=*/nullptr, kKey,
+                                     /*iv=*/nullptr));
+      ASSERT_TRUE(MaybeCopyCipherContext(copy, &ctx));
+      // Simulate a caller that cannot make up its mind about the IV length.
+      for (int iv_len : length_seq) {
+        ASSERT_TRUE(EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_AEAD_SET_IVLEN,
+                                        iv_len, nullptr));
+        ASSERT_TRUE(MaybeCopyCipherContext(copy, &ctx));
+      }
+      // Finish the encryption.
+      ASSERT_TRUE(EVP_EncryptInit_ex(ctx.get(), /*cipher=*/nullptr,
+                                     /*impl=*/nullptr, /*key=*/nullptr,
+                                     iv.data()));
+      ASSERT_TRUE(MaybeCopyCipherContext(copy, &ctx));
+      uint8_t ciphertext[sizeof(kInput)];
+      ASSERT_TRUE(EVP_EncryptUpdate_ex(ctx.get(), ciphertext, &len,
+                                       sizeof(ciphertext), kInput,
+                                       sizeof(kInput)));
+      ASSERT_TRUE(MaybeCopyCipherContext(copy, &ctx));
+      ASSERT_EQ(len, sizeof(ciphertext));
+      ASSERT_TRUE(EVP_EncryptFinal_ex2(ctx.get(), nullptr, &len, 0));
+      ASSERT_TRUE(MaybeCopyCipherContext(copy, &ctx));
+      uint8_t tag[12];
+      ASSERT_TRUE(EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_AEAD_GET_TAG,
+                                      sizeof(tag), tag));
+
+      // The answer should have been the same.
+      EXPECT_EQ(Bytes(ciphertext), Bytes(expected_ciphertext));
+      EXPECT_EQ(Bytes(tag), Bytes(expected_tag));
     }
+  }
+}
+
+TEST(CipherTest, RC2KeyLengthOverflow) {
+  const EVP_CIPHER *cipher = EVP_rc2_cbc();
+  UniquePtr<EVP_CIPHER_CTX> ctx(EVP_CIPHER_CTX_new());
+  ASSERT_TRUE(ctx);
+
+  ASSERT_TRUE(EVP_DecryptInit_ex(ctx.get(), cipher, nullptr, nullptr, nullptr));
+
+  if (EVP_CIPHER_CTX_set_key_length(ctx.get(), 0x80000000)) {
+    std::vector<uint8_t> key(128, 0);
+    // This should not crash.
+    EVP_DecryptInit_ex(ctx.get(), nullptr, nullptr, key.data(), nullptr);
+  }
 }
 
 }  // namespace

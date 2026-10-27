@@ -35,7 +35,8 @@
 #include "src/heap/spaces-inl.h"
 #include "src/objects/allocation-site-inl.h"
 #include "src/objects/cell-inl.h"
-#include "src/objects/objects-inl.h"
+#include "src/objects/map-word-inl.h"
+#include "src/objects/object-predicates-inl.h"
 #include "src/objects/slots-inl.h"
 #include "src/objects/visitors-inl.h"
 #include "src/roots/static-roots.h"
@@ -133,7 +134,7 @@ void Heap::SetMessageListeners(Tagged<ArrayList> value) {
 }
 
 void Heap::SetFunctionsMarkedForManualOptimization(Tagged<Object> hash_table) {
-  DCHECK(IsObjectHashTable(hash_table) || IsUndefined(hash_table, isolate()));
+  DCHECK(IsObjectHashTable(hash_table) || IsUndefined(hash_table));
   roots_table()[RootIndex::kFunctionsMarkedForManualOptimization] =
       hash_table.ptr();
 }

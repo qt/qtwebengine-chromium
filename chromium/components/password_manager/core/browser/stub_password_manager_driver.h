@@ -26,7 +26,7 @@ class StubPasswordManagerDriver : public PasswordManagerDriver {
   ~StubPasswordManagerDriver() override;
 
   // PasswordManagerDriver:
-  int GetId() const override;
+  DriverId GetId() const override;
   void PropagateFillDataOnParsingCompletion(
       const autofill::PasswordFormFillData& form_data) override;
   void GeneratedPasswordAccepted(const std::u16string& password) override;
@@ -62,6 +62,7 @@ class StubPasswordManagerDriver : public PasswordManagerDriver {
   PasswordGenerationFrameHelper* GetPasswordGenerationHelper() override;
   PasswordManagerInterface* GetPasswordManager() override;
   PasswordAutofillManager* GetPasswordAutofillManager() override;
+  autofill::PasswordManagerDelegate* GetPasswordManagerDelegate() override;
   bool IsDirectChildOfPrimaryMainFrame() const override;
   bool IsInPrimaryMainFrame() const override;
   bool IsNestedWithinFencedFrame() const override;
@@ -69,6 +70,7 @@ class StubPasswordManagerDriver : public PasswordManagerDriver {
   int GetFrameId() const override;
   const GURL& GetLastCommittedURL() const override;
   const url::Origin& GetLastCommittedOrigin() const override;
+  bool HasCrossOriginAncestor() const override;
 
   gfx::RectF TransformToRootCoordinates(
       const gfx::RectF& bounds_in_frame_coordinates) override;

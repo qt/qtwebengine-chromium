@@ -19,6 +19,9 @@
 #include "src/xnnpack/microparams-init.h"
 #include "src/xnnpack/reduce.h"
 
+static struct xnn_reduce_config bf16_rmax_config = {0};
+static struct xnn_reduce_config bf16_rminmax_config = {0};
+static struct xnn_reduce_config bf16_rmin_config = {0};
 static struct xnn_reduce_config f16_f32acc_rsum_config = {0};
 static struct xnn_reduce_config f16_f32acc_rsum2_config = {0};
 static struct xnn_reduce_config f16_rmax_config = {0};
@@ -38,6 +41,9 @@ static struct xnn_reduce_config u8_rminmax_config = {0};
 static struct xnn_reduce_config u8_rmin_config = {0};
 static struct xnn_reduce_config qu8_rsum_config = {0};
 
+XNN_INIT_ONCE_GUARD(bf16_rmax);
+XNN_INIT_ONCE_GUARD(bf16_rminmax);
+XNN_INIT_ONCE_GUARD(bf16_rmin);
 XNN_INIT_ONCE_GUARD(f16_f32acc_rsum);
 XNN_INIT_ONCE_GUARD(f16_f32acc_rsum2);
 XNN_INIT_ONCE_GUARD(f16_rmax);
@@ -797,6 +803,53 @@ static void init_f16_rmax_config(void) {
   f16_rmax_config.identity_value = pack_uint16_x2(0xFC00);  // -FLOAT16_INFINITY
 }
 
+static void init_bf16_rmax_config(void) {
+  bf16_rmax_config.identity_value = pack_uint16_x2(UINT16_C(0xFF80));  // -BF16_INFINITY
+  #if XNN_ARCH_ARM || XNN_ARCH_ARM64
+    const struct xnn_hardware_config* hardware_config = xnn_init_hardware_config();
+    assert(hardware_config != NULL);
+    (void) hardware_config;  // May be unused.
+    if (hardware_config->arch_flags & xnn_arch_arm_neon) {
+      bf16_rmax_config.ukernel = XNN_INIT_REDUCE_UKERNEL(xnn_bf16_rmax_ukernel__neon_u32_acc4);
+    } else {
+      bf16_rmax_config.ukernel = XNN_INIT_REDUCE_UKERNEL(xnn_bf16_rmax_ukernel__scalar_u2_acc2);
+    }
+  #else
+    bf16_rmax_config.ukernel = XNN_INIT_REDUCE_UKERNEL(xnn_bf16_rmax_ukernel__scalar_u2_acc2);
+  #endif
+}
+
+static void init_bf16_rminmax_config(void) {
+  #if XNN_ARCH_ARM || XNN_ARCH_ARM64
+    const struct xnn_hardware_config* hardware_config = xnn_init_hardware_config();
+    assert(hardware_config != NULL);
+    (void) hardware_config;  // May be unused.
+    if (hardware_config->arch_flags & xnn_arch_arm_neon) {
+      bf16_rminmax_config.ukernel = XNN_INIT_REDUCE_UKERNEL(xnn_bf16_rminmax_ukernel__neon_u32_acc4);
+    } else {
+      bf16_rminmax_config.ukernel = XNN_INIT_REDUCE_UKERNEL(xnn_bf16_rminmax_ukernel__scalar_u2_acc2);
+    }
+  #else
+    bf16_rminmax_config.ukernel = XNN_INIT_REDUCE_UKERNEL(xnn_bf16_rminmax_ukernel__scalar_u2_acc2);
+  #endif
+}
+
+static void init_bf16_rmin_config(void) {
+  bf16_rmin_config.identity_value = pack_uint16_x2(UINT16_C(0x7F80));  // +BF16_INFINITY
+  #if XNN_ARCH_ARM || XNN_ARCH_ARM64
+    const struct xnn_hardware_config* hardware_config = xnn_init_hardware_config();
+    assert(hardware_config != NULL);
+    (void) hardware_config;  // May be unused.
+    if (hardware_config->arch_flags & xnn_arch_arm_neon) {
+      bf16_rmin_config.ukernel = XNN_INIT_REDUCE_UKERNEL(xnn_bf16_rmin_ukernel__neon_u32_acc4);
+    } else {
+      bf16_rmin_config.ukernel = XNN_INIT_REDUCE_UKERNEL(xnn_bf16_rmin_ukernel__scalar_u2_acc2);
+    }
+  #else
+    bf16_rmin_config.ukernel = XNN_INIT_REDUCE_UKERNEL(xnn_bf16_rmin_ukernel__scalar_u2_acc2);
+  #endif
+}
+
 static void init_f16_rminmax_config(void) {
   #if XNN_ENABLE_ARM_FP16_VECTOR && (XNN_ARCH_ARM || XNN_ARCH_ARM64)
     const struct xnn_hardware_config* hardware_config = xnn_init_hardware_config();
@@ -1020,7 +1073,9 @@ static void init_f32_rminmax_config(void) {
     {
       f32_rminmax_config.ukernel = XNN_INIT_REDUCE_UKERNEL(xnn_f32_rminmax_ukernel__scalar_u4_acc4);
     }
-  #elif XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
+  #elif XNN_ARCH_WASMRELAXEDSIMD
+    f32_rminmax_config.ukernel = XNN_INIT_REDUCE_UKERNEL(xnn_f32_rminmax_ukernel__wasmrelaxedsimd_minmax_u16_acc4);
+  #elif XNN_ARCH_WASMSIMD
     f32_rminmax_config.ukernel = XNN_INIT_REDUCE_UKERNEL(xnn_f32_rminmax_ukernel__wasmsimd_minmax_u16_acc4);
   #elif XNN_ARCH_RISCV && XNN_ENABLE_RISCV_VECTOR
     f32_rminmax_config.ukernel = XNN_INIT_REDUCE_UKERNEL(xnn_f32_rminmax_ukernel__rvv_u8v);
@@ -1301,6 +1356,33 @@ const struct xnn_reduce_config* xnn_init_f16_rmax_config() {
   }
   XNN_INIT_ONCE(f16_rmax);
   return &f16_rmax_config;
+}
+
+const struct xnn_reduce_config* xnn_init_bf16_rmax_config() {
+  const struct xnn_hardware_config* hardware_config = xnn_init_hardware_config();
+  if (hardware_config == NULL) {
+    return NULL;
+  }
+  XNN_INIT_ONCE(bf16_rmax);
+  return &bf16_rmax_config;
+}
+
+const struct xnn_reduce_config* xnn_init_bf16_rminmax_config() {
+  const struct xnn_hardware_config* hardware_config = xnn_init_hardware_config();
+  if (hardware_config == NULL) {
+    return NULL;
+  }
+  XNN_INIT_ONCE(bf16_rminmax);
+  return &bf16_rminmax_config;
+}
+
+const struct xnn_reduce_config* xnn_init_bf16_rmin_config() {
+  const struct xnn_hardware_config* hardware_config = xnn_init_hardware_config();
+  if (hardware_config == NULL) {
+    return NULL;
+  }
+  XNN_INIT_ONCE(bf16_rmin);
+  return &bf16_rmin_config;
 }
 
 const struct xnn_reduce_config* xnn_init_f16_rminmax_config() {

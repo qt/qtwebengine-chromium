@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_UINT128_H
-#define EIGEN_CXX11_TENSOR_TENSOR_UINT128_H
+#ifndef EIGEN_TENSOR_TENSOR_UINT128_H
+#define EIGEN_TENSOR_TENSOR_UINT128_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -225,4 +226,4 @@ static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorUInt128<uint64_t, uint64_t> o
 }  // namespace internal
 }  // namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_UINT128_H
+#endif  // EIGEN_TENSOR_TENSOR_UINT128_H

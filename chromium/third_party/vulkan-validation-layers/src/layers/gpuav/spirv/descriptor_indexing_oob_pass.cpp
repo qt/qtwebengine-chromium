@@ -177,24 +177,13 @@ bool DescriptorIndexingOOBPass::RequiresInstrumentation(const Function& function
                AtomicOperation(opcode)) {
         // Buffer and Buffer Atomics and Storage Images
 
-        const Variable* variable = nullptr;
-        const Instruction* access_chain_inst = function.FindInstruction(inst.Operand(0));
-        // We need to walk down possibly multiple chained OpAccessChains or OpCopyObject to get the variable
-        while (access_chain_inst && access_chain_inst->IsNonPtrAccessChain()) {
-            const uint32_t access_chain_base_id = access_chain_inst->Operand(0);
-            variable = type_manager_.FindVariableById(access_chain_base_id);
-            if (variable) {
-                break;  // found
-            }
-            access_chain_inst = function.FindInstruction(access_chain_base_id);
-        }
-        if (!variable) {
+        const AccessPath access_path = type_manager_.BuildAccessPath(function, inst);
+        if (!access_path.IsValid()) {
             return false;
         }
+        meta.var_inst = &access_path.variable->inst_;
 
-        meta.var_inst = &variable->inst_;
-
-        const uint32_t storage_class = variable->StorageClass();
+        const uint32_t storage_class = access_path.variable->StorageClass();
         if (storage_class == spv::StorageClassUniformConstant) {
             // TODO - Need to add Storage Image support
             return false;
@@ -203,7 +192,7 @@ bool DescriptorIndexingOOBPass::RequiresInstrumentation(const Function& function
             return false;  // Prevents things like Push Constants
         }
 
-        const Type* pointer_type = variable->PointerType(type_manager_);
+        const Type* pointer_type = access_path.variable->PointerType(type_manager_);
         if (!pointer_type) {
             module_.InternalError(Name(), "Pointer type not found");
             return false;
@@ -211,7 +200,7 @@ bool DescriptorIndexingOOBPass::RequiresInstrumentation(const Function& function
 
         if (pointer_type->IsArray()) {
             array_found = true;
-            meta.descriptor_index_id = access_chain_inst->Operand(1);
+            meta.descriptor_index_id = access_path.DescriptorIndexId();
         } else {
             // There is no array of this descriptor, so we essentially have an array of 1
             meta.descriptor_index_id = type_manager_.GetConstantZeroUint32().Id();
@@ -294,15 +283,7 @@ bool DescriptorIndexingOOBPass::RequiresInstrumentation(const Function& function
 
     assert(meta.var_inst);
     uint32_t variable_id = meta.var_inst->ResultId();
-    for (const auto& annotation : module_.annotations_) {
-        if (annotation->Opcode() == spv::OpDecorate && annotation->Word(1) == variable_id) {
-            if (annotation->Word(2) == spv::DecorationDescriptorSet) {
-                meta.descriptor_set = annotation->Word(3);
-            } else if (annotation->Word(2) == spv::DecorationBinding) {
-                meta.descriptor_binding = annotation->Word(3);
-            }
-        }
-    }
+    GetDescriptorSetAndBinding(variable_id, meta.descriptor_set, meta.descriptor_binding);
 
     if (meta.descriptor_set >= glsl::kDebugInputBindlessMaxDescSets) {
         module_.InternalWarning(Name(), "Tried to use a descriptor slot over the current max limit");
@@ -357,15 +338,7 @@ bool DescriptorIndexingOOBPass::RequiresInstrumentation(const Function& function
         }
 
         variable_id = meta.sampler_var_inst->ResultId();
-        for (const auto& annotation : module_.annotations_) {
-            if (annotation->Opcode() == spv::OpDecorate && annotation->Word(1) == variable_id) {
-                if (annotation->Word(2) == spv::DecorationDescriptorSet) {
-                    meta.sampler_descriptor_set = annotation->Word(3);
-                } else if (annotation->Word(2) == spv::DecorationBinding) {
-                    meta.sampler_descriptor_binding = annotation->Word(3);
-                }
-            }
-        }
+        GetDescriptorSetAndBinding(variable_id, meta.sampler_descriptor_set, meta.sampler_descriptor_binding);
 
         if (meta.sampler_descriptor_set >= glsl::kDebugInputBindlessMaxDescSets) {
             module_.InternalWarning(Name(), "Sampler Tried to use a descriptor slot over the current max limit");

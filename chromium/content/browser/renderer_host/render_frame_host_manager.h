@@ -242,6 +242,16 @@ class CONTENT_EXPORT RenderFrameHostManager {
     // Called when a FrameTreeNode is destroyed.
     virtual void OnFrameTreeNodeDestroyed(FrameTreeNode* node) = 0;
 
+    // Called when the RenderWidgetHostViewChildFrame associated with
+    // `new_view` is swapped in.
+    virtual void NotifySwappedRWHVChildFrameFromRenderManager(
+        RenderWidgetHostViewChildFrame* new_view,
+        bool allow_paint_holding) = 0;
+
+    // Called when the frame swap from a commit is complete and the new frame is
+    // ready to be shown.
+    virtual void PrimaryMainFrameCommitted(RenderFrameHostImpl* new_frame) = 0;
+
    protected:
     virtual ~Delegate() = default;
   };
@@ -1146,6 +1156,10 @@ class CONTENT_EXPORT RenderFrameHostManager {
       const ViewTransitionCommitInfo& view_transition_commit_info,
       const base::optional_ref<const GURL> navigation_request_url,
       bool is_backward_navigation);
+
+  // Called when either a same-RenderFrameHost or pending RenderFrameHost
+  // navigation commits.
+  void UpdateViewVisibilityAfterCommit(bool was_same_render_frame_host);
 
   // Runs the unload handler in the old RenderFrameHost, after the new
   // RenderFrameHost has committed.  |old_render_frame_host| will either be

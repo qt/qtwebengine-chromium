@@ -12,9 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::codecs::DecoderConfig;
+use crate::decoder::DEFAULT_IMAGE_SIZE_LIMIT;
 use crate::encoder::*;
 use crate::internal_utils::sampletransform::*;
 use crate::*;
+use std::num::NonZero;
 
 impl Recipe {
     pub(crate) fn self_or_auto_choose_depending_on(self, image: &Image) -> Recipe {
@@ -25,7 +28,10 @@ impl Recipe {
                 // This is unsupported and will lead to an error later.
                 _ => Recipe::None,
             },
-            Recipe::None | Recipe::BitDepthExtension8b8b | Recipe::BitDepthExtension12b4b => self,
+            Recipe::None
+            | Recipe::BitDepthExtension8b8b
+            | Recipe::BitDepthExtension12b4b
+            | Recipe::BitDepthExtension12b8bOverlap4b => self,
         }
     }
 }
@@ -133,6 +139,35 @@ fn recipe_to_expression(recipe: Recipe) -> Result<SampleTransform, AvifError> {
                     SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Quotient),
                     // Combine the two.
                     SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Sum),
+                ],
+            )
+        }
+        Recipe::BitDepthExtension12b8bOverlap4b => {
+            // reference_count is two: one 12-bit input image and one 8-bit input image.
+            //   (base_sample << 4) + hidden_sample
+            // Note: Both base_sample and hidden_sample are encoded lossily or losslessly. hidden_sample overlaps
+            //       with base_sample by 4 bits to alleviate the loss caused by the quantization of base_sample.
+            SampleTransform::create_from(
+                // SampleTransformBitDepth::Signed32bits is necessary because the two input images
+                // once combined use 16-bit unsigned values, but intermediate results are stored in signed integers.
+                SampleTransformBitDepth::Signed32bits.to_bits(),
+                2, // num_inputs
+                vec![
+                    // The base image represents the 12 most significant bits of the reconstructed, bit-depth-extended output image.
+                    // Left shift the base image (which is also the primary item, or the auxiliary alpha item of the primary item)
+                    // by 4 bits. This is equivalent to multiplying by 2^4.
+                    SampleTransformToken::Constant(16),
+                    SampleTransformToken::ImageItem(0),
+                    SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Product),
+                    // The second image represents the offset to apply to the shifted base image to retrieve
+                    // the original image, with some loss due to quantization.
+                    SampleTransformToken::ImageItem(1),
+                    SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Sum),
+                    // The second image is offset by 128 to have unsigned values to encode.
+                    // Correct that last to always work with unsigned values in the operations above.
+                    SampleTransformToken::Constant(128),
+                    SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Difference),
+                    // Sample values are clamped to [0:1<<depth[ at that point.
                 ],
             )
         }
@@ -249,11 +284,7 @@ impl Encoder {
                     SampleTransformToken::BinaryOp(SampleTransformBinaryOp::And),
                 ],
             )?
-            .apply_to_planes(
-                item.category,
-                std::slice::from_ref(full_depth_image),
-                &mut lsb,
-            )?;
+            .apply_to_planes(item.category, &[full_depth_image], &mut lsb)?;
             Ok(lsb)
         } else {
             // 8-bit image containing the most significant bits of the 16-bit image.
@@ -270,11 +301,7 @@ impl Encoder {
                     SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Quotient),
                 ],
             )?
-            .apply_to_planes(
-                item.category,
-                std::slice::from_ref(full_depth_image),
-                &mut msb,
-            )?;
+            .apply_to_planes(item.category, &[full_depth_image], &mut msb)?;
             Ok(msb)
         }
     }
@@ -319,9 +346,120 @@ impl Encoder {
                 /*bit_depth=*/ 32, // Signed so 16 is not enough.
                 /*num_inputs=*/ 1, tokens,
             )?
+            .apply_to_planes(item.category, &[full_depth_image], &mut lsb)?;
+            Ok(lsb)
+        } else {
+            // 12-bit image containing the 12 most significant bits of the 16-bit image.
+            let mut msb = full_depth_image.shallow_clone();
+            msb.depth = 12;
+            msb.allocate_planes(item.category)?;
+            SampleTransform::create_from(
+                /*bit_depth=*/ 32, // Signed so 16 is not enough.
+                /*num_inputs=*/ 1,
+                vec![
+                    // Postfix notation.
+                    SampleTransformToken::ImageItem(0),
+                    SampleTransformToken::Constant(16),
+                    SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Quotient),
+                ],
+            )?
+            .apply_to_planes(item.category, &[full_depth_image], &mut msb)?;
+            Ok(msb)
+        }
+    }
+
+    // Finds the encoded base image and decodes it.
+    fn avif_encoder_decode_sato_base_image(
+        &self,
+        cell_index: usize,
+        original: &Image,
+        num_bits: u8,
+        category: Category,
+    ) -> AvifResult<Image> {
+        let mut iter = self.items.iter().filter(|item| {
+            item.codec.is_some() && item.category == category && item.cell_index == cell_index
+        });
+        let item = iter.next().unwrap();
+        let (_, encoder_codec) = self
+            .settings
+            .codec_choice
+            .get_item_type_and_encoder_codec()?;
+        let mut decoder_codec = CodecChoice::Auto
+            .get_decoder_codec(decoder::CompressionFormat::Avif)
+            .ok_or(AvifError::NoCodecAvailable)?;
+        let mut decoded_base_image = original.shallow_clone();
+        decoded_base_image.depth = num_bits;
+        let is_single_image = self.duration_in_timescales.len() < 2;
+        let is_lossless = self.settings.mutable.quality(item.category) == 100.0;
+        let codec_config = encoder_codec.get_codec_config(
+            &decoded_base_image,
+            is_single_image,
+            is_lossless,
+            &item.samples,
+        )?;
+        let config = DecoderConfig {
+            operating_point: 0,
+            all_layers: false,
+            width: original.width,
+            height: original.height,
+            depth: num_bits,
+            max_threads: self.settings.threads,
+            image_size_limit: NonZero::new(DEFAULT_IMAGE_SIZE_LIMIT),
+            max_input_size: item.samples[0].data.len(),
+            codec_config,
+            category,
+            android_mediacodec_output_color_format: Default::default(),
+        };
+        decoder_codec.initialize(&config)?;
+        decoder_codec.get_next_image(
+            &item.samples[0].data,
+            0xff,
+            &mut decoded_base_image,
+            category,
+            None,
+            false,
+        )?;
+        // Copy the buffer allocated by the underlying decoder_codec before
+        // it gets dropped.
+        decoded_base_image.try_deep_clone()
+    }
+
+    pub(crate) fn create_bit_depth_extension_12b8b_overlap4b_image(
+        &self,
+        full_depth_image: &Image,
+        item: &Item,
+    ) -> AvifResult<Image> {
+        assert_eq!(full_depth_image.depth, 16);
+        if item.is_sato_least_significant_input {
+            let decoded_base_image = self.avif_encoder_decode_sato_base_image(
+                item.cell_index,
+                full_depth_image,
+                12,
+                item.category,
+            )?;
+
+            let mut lsb = full_depth_image.shallow_clone();
+            lsb.depth = 8;
+            lsb.allocate_planes(item.category)?;
+            // decoded = main*16+hidden-128 so hidden = clamp_8b(original-main*16+128). Postfix notation.
+            let tokens = vec![
+                // Postfix notation.
+                SampleTransformToken::ImageItem(0),
+                SampleTransformToken::ImageItem(1),
+                SampleTransformToken::Constant(16),
+                SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Product),
+                SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Difference),
+                SampleTransformToken::Constant(128),
+                SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Sum),
+            ];
+            // image is "original" (index 0) and decodedBaseImage is "main" (index 1) in the formula above.
+            SampleTransform::create_from(
+                /*bit_depth=*/ 32, // Signed so 16 is not enough.
+                /*num_inputs=*/ 2, tokens,
+            )?
             .apply_to_planes(
                 item.category,
-                std::slice::from_ref(full_depth_image),
+                &[full_depth_image, &decoded_base_image],
                 &mut lsb,
             )?;
             Ok(lsb)
@@ -340,11 +478,7 @@ impl Encoder {
                     SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Quotient),
                 ],
             )?
-            .apply_to_planes(
-                item.category,
-                std::slice::from_ref(full_depth_image),
-                &mut msb,
-            )?;
+            .apply_to_planes(item.category, &[full_depth_image], &mut msb)?;
             Ok(msb)
         }
     }

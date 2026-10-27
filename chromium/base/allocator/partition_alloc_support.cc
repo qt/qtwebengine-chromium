@@ -136,12 +136,35 @@ namespace switches {
 constexpr char kGpuProcess[] = "gpu-process";
 constexpr char kProcessType[] = "type";
 [[maybe_unused]] constexpr char kRendererProcess[] = "renderer";
+const char kUtilitySubType[] = "utility-sub-type";
 constexpr char kZygoteProcess[] = "zygote";
 }  // namespace switches
 
 [[maybe_unused]] std::string GetProcessType() {
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
   return command_line->GetSwitchValueASCII(switches::kProcessType);
+}
+
+// Returns a "process type identifier" for the current process.
+// It is the process type (e.g. "renderer", "gpu-process") for non-utility
+// processes. For the browser process, it is "browser".
+// For utility processes, it is "utility" followed by "." and the utility
+// sub-type name (e.g. "utility.network.mojom.NetworkService").
+[[maybe_unused]] std::string GetProcessTypeIdentifier() {
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  std::string process_type =
+      command_line->GetSwitchValueASCII(switches::kProcessType);
+  if (process_type.empty()) {
+    return "browser";
+  }
+  if (process_type == "utility") {
+    std::string utility_subtype =
+        command_line->GetSwitchValueASCII(switches::kUtilitySubType);
+    if (!utility_subtype.empty()) {
+      return "utility." + utility_subtype;
+    }
+  }
+  return process_type;
 }
 
 class LockMetricsRecorderSupport
@@ -175,10 +198,10 @@ void RunThreadCachePeriodicPurge() {
       "Memory.PartitionAlloc.PeriodicPurge.Subsampled",
       base::ShouldRecordSubsampledMetric(0.01));
   TRACE_EVENT0("memory", "PeriodicPurge");
-  auto& instance = ::partition_alloc::ThreadCacheRegistry::Instance();
-  instance.RunPeriodicPurge();
+  ::partition_alloc::ThreadCache::RunPeriodicPurge();
   TimeDelta delay =
-      Microseconds(instance.GetPeriodicPurgeNextIntervalInMicroseconds());
+      Microseconds(::partition_alloc::ThreadCache::
+                       GetPeriodicPurgeNextIntervalInMicroseconds());
   SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE, BindOnce(RunThreadCachePeriodicPurge), delay);
 }
@@ -270,10 +293,10 @@ void MemoryReclaimerSupport::MaybeScheduleTask(TimeDelta delay) {
 }
 
 void StartThreadCachePeriodicPurge() {
-  auto& instance = ::partition_alloc::ThreadCacheRegistry::Instance();
-  TimeDelta delay = std::max(
-      Microseconds(instance.GetPeriodicPurgeNextIntervalInMicroseconds()),
-      kFirstPAPurgeOrReclaimDelay);
+  TimeDelta delay =
+      std::max(Microseconds(::partition_alloc::ThreadCache::
+                                GetPeriodicPurgeNextIntervalInMicroseconds()),
+               kFirstPAPurgeOrReclaimDelay);
 
   SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE, BindOnce(RunThreadCachePeriodicPurge), delay);
@@ -310,9 +333,10 @@ std::map<std::string, std::string> ProposeSyntheticFinchTrials() {
     partition_alloc::TagViolationReportingMode reporting_mode =
         partition_alloc::TagViolationReportingMode::kUndefined;
 #if PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
-    reporting_mode = allocator_shim::internal::PartitionAllocMalloc::Allocator(
-                         kDefaultAllocToken)
-                         ->memory_tagging_reporting_mode();
+    reporting_mode =
+        allocator_shim::internal::PartitionAllocMalloc::Allocator(
+            allocator_shim::AllocToken(allocator_shim::kDefaultPartitionIndex))
+            ->memory_tagging_reporting_mode();
 #endif  // PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
     switch (bootloader_override) {
       case BootloaderOverride::kDefault:
@@ -878,13 +902,14 @@ void ReconfigureSchedulerLoopQuarantineBranch(
           base::features::kPartitionAllocSchedulerLoopQuarantine)) {
     return;
   }
-  std::string process_type = GetProcessType();
+  std::string process_type_identifier = GetProcessTypeIdentifier();
   partition_alloc::internal::SchedulerLoopQuarantineConfig config =
-      GetSchedulerLoopQuarantineConfiguration(process_type, branch_type);
-  for (size_t alloc_token = 0; alloc_token <= kMaxAllocToken.value();
+      GetSchedulerLoopQuarantineConfiguration(process_type_identifier,
+                                              branch_type);
+  for (size_t alloc_token = 0; alloc_token < allocator_shim::kNumPartitions;
        alloc_token++) {
     allocator_shim::internal::PartitionAllocMalloc::Allocator(
-        AllocToken(alloc_token))
+        allocator_shim::AllocToken(alloc_token))
         ->ReconfigureSchedulerLoopQuarantineForCurrentThread(config);
   }
 #endif  // PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
@@ -988,6 +1013,7 @@ void PartitionAllocSupport::ReconfigureEarlyish(std::string_view process_type) {
     // is earlier than ContentMain().
     if (called_for_tests_) {
       DCHECK(called_earlyish_);
+      established_process_type_ = process_type;
       return;
     }
 
@@ -1116,6 +1142,15 @@ void PartitionAllocSupport::ReconfigureAfterFeatureListInit(
   // current platform. Note that CastOS is not protected by BackupRefPtr
   // a the moment, so they are excluded.
 #if PA_BUILDFLAG(USE_ASAN_BACKUP_REF_PTR) && !PA_BUILDFLAG(IS_CASTOS)
+#if PA_BUILDFLAG(USE_ASAN_BACKUP_REF_PTR_V2)
+  base::RawPtrAsanService::GetInstance().Configure(
+      ShouldEnableFeatureOnProcess(
+          base::features::kBackupRefPtrEnabledProcessesParam.Get(),
+          process_type),
+      {.enable_data_race_check = RawPtrAsanServiceOptions::kDisabled,
+       .enable_free_after_quarantined_check =
+           RawPtrAsanServiceOptions::kDisabled});
+#else
   if (ShouldEnableFeatureOnProcess(
           base::features::kBackupRefPtrEnabledProcessesParam.Get(),
           process_type)) {
@@ -1131,6 +1166,7 @@ void PartitionAllocSupport::ReconfigureAfterFeatureListInit(
                                                EnableExtractionCheck(false),
                                                EnableInstantiationCheck(false));
   }
+#endif  // PA_BUILDFLAG(USE_ASAN_BACKUP_REF_PTR_V2)
 #endif  // PA_BUILDFLAG(USE_ASAN_BACKUP_REF_PTR) && !PA_BUILDFLAG(IS_CASTOS)
 
 #if PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
@@ -1146,26 +1182,34 @@ void PartitionAllocSupport::ReconfigureAfterFeatureListInit(
       break;
   }
 
+  std::string process_type_identifier = GetProcessTypeIdentifier();
   const auto scheduler_loop_quarantine_global_config =
       GetSchedulerLoopQuarantineConfiguration(
-          process_type, SchedulerLoopQuarantineBranchType::kGlobal);
+          process_type_identifier, SchedulerLoopQuarantineBranchType::kGlobal);
   const auto scheduler_loop_quarantine_thread_local_config =
       GetSchedulerLoopQuarantineConfiguration(
-          process_type, SchedulerLoopQuarantineBranchType::kThreadLocalDefault);
+          process_type_identifier,
+          SchedulerLoopQuarantineBranchType::kThreadLocalDefault);
   const auto
       scheduler_loop_quarantine_for_advanced_memory_safety_checks_config =
           GetSchedulerLoopQuarantineConfiguration(
-              process_type,
+              process_type_identifier,
               SchedulerLoopQuarantineBranchType::kAdvancedMemorySafetyChecks);
 
-  if (base::FeatureList::IsEnabled(
-          base::features::
-              kPartitionAllocSchedulerLoopQuarantineTaskControlledPurge) &&
-      ShouldEnableFeatureOnProcess(
-          base::features::
-              kPartitionAllocSchedulerLoopQuarantineTaskControlledPurgeEnabledProcessesParam
-                  .Get(),
-          process_type)) {
+  const auto scheduler_loop_quarantine_main_config =
+      GetSchedulerLoopQuarantineConfiguration(
+          process_type, SchedulerLoopQuarantineBranchType::kMain);
+  const auto scheduler_loop_quarantine_io_config =
+      GetSchedulerLoopQuarantineConfiguration(
+          process_type, SchedulerLoopQuarantineBranchType::kIO);
+
+  if (scheduler_loop_quarantine_thread_local_config
+          .enable_task_controlled_purge ||
+      scheduler_loop_quarantine_thread_local_config.pause_in_between_tasks ||
+      scheduler_loop_quarantine_main_config.enable_task_controlled_purge ||
+      scheduler_loop_quarantine_main_config.pause_in_between_tasks ||
+      scheduler_loop_quarantine_io_config.enable_task_controlled_purge ||
+      scheduler_loop_quarantine_io_config.pause_in_between_tasks) {
     base::EnableSchedulerLoopQuarantineTaskControlledPurge();
   }
 
@@ -1176,8 +1220,26 @@ void PartitionAllocSupport::ReconfigureAfterFeatureListInit(
   partition_alloc::TagViolationReportingMode memory_tagging_reporting_mode =
       partition_alloc::TagViolationReportingMode::kUndefined;
 
+#if !BUILDFLAG(IS_CHROMEOS)
+  // Enable free with size on non-ChromeOS purely based on feature flag.
   const bool enable_free_with_size =
       base::FeatureList::IsEnabled(base::features::kPartitionAllocFreeWithSize);
+#else
+  bool enable_free_with_size = false;  // Default to false.
+  // TODO(crbug.com/495493036): Remove this opt out once the bug is fixed.
+  static constexpr auto kOptOutChromeOSPlatforms =
+      std::to_array<std::string_view>(
+          {std::string_view("REX"), std::string_view("OVIS")});
+  if (std::ranges::find(kOptOutChromeOSPlatforms,
+                        base::SysInfo::HardwareModelName()) ==
+      kOptOutChromeOSPlatforms.end()) {
+    // If we aren't on an opt-d out device, check the feature enablement. This
+    // prevents the device being considered part of the experiment if it was
+    // opt-ed out (querying for feature status marks as active).
+    enable_free_with_size = base::FeatureList::IsEnabled(
+        base::features::kPartitionAllocFreeWithSize);
+  }
+#endif  // !BUILDFLAG(IS_CHROMEOS)
 
   const bool enable_strict_free_size_check =
       base::features::kPartitionAllocStrictFreeSizeCheck.Get();
@@ -1263,14 +1325,6 @@ void PartitionAllocSupport::ReconfigureAfterFeatureListInit(
       }
 #endif  // BUILDFLAG(IS_ANDROID)
     }
-
-#if BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_ARM64)
-    if (base::FeatureList::IsEnabled(
-            base::features::kPartitionAllocLockTuneSpin)) {
-      partition_alloc::internal::SpinningMutex::SetSpinCount(
-          base::features::kPartitionAllocLockSpinCount.Get());
-    }
-#endif  // BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_ARM64)
   }
 #endif  // PA_BUILDFLAG(HAS_MEMORY_TAGGING)
 
@@ -1293,13 +1347,24 @@ void PartitionAllocSupport::ReconfigureAfterFeatureListInit(
   UmaHistogramCounts100("Memory.PartitionAlloc.PartitionRoot.ExtrasSize",
                         int(extras_size));
 
+#if PA_CONFIG(DYNAMICALLY_SELECT_POOL_SIZE)
+  // We don't care about the normal case... That is just daily sessions, we
+  // don't want to record this if it isn't interesting to reduce impact on data
+  // volume and sampling.
+  if (partition_alloc::internal::PartitionAddressSpace::
+          IsCorePoolSizeReduced()) {
+    base::UmaHistogramBoolean("Memory.PartitionAlloc.CorePoolSizeReduced",
+                              true);
+  }
+#endif
+
   partition_alloc::internal::StackTopRegistry::Get().NotifyThreadCreated(
       partition_alloc::internal::GetStackTop());
 
-  for (size_t alloc_token = 0; alloc_token <= kMaxAllocToken.value();
+  for (size_t alloc_token = 0; alloc_token < allocator_shim::kNumPartitions;
        alloc_token++) {
     allocator_shim::internal::PartitionAllocMalloc::Allocator(
-        AllocToken(alloc_token))
+        allocator_shim::AllocToken(alloc_token))
         ->EnableThreadCacheIfSupported();
   }
 
@@ -1307,10 +1372,10 @@ void PartitionAllocSupport::ReconfigureAfterFeatureListInit(
           base::features::kPartitionAllocLargeEmptySlotSpanRing)) {
     int16_t size = static_cast<int16_t>(
         features::kPartitionAllocLargeEmptySlotSpanRingSize.Get());
-    for (size_t alloc_token = 0; alloc_token <= kMaxAllocToken.value();
+    for (size_t alloc_token = 0; alloc_token < allocator_shim::kNumPartitions;
          alloc_token++) {
       allocator_shim::internal::PartitionAllocMalloc::Allocator(
-          AllocToken(alloc_token))
+          allocator_shim::AllocToken(alloc_token))
           ->AdjustSlotSpanRing(size, kDefaultMaxEmptySlotSpansDirtyBytesShift);
     }
   }
@@ -1375,7 +1440,7 @@ void PartitionAllocSupport::ReconfigureAfterTaskRunnerInit(
   // Lower thread cache limits to avoid stranding too much memory in the caches.
   if (SysInfo::IsLowEndDeviceOrPartialLowEndModeEnabled(
           features::kPartialLowEndModeExcludePartitionAllocSupport)) {
-    ::partition_alloc::ThreadCacheRegistry::Instance().SetThreadCacheMultiplier(
+    ::partition_alloc::ThreadCache::SetThreadCacheMultiplier(
         ::partition_alloc::ThreadCache::kDefaultMultiplier / 2.);
   }
 #endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
@@ -1442,10 +1507,10 @@ void PartitionAllocSupport::OnForegrounded(bool has_main_frame) {
           features::kPartitionAllocAdjustSizeWhenInForeground)) {
     int16_t size = static_cast<int16_t>(
         features::kPartitionAllocForegroundEmptySlotSpanRingSize.Get());
-    for (size_t alloc_token = 0; alloc_token <= kMaxAllocToken.value();
+    for (size_t alloc_token = 0; alloc_token < allocator_shim::kNumPartitions;
          alloc_token++) {
       allocator_shim::internal::PartitionAllocMalloc::Allocator(
-          AllocToken(alloc_token))
+          allocator_shim::AllocToken(alloc_token))
           ->AdjustSlotSpanRing(size,
                                kForegroundMaxEmptySlotSpansDirtyBytesShift);
     }
@@ -1489,10 +1554,10 @@ void PartitionAllocSupport::OnBackgrounded() {
           features::kPartitionAllocAdjustSizeWhenInForeground)) {
     int16_t size = static_cast<int16_t>(
         features::kPartitionAllocBackgroundEmptySlotSpanRingSize.Get());
-    for (size_t alloc_token = 0; alloc_token <= kMaxAllocToken.value();
+    for (size_t alloc_token = 0; alloc_token < allocator_shim::kNumPartitions;
          alloc_token++) {
       allocator_shim::internal::PartitionAllocMalloc::Allocator(
-          AllocToken(alloc_token))
+          allocator_shim::AllocToken(alloc_token))
           ->AdjustSlotSpanRing(size,
                                kBackgroundMaxEmptySlotSpansDirtyBytesShift);
     }

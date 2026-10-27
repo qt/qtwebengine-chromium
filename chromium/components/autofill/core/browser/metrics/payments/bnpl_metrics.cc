@@ -4,13 +4,19 @@
 
 #include "components/autofill/core/browser/metrics/payments/bnpl_metrics.h"
 
+#include <string>
+#include <string_view>
+
+#include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/notreached.h"
 #include "base/strings/strcat.h"
-#include "base/strings/string_util.h"
+#include "base/time/time.h"
 #include "components/autofill/core/browser/data_model/payments/bnpl_issuer.h"
-#include "components/autofill/core/browser/payments/constants.h"
 #include "components/autofill/core/common/autofill_payments_features.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
+#include "services/metrics/public/cpp/ukm_recorder.h"
+#include "services/metrics/public/cpp/ukm_source_id.h"
 
 namespace autofill::autofill_metrics {
 
@@ -105,18 +111,33 @@ void LogBnplPopupWindowLatency(base::TimeDelta duration,
   base::UmaHistogramLongTimes(histogram_name, duration);
 }
 
-void LogSuggestionShownForPayLaterTab(bool contains_pay_later_tab_suggestions) {
+void LogSuggestionShownForPayLaterTab(bool contains_pay_later_tab_suggestions,
+                                      ukm::SourceId ukm_source_id) {
   autofill_metrics::LogPayLaterTabsFormEvent(
       autofill_metrics::PayLaterTabsFormEvent::kSuggestionsShown);
   if (contains_pay_later_tab_suggestions) {
     autofill_metrics::LogPayLaterTabsFormEvent(
         autofill_metrics::PayLaterTabsFormEvent::
             kSuggestionsShownWithPayLaterTab);
+    ukm::builders::Autofill_PayLaterTabShown(ukm_source_id)
+        .SetShown(true)
+        .Record(ukm::UkmRecorder::Get());
   }
 }
 
-void LogPayLaterTabSuggestionAccepted(
-    autofill::BnplIssuer::IssuerId issuer_id) {
+void LogPayLaterTabSelected(ukm::SourceId ukm_source_id) {
+  autofill_metrics::LogPayLaterTabsFormEvent(
+      autofill_metrics::PayLaterTabsFormEvent::kSwitchedToPayLaterTab);
+  ukm::builders::Autofill_PayLaterTabSelected(ukm_source_id)
+      .SetSelected(true)
+      .Record(ukm::UkmRecorder::Get());
+}
+
+void LogPayLaterTabSuggestionAccepted(autofill::BnplIssuer::IssuerId issuer_id,
+                                      ukm::SourceId ukm_source_id) {
+  ukm::builders::Autofill_PayLaterTabSuggestionAccepted(ukm_source_id)
+      .SetAccepted(true)
+      .Record(ukm::UkmRecorder::Get());
   switch (issuer_id) {
     case IssuerId::kBnplAffirm:
       autofill_metrics::LogPayLaterTabsFormEvent(

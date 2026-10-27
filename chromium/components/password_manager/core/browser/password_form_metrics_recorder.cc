@@ -535,12 +535,6 @@ PasswordFormMetricsRecorder::~PasswordFormMetricsRecorder() {
 
   ukm_entry_builder_.Record(ukm::UkmRecorder::Get());
 
-#if BUILDFLAG(IS_ANDROID)
-  if (form_submission_reached_) {
-    LogFormSubmissionsVsSavePromptsHistogram(
-        metrics_util::SaveFlowStep::kFormSubmitted);
-  }
-#endif
 }
 
 void PasswordFormMetricsRecorder::SetGeneratedPasswordStatus(
@@ -678,7 +672,7 @@ void PasswordFormMetricsRecorder::RecordFirstWaitForUsernameReason(
 }
 
 void PasswordFormMetricsRecorder::RecordMatchedFormType(
-    const PasswordForm& form) {
+    const StoredCredential& form) {
   if (std::exchange(recorded_preferred_matched_password_type_, true)) {
     return;
   }
@@ -720,7 +714,7 @@ void PasswordFormMetricsRecorder::RecordPotentialPreferredMatch(
 }
 
 void PasswordFormMetricsRecorder::RecordFillSuggestionHasGroupedMatch(
-    base::span<const PasswordForm> best_matches) {
+    base::span<const StoredCredential> best_matches) {
   // Do not record the UMA if there is nothing to fill.
   if (best_matches.empty()) {
     return;
@@ -730,7 +724,7 @@ void PasswordFormMetricsRecorder::RecordFillSuggestionHasGroupedMatch(
   }
   base::UmaHistogramBoolean(
       "PasswordManager.FillSuggestionsHasGroupedMatch",
-      std::ranges::find_if(best_matches, [](const PasswordForm& match) {
+      std::ranges::find_if(best_matches, [](const StoredCredential& match) {
         return password_manager_util::GetMatchType(match) ==
                password_manager_util::GetLoginMatchType::kGrouped;
       }) != best_matches.end());

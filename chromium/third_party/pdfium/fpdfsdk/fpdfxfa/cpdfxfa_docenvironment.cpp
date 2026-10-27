@@ -32,17 +32,6 @@
   "At least one required field was empty. Please fill in the required " \
   "fields\r\n(highlighted) before continuing."
 
-// submit
-#define FXFA_CONFIG 0x00000001
-#define FXFA_TEMPLATE 0x00000010
-#define FXFA_LOCALESET 0x00000100
-#define FXFA_DATASETS 0x00001000
-#define FXFA_XMPMETA 0x00010000
-#define FXFA_XFDF 0x00100000
-#define FXFA_FORM 0x01000000
-#define FXFA_PDF 0x10000000
-#define FXFA_XFA_ALL 0x01111111
-
 // Although there isn't direct casting between these types at present,
 // keep the internal and exernal types in sync.
 static_assert(FXFA_PAGEVIEWEVENT_POSTADDED ==
@@ -504,14 +493,13 @@ void CPDFXFA_DocEnvironment::ExportData(CXFA_FFDoc* hDoc,
   int fileType = bXDP ? FXFA_SAVEAS_XDP : FXFA_SAVEAS_XML;
   ByteString bs = wsFilePath.ToUTF16LE();
   if (wsFilePath.IsEmpty()) {
-    if (!pFormFillEnv->GetFormFillInfo() ||
-        !pFormFillEnv->GetFormFillInfo()->m_pJsPlatform) {
+    if (!pFormFillEnv->IsJSPlatformPresent()) {
       return;
     }
-
     WideString filepath = pFormFillEnv->JS_fieldBrowse();
     bs = filepath.ToUTF16LE();
   }
+
   FPDF_FILEHANDLER* pFileHandler = pFormFillEnv->OpenFile(
       bXDP ? FXFA_SAVEAS_XDP : FXFA_SAVEAS_XML, AsFPDFWideString(&bs), "wb");
   if (!pFileHandler) {
@@ -664,20 +652,22 @@ void CPDFXFA_DocEnvironment::Print(CXFA_FFDoc* hDoc,
   }
 
   CPDFSDK_FormFillEnvironment* pFormFillEnv = context_->GetFormFillEnv();
-  if (!pFormFillEnv || !pFormFillEnv->GetFormFillInfo() ||
-      !pFormFillEnv->GetFormFillInfo()->m_pJsPlatform ||
-      !pFormFillEnv->GetFormFillInfo()->m_pJsPlatform->Doc_print) {
+  if (!pFormFillEnv) {
     return;
   }
 
-  pFormFillEnv->GetFormFillInfo()->m_pJsPlatform->Doc_print(
-      pFormFillEnv->GetFormFillInfo()->m_pJsPlatform,
-      !!(dwOptions & XFA_PrintOpt::kShowDialog), nStartPage, nEndPage,
-      !!(dwOptions & XFA_PrintOpt::kCanCancel),
-      !!(dwOptions & XFA_PrintOpt::kShrinkPage),
-      !!(dwOptions & XFA_PrintOpt::kAsImage),
-      !!(dwOptions & XFA_PrintOpt::kReverseOrder),
-      !!(dwOptions & XFA_PrintOpt::kPrintAnnot));
+  IPDF_JSPLATFORM* js_platform = pFormFillEnv->GetJSPlatform();
+  if (!js_platform || !js_platform->Doc_print) {
+    return;
+  }
+
+  js_platform->Doc_print(js_platform, !!(dwOptions & XFA_PrintOpt::kShowDialog),
+                         nStartPage, nEndPage,
+                         !!(dwOptions & XFA_PrintOpt::kCanCancel),
+                         !!(dwOptions & XFA_PrintOpt::kShrinkPage),
+                         !!(dwOptions & XFA_PrintOpt::kAsImage),
+                         !!(dwOptions & XFA_PrintOpt::kReverseOrder),
+                         !!(dwOptions & XFA_PrintOpt::kPrintAnnot));
 }
 
 FX_ARGB CPDFXFA_DocEnvironment::GetHighlightColor(
@@ -723,376 +713,3 @@ RetainPtr<IFX_SeekableReadStream> CPDFXFA_DocEnvironment::OpenLinkedFile(
 
   return MakeSeekableStream(pFileHandler);
 }
-
-#ifdef PDF_XFA_ELEMENT_SUBMIT_ENABLED
-bool CPDFXFA_DocEnvironment::Submit(CXFA_FFDoc* hDoc, CXFA_Submit* submit) {
-  if (!OnBeforeNotifySubmit() || !context_->GetXFADocView()) {
-    return false;
-  }
-
-  context_->GetXFADocView()->UpdateDocView();
-  bool ret = SubmitInternal(hDoc, submit);
-  OnAfterNotifySubmit();
-  return ret;
-}
-
-bool CPDFXFA_DocEnvironment::MailToInfo(WideString& csURL,
-                                        WideString& csToAddress,
-                                        WideString& csCCAddress,
-                                        WideString& csBCCAddress,
-                                        WideString& csSubject,
-                                        WideString& csMsg) {
-  WideString srcURL = csURL;
-  srcURL.TrimWhitespaceFront();
-  if (!srcURL.Left(7).EqualsASCIINoCase("mailto:")) {
-    return false;
-  }
-  auto pos = srcURL.Find(L'?');
-  {
-    WideString tmp;
-    if (!pos.has_value()) {
-      pos = srcURL.Find(L'@');
-      if (!pos.has_value()) {
-        return false;
-      }
-
-      tmp = srcURL.Right(csURL.GetLength() - 7);
-    } else {
-      tmp = srcURL.Left(pos.value());
-      tmp = tmp.Right(tmp.GetLength() - 7);
-    }
-    tmp.TrimWhitespace();
-    csToAddress = std::move(tmp);
-  }
-
-  srcURL = srcURL.Right(srcURL.GetLength() - (pos.value() + 1));
-  while (!srcURL.IsEmpty()) {
-    srcURL.TrimWhitespace();
-    pos = srcURL.Find(L'&');
-    WideString tmp = (!pos.has_value()) ? srcURL : srcURL.Left(pos.value());
-    tmp.TrimWhitespace();
-    if (tmp.GetLength() >= 3 && tmp.Left(3).EqualsASCIINoCase("cc=")) {
-      tmp = tmp.Right(tmp.GetLength() - 3);
-      if (!csCCAddress.IsEmpty()) {
-        csCCAddress += L';';
-      }
-      csCCAddress += tmp;
-    } else if (tmp.GetLength() >= 4 && tmp.Left(4).EqualsASCIINoCase("bcc=")) {
-      tmp = tmp.Right(tmp.GetLength() - 4);
-      if (!csBCCAddress.IsEmpty()) {
-        csBCCAddress += L';';
-      }
-      csBCCAddress += tmp;
-    } else if (tmp.GetLength() >= 8 &&
-               tmp.Left(8).EqualsASCIINoCase("subject=")) {
-      tmp = tmp.Right(tmp.GetLength() - 8);
-      csSubject += tmp;
-    } else if (tmp.GetLength() >= 5 && tmp.Left(5).EqualsASCIINoCase("body=")) {
-      tmp = tmp.Right(tmp.GetLength() - 5);
-      csMsg += tmp;
-    }
-    srcURL = pos.has_value()
-                 ? srcURL.Right(csURL.GetLength() - (pos.value() + 1))
-                 : WideString();
-  }
-  csToAddress.Replace(L",", L";");
-  csCCAddress.Replace(L",", L";");
-  csBCCAddress.Replace(L",", L";");
-  return true;
-}
-
-bool CPDFXFA_DocEnvironment::ExportSubmitFile(FPDF_FILEHANDLER* pFileHandler,
-                                              int fileType,
-                                              FPDF_DWORD encodeType,
-                                              FPDF_DWORD flag) {
-  if (!context_->GetXFADocView()) {
-    return false;
-  }
-
-  CPDFSDK_FormFillEnvironment* pFormFillEnv = context_->GetFormFillEnv();
-  if (!pFormFillEnv) {
-    return false;
-  }
-
-  CXFA_FFDoc* ffdoc = context_->GetXFADocView()->GetDoc();
-  RetainPtr<IFX_SeekableStream> fileStream = MakeSeekableStream(pFileHandler);
-  if (fileType == FXFA_SAVEAS_XML) {
-    fileStream->WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n");
-    ffdoc->SavePackage(
-        ToNode(ffdoc->GetXFADoc()->GetXFAObject(XFA_HASHCODE_Data)),
-        fileStream);
-    return true;
-  }
-
-  if (fileType != FXFA_SAVEAS_XDP) {
-    return true;
-  }
-
-  if (!flag) {
-    flag = FXFA_CONFIG | FXFA_TEMPLATE | FXFA_LOCALESET | FXFA_DATASETS |
-           FXFA_XMPMETA | FXFA_XFDF | FXFA_FORM;
-  }
-  if (!context_->GetPDFDoc()) {
-    fileStream->Flush();
-    return false;
-  }
-
-  const CPDF_Dictionary* pRoot = context_->GetPDFDoc()->GetRoot();
-  if (!pRoot) {
-    fileStream->Flush();
-    return false;
-  }
-
-  RetainPtr<const CPDF_Dictionary> pAcroForm = pRoot->GetDictFor("AcroForm");
-  if (!pAcroForm) {
-    fileStream->Flush();
-    return false;
-  }
-
-  RetainPtr<const CPDF_Array> pArray = ToArray(pAcroForm->GetObjectFor("XFA"));
-  if (!pArray) {
-    fileStream->Flush();
-    return false;
-  }
-
-  for (size_t i = 1; i < pArray->size(); i += 2) {
-    RetainPtr<const CPDF_Object> pPDFObj = pArray->GetObjectAt(i);
-    RetainPtr<const CPDF_Object> pPrePDFObj = pArray->GetObjectAt(i - 1);
-    if (!pPrePDFObj->IsString()) {
-      continue;
-    }
-    if (!pPDFObj->IsReference()) {
-      continue;
-    }
-
-    RetainPtr<const CPDF_Object> pDirectObj = pPDFObj->GetDirect();
-    if (!pDirectObj->IsStream()) {
-      continue;
-    }
-    ByteString bsType = pPrePDFObj->GetString();
-    if (bsType == "config" && !(flag & FXFA_CONFIG)) {
-      continue;
-    }
-    if (bsType == "template" && !(flag & FXFA_TEMPLATE)) {
-      continue;
-    }
-    if (bsType == "localeSet" && !(flag & FXFA_LOCALESET)) {
-      continue;
-    }
-    if (bsType == "datasets" && !(flag & FXFA_DATASETS)) {
-      continue;
-    }
-    if (bsType == "xmpmeta" && !(flag & FXFA_XMPMETA)) {
-      continue;
-    }
-    if (bsType == "xfdf" && !(flag & FXFA_XFDF)) {
-      continue;
-    }
-    if (bsType == "form" && !(flag & FXFA_FORM)) {
-      continue;
-    }
-
-    if (bsType == "form") {
-      ffdoc->SavePackage(
-          ToNode(ffdoc->GetXFADoc()->GetXFAObject(XFA_HASHCODE_Form)),
-          fileStream);
-    } else if (pPrePDFObj->GetString() == "datasets") {
-      ffdoc->SavePackage(
-          ToNode(ffdoc->GetXFADoc()->GetXFAObject(XFA_HASHCODE_Datasets)),
-          fileStream);
-    }
-  }
-  return true;
-}
-
-void CPDFXFA_DocEnvironment::ToXFAContentFlags(WideString csSrcContent,
-                                               FPDF_DWORD& flag) {
-  if (csSrcContent.Contains(L" config ")) {
-    flag |= FXFA_CONFIG;
-  }
-  if (csSrcContent.Contains(L" template ")) {
-    flag |= FXFA_TEMPLATE;
-  }
-  if (csSrcContent.Contains(L" localeSet ")) {
-    flag |= FXFA_LOCALESET;
-  }
-  if (csSrcContent.Contains(L" datasets ")) {
-    flag |= FXFA_DATASETS;
-  }
-  if (csSrcContent.Contains(L" xmpmeta ")) {
-    flag |= FXFA_XMPMETA;
-  }
-  if (csSrcContent.Contains(L" xfdf ")) {
-    flag |= FXFA_XFDF;
-  }
-  if (csSrcContent.Contains(L" form ")) {
-    flag |= FXFA_FORM;
-  }
-  if (flag == 0) {
-    flag = FXFA_CONFIG | FXFA_TEMPLATE | FXFA_LOCALESET | FXFA_DATASETS |
-           FXFA_XMPMETA | FXFA_XFDF | FXFA_FORM;
-  }
-}
-
-bool CPDFXFA_DocEnvironment::OnBeforeNotifySubmit() {
-  if (!context_->ContainsXFAForm()) {
-    return true;
-  }
-
-  CXFA_FFDocView* docView = context_->GetXFADocView();
-  if (!docView) {
-    return true;
-  }
-
-  CXFA_FFWidgetHandler* pWidgetHandler = docView->GetWidgetHandler();
-  if (!pWidgetHandler) {
-    return true;
-  }
-
-  auto it = docView->CreateReadyNodeIterator();
-  if (it) {
-    CXFA_EventParam Param;
-    Param.type_ = XFA_EVENT_PreSubmit;
-    while (CXFA_Node* pNode = it->MoveToNext()) {
-      pWidgetHandler->ProcessEvent(pNode, &Param);
-    }
-  }
-
-  it = docView->CreateReadyNodeIterator();
-  if (!it) {
-    return true;
-  }
-
-  (void)it->MoveToNext();
-  CXFA_Node* pNode = it->MoveToNext();
-
-  while (pNode) {
-    if (pNode->ProcessValidate(docView, -1) == XFA_EventError::kError) {
-      CPDFSDK_FormFillEnvironment* pFormFillEnv = context_->GetFormFillEnv();
-      if (!pFormFillEnv) {
-        return false;
-      }
-
-      pFormFillEnv->JS_appAlert(WideString::FromDefANSI(IDS_XFA_Validate_Input),
-                                WideString(), JSPLATFORM_ALERT_BUTTON_OK,
-                                JSPLATFORM_ALERT_ICON_WARNING);
-      return false;
-    }
-    pNode = it->MoveToNext();
-  }
-
-  docView->UpdateDocView();
-  return true;
-}
-
-void CPDFXFA_DocEnvironment::OnAfterNotifySubmit() {
-  if (!context_->ContainsXFAForm()) {
-    return;
-  }
-
-  if (!context_->GetXFADocView()) {
-    return;
-  }
-
-  CXFA_FFWidgetHandler* pWidgetHandler =
-      context_->GetXFADocView()->GetWidgetHandler();
-  if (!pWidgetHandler) {
-    return;
-  }
-
-  auto it = context_->GetXFADocView()->CreateReadyNodeIterator();
-  if (!it) {
-    return;
-  }
-
-  CXFA_EventParam Param;
-  Param.type_ = XFA_EVENT_PostSubmit;
-  CXFA_Node* pNode = it->MoveToNext();
-  while (pNode) {
-    pWidgetHandler->ProcessEvent(pNode, &Param);
-    pNode = it->MoveToNext();
-  }
-  context_->GetXFADocView()->UpdateDocView();
-}
-
-bool CPDFXFA_DocEnvironment::SubmitInternal(CXFA_FFDoc* hDoc,
-                                            CXFA_Submit* submit) {
-  CPDFSDK_FormFillEnvironment* pFormFillEnv = context_->GetFormFillEnv();
-  if (!pFormFillEnv) {
-    return false;
-  }
-
-  WideString csURL = submit->GetSubmitTarget();
-  if (csURL.IsEmpty()) {
-    pFormFillEnv->JS_appAlert(WideString::FromDefANSI("Submit cancelled."),
-                              WideString(), JSPLATFORM_ALERT_BUTTON_OK,
-                              JSPLATFORM_ALERT_ICON_ASTERISK);
-    return false;
-  }
-
-  FPDF_FILEHANDLER* pFileHandler = nullptr;
-  int fileFlag = -1;
-  switch (submit->GetSubmitFormat()) {
-    case XFA_AttributeValue::Xdp: {
-      WideString csContent = submit->GetSubmitXDPContent();
-      csContent.TrimWhitespace();
-
-      WideString space = WideString::FromDefANSI(" ");
-      csContent = space + csContent + space;
-      FPDF_DWORD flag = 0;
-      if (submit->IsSubmitEmbedPDF()) {
-        flag |= FXFA_PDF;
-      }
-
-      ToXFAContentFlags(csContent, flag);
-      pFileHandler = pFormFillEnv->OpenFile(FXFA_SAVEAS_XDP, nullptr, "wb");
-      fileFlag = FXFA_SAVEAS_XDP;
-      ExportSubmitFile(pFileHandler, FXFA_SAVEAS_XDP, 0, flag);
-      break;
-    }
-    case XFA_AttributeValue::Xml:
-      pFileHandler = pFormFillEnv->OpenFile(FXFA_SAVEAS_XML, nullptr, "wb");
-      fileFlag = FXFA_SAVEAS_XML;
-      ExportSubmitFile(pFileHandler, FXFA_SAVEAS_XML, 0, FXFA_XFA_ALL);
-      break;
-    case XFA_AttributeValue::Pdf:
-      break;
-    case XFA_AttributeValue::Urlencoded:
-      pFileHandler = pFormFillEnv->OpenFile(FXFA_SAVEAS_XML, nullptr, "wb");
-      fileFlag = FXFA_SAVEAS_XML;
-      ExportSubmitFile(pFileHandler, FXFA_SAVEAS_XML, 0, FXFA_XFA_ALL);
-      break;
-    default:
-      return false;
-  }
-  if (!pFileHandler) {
-    return false;
-  }
-
-  if (csURL.Left(7).EqualsASCIINoCase("mailto:")) {
-    WideString csToAddress;
-    WideString csCCAddress;
-    WideString csBCCAddress;
-    WideString csSubject;
-    WideString csMsg;
-    if (!MailToInfo(csURL, csToAddress, csCCAddress, csBCCAddress, csSubject,
-                    csMsg)) {
-      return false;
-    }
-    ByteString bsTo = WideString(csToAddress).ToUTF16LE();
-    ByteString bsCC = WideString(csCCAddress).ToUTF16LE();
-    ByteString bsBcc = WideString(csBCCAddress).ToUTF16LE();
-    ByteString bsSubject = WideString(csSubject).ToUTF16LE();
-    ByteString bsMsg = WideString(csMsg).ToUTF16LE();
-    pFormFillEnv->EmailTo(pFileHandler, AsFPDFWideString(&bsTo),
-                          AsFPDFWideString(&bsSubject), AsFPDFWideString(&bsCC),
-                          AsFPDFWideString(&bsBcc), AsFPDFWideString(&bsMsg));
-    return true;
-  }
-
-  // HTTP or FTP
-  ByteString bs = csURL.ToUTF16LE();
-  pFormFillEnv->UploadTo(pFileHandler, fileFlag, AsFPDFWideString(&bs));
-  return true;
-}
-#endif  // PDF_XFA_ELEMENT_SUBMIT_ENABLED

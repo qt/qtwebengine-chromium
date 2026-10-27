@@ -7,6 +7,8 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include "cast/receiver/application_agent.h"
@@ -52,6 +54,20 @@ class MirroringApplication final : public ApplicationAgent::Application,
   void OnPlaybackError(StreamingPlaybackController* controller,
                        const Error& error) final;
 
+  void AddCustomNamespace(std::string_view message_namespace);
+  void RemoveCustomNamespace(std::string_view message_namespace);
+
+  using CustomMessageCallback =
+      std::function<void(const std::string& /* source_id */,
+                         const std::string& /* message_namespace */,
+                         const std::string& /* message */)>;
+  void SetCustomMessageHandler(std::string_view message_namespace,
+                               CustomMessageCallback cb);
+
+  void SendMessage(std::string_view destination_id,
+                   std::string_view message_namespace,
+                   std::string_view message);
+
  private:
   TaskRunner& task_runner_;
   const IPAddress interface_address_;
@@ -59,6 +75,10 @@ class MirroringApplication final : public ApplicationAgent::Application,
   ApplicationAgent& agent_;
   const bool enable_dscp_;
   const bool enable_input_events_;
+
+  std::vector<std::string> custom_namespaces_;
+  std::vector<std::pair<std::string, CustomMessageCallback>>
+      custom_message_handlers_;
 
   ScopedWakeLockPtr wake_lock_;
   std::unique_ptr<Environment> environment_;

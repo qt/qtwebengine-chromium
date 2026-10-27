@@ -25,7 +25,6 @@
 #include "build/build_config.h"
 #include "media/audio/audio_device_description.h"
 #include "media/base/audio_timestamp_helper.h"
-#include "media/base/media_switches.h"
 #include "media/media_buildflags.h"
 #include "services/audio/device_listener_output_stream.h"
 
@@ -76,9 +75,7 @@ const char* ErrorTypeToString(
 }
 
 bool ShouldMonitorAudioLevels() {
-#if BUILDFLAG(IS_ANDROID)
-  return base::FeatureList::IsEnabled(media::kEnableAudioMonitoringOnAndroid);
-#elif BUILDFLAG(IS_IOS)
+#if BUILDFLAG(IS_IOS)
   return false;
 #else
   return true;
@@ -167,7 +164,8 @@ OutputController::OutputController(
     SyncReader* sync_reader,
     ManagedDeviceOutputStreamCreateCallback
         managed_device_output_stream_create_callback)
-    : audio_manager_(audio_manager),
+    : id_(base::UnguessableToken::Create()),
+      audio_manager_(audio_manager),
       params_(params),
       managed_device_output_stream_create_callback_(
           std::move(managed_device_output_stream_create_callback)),
@@ -534,11 +532,11 @@ int OutputController::OnMoreData(base::TimeDelta delay,
 }
 
 void OutputController::SendLogMessage(const std::string& message) {
-  if (!handler_)
+  if (!handler_) {
     return;
-  handler_->OnLog(base::StringPrintf("AOC::%s [this=0x%" PRIXPTR "]",
-                                     message.c_str(),
-                                     reinterpret_cast<uintptr_t>(this)));
+  }
+  handler_->OnLog(base::StringPrintf("AOC::%s [id=%s]", message.c_str(),
+                                     id_.ToString().c_str()));
 }
 
 void OutputController::LogAudioPowerLevel(const char* call_name) {

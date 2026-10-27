@@ -175,10 +175,10 @@ error:
   return ret;
 }
 
-int memfd_set_prot_region(int fd, int prot) {
+int MemfdSetProtRegion(int fd, int prot) {
   int seals = fcntl(fd, F_GET_SEALS);
   if (seals == -1) {
-    LOG_E("memfd_set_prot_region(%d, %d): F_GET_SEALS failed: %m", fd, prot);
+    LOG_E("MemfdSetProtRegion(%d, %d): F_GET_SEALS failed: %m", fd, prot);
     return -1;
   }
 
@@ -188,8 +188,7 @@ int memfd_set_prot_region(int fd, int prot) {
      * has been previously marked as read-only before, if so return error
      */
     if (seals & F_SEAL_FUTURE_WRITE) {
-      LOG_E("memfd_set_prot_region(%d, %d): region is write protected", fd,
-            prot);
+      LOG_E("MemfdSetProtRegion(%d, %d): region is write protected", fd, prot);
       // Inline with ashmem error code, if already in read-only mode.
       errno = EINVAL;
       return -1;
@@ -200,8 +199,8 @@ int memfd_set_prot_region(int fd, int prot) {
 
   // We would only allow read-only for any future file operations
   if (fcntl(fd, F_ADD_SEALS, F_SEAL_FUTURE_WRITE) == -1) {
-    LOG_E("memfd_set_prot_region(%d, %d): F_SEAL_FUTURE_WRITE seal failed: %m",
-          fd, prot);
+    LOG_E("MemfdSetProtRegion(%d, %d): F_SEAL_FUTURE_WRITE seal failed: %m", fd,
+          prot);
     return -1;
   }
 
@@ -233,7 +232,7 @@ void InitAshmemFuncs() {
    */
   if (VendorApiLevel() >= 202604) {
     funcs->create = &MemfdCreateRegion;
-    funcs->setProt = &memfd_set_prot_region;
+    funcs->setProt = &MemfdSetProtRegion;
   } else {
     /* Leaked intentionally! */
     void* lib = dlopen("libandroid.so", RTLD_NOW);
@@ -250,9 +249,22 @@ const ASharedMemoryFuncs* GetAshmemFuncs() {
 }
 
 bool IsMemfdFd(int fd) {
-  if (fcntl(fd, F_GET_SEALS, 0) == -1) {
+  int seals = fcntl(fd, F_GET_SEALS, 0);
+  if (seals == -1) {
     return false;
   }
+
+  /*
+   * crbug.com/498720726: Ensure that the memfd has the same restrictions on its
+   * size that an ashmem fd would. Otherwise, memfds that aren't sealed against
+   * size changes can be treated as valid ashmem fds. The size of the memory
+   * associated with those fds can then be changed while a process is using it,
+   * leading to time of check to time of use issues.
+   */
+  if ((seals & (F_SEAL_GROW | F_SEAL_SHRINK)) != (F_SEAL_GROW | F_SEAL_SHRINK)) {
+   return false;
+  }
+
   return true;
 }
 

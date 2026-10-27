@@ -93,7 +93,8 @@ using CompositingReasons = uint64_t;
   V(Scrollbar)                                                                 \
   V(LinkHighlight)                                                             \
   V(DevToolsOverlay)                                                           \
-  V(ViewTransitionContent)
+  V(ViewTransitionContent)                                                     \
+  V(UnboundedElement)
 
 class PLATFORM_EXPORT CompositingReason {
   DISALLOW_NEW();
@@ -130,10 +131,16 @@ class PLATFORM_EXPORT CompositingReason {
     // that are not IsIdentityOrTranslation().
     kPreventingSubpixelAccumulationReasons =
         kWillChangeTransform | kWillChangeScale | kWillChangeRotate,
+
     kDirectReasonsForPaintOffsetTranslationProperty =
         kFixedPosition | kAffectedByOuterViewportBoundsDelta | kUndoOverscroll |
         kVideo | kCanvas | kCanvasChild | kPlugin | kIFrame |
         kAffectedBySafeAreaBottom,
+
+    kFixedPositionReasons = kFixedPosition | kUndoOverscroll |
+                            kAffectedByOuterViewportBoundsDelta |
+                            kAffectedBySafeAreaBottom,
+
     // TODO(dbaron): kWillChangeOther probably shouldn't be in this list.
     // TODO(vmpstr): kViewTransitionElement is needed to make sure that the
     // capture escapes clips when view transition has a descendant that
@@ -149,15 +156,19 @@ class PLATFORM_EXPORT CompositingReason {
         k3DRotate | kWillChangeRotate | kActiveRotateAnimation,
     kDirectReasonsForTranslateProperty =
         k3DTranslate | kWillChangeTranslate | kActiveTranslateAnimation,
+
     kDirectReasonsForScrollTranslationProperty =
         kRootScroller | kOverflowScrolling,
+
     kDirectReasonsForEffectProperty =
         kActiveOpacityAnimation | kWillChangeOpacity | kBackdropFilter |
         kWillChangeBackdropFilter | kWillChangeMixBlendMode |
         kActiveBackdropFilterAnimation | kViewTransitionPseudoElement |
-        kTransform3DSceneLeaf | kElementCapture | kCanvasChild,
+        kTransform3DSceneLeaf | kElementCapture | kCanvasChild |
+        kUnboundedElement,
     kDirectReasonsForFilterProperty =
         kActiveFilterAnimation | kWillChangeFilter,
+
     kDirectReasonsForBackdropFilter = kBackdropFilter |
                                       kActiveBackdropFilterAnimation |
                                       kWillChangeBackdropFilter,

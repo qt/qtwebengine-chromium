@@ -76,6 +76,7 @@ void MojoDecryptorService::Initialize(
   DVLOG(1) << __func__;
 
   if (has_initialize_been_called_) {
+    CHECK(mojo::IsInMessageDispatch());
     mojo::ReportBadMessage(kInvalidStateMessage);
     return;
   }
@@ -97,18 +98,31 @@ void MojoDecryptorService::Decrypt(StreamType stream_type,
   DVLOG(3) << __func__;
 
   if (!decrypt_buffer_reader_) {
+    CHECK(mojo::IsInMessageDispatch());
     mojo::ReportBadMessage(kInvalidStateMessage);
+    return;
+  }
+
+  if (!GetBufferReader(stream_type)) {
+    CHECK(mojo::IsInMessageDispatch());
+    mojo::ReportBadMessage("Unexpected stream_type");
     return;
   }
 
   decrypt_buffer_reader_->ReadDecoderBuffer(
       std::move(encrypted),
-      base::BindOnce(&MojoDecryptorService::OnReadDone, weak_this_, stream_type,
+      base::BindOnce(&MojoDecryptorService::OnReadDone, weak_this_,
+                     mojo::GetBadMessageCallback(), stream_type,
                      std::move(callback)));
 }
 
 void MojoDecryptorService::CancelDecrypt(StreamType stream_type) {
   DVLOG(2) << __func__;
+  if (!GetBufferReader(stream_type)) {
+    CHECK(mojo::IsInMessageDispatch());
+    mojo::ReportBadMessage("Unexpected stream_type");
+    return;
+  }
   decryptor_->CancelDecrypt(stream_type);
 }
 
@@ -125,6 +139,13 @@ void MojoDecryptorService::InitializeVideoDecoder(
     const VideoDecoderConfig& config,
     InitializeVideoDecoderCallback callback) {
   DVLOG(2) << __func__;
+
+  if (!config.IsValidConfig()) {
+    std::move(callback).Run(false);
+    mojo::ReportBadMessage("Invalid VideoDecoderConfig");
+    return;
+  }
+
   decryptor_->InitializeVideoDecoder(
       config, base::BindOnce(&MojoDecryptorService::OnVideoDecoderInitialized,
                              weak_this_, std::move(callback)));
@@ -136,13 +157,15 @@ void MojoDecryptorService::DecryptAndDecodeAudio(
   DVLOG(3) << __func__;
 
   if (!audio_buffer_reader_) {
+    CHECK(mojo::IsInMessageDispatch());
     mojo::ReportBadMessage(kInvalidStateMessage);
     return;
   }
 
   audio_buffer_reader_->ReadDecoderBuffer(
-      std::move(encrypted), base::BindOnce(&MojoDecryptorService::OnAudioRead,
-                                           weak_this_, std::move(callback)));
+      std::move(encrypted),
+      base::BindOnce(&MojoDecryptorService::OnAudioRead, weak_this_,
+                     mojo::GetBadMessageCallback(), std::move(callback)));
 }
 
 void MojoDecryptorService::DecryptAndDecodeVideo(
@@ -151,30 +174,34 @@ void MojoDecryptorService::DecryptAndDecodeVideo(
   DVLOG(3) << __func__;
 
   if (!video_buffer_reader_) {
+    CHECK(mojo::IsInMessageDispatch());
     mojo::ReportBadMessage(kInvalidStateMessage);
     return;
   }
 
   video_buffer_reader_->ReadDecoderBuffer(
-      std::move(encrypted), base::BindOnce(&MojoDecryptorService::OnVideoRead,
-                                           weak_this_, std::move(callback)));
+      std::move(encrypted),
+      base::BindOnce(&MojoDecryptorService::OnVideoRead, weak_this_,
+                     mojo::GetBadMessageCallback(), std::move(callback)));
 }
 
 void MojoDecryptorService::ResetDecoder(StreamType stream_type) {
   DVLOG(2) << __func__ << ": stream_type = " << stream_type;
 
   // Reset the reader so that pending decodes will be dispatched first.
-  if (!GetBufferReader(stream_type))
+  MojoDecoderBufferReader* reader = GetBufferReader(stream_type);
+  if (!reader) {
+    CHECK(mojo::IsInMessageDispatch());
+    mojo::ReportBadMessage("Unexpected stream_type");
     return;
+  }
 
-  GetBufferReader(stream_type)
-      ->Flush(base::BindOnce(&MojoDecryptorService::OnReaderFlushDone,
-                             weak_this_, stream_type));
+  reader->Flush(base::BindOnce(&MojoDecryptorService::OnReaderFlushDone,
+                               weak_this_, stream_type));
 }
 
 void MojoDecryptorService::DeinitializeDecoder(StreamType stream_type) {
   DVLOG(2) << __func__;
-
   auto* reader = GetBufferReader(stream_type);
   if (!reader) {
     CHECK(mojo::IsInMessageDispatch());
@@ -196,11 +223,26 @@ void MojoDecryptorService::DeinitializeDecoder(StreamType stream_type) {
   decryptor_->DeinitializeDecoder(stream_type);
 }
 
-void MojoDecryptorService::OnReadDone(StreamType stream_type,
-                                      DecryptCallback callback,
-                                      scoped_refptr<DecoderBuffer> buffer) {
+void MojoDecryptorService::OnReadDone(
+    mojo::ReportBadMessageCallback bad_message_callback,
+    StreamType stream_type,
+    DecryptCallback callback,
+    scoped_refptr<DecoderBuffer> buffer) {
   if (!buffer) {
     std::move(callback).Run(Status::kError, nullptr);
+    return;
+  }
+
+  if (!buffer->end_of_stream() && buffer->side_data() &&
+      buffer->side_data()->secure_handle) {
+    std::move(callback).Run(Status::kError, nullptr);
+    std::move(bad_message_callback)
+        .Run("Renderer sent non-zero DecoderBufferSideData.secure_handle.");
+    return;
+  }
+
+  if (!GetBufferReader(stream_type)) {
+    std::move(bad_message_callback).Run("Unexpected stream_type");
     return;
   }
 
@@ -244,11 +286,22 @@ void MojoDecryptorService::OnVideoDecoderInitialized(
   std::move(callback).Run(success);
 }
 
-void MojoDecryptorService::OnAudioRead(DecryptAndDecodeAudioCallback callback,
-                                       scoped_refptr<DecoderBuffer> buffer) {
+void MojoDecryptorService::OnAudioRead(
+    mojo::ReportBadMessageCallback bad_message_callback,
+    DecryptAndDecodeAudioCallback callback,
+    scoped_refptr<DecoderBuffer> buffer) {
   if (!buffer) {
     std::move(callback).Run(Status::kError,
                             std::vector<mojom::AudioBufferPtr>());
+    return;
+  }
+
+  if (!buffer->end_of_stream() && buffer->side_data() &&
+      buffer->side_data()->secure_handle) {
+    std::move(callback).Run(Status::kError,
+                            std::vector<mojom::AudioBufferPtr>());
+    std::move(bad_message_callback)
+        .Run("Renderer sent non-zero DecoderBufferSideData.secure_handle.");
     return;
   }
 
@@ -257,10 +310,20 @@ void MojoDecryptorService::OnAudioRead(DecryptAndDecodeAudioCallback callback,
                                         weak_this_, std::move(callback)));
 }
 
-void MojoDecryptorService::OnVideoRead(DecryptAndDecodeVideoCallback callback,
-                                       scoped_refptr<DecoderBuffer> buffer) {
+void MojoDecryptorService::OnVideoRead(
+    mojo::ReportBadMessageCallback bad_message_callback,
+    DecryptAndDecodeVideoCallback callback,
+    scoped_refptr<DecoderBuffer> buffer) {
   if (!buffer) {
     std::move(callback).Run(Status::kError, nullptr, mojo::NullRemote());
+    return;
+  }
+
+  if (!buffer->end_of_stream() && buffer->side_data() &&
+      buffer->side_data()->secure_handle) {
+    std::move(callback).Run(Status::kError, nullptr, mojo::NullRemote());
+    std::move(bad_message_callback)
+        .Run("Renderer sent non-zero DecoderBufferSideData.secure_handle.");
     return;
   }
 
@@ -325,7 +388,7 @@ MojoDecoderBufferReader* MojoDecryptorService::GetBufferReader(
       return video_buffer_reader_.get();
   }
 
-  NOTREACHED() << "Unexpected stream_type: " << stream_type;
+  return nullptr;
 }
 
 }  // namespace media

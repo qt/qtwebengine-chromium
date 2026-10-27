@@ -7780,8 +7780,8 @@ Default value: @code{"text"}
 
 @item max_len
 Maximum segment length in characters. When set to a value greater than 0,
-transcription segments will be split to not exceed this length. This is useful
-for generating subtitles with shorter lines.
+transcription segments will be split by word to not exceed this length. This is
+useful for generating subtitles with shorter lines.
 Default value: @code{"0"}
 
 @item vad_model
@@ -14747,6 +14747,73 @@ Available value for @var{flags} is:
 Enable scene change detection using the value of the option @var{scene}.
 This flag is enabled by default.
 @end table
+@end table
+
+@section frc_amf
+
+Double the frame rate, using Frame Rate Converter (FRC) provided by
+AMD Advanced Media Framework library for hardware acceleration.
+
+The filter accepts the following options:
+
+@table @option
+@item engine_type
+Specify the engine used to run shaders.
+@table @samp
+@item dx11
+DirectX 11.
+
+@item dx12
+DirectX 12 (Default value).
+@end table
+
+@item enable
+Boolean value: enable/disable FRC. Dynamic value, can be altered at a runtime
+without re-initializing the filter. (Default value: enabled).
+
+@item fallback_mode
+Fallback behavior in case of low interpolation confidence.
+@table @samp
+@item duplicate
+Duplicate frame.
+
+@item blend
+Blend two frames together (Default value).
+@end table
+
+@item indicator
+Boolean value: show FRC indicator square in the top left corner of the video
+(Default value: disabled).
+
+@item profile
+Level of hierarchical motion search.
+@table @samp
+@item low
+Less levels of hierarchical motion search.
+Only recommended for extremely low resolutions.
+
+@item high
+Recommended for any resolution up to 1440p. (Default value)
+
+@item super
+More levels of hierarchical motion search. Recommended for resolutions 1440p
+or higher.
+@end table
+
+@item mv_search_mode
+Performance mode of the motion search.
+@table @samp
+@item native
+Conduct motion search on the full resolution of source images.
+
+@item performance
+Conduct motion search on the down scaled source images.
+Recommended for APU or low end GPU for better performance.
+@end table
+
+@item use_future_frame
+Boolean value: enable dependency on future frame, improves quality for the cost
+of latency (Default value: enabled).
 @end table
 
 @section framestep
@@ -25804,18 +25871,10 @@ vpp_amf=4096:2160:color_profile=bt2020
 @end example
 
 @item
-Override display mastering, max CLL and max FALL metadata for filter input to represent those parameters:
-Primary G: x=0.2650 y=0.6900
-Primary B: x=0.1500 y=0.0600
-Primary R: x=0.6800 y=0.3200
-White point: x=0.3127 y=0.3290
-Max. luminance: 1100.0000 cd/m²
-Min. luminance: 0.0040 cd/m²
-MaxCLL: 1100 cd/m²
-MaxFALL: 400 cd/m²
+Override input primaries and input transfer characteristics, change both to bt709.
 
 @example
-vpp_amf=color_profile=bt2020:in_trc=smpte2084:in_primaries=bt2020:master_display='G(13250,23460)B(7500,3000)R(34000,16000)WP(15635,16450)L(11000000,40)':max_cll='1100,400'
+vpp_amf=color_profile=bt2020:in_trc=smpte2084:in_primaries=bt2020:out_trc=bt709:out_primaries=bt709
 @end example
 @end itemize
 
@@ -27431,6 +27490,56 @@ Thumbnails are extracted from every @var{n}=150-frame batch, selecting one per b
 @end example
 
 @end itemize
+
+@subsection transpose_cuda
+
+Transpose rows with columns in the input video and optionally flip it.
+For more in depth examples see the @ref{transpose} video filter, which shares mostly the same options.
+
+It accepts the following parameters:
+
+@table @option
+
+@item dir
+Specify the transposition direction.
+
+Can assume the following values:
+@table @samp
+@item cclock_flip
+Rotate by 90 degrees counterclockwise and vertically flip. (default)
+
+@item clock
+Rotate by 90 degrees clockwise.
+
+@item cclock
+Rotate by 90 degrees counterclockwise.
+
+@item clock_flip
+Rotate by 90 degrees clockwise and vertically flip.
+
+@item reversal
+Rotate by 180 degrees.
+
+@item hflip
+Flip horizontally.
+
+@item vflip
+Flip vertically.
+@end table
+
+@item passthrough
+Do not apply the transposition if the input geometry matches the one
+specified by the specified value. It accepts the following values:
+@table @samp
+@item none
+Always apply transposition. (default)
+@item portrait
+Preserve portrait geometry (when @var{height} >= @var{width}).
+@item landscape
+Preserve landscape geometry (when @var{width} >= @var{height}).
+@end table
+
+@end table
 
 @subsection yadif_cuda
 

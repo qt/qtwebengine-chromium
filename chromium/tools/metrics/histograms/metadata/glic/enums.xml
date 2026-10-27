@@ -85,30 +85,6 @@ chromium-metrics-reviews@google.com.
 
 <!-- LINT.ThenChange(//chrome/browser/glic/fre/glic_fre_controller.cc:FreErrorStateReason) -->
 
-<!-- LINT.IfChange(FreWebUiState) -->
-
-<enum name="FreWebUiState">
-  <int value="0" label="Glic fre app controller not started."/>
-  <int value="1" label="Web client begins loading; no visible UI."/>
-  <int value="2"
-      label="Loading panel is displayed. This state, combined with the
-             `hold-loading` state, will be held for `kMinHoldLoadingTimeMs`
-             if entered."/>
-  <int value="3"
-      label="Loading panel is still displayed, but the web client is ready.
-             This state will be held for the remainder of
-             `kMinHoldLoadingTimeMs`."/>
-  <int value="4"
-      label="Loading panel is displayed until web client is ready, or until
-             `kMaxWaitTimeMs` timeout is reached."/>
-  <int value="5" label="'Something went wrong' error panel is displayed."/>
-  <int value="6" label="Connection offline panel is displayed."/>
-  <int value="7" label="Web view is displayed."/>
-  <int value="8" label="'Disabled by Admin' error panel is displayed."/>
-</enum>
-
-<!-- LINT.ThenChange(//chrome/browser/glic/fre/glic_fre.mojom:FreWebUiState) -->
-
 <!-- LINT.IfChange(GeminiNavigationCaptureResult) -->
 
 <enum name="GeminiNavigationCaptureResult">
@@ -123,16 +99,6 @@ chromium-metrics-reviews@google.com.
 
 <!-- LINT.ThenChange(//chrome/browser/glic/glic_enums.h:GeminiNavigationCaptureResult) -->
 
-<!-- LINT.IfChange(GlicAttachChangeReason) -->
-
-<enum name="GlicAttachChangeReason">
-  <int value="0" label="Drag gesture."/>
-  <int value="1" label="Menu click."/>
-  <int value="2" label="Panel initialized."/>
-</enum>
-
-<!-- LINT.ThenChange(//chrome/browser/glic/glic_metrics.h:AttachChangeReason) -->
-
 <!-- LINT.IfChange(GlicBrowserActiveState) -->
 
 <enum name="GlicBrowserActiveState">
@@ -145,6 +111,48 @@ chromium-metrics-reviews@google.com.
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/glic/glic_metrics.cc:BrowserActiveState) -->
+
+<!-- LINT.IfChange(GlicCheckAuthBeforeLoadOutcome) -->
+
+<enum name="GlicCheckAuthBeforeLoadOutcome">
+  <int value="0" label="Skipped sync: test automation is enabled"/>
+  <int value="1" label="Skipped sync: user must manually sign in"/>
+  <int value="2"
+      label="Skipped sync: GlicCookieSyncOnTokenChange is on and sync is not
+             needed"/>
+  <int value="3" label="Skipped sync: GlicSkipCookieSyncOnOpen is on"/>
+  <int value="4" label="Cookie sync was attempted"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/glic/host/auth_controller.h:CheckAuthBeforeLoadOutcome) -->
+
+<!-- LINT.IfChange(ClientErrorDialogType) -->
+
+<enum name="GlicClientErrorDialogType">
+  <int value="0" label="Unknown"/>
+  <int value="1" label="Disabled By Organization"/>
+  <int value="2" label="Generic Availability"/>
+  <int value="3" label="Ineligible Account"/>
+  <int value="4" label="Signout"/>
+  <int value="5" label="Unsupported Location"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/glic/host/glic.mojom:ClientErrorDialogType) -->
+
+<!-- LINT.IfChange(GlicCookieSyncResult) -->
+
+<enum name="GlicCookieSyncResult">
+  <int value="0" label="Success"/>
+  <int value="1" label="Destroyed With Pending Callbacks"/>
+  <int value="2" label="No Storage Partition"/>
+  <int value="3" label="Dev Sync Failure"/>
+  <int value="4" label="User Not Signed In"/>
+  <int value="5" label="Auth Transient Error"/>
+  <int value="6" label="Auth Persistent Error"/>
+  <int value="7" label="Timeout"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/glic/host/glic_cookie_synchronizer.h:GlicCookieSyncResult) -->
 
 <!-- LINT.IfChange(GlicDaisyChainFirstAction) -->
 
@@ -171,7 +179,9 @@ chromium-metrics-reviews@google.com.
   <int value="6" label="Responsive"/>
   <int value="7" label="Responsive Inactive"/>
   <int value="8" label="Unresponsive Inactive"/>
-  <int value="9" label="Mojo pipe closed unexpectedly"/>
+  <int value="9" label="(Obsolete) Mojo pipe closed unexpectedly"/>
+  <int value="10" label="Mojo pipe closed unexpectedly before initialize"/>
+  <int value="11" label="Mojo pipe closed unexpectedly after initialization"/>
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/resources/glic/glic_api_impl/host/glic_api_host.ts:DetailedWebClientState) -->
@@ -188,16 +198,32 @@ chromium-metrics-reviews@google.com.
   <int value="6" label="Both Tabstrip and OS entrypoints enabled."/>
   <int value="7" label="Only three-dot menu entry enabled."/>
   <int value="8" label="Completed the FRE and not eligible."/>
+  <int value="9" label="Anchored but technically ineligible."/>
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/glic/glic_metrics.h:EntryPointStatus) -->
+
+<!-- LINT.IfChange(GlicExperimentalTriggeringState) -->
+
+<enum name="GlicExperimentalTriggeringState">
+  <int value="0" label="Unavailable"/>
+  <int value="1" label="Needs Opt-In"/>
+  <int value="2" label="Ready"/>
+</enum>
+
+<!-- LINT.ThenChange(//components/sync_device_info/device_info.h:GlicExperimentalTriggeringState) -->
+
+<!-- LINT.IfChange(GlicFeatureDisabledReason) -->
 
 <enum name="GlicFeatureDisabledReason">
   <int value="0" label="Feature Flag Disabled"/>
   <int value="1" label="Country Disabled"/>
   <int value="2" label="Locale Disabled"/>
   <int value="3" label="System Requirement Not Met"/>
+  <int value="4" label="OS Version Not Supported"/>
 </enum>
+
+<!-- LINT.ThenChange(//chrome/browser/glic/public/glic_enabling.h:FeatureDisabledReason) -->
 
 <!-- LINT.IfChange(GlicFilteringResult) -->
 
@@ -238,21 +264,6 @@ chromium-metrics-reviews@google.com.
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/resources/glic/fre/metrics_enums.ts:GlicFreWebviewLoadAbortReason) -->
-
-<!-- LINT.IfChange(GlicFreWidgetClosedReason) -->
-
-<enum name="GlicFreWidgetClosedReason">
-  <int value="0" label="Unspecified"/>
-  <int value="1" label="EscKeyPressed"/>
-  <int value="2" label="CloseButtonClicked"/>
-  <int value="3" label="LostFocus"/>
-  <int value="4" label="CancelButtonClicked"/>
-  <int value="5" label="AcceptButtonClicked"/>
-  <int value="6" label="HostTabClosed"/>
-  <int value="7" label="HostTabMoved"/>
-</enum>
-
-<!-- LINT.ThenChange(//chrome/browser/glic/fre/glic_fre_controller.h:GlicFreWidgetClosedReason) -->
 
 <!-- LINT.IfChange(GlicGetContextFromTabError) -->
 
@@ -298,7 +309,7 @@ chromium-metrics-reviews@google.com.
   <int value="16" label="CaptureScreenshot"/>
   <int value="17" label="ResizeWindow"/>
   <int value="18" label="EnableDragResize"/>
-  <int value="19" label="SetWindowDraggableAreas"/>
+  <int value="19" label="(Obsolete) SetWindowDraggableAreas"/>
   <int value="20" label="SetMinimumWidgetSize"/>
   <int value="21" label="SetMicrophonePermissionState"/>
   <int value="22" label="SetLocationPermissionState"/>
@@ -352,13 +363,12 @@ chromium-metrics-reviews@google.com.
   <int value="70" label="OnModeChange"/>
   <int value="71" label="SubscribeToCaptureRegion"/>
   <int value="72" label="UnsubscribeFromCaptureRegion"/>
-  <int value="73" label="OnRecordUseCounter"/>
+  <int value="73" label="(Obsolete) OnRecordUseCounter"/>
   <int value="74" label="InterruptActorTask"/>
   <int value="75" label="UninterruptActorTask"/>
   <int value="76" label="ActivateTab"/>
   <int value="77" label="CreateActorTab"/>
   <int value="78" label="OpenPasswordManagerSettingsPage"/>
-  <int value="79" label="LoadAndExtractContent"/>
   <int value="80" label="SetOnboardingCompleted"/>
   <int value="81" label="SubscribeToTabData"/>
   <int value="82" label="CreateSkill"/>
@@ -377,7 +387,9 @@ chromium-metrics-reviews@google.com.
   <int value="95" label="ShowBrowseSkillsUi"/>
   <int value="96" label="SubscribeToZoomLevel"/>
   <int value="97" label="UnsubscribeFromZoomLevel"/>
+  <int value="98" label="OnExperimentalTriggeringUpdate"/>
   <int value="99" label="OnOptinImpression"/>
+  <int value="100" label="ProcessCounterAbuseVerdict"/>
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/resources/glic/glic_api_impl/request_types.ts:ApiRequestType) -->
@@ -455,6 +467,9 @@ chromium-metrics-reviews@google.com.
   <int value="47" label="Shown"/>
   <int value="48" label="Open"/>
   <int value="49" label="WebUI State Warmed"/>
+  <int value="50" label="(Obsolete) Open2"/>
+  <int value="51" label="WebUI State Location Mismatch"/>
+  <int value="52" label="WebUI State Ineligible Account"/>
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/glic/service/metrics/glic_instance_metrics.h:GlicInstanceEvent) -->
@@ -506,9 +521,39 @@ chromium-metrics-reviews@google.com.
   <int value="24" label="Text selection nudge"/>
   <int value="25" label="Text selection widget"/>
   <int value="26" label="Zero-state Auto-summarize"/>
+  <int value="27" label="From the universal cart"/>
+  <int value="28" label="Experimental triggering"/>
+  <int value="29" label="Password change"/>
+  <int value="30" label="From an Autofill action"/>
+  <int value="31" label="Button in the toolbar"/>
+  <int value="32" label="Indigo page action"/>
+  <int value="33" label="Web Drag and Drop"/>
+  <int value="34" label="From the promotion page"/>
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/glic/host/glic.mojom:InvocationSource) -->
+
+<!-- LINT.IfChange(GlicInvokeResult) -->
+
+<enum name="GlicInvokeResult">
+  <int value="0" label="Success"/>
+  <int value="1" label="Unknown error"/>
+  <int value="2" label="Timeout"/>
+  <int value="3" label="Invalid conversation ID"/>
+  <int value="4" label="Invalid tab"/>
+  <int value="5" label="Tab closed"/>
+  <int value="6" label="Instance destroyed"/>
+  <int value="7" label="Invoke in progress"/>
+  <int value="8" label="Invalid configuration"/>
+  <int value="9" label="Additional context saw navigation"/>
+  <int value="10" label="Additional context failed copy policy"/>
+  <int value="11" label="Additional context failed paste policy"/>
+  <int value="12" label="Additional context no source frame"/>
+  <int value="13" label="Additional context no client frame"/>
+  <int value="14" label="Additional context no clipboard metadata"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/glic/public/glic_invoke_options.h:GlicInvokeResult) -->
 
 <!-- LINT.IfChange(GlicResponseError) -->
 
@@ -537,6 +582,15 @@ chromium-metrics-reviews@google.com.
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/glic/service/metrics/glic_metrics_session_manager.h:GlicMultiInstanceSessionEndReason) -->
+
+<!-- LINT.IfChange(GlicOptInFlowSource) -->
+
+<enum name="GlicOptInFlowSource">
+  <int value="0" label="Glic Flow (Side Panel / Floaty)"/>
+  <int value="1" label="Experimental Triggering Opt-In Modal"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/glic/glic_metrics.h:OptInFlow) -->
 
 <!-- LINT.IfChange(GlicPinTrigger) -->
 
@@ -577,6 +631,8 @@ chromium-metrics-reviews@google.com.
   <int value="15" label="User already went through the FRE"/>
   <int value="16" label="Invalid - Disabled for testing."/>
   <int value="17" label="Not Pinned To Tabstrip"/>
+  <int value="18" label="Profile Not Eligible (Location Mismatch)"/>
+  <int value="19" label="Profile Not Eligible (Account Capabilities)"/>
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/glic/glic_profile_manager.h:GlicPrewarmingChecksResult) -->
@@ -592,6 +648,43 @@ chromium-metrics-reviews@google.com.
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/glic/public/glic_keyed_service.h:GlicPrewarmingFreSource) -->
+
+<!-- LINT.IfChange(GlicPrivateApiStatusCodeHistogramValue) -->
+
+<enum name="GlicPrivateApiStatusCodeHistogramValue">
+  <int value="0" label="Success"/>
+  <int value="1" label="LocalInvalidInvocationSource"/>
+  <int value="2" label="LocalMissingPromptId"/>
+  <int value="3" label="ServerMissingPrompt"/>
+  <int value="4" label="HttpError"/>
+  <int value="5" label="ParseError"/>
+  <int value="6" label="LocalNoActiveTab"/>
+  <int value="7" label="LocalGlicNotEnabled"/>
+  <int value="8" label="LocalGlicNotReady"/>
+  <int value="9" label="LocalGlicActuationNotAllowed"/>
+  <int value="10" label="LocalGlicNotEnabledAndConsented"/>
+  <int value="11" label="LocalAccountMismatch"/>
+  <int value="12" label="LocalInvalidDocumentId"/>
+  <int value="13" label="LocalConversationNotFound"/>
+  <int value="14" label="LocalNoBoundTabs"/>
+  <int value="15" label="LocalTabNotInWindow"/>
+  <int value="16" label="LocalGlicAccessFromPageDisabled"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/extensions/api/glic_private/glic_private_api.cc:GlicPrivateApiStatusCodeHistogramValue) -->
+
+<!-- LINT.IfChange(GlicProcessCounterAbuseVerdictResult) -->
+
+<enum name="GlicProcessCounterAbuseVerdictResult">
+  <int value="0" label="Success: Interstitial displayed"/>
+  <int value="1" label="Failed: Invalid verdict payload"/>
+  <int value="2" label="Ignored: No interstitial requested"/>
+  <int value="3" label="Failed: URL mismatch"/>
+  <int value="4" label="Failed: Unsupported threat type"/>
+  <int value="5" label="Skipped: URL is already allowlisted"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/glic/glic_enums.h:GlicProcessCounterAbuseVerdictResult) -->
 
 <enum name="GlicProfileEnablementReason">
   <int value="0" label="Feature disabled"/>
@@ -616,14 +709,33 @@ chromium-metrics-reviews@google.com.
 <!-- LINT.IfChange(GlicRequestEvent) -->
 
 <enum name="GlicRequestEvent">
-  <int value="0" label="Request received."/>
-  <int value="1" label="Response sent."/>
-  <int value="2" label="Request handling exception caught."/>
-  <int value="3"
-      label="Request received while hidden (whether or not this is expected)."/>
+  <int value="0" label="Received">The request was received.</int>
+  <int value="1" label="Responded">A response for the request was sent.</int>
+  <int value="2" label="Exception caught">
+    An exception was caught while handling the request.
+  </int>
+  <int value="3" label="(Obsolete) Hidden; replaced by Inactive">
+    (Obsolete) Request received while hidden (whether or not this is expected).
+    Replaced by Inactive in 2026/04
+  </int>
+  <int value="4" label="Inactive">
+    Request received while the panel was inactive (whether or not this is
+    expected).
+  </int>
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/resources/glic/glic_api_impl/host/glic_api_host.ts:GlicRequestEvent, //chrome/browser/glic/glic_metrics.h:GlicRequestEvent) -->
+
+<!-- LINT.IfChange(RequiredExperimentalOptIn) -->
+
+<enum name="GlicRequiredExperimentalOptIn">
+  <int value="0" label="Glic FRE"/>
+  <int value="1" label="Actuation"/>
+  <int value="2" label="Experimental Triggering"/>
+  <int value="3" label="Not Needed"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/glic/public/glic_enabling.h:RequiredExperimentalOptIn) -->
 
 <!-- LINT.IfChange(GlicResponseSegmentation) -->
 
@@ -741,9 +853,52 @@ chromium-metrics-reviews@google.com.
   <int value="106" label="Zero-state Auto-summarize, attached, audio mode."/>
   <int value="107" label="Zero-state Auto-summarize, detached, text mode."/>
   <int value="108" label="Zero-state Auto-summarize, detached, audio mode."/>
+  <int value="109" label="Universal cart, attached, text mode."/>
+  <int value="110" label="Universal cart, attached, audio mode."/>
+  <int value="111" label="Universal cart, detached, text mode."/>
+  <int value="112" label="Universal cart, detached, audio mode."/>
+  <int value="113" label="Experimental triggering, attached, text mode."/>
+  <int value="114" label="Experimental triggering, attached, audio mode."/>
+  <int value="115" label="Experimental triggering, detached, text mode."/>
+  <int value="116" label="Experimental triggering, detached, audio mode."/>
+  <int value="117" label="Password Change, attached, text mode."/>
+  <int value="118" label="Password Change, attached, audio mode."/>
+  <int value="119" label="Password Change, detached, text mode."/>
+  <int value="120" label="Password Change, detached, audio mode."/>
+  <int value="121" label="Autofill, attached, text mode."/>
+  <int value="122" label="Autofill, attached, audio mode."/>
+  <int value="123" label="Autofill, detached, text mode."/>
+  <int value="124" label="Autofill, detached, audio mode."/>
+  <int value="125" label="Toolbar button, attached, text mode."/>
+  <int value="126" label="Toolbar button, attached, audio mode."/>
+  <int value="127" label="Toolbar button, detached, text mode."/>
+  <int value="128" label="Toolbar button, detached, audio mode."/>
+  <int value="129" label="Indigo page action, attached, text mode."/>
+  <int value="130" label="Indigo page action, attached, audio mode."/>
+  <int value="131" label="Indigo page action, detached, text mode."/>
+  <int value="132" label="Indigo page action, detached, audio mode."/>
+  <int value="133" label="Web Drag and Drop, attached, text mode."/>
+  <int value="134" label="Web Drag and Drop, attached, audio mode."/>
+  <int value="135" label="Web Drag and Drop, detached, text mode."/>
+  <int value="136" label="Web Drag and Drop, detached, audio mode."/>
+  <int value="137" label="From the promotion page, attached, text mode."/>
+  <int value="138" label="From the promotion page, attached, audio mode."/>
+  <int value="139" label="From the promotion page, detached, text mode."/>
+  <int value="140" label="From the promotion page, detached, audio mode."/>
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/glic/service/metrics/metrics_types.h:ResponseSegmentation) -->
+
+<!-- LINT.IfChange(GlicSbThreatType) -->
+
+<enum name="GlicSbThreatType">
+  <int value="0" label="Unspecified"/>
+  <int value="1" label="Social Engineering"/>
+  <int value="2" label="Malware"/>
+  <int value="3" label="Unwanted Software"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/glic/host/glic.mojom:SbThreatType) -->
 
 <!-- LINT.IfChange(GlicScrollToErrorReason) -->
 
@@ -833,6 +988,18 @@ chromium-metrics-reviews@google.com.
 
 <!-- LINT.ThenChange(//chrome/browser/glic/public/context/glic_sharing_manager.h:GlicUnpinTrigger) -->
 
+<!-- LINT.IfChange(GlicWarmedContainerFate) -->
+
+<enum name="GlicWarmedContainerFate">
+  <int value="0" label="Used"/>
+  <int value="1" label="Expired"/>
+  <int value="2" label="Deleted on Chrome Closed"/>
+  <int value="3" label="Crashed"/>
+  <int value="4" label="Deleted on Memory Pressure"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/glic/host/glic_web_contents_warming_pool.cc:GlicWarmedContainerFate) -->
+
 <!-- LINT.IfChange(GlicWarmingPoolStatus) -->
 
 <enum name="GlicWarmingPoolStatus">
@@ -872,6 +1039,9 @@ chromium-metrics-reviews@google.com.
   <int value="1" label="Submit Prompt with Auto Mode"/>
   <int value="2" label="Task interrupted for user confirmation"/>
   <int value="3" label="Task interrupted for user cancellation"/>
+  <int value="4" label="Selection toggled via shared menu"/>
+  <int value="5" label="Selection toggled via hotkey"/>
+  <int value="6" label="Submit Prompt with Text Selection Cue"/>
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/glic/host/glic.mojom:WebUseCounter) -->
@@ -924,6 +1094,21 @@ chromium-metrics-reviews@google.com.
 
 <!-- LINT.ThenChange(//chrome/browser/resources/glic/glic_app_controller.ts:LoadingStage) -->
 
+<!-- LINT.IfChange(PanelWebUiStateErrorReason) -->
+
+<enum name="PanelWebUiStateErrorReason">
+  <int value="0" label="Webview Error"/>
+  <int value="1" label="Load Error"/>
+  <int value="2" label="Cookie Sync Error"/>
+  <int value="3" label="Timeout Waiting For NotifyPanelWillOpen"/>
+  <int value="4" label="Timeout Loading Client"/>
+  <int value="5" label="Timeout Warmed"/>
+  <int value="6" label="Client Error"/>
+  <int value="7" label="Close Debug View"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/resources/glic/glic_app_controller.ts:PanelWebUiStateErrorReason) -->
+
 <enum name="PdfRequestStates">
   <int value="0" label="PDF main doc; PDF found"/>
   <int value="1" label="PDF main doc; PDF not found"/>
@@ -931,29 +1116,22 @@ chromium-metrics-reviews@google.com.
   <int value="3" label="Non-PDF main doc; PDF not found"/>
 </enum>
 
-<!-- LINT.IfChange(PercentOverlap) -->
+<!-- LINT.IfChange(PdfTextExtractionStatus) -->
 
-<enum name="PercentOverlap">
-  <int value="0" label="0%"/>
-  <int value="1" label="10%"/>
-  <int value="2" label="20%"/>
-  <int value="3" label="30%"/>
-  <int value="4" label="40%"/>
-  <int value="5" label="50%"/>
-  <int value="6" label="60%"/>
-  <int value="7" label="70%"/>
-  <int value="8" label="80%"/>
-  <int value="9" label="90%"/>
-  <int value="10" label="100%"/>
-  <int value="11" label="No visible chrome browser"/>
+<enum name="PdfTextExtractionStatus">
+  <int value="0" label="Success"/>
+  <int value="1" label="EmptyText"/>
+  <int value="2" label="NotPdf"/>
+  <int value="3" label="PdfExtractionNotAvailable"/>
+  <int value="4" label="PdfDocumentNotLoaded"/>
 </enum>
 
-<!-- LINT.ThenChange(//chrome/browser/glic/glic_metrics.h:PercentOverlap) -->
+<!-- LINT.ThenChange(//components/page_content_annotations/content/page_context_fetcher_metrics.h:PdfTextExtractionStatus) -->
 
 <!-- LINT.IfChange(ShareImageResult) -->
 
 <enum name="ShareImageResult">
-  <int value="0" label="kSuccess"/>
+  <int value="0" label="kSentImageToClient"/>
   <int value="1" label="kFailedNoTab"/>
   <int value="2" label="kFailedNoFrame"/>
   <int value="3" label="kFailedNoBrowser"/>
@@ -967,7 +1145,18 @@ chromium-metrics-reviews@google.com.
   <int value="11" label="kFailedClipboardCopyPolicy"/>
   <int value="12" label="kFailedClipboardPastePolicy"/>
   <int value="13" label="kFailedNoInstance"/>
-  <int value="15" label="kFailedClientUnreadied"/>
+  <int value="14" label="kFailedClientUnreadied"/>
+  <int value="15" label="kFailedTimedOutNoInstance"/>
+  <int value="16" label="kFailedTimedOutNoWebClient"/>
+  <int value="17" label="kFailedTimedOutDidNotCompleteOnboarding"/>
+  <int value="18" label="kFailedLostInstance"/>
+  <int value="19" label="kFailedSawNavigationDidNotCompleteOnboarding"/>
+  <int value="20" label="kFailedUnknown"/>
+  <int value="21" label="kFailedInvalidConversationId"/>
+  <int value="22" label="kFailedInvokeInProgress"/>
+  <int value="23" label="kFailedInvalidConfiguration"/>
+  <int value="24" label="kFailedNoClientFrame"/>
+  <int value="25" label="kFailedNoClipboardMetadata"/>
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/glic/glic_metrics.h:ShareImageResult) -->
@@ -1045,13 +1234,11 @@ chromium-metrics-reviews@google.com.
 
 <enum name="WebUiState">
   <int value="0" label="Glic app controller not started"/>
-  <int value="1" label="Web client begins loading; no visible UI"/>
-  <int value="2" label="Loading panel is displayed"/>
+  <int value="1" label="Begin loading web client; no visible UI"/>
+  <int value="2" label="Display loading panel"/>
   <int value="3"
-      label="Loading panel is still displayed, but the web client is ready"/>
-  <int value="4"
-      label="Loading panel is displayed until web client is ready, or timeout
-             is reached"/>
+      label="Web client is ready, but wait for minimum loading timer"/>
+  <int value="4" label="Loading panel waiting for web client or timeout"/>
   <int value="5" label="'Something went wrong' error panel is displayed"/>
   <int value="6" label="Connection offline panel is displayed"/>
   <int value="7" label="Glic is not available for profile"/>
@@ -1062,6 +1249,8 @@ chromium-metrics-reviews@google.com.
       label="Web view is displayed, but it is displaying an error page"/>
   <int value="12" label="Glic is disabled by the administrator"/>
   <int value="13" label="Web contents is warmed"/>
+  <int value="14" label="Glic is unavailable due to country location mismatch"/>
+  <int value="15" label="Glic is unavailable due to account capabilities"/>
 </enum>
 
 <!-- LINT.ThenChange(//chrome/browser/glic/host/glic.mojom:WebUiState) -->

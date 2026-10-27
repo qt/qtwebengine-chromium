@@ -138,6 +138,7 @@ android_library("java") {
     "//chrome/browser/ui/android/native_page:java",
     "//chrome/browser/ui/android/signin:java",
     "//chrome/browser/ui/android/toolbar:java",
+    "//chrome/browser/ui/android/toolbar:optional_button_java",
     "//chrome/browser/ui/messages/android:java",
     "//chrome/browser/url_constants/android:java",
     "//chrome/browser/user_education:java",
@@ -208,6 +209,7 @@ robolectric_library("junit") {
     "junit/src/org/chromium/chrome/browser/bookmarks/BookmarkManagerOpenerTest.java",
     "junit/src/org/chromium/chrome/browser/bookmarks/BookmarkManagerViewBinderTest.java",
     "junit/src/org/chromium/chrome/browser/bookmarks/BookmarkModelListTestUtil.java",
+    "junit/src/org/chromium/chrome/browser/bookmarks/BookmarkOpenerUnitTest.java",
     "junit/src/org/chromium/chrome/browser/bookmarks/BookmarkPaneUnitTest.java",
     "junit/src/org/chromium/chrome/browser/bookmarks/BookmarkSaveFlowMediatorUnitTest.java",
     "junit/src/org/chromium/chrome/browser/bookmarks/BookmarkTextInputLayoutTest.java",
@@ -227,7 +229,6 @@ robolectric_library("junit") {
     "junit/src/org/chromium/chrome/browser/bookmarks/ShoppingAccessoryCoordinatorTest.java",
     "junit/src/org/chromium/chrome/browser/bookmarks/bar/BookmarkBarButtonTest.java",
     "junit/src/org/chromium/chrome/browser/bookmarks/bar/BookmarkBarCoordinatorTest.java",
-    "junit/src/org/chromium/chrome/browser/bookmarks/bar/BookmarkBarIphControllerTest.java",
     "junit/src/org/chromium/chrome/browser/bookmarks/bar/BookmarkBarItemsLayoutManagerTest.java",
     "junit/src/org/chromium/chrome/browser/bookmarks/bar/BookmarkBarItemsProviderTest.java",
     "junit/src/org/chromium/chrome/browser/bookmarks/bar/BookmarkBarMediatorTest.java",
@@ -238,13 +239,14 @@ robolectric_library("junit") {
 
   deps = [
     "//chrome/android/junit:chrome_junit_tests_helper",
+    "//chrome/browser/ui/android/toolbar:optional_button_java",
     "//third_party/androidx:androidx_recyclerview_recyclerview_java",
   ]
 }
 
 android_library("javatests") {
   testonly = true
-  resources_package = "org.chromium.chrome.test"
+  resources_package = "org.chromium.chrome"
 
   sources = [
     "//chrome/browser/bookmarks/android/junit/src/org/chromium/chrome/browser/bookmarks/FakeBookmarkModel.java",
@@ -272,6 +274,7 @@ android_library("javatests") {
 
   deps = [
     "//chrome/android/javatests:chrome_test_java_helper",
+    "//chrome/browser/ui/side_ui/public:java",
     "//chrome/browser/user_education:java",
   ]
 }

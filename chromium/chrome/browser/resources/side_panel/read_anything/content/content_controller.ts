@@ -9,10 +9,11 @@ import {previousReadHighlightClass} from '../read_aloud/movement.js';
 import {getReadAloudModel} from '../read_aloud/read_aloud_model_browser_proxy.js';
 import {ReadAloudNode} from '../read_aloud/read_aloud_types.js';
 import {SpeechController} from '../read_aloud/speech_controller.js';
-import {isDistilledByReadability, LOG_EMPTY_DELAY_MS} from '../shared/common.js';
+import {getReadingModeTextNodes, isDistilledByReadability, LOG_EMPTY_DELAY_MS} from '../shared/common.js';
 import {LinkStatus, ReadAnythingLogger} from '../shared/read_anything_logger.js';
 
 import {NodeStore} from './node_store.js';
+import {removeExtraneousElementsFrom} from './readability_content_processing.js';
 import {ReadabilityImageClassifier} from './readability_image_classifier.js';
 
 const DATA_PREFIX = 'data-';
@@ -146,6 +147,11 @@ export class ContentController {
   // (which occur frequently during WebUI test runs) share the same policy
   // reference and do not trigger a "Policy already exists" TypeError.
   private static trustedUpdatePolicy: TrustedTypePolicy|undefined;
+
+  // Holds the text nodes extracted from the current rendered distillation.
+  // This array ensures that we can link a DOM node back to its AXTree
+  // mapping for text selection via its index in this array.
+  private renderedTextNodes_: Node[] = [];
 
   getState(): ContentState {
     return this.currentState_;
@@ -312,14 +318,24 @@ export class ContentController {
       // Ensure link visibility is updated with user preferences.
       this.updateLinksForReadability(contentContainer);
 
-      // TODO(crbug.com/40910704): Remove ReadabilityImageClassifier once we
-      // share code with mobile's Reading Mode.
-      ReadabilityImageClassifier.processImagesIn(contentContainer);
+      this.applyReadabilityContentPostProcessing_(contentContainer);
       this.updateReadAloudState(contentFragment);
       this.listeners_.forEach(l => l.onContentChange());
       return contentFragment;
     }
     return null;
+  }
+
+  private applyReadabilityContentPostProcessing_(
+      contentContainer: HTMLElement) {
+    if (!isDistilledByReadability()) {
+      return;
+    }
+
+    // TODO(crbug.com/478229109): Remove duplicated code once we share code with
+    // mobile's Reading Mode.
+    removeExtraneousElementsFrom(contentContainer);
+    ReadabilityImageClassifier.processImagesIn(contentContainer);
   }
 
   updateContentForScreen2x(shadowRoot?: ShadowRoot): Node|null {
@@ -375,6 +391,69 @@ export class ContentController {
 
     this.updateReadAloudState(node);
     return node;
+  }
+
+  onRenderedTextMappingReady() {
+    if (!isDistilledByReadability() ||
+        !chrome.readingMode.isReadabilitySelectTextEnabled) {
+      return;
+    }
+
+    // Iterate through the rendered text nodes by their index.
+    for (let i = 0; i < this.renderedTextNodes_.length; i++) {
+      const node = this.renderedTextNodes_[i];
+      if (!(node instanceof Text) || !node.parentNode) {
+        continue;
+      }
+
+      // Retrieve the mapping segments for this specific block index.
+      const segments = chrome.readingMode.getAxMapping(i);
+      if (segments && segments.length > 0) {
+        this.mapBlockToAxNodes_(node, segments);
+      }
+    }
+
+    // After populating the NodeStore, trigger a selection update to synchronize
+    // any existing selection state.
+    chrome.readingMode.updateSelection();
+  }
+
+  private mapBlockToAxNodes_(node: Text, segments: Array<{
+                               axNodeId: number,
+                               start: number,
+                               end: number,
+                               axNodeOffset: number,
+                             }>) {
+    // Link the block (rendered text node) to it's equivalent segment in the
+    // AXnode. For multiple segments, mapping to a single block, we split the
+    // block to create a 1:1 mapping between rendered text and an AXNode.
+    let currentNode: Text = node;
+    let lastOffset = 0;
+
+    for (const segment of segments) {
+      if (segment.start > lastOffset) {
+        const gapLength = segment.start - lastOffset;
+        currentNode = currentNode.splitText(gapLength);
+        lastOffset = segment.start;
+      }
+
+      const nodeLength = currentNode.textContent?.length || 0;
+      const segmentLength = Math.min(segment.end - lastOffset, nodeLength);
+
+      // Only split if there is text remaining in the node to avoid creating
+      // empty trailing nodes.
+      if (segmentLength < nodeLength) {
+        const remainingNode = currentNode.splitText(segmentLength);
+        this.nodeStore_.setDomNode(currentNode, segment.axNodeId);
+        this.nodeStore_.setAxNodeOffset(currentNode, segment.axNodeOffset);
+        currentNode = remainingNode;
+      } else {
+        this.nodeStore_.setDomNode(currentNode, segment.axNodeId);
+        this.nodeStore_.setAxNodeOffset(currentNode, segment.axNodeOffset);
+      }
+
+      lastOffset = segment.end;
+    }
   }
 
   updateReadAloudState(rootNode: Node): void {
@@ -606,13 +685,6 @@ export class ContentController {
 
   // TODO(crbug.com/40910704): Potentially hide links during distillation.
   private shouldShowLinks_(): boolean {
-    // If Readability is enabled and the ReadabilityWithLinks flag is disabled,
-    // don't show links.
-    if (chrome.readingMode.isReadabilityEnabled &&
-        !chrome.readingMode.isReadabilityWithLinksEnabled) {
-      return false;
-    }
-
     // Links should only show when Read Aloud is paused.
     return chrome.readingMode.linksEnabled &&
         !this.speechController_.isSpeechActive();
@@ -657,6 +729,24 @@ export class ContentController {
     }
   }
 
+  onRenderedTextBlocksAvailable(container: HTMLElement) {
+    if (!isDistilledByReadability() ||
+        !chrome.readingMode.isReadabilitySelectTextEnabled) {
+      return;
+    }
+
+    // Capture the specific node instances currently rendered in the UI.
+    // We store them in an array so that the index becomes the identifier that
+    // links this node to its AXTree mapping in the renderer.
+    this.renderedTextNodes_ = getReadingModeTextNodes(container);
+
+    // Extract the raw text content from each node to send to the mapping
+    // algorithm in the renderer.
+    const blocks = this.renderedTextNodes_.map(n => n.textContent || '');
+
+    chrome.readingMode.onRenderedTextBlocksAvailable(blocks);
+  }
+
   updateImages(shadowRoot?: ShadowRoot) {
     if (!shadowRoot || !this.hasContent()) {
       return;
@@ -684,7 +774,6 @@ export class ContentController {
 
   updateAnchorsForReadability(root: ParentNode) {
     if (!chrome.readingMode.isReadabilityEnabled ||
-        !chrome.readingMode.isReadabilityWithLinksEnabled ||
         !isDistilledByReadability()) {
       return;
     }

@@ -1,6 +1,8 @@
 // Benchmarks for special functions beyond what bench_cwise_math.cpp covers.
 // Includes Bessel functions, two-argument functions (igamma, betainc),
 // and additional functions (lgamma, digamma, zeta, polygamma).
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>
@@ -84,44 +86,46 @@ static void BM_Betainc(benchmark::State& state) {
   state.SetBytesProcessed(state.iterations() * n * sizeof(Scalar) * 4);
 }
 
-static void SpecialSizes(::benchmark::Benchmark* b) {
-  for (int n : {256, 4096, 65536, 1048576}) b->Arg(n);
-}
+#define SPECIAL_SIZES ->Arg(256)->Arg(4096)->Arg(65536)->Arg(1048576)
 
 // --- Register float ---
-BENCHMARK(BM_Lgamma<float>)->Apply(SpecialSizes)->Name("Lgamma_float");
-BENCHMARK(BM_Digamma<float>)->Apply(SpecialSizes)->Name("Digamma_float");
-BENCHMARK(BM_BesselI0<float>)->Apply(SpecialSizes)->Name("BesselI0_float");
-BENCHMARK(BM_BesselI1<float>)->Apply(SpecialSizes)->Name("BesselI1_float");
-BENCHMARK(BM_BesselI0e<float>)->Apply(SpecialSizes)->Name("BesselI0e_float");
-BENCHMARK(BM_BesselI1e<float>)->Apply(SpecialSizes)->Name("BesselI1e_float");
-BENCHMARK(BM_BesselJ0<float>)->Apply(SpecialSizes)->Name("BesselJ0_float");
-BENCHMARK(BM_BesselJ1<float>)->Apply(SpecialSizes)->Name("BesselJ1_float");
-BENCHMARK(BM_BesselY0<float>)->Apply(SpecialSizes)->Name("BesselY0_float");
-BENCHMARK(BM_BesselY1<float>)->Apply(SpecialSizes)->Name("BesselY1_float");
-BENCHMARK(BM_BesselK0<float>)->Apply(SpecialSizes)->Name("BesselK0_float");
-BENCHMARK(BM_BesselK1<float>)->Apply(SpecialSizes)->Name("BesselK1_float");
-BENCHMARK(BM_BesselK0e<float>)->Apply(SpecialSizes)->Name("BesselK0e_float");
-BENCHMARK(BM_BesselK1e<float>)->Apply(SpecialSizes)->Name("BesselK1e_float");
-BENCHMARK(BM_Igamma<float>)->Apply(SpecialSizes)->Name("Igamma_float");
-BENCHMARK(BM_Igammac<float>)->Apply(SpecialSizes)->Name("Igammac_float");
-BENCHMARK(BM_Betainc<float>)->Apply(SpecialSizes)->Name("Betainc_float");
-BENCHMARK(BM_Zeta<float>)->Apply(SpecialSizes)->Name("Zeta_float");
-BENCHMARK(BM_Polygamma<float>)->Apply(SpecialSizes)->Name("Polygamma_float");
+BENCHMARK(BM_Lgamma<float>) SPECIAL_SIZES->Name("Lgamma_float");
+BENCHMARK(BM_Digamma<float>) SPECIAL_SIZES->Name("Digamma_float");
+BENCHMARK(BM_BesselI0<float>) SPECIAL_SIZES->Name("BesselI0_float");
+BENCHMARK(BM_BesselI1<float>) SPECIAL_SIZES->Name("BesselI1_float");
+BENCHMARK(BM_BesselI0e<float>) SPECIAL_SIZES->Name("BesselI0e_float");
+BENCHMARK(BM_BesselI1e<float>) SPECIAL_SIZES->Name("BesselI1e_float");
+BENCHMARK(BM_BesselJ0<float>) SPECIAL_SIZES->Name("BesselJ0_float");
+BENCHMARK(BM_BesselJ1<float>) SPECIAL_SIZES->Name("BesselJ1_float");
+BENCHMARK(BM_BesselY0<float>) SPECIAL_SIZES->Name("BesselY0_float");
+BENCHMARK(BM_BesselY1<float>) SPECIAL_SIZES->Name("BesselY1_float");
+BENCHMARK(BM_BesselK0<float>) SPECIAL_SIZES->Name("BesselK0_float");
+BENCHMARK(BM_BesselK1<float>) SPECIAL_SIZES->Name("BesselK1_float");
+BENCHMARK(BM_BesselK0e<float>) SPECIAL_SIZES->Name("BesselK0e_float");
+BENCHMARK(BM_BesselK1e<float>) SPECIAL_SIZES->Name("BesselK1e_float");
+BENCHMARK(BM_Igamma<float>) SPECIAL_SIZES->Name("Igamma_float");
+BENCHMARK(BM_Igammac<float>) SPECIAL_SIZES->Name("Igammac_float");
+BENCHMARK(BM_Betainc<float>) SPECIAL_SIZES->Name("Betainc_float");
+BENCHMARK(BM_Zeta<float>) SPECIAL_SIZES->Name("Zeta_float");
+BENCHMARK(BM_Polygamma<float>) SPECIAL_SIZES->Name("Polygamma_float");
 
 // --- Register double ---
-BENCHMARK(BM_Lgamma<double>)->Apply(SpecialSizes)->Name("Lgamma_double");
-BENCHMARK(BM_Digamma<double>)->Apply(SpecialSizes)->Name("Digamma_double");
-BENCHMARK(BM_BesselI0<double>)->Apply(SpecialSizes)->Name("BesselI0_double");
-BENCHMARK(BM_BesselI1<double>)->Apply(SpecialSizes)->Name("BesselI1_double");
-BENCHMARK(BM_BesselJ0<double>)->Apply(SpecialSizes)->Name("BesselJ0_double");
-BENCHMARK(BM_BesselJ1<double>)->Apply(SpecialSizes)->Name("BesselJ1_double");
-BENCHMARK(BM_BesselY0<double>)->Apply(SpecialSizes)->Name("BesselY0_double");
-BENCHMARK(BM_BesselY1<double>)->Apply(SpecialSizes)->Name("BesselY1_double");
-BENCHMARK(BM_BesselK0<double>)->Apply(SpecialSizes)->Name("BesselK0_double");
-BENCHMARK(BM_BesselK1<double>)->Apply(SpecialSizes)->Name("BesselK1_double");
-BENCHMARK(BM_Igamma<double>)->Apply(SpecialSizes)->Name("Igamma_double");
-BENCHMARK(BM_Igammac<double>)->Apply(SpecialSizes)->Name("Igammac_double");
-BENCHMARK(BM_Betainc<double>)->Apply(SpecialSizes)->Name("Betainc_double");
-BENCHMARK(BM_Zeta<double>)->Apply(SpecialSizes)->Name("Zeta_double");
-BENCHMARK(BM_Polygamma<double>)->Apply(SpecialSizes)->Name("Polygamma_double");
+BENCHMARK(BM_Lgamma<double>) SPECIAL_SIZES->Name("Lgamma_double");
+BENCHMARK(BM_Digamma<double>) SPECIAL_SIZES->Name("Digamma_double");
+BENCHMARK(BM_BesselI0<double>) SPECIAL_SIZES->Name("BesselI0_double");
+BENCHMARK(BM_BesselI1<double>) SPECIAL_SIZES->Name("BesselI1_double");
+BENCHMARK(BM_BesselI0e<double>) SPECIAL_SIZES->Name("BesselI0e_double");
+BENCHMARK(BM_BesselI1e<double>) SPECIAL_SIZES->Name("BesselI1e_double");
+BENCHMARK(BM_BesselJ0<double>) SPECIAL_SIZES->Name("BesselJ0_double");
+BENCHMARK(BM_BesselJ1<double>) SPECIAL_SIZES->Name("BesselJ1_double");
+BENCHMARK(BM_BesselY0<double>) SPECIAL_SIZES->Name("BesselY0_double");
+BENCHMARK(BM_BesselY1<double>) SPECIAL_SIZES->Name("BesselY1_double");
+BENCHMARK(BM_BesselK0<double>) SPECIAL_SIZES->Name("BesselK0_double");
+BENCHMARK(BM_BesselK1<double>) SPECIAL_SIZES->Name("BesselK1_double");
+BENCHMARK(BM_BesselK0e<double>) SPECIAL_SIZES->Name("BesselK0e_double");
+BENCHMARK(BM_BesselK1e<double>) SPECIAL_SIZES->Name("BesselK1e_double");
+BENCHMARK(BM_Igamma<double>) SPECIAL_SIZES->Name("Igamma_double");
+BENCHMARK(BM_Igammac<double>) SPECIAL_SIZES->Name("Igammac_double");
+BENCHMARK(BM_Betainc<double>) SPECIAL_SIZES->Name("Betainc_double");
+BENCHMARK(BM_Zeta<double>) SPECIAL_SIZES->Name("Zeta_double");
+BENCHMARK(BM_Polygamma<double>) SPECIAL_SIZES->Name("Polygamma_double");

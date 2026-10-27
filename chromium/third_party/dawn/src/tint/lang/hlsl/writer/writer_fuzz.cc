@@ -28,7 +28,7 @@
 #include <iostream>
 
 #include "src/tint/api/helpers/generate_bindings.h"
-#include "src/tint/cmd/fuzz/ir/fuzz.h"
+#include "src/tint/cmd/fuzz/common/ir_fuzzer.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/var.h"
 #include "src/tint/lang/hlsl/validate/validate.h"
@@ -63,6 +63,8 @@ struct FuzzedOptions {
     std::optional<uint32_t> num_workgroups_start_offset;
     std::vector<BindingPoint> ignored_by_robustness_transform;
     SubstituteOverridesConfig substitute_overrides_config;
+    bool d3d12_decompose_workgroup_access;
+    bool polyfill_sample_mask;
     bool collapse_subgroup_min_max;
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
@@ -85,6 +87,8 @@ struct FuzzedOptions {
                  num_workgroups_start_offset,
                  ignored_by_robustness_transform,
                  substitute_overrides_config,
+                 d3d12_decompose_workgroup_access,
+                 polyfill_sample_mask,
                  collapse_subgroup_min_max);
 };
 
@@ -125,6 +129,8 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
     options.workarounds.polyfill_reflect_vec2_f32 = fuzzed_options.polyfill_reflect_vec2_f32;
     options.workarounds.polyfill_subgroup_broadcast_f16 =
         fuzzed_options.polyfill_subgroup_broadcast_f16;
+    options.workarounds.d3d12_decompose_workgroup_access =
+        fuzzed_options.d3d12_decompose_workgroup_access;
     options.workarounds.collapse_subgroup_min_max = fuzzed_options.collapse_subgroup_min_max;
     options.extensions.polyfill_dot_4x8_packed = fuzzed_options.polyfill_dot_4x8_packed;
     options.extensions.polyfill_pack_unpack_4x8 = fuzzed_options.polyfill_pack_unpack_4x8;
@@ -133,6 +139,7 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
     options.first_index_offset = fuzzed_options.first_index_offset;
     options.first_instance_offset = fuzzed_options.first_instance_offset;
     options.num_workgroups_start_offset = fuzzed_options.num_workgroups_start_offset;
+    options.polyfill_sample_mask = fuzzed_options.polyfill_sample_mask;
     options.ignored_by_robustness_transform = fuzzed_options.ignored_by_robustness_transform;
     options.substitute_overrides_config = fuzzed_options.substitute_overrides_config;
 
@@ -168,7 +175,7 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
     }
     auto dxc = tint::Command::LookPath(dxc_path);
     if (dxc.Found()) {
-        uint32_t hlsl_shader_model = 66;
+        auto hlsl_shader_model = validate::HlslShaderModel::kSM_6_6;
         bool require_16bit_types = true;
         [[maybe_unused]] auto validate_res = validate::ValidateUsingDXC(
             dxc.Path(), output.hlsl, output.entry_point_name, output.pipeline_stage,

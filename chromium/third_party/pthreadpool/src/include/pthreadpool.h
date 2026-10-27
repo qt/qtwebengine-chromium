@@ -148,6 +148,16 @@ typedef void (*pthreadpool_task_3d_tile_1d_dynamic_with_id_with_thread_t)(
  */
 #define PTHREADPOOL_FLAG_DONT_SPIN_WORKERS 0x00000004
 
+// Disable function sanitization here. The thread pool calls these functions
+// via function pointers with void* contexts, which triggers false positives in
+// the function sanitizer when casting and calling the actual context type.
+#if defined(__clang__) && __has_attribute(no_sanitize)
+#define PTHREADPOOL_NO_SANITIZE_FUNCTION \
+  __attribute__((no_sanitize("function")))
+#else
+#define PTHREADPOOL_NO_SANITIZE_FUNCTION
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

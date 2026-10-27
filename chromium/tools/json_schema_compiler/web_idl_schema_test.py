@@ -212,7 +212,6 @@ class WebIdlSchemaTest(unittest.TestCase):
     self.assertEqual(
         {
             'name': 'callback',
-            'optional': True,
             'parameters': [{
                 'type': 'string'
             }],
@@ -220,7 +219,6 @@ class WebIdlSchemaTest(unittest.TestCase):
     self.assertEqual(
         {
             'name': 'callback',
-            'optional': True,
             'parameters': [{
                 'optional': True,
                 'type': 'string'
@@ -229,7 +227,6 @@ class WebIdlSchemaTest(unittest.TestCase):
     self.assertEqual(
         {
             'name': 'callback',
-            'optional': True,
             'parameters': [{
                 '$ref': 'ExampleType'
             }],
@@ -237,13 +234,11 @@ class WebIdlSchemaTest(unittest.TestCase):
     self.assertEqual(
         {
             'name': 'callback',
-            'optional': True,
             'parameters': [],
         }, getFunctionAsyncReturn(schema, 'undefinedPromiseReturn'))
     self.assertEqual(
         {
             'name': 'callback',
-            'optional': True,
             'parameters': [{
                 'type': 'array',
                 'items': {
@@ -254,7 +249,6 @@ class WebIdlSchemaTest(unittest.TestCase):
     self.assertEqual(
         {
             'name': 'callback',
-            'optional': True,
             'parameters': [{
                 'type': 'array',
                 'items': {
@@ -392,8 +386,6 @@ class WebIdlSchemaTest(unittest.TestCase):
         {
             'name':
             'callback',
-            'optional':
-            True,
             'description':
             'General description for the promise return.',
             'parameters': [{
@@ -414,7 +406,6 @@ class WebIdlSchemaTest(unittest.TestCase):
     self.assertEqual(
         {
             'name': 'callback',
-            'optional': True,
             'parameters': [{
                 'type': 'boolean',
                 'name': 'justAName'
@@ -470,6 +461,12 @@ class WebIdlSchemaTest(unittest.TestCase):
     event_max_listeners = getEvent(schema, 'onTestMaxListeners')
     self.assertEqual('onTestMaxListeners', event_max_listeners.get('name'))
     self.assertEqual({'maxListeners': 1}, event_max_listeners.get('options'))
+
+    event_supports_filters = getEvent(schema, 'onTestSupportsFilters')
+    self.assertEqual('onTestSupportsFilters',
+                     event_supports_filters.get('name'))
+    self.assertEqual({'supportsFilters': True},
+                     event_supports_filters.get('options'))
 
   # Tests that Dictionaries and Enums defined on the top level of the IDL file
   # are processed into types on the resulting namespace.
@@ -676,7 +673,7 @@ class WebIdlSchemaTest(unittest.TestCase):
 
     self.assertEqual('nested.example', schema['namespace'])
     self.assertEqual(
-        'Schema to test nested namespacee names types in IDL (API names with a'
+        'Schema to test nested namespace names types in IDL (API names with a'
         ' dot in them). API should end up on `<Browser>.nested.example`.',
         schema['description'],
     )
@@ -690,7 +687,7 @@ class WebIdlSchemaTest(unittest.TestCase):
 
     self.assertEqual('multi.nested.example', schema['namespace'])
     self.assertEqual(
-        'Schema to test triple nested namespacee names types in IDL (API names'
+        'Schema to test triple nested namespace names types in IDL (API names'
         ' with 2 dots in them). API should end up on `<Browser>.multi.nested.'
         'example`.',
         schema['description'],
@@ -701,7 +698,7 @@ class WebIdlSchemaTest(unittest.TestCase):
   def testMissingBrowserInterfaceError(self):
     expected_error_regex = (
         r'.* File\(test\/web_idl\/missing_browser_interface.idl\): Schema must'
-        r' contain either a paritial Browser interface \(for APIs\) or a'
+        r' contain either a partial Browser interface \(for APIs\) or a'
         r' partial ExtensionManifest dictionary \(for manifest stubs\)\.')
     self.assertRaisesRegex(
         SchemaCompilerError,
@@ -989,29 +986,6 @@ class WebIdlSchemaTest(unittest.TestCase):
     self.assertEqual('This property is deprecated',
                      deprecated_property['deprecated'])
 
-  # Tests that a function defined with the requiredCallback extended attribute
-  # does not have the returns_async field marked as optional after processing.
-  # Note: These are only relevant to contexts which don't support promise based
-  # calls, or for specific functions which still do not support promises.
-  def testRequiredCallbackFunction(self):
-    idl = web_idl_schema.Load('test/web_idl/required_callback_function.idl')
-    self.assertEqual(1, len(idl))
-    self.assertEqual(
-        {
-            'name': 'callback',
-            'parameters': [{
-                'type': 'string'
-            }],
-        }, getFunctionAsyncReturn(idl[0], 'requiredCallbackFunction'))
-    self.assertEqual(
-        {
-            'name': 'callback',
-            'optional': True,
-            'parameters': [{
-                'type': 'string'
-            }],
-        }, getFunctionAsyncReturn(idl[0], 'notRequiredCallbackFunction'))
-
   # Tests that extended attributes being listed on the the line previous to a
   # node come through correctly and don't throw off and associated descriptions.
   def testPreviousLineExtendedAttributes(self):
@@ -1286,9 +1260,10 @@ class WebIdlSchemaTest(unittest.TestCase):
             }]
         }, union_dict['properties']['dictTypeOrLong'])
 
-  # Tests 'ArrayBuffer' types on Dictionaries.
-  def testArrayBufferTypes(self):
-    idl = web_idl_schema.Load('test/web_idl/array_buffer.idl')
+  # Tests supported 'binary' buffer source types in dictionaries and as function
+  # parameters. Currently only ArrayBuffer and Uint8Array.
+  def testBufferSourceTypes(self):
+    idl = web_idl_schema.Load('test/web_idl/buffer_source_types.idl')
     self.assertEqual(1, len(idl))
     schema = idl[0]
 
@@ -1308,11 +1283,20 @@ class WebIdlSchemaTest(unittest.TestCase):
             'isInstanceOf': 'ArrayBuffer'
         }, array_buffer_dict['properties']['optionalArrayBuffer'])
 
-  # Tests 'ArrayBuffer' types used as function parameters.
-  def testArrayBufferFunctionParams(self):
-    idl = web_idl_schema.Load('test/web_idl/array_buffer.idl')
-    self.assertEqual(1, len(idl))
-    schema = idl[0]
+    uint_8_array_dict = getType(schema, 'Uint8ArrayDict')
+    self.assertEqual('object', uint_8_array_dict['type'])
+    self.assertEqual({
+        'type': 'binary',
+        'name': 'requiredUint8Array',
+        'isInstanceOf': 'Uint8Array'
+    }, uint_8_array_dict['properties']['requiredUint8Array'])
+    self.assertEqual(
+        {
+            'type': 'binary',
+            'optional': True,
+            'name': 'optionalUint8Array',
+            'isInstanceOf': 'Uint8Array'
+        }, uint_8_array_dict['properties']['optionalUint8Array'])
 
     array_buffer_params = getFunctionParameters(schema,
                                                 'arrayBufferParamFunction')
@@ -1329,6 +1313,21 @@ class WebIdlSchemaTest(unittest.TestCase):
             'name': 'optionalArrayBufferParam',
             'isInstanceOf': 'ArrayBuffer'
         }, array_buffer_params[1])
+
+    uint_8_array_params = getFunctionParameters(
+        schema, 'uint8ArrayParamFunction')
+    self.assertEqual({
+        'type': 'binary',
+        'name': 'requiredUint8ArrayParam',
+        'isInstanceOf': 'Uint8Array'
+    }, uint_8_array_params[0])
+    self.assertEqual(
+        {
+            'type': 'binary',
+            'optional': True,
+            'name': 'optionalUint8ArrayParam',
+            'isInstanceOf': 'Uint8Array'
+        }, uint_8_array_params[1])
 
   # Tests using the ExternalExtensionType extended attribute to indicate a type
   # has the actual definition in another schema file from another API
@@ -1510,6 +1509,81 @@ class WebIdlSchemaTest(unittest.TestCase):
         'Description for longIdentifierParameter.',
         long_identifier_function['parameters'][0].get('description'),
     )
+
+  # Various tests for trailing callback parameters on function definitions.
+  def testTrailingCallbackParameters(self):
+    idl = web_idl_schema.Load('test/web_idl/trailing_callback_parameters.idl')
+    self.assertEqual(1, len(idl))
+    schema = idl[0]
+
+    # Verifies an optional callback parameter is marked as optional and as not
+    # supporting promises, along with various related descritiptions come
+    # through as expected.
+    foo_function = getFunction(schema, 'foo')
+    self.assertEqual('Foo description.', foo_function.get('description'))
+    self.assertEqual(1, len(foo_function['parameters']))
+    self.assertEqual('The arg.',
+                     foo_function['parameters'][0].get('description'))
+
+    foo_async_return = getFunctionAsyncReturn(schema, 'foo')
+    self.assertTrue(foo_async_return.get('does_not_support_promises'))
+    self.assertTrue(foo_async_return.get('optional'))
+    self.assertEqual('callback', foo_async_return.get('name'))
+    self.assertEqual('The callback.', foo_async_return.get('description'))
+
+    self.assertEqual(1, len(foo_async_return['parameters']))
+    self.assertEqual('The x value.',
+                     foo_async_return['parameters'][0].get('description'))
+
+    # Verifies a required callback parameter isn't marked optional and is marked
+    # as not supporting promises.
+    bar_async_return = getFunctionAsyncReturn(schema, 'bar')
+    self.assertTrue(bar_async_return.get('does_not_support_promises'))
+    self.assertNotIn('optional', bar_async_return)
+
+    # Verifies a function with both callback and a synchronous return gets both
+    # of those processed as expected.
+    sync_and_async_function = getFunction(schema, 'syncAndAsync')
+    self.assertEqual('Description for syncAndAsync.',
+                     sync_and_async_function.get('description'))
+
+    sync_return = getFunctionReturn(schema, 'syncAndAsync')
+    self.assertEqual('integer', sync_return.get('type'))
+    self.assertEqual('Sync return description.', sync_return.get('description'))
+
+    async_return = getFunctionAsyncReturn(schema, 'syncAndAsync')
+    self.assertTrue(async_return.get('does_not_support_promises'))
+    self.assertEqual('callback', async_return.get('name'))
+    self.assertEqual('Async return description.',
+                     async_return.get('description'))
+
+    # Verifies that the [trailingCallbackIsFunctionParameter] extended attribute
+    # on a function leaves the trailing callback as a normal function parameter
+    # and doesn't get turned into an async return.
+    with_ext_attr_function = getFunction(schema, 'withExtAttr')
+    self.assertEqual('Description for withExtAttr.',
+                     with_ext_attr_function.get('description'))
+    self.assertEqual(2, len(with_ext_attr_function['parameters']))
+    self.assertEqual('The arg.',
+                     with_ext_attr_function['parameters'][0].get('description'))
+    self.assertEqual('The callback as a normal parameter.',
+                     with_ext_attr_function['parameters'][1].get('description'))
+    self.assertEqual('function',
+                     with_ext_attr_function['parameters'][1].get('type'))
+    self.assertIsNone(getFunctionAsyncReturn(schema, 'withExtAttr'))
+
+    # Verifies that a Callback definition with a trailing callback does not pop
+    # it into returns_async. We test this by getting the type on a dictionary
+    # member which references the callback.
+    callback_type = getType(
+        schema, 'CallbackDictionary')['properties']['trailingCallback']
+    self.assertEqual('function', callback_type.get('type'))
+    self.assertEqual(1, len(callback_type['parameters']))
+    self.assertEqual('callback', callback_type['parameters'][0].get('name'))
+    self.assertEqual('function', callback_type['parameters'][0].get('type'))
+    self.assertEqual('The trailing callback.',
+                     callback_type['parameters'][0].get('description'))
+    self.assertNotIn('returns_async', callback_type)
 
 
 if __name__ == '__main__':

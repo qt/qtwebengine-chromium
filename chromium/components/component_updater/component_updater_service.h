@@ -15,7 +15,9 @@
 #include "base/functional/callback_forward.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/time/time.h"
 #include "base/version.h"
+#include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "components/update_client/update_client.h"
 
@@ -198,6 +200,11 @@ class ComponentUpdateService {
   // function returns true in case of success and false in case of errors.
   virtual bool GetComponentDetails(const std::string& id,
                                    CrxUpdateItem* item) const = 0;
+#if BUILDFLAG(CHROME_FOR_TESTING)
+  // Runs local loop delaying the caller's execution until all the registered
+  // required components are up to date.
+  virtual void EnsureRequiredComponentsReady(base::TimeDelta timeout) = 0;
+#endif
 
  private:
   friend class screen_ai::ScreenAIDownloaderNonChromeOS;
@@ -236,6 +243,7 @@ class OnDemandUpdater {
   friend class CrOSComponentInstaller;
 #endif  // BUILDFLAG(IS_CHROMEOS)
   friend class IwaKeyDistributionComponentInstallerPolicy;
+  friend class PlatformRuntimeComponentInstallerPolicy;
 
   // Triggers an update check for a component. |id| is a value
   // returned by GetCrxComponentID(). If an update for this component is already

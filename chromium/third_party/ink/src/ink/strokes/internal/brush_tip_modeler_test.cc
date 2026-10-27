@@ -19,15 +19,22 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "fuzztest/fuzztest.h"
 #include "ink/brush/brush_behavior.h"
+#include "ink/brush/brush_family.h"
 #include "ink/brush/brush_tip.h"
 #include "ink/brush/easing_function.h"
+#include "ink/brush/fuzz_domains.h"
 #include "ink/geometry/angle.h"
 #include "ink/geometry/point.h"
 #include "ink/geometry/type_matchers.h"
+#include "ink/strokes/input/fuzz_domains.h"
 #include "ink/strokes/input/stroke_input.h"
+#include "ink/strokes/input/stroke_input_batch.h"
 #include "ink/strokes/internal/brush_tip_state.h"
 #include "ink/strokes/internal/modeled_stroke_input.h"
+#include "ink/strokes/internal/stroke_input_modeler.h"
+#include "ink/strokes/internal/type_matchers.h"
 #include "ink/types/duration.h"
 
 namespace ink::strokes_internal {
@@ -40,9 +47,12 @@ using ::testing::ExplainMatchResult;
 using ::testing::Field;
 using ::testing::FloatEq;
 using ::testing::FloatNear;
+using ::testing::Gt;
 using ::testing::IsEmpty;
+using ::testing::Le;
 using ::testing::Ne;
 using ::testing::Pointwise;
+using ::testing::SizeIs;
 
 // Matcher that compares all fields of two tip states for equality except the
 // positions.
@@ -50,8 +60,8 @@ MATCHER_P(NonPositionFieldsEq, expected, "") {
   return ExplainMatchResult(
       AllOf(Field("width", &BrushTipState::width, FloatEq(expected.width)),
             Field("height", &BrushTipState::height, FloatEq(expected.height)),
-            Field("percent_radius", &BrushTipState::percent_radius,
-                  FloatEq(expected.percent_radius)),
+            Field("corner_rounding", &BrushTipState::corner_rounding,
+                  FloatEq(expected.corner_rounding)),
             Field("rotation", &BrushTipState::rotation,
                   AngleEq(expected.rotation))),
       arg, result_listener);
@@ -122,7 +132,7 @@ TEST(BrushTipModelerTest, UpdateWithAllStableInputs) {
   BrushTipState expected_non_position_values = {
       .width = brush_tip.scale.x * brush_size,
       .height = brush_tip.scale.y * brush_size,
-      .percent_radius = brush_tip.corner_rounding,
+      .corner_rounding = brush_tip.corner_rounding,
       .rotation = brush_tip.rotation,
   };
 
@@ -156,7 +166,7 @@ TEST(BrushTipModelerTest, UpdateWithNoStableInputs) {
   BrushTipState expected_non_position_values = {
       .width = brush_tip.scale.x * brush_size,
       .height = brush_tip.scale.y * brush_size,
-      .percent_radius = brush_tip.corner_rounding,
+      .corner_rounding = brush_tip.corner_rounding,
       .rotation = brush_tip.rotation,
   };
 
@@ -189,7 +199,7 @@ TEST(BrushTipModelerTest, UpdateClearsPreviousStableStates) {
   BrushTipState expected_non_position_values = {
       .width = brush_tip.scale.x * brush_size,
       .height = brush_tip.scale.y * brush_size,
-      .percent_radius = brush_tip.corner_rounding,
+      .corner_rounding = brush_tip.corner_rounding,
       .rotation = brush_tip.rotation,
   };
 
@@ -279,7 +289,7 @@ TEST(BrushTipModelerTest, TipWithBehaviors) {
                },
                BrushBehavior::DampingNode{
                    .damping_source =
-                       BrushBehavior::DampingSource::kTimeInSeconds,
+                       BrushBehavior::ProgressDomain::kTimeInSeconds,
                    .damping_gap = 0.1,
                },
                BrushBehavior::TargetNode{
@@ -378,14 +388,17 @@ TEST(BrushTipModelerTest, TipWithFallbackFilter) {
       .behaviors = {BrushBehavior{{
           // Map speed to width multiplier, but only if pressure is missing.
           BrushBehavior::SourceNode{
+              .source = BrushBehavior::Source::kNormalizedPressure,
+              .source_value_range = {0, 1},
+          },
+          BrushBehavior::ConstantNode{0.0f},
+          BrushBehavior::BinaryOpNode{BrushBehavior::BinaryOp::kXorElse},
+          BrushBehavior::SourceNode{
               .source =
                   BrushBehavior::Source::kSpeedInMultiplesOfBrushSizePerSecond,
               .source_value_range = {0, 1},
           },
-          BrushBehavior::FallbackFilterNode{
-              .is_fallback_for =
-                  BrushBehavior::OptionalInputProperty::kPressure,
-          },
+          BrushBehavior::BinaryOpNode{BrushBehavior::BinaryOp::kAndThen},
           BrushBehavior::TargetNode{
               .target = BrushBehavior::Target::kWidthMultiplier,
               .target_modifier_range = {1.5, 2},
@@ -766,53 +779,6 @@ TEST(BrushTipModelerTest, TipWithSecondsRemainingBehavior) {
   EXPECT_EQ(modeler.VolatileTipStates().size(), 4);
 }
 
-TEST(BrushTipModelerTest, TipWithMillisecondsRemainingBehavior) {
-  BrushTipModeler modeler;
-  BrushTip brush_tip = {
-      .behaviors = {BrushBehavior{{
-          BrushBehavior::SourceNode{
-              .source = BrushBehavior::Source::kTimeSinceInputInMillis,
-              .source_out_of_range_behavior = BrushBehavior::OutOfRange::kClamp,
-              .source_value_range = {0, 1500},
-          },
-          BrushBehavior::TargetNode{
-              .target = BrushBehavior::Target::kWidthMultiplier,
-              .target_modifier_range = {0.5, 1.5},
-          },
-      }}}};
-  BrushBehavior::SourceNode* source_node =
-      &std::get<BrushBehavior::SourceNode>(brush_tip.behaviors[0].nodes[0]);
-  modeler.StartStroke(&brush_tip, 1);
-
-  std::vector<ModeledStrokeInput> inputs = {
-      {.position = {0, 0}, .elapsed_time = Duration32::Zero()},
-      {.position = {0, 1}, .elapsed_time = Duration32::Seconds(3)},
-      {.position = {0, 2}, .elapsed_time = Duration32::Seconds(5)},
-      {.position = {0, 3}, .elapsed_time = Duration32::Seconds(8.4)},
-      {.position = {0, 4}, .elapsed_time = Duration32::Seconds(10)},
-  };
-  InputModelerState input_modeler_state = {
-      .complete_elapsed_time = Duration32::Seconds(14),
-
-      .stable_input_count = 5,
-  };
-  modeler.UpdateStroke(input_modeler_state, inputs);
-
-  // Even though all of the inputs in the state were stable, the tip state
-  // created from the last input state should be volatile because it is less
-  // than 1500 milliseconds from the current stable end of the stroke:
-  EXPECT_EQ(modeler.NewFixedTipStates().size(), 4);
-  EXPECT_EQ(modeler.VolatileTipStates().size(), 1);
-
-  // Check again with the source value range reversed, as it should still cause
-  // the same behavior upper bound.
-  source_node->source_value_range = {1500, 0};
-  modeler.StartStroke(&brush_tip, 1);
-  modeler.UpdateStroke(input_modeler_state, inputs);
-  EXPECT_EQ(modeler.NewFixedTipStates().size(), 4);
-  EXPECT_EQ(modeler.VolatileTipStates().size(), 1);
-}
-
 TEST(BrushTipModelerTest, TipWithMultipleTimeSinceInputBehaviors) {
   BrushTipModeler modeler;
   BrushTip brush_tip = {
@@ -831,10 +797,10 @@ TEST(BrushTipModelerTest, TipWithMultipleTimeSinceInputBehaviors) {
           }},
           BrushBehavior{{
               BrushBehavior::SourceNode{
-                  .source = BrushBehavior::Source::kTimeSinceInputInMillis,
+                  .source = BrushBehavior::Source::kTimeSinceInputInSeconds,
                   .source_out_of_range_behavior =
                       BrushBehavior::OutOfRange::kClamp,
-                  .source_value_range = {4000, 0},
+                  .source_value_range = {4, 0},
               },
               BrushBehavior::TargetNode{
                   .target = BrushBehavior::Target::kHeightMultiplier,
@@ -1102,6 +1068,60 @@ TEST(BrushTipModelerTest, TipWithNonZeroParticleGapDistanceAndDuration) {
   EXPECT_THAT(modeler.VolatileTipStates(), IsEmpty());
 }
 
+TEST(BrushTipModelerTest, SmallParticleGapDistanceWithLongInputDistance) {
+  // Create a brush tip with a particle gap of 1 unit, and a set of modeled
+  // inputs that travels a distance of 10^30 units.
+  BrushTip brush_tip = {.particle_gap_distance_scale = 1};
+  InputModelerState input_modeler_state;
+  std::vector<ModeledStrokeInput> inputs = {
+      {.position = Point{0, 0},
+       .traveled_distance = 0,
+       .elapsed_time = Duration32::Zero()},
+      {.position = Point{1e30, 0},
+       .traveled_distance = 1e30,
+       .elapsed_time = Duration32::Seconds(1)},
+  };
+  input_modeler_state.real_input_count = inputs.size();
+  input_modeler_state.stable_input_count = inputs.size();
+  // In theory, the tip modeler should be forced to create 10^30 particle tip
+  // states, which would definitely cause us to run out of memory and crash.
+  BrushTipModeler modeler;
+  modeler.StartStroke(&brush_tip, /* brush_size = */ 2);
+  modeler.UpdateStroke(input_modeler_state, inputs);
+  // The tip modeler should impose some kind of limitation to prevent this. This
+  // particular test has no strong opinions on what that limit should be, other
+  // than that tip modeling should complete successfully, and result in some
+  // nonzero number of tip states that isn't "millions".
+  EXPECT_THAT(modeler.NewFixedTipStates(), SizeIs(AllOf(Gt(0), Le(1000000))));
+}
+
+TEST(BrushTipModelerTest, SmallParticleGapDurationWithLongInputDuration) {
+  // Create a brush tip with a particle duration gap of 1 femtosecond, and a set
+  // of modeled inputs that spans a duration of 1 second.
+  BrushTip brush_tip = {.particle_gap_duration = Duration32::Seconds(1e-15)};
+  InputModelerState input_modeler_state;
+  std::vector<ModeledStrokeInput> inputs = {
+      {.position = Point{0, 0},
+       .traveled_distance = 0,
+       .elapsed_time = Duration32::Zero()},
+      {.position = Point{1, 0},
+       .traveled_distance = 1,
+       .elapsed_time = Duration32::Seconds(1)},
+  };
+  input_modeler_state.real_input_count = inputs.size();
+  input_modeler_state.stable_input_count = inputs.size();
+  // In theory, the tip modeler should be forced to create 10^15 particle tip
+  // states, which would definitely cause us to run out of memory and crash.
+  BrushTipModeler modeler;
+  modeler.StartStroke(&brush_tip, /* brush_size = */ 2);
+  modeler.UpdateStroke(input_modeler_state, inputs);
+  // The tip modeler should impose some kind of limitation to prevent this. This
+  // particular test has no strong opinions on what that limit should be, other
+  // than that tip modeling should complete successfully, and result in some
+  // nonzero number of tip states that isn't "millions".
+  EXPECT_THAT(modeler.NewFixedTipStates(), SizeIs(AllOf(Gt(0), Le(1000000))));
+}
+
 TEST(BrushTipModelerTest, UnstableTargetModifierReplacedWithNull) {
   BrushTipModeler modeler;
   BrushTip brush_tip = {
@@ -1230,6 +1250,40 @@ TEST(BrushTipModelerDeathTest, NanBrushSize) {
   EXPECT_DEATH_IF_SUPPORTED(
       modeler.StartStroke(&tip, std::numeric_limits<float>::quiet_NaN()), "");
 }
+
+TEST(BrushTipModelerDeathTest, UpdateStrokeBeforeStartStroke) {
+  BrushTipModeler modeler;
+  EXPECT_DEATH_IF_SUPPORTED(modeler.UpdateStroke({}, {}), "");
+}
+
+TEST(BrushTipModelerDeathTest, RestartStrokeBeforeStartStroke) {
+  BrushTipModeler modeler;
+  EXPECT_DEATH_IF_SUPPORTED(modeler.RestartStroke(), "");
+}
+
+void CanModelAnyValidBrushTipAndInputs(const BrushTip& brush_tip,
+                                       const StrokeInputBatch& input_batch) {
+  float brush_size = 1;
+  float brush_epsilon = 0.01;
+  // Run an arbitrary `StrokeInputBatch` through the passthrough input modeler
+  // as a way of getting a mostly-arbitrary (but valid) input modeler state and
+  // sequence of modeled inputs.
+  StrokeInputModeler input_modeler;
+  input_modeler.StartStroke(BrushFamily::PassthroughModel{}, brush_epsilon);
+  input_modeler.ExtendStroke(input_batch, StrokeInputBatch(),
+                             Duration32::Zero());
+  // We should be able to apply the `BrushTipModeler` to any valid brush tip and
+  // input sequence, and not crash.
+  BrushTipModeler tip_modeler;
+  tip_modeler.StartStroke(&brush_tip, brush_size);
+  tip_modeler.UpdateStroke(input_modeler.GetState(),
+                           input_modeler.GetModeledInputs());
+  // All resulting tip states should be valid.
+  EXPECT_THAT(tip_modeler.VolatileTipStates(), Each(IsValidBrushTipState()));
+  EXPECT_THAT(tip_modeler.NewFixedTipStates(), Each(IsValidBrushTipState()));
+}
+FUZZ_TEST(BrushTipModelerFuzzTest, CanModelAnyValidBrushTipAndInputs)
+    .WithDomains(ValidBrushTip(), ArbitraryStrokeInputBatch());
 
 }  // namespace
 }  // namespace ink::strokes_internal

@@ -118,6 +118,16 @@ impl Default for MutableSettings {
     }
 }
 
+impl MutableSettings {
+    fn quality(&self, category: Category) -> f32 {
+        match category {
+            Category::Color => self.quality,
+            Category::Alpha => self.quality_alpha,
+            Category::Gainmap => self.quality_gainmap,
+        }
+    }
+}
+
 // Scheme for splitting, combining and/or transforming the input samples to
 // bypass some codec or format limits.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -145,6 +155,15 @@ pub enum Recipe {
     // precision loss (16-bit samples truncated to the 12 most significant
     // bits).
     BitDepthExtension12b4b,
+    // Encode the 12 most significant bits of each input image sample lossily or
+    // losslessly into a base image. The difference between the original and
+    // decoded values of these samples is encoded as a separate 8-bit hidden
+    // image item. The two are combined at decoding into one image with the same
+    // bit depth as the original image. It is backward compatible in the sense
+    // that it is possible to decode only the base image (ignoring the hidden
+    // image item), leading to a valid image but with loss due to precision
+    // truncation and/or compression.
+    BitDepthExtension12b8bOverlap4b,
 }
 
 impl CodecChoice {
@@ -425,6 +444,7 @@ impl Encoder {
                 (8 | 10 | 12, Recipe::None)
                     | (16, Recipe::BitDepthExtension8b8b)
                     | (16, Recipe::BitDepthExtension12b4b)
+                    | (16, Recipe::BitDepthExtension12b8bOverlap4b)
             ) {
                 return AvifError::invalid_argument();
             }
@@ -590,7 +610,9 @@ impl Encoder {
             match final_recipe {
                 Recipe::Auto => unreachable!(),
                 Recipe::None => {}
-                Recipe::BitDepthExtension8b8b | Recipe::BitDepthExtension12b4b => {
+                Recipe::BitDepthExtension8b8b
+                | Recipe::BitDepthExtension12b4b
+                | Recipe::BitDepthExtension12b8bOverlap4b => {
                     if first_image.depth != 16 {
                         return AvifError::invalid_argument();
                     }
@@ -629,7 +651,9 @@ impl Encoder {
             .tiling_mode
             .log2(cell_images[0].width, cell_images[0].height);
         // Encode the AV1 OBUs.
-        for item in &mut self.items {
+        let num_items = self.items.len();
+        for i in 0..num_items {
+            let item = &self.items[i];
             if item.codec.is_none() {
                 continue;
             }
@@ -685,6 +709,11 @@ impl Encoder {
                     )?;
                     image = &bit_depth_extension_image;
                 }
+                Recipe::BitDepthExtension12b8bOverlap4b => {
+                    bit_depth_extension_image =
+                        self.create_bit_depth_extension_12b8b_overlap4b_image(image, item)?;
+                    image = &bit_depth_extension_image;
+                }
             }
 
             let encoder_config = EncoderConfig {
@@ -699,6 +728,7 @@ impl Encoder {
                 scaling_mode: self.settings.mutable.scaling_mode,
                 codec_specific_options: self.codec_specific_options.clone(),
             };
+            let item = &mut self.items[i];
             item.codec.unwrap_mut().encode_image(
                 image,
                 item.category,
@@ -790,7 +820,7 @@ impl Encoder {
             if !item.samples.is_empty() {
                 assert_eq!(item.codec_configuration, None);
                 let is_single_image = self.duration_in_timescales.len() < 2;
-                let is_lossless = self.settings.mutable.quality == 100.0;
+                let is_lossless = self.settings.mutable.quality(item.category) == 100.0;
                 item.codec_configuration = Some(item.codec.unwrap_ref().get_codec_config(
                     &self.image_metadata,
                     is_single_image,

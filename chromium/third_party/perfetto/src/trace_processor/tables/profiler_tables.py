@@ -53,6 +53,9 @@ PROFILER_SMAPS_TABLE = Table(
             cpp_access_duration=CppAccessDuration.POST_FINALIZATION,
         ),
         C('path', CppString()),
+        C('path_trimmed', CppString()),
+        C('aggregate_count', CppUint32()),
+        C('is_deleted', CppBool()),
         C(
             'size_kb',
             CppInt64(),
@@ -132,6 +135,10 @@ PROFILER_SMAPS_TABLE = Table(
             cpp_access=CppAccess.READ,
             cpp_access_duration=CppAccessDuration.POST_FINALIZATION,
         ),
+        C('rss_kb', CppInt64()),
+        C('anonymous_kb', CppInt64()),
+        C('pss_dirty_kb', CppInt64()),
+        C('swap_pss_kb', CppInt64()),
     ],
     tabledoc=TableDoc(
         doc='''
@@ -147,7 +154,14 @@ PROFILER_SMAPS_TABLE = Table(
                 '''Timestamp of the snapshot. Multiple rows will have the same
                 timestamp.''',
             'path':
-                '''The mmaped file, as per /proc/pid/smaps.''',
+                '''The name of the mapping, as per /proc/pid/smaps.''',
+            'path_trimmed':
+                '''Same as `path` but with any trailing " (deleted)" suffix
+                removed.''',
+            'aggregate_count':
+                '''''',
+            'is_deleted':
+                '''''',
             'size_kb':
                 '''Total size of the mapping.''',
             'private_dirty_kb':
@@ -175,7 +189,15 @@ PROFILER_SMAPS_TABLE = Table(
             'locked_kb':
                 '''''',
             'proportional_resident_kb':
-                ''''''
+                '''''',
+            'rss_kb':
+                '''''',
+            'anonymous_kb':
+                '''''',
+            'pss_dirty_kb':
+                '''''',
+            'swap_pss_kb':
+                '''''',
         }))
 
 PACKAGE_LIST_TABLE = Table(
@@ -1229,13 +1251,50 @@ GPU_COUNTER_GROUP_TABLE = Table(
     columns=[
         C('group_id', CppInt32()),
         C('track_id', CppTableId(TRACK_TABLE)),
+        C('name', CppOptional(CppString())),
+        C('description', CppOptional(CppString())),
     ],
     tabledoc=TableDoc(
-        doc='''''',
+        doc='''Maps GPU counter tracks to groups.''',
         group='Misc',
         columns={
-            'group_id': '''''',
-            'track_id': ''''''
+            'group_id':
+                '''Group identifier (enum value for legacy groups, custom
+                ID for producer-defined groups).''',
+            'track_id':
+                '''Track table reference for the counter.''',
+            'name':
+                '''Group name. NULL for legacy enum-based groups.''',
+            'description':
+                '''Group description. NULL for legacy enum-based groups.''',
+        }))
+
+GPU_CONTEXT_TABLE = Table(
+    python_module=__file__,
+    class_name='GpuContextTable',
+    sql_name='__intrinsic_gpu_context',
+    wrapping_sql_view=WrappingSqlView('gpu_context'),
+    columns=[
+        C('context_id', CppUint32()),
+        C('pid', CppOptional(CppUint32())),
+        C('api', CppOptional(CppString())),
+    ],
+    tabledoc=TableDoc(
+        doc='''Maps GPU graphics context IDs to process and API type.
+
+Each row represents a unique graphics context seen in the trace,
+populated from InternedGraphicsContext data attached to
+GpuRenderStageEvent packets.''',
+        group='Misc',
+        columns={
+            'context_id':
+                '''The graphics context handle (GL context, VkDevice,
+                CUDA context, etc.).''',
+            'pid':
+                '''Process ID associated with this context.''',
+            'api':
+                '''Graphics API type (OPEN_GL, VULKAN, OPEN_CL, CUDA,
+                HIP, or UNDEFINED).''',
         }))
 
 # TODO(lalitm): delete this once we have proper tree functions.
@@ -1361,6 +1420,7 @@ ALL_TABLES = [
     AGGREGATE_SAMPLE_TABLE,
     CPU_PROFILE_STACK_SAMPLE_TABLE,
     EXPERIMENTAL_FLAMEGRAPH_TABLE,
+    GPU_CONTEXT_TABLE,
     GPU_COUNTER_GROUP_TABLE,
     HEAP_GRAPH_CLASS_TABLE,
     HEAP_GRAPH_OBJECT_DATA_TABLE,

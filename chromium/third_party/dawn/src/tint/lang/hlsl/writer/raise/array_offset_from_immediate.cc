@@ -133,6 +133,8 @@ struct State {
                         case hlsl::BuiltinFn::kInterlockedAdd:
                         case hlsl::BuiltinFn::kInterlockedMax:
                         case hlsl::BuiltinFn::kInterlockedMin:
+                        case hlsl::BuiltinFn::kInterlockedMax64:
+                        case hlsl::BuiltinFn::kInterlockedMin64:
                         case hlsl::BuiltinFn::kInterlockedAnd:
                         case hlsl::BuiltinFn::kInterlockedOr:
                         case hlsl::BuiltinFn::kInterlockedXor:
@@ -173,6 +175,10 @@ struct State {
                         case hlsl::BuiltinFn::kF32Tof16:
                         case hlsl::BuiltinFn::kF16Tof32:
                         case hlsl::BuiltinFn::kMul:
+                        case hlsl::BuiltinFn::kMultiply:
+                        case hlsl::BuiltinFn::kMultiplyAccumulate:
+                        case hlsl::BuiltinFn::kGet:
+                        case hlsl::BuiltinFn::kSet:
                         case hlsl::BuiltinFn::kPackU8:
                         case hlsl::BuiltinFn::kPackS8:
                         case hlsl::BuiltinFn::kPackClampS8:
@@ -186,6 +192,7 @@ struct State {
                         case hlsl::BuiltinFn::kWaveReadLaneAt:
                         case hlsl::BuiltinFn::kModf:
                         case hlsl::BuiltinFn::kFrexp:
+                        case hlsl::BuiltinFn::kSelect:
                         case hlsl::BuiltinFn::kGatherCmp:
                         case hlsl::BuiltinFn::kGather:
                         case hlsl::BuiltinFn::kGatherAlpha:
@@ -199,6 +206,7 @@ struct State {
                         case hlsl::BuiltinFn::kSampleCmpLevelZero:
                         case hlsl::BuiltinFn::kSampleGrad:
                         case hlsl::BuiltinFn::kSampleLevel:
+                        case hlsl::BuiltinFn::kSplat:
                         case hlsl::BuiltinFn::kNone:
                             break;
                     }

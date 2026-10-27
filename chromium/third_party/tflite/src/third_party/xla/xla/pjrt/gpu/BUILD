@@ -43,6 +43,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -69,6 +70,7 @@ cc_library(
         "//xla:util",
         "//xla:xla_data_proto_cc",
         "//xla:xla_proto_cc",
+        "//xla/backends/cpu:target_machine_options",
         "//xla/backends/gpu/collectives:gpu_clique",
         "//xla/backends/gpu/collectives:gpu_clique_key",
         "//xla/backends/gpu/collectives:gpu_cliques",
@@ -83,7 +85,6 @@ cc_library(
         "//xla/core/collectives:communicator",
         "//xla/core/collectives:rank_id",
         "//xla/hlo/builder:xla_computation",
-        "//xla/pjrt:abstract_tracked_device_buffer",
         "//xla/pjrt:async_work_runner",
         "//xla/pjrt:common_pjrt_client",
         "//xla/pjrt:device_event",
@@ -124,6 +125,7 @@ cc_library(
         "//xla/service:executable",
         "//xla/service:gpu_topology",
         "//xla/service:gpu_topology_proto_cc",
+        "//xla/service:pjrt_gpu_utils",
         "//xla/service:platform_util",
         "//xla/service:shaped_buffer",
         "//xla/service:transfer_manager",
@@ -159,7 +161,6 @@ cc_library(
         "//xla/tsl/util:env_var",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base:core_headers",
-        "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:inlined_vector",
@@ -172,6 +173,7 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
@@ -202,6 +204,14 @@ cc_library(
     ]) + if_rocm([
         # keep sorted
         "@local_config_rocm//rocm:rocm_headers",
+    ]) + if_sycl([
+        # keep sorted
+        "//xla:debug_options_flags",
+        "//xla/service/gpu:gpu_compiler",
+        "//xla/service/gpu:gpu_constants",
+        "//xla/service/gpu:gpu_executable",
+        "//xla/service/gpu:stream_executor_util",
+        "@local_config_sycl//sycl:sycl_headers",
     ]),
 )
 
@@ -361,6 +371,16 @@ xla_test(
             "broken",
             "no_oss",
         ],
+        # See b/491475964 for details.
+        "gb200": [
+            "multi_gpu",
+            "broken",
+        ],
+        # See b/491475964 for details.
+        "gb300": [
+            "multi_gpu",
+            "broken",
+        ],
     },
     backends = ["gpu"],
     env = {
@@ -482,7 +502,6 @@ cc_library(
         ":se_gpu_topology_description",
         "//xla:shape_util",
         "//xla:status_macros",
-        "//xla/backends/cpu:target_machine_options",
         "//xla/backends/gpu/target_config",
         "//xla/client:executable_build_options",
         "//xla/hlo/builder:xla_computation",
@@ -566,6 +585,31 @@ cc_library(
 )
 
 cc_library(
+    name = "se_gpu_pjrt_compiler_sycl_registration",
+    srcs = ["se_gpu_pjrt_compiler_sycl_registration.cc"],
+    compatible_with = [],
+    tags = [
+        "gpu",
+        "oneapi-only",
+    ] + if_google([
+        # TODO(b/456585142): Currently we don't support building the SYCL backend.
+        "notap",
+        "nobuilder",
+        "manual",
+    ]),
+    deps = [
+        ":se_gpu_pjrt_compiler_impl",
+        "//xla/pjrt:pjrt_compiler",
+        "//xla/pjrt:stream_executor_platform_id_mapping",
+        "//xla/service/gpu:intel_gpu_compiler",
+        "//xla/stream_executor/platform:initialize",
+        "//xla/stream_executor/sycl:sycl_platform_id",
+        "@com_google_absl//absl/log:check",
+    ],
+    alwayslink = 1,
+)
+
+cc_library(
     name = "se_gpu_pjrt_compiler",
     hdrs = ["se_gpu_pjrt_compiler.h"],
     # TODO(b/382070262): Migrate users off this target - They should go though the PjRt ABI compatibility layer.
@@ -592,6 +636,8 @@ cc_library(
         ":se_gpu_pjrt_compiler_cuda_registration",
     ]) + if_rocm([
         ":se_gpu_pjrt_compiler_rocm_registration",
+    ]) + if_sycl([
+        ":se_gpu_pjrt_compiler_sycl_registration",
     ]),
 )
 
@@ -617,9 +663,11 @@ xla_test(
         ":se_gpu_topology_description",
         "//xla:literal",
         "//xla:literal_util",
+        "//xla:shape_layout",
         "//xla/backends/cpu:target_machine_options",
         "//xla/backends/gpu/target_config",
         "//xla/hlo/builder:xla_computation",
+        "//xla/hlo/ir:hlo",
         "//xla/hlo/parser:hlo_parser",
         "//xla/hlo/testlib:test",
         "//xla/mlir_hlo",
@@ -639,6 +687,7 @@ xla_test(
         "//xla/stream_executor:stream_executor_h",
         "//xla/stream_executor/cuda:cuda_platform_id",
         "//xla/tests:literal_test_util",
+        "//xla/tsl/platform:status_macros",
         "//xla/tsl/platform:statusor",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_matchers",
@@ -649,6 +698,7 @@ xla_test(
         "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Parser",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -676,6 +726,7 @@ xla_test(
         "//xla/service:compiler",
         "//xla/tests:literal_test_util",
         "//xla/tsl/platform:statusor",
+        "@com_google_absl//absl/base",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
@@ -699,6 +750,7 @@ cc_library(
     ]),
     deps = [
         "//xla:shape_util",
+        "//xla:util",
         "//xla:xla_data_proto_cc",
         "//xla/pjrt:pjrt_common",
         "//xla/pjrt:pjrt_compiler",
@@ -750,7 +802,9 @@ cc_library(
         "//xla/pjrt:pjrt_abi_version",
         "//xla/pjrt:pjrt_common",
         "//xla/pjrt:stream_executor_pjrt_abi_version",
+        "//xla/pjrt/proto:pjrt_abi_version_proto_cc",
         "//xla/stream_executor/abi:runtime_abi_version",
+        "//xla/stream_executor/abi:runtime_abi_version_proto_cc",
         "//xla/stream_executor/abi:runtime_abi_version_resolver",
         "//xla/tsl/platform:status_macros",
         "@com_google_absl//absl/base:nullability",
@@ -766,8 +820,11 @@ xla_cc_test(
         ":se_gpu_pjrt_runtime_abi_version",
         "//xla/pjrt:pjrt_common",
         "//xla/pjrt:stream_executor_pjrt_abi_version",
+        "//xla/pjrt/proto:pjrt_abi_version_proto_cc",
         "//xla/stream_executor/abi:executable_abi_version",
+        "//xla/stream_executor/abi:executable_abi_version_proto_cc",
         "//xla/stream_executor/abi:mock_runtime_abi_version",
+        "//xla/stream_executor/abi:runtime_abi_version_proto_cc",
         "//xla/tsl/util/proto:proto_matchers",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_matchers",
@@ -799,7 +856,7 @@ xla_test(
         "nvgpu_any",
     ],
     # Each test case is a separate process since cuda stream errors are sticky.
-    shard_count = 2,
+    shard_count = 4,
     tags = [
         "gpu",
     ],

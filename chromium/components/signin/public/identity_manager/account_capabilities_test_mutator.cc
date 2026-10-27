@@ -11,10 +11,15 @@
 #include "build/build_config.h"
 #include "components/signin/internal/identity_manager/account_capabilities_constants.h"
 #include "components/signin/public/base/signin_switches.h"
+#include "components/signin/public/identity_manager/account_info.h"
 
 AccountCapabilitiesTestMutator::AccountCapabilitiesTestMutator(
     AccountCapabilities* capabilities)
     : capabilities_(capabilities) {}
+
+AccountCapabilitiesTestMutator::AccountCapabilitiesTestMutator(
+    AccountInfo* account_info)
+    : capabilities_(&account_info->capabilities) {}
 
 // static
 base::span<const std::string_view>
@@ -23,7 +28,7 @@ AccountCapabilitiesTestMutator::GetSupportedAccountCapabilityNames() {
 }
 
 // clang-format off
-// keep-sorted start newline_separated=yes sticky_prefixes=#if group_prefixes=#endif block=yes
+// keep-sorted start newline_separated=yes sticky_prefixes=#if,BUILDFLAG group_prefixes=#endif block=yes
 // clang-format on
 void AccountCapabilitiesTestMutator::set_can_fetch_family_member_info(
     bool value) {
@@ -83,7 +88,8 @@ void AccountCapabilitiesTestMutator::set_can_sign_in_to_chrome(bool value) {
 }
 #endif
 
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_IOS)
 void AccountCapabilitiesTestMutator::set_can_submit_feedback(bool value) {
   capabilities_->capabilities_map_[kCanSubmitFeedbackInChromeCapabilityName] =
       value;
@@ -210,6 +216,23 @@ void AccountCapabilitiesTestMutator::set_is_subject_to_parental_controls(
   capabilities_->capabilities_map_[kIsSubjectToParentalControlsCapabilityName] =
       value;
 }
+
+#if BUILDFLAG(IS_IOS)
+void AccountCapabilitiesTestMutator::set_must_fetch_apple_age_range_in_chrome(
+    bool value) {
+  capabilities_
+      ->capabilities_map_[kMustFetchAppleAgeRangeInChromeCapabilityName] =
+      value;
+}
+#endif
+
+#if BUILDFLAG(IS_IOS)
+void AccountCapabilitiesTestMutator::set_must_skip_apple_age_range_in_chrome(
+    bool value) {
+  capabilities_
+      ->capabilities_map_[kMustSkipAppleAgeRangeInChromeCapabilityName] = value;
+}
+#endif
 
 // keep-sorted end
 

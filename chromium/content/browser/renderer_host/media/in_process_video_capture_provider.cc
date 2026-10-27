@@ -51,7 +51,8 @@ void InProcessVideoCaptureProvider::OpenNativeScreenCapturePicker(
     base::OnceCallback<void(DesktopMediaID::Id)> created_callback,
     base::OnceCallback<void(webrtc::DesktopCapturer::Source)> picker_callback,
     base::OnceCallback<void()> cancel_callback,
-    base::OnceCallback<void()> error_callback) {
+    base::OnceCallback<void()> error_callback,
+    base::OnceCallback<void(DesktopMediaID::Id)> stop_audio_callback) {
   CHECK(native_screen_capture_picker_);
 
   device_task_runner_->PostTask(
@@ -59,7 +60,8 @@ void InProcessVideoCaptureProvider::OpenNativeScreenCapturePicker(
       base::BindOnce(&NativeScreenCapturePicker::Open,
                      native_screen_capture_picker_->GetWeakPtr(), type,
                      std::move(created_callback), std::move(picker_callback),
-                     std::move(cancel_callback), std::move(error_callback)));
+                     std::move(cancel_callback), std::move(error_callback),
+                     std::move(stop_audio_callback)));
 }
 
 void InProcessVideoCaptureProvider::CloseNativeScreenCapturePicker(
@@ -73,5 +75,24 @@ void InProcessVideoCaptureProvider::CloseNativeScreenCapturePicker(
       base::BindOnce(&NativeScreenCapturePicker::Close,
                      native_screen_capture_picker_->GetWeakPtr(), device_id));
 }
+
+#if BUILDFLAG(IS_MAC)
+void InProcessVideoCaptureProvider::GetApplicationAudioCaptureId(
+    DesktopMediaID::Id session_id,
+    base::OnceCallback<
+        void(const std::optional<desktop_capture::ApplicationAudioCaptureId>&)>
+        callback) {
+  if (!native_screen_capture_picker_) {
+    std::move(callback).Run(std::nullopt);
+    return;
+  }
+
+  device_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&NativeScreenCapturePicker::GetApplicationAudioCaptureId,
+                     native_screen_capture_picker_->GetWeakPtr(), session_id,
+                     std::move(callback)));
+}
+#endif
 
 }  // namespace content

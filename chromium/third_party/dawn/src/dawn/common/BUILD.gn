@@ -103,10 +103,7 @@ clang_plugin("raw_ptr_check") {
 
 config("internal_config") {
   configs = []
-  include_dirs = [
-    "${target_gen_dir}/../../../src",
-    "${dawn_root}/src",
-  ]
+  include_dirs = [ "${target_gen_dir}/../../../src" ]
 
   defines = []
   if (dawn_always_assert || dcheck_always_on || is_debug ||
@@ -115,8 +112,8 @@ config("internal_config") {
   }
 
   if (build_with_chromium || use_fuzzing_engine) {
-    # Does a hard abort when an assertion fails so that fuzzers catch and parse the failure.
-    # Also call abort() so chrome can dump crash stach in console.
+    # Does a hard abort when an assertion fails so that fuzzers catch and parse
+    # the failure. Also call abort() so chrome can dump crash stack in console.
     defines += [ "DAWN_ABORT_ON_ASSERT" ]
   }
 
@@ -170,6 +167,10 @@ config("internal_config") {
     defines += [ "DAWN_USE_WINDOWS_UI" ]
   }
 
+  if (dawn_supports_glfw_for_windowing) {
+    defines += [ "DAWN_SUPPORTS_GLFW_FOR_WINDOWING" ]
+  }
+
   if (dawn_enable_error_injection) {
     defines += [ "DAWN_ENABLE_ERROR_INJECTION" ]
   }
@@ -188,7 +189,8 @@ config("internal_config") {
   cflags = []
 
   if (is_clang) {
-    # We use __builtin_assume liberally in DAWN_ASSERT, allow ignoring side-effects there.
+    # We use __builtin_assume liberally in DAWN_ASSERT, allow ignoring
+    # side-effects there.
     cflags += [ "-Wno-assume" ]
 
     # Flags use of __COUNTER__, which is used in histogram macros that were
@@ -239,7 +241,8 @@ config("internal_config") {
 
     if (is_win) {
       cflags += [
-        # clang-cl doesn't know -pedantic, pass it explicitly to the clang driver
+        # clang-cl doesn't know -pedantic, pass it explicitly to the clang
+        # driver
         "/clang:-pedantic",
 
         # Allow the use of __uuidof()
@@ -255,10 +258,10 @@ config("internal_config") {
     # MSVC considers these invalid switch values. crbug.com/dawn/397.
     cflags += [ "/wd4063" ]
 
-    # MSVC things that a switch over all the enum values of an enum class is
-    # not sufficient to cover all control paths. Turn off this warning so that
-    # the respective clang warning tells us where to add switch cases
-    # (otherwise we have to add default: DAWN_UNREACHABLE() that silences clang too)
+    # MSVC things that a switch over all the enum values of an enum class is not
+    # sufficient to cover all control paths. Turn off this warning so that the
+    # respective clang warning tells us where to add switch cases (otherwise we
+    # have to add default: DAWN_UNREACHABLE() that silences clang too)
     cflags += [ "/wd4715" ]
 
     # MSVC needs a flag to enable a standard-compliant preprocessor.
@@ -281,23 +284,8 @@ config("internal_config") {
 # Common dawn library
 ###############################################################################
 
-dawn_generator("dawn_version_gen") {
-  script = "${dawn_root}/generator/dawn_version_generator.py"
-  args = [
-    "--dawn-dir",
-    rebase_path("${dawn_root}", root_build_dir),
-  ]
-
-  # We can use the explicit version file if it is generated instead of relying
-  # on the existence of git.
-  if (dawn_version_file != "") {
-    args += [
-      "--version-file",
-      rebase_path(dawn_version_file, root_build_dir),
-    ]
-  }
-
-  outputs = [ "src/dawn/common/Version_autogen.h" ]
+group("dawn_version_gen") {
+  public_deps = [ "${dawn_root}/src/dawn:dawn_version_gen" ]
 }
 
 dawn_generator("dawn_gpu_info_gen") {
@@ -354,11 +342,8 @@ if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android ||
       "Mutex.h",
       "MutexProtected.h",
       "NSRef.h",
-      "NonCopyable.h",
-      "NonMovable.h",
       "Numeric.h",
       "PlacementAllocated.h",
-      "Platform.h",
       "Preprocessor.h",
       "Range.h",
       "Ref.h",
@@ -378,6 +363,7 @@ if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android ||
       "StackAllocated.h",
       "StringViewUtils.cpp",
       "StringViewUtils.h",
+      "Strings.h",
       "SystemUtils.cpp",
       "SystemUtils.h",
       "ThreadLocal.cpp",
@@ -385,7 +371,6 @@ if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android ||
       "Time.h",
       "TypeTraits.h",
       "TypedInteger.h",
-      "UnderlyingType.h",
       "WGSLFeatureMapping.h",
       "WeakRef.h",
       "WeakRefSupport.cpp",
@@ -439,7 +424,6 @@ if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android ||
       sources += [
         "WindowsUtils.cpp",
         "WindowsUtils.h",
-        "windows_with_undefs.h",
       ]
     }
     if (dawn_enable_vulkan) {

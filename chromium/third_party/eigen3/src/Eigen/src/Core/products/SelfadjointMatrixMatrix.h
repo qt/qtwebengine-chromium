@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SELFADJOINT_MATRIX_MATRIX_H
 #define EIGEN_SELFADJOINT_MATRIX_MATRIX_H
@@ -68,22 +69,22 @@ struct symm_pack_lhs {
             ? peeled_mc_half + ((rows - peeled_mc_half) / (QuarterPacketSize)) * (QuarterPacketSize)
             : 0;
 
-    if (Pack1 >= 3 * PacketSize)
-      for (Index i = 0; i < peeled_mc3; i += 3 * PacketSize) pack<3 * PacketSize>(blockA, lhs, cols, i, count);
+    EIGEN_IF_CONSTEXPR(Pack1 >= 3 * PacketSize)
+    for (Index i = 0; i < peeled_mc3; i += 3 * PacketSize) pack<3 * PacketSize>(blockA, lhs, cols, i, count);
 
-    if (Pack1 >= 2 * PacketSize)
-      for (Index i = peeled_mc3; i < peeled_mc2; i += 2 * PacketSize) pack<2 * PacketSize>(blockA, lhs, cols, i, count);
+    EIGEN_IF_CONSTEXPR(Pack1 >= 2 * PacketSize)
+    for (Index i = peeled_mc3; i < peeled_mc2; i += 2 * PacketSize) pack<2 * PacketSize>(blockA, lhs, cols, i, count);
 
-    if (Pack1 >= 1 * PacketSize)
-      for (Index i = peeled_mc2; i < peeled_mc1; i += 1 * PacketSize) pack<1 * PacketSize>(blockA, lhs, cols, i, count);
+    EIGEN_IF_CONSTEXPR(Pack1 >= 1 * PacketSize)
+    for (Index i = peeled_mc2; i < peeled_mc1; i += 1 * PacketSize) pack<1 * PacketSize>(blockA, lhs, cols, i, count);
 
-    if (HasHalf && Pack1 >= HalfPacketSize)
-      for (Index i = peeled_mc1; i < peeled_mc_half; i += HalfPacketSize)
-        pack<HalfPacketSize>(blockA, lhs, cols, i, count);
+    EIGEN_IF_CONSTEXPR(HasHalf && Pack1 >= HalfPacketSize)
+    for (Index i = peeled_mc1; i < peeled_mc_half; i += HalfPacketSize)
+      pack<HalfPacketSize>(blockA, lhs, cols, i, count);
 
-    if (HasQuarter && Pack1 >= QuarterPacketSize)
-      for (Index i = peeled_mc_half; i < peeled_mc_quarter; i += QuarterPacketSize)
-        pack<QuarterPacketSize>(blockA, lhs, cols, i, count);
+    EIGEN_IF_CONSTEXPR(HasQuarter && Pack1 >= QuarterPacketSize)
+    for (Index i = peeled_mc_half; i < peeled_mc_quarter; i += QuarterPacketSize)
+      pack<QuarterPacketSize>(blockA, lhs, cols, i, count);
 
     // do the same with mr==1
     for (Index i = peeled_mc_quarter; i < rows; i++) {
@@ -111,11 +112,11 @@ struct symm_pack_rhs {
       for (Index k = k2; k < end_k; k++) {
         blockB[count + 0] = rhs(k, j2 + 0);
         blockB[count + 1] = rhs(k, j2 + 1);
-        if (nr >= 4) {
+        EIGEN_IF_CONSTEXPR(nr >= 4) {
           blockB[count + 2] = rhs(k, j2 + 2);
           blockB[count + 3] = rhs(k, j2 + 3);
         }
-        if (nr >= 8) {
+        EIGEN_IF_CONSTEXPR(nr >= 8) {
           blockB[count + 4] = rhs(k, j2 + 4);
           blockB[count + 5] = rhs(k, j2 + 5);
           blockB[count + 6] = rhs(k, j2 + 6);
@@ -127,7 +128,7 @@ struct symm_pack_rhs {
 
     // second part: diagonal block
     Index end8 = nr >= 8 ? (std::min)(k2 + rows, packet_cols8) : k2;
-    if (nr >= 8) {
+    EIGEN_IF_CONSTEXPR(nr >= 8) {
       for (Index j2 = k2; j2 < end8; j2 += 8) {
         // again we can split vertically in three different parts (transpose, symmetric, normal)
         // transpose
@@ -169,7 +170,7 @@ struct symm_pack_rhs {
         }
       }
     }
-    if (nr >= 4) {
+    EIGEN_IF_CONSTEXPR(nr >= 4) {
       for (Index j2 = end8; j2 < (std::min)(k2 + rows, packet_cols4); j2 += 4) {
         // again we can split vertically in three different parts (transpose, symmetric, normal)
         // transpose
@@ -205,7 +206,7 @@ struct symm_pack_rhs {
     }
 
     // third part: transposed
-    if (nr >= 8) {
+    EIGEN_IF_CONSTEXPR(nr >= 8) {
       for (Index j2 = k2 + rows; j2 < packet_cols8; j2 += 8) {
         for (Index k = k2; k < end_k; k++) {
           blockB[count + 0] = numext::conj(rhs(j2 + 0, k));
@@ -220,7 +221,7 @@ struct symm_pack_rhs {
         }
       }
     }
-    if (nr >= 4) {
+    EIGEN_IF_CONSTEXPR(nr >= 4) {
       for (Index j2 = (std::max)(packet_cols8, k2 + rows); j2 < packet_cols4; j2 += 4) {
         for (Index k = k2; k < end_k; k++) {
           blockB[count + 0] = numext::conj(rhs(j2 + 0, k));

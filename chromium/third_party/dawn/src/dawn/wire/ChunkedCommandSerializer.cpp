@@ -25,14 +25,10 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/439062058): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
+#include "src/dawn/wire/ChunkedCommandSerializer.h"
 
-#include "dawn/wire/ChunkedCommandSerializer.h"
-
-#include "dawn/common/Assert.h"
+#include "src/dawn/common/Assert.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::wire {
 
@@ -68,7 +64,7 @@ void ChunkedCommandSerializer::SerializeChunkedCommand(const char* allocatedBuff
 
         SerializeCommand(cmd);
 
-        allocatedBuffer += cmd.chunkSize;
+        DAWN_UNSAFE_TODO(allocatedBuffer += cmd.chunkSize);
         remainingSize -= cmd.chunkSize;
     }
 }

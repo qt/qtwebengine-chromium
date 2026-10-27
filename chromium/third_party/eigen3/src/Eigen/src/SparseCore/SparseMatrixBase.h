@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SPARSEMATRIXBASE_H
 #define EIGEN_SPARSEMATRIXBASE_H
@@ -68,7 +69,7 @@ class SparseMatrixBase : public EigenBase<Derived> {
      * it is set to the \a Dynamic constant.
      * \sa MatrixBase::rows(), MatrixBase::cols(), RowsAtCompileTime, SizeAtCompileTime */
 
-    SizeAtCompileTime = (internal::size_of_xpr_at_compile_time<Derived>::ret),
+    SizeAtCompileTime = (internal::size_of_xpr_at_compile_time<Derived>::value),
     /**< This is equal to the number of coefficients, i.e. the number of
      * rows times the number of columns, or to \a Dynamic if this is not
      * known at compile-time. \sa RowsAtCompileTime, ColsAtCompileTime */
@@ -225,9 +226,9 @@ class SparseMatrixBase : public EigenBase<Derived> {
 #ifndef EIGEN_NO_IO
   friend std::ostream& operator<<(std::ostream& s, const SparseMatrixBase& m) {
     using Nested = typename Derived::Nested;
-    using NestedCleaned = typename internal::remove_all<Nested>::type;
+    using NestedCleaned = internal::remove_all_t<Nested>;
 
-    if (Flags & RowMajorBit) {
+    EIGEN_IF_CONSTEXPR(Flags & RowMajorBit) {
       Nested nm(m.derived());
       internal::evaluator<NestedCleaned> thisEval(nm);
 
@@ -267,7 +268,8 @@ class SparseMatrixBase : public EigenBase<Derived> {
         }
         s << std::endl;
       }
-    } else {
+    }
+    else {
       Nested nm(m.derived());
       internal::evaluator<NestedCleaned> thisEval(nm);
       if (m.cols() == 1) {

@@ -33,6 +33,7 @@
 #include "build/build_config.h"
 #include "media/gpu/chromeos/fourcc.h"
 #include "media/gpu/media_gpu_export.h"
+#include "media/gpu/vaapi/vaapi_status.h"
 #include "media/gpu/vaapi/vaapi_utils.h"
 #include "media/video/video_decode_accelerator.h"
 #include "media/video/video_encode_accelerator.h"
@@ -42,6 +43,10 @@ namespace gfx {
 class NativePixmap;
 class NativePixmapDmaBuf;
 class Rect;
+}  // namespace gfx
+
+namespace gpu {
+struct GPUInfo;
 }
 
 namespace viz {
@@ -459,8 +464,8 @@ class MEDIA_GPU_EXPORT VaapiWrapper
   // Implementations of the pixmap exporter for both types of VASurface.
   // See ExportVASurfaceAsNativePixmapDmaBufUnwrapped() for further
   // documentation.
-  std::unique_ptr<NativePixmapAndSizeInfo> ExportVASurfaceAsNativePixmapDmaBuf(
-      const ScopedVASurface& scoped_va_surface);
+  VaapiStatus::Or<std::unique_ptr<NativePixmapAndSizeInfo>>
+  ExportVASurfaceAsNativePixmapDmaBuf(const ScopedVASurface& scoped_va_surface);
 
   // Synchronize the VASurface explicitly. This is useful when sharing a surface
   // between contexts.
@@ -598,7 +603,8 @@ class MEDIA_GPU_EXPORT VaapiWrapper
   // Initialize static data before sandbox is enabled.
   static void PreSandboxInitialization(
       bool allow_disabling_global_lock = false,
-      const gpu::GpuDriverBugWorkarounds* workarounds = nullptr);
+      const gpu::GpuDriverBugWorkarounds* workarounds = nullptr,
+      const gpu::GPUInfo* gpu_info = nullptr);
 
   // vaDestroySurfaces() a vector or a single VASurfaceID.
   virtual void DestroySurfaces(std::vector<VASurfaceID> va_surfaces);
@@ -657,7 +663,7 @@ class MEDIA_GPU_EXPORT VaapiWrapper
   //
   // Returns nullptr on failure, or if the exported surface can't contain
   // |va_surface_size|.
-  std::unique_ptr<NativePixmapAndSizeInfo>
+  VaapiStatus::Or<std::unique_ptr<NativePixmapAndSizeInfo>>
   ExportVASurfaceAsNativePixmapDmaBufUnwrapped(
       VASurfaceID va_surface_id,
       const gfx::Size& va_surface_size);

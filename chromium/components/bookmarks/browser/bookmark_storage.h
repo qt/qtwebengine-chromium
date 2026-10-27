@@ -78,13 +78,11 @@ class BookmarkStorage
   // `encrypted_file_path` (appending suffix kBackupExtension).
   //
   // All disk writes will be executed as a task in a backend task runner.
-  BookmarkStorage(
-      const BookmarkModel* model,
-      PermanentNodeSelection permanent_node_selection,
-      const scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-          encryptor,
-      const base::FilePath& clear_text_file_path,
-      const base::FilePath& encrypted_file_path);
+  BookmarkStorage(const BookmarkModel* model,
+                  PermanentNodeSelection permanent_node_selection,
+                  scoped_refptr<const os_crypt_async::Encryptor> encryptor,
+                  const base::FilePath& clear_text_file_path,
+                  const base::FilePath& encrypted_file_path);
 
   BookmarkStorage(const BookmarkStorage&) = delete;
   BookmarkStorage& operator=(const BookmarkStorage&) = delete;
@@ -105,12 +103,18 @@ class BookmarkStorage
   // If there is a pending write, performs it immediately.
   void SaveNowIfScheduledForTesting();
 
-  // Saves the bookmarks to the clear text or encrypted file right away based on
-  // `encryption_type`.
+  // Saves the given `json_content` to the clear text or encrypted file right
+  // away based on `encryption_type`. The 'json_content' should be a clear text
+  // JSON string coming from a bookmarks file that was properly loaded. It will
+  // be encrypted if `encryption_type` is StorageFileEncryptionType::kEncrypted.
   //
   // The other file will not be touched. This write operation is scheduled on
   // the backend task runner.
-  void SaveToSingleFileNow(StorageFileEncryptionType encryption_type);
+  //
+  // This function will be a no-op if ScheduleSave() has been called at least
+  // once.
+  void SaveSingleFileIfNoPreviousSave(StorageFileEncryptionType encryption_type,
+                                      std::string json_content);
 
   base::WeakPtr<BookmarkStorage> AsWeakPtr() {
     return weak_factory_.GetWeakPtr();
@@ -146,8 +150,7 @@ class BookmarkStorage
 
   // Used to hold the encryptor that is shared between BookmarkStorage and the
   // background sequence.
-  const scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-      encryptor_;
+  const scoped_refptr<const os_crypt_async::Encryptor> encryptor_;
 
   // The encryption type of the primary file.
   const StorageFileEncryptionType primary_file_encryption_type_;
@@ -164,6 +167,10 @@ class BookmarkStorage
 
   // Used to track the frequency of saves starting from the first save.
   base::TimeTicks last_scheduled_save_;
+
+  // Used to track whether the ScheduleSave() function has been called at least
+  // once.
+  bool was_scheduled_save_ever_called_ = false;
 
   base::WeakPtrFactory<BookmarkStorage> weak_factory_{this};
 };

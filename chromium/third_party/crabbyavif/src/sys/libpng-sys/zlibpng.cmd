@@ -7,7 +7,7 @@ cmake -DBUILD_SHARED_LIBS=OFF ..
 make
 cd ../..
 
-git clone -b v1.6.51 --depth 1 https://github.com/glennrp/libpng.git
+git clone -b v1.6.58 --depth 1 https://github.com/glennrp/libpng.git
 cd libpng
 mkdir build
 cd build

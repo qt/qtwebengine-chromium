@@ -15,6 +15,8 @@
 #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
 #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
 #include "third_party/blink/renderer/core/html/html_body_element.h"
+#include "third_party/blink/renderer/core/html/html_element.h"
+#include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_transformable_container.h"
@@ -271,6 +273,10 @@ CompositingReasons CompositingReasonsForViewportScrollEffect(
     }
   }
 
+  // NOTE: The style-level checks here (position: fixed with bottom-relative or
+  // safe-area-inset-relative positioning) are mirrored in
+  // LayoutBox::StyleDidChange() to invalidate paint properties on the next
+  // document lifecycle update. Keep the two in sync.
   if (layout_object.StyleRef().IsFixedToBottom()) {
     reasons |= CompositingReason::kFixedPosition |
                CompositingReason::kAffectedByOuterViewportBoundsDelta;
@@ -372,7 +378,8 @@ CompositingReasons CompositingReasonFinder::DirectReasonsForPaintProperties(
   auto* element = DynamicTo<Element>(object.GetNode());
   if (element && RuntimeEnabledFeatures::CanvasDrawElementEnabled(
                      object.GetDocument().GetExecutionContext())) {
-    if (element->IsInCanvasSubtree()) [[unlikely]] {
+    if (element->IsInCanvasSubtree() &&
+        !object.StyleRef().IsRenderedInTopLayer(*element)) [[unlikely]] {
       auto* canvas_parent =
           DynamicTo<HTMLCanvasElement>(element->parentElement());
       if (IsA<LayoutBox>(object) && canvas_parent &&
@@ -388,6 +395,13 @@ CompositingReasons CompositingReasonFinder::DirectReasonsForPaintProperties(
   }
 
   reasons |= CompositingReasonsFor3DSceneLeaf(object);
+
+  if (auto* html_element = DynamicTo<HTMLElement>(element);
+      html_element &&
+      html_element->IsUnboundedElementActive()) {
+    DCHECK(RuntimeEnabledFeatures::UnboundedElementEnabled());
+    reasons |= CompositingReason::kUnboundedElement;
+  }
 
   if (object.CanHaveAdditionalCompositingReasons())
     reasons |= object.AdditionalCompositingReasons();

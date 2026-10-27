@@ -30,7 +30,6 @@
 #include "printing/printed_document.h"
 #include "printing/printed_page_win.h"
 #include "printing/printing_context_system_dialog_win.h"
-#include "printing/printing_features.h"
 #include "printing/printing_utils.h"
 #include "printing/units.h"
 #include "skia/ext/skia_utils_win.h"
@@ -353,11 +352,6 @@ mojom::ResultCode PrintingContextWin::NewDocument(
   }
 #endif
 
-  if (base::FeatureList::IsEnabled(printing::features::kUseXpsForPrinting)) {
-    // This is all the new document context needed when using XPS.
-    return mojom::ResultCode::kSuccess;
-  }
-
   // Need more context setup when using GDI.
 
   // Register the application's AbortProc function with GDI.
@@ -417,12 +411,15 @@ mojom::ResultCode PrintingContextWin::RenderPage(const PrintedPage& page,
         content_area.y() - page_setup.printable_area().y(),
         page.shrink_factor());
 
-    if (::StartPage(context_) <= 0)
+    if (::StartPage(context_) <= 0) {
       return mojom::ResultCode::kFailed;
-    bool played_back = page.metafile()->SafePlayback(context_);
-    DCHECK(played_back);
-    if (::EndPage(context_) <= 0)
+    }
+    if (!page.metafile()->SafePlayback(context_)) {
       return mojom::ResultCode::kFailed;
+    }
+    if (::EndPage(context_) <= 0) {
+      return mojom::ResultCode::kFailed;
+    }
   }
 
   return mojom::ResultCode::kSuccess;
@@ -432,8 +429,6 @@ mojom::ResultCode PrintingContextWin::PrintDocument(
     const MetafilePlayer& metafile,
     const PrintSettings& settings,
     uint32_t num_pages) {
-  // TODO(crbug.com/40100562)
-  NOTIMPLEMENTED();
   return mojom::ResultCode::kFailed;
 }
 

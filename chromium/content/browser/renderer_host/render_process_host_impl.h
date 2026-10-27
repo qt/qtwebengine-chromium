@@ -249,6 +249,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   unsigned int GetFrameDepth() override;
   bool GetIntersectsViewport() override;
   bool IsForTopChromeWebUI() const override;
+  bool ShouldSendGpuChannelEarly() const override;
   bool IsForGuestsOnly() override;
   bool IsJitDisabled() override;
   bool AreV8OptimizationsDisabled() override;
@@ -528,6 +529,14 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // provided by |site_instance|.
   static bool MayReuseAndIsSuitable(RenderProcessHost* host,
                                     SiteInstanceImpl* site_instance);
+
+  // Returns true if there is at least one "warm" (pending, committed, or
+  // delayed shutdown) process that is locked to `site_info` and suitable
+  // for reuse in `isolation_context`.
+  static bool HasWarmLockedProcess(BrowserContext* browser_context,
+                                   const IsolationContext& isolation_context,
+                                   const SiteInfo& site_info,
+                                   ProcessReusePolicy process_reuse_policy);
 
   // Returns true if RenderProcessHost shutdown should be delayed by a few
   // seconds to allow the subframe's process to be potentially reused. This aims
@@ -1379,8 +1388,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
 #if BUILDFLAG(IS_ANDROID)
   // Highest importance of all clients that contribute priority.
   ChildProcessImportance effective_importance_ = ChildProcessImportance::NORMAL;
-  // This is true if at least one of the priority clients is active.
-  bool has_active_clients_ = true;
 #endif
 
   // Clients that contribute priority to this process.
@@ -1424,10 +1431,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // The globally-unique identifier for this RenderProcessHost.
   const ChildProcessId id_;
 
-  // This field is not a raw_ptr<> because problems related to passing to a
-  // templated && parameter, which is later forwarded to something that doesn't
-  // vibe with raw_ptr<T>.
-  RAW_PTR_EXCLUSION BrowserContext* browser_context_ = nullptr;
+  // The BrowserContext this RenderProcessHost exists within.
+  raw_ptr<BrowserContext> browser_context_ = nullptr;
 
   // Owned by `browser_context_`.
   raw_ptr<StoragePartitionImpl> storage_partition_impl_;

@@ -948,6 +948,7 @@ Status ExecuteSwitchToWindow(Session* session,
 
   // Find active web page view for each tab.
   std::unordered_map<std::string, WebView*> tab_to_active_webview;
+  std::vector<std::unique_ptr<WebViewHolder>> web_view_locks;
   for (auto& tab_id : tab_view_ids) {
     WebView* active_page = nullptr;
     status = session->chrome->GetActivePageByWebViewId(tab_id, &active_page,
@@ -958,6 +959,7 @@ Status ExecuteSwitchToWindow(Session* session,
       }
       return status;
     }
+    web_view_locks.push_back(active_page->GetHolder());
     tab_to_active_webview[tab_id] = active_page;
   }
 
@@ -1509,6 +1511,7 @@ Status ExecuteSetNetworkConnection(Session* session,
       }
       return status;
     }
+    std::unique_ptr<WebViewHolder> scoped_web_view_lock = web_view->GetHolder();
     web_view->OverrideNetworkConditions(
         *session->overridden_network_conditions);
   }
@@ -1763,24 +1766,15 @@ Status ExecuteUpdateVirtualPressureSource(Session* session,
     return Status(kInvalidArgument, "'type' must be a string");
   }
 
-  const std::string* state = params.FindString("sample");
-  if (!state) {
+  const std::string* sample = params.FindString("sample");
+  if (!sample) {
     return Status(kInvalidArgument, "'sample' must be a string");
   }
 
   base::DictValue body;
   body.Set("source", *type);
-  body.Set("state", *state);
-
-  std::optional<double> maybe_estimate =
-      params.FindDouble("own_contribution_estimate");
-  if (!maybe_estimate.has_value()) {
-    body.Set("ownContributionEstimate", -1.0);
-  } else {
-    body.Set("ownContributionEstimate", maybe_estimate.value());
-  }
-
-  return web_view->SendCommand("Emulation.setPressureDataOverride", body);
+  body.Set("state", *sample);
+  return web_view->SendCommand("Emulation.setPressureStateOverride", body);
 }
 
 Status ExecuteRemoveVirtualPressureSource(Session* session,

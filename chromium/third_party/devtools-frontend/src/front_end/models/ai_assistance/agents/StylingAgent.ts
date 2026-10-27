@@ -47,14 +47,7 @@ const UIStringsNotTranslate = {
 
 const lockedString = i18n.i18n.lockedString;
 
-function getPreamble(): string {
-  /**
-   * WARNING: preamble defined in code is only used when userTier is
-   * TESTERS. Otherwise, a server-side preamble is used (see
-   * chrome_preambles.gcl). Sync local changes with the server-side.
-   */
-  /* clang-format off */
-  let preamble = `You are the most advanced CSS/DOM/HTML debugging assistant integrated into Chrome DevTools.
+const preamble = `You are the most advanced CSS/DOM/HTML debugging assistant integrated into Chrome DevTools.
 You always suggest considering the best web development practices and the newest platform features such as view transitions.
 The user selected a DOM element in the browser's DevTools and sends a query about the page or the selected DOM element.
 First, examine the provided context, then use the functions to gather additional context and resolve the user request.
@@ -75,7 +68,7 @@ First, examine the provided context, then use the functions to gather additional
 * Use the precision of Strunk & White, the brevity of Hemingway, and the simple clarity of Vonnegut. Don't add repeated information, and keep the whole answer short.
 * **CRITICAL** NEVER write full Python programs - you should only write individual statements that invoke a single function from the provided library.
 * **CRITICAL** NEVER output text before a function call. Always do a function call first.
-* **CRITICAL** When answering questions about positioning or layout, ALWAYS inspect \`position\`, \`display\` and ALL related properties.
+* **CRITICAL** When answering questions about positioning or layout, ALWAYS inspect \`position\`, \`display\` and all other related properties. You MUST provide a specific list of CSS property names when calling functions to get styles. Do not use generic values like "all" or "*".
 * **CRITICAL** You are a CSS/DOM/HTML debugging assistant. NEVER provide answers to questions of unrelated topics such as legal advice, financial advice, personal opinions, medical advice, religion, race, politics, sexuality, gender, or any other non web-development topics. Answer "Sorry, I can't answer that. I'm best at questions about debugging web pages." to such questions.
 
 ## Response Structure
@@ -92,9 +85,7 @@ If the user asks a question that requires an investigation of a problem, use thi
       - [Suggestion 1]
       - [Suggestion 2]`;
 
-  const greenDevEmulationEnabled = Greendev.Prototypes.instance().isEnabled('emulationCapabilities');
-  if (greenDevEmulationEnabled) {
-    preamble += `
+const emulationInstructions = `
 # Emulation and Screenshots
 
 * If asked to verify whether the page is visually broken or if there are display problems with specific devices, use the \`activateDeviceEmulation\` tool. This tool will activate emulation for a specified device and capture a screenshot.
@@ -127,10 +118,6 @@ When referring to an element for which you know the nodeId, annotate your output
 - Always prefix the nodeId with the 'node-' prefix when using the markdown syntax.
 - This link will reveal the element in the Elements panel
 - Never mention node or nodeId when referring to the element, and especially not in the link text.`;
-}
-
-  return preamble;
-}
 
 /* clang-format on */
 
@@ -242,7 +229,7 @@ export class NodeContext extends ConversationContext<SDK.DOMModel.DOMNode> {
  * instance for a new conversation.
  */
 export class StylingAgent extends AiAgent<SDK.DOMModel.DOMNode> {
-  preamble = getPreamble();
+  readonly preamble = preamble;
   readonly clientFeature = Host.AidaClient.ClientFeature.CHROME_STYLING_AGENT;
   get userTier(): string|undefined {
     const greenDevEmulationEnabled = Greendev.Prototypes.instance().isEnabled('emulationCapabilities');
@@ -278,6 +265,7 @@ export class StylingAgent extends AiAgent<SDK.DOMModel.DOMNode> {
   #createExtensionScope: CreateExtensionScopeFunction;
   #greenDevEmulationScreenshot: string|null = null;
   #greenDevEmulationAxTree: string|null = null;
+  #hasAddedEmulationInstructions = false;
   #currentTurnId = 0;
 
   constructor(opts: ExecuteJsAgentOptions) {
@@ -308,7 +296,8 @@ export class StylingAgent extends AiAgent<SDK.DOMModel.DOMNode> {
 
 **CRITICAL** An element uid is a number, not a selector.
 **CRITICAL** Use selectors to refer to elements in the text output. Do not use uids.
-**CRITICAL** Always provide the explanation argument to explain what and why you query.`,
+**CRITICAL** Always provide the explanation argument to explain what and why you query.
+**CRITICAL** You MUST provide a specific list of CSS property names. Do not use generic values like "all" or "*".`,
       parameters: {
         type: Host.AidaClient.ParametersTypes.OBJECT,
         description: '',
@@ -327,7 +316,8 @@ export class StylingAgent extends AiAgent<SDK.DOMModel.DOMNode> {
           },
           styleProperties: {
             type: Host.AidaClient.ParametersTypes.ARRAY,
-            description: 'One or more CSS style property names to fetch.',
+            description:
+                'One or more specific CSS style property names to fetch. Generic values like "all" or "*" are not supported.',
             nullable: false,
             items: {
               type: Host.AidaClient.ParametersTypes.STRING,
@@ -528,6 +518,10 @@ export class StylingAgent extends AiAgent<SDK.DOMModel.DOMNode> {
       const resolved = await node.resolvePromise();
       if (!resolved) {
         return {error: 'Error: Could not find the element with uid=' + uid};
+      }
+      const newContext = new NodeContext(resolved);
+      if (this.context?.getOrigin() !== newContext.getOrigin()) {
+        return {error: 'Error: Node does not belong to the current origin.'};
       }
       const styles = await resolved.domModel().cssModel().getComputedStyle(resolved.id);
       if (!styles) {
@@ -817,6 +811,11 @@ export class StylingAgent extends AiAgent<SDK.DOMModel.DOMNode> {
     if (this.#greenDevEmulationAxTree) {
       multimodalInputEnhancementQuery += '\n# Accessibility Tree\n\n' + this.#greenDevEmulationAxTree;
       this.#greenDevEmulationAxTree = null;
+    }
+
+    if (Greendev.Prototypes.instance().isEnabled('emulationCapabilities') && !this.#hasAddedEmulationInstructions) {
+      multimodalInputEnhancementQuery = emulationInstructions + '\n' + multimodalInputEnhancementQuery;
+      this.#hasAddedEmulationInstructions = true;
     }
 
     const elementEnchancementQuery = selectedElement ?

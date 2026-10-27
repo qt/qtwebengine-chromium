@@ -25,35 +25,37 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/opengl/CommandBufferGL.h"
+#include "src/dawn/native/opengl/CommandBufferGL.h"
 
 #include <algorithm>
 #include <cstring>
 #include <utility>
 #include <vector>
 
-#include "dawn/common/MatchVariant.h"
-#include "dawn/common/Range.h"
-#include "dawn/native/BindGroup.h"
-#include "dawn/native/BindGroupTracker.h"
-#include "dawn/native/CommandEncoder.h"
-#include "dawn/native/Commands.h"
-#include "dawn/native/ExternalTexture.h"
-#include "dawn/native/ImmediateConstantsTracker.h"
-#include "dawn/native/RenderBundle.h"
-#include "dawn/native/opengl/BufferGL.h"
-#include "dawn/native/opengl/ComputePipelineGL.h"
-#include "dawn/native/opengl/DeviceGL.h"
-#include "dawn/native/opengl/Forward.h"
-#include "dawn/native/opengl/PersistentPipelineStateGL.h"
-#include "dawn/native/opengl/PhysicalDeviceGL.h"
-#include "dawn/native/opengl/PipelineLayoutGL.h"
-#include "dawn/native/opengl/QuerySetGL.h"
-#include "dawn/native/opengl/RenderPipelineGL.h"
-#include "dawn/native/opengl/SamplerGL.h"
-#include "dawn/native/opengl/TextureGL.h"
-#include "dawn/native/opengl/UtilsGL.h"
 #include "partition_alloc/pointers/raw_ptr.h"
+#include "src/dawn/common/MatchVariant.h"
+#include "src/dawn/common/Range.h"
+#include "src/dawn/native/BindGroup.h"
+#include "src/dawn/native/BindGroupTracker.h"
+#include "src/dawn/native/CommandEncoder.h"
+#include "src/dawn/native/Commands.h"
+#include "src/dawn/native/ExternalTexture.h"
+#include "src/dawn/native/ImmediatesTracker.h"
+#include "src/dawn/native/RenderBundle.h"
+#include "src/dawn/native/opengl/BufferGL.h"
+#include "src/dawn/native/opengl/ComputePipelineGL.h"
+#include "src/dawn/native/opengl/DeviceGL.h"
+#include "src/dawn/native/opengl/Forward.h"
+#include "src/dawn/native/opengl/ImmediatesLayoutGL.h"
+#include "src/dawn/native/opengl/PersistentPipelineStateGL.h"
+#include "src/dawn/native/opengl/PhysicalDeviceGL.h"
+#include "src/dawn/native/opengl/PipelineLayoutGL.h"
+#include "src/dawn/native/opengl/QuerySetGL.h"
+#include "src/dawn/native/opengl/RenderPipelineGL.h"
+#include "src/dawn/native/opengl/SamplerGL.h"
+#include "src/dawn/native/opengl/TextureGL.h"
+#include "src/dawn/native/opengl/UtilsGL.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native::opengl {
 
@@ -535,7 +537,8 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
         if (offset >= mInternalUniformBufferData.size()) {
             mInternalUniformBufferData.resize(offset + sizeof(uint32_t));
         }
-        memcpy(mInternalUniformBufferData.data() + offset, &data, sizeof(uint32_t));
+        DAWN_UNSAFE_TODO(
+            memcpy(mInternalUniformBufferData.data() + offset, &data, sizeof(uint32_t)));
 
         // Updating dirty range of the data vector
         mDirtyRange.begin = std::min(mDirtyRange.begin, offset);
@@ -568,9 +571,10 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
                     internalUniformBufferHandle));
 
         DAWN_GL_TRY(gl, BindBuffer(GL_UNIFORM_BUFFER, internalUniformBufferHandle));
-        DAWN_GL_TRY(gl, BufferSubData(GL_UNIFORM_BUFFER, mDirtyRange.begin,
-                                      mDirtyRange.end - mDirtyRange.begin,
-                                      mInternalUniformBufferData.data() + mDirtyRange.begin));
+        DAWN_UNSAFE_TODO(DAWN_GL_TRY(
+            gl,
+            BufferSubData(GL_UNIFORM_BUFFER, mDirtyRange.begin, mDirtyRange.end - mDirtyRange.begin,
+                          mInternalUniformBufferData.data() + mDirtyRange.begin)));
         DAWN_GL_TRY(gl, BindBuffer(GL_UNIFORM_BUFFER, 0));
 
         ResetInternalUniformDataDirtyRange();
@@ -600,11 +604,11 @@ class BindGroupTracker : public BindGroupTrackerBase<false> {
                         internalUniformBufferHandle));
 
         DAWN_GL_TRY(gl, BindBuffer(GL_UNIFORM_BUFFER, internalUniformBufferHandle));
-        DAWN_GL_TRY(
+        DAWN_UNSAFE_TODO(DAWN_GL_TRY(
             gl, BufferSubData(
                     GL_UNIFORM_BUFFER, sizeof(uint32_t) * mDirtyRangeArrayLength.begin,
                     sizeof(uint32_t) * (mDirtyRangeArrayLength.end - mDirtyRangeArrayLength.begin),
-                    mInternalArrayLengthBufferData.data() + mDirtyRangeArrayLength.begin));
+                    mInternalArrayLengthBufferData.data() + mDirtyRangeArrayLength.begin)));
         DAWN_GL_TRY(gl, BindBuffer(GL_UNIFORM_BUFFER, 0));
 
         ResetInternalUniformDataDirtyRangeArrayLength();
@@ -731,20 +735,43 @@ TexelExtent3D ComputeTextureCopyExtent(const TextureCopy& textureCopy,
     return validTextureCopyExtent;
 }
 
-template <typename T>
-class ImmediateConstantTracker : public T {
+class RenderImmediatesTracker
+    : public UserImmediatesTrackerBase<RenderImmediates, RenderPipelineBase> {
   public:
-    ImmediateConstantTracker() = default;
+    RenderImmediatesTracker() = default;
+    void SetClampFragDepth(float minClampFragDepth, float maxClampFragDepth) {
+        ClampFragDepthArgs fragDepthArgs;
+        fragDepthArgs.minClampFragDepth = minClampFragDepth;
+        fragDepthArgs.maxClampFragDepth = maxClampFragDepth;
+
+        UpdateImmediates(offsetof(RenderImmediates, clampFragDepth), fragDepthArgs);
+    }
+
+    void SetFirstVertex(uint32_t firstVertex) {
+        UpdateImmediates(offsetof(RenderImmediates, firstVertex), firstVertex);
+    }
+
+    void SetFirstInstance(uint32_t firstInstance) {
+        UpdateImmediates(offsetof(RenderImmediates, firstInstance), firstInstance);
+    }
+};
+
+using ComputeImmediatesTracker = UserImmediatesTrackerBase<ComputeImmediates, ComputePipelineBase>;
+
+template <typename T>
+class ImmediateTracker : public T {
+  public:
+    ImmediateTracker() = default;
 
     MaybeError Apply(const OpenGLFunctions& gl) {
         DAWN_ASSERT(this->mLastPipeline != nullptr);
 
         auto* lastPipeline = this->mLastPipeline;
-        ImmediateConstantMask pipelineMask = lastPipeline->GetImmediateMask();
-        ImmediateConstantMask uploadBits = this->mDirty & pipelineMask;
+        ImmediateMask pipelineMask = lastPipeline->GetImmediateMask();
+        ImmediateMask uploadBits = this->mDirty & pipelineMask;
         for (auto&& [offset, size] : IterateRanges(uploadBits)) {
             uint32_t immediateContentStartOffset =
-                static_cast<uint32_t>(offset) * kImmediateConstantElementByteSize;
+                static_cast<uint32_t>(offset) * kImmediateElementByteSize;
             auto location =
                 GetImmediateIndexInPipeline(static_cast<uint32_t>(offset), pipelineMask);
             auto count = static_cast<uint32_t>(size);
@@ -786,8 +813,8 @@ MaybeError CommandBuffer::Execute(const OpenGLFunctions& gl) {
         return {};
     };
 
-    size_t nextComputePassNumber = 0;
-    size_t nextRenderPassNumber = 0;
+    PassIndex nextComputePassNumber{0};
+    PassIndex nextRenderPassNumber{0};
 
     Command type;
     while (mCommands.NextCommandId(&type)) {
@@ -820,7 +847,7 @@ MaybeError CommandBuffer::Execute(const OpenGLFunctions& gl) {
                     GetDevice(), cmd, [&](TextureBase* texture, const SubresourceRange& range) {
                         return ToBackend(texture)->EnsureSubresourceContentInitialized(gl, range);
                     }));
-                DAWN_TRY(ExecuteRenderPass(cmd, gl));
+                DAWN_TRY(ExecuteRenderPass(cmd, gl, nextRenderPassNumber));
 
                 nextRenderPassNumber++;
                 break;
@@ -995,7 +1022,7 @@ MaybeError CommandBuffer::Execute(const OpenGLFunctions& gl) {
                                                            static_cast<uint32_t>(copySize.width),
                                                            static_cast<uint32_t>(copySize.height),
                                                            glFormat, glType, offset));
-                                offset += bytesPerImage;
+                                DAWN_UNSAFE_TODO(offset += bytesPerImage);
                             }
                             break;
                         }
@@ -1017,7 +1044,7 @@ MaybeError CommandBuffer::Execute(const OpenGLFunctions& gl) {
                                                        static_cast<uint32_t>(copySize.height),
                                                        glFormat, glType, offset));
 
-                            offset += bytesPerImage;
+                            DAWN_UNSAFE_TODO(offset += bytesPerImage);
                         }
                         break;
                     }
@@ -1100,18 +1127,18 @@ MaybeError CommandBuffer::Execute(const OpenGLFunctions& gl) {
                 QuerySet* querySet = ToBackend(cmd->querySet.Get());
                 Buffer* destination = ToBackend(cmd->destination.Get());
 
-                size_t size = cmd->queryCount * sizeof(uint64_t);
+                size_t size = ToQueryStorageSize(cmd->queryCount);
                 DAWN_TRY(
                     destination->EnsureDataInitializedAsDestination(cmd->destinationOffset, size));
 
-                std::vector<uint64_t> values(cmd->queryCount);
-                auto availability = querySet->GetQueryAvailability();
+                ityp::vector<QueryIndex, uint64_t> values(cmd->queryCount);
 
-                for (uint32_t i = 0; i < cmd->queryCount; ++i) {
-                    if (!availability[cmd->firstQuery + i]) {
+                for (QueryIndex i : Range(cmd->queryCount)) {
+                    if (!querySet->IsQueryAvailable(cmd->firstQuery + i)) {
                         values[i] = 0;
                         continue;
                     }
+
                     uint32_t query = querySet->Get(cmd->firstQuery + i);
                     GLuint value;
                     DAWN_GL_TRY(gl, GetQueryObjectuiv(query, GL_QUERY_RESULT, &value));
@@ -1142,12 +1169,13 @@ MaybeError CommandBuffer::Execute(const OpenGLFunctions& gl) {
                 WriteBufferCmd* write = mCommands.NextCommand<WriteBufferCmd>();
                 uint64_t offset = write->offset;
                 uint64_t size = write->size;
+                uint8_t* data = mCommands.NextData<uint8_t>(size);
+
                 if (size == 0) {
                     continue;
                 }
 
                 Buffer* dstBuffer = ToBackend(write->buffer.Get());
-                uint8_t* data = mCommands.NextData<uint8_t>(size);
                 DAWN_TRY(dstBuffer->EnsureDataInitializedAsDestination(offset, size));
 
                 DAWN_GL_TRY(gl, BindBuffer(GL_ARRAY_BUFFER, dstBuffer->GetHandle()));
@@ -1170,7 +1198,7 @@ MaybeError CommandBuffer::ExecuteComputePass(const OpenGLFunctions& gl) {
     BindGroupTracker bindGroupTracker = {};
 
     Command type;
-    ImmediateConstantTracker<ComputeImmediateConstantsTrackerBase> immediates = {};
+    ImmediateTracker<ComputeImmediatesTracker> immediates = {};
     while (mCommands.NextCommandId(&type)) {
         switch (type) {
             case Command::EndComputePass: {
@@ -1257,8 +1285,12 @@ MaybeError CommandBuffer::ExecuteComputePass(const OpenGLFunctions& gl) {
 }
 
 MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
-                                            const OpenGLFunctions& gl) {
+                                            const OpenGLFunctions& gl,
+                                            PassIndex renderPassIndex) {
     GLuint fbo = 0;
+
+    const IndirectDrawMetadata& metadata = GetIndirectDrawMetadata()[renderPassIndex];
+    IndirectDrawIndex indirectDrawIndex{0};
 
     // Create the framebuffer used for this render pass and calls the correct glDrawBuffers
     {
@@ -1401,7 +1433,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
 
     VertexStateBufferBindingTracker vertexStateBufferBindingTracker;
     BindGroupTracker bindGroupTracker = {};
-    ImmediateConstantTracker<RenderImmediateConstantsTrackerBase> immediates = {};
+    ImmediateTracker<RenderImmediatesTracker> immediates = {};
 
     auto DoRenderBundleCommand = [&](CommandIterator* iter, Command type) -> MaybeError {
         switch (type) {
@@ -1451,14 +1483,16 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 DAWN_TRY(vertexStateBufferBindingTracker.Apply(gl, 0, 0));
                 DAWN_TRY(bindGroupTracker.Apply(gl));
 
-                uint64_t indirectBufferOffset = draw->indirectOffset;
-                Buffer* indirectBuffer = ToBackend(draw->indirectBuffer.Get());
+                IndirectDrawMetadata::ValidatedIndirectDraw validatedDraw =
+                    metadata.GetValidatedIndirectDraw(draw, indirectDrawIndex++);
+
+                Buffer* indirectBuffer = ToBackend(validatedDraw.indirectBuffer.Get());
+                DAWN_ASSERT(indirectBuffer != nullptr);
 
                 DAWN_GL_TRY(gl, BindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectBuffer->GetHandle()));
-                DAWN_GL_TRY(
-                    gl, DrawArraysIndirect(
-                            lastPipeline->GetGLPrimitiveTopology(),
-                            reinterpret_cast<void*>(static_cast<intptr_t>(indirectBufferOffset))));
+                DAWN_GL_TRY(gl, DrawArraysIndirect(lastPipeline->GetGLPrimitiveTopology(),
+                                                   reinterpret_cast<void*>(static_cast<intptr_t>(
+                                                       validatedDraw.indirectOffset))));
                 indirectBuffer->TrackUsage();
                 break;
             }
@@ -1472,7 +1506,10 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 DAWN_TRY(vertexStateBufferBindingTracker.Apply(gl, 0, 0));
                 DAWN_TRY(bindGroupTracker.Apply(gl));
 
-                Buffer* indirectBuffer = ToBackend(draw->indirectBuffer.Get());
+                IndirectDrawMetadata::ValidatedIndirectDraw validatedDraw =
+                    metadata.GetValidatedIndirectDraw(draw, indirectDrawIndex++);
+
+                Buffer* indirectBuffer = ToBackend(validatedDraw.indirectBuffer.Get());
                 DAWN_ASSERT(indirectBuffer != nullptr);
 
                 const auto topology = lastPipeline->GetGLPrimitiveTopology();
@@ -1483,10 +1520,9 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 }
 
                 DAWN_GL_TRY(gl, BindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectBuffer->GetHandle()));
-                DAWN_GL_TRY(
-                    gl, DrawElementsIndirect(
-                            topology, indexBufferFormat,
-                            reinterpret_cast<void*>(static_cast<intptr_t>(draw->indirectOffset))));
+                DAWN_GL_TRY(gl, DrawElementsIndirect(topology, indexBufferFormat,
+                                                     reinterpret_cast<void*>(static_cast<intptr_t>(
+                                                         validatedDraw.indirectOffset))));
                 indirectBuffer->TrackUsage();
                 break;
             }
@@ -1613,7 +1649,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
                 auto bundles = mCommands.NextData<Ref<RenderBundleBase>>(cmd->count);
 
                 for (uint32_t i = 0; i < cmd->count; ++i) {
-                    CommandIterator* iter = bundles[i]->GetCommands();
+                    CommandIterator* iter = DAWN_UNSAFE_TODO(bundles[i])->GetCommands();
                     iter->Reset();
                     while (iter->NextCommandId(&type)) {
                         DAWN_TRY(DoRenderBundleCommand(iter, type));
@@ -1630,8 +1666,9 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass,
             }
 
             case Command::EndOcclusionQuery: {
-                mCommands.NextCommand<EndOcclusionQueryCmd>();
+                EndOcclusionQueryCmd* cmd = mCommands.NextCommand<EndOcclusionQueryCmd>();
                 DAWN_GL_TRY(gl, EndQuery(GL_ANY_SAMPLES_PASSED));
+                UpdateQueryAvailability(cmd);
                 break;
             }
 
@@ -1658,7 +1695,7 @@ MaybeError DoTexSubImage(const OpenGLFunctions& gl,
 
     const GLFormat& format = texture->GetGLFormat();
     GLenum target = texture->GetGLTarget();
-    data = static_cast<const uint8_t*>(data) + dataLayout.offset;
+    data = DAWN_UNSAFE_TODO(static_cast<const uint8_t*>(data) + dataLayout.offset);
     DAWN_GL_TRY(gl, ActiveTexture(GL_TEXTURE0));
     DAWN_GL_TRY(gl, BindTexture(target, texture->GetHandle()));
     const TypedTexelBlockInfo& blockInfo = GetBlockInfo(destination);
@@ -1722,7 +1759,7 @@ MaybeError DoTexSubImage(const OpenGLFunctions& gl,
                                         static_cast<uint32_t>(x), static_cast<uint32_t>(y),
                                         static_cast<uint32_t>(width), static_cast<uint32_t>(height),
                                         format.internalFormat, imageSize, pointer));
-                    pointer += bytesPerImage;
+                    DAWN_UNSAFE_TODO(pointer += bytesPerImage);
                 }
             } else {
                 DAWN_GL_TRY(
@@ -1753,14 +1790,15 @@ MaybeError DoTexSubImage(const OpenGLFunctions& gl,
                                 target, destination.mipLevel, static_cast<uint32_t>(x),
                                 static_cast<uint32_t>(y), static_cast<uint32_t>(width),
                                 static_cast<uint32_t>(height), format.internalFormat, rowSize, d));
-                    d += bytesPerRow;
+                    DAWN_UNSAFE_TODO(d += bytesPerRow);
                 }
             } else if (target == GL_TEXTURE_CUBE_MAP) {
                 DAWN_ASSERT(texture->GetArrayLayers() == 6);
                 const uint8_t* pointer = static_cast<const uint8_t*>(data);
                 TexelCount baseLayer = destination.origin.z;
                 for (TexelCount l{0}; l < copySize.depthOrArrayLayers; ++l) {
-                    const uint8_t* d = pointer + static_cast<uint32_t>(l) * bytesPerImage;
+                    const uint8_t* d =
+                        DAWN_UNSAFE_TODO(pointer + static_cast<uint32_t>(l)) * bytesPerImage;
                     GLenum cubeMapTarget =
                         GL_TEXTURE_CUBE_MAP_POSITIVE_X + static_cast<uint32_t>(baseLayer + l);
                     for (y = destination.origin.y; y < destination.origin.y + copySize.height;
@@ -1772,7 +1810,7 @@ MaybeError DoTexSubImage(const OpenGLFunctions& gl,
                                                                 static_cast<uint32_t>(width),
                                                                 static_cast<uint32_t>(height),
                                                                 format.internalFormat, rowSize, d));
-                        d += bytesPerRow;
+                        DAWN_UNSAFE_TODO(d += bytesPerRow);
                     }
                 }
             } else {
@@ -1792,10 +1830,10 @@ MaybeError DoTexSubImage(const OpenGLFunctions& gl,
                                     static_cast<uint32_t>(y), static_cast<uint32_t>(z),
                                     static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1,
                                     format.internalFormat, rowSize, d));
-                        d += bytesPerRow;
+                        DAWN_UNSAFE_TODO(d += bytesPerRow);
                     }
 
-                    slice += bytesPerImage;
+                    DAWN_UNSAFE_TODO(slice += bytesPerImage);
                 }
             }
         }
@@ -1834,7 +1872,7 @@ MaybeError DoTexSubImage(const OpenGLFunctions& gl,
                                         static_cast<uint32_t>(x), static_cast<uint32_t>(y),
                                         static_cast<uint32_t>(width), static_cast<uint32_t>(height),
                                         adjustedFormat, format.type, pointer));
-                    pointer += bytesPerImage;
+                    DAWN_UNSAFE_TODO(pointer += bytesPerImage);
                 }
             } else {
                 DAWN_ASSERT(target == GL_TEXTURE_3D || target == GL_TEXTURE_2D_ARRAY ||
@@ -1860,7 +1898,7 @@ MaybeError DoTexSubImage(const OpenGLFunctions& gl,
                         gl, TexSubImage2D(target, destination.mipLevel, static_cast<uint32_t>(x),
                                           static_cast<uint32_t>(y), static_cast<uint32_t>(width), 1,
                                           adjustedFormat, format.type, d));
-                    d += bytesPerRow;
+                    DAWN_UNSAFE_TODO(d += bytesPerRow);
                 }
             } else if (target == GL_TEXTURE_CUBE_MAP) {
                 DAWN_ASSERT(texture->GetArrayLayers() == 6);
@@ -1876,9 +1914,9 @@ MaybeError DoTexSubImage(const OpenGLFunctions& gl,
                                               static_cast<uint32_t>(x), static_cast<uint32_t>(y),
                                               static_cast<uint32_t>(width), 1, adjustedFormat,
                                               format.type, d));
-                        d += bytesPerRow;
+                        DAWN_UNSAFE_TODO(d += bytesPerRow);
                     }
-                    pointer += bytesPerImage;
+                    DAWN_UNSAFE_TODO(pointer += bytesPerImage);
                 }
             } else {
                 DAWN_ASSERT(target == GL_TEXTURE_3D || target == GL_TEXTURE_2D_ARRAY ||
@@ -1892,9 +1930,9 @@ MaybeError DoTexSubImage(const OpenGLFunctions& gl,
                                             static_cast<uint32_t>(y), static_cast<uint32_t>(z),
                                             static_cast<uint32_t>(width), 1, 1, adjustedFormat,
                                             format.type, d));
-                        d += bytesPerRow;
+                        DAWN_UNSAFE_TODO(d += bytesPerRow);
                     }
-                    slice += bytesPerImage;
+                    DAWN_UNSAFE_TODO(slice += bytesPerImage);
                 }
             }
         }

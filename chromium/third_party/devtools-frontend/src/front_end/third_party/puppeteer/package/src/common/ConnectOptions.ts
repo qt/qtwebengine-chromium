@@ -79,6 +79,13 @@ export interface ConnectOptions {
    */
   networkEnabled?: boolean;
   /**
+   * Experimental setting to disable monitoring issue events by default.
+   *
+   * @experimental
+   * @defaultValue `true`
+   */
+  issuesEnabled?: boolean;
+  /**
    * Sets the viewport for each page.
    *
    * @defaultValue '\{width: 800, height: 600\}'
@@ -154,4 +161,66 @@ export interface ConnectOptions {
    * Only works for `protocol="webDriverBiDi"` and {@link Puppeteer.connect}.
    */
   capabilities?: SupportedWebDriverCapabilities;
+
+  /**
+   * A list of URL patterns to block.
+   *
+   * This option allows you to restrict the browser from accessing specific
+   * URLs or origins. It uses the standard [URLPattern](https://urlpattern.spec.whatwg.org/) API to match URLs.
+   *
+   * When connecting to an existing browser, Puppeteer will silently detach from any
+   * already open targets that violate the patterns.
+   *
+   * For any network requests made by the browser (including navigations and
+   * subresources like images or scripts), the request will fail with an error
+   * if the URL matches a blocked pattern.
+   *
+   * @example Pattern to block a specific domain:
+   * `*://example.com/*`
+   *
+   * @example Pattern to block all subdomains:
+   * `*://*.evil.com/*`
+   *
+   * @remarks
+   * Currently only supported for CDP connections.
+   *
+   * Inner `<iframe>` content loading is currently not blocked.
+   *
+   * Cannot be used along with {@link ConnectOptions.allowlist}.
+   *
+   * @experimental
+   */
+  blocklist?: string[];
+  /**
+   * A list of URL patterns to allow.
+   *
+   * **Requires Chrome 149+.**
+   *
+   * This option allows you to restrict the browser from accessing any URLs
+   * except for those that match the patterns in the allowList.
+   * It uses the standard [URLPattern](https://urlpattern.spec.whatwg.org/) API to match URLs.
+   *
+   * When connecting to an existing browser, Puppeteer will silently detach from any
+   * already open targets that violate the patterns.
+   *
+   * For any network requests made by the browser (including navigations and
+   * subresources like images or scripts), the request will fail with an error
+   * if the URL does not match any pattern in the allowlist.
+   *
+   * @example Pattern to allow a specific domain:
+   * `*://example.com/*`
+   *
+   * @example Pattern to allow all subdomains:
+   * `*://*.example.com/*`
+   *
+   * @remarks
+   * Currently only supported for CDP connections.
+   *
+   * Inner `<iframe>` content loading is currently not blocked.
+   *
+   * Cannot be used along with {@link ConnectOptions.blocklist}.
+   *
+   * @experimental
+   */
+  allowlist?: string[];
 }

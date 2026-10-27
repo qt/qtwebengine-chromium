@@ -5,6 +5,7 @@
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
+import * as Root from '../../core/root/root.js';
 import type * as SDK from '../../core/sdk/sdk.js';
 import * as AiCodeCompletion from '../../models/ai_code_completion/ai_code_completion.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
@@ -31,9 +32,8 @@ export class StylesAiCodeCompletionProvider {
   #boundOnUpdateAiCodeCompletionState = this.#updateAiCodeCompletionState.bind(this);
 
   private constructor(aiCodeCompletionConfig: TextEditor.AiCodeCompletionProvider.AiCodeCompletionConfig) {
-    const devtoolsLocale = i18n.DevToolsLocale.DevToolsLocale.instance();
-    if (!AiCodeCompletion.AiCodeCompletion.AiCodeCompletion.isAiCodeCompletionStylesEnabled(devtoolsLocale.locale)) {
-      throw new Error('AI code completion feature in Styles is not enabled.');
+    if (!AiCodeCompletion.AiCodeCompletion.AiCodeCompletion.isAiCodeCompletionStylesAvailable()) {
+      throw new Error('AI code completion feature in Styles is not available.');
     }
     this.#aiCodeCompletionConfig = aiCodeCompletionConfig;
     Host.AidaClient.HostConfigTracker.instance().addEventListener(
@@ -55,9 +55,17 @@ export class StylesAiCodeCompletionProvider {
       // early return as this means that code completion was previously setup
       return;
     }
+    // Adding '}' as a stop sequence so that suggestion is limited to properties for a given style section
+    const stopSequences = ['}'];
+    if (this.#aiCodeCompletionConfig.completionContext.stopSequences) {
+      stopSequences.push(...this.#aiCodeCompletionConfig.completionContext.stopSequences);
+    }
     this.#aiCodeCompletion = new AiCodeCompletion.AiCodeCompletion.AiCodeCompletion(
-        {aidaClient: this.#aidaClient}, this.#aiCodeCompletionConfig.panel, undefined,
-        this.#aiCodeCompletionConfig.completionContext.stopSequences);
+        {
+          aidaClient: this.#aidaClient,
+          serverSideLoggingEnabled: !Root.Runtime.hostConfig.aidaAvailability?.disallowLogging
+        },
+        this.#aiCodeCompletionConfig.panel, undefined, stopSequences);
     this.#aiCodeCompletionConfig.onFeatureEnabled();
   }
 
@@ -73,7 +81,10 @@ export class StylesAiCodeCompletionProvider {
   async #updateAiCodeCompletionState(): Promise<void> {
     const aidaAvailability = await Host.AidaClient.AidaClient.checkAccessPreconditions();
     const isAvailable = aidaAvailability === Host.AidaClient.AidaAccessPreconditions.AVAILABLE;
-    const isEnabled = this.#aiCodeCompletionSetting.get();
+    const devtoolsLocale = i18n.DevToolsLocale.DevToolsLocale.instance().locale;
+    const isEnabled =
+        AiCodeCompletion.AiCodeCompletion.AiCodeCompletion.isAiCodeCompletionStylesEnabled(devtoolsLocale) &&
+        this.#aiCodeCompletionSetting.get();
     if (isAvailable && isEnabled) {
       this.#setupAiCodeCompletion();
     } else {
@@ -155,7 +166,7 @@ export class StylesAiCodeCompletionProvider {
   }|null> {
     this.#aiCodeCompletionConfig?.onRequestTriggered();
     // Registering AiCodeCompletionRequestTriggered metric even if the request is served from cache
-    Host.userMetrics.actionTaken(Host.UserMetrics.Action.AiCodeCompletionRequestTriggered);
+    Host.userMetrics.actionTaken(Host.UserMetrics.Action.AiCodeCompletionRequestTriggeredFromStyles);
 
     try {
       const completionResponse = await this.#aiCodeCompletion?.completeCode(

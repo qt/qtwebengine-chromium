@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_CORE_ARCH_AVX512_TRSM_KERNEL_H
 #define EIGEN_CORE_ARCH_AVX512_TRSM_KERNEL_H
@@ -227,7 +228,7 @@ void gemmKernel(Scalar* A_arr, Scalar* B_arr, Scalar* C_arr, int64_t M, int64_t 
   constexpr int64_t U3 = urolls::PacketSize * 3;
   constexpr int64_t U2 = urolls::PacketSize * 2;
   constexpr int64_t U1 = urolls::PacketSize * 1;
-  using vec = typename std::conditional<std::is_same<Scalar, float>::value, vecFullFloat, vecFullDouble>::type;
+  using vec = std::conditional_t<std::is_same<Scalar, float>::value, vecFullFloat, vecFullDouble>;
   int64_t N_ = (N / U3) * U3;
   int64_t M_ = (M / EIGEN_AVX_MAX_NUM_ROW) * EIGEN_AVX_MAX_NUM_ROW;
   int64_t K_ = (K / EIGEN_AVX_MAX_K_UNROL) * EIGEN_AVX_MAX_K_UNROL;
@@ -785,7 +786,7 @@ template <typename Scalar, bool isARowMajor, bool isFWDSolve, bool isUnitDiag>
 void triSolveKernelLxK(Scalar* A_arr, Scalar* B_arr, int64_t M, int64_t K, int64_t LDA, int64_t LDB) {
   // Note: this assumes EIGEN_AVX_MAX_NUM_ROW = 8. Unrolls should be adjusted
   // accordingly if EIGEN_AVX_MAX_NUM_ROW is smaller.
-  using vec = typename std::conditional<std::is_same<Scalar, float>::value, vecFullFloat, vecFullDouble>::type;
+  using vec = std::conditional_t<std::is_same<Scalar, float>::value, vecFullFloat, vecFullDouble>;
   if (M == 8)
     triSolveKernel<Scalar, vec, 8, isARowMajor, isFWDSolve, isUnitDiag>(A_arr, B_arr, K, LDA, LDB);
   else if (M == 7)
@@ -817,7 +818,7 @@ EIGEN_ALWAYS_INLINE void copyBToRowMajor(Scalar* B_arr, int64_t LDB, int64_t K, 
                                          int64_t remM_ = 0) {
   EIGEN_UNUSED_VARIABLE(remM_);
   using urolls = unrolls::transB<Scalar>;
-  using vecHalf = typename std::conditional<std::is_same<Scalar, float>::value, vecHalfFloat, vecFullDouble>::type;
+  using vecHalf = std::conditional_t<std::is_same<Scalar, float>::value, vecHalfFloat, vecFullDouble>;
   PacketBlock<vecHalf, EIGEN_ARCH_DEFAULT_NUMBER_OF_REGISTERS> ymm;
   constexpr int64_t U3 = urolls::PacketSize * 3;
   constexpr int64_t U2 = urolls::PacketSize * 2;

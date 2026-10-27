@@ -24,6 +24,7 @@
 #include "fuzztest/fuzztest.h"
 #include "absl/log/absl_check.h"
 #include "absl/status/status_matchers.h"
+#include "absl/status/statusor.h"
 #include "ink/brush/brush_family.h"
 #include "ink/brush/fuzz_domains.h"
 #include "ink/geometry/angle.h"
@@ -363,12 +364,13 @@ TEST_P(StrokeInputModelerTest, CumulativeDistanceTraveled) {
   // on the order of *around* 200 stroke units. Exactly how close the distance
   // is will depend on the modeler implementation, but it shouldn't be *too* far
   // off.
-  EXPECT_THAT(modeler.GetState().complete_traveled_distance,
+  EXPECT_THAT(modeler.GetState().full_input_metrics.traveled_distance,
               FloatNear(200, 25));
   // Only the first 100ms of inputs were real, so the total real distance should
   // be *around* 100 stroke units (again, we'll leave a generous margin to allow
   // for different modeling strategies).
-  EXPECT_THAT(modeler.GetState().total_real_distance, FloatNear(100, 25));
+  EXPECT_THAT(modeler.GetState().real_input_metrics.traveled_distance,
+              FloatNear(100, 25));
   // Intermediate elapsed times/distances should also be reasonable.  Different
   // modeling implementations may have different upsampling strategies, but
   // given the regularity of these test inputs, it is reasonable to assume that
@@ -395,16 +397,24 @@ TEST_P(StrokeInputModelerTest, EraseInitialPredictionWithNoRealInputs) {
   StrokeInputBatch synthetic_predicted_inputs = input_batches[0];
   ASSERT_THAT(synthetic_predicted_inputs.Append(input_batches[1]), IsOk());
   modeler.ExtendStroke({}, synthetic_predicted_inputs, Duration32::Zero());
+  EXPECT_EQ(modeler.GetState().real_input_count, 0);
+  EXPECT_EQ(modeler.GetState().real_input_metrics.elapsed_time,
+            Duration32::Zero());
+  EXPECT_EQ(modeler.GetState().real_input_metrics.traveled_distance, 0);
   EXPECT_THAT(modeler.GetModeledInputs(), Not(IsEmpty()));
   EXPECT_GT(modeler.GetState().complete_elapsed_time, Duration32::Zero());
-  EXPECT_GT(modeler.GetState().complete_traveled_distance, 0);
+  EXPECT_GT(modeler.GetState().full_input_metrics.elapsed_time,
+            Duration32::Zero());
+  EXPECT_GT(modeler.GetState().full_input_metrics.traveled_distance, 0);
 
   // Now erase the prediction, still with no real inputs. Elapsed time and
   // distance traveled should go back to zero.
   modeler.ExtendStroke({}, {}, Duration32::Zero());
   EXPECT_THAT(modeler.GetModeledInputs(), IsEmpty());
   EXPECT_EQ(modeler.GetState().complete_elapsed_time, Duration32::Zero());
-  EXPECT_EQ(modeler.GetState().complete_traveled_distance, 0);
+  EXPECT_EQ(modeler.GetState().full_input_metrics.elapsed_time,
+            Duration32::Zero());
+  EXPECT_EQ(modeler.GetState().full_input_metrics.traveled_distance, 0);
 }
 
 TEST_P(StrokeInputModelerTest, ExtendWithoutStart) {
@@ -420,12 +430,28 @@ TEST_P(StrokeInputModelerTest, StartWithZeroEpsilon) {
                             "brush_epsilon");
 }
 
+TEST_P(StrokeInputModelerTest, ExtendInputsAfterInputsFinished) {
+  StrokeInputModeler modeler;
+  float brush_epsilon = 0.08;
+  modeler.StartStroke(GetParam().input_model, brush_epsilon);
+
+  absl::StatusOr<StrokeInputBatch> inputs = StrokeInputBatch::Create({
+      {.position = {5, 7}, .elapsed_time = Duration32::Zero()},
+  });
+  ASSERT_THAT(inputs, IsOk());
+  modeler.ExtendStroke(*inputs, {}, Duration32::Zero());
+  modeler.FinishStrokeInputs();
+
+  EXPECT_DEATH_IF_SUPPORTED(
+      modeler.ExtendStroke(*inputs, {}, Duration32::Zero()),
+      "Can't add more inputs");
+}
+
 INSTANTIATE_TEST_SUITE_P(
     TestInputModels, StrokeInputModelerTest,
     // LINT.IfChange(input_model_types)
     ::testing::ValuesIn<InputModelTestCase>({
-        {"SpringModel", {BrushFamily::SpringModel{}}},
-        {"NaiveModel", {BrushFamily::ExperimentalNaiveModel{}}},
+        {"PassthroughModel", {BrushFamily::PassthroughModel{}}},
         {"SlidingWindowModel_default", {BrushFamily::SlidingWindowModel{}}},
         {"SlidingWindowModel_250ms_100ms",
          {BrushFamily::SlidingWindowModel{

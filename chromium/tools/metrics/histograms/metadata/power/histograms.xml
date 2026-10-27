@@ -347,19 +347,20 @@ tools/metrics/histograms/metadata/stability/enums.xml
   <variant name="viz"/>
 </variants>
 
-<histogram name="PerformanceMonitor.AverageCPU9.Total{UsageScenario}"
+<histogram name="PerformanceMonitor.AverageCPU10.Total{UsageScenario}"
     units="1/100 %" expires_after="2026-08-30">
   <owner>fdoray@chromium.org</owner>
   <owner>pmonette@chromium.org</owner>
   <owner>catan-team@chromium.org</owner>
   <summary>
-    See definition of PerformanceClass.AverageCPU9.ProcessName. This is recorded
-    every 2 minutes for {UsageScenario} (see go/chrome_power_use_per_scenario).
+    See definition of PerformanceClass.AverageCPU10.ProcessName. This is
+    recorded every 2 minutes for {UsageScenario} (see
+    go/chrome_power_use_per_scenario).
   </summary>
   <token key="UsageScenario" variants="UsageScenario"/>
 </histogram>
 
-<histogram name="PerformanceMonitor.AverageCPU9.UtilityProcess.{Subtype}"
+<histogram name="PerformanceMonitor.AverageCPU10.UtilityProcess.{Subtype}"
     units="1/100 %" expires_after="2027-02-13">
   <owner>anthonyvd@chromium.org</owner>
   <owner>fdoray@chromium.org</owner>
@@ -382,7 +383,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
   <token key="Subtype" variants="UtilityProcessSubtype"/>
 </histogram>
 
-<histogram name="PerformanceMonitor.AverageCPU9.{ProcessName}" units="1/100 %"
+<histogram name="PerformanceMonitor.AverageCPU10.{ProcessName}" units="1/100 %"
     expires_after="2026-08-30">
   <owner>fdoray@chromium.org</owner>
   <owner>pmonette@chromium.org</owner>
@@ -667,7 +668,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.AmbientLightOnResume" units="lux"
-    expires_after="2026-08-30">
+    expires_after="2026-11-01">
   <owner>bkersten@chromium.org</owner>
   <owner>slangley@chromium.org</owner>
   <summary>
@@ -677,7 +678,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.AvgCpuLoad.{ProcessType}" units="%"
-    expires_after="2026-08-23">
+    expires_after="2026-10-25">
   <owner>eseckler@chromium.org</owner>
   <owner>khokhlov@chromium.org</owner>
   <owner>woa-performance@google.com</owner>
@@ -731,7 +732,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.BatteryChargeHealth" units="%"
-    expires_after="2026-09-06">
+    expires_after="2026-11-15">
   <owner>puthik@chromium.org</owner>
   <owner>chromeos-platform-power@google.com</owner>
   <summary>
@@ -846,7 +847,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.BatteryDischargeRate" units="mW"
-    expires_after="2026-09-27">
+    expires_after="2026-11-01">
   <owner>puthik@chromium.org</owner>
   <owner>chromeos-platform-power@google.com</owner>
   <summary>
@@ -856,7 +857,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.BatteryDischargeRateMilliwatts6.TenMinutes"
-    units="milliwatts" expires_after="2026-09-06">
+    units="milliwatts" expires_after="2026-11-15">
   <owner>pmonette@chromium.org</owner>
   <owner>fdoray@chromium.org</owner>
   <summary>
@@ -873,7 +874,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 
 <histogram
     name="Power.BatteryDischargeRateMilliwatts6{UsageScenario}{IntervalType}{BatterySaverMode}"
-    units="milliwatts" expires_after="2026-08-30">
+    units="milliwatts" expires_after="2026-11-08">
   <owner>etiennep@chromium.org</owner>
   <owner>olivierli@chromium.org</owner>
   <owner>lgrey@chromium.org</owner>
@@ -929,7 +930,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 
 <histogram
     name="Power.BatteryDischargeRateRelative5{UsageScenario}{IntervalType}{BatterySaverMode}"
-    units="hundredth of percent" expires_after="2026-08-30">
+    units="hundredth of percent" expires_after="2026-11-08">
   <owner>etiennep@chromium.org</owner>
   <owner>olivierli@chromium.org</owner>
   <owner>lgrey@chromium.org</owner>
@@ -957,7 +958,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.BatteryDischargeRateWhileSuspended" units="mW"
-    expires_after="2026-09-06">
+    expires_after="2026-11-15">
   <owner>puthik@chromium.org</owner>
   <owner>chromeos-platform-power@google.com</owner>
   <summary>
@@ -1106,8 +1107,8 @@ tools/metrics/histograms/metadata/stability/enums.xml
   </summary>
 </histogram>
 
-<histogram name="Power.CpuTimeSecondsPerProcessType" enum="ProcessType2"
-    expires_after="2026-09-27">
+<histogram name="Power.CpuTimeSecondsPerProcessType2" enum="ShortProcessType"
+    expires_after="2026-11-22">
   <owner>eseckler@chromium.org</owner>
   <owner>skyostil@chromium.org</owner>
   <owner>woa-performance@google.com</owner>
@@ -1124,8 +1125,8 @@ tools/metrics/histograms/metadata/stability/enums.xml
   </summary>
 </histogram>
 
-<histogram name="Power.CpuTimeSecondsPerProcessType.{Visibility}"
-    enum="ProcessType2" expires_after="2026-09-06">
+<histogram name="Power.CpuTimeSecondsPerProcessType2.{Visibility}"
+    enum="ShortProcessType" expires_after="2026-09-06">
   <owner>eseckler@chromium.org</owner>
   <owner>skyostil@chromium.org</owner>
   <owner>woa-performance@google.com</owner>
@@ -1149,7 +1150,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.CpuTimeSecondsPerThreadType.{ProcessType}"
-    enum="CpuTimeMetricsThreadType" expires_after="2026-08-23">
+    enum="CpuTimeMetricsThreadType" expires_after="2026-10-25">
   <owner>eseckler@chromium.org</owner>
   <owner>skyostil@chromium.org</owner>
   <owner>woa-performance@google.com</owner>
@@ -1176,7 +1177,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.CpuTimeSecondsPerThreadType.{ProcessType}.{Visibility}"
-    enum="CpuTimeMetricsThreadType" expires_after="2026-08-23">
+    enum="CpuTimeMetricsThreadType" expires_after="2026-10-25">
   <owner>eseckler@chromium.org</owner>
   <owner>mthiesse@chromium.org</owner>
   <owner>woa-performance@google.com</owner>
@@ -1336,26 +1337,6 @@ tools/metrics/histograms/metadata/stability/enums.xml
   </token>
 </histogram>
 
-<histogram name="Power.FirmwareResumeTimeOnAC" units="ms"
-    expires_after="2022-03-31">
-  <owner>puthik@chromium.org</owner>
-  <owner>chromeos-platform-power@google.com</owner>
-  <summary>
-    The time that the firmware took to resume the Chrome OS device from
-    suspend-to-RAM state when running on AC at pre-suspend time.
-  </summary>
-</histogram>
-
-<histogram name="Power.FirmwareResumeTimeOnBattery" units="ms"
-    expires_after="2022-03-31">
-  <owner>puthik@chromium.org</owner>
-  <owner>chromeos-platform-power@google.com</owner>
-  <summary>
-    The time that the firmware took to resume the Chrome OS device from
-    suspend-to-RAM state when running on battery at pre-suspend time.
-  </summary>
-</histogram>
-
 <histogram
     name="Power.ForegroundBatteryDrain.30SecondsAvg2{Exclusive}{DarkeningType}"
     units="uAh" expires_after="never">
@@ -1449,7 +1430,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 
 <histogram
     name="Power.ForegroundBatteryDrainPerScenario.30Seconds{Exclusive}{LoadingScenario}{InputScenario}"
-    units="uAh" expires_after="2026-08-02">
+    units="uAh" expires_after="2026-10-04">
   <owner>kraskevich@google.com</owner>
   <owner>woa-performance@google.com</owner>
   <summary>
@@ -1493,7 +1474,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 
 <histogram
     name="Power.ForegroundEnergyConsumedPerScenario.30Seconds{Exclusive}{LoadingScenario}{InputScenario}{Subsystem}"
-    units="uWh" expires_after="2026-08-23">
+    units="uWh" expires_after="2026-10-25">
   <owner>kraskevich@google.com</owner>
   <owner>woa-performance@google.com</owner>
   <summary>
@@ -1543,64 +1524,6 @@ tools/metrics/histograms/metadata/stability/enums.xml
   </summary>
 </histogram>
 
-<histogram name="Power.IdleTimeAfterDimOnAC" units="ms"
-    expires_after="2022-04-24">
-  <owner>tbroch@chromium.org</owner>
-  <owner>napper@chromium.org</owner>
-  <summary>
-    Chrome OS user idle time since the screen dimmed sampled when the user
-    becomes active again if the device runs on AC.
-  </summary>
-</histogram>
-
-<histogram name="Power.IdleTimeAfterDimOnBattery" units="ms"
-    expires_after="2022-04-17">
-  <owner>tbroch@chromium.org</owner>
-  <owner>napper@chromium.org</owner>
-  <summary>
-    Chrome OS user idle time since the screen dimmed sampled when the user
-    becomes active again if the device runs on battery.
-  </summary>
-</histogram>
-
-<histogram name="Power.IdleTimeAfterScreenOffOnAC" units="ms"
-    expires_after="2022-05-01">
-  <owner>tbroch@chromium.org</owner>
-  <owner>napper@chromium.org</owner>
-  <summary>
-    Chrome OS user idle time since the screen turned off sampled when the user
-    becomes active again if the device runs on AC.
-  </summary>
-</histogram>
-
-<histogram name="Power.IdleTimeAfterScreenOffOnBattery" units="ms"
-    expires_after="2022-04-17">
-  <owner>tbroch@chromium.org</owner>
-  <owner>napper@chromium.org</owner>
-  <summary>
-    Chrome OS user idle time since the screen turned off sampled when the user
-    becomes active again if the device runs on battery.
-  </summary>
-</histogram>
-
-<histogram name="Power.IdleTimeOnAC" units="ms" expires_after="2022-04-24">
-  <owner>tbroch@chromium.org</owner>
-  <owner>napper@chromium.org</owner>
-  <summary>
-    Chrome OS user idle time sampled when the user becomes active again if the
-    device runs on AC.
-  </summary>
-</histogram>
-
-<histogram name="Power.IdleTimeOnBattery" units="ms" expires_after="2021-10-17">
-  <owner>tbroch@chromium.org</owner>
-  <owner>napper@chromium.org</owner>
-  <summary>
-    Chrome OS user idle time sampled when the user becomes active again if the
-    device runs on battery.
-  </summary>
-</histogram>
-
 <histogram name="Power.IOPMPowerSource.SamplingEventDelta" units="ms"
     expires_after="2024-04-28">
   <owner>pmonette@chromium.org</owner>
@@ -1624,7 +1547,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.KernelResumeTimeOnAC" units="ms"
-    expires_after="2026-09-06">
+    expires_after="2026-11-15">
   <owner>puthik@chromium.org</owner>
   <owner>mhiramat@google.com</owner>
   <owner>chromeos-platform-power@google.com</owner>
@@ -1651,7 +1574,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.KernelSuspendTimeOnAC" units="ms"
-    expires_after="2026-09-06">
+    expires_after="2026-11-15">
   <owner>puthik@chromium.org</owner>
   <owner>mhiramat@google.com</owner>
   <owner>chromeos-platform-power@google.com</owner>
@@ -1666,7 +1589,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.KernelSuspendTimeOnBattery" units="ms"
-    expires_after="2026-08-23">
+    expires_after="2026-10-25">
   <owner>puthik@chromium.org</owner>
   <owner>mhiramat@google.com</owner>
   <owner>chromeos-platform-power@google.com</owner>
@@ -1681,7 +1604,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.KeyboardBacklightLevel" units="%"
-    expires_after="2026-08-02">
+    expires_after="2026-10-04">
   <owner>tbroch@chromium.org</owner>
   <summary>
     The level of the keyboard backlight as a percentage. Sampled every 30
@@ -1747,74 +1670,6 @@ tools/metrics/histograms/metadata/stability/enums.xml
   </token>
 </histogram>
 
-<histogram name="Power.PC10inS0ixRuntimeResidencyRate" units="%"
-    expires_after="2024-09-22">
-  <owner>skardach@google.com</owner>
-  <owner>svenva@google.com</owner>
-  <owner>chromeos-platform-power@google.com</owner>
-  <summary>
-    Reports the time a Chrome OS device spends in the S0ix idle state while not
-    suspended (that is between system resume and suspend events) as a percentage
-    of the time spent in the Package C10 (PC10) idle state. Reported only if at
-    the time of measurement the time spent in PC10 is non-zero.
-
-    Data points for this metric are recorded on every resume and suspend event
-    and therefore the metric itself is reported on every suspend attempt,
-    starting from the second one.
-
-    Only available on Chrome OS devices with Intel CPU.
-  </summary>
-</histogram>
-
-<histogram name="Power.PC10RuntimeResidencyRate" units="%"
-    expires_after="2024-09-22">
-  <owner>skardach@google.com</owner>
-  <owner>svenva@google.com</owner>
-  <owner>chromeos-platform-power@google.com</owner>
-  <summary>
-    Reports the time a Chrome OS device spends in the Package C10 (PC10) idle
-    state as a percentage of the time device is not suspended (that is between
-    system resume and suspend events). Reported even if the value is zero.
-
-    Data points for this metric are recorded on every resume and suspend event
-    and therefore the metric itself is reported on every suspend attempt,
-    starting from the second one.
-
-    Only available on Chrome OS devices with Intel CPU.
-  </summary>
-</histogram>
-
-<histogram name="Power.PeripheralReadErrorLatencyMs" units="ms"
-    expires_after="2024-07-07">
-  <owner>skyostil@chromium.org</owner>
-  <owner>chromeos-platform-power@google.com</owner>
-  <summary>
-    The amount of wall time in milliseconds taken to fail a read of the battery
-    capacity of a peripheral.
-  </summary>
-</histogram>
-
-<histogram name="Power.PeripheralReadLatencyMs" units="ms"
-    expires_after="2024-07-07">
-  <owner>skyostil@chromium.org</owner>
-  <owner>chromeos-platform-power@google.com</owner>
-  <summary>
-    The amount of wall time in milliseconds taken to complete a read of the
-    battery capacity of a peripheral.
-  </summary>
-</histogram>
-
-<histogram name="Power.PowerButtonAcknowledgmentDelay" units="ms"
-    expires_after="M100">
-  <owner>puthik@chromium.org</owner>
-  <owner>chromeos-platform-power@google.com</owner>
-  <summary>
-    The amount of time between the user pressing the power button and Chrome
-    acknowledging the button-down event on Chrome OS. Values for this metric are
-    capped to two seconds.
-  </summary>
-</histogram>
-
 <histogram name="Power.PowerButtonMenuAction" enum="PowerButtonMenuActionType"
     expires_after="2025-04-30">
   <owner>minch@chromium.org</owner>
@@ -1871,7 +1726,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.PowerSupplyMaxVoltage" units="V"
-    expires_after="2026-08-23">
+    expires_after="2026-10-25">
   <owner>bleung@chromium.org</owner>
   <owner>puthik@chromium.org</owner>
   <owner>chromeos-platform-power@google.com</owner>
@@ -1917,7 +1772,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.ShutdownReason" enum="ShutdownReason"
-    expires_after="2026-08-09">
+    expires_after="2026-10-25">
   <owner>mqg@chromium.org</owner>
   <owner>sammc@chromium.org</owner>
   <owner>chromeos-power-team@google.com</owner>
@@ -1932,13 +1787,13 @@ tools/metrics/histograms/metadata/stability/enums.xml
 
 <histogram name="Power.SmartCharging.Messages" enum="SmartChargingMessages"
     expires_after="2026-08-01">
-  <owner>alanlxl@chromium.org</owner>
   <owner>amoylan@chromium.org</owner>
+  <owner>chrome-knowledge-eng@google.com</owner>
   <summary>Type of messages that are reported by smart charging.</summary>
 </histogram>
 
 <histogram name="Power.SuspendAttempt" enum="SuspendAttempt"
-    expires_after="2026-08-09">
+    expires_after="2026-10-11">
   <owner>puthik@chromium.org</owner>
   <owner>chromeos-platform-power@google.com</owner>
   <summary>
@@ -1987,7 +1842,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.SuspendJourneyResult" enum="SuspendJourneyResult"
-    expires_after="2026-09-06">
+    expires_after="2026-11-15">
   <owner>eizan@chromium.org</owner>
   <owner>chromeos-power-team@google.com</owner>
   <summary>
@@ -1997,7 +1852,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.SuspendResult" enum="SuspendResult"
-    expires_after="2026-08-02">
+    expires_after="2026-10-04">
   <owner>puthik@chromium.org</owner>
   <owner>chromeos-platform-power@google.com</owner>
   <summary>
@@ -2019,7 +1874,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.TimeInSuspendAtBoot" units="minutes"
-    expires_after="2026-09-06">
+    expires_after="2026-11-15">
   <owner>tbroch@chromium.org</owner>
   <summary>
     Chrome OS time in minutes spent in suspend-to-RAM mode sampled at boot
@@ -2028,7 +1883,7 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.TimeInSuspendAtResume" units="minutes"
-    expires_after="2026-09-06">
+    expires_after="2026-11-15">
   <owner>tbroch@chromium.org</owner>
   <summary>
     Chrome OS time in minutes spent in suspend-to-RAM mode sampled at resume.
@@ -2036,10 +1891,10 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.UserBrightnessAdjustmentsPerSessionOnAC" units="units"
-    expires_after="2026-06-01">
+    expires_after="2026-11-01">
   <owner>amoylan@chromium.org</owner>
-  <owner>alanlxl@chromium.org</owner>
   <owner>napper@chromium.org</owner>
+  <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
     The number of times that the user adjusted the brightness during a session
     when on AC. Values for this metric are clamped to 10k count, so the last
@@ -2048,10 +1903,10 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="Power.UserBrightnessAdjustmentsPerSessionOnBattery"
-    units="units" expires_after="2026-08-02">
-  <owner>alanlxl@chromium.org</owner>
+    units="units" expires_after="2026-10-04">
   <owner>amoylan@chromium.org</owner>
   <owner>napper@chromium.org</owner>
+  <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
     The number of times that the user adjusted the brightness during a session
     when on battery. Values for this metric are clamped to 10k count, so the
@@ -2081,9 +1936,9 @@ tools/metrics/histograms/metadata/stability/enums.xml
 
 <histogram name="PowerML.DimImminent.Action" enum="PowerMLDimImminentAction"
     expires_after="2026-09-08">
-  <owner>alanlxl@chromium.org</owner>
   <owner>amoylan@chromium.org</owner>
   <owner>napper@chromium.org</owner>
+  <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
     What happens when UserActivityManager receives a screen dim imminent
     notification. Only applicable to Chrome OS.
@@ -2091,11 +1946,11 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="PowerML.ModelDim.Result" enum="PowerMLFinalResult"
-    expires_after="2026-09-06">
-  <owner>alanlxl@chromium.org</owner>
+    expires_after="2026-11-08">
   <owner>amoylan@chromium.org</owner>
   <owner>napper@chromium.org</owner>
   <owner>thanhdng@chromium.org</owner>
+  <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
     What happens after screen is dimmed following model instruction. Only
     applicable to Chrome OS.
@@ -2103,11 +1958,11 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="PowerML.ModelNoDim.Result" enum="PowerMLFinalResult"
-    expires_after="2026-06-01">
-  <owner>alanlxl@chromium.org</owner>
+    expires_after="2026-11-01">
   <owner>amoylan@chromium.org</owner>
   <owner>napper@chromium.org</owner>
   <owner>thanhdng@chromium.org</owner>
+  <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
     What happens after screen dim is deferred following model instruction. Only
     applicable to Chrome OS.
@@ -2115,11 +1970,11 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="PowerML.NonModelDim.Result" enum="PowerMLFinalResult"
-    expires_after="2026-06-01">
-  <owner>alanlxl@chromium.org</owner>
+    expires_after="2026-11-01">
   <owner>amoylan@chromium.org</owner>
   <owner>napper@chromium.org</owner>
   <owner>thanhdng@chromium.org</owner>
+  <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
     What happens after screen is dimmed by powerd by ignoring the model
     instruction. Only applicable to Chrome OS.
@@ -2138,10 +1993,10 @@ tools/metrics/histograms/metadata/stability/enums.xml
 
 <histogram name="PowerML.SmartDimComponent.LoadComponentEvent"
     enum="PowerMLSmartDimComponentLoadComponentEvent"
-    expires_after="2026-06-01">
-  <owner>alanlxl@chromium.org</owner>
+    expires_after="2026-11-01">
   <owner>amoylan@chromium.org</owner>
   <owner>napper@chromium.org</owner>
+  <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
     Records the event (various failures or success) of loading smart dim
     component. Only applicable to Chrome OS.
@@ -2149,10 +2004,10 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="PowerML.SmartDimComponent.VersionType"
-    enum="PowerMLSmartDimComponentVersionType" expires_after="2026-06-01">
-  <owner>alanlxl@chromium.org</owner>
+    enum="PowerMLSmartDimComponentVersionType" expires_after="2026-11-01">
   <owner>amoylan@chromium.org</owner>
   <owner>napper@chromium.org</owner>
+  <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
     Records the type of expected version (default, experimental or empty) used
     by smart dim component installer. Only applicable to Chrome OS.
@@ -2160,10 +2015,10 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="PowerML.SmartDimComponent.WorkerType"
-    enum="PowerMLSmartDimComponentWorkerType" expires_after="2026-06-01">
-  <owner>alanlxl@chromium.org</owner>
+    enum="PowerMLSmartDimComponentWorkerType" expires_after="2026-11-01">
   <owner>amoylan@chromium.org</owner>
   <owner>napper@chromium.org</owner>
+  <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
     Records the worker type that is used by smart dim ml agent to make a
     decision. Only applicable to Chrome OS.
@@ -2171,11 +2026,11 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="PowerML.SmartDimModel.RequestCanceledDuration" units="ms"
-    expires_after="2026-08-09">
-  <owner>alanlxl@chromium.org</owner>
+    expires_after="2026-10-11">
   <owner>amoylan@chromium.org</owner>
   <owner>napper@chromium.org</owner>
   <owner>pmalani@chromium.org</owner>
+  <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
     The time elapsed between a Smart Dim Inference Request being sent to the ML
     model, and the request being canceled before the result is returned.
@@ -2183,11 +2038,11 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="PowerML.SmartDimModel.RequestCompleteDuration" units="ms"
-    expires_after="2026-07-01">
-  <owner>alanlxl@chromium.org</owner>
+    expires_after="2026-12-01">
   <owner>amoylan@chromium.org</owner>
   <owner>napper@chromium.org</owner>
   <owner>pmalani@chromium.org</owner>
+  <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
     The time elapsed between a Smart Dim Inference Request being sent to the ML
     model and a result being returned.
@@ -2196,10 +2051,10 @@ tools/metrics/histograms/metadata/stability/enums.xml
 
 <histogram name="PowerML.SmartDimModel.Result"
     enum="PowerMLSmartDimModelResult" expires_after="2026-08-01">
-  <owner>alanlxl@chromium.org</owner>
   <owner>amoylan@chromium.org</owner>
   <owner>napper@chromium.org</owner>
   <owner>thanhdng@chromium.org</owner>
+  <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
     This is the status code returned by the model when calculating a user
     inactivity score. If it is any value other than 0 (success), then some issue
@@ -2210,11 +2065,11 @@ tools/metrics/histograms/metadata/stability/enums.xml
 </histogram>
 
 <histogram name="PowerML.SmartDimParameter.Result"
-    enum="PowerMLSmartDimParameterResult" expires_after="2026-06-01">
-  <owner>alanlxl@chromium.org</owner>
+    enum="PowerMLSmartDimParameterResult" expires_after="2026-11-01">
   <owner>amoylan@chromium.org</owner>
   <owner>napper@chromium.org</owner>
   <owner>thanhdng@chromium.org</owner>
+  <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
     The result of parsing the dim threshold parameter value. Only applicable to
     Chrome OS.

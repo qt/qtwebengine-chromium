@@ -1,6 +1,6 @@
 {
   "doc/ExtensionSupport.md":
-    "d2b01c702e39ac3612900dc9777d4676",
+    "c7044b13720f904db5c91c9821436209",
   "scripts/egl_angle_ext.xml":
     "676627eae49a3ccadeafc3adbd7dba8d",
   "scripts/extension_data/intel_630_linux.json":
@@ -22,13 +22,13 @@
   "scripts/gl_angle_ext.xml":
     "df82dab93ee0204653ab74bd08db6496",
   "scripts/registry_xml.py":
-    "107cb680ae3f7a7bac304dfdc36185a4",
+    "e8c215a6b07343fa1ae7fcb2601297e9",
   "src/libANGLE/gen_extensions.py":
     "b633607f7ec8333cd64234e5e10af145",
   "src/libANGLE/gles_extensions_autogen.cpp":
-    "6dda5d42333e5bb41a21f1100d5dbb0f",
+    "2385fa97600cc5aeaee2a21fe625512e",
   "src/libANGLE/gles_extensions_autogen.h":
-    "0f54916907002fa66d5ac3a61429e1a6",
+    "cf219264b98a17ac2f011db2ac5e7d42",
   "third_party/EGL-Registry/src/api/egl.xml":
     "2056d54ea07156f1988ca1366bdee21a",
   "third_party/OpenCL-Docs/src/xml/cl.xml":

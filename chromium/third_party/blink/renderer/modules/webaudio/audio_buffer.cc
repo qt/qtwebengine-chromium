@@ -42,6 +42,18 @@
 
 namespace blink {
 
+namespace {
+
+DOMFloat32Array* CreateFloat32ArrayOrNull(
+    uint32_t length,
+    AudioBuffer::InitializationPolicy policy) {
+  return policy == AudioBuffer::InitializationPolicy::kZeroInitialize
+             ? DOMFloat32Array::CreateOrNull(length)
+             : DOMFloat32Array::CreateUninitializedOrNull(length);
+}
+
+}  // namespace
+
 AudioBuffer* AudioBuffer::Create(unsigned number_of_channels,
                                  uint32_t number_of_frames,
                                  float sample_rate) {
@@ -151,14 +163,6 @@ bool AudioBuffer::CreatedSuccessfully(
   return numberOfChannels() == desired_number_of_channels;
 }
 
-DOMFloat32Array* AudioBuffer::CreateFloat32ArrayOrNull(
-    uint32_t length,
-    InitializationPolicy policy) {
-  return policy == InitializationPolicy::kZeroInitialize
-             ? DOMFloat32Array::CreateOrNull(length)
-             : DOMFloat32Array::CreateUninitializedOrNull(length);
-}
-
 AudioBuffer::AudioBuffer(unsigned number_of_channels,
                          uint32_t number_of_frames,
                          float sample_rate,
@@ -253,7 +257,7 @@ void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
   // We don't need to copy anything if a) the buffer offset is past the end of
   // the AudioBuffer or b) the internal `Data()` of is a zero-length
   // `Float32Array`, which can result a nullptr.
-  if (buffer_offset >= src.size() || dst.size() <= 0) {
+  if (buffer_offset >= src.size() || dst.empty()) {
     return;
   }
 
@@ -324,9 +328,11 @@ std::unique_ptr<SharedAudioBuffer> AudioBuffer::CreateSharedAudioBuffer() {
 SharedAudioBuffer::SharedAudioBuffer(AudioBuffer* buffer)
     : sample_rate_(buffer->sampleRate()), length_(buffer->length()) {
   channels_.resize(buffer->numberOfChannels());
+  channel_spans_.resize(buffer->numberOfChannels());
   for (unsigned int i = 0; i < buffer->numberOfChannels(); ++i) {
-    buffer->getChannelData(i)->buffer()->ShareNonSharedForInternalUse(
-        channels_[i]);
+    NotShared<DOMFloat32Array> channel_data = buffer->getChannelData(i);
+    channel_spans_[i] = channel_data->AsSpan();
+    channel_data->buffer()->ShareNonSharedForInternalUse(channels_[i]);
   }
 }
 

@@ -1,0 +1,13 @@
+Name: libcxxabi
+Short Name: libc++abi
+URL: http://libcxxabi.llvm.org/
+Version: 1.0
+Revision: 83a852080747b9a362e8f9e361366b7a601f302c
+License: NCSA, Apache-with-LLVM-Exception, MIT
+License File: src/LICENSE.TXT
+Security Critical: yes
+Shipped: yes
+
+Description:
+
+libc++abi for Open Screen.

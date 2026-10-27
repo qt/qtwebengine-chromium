@@ -8,12 +8,15 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/to_string.h"
 #include "base/test/scoped_feature_list.h"
+#include "build/build_config.h"
 #include "components/download/public/common/download_danger_type.h"
 #include "components/download/public/common/mock_download_item.h"
 #include "components/enterprise/common/proto/connectors.pb.h"
 #include "components/enterprise/connectors/core/analysis_test_utils.h"
+#include "components/enterprise/connectors/core/cloud_content_scanning/binary_upload_request.h"
 #include "components/enterprise/connectors/core/cloud_content_scanning/common.h"
 #include "components/enterprise/connectors/core/cloud_content_scanning/deep_scanning_utils.h"
+#include "components/enterprise/connectors/core/cloud_content_scanning/mock_content_analysis_info.h"
 #include "components/enterprise/connectors/core/common.h"
 #include "components/enterprise/connectors/core/test_connectors_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
@@ -52,6 +55,8 @@ constexpr char16_t kTestUnescapedHtmlMessage[] = u"<>&\"'";
 constexpr size_t kRuleMessageOffset = 26;
 constexpr char kTestLinkedMessage[] = "Learn More";
 constexpr char16_t kU16TestLinkedMessage[] = u"Learn More";
+constexpr char kProfileDMToken[] = "profile_dm_token";
+constexpr char kMachineDMToken[] = "machine_dm_token";
 
 ContentAnalysisResponse CreateContentAnalysisResponse(
     const std::vector<CustomMessageTestCase>& triggered_rules,
@@ -85,8 +90,8 @@ class BaseTest : public testing::Test {
     // Settings can't be returned if no DM token exists.
     connectors_service_ = std::make_unique<TestConnectorsService>(&prefs_);
     connectors_service_->set_connectors_enabled(true);
-    connectors_service_->set_profile_dm_token();
-    connectors_service_->set_machine_dm_token();
+    connectors_service_->set_profile_dm_token(kProfileDMToken);
+    connectors_service_->set_machine_dm_token(kMachineDMToken);
   }
 
   void TearDown() override { connectors_service_ = nullptr; }
@@ -182,6 +187,27 @@ TEST_P(EnterpriseConnectorsResultShouldAllowDataUseTest, BlockUploadFailure) {
   EXPECT_EQ(allowed(),
             ResultShouldAllowDataUse(settings(connectors_service_.get()),
                                      ScanRequestUploadResult::kUploadFailure));
+}
+
+// Tests request result should not be allowed a data use if user cancelled.
+TEST_P(EnterpriseConnectorsResultShouldAllowDataUseTest, BlockUserCancelled) {
+  EXPECT_FALSE(ResultIsFailClosed(ScanRequestUploadResult::kUserCancelled));
+  EXPECT_EQ("UserCancelled",
+            BinaryUploadServiceResultToString(
+                ScanRequestUploadResult::kUserCancelled, false));
+  auto pref = base::StringPrintf(R"(
+    {
+      "service_provider": "google",
+      "enable": [{"url_list": ["*"], "tags": ["dlp"]}],
+      "default_action": "%s"
+    })",
+                                 default_action_setting());
+  test::SetAnalysisConnectorsPrefs(connectors_service_->GetPrefs(),
+                                   FILE_DOWNLOADED, {pref}, true);
+
+  EXPECT_FALSE(
+      ResultShouldAllowDataUse(settings(connectors_service_.get()),
+                               ScanRequestUploadResult::kUserCancelled));
 }
 
 class ContentAnalysisResponseCustomMessageTest
@@ -319,5 +345,64 @@ INSTANTIATE_TEST_SUITE_P(
                 {.action = TriggeredRule::BLOCK,
                  .message = kTestEscapedHtmlMessage}},
             /*expected_message=*/kTestUnescapedHtmlMessage)));
+
+TEST(DeepScanningUtilsTest, BinaryUploadServiceResultToString) {
+  EXPECT_EQ("UserCancelled",
+            enterprise_connectors::BinaryUploadServiceResultToString(
+                enterprise_connectors::ScanRequestUploadResult::kUserCancelled,
+                false));
+}
+
+class FakeBinaryUploadRequest : public BinaryUploadRequest {
+ public:
+  FakeBinaryUploadRequest()
+      : BinaryUploadRequest(
+            base::DoNothing(),
+            CloudOrLocalAnalysisSettings(CloudAnalysisSettings()),
+            base::NullCallback()) {}
+  void GetRequestData(DataCallback callback) override {
+    std::move(callback).Run(ScanRequestUploadResult::kSuccess, Data());
+  }
+};
+
+TEST(DeepScanningUtilsTest, InitializeBinaryUploadRequest_IsMobile) {
+  FakeBinaryUploadRequest request;
+  testing::NiceMock<MockContentAnalysisInfoBase> info;
+  AnalysisSettings settings;
+  GURL url;
+  ON_CALL(info, settings()).WillByDefault(testing::ReturnRef(settings));
+  ON_CALL(info, url()).WillByDefault(testing::ReturnRef(url));
+  ON_CALL(info, tab_url()).WillByDefault(testing::ReturnRef(url));
+
+  InitializeBinaryUploadRequest(&request, info,
+                                /*include_enterprise_only_fields=*/true);
+
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+  EXPECT_TRUE(request.content_analysis_request().is_mobile());
+#else
+  EXPECT_FALSE(request.content_analysis_request().is_mobile());
+#endif
+}
+
+class CalculateRequestHandlerResultTest : public BaseTest {};
+
+TEST_F(CalculateRequestHandlerResultTest, UserCancelled) {
+  test::SetAnalysisConnectorsPrefs(connectors_service_->GetPrefs(),
+                                   FILE_DOWNLOADED, {kGoogleServiceProvider},
+                                   true);
+
+  ContentAnalysisResponse response;
+  auto* result = response.add_results();
+  result->set_status(ContentAnalysisResponse::Result::SUCCESS);
+
+  RequestHandlerResult handler_result = CalculateRequestHandlerResult(
+      settings(connectors_service_.get()),
+      ScanRequestUploadResult::kUserCancelled, response);
+
+  EXPECT_FALSE(handler_result.complies);
+  EXPECT_EQ(FinalContentAnalysisResult::CANCELLED, handler_result.final_result);
+  EXPECT_EQ("Cancelled",
+            FinalContentAnalysisResultToString(handler_result.final_result));
+}
 
 }  // namespace enterprise_connectors

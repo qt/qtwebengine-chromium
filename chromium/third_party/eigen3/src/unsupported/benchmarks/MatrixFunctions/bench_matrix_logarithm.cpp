@@ -1,5 +1,7 @@
 // Benchmarks for matrix logarithm.
 // Inverse of matrix exponential, used for Lie group log maps.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>

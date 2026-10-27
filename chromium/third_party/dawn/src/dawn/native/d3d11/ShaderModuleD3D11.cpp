@@ -25,29 +25,29 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/d3d11/ShaderModuleD3D11.h"
+#include "src/dawn/native/d3d11/ShaderModuleD3D11.h"
 
 #include <string>
 #include <unordered_map>
 #include <utility>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/MatchVariant.h"
-#include "dawn/native/ImmediateConstantsLayout.h"
-#include "dawn/native/Pipeline.h"
-#include "dawn/native/TintUtils.h"
-#include "dawn/native/d3d/D3DCompilationRequest.h"
-#include "dawn/native/d3d/D3DError.h"
-#include "dawn/native/d3d11/BackendD3D11.h"
-#include "dawn/native/d3d11/BindGroupLayoutD3D11.h"
-#include "dawn/native/d3d11/DeviceD3D11.h"
-#include "dawn/native/d3d11/PhysicalDeviceD3D11.h"
-#include "dawn/native/d3d11/PipelineLayoutD3D11.h"
-#include "dawn/native/d3d11/PlatformFunctionsD3D11.h"
-#include "dawn/native/d3d11/UtilsD3D11.h"
 #include "dawn/platform/DawnPlatform.h"
-#include "dawn/platform/metrics/HistogramMacros.h"
-#include "dawn/platform/tracing/TraceEvent.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/MatchVariant.h"
+#include "src/dawn/native/Pipeline.h"
+#include "src/dawn/native/TintUtils.h"
+#include "src/dawn/native/d3d/D3DCompilationRequest.h"
+#include "src/dawn/native/d3d/D3DError.h"
+#include "src/dawn/native/d3d11/BackendD3D11.h"
+#include "src/dawn/native/d3d11/BindGroupLayoutD3D11.h"
+#include "src/dawn/native/d3d11/DeviceD3D11.h"
+#include "src/dawn/native/d3d11/ImmediatesLayoutD3D11.h"
+#include "src/dawn/native/d3d11/PhysicalDeviceD3D11.h"
+#include "src/dawn/native/d3d11/PipelineLayoutD3D11.h"
+#include "src/dawn/native/d3d11/PlatformFunctionsD3D11.h"
+#include "src/dawn/native/d3d11/UtilsD3D11.h"
+#include "src/dawn/platform/metrics/HistogramMacros.h"
+#include "src/dawn/platform/tracing/TraceEvent.h"
 #include "tint/tint.h"
 
 namespace dawn::native::d3d11 {
@@ -72,7 +72,8 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     SingleShaderStage stage,
     const PipelineLayout* layout,
     uint32_t compileFlags,
-    const ImmediateConstantMask& pipelineImmediateMask,
+    const ImmediateMask& pipelineImmediateMask,
+    bool applySampleMaskPolyfill,
     const std::optional<dawn::native::d3d::InterStageShaderVariablesMask>& usedInterstageVariables,
     const std::optional<tint::hlsl::writer::PixelLocalOptions>& pixelLocalOptions) {
     Device* device = ToBackend(GetDevice());
@@ -136,16 +137,17 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     req.hlsl.tintOptions.disable_integer_range_analysis =
         !device->IsToggleEnabled(Toggle::EnableIntegerRangeAnalysisInRobustness);
 
+    req.hlsl.tintOptions.polyfill_sample_mask = applySampleMaskPolyfill;
     req.hlsl.tintOptions.immediate_binding_point =
         tint::BindingPoint{0, PipelineLayout::kReservedConstantBufferSlot};
     if (stage == SingleShaderStage::Compute) {
         req.hlsl.tintOptions.num_workgroups_start_offset = GetImmediateByteOffsetInPipelineIfAny(
-            &ComputeImmediateConstants::numWorkgroups, pipelineImmediateMask);
+            &ComputeImmediates::numWorkgroups, pipelineImmediateMask);
     } else {
         req.hlsl.tintOptions.first_index_offset = GetImmediateByteOffsetInPipelineIfAny(
-            &RenderImmediateConstants::firstVertex, pipelineImmediateMask);
+            &RenderImmediates::firstVertex, pipelineImmediateMask);
         req.hlsl.tintOptions.first_instance_offset = GetImmediateByteOffsetInPipelineIfAny(
-            &RenderImmediateConstants::firstInstance, pipelineImmediateMask);
+            &RenderImmediates::firstInstance, pipelineImmediateMask);
     }
 
     if (stage == SingleShaderStage::Vertex) {

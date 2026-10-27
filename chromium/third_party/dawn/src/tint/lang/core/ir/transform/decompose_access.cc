@@ -68,8 +68,15 @@ struct State {
     const type::Type* base_ty_ = nullptr;
     const type::Pointer* base_ptr_ty_ = nullptr;
 
+    diag::Diagnostic MakeError(const Source& src) {
+        diag::Diagnostic error{};
+        error.severity = diag::Severity::Error;
+        error.source = src;
+        return error;
+    }
+
     /// Process the module.
-    void Process() {
+    diag::Result<SuccessType> Process() {
         Vector<core::ir::Var*, 4> var_worklist;
         for (auto* inst : *ir.root_block) {
             // Allow this to run before or after PromoteInitializers by handling non-var root_block
@@ -103,10 +110,24 @@ struct State {
 
         for (auto* var : var_worklist) {
             auto* result = var->Result();
+            auto* var_ty = result->Type()->As<core::type::Pointer>();
             SetBaseEleType(var);
 
+            // Figure the final type early to check for potential size issues.
+            const type::Array* array_ty = nullptr;
+            if (!var_ty->StoreType()->HasFixedFootprint()) {
+                // Use a runtime-sized array of the base type.
+                array_ty = ty.runtime_array(BaseEleType());
+            } else {
+                TINT_CHECK_RESULT_UNWRAP(array_length,
+                                         NumBaseElementsChecked(var_ty->StoreType(), var));
+
+                array_length =
+                    std::max(array_length, options.minimum_array_size / BaseEleType()->Size());
+                array_ty = ty.array(BaseEleType(), array_length);
+            }
+
             auto usage_worklist = result->UsagesSorted();
-            auto* var_ty = result->Type()->As<core::type::Pointer>();
             while (!usage_worklist.IsEmpty()) {
                 auto usage = usage_worklist.Pop();
                 auto* inst = usage.instruction;
@@ -143,6 +164,7 @@ struct State {
                                 BufferLength(call, var, var_ty->StoreType());
                                 break;
                             case core::BuiltinFn::kBufferView:
+                            case core::BuiltinFn::kBufferArrayView:
                                 BufferView(call, var, var_ty->StoreType(), {});
                                 break;
                             default:
@@ -152,40 +174,11 @@ struct State {
                     TINT_ICE_ON_NO_MATCH);
             }
 
-            auto HasRuntimeSize = [&](const type::Type* type) {
-                return tint::Switch(
-                    type,
-                    [&](const type::Array* arr) {
-                        return arr->Count()->Is<type::RuntimeArrayCount>();
-                    },
-                    [&](const type::Buffer* buf) {
-                        return buf->Count()->Is<type::RuntimeArrayCount>();
-                    },
-                    [&](const type::Struct* str) {
-                        auto* last =
-                            str->Element(static_cast<uint32_t>(str->Members().Length()) - 1);
-                        if (auto* arr = last->As<type::Array>()) {
-                            return arr->Count()->Is<type::RuntimeArrayCount>();
-                        }
-                        return false;
-                    },
-                    [&](Default) { return false; });
-            };
-
             // Swap the result type of the `var` to the new result type
-            const type::Array* array_ty = nullptr;
-            if (HasRuntimeSize(var_ty->StoreType())) {
-                // Use a runtime-sized array of the base type.
-                array_ty = ty.runtime_array(BaseEleType());
-            } else {
-                auto array_length = NumBaseElements(var_ty->StoreType());
-
-                array_length =
-                    std::max(array_length, options.minimum_array_size / BaseEleType()->Size());
-                array_ty = ty.array(BaseEleType(), array_length);
-            }
             result->SetType(ty.ptr(var_ty->AddressSpace(), array_ty, var_ty->Access()));
         }
+
+        return Success;
     }
 
     const type::Type* BaseEleType() { return base_ty_; }
@@ -193,16 +186,45 @@ struct State {
     const type::Pointer* BaseEleTypePtr() { return base_ptr_ty_; }
 
     // Returns the number of BaseEleType elements need to represent `type` rounded up.
+    diag::Result<uint32_t> NumBaseElementsChecked(const type::Type* type,
+                                                  Instruction* source_inst) {
+        uint64_t num_elements = static_cast<uint64_t>(type->Size());
+        num_elements = (num_elements + BaseEleType()->Size() - 1) / BaseEleType()->Size();
+        if (num_elements > std::numeric_limits<uint32_t>::max()) {
+            diag::Diagnostic error = MakeError(ir.SourceOf(source_inst));
+            error << "required array size (" << num_elements << ") is too large";
+            return diag::Failure(error);
+        }
+        return static_cast<uint32_t>(num_elements);
+    }
+
     uint32_t NumBaseElements(const type::Type* type) {
-        return (type->Size() + BaseEleType()->Size() - 1) / BaseEleType()->Size();
+        uint64_t num_elements = static_cast<uint64_t>(type->Size());
+        num_elements = (num_elements + BaseEleType()->Size() - 1) / BaseEleType()->Size();
+        return static_cast<uint32_t>(num_elements);
     }
 
     // OffsetData represents an unsigned integer expression.
     // The value is the sum of a const part, held in `byte_offset`, and
     // non-const parts in `byte_offset_expr`.
+    //
+    // It also contains information encoding for buffer_view functions.
     struct OffsetData {
         uint32_t byte_offset = 0;
         Vector<core::ir::Value*, 4> byte_offset_expr{};
+
+        // The byte offset of the runtime array part of a struct.
+        // Note: this is also encoded as part of byte_offset, but is needed separately for
+        // bufferArrayView.
+        uint32_t byte_struct_offset = 0;
+
+        // The byte size of a bufferArrayView call
+        uint32_t byte_size = 0;
+        core::ir::Value* byte_size_expr = nullptr;
+
+        // The byte length of a bufferView or bufferArrayView call
+        uint32_t byte_length = 0;
+        core::ir::Value* byte_length_expr = nullptr;
     };
 
     bool ContainsAtomic(const type::Type* type) const {
@@ -226,7 +248,7 @@ struct State {
             type,  //
             [&](const type::Scalar* scalar) { return scalar->Size(); },
             [&](const type::Vector* vector) {
-                if (vector->Width() == 3) {
+                if (vector->Width() == 3 || vector->Type()->Is<type::F16>()) {
                     return vector->Type()->Size();
                 }
                 return type->Size();
@@ -266,7 +288,8 @@ struct State {
                     [&](core::ir::Instruction* inst) {
                         bool bufferView = false;
                         if (auto* call = inst->As<core::ir::CoreBuiltinCall>()) {
-                            bufferView = call->Func() == core::BuiltinFn::kBufferView;
+                            bufferView = call->Func() == core::BuiltinFn::kBufferView ||
+                                         call->Func() == core::BuiltinFn::kBufferArrayView;
                         }
                         if (inst->IsAnyOf<core::ir::Access, core::ir::Let>() || bufferView) {
                             for (auto u : inst->Result()->UsagesSorted()) {
@@ -369,18 +392,82 @@ struct State {
     }
 
     // Note, must be called inside a builder insert block (Append, InsertBefore, etc)
-    void UpdateOffsetData(core::ir::Value* v, uint32_t elm_size, OffsetData* offset) {
+    void UpdateOffsetData(core::ir::Value* v, uint32_t elm_size, OffsetData* data) {
         tint::Switch(
             v,  //
             [&](core::ir::Constant* idx_value) {
-                offset->byte_offset += idx_value->Value()->ValueAs<uint32_t>() * elm_size;
+                data->byte_offset += idx_value->Value()->ValueAs<uint32_t>() * elm_size;
             },
             [&](core::ir::Value* val) {
                 auto* idx = val;
                 idx = b.InsertConvertIfNeeded(ty.u32(), val);
-                offset->byte_offset_expr.Push(b.Multiply(idx, u32(elm_size))->Result());
+                data->byte_offset_expr.Push(b.Multiply(idx, u32(elm_size))->Result());
             },
             TINT_ICE_ON_NO_MATCH);
+    }
+
+    // Note, must be called inside a builder insert block (Append, InsertBefore, etc)
+    // Note, size is always in bytes.
+    void UpdateSizeData(core::ir::Value* v, OffsetData* data) {
+        tint::Switch(
+            v,  //
+            [&](core::ir::Constant* idx_value) {
+                TINT_IR_ASSERT(ir, data->byte_size == 0);
+                data->byte_size = idx_value->Value()->ValueAs<uint32_t>();
+            },
+            [&](core::ir::Value* val) {
+                TINT_IR_ASSERT(ir, data->byte_size_expr == nullptr);
+                auto* idx = val;
+                idx = b.InsertConvertIfNeeded(ty.u32(), val);
+                data->byte_size_expr = idx;
+            },
+            TINT_ICE_ON_NO_MATCH);
+    }
+
+    // Note, must be called inside a builder insert block (Append, InsertBefore, etc)
+    core::ir::Value* SizeToValue(OffsetData* data) {
+        if (data->byte_size_expr) {
+            TINT_IR_ASSERT(ir, data->byte_size == 0);
+            return data->byte_size_expr;
+        }
+        return b.Constant(u32(data->byte_size));
+    }
+
+    /// @returns true if data has size information.
+    bool HasSizeData(const OffsetData& data) {
+        return data.byte_size != 0 || data.byte_size_expr != nullptr;
+    }
+
+    // Note, must be called inside a builder insert block (Append, InsertBefore, etc)
+    // Note, length is always in bytes.
+    void UpdateLengthData(core::ir::Value* v, OffsetData* data) {
+        tint::Switch(
+            v,  //
+            [&](core::ir::Constant* idx_value) {
+                TINT_IR_ASSERT(ir, data->byte_length == 0);
+                data->byte_length = idx_value->Value()->ValueAs<uint32_t>();
+            },
+            [&](core::ir::Value* val) {
+                TINT_IR_ASSERT(ir, data->byte_length_expr == nullptr);
+                auto* idx = val;
+                idx = b.InsertConvertIfNeeded(ty.u32(), val);
+                data->byte_length_expr = idx;
+            },
+            TINT_ICE_ON_NO_MATCH);
+    }
+
+    // Note, must be called inside a builder insert block (Append, InsertBefore, etc)
+    core::ir::Value* LengthToValue(OffsetData* data) {
+        if (data->byte_length_expr) {
+            TINT_IR_ASSERT(ir, data->byte_length == 0);
+            return data->byte_length_expr;
+        }
+        return b.Constant(u32(data->byte_length));
+    }
+
+    /// @returns true if data has length information.
+    bool HasLengthData(const OffsetData& data) {
+        return data.byte_length != 0 || data.byte_length_expr != nullptr;
     }
 
     void Access(core::ir::Access* a,
@@ -422,6 +509,11 @@ struct State {
                     auto* mem = s->Members()[idx];
                     obj_ty = mem->Type();
                     offset.byte_offset += mem->Offset();
+                    if (!a->Result()->Type()->UnwrapPtr()->HasFixedFootprint()) {
+                        // Also track the struct offset separately.
+                        TINT_IR_ASSERT(ir, offset.byte_struct_offset == 0);
+                        offset.byte_struct_offset = mem->Offset();
+                    }
                 },
                 TINT_ICE_ON_NO_MATCH);
         }
@@ -432,12 +524,22 @@ struct State {
     void BufferView(core::ir::CoreBuiltinCall* call,
                     core::ir::Var* var,
                     const type::Type* obj_type,
-                    OffsetData offset) {
-        auto* offset_arg = call->Args()[1];
-        b.InsertBefore(call, [&] { UpdateOffsetData(offset_arg, 1, &offset); });
+                    OffsetData data) {
+        b.InsertBefore(call, [&] {
+            // Record offset, size (for bufferArrayView), and length (if present).
+            UpdateOffsetData(call->Args()[1], 1, &data);
+            if (call->Func() == core::BuiltinFn::kBufferArrayView) {
+                UpdateSizeData(call->Args()[2], &data);
+                if (call->Args().size() > 3) {
+                    UpdateLengthData(call->Args()[3], &data);
+                }
+            } else if (call->Args().size() > 2) {
+                UpdateLengthData(call->Args()[2], &data);
+            }
+        });
         obj_type = call->Result()->Type()->As<type::Pointer>()->StoreType();
 
-        AccessUses(call, var, obj_type, offset);
+        AccessUses(call, var, obj_type, data);
     }
 
     void AccessUses(core::ir::Instruction* inst,
@@ -494,6 +596,16 @@ struct State {
     }
 
     void Load(core::ir::Load* ld, core::ir::Var* var, OffsetData offset) {
+        // Skip unused array loads from workgroup phony assignments (e.g. `_ = workgroup_var;`).
+        // Only arrays generate expensive loop helpers. The var stays in root block scope to
+        // preserve groupshared/static declarations.
+        if (!ld->Result()->IsUsed() && ld->Result()->Type()->Is<core::type::Array>()) {
+            auto* var_ty = var->Result()->Type()->As<core::type::Pointer>();
+            if (var_ty && var_ty->AddressSpace() == AddressSpace::kWorkgroup) {
+                ld->Destroy();
+                return;
+            }
+        }
         b.InsertBefore(ld, [&] {
             auto* byte_idx = OffsetToValue(offset);
             auto* result = MakeLoad(ld, var, ld->Result()->Type(), byte_idx);
@@ -1001,13 +1113,18 @@ struct State {
     void ArrayLength(core::ir::CoreBuiltinCall* call,
                      core::ir::Var* var,
                      const type::Type* type,
-                     OffsetData offset) {
+                     OffsetData data) {
         auto* array_ty = type->As<type::Array>();
         TINT_IR_ASSERT(ir, array_ty && array_ty->Count()->Is<core::type::RuntimeArrayCount>());
+        auto* ptr_ty = var->Result()->Type()->As<core::type::Pointer>();
 
         // The arrayLength of the transformed variable will always be a multiple of the base type.
-        TINT_IR_ASSERT(ir, array_ty->ElemType()->Size() / BaseEleType()->Size() >= 1);
-        const uint32_t ratio = array_ty->ImplicitStride() / BaseEleType()->Size();
+        TINT_IR_ASSERT(ir, ptr_ty->AddressSpace() != core::AddressSpace::kStorage ||
+                               array_ty->ElemType()->Size() / BaseEleType()->Size() >= 1);
+        uint32_t ratio = 1;
+        if (ptr_ty->AddressSpace() == core::AddressSpace::kStorage) {
+            ratio = array_ty->ImplicitStride() / BaseEleType()->Size();
+        }
 
         // Given:
         // b = bufferView var, offset1
@@ -1019,31 +1136,76 @@ struct State {
         // o = add offset1, bytes(offset2)
         // s = sub l, o
         // d = div s, ratio
+        //
+        // Given:
+        // b = bufferArrayView var, offset1, size
+        // a = access b, offset2
+        // l = arrayLength a
+        //
+        // Transformed:
+        // l = size
+        // s = sub l, offset2
+        // d = div s, array_stride
+        //
+        // Given:
+        // b = bufferView var, offset1, length
+        // a = access b, offset2
+        // l = arrayLength a
+        //
+        // Transformed:
+        // l = length
+        // s = sub l, offset2
+        // d = div s, array_stride
         b.InsertBefore(call, [&] {
-            // Re-create the arrayLength call to simplify RAUW below.
-            auto* len = b.Call(ty.u32(), BuiltinFn::kArrayLength, var);
+            bool has_size = HasSizeData(data);
+            bool has_length = HasLengthData(data);
+            core::ir::Value* len = nullptr;
+            if (has_size) {
+                len = SizeToValue(&data);
+            } else if (has_length) {
+                len = LengthToValue(&data);
+            } else {
+                TINT_IR_ASSERT(ir, ptr_ty->AddressSpace() != core::AddressSpace::kUniform &&
+                                       ptr_ty->AddressSpace() != core::AddressSpace::kWorkgroup);
+                // Re-create the arrayLength call to simplify RAUW below.
+                len = b.Call(ty.u32(), BuiltinFn::kArrayLength, var)->Result();
+            }
 
             Value* value = nullptr;
-            ir::Instruction* inst = len;
-            // bufferView calls may have introduced a single runtime offset value.
-            TINT_IR_ASSERT(ir, offset.byte_offset_expr.Length() <= 1);
-            if (offset.byte_offset > 0 && offset.byte_offset_expr.Length() > 0) {
-                value = b.Add(offset.byte_offset_expr[0], u32(offset.byte_offset))->Result();
-            } else if (offset.byte_offset_expr.Length() > 0) {
-                value = offset.byte_offset_expr[0];
-            } else if (offset.byte_offset > 0) {
-                value = b.Constant(u32(offset.byte_offset / BaseEleType()->Size()));
-            }
-            if (value && offset.byte_offset_expr.Length() > 0) {
-                value = b.Divide(value, u32(BaseEleType()->Size()))->Result();
+            // buffer[Array]View calls may have introduced a single runtime offset value.
+            TINT_IR_ASSERT(ir, data.byte_offset_expr.Length() <= 1);
+            if (has_size) {
+                // bufferArrayView call preceded this. We can't just use the accumulated offset
+                // since that includes the offset in view call. Instead we only want any struct
+                // offset that was encountered.
+                if (data.byte_struct_offset != 0) {
+                    value = b.Constant(u32(data.byte_struct_offset));
+                }
+            } else if (has_length) {
+                // A length was encoded in bytes so use offset directly.
+                value = OffsetToValue(data);
+            } else {
+                if (data.byte_offset > 0 && data.byte_offset_expr.Length() > 0) {
+                    value = b.Add(data.byte_offset_expr[0], u32(data.byte_offset))->Result();
+                } else if (data.byte_offset_expr.Length() > 0) {
+                    value = data.byte_offset_expr[0];
+                } else if (data.byte_offset > 0) {
+                    value = b.Constant(u32(data.byte_offset / BaseEleType()->Size()));
+                }
+                if (value && data.byte_offset_expr.Length() > 0) {
+                    value = b.Divide(value, u32(BaseEleType()->Size()))->Result();
+                }
             }
             if (value) {
-                inst = b.Subtract(inst, value);
+                len = b.Subtract(len, value)->Result();
             }
-            if (ratio != 1u) {
-                inst = b.Divide(inst, u32(ratio));
+            if (has_size || has_length) {
+                // The calculations are in bytes, so use the array stride here.
+                len = b.Divide(len, u32(array_ty->ImplicitStride()))->Result();
+            } else if (ratio != 1u) {
+                len = b.Divide(len, u32(ratio))->Result();
             }
-            call->Result()->ReplaceAllUsesWith(inst->Result());
+            call->Result()->ReplaceAllUsesWith(len);
         });
         call->Destroy();
     }
@@ -1380,9 +1542,12 @@ Result<SuccessType> DecomposeAccess(core::ir::Module& ir, const DecomposeAccessO
                               core::ir::Capability::kAllowNonCoreTypes,
                               core::ir::Capability::kLoosenValidationForShaderIO,
                           },
-                          "before core.DecomposeUniformAccess");
+                          "before core.DecomposeAccess");
 
-    State{ir, options}.Process();
+    auto res = State{ir, options}.Process();
+    if (res != Success) {
+        return Failure{res.Failure().reason.Str()};
+    }
 
     return Success;
 }

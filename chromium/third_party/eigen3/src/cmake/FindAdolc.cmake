@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 if (ADOLC_INCLUDES AND ADOLC_LIBRARIES)
   set(ADOLC_FIND_QUIETLY TRUE)

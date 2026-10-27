@@ -7,6 +7,7 @@
 #include "third_party/blink/renderer/core/layout/block_node.h"
 #include "third_party/blink/renderer/core/layout/box_fragment_builder.h"
 #include "third_party/blink/renderer/core/layout/constraint_space.h"
+#include "third_party/blink/renderer/core/layout/disable_layout_side_effects_scope.h"
 #include "third_party/blink/renderer/core/layout/geometry/box_strut.h"
 #include "third_party/blink/renderer/core/layout/geometry/logical_size.h"
 #include "third_party/blink/renderer/core/layout/geometry/static_position.h"
@@ -46,6 +47,24 @@ LayoutUnit GetLogicalBaseline(const LogicalBoxFragment& baseline_fragment,
              : baseline_fragment.FirstBaselineOrSynthesize(font_baseline);
 }
 
+void SetTrackBaseline(const GridItemData& grid_item,
+                      GridTrackSizingDirection track_direction,
+                      LayoutUnit baseline,
+                      GridLayoutData& layout_data) {
+  // "If a box spans multiple shared alignment contexts, then it participates
+  //  in first/last baseline alignment within its start-most/end-most shared
+  //  alignment context along that axis"
+  // https://www.w3.org/TR/css-align-3/#baseline-sharing-group
+  const auto& [begin_set_index, end_set_index] =
+      grid_item.SetIndices(track_direction);
+
+  if (grid_item.BaselineGroup(track_direction) == BaselineGroup::kMajor) {
+    layout_data.SetMajorBaseline(track_direction, begin_set_index, baseline);
+  } else {
+    layout_data.SetMinorBaseline(track_direction, end_set_index - 1, baseline);
+  }
+}
+
 void StoreItemBaseline(const LogicalBoxFragment& baseline_fragment,
                        GridTrackSizingDirection track_direction,
                        FontBaseline font_baseline,
@@ -61,20 +80,7 @@ void StoreItemBaseline(const LogicalBoxFragment& baseline_fragment,
                          item.IsLastBaselineSpecified(track_direction));
   const LayoutUnit total_baseline = extra_margin + item_baseline;
 
-  // "If a box spans multiple shared alignment contexts, then it participates
-  //  in first/last baseline alignment within its start-most/end-most shared
-  //  alignment context along that axis"
-  // https://www.w3.org/TR/css-align-3/#baseline-sharing-group
-  const auto& [begin_set_index, end_set_index] =
-      item.SetIndices(track_direction);
-
-  if (item.BaselineGroup(track_direction) == BaselineGroup::kMajor) {
-    layout_data.SetMajorBaseline(track_direction, begin_set_index,
-                                 total_baseline);
-  } else {
-    layout_data.SetMinorBaseline(track_direction, end_set_index - 1,
-                                 total_baseline);
-  }
+  SetTrackBaseline(item, track_direction, total_baseline, layout_data);
 }
 
 LayoutUnit ComputeBaselineOffset(const GridItemData& grid_item,
@@ -104,6 +110,28 @@ LayoutUnit ComputeBaselineOffset(const GridItemData& grid_item,
                                    ? fragment.InlineSize()
                                    : fragment.BlockSize();
   return available_size - baseline_delta - item_size;
+}
+
+const LayoutResult* LayoutGridItemForMeasure(
+    const GridItemData& grid_item,
+    const ConstraintSpace& constraint_space,
+    SizingConstraint sizing_constraint) {
+  const auto& node = grid_item.node;
+
+  // Disable side effects during MinMax computation to avoid potential "MinMax
+  // after layout" crashes. This is not necessary during the layout pass, and
+  // would have a negative impact on performance if used there.
+  //
+  // TODO(ikilpatrick): For subgrid, ideally we don't want to disable side
+  // effects as it may impact performance significantly; this issue can be
+  // avoided by introducing additional cache slots (see crbug.com/1272533).
+  std::optional<DisableLayoutSideEffectsScope> disable_side_effects;
+  if (!node.GetLayoutBox()->NeedsLayout() &&
+      (sizing_constraint != SizingConstraint::kLayout ||
+       grid_item.is_subgridded_to_parent_grid)) {
+    disable_side_effects.emplace();
+  }
+  return node.Layout(constraint_space);
 }
 
 void ComputeAvailableSizes(const BoxStrut& border_scrollbar_padding,
@@ -382,6 +410,8 @@ LayoutUnit TrackOffset(const GridLayoutTrackCollection& track_collection,
   return track_offset;
 }
 
+}  // namespace
+
 LayoutUnit TrackStartOffset(const GridLayoutTrackCollection& track_collection,
                             const wtf_size_t range_index,
                             const wtf_size_t offset_in_range) {
@@ -433,67 +463,6 @@ LayoutUnit TrackEndOffset(const GridLayoutTrackCollection& track_collection,
       track_collection, range_index, offset_in_range);
 }
 
-}  // namespace
-
-void ComputeOutOfFlowOffsetAndSize(
-    const GridItemData& out_of_flow_item,
-    const GridLayoutTrackCollection& track_collection,
-    const BoxStrut& borders,
-    const LogicalSize& border_box_size,
-    LayoutUnit* start_offset,
-    LayoutUnit* size,
-    bool is_grid_lanes_axis) {
-  DCHECK(start_offset && size && out_of_flow_item.IsOutOfFlow());
-  OutOfFlowItemPlacement item_placement;
-  LayoutUnit end_offset;
-
-  // For the normal grid axis, determine axis from track collection direction.
-  // For the grid-lanes stacking axis, invert the direction to get the stacking
-  // axis.
-  const bool is_for_columns = is_grid_lanes_axis
-                                  ? track_collection.Direction() == kForRows
-                                  : track_collection.Direction() == kForColumns;
-
-  // The default padding box value for `size` is used for out of flow items in
-  // which both the start line and end line are defined as 'auto'.
-  if (is_for_columns) {
-    item_placement = out_of_flow_item.column_placement;
-    *start_offset = borders.inline_start;
-    end_offset = border_box_size.inline_size - borders.inline_end;
-  } else {
-    item_placement = out_of_flow_item.row_placement;
-    *start_offset = borders.block_start;
-    end_offset = border_box_size.block_size - borders.block_end;
-  }
-
-  // For the grid-lanes stacking axis, ignore grid placement and use border
-  // edges. If the start line is defined, the size will be calculated by
-  // subtracting the offset at `start_index`; otherwise, use the computed border
-  // start.
-  if (!is_grid_lanes_axis && item_placement.range_index.begin != kNotFound) {
-    DCHECK_NE(item_placement.offset_in_range.begin, kNotFound);
-
-    *start_offset =
-        TrackStartOffset(track_collection, item_placement.range_index.begin,
-                         item_placement.offset_in_range.begin);
-  }
-
-  // If the end line is defined, the offset (which can be the offset at the
-  // start index or the start border) and the added grid gap after the spanned
-  // tracks are subtracted from the offset at the end index.
-  if (!is_grid_lanes_axis && item_placement.range_index.end != kNotFound) {
-    DCHECK_NE(item_placement.offset_in_range.end, kNotFound);
-
-    end_offset =
-        TrackEndOffset(track_collection, item_placement.range_index.end,
-                       item_placement.offset_in_range.end);
-  }
-
-  // `start_offset` can be greater than `end_offset` if the used track sizes or
-  // gutter size saturated the set offsets of the track collection.
-  *size = (end_offset - *start_offset).ClampNegativeToZero();
-}
-
 void AlignmentOffsetForOutOfFlow(AxisEdge inline_axis_edge,
                                  AxisEdge block_axis_edge,
                                  LogicalSize container_size,
@@ -537,10 +506,10 @@ void AlignmentOffsetForOutOfFlow(AxisEdge inline_axis_edge,
 LayoutUnit CalculateIntrinsicMinimumContribution(
     bool is_parallel_with_track_direction,
     bool special_spanning_criteria,
-    const LayoutUnit min_content_contribution,
-    const LayoutUnit max_content_contribution,
+    base::FunctionRef<LayoutUnit()> min_content_contribution,
+    base::FunctionRef<LayoutUnit()> max_content_contribution,
+    base::FunctionRef<MinMaxSizesResult()> subgrid_minmax_sizes,
     const ConstraintSpace& space,
-    const MinMaxSizesResult& subgrid_minmax_sizes,
     const GridItemData* grid_item,
     bool& maybe_clamp) {
   CHECK(grid_item);
@@ -593,7 +562,7 @@ LayoutUnit CalculateIntrinsicMinimumContribution(
         if (is_parallel_with_track_direction) {
           auto MinMaxSizesFunc = [&](SizeType type) -> MinMaxSizesResult {
             if (grid_item->IsSubgrid()) {
-              return subgrid_minmax_sizes;
+              return subgrid_minmax_sizes();
             }
             return node.ComputeMinMaxSizes(item_style.GetWritingMode(), type,
                                            space);
@@ -607,7 +576,7 @@ LayoutUnit CalculateIntrinsicMinimumContribution(
       }
 
       maybe_clamp = true;
-      return min_content_contribution;
+      return min_content_contribution();
     }
     case Length::kMinContent:
     case Length::kMaxContent:
@@ -615,8 +584,8 @@ LayoutUnit CalculateIntrinsicMinimumContribution(
       // All of the above lengths are "definite" (non-auto), and don't need
       // the special min-size treatment above. (They will all end up being
       // the specified size).
-      return main_length.IsMaxContent() ? max_content_contribution
-                                        : min_content_contribution;
+      return main_length.IsMaxContent() ? max_content_contribution()
+                                        : min_content_contribution();
     }
     case Length::kMinIntrinsic:
     case Length::kFlex:
@@ -703,7 +672,7 @@ void BuildGridSizingSubtree(const LayoutAlgorithmType& algorithm,
   const bool has_standalone_columns = subgrid_area.columns.IsIndefinite();
   const bool has_standalone_rows = subgrid_area.rows.IsIndefinite();
 
-  GridItems* virtual_items = MakeGarbageCollected<GridItems>();
+  VirtualItems* virtual_items = nullptr;
   if (has_standalone_columns) {
     algorithm.BuildSizingCollection(kForColumns, line_resolver, *grid_items,
                                     *layout_data, sizing_constraint,
@@ -1066,6 +1035,37 @@ bool ValidateMinMaxSizesCache(const BlockNode& grid_node,
   return should_invalidate_min_max_sizes_cache;
 }
 
+bool NeedsAdditionalLayoutPass(
+    const ComputedStyle& style,
+    const ConstraintSpace& constraint_space,
+    const BlockNode& node,
+    const BoxStrut& border_padding,
+    const GridSizingTrackCollection& track_collection,
+    LayoutUnit grid_inline_size) {
+  bool needs_additional_pass = false;
+
+  // If we have any rows, gaps which will resolve differently if we have a
+  // definite available size, re-compute the grid using the resolved block size.
+  needs_additional_pass |= (style.RowGap() && style.RowGap()->HasPercent()) ||
+                           track_collection.IsDependentOnAvailableSize();
+
+  // If we are a flex-item, we may have our initial block-size forced to be
+  // indefinite, however grid layout always re-computes the grid using the
+  // final "used" block-size. We can detect this case by checking if computing
+  // our block-size (with an indefinite intrinsic size) is definite.
+  //
+  // TODO(layout-dev): A small optimization here would be to do this only if
+  // we have 'auto' tracks which fill the remaining available space.
+  if (constraint_space.IsInitialBlockSizeIndefinite()) {
+    needs_additional_pass |=
+        ComputeBlockSizeForFragment(constraint_space, node, border_padding,
+                                    /*intrinsic_size=*/kIndefiniteSize,
+                                    grid_inline_size) != kIndefiniteSize;
+  }
+
+  return needs_additional_pass;
+}
+
 LayoutUnit GetSynthesizedLogicalBaseline(
     const GridItemData& grid_item,
     LayoutUnit block_size,
@@ -1078,6 +1078,104 @@ LayoutUnit GetSynthesizedLogicalBaseline(
   return grid_item.IsLastBaselineSpecified(track_direction)
              ? block_size - synthesized_baseline
              : synthesized_baseline;
+}
+
+void AccommodateSubgridExtraMargins(const GridSizingSubtree& sizing_subtree,
+                                    GridSizingTrackCollection& track_collection,
+                                    GridTrackSizingDirection track_direction) {
+  auto AccommodateExtraMargin = [&](LayoutUnit extra_margin,
+                                    wtf_size_t set_index) {
+    auto& set = track_collection.GetSetAt(set_index);
+    if (set.track_size.HasIntrinsicMinTrackBreadth() &&
+        set.BaseSize() < extra_margin) {
+      set.IncreaseBaseSize(extra_margin);
+    }
+  };
+
+  // Lazily built mapping from track index to set index.
+  Vector<wtf_size_t> track_to_set;
+
+  for (auto& grid_item :
+       sizing_subtree.GetGridItems().IncludeSubgriddedItems()) {
+    if (!grid_item.MustConsiderGridItemsForSizing(track_direction)) {
+      continue;
+    }
+
+    // For auto-placed subgrids within a grid lanes container, we place them
+    // at the beginning of the container for sizing, but their extra margin
+    // should contribute to every track they could be placed in. As such, skip
+    // checking whether they span intrinsic tracks since that will not be known
+    // at this point.
+    if (!grid_item.is_auto_placed &&
+        !grid_item.IsSpanningIntrinsicTrack(track_direction)) {
+      continue;
+    }
+
+    // A subgrid should accommodate its extra margins in the subgridded axis
+    // since it might not have children on its edges to account for them.
+    DCHECK(grid_item.IsSubgrid());
+
+    const bool is_for_columns_in_subgrid =
+        grid_item.RelativeDirectionInSubgrid(track_direction) == kForColumns;
+
+    const auto& subgrid_layout_data =
+        sizing_subtree.SubgridSizingSubtree(grid_item).LayoutData();
+    const auto& subgrid_track_collection = is_for_columns_in_subgrid
+                                               ? subgrid_layout_data.Columns()
+                                               : subgrid_layout_data.Rows();
+
+    auto start_extra_margin = subgrid_track_collection.StartExtraMargin();
+    auto end_extra_margin = subgrid_track_collection.EndExtraMargin();
+
+    if (grid_item.IsOppositeDirectionInRootGrid(track_direction)) {
+      std::swap(start_extra_margin, end_extra_margin);
+    }
+
+    if (grid_item.is_auto_placed) {
+      // The subgrid is auto-placed (e.g., in grid-lanes where placement
+      // happens after track sizing). Walk every possible start track
+      // position and accommodate the sets containing the start and end
+      // tracks.
+      if (track_to_set.empty()) {
+        track_to_set = track_collection.BuildTrackToSetMapping();
+      }
+
+      const auto& span = grid_item.Span(track_direction);
+      const wtf_size_t line_span = span.IsTranslatedDefinite()
+                                       ? span.IntegerSpan()
+                                       : span.IndefiniteSpanSize();
+
+      // TODO(almaher): This is a bit unfortunate, since we have to walk every
+      // track for every auto placed subgrid. We could optimize this by handling
+      // all of these in the same loop once we exit. However, subgrids in grid
+      // lanes should be relatively rare, so this is likely ok for now.
+      for (wtf_size_t start_track = 0;
+           start_track + line_span <= track_to_set.size(); ++start_track) {
+        const wtf_size_t start_set = track_to_set[start_track];
+        const wtf_size_t end_set = track_to_set[start_track + line_span - 1];
+        if (start_set < end_set) {
+          AccommodateExtraMargin(start_extra_margin, start_set);
+          AccommodateExtraMargin(end_extra_margin, end_set);
+        } else {
+          AccommodateExtraMargin(start_extra_margin + end_extra_margin,
+                                 start_set);
+        }
+      }
+    } else {
+      // The subgrid has a definite position; accommodate its specific edge
+      // sets.
+      const auto& set_indices = grid_item.SetIndices(track_direction);
+      const wtf_size_t set_span_size = set_indices.end - set_indices.begin;
+      const wtf_size_t end_position = set_indices.begin + set_span_size - 1;
+      if (set_indices.begin < end_position) {
+        AccommodateExtraMargin(start_extra_margin, set_indices.begin);
+        AccommodateExtraMargin(end_extra_margin, end_position);
+      } else {
+        AccommodateExtraMargin(start_extra_margin + end_extra_margin,
+                               set_indices.begin);
+      }
+    }
+  }
 }
 
 }  // namespace blink

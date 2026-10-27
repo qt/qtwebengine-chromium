@@ -31,12 +31,12 @@
 #include <array>
 #include <memory>
 
-#include "dawn/common/SerialQueue.h"
-#include "dawn/native/BuddyMemoryAllocator.h"
-#include "dawn/native/IntegerTypes.h"
-#include "dawn/native/PooledResourceMemoryAllocator.h"
-#include "dawn/native/d3d12/d3d12_platform.h"
 #include "partition_alloc/pointers/raw_ptr.h"
+#include "src/dawn/common/SerialQueue.h"
+#include "src/dawn/native/BuddyMemoryAllocator.h"
+#include "src/dawn/native/IntegerTypes.h"
+#include "src/dawn/native/PooledResourceMemoryAllocator.h"
+#include "src/dawn/native/d3d12/d3d12_platform.h"
 
 namespace dawn::native::d3d12 {
 
@@ -90,6 +90,9 @@ class ResourceAllocatorManager {
 
     void Tick(ExecutionSerial lastCompletedSerial);
 
+    uint64_t GetTotalAllocatedMemory() const;
+    uint64_t GetTotalUsedMemory() const;
+
   private:
     void FreeSubAllocatedMemory(ResourceHeapAllocation& allocation);
 
@@ -121,6 +124,9 @@ class ResourceAllocatorManager {
 
     SerialQueue<ExecutionSerial, ResourceHeapAllocation> mAllocationsToDelete;
     SerialQueue<ExecutionSerial, std::unique_ptr<ResourceHeapBase>> mHeapsToDelete;
+
+    AllocationSizeTracker mAllocatedMemory;
+    AllocationSizeTracker mUsedMemory;
 };
 
 }  // namespace dawn::native::d3d12

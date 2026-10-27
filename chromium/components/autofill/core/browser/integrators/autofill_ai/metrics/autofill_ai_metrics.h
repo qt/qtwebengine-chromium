@@ -5,9 +5,12 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_INTEGRATORS_AUTOFILL_AI_METRICS_AUTOFILL_AI_METRICS_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_INTEGRATORS_AUTOFILL_AI_METRICS_AUTOFILL_AI_METRICS_H_
 
+#include <stddef.h>
+
 #include <string_view>
 
 #include "base/containers/flat_map.h"
+#include "base/containers/span.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
@@ -35,6 +38,15 @@ void LogLocalEntitiesDeduplicationMetrics(
         local_entities_deduplicated_per_type);
 
 void LogStoredEntitiesCount(base::span<const EntityInstance> entities);
+
+void LogEntityDeletedFromSettings(EntityType type,
+                                  EntityInstance::RecordType record_type);
+
+void LogEntityUpdatedFromSettings(EntityType type,
+                                  EntityInstance::RecordType record_type);
+
+void LogEntityAddedFromSettings(EntityType type,
+                                EntityInstance::RecordType record_type);
 
 std::string_view EntityTypeToMetricsString(EntityType type);
 

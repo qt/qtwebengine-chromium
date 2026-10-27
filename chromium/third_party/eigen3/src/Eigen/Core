@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_CORE_MODULE_H
 #define EIGEN_CORE_MODULE_H
@@ -49,10 +50,8 @@
 #include "src/Core/util/MKL_support.h"
 #include "src/Core/util/AOCL_Support.h"
 
-
-#if defined(EIGEN_HAS_CUDA_FP16) || defined(EIGEN_HAS_HIP_FP16)
-#define EIGEN_HAS_GPU_FP16
-#endif
+// EIGEN_HAS_GPU_FP16 is defined in Macros.h when compiling with CUDA or HIP (excluding SPIR-V).
+// TODO: Remove EIGEN_HAS_GPU_BF16 similarly once HIP bf16 guards are cleaned up.
 
 #if defined(EIGEN_HAS_CUDA_BF16) || defined(EIGEN_HAS_HIP_BF16)
 #define EIGEN_HAS_GPU_BF16
@@ -95,6 +94,9 @@
 
 // for std::is_nothrow_move_assignable
 #include <type_traits>
+
+// for std::move, std::forward, std::declval
+#include <utility>
 
 // for std::this_thread::yield().
 #if !defined(EIGEN_USE_BLAS) && (defined(EIGEN_HAS_OPENMP) || defined(EIGEN_GEMM_THREADPOOL))
@@ -139,7 +141,6 @@
 #include <CL/sycl.hpp>
 #include <map>
 #include <thread>
-#include <utility>
 #ifndef EIGEN_SYCL_LOCAL_THREAD_DIM0
 #define EIGEN_SYCL_LOCAL_THREAD_DIM0 16
 #endif
@@ -150,8 +151,8 @@
 
 namespace Eigen {
 
-using std::size_t;
 using std::ptrdiff_t;
+using std::size_t;
 
 }  // namespace Eigen
 
@@ -188,6 +189,7 @@ using std::ptrdiff_t;
 #include "src/Core/util/SymbolicIndex.h"
 #include "src/Core/util/EmulateArray.h"
 #include "src/Core/util/MoreMeta.h"
+#include "src/Core/util/LruCache.h"
 
 #include "src/Core/NumTraits.h"
 #include "src/Core/MathFunctions.h"
@@ -273,9 +275,10 @@ using std::ptrdiff_t;
 #include "src/Core/arch/SVE/TypeCasting.h"
 #include "src/Core/arch/SVE/MathFunctions.h"
 #elif defined EIGEN_VECTORIZE_RVV10
+#include "src/Core/arch/RVV10/PacketMathDecl.h"
 #include "src/Core/arch/RVV10/PacketMath.h"
-#include "src/Core/arch/RVV10/PacketMath4.h"
 #include "src/Core/arch/RVV10/PacketMath2.h"
+#include "src/Core/arch/RVV10/PacketMath4.h"
 #include "src/Core/arch/RVV10/TypeCasting.h"
 #include "src/Core/arch/RVV10/MathFunctions.h"
 #if defined EIGEN_VECTORIZE_RVV10FP16
@@ -283,6 +286,10 @@ using std::ptrdiff_t;
 #endif
 #if defined EIGEN_VECTORIZE_RVV10BF16
 #include "src/Core/arch/RVV10/PacketMathBF16.h"
+#endif
+#if EIGEN_RISCV64_DEFAULT_LMUL == 1
+#include "src/Core/arch/RVV10/Complex.h"
+#include "src/Core/arch/RVV10/Complex2.h"
 #endif
 #elif defined EIGEN_VECTORIZE_ZVECTOR
 #include "src/Core/arch/ZVector/PacketMath.h"
@@ -361,6 +368,7 @@ using std::ptrdiff_t;
 #include "src/Core/PlainObjectBase.h"
 #include "src/Core/Matrix.h"
 #include "src/Core/Array.h"
+#include "src/Core/StructuredBindings.h"
 #include "src/Core/Fill.h"
 #include "src/Core/CwiseTernaryOp.h"
 #include "src/Core/CwiseBinaryOp.h"
@@ -442,6 +450,7 @@ using std::ptrdiff_t;
 #include "src/Core/PartialReduxEvaluator.h"
 #include "src/Core/Random.h"
 #include "src/Core/Replicate.h"
+#include "src/Core/ConcatOp.h"
 #include "src/Core/Reverse.h"
 #include "src/Core/ArrayWrapper.h"
 #include "src/Core/StlIterators.h"

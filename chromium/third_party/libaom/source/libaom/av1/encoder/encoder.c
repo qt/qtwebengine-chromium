@@ -2975,10 +2975,14 @@ static int encode_without_recode(AV1_COMP *cpi) {
   av1_set_size_dependent_vars(cpi, &q, &bottom_index, &top_index);
   av1_set_mv_search_params(cpi);
 
-  if (cm->current_frame.frame_number == 0 &&
-      (cpi->ppi->use_svc || cpi->oxcf.rc_cfg.drop_frames_water_mark > 0) &&
-      cpi->svc.temporal_layer_id == 0) {
-    const SequenceHeader *seq_params = cm->seq_params;
+  const SequenceHeader *seq_params = cm->seq_params;
+  if ((cpi->svc.source_last_TL0.buffer_alloc_sz == 0 ||
+       cpi->svc.source_last_TL0.y_crop_width != cpi->oxcf.frm_dim_cfg.width ||
+       cpi->svc.source_last_TL0.y_crop_height != cpi->oxcf.frm_dim_cfg.height ||
+       cpi->svc.source_last_TL0.subsampling_x != seq_params->subsampling_x ||
+       cpi->svc.source_last_TL0.subsampling_y != seq_params->subsampling_y ||
+       cpi->svc.source_last_TL0.flags != cpi->source->flags) &&
+      (cpi->ppi->use_svc || cpi->oxcf.rc_cfg.drop_frames_water_mark > 0)) {
     if (aom_alloc_frame_buffer(
             &cpi->svc.source_last_TL0, cpi->oxcf.frm_dim_cfg.width,
             cpi->oxcf.frm_dim_cfg.height, seq_params->subsampling_x,
@@ -5342,7 +5346,6 @@ int av1_get_compressed_data(AV1_COMP *cpi, AV1_COMP_DATA *const cpi_data) {
   cpi->is_dropped_frame = false;
   cm->showable_frame = 0;
   cpi_data->frame_size = 0;
-  cpi->available_bs_size = cpi_data->cx_data_sz;
 #if CONFIG_INTERNAL_STATS
   struct aom_usec_timer cmptimer;
   aom_usec_timer_start(&cmptimer);

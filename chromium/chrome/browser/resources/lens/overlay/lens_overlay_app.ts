@@ -19,21 +19,17 @@ import type {CrIconButtonElement} from '//resources/cr_elements/cr_icon_button/c
 import type {CrToastElement} from '//resources/cr_elements/cr_toast/cr_toast.js';
 import {I18nMixin} from '//resources/cr_elements/i18n_mixin.js';
 import {assert} from '//resources/js/assert.js';
-import {skColorToHexColor} from '//resources/js/color_utils.js';
 import {EventTracker} from '//resources/js/event_tracker.js';
 import {loadTimeData} from '//resources/js/load_time_data.js';
-import type {SkColor} from '//resources/mojo/skia/public/mojom/skcolor.mojom-webui.js';
 import {PolymerElement} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 import type {LensSearchboxElement} from '/lens/shared/searchbox/lens_searchbox.js';
 import type {SearchboxGhostLoaderElement} from '/lens/shared/searchbox_ghost_loader.js';
 
 import {BrowserProxyImpl} from './browser_proxy.js';
 import type {BrowserProxy} from './browser_proxy.js';
-import {getFallbackTheme} from './color_utils.js';
 import type {CursorTooltipData, CursorTooltipElement} from './cursor_tooltip.js';
 import {CursorTooltipType} from './cursor_tooltip.js';
 import type {InitialGradientElement} from './initial_gradient.js';
-import type {OverlayTheme} from './lens.mojom-webui.js';
 import {UserAction} from './lens.mojom-webui.js';
 import {getTemplate} from './lens_overlay_app.html.js';
 import {recordLensOverlayInteraction, recordTimeToWebUIReady} from './metrics_utils.js';
@@ -116,6 +112,12 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
             'computeShouldHideSearchBox(isTranslateModeActive, sidePanelOpened, forceHideSearchBox)',
         reflectToAttribute: true,
       },
+      privacyNoticeHidden: {
+        type: Boolean,
+        computed:
+            'computeShouldHidePrivacyNotice(isTranslateModeActive, forceHideSearchBox)',
+        reflectToAttribute: true,
+      },
       isClosing: {
         type: Boolean,
         reflectToAttribute: true,
@@ -163,10 +165,6 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
         reflectToAttribute: true,
         readOnly: true,
         value: () => loadTimeData.getBoolean('isRoutingToContextualTasks'),
-      },
-      theme: {
-        type: Object,
-        value: getFallbackTheme,
       },
       darkMode: {
         type: Boolean,
@@ -278,6 +276,8 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
   declare private sidePanelOpened: boolean;
   // Whether the search box should be hidden.
   declare private searchBoxHidden: boolean;
+  // Whether the privacy notice should be hidden.
+  declare private privacyNoticeHidden: boolean;
   // Whether the search box should be forced to hide. Used to prevent the search
   // box from showing when we know the side panel will be opened.
   declare private forceHideSearchBox: boolean;
@@ -294,8 +294,6 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
   // Whether the button containers should be faded out.
   declare private shouldFadeOutButtons: boolean;
   declare private darkMode: boolean;
-  // The overlay theme.
-  declare private theme: OverlayTheme;
   // Whether the contextual searchbox feature is enabled.
   declare private isLensOverlayContextualSearchboxEnabled: boolean;
   // Whether the contextual searchbox is visible to the user.
@@ -305,8 +303,8 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
   // Whether the contextual searchbox should be auto-focused when the overlay is
   // first opened.
   private autoFocusSearchbox: boolean =
-      loadTimeData.getValue('autoFocusSearchbox') &&
-      !loadTimeData.getValue('enablePrivacyNotice');
+      loadTimeData.getBoolean('autoFocusSearchbox') &&
+      !loadTimeData.getBoolean('enablePrivacyNotice');
   declare private toastMessage: string;
   declare private enableCloseButtonTweaks: boolean;
   declare private enableVisualSelectionUpdates: boolean;
@@ -354,10 +352,16 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
 
   private searchboxBoundingClientRectObserver: ResizeObserver =
       new ResizeObserver(this.onSearchboxBoundsChanged.bind(this));
+  private resizeObserver: ResizeObserver =
+      new ResizeObserver(this.handleResize.bind(this));
 
   // The ID returned by requestAnimationFrame for the updateCursorPosition
   // function.
   private updateCursorPositionRequestId?: number;
+
+  // The ID returned by requestAnimationFrame for the handleResize
+  // function.
+  private handleResizeRequestId?: number;
 
   constructor() {
     super();
@@ -370,10 +374,10 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
 
   override connectedCallback() {
     super.connectedCallback();
+    this.resizeObserver.observe(document.body);
 
     const callbackRouter = this.browserProxy.callbackRouter;
     this.listenerIds = [
-      callbackRouter.themeReceived.addListener(this.themeReceived.bind(this)),
       callbackRouter.shouldShowContextualSearchBox.addListener(
           this.shouldShowContextualSearchBox.bind(this)),
       callbackRouter.notifyHandshakeComplete.addListener(
@@ -391,6 +395,7 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
         this.hasPermissionsForSession = true;
         this.performanceTracker.reset();
         this.performanceTracker.startSession();
+        this.updatePrivacyNoticePosition(window.innerWidth, window.innerHeight);
       }),
       callbackRouter.suppressGhostLoader.addListener(
           this.suppressGhostLoader_.bind(this)),
@@ -449,6 +454,7 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
 
   override disconnectedCallback() {
     super.disconnectedCallback();
+    this.resizeObserver.unobserve(document.body);
     this.listenerIds.forEach(
         id => assert(this.browserProxy.callbackRouter.removeListener(id)));
     this.listenerIds = [];
@@ -699,11 +705,9 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
 
   private onNotifyResultsPanelOpened() {
     this.sidePanelOpened = true;
+    this.updatePrivacyNoticePosition(window.innerWidth, window.innerHeight);
   }
 
-  private themeReceived(theme: OverlayTheme) {
-    this.theme = theme;
-  }
 
   private shouldShowContextualSearchBox(shouldShow: boolean) {
     this.isLensOverlayContextualSearchboxVisible =
@@ -730,6 +734,7 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
   private onScreenshotRendered(e: CustomEvent<{isSidePanelOpen: boolean}>) {
     this.isImageRendered = true;
     this.sidePanelOpened = e.detail.isSidePanelOpen;
+    this.updatePrivacyNoticePosition(window.innerWidth, window.innerHeight);
     // Focus the searchbox simultaneously with the initial flash animation.
     if (this.enableCsbMotionTweaks && this.autoFocusSearchbox &&
         this.isLensOverlayContextualSearchboxVisible) {
@@ -801,6 +806,10 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
         this.forceHideSearchBox;
   }
 
+  private computeShouldHidePrivacyNotice(): boolean {
+    return this.isTranslateModeActive || this.forceHideSearchBox;
+  }
+
   private async showToast(message: string) {
     if (this.$.toast.open) {
       // If toast already open, wait after hiding so that animation is
@@ -839,18 +848,6 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
     });
   }
 
-  private skColorToHex_(skColor: SkColor): string {
-    return skColorToHexColor(skColor);
-  }
-
-  private skColorToRgb_(skColor: SkColor): string {
-    const hex = skColorToHexColor(skColor);
-    assert(/^#[0-9a-fA-F]{6}$/.test(hex));
-    const r = parseInt(hex.substring(1, 3), 16);
-    const g = parseInt(hex.substring(3, 5), 16);
-    const b = parseInt(hex.substring(5, 7), 16);
-    return `${r}, ${g}, ${b}`;
-  }
 
   private getSearchboxAriaDescription(): string {
     // Get the the text from the ghost loader to add to the searchbox aria
@@ -884,6 +881,58 @@ export class LensOverlayAppElement extends LensOverlayAppElementBase {
 
   getOverlayReshowInProgressForTesting(): boolean {
     return this.overlayReshowInProgress;
+  }
+
+  private handleResize(entries: ResizeObserverEntry[]) {
+    if (this.handleResizeRequestId) {
+      cancelAnimationFrame(this.handleResizeRequestId);
+    }
+
+    this.handleResizeRequestId = requestAnimationFrame(() => {
+      assert(entries.length === 1);
+      const newRect = entries[0].contentRect;
+      if (newRect.width > 0 && newRect.height > 0) {
+        this.updatePrivacyNoticePosition(newRect.width, newRect.height);
+      }
+      this.handleResizeRequestId = undefined;
+    });
+  }
+
+  private updatePrivacyNoticePosition(
+      containerWidth: number, containerHeight: number) {
+    // Only needed if the privacy notice is being displayed while the side panel
+    // is open (i.e. in the non-blocking image context menu search case).
+    // Otherwise, the styles in the HTML file are sufficient.
+    const privacyNotice =
+        this.shadowRoot!.querySelector<HTMLElement>('#privacyNotice');
+    if (!privacyNotice || !this.sidePanelOpened) {
+      return;
+    }
+
+    const selectionOverlayRect = this.$.selectionOverlay.getBoundingRect();
+    const screenshotWidth = selectionOverlayRect.width;
+    const screenshotHeight = selectionOverlayRect.height;
+    if (screenshotWidth === 0 || screenshotHeight === 0) {
+      return;
+    }
+
+    const margins = 48;
+    const newContainerWidth = containerWidth - margins;
+    const newContainerHeight = containerHeight - margins;
+
+    const aspectRatio = screenshotWidth / screenshotHeight;
+    const widthBasedHeight = Math.round(newContainerWidth / aspectRatio);
+    const heightBasedWidth = Math.round(newContainerHeight * aspectRatio);
+
+    if (widthBasedHeight <= newContainerHeight) {
+      privacyNotice.style.insetBlockStart =
+          `${(newContainerHeight - widthBasedHeight) / 2 + 12}px`;
+      privacyNotice.style.insetInlineEnd = `62px`;
+    } else {
+      privacyNotice.style.insetBlockStart = `12px`;
+      privacyNotice.style.insetInlineEnd =
+          `${(newContainerWidth - heightBasedWidth) / 2 + 62}px`;
+    }
   }
 }
 

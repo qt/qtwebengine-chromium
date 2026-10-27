@@ -605,7 +605,8 @@ def main(argv,
       '-parameters',
       # Jacoco does not currently support a higher value.
       '--release',
-      '17',
+      # Keep consistent with javac_cmd in //build/android/gyp/turbine.py.
+      '21',
       # Chromium only allows UTF8 source files.  Being explicit avoids
       # javac pulling a default encoding from the user's environment.
       '-encoding',
@@ -626,6 +627,11 @@ def main(argv,
       # Disable all annotation processors (we run them via Turbine).
       '-proc:none',
   ]
+
+  # Apply -Xlint:unchecked to Chromium-owned code only. Third-party code
+  # (chromium_code = false) is exempt.
+  if options.chromium_code:
+    javac_args += ['-Xlint:unchecked']
 
   if extra_javac_args:
     javac_args.extend(extra_javac_args)

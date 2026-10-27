@@ -97,6 +97,10 @@ VIEWS_EXPORT extern const ui::ClassProperty<LayoutAlignment*>* const
 VIEWS_EXPORT extern const ui::ClassProperty<bool>* const
     kViewIgnoredByLayoutKey;
 
+// Property indicating whether a view should not lay out its own children.
+VIEWS_EXPORT extern const ui::ClassProperty<bool>* const
+    kViewDoesNotLayOutChildren;
+
 // Tag for the view associated with ui::ElementTracker.
 VIEWS_EXPORT extern const ui::ClassProperty<ui::ElementIdentifier>* const
     kElementIdentifierKey;
@@ -105,6 +109,10 @@ VIEWS_EXPORT extern const ui::ClassProperty<ui::ElementIdentifier>* const
 // not (yet) attached to a widget. This makes View::GetFocusManager() work.
 VIEWS_EXPORT extern const ui::ClassProperty<FocusManager*>* const
     kDetachedViewFocusManagerKey;
+
+// A property indicating whether a view (usually a WebView or NativeViewHost)
+// is currently blocked by a tab-modal dialog.
+VIEWS_EXPORT extern const ui::ClassProperty<bool>* const kIsBlockedByModalKey;
 
 }  // namespace views
 

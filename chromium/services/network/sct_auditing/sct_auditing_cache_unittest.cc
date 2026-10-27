@@ -10,6 +10,7 @@
 #include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/task_environment.h"
+#include "crypto/hash.h"
 #include "crypto/secure_hash.h"
 #include "crypto/sha2.h"
 #include "net/base/hash_value.h"
@@ -28,7 +29,6 @@
 #include "services/network/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/boringssl/src/include/openssl/pool.h"
-#include "third_party/boringssl/src/include/openssl/sha.h"
 
 namespace network {
 
@@ -104,14 +104,10 @@ void MakeTestSCTAndStatus(
 // computes cache keys internally.
 net::HashValue ComputeCacheKey(
     net::SignedCertificateTimestampAndStatusList sct_list) {
-  net::HashValue cache_key(net::HASH_VALUE_SHA256);
-  SHA256_CTX ctx;
-  SHA256_Init(&ctx);
   std::string encoded_sct;
   net::ct::EncodeSignedCertificateTimestamp(sct_list.at(0).sct, &encoded_sct);
-  SHA256_Update(&ctx, encoded_sct.data(), encoded_sct.size());
-  SHA256_Final(cache_key.span().data(), &ctx);
-  return cache_key;
+  return net::HashValue(net::HASH_VALUE_SHA256,
+                        crypto::hash::Sha256(encoded_sct));
 }
 
 }  // namespace
@@ -140,19 +136,18 @@ TEST_F(SCTAuditingCacheTest, EvictLRUAfterCacheFull) {
   const net::HostPortPair host_port_pair2("example2.com", 443);
   const net::HostPortPair host_port_pair3("example3.com", 443);
 
-  net::HashValue first_key(net::HASH_VALUE_SHA256);
-  {
+  net::HashValue first_key = [&]() -> auto {
     net::SignedCertificateTimestampAndStatusList sct_list;
     MakeTestSCTAndStatus(net::ct::SignedCertificateTimestamp::SCT_EMBEDDED,
                          "extensions1", "signature1", base::Time::Now(),
                          net::ct::SCT_STATUS_OK, &sct_list);
-    ASSERT_TRUE(cache.MaybeGenerateReportEntry(host_port_pair1, chain_.get(),
-                                               sct_list));
-    ASSERT_EQ(1u, cache.GetCacheForTesting()->size());
+    CHECK(cache.MaybeGenerateReportEntry(host_port_pair1, chain_.get(),
+                                         sct_list));
+    CHECK_EQ(1u, cache.GetCacheForTesting()->size());
 
     // Save the initial cache key for later inspection.
-    first_key = ComputeCacheKey(sct_list);
-  }
+    return ComputeCacheKey(sct_list);
+  }();
 
   {
     net::SignedCertificateTimestampAndStatusList sct_list;
@@ -329,7 +324,6 @@ TEST_F(SCTAuditingCacheTest, ReportSizeMetrics) {
   EXPECT_FALSE(
       cache.MaybeGenerateReportEntry(host_port_pair, chain_.get(), sct_list));
 
-  histograms.ExpectTotalCount("Security.SCTAuditing.OptIn.ReportSampled", 1);
   histograms.ExpectTotalCount("Security.SCTAuditing.OptIn.ReportSize", 1);
   histograms.ExpectBucketCount("Security.SCTAuditing.OptIn.ReportDeduplicated",
                                true, 1);
@@ -351,8 +345,6 @@ TEST_F(SCTAuditingCacheTest, ReportSampleDroppedMetrics) {
   EXPECT_FALSE(
       cache.MaybeGenerateReportEntry(host_port_pair, chain_.get(), sct_list));
 
-  histograms.ExpectUniqueSample("Security.SCTAuditing.OptIn.ReportSampled",
-                                false, 1);
   histograms.ExpectTotalCount("Security.SCTAuditing.OptIn.ReportSize", 0);
   histograms.ExpectBucketCount("Security.SCTAuditing.OptIn.ReportDeduplicated",
                                false, 1);

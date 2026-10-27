@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
-
 assert(is_chromeos)
 
 static_library("live_caption") {
@@ -16,6 +14,7 @@ static_library("live_caption") {
 
   deps = [
     "//ash/webui/settings/public/constants:mojom",
+    "//chrome/browser/accessibility",
     "//chrome/browser/profiles:profile_manager",
     "//chrome/browser/speech",
     "//chromeos/ash/components/browser_context_helper",
@@ -48,6 +47,7 @@ source_set("browser_tests") {
   deps = [
     ":live_caption",
     "//base",
+    "//chrome/browser/accessibility/live_caption",
     "//chrome/browser/ash/login/session",
     "//chrome/browser/speech",
     "//chrome/test:test_support",

@@ -5,6 +5,7 @@
 #include "src/maglev/maglev-code-generator.h"
 
 #include <algorithm>
+#include <fstream>
 
 #include "absl/container/flat_hash_map.h"
 #include "src/base/hashmap.h"
@@ -23,6 +24,7 @@
 #include "src/deoptimizer/deoptimize-reason.h"
 #include "src/deoptimizer/deoptimizer.h"
 #include "src/deoptimizer/frame-translation-builder.h"
+#include "src/diagnostics/gdb-jit.h"
 #include "src/execution/frame-constants.h"
 #include "src/flags/flags.h"
 #include "src/handles/global-handles-inl.h"
@@ -825,7 +827,31 @@ class MaglevCodeGeneratingNodeProcessor {
          << PrintNode(node);
       __ RecordComment(ss.str());
     }
-    if (collect_source_positions_) {
+    bool handled_gdbjit = false;
+#ifdef ENABLE_GDB_JIT_INTERFACE
+    if (v8_flags.gdbjit_full && v8_flags.maglev_gdbjit) {
+      int line_number = graph_labeller()->GetNodeLineNumber(node);
+      if (line_number != -1) {
+        Isolate* isolate = masm_->code_gen_state()
+                               ->compilation_info()
+                               ->broker()
+                               ->local_isolate()
+                               ->GetMainThreadIsolateUnsafe();
+        std::string func_name =
+            masm_->code_gen_state()->compilation_info()->function_name();
+        std::string filename = GetMaglevGraphFilename(
+            func_name,
+            masm_->code_gen_state()->compilation_info()->optimization_id());
+        int file_id =
+            isolate->LookupOrAddExternallyCompiledFilename(filename.c_str());
+        SourcePosition pos = SourcePosition::External(line_number, file_id);
+        code_gen_state()->source_position_table_builder()->AddPosition(
+            masm_->pc_offset(), pos, true);
+      }
+      handled_gdbjit = true;
+    }
+#endif
+    if (!handled_gdbjit && collect_source_positions_) {
       // TODO(leszeks): Consider collecting source position in a more memory
       // friendly way, if we don't need the whole graph labeller.
       const auto& provenance = graph_labeller()->GetNodeProvenance(node);
@@ -888,7 +914,11 @@ class MaglevCodeGeneratingNodeProcessor {
     if (std::is_base_of_v<ValueNode, NodeT>) {
       ValueNode* value_node = node->template Cast<ValueNode>();
       RegallocValueNodeInfo* node_info = value_node->regalloc_info();
-      if (node_info->has_valid_live_range() && node_info->is_spilled()) {
+      bool is_spilled = false;
+      if (node_info && node_info->has_valid_live_range()) {
+        is_spilled = node_info->is_spilled();
+      }
+      if (is_spilled) {
         compiler::AllocatedOperand source =
             compiler::AllocatedOperand::cast(node_info->result().operand());
         // We shouldn't spill nodes which already output to the stack.
@@ -907,6 +937,17 @@ class MaglevCodeGeneratingNodeProcessor {
           DCHECK_EQ(source.index(), node_info->spill_slot().index());
         }
       }
+
+#ifdef ENABLE_GDB_JIT_INTERFACE
+      if (v8_flags.maglev_gdbjit && is_spilled) {
+        int node_id = graph_labeller()->NodeId(value_node);
+        if (node_id != -1) {
+          int start_pc = masm()->pc_offset();
+          code_gen_state()->AddVariableInfo(
+              {node_id, node_info->spill_slot().index(), start_pc});
+        }
+      }
+#endif
     }
     return ProcessResult::kContinue;
   }
@@ -1506,7 +1547,7 @@ class MaglevFrameTranslationBuilder {
 
   void BuildHeapNumber(const VirtualObject* vobject) {
     DCHECK_EQ(vobject->object_type(), vobj::ObjectType::kHeapNumber);
-    ValueNode* value_node = vobject->get(HeapNumber::kValueOffset);
+    ValueNode* value_node = vobject->get(offsetof(HeapNumber, value_));
     return BuildHeapNumber(value_node->Cast<Float64Constant>()->value());
   }
 
@@ -1586,7 +1627,15 @@ class MaglevFrameTranslationBuilder {
     if (object_type == vobj::ObjectType::kConsString) {
       translation_array_builder_->StringConcat();
     } else {
-      translation_array_builder_->BeginCapturedObject(object->slot_count());
+      int fields = object->slot_count();
+#if TAGGED_SIZE_8_BYTES
+      // To keep the deoptimization data in sync with TF (which represents
+      // length and padding in a single Uint64), we skip the padding.
+      if (object_type == vobj::ObjectType::kFixedArray) {
+        fields--;
+      }
+#endif  // TAGGED_SIZE_8_BYTES
+      translation_array_builder_->BeginCapturedObject(fields);
     }
     auto callback = [&](ValueNode* node, const vobj::Field& desc) -> bool {
       BuildNestedValue(node, input_location, virtual_objects);
@@ -2028,7 +2077,21 @@ MaybeHandle<Code> MaglevCodeGenerator::BuildCodeObject(
     builder.set_is_context_specialized();
   }
 
-  return builder.TryBuild();
+  MaybeHandle<Code> maybe_code = builder.TryBuild();
+  Handle<Code> code;
+  if (maybe_code.ToHandle(&code)) {
+    Isolate* isolate = local_isolate->GetMainThreadIsolateUnsafe();
+#ifdef ENABLE_GDB_JIT_INTERFACE
+    if (v8_flags.maglev_gdbjit) {
+      GDBJITInterface::RegisterMaglevVariableLocations(
+          code->instruction_start(), code_gen_state_.maglev_variables());
+    }
+#endif
+    LOG_CODE_EVENT(isolate, CodeLinePosInfoRecordEvent(
+                                code->instruction_start(), *source_positions,
+                                JitCodeEvent::JIT_CODE));
+  }
+  return maybe_code;
 }
 
 GlobalHandleVector<Map> MaglevCodeGenerator::CollectRetainedMaps(
@@ -2037,13 +2100,12 @@ GlobalHandleVector<Map> MaglevCodeGenerator::CollectRetainedMaps(
 
   DisallowGarbageCollection no_gc;
   GlobalHandleVector<Map> maps(local_isolate_->heap());
-  PtrComprCageBase cage_base(local_isolate_);
   int const mode_mask = RelocInfo::EmbeddedObjectModeMask();
   for (RelocIterator it(*code, mode_mask); !it.done(); it.next()) {
     DCHECK(RelocInfo::IsEmbeddedObjectMode(it.rinfo()->rmode()));
-    Tagged<HeapObject> target_object = it.rinfo()->target_object(cage_base);
+    Tagged<HeapObject> target_object = it.rinfo()->target_object();
     if (code->IsWeakObjectInOptimizedCode(target_object)) {
-      if (IsMap(target_object, cage_base)) {
+      if (IsMap(target_object)) {
         maps.Push(Cast<Map>(target_object));
       }
     }
@@ -2080,7 +2142,7 @@ Handle<DeoptimizationData> MaglevCodeGenerator::GenerateDeoptimizationData(
     raw_data->SetFrameTranslation(*translations);
     raw_data->SetInlinedFunctionCount(Smi::FromInt(inlined_function_count_));
     raw_data->SetOptimizationId(
-        Smi::FromInt(local_isolate->NextOptimizationId()));
+        Smi::FromInt(code_gen_state_.compilation_info()->optimization_id()));
 
     DCHECK_NE(deopt_exit_start_offset_, -1);
     raw_data->SetDeoptExitStart(Smi::FromInt(deopt_exit_start_offset_));

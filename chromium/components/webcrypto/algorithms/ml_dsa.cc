@@ -174,6 +174,24 @@ Status MlDsaImplementation::ExportKey(blink::WebCryptoKeyFormat format,
   }
 }
 
+Status MlDsaImplementation::GetPublicKey(
+    const blink::WebCryptoKey& key,
+    blink::WebCryptoKeyUsageMask usages,
+    blink::WebCryptoKey* public_key) const {
+  Status status = CheckKeyCreationUsages(all_public_key_usages_, usages);
+  if (status.IsError()) {
+    return status;
+  }
+
+  bssl::UniquePtr<EVP_PKEY> pub_pkey(EVP_PKEY_copy_public(GetEVP_PKEY(key)));
+  if (!pub_pkey) {
+    return Status::OperationError();
+  }
+
+  return CreateWebCryptoPublicKey(std::move(pub_pkey), key.Algorithm(), true,
+                                  usages, public_key);
+}
+
 Status MlDsaImplementation::Sign(const blink::WebCryptoAlgorithm& algorithm,
                                  const blink::WebCryptoKey& key,
                                  base::span<const uint8_t> message,
@@ -497,6 +515,19 @@ Status MlDsaImplementation::ExportKeyJwk(const blink::WebCryptoKey& key,
 
   jwk.ToJson(buffer);
   return Status::Success();
+}
+
+bool MlDsaImplementation::Supports(
+    blink::WebCryptoOperation op,
+    const blink::WebCryptoAlgorithm& algorithm,
+    std::optional<unsigned int> length_bits) const {
+  // Boring limits the context to at most 255 bytes
+  const blink::WebCryptoContextParams* params = algorithm.ContextParams();
+  if (params && params->Context()) {
+    return params->Context()->size() < 256;
+  }
+  // None of the algorithm params have hard constraints.
+  return true;
 }
 
 Status MlDsaImplementation::DeserializeKeyForClone(

@@ -37,6 +37,8 @@
  * that is an implementation detail of the specific backend.
  */
 
+typedef struct SwsOpTable SwsOpTable;
+
 /**
  * Private data for each kernel.
  */
@@ -59,12 +61,6 @@ typedef union SwsOpPriv {
 } SwsOpPriv;
 
 static_assert(sizeof(SwsOpPriv) == 16, "SwsOpPriv size mismatch");
-
-/* Setup helpers */
-int ff_sws_setup_u(const SwsOp *op, SwsOpPriv *out);
-int ff_sws_setup_u8(const SwsOp *op, SwsOpPriv *out);
-int ff_sws_setup_q(const SwsOp *op, SwsOpPriv *out);
-int ff_sws_setup_q4(const SwsOp *op, SwsOpPriv *out);
 
 /**
  * Per-kernel execution context.
@@ -90,7 +86,9 @@ typedef struct SwsOpChain {
     SwsOpImpl impl[SWS_MAX_OPS + 1]; /* reserve extra space for the entrypoint */
     void (*free[SWS_MAX_OPS + 1])(SwsOpPriv *);
     int num_impl;
-    int cpu_flags; /* set of all used CPU flags */
+    int cpu_flags;  /* set of all used CPU flags */
+    int over_read;  /* chain over-reads input by this many bytes */
+    int over_write; /* chain over-writes output by this many bytes */
 } SwsOpChain;
 
 SwsOpChain *ff_sws_op_chain_alloc(void);
@@ -104,49 +102,74 @@ static inline void ff_sws_op_chain_free(SwsOpChain *chain)
 int ff_sws_op_chain_append(SwsOpChain *chain, SwsFuncPtr func,
                            void (*free)(SwsOpPriv *), const SwsOpPriv *priv);
 
+typedef struct SwsImplParams {
+    const SwsOpTable *table;
+    const SwsOp *op;
+    SwsContext *ctx;
+} SwsImplParams;
+
+typedef struct SwsImplResult {
+    SwsFuncPtr func; /* overrides `SwsOpEntry.func` if non-NULL */
+    SwsOpPriv priv; /* private data for this implementation instance */
+    void (*free)(SwsOpPriv *priv); /* free function for `priv` */
+    int over_read;  /* implementation over-reads input by this many bytes */
+    int over_write; /* implementation over-writes output by this many bytes */
+} SwsImplResult;
+
 typedef struct SwsOpEntry {
     /* Kernel metadata; reduced size subset of SwsOp */
     SwsOpType op;
     SwsPixelType type;
+    SwsCompMask mask; /* mask of active components (after operation) */
     bool flexible; /* if true, only the type and op are matched */
-    bool unused[4]; /* for kernels which operate on a subset of components */
 
     union { /* extra data defining the operation, unless `flexible` is true */
         SwsReadWriteOp rw;
         SwsPackOp      pack;
         SwsSwizzleOp   swizzle;
         SwsConvertOp   convert;
+        SwsClearOp     clear;
         uint32_t       linear_mask; /* subset of SwsLinearOp */
         int            dither_size; /* subset of SwsDitherOp */
-        int            clear_value; /* clear value for integer clears */
         AVRational     scale;       /* scale factor for SWS_OP_SCALE */
     };
 
     /* Kernel implementation */
     SwsFuncPtr func;
-    int (*setup)(const SwsOp *op, SwsOpPriv *out); /* optional */
-    void (*free)(SwsOpPriv *priv);
+    int (*setup)(const SwsImplParams *params, SwsImplResult *out); /* optional */
+    bool (*check)(const SwsImplParams *params); /* optional, return true if supported */
 } SwsOpEntry;
+
+/* Setup helpers for common/trivial operation types */
+int ff_sws_setup_shift(const SwsImplParams *params, SwsImplResult *out);
+int ff_sws_setup_scale(const SwsImplParams *params, SwsImplResult *out);
+int ff_sws_setup_clamp(const SwsImplParams *params, SwsImplResult *out);
+int ff_sws_setup_clear(const SwsImplParams *params, SwsImplResult *out);
 
 static inline void ff_op_priv_free(SwsOpPriv *priv)
 {
     av_freep(&priv->ptr);
 }
 
-typedef struct SwsOpTable {
+static inline void ff_op_priv_unref(SwsOpPriv *priv)
+{
+    av_refstruct_unref(&priv->ptr);
+}
+
+struct SwsOpTable {
     unsigned cpu_flags;   /* required CPU flags for this table */
     int block_size;       /* fixed block size of this table */
     const SwsOpEntry *entries[]; /* terminated by NULL */
-} SwsOpTable;
+};
 
 /**
  * "Compile" a single op by looking it up in a list of fixed size op tables.
  * See `op_match` in `ops_chain.c` for details on how the matching works.
  *
- * Returns 0, AVERROR(EAGAIN), or a negative error code.
+ * Returns 0 or a negative error code.
  */
-int ff_sws_op_compile_tables(const SwsOpTable *const tables[], int num_tables,
-                             SwsOpList *ops, const int block_size,
-                             SwsOpChain *chain);
+int ff_sws_op_compile_tables(SwsContext *ctx, const SwsOpTable *const tables[],
+                             int num_tables, const SwsOp *op,
+                             const int block_size, SwsOpChain *chain);
 
 #endif

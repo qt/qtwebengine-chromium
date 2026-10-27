@@ -33,6 +33,10 @@ const UIStrings = {
    */
   noContentForWebSocket: 'Content for WebSockets is currently not supported',
   /**
+   * @description Explanation why no content is shown for Server-Sent Events (SSE).
+   */
+  noContentForSSE: 'Content for Server-Sent Events (SSE) is currently not supported',
+  /**
    * @description Explanation why no content is shown for redirect response.
    */
   noContentForRedirect: 'No content available because this request was redirected',
@@ -165,10 +169,16 @@ export class NetworkManager extends SDKModel<EventTypes> {
 
     void this.#networkAgent.invoke_enable({
       maxPostDataSize: MAX_EAGER_POST_REQUEST_BODY_LENGTH,
-      enableDurableMessages: Root.Runtime.hostConfig.devToolsEnableDurableMessages?.enabled,
       maxTotalBufferSize: MAX_RESPONSE_BODY_TOTAL_BUFFER_LENGTH,
       reportDirectSocketTraffic: true,
     });
+
+    if (Root.Runtime.hostConfig.devToolsEnableDurableMessages?.enabled) {
+      const preserveLogSetting = settings.moduleSetting('network-log.preserve-log');
+      this.#updateDurableMessages(preserveLogSetting.get());
+      preserveLogSetting.addChangeListener(this.preserveLogChanged, this);
+    }
+
     void this.#networkAgent.invoke_setAttachDebugStack({enabled: true});
 
     this.#bypassServiceWorkerSetting = settings.createSetting('bypass-service-worker', false);
@@ -215,6 +225,9 @@ export class NetworkManager extends SDKModel<EventTypes> {
       return {error: i18nString(UIStrings.noContentForWebSocket)};
     }
     if (!request.finished) {
+      if (Boolean(request.eventSourceMessages()?.length)) {
+        return {error: i18nString(UIStrings.noContentForSSE)};
+      }
       await request.once(NetworkRequestEvents.FINISHED_LOADING);
     }
     if (request.isRedirect()) {
@@ -282,7 +295,7 @@ export class NetworkManager extends SDKModel<EventTypes> {
       const {postData, base64Encoded} = await manager.#networkAgent.invoke_getRequestPostData({requestId});
       if (base64Encoded && postData) {
         // Decode base64 to get raw bytes as an ArrayBuffer.
-        const binaryString = window.atob(postData);
+        const binaryString = globalThis.atob(postData);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
           bytes[i] = binaryString.charCodeAt(i);
@@ -373,9 +386,24 @@ export class NetworkManager extends SDKModel<EventTypes> {
     void this.#networkAgent.invoke_setCacheDisabled({cacheDisabled: enabled});
   }
 
+  private preserveLogChanged({data: enabled}: Common.EventTarget.EventTargetEvent<boolean>): void {
+    this.#updateDurableMessages(enabled);
+  }
+
+  #updateDurableMessages(enabled: boolean): void {
+    if (enabled) {
+      void this.#networkAgent.invoke_configureDurableMessages({
+        maxTotalBufferSize: MAX_RESPONSE_BODY_TOTAL_BUFFER_LENGTH,
+      });
+    } else {
+      void this.#networkAgent.invoke_configureDurableMessages({});
+    }
+  }
+
   override dispose(): void {
     const settings = this.target().targetManager().settings;
     settings.moduleSetting('cache-disabled').removeChangeListener(this.cacheDisabledSettingChanged, this);
+    settings.moduleSetting('network-log.preserve-log').removeChangeListener(this.preserveLogChanged, this);
   }
 
   private bypassServiceWorkerChanged(): void {
@@ -391,12 +419,17 @@ export class NetworkManager extends SDKModel<EventTypes> {
     return result.status;
   }
 
-  async enableReportingApi(enable = true): Promise<Promise<Protocol.ProtocolResponseWithError>> {
+  async enableReportingApi(enable = true): Promise<Protocol.ProtocolResponseWithError> {
     return await this.#networkAgent.invoke_enableReportingApi({enable});
   }
 
-  async enableDeviceBoundSessions(enable = true): Promise<Promise<Protocol.ProtocolResponseWithError>> {
+  async enableDeviceBoundSessions(enable = true): Promise<Protocol.ProtocolResponseWithError> {
     return await this.#networkAgent.invoke_enableDeviceBoundSessions({enable});
+  }
+
+  async deleteDeviceBoundSession(key: Protocol.Network.DeviceBoundSessionKey):
+      Promise<Protocol.ProtocolResponseWithError> {
+    return await this.#networkAgent.invoke_deleteDeviceBoundSession({key});
   }
 
   async loadNetworkResource(

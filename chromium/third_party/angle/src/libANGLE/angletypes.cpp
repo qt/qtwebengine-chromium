@@ -106,38 +106,6 @@ bool operator!=(const RasterizerState &a, const RasterizerState &b)
     return !(a == b);
 }
 
-BlendState::BlendState()
-{
-    memset(this, 0, sizeof(BlendState));
-
-    blend              = false;
-    sourceBlendRGB     = GL_ONE;
-    sourceBlendAlpha   = GL_ONE;
-    destBlendRGB       = GL_ZERO;
-    destBlendAlpha     = GL_ZERO;
-    blendEquationRGB   = GL_FUNC_ADD;
-    blendEquationAlpha = GL_FUNC_ADD;
-    colorMaskRed       = true;
-    colorMaskGreen     = true;
-    colorMaskBlue      = true;
-    colorMaskAlpha     = true;
-}
-
-BlendState::BlendState(const BlendState &other)
-{
-    memcpy(this, &other, sizeof(BlendState));
-}
-
-bool operator==(const BlendState &a, const BlendState &b)
-{
-    return memcmp(&a, &b, sizeof(BlendState)) == 0;
-}
-
-bool operator!=(const BlendState &a, const BlendState &b)
-{
-    return !(a == b);
-}
-
 DepthStencilState::DepthStencilState()
 {
     memset(this, 0, sizeof(DepthStencilState));
@@ -216,6 +184,7 @@ SamplerState::SamplerState()
     setMaxAnisotropy(1.0f);
     setMinLod(-1000.0f);
     setMaxLod(1000.0f);
+    setLodBias(0.0f);
     setCompareMode(GL_NONE);
     setCompareFunc(GL_LEQUAL);
     setSRGBDecode(GL_DECODE_EXT);
@@ -321,6 +290,16 @@ bool SamplerState::setMaxLod(GLfloat maxLod)
     if (mMaxLod != maxLod)
     {
         mMaxLod = maxLod;
+        return true;
+    }
+    return false;
+}
+
+bool SamplerState::setLodBias(GLfloat lodBias)
+{
+    if (mSampleLodBias != lodBias)
+    {
+        mSampleLodBias = lodBias;
         return true;
     }
     return false;

@@ -16,9 +16,11 @@ import "services/viz/public/mojom/compositing/local_surface_id.mojom";
 import "services/viz/public/mojom/compositing/resource_id.mojom";
 import "services/viz/public/mojom/compositing/surface_range.mojom";
 import "services/viz/public/mojom/compositing/tiling.mojom";
+import "services/viz/public/mojom/compositing/tracked_element_rects.mojom";
 import "services/viz/public/mojom/compositing/transferable_resource.mojom";
 import "services/viz/public/mojom/compositing/view_transition_request.mojom";
 import "skia/public/mojom/skcolor4f.mojom";
+import "third_party/blink/public/mojom/tokens/tokens.mojom";
 import "ui/gfx/geometry/mojom/geometry.mojom";
 import "ui/gfx/mojom/display_color_spaces.mojom";
 import "ui/gfx/mojom/overlay_transform.mojom";
@@ -98,10 +100,15 @@ struct LayerTreeUpdate {
   gfx.mojom.DisplayColorSpaces display_color_spaces;
 
   // If a new LocalSurfaceId is assigned by the parent, it's included here.
+  // This is optional because an invalid LocalSurfaceId (specifically one with
+  // an empty UnguessableToken) cannot be serialized.
   LocalSurfaceId? local_surface_id_from_parent;
 
-  // The current LocalSurfaceId from client process.
-  LocalSurfaceId current_local_surface_id;
+  // The current LocalSurfaceId from client process. This is optional because
+  // in some cases (like backgrounding) the renderer might not have a valid
+  // LocalSurfaceId to provide, and an invalid LocalSurfaceId cannot be
+  // serialized due to the UnguessableToken constraint.
+  LocalSurfaceId? current_local_surface_id;
 
   // Pass the frame_token generated on the client side to viz. Without this,
   // viz needs to generate the token on its own, but GPU process could
@@ -124,6 +131,9 @@ struct LayerTreeUpdate {
   int32 inner_scroll;
   int32 outer_clip;
   int32 outer_scroll;
+
+  gfx.mojom.Vector2dF inner_viewport_container_bounds_delta;
+  gfx.mojom.Vector2dF outer_viewport_container_bounds_delta;
 
   // The tree's viewport damage rect.
   gfx.mojom.Rect viewport_damage_rect;
@@ -225,21 +235,32 @@ struct LayerTreeUpdate {
   // Metadata for delegated ink trails.
   gfx.mojom.DelegatedInkMetadata? delegated_ink_metadata;
 
+  // When non-empty, the next compositor frame also informs viz to issue a
+  // screenshot against the previous surface.
+  blink.mojom.SameDocNavigationScreenshotDestinationToken?
+      screenshot_destination;
+
   // Whether the compositor should throttle if there are undrawn frames.
   bool may_throttle_if_undrawn_frames;
 
   // Whether the viewport is mobile optimized.
   bool is_viewport_mobile_optimized;
 
-  // Whether the viewport size should be shrunk by the height of the
-  // URL-bar.
-  bool browser_controls_shrink_blink_size;
-
   // Equivalent to hud_layer() && hud_layer()->IsANimatingHUDContents().
   bool is_animating_hud_contents;
 
+  // If true, this update is only for synchronization purposes (e.g. to flush
+  // resource deletions) and should not trigger a draw or any expensive
+  // post-sync recomputations. This is used when the renderer is backgrounded
+  // to ensure Viz releases tile memory immediately without the overhead of
+  // a full frame commit.
+  bool is_flush;
+
   // Latency info for the current update.
   array<ui.mojom.LatencyInfo> latency_info;
+
+  // Tracked element rects to be added to the frame metadata.
+  TrackedElementRects tracked_element_rects;
 };
 
 // Drives updates to a GPU-side LayerTreeHostImpl from its corresponding

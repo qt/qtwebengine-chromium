@@ -24,12 +24,12 @@
 #include "base/test/test_future.h"
 #include "components/unexportable_keys/background_task_origin.h"
 #include "components/unexportable_keys/features.h"
-#include "components/unexportable_keys/mock_unexportable_key.h"
 #include "components/unexportable_keys/mock_unexportable_key_service.h"
-#include "components/unexportable_keys/scoped_mock_unexportable_key_provider.h"
 #include "components/unexportable_keys/unexportable_key_service_impl.h"
 #include "components/unexportable_keys/unexportable_key_task_manager.h"
+#include "crypto/mock_unexportable_key.h"
 #include "crypto/scoped_fake_unexportable_key_provider.h"
+#include "crypto/scoped_mock_unexportable_key_provider.h"
 #include "net/base/features.h"
 #include "net/device_bound_sessions/challenge_result.h"
 #include "net/device_bound_sessions/jwk_utils.h"
@@ -40,6 +40,7 @@
 #include "net/device_bound_sessions/unexportable_key_service_factory.h"
 #include "net/log/test_net_log.h"
 #include "net/test/test_with_task_environment.h"
+#include "net/url_request/device_bound_session_mode.h"
 #include "net/url_request/url_request_context_builder.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -52,7 +53,9 @@ using ::testing::Eq;
 using ::testing::InSequence;
 using ::testing::Invoke;
 using ::testing::IsEmpty;
+using ::testing::Not;
 using ::testing::Return;
+using ::testing::SaveArgByMove;
 using ::testing::StrictMock;
 using ::testing::UnorderedElementsAre;
 
@@ -588,14 +591,14 @@ TEST_F(SessionServiceImplTest, EventObserverOnAddSession) {
   base::CallbackListSubscription subscription =
       service().AddEventObserver(event_callback.Get());
 
-  base::test::TestFuture<
-      unexportable_keys::ServiceErrorOr<unexportable_keys::UnexportableKeyId>>
+  base::test::TestFuture<unexportable_keys::ServiceErrorOr<
+      unexportable_keys::UnexportableSigningKeyId>>
       key_future;
   key_service()->GenerateSigningKeySlowlyAsync(
       {crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256},
       unexportable_keys::BackgroundTaskPriority::kBestEffort,
       key_future.GetCallback());
-  unexportable_keys::UnexportableKeyId key = *key_future.Take();
+  unexportable_keys::UnexportableSigningKeyId key = *key_future.Take();
   std::vector<uint8_t> wrapped_key = key_service()->GetWrappedKey(key).value();
 
   EXPECT_CALL(event_callback, Run(_)).WillOnce([](const SessionEvent& event) {
@@ -615,10 +618,10 @@ TEST_F(SessionServiceImplTest, EventObserverOnAddSession) {
 
   SessionParams::Scope scope;
   scope.origin = kOrigin;
-  SessionParams params(kSessionId, kTestUrl, kRefreshUrlString,
-                       std::move(scope),
-                       /*creds=*/{}, unexportable_keys::UnexportableKeyId(),
-                       /*allowed_refresh_initiators=*/{});
+  SessionParams params(
+      kSessionId, kTestUrl, kRefreshUrlString, std::move(scope),
+      /*creds=*/{}, unexportable_keys::UnexportableSigningKeyId(),
+      /*allowed_refresh_initiators=*/{});
 
   base::test::TestFuture<SessionError::ErrorType> add_session_future;
   service().AddSession(SchemefulSite(kTestUrl), std::move(params), wrapped_key,
@@ -1018,7 +1021,7 @@ TEST_F(SessionServiceImplTest, EventObserverOnProactiveAndDeferredRefresh) {
   tracker.ResolvePendingRefresh(
       RegistrationResult(RegistrationResult::NoSessionConfigChange(),
                          /*maybe_stored_cookies=*/{}));
-  EXPECT_EQ(future.Take(), RefreshResult::kRefreshed);
+  EXPECT_EQ(future.Take(), RefreshResult::kRefreshedAsWaiter);
 }
 
 TEST_F(SessionServiceImplTest, EventObserverOnChallenge) {
@@ -1256,6 +1259,64 @@ TEST_F(SessionServiceImplTest, DeleteAllSessionsByCreationTime) {
 
   histograms.ExpectUniqueSample("Net.DeviceBoundSessions.DeletionReason",
                                 DeletionReason::kStoragePartitionCleared, 1);
+}
+
+// Verifies that the session's creation date isn't updated when its
+// configuration changes at a refresh.
+// Regression test for https://crbug.com/512365319.
+TEST_F(SessionServiceImplTest, RefreshedSessionKeepsCreationDate) {
+  net::SchemefulSite site(kTestUrl);
+
+  // Register a session on the site.
+  AddSessionsForTesting({{"SessionA", kRefreshUrlString, kOrigin}});
+  Session* session = service().GetSession({site, Session::Id("SessionA")});
+  ASSERT_TRUE(session);
+  base::Time original_creation_time = base::Time::Now();
+
+  // Fast-forward time by 10 days to emulate an "old" session.
+  FastForwardBy(base::Days(10));
+  // Verify session is still at the old creation date before the refresh.
+  EXPECT_EQ(session->creation_date(), original_creation_time);
+
+  // Perform a refresh request.
+  auto scoped_test_fetcher = ScopedTestRegistrationFetcher::CreateWithSuccess(
+      "SessionA", kRefreshUrlString, kOrigin);
+  net::TestDelegate delegate;
+  std::unique_ptr<URLRequest> request =
+      context()->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
+  request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
+  DbscRequest dbsc_request(request.get());
+  base::test::TestFuture<RefreshResult> refresh_future;
+  service().DeferRequestForRefresh(
+      dbsc_request, SessionService::DeferralParams(Session::Id("SessionA")),
+      refresh_future.GetCallback());
+  EXPECT_EQ(refresh_future.Take(), RefreshResult::kRefreshed);
+
+  // Check that the refresh updated the session while preserving its original
+  // creation date.
+  Session* refreshed_session =
+      service().GetSession({site, Session::Id("SessionA")});
+  ASSERT_TRUE(refreshed_session);
+  EXPECT_EQ(refreshed_session->creation_date(), original_creation_time);
+
+  // Fast-forward time by another 15 minutes so that the refresh is now 15
+  // minutes in the past.
+  FastForwardBy(base::Minutes(15));
+
+  // User triggers a "Clear Browsing Data" for the "Last Hour".
+  // Deletion time range: [Now - 1 Hour, Now].
+  base::Time delete_begin = base::Time::Now() - base::Hours(1);
+  base::Time delete_end = base::Time::Now();
+
+  base::RunLoop run_loop;
+  service().DeleteAllSessions(DeletionReason::kStoragePartitionCleared,
+                              delete_begin, delete_end,
+                              /*origin_and_site_matcher=*/
+                              base::NullCallback(), run_loop.QuitClosure());
+  run_loop.Run();
+
+  // The session should be preserved because it was created 10 days ago.
+  EXPECT_TRUE(service().GetSession({site, Session::Id("SessionA")}));
 }
 
 TEST_F(SessionServiceImplTest, DeleteAllSessionsBySite) {
@@ -1553,7 +1614,7 @@ TEST_F(SessionServiceImplTest, RefreshWithInvalidParams) {
             nullptr, RegistrationResult(Session::CreateIfValid(SessionParams(
                          kSessionId, GURL(), "", SessionParams::Scope(),
                          std::vector<SessionParams::Credential>(),
-                         unexportable_keys::UnexportableKeyId(),
+                         unexportable_keys::UnexportableSigningKeyId(),
                          /*allowed_refresh_initiators=*/{}))));
       }));
   service().DeferRequestForRefresh(
@@ -1804,7 +1865,7 @@ TEST_F(SessionServiceImplTest, LatestSignedRefreshChallenges) {
   SessionService::SignedRefreshChallenge signed_refresh_challenge = {
       .signed_challenge = "signed_challenge",
       .challenge = "challenge",
-      .key_id = unexportable_keys::UnexportableKeyId()};
+      .key_id = unexportable_keys::UnexportableSigningKeyId()};
   service().SetLatestSignedRefreshChallenge(session_key1,
                                             signed_refresh_challenge);
   const SessionService::SignedRefreshChallenge* retrieved_challenge =
@@ -1977,14 +2038,14 @@ TEST_F(SessionServiceImplTestWithFederatedSessions,
   ASSERT_NE(provider_session, nullptr);
 
   // Create the provider key and the correct thumbprint
-  base::test::TestFuture<
-      unexportable_keys::ServiceErrorOr<unexportable_keys::UnexportableKeyId>>
+  base::test::TestFuture<unexportable_keys::ServiceErrorOr<
+      unexportable_keys::UnexportableSigningKeyId>>
       key_future;
   key_service()->GenerateSigningKeySlowlyAsync(
       {crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256},
       unexportable_keys::BackgroundTaskPriority::kBestEffort,
       key_future.GetCallback());
-  unexportable_keys::UnexportableKeyId key = *key_future.Take();
+  unexportable_keys::UnexportableSigningKeyId key = *key_future.Take();
   std::string key_thumbprint = CreateJwkThumbprint(
       crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256,
       *key_service()->GetSubjectPublicKeyInfo(key));
@@ -2018,14 +2079,14 @@ TEST_F(SessionServiceImplTestWithFederatedSessions,
   ASSERT_NE(provider_session, nullptr);
 
   // Create the provider key and the correct thumbprint
-  base::test::TestFuture<
-      unexportable_keys::ServiceErrorOr<unexportable_keys::UnexportableKeyId>>
+  base::test::TestFuture<unexportable_keys::ServiceErrorOr<
+      unexportable_keys::UnexportableSigningKeyId>>
       key_future;
   key_service()->GenerateSigningKeySlowlyAsync(
       {crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256},
       unexportable_keys::BackgroundTaskPriority::kBestEffort,
       key_future.GetCallback());
-  unexportable_keys::UnexportableKeyId key = *key_future.Take();
+  unexportable_keys::UnexportableSigningKeyId key = *key_future.Take();
   provider_session->set_unexportable_key_id(key);
 
   // Attempt a registration with a session provider
@@ -2056,14 +2117,14 @@ TEST_F(SessionServiceImplTestWithFederatedSessions,
   ASSERT_NE(provider_session, nullptr);
 
   // Create the provider key and the correct thumbprint
-  base::test::TestFuture<
-      unexportable_keys::ServiceErrorOr<unexportable_keys::UnexportableKeyId>>
+  base::test::TestFuture<unexportable_keys::ServiceErrorOr<
+      unexportable_keys::UnexportableSigningKeyId>>
       key_future;
   key_service()->GenerateSigningKeySlowlyAsync(
       {crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256},
       unexportable_keys::BackgroundTaskPriority::kBestEffort,
       key_future.GetCallback());
-  unexportable_keys::UnexportableKeyId key = *key_future.Take();
+  unexportable_keys::UnexportableSigningKeyId key = *key_future.Take();
   std::string key_thumbprint = CreateJwkThumbprint(
       crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256,
       *key_service()->GetSubjectPublicKeyInfo(key));
@@ -2097,14 +2158,14 @@ TEST_F(SessionServiceImplTestWithFederatedSessions,
   ASSERT_NE(provider_session, nullptr);
 
   // Create the provider key and the correct thumbprint
-  base::test::TestFuture<
-      unexportable_keys::ServiceErrorOr<unexportable_keys::UnexportableKeyId>>
+  base::test::TestFuture<unexportable_keys::ServiceErrorOr<
+      unexportable_keys::UnexportableSigningKeyId>>
       key_future;
   key_service()->GenerateSigningKeySlowlyAsync(
       {crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256},
       unexportable_keys::BackgroundTaskPriority::kBestEffort,
       key_future.GetCallback());
-  unexportable_keys::UnexportableKeyId key = *key_future.Take();
+  unexportable_keys::UnexportableSigningKeyId key = *key_future.Take();
   std::string key_thumbprint = CreateJwkThumbprint(
       crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256,
       *key_service()->GetSubjectPublicKeyInfo(key));
@@ -2179,59 +2240,6 @@ TEST_F(SessionServiceImplTestWithFederatedSessions,
                                 SessionError::kInvalidFederatedSessionUrl, 1);
 }
 
-TEST_F(SessionServiceImplTestWithFederatedSessions,
-       FederatedRegistrationKeyUnrestored) {
-  // Create the provider session
-  SchemefulSite site(kTestUrl);
-  AddSessionsForTesting({{kSessionId, kRefreshUrlString, kOrigin}});
-  Session* provider_session =
-      service().GetSession({site, Session::Id(kSessionId)});
-  ASSERT_NE(provider_session, nullptr);
-
-  // Create the provider key and the correct thumbprint, but leave it
-  // unrestored.
-  provider_session->set_unexportable_key_id(
-      base::unexpected(unexportable_keys::ServiceError::kKeyNotReady));
-
-  base::test::TestFuture<
-      unexportable_keys::ServiceErrorOr<unexportable_keys::UnexportableKeyId>>
-      key_future;
-  key_service()->GenerateSigningKeySlowlyAsync(
-      {crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256},
-      unexportable_keys::BackgroundTaskPriority::kBestEffort,
-      key_future.GetCallback());
-  unexportable_keys::UnexportableKeyId key = *key_future.Take();
-  std::string key_thumbprint = CreateJwkThumbprint(
-      crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256,
-      *key_service()->GetSubjectPublicKeyInfo(key));
-
-  // Attempt a registration with a session provider
-  base::HistogramTester histograms;
-  auto scoped_test_fetcher = ScopedTestRegistrationFetcher::CreateWithSuccess(
-      "RelyingSession", "https://rp.com/refresh", "https://rp.com");
-  auto fetch_param = RegistrationFetcherParam::CreateInstanceForTesting(
-      kTestUrl, {crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256},
-      "challenge", /*authorization=*/std::nullopt, key_thumbprint, kTestUrl,
-      Session::Id(kSessionId));
-  service().RegisterBoundSession(
-      SessionService::OnAccessCallback(), std::move(fetch_param),
-      IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
-      NetLogWithSource(), /*original_request_initiator=*/std::nullopt);
-
-  // The relying session will not exist, since we did not have the
-  // provider key restored.
-  Session* relying_session = service().GetSession(
-      {SchemefulSite(GURL("https://rp.com")), Session::Id("RelyingSession")});
-  EXPECT_EQ(relying_session, nullptr);
-
-  // Because we could not restore the key, we also deleted the provider session.
-  EXPECT_EQ(service().GetSession({site, Session::Id(kSessionId)}), nullptr);
-  histograms.ExpectUniqueSample("Net.DeviceBoundSessions.DeletionReason",
-                                DeletionReason::kFailedToUnwrapKey, 1);
-  histograms.ExpectUniqueSample(
-      "Net.DeviceBoundSessions.RegistrationResult",
-      SessionError::kInvalidFederatedSessionProviderFailedToRestoreKey, 1);
-}
 
 TEST_F(SessionServiceImplTestWithoutFederatedSessions,
        IgnoresFederatedRegistration) {
@@ -2243,14 +2251,14 @@ TEST_F(SessionServiceImplTestWithoutFederatedSessions,
   ASSERT_NE(provider_session, nullptr);
 
   // Create the provider key and the correct thumbprint
-  base::test::TestFuture<
-      unexportable_keys::ServiceErrorOr<unexportable_keys::UnexportableKeyId>>
+  base::test::TestFuture<unexportable_keys::ServiceErrorOr<
+      unexportable_keys::UnexportableSigningKeyId>>
       key_future;
   key_service()->GenerateSigningKeySlowlyAsync(
       {crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256},
       unexportable_keys::BackgroundTaskPriority::kBestEffort,
       key_future.GetCallback());
-  unexportable_keys::UnexportableKeyId key = *key_future.Take();
+  unexportable_keys::UnexportableSigningKeyId key = *key_future.Take();
   std::string key_thumbprint = CreateJwkThumbprint(
       crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256,
       *key_service()->GetSubjectPublicKeyInfo(key));
@@ -2390,14 +2398,18 @@ TEST_F(SessionServiceImplTest, SessionUsage) {
             SessionUsage::kDeferred);
 }
 
-TEST_F(SessionServiceImplTest, ShouldDeferRespectsAllowsDeviceBoundSessions) {
+class SessionServiceImplRequestModeTest
+    : public SessionServiceImplTest,
+      public ::testing::WithParamInterface<net::DeviceBoundSessionMode> {};
+
+TEST_P(SessionServiceImplRequestModeTest, ShouldDefer) {
   AddSessionsForTesting({{kSessionId, kRefreshUrlString, kOrigin}});
 
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
       context()->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
-  request->set_allows_device_bound_sessions(false);
+  request->set_device_bound_session_mode(GetParam());
 
   HttpRequestHeaders extra_headers;
   DbscRequest dbsc_request(request.get());
@@ -2405,15 +2417,18 @@ TEST_F(SessionServiceImplTest, ShouldDeferRespectsAllowsDeviceBoundSessions) {
       service().ShouldDefer(dbsc_request, &extra_headers,
                             FirstPartySetMetadata());
 
-  EXPECT_FALSE(deferral.has_value());
+  if (GetParam() == net::DeviceBoundSessionMode::kAllowed) {
+    EXPECT_TRUE(deferral.has_value());
+  } else {
+    EXPECT_FALSE(deferral.has_value());
+  }
 }
 
-TEST_F(SessionServiceImplTest,
-       HandleRegistrationHeaderRespectsAllowsDeviceBoundSessions) {
+TEST_P(SessionServiceImplRequestModeTest, HandleRegistrationHeader) {
   net::TestDelegate delegate;
   std::unique_ptr<URLRequest> request =
       context()->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
-  request->set_allows_device_bound_sessions(false);
+  request->set_device_bound_session_mode(GetParam());
 
   auto headers = base::MakeRefCounted<HttpResponseHeaders>("HTTP/1.1 200 OK\n");
   headers->AddHeader("Secure-Session-Registration",
@@ -2427,15 +2442,18 @@ TEST_F(SessionServiceImplTest,
   service().HandleResponseHeaders(dbsc_request, headers.get(),
                                   FirstPartySetMetadata());
 
-  // Registration should NOT be triggered.
   base::test::TestFuture<std::vector<SessionKey>> future;
   service().GetAllSessionsAsync(
       future.GetCallback<const std::vector<SessionKey>&>());
-  EXPECT_THAT(future.Get(), IsEmpty());
+
+  if (GetParam() == net::DeviceBoundSessionMode::kDisabled) {
+    EXPECT_THAT(future.Get(), IsEmpty());
+  } else {
+    EXPECT_THAT(future.Get(), Not(IsEmpty()));
+  }
 }
 
-TEST_F(SessionServiceImplTest,
-       HandleChallengeHeaderRespectsAllowsDeviceBoundSessions) {
+TEST_P(SessionServiceImplRequestModeTest, HandleChallengeHeader) {
   AddSessionsForTesting({{kSessionId, kRefreshUrlString, kOrigin}});
   SessionKey session_key{SchemefulSite(GURL(kOrigin)), Session::Id(kSessionId)};
   Session* session = service().GetSession(session_key);
@@ -2446,7 +2464,7 @@ TEST_F(SessionServiceImplTest,
   std::unique_ptr<URLRequest> request =
       context()->CreateRequest(kTestUrl, IDLE, &delegate, kDummyAnnotation);
   request->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
-  request->set_allows_device_bound_sessions(false);
+  request->set_device_bound_session_mode(GetParam());
 
   auto headers = base::MakeRefCounted<HttpResponseHeaders>("HTTP/1.1 200 OK\n");
   headers->AddHeader("Secure-Session-Challenge",
@@ -2456,9 +2474,19 @@ TEST_F(SessionServiceImplTest,
   service().HandleResponseHeaders(dbsc_request, headers.get(),
                                   FirstPartySetMetadata());
 
-  // Challenge should NOT be stored.
-  EXPECT_FALSE(session->cached_challenge().has_value());
+  if (GetParam() == net::DeviceBoundSessionMode::kDisabled) {
+    EXPECT_FALSE(session->cached_challenge().has_value());
+  } else {
+    EXPECT_TRUE(session->cached_challenge().has_value());
+  }
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    ,
+    SessionServiceImplRequestModeTest,
+    ::testing::Values(net::DeviceBoundSessionMode::kDisabled,
+                      net::DeviceBoundSessionMode::kBypassDeferral,
+                      net::DeviceBoundSessionMode::kAllowed));
 
 }  // namespace
 
@@ -2480,12 +2508,11 @@ class SessionServiceImplWithStoreTest : public TestWithTaskEnvironment {
   SessionServiceImpl& service() { return service_; }
   StrictMock<SessionStoreMock>& store() { return *store_; }
 
-  unexportable_keys::ScopedMockUnexportableKeyProvider&
-  SwitchToMockKeyProvider() {
+  crypto::ScopedMockUnexportableKeyProvider& SwitchToMockKeyProvider() {
     // Using `emplace()` to destroy the existing scoped object before
     // constructing a new one.
     return scoped_key_provider_
-        .emplace<unexportable_keys::ScopedMockUnexportableKeyProvider>();
+        .emplace<crypto::ScopedMockUnexportableKeyProvider>();
   }
 
   void OnSessionsLoaded() {
@@ -2512,7 +2539,7 @@ class SessionServiceImplWithStoreTest : public TestWithTaskEnvironment {
   unexportable_keys::UnexportableKeyServiceImpl unexportable_key_service_{
       task_manager_, kTaskOrigin, crypto::UnexportableKeyProvider::Config()};
   std::variant<crypto::ScopedFakeUnexportableKeyProvider,
-               unexportable_keys::ScopedMockUnexportableKeyProvider>
+               crypto::ScopedMockUnexportableKeyProvider>
       scoped_key_provider_;
   std::unique_ptr<URLRequestContext> context_;
   std::unique_ptr<StrictMock<SessionStoreMock>> store_;
@@ -2527,7 +2554,7 @@ TEST_F(SessionServiceImplWithStoreTest, UsesSessionStore) {
         .Times(1)
         .WillOnce(
             Invoke(this, &SessionServiceImplWithStoreTest::OnSessionsLoaded));
-    EXPECT_CALL(store(), SaveSession).Times(1);
+    EXPECT_CALL(store(), SaveSession);
     EXPECT_CALL(store(), DeleteSession).Times(1);
   }
 
@@ -2568,7 +2595,7 @@ TEST_F(SessionServiceImplWithStoreTest, GetAllSessionsWaitsForSessionsToLoad) {
   scope.origin = "https://example.com";
   auto session_or_error = Session::CreateIfValid(SessionParams(
       "session_id", kTestUrl, "https://example.com/refresh", std::move(scope),
-      /*creds=*/{}, unexportable_keys::UnexportableKeyId(),
+      /*creds=*/{}, unexportable_keys::UnexportableSigningKeyId(),
       /*allowed_refresh_initiators=*/{}));
   ASSERT_TRUE(session_or_error.has_value());
   std::unique_ptr<Session> session = std::move(*session_or_error);
@@ -2654,10 +2681,7 @@ TEST_F(SessionServiceImplWithStoreTest, RequestDestroyedDuringAsyncKeyRestore) {
       store(),
       RestoreSessionBindingKey(
           SessionKey(SchemefulSite(kTestUrl), Session::Id(kSessionId)), _))
-      .WillOnce([&](const SessionKey& session_key,
-                    SessionStore::RestoreSessionBindingKeyCallback cb) {
-        restore_key_callback = std::move(cb);
-      });
+      .WillOnce(SaveArgByMove<1>(&restore_key_callback));
   service().DeferRequestForRefresh(*dbsc_request, *maybe_deferral,
                                    base::DoNothing());
   // Simulate the request being cleaned up before the callback has been called.
@@ -2666,7 +2690,82 @@ TEST_F(SessionServiceImplWithStoreTest, RequestDestroyedDuringAsyncKeyRestore) {
   ASSERT_TRUE(restore_key_callback);
   // Call the callback, and the test should not crash even though the request
   // was cleaned up.
-  std::move(restore_key_callback).Run(unexportable_keys::UnexportableKeyId());
+  std::move(restore_key_callback)
+      .Run(unexportable_keys::UnexportableSigningKeyId());
+}
+
+TEST_F(SessionServiceImplWithStoreTest,
+       WaiterRequestResumedIfTriggerCanceledDuringKeyRestoration) {
+  // Start loading
+  EXPECT_CALL(store(), LoadSessions).Times(1);
+  service().LoadSessionsAsync();
+
+  std::unique_ptr<Session> session =
+      Session::CreateFromProto(CreateSessionProto(kSessionId, kUrlString));
+  ASSERT_TRUE(session);
+
+  SessionStore::SessionsMap session_map;
+  session_map.insert(
+      {SessionKey{SchemefulSite(kTestUrl), session->id()}, std::move(session)});
+  FinishLoadingSessions(std::move(session_map));
+
+  // Create request1 that should be deferred due to the session
+  net::TestDelegate delegate1;
+  std::unique_ptr<URLRequest> request1 =
+      context()->CreateRequest(kTestUrl, IDLE, &delegate1, kDummyAnnotation);
+  request1->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
+
+  HttpRequestHeaders extra_headers1;
+  auto dbsc_request1 = std::make_unique<DbscRequest>(request1.get());
+  std::optional<SessionService::DeferralParams> deferral1 =
+      service().ShouldDefer(*dbsc_request1, &extra_headers1,
+                            FirstPartySetMetadata());
+  ASSERT_TRUE(deferral1);
+  EXPECT_EQ(**deferral1->session_id, kSessionId);
+
+  // Now actually defer request1 to trigger RestoreSessionBindingKey
+  SessionStore::RestoreSessionBindingKeyCallback restore_key_callback;
+  EXPECT_CALL(
+      store(),
+      RestoreSessionBindingKey(
+          SessionKey(SchemefulSite(kTestUrl), Session::Id(kSessionId)), _))
+      .WillOnce(SaveArgByMove<1>(&restore_key_callback));
+  service().DeferRequestForRefresh(*dbsc_request1, *deferral1,
+                                   base::DoNothing());
+  ASSERT_TRUE(restore_key_callback);
+
+  // Create request2 and defer it while RestoreSessionBindingKey is pending
+  net::TestDelegate delegate2;
+  std::unique_ptr<URLRequest> request2 =
+      context()->CreateRequest(kTestUrl, IDLE, &delegate2, kDummyAnnotation);
+  request2->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
+
+  HttpRequestHeaders extra_headers2;
+  DbscRequest dbsc_request2(request2.get());
+  std::optional<SessionService::DeferralParams> deferral2 =
+      service().ShouldDefer(dbsc_request2, &extra_headers2,
+                            FirstPartySetMetadata());
+  ASSERT_TRUE(deferral2);
+
+  base::test::TestFuture<RefreshResult> future2;
+  service().DeferRequestForRefresh(dbsc_request2, *deferral2,
+                                   future2.GetCallback());
+
+  // Now cancel/destroy request1 before the key restoration completes
+  dbsc_request1.reset();
+  request1.reset();
+
+  // Set expectations for the refresh completion
+  auto scoped_test_fetcher = ScopedTestRegistrationFetcher::CreateWithSuccess(
+      kSessionId, kUrlString, kOrigin);
+  EXPECT_CALL(store(), SaveSession);
+
+  // Resolve the key restoration.
+  std::move(restore_key_callback)
+      .Run(unexportable_keys::UnexportableSigningKeyId());
+
+  EXPECT_TRUE(future2.IsReady());
+  EXPECT_EQ(future2.Take(), RefreshResult::kRefreshed);
 }
 
 TEST_F(SessionServiceImplWithStoreTest, SessionKeyRestoredOnUse) {
@@ -2700,18 +2799,174 @@ TEST_F(SessionServiceImplWithStoreTest, SessionKeyRestoredOnUse) {
   // Now actually defer the request
   auto scoped_test_fetcher = ScopedTestRegistrationFetcher::CreateWithSuccess(
       kSessionId, kUrlString, kOrigin);
-  EXPECT_CALL(store(), SaveSession(_, _)).Times(1);
+  EXPECT_CALL(store(), SaveSession);
   EXPECT_CALL(
       store(),
       RestoreSessionBindingKey(
           SessionKey(SchemefulSite(kTestUrl), Session::Id(kSessionId)), _))
-      .WillOnce(RunOnceCallback<1>(unexportable_keys::UnexportableKeyId()));
+      .WillOnce(
+          RunOnceCallback<1>(unexportable_keys::UnexportableSigningKeyId()));
 
   base::test::TestFuture<RefreshResult> future;
   service().DeferRequestForRefresh(dbsc_request, *maybe_deferral,
                                    future.GetCallback());
 
   EXPECT_EQ(future.Take(), RefreshResult::kRefreshed);
+}
+
+TEST_F(SessionServiceImplWithStoreTest, RecoveryFromTransientSigningError) {
+  // Start loading
+  EXPECT_CALL(store(), LoadSessions).Times(1);
+  service().LoadSessionsAsync();
+
+  std::unique_ptr<Session> session =
+      Session::CreateFromProto(CreateSessionProto(kSessionId, kUrlString));
+  ASSERT_TRUE(session);
+
+  SessionStore::SessionsMap session_map;
+  session_map.insert(
+      {SessionKey{SchemefulSite(kTestUrl), session->id()}, std::move(session)});
+  FinishLoadingSessions(std::move(session_map));
+
+  // Create Request A
+  net::TestDelegate delegate_a;
+  std::unique_ptr<URLRequest> request_a =
+      context()->CreateRequest(kTestUrl, IDLE, &delegate_a, kDummyAnnotation);
+  request_a->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
+
+  HttpRequestHeaders extra_headers_a;
+  DbscRequest dbsc_request_a(request_a.get());
+  std::optional<SessionService::DeferralParams> maybe_deferral_a =
+      service().ShouldDefer(dbsc_request_a, &extra_headers_a,
+                            FirstPartySetMetadata());
+  ASSERT_TRUE(maybe_deferral_a);
+
+  // Mock transient failure for Request A
+  SessionStore::RestoreSessionBindingKeyCallback restore_key_callback_a;
+  EXPECT_CALL(
+      store(),
+      RestoreSessionBindingKey(
+          SessionKey(SchemefulSite(kTestUrl), Session::Id(kSessionId)), _))
+      .WillOnce(SaveArgByMove<1>(&restore_key_callback_a));
+
+  base::test::TestFuture<RefreshResult> future_a;
+  service().DeferRequestForRefresh(dbsc_request_a, *maybe_deferral_a,
+                                   future_a.GetCallback());
+
+  ASSERT_TRUE(restore_key_callback_a);
+  // Fail with transient error
+  std::move(restore_key_callback_a)
+      .Run(base::unexpected(unexportable_keys::ServiceError::kKeyNotReady));
+
+  EXPECT_EQ(future_a.Take(), RefreshResult::kTransientSigningError);
+
+  // Create Request B
+  net::TestDelegate delegate_b;
+  std::unique_ptr<URLRequest> request_b =
+      context()->CreateRequest(kTestUrl, IDLE, &delegate_b, kDummyAnnotation);
+  request_b->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
+
+  HttpRequestHeaders extra_headers_b;
+  DbscRequest dbsc_request_b(request_b.get());
+  std::optional<SessionService::DeferralParams> maybe_deferral_b =
+      service().ShouldDefer(dbsc_request_b, &extra_headers_b,
+                            FirstPartySetMetadata());
+  ASSERT_TRUE(maybe_deferral_b);
+
+  // Mock success for Request B
+  auto scoped_test_fetcher = ScopedTestRegistrationFetcher::CreateWithSuccess(
+      kSessionId, kUrlString, kOrigin);
+  EXPECT_CALL(store(), SaveSession);
+  EXPECT_CALL(
+      store(),
+      RestoreSessionBindingKey(
+          SessionKey(SchemefulSite(kTestUrl), Session::Id(kSessionId)), _))
+      .WillOnce(
+          RunOnceCallback<1>(unexportable_keys::UnexportableSigningKeyId()));
+
+  base::test::TestFuture<RefreshResult> future_b;
+  service().DeferRequestForRefresh(dbsc_request_b, *maybe_deferral_b,
+                                   future_b.GetCallback());
+
+  EXPECT_EQ(future_b.Take(), RefreshResult::kRefreshed);
+}
+
+TEST_F(SessionServiceImplWithStoreTest, FederatedRegistrationKeyUnrestored) {
+  // Start loading
+  EXPECT_CALL(store(), LoadSessions).Times(1);
+  service().LoadSessionsAsync();
+
+  std::unique_ptr<Session> session =
+      Session::CreateFromProto(CreateSessionProto(kSessionId, kUrlString));
+  ASSERT_TRUE(session);
+
+  SessionStore::SessionsMap session_map;
+  session_map.insert(
+      {SessionKey{SchemefulSite(kTestUrl), session->id()}, std::move(session)});
+  FinishLoadingSessions(std::move(session_map));
+
+  Session* provider_session =
+      service().GetSession({SchemefulSite(kTestUrl), Session::Id(kSessionId)});
+  ASSERT_NE(provider_session, nullptr);
+
+  // Create the provider key and the correct thumbprint, but leave it
+  // unrestored.
+  provider_session->set_unexportable_key_id(
+      base::unexpected(unexportable_keys::ServiceError::kKeyNotReady));
+
+  base::test::TestFuture<unexportable_keys::ServiceErrorOr<
+      unexportable_keys::UnexportableSigningKeyId>>
+      key_future;
+  key_service()->GenerateSigningKeySlowlyAsync(
+      {crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256},
+      unexportable_keys::BackgroundTaskPriority::kBestEffort,
+      key_future.GetCallback());
+  unexportable_keys::UnexportableSigningKeyId key = *key_future.Take();
+  std::string key_thumbprint = CreateJwkThumbprint(
+      crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256,
+      *key_service()->GetSubjectPublicKeyInfo(key));
+
+  // Attempt a registration with a session provider
+  base::HistogramTester histograms;
+  auto scoped_test_fetcher = ScopedTestRegistrationFetcher::CreateWithSuccess(
+      "RelyingSession", "https://rp.com/refresh", "https://rp.com");
+  auto fetch_param = RegistrationFetcherParam::CreateInstanceForTesting(
+      kTestUrl, {crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256},
+      "challenge", /*authorization=*/std::nullopt, key_thumbprint, kTestUrl,
+      Session::Id(kSessionId));
+
+  // Mock persistent failure for RestoreSessionBindingKey
+  EXPECT_CALL(
+      store(),
+      RestoreSessionBindingKey(
+          SessionKey(SchemefulSite(kTestUrl), Session::Id(kSessionId)), _))
+      .WillOnce(RunOnceCallback<1>(
+          base::unexpected(unexportable_keys::ServiceError::kKeyNotFound)));
+
+  EXPECT_CALL(store(), DeleteSession(SessionKey(SchemefulSite(kTestUrl),
+                                                Session::Id(kSessionId))))
+      .Times(1);
+
+  service().RegisterBoundSession(
+      SessionService::OnAccessCallback(), std::move(fetch_param),
+      IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
+      NetLogWithSource(), /*original_request_initiator=*/std::nullopt);
+
+  // The relying session will not exist
+  Session* relying_session = service().GetSession(
+      {SchemefulSite(GURL("https://rp.com")), Session::Id("RelyingSession")});
+  EXPECT_EQ(relying_session, nullptr);
+
+  // Because we failed to restore the key with a persistent error, we also
+  // deleted the provider session.
+  EXPECT_EQ(
+      service().GetSession({SchemefulSite(kTestUrl), Session::Id(kSessionId)}),
+      nullptr);
+  histograms.ExpectUniqueSample("Net.DeviceBoundSessions.DeletionReason",
+                                DeletionReason::kFailedToUnwrapKey, 1);
+  histograms.ExpectUniqueSample(
+      "Net.DeviceBoundSessions.RegistrationResult",
+      SessionError::kInvalidFederatedSessionProviderFailedToRestoreKey, 1);
 }
 
 TEST_F(SessionServiceImplWithStoreTest, NoSessionUsageDuringInitialization) {
@@ -2747,14 +3002,14 @@ TEST_F(SessionServiceImplWithStoreTest,
        std::move(provider_session)});
   FinishLoadingSessions(std::move(session_map));
 
-  base::test::TestFuture<
-      unexportable_keys::ServiceErrorOr<unexportable_keys::UnexportableKeyId>>
+  base::test::TestFuture<unexportable_keys::ServiceErrorOr<
+      unexportable_keys::UnexportableSigningKeyId>>
       key_future;
   key_service()->GenerateSigningKeySlowlyAsync(
       {crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256},
       unexportable_keys::BackgroundTaskPriority::kBestEffort,
       key_future.GetCallback());
-  unexportable_keys::UnexportableKeyId key = *key_future.Take();
+  unexportable_keys::UnexportableSigningKeyId key = *key_future.Take();
   std::string key_thumbprint = CreateJwkThumbprint(
       crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256,
       *key_service()->GetSubjectPublicKeyInfo(key));
@@ -2772,7 +3027,7 @@ TEST_F(SessionServiceImplWithStoreTest,
       RestoreSessionBindingKey(
           SessionKey(SchemefulSite(kTestUrl), Session::Id(kSessionId)), _))
       .WillOnce(RunOnceCallback<1>(key));
-  EXPECT_CALL(store(), SaveSession).Times(1);
+  EXPECT_CALL(store(), SaveSession);
   service().RegisterBoundSession(
       SessionService::OnAccessCallback(), std::move(fetch_param),
       IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
@@ -2852,6 +3107,77 @@ TEST_F(SessionServiceImplTest, DeferringRefreshBlocksDeferring) {
   EXPECT_EQ(tracker.num_pending_refreshes(), 1);
 }
 
+TEST_F(SessionServiceImplTest, DeferredWaitersCanTriggerAnotherRefresh) {
+  // Register a session with kSessionId.
+  AddSessionsForTesting({{kSessionId, kRefreshUrlString, kOrigin}});
+
+  RefreshTracker tracker;
+  auto scoped_test_fetcher = ScopedTestRegistrationFetcher(base::BindRepeating(
+      &RefreshTracker::Refresh, base::Unretained(&tracker)));
+
+  auto site = SchemefulSite(kTestUrl);
+  ASSERT_TRUE(service().GetSession({site, Session::Id(kSessionId)}));
+
+  // Create two requests.
+  net::TestDelegate delegate1;
+  std::unique_ptr<URLRequest> request1 =
+      context()->CreateRequest(kTestUrl, IDLE, &delegate1, kDummyAnnotation);
+  request1->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
+  DbscRequest dbsc_request1(request1.get());
+
+  net::TestDelegate delegate2;
+  std::unique_ptr<URLRequest> request2 =
+      context()->CreateRequest(kTestUrl, IDLE, &delegate2, kDummyAnnotation);
+  request2->set_site_for_cookies(SiteForCookies::FromUrl(kTestUrl));
+  DbscRequest dbsc_request2(request2.get());
+
+  auto deferral = SessionService::DeferralParams(Session::Id(kSessionId));
+
+  base::test::TestFuture<RefreshResult> future1;
+  base::test::TestFuture<RefreshResult> future2;
+
+  // Defer the first request. This should trigger a refresh.
+  service().DeferRequestForRefresh(dbsc_request1, deferral,
+                                   future1.GetCallback());
+
+  // Defer the second request. This should NOT trigger a refresh.
+  service().DeferRequestForRefresh(dbsc_request2, deferral,
+                                   future2.GetCallback());
+
+  // Only one refresh actually happened.
+  EXPECT_EQ(tracker.num_pending_refreshes(), 1);
+
+  // Resolve the refresh successfully.
+  tracker.ResolvePendingRefresh(
+      RegistrationResult(RegistrationResult::NoSessionConfigChange(),
+                         /*maybe_stored_cookies=*/{}));
+
+  // Verify callbacks.
+  RefreshResult result1 = future1.Take();
+  EXPECT_EQ(result1, RefreshResult::kRefreshed);
+
+  RefreshResult result2 = future2.Take();
+  EXPECT_EQ(result2, RefreshResult::kRefreshedAsWaiter);
+
+  // Simulate what `URLRequestHttpJob` does when it receives the callback.
+  SessionKey session_key{site, Session::Id(kSessionId)};
+  request1->AddDeviceBoundSessionDeferral(session_key, result1);
+  request2->AddDeviceBoundSessionDeferral(session_key, result2);
+
+  // Verify that `ShouldDefer()` returns false for the first request
+  // (already refreshed) but true for the second one (waiter gets a second
+  // chance).
+  HttpRequestHeaders extra_headers1;
+  auto deferral1 = service().ShouldDefer(dbsc_request1, &extra_headers1,
+                                         FirstPartySetMetadata());
+  EXPECT_FALSE(deferral1.has_value());
+
+  HttpRequestHeaders extra_headers2;
+  auto deferral2 = service().ShouldDefer(dbsc_request2, &extra_headers2,
+                                         FirstPartySetMetadata());
+  EXPECT_TRUE(deferral2.has_value());
+}
+
 TEST_F(SessionServiceImplTest, ProactiveRefreshBlocksDeferring) {
   base::HistogramTester histograms;
 
@@ -2914,7 +3240,7 @@ TEST_F(SessionServiceImplTest, ProactiveRefreshBlocksDeferring) {
   tracker.ResolvePendingRefresh(
       RegistrationResult(RegistrationResult::NoSessionConfigChange(),
                          /*maybe_stored_cookies=*/{}));
-  EXPECT_EQ(future.Take(), RefreshResult::kRefreshed);
+  EXPECT_EQ(future.Take(), RefreshResult::kRefreshedAsWaiter);
 
   histograms.ExpectUniqueSample(
       "Net.DeviceBoundSessions.ProactiveRefreshAttempt",
@@ -3206,7 +3532,7 @@ TEST_F(SessionServiceImplTest, SessionDeletionDuringRefresh_ConfigChange) {
       std::unique_ptr<Session> session,
       Session::CreateIfValid(SessionParams(
           kSessionId, kTestUrl, "https://example.com/refresh", std::move(scope),
-          /*creds=*/{}, unexportable_keys::UnexportableKeyId(),
+          /*creds=*/{}, unexportable_keys::UnexportableSigningKeyId(),
           /*allowed_refresh_initiators=*/{})));
   ASSERT_TRUE(session);
 

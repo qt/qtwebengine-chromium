@@ -25,33 +25,34 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/vulkan/TextureVk.h"
+#include "src/dawn/native/vulkan/TextureVk.h"
 
 #include <iostream>
 #include <utility>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/DynamicLib.h"
-#include "dawn/common/Math.h"
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/DynamicUploader.h"
-#include "dawn/native/EnumMaskIterator.h"
-#include "dawn/native/Error.h"
 #include "dawn/native/VulkanBackend.h"
-#include "dawn/native/utils/RenderDoc.h"
-#include "dawn/native/vulkan/BufferVk.h"
-#include "dawn/native/vulkan/CommandBufferVk.h"
-#include "dawn/native/vulkan/CommandRecordingContextVk.h"
-#include "dawn/native/vulkan/DeviceVk.h"
-#include "dawn/native/vulkan/FencedDeleter.h"
-#include "dawn/native/vulkan/PhysicalDeviceVk.h"
-#include "dawn/native/vulkan/QueueVk.h"
-#include "dawn/native/vulkan/ResourceHeapVk.h"
-#include "dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
-#include "dawn/native/vulkan/SamplerVk.h"
-#include "dawn/native/vulkan/SharedFenceVk.h"
-#include "dawn/native/vulkan/UtilsVulkan.h"
-#include "dawn/native/vulkan/VulkanError.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/DynamicLib.h"
+#include "src/dawn/common/Math.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/DynamicUploader.h"
+#include "src/dawn/native/EnumMaskIterator.h"
+#include "src/dawn/native/Error.h"
+#include "src/dawn/native/utils/RenderDoc.h"
+#include "src/dawn/native/vulkan/BufferVk.h"
+#include "src/dawn/native/vulkan/CommandBufferVk.h"
+#include "src/dawn/native/vulkan/CommandRecordingContextVk.h"
+#include "src/dawn/native/vulkan/DeviceVk.h"
+#include "src/dawn/native/vulkan/FencedDeleter.h"
+#include "src/dawn/native/vulkan/PhysicalDeviceVk.h"
+#include "src/dawn/native/vulkan/QueueVk.h"
+#include "src/dawn/native/vulkan/ResourceHeapVk.h"
+#include "src/dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
+#include "src/dawn/native/vulkan/SamplerVk.h"
+#include "src/dawn/native/vulkan/SharedFenceVk.h"
+#include "src/dawn/native/vulkan/UtilsVulkan.h"
+#include "src/dawn/native/vulkan/VulkanError.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native::vulkan {
 
@@ -323,8 +324,8 @@ VkImageMemoryBarrier BuildMemoryBarrier(const Texture* texture,
     barrier.pNext = nullptr;
     barrier.srcAccessMask = VulkanAccessFlags(lastUsage, format);
     barrier.dstAccessMask = VulkanAccessFlags(usage, format);
-    barrier.oldLayout = VulkanImageLayout(format, lastUsage);
-    barrier.newLayout = VulkanImageLayout(format, usage);
+    barrier.oldLayout = texture->VulkanImageLayout(lastUsage);
+    barrier.newLayout = texture->VulkanImageLayout(usage);
     barrier.image = texture->GetHandle();
     barrier.subresourceRange.aspectMask = VulkanAspectMask(range.aspects);
     barrier.subresourceRange.baseMipLevel = range.baseMipLevel;
@@ -668,6 +669,9 @@ VkImageUsageFlags VulkanImageUsage(const DeviceBase* device,
         }
     }
     if (usage & wgpu::TextureUsage::StorageBinding) {
+        // Storage bit should only be included if the format actually supports a storage uage.
+        DAWN_ASSERT(format.SupportsReadOnlyStorageUsage() ||
+                    format.SupportsWriteOnlyStorageUsage());
         flags |= VK_IMAGE_USAGE_STORAGE_BIT;
     }
     if (usage & wgpu::TextureUsage::RenderAttachment) {
@@ -675,10 +679,13 @@ VkImageUsageFlags VulkanImageUsage(const DeviceBase* device,
             flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
         } else {
             flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-            if (!format.IsMultiPlanar() && (usage & wgpu::TextureUsage::TextureBinding) &&
-                device->HasFeature(Feature::DawnLoadResolveTexture)) {
-                // Automatically set "input attachment" usage so that the texture would be
-                // used in ExpandResolveTexture subpass.
+
+            // Automatically set "input attachment" usage so that the texture can be used in
+            // ExpandResolveTexture subpass or with framebuffer fetch.
+            bool mayNeedToExpandTexture = !format.IsMultiPlanar() &&
+                                          usage & wgpu::TextureUsage::TextureBinding &&
+                                          device->HasFeature(Feature::DawnLoadResolveTexture);
+            if (mayNeedToExpandTexture || device->HasFeature(Feature::FramebufferFetch)) {
                 flags |= VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
             }
         }
@@ -694,34 +701,44 @@ VkImageUsageFlags VulkanImageUsage(const DeviceBase* device,
     return flags;
 }
 
+VkImageCreateFlags VulkanImageCreateFlags(const DeviceBase* device,
+                                          wgpu::TextureUsage usage,
+                                          const Format& format,
+                                          uint32_t sampleCount) {
+    VkImageCreateFlags vkCreateFlags = 0;
+
+    // If the MSAARenderToSingleSampled feature is enabled, textures with RenderAttachment usage
+    // need to have the VK_IMAGE_CREATE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_BIT_EXT flag set so
+    // that they can be used as a render target with an implicit sample count. syoussefi@ has
+    // confirmed that this is expected to be cheap or no cost on hardware with the extension.
+    if (device->HasFeature(Feature::MSAARenderToSingleSampled) &&
+        (usage & wgpu::TextureUsage::RenderAttachment) && sampleCount == 1 &&
+        !format.HasDepthOrStencil()) {
+        vkCreateFlags |= VK_IMAGE_CREATE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_BIT_EXT;
+    }
+
+    return vkCreateFlags;
+}
+
 // Chooses which Vulkan image layout should be used for the given Dawn usage. Note that this
 // layout must match the layout given to various Vulkan operations as well as the layout given
 // to descriptor set writes.
-VkImageLayout VulkanImageLayout(const Format& format, wgpu::TextureUsage usage) {
-    if (usage == wgpu::TextureUsage::None) {
-        return VK_IMAGE_LAYOUT_UNDEFINED;
+VkImageLayout VulkanImageLayout(const Format& format,
+                                wgpu::TextureUsage usage,
+                                wgpu::TextureUsage allowedUsage = wgpu::TextureUsage::None) {
+    if (allowedUsage == wgpu::TextureUsage::None) {
+        allowedUsage = usage;
     }
 
-    if (!wgpu::HasZeroOrOneBits(usage)) {
-        // sampled | (some sort of readonly depth-stencil aspect) is the only possible multi-bit
-        // usage, if more appear we will need additional special-casing.
-        DAWN_ASSERT(IsSubset(
-            usage, wgpu::TextureUsage::TextureBinding | kDepthReadOnlyStencilWritableAttachment |
-                       kDepthWritableStencilReadOnlyAttachment | kReadOnlyRenderAttachment));
-
-        if (IsSubset(kDepthReadOnlyStencilWritableAttachment, usage)) {
-            return VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL;
-        } else if (IsSubset(kDepthWritableStencilReadOnlyAttachment, usage)) {
-            return VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL;
-        } else {
-            DAWN_ASSERT(
-                IsSubset(usage, kReadOnlyRenderAttachment | wgpu::TextureUsage::TextureBinding));
-            return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        }
-    }
-
-    // Usage has a single bit so we can switch on its value directly.
+    // Note some of these cases have one bit, others have multiple bits.
+#if DAWN_COMPILER_IS(CLANG)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wswitch"
+#endif
     switch (usage) {
+        case wgpu::TextureUsage::None:
+            return VK_IMAGE_LAYOUT_UNDEFINED;
+
         case wgpu::TextureUsage::CopyDst:
             return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 
@@ -733,6 +750,12 @@ VkImageLayout VulkanImageLayout(const Format& format, wgpu::TextureUsage usage) 
             // VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL.
             if (format.HasDepthOrStencil() && format.IsRenderable()) {
                 return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            }
+            // Sampled textures can be used simultaneously as read only storage. If storage usage is
+            // allowed fall back to VK_IMAGE_LAYOUT_GENERAL.
+            // TODO(crbug.com/392121643): Investigate potential optimizations.
+            if (allowedUsage & (wgpu::TextureUsage::StorageBinding | kReadOnlyStorageTexture)) {
+                return VK_IMAGE_LAYOUT_GENERAL;
             }
             return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -749,6 +772,7 @@ VkImageLayout VulkanImageLayout(const Format& format, wgpu::TextureUsage usage) 
             // VK_IMAGE_LAYOUT_GENERAL layout.
         case wgpu::TextureUsage::StorageBinding:
         case kReadOnlyStorageTexture:
+        case kReadOnlyStorageTexture | wgpu::TextureUsage::TextureBinding:
         case kWriteOnlyStorageTexture:
             return VK_IMAGE_LAYOUT_GENERAL;
 
@@ -759,7 +783,14 @@ VkImageLayout VulkanImageLayout(const Format& format, wgpu::TextureUsage usage) 
                 return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             }
 
+        case kDepthReadOnlyStencilWritableAttachment:
+        case kDepthReadOnlyStencilWritableAttachment | wgpu::TextureUsage::TextureBinding:
+            return VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL;
+        case kDepthWritableStencilReadOnlyAttachment:
+        case kDepthWritableStencilReadOnlyAttachment | wgpu::TextureUsage::TextureBinding:
+            return VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL;
         case kReadOnlyRenderAttachment:
+        case kReadOnlyRenderAttachment | wgpu::TextureUsage::TextureBinding:
             return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
         case kPresentReleaseTextureUsage:
@@ -779,10 +810,10 @@ VkImageLayout VulkanImageLayout(const Format& format, wgpu::TextureUsage usage) 
         case wgpu::TextureUsage::StorageAttachment:
             // TODO(dawn:1704): Support PLS on Vulkan.
             DAWN_UNREACHABLE();
-
-        case wgpu::TextureUsage::None:
-            break;
     }
+#if DAWN_COMPILER_IS(CLANG)
+#pragma clang diagnostic pop
+#endif
     DAWN_UNREACHABLE();
 }
 
@@ -892,6 +923,10 @@ void Texture::NotifySwapChainPresent() {
 
 void Texture::SetIsExternalSwapchainTexture(bool isSwapChainTexture) {
     mIsExternalSwapChainTexture = isSwapChainTexture;
+}
+
+VkImageLayout Texture::VulkanImageLayout(wgpu::TextureUsage usage) const {
+    return dawn::native::vulkan::VulkanImageLayout(GetFormat(), usage, GetUsage());
 }
 
 void Texture::SetLabelImpl() {
@@ -1300,7 +1335,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
             blocksPerRow * largestMipSize.height * largestMipSize.depthOrArrayLayers;
         uint64_t uploadSize = blockInfo.ToBytes(uploadBlocks);
 
-        DAWN_TRY(device->GetDynamicUploader()->WithUploadReservation(
+        DAWN_UNSAFE_TODO(DAWN_TRY(device->GetDynamicUploader()->WithUploadReservation(
             uploadSize, blockInfo.byteSize, [&](UploadReservation reservation) -> MaybeError {
                 memset(reservation.mappedPointer, uClearColor, uploadSize);
 
@@ -1340,7 +1375,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
                                                 GetHandle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                                 regions.size(), regions.data());
                 return {};
-            }));
+            })));
     }
 
     if (clearValue == TextureBase::ClearValue::Zero) {
@@ -1394,8 +1429,7 @@ VkImageLayout Texture::GetCurrentLayout(Aspect aspect,
                                         uint32_t arrayLayer,
                                         uint32_t mipLevel) const {
     DAWN_ASSERT(GetFormat().aspects == Aspect::Color);
-    return VulkanImageLayout(GetFormat(),
-                             mSubresourceLastSyncInfos.Get(aspect, arrayLayer, mipLevel).usage);
+    return VulkanImageLayout(mSubresourceLastSyncInfos.Get(aspect, arrayLayer, mipLevel).usage);
 }
 
 bool Texture::UseCombinedAspects() const {
@@ -1454,6 +1488,8 @@ MaybeError InternalTexture::Initialize(VkImageUsageFlags extraUsages) {
     createInfo.usage = VulkanImageUsage(device, GetInternalUsage(), GetFormat()) | extraUsages;
     createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     createInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    createInfo.flags =
+        VulkanImageCreateFlags(device, GetInternalUsage(), GetFormat(), GetSampleCount());
 
     std::vector<VkFormat> viewFormats;
     bool requiresViewFormatsList = GetViewFormats().any();
@@ -1474,17 +1510,6 @@ MaybeError InternalTexture::Initialize(VkImageUsageFlags extraUsages) {
         // Note: we cannot include R8 & RG8 in the viewFormats list of
         // G8_B8R8_2PLANE_420_UNORM. The Vulkan validation layer will disallow that.
         createInfo.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
-    }
-
-    // If the MSAARenderToSingleSampled feature is enabled, textures with RenderAttachment
-    // usage need to have VK_IMAGE_CREATE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_BIT_EXT set
-    // so that they can be used as a render target with an implicit sample count. syoussefi@
-    // has confirmed that this is expected to be very cheap or no cost on hardware that
-    // supports the extension.
-    if (device->HasFeature(Feature::MSAARenderToSingleSampled) &&
-        (GetInternalUsage() & wgpu::TextureUsage::RenderAttachment) && GetSampleCount() == 1 &&
-        !GetFormat().HasDepthOrStencil()) {
-        createInfo.flags |= VK_IMAGE_CREATE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_BIT_EXT;
     }
 
     // Add the view format list only when the usage does not have storage. Otherwise, the VVL will
@@ -1849,6 +1874,9 @@ MaybeError ImportedTextureBase::OnAfterSubmit() {
     // The submit succeeded, we can replace the previous external semaphore with the pending one.
     if (mExternalSemaphoreHandle != kNullExternalSemaphoreHandle) {
         device->GetExternalSemaphoreService()->CloseHandle(mExternalSemaphoreHandle);
+        // Set the handle to null after it's been closed so that we don't accidentally attempt to
+        // use or close it again if the ExportSemaphore() below fails.
+        mExternalSemaphoreHandle = kNullExternalSemaphoreHandle;
     }
 
     DAWN_TRY_ASSIGN(mExternalSemaphoreHandle,
@@ -2286,6 +2314,10 @@ ResultOrError<VkImageView> TextureView::GetOrCreate2DViewOn3D(uint32_t depthSlic
 bool TextureView::IsYCbCrFilterable() const {
     DAWN_ASSERT(IsYCbCr());
     return mIsYCbCrFilterable;
+}
+
+VkImageLayout TextureView::VulkanImageLayout(wgpu::TextureUsage usage) const {
+    return dawn::native::vulkan::VulkanImageLayout(GetFormat(), usage, GetUsage());
 }
 
 void TextureView::SetLabelImpl() {

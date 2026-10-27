@@ -51,7 +51,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, ReadUniformMatrix) {
     // }
 
     auto* matrix_member = ty.Get<core::type::StructMember>(mod.symbols.New("m"), ty.mat2x3<f32>(),
-                                                           0u, 16u, 24u, 24u, core::IOAttributes{});
+                                                           0u, 16u, 8u, 24u, core::IOAttributes{});
     matrix_member->SetRowMajor();
 
     auto* strct = ty.Struct(mod.symbols.New("S"), Vector{matrix_member});
@@ -67,7 +67,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, ReadUniformMatrix) {
     });
 
     auto* before = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
@@ -88,11 +88,11 @@ $B1: {  # root
     ASSERT_EQ(before, str());
 
     auto* after = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
-S_1 = struct @align(24) {
+S_1 = struct @align(8) {
   m:mat3x2<f32> @offset(16)
 }
 
@@ -128,7 +128,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, ReadUniformColumn) {
     //   let x : vec3<f32> = s.m[1];
     // }
     auto* matrix_member = ty.Get<core::type::StructMember>(mod.symbols.New("m"), ty.mat2x3<f32>(),
-                                                           0u, 16u, 24u, 24u, core::IOAttributes{});
+                                                           0u, 16u, 8u, 24u, core::IOAttributes{});
     matrix_member->SetRowMajor();
 
     auto* strct = ty.Struct(mod.symbols.New("S"), Vector{matrix_member});
@@ -144,7 +144,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, ReadUniformColumn) {
     });
 
     auto* before = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
@@ -165,11 +165,11 @@ $B1: {  # root
     ASSERT_EQ(before, str());
 
     auto* after = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
-S_1 = struct @align(24) {
+S_1 = struct @align(8) {
   m:mat3x2<f32> @offset(16)
 }
 
@@ -217,7 +217,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, ReadUniformElement) {
     //   let x : f32 = s.m[col_idx].z;
     // }
     auto* matrix_member = ty.Get<core::type::StructMember>(mod.symbols.New("m"), ty.mat2x3<f32>(),
-                                                           0u, 16u, 24u, 24u, core::IOAttributes{});
+                                                           0u, 16u, 8u, 24u, core::IOAttributes{});
     matrix_member->SetRowMajor();
 
     auto* strct = ty.Struct(mod.symbols.New("S"), Vector{matrix_member});
@@ -234,7 +234,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, ReadUniformElement) {
     });
 
     auto* before = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
@@ -255,11 +255,11 @@ $B1: {  # root
     ASSERT_EQ(before, str());
 
     auto* after = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
-S_1 = struct @align(24) {
+S_1 = struct @align(8) {
   m:mat3x2<f32> @offset(16)
 }
 
@@ -296,7 +296,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, ReadUniformSwizzle) {
     //   let x : vec2<f32> = s.m[1].zx;
     // }
     auto* matrix_member = ty.Get<core::type::StructMember>(mod.symbols.New("m"), ty.mat2x3<f32>(),
-                                                           0u, 16u, 24u, 24u, core::IOAttributes{});
+                                                           0u, 16u, 8u, 24u, core::IOAttributes{});
     matrix_member->SetRowMajor();
 
     auto* strct = ty.Struct(mod.symbols.New("S"), Vector{matrix_member});
@@ -314,7 +314,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, ReadUniformSwizzle) {
     });
 
     auto* before = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
@@ -336,11 +336,11 @@ $B1: {  # root
     ASSERT_EQ(before, str());
 
     auto* after = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
-S_1 = struct @align(24) {
+S_1 = struct @align(8) {
   m:mat3x2<f32> @offset(16)
 }
 
@@ -388,7 +388,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, WriteStorageMatrix) {
     //   s.m = mat2x3<f32>(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
     // }
     auto* matrix_member = ty.Get<core::type::StructMember>(mod.symbols.New("m"), ty.mat2x3<f32>(),
-                                                           0u, 8u, 24u, 24u, core::IOAttributes{});
+                                                           0u, 8u, 8u, 24u, core::IOAttributes{});
     matrix_member->SetRowMajor();
 
     auto* strct = ty.Struct(mod.symbols.New("S"), Vector{matrix_member});
@@ -406,7 +406,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, WriteStorageMatrix) {
     });
 
     auto* before = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(8) @size(24), @row_major
 }
 
@@ -427,11 +427,11 @@ $B1: {  # root
     ASSERT_EQ(before, str());
 
     auto* after = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(8) @size(24), @row_major
 }
 
-S_1 = struct @align(24) {
+S_1 = struct @align(8) {
   m:mat3x2<f32> @offset(8)
 }
 
@@ -468,7 +468,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, WriteStorageColumn) {
     //   s.m[1] = vec3<f32>(1.0, 2.0, 3.0);
     // }
     auto* matrix_member = ty.Get<core::type::StructMember>(mod.symbols.New("m"), ty.mat2x3<f32>(),
-                                                           0u, 8u, 24u, 24u, core::IOAttributes{});
+                                                           0u, 8u, 8u, 24u, core::IOAttributes{});
     matrix_member->SetRowMajor();
 
     auto* strct = ty.Struct(mod.symbols.New("S"), Vector{matrix_member});
@@ -486,7 +486,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, WriteStorageColumn) {
     });
 
     auto* before = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(8) @size(24), @row_major
 }
 
@@ -507,11 +507,11 @@ $B1: {  # root
     ASSERT_EQ(before, str());
 
     auto* after = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(8) @size(24), @row_major
 }
 
-S_1 = struct @align(24) {
+S_1 = struct @align(8) {
   m:mat3x2<f32> @offset(8)
 }
 
@@ -561,7 +561,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, WriteStorageElement_Accessor) {
     //   s.m[1].z = 1.0;
     // }
     auto* matrix_member = ty.Get<core::type::StructMember>(mod.symbols.New("m"), ty.mat2x3<f32>(),
-                                                           0u, 8u, 24u, 24u, core::IOAttributes{});
+                                                           0u, 8u, 8u, 24u, core::IOAttributes{});
     matrix_member->SetRowMajor();
 
     auto* strct = ty.Struct(mod.symbols.New("S"), Vector{matrix_member});
@@ -578,7 +578,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, WriteStorageElement_Accessor) {
     });
 
     auto* before = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(8) @size(24), @row_major
 }
 
@@ -598,11 +598,11 @@ $B1: {  # root
     ASSERT_EQ(before, str());
 
     auto* after = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(8) @size(24), @row_major
 }
 
-S_1 = struct @align(24) {
+S_1 = struct @align(8) {
   m:mat3x2<f32> @offset(8)
 }
 
@@ -642,7 +642,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, ExtractFromLoadedStruct) {
     //   let e : vec3<f32> = load.m[col_idx][row_idx];
     // }
     auto* matrix_member = ty.Get<core::type::StructMember>(mod.symbols.New("m"), ty.mat2x3<f32>(),
-                                                           0u, 16u, 24u, 24u, core::IOAttributes{});
+                                                           0u, 16u, 8u, 24u, core::IOAttributes{});
     matrix_member->SetRowMajor();
 
     auto* strct = ty.Struct(mod.symbols.New("S"), Vector{matrix_member});
@@ -662,7 +662,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, ExtractFromLoadedStruct) {
     });
 
     auto* before = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
@@ -688,11 +688,11 @@ $B1: {  # root
     ASSERT_EQ(before, str());
 
     auto* after = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
-S_1 = struct @align(24) {
+S_1 = struct @align(8) {
   m:mat3x2<f32> @offset(16)
 }
 
@@ -742,7 +742,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, ExtractFromLoadedVector) {
     //   let e : vec3<f32> = c[row_idx];
     // }
     auto* matrix_member = ty.Get<core::type::StructMember>(mod.symbols.New("m"), ty.mat2x3<f32>(),
-                                                           0u, 16u, 24u, 24u, core::IOAttributes{});
+                                                           0u, 16u, 8u, 24u, core::IOAttributes{});
     matrix_member->SetRowMajor();
 
     auto* strct = ty.Struct(mod.symbols.New("S"), Vector{matrix_member});
@@ -762,7 +762,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, ExtractFromLoadedVector) {
     });
 
     auto* before = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
@@ -788,11 +788,11 @@ $B1: {  # root
     ASSERT_EQ(before, str());
 
     auto* after = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
-S_1 = struct @align(24) {
+S_1 = struct @align(8) {
   m:mat3x2<f32> @offset(16)
 }
 
@@ -836,8 +836,8 @@ TEST_F(SpirvReader_TransposeRowMajorTest, InsertInStructConstructor) {
     //   let m2 = mat4x2<f32>();
     //   s = S(m, m2, m2);
     // }
-    auto* matrix_member_0 = ty.Get<core::type::StructMember>(
-        mod.symbols.New("m"), ty.mat2x3<f32>(), 0u, 0u, 24u, 24u, core::IOAttributes{});
+    auto* matrix_member_0 = ty.Get<core::type::StructMember>(mod.symbols.New("m"), ty.mat2x3<f32>(),
+                                                             0u, 0u, 8u, 24u, core::IOAttributes{});
     matrix_member_0->SetRowMajor();
 
     auto* matrix_member_1 = ty.Get<core::type::StructMember>(
@@ -1307,7 +1307,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, PreserveMatrixStride) {
     //   let x : mat2x3<f32> = s.m;
     // }
     auto* matrix_member = ty.Get<core::type::StructMember>(mod.symbols.New("m"), ty.mat2x3<f32>(),
-                                                           0u, 0u, 24u, 24u, core::IOAttributes{});
+                                                           0u, 0u, 8u, 24u, core::IOAttributes{});
     matrix_member->SetRowMajor();
     matrix_member->SetMatrixStride(32);
 
@@ -1324,7 +1324,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, PreserveMatrixStride) {
     });
 
     auto* before = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(0) @size(24), @row_major, @matrix_stride(32)
 }
 
@@ -1345,11 +1345,11 @@ $B1: {  # root
     ASSERT_EQ(before, str());
 
     auto* after = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(0) @size(24), @row_major, @matrix_stride(32)
 }
 
-S_1 = struct @align(24) {
+S_1 = struct @align(8) {
   m:mat3x2<f32> @offset(0), @matrix_stride(32)
 }
 
@@ -2002,7 +2002,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, FunctionConstruct) {
     // }
 
     auto* matrix_member = ty.Get<core::type::StructMember>(mod.symbols.New("m"), ty.mat2x3<f32>(),
-                                                           0u, 16u, 24u, 24u, core::IOAttributes{});
+                                                           0u, 16u, 8u, 24u, core::IOAttributes{});
     matrix_member->SetRowMajor();
 
     auto* strct = ty.Struct(mod.symbols.New("S"), Vector{matrix_member});
@@ -2019,7 +2019,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, FunctionConstruct) {
     });
 
     auto* before = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
@@ -2038,11 +2038,11 @@ S = struct @align(24) {
     ASSERT_EQ(before, str());
 
     auto* after = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
-S_1 = struct @align(24) {
+S_1 = struct @align(8) {
   m:mat3x2<f32> @offset(16)
 }
 
@@ -2076,7 +2076,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, FunctionConstant) {
     // }
 
     auto* matrix_member = ty.Get<core::type::StructMember>(mod.symbols.New("m"), ty.mat2x3<f32>(),
-                                                           0u, 16u, 24u, 24u, core::IOAttributes{});
+                                                           0u, 16u, 8u, 24u, core::IOAttributes{});
     matrix_member->SetRowMajor();
 
     auto* strct = ty.Struct(mod.symbols.New("S"), Vector{matrix_member});
@@ -2093,7 +2093,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, FunctionConstant) {
     });
 
     auto* before = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
@@ -2111,11 +2111,11 @@ S = struct @align(24) {
     ASSERT_EQ(before, str());
 
     auto* after = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
-S_1 = struct @align(24) {
+S_1 = struct @align(8) {
   m:mat3x2<f32> @offset(16)
 }
 
@@ -2148,7 +2148,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, PrivateConstant) {
     // }
 
     auto* matrix_member = ty.Get<core::type::StructMember>(mod.symbols.New("m"), ty.mat2x3<f32>(),
-                                                           0u, 16u, 24u, 24u, core::IOAttributes{});
+                                                           0u, 16u, 8u, 24u, core::IOAttributes{});
     matrix_member->SetRowMajor();
 
     auto* strct = ty.Struct(mod.symbols.New("S"), Vector{matrix_member});
@@ -2169,7 +2169,7 @@ TEST_F(SpirvReader_TransposeRowMajorTest, PrivateConstant) {
     });
 
     auto* before = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
@@ -2190,11 +2190,11 @@ $B1: {  # root
     ASSERT_EQ(before, str());
 
     auto* after = R"(
-S = struct @align(24) {
+S = struct @align(8) {
   m:mat2x3<f32> @offset(16) @size(24), @row_major
 }
 
-S_1 = struct @align(24) {
+S_1 = struct @align(8) {
   m:mat3x2<f32> @offset(16)
 }
 

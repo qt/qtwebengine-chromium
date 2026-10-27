@@ -1,11 +1,11 @@
 project(
   'hwy',
   'cpp',
-  version: '1.2.0',
+  version: '1.4.0',
   meson_version: '>= 1.3.0',
   license: 'Apache-2.0 OR BSD-3-Clause',
   default_options: [
-    'cpp_std=c++17,c++14,c++11',
+    'cpp_std=c++17,c++14',
     'b_pie=true',
     'b_staticpic=true',
     'default_library=static',
@@ -23,11 +23,14 @@ is_subproj = meson.is_subproject()
 tests_enabled = get_option('tests').disable_auto_if(is_subproj).allowed()
 examples_enabled = get_option('examples').disable_auto_if(is_subproj).allowed()
 
-hwy_nowarn_args = []
+cpp = meson.get_compiler('cpp')
+
+hwy_nowarn_args = cpp.get_supported_arguments([
+  '-Wno-gnu-zero-variadic-macro-arguments', # Disable gnu variadic macro warning.
+])
+
 hwy_cpp_args = []
 hwy_link_args = []
-
-cpp = meson.get_compiler('cpp')
 
 pkg = import('pkgconfig')
 
@@ -73,6 +76,7 @@ hwy_headers = files(
     'hwy/aligned_allocator.h',
     'hwy/auto_tune.h',
     'hwy/base.h',
+    'hwy/bit_set.h',
     'hwy/cache_control.h',
     'hwy/detect_compiler_arch.h',  # private
     'hwy/detect_targets.h',  # private
@@ -124,6 +128,7 @@ hwy_contrib_headers = files(
     'hwy/contrib/bit_pack/bit_pack-inl.h',
     'hwy/contrib/dot/dot-inl.h',
     'hwy/contrib/image/image.h',
+    'hwy/contrib/math/fast_math-inl.h',
     'hwy/contrib/math/math-inl.h',
     'hwy/contrib/matvec/matvec-inl.h',
     'hwy/contrib/random/random-inl.h',
@@ -139,7 +144,9 @@ hwy_contrib_headers = files(
     'hwy/contrib/thread_pool/thread_pool.h',
     'hwy/contrib/thread_pool/topology.h',
     'hwy/contrib/algo/copy-inl.h',
+    'hwy/contrib/algo/count-inl.h',
     'hwy/contrib/algo/find-inl.h',
+    'hwy/contrib/algo/minmax-inl.h',
     'hwy/contrib/algo/transform-inl.h',
     'hwy/contrib/unroller/unroller-inl.h',
 )
@@ -147,6 +154,7 @@ hwy_contrib_headers = files(
 hwy_contrib_sources = files(
     'hwy/contrib/image/image.cc',
     'hwy/contrib/sort/vqsort.cc',
+    'hwy/contrib/thread_pool/thread_pool.cc',
     'hwy/contrib/thread_pool/topology.cc',
     # plus all of the vqsort_*.cc....
     # note meson doesn't directly support glob (by design).
@@ -564,6 +572,7 @@ if tests_enabled
         'hwy/tests/blockwise_test.cc',
         'hwy/tests/cast_test.cc',
         'hwy/tests/combine_test.cc',
+        'hwy/tests/compare_128_test.cc',
         'hwy/tests/compare_test.cc',
         'hwy/tests/complex_arithmetic_test.cc',
         'hwy/tests/compress_test.cc',
@@ -589,6 +598,7 @@ if tests_enabled
         'hwy/tests/mask_slide_test.cc',
         'hwy/tests/mask_test.cc',
         'hwy/tests/masked_arithmetic_test.cc',
+        'hwy/tests/masked_compare_test.cc',
         'hwy/tests/masked_minmax_test.cc',
         'hwy/tests/memory_test.cc',
         'hwy/tests/minmax_magnitude_test.cc',
@@ -598,6 +608,7 @@ if tests_enabled
         'hwy/tests/mul_by_pow2_test.cc',
         'hwy/tests/mul_pairwise_test.cc',
         'hwy/tests/mul_test.cc',
+        'hwy/tests/neg_test.cc',
         'hwy/tests/reduction_test.cc',
         'hwy/tests/resize_test.cc',
         'hwy/tests/reverse_test.cc',
@@ -659,7 +670,9 @@ if tests_enabled
         hwy_contrib_test_files = files(
             'hwy/auto_tune_test.cc',
             'hwy/contrib/algo/copy_test.cc',
+            'hwy/contrib/algo/count_value_test.cc',
             'hwy/contrib/algo/find_test.cc',
+            'hwy/contrib/algo/minmax_value_test.cc',
             'hwy/contrib/algo/transform_test.cc',
             'hwy/contrib/bit_pack/bit_pack_test.cc',
             'hwy/contrib/dot/dot_test.cc',

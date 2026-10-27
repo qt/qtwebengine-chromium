@@ -110,6 +110,7 @@ libavfilter/vf_find_rect.* @michaelni
 libavfilter/vf_icc.* @haasn
 libavfilter/vf_libplacebo.* @haasn
 libavfilter/vf_libvmaf.* @kylophone
+libavfilter/vf_mpdecimate.* @dana-feng
 libavfilter/vf_premultiply.* @haasn
 libavfilter/vf_scale.* @haasn
 libavfilter/vf_scale_vt.* @quink
@@ -140,6 +141,7 @@ libavformat/electronicarts.* @pross
 libavformat/.*exif.* @Traneptora
 libavformat/filmstrip.* @pross
 libavformat/frm.* @pross
+libavformat/hls.* @kasper93
 libavformat/hxvs.* @quink
 libavformat/iamf.* @jamrial
 libavformat/icecast.c @ePirat
@@ -155,7 +157,7 @@ libavformat/mlv.* @pross
 libavformat/mm.* @pross
 libavformat/msp.* @pross
 libavformat/mv.* @pross
-libavformat/ogg* @toots
+libavformat/ogg.* @toots
 libavformat/pp_bnk.* @zane
 libavformat/rm.* @pross
 libavformat/sauce.* @pross
@@ -230,8 +232,16 @@ doc/.* @GyanD
 # tests
 # =====
 tests/checkasm/riscv/.* @Courmisch
+libavutil/tests/buffer.* @MarcosAsh
+libavutil/tests/hdr_dynamic_vivid_metadata.* @MarcosAsh
+libavutil/tests/tdrdi.* @MarcosAsh
+libavutil/tests/timestamp.* @MarcosAsh
 tests/ref/.*drawvg.* @ayosec
+tests/ref/fate/buffer @MarcosAsh
+tests/ref/fate/hdr_dynamic_vivid_metadata @MarcosAsh
 tests/ref/fate/sub-mcc.* @programmerjake
+tests/ref/fate/tdrdi @MarcosAsh
+tests/ref/fate/timestamp @MarcosAsh
 
 # Forgejo
 # =======

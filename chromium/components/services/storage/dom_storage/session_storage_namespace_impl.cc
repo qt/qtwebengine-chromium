@@ -101,17 +101,6 @@ void SessionStorageNamespaceImpl::PopulateAsClone(
   }
 }
 
-void SessionStorageNamespaceImpl::Reset() {
-  database_ = nullptr;
-  pending_population_from_parent_namespace_.clear();
-  bind_waiting_on_population_ = false;
-  run_after_population_.clear();
-  state_ = State::kNotPopulated;
-  child_namespaces_waiting_for_clone_call_.clear();
-  storage_key_areas_.clear();
-  receivers_.Clear();
-}
-
 void SessionStorageNamespaceImpl::Bind(
     mojo::PendingReceiver<blink::mojom::SessionStorageNamespace> receiver) {
   if (!IsPopulated()) {
@@ -279,6 +268,25 @@ void SessionStorageNamespaceImpl::FlushStorageKeyForTesting(
   if (it == storage_key_areas_.end())
     return;
   it->second->data_map()->storage_area()->ScheduleImmediateCommit();
+}
+
+void SessionStorageNamespaceImpl::PutValueForTesting(
+    const blink::StorageKey& storage_key,
+    const std::vector<uint8_t>& key,
+    const std::vector<uint8_t>& value,
+    base::OnceCallback<void(bool)> callback) {
+  if (!IsPopulated()) {
+    return;
+  }
+
+  auto it = storage_key_areas_.find(storage_key);
+  if (it == storage_key_areas_.end()) {
+    return;
+  }
+
+  it->second->data_map()->storage_area()->Put(
+      key, value, /*client_old_value=*/std::nullopt,
+      /*source=*/nullptr, std::move(callback));
 }
 
 }  // namespace storage

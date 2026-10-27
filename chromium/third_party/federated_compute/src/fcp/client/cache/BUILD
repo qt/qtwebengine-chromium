@@ -12,14 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
+    default_applicable_licenses = ["//fcp:license"],
     default_visibility = [
         "//fcp:internal",
     ],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 cc_library(
@@ -46,6 +49,7 @@ cc_test(
         "//fcp/client:diag_codes_cc_proto",
         "//fcp/client:test_helpers",
         "//fcp/testing",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
@@ -72,10 +76,10 @@ cc_library(
     deps = [
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:cord",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:any_cc_proto",
     ],
 )
 
@@ -104,7 +108,8 @@ cc_library(
         "@com_google_absl//absl/strings:cord",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:any_cc_proto",
+        "@com_google_protobuf//:timestamp_cc_proto",
         "@protodatastore_cpp//protostore:file-storage",
         "@protodatastore_cpp//protostore:proto-data-store",
     ],
@@ -121,6 +126,7 @@ cc_test(
         "//fcp/client:selector_context_cc_proto",
         "//fcp/client:test_helpers",
         "//fcp/testing",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:cord",
         "@com_google_absl//absl/time",
@@ -136,10 +142,10 @@ cc_library(
         ":resource_cache",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:cord",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:any_cc_proto",
     ],
 )

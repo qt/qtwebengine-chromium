@@ -133,7 +133,7 @@ chromium-metrics-reviews@google.com.
   <int value="3" label="Expanded"/>
 </enum>
 
-<!-- LINT.ThenChange(/ios/public/provider/chrome/browser/bwg/bwg_api.h:GeminiViewState) -->
+<!-- LINT.ThenChange(/ios/public/provider/chrome/browser/bwg/gemini_api.h:GeminiViewState) -->
 
 <enum name="GeolocationAPI">
   <int value="0" label="Clear Watch"/>
@@ -316,6 +316,7 @@ chromium-metrics-reviews@google.com.
   <int value="5" label="Price Tracking and Insights"/>
   <int value="6" label="Autofill Passwords in Other Apps"/>
   <int value="7" label="Share Passwords with Family"/>
+  <int value="8" label="Incognito Browsing"/>
 </enum>
 
 <!-- LINT.ThenChange(/ios/chrome/browser/first_run/public/best_features_item.h:BestFeaturesItemType) -->
@@ -332,6 +333,7 @@ chromium-metrics-reviews@google.com.
   <int value="6" label="Price Tracking Tapped"/>
   <int value="7" label="Passwords In Other Apps Item Tapped"/>
   <int value="8" label="Share Passwords Item Tapped"/>
+  <int value="9" label="Incognito Browsing Item Tapped"/>
 </enum>
 
 <!-- LINT.ThenChange(/ios/chrome/browser/first_run/best_features/ui/metrics_util.h:BestFeaturesMainScreenActionType) -->
@@ -409,6 +411,26 @@ chromium-metrics-reviews@google.com.
 </enum>
 
 <!-- LINT.ThenChange(//components/desktop_to_mobile_promos/promos_types.h:PromoType) -->
+
+<!-- LINT.IfChange(IOSDarkModeDetectionCrossedState) -->
+
+<enum name="IOSDarkModeDetectionCrossedState">
+  <int value="0" label="Not supported, Light mode"/>
+  <int value="1" label="Not supported, Dark mode"/>
+  <int value="2" label="Supported, Light mode"/>
+  <int value="3" label="Supported, Dark mode"/>
+</enum>
+
+<!-- LINT.ThenChange(/ios/chrome/browser/web/model/dark_mode_detection/dark_mode_detection_java_script_feature.mm:DarkModeDetectionCrossedState) -->
+
+<!-- LINT.IfChange(IOSDataProtectionScreenshotBlockSource) -->
+
+<enum name="IOSDataProtectionScreenshotBlockSource">
+  <int value="0" label="Data Controls"/>
+  <int value="1" label="Real-time Lookup"/>
+</enum>
+
+<!-- LINT.ThenChange(/ios/chrome/browser/enterprise/data_protection/model/data_protection_tab_helper.h:ScreenshotBlockSource) -->
 
 <!-- LINT.IfChange(IOSDefaultBrowserBannerPromoPromoSessionEndedReason) -->
 
@@ -596,6 +618,7 @@ chromium-metrics-reviews@google.com.
   <int value="1" label="Open NTP"/>
   <int value="2" label="Default Browser Settings"/>
   <int value="3" label="Skipped Default Browser Settings For NTP"/>
+  <int value="4" label="App Store Event For Gemini Promo"/>
 </enum>
 
 <enum name="IOSFilePickerDriveAccountSelection">
@@ -651,6 +674,26 @@ chromium-metrics-reviews@google.com.
   <int value="4" label="Cancel without triggering search"/>
   <int value="5" label="Cancel after triggering search"/>
 </enum>
+
+<!-- LINT.IfChange(IOSFilePickerDriveSignInResult) -->
+
+<enum name="IOSFilePickerDriveSignInResult">
+  <int value="0" label="Sign in success"/>
+  <int value="1" label="Sign in cancelled"/>
+  <int value="2" label="Sign in failed"/>
+</enum>
+
+<!-- LINT.ThenChange(//ios/chrome/browser/drive_file_picker/coordinator/drive_file_picker_metrics_constants.h:IOSFilePickerDriveSignInResult) -->
+
+<!-- LINT.IfChange(IOSFilePickerDriveSignInStatus) -->
+
+<enum name="IOSFilePickerDriveSignInStatus">
+  <int value="0" label="Signed in"/>
+  <int value="1" label="Signed out without account on device"/>
+  <int value="2" label="Signed out with account on device"/>
+</enum>
+
+<!-- LINT.ThenChange(//ios/chrome/browser/drive_file_picker/coordinator/drive_file_picker_metrics_constants.h:IOSFilePickerDriveSignInStatus) -->
 
 <enum name="IOSFilePickerDriveSorting">
   <int value="0" label="Sorted by name ascending"/>
@@ -784,6 +827,8 @@ chromium-metrics-reviews@google.com.
   <int value="8" label="Edit Menu (Explain)"/>
   <int value="9" label="Direct Omnibox Badge"/>
   <int value="10" label="AI Hub Sign-in Sheet"/>
+  <int value="11" label="External App Store Event"/>
+  <int value="12" label="Toolbar"/>
 </enum>
 
 <!-- LINT.ThenChange(/ios/chrome/browser/intelligence/bwg/utils/gemini_constants.h:EntryPoint) -->
@@ -829,11 +874,13 @@ chromium-metrics-reviews@google.com.
       label="Nano Banana: Turn This Image Into a Watercolor Painting"/>
   <int value="23" label="Nano Banana: Make This Image Look Like Instant Film"/>
   <int value="24" label="Edit Menu Prompt"/>
+  <int value="25" label="Onboarding: No I Am Done"/>
+  <int value="26" label="Onboarding: Keep Learning"/>
 </enum>
 
 <!-- LINT.ThenChange(
     /ios/chrome/browser/intelligence/bwg/metrics/gemini_metrics.h:IOSGeminiFirstPromptSubmissionMethod,
-    /ios/chrome/browser/intelligence/bwg/model/gemini_session_delegate.h:BWGInputType
+    /ios/chrome/browser/intelligence/bwg/utils/gemini_constants.h:InputType
 ) -->
 
 <!-- LINT.IfChange(IOSGeminiFloatyUpdateSource) -->
@@ -854,7 +901,7 @@ chromium-metrics-reviews@google.com.
   <int value="12" label="Bottom Banner (e.g. Download Banner)"/>
   <int value="13" label="Keyboard"/>
   <int value="14" label="Gesture IPH"/>
-  <int value="15" label="Search Related Page"/>
+  <int value="15" label="Search Related Page (Deprecated)"/>
 </enum>
 
 <!-- LINT.ThenChange(/ios/chrome/browser/intelligence/bwg/utils/gemini_constants.h:FloatyUpdateSource) -->
@@ -928,6 +975,22 @@ chromium-metrics-reviews@google.com.
 
 <!-- LINT.ThenChange(ios/chrome/browser/intelligence/bwg/utils/gemini_constants.h:InputPlateAttachmentOption) -->
 
+<!-- LINT.IfChange(IOSGeminiInvocationPageType) -->
+
+<enum name="IOSGeminiInvocationPageType">
+  <summary>
+    Enum describing the page type from which Gemini was started.
+  </summary>
+  <int value="0" label="Extractable Web Page"/>
+  <int value="1" label="PDF Document"/>
+  <int value="2" label="New Tab Page"/>
+  <int value="3" label="Chrome Internal Other"/>
+  <int value="4" label="Other Non-Extractable"/>
+  <int value="5" label="No WebState"/>
+</enum>
+
+<!-- LINT.ThenChange(/ios/chrome/browser/intelligence/bwg/metrics/gemini_metrics.h:IOSGeminiInvocationPageType) -->
+
 <!-- LINT.IfChange(IOSGeminiOSCameraAuthorizationInitialStatus) -->
 
 <enum name="IOSGeminiOSCameraAuthorizationInitialStatus">
@@ -949,10 +1012,25 @@ chromium-metrics-reviews@google.com.
 <enum name="IOSGeminiPageAvailability">
   <int value="0" label="Unavailable"/>
   <int value="1" label="Available"/>
-  <int value="2" label="Search Result Page"/>
+  <int value="2" label="Search Result Page (Deprecated)"/>
 </enum>
 
 <!-- LINT.ThenChange(/ios/chrome/browser/intelligence/bwg/metrics/gemini_metrics.h:IOSGeminiPageAvailability) -->
+
+<!-- LINT.IfChange(IOSGeminiRegenerateOptionType) -->
+
+<enum name="IOSGeminiRegenerateOptionType">
+  <summary>The type of regenerate option for a Gemini query retry.</summary>
+  <int value="0" label="Unspecified"/>
+  <int value="1" label="No Changes"/>
+  <int value="2" label="Without Personalization"/>
+  <int value="3" label="With Personalization"/>
+  <int value="4" label="With Nano Banana Pro"/>
+  <int value="5" label="Elaborate"/>
+  <int value="6" label="Shorten"/>
+</enum>
+
+<!-- LINT.ThenChange(/ios/chrome/browser/intelligence/bwg/utils/gemini_constants.h:RegenerateOptionType) -->
 
 <!-- LINT.IfChange(IOSGeminiSessionCancellationReason) -->
 
@@ -1044,12 +1122,6 @@ chromium-metrics-reviews@google.com.
 </enum>
 
 <!-- LINT.ThenChange(/ios/chrome/browser/default_browser/model/install_attribution/install_attribution_helper.h:InstallAttributionType) -->
-
-<enum name="IOSJavascriptContentBlockType">
-  <int value="0" label="Cookie"/>
-  <int value="1" label="Local Storage"/>
-  <int value="2" label="Session Storage"/>
-</enum>
 
 <!-- LINT.IfChange(IOSJavascriptErrorReportProcessorResult) -->
 
@@ -1270,15 +1342,6 @@ chromium-metrics-reviews@google.com.
 
 <!-- LINT.ThenChange(/ios/chrome/browser/omnibox/public/omnibox_metrics_helper.h:OmniboxCopyType) -->
 
-<enum name="IOSOpenExtensionOutcome">
-  <int value="0" label="Open Extension Success"/>
-  <int value="1" label="Open Extension Invalid outcome"/>
-  <int value="2" label="Open Extension Invalid URL"/>
-  <int value="3" label="Open Extension URL not found"/>
-  <int value="4" label="Open Extension Method not found"/>
-  <int value="5" label="Open Extension Unsupported scheme"/>
-</enum>
-
 <enum name="IOSOpenInDownloadResult">
   <int value="0" label="Download Succeeded"/>
   <int value="1" label="Download Canceled">
@@ -1329,7 +1392,7 @@ chromium-metrics-reviews@google.com.
   <int value="19" label="ReaderMode"/>
   <int value="20" label="AskGemini"/>
   <int value="21" label="HideToolbars"/>
-  <int value="22" label="TabGroup"/>
+  <int value="22" label="Obsolete in M150 - TabGroup"/>
   <int value="23" label="ShareThisPage"/>
 </enum>
 
@@ -1359,6 +1422,7 @@ chromium-metrics-reviews@google.com.
   <int value="9" label="SpotlightDebugger"/>
   <int value="10" label="PriceNotifications"/>
   <int value="11" label="Cobalt"/>
+  <int value="12" label="LevelUp"/>
 </enum>
 
 <!-- LINT.ThenChange(
@@ -1388,6 +1452,20 @@ chromium-metrics-reviews@google.com.
 </enum>
 
 <!-- LINT.ThenChange(/ios/chrome/browser/intelligence/page_action_menu/utils/ai_hub_metrics.h:IOSPageActionMenuFeatureType) -->
+
+<!-- LINT.IfChange(IOSPageActionMenuFooterReason) -->
+
+<enum name="IOSPageActionMenuFooterReason">
+  <summary>
+    Reason for showing an ineligibility disclaimer in the Page Action Menu
+    footer.
+  </summary>
+  <int value="0" label="Gemini - Enterprise Policies"/>
+  <int value="1" label="Lens - Enterprise Policies"/>
+  <int value="2" label="Lens - Non Google Search Engine"/>
+</enum>
+
+<!-- LINT.ThenChange(/ios/chrome/browser/intelligence/page_action_menu/utils/ai_hub_metrics.h:IOSPageActionMenuFooterReason) -->
 
 <enum name="IOSPageLoadCountNavigationType">
   <int value="0" label="Chrome URL Navigation"/>
@@ -1705,16 +1783,6 @@ chromium-metrics-reviews@google.com.
   <int value="3" label="Incognito Mode, Other Search engine"/>
 </enum>
 
-<enum name="IOSSessionMigration">
-  <int value="0" label="No Migration"/>
-  <int value="1" label="Migration Failed"/>
-  <int value="2" label="No Session To Migrate"/>
-  <int value="3" label="Migrated Pre-MW to Multi Scenes"/>
-  <int value="4" label="Migrated Pre-MW to Single Scene"/>
-  <int value="5" label="Migrated Single Scene to Multi Scenes"/>
-  <int value="6" label="Migrated Multi Scenes to Single Scene"/>
-</enum>
-
 <enum name="IOSSetUpListItemType">
   <int value="1" label="Obsolete - SignIn Sync"/>
   <int value="2" label="Default Browser"/>
@@ -1887,6 +1955,15 @@ chromium-metrics-reviews@google.com.
 
 <!-- LINT.ThenChange(//ios/chrome/browser/home_customization/model/theme_syncable_service_ios_constants.h:IOSThemeSyncStopAction) -->
 
+<!-- LINT.IfChange(IOSTipsNotificationPromoAction) -->
+
+<enum name="IOSTipsNotificationPromoAction">
+  <int value="0" label="Primary Action"/>
+  <int value="1" label="Secondary Action"/>
+</enum>
+
+<!-- LINT.ThenChange(/ios/chrome/browser/tips_notifications/model/utils.h:TipsNotificationPromoAction) -->
+
 <!-- LINT.IfChange(IOSTipsNotificationType) -->
 
 <enum name="IOSTipsNotificationType">
@@ -1937,6 +2014,17 @@ chromium-metrics-reviews@google.com.
   <int value="0" label="Invalid URL"/>
   <int value="1" label="Invalid Version"/>
 </enum>
+
+<!-- LINT.IfChange(IOSUserInterfaceStyle) -->
+
+<enum name="IOSUserInterfaceStyle">
+  <int value="0" label="Unspecified"/>
+  <int value="1" label="Light"/>
+  <int value="2" label="Dark"/>
+  <int value="3" label="Unsupported"/>
+</enum>
+
+<!-- LINT.ThenChange(/ios/chrome/browser/metrics/model/user_interface_style_recorder.mm:InterfaceStyleForReporting) -->
 
 <!-- LINT.IfChange(IOSUserUploadedImageError) -->
 
@@ -2097,6 +2185,16 @@ chromium-metrics-reviews@google.com.
 </enum>
 
 <!-- LINT.ThenChange(/ios/chrome/browser/push_notification/model/constants.h:NotificationType) -->
+
+<enum name="NtpBackgroundCacheCleanupEvent">
+  <int value="0" label="Cleanup Skipped (New User)"/>
+  <int value="1" label="Cleanup Triggered"/>
+  <int value="2" label="Cleanup Completed Success"/>
+  <int value="3" label="Cleanup Completed Failure"/>
+  <int value="4" label="Refetch Triggered"/>
+  <int value="5" label="Refetch Completed Success"/>
+  <int value="6" label="Refetch Completed Failure"/>
+</enum>
 
 <!-- LINT.IfChange(OmniboxPositionType) -->
 
@@ -2510,6 +2608,27 @@ chromium-metrics-reviews@google.com.
 
 <!-- LINT.ThenChange(/ios/chrome/browser/safari_data_import/public/safari_data_import_stage.h:SafariDataImportStage) -->
 
+<!-- LINT.IfChange(ScanCardOfferToSaveAction) -->
+
+<enum name="ScanCardOfferToSaveAction">
+  <int value="0" label="Ignore"/>
+  <int value="1" label="Accept"/>
+  <int value="2" label="Reject"/>
+</enum>
+
+<!-- LINT.ThenChange(/ios/chrome/browser/autofill/scan_save_and_fill/ui/payments_scan_save_and_fill_edit_view_controller.h:ScanCardOfferToSaveAction) -->
+
+<!-- LINT.IfChange(ScanCardSuggestionBottomSheetExitReason) -->
+
+<enum name="ScanCardSuggestionBottomSheetExitReason">
+  <int value="0" label="Ignore"/>
+  <int value="1" label="Accept Suggestion"/>
+  <int value="2" label="Reject Suggestion"/>
+  <int value="3" label="Could Not Present"/>
+</enum>
+
+<!-- LINT.ThenChange(/ios/chrome/browser/autofill/scan_save_and_fill/coordinator/payments_scan_save_and_fill_offer_bottom_sheet_mediator.h:ScanCardSuggestionBottomSheetExitReason) -->
+
 <!-- LINT.IfChange(SyncedSetUpAppliedPref) -->
 
 <enum name="SyncedSetUpAppliedPref">
@@ -2641,6 +2760,21 @@ chromium-metrics-reviews@google.com.
   <int value="14" label="Metric Volume"/>
 </enum>
 
+<!-- LINT.IfChange(UserFeedbackSender) -->
+
+<enum name="UserFeedbackSender">
+  <int value="0" label="ToolsMenu"/>
+  <int value="1" label="SadTab"/>
+  <int value="2" label="Feed"/>
+  <int value="3" label="KeyCommand"/>
+  <int value="4" label="MiniMap"/>
+  <int value="5" label="ParcelTracking"/>
+  <int value="6" label="UnitConversion"/>
+  <int value="7" label="ContentNotification"/>
+</enum>
+
+<!-- LINT.ThenChange(/ios/public/provider/chrome/browser/user_feedback/user_feedback_sender.h:UserFeedbackSender) -->
+
 <enum name="VariationsFirstRunSeedApplicationStage">
   <int value="0" label="Seed missing">
     No seed in native variations seed store
@@ -2653,6 +2787,20 @@ chromium-metrics-reviews@google.com.
   </int>
   <int value="3" label="Seed used">Seed is applied by variations service</int>
 </enum>
+
+<!-- LINT.IfChange(WelcomeBackPromoRegistrationResult) -->
+
+<enum name="WelcomeBackPromoRegistrationResult">
+  <int value="0" label="Success"/>
+  <int value="1" label="Failure_TimeSinceActiveLimitNotMet"/>
+  <int value="2" label="Failure_MinEligibleFeaturesNotMet"/>
+  <int value="3" label="Failure_SessionEndTimeNil"/>
+  <int value="4" label="Failure_FirstRun"/>
+  <int value="5" label="Failure_TrackerInitialization"/>
+  <int value="6" label="Failure_NotResurrectedUser"/>
+</enum>
+
+<!-- LINT.ThenChange(/ios/chrome/browser/welcome_back/metrics/welcome_back_metrics.h:WelcomeBackPromoRegistrationResult) -->
 
 <enum name="WhatsNewType">
   <int value="-1" label="Error"/>

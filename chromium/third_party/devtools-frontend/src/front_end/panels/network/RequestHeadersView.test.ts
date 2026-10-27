@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as Platform from '../../core/platform/platform.js';
@@ -16,7 +18,7 @@ import {
   renderElementIntoDOM,
 } from '../../testing/DOMHelpers.js';
 import {describeWithMockConnection} from '../../testing/MockConnection.js';
-import {createWorkspaceProject} from '../../testing/OverridesHelpers.js';
+import {createWorkspaceProject, setUpEnvironment} from '../../testing/OverridesHelpers.js';
 import {createFileSystemUISourceCode} from '../../testing/UISourceCodeHelpers.js';
 import {
   recordedMetricsContain,
@@ -110,6 +112,7 @@ describeWithMockConnection('RequestHeadersView', () => {
   let component: Network.RequestHeadersView.RequestHeadersView|null|undefined = null;
 
   beforeEach(() => {
+    setUpEnvironment();
     resetRecordedMetrics();
   });
 

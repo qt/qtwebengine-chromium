@@ -141,9 +141,9 @@ IN_PROC_BROWSER_TEST_F(WallpaperSearchInteractiveTest,
                       optimization_guide::prefs::FeatureOptInState::kEnabled));
             }),
             NavigateWebContents(kNewTabPageElementId,
-                                GURL(chrome::kChromeUINewTabPageURL)),
+                                chrome::ChromeUINewTabPageURLAsGURL()),
             WaitForWebContentsReady(kNewTabPageElementId,
-                                    GURL(chrome::kChromeUINewTabPageURL))),
+                                    chrome::ChromeUINewTabPageURLAsGURL())),
       // 2. Ensure the wallpaper search button is visible.
       WaitForElementToRender(kNewTabPageElementId, kWallpaperSearchButton),
       // 3. Turn wallpaper search setting off.
@@ -254,9 +254,9 @@ class WallpaperSearchOptimizationGuideInteractiveTest
               .WillByDefault(testing::Return(true));
         }),
         NavigateWebContents(kNewTabPageElementId,
-                            GURL(chrome::kChromeUINewTabPageURL)),
+                            chrome::ChromeUINewTabPageURLAsGURL()),
         WaitForWebContentsReady(kNewTabPageElementId,
-                                GURL(chrome::kChromeUINewTabPageURL)));
+                                chrome::ChromeUINewTabPageURLAsGURL()));
   }
 
   InteractiveTestApi::MultiStep OpenCustomizeChromeAt(
@@ -340,8 +340,14 @@ class WallpaperSearchOptimizationGuideInteractiveTest
   base::CallbackListSubscription subscription_;
 };
 
+// TODO(crbug.com/524036564): Flaky on Win.
+#if BUILDFLAG(IS_WIN)
+#define MAYBE_CustomizeButtonsWorkTogether DISABLED_CustomizeButtonsWorkTogether
+#else
+#define MAYBE_CustomizeButtonsWorkTogether CustomizeButtonsWorkTogether
+#endif
 IN_PROC_BROWSER_TEST_F(WallpaperSearchOptimizationGuideInteractiveTest,
-                       CustomizeButtonsWorkTogether) {
+                       MAYBE_CustomizeButtonsWorkTogether) {
   DEFINE_LOCAL_ELEMENT_IDENTIFIER_VALUE(kReopenedCustomizeChromeElementId);
 
   const DeepQuery kCustomizeChromeButton = {"ntp-app", "ntp-customize-buttons",
@@ -385,9 +391,9 @@ IN_PROC_BROWSER_TEST_F(WallpaperSearchOptimizationGuideInteractiveTest,
                   prefs::kNtpWallpaperSearchButtonShownCount, 14);
             }),
             NavigateWebContents(kNewTabPageElementId,
-                                GURL(chrome::kChromeUINewTabPageURL)),
+                                chrome::ChromeUINewTabPageURLAsGURL()),
             WaitForWebContentsReady(kNewTabPageElementId,
-                                    GURL(chrome::kChromeUINewTabPageURL))),
+                                    chrome::ChromeUINewTabPageURLAsGURL())),
       // 2. Ensure that the wallpaper search button is animated.
       Steps(
           WaitForElementToRender(kNewTabPageElementId, kWallpaperSearchButton),
@@ -415,9 +421,9 @@ IN_PROC_BROWSER_TEST_F(WallpaperSearchOptimizationGuideInteractiveTest,
                   prefs::kNtpWallpaperSearchButtonShownCount, 16);
             }),
             NavigateWebContents(kNewTabPageElementId,
-                                GURL(chrome::kChromeUINewTabPageURL)),
+                                chrome::ChromeUINewTabPageURLAsGURL()),
             WaitForWebContentsReady(kNewTabPageElementId,
-                                    GURL(chrome::kChromeUINewTabPageURL))),
+                                    chrome::ChromeUINewTabPageURLAsGURL())),
       // 2. Ensure that the wallpaper search button is not animated.
       Steps(
           WaitForElementToRender(kNewTabPageElementId, kWallpaperSearchButton),
@@ -656,9 +662,9 @@ IN_PROC_BROWSER_TEST_F(NTPWallpaperSearchButtonAnimationTest,
                   prefs::kNtpWallpaperSearchButtonShownCount, 1000);
             }),
             NavigateWebContents(kNewTabPageElementId,
-                                GURL(chrome::kChromeUINewTabPageURL)),
+                                chrome::ChromeUINewTabPageURLAsGURL()),
             WaitForWebContentsReady(kNewTabPageElementId,
-                                    GURL(chrome::kChromeUINewTabPageURL))),
+                                    chrome::ChromeUINewTabPageURLAsGURL())),
       // 2. Ensure that the wallpaper search button is animated.
       Steps(
           WaitForElementToRender(kNewTabPageElementId, kWallpaperSearchButton),

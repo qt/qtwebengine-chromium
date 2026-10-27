@@ -2,8 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: tsc 6.0 does not support side-effect imports without a type definition.
+// We cannot use `@ts-expect-error` here because the import is correctly resolved
+// when bundling the application (which doesn't error) and only errors in unbundled builds.
 import '../../Images/Images.js';
-import '../../core/dom_extension/dom_extension.js';
+import '../../ui/dom_extension/dom_extension.js';
 import '../../panels/sources/sources-meta.js';
 import '../../panels/profiler/profiler-meta.js';
 import '../../panels/console/console-meta.js';

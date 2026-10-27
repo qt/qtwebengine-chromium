@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 #pragma once
+#include <cstdint>
 #include "chassis/layer_object_id.h"
 #include "state_tracker/state_tracker.h"
 #include "state_tracker/cmd_buffer_state.h"
 
 namespace gpudump {
 class GpuDump;
+struct MappingInfo;
 
 class CommandBufferSubState : public vvl::CommandBufferSubState {
   public:
@@ -28,10 +30,30 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
 
     void RecordActionCommand(LastBound& last_bound, const Location& loc) final;
 
+    void RecordPushData(const VkPushDataInfoEXT& push_data_info) final;
+    void ClearPushData() final;
+
+    void RecordExecuteGeneratedCommands(const VkGeneratedCommandsInfoEXT& info, VkPipelineBindPoint bind_point,
+                                        const Location& loc) final;
+
+    void RecordCopyMemoryIndirect(const VkCopyMemoryIndirectInfoKHR& info, const Location& loc) final;
+    void RecordCopyMemoryToImageIndirect(const VkCopyMemoryToImageIndirectInfoKHR& info, const Location& loc) final;
+
   private:
     void DumpDescriptors(const LastBound& last_bound, const Location& loc) const;
-    void DumpDescriptorBuffer(std::ostringstream& ss, const LastBound& last_bound) const;
-    void DumpDescriptorHeap(std::ostringstream& ss, const LastBound& last_bound) const;
+    bool DumpDescriptorBuffer(std::ostringstream& ss, const LastBound& last_bound) const;
+    bool DumpDescriptorHeap(std::ostringstream& ss, const LastBound& last_bound) const;
+    bool DumpDescriptorHeapMapping(std::ostringstream& ss, const MappingInfo& mapping_info) const;
+
+    bool DumpCopyMemoryIndirectCommon(std::ostringstream& ss, uint32_t copy_count,
+                                      VkStridedDeviceAddressRangeKHR copy_address_range) const;
+    void DumpCopyMemoryIndirect(const VkCopyMemoryIndirectInfoKHR& info, const Location& loc) const;
+    void DumpCopyMemoryToImageIndirect(const VkCopyMemoryToImageIndirectInfoKHR& info, const Location& loc) const;
+
+    void DumpDeviceGeneratedCommands(const VkGeneratedCommandsInfoEXT& info, VkPipelineBindPoint bind_point,
+                                     const Location& loc) const;
+
+    std::vector<uint8_t> push_data_value;
 };
 
 static inline CommandBufferSubState& SubState(vvl::CommandBuffer& cb) {

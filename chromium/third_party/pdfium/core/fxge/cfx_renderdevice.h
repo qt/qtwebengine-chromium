@@ -61,22 +61,16 @@ class CFX_RenderDevice {
   int GetHeight() const { return height_; }
   DeviceType GetDeviceType() const { return device_type_; }
   bool RenderCapGetBits() const { return render_cap_get_bits_; }
-  bool RenderCapAlphaPath() const { return render_cap_alpha_path_; }
-  bool RenderCapAlphaImage() const { return render_cap_alpha_image_; }
   bool RenderCapBlendMode() const { return render_cap_blend_mode_; }
   bool RenderCapSoftClip() const { return render_cap_soft_clip_; }
   bool RenderCapAlphaOutput() const { return render_cap_alpha_output_; }
-  bool RenderCapByteMaskOutput() const { return render_cap_bytemask_output_; }
 #if defined(PDF_USE_SKIA)
-  bool RenderCapFillStrokePath() const { return render_cap_fillstroke_path_; }
   bool RenderCapShading() const { return render_cap_shading_; }
-  bool RenderCapPremultipliedAlpha() const {
-    return render_cap_premultiplied_alpha_;
-  }
 #endif
-  int GetBitsPerPixel() const;
+#if BUILDFLAG(IS_WIN)
   int GetHorzSize() const;
   int GetVertSize() const;
+#endif
   RetainPtr<CFX_DIBitmap> GetBitmap();
   RetainPtr<const CFX_DIBitmap> GetBitmap() const;
   [[nodiscard]] bool CreateCompatibleBitmap(const RetainPtr<CFX_DIBitmap>& pDIB,
@@ -254,7 +248,6 @@ class CFX_RenderDevice {
   int height_ = 0;
   int bpp_ = 0;
   bool render_cap_get_bits_ = false;
-  bool render_cap_alpha_path_ = false;
   bool render_cap_alpha_image_ = false;
   bool render_cap_blend_mode_ = false;
   bool render_cap_soft_clip_ = false;

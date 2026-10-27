@@ -9,6 +9,7 @@
 
 #include "base/functional/callback_helpers.h"
 #include "base/run_loop.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/mojom/ai/ai_common.mojom-blink.h"
@@ -54,6 +55,7 @@ std::tuple<String, bool> ReadString(ReadableStreamDefaultReader* reader,
 }  // namespace
 
 TEST(CreateModelExecutionResponder, Simple) {
+  base::HistogramTester histogram_tester;
   uint64_t kTestTokenNumber = 1u;
   test::TaskEnvironment task_environment;
   V8TestingScope scope;
@@ -102,13 +104,94 @@ TEST(CreateModelExecutionResponder, Simple) {
   EXPECT_TRUE(tester.IsFulfilled());
   EXPECT_TRUE(tester.Value().V8Value()->IsString());
   EXPECT_EQ("ab", ToCoreString(scope.GetIsolate(),
-                                tester.Value().V8Value().As<v8::String>()));
+                               tester.Value().V8Value().As<v8::String>()));
 
   // Check that the complete and overflow callback is run.
   complete_runloop.Run();
   overflow_runloop.Run();
   // Check that the Mojo handle will be disconnected.
   disconnect_runloop.Run();
+
+  histogram_tester.ExpectTotalCount(
+      AIMetrics::GetAISessionResponseCompleteTimeMetricName(
+          AIMetrics::AISessionType::kLanguageModel),
+      1);
+  histogram_tester.ExpectTotalCount(
+      AIMetrics::GetAISessionFirstResponseTimeMetricName(
+          AIMetrics::AISessionType::kLanguageModel),
+      1);
+  histogram_tester.ExpectUniqueSample(
+      AIMetrics::GetAISessionContextTokensMetricName(
+          AIMetrics::AISessionType::kLanguageModel),
+      static_cast<int>(kTestTokenNumber), 1);
+  histogram_tester.ExpectUniqueSample(
+      AIMetrics::GetAISessionCrashedMetricName(
+          AIMetrics::AISessionType::kLanguageModel),
+      false, 1);
+}
+
+TEST(CreateModelExecutionResponder, NonStreaming) {
+  uint64_t kTestTokenNumber = 1u;
+  test::TaskEnvironment task_environment;
+  V8TestingScope scope;
+  ScriptState* script_state = scope.GetScriptState();
+  auto* resolver =
+      MakeGarbageCollected<ScriptPromiseResolver<IDLString>>(script_state);
+  auto promise = resolver->Promise();
+  base::RunLoop disconnect_runloop;
+  base::RunLoop complete_runloop;
+
+  base::HistogramTester histogram_tester;
+
+  auto pending_remote = CreateModelExecutionResponder(
+      script_state, /*signal=*/nullptr,
+      blink::scheduler::GetSequencedTaskRunnerForTesting(),
+      AIMetrics::AISessionType::kLanguageModel,
+      blink::BindOnce(
+          [](base::RunLoop* runloop, ScriptPromiseResolver<IDLString>* resolver,
+             const String& response,
+             mojom::blink::ModelExecutionContextInfoPtr context_info) {
+            ResolvePromiseOnCompletion(resolver, response,
+                                       std::move(context_info));
+            runloop->Quit();
+          },
+          blink::Unretained(&complete_runloop), WrapPersistent(resolver)),
+      /*tool_call_callback=*/base::NullCallback(),
+      /*overflow_callback=*/base::DoNothing(),
+      base::BindOnce(&RejectPromiseOnError<IDLString>,
+                     WrapPersistent(resolver)),
+      base::BindOnce(&RejectPromiseOnAbort<IDLString>, WrapPersistent(resolver),
+                     nullptr, WrapPersistent(script_state)));
+
+  mojo::Remote<blink::mojom::blink::ModelStreamingResponder> responder(
+      std::move(pending_remote));
+  responder.set_disconnect_handler(disconnect_runloop.QuitClosure());
+  responder->OnCompletion(
+      mojom::blink::ModelExecutionContextInfo::New(kTestTokenNumber));
+
+  ScriptPromiseTester tester(scope.GetScriptState(), promise);
+  tester.WaitUntilSettled();
+  EXPECT_TRUE(tester.IsFulfilled());
+
+  complete_runloop.Run();
+  disconnect_runloop.Run();
+
+  histogram_tester.ExpectTotalCount(
+      AIMetrics::GetAISessionResponseCompleteTimeMetricName(
+          AIMetrics::AISessionType::kLanguageModel),
+      1);
+  histogram_tester.ExpectTotalCount(
+      AIMetrics::GetAISessionFirstResponseTimeMetricName(
+          AIMetrics::AISessionType::kLanguageModel),
+      1);
+  histogram_tester.ExpectUniqueSample(
+      AIMetrics::GetAISessionContextTokensMetricName(
+          AIMetrics::AISessionType::kLanguageModel),
+      static_cast<int>(kTestTokenNumber), 1);
+  histogram_tester.ExpectUniqueSample(
+      AIMetrics::GetAISessionCrashedMetricName(
+          AIMetrics::AISessionType::kLanguageModel),
+      false, 1);
 }
 
 TEST(CreateModelExecutionResponder, ErrorPermissionDenied) {
@@ -242,7 +325,49 @@ TEST(CreateModelExecutionResponder, AbortAfterResponse) {
   runloop.Run();
 }
 
+TEST(CreateModelExecutionResponder, RejectOnMojoDisconnection) {
+  base::HistogramTester histogram_tester;
+  test::TaskEnvironment task_environment;
+  V8TestingScope scope;
+  ScriptState* script_state = scope.GetScriptState();
+  auto* controller = AbortController::Create(scope.GetScriptState());
+  auto* resolver =
+      MakeGarbageCollected<ScriptPromiseResolver<IDLString>>(script_state);
+  auto promise = resolver->Promise();
+  auto pending_remote = CreateModelExecutionResponder(
+      script_state, controller->signal(),
+      blink::scheduler::GetSequencedTaskRunnerForTesting(),
+      AIMetrics::AISessionType::kLanguageModel,
+      base::BindOnce(&ResolvePromiseOnCompletion<IDLString>,
+                     WrapPersistent(resolver)),
+      /*tool_call_callback=*/base::NullCallback(),
+      /*overflow_callback=*/base::DoNothing(),
+      base::BindOnce(&RejectPromiseOnError<IDLString>,
+                     WrapPersistent(resolver)),
+      base::BindOnce(&RejectPromiseOnAbort<IDLString>, WrapPersistent(resolver),
+                     WrapPersistent(controller->signal()),
+                     WrapPersistent(script_state)));
+
+  pending_remote.reset();
+
+  // Check that the promise will be rejected with an InvalidStateError.
+  ScriptPromiseTester tester(scope.GetScriptState(), promise);
+  tester.WaitUntilSettled();
+  EXPECT_TRUE(tester.IsRejected());
+  auto* dom_exception = V8DOMException::ToWrappable(script_state->GetIsolate(),
+                                                    tester.Value().V8Value());
+  ASSERT_TRUE(dom_exception);
+  EXPECT_EQ(DOMException(DOMExceptionCode::kInvalidStateError).name(),
+            dom_exception->name());
+
+  histogram_tester.ExpectUniqueSample(
+      AIMetrics::GetAISessionCrashedMetricName(
+          AIMetrics::AISessionType::kLanguageModel),
+      true, 1);
+}
+
 TEST(CreateModelExecutionStreamingResponder, Simple) {
+  base::HistogramTester histogram_tester;
   test::TaskEnvironment task_environment;
   V8TestingScope scope;
   ScriptState* script_state = scope.GetScriptState();
@@ -275,6 +400,23 @@ TEST(CreateModelExecutionStreamingResponder, Simple) {
 
   // Check that the Mojo handle will be disconnected.
   runloop.Run();
+
+  histogram_tester.ExpectTotalCount(
+      AIMetrics::GetAISessionResponseCompleteTimeMetricName(
+          AIMetrics::AISessionType::kLanguageModel),
+      1);
+  histogram_tester.ExpectTotalCount(
+      AIMetrics::GetAISessionFirstResponseTimeMetricName(
+          AIMetrics::AISessionType::kLanguageModel),
+      1);
+  histogram_tester.ExpectUniqueSample(
+      AIMetrics::GetAISessionContextTokensMetricName(
+          AIMetrics::AISessionType::kLanguageModel),
+      1, 1);
+  histogram_tester.ExpectUniqueSample(
+      AIMetrics::GetAISessionCrashedMetricName(
+          AIMetrics::AISessionType::kLanguageModel),
+      false, 1);
 }
 
 TEST(CreateModelExecutionStreamingResponder, ErrorPermissionDenied) {
@@ -385,6 +527,40 @@ TEST(CreateModelExecutionStreamingResponder, AbortAfterResponse) {
 
   // Check that the Mojo handle will be disconnected.
   runloop.Run();
+}
+
+TEST(CreateModelExecutionStreamingResponder, RejectOnMojoDisconnection) {
+  base::HistogramTester histogram_tester;
+  test::TaskEnvironment task_environment;
+  V8TestingScope scope;
+  ScriptState* script_state = scope.GetScriptState();
+  auto* controller = AbortController::Create(scope.GetScriptState());
+  auto [stream, pending_remote] = CreateModelExecutionStreamingResponder(
+      script_state, controller->signal(),
+      blink::scheduler::GetSequencedTaskRunnerForTesting(),
+      AIMetrics::AISessionType::kLanguageModel,
+      /*complete_callback=*/base::DoNothing(),
+      /*overflow_callback=*/base::DoNothing());
+
+  pending_remote.reset();
+
+  // Check that the InvalidStateError is passed to the stream.
+  auto* reader =
+      stream->GetDefaultReaderForTesting(script_state, ASSERT_NO_EXCEPTION);
+  auto read_promise = reader->read(scope.GetScriptState(), ASSERT_NO_EXCEPTION);
+  ScriptPromiseTester tester(scope.GetScriptState(), read_promise);
+  tester.WaitUntilSettled();
+  EXPECT_TRUE(tester.IsRejected());
+  auto* dom_exception = V8DOMException::ToWrappable(script_state->GetIsolate(),
+                                                    tester.Value().V8Value());
+  ASSERT_TRUE(dom_exception);
+  EXPECT_EQ(DOMException(DOMExceptionCode::kInvalidStateError).name(),
+            dom_exception->name());
+
+  histogram_tester.ExpectUniqueSample(
+      AIMetrics::GetAISessionCrashedMetricName(
+          AIMetrics::AISessionType::kLanguageModel),
+      true, 1);
 }
 
 }  // namespace blink

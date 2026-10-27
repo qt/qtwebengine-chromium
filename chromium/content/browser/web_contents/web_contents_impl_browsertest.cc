@@ -38,7 +38,6 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "components/input/render_widget_host_input_event_router.h"
-#include "components/surface_embed/buildflags/buildflags.h"
 #include "components/ukm/test_ukm_recorder.h"
 #include "components/url_formatter/url_formatter.h"
 #include "content/browser/preloading/prerender/prerender_host_registry.h"
@@ -53,6 +52,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
 #include "content/browser/renderer_host/text_input_manager.h"
+#include "content/browser/surface_embed/surface_embed_connector_impl.h"
 #include "content/browser/web_contents/web_contents_view.h"
 #include "content/common/content_navigation_policy.h"
 #include "content/common/frame.mojom-test-utils.h"
@@ -127,12 +127,8 @@
 #include "ui/color/color_provider_manager.h"
 #include "ui/color/color_provider_utils.h"
 #include "ui/display/screen.h"
-#include "url/gurl.h"
-
-#if BUILDFLAG(ENABLE_SURFACE_EMBED)
-#include "content/browser/surface_embed/surface_embed_connector_impl.h"
 #include "ui/gfx/native_ui_types.h"
-#endif  // BUILDFLAG(ENABLE_SURFACE_EMBED)
+#include "url/gurl.h"
 
 namespace content {
 
@@ -295,6 +291,34 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   EXPECT_EQ(
       shell()->web_contents()->DumpAccessibilityTree(false, property_filters),
       expected);
+}
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, DidBecomeReadyForInput) {
+  GURL url(
+      "data:text/html,"
+      "<html><body><script>"
+      "window.receivedEvent = false;"
+      "window.addEventListener('mousemove', () => {"
+      "  window.receivedEvent = true;"
+      "});"
+      "</script></body></html>");
+
+  ReadyForInputObserver observer(shell()->web_contents());
+
+  ASSERT_TRUE(NavigateToURL(shell(), url));
+
+  observer.Wait();
+
+  // Verify that we can now send input and the page receives it.
+  EXPECT_EQ(false, EvalJs(shell(), "window.receivedEvent"));
+
+  SimulateMouseEvent(shell()->web_contents(),
+                     blink::WebInputEvent::Type::kMouseMove,
+                     gfx::Point(10, 10));
+
+  // Wait for the event to be processed.
+  EXPECT_TRUE(base::test::RunUntil(
+      [&]() { return EvalJs(shell(), "window.receivedEvent").ExtractBool(); }));
 }
 
 namespace {
@@ -3598,6 +3622,94 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, TitleUpdateOnRestore) {
 
 namespace {
 
+// A WebContentsDelegate whose AddNewContents() runs a caller-provided closure
+// before returning. The closure is used to destroy the opener WebContents
+// synchronously, simulating the re-entrant destruction that can happen when
+// AddNewContents() spins a nested run loop (e.g. on Windows, showing the new
+// browser window dispatches native messages that can close the opener window).
+class DestroyOpenerOnAddNewContentsDelegate : public WebContentsDelegate {
+ public:
+  explicit DestroyOpenerOnAddNewContentsDelegate(base::OnceClosure on_add)
+      : on_add_(std::move(on_add)) {}
+
+  WebContents* AddNewContents(
+      WebContents* source,
+      std::unique_ptr<WebContents> new_contents,
+      const GURL& target_url,
+      WindowOpenDisposition disposition,
+      const blink::mojom::WindowFeatures& window_features,
+      bool user_gesture,
+      bool* was_blocked) override {
+    // Keep the new popup alive so that CreateNewWindow()'s `weak_new_contents`
+    // guard does NOT short-circuit. Otherwise the function would return early
+    // before reaching the code that dereferences the (now destroyed) opener,
+    // and the regression would not be exercised.
+    new_contents_ = std::move(new_contents);
+    WebContents* raw_new_contents = new_contents_.get();
+    if (on_add_) {
+      std::move(on_add_).Run();
+    }
+    return raw_new_contents;
+  }
+
+ private:
+  base::OnceClosure on_add_;
+  std::unique_ptr<WebContents> new_contents_;
+};
+
+}  // namespace
+
+// Regression test for a use-after-free where the opener WebContents is
+// destroyed re-entrantly while WebContentsImpl::CreateNewWindow() is calling
+// WebContentsDelegate::AddNewContents(). With an opener-suppressed
+// (`noopener`) window.open(), CreateNewWindow() drives the new window through
+// the delegate and then keeps using `this` (and `delegate_`/`opener`) after
+// AddNewContents() returns. If the opener is torn down during that call, the
+// trailing code used to run on freed memory. See crbug.com/527676561.
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       CreateNewWindowOpenerDestroyedInAddNewContents) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  // Create an opener WebContents owned by the test, so the delegate can destroy
+  // it from within AddNewContents().
+  WebContents::CreateParams create_params(
+      shell()->web_contents()->GetBrowserContext());
+  create_params.desired_renderer_state =
+      WebContents::CreateParams::kInitializeAndWarmupRendererProcess;
+  std::unique_ptr<WebContents> opener(WebContents::Create(create_params));
+  WebContents* opener_ptr = opener.get();
+
+  base::RunLoop run_loop;
+  DestroyOpenerOnAddNewContentsDelegate delegate(
+      base::BindLambdaForTesting([&]() {
+        // Destroy the opener (`this` inside CreateNewWindow()) synchronously.
+        opener.reset();
+        run_loop.Quit();
+      }));
+  opener_ptr->SetDelegate(&delegate);
+
+  const GURL opener_url(
+      embedded_test_server()->GetURL("a.com", "/title1.html"));
+  ASSERT_TRUE(NavigateToURL(opener_ptr, opener_url));
+
+  // Open a new window with `noopener` so CreateNewWindow() takes the
+  // opener-suppressed path that shows/navigates the window via the delegate.
+  // The script is run fire-and-forget because the opener frame is destroyed
+  // while the window.open() IPC is being handled.
+  const GURL popup_url(
+      embedded_test_server()->GetURL("a.com", "/title2.html"));
+  ExecuteScriptAsync(
+      opener_ptr,
+      JsReplace("window.open($1, '_blank', 'noopener');", popup_url));
+
+  // The opener is destroyed during AddNewContents(). The test passes if this
+  // completes without a use-after-free (caught under ASAN).
+  run_loop.Run();
+  EXPECT_FALSE(opener);
+}
+
+namespace {
+
 class OutgoingSetRendererPrefsMojoWatcher {
  public:
   explicit OutgoingSetRendererPrefsMojoWatcher(RenderViewHostImpl* rvh)
@@ -3994,9 +4106,9 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, RejectFullscreenIfBlocked) {
 
   // While the |fullscreen_block| is in scope, fullscreen should fail with an
   // error.
-  base::ScopedClosureRunner fullscreen_block =
-      web_contents->ForSecurityDropFullscreen(
-          /*display_id=*/display::kInvalidDisplayId);
+  auto blocker = web_contents->ForSecurityDropFullscreen(
+      /*display_id=*/display::kInvalidDisplayId);
+  ASSERT_TRUE(blocker.has_value());
 
   EXPECT_TRUE(ExecJs(main_frame, "document.body.requestFullscreen();",
                      EXECUTE_SCRIPT_NO_RESOLVE_PROMISES));
@@ -5564,9 +5676,106 @@ IN_PROC_BROWSER_TEST_F(UnownedInnerWebContentsBrowserTest,
   EXPECT_EQ(outer_wc, inner_wc->GetOuterWebContents());
 }
 
+// Tests that GetFocusedFrame, GetFocusedWebContents, GetFocusedFrameTree,
+// ContainsOrIsFocusedWebContents, and GetFocusedRenderWidgetHost return the
+// correct values for inner WebContents attached via
+// AttachUnownedInnerWebContents. Uses FocusOwningWebContents() to move focus.
+IN_PROC_BROWSER_TEST_F(UnownedInnerWebContentsBrowserTest,
+                       FocusBehaviorWithInnerWebContents) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  const GURL outer_url(
+      embedded_test_server()->GetURL("a.com", "/page_with_iframe.html"));
+  const GURL inner_url(embedded_test_server()->GetURL("b.com", "/title1.html"));
+
+  // Setup outer WebContents.
+  ASSERT_TRUE(NavigateToURL(shell(), outer_url));
+  WebContentsImpl* outer_wc =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+  RenderFrameHostImpl* iframe_rfh = static_cast<RenderFrameHostImpl*>(
+      ChildFrameAt(outer_wc->GetPrimaryMainFrame(), 0));
+  ASSERT_TRUE(iframe_rfh);
+
+  // Setup inner WebContents.
+  WebContents::CreateParams inner_params(
+      shell()->web_contents()->GetBrowserContext());
+  std::unique_ptr<WebContents> inner_wc = WebContents::Create(inner_params);
+  WebContentsImpl* inner_wc_impl =
+      static_cast<WebContentsImpl*>(inner_wc.get());
+  ASSERT_TRUE(NavigateToURL(inner_wc.get(), inner_url));
+
+  // Attach inner WC to outer WC's iframe.
+  outer_wc->AttachUnownedInnerWebContents(
+      UnownedInnerWebContentsClient::GetPassKeyForTesting(), inner_wc.get(),
+      iframe_rfh);
+  ASSERT_EQ(outer_wc, inner_wc->GetOuterWebContents());
+
+  RenderWidgetHostImpl* outer_main_rwh =
+      outer_wc->GetPrimaryMainFrame()->GetRenderWidgetHost();
+  RenderWidgetHostImpl* inner_rwh =
+      inner_wc_impl->GetPrimaryMainFrame()->GetRenderWidgetHost();
+
+  // Focus is on the outer WebContents initially.
+  EXPECT_TRUE(outer_wc->ContainsOrIsFocusedWebContents());
+  EXPECT_FALSE(inner_wc_impl->ContainsOrIsFocusedWebContents());
+  // When embedded via inner WebContents, while there is restriction in
+  // GetFocusedFrame(), there is no restriction on access to focused FrameTree
+  // or WebContents from inner WebContents.
+  EXPECT_EQ(outer_wc->GetPrimaryMainFrame(), outer_wc->GetFocusedFrame());
+  EXPECT_EQ(nullptr, inner_wc_impl->GetFocusedFrame());
+  EXPECT_EQ(&outer_wc->GetPrimaryFrameTree(), outer_wc->GetFocusedFrameTree());
+  EXPECT_EQ(&outer_wc->GetPrimaryFrameTree(),
+            inner_wc_impl->GetFocusedFrameTree());
+  EXPECT_EQ(outer_wc, outer_wc->GetFocusedWebContents());
+  EXPECT_EQ(outer_wc, inner_wc_impl->GetFocusedWebContents());
+  EXPECT_EQ(outer_main_rwh,
+            outer_wc->GetFocusedRenderWidgetHost(outer_main_rwh));
+  EXPECT_EQ(outer_main_rwh,
+            inner_wc_impl->GetFocusedRenderWidgetHost(inner_rwh));
+
+  // Move focus to the inner WebContents using FocusOwningWebContents.
+  inner_wc_impl->FocusOwningWebContents(inner_rwh);
+
+  // Wait for async focus propagation.
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return inner_wc_impl->GetFocusedFrame() != nullptr; }));
+
+  EXPECT_TRUE(outer_wc->ContainsOrIsFocusedWebContents());
+  EXPECT_TRUE(inner_wc_impl->ContainsOrIsFocusedWebContents());
+  EXPECT_EQ(inner_wc_impl->GetPrimaryMainFrame(), outer_wc->GetFocusedFrame());
+  EXPECT_EQ(inner_wc_impl->GetPrimaryMainFrame(),
+            inner_wc_impl->GetFocusedFrame());
+  EXPECT_EQ(&inner_wc_impl->GetPrimaryFrameTree(),
+            outer_wc->GetFocusedFrameTree());
+  EXPECT_EQ(&inner_wc_impl->GetPrimaryFrameTree(),
+            inner_wc_impl->GetFocusedFrameTree());
+  EXPECT_EQ(inner_wc_impl, outer_wc->GetFocusedWebContents());
+  EXPECT_EQ(inner_wc_impl, inner_wc_impl->GetFocusedWebContents());
+  EXPECT_EQ(inner_rwh, outer_wc->GetFocusedRenderWidgetHost(outer_main_rwh));
+  EXPECT_EQ(inner_rwh, inner_wc_impl->GetFocusedRenderWidgetHost(inner_rwh));
+
+  // Move focus back to the outer WebContents.
+  outer_wc->SetAsFocusedWebContentsIfNecessary();
+
+  EXPECT_TRUE(outer_wc->ContainsOrIsFocusedWebContents());
+  EXPECT_FALSE(inner_wc_impl->ContainsOrIsFocusedWebContents());
+  // When embedded via inner WebContents, while there is restriction in
+  // GetFocusedFrame(), there is no restriction on access to focused FrameTree
+  // or WebContents from inner WebContents.
+  EXPECT_EQ(outer_wc->GetPrimaryMainFrame(), outer_wc->GetFocusedFrame());
+  EXPECT_EQ(nullptr, inner_wc_impl->GetFocusedFrame());
+  EXPECT_EQ(&outer_wc->GetPrimaryFrameTree(), outer_wc->GetFocusedFrameTree());
+  EXPECT_EQ(&outer_wc->GetPrimaryFrameTree(),
+            inner_wc_impl->GetFocusedFrameTree());
+  EXPECT_EQ(outer_wc, outer_wc->GetFocusedWebContents());
+  EXPECT_EQ(outer_wc, inner_wc_impl->GetFocusedWebContents());
+  EXPECT_EQ(outer_main_rwh,
+            outer_wc->GetFocusedRenderWidgetHost(outer_main_rwh));
+  EXPECT_EQ(outer_main_rwh,
+            inner_wc_impl->GetFocusedRenderWidgetHost(inner_rwh));
+}
+
 #endif  // !BUILDFLAG(IS_ANDROID)
 
-#if BUILDFLAG(ENABLE_SURFACE_EMBED)
 // SurfaceEmbedConnectorWebContentsBrowserTest tests are similar to
 // UnownedInnerWebContentsBrowserTest but for SurfaceEmbedConnector instead of
 // UnownedInnerWebContents. They test almost the same set of scenarios to ensure
@@ -5602,9 +5811,10 @@ class SurfaceEmbedConnectorWebContentsBrowserTest
   std::unique_ptr<SurfaceEmbedConnectorImpl> CreateConnector(
       WebContents* child_web_contents,
       WebContents* parent_web_contents) {
-    return base::WrapUnique(
-        new SurfaceEmbedConnectorImpl(child_web_contents, parent_web_contents,
-                                      &surface_embed_connector_delegate_));
+    return base::WrapUnique(new SurfaceEmbedConnectorImpl(
+        child_web_contents, parent_web_contents,
+        parent_web_contents->GetPrimaryMainFrame(),
+        &surface_embed_connector_delegate_));
   }
 
  private:
@@ -5621,6 +5831,8 @@ class SurfaceEmbedConnectorWebContentsBrowserTest
         const viz::LocalSurfaceId& local_surface_id) override {}
     void DetachedByHost() override {}
     bool IsAttachedForTesting() const override { return false; }
+    void ChildProcessGone() override {}
+    void RequestFocus() override {}
   };
 
   content::test::PrerenderTestHelper prerender_helper_;
@@ -5852,6 +6064,16 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorWebContentsBrowserTest,
   RenderFrameHost* rfh_b2 = ChildFrameAt(rfh_a, 1);
   ASSERT_TRUE(rfh_b2);
 
+  bool has_full_site_isolation = AreAllSitesIsolatedForTesting();
+  // When full site isolation is not enabled, all frames in the inner
+  // WebContents should share the same RenderWidgetHostView.
+  if (!has_full_site_isolation) {
+    EXPECT_EQ(rfh_a->GetView(), rfh_b1->GetView());
+    EXPECT_EQ(rfh_a->GetView(), rfh_a_nested->GetView());
+    EXPECT_EQ(rfh_a->GetView(), rfh_b2->GetView());
+  }
+  size_t expected_inner_widget_view_count = has_full_site_isolation ? 4U : 1U;
+
   // Verify that views are registered in their respective WebContents for input
   // event routing and text input management.
   {
@@ -5861,7 +6083,8 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorWebContentsBrowserTest,
               outer_text_input_manager->GetRegisteredViewsCountForTesting());
     EXPECT_TRUE(outer_text_input_manager->IsRegistered(outer_view));
 
-    EXPECT_EQ(4U, inner_event_router->RegisteredViewCountForTesting());
+    EXPECT_EQ(expected_inner_widget_view_count,
+              inner_event_router->RegisteredViewCountForTesting());
     EXPECT_TRUE(inner_event_router->IsViewInMap(
         static_cast<RenderWidgetHostViewBase*>(rfh_a->GetView())));
     EXPECT_TRUE(inner_event_router->IsViewInMap(
@@ -5870,7 +6093,7 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorWebContentsBrowserTest,
         static_cast<RenderWidgetHostViewBase*>(rfh_a_nested->GetView())));
     EXPECT_TRUE(inner_event_router->IsViewInMap(
         static_cast<RenderWidgetHostViewBase*>(rfh_b2->GetView())));
-    EXPECT_EQ(4U,
+    EXPECT_EQ(expected_inner_widget_view_count,
               inner_text_input_manager->GetRegisteredViewsCountForTesting());
     EXPECT_TRUE(inner_text_input_manager->IsRegistered(
         static_cast<RenderWidgetHostViewBase*>(rfh_a->GetView())));
@@ -5898,7 +6121,8 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorWebContentsBrowserTest,
   // Verify that views are registered appropriately after setting connector for
   // input event routing and text input management.
   {
-    EXPECT_EQ(5U, outer_event_router->RegisteredViewCountForTesting());
+    EXPECT_EQ(expected_inner_widget_view_count + 1,
+              outer_event_router->RegisteredViewCountForTesting());
     EXPECT_TRUE(outer_event_router->IsViewInMap(outer_view));
     EXPECT_TRUE(outer_event_router->IsViewInMap(
         static_cast<RenderWidgetHostViewBase*>(rfh_a->GetView())));
@@ -5908,7 +6132,7 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorWebContentsBrowserTest,
         static_cast<RenderWidgetHostViewBase*>(rfh_a_nested->GetView())));
     EXPECT_TRUE(outer_event_router->IsViewInMap(
         static_cast<RenderWidgetHostViewBase*>(rfh_b2->GetView())));
-    EXPECT_EQ(5U,
+    EXPECT_EQ(expected_inner_widget_view_count + 1,
               outer_text_input_manager->GetRegisteredViewsCountForTesting());
     EXPECT_TRUE(outer_text_input_manager->IsRegistered(outer_view));
     EXPECT_TRUE(outer_text_input_manager->IsRegistered(
@@ -5944,7 +6168,8 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorWebContentsBrowserTest,
               outer_text_input_manager->GetRegisteredViewsCountForTesting());
     EXPECT_TRUE(outer_text_input_manager->IsRegistered(outer_view));
 
-    EXPECT_EQ(4U, inner_event_router->RegisteredViewCountForTesting());
+    EXPECT_EQ(expected_inner_widget_view_count,
+              inner_event_router->RegisteredViewCountForTesting());
     EXPECT_TRUE(inner_event_router->IsViewInMap(
         static_cast<RenderWidgetHostViewBase*>(rfh_a->GetView())));
     EXPECT_TRUE(inner_event_router->IsViewInMap(
@@ -5953,7 +6178,7 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorWebContentsBrowserTest,
         static_cast<RenderWidgetHostViewBase*>(rfh_a_nested->GetView())));
     EXPECT_TRUE(inner_event_router->IsViewInMap(
         static_cast<RenderWidgetHostViewBase*>(rfh_b2->GetView())));
-    EXPECT_EQ(4U,
+    EXPECT_EQ(expected_inner_widget_view_count,
               inner_text_input_manager->GetRegisteredViewsCountForTesting());
     EXPECT_TRUE(inner_text_input_manager->IsRegistered(
         static_cast<RenderWidgetHostViewBase*>(rfh_a->GetView())));
@@ -6027,6 +6252,14 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorWebContentsBrowserTest,
       tree_node_b->render_manager()->speculative_frame_host();
   ASSERT_TRUE(rfh_b);
 
+  bool has_full_site_isolation = AreAllSitesIsolatedForTesting();
+  // When full site isolation is not enabled, all frames in the inner
+  // WebContents should share the same RenderWidgetHostView.
+  if (!has_full_site_isolation) {
+    EXPECT_EQ(rfh_a->GetView(), rfh_b->GetView());
+  }
+  size_t expected_inner_widget_view_count = has_full_site_isolation ? 2U : 1U;
+
   // Verify that views for pending navigation are registered in their respective
   // WebContents for input event routing and text input management.
   {
@@ -6036,12 +6269,13 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorWebContentsBrowserTest,
               outer_text_input_manager->GetRegisteredViewsCountForTesting());
     EXPECT_TRUE(outer_text_input_manager->IsRegistered(outer_view));
 
-    EXPECT_EQ(2U, inner_event_router->RegisteredViewCountForTesting());
+    EXPECT_EQ(expected_inner_widget_view_count,
+              inner_event_router->RegisteredViewCountForTesting());
     EXPECT_TRUE(inner_event_router->IsViewInMap(
         static_cast<RenderWidgetHostViewBase*>(rfh_a->GetView())));
     EXPECT_TRUE(inner_event_router->IsViewInMap(
         static_cast<RenderWidgetHostViewBase*>(rfh_b->GetView())));
-    EXPECT_EQ(2U,
+    EXPECT_EQ(expected_inner_widget_view_count,
               inner_text_input_manager->GetRegisteredViewsCountForTesting());
     EXPECT_TRUE(inner_text_input_manager->IsRegistered(
         static_cast<RenderWidgetHostViewBase*>(rfh_a->GetView())));
@@ -6062,13 +6296,14 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorWebContentsBrowserTest,
   // Verify that views are registered appropriately after setting connector for
   // input event routing and text input management.
   {
-    EXPECT_EQ(3U, outer_event_router->RegisteredViewCountForTesting());
+    EXPECT_EQ(expected_inner_widget_view_count + 1,
+              outer_event_router->RegisteredViewCountForTesting());
     EXPECT_TRUE(outer_event_router->IsViewInMap(outer_view));
     EXPECT_TRUE(outer_event_router->IsViewInMap(
         static_cast<RenderWidgetHostViewBase*>(rfh_a->GetView())));
     EXPECT_TRUE(outer_event_router->IsViewInMap(
         static_cast<RenderWidgetHostViewBase*>(rfh_b->GetView())));
-    EXPECT_EQ(3U,
+    EXPECT_EQ(expected_inner_widget_view_count + 1,
               outer_text_input_manager->GetRegisteredViewsCountForTesting());
     EXPECT_TRUE(outer_text_input_manager->IsRegistered(outer_view));
     EXPECT_TRUE(outer_text_input_manager->IsRegistered(
@@ -6098,12 +6333,13 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorWebContentsBrowserTest,
               outer_text_input_manager->GetRegisteredViewsCountForTesting());
     EXPECT_TRUE(outer_text_input_manager->IsRegistered(outer_view));
 
-    EXPECT_EQ(2U, inner_event_router->RegisteredViewCountForTesting());
+    EXPECT_EQ(expected_inner_widget_view_count,
+              inner_event_router->RegisteredViewCountForTesting());
     EXPECT_TRUE(inner_event_router->IsViewInMap(
         static_cast<RenderWidgetHostViewBase*>(rfh_a->GetView())));
     EXPECT_TRUE(inner_event_router->IsViewInMap(
         static_cast<RenderWidgetHostViewBase*>(rfh_b->GetView())));
-    EXPECT_EQ(2U,
+    EXPECT_EQ(expected_inner_widget_view_count,
               inner_text_input_manager->GetRegisteredViewsCountForTesting());
     EXPECT_TRUE(inner_text_input_manager->IsRegistered(
         static_cast<RenderWidgetHostViewBase*>(rfh_a->GetView())));
@@ -6126,13 +6362,14 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorWebContentsBrowserTest,
   // Verify that views are still registered appropriately for input event
   // routing and text input management.
   {
-    EXPECT_EQ(3U, outer_event_router->RegisteredViewCountForTesting());
+    EXPECT_EQ(expected_inner_widget_view_count + 1,
+              outer_event_router->RegisteredViewCountForTesting());
     EXPECT_TRUE(outer_event_router->IsViewInMap(outer_view));
     EXPECT_TRUE(outer_event_router->IsViewInMap(
         static_cast<RenderWidgetHostViewBase*>(rfh_a->GetView())));
     EXPECT_TRUE(outer_event_router->IsViewInMap(
         static_cast<RenderWidgetHostViewBase*>(rfh_b->GetView())));
-    EXPECT_EQ(3U,
+    EXPECT_EQ(expected_inner_widget_view_count + 1,
               outer_text_input_manager->GetRegisteredViewsCountForTesting());
     EXPECT_TRUE(outer_text_input_manager->IsRegistered(outer_view));
     EXPECT_TRUE(outer_text_input_manager->IsRegistered(
@@ -6516,7 +6753,6 @@ IN_PROC_BROWSER_TEST_F(SurfaceEmbedConnectorWebContentsBrowserTest,
     EXPECT_TRUE(rwhv2->IsRenderWidgetHostViewChildFrame());
   }
 }
-#endif  // BUILDFLAG(ENABLE_SURFACE_EMBED)
 
 IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
                        ShutdownDuringSpeculativeNavigation) {
@@ -8514,6 +8750,85 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   RenderWidgetHost* popup_rwh = RenderWidgetHost::FromID(
       rwh->GetProcess()->GetDeprecatedID(), waiter.last_routing_id());
   EXPECT_FALSE(popup_rwh);
+}
+
+class DestroyTargetOnFullscreenExitDelegate : public WebContentsDelegate {
+ public:
+  DestroyTargetOnFullscreenExitDelegate(WebContentsDelegate* original_delegate,
+                                        Shell* target_to_destroy)
+      : original_delegate_(original_delegate),
+        target_to_destroy_(target_to_destroy) {}
+
+  void ExitFullscreenModeForTab(WebContents* web_contents) override {
+    if (target_to_destroy_) {
+      target_to_destroy_->Close();
+      target_to_destroy_ = nullptr;
+    }
+    if (original_delegate_) {
+      original_delegate_->ExitFullscreenModeForTab(web_contents);
+    }
+  }
+
+  FullscreenState GetFullscreenState(
+      const WebContents* web_contents) const override {
+    if (original_delegate_) {
+      return original_delegate_->GetFullscreenState(web_contents);
+    }
+    return FullscreenState();
+  }
+
+  bool IsFullscreenForTabOrPending(const WebContents* web_contents) override {
+    if (original_delegate_) {
+      return original_delegate_->IsFullscreenForTabOrPending(web_contents);
+    }
+    return false;
+  }
+
+ private:
+  raw_ptr<WebContentsDelegate> original_delegate_;
+  raw_ptr<Shell, DisableDanglingPtrDetection> target_to_destroy_;
+};
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       ForSecurityDropFullscreenUAF) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL url(embedded_test_server()->GetURL("/title1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), url));
+
+  WebContentsImpl* opener_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+
+  ShellAddedObserver new_shell_observer;
+  EXPECT_TRUE(ExecJs(opener_contents, "window.open('about:blank', 'popup')"));
+  Shell* popup_shell = new_shell_observer.GetShell();
+  WebContentsImpl* popup_contents =
+      static_cast<WebContentsImpl*>(popup_shell->web_contents());
+
+  EXPECT_EQ(opener_contents,
+            popup_contents->GetFirstWebContentsInLiveOriginalOpenerChain());
+
+  FullscreenWebContentsObserver observer(
+      opener_contents, opener_contents->GetPrimaryMainFrame());
+  EXPECT_TRUE(ExecJs(opener_contents->GetPrimaryMainFrame(),
+                     "document.body.webkitRequestFullscreen();"));
+  observer.Wait();
+  EXPECT_TRUE(opener_contents->IsFullscreen());
+
+  DestroyTargetOnFullscreenExitDelegate intercepting_delegate(
+      opener_contents->GetDelegate(), popup_shell);
+  opener_contents->SetDelegate(&intercepting_delegate);
+
+  base::WeakPtr<WebContents> weak_popup = popup_contents->GetWeakPtr();
+
+  auto blocker = popup_contents->ForSecurityDropFullscreen(
+      /*display_id=*/display::kInvalidDisplayId);
+
+  EXPECT_EQ(weak_popup, nullptr);
+  EXPECT_FALSE(blocker.has_value());
+
+  if (opener_contents) {
+    opener_contents->SetDelegate(shell());
+  }
 }
 
 }  // namespace content

@@ -89,6 +89,8 @@ ValidValue stateless::Context::IsValidEnumValue(VkObjectType value) const {
             return IsExtEnabled(extensions.vk_nvx_binary_import) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT:
             return IsExtEnabled(extensions.vk_ext_debug_utils) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_OBJECT_TYPE_GPA_SESSION_AMD:
+            return IsExtEnabled(extensions.vk_amd_gpa_interface) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR:
             return IsExtEnabled(extensions.vk_khr_acceleration_structure) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_OBJECT_TYPE_VALIDATION_CACHE_EXT:
@@ -491,6 +493,8 @@ ValidValue stateless::Context::IsValidEnumValue(VkQueryType value) const {
             return IsExtEnabled(extensions.vk_khr_acceleration_structure) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_NV:
             return IsExtEnabled(extensions.vk_nv_ray_tracing) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_QUERY_TYPE_TIME_ELAPSED_QCOM:
+            return IsExtEnabled(extensions.vk_qcom_elapsed_timer_query) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_QUERY_TYPE_PERFORMANCE_QUERY_INTEL:
             return IsExtEnabled(extensions.vk_intel_performance_query) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_QUERY_TYPE_VIDEO_ENCODE_FEEDBACK_KHR:
@@ -1341,6 +1345,8 @@ ValidValue stateless::Context::IsValidEnumValue(VkAccelerationStructureTypeKHR v
         case VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR:
         case VK_ACCELERATION_STRUCTURE_TYPE_GENERIC_KHR:
             return ValidValue::Valid;
+        case VK_ACCELERATION_STRUCTURE_TYPE_OPACITY_MICROMAP_KHR:
+            return IsExtEnabled(extensions.vk_khr_opacity_micromap) ? ValidValue::Valid : ValidValue::NoExtension;
         default:
             return ValidValue::NotFound;
     };
@@ -1418,6 +1424,17 @@ template <>
 ValidValue stateless::Context::IsValidEnumValue(VkDeviceFaultVendorBinaryHeaderVersionKHR value) const {
     switch (value) {
         case VK_DEVICE_FAULT_VENDOR_BINARY_HEADER_VERSION_ONE_KHR:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkOpacityMicromapFormatKHR value) const {
+    switch (value) {
+        case VK_OPACITY_MICROMAP_FORMAT_2_STATE_KHR:
+        case VK_OPACITY_MICROMAP_FORMAT_4_STATE_KHR:
             return ValidValue::Valid;
         default:
             return ValidValue::NotFound;
@@ -1588,6 +1605,99 @@ ValidValue stateless::Context::IsValidEnumValue(VkConservativeRasterizationModeE
 }
 
 template <>
+ValidValue stateless::Context::IsValidEnumValue(VkGpaPerfBlockAMD value) const {
+    switch (value) {
+        case VK_GPA_PERF_BLOCK_CPF_AMD:
+        case VK_GPA_PERF_BLOCK_IA_AMD:
+        case VK_GPA_PERF_BLOCK_VGT_AMD:
+        case VK_GPA_PERF_BLOCK_PA_AMD:
+        case VK_GPA_PERF_BLOCK_SC_AMD:
+        case VK_GPA_PERF_BLOCK_SPI_AMD:
+        case VK_GPA_PERF_BLOCK_SQ_AMD:
+        case VK_GPA_PERF_BLOCK_SX_AMD:
+        case VK_GPA_PERF_BLOCK_TA_AMD:
+        case VK_GPA_PERF_BLOCK_TD_AMD:
+        case VK_GPA_PERF_BLOCK_TCP_AMD:
+        case VK_GPA_PERF_BLOCK_TCC_AMD:
+        case VK_GPA_PERF_BLOCK_TCA_AMD:
+        case VK_GPA_PERF_BLOCK_DB_AMD:
+        case VK_GPA_PERF_BLOCK_CB_AMD:
+        case VK_GPA_PERF_BLOCK_GDS_AMD:
+        case VK_GPA_PERF_BLOCK_SRBM_AMD:
+        case VK_GPA_PERF_BLOCK_GRBM_AMD:
+        case VK_GPA_PERF_BLOCK_GRBM_SE_AMD:
+        case VK_GPA_PERF_BLOCK_RLC_AMD:
+        case VK_GPA_PERF_BLOCK_DMA_AMD:
+        case VK_GPA_PERF_BLOCK_MC_AMD:
+        case VK_GPA_PERF_BLOCK_CPG_AMD:
+        case VK_GPA_PERF_BLOCK_CPC_AMD:
+        case VK_GPA_PERF_BLOCK_WD_AMD:
+        case VK_GPA_PERF_BLOCK_TCS_AMD:
+        case VK_GPA_PERF_BLOCK_ATC_AMD:
+        case VK_GPA_PERF_BLOCK_ATC_L2_AMD:
+        case VK_GPA_PERF_BLOCK_MC_VM_L2_AMD:
+        case VK_GPA_PERF_BLOCK_EA_AMD:
+        case VK_GPA_PERF_BLOCK_RPB_AMD:
+        case VK_GPA_PERF_BLOCK_RMI_AMD:
+        case VK_GPA_PERF_BLOCK_UMCCH_AMD:
+        case VK_GPA_PERF_BLOCK_GE_AMD:
+        case VK_GPA_PERF_BLOCK_GL1A_AMD:
+        case VK_GPA_PERF_BLOCK_GL1C_AMD:
+        case VK_GPA_PERF_BLOCK_GL1CG_AMD:
+        case VK_GPA_PERF_BLOCK_GL2A_AMD:
+        case VK_GPA_PERF_BLOCK_GL2C_AMD:
+        case VK_GPA_PERF_BLOCK_CHA_AMD:
+        case VK_GPA_PERF_BLOCK_CHC_AMD:
+        case VK_GPA_PERF_BLOCK_CHCG_AMD:
+        case VK_GPA_PERF_BLOCK_GUS_AMD:
+        case VK_GPA_PERF_BLOCK_GCR_AMD:
+        case VK_GPA_PERF_BLOCK_PH_AMD:
+        case VK_GPA_PERF_BLOCK_UTCL1_AMD:
+        case VK_GPA_PERF_BLOCK_GE_DIST_AMD:
+        case VK_GPA_PERF_BLOCK_GE_SE_AMD:
+        case VK_GPA_PERF_BLOCK_DF_MALL_AMD:
+        case VK_GPA_PERF_BLOCK_SQ_WGP_AMD:
+        case VK_GPA_PERF_BLOCK_PC_AMD:
+        case VK_GPA_PERF_BLOCK_GL1XA_AMD:
+        case VK_GPA_PERF_BLOCK_GL1XC_AMD:
+        case VK_GPA_PERF_BLOCK_WGS_AMD:
+        case VK_GPA_PERF_BLOCK_EACPWD_AMD:
+        case VK_GPA_PERF_BLOCK_EASE_AMD:
+        case VK_GPA_PERF_BLOCK_RLCUSER_AMD:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkGpaSampleTypeAMD value) const {
+    switch (value) {
+        case VK_GPA_SAMPLE_TYPE_CUMULATIVE_AMD:
+        case VK_GPA_SAMPLE_TYPE_TRACE_AMD:
+        case VK_GPA_SAMPLE_TYPE_TIMING_AMD:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkGpaDeviceClockModeAMD value) const {
+    switch (value) {
+        case VK_GPA_DEVICE_CLOCK_MODE_DEFAULT_AMD:
+        case VK_GPA_DEVICE_CLOCK_MODE_QUERY_AMD:
+        case VK_GPA_DEVICE_CLOCK_MODE_PROFILING_AMD:
+        case VK_GPA_DEVICE_CLOCK_MODE_MIN_MEMORY_AMD:
+        case VK_GPA_DEVICE_CLOCK_MODE_MIN_ENGINE_AMD:
+        case VK_GPA_DEVICE_CLOCK_MODE_PEAK_AMD:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
 ValidValue stateless::Context::IsValidEnumValue(VkDescriptorMappingSourceEXT value) const {
     switch (value) {
         case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT:
@@ -1690,6 +1800,8 @@ ValidValue stateless::Context::IsValidEnumValue(VkGeometryTypeKHR value) const {
             return IsExtEnabled(extensions.vk_nv_ray_tracing_linear_swept_spheres) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_GEOMETRY_TYPE_DENSE_GEOMETRY_FORMAT_TRIANGLES_AMDX:
             return IsExtEnabled(extensions.vk_amdx_dense_geometry_format) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_GEOMETRY_TYPE_MICROMAP_KHR:
+            return IsExtEnabled(extensions.vk_khr_opacity_micromap) ? ValidValue::Valid : ValidValue::NoExtension;
         default:
             return ValidValue::NotFound;
     };
@@ -1872,6 +1984,19 @@ ValidValue stateless::Context::IsValidEnumValue(VkDepthBiasRepresentationEXT val
         case VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT:
         case VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORCE_UNORM_EXT:
         case VK_DEPTH_BIAS_REPRESENTATION_FLOAT_EXT:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkPerfHintTypeQCOM value) const {
+    switch (value) {
+        case VK_PERF_HINT_TYPE_DEFAULT_QCOM:
+        case VK_PERF_HINT_TYPE_FREQUENCY_MIN_QCOM:
+        case VK_PERF_HINT_TYPE_FREQUENCY_MAX_QCOM:
+        case VK_PERF_HINT_TYPE_FREQUENCY_SCALED_QCOM:
             return ValidValue::Valid;
         default:
             return ValidValue::NotFound;
@@ -2190,6 +2315,11 @@ ValidValue stateless::Context::IsValidEnumValue(VkDataGraphPipelineSessionBindPo
     switch (value) {
         case VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM:
             return ValidValue::Valid;
+        case VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_OPTICAL_FLOW_CACHE_ARM:
+            return IsExtEnabled(extensions.vk_arm_data_graph_optical_flow) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_NEURAL_ACCELERATOR_STATISTICS_ARM:
+            return IsExtEnabled(extensions.vk_arm_data_graph_neural_accelerator_statistics) ? ValidValue::Valid
+                                                                                            : ValidValue::NoExtension;
         default:
             return ValidValue::NotFound;
     };
@@ -2201,6 +2331,10 @@ ValidValue stateless::Context::IsValidEnumValue(VkDataGraphPipelinePropertyARM v
         case VK_DATA_GRAPH_PIPELINE_PROPERTY_CREATION_LOG_ARM:
         case VK_DATA_GRAPH_PIPELINE_PROPERTY_IDENTIFIER_ARM:
             return ValidValue::Valid;
+        case VK_DATA_GRAPH_PIPELINE_PROPERTY_NEURAL_ACCELERATOR_DEBUG_DATABASE_ARM:
+        case VK_DATA_GRAPH_PIPELINE_PROPERTY_NEURAL_ACCELERATOR_STATISTICS_INFO_ARM:
+            return IsExtEnabled(extensions.vk_arm_data_graph_neural_accelerator_statistics) ? ValidValue::Valid
+                                                                                            : ValidValue::NoExtension;
         default:
             return ValidValue::NotFound;
     };
@@ -2227,6 +2361,8 @@ ValidValue stateless::Context::IsValidEnumValue(VkPhysicalDeviceDataGraphOperati
         case VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_NEURAL_MODEL_QCOM:
         case VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_BUILTIN_MODEL_QCOM:
             return IsExtEnabled(extensions.vk_qcom_data_graph_model) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_OPTICAL_FLOW_ARM:
+            return IsExtEnabled(extensions.vk_arm_data_graph_optical_flow) ? ValidValue::Valid : ValidValue::NoExtension;
         default:
             return ValidValue::NotFound;
     };
@@ -2372,6 +2508,67 @@ ValidValue stateless::Context::IsValidEnumValue(VkDataGraphModelCacheTypeQCOM va
 }
 
 template <>
+ValidValue stateless::Context::IsValidEnumValue(VkDataGraphOpticalFlowPerformanceLevelARM value) const {
+    switch (value) {
+        case VK_DATA_GRAPH_OPTICAL_FLOW_PERFORMANCE_LEVEL_UNKNOWN_ARM:
+        case VK_DATA_GRAPH_OPTICAL_FLOW_PERFORMANCE_LEVEL_SLOW_ARM:
+        case VK_DATA_GRAPH_OPTICAL_FLOW_PERFORMANCE_LEVEL_MEDIUM_ARM:
+        case VK_DATA_GRAPH_OPTICAL_FLOW_PERFORMANCE_LEVEL_FAST_ARM:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkDataGraphPipelineNodeTypeARM value) const {
+    switch (value) {
+        case VK_DATA_GRAPH_PIPELINE_NODE_TYPE_OPTICAL_FLOW_ARM:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkDataGraphPipelineNodeConnectionTypeARM value) const {
+    switch (value) {
+        case VK_DATA_GRAPH_PIPELINE_NODE_CONNECTION_TYPE_OPTICAL_FLOW_INPUT_ARM:
+        case VK_DATA_GRAPH_PIPELINE_NODE_CONNECTION_TYPE_OPTICAL_FLOW_REFERENCE_ARM:
+        case VK_DATA_GRAPH_PIPELINE_NODE_CONNECTION_TYPE_OPTICAL_FLOW_HINT_ARM:
+        case VK_DATA_GRAPH_PIPELINE_NODE_CONNECTION_TYPE_OPTICAL_FLOW_FLOW_VECTOR_ARM:
+        case VK_DATA_GRAPH_PIPELINE_NODE_CONNECTION_TYPE_OPTICAL_FLOW_COST_ARM:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkThrottleHintTypeSEC value) const {
+    switch (value) {
+        case VK_THROTTLE_HINT_TYPE_DEFAULT_SEC:
+        case VK_THROTTLE_HINT_TYPE_LOW_SEC:
+        case VK_THROTTLE_HINT_TYPE_HIGH_SEC:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkNeuralAcceleratorStatisticsModeARM value) const {
+    switch (value) {
+        case VK_NEURAL_ACCELERATOR_STATISTICS_MODE_DISABLED_ARM:
+        case VK_NEURAL_ACCELERATOR_STATISTICS_MODE_STATISTICS0_ARM:
+        case VK_NEURAL_ACCELERATOR_STATISTICS_MODE_STATISTICS1_ARM:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
 ValidValue stateless::Context::IsValidEnumValue(VkBuildAccelerationStructureModeKHR value) const {
     switch (value) {
         case VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR:
@@ -2421,6 +2618,8 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkObjectType value) const 
             return {vvl::Extension::_VK_NVX_binary_import};
         case VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT:
             return {vvl::Extension::_VK_EXT_debug_utils};
+        case VK_OBJECT_TYPE_GPA_SESSION_AMD:
+            return {vvl::Extension::_VK_AMD_gpa_interface};
         case VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR:
             return {vvl::Extension::_VK_KHR_acceleration_structure};
         case VK_OBJECT_TYPE_VALIDATION_CACHE_EXT:
@@ -2639,6 +2838,8 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkQueryType value) const {
             return {vvl::Extension::_VK_KHR_acceleration_structure};
         case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_NV:
             return {vvl::Extension::_VK_NV_ray_tracing};
+        case VK_QUERY_TYPE_TIME_ELAPSED_QCOM:
+            return {vvl::Extension::_VK_QCOM_elapsed_timer_query};
         case VK_QUERY_TYPE_PERFORMANCE_QUERY_INTEL:
             return {vvl::Extension::_VK_INTEL_performance_query};
         case VK_QUERY_TYPE_VIDEO_ENCODE_FEEDBACK_KHR:
@@ -3321,11 +3522,16 @@ const char* stateless::Context::DescribeEnum(VkVideoEncodeTuningModeKHR value) c
 
 template <>
 vvl::Extensions stateless::Context::GetEnumExtensions(VkAccelerationStructureTypeKHR value) const {
-    return {};
+    switch (value) {
+        case VK_ACCELERATION_STRUCTURE_TYPE_OPACITY_MICROMAP_KHR:
+            return {vvl::Extension::_VK_KHR_opacity_micromap};
+        default:
+            return {};
+    };
 }
 template <>
 const char* stateless::Context::DescribeEnum(VkAccelerationStructureTypeKHR value) const {
-    return nullptr;
+    return string_VkAccelerationStructureTypeKHR(value);
 }
 
 template <>
@@ -3384,6 +3590,15 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkDeviceFaultVendorBinaryH
 }
 template <>
 const char* stateless::Context::DescribeEnum(VkDeviceFaultVendorBinaryHeaderVersionKHR value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkOpacityMicromapFormatKHR value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkOpacityMicromapFormatKHR value) const {
     return nullptr;
 }
 
@@ -3497,6 +3712,33 @@ const char* stateless::Context::DescribeEnum(VkConservativeRasterizationModeEXT 
 }
 
 template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkGpaPerfBlockAMD value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkGpaPerfBlockAMD value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkGpaSampleTypeAMD value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkGpaSampleTypeAMD value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkGpaDeviceClockModeAMD value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkGpaDeviceClockModeAMD value) const {
+    return nullptr;
+}
+
+template <>
 vvl::Extensions stateless::Context::GetEnumExtensions(VkDescriptorMappingSourceEXT value) const {
     return {};
 }
@@ -3558,6 +3800,8 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkGeometryTypeKHR value) c
             return {vvl::Extension::_VK_NV_ray_tracing_linear_swept_spheres};
         case VK_GEOMETRY_TYPE_DENSE_GEOMETRY_FORMAT_TRIANGLES_AMDX:
             return {vvl::Extension::_VK_AMDX_dense_geometry_format};
+        case VK_GEOMETRY_TYPE_MICROMAP_KHR:
+            return {vvl::Extension::_VK_KHR_opacity_micromap};
         default:
             return {};
     };
@@ -3702,6 +3946,15 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkDepthBiasRepresentationE
 }
 template <>
 const char* stateless::Context::DescribeEnum(VkDepthBiasRepresentationEXT value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkPerfHintTypeQCOM value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkPerfHintTypeQCOM value) const {
     return nullptr;
 }
 
@@ -3930,20 +4183,33 @@ const char* stateless::Context::DescribeEnum(VkOutOfBandQueueTypeNV value) const
 
 template <>
 vvl::Extensions stateless::Context::GetEnumExtensions(VkDataGraphPipelineSessionBindPointARM value) const {
-    return {};
+    switch (value) {
+        case VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_OPTICAL_FLOW_CACHE_ARM:
+            return {vvl::Extension::_VK_ARM_data_graph_optical_flow};
+        case VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_NEURAL_ACCELERATOR_STATISTICS_ARM:
+            return {vvl::Extension::_VK_ARM_data_graph_neural_accelerator_statistics};
+        default:
+            return {};
+    };
 }
 template <>
 const char* stateless::Context::DescribeEnum(VkDataGraphPipelineSessionBindPointARM value) const {
-    return nullptr;
+    return string_VkDataGraphPipelineSessionBindPointARM(value);
 }
 
 template <>
 vvl::Extensions stateless::Context::GetEnumExtensions(VkDataGraphPipelinePropertyARM value) const {
-    return {};
+    switch (value) {
+        case VK_DATA_GRAPH_PIPELINE_PROPERTY_NEURAL_ACCELERATOR_DEBUG_DATABASE_ARM:
+        case VK_DATA_GRAPH_PIPELINE_PROPERTY_NEURAL_ACCELERATOR_STATISTICS_INFO_ARM:
+            return {vvl::Extension::_VK_ARM_data_graph_neural_accelerator_statistics};
+        default:
+            return {};
+    };
 }
 template <>
 const char* stateless::Context::DescribeEnum(VkDataGraphPipelinePropertyARM value) const {
-    return nullptr;
+    return string_VkDataGraphPipelinePropertyARM(value);
 }
 
 template <>
@@ -3967,6 +4233,8 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkPhysicalDeviceDataGraphO
         case VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_NEURAL_MODEL_QCOM:
         case VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_BUILTIN_MODEL_QCOM:
             return {vvl::Extension::_VK_QCOM_data_graph_model};
+        case VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_OPTICAL_FLOW_ARM:
+            return {vvl::Extension::_VK_ARM_data_graph_optical_flow};
         default:
             return {};
     };
@@ -4077,6 +4345,51 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkDataGraphModelCacheTypeQ
 }
 template <>
 const char* stateless::Context::DescribeEnum(VkDataGraphModelCacheTypeQCOM value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkDataGraphOpticalFlowPerformanceLevelARM value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkDataGraphOpticalFlowPerformanceLevelARM value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkDataGraphPipelineNodeTypeARM value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkDataGraphPipelineNodeTypeARM value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkDataGraphPipelineNodeConnectionTypeARM value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkDataGraphPipelineNodeConnectionTypeARM value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkThrottleHintTypeSEC value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkThrottleHintTypeSEC value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkNeuralAcceleratorStatisticsModeARM value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkNeuralAcceleratorStatisticsModeARM value) const {
     return nullptr;
 }
 

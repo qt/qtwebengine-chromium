@@ -73,8 +73,12 @@ OpenscreenFrameSender::OpenscreenFrameSender(
       client_(client),
       max_frame_rate_(config.max_frame_rate),
       is_audio_(config.is_audio()),
-      min_playout_delay_(config.min_playout_delay),
-      max_playout_delay_(config.max_playout_delay) {
+      min_playout_delay_(
+          std::min(config.min_playout_delay,
+                   base::Milliseconds(std::numeric_limits<uint16_t>::max()))),
+      max_playout_delay_(
+          std::min(config.max_playout_delay,
+                   base::Milliseconds(std::numeric_limits<uint16_t>::max()))) {
   CHECK_GT(sender_->config().rtp_timebase, 0);
 
   const std::chrono::milliseconds target_playout_delay =
@@ -218,14 +222,12 @@ CastStreamingFrameDropReason OpenscreenFrameSender::EnqueueFrame(
 
   if (!is_audio_) {
     // Used by chrome/browser/media/cast_mirroring_performance_browsertest.cc
-    TRACE_EVENT_INSTANT1("cast_perf_test", "VideoFrameEncoded",
-                         TRACE_EVENT_SCOPE_THREAD, "rtp_timestamp",
-                         encoded_frame->rtp_timestamp.lower_32_bits());
+    TRACE_EVENT_INSTANT("cast_perf_test", "VideoFrameEncoded", "rtp_timestamp",
+                        encoded_frame->rtp_timestamp.lower_32_bits());
   }
 
   if (send_target_playout_delay_) {
-    encoded_frame->new_playout_delay_ms =
-        target_playout_delay_.InMilliseconds();
+    encoded_frame->new_playout_delay = target_playout_delay_;
     send_target_playout_delay_ = false;
   }
 

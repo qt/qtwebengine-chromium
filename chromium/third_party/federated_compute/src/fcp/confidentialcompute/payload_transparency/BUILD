@@ -19,7 +19,8 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
-    licenses = ["notice"],  # Apache 2.0
+    default_applicable_licenses = ["//fcp:license"],
+    licenses = ["notice"],
 )
 
 cc_library(
@@ -34,14 +35,17 @@ cc_library(
         "//fcp/protos/confidentialcompute:access_policy_endorsement_options_cc_proto",
         "//fcp/protos/confidentialcompute:key_cc_proto",
         "//fcp/protos/confidentialcompute:payload_transparency_cc_proto",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:timestamp_cc_proto",
+        "@com_google_protobuf//src/google/protobuf/io",
     ],
 )
 
@@ -56,13 +60,15 @@ cc_test(
         "//fcp/protos/confidentialcompute:key_cc_proto",
         "//fcp/protos/confidentialcompute:payload_transparency_cc_proto",
         "//fcp/testing",
-        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:timestamp_cc_proto",
     ],
 )
 
@@ -84,8 +90,9 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:protobuf_lite",
     ],
 )
 
@@ -102,8 +109,9 @@ cc_test(
         "@boringssl//:crypto",
         "@com_google_absl//absl/container:fixed_array",
         "@com_google_absl//absl/functional:function_ref",
-        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],
@@ -138,8 +146,9 @@ cc_test(
         "@com_google_absl//absl/container:fixed_array",
         "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],

@@ -29,8 +29,8 @@
 
 #include <memory>
 
-#include "dawn/common/Assert.h"
-#include "dawn/platform/WorkerThread.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/platform/WorkerThread.h"
 
 namespace dawn::platform {
 
@@ -110,6 +110,8 @@ bool Platform::IsFeatureEnabled(Features feature) {
         case Features::kWebGPUUseSpirv14:
             return true;
         case Features::kWebGPUDecomposeUniformBuffers:
+            return true;
+        case Features::kWebGPUUseHLSL2021:
             return true;
     }
     return false;

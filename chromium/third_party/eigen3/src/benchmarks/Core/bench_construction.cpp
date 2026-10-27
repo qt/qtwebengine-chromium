@@ -2,6 +2,8 @@
 //
 // Tests setZero, setRandom, setIdentity, LinSpaced, Zero(), Constant()
 // for both dynamic and small fixed-size matrices.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>

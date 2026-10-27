@@ -30,16 +30,16 @@
 
 #include <vector>
 
-#include "dawn/common/Ref.h"
-#include "dawn/common/WeakRefSupport.h"
-#include "dawn/common/ityp_vector.h"
-#include "dawn/native/Error.h"
-#include "dawn/native/Forward.h"
-#include "dawn/native/IntegerTypes.h"
-#include "dawn/native/ObjectBase.h"
-#include "dawn/native/Sampler.h"
-#include "dawn/native/dawn_platform.h"
 #include "partition_alloc/pointers/raw_ptr.h"
+#include "src/dawn/common/Ref.h"
+#include "src/dawn/common/WeakRefSupport.h"
+#include "src/dawn/common/ityp_vector.h"
+#include "src/dawn/native/Error.h"
+#include "src/dawn/native/Forward.h"
+#include "src/dawn/native/IntegerTypes.h"
+#include "src/dawn/native/ObjectBase.h"
+#include "src/dawn/native/Sampler.h"
+#include "src/dawn/native/dawn_platform.h"
 
 namespace tint {
 enum class ResourceType : uint32_t;
@@ -124,16 +124,19 @@ class ResourceTableBase : public ApiObjectBase, public WeakRefSupport<ResourceTa
     // of the ResourceTable (since the last call to AcquireDirtySlotUpdates or creation of the
     // ResourceTable).
     struct MetadataUpdate {
-        uint32_t offset;
-        uint32_t data;
+        ResourceTableSlot slot{0};  // Slot index to update
+        uint32_t offset = 0;        // Byte offset resource array
+        uint32_t data = 0;          // tint::ResourceType in the low 16 bits
     };
-    struct ResourceUpdate {
-        ResourceTableSlot slot;
-        std::variant<raw_ptr<TextureViewBase>, raw_ptr<SamplerBase>> resource;
+    struct ResourceDiff {
+        using Resource = std::variant<std::monostate, Ref<TextureViewBase>, Ref<SamplerBase>>;
+        ResourceTableSlot slot = ResourceTableSlot(0);
+        Resource removed;  // Resource removed from 'slot', if any
+        Resource added;    // Resource added to 'slot', if any
     };
     struct Updates {
         std::vector<MetadataUpdate> metadataUpdates;
-        std::vector<ResourceUpdate> resourceUpdates;
+        std::vector<ResourceDiff> resourceDiffs;
     };
     Updates AcquireDirtySlotUpdates();
 
@@ -163,7 +166,11 @@ class ResourceTableBase : public ApiObjectBase, public WeakRefSupport<ResourceTa
     Ref<BufferBase> mMetadataBuffer;
 
     struct SlotState {
-        std::variant<std::monostate, Ref<TextureViewBase>, Ref<SamplerBase>> resource;
+        using Resource = std::variant<std::monostate, Ref<TextureViewBase>, Ref<SamplerBase>>;
+        // The last bound resource
+        Resource lastResource;
+        // The currently bound resource
+        Resource resource;
 
         // Matches the value of the Tint enum for type IDs but kept as u32 to keep usage of Tint
         // headers local.

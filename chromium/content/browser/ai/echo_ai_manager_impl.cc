@@ -9,6 +9,7 @@
 #include "base/time/time.h"
 #include "components/language/core/common/locale_util.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
+#include "content/browser/ai/echo_ai_classifier.h"
 #include "content/browser/ai/echo_ai_language_model.h"
 #include "content/browser/ai/echo_ai_proofreader.h"
 #include "content/browser/ai/echo_ai_rewriter.h"
@@ -166,7 +167,8 @@ void EchoAIManagerImpl::CanCreateLanguageModel(
 void EchoAIManagerImpl::CreateLanguageModel(
     mojo::PendingRemote<blink::mojom::AIManagerCreateLanguageModelClient>
         client,
-    blink::mojom::AILanguageModelCreateOptionsPtr options) {
+    blink::mojom::AILanguageModelCreateOptionsPtr options,
+    mojo::PendingRemote<on_device_model::mojom::DownloadObserver> monitor) {
   mojo::Remote<blink::mojom::AIManagerCreateLanguageModelClient> client_remote(
       std::move(client));
 
@@ -245,7 +247,8 @@ void EchoAIManagerImpl::CanCreateSummarizer(
 
 void EchoAIManagerImpl::CreateSummarizer(
     mojo::PendingRemote<blink::mojom::AIManagerCreateSummarizerClient> client,
-    blink::mojom::AISummarizerCreateOptionsPtr options) {
+    blink::mojom::AISummarizerCreateOptionsPtr options,
+    mojo::PendingRemote<on_device_model::mojom::DownloadObserver> monitor) {
   CreateWritingAssistanceClient<blink::mojom::AISummarizerCreateOptionsPtr,
                                 blink::mojom::AIManagerCreateSummarizerClient,
                                 blink::mojom::AISummarizer, EchoAISummarizer>(
@@ -273,7 +276,8 @@ void EchoAIManagerImpl::CanCreateWriter(
 
 void EchoAIManagerImpl::CreateWriter(
     mojo::PendingRemote<blink::mojom::AIManagerCreateWriterClient> client,
-    blink::mojom::AIWriterCreateOptionsPtr options) {
+    blink::mojom::AIWriterCreateOptionsPtr options,
+    mojo::PendingRemote<on_device_model::mojom::DownloadObserver> monitor) {
   CreateWritingAssistanceClient<blink::mojom::AIWriterCreateOptionsPtr,
                                 blink::mojom::AIManagerCreateWriterClient,
                                 blink::mojom::AIWriter, EchoAIWriter>(
@@ -290,7 +294,8 @@ void EchoAIManagerImpl::CanCreateRewriter(
 
 void EchoAIManagerImpl::CreateRewriter(
     mojo::PendingRemote<blink::mojom::AIManagerCreateRewriterClient> client,
-    blink::mojom::AIRewriterCreateOptionsPtr options) {
+    blink::mojom::AIRewriterCreateOptionsPtr options,
+    mojo::PendingRemote<on_device_model::mojom::DownloadObserver> monitor) {
   CreateWritingAssistanceClient<blink::mojom::AIRewriterCreateOptionsPtr,
                                 blink::mojom::AIManagerCreateRewriterClient,
                                 blink::mojom::AIRewriter, EchoAIRewriter>(
@@ -312,7 +317,8 @@ void EchoAIManagerImpl::CanCreateProofreader(
 
 void EchoAIManagerImpl::CreateProofreader(
     mojo::PendingRemote<blink::mojom::AIManagerCreateProofreaderClient> client,
-    blink::mojom::AIProofreaderCreateOptionsPtr options) {
+    blink::mojom::AIProofreaderCreateOptionsPtr options,
+    mojo::PendingRemote<on_device_model::mojom::DownloadObserver> monitor) {
   mojo::Remote<blink::mojom::AIManagerCreateProofreaderClient> client_remote(
       std::move(client));
   if (options &&
@@ -329,10 +335,22 @@ void EchoAIManagerImpl::CreateProofreader(
       std::move(client_remote));
 }
 
-void EchoAIManagerImpl::AddModelDownloadProgressObserver(
-    mojo::PendingRemote<on_device_model::mojom::DownloadObserver>
-        observer_remote) {
-  download_progress_observers_.Add(std::move(observer_remote));
+void EchoAIManagerImpl::CanCreateClassifier(
+    blink::mojom::AIClassifierCreateOptionsPtr options,
+    CanCreateClassifierCallback callback) {
+  CanCreateClient<CanCreateClassifierCallback>(std::move(callback));
+}
+
+void EchoAIManagerImpl::CreateClassifier(
+    mojo::PendingRemote<blink::mojom::AIManagerCreateClassifierClient> client,
+    blink::mojom::AIClassifierCreateOptionsPtr options,
+    mojo::PendingRemote<on_device_model::mojom::DownloadObserver> monitor) {
+  mojo::Remote<blink::mojom::AIManagerCreateClassifierClient> client_remote(
+      std::move(client));
+
+  CreateClient<blink::mojom::AIManagerCreateClassifierClient,
+               blink::mojom::AIClassifier, EchoAIClassifier>(
+      std::move(client_remote));
 }
 
 template <typename CanCreateCallback>
@@ -441,7 +459,8 @@ void EchoAIManagerImpl::ReturnAILanguageModelCreationResult(
           std::vector<blink::mojom::AILanguageModelPromptType>(
               enabled_input_types.begin(), enabled_input_types.end()),
           /*audio_sample_rate_hz=*/std::nullopt,
-          /*audio_channel_count=*/std::nullopt));
+          /*audio_channel_count=*/std::nullopt,
+          /*sampling_mode=*/std::nullopt));
 }
 
 void EchoAIManagerImpl::DoMockDownloadingAndReturn(base::OnceClosure callback) {

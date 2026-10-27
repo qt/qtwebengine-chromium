@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as i18n from '../../core/i18n/i18n.js';
 import {raf, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {createFakeSetting} from '../../testing/EnvironmentHelpers.js';
@@ -15,6 +17,38 @@ import * as UI from './legacy.js';
 const {html, nothing} = Lit;
 
 describe('UIUtils', () => {
+  describe('isEditing', () => {
+    it('returns true if an element is marked as being edited', () => {
+      const el = document.createElement('div');
+      UI.UIUtils.markBeingEdited(el, true);
+      assert.isTrue(UI.UIUtils.isEditing());
+      UI.UIUtils.markBeingEdited(el, false);
+      assert.isFalse(UI.UIUtils.isEditing());
+    });
+
+    it('returns true if an input is focused', () => {
+      const input = document.createElement('input');
+      renderElementIntoDOM(input);
+      input.focus();
+      assert.isTrue(UI.UIUtils.isEditing());
+    });
+
+    it('returns true if a textarea is focused', () => {
+      const textarea = document.createElement('textarea');
+      renderElementIntoDOM(textarea);
+      textarea.focus();
+      assert.isTrue(UI.UIUtils.isEditing());
+    });
+
+    it('returns true if a contentEditable element is focused', () => {
+      const el = document.createElement('div');
+      el.contentEditable = 'true';
+      renderElementIntoDOM(el);
+      el.focus();
+      assert.isTrue(UI.UIUtils.isEditing());
+    });
+  });
+
   describe('LongClickController', () => {
     it('does not invoke callback when disposed', () => {
       const clock = sinon.useFakeTimers({toFake: ['setTimeout']});
@@ -682,6 +716,70 @@ describe('bindToSetting (boolean)', () => {
 
     assert.isFalse(input.isConnected);
     assert.isTrue(input.checked);
+  });
+});
+
+describe('bindToSetting (devtools-button)', () => {
+  setupLocaleHooks();
+
+  function setup(opts: UI.UIUtils.BindToSettingOpts = {}) {
+    const {bindToSetting} = UI.UIUtils;
+    const setting = createFakeSetting<boolean>('fake-setting', true);
+    const container = document.createElement('div');
+    renderElementIntoDOM(container);
+    const inputRef = Lit.Directives.createRef<Buttons.Button.Button>();
+    Lit.render(
+        html`<devtools-button ${Lit.Directives.ref(inputRef)} ${bindToSetting(setting, opts)}></devtools-button>`,
+        container);
+
+    const input = inputRef.value;
+    assert.exists(input);
+
+    return {input, setting, container};
+  }
+
+  it('shows the current value on initial render', () => {
+    const {input} = setup();
+
+    assert.isTrue(input.toggled);
+  });
+
+  it('adds jslog for tracking changes', () => {
+    const {input} = setup();
+
+    assert.strictEqual(input.getAttribute('jslog'), 'Toggle; context: fake-setting; track: click');
+  });
+
+  it('does not add jslog if disabled via options', () => {
+    const {input} = setup({jslog: false});
+
+    assert.isNull(input.getAttribute('jslog'));
+  });
+
+  it('changes the setting when the button is clicked', () => {
+    const {input, setting} = setup();
+
+    input.click();
+
+    assert.isFalse(setting.get());
+  });
+
+  it('changes the button when the setting changes', () => {
+    const {input, setting} = setup();
+
+    setting.set(false);
+
+    assert.isFalse(input.toggled);
+  });
+
+  it('removes the change listener when the input is removed from the DOM', () => {
+    const {setting, input, container} = setup();
+    Lit.render(nothing, container);
+
+    setting.set(false);
+
+    assert.isFalse(input.isConnected);
+    assert.isTrue(input.toggled);
   });
 });
 

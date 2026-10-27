@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_PARTIALREDUX_H
 #define EIGEN_PARTIALREDUX_H
@@ -199,10 +200,9 @@ struct evaluator<PartialReduxExpr<ArgType, MemberOp, Direction> >
     using BinaryOp = typename MemberOp::BinaryOp;
     using Impl = internal::packetwise_redux_impl<BinaryOp, PanelEvaluator>;
 
-    // FIXME
-    // See bug 1612, currently if PacketSize==1 (i.e. complex<double> with 128bits registers) then the storage-order of
-    // panel get reversed and methods like packetByOuterInner do not make sense anymore in this context. So let's just
-    // by pass "vectorization" in this case:
+    // Workaround for issue 1612 (closed): when PacketSize==1 (i.e. complex<double> with 128bits registers) the
+    // storage-order of panel gets reversed and methods like packetByOuterInner do not make sense in this context, so
+    // bypass "vectorization":
     EIGEN_IF_CONSTEXPR(PacketSize == 1) return internal::pset1<PacketType>(coeff(idx));
 
     Index startRow = Direction == Vertical ? 0 : idx;

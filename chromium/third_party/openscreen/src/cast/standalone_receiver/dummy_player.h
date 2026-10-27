@@ -27,7 +27,7 @@ class DummyPlayer final : public Receiver::Consumer {
 
  private:
   // Receiver::Consumer implementation.
-  void OnFramesReady(int next_frame_buffer_size) final;
+  void OnFramesReady(size_t next_frame_buffer_size) final;
 
   Receiver& receiver_;
   std::vector<uint8_t> buffer_;

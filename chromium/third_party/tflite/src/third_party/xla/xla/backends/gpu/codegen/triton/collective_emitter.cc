@@ -38,7 +38,7 @@ limitations under the License.
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/LLVMIR/NVVMDialect.h"
+#include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
@@ -58,14 +58,12 @@ limitations under the License.
 #include "xla/codegen/emitters/ir/xla_ops.h"  // IWYU pragma: keep
 #include "xla/codegen/xtile/codegen/emitter_helpers.h"
 #include "xla/codegen/xtile/ir/xtile_ops.h"
-#include "xla/core/collectives/reduction_kind.h"
 #include "xla/hlo/ir/hlo_casting_utils.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/hlo/ir/hlo_opcode.h"
-#include "xla/layout_util.h"
+#include "xla/hlo/translate/mhlo_to_hlo/attribute_exporter.h"
 #include "xla/mlir/utils/type_util.h"
-#include "xla/service/collective_ops_utils.h"
 #include "xla/service/gpu/backend_configs.pb.h"
 #include "xla/service/gpu/gpu_constants.h"
 #include "xla/service/gpu/ir_emission_utils.h"
@@ -97,22 +95,15 @@ using ReductionComputationEmitter = absl::AnyInvocable<xtile::TensorValue(
     mlir::ImplicitLocOpBuilder&, xtile::TensorValue, xtile::TensorValue)>;
 
 // The main memory space on a device (HBM).
+// Use GPU dialect address space which is platform-independent.
 static constexpr auto kGlobalAddressSpace =
-    static_cast<std::underlying_type_t<mlir::NVVM::NVVMMemorySpace>>(
-        mlir::NVVM::NVVMMemorySpace::Global);
+    static_cast<std::underlying_type_t<mlir::gpu::AddressSpace>>(
+        mlir::gpu::AddressSpace::Global);
 
 // Metadata arguments for the collective emitter.
 // device_rank, signal_value, signal_buffers.
 static constexpr int32_t kNumCollectiveMetadataArgs = 3;
 static constexpr int32_t kNumTileIndexArgs = 1;
-
-struct AllReduceInfo {
-  ReductionKind reduction_kind;
-  int64_t num_devices;
-  int64_t num_elements;
-  PrimitiveType element_type;
-  AllReduceStrategy all_reduce_strategy;
-};
 
 // Common context for all reduce emitters.
 struct AllReduceEmitterContext {
@@ -207,74 +198,9 @@ absl::StatusOr<AllReduceEmitterContext> CreateAllReduceEmitterContext(
                        8);
   ctx.strategy = GetAllReduceStrategy(input_byte_size,
                                       /*is_multimem_enabled=*/false);
-  ctx.world_size = op.getReplicaGroups().getShapedType().getDimSize(1);
   ctx.op = op;
 
   return ctx;
-}
-
-// Returns the AllReduceInfo for the given all-reduce instruction if the
-// instruction is supported by the codegen.
-std::optional<AllReduceInfo> MaybeBuildAllReduceInfo(
-    const HloAllReduceInstruction* all_reduce) {
-  if (!all_reduce->GetModule()
-           ->config()
-           .debug_options()
-           .xla_gpu_unsupported_use_all_reduce_one_shot_kernel()) {
-    VLOG(1)
-        << "Skipping all-reduce codegen because "
-           "xla_gpu_unsupported_use_all_reduce_one_shot_kernel is disabled.";
-    return std::nullopt;
-  }
-  if (all_reduce->device_list()->replica_groups().empty()) {
-    VLOG(1) << "Replica groups are empty for " << all_reduce->name()
-            << ". Codegen will not be supported.";
-    return std::nullopt;
-  }
-  const int64_t num_devices =
-      all_reduce->device_list()->num_devices_per_group();
-  if (!llvm::has_single_bit(static_cast<uint64_t>(num_devices))) {
-    VLOG(1) << "Number of devices is not a power of 2 for "
-            << all_reduce->name() << ". Codegen will not be supported.";
-    return std::nullopt;
-  }
-  const std::optional<ReductionKind> reduction_kind =
-      MatchReductionComputation(all_reduce->called_computations().front());
-  if (!reduction_kind.has_value()) {
-    return std::nullopt;
-  }
-  // TODO(b/383125489): Support variadic all-reduce.
-  if (all_reduce->operand_count() > 1) {
-    return std::nullopt;
-  }
-  const int64_t num_elements =
-      ShapeUtil::ElementsIn(all_reduce->operand(0)->shape());
-  const PrimitiveType element_type =
-      all_reduce->operand(0)->shape().element_type();
-  const int64_t byte_size =
-      num_elements * ShapeUtil::ByteSizeOfPrimitiveType(element_type);
-  // NB: We do not codegen multimem kernels for now.
-  const AllReduceStrategy all_reduce_strategy =
-      GetAllReduceStrategy(byte_size, /*is_multimem_enabled=*/false);
-  const int64_t max_supported_all_reduce_size_bytes =
-      GetMaxSupportedAllReduceSizeBytes(all_reduce_strategy);
-  if (byte_size > max_supported_all_reduce_size_bytes) {
-    VLOG(3) << "Codegen forall-reduce is only supported for small inputs."
-            << max_supported_all_reduce_size_bytes << " <" << byte_size;
-    return std::nullopt;
-  }
-  if (!IsAllReduceKernelSupported(num_devices, num_elements, element_type,
-                                  reduction_kind.value(),
-                                  all_reduce_strategy)) {
-    return std::nullopt;
-  }
-  return AllReduceInfo{
-      /* .reduction_kind= */ reduction_kind.value(),
-      /* .num_devices= */ num_devices,
-      /* .num_elements= */ num_elements,
-      /* .element_type= */ element_type,
-      /* .all_reduce_strategy= */ all_reduce_strategy,
-  };
 }
 
 // The logic here is very naive and assumes a monotonic layout
@@ -283,25 +209,23 @@ absl::StatusOr<std::optional<BlockLevelFusionConfig>>
 GetBlockLevelFusionConfigForAllReduce(
     const se::DeviceDescription& device_info,
     const HloAllReduceInstruction* all_reduce) {
-  const auto compute_capability = device_info.cuda_compute_capability();
-  if (!compute_capability.IsAtLeastHopper()) {
-    VLOG(3) << "Collective codegen requires compute capability of at least "
-               "9.0. Got "
-            << compute_capability.ToString()
-            << ". Codegen will not be supported.";
+  absl::StatusOr<AllReduceInfo> maybe_all_reduce_info = BuildAllReduceInfo(
+      /*is_collective_kernel_enabled=*/all_reduce->GetModule()
+          ->config()
+          .debug_options()
+          .xla_gpu_unsupported_use_all_reduce_one_shot_kernel(),
+      /*is_multimem_enabled=*/false, device_info, all_reduce);
+  if (absl::IsUnimplemented(maybe_all_reduce_info.status())) {
+    VLOG(3) << "Codegen for all-reduce is not supported: "
+            << maybe_all_reduce_info.status();
     return std::nullopt;
   }
-  const std::optional<AllReduceInfo> all_reduce_info =
-      MaybeBuildAllReduceInfo(all_reduce);
-  if (!all_reduce_info.has_value()) {
-    VLOG(3) << "AllReduceInfo is not available for " << all_reduce->name()
-            << ". Codegen will not be supported.";
-    return std::nullopt;
-  }
+  TF_ASSIGN_OR_RETURN(AllReduceInfo all_reduce_info,
+                      std::move(maybe_all_reduce_info));
   const Shape& output_shape = all_reduce->shape();
   const LaunchDimensions launch_dims = AllReduceLaunchDimensions(
-      all_reduce_info->num_elements, all_reduce_info->num_devices,
-      all_reduce_info->all_reduce_strategy);
+      all_reduce_info.num_elements, all_reduce_info.num_devices,
+      all_reduce_info.all_reduce_strategy);
   BlockLevelFusionConfig block_level_config;
   block_level_config.set_num_warps(xla::CeilOfRatio(
       static_cast<int64_t>(launch_dims.num_threads_per_block()),
@@ -313,10 +237,10 @@ GetBlockLevelFusionConfigForAllReduce(
       GreedyPowerOfTwoTiles(output_shape, launch_dims.num_blocks());
   output_tile->mutable_sizes()->Assign(tile_sizes.begin(), tile_sizes.end());
   const int64_t linear_tile_size = Product(tile_sizes);
-  if (all_reduce_info->all_reduce_strategy == AllReduceStrategy::kTwoShot &&
-      linear_tile_size % all_reduce_info->num_devices != 0) {
+  if (all_reduce_info.all_reduce_strategy == AllReduceStrategy::kTwoShot &&
+      linear_tile_size % all_reduce_info.num_devices != 0) {
     VLOG(3) << "Two-shot all-reduce linear_tile_size(" << linear_tile_size
-            << ") % num_devices(" << all_reduce_info->num_devices
+            << ") % num_devices(" << all_reduce_info.num_devices
             << ") != 0. Codegen will not be supported.";
     return std::nullopt;
   }
@@ -462,6 +386,14 @@ class AllReduceEmitter {
     remote_input_buffers_ = ctx_.xtile_entry_fn.getArgument(start_idx + 3);
 
     // 2. Constants and types.
+    auto replica_groups =
+        xla::ConvertReplicaGroups(ctx_.op.getReplicaGroups(), ctx_.op);
+    if (!replica_groups.ok()) {
+      ctx_.op.emitOpError(replica_groups.status().ToString());
+      return absl::InternalError(replica_groups.status().ToString());
+    }
+    ctx_.world_size = (*replica_groups)->num_devices_per_group();
+
     elem_type_ = mlir::getElementTypeOrSelf(ctx_.input_tile.getType());
     elem_storage_type_ = xtile::StorageType(elem_type_);
     ptr_to_i64_type_ =

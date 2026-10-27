@@ -920,6 +920,12 @@ struct FeaturesVk : FeatureSetBase
         &members,
     };
 
+    FeatureInfo addFramebufferFetchBarrierOnUseMidRenderPass = {
+        "addFramebufferFetchBarrierOnUseMidRenderPass",
+        FeatureCategory::VulkanWorkarounds,
+        &members,
+    };
+
     FeatureInfo eglColorspaceAttributePassthrough = {
         "eglColorspaceAttributePassthrough",
         FeatureCategory::VulkanFeatures,
@@ -1037,6 +1043,12 @@ struct FeaturesVk : FeatureSetBase
     FeatureInfo supportsSwapchainMaintenance1 = {
         "supportsSwapchainMaintenance1",
         FeatureCategory::VulkanFeatures,
+        &members,
+    };
+
+    FeatureInfo swapchainDeferredMemoryAllocation = {
+        "swapchainDeferredMemoryAllocation",
+        FeatureCategory::VulkanWorkarounds,
         &members,
     };
 
@@ -1678,6 +1690,12 @@ struct FeaturesVk : FeatureSetBase
 
     FeatureInfo supportsShaderDemoteToHelperInvocation = {
         "supportsShaderDemoteToHelperInvocation",
+        FeatureCategory::VulkanFeatures,
+        &members,
+    };
+
+    FeatureInfo avoidImageGhostOutsideRenderPass = {
+        "avoidImageGhostOutsideRenderPass",
         FeatureCategory::VulkanFeatures,
         &members,
     };

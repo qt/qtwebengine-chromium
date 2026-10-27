@@ -14,12 +14,15 @@ py_binary(
     name = "generator",
     srcs = [
         "convert.py",
+        "erf.py",
         "exp.py",
         "generator.py",
         "kernels.py",
+        "log.py",
         "sigmoid.py",
         "sine_cosine.py",
         "tanh.py",
+        "util.py",
     ],
     tags = [
         "manual",
@@ -33,11 +36,14 @@ ARCHS = [
     "x86_sse41",
     "x86_avx",
     "x86_avx2",
+    "x86_avx2_fma3",
     "x86_fma3",
     "x86_f16c",
     "x86_avx512",
     "x86_avx512bf16",
+    "arm64_neon",
     "arm_neon",
+    "arm_neonbf16",
     "arm_neonfp16",
     "wasm_simd128",
 ]
@@ -77,10 +83,12 @@ cc_library(
     hdrs = ["reference.h"],
     visibility = ["//ynnpack:__subpackages__"],
     deps = [
+        ":unary",
         "//ynnpack:ynnpack_h",
         "//ynnpack/base",
         "//ynnpack/base/test:tensor",
-        "@com_google_googletest//:gtest",
+        "//ynnpack/base/test:util",
+        "@com_google_googletest//:gtest",  # no g3
     ],
 )
 

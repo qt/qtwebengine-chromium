@@ -25,9 +25,7 @@ cc_library(
     hdrs = ["algorithms.h"],
     deps = [
         ":intersects_internal",
-        "//ink/color",
         "//ink/geometry:affine_transform",
-        "//ink/geometry:angle",
         "//ink/geometry:envelope",
         "//ink/geometry:mesh",
         "//ink/geometry:mutable_mesh",
@@ -46,8 +44,6 @@ cc_test(
     srcs = ["algorithms_test.cc"],
     deps = [
         ":algorithms",
-        "//ink/color",
-        "//ink/color:type_matchers",
         "//ink/geometry:affine_transform",
         "//ink/geometry:angle",
         "//ink/geometry:envelope",
@@ -62,6 +58,7 @@ cc_test(
         "//ink/geometry:vec",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -137,6 +134,37 @@ cc_test(
 )
 
 cc_library(
+    name = "lerp",
+    srcs = ["lerp.cc"],
+    hdrs = ["lerp.h"],
+    deps = [
+        "//ink/color",
+        "//ink/geometry:angle",
+        "//ink/geometry:point",
+        "//ink/geometry:vec",
+        "//ink/types:duration",
+    ],
+)
+
+cc_test(
+    name = "lerp_test",
+    srcs = ["lerp_test.cc"],
+    deps = [
+        ":lerp",
+        "//ink/color",
+        "//ink/color:type_matchers",
+        "//ink/geometry:angle",
+        "//ink/geometry:point",
+        "//ink/geometry:type_matchers",
+        "//ink/geometry:vec",
+        "//ink/types:duration",
+        "//ink/types:type_matchers",
+        "@com_google_fuzztest//fuzztest",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "modulo",
     srcs = ["modulo.cc"],
     hdrs = ["modulo.h"],
@@ -164,6 +192,7 @@ cc_library(
         "//ink/geometry:point",
         "//ink/geometry:vec",
         "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -210,6 +239,7 @@ cc_test(
         "//ink/geometry:segment",
         "//ink/geometry:type_matchers",
         "//ink/geometry:vec",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_googletest//:gtest_main",
     ],
@@ -267,6 +297,7 @@ cc_test(
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],

@@ -4,6 +4,7 @@
 
 #include "net/device_bound_sessions/dbsc_request.h"
 
+#include "net/base/network_delegate.h"
 #include "net/base/url_util.h"
 #include "net/url_request/url_request.h"
 
@@ -65,8 +66,9 @@ const URLRequestContext* DbscRequest::context() const {
   return request_->context();
 }
 
-bool DbscRequest::force_ignore_site_for_cookies() const {
-  return request_->force_ignore_site_for_cookies();
+bool DbscRequest::ShouldForceIgnoreSiteForCookies() const {
+  NetworkDelegate* delegate = request_->network_delegate();
+  return delegate && delegate->ShouldForceIgnoreSiteForCookies(*request_);
 }
 
 const SiteForCookies& DbscRequest::site_for_cookies() const {
@@ -97,8 +99,8 @@ NetworkDelegate* DbscRequest::network_delegate() const {
   return request_->network_delegate();
 }
 
-bool DbscRequest::allows_device_bound_sessions() const {
-  return request_->allows_device_bound_sessions();
+net::DeviceBoundSessionMode DbscRequest::device_bound_session_mode() const {
+  return request_->device_bound_session_mode();
 }
 
 int DbscRequest::load_flags() const {

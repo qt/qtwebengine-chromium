@@ -29,6 +29,7 @@
  *   General matrix-matrix product functionality based on ?GEMM.
  ********************************************************************************
 */
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef EIGEN_GENERAL_MATRIX_MATRIX_BLAS_H
 #define EIGEN_GENERAL_MATRIX_MATRIX_BLAS_H

@@ -19,6 +19,7 @@
 #include "third_party/blink/renderer/core/css/css_initial_value.h"
 #include "third_party/blink/renderer/core/css/css_revert_layer_value.h"
 #include "third_party/blink/renderer/core/css/css_revert_value.h"
+#include "third_party/blink/renderer/core/css/css_shape_value.h"
 #include "third_party/blink/renderer/core/css/css_to_length_conversion_data.h"
 #include "third_party/blink/renderer/core/css/css_unset_value.h"
 #include "third_party/blink/renderer/core/css/css_value_list.h"
@@ -36,7 +37,6 @@
 #include "third_party/blink/renderer/platform/geometry/path_builder.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "ui/gfx/geometry/size_f.h"
 
 namespace blink {
@@ -141,10 +141,11 @@ class ClipPathPaintWorkletInput : public PaintWorkletInput {
       result_index = offsets_.size() - 2;
     }
 
+    float range = offsets_[result_index + 1] - offsets_[result_index];
     // Use offsets to calculate for intra-keyframe progress.
-    float local_progress =
-        (progress - offsets_[result_index]) /
-        (offsets_[result_index + 1] - offsets_[result_index]);
+    float local_progress = range == 0
+                               ? offsets_[result_index + 1]
+                               : (progress - offsets_[result_index]) / range;
     // Adjust for that keyframe's timing function
     // TODO(crbug.com/347958668): Correct limit direction for phase and
     // direction in order to make the correct evaluation at the boundary of a
@@ -195,16 +196,21 @@ class ClipPathPaintWorkletInput : public PaintWorkletInput {
 BasicShape* CreateBasicShape(
     BasicShape::ShapeType type,
     const InterpolableValue& interpolable_value,
-    const NonInterpolableValue& untyped_non_interpolable_value) {
+    const NonInterpolableValue& untyped_non_interpolable_value,
+    const Element* element) {
   if (type == BasicShape::kStylePathType) {
     return PathInterpolationFunctions::AppliedValue(
-        interpolable_value, &untyped_non_interpolable_value);
+        interpolable_value, untyped_non_interpolable_value);
   }
 
-  CSSToLengthConversionData conversion_data(/*element=*/nullptr);
+  DCHECK(element);
+  DCHECK(element->GetLayoutObject());
+  CSSToLengthConversionData conversion_data(element);
+  conversion_data.SetZoom(
+      element->GetLayoutObject()->StyleRef().EffectiveZoom());
   if (type == BasicShape::kStyleShapeType) {
     return CSSShapeInterpolationType::CreateShape(
-        interpolable_value, &untyped_non_interpolable_value, conversion_data);
+        interpolable_value, untyped_non_interpolable_value, conversion_data);
   }
 
   return basic_shape_interpolation_functions::CreateBasicShape(
@@ -214,8 +220,7 @@ BasicShape* CreateBasicShape(
 bool CanExtractShapeOrPath(const CSSValue* computed_value) {
   // TODO(pdr): Support <geometry-box> (alone, or with a shape).
   if (const auto* list = DynamicTo<CSSValueList>(computed_value)) {
-    return list->First().IsBasicShapeValue() || list->First().IsPathValue() ||
-           (list->First().IsShapeValue());
+    return list->First().IsBasicShapeValue();
   }
   return false;
 }
@@ -289,7 +294,7 @@ BasicShape* GetAnimatedShapeFromKeyframe(const PropertySpecificKeyframe* frame,
               : BasicShape::kBasicShapeCircleType;
       return CreateBasicShape(
           type, *keyframe->GetValue()->Value().interpolable_value.Get(),
-          *non_interpolable_value);
+          *non_interpolable_value, element);
     }
   }
 }
@@ -345,7 +350,7 @@ std::optional<SkPath> GetFillRequiredByEffect(const AnimationEffect* effect,
 
 bool ValidateClipPathValue(const Element* element,
                            const CSSValue* value,
-                           const InterpolableValue* interpolable_value) {
+                           const TypedInterpolationValue* interpolation_value) {
   if (value) {
     const CSSPropertyName property_name =
         CSSPropertyName(CSSPropertyID::kClipPath);
@@ -365,6 +370,19 @@ bool ValidateClipPathValue(const Element* element,
         return false;
       }
 
+      // shape() arc commands produce variable conic weights in the resulting
+      // SkPath depending on the resolved radius, which prevents Skia path
+      // interpolation from working across keyframes with different radii.
+      if (const auto* css_shape =
+              DynamicTo<cssvalue::CSSShapeValue>(list->First())) {
+        for (const auto& cmd : css_shape->Commands()) {
+          if (cmd->GetType() == kPathSegArcAbs ||
+              cmd->GetType() == kPathSegArcRel) {
+            return false;
+          }
+        }
+      }
+
       return true;
     }
 
@@ -374,7 +392,12 @@ bool ValidateClipPathValue(const Element* element,
     }
 
     return false;
-  } else if (interpolable_value) {
+  } else if (interpolation_value) {
+    // Transition keyframes: check the non-interpolable value for arc segments.
+    if (CSSShapeInterpolationType::HasArcSegments(
+            interpolation_value->Value().non_interpolable_value.Get())) {
+      return false;
+    }
     return true;
   }
   return false;
@@ -690,14 +713,17 @@ std::optional<gfx::RectF> ComputeKeyframeUnionIncludingExtrapolation(
       break;
     }
 
+    // Skip keyframe pairs at the same offset. Keyframes at the same offsets
+    // do not interpolate / extrapolate between them.
+    double range = frames->at(i + 1)->Offset() - frames->at(i)->Offset();
+    if (range <= 0.0) {
+      continue;
+    }
     double min_progress =
-        i == 0 ? ((min_total_progress - frames->at(0)->Offset()) /
-                  (frames->at(1)->Offset() - frames->at(0)->Offset()))
-               : 0.0;
+        i == 0 ? ((min_total_progress - frames->at(0)->Offset()) / range) : 0.0;
     double max_progress =
         (i + 2) == frames->size()
-            ? ((max_total_progress - frames->at(i)->Offset()) /
-               (frames->at(i + 1)->Offset() - frames->at(i)->Offset()))
+            ? ((max_total_progress - frames->at(i)->Offset()) / range)
             : 1.0;
 
     TimingFunction& timing = frames->at(i)->Easing();

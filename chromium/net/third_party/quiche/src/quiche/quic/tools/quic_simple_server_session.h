@@ -53,7 +53,6 @@ class QuicSimpleServerSession : public QuicServerSessionBase {
  protected:
   // QuicSession methods:
   QuicSpdyStream* CreateIncomingStream(QuicStreamId id) override;
-  QuicSpdyStream* CreateIncomingStream(PendingStream* pending) override;
   QuicSpdyStream* CreateOutgoingBidirectionalStream() override;
 
   // QuicServerSessionBaseMethod:
@@ -63,7 +62,7 @@ class QuicSimpleServerSession : public QuicServerSessionBase {
 
   // Overridden to handle conversion from bidi pending stream.
   QuicStream* ProcessBidirectionalPendingStream(
-      PendingStream* pending) override;
+      PendingStream& pending) override;
 
   QuicSimpleServerBackend* server_backend() {
     return quic_simple_server_backend_;

@@ -127,7 +127,7 @@ template("chrome_feature_module") {
       deps += invoker.deps
     }
 
-    # Don't embed more translations than required (http://crbug.com/932017).
+    # Don't embed more translations than required (http://crbug.com/40613919).
     aapt_locale_allowlist = platform_pak_locales
     proguard_enabled = !is_java_debug
     module_name = _module_desc.name
@@ -147,9 +147,9 @@ template("chrome_feature_module") {
       shared_libraries = _shared_libraries
     }
 
-    # Adds unwind table asset to the chrome apk for the given library target. This
-    # is not part of generic apk assets target since it depends on the main shared
-    # library of the apk, to extract unwind tables.
+    # Adds unwind table asset to the chrome apk for the given library target.
+    # This is not part of generic apk assets target since it depends on the main
+    # shared library of the apk, to extract unwind tables.
     asset_deps = []
     if (defined(_module_desc.include_unwind_assets) &&
         _module_desc.include_unwind_assets) {

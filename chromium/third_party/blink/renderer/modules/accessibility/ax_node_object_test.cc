@@ -104,8 +104,6 @@ TEST_F(AccessibilityTest, TextOffsetInFormattingContextWithLayoutText) {
 }
 
 TEST_F(AccessibilityTest, TextAlternativeFromInterestForAttribute) {
-  ScopedHTMLInterestForAttributeForTest interest_for_attribute_enabled(true);
-
   SetBodyInnerHTML(R"HTML(
       <div id="target" class="hint">Tooltip text</div>
       <button id="button" interestfor="target">Button</button>")HTML");
@@ -262,7 +260,9 @@ TEST_F(AccessibilityTest, FocusgroupItemImpliedRoleMenubar) {
 TEST_F(AccessibilityTest, FocusgroupItemExplicitRolePreserved) {
   SetBodyInnerHTML(R"HTML(
       <div id="fg" focusgroup="tablist">
-        <span tabindex="0" id="child" role="listitem">Item</span>
+        <div role="list">
+          <span tabindex="0" id="child" role="listitem">Item</span>
+        </div>
       </div>)HTML");
   const AXObject* child = GetAXObjectByElementId("child");
   ASSERT_NE(nullptr, child);
@@ -407,7 +407,9 @@ TEST_F(AccessibilityTest, FocusgroupPopupButtonDialogHaspopupInferredRole) {
 TEST_F(AccessibilityTest, FocusgroupPopupButtonExplicitRolePreserved) {
   SetBodyInnerHTML(R"HTML(
       <div id="fg" focusgroup="menubar">
-        <button id="child" aria-haspopup="menu" role="listitem">List Item</button>
+        <div role="list">
+          <button id="child" aria-haspopup="menu" role="listitem">List Item</button>
+        </div>
       </div>)HTML");
   const AXObject* child = GetAXObjectByElementId("child");
   ASSERT_NE(nullptr, child);
@@ -432,7 +434,9 @@ TEST_F(AccessibilityTest, FocusgroupToggleButtonRoleNotInferred) {
 TEST_F(AccessibilityTest, FocusgroupButtonExplicitRolePreserved) {
   SetBodyInnerHTML(R"HTML(
       <div id="fg" focusgroup="tablist">
-        <button id="child" role="listitem">List Item</button>
+        <div role="list">
+          <button id="child" role="listitem">List Item</button>
+        </div>
       </div>)HTML");
   const AXObject* child = GetAXObjectByElementId("child");
   ASSERT_NE(nullptr, child);
@@ -684,6 +688,44 @@ TEST_F(AccessibilityTest, RadioButtonsInGroupInTableRows) {
   std::vector<int32_t> radio_group_ids = node_data.GetIntListAttribute(
       ax::mojom::IntListAttribute::kRadioGroupIds);
   EXPECT_EQ(6u, radio_group_ids.size());
+}
+
+// Regression test for crbug.com/501371770. Verifies that an aria-owned element
+// is not pruned via RemoveSubtree while its own AddChildren() is in progress.
+// The exact crash requires a deeply nested cascade during tree building (found
+// by ClusterFuzz) that is difficult to reproduce in a unit test. This test
+// exercises the broader scenario: dynamic aria-owns removal triggers tree
+// rebuilding that includes the RestoreParentOrPrune path.
+TEST_F(AccessibilityTest, NoDetachDuringAddChildrenViaAriaOwns) {
+  SetBodyInnerHTML(R"HTML(
+    <div id="owner" aria-owns="target">Owner</div>
+    <ul id="list">
+      <li id="target">
+        <span>Item text</span>
+      </li>
+    </ul>
+  )HTML");
+
+  // Build the initial tree.
+  GetAXRootObject();
+  GetAXObjectCache().UpdateAXForAllDocuments();
+
+  const AXObject* target = GetAXObjectByElementId("target");
+  ASSERT_NE(nullptr, target);
+  EXPECT_FALSE(target->IsDetached());
+
+  // Remove the owner, which will trigger un-owning the target and
+  // RestoreParentOrPrune logic.
+  Element* owner = GetDocument().getElementById(AtomicString("owner"));
+  ASSERT_NE(nullptr, owner);
+  owner->remove();
+  GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+  GetAXObjectCache().UpdateAXForAllDocuments();
+
+  // The target should still exist, parented under its natural <ul> parent.
+  target = GetAXObjectByElementId("target");
+  ASSERT_NE(nullptr, target);
+  EXPECT_FALSE(target->IsDetached());
 }
 
 }  // namespace blink

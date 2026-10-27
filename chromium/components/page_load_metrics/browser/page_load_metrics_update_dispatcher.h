@@ -154,9 +154,7 @@ class PageLoadMetricsUpdateDispatcher {
         const std::vector<mojom::ResourceDataUpdatePtr>& resources) = 0;
     virtual void UpdateFrameCpuTiming(content::RenderFrameHost* rfh,
                                       const mojom::CpuTiming& timing) = 0;
-    virtual void OnMainFrameIntersectionRectChanged(
-        content::RenderFrameHost* rfh,
-        const gfx::Rect& main_frame_intersection_rect) = 0;
+    virtual void OnMainFrameRectChanged(const gfx::Rect& main_frame_rect) = 0;
     virtual void OnMainFrameViewportRectChanged(
         const gfx::Rect& main_frame_viewport_rect) = 0;
     virtual void OnMainFrameAdRectsChanged(
@@ -190,6 +188,7 @@ class PageLoadMetricsUpdateDispatcher {
       std::vector<mojom::SoftNavigationMetricsPtr> soft_navigation_metrics,
       std::vector<mojom::LargestContentfulPaintTimingPtr>
           soft_largest_contentful_paint,
+      mojom::FontLoadingMetricsPtr font_loading_metrics,
       internal::PageLoadTrackerPageType page_type);
 
   // This method is only intended to be called for PageLoadFeatures being
@@ -260,6 +259,9 @@ class PageLoadMetricsUpdateDispatcher {
       const {
     return subresource_load_metrics_;
   }
+  const mojom::FontLoadingMetricsPtr& font_loading_metrics() const {
+    return font_loading_metrics_;
+  }
   void UpdateInteractionToNextPaintCalculatorForBfcache() {
     interaction_to_next_paint_calculator_.ClearEventTimings();
   }
@@ -289,6 +291,9 @@ class PageLoadMetricsUpdateDispatcher {
   void UpdateMainFrameSubresourceLoadMetrics(
       const blink::SubresourceLoadMetrics& subresource_load_metrics);
 
+  void UpdateMainFrameFontLoadingMetrics(
+      const mojom::FontLoadingMetrics& font_loading_metrics);
+
   void UpdateSoftNavigationMetrics(
       std::vector<mojom::SoftNavigationMetricsPtr> soft_navigation_metrics,
       base::span<const mojom::EventTimingPtr> event_timings,
@@ -299,9 +304,7 @@ class PageLoadMetricsUpdateDispatcher {
       content::RenderFrameHost* render_frame_host,
       const std::vector<mojom::EventTimingPtr>& event_timings);
 
-  void MaybeUpdateMainFrameIntersectionRect(
-      content::RenderFrameHost* render_frame_host,
-      const mojom::FrameMetadataPtr& frame_metadata);
+  void MaybeUpdateMainFrameRect(const mojom::FrameMetadataPtr& frame_metadata);
   void MaybeUpdateMainFrameViewportRect(
       const mojom::FrameMetadataPtr& frame_metadata);
 
@@ -349,6 +352,9 @@ class PageLoadMetricsUpdateDispatcher {
   // SubresourceLoadMetrics for the main frame.
   std::optional<blink::SubresourceLoadMetrics> subresource_load_metrics_;
 
+  // FontLoadingMetrics for the main frame.
+  mojom::FontLoadingMetricsPtr font_loading_metrics_;
+
   // True if this page load started in prerender.
   const bool is_prerendered_page_load_;
 
@@ -368,9 +374,9 @@ class PageLoadMetricsUpdateDispatcher {
   PageRenderData page_render_data_;
   PageRenderData main_frame_render_data_;
 
-  // The last main frame intersection rects dispatched to page load metrics
+  // The last main frame document rect dispatched to page load metrics
   // observers.
-  std::map<content::FrameTreeNodeId, gfx::Rect> main_frame_intersection_rects_;
+  std::optional<gfx::Rect> main_frame_rect_;
 
   // The last main frame viewport rect dispatched to page load metrics
   // observers.

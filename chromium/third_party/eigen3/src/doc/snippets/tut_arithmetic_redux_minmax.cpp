@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 Matrix3f m = Matrix3f::Random();
 std::ptrdiff_t i, j;
 float minOfM = m.minCoeff(&i, &j);

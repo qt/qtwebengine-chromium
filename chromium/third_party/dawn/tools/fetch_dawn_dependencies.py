@@ -97,7 +97,7 @@ def main(args):
     # Dependencies of dependencies are prefixed by their ancestors.
     required_submodules = [
         'third_party/abseil-cpp',
-        'third_party/dxc',
+        'third_party/directx-shader-compiler/src',
         'third_party/directx-headers/src',
         'third_party/glfw3/src',
         'third_party/jinja2',

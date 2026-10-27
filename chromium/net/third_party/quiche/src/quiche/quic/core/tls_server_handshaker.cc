@@ -115,39 +115,19 @@ TlsServerHandshaker::DefaultProofSourceHandle::SelectCertificate(
     return QUIC_FAILURE;
   }
 
-  if (handshaker_->DoesOnSelectCertificateDoneExpectChains()) {
-    QUIC_RELOADABLE_FLAG_COUNT_N(quic_use_proof_source_get_cert_chains, 1, 2);
-
-    ProofSource::CertChainsResult cert_chains_result =
-        proof_source_->GetCertChains(server_address, client_address, hostname);
-
-    handshaker_->OnSelectCertificateDone(
-        /*ok=*/true, /*is_sync=*/true,
-        ProofSourceHandleCallback::LocalSSLConfig(cert_chains_result.chains,
-                                                  QuicDelayedSSLConfig()),
-        /*ticket_encryption_key=*/absl::string_view(),
-        /*cert_matched_sni=*/cert_chains_result.chains_match_sni);
-    if (!handshaker_->select_cert_status().has_value()) {
-      QUIC_BUG(select_cert_status_valueless_after_sync_select_cert);
-      // Return success to continue the handshake.
-      return QUIC_SUCCESS;
-    }
-    return *handshaker_->select_cert_status();
-  }
-
-  bool cert_matched_sni;
-  quiche::QuicheReferenceCountedPointer<ProofSource::Chain> chain =
-      proof_source_->GetCertChain(server_address, client_address, hostname,
-                                  &cert_matched_sni);
+  ProofSource::CertChainsResult cert_chains_result =
+      proof_source_->GetCertChains(server_address, client_address, hostname);
 
   handshaker_->OnSelectCertificateDone(
       /*ok=*/true, /*is_sync=*/true,
-      ProofSourceHandleCallback::LocalSSLConfig{chain.get(),
-                                                QuicDelayedSSLConfig()},
-      /*ticket_encryption_key=*/absl::string_view(), cert_matched_sni);
+      ProofSourceHandleCallback::LocalSSLConfig(
+          cert_chains_result.chains,
+          QuicDelayedSSLConfig{.ssl_compliance_policy =
+                                   cert_chains_result.ssl_compliance_policy}),
+      /*ticket_encryption_key=*/absl::string_view(),
+      /*cert_matched_sni=*/cert_chains_result.chains_match_sni);
   if (!handshaker_->select_cert_status().has_value()) {
-    QUIC_BUG(quic_bug_12423_1)
-        << "select_cert_status() has no value after a synchronous select cert";
+    QUIC_BUG(select_cert_status_valueless_after_sync_select_cert);
     // Return success to continue the handshake.
     return QUIC_SUCCESS;
   }
@@ -243,8 +223,6 @@ TlsServerHandshaker::TlsServerHandshaker(
       QuicCryptoServerStreamBase(session),
       proof_source_(crypto_config->proof_source()),
       proof_verifier_(crypto_config->proof_verifier()),
-      use_proof_source_get_cert_chains_(
-          GetQuicReloadableFlag(quic_use_proof_source_get_cert_chains)),
       pre_shared_key_(crypto_config->pre_shared_key()),
       crypto_negotiated_params_(new QuicCryptoNegotiatedParameters),
       tls_connection_(crypto_config->ssl_ctx(), this, session->GetSSLConfig()),
@@ -547,17 +525,6 @@ bool TlsServerHandshaker::ProcessTransportParameters(
 
   // Notify QuicConnectionDebugVisitor.
   session()->connection()->OnTransportParametersReceived(client_params);
-  if (GetQuicRestartFlag(quic_stop_parsing_legacy_version_info)) {
-    QUIC_RESTART_FLAG_COUNT_N(quic_stop_parsing_legacy_version_info, 2, 3);
-  } else {
-    if (client_params.legacy_version_information.has_value() &&
-        CryptoUtils::ValidateClientHelloVersion(
-            client_params.legacy_version_information->version,
-            session()->connection()->version(), session()->supported_versions(),
-            error_details) != QUIC_NO_ERROR) {
-      return false;
-    }
-  }
 
   if (client_params.version_information.has_value() &&
       !CryptoUtils::ValidateChosenVersion(
@@ -587,16 +554,6 @@ TlsServerHandshaker::SetTransportParameters() {
   QUICHE_DCHECK(!result.success);
 
   server_params_.perspective = Perspective::IS_SERVER;
-  if (GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-    QUIC_RESTART_FLAG_COUNT_N(quic_stop_sending_legacy_version_info, 3, 4);
-  } else {
-    server_params_.legacy_version_information =
-        TransportParameters::LegacyVersionInformation();
-    server_params_.legacy_version_information->supported_versions =
-        CreateQuicVersionLabelVector(session()->supported_versions());
-    server_params_.legacy_version_information->version =
-        CreateQuicVersionLabel(session()->connection()->version());
-  }
   server_params_.version_information =
       TransportParameters::VersionInformation();
   server_params_.version_information->chosen_version =
@@ -1153,31 +1110,26 @@ void TlsServerHandshaker::OnSelectCertificateDone(
                   << client_cert_mode();
   }
 
+  if (delayed_ssl_config.ssl_compliance_policy.has_value()) {
+    SSL_set_compliance_policy(ssl(), *delayed_ssl_config.ssl_compliance_policy);
+  }
+
   if (ok) {
     if (auto* local_config = std::get_if<LocalSSLConfig>(&ssl_config);
         local_config != nullptr) {
-      if (!use_proof_source_get_cert_chains_ && local_config->chain &&
-          !local_config->chain->certs.empty()) {
-        tls_connection_.AddCertChain(
-            local_config->chain->ToCryptoBuffers().value,
-            local_config->chain->trust_anchor_id);
-        select_cert_status_ = QUIC_SUCCESS;
-      } else if (use_proof_source_get_cert_chains_ &&
-                 !local_config->chains.empty() &&
-                 // Cert selection fails when there are no chains with certs.
-                 absl::c_any_of(local_config->chains,
-                                [](const quiche::QuicheReferenceCountedPointer<
-                                    ProofSource::Chain> absl_nonnull& chain) {
-                                  return !chain->certs.empty();
-                                })) {
-        QUIC_RELOADABLE_FLAG_COUNT_N(quic_use_proof_source_get_cert_chains, 2,
-                                     2);
+      if (!local_config->chains.empty() &&
+          // Cert selection fails when there are no chains with certs.
+          absl::c_any_of(local_config->chains,
+                         [](const quiche::QuicheReferenceCountedPointer<
+                             ProofSource::Chain> absl_nonnull& chain) {
+                           return !chain->certs.empty();
+                         })) {
         for (const quiche::QuicheReferenceCountedPointer<
                  ProofSource::Chain> absl_nonnull& chain :
              local_config->chains) {
           if (!chain->certs.empty()) {
             QUIC_CODE_COUNT(quic_tls_server_chain_with_certs_nonempty);
-            tls_connection_.AddCertChain(chain->ToCryptoBuffers().value,
+            tls_connection_.AddCertChain(chain->ToCryptoBuffers(),
                                          chain->trust_anchor_id);
           } else {
             QUIC_CODE_COUNT(quic_tls_server_chain_with_certs_empty);
@@ -1368,11 +1320,42 @@ void TlsServerHandshaker::ResetSsl() {
   cached_ssl_info_.emplace(CachedSSLInfo{
       .is_resumption = IsResumption(),
       .is_zero_rtt = IsZeroRtt(),
+      .tls_group_id = TlsGroupId(),
       .early_data_reason = EarlyDataReason(),
       .cipher = GetCipher(),
+      .alpn = std::string(Alpn()),
+      .sni = std::string(Sni()),
   });
   tls_connection_.ResetSsl();
   ResetCryptoSubstreams();
+}
+
+absl::string_view TlsServerHandshaker::Sni() const {
+  if (cached_ssl_info_.has_value()) {
+    return cached_ssl_info_->sni;
+  }
+  return QuicCryptoStream::Sni();
+}
+
+const SSL_CIPHER* TlsServerHandshaker::Ciphersuite() const {
+  if (cached_ssl_info_.has_value()) {
+    return cached_ssl_info_->cipher;
+  }
+  return QuicCryptoStream::Ciphersuite();
+}
+
+absl::string_view TlsServerHandshaker::Alpn() const {
+  if (cached_ssl_info_.has_value()) {
+    return cached_ssl_info_->alpn;
+  }
+  return QuicCryptoStream::Alpn();
+}
+
+uint16_t TlsServerHandshaker::TlsGroupId() const {
+  if (cached_ssl_info_.has_value()) {
+    return cached_ssl_info_->tls_group_id;
+  }
+  return QuicCryptoStream::TlsGroupId();
 }
 
 bool TlsServerHandshaker::IsCryptoFrameExpectedForEncryptionLevel(

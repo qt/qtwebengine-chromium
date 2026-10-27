@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import {
   createTarget,
 } from '../../testing/EnvironmentHelpers.js';
@@ -40,9 +42,7 @@ describe('Target', () => {
     assert.isFalse(subframeTarget.hasAllCapabilities(SDK.Target.Capability.DEVICE_EMULATION));
   });
 
-  // Temporarily disabled until the root cause for the crashers in https://crbug.com/466134219 is
-  // found and resolved.
-  it.skip('[crbug.com/406991275] should grant STORAGE capability to top-level workers', () => {
+  it('should grant STORAGE capability to top-level workers', () => {
     const serviceWorker = createTarget({type: SDK.Target.Type.ServiceWorker, parentTarget: browserTarget});
     const sharedWorker = createTarget({type: SDK.Target.Type.SHARED_WORKER, parentTarget: browserTarget});
     const dedicatedWorker = createTarget({type: SDK.Target.Type.Worker, parentTarget: browserTarget});

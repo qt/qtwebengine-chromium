@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
+
 include(EigenTesting)
 include(CheckCXXSourceCompiles)
 
@@ -10,6 +13,19 @@ ei_set_build_string()
 
 add_custom_target(buildtests)
 
+# buildsmoketests is created up-front so that ei_add_test_internal — which
+# runs from inside test/ and unsupported/test/ — can attach the smoketest
+# label and the build dependency in the same directory scope where add_test()
+# was called.  CMake's set_property(TEST ...) and add_dependencies require
+# this scope match, so a single post-hoc registration from the top level
+# would silently fail for unsupported entries.
+add_custom_target(buildsmoketests)
+
+# Load the smoke-test list once.  ei_smoke_test_list is then visible to both
+# test/ and unsupported/test/ as a parent-scope variable, and ei_add_test_internal
+# checks it on every test it registers.
+include(EigenSmokeTestList)
+
 if (NOT EIGEN_CTEST_ARGS)
   # By default, run tests in parallel on all available cores.
   set(EIGEN_CTEST_ARGS "" CACHE STRING "-j0")
@@ -20,7 +36,8 @@ add_dependencies(check buildtests)
 
 # Convenience target for only building GPU tests.
 add_custom_target(buildtests_gpu)
-add_custom_target(check_gpu COMMAND "ctest" "--output-on-failure"
+add_custom_target(check_gpu COMMAND "ctest" ${EIGEN_CTEST_ARGS}
+                                            "--output-on-failure"
                                             "--no-compress-output"
                                             "--build-no-clean"
                                             "-T" "test"
@@ -70,5 +87,4 @@ if(CMAKE_COMPILER_IS_GNUCXX)
 elseif(MSVC)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /D_CRT_SECURE_NO_WARNINGS /D_SCL_SECURE_NO_WARNINGS")
 endif()
-
 

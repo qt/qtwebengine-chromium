@@ -99,39 +99,28 @@
 
   .inline-wrapper {
     display: flex;
-    /* Note: no gap here; the gap is dealt with in padding on the text */
     align-items: flex-start;
+    gap: var(--sys-size-2);
     justify-content: flex-start;
 
     .inline-icon {
       display: block;
-      margin-top: var(--sys-size-2);
+    margin-top: var(--sys-size-2);
     }
   }
 
   .walkthrough-inline {
-    border-radius: var(--sys-size-5);
+    border-radius: var(--sys-shape-corner-full);
     overflow: hidden;
     width: fit-content;
     max-width: 100%;
 
     &[open] {
+      border-radius: var(--sys-size-5);
       width: auto;
-      background-color: var(--sys-color-surface1);
+      background-color: var(--sys-color-surface2);
       margin-left: calc(var(--sys-size-6) / 2);
       flex-grow: 1;
-
-      > summary {
-        border-radius: var(--sys-shape-corner-medium-small);
-        border-bottom-right-radius: 0;
-        border-bottom-left-radius: 0;
-        background: var(--sys-color-surface5);
-        color: var(--sys-color-on-surface);
-
-        &[data-has-widgets] {
-          margin-left: 0;
-        }
-      }
     }
   }
 
@@ -169,11 +158,35 @@
     }
 
     > .walkthrough-inline-title {
+      font: var(--sys-typescale-body4-regular);
+      font-weight: var(--ref-typeface-weight-medium);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
       min-width: 0;
     }
+
+    &:focus-visible {
+      outline: var(--sys-size-2) solid var(--sys-color-state-focus-ring);
+      outline-offset: calc(-1 * var(--sys-size-2));
+    }
+  }
+
+  .walkthrough-inline[open] > summary {
+    border-radius: var(--sys-shape-corner-medium-small);
+    border-bottom-right-radius: 0;
+    border-bottom-left-radius: 0;
+    background: var(--sys-color-surface5);
+    color: var(--sys-color-on-surface);
+
+    &[data-has-widgets] {
+      margin-left: 0;
+    }
+
+    > devtools-icon[name='chevron-right'] {
+      transform: rotate(270deg);
+    }
+
   }
 
   .walkthrough-inline > summary::-webkit-details-marker {
@@ -199,9 +212,5 @@
 
   .walkthrough-inline .step {
     background-color: var(--sys-color-surface5);
-  }
-
-  .walkthrough-inline[open] > summary > devtools-icon[name='chevron-right'] {
-    transform: rotate(270deg);
   }
 }

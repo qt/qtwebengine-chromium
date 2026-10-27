@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as SDK from '../../core/sdk/sdk.js';
 import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 
@@ -466,25 +468,25 @@ describeWithEnvironment('CSSRuleValidator', () => {
       hintExpected: false,
     },
     {
-      description: 'Does not report a hint for valid anchor positioning',
+      description: 'Does not report a hint for valid fixed anchor positioning',
       computedStyles: new Map<string, string>([['position', 'fixed']]),
       validator: () => new Elements.CSSRuleValidator.PositionAnchorValidator(),
       hintExpected: false,
     },
     {
-      description: 'Does not report a hint for valid anchor positioning',
+      description: 'Does not report a hint for valid absolute anchor positioning',
       computedStyles: new Map<string, string>([['position', 'absolute']]),
       validator: () => new Elements.CSSRuleValidator.PositionAnchorValidator(),
       hintExpected: false,
     },
     {
-      description: 'Reports a hint for invalid anchor positioning',
+      description: 'Reports a hint for invalid static anchor positioning',
       computedStyles: new Map<string, string>([['position', 'static']]),
       validator: () => new Elements.CSSRuleValidator.PositionAnchorValidator(),
       hintExpected: true,
     },
     {
-      description: 'Reports a hint for invalid anchor positioning',
+      description: 'Reports a hint for invalid display: none anchor positioning',
       computedStyles: new Map<string, string>([['display', 'none']]),
       validator: () => new Elements.CSSRuleValidator.PositionAnchorValidator(),
       hintExpected: true,

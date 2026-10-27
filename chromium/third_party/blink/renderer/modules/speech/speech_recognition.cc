@@ -62,6 +62,7 @@
 #include "third_party/blink/renderer/modules/speech/speech_recognition_phrase.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_source.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
@@ -166,6 +167,7 @@ void SpeechRecognition::stopFunction() {
   if (started_ && !stopping_) {
     stopping_ = true;
     session_->StopCapture();
+    ResetAudioSink();
   }
 }
 
@@ -184,6 +186,7 @@ void SpeechRecognition::abort() {
   if (started_ && !stopping_) {
     stopping_ = true;
     session_->Abort();
+    ResetAudioSink();
   }
 }
 
@@ -194,6 +197,7 @@ ScriptPromise<V8AvailabilityStatus> SpeechRecognition::available(
     const blink::SpeechRecognitionOptions* options,
     ExceptionState& exception_state) {
   LocalDOMWindow& window = *LocalDOMWindow::From(script_state);
+  UseCounter::Count(window, WebFeature::kWebSpeechSttAvailable);
   auto* controller = SpeechRecognitionController::From(window);
   if (!controller || !script_state->ContextIsValid()) {
     exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
@@ -333,6 +337,10 @@ ScriptPromise<IDLBoolean> SpeechRecognition::install(
 
 void SpeechRecognition::ResultRetrieved(
     Vector<media::mojom::blink::WebSpeechRecognitionResultPtr> results) {
+  if (GetExecutionContext()) {
+    UseCounter::Count(GetExecutionContext(),
+                      WebFeature::kWebSpeechSttResultRetrieved);
+  }
   auto it = std::stable_partition(
       results.begin(), results.end(),
       [](const auto& result) { return !result->is_provisional; });
@@ -374,6 +382,9 @@ void SpeechRecognition::ResultRetrieved(
 
 void SpeechRecognition::ErrorOccurred(
     media::mojom::blink::SpeechRecognitionErrorPtr error) {
+  if (GetExecutionContext()) {
+    UseCounter::Count(GetExecutionContext(), WebFeature::kWebSpeechSttError);
+  }
   base::UmaHistogramEnumeration(kWebSpeechErrorOccurredHistogram, error->code);
   if (error->code ==
       media::mojom::blink::SpeechRecognitionErrorCode::kNoMatch) {
@@ -406,11 +417,24 @@ void SpeechRecognition::AudioEnded() {
   DispatchEvent(*Event::Create(event_type_names::kAudioend));
 }
 
+void SpeechRecognition::ResetAudioSink() {
+  if (audio_sink_) {
+    // WebMediaStreamAudioSink is part of the Blink public API, so it expects a
+    // WebMediaStreamTrack wrapper rather than the internal MediaStreamComponent
+    // object. We create a temporary wrapper to pass the component pointer.
+    WebMediaStreamAudioSink::RemoveFromAudioTrack(
+        audio_sink_.Get(), WebMediaStreamTrack(stream_track_->Component()));
+    stream_track_->UnregisterSink(audio_sink_.Get());
+    audio_sink_ = nullptr;
+  }
+}
+
 void SpeechRecognition::Ended() {
   started_ = false;
   stopping_ = false;
   session_.reset();
   receiver_.reset();
+  ResetAudioSink();
   DispatchEvent(*Event::Create(event_type_names::kEnd));
 }
 
@@ -423,6 +447,7 @@ ExecutionContext* SpeechRecognition::GetExecutionContext() const {
 }
 
 void SpeechRecognition::ContextDestroyed() {
+  ResetAudioSink();
   controller_ = nullptr;
 }
 
@@ -530,6 +555,21 @@ void SpeechRecognition::CheckAvailabilityAndStart(
     return;
   }
 
+  bool can_use_on_device_recognition = DomWindow()->IsFeatureEnabled(
+      network::mojom::PermissionsPolicyFeature::kOnDeviceSpeechRecognition);
+
+  if (process_locally_ && !can_use_on_device_recognition) {
+    if (exception_state) {
+      exception_state->ThrowDOMException(DOMExceptionCode::kNotAllowedError,
+                                         kExceptionMessagePermissionPolicy);
+    } else {
+      ErrorOccurred(media::mojom::blink::SpeechRecognitionError::New(
+          media::mojom::blink::SpeechRecognitionErrorCode::kNotAllowed,
+          media::mojom::blink::SpeechAudioErrorDetails::kNone));
+    }
+    return;
+  }
+
   if (process_locally_ && lang_) {
     controller_->AvailableOnDevice(
         Vector<String>{lang_}, SpeechRecognitionQualityToMojom(quality_),
@@ -579,6 +619,7 @@ void SpeechRecognition::StartInternal() {
     WebMediaStreamAudioSink::AddToAudioTrack(
         sink, WebMediaStreamTrack(stream_track_->Component()));
     stream_track_->RegisterSink(sink);
+    audio_sink_ = sink;
   } else {
     StartController(session_.BindNewPipeAndPassReceiver(task_runner));
   }
@@ -596,6 +637,11 @@ void SpeechRecognition::StartController(
   // SpeechRecognitionMediaStreamAudioSink), the caller must not invoke it after
   // the ExecutionContext is destroyed.
   CHECK(GetExecutionContext());
+  UseCounter::Count(GetExecutionContext(), WebFeature::kWebSpeechSttStart);
+
+  LocalDOMWindow* window = DomWindow();
+  bool can_use_on_device_recognition = window->IsFeatureEnabled(
+      network::mojom::PermissionsPolicyFeature::kOnDeviceSpeechRecognition);
 
   mojo::PendingRemote<media::mojom::blink::SpeechRecognitionSessionClient>
       session_client;
@@ -608,7 +654,7 @@ void SpeechRecognition::StartController(
   auto params = controller_->BuildStartSpeechRecognitionRequestParams(
       std::move(session_receiver), std::move(session_client), *grammars_,
       phrases_.Get(), lang_, continuous_, interim_results_, max_alternatives_,
-      /*on_device=*/true,  // On-device speech recognition is always preferred.
+      unspoken_punctuation_, can_use_on_device_recognition,
       /*allow_cloud_fallback=*/!process_locally_,
       SpeechRecognitionQualityToMojom(quality_),
       std::move(audio_forwarder_receiver), std::move(audio_parameters));
@@ -633,6 +679,7 @@ SpeechRecognition::~SpeechRecognition() = default;
 
 void SpeechRecognition::Trace(Visitor* visitor) const {
   visitor->Trace(stream_track_);
+  visitor->Trace(audio_sink_);
   visitor->Trace(grammars_);
   visitor->Trace(phrases_);
   visitor->Trace(controller_);

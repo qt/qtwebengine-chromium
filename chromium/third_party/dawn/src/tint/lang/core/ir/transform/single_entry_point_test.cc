@@ -41,6 +41,11 @@ namespace {
 
 class IR_SingleEntryPointTest : public TransformTest {
   protected:
+    void SetUp() override {
+        TransformTest::SetUp();
+        mod.properties.Add(Property::kAllowMultipleEntryPoints, Property::kAllowOverrides);
+    }
+
     /// @returns a new entry point called @p name that references @p refs
     Function* EntryPoint(const char* name, std::initializer_list<Value*> refs = {}) {
         auto* func = Func(name, std::move(refs));
@@ -100,6 +105,12 @@ TEST_F(IR_SingleEntryPointTest, EntryPointNotFound) {
     auto result = SingleEntryPoint(mod, "foo");
     ASSERT_TRUE(result != Success);
     EXPECT_EQ(result.Failure().reason, "entry point 'foo' not found");
+}
+
+TEST_F(IR_SingleEntryPointTest, MultipleEntryPointPropertyRemoved) {
+    EntryPoint("main");
+    Run(SingleEntryPoint, "main");
+    EXPECT_FALSE(mod.properties.Contains(Property::kAllowMultipleEntryPoints));
 }
 
 TEST_F(IR_SingleEntryPointTest, NoChangesNeeded) {
@@ -319,7 +330,6 @@ $B1: {  # root
 
     EXPECT_EQ(src, str());
 
-    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
     Run(SingleEntryPoint, "foo");
 
     EXPECT_EQ(expect, str());
@@ -392,7 +402,6 @@ $B1: {  # root
 
     EXPECT_EQ(src, str());
 
-    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
     Run(SingleEntryPoint, "foo");
 
     EXPECT_EQ(expect, str());
@@ -587,7 +596,6 @@ $B1: {  # root
 
     EXPECT_EQ(src, str());
 
-    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
     Run(SingleEntryPoint, "foo");
 
     EXPECT_EQ(expect, str());
@@ -814,7 +822,6 @@ $B1: {  # root
 
     EXPECT_EQ(src, str());
 
-    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
     Run(SingleEntryPoint, "foo");
 
     EXPECT_EQ(expect, str());
@@ -865,7 +872,6 @@ $B1: {  # root
 
     EXPECT_EQ(src, str());
 
-    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
     Run(SingleEntryPoint, "foo");
 
     EXPECT_EQ(expect, str());
@@ -938,7 +944,6 @@ $B1: {  # root
 
     EXPECT_EQ(src, str());
 
-    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
     Run(SingleEntryPoint, "foo");
 
     EXPECT_EQ(expect, str());
@@ -1000,7 +1005,6 @@ $B1: {  # root
 
     EXPECT_EQ(src, str());
 
-    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
     Run(SingleEntryPoint, "foo");
 
     EXPECT_EQ(expect, str());
@@ -1052,7 +1056,6 @@ $B1: {  # root
 
     EXPECT_EQ(src, str());
 
-    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
     Run(SingleEntryPoint, "foo");
 
     EXPECT_EQ(expect, str());
@@ -1110,7 +1113,6 @@ $B1: {  # root
 
     EXPECT_EQ(src, str());
 
-    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
     Run(SingleEntryPoint, "foo");
 
     EXPECT_EQ(expect, str());
@@ -1154,7 +1156,6 @@ $B1: {  # root
 
     EXPECT_EQ(src, str());
 
-    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
     Run(SingleEntryPoint, "foo");
 
     EXPECT_EQ(expect, str());
@@ -1246,10 +1247,57 @@ $B1: {  # root
 
     EXPECT_EQ(src, str());
 
-    capabilities = core::ir::Capabilities{core::ir::Capability::kAllowOverrides};
     Run(SingleEntryPoint, "foo");
 
     EXPECT_EQ(expect, str());
+}
+
+TEST_F(IR_SingleEntryPointTest, OverrideSizedBuffer) {
+    auto* o = Override("x", 0);
+    core::ir::Var* v = nullptr;
+    core::ir::Value* add = nullptr;
+    const core::ir::type::ValueArrayCount* c1 = nullptr;
+    const core::type::Type* b1 = nullptr;
+    b.Append(mod.root_block, [&] {
+        add = b.Add(o, 2_i)->Result();
+        c1 = ty.Get<core::ir::type::ValueArrayCount>(add);
+        b1 = ty.Get<core::type::Buffer>(c1);
+        v = b.Var("v", ty.ptr(workgroup, b1));
+    });
+    auto* param = b.FunctionParam("param", ty.ptr(workgroup, b1));
+    auto* func = b.Function("foo", ty.void_());
+    func->SetParams({param});
+    b.Append(func->Block(), [&] { b.Return(func); });
+    auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
+    b.Append(ep->Block(), [&] {
+        b.Call(ty.void_(), func, v);
+        b.Return(ep);
+    });
+    auto* src = R"(
+$B1: {  # root
+  %x:i32 = override undef @id(0)
+  %2:i32 = add %x, 2i
+  %v:ptr<workgroup, buffer<%2>, read_write> = var undef
+}
+
+%foo = func(%param:ptr<workgroup, buffer<%2>, read_write>):void {
+  $B2: {
+    ret
+  }
+}
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B3: {
+    %7:void = call %foo, %v
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    Run(SingleEntryPoint, "ep");
+
+    EXPECT_EQ(src, str());
 }
 
 }  // namespace

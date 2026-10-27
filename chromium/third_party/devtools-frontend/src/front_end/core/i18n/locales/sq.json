@@ -101,6 +101,9 @@
   "core/common/Revealer.ts | issuesView": {
     "message": "Pamja e \"Problemeve\""
   },
+  "core/common/Revealer.ts | lighthousePanel": {
+    "message": "Paneli i Lighthouse"
+  },
   "core/common/Revealer.ts | memoryInspectorPanel": {
     "message": "Paneli i \"Inspektorit të memories\""
   },
@@ -322,6 +325,9 @@
   },
   "core/sdk/NetworkManager.ts | noContentForRedirect": {
     "message": "Nuk ka përmbajtje pasi kjo kërkesë është ridrejtuar"
+  },
+  "core/sdk/NetworkManager.ts | noContentForSSE": {
+    "message": "Përmbajtja për Server-Sent Events (SSE) nuk mbështetet për momentin"
   },
   "core/sdk/NetworkManager.ts | noContentForWebSocket": {
     "message": "Përmbajtja për WebSockets nuk mbështetet për momentin"
@@ -559,6 +565,9 @@
   },
   "core/sdk/sdk-meta.ts | achromatopsia": {
     "message": "Akromatopsia (mungesa e perceptimit të ngjyrave)"
+  },
+  "core/sdk/sdk-meta.ts | apca": {
+    "message": "Advanced Perceptual Contrast Algorithm (APCA) që zëvendëson raportin e mëparshëm të kontrastit dhe udhëzimet AA/AAA"
   },
   "core/sdk/sdk-meta.ts | blurredVision": {
     "message": "Shikim i turbullt"
@@ -1442,6 +1451,9 @@
   "generated/Deprecation.ts | PrefixedVideoSupportsFullscreen": {
     "message": "HTMLVideoElement.webkitSupportsFullscreen është zhvlerësuar Përdor më mirë Document.fullscreenEnabled."
   },
+  "generated/Deprecation.ts | PreventSvgFilterPaint": {
+    "message": "Filtrat SVG nuk mund të zbatohen në iframe me origjinë të kryqëzuar, në iframe të kufizuar (p.sh. në mjedis të izoluar) ose në shtesa."
+  },
   "generated/Deprecation.ts | RTCConstraintEnableDtlsSrtpFalse": {
     "message": "Kufizimi DtlsSrtpKeyAgreement është hequr. Ke specifikuar një vlerë false për këtë kufizim, gjë që interpretohet si një përpjekje për të përdorur metodën e hequr për SDES key negotiation. Ky funksionalitet është hequr; përdor një shërbim që mbështet DTLS key negotiation më mirë."
   },
@@ -1646,6 +1658,9 @@
   "models/issues_manager/DeprecationIssue.ts | title": {
     "message": "Është përdorur një veçori e zhvlerësuar"
   },
+  "models/issues_manager/EmailVerificationRequestIssue.ts | emailVerification": {
+    "message": "Protokolli i verifikimit të email-it"
+  },
   "models/issues_manager/FederatedAuthRequestIssue.ts | fedCm": {
     "message": "Federated Credential Management API"
   },
@@ -1654,6 +1669,9 @@
   },
   "models/issues_manager/GenericIssue.ts | autocompleteAttributePageTitle": {
     "message": "Atributi i protokollit HTML: autocomplete"
+  },
+  "models/issues_manager/GenericIssue.ts | backToAdInterventionPageTitle": {
+    "message": "Shpjeguesi i ndërhyrjes për kthim te reklamat"
   },
   "models/issues_manager/GenericIssue.ts | corbExplainerPageTitle": {
     "message": "Shpjeguesi i CORB"
@@ -2351,6 +2369,9 @@
   "models/trace/insights/DuplicatedJavaScript.ts | description": {
     "message": "Hiq [modulet e mëdha dublikatë të JavaScript](https://developer.chrome.com/docs/performance/insights/duplicated-javascript) nga paketat për të reduktuar bajtet e konsumuara nga aktiviteti i rrjetit."
   },
+  "models/trace/insights/DuplicatedJavaScript.ts | noDuplicatedJavaScript": {
+    "message": "Nuk u gjet JavaScript e dublikuar"
+  },
   "models/trace/insights/DuplicatedJavaScript.ts | title": {
     "message": "JavaScript i dublikuar"
   },
@@ -2359,6 +2380,9 @@
   },
   "models/trace/insights/FontDisplay.ts | fontColumn": {
     "message": "Fonti"
+  },
+  "models/trace/insights/FontDisplay.ts | noFonts": {
+    "message": "Nuk u gjet asnjë font me shfaqje fonti suboptimale"
   },
   "models/trace/insights/FontDisplay.ts | title": {
     "message": "Shfaqja e fontit"
@@ -2509,6 +2533,9 @@
   },
   "models/trace/insights/LegacyJavaScript.ts | description": {
     "message": "Kodet polifil dhe transformimet bëjnë të mundur që shfletuesit më të vjetër të përdorin veçoritë e reja të JavaScript. Sidoqoftë, shumë prej tyre nuk janë të nevojshëm për shfletuesit modernë. Ki parasysh ta modifikosh procesin e ndërtimit të JavaScript që të mos transformohen veçoritë [bazë](https://web.dev/articles/baseline-and-polyfills), përveçse nëse e di që duhet të mbështeten shfletuesit më të vjetër. [Mëso se pse shumica e sajteve mund të përdorin kodin ES6+ pa kryer transformimin e gjuhës së programimit](https://developer.chrome.com/docs/performance/insights/legacy-javascript)"
+  },
+  "models/trace/insights/LegacyJavaScript.ts | noLegacyJavaScript": {
+    "message": "Nuk u gjet asnjë version i vjetër i JavaScript"
   },
   "models/trace/insights/LegacyJavaScript.ts | title": {
     "message": "Versioni i vjetër i JavaScript"
@@ -3171,7 +3198,7 @@
     "message": "Ndihma e IA-së nuk ofrohet në modalitetin \"I fshehtë\" ose në modalitetin \"Vizitor\""
   },
   "panels/ai_assistance/components/DisabledWidget.ts | notLoggedIn": {
-    "message": "Kjo veçori ofrohet vetëm kur je identifikuar në Chrome me \"Llogarinë tënde të Google\"."
+    "message": "Kjo veçori ofrohet vetëm kur je i identifikuar në Chrome me \"Llogarinë tënde të Google\"."
   },
   "panels/ai_assistance/components/DisabledWidget.ts | offline": {
     "message": "Kontrollo lidhjen e internetit dhe provo përsëri"
@@ -3192,10 +3219,10 @@
     "message": "Aktivizo \"{PH1}\" për të marrë ndihmë për stilet, kërkesat e rrjetit, performancën dhe skedarët"
   },
   "panels/ai_assistance/components/ExportForAgentsDialog.ts | asMarkdown": {
-    "message": "Si shënim formati"
+    "message": "Bisedë e plotë"
   },
   "panels/ai_assistance/components/ExportForAgentsDialog.ts | asPrompt": {
-    "message": "Si kërkesë"
+    "message": "Kërkesa për përmbledhje"
   },
   "panels/ai_assistance/components/ExportForAgentsDialog.ts | copiedToClipboard": {
     "message": "U kopjua në kujtesën e fragmenteve"
@@ -3207,13 +3234,34 @@
     "message": "Kjo është një veçori eksperimentale nga IA-ja dhe nuk do të jetë gjithmonë e saktë. Kontrolloje përsëri këtë tekst para se ta ngjitësh në një vegël tjetër."
   },
   "panels/ai_assistance/components/ExportForAgentsDialog.ts | exportForAgents": {
-    "message": "Kopjo për agjentin tënd të kodimit"
+    "message": "Kopjo tek agjenti i kodimit"
   },
   "panels/ai_assistance/components/ExportForAgentsDialog.ts | generatingSummary": {
     "message": "Po gjenerohet përmbledhja…"
   },
   "panels/ai_assistance/components/ExportForAgentsDialog.ts | saveAsMarkdown": {
     "message": "Ruaj si…"
+  },
+  "panels/ai_assistance/components/OptInChangeDialog.ts | gotIt": {
+    "message": "E kuptova"
+  },
+  "panels/ai_assistance/components/OptInChangeDialog.ts | integrationPoint": {
+    "message": "Ndihma nga IA-ja tani është e integruar me panelet \"Aplikacioni\" dhe \"Lighthouse\" dhe nxjerr kontekstin nga burimet e të dhënave në të njëjtën kohë"
+  },
+  "panels/ai_assistance/components/OptInChangeDialog.ts | manageSettings": {
+    "message": "Menaxho te cilësimet"
+  },
+  "panels/ai_assistance/components/OptInChangeDialog.ts | privacyDisclaimer": {
+    "message": "Mesazhet e bisedës, të dhënat e qasshme për këtë sajt nëpërmjet paneleve të DevTools dhe API-ve të uebit, si dhe artikujt që zgjedh ti, si p.sh. kërkesat e rrjetit, skedarët dhe gjurmimet e performancës, dërgohen te Google dhe mund të shikohen nga shqyrtues njerëzorë për të përmirësuar këtë veçori. Kjo është një veçori eksperimentale nga IA-ja dhe nuk do të jetë gjithmonë e saktë."
+  },
+  "panels/ai_assistance/components/OptInChangeDialog.ts | privacyDisclaimerEnterpriseNoLogging": {
+    "message": "Mesazhet e bisedës, të dhënat e qasshme për këtë sajt nëpërmjet paneleve të DevTools dhe API-ve të uebit, si dhe artikujt që zgjedh ti, si p.sh. kërkesat e rrjetit, skedarët dhe gjurmimet e performancës, dërgohen te Google. Përmbajtjet e dërguara te kjo veçori dhe të gjeneruara prej saj nuk do të përdoren për të përmirësuar modelet e IA-së së Google. Kjo është një veçori eksperimentale nga IA-ja dhe nuk do të jetë gjithmonë e saktë."
+  },
+  "panels/ai_assistance/components/OptInChangeDialog.ts | title": {
+    "message": "Ndihma e IA-së sapo u përmirësua"
+  },
+  "panels/ai_assistance/components/OptInChangeDialog.ts | widgetPoint": {
+    "message": "Përdor miniaplikacionet për të verifikuar rezultatet ose për të kaluar te të dhënat e burimit për raste të zgjedhura të korrigjimit"
   },
   "panels/ai_assistance/components/WalkthroughView.ts | close": {
     "message": "Mbyll"
@@ -3223,6 +3271,9 @@
   },
   "panels/ai_assistance/components/WalkthroughView.ts | hideThinking": {
     "message": "Fshih arsyetimin"
+  },
+  "panels/ai_assistance/components/WalkthroughView.ts | inProgress": {
+    "message": "Në vazhdim"
   },
   "panels/ai_assistance/components/WalkthroughView.ts | showAgentWalkthrough": {
     "message": "Shfaq udhëzimet e detajuara të agjentit"
@@ -3677,9 +3728,6 @@
   "panels/application/ApplicationPanelSidebar.ts | theContentOfThisDocumentHasBeen": {
     "message": "Përmbajtja e këtij dokumenti është krijuar në mënyrë dinamike përmes \"document.write ()\"."
   },
-  "panels/application/ApplicationPanelSidebar.ts | thirdPartyPhaseout": {
-    "message": "Kukit nga {PH1} mund të jenë bllokuar për shkak të ndërprerjes së kukive të palëve të treta."
-  },
   "panels/application/ApplicationPanelSidebar.ts | versionS": {
     "message": "Versioni: {PH1}"
   },
@@ -3829,6 +3877,9 @@
   },
   "panels/application/DOMStorageItemsView.ts | domStorageItemsCleared": {
     "message": "Artikujt e hapësirës ruajtëse DOM u pastruan"
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | clear": {
+    "message": "Pastro"
   },
   "panels/application/DeviceBoundSessionsTreeElement.ts | deviceBoundSessions": {
     "message": "Seancat e lidhura vetëm me pajisjen"
@@ -4922,11 +4973,17 @@
   "panels/application/TrustTokensTreeElement.ts | trustTokens": {
     "message": "Kodet e gjendjes private"
   },
+  "panels/application/WebMCPView.ts | cancelCall": {
+    "message": "Anulo"
+  },
   "panels/application/WebMCPView.ts | canceled": {
     "message": "Anuluar"
   },
   "panels/application/WebMCPView.ts | canceledCount": {
     "message": "{PH1} anuluar"
+  },
+  "panels/application/WebMCPView.ts | causedBy": {
+    "message": "Shkaktuar nga:"
   },
   "panels/application/WebMCPView.ts | clearFilters": {
     "message": "Pastro filtrat"
@@ -4937,8 +4994,20 @@
   "panels/application/WebMCPView.ts | close": {
     "message": "Mbyll"
   },
+  "panels/application/WebMCPView.ts | completed": {
+    "message": "Ka përfunduar"
+  },
+  "panels/application/WebMCPView.ts | copyDescription": {
+    "message": "Kopjo përshkrimin"
+  },
+  "panels/application/WebMCPView.ts | copyName": {
+    "message": "Kopjo emrin"
+  },
   "panels/application/WebMCPView.ts | declarative": {
     "message": "Deklaruese"
+  },
+  "panels/application/WebMCPView.ts | editAndRun": {
+    "message": "Modifiko dhe ekzekuto"
   },
   "panels/application/WebMCPView.ts | error": {
     "message": "Gabim"
@@ -4982,17 +5051,23 @@
   "panels/application/WebMCPView.ts | output": {
     "message": "Rezultati"
   },
+  "panels/application/WebMCPView.ts | paste": {
+    "message": "Ngjit"
+  },
   "panels/application/WebMCPView.ts | pending": {
     "message": "Në vazhdim"
+  },
+  "panels/application/WebMCPView.ts | revealTool": {
+    "message": "Zbulo veglën"
+  },
+  "panels/application/WebMCPView.ts | runTool": {
+    "message": "Ekzekuto veglën"
   },
   "panels/application/WebMCPView.ts | status": {
     "message": "Statusi"
   },
   "panels/application/WebMCPView.ts | statusTypes": {
     "message": "Llojet e statusit"
-  },
-  "panels/application/WebMCPView.ts | success": {
-    "message": "Me sukses"
   },
   "panels/application/WebMCPView.ts | toolDetails": {
     "message": "Detaje"
@@ -5002,6 +5077,9 @@
   },
   "panels/application/WebMCPView.ts | toolTypes": {
     "message": "Llojet e veglave"
+  },
+  "panels/application/WebMCPView.ts | toolUnregisteredNotice": {
+    "message": "Kjo vegël është çregjistruar"
   },
   "panels/application/WebMCPView.ts | totalCalls": {
     "message": "Telefonata gjithsej: {PH1}"
@@ -5873,6 +5951,9 @@
   "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsFailureReason": {
     "message": "Arsyeja e gabimit"
   },
+  "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsFormSubmission": {
+    "message": "Dërgimi i formularit"
+  },
   "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsRuleSet": {
     "message": "Paketa e rregullave"
   },
@@ -5882,11 +5963,17 @@
   "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsTargetHint": {
     "message": "Sugjerimi për objektivin"
   },
+  "panels/application/preloading/components/PreloadingDetailsReportView.ts | no": {
+    "message": "Jo"
+  },
   "panels/application/preloading/components/PreloadingDetailsReportView.ts | noElementSelected": {
     "message": "Nuk është zgjedhur asnjë element"
   },
   "panels/application/preloading/components/PreloadingDetailsReportView.ts | selectAnElementForMoreDetails": {
     "message": "Zgjidh një element për më shumë detaje"
+  },
+  "panels/application/preloading/components/PreloadingDetailsReportView.ts | yes": {
+    "message": "Po"
   },
   "panels/application/preloading/components/PreloadingDisabledInfobar.ts | descriptionDisabledByBatterySaver": {
     "message": "Ngarkimi spekulativ është çaktivizuar për shkak të modalitetit të \"Kursyesit të baterisë\" të sistemit operativ."
@@ -6734,6 +6821,15 @@
   "panels/console/ConsoleContextSelector.ts | javascriptContextS": {
     "message": "Konteksti i JavaScript: {PH1}"
   },
+  "panels/console/ConsolePinPane.ts | allowPasting": {
+    "message": "lejo ngjitjen"
+  },
+  "panels/console/ConsolePinPane.ts | doNotPaste": {
+    "message": "Mos e ngjit kodin që nuk e kupton ose që nuk e ke shqyrtuar vetë në DevTools. Kjo mund t'i lejojë sulmuesit që të vjedhin identitetin tënd ose të marrin kontrollin e kompjuterit tënd. Shkruaj “{PH1}” më poshtë për të lejuar ngjitjen."
+  },
+  "panels/console/ConsolePinPane.ts | doYouTrustThisCode": {
+    "message": "A i beson këtij kodi?"
+  },
   "panels/console/ConsolePinPane.ts | evaluateAllowingSideEffects": {
     "message": "Vlerësim, duke lejuar efekte anësore"
   },
@@ -6758,6 +6854,9 @@
   "panels/console/ConsolePinPane.ts | removeExpressionS": {
     "message": "Hiq shprehjen: {PH1}"
   },
+  "panels/console/ConsolePinPane.ts | typeAllowPasting": {
+    "message": "Lloji “{PH1}”"
+  },
   "panels/console/ConsolePrompt.ts | allowPasting": {
     "message": "lejo ngjitjen"
   },
@@ -6765,7 +6864,7 @@
     "message": "Kërkesa e panelit komandues"
   },
   "panels/console/ConsolePrompt.ts | selfXssWarning": {
-    "message": "Paralajmërim: Mos ngjit kodin që nuk e kupton ose që nuk e ke shqyrtuar vetë në panelin e DevTools. Kjo mund t'i lejojë sulmuesit që të vjedhin identitetin tënd ose të marrin kontrollin e kompjuterit tënd. Shkruaj \"{PH1}\" më poshtë dhe shtyp \"Enter\" për të lejuar ngjitjen."
+    "message": "Paralajmërim: Mos ngjit në panelin e DevTools kodin që nuk e kupton ose që nuk e ke shqyrtuar vetë. Kjo mund t'i lejojë sulmuesit që të vjedhin identitetin tënd ose të marrin kontrollin e kompjuterit tënd. Shkruaj “{PH1}” më poshtë dhe shtyp \"Enter\" për të lejuar ngjitjen."
   },
   "panels/console/ConsoleSidebar.ts | dErrors": {
     "message": "{n,plural, =0{Nuk ka gabime}=1{# gabim}other{# gabime}}"
@@ -6793,6 +6892,9 @@
   },
   "panels/console/ConsoleView.ts | autocompleteFromHistory": {
     "message": "Plotësimi automatik nga historiku"
+  },
+  "panels/console/ConsoleView.ts | collapseAll": {
+    "message": "Palos të gjitha"
   },
   "panels/console/ConsoleView.ts | consoleCleared": {
     "message": "Paneli komandues u pastrua"
@@ -6832,6 +6934,9 @@
   },
   "panels/console/ConsoleView.ts | errors": {
     "message": "Gabimet"
+  },
+  "panels/console/ConsoleView.ts | expandAll": {
+    "message": "Zgjero të gjitha"
   },
   "panels/console/ConsoleView.ts | filteredMessagesInConsole": {
     "message": "{PH1} mesazhe në konsolë"
@@ -7991,9 +8096,6 @@
   "panels/elements/MarkerDecorator.ts | elementIsHidden": {
     "message": "Elementi është i fshehur"
   },
-  "panels/elements/NodeStackTraceWidget.ts | noStackTraceAvailable": {
-    "message": "Nuk ka gjurmim të stivës"
-  },
   "panels/elements/PlatformFontsWidget.ts | dGlyphs": {
     "message": "{n,plural, =1{(# simbol)}other{(# simbole)}}"
   },
@@ -8147,6 +8249,12 @@
   "panels/elements/StylePropertyTreeElement.ts | viewComputedValue": {
     "message": "Shiko vlerën e përllogaritur"
   },
+  "panels/elements/StylesSidebarPane.ts | aiSuggestionAccepted": {
+    "message": "Sugjerimi i {PH1} u pranua."
+  },
+  "panels/elements/StylesSidebarPane.ts | atRuleSection": {
+    "message": "@rregulla të tjera"
+  },
   "panels/elements/StylesSidebarPane.ts | automaticDarkMode": {
     "message": "Modaliteti i errët automatik"
   },
@@ -8249,8 +8357,14 @@
   "panels/elements/elements-meta.ts | captureAreaScreenshot": {
     "message": "Regjistro pamjen e ekranit të zonës"
   },
+  "panels/elements/elements-meta.ts | collapseNonContributingCSSRules": {
+    "message": "Palos rregullat e CSS-së që nuk kontribuojnë"
+  },
   "panels/elements/elements-meta.ts | copyStyles": {
     "message": "Kopjo stilet"
+  },
+  "panels/elements/elements-meta.ts | cssAnimationsOnlyWhenAnimationsTabOpen": {
+    "message": "Shfaq stilet e animacionit vetëm kur skeda \"Animacionet\" është e hapur"
   },
   "panels/elements/elements-meta.ts | detailedInspectTooltip": {
     "message": "Këshilla për veglën për inspektimin e detajuar"
@@ -8315,14 +8429,8 @@
   "panels/elements/elements-meta.ts | showProperties": {
     "message": "Shfaq atributet"
   },
-  "panels/elements/elements-meta.ts | showStackTrace": {
-    "message": "Shfaq gjurmimin e stivës"
-  },
   "panels/elements/elements-meta.ts | showStyles": {
     "message": "Shfaq stilet"
-  },
-  "panels/elements/elements-meta.ts | stackTrace": {
-    "message": "Gjurmimi i stivës"
   },
   "panels/elements/elements-meta.ts | toggleA11yTree": {
     "message": "Aktivizo/çaktivizo pemën e qasshmërisë"
@@ -9056,6 +9164,12 @@
   "panels/js_timeline/js_timeline-meta.ts | stop": {
     "message": "Ndalo"
   },
+  "panels/js_timeline/js_timeline-meta.ts | timelineDebugMode": {
+    "message": "Modaliteti i korrigjimit sipas kronologjisë (detajet e ngjarjes së gjurmës etj.)"
+  },
+  "panels/js_timeline/js_timeline-meta.ts | timelineShowAllEvents": {
+    "message": "Shfaq të gjitha ngjarjet"
+  },
   "panels/layer_viewer/LayerDetailsView.ts | compositingReasons": {
     "message": "Arsyet e përbërjes"
   },
@@ -9238,6 +9352,12 @@
   },
   "panels/lighthouse/LighthouseController.ts | accessibility": {
     "message": "Qasshmëria"
+  },
+  "panels/lighthouse/LighthouseController.ts | agenticBrowsing": {
+    "message": "Shfletimi agjentik"
+  },
+  "panels/lighthouse/LighthouseController.ts | agenticBrowsingDescription": {
+    "message": "Këto kontrolle sigurojnë uebsajte të shfletueshme me cilësi të lartë për agjentët e IA-së dhe vërtetojnë saktësinë e integrimeve WebMCP. Kjo kategori është ende në zhvillim dhe mund të ndryshojë."
   },
   "panels/lighthouse/LighthouseController.ts | applyDesktopEmulationDuring": {
     "message": "Zbato imitimin për desktop gjatë auditimit"
@@ -11723,6 +11843,9 @@
   "panels/profiler/HeapProfileView.ts | sBytes": {
     "message": "{PH1} bajtë"
   },
+  "panels/profiler/HeapProfileView.ts | samplingHeapProfilerTimeline": {
+    "message": "Kronologjia e profilizuesit të grumbullit të kampionimit"
+  },
   "panels/profiler/HeapProfileView.ts | samplingProfiles": {
     "message": "Profilet e kampionimit"
   },
@@ -11930,9 +12053,6 @@
   "panels/profiler/HeapSnapshotView.ts | duplicatedStrings": {
     "message": "Vargjet dublikatë"
   },
-  "panels/profiler/HeapSnapshotView.ts | exposeInternals": {
-    "message": "Të dhënat e brendshme me detajet për zbatimin"
-  },
   "panels/profiler/HeapSnapshotView.ts | filter": {
     "message": "Filtro"
   },
@@ -12070,33 +12190,6 @@
   },
   "panels/profiler/IsolateSelector.ts | totalPageJsHeapSizeChangeTrend": {
     "message": "Tendencat e ndryshimit të madhësisë totale të grumbullit JS të faqes përgjatë {PH1} minutave të fundit."
-  },
-  "panels/profiler/LiveHeapProfileView.ts | allocatedJsHeapSizeCurrentlyIn": {
-    "message": "Madhësia e caktuar e grumbullit JS aktualisht në përdorim"
-  },
-  "panels/profiler/LiveHeapProfileView.ts | anonymousScriptS": {
-    "message": "(Skripti anonim {PH1})"
-  },
-  "panels/profiler/LiveHeapProfileView.ts | heapProfile": {
-    "message": "Profili i grumbullit"
-  },
-  "panels/profiler/LiveHeapProfileView.ts | jsHeap": {
-    "message": "Grumbulli JS (JavaScript)"
-  },
-  "panels/profiler/LiveHeapProfileView.ts | kb": {
-    "message": "kB"
-  },
-  "panels/profiler/LiveHeapProfileView.ts | numberOfVmsSharingTheSameScript": {
-    "message": "Numri i VM-ve që ndajnë të njëjtin burim skripti"
-  },
-  "panels/profiler/LiveHeapProfileView.ts | scriptUrl": {
-    "message": "URL-ja e skriptit"
-  },
-  "panels/profiler/LiveHeapProfileView.ts | urlOfTheScriptSource": {
-    "message": "URL-ja e burimit të skriptit"
-  },
-  "panels/profiler/LiveHeapProfileView.ts | vms": {
-    "message": "VM-të"
   },
   "panels/profiler/ModuleUIStrings.ts | buildingAllocationStatistics": {
     "message": "Po ndërton statistikat e shpërndarjes…"
@@ -12275,9 +12368,6 @@
   "panels/profiler/profiler-meta.ts | deleteProfile": {
     "message": "Fshi profilin"
   },
-  "panels/profiler/profiler-meta.ts | liveHeapProfile": {
-    "message": "Profili i grumbullit drejtpërdrejt"
-  },
   "panels/profiler/profiler-meta.ts | loadProfile": {
     "message": "Ngarko profilin…"
   },
@@ -12287,23 +12377,11 @@
   "panels/profiler/profiler-meta.ts | saveProfile": {
     "message": "Ruaj profilin…"
   },
-  "panels/profiler/profiler-meta.ts | showLiveHeapProfile": {
-    "message": "Shfaq profilin e grumbullit të drejtpërdrejtë"
-  },
   "panels/profiler/profiler-meta.ts | showMemory": {
     "message": "Shfaq memorien"
   },
-  "panels/profiler/profiler-meta.ts | startRecordingHeapAllocations": {
-    "message": "Fillo regjistrimin e caktimeve të grumbullit"
-  },
-  "panels/profiler/profiler-meta.ts | startRecordingHeapAllocationsAndReload": {
-    "message": "Fillo të regjistrosh shpërndarjet e grumbujve dhe të ringarkosh faqen"
-  },
   "panels/profiler/profiler-meta.ts | startStopRecording": {
     "message": "Fillo/ndalo regjistrimin"
-  },
-  "panels/profiler/profiler-meta.ts | stopRecordingHeapAllocations": {
-    "message": "Ndalo regjistrimin e shpërndarjeve të grumbullit"
   },
   "panels/protocol_monitor/JSONEditor.ts | addCustomProperty": {
     "message": "Shto karakteristikë të personalizuar"
@@ -12417,7 +12495,7 @@
     "message": "Fshi regjistrimin"
   },
   "panels/recorder/RecorderController.ts | doNotImport": {
-    "message": "Mos i importo regjistrimet që nuk i kupton ose që nuk i ke rishikuar vetë në DevTools. Kjo mund t'i lejojë sulmuesit që të vjedhin identitetin tënd ose të marrin kontrollin e kompjuterit tënd. Shkruaj ''{PH1}'' më poshtë për të lejuar importimin."
+    "message": "Mos i importo regjistrimet që nuk i kupton ose që nuk i ke rishikuar vetë në DevTools. Kjo mund t'i lejojë sulmuesit që të vjedhin identitetin tënd ose të marrin kontrollin e kompjuterit tënd. Shkruaj “{PH1}” më poshtë për të lejuar importimin."
   },
   "panels/recorder/RecorderController.ts | doYouTrustThisCode": {
     "message": "I beson këtij regjistrimi?"
@@ -12477,7 +12555,7 @@
     "message": "Aktivizo/çaktivizo pamjen e kodit"
   },
   "panels/recorder/RecorderController.ts | typeAllowImporting": {
-    "message": "Shkruaj ''{PH1}''"
+    "message": "Lloji “{PH1}”"
   },
   "panels/recorder/components/CreateRecordingView.ts | cancelRecording": {
     "message": "Anulo regjistrimin"
@@ -13460,6 +13538,21 @@
   "panels/settings/AISettingsTab.ts | aIAnnotationsFeatureDescription": {
     "message": "Gjenero automatikisht titujt për shënimet e gjurmimeve të performancës"
   },
+  "panels/settings/AISettingsTab.ts | aiAssistanceDescriptionV2": {
+    "message": "Merr ndihmë në varësi të kontekstit në faqen e inspektuar"
+  },
+  "panels/settings/AISettingsTab.ts | aiAssistanceThingsToConsiderNoLoggingV2": {
+    "message": "Për të gjeneruar shpjegimet, mesazhet e bisedës, të dhënat e qasshme për këtë sajt nëpërmjet paneleve të DevTools dhe API-ve të uebit, si dhe artikujt që zgjedh ti, si p.sh. kërkesat e rrjetit, skedarët dhe gjurmimet e performancës, dërgohen te Google. Përmbajtjet që dërgon ti dhe që gjenerohen nga kjo veçori nuk do të përdoren për të përmirësuar modelet e IA-së së Google. Kjo është një veçori eksperimentale nga IA-ja dhe nuk do të jetë gjithmonë e saktë."
+  },
+  "panels/settings/AISettingsTab.ts | aiAssistanceThingsToConsiderV2": {
+    "message": "Për të gjeneruar shpjegimet, mesazhet e bisedës, të dhënat e qasshme për këtë sajt nëpërmjet paneleve të DevTools dhe API-ve të uebit, si dhe artikujt që zgjedh ti, si p.sh. kërkesat e rrjetit, skedarët dhe gjurmimet e performancës, dërgohen te Google dhe mund të shikohen nga shqyrtues njerëzorë për të përmirësuar këtë veçori. Kjo është një veçori eksperimentale nga IA-ja dhe nuk do të jetë gjithmonë e saktë."
+  },
+  "panels/settings/AISettingsTab.ts | aiAssistanceWhenOnItem1V2": {
+    "message": "Korrigjo problemet e stilit, rrjetit, performancës, kodit burimor, qasshmërisë dhe të hapësirës ruajtëse me \"Ndihmën e IA-së\" të DevTools"
+  },
+  "panels/settings/AISettingsTab.ts | aiAssistanceWhenOnItem2V2": {
+    "message": "Ndiq arsyetimin e agjentit hap pas hapi dhe kalo me shpejtësi te të dhënat përkatëse të burimit"
+  },
   "panels/settings/AISettingsTab.ts | asYouTypeCodeSuggestions": {
     "message": "Ndërsa shkruan në panelin \"Paneli i burimeve\", do të marrësh sugjerime kodesh. Shtyp tastin Tab për të pranuar njërin."
   },
@@ -13797,7 +13890,7 @@
     "message": "Regjistrohu"
   },
   "panels/settings/components/SyncSection.ts | signedIn": {
-    "message": "Identifikuar në Chrome si:"
+    "message": "I identifikuar në Chrome si:"
   },
   "panels/settings/components/SyncSection.ts | syncDisabled": {
     "message": "Për ta aktivizuar këtë cilësim, duhet të aktivizosh sinkronizimin e Chrome."
@@ -14539,12 +14632,6 @@
   },
   "panels/sources/PersistenceActions.ts | showOverrides": {
     "message": "Shfaq të gjitha anulimet"
-  },
-  "panels/sources/ProfilePlugin.ts | kb": {
-    "message": "kB"
-  },
-  "panels/sources/ProfilePlugin.ts | mb": {
-    "message": "MB"
   },
   "panels/sources/ProfilePlugin.ts | ms": {
     "message": "ms"
@@ -16922,6 +17009,12 @@
   "panels/timeline/timeline-meta.ts | stop": {
     "message": "Ndalo"
   },
+  "panels/timeline/timeline-meta.ts | timelineDebugMode": {
+    "message": "Modaliteti i korrigjimit sipas kronologjisë (detajet e ngjarjes së gjurmës etj.)"
+  },
+  "panels/timeline/timeline-meta.ts | timelineInvalidationTracking": {
+    "message": "Monitorimi i zhvlerësimit"
+  },
   "panels/timeline/timeline-meta.ts | timelineShowAllEvents": {
     "message": "Shfaq të gjitha ngjarjet"
   },
@@ -17183,6 +17276,9 @@
   "ui/components/markdown_view/CodeBlock.ts | copy": {
     "message": "Kopjo kodin"
   },
+  "ui/components/markdown_view/CodeBlock.ts | copyCodeSnippet": {
+    "message": "Kopjo fragmentin e kodit {PH1}"
+  },
   "ui/components/markdown_view/CodeBlock.ts | disclaimer": {
     "message": "Përdori me kujdes fragmentet e kodit"
   },
@@ -17306,6 +17402,9 @@
   "ui/legacy/ActionRegistration.ts | sources": {
     "message": "Burimet"
   },
+  "ui/legacy/Dialog.ts | close": {
+    "message": "Mbyll"
+  },
   "ui/legacy/DockController.ts | close": {
     "message": "Mbyll"
   },
@@ -17339,6 +17438,12 @@
   "ui/legacy/InspectorDrawerView.ts | closeDrawer": {
     "message": "Mbyll sirtarin"
   },
+  "ui/legacy/InspectorDrawerView.ts | expandDrawer": {
+    "message": "Zgjero sirtarin"
+  },
+  "ui/legacy/InspectorDrawerView.ts | minimizeDrawer": {
+    "message": "Minimizo sirtarin"
+  },
   "ui/legacy/InspectorDrawerView.ts | moreTools": {
     "message": "Vegla të tjera"
   },
@@ -17354,8 +17459,14 @@
   "ui/legacy/InspectorView.ts | drawer": {
     "message": "Sirtari i veglave"
   },
+  "ui/legacy/InspectorView.ts | drawerExpanded": {
+    "message": "Sirtari u zgjerua"
+  },
   "ui/legacy/InspectorView.ts | drawerHidden": {
     "message": "Sirtari është fshehur"
+  },
+  "ui/legacy/InspectorView.ts | drawerMinimized": {
+    "message": "Sirtari u minimizua"
   },
   "ui/legacy/InspectorView.ts | drawerShown": {
     "message": "Sirtari është shfaqur"
@@ -17413,6 +17524,9 @@
   },
   "ui/legacy/ListWidget.ts | saveString": {
     "message": "Ruaj"
+  },
+  "ui/legacy/PlusButton.ts | moreTools": {
+    "message": "Mjete të tjera"
   },
   "ui/legacy/RemoteDebuggingTerminatedScreen.ts | connectionClosedReason": {
     "message": "Arsyeja: {PH1}."
@@ -17831,66 +17945,6 @@
   "ui/legacy/components/inline_editor/ColorSwatch.ts | shiftclickToChangeColorFormat": {
     "message": "Shtyp Shift dhe kliko për të ndryshuar formatin e ngjyrës"
   },
-  "ui/legacy/components/inline_editor/FontEditor.ts | PleaseEnterAValidValueForSText": {
-    "message": "* Fut një vlerë të vlefshme për hyrjen e tekstit të {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | cssProperties": {
-    "message": "Karakteristikat e CSS-së"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | deleteS": {
-    "message": "Fshi {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | fallbackS": {
-    "message": "Rezervo {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | fontFamily": {
-    "message": "Familja e fontit"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | fontSelectorDeletedAtIndexS": {
-    "message": "Përzgjedhësi i fonteve i fshirë në indeks: {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | fontSize": {
-    "message": "Madhësia e fontit"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | fontWeight": {
-    "message": "Pesha e fontit"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | lineHeight": {
-    "message": "Lartësia e rreshtit"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | sKeyValueSelector": {
-    "message": "Përzgjedhësi i vlerës kyçe {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | sSliderInput": {
-    "message": "Hyrja e rrëshqitësit {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | sTextInput": {
-    "message": "Hyrja e tekstit {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | sToggleInputType": {
-    "message": "Aktivizo/çaktivizo llojin e hyrjes për {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | sUnitInput": {
-    "message": "Hyrja e njësisë {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | selectorInputMode": {
-    "message": "Modaliteti i hyrjes së përzgjedhësit"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | sliderInputMode": {
-    "message": "Modaliteti i hyrjes së rrëshqitësit"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | spacing": {
-    "message": "Hapësira"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | thereIsNoValueToDeleteAtIndexS": {
-    "message": "Nuk ka asnjë vlerë për t'u fshirë në indeks: {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | thisPropertyIsSetToContainUnits": {
-    "message": "Kjo karakteristikë është caktuar të përmbajë njësi por nuk ka një unitsArray (grup njësish) përkatëse të përcaktuar: {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | units": {
-    "message": "Njësitë"
-  },
   "ui/legacy/components/object_ui/CustomPreviewComponent.ts | showAsJavascriptObject": {
     "message": "Shfaqe si objekt JavaScript"
   },
@@ -18047,17 +18101,8 @@
   "ui/legacy/components/perf_ui/perf_ui-meta.ts | flamechartSelectedNavigation": {
     "message": "Navigimi në grafikun e flakëve:"
   },
-  "ui/legacy/components/perf_ui/perf_ui-meta.ts | hideLiveMemoryAllocation": {
-    "message": "Fshih shënimet e shpërndarjes së memories së drejtpërdrejtë"
-  },
-  "ui/legacy/components/perf_ui/perf_ui-meta.ts | liveMemoryAllocationAnnotations": {
-    "message": "Shënimet e shpërndarjes së memories drejtpërdrejt"
-  },
   "ui/legacy/components/perf_ui/perf_ui-meta.ts | modern": {
     "message": "Moderne"
-  },
-  "ui/legacy/components/perf_ui/perf_ui-meta.ts | showLiveMemoryAllocation": {
-    "message": "Shfaq shënimet e shpërndarjes së memories së drejtpërdrejtë"
   },
   "ui/legacy/components/quick_open/CommandMenu.ts | command": {
     "message": "Komando"
@@ -18140,6 +18185,9 @@
   "ui/legacy/components/source_frame/ImageView.ts | saveImageAs": {
     "message": "Ruaje imazhin si…"
   },
+  "ui/legacy/components/source_frame/ImageView.ts | thisImageIsTooBig": {
+    "message": "Ky imazh është shumë i madh për t'u shfaqur në DevTools. Kliko këtu për ta hapur në një skedë të re."
+  },
   "ui/legacy/components/source_frame/JSONView.ts | find": {
     "message": "Gjej"
   },
@@ -18171,7 +18219,7 @@
     "message": "Rajonet e përzgjedhjes: {PH1}"
   },
   "ui/legacy/components/source_frame/SourceFrame.ts | doNotPaste": {
-    "message": "Mos ngjit kodin që nuk e kupton ose që nuk e ke shqyrtuar vetë në DevTools. Kjo mund t'i lejojë sulmuesit që të vjedhin identitetin tënd ose të marrin kontrollin e kompjuterit tënd. Shkruaj ''{PH1}'' më poshtë për të lejuar ngjitjen."
+    "message": "Mos e ngjit kodin që nuk e kupton ose që nuk e ke shqyrtuar vetë në DevTools. Kjo mund t'i lejojë sulmuesit që të vjedhin identitetin tënd ose të marrin kontrollin e kompjuterit tënd. Shkruaj “{PH1}” më poshtë për të lejuar ngjitjen."
   },
   "ui/legacy/components/source_frame/SourceFrame.ts | doYouTrustThisCode": {
     "message": "A i beson këtij kodi?"
@@ -18189,7 +18237,7 @@
     "message": "Burimi"
   },
   "ui/legacy/components/source_frame/SourceFrame.ts | typeAllowPasting": {
-    "message": "Shkruaj ''{PH1}''"
+    "message": "Lloji “{PH1}”"
   },
   "ui/legacy/components/source_frame/XMLView.ts | find": {
     "message": "Gjej"

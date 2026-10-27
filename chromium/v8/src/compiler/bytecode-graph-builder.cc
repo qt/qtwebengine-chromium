@@ -1406,7 +1406,7 @@ void BytecodeGraphBuilder::AdvanceToOsrEntryAndPeelLoops() {
 
   // Suppose we have n nested loops, loop_0 being the outermost one, and
   // loop_n being the OSR loop. We start iterating the bytecode at the header
-  // of loop_n (the OSR loop), and then we peel the part of the the body of
+  // of loop_n (the OSR loop), and then we peel the part of the body of
   // loop_{n-1} following the end of loop_n. We then rewind the iterator to
   // the header of loop_{n-1}, and so on until we have partly peeled loop 0.
   // The full loop_0 body will be generating with the rest of the function,
@@ -3975,15 +3975,13 @@ void BytecodeGraphBuilder::VisitForOfNext() {
       environment()->LookupRegister(bytecode_iterator().GetRegisterOperand(0));
   Node* next_method =
       environment()->LookupRegister(bytecode_iterator().GetRegisterOperand(1));
-  auto value_done = bytecode_iterator().GetRegisterPairOperand(2);
   FeedbackSource call_feedback =
-      CreateFeedbackSource(bytecode_iterator().GetFeedbackSlotOperand(3));
+      CreateFeedbackSource(bytecode_iterator().GetFeedbackSlotOperand(2));
   Node* feedback_vector = feedback_vector_node();
-  Node* result_pair = NewNode(javascript()->ForOfNext(call_feedback), iterator,
-                              next_method, feedback_vector);
+  Node* result = NewNode(javascript()->ForOfNext(call_feedback), iterator,
+                         next_method, feedback_vector);
 
-  environment()->BindRegistersToProjections(value_done.first, result_pair,
-                                            Environment::kAttachFrameState);
+  environment()->BindAccumulator(result, Environment::kAttachFrameState);
 }
 
 void BytecodeGraphBuilder::VisitGetIterator() {

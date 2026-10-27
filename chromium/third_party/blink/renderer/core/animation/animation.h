@@ -307,7 +307,7 @@ class CORE_EXPORT Animation : public EventTarget,
   // Pausing via this method is not reflected in the value returned by
   // paused() and must never overlap with pausing via pause().
   // Deprecated: Do not use in new tests.
-  void PauseForTesting(AnimationTimeDelta pause_time);
+  void PauseForTesting(AnimationTimeDelta hold_time);
   void DisableCompositedAnimationForTesting();
 
   // This should only be used for CSS
@@ -349,8 +349,7 @@ class CORE_EXPORT Animation : public EventTarget,
   // the influence of the compositor animation trigger attempting to push the
   // animation to the compositor. Returns false otherwise.
   bool StartTriggeredAnimationOnCompositor(
-      const PaintArtifactCompositor* paint_artifact_compositor,
-      bool& pause_keyframe_models);
+      const PaintArtifactCompositor* paint_artifact_compositor);
   void CancelAnimationOnCompositor();
   void RestartAnimationOnCompositor(
       CompositorPendingReason reason =
@@ -360,6 +359,15 @@ class CORE_EXPORT Animation : public EventTarget,
   CompositorAnimations::FailureReasons LastCompositorFailureReason() const {
     return last_compositor_failure_reasons_;
   }
+
+  // The compositor started playing this animation on the impl thread.
+  // Synchronize to the impl thread start time. This is only called for
+  // triggered[1] animations.
+  // [1] https://drafts.csswg.org/animation-triggers-1/
+  void NotifyAnimationStartedAsync(base::TimeDelta monotonic_time);
+  // The compositor paused this animation on the impl thread.
+  // This is only called for triggered animations.
+  void NotifyAnimationPausedAsync(base::TimeDelta monotonic_time);
 
   void NotifyReady(AnimationTimeDelta ready_time);
   void CommitPendingPlay(AnimationTimeDelta ready_time);
@@ -428,7 +436,7 @@ class CORE_EXPORT Animation : public EventTarget,
 
   bool IsInDisplayLockedSubtree();
 
-  base::TimeDelta ComputeCompositorTimeOffset() const;
+  std::optional<base::TimeDelta> ComputeCompositorHoldTime() const;
 
   // Updates |compositor_property_animations_have_no_effect_| and marks the
   // animation as pending if it changes.

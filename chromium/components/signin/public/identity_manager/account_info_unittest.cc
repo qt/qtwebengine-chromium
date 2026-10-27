@@ -4,7 +4,9 @@
 
 #include "components/signin/public/identity_manager/account_info.h"
 
+#include "base/test/scoped_feature_list.h"
 #include "components/signin/public/base/signin_metrics.h"
+#include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/identity_manager/account_capabilities.h"
 #include "components/signin/public/identity_manager/account_capabilities_test_mutator.h"
 #include "components/signin/public/identity_manager/signin_constants.h"
@@ -139,7 +141,7 @@ TEST_F(AccountInfoTest, UpdateWithSuccessfulUpdate) {
           .SetLastAuthenticationAccessPoint(
               signin_metrics::AccessPoint::kSettings)
           .Build();
-  AccountCapabilitiesTestMutator mutator(&other.capabilities);
+  AccountCapabilitiesTestMutator mutator(&other);
   mutator.set_can_show_history_sync_opt_ins_without_minor_mode_restrictions(
       true);
 
@@ -190,8 +192,8 @@ TEST_F(AccountInfoTest, UpdateWithDefaultValuesNoOverride) {
           .SetHostedDomain("test_domain")
           .SetAvatarUrl("test_url")
           .Build();
-  AccountCapabilitiesTestMutator(&info.capabilities)
-      .set_is_subject_to_enterprise_features(true);
+  AccountCapabilitiesTestMutator(&info).set_is_subject_to_enterprise_features(
+      true);
 
   AccountInfo other =
       AccountInfo::Builder(GaiaId("test_id"), "test@example.com")
@@ -216,6 +218,18 @@ TEST_F(AccountInfoTest, BuilderPopulatesCoreAccountInfoFields) {
   EXPECT_EQ(info.GetEmail(), "test@example.com");
   EXPECT_EQ(info.GetAccountId(), CoreAccountId::FromGaiaId(GaiaId("test_id")));
   EXPECT_TRUE(info.IsUnderAdvancedProtection());
+}
+
+TEST_F(AccountInfoTest, BuilderSetsAccountIdFromGaiaIdWithEnforcement) {
+  base::test::ScopedFeatureList scoped_feature_list(
+      switches::kGaiaAccountIdEnforcement);
+
+  AccountInfo info =
+      AccountInfo::Builder(GaiaId("test_id"), "test@example.com").Build();
+
+  EXPECT_EQ(info.GetGaiaId(), GaiaId("test_id"));
+  EXPECT_EQ(info.GetEmail(), "test@example.com");
+  EXPECT_EQ(info.GetAccountId(), CoreAccountId::FromGaiaId(GaiaId("test_id")));
 }
 
 TEST_F(AccountInfoTest, GettersEmptyAccountInfo) {

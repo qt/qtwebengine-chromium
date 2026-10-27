@@ -6,28 +6,6 @@ import {InspectorFrontendHostInstance} from './InspectorFrontendHost.js';
 import {EnumeratedHistogram} from './InspectorFrontendHostAPI.js';
 
 export class UserMetrics {
-  #panelChangedSinceLaunch: boolean;
-  #firedLaunchHistogram: boolean;
-  #launchPanelName: string;
-  constructor() {
-    this.#panelChangedSinceLaunch = false;
-    this.#firedLaunchHistogram = false;
-    this.#launchPanelName = '';
-  }
-
-  panelShown(panelName: string, isLaunching?: boolean): void {
-    const code = PanelCodes[panelName as keyof typeof PanelCodes] || 0;
-    InspectorFrontendHostInstance.recordEnumeratedHistogram(EnumeratedHistogram.PanelShown, code, PanelCodes.MAX_VALUE);
-    InspectorFrontendHostInstance.recordUserMetricsAction('DevTools_PanelShown_' + panelName);
-    // Store that the user has changed the panel so we know launch histograms should not be fired.
-    if (!isLaunching) {
-      this.#panelChangedSinceLaunch = true;
-    }
-  }
-
-  settingsPanelShown(settingsViewId: string): void {
-    this.panelShown('settings-' + settingsViewId);
-  }
 
   sourcesPanelFileDebugged(mediaType?: string): void {
     const code = (mediaType && MediaTypes[mediaType as keyof typeof MediaTypes]) || MediaTypes.Unknown;
@@ -49,38 +27,6 @@ export class UserMetrics {
 
   actionTaken(action: Action): void {
     InspectorFrontendHostInstance.recordEnumeratedHistogram(EnumeratedHistogram.ActionTaken, action, Action.MAX_VALUE);
-  }
-
-  panelLoaded(panelName: string, histogramName: string): void {
-    if (this.#firedLaunchHistogram || panelName !== this.#launchPanelName) {
-      return;
-    }
-
-    this.#firedLaunchHistogram = true;
-    // Use rAF and window.setTimeout to ensure the marker is fired after layout and rendering.
-    // This will give the most accurate representation of the tool being ready for a user.
-    requestAnimationFrame(() => {
-      window.setTimeout(() => {
-        // Mark the load time so that we can pinpoint it more easily in a trace.
-        performance.mark(histogramName);
-        // If the user has switched panel before we finished loading, ignore the histogram,
-        // since the launch timings will have been affected and are no longer valid.
-        if (this.#panelChangedSinceLaunch) {
-          return;
-        }
-        // This fires the event for the appropriate launch histogram.
-        // The duration is measured as the time elapsed since the time origin of the document.
-        InspectorFrontendHostInstance.recordPerformanceHistogram(histogramName, performance.now());
-      }, 0);
-    });
-  }
-
-  setLaunchPanel(panelName: string|null): void {
-    this.#launchPanelName = (panelName as string);
-  }
-
-  performanceTraceLoad(measure: PerformanceMeasure): void {
-    InspectorFrontendHostInstance.recordPerformanceHistogram('DevTools.TraceLoad', measure.duration);
   }
 
   keybindSetSettingChanged(keybindSet: string): void {
@@ -543,7 +489,14 @@ export enum Action {
   InsightTeaserModelDownloadCompleted = 198,
   AiCodeGenerationError = 199,
   AiCodeGenerationRequestTriggered = 200,
-  MAX_VALUE = 201,
+  AiCodeCompletionRequestTriggeredFromConsole = 201,
+  AiCodeCompletionRequestTriggeredFromSources = 202,
+  AiCodeCompletionRequestTriggeredFromStyles = 203,
+  AiCodeGenerationRequestTriggeredFromConsole = 204,
+  AiCodeGenerationRequestTriggeredFromSources = 205,
+  AiCodeCompletionFreCompletedFromConsole = 206,
+  AiCodeCompletionFreCompletedFromSources = 207,
+  MAX_VALUE = 208,
   /* eslint-enable @typescript-eslint/naming-convention */
 }
 
@@ -573,7 +526,7 @@ export enum PanelCodes {
   'changes.changes' = 23,
   'performance.monitor' = 24,
   'release-note' = 25,
-  'live-heap-profile' = 26,
+
   'sources.quick' = 27,
   'network.blocked-urls' = 28,
   'settings-preferences' = 29,
@@ -723,8 +676,6 @@ export enum KeyboardShortcutAction {
   'inspector-main.focus-debuggee' = 47,
   'inspector-main.hard-reload' = 48,
   'inspector-main.reload' = 49,
-  'live-heap-profile.start-with-reload' = 50,
-  'live-heap-profile.toggle-recording' = 51,
   'main.debug-reload' = 52,
   'main.next-tab' = 53,
   'main.previous-tab' = 54,
@@ -795,6 +746,7 @@ export enum KeyboardShortcutAction {
   MAX_VALUE = 120,
 }
 
+/** Update DevToolsIssuesPanelOpenedFrom in tools/metrics/histograms/metadata/dev/enums.xml if new enum is added. **/
 export const enum IssueOpener {
   CONSOLE_INFO_BAR = 0,
   LEARN_MORE_LINK_COEP = 1,
@@ -802,7 +754,8 @@ export const enum IssueOpener {
   HAMBURGER_MENU = 3,
   ADORNER = 4,
   COMMAND_MENU = 5,
-  MAX_VALUE = 6,
+  MORE_TOOLS_MENU = 6,
+  MAX_VALUE = 7,
 }
 
 /**
@@ -811,22 +764,16 @@ export const enum IssueOpener {
  */
 export enum DevtoolsExperiments {
   /* eslint-disable @typescript-eslint/naming-convention */
-  'capture-node-creation-stacks' = 1,
-  'live-heap-profile' = 11,
   'protocol-monitor' = 13,
-  'sampling-heap-profiler-timeline' = 17,
-  'timeline-invalidation-tracking' = 26,
-  apca = 39,
-  'font-editor' = 41,
   'instrumentation-breakpoints' = 61,
   'use-source-map-scopes' = 76,
-  'timeline-debug-mode' = 93,
   'durable-messages' = 110,
   'jpeg-xl' = 111,
+  'plus-button' = 112,
   /* eslint-enable @typescript-eslint/naming-convention */
 
   // Increment this when new experiments are added.
-  MAX_VALUE = 112,
+  MAX_VALUE = 113,
 }
 
 /** Update DevToolsIssuesPanelIssueExpanded from tools/metrics/histograms/enums.xml if new enum is added. **/
@@ -1199,7 +1146,8 @@ export const enum LighthouseCategoryUsed {
   SEO = 3,
   PWA = 4,
   PUB_ADS = 5,
-  MAX_VALUE = 6,
+  AGENTIC_BROWSING = 6,
+  MAX_VALUE = 7,
 }
 
 export const enum SwatchType {

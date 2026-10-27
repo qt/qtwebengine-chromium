@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 macro(ei_add_property prop value)
   get_property(previous GLOBAL PROPERTY ${prop})
@@ -7,6 +9,12 @@ macro(ei_add_property prop value)
     set_property(GLOBAL PROPERTY ${prop} "${previous} ${value}")
   endif()
 endmacro()
+
+if(EIGEN_TEST_HIP AND NOT DEFINED EIGEN_HIP_ARCHITECTURES)
+  set(EIGEN_HIP_ARCHITECTURES
+      gfx900;gfx906;gfx908;gfx90a;gfx940;gfx941;gfx942;gfx1030;gfx1100;gfx1101;gfx1102;gfx1150;gfx1151
+      CACHE STRING "HIP GPU architectures to build Eigen's HIP tests for.")
+endif()
 
 #internal. See documentation of ei_add_test for details.
 macro(ei_add_test_internal testname testname_with_suffix)
@@ -30,7 +38,7 @@ macro(ei_add_test_internal testname testname_with_suffix)
       hip_reset_flags()
       hip_add_executable(${targetname} ${filename} HIPCC_OPTIONS -std=c++14)
       target_compile_definitions(${targetname} PRIVATE -DEIGEN_USE_HIP)
-      set_property(TARGET ${targetname} PROPERTY HIP_ARCHITECTURES gfx900 gfx906 gfx908 gfx90a gfx940 gfx941 gfx942 gfx1030)
+      set_property(TARGET ${targetname} PROPERTY HIP_ARCHITECTURES "${EIGEN_HIP_ARCHITECTURES}")
     elseif(EIGEN_TEST_CUDA_CLANG)
       set_source_files_properties(${filename} PROPERTIES LANGUAGE CXX)
 
@@ -134,6 +142,7 @@ macro(ei_add_test_internal testname testname_with_suffix)
   if (is_gpu_test)
     # Add gpu tag for testing only GPU tests.
     set_property(TEST ${testname_with_suffix} APPEND PROPERTY LABELS "gpu")
+    set_property(TEST ${testname_with_suffix} PROPERTY SKIP_RETURN_CODE 77)
   endif()
 
   if(EIGEN_SYCL)
@@ -145,6 +154,14 @@ macro(ei_add_test_internal testname testname_with_suffix)
     target_link_libraries(${targetname} Threads::Threads)
     add_sycl_to_target(TARGET ${targetname} SOURCES ${filename})
   endif(EIGEN_SYCL)
+
+  # Match on the parent test name (e.g. "packetmath" → all packetmath_N) or
+  # the specific subtest name (e.g. "packetmath_2"); see EigenConfigureTesting.cmake
+  # for why this lives here instead of in a post-hoc registration.
+  if ("${testname_with_suffix}" IN_LIST ei_smoke_test_list OR "${testname}" IN_LIST ei_smoke_test_list)
+    set_property(TEST ${testname_with_suffix} APPEND PROPERTY LABELS "smoketest")
+    add_dependencies(buildsmoketests ${targetname})
+  endif()
 endmacro(ei_add_test_internal)
 # Macro to add a test
 #
@@ -729,55 +746,3 @@ macro(ei_split_testsuite num_splits)
     add_dependencies("${current_target}" "${curr_test}")
   endforeach()
 endmacro(ei_split_testsuite num_splits)
-
-# Defines the custom command buildsmoketests to build a number of tests
-# specified in smoke_test_list.
-#
-# Test in smoke_test_list can be either test targets (e.g. packetmath) or
-# subtests targets (e.g. packetmath_2). If any of the test are not available
-# in the current configuration they are just skipped.
-#
-# All tests added via this macro are labeled with the smoketest label. This
-# allows running smoketests only using ctest.
-#
-# Smoke tests are intended to be run before the whole test suite is invoked,
-# e.g., to smoke test patches.
-macro(ei_add_smoke_tests smoke_test_list)
-  # Set the build target to build smoketests
-  set(buildtarget "buildsmoketests")
-  add_custom_target("${buildtarget}")
-
-  # Get list of all tests and translate it into a CMake list
-  get_property(EIGEN_TESTS_LIST GLOBAL PROPERTY EIGEN_TESTS_LIST)
-  string(REGEX REPLACE "\n" " " EIGEN_TESTS_LIST "${EIGEN_TESTS_LIST}")
-  set(EIGEN_TESTS_LIST "${EIGEN_TESTS_LIST}")
-  separate_arguments(EIGEN_TESTS_LIST)
-
-  # Check if the test in smoke_test_list is a currently valid test target
-  foreach(test IN ITEMS ${smoke_test_list})
-    # Add tests in smoke_test_list to our smoke test target but only if the test
-    # is currently available, i.e., is in EIGEN_SUBTESTS_LIST
-    if ("${test}" IN_LIST EIGEN_TESTS_LIST)
-      add_dependencies("${buildtarget}" "${test}")
-      # In the case of a test we match all subtests
-      set(ctest_regex "${ctest_regex}^${test}_[0-9]+$$|")
-    endif()
-  endforeach()
-
-  # Get list of all subtests and translate it into a CMake list
-  get_property(EIGEN_SUBTESTS_LIST GLOBAL PROPERTY EIGEN_SUBTESTS_LIST)
-  string(REGEX REPLACE "\n" " " EIGEN_SUBTESTS_LIST "${EIGEN_SUBTESTS_LIST}")
-  set(EIGEN_SUBTESTS_LIST "${EIGEN_SUBTESTS_LIST}")
-  separate_arguments(EIGEN_SUBTESTS_LIST)
-
-  # Check if the test in smoke_test_list is a currently valid subtest target
-  foreach(test IN ITEMS ${smoke_test_list})
-    # Add tests in smoke_test_list to our smoke test target but only if the test
-    # is currently available, i.e., is in EIGEN_SUBTESTS_LIST
-    if ("${test}" IN_LIST EIGEN_SUBTESTS_LIST)
-      add_dependencies("${buildtarget}" "${test}")
-      # Add label smoketest to be able to run smoketests using ctest
-      set_property(TEST ${test} APPEND PROPERTY LABELS "smoketest")
-    endif()
-  endforeach()
-endmacro(ei_add_smoke_tests)

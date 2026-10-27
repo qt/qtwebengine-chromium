@@ -22,6 +22,7 @@
 #import "components/signin/core/browser/chrome_connected_header_helper.h"
 #import "components/signin/core/browser/signin_header_helper.h"
 #import "components/signin/ios/browser/features.h"
+#import "components/signin/public/base/signin_switches.h"
 #import "components/signin/public/identity_manager/accounts_cookie_mutator.h"
 #import "components/signin/public/identity_manager/accounts_in_cookie_jar_info.h"
 #import "google_apis/gaia/gaia_constants.h"
@@ -225,6 +226,13 @@ void AccountConsistencyService::AccountConsistencyHandler::ShouldAllowResponse(
     return;
   }
 
+  if (!response_info.for_main_frame &&
+      base::FeatureList::IsEnabled(
+          switches::kIgnoreChromeManageAccountsInSubframes)) {
+    std::move(callback).Run(PolicyDecision::Allow());
+    return;
+  }
+
   GURL url = net::GURLWithNSURL(http_response.URL);
   // User is showing intent to navigate to a Google-owned domain. Set GAIA and
   // CHROME_CONNECTED cookies if the user is signed in (this is filtered in
@@ -396,7 +404,7 @@ BOOL AccountConsistencyService::RestoreGaiaCookies(
     cookie_manager->GetCookieList(
         GaiaUrls::GetInstance()->secure_google_url(),
         net::CookieOptions::MakeAllInclusive(),
-        net::CookiePartitionKeyCollection::Todo(),
+        net::CookiePartitionKeyCollection(),
         base::BindOnce(
             &AccountConsistencyService::TriggerGaiaCookieChangeIfDeleted,
             base::Unretained(this), std::move(cookies_restored_callback)));

@@ -4,25 +4,93 @@
 
 module toolbar_ui_api.mojom;
 
+import "components/browser_apis/browser_controls/browser_controls_api_data_model.mojom";
 import "components/content_settings/core/common/content_settings_types.mojom";
 import "mojo/public/mojom/base/string16.mojom";
+import "mojo/public/mojom/base/time.mojom";
+import "skia/public/mojom/skcolor.mojom";
 import "ui/gfx/range/mojom/range.mojom";
+
+// A reference to a separately uploaded icon. See IconHandle in icon_handle.h
+// and webui_toolbar::IconTable.
+// Note that this can only be sent C++ -> JS; if you try to sent it towards
+// C++ you'll just end up with a null IconHandle, since the traits don't know
+// what IconTable (or other implementation!) is supposed to be interpreting the
+// number.
+struct IconHandle {
+  uint64 handle_id;
+};
+
+enum IconType {
+  kIconSet,
+  kMaskUrl,
+  kFullColorUrl,
+};
+
+// Used to update binding of an IconHandle.
+struct IconUpdate {
+  uint64 handle_id;
+  // If this is null, the icon is deleted.
+  // Otherwise, the semantics depend on icon_type:
+  // kIconSet: `icon_url_or_name` is the name of an icon provided by a
+  //           <cr-iconset>
+  // kMaskUrl: `icon_url_or_name` is a URL to a monochrome mask image,
+  //           which should be painted with current pen (for now).
+  // kFullColorUrl: `icon_url_or_name` is a URL to a multi-color image,
+  //                that's not controlled by pen colors.
+  string? icon_url_or_name;
+  IconType icon_type;
+
+  // Color to apply to vector icons.
+  skia.mojom.SkColor? color;
+};
 
 // The context menu types that can be opened with ToolbarUIService's
 // ShowContextMenu.
 enum ContextMenuType {
   kUnspecified,
+  // Navigation control buttons
   kReload,
   kSplitTabsAction,
   kSplitTabsContext,
   kBack,
   kForward,
   kHome,
+
+  // Pinned toolbar action buttons
+  kPinnedActionNewIncognitoWindow,
+  kPinnedActionShowPasswordsBubbleOrPage,
+  kPinnedActionShowPaymentsBubbleOrPage,
+  kPinnedActionShowAddressesBubbleOrPage,
+  kPinnedActionSidePanelShowBookmarks,
+  kPinnedActionSidePanelShowReadingList,
+  kPinnedActionSidePanelShowHistoryCluster,
+  kPinnedActionShowDownloads,
+  kPinnedActionClearBrowsingData,
+  kPinnedActionPrint,
+  kPinnedActionSidePanelShowLensOverlayResults,
+  kPinnedActionShowTranslate,
+  kPinnedActionQrCodeGenerator,
+  kPinnedActionRouteMedia,
+  kPinnedActionSidePanelShowReadAnything,
+  kPinnedActionCopyUrl,
+  kPinnedActionSendTabToSelf,
+  kPinnedActionTaskManager,
+  kPinnedActionDevTools,
+  kPinnedActionTabSearch,
+  kPinnedActionSidePanelShowContextualTasks,
+  kPinnedActionSidePanelShowLens,
+  kPinnedActionSidePanelShowAboutThisSite,
+  kPinnedActionSidePanelShowCustomizeChrome,
+  kPinnedActionSidePanelShowShoppingInsights,
+  kPinnedActionSidePanelShowMerchantTrust,
+  kPinnedActionSendSharedTabGroupFeedback,
+  kPinnedActionSidePanelShowComments,
 };
 
 struct BackForwardButtonState {
   bool enabled;
-  bool visible;
+  bool should_be_shown;
   bool is_context_menu_visible;
 };
 
@@ -40,10 +108,68 @@ enum ToolbarButtonType {
   kHome,
 };
 
+struct OmniboxActionFocusChange {
+  bool has_focus = false;
+  gfx.mojom.Range selection;
+};
+
+struct OmniboxActionTextInput {
+  // The entire user-entered text (not including any displayed inline
+  // autocompletion). Should be considered untrusted.
+  mojo_base.mojom.String16 text;
+
+  // The unaccepted portion of inline autocompletion. (May be a suffix of
+  // what the model suggested if the user typed some of the expected
+  // characters).
+  mojo_base.mojom.String16 inline_autocompletion;
+
+  // The version of the input on the browser side, incremented when the
+  // state is reset due to navigation or selection from completion popup.
+  // (Wraparound is OK, it looks for equality).
+  uint32 browser_version;
+
+  // The version of the input on the WebUI side, incremented during typing.
+  // (Wraparound is OK, it looks for equality).
+  uint32 ui_version;
+
+  gfx.mojom.Range selection;
+};
+
+struct OmniboxActionKey {
+  // True if this is a key down event, false if it's key up.
+  bool is_key_down = true;
+
+  // KeyboardEvent.key of the event; nothing else should be stored in this
+  // field.
+  string key;
+  gfx.mojom.Range selection;
+
+  // Modifier keys held during event.
+  array<browser_controls_api.mojom.EventDispositionFlag> modifiers;
+};
+
+union OmniboxAction {
+  OmniboxActionFocusChange focus_change;
+  OmniboxActionTextInput text_input;
+  OmniboxActionKey key;
+};
+
 struct ReloadControlState {
+  // The maximum delay for a double click. If there's a longer delay than this,
+  // it should be treated as two separate clicks.
+  mojo_base.mojom.TimeDelta double_click_interval;
+
   bool can_show_menu;
   bool is_navigation_loading;
   bool is_context_menu_visible;
+
+  // This changes whenever the state should be reset, typically due to a change
+  // in context (i.e., a switch between tabs). When a `state_token` is received
+  // that has different from the most recently recently received token, the
+  // reload button icon changes immediately to the state corresponding to the
+  // value of `is_navigation_loading`, ignoring all debouncing logic and double
+  // click delays, and any timers are stopped.
+  int32 state_token;
 };
 
 struct SplitTabsControlState {
@@ -60,8 +186,16 @@ struct BackForwardControlState {
 };
 
 struct HomeControlState {
-  bool is_pinned;
+  bool should_be_shown;
   bool is_context_menu_visible;
+};
+
+struct AvatarControlState {
+  string icon_url;
+  mojo_base.mojom.String16 text;
+  mojo_base.mojom.String16 tooltip;
+  mojo_base.mojom.String16 accessibility_name;
+  mojo_base.mojom.String16 accessibility_description;
 };
 
 // The type of the content setting image model.
@@ -107,9 +241,8 @@ struct ContentSettingImageState {
   // The type of icon to display.
   ContentSettingImageType type;
 
-  // NOTE: this isn't actually announced unless `should_notify_accessibility` is
-  // true -- it's merely the accessible name.
-  mojo_base.mojom.String16 accessibility_announcement_string;
+  // Accessible name for the icon. If empty, `tooltip` is used instead.
+  mojo_base.mojom.String16 accessibility_string;
 
   // Mouseover popup text to display over icon.
   mojo_base.mojom.String16 tooltip;
@@ -119,30 +252,23 @@ struct ContentSettingImageState {
   // the blocked status.
   bool is_blocked;
 
-  // If true, `accessibility_announcement_string` is announced to users of
-  // accessibility technologies.
-  bool should_notify_accessibility;
-
-  // If true, the bubble should open on its own, without requiring a click from
-  // the user. This round-trips through WebUI so that the bubble never opens
-  // before the icon is ready.
+  // If true, the bubble is visible, so the icon should be highlighted.
   //
-  // If set, `is_bubble_visible` should also be set. Technically, the bubble
-  // only displays after requested by the WebUI, but this prevents a flicker
-  // where the icon appears non-highlighted initially before immediately
-  // transitioning to highlighted.
-  bool should_auto_open_bubble;
-
-  // If true, the bubble is visible, so the icon should be highlighted. Should
-  // always be set to true if `should_auto_open_bubble` is true.
+  // TODO: crbug.com/489109708 - Consider removing `should_run_animation` if we
+  // can use element tracking for highlighting instead.
   bool is_bubble_visible;
+
+  // TODO: crbug.com/489109708 - For stateful property below, we'll need to
+  // send an incrementing generation number instead, as updates can be
+  // consolidated, and check against the last known number on the WebUI side.
+  // This prevents an issue where the initial message (run animation) gets lost
+  // in consolidation.
 
   // If true, when `explanitory_string` is displayed, it should appear via an
   // animation.
   bool should_run_animation;
 
-  // Explanatory text that either appears instantly, or animates in, depending
-  // on the value of `should_run_animation`.
+  // Explanatory text that animates in if `should_run_animation` is true.
   mojo_base.mojom.String16 explanatory_string;
 
   // NOTE: The visual icon to display is determined by `type`
@@ -169,8 +295,21 @@ struct OmniboxTextPortion {
 };
 
 struct OmniboxViewState {
+  // Latest version of the input from the WebUI seen by the browser side;
+  // used to discard updates that are out-of-date. This gets reset to 0
+  // when `browser_version` changes.
+  uint32 ui_version = 0;
+
+  // Latest version of the input from the browser side. Used to discard
+  // input if something dramatic happened clearing the entire state.
+  uint32 browser_version = 0;
+
   // Text to display in the omnibox view.
   array<OmniboxTextPortion> text_pieces;
+
+  // Inline autocompletion to display. If not empty, this may override
+  // `selection`.
+  mojo_base.mojom.String16 inline_autocompletion;
 
   // Selection or caret (if start == end) to set on the omnibox view, if any.
   gfx.mojom.Range? selection;
@@ -186,8 +325,20 @@ struct LocationBarFlags {
   // changes.
   bool user_input_in_progress = false;
 
-  // Whether to render as if we have focus, due to omnibox popup taking it over.
-  bool render_focused = false;
+  // Whether the omnibox popup is open
+  bool popup_open = false;
+};
+
+// Search keyword chip, which shows up when the user enters things like
+// "google.com query" or "@history recent site" to replace google.com and
+// @history with a chip describing the search provider.
+struct SelectedKeywordState {
+  // Descriptions to show based on available space. Note that `short_name`
+  // may be empty.
+  mojo_base.mojom.String16 short_name;
+  mojo_base.mojom.String16 full_name;
+
+  // TODO(crbug.com/503784002): Icon
 };
 
 // Enum of all supported pinned toolbar actions.
@@ -235,6 +386,9 @@ struct PinnedToolbarActionState {
   // Should this button appear enabled?
   bool enabled;
 
+  // Should this button appear activated?
+  bool activated;
+
   // Tooltip text to display on hover.
   mojo_base.mojom.String16 tooltip;
 
@@ -243,13 +397,126 @@ struct PinnedToolbarActionState {
 
   // The ElementIdentifier for this action, if any.
   string? element_id;
+
+  // The icon to display.
+  IconHandle icon;
 };
 
 struct LocationBarState {
   OmniboxViewState omnibox_view_state;
   LocationBarFlags location_bar_flags;
-  // The set of content setting icon state for each visible LHS icon.
+  // The set of content setting icon state for each visible RHS icon.
   array<ContentSettingImageState> content_setting_image_states;
+  // LHS location bar chips states.
+  LhsChipsState lhs_chips_state;
+
+  // Any search keyword to render, if not null.
+  SelectedKeywordState? selected_keyword;
+};
+
+enum LhsChipIdentifier {
+  kUnspecified,
+  kLocationIcon,
+  kPermissionIndicator,
+  kPermissionRequest,
+};
+
+// Defines the visual styling and color mappings for the permission chip,
+// matching the equivalent C++ views::PermissionChipTheme enum.
+enum PermissionChipTheme {
+  kUnspecified,
+  kNormalVisibility,
+  kLowVisibility,
+  kActivityIndicator,
+  kInUseActivityIndicator,
+  kBlockedActivityIndicator,
+  kOnSystemBlockedActivityIndicator,
+};
+
+// Defines the visual style of the permission prompt, matching the equivalent
+// C++ PermissionPromptStyle enum. This dictates whether the prompt is shown
+// as a bubble, a chip, or a quieter UI treatment.
+enum PermissionPromptStyle {
+  kUnspecified,
+  kBubbleOnly,
+  kChip,
+  kLocationBarRightIcon,
+  kQuietChip,
+};
+
+// Represents the user's decision or action regarding a permission request,
+// matching the equivalent C++ permissions::PermissionAction enum.
+enum PermissionAction {
+  kUnspecified,
+  kGranted,
+  kDenied,
+  kDismissed,
+  kIgnored,
+  kRevoked,
+  kGrantedOnce,
+};
+
+struct PermissionChipState {
+  bool is_visible;
+  string icon_name;
+  mojo_base.mojom.String16 message;
+  mojo_base.mojom.String16 tooltip;
+  PermissionChipTheme theme;
+  PermissionAction user_decision;
+  bool should_show_blocked_icon;
+  PermissionPromptStyle prompt_style;
+  bool is_fully_collapsed;
+  mojo_base.mojom.String16 accessibility_name;
+};
+
+struct PermissionDashboardState {
+  PermissionChipState indicator_chip;
+  PermissionChipState request_chip;
+  bool is_divider_visible;
+};
+
+// Represents the security state of the current page.
+// This strictly maps to native security_state::SecurityLevel values.
+enum SecurityLevel {
+  kUnspecified,
+  kNone,
+  kSecure,
+  kDangerous,
+  kWarning,
+};
+
+struct SecurityChipAccessibilityState {
+  mojo_base.mojom.String16 label;
+  mojo_base.mojom.String16 description;
+};
+
+struct SecurityChipState {
+  IconHandle icon;
+  SecurityLevel security_level;
+  mojo_base.mojom.String16 text;
+  SecurityChipAccessibilityState accessibility_state;
+  bool is_clickable;
+  // True specifically when the text is exactly "Dangerous" (e.g. Malware). This
+  // represents a higher alert state than the standard kDangerous security
+  // level, and generally receives a more prominent visual treatment.
+  bool is_text_dangerous;
+  // Whether the security chip is visible. It might be hidden if it is
+  // overridden by permission chips.
+  bool is_visible;
+};
+
+// Note: The security chip and permission chips are visually mutually exclusive.
+// When active permission indicators exist, they override and hide the security
+// chip. The WebUI frontend is responsible for this logic.
+struct LhsChipsState {
+  // The data payload for the location icon. This is referred to as the
+  // "security chip" because its primary role is displaying the page's security
+  // status (e.g., tune icon, "Not Secure" warning, G logo).
+  SecurityChipState security_chip;
+  // Multiple indicators can be active (e.g., Camera + Mic).
+  array<ContentSettingImageState> activity_indicators;
+
+  PermissionDashboardState? permission_dashboard;
 };
 
 struct NavigationControlsState {
@@ -257,6 +524,7 @@ struct NavigationControlsState {
   SplitTabsControlState split_tabs_control_state;
   BackForwardControlState back_forward_control_state;
   HomeControlState home_control_state;
+  AvatarControlState avatar_control_state;
   LocationBarState location_bar_state;
   // List of pinned toolbar action button states. Order corresponds to order
   // of the drawn buttons and duplicates imply duplicate buttons.
@@ -264,4 +532,7 @@ struct NavigationControlsState {
   // This is incremented every time a settings change may change the layout
   // constants.
   int32 layout_constants_version = 0;
+
+  // This is true if we're in touch mode.
+  bool touch_ui = false;
 };

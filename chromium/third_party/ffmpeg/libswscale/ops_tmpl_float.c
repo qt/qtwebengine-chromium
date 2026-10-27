@@ -29,8 +29,8 @@
 #if BIT_DEPTH == 32
 #  define PIXEL_TYPE SWS_PIXEL_F32
 #  define PIXEL_MAX  FLT_MAX
-#  define PIXEL_MIN  FLT_MIN
 #  define pixel_t    float
+#  define inter_t    float
 #  define block_t    f32block_t
 #  define px         f32
 #else
@@ -41,23 +41,27 @@
 #define FMT_CHAR f
 #include "ops_tmpl_common.c"
 
-DECL_SETUP(setup_dither)
+DECL_SETUP(setup_dither, params, out)
 {
+    const SwsOp *op = params->op;
     const int size = 1 << op->dither.size_log2;
     if (size == 1) {
         /* We special case this value */
         av_assert1(!av_cmp_q(op->dither.matrix[0], av_make_q(1, 2)));
-        out->ptr = NULL;
+        out->priv.ptr = NULL;
         return 0;
     }
 
     const int width = FFMAX(size, SWS_BLOCK_SIZE);
-    pixel_t *matrix = out->ptr = av_malloc(sizeof(pixel_t) * size * width);
+    pixel_t *matrix = out->priv.ptr = av_malloc(sizeof(pixel_t) * size * width);
     if (!matrix)
         return AVERROR(ENOMEM);
+    out->free = ff_op_priv_free;
 
-    static_assert(sizeof(out->ptr) <= sizeof(uint8_t[8]), ">8 byte pointers not supported");
-    int8_t *offset = &out->i8[8];
+    static_assert(sizeof(out->priv.ptr) <= sizeof(uint8_t[8]),
+                  ">8 byte pointers not supported");
+
+    int8_t *offset = &out->priv.i8[8];
     for (int i = 0; i < 4; i++)
         offset[i] = op->dither.y_offset[i];
 
@@ -94,20 +98,16 @@ DECL_FUNC(dither, const int size_log2)
     DITHER_COMP(z, 2)
     DITHER_COMP(w, 3)
 
-    CONTINUE(block_t, x, y, z, w);
+    CONTINUE(x, y, z, w);
 }
 
 #define WRAP_DITHER(N)                                                          \
-DECL_IMPL(dither##N)                                                            \
-{                                                                               \
-    CALL(dither, N);                                                            \
-}                                                                               \
+DECL_IMPL(dither, dither##N, N)                                                 \
                                                                                 \
-DECL_ENTRY(dither##N,                                                           \
+DECL_ENTRY(dither##N, SWS_COMP_ALL,                                             \
     .op = SWS_OP_DITHER,                                                        \
     .dither_size = N,                                                           \
     .setup = fn(setup_dither),                                                  \
-    .free = ff_op_priv_free,                                                    \
 );
 
 WRAP_DITHER(0)
@@ -126,8 +126,9 @@ typedef struct {
     pixel_t k[4];
 } fn(LinCoeffs);
 
-DECL_SETUP(setup_linear)
+DECL_SETUP(setup_linear, params, out)
 {
+    const SwsOp *op = params->op;
     fn(LinCoeffs) c;
 
     for (int i = 0; i < 4; i++) {
@@ -136,7 +137,7 @@ DECL_SETUP(setup_linear)
         c.k[i] = av_q2pixel(op->lin.m[i][4]);
     }
 
-    return SETUP_MEMDUP(c);
+    return SETUP_MEMDUP(c, out);
 }
 
 /**
@@ -181,36 +182,34 @@ DECL_FUNC(linear_mask, const uint32_t mask)
         w[i] += (mask & SWS_MASK(3, 3))  ? c.m[3][3] * ww : ww;
     }
 
-    CONTINUE(block_t, x, y, z, w);
+    CONTINUE(x, y, z, w);
 }
 
 #define WRAP_LINEAR(NAME, MASK)                                                 \
-DECL_IMPL(linear_##NAME)                                                        \
-{                                                                               \
-    CALL(linear_mask, MASK);                                                    \
-}                                                                               \
+DECL_IMPL(linear_mask, linear_##NAME, MASK)                                     \
                                                                                 \
-DECL_ENTRY(linear_##NAME,                                                       \
+DECL_ENTRY(linear_##NAME, SWS_COMP_ALL,                                         \
     .op    = SWS_OP_LINEAR,                                                     \
     .setup = fn(setup_linear),                                                  \
-    .free  = ff_op_priv_free,                                                   \
     .linear_mask = (MASK),                                                      \
 );
 
 WRAP_LINEAR(luma,      SWS_MASK_LUMA)
 WRAP_LINEAR(alpha,     SWS_MASK_ALPHA)
 WRAP_LINEAR(lumalpha,  SWS_MASK_LUMA | SWS_MASK_ALPHA)
+WRAP_LINEAR(yalpha,    SWS_MASK(1, 1)) /* ya alpha */
 WRAP_LINEAR(dot3,      0x7)
-WRAP_LINEAR(row0,      SWS_MASK_ROW(0))
-WRAP_LINEAR(row0a,     SWS_MASK_ROW(0) | SWS_MASK_ALPHA)
+WRAP_LINEAR(dot3a,     0x7 | SWS_MASK_ALPHA)
+WRAP_LINEAR(row0,      SWS_MASK_ROW(0) ^ SWS_MASK(0, 3)) /* row0 sans alpha */
 WRAP_LINEAR(diag3,     SWS_MASK_DIAG3)
 WRAP_LINEAR(diag4,     SWS_MASK_DIAG4)
 WRAP_LINEAR(diagoff3,  SWS_MASK_DIAG3 | SWS_MASK_OFF3)
-WRAP_LINEAR(matrix3,   SWS_MASK_MAT3)
 WRAP_LINEAR(affine3,   SWS_MASK_MAT3 | SWS_MASK_OFF3)
+WRAP_LINEAR(affine3uv, SWS_MASK_MAT3 | SWS_MASK_OFF(1) | SWS_MASK_OFF(2))
+WRAP_LINEAR(affine3x,  SWS_MASK_MAT3 ^ SWS_MASK(0, 1) | SWS_MASK_OFF3)
+WRAP_LINEAR(affine3xa, SWS_MASK_MAT3 ^ SWS_MASK(0, 1) | SWS_MASK_OFF3 | SWS_MASK_ALPHA)
+WRAP_LINEAR(affine3xy, SWS_MASK_MAT3 ^ SWS_MASK(0, 0) ^ SWS_MASK(0, 1) | SWS_MASK_OFF3)
 WRAP_LINEAR(affine3a,  SWS_MASK_MAT3 | SWS_MASK_OFF3 | SWS_MASK_ALPHA)
-WRAP_LINEAR(matrix4,   SWS_MASK_MAT4)
-WRAP_LINEAR(affine4,   SWS_MASK_MAT4 | SWS_MASK_OFF4)
 
 static const SwsOpTable fn(op_table_float) = {
     .block_size = SWS_BLOCK_SIZE,
@@ -219,7 +218,7 @@ static const SwsOpTable fn(op_table_float) = {
         REF_COMMON_PATTERNS(convert_uint16),
         REF_COMMON_PATTERNS(convert_uint32),
 
-        &fn(op_clear_1110),
+        &fn(op_clear_0001),
         REF_COMMON_PATTERNS(min),
         REF_COMMON_PATTERNS(max),
         REF_COMMON_PATTERNS(scale),
@@ -234,24 +233,36 @@ static const SwsOpTable fn(op_table_float) = {
         &fn(op_dither7),
         &fn(op_dither8),
 
-        &fn(op_clear_1110),
-        &fn(op_clear_0111),
-        &fn(op_clear_0011),
+        &fn(op_clear_0001),
+        &fn(op_clear_1000),
+        &fn(op_clear_1100),
 
         &fn(op_linear_luma),
         &fn(op_linear_alpha),
         &fn(op_linear_lumalpha),
+        &fn(op_linear_yalpha),
         &fn(op_linear_dot3),
+        &fn(op_linear_dot3a),
         &fn(op_linear_row0),
-        &fn(op_linear_row0a),
         &fn(op_linear_diag3),
         &fn(op_linear_diag4),
         &fn(op_linear_diagoff3),
-        &fn(op_linear_matrix3),
         &fn(op_linear_affine3),
+        &fn(op_linear_affine3uv),
+        &fn(op_linear_affine3x),
+        &fn(op_linear_affine3xa),
+        &fn(op_linear_affine3xy),
         &fn(op_linear_affine3a),
-        &fn(op_linear_matrix4),
-        &fn(op_linear_affine4),
+
+        &fn(op_filter1_v),
+        &fn(op_filter2_v),
+        &fn(op_filter3_v),
+        &fn(op_filter4_v),
+
+        &fn(op_filter1_h),
+        &fn(op_filter2_h),
+        &fn(op_filter3_h),
+        &fn(op_filter4_h),
 
         NULL
     },
@@ -259,8 +270,8 @@ static const SwsOpTable fn(op_table_float) = {
 
 #undef PIXEL_TYPE
 #undef PIXEL_MAX
-#undef PIXEL_MIN
 #undef pixel_t
+#undef inter_t
 #undef block_t
 #undef px
 

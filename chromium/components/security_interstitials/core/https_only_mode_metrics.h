@@ -6,6 +6,7 @@
 #define COMPONENTS_SECURITY_INTERSTITIALS_CORE_HTTPS_ONLY_MODE_METRICS_H_
 
 #include <cstddef>
+
 #include "base/time/time.h"
 
 namespace security_interstitials::https_only_mode {
@@ -16,6 +17,10 @@ extern const char kEventHistogram[];
 // Same as kEventHistogram, but only recorded if the event happened on a
 // navigation where HFM was enabled due to the site engagement heuristic.
 extern const char kEventHistogramWithEngagementHeuristic[];
+
+// Same as kEventHistogram, but only recorded if the event happened on a
+// navigation where HFM was enabled due to the HFM-ESB pairing.
+extern const char kEventHistogramWithEsbPairing[];
 
 extern const char kNavigationRequestSecurityLevelHistogram[];
 
@@ -76,7 +81,16 @@ enum class Event {
   // Upgrade failed due to encountering a redirect loop and failing early.
   kUpgradeRedirectLoop = 8,
 
-  kMaxValue = kUpgradeRedirectLoop,
+  // Typed schemeless upgrade metrics.
+  // kTypedSchemelessUpgradeAttempted, kTypedSchemelessUpgradeSucceeded, and
+  // kTypedSchemelessUpgradeTimedOut are subsets of kUpgradeAttempted,
+  // kUpgradeSucceeded, and kUpgradeTimedOut respectively. The base metrics
+  // should also be recorded whenever these events are recorded.
+  kTypedSchemelessUpgradeAttempted = 9,
+  kTypedSchemelessUpgradeSucceeded = 10,
+  kTypedSchemelessUpgradeTimedOut = 11,
+
+  kMaxValue = kTypedSchemelessUpgradeTimedOut,
 };
 
 // Recorded by HTTPS-Upgrade logic when each step in a navigation request is
@@ -139,7 +153,11 @@ enum class NavigationRequestSecurityLevel {
   // or an interstitial. Not recorded if the hostname is allowlisted.
   kHttpsEnforcedOnHostname = 13,
 
-  kMaxValue = kHttpsEnforcedOnHostname,
+  // Request was upgraded to HTTPS, and was a typed schemeless navigation
+  // (eligible for no-fallback on timeout).
+  kTypedSchemelessUpgraded = 14,
+
+  kMaxValue = kTypedSchemelessUpgraded,
 };
 
 // Recorded by the Site Engagement Heuristic logic, recording whether HFM should
@@ -189,6 +207,10 @@ struct HttpInterstitialState {
   // warn when HTTPS can be expected to succeed, but not when it will likely
   // fail (e.g. to non-unique hostnames).
   bool enabled_in_balanced_mode = false;
+
+  // Whether HTTPS-First Mode is enabled because the user has Enhanced Safe
+  // Browsing enabled and has not manually customized their HFM settings.
+  bool enabled_by_esb_pairing = false;
 };
 
 // Helper to record an HTTPS-First Mode navigation event.
@@ -236,14 +258,31 @@ enum class InterstitialReason {
   kIncognito = 5,
   // The interstitial was shown because of HTTPS-First Balance Mode.
   kBalanced = 6,
+  // The interstitial was shown because HFM was enabled via ESB pairing.
+  kEsbPairing = 7,
 
-  kMaxValue = kBalanced,
+  kMaxValue = kEsbPairing,
 };
 
 InterstitialReason GetInterstitialReason(
     const HttpInterstitialState& interstitial_state);
 
 void RecordInterstitialReason(const HttpInterstitialState& interstitial_state);
+
+// LINT.IfChange
+
+// Reason why the navigation fell back to HTTP. Used for UKM. There is only a
+// single FallbackReason per navigation.
+enum class FallbackReason {
+  kNone = 0,
+  kTimerFired = 1,
+  kCertError = 2,
+  kRedirectLoop = 3,
+  kNetError = 4,
+  kMaxValue = kNetError,
+};
+
+// LINT.ThenChange(/tools/metrics/histograms/metadata/security/enums.xml:HttpsFirstModeFallbackReason)
 
 // Used for UKM. There is only a single BlockingResult per navigation.
 enum class BlockingResult {

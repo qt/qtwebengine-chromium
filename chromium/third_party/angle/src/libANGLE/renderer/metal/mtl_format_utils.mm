@@ -303,7 +303,9 @@ void FormatTable::setFormatCaps(MTLPixelFormat id,
     mNativePixelFormatCapsTable[id].pixelBytesMSAA  = pixelBytes;
     mNativePixelFormatCapsTable[id].channels        = channels;
     if (channels != 0)
+    {
         mNativePixelFormatCapsTable[id].alignment = MAX(pixelBytes / channels, 1U);
+    }
 }
 
 void FormatTable::setCompressedFormatCaps(MTLPixelFormat formatId, bool filterable)

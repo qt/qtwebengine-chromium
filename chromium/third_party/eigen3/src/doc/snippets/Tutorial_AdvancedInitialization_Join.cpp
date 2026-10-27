@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 RowVectorXd vec1(3);
 vec1 << 1, 2, 3;
 std::cout << "vec1 = " << vec1 << std::endl;

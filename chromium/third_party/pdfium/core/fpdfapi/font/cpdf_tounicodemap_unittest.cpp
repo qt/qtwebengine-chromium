@@ -63,6 +63,22 @@ TEST(CPDFToUnicodeMapTest, StringToWideString) {
             CPDF_ToUnicodeMap::StringToWideString("< c 2 a b  F a A b  1 2 >"));
 }
 
+TEST(CPDFToUnicodeMapTest, HandleBeginBFCharRejectsInvalidCidValues) {
+  static constexpr const char* kInputs[] = {
+      "1 beginbfchar<00NN><0041>endbfchar",
+      "1 beginbfchar<100000000><0041>endbfchar",
+  };
+
+  for (const char* input : kInputs) {
+    auto stream =
+        pdfium::MakeRetain<CPDF_Stream>(ByteStringView(input).unsigned_span());
+    CPDF_ToUnicodeMap map(stream);
+    EXPECT_EQ(L"", map.Lookup(0));
+    EXPECT_EQ(0u, map.ReverseLookup(0x0041));
+    EXPECT_EQ(0u, map.GetUnicodeCountByCharcodeForTesting(0u));
+  }
+}
+
 TEST(CPDFToUnicodeMapTest, HandleBeginBFCharBadCount) {
   {
     static constexpr uint8_t kInput1[] =

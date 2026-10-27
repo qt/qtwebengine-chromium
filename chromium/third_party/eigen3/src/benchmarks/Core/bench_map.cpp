@@ -2,6 +2,8 @@
 //
 // Compares contiguous Map vs strided Map vs owned matrix for basic
 // operations (GEMV and vector sum).
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>

@@ -10,7 +10,6 @@
 #include "chrome/browser/ui/omnibox/omnibox_controller.h"
 #include "chrome/browser/ui/omnibox/test_omnibox_edit_model.h"
 #include "chrome/browser/ui/webui/cr_components/searchbox/searchbox_handler.h"
-#include "chrome/browser/ui/webui/omnibox_popup/mojom/omnibox_popup.mojom.h"
 #include "chrome/browser/ui/webui/searchbox/lens_searchbox_client.h"
 #include "components/contextual_search/contextual_search_types.h"
 #include "components/omnibox/browser/autocomplete_controller.h"
@@ -22,6 +21,11 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/window_open_disposition.h"
+#include "ui/gfx/geometry/size.h"
+
+#if !BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/ui/webui/omnibox_popup/mojom/omnibox_popup.mojom.h"
+#endif
 
 class MockTabContextualizationController
     : public lens::TabContextualizationController {
@@ -95,8 +99,21 @@ class MockSearchboxPage : public searchbox::mojom::Page {
   MOCK_METHOD(void, UpdateLensSearchEligibility, (bool eligible), (override));
   MOCK_METHOD(void, UpdateAimPopupEligibility, (bool eligible), (override));
   MOCK_METHOD(void, UpdateContentSharingPolicy, (bool enabled), (override));
+  MOCK_METHOD(void,
+              OnPermissionPromptChanged,
+              (bool, const gfx::Size&),
+              (override));
+  MOCK_METHOD(void,
+              SetRestoredTabIds,
+              (const std::vector<int32_t>& ids),
+              (override));
+  MOCK_METHOD(void,
+              SetAimThreadRestoredTabs,
+              (std::vector<searchbox::mojom::TabInfoPtr> tabs),
+              (override));
 };
 
+#if !BUILDFLAG(IS_ANDROID)
 class MockOmniboxPopupPage : public omnibox_popup::mojom::Page {
  public:
   MockOmniboxPopupPage();
@@ -107,7 +124,10 @@ class MockOmniboxPopupPage : public omnibox_popup::mojom::Page {
   void FlushForTesting() { receiver_.FlushForTesting(); }
 
   MOCK_METHOD(void, OnShow, (), (override));
+  MOCK_METHOD(void, OnContextMenuClosed, (), (override));
+  MOCK_METHOD(void, SetInputText, (const std::string& input), (override));
 };
+#endif
 
 class MockAutocompleteController : public AutocompleteController {
  public:

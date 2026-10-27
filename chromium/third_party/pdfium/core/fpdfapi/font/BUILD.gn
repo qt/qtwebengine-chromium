@@ -7,10 +7,6 @@ import("../../../testing/test.gni")
 
 source_set("font") {
   sources = [
-    "cfx_cttgsubtable.cpp",
-    "cfx_cttgsubtable.h",
-    "cfx_stockfontarray.cpp",
-    "cfx_stockfontarray.h",
     "cpdf_cid2unicodemap.cpp",
     "cpdf_cid2unicodemap.h",
     "cpdf_cidfont.cpp",
@@ -27,6 +23,8 @@ source_set("font") {
     "cpdf_fontglobals.h",
     "cpdf_simplefont.cpp",
     "cpdf_simplefont.h",
+    "cpdf_stockfontarray.cpp",
+    "cpdf_stockfontarray.h",
     "cpdf_tounicodemap.cpp",
     "cpdf_tounicodemap.h",
     "cpdf_truetypefont.cpp",

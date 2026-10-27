@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_LLT_H
 #define EIGEN_LLT_H
@@ -404,19 +405,8 @@ LLT<MatrixType, UpLo_>& LLT<MatrixType, UpLo_>::compute(const EigenBase<InputTyp
   m_matrix.resize(size, size);
   if (!internal::is_same_dense(m_matrix, a.derived())) m_matrix = a.derived();
 
-  // Compute matrix L1 norm = max abs column sum.
-  m_l1_norm = RealScalar(0);
-  // TODO: move this code to SelfAdjointView
-  for (Index col = 0; col < size; ++col) {
-    RealScalar abs_col_sum;
-    if (UpLo_ == Lower)
-      abs_col_sum =
-          m_matrix.col(col).tail(size - col).template lpNorm<1>() + m_matrix.row(col).head(col).template lpNorm<1>();
-    else
-      abs_col_sum =
-          m_matrix.col(col).head(col).template lpNorm<1>() + m_matrix.row(col).tail(size - col).template lpNorm<1>();
-    if (abs_col_sum > m_l1_norm) m_l1_norm = abs_col_sum;
-  }
+  // Compute matrix L1 norm = max abs column sum over the implicit self-adjoint matrix.
+  m_l1_norm = m_matrix.template selfadjointView<UpLo_>().l1Norm();
 
   m_isInitialized = true;
   bool ok = Traits::inplace_decomposition(m_matrix);

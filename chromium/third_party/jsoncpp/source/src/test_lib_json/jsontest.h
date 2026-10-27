@@ -185,7 +185,7 @@ TestResult& checkEqual(TestResult& result, T expected, U actual,
 
 Json::String ToJsonString(const char* toConvert);
 Json::String ToJsonString(Json::String in);
-#if JSONCPP_USING_SECURE_MEMORY
+#if JSONCPP_USE_SECURE_MEMORY
 Json::String ToJsonString(std::string in);
 #endif
 
@@ -228,6 +228,8 @@ TestResult& checkStringEqual(TestResult& result, const Json::String& expected,
                              JsonTest::ToJsonString(actual), __FILE__,         \
                              __LINE__, #expected " == " #actual)
 
+#if JSON_USE_EXCEPTION
+
 /// \brief Asserts that a given expression throws an exception
 #define JSONTEST_ASSERT_THROWS(expr)                                           \
   do {                                                                         \
@@ -241,6 +243,8 @@ TestResult& checkStringEqual(TestResult& result, const Json::String& expected,
       result_->addFailure(__FILE__, __LINE__,                                  \
                           "expected exception thrown: " #expr);                \
   } while (0)
+
+#endif // JSON_USE_EXCEPTION
 
 /// \brief Begin a fixture test case.
 #define JSONTEST_FIXTURE(FixtureType, name)                                    \

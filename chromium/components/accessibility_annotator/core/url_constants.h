@@ -7,8 +7,13 @@
 
 namespace accessibility_annotator {
 
+inline constexpr char kAccessibilityAnnotatorLearnMoreURL[] =
+    "https://support.google.com/chrome?p=chrome_pi";
+
 inline constexpr char kAccessibilityAnnotatorSettingsURL[] =
     "https://gemini.google.com/personalization-settings";
+
+inline constexpr char kAccessibilityAnnotatorTriggerText[] = "@@";
 
 }  // namespace accessibility_annotator
 

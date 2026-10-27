@@ -208,4 +208,59 @@ TEST_F(UrlIndexTest, DestructionWithOrphanedUrlData) {
   EXPECT_FALSE(b->url_index());
 }
 
+TEST_F(UrlIndexTest, RedirectToPreservesCrossOrigin) {
+  KURL url1("http://foo.bar.com");
+  KURL url2("http://bar.foo.com");
+  scoped_refptr<UrlData> a = GetByUrl(url1, UrlData::CORS_UNSPECIFIED);
+  scoped_refptr<UrlData> b = GetByUrl(url2, UrlData::CORS_UNSPECIFIED);
+
+  EXPECT_FALSE(a->is_cors_cross_origin());
+  EXPECT_FALSE(b->is_cors_cross_origin());
+
+  a->set_is_cors_cross_origin(true);
+  a->RedirectTo(b);
+
+  EXPECT_TRUE(a->is_cors_cross_origin());
+  EXPECT_TRUE(b->is_cors_cross_origin());
+}
+
+TEST_F(UrlIndexTest, AllowGzip) {
+  KURL url("http://foo.bar.com");
+
+  // 1. Get UrlData with kAllowGzip and insert it into index.
+  scoped_refptr<UrlData> a =
+      url_index_->GetByUrl(url, UrlData::CORS_UNSPECIFIED, UrlData::kNormal,
+                           media::DataSource::EncodingMode::kAllowGzip);
+  EXPECT_EQ(a->encoding_mode(), media::DataSource::EncodingMode::kAllowGzip);
+  a->Use();
+  a->set_range_supported();
+  EXPECT_TRUE(a->Valid());
+  EXPECT_EQ(a, url_index_->TryInsert(a));
+
+  // 2. Get UrlData with kIdentity (should be a cache miss / new instance).
+  scoped_refptr<UrlData> b =
+      url_index_->GetByUrl(url, UrlData::CORS_UNSPECIFIED, UrlData::kNormal,
+                           media::DataSource::EncodingMode::kIdentity);
+  EXPECT_EQ(b->encoding_mode(), media::DataSource::EncodingMode::kIdentity);
+  EXPECT_NE(a, b);
+
+  // 3. Get UrlData with kAllowGzip again (should be a cache hit, returns 'a').
+  scoped_refptr<UrlData> c =
+      url_index_->GetByUrl(url, UrlData::CORS_UNSPECIFIED, UrlData::kNormal,
+                           media::DataSource::EncodingMode::kAllowGzip);
+  EXPECT_EQ(a, c);
+
+  // 4. Insert 'b' (kIdentity) into the index.
+  b->Use();
+  b->set_range_supported();
+  EXPECT_TRUE(b->Valid());
+  EXPECT_EQ(b, url_index_->TryInsert(b));
+
+  // 5. Get UrlData with kIdentity again (should be a cache hit, returns 'b').
+  scoped_refptr<UrlData> d =
+      url_index_->GetByUrl(url, UrlData::CORS_UNSPECIFIED, UrlData::kNormal,
+                           media::DataSource::EncodingMode::kIdentity);
+  EXPECT_EQ(b, d);
+}
+
 }  // namespace blink

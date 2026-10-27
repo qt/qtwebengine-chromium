@@ -26,17 +26,30 @@
 #include "third_party/skia/include/core/SkRefCnt.h"  // nogncheck
 #endif
 
-namespace fxge {
-enum class FontEncoding : uint32_t;
-}
+#if defined(PDF_ENABLE_FONTATIONS)
+#include "third_party/rust/cxx/v1/cxx.h"
+#endif
 
+class CFX_CTTGSUBTable;
 class CFX_GlyphBitmap;
 class CFX_Path;
 class CFX_SubstFont;
 
+#if defined(PDF_ENABLE_XFA)
+class CFX_CTTNameTable;
+#endif  // defined(PDF_ENABLE_XFA)
+
 #if defined(PDF_USE_SKIA)
 class SkTypeface;
 #endif
+
+#if defined(PDF_ENABLE_FONTATIONS)
+struct SkrifaFontHolder;
+#endif
+
+namespace fxge {
+enum class FontEncoding : uint32_t;
+}  // namespace fxge
 
 class CFX_Face final : public Retainable, public Observable {
  public:
@@ -63,6 +76,7 @@ class CFX_Face final : public Retainable, public Observable {
 
   bool HasGlyphNames() const;
   bool IsTtOt() const;
+  ByteString GetFontFormat();
   bool IsFixedWidth() const;
   bool IsItalic() const;
   bool IsBold() const;
@@ -80,6 +94,8 @@ class CFX_Face final : public Retainable, public Observable {
   // Returns the size of the data, or 0 on failure. Only write into `buffer` if
   // it is large enough to hold the data.
   size_t GetSfntTable(uint32_t table, pdfium::span<uint8_t> buffer);
+
+  std::unique_ptr<CFX_CTTGSUBTable> ParseGSUBTable();
 
   int GetGlyphCount() const;
   // TODO(crbug.com/42271048): Can this method be private?
@@ -114,12 +130,10 @@ class CFX_Face final : public Retainable, public Observable {
   std::optional<fxge::FontEncoding> GetCurrentCharMapEncoding() const;
   CharMapId GetCharMapIdByIndex(size_t index) const;
   int GetCharMapPlatformIdByIndex(size_t index) const;
-  int GetCharMapEncodingIdByIndex(size_t index) const;
   fxge::FontEncoding GetCharMapEncodingByIndex(size_t index) const;
   size_t GetCharMapCount() const;
   int LoadGlyph(uint32_t glyph_index, bool scale);
   ByteString GetPostscriptName();
-  CFX_Size GetPixelSize() const;
   void SetCharMap(CharMap map);
   void SetCharMapByIndex(size_t index);
   bool SelectCharMap(fxge::FontEncoding encoding);
@@ -134,6 +148,7 @@ class CFX_Face final : public Retainable, public Observable {
 #if defined(PDF_ENABLE_XFA)
   bool IsScalable() const;
   int GetNumFaces() const;
+  std::unique_ptr<CFX_CTTNameTable> ParseNameTable();
   std::optional<std::array<uint32_t, 4>> GetOs2UnicodeRange();
 #endif
 
@@ -148,12 +163,20 @@ class CFX_Face final : public Retainable, public Observable {
  private:
   CFX_Face(RetainPtr<Retainable> cache_entry,
            RetainPtr<CFX_ReadOnlySpanStream> font_stream,
-           FT_FaceRec* rec);
+           FT_FaceRec* rec
+#if defined(PDF_ENABLE_FONTATIONS)
+           ,
+           std::unique_ptr<SkrifaFontHolder> skrifa_font
+#endif
+  );
 
   ~CFX_Face() override;
 
   FT_FaceRec* GetRec() { return rec_.get(); }
   const FT_FaceRec* GetRec() const { return rec_.get(); }
+
+  int GetCharMapEncodingIdByIndex(size_t index) const;
+  CFX_Size GetPixelSize() const;
 
   bool IsTricky() const;
   void AdjustVariationParams(int glyph_index, int dest_width, int weight);
@@ -162,6 +185,14 @@ class CFX_Face final : public Retainable, public Observable {
 
 #if BUILDFLAG(IS_ANDROID) || defined(PDF_ENABLE_XFA)
   std::optional<std::array<uint8_t, 2>> GetOs2Panose();
+#endif
+
+#if defined(PDF_ENABLE_SKIA_TYPEFACE_CHECKS)
+  std::unique_ptr<CFX_Path> LoadGlyphPathFontations(
+      uint32_t glyph_index,
+      int dest_width,
+      bool is_vertical,
+      const CFX_SubstFont* subst_font);
 #endif
 
   // `cache_entry_` must outlive `font_stream_`. Faces managed by a cache
@@ -179,6 +210,9 @@ class CFX_Face final : public Retainable, public Observable {
 #if defined(PDF_USE_SKIA)
   sk_sp<SkTypeface> skia_typeface_;
 #endif  // defined(PDF_USE_SKIA)
+#if defined(PDF_ENABLE_FONTATIONS)
+  std::unique_ptr<SkrifaFontHolder> skrifa_font_;
+#endif
 };
 
 #endif  // CORE_FXGE_CFX_FACE_H_

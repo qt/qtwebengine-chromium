@@ -12,14 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
+    default_applicable_licenses = ["//fcp:license"],
     default_visibility = [
         "//fcp:internal",
     ],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 cc_library(
@@ -60,6 +63,7 @@ cc_test(
         "//fcp/testing",
         "@com_google_absl//absl/random",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/time",
         "@com_google_googleapis//google/rpc:status_cc_proto",
         "@com_google_googletest//:gtest_main",
@@ -98,7 +102,8 @@ cc_library(
         "@com_google_absl//absl/strings:cord",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:any_cc_proto",
+        "@com_google_protobuf//src/google/protobuf/io",
     ],
 )
 
@@ -123,13 +128,14 @@ cc_test(
         "//fcp/testing",
         "@com_google_absl//absl/random",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:cord",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:any_cc_proto",
     ],
 )
 
@@ -157,7 +163,6 @@ cc_library(
         "//fcp/client:fl_runner_cc_proto",
         "//fcp/client:interfaces",
         "//fcp/client:interruptible_runner",
-        "//fcp/client:parsing_utils",
         "//fcp/client:secagg_runner",
         "//fcp/client:selector_context_cc_proto",
         "//fcp/client/attestation:attestation_verifier",
@@ -184,7 +189,7 @@ cc_library(
         "@com_google_absl//absl/time",
         "@com_google_googleapis//google/longrunning:longrunning_cc_proto",
         "@com_google_googleapis//google/rpc:code_cc_proto",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:any_cc_proto",
     ],
 )
 
@@ -220,16 +225,19 @@ cc_library(
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/random",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:cord",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
         "@com_google_googleapis//google/longrunning:longrunning_cc_proto",
         "@com_google_googleapis//google/rpc:code_cc_proto",
         "@com_google_googleapis//google/type:datetime_cc_proto",
-        "@com_google_googletest//:gtest",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_googletest//:gtest_for_library",
+        "@com_google_protobuf//:any_cc_proto",
+        "@com_google_protobuf//:duration_cc_proto",
         "@oak//proto/attestation:endorsement_cc_proto",
     ],
 )
@@ -265,6 +273,7 @@ cc_test(
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/random",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:cord",
@@ -275,7 +284,8 @@ cc_test(
         "@com_google_googleapis//google/rpc:code_cc_proto",
         "@com_google_googleapis//google/type:datetime_cc_proto",
         "@com_google_googletest//:gtest_main",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:any_cc_proto",
+        "@com_google_protobuf//:duration_cc_proto",
         "@oak//proto/attestation:endorsement_cc_proto",
     ],
 )
@@ -302,7 +312,7 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         "@com_google_googleapis//google/rpc:code_cc_proto",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:any_cc_proto",
     ],
 )
 
@@ -326,8 +336,9 @@ cc_test(
         "//fcp/testing",
         "@com_google_absl//absl/random",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
         "@com_google_googleapis//google/longrunning:longrunning_cc_proto",
         "@com_google_googleapis//google/rpc:code_cc_proto",
@@ -356,7 +367,7 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         "@com_google_googleapis//google/longrunning:longrunning_cc_proto",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:any_cc_proto",
     ],
 )
 
@@ -379,10 +390,12 @@ cc_test(
         "//fcp/testing",
         "@com_google_absl//absl/random",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:any_cc_proto",
     ],
 )

@@ -9,7 +9,6 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/notreached.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/character.h"
 #include "third_party/blink/renderer/platform/text/icu_error.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_names.h"
@@ -50,7 +49,7 @@ inline UScriptCode FirstHanScript(
 }
 
 ScriptRunIterator::UScriptCodeList GetHanScriptExtensions() {
-  ICUError status;
+  IcuError status;
   ScriptRunIterator::UScriptCodeList list;
   list.resize(ScriptRunIterator::kMaxScriptCount - 1);
   // Get the list from one of the CJK punctuation in the CJK Symbols and
@@ -117,7 +116,7 @@ typedef ScriptData::PairedBracketType PairedBracketType;
 ScriptData::~ScriptData() = default;
 
 void ICUScriptData::GetScripts(UChar32 ch, UScriptCodeList& dst) const {
-  ICUError status;
+  IcuError status;
   // Leave room to insert primary script. It's not strictly necessary but
   // it ensures that the result won't ever be greater than kMaxScriptCount,
   // which some client someday might expect.

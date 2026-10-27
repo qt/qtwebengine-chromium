@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SPARSE_CWISE_BINARY_OP_H
 #define EIGEN_SPARSE_CWISE_BINARY_OP_H
@@ -41,8 +42,8 @@ class CwiseBinaryOpImpl<BinaryOp, Lhs, Rhs, Sparse> : public SparseMatrixBase<Cw
   typedef CwiseBinaryOp<BinaryOp, Lhs, Rhs> Derived;
   typedef SparseMatrixBase<Derived> Base;
   EIGEN_SPARSE_PUBLIC_INTERFACE(Derived)
-  EIGEN_STATIC_ASSERT(((!internal::is_same<typename internal::traits<Lhs>::StorageKind,
-                                           typename internal::traits<Rhs>::StorageKind>::value) ||
+  EIGEN_STATIC_ASSERT(((!std::is_same<typename internal::traits<Lhs>::StorageKind,
+                                      typename internal::traits<Rhs>::StorageKind>::value) ||
                        ((internal::evaluator<Lhs>::Flags & RowMajorBit) ==
                         (internal::evaluator<Rhs>::Flags & RowMajorBit))),
                       THE_STORAGE_ORDER_OF_BOTH_SIDES_MUST_MATCH)

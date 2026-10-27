@@ -9,6 +9,8 @@
  * Note that `resetTestDOM` is automatically run before each test (see `test_setup.ts`).
  **/
 
+import {assert} from 'chai';
+
 import type * as Platform from '../core/platform/platform.js';
 import * as Buttons from '../ui/components/buttons/buttons.js';
 import type * as NodeText from '../ui/components/node_text/node_text.js';
@@ -26,7 +28,7 @@ interface RenderOptions {
 /**
  * Renders a given element into the DOM. By default it will error if it finds an element already rendered but this can be controlled via the options.
  **/
-export function renderElementIntoDOM<E extends Node|UI.Widget.Widget>(
+export function renderElementIntoDOM<E extends Node|UI.Widget.AnyWidget>(
     element: E, renderOptions: RenderOptions = {}): E {
   const container = document.getElementById(TEST_CONTAINER_ID);
 
@@ -217,7 +219,7 @@ export function dispatchPasteEvent<T extends Element>(element: T, options: Clipb
  * Listens to an event of an element and returns a Promise that resolves to the
  * specified event type.
  */
-export function getEventPromise<T extends Event>(element: HTMLElement, eventName: string): Promise<T> {
+export function getEventPromise<T extends Event>(element: EventTarget, eventName: string): Promise<T> {
   return new Promise<T>(resolve => {
     element.addEventListener(eventName, (event: Event) => {
       resolve(event as T);

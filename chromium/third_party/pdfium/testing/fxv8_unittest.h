@@ -9,7 +9,6 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 
-class CFX_V8;
 class CFX_V8ArrayBufferAllocator;
 
 namespace v8 {

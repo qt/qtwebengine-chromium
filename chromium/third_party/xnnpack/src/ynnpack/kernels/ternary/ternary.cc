@@ -13,6 +13,7 @@
 #include "ynnpack/base/arithmetic.h"
 #include "ynnpack/base/base.h"
 #include "ynnpack/base/half.h"
+#include "ynnpack/base/log.h"
 #include "ynnpack/base/type.h"  // IWYU pragma: keep
 #include "ynnpack/include/ynnpack.h"
 
@@ -24,7 +25,7 @@ template <typename A, typename X>
 void quantize(size_t m, size_t n, size_t stride_a_m, size_t stride_a_n,
               const A* a, size_t stride_b_m, size_t stride_b_n, const float* b,
               size_t stride_c_m, size_t stride_c_n, const int32_t* c,
-              size_t stride_x_m, X* x) {
+              size_t stride_x_m, X* x, const ternary_params* params) {
   for (size_t i = 0; i < m; ++i) {
     // There are 8 cases of broadcasting. Here, we only specialize for
     // broadcasting b, because it permits lifting a division out of the loop.
@@ -53,10 +54,14 @@ template <typename A, typename X>
 void dequantize(size_t m, size_t n, size_t stride_a_m, size_t stride_a_n,
                 const A* a, size_t stride_b_m, size_t stride_b_n,
                 const int32_t* b, size_t stride_c_m, size_t stride_c_n,
-                const float* c, size_t stride_x_m, X* x) {
+                const float* c, size_t stride_x_m, X* x,
+                const ternary_params* params) {
+  assert(stride_a_n == 0 || stride_a_n == sizeof(A));
+  if (stride_a_n != 0) stride_a_n = 1;
+
   for (size_t i = 0; i < m; ++i) {
     for (size_t j = 0; j < n; ++j) {
-      const A a_j = *offset_bytes(a, j * stride_a_n);
+      const float a_j = type_info<A>::get(a, j * stride_a_n);
       const int32_t b_j = *offset_bytes(b, j * stride_b_n);
       const float c_j = *offset_bytes(c, j * stride_c_n);
       x[j] = (a_j - b_j) * c_j;
@@ -74,22 +79,22 @@ void quantize_fp32_to_int8(size_t m, size_t n, size_t stride_a_m,
                            size_t stride_a_n, const void* a, size_t stride_b_m,
                            size_t stride_b_n, const void* b, size_t stride_c_m,
                            size_t stride_c_n, const void* c, size_t stride_x_m,
-                           void* x) {
+                           void* x, const ternary_params* params) {
   quantize(m, n, stride_a_m, stride_a_n, reinterpret_cast<const float*>(a),
            stride_b_m, stride_b_n, reinterpret_cast<const float*>(b),
            stride_c_m, stride_c_n, reinterpret_cast<const int32_t*>(c),
-           stride_x_m, reinterpret_cast<int8_t*>(x));
+           stride_x_m, reinterpret_cast<int8_t*>(x), params);
 }
 
 void quantize_fp32_to_uint8(size_t m, size_t n, size_t stride_a_m,
                             size_t stride_a_n, const void* a, size_t stride_b_m,
                             size_t stride_b_n, const void* b, size_t stride_c_m,
                             size_t stride_c_n, const void* c, size_t stride_x_m,
-                            void* x) {
+                            void* x, const ternary_params* params) {
   quantize(m, n, stride_a_m, stride_a_n, reinterpret_cast<const float*>(a),
            stride_b_m, stride_b_n, reinterpret_cast<const float*>(b),
            stride_c_m, stride_c_n, reinterpret_cast<const int32_t*>(c),
-           stride_x_m, reinterpret_cast<uint8_t*>(x));
+           stride_x_m, reinterpret_cast<uint8_t*>(x), params);
 }
 
 void dequantize_int8_to_fp32(size_t m, size_t n, size_t stride_a_m,
@@ -97,11 +102,12 @@ void dequantize_int8_to_fp32(size_t m, size_t n, size_t stride_a_m,
                              size_t stride_b_m, size_t stride_b_n,
                              const void* b, size_t stride_c_m,
                              size_t stride_c_n, const void* c,
-                             size_t stride_x_m, void* x) {
+                             size_t stride_x_m, void* x,
+                             const ternary_params* params) {
   dequantize(m, n, stride_a_m, stride_a_n, reinterpret_cast<const int8_t*>(a),
              stride_b_m, stride_b_n, reinterpret_cast<const int32_t*>(b),
              stride_c_m, stride_c_n, reinterpret_cast<const float*>(c),
-             stride_x_m, reinterpret_cast<float*>(x));
+             stride_x_m, reinterpret_cast<float*>(x), params);
 }
 
 void dequantize_uint8_to_fp32(size_t m, size_t n, size_t stride_a_m,
@@ -109,11 +115,12 @@ void dequantize_uint8_to_fp32(size_t m, size_t n, size_t stride_a_m,
                               size_t stride_b_m, size_t stride_b_n,
                               const void* b, size_t stride_c_m,
                               size_t stride_c_n, const void* c,
-                              size_t stride_x_m, void* x) {
+                              size_t stride_x_m, void* x,
+                              const ternary_params* params) {
   dequantize(m, n, stride_a_m, stride_a_n, reinterpret_cast<const uint8_t*>(a),
              stride_b_m, stride_b_n, reinterpret_cast<const int32_t*>(b),
              stride_c_m, stride_c_n, reinterpret_cast<const float*>(c),
-             stride_x_m, reinterpret_cast<float*>(x));
+             stride_x_m, reinterpret_cast<float*>(x), params);
 }
 
 void dequantize_int32_to_fp32(size_t m, size_t n, size_t stride_a_m,
@@ -121,11 +128,38 @@ void dequantize_int32_to_fp32(size_t m, size_t n, size_t stride_a_m,
                               size_t stride_b_m, size_t stride_b_n,
                               const void* b, size_t stride_c_m,
                               size_t stride_c_n, const void* c,
-                              size_t stride_x_m, void* x) {
+                              size_t stride_x_m, void* x,
+                              const ternary_params* params) {
   dequantize(m, n, stride_a_m, stride_a_n, reinterpret_cast<const int32_t*>(a),
              stride_b_m, stride_b_n, reinterpret_cast<const int32_t*>(b),
              stride_c_m, stride_c_n, reinterpret_cast<const float*>(c),
-             stride_x_m, reinterpret_cast<float*>(x));
+             stride_x_m, reinterpret_cast<float*>(x), params);
+}
+
+void dequantize_int4_to_fp32(size_t m, size_t n, size_t stride_a_m,
+                             size_t stride_a_n, const void* va,
+                             size_t stride_b_m, size_t stride_b_n,
+                             const void* vb, size_t stride_c_m,
+                             size_t stride_c_n, const void* vc,
+                             size_t stride_x_m, void* vx,
+                             const ternary_params* params) {
+  dequantize(m, n, stride_a_m, stride_a_n, reinterpret_cast<const int4x2*>(va),
+             stride_b_m, stride_b_n, reinterpret_cast<const int32_t*>(vb),
+             stride_c_m, stride_c_n, reinterpret_cast<const float*>(vc),
+             stride_x_m, reinterpret_cast<float*>(vx), params);
+}
+
+void dequantize_int2_to_fp32(size_t m, size_t n, size_t stride_a_m,
+                             size_t stride_a_n, const void* va,
+                             size_t stride_b_m, size_t stride_b_n,
+                             const void* vb, size_t stride_c_m,
+                             size_t stride_c_n, const void* vc,
+                             size_t stride_x_m, void* vx,
+                             const ternary_params* params) {
+  dequantize(m, n, stride_a_m, stride_a_n, reinterpret_cast<const int2x4*>(va),
+             stride_b_m, stride_b_n, reinterpret_cast<const int32_t*>(vb),
+             stride_c_m, stride_c_n, reinterpret_cast<const float*>(vc),
+             stride_x_m, reinterpret_cast<float*>(vx), params);
 }
 
 ternary_kernel_fn get_ternary_kernel(ternary_op op, ynn_type type_a,
@@ -135,6 +169,7 @@ ternary_kernel_fn get_ternary_kernel(ternary_op op, ynn_type type_a,
   if (ternary_op::kernel_op == op && is_arch_supported(arch)) {   \
     if (type_of<A>() == type_a && type_of<B>() == type_b &&       \
         type_of<C>() == type_c && type_of<X>() == type_x) {       \
+      YNN_LOG_DEBUG() << "Using ternary kernel " << #name;        \
       return name;                                                \
     }                                                             \
   }
@@ -145,6 +180,8 @@ ternary_kernel_fn get_ternary_kernel(ternary_op op, ynn_type type_a,
 
 const char* to_string(ternary_op op) {
   switch (op) {
+    case ternary_op::invalid:
+      return "invalid";
     case ternary_op::multiply:
       return "multiply";
     case ternary_op::multiply_add:
@@ -163,5 +200,7 @@ const char* to_string(ternary_op op) {
   YNN_UNREACHABLE;
   return "unknown";
 }
+
+ternary_params get_ternary_params(ternary_op op) { return ternary_params{}; }
 
 }  // namespace ynn

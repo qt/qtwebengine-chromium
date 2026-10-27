@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/run_loop.h"
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
 #include "media/base/media_content_type.h"
@@ -77,6 +78,13 @@ class MediaWebContentsObserverTest : public RenderViewHostImplTestHarness {
     return setup;
   }
 
+  // Overload for tests that do not care about specific IDs.
+  auto CreateAndAddPlayer(
+      mojo::AssociatedRemote<media::mojom::MediaPlayerHost>& player_host)
+      -> PlayerSetup {
+    return CreateAndAddPlayer(player_host, next_player_id_++);
+  }
+
   void SetMediaMetadata(
       mojo::AssociatedRemote<media::mojom::MediaPlayerObserver>& observer,
       bool has_audio,
@@ -105,6 +113,15 @@ class MediaWebContentsObserverTest : public RenderViewHostImplTestHarness {
     observer.FlushForTesting();
   }
 
+  void SetUseAudioService(
+      mojo::AssociatedRemote<media::mojom::MediaPlayerObserver>& observer,
+      bool uses_audio_service) {
+    observer->OnUseAudioServiceChanged(uses_audio_service);
+    observer.FlushForTesting();
+  }
+
+  bool IsWebContentsAudible() { return contents()->IsCurrentlyAudible(); }
+
   MediaPlayerId CreatePlayerId(int32_t player_id) {
     return MediaPlayerId(contents()->GetPrimaryMainFrame()->GetGlobalId(),
                          player_id);
@@ -113,6 +130,9 @@ class MediaWebContentsObserverTest : public RenderViewHostImplTestHarness {
   MediaWebContentsObserver& media_web_contents_observer() {
     return *contents()->media_web_contents_observer();
   }
+
+ private:
+  int32_t next_player_id_ = 0;
 };
 
 TEST_F(MediaWebContentsObserverTest, GetCurrentlyPlayingVideoCount) {
@@ -306,6 +326,164 @@ TEST_F(MediaWebContentsObserverTest, PlayerPausedWithStreamEnded) {
   // Test pause with stream ended.
   PauseMedia(test_player.observer, /*stream_ended=*/true);
   EXPECT_FALSE(media_web_contents_observer().IsPlayerActive(player_id));
+}
+
+TEST_F(MediaWebContentsObserverTest, StandardPlaybackNoAuthorization) {
+  auto player_host = SetupPlayerHost();
+  auto player = CreateAndAddPlayer(player_host);
+
+  SetMediaMetadata(player.observer, /*has_audio=*/true, /*has_video=*/false);
+  SetUseAudioService(player.observer, true);
+  PlayMedia(player.observer);
+
+  // Verify that standard playback (via audio service) does not trigger
+  // `RegisterAudibleClient`, so the `WebContents` remains non-audible.
+  EXPECT_FALSE(IsWebContentsAudible());
+}
+
+TEST_F(MediaWebContentsObserverTest, UnauthorizedBypassDenied) {
+  auto player_host = SetupPlayerHost();
+  auto player = CreateAndAddPlayer(player_host);
+
+  SetMediaMetadata(player.observer, /*has_audio=*/true, /*has_video=*/false);
+
+  // Renderer claims it's audible but bypassing the audio service.
+  // Without a `MediaFoundationRenderer`, this should be rejected.
+  SetUseAudioService(player.observer, false);
+  PlayMedia(player.observer);
+
+  EXPECT_FALSE(IsWebContentsAudible());
+}
+
+TEST_F(MediaWebContentsObserverTest, AuthorizedBypassAllowed) {
+  auto player_host = SetupPlayerHost();
+  auto player = CreateAndAddPlayer(player_host);
+
+  // Simulate audibility bypass authorization for the document.
+  AudibilityBypassTracker::AddGrant(contents()->GetPrimaryMainFrame());
+
+  SetMediaMetadata(player.observer, /*has_audio=*/true, /*has_video=*/false);
+
+  // Renderer claims it's audible but bypassing the audio service.
+  // Since we authorized it, this should be allowed.
+  SetUseAudioService(player.observer, false);
+  PlayMedia(player.observer);
+
+  EXPECT_TRUE(IsWebContentsAudible());
+}
+
+TEST_F(MediaWebContentsObserverTest, AuthorizationIsFrameScoped) {
+  auto main_player_host = SetupPlayerHost();
+  auto main_player = CreateAndAddPlayer(main_player_host);
+
+  // Create a child frame.
+  RenderFrameHost* main_rfh = contents()->GetPrimaryMainFrame();
+  RenderFrameHostTester::For(main_rfh)->InitializeRenderFrameIfNeeded();
+  RenderFrameHost* child_rfh =
+      RenderFrameHostTester::For(main_rfh)->AppendChild("child");
+  ASSERT_NE(child_rfh, nullptr);
+  RenderFrameHostTester::For(child_rfh)->InitializeRenderFrameIfNeeded();
+
+  mojo::AssociatedRemote<media::mojom::MediaPlayerHost> child_player_host;
+  contents()->media_web_contents_observer()->BindMediaPlayerHost(
+      child_rfh->GetGlobalId(),
+      child_player_host.BindNewEndpointAndPassDedicatedReceiver());
+
+  auto child_player = CreateAndAddPlayer(child_player_host);
+
+  // Authorize only the main frame.
+  AudibilityBypassTracker::AddGrant(main_rfh);
+
+  // Child frame attempts bypass.
+  SetMediaMetadata(child_player.observer, /*has_audio=*/true,
+                   /*has_video=*/false);
+  SetUseAudioService(child_player.observer, false);
+  PlayMedia(child_player.observer);
+
+  // Should be denied because authorization is not inherited.
+  EXPECT_FALSE(IsWebContentsAudible());
+
+  // Main frame attempts bypass.
+  SetMediaMetadata(main_player.observer, /*has_audio=*/true,
+                   /*has_video=*/false);
+  SetUseAudioService(main_player.observer, false);
+  PlayMedia(main_player.observer);
+
+  // Should be allowed.
+  EXPECT_TRUE(IsWebContentsAudible());
+}
+
+TEST_F(MediaWebContentsObserverTest,
+       AudibilityBypassAuthorizationTiedToSpecificPlayer) {
+  auto player_host = SetupPlayerHost();
+  auto original_player = CreateAndAddPlayer(player_host);
+
+  // Simulate MediaFoundationRenderer creation grant.
+  AudibilityBypassTracker::AddGrant(contents()->GetPrimaryMainFrame());
+
+  // Original player claims the grant successfully.
+  SetMediaMetadata(original_player.observer, true, false);
+  SetUseAudioService(original_player.observer, false);
+  PlayMedia(original_player.observer);
+
+  EXPECT_TRUE(IsWebContentsAudible());
+
+  // Original player disconnects, relinquishing its grant/authority.
+  original_player.observer.reset();
+  original_player.player.reset();
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_FALSE(IsWebContentsAudible());
+
+  // A later spoofed player attempts to claim a bypass using the original
+  // document context.
+  auto later_player = CreateAndAddPlayer(player_host);
+  SetMediaMetadata(later_player.observer, true, false);
+  SetUseAudioService(later_player.observer, false);
+  PlayMedia(later_player.observer);
+
+  // The later player should not be able to reuse the audibility bypass grant.
+  EXPECT_FALSE(IsWebContentsAudible());
+}
+
+// Ensure the tracking counter mechanism works when multiple grants are given
+// and consumed.
+TEST_F(MediaWebContentsObserverTest,
+       AudibilityBypassAuthorizationMultipleGrants) {
+  auto player_host = SetupPlayerHost();
+
+  // Simulate two MediaFoundationRenderer creation grants.
+  AudibilityBypassTracker::AddGrant(contents()->GetPrimaryMainFrame());
+  AudibilityBypassTracker::AddGrant(contents()->GetPrimaryMainFrame());
+
+  auto player1 = CreateAndAddPlayer(player_host);
+  auto player2 = CreateAndAddPlayer(player_host);
+  auto player3 = CreateAndAddPlayer(player_host);
+
+  // Player 1 claims the first grant successfully.
+  SetMediaMetadata(player1.observer, true, false);
+  SetUseAudioService(player1.observer, false);
+  PlayMedia(player1.observer);
+  EXPECT_TRUE(IsWebContentsAudible());
+
+  // Pause Player 1 so we can verify Player 2 independently.
+  PauseMedia(player1.observer);
+  EXPECT_FALSE(IsWebContentsAudible());
+
+  // Player 2 claims the second grant successfully.
+  SetMediaMetadata(player2.observer, true, false);
+  SetUseAudioService(player2.observer, false);
+  PlayMedia(player2.observer);
+  EXPECT_TRUE(IsWebContentsAudible());
+
+  PauseMedia(player2.observer);
+  EXPECT_FALSE(IsWebContentsAudible());
+
+  // Player 3 attempts to claim a grant, but none are left.
+  SetMediaMetadata(player3.observer, true, false);
+  SetUseAudioService(player3.observer, false);
+  PlayMedia(player3.observer);
+  EXPECT_FALSE(IsWebContentsAudible());
 }
 
 }  // namespace

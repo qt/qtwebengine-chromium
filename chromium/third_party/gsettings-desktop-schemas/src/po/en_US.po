@@ -1,0 +1,26 @@
+# American English translation for gsettings-desktop-schemas.
+# This is almost the same as LC_MESSAGES=C, but with a 12h clock.
+# Copyright (C) 2024 gsettings-desktop-schemas's COPYRIGHT HOLDER
+# This file is distributed under the same license as the gsettings-desktop-schemas package.
+# Simon McVittie <smcv@collabora.com>, 2024
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: gsettings-desktop-schemas main\n"
+"Report-Msgid-Bugs-To: https://gitlab.gnome.org/GNOME/gsettings-desktop-"
+"schemas/issues\n"
+"POT-Creation-Date: 2024-02-16 13:00+0000\n"
+"PO-Revision-Date: 2024-02-16 13:00+0000\n"
+"Last-Translator: Simon McVittie <smcv@collabora.com>\n"
+"Language-Team: https://gitlab.gnome.org/Teams/Translation/Coordination\n"
+"Language: en_US\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Project-Style: gnome\n"
+
+#. TRANSLATORS: select your locale's default clock format, this should be '12h' or '24h' (with the quotes!)
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:212
+msgid "'24h'"
+msgstr "'12h'"

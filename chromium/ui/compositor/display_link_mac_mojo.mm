@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/task/bind_post_task.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
@@ -31,41 +32,41 @@ DisplayLinkMacMojo::DisplayLinkMacMojo(
   StartWithOptions(base::Thread::Options(std::move(thread_options)));
 
   // To ensure VSyncThread task_runner() is valid, StartWithOptions() must be
-  // called before ConnectVSyncIpc().
-  ConnectVSyncIpc(host_frame_sink_manager);
-
-  // Display AddObserver can only be called on the browser main thread.
-  DCHECK(display::Screen::HasScreen());
-  display::Screen::Get()->AddObserver(this);
-
-  // Now |external_begin_frame_controller_| is valid after ConnectVSyncIpc(). We
-  // can start getting DisplayLinks for all displays.
-  task_runner()->PostTask(
-      FROM_HERE, base::BindOnce(&DisplayLinkMacMojo::InitDisplaysOnVSyncThread,
-                                base::Unretained(this)));
+  // called before connecting the VSync IPC and adding the display observer,
+  // which are done on the browser main thread.
+  ConnectVSyncIpcAndAddDisplayObserver(host_frame_sink_manager);
 }
 
 DisplayLinkMacMojo::~DisplayLinkMacMojo() {
-  if (display::Screen::HasScreen()) {
-    display::Screen::Get()->RemoveObserver(this);
-  }
+  display_observer_.reset();
 
   // Stop the VSync thread.
   Stop();
 }
 
-void DisplayLinkMacMojo::InitDisplaysOnVSyncThread() {
+void DisplayLinkMacMojo::InitDisplaysOnVSyncThread(
+    std::vector<int64_t> display_ids,
+    mojo::Remote<viz::mojom::ExternalBeginFrameController>
+        external_begin_frame_controller,
+    std::unique_ptr<
+        mojo::Receiver<viz::mojom::ExternalBeginFrameControllerClient>>
+        client_receiver) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(vsync_thread_sequence_checker_);
+  external_begin_frame_controller_ = std::move(external_begin_frame_controller);
+  client_receiver_ = std::move(client_receiver);
 
   // Create CADisplayLink for all displays.
-  const std::vector<display::Display>& displays =
-      display::Screen::Get()->GetAllDisplays();
-  for (const auto& display : displays) {
-    DisplayAddedOnVSyncThread(display.id());
+  for (int64_t display_id : display_ids) {
+    DisplayAddedOnVSyncThread(display_id);
   }
 }
 
 void DisplayLinkMacMojo::CleanUp() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(vsync_thread_sequence_checker_);
+  ResetStateOnVSyncThread();
+}
+
+void DisplayLinkMacMojo::ResetStateOnVSyncThread() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(vsync_thread_sequence_checker_);
 
   // Created on the VSync thread and must be destroyed on the same thread.
@@ -73,48 +74,65 @@ void DisplayLinkMacMojo::CleanUp() {
   display_links_.clear();
 
   // The remote and receiver are connected to IPC to issue and receive mojom
-  // interrace calls on the VSync thread. These dtors are required to run on the
+  // interface calls on the VSync thread. These dtors are required to run on the
   // same thread.
   external_begin_frame_controller_.reset();
   client_receiver_.reset();
 }
 
 // Called on the browser main thread.
+// Handles GPU process loss, even if multiple losses occur in rapid succession.
+// Resource destruction and recreation are serialized across both threads to
+// avoid races.
 void DisplayLinkMacMojo::OnGpuProcessLost(
     viz::HostFrameSinkManager* host_frame_sink_manager) {
-  // Destroy all DisplayLinks on the VSyncThread.
-  DCHECK(display::Screen::HasScreen());
-  display::Screen::Get()->RemoveObserver(this);
+  pending_gpu_lost_count_++;
 
-  if (!vsync_callbacks_.empty()) {
-    task_runner()->PostTask(
-        FROM_HERE, base::DoNothingWithBoundArgs(std::move(vsync_callbacks_)));
-  }
-  if (!display_links_.empty()) {
-    task_runner()->PostTask(
-        FROM_HERE, base::DoNothingWithBoundArgs(std::move(display_links_)));
-  }
+  display_observer_.reset();
 
-  // Reconnect IPC. Destory the old controller and the old receiver on the
-  // VSyncThread first.
-  if (external_begin_frame_controller_) {
-    task_runner()->PostTask(FROM_HERE, base::DoNothingWithBoundArgs(std::move(
-                                           external_begin_frame_controller_)));
-  }
-  if (client_receiver_) {
-    task_runner()->DeleteSoon(FROM_HERE, std::move(client_receiver_));
-  }
-
-  ConnectVSyncIpc(host_frame_sink_manager);
-
-  display::Screen::Get()->AddObserver(this);
+  // Ensure the WeakPtr are created and bound to the sequence on CrBrowserMain.
+  // The dereferencing (checking if the pointer is still valid) and invalidation
+  // happens on the Main thread only. A WeakPtr is passed to the VSync thread
+  // only to be used as an argument for the recovery task
+  // (ContinueGpuProcessLostOnMainThread).
   task_runner()->PostTask(
-      FROM_HERE, base::BindOnce(&DisplayLinkMacMojo::InitDisplaysOnVSyncThread,
-                                base::Unretained(this)));
+      FROM_HERE,
+      base::BindOnce(&DisplayLinkMacMojo::OnGpuProcessLostOnVSyncThread,
+                     base::Unretained(this), host_frame_sink_manager,
+                     base::SingleThreadTaskRunner::GetCurrentDefault(),
+                     weak_ptr_factory_.GetWeakPtr()));
+}
+
+// Called on the browser main thread.
+void DisplayLinkMacMojo::ContinueGpuProcessLostOnMainThread(
+    viz::HostFrameSinkManager* host_frame_sink_manager) {
+  pending_gpu_lost_count_--;
+  if (pending_gpu_lost_count_ > 0) {
+    return;
+  }
+
+  ConnectVSyncIpcAndAddDisplayObserver(host_frame_sink_manager);
+}
+
+void DisplayLinkMacMojo::OnGpuProcessLostOnVSyncThread(
+    viz::HostFrameSinkManager* host_frame_sink_manager,
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
+    base::WeakPtr<DisplayLinkMacMojo> weak_ptr) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(vsync_thread_sequence_checker_);
+
+  ResetStateOnVSyncThread();
+
+  // After destroying the old objects on the VSync thread, return to the main
+  // thread to continue the recovery process. We use a WeakPtr because recovery
+  // should only proceed if this instance has not been destroyed.
+  main_task_runner->PostTask(
+      FROM_HERE,
+      base::BindOnce(&DisplayLinkMacMojo::ContinueGpuProcessLostOnMainThread,
+                     weak_ptr, host_frame_sink_manager));
 }
 
 // Called on the browser main thread
-void DisplayLinkMacMojo::ConnectVSyncIpc(
+void DisplayLinkMacMojo::ConnectVSyncIpcAndAddDisplayObserver(
     viz::HostFrameSinkManager* host_frame_sink_manager) {
   CHECK(host_frame_sink_manager);
 
@@ -128,7 +146,6 @@ void DisplayLinkMacMojo::ConnectVSyncIpc(
   // Move pending receiver to params.
   params->external_begin_frame_controller =
       external_begin_frame_controller.BindNewPipeAndPassReceiver(task_runner());
-  external_begin_frame_controller_ = std::move(external_begin_frame_controller);
 
   // Set up ExternalBeginFrameControllerClient for Viz to call
   // NeedsBeginFrameWithId() via IPC to request DisplayLinkMacMojo for VSync
@@ -141,11 +158,33 @@ void DisplayLinkMacMojo::ConnectVSyncIpc(
   auto client_receiver = std::make_unique<
       mojo::Receiver<viz::mojom::ExternalBeginFrameControllerClient>>(this);
   client_receiver->Bind(std::move(pending_client_receiver), task_runner());
-  client_receiver_ = std::move(client_receiver);
+
   // Move pending remote to params.
   params->external_begin_frame_controller_client = std::move(remote_client);
 
   host_frame_sink_manager->CreateCompositorDisplayLink(std::move(params));
+
+  // Display AddObserver can only be called on the browser main thread.
+  // Only add a observer after IPC is connected.
+  display_observer_.emplace(this);
+
+  std::vector<int64_t> display_ids;
+  // Screen GetAllDisplays() should be called on the main thread.
+  const std::vector<display::Display>& displays =
+      display::Screen::Get()->GetAllDisplays();
+  for (const display::Display& display : displays) {
+    display_ids.push_back(display.id());
+  }
+
+  // Since |external_begin_frame_controller_| and |client_receiver_| must be
+  // accessed exclusively on the VSync thread sequence, move the remote to the
+  // VSync thread and assign it there to maintain sequence safety. Now start
+  // getting DisplayLinks for all displays on the VSync thread.
+  task_runner()->PostTask(
+      FROM_HERE, base::BindOnce(&DisplayLinkMacMojo::InitDisplaysOnVSyncThread,
+                                base::Unretained(this), std::move(display_ids),
+                                std::move(external_begin_frame_controller),
+                                std::move(client_receiver)));
 }
 
 // Called on the VSync thread directly from IPC.
@@ -217,17 +256,25 @@ void DisplayLinkMacMojo::OnDisplayAdded(const display::Display& new_display) {
                                 base::Unretained(this), display_id));
 }
 
-void DisplayLinkMacMojo::DisplayAddedOnVSyncThread(int64_t display_id) {
+void DisplayLinkMacMojo::DisplayAddedOnVSyncThread(int64_t vsync_display_id) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(vsync_thread_sequence_checker_);
   DCHECK(external_begin_frame_controller_);
 
-  if (auto it = display_links_.find(display_id); it != display_links_.end()) {
+  if (auto it = display_links_.find(vsync_display_id);
+      it != display_links_.end()) {
     // This display has been added.
     return;
   }
 
+  if (!base::IsValueInRangeForNumericType<CGDirectDisplayID>(
+          vsync_display_id)) {
+    return;
+  }
+
+  CGDirectDisplayID display_id =
+      static_cast<CGDirectDisplayID>(vsync_display_id);
   scoped_refptr<DisplayLinkMac> display_link_mac =
-      CADisplayLinkMac::GetForDisplay(display_id);
+      CADisplayLinkMac::GetForDisplay(display_id, /*in_gpu_process=*/false);
   if (!display_link_mac) {
     // The display ID was never added to the GPU, so there is no need to call
     // SetSupportedDisplayLinkId(false) to remove an existing supported ID from
@@ -250,7 +297,7 @@ void DisplayLinkMacMojo::DisplayAddedOnVSyncThread(int64_t display_id) {
 void DisplayLinkMacMojo::OnDisplaysRemoved(
     const display::Displays& removed_displays) {
   std::vector<int64_t> display_ids;
-  for (auto& removed_display : removed_displays) {
+  for (const display::Display& removed_display : removed_displays) {
     display_ids.push_back(removed_display.id());
   }
 

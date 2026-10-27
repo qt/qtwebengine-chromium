@@ -30,7 +30,7 @@ class ZoneForwardList;
 // Module is the base class for ECMAScript module types, roughly corresponding
 // to Abstract Module Record.
 // https://tc39.es/ecma262/#sec-abstract-module-records
-V8_OBJECT class Module : public HeapObjectLayout {
+V8_OBJECT class Module : public HeapObject {
  public:
   DECL_VERIFIER(Module)
   DECL_PRINTER(Module)
@@ -140,7 +140,7 @@ V8_OBJECT class Module : public HeapObjectLayout {
   static V8_WARN_UNUSED_RESULT bool FinishInstantiate(
       Isolate* isolate, Handle<Module> module,
       ZoneForwardList<Handle<SourceTextModule>>* stack, unsigned* dfs_index,
-      Zone* zone);
+      Zone* zone, unsigned depth, unsigned* max_depth);
 
   // Set module's status back to kUnlinked and reset other internal state.
   // This is used when instantiation fails.
@@ -170,11 +170,14 @@ struct ObjectTraits<Module> {
 // When importing a module namespace (import * as foo from "bar"), a
 // JSModuleNamespace object (representing module "bar") is created and bound to
 // the declared variable (foo).  A module can have at most one namespace object.
-class JSModuleNamespace
-    : public TorqueGeneratedJSModuleNamespace<JSModuleNamespace,
-                                              JSSpecialObject> {
+V8_OBJECT class JSModuleNamespace : public JSSpecialObject {
  public:
+  inline Tagged<Module> module() const;
+  inline void set_module(Tagged<Module> value,
+                         WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+
   DECL_PRINTER(JSModuleNamespace)
+  DECL_VERIFIER(JSModuleNamespace)
 
   // Retrieve the value exported by [module] under the given [name]. If there is
   // no such export, return Just(undefined). If the export is uninitialized,
@@ -202,19 +205,23 @@ class JSModuleNamespace
     kInObjectFieldCount,
   };
 
+  static const int kHeaderSize;
   // We need to include in-object fields
   // TODO(v8:8944): improve handling of in-object fields
-  static constexpr int kSize =
-      kHeaderSize + (kTaggedSize * kInObjectFieldCount);
+  static const int kSize;
 
-  TQ_OBJECT_CONSTRUCTORS(JSModuleNamespace)
-};
+ public:
+  TaggedMember<Module> module_;
+} V8_OBJECT_END;
 
-class JSDeferredModuleNamespace
-    : public TorqueGeneratedJSDeferredModuleNamespace<JSDeferredModuleNamespace,
-                                                      JSModuleNamespace> {
+inline constexpr int JSModuleNamespace::kHeaderSize = sizeof(JSModuleNamespace);
+inline constexpr int JSModuleNamespace::kSize =
+    JSModuleNamespace::kHeaderSize + (kTaggedSize * kInObjectFieldCount);
+
+V8_OBJECT class JSDeferredModuleNamespace : public JSModuleNamespace {
  public:
   DECL_PRINTER(JSDeferredModuleNamespace)
+  DECL_VERIFIER(JSDeferredModuleNamespace)
 
   static void EvaluateModuleSync(
       Isolate* isolate, DirectHandle<JSDeferredModuleNamespace> holder);
@@ -222,13 +229,13 @@ class JSDeferredModuleNamespace
 
   // We need to include in-object fields
   // TODO(v8:8944): improve handling of in-object fields
-  static constexpr int kSize =
-      kHeaderSize + (kTaggedSize * kInObjectFieldCount);
+  static const int kSize;
+} V8_OBJECT_END;
 
-  TQ_OBJECT_CONSTRUCTORS(JSDeferredModuleNamespace)
-};
+inline constexpr int JSDeferredModuleNamespace::kSize =
+    sizeof(JSDeferredModuleNamespace) + (kTaggedSize * kInObjectFieldCount);
 
-V8_OBJECT class ScriptOrModule : public StructLayout {
+V8_OBJECT class ScriptOrModule : public Struct {
  public:
   inline Tagged<Object> resource_name() const;
   inline void set_resource_name(Tagged<Object> value,

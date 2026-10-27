@@ -11,14 +11,14 @@ As demonstrated below, this makes them naturally compatible with range-for-loops
 
 Any dense 1D expressions exposes the pair of `begin()/end()` methods to iterate over them.
 
-This directly enables c++11 range for loops:
+This directly enables range for loops:
 <table class="example">
 <tr><th>Example:</th><th>Output:</th></tr>
 <tr><td>
-\include Tutorial_range_for_loop_1d_cxx11.cpp
+\include Tutorial_range_for_loop_1d.cpp
 </td>
 <td>
-\verbinclude Tutorial_range_for_loop_1d_cxx11.out
+\verbinclude Tutorial_range_for_loop_1d.out
 </td></tr></table>
 
 One dimensional expressions can also easily be passed to STL algorithms:
@@ -41,10 +41,10 @@ Iterating over all coefficients of a 2D expressions is still easily accomplished
 <table class="example">
 <tr><th>Example:</th><th>Output:</th></tr>
 <tr><td>
-\include Tutorial_range_for_loop_2d_cxx11.cpp
+\include Tutorial_range_for_loop_2d.cpp
 </td>
 <td>
-\verbinclude Tutorial_range_for_loop_2d_cxx11.out
+\verbinclude Tutorial_range_for_loop_2d.out
 </td></tr></table>
 
 \section TutorialSTLRowsColumns Iterating over rows or columns of 2D arrays and matrices
@@ -55,10 +55,10 @@ Here is an example sorting each row of a matrix:
 <table class="example">
 <tr><th>Example:</th><th>Output:</th></tr>
 <tr><td>
-\include Tutorial_std_sort_rows_cxx11.cpp
+\include Tutorial_std_sort_rows.cpp
 </td>
 <td>
-\verbinclude Tutorial_std_sort_rows_cxx11.out
+\verbinclude Tutorial_std_sort_rows.out
 </td></tr></table>
 
 */

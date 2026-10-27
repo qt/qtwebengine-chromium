@@ -17,7 +17,9 @@ syntax = "proto3";
 package fcp.confidentialcompute;
 
 import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
 import "fcp/protos/confidentialcompute/access_policy.proto";
+import "fcp/protos/confidentialcompute/confidential_transform.proto";
 import "fcp/protos/confidentialcompute/private_inference.proto";
 import "fcp/protos/confidentialcompute/private_logger_uploads_config.proto";
 import "tensorflow_federated/cc/core/impl/aggregation/protocol/configuration.proto";
@@ -33,10 +35,23 @@ message FedSqlContainerInitializeConfiguration {
   // Configuration for processing PrivateLogger uploads.
   PrivateLoggerUploadsConfig private_logger_uploads_config = 10;
 
+  // Configuration for possibly encrypted auto-tuning parameters.
+  FedSqlContainerAutoTuningConfig auto_tuning_config = 11;
+
   reserved 2, 3, 4, 5, 7, 8, 9;
 }
 
-// TODO: b/452043727 - Consider removing the `AggCore` prefix from this enum.
+// Configuration for serialized and possibly encrypted auto-tuning parameters.
+// This parametes are passed in the form of Federate Compute checkpoint that
+// contains individual auto-tuning parameters as scalar tensors.
+message FedSqlContainerAutoTuningConfig {
+  // Contains encryption and encoding metadata for the auto-tuning parameters.
+  BlobMetadata auto_tuning_metadata = 1;
+  // The blob containing serialized and possibly encrypted auto-tuning data.
+  bytes auto_tuning_data = 2 [ctype = CORD];
+}
+
+// TODO: b/505099049 - Streamline the naming of these aggregation types.
 enum AggCoreAggregationType {
   AGGREGATION_TYPE_UNSPECIFIED = 0;
   // Accumulates the results in memory which are applied during `Commit`.
@@ -65,9 +80,17 @@ message FedSqlContainerCommitConfiguration {
   }
   // The range of blobs to commit.
   Range range = 1;
+
+  // The start and end time of the aggregation window for the blobs in the
+  // range. This is used for time-based budget tracking. Any blobs outside
+  // of this range will be dropped. The event times for each blob must be
+  // present in the encrypted blob payload which will be checked against this
+  // time window.
+  google.protobuf.Timestamp start_time = 2;
+  google.protobuf.Timestamp end_time = 3;
 }
 
-// TODO: b/452043727 - Consider removing the `AggCore` prefix from this enum.
+// TODO: b/505099049 - Streamline the naming of these finalization types.
 enum AggCoreFinalizationType {
   FINALIZATION_TYPE_UNSPECIFIED = 0;
   // Return noised results from the checkpoint aggregator.
@@ -75,7 +98,8 @@ enum AggCoreFinalizationType {
   // Return the serialized internal state of the checkpoint aggregator.
   FINALIZATION_TYPE_SERIALIZE = 2;
   // The below enums are used when output partitioning is enabled.
-  // Return the partitioned internal state of the checkpoint aggregator.
+  // Return the partitioned internal state of the checkpoint aggregator
+  // bundled with the budget tracking state.
   FINALIZATION_TYPE_PARTITION = 3;
   // Returns the noised results for the partitioned checkpoint aggregator.
   FINALIZATION_TYPE_REPORT_PARTITION = 4;
@@ -84,6 +108,9 @@ enum AggCoreFinalizationType {
   // Returns the final private state generating a release token that can be
   // passed to KMS for releasing the results.
   FINALIZATION_TYPE_REPORT_PRIVATE_STATE = 6;
+  // Returns the result of aggregation (e.g. with autotuning parameters)
+  // bundled with the budget tracking state.
+  FINALIZATION_TYPE_REPORT_AUTOTUNING_PARAMS = 7;
 }
 
 // Configures how a result should be output by the trusted AggCore container.
@@ -92,7 +119,9 @@ message FedSqlContainerFinalizeConfiguration {
   AggCoreFinalizationType type = 1;
 
   // The number of partitions to use for the partitioned output. This is only
-  // used when `type` is `FINALIZATION_TYPE_PARTITION`.
+  // used when `type` is `FINALIZATION_TYPE_PARTITION`. This value must be less
+  // than or equal to `max_output_partitions` in
+  // `FedSqlContainerConfigConstraints`.
   uint64 num_partitions = 3;
 
   reserved 2;
@@ -105,9 +134,14 @@ message FedSqlContainerPartitionedOutputConfiguration {
   uint64 partition_index = 1;
 }
 
-// The symmetric keys used to encrypt each output partition.
-message FedSqlContainerPartitionKeys {
+// The finalized state for a partitioned output.
+// This includes the symmetric keys used to decrypt each output partition and
+// optional released auto-tuning parameters, if any were provided in the
+// encrypted form in the first place.
+message FedSqlContainerPartitionedOutputFinalizedState {
   repeated PartitionKey keys = 1;
+
+  bytes auto_tuning_data = 2 [ctype = CORD];
 
   message PartitionKey {
     uint64 partition_index = 1;
@@ -129,7 +163,7 @@ message FedSqlContainerConfigConstraints {
   // The column names that are part of the DP unit.
   repeated string dp_column_names = 5;
   // The fcp.confidentialcompute.WindowingSchedule for the DP unit. This is an
-  // `Any` because using a WindowingSchedule would require using the
+  // `Any` because using a WindowingSchedule would have required using the
   // `tf_proto_library` build rule for
   // fed_sql_container_config.proto and all its dependencies.
   // TODO: b/425744048 - Change this to a WindowingSchedule once we remove the
@@ -137,7 +171,8 @@ message FedSqlContainerConfigConstraints {
   google.protobuf.Any dp_windowing_schedule = 6;
 
   // The uri of the aggregation intrinsic to use with AggCore.
-  string intrinsic_uri = 3;
+  // Use `intrinsic_uris` instead.
+  string intrinsic_uri = 3 [deprecated = true];
 
   // Defines limits on the accesses to blobs.
   AccessBudget access_budget = 4;
@@ -145,4 +180,10 @@ message FedSqlContainerConfigConstraints {
   // The uris of the aggregation intrinsics to use with AggCore. If non-empty,
   // this field is used instead of `intrinsic_uri`.
   repeated string intrinsic_uris = 7;
+
+  // This value represents an upper bound on the number of partitions that can
+  // be used when performing partitioned aggregation. If unset or set to 0,
+  // unpartitioned aggregation will be used i.e. all aggregates are
+  // merged together in a single worker before release.
+  optional uint64 max_output_partitions = 8;
 }

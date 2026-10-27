@@ -15,7 +15,6 @@
 #include "base/scoped_observation.h"
 #include "chrome/browser/new_tab_page/modules/new_tab_page_modules.h"
 #include "chrome/browser/search/background/ntp_custom_background_service.h"
-#include "chrome/browser/search/background/ntp_custom_background_service_observer.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_observer.h"
 #include "chrome/browser/ui/views/new_tab_footer/footer_controller_observer.h"
@@ -28,6 +27,7 @@
 #include "components/search_engines/template_url_service_observer.h"
 #include "components/themes/ntp_background_service.h"
 #include "components/themes/ntp_background_service_observer.h"
+#include "components/themes/ntp_custom_background_service_observer.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -215,7 +215,7 @@ class CustomizeChromePageHandler
 
   // Caches the attached tab state provided to the handler, in cases where the
   // value needs to be requeried by the page.
-  GURL last_source_url_{GURL(chrome::kChromeUINewTabPageURL)};
+  GURL last_source_url_{chrome::ChromeUINewTabPageURLAsGURL()};
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
   PrefChangeRegistrar browser_pref_change_registrar_;

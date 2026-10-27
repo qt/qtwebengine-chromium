@@ -87,7 +87,7 @@ String ExtractTokenOrQuotedString(const String& header_value, unsigned& pos) {
     while (pos < len && !IsWhitespace(header_value[pos]) &&
            header_value[pos] != ',')
       pos++;
-    result = header_value.Substring(start_pos, pos - start_pos);
+    result = header_value.substr(start_pos, pos - start_pos);
   }
   SkipWhiteSpace(header_value, pos);
   return result;
@@ -444,27 +444,11 @@ bool OriginTrialContext::InstallFeatures(
       }
     }
 
-    if (InstallSettingFeature(document, enabled_feature))
-      continue;
-
     InstallPropertiesPerFeature(script_state, enabled_feature);
     added_binding_features = true;
   }
 
   return added_binding_features;
-}
-
-bool OriginTrialContext::InstallSettingFeature(
-    Document& document,
-    mojom::blink::OriginTrialFeature enabled_feature) {
-  switch (enabled_feature) {
-    case mojom::blink::OriginTrialFeature::kAutoDarkMode:
-      if (document.GetSettings())
-        document.GetSettings()->SetForceDarkModeEnabled(true);
-      return true;
-    default:
-      return false;
-  }
 }
 
 void OriginTrialContext::AddFeature(mojom::blink::OriginTrialFeature feature) {
@@ -563,6 +547,10 @@ bool OriginTrialContext::CanEnableTrialFromName(const StringView& trial_name) {
 
   if (trial_name == "InstallElement") {
     return base::FeatureList::IsEnabled(blink::features::kInstallElement);
+  }
+
+  if (trial_name == "WebMCP") {
+    return base::FeatureList::IsEnabled(blink::features::kWebMCP);
   }
   return true;
 }

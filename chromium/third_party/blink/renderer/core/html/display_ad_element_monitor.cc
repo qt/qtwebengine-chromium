@@ -75,8 +75,11 @@ void DisplayAdElementMonitor::OnElementRemoved() {
 
   if (element_->InActiveDocument() && !last_reported_rect_.IsEmpty()) {
     gfx::Rect empty_rect;
-    element_->GetDocument().GetFrame()->Client()->OnMainFrameAdRectangleChanged(
-        element_->GetDomNodeId(), empty_rect);
+    element_->GetDocument()
+        .GetFrame()
+        ->LocalFrameRoot()
+        .Client()
+        ->OnMainFrameAdRectangleChanged(element_->GetDomNodeId(), empty_rect);
     last_reported_rect_ = empty_rect;
   }
 
@@ -97,11 +100,14 @@ void DisplayAdElementMonitor::DidFinishLifecycleUpdate(
   LocalFrame* frame = element_->GetDocument().GetFrame();
   DCHECK(frame);
 
-  // We use this lifecycle update as an opportunity to poll the "Highlight ads"
-  // setting (toggled by DevTools). If it has changed, we trigger a repaint.
-  // This polling approach is less precise than relying on direct events, but
-  // it's more robust against potential race conditions or missed state updates.
-  bool should_highlight = frame->GetPage()->GetSettings().GetHighlightAds();
+  // We use this lifecycle update to check the "Highlight ads" settings, which
+  // are toggled via the internals page and DevTools. If the combined state
+  // changes, we trigger a repaint. While less precise than relying on direct
+  // toggling events, reading this local state provides better robustness
+  // against race conditions and missed updates.
+  bool should_highlight =
+      frame->GetPage()->GetSettings().GetHighlightAds() ||
+      frame->GetPage()->GetSettings().GetInspectorHighlightAds();
   if (should_highlight != should_highlight_) {
     should_highlight_ = should_highlight;
     if (auto* layout_object = element_->GetLayoutObject()) {

@@ -16,7 +16,7 @@ import {Directives, html, nothing, render} from '../../../ui/lit/lit.js';
 import {PatchWidget} from '../PatchWidget.js';
 
 import {ChatInput} from './ChatInput.js';
-import {ChatMessage, type Message, type ModelChatMessage} from './ChatMessage.js';
+import {ChatMessage, ChatMessageEntity, type Message, type ModelChatMessage} from './ChatMessage.js';
 import chatViewStyles from './chatView.css.js';
 import {ExportForAgentsDialog} from './ExportForAgentsDialog.js';
 
@@ -46,6 +46,33 @@ const UIStringsNotTranslate = {
 const lockedString = i18n.i18n.lockedString;
 
 const SCROLL_ROUNDING_OFFSET = 1;
+
+/**
+ * Determines which message should display the CSS change summary.
+ *
+ * If the AI is actively loading a new response, the summary is anchored to the
+ * last completed model response. Otherwise, it's anchored to the latest model
+ * message.
+ */
+export function getCSSChangeSummaryMessage(messages: Message[], isLoading: boolean): Message|undefined {
+  const modelMessages = messages.filter(m => m.entity === ChatMessageEntity.MODEL);
+  const lastModelMessage = modelMessages.at(-1);
+
+  if (!lastModelMessage) {
+    return undefined;
+  }
+
+  // If we are loading and the last message in the list is the one being loaded,
+  // we anchor the summary to the previous model message.
+  // If the last message is NOT a model message (e.g. it's the user's follow-up),
+  // we keep the summary on the current last model message until the new response
+  // starts appearing.
+  if (isLoading && messages.at(-1) === lastModelMessage) {
+    return modelMessages.at(-2);
+  }
+
+  return lastModelMessage;
+}
 
 interface ViewOutput {
   mainElement?: HTMLElement;
@@ -96,7 +123,7 @@ export interface Props {
   };
 }
 
-interface ChatWidgetInput extends Props {
+export interface ChatWidgetInput extends Props {
   handleScroll: (ev: Event) => void;
   handleSuggestionClick: (title: string) => void;
   handleMessageContainerRef: (el: Element|undefined) => void;
@@ -119,6 +146,8 @@ const DEFAULT_VIEW: View = (input, output, target) => {
 
   const shouldShowPatchWidget = !hasAiV2 && !input.isLoading;
 
+  const cssChangeSummaryMessage = getCSSChangeSummaryMessage(input.messages, input.isLoading);
+
   // clang-format off
     render(html`
       <style>${chatViewStyles}</style>
@@ -126,15 +155,21 @@ const DEFAULT_VIEW: View = (input, output, target) => {
         <main @scroll=${input.handleScroll} ${ref(element => { output.mainElement = element as HTMLElement; } )}>
           ${input.messages.length > 0 ? html`
             <div class="messages-container" ${ref(input.handleMessageContainerRef)}>
-              ${repeat(input.messages, message =>
-                widget(ChatMessage, {
+              ${repeat(input.messages, message => message.id, (message, index) => {
+                const prevMessage = index > 0 ? input.messages[index - 1] : null;
+                const prompt = (message.entity === ChatMessageEntity.MODEL && prevMessage?.entity === ChatMessageEntity.USER) ?
+                    prevMessage.text :
+                    '';
+                return widget(ChatMessage, {
                   message,
-                  isLoading: input.isLoading && input.messages.at(-1) === message,
+                  isLoading: input.isLoading && index === input.messages.length - 1,
                   isReadOnly: input.isReadOnly,
                   canShowFeedbackForm: input.canShowFeedbackForm,
                   markdownRenderer: input.markdownRenderer,
-                  isLastMessage: input.messages.at(-1) === message,
-                  isFirstMessage: input.messages.at(0) === message,
+                  isLastMessage: index === input.messages.length - 1,
+                  isFirstMessage: index === 0,
+                  prompt,
+                  shouldShowCSSChangeSummary: message.id === cssChangeSummaryMessage?.id,
                   onSuggestionClick: input.handleSuggestionClick,
                   onFeedbackSubmit: input.onFeedbackSubmit,
                   onCopyResponseClick: input.onCopyResponseClick,
@@ -143,8 +178,8 @@ const DEFAULT_VIEW: View = (input, output, target) => {
                   walkthrough: {
                     ...input.walkthrough,
                   }
-                })
-              )}
+                });
+              })}
               ${shouldShowPatchWidget ? widget(PatchWidget, {
                 changeSummary: input.changeSummary ?? '',
                 changeManager: input.changeManager,
@@ -282,6 +317,10 @@ export class ChatView extends HTMLElement {
     textArea.focus();
   }
 
+  setInputValue(text: string): void {
+    this.#output.input?.getWidget()?.setInputValue(text);
+  }
+
   restoreScrollPosition(): void {
     if (this.#scrollTop === undefined) {
       return;
@@ -363,12 +402,13 @@ export class ChatView extends HTMLElement {
   };
 
   async #getSummary(): Promise<string> {
-    if (this.#cachedSummary?.markdown === this.#props.conversationMarkdown) {
+    const cacheKey = this.#props.conversationMarkdown.replace(/\*\*Export Timestamp \(UTC\):\*\* .*\n\n/, '');
+    if (this.#cachedSummary?.markdown === cacheKey) {
       return this.#cachedSummary.summary;
     }
     try {
       const summary = await this.#props.generateConversationSummary(this.#props.conversationMarkdown);
-      this.#cachedSummary = {markdown: this.#props.conversationMarkdown, summary};
+      this.#cachedSummary = {markdown: cacheKey, summary};
       return summary;
     } catch (err) {
       console.error(err);

@@ -26,6 +26,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/unguessable_token.h"
 #include "build/build_config.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/child_process_security_policy_impl.rs.h"
@@ -76,23 +77,21 @@ BASE_FEATURE(kDumpWithoutCrashingForMissingSecurityState,
 
 namespace content {
 
-// When enabled, replaces certain ChildProcessSecurityPolicy functionality with
-// an experimental Rust implementation. See https://crbug.com/482216433.
-BASE_FEATURE(kChildProcessSecurityPolicyRust,
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 // Defines a FeatureParam to control `RustPolicy` in field trials or from
 // command line. Note that the `kCppOnly` policy is achieved by turning off
-// kChildProcessSecurityPolicyRust; this param controls whether to run in
-// kRustOnly or kRustAndCpp mode if that feature is enabled. The default is
-// Rust-only. To enable kRustAndCpp for command-line testing, use:
-// --enable-features=ChildProcessSecurityPolicyRust:policy/rust-and-cpp
+// features::kChildProcessSecurityPolicyRust; this param controls whether to run
+// in kRustOnly or kRustAndCpp mode if that feature is enabled. The default
+// (when enabled) is Rust-only. To enable kRustAndCpp for command-line testing,
+// use: --enable-features=ChildProcessSecurityPolicyRust:policy/rust-and-cpp
 constexpr base::FeatureParam<RustPolicy>::Option rust_policy_options[] = {
-    {RustPolicy::kRustOnly, "rust-only"},
-    {RustPolicy::kRustAndCpp, "rust-and-cpp"}};
+    {RustPolicy::kRustOnly,
+     features::kChildProcessSecurityPolicyRustPolicyRustOnly},
+    {RustPolicy::kRustAndCpp,
+     features::kChildProcessSecurityPolicyRustPolicyRustAndCpp}};
 
 const base::FeatureParam<RustPolicy> kRustPolicyParam{
-    &kChildProcessSecurityPolicyRust, "policy", RustPolicy::kRustOnly,
+    &features::kChildProcessSecurityPolicyRust,
+    features::kChildProcessSecurityPolicyRustPolicyName, RustPolicy::kRustOnly,
     &rust_policy_options};
 
 namespace {
@@ -101,7 +100,8 @@ namespace {
 // implementation is enabled, and whether both Rust and the legacy C++
 // implementations should run in parallel.
 RustPolicy GetRustPolicy() {
-  if (!base::FeatureList::IsEnabled(kChildProcessSecurityPolicyRust)) {
+  if (!base::FeatureList::IsEnabled(
+          features::kChildProcessSecurityPolicyRust)) {
     return RustPolicy::kCppOnly;
   }
   return kRustPolicyParam.Get();
@@ -798,7 +798,7 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
     int skip = 0;
     while (current_path != last_path) {
       base::FilePath base_name = current_path.BaseName();
-      if (base_name.value() == base::FilePath::kParentDirectory) {
+      if (base_name.ReferencesParent()) {
         ++skip;
       } else if (skip > 0) {
         if (base_name.value() != base::FilePath::kCurrentDirectory) {
@@ -1193,7 +1193,7 @@ void ChildProcessSecurityPolicyImpl::AddForTesting(
                   StoragePartitionConfig::CreateDefault(browser_context),
                   WebExposedIsolationInfo::CreateNonIsolated(),
                   /*cross_origin_isolation_key=*/std::nullopt,
-                  browser_context->UniqueId()));
+                  browser_context->UniqueToken()));
 }
 
 void ChildProcessSecurityPolicyImpl::Remove(ChildProcessId child_id) {
@@ -1832,6 +1832,33 @@ bool ChildProcessSecurityPolicyImpl::CanReadFile(ChildProcessId child_id,
   return HasPermissionsForFile(child_id, file, READ_FILE_GRANT);
 }
 
+void ChildProcessSecurityPolicyImpl::GrantFileForBrowserUpload(
+    const base::UnguessableToken& owner_token,
+    const base::FilePath& file) {
+  base::AutoLock lock(lock_);
+  browser_granted_files_[file].push_back(owner_token);
+}
+
+void ChildProcessSecurityPolicyImpl::RevokeFileForBrowserUpload(
+    const base::UnguessableToken& owner_token) {
+  base::AutoLock lock(lock_);
+  for (auto it = browser_granted_files_.begin();
+       it != browser_granted_files_.end();) {
+    std::erase(it->second, owner_token);
+    if (it->second.empty()) {
+      browser_granted_files_.erase(it++);
+    } else {
+      it++;
+    }
+  }
+}
+
+bool ChildProcessSecurityPolicyImpl::CanReadFileForBrowserUpload(
+    const base::FilePath& file) {
+  base::AutoLock lock(lock_);
+  return browser_granted_files_.contains(file);
+}
+
 bool ChildProcessSecurityPolicyImpl::CanReadAllFiles(
     ChildProcessId child_id,
     const std::vector<base::FilePath>& files) {
@@ -2423,7 +2450,8 @@ bool ChildProcessSecurityPolicyImpl::PerformJailAndCitadelChecks(
                     actual_process_lock.GetStoragePartitionConfig())
                 .WithWebExposedIsolationInfo(
                     actual_process_lock.GetWebExposedIsolationInfo())
-                .WithIsPdf(actual_process_lock.is_pdf())
+                .WithEmbedderIsolationInfo(
+                    actual_process_lock.embedder_isolation_info())
                 .WithSandbox(actual_process_lock.is_sandboxed())
                 .WithUniqueSandboxId(actual_process_lock.unique_sandbox_id())
                 .WithCrossOriginIsolationKey(
@@ -2626,7 +2654,7 @@ bool ChildProcessSecurityPolicyImpl::CanAccessMaybeOpaqueOrigin(
     } else {
       // For checking kHostsOrigin or kCanAccessDataForOrigin access types, we
       // can use a simpler check based on tracking the list of committed
-      // origins (when that tracking is enabled).
+      // origins.
       //
       // Note that it's important to perform this check *after* the PDF and
       // sandboxing restrictions above, since those checks may deny access even
@@ -2634,10 +2662,8 @@ bool ChildProcessSecurityPolicyImpl::CanAccessMaybeOpaqueOrigin(
       // words, PDF and sandboxed processes should never be allowed to access
       // data, even to their own committed origins.
       bool can_use_committed_origin_checks =
-          (access_type == AccessType::kHostsOrigin ||
-           access_type == AccessType::kCanAccessDataForCommittedOrigin) &&
-          base::FeatureList::IsEnabled(features::kCommittedOriginTracking) &&
-          base::FeatureList::IsEnabled(features::kCommittedOriginEnforcements);
+          access_type == AccessType::kHostsOrigin ||
+          access_type == AccessType::kCanAccessDataForCommittedOrigin;
       if (can_use_committed_origin_checks) {
         if (security_state->MatchesCommittedOrigin(
                 url, url_is_precursor_of_opaque_origin)) {
@@ -2645,12 +2671,11 @@ bool ChildProcessSecurityPolicyImpl::CanAccessMaybeOpaqueOrigin(
         }
         failure_reason = "no_matching_committed_origin";
       } else {
-        // If the committed origin enforcements are off, or if we couldn't use
-        // them (i.e., for kCanCommitNewOrigin checks), Jail and Citadel
-        // checks are the source of truth. If they don't pass, collect crash
-        // keys below before returning false. Unlike committed origin
-        // enforcements, these checks require BrowserContext to still exist
-        // in the SecurityState.
+        // If we couldn't use committed origin enforcements (i.e., for
+        // kCanCommitNewOrigin checks), Jail and Citadel checks are the source
+        // of truth. If they don't pass, collect crash keys below before
+        // returning false. Unlike committed origin enforcements, these checks
+        // require BrowserContext to still exist in the SecurityState.
         if (!security_state->browser_context()) {
           failure_reason = "no_browser_context";
         } else if (PerformJailAndCitadelChecks(
@@ -3721,10 +3746,6 @@ void ChildProcessSecurityPolicyImpl::SecurityStateMaps::
 void ChildProcessSecurityPolicyImpl::AddCommittedOrigin(
     int child_id,
     const url::Origin& origin) {
-  if (!base::FeatureList::IsEnabled(features::kCommittedOriginTracking)) {
-    return;
-  }
-
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   base::AutoLock lock(lock_);
   // TODO(crbug.com/379869738) Remove FromUnsafeValue.

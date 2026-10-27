@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_CWISE_UNARY_VIEW_H
 #define EIGEN_CWISE_UNARY_VIEW_H
@@ -28,7 +29,7 @@ struct traits<CwiseUnaryView<ViewOp, MatrixType, StrideType> > : traits<MatrixTy
     Flags =
         traits<MatrixTypeNested_>::Flags &
         (RowMajorBit | FlagsLvalueBit | DirectAccessBit),  // FIXME DirectAccessBit should not be handled by expressions
-    MatrixTypeInnerStride = inner_stride_at_compile_time<MatrixType>::ret,
+    MatrixTypeInnerStride = inner_stride_at_compile_time<MatrixType>::value,
     // need to cast the sizeof's from size_t to int explicitly, otherwise:
     // "error: no integral type can represent all of the enumerator values
     InnerStrideAtCompileTime =
@@ -39,9 +40,9 @@ struct traits<CwiseUnaryView<ViewOp, MatrixType, StrideType> > : traits<MatrixTy
             : int(StrideType::InnerStrideAtCompileTime),
 
     OuterStrideAtCompileTime = StrideType::OuterStrideAtCompileTime == 0
-                                   ? (outer_stride_at_compile_time<MatrixType>::ret == Dynamic
+                                   ? (outer_stride_at_compile_time<MatrixType>::value == Dynamic
                                           ? int(Dynamic)
-                                          : outer_stride_at_compile_time<MatrixType>::ret *
+                                          : outer_stride_at_compile_time<MatrixType>::value *
                                                 int(sizeof(typename traits<MatrixType>::Scalar) / sizeof(Scalar)))
                                    : int(StrideType::OuterStrideAtCompileTime)
   };
@@ -100,6 +101,7 @@ class CwiseUnaryViewImpl<ViewOp, MatrixType, StrideType, Dense, true>
   EIGEN_DENSE_PUBLIC_INTERFACE(Derived)
   EIGEN_INHERIT_ASSIGNMENT_OPERATORS(CwiseUnaryViewImpl)
 
+  using Base::coeffRef;
   using Base::data;
   EIGEN_DEVICE_FUNC inline Scalar* data() { return &(this->coeffRef(0)); }
 

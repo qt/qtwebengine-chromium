@@ -6,6 +6,8 @@
 #   EIGEN_BENCH_TARGET         - ISA target name (e.g. "x86-64-avx2")
 #   EIGEN_BENCH_SCOPE          - "nightly" (core subset) or "weekly" (all)
 #   EIGEN_BENCH_REPETITIONS    - number of repetitions per benchmark (default: 5)
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 set -ex
 

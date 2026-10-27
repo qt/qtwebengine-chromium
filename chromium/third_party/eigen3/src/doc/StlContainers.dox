@@ -12,8 +12,6 @@ Otherwise, using STL containers on \ref TopicFixedSizeVectorizable "fixed-size v
 That is, an allocator capable of allocating buffers with 16, 32, or even 64 bytes alignment.
 %Eigen does provide one ready for use: aligned_allocator.
 
-Prior to \cpp11, if you want to use the `std::vector` container, then you also have to <code> \#include <Eigen/StdVector> </code>.
-
 These issues arise only with \ref TopicFixedSizeVectorizable "fixed-size vectorizable Eigen types" and \ref TopicStructHavingEigenMembers "structures having such Eigen objects as member".
 For other %Eigen types, such as Vector3f or MatrixXd, no special care is needed when using STL containers.
 
@@ -34,9 +32,7 @@ Note that the third parameter `std::less<int>` is just the default value, but we
 
 \section StlContainers_vector The case of std::vector
 
-This section is for c++98/03 users only. \cpp11 (or above) users can stop reading here.
-
-So in c++98/03, the situation with `std::vector` is more complicated because of a bug in the standard (explanation below).
+On some older toolchains (notably MSVC in 64-bit mode with reduced alignment settings), the situation with `std::vector` is more complicated because of a bug in the standard (explanation below).
 To workaround the issue, we had to specialize it for the Eigen::aligned_allocator type.
 In practice you \b must use the Eigen::aligned_allocator (not another aligned allocator), \b and \#include <Eigen/StdVector>.
 

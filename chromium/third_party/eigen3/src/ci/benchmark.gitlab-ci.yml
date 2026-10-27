@@ -4,6 +4,8 @@
 # pipelines, with separate jobs per ISA target.  Results are analyzed
 # using Welch's t-test against the last 30 runs stored on the perf-data
 # branch.
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 # ============================================================================
 # Variables
@@ -31,9 +33,7 @@ variables:
     EIGEN_BENCH_TARGET: ""
   before_script:
     - . ci/scripts/common.linux.before_script.sh
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_NAMESPACE == "libeigen"
-    - if: $CI_PIPELINE_SOURCE == "web" && $CI_PROJECT_NAMESPACE == "libeigen"
+  rules: !reference [.rules:libeigen:scheduled-or-web, rules]
 
 .bench:linux:build:
   extends: .bench:linux:base
@@ -193,9 +193,7 @@ bench:analyze:
     expire_in: 90 days
   tags:
     - saas-linux-small-amd64
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_NAMESPACE == "libeigen"
-    - if: $CI_PIPELINE_SOURCE == "web" && $CI_PROJECT_NAMESPACE == "libeigen"
+  rules: !reference [.rules:libeigen:scheduled-or-web, rules]
 
 # ============================================================================
 # Storage and gating
@@ -203,7 +201,7 @@ bench:analyze:
 
 bench:store-results:
   stage: deploy
-  image: alpine:edge
+  image: alpine:3.20
   needs:
     - job: bench:analyze
       artifacts: true
@@ -215,13 +213,11 @@ bench:store-results:
     EIGEN_CI_BUILDDIR: ${EIGEN_BENCH_BUILDDIR}
   tags:
     - saas-linux-small-amd64
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    - if: $CI_PIPELINE_SOURCE == "web" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  rules: !reference [.rules:libeigen:scheduled-or-web:default-branch, rules]
 
 bench:regression-gate:
   stage: deploy
-  image: alpine:edge
+  image: alpine:3.20
   needs:
     - job: bench:analyze
       artifacts: true
@@ -234,6 +230,4 @@ bench:regression-gate:
     EIGEN_CI_BUILDDIR: ${EIGEN_BENCH_BUILDDIR}
   tags:
     - saas-linux-small-amd64
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_NAMESPACE == "libeigen"
-    - if: $CI_PIPELINE_SOURCE == "web" && $CI_PROJECT_NAMESPACE == "libeigen"
+  rules: !reference [.rules:libeigen:scheduled-or-web, rules]

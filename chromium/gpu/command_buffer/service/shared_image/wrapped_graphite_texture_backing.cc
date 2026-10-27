@@ -9,6 +9,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
+#include "gpu/command_buffer/common/shared_image_info.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
 #include "gpu/command_buffer/service/graphite_shared_context.h"
 #include "gpu/command_buffer/service/shared_image/compound_image_backing.h"
@@ -136,25 +137,14 @@ class WrappedGraphiteTextureBacking::SkiaGraphiteImageRepresentationImpl
 WrappedGraphiteTextureBacking::WrappedGraphiteTextureBacking(
     base::PassKey<WrappedSkImageBackingFactory>,
     const Mailbox& mailbox,
-    viz::SharedImageFormat format,
-    const gfx::Size& size,
-    const gfx::ColorSpace& color_space,
-    GrSurfaceOrigin surface_origin,
-    SkAlphaType alpha_type,
-    gpu::SharedImageUsageSet usage,
-    std::string debug_label,
+    const SharedImageInfo& si_info,
     scoped_refptr<SharedContextState> context_state,
     const bool thread_safe)
-    : ClearTrackingSharedImageBacking(mailbox,
-                                      format,
-                                      size,
-                                      color_space,
-                                      surface_origin,
-                                      alpha_type,
-                                      usage,
-                                      std::move(debug_label),
-                                      format.EstimatedSizeInBytes(size),
-                                      thread_safe),
+    : ClearTrackingSharedImageBacking(
+          mailbox,
+          si_info,
+          si_info.format.EstimatedSizeInBytes(si_info.size),
+          thread_safe),
       context_state_(std::move(context_state)) {
   CHECK(context_state_);
   CHECK(context_state_->graphite_shared_context());
@@ -320,9 +310,7 @@ bool WrappedGraphiteTextureBacking::ReadbackToMemory(
     // copy. We only apply this fix when dynamic allocation is enabled to
     // maintain parity with the legacy path's raw-copy behavior for now.
     sk_sp<SkColorSpace> src_color_space = nullptr;
-    if (base::FeatureList::IsEnabled(
-            features::kUseCompoundImageBackingAsDefault) &&
-        base::FeatureList::IsEnabled(features::kUseDynamicBackingAllocations)) {
+    if (base::FeatureList::IsEnabled(features::kUseDynamicBackingAllocations)) {
       src_color_space = color_space().ToSkColorSpace();
     }
 
@@ -365,9 +353,7 @@ bool WrappedGraphiteTextureBacking::CheckSupportForAccessStream(
     SharedImageAccessStream stream,
     viz::SharedImageFormat format,
     const AccessParams& params) {
-  if (base::FeatureList::IsEnabled(
-          features::kUseCompoundImageBackingAsDefault) &&
-      base::FeatureList::IsEnabled(features::kUseDynamicBackingAllocations)) {
+  if (base::FeatureList::IsEnabled(features::kUseDynamicBackingAllocations)) {
     // When kUseDynamicBackingAllocations is enabled, we don't support GL access
     // directly in this backing. Instead, we want CompoundImageBacking to
     // allocate a GLTextureImageBacking which provides native GL support.
@@ -438,10 +424,7 @@ WrappedGraphiteTextureBacking::ProduceSkiaGanesh(
   // When kUseDynamicBackingAllocations is enabled, this method should not be
   // called. CompoundImageBacking will instead allocate a
   // GLTextureImageBacking.
-  CHECK(
-      !(base::FeatureList::IsEnabled(
-            features::kUseCompoundImageBackingAsDefault) &&
-        base::FeatureList::IsEnabled(features::kUseDynamicBackingAllocations)));
+  CHECK(!base::FeatureList::IsEnabled(features::kUseDynamicBackingAllocations));
 
   // Used with Graphite-Vulkan-Swiftshader backend for testing, but the context
   // passed in is GLContext for passthrough command decoder. See
@@ -465,10 +448,7 @@ WrappedGraphiteTextureBacking::ProduceGLTexturePassthrough(
   // When kUseDynamicBackingAllocations is enabled, this method should not be
   // called. CompoundImageBacking will instead allocate a
   // GLTextureImageBacking.
-  CHECK(
-      !(base::FeatureList::IsEnabled(
-            features::kUseCompoundImageBackingAsDefault) &&
-        base::FeatureList::IsEnabled(features::kUseDynamicBackingAllocations)));
+  CHECK(!base::FeatureList::IsEnabled(features::kUseDynamicBackingAllocations));
 
   CHECK(context_state_->IsGraphiteDawnVulkan());
   if (context_state_->context_lost()) {

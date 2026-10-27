@@ -350,15 +350,16 @@ void FocusManager::SetFocusedViewWithReason(View* view,
   focus_change_listeners_.Notify(&FocusChangeListener::OnWillChangeFocus,
                                  focused_view_, view);
 
-  View* old_focused_view = focused_view_;
+  // Actions below like `Blur()` can destroy `focused_view_`.
+  ViewTracker old_focused_view_tracker(focused_view_);
   focused_view_ = view;
   base::AutoReset<int> entrance_count_resetter(
       &setting_focused_view_entrance_count_,
       setting_focused_view_entrance_count_ + 1);
 
-  if (old_focused_view) {
-    old_focused_view->RemoveObserver(this);
-    old_focused_view->Blur();
+  if (old_focused_view_tracker.view()) {
+    old_focused_view_tracker.view()->RemoveObserver(this);
+    old_focused_view_tracker.view()->Blur();
   }
   // Also make |focused_view_| the stored focus view. This way the stored focus
   // view is remembered if focus changes are requested prior to a show or while
@@ -373,7 +374,8 @@ void FocusManager::SetFocusedViewWithReason(View* view,
   }
 
   focus_change_listeners_.Notify(&FocusChangeListener::OnDidChangeFocus,
-                                 old_focused_view, focused_view_);
+                                 old_focused_view_tracker.view(),
+                                 focused_view_);
 }
 
 void FocusManager::SetFocusedView(View* view) {
@@ -387,11 +389,12 @@ void FocusManager::SetFocusedView(View* view) {
 
 void FocusManager::ClearFocus() {
   // SetFocusedView(nullptr) is going to clear out the stored view to. We need
-  // to persist it in this case.
-  views::View* focused_view = GetStoredFocusView();
+  // to persist it in this case (assuming it survives the events sent out in the
+  // interim).
+  auto focused_view = std::make_unique<ViewTracker>(GetStoredFocusView());
   SetFocusedView(nullptr);
   ClearNativeFocus();
-  SetStoredFocusView(focused_view);
+  view_tracker_for_stored_view_ = std::move(focused_view);
 }
 
 void FocusManager::AdvanceFocusIfNecessary() {
@@ -412,14 +415,14 @@ void FocusManager::AdvanceFocusIfNecessary() {
 }
 
 void FocusManager::StoreFocusedView(bool clear_native_focus) {
-  View* focused_view = focused_view_;
   // Don't do anything if no focused view. Storing the view (which is nullptr),
   // in this case, would clobber the view that was previously saved.
   if (!focused_view_) {
     return;
   }
 
-  View* v = focused_view_;
+  // This could go away when sending events below, so guard access.
+  ViewTracker old_view(focused_view_);
 
   if (clear_native_focus) {
     // Temporarily disable notification.  ClearFocus() will set the focus to the
@@ -431,11 +434,11 @@ void FocusManager::StoreFocusedView(bool clear_native_focus) {
     ClearFocus();
   } else {
     SetFocusedView(nullptr);
-    SetStoredFocusView(focused_view);
+    SetStoredFocusView(old_view.view());
   }
 
-  if (v) {
-    v->SchedulePaint();  // Remove focus border.
+  if (auto* const view = old_view.view()) {
+    view->SchedulePaint();  // Remove focus border.
   }
 }
 

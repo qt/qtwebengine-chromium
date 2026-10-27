@@ -1089,6 +1089,7 @@ set(lite_test_util_hdrs
 
 # @//pkg:test_util
 set(test_util_srcs
+  ${protobuf_SOURCE_DIR}/editions/edition_defaults_test_utils.cc
   ${protobuf_SOURCE_DIR}/src/google/protobuf/compiler/annotation_test_util.cc
   ${protobuf_SOURCE_DIR}/src/google/protobuf/reflection_tester.cc
   ${protobuf_SOURCE_DIR}/src/google/protobuf/test_util.cc
@@ -1098,6 +1099,7 @@ set(test_util_srcs
 
 # @//pkg:test_util
 set(test_util_hdrs
+  ${protobuf_SOURCE_DIR}/editions/edition_defaults_test_utils.h
   ${protobuf_SOURCE_DIR}/src/google/protobuf/compiler/annotation_test_util.h
   ${protobuf_SOURCE_DIR}/src/google/protobuf/compiler/cpp/unittest.h
   ${protobuf_SOURCE_DIR}/src/google/protobuf/compiler/cpp/unittest.inc
@@ -1293,6 +1295,7 @@ set(protobuf_test_protos_files
   ${protobuf_SOURCE_DIR}/src/google/protobuf/map_unittest.proto
   ${protobuf_SOURCE_DIR}/src/google/protobuf/unittest.proto
   ${protobuf_SOURCE_DIR}/src/google/protobuf/unittest_arena.proto
+  ${protobuf_SOURCE_DIR}/src/google/protobuf/unittest_custom_features.proto
   ${protobuf_SOURCE_DIR}/src/google/protobuf/unittest_custom_options.proto
   ${protobuf_SOURCE_DIR}/src/google/protobuf/unittest_delimited.proto
   ${protobuf_SOURCE_DIR}/src/google/protobuf/unittest_delimited_import.proto

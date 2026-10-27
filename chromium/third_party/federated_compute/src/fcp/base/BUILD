@@ -21,8 +21,9 @@ load("//fcp:config.bzl", "FCP_COPTS")
 load("//fcp/tracing:build_defs.bzl", "tracing_schema_cc_library")
 
 package(
+    default_applicable_licenses = ["//fcp:license"],
     default_visibility = ["//fcp:internal"],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 tracing_schema_cc_library(
@@ -211,6 +212,7 @@ cc_test(
     deps = [
         ":base",
         "@com_google_absl//absl/base:log_severity",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_googletest//:gtest_main",
     ],
@@ -321,6 +323,8 @@ cc_library(
         ":source_location",
         ":tracing_schema",
         "//fcp/tracing",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
     ],
 )
 
@@ -485,7 +489,8 @@ cc_library(
     hdrs = ["time_util.h"],
     deps = [
         "@com_google_absl//absl/time",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:duration_cc_proto",
+        "@com_google_protobuf//:timestamp_cc_proto",
     ],
 )
 
@@ -538,8 +543,8 @@ cc_library(
         ":base",
         "@boringssl//:crypto",
         "@com_google_absl//absl/functional:function_ref",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:cord",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -564,12 +569,15 @@ cc_library(
         "compression.h",
     ],
     copts = FCP_COPTS,
+    visibility = ["//visibility:public"],
     deps = [
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:cord",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_protobuf//src/google/protobuf/io",
+        "@com_google_protobuf//src/google/protobuf/io:gzip_stream",
     ],
 )
 
@@ -579,7 +587,7 @@ cc_test(
     copts = FCP_COPTS,
     deps = [
         ":compression",
-        "//fcp/testing",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )

@@ -1,5 +1,7 @@
 // Benchmarks for Eigen Spline module.
 // Tests fitting, evaluation, and derivative computation.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>
@@ -77,22 +79,18 @@ static void BM_SplineDerivatives(benchmark::State& state) {
   state.counters["Evals/s"] = benchmark::Counter(neval, benchmark::Counter::kIsIterationInvariantRate);
 }
 
-static void SplineSizes(::benchmark::Benchmark* b) {
-  for (int n : {10, 50, 200, 1000}) {
-    b->Arg(n);
-  }
-}
+#define SPLINE_SIZES ->Arg(10)->Arg(50)->Arg(200)->Arg(1000)
 
 // 2D cubic splines
-BENCHMARK(BM_SplineFit<2, 3>)->Apply(SplineSizes)->Name("SplineFit_2D_Cubic");
-BENCHMARK(BM_SplineEval<2, 3>)->Apply(SplineSizes)->Name("SplineEval_2D_Cubic");
-BENCHMARK(BM_SplineDerivatives<2, 3>)->Apply(SplineSizes)->Name("SplineDerivatives_2D_Cubic");
+BENCHMARK(BM_SplineFit<2, 3>) SPLINE_SIZES->Name("SplineFit_2D_Cubic");
+BENCHMARK(BM_SplineEval<2, 3>) SPLINE_SIZES->Name("SplineEval_2D_Cubic");
+BENCHMARK(BM_SplineDerivatives<2, 3>) SPLINE_SIZES->Name("SplineDerivatives_2D_Cubic");
 
 // 3D cubic splines
-BENCHMARK(BM_SplineFit<3, 3>)->Apply(SplineSizes)->Name("SplineFit_3D_Cubic");
-BENCHMARK(BM_SplineEval<3, 3>)->Apply(SplineSizes)->Name("SplineEval_3D_Cubic");
-BENCHMARK(BM_SplineDerivatives<3, 3>)->Apply(SplineSizes)->Name("SplineDerivatives_3D_Cubic");
+BENCHMARK(BM_SplineFit<3, 3>) SPLINE_SIZES->Name("SplineFit_3D_Cubic");
+BENCHMARK(BM_SplineEval<3, 3>) SPLINE_SIZES->Name("SplineEval_3D_Cubic");
+BENCHMARK(BM_SplineDerivatives<3, 3>) SPLINE_SIZES->Name("SplineDerivatives_3D_Cubic");
 
 // 2D quintic splines
-BENCHMARK(BM_SplineFit<2, 5>)->Apply(SplineSizes)->Name("SplineFit_2D_Quintic");
-BENCHMARK(BM_SplineEval<2, 5>)->Apply(SplineSizes)->Name("SplineEval_2D_Quintic");
+BENCHMARK(BM_SplineFit<2, 5>) SPLINE_SIZES->Name("SplineFit_2D_Quintic");
+BENCHMARK(BM_SplineEval<2, 5>) SPLINE_SIZES->Name("SplineEval_2D_Quintic");

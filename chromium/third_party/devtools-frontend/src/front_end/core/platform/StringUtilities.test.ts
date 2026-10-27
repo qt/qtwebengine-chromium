@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Platform from './platform.js';
 
 describe('StringUtilities', () => {
@@ -405,6 +407,27 @@ describe('StringUtilities', () => {
     });
   });
 
+  describe('escapeForURLPattern', () => {
+    it('escapes URLPattern special characters', () => {
+      const inputString = '?+*(){}\\:';
+      const outputString = Platform.StringUtilities.escapeForURLPattern(inputString);
+      assert.strictEqual(outputString, '\\?\\+\\*\\(\\)\\{\\}\\\\\\:');
+    });
+
+    it('does not escape alphanumeric characters', () => {
+      const inputString = 'helloWorld123';
+      const outputString = Platform.StringUtilities.escapeForURLPattern(inputString);
+      assert.strictEqual(outputString, 'helloWorld123');
+    });
+
+    it('does not escape standard URL delimiters and parameters', () => {
+      const inputString = '/api/v1/users?name=test-user&id=1.2';
+      const outputString = Platform.StringUtilities.escapeForURLPattern(inputString);
+      // Note: '?' is escaped because it's a URLPattern modifier
+      assert.strictEqual(outputString, '/api/v1/users\\?name=test-user&id=1.2');
+    });
+  });
+
   describe('naturalOrderComparator', () => {
     it('sorts natural order', () => {
       const testArray = [
@@ -724,10 +747,6 @@ describe('StringUtilities', () => {
 
     it('should convert UPPER_SNAKE_CASE to kebab-case', () => {
       assert.strictEqual(toKebabCase('REGULAR_BREAKPOINT'), 'regular-breakpoint');
-    });
-
-    it('should handle uppercase acronyms as words', () => {
-      assert.strictEqual(toKebabCase('showUAShadowDOM'), 'show-ua-shadow-dom');
     });
 
     it('should handle uppercase acronyms as words', () => {

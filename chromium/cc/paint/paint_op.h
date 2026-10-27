@@ -162,35 +162,32 @@ class CC_PAINT_EXPORT PaintOp {
   };
 
   // Subclasses should provide a Serialize() method called from here.
-  // If the op can be serialized to |memory| in no more than |size| bytes,
-  // then return the number of bytes written.  If it won't fit, return 0.
-  // If |flags_to_serialize| is non-null, it overrides any flags within the op.
-  // |current_ctm| is the transform that will affect the op when rasterized.
-  // |original_ctm| is the transform that SetMatrixOps must be made relative to.
-  size_t Serialize(void* memory,
-                   size_t size,
+  // If the op can be serialized to `memory`, then return the number of bytes
+  // written.  If it won't fit, return 0.
+  // If `flags_to_serialize` is non-null, it overrides any flags within the op.
+  // `current_ctm` is the transform that will affect the op when rasterized.
+  // `original_ctm` is the transform that SetMatrixOps must be made relative to.
+  size_t Serialize(base::span<uint8_t> memory,
                    const SerializeOptions& options,
                    const PaintFlags* flags_to_serialize,
                    const SkM44& current_ctm,
                    const SkM44& original_ctm) const;
 
-  // Deserializes a PaintOp of this type from a given buffer |input| of
-  // at most |input_size| bytes.  Returns null on any errors.
-  // The PaintOp is deserialized into the |output| buffer and returned
+  // Deserializes a PaintOp of this type from a given buffer `input`.
+  // Returns null on any errors.
+  // The PaintOp is deserialized into the `output` buffer and returned
   // if valid.  nullptr is returned if the deserialization fails.
-  // |output_size| must be at least ComputeOpAlignedSize<LargestPaintOp>(),
+  // `output_size` must be at least ComputeOpAlignedSize<LargestPaintOp>(),
   // to fit all ops.  The caller is responsible for destroying these ops.
-  // After reading, it returns the number of bytes read in |read_bytes|.
-  static PaintOp* Deserialize(const volatile void* input,
-                              size_t input_size,
+  // After reading, it returns the number of bytes read in `read_bytes`.
+  static PaintOp* Deserialize(base::span<const volatile uint8_t> input,
                               void* output,
                               size_t output_size,
                               size_t* read_bytes,
                               const DeserializeOptions& options);
-  // Similar to the above, but deserializes into |buffer|.
+  // Similar to the above, but deserializes into `buffer`.
   static PaintOp* DeserializeIntoPaintOpBuffer(
-      const volatile void* input,
-      size_t input_size,
+      base::span<const volatile uint8_t> input,
       PaintOpBuffer* buffer,
       size_t* read_bytes,
       const DeserializeOptions& options);

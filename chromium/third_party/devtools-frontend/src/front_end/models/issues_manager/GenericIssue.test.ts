@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import type * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
@@ -91,6 +93,28 @@ describe('GenericIssue', () => {
     assert.strictEqual(
         genericIssue.primaryKey(),
         'GenericIssue::NavigationEntryMarkedSkippable-(undefined)-(undefined)-(undefined)-(blabla)');
+    assert.strictEqual(genericIssue.getKind(), IssuesManager.Issue.IssueKind.IMPROVEMENT);
+    assert.isNotNull(genericIssue.getDescription());
+
+    const requests = Array.from(genericIssue.requests());
+    assert.strictEqual(requests[0].url, 'https://skippablePage.com');
+  });
+
+  it('adds a back-to-ad navigation entry issue with valid details', () => {
+    const issueDetails = {
+      errorType: Protocol.Audits.GenericIssueErrorType.BackUINavigationWouldSkipAd,
+      request: {requestId: 'blabla', url: 'https://skippablePage.com'} as Protocol.Audits.AffectedRequest,
+    };
+
+    const issue = createProtocolIssueWithDetails(issueDetails);
+    const genericIssues = IssuesManager.GenericIssue.GenericIssue.fromInspectorIssue(mockModel, issue);
+    assert.lengthOf(genericIssues, 1);
+    const genericIssue = genericIssues[0];
+
+    assert.strictEqual(genericIssue.getCategory(), IssuesManager.Issue.IssueCategory.GENERIC);
+    assert.strictEqual(
+        genericIssue.primaryKey(),
+        'GenericIssue::BackUINavigationWouldSkipAd-(undefined)-(undefined)-(undefined)-(blabla)');
     assert.strictEqual(genericIssue.getKind(), IssuesManager.Issue.IssueKind.IMPROVEMENT);
     assert.isNotNull(genericIssue.getDescription());
 

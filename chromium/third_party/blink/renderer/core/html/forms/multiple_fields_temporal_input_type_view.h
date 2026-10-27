@@ -104,12 +104,13 @@ class MultipleFieldsTemporalInputTypeView final
   void AdjustStyle(ComputedStyleBuilder&) override;
   void CreateShadowSubtree() final;
   void DestroyShadowSubtree() final;
-  void DisabledAttributeChanged() final;
+  void DisabledAttributeChanged(DisabledChangedReason) final;
   void ForwardEvent(Event&) final;
   void HandleClickEvent(MouseEvent&) final;
   void HandleFocusInEvent(Element* old_focused_element,
                           mojom::blink::FocusType) final;
   void HandleKeydownEvent(KeyboardEvent&) final;
+  void AccessKeyAction(SimulatedClickCreationScope creation_scope) final;
   bool HasBadInput() const override;
   bool HasCustomFocusLogic() const final;
   void MinOrMaxAttributeChanged() final;

@@ -626,8 +626,8 @@ void av1_apply_temporal_filter_avx2(
           }
         }
       } else {
-        for (unsigned int i = 0, k = 0; i < plane_h; i++) {
-          for (unsigned int j = 0; j < plane_w; j++, k++) {
+        for (unsigned int i = 0; i < plane_h; i++) {
+          for (unsigned int j = 0; j < plane_w; j++) {
             for (int ii = 0; ii < (1 << ss_y_shift); ++ii) {
               for (int jj = 0; jj < (1 << ss_x_shift); ++jj) {
                 const int yy = (i << ss_y_shift) + ii;  // Y-coord on Y-plane.

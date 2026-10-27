@@ -6,13 +6,13 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/cord.h"
 #include "absl/strings/escaping.h"
 #include "absl/strings/string_view.h"
 #include "fcp/base/compression.h"
 #include "fcp/client/attestation/test_values.h"
-#include "fcp/client/parsing_utils.h"
 #include "fcp/protos/confidentialcompute/access_policy.pb.h"
 #include "fcp/protos/confidentialcompute/verification_record.pb.h"
 #include "fcp/protos/federatedcompute/confidential_aggregations.pb.h"
@@ -92,8 +92,9 @@ TEST(LogSerializedVerificationRecordTest,
   ASSERT_TRUE(absl::Base64Unescape(base64_record_data, &decoded_record_data));
   absl::StatusOr<absl::Cord> uncompressed_record_data =
       UncompressWithGzip(decoded_record_data);
+  ABSL_ASSERT_OK(uncompressed_record_data);
   confidentialcompute::AttestationVerificationRecord decoded_record;
-  ASSERT_TRUE(ParseFromStringOrCord(decoded_record, *uncompressed_record_data));
+  ASSERT_TRUE(decoded_record.ParseFromString(*uncompressed_record_data));
   EXPECT_THAT(decoded_record, EqualsProto(record));
 }
 

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import {mockAidaClient} from '../../../testing/AiAssistanceHelpers.js';
 import {
   describeWithEnvironment,
@@ -17,7 +19,9 @@ describeWithEnvironment('ConversationSummaryAgent', () => {
     });
 
     const summary = await agent.summarizeConversation('User: Hello\nAssistant: Hi');
-    assert.strictEqual(summary, 'Summary of the conversation');
+    assert.isTrue(summary.startsWith('Summary of the conversation'));
+    assert.isTrue(
+        summary.includes('Note: The code fixes and findings above were identified on a live page in DevTools'));
   });
 
   it('summarizes a conversation using a context', async () => {

@@ -81,11 +81,6 @@ interface AutofillAgent {
   // Tells the renderer that the Autofill previewed form should be cleared.
   ClearPreviewedForm();
 
-  // Finds potential "Sign in with Google" buttons in the DOM and returns their
-  // relevant data. The renderer should perform minimal filtering and leave the
-  // decision to the browser.
-  FindPotentialSiwgButtons() => (array<SiwgButtonData> siwg_button_data);
-
   // Tells the renderer to trigger Autofill suggestions on the `field`, as if
   // triggered through the provided `trigger_source`.
   // For the most part, suggestions are triggered through Blink events on the
@@ -100,14 +95,14 @@ interface AutofillAgent {
   TriggerSuggestions(
       FieldRendererId field, AutofillSuggestionTriggerSource trigger_source);
 
-  // Sets the autofill/autocomplete suggestion availability of `field` (if it is
-  // still the currently selected node).
+  // Sets the autofill/autocomplete suggestion availability of `field` (if it
+  // still exists).
   SetSuggestionAvailability(
       FieldRendererId field,
       AutofillSuggestionAvailability suggestion_availability);
 
-  // Sets the value of `field` (if it is still the currently selected node).
-  // to the given data list value.
+  // Sets the value of `field` (if it still exists) to the given data list
+  // value.
   AcceptDataListSuggestion(
       FieldRendererId field, mojo_base.mojom.String16 value);
 
@@ -126,10 +121,14 @@ interface AutofillAgent {
   GetPotentialLastFourCombinationsForStandaloneCvc()
       => (array<string> potential_matches);
 
-  // Asks the renderer to dispatch a custom DOM event on a specific field.
-  // The event will be of type VerifiedEvent.
-  DispatchEmailVerifiedEvent(
-      FieldRendererId field_id, string presentation_token);
+  // Sends an email verification token along with the corresponding email
+  // address and field ID to the renderer. At form submission time, the
+  // renderer will verify that the email field's value still matches the verified
+  // email address before injecting the token.
+  SendEmailVerificationToken(FieldRendererId email_field_id,
+                             string email,
+                             FieldRendererId token_field_id,
+                             string token);
 };
 
 // There is one instance of this interface per render frame in the render

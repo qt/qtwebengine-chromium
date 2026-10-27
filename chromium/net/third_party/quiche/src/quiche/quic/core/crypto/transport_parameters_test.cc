@@ -52,8 +52,6 @@ const auto kCustomParameter1 =
 const char* kCustomParameter1Value = "foo";
 const auto kCustomParameter2 =
     static_cast<TransportParameters::TransportParameterId>(0xff34);
-const auto kLegacyVersionInfoParameter =
-    static_cast<TransportParameters::TransportParameterId>(0x4752);
 const char* kCustomParameter2Value = "bar";
 
 const char kFakeGoogleHandshakeMessage[] =
@@ -112,22 +110,6 @@ CreateFakePreferredAddress() {
       CreateFakePreferredStatelessResetToken();
   return std::make_unique<TransportParameters::PreferredAddress>(
       preferred_address);
-}
-
-TransportParameters::LegacyVersionInformation
-CreateFakeLegacyVersionInformationClient() {
-  TransportParameters::LegacyVersionInformation legacy_version_information;
-  legacy_version_information.version = kFakeVersionLabel;
-  return legacy_version_information;
-}
-
-TransportParameters::LegacyVersionInformation
-CreateFakeLegacyVersionInformationServer() {
-  TransportParameters::LegacyVersionInformation legacy_version_information =
-      CreateFakeLegacyVersionInformationClient();
-  legacy_version_information.supported_versions.push_back(kFakeVersionLabel);
-  legacy_version_information.supported_versions.push_back(kFakeVersionLabel2);
-  return legacy_version_information;
 }
 
 TransportParameters::VersionInformation CreateFakeVersionInformation() {
@@ -189,37 +171,20 @@ TEST_P(TransportParametersTest, Comparator) {
   EXPECT_FALSE(orig_params == new_params);
   EXPECT_TRUE(orig_params != new_params);
   new_params.perspective = Perspective::IS_CLIENT;
-  if (!GetQuicRestartFlag(quic_stop_parsing_legacy_version_info) ||
-      !GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-    orig_params.legacy_version_information =
-        CreateFakeLegacyVersionInformationClient();
-    new_params.legacy_version_information =
-        CreateFakeLegacyVersionInformationClient();
-  }
   orig_params.version_information = CreateFakeVersionInformation();
   new_params.version_information = CreateFakeVersionInformation();
   orig_params.disable_active_migration = true;
   new_params.disable_active_migration = true;
   orig_params.reliable_stream_reset = true;
   new_params.reliable_stream_reset = true;
+  orig_params.scone_supported = true;
+  new_params.scone_supported = false;
+  EXPECT_NE(orig_params, new_params);
+  new_params.scone_supported = true;
   EXPECT_EQ(orig_params, new_params);
   EXPECT_TRUE(orig_params == new_params);
   EXPECT_FALSE(orig_params != new_params);
 
-  if (!GetQuicRestartFlag(quic_stop_parsing_legacy_version_info) ||
-      !GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-    // Test comparison on vectors.
-    orig_params.legacy_version_information.value().supported_versions.push_back(
-        kFakeVersionLabel);
-    new_params.legacy_version_information.value().supported_versions.push_back(
-        kFakeVersionLabel2);
-    EXPECT_NE(orig_params, new_params);
-    EXPECT_FALSE(orig_params == new_params);
-    EXPECT_TRUE(orig_params != new_params);
-    new_params.legacy_version_information.value().supported_versions.pop_back();
-    new_params.legacy_version_information.value().supported_versions.push_back(
-        kFakeVersionLabel);
-  }
   orig_params.stateless_reset_token = CreateStatelessResetTokenForTest();
   new_params.stateless_reset_token = CreateStatelessResetTokenForTest();
   EXPECT_EQ(orig_params, new_params);
@@ -278,11 +243,6 @@ TEST_P(TransportParametersTest, Comparator) {
 TEST_P(TransportParametersTest, CopyConstructor) {
   TransportParameters orig_params;
   orig_params.perspective = Perspective::IS_CLIENT;
-  if (!GetQuicRestartFlag(quic_stop_parsing_legacy_version_info) ||
-      !GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-    orig_params.legacy_version_information =
-        CreateFakeLegacyVersionInformationClient();
-  }
   orig_params.version_information = CreateFakeVersionInformation();
   orig_params.original_destination_connection_id =
       CreateFakeOriginalDestinationConnectionId();
@@ -303,6 +263,7 @@ TEST_P(TransportParametersTest, CopyConstructor) {
   orig_params.min_ack_delay_us_draft10 = kMinAckDelayUsForTest;
   orig_params.disable_active_migration = kFakeDisableMigration;
   orig_params.reliable_stream_reset = kFakeReliableStreamReset;
+  orig_params.scone_supported = true;
   orig_params.preferred_address = CreateFakePreferredAddress();
   orig_params.active_connection_id_limit.set_value(
       kActiveConnectionIdLimitForTest);
@@ -327,10 +288,6 @@ TEST_P(TransportParametersTest, CopyConstructor) {
 TEST_P(TransportParametersTest, RoundTripClient) {
   TransportParameters orig_params;
   orig_params.perspective = Perspective::IS_CLIENT;
-  if (!GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-    orig_params.legacy_version_information =
-        CreateFakeLegacyVersionInformationClient();
-  }
   orig_params.version_information = CreateFakeVersionInformation();
   orig_params.max_idle_timeout_ms.set_value(kFakeIdleTimeoutMilliseconds);
   orig_params.max_udp_payload_size.set_value(kMaxPacketSizeForTest);
@@ -348,6 +305,7 @@ TEST_P(TransportParametersTest, RoundTripClient) {
   orig_params.min_ack_delay_us_draft10 = kMinAckDelayUsForTest;
   orig_params.disable_active_migration = kFakeDisableMigration;
   orig_params.reliable_stream_reset = kFakeReliableStreamReset;
+  orig_params.scone_supported = true;
   orig_params.active_connection_id_limit.set_value(
       kActiveConnectionIdLimitForTest);
   orig_params.initial_source_connection_id =
@@ -374,21 +332,12 @@ TEST_P(TransportParametersTest, RoundTripClient) {
       << error_details;
   EXPECT_TRUE(error_details.empty());
   RemoveGreaseParameters(&new_params);
-  if (GetQuicRestartFlag(quic_stop_parsing_legacy_version_info) &&
-      !GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-    orig_params.legacy_version_information.reset();
-    new_params.custom_parameters.erase(kLegacyVersionInfoParameter);
-  }
   EXPECT_EQ(new_params, orig_params);
 }
 
 TEST_P(TransportParametersTest, RoundTripServer) {
   TransportParameters orig_params;
   orig_params.perspective = Perspective::IS_SERVER;
-  if (!GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-    orig_params.legacy_version_information =
-        CreateFakeLegacyVersionInformationServer();
-  }
   orig_params.version_information = CreateFakeVersionInformation();
   orig_params.original_destination_connection_id =
       CreateFakeOriginalDestinationConnectionId();
@@ -409,6 +358,7 @@ TEST_P(TransportParametersTest, RoundTripServer) {
   orig_params.min_ack_delay_us_draft10 = kMinAckDelayUsForTest;
   orig_params.disable_active_migration = kFakeDisableMigration;
   orig_params.reliable_stream_reset = kFakeReliableStreamReset;
+  orig_params.scone_supported = true;
   orig_params.preferred_address = CreateFakePreferredAddress();
   orig_params.active_connection_id_limit.set_value(
       kActiveConnectionIdLimitForTest);
@@ -428,11 +378,6 @@ TEST_P(TransportParametersTest, RoundTripServer) {
       << error_details;
   EXPECT_TRUE(error_details.empty());
   RemoveGreaseParameters(&new_params);
-  if (GetQuicRestartFlag(quic_stop_parsing_legacy_version_info) &&
-      !GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-    orig_params.legacy_version_information.reset();
-    new_params.custom_parameters.erase(kLegacyVersionInfoParameter);
-  }
   EXPECT_EQ(new_params, orig_params);
 }
 
@@ -539,11 +484,6 @@ TEST_P(TransportParametersTest, AreValid) {
 TEST_P(TransportParametersTest, NoClientParamsWithStatelessResetToken) {
   TransportParameters orig_params;
   orig_params.perspective = Perspective::IS_CLIENT;
-  if (!GetQuicRestartFlag(quic_stop_parsing_legacy_version_info) ||
-      !GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-    orig_params.legacy_version_information =
-        CreateFakeLegacyVersionInformationClient();
-  }
   orig_params.max_idle_timeout_ms.set_value(kFakeIdleTimeoutMilliseconds);
   orig_params.stateless_reset_token = CreateStatelessResetTokenForTest();
   orig_params.max_udp_payload_size.set_value(kMaxPacketSizeForTest);
@@ -651,6 +591,9 @@ TEST_P(TransportParametersTest, ParseClientParams) {
       0x01, 0x23, 0x45, 0x67,  // chosen version
       0x01, 0x23, 0x45, 0x67,  // other version 1
       0x89, 0xab, 0xcd, 0xef,  // other version 2
+      // scone_supported
+      0x61, 0x9e,  // parameter id
+      0x00,  // length
   };
   // clang-format on
   const uint8_t* client_params =
@@ -664,13 +607,6 @@ TEST_P(TransportParametersTest, ParseClientParams) {
       << error_details;
   EXPECT_TRUE(error_details.empty());
   EXPECT_EQ(Perspective::IS_CLIENT, new_params.perspective);
-  if (!GetQuicRestartFlag(quic_stop_parsing_legacy_version_info)) {
-    ASSERT_TRUE(new_params.legacy_version_information.has_value());
-    EXPECT_EQ(kFakeVersionLabel,
-              new_params.legacy_version_information.value().version);
-    EXPECT_TRUE(new_params.legacy_version_information.value()
-                    .supported_versions.empty());
-  }
   ASSERT_TRUE(new_params.version_information.has_value());
   EXPECT_EQ(new_params.version_information.value(),
             CreateFakeVersionInformation());
@@ -715,6 +651,7 @@ TEST_P(TransportParametersTest, ParseClientParams) {
             new_params.google_handshake_message);
 
   EXPECT_EQ(kFakeSni, new_params.debugging_sni);
+  EXPECT_TRUE(new_params.scone_supported);
 }
 
 TEST_P(TransportParametersTest,
@@ -930,19 +867,6 @@ TEST_P(TransportParametersTest, ParseServerParams) {
       << error_details;
   EXPECT_TRUE(error_details.empty());
   EXPECT_EQ(Perspective::IS_SERVER, new_params.perspective);
-  if (!GetQuicRestartFlag(quic_stop_parsing_legacy_version_info)) {
-    ASSERT_TRUE(new_params.legacy_version_information.has_value());
-    EXPECT_EQ(kFakeVersionLabel,
-              new_params.legacy_version_information.value().version);
-    ASSERT_EQ(2u, new_params.legacy_version_information.value()
-                      .supported_versions.size());
-    EXPECT_EQ(
-        kFakeVersionLabel,
-        new_params.legacy_version_information.value().supported_versions[0]);
-    EXPECT_EQ(
-        kFakeVersionLabel2,
-        new_params.legacy_version_information.value().supported_versions[1]);
-  }
   ASSERT_TRUE(new_params.version_information.has_value());
   EXPECT_EQ(new_params.version_information.value(),
             CreateFakeVersionInformation());
@@ -1063,10 +987,6 @@ TEST_P(TransportParametersTest, VeryLongCustomParameter) {
   std::string custom_value(70000, '?');
   TransportParameters orig_params;
   orig_params.perspective = Perspective::IS_CLIENT;
-  if (!GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-    orig_params.legacy_version_information =
-        CreateFakeLegacyVersionInformationClient();
-  }
   orig_params.custom_parameters[kCustomParameter1] = custom_value;
 
   std::vector<uint8_t> serialized;
@@ -1080,22 +1000,12 @@ TEST_P(TransportParametersTest, VeryLongCustomParameter) {
       << error_details;
   EXPECT_TRUE(error_details.empty());
   RemoveGreaseParameters(&new_params);
-  if (GetQuicRestartFlag(quic_stop_parsing_legacy_version_info) &&
-      !GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-    orig_params.legacy_version_information.reset();
-    new_params.custom_parameters.erase(kLegacyVersionInfoParameter);
-  }
   EXPECT_EQ(new_params, orig_params);
 }
 
 TEST_P(TransportParametersTest, SerializationOrderIsRandom) {
   TransportParameters orig_params;
   orig_params.perspective = Perspective::IS_CLIENT;
-  if (!GetQuicRestartFlag(quic_stop_parsing_legacy_version_info) ||
-      !GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-    orig_params.legacy_version_information =
-        CreateFakeLegacyVersionInformationClient();
-  }
   orig_params.max_idle_timeout_ms.set_value(kFakeIdleTimeoutMilliseconds);
   orig_params.max_udp_payload_size.set_value(kMaxPacketSizeForTest);
   orig_params.initial_max_data.set_value(kFakeInitialMaxData);
@@ -1138,10 +1048,6 @@ TEST_P(TransportParametersTest, SerializationOrderIsRandom) {
 TEST_P(TransportParametersTest, Degrease) {
   TransportParameters orig_params;
   orig_params.perspective = Perspective::IS_CLIENT;
-  if (!GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-    orig_params.legacy_version_information =
-        CreateFakeLegacyVersionInformationClient();
-  }
   orig_params.version_information = CreateFakeVersionInformation();
   orig_params.max_idle_timeout_ms.set_value(kFakeIdleTimeoutMilliseconds);
   orig_params.max_udp_payload_size.set_value(kMaxPacketSizeForTest);
@@ -1189,22 +1095,12 @@ TEST_P(TransportParametersTest, Degrease) {
   EXPECT_NE(new_params, orig_params);
 
   DegreaseTransportParameters(new_params);
-  if (GetQuicRestartFlag(quic_stop_parsing_legacy_version_info) &&
-      !GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-    orig_params.legacy_version_information.reset();
-    new_params.custom_parameters.erase(kLegacyVersionInfoParameter);
-  }
   EXPECT_EQ(new_params, orig_params);
 }
 
 TEST_P(TransportParametersTest, DebuggingSniParsingClientToServer) {
   TransportParameters orig_params;
   orig_params.perspective = Perspective::IS_CLIENT;
-  if (!GetQuicRestartFlag(quic_stop_parsing_legacy_version_info) ||
-      !GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-    orig_params.legacy_version_information =
-        CreateFakeLegacyVersionInformationClient();
-  }
   orig_params.debugging_sni = kFakeSni;
 
   std::vector<uint8_t> serialized;
@@ -1222,11 +1118,6 @@ TEST_P(TransportParametersTest, DebuggingSniParsingClientToServer) {
 TEST_P(TransportParametersTest, ServerCannotSendDebuggingSni) {
   TransportParameters orig_params;
   orig_params.perspective = Perspective::IS_SERVER;
-  if (!GetQuicRestartFlag(quic_stop_parsing_legacy_version_info) ||
-      !GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-    orig_params.legacy_version_information =
-        CreateFakeLegacyVersionInformationServer();
-  }
   orig_params.debugging_sni = kFakeSni;
 
   std::vector<uint8_t> out;
@@ -1240,11 +1131,6 @@ class TransportParametersTicketSerializationTest : public QuicTest {
  protected:
   void SetUp() override {
     original_params_.perspective = Perspective::IS_SERVER;
-    if (!GetQuicRestartFlag(quic_stop_parsing_legacy_version_info) ||
-        !GetQuicRestartFlag(quic_stop_sending_legacy_version_info)) {
-      original_params_.legacy_version_information =
-          CreateFakeLegacyVersionInformationServer();
-    }
     original_params_.original_destination_connection_id =
         CreateFakeOriginalDestinationConnectionId();
     original_params_.max_idle_timeout_ms.set_value(

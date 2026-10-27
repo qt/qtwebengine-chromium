@@ -21,6 +21,7 @@
 #include "platform/api/time.h"
 #include "platform/test/paths.h"
 #include "util/crypto/pem_helpers.h"
+#include "util/no_destructor.h"
 #include "util/osp_logging.h"
 #include "util/read_file.h"
 
@@ -116,8 +117,9 @@ bool ConvertTimeSeconds(const DateTime& time, uint64_t* seconds) {
 }
 
 const std::string& GetSpecificTestDataPath() {
-  static std::string data_path = GetTestDataPath() + "cast/common/certificate/";
-  return data_path;
+  static const NoDestructor<std::string> data_path(GetTestDataPath() +
+                                                   "cast/common/certificate/");
+  return *data_path;
 }
 
 class CastAuthUtilTest : public ::testing::Test {

@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_BLASUTIL_H
 #define EIGEN_BLASUTIL_H
@@ -469,7 +470,7 @@ struct blas_traits {
     NeedToConjugate = false,
     HasUsableDirectAccess =
         ((int(XprType::Flags) & DirectAccessBit) &&
-         (bool(XprType::IsVectorAtCompileTime) || int(inner_stride_at_compile_time<XprType>::ret) == 1))
+         (bool(XprType::IsVectorAtCompileTime) || int(inner_stride_at_compile_time<XprType>::value) == 1))
             ? 1
             : 0,
     HasScalarFactor = false

@@ -94,6 +94,11 @@ LOGGING_SRCS = [
 ]
 
 MICROKERNEL_DEFS = [
+    "src/bf16-f32-vcvt/bf16-f32-vcvt.inc",
+    "src/bf16-qs8-vcvt/bf16-qs8-vcvt.inc",
+    "src/bf16-rminmax/bf16-rmax.inc",
+    "src/bf16-rminmax/bf16-rmin.inc",
+    "src/bf16-rminmax/bf16-rminmax.inc",
     "src/f16-avgpool/f16-avgpool-minmax.inc",
     "src/f16-dwconv/f16-dwconv-minmax.inc",
     "src/f16-f32-vcvt/f16-f32-vcvt.inc",
@@ -139,6 +144,7 @@ MICROKERNEL_DEFS = [
     "src/f16-vexp/f16-vexp.inc",
     "src/f16-vgelu/f16-vgelu.inc",
     "src/f16-vhswish/f16-vhswish.inc",
+    "src/f16-vlog/f16-vlog.inc",
     "src/f16-vlrelu/f16-vlrelu.inc",
     "src/f16-vmulcaddc/f16-vmulcaddc.inc",
     "src/f16-vneg/f16-vneg.inc",
@@ -156,6 +162,7 @@ MICROKERNEL_DEFS = [
     "src/f32-conv-hwc/f32-conv-hwc.inc",
     "src/f32-dwconv/f32-dwconv-minmax.inc",
     "src/f32-dwconv/f32-dwconv.inc",
+    "src/f32-bf16-vcvt/f32-bf16-vcvt.inc",
     "src/f32-f16-vcvt/f32-f16-vcvt.inc",
     "src/f32-maxpool/f32-maxpool-minmax.inc",
     "src/f32-qs8-vcvt/f32-qs8-vcvt.inc",

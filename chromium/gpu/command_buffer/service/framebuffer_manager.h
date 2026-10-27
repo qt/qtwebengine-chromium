@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "base/containers/heap_array.h"
 #include "base/containers/small_map.h"
 #include "base/containers/span.h"
 #include "base/memory/raw_ptr.h"
@@ -57,6 +58,7 @@ class GPU_GLES2_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
     virtual bool IsRenderbuffer(Renderbuffer* renderbuffer) const = 0;
     virtual bool IsSameAttachment(const Attachment* attachment) const = 0;
     virtual bool Is3D() const = 0;
+    virtual GLint layer() const;
 
     // If it's a 3D texture attachment, return true if
     // FRAMEBUFFER_ATTACHMENT_TEXTURE_LAYER is smaller than the number of
@@ -95,7 +97,7 @@ class GPU_GLES2_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
   bool HasSRGBAttachments() const;
   bool HasDepthStencilFormatAttachment() const;
 
-  void ClearUnclearedIntOr3DTexturesOrPartiallyClearedTextures(
+  bool ClearUnclearedIntOr3DTexturesOrPartiallyClearedTextures(
       GLES2Decoder* decoder,
       TextureManager* texture_manager);
 
@@ -174,6 +176,7 @@ class GPU_GLES2_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
   // returns 0.
   GLenum GetReadBufferTextureType() const;
   bool GetReadBufferIsMultisampledTexture() const;
+  bool GetReadBufferIsMultisampledRenderbuffer() const;
 
   // Verify all the rules in OpenGL ES 2.0.25 4.4.5 are followed.
   // Returns GL_FRAMEBUFFER_COMPLETE if there are no reasons we know we can't
@@ -301,13 +304,13 @@ class GPU_GLES2_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
   AttachmentMap attachments_;
 
   // User's draw buffers setting through DrawBuffers() call.
-  std::unique_ptr<GLenum[]> draw_buffers_;
+  base::HeapArray<GLenum> draw_buffers_;
 
   // If a draw buffer does not have an image, or it has no corresponding
   // fragment shader output variable, it might be filtered out as NONE.
   // Note that the actually draw buffers setting sent to the driver is always
   // consistent with |adjusted_draw_buffers_|, not |draw_buffers_|.
-  std::unique_ptr<GLenum[]> adjusted_draw_buffers_;
+  base::HeapArray<GLenum> adjusted_draw_buffers_;
 
   // Draw buffer base types: FLOAT, INT, or UINT.
   // We have up to 16 draw buffers, each is encoded into 2 bits, total 32 bits:
@@ -380,6 +383,12 @@ class GPU_GLES2_EXPORT FramebufferManager {
   void MarkAsComplete(Framebuffer* framebuffer);
 
   bool IsComplete(const Framebuffer* framebuffer);
+
+  std::vector<std::pair<scoped_refptr<Framebuffer>, GLenum>>
+  GetBindingFramebuffersForTexture(TextureRef* texture_ref);
+
+  std::vector<std::pair<scoped_refptr<Framebuffer>, GLenum>>
+  GetBindingFramebuffersForRenderbuffer(Renderbuffer* renderbuffer);
 
   void IncFramebufferStateChangeCount() {
     // make sure this is never 0.

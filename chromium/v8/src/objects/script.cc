@@ -44,10 +44,10 @@ MaybeHandle<SharedFunctionInfo> Script::FindSharedFunctionInfo(
   // triggers the mismatch.
   CHECK_LT(static_cast<uint32_t>(function_literal_id),
            script->infos()->ulength().value());
-  Tagged<MaybeObject> shared = script->infos()->get(function_literal_id);
+  Tagged<MaybeObject> shared =
+      script->infos()->get(function_literal_id, kAcquireLoad);
   Tagged<HeapObject> heap_object;
-  if (!shared.GetHeapObject(&heap_object) ||
-      IsUndefined(heap_object, isolate)) {
+  if (!shared.GetHeapObject(&heap_object) || IsUndefined(heap_object)) {
     return MaybeHandle<SharedFunctionInfo>();
   }
   Handle<SharedFunctionInfo> result(Cast<SharedFunctionInfo>(heap_object),
@@ -76,7 +76,7 @@ Tagged<Script> Script::Iterator::Next() {
   if (o != Tagged<Object>()) {
     return Cast<Script>(o);
   }
-  return Script();
+  return Tagged<Script>();
 }
 
 // static
@@ -122,7 +122,7 @@ void Script::InitLineEndsInternal(IsolateT* isolate,
   DCHECK(script->CanHaveLineEnds());
   Tagged<Object> src_obj = script->source();
   if (!IsString(src_obj)) {
-    DCHECK(IsUndefined(src_obj, isolate));
+    DCHECK(IsUndefined(src_obj));
     script->set_line_ends(ReadOnlyRoots(isolate).empty_fixed_array());
   } else {
     DCHECK(IsString(src_obj));
@@ -191,7 +191,7 @@ bool Script::IsUserJavaScript() const {
 #if V8_ENABLE_WEBASSEMBLY
 bool Script::ContainsAsmModule() {
   DisallowGarbageCollection no_gc;
-  SharedFunctionInfo::ScriptIterator iter(Isolate::Current(), *this);
+  SharedFunctionInfo::ScriptIterator iter(Isolate::Current(), this);
   for (Tagged<SharedFunctionInfo> sfi = iter.Next(); !sfi.is_null();
        sfi = iter.Next()) {
     if (sfi->HasAsmWasmData()) return true;
@@ -234,8 +234,8 @@ void Script::TraceScriptRundown() {
   if (IsString(this->name())) {
     value->SetString("url", Cast<String>(this->name())->ToCString().get());
   }
-  TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.v8-source-rundown"),
-               "ScriptCatchup", "data", std::move(value));
+  TRACE_EVENT(TRACE_DISABLED_BY_DEFAULT("devtools.v8-source-rundown"),
+              "ScriptCatchup", "data", std::move(value));
 }
 
 void Script::TraceScriptRundownSources() {
@@ -254,18 +254,16 @@ void Script::TraceScriptRundownSources() {
     value->SetInteger("scriptId", script_id);
     value->SetInteger("length", source_length);
     value->SetInteger("limit", kSourceMaxLength);
-    TRACE_EVENT1(
-        TRACE_DISABLED_BY_DEFAULT("devtools.v8-source-rundown-sources"),
-        "TooLargeScriptCatchup", "data", std::move(value));
+    TRACE_EVENT(TRACE_DISABLED_BY_DEFAULT("devtools.v8-source-rundown-sources"),
+                "TooLargeScriptCatchup", "data", std::move(value));
   } else if (source_length <= kSplitMaxLength) {
     auto value = v8::tracing::TracedValue::Create();
     value->SetString("isolate", std::to_string(isolate->debug()->IsolateId()));
     value->SetInteger("scriptId", script_id);
     value->SetInteger("length", source_length);
     value->SetString("sourceText", source->ToCString().get());
-    TRACE_EVENT1(
-        TRACE_DISABLED_BY_DEFAULT("devtools.v8-source-rundown-sources"),
-        "ScriptCatchup", "data", std::move(value));
+    TRACE_EVENT(TRACE_DISABLED_BY_DEFAULT("devtools.v8-source-rundown-sources"),
+                "ScriptCatchup", "data", std::move(value));
   } else {
     int32_t split_count = source_length / kSplitMaxLength + 1;
     std::unique_ptr<char[]> source_ptr = source->ToCString();
@@ -280,7 +278,7 @@ void Script::TraceScriptRundownSources() {
       split_trace_value->SetInteger("scriptId", script_id);
       split_trace_value->SetString(
           "sourceText", std::string(source_ptr.get() + begin, end - begin));
-      TRACE_EVENT1(
+      TRACE_EVENT(
           TRACE_DISABLED_BY_DEFAULT("devtools.v8-source-rundown-sources"),
           "LargeScriptCatchup", "data", std::move(split_trace_value));
     }
@@ -406,8 +404,9 @@ template <typename LineEndsContainer>
 bool Script::GetPositionInfoInternal(
     const LineEndsContainer& ends, int position, Script::PositionInfo* info,
     const DisallowGarbageCollection& no_gc) const {
-  if (!GetLineEndsContainerPositionInfo(ends, position, info, no_gc))
+  if (!GetLineEndsContainerPositionInfo(ends, position, info, no_gc)) {
     return false;
+  }
 
   // Line end is position of the linebreak character.
   info->line_end = GetLineEnd(ends, info->line);
@@ -451,7 +450,7 @@ bool Script::GetPositionInfo(int position, PositionInfo* info,
 
   if (!has_line_ends()) {
     // Slow mode: we do not have line_ends. We have to iterate through source.
-    if (!GetPositionInfoSlow(*this, position, no_gc, info)) {
+    if (!GetPositionInfoSlow(this, position, no_gc, info)) {
       return false;
     }
   } else {
@@ -532,10 +531,9 @@ DirectHandle<String> Script::GetScriptHash(Isolate* isolate,
     return isolate->factory()->empty_string();
   }
 
-  PtrComprCageBase cage_base(isolate);
   {
-    Tagged<Object> maybe_source_hash = script->source_hash(cage_base);
-    if (IsString(maybe_source_hash, cage_base)) {
+    Tagged<Object> maybe_source_hash = script->source_hash();
+    if (IsString(maybe_source_hash)) {
       DirectHandle<String> precomputed(Cast<String>(maybe_source_hash),
                                        isolate);
       if (precomputed->length() > 0) {
@@ -546,9 +544,9 @@ DirectHandle<String> Script::GetScriptHash(Isolate* isolate,
 
   DirectHandle<String> src_text;
   {
-    Tagged<Object> maybe_script_source = script->source(cage_base);
+    Tagged<Object> maybe_script_source = script->source();
 
-    if (!IsString(maybe_script_source, cage_base)) {
+    if (!IsString(maybe_script_source)) {
       return isolate->factory()->empty_string();
     }
     src_text = direct_handle(Cast<String>(maybe_script_source), isolate);

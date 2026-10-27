@@ -206,7 +206,7 @@ TEST_F(TextBreakIteratorTest, ChineseSpaces) {
   MatchLineBreaks({3, 6, 9, 10}, LineBreakType::kKeepAll);
 }
 
-TEST_F(TextBreakIteratorTest, KeepEmojiZWJFamilyIsolate) {
+TEST_F(TextBreakIteratorTest, KeepEmojiZwjFamilyIsolate) {
   SetTestString("\U0001F468\u200D\U0001F469\u200D\U0001F467\u200D\U0001F466");
   MatchLineBreaks({11}, LineBreakType::kNormal);
   MatchLineBreaks({11}, LineBreakType::kBreakAll);
@@ -222,7 +222,7 @@ TEST_F(TextBreakIteratorTest, KeepEmojiModifierSequenceIsolate) {
   MatchLineBreaks({3}, LineBreakType::kKeepAll);
 }
 
-TEST_F(TextBreakIteratorTest, KeepEmojiZWJSequence) {
+TEST_F(TextBreakIteratorTest, KeepEmojiZwjSequence) {
   SetTestString(
       "abc \U0001F469\u200D\U0001F469\u200D\U0001F467\u200D\U0001F467 def");
   MatchLineBreaks({4, 16, 19}, LineBreakType::kNormal);
@@ -336,6 +336,33 @@ TEST_F(TextBreakIteratorTest, GraphemesClusterListTest) {
   // ARABIC LETTER MEEM + ARABIC FATHA
   EXPECT_EQ(GraphemesClusterList(u"\u0645\u064E", 0, 2),
             Vector<unsigned>({0, 0}));
+}
+
+// word-break:break-all should NOT break before BA-class characters (LB21).
+// U+1361 ETHIOPIC WORDSPACE is line break class BA (Break After).
+// Breaks should occur AFTER U+1361, not before it.
+TEST_F(TextBreakIteratorTest, BreakAllEthiopic) {
+  // Text: U+1260 U+1361 U+1260 U+1361 U+1260
+  // (Ethiopic syllable BA, Ethiopic wordspace, repeated)
+  // AL     BA     AL     BA     AL
+  // LB21 prohibits breaking before BA, so the only break-all opportunities
+  // are after the BA characters (positions 2 and 4).
+  SetTestString16({0x1260, 0x1361, 0x1260, 0x1361, 0x1260});
+  MatchLineBreaks({2, 4, 5}, LineBreakType::kBreakAll);
+}
+
+// word-break:break-all + line-break:loose should allow break before BA-class
+// hyphens (U+2010, U+2013), relaxing LB21.
+TEST_F(TextBreakIteratorTest, BreakAllLooseHyphen) {
+  // Text: a a U+2010 a
+  // AL AL BA    AL
+  // With break-all + loose, break before BA is allowed.
+  SetTestString16({'a', 'a', 0x2010, 'a'});
+  LazyLineBreakIterator iterator(test_string_);
+  iterator.SetBreakType(LineBreakType::kBreakAll);
+  iterator.SetStrictness(LineBreakStrictness::kLoose);
+  TestIsBreakable({1, 2, 3, 4}, iterator);
+  TestNextBreakOpportunity({1, 2, 3, 4}, iterator);
 }
 
 TEST_F(TextBreakIteratorTest, SoftHyphen) {

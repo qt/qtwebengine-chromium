@@ -1,5 +1,7 @@
 // Benchmarks for Eigen AutoDiff module.
 // Compares AutoDiff Jacobian computation against NumericalDiff and hand-coded Jacobians.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>

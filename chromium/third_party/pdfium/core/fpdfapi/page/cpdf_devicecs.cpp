@@ -69,7 +69,7 @@ std::optional<FX_RGB_STRUCT<float>> CPDF_DeviceCS::GetRGB(
             1.0f - std::min(1.0f, cmyk.yellow + cmyk.key),
         };
       }
-      return AdobeCMYK_to_sRGB(
+      return AdobeCmykToStandardRgbF(
           NormalizeChannel(cmyk.cyan), NormalizeChannel(cmyk.magenta),
           NormalizeChannel(cmyk.yellow), NormalizeChannel(cmyk.key));
     }
@@ -130,8 +130,8 @@ void CPDF_DeviceCS::TranslateImageLine(pdfium::span<uint8_t> dest_span,
       }
       for (const auto& cmyk : cmyk_in.first(static_cast<size_t>(pixels))) {
         // TODO(tsepez): maybe this is a FX_BGR_STRUCT in reality?
-        FX_RGB_STRUCT<uint8_t> rgb =
-            AdobeCMYK_to_sRGB1(cmyk.cyan, cmyk.magenta, cmyk.yellow, cmyk.key);
+        FX_RGB_STRUCT<uint8_t> rgb = AdobeCmykToStandardRgb(
+            cmyk.cyan, cmyk.magenta, cmyk.yellow, cmyk.key);
         rgb_out.front().red = rgb.blue;
         rgb_out.front().green = rgb.green;
         rgb_out.front().blue = rgb.red;

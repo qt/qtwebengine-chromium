@@ -20,6 +20,7 @@ OBJS = allformats.o         \
        id3v1.o              \
        id3v2.o              \
        isom_tags.o          \
+       lcevc.o              \
        metadata.o           \
        mux.o                \
        mux_utils.o          \
@@ -39,6 +40,8 @@ OBJS = allformats.o         \
 OBJS-$(HAVE_LIBC_MSVCRT)                 += file_open.o
 
 # subsystems
+OBJS-$(CONFIG_CBS_APV_LAVF)              += cbs_apv.o cbs.o
+OBJS-$(CONFIG_CBS_AV1_LAVF)              += cbs_av1.o cbs.o
 OBJS-$(CONFIG_ISO_MEDIA)                 += isom.o
 OBJS-$(CONFIG_ISO_WRITER)                += avc.o hevc.o vvc.o
 OBJS-$(CONFIG_IAMFDEC)                   += iamf_reader.o iamf_parse.o iamf.o
@@ -389,8 +392,7 @@ OBJS-$(CONFIG_MOV_DEMUXER)               += mov.o mov_chan.o mov_esds.o \
 OBJS-$(CONFIG_MOV_MUXER)                 += movenc.o \
                                             movenchint.o mov_chan.o rtp.o \
                                             movenccenc.o movenc_ttml.o rawutils.o \
-                                            apv.o dovi_isom.o evc.o cbs.o cbs_av1.o cbs_apv.o \
-                                            lcevc.o
+                                            apv.o dovi_isom.o evc.o
 OBJS-$(CONFIG_MP2_MUXER)                 += rawenc.o
 OBJS-$(CONFIG_MP3_DEMUXER)               += mp3dec.o replaygain.o
 OBJS-$(CONFIG_MP3_MUXER)                 += mp3enc.o rawenc.o id3v2enc.o
@@ -502,6 +504,7 @@ OBJS-$(CONFIG_PCM_U8_MUXER)              += pcmenc.o rawenc.o
 OBJS-$(CONFIG_PCM_VIDC_DEMUXER)          += pcmdec.o pcm.o
 OBJS-$(CONFIG_PCM_VIDC_MUXER)            += pcmenc.o rawenc.o
 OBJS-$(CONFIG_PDV_DEMUXER)               += pdvdec.o
+OBJS-$(CONFIG_PDV_MUXER)                 += pdvenc.o
 OBJS-$(CONFIG_PJS_DEMUXER)               += pjsdec.o subtitles.o
 OBJS-$(CONFIG_PMP_DEMUXER)               += pmpdec.o
 OBJS-$(CONFIG_PP_BNK_DEMUXER)            += pp_bnk.o
@@ -741,7 +744,8 @@ OBJS-$(CONFIG_LIBSSH_PROTOCOL)           += libssh.o
 OBJS-$(CONFIG_LIBZMQ_PROTOCOL)           += libzmq.o
 
 # Objects duplicated from other libraries for shared builds
-SHLIBOBJS                                += log2_tab.o to_upper4.o
+SHLIBOBJS                                += log2_tab.o to_upper4.o \
+                                            h2645_parse.o lcevctab.o
 SHLIBOBJS-$(CONFIG_ISO_MEDIA)            += mpegaudiotabs.o
 SHLIBOBJS-$(CONFIG_ISO_WRITER)           += golomb_tab.o
 SHLIBOBJS-$(CONFIG_FLV_MUXER)            += mpeg4audio_sample_rates.o
@@ -752,7 +756,6 @@ SHLIBOBJS-$(CONFIG_JPEGXL_ANIM_DEMUXER)  += jpegxl_parse.o
 SHLIBOBJS-$(CONFIG_MATROSKA_DEMUXER)     += mpeg4audio_sample_rates.o
 SHLIBOBJS-$(CONFIG_MATROSKA_MUXER)       += opus_frame_duration_tab.o
 SHLIBOBJS-$(CONFIG_MOV_DEMUXER)          += ac3_channel_layout_tab.o
-SHLIBOBJS-$(CONFIG_MOV_MUXER)            += h2645_parse.o lcevctab.o
 SHLIBOBJS-$(CONFIG_MP3_MUXER)            += mpegaudiotabs.o
 SHLIBOBJS-$(CONFIG_MXF_MUXER)            += golomb_tab.o \
                                             rangecoder_dec.o
@@ -772,7 +775,8 @@ SKIPHEADERS-$(CONFIG_IMF_DEMUXER)        += imf.h
 SKIPHEADERS-$(CONFIG_FFRTMPCRYPT_PROTOCOL) += rtmpdh.h
 SKIPHEADERS-$(CONFIG_NETWORK)            += network.h rtsp.h
 
-TESTPROGS = seek                                                        \
+TESTPROGS = id3v2                                                       \
+            seek                                                        \
             url                                                         \
             seek_utils
 #           async                                                       \

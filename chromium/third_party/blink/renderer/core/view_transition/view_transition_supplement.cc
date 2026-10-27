@@ -110,7 +110,7 @@ DOMViewTransition* ViewTransitionSupplement::StartTransition(
   // Disallow script initiated transitions during a navigation initiated
   // transition.
   if (document_transition_ && !document_transition_->IsCreatedViaScriptAPI()) {
-    return ViewTransition::CreateSkipped(&element, callback)
+    return ViewTransition::CreateSkipped(&element, callback, types)
         ->GetScriptDelegate();
   }
 
@@ -133,7 +133,8 @@ DOMViewTransition* ViewTransitionSupplement::StartTransition(
 
   // We need to be connected to a view to have a transition.
   if (!document.View()) {
-    return nullptr;
+    return ViewTransition::CreateSkipped(&element, callback, types)
+        ->GetScriptDelegate();
   }
 
   ViewTransition* transition = ViewTransition::CreateFromScript(

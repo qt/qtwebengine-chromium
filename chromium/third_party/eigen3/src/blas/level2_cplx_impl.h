@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #include "common.h"
 
@@ -72,31 +73,193 @@ EIGEN_BLAS_FUNC(hemv)
   if (actual_y != y) delete[] copy_back(actual_y, y, *n, *incy);
 }
 
-/**  ZHBMV  performs the matrix-vector  operation
+/**  HBMV  performs the matrix-vector operation
  *
  *     y := alpha*A*x + beta*y,
  *
  *  where alpha and beta are scalars, x and y are n element vectors and
  *  A is an n by n hermitian band matrix, with k super-diagonals.
+ *  Diagonal elements are real; off-diagonal contributions use conjugation.
  */
-// EIGEN_BLAS_FUNC(hbmv)(char *uplo, int *n, int *k, RealScalar *alpha, RealScalar *a, int *lda,
-//                           RealScalar *x, int *incx, RealScalar *beta, RealScalar *y, int *incy)
-// {
-//   return 1;
-// }
+EIGEN_BLAS_FUNC(hbmv)
+(char *uplo, int *n, int *k, RealScalar *palpha, RealScalar *pa, int *lda, RealScalar *px, int *incx, RealScalar *pbeta,
+ RealScalar *py, int *incy) {
+  const Scalar alpha = *reinterpret_cast<const Scalar *>(palpha);
+  const Scalar beta = *reinterpret_cast<const Scalar *>(pbeta);
+  const Scalar *a = reinterpret_cast<const Scalar *>(pa);
+  const Scalar *x = reinterpret_cast<const Scalar *>(px);
+  Scalar *y = reinterpret_cast<Scalar *>(py);
 
-/**  ZHPMV  performs the matrix-vector operation
+  int info = 0;
+  if (UPLO(*uplo) == INVALID)
+    info = 1;
+  else if (*n < 0)
+    info = 2;
+  else if (*k < 0)
+    info = 3;
+  else if (*lda < *k + 1)
+    info = 6;
+  else if (*incx == 0)
+    info = 8;
+  else if (*incy == 0)
+    info = 11;
+  if (info) return xerbla_(SCALAR_SUFFIX_UP "HBMV ", &info);
+
+  if (*n == 0 || (alpha == Scalar(0) && beta == Scalar(1))) return;
+
+  const Scalar *actual_x = get_compact_vector(x, *n, *incx);
+  Scalar *actual_y = get_compact_vector(y, *n, *incy);
+
+  // First form y := beta*y.
+  if (beta != Scalar(1)) {
+    if (beta == Scalar(0))
+      make_vector(actual_y, *n).setZero();
+    else
+      make_vector(actual_y, *n) *= beta;
+  }
+
+  if (alpha == Scalar(0)) {
+    if (actual_x != x) delete[] actual_x;
+    if (actual_y != y) delete[] copy_back(actual_y, y, *n, *incy);
+    return;
+  }
+
+  if (*k >= 8) {
+    // Vectorized path: use Eigen Map segments for the inner band operations.
+    ConstMatrixType band(a, *k + 1, *n, *lda);
+    if (UPLO(*uplo) == UP) {
+      for (int j = 0; j < *n; ++j) {
+        int start = std::max(0, j - *k);
+        int len = j - start;
+        int offset = *k - (j - start);
+        Scalar temp1 = alpha * actual_x[j];
+        actual_y[j] += Scalar(Eigen::numext::real(band(*k, j))) * temp1;
+        if (len > 0) {
+          make_vector(actual_y + start, len) += temp1 * band.col(j).segment(offset, len);
+          actual_y[j] += alpha * band.col(j).segment(offset, len).dot(make_vector(actual_x + start, len));
+        }
+      }
+    } else {
+      for (int j = 0; j < *n; ++j) {
+        int len = std::min(*n - 1, j + *k) - j;
+        Scalar temp1 = alpha * actual_x[j];
+        actual_y[j] += Scalar(Eigen::numext::real(band(0, j))) * temp1;
+        if (len > 0) {
+          make_vector(actual_y + j + 1, len) += temp1 * band.col(j).segment(1, len);
+          actual_y[j] += alpha * band.col(j).segment(1, len).dot(make_vector(actual_x + j + 1, len));
+        }
+      }
+    }
+  } else {
+    // Scalar path: for narrow bandwidth, avoid Map overhead.
+    if (UPLO(*uplo) == UP) {
+      for (int j = 0; j < *n; ++j) {
+        Scalar temp1 = alpha * actual_x[j];
+        Scalar temp2 = Scalar(0);
+        for (int i = std::max(0, j - *k); i < j; ++i) {
+          Scalar aij = a[(*k + i - j) + j * *lda];
+          actual_y[i] += temp1 * aij;
+          temp2 += Eigen::numext::conj(aij) * actual_x[i];
+        }
+        actual_y[j] += Scalar(Eigen::numext::real(a[*k + j * *lda])) * temp1 + alpha * temp2;
+      }
+    } else {
+      for (int j = 0; j < *n; ++j) {
+        Scalar temp1 = alpha * actual_x[j];
+        Scalar temp2 = Scalar(0);
+        actual_y[j] += Scalar(Eigen::numext::real(a[j * *lda])) * temp1;
+        for (int i = j + 1; i <= std::min(*n - 1, j + *k); ++i) {
+          Scalar aij = a[(i - j) + j * *lda];
+          actual_y[i] += temp1 * aij;
+          temp2 += Eigen::numext::conj(aij) * actual_x[i];
+        }
+        actual_y[j] += alpha * temp2;
+      }
+    }
+  }
+
+  if (actual_x != x) delete[] actual_x;
+  if (actual_y != y) delete[] copy_back(actual_y, y, *n, *incy);
+}
+
+/**  HPMV  performs the matrix-vector operation
  *
  *     y := alpha*A*x + beta*y,
  *
  *  where alpha and beta are scalars, x and y are n element vectors and
  *  A is an n by n hermitian matrix, supplied in packed form.
+ *  Diagonal elements are real; off-diagonal contributions use conjugation.
  */
-// EIGEN_BLAS_FUNC(hpmv)(char *uplo, int *n, RealScalar *alpha, RealScalar *ap, RealScalar *x, int *incx, RealScalar
-// *beta, RealScalar *y, int *incy)
-// {
-//   return 1;
-// }
+EIGEN_BLAS_FUNC(hpmv)
+(char *uplo, int *n, RealScalar *palpha, RealScalar *pap, RealScalar *px, int *incx, RealScalar *pbeta, RealScalar *py,
+ int *incy) {
+  const Scalar alpha = *reinterpret_cast<const Scalar *>(palpha);
+  const Scalar beta = *reinterpret_cast<const Scalar *>(pbeta);
+  const Scalar *ap = reinterpret_cast<const Scalar *>(pap);
+  const Scalar *x = reinterpret_cast<const Scalar *>(px);
+  Scalar *y = reinterpret_cast<Scalar *>(py);
+
+  int info = 0;
+  if (UPLO(*uplo) == INVALID)
+    info = 1;
+  else if (*n < 0)
+    info = 2;
+  else if (*incx == 0)
+    info = 6;
+  else if (*incy == 0)
+    info = 9;
+  if (info) return xerbla_(SCALAR_SUFFIX_UP "HPMV ", &info);
+
+  if (*n == 0 || (alpha == Scalar(0) && beta == Scalar(1))) return;
+
+  const Scalar *actual_x = get_compact_vector(x, *n, *incx);
+  Scalar *actual_y = get_compact_vector(y, *n, *incy);
+
+  // First form y := beta*y.
+  if (beta != Scalar(1)) {
+    if (beta == Scalar(0))
+      make_vector(actual_y, *n).setZero();
+    else
+      make_vector(actual_y, *n) *= beta;
+  }
+
+  if (alpha == Scalar(0)) {
+    if (actual_x != x) delete[] actual_x;
+    if (actual_y != y) delete[] copy_back(actual_y, y, *n, *incy);
+    return;
+  }
+
+  int kk = 0;
+  if (UPLO(*uplo) == UP) {
+    // Upper triangle packed: column j occupies ap[kk..kk+j].
+    for (int j = 0; j < *n; ++j) {
+      Scalar temp1 = alpha * actual_x[j];
+      // Diagonal is real.
+      actual_y[j] += Scalar(Eigen::numext::real(ap[kk + j])) * temp1;
+      if (j > 0) {
+        make_vector(actual_y, j) += temp1 * make_vector(ap + kk, j);
+        actual_y[j] += alpha * make_vector(ap + kk, j).dot(make_vector(actual_x, j));
+      }
+      kk += j + 1;
+    }
+  } else {
+    // Lower triangle packed: column j occupies ap[kk..kk+(n-j-1)].
+    for (int j = 0; j < *n; ++j) {
+      int len = *n - j - 1;
+      Scalar temp1 = alpha * actual_x[j];
+      // Diagonal is real.
+      actual_y[j] += Scalar(Eigen::numext::real(ap[kk])) * temp1;
+      if (len > 0) {
+        make_vector(actual_y + j + 1, len) += temp1 * make_vector(ap + kk + 1, len);
+        actual_y[j] += alpha * make_vector(ap + kk + 1, len).dot(make_vector(actual_x + j + 1, len));
+      }
+      kk += *n - j;
+    }
+  }
+
+  if (actual_x != x) delete[] actual_x;
+  if (actual_y != y) delete[] copy_back(actual_y, y, *n, *incy);
+}
 
 /**  ZHPR    performs the hermitian rank 1 operation
  *

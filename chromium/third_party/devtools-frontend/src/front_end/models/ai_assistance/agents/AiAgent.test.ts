@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Host from '../../../core/host/host.js';
 import {mockAidaClient} from '../../../testing/AiAssistanceHelpers.js';
 import {
@@ -25,6 +27,12 @@ function mockConversationContext(): AiAssistance.AiAgent.ConversationContext<unk
   })();
 }
 
+function findFirstErrorResponse(responses: AiAssistance.AiAgent.ResponseData[]): AiAssistance.AiAgent.ErrorResponse {
+  const errorResponse = responses.find(r => r.type === AiAssistance.AiAgent.ResponseType.ERROR);
+  assert.isDefined(errorResponse);
+  return errorResponse as AiAssistance.AiAgent.ErrorResponse;
+}
+
 class AiAgentMock extends AiAssistance.AiAgent.AiAgent<unknown> {
   override preamble = 'preamble';
 
@@ -40,6 +48,13 @@ class AiAgentMock extends AiAssistance.AiAgent.AiAgent<unknown> {
     temperature: 1,
     modelId: 'test model',
   };
+
+  declareFunctionForTest<Args extends Record<string, unknown>, ReturnType = unknown>(
+      name: string,
+      declaration: AiAssistance.AiAgent.FunctionDeclaration<Args, ReturnType>,
+      ): void {
+    this.declareFunction(name, declaration);
+  }
 }
 
 describeWithEnvironment('AiAgent', () => {
@@ -371,41 +386,83 @@ describeWithEnvironment('AiAgent', () => {
       return new TestContext();
     }
     it('checks context origins', () => {
-      const tests = [
+      const tests: Array<{dataOrigin: string, establishedOrigin: string | undefined, isAllowed: boolean}> = [
         {
-          contextOrigin: 'https://google.test',
-          agentOrigin: 'https://google.test',
+          dataOrigin: 'https://google.test',
+          establishedOrigin: 'https://google.test',
           isAllowed: true,
         },
         {
-          contextOrigin: 'https://google.test',
-          agentOrigin: 'about:blank',
+          dataOrigin: 'https://google.test',
+          establishedOrigin: 'about:blank',
           isAllowed: false,
         },
         {
-          contextOrigin: 'https://google.test',
-          agentOrigin: 'https://www.google.test',
+          dataOrigin: 'https://google.test',
+          establishedOrigin: 'https://www.google.test',
           isAllowed: false,
         },
         {
-          contextOrigin: 'https://a.test',
-          agentOrigin: 'https://b.test',
+          dataOrigin: 'https://a.test',
+          establishedOrigin: 'https://b.test',
           isAllowed: false,
         },
         {
-          contextOrigin: 'https://a.test',
-          agentOrigin: 'file:///tmp',
+          dataOrigin: 'https://a.test',
+          establishedOrigin: 'file:///tmp',
           isAllowed: false,
         },
         {
-          contextOrigin: 'https://a.test',
-          agentOrigin: 'http://a.test',
+          dataOrigin: 'https://a.test',
+          establishedOrigin: 'http://a.test',
+          isAllowed: false,
+        },
+        {
+          dataOrigin: 'null',
+          establishedOrigin: 'null',
+          isAllowed: false,
+        },
+        {
+          dataOrigin: 'null',
+          establishedOrigin: undefined,
+          isAllowed: false,
+        },
+        {
+          dataOrigin: 'data:',
+          establishedOrigin: 'data:',
+          isAllowed: false,
+        },
+        {
+          dataOrigin: 'about://',
+          establishedOrigin: 'about://',
+          isAllowed: false,
+        },
+        {
+          dataOrigin: 'about:srcdoc',
+          establishedOrigin: 'about:srcdoc',
+          isAllowed: false,
+        },
+        {
+          dataOrigin: 'detached',
+          establishedOrigin: 'detached',
           isAllowed: false,
         },
       ];
       for (const test of tests) {
-        assert.strictEqual(getTestContext(test.contextOrigin).isOriginAllowed(test.agentOrigin), test.isAllowed);
+        assert.strictEqual(
+            getTestContext(test.dataOrigin).isOriginAllowed(test.establishedOrigin), test.isAllowed,
+            `Checking origin ${test.dataOrigin} against ${test.establishedOrigin}`);
       }
+    });
+
+    it('identifies opaque origins', () => {
+      assert.isTrue(AiAssistance.AiAgent.isOpaqueOrigin('null'));
+      assert.isTrue(AiAssistance.AiAgent.isOpaqueOrigin('data:'));
+      assert.isTrue(AiAssistance.AiAgent.isOpaqueOrigin('about://'));
+      assert.isTrue(AiAssistance.AiAgent.isOpaqueOrigin('about:srcdoc'));
+      assert.isTrue(AiAssistance.AiAgent.isOpaqueOrigin('detached'));
+      assert.isTrue(AiAssistance.AiAgent.isOpaqueOrigin('detached:123'));
+      assert.isFalse(AiAssistance.AiAgent.isOpaqueOrigin('https://google.com'));
     });
   });
 
@@ -507,6 +564,188 @@ describeWithEnvironment('AiAgent', () => {
           },
         ],
       });
+    });
+
+    it('should abort execution if origin becomes blocked after approval', async () => {
+      let called = 0;
+      // Flag to simulate whether the origin is blocked or not.
+      let originBlocked = false;
+
+      const agent = new AiAgentMock({
+        aidaClient: mockAidaClient([
+          [
+            {
+              explanation: 'Calling function',
+              functionCalls: [{name: 'testFn', args: {}}],
+            },
+          ],
+          [{
+            explanation: 'Final answer',
+          }]
+        ]),
+        // Mock allowedOrigin to return blocked if our flag is set.
+        allowedOrigin: () => originBlocked ? {blocked: true} : {origin: 'https://google.com'},
+        // Mock the side effect confirmation to simulate user approval AND concurrent navigation.
+        confirmSideEffectForTest: <T>() => {
+          const resolvers = Promise.withResolvers<T>();
+          // 1. Simulate the user clicking "Continue" (approving the run).
+          resolvers.resolve(true as unknown as T);
+          // 2. Simulate that while the user was deciding, the page navigated cross-origin.
+          // This flips the flag so that the next call to allowedOrigin() will return {blocked: true}.
+          originBlocked = true;
+          return resolvers;
+        },
+      });
+
+      agent.declareFunctionForTest('testFn', {
+        description: 'test fn description',
+        parameters: {
+          type: Host.AidaClient.ParametersTypes.OBJECT,
+          description: 'test parameters',
+          properties: {},
+          required: []
+        },
+        handler: async (args, options) => {
+          called++;
+          if (!options?.approved) {
+            return {requiresApproval: true, description: 'test approval'};
+          }
+          return {result: 'success'};
+        },
+      });
+
+      const responses = await Array.fromAsync(agent.run('query', {selected: mockConversationContext()}));
+
+      const errorResponse = findFirstErrorResponse(responses);
+      assert.strictEqual(errorResponse.error, AiAssistance.AiAgent.ErrorType.CROSS_ORIGIN);
+      // Verify that the handler was only called once (the dry run) and not re-invoked after approval.
+      assert.strictEqual(called, 1);
+    });
+
+    it('should abort execution if origin becomes blocked during handler execution', async () => {
+      let called = 0;
+      let originBlocked = false;
+
+      const agent = new AiAgentMock({
+        aidaClient: mockAidaClient([
+          [
+            {
+              explanation: 'Calling function',
+              functionCalls: [{name: 'testFn', args: {}}],
+            },
+          ],
+          [{
+            explanation: 'Final answer',
+          }]
+        ]),
+        allowedOrigin: () => originBlocked ? {blocked: true} : {origin: 'https://google.com'},
+      });
+
+      agent.declareFunctionForTest('testFn', {
+        description: 'test fn description',
+        parameters: {
+          type: Host.AidaClient.ParametersTypes.OBJECT,
+          description: 'test parameters',
+          properties: {},
+          required: []
+        },
+        handler: async (_args, _options) => {
+          called++;
+          // Simulate navigation happening DURING handler execution.
+          originBlocked = true;
+          return {result: 'success'};
+        },
+      });
+
+      const responses = await Array.fromAsync(agent.run('query', {selected: mockConversationContext()}));
+
+      const errorResponse = findFirstErrorResponse(responses);
+      assert.strictEqual(errorResponse.error, AiAssistance.AiAgent.ErrorType.CROSS_ORIGIN);
+      assert.strictEqual(called, 1);
+    });
+  });
+
+  describe('parseTextResponseForSuggestions', () => {
+    it('should parse valid suggestions', () => {
+      const agent = new AiAgentMock({
+        aidaClient: mockAidaClient(),
+      });
+      const parsed = agent.parseTextResponseForSuggestions('SUGGESTIONS: ["how to fix", "why it fails"]');
+      assert.deepEqual(parsed.suggestions, ['how to fix', 'why it fails']);
+    });
+
+    it('should filter out non-string suggestions', () => {
+      const agent = new AiAgentMock({
+        aidaClient: mockAidaClient(),
+      });
+      const parsed = agent.parseTextResponseForSuggestions('SUGGESTIONS: ["valid", 123, null, {"key": "val"}]');
+      assert.deepEqual(parsed.suggestions, ['valid']);
+    });
+
+    it('should truncate long suggestions', () => {
+      const agent = new AiAgentMock({
+        aidaClient: mockAidaClient(),
+      });
+      const longSuggestion = 'a'.repeat(300);
+      const parsed = agent.parseTextResponseForSuggestions(`SUGGESTIONS: ["${longSuggestion}"]`);
+      assert.isDefined(parsed.suggestions);
+      assert.lengthOf(parsed.suggestions![0], 200);
+      assert.strictEqual(parsed.suggestions![0], 'a'.repeat(200));
+    });
+
+    it('should sanitize whitespace and newlines in suggestions', () => {
+      const agent = new AiAgentMock({
+        aidaClient: mockAidaClient(),
+      });
+      const parsed = agent.parseTextResponseForSuggestions(
+          'SUGGESTIONS: ["line1\\nline2", "word1\\r\\nword2", "excessive   spaces"]');
+      assert.deepEqual(parsed.suggestions, ['line1 line2', 'word1 word2', 'excessive spaces']);
+    });
+
+    it('should reject non-array suggestions', () => {
+      const agent = new AiAgentMock({
+        aidaClient: mockAidaClient(),
+      });
+      const parsed = agent.parseTextResponseForSuggestions('SUGGESTIONS: "not an array"');
+      assert.isUndefined(parsed.suggestions);
+    });
+
+    it('should remove empty suggestions after sanitization', () => {
+      const agent = new AiAgentMock({
+        aidaClient: mockAidaClient(),
+      });
+      const parsed = agent.parseTextResponseForSuggestions('SUGGESTIONS: ["", "   ", "\\n\\n"]');
+      assert.isUndefined(parsed.suggestions);
+    });
+
+    it('should parse suggestions from a multi-line response containing both answer and suggestions', () => {
+      const agent = new AiAgentMock({
+        aidaClient: mockAidaClient(),
+      });
+      const responseText = [
+        'Here is the first line of the answer.',
+        'SUGGESTIONS: ["suggestion 1", "suggestion 2"]',
+        'Here is the second line of the answer.',
+      ].join('\n');
+      const parsed = agent.parseTextResponseForSuggestions(responseText);
+      assert.strictEqual(
+          parsed.answer, 'Here is the first line of the answer.\nHere is the second line of the answer.');
+      assert.deepEqual(parsed.suggestions, ['suggestion 1', 'suggestion 2']);
+    });
+
+    it('should handle multiple SUGGESTIONS lines by keeping the last valid one', () => {
+      const agent = new AiAgentMock({
+        aidaClient: mockAidaClient(),
+      });
+      const responseText = [
+        'Answer text.',
+        'SUGGESTIONS: ["first suggestion"]',
+        'More answer text.',
+        'SUGGESTIONS: ["second suggestion"]',
+      ].join('\n');
+      const parsed = agent.parseTextResponseForSuggestions(responseText);
+      assert.strictEqual(parsed.answer, 'Answer text.\nMore answer text.');
+      assert.deepEqual(parsed.suggestions, ['second suggestion']);
     });
   });
 });

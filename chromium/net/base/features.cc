@@ -22,6 +22,10 @@
 #include "base/win/windows_version.h"
 #endif
 
+#if BUILDFLAG(IS_ANDROID)
+#include "base/android/android_info.h"
+#endif  // BUILDFLAG(IS_ANDROID)
+
 namespace net::features {
 
 BASE_FEATURE(kAlpsForHttp2, base::FEATURE_ENABLED_BY_DEFAULT);
@@ -87,6 +91,10 @@ BASE_FEATURE(kHappyEyeballsV2, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kHappyEyeballsV3, base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE(kHttpCacheZstdDecompression, base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kHttpCacheZstdCompression, base::FEATURE_DISABLED_BY_DEFAULT);
+
 const base::FeatureParam<int> kAlternativePortForGloballyReachableCheck{
     &kUseAlternativePortForGloballyReachableCheck,
     "AlternativePortForGloballyReachableCheck", 443};
@@ -103,6 +111,9 @@ BASE_FEATURE(kMaintainConnectionsOnIpv6TempAddrChange,
 BASE_FEATURE(kEnableTLS13EarlyData, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kNetworkQualityEstimator, base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kNetworkQualityEstimatorIsPrivateHostCache,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 const base::FeatureParam<int> kRecentHTTPThresholdInSeconds{
     &kNetworkQualityEstimator, "RecentHTTPThresholdInSeconds", -1};
@@ -225,16 +236,9 @@ BASE_FEATURE(kCookieDomainRejectNonASCII, base::FEATURE_DISABLED_BY_DEFAULT);
 // by the top level site to reduce fingerprinting.
 BASE_FEATURE(kThirdPartyStoragePartitioning, base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kTpcdMetadataGrants, base::FEATURE_ENABLED_BY_DEFAULT);
-
-BASE_FEATURE(kTpcdMetadataStageControl, base::FEATURE_ENABLED_BY_DEFAULT);
-
 BASE_FEATURE(kAlpsParsing, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kAlpsClientHintParsing, base::FEATURE_ENABLED_BY_DEFAULT);
-
-BASE_FEATURE(kShouldKillSessionOnAcceptChMalformed,
-             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kEnableWebsocketsOverHttp3, base::FEATURE_DISABLED_BY_DEFAULT);
 
@@ -254,6 +258,8 @@ BASE_FEATURE_PARAM(int,
 BASE_FEATURE(kTcpPortReuseMetricsWin, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kTcpSocketIoCompletionPortWin, base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kDeferConnectionTypeAtStartup, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
 #if BUILDFLAG(IS_MAC)
@@ -367,7 +373,8 @@ BASE_FEATURE(kDeviceBoundSessions, base::FEATURE_ENABLED_BY_DEFAULT);
 #else
 BASE_FEATURE(kDeviceBoundSessions, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-BASE_FEATURE(kPersistDeviceBoundSessions, base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kDeviceBoundSessionsBypassDeferralsForRefreshRequests,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE_PARAM(bool,
                    kDeviceBoundSessionsRefreshQuota,
                    &kDeviceBoundSessions,
@@ -405,14 +412,6 @@ BASE_FEATURE(kDeviceBoundSessionSigningQuotaAndCaching,
 
 BASE_FEATURE(kDeviceBoundSessionsForRestrictedSites,
              base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kDeviceBoundSessionsForRestrictedSitesExperimentId,
-             base::FEATURE_DISABLED_BY_DEFAULT);
-BASE_FEATURE_PARAM(std::string,
-                   kDeviceBoundSessionsForRestrictedSitesExperimentIdParam,
-                   &kDeviceBoundSessionsForRestrictedSitesExperimentId,
-                   "Value",
-                   "");
 
 BASE_FEATURE(kDeviceBoundSessionsForSingleSignOn,
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -488,10 +487,15 @@ BASE_FEATURE_PARAM(bool,
                    "SqlDiskCachePreloadDatabase",
                    false);
 BASE_FEATURE_PARAM(bool,
+                   kSqlDiskCacheWalMode,
+                   &kDiskCacheBackendExperiment,
+                   "SqlDiskCacheWalMode",
+                   false);
+BASE_FEATURE_PARAM(bool,
                    kSqlDiskCacheSynchronousOff,
                    &kDiskCacheBackendExperiment,
                    "SqlDiskCacheSynchronousOff",
-                   false);
+                   true);
 BASE_FEATURE_PARAM(int,
                    kSqlDiskCacheShardCount,
                    &kDiskCacheBackendExperiment,
@@ -523,6 +527,11 @@ BASE_FEATURE_PARAM(bool,
                    "SqlDiskCacheSerialCheckpoint",
                    true);
 BASE_FEATURE_PARAM(bool,
+                   kSqlDiskCacheSerialInitialize,
+                   &kDiskCacheBackendExperiment,
+                   "SqlDiskCacheSerialInitialize",
+                   true);
+BASE_FEATURE_PARAM(bool,
                    kSqlDiskCacheSizeAndPriorityAwareEviction,
                    &kDiskCacheBackendExperiment,
                    "SqlDiskCacheSizeAndPriorityAwareEviction",
@@ -537,6 +546,21 @@ BASE_FEATURE_PARAM(int,
                    &kDiskCacheBackendExperiment,
                    "SqlDiskCacheCacheSize",
                    0);
+BASE_FEATURE_PARAM(bool,
+                   kSqlDiskCacheConsolidatedInMemoryIndex,
+                   &kDiskCacheBackendExperiment,
+                   "SqlDiskCacheConsolidatedInMemoryIndex",
+                   true);
+BASE_FEATURE_PARAM(bool,
+                   kSqlDiskCacheIncrementalVacuum,
+                   &kDiskCacheBackendExperiment,
+                   "SqlDiskCacheIncrementalVacuum",
+                   true);
+BASE_FEATURE_PARAM(int,
+                   kSqlDiskCacheIncrementalVacuumPageCount,
+                   &kDiskCacheBackendExperiment,
+                   "SqlDiskCacheIncrementalVacuumPageCount",
+                   100);
 #endif  // ENABLE_DISK_CACHE_SQL_BACKEND
 
 BASE_FEATURE(kIgnoreHSTSForLocalhost, base::FEATURE_ENABLED_BY_DEFAULT);
@@ -575,12 +599,6 @@ BASE_FEATURE_PARAM(bool,
                    "persistence_enabled",
                    true);
 
-BASE_FEATURE_PARAM(bool,
-                   kHttpCacheNoVarySearchKeepNotSuitable,
-                   &kHttpCacheNoVarySearch,
-                   "keep_not_suitable",
-                   true);
-
 BASE_FEATURE(kHttpNoVarySearchDataUseNewAreEquivalent,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
@@ -606,6 +624,8 @@ BASE_FEATURE(kRestrictAbusePortsOnLocalhost, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kTLSTrustAnchorIDs, base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE(kTlsMldsaSignatures, base::FEATURE_ENABLED_BY_DEFAULT);
+
 #if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
 BASE_FEATURE(kVerifyMTCs, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
@@ -619,12 +639,6 @@ BASE_FEATURE_PARAM(double,
                    "TcpSocketPoolLimitRandomizationBase",
                    0.000001);
 
-BASE_FEATURE_PARAM(int,
-                   kTcpSocketPoolLimitRandomizationCapacity,
-                   &kTcpSocketPoolLimitRandomization,
-                   "TcpSocketPoolLimitRandomizationCapacity",
-                   256);
-
 BASE_FEATURE_PARAM(double,
                    kTcpSocketPoolLimitRandomizationMinimum,
                    &kTcpSocketPoolLimitRandomization,
@@ -636,6 +650,9 @@ BASE_FEATURE_PARAM(double,
                    &kTcpSocketPoolLimitRandomization,
                    "TcpSocketPoolLimitRandomizationNoise",
                    0.2);
+
+BASE_FEATURE(kTcpSocketPoolLimitRandomizationForProxy,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kNetTaskScheduler, base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE_PARAM(bool,
@@ -673,6 +690,9 @@ BASE_FEATURE_PARAM(bool,
                    &kNetTaskScheduler,
                    "url_request_redirect_job",
                    true);
+
+BASE_FEATURE(kNetworkServicePerPriorityTaskQueues,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kNetTaskScheduler2, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE_PARAM(bool,
@@ -720,6 +740,10 @@ BASE_FEATURE_PARAM(base::TimeDelta,
                    "MaxIdleTimeBeforeCryptoHandshake",
                    base::Seconds(quic::kInitialIdleTimeoutSecs));
 
+BASE_FEATURE(kQuicIgnoreRedundantOnNetworkMadeDefault,
+             "QuicIgnoreRedundantOnNetworkMadeDefault",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kQuicLongerIdleConnectionTimeout,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
@@ -751,13 +775,15 @@ BASE_FEATURE_PARAM(size_t,
                    "cache_size",
                    64);
 
-BASE_FEATURE(kTryQuicByDefault, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kTryQuicByDefault, base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kCloseQuicSessionsOnPreFreeze, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE_PARAM(std::string,
                    kQuicOptions,
                    &kTryQuicByDefault,
                    "quic_options",
-                   "");
+                   "ORIG");
 
 BASE_FEATURE(kIgnoreIpMatching, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE_PARAM(std::string,
@@ -780,8 +806,6 @@ BASE_FEATURE(kDohFallbackAllowedWithLocalNameservers,
 BASE_FEATURE(kAddAutomaticWithDohFallbackMode,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kForceSecureDnsDohFallback, base::FEATURE_DISABLED_BY_DEFAULT);
-
 BASE_FEATURE(kUseQuicProxiesWithoutWaitingForConnectResponse,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
@@ -790,12 +814,6 @@ BASE_FEATURE(kEnableBootstrapIPRandomizationForDoh,
 
 BASE_FEATURE(kUseLockFreeX509Verification, base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kProbeSecureDnsCanaryDomain, base::FEATURE_ENABLED_BY_DEFAULT);
-BASE_FEATURE_PARAM(std::string,
-                   kSecureDnsCanaryDomainHost,
-                   &kProbeSecureDnsCanaryDomain,
-                   /*name=*/"canary_domain_host",
-                   /*default_value=*/"use-application-dns.net");
 
 #if BUILDFLAG(IS_APPLE)
 BASE_FEATURE(kUseNSURLDataForGURLConversion, base::FEATURE_ENABLED_BY_DEFAULT);
@@ -807,7 +825,6 @@ BASE_FEATURE(kDrainSpdySessionSynchronouslyOnRemoteEndpointDisconnect,
 BASE_FEATURE(kLogicalClearHttpCache, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kSQLitePersistentCookieStoreEarlyInit,
-             "SQLitePersistentCookieStoreEarlyInit",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 const base::FeatureParam<bool> kSQLitePersistentCookieStoreEarlyInitCheckDisk{
@@ -821,24 +838,68 @@ BASE_FEATURE(kPermitTcpSocketPoolConnectBackupJobs,
 
 BASE_FEATURE(kLocalNetworkPermissionCheck, base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kTcpSocketPoolProxyLimit, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kTcpSocketPoolProxyLimit, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE_PARAM(int,
                    kTcpSocketPoolProxyLimitNormal,
                    &kTcpSocketPoolProxyLimit,
                    "TcpSocketPoolProxyLimitNormal",
-                   32);
+                   128);
 
 BASE_FEATURE_PARAM(int,
                    kTcpSocketPoolProxyLimitWebSocket,
                    &kTcpSocketPoolProxyLimit,
                    "TcpSocketPoolProxyLimitWebSocket",
-                   32);
+                   128);
+
+BASE_FEATURE(kIgnoreQuicCryptoConfigMemoryPressure,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kIgnoreQuicCryptoConfigMemoryPressureForDoh,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+BASE_FEATURE(kIgnoreMemoryPressureForSslClientSessionCache,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kCookieParseRejectEmptyNameAmbiguous,
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kEnablePrivateVerificationTokens,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kAddTLSServerHandshakePadding, base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE_PARAM(int,
+                   kAddTLSServerHandshakePaddingBytes,
+                   &kAddTLSServerHandshakePadding,
+                   "AddTLSServerHandshakePaddingBytes",
+                   0);
+
+bool IsDnsPlatformSupported() {
+#if BUILDFLAG(IS_ANDROID)
+  // android_res_n{query, result} are available starting from API level 29 (Q).
+  // https://developer.android.com/ndk/reference/group/networking#android_res_nquery
+  return base::android::android_info::sdk_int() >=
+         base::android::android_info::SDK_VERSION_Q;
+#else
+  return false;
+#endif
+}
+
+BASE_FEATURE(kNoVarySearchCacheLoadOnSeparateTaskRunner,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+constexpr base::FeatureParam<base::TaskPriority>::Option
+    kNoVarySearchCacheLoadOnSeparateTaskRunnerOptions[] = {
+        {base::TaskPriority::BEST_EFFORT, "BEST_EFFORT"},
+        {base::TaskPriority::USER_VISIBLE, "USER_VISIBLE"},
+        {base::TaskPriority::USER_BLOCKING, "USER_BLOCKING"},
+};
+
+BASE_FEATURE_ENUM_PARAM(base::TaskPriority,
+                        kNoVarySearchCacheLoadTaskRunnerPriority,
+                        &kNoVarySearchCacheLoadOnSeparateTaskRunner,
+                        base::TaskPriority::BEST_EFFORT,
+                        &kNoVarySearchCacheLoadOnSeparateTaskRunnerOptions);
 
 }  // namespace net::features

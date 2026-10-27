@@ -137,10 +137,10 @@ To test against SwiftShader (software implementation of Vulkan) instead of the d
 VK_ICD_FILENAMES=<swiftshader-cmake-build>/Linux/vk_swiftshader_icd.json ./tools/run run-cts --bin=<path-build-dir> [WebGPU CTS query]
 ```
 
-To test against Lavapipe (mesa's software implementation of Vulkan), similarly to SwiftShader, prefix `./tools/run run-cts` with `VK_ICD_FILENAMES=<lavapipe-install-dir>/share/vulkan/icd.d/lvp_icd.x86_64.json`. For example:
+To test against Lavapipe (mesa's software implementation of Vulkan), similarly to SwiftShader, prefix `./tools/run run-cts` with `VK_ICD_FILENAMES=<path-to-lvp_icd.json>`. If using the version built by Dawn, this will be `lvp_icd.json` in the root of the build directory. For example:
 
 ```sh
-VK_ICD_FILENAMES=<lavapipe-install-dir>/share/vulkan/icd.d/lvp_icd.x86_64.json ./tools/run run-cts --bin=<path-build-dir> [WebGPU CTS query]
+VK_ICD_FILENAMES=<path-build-dir>/lvp_icd.json ./tools/run run-cts --bin=<path-build-dir> [WebGPU CTS query]
 ```
 
 The `--flag` parameter must be passed in multiple times, once for each flag begin set. Here are some common arguments:
@@ -315,6 +315,22 @@ and [this extension for MSVC](https://marketplace.visualstudio.com/items?itemNam
 ## Recipes for building software GPUs
 
 ### Building Lavapipe (LLVM Vulkan)
+
+#### Building as part of Dawn
+
+Dawn can automatically build and configure Lavapipe as part of its build process.
+
+1.  **GN Build:**
+    *   Ensure `checkout_mesa = True` is set in your `.gclient` file's `custom_vars` section, and run `gclient sync`.
+    *   Add `tint_build_mesa = true` to your `args.gn`.
+    *   Build with `ninja`.
+2.  **CMake Build:**
+    *   Add `-DTINT_BUILD_MESA=ON` to your CMake configuration command.
+    *   Build with `ninja` or `make`.
+
+The build system will automatically copy `libvulkan_lvp.so` (or platform equivalent) and `lvp_icd.json` to the root of your build directory.
+
+#### Building manually
 
 ### System requirements
 

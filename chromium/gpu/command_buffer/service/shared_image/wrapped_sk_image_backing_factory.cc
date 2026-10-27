@@ -45,7 +45,6 @@ SharedImageUsageSet GetSupportedUsage(const SharedContextState* context_state) {
 
   if (context_state->IsGraphiteDawn()) {
     switch (context_state->dawn_context_provider()->backend_type()) {
-      case wgpu::BackendType::D3D12:
       case wgpu::BackendType::Vulkan:
         return kSupportedUsage | kGraphiteDawnFallbackUsage;
       default:
@@ -83,21 +82,13 @@ WrappedSkImageBackingFactory::WrappedSkImageBackingFactory(
 WrappedSkImageBackingFactory::~WrappedSkImageBackingFactory() = default;
 
 std::unique_ptr<SharedImageBacking>
-WrappedSkImageBackingFactory::CreateSharedImage(
-    const Mailbox& mailbox,
-    viz::SharedImageFormat format,
-    SurfaceHandle surface_handle,
-    const gfx::Size& size,
-    const gfx::ColorSpace& color_space,
-    GrSurfaceOrigin surface_origin,
-    SkAlphaType alpha_type,
-    SharedImageUsageSet usage,
-    std::string debug_label,
-    bool is_thread_safe) {
+WrappedSkImageBackingFactory::CreateSharedImage(const Mailbox& mailbox,
+                                                const SharedImageInfo& si_info,
+                                                SurfaceHandle surface_handle,
+                                                bool is_thread_safe) {
   if (use_graphite_) {
     auto backing = std::make_unique<WrappedGraphiteTextureBacking>(
-        base::PassKey<WrappedSkImageBackingFactory>(), mailbox, format, size,
-        color_space, surface_origin, alpha_type, usage, std::move(debug_label),
+        base::PassKey<WrappedSkImageBackingFactory>(), mailbox, si_info,
         context_state_, is_thread_safe);
     if (!backing->Initialize()) {
       return nullptr;
@@ -106,10 +97,9 @@ WrappedSkImageBackingFactory::CreateSharedImage(
   }
   CHECK(context_state_->gr_context());
   auto backing = std::make_unique<WrappedSkImageBacking>(
-      base::PassKey<WrappedSkImageBackingFactory>(), mailbox, format, size,
-      color_space, surface_origin, alpha_type, usage, debug_label,
+      base::PassKey<WrappedSkImageBackingFactory>(), mailbox, si_info,
       context_state_, is_thread_safe);
-  if (!backing->Initialize(debug_label)) {
+  if (!backing->Initialize(si_info.debug_label)) {
     return nullptr;
   }
   return backing;
@@ -118,19 +108,12 @@ WrappedSkImageBackingFactory::CreateSharedImage(
 std::unique_ptr<SharedImageBacking>
 WrappedSkImageBackingFactory::CreateSharedImage(
     const Mailbox& mailbox,
-    viz::SharedImageFormat format,
-    const gfx::Size& size,
-    const gfx::ColorSpace& color_space,
-    GrSurfaceOrigin surface_origin,
-    SkAlphaType alpha_type,
-    SharedImageUsageSet usage,
-    std::string debug_label,
+    const SharedImageInfo& si_info,
     bool is_thread_safe,
     base::span<const uint8_t> data) {
   if (use_graphite_) {
     auto backing = std::make_unique<WrappedGraphiteTextureBacking>(
-        base::PassKey<WrappedSkImageBackingFactory>(), mailbox, format, size,
-        color_space, surface_origin, alpha_type, usage, std::move(debug_label),
+        base::PassKey<WrappedSkImageBackingFactory>(), mailbox, si_info,
         context_state_, is_thread_safe);
     if (!backing->InitializeWithData(data)) {
       return nullptr;
@@ -139,10 +122,9 @@ WrappedSkImageBackingFactory::CreateSharedImage(
   }
   CHECK(context_state_->gr_context());
   auto backing = std::make_unique<WrappedSkImageBacking>(
-      base::PassKey<WrappedSkImageBackingFactory>(), mailbox, format, size,
-      color_space, surface_origin, alpha_type, usage, debug_label,
+      base::PassKey<WrappedSkImageBackingFactory>(), mailbox, si_info,
       context_state_, is_thread_safe);
-  if (!backing->InitializeWithData(debug_label, data)) {
+  if (!backing->InitializeWithData(si_info.debug_label, data)) {
     return nullptr;
   }
   return backing;
@@ -252,6 +234,19 @@ bool WrappedSkImageBackingFactory::IsSupportedForAccessStream(
     SharedImageAccessStream stream,
     viz::SharedImageFormat format,
     const AccessParams* params) const {
+  // `WrappedSkImageBackingFactory` is strictly bound to the
+  // `SharedContextState` it was created with (the GPU main thread). If a
+  // request is made from a different thread/context, we must return false early
+  // to prevent `SharedImageFactory` from calling `IsSupported`, which would
+  // unsafely access the thread-bound `context_state_`. Note that this currently
+  // restricts this factory to only be selected and used on the GPU main thread.
+  // If it's refactored in the future to remove its dependency on
+  // `SharedContextState` in `IsSupported`, this restriction can be relaxed.
+  if (params && params->context_state &&
+      params->context_state != context_state_) {
+    return false;
+  }
+
   if (use_graphite_) {
     // We create a temporary backing just to check for support.
     // TODO(crbug.com/394385381): Consider refactoring this to not require a

@@ -9,14 +9,16 @@ aidl = [
   "aidl/androidx/pdf/DraftEditResult.aidl",
   "aidl/androidx/pdf/annotation/KeyedPdfAnnotation.aidl",
   "aidl/androidx/pdf/annotation/models/PdfObject.aidl",
+  "aidl/androidx/pdf/annotation/models/KeyedPdfObject.aidl",
   "aidl/androidx/pdf/annotation/models/PdfAnnotation.aidl",
   "aidl/androidx/pdf/annotation/models/PaginatedAnnotations.aidl",
-  "aidl/androidx/pdf/RenderParams.aidl"
+  "aidl/androidx/pdf/RenderParams.aidl",
+  "aidl/androidx/pdf/models/PaginatedObjects.aidl"
 ]
 assets = []
 has_classes_jar = true
 has_native_libraries = false
-has_proguard_flags = true
+has_proguard_flags = false
 has_r_text_file = false
 is_manifest_empty = false
 manifest_package = "androidx.pdf.document.service"

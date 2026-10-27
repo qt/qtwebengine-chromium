@@ -1,0 +1,66 @@
+# This file contains the configuration for the gitlab ci.
+# See the .gitlab-ci/generate-gitlab-ci.py file for more info
+#
+
+# We're happy to rebuild all containers when one changes.
+.default_tag: &default_tag '2024-09-11.0'
+
+last_abi_break: abe85e051e7029bfd2e7913ab980a9e0042b6d0d
+minimum_meson_version: 0.57.0
+
+distributions:
+  - name: fedora
+    tag: *default_tag
+    versions:
+      - '40' # update the pages job when bumping the version
+    use_for_custom_build_tests: true
+    packages:
+      - git
+      - diffutils
+      - gcc
+      - gcc-c++
+      - pkgconf-pkg-config
+      - systemd-devel
+      - libxkbcommon-devel
+      - libxml2
+      - doxygen
+      - python3-pytest
+      - python3-dbusmock
+      - python3-jinja2
+      - python3-pip
+      - python3-pyyaml
+      - golang   # for documentation only
+      - libabigail  # for abidiff only
+    pips:
+      - meson
+      - ninja
+      - structlog
+      - strenum
+  - name: debian
+    tag: *default_tag
+    use_for_minimal_meson_test: true
+    versions:
+      - 'bullseye'
+    packages:
+      - git
+      - gcc
+      - g++
+      - pkg-config
+      - libsystemd-dev
+      - libxkbcommon-dev
+      - libxml2
+      - doxygen
+      - python3-pytest
+      - python3-dbusmock
+      - python3-jinja2
+      - python3-pip
+      - python3-yaml
+    pips:
+      - meson
+      - ninja
+      - structlog
+      - strenum
+
+pages:
+  distro: fedora
+  version: 40

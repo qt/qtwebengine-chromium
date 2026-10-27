@@ -47,7 +47,7 @@
 CJS_Runtime::CJS_Runtime(CPDFSDK_FormFillEnvironment* pFormFillEnv)
     : form_fill_env_(pFormFillEnv) {
   v8::Isolate* pIsolate = nullptr;
-  IPDF_JSPLATFORM* pPlatform = form_fill_env_->GetFormFillInfo()->m_pJsPlatform;
+  IPDF_JSPLATFORM* pPlatform = form_fill_env_->GetJSPlatform();
   if (pPlatform->version <= 2) {
     // Backwards compatibility - JS now initialized earlier in more modern
     // JSPLATFORM versions.
@@ -158,7 +158,7 @@ void CJS_Runtime::SetFormFillEnvToDocument() {
     return;
   }
 
-  auto pJSDocument = JSGetObject<CJS_Document>(GetIsolate(), pThis);
+  auto pJSDocument = JSGetObject<CJS_Document>(pThis);
   if (!pJSDocument) {
     return;
   }

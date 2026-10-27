@@ -15,6 +15,7 @@
 
 #include "cast/streaming/impl/clock_offset_estimator.h"
 #include "cast/streaming/impl/message_constants.h"
+#include "cast/streaming/impl/sender_impl.h"
 #include "cast/streaming/message_fields.h"
 #include "cast/streaming/public/capture_recommendations.h"
 #include "cast/streaming/public/environment.h"
@@ -25,6 +26,7 @@
 #include "util/json/json_helpers.h"
 #include "util/json/json_serialization.h"
 #include "util/osp_logging.h"
+#include "util/no_destructor.h"
 #include "util/stringprintf.h"
 
 namespace openscreen::cast {
@@ -32,39 +34,40 @@ namespace openscreen::cast {
 namespace {
 // Default error message for a bad CAPABILITIES_RESPONSE message.
 const Error& InvalidCapabilitiesResponseError() {
-  static const Error kError(
+  static const openscreen::NoDestructor<Error> kError(
       Error::Code::kRemotingNotSupported,
       "Invalid CAPABILITIES_RESPONSE message, assuming remoting is not "
       "supported");
-  return kError;
+  return *kError;
 }
 
 // Default error message for a bad ANSWER message.
 const Error& InvalidAnswerError() {
-  static const Error kError(Error::Code::kInvalidAnswer,
-                            "Invalid ANSWER message.");
-  return kError;
+  static const openscreen::NoDestructor<Error> kError(
+      Error::Code::kInvalidAnswer, "Invalid ANSWER message.");
+  return *kError;
 }
 
 // Error message for an ANSWER timeout.
 const Error& AnswerTimeoutError() {
-  static const Error kError(Error::Code::kAnswerTimeout,
-                            "Didn't receive an ANSWER message before timeout.");
-  return kError;
+  static const openscreen::NoDestructor<Error> kError(
+      Error::Code::kAnswerTimeout,
+      "Didn't receive an ANSWER message before timeout.");
+  return *kError;
 }
 
 // Default error message for a bad RPC message.
 const Error& InvalidRpcError() {
-  static const Error kError(Error::Code::kJsonParseError,
-                            "Invalid RPC message.");
-  return kError;
+  static const openscreen::NoDestructor<Error> kError(
+      Error::Code::kJsonParseError, "Invalid RPC message.");
+  return *kError;
 }
 
 // Default error message for a bad INPUT message.
 const Error& InvalidInputError() {
-  static const Error kError(Error::Code::kJsonParseError,
-                            "Invalid INPUT message.");
-  return kError;
+  static const openscreen::NoDestructor<Error> kError(
+      Error::Code::kJsonParseError, "Invalid INPUT message.");
+  return *kError;
 }
 
 // Returns DSCP suggestions based on Table 1 in RFC 8837.
@@ -351,7 +354,9 @@ SenderSession::SenderSession(Configuration config)
                         });
 }
 
-SenderSession::~SenderSession() = default;
+SenderSession::~SenderSession() {
+  config_.environment->SetStatisticsCollector(nullptr);
+}
 
 Error SenderSession::Negotiate(std::vector<AudioCaptureConfig> audio_configs,
                                std::vector<VideoCaptureConfig> video_configs) {
@@ -598,8 +603,8 @@ std::unique_ptr<Sender> SenderSession::CreateSender(Ssrc receiver_ssrc,
                        /* is_pli_enabled*/ true,
                        ToStreamType(type, config_.use_android_rtp_hack)};
   OSP_DCHECK(config.IsValid());
-  return std::make_unique<Sender>(*config_.environment, packet_router_,
-                                  std::move(config), type);
+  return std::make_unique<SenderImpl>(*config_.environment, packet_router_,
+                                      std::move(config), type);
 }
 
 void SenderSession::SpawnAudioSender(ConfiguredSenders* senders,

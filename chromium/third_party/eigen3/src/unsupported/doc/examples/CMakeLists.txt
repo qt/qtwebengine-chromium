@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
+
 file(GLOB examples_SRCS "*.cpp")
 
 add_custom_target(unsupported_examples)

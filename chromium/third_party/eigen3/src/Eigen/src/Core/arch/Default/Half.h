@@ -23,6 +23,7 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// SPDX-License-Identifier: MPL-2.0
 
 // Standard 16-bit float type, mostly useful for GPUs. Defines a new
 // type Eigen::half (inheriting either from CUDA's or HIP's __half struct) with
@@ -45,7 +46,7 @@
 // Eigen with GPU support.
 // Any functions that require `numext::bit_cast` may also not be constexpr,
 // including any native types when setting via raw bit values.
-#if defined(EIGEN_HAS_GPU_FP16) || defined(EIGEN_HAS_ARM64_FP16_SCALAR_ARITHMETIC) || defined(EIGEN_HAS_BUILTIN_FLOAT16)
+#if defined(EIGEN_GPUCC) || defined(EIGEN_HAS_ARM64_FP16_SCALAR_ARITHMETIC) || defined(EIGEN_HAS_BUILTIN_FLOAT16)
 #define _EIGEN_MAYBE_CONSTEXPR
 #else
 #define _EIGEN_MAYBE_CONSTEXPR constexpr
@@ -121,12 +122,12 @@ namespace half_impl {
 //
 // Making the host side compile phase of hipcc use the same Eigen::half impl, as the gcc compile, resolves
 // this error, and hence the following convoluted #if condition
-#if !defined(EIGEN_HAS_GPU_FP16) || !defined(EIGEN_GPU_COMPILE_PHASE)
+#if !defined(EIGEN_GPUCC) || !defined(EIGEN_GPU_COMPILE_PHASE)
 
 // Make our own __half_raw definition that is similar to CUDA's.
 struct __half_raw {
   struct construct_from_rep_tag {};
-#if (defined(EIGEN_HAS_GPU_FP16) && !defined(EIGEN_GPU_COMPILE_PHASE))
+#if (defined(EIGEN_GPUCC) && !defined(EIGEN_GPU_COMPILE_PHASE))
   // Eigen::half can be used as the datatype for shared memory declarations (in Eigen and TF)
   // The element type for shared memory cannot have non-trivial constructors
   // and hence the following special casing (which skips the zero-initilization).
@@ -152,16 +153,12 @@ struct __half_raw {
 #endif
 };
 
-#elif defined(EIGEN_HAS_HIP_FP16)
+#elif defined(EIGEN_HIPCC)
 // HIP GPU compile phase: nothing to do here.
 // HIP fp16 header file has a definition for __half_raw
-#elif defined(EIGEN_HAS_CUDA_FP16)
+#elif defined(EIGEN_CUDACC)
 
 // CUDA GPU compile phase.
-#if EIGEN_CUDA_SDK_VER < 90000
-// In CUDA < 9.0, __half is the equivalent of CUDA 9's __half_raw
-typedef __half __half_raw;
-#endif  // defined(EIGEN_HAS_CUDA_FP16)
 
 #elif defined(SYCL_DEVICE_ONLY)
 typedef cl::sycl::half __half_raw;
@@ -175,13 +172,11 @@ struct half_base : public __half_raw {
   EIGEN_DEVICE_FUNC _EIGEN_MAYBE_CONSTEXPR half_base() {}
   EIGEN_DEVICE_FUNC _EIGEN_MAYBE_CONSTEXPR half_base(const __half_raw& h) : __half_raw(h) {}
 
-#if defined(EIGEN_HAS_GPU_FP16)
-#if defined(EIGEN_HAS_HIP_FP16)
+#if defined(EIGEN_GPUCC)
+#if defined(EIGEN_HIPCC)
   EIGEN_DEVICE_FUNC _EIGEN_MAYBE_CONSTEXPR half_base(const __half& h) { x = __half_as_ushort(h); }
-#elif defined(EIGEN_HAS_CUDA_FP16)
-#if EIGEN_CUDA_SDK_VER >= 90000
+#elif defined(EIGEN_CUDACC)
   EIGEN_DEVICE_FUNC _EIGEN_MAYBE_CONSTEXPR half_base(const __half& h) : __half_raw(*(__half_raw*)&h) {}
-#endif
 #endif
 #endif
 };
@@ -192,34 +187,27 @@ struct half_base : public __half_raw {
 struct half : public half_impl::half_base {
   // Writing this out as separate #if-else blocks to make the code easier to follow
   // The same applies to most #if-else blocks in this file
-#if !defined(EIGEN_HAS_GPU_FP16) || !defined(EIGEN_GPU_COMPILE_PHASE)
+#if !defined(EIGEN_GPUCC) || !defined(EIGEN_GPU_COMPILE_PHASE)
   // Use the same base class for the following two scenarios
   // * when compiling without GPU support enabled
   // * during host compile phase when compiling with GPU support enabled
   typedef half_impl::__half_raw __half_raw;
-#elif defined(EIGEN_HAS_HIP_FP16)
+#elif defined(EIGEN_HIPCC)
   // Nothing to do here
   // HIP fp16 header file has a definition for __half_raw
-#elif defined(EIGEN_HAS_CUDA_FP16)
-// Note that EIGEN_CUDA_SDK_VER is set to 0 even when compiling with HIP, so
-// (EIGEN_CUDA_SDK_VER < 90000) is true even for HIP!  So keeping this within
-// #if defined(EIGEN_HAS_CUDA_FP16) is needed
-#if defined(EIGEN_CUDA_SDK_VER) && EIGEN_CUDA_SDK_VER < 90000
-  typedef half_impl::__half_raw __half_raw;
-#endif
+#elif defined(EIGEN_CUDACC)
+  // Nothing to do here.
 #endif
 
   EIGEN_DEVICE_FUNC _EIGEN_MAYBE_CONSTEXPR half() {}
 
   EIGEN_DEVICE_FUNC _EIGEN_MAYBE_CONSTEXPR half(const __half_raw& h) : half_impl::half_base(h) {}
 
-#if defined(EIGEN_HAS_GPU_FP16)
-#if defined(EIGEN_HAS_HIP_FP16)
+#if defined(EIGEN_GPUCC)
+#if defined(EIGEN_HIPCC)
   EIGEN_DEVICE_FUNC _EIGEN_MAYBE_CONSTEXPR half(const __half& h) : half_impl::half_base(h) {}
-#elif defined(EIGEN_HAS_CUDA_FP16)
-#if defined(EIGEN_CUDA_SDK_VER) && EIGEN_CUDA_SDK_VER >= 90000
+#elif defined(EIGEN_CUDACC)
   EIGEN_DEVICE_FUNC _EIGEN_MAYBE_CONSTEXPR half(const __half& h) : half_impl::half_base(h) {}
-#endif
 #endif
 #endif
 
@@ -380,8 +368,7 @@ namespace Eigen {
 
 namespace half_impl {
 
-#if (defined(EIGEN_HAS_CUDA_FP16) && defined(EIGEN_CUDA_ARCH) && EIGEN_CUDA_ARCH >= 530) || \
-    (defined(EIGEN_HAS_HIP_FP16) && defined(HIP_DEVICE_COMPILE))
+#if defined(EIGEN_GPU_COMPILE_PHASE)
 // Note: We deliberately do *not* define this to 1 even if we have Arm's native
 // fp16 type since GPU half types are rather different from native CPU half types.
 #define EIGEN_HAS_NATIVE_GPU_FP16
@@ -393,24 +380,10 @@ namespace half_impl {
 // conversion steps back and forth.
 
 #if defined(EIGEN_HAS_NATIVE_GPU_FP16)
-EIGEN_STRONG_INLINE __device__ half operator+(const half& a, const half& b) {
-#if defined(EIGEN_CUDA_SDK_VER) && EIGEN_CUDA_SDK_VER >= 90000
-  return __hadd(::__half(a), ::__half(b));
-#else
-  return __hadd(a, b);
-#endif
-}
+EIGEN_STRONG_INLINE __device__ half operator+(const half& a, const half& b) { return __hadd(::__half(a), ::__half(b)); }
 EIGEN_STRONG_INLINE __device__ half operator*(const half& a, const half& b) { return __hmul(a, b); }
 EIGEN_STRONG_INLINE __device__ half operator-(const half& a, const half& b) { return __hsub(a, b); }
-EIGEN_STRONG_INLINE __device__ half operator/(const half& a, const half& b) {
-#if defined(EIGEN_CUDA_SDK_VER) && EIGEN_CUDA_SDK_VER >= 90000
-  return __hdiv(a, b);
-#else
-  float num = __half2float(a);
-  float denom = __half2float(b);
-  return __float2half(num / denom);
-#endif
-}
+EIGEN_STRONG_INLINE __device__ half operator/(const half& a, const half& b) { return __hdiv(a, b); }
 EIGEN_STRONG_INLINE __device__ half operator-(const half& a) { return __hneg(a); }
 EIGEN_STRONG_INLINE __device__ half& operator+=(half& a, const half& b) {
   a = a + b;
@@ -505,7 +478,7 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool operator>=(const half& a, const half&
 // We need to provide emulated *host-side* FP16 operators for clang.
 #pragma push_macro("EIGEN_DEVICE_FUNC")
 #undef EIGEN_DEVICE_FUNC
-#if defined(EIGEN_HAS_CUDA_FP16) && defined(EIGEN_HAS_NATIVE_GPU_FP16)
+#if defined(EIGEN_GPUCC) && defined(EIGEN_HAS_NATIVE_GPU_FP16)
 #define EIGEN_DEVICE_FUNC __host__
 #else  // both host and device need emulated ops.
 #define EIGEN_DEVICE_FUNC __host__ __device__
@@ -636,7 +609,7 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC _EIGEN_MAYBE_CONSTEXPR __half_raw raw_uint
   // because this is constexpr function.
   // Fortunately, since we need to disable EIGEN_CONSTEXPR for GPU anyway, we can get out
   // of this catch22 by having separate bodies for GPU / non GPU
-#if defined(EIGEN_HAS_GPU_FP16)
+#if defined(EIGEN_GPUCC)
   __half_raw h;
   h.x = x;
   return h;
@@ -661,8 +634,7 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC numext::uint16_t raw_half_as_uint16(const 
 }
 
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC __half_raw float_to_half_rtne(float ff) {
-#if (defined(EIGEN_HAS_CUDA_FP16) && defined(EIGEN_CUDA_ARCH) && EIGEN_CUDA_ARCH >= 300) || \
-    (defined(EIGEN_HAS_HIP_FP16) && defined(EIGEN_HIP_DEVICE_COMPILE))
+#if defined(EIGEN_GPU_COMPILE_PHASE)
   __half tmp_ff = __float2half(ff);
   return *(__half_raw*)&tmp_ff;
 
@@ -678,12 +650,8 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC __half_raw float_to_half_rtne(float ff) {
 
 #elif defined(EIGEN_HAS_FP16_C)
   __half_raw h;
-#if EIGEN_COMP_MSVC
-  // MSVC does not have scalar instructions.
-  h.x = _mm_extract_epi16(_mm_cvtps_ph(_mm_set_ss(ff), 0), 0);
-#else
-  h.x = _cvtss_sh(ff, 0);
-#endif
+  // Spell out the vector conversion to avoid Clang warning about the C99 compound literal used by _cvtss_sh.
+  h.x = static_cast<numext::uint16_t>(_mm_extract_epi16(_mm_cvtps_ph(_mm_set_ss(ff), 0), 0));
   return h;
 
 #else
@@ -735,8 +703,7 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC __half_raw float_to_half_rtne(float ff) {
 }
 
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC float half_to_float(__half_raw h) {
-#if (defined(EIGEN_HAS_CUDA_FP16) && defined(EIGEN_CUDA_ARCH) && EIGEN_CUDA_ARCH >= 300) || \
-    (defined(EIGEN_HAS_HIP_FP16) && defined(EIGEN_HIP_DEVICE_COMPILE))
+#if defined(EIGEN_GPU_COMPILE_PHASE)
   return __half2float(h);
 #elif defined(EIGEN_HAS_ARM64_FP16_SCALAR_ARITHMETIC) || defined(EIGEN_HAS_BUILTIN_FLOAT16)
   return static_cast<float>(h.x);
@@ -778,8 +745,7 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool(isinf)(const half& a) {
 #endif
 }
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool(isnan)(const half& a) {
-#if (defined(EIGEN_HAS_CUDA_FP16) && defined(EIGEN_CUDA_ARCH) && EIGEN_CUDA_ARCH >= 530) || \
-    (defined(EIGEN_HAS_HIP_FP16) && defined(EIGEN_HIP_DEVICE_COMPILE))
+#if defined(EIGEN_GPU_COMPILE_PHASE)
   return __hisnan(a);
 #elif defined(EIGEN_HAS_ARM64_FP16_SCALAR_ARITHMETIC) || defined(EIGEN_HAS_BUILTIN_FLOAT16)
   return (numext::bit_cast<numext::uint16_t>(a.x) & 0x7fff) > 0x7c00;
@@ -810,27 +776,23 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC half abs(const half& a) {
 #endif
 }
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC half exp(const half& a) {
-#if (EIGEN_CUDA_SDK_VER >= 80000 && defined EIGEN_CUDA_ARCH && EIGEN_CUDA_ARCH >= 530) || \
-    defined(EIGEN_HIP_DEVICE_COMPILE)
-  return half(hexp(a));
+#if defined(EIGEN_CUDA_ARCH) || defined(EIGEN_HIP_DEVICE_COMPILE)
+  return half(hexp(::__half(a)));
 #else
   return half(::expf(float(a)));
 #endif
 }
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC half exp2(const half& a) {
-#if (EIGEN_CUDA_SDK_VER >= 80000 && defined EIGEN_CUDA_ARCH && EIGEN_CUDA_ARCH >= 530) || \
-    defined(EIGEN_HIP_DEVICE_COMPILE)
-  return half(hexp2(a));
+#if defined(EIGEN_CUDA_ARCH) || defined(EIGEN_HIP_DEVICE_COMPILE)
+  return half(hexp2(::__half(a)));
 #else
   return half(::exp2f(float(a)));
 #endif
 }
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC half expm1(const half& a) { return half(numext::expm1(float(a))); }
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC half log(const half& a) {
-#if (defined(EIGEN_HAS_CUDA_FP16) && EIGEN_CUDA_SDK_VER >= 80000 && defined(EIGEN_CUDA_ARCH) && \
-     EIGEN_CUDA_ARCH >= 530) ||                                                                 \
-    (defined(EIGEN_HAS_HIP_FP16) && defined(EIGEN_HIP_DEVICE_COMPILE))
-  return half(hlog(a));
+#if defined(EIGEN_GPU_COMPILE_PHASE)
+  return half(hlog(::__half(a)));
 #else
   return half(::logf(float(a)));
 #endif
@@ -842,9 +804,8 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC half log2(const half& a) {
 }
 
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC half sqrt(const half& a) {
-#if (EIGEN_CUDA_SDK_VER >= 80000 && defined EIGEN_CUDA_ARCH && EIGEN_CUDA_ARCH >= 530) || \
-    defined(EIGEN_HIP_DEVICE_COMPILE)
-  return half(hsqrt(a));
+#if defined(EIGEN_CUDA_ARCH) || defined(EIGEN_HIP_DEVICE_COMPILE)
+  return half(hsqrt(::__half(a)));
 #else
   return half(::sqrtf(float(a)));
 #endif
@@ -864,17 +825,15 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC half acos(const half& a) { return half(::a
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC half atan(const half& a) { return half(::atanf(float(a))); }
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC half atanh(const half& a) { return half(::atanhf(float(a))); }
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC half floor(const half& a) {
-#if (EIGEN_CUDA_SDK_VER >= 80000 && defined EIGEN_CUDA_ARCH && EIGEN_CUDA_ARCH >= 300) || \
-    defined(EIGEN_HIP_DEVICE_COMPILE)
-  return half(hfloor(a));
+#if (defined(EIGEN_CUDA_ARCH)) || defined(EIGEN_HIP_DEVICE_COMPILE)
+  return half(hfloor(::__half(a)));
 #else
   return half(::floorf(float(a)));
 #endif
 }
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC half ceil(const half& a) {
-#if (EIGEN_CUDA_SDK_VER >= 80000 && defined EIGEN_CUDA_ARCH && EIGEN_CUDA_ARCH >= 300) || \
-    defined(EIGEN_HIP_DEVICE_COMPILE)
-  return half(hceil(a));
+#if (defined(EIGEN_CUDA_ARCH)) || defined(EIGEN_HIP_DEVICE_COMPILE)
+  return half(hceil(::__half(a)));
 #else
   return half(::ceilf(float(a)));
 #endif
@@ -917,9 +876,7 @@ EIGEN_ALWAYS_INLINE std::ostream& operator<<(std::ostream& os, const half& v) {
 namespace internal {
 
 template <>
-struct is_arithmetic<half> {
-  enum { value = true };
-};
+struct is_arithmetic<half> : std::true_type {};
 
 template <>
 struct random_impl<half> {
@@ -1007,20 +964,12 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::half madd<Eigen::half>(const Eigen:
 }  // namespace numext
 }  // namespace Eigen
 
-// Add the missing shfl* intrinsics.
-// The __shfl* functions are only valid on HIP or _CUDA_ARCH_ >= 300.
-//   CUDA defines them for (__CUDA_ARCH__ >= 300 || !defined(__CUDA_ARCH__))
-//
-// HIP and CUDA prior to SDK 9.0 define
-//    __shfl, __shfl_up, __shfl_down, __shfl_xor for int and float
-// CUDA since 9.0 deprecates those and instead defines
-//    __shfl_sync, __shfl_up_sync, __shfl_down_sync, __shfl_xor_sync,
-//    with native support for __half and __nv_bfloat16
-//
+// Warp shuffle overloads for Eigen::half.
+// CUDA uses __shfl_*_sync (with mask); HIP uses __shfl_* (no mask).
 // Note that the following are __device__ - only functions.
-#if (defined(EIGEN_CUDACC) && (!defined(EIGEN_CUDA_ARCH) || EIGEN_CUDA_ARCH >= 300)) || defined(EIGEN_HIPCC)
+#if defined(EIGEN_CUDACC) || defined(EIGEN_HIPCC)
 
-#if defined(EIGEN_HAS_CUDA_FP16) && EIGEN_CUDA_SDK_VER >= 90000
+#if defined(EIGEN_CUDACC)
 
 __device__ EIGEN_STRONG_INLINE Eigen::half __shfl_sync(unsigned mask, Eigen::half var, int srcLane,
                                                        int width = warpSize) {
@@ -1046,7 +995,7 @@ __device__ EIGEN_STRONG_INLINE Eigen::half __shfl_xor_sync(unsigned mask, Eigen:
   return static_cast<Eigen::half>(__shfl_xor_sync(mask, h, laneMask, width));
 }
 
-#else  // HIP or CUDA SDK < 9.0
+#else  // HIP
 
 __device__ EIGEN_STRONG_INLINE Eigen::half __shfl(Eigen::half var, int srcLane, int width = warpSize) {
   const int ivar = static_cast<int>(Eigen::numext::bit_cast<Eigen::numext::uint16_t>(var));
@@ -1072,7 +1021,7 @@ __device__ EIGEN_STRONG_INLINE Eigen::half __shfl_xor(Eigen::half var, int laneM
 #endif  // __shfl*
 
 // ldg() has an overload for __half_raw, but we also need one for Eigen::half.
-#if (defined(EIGEN_CUDACC) && (!defined(EIGEN_CUDA_ARCH) || EIGEN_CUDA_ARCH >= 350)) || defined(EIGEN_HIPCC)
+#if defined(EIGEN_CUDACC) || defined(EIGEN_HIPCC)
 EIGEN_STRONG_INLINE __device__ Eigen::half __ldg(const Eigen::half* ptr) {
   return Eigen::half_impl::raw_uint16_to_half(__ldg(reinterpret_cast<const Eigen::numext::uint16_t*>(ptr)));
 }
@@ -1095,8 +1044,7 @@ namespace internal {
 template <>
 struct cast_impl<float, half> {
   EIGEN_DEVICE_FUNC static inline half run(const float& a) {
-#if (defined(EIGEN_HAS_CUDA_FP16) && defined(EIGEN_CUDA_ARCH) && EIGEN_CUDA_ARCH >= 300) || \
-    (defined(EIGEN_HAS_HIP_FP16) && defined(EIGEN_HIP_DEVICE_COMPILE))
+#if defined(EIGEN_GPU_COMPILE_PHASE)
     return __float2half(a);
 #else
     return half(a);
@@ -1107,8 +1055,7 @@ struct cast_impl<float, half> {
 template <>
 struct cast_impl<int, half> {
   EIGEN_DEVICE_FUNC static inline half run(const int& a) {
-#if (defined(EIGEN_HAS_CUDA_FP16) && defined(EIGEN_CUDA_ARCH) && EIGEN_CUDA_ARCH >= 300) || \
-    (defined(EIGEN_HAS_HIP_FP16) && defined(EIGEN_HIP_DEVICE_COMPILE))
+#if defined(EIGEN_GPU_COMPILE_PHASE)
     return __float2half(static_cast<float>(a));
 #else
     return half(static_cast<float>(a));
@@ -1119,8 +1066,7 @@ struct cast_impl<int, half> {
 template <>
 struct cast_impl<half, float> {
   EIGEN_DEVICE_FUNC static inline float run(const half& a) {
-#if (defined(EIGEN_HAS_CUDA_FP16) && defined(EIGEN_CUDA_ARCH) && EIGEN_CUDA_ARCH >= 300) || \
-    (defined(EIGEN_HAS_HIP_FP16) && defined(EIGEN_HIP_DEVICE_COMPILE))
+#if defined(EIGEN_GPU_COMPILE_PHASE)
     return __half2float(a);
 #else
     return static_cast<float>(a);

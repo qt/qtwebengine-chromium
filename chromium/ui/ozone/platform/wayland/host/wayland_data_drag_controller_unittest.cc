@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "base/containers/flat_set.h"
+#include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/pickle.h"
 #include "base/strings/utf_string_conversions.h"
@@ -30,6 +31,8 @@
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_factory.h"
 #include "ui/events/base_event_utils.h"
+#include "ui/events/event.h"
+#include "ui/events/types/event_type.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/native_ui_types.h"
@@ -288,7 +291,8 @@ TEST_P(WaylandDataDragControllerTest, StartDrag) {
   // objects are ready.
   ScheduleTestTask(base::BindLambdaForTesting([&]() {
     // Now the server can read the data and give it to our callback.
-    ReadAndCheckData(kMimeTypeUtf8PlainText, kSampleTextForDragAndDrop);
+    ReadAndCheckData(kMimeTypeUtf8PlainText,
+                     base::byte_span_from_cstring(kSampleTextForDragAndDrop));
 
     SendDndCancelled();
   }));
@@ -371,13 +375,14 @@ TEST_P(WaylandDataDragControllerTest, StartDragWithFileContents) {
   OSExchangeData os_exchange_data;
   os_exchange_data.SetFileContents(
       base::FilePath(FILE_PATH_LITERAL("t\\est\".jpg")),
-      kSampleTextForDragAndDrop);
+      base::byte_span_from_cstring(kSampleTextForDragAndDrop));
   int operations = DragDropTypes::DRAG_COPY | DragDropTypes::DRAG_MOVE;
   drag_controller()->StartSession(os_exchange_data, operations,
                                   DragEventSource::kMouse);
 
   constexpr char kText[] = "application/octet-stream;name=\"t\\\\est\\\".jpg\"";
-  ReadAndCheckData(kText, kSampleTextForDragAndDrop);
+  ReadAndCheckData(kText,
+                   base::byte_span_from_cstring(kSampleTextForDragAndDrop));
   PostToServerAndWait([kText](wl::TestWaylandServerThread* server) {
     auto* source = server->data_device_manager()->data_source();
     ASSERT_TRUE(source);
@@ -510,7 +515,8 @@ TEST_P(WaylandDataDragControllerTest,
   // objects are ready.
   ScheduleTestTask(base::BindLambdaForTesting([&]() {
     // Now the server can read the data and give it to our callback.
-    ReadAndCheckData(kMimeTypeUtf8PlainText, kSampleTextForDragAndDrop);
+    ReadAndCheckData(kMimeTypeUtf8PlainText,
+                     base::byte_span_from_cstring(kSampleTextForDragAndDrop));
 
     EXPECT_CALL(*drop_handler_, OnDragLeave()).Times(1);
     SendDndDropPerformed();
@@ -906,6 +912,36 @@ TEST_P(WaylandDataDragControllerTest, DestroyOriginSurface) {
   // expected to gracefully reset its internal state.
   SendDndLeave();
   SendDndCancelled();
+}
+
+// Verifies the drag loop exits gracefully when the origin window is destroyed
+// while dispatching the synthetic pointer release at drag-session close.
+TEST_P(WaylandDataDragControllerTest,
+       DestroyOriginWindowDuringDragSessionClose) {
+  FocusAndPressLeftPointerButton(window_.get(), &delegate_);
+
+  // Once the drag session has started, emulate a successful drop. The
+  // controller will synthesize a release for the still-pressed pointer button;
+  // have the delegate destroy the origin window from within that event's
+  // dispatch, mimicking a queued close task running in a nested loop.
+  ScheduleTestTask(base::BindLambdaForTesting([&]() {
+    EXPECT_CALL(delegate_, DispatchEvent(_)).WillRepeatedly([&](Event* event) {
+      if (event->type() == EventType::kMouseReleased) {
+        window_.reset();
+      }
+    });
+    SendDndFinished();
+  }));
+
+  OSExchangeData os_exchange_data;
+  os_exchange_data.SetString(sample_text_for_dnd());
+  EXPECT_CALL(drag_started_callback_, Run()).Times(1);
+  EXPECT_FALSE(window_->StartDrag(
+      os_exchange_data, DragDropTypes::DRAG_COPY, DragEventSource::kMouse,
+      /*cursor=*/{}, /*can_grab_pointer=*/true, drag_started_callback_.Get(),
+      drag_finished_callback_.Get(), /*location_delegate=*/nullptr));
+
+  EXPECT_FALSE(window_);
 }
 
 // Ensures drag/drop events are properly propagated to non-toplevel windows.

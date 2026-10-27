@@ -9,12 +9,16 @@
 
 #include <variant>
 
+#include "base/functional/callback_forward.h"
 #include "base/types/strong_alias.h"
 
 // Defines various IDs used for PDF Ink Signatures. The IDs use
 // base::StrongAlias to avoid type confusion.
 
 namespace chrome_pdf {
+
+// Identifies a unique font from the frontend.
+using FontId = base::StrongAlias<class InkFontIdTag, int>;
 
 // Identifies ink::PartitionedMesh objects.
 using InkModeledShapeId = base::StrongAlias<class InkModeledShapeIdTag, size_t>;
@@ -27,6 +31,9 @@ using InkTextId = base::StrongAlias<class InkTextIdTag, size_t>;
 
 // Set of all IDs.
 using IdType = std::variant<InkStrokeId, InkModeledShapeId, InkTextId>;
+
+// A callback to generate a unique ID for Ink text objects.
+using GenerateTextIdCallback = base::RepeatingCallback<InkTextId()>;
 
 // Returns the underlying value of an IdType.
 size_t GetIdTypeValue(const IdType& id);

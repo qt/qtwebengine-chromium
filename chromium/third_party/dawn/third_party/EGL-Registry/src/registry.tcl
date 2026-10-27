@@ -553,6 +553,7 @@ extension EGL_EXT_gl_colorspace_bt2020_linear {
     number      107
     flags       public
     filename    extensions/EXT/EGL_EXT_gl_colorspace_bt2020_linear.txt
+    alias       EGL_EXT_gl_colorspace_bt2020_hlg
     alias       EGL_EXT_gl_colorspace_bt2020_pq
 }
 extension EGL_EXT_gl_colorspace_scrgb_linear {
@@ -767,4 +768,39 @@ extension EGL_EXT_explicit_device {
     flags       public
     filename    extensions/EXT/EGL_EXT_explicit_device.txt
 }
-# Next free extension number: 149
+extension EGL_NV_stream_consumer_eglimage_use_scanout_attrib {
+    number      149
+    flags       public
+    filename    extensions/NV/EGL_NV_stream_consumer_eglimage_use_scanout_attrib.txt
+}
+extension EGL_QNX_platform_screen {
+    number      150
+    flags       public
+    filename    extensions/QNX/EGL_QNX_platform_screen.txt
+}
+extension EGL_QNX_image_native_buffer {
+    number      151
+    flags       public
+    filename    extensions/QNX/EGL_QNX_image_native_buffer.txt
+}
+extension EXT_query_reset_notification_strategy {
+    number      152
+    flags       public
+    filename    extensions/EXT/EGL_EXT_query_reset_notification_strategy.txt
+}
+extension EGL_ANDROID_telemetry_hint {
+    number      153
+    flags       public
+    filename    extensions/EXT/EGL_ANDROID_telemetry_hint.txt
+}
+extension EGL_EXT_display_alloc {
+    number      154
+    flags       public
+    filename    extensions/EXT/EGL_EXT_display_alloc.txt
+}
+extension EGL_EXT_device_type {
+    number      155
+    flags       public
+    filename    extensions/EXT/EGL_EXT_device_type.txt
+}
+# Next free extension number: 156

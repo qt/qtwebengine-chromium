@@ -13,6 +13,7 @@
 
 #include "absl/functional/overload.h"
 #include "include/v8config.h"
+#include "src/base/logging.h"
 #include "src/common/assert-scope.h"
 #include "src/common/globals.h"
 #include "src/execution/isolate-utils.h"
@@ -36,8 +37,6 @@
 #include "src/sandbox/isolate.h"
 #include "src/strings/string-hasher-inl.h"
 #include "src/strings/unicode-inl.h"
-#include "src/torque/runtime-macro-shims.h"
-#include "src/torque/runtime-support.h"
 #include "src/utils/utils.h"
 #include "third_party/simdutf/simdutf.h"
 
@@ -322,7 +321,7 @@ V8_NOINLINE V8_PRESERVE_MOST inline bool TryReportUnreachable(
   }
   recursion++;
   Isolate::Current()->PushStackTraceAndDie(
-      reinterpret_cast<void*>(string->ptr()),
+      "invalid string dispatch", reinterpret_cast<void*>(string->ptr()),
       reinterpret_cast<void*>(map->ptr()));
   recursion--;
   UNREACHABLE();
@@ -1093,6 +1092,7 @@ HandleType<String> String::Share(Isolate* isolate, HandleType<T> string) {
     case StringTransitionStrategy::kAlreadyTransitioned:
       return string;
   }
+  UNREACHABLE();
 }
 
 template <typename T, template <typename> typename HandleType>
@@ -1475,17 +1475,23 @@ void ExternalString::VisitExternalPointers(ObjectVisitor* visitor) {
   visitor->VisitExternalPointer(this, ExternalPointerSlot(&resource_data_));
 }
 
-Address ExternalString::resource_as_address() const {
-  IsolateForSandbox isolate = GetCurrentIsolateForSandbox();
+Address ExternalString::resource_as_address(Isolate* isolate) const {
   return resource_.load(isolate);
+}
+
+Address ExternalString::resource_as_address() const {
+  Isolate* isolate = Isolate::Current();
+  return resource_as_address(isolate);
 }
 
 void ExternalString::set_address_as_resource(Isolate* isolate, Address value) {
   resource_.store(isolate, value);
   if (IsExternalOneByteString(this)) {
-    Cast<ExternalOneByteString>(this)->update_data_cache(isolate);
+    Cast<ExternalOneByteString>(this)->update_data_cache(
+        isolate, reinterpret_cast<ExternalOneByteString::Resource*>(value));
   } else {
-    Cast<ExternalTwoByteString>(this)->update_data_cache(isolate);
+    Cast<ExternalTwoByteString>(this)->update_data_cache(
+        isolate, reinterpret_cast<ExternalTwoByteString::Resource*>(value));
   }
 }
 
@@ -1500,6 +1506,8 @@ void ExternalString::SetResourceRefForSerialization(uint32_t ref) {
 }
 
 void ExternalString::DisposeResource(Isolate* isolate) {
+  DisallowGarbageCollection no_gc;
+
   Address value = resource_.load(isolate);
   v8::String::ExternalStringResourceBase* resource =
       reinterpret_cast<v8::String::ExternalStringResourceBase*>(value);
@@ -1509,6 +1517,7 @@ void ExternalString::DisposeResource(Isolate* isolate) {
     if (!IsShared() && !HeapLayout::InWritableSharedSpace(this)) {
       resource->Unaccount(reinterpret_cast<v8::Isolate*>(isolate));
     }
+    DisableGCMole no_gc_mole;
     resource->Dispose();
     resource_.store(isolate, kNullAddress);
   }
@@ -1518,17 +1527,13 @@ const ExternalOneByteString::Resource* ExternalOneByteString::resource() const {
   return reinterpret_cast<const Resource*>(resource_as_address());
 }
 
-ExternalOneByteString::Resource* ExternalOneByteString::mutable_resource() {
-  return reinterpret_cast<Resource*>(resource_as_address());
-}
-
-void ExternalOneByteString::update_data_cache(Isolate* isolate) {
+void ExternalOneByteString::update_data_cache(
+    Isolate* isolate, ExternalOneByteString::Resource* resource) {
   DisallowGarbageCollection no_gc;
   if (is_uncached()) {
-    if (resource()->IsCacheable()) mutable_resource()->UpdateDataCache();
+    if (resource->IsCacheable()) resource->UpdateDataCache();
   } else {
-    resource_data_.store(isolate,
-                         reinterpret_cast<Address>(resource()->data()));
+    resource_data_.store(isolate, reinterpret_cast<Address>(resource->data()));
   }
 }
 
@@ -1544,7 +1549,10 @@ void ExternalOneByteString::SetResource(
 void ExternalOneByteString::set_resource(
     Isolate* isolate, const ExternalOneByteString::Resource* resource) {
   resource_.store(isolate, reinterpret_cast<Address>(resource));
-  if (resource != nullptr) update_data_cache(isolate);
+  if (resource != nullptr) {
+    update_data_cache(isolate,
+                      const_cast<ExternalOneByteString::Resource*>(resource));
+  }
 }
 
 const uint8_t* ExternalOneByteString::GetChars() const {
@@ -1581,17 +1589,13 @@ const ExternalTwoByteString::Resource* ExternalTwoByteString::resource() const {
   return reinterpret_cast<const Resource*>(resource_as_address());
 }
 
-ExternalTwoByteString::Resource* ExternalTwoByteString::mutable_resource() {
-  return reinterpret_cast<Resource*>(resource_as_address());
-}
-
-void ExternalTwoByteString::update_data_cache(Isolate* isolate) {
+void ExternalTwoByteString::update_data_cache(
+    Isolate* isolate, ExternalTwoByteString::Resource* resource) {
   DisallowGarbageCollection no_gc;
   if (is_uncached()) {
-    if (resource()->IsCacheable()) mutable_resource()->UpdateDataCache();
+    if (resource->IsCacheable()) resource->UpdateDataCache();
   } else {
-    resource_data_.store(isolate,
-                         reinterpret_cast<Address>(resource()->data()));
+    resource_data_.store(isolate, reinterpret_cast<Address>(resource->data()));
   }
 }
 
@@ -1607,7 +1611,10 @@ void ExternalTwoByteString::SetResource(
 void ExternalTwoByteString::set_resource(
     Isolate* isolate, const ExternalTwoByteString::Resource* resource) {
   resource_.store(isolate, reinterpret_cast<Address>(resource));
-  if (resource != nullptr) update_data_cache(isolate);
+  if (resource != nullptr) {
+    update_data_cache(isolate,
+                      const_cast<ExternalTwoByteString::Resource*>(resource));
+  }
 }
 
 const uint16_t* ExternalTwoByteString::GetChars() const {
@@ -1723,8 +1730,9 @@ void StringCharacterStream::Reset(Tagged<String> string, int offset) {
   iter_.Reset(cons_string, offset);
   if (!cons_string.is_null()) {
     string = iter_.Next(&offset);
-    if (!string.is_null())
+    if (!string.is_null()) {
       String::VisitFlat(this, string, offset, access_guard_);
+    }
   }
 }
 

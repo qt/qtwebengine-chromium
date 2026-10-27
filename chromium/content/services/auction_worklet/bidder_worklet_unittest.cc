@@ -343,7 +343,6 @@ class BidderWorkletTest : public testing::Test {
     SetDefaultParameters();
     feature_list_.InitWithFeatures(
         /*enabled_features=*/{features::kInterestGroupUpdateIfOlderThan,
-                              features::kFledgeTextConversionHelpers,
                               blink::features::
                                   kFledgeTrustedSignalsKVv1CreativeScanning},
         /*disabled_features=*/{});
@@ -1292,16 +1291,6 @@ class BidderWorkletMultiBidDisabledTest : public BidderWorkletTest {
  public:
   BidderWorkletMultiBidDisabledTest() {
     feature_list_.InitAndDisableFeature(blink::features::kFledgeMultiBid);
-  }
-
- protected:
-  base::test::ScopedFeatureList feature_list_;
-};
-
-class BidderWorkletNoTextConversionsTest : public BidderWorkletTest {
- public:
-  BidderWorkletNoTextConversionsTest() {
-    feature_list_.InitAndDisableFeature(features::kFledgeTextConversionHelpers);
   }
 
  protected:
@@ -5018,23 +5007,6 @@ TEST_F(BidderWorkletNoCreativeScanningTest,
       R"(!('creativeScanningMetadata' in interestGroup.adComponents[0]))");
 }
 
-TEST_F(BidderWorkletNoTextConversionsTest, GenerateBidTextConversions) {
-  RunGenerateBidExpectingExpressionIsTrue(
-      R"(!('protectedAudience' in globalThis))");
-}
-
-TEST_F(BidderWorkletTest, GenerateBidTextConversions) {
-  RunGenerateBidExpectingExpressionIsTrue(
-      R"('encodeUtf8' in protectedAudience)");
-  RunGenerateBidExpectingExpressionIsTrue(
-      R"('decodeUtf8' in protectedAudience)");
-
-  RunGenerateBidExpectingExpressionIsTrue(
-      "protectedAudience.encodeUtf8('A')[0] === 65");
-  RunGenerateBidExpectingExpressionIsTrue(
-      "protectedAudience.decodeUtf8(new Uint8Array([65, 32, 68])) === 'A D'");
-}
-
 // Make sure we don't stomp over an existing user protectedAudience
 TEST_F(BidderWorkletTest, GenerateBidNoGlobalStomp) {
   const char kScript[] = R"(
@@ -8074,21 +8046,6 @@ TEST_F(BidderWorkletTest, ReportWinTopLevelTimeout) {
       {"https://url.test/ top-level execution timed out."});
 }
 
-TEST_F(BidderWorkletNoTextConversionsTest, ReportWinTextConversions) {
-  RunReportWinWithFunctionBodyExpectingResult(
-      "sendReportTo('https://foo.test?' + ('protectedAudience' in globalThis))",
-      GURL("https://foo.test/?false"));
-}
-
-TEST_F(BidderWorkletTest, ReportWinTextConversions) {
-  RunReportWinWithFunctionBodyExpectingResult(
-      "sendReportTo('https://foo.test?' + ('encodeUtf8' in protectedAudience))",
-      GURL("https://foo.test/?true"));
-  RunReportWinWithFunctionBodyExpectingResult(
-      "sendReportTo('https://foo.test?' + ('decodeUtf8' in protectedAudience))",
-      GURL("https://foo.test/?true"));
-}
-
 // Make sure we don't stomp over an existing user protectedAudience object.
 TEST_F(BidderWorkletTest, ReportWinNoGlobalStomp) {
   const char kScript[] = R"(
@@ -8753,6 +8710,33 @@ TEST_F(BidderWorkletTest, ReportWinBrowserSignalRenderUrlDeprecationWarning) {
       interest_group_bidding_url_, /*line_number=*/10);
 
   channel->ExpectNoMoreConsoleEvents();
+}
+
+TEST_F(BidderWorkletTest, ReportWinBrowserSignalRenderUrlDeprecationAsync) {
+  // From https://crbug.com/527406824
+  const char kBody[] = R"(
+      globalThis.savedBrowserSignals = browserSignals;
+      Promise.resolve().then(() => {
+        void globalThis.savedBrowserSignals.renderUrl;
+      });
+
+      // Force reportWin timeout. V8's normal auto microtask checkpoint is
+      // skipped while execution is terminating; AuctionWorklet's
+      // ContextRecyclerScope then performs a later ResetForReuse() microtask
+      // checkpoint after stack unwind.
+      while (true) {}
+  )";
+  AddJavascriptResponse(&url_loader_factory_, interest_group_bidding_url_,
+                        CreateReportWinScript(kBody));
+  RunReportWinExpectingResult(
+      /*expected_report_url=*/std::nullopt,
+      /*expected_ad_beacon_map=*/{},
+      /*expected_ad_macro_map=*/{},
+      /*expected_pa_requests=*/{},
+      /*expected_pmt_request_data=*/nullptr,
+      /*expected_reporting_latency_timeout=*/true,
+      /*expected_errors=*/
+      {"https://url.test/ execution of `reportWin` timed out."});
 }
 
 // Check that accessing `renderURL` of browserSignals does not display a

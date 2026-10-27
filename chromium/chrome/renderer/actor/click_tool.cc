@@ -14,10 +14,11 @@
 #include "base/types/expected.h"
 #include "chrome/common/actor.mojom-shared.h"
 #include "chrome/common/actor/action_result.h"
-#include "chrome/common/actor/actor_logging.h"
-#include "chrome/common/actor/journal_details_builder.h"
 #include "chrome/renderer/actor/click_dispatcher.h"
 #include "chrome/renderer/actor/tool_utils.h"
+#include "components/actor/core/actor_logging.h"
+#include "components/actor/core/journal_details_builder.h"
+#include "components/actor/public/mojom/actor_types.mojom.h"
 #include "content/public/renderer/render_frame.h"
 #include "third_party/abseil-cpp/absl/strings/str_format.h"
 #include "third_party/blink/public/common/input/web_coalesced_input_event.h"
@@ -109,8 +110,14 @@ bool ClickTool::SupportsPaintStability() const {
 
 void ClickTool::Cancel() {
   if (click_dispatcher_) {
+    // click_dispatcher_->Cancel() synchronously dispatches DOM events that
+    // might destroy the owning frame and this tool. Use a weak pointer to
+    // detect if `this` is still valid.
+    base::WeakPtr<ClickTool> weak_this = weak_ptr_factory_.GetWeakPtr();
     click_dispatcher_->Cancel();
-    click_dispatcher_.reset();
+    if (weak_this) {
+      click_dispatcher_.reset();
+    }
   }
 }
 

@@ -62,10 +62,9 @@ int32_t CJX_InstanceManager::SetInstances(v8::Isolate* pIsolate,
 
   if (iDesired < iCount) {
     WideString wsInstManagerName = GetCData(XFA_Attribute::Name);
-    WideString wsInstanceName = WideString(
-        wsInstManagerName.IsEmpty()
-            ? wsInstManagerName
-            : wsInstManagerName.Last(wsInstManagerName.GetLength() - 1));
+    WideString wsInstanceName =
+        WideString(wsInstManagerName.IsEmpty() ? wsInstManagerName
+                                               : wsInstManagerName.Substr(1));
     uint32_t dInstanceNameHash =
         FX_HashCode_GetW(wsInstanceName.AsStringView());
     CXFA_Node* pPrevSibling = iDesired == 0
@@ -147,8 +146,8 @@ CJS_Result CJX_InstanceManager::moveInstance(
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  int32_t iFrom = runtime->ToInt32(params[0]);
-  int32_t iTo = runtime->ToInt32(params[1]);
+  int32_t iFrom = runtime->ToInt32Reentrant(params[0]);
+  int32_t iTo = runtime->ToInt32Reentrant(params[1]);
   MoveInstance(runtime->GetIsolate(), iTo, iFrom);
 
   CXFA_FFNotify* pNotify = GetDocument()->GetNotify();
@@ -182,7 +181,7 @@ CJS_Result CJX_InstanceManager::removeInstance(
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  int32_t index = runtime->ToInt32(params[0]);
+  int32_t index = runtime->ToInt32Reentrant(params[0]);
   int32_t iCount = GetXFANode()->GetCount();
   if (index < 0 || index >= iCount) {
     return CJS_Result::Failure(JSMessage::kInvalidInputError);
@@ -227,7 +226,7 @@ CJS_Result CJX_InstanceManager::setInstances(
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  SetInstances(runtime->GetIsolate(), runtime->ToInt32(params[0]));
+  SetInstances(runtime->GetIsolate(), runtime->ToInt32Reentrant(params[0]));
   return CJS_Result::Success();
 }
 
@@ -245,7 +244,7 @@ CJS_Result CJX_InstanceManager::addInstance(
 
   bool fFlags = true;
   if (params.size() == 1) {
-    fFlags = runtime->ToBoolean(params[0]);
+    fFlags = runtime->ToBooleanReentrant(params[0]);
   }
 
   int32_t iCount = GetXFANode()->GetCount();
@@ -284,10 +283,10 @@ CJS_Result CJX_InstanceManager::insertInstance(
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  int32_t index = runtime->ToInt32(params[0]);
+  int32_t index = runtime->ToInt32Reentrant(params[0]);
   bool bBind = false;
   if (params.size() == 2) {
-    bBind = runtime->ToBoolean(params[1]);
+    bBind = runtime->ToBooleanReentrant(params[1]);
   }
 
   int32_t iCount = GetXFANode()->GetCount();

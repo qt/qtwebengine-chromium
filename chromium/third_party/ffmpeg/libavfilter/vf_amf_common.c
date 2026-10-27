@@ -280,17 +280,25 @@ int amf_init_filter_config(AVFilterLink *outlink, enum AVPixelFormat *in_format)
     FilterLink        *outl = ff_filter_link(outlink);
     double w_adj = 1.0;
 
-    if ((err = ff_scale_eval_dimensions(avctx,
-                                        ctx->w_expr, ctx->h_expr,
-                                        inlink, outlink,
-                                        &ctx->width, &ctx->height)) < 0)
-        return err;
+    if (ctx->w_expr && ctx->h_expr) {
+        if ((err = ff_scale_eval_dimensions(avctx,
+                                            ctx->w_expr, ctx->h_expr,
+                                            inlink, outlink,
+                                            &ctx->width, &ctx->height)) < 0)
+            return err;
+    } else {
+        ctx->width = inlink->w;
+        ctx->height = inlink->h;
+    }
 
     if (ctx->reset_sar && inlink->sample_aspect_ratio.num)
         w_adj = (double) inlink->sample_aspect_ratio.num / inlink->sample_aspect_ratio.den;
 
-    ff_scale_adjust_dimensions(inlink, &ctx->width, &ctx->height,
-                               ctx->force_original_aspect_ratio, ctx->force_divisible_by, w_adj);
+    err = ff_scale_adjust_dimensions(inlink, &ctx->width, &ctx->height,
+                                     ctx->force_original_aspect_ratio,
+                                     ctx->force_divisible_by, w_adj);
+    if (err < 0)
+        return err;
 
     av_buffer_unref(&ctx->amf_device_ref);
     av_buffer_unref(&ctx->hwframes_in_ref);
@@ -392,8 +400,7 @@ AVFrame *amf_amfsurface_to_avframe(AVFilterContext *avctx, AMFSurface* pSurface)
             int ret = av_hwframe_get_buffer(ctx->hwframes_out_ref, frame, 0);
             if (ret < 0) {
                 av_log(avctx, AV_LOG_ERROR, "Get hw frame failed.\n");
-                av_frame_free(&frame);
-                return NULL;
+                goto fail;
             }
             frame->data[0] = (uint8_t *)pSurface;
             frame->buf[1] = av_buffer_create((uint8_t *)pSurface, sizeof(AMFSurface),
@@ -402,7 +409,7 @@ AVFrame *amf_amfsurface_to_avframe(AVFilterContext *avctx, AMFSurface* pSurface)
                                             AV_BUFFER_FLAG_READONLY);
         } else { // FIXME: add processing of other hw formats
             av_log(ctx, AV_LOG_ERROR, "Unknown pixel format\n");
-            return NULL;
+            goto fail;
         }
     } else {
 
@@ -440,18 +447,23 @@ AVFrame *amf_amfsurface_to_avframe(AVFilterContext *avctx, AMFSurface* pSurface)
         default:
             {
                 av_log(avctx, AV_LOG_ERROR, "Unsupported memory type : %d\n", pSurface->pVtbl->GetMemoryType(pSurface));
-                return NULL;
+                goto fail;
             }
         }
     }
 
+
     return frame;
+fail:
+    av_frame_free(&frame);
+    return NULL;
 }
 
 int amf_avframe_to_amfsurface(AVFilterContext *avctx, const AVFrame *frame, AMFSurface** ppSurface)
 {
     AMFVariantStruct var = { 0 };
     AMFFilterContext *ctx = avctx->priv;
+    AMFBuffer  *hdrmeta_buffer = NULL;
     AMFSurface *surface;
     AMF_RESULT  res;
     int hw_surface = 0;
@@ -541,7 +553,6 @@ int amf_avframe_to_amfsurface(AVFilterContext *avctx, const AVFrame *frame, AMFS
     }
 
     if (ctx->in_trc == AMF_COLOR_TRANSFER_CHARACTERISTIC_SMPTE2084 && (ctx->master_display || ctx->light_meta)) {
-        AMFBuffer *hdrmeta_buffer = NULL;
         res = ctx->amf_device_ctx->context->pVtbl->AllocBuffer(ctx->amf_device_ctx->context, AMF_MEMORY_HOST, sizeof(AMFHDRMetadata), &hdrmeta_buffer);
         if (res == AMF_OK) {
             AMFHDRMetadata *hdrmeta = (AMFHDRMetadata*)hdrmeta_buffer->pVtbl->GetNative(hdrmeta_buffer);
@@ -553,16 +564,19 @@ int amf_avframe_to_amfsurface(AVFilterContext *avctx, const AVFrame *frame, AMFS
     } else if (frame->color_trc == AVCOL_TRC_SMPTE2084) {
         res = surface->pVtbl->GetProperty(surface, AMF_VIDEO_DECODER_HDR_METADATA, &var);
         if (res == AMF_NOT_FOUND) {
-            AMFBuffer *hdrmeta_buffer = NULL;
             res = ctx->amf_device_ctx->context->pVtbl->AllocBuffer(ctx->amf_device_ctx->context, AMF_MEMORY_HOST, sizeof(AMFHDRMetadata), &hdrmeta_buffer);
             if (res == AMF_OK) {
                 AMFHDRMetadata *hdrmeta = (AMFHDRMetadata*)hdrmeta_buffer->pVtbl->GetNative(hdrmeta_buffer);
 
                 if (av_amf_extract_hdr_metadata(frame, hdrmeta) == 0)
                     AMF_ASSIGN_PROPERTY_INTERFACE(res, surface, AMF_VIDEO_DECODER_HDR_METADATA, hdrmeta_buffer);
-                hdrmeta_buffer->pVtbl->Release(hdrmeta_buffer);
             }
         }
+    }
+
+    if (hdrmeta_buffer) {
+        hdrmeta_buffer->pVtbl->Release(hdrmeta_buffer);
+        hdrmeta_buffer = NULL;
     }
 
     if (frame->crop_left || frame->crop_right || frame->crop_top || frame->crop_bottom) {

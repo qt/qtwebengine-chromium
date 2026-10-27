@@ -25,26 +25,27 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/Instance.h"
+#include "src/dawn/native/Instance.h"
 
 #include <utility>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/FutureUtils.h"
-#include "dawn/common/GPUInfo.h"
-#include "dawn/common/Log.h"
-#include "dawn/common/StringViewUtils.h"
-#include "dawn/common/SystemUtils.h"
-#include "dawn/common/WGSLFeatureMapping.h"
-#include "dawn/native/CallbackTaskManager.h"
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/Device.h"
-#include "dawn/native/ErrorData.h"
-#include "dawn/native/Surface.h"
-#include "dawn/native/Toggles.h"
 #include "dawn/native/ValidationUtils_autogen.h"
 #include "dawn/platform/DawnPlatform.h"
 #include "partition_alloc/pointers/raw_ptr.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/FutureUtils.h"
+#include "src/dawn/common/GPUInfo.h"
+#include "src/dawn/common/Log.h"
+#include "src/dawn/common/StringViewUtils.h"
+#include "src/dawn/common/SystemUtils.h"
+#include "src/dawn/common/WGSLFeatureMapping.h"
+#include "src/dawn/native/CallbackTaskManager.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/Device.h"
+#include "src/dawn/native/ErrorData.h"
+#include "src/dawn/native/Surface.h"
+#include "src/dawn/native/Toggles.h"
+#include "src/utils/compiler.h"
 
 // For SwiftShader fallback
 #if defined(DAWN_ENABLE_BACKEND_VULKAN)
@@ -53,8 +54,8 @@
 
 #if defined(DAWN_ENABLE_BACKEND_D3D11) || defined(DAWN_ENABLE_BACKEND_D3D12)
 #include "dawn/native/D3DBackend.h"
-#include "dawn/native/d3d/BackendD3D.h"
-#include "dawn/native/d3d/D3DError.h"
+#include "src/dawn/native/d3d/BackendD3D.h"
+#include "src/dawn/native/d3d/D3DError.h"
 #endif  // defined(DAWN_ENABLE_BACKEND_D3D11) || defined(DAWN_ENABLE_BACKEND_D3D12)
 
 #if defined(DAWN_ENABLE_BACKEND_OPENGL)
@@ -62,7 +63,7 @@
 #endif  // defined(DAWN_ENABLE_BACKEND_OPENGL)
 
 #if defined(DAWN_USE_X11)
-#include "dawn/native/X11Functions.h"
+#include "src/dawn/native/X11Functions.h"
 #endif  // defined(DAWN_USE_X11)
 
 namespace dawn::native {
@@ -145,13 +146,53 @@ static constexpr WGPULoggingCallbackInfo kDefaultLoggingCallbackInfo = {
 
 }  // anonymous namespace
 
+// Instance default limits.
+#define INSTANCE_LIMITS(X)                    \
+    /* class   name                  limit */ \
+    X(Maximum, timedWaitAnyMaxCount, kTimedWaitAnyMaxCountDefault)
+
+void GetDefaultLimits(InstanceLimits* limits) {
+    DAWN_ASSERT(limits != nullptr);
+#define X(Class, limitName, limitValue) limits->limitName = limitValue;
+    INSTANCE_LIMITS(X)
+#undef X
+}
+
+InstanceLimits ReifyDefaultLimits(const InstanceLimits& limits) {
+    InstanceLimits out;
+#define X(Class, limitName, limitValue)                                                  \
+    {                                                                                    \
+        const auto defaultLimit = static_cast<decltype(limits.limitName)>(limitValue);   \
+        if (detail::CheckLimit<detail::LimitClass::Class>::IsBetter(defaultLimit,        \
+                                                                    limits.limitName)) { \
+            /* If the limit is undefined or the default is better, use the default */    \
+            out.limitName = defaultLimit;                                                \
+        } else {                                                                         \
+            out.limitName = limits.limitName;                                            \
+        }                                                                                \
+    }
+    INSTANCE_LIMITS(X)
+#undef X
+    return out;
+}
+
+MaybeError ValidateLimits(const InstanceLimits& requiredLimits) {
+#define X(Class, limitName, supportedLimitValue)                              \
+    DAWN_TRY_CONTEXT(detail::CheckLimit<detail::LimitClass::Class>::Validate( \
+                         supportedLimitValue, requiredLimits.limitName),      \
+                     "validating " #limitName);
+    INSTANCE_LIMITS(X)
+#undef X
+
+    return {};
+}
+
 wgpu::Status APIGetInstanceLimits(InstanceLimits* limits) {
     DAWN_ASSERT(limits != nullptr);
     if (limits->nextInChain != nullptr) {
         return wgpu::Status::Error;
     }
-
-    limits->timedWaitAnyMaxCount = kTimedWaitAnyMaxCountDefault;
+    GetDefaultLimits(limits);
     return wgpu::Status::Success;
 }
 
@@ -187,7 +228,7 @@ InstanceBase* APICreateInstance(const InstanceDescriptor* descriptor) {
 // InstanceBase
 
 struct InstanceBase::DeprecationWarnings {
-    absl::flat_hash_set<std::string> emitted;
+    absl::flat_hash_set<std::string> emitted = {};
     uint64_t count = 0;
 };
 
@@ -259,7 +300,8 @@ MaybeError InstanceBase::Initialize(const UnpackedPtr<InstanceDescriptor>& descr
     // Process DawnInstanceDescriptor
     if (const auto* dawnDesc = descriptor.Get<DawnInstanceDescriptor>()) {
         for (uint32_t i = 0; i < dawnDesc->additionalRuntimeSearchPathsCount; ++i) {
-            mRuntimeSearchPaths.push_back(dawnDesc->additionalRuntimeSearchPaths[i]);
+            mRuntimeSearchPaths.push_back(
+                DAWN_UNSAFE_TODO(dawnDesc->additionalRuntimeSearchPaths[i]));
         }
         SetPlatform(dawnDesc->platform);
 
@@ -287,8 +329,14 @@ MaybeError InstanceBase::Initialize(const UnpackedPtr<InstanceDescriptor>& descr
         mInstanceFeatures = {features.begin(), features.end()};
     }
 
+    if (descriptor->requiredLimits != nullptr) {
+        mLimits = ReifyDefaultLimits(*(descriptor->requiredLimits));
+    } else {
+        GetDefaultLimits(&mLimits);
+    }
+    DAWN_TRY(ValidateLimits(mLimits));
+
     mCallbackTaskManager = AcquireRef(new CallbackTaskManager());
-    DAWN_TRY(mEventManager.Initialize(descriptor));
     GatherWGSLFeatures(descriptor.Get<DawnWGSLBlocklist>());
 
     return {};
@@ -388,7 +436,7 @@ std::vector<Ref<AdapterBase>> InstanceBase::EnumerateAdapters(
 
     std::vector<Ref<AdapterBase>> adapters;
     for (const auto& physicalDevice : EnumeratePhysicalDevices(unpacked)) {
-        DAWN_ASSERT(physicalDevice->SupportsFeatureLevel(unpacked->featureLevel, this));
+        DAWN_CHECK(physicalDevice->SupportsFeatureLevel(unpacked->featureLevel, this));
         adapters.push_back(CreateAdapter(physicalDevice, unpacked->featureLevel, togglesDesc,
                                          unpacked->powerPreference));
     }
@@ -410,8 +458,8 @@ BackendConnection* InstanceBase::GetBackendConnection(wgpu::BackendType backendT
 
     auto Register = [this](BackendConnection* connection, wgpu::BackendType expectedType) {
         if (connection != nullptr) {
-            DAWN_ASSERT(connection->GetType() == expectedType);
-            DAWN_ASSERT(connection->GetInstance() == this);
+            DAWN_CHECK(connection->GetType() == expectedType);
+            DAWN_CHECK(connection->GetInstance() == this);
             mBackends[connection->GetType()] = std::unique_ptr<BackendConnection>(connection);
         }
     };
@@ -476,7 +524,7 @@ BackendConnection* InstanceBase::GetBackendConnection(wgpu::BackendType backendT
 
 std::vector<Ref<PhysicalDeviceBase>> InstanceBase::EnumeratePhysicalDevices(
     const UnpackedPtr<RequestAdapterOptions>& options) {
-    DAWN_ASSERT(options);
+    DAWN_CHECK(options);
 
     BackendsBitset backendsToFind;
     if (options.Has<RequestAdapterWebGPUBackendOptions>()) {
@@ -621,7 +669,24 @@ void InstanceBase::APIProcessEvents() {
 wgpu::WaitStatus InstanceBase::APIWaitAny(size_t count,
                                           FutureWaitInfo* futures,
                                           uint64_t timeoutNS) {
-    return mEventManager.WaitAny(count, futures, Nanoseconds(timeoutNS));
+    if (timeoutNS > 0) {
+        if (!HasFeature(wgpu::InstanceFeatureName::TimedWaitAny)) {
+            EmitLog(WGPULoggingType_Error,
+                    "Timeout waits are either not enabled or not supported.");
+            return wgpu::WaitStatus::Error;
+        }
+        if (count > mLimits.timedWaitAnyMaxCount) {
+            EmitLog(WGPULoggingType_Error,
+                    absl::StrFormat("Number of futures to wait on (%d) exceeds maximum (%d).",
+                                    count, mLimits.timedWaitAnyMaxCount));
+            return wgpu::WaitStatus::Error;
+        }
+    }
+    if (count == 0) {
+        return wgpu::WaitStatus::Success;
+    }
+    auto waitInfos = std::span(futures, count);
+    return mEventManager.WaitAny(waitInfos, Nanoseconds(timeoutNS));
 }
 
 const std::vector<std::string>& InstanceBase::GetRuntimeSearchPaths() const {
@@ -716,7 +781,7 @@ void InstanceBase::GatherWGSLFeatures(const DawnWGSLBlocklist* wgslBlocklist) {
     // Remove blocklisted features.
     if (wgslBlocklist != nullptr) {
         for (size_t i = 0; i < wgslBlocklist->blocklistedFeatureCount; i++) {
-            const char* name = wgslBlocklist->blocklistedFeatures[i];
+            const char* name = DAWN_UNSAFE_TODO(wgslBlocklist->blocklistedFeatures[i]);
             tint::wgsl::LanguageFeature tintFeature = tint::wgsl::ParseLanguageFeature(name);
             if (tintFeature == tint::wgsl::LanguageFeature::kUndefined) {
                 // Ignore unknown features in the blocklist.
@@ -739,9 +804,9 @@ void InstanceBase::APIGetWGSLLanguageFeatures(SupportedWGSLLanguageFeatures* fea
     wgpu::WGSLLanguageFeatureName* wgslFeatures = new wgpu::WGSLLanguageFeatureName[featureCount];
     uint32_t index = 0;
     for (wgpu::WGSLLanguageFeatureName feature : mWGSLFeatures) {
-        wgslFeatures[index++] = feature;
+        DAWN_UNSAFE_TODO(wgslFeatures[index++]) = feature;
     }
-    DAWN_ASSERT(index == featureCount);
+    DAWN_CHECK(index == featureCount);
 
     features->featureCount = featureCount;
     features->features = wgslFeatures;

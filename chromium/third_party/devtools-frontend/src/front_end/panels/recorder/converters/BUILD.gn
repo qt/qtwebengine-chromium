@@ -18,7 +18,6 @@ devtools_ui_module("converters") {
   ]
 
   deps = [
-    "../../../core/common:bundle",
     "../../../third_party/puppeteer-replay:bundle",
     "../extensions:bundle",
     "../models:bundle",

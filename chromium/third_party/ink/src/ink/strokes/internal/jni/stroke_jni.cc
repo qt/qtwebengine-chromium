@@ -14,27 +14,28 @@
 
 #include <jni.h>
 
-#include "ink/brush/brush.h"
-#include "ink/brush/internal/jni/brush_jni_helper.h"
-#include "ink/geometry/internal/jni/partitioned_mesh_jni_helper.h"
-#include "ink/geometry/partitioned_mesh.h"
+#include <cstddef>
+#include <vector>
+
+#include "ink/brush/internal/jni/brush_native_helper.h"
+#include "ink/geometry/affine_transform.h"
+#include "ink/geometry/internal/jni/partitioned_mesh_native_helper.h"
 #include "ink/jni/internal/jni_defines.h"
-#include "ink/strokes/input/stroke_input_batch.h"
-#include "ink/strokes/internal/jni/stroke_input_jni_helper.h"
+#include "ink/strokes/internal/jni/stroke_input_batch_native_helper.h"
 #include "ink/strokes/internal/jni/stroke_jni_helper.h"
 #include "ink/strokes/stroke.h"
 
 namespace {
 
 using ::ink::Stroke;
-using ::ink::jni::CastToBrush;
-using ::ink::jni::CastToPartitionedMesh;
 using ::ink::jni::CastToStroke;
-using ::ink::jni::CastToStrokeInputBatch;
 using ::ink::jni::DeleteNativeStroke;
-using ::ink::jni::NewNativePartitionedMesh;
 using ::ink::jni::NewNativeStroke;
-using ::ink::jni::NewNativeStrokeInputBatch;
+using ::ink::native::CastToBrush;
+using ::ink::native::CastToPartitionedMesh;
+using ::ink::native::CastToStrokeInputBatch;
+using ::ink::native::NewNativePartitionedMesh;
+using ::ink::native::NewNativeStrokeInputBatch;
 
 }  // namespace
 
@@ -82,6 +83,30 @@ JNI_METHOD(strokes, StrokeNative, jlong, newShallowCopyOfShape)
 JNI_METHOD(strokes, StrokeNative, void, free)
 (JNIEnv* env, jobject object, jlong native_pointer_to_stroke) {
   DeleteNativeStroke(native_pointer_to_stroke);
+}
+
+JNI_METHOD(strokes, StrokeNative, jlongArray, partialErase)
+(JNIEnv* env, jobject object, jlong target_stroke_ptr, jlong eraser_shape_ptr,
+ jfloat eraser_a, jfloat eraser_b, jfloat eraser_c, jfloat eraser_d,
+ jfloat eraser_e, jfloat eraser_f, jfloat stroke_a, jfloat stroke_b,
+ jfloat stroke_c, jfloat stroke_d, jfloat stroke_e, jfloat stroke_f) {
+  ink::AffineTransform eraser_transform(eraser_a, eraser_b, eraser_c, eraser_d,
+                                        eraser_e, eraser_f);
+  ink::AffineTransform stroke_transform(stroke_a, stroke_b, stroke_c, stroke_d,
+                                        stroke_e, stroke_f);
+
+  std::vector<ink::Stroke> fragments =
+      CastToStroke(target_stroke_ptr)
+          .PartialErase(CastToPartitionedMesh(eraser_shape_ptr),
+                        eraser_transform, stroke_transform);
+
+  jlongArray result = env->NewLongArray(fragments.size());
+  jlong* elements = env->GetLongArrayElements(result, nullptr);
+  for (size_t i = 0; i < fragments.size(); ++i) {
+    elements[i] = NewNativeStroke(fragments[i]);
+  }
+  env->ReleaseLongArrayElements(result, elements, 0);
+  return result;
 }
 
 }  // extern "C"

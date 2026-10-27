@@ -41,6 +41,7 @@ openscreen_source_set("util") {
     "json/json_helpers.h",
     "json/json_serialization.h",
     "json/json_value.h",
+    "no_destructor.h",
     "osp_logging.h",
     "read_file.h",
     "saturate_cast.h",
@@ -50,6 +51,7 @@ openscreen_source_set("util") {
     "string_util.h",
     "stringprintf.h",
     "trace_logging.h",
+    "thread_annotations.h",
     "uuid.h",
     "weak_ptr.h",
   ]
@@ -152,8 +154,4 @@ openscreen_source_set("unittests") {
     "../third_party/googletest:gtest",
     "../third_party/jsoncpp",
   ]
-
-  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
-  # enable the diagnostic by removing this line.
-  configs = [ "//build/config/compiler:no_exit_time_destructors" ]
 }

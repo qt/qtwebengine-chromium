@@ -720,6 +720,54 @@ GLenum ConvertImageAccessToGLImageLayout(vk::Renderer *renderer, vk::ImageAccess
     UNREACHABLE();
     return GL_NONE;
 }
+
+class [[nodiscard]] SaveLoadStorePerfCounters
+{
+  public:
+    SaveLoadStorePerfCounters(ContextVk *contextVk)
+    {
+        mPerfCounters        = &contextVk->getPerfCounters();
+        renderPassCount      = mPerfCounters->renderPasses;
+        depthLoadOpClears    = mPerfCounters->depthLoadOpClears;
+        depthLoadOpLoads     = mPerfCounters->depthLoadOpLoads;
+        depthLoadOpNones     = mPerfCounters->depthLoadOpNones;
+        depthStoreOpStores   = mPerfCounters->depthStoreOpStores;
+        stencilLoadOpClears  = mPerfCounters->stencilLoadOpClears;
+        stencilLoadOpLoads   = mPerfCounters->stencilLoadOpLoads;
+        stencilLoadOpNones   = mPerfCounters->stencilLoadOpNones;
+        stencilStoreOpStores = mPerfCounters->stencilStoreOpStores;
+        depthStoreOpNones    = mPerfCounters->depthStoreOpNones;
+        stencilStoreOpNones  = mPerfCounters->stencilStoreOpNones;
+    }
+    ~SaveLoadStorePerfCounters()
+    {
+        mPerfCounters->renderPasses         = renderPassCount;
+        mPerfCounters->depthLoadOpClears    = depthLoadOpClears;
+        mPerfCounters->depthLoadOpLoads     = depthLoadOpLoads;
+        mPerfCounters->depthLoadOpNones     = depthLoadOpNones;
+        mPerfCounters->depthStoreOpStores   = depthStoreOpStores;
+        mPerfCounters->stencilLoadOpClears  = stencilLoadOpClears;
+        mPerfCounters->stencilLoadOpLoads   = stencilLoadOpLoads;
+        mPerfCounters->stencilLoadOpNones   = stencilLoadOpNones;
+        mPerfCounters->stencilStoreOpStores = stencilStoreOpStores;
+        mPerfCounters->depthStoreOpNones    = depthStoreOpNones;
+        mPerfCounters->stencilStoreOpNones  = stencilStoreOpNones;
+    }
+
+  private:
+    angle::VulkanPerfCounters *mPerfCounters;
+    uint64_t renderPassCount;
+    uint64_t depthLoadOpClears;
+    uint64_t depthLoadOpLoads;
+    uint64_t depthLoadOpNones;
+    uint64_t depthStoreOpStores;
+    uint64_t stencilLoadOpClears;
+    uint64_t stencilLoadOpLoads;
+    uint64_t stencilLoadOpNones;
+    uint64_t stencilStoreOpStores;
+    uint64_t depthStoreOpNones;
+    uint64_t stencilStoreOpNones;
+};
 }  // anonymous namespace
 
 void ContextVk::flushDescriptorSetUpdates()
@@ -780,7 +828,7 @@ ContextVk::ContextVk(const gl::State &state, gl::ErrorSet *errorSet, vk::Rendere
       mFlipViewportForDrawFramebuffer(false),
       mFlipViewportForReadFramebuffer(false),
       mIsAnyHostVisibleBufferWritten(false),
-      mDefaultAttribsGeneration(mDefaultAttribsGenerationFactory.generate()),
+      mImageWithTileMemory(nullptr),
       mCurrentQueueSerialIndex(kInvalidQueueSerialIndex),
       mInitialContextPriority(renderer->getDriverPriority(GetContextPriority(state))),
       mCommandState(renderer,
@@ -1163,7 +1211,7 @@ void ContextVk::onDestroy(const gl::Context *context)
 {
     VkDevice device = getDevice();
 
-    ASSERT(mImagesWithTileMemory.empty());
+    ASSERT(mImageWithTileMemory == nullptr);
 
     mCommandState.destroy(device);
 
@@ -1374,11 +1422,6 @@ angle::Result ContextVk::initialize(const angle::ImageLoadContext &imageLoadCont
         }
     }
 
-    if (getFeatures().supportsTileMemoryHeap.enabled)
-    {
-        mImagesWithTileMemory.reserve(4);
-    }
-
     return angle::Result::Continue;
 }
 
@@ -1518,12 +1561,19 @@ angle::Result ContextVk::setupDraw(const gl::Context *context,
     {
         updateTopology(mode);
     }
+    if (mGraphicsDriverUniforms.updateBaseInstance(baseInstance))
+    {
+        mGraphicsDirtyBits.set(DIRTY_BIT_DRIVER_UNIFORMS);
+    }
 
-    // Submit pending commands if the number of write-commands in the current render pass reaches a
-    // threshold to avoid delaying the submission too much.
+    // Avoid potential tile memory fallback since we can't handle framebuffer change here. Luckily
+    // this will only possible in simulated mode since on qualcomm
+    // getMinRenderPassWriteCommandCountToEarlySubmit is set to UINT32_MAX. Submit pending commands
+    // if the number of write-commands in the current render pass reaches a threshold to avoid
+    // delaying the submission too much.
     if (ANGLE_UNLIKELY(mRenderPassCommands->getCommandBuffer().getRenderPassWriteCommandCount() >
                        mRenderer->getMinRenderPassWriteCommandCountToEarlySubmit()) &&
-        (mCommandsPendingSubmissionCount > 0))
+        mCommandsPendingSubmissionCount > 0 && mImageWithTileMemory == nullptr)
     {
         ANGLE_TRY(
             submitCommands(nullptr, nullptr, QueueSubmitReason::RenderPassCommandLimitReached));
@@ -1660,32 +1710,37 @@ angle::Result ContextVk::setupIndexedDraw(const gl::Context *context,
             vertexArrayVk->updateCurrentElementArrayBuffer();
         }
 
-        if (shouldConvertUint8VkIndexType(indexType) && mGraphicsDirtyBits[DIRTY_BIT_INDEX_BUFFER])
+        if (shouldConvertUint8VkIndexType(indexType))
         {
-            ANGLE_VK_PERF_WARNING(this, GL_DEBUG_SEVERITY_LOW,
-                                  "Potential inefficiency emulating uint8 vertex attributes due to "
-                                  "lack of hardware support");
-
-            BufferVk *bufferVk             = vk::GetImpl(elementArrayBuffer);
-            vk::BufferHelper &bufferHelper = bufferVk->getBuffer();
-
-            if (bufferHelper.isHostVisible() &&
-                mRenderer->hasResourceUseFinished(bufferHelper.getResourceUse()))
+            if (mGraphicsDirtyBits[DIRTY_BIT_INDEX_BUFFER])
             {
-                uint8_t *src = nullptr;
-                ANGLE_TRY(bufferVk->mapForReadAccessOnly(this, reinterpret_cast<void **>(&src)));
-                // Note: bufferOffset is not added here because mapImpl already adds it.
-                src += reinterpret_cast<uintptr_t>(indices);
-                const size_t byteCount = static_cast<size_t>(elementArrayBuffer->getSize()) -
-                                         reinterpret_cast<uintptr_t>(indices);
-                BufferBindingDirty bindingDirty;
-                ANGLE_TRY(vertexArrayVk->convertIndexBufferCPU(this, indexType, byteCount, src,
-                                                               &bindingDirty));
-                ANGLE_TRY(bufferVk->unmapReadAccessOnly(this));
-            }
-            else
-            {
-                ANGLE_TRY(vertexArrayVk->convertIndexBufferGPU(this, bufferVk, indices));
+                ANGLE_VK_PERF_WARNING(
+                    this, GL_DEBUG_SEVERITY_LOW,
+                    "Potential inefficiency emulating uint8 vertex attributes due to "
+                    "lack of hardware support");
+
+                BufferVk *bufferVk             = vk::GetImpl(elementArrayBuffer);
+                vk::BufferHelper &bufferHelper = bufferVk->getBuffer();
+
+                if (bufferHelper.isHostVisible() &&
+                    mRenderer->hasResourceUseFinished(bufferHelper.getResourceUse()))
+                {
+                    uint8_t *src = nullptr;
+                    ANGLE_TRY(
+                        bufferVk->mapForReadAccessOnly(this, reinterpret_cast<void **>(&src)));
+                    // Note: bufferOffset is not added here because mapImpl already adds it.
+                    src += reinterpret_cast<uintptr_t>(indices);
+                    const size_t byteCount = static_cast<size_t>(elementArrayBuffer->getSize()) -
+                                             reinterpret_cast<uintptr_t>(indices);
+                    BufferBindingDirty bindingDirty;
+                    ANGLE_TRY(vertexArrayVk->convertIndexBufferCPU(this, indexType, byteCount, src,
+                                                                   &bindingDirty));
+                    ANGLE_TRY(bufferVk->unmapReadAccessOnly(this));
+                }
+                else
+                {
+                    ANGLE_TRY(vertexArrayVk->convertIndexBufferGPU(this, bufferVk, indices));
+                }
             }
 
             mCurrentIndexBufferOffset = 0;
@@ -2084,25 +2139,11 @@ angle::Result ContextVk::handleDirtyGraphicsDefaultAttribs(DirtyBits::Iterator *
 {
     VertexArrayVk *vertexArrayVk = getVertexArray();
 
-    gl::AttributesMask attribsMask;
-    if (vertexArrayVk->getDefaultAttribsGeneration() != mDefaultAttribsGeneration)
-    {
-        vertexArrayVk->setDefaultAttribsGeneration(mDefaultAttribsGeneration);
-        attribsMask = ~vertexArrayVk->getCurrentEnabledAttribsMask();
-    }
-    else
-    {
-        attribsMask = mDirtyDefaultAttribsMask;
-        attribsMask &= ~vertexArrayVk->getCurrentEnabledAttribsMask();
-        attribsMask &= mState.getProgramExecutable()->getAttributesMask();
-    }
+    mDirtyDefaultAttribsMask &= ~vertexArrayVk->getCurrentEnabledAttribsMask();
+    mDirtyDefaultAttribsMask &= mState.getProgramExecutable()->getAttributesMask();
 
-    for (size_t attribIndex : attribsMask)
-    {
-        ANGLE_TRY(vertexArrayVk->updateDefaultAttrib(this, attribIndex));
-    }
-
-    ANGLE_TRY(onVertexArrayChange(attribsMask));
+    ANGLE_TRY(vertexArrayVk->updateDefaultAttribs(this, mDirtyDefaultAttribsMask));
+    ANGLE_TRY(onVertexArrayChange(mDirtyDefaultAttribsMask));
 
     mDirtyDefaultAttribsMask.reset();
     return angle::Result::Continue;
@@ -2346,7 +2387,7 @@ angle::Result ContextVk::handleDirtyAnySamplePassedQueryEnd(DirtyBits::Iterator 
                                                             DirtyBits dirtyBitMask)
 {
     // If we are using tile memory, don't enable this optimization to prevent fallback.
-    if (mRenderPassCommands->started() && mImagesWithTileMemory.empty())
+    if (mRenderPassCommands->started() && mImageWithTileMemory == nullptr)
     {
         // When we switch from query enabled draw to query disabled draw, we do immediate flush to
         // ensure the query result will be ready early so that application thread calling
@@ -2770,6 +2811,21 @@ angle::Result ContextVk::handleDirtyGraphicsVertexBuffersVertexInputDynamicState
         {
             mRenderPassCommandBuffer->bindVertexBuffers2NoSize(
                 0, maxAttrib, bufferHandles.data(), bufferOffsets.data(), strides.data());
+        }
+    }
+    else if (getFeatures().supportsBindVertexBuffers2.enabled)
+    {
+        if (mUseSizePointerForBindingVertexBuffers)
+        {
+            const gl::AttribArray<VkDeviceSize> &bufferSizes =
+                vertexArrayVk->getCurrentArrayBufferSizes();
+            mRenderPassCommandBuffer->bindVertexBuffers2NoStride(
+                0, maxAttrib, bufferHandles.data(), bufferOffsets.data(), bufferSizes.data());
+        }
+        else
+        {
+            mRenderPassCommandBuffer->bindVertexBuffers2NoSizeNoStride(
+                0, maxAttrib, bufferHandles.data(), bufferOffsets.data());
         }
     }
     else
@@ -3751,9 +3807,26 @@ angle::Result ContextVk::submitCommands(const vk::Semaphore *signalSemaphore,
         mCommandState.flushImagesTransitionToForeign(std::move(mImagesToTransitionToForeign));
     }
 
-    if (!mImagesWithTileMemory.empty())
+    if (mImageWithTileMemory != nullptr)
     {
-        ANGLE_TRY(finalizeImagesWithTileMemory());
+        // submitCommands may get called from a draw call (for example, Texture::syncState). The
+        // Framebuffer::syncState will not get called for current draw call since
+        // State::syncDirtyObjects already took the dirty bits. Here we try to detect that current
+        // drawFBO is getting affected and invalidate cached object in FramebufferVk so that they
+        // could get recreated. We have to do this detection logic before fallback since fallback
+        // will clear mImageWithTileMemory pointer.
+        const vk::ImageHelper *drawFBOImageWithTileMemory =
+            mState.getDrawFramebuffer() != nullptr ? getDrawFramebuffer()->getImageWithTileMemory()
+                                                   : nullptr;
+        const bool drawFBOImageFallbackFromTileMemory =
+            drawFBOImageWithTileMemory && drawFBOImageWithTileMemory == mImageWithTileMemory;
+
+        ANGLE_TRY(finalizeImageWithTileMemory());
+
+        if (drawFBOImageFallbackFromTileMemory)
+        {
+            getDrawFramebuffer()->onTileMemoryFallback(this);
+        }
     }
 
     ANGLE_TRY(mCommandState.insertSubmitDebugMarker(this, reason));
@@ -3808,7 +3881,7 @@ angle::Result ContextVk::onCopyUpdate(VkDeviceSize size, bool *commandBufferWasF
     // If the copy size exceeds the specified threshold, submit the outside command buffer. When
     // there are images with tile memory in use, avoid submission by trying to avoid triggering tile
     // memory fallback.
-    if (mTotalBufferToImageCopySize >= kMaxBufferToImageCopySize && mImagesWithTileMemory.empty())
+    if (mTotalBufferToImageCopySize >= kMaxBufferToImageCopySize && mImageWithTileMemory == nullptr)
     {
         ANGLE_TRY(flushAndSubmitOutsideRenderPassCommands(
             QueueSubmitReason::BufferToImageUpdateLimitReached));
@@ -3846,16 +3919,6 @@ void ContextVk::clearAllGarbage()
         garbage.destroy(mRenderer);
     }
     mCurrentGarbage.clear();
-}
-
-void ContextVk::handleDeviceLost()
-{
-    vk::SecondaryCommandBufferCollector collector;
-    (void)mOutsideRenderPassCommands->reset(this, &collector);
-    (void)mRenderPassCommands->reset(this, &collector);
-    collector.releaseCommandBuffers();
-
-    mRenderer->notifyDeviceLost();
 }
 
 angle::Result ContextVk::drawArrays(const gl::Context *context,
@@ -5214,8 +5277,6 @@ void ContextVk::updateDither()
     {
         mGraphicsPipelineDesc->updateEmulatedDitherControl(&mGraphicsPipelineTransition,
                                                            ditherControl);
-        mGraphicsDriverUniforms.updateEmulatedDitherControl(ditherControl);
-        mGraphicsDirtyBits.set(DIRTY_BIT_DRIVER_UNIFORMS);
         invalidateCurrentGraphicsPipeline();
     }
 }
@@ -5278,7 +5339,7 @@ angle::Result ContextVk::invalidateProgramExecutableHelper(const gl::Context *co
             // sets |mCurrentGraphicsPipeline| to nullptr.
             mGraphicsPipelineDesc->setRenderPassFramebufferFetchMode(framebufferFetchMode);
 
-            if (framebufferFetchMode != vk::FramebufferFetchMode::None)
+            if (hasColorFramebufferFetch)
             {
                 onFramebufferFetchUse(framebufferFetchMode);
             }
@@ -5631,7 +5692,7 @@ angle::Result ContextVk::syncState(const gl::Context *context,
 
                 // If we are using tile memory, don't enable this optimization to prevent fallback.
                 if ((shouldSubmitAtFBOBoundary || mState.getDrawFramebuffer()->isDefault()) &&
-                    mRenderPassCommands->started() && mImagesWithTileMemory.empty())
+                    mRenderPassCommands->started() && mImageWithTileMemory == nullptr)
                 {
                     // This will behave as if user called glFlush, but the actual flush will be
                     // triggered at endRenderPass time.
@@ -5698,13 +5759,14 @@ angle::Result ContextVk::syncState(const gl::Context *context,
                 break;
             case gl::state::DIRTY_BIT_VERTEX_ARRAY_BINDING:
             {
-                if (vertexArrayVk->getDefaultAttribsGeneration() != mDefaultAttribsGeneration)
-                {
-                    mGraphicsDirtyBits.set(DIRTY_BIT_DEFAULT_ATTRIBS);
-                }
+                gl::AttributesMask staleDefaultAttribsMask =
+                    vertexArrayVk->getCurrentDefaultAttribsMask() &
+                    ~programExecutable->getAttributesMask();
+                vertexArrayVk->syncDirtyDisabledAttribs(this, staleDefaultAttribsMask);
                 invalidateDefaultAttributes(context->getActiveDefaultAttribsMask());
                 ANGLE_TRY(onVertexArrayChange(vertexArrayVk->getCurrentEnabledAttribsMask()));
                 ANGLE_TRY(onIndexBufferChange(vertexArrayVk->getCurrentElementArrayBuffer()));
+                vertexArrayVk->resetInactiveStreamedAttribs(context);
                 break;
             }
             case gl::state::DIRTY_BIT_DRAW_INDIRECT_BUFFER_BINDING:
@@ -6427,6 +6489,14 @@ angle::Result ContextVk::onFramebufferChange(FramebufferVk *framebufferVk, gl::C
     }
 
     onDrawFramebufferRenderPassDescChange(framebufferVk, nullptr);
+
+    if (mGraphicsDriverUniforms.updateflipXY(
+            mCurrentRotationDrawFramebuffer, isViewportFlipEnabledForDrawFBO(),
+            framebufferVk->getSamples(), framebufferVk->getLayerCount() > 1))
+    {
+        mGraphicsDirtyBits.set(DIRTY_BIT_DRIVER_UNIFORMS);
+    }
+
     return angle::Result::Continue;
 }
 
@@ -6950,6 +7020,23 @@ void ContextVk::handleError(VkResult errorCode,
 
     getRenderer()->getMemoryAllocationTracker()->logMemoryStatsOnError();
 
+    // Command buffers maybe left in limbo state, we need to reset them.
+    vk::SecondaryCommandBufferCollector collector;
+    if (!mOutsideRenderPassCommands->empty())
+    {
+        mLastFlushedQueueSerial = mOutsideRenderPassCommands->getQueueSerial();
+        mOutsideRenderPassCommands->abandon(this, &collector);
+    }
+    if (mRenderPassCommands->started())
+    {
+        mLastFlushedQueueSerial = mRenderPassCommands->getQueueSerial();
+        mRenderPassCommands->abandon(this, &collector);
+    }
+    collector.releaseCommandBuffers();
+
+    mOutsideRenderPassSerialFactory.reset();
+    generateOutsideRenderPassCommandsQueueSerial();
+
     if (errorCode == VK_ERROR_DEVICE_LOST)
     {
         VkResult deviceLostInfoErrorCode = getRenderer()->retrieveDeviceLostDetails();
@@ -6962,7 +7049,7 @@ void ContextVk::handleError(VkResult errorCode,
         }
 
         WARN() << errorStream.str();
-        handleDeviceLost();
+        mRenderer->notifyDeviceLost();
     }
 
     mErrors->handleError(glErrorCode, errorStream.str().c_str(), file, function, line);
@@ -7485,6 +7572,21 @@ angle::Result ContextVk::flushAndSubmitCommands(const vk::Semaphore *signalSemap
                                                 const vk::SharedExternalFence *externalFence,
                                                 QueueSubmitReason queueSubmitReason)
 {
+    const angle::Result result =
+        flushAndSubmitCommandsImpl(signalSemaphore, externalFence, queueSubmitReason);
+
+    if (result != angle::Result::Continue)
+    {
+        forgetAllForeignImagesOnError();
+    }
+
+    return result;
+}
+
+angle::Result ContextVk::flushAndSubmitCommandsImpl(const vk::Semaphore *signalSemaphore,
+                                                    const vk::SharedExternalFence *externalFence,
+                                                    QueueSubmitReason queueSubmitReason)
+{
     // Even if render pass does not have any command, we may still need to submit it in case it has
     // CLEAR loadOp.
     bool someCommandsNeedFlush =
@@ -7701,12 +7803,6 @@ angle::Result ContextVk::getTimestamp(uint64_t *timestampOut)
         static_cast<double>(getRenderer()->getPhysicalDeviceProperties().limits.timestampPeriod));
 
     return angle::Result::Continue;
-}
-
-void ContextVk::invalidateDefaultAttribute(size_t attribIndex)
-{
-    mDirtyDefaultAttribsMask.set(attribIndex);
-    mGraphicsDirtyBits.set(DIRTY_BIT_DEFAULT_ATTRIBS);
 }
 
 void ContextVk::invalidateDefaultAttributes(const gl::AttributesMask &dirtyMask)
@@ -7957,6 +8053,28 @@ angle::Result ContextVk::flushCommandsAndEndRenderPass(RenderPassClosureReason r
     ASSERT(!mHasDeferredRenderPassFlush || mRenderPassCommands->started());
 
     ANGLE_TRY(flushCommandsAndEndRenderPassWithoutSubmit(reason));
+
+    // If mImageWithTileMemory does not have any valid data, then there is no worry about data loss
+    // here. Next addImageWithTileMemory will just overwrite the pointer with new pointer.
+    if (mImageWithTileMemory && mImageWithTileMemory->isVkImageContentDefined())
+    {
+        FramebufferVk *drawFramebufferVk = getDrawFramebuffer();
+        const vk::ImageHelper *nextImageWithTileMemory =
+            drawFramebufferVk->getImageWithTileMemory();
+        if (nextImageWithTileMemory && nextImageWithTileMemory != mImageWithTileMemory)
+        {
+            ASSERT(nextImageWithTileMemory->useTileMemory());
+            // Next renderPass also uses image with tileMemory, and it is different from current
+            // mImageWithTileMemory. The vkCmdBindTileMemoryQCOM call of nextImageWithTileMemory
+            // will cause mImageWithTileMemory point to the same memory location. So if
+            // mImageWithTileMemory has valid content, we must fallback to give room for
+            // nextImageWithTileMemory. In theory we could also choose to fallback
+            // nextImageWithTileMemory, but since we know mImageWithTileMemory has valid data, it
+            // likely will eventually fallback anyway. So we choose to fallback mImageWithTileMemory
+            // here.
+            ANGLE_TRY(finalizeImageWithTileMemory());
+        }
+    }
 
     // In some cases, it is recommended to flush and submit the command buffer to boost performance
     // or avoid too much memory allocation.
@@ -8441,6 +8559,7 @@ angle::Result ContextVk::switchToReadOnlyDepthStencilMode(gl::Texture *texture,
         return angle::Result::Continue;
     }
 
+    // Switch to read-only depth or stencil feedback loop if not already
     if (isStencilTexture)
     {
         if (mState.isStencilWriteEnabled(mState.getDrawFramebuffer()->getStencilBitCount()))
@@ -8455,18 +8574,19 @@ angle::Result ContextVk::switchToReadOnlyDepthStencilMode(gl::Texture *texture,
             mDepthStencilAttachmentFlags.set(vk::RenderPassUsage::StencilReadOnlyAttachment);
         }
     }
-
-    // Switch to read-only depth feedback loop if not already
-    if (mState.isDepthWriteEnabled())
+    else
     {
-        // This looks like a feedback loop, but we don't issue a warning because the application
-        // may have correctly used BASE and MAX levels to avoid it.  ANGLE doesn't track that.
-        mDepthStencilAttachmentFlags.set(vk::RenderPassUsage::DepthFeedbackLoop);
-    }
-    else if (!mDepthStencilAttachmentFlags[vk::RenderPassUsage::DepthFeedbackLoop])
-    {
-        // If we are not in the actual feedback loop mode, switch to read-only depth mode
-        mDepthStencilAttachmentFlags.set(vk::RenderPassUsage::DepthReadOnlyAttachment);
+        if (mState.isDepthWriteEnabled())
+        {
+            // This looks like a feedback loop, but we don't issue a warning because the application
+            // may have correctly used BASE and MAX levels to avoid it.  ANGLE doesn't track that.
+            mDepthStencilAttachmentFlags.set(vk::RenderPassUsage::DepthFeedbackLoop);
+        }
+        else if (!mDepthStencilAttachmentFlags[vk::RenderPassUsage::DepthFeedbackLoop])
+        {
+            // If we are not in the actual feedback loop mode, switch to read-only depth mode
+            mDepthStencilAttachmentFlags.set(vk::RenderPassUsage::DepthReadOnlyAttachment);
+        }
     }
 
     if ((mDepthStencilAttachmentFlags & vk::kDepthStencilReadOnlyBits).none())
@@ -8549,7 +8669,7 @@ angle::Result ContextVk::onResourceAccess(const vk::CommandResources &resources)
         vk::ImageHelper *image = writeImage.image.image;
         ASSERT(!isRenderPassStartedAndUsesImage(*image));
 
-        image->recordWriteBarrier(this, writeImage.image.aspectFlags, writeImage.image.imageAccess,
+        image->recordWriteBarrier(this, image->getAspectFlags(), writeImage.image.imageAccess,
                                   writeImage.levelStart, writeImage.levelCount,
                                   writeImage.layerStart, writeImage.layerCount,
                                   mOutsideRenderPassCommands);
@@ -8864,12 +8984,27 @@ void ContextVk::onFramebufferFetchUse(vk::FramebufferFetchMode framebufferFetchM
 
     if (mRenderPassCommands->started())
     {
+        const bool wasFramebufferFetchDisabled =
+            mRenderPassCommands->getRenderPassDesc().framebufferFetchMode() ==
+            vk::FramebufferFetchMode::None;
+
         // Accumulate framebuffer fetch mode to allow multiple draw calls in the same render pass
         // where some use color framebuffer fetch and some depth/stencil
         const vk::FramebufferFetchMode mergedMode = vk::FramebufferFetchModeMerge(
             mRenderPassCommands->getRenderPassDesc().framebufferFetchMode(), framebufferFetchMode);
 
         mRenderPassCommands->setFramebufferFetchMode(mergedMode);
+
+        // If the render pass was already started without framebuffer fetch, prior draws would have
+        // written to the color attachments without rasterization order access enabled on the
+        // pipeline. Some drivers require a manual barrier between these draw calls and do not
+        // synchronize automatically. This is likely a driver bug.
+        if (getFeatures().addFramebufferFetchBarrierOnUseMidRenderPass.enabled &&
+            wasFramebufferFetchDisabled &&
+            mRenderPassCommands->getCommandBuffer().getRenderPassWriteCommandCount() > 0)
+        {
+            mGraphicsDirtyBits.set(DIRTY_BIT_FRAMEBUFFER_FETCH_BARRIER);
+        }
 
         // When framebuffer fetch is enabled, attachments can be read from even if output is
         // masked, so update their access.
@@ -9011,13 +9146,16 @@ angle::Result ContextVk::onVertexArrayChange(const gl::AttributesMask dirtyAttri
 void ContextVk::addImageWithTileMemory(vk::ImageHelper *imageToAdd)
 {
     ASSERT(imageToAdd->useTileMemory());
-    if (std::find(mImagesWithTileMemory.begin(), mImagesWithTileMemory.end(), imageToAdd) !=
-        mImagesWithTileMemory.end())
+    if (mImageWithTileMemory == imageToAdd)
     {
         // Already added.
         return;
     }
 
+    // We can only support one image with tile memory. So if we are overwriting
+    // mImageWithTileMemory, it must not have any valid content. Otherwise it should have triggered
+    // fallback (see ContextVk::startRenderPass).
+    ASSERT(mImageWithTileMemory == nullptr || !mImageWithTileMemory->isVkImageContentDefined());
     // If this is first time added, it must have no valid data
     ASSERT(!imageToAdd->isVkImageContentDefined());
 
@@ -9027,92 +9165,63 @@ void ContextVk::addImageWithTileMemory(vk::ImageHelper *imageToAdd)
             imageToAdd->getDeviceMemory());
     }
 
-    mImagesWithTileMemory.emplace_back(imageToAdd);
+    mImageWithTileMemory = imageToAdd;
 }
 
 void ContextVk::removeImageWithTileMemory(const vk::ImageHelper *imageToRemove)
 {
     ASSERT(imageToRemove->useTileMemory());
-    auto iter =
-        std::find(mImagesWithTileMemory.begin(), mImagesWithTileMemory.end(), imageToRemove);
-    if (iter != mImagesWithTileMemory.end())
+    if (mImageWithTileMemory == imageToRemove)
     {
-        mImagesWithTileMemory.erase(iter);
+        mImageWithTileMemory = nullptr;
     }
 }
 
-bool ContextVk::isImageWithTileMemoryFinalized(const vk::ImageHelper *image) const
+angle::Result ContextVk::finalizeImageWithTileMemory()
 {
-    ASSERT(image->useTileMemory());
-    return std::find(mImagesWithTileMemory.begin(), mImagesWithTileMemory.end(), image) ==
-           mImagesWithTileMemory.end();
-}
+    ASSERT(mImageWithTileMemory != nullptr);
+    // Check image with tile memory to see if they have valid content or not. tile memory is
+    // transient, we must reallocate to keep data valid across command buffer boundary or before
+    // binding to a different VkDeviceMemory.
+    ASSERT(mImageWithTileMemory->useTileMemory());
 
-angle::Result ContextVk::finalizeImagesWithTileMemory()
-{
-    ASSERT(!mImagesWithTileMemory.empty());
-
-    // Check all images with tile memory to see if they have valid content or not. tile memory are
-    // transient, we must reallocate to keep data valid across command buffer boundary.
-    for (auto iter = mImagesWithTileMemory.begin(); iter != mImagesWithTileMemory.end();)
+    // Other context may have submitted command buffer and causes it fallback already, so check
+    // again.
+    if (mImageWithTileMemory->isVkImageContentDefined())
     {
-        vk::ImageHelper *image = *iter;
-        // Other context may have submitted command buffer and causes it fallback already, so check
-        // again.
-        if (image->isVkImageContentDefined() && image->useTileMemory())
-        {
-            ANGLE_TRY(image->fallbackFromTileMemory(this));
-            ASSERT(!image->useTileMemory());
-            iter = mImagesWithTileMemory.erase(iter);
-        }
-        else
-        {
-            ++iter;
-        }
+        ANGLE_TRY(mImageWithTileMemory->fallbackFromTileMemory(this));
+        // fallbackFromTileMemory should set mImageWithTileMemory to nullptr
+        ASSERT(mImageWithTileMemory == nullptr);
     }
-
-    if (getFeatures().supportsTileMemoryHeap.enabled)
-    {
-        // We dont explicitly unbind tileMemory here. They occur implicitly at endCommandBiuffer
-        // time
-    }
-    else
+    else if (!getFeatures().supportsTileMemoryHeap.enabled)
     {
         ASSERT(getFeatures().simulateTileMemoryForTesting.enabled);
-
+        // Don't count load/store ops used for this simulation feature.
+        SaveLoadStorePerfCounters saveLoadStorePerfCounters(this);
         // clear VkImage to simulate the transient nature of tile memory
         UtilsVk::ClearTextureParameters params = {};
         params.level                           = vk::LevelIndex(0);
         params.layer                           = 0;
         params.clearValue                      = {};
         params.clearArea                       = gl::Box(0, 0, 0, 0, 0, 1);
-        for (vk::ImageHelper *image : mImagesWithTileMemory)
-        {
-            // Other context may have triggered fallback already, so check
-            // again.
-            if (image->useTileMemory() && !image->isVkImageContentDefined())
-            {
-                params.aspectFlags      = image->getAspectFlags();
-                params.clearArea.width  = image->getExtents().width;
-                params.clearArea.height = image->getExtents().height;
-                ANGLE_TRY(mUtils.clearTextureNoFlush(this, image, params));
+        params.aspectFlags                     = mImageWithTileMemory->getAspectFlags();
+        params.clearArea.width                 = mImageWithTileMemory->getExtents().width;
+        params.clearArea.height                = mImageWithTileMemory->getExtents().height;
+        ANGLE_TRY(mUtils.clearTextureNoFlush(this, mImageWithTileMemory, params));
 
-                // Since this may called from submitCommands, use no submit version to avoid
-                // recursion.
-                ANGLE_TRY(flushCommandsAndEndRenderPassWithoutSubmit(
-                    RenderPassClosureReason::TileMemorySimulatedClear));
-                ASSERT(mLastFlushedQueueSerial > mLastSubmittedQueueSerial);
+        // Since this may called from submitCommands, use no submit version to avoid
+        // recursion.
+        ANGLE_TRY(flushCommandsAndEndRenderPassWithoutSubmit(
+            RenderPassClosureReason::TileMemorySimulatedClear));
+        ASSERT(mLastFlushedQueueSerial > mLastSubmittedQueueSerial);
 
-                // clearTextureNoFlush may have set content valid again, remove the bits to keep
-                // content as invalid.
-                image->invalidateEntireLevelContent(this, gl::LevelIndex(0));
-                image->invalidateEntireLevelStencilContent(this, gl::LevelIndex(0));
-            }
-        }
+        // clearTextureNoFlush may have set content valid again, remove the bits to keep
+        // content as invalid.
+        mImageWithTileMemory->invalidateEntireLevelContent(this, gl::LevelIndex(0));
+        mImageWithTileMemory->invalidateEntireLevelStencilContent(this, gl::LevelIndex(0));
     }
 
-    mImagesWithTileMemory.clear();
-
+    mImageWithTileMemory = nullptr;
     return angle::Result::Continue;
 }
 

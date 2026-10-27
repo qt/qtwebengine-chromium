@@ -100,6 +100,18 @@ void MicrotaskQueue::EnqueueMicrotask(v8::Isolate* v8_isolate,
   EnqueueMicrotask(*microtask);
 }
 
+void MicrotaskQueue::EnqueueMicrotask(v8::Isolate* v8_isolate,
+                                      v8::MicrotaskCallbackWithData callback,
+                                      v8::Local<v8::Data> data) {
+  Isolate* isolate = reinterpret_cast<Isolate*>(v8_isolate);
+  HandleScope scope(isolate);
+  DirectHandle<CallbackTask> microtask = isolate->factory()->NewCallbackTask(
+      isolate->factory()->NewForeign<kMicrotaskCallbackTag>(
+          reinterpret_cast<Address>(callback)),
+      Utils::OpenDirectHandle(*data));
+  EnqueueMicrotask(*microtask);
+}
+
 void MicrotaskQueue::EnqueueMicrotask(Tagged<Microtask> microtask) {
   if (size_ == capacity_) {
     // Keep the capacity of |ring_buffer_| power of 2, so that the JIT
@@ -179,15 +191,14 @@ int MicrotaskQueue::RunMicrotasks(Isolate* isolate) {
   {
     HandleScopeImplementer::EnteredContextRewindScope rewind_scope(
         isolate->handle_scope_implementer());
-    TRACE_EVENT_BEGIN0("v8.execute", "RunMicrotasks");
+    TRACE_EVENT_BEGIN("v8.execute", "RunMicrotasks");
     {
       TRACE_EVENT_CALL_STATS_SCOPED(isolate, "v8", "V8.RunMicrotasks");
       maybe_result = Execution::TryRunMicrotasks(isolate, this);
       processed_microtask_count =
           static_cast<int>(finished_microtask_count_ - base_count);
     }
-    TRACE_EVENT_END1("v8.execute", "RunMicrotasks", "microtask_count",
-                     processed_microtask_count);
+    TRACE_EVENT_END("v8.execute", "microtask_count", processed_microtask_count);
   }
 
 #ifdef V8_ENABLE_CONTINUATION_PRESERVED_EMBEDDER_DATA

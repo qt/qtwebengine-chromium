@@ -5,6 +5,8 @@
 // Build example:
 //   g++ -O3 -DNDEBUG -march=native -DBLOCK_SIZE=16 -DBLOCKING_THRESHOLD=128
 //       -I../.. bench_jacobi_sweep.cpp -lbenchmark -lbenchmark_main -lpthread
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 

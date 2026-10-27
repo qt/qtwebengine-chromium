@@ -13,7 +13,6 @@
 #include "cc/cc_export.h"
 #include "cc/metrics/scroll_jank_v4_decider.h"
 #include "cc/metrics/scroll_jank_v4_frame.h"
-#include "cc/metrics/scroll_jank_v4_frame_stage.h"
 #include "cc/metrics/scroll_jank_v4_result.h"
 
 namespace cc {
@@ -47,7 +46,7 @@ class CC_EXPORT ScrollJankV4DecisionQueue {
    public:
     virtual ~ResultConsumer();
     virtual void OnFrameResult(
-        const ScrollJankV4FrameStage::ScrollUpdates& updates,
+        const ScrollJankV4Frame::Stage::ScrollUpdates& updates,
         const ScrollJankV4Frame::ScrollDamage& damage,
         const ScrollJankV4Frame::BeginFrameArgsForScrollJank& args,
         const ScrollJankV4Result& result) = 0;
@@ -91,7 +90,7 @@ class CC_EXPORT ScrollJankV4DecisionQueue {
   // for (`updates1`, `damage1`, `args1`) before invoking it with the jank
   // results for (`updates2`, `damage2`, `args2`).
   bool ProcessFrameWithScrollUpdates(
-      const ScrollJankV4FrameStage::ScrollUpdates& updates,
+      const ScrollJankV4Frame::Stage::ScrollUpdates& updates,
       const ScrollJankV4Frame::ScrollDamage& damage,
       const ScrollJankV4Frame::BeginFrameArgsForScrollJank& args);
 
@@ -100,7 +99,7 @@ class CC_EXPORT ScrollJankV4DecisionQueue {
 
  private:
   bool AcceptFrameIfValidAndChronological(
-      const ScrollJankV4FrameStage::ScrollUpdates& updates,
+      const ScrollJankV4Frame::Stage::ScrollUpdates& updates,
       const ScrollJankV4Frame::ScrollDamage& damage,
       const ScrollJankV4Frame::BeginFrameArgsForScrollJank& args);
 
@@ -128,9 +127,10 @@ class CC_EXPORT ScrollJankV4DecisionQueue {
   // (`deferred_synthetic_frames_.rbegin()->args.frame_time`). Furthermore, if
   // this vector contains any damaging frames,
   // `last_provided_valid_presentation_ts_` is equal to the presentation time of
-  // the last damaging frame in this vector.
+  // the last damaging frame in this vector. For each frame in
+  // `deferred_synthetic_frames_`, `updates.real()` is guaranteed to be empty.
   struct DeferredSyntheticFrame {
-    ScrollJankV4FrameStage::ScrollUpdates::Synthetic synthetic_updates;
+    ScrollJankV4Frame::Stage::ScrollUpdates updates;
     ScrollJankV4Frame::ScrollDamage damage;
     ScrollJankV4Frame::BeginFrameArgsForScrollJank args;
   };

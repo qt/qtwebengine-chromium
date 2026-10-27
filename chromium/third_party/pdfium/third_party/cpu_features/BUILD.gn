@@ -23,6 +23,7 @@ source_set("cpuinfo") {
     "src/src/equals.inl",
     "src/src/filesystem.c",
     "src/src/hwcaps.c",
+    "src/src/hwcaps_linux_or_android.c",
     "src/src/stack_line_reader.c",
     "src/src/string_view.c",
   ]

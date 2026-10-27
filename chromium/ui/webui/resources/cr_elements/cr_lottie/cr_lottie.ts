@@ -15,6 +15,7 @@
  * Fires a 'cr-lottie-playing' event when the animation starts playing.
  * Fires a 'cr-lottie-paused' event when the animation has paused.
  * Fires a 'cr-lottie-stopped' event when animation has stopped.
+ * Fires a 'cr-lottie-completed' event when animation has completed.
  * Fires a 'cr-lottie-resized' event when the canvas the animation is being
  * drawn on is resized.
  */
@@ -120,12 +121,28 @@ export class CrLottieElement extends CrLitElement {
   private workerNeedsSizeUpdate_: boolean = false;
 
   /**
+   * The last segments that were explicitly set via playSegments.
+   * In case playSegments() is invoked before the animation is initialized, the
+   * segments are stored in this variable. Once the animation initializes, the
+   * state is sent to the worker.
+   */
+  private playSegments_: [number, number]|null = null;
+
+  /**
    * Whether the Worker needs to receive new control
    * information about its desired state. This is necessary for the corner
    * case when the control information is received when the animation is still
    * being loaded into the worker.
    */
   private workerNeedsPlayControlUpdate_: boolean = false;
+
+  /**
+   * Whether the Worker needs to receive new segments
+   * information. This is necessary for the corner case when the segments
+   * information is received when the animation is still being loaded into
+   * the worker.
+   */
+  private workerNeedsPlaySegmentsUpdate_: boolean = false;
 
   private worker_: Worker|null = null;
 
@@ -200,11 +217,35 @@ export class CrLottieElement extends CrLitElement {
   }
 
   /**
+   * Plays a segment of the animation.
+   * @param segments The start and end frames.
+   */
+  playSegments(segments: [number, number]) {
+    this.playSegments_ = segments;
+    this.playState_ = true;
+
+    if (this.isAnimationLoaded_) {
+      this.sendPlaySegmentsInformationToWorker_();
+      return;
+    }
+    this.workerNeedsPlaySegmentsUpdate_ = true;
+    this.workerNeedsPlayControlUpdate_ = false;
+  }
+
+  /**
    * Sends control (play/pause) information to the worker.
    */
   private sendPlayControlInformationToWorker_() {
     assert(this.worker_);
     this.worker_.postMessage({control: {play: this.playState_}});
+  }
+
+  /**
+   * Sends segment information to the worker.
+   */
+  private sendPlaySegmentsInformationToWorker_() {
+    assert(this.worker_);
+    this.worker_.postMessage({control: {playSegments: this.playSegments_}});
   }
 
   /**
@@ -251,7 +292,7 @@ export class CrLottieElement extends CrLitElement {
    */
   private isValidUrl_(maybeValidUrl: string): boolean {
     const url = new URL(maybeValidUrl, document.location.href);
-    return url.protocol === 'chrome:' ||
+    return url.protocol === 'chrome:' || url.protocol === 'chrome-extension:' ||
         (url.protocol === 'data:' &&
          url.pathname.startsWith('application/json;'));
   }
@@ -339,11 +380,13 @@ export class CrLottieElement extends CrLitElement {
       this.sendPendingInfo_();
       this.fire('cr-lottie-initialized');
     } else if (event.data.name === 'playing') {
-      this.fire('cr-lottie-playing');
+      this.fire('cr-lottie-playing', {segments: event.data.segments});
     } else if (event.data.name === 'paused') {
       this.fire('cr-lottie-paused');
     } else if (event.data.name === 'stopped') {
       this.fire('cr-lottie-stopped');
+    } else if (event.data.name === 'completed') {
+      this.fire('cr-lottie-completed');
     } else if (event.data.name === 'resized') {
       this.fire('cr-lottie-resized', event.data.size);
     }
@@ -358,6 +401,10 @@ export class CrLottieElement extends CrLitElement {
     if (this.workerNeedsSizeUpdate_) {
       this.workerNeedsSizeUpdate_ = false;
       this.sendCanvasSizeToWorker_();
+    }
+    if (this.workerNeedsPlaySegmentsUpdate_) {
+      this.workerNeedsPlaySegmentsUpdate_ = false;
+      this.sendPlaySegmentsInformationToWorker_();
     }
     if (this.workerNeedsPlayControlUpdate_) {
       this.workerNeedsPlayControlUpdate_ = false;

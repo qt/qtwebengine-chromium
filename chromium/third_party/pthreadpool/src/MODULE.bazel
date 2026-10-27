@@ -4,8 +4,9 @@ module(
 )
 
 # Bazel rule definitions
-bazel_dep(name = "rules_cc", version = "0.1.1")
-bazel_dep(name = "rules_python", version = "1.0.0")
+bazel_dep(name = "rules_cc", version = "0.2.17")
+bazel_dep(name = "rules_license", version = "1.0.0")
+bazel_dep(name = "rules_python", version = "1.7.0")
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
@@ -16,10 +17,10 @@ pip.parse(
 use_repo(pip, "pip")
 
 # Bazel Skylib.
-bazel_dep(name = "bazel_skylib", version = "1.7.1")
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
 
 # Bazel Platforms
-bazel_dep(name = "platforms", version = "0.0.10")
+bazel_dep(name = "platforms", version = "1.0.0")
 
 # TODO: some (most? all?) of the http_archive() calls below could become bazel_dep() calls,
 # but it would require verifying that the semver provided by the Bazel registry matches the hash
@@ -31,11 +32,12 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 # LINT.IfChange(googletest)
 # Google Test framework, used by most unit-tests.
-http_archive(
-    name = "com_google_googletest",
-    sha256 = "ce7366fe57eb49928311189cb0e40e0a8bf3d3682fca89af30d884c25e983786",
-    strip_prefix = "googletest-release-1.12.0",
-    urls = ["https://github.com/google/googletest/archive/release-1.12.0.zip"],
+bazel_dep(name = "googletest", version = "1.17.0.bcr.2", repo_name = "com_google_googletest")
+archive_override(
+    module_name = "googletest",
+    sha256 = "a4cb11930215b071168811982dfbebc82a2bb0f90db0e8713245931eb742ea46",
+    strip_prefix = "googletest-d72f9c8aea6817cdf1ca0ac10887f328de7f3da2",
+    urls = ["https://github.com/google/googletest/archive/d72f9c8aea6817cdf1ca0ac10887f328de7f3da2.zip"],
 )
 # LINT.ThenChange(cmake/DownloadGoogleTest.cmake,WORKSPACE:googletest)
 
@@ -63,10 +65,10 @@ http_archive(
 # cpuinfo library, used for detecting processor characteristics
 http_archive(
     name = "cpuinfo",
-    sha256 = "52e0ffd7998d8cb3a927d8a6e1145763744d866d2be09c4eccea27fc157b6bb0",
-    strip_prefix = "cpuinfo-cebb0933058d7f181c979afd50601dc311e1bf8c",
+    sha256 = "995316f224247d1611ab1b624a66bc5cbd5b5d2e5ce991ed68d983aac950ad8b",
+    strip_prefix = "cpuinfo-bc3c01e230c6974283e4b89421cfb0e232435589",
     urls = [
-        "https://github.com/pytorch/cpuinfo/archive/cebb0933058d7f181c979afd50601dc311e1bf8c.zip",
+        "https://github.com/pytorch/cpuinfo/archive/bc3c01e230c6974283e4b89421cfb0e232435589.zip",
     ],
 )
 # LINT.ThenChange(cmake/DownloadCpuinfo.cmake)

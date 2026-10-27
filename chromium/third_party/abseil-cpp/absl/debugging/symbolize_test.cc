@@ -136,7 +136,7 @@ static const char *TrySymbolizeWithLimit(void *pc, int limit) {
       << "try_symbolize_buffer is too small";
 
   // Use the heap to facilitate heap and buffer sanitizer tools.
-  auto heap_buffer = absl::make_unique<char[]>(sizeof(try_symbolize_buffer));
+  auto heap_buffer = std::make_unique<char[]>(sizeof(try_symbolize_buffer));
   bool found = absl::Symbolize(pc, heap_buffer.get(), limit);
   if (found) {
     CHECK_LT(static_cast<int>(
@@ -373,48 +373,6 @@ TEST(Symbolize, SymbolizeWithMultipleMaps) {
       EXPECT_STREQ(expected[i], buf);
     }
   }
-}
-
-// Appends string(*args->arg) to args->symbol_buf.
-static void DummySymbolDecorator(
-    const absl::debugging_internal::SymbolDecoratorArgs *args) {
-  std::string *message = static_cast<std::string *>(args->arg);
-  strncat(args->symbol_buf, message->c_str(),
-          args->symbol_buf_size - strlen(args->symbol_buf) - 1);
-}
-
-TEST(Symbolize, InstallAndRemoveSymbolDecorators) {
-  int ticket_a;
-  std::string a_message("a");
-  EXPECT_GE(ticket_a = absl::debugging_internal::InstallSymbolDecorator(
-                DummySymbolDecorator, &a_message),
-            0);
-
-  int ticket_b;
-  std::string b_message("b");
-  EXPECT_GE(ticket_b = absl::debugging_internal::InstallSymbolDecorator(
-                DummySymbolDecorator, &b_message),
-            0);
-
-  int ticket_c;
-  std::string c_message("c");
-  EXPECT_GE(ticket_c = absl::debugging_internal::InstallSymbolDecorator(
-                DummySymbolDecorator, &c_message),
-            0);
-
-  // Use addresses 4 and 8 here to ensure that we always use valid addresses
-  // even on systems that require instructions to be 32-bit aligned.
-  char *address = reinterpret_cast<char *>(4);
-  EXPECT_STREQ("abc", TrySymbolize(address));
-
-  EXPECT_TRUE(absl::debugging_internal::RemoveSymbolDecorator(ticket_b));
-
-  EXPECT_STREQ("ac", TrySymbolize(address + 4));
-
-  // Cleanup: remove all remaining decorators so other stack traces don't
-  // get mystery "ac" decoration.
-  EXPECT_TRUE(absl::debugging_internal::RemoveSymbolDecorator(ticket_a));
-  EXPECT_TRUE(absl::debugging_internal::RemoveSymbolDecorator(ticket_c));
 }
 
 template <char C>

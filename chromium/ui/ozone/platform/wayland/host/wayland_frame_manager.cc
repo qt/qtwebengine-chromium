@@ -23,6 +23,7 @@
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/overlay_priority_hint.h"
 #include "ui/gfx/swap_result.h"
+#include "ui/ozone/platform/wayland/host/begin_frame_source_wayland.h"
 #include "ui/ozone/platform/wayland/host/wayland_buffer_factory.h"
 #include "ui/ozone/platform/wayland/host/wayland_buffer_handle.h"
 #include "ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h"
@@ -198,7 +199,11 @@ void WaylandFrameManager::MaybeProcessPendingFrame() {
     if (!ValidateRect(config.bounds_rect)) {
       fatal_error_message_ = kBoundsRectNanOrInf;
     } else {
+      auto weak_this = weak_factory_.GetWeakPtr();
       window_->OnSequencePoint(frame->seq);
+      if (!weak_this) {
+        return;
+      }
       // During a tab dragging session, OnSequencePoint() can implicitly invoke
       // Hide(). |pending_frames_| will be cleared and we should return
       // directly.
@@ -567,6 +572,19 @@ void WaylandFrameManager::OnFrameDone(void* data,
 }
 
 void WaylandFrameManager::HandleFrameCallback(wl_callback* callback) {
+  if (no_damage_frame_callback_.get() == callback) {
+    // "Empty" frame callbacks are issued for no damage if the begin
+    // frame source driver is enabled. These do not need to be processed,
+    // only relayed to the frame source to trigger the next frame.
+    no_damage_frame_callback_.reset();
+    TRACE_EVENT("wayland", "HandleFrameCallback (no damage)");
+    auto time = base::TimeTicks::Now();
+    if (frame_timing_observer_) {
+      frame_timing_observer_->OnFrameCallback(time);
+    }
+    return;
+  }
+
   if (frame_callback_freeze_detected_ &&
       submitted_frames_.back()->wl_frame_callback.get() != callback) {
     // If there is a frame callback freeze, frames are still submitted without
@@ -584,6 +602,12 @@ void WaylandFrameManager::HandleFrameCallback(wl_callback* callback) {
   frame_callback_timer_.Stop();
   frame_callback_freeze_detected_ = false;
   EvaluateShouldSkipFrameCallbacks();
+
+  auto time = base::TimeTicks::Now();
+  if (frame_timing_observer_) {
+    frame_timing_observer_->OnFrameCallback(time);
+  }
+
   MaybeProcessPendingFrame();
 }
 
@@ -651,6 +675,11 @@ void WaylandFrameManager::HandlePresentationFeedback(
     }
     CHECK_NE(frame.get(), submitted_frames_.back().get());
   }
+
+  if (frame_timing_observer_) {
+    frame_timing_observer_->OnPresentationFeedback(feedback);
+  }
+
   MaybeProcessSubmittedFrames();
 }
 
@@ -972,6 +1001,34 @@ void WaylandFrameManager::FrameCallbackTimeout() {
            << " frame callback timed out";
   frame_callback_freeze_detected_ = true;
   EvaluateShouldSkipFrameCallbacks();
+}
+
+void WaylandFrameManager::AddFrameTimingObserver(
+    WaylandFrameTimingObserver* observer) {
+  DCHECK(!frame_timing_observer_);
+  frame_timing_observer_ = observer;
+}
+
+void WaylandFrameManager::RemoveFrameTimingObserver(
+    WaylandFrameTimingObserver* observer) {
+  DCHECK_EQ(frame_timing_observer_, observer);
+  frame_timing_observer_ = nullptr;
+}
+
+void WaylandFrameManager::RequestFrameCallback() {
+  if (no_damage_frame_callback_ ||
+      (!submitted_frames_.empty() &&
+       submitted_frames_.back()->wl_frame_callback)) {
+    return;
+  }
+
+  auto* surface = window_->root_surface();
+  static constexpr wl_callback_listener kFrameCallbackListener = {
+      .done = &OnFrameDone};
+  no_damage_frame_callback_.reset(wl_surface_frame(surface->surface()));
+  wl_callback_add_listener(no_damage_frame_callback_.get(),
+                           &kFrameCallbackListener, this);
+  surface->Commit();
 }
 
 void WaylandFrameManager::FreezeTimeout() {

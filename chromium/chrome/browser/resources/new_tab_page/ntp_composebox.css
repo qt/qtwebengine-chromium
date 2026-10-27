@@ -1,0 +1,124 @@
+/* Copyright 2026 The Chromium Authors
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
+/* #css_wrapper_metadata_start
+ * #type=style-lit
+ * #import=//resources/cr_elements/cr_icons_lit.css.js
+ * #import=//resources/cr_components/composebox/composebox.css.js
+ * #import=//resources/cr_components/composebox/composebox_shared_style.css.js
+ * #scheme=relative
+ * #include=cr-icons-lit composebox composebox-shared-style
+ * #css_wrapper_metadata_end */
+
+:host {
+  --composebox-cancel-button-top: var(--cr-composebox-cancel-button-top, 10px);
+  --contextual-entrypoint-and-carousel-context-menu-container-padding-inline-start: 0px;
+
+  --text-input-top-spacing: 10px;
+  --text-input-inline-end-spacing: 80px;
+  --text-input-max-height: 190px;
+  --cr-composebox-font-size: var(--cr-composebox-custom-font-size, 16px);
+  --input-bottom-spacing: 12px;
+  --text-input-inline-start-spacing: var(--cr-composebox-text-input-inline-start, 18px);
+  --expanded-border-radius: var(--cr-composebox-expanded-border-radius, 30px);
+  border-radius: var(--expanded-border-radius);
+  box-shadow: var(--cr-searchbox-shadow);
+  font-size: var(--cr-composebox-font-size);
+  width: var(--cr-composebox-width, 337px);
+}
+
+#composebox {
+  border-radius: inherit;
+  display: flex;
+  flex-direction: column;
+  height: calc-size(auto, size);
+  max-height: var(--cr-composebox-max-height, 422px);
+  pointer-events: auto;
+  position: relative;
+  overflow: hidden;
+}
+
+#inputContainer {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0;
+  overflow: hidden;
+  width: 100%;
+}
+
+cr-composebox-input::part(cancel),
+cr-composebox-submit::part(submit) {
+  opacity: 1;
+  transition: var(--icon-entry-transition);
+}
+
+:host([show-dropdown][searchbox-next-enabled][searchbox-layout-mode='Compact']) cr-composebox-dropdown {
+  padding-bottom: 0;
+  padding-top: 4px;
+}
+
+:host([searchbox-next-enabled]) #composebox {
+  padding-bottom: 10px;
+}
+
+#contextEntrypoint {
+  color: var(--color-searchbox-results-foreground);
+  padding-inline-start: var(--contextual-entrypoint-and-carousel-context-entrypoint-padding-inline-start, 8px);
+  padding-inline-end: var(--contextual-entrypoint-and-carousel-context-entrypoint-padding-inline-end, 8px);
+}
+
+#contextEntrypoint::part(context-menu-entrypoint-icon) {
+  position: absolute;
+  top: 10px;
+  --cr-icon-button-icon-size: 24px;
+  --cr-icon-button-margin-start: 2px;
+  --cr-icon-button-size: 36px;
+}
+
+#voiceSearchButton {
+  --cr-icon-button-fill-color: var(--color-composebox-font-light);
+  --cr-icon-button-hover-background-color: var(--color-composebox-voice-button-hover-background);
+  --cr-icon-button-margin-end: 0px;
+  --cr-icon-button-margin-start: 0px;
+  --cr-icon-button-size: 36px;
+  position: absolute;
+  inset-inline-end: calc(40px + 12px); /* 40px is the submit container size */
+  top: 10px;
+}
+
+#composebox[inert] {
+  pointer-events: none;
+}
+
+:host([is-dragging-file]) #composebox * {
+  pointer-events: none;
+}
+
+#carouselContainer {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: row;
+}
+
+:host([submit-enabled]) cr-composebox-submit::part(submit) {
+  inset-inline-end: 0;
+  margin-block: 12px 2px;
+  margin-inline: auto 10px;
+  position: relative;
+}
+
+:host([in-voice-search-mode]) {
+  box-shadow: 2px 10px 18px -5px rgb(0, 0, 0, 0.1);
+}
+
+cr-composebox-voice-search {
+  z-index: 2;
+}
+
+:host([in-voice-search-mode]) cr-composebox-input::part(cancel),
+:host([in-voice-search-mode]) cr-composebox-submit::part(submit) {
+  opacity: 0;
+  transition: var(--icon-exit-transition);
+}

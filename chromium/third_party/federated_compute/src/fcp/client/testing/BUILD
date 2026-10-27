@@ -16,10 +16,11 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
+    default_applicable_licenses = ["//fcp:license"],
     default_visibility = [
         "//fcp:internal",
     ],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 cc_library(
@@ -33,7 +34,7 @@ cc_library(
         "//fcp/client:selector_context_cc_proto",
         "//fcp/client:simple_task_environment",
         "//fcp/protos:federated_api_cc_proto",
-        "//fcp/protos:plan_proto_cc",
+        "//fcp/protos:plan_cc_proto",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -49,6 +50,7 @@ cc_test(
         ":utils",
         "//fcp/protos:plan_cc_proto",
         "//fcp/testing",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_googletest//:gtest_main",
     ],

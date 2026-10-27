@@ -36,6 +36,7 @@
 #include "src/tint/lang/core/type/external_texture.h"
 #include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/core/type/storage_texture.h"
+#include "src/tint/lang/core/type/texel_buffer.h"
 #include "src/tint/utils/rtti/switch.h"
 
 namespace tint {
@@ -110,6 +111,13 @@ Bindings GenerateBindings(const core::ir::Module& module,
                             .binding = flatten_bindings ? next_texture_idx++ : bp->binding,
                         };
                         bindings.storage_texture.emplace(*bp, info);
+                    },
+                    [&](const core::type::TexelBuffer*) {
+                        tint::BindingPoint info{
+                            .group = set_group_to_zero ? 0 : bp->group,
+                            .binding = flatten_bindings ? next_texture_idx++ : bp->binding,
+                        };
+                        bindings.texel_buffer.emplace(*bp, info);
                     },
                     [&](const core::type::Texture*) {
                         tint::BindingPoint info{

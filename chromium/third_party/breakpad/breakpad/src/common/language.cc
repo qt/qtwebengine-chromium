@@ -62,6 +62,11 @@ std::string MakeQualifiedNameWithSeparator(const std::string& parent_name,
   return parent_name + separator + name;
 }
 
+bool IsObjectiveCMethod(const std::string& name) {
+  return name.size() >= 2 && (name[0] == '-' || name[0] == '+') &&
+         name[1] == '[';
+}
+
 }  // namespace
 
 namespace google_breakpad {
@@ -128,6 +133,45 @@ class CPPLanguage: public Language {
 };
 
 CPPLanguage CPPLanguageSingleton;
+
+// Objective-C language-specific operations.
+class ObjectiveCLanguage: public Language {
+ public:
+  ObjectiveCLanguage() {}
+
+  std::string MakeQualifiedName(const std::string& parent_name,
+                                const std::string& name) const {
+    // In Objective-C, names are not qualified. Objective-C methods are already
+    // fully qualified as `-[Class method]` or `+[Class method]`.
+    return name;
+  }
+};
+
+ObjectiveCLanguage ObjectiveCLanguageSingleton;
+
+// Objective-C++ language-specific operations.
+class ObjectiveCPlusPlusLanguage: public CPPLanguage {
+ public:
+  ObjectiveCPlusPlusLanguage() {}
+
+  std::string MakeQualifiedName(const std::string& parent_name,
+                                const std::string& name) const {
+    // Starting with DWARF v5, clang/LLVM emits Objective-C method
+    // declarations nested inside the class/interface type's structure
+    // block. When processing these declarations, dump_syms retrieves
+    // the parent class name as the enclosing scope.
+    //
+    // Since Objective-C method names are already fully qualified
+    // (e.g., `-[Class method]`), we should not qualify them with
+    // C++ `::` prefixes.
+    if (IsObjectiveCMethod(name)) {
+      return name;
+    }
+    return MakeQualifiedNameWithSeparator(parent_name, "::", name);
+  }
+};
+
+ObjectiveCPlusPlusLanguage ObjectiveCPlusPlusLanguageSingleton;
 
 // Java language-specific operations.
 class JavaLanguage: public Language {
@@ -219,5 +263,8 @@ const Language * const Language::Java = &JavaLanguageSingleton;
 const Language * const Language::Swift = &SwiftLanguageSingleton;
 const Language * const Language::Rust = &RustLanguageSingleton;
 const Language * const Language::Assembler = &AssemblerLanguageSingleton;
+const Language * const Language::ObjectiveC = &ObjectiveCLanguageSingleton;
+const Language * const Language::ObjectiveCPlusPlus =
+    &ObjectiveCPlusPlusLanguageSingleton;
 
 } // namespace google_breakpad

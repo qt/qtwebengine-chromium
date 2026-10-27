@@ -12,17 +12,23 @@
 namespace cc {
 
 TimelineTrigger::TimelineTrigger(int id,
+                                 State state,
                                  scoped_refptr<AnimationTimeline> timeline,
                                  Boundaries boundaries)
-    : AnimationTrigger(id), timeline_(timeline), boundaries_(boundaries) {}
+    : AnimationTrigger(id),
+      timeline_(timeline),
+      boundaries_(boundaries),
+      state_(state) {}
 
 TimelineTrigger::~TimelineTrigger() = default;
 
 scoped_refptr<TimelineTrigger> TimelineTrigger::Create(
     int id,
+    State state,
     scoped_refptr<AnimationTimeline> timeline,
     Boundaries boundaries) {
-  return base::WrapRefCounted(new TimelineTrigger(id, timeline, boundaries));
+  return base::WrapRefCounted(
+      new TimelineTrigger(id, state, timeline, boundaries));
 }
 
 scoped_refptr<AnimationTrigger> TimelineTrigger::CreateImplInstance(
@@ -31,7 +37,7 @@ scoped_refptr<AnimationTrigger> TimelineTrigger::CreateImplInstance(
       host_impl.GetScopedRefTimelineById(timeline_.Read(*this)->id());
   CHECK(timeline_impl);
   scoped_refptr<TimelineTrigger> impl_instance =
-      TimelineTrigger::Create(id(), timeline_impl, boundaries_);
+      TimelineTrigger::Create(id(), state_, timeline_impl, boundaries_);
   return impl_instance;
 }
 
@@ -59,7 +65,8 @@ AnimationTrigger::State TimelineTrigger::ComputeState(base::TimeTicks time) {
 }
 
 void TimelineTrigger::Update(const ScrollTree& scroll_tree,
-                             AnimationEvents* events) {
+                             AnimationEvents* events,
+                             base::TimeTicks monotonic_time) {
   ScrollTimeline* scroll_timeline =
       reinterpret_cast<ScrollTimeline*>(timeline_.Read(*this).get());
   DCHECK(scroll_timeline);
@@ -90,10 +97,10 @@ void TimelineTrigger::Update(const ScrollTree& scroll_tree,
 
   switch (state_) {
     case State::kPrimary:
-      PerformActivate(events);
+      PerformActivate(events, monotonic_time);
       break;
     case State::kInverse:
-      PerformDeactivate(events);
+      PerformDeactivate(events, monotonic_time);
       break;
     default:
       NOTREACHED();

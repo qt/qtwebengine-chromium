@@ -1314,6 +1314,42 @@ void DispatchDevice::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallRecordGetMemoryAndroidHardwareBufferANDROID);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetMemoryAndroidHardwareBufferANDROID);
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
+    BUILD_DISPATCH_VECTOR(PreCallValidateCreateGpaSessionAMD);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCreateGpaSessionAMD);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCreateGpaSessionAMD);
+    BUILD_DESTROY_DISPATCH_VECTOR(PreCallValidateDestroyGpaSessionAMD);
+    BUILD_DESTROY_DISPATCH_VECTOR(PreCallRecordDestroyGpaSessionAMD);
+    BUILD_DESTROY_DISPATCH_VECTOR(PostCallRecordDestroyGpaSessionAMD);
+    BUILD_DISPATCH_VECTOR(PreCallValidateSetGpaDeviceClockModeAMD);
+    BUILD_DISPATCH_VECTOR(PreCallRecordSetGpaDeviceClockModeAMD);
+    BUILD_DISPATCH_VECTOR(PostCallRecordSetGpaDeviceClockModeAMD);
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetGpaDeviceClockInfoAMD);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetGpaDeviceClockInfoAMD);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetGpaDeviceClockInfoAMD);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdBeginGpaSessionAMD);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdBeginGpaSessionAMD);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdBeginGpaSessionAMD);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdEndGpaSessionAMD);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdEndGpaSessionAMD);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdEndGpaSessionAMD);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdBeginGpaSampleAMD);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdBeginGpaSampleAMD);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdBeginGpaSampleAMD);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdEndGpaSampleAMD);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdEndGpaSampleAMD);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdEndGpaSampleAMD);
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetGpaSessionStatusAMD);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetGpaSessionStatusAMD);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetGpaSessionStatusAMD);
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetGpaSessionResultsAMD);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetGpaSessionResultsAMD);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetGpaSessionResultsAMD);
+    BUILD_DISPATCH_VECTOR(PreCallValidateResetGpaSessionAMD);
+    BUILD_DISPATCH_VECTOR(PreCallRecordResetGpaSessionAMD);
+    BUILD_DISPATCH_VECTOR(PostCallRecordResetGpaSessionAMD);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdCopyGpaSessionResultsAMD);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdCopyGpaSessionResultsAMD);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdCopyGpaSessionResultsAMD);
 #ifdef VK_ENABLE_BETA_EXTENSIONS
     BUILD_DISPATCH_VECTOR(PreCallValidateCreateExecutionGraphPipelinesAMDX);
     BUILD_DISPATCH_VECTOR(PreCallRecordCreateExecutionGraphPipelinesAMDX);
@@ -1600,6 +1636,9 @@ void DispatchDevice::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateGetPrivateDataEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetPrivateDataEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetPrivateDataEXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateQueueSetPerfHintQCOM);
+    BUILD_DISPATCH_VECTOR(PreCallRecordQueueSetPerfHintQCOM);
+    BUILD_DISPATCH_VECTOR(PostCallRecordQueueSetPerfHintQCOM);
 #ifdef VK_ENABLE_BETA_EXTENSIONS
     BUILD_DISPATCH_VECTOR(PreCallValidateCreateCudaModuleNV);
     BUILD_DISPATCH_VECTOR(PreCallRecordCreateCudaModuleNV);
@@ -1794,6 +1833,9 @@ void DispatchDevice::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateSetDeviceMemoryPriorityEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordSetDeviceMemoryPriorityEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordSetDeviceMemoryPriorityEXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetDispatchParametersARM);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetDispatchParametersARM);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetDispatchParametersARM);
     BUILD_DISPATCH_VECTOR(PreCallValidateGetDescriptorSetLayoutHostMappingInfoVALVE);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetDescriptorSetLayoutHostMappingInfoVALVE);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetDescriptorSetLayoutHostMappingInfoVALVE);
@@ -2135,6 +2177,9 @@ void DispatchDevice::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetComputeOccupancyPriorityNV);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetComputeOccupancyPriorityNV);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetComputeOccupancyPriorityNV);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetPrimitiveRestartIndexEXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetPrimitiveRestartIndexEXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetPrimitiveRestartIndexEXT);
     BUILD_DISPATCH_VECTOR(PreCallValidateCreateAccelerationStructureKHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordCreateAccelerationStructureKHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordCreateAccelerationStructureKHR);

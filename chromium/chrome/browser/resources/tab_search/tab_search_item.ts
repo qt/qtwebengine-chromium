@@ -47,6 +47,7 @@ export interface TabSearchItemElement {
   $: {
     primaryText: HTMLElement,
     secondaryText: HTMLElement,
+    secondaryTextInner: HTMLElement,
   };
 }
 
@@ -70,6 +71,7 @@ export class TabSearchItemElement extends TabSearchItemBase {
     return {
       data: {type: Object},
       buttonRipples_: {type: Boolean},
+      tabGroupColorRefresh_: {type: Boolean},
       hideTimestamp: {type: Boolean},
       hideUrl: {type: Boolean},
       hideCloseButton: {type: Boolean},
@@ -92,6 +94,8 @@ export class TabSearchItemElement extends TabSearchItemBase {
         lastActiveTimeTicks: {internalValue: BigInt(0)},
         pinned: false,
         split: false,
+        splitId: null,
+        splitLayout: null,
         showIcon: false,
         tabId: 1,
         title: '',
@@ -100,6 +104,8 @@ export class TabSearchItemElement extends TabSearchItemBase {
       TabItemType.OPEN_TAB, '');
   protected accessor buttonRipples_: boolean =
       loadTimeData.getBoolean('useRipples');
+  protected accessor tabGroupColorRefresh_: boolean =
+      loadTimeData.getBoolean('useTabGroupColorRefresh');
   accessor hideTimestamp: boolean = false;
   accessor size: TabSearchItemSize = TabSearchItemSize.MEDIUM;
   accessor hideUrl: boolean = false;
@@ -115,7 +121,9 @@ export class TabSearchItemElement extends TabSearchItemBase {
       if (this.data.tabGroup) {
         this.style.setProperty(
             '--group-dot-color',
-            `var(--tab-group-color-${colorName(this.data.tabGroup.color)})`);
+            this.tabGroupColorRefresh_ ?
+                `var(--tab-group-refresh-color-${colorName(this.data.tabGroup.color)})` :
+                `var(--tab-group-color-${colorName(this.data.tabGroup.color)})`);
       }
 
       if (changedProperties.has('size')) {
@@ -243,7 +251,7 @@ export class TabSearchItemElement extends TabSearchItemBase {
     const data = this.data;
     ([
       ['tab.title', this.$.primaryText],
-      ['hostname', this.$.secondaryText],
+      ['hostname', this.$.secondaryTextInner],
       ['tabGroup.title', this.shadowRoot.querySelector('#groupTitle')],
     ] as Array<[string, HTMLElement | null]>)
         .forEach(([path, element]) => {
@@ -257,7 +265,7 @@ export class TabSearchItemElement extends TabSearchItemBase {
     // Show chrome:// if it's a chrome internal url
     const protocol = new URL(normalizeURL(data.tab.url)).protocol;
     if (protocol === 'chrome:') {
-      this.$.secondaryText.prepend(document.createTextNode('chrome://'));
+      this.$.secondaryTextInner.prepend(document.createTextNode('chrome://'));
     }
   }
 

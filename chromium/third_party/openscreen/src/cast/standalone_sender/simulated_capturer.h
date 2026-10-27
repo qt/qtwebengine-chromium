@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-#include "cast/standalone_sender/ffmpeg_glue.h"
+#include "cast/standalone_common/ffmpeg_glue.h"
 #include "platform/api/time.h"
 #include "util/alarm.h"
 

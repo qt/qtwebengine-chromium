@@ -600,12 +600,10 @@ std::vector<std::pair<base::test::FeatureRef, bool>> GetWipFeatures(
       {features::kAutofillSupportCombinedZipAndCityFR, true},
       {features::kAutofillSupportSplitZipCode, true},
       // Other improvements.
-      {features::kAutofillEnableSupportForParsingWithSharedLabels, true},
       {features::kAutofillUseNegativePatternForAllAttributes, true},
       {features::kAutofillDisallowMoreHyphenLikeLabels, true},
       {features::kAutofillFixStateCountryMisclassification, true},
       {features::kAutofillFixCivilStateMisclassificationForESPT, true},
-      {features::kAutofillAddressImproveBuildingNumberRegex, true},
       {features::kAutofillNewRegexForPhoneCountryCode, true},
       {features::kAutofillImprovePhoneFieldParser, true},
       {features::kAutofillNewAugmentedPhoneCountryCodeRegex, true},

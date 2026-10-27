@@ -427,9 +427,8 @@ void WebMediaPlayerMSCompositor::EnqueueFrame(
     bool is_copy) {
   DCHECK(video_task_runner_->RunsTasksInCurrentSequence());
   base::AutoLock auto_lock(current_frame_lock_);
-  TRACE_EVENT_INSTANT1("media", "WebMediaPlayerMSCompositor::EnqueueFrame",
-                       TRACE_EVENT_SCOPE_THREAD, "Timestamp",
-                       frame->timestamp().InMicroseconds());
+  TRACE_EVENT_INSTANT("media", "WebMediaPlayerMSCompositor::EnqueueFrame",
+                      "Timestamp", frame->timestamp().InMicroseconds());
   ++total_frame_count_;
   ++frame_enqueued_since_last_vsync_;
   std::optional<uint32_t> enqueue_frame_rtp_timestamp;
@@ -599,9 +598,9 @@ scoped_refptr<media::VideoFrame> WebMediaPlayerMSCompositor::GetCurrentFrame() {
   if (!current_frame_)
     return nullptr;
 
-  TRACE_EVENT_INSTANT1("media", "WebMediaPlayerMSCompositor::GetCurrentFrame",
-                       TRACE_EVENT_SCOPE_THREAD, "Timestamp",
-                       current_frame_->timestamp().InMicroseconds());
+  TRACE_EVENT_INSTANT("media", "WebMediaPlayerMSCompositor::GetCurrentFrame",
+                      "Timestamp",
+                      current_frame_->timestamp().InMicroseconds());
   if (!render_started_)
     return nullptr;
 
@@ -645,6 +644,14 @@ void WebMediaPlayerMSCompositor::PutCurrentFrame() {
 
 base::TimeDelta WebMediaPlayerMSCompositor::GetPreferredRenderInterval() {
   DCHECK(video_frame_compositor_task_runner_->BelongsToCurrentThread());
+  base::AutoLock auto_lock(current_frame_lock_);
+  return GetPreferredRenderIntervalInternal();
+}
+
+base::TimeDelta
+WebMediaPlayerMSCompositor::GetPreferredRenderIntervalInternal() {
+  DCHECK(video_frame_compositor_task_runner_->BelongsToCurrentThread());
+  current_frame_lock_.AssertAcquired();
   if (!rendering_frame_buffer_) {
     DCHECK_GE(last_render_length_, base::TimeDelta());
     return last_render_length_;
@@ -765,7 +772,10 @@ void WebMediaPlayerMSCompositor::RenderUsingAlgorithm(
     pending_frames_info_.pop_front();
   }
 
-  SetCurrentFrame(std::move(frame), is_copy, deadline_min);
+  const base::TimeTicks expected_display_time =
+      submitter_ ? submitter_->GetExpectedDisplayTime().value_or(deadline_min)
+                 : deadline_min;
+  SetCurrentFrame(std::move(frame), is_copy, expected_display_time);
 }
 
 void WebMediaPlayerMSCompositor::RenderWithoutAlgorithm(
@@ -795,12 +805,15 @@ void WebMediaPlayerMSCompositor::RenderWithoutAlgorithmOnCompositor(
     const base::TimeTicks now = base::TimeTicks::Now();
     base::TimeDelta diff_from_deadline_min = now - last_deadline_min_;
     base::TimeDelta diff_from_deadline_max = now - last_deadline_max_;
-    TRACE_EVENT_INSTANT2("media",
-                         "RenderWithoutAlgorithm Difference From Deadline",
-                         TRACE_EVENT_SCOPE_THREAD, "diff_from_deadline_min",
-                         diff_from_deadline_min, "diff_from_deadline_max",
-                         diff_from_deadline_max);
-    SetCurrentFrame(std::move(frame), is_copy, last_deadline_max_);
+    TRACE_EVENT_INSTANT("media",
+                        "RenderWithoutAlgorithm Difference From Deadline",
+                        "diff_from_deadline_min", diff_from_deadline_min,
+                        "diff_from_deadline_max", diff_from_deadline_max);
+    const base::TimeTicks expected_display_time =
+        submitter_
+            ? submitter_->GetExpectedDisplayTime().value_or(last_deadline_max_)
+            : last_deadline_max_;
+    SetCurrentFrame(std::move(frame), is_copy, expected_display_time);
   }
   if (video_frame_provider_client_)
     video_frame_provider_client_->DidReceiveFrame();
@@ -977,9 +990,8 @@ void WebMediaPlayerMSCompositor::SetCurrentFrame(
   TRACE_EVENT("media", "SetCurrentFrame");
   DCHECK(video_frame_compositor_task_runner_->BelongsToCurrentThread());
   current_frame_lock_.AssertAcquired();
-  TRACE_EVENT_INSTANT1("media", "WebMediaPlayerMSCompositor::SetCurrentFrame",
-                       TRACE_EVENT_SCOPE_THREAD, "Timestamp",
-                       frame->timestamp().InMicroseconds());
+  TRACE_EVENT_INSTANT("media", "WebMediaPlayerMSCompositor::SetCurrentFrame",
+                      "Timestamp", frame->timestamp().InMicroseconds());
 
   if (base::FeatureList::IsEnabled(
           media::kMediaStreamAccurateDroppedFrameCount)) {
@@ -1045,13 +1057,13 @@ void WebMediaPlayerMSCompositor::SetCurrentFrame(
       (expected_display_time.has_value() && !expected_display_time->is_null())
           ? *expected_display_time
           : now;
-  last_preferred_render_interval_ = GetPreferredRenderInterval();
+  last_preferred_render_interval_ = GetPreferredRenderIntervalInternal();
   ++presented_frames_;
 
-  TRACE_EVENT_INSTANT2("media", "SetCurrentFrame Timestamps",
-                       TRACE_EVENT_SCOPE_THREAD, "presentation_time",
-                       (last_presentation_time_), "last_expected_display_time",
-                       (last_expected_display_time_));
+  TRACE_EVENT_INSTANT("media", "SetCurrentFrame Timestamps",
+                      "presentation_time", (last_presentation_time_),
+                      "last_expected_display_time",
+                      (last_expected_display_time_));
 
   OnNewFramePresentedCB presented_frame_cb;
   {
@@ -1164,6 +1176,7 @@ void WebMediaPlayerMSCompositor::ReplaceCurrentFrameWithACopy() {
 
 void WebMediaPlayerMSCompositor::SetAlgorithmEnabledForTesting(
     bool algorithm_enabled) {
+  base::AutoLock auto_lock(current_frame_lock_);
   if (!algorithm_enabled) {
     rendering_frame_buffer_.reset();
     return;
@@ -1171,9 +1184,9 @@ void WebMediaPlayerMSCompositor::SetAlgorithmEnabledForTesting(
 
   if (!rendering_frame_buffer_) {
     rendering_frame_buffer_ = std::make_unique<VideoRendererAlgorithmWrapper>(
-        blink::BindRepeating(
+        ConvertToBaseRepeatingCallback(CrossThreadBindRepeating(
             &WebMediaPlayerMSCompositor::MapTimestampsToRenderTimeTicks,
-            Unretained(this)),
+            CrossThreadUnretained(this))),
         &media_log_);
   }
 }

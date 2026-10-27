@@ -9,6 +9,7 @@ include_rules = [
     "+base/apple",
     "+base/mac",
     "+base/win",
+    "+base/memory_coordinator",
     "+cc",
     "+third_party/blink/renderer/platform/bindings/v8_external_memory_accounter.h",
     "+third_party/blink/renderer/platform/font_family_names.h",
@@ -32,12 +33,13 @@ include_rules = [
 ]
 
 specific_include_rules = {
+    "font_unique_name_lookup_win.h" : [
+        "+components/services/font_data/public/mojom/font_data_service.mojom-blink.h",
+    ],
     "font_cache.cc" : [
         "+base/strings/escape.h",
         "+third_party/blink/renderer/platform/json/json_parser.h",
         "+third_party/blink/renderer/platform/json/json_values.h"
     ],
-    "ng_shape_cache.h" : [
-        "+base/memory_coordinator"
-    ],
+
 }

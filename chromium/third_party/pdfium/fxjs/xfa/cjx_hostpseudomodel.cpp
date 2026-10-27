@@ -284,7 +284,7 @@ CJS_Result CJX_HostPseudoModel::gotoURL(
     return CJS_Result::Success();
   }
 
-  pNotify->GetFFDoc()->GotoURL(runtime->ToWideString(params[0]));
+  pNotify->GetFFDoc()->GotoURL(runtime->ToWideStringReentrant(params[0]));
   return CJS_Result::Success();
 }
 
@@ -318,7 +318,8 @@ CJS_Result CJX_HostPseudoModel::openList(
         XFA_ResolveFlag::kSiblings};
     std::optional<CFXJSE_Engine::ResolveResult> maybeResult =
         runtime->ResolveObjects(
-            pObject, runtime->ToWideString(params[0]).AsStringView(), kFlags);
+            pObject, runtime->ToWideStringReentrant(params[0]).AsStringView(),
+            kFlags);
     if (!maybeResult.has_value() ||
         !maybeResult.value().objects.front()->IsNode()) {
       return CJS_Result::Success();
@@ -346,22 +347,22 @@ CJS_Result CJX_HostPseudoModel::response(
 
   WideString question;
   if (params.size() >= 1) {
-    question = runtime->ToWideString(params[0]);
+    question = runtime->ToWideStringReentrant(params[0]);
   }
 
   WideString title;
   if (params.size() >= 2) {
-    title = runtime->ToWideString(params[1]);
+    title = runtime->ToWideStringReentrant(params[1]);
   }
 
   WideString defaultAnswer;
   if (params.size() >= 3) {
-    defaultAnswer = runtime->ToWideString(params[2]);
+    defaultAnswer = runtime->ToWideStringReentrant(params[2]);
   }
 
   bool mark = false;
   if (params.size() >= 4) {
-    mark = runtime->ToInt32(params[3]) != 0;
+    mark = runtime->ToInt32Reentrant(params[3]) != 0;
   }
 
   WideString answer =
@@ -390,7 +391,7 @@ CJS_Result CJX_HostPseudoModel::resetData(
 
   WideString expression;
   if (params.size() >= 1) {
-    expression = runtime->ToWideString(params[0]);
+    expression = runtime->ToWideStringReentrant(params[0]);
   }
 
   if (expression.IsEmpty()) {
@@ -447,7 +448,7 @@ CJS_Result CJX_HostPseudoModel::beep(
 
   uint32_t dwType = 4;
   if (params.size() >= 1) {
-    dwType = runtime->ToInt32(params[0]);
+    dwType = runtime->ToInt32Reentrant(params[0]);
   }
 
   pNotify->GetAppProvider()->Beep(dwType);
@@ -485,7 +486,8 @@ CJS_Result CJX_HostPseudoModel::setFocus(
           XFA_ResolveFlag::kSiblings};
       std::optional<CFXJSE_Engine::ResolveResult> maybeResult =
           runtime->ResolveObjects(
-              pObject, runtime->ToWideString(params[0]).AsStringView(), kFlags);
+              pObject, runtime->ToWideStringReentrant(params[0]).AsStringView(),
+              kFlags);
       if (!maybeResult.has_value() ||
           !maybeResult.value().objects.front()->IsNode()) {
         return CJS_Result::Success();
@@ -531,17 +533,17 @@ CJS_Result CJX_HostPseudoModel::messageBox(
 
   WideString message;
   if (params.size() >= 1) {
-    message = runtime->ToWideString(params[0]);
+    message = runtime->ToWideStringReentrant(params[0]);
   }
 
   WideString title;
   if (params.size() >= 2) {
-    title = runtime->ToWideString(params[1]);
+    title = runtime->ToWideStringReentrant(params[1]);
   }
 
   uint32_t messageType = static_cast<uint32_t>(AlertIcon::kDefault);
   if (params.size() >= 3) {
-    messageType = runtime->ToInt32(params[2]);
+    messageType = runtime->ToInt32Reentrant(params[2]);
     if (messageType > static_cast<uint32_t>(AlertIcon::kStatus)) {
       messageType = static_cast<uint32_t>(AlertIcon::kDefault);
     }
@@ -549,7 +551,7 @@ CJS_Result CJX_HostPseudoModel::messageBox(
 
   uint32_t buttonType = static_cast<uint32_t>(AlertButton::kDefault);
   if (params.size() >= 4) {
-    buttonType = runtime->ToInt32(params[3]);
+    buttonType = runtime->ToInt32Reentrant(params[3]);
     if (buttonType > static_cast<uint32_t>(AlertButton::kYesNoCancel)) {
       buttonType = static_cast<uint32_t>(AlertButton::kDefault);
     }
@@ -583,27 +585,27 @@ CJS_Result CJX_HostPseudoModel::print(
   }
 
   Mask<XFA_PrintOpt> dwOptions;
-  if (runtime->ToBoolean(params[0])) {
+  if (runtime->ToBooleanReentrant(params[0])) {
     dwOptions |= XFA_PrintOpt::kShowDialog;
   }
-  if (runtime->ToBoolean(params[3])) {
+  if (runtime->ToBooleanReentrant(params[3])) {
     dwOptions |= XFA_PrintOpt::kCanCancel;
   }
-  if (runtime->ToBoolean(params[4])) {
+  if (runtime->ToBooleanReentrant(params[4])) {
     dwOptions |= XFA_PrintOpt::kShrinkPage;
   }
-  if (runtime->ToBoolean(params[5])) {
+  if (runtime->ToBooleanReentrant(params[5])) {
     dwOptions |= XFA_PrintOpt::kAsImage;
   }
-  if (runtime->ToBoolean(params[6])) {
+  if (runtime->ToBooleanReentrant(params[6])) {
     dwOptions |= XFA_PrintOpt::kReverseOrder;
   }
-  if (runtime->ToBoolean(params[7])) {
+  if (runtime->ToBooleanReentrant(params[7])) {
     dwOptions |= XFA_PrintOpt::kPrintAnnot;
   }
 
-  int32_t nStartPage = runtime->ToInt32(params[1]);
-  int32_t nEndPage = runtime->ToInt32(params[2]);
+  int32_t nStartPage = runtime->ToInt32Reentrant(params[1]);
+  int32_t nEndPage = runtime->ToInt32Reentrant(params[2]);
   pNotify->GetFFDoc()->Print(nStartPage, nEndPage, dwOptions);
   return CJS_Result::Success();
 }
@@ -632,12 +634,12 @@ CJS_Result CJX_HostPseudoModel::exportData(
 
   WideString filePath;
   if (params.size() >= 1) {
-    filePath = runtime->ToWideString(params[0]);
+    filePath = runtime->ToWideStringReentrant(params[0]);
   }
 
   bool XDP = true;
   if (params.size() >= 2) {
-    XDP = runtime->ToBoolean(params[1]);
+    XDP = runtime->ToBooleanReentrant(params[1]);
   }
 
   pNotify->GetFFDoc()->ExportData(filePath, XDP);

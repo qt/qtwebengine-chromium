@@ -23,14 +23,11 @@
 #include "components/performance_manager/public/render_process_host_proxy.h"
 #include "content/public/browser/browsing_instance_id.h"
 #include "content/public/browser/site_instance.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/common/process_type.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 
 class GURL;
-
-namespace content {
-class WebContents;
-}
 
 namespace url {
 class Origin;
@@ -68,13 +65,15 @@ class PerformanceManagerImpl : public PerformanceManager {
       FrameNodeImpl* outer_document_for_fenced_frame,
       int render_frame_id,
       const blink::LocalFrameToken& frame_token,
+      const perfetto::NamedTrack& tracing_track,
       content::BrowsingInstanceId browsing_instance_id,
       content::SiteInstanceGroupId site_instance_group_id,
       bool is_current,
       bool is_active);
   static std::unique_ptr<PageNodeImpl> CreatePageNode(
       base::WeakPtr<content::WebContents> web_contents,
-      const std::string& browser_context_id,
+      const content::WebContents::UniqueToken& web_contents_token,
+      const base::UnguessableToken& browser_context_id,
       const GURL& visible_url,
       PagePropertyFlags initial_properties,
       base::TimeTicks visibility_change_time);
@@ -87,7 +86,7 @@ class PerformanceManagerImpl : public PerformanceManager {
       content::ProcessType process_type,
       BrowserChildProcessHostProxy proxy);
   static std::unique_ptr<WorkerNodeImpl> CreateWorkerNode(
-      const std::string& browser_context_id,
+      const base::UnguessableToken& browser_context_id,
       WorkerNode::WorkerType worker_type,
       ProcessNodeImpl* process_node,
       const blink::WorkerToken& worker_token,

@@ -2479,6 +2479,7 @@ static inline void try_tx_block_split(
     if (offsetr >= max_blocks_high) break;
     for (int c = 0; c < txb_width; c += sub_txb_width, ++blk_idx) {
       assert(blk_idx < 4);
+      (void)blk_idx;
       const int offsetc = blk_col + c;
       if (offsetc >= max_blocks_wide) continue;
 

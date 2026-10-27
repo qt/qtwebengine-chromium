@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SPARSEBLOCKMATRIX_H
 #define EIGEN_SPARSEBLOCKMATRIX_H
@@ -93,10 +94,10 @@ template <typename Iterator, bool IsColMajor>
 struct TripletComp {
   typedef typename Iterator::value_type Triplet;
   bool operator()(const Triplet& a, const Triplet& b) {
-    if (IsColMajor)
-      return ((a.col() == b.col() && a.row() < b.row()) || (a.col() < b.col()));
-    else
+    EIGEN_IF_CONSTEXPR(IsColMajor) { return ((a.col() == b.col() && a.row() < b.row()) || (a.col() < b.col())); }
+    else {
       return ((a.row() == b.row() && a.col() < b.col()) || (a.row() < b.row()));
+    }
   }
 };
 }  // end namespace internal

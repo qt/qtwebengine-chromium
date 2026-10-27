@@ -26,6 +26,7 @@
 
 // clang-format on
 
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -229,8 +230,7 @@ class QuicPacketPrinter : public QuicFramerVisitorInterface {
     std::cerr << "IsValidStatelessResetToken\n";
     return false;
   }
-  void OnAuthenticatedIetfStatelessResetPacket(
-      const QuicIetfStatelessResetPacket& /*packet*/) override {
+  void OnAuthenticatedIetfStatelessResetPacket() override {
     std::cerr << "OnAuthenticatedIetfStatelessResetPacket\n";
   }
   void OnKeyUpdate(KeyUpdateReason reason) override {
@@ -238,6 +238,9 @@ class QuicPacketPrinter : public QuicFramerVisitorInterface {
   }
   void OnDecryptedFirstPacketInKeyPhase() override {
     std::cerr << "OnDecryptedFirstPacketInKeyPhase\n";
+  }
+  void OnSconePacket(uint8_t signal) override {
+    std::cerr << "OnSconePacket: " << static_cast<int>(signal) << "\n";
   }
   std::unique_ptr<QuicDecrypter> AdvanceKeysAndCreateCurrentOneRttDecrypter()
       override {

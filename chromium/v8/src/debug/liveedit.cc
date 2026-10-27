@@ -812,7 +812,7 @@ Tagged<ScopeInfo> FindOuterScopeInfoFromScriptSfi(Isolate* isolate,
   // technically the EVAL_SCOPE must have an outer_scope_info. But, the GC can
   // clean up some ScopeInfos it thinks are no longer needed. Abort the check
   // in that case.
-  if (!other_scope_info->HasOuterScopeInfo()) return ScopeInfo();
+  if (!other_scope_info->HasOuterScopeInfo()) return {};
 
   DCHECK_EQ(other_scope_info->scope_type(), EVAL_SCOPE);
   other_scope_info = other_scope_info->OuterScopeInfo();
@@ -872,8 +872,9 @@ void LiveEdit::PatchScript(Isolate* isolate, Handle<Script> script,
   std::vector<FunctionLiteral*> literals;
   std::map<uint32_t, std::vector<uint32_t>> eval_calls;
   if (!ParseScript(isolate, script, &parse_info, outer_scope_info, false,
-                   &literals, &eval_calls, result))
+                   &literals, &eval_calls, result)) {
     return;
+  }
 
   Handle<Script> new_script =
       isolate->factory()->CloneScript(script, new_source);
@@ -950,12 +951,15 @@ void LiveEdit::PatchScript(Isolate* isolate, Handle<Script> script,
     std::vector<uint32_t> target_infos =
         new_eval_calls[sfi->function_literal_id(kRelaxedLoad)];
     new_script->infos()->set(mapping.second->function_literal_id(),
-                             MakeWeak(*sfi));
+                             MakeWeak(*sfi), kReleaseStore);
     if (sfi->HasBytecodeArray()) {
       for (size_t i = 0; i < source_infos.size(); i++) {
-        Tagged<ScopeInfo> scope_info = Cast<ScopeInfo>(
-            script->infos()->get(source_infos[i]).GetHeapObjectAssumeWeak());
-        new_script->infos()->set(target_infos[i], MakeWeak(scope_info));
+        Tagged<ScopeInfo> scope_info =
+            Cast<ScopeInfo>(script->infos()
+                                ->get(source_infos[i], kAcquireLoad)
+                                .GetHeapObjectAssumeWeak());
+        new_script->infos()->set(target_infos[i], MakeWeak(scope_info),
+                                 kReleaseStore);
       }
     }
     DCHECK_EQ(sfi->function_literal_id(kRelaxedLoad),

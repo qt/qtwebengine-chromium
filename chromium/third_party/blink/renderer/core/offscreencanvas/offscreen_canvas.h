@@ -22,6 +22,7 @@
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/prefinalizer.h"
 #include "third_party/blink/renderer/platform/text/layout_locale.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace blink {
@@ -83,7 +84,7 @@ class CORE_EXPORT OffscreenCanvas final
   void DeregisterFromAnimationFrameProvider();
   DOMNodeId PlaceholderCanvasId() const { return placeholder_canvas_id_; }
   bool HasPlaceholderCanvas() const;
-  bool IsDirtyRectEmpty() const { return dirty_rect_for_commit_.isEmpty(); }
+  bool IsPendingFrame() const { return needs_push_frame_; }
 
   bool IsNeutered() const override { return is_neutered_; }
   void SetNeutered();
@@ -100,6 +101,10 @@ class CORE_EXPORT OffscreenCanvas final
   // TODO(crbug.com/630356): apply the flag to WebGL context as well
   void SetDisableReadingFromCanvasTrue() {
     disable_reading_from_canvas_ = true;
+  }
+
+  void SetFrameSinkIdForTesting(uint32_t client_id, uint32_t sink_id) {
+    SetFrameSinkId(client_id, sink_id);
   }
 
   void SetFrameSinkId(uint32_t client_id, uint32_t sink_id) {
@@ -122,18 +127,13 @@ class CORE_EXPORT OffscreenCanvas final
   CanvasRenderingContext* RenderingContext() const override {
     return context_.Get();
   }
-  // Because OffscreenCanvas is not tied to a DOM, it's visibility cannot be
-  // determined synchronously.
-  // TODO(junov): Propagate changes in visibility from the placeholder canvas.
-  bool IsPageVisible() const override { return true; }
-  void SetTransferToGPUTextureWasInvoked() override {
-    transfer_to_gpu_texture_was_invoked_ = true;
-  }
+  bool IsPageVisible() const override;
+  void SetParentVisibility(bool visible) override;
   void DiscardResources() override;
 
   bool PushFrameIfNeeded();
   bool PushFrame(scoped_refptr<CanvasResource>&& frame) override;
-  void DidDraw(const SkIRect&) override;
+  void DidDraw(const gfx::Rect&) override;
   using CanvasRenderingContextHost::DidDraw;
   bool ShouldAccelerate2dContext() const override;
   CanvasResourceDispatcher* GetOrCreateResourceDispatcher() override;
@@ -145,9 +145,6 @@ class CORE_EXPORT OffscreenCanvas final
 
   // CanvasResourceProvider::Delegate implementation
   void NotifyGpuContextLost() override;
-  bool TransferToGPUTextureWasInvoked() override {
-    return transfer_to_gpu_texture_was_invoked_;
-  }
   void SetNeedsCompositingUpdate() override {}
 
   // EventTarget implementation
@@ -254,6 +251,7 @@ class CORE_EXPORT OffscreenCanvas final
   WeakMember<ExecutionContext> execution_context_;
 
   DOMNodeId placeholder_canvas_id_ = kInvalidDOMNodeId;
+  bool is_parent_visible_ = true;
   std::optional<TextDirection> text_direction_;
 
   // Required for the TextStyle lang attribute, only non-null if control
@@ -267,12 +265,9 @@ class CORE_EXPORT OffscreenCanvas final
 
   std::unique_ptr<CanvasResourceDispatcher> frame_dispatcher_;
 
-  SkIRect current_frame_damage_rect_;
-
   // Rect is in a canvas's space (i.e Size() is a full rect and not in a
   // CanvasResource space).
-  // TODO(vasilyt): We should reconsile this rect with the one above.
-  SkIRect dirty_rect_for_commit_;
+  gfx::Rect current_frame_damage_rect_;
 
   bool needs_push_frame_ = false;
   bool inside_worker_raf_ = false;
@@ -290,7 +285,6 @@ class CORE_EXPORT OffscreenCanvas final
   uint32_t client_id_ = 0;
   uint32_t sink_id_ = 0;
 
-  bool transfer_to_gpu_texture_was_invoked_ = false;
 };
 
 }  // namespace blink

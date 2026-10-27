@@ -38,7 +38,6 @@ if (include_js2gtest_tests) {
       "ash_common/i18n_process_test.js",
       "assertions.js",
       "async_gen.js",
-      "borealis_installer/borealis_installer_browsertest.js",
       "certificate_manager_dialog_browsertest.js",
       "cloud_upload/cloud_upload_dialog_browsertest.js",
       "cloud_upload/connect_onedrive_browsertest.js",
@@ -116,7 +115,6 @@ js_library("test_util") {
 group("closure_compile") {
   public_deps = [
     ":closure_compile_local",
-    "account_manager:closure_compile",
     "ash_common:closure_compile",
   ]
 }

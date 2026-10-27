@@ -158,7 +158,7 @@ void TaskRunnerImpl::ScheduleDelayedTasks() {
   delayed_tasks_.erase(delayed_tasks_.begin(), end_of_range);
 }
 
-bool TaskRunnerImpl::GrabMoreRunnableTasks() {
+bool TaskRunnerImpl::GrabMoreRunnableTasks() OSP_NO_THREAD_SAFETY_ANALYSIS {
   OSP_CHECK(running_tasks_.empty());
 
   std::unique_lock<std::mutex> lock(task_mutex_);

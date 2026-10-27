@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_INDEXED_VIEW_H
 #define EIGEN_INDEXED_VIEW_H
@@ -36,15 +37,16 @@ struct traits<IndexedView<XprType, RowIndices, ColIndices>> : traits<XprType> {
     OuterIncr = IsRowMajor ? RowIncr : ColIncr,
 
     HasSameStorageOrderAsXprType = (IsRowMajor == XprTypeIsRowMajor),
-    XprInnerStride = HasSameStorageOrderAsXprType ? int(inner_stride_at_compile_time<XprType>::ret)
-                                                  : int(outer_stride_at_compile_time<XprType>::ret),
-    XprOuterstride = HasSameStorageOrderAsXprType ? int(outer_stride_at_compile_time<XprType>::ret)
-                                                  : int(inner_stride_at_compile_time<XprType>::ret),
+    XprInnerStride = HasSameStorageOrderAsXprType ? int(inner_stride_at_compile_time<XprType>::value)
+                                                  : int(outer_stride_at_compile_time<XprType>::value),
+    XprOuterstride = HasSameStorageOrderAsXprType ? int(outer_stride_at_compile_time<XprType>::value)
+                                                  : int(inner_stride_at_compile_time<XprType>::value),
 
     InnerSize = XprTypeIsRowMajor ? ColsAtCompileTime : RowsAtCompileTime,
     IsBlockAlike = InnerIncr == 1 && OuterIncr == 1,
-    IsInnerPannel = HasSameStorageOrderAsXprType &&
-                    is_same<AllRange<InnerSize>, std::conditional_t<XprTypeIsRowMajor, ColIndices, RowIndices>>::value,
+    IsInnerPannel =
+        HasSameStorageOrderAsXprType &&
+        std::is_same<AllRange<InnerSize>, std::conditional_t<XprTypeIsRowMajor, ColIndices, RowIndices>>::value,
 
     InnerStrideAtCompileTime =
         InnerIncr < 0 || InnerIncr == DynamicIndex || XprInnerStride == Dynamic || InnerIncr == Undefined
@@ -197,13 +199,13 @@ class IndexedViewImpl<XprType, RowIndices, ColIndices, StorageKind, true>
   IndexedViewImpl(XprType& xpr, const T0& rowIndices, const T1& colIndices) : Base(xpr, rowIndices, colIndices) {}
 
   Index rowIncrement() const {
-    if (traits<Derived>::RowIncr != DynamicIndex && traits<Derived>::RowIncr != Undefined) {
+    EIGEN_IF_CONSTEXPR(traits<Derived>::RowIncr != DynamicIndex && traits<Derived>::RowIncr != Undefined) {
       return traits<Derived>::RowIncr;
     }
     return IndexedViewHelper<RowIndices>::incr(this->rowIndices());
   }
   Index colIncrement() const {
-    if (traits<Derived>::ColIncr != DynamicIndex && traits<Derived>::ColIncr != Undefined) {
+    EIGEN_IF_CONSTEXPR(traits<Derived>::ColIncr != DynamicIndex && traits<Derived>::ColIncr != Undefined) {
       return traits<Derived>::ColIncr;
     }
     return IndexedViewHelper<ColIndices>::incr(this->colIndices());
@@ -226,14 +228,14 @@ class IndexedViewImpl<XprType, RowIndices, ColIndices, StorageKind, true>
   }
 
   EIGEN_DEVICE_FUNC constexpr Index innerStride() const noexcept {
-    if (traits<Derived>::InnerStrideAtCompileTime != Dynamic) {
+    EIGEN_IF_CONSTEXPR(traits<Derived>::InnerStrideAtCompileTime != Dynamic) {
       return traits<Derived>::InnerStrideAtCompileTime;
     }
     return innerIncrement() * this->nestedExpression().innerStride();
   }
 
   EIGEN_DEVICE_FUNC constexpr Index outerStride() const noexcept {
-    if (traits<Derived>::OuterStrideAtCompileTime != Dynamic) {
+    EIGEN_IF_CONSTEXPR(traits<Derived>::OuterStrideAtCompileTime != Dynamic) {
       return traits<Derived>::OuterStrideAtCompileTime;
     }
     return outerIncrement() * this->nestedExpression().outerStride();

@@ -113,7 +113,8 @@ class GetSandboxFlagsUnittest(unittest.TestCase):
         self.mock_get_container_path.return_value = '/usr/bin:/bin'
         self.mock_get_sandbox_image_tag.return_value = 'fake/image:latest'
 
-        flags, error = gemini_provider._get_sandbox_flags()
+        flags, error = gemini_provider._get_sandbox_flags(
+            gemini_cli_cmd=['gemini'])
 
         self.assertEqual(error, '')
         self.assertIn(f'-v {fake_depot_tools_path.as_posix()}:/depot_tools',
@@ -124,7 +125,8 @@ class GetSandboxFlagsUnittest(unittest.TestCase):
         """Tests that an error is returned when depot_tools is not found."""
         self.mock_get_depot_tools_path.return_value = None
 
-        flags, error = gemini_provider._get_sandbox_flags()
+        flags, error = gemini_provider._get_sandbox_flags(
+            gemini_cli_cmd=['gemini'])
 
         self.assertEqual(flags, [])
         self.assertEqual(
@@ -138,7 +140,8 @@ class GetSandboxFlagsUnittest(unittest.TestCase):
         self.mock_get_container_path.return_value = None
         self.mock_get_sandbox_image_tag.return_value = 'fake/image:latest'
 
-        flags, error = gemini_provider._get_sandbox_flags()
+        flags, error = gemini_provider._get_sandbox_flags(
+            gemini_cli_cmd=['gemini'])
 
         self.assertEqual(flags, [])
         self.assertEqual(
@@ -335,7 +338,7 @@ class GetGeminiCliArgumentsUnittest(fake_filesystem_unittest.TestCase):
 
         self.assertEqual(error, '')
         self.assertEqual(args.command,
-                         ['gemini', '-y', '--model', 'gemini-2.5-pro'])
+                         ['gemini', '-y', '--model', 'gemini-3-flash-preview'])
         self.assertIsNone(args.home_dir)
         self.assertEqual(args.timeout_seconds,
                          gemini_provider.DEFAULT_TIMEOUT_SECONDS)
@@ -355,8 +358,9 @@ class GetGeminiCliArgumentsUnittest(fake_filesystem_unittest.TestCase):
             provider_vars, provider_config, user_prompt)
 
         self.assertEqual(error, '')
-        self.assertEqual(args.command,
-                         ['/custom/gemini', '-y', '--model', 'gemini-2.5-pro'])
+        self.assertEqual(
+            args.command,
+            ['/custom/gemini', '-y', '--model', 'gemini-3-flash-preview'])
 
     def test_sandbox_enabled(self):
         """Tests that sandbox flags are added when sandbox is enabled."""
@@ -371,7 +375,7 @@ class GetGeminiCliArgumentsUnittest(fake_filesystem_unittest.TestCase):
         self.assertEqual(error, '')
         self.assertEqual(
             args.command,
-            ['gemini', '-y', '--model', 'gemini-2.5-pro', '--sandbox'])
+            ['gemini', '-y', '--model', 'gemini-3-flash-preview', '--sandbox'])
         self.assertIn('SANDBOX_FLAGS', args.env)
         self.assertEqual(args.env['SANDBOX_FLAGS'], '--sandbox-flag')
 
@@ -504,7 +508,8 @@ class RunGeminiCliWithOutputStreamingUnittest(fake_filesystem_unittest.TestCase
     def test_successful_execution(self):
         """Tests a successful execution of the gemini CLI."""
         args = gemini_provider.GeminiCliArguments(
-            command=['gemini', '-y'],
+            base_gemini_cli_cmd=['gemini'],
+            gemini_cli_args=['-y'],
             home_dir=None,
             env={},
             timeout_seconds=10,
@@ -537,7 +542,8 @@ class RunGeminiCliWithOutputStreamingUnittest(fake_filesystem_unittest.TestCase
             'Fake error')
         self.mock_popen.return_value.poll.return_value = None
         args = gemini_provider.GeminiCliArguments(
-            command=['gemini', '-y'],
+            base_gemini_cli_cmd=['gemini'],
+            gemini_cli_args=['-y'],
             home_dir=None,
             env={},
             timeout_seconds=10,
@@ -844,7 +850,8 @@ class CallApiUnittest(fake_filesystem_unittest.TestCase):
         context = {'vars': {}}
         self.mock_get_gemini_cli_arguments.return_value = (
             gemini_provider.GeminiCliArguments(
-                command=['gemini', '-y'],
+                base_gemini_cli_cmd=['gemini'],
+                gemini_cli_args=['-y'],
                 home_dir=pathlib.Path('/fake/home'),
                 env={},
                 timeout_seconds=10,
@@ -887,7 +894,8 @@ class CallApiUnittest(fake_filesystem_unittest.TestCase):
         context = {'vars': {}}
         self.mock_get_gemini_cli_arguments.return_value = (
             gemini_provider.GeminiCliArguments(
-                command=['gemini', '-y'],
+                base_gemini_cli_cmd=['gemini'],
+                gemini_cli_args=['-y'],
                 home_dir=None,
                 env={},
                 timeout_seconds=10,
@@ -912,7 +920,8 @@ class CallApiUnittest(fake_filesystem_unittest.TestCase):
         context = {'vars': {}}
         self.mock_get_gemini_cli_arguments.return_value = (
             gemini_provider.GeminiCliArguments(
-                command=['gemini', '-y'],
+                base_gemini_cli_cmd=['gemini'],
+                gemini_cli_args=['-y'],
                 home_dir=None,
                 env={},
                 timeout_seconds=123,
@@ -939,7 +948,8 @@ class CallApiUnittest(fake_filesystem_unittest.TestCase):
         context = {'vars': {}}
         self.mock_get_gemini_cli_arguments.return_value = (
             gemini_provider.GeminiCliArguments(
-                command=['gemini', '-y'],
+                base_gemini_cli_cmd=['gemini'],
+                gemini_cli_args=['-y'],
                 home_dir=None,
                 env={},
                 timeout_seconds=123,
@@ -964,7 +974,8 @@ class CallApiUnittest(fake_filesystem_unittest.TestCase):
         context = {'vars': {}}
         self.mock_get_gemini_cli_arguments.return_value = (
             gemini_provider.GeminiCliArguments(
-                command=['gemini', '-y'],
+                base_gemini_cli_cmd=['gemini'],
+                gemini_cli_args=['-y'],
                 home_dir=None,
                 env={},
                 timeout_seconds=123,

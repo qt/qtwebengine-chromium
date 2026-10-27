@@ -46,8 +46,33 @@ void LastBound::UnbindAndResetPushDescriptorSet(std::shared_ptr<vvl::DescriptorS
 
 bool LastBound::IsDynamic(const CBDynamicState state) const { return !pipeline_state || pipeline_state->IsDynamic(state); }
 
+void LastBound::BindPipeline(vvl::Pipeline* pipe_state) {
+    pipeline_state = pipe_state;
+
+    // Mark any previous shader object binds as invalidated vkspec.html#shaders-objects-pipeline-interaction
+    for (uint32_t i = 0; i < kShaderObjectStageCount; ++i) {
+        shader_object_bound[i] = false;
+        shader_object_states[i] = nullptr;
+    }
+}
+
+void LastBound::BindShaderObject(VkShaderStageFlagBits shader_stage,
+                                 const std::shared_ptr<vvl::ShaderObject>& shader_object_state) {
+    const auto stage_index = static_cast<uint32_t>(VkShaderStageToShaderObjectStage(shader_stage));
+    shader_object_bound[stage_index] = true;
+    shader_object_states[stage_index] = shader_object_state;
+
+    // We use this to mark any previous pipeline bounds are invalidated now
+    // vkspec.html#shaders-objects-pipeline-interaction
+    pipeline_state = nullptr;
+}
+
 void LastBound::Reset() {
     pipeline_state = nullptr;
+    for (uint32_t i = 0; i < kShaderObjectStageCount; ++i) {
+        shader_object_bound[i] = false;
+        shader_object_states[i] = nullptr;
+    }
     desc_set_pipeline_layout.reset();
     if (push_descriptor_set) {
         cb_state.RemoveChild(push_descriptor_set);
@@ -758,7 +783,7 @@ float LastBound::GetMinSampleShading() const {
 
 std::string LastBound::DescribeSampleShading() const {
     std::ostringstream ss;
-    ss << "Sample Shading was enbled ";
+    ss << "Sample Shading was enabled ";
 
     bool is_implicit = false;
     if (auto fragment_entry_point = GetFragmentEntryPoint()) {
@@ -803,14 +828,14 @@ VkShaderEXT LastBound::GetShaderObject(ShaderObjectStage stage) const {
 }
 
 vvl::ShaderObject* LastBound::GetShaderObjectState(ShaderObjectStage stage) const {
-    return shader_object_states[static_cast<uint32_t>(stage)];
+    return shader_object_states[static_cast<uint32_t>(stage)].get();
 }
 
 const vvl::ShaderObject* LastBound::GetShaderObjectStateIfValid(ShaderObjectStage stage) const {
     if (!shader_object_bound[static_cast<uint32_t>(stage)]) {
         return nullptr;
     }
-    return shader_object_states[static_cast<uint32_t>(stage)];
+    return shader_object_states[static_cast<uint32_t>(stage)].get();
 }
 
 const vvl::ShaderObject* LastBound::GetFirstShader() const {
@@ -848,25 +873,25 @@ std::vector<vvl::ShaderObject*> LastBound::GetAllBoundGraphicsShaderObjects() {
     std::vector<vvl::ShaderObject*> shaders;
 
     if (IsValidShaderObjectBound(ShaderObjectStage::VERTEX)) {
-        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::VERTEX)]);
+        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::VERTEX)].get());
     }
     if (IsValidShaderObjectBound(ShaderObjectStage::TESSELLATION_CONTROL)) {
-        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::TESSELLATION_CONTROL)]);
+        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::TESSELLATION_CONTROL)].get());
     }
     if (IsValidShaderObjectBound(ShaderObjectStage::TESSELLATION_EVALUATION)) {
-        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::TESSELLATION_EVALUATION)]);
+        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::TESSELLATION_EVALUATION)].get());
     }
     if (IsValidShaderObjectBound(ShaderObjectStage::GEOMETRY)) {
-        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::GEOMETRY)]);
+        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::GEOMETRY)].get());
     }
     if (IsValidShaderObjectBound(ShaderObjectStage::FRAGMENT)) {
-        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::FRAGMENT)]);
+        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::FRAGMENT)].get());
     }
     if (IsValidShaderObjectBound(ShaderObjectStage::TASK)) {
-        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::TASK)]);
+        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::TASK)].get());
     }
     if (IsValidShaderObjectBound(ShaderObjectStage::MESH)) {
-        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::MESH)]);
+        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::MESH)].get());
     }
 
     return shaders;
@@ -930,6 +955,7 @@ bool LastBound::IsBoundSetCompatible(uint32_t set, const vvl::PipelineLayout& pi
     if ((set >= ds_slots.size()) || (set >= pipeline_layout.set_compat_ids.size())) {
         return false;
     }
+    // (because I always forget) Checked in PipelineLayoutCompatDef::operator==
     return (*(ds_slots[set].compat_id_for_set) == *(pipeline_layout.set_compat_ids[set]));
 }
 
@@ -937,6 +963,7 @@ bool LastBound::IsBoundSetCompatible(uint32_t set, const vvl::ShaderObject& shad
     if ((set >= ds_slots.size()) || (set >= shader_object_state.set_compat_ids.size())) {
         return false;
     }
+    // (because I always forget) Checked in PipelineLayoutCompatDef::operator==
     return (*(ds_slots[set].compat_id_for_set) == *(shader_object_state.set_compat_ids[set]));
 };
 
@@ -958,9 +985,8 @@ std::string LastBound::DescribeNonCompatibleSet(uint32_t set, const vvl::Pipelin
 std::string LastBound::DescribeNonCompatibleSet(uint32_t set, const vvl::ShaderObject& shader_object_state) const {
     std::ostringstream ss;
     if (set >= ds_slots.size()) {
-        ss << "The set (" << set << ") is out of bounds for the number of sets bound (" << ds_slots.size()
-           << ")\nHint: Make sure the previous calls to " << String(desc_set_bound_command)
-           << " has all sets bound that are needed.";
+        ss << "The bound shader VkShaderCreateInfoEXT::pSetLayouts[" << set << "] is out of bounds for the number of sets bound ("
+           << ds_slots.size() << ") in the previous call to " << String(desc_set_bound_command);
     } else if (set >= shader_object_state.set_compat_ids.size()) {
         ss << "The set (" << set << ") is out of bounds for the number of sets in the non-compatible VkDescriptorSetLayout ("
            << shader_object_state.set_compat_ids.size() << ")\n";

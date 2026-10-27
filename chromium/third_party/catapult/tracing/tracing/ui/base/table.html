@@ -42,7 +42,10 @@ tr.exportTo('tr.ui.b', function() {
     LIGHT: 2,
 
     // Dark highlight.
-    DARK: 3
+    DARK: 3,
+
+    // Outline highlight.
+    OUTLINE: 4
   };
 
   TableFormat.ColumnAlignment = {
@@ -152,6 +155,22 @@ tr.exportTo('tr.ui.b', function() {
       table > tbody[row-highlight-style="dark"] > tr:hover[selected],
       table > tbody[cell-highlight-style="dark"] > tr[selected] > td:hover {
         background-color: rgb(171, 217, 202);  /* semi-light turquoise */
+      }
+
+      /* Outline row and cell highlight. */
+      table > tbody[row-highlight-style="outline"] > tr[selected],
+      table > tbody[cell-highlight-style="outline"] > tr > td[selected] {
+        outline: -webkit-focus-ring-color auto 1px;
+      }
+      table > tbody[row-highlight-style="outline"] >
+          tr:not(.empty-row):not([selected]):hover,
+      table > tbody[cell-highlight-style="outline"] >
+          tr:not(.empty-row):not([selected]) > td:hover {
+        outline: -webkit-focus-ring-color auto 1px;
+      }
+      table > tbody[row-highlight-style="outline"] > tr:hover[selected],
+      table > tbody[cell-highlight-style="outline"] > tr[selected] > td:hover {
+        outline: -webkit-focus-ring-color auto 1px;
       }
 
       table > colgroup > col[selected] {
@@ -1108,6 +1127,9 @@ tr.exportTo('tr.ui.b', function() {
           break;
         case HighlightStyle.DARK:
           Polymer.dom(this.$.body).setAttribute(highlightAttribute, 'dark');
+          break;
+        case HighlightStyle.OUTLINE:
+          Polymer.dom(this.$.body).setAttribute(highlightAttribute, 'outline');
           break;
         default:
           throw new Error('Invalid resolved highlight style ' +

@@ -70,6 +70,7 @@ void LineInfo::Reset() {
   end_item_index_ = 0;
   end_offset_for_justify_ = 0;
 
+  text_fit_scale_ = 1.0f;
   text_align_ = ETextAlign::kLeft;
   base_direction_ = TextDirection::kLtr;
 
@@ -260,6 +261,13 @@ bool LineInfo::IsHyphenated() const {
     if (item_result.Length()) {
       return item_result.is_hyphenated;
     }
+  }
+  return false;
+}
+
+bool LineInfo::HasUnsuccessfulBlockInInline() const {
+  if (const LayoutResult* result = BlockInInlineLayoutResult()) {
+    return result->Status() != LayoutResult::kSuccess;
   }
   return false;
 }

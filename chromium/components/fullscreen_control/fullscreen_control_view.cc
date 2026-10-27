@@ -6,20 +6,17 @@
 
 #include <memory>
 
-#include "base/functional/callback.h"
 #include "cc/paint/paint_flags.h"
 #include "components/strings/grit/components_strings.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/size.h"
-#include "ui/gfx/paint_vector_icon.h"
 #include "ui/views/accessibility/view_accessibility.h"
-#include "ui/views/background.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/layout/fill_layout.h"
@@ -41,7 +38,9 @@ class CloseFullscreenButton : public views::Button {
     std::unique_ptr<views::ImageView> close_image_view =
         std::make_unique<views::ImageView>();
     close_image_view->SetImage(ui::ImageModel::FromVectorIcon(
-        views::kIcCloseIcon, SK_ColorWHITE, kCloseIconSize));
+        features::IsRoundedIconsEnabled() ? views::kCloseIcon
+                                          : views::kIcCloseOldIcon,
+        SK_ColorWHITE, kCloseIconSize));
     // Not focusable by default, only for accessibility.
     SetFocusBehavior(FocusBehavior::ACCESSIBLE_ONLY);
     GetViewAccessibility().SetName(

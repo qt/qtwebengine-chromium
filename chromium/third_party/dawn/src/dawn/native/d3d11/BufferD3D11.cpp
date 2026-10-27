@@ -25,27 +25,28 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/d3d11/BufferD3D11.h"
+#include "src/dawn/native/d3d11/BufferD3D11.h"
 
 #include <algorithm>
 #include <memory>
 #include <utility>
 #include <vector>
 
-#include "dawn/common/Alloc.h"
-#include "dawn/common/Assert.h"
-#include "dawn/common/Constants.h"
-#include "dawn/common/Math.h"
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/CommandBuffer.h"
-#include "dawn/native/DynamicUploader.h"
-#include "dawn/native/d3d/D3DError.h"
-#include "dawn/native/d3d11/DeviceD3D11.h"
-#include "dawn/native/d3d11/PhysicalDeviceD3D11.h"
-#include "dawn/native/d3d11/QueueD3D11.h"
-#include "dawn/native/d3d11/UtilsD3D11.h"
 #include "dawn/platform/DawnPlatform.h"
-#include "dawn/platform/tracing/TraceEvent.h"
+#include "src/dawn/common/Alloc.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/Constants.h"
+#include "src/dawn/common/Math.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/CommandBuffer.h"
+#include "src/dawn/native/DynamicUploader.h"
+#include "src/dawn/native/d3d/D3DError.h"
+#include "src/dawn/native/d3d11/DeviceD3D11.h"
+#include "src/dawn/native/d3d11/PhysicalDeviceD3D11.h"
+#include "src/dawn/native/d3d11/QueueD3D11.h"
+#include "src/dawn/native/d3d11/UtilsD3D11.h"
+#include "src/dawn/platform/tracing/TraceEvent.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native::d3d11 {
 
@@ -242,7 +243,7 @@ class UploadBuffer final : public Buffer {
                              uint8_t clearValue,
                              uint64_t offset,
                              uint64_t size) override {
-        memset(mUploadData.get() + offset, clearValue, size);
+        DAWN_UNSAFE_TODO(memset(mUploadData.get() + offset, clearValue, size));
         return {};
     }
 
@@ -252,7 +253,7 @@ class UploadBuffer final : public Buffer {
                               Buffer* destination,
                               uint64_t destinationOffset) override {
         return destination->WriteInternal(commandContext, destinationOffset,
-                                          mUploadData.get() + sourceOffset, size,
+                                          DAWN_UNSAFE_TODO(mUploadData.get() + sourceOffset), size,
                                           /*isInitialWrite=*/false);
     }
 
@@ -272,7 +273,7 @@ class UploadBuffer final : public Buffer {
                              size_t size,
                              bool isInitialWrite) override {
         const auto* src = static_cast<const uint8_t*>(data);
-        std::copy(src, src + size, mUploadData.get() + offset);
+        std::copy(src, DAWN_UNSAFE_TODO(src + size), DAWN_UNSAFE_TODO(mUploadData.get() + offset));
         return {};
     }
 
@@ -445,7 +446,8 @@ MaybeError Buffer::UnmapIfNeeded(const ScopedCommandRecordingContext* commandCon
         ScopedMap scopedMap;
         DAWN_TRY_ASSIGN(scopedMap, ScopedMap::Create(commandContext, this, wgpu::MapMode::Write));
         DAWN_ASSERT(scopedMap.GetMappedData());
-        memcpy(scopedMap.GetMappedData(), mMapAtCreationData.get(), GetAllocatedSize());
+        DAWN_UNSAFE_TODO(
+            memcpy(scopedMap.GetMappedData(), mMapAtCreationData.get(), GetAllocatedSize()));
         mMapAtCreationData.reset();
         return {};
     }
@@ -1175,7 +1177,7 @@ MaybeError GPUUsableBuffer::SyncStorage(const ScopedCommandRecordingContext* com
                                                   /*Subresource=*/0, D3D11_MAP_WRITE_DISCARD,
                                                   /*MapFlags=*/0, &mappedDstResource),
                               "ID3D11DeviceContext::Map dst"));
-        memcpy(mappedDstResource.pData, srcData, size);
+        DAWN_UNSAFE_TODO(memcpy(mappedDstResource.pData, srcData, size));
         commandContext->Unmap(dst,
                               /*Subresource=*/0);
         return {};
@@ -1344,8 +1346,8 @@ GPUUsableBuffer::CreateD3D11ShaderResourceViewFromD3DBuffer(ID3D11Buffer* d3d11B
                                                             uint64_t offset,
                                                             uint64_t originalSize) {
     uint64_t size = Align(originalSize, 4);
-    DAWN_ASSERT(IsAligned(offset, 4u));
-    DAWN_ASSERT(size <= GetAllocatedSize());
+    DAWN_CHECK(IsAligned(offset, 4u));
+    DAWN_CHECK(size <= GetAllocatedSize());
     UINT firstElement = static_cast<UINT>(offset / 4);
     UINT numElements = static_cast<UINT>(size / 4);
 
@@ -1369,8 +1371,8 @@ GPUUsableBuffer::CreateD3D11UnorderedAccessViewFromD3DBuffer(ID3D11Buffer* d3d11
                                                              uint64_t offset,
                                                              uint64_t originalSize) {
     uint64_t size = Align(originalSize, 4);
-    DAWN_ASSERT(IsAligned(offset, 4u));
-    DAWN_ASSERT(size <= GetAllocatedSize());
+    DAWN_CHECK(IsAligned(offset, 4u));
+    DAWN_CHECK(size <= GetAllocatedSize());
 
     UINT firstElement = static_cast<UINT>(offset / 4);
     UINT numElements = static_cast<UINT>(size / 4);
@@ -1478,8 +1480,8 @@ MaybeError GPUUsableBuffer::UpdateD3D11ConstantBuffer(
         }
         size_t alignedSize = alignedEnd - alignedOffset;
 
-        DAWN_ASSERT((alignedSize % kConstantBufferUpdateAlignment) == 0);
-        DAWN_ASSERT(alignedSize <= GetAllocatedSize());
+        DAWN_CHECK((alignedSize % kConstantBufferUpdateAlignment) == 0);
+        DAWN_CHECK(alignedSize <= GetAllocatedSize());
         DAWN_ASSERT(offset >= alignedOffset);
 
         // Extra bytes on the left of offset we could write to. This is only valid if
@@ -1494,7 +1496,7 @@ MaybeError GPUUsableBuffer::UpdateD3D11ConstantBuffer(
         std::unique_ptr<uint8_t[]> alignedBuffer;
         if (size != alignedSize) {
             alignedBuffer.reset(new uint8_t[alignedSize]);
-            std::memcpy(alignedBuffer.get() + leftExtraBytes, data, size);
+            DAWN_UNSAFE_TODO(std::memcpy(alignedBuffer.get() + leftExtraBytes, data, size));
             data = alignedBuffer.get();
         }
 
@@ -1557,7 +1559,7 @@ MaybeError GPUUsableBuffer::WriteInternal(const ScopedCommandRecordingContext* c
         DAWN_TRY_ASSIGN(scopedMap, ScopedMap::Create(commandContext, this, wgpu::MapMode::Write));
 
         DAWN_ASSERT(scopedMap.GetMappedData());
-        memcpy(scopedMap.GetMappedData() + offset, data, size);
+        DAWN_UNSAFE_TODO(memcpy(scopedMap.GetMappedData() + offset, data, size));
 
         return {};
     }

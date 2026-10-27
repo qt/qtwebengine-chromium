@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as Platform from '../../core/platform/platform.js';
@@ -56,7 +58,7 @@ describeWithEnvironment('AiCodeCompletionPlugin', () => {
     const uiSourceCode = createUiSourceCodeStub();
     assert.throws(
         () => new AiCodeCompletionPlugin.AiCodeCompletionPlugin(uiSourceCode),
-        'AI code completion feature is not enabled.');
+        'AI code completion feature is not available.');
   });
 
   describe('provider callbacks', () => {
@@ -151,7 +153,8 @@ describeWithEnvironment('AiCodeCompletionPlugin', () => {
     });
 
     it('attaches the citations toolbar when a suggestion with citations is accepted', async () => {
-      const updateCitationsSpy = sinon.spy(PanelCommon.AiCodeCompletionSummaryToolbar.prototype, 'updateCitations');
+      const updateCitationsSpy = sinon.spy(
+          PanelCommon.AiCodeCompletionSummaryToolbar.AiCodeCompletionSummaryToolbar.prototype, 'updateCitations');
       const plugin = setupPlugin();
       await clock.tickAsync(0);
       const providerConfig = plugin.aiCodeCompletionConfig;
@@ -172,7 +175,8 @@ describeWithEnvironment('AiCodeCompletionPlugin', () => {
     });
 
     it('does not attach the citations toolbar if there are no citations', async () => {
-      const updateCitationsSpy = sinon.spy(PanelCommon.AiCodeCompletionSummaryToolbar.prototype, 'updateCitations');
+      const updateCitationsSpy = sinon.spy(
+          PanelCommon.AiCodeCompletionSummaryToolbar.AiCodeCompletionSummaryToolbar.prototype, 'updateCitations');
       const plugin = setupPlugin();
       await clock.tickAsync(0);
       const providerConfig = plugin.aiCodeCompletionConfig;

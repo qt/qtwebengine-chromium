@@ -17,7 +17,7 @@ import "third_party/blink/public/mojom/fetch/fetch_api_response.mojom";
 import "third_party/blink/public/mojom/loader/url_loader_factory_bundle.mojom";
 import "third_party/blink/public/mojom/messaging/transferable_message.mojom";
 import "third_party/blink/public/mojom/notifications/notification.mojom";
-import "third_party/blink/public/mojom/payments/payment_app.mojom";
+import "third_party/blink/public/mojom/payments/payment_app_events.mojom";
 import "third_party/blink/public/mojom/push_messaging/push_messaging.mojom";
 import "third_party/blink/public/mojom/service_worker/dispatch_fetch_event_params.mojom";
 import "third_party/blink/public/mojom/service_worker/service_worker_ancestor_frame_type.mojom";
@@ -332,8 +332,10 @@ interface ServiceWorker {
   // events are handled.
   SetIdleDelay(mojo_base.mojom.TimeDelta delay);
 
-  // Resets the members for idle timeouts to cancel the idle callback.
-  AddKeepAlive();
+  // Notifies the renderer of an active keepalive. Resets the idle timeout
+  // and provides a `keepalive_sequence_number` to allow the browser to detect
+  // and reject stale idle termination requests.
+  AddKeepAlive(uint64 keepalive_sequence_number);
 
   // Check if the event queue is empty.
   // Schedules idle timeout callback if there is no ongoing event.

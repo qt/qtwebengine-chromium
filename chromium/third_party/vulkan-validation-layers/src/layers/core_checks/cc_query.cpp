@@ -25,6 +25,7 @@
 #include "core_validation.h"
 #include "core_checks/cc_state_tracker.h"
 #include "core_checks/cc_buffer_address.h"
+#include "error_message/error_location.h"
 #include "generated/enum_flag_bits.h"
 #include "state_tracker/device_state.h"
 #include "state_tracker/buffer_state.h"
@@ -744,6 +745,15 @@ bool CoreChecks::ValidateBeginQuery(const vvl::CommandBuffer& cb_state, const Qu
                          "there is no bound video session but query type is VK_QUERY_TYPE_VIDEO_ENCODE_FEEDBACK_KHR.");
     }
 
+    if (cb_state.per_tile_execution_model_enabled) {
+        const char* vuid = is_indexed ? "VUID-vkCmdBeginQueryIndexedEXT-None-10681" : "VUID-vkCmdBeginQuery-None-10681";
+        const LogObjectList objlist(cb_state.Handle(), query_obj.pool);
+        skip |= LogError(vuid, objlist, loc,
+                         "the per-tile execution model has been enabled in this command buffer. "
+                         "(Don't call vkCmdBeginPerTileExecutionQCOM before %s)",
+                         String(loc.function));
+    }
+
     return skip;
 }
 
@@ -766,6 +776,7 @@ bool CoreChecks::PreCallValidateCmdBeginQuery(VkCommandBuffer commandBuffer, VkQ
     QueryObject query_obj = {queryPool, slot};
     skip |= ValidateBeginQuery(*cb_state, query_obj, flags, 0, error_obj.location);
     skip |= ValidateCmd(*cb_state, error_obj.location);
+
     return skip;
 }
 
@@ -845,7 +856,7 @@ bool CoreChecks::ValidatePerformanceQuery(const vvl::CommandBuffer& cb_state, co
     if (!cb_state.performance_lock_acquired || cb_state.performance_lock_released) {
         const LogObjectList objlist(cb_state.Handle(), query_obj.pool);
         skip |= state_data.LogError("VUID-vkQueueSubmit-pCommandBuffers-03220", objlist, loc,
-                                    "Commandbuffer %s was submitted and contains a performance query but the"
+                                    "Commandbuffer %s was submitted and contains a performance query but the "
                                     "profiling lock was not held continuously throughout the recording of commands.",
                                     state_data.FormatHandle(cb_state).c_str());
     }
@@ -940,6 +951,15 @@ bool CoreChecks::ValidateCmdEndQuery(const vvl::CommandBuffer& cb_state, VkQuery
             }
         }
     }
+
+    if (cb_state.per_tile_execution_model_enabled) {
+        const char* vuid = is_indexed ? "VUID-vkCmdEndQueryIndexedEXT-None-10682" : "VUID-vkCmdEndQuery-None-10682";
+        const LogObjectList objlist(cb_state.Handle(), queryPool);
+        skip |= LogError(vuid, objlist, loc,
+                         "the per-tile execution model has been enabled in this command buffer. "
+                         "(Don't call vkCmdBeginPerTileExecutionQCOM before %s)",
+                         String(loc.function));
+    }
     return skip;
 }
 
@@ -956,12 +976,14 @@ bool CoreChecks::PreCallValidateCmdEndQuery(VkCommandBuffer commandBuffer, VkQue
     // Only continue validating if the slot is even within range
     if (slot >= available_query_count) {
         const LogObjectList objlist(commandBuffer, queryPool);
-        skip |= LogError("VUID-vkCmdEndQuery-query-00810", objlist, error_obj.location.dot(Field::query),
-                         "(%" PRIu32 ") is greater or equal to the queryPool size (%" PRIu32 ").", slot, available_query_count);
+        skip |=
+            LogError("VUID-vkCmdEndQuery-query-00810", objlist, error_obj.location.dot(Field::query),
+                     "(%" PRIu32 ") is greater than or equal to the queryPool size (%" PRIu32 ").", slot, available_query_count);
     } else {
         skip |= ValidateCmdEndQuery(*cb_state, queryPool, slot, 0, error_obj.location);
         skip |= ValidateCmd(*cb_state, error_obj.location);
     }
+
     return skip;
 }
 
@@ -973,7 +995,7 @@ bool CoreChecks::ValidateQueryPoolIndex(LogObjectList objlist, const vvl::QueryP
     if (firstQuery >= available_query_count) {
         objlist.add(query_pool_state.Handle());
         skip |= LogError(first_vuid, objlist, loc,
-                         "In Query %s the firstQuery (%" PRIu32 ") is greater or equal to the queryPool size (%" PRIu32 ").",
+                         "In Query %s the firstQuery (%" PRIu32 ") is greater than or equal to the queryPool size (%" PRIu32 ").",
                          FormatHandle(query_pool_state).c_str(), firstQuery, available_query_count);
     }
     if ((firstQuery + queryCount) > available_query_count) {
@@ -1281,6 +1303,15 @@ bool CoreChecks::ValidateCmdWriteTimestamp(const vvl::CommandBuffer& cb_state, V
                      slot, view_mask_bits, view_mask, query_pool_state->create_info.queryCount, FormatHandle(queryPool).c_str());
     }
 
+    if (cb_state.per_tile_execution_model_enabled) {
+        const char* vuid = is_2 ? "VUID-vkCmdWriteTimestamp2-None-10639" : "VUID-vkCmdWriteTimestamp-None-10640";
+        const LogObjectList objlist(cb_state.Handle(), queryPool);
+        skip |= LogError(vuid, objlist, loc,
+                         "the per-tile execution model has been enabled in this command buffer. "
+                         "(Don't call vkCmdBeginPerTileExecutionQCOM before %s)",
+                         String(loc.function));
+    }
+
     return skip;
 }
 
@@ -1293,6 +1324,7 @@ bool CoreChecks::PreCallValidateCmdWriteTimestamp(VkCommandBuffer commandBuffer,
 
     const Location stage_loc = error_obj.location.dot(Field::pipelineStage);
     skip |= ValidatePipelineStage(LogObjectList(commandBuffer), stage_loc, cb_state->GetQueueFlags(), pipelineStage);
+
     return skip;
 }
 
@@ -1314,6 +1346,7 @@ bool CoreChecks::PreCallValidateCmdWriteTimestamp2(VkCommandBuffer commandBuffer
                          "(%s) must only set a single pipeline stage.", string_VkPipelineStageFlags2(stage).c_str());
     }
     skip |= ValidatePipelineStage(LogObjectList(commandBuffer), stage_loc, cb_state->GetQueueFlags(), stage);
+
     return skip;
 }
 
@@ -1378,6 +1411,7 @@ bool CoreChecks::PreCallValidateCmdBeginQueryIndexedEXT(VkCommandBuffer commandB
                          "VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT",
                          index, FormatHandle(queryPool).c_str());
     }
+
     return skip;
 }
 
@@ -1396,8 +1430,9 @@ bool CoreChecks::PreCallValidateCmdEndQueryIndexedEXT(VkCommandBuffer commandBuf
     const uint32_t available_query_count = query_pool_ci.queryCount;
     if (slot >= available_query_count) {
         const LogObjectList objlist(commandBuffer, queryPool);
-        skip |= LogError("VUID-vkCmdEndQueryIndexedEXT-query-02343", objlist, error_obj.location.dot(Field::index),
-                         "(%" PRIu32 ") is greater or equal to the queryPool size (%" PRIu32 ").", index, available_query_count);
+        skip |=
+            LogError("VUID-vkCmdEndQueryIndexedEXT-query-02343", objlist, error_obj.location.dot(Field::index),
+                     "(%" PRIu32 ") is greater than or equal to the queryPool size (%" PRIu32 ").", index, available_query_count);
     }
     if (query_pool_ci.queryType == VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT ||
         query_pool_ci.queryType == VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT) {

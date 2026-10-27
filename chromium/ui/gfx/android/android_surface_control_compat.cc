@@ -414,9 +414,6 @@ bool SetDataSpaceTransfer(const gfx::ColorSpace& color_space,
                           float& extended_range_brightness_ratio) {
   extended_range_brightness_ratio = 1.f;
   switch (color_space.GetTransferID()) {
-    case gfx::ColorSpace::TransferID::SMPTE170M:
-      dataspace |= ADATASPACE_TRANSFER_SMPTE_170M;
-      return true;
     case gfx::ColorSpace::TransferID::LINEAR_HDR:
       dataspace |= ADATASPACE_TRANSFER_LINEAR;
       return true;
@@ -430,7 +427,9 @@ bool SetDataSpaceTransfer(const gfx::ColorSpace& color_space,
       dataspace |= ADATASPACE_TRANSFER_SRGB;
       return true;
     case gfx::ColorSpace::TransferID::BT709:
-      // We use SRGB for BT709. See |ColorSpace::GetTransferFunction()| for
+    case gfx::ColorSpace::TransferID::SMPTE170M:
+      // We use SRGB for BT709 and SMPTE170M. See
+      // |ColorSpace::GetTransferFunction()| and go/smpte170m-cursed for
       // details.
       dataspace |= ADATASPACE_TRANSFER_SRGB;
       return true;
@@ -551,8 +550,7 @@ void OnTransactionCompletedOnAnyThread(void* context,
 void OnTransactiOnCommittedOnAnyThread(void* context,
                                        ASurfaceTransactionStats* stats) {
   auto* ack_ctx = static_cast<TransactionAckCtx*>(context);
-  TRACE_EVENT_INSTANT0("gpu,benchmark", "SurfaceControlTransaction committed",
-                       TRACE_EVENT_SCOPE_THREAD);
+  TRACE_EVENT_INSTANT("gpu,benchmark", "SurfaceControlTransaction committed");
 
   std::move(ack_ctx->latch_callback).Run();
   delete ack_ctx;
@@ -569,11 +567,7 @@ bool SurfaceControl::IsSupported() {
     min_sdk_version = base::android::android_info::SDK_VERSION_R;
   }
 
-  if (base::android::android_info::sdk_int() < min_sdk_version) {
-    return false;
-  }
-
-  return true;
+  return base::android::android_info::sdk_int() >= min_sdk_version;
 }
 
 bool SurfaceControl::SupportsColorSpace(const gfx::ColorSpace& color_space) {

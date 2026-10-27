@@ -97,12 +97,12 @@ std::unique_ptr<KeyframeModel> KeyframeModel::CreateImplInstance(
   if (has_set_start_time()) {
     to_return->set_start_time(start_time());
   }
-  to_return->set_pause_time(pause_time());
-  to_return->set_total_paused_duration(total_paused_duration());
-  to_return->set_time_offset(time_offset());
+  to_return->set_hold_time(hold_time());
+  to_return->set_start_delay(start_delay());
   to_return->set_direction(direction());
   to_return->set_playback_rate(playback_rate());
   to_return->set_fill_mode(fill_mode());
+  to_return->set_auto_fills_on_finish(auto_fills_on_finish());
   DCHECK(!to_return->is_controlling_instance_);
   to_return->is_controlling_instance_ = true;
 #if DCHECK_IS_ON()
@@ -138,8 +138,7 @@ int KeyframeModel::TargetProperty() const {
   return target_property_id_.target_property_type();
 }
 
-void KeyframeModel::SetRunState(RunState new_run_state,
-                                base::TimeTicks monotonic_time) {
+void KeyframeModel::SetRunState(RunState new_run_state) {
   char name_buffer[256];
   UNSAFE_TODO(base::SpanPrintf(name_buffer, "%s-%d-%d", curve()->TypeName(),
                                TargetProperty(), group_));
@@ -156,7 +155,7 @@ void KeyframeModel::SetRunState(RunState new_run_state,
   bool was_finished = is_finished();
 
   auto old_run_state_name = gfx::KeyframeModel::ToString(run_state());
-  gfx::KeyframeModel::SetRunState(new_run_state, monotonic_time);
+  gfx::KeyframeModel::SetRunState(new_run_state);
   auto new_run_state_name = gfx::KeyframeModel::ToString(new_run_state);
 
   if (is_controlling_instance_ && !was_finished && is_finished()) {
@@ -167,9 +166,9 @@ void KeyframeModel::SetRunState(RunState new_run_state,
   base::SpanPrintf(state_buffer, "%s->%s", old_run_state_name.c_str(),
                    new_run_state_name.c_str());
 
-  TRACE_EVENT_INSTANT2(
-      "cc", "ElementAnimations::SetRunState", TRACE_EVENT_SCOPE_THREAD, "Name",
-      TRACE_STR_COPY(name_buffer), "State", TRACE_STR_COPY(state_buffer));
+  TRACE_EVENT_INSTANT("cc", "ElementAnimations::SetRunState", "Name",
+                      TRACE_STR_COPY(name_buffer), "State",
+                      TRACE_STR_COPY(state_buffer));
 }
 
 bool KeyframeModel::InEffect(base::TimeTicks monotonic_time) const {
@@ -184,11 +183,9 @@ void KeyframeModel::PushPropertiesTo(KeyframeModel* other) const {
          "model ids are reused.";
 #endif
   other->element_id_ = element_id_;
-  if (run_state() == KeyframeModel::PAUSED ||
-      other->run_state() == KeyframeModel::PAUSED) {
+  if (IsPaused(run_state()) || IsPaused(other->run_state())) {
     other->ForceRunState(run_state());
-    other->set_pause_time(pause_time());
-    other->set_total_paused_duration(total_paused_duration());
+    other->set_hold_time(hold_time());
   }
 }
 

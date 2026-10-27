@@ -7,9 +7,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_MODULE_H
-#define EIGEN_CXX11_TENSOR_MODULE_H
+#ifndef EIGEN_TENSOR_MODULE_H
+#define EIGEN_TENSOR_MODULE_H
 
 #include "../../Eigen/Core"
 
@@ -22,7 +23,7 @@
 #include "../../Eigen/src/Core/util/MaxSizeVector.h"
 // IWYU pragma: end_exports
 
-/** \defgroup CXX11_Tensor_Module Tensor Module
+/** \defgroup Tensor_Module Tensor Module
  *
  * This module provides a Tensor class for storing arbitrarily indexed
  * objects.
@@ -139,4 +140,4 @@
 
 #include "../../Eigen/src/Core/util/ReenableStupidWarnings.h"
 
-#endif  // EIGEN_CXX11_TENSOR_MODULE_H
+#endif  // EIGEN_TENSOR_MODULE_H

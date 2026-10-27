@@ -30,12 +30,12 @@
 
 #include <webgpu/webgpu.h>
 
-#include "dawn/common/Ref.h"
-#include "dawn/common/RefCounted.h"
-#include "dawn/wire/ObjectHandle.h"
 #include "dawn/wire/ObjectType_autogen.h"
-#include "dawn/wire/client/EventManager.h"
 #include "partition_alloc/pointers/raw_ptr.h"
+#include "src/dawn/common/Ref.h"
+#include "src/dawn/common/RefCounted.h"
+#include "src/dawn/wire/ObjectHandle.h"
+#include "src/dawn/wire/client/EventManager.h"
 
 namespace dawn::wire::client {
 
@@ -55,7 +55,6 @@ class ObjectBase : public RefCounted {
   public:
     explicit ObjectBase(const ObjectBaseParams& params);
 
-    virtual void CancelCallbacksForDisconnect() {}
     virtual ObjectType GetObjectType() const = 0;
 
     // Objects are assumed to be registered with the wire on creation but can be unregistered

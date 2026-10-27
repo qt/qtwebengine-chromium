@@ -104,7 +104,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="API.StorageAccess.AllowedRequests4.Subsampled"
-    enum="StorageAccessResult" expires_after="2026-06-28">
+    enum="StorageAccessResult" expires_after="2026-10-25">
   <owner>mkwst@chromium.org</owner>
   <owner>brandm@microsoft.com</owner>
   <owner>cfredric@chromium.org</owner>
@@ -131,7 +131,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="API.StorageAccess.DocumentLoadedWithStorageAccess"
-    enum="Boolean" expires_after="2026-09-15">
+    enum="Boolean" expires_after="2026-11-15">
   <owner>cfredric@chromium.org</owner>
   <owner>johannhof@chromium.org</owner>
   <summary>
@@ -199,7 +199,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="API.StorageAccessHeader.StorageAccessStatusOutcome"
-    enum="StorageAccessStatusOutcome" expires_after="2026-09-20">
+    enum="StorageAccessStatusOutcome" expires_after="2026-11-22">
   <owner>sledoux@chromium.org</owner>
   <owner>cfredric@chromium.org</owner>
   <summary>
@@ -213,7 +213,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="API.TopLevelStorageAccess.RequestOutcome"
-    enum="TopLevelStorageAccessRequestOutcome" expires_after="2026-07-13">
+    enum="TopLevelStorageAccessRequestOutcome" expires_after="2026-11-15">
   <owner>cfredric@chromium.org</owner>
   <owner>mreichhoff@chromium.org</owner>
   <summary>
@@ -225,7 +225,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="API.TopLevelStorageAccess.RequestStorageAccessFor2"
-    enum="RequestStorageResult" expires_after="2026-08-09">
+    enum="RequestStorageResult" expires_after="2026-10-11">
   <owner>cfredric@chromium.org</owner>
   <owner>mreichhoff@chromium.org</owner>
   <summary>
@@ -249,7 +249,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Clipboard.Read" enum="ClipboardFormatRead"
-    expires_after="2026-08-23">
+    expires_after="2026-10-25">
   <owner>huangdarwin@chromium.org</owner>
   <owner>src/ui/base/clipboard/OWNERS</owner>
   <summary>
@@ -276,7 +276,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Clipboard.Write" enum="ClipboardFormatWrite"
-    expires_after="2026-08-23">
+    expires_after="2026-10-25">
   <owner>huangdarwin@chromium.org</owner>
   <owner>src/ui/base/clipboard/OWNERS</owner>
   <summary>
@@ -286,9 +286,23 @@ chromium-metrics-reviews@google.com.
   </summary>
 </histogram>
 
+<histogram name="Clipboard.Write.Text.{TextGranularity}Count" units="count"
+    expires_after="2027-05-28">
+  <owner>sophiechang@chromium.org</owner>
+  <owner>src/ui/base/clipboard/OWNERS</owner>
+  <summary>
+    Records the number of {TextGranularity} in the text that is written to the
+    clipboard. Recorded each time a text copy is written.
+  </summary>
+  <token key="TextGranularity">
+    <variant name="Character"/>
+    <variant name="Word"/>
+  </token>
+</histogram>
+
 <histogram
     name="IndexedDB.BackendDuration.WriteBlobs.{IndexedDBBackingStoreType}"
-    units="ms" expires_after="2026-10-01">
+    units="ms" expires_after="2026-10-27">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>abhishek.shanthkumar@microsoft.com</owner>
@@ -303,7 +317,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="IndexedDB.BackendDuration.{Operation}.{IndexedDBBackingStoreType}"
-    units="ms" expires_after="2026-10-01">
+    units="ms" expires_after="2026-10-27">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>abhishek.shanthkumar@microsoft.com</owner>
@@ -341,12 +355,13 @@ chromium-metrics-reviews@google.com.
     <variant name="RenameIndex"/>
     <variant name="RenameObjectStore"/>
     <variant name="RunIdleTasks"/>
+    <variant name="RunLongIdleTasks"/>
     <variant name="SetIndexKeys"/>
   </token>
 </histogram>
 
 <histogram name="IndexedDB.BackingStore.ReadBlob.{IndexedDBBackingStoreType}"
-    enum="NetErrorCodes" expires_after="2026-10-01">
+    enum="NetErrorCodes" expires_after="2026-10-27">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>abhishek.shanthkumar@microsoft.com</owner>
@@ -364,7 +379,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="IndexedDB.BackingStore.{Operation}.{IndexedDBBackingStoreType}"
-    enum="IndexedDbStatusType" expires_after="2026-10-01">
+    enum="IndexedDbStatusType" expires_after="2026-10-27">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>abhishek.shanthkumar@microsoft.com</owner>
@@ -406,29 +421,6 @@ chromium-metrics-reviews@google.com.
   </token>
 </histogram>
 
-<histogram name="IndexedDB.CalculateBlockingStatusLongTimes" units="ms"
-    expires_after="2026-07-19">
-  <owner>estade@chromium.org</owner>
-  <owner>chrome-owp-storage@google.com</owner>
-  <summary>
-    Logs the duration of Transaction::IsTransactionBlockingOtherClients, but
-    only if it takes over 2ms to execute. This is intended to facilitate
-    tracking down performance issues. See crbug.com/384476946
-  </summary>
-</histogram>
-
-<histogram name="IndexedDB.CalculateBlockingStatusRequestQueueSize"
-    units="count" expires_after="2026-07-19">
-  <owner>estade@chromium.org</owner>
-  <owner>chrome-owp-storage@google.com</owner>
-  <summary>
-    Logs the number of queued lock requests that exist in the
-    PartitionedLockManager when IsTransactionBlockingPtherClients() takes over
-    2ms to complete. This is intended to facilitate tracking down performance
-    issues. See crbug.com/384476946
-  </summary>
-</histogram>
-
 <histogram name="IndexedDB.ClientKeepActiveRemotesCount" units="count"
     expires_after="2026-10-05">
   <owner>pmonette@chromium.org</owner>
@@ -439,15 +431,17 @@ chromium-metrics-reviews@google.com.
   </summary>
 </histogram>
 
-<histogram name="IndexedDB.ContextShutdownDuration" units="ms"
+<histogram name="IndexedDB.ContextShutdownDuration2" units="ms"
     expires_after="2026-10-02">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
+  <owner>abhishek.shanthkumar@microsoft.com</owner>
   <owner>chrome-owp-storage@google.com</owner>
   <summary>
     Logs the time it takes to completely shut down `IndexedDBContextImpl`,
-    starting from when it's requested on the UI thread to when destruction is
-    completed on the IDB task runner.
+    starting from when it's requested on the UI thread to when the last bucket's
+    destruction is completed. This is only recorded for regular (not incognito)
+    profiles.
   </summary>
 </histogram>
 
@@ -466,7 +460,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.Create{Mode}Transaction.NumTransactionsInDatabase"
-    units="transactions" expires_after="2026-08-02">
+    units="transactions" expires_after="2026-10-04">
   <owner>fdoray@chromium.org</owner>
   <owner>catan-team@chromium.org</owner>
   <summary>
@@ -481,7 +475,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="IndexedDB.DatabaseConnectionOpenResult.{IndexedDBBackingStoreType}"
-    enum="DatabaseConnectionOpenResult" expires_after="2027-03-01">
+    enum="DatabaseConnectionOpenResult" expires_after="2026-10-27">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>abhishek.shanthkumar@microsoft.com</owner>
@@ -496,7 +490,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.DeleteBucketDataSuccess.{IndexedDBBackingStoreType}"
-    enum="BooleanSuccess" expires_after="2026-10-01">
+    enum="BooleanSuccess" expires_after="2026-10-27">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>abhishek.shanthkumar@microsoft.com</owner>
@@ -509,7 +503,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.FilePathLengthOverflow.{Engine}" units="characters"
-    expires_after="2026-08-09">
+    expires_after="2026-10-11">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>chrome-owp-storage@google.com</owner>
@@ -563,7 +557,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="IndexedDB.IdleTasksCompletionToNextActivity.{IndexedDBBackingStoreType}"
-    units="ms" expires_after="2026-10-01">
+    units="ms" expires_after="2026-10-27">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>abhishek.shanthkumar@microsoft.com</owner>
@@ -579,7 +573,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.LargeValueReadResult" enum="FileErrorCode"
-    expires_after="2026-09-06">
+    expires_after="2026-11-15">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>chrome-owp-storage@google.com</owner>
@@ -589,82 +583,6 @@ chromium-metrics-reviews@google.com.
     to be unwrapped in a transaction will be logged. This error causes the
     transaction to abort, preventing further read attempts on other values. This
     metric is recorded in the renderer process.
-  </summary>
-</histogram>
-
-<histogram name="IndexedDB.LevelDB.InSessionCleanupSnapshotTime" units="ms"
-    expires_after="2026-07-01">
-  <owner>leimy@chromium.org</owner>
-  <owner>evanstade@microsoft.com</owner>
-  <owner>abhishek.shanthkumar@microsoft.com</owner>
-  <owner>chrome-owp-storage@google.com</owner>
-  <summary>
-    Logs the time taken to snapshot/dump an entire backing store for the
-    purposes of in-session cleanup verification. This is logged for the pre-
-    cleanup snapshot as well as the post-cleanup snapshot.
-  </summary>
-</histogram>
-
-<histogram name="IndexedDB.LevelDB.InSessionCleanupVerificationEvent"
-    enum="IndexedDbLevelDbCleanupVerificationEvent" expires_after="2026-07-01">
-  <owner>leimy@chromium.org</owner>
-  <owner>evanstade@microsoft.com</owner>
-  <owner>abhishek.shanthkumar@microsoft.com</owner>
-  <owner>chrome-owp-storage@google.com</owner>
-  <summary>
-    Logs results of attempts to verify that in-session cleanup (compaction,
-    tombstone sweeping) of LevelDB files was successful. This will only be
-    emitted if in session cleanup is enabled and verification of it is also
-    enabled, so both kIdbInSessionDbCleanup and kIdbVerifyInSessionDbCleanup
-    must be enabled.
-  </summary>
-</histogram>
-
-<histogram name="IndexedDB.LevelDBCleanupScheduler.CleanerPostponedCount"
-    units="count" expires_after="2026-03-08">
-  <owner>leimy@chromium.org</owner>
-  <owner>tamartol@microsoft.com</owner>
-  <owner>chrome-owp-storage@google.com</owner>
-  <summary>
-    Records the number of times the LevelDBCleanupScheduler cleanup task was
-    postponed while it was scheduled to run. Recorded when the clean up
-    successfuly completes or if the scheduler is destructed mid run.
-  </summary>
-</histogram>
-
-<histogram name="IndexedDB.LevelDBCleanupScheduler.DBCompactionDuration"
-    units="ms" expires_after="2026-03-08">
-  <owner>leimy@chromium.org</owner>
-  <owner>tamartol@microsoft.com</owner>
-  <owner>chrome-owp-storage@google.com</owner>
-  <summary>
-    Records the total time taken for level db compaction run in the LevelDB
-    cleanup task. Recorded when the db compaction phase completes.
-  </summary>
-</histogram>
-
-<histogram name="IndexedDB.LevelDBCleanupScheduler.PrematureTerminationPhase"
-    enum="LevelDBCleanupSchedulerPhase" expires_after="2026-03-08">
-  <owner>leimy@chromium.org</owner>
-  <owner>tamartol@microsoft.com</owner>
-  <owner>chrome-owp-storage@google.com</owner>
-  <summary>
-    Records the next phase which the scheduler would have executed if it had run
-    instead of being destructed. If the phase logged is `Run scheduled` (as it's
-    the initial phase) or `Tombstone sweeper` (as it's a multi phase operation)
-    then it's current phase of the scheduler.
-  </summary>
-</histogram>
-
-<histogram name="IndexedDB.LevelDBCleanupScheduler.TombstoneSweeperDuration"
-    units="ms" expires_after="2026-03-08">
-  <owner>leimy@chromium.org</owner>
-  <owner>tamartol@microsoft.com</owner>
-  <owner>chrome-owp-storage@google.com</owner>
-  <summary>
-    Records the total time taken to sweep tombstones in the LevelDB cleanup
-    task. The sweeper runs in multiple rounds, this is the sum of all of them.
-    Recorded when the tombstone sweeper phase completes.
   </summary>
 </histogram>
 
@@ -705,7 +623,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.NumConnections.OnCreateAbove10k" units="connections"
-    expires_after="2026-08-02">
+    expires_after="2026-10-04">
   <owner>fdoray@chromium.org</owner>
   <owner>catan-team@chromium.org</owner>
   <summary>
@@ -717,7 +635,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.NumPendingConnections.OnCreateAbove10k"
-    units="connections" expires_after="2026-08-02">
+    units="connections" expires_after="2026-10-04">
   <owner>fdoray@chromium.org</owner>
   <owner>catan-team@chromium.org</owner>
   <summary>
@@ -730,7 +648,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.NumPendingConnections.RequestQueueSize"
-    units="connections" expires_after="2026-08-02">
+    units="connections" expires_after="2026-10-04">
   <owner>etienneb@chromium.org</owner>
   <owner>fdoray@chromium.org</owner>
   <owner>catan-team@chromium.org</owner>
@@ -743,7 +661,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="IndexedDB.NumTransactionsInIDBDatabaseOnTransactionCreated.10kTransactions"
-    units="transactions" expires_after="2026-08-02">
+    units="transactions" expires_after="2026-10-04">
   <owner>fdoray@chromium.org</owner>
   <owner>catan-team@chromium.org</owner>
   <summary>
@@ -755,7 +673,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.QuotaCheckTime2.{QuotaCheckResult}" units="ms"
-    expires_after="2026-08-30">
+    expires_after="2026-11-08">
   <owner>estade@chromium.org</owner>
   <owner>chrome-owp-storage@google.com</owner>
   <summary>
@@ -807,7 +725,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.SQLite.BlobServedFromLegacyFile" enum="Boolean"
-    expires_after="2027-01-22">
+    expires_after="2026-10-27">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>chrome-owp-storage@google.com</owner>
@@ -823,7 +741,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.SQLite.FreelistPercentageAtClose" units="%"
-    expires_after="2026-09-01">
+    expires_after="2026-10-27">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>abhishek.shanthkumar@microsoft.com</owner>
@@ -836,7 +754,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.SQLite.OpenRetryResult" enum="IndexedDbStatusType"
-    expires_after="2026-10-01">
+    expires_after="2026-10-27">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>chrome-owp-storage@google.com</owner>
@@ -847,7 +765,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.SQLite.OpenToReadMetadataResult"
-    enum="IndexedDbStatusType" expires_after="2026-10-01">
+    enum="IndexedDbStatusType" expires_after="2026-10-27">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>chrome-owp-storage@google.com</owner>
@@ -858,7 +776,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.SQLite.PutRecord.CompressionRatio" units="%"
-    expires_after="2026-06-01">
+    expires_after="2026-10-27">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>chrome-owp-storage@google.com</owner>
@@ -872,7 +790,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="IndexedDB.SQLite.PutRecord.PrecompressionValueSize.{CompressionState}"
-    units="bytes" expires_after="2026-06-01">
+    units="bytes" expires_after="2026-10-27">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>chrome-owp-storage@google.com</owner>
@@ -885,7 +803,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.SQLite.SpecificEvent.{Mode}"
-    enum="IndexedDbSqliteSpecificEvent" expires_after="2026-09-01">
+    enum="IndexedDbSqliteSpecificEvent" expires_after="2026-10-27">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>chrome-owp-storage@google.com</owner>
@@ -903,16 +821,15 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.SQLite.VacuumEvent"
-    enum="IndexedDbSqliteVacuumEvent" expires_after="2026-09-01">
+    enum="IndexedDbSqliteVacuumEvent" expires_after="2026-10-27">
   <owner>leimy@chromium.org</owner>
   <owner>evanstade@microsoft.com</owner>
   <owner>abhishek.shanthkumar@microsoft.com</owner>
   <owner>chrome-owp-storage@google.com</owner>
   <summary>
-    Tracks the vacuum funnel for SQLite-backed IndexedDB databases. The first
-    event is logged when a database is closed and the conditions for vacuuming
-    are met. Multiple events may be logged subsequently as the funnel
-    progresses.
+    Tracks the vacuum funnel for SQLite-backed IndexedDB databases. An event is
+    logged when vacuuming is attempted on long idle or requested at close.
+    Multiple events may be logged subsequently as the funnel progresses.
   </summary>
 </histogram>
 
@@ -929,7 +846,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.TransactionTimeout.{TransactionCount}CommitPending"
-    enum="Boolean" expires_after="2026-08-02">
+    enum="Boolean" expires_after="2026-10-04">
   <owner>fdoray@chromium.org</owner>
   <owner>catan-team@chromium.org</owner>
   <summary>
@@ -941,7 +858,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.TransactionTimeout.{TransactionCount}IsAborted"
-    enum="IDBTransactionMode" expires_after="2026-08-02">
+    enum="IDBTransactionMode" expires_after="2026-10-04">
   <owner>fdoray@chromium.org</owner>
   <owner>catan-team@chromium.org</owner>
   <summary>
@@ -953,7 +870,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.TransactionTimeout.{TransactionCount}IsConnected"
-    enum="Boolean" expires_after="2026-08-02">
+    enum="Boolean" expires_after="2026-10-25">
   <owner>fdoray@chromium.org</owner>
   <owner>catan-team@chromium.org</owner>
   <summary>
@@ -966,7 +883,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.TransactionTimeout.{TransactionCount}Mode"
-    enum="IDBTransactionMode" expires_after="2026-08-02">
+    enum="IDBTransactionMode" expires_after="2026-10-04">
   <owner>fdoray@chromium.org</owner>
   <owner>catan-team@chromium.org</owner>
   <summary>
@@ -979,7 +896,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="IndexedDB.TransactionTimeout.{TransactionCount}NumTransactionsInConnection"
-    units="transactions" expires_after="2026-08-02">
+    units="transactions" expires_after="2026-10-04">
   <owner>fdoray@chromium.org</owner>
   <owner>catan-team@chromium.org</owner>
   <summary>
@@ -993,7 +910,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="IndexedDB.TransactionTimeout.{TransactionCount}NumTransactionsInDB"
-    units="transactions" expires_after="2026-08-02">
+    units="transactions" expires_after="2026-10-04">
   <owner>fdoray@chromium.org</owner>
   <owner>catan-team@chromium.org</owner>
   <summary>
@@ -1006,7 +923,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.TransactionTimeout.{TransactionCount}TaskRunQueued"
-    enum="Boolean" expires_after="2026-08-02">
+    enum="Boolean" expires_after="2026-10-04">
   <owner>fdoray@chromium.org</owner>
   <owner>catan-team@chromium.org</owner>
   <summary>
@@ -1018,7 +935,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="IndexedDB.WrappedBlobLoadTime" units="ms"
-    expires_after="2026-09-13">
+    expires_after="2026-11-15">
   <owner>estade@chromium.org</owner>
   <owner>chrome-owp-storage@google.com</owner>
   <summary>
@@ -1045,7 +962,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="LevelDBEnv.SyncResult" enum="PlatformFileError"
-    expires_after="2026-08-06">
+    expires_after="2026-10-25">
   <owner>estade@chromium.org</owner>
   <owner>chrome-owp-storage@google.com</owner>
   <summary>
@@ -1087,7 +1004,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="LevelDBWrapper.CommitDelay" units="ms"
-    expires_after="2026-08-30">
+    expires_after="2026-11-01">
   <owner>ayui@chromium.org</owner>
   <owner>chrome-owp-storage@google.com</owner>
   <summary>
@@ -1114,7 +1031,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="LocalStorage.DatabaseOnDiskSizeKB" units="KB"
-    expires_after="2026-09-20">
+    expires_after="2026-11-22">
   <owner>fergal@chromium.org</owner>
   <owner>rahsin@microsoft.com</owner>
   <owner>chrome-owp-storage@google.com</owner>
@@ -1348,7 +1265,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Storage.Buckets.Parameters.QuotaKb" units="KB"
-    expires_after="2026-08-30">
+    expires_after="2026-11-01">
   <owner>estade@chromium.org</owner>
   <owner>chrome-owp-storage@google.com</owner>
   <summary>
@@ -1361,7 +1278,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Storage.ClearSiteDataHeader.Parameters"
-    enum="ClearSiteDataParameters" expires_after="2026-09-13">
+    enum="ClearSiteDataParameters" expires_after="2026-11-15">
   <owner>estade@chromium.org</owner>
   <owner>chrome-owp-storage@google.com</owner>
   <summary>
@@ -1411,7 +1328,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Storage.FileSystemAccess.ConfirmSensitiveEntryAccessDuration"
-    units="ms" expires_after="2026-08-31">
+    units="ms" expires_after="2026-11-01">
   <owner>leimy@chromium.org</owner>
   <owner>src/content/browser/file_system_access/OWNERS</owner>
   <summary>
@@ -1465,7 +1382,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Storage.FileSystemAccess.ObserverUsageQuotaExceeded"
-    enum="Boolean" expires_after="2026-08-31">
+    enum="Boolean" expires_after="2026-11-15">
   <owner>mych@chromium.org</owner>
   <owner>src/content/browser/file_system_access/OWNERS</owner>
   <summary>
@@ -1534,54 +1451,6 @@ chromium-metrics-reviews@google.com.
     <variant name="Directory" summary="Requested permission to a directory"/>
     <variant name="File" summary="Requested permission to a file"/>
   </token>
-</histogram>
-
-<histogram name="Storage.ImportantSites.CBDChosenReason"
-    enum="ImportantSitesReason" expires_after="2024-10-06">
-  <owner>ayui@chromium.org</owner>
-  <owner>chrome-owp-storage@google.com</owner>
-  <summary>
-    When a user chooses to blocklist one or more sites when they clear browsing
-    data, this is recorded for every reason each chosen site was marked as
-    important. It indicates which signals were used to show the given site to
-    the user that the user then chose to exclude from clearing. This histogram
-    has expired between M95-M106.
-  </summary>
-</histogram>
-
-<histogram name="Storage.ImportantSites.CBDChosenReasonCount" units="count"
-    expires_after="2024-08-01">
-  <owner>ayui@chromium.org</owner>
-  <owner>chrome-owp-storage@google.com</owner>
-  <summary>
-    This records the number of reasons each important site had that the user
-    chose to blocklist when clearing browsing data. This histogram has expired
-    between M95-M106.
-  </summary>
-</histogram>
-
-<histogram name="Storage.ImportantSites.CBDIgnoredReason"
-    enum="ImportantSitesReason" expires_after="2024-08-01">
-  <owner>ayui@chromium.org</owner>
-  <owner>chrome-owp-storage@google.com</owner>
-  <summary>
-    When a user chooses to blocklist one or more sites when they clear browsing
-    data, this is recorded for every reason each unchosen site was marked as
-    important. It indicates which signals were used to show the given site to
-    the user, which the user then ignored and did not select to blocklist from
-    clearing data. This histogram has expired between M95-M106.
-  </summary>
-</histogram>
-
-<histogram name="Storage.ImportantSites.CBDIgnoredReasonCount" units="count"
-    expires_after="2024-08-01">
-  <owner>ayui@chromium.org</owner>
-  <owner>chrome-owp-storage@google.com</owner>
-  <summary>
-    This records the number of reasons each important site had that the user
-    chose to NOT blocklist when clearing browsing data. This histogram has
-    expired between M95-M106.
-  </summary>
 </histogram>
 
 <histogram name="Storage.ImportantSites.GeneratedReason"
@@ -1926,8 +1795,22 @@ chromium-metrics-reviews@google.com.
   </summary>
 </histogram>
 
+<histogram name="Storage.SessionStorage.ClearDiskStateAtStoragePartitionInit"
+    enum="Boolean" expires_after="2027-05-01">
+  <owner>leimy@chromium.org</owner>
+  <owner>fergal@chromium.org</owner>
+  <owner>rahsin@microsoft.com</owner>
+  <owner>chrome-owp-storage@google.com</owner>
+  <summary>
+    Records whether the session storage database was cleared during storage
+    partition initialization. True means the database was destroyed and
+    recreated because no session restore was needed. Emitted once per storage
+    partition during initialization.
+  </summary>
+</histogram>
+
 <histogram name="Storage.SessionStorage.RendererAreaCacheHit"
-    enum="LocalStorageRendererAreaCacheHitEnum" expires_after="2026-04-12">
+    enum="LocalStorageRendererAreaCacheHitEnum" expires_after="2026-10-12">
   <owner>ayui@chromium.org</owner>
   <owner>chrome-owp-storage@google.com</owner>
   <summary>
@@ -2520,7 +2403,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Storage.SharedStorage.OnShutdown.NumSqlErrors" units="Errors"
-    expires_after="2026-08-16">
+    expires_after="2026-10-18">
   <owner>cammie@chromium.org</owner>
   <owner>yaoxia@chromium.org</owner>
   <owner>chrome-ads-histograms@google.com</owner>
@@ -2711,7 +2594,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Storage.SharedStorage.Worklet.Error.Type"
-    enum="SharedStorageWorkletErrorType" expires_after="2026-08-16">
+    enum="SharedStorageWorkletErrorType" expires_after="2026-10-18">
   <owner>cammie@chromium.org</owner>
   <owner>yaoxia@chromium.org</owner>
   <owner>chrome-ads-histograms@google.com</owner>
@@ -2930,7 +2813,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Storage.SharedStorage.Worklet.Timing.Set" units="ms"
-    expires_after="2026-08-16">
+    expires_after="2026-10-18">
   <owner>cammie@chromium.org</owner>
   <owner>yaoxia@chromium.org</owner>
   <owner>chrome-ads-histograms@google.com</owner>
@@ -3069,6 +2952,17 @@ chromium-metrics-reviews@google.com.
     (re-opened successfully), false means we gave up after attempting and
     failing to reopen. {DomStorageRecoveryReason} indicates what initiated the
     recovery.
+  </summary>
+</histogram>
+
+<histogram name="Storage.{DomStorageType}.ShutdownDroppedChanges"
+    enum="Boolean" expires_after="2026-11-01">
+  <owner>leimy@chromium.org</owner>
+  <owner>stevebe@microsoft.com</owner>
+  <owner>chrome-owp-storage@google.com</owner>
+  <summary>
+    Records data loss that occurs when browser shutdown discards pending
+    changes.
   </summary>
 </histogram>
 

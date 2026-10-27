@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
+
 file(GLOB Eigen_EulerAngles_SRCS "*.h")
 
 install(FILES

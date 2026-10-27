@@ -229,6 +229,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
     owner_delegate_ = owner_delegate;
   }
 
+  bool IsPinchToZoomEnabled() const;
+
   RenderWidgetHostOwnerDelegate* owner_delegate() { return owner_delegate_; }
 
   AgentSchedulingGroupHost& agent_scheduling_group() {
@@ -255,7 +257,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const input::NativeWebKeyboardEvent& key_event) override;
   void ForwardGestureEvent(
       const blink::WebGestureEvent& gesture_event) override;
-  RenderProcessHost* GetProcess() override;
+  RenderProcessHost* GetProcess() const override;
   int GetRoutingID() final;
   RenderWidgetHostViewBase* GetView() override;
   const RenderWidgetHostViewBase* GetView() const override;
@@ -331,6 +333,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const ui::mojom::MenuSourceType source_type) override;
   void InsertVisualStateCallback(VisualStateCallback callback) override;
   void SetHungRendererDelay(const base::TimeDelta& delay) override;
+  void SetReadyForInputCallbackForTesting(base::OnceClosure callback);
 
   // RenderProcessHostPriorityClient implementation.
   RenderProcessHostPriorityClient::Priority GetPriority() override;
@@ -409,13 +412,17 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void OnInputEventAckTimeout(base::TimeTicks ack_timeout_ts) override;
   void RendererIsResponsive() override;
   void DidOverscroll(blink::mojom::DidOverscrollParamsPtr params) override;
+  void OnInputRouterActive() override;
+
+  // Called when the InputRouter in the Viz process becomes active.
+  void OnVizInputRouterActive();
 
   // Update the stored set of visual properties for the renderer. If 'propagate'
   // is true, the new properties will be sent to the renderer process.
   bool UpdateVisualProperties(bool propagate);
 
   // Notification that the screen info has changed.
-  void NotifyScreenInfoChanged();
+  void NotifyScreenInfoChanged(bool ignore_ack = true);
 
   // Forces redraw in the renderer and when the update reaches the browser.
   // grabs snapshot from the compositor.
@@ -955,6 +962,13 @@ class CONTENT_EXPORT RenderWidgetHostImpl
     return blink_widget_host_receiver_;
   }
 
+  bool has_initial_frame_sink_for_testing() const {
+    return initial_frame_sink_pipes_ &&
+           initial_frame_sink_pipes_->receiver.is_valid();
+  }
+
+  bool is_hidden_for_testing() const { return is_hidden_; }
+
   std::optional<blink::VisualProperties> LastComputedVisualProperties() const;
 
   // Generates widget creation params that will be passed to the renderer to
@@ -1151,6 +1165,16 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   friend class RenderViewHostTester;
   friend class TestRenderViewHost;
 
+  struct InitialFrameSinkPipes {
+    InitialFrameSinkPipes();
+    ~InitialFrameSinkPipes();
+    InitialFrameSinkPipes(InitialFrameSinkPipes&&);
+    InitialFrameSinkPipes& operator=(InitialFrameSinkPipes&&);
+    mojo::PendingReceiver<viz::mojom::CompositorFrameSink> receiver;
+    mojo::PendingRemote<viz::mojom::CompositorFrameSinkClient> client;
+    mojo::PendingRemote<blink::mojom::RenderInputRouterClient> viz_rir_client;
+  };
+
   // Tell this object to destroy itself. If |also_delete| is specified, the
   // destructor is called as well.
   void Destroy(bool also_delete);
@@ -1249,6 +1273,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   void SetupRenderInputRouter();
   void SetupInputRouter();
+  void MaybeNotifyReadyForInput();
 
   // Start intercepting system keyboard events.
   void LockKeyboard();
@@ -1442,7 +1467,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   std::vector<SuppressShowingImeCallback> suppress_showing_ime_callbacks_;
 
   // Input event callbacks.
-  base::ObserverList<RenderWidgetHost::InputEventObserver>::Unchecked
+  // TODO(crbug.com/512323406): Make observer list non-reentrant.
+  base::ObserverList<
+      RenderWidgetHost::InputEventObserver,
+      /*check_empty=*/false,
+      base::ObserverListReentrancyPolicy::kAllowReentrancyUntriaged>::Unchecked
       input_event_observers_;
 
 #if BUILDFLAG(IS_ANDROID)
@@ -1624,6 +1653,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   bool view_is_frame_sink_id_owner_{false};
 
   std::unique_ptr<CompositorMetricRecorder> compositor_metric_recorder_;
+  base::OnceClosure ready_for_input_callback_for_testing_;
+
+  std::optional<InitialFrameSinkPipes> initial_frame_sink_pipes_;
 
   std::optional<GlobalRenderFrameHostId> popup_creator_frame_id_;
 

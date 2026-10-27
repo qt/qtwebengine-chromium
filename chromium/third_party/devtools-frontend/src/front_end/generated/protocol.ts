@@ -1090,6 +1090,7 @@ export namespace Audits {
     WriteErrorNonSecureContext = 'WriteErrorNonSecureContext',
     WriteErrorNonStringIdField = 'WriteErrorNonStringIdField',
     WriteErrorNonStringInMatchDestList = 'WriteErrorNonStringInMatchDestList',
+    WriteErrorInvalidMatchDestList = 'WriteErrorInvalidMatchDestList',
     WriteErrorNonStringMatchField = 'WriteErrorNonStringMatchField',
     WriteErrorNonTokenTypeField = 'WriteErrorNonTokenTypeField',
     WriteErrorRequestAborted = 'WriteErrorRequestAborted',
@@ -1120,6 +1121,10 @@ export namespace Audits {
     ValidationFailedInvalidLength = 'ValidationFailedInvalidLength',
     ValidationFailedSignatureMismatch = 'ValidationFailedSignatureMismatch',
     ValidationFailedIntegrityMismatch = 'ValidationFailedIntegrityMismatch',
+    SignatureBaseUnknownDerivedComponent = 'SignatureBaseUnknownDerivedComponent',
+    SignatureBaseMissingHeader = 'SignatureBaseMissingHeader',
+    SignatureBaseInvalidUnencodedDigest = 'SignatureBaseInvalidUnencodedDigest',
+    SignatureBaseUnsupportedComponent = 'SignatureBaseUnsupportedComponent',
   }
 
   export const enum UnencodedDigestError {
@@ -1208,10 +1213,15 @@ export namespace Audits {
     FormInputHasWrongButWellIntendedAutocompleteValueError = 'FormInputHasWrongButWellIntendedAutocompleteValueError',
     ResponseWasBlockedByORB = 'ResponseWasBlockedByORB',
     NavigationEntryMarkedSkippable = 'NavigationEntryMarkedSkippable',
+    BackUINavigationWouldSkipAd = 'BackUINavigationWouldSkipAd',
     AutofillAndManualTextPolicyControlledFeaturesInfo = 'AutofillAndManualTextPolicyControlledFeaturesInfo',
     AutofillPolicyControlledFeatureInfo = 'AutofillPolicyControlledFeatureInfo',
     ManualTextPolicyControlledFeatureInfo = 'ManualTextPolicyControlledFeatureInfo',
     FormModelContextParameterMissingTitleAndDescription = 'FormModelContextParameterMissingTitleAndDescription',
+    FormModelContextMissingToolName = 'FormModelContextMissingToolName',
+    FormModelContextMissingToolDescription = 'FormModelContextMissingToolDescription',
+    FormModelContextRequiredParameterMissingName = 'FormModelContextRequiredParameterMissingName',
+    FormModelContextParameterMissingName = 'FormModelContextParameterMissingName',
   }
 
   /**
@@ -1345,6 +1355,40 @@ export namespace Audits {
     InvalidConfigOrWellKnown = 'InvalidConfigOrWellKnown',
     InvalidAccountsResponse = 'InvalidAccountsResponse',
     NoReturningUserFromFetchedAccounts = 'NoReturningUserFromFetchedAccounts',
+  }
+
+  export interface EmailVerificationRequestIssueDetails {
+    emailVerificationRequestIssueReason: EmailVerificationRequestIssueReason;
+  }
+
+  /**
+   * Represents the failure reason when an email verification request fails.
+   * Should be updated alongside EmailVerificationRequestResult in
+   * third_party/blink/public/mojom/devtools/inspector_issue.mojom.
+   */
+  export const enum EmailVerificationRequestIssueReason {
+    InvalidEmail = 'InvalidEmail',
+    DnsFetchFailed = 'DnsFetchFailed',
+    DnsInvalidRecord = 'DnsInvalidRecord',
+    WellKnownHttpNotFound = 'WellKnownHttpNotFound',
+    WellKnownNoResponse = 'WellKnownNoResponse',
+    WellKnownInvalidResponse = 'WellKnownInvalidResponse',
+    WellKnownListEmpty = 'WellKnownListEmpty',
+    WellKnownInvalidContentType = 'WellKnownInvalidContentType',
+    WellKnownMissingIssuanceEndpoint = 'WellKnownMissingIssuanceEndpoint',
+    WellKnownIssuanceEndpointCrossOrigin = 'WellKnownIssuanceEndpointCrossOrigin',
+    WellKnownUnsupportedSigningAlgorithm = 'WellKnownUnsupportedSigningAlgorithm',
+    TokenHttpNotFound = 'TokenHttpNotFound',
+    TokenNoResponse = 'TokenNoResponse',
+    TokenInvalidResponse = 'TokenInvalidResponse',
+    TokenInvalidContentType = 'TokenInvalidContentType',
+    TokenMalformedSdJwt = 'TokenMalformedSdJwt',
+    TokenInvalidSdJwt = 'TokenInvalidSdJwt',
+    KeyBindingSigningFailed = 'KeyBindingSigningFailed',
+    RpOriginIsOpaque = 'RpOriginIsOpaque',
+    WellKnownMissingAccountsEndpoint = 'WellKnownMissingAccountsEndpoint',
+    UserLoggedOut = 'UserLoggedOut',
+    WellKnownAccountsEndpointCrossOrigin = 'WellKnownAccountsEndpointCrossOrigin',
   }
 
   /**
@@ -1587,6 +1631,7 @@ export namespace Audits {
     PermissionElementIssue = 'PermissionElementIssue',
     PerformanceIssue = 'PerformanceIssue',
     SelectivePermissionsInterventionIssue = 'SelectivePermissionsInterventionIssue',
+    EmailVerificationRequestIssue = 'EmailVerificationRequestIssue',
   }
 
   /**
@@ -1627,6 +1672,7 @@ export namespace Audits {
     permissionElementIssueDetails?: PermissionElementIssueDetails;
     performanceIssueDetails?: PerformanceIssueDetails;
     selectivePermissionsInterventionIssueDetails?: SelectivePermissionsInterventionIssueDetails;
+    emailVerificationRequestIssueDetails?: EmailVerificationRequestIssueDetails;
   }
 
   /**
@@ -3236,6 +3282,10 @@ export namespace CSS {
   export interface CSSContainerQuery {
     /**
      * Container query text.
+     * Contains the query part without the container name for a single query.
+     * Deprecated in favor of conditionText which contains the full prelude
+     * after @container.
+     * @deprecated
      */
     text: string;
     /**
@@ -3267,6 +3317,10 @@ export namespace CSS {
      * true if the query contains anchored() queries.
      */
     queriesAnchored?: boolean;
+    /**
+     * CSSContainerRule.conditionText
+     */
+    conditionText: string;
   }
 
   /**
@@ -3553,6 +3607,7 @@ export namespace CSS {
     FontFace = 'font-face',
     FontFeatureValues = 'font-feature-values',
     FontPaletteValues = 'font-palette-values',
+    CounterStyle = 'counter-style',
   }
 
   export const enum CSSAtRuleSubsection {
@@ -4133,6 +4188,19 @@ export namespace CSS {
     containerQuery: CSSContainerQuery;
   }
 
+  export interface SetContainerQueryConditionTextRequest {
+    styleSheetId: DOM.StyleSheetId;
+    range: SourceRange;
+    text: string;
+  }
+
+  export interface SetContainerQueryConditionTextResponse extends ProtocolResponseWithError {
+    /**
+     * The resulting CSS container query rule after modification.
+     */
+    containerQuery: CSSContainerQuery;
+  }
+
   export interface SetSupportsTextRequest {
     styleSheetId: DOM.StyleSheetId;
     range: SourceRange;
@@ -4600,7 +4668,7 @@ export namespace DOM {
     After = 'after',
     ExpandIcon = 'expand-icon',
     PickerIcon = 'picker-icon',
-    InterestHint = 'interest-hint',
+    InterestButton = 'interest-button',
     Marker = 'marker',
     Backdrop = 'backdrop',
     Column = 'column',
@@ -7362,12 +7430,6 @@ export namespace Emulation {
   export interface SetPressureStateOverrideRequest {
     source: PressureSource;
     state: PressureState;
-  }
-
-  export interface SetPressureDataOverrideRequest {
-    source: PressureSource;
-    state: PressureState;
-    ownContributionEstimate?: number;
   }
 
   export interface SetIdleOverrideRequest {
@@ -11376,6 +11438,10 @@ export namespace Network {
      * WebRTC packetReordering feature.
      */
     packetReordering?: boolean;
+    /**
+     * True to emulate internet disconnection.
+     */
+    offline?: boolean;
   }
 
   export interface BlockPattern {
@@ -11805,6 +11871,7 @@ export namespace Network {
     Success = 'Success',
     KeyError = 'KeyError',
     SigningError = 'SigningError',
+    TransientSigningError = 'TransientSigningError',
     ServerRequestedTermination = 'ServerRequestedTermination',
     InvalidSessionId = 'InvalidSessionId',
     InvalidChallenge = 'InvalidChallenge',
@@ -11870,6 +11937,7 @@ export namespace Network {
     InvalidFederatedSessionProviderFailedToRestoreKey = 'InvalidFederatedSessionProviderFailedToRestoreKey',
     FailedToUnwrapKey = 'FailedToUnwrapKey',
     SessionDeletedDuringRefresh = 'SessionDeletedDuringRefresh',
+    CrossOriginRegistrationSiteNotIncluded = 'CrossOriginRegistrationSiteNotIncluded',
   }
 
   /**
@@ -11924,6 +11992,8 @@ export namespace Network {
     RefreshQuotaExceeded = 'RefreshQuotaExceeded',
     FatalError = 'FatalError',
     SigningQuotaExceeded = 'SigningQuotaExceeded',
+    RefreshedAsWaiter = 'RefreshedAsWaiter',
+    TransientSigningError = 'TransientSigningError',
   }
 
   /**
@@ -11963,6 +12033,7 @@ export namespace Network {
     ServerRequested = 'ServerRequested',
     InvalidSessionParams = 'InvalidSessionParams',
     RefreshFatalError = 'RefreshFatalError',
+    DevTools = 'DevTools',
   }
 
   /**
@@ -12154,9 +12225,15 @@ export namespace Network {
 
   export interface EmulateNetworkConditionsByRuleRequest {
     /**
-     * True to emulate internet disconnection.
+     * True to emulate internet disconnection. Deprecated, use the offline property in matchedNetworkConditions
+     * or emulateOfflineServiceWorker instead.
+     * @deprecated
      */
-    offline: boolean;
+    offline?: boolean;
+    /**
+     * True to emulate offline service worker.
+     */
+    emulateOfflineServiceWorker?: boolean;
     /**
      * Configure conditions for matching requests. If multiple entries match a request, the first entry wins.  Global
      * conditions can be configured by leaving the urlPattern for the conditions empty. These global conditions are
@@ -12545,6 +12622,10 @@ export namespace Network {
     enable: boolean;
   }
 
+  export interface DeleteDeviceBoundSessionRequest {
+    key: DeviceBoundSessionKey;
+  }
+
   export interface FetchSchemefulSiteRequest {
     /**
      * The URL origin.
@@ -12584,14 +12665,6 @@ export namespace Network {
      * Whether 3pc restriction is enabled.
      */
     enableThirdPartyCookieRestriction: boolean;
-    /**
-     * Whether 3pc grace period exception should be enabled; false by default.
-     */
-    disableThirdPartyCookieMetadata: boolean;
-    /**
-     * Whether 3pc heuristics exceptions should be enabled; false by default.
-     */
-    disableThirdPartyCookieHeuristics: boolean;
   }
 
   /**
@@ -14452,7 +14525,6 @@ export namespace Page {
     EncryptedMedia = 'encrypted-media',
     ExecutionWhileOutOfViewport = 'execution-while-out-of-viewport',
     ExecutionWhileNotRendered = 'execution-while-not-rendered',
-    FencedUnpartitionedStorageRead = 'fenced-unpartitioned-storage-read',
     FocusWithoutUserActivation = 'focus-without-user-activation',
     Fullscreen = 'fullscreen',
     Frobulate = 'frobulate',
@@ -14498,6 +14570,7 @@ export namespace Page {
     SubApps = 'sub-apps',
     Summarizer = 'summarizer',
     SyncXhr = 'sync-xhr',
+    Tools = 'tools',
     Translator = 'translator',
     Unload = 'unload',
     Usb = 'usb',
@@ -15370,6 +15443,7 @@ export namespace Page {
     EmbedderExtensionMessaging = 'EmbedderExtensionMessaging',
     EmbedderExtensionMessagingForOpenPort = 'EmbedderExtensionMessagingForOpenPort',
     EmbedderExtensionSentMessageToCachedFrame = 'EmbedderExtensionSentMessageToCachedFrame',
+    EmbedderExtensionFrame = 'EmbedderExtensionFrame',
     RequestedByWebViewClient = 'RequestedByWebViewClient',
     PostMessageByWebViewClient = 'PostMessageByWebViewClient',
     CacheControlNoStoreDeviceBoundSessionTerminated = 'CacheControlNoStoreDeviceBoundSessionTerminated',
@@ -17039,6 +17113,7 @@ export namespace Preload {
     BrowsingDataRemoved = 'BrowsingDataRemoved',
     PrerenderHostReused = 'PrerenderHostReused',
     FormSubmitWhenPrerendering = 'FormSubmitWhenPrerendering',
+    CrossDocumentRestart = 'CrossDocumentRestart',
   }
 
   /**
@@ -18570,25 +18645,6 @@ export namespace Storage {
     sets: RelatedWebsiteSet[];
   }
 
-  export interface GetAffectedUrlsForThirdPartyCookieMetadataRequest {
-    /**
-     * The URL of the page currently being visited.
-     */
-    firstPartyUrl: string;
-    /**
-     * The list of embedded resource URLs from the page.
-     */
-    thirdPartyUrls: string[];
-  }
-
-  export interface GetAffectedUrlsForThirdPartyCookieMetadataResponse extends ProtocolResponseWithError {
-    /**
-     * Array of matching URLs. If there is a primary pattern match for the first-
-     * party URL, only the first-party URL is returned in the array.
-     */
-    matchedUrls: string[];
-  }
-
   export interface SetProtectedAudienceKAnonymityRequest {
     owner: string;
     name: string;
@@ -19049,6 +19105,10 @@ export namespace Target {
      */
     attached: boolean;
     /**
+     * Id of the parent target, if any. For example, "iframe" target may have a "page" parent.
+     */
+    parentId?: TargetID;
+    /**
      * Opener target Id
      */
     openerId?: TargetID;
@@ -19061,7 +19121,8 @@ export namespace Target {
      */
     openerFrameId?: Page.FrameId;
     /**
-     * Id of the parent frame, only present for the "iframe" targets.
+     * Id of the parent frame, present for "iframe" and "worker" targets. For nested workers,
+     * this is the "ancestor" frame that created the first worker in the nested chain.
      */
     parentFrameId?: Page.FrameId;
     browserContextId?: Browser.BrowserContextID;
@@ -19070,6 +19131,11 @@ export namespace Target {
      * the type of "page", this may be set to "prerender".
      */
     subtype?: string;
+    /**
+     * Embedder-specific target metadata. This is only set for targets of
+     * type "tab".
+     */
+    embedderData?: any;
   }
 
   /**
@@ -19402,8 +19468,8 @@ export namespace Target {
     targetId: TargetID;
     /**
      * The id of the panel we want DevTools to open initially. Currently
-     * supported panels are elements, console, network, sources, resources
-     * and performance.
+     * supported panels are elements, console, network, sources, resources,
+     * timeline, chrome-recorder, heap-profiler, lighthouse, and security.
      */
     panelId?: string;
   }
@@ -20325,6 +20391,10 @@ export namespace WebMCP {
      */
     readOnly?: boolean;
     /**
+     * A hint indicating that the tool output may contain untrusted content, ex: UGC, 3rd party data.
+     */
+    untrustedContent?: boolean;
+    /**
      * If the declarative tool was declared with the autosubmit attribute.
      */
     autosubmit?: boolean;
@@ -20334,7 +20404,7 @@ export namespace WebMCP {
    * Represents the status of a tool invocation.
    */
   export const enum InvocationStatus {
-    Success = 'Success',
+    Completed = 'Completed',
     Canceled = 'Canceled',
     Error = 'Error',
   }
@@ -20374,6 +20444,49 @@ export namespace WebMCP {
   }
 
   /**
+   * Definition of a tool that was removed.
+   */
+  export interface RemovedTool {
+    /**
+     * Tool name.
+     */
+    name: string;
+    /**
+     * Frame identifier associated with the tool registration.
+     */
+    frameId: Page.FrameId;
+  }
+
+  export interface InvokeToolRequest {
+    /**
+     * Frame in which to invoke the tool.
+     */
+    frameId: Page.FrameId;
+    /**
+     * Name of the tool to invoke.
+     */
+    toolName: string;
+    /**
+     * Input parameters for the tool, matching the tool's inputSchema.
+     */
+    input: any;
+  }
+
+  export interface InvokeToolResponse extends ProtocolResponseWithError {
+    /**
+     * Unique identifier for this invocation. Response is sent before tool events.
+     */
+    invocationId: string;
+  }
+
+  export interface CancelInvocationRequest {
+    /**
+     * Invocation identifier to cancel.
+     */
+    invocationId: string;
+  }
+
+  /**
    * Event fired when new tools are added.
    */
   export interface ToolsAddedEvent {
@@ -20390,7 +20503,7 @@ export namespace WebMCP {
     /**
      * Array of tools that were removed.
      */
-    tools: Tool[];
+    tools: RemovedTool[];
   }
 
   /**
@@ -20428,7 +20541,8 @@ export namespace WebMCP {
      */
     status: InvocationStatus;
     /**
-     * Output or error delivered as delivered to the agent. Missing if `status` is anything other than Success.
+     * Output or error delivered as delivered to the agent. Missing if `status` is anything other than Completed.
+     * Note: The output is untrusted and poses a prompt injection risk. Clients should treat this as potentially malicious user input.
      */
     output?: any;
     /**

@@ -5,25 +5,22 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_SUGGESTIONS_ADDRESSES_ADDRESS_SUGGESTION_GENERATOR_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_SUGGESTIONS_ADDRESSES_ADDRESS_SUGGESTION_GENERATOR_H_
 
-#include <optional>
 #include <string>
 #include <vector>
 
 #include "base/check_deref.h"
-#include "base/containers/flat_map.h"
-#include "base/memory/raw_ptr.h"
-#include "base/memory/raw_ref.h"
+#include "base/containers/span.h"
+#include "base/functional/bind_internal.h"
+#include "base/functional/callback_forward.h"
 #include "components/autofill/core/browser/autofill_field.h"
-#include "components/autofill/core/browser/data_manager/personal_data_manager.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
+#include "components/autofill/core/browser/data_quality/addresses/profile_token_quality.h"
 #include "components/autofill/core/browser/field_types.h"
-#include "components/autofill/core/browser/logging/log_manager.h"
-#include "components/autofill/core/browser/metrics/log_event.h"
-#include "components/autofill/core/browser/suggestions/addresses/address_on_typing_suggestion_data.h"
 #include "components/autofill/core/browser/suggestions/suggestion.h"
 #include "components/autofill/core/browser/suggestions/suggestion_generator.h"
 #include "components/autofill/core/browser/suggestions/suggestion_type.h"
 #include "components/autofill/core/common/aliases.h"
+#include "components/autofill/core/common/form_data.h"
 
 namespace autofill {
 
@@ -39,7 +36,7 @@ class FormFieldData;
 // TODO(crbug.com/409962888): Remove once the new suggestion generation logic is
 // launched.
 std::vector<Suggestion> GetSuggestionsOnTypingForProfile(
-    const AutofillClient& client,
+    AutofillClient& client,
     const FormData& form,
     const FormFieldData& trigger_field);
 
@@ -62,7 +59,6 @@ std::vector<Suggestion> CreateSuggestionsFromProfilesForTest(
     FieldType trigger_field_type,
     const FormFieldData& trigger_field,
     const std::string& app_locale = "en-US",
-    std::optional<std::string> plus_address_email_override = std::nullopt,
     const std::string& gaia_email = "");
 
 // Returns true if a suggestion for an `AutofillProfile` with record type equal
@@ -76,96 +72,30 @@ bool ContainsProfileSuggestionWithRecordType(
 // suggestions should be done only through this class.
 class AddressSuggestionGenerator : public SuggestionGenerator {
  public:
-  // TODO(crbug.com/409962888): `plus_address_email_override`
-  // has to be removed once the plus address suggestion generator and
-  // suggestions merging are implemented.
-  AddressSuggestionGenerator(
-      const std::optional<std::string>& plus_address_email_override,
-      LogManager* log_manager,
+  explicit AddressSuggestionGenerator(
       AutofillSuggestionTriggerSource trigger_source);
   ~AddressSuggestionGenerator() override;
-
-  void FetchSuggestionData(
-      const FormData& form,
-      const FormFieldData& trigger_field,
-      const FormStructure* form_structure,
-      const AutofillField* trigger_autofill_field,
-      const AutofillClient& client,
-      base::OnceCallback<
-          void(std::pair<SuggestionDataSource,
-                         std::vector<SuggestionGenerator::SuggestionData>>)>
-          callback) override;
 
   void GenerateSuggestions(
       const FormData& form,
       const FormFieldData& trigger_field,
       const FormStructure* form_structure,
       const AutofillField* trigger_autofill_field,
-      const AutofillClient& client,
-      const base::flat_map<SuggestionDataSource, std::vector<SuggestionData>>&
-          all_suggestion_data,
+      AutofillClient& client,
       base::OnceCallback<void(ReturnedSuggestions)> callback) override;
 
   // Like SuggestionGenerator override, but takes a base::FunctionRef instead of
   // a base::OnceCallback. Calls that callback exactly once.
-  void FetchSuggestionData(
-      const FormData& form,
-      const FormFieldData& trigger_field,
-      const FormStructure* form_structure,
-      const AutofillField* trigger_autofill_field,
-      const AutofillClient& client,
-      base::FunctionRef<
-          void(std::pair<SuggestionDataSource,
-                         std::vector<SuggestionGenerator::SuggestionData>>)>
-          callback);
-
-  // Like SuggestionGenerator override, but takes a base::FunctionRef instead of
-  // a base::OnceCallback. Calls that callback exactly once.
   void GenerateSuggestions(
       const FormData& form,
       const FormFieldData& trigger_field,
       const FormStructure* form_structure,
       const AutofillField* trigger_autofill_field,
-      const AutofillClient& client,
-      const base::flat_map<SuggestionDataSource, std::vector<SuggestionData>>&
-          all_suggestion_data,
+      AutofillClient& client,
       base::FunctionRef<void(ReturnedSuggestions)> callback);
 
  private:
-  // Returns a vector of `AutofillProfile`s that will be suggested on a
-  // `trigger_field` in a `form`. Can be empty if there is no data available for
-  // filling or the filling conditions were not met.
-  std::vector<AutofillProfile> MaybeFetchRegularAddressSuggestionData(
-      const FormData& form,
-      const FormFieldData& trigger_field,
-      const FormStructure* form_structure,
-      const AutofillField* trigger_autofill_field,
-      const AutofillClient& client);
-
-  // Returns a vector of suggestions that will be suggested on a
-  // `trigger_field` in a `form`.
-  std::vector<Suggestion> GenerateAddressSuggestions(
-      const FormData& form,
-      const FormFieldData& trigger_field,
-      const FormStructure* form_structure,
-      const AutofillField* trigger_autofill_field,
-      const AutofillClient& client,
-      std::vector<AutofillProfile>& profiles_to_suggest,
-      const std::optional<std::string>& plus_address_email_override);
-
-  // Used to change the emails matching the GAIA email in suggestions with
-  // the `plus_address_email_override_`.
-  // TODO(crbug.com/409962888): `plus_address_email_override_` has to be removed
-  // once the plus address suggestion generator and suggestions merging are
-  // implemented.
-  const std::optional<std::string> plus_address_email_override_;
-
-  raw_ptr<LogManager> log_manager_;
-
   AutofillSuggestionTriggerSource trigger_source_;
-
-  // Stores a set of types of fillable fields that are in the form.
-  FieldTypeSet field_types_;
 };
 
 }  // namespace autofill

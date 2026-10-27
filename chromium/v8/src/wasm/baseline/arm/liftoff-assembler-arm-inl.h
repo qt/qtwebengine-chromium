@@ -17,7 +17,6 @@
 #include "src/wasm/baseline/liftoff-assembler.h"
 #include "src/wasm/baseline/liftoff-register.h"
 #include "src/wasm/baseline/parallel-move-inl.h"
-#include "src/wasm/object-access.h"
 #include "src/wasm/wasm-linkage.h"
 #include "src/wasm/wasm-objects.h"
 
@@ -500,8 +499,15 @@ void LiftoffAssembler::CallFrameSetupStub(int declared_function_index) {
 void LiftoffAssembler::PrepareTailCall(int num_callee_stack_params,
                                        int stack_param_delta) {
   {
-    UseScratchRegisterScope temps(this);
-    Register scratch = temps.Acquire();
+    // There is only one temp register on this architecture, and it might be
+    // needed for the str/ldr below when the offsets can't be encoded as
+    // immediates. So we cannot reserve a temp from the temp list with
+    // "UseScratchRegisterScope" here.
+    // We cannot use an arbitrary allocatable register either because it might
+    // hold the call target or the arguments.
+    // Use "lr" as a scratch register to shift the frame. Its value is not
+    // needed anymore since we restore the caller lr before the tail call.
+    Register scratch = lr;
 
     // Push the return address and frame pointer to complete the stack frame.
     sub(sp, sp, Operand(8));
@@ -651,9 +657,9 @@ void LiftoffAssembler::CheckTierUp(int declared_func_index, int budget_used,
       LoadInstanceDataFromFrame(instance_data);
     }
 
-    constexpr int kArrayOffset = wasm::ObjectAccess::ToTagged(
-        WasmTrustedInstanceData::kTieringBudgetArrayOffset);
-    ldr(budget_array, MemOperand{instance_data, kArrayOffset});
+    ldr(budget_array,
+        FieldMemOperand(instance_data,
+                        WasmTrustedInstanceData::kTieringBudgetArrayOffset));
 
     int budget_arr_offset = kInt32Size * declared_func_index;
     // If the offset cannot be used in the operand directly, add it once to the
@@ -765,7 +771,7 @@ void LiftoffAssembler::LoadTrustedPointer(Register dst, Register src_addr,
 void LiftoffAssembler::LoadFromInstance(Register dst, Register instance,
                                         int offset, int size) {
   DCHECK_LE(0, offset);
-  MemOperand src{instance, offset};
+  MemOperand src = FieldMemOperand(instance, offset);
   switch (size) {
     case 1:
       ldrb(dst, src);
@@ -782,7 +788,7 @@ void LiftoffAssembler::LoadTaggedPointerFromInstance(Register dst,
                                                      Register instance,
                                                      int offset) {
   static_assert(kTaggedSize == kSystemPointerSize);
-  ldr(dst, MemOperand{instance, offset});
+  ldr(dst, FieldMemOperand(instance, offset));
 }
 
 void LiftoffAssembler::ResetOSRTarget() {}
@@ -894,9 +900,12 @@ void LiftoffAssembler::LoadTaggedPointer(Register dst, Register src_addr,
                                          uint32_t* trapping_load_pc,
                                          bool needs_shift) {
   static_assert(kTaggedSize == kInt32Size);
-  liftoff::LoadInternal(this, LiftoffRegister(dst), src_addr, offset_reg,
-                        offset_imm, LoadType::kI32Load, trapping_load_pc,
-                        needs_shift);
+  unsigned shift_amount = needs_shift ? 2 : 0;
+  UseScratchRegisterScope temps(this);
+  MemOperand src_op = liftoff::GetMemOp(this, &temps, src_addr, offset_reg,
+                                        offset_imm, shift_amount);
+  if (trapping_load_pc) *trapping_load_pc = pc_offset();
+  ldr(dst, src_op);
 }
 
 void LiftoffAssembler::AtomicLoadTaggedPointer(Register dst, Register src_addr,
@@ -916,9 +925,9 @@ void LiftoffAssembler::AtomicLoadTaggedPointer(Register dst, Register src_addr,
 }
 
 void LiftoffAssembler::LoadProtectedPointer(Register dst, Register src_addr,
-                                            int32_t offset) {
+                                            int32_t field_offset) {
   static_assert(!V8_ENABLE_SANDBOX_BOOL);
-  LoadTaggedPointer(dst, src_addr, no_reg, offset);
+  ldr(dst, FieldMemOperand(src_addr, field_offset));
 }
 
 void LiftoffAssembler::LoadFullPointer(Register dst, Register src_addr,
@@ -1664,8 +1673,13 @@ void LiftoffAssembler::AtomicCompareExchangeTaggedPointer(
   }
 
   if (v8_flags.disable_write_barriers) return;
-  // Emit the write barrier.
+  // We only need a write barrier if the CAS was successful.
+  // The AtomicCompareExchange above leaves the condition flags from the
+  // final comparison.
   Label exit;
+  b(ne, &exit);
+
+  // Emit the write barrier.
   JumpIfSmi(new_value.gp(), &exit);
   CheckPageFlag(dst_addr, MemoryChunk::kPointersFromHereAreInterestingMask,
                 kZero, &exit);
@@ -2188,6 +2202,10 @@ void LiftoffAssembler::emit_i64_mul(LiftoffRegister dst, LiftoffRegister lhs,
   add(dst.high_gp(), dst.high_gp(), scratch);
 }
 
+void LiftoffAssembler::emit_i64_mul_wide_s() { UNIMPLEMENTED(); }
+
+void LiftoffAssembler::emit_i64_mul_wide_u() { UNIMPLEMENTED(); }
+
 bool LiftoffAssembler::emit_i64_divs(LiftoffRegister dst, LiftoffRegister lhs,
                                      LiftoffRegister rhs,
                                      Label* trap_div_by_zero,
@@ -2330,6 +2348,48 @@ void LiftoffAssembler::IncrementSmi(LiftoffRegister dst, int offset) {
   ldr(scratch, MemOperand(dst.gp(), offset));
   add(scratch, scratch, Operand(Smi::FromInt(1)));
   str(scratch, MemOperand(dst.gp(), offset));
+}
+
+void LiftoffAssembler::DecrementMaxSteps(int32_t* max_steps_ptr,
+                                         MaxStepsVariant steps,
+                                         Label* trap_label,
+                                         LiftoffRegList pinned) {
+  Register addr = pinned.set(GetUnusedRegister(kGpReg, pinned)).gp();
+  mov(addr, Operand(reinterpret_cast<uintptr_t>(max_steps_ptr)));
+  Register max_steps = pinned.set(GetUnusedRegister(kGpReg, pinned)).gp();
+  ldr(max_steps, MemOperand(addr));
+
+  if (auto* steps_const = std::get_if<int32_t>(&steps)) {
+    sub(max_steps, max_steps, Operand(*steps_const), SetCC);
+    str(max_steps, MemOperand(addr));
+    b(trap_label, mi);
+    return;
+  }
+
+  // {steps} must be a register here.
+  LiftoffRegister reg = std::get<LiftoffRegister>(steps);
+  if (reg.is_gp_pair()) {
+    // If the high word is non-zero, the step count exceeds a 32-bit counter.
+    // We set the low word to -1 (0xFFFFFFFF) in that case. This ensures that
+    // the subtraction below will underflow and set the carry flag clear (C=0),
+    // which in turn causes the mvn logic below to clamp max_steps to -1 and
+    // trap.
+    cmp(reg.high_gp(), Operand(0));
+    // Mutating {reg.low_gp()} is safe because if we do so, the subtraction
+    // below will underflow and we will trap immediately after. The mutated
+    // value is never used for any other purpose.
+    mvn(reg.low_gp(), Operand(0), LeaveCC, ne);
+    reg = reg.low();
+  }
+
+  sub(max_steps, max_steps, Operand(reg.gp()), SetCC);
+
+  // Handle wraparound: if Carry clear (lo/unsigned less than), it underflowed.
+  // Set to -1 and update flags.
+  mvn(max_steps, Operand(0), SetCC, lo);
+
+  str(max_steps, MemOperand(addr));
+  b(trap_label, mi);
 }
 
 bool LiftoffAssembler::emit_f32_ceil(DoubleRegister dst, DoubleRegister src) {

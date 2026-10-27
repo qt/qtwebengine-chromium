@@ -31,7 +31,7 @@ if [ $# -ne 1 ]; then
 fi
 
 if [ ! -d dav1d ]; then
-  git clone -b 1.2.1 --depth 1 https://code.videolan.org/videolan/dav1d.git
+  git clone -b 1.5.3 --depth 1 https://code.videolan.org/videolan/dav1d.git
 fi
 cd dav1d
 mkdir build.android

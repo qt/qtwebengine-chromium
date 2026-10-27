@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
@@ -208,6 +210,91 @@ describeWithMockConnection('ElementsTreeOutline', () => {
       };
       const issue = IssuesManager.ContentSecurityPolicyIssue.ContentSecurityPolicyIssue.fromInspectorIssue(
           mockModel, inspectorIssue)[0];
+      issuesManager.dispatchEventToListeners(
+          IssuesManager.IssuesManager.Events.ISSUE_ADDED, {issuesModel: mockModel, issue});
+      await deferredDOMNodeStub();
+      const tagElement = treeElement.listItemElement.getElementsByClassName('webkit-html-tag-name')[0];
+      assert.isFalse(tagElement.classList.contains('violating-element'));
+    }
+
+    // Test that issue can be hidden from the tree element.
+    {
+      const inspectorIssue = {
+        code: Protocol.Audits.InspectorIssueCode.GenericIssue,
+        details: {
+          genericIssueDetails: {
+            errorType: Protocol.Audits.GenericIssueErrorType.FormLabelForNameError,
+            frameId: 'main' as Protocol.Page.FrameId,
+            violatingNodeId: 2 as Protocol.DOM.BackendNodeId,
+          },
+        },
+      };
+      // Remove the issues added in previous tests.
+      const tagElement = treeElement.listItemElement.getElementsByClassName('webkit-html-tag-name')[0];
+      const issues = treeElement.issuesByNodeElement.get(tagElement);
+      for (const issue of issues ?? []) {
+        treeElement.removeIssue(issue);
+      }
+      // Add the issue.
+      const issue = IssuesManager.GenericIssue.GenericIssue.fromInspectorIssue(mockModel, inspectorIssue)[0];
+      issuesManager.dispatchEventToListeners(
+          IssuesManager.IssuesManager.Events.ISSUE_ADDED, {issuesModel: mockModel, issue});
+      await deferredDOMNodeStub();
+      assert.isTrue(tagElement.classList.contains('violating-element'));
+      // Hide the issue.
+      issue.setHidden(true);
+      issuesManager.dispatchEventToListeners(IssuesManager.IssuesManager.Events.ISSUE_HIDDEN_STATUS_UPDATED, {issue});
+      await deferredDOMNodeStub();
+      assert.isFalse(tagElement.classList.contains('violating-element'));
+    }
+
+    // Test that hidden issue can be unhidden from the tree element.
+    {
+      const inspectorIssue = {
+        code: Protocol.Audits.InspectorIssueCode.GenericIssue,
+        details: {
+          genericIssueDetails: {
+            errorType: Protocol.Audits.GenericIssueErrorType.FormLabelForNameError,
+            frameId: 'main' as Protocol.Page.FrameId,
+            violatingNodeId: 2 as Protocol.DOM.BackendNodeId,
+          },
+        },
+      };
+      // Add the issue.
+      const issue = IssuesManager.GenericIssue.GenericIssue.fromInspectorIssue(mockModel, inspectorIssue)[0];
+      issuesManager.dispatchEventToListeners(
+          IssuesManager.IssuesManager.Events.ISSUE_ADDED, {issuesModel: mockModel, issue});
+      await deferredDOMNodeStub();
+      const tagElement = treeElement.listItemElement.getElementsByClassName('webkit-html-tag-name')[0];
+      assert.isTrue(tagElement.classList.contains('violating-element'));
+      // Hide the issue.
+      issue.setHidden(true);
+      issuesManager.dispatchEventToListeners(IssuesManager.IssuesManager.Events.ISSUE_HIDDEN_STATUS_UPDATED, {issue});
+      await deferredDOMNodeStub();
+      assert.isFalse(tagElement.classList.contains('violating-element'));
+      // Unhide the issue.
+      issue.setHidden(false);
+      issuesManager.dispatchEventToListeners(IssuesManager.IssuesManager.Events.ISSUE_HIDDEN_STATUS_UPDATED, {issue});
+      await deferredDOMNodeStub();
+      assert.isTrue(tagElement.classList.contains('violating-element'));
+      // Remove issue to prepare for subsequent tests.
+      treeElement.removeIssue(issue);
+    }
+
+    // Test that new pre-hidden issue won't be added to the tree element.
+    {
+      const inspectorIssue = {
+        code: Protocol.Audits.InspectorIssueCode.GenericIssue,
+        details: {
+          genericIssueDetails: {
+            errorType: Protocol.Audits.GenericIssueErrorType.FormLabelForNameError,
+            frameId: 'main' as Protocol.Page.FrameId,
+            violatingNodeId: 2 as Protocol.DOM.BackendNodeId,
+          },
+        },
+      };
+      const issue = IssuesManager.GenericIssue.GenericIssue.fromInspectorIssue(mockModel, inspectorIssue)[0];
+      issue.setHidden(true);
       issuesManager.dispatchEventToListeners(
           IssuesManager.IssuesManager.Events.ISSUE_ADDED, {issuesModel: mockModel, issue});
       await deferredDOMNodeStub();

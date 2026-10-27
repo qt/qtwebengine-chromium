@@ -87,8 +87,8 @@ class CORE_EXPORT PseudoElement : public Element {
   //
   // Always resolves to the originating DOM element, for every pseudo-element
   // including those with activation behavior (::scroll-marker, ::scroll-button,
-  // ::interest-hint). This enforces the invariant that |inner_node_| is always
-  // a real (non-pseudo) Element, which is required for:
+  // ::interest-button). This enforces the invariant that |inner_node_| is
+  // always a real (non-pseudo) Element, which is required for:
   //   - SelectionController: IsEditable / CanStartSelection / GetPosition
   //
   // Dispatch targets the pseudo via InnerPossiblyPseudoElement() instead:
@@ -120,6 +120,8 @@ class CORE_EXPORT PseudoElement : public Element {
   bool IsLayoutSiblingOfOriginatingElement() const;
 
   bool IsInertRoot() const override;
+
+  void RetargetAnimations();
 
  protected:
   void SetIsGeneratedName(bool generated) { is_generated_name_ = generated; }

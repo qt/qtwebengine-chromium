@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_META_MACROS_H
-#define EIGEN_CXX11_TENSOR_TENSOR_META_MACROS_H
+#ifndef EIGEN_TENSOR_TENSOR_META_MACROS_H
+#define EIGEN_TENSOR_TENSOR_META_MACROS_H
 
 /** use this macro in sfinae selection in templated functions
  *
@@ -75,8 +76,8 @@
 /** \internal
  * \brief Macro to manually inherit assignment operators.
  * This is necessary, because the implicitly defined assignment operator gets deleted when a custom operator= is
- * defined. This also inherits template<OtherDerived> operator=(const OtherDerived&) assignments. With C++11 or later
- * this also default-implements the copy-constructor
+ * defined. This also inherits template<OtherDerived> operator=(const OtherDerived&) assignments, and
+ * default-implements the copy-constructor.
  */
 #define EIGEN_TENSOR_INHERIT_ASSIGNMENT_OPERATORS(Derived) \
   EIGEN_TENSOR_INHERIT_ASSIGNMENT_EQUAL_OPERATOR(Derived)  \

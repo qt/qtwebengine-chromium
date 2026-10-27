@@ -25,7 +25,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/vulkan/PhysicalDeviceVk.h"
+#include "src/dawn/native/vulkan/PhysicalDeviceVk.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -33,24 +33,25 @@
 #include <utility>
 #include <vector>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/GPUInfo.h"
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/Error.h"
-#include "dawn/native/ImmediateConstantsLayout.h"
-#include "dawn/native/Instance.h"
-#include "dawn/native/Limits.h"
-#include "dawn/native/vulkan/BackendVk.h"
-#include "dawn/native/vulkan/DeviceVk.h"
-#include "dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
-#include "dawn/native/vulkan/SwapChainVk.h"
-#include "dawn/native/vulkan/TextureVk.h"
-#include "dawn/native/vulkan/UtilsVulkan.h"
-#include "dawn/native/vulkan/VulkanError.h"
 #include "dawn/platform/DawnPlatform.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/GPUInfo.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/Error.h"
+#include "src/dawn/native/Instance.h"
+#include "src/dawn/native/Limits.h"
+#include "src/dawn/native/vulkan/BackendVk.h"
+#include "src/dawn/native/vulkan/DeviceVk.h"
+#include "src/dawn/native/vulkan/ImmediatesLayoutVk.h"
+#include "src/dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
+#include "src/dawn/native/vulkan/SwapChainVk.h"
+#include "src/dawn/native/vulkan/TextureVk.h"
+#include "src/dawn/native/vulkan/UtilsVulkan.h"
+#include "src/dawn/native/vulkan/VulkanError.h"
+#include "src/utils/compiler.h"
 
 #if DAWN_PLATFORM_IS(ANDROID)
-#include "dawn/native/AHBFunctions.h"
+#include "src/dawn/native/AHBFunctions.h"
 #endif  // DAWN_PLATFORM_IS(ANDROID)
 
 namespace dawn::native::vulkan {
@@ -209,11 +210,6 @@ MaybeError PhysicalDevice::InitializeImpl() {
     mSubgroupMinSize = mDeviceInfo.subgroupSizeControlProperties.minSubgroupSize;
     mSubgroupMaxSize = mDeviceInfo.subgroupSizeControlProperties.maxSubgroupSize;
 
-    mMinExplicitComputeSubgroupSize = mDeviceInfo.subgroupSizeControlProperties.minSubgroupSize;
-    mMaxExplicitComputeSubgroupSize = mDeviceInfo.subgroupSizeControlProperties.maxSubgroupSize;
-    mMaxComputeWorkgroupSubgroups =
-        mDeviceInfo.subgroupSizeControlProperties.maxComputeWorkgroupSubgroups;
-
     // Check for essential Vulkan extensions and features
 
     // Dawn requires at least Vulkan 1.1
@@ -325,6 +321,22 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::DualSourceBlending);
     }
 
+    if (mDeviceInfo.HasExt(DeviceExt::RasterizationOrderAttachmentAccess) &&
+        mDeviceInfo.rasterizationOrderAttachmentAccessFeatures
+                .rasterizationOrderColorAttachmentAccess == VK_TRUE) {
+        // There are four possible ways FramebufferFetch can be supported. Currently only #1 is
+        // implemented.
+        //
+        // 1. Coherent with rasterization order extension.
+        // 2. Coherent without rasterization order extension but when GPU architecture supports
+        //    coherent input attachment reads. This needs a subpass self dependency to be added.
+        // 3. Non-coherent. This needs both a subpass self dependency and barriers to be
+        //    inserted before draws that use FramebufferFetch.
+        // 4. When dynamic rendering is used FramebufferFetch requires the dynamic rendering local
+        //    storage extension and barriers to be inserted before draws that use FramebufferFetch.
+        EnableFeature(Feature::FramebufferFetch);
+    }
+
     if (mDeviceInfo.features.shaderClipDistance == VK_TRUE) {
         EnableFeature(Feature::ClipDistances);
     }
@@ -335,9 +347,12 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::PrimitiveIndex);
     }
 
+    // buffer_view decompositions may use u16 if the smallest access is 16-bit, so require
+    // shaderInt16 as well.
     bool shaderF16Enabled = false;
     if (mDeviceInfo.HasExt(DeviceExt::ShaderFloat16Int8) &&
         mDeviceInfo.shaderFloat16Int8Features.shaderFloat16 == VK_TRUE &&
+        mDeviceInfo.features.shaderInt16 == VK_TRUE &&
         mDeviceInfo._16BitStorageFeatures.storageBuffer16BitAccess == VK_TRUE) {
         EnableFeature(Feature::ShaderF16);
         shaderF16Enabled = true;
@@ -535,10 +550,10 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     }
 
     if (supportsSubgroupsFeature && hasComputeFullSubgroups) {
-        EnableFeature(Feature::ChromiumExperimentalSubgroupSizeControl);
+        EnableFeature(Feature::SubgroupSizeControl);
     }
 
-    // HostMappedPointer is currently disabled on AMD due to a driver bug: crbug.com/494566064
+    // HostMappedPointer is not supported on AMD (see: crbug.com/494566064)
     if (!gpu_info::IsAMD(GetVendorId()) && mDeviceInfo.HasExt(DeviceExt::ExternalMemoryHost) &&
         mDeviceInfo.externalMemoryHostProperties.minImportedHostPointerAlignment <=
             kMinimumHostMappedPointerAlignment) {
@@ -904,9 +919,7 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsInternal(wgpu::FeatureLevel 
     // Vulkan needs to have enough push constant range size for all
     // internal and external immediate data usages.
     constexpr uint32_t kVkGuaranteedMaxPushConstantsSize = 128;  // from Vulkan spec
-    constexpr uint32_t kMaxInternalConstants =
-        std::max(sizeof(RenderImmediateConstants) - sizeof(UserImmediateConstants),
-                 sizeof(ComputeImmediateConstants) - sizeof(UserImmediateConstants));
+    constexpr uint32_t kMaxInternalConstants = sizeof(RenderImmediates) - sizeof(UserImmediates);
     static_assert(kVkGuaranteedMaxPushConstantsSize >=
                   kMaxImmediateDataBytes + kMaxInternalConstants);
     DAWN_ASSERT(vkLimits.maxPushConstantsSize >= kVkGuaranteedMaxPushConstantsSize);
@@ -963,13 +976,14 @@ void PhysicalDevice::SetupBackendAdapterToggles(dawn::platform::Platform* platfo
     // because they affect whether or not the MSAARenderToSingleSampled feature is available.
 
     // Use dynamic rendering by default if the corresponding extension is available.
-    // Also disable on older Intel devices and ARM Mali-G68 devices which have been observed to have
-    // driver issues with the dynamic rendering path.
+    // Also disable on older Intel devices, ARM Mali-G68 devices, and PowerVR devices, all of which
+    // have been observed to have driver issues with the dynamic rendering path.
     if (!GetDeviceInfo().HasExt(DeviceExt::DynamicRendering) ||
         GetDeviceInfo().dynamicRenderingFeatures.dynamicRendering == VK_FALSE ||
         (gpu_info::IsIntel(GetVendorId()) &&
          gpu_info::GetIntelGen(GetVendorId(), GetDeviceId()) <= gpu_info::IntelGen::Gen9) ||
-        (gpu_info::IsARM(GetVendorId()) && gpu_info::IsMaliG68(GetDeviceId()))) {
+        (gpu_info::IsARM(GetVendorId()) && gpu_info::IsMaliG68(GetDeviceId())) ||
+        gpu_info::IsImgTec(GetVendorId())) {
         adapterToggles->ForceSet(Toggle::VulkanUseDynamicRendering, false);
     } else {
         adapterToggles->Default(Toggle::VulkanUseDynamicRendering, true);
@@ -989,7 +1003,7 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     // Vulkan SPEC and drivers.
     deviceToggles->Default(Toggle::UseTemporaryBufferInCompressedTextureToTextureCopy, true);
 
-    if (IsAndroidQualcomm()) {
+    if (MayBeQualcommProprietary()) {
         // dawn:1564, dawn:1897: Recording a compute pass after a render pass in the same command
         // buffer frequently causes a crash on Qualcomm GPUs. To work around that bug, split the
         // command buffer any time we are about to record a compute pass when a render pass has
@@ -1019,11 +1033,8 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
 #if DAWN_PLATFORM_IS(32_BIT)
         deviceToggles->Default(Toggle::VulkanSampleCompareDepthCubeArrayWorkaround, true);
 #endif
-    }
-
-    if (IsIntelMesa()) {
-        // chromium:448873316: Non-scalar (vector) saturate from uniform fails.
-        deviceToggles->Default(Toggle::SaturateAsMinMaxF16, true);
+        // crbug.com/469328925
+        deviceToggles->Default(Toggle::VulkanSampleCompare2DWorkaround, true);
     }
 
     if (IsPixel10() || IsAndroidSamsung()) {
@@ -1034,7 +1045,7 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         deviceToggles->Default(Toggle::VulkanIncompletePipelineCacheWorkaround, true);
     }
 
-    if (gpu_info::IsImgTec(GetVendorId())) {
+    if (MayBeImaginationProprietary()) {
         // crbug.com/443906252: Polyfill for case switch with large ranges.
         deviceToggles->Default(Toggle::VulkanPolyfillSwitchWithIf, true);
     }
@@ -1051,7 +1062,7 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         }
     }
 
-    if (IsAndroidARM()) {
+    if (MayBeArmProprietary()) {
         // dawn:1550: Resolving multiple color targets in a single pass fails on ARM GPUs. To
         // work around the issue, passes that resolve to multiple color targets will instead be
         // forced to store the multisampled targets and do the resolves as separate passes injected
@@ -1062,9 +1073,7 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         // `unpack4x8unorm` methods can have issues on ARM. To work around the issue we re-write the
         // pack/unpack calls and do the packing manually.
         deviceToggles->Default(Toggle::PolyfillPackUnpack4x8Norm, true);
-    }
 
-    if (gpu_info::IsARM(GetVendorId())) {
         // chromium:387000529: Arm devices have issues passing texture handles as parameters to
         // functions for accesses without a sampler (TextureLoad).
         deviceToggles->Default(Toggle::VulkanDirectVariableAccessTransformHandle, true);
@@ -1092,43 +1101,52 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         // OpCompositeExtract which happens when a binding_array is indexed "by value" instead of
         // through a pointer.
         deviceToggles->Default(Toggle::VulkanDirectVariableAccessTransformHandle, true);
+
+        // Disable use of ExtendedDynamicState on SwitfShader. It doesn't appear to be handling all
+        // dynamic states properly, specifically some stencil ops.
+        deviceToggles->ForceSet(Toggle::VulkanUseExtendedDynamicState, false);
     }
 
     if (IsIntelMesa()) {
+        // chromium:448873316: Non-scalar (vector) saturate from uniform fails.
+        deviceToggles->Default(Toggle::SaturateAsMinMaxF16, true);
+
         // Polyfill a clamp of `id` param in subgroupShuffle to follow spec limitations.
         // See crbug.com/435246627
         deviceToggles->Default(Toggle::SubgroupShuffleClamped, true);
-    }
 
-    if (IsIntelMesa() && gpu_info::IsIntelGen12LP(GetVendorId(), GetDeviceId())) {
-        // dawn:1688: Intel Mesa driver has a bug about reusing the VkDeviceMemory that was
-        // previously bound to a 2D VkImage. To work around that bug we have to disable the resource
-        // sub-allocation for 2D textures with CopyDst or RenderAttachment usage.
-        const gpu_info::DriverVersion kBuggyDriverVersion = {21, 3, 6, 0};
-        if (GetDriverVersion() >= kBuggyDriverVersion) {
-            deviceToggles->Default(
-                Toggle::DisableSubAllocationFor2DTextureWithCopyDstOrRenderAttachment, true);
+        if (gpu_info::IsIntelGen12LP(GetVendorId(), GetDeviceId())) {
+            // dawn:1688: Intel Mesa driver has a bug about reusing the VkDeviceMemory that was
+            // previously bound to a 2D VkImage. To work around that bug we have to disable the
+            // resource sub-allocation for 2D textures with CopyDst or RenderAttachment usage.
+            const gpu_info::DriverVersion kBuggyDriverVersion = {21, 3, 6, 0};
+            if (GetDriverVersion() >= kBuggyDriverVersion) {
+                deviceToggles->Default(
+                    Toggle::DisableSubAllocationFor2DTextureWithCopyDstOrRenderAttachment, true);
+            }
+
+            // chromium:1361662: Mesa driver has a bug clearing R8 mip-leveled textures on Intel
+            // Gen12 GPUs. Work around it by clearing the whole texture as soon as they are created.
+            const gpu_info::DriverVersion kFixedDriverVersion = {23, 1, 0, 0};
+            if (GetDriverVersion() < kFixedDriverVersion) {
+                deviceToggles->Default(Toggle::VulkanClearGen12TextureWithCCSAmbiguateOnCreation,
+                                       true);
+            }
         }
 
-        // chromium:1361662: Mesa driver has a bug clearing R8 mip-leveled textures on Intel Gen12
-        // GPUs. Work around it by clearing the whole texture as soon as they are created.
-        const gpu_info::DriverVersion kFixedDriverVersion = {23, 1, 0, 0};
-        if (GetDriverVersion() < kFixedDriverVersion) {
-            deviceToggles->Default(Toggle::VulkanClearGen12TextureWithCCSAmbiguateOnCreation, true);
-        }
-    }
-
-    if (IsIntelMesa() && (gpu_info::IsIntelGen12LP(GetVendorId(), GetDeviceId()) ||
-                          gpu_info::IsIntelGen12HP(GetVendorId(), GetDeviceId()))) {
-        // Intel Mesa driver has a bug where vkCmdCopyQueryPoolResults fails to write overlapping
-        // queries to a same buffer after the buffer is accessed by a compute shader with correct
-        // resource barriers, which may caused by flush and memory coherency issue on Intel Gen12
-        // GPUs. Workaround for it to clear the buffer before vkCmdCopyQueryPoolResults on Mesa
-        // driver version < 23.1.3.
-        const gpu_info::DriverVersion kBuggyDriverVersion = {21, 2, 0, 0};
-        const gpu_info::DriverVersion kFixedDriverVersion = {23, 1, 3, 0};
-        if (GetDriverVersion() >= kBuggyDriverVersion && GetDriverVersion() < kFixedDriverVersion) {
-            deviceToggles->Default(Toggle::ClearBufferBeforeResolveQueries, true);
+        if (gpu_info::IsIntelGen12LP(GetVendorId(), GetDeviceId()) ||
+            gpu_info::IsIntelGen12HP(GetVendorId(), GetDeviceId())) {
+            // Intel Mesa driver has a bug where vkCmdCopyQueryPoolResults fails to write
+            // overlapping queries to a same buffer after the buffer is accessed by a compute shader
+            // with correct resource barriers, which may caused by flush and memory coherency issue
+            // on Intel Gen12 GPUs. Workaround for it to clear the buffer before
+            // vkCmdCopyQueryPoolResults on Mesa driver version < 23.1.3.
+            const gpu_info::DriverVersion kBuggyDriverVersion = {21, 2, 0, 0};
+            const gpu_info::DriverVersion kFixedDriverVersion = {23, 1, 3, 0};
+            if (GetDriverVersion() >= kBuggyDriverVersion &&
+                GetDriverVersion() < kFixedDriverVersion) {
+                deviceToggles->Default(Toggle::ClearBufferBeforeResolveQueries, true);
+            }
         }
     }
 
@@ -1256,7 +1274,6 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         GetDeviceInfo().extendedDynamicStateFeatures.extendedDynamicState == VK_FALSE) {
         deviceToggles->ForceSet(Toggle::VulkanUseExtendedDynamicState, false);
     } else {
-        // TODO(463893795): Default to true when support is fully implemented.
         deviceToggles->Default(Toggle::VulkanUseExtendedDynamicState, false);
     }
 }
@@ -1285,6 +1302,7 @@ FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
         // See crbug.com/391680973. We disable subgroups on this device unless the user has
         // explicitly enabled the 'enable_subgroups_intel_gen9' toggle.
         case wgpu::FeatureName::Subgroups:
+        case wgpu::FeatureName::SubgroupSizeControl:
             if (gpu_info::IsIntelGen9(GetVendorId(), GetDeviceId()) &&
                 !toggles.IsEnabled(Toggle::EnableSubgroupsIntelGen9)) {
                 return FeatureValidationResult(
@@ -1322,7 +1340,7 @@ FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
             }
             break;
 
-        // HostMappedPointer is currently disabled on AMD due to a driver bug: crbug.com/494566064
+        // HostMappedPointer is not supported on AMD (see: crbug.com/494566064)
         case wgpu::FeatureName::HostMappedPointer:
             if (gpu_info::IsAMD(GetVendorId())) {
                 return FeatureValidationResult(
@@ -1408,6 +1426,33 @@ bool PhysicalDevice::IsWindowsAMD() const {
 #else
     return false;
 #endif
+}
+
+bool PhysicalDevice::MayBeArmProprietary() const {
+    if (!gpu_info::IsARM(GetVendorId())) {
+        return false;
+    }
+
+    return !mDeviceInfo.HasExt(DeviceExt::DriverProperties) ||
+           mDeviceInfo.driverProperties.driverID == VK_DRIVER_ID_ARM_PROPRIETARY;
+}
+
+bool PhysicalDevice::MayBeQualcommProprietary() const {
+    if (!gpu_info::IsQualcommPCI(GetVendorId())) {
+        return false;
+    }
+
+    return !mDeviceInfo.HasExt(DeviceExt::DriverProperties) ||
+           mDeviceInfo.driverProperties.driverID == VK_DRIVER_ID_QUALCOMM_PROPRIETARY;
+}
+
+bool PhysicalDevice::MayBeImaginationProprietary() const {
+    if (!gpu_info::IsImgTec(GetVendorId())) {
+        return false;
+    }
+
+    return !mDeviceInfo.HasExt(DeviceExt::DriverProperties) ||
+           mDeviceInfo.driverProperties.driverID == VK_DRIVER_ID_IMAGINATION_PROPRIETARY;
 }
 
 std::optional<uint32_t> PhysicalDevice::FindDefaultComputeSubgroupSize() const {
@@ -1590,23 +1635,27 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
         memoryHeapProperties->heapInfo = heapInfo;
 
         for (size_t i = 0; i < count; ++i) {
-            heapInfo[i].size = mDeviceInfo.memoryHeaps[i].size;
-            heapInfo[i].properties = {};
+            DAWN_UNSAFE_TODO(heapInfo[i]).size = mDeviceInfo.memoryHeaps[i].size;
+            DAWN_UNSAFE_TODO(heapInfo[i]).properties = {};
             if (mDeviceInfo.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
-                heapInfo[i].properties |= wgpu::HeapProperty::DeviceLocal;
+                DAWN_UNSAFE_TODO(heapInfo[i]).properties |= wgpu::HeapProperty::DeviceLocal;
             }
         }
         for (const auto& memoryType : mDeviceInfo.memoryTypes) {
             if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-                heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostVisible;
+                DAWN_UNSAFE_TODO(heapInfo[memoryType.heapIndex]).properties |=
+                    wgpu::HeapProperty::HostVisible;
             }
             if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
-                heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostCoherent;
+                DAWN_UNSAFE_TODO(heapInfo[memoryType.heapIndex]).properties |=
+                    wgpu::HeapProperty::HostCoherent;
             }
             if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) {
-                heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostCached;
+                DAWN_UNSAFE_TODO(heapInfo[memoryType.heapIndex]).properties |=
+                    wgpu::HeapProperty::HostCached;
             } else {
-                heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostUncached;
+                DAWN_UNSAFE_TODO(heapInfo[memoryType.heapIndex]).properties |=
+                    wgpu::HeapProperty::HostUncached;
             }
         }
     }
@@ -1628,16 +1677,8 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
         SubgroupMatrixConfig* configs = new SubgroupMatrixConfig[count];
         subgroupMatrixConfigs->configs = configs;
         subgroupMatrixConfigs->configCount = supportedConfigs.size();
-        memcpy(configs, supportedConfigs.data(), count * sizeof(SubgroupMatrixConfig));
-    }
-    if (auto* explicitComputeSubgroupSizeConfigs =
-            info.Get<AdapterPropertiesExplicitComputeSubgroupSizeConfigs>()) {
-        explicitComputeSubgroupSizeConfigs->minExplicitComputeSubgroupSize =
-            GetMinExplicitComputeSubgroupSize();
-        explicitComputeSubgroupSizeConfigs->maxExplicitComputeSubgroupSize =
-            GetMaxExplicitComputeSubgroupSize();
-        explicitComputeSubgroupSizeConfigs->maxComputeWorkgroupSubgroups =
-            GetMaxComputeWorkgroupSubgroups();
+        DAWN_UNSAFE_TODO(
+            memcpy(configs, supportedConfigs.data(), count * sizeof(SubgroupMatrixConfig)));
     }
 }
 
@@ -1659,8 +1700,8 @@ void PhysicalDevice::PopulateBackendFormatCapabilities(
             drmCapabilities->propertiesCount = count;
 
             for (size_t i = 0; i < count; i++) {
-                properties[i].modifier = drmFormatModifiers[i].drmFormatModifier;
-                properties[i].modifierPlaneCount =
+                DAWN_UNSAFE_TODO(properties[i]).modifier = drmFormatModifiers[i].drmFormatModifier;
+                DAWN_UNSAFE_TODO(properties[i]).modifierPlaneCount =
                     drmFormatModifiers[i].drmFormatModifierPlaneCount;
             }
         }

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Host from '../../core/host/host.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
@@ -97,6 +99,35 @@ describeWithEnvironment('InspectorView', () => {
   });
 
   describe('action delegate', () => {
+    it('main.toggle-drawer triggers animated hide when drawer is expanded and visible', () => {
+      const {inspectorView} = createInspectorViewWithDockState(DockState.BOTTOM);
+      inspectorView.showDrawer({focus: false, hasTargetDrawer: false});
+      assert.isTrue(inspectorView.drawerVisible());
+      const drawerSplitWidget =
+          (inspectorView as unknown as {drawerSplitWidget: LegacyUI.SplitWidget.SplitWidget}).drawerSplitWidget;
+      const hideSidebarSpy = sinon.spy(drawerSplitWidget, 'hideSidebar');
+
+      const delegate = new LegacyUI.InspectorView.ActionDelegate();
+      delegate.handleAction({} as LegacyUI.Context.Context, 'main.toggle-drawer');
+
+      sinon.assert.calledOnceWithExactly(hideSidebarSpy, true);
+    });
+
+    it('main.toggle-drawer hides without animation when drawer is minimized', () => {
+      const {inspectorView} = createInspectorViewWithDockState(DockState.BOTTOM);
+      inspectorView.showDrawer({focus: false, hasTargetDrawer: false});
+      inspectorView.setDrawerMinimized(true);
+      const drawerSplitWidget =
+          (inspectorView as unknown as {drawerSplitWidget: LegacyUI.SplitWidget.SplitWidget}).drawerSplitWidget;
+      const hideSidebarSpy = sinon.spy(drawerSplitWidget, 'hideSidebar');
+
+      const delegate = new LegacyUI.InspectorView.ActionDelegate();
+      delegate.handleAction({} as LegacyUI.Context.Context, 'main.toggle-drawer');
+
+      sinon.assert.calledOnceWithExactly(hideSidebarSpy, false);
+      assert.isFalse(inspectorView.drawerVisible());
+    });
+
     it('main.toggle-drawer shows drawer when hidden', () => {
       const {inspectorView} = createInspectorViewWithDockState(DockState.BOTTOM);
       assert.isFalse(inspectorView.drawerVisible());

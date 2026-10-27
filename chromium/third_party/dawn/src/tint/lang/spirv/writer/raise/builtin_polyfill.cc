@@ -28,6 +28,7 @@
 #include "src/tint/lang/spirv/writer/raise/builtin_polyfill.h"
 
 #include <utility>
+#include <vector>
 
 #include "spirv/unified1/spirv.h"
 #include "src/tint/lang/core/enums.h"
@@ -186,7 +187,6 @@ struct State {
     /// Process the module.
     void Process() {
         // Find the builtins that need replacing.
-        Vector<core::ir::CoreBuiltinCall*, 4> worklist;
         Vector<core::ir::Construct*, 4> subgroup_matrix_constructors;
 
         // Replace types for function parameters if necessary
@@ -197,6 +197,9 @@ struct State {
                 }
             }
         }
+
+        std::vector<std::function<void()>> worklist;
+        worklist.reserve(128);
 
         for (auto* inst : ir.Instructions()) {
             // Replace types for instruction results if necessary
@@ -209,11 +212,11 @@ struct State {
             if (auto* builtin = inst->As<core::ir::CoreBuiltinCall>()) {
                 switch (builtin->Func()) {
                     case core::BuiltinFn::kArrayLength:
+                        worklist.push_back([this, builtin] { ArrayLength(builtin); });
+                        break;
                     case core::BuiltinFn::kAtomicAdd:
                     case core::BuiltinFn::kAtomicAnd:
                     case core::BuiltinFn::kAtomicCompareExchangeWeak:
-                    case core::BuiltinFn::kAtomicStoreMax:
-                    case core::BuiltinFn::kAtomicStoreMin:
                     case core::BuiltinFn::kAtomicExchange:
                     case core::BuiltinFn::kAtomicLoad:
                     case core::BuiltinFn::kAtomicMax:
@@ -222,44 +225,103 @@ struct State {
                     case core::BuiltinFn::kAtomicStore:
                     case core::BuiltinFn::kAtomicSub:
                     case core::BuiltinFn::kAtomicXor:
+                    case core::BuiltinFn::kAtomicStoreMax:
+                    case core::BuiltinFn::kAtomicStoreMin:
+                        worklist.push_back([this, builtin] { Atomic(builtin); });
+                        break;
                     case core::BuiltinFn::kDot:
+                        worklist.push_back([this, builtin] { Dot(builtin); });
+                        break;
                     case core::BuiltinFn::kDot4I8Packed:
                     case core::BuiltinFn::kDot4U8Packed:
+                        worklist.push_back([this, builtin] { DotPacked4x8(builtin); });
+                        break;
                     case core::BuiltinFn::kQuadBroadcast:
+                        worklist.push_back([this, builtin] { QuadBroadcast(builtin); });
+                        break;
                     case core::BuiltinFn::kSelect:
+                        worklist.push_back([this, builtin] { Select(builtin); });
+                        break;
                     case core::BuiltinFn::kSubgroupBroadcast:
+                        worklist.push_back([this, builtin] { SubgroupBroadcast(builtin); });
+                        break;
                     case core::BuiltinFn::kSubgroupShuffle:
                     case core::BuiltinFn::kSubgroupShuffleDown:
                     case core::BuiltinFn::kSubgroupShuffleUp:
-                    case core::BuiltinFn::kSubgroupShuffleXor:
+                    case core::BuiltinFn::kSubgroupShuffleXor: {
+                        bool clamped = config.subgroup_shuffle_clamped;
+                        worklist.push_back(
+                            [this, builtin, clamped] { SubgroupShuffle(builtin, clamped); });
+                        break;
+                    }
                     case core::BuiltinFn::kTextureDimensions:
+                        worklist.push_back([this, builtin] { TextureDimensions(builtin); });
+                        break;
                     case core::BuiltinFn::kTextureGather:
                     case core::BuiltinFn::kTextureGatherCompare:
+                        worklist.push_back([this, builtin] { TextureGather(builtin); });
+                        break;
                     case core::BuiltinFn::kTextureLoad:
+                        worklist.push_back([this, builtin] { TextureLoad(builtin); });
+                        break;
                     case core::BuiltinFn::kTextureNumLayers:
+                        worklist.push_back([this, builtin] { TextureNumLayers(builtin); });
+                        break;
                     case core::BuiltinFn::kTextureNumLevels:
+                        worklist.push_back([this, builtin] { TextureNumLevels(builtin); });
+                        break;
                     case core::BuiltinFn::kTextureNumSamples:
+                        worklist.push_back([this, builtin] { TextureNumSamples(builtin); });
+                        break;
                     case core::BuiltinFn::kTextureSample:
                     case core::BuiltinFn::kTextureSampleBias:
                     case core::BuiltinFn::kTextureSampleCompare:
                     case core::BuiltinFn::kTextureSampleCompareLevel:
                     case core::BuiltinFn::kTextureSampleGrad:
                     case core::BuiltinFn::kTextureSampleLevel:
+                        worklist.push_back([this, builtin] { TextureSample(builtin); });
+                        break;
                     case core::BuiltinFn::kTextureStore:
-                    case core::BuiltinFn::kInputAttachmentLoad:
-                    case core::BuiltinFn::kSubgroupMatrixLoad:
-                    case core::BuiltinFn::kSubgroupMatrixStore:
-                    case core::BuiltinFn::kSubgroupMatrixMultiply:
-                    case core::BuiltinFn::kSubgroupMatrixMultiplyAccumulate:
-                    case core::BuiltinFn::kSubgroupMatrixScalarAdd:
-                    case core::BuiltinFn::kSubgroupMatrixScalarSubtract:
-                    case core::BuiltinFn::kSubgroupMatrixScalarMultiply:
-                        worklist.Push(builtin);
+                        worklist.push_back([this, builtin] { TextureStore(builtin); });
                         break;
                     case core::BuiltinFn::kQuantizeToF16:
                         if (builtin->Result()->Type()->Is<core::type::Vector>()) {
-                            worklist.Push(builtin);
+                            worklist.push_back([this, builtin] { QuantizeToF16Vec(builtin); });
                         }
+                        break;
+                    case core::BuiltinFn::kInputAttachmentLoad:
+                        worklist.push_back([this, builtin] { InputAttachmentLoad(builtin); });
+                        break;
+                    case core::BuiltinFn::kSubgroupMatrixLoad:
+                        worklist.push_back([this, builtin] { SubgroupMatrixLoad(builtin); });
+                        break;
+                    case core::BuiltinFn::kSubgroupMatrixStore:
+                        worklist.push_back([this, builtin] { SubgroupMatrixStore(builtin); });
+                        break;
+                    case core::BuiltinFn::kSubgroupMatrixMultiply:
+                        worklist.push_back([this, builtin] { SubgroupMatrixMultiply(builtin); });
+                        break;
+                    case core::BuiltinFn::kSubgroupMatrixMultiplyAccumulate:
+                        worklist.push_back(
+                            [this, builtin] { SubgroupMatrixMultiplyAccumulate(builtin); });
+                        break;
+                    case core::BuiltinFn::kSubgroupMatrixScalarAdd:
+                        worklist.push_back([this, builtin] {
+                            SubgroupMatrixScalar(builtin, core::BinaryOp::kAdd);
+                        });
+                        break;
+                    case core::BuiltinFn::kSubgroupMatrixScalarSubtract:
+                        worklist.push_back([this, builtin] {
+                            SubgroupMatrixScalar(builtin, core::BinaryOp::kSubtract);
+                        });
+                        break;
+                    case core::BuiltinFn::kSubgroupMatrixScalarMultiply:
+                        worklist.push_back([this, builtin] {
+                            SubgroupMatrixScalar(builtin, core::BinaryOp::kMultiply);
+                        });
+                        break;
+                    case core::BuiltinFn::kAddSat:
+                        worklist.push_back([this, builtin] { AddSat(builtin); });
                         break;
                     default:
                         break;
@@ -276,108 +338,8 @@ struct State {
         }
 
         // Replace the builtins that we found.
-        for (auto* builtin : worklist) {
-            switch (builtin->Func()) {
-                case core::BuiltinFn::kArrayLength:
-                    ArrayLength(builtin);
-                    break;
-                case core::BuiltinFn::kAtomicAdd:
-                case core::BuiltinFn::kAtomicAnd:
-                case core::BuiltinFn::kAtomicCompareExchangeWeak:
-                case core::BuiltinFn::kAtomicExchange:
-                case core::BuiltinFn::kAtomicLoad:
-                case core::BuiltinFn::kAtomicMax:
-                case core::BuiltinFn::kAtomicMin:
-                case core::BuiltinFn::kAtomicOr:
-                case core::BuiltinFn::kAtomicStore:
-                case core::BuiltinFn::kAtomicSub:
-                case core::BuiltinFn::kAtomicXor:
-                case core::BuiltinFn::kAtomicStoreMax:
-                case core::BuiltinFn::kAtomicStoreMin:
-                    Atomic(builtin);
-                    break;
-                case core::BuiltinFn::kDot:
-                    Dot(builtin);
-                    break;
-                case core::BuiltinFn::kDot4I8Packed:
-                case core::BuiltinFn::kDot4U8Packed:
-                    DotPacked4x8(builtin);
-                    break;
-                case core::BuiltinFn::kQuadBroadcast:
-                    QuadBroadcast(builtin);
-                    break;
-                case core::BuiltinFn::kSelect:
-                    Select(builtin);
-                    break;
-                case core::BuiltinFn::kSubgroupBroadcast:
-                    SubgroupBroadcast(builtin);
-                    break;
-                case core::BuiltinFn::kSubgroupShuffle:
-                case core::BuiltinFn::kSubgroupShuffleDown:
-                case core::BuiltinFn::kSubgroupShuffleUp:
-                case core::BuiltinFn::kSubgroupShuffleXor:
-                    SubgroupShuffle(builtin, config.subgroup_shuffle_clamped);
-                    break;
-                case core::BuiltinFn::kTextureDimensions:
-                    TextureDimensions(builtin);
-                    break;
-                case core::BuiltinFn::kTextureGather:
-                case core::BuiltinFn::kTextureGatherCompare:
-                    TextureGather(builtin);
-                    break;
-                case core::BuiltinFn::kTextureLoad:
-                    TextureLoad(builtin);
-                    break;
-                case core::BuiltinFn::kTextureNumLayers:
-                    TextureNumLayers(builtin);
-                    break;
-                case core::BuiltinFn::kTextureNumLevels:
-                    TextureNumLevels(builtin);
-                    break;
-                case core::BuiltinFn::kTextureNumSamples:
-                    TextureNumSamples(builtin);
-                    break;
-                case core::BuiltinFn::kTextureSample:
-                case core::BuiltinFn::kTextureSampleBias:
-                case core::BuiltinFn::kTextureSampleCompare:
-                case core::BuiltinFn::kTextureSampleCompareLevel:
-                case core::BuiltinFn::kTextureSampleGrad:
-                case core::BuiltinFn::kTextureSampleLevel:
-                    TextureSample(builtin);
-                    break;
-                case core::BuiltinFn::kTextureStore:
-                    TextureStore(builtin);
-                    break;
-                case core::BuiltinFn::kQuantizeToF16:
-                    QuantizeToF16Vec(builtin);
-                    break;
-                case core::BuiltinFn::kInputAttachmentLoad:
-                    InputAttachmentLoad(builtin);
-                    break;
-                case core::BuiltinFn::kSubgroupMatrixLoad:
-                    SubgroupMatrixLoad(builtin);
-                    break;
-                case core::BuiltinFn::kSubgroupMatrixStore:
-                    SubgroupMatrixStore(builtin);
-                    break;
-                case core::BuiltinFn::kSubgroupMatrixMultiply:
-                    SubgroupMatrixMultiply(builtin);
-                    break;
-                case core::BuiltinFn::kSubgroupMatrixMultiplyAccumulate:
-                    SubgroupMatrixMultiplyAccumulate(builtin);
-                    break;
-                case core::BuiltinFn::kSubgroupMatrixScalarAdd:
-                    SubgroupMatrixScalar(builtin, core::BinaryOp::kAdd);
-                    break;
-                case core::BuiltinFn::kSubgroupMatrixScalarSubtract:
-                    SubgroupMatrixScalar(builtin, core::BinaryOp::kSubtract);
-                    break;
-                case core::BuiltinFn::kSubgroupMatrixScalarMultiply:
-                    SubgroupMatrixScalar(builtin, core::BinaryOp::kMultiply);
-                    break;
-                default:
-                    break;
-            }
+        for (auto& cb : worklist) {
+            cb();
         }
 
         // Replace non-zero subgroup matrix constructors that use 8-bit component types.
@@ -760,6 +722,15 @@ struct State {
             (builtin->Func() == core::BuiltinFn::kTextureSampleCompare ||
              builtin->Func() == core::BuiltinFn::kTextureSampleCompareLevel);
 
+        // This includes both 2d and 2d array.
+        const bool is_depth_2d = (texture_ty->GetDim() == type::Dim::kD2) &&
+                                 (texture_ty->GetDepth() == type::Depth::kDepth);
+
+        const bool polyfill_depth_2d =
+            config.texture_sample_compare_2d_polyfill && is_depth_2d &&
+            (builtin->Func() == core::BuiltinFn::kTextureSampleCompare ||
+             builtin->Func() == core::BuiltinFn::kTextureSampleCompareLevel);
+
         // Use OpSampledImage to create an OpTypeSampledImage object.
         auto* sampled_image = b.CallExplicit<spirv::ir::BuiltinCall>(
             ty.Get<type::SampledImage>(texture_ty), spirv::BuiltinFn::kOpSampledImage,
@@ -769,9 +740,6 @@ struct State {
         // Append the array index to the coordinates if provided.
         auto* array_idx =
             texture_ty->GetArrayed() == type::Arrayed::kArrayed ? next_arg() : nullptr;
-        if (array_idx) {
-            coords = AppendArrayIndex(coords, array_idx, builtin);
-        }
 
         // Determine which SPIR-V function to use and which optional image operands are needed.
         enum spirv::BuiltinFn function = BuiltinFn::kNone;
@@ -788,18 +756,18 @@ struct State {
                 operands.offset = next_arg();
                 break;
             case core::BuiltinFn::kTextureSampleCompare:
-                function = polyfill_depth_cube_array
+                function = (polyfill_depth_cube_array || polyfill_depth_2d)
                                ? spirv::BuiltinFn::kImageDrefGather
                                : spirv::BuiltinFn::kImageSampleDrefImplicitLod;
                 depth = next_arg();
                 operands.offset = next_arg();
                 break;
             case core::BuiltinFn::kTextureSampleCompareLevel:
-                function = polyfill_depth_cube_array
+                function = (polyfill_depth_cube_array || polyfill_depth_2d)
                                ? spirv::BuiltinFn::kImageDrefGather
                                : spirv::BuiltinFn::kImageSampleDrefExplicitLod;
                 depth = next_arg();
-                if (!polyfill_depth_cube_array) {
+                if (!polyfill_depth_cube_array && !polyfill_depth_2d) {
                     operands.lod = b.Constant(0_f);
                 }
                 operands.offset = next_arg();
@@ -819,6 +787,46 @@ struct State {
                 TINT_IR_UNREACHABLE(ir) << "unhandled texture sample builtin";
         }
 
+        core::ir::Value* fract_bilinear = nullptr;
+        if (polyfill_depth_2d) {
+            b.InsertBefore(builtin, [&] {
+                // Get texture dimensions. The return type depends on if it was an array texture.
+                auto* dim = b.CallExplicit<spirv::ir::BuiltinCall>(
+                    array_idx ? ty.vec3u() : ty.vec2u(), spirv::BuiltinFn::kImageQuerySizeLod,
+                    Vector{ty.u32()}, texture, b.Constant(0_i));
+
+                auto* dim2u = b.Swizzle(ty.vec2u(), dim, {0, 1});
+                auto* fdim = b.Convert(ty.vec2f(), dim2u);
+
+                // Calculate texel position: coords * dim - 0.5
+                auto* texelPos =
+                    b.Subtract(b.Multiply(coords, fdim), b.Splat(ty.vec2f(), b.Constant(0.5_f)));
+
+                if (operands.offset) {
+                    texelPos = b.Add(texelPos, b.Convert(ty.vec2f(), operands.offset));
+                    // We've baked the offset into the coordinates, so clear it from the image
+                    // operands.
+                    operands.offset = nullptr;
+                }
+
+                // Snap to texel as we will be doing the bilinear filtering manually.
+                auto* i_j = b.Call(ty.vec2f(), core::BuiltinFn::kFloor, texelPos);
+
+                // fraction = texelPos - i_j
+                fract_bilinear = b.Subtract(texelPos, i_j)->Result();
+
+                // gatherUV = (i_j + 0.5) / dim
+                auto* gatherUV = b.Divide(b.Add(i_j, b.Splat(ty.vec2f(), b.Constant(0.5_f))), fdim);
+
+                // Update coords for the gather call.
+                coords = gatherUV->Result();
+            });
+        }
+
+        if (array_idx) {
+            coords = AppendArrayIndex(coords, array_idx, builtin);
+        }
+
         // Start building the argument list for the function.
         // The first two operands are always the sampled image and then the coordinates, followed by
         // the depth reference if used.
@@ -834,7 +842,7 @@ struct State {
 
         // Call the function.
         // If this is a depth comparison, the result is always f32, otherwise vec4f.
-        auto* result_ty = (depth && !polyfill_depth_cube_array)
+        auto* result_ty = (depth && !polyfill_depth_cube_array && !polyfill_depth_2d)
                               ? static_cast<const core::type::Type*>(ty.f32())
                               : ty.vec4f();
 
@@ -850,26 +858,50 @@ struct State {
         }
 
         if (polyfill_depth_cube_array) {
-            core::ir::Instruction* close_to_pcf_result = nullptr;
             b.InsertAfter(result, [&] {
                 // This is an imperfect polyfill for builtin intrinsic to do PCF style shadows.
                 // See: crbug.com/467015399
-                // To do a complete polyfill we would have to properly do bilinear interpolation of
-                // the TextureGatherCompare result which we do not do as there is no trivial way to
-                // do it for a cubemap.
+                // To do a complete polyfill we would have to properly do bilinear interpolation
+                // of the TextureGatherCompare result which we do not do as there is no trivial
+                // way to do it for a cubemap.
 
-                // We do a textureGatherCompare and then dot with a vec4f(0.25) to get the average
-                // result. This will give PCF-like shadows but they will not be as smooth as the
-                // result from the original TextureSampleCompare. We also only sample mip0 which is
-                // identical to TextureSampleCompareLevel but not TextureSampleCompare.
-                close_to_pcf_result =
-                    b.Call<spirv::ir::BuiltinCall>(ty.f32(), spirv::BuiltinFn::kDot, result,
-                                                   b.Splat(ty.vec4f(), b.Constant(0.25_f)));
+                // We do a textureGatherCompare and then dot with a vec4f(0.25) to get the
+                // average result. This will give PCF-like shadows but they will not be as
+                // smooth as the result from the original TextureSampleCompare. We also only
+                // sample mip0 which is identical to TextureSampleCompareLevel but not
+                // TextureSampleCompare.
+                result = b.Call<spirv::ir::BuiltinCall>(ty.f32(), spirv::BuiltinFn::kDot, result,
+                                                        b.Splat(ty.vec4f(), b.Constant(0.25_f)));
             });
+        }
 
-            close_to_pcf_result->SetResult(builtin->DetachResult());
-            builtin->Destroy();
-            return;
+        if (polyfill_depth_2d) {
+            b.InsertAfter(result, [&] {
+                // Bilinear interpolation for 2D sampleCompare (2D polyfill).
+                // result from OpImageDrefGather (textureGatherCompare) is vec4f:
+                // [0]: (i,   j+1)
+                // [1]: (i+1, j+1)
+                // [2]: (i+1, j)
+                // [3]: (i,   j)
+                auto* x = b.Access(ty.f32(), result, 0_u);
+                auto* y = b.Access(ty.f32(), result, 1_u);
+                auto* z = b.Access(ty.f32(), result, 2_u);
+                auto* w = b.Access(ty.f32(), result, 3_u);
+
+                auto* fx = b.Access(ty.f32(), fract_bilinear, 0_u);
+                auto* fy = b.Access(ty.f32(), fract_bilinear, 1_u);
+
+                // top = mix(result.w, result.z, fract_bilinear.x)
+                // where result.w == (i,   j)
+                //       result.z == (i+1, j)
+                // fract_bilinear.x)
+                auto* top = b.Call(ty.f32(), core::BuiltinFn::kMix, w, z, fx);
+                // bottom = mix(result.x, result.y, fract_bilinear.x) -> mix((i, j+1), (i+1,
+                // j+1), fract_bilinear.x)
+                auto* bottom = b.Call(ty.f32(), core::BuiltinFn::kMix, x, y, fx);
+                // Percentage-closer filtering = mix(top, bottom, fract_bilinear.y)
+                result = b.Call(ty.f32(), core::BuiltinFn::kMix, top, bottom, fy);
+            });
         }
 
         result->SetResult(builtin->DetachResult());
@@ -1437,6 +1469,23 @@ struct State {
 
             auto* scalar_mat = b.Construct(sm_ty, scalar);
             b.BinaryWithResult<spirv::ir::Binary>(builtin->DetachResult(), op, mat, scalar_mat);
+        });
+        builtin->Destroy();
+    }
+
+    void AddSat(core::ir::CoreBuiltinCall* builtin) {
+        auto* type = builtin->Result()->Type();
+        auto* str_ty = core::type::CreateAddCarryResult(ty, ir.symbols, type);
+        b.InsertBefore(builtin, [&] {
+            auto* call = b.Call<spirv::ir::BuiltinCall>(str_ty, BuiltinFn::kAddCarry,
+                                                        builtin->Args()[0], builtin->Args()[1]);
+            auto* res = b.Access(type, call, 0_u);
+            auto* carry = b.Access(type, call, 1_u);
+            auto* eq = b.Equal(carry, b.Zero(type));
+            core::ir::Value* sat = (type->Is<core::type::Vector>() ? b.Splat(type, u32(0xffffffff))
+                                                                   : b.Constant(u32(0xffffffff)));
+            b.CallWithResult<spirv::ir::BuiltinCall>(builtin->DetachResult(),
+                                                     spirv::BuiltinFn::kSelect, eq, res, sat);
         });
         builtin->Destroy();
     }

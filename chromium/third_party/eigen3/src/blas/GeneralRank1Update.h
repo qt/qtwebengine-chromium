@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_GENERAL_RANK1UPDATE_H
 #define EIGEN_GENERAL_RANK1UPDATE_H
@@ -21,7 +22,7 @@ template <typename Scalar, typename Index, bool ConjLhs, bool ConjRhs>
 struct general_rank1_update<Scalar, Index, ColMajor, ConjLhs, ConjRhs> {
   static void run(Index rows, Index cols, Scalar* mat, Index stride, const Scalar* u, const Scalar* v, Scalar alpha) {
     typedef Map<const Matrix<Scalar, Dynamic, 1> > OtherMap;
-    typedef typename conj_expr_if<ConjLhs, OtherMap>::type ConjRhsType;
+    typedef conj_expr_if<ConjLhs, OtherMap> ConjRhsType;
     conj_if<ConjRhs> cj;
 
     for (Index i = 0; i < cols; ++i)

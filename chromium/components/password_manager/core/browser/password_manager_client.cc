@@ -14,6 +14,7 @@
 #include "components/password_manager/core/browser/http_auth_manager.h"
 #include "components/password_manager/core/browser/leak_detection/leak_detection_request_utils.h"
 #include "components/password_manager/core/browser/password_form_manager_for_ui.h"
+#include "components/password_manager/core/browser/password_store/stored_credential.h"
 #include "components/signin/public/base/signin_metrics.h"
 #include "components/version_info/channel.h"
 #include "url/origin.h"
@@ -68,9 +69,9 @@ void PasswordManagerClient::UpdateCredentialCache(
     std::optional<PasswordStoreBackendError> backend_error) {}
 
 void PasswordManagerClient::PasswordWasAutofilled(
-    base::span<const PasswordForm> best_matches,
+    base::span<const StoredCredential> best_matches,
     const url::Origin& origin,
-    base::span<const PasswordForm> federated_matches,
+    base::span<const StoredCredential> federated_matches,
     bool was_autofilled_on_pageload) {}
 
 void PasswordManagerClient::AutofillHttpAuth(
@@ -191,7 +192,8 @@ PasswordManagerClient::GetWebAuthnCredManDelegateForDriver(
   return nullptr;
 }
 
-void PasswordManagerClient::MarkSharedCredentialsAsNotified(const GURL& url) {}
+void PasswordManagerClient::MarkSharedCredentialsAsNotified(
+    const url::Origin& origin) {}
 
 #endif  // BUILDFLAG(IS_ANDROID)
 
@@ -211,10 +213,8 @@ PasswordManagerClient::GetUndoPasswordChangeController() {
   return nullptr;
 }
 
-#if !BUILDFLAG(IS_ANDROID)
 bool PasswordManagerClient::IsActorTaskActive() {
   return false;
 }
-#endif  // !BUILDFLAG(IS_ANDROID)
 
 }  // namespace password_manager

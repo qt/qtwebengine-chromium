@@ -8,6 +8,8 @@
 #include <optional>
 #include <set>
 
+#include "include/v8config.h"
+#include "src/api/api-inl.h"
 #include "src/base/numerics/safe_conversions.h"
 #include "src/common/globals.h"
 #include "src/date/date.h"
@@ -587,9 +589,10 @@ Maybe<temporal_rs::ArithmeticOverflow> ToTemporalOverflowHandleUndefined(
     const char* method_name) {
   DirectHandle<Object> options;
   // Default is "constrain"
-  if (!maybe_options.ToHandle(&options) || IsUndefined(*options))
+  if (!maybe_options.ToHandle(&options) || IsUndefined(*options)) {
     return Just(temporal_rs::ArithmeticOverflow(
         temporal_rs::ArithmeticOverflow::Constrain));
+  }
   auto overflow_ident = isolate->factory()->overflow_string();
   if (!IsJSReceiver(*options)) {
     // (GetOptionsObject) 3. Throw a TypeError exception.
@@ -1027,7 +1030,7 @@ Maybe<temporal_rs::DisplayCalendar> GetTemporalShowCalendarNameOption(
 // convenience method for getting the "calendar" field off of a Temporal object
 std::optional<temporal_rs::AnyCalendarKind> ExtractCalendarFrom(
     Isolate* isolate, Tagged<HeapObject> calendar_like) {
-  InstanceType instance_type = calendar_like->map(isolate)->instance_type();
+  InstanceType instance_type = calendar_like->map()->instance_type();
   // a. If temporalCalendarLike has an [[InitializedTemporalDate]],
   // [[InitializedTemporalDateTime]], [[InitializedTemporalMonthDay]],
   // [[InitializedTemporalYearMonth]], or [[InitializedTemporalZonedDateTime]]
@@ -1035,27 +1038,27 @@ std::optional<temporal_rs::AnyCalendarKind> ExtractCalendarFrom(
   //
   // i. Return temporalCalendarLike.[[Calendar]].
   if (InstanceTypeChecker::IsJSTemporalPlainDate(instance_type)) {
-    return Cast<JSTemporalPlainDate>(*calendar_like)
+    return Cast<JSTemporalPlainDate>(calendar_like)
         ->wrapped_rust()
         ->calendar()
         .kind();
   } else if (InstanceTypeChecker::IsJSTemporalPlainDateTime(instance_type)) {
-    return Cast<JSTemporalPlainDateTime>(*calendar_like)
+    return Cast<JSTemporalPlainDateTime>(calendar_like)
         ->wrapped_rust()
         ->calendar()
         .kind();
   } else if (InstanceTypeChecker::IsJSTemporalPlainMonthDay(instance_type)) {
-    return Cast<JSTemporalPlainMonthDay>(*calendar_like)
+    return Cast<JSTemporalPlainMonthDay>(calendar_like)
         ->wrapped_rust()
         ->calendar()
         .kind();
   } else if (InstanceTypeChecker::IsJSTemporalPlainYearMonth(instance_type)) {
-    return Cast<JSTemporalPlainYearMonth>(*calendar_like)
+    return Cast<JSTemporalPlainYearMonth>(calendar_like)
         ->wrapped_rust()
         ->calendar()
         .kind();
   } else if (InstanceTypeChecker::IsJSTemporalZonedDateTime(instance_type)) {
-    return Cast<JSTemporalZonedDateTime>(*calendar_like)
+    return Cast<JSTemporalZonedDateTime>(calendar_like)
         ->wrapped_rust()
         ->calendar()
         .kind();
@@ -1157,9 +1160,10 @@ template <typename JSType, typename... Args, typename... Args2>
 MaybeDirectHandle<String> GenericTemporalToString(
     Isolate* isolate, DirectHandle<JSType> val,
     std::string (JSType::RustType::*method)(Args2...) const, Args... args) {
+  auto rust_object = val->wrapped_rust();
   // This is currently inefficient, can be improved after
   // https://github.com/rust-diplomat/diplomat/issues/866 is fixed
-  auto output = (val->wrapped_rust().get()->*method)(args...);
+  auto output = (rust_object.raw()->*method)(args...);
 
   IncrementalStringBuilder builder(isolate);
   builder.AppendString(output);
@@ -1172,13 +1176,13 @@ MaybeDirectHandle<String> GenericTemporalToString(
     Isolate* isolate, DirectHandle<JSType> val,
     TemporalResult<std::string> (JSType::RustType::*method)(Args2...) const,
     Args... args) {
+  auto rust_object = val->wrapped_rust();
   std::string output;
   // This is currently inefficient, can be improved after
   // https://github.com/rust-diplomat/diplomat/issues/866 is fixed
   MOVE_RETURN_ON_EXCEPTION(
       isolate, output,
-      ExtractRustResult(isolate,
-                        (val->wrapped_rust().get()->*method)(args...)));
+      ExtractRustResult(isolate, (rust_object.raw()->*method)(args...)));
 
   IncrementalStringBuilder builder(isolate);
   builder.AppendString(output);
@@ -1610,8 +1614,7 @@ Maybe<bool> IsPartialTemporalObject(Isolate* isolate,
   if (!IsHeapObject(*value)) {
     return Just(false);
   }
-  InstanceType instance_type =
-      Cast<HeapObject>(*value)->map(isolate)->instance_type();
+  InstanceType instance_type = Cast<HeapObject>(*value)->map()->instance_type();
 
   if (!InstanceTypeChecker::IsJSReceiver(instance_type)) {
     return Just(false);
@@ -1734,7 +1737,8 @@ struct DateRecord {
   std::optional<double> era_year;
   temporal_rs::AnyCalendarKind calendar = temporal_rs::AnyCalendarKind::Iso;
   Maybe<temporal_rs::PartialDate> Regulate(
-      Isolate* isolate, temporal_rs::ArithmeticOverflow overflow);
+      Isolate* isolate,
+      temporal_rs::ArithmeticOverflow overflow) V8_LIFETIME_BOUND;
 };
 
 // https://tc39.es/proposal-temporal/#sec-temporal-regulatetime
@@ -1806,7 +1810,8 @@ struct CombinedRecord {
   // For use in generic contexts
   template <typename Ret>
   Maybe<Ret> Regulate(Isolate* isolate,
-                      temporal_rs::ArithmeticOverflow overflow);
+                      temporal_rs::ArithmeticOverflow overflow)
+      V8_LIFETIME_BOUND;
 };
 
 template <>
@@ -2162,7 +2167,20 @@ temporal_rs::TimeZone SystemTimeZoneIdentifier() { return UTCTimeZone(); }
 #endif  //  V8_INTL_SUPPORT
 
 // https://tc39.es/proposal-temporal/#sec-temporal-systemutcepochnanoseconds
-temporal_rs::I128Nanoseconds SystemUTCEpochNanoseconds() {
+temporal_rs::I128Nanoseconds SystemUTCEpochNanoseconds(Isolate* isolate) {
+  DirectHandle<NativeContext> context = isolate->native_context();
+  if (!IsUndefined(context->temporal_get_epoch_nanoseconds_callback())) {
+    v8::TemporalHostSystemUTCEpochNanosecondsCallback callback =
+        v8::ToCData<v8::TemporalHostSystemUTCEpochNanosecondsCallback,
+                    kApiTemporalHostSystemUTCEpochNanosecondsCallbackTag>(
+            isolate, context->temporal_get_epoch_nanoseconds_callback());
+    v8::Local<v8::Context> api_context = v8::Utils::ToLocal(context);
+    int64_t ns_int = callback(api_context);
+    absl::int128 ns = ns_int;
+    return temporal_rs::I128Nanoseconds{.high = absl::Uint128High64(ns),
+                                        .low = absl::Uint128Low64(ns)};
+  }
+
   double ms =
       V8::GetCurrentPlatform()->CurrentClockTimeMillisecondsHighResolution();
 
@@ -2203,7 +2221,7 @@ Maybe<std::unique_ptr<temporal_rs::ZonedDateTime>> GenericTemporalNowISO(
   }
 
   // 3. Let ns be SystemUTCEpochNanoseconds().
-  auto ns = SystemUTCEpochNanoseconds();
+  auto ns = SystemUTCEpochNanoseconds(isolate);
 
   // 4. Return ! CreateTemporalZonedDateTime(ns, timeZone, "iso8601").
   // TODO(manishearth) we can avoid the multiple layers of allocation here
@@ -2231,7 +2249,7 @@ MaybeDirectHandle<DstType> GenericToTemporalMethod(
     TemporalAllocatedResult<typename DstType::RustType> (
         SrcType::RustType::*method)() const) {
   return ConstructRustWrappingType<DstType>(
-      isolate, (val->wrapped_rust().get()->*method)());
+      isolate, (val->wrapped_rust().raw()->*method)());
 }
 
 // Same as above, but for infallible conversions
@@ -2241,7 +2259,7 @@ MaybeDirectHandle<DstType> GenericToTemporalMethod(
     std::unique_ptr<typename DstType::RustType> (SrcType::RustType::*method)()
         const) {
   return ConstructRustWrappingType<DstType>(
-      isolate, (val->wrapped_rust().get()->*method)());
+      isolate, (val->wrapped_rust().raw()->*method)());
 }
 
 // https://tc39.es/proposal-temporal/#sec-temporal-totemporalduration
@@ -2406,8 +2424,7 @@ MaybeDirectHandle<JSTemporalPlainTime> ToTemporalTime(
         isolate,
         NEW_TEMPORAL_TYPE_ERROR("Time-like argument must be object or string"));
   }
-  InstanceType instance_type =
-      Cast<HeapObject>(*item)->map(isolate)->instance_type();
+  InstanceType instance_type = Cast<HeapObject>(*item)->map()->instance_type();
 
   // 2. If item is an Object, then
   if (InstanceTypeChecker::IsJSReceiver(instance_type)) {
@@ -2504,12 +2521,12 @@ MaybeDirectHandle<JSTemporalPlainTime> ToTemporalTime(
 // handles the midnight-setting
 //
 // https://tc39.es/proposal-temporal/#sec-temporal-totimerecordormidnight
-Maybe<std::shared_ptr<const temporal_rs::PlainTime>> ToTimeRecordOrMidnight(
+Maybe<Managed<temporal_rs::PlainTime>::Ptr> ToTimeRecordOrMidnight(
     Isolate* isolate, DirectHandle<Object> item,
     DirectHandle<JSTemporalPlainTime>& output_time, const char* method_name) {
   // 1. If item is undefined, return MidnightTimeRecord().
   if (IsUndefined(*item)) {
-    return Just(std::shared_ptr<const temporal_rs::PlainTime>(nullptr));
+    return Just(Managed<temporal_rs::PlainTime>::Ptr());
   }
 
   // 2. Let plainTime be ? ToTemporalTime(item).
@@ -2517,8 +2534,7 @@ Maybe<std::shared_ptr<const temporal_rs::PlainTime>> ToTimeRecordOrMidnight(
                              ToTemporalTime(isolate, item, {}, method_name));
 
   // 3. Return plainTime.[[Time]].
-  std::shared_ptr<const temporal_rs::PlainTime> empty =
-      output_time->wrapped_rust();
+  Managed<temporal_rs::PlainTime>::Ptr empty = output_time->wrapped_rust();
   return Just(std::move(empty));
 }
 
@@ -2535,8 +2551,7 @@ MaybeDirectHandle<JSTemporalPlainDate> ToTemporalDate(
     THROW_NEW_ERROR(isolate, NEW_TEMPORAL_TYPE_ERROR(
                                  "Date argument must be object or string."));
   }
-  InstanceType instance_type =
-      Cast<HeapObject>(*item)->map(isolate)->instance_type();
+  InstanceType instance_type = Cast<HeapObject>(*item)->map()->instance_type();
   // 2. If item is an Object, then
   if (InstanceTypeChecker::IsJSReceiver(instance_type)) {
     auto partial = temporal::kNullPartialDate;
@@ -2648,8 +2663,7 @@ MaybeDirectHandle<JSTemporalPlainDateTime> ToTemporalDateTime(
         isolate,
         NEW_TEMPORAL_TYPE_ERROR("DateTime argument must be object or string."));
   }
-  InstanceType instance_type =
-      Cast<HeapObject>(*item)->map(isolate)->instance_type();
+  InstanceType instance_type = Cast<HeapObject>(*item)->map()->instance_type();
 
   // 2. If item is an Object, then
   if (InstanceTypeChecker::IsJSReceiver(instance_type)) {
@@ -2769,8 +2783,7 @@ MaybeDirectHandle<JSTemporalPlainYearMonth> ToTemporalYearMonth(
                     NEW_TEMPORAL_TYPE_ERROR(
                         "YearMonth argument must be object or string."));
   }
-  InstanceType instance_type =
-      Cast<HeapObject>(*item)->map(isolate)->instance_type();
+  InstanceType instance_type = Cast<HeapObject>(*item)->map()->instance_type();
   // 2. If item is an Object, then
   if (InstanceTypeChecker::IsJSReceiver(instance_type)) {
     // a. If item has an [[InitializedTemporalYearMonth]] internal slot, then
@@ -2918,8 +2931,7 @@ MaybeDirectHandle<JSTemporalZonedDateTime> ToTemporalZonedDateTime(
                     NEW_TEMPORAL_TYPE_ERROR(
                         "ZonedDateTime argument must be object or string."));
   }
-  InstanceType instance_type =
-      Cast<HeapObject>(*item)->map(isolate)->instance_type();
+  InstanceType instance_type = Cast<HeapObject>(*item)->map()->instance_type();
 
   // 2. Let offsetBehaviour be option.
   // 3. Let matchBehaviour be match-exactly.
@@ -3044,8 +3056,7 @@ MaybeDirectHandle<JSTemporalPlainMonthDay> ToTemporalMonthDay(
         isolate,
         NEW_TEMPORAL_TYPE_ERROR("MonthDay argument must be object or string."));
   }
-  InstanceType instance_type =
-      Cast<HeapObject>(*item)->map(isolate)->instance_type();
+  InstanceType instance_type = Cast<HeapObject>(*item)->map()->instance_type();
   // 2. If item is an Object, then
   if (InstanceTypeChecker::IsJSReceiver(instance_type)) {
     // a. If item has an [[InitializedTemporalMonthDay]] internal slot, then
@@ -3186,16 +3197,16 @@ class RelativeTo {
   RelativeTo() = default;
 
   explicit RelativeTo(std::shared_ptr<const temporal_rs::PlainDate> val)
-      : date_(std::move(val)), zoned_(nullptr) {}
+      : date_(std::move(val)), zoned_() {}
   explicit RelativeTo(std::shared_ptr<const temporal_rs::ZonedDateTime> val)
-      : date_(nullptr), zoned_(std::move(val)) {}
+      : date_(), zoned_(std::move(val)) {}
 
   explicit RelativeTo(temporal_rs::OwnedRelativeTo&& owned) {
     date_ = std::move(owned.date);
     zoned_ = std::move(owned.zoned);
   }
 
-  temporal_rs::RelativeTo ToRust() const {
+  temporal_rs::RelativeTo ToRust() const V8_LIFETIME_BOUND {
     return temporal_rs::RelativeTo{
         .date = date_.get(),
         .zoned = zoned_.get(),
@@ -3248,8 +3259,7 @@ Maybe<RelativeTo> GetTemporalRelativeToOptionHandleUndefined(
     THROW_NEW_ERROR(isolate, NEW_TEMPORAL_TYPE_ERROR(
                                  "relativeTo must be object or string."));
   }
-  InstanceType instance_type =
-      Cast<HeapObject>(*value)->map(isolate)->instance_type();
+  InstanceType instance_type = Cast<HeapObject>(*value)->map()->instance_type();
 
   // 5. If value is an Object, then
   if (InstanceTypeChecker::IsJSReceiver(instance_type)) {
@@ -3258,15 +3268,17 @@ Maybe<RelativeTo> GetTemporalRelativeToOptionHandleUndefined(
     if (InstanceTypeChecker::IsJSTemporalZonedDateTime(instance_type)) {
       // i. Return the Record { [[PlainRelativeTo]]: undefined,
       // [[ZonedRelativeTo]]: value }.
-      return Just(
-          RelativeTo(Cast<JSTemporalZonedDateTime>(value)->wrapped_rust()));
+      return Just(RelativeTo(Cast<JSTemporalZonedDateTime>(value)
+                                 ->wrapped_rust()
+                                 .as_shared_ptr()));
     }
 
     // b. If value has an [[InitializedTemporalDate]] internal slot, then
     if (InstanceTypeChecker::IsJSTemporalPlainDate(instance_type)) {
       // i. Return the Record { [[PlainRelativeTo]]: value, [[ZonedRelativeTo]]:
       // undefined }.
-      return Just(RelativeTo(Cast<JSTemporalPlainDate>(value)->wrapped_rust()));
+      return Just(RelativeTo(
+          Cast<JSTemporalPlainDate>(value)->wrapped_rust().as_shared_ptr()));
     }
 
     // c. If value has an [[InitializedTemporalDateTime]] internal slot, then
@@ -3432,8 +3444,8 @@ MaybeDirectHandle<JSTemporalDuration> GenericDifferenceTemporal(
                                                   .rounding_mode = std::nullopt,
                                                   .increment = std::nullopt};
 
-  auto& this_rust = handle->wrapped_rust();
-  auto& other_rust = other->wrapped_rust();
+  auto this_rust = handle->wrapped_rust();
+  auto other_rust = other->wrapped_rust();
 
   // This step only exists for calendared types (everything other than PlainTime
   // and Instant)
@@ -3458,8 +3470,7 @@ MaybeDirectHandle<JSTemporalDuration> GenericDifferenceTemporal(
   // operation negation (step 6) is also handled in temporal_rs, we should not
   // negate again here.
 
-  auto diff =
-      (this_rust.get()->*operation)(*other_rust.get(), settings, provider...);
+  auto diff = (this_rust.raw()->*operation)(*other_rust, settings, provider...);
 
   return ConstructRustWrappingType<JSTemporalDuration>(isolate,
                                                        std::move(diff));
@@ -3512,9 +3523,10 @@ MaybeDirectHandle<JSType> AddDurationToGeneric(
                              temporal::ToTemporalOverflowHandleUndefined(
                                  isolate, options_obj, method_name));
 
+  auto rust_object = temporal_js_type->wrapped_rust();
   // Remaining steps handled in Rust.
-  auto added = (temporal_js_type->wrapped_rust().get()->*operation)(
-      *other_duration->wrapped_rust(), overflow, provider...);
+  auto added = (rust_object.raw()->*operation)(*other_duration->wrapped_rust(),
+                                               overflow, provider...);
 
   return ConstructRustWrappingType<JSType>(isolate, std::move(added));
 }
@@ -3528,7 +3540,7 @@ MaybeDirectHandle<JSType> AddDurationToGeneric(
 template <typename JSType, typename PartialType>
 MaybeDirectHandle<JSType> GenericWithHelper(
     Isolate* isolate,
-    const std::shared_ptr<const typename JSType::RustType>& rust_object,
+    const typename Managed<typename JSType::RustType>::Ptr& rust_object,
     CombinedRecord& fields, DirectHandle<Object> options_obj,
     const char* method_name) {
   // 8. Let resolvedOptions be ? GetOptionsObject(options).
@@ -3554,7 +3566,7 @@ template <>
 MaybeDirectHandle<JSTemporalZonedDateTime>
 GenericWithHelper<JSTemporalZonedDateTime, temporal_rs::PartialZonedDateTime>(
     Isolate* isolate,
-    const std::shared_ptr<const temporal_rs::ZonedDateTime>& rust_object,
+    const Managed<JSTemporalZonedDateTime::RustType>::Ptr& rust_object,
     CombinedRecord& fields, DirectHandle<Object> options_obj,
     const char* method_name) {
   // 19. Let resolvedOptions be ? GetOptionsObject(options).
@@ -3626,7 +3638,7 @@ MaybeDirectHandle<JSType> GenericWith(Isolate* isolate,
   // IsPartialTemporalObject only returns true for valid JSReceivers.
   auto options_recvr = Cast<JSReceiver>(temporal_like_obj);
 
-  auto& rust_object = this_obj->wrapped_rust();
+  auto rust_object = this_obj->wrapped_rust();
   // 4. Let calendar be temporalDate.[[Calendar]].
   auto kind = rust_object->calendar().kind();
 
@@ -3676,7 +3688,7 @@ MaybeDirectHandle<JSTemporalDuration> JSTemporalDuration::Constructor(
     DirectHandle<Object> milliseconds, DirectHandle<Object> microseconds,
     DirectHandle<Object> nanoseconds) {
   // 1. If NewTarget is undefined, then
-  if (IsUndefined(*new_target, isolate)) {
+  if (IsUndefined(*new_target)) {
     // a. Throw a TypeError exception.
     THROW_NEW_ERROR(isolate,
                     NewTypeError(MessageTemplate::kMethodInvokedOnWrongType,
@@ -4188,7 +4200,7 @@ MaybeDirectHandle<JSTemporalPlainDate> JSTemporalPlainDate::Constructor(
     DirectHandle<Object> iso_month_obj, DirectHandle<Object> iso_day_obj,
     DirectHandle<Object> calendar_like) {
   // 1. If NewTarget is undefined, then
-  if (IsUndefined(*new_target, isolate)) {
+  if (IsUndefined(*new_target)) {
     // a. Throw a TypeError exception.
     THROW_NEW_ERROR(isolate,
                     NewTypeError(MessageTemplate::kMethodInvokedOnWrongType,
@@ -4297,7 +4309,7 @@ MaybeDirectHandle<JSTemporalPlainDateTime> JSTemporalPlainDate::ToPlainDateTime(
   static const char method_name[] = "Temporal.PlainDate.toPlainDateTime";
 
   // 3. Let time be ? ToTimeRecordOrMidnight(temporalTime).
-  std::shared_ptr<const temporal_rs::PlainTime> maybe_time = nullptr;
+  Managed<temporal_rs::PlainTime>::Ptr maybe_time;
   DirectHandle<JSTemporalPlainTime> time_output;
   MOVE_RETURN_ON_EXCEPTION(
       isolate, maybe_time,
@@ -4307,7 +4319,7 @@ MaybeDirectHandle<JSTemporalPlainDateTime> JSTemporalPlainDate::ToPlainDateTime(
   // Rest of the steps handled in Rust.
   return ConstructRustWrappingType<JSTemporalPlainDateTime>(
       isolate,
-      temporal_date->wrapped_rust()->to_plain_date_time(maybe_time.get()));
+      temporal_date->wrapped_rust()->to_plain_date_time(maybe_time.raw()));
 }
 
 // https://tc39.es/proposal-temporal/#sec-temporal.plaindate.prototype.with
@@ -4387,7 +4399,7 @@ MaybeDirectHandle<JSTemporalZonedDateTime> JSTemporalPlainDate::ToZonedDateTime(
   }
 
   DirectHandle<JSTemporalPlainTime> temporal_time;
-  std::shared_ptr<const temporal_rs::PlainTime> temporal_time_rust;
+  Managed<temporal_rs::PlainTime>::Ptr temporal_time_rust;
 
   // 5. If temporalTime is undefined, then
   if (temporal_time_obj.is_null() || IsUndefined(*temporal_time_obj)) {
@@ -4406,7 +4418,7 @@ MaybeDirectHandle<JSTemporalZonedDateTime> JSTemporalPlainDate::ToZonedDateTime(
 
   return ConstructRustWrappingType<JSTemporalZonedDateTime>(
       isolate, temporal_date->wrapped_rust()->to_zoned_date_time_with_provider(
-                   time_zone, temporal_time_rust.get(), TimeZoneProvider()));
+                   time_zone, temporal_time_rust.raw(), TimeZoneProvider()));
 }
 
 // https://tc39.es/proposal-temporal/#sec-temporal.plaindate.prototype.add
@@ -4542,7 +4554,7 @@ MaybeDirectHandle<JSTemporalPlainDateTime> JSTemporalPlainDateTime::Constructor(
     DirectHandle<Object> microsecond_obj, DirectHandle<Object> nanosecond_obj,
     DirectHandle<Object> calendar_like) {
   // 1. If NewTarget is undefined, then
-  if (IsUndefined(*new_target, isolate)) {
+  if (IsUndefined(*new_target)) {
     // a. Throw a TypeError exception.
     THROW_NEW_ERROR(isolate,
                     NewTypeError(MessageTemplate::kMethodInvokedOnWrongType,
@@ -4738,7 +4750,7 @@ JSTemporalPlainDateTime::WithPlainTime(
       "Temporal.PlainDateTime.prototype.withPlainTime";
 
   // 3. Let time be ? ToTimeRecordOrMidnight(plainTimeLike).
-  std::shared_ptr<const temporal_rs::PlainTime> maybe_time = nullptr;
+  Managed<temporal_rs::PlainTime>::Ptr maybe_time;
   DirectHandle<JSTemporalPlainTime> time_output;
   MOVE_RETURN_ON_EXCEPTION(
       isolate, maybe_time,
@@ -4747,7 +4759,7 @@ JSTemporalPlainDateTime::WithPlainTime(
 
   // Rest of the steps handled in Rust.
   return ConstructRustWrappingType<JSTemporalPlainDateTime>(
-      isolate, date_time->wrapped_rust()->with_time(maybe_time.get()));
+      isolate, date_time->wrapped_rust()->with_time(maybe_time.raw()));
 }
 
 // https://tc39.es/proposal-temporal/#sec-temporal.plaindatetime.prototype.tozoneddatetime
@@ -5028,7 +5040,7 @@ MaybeDirectHandle<JSTemporalPlainMonthDay> JSTemporalPlainMonthDay::Constructor(
     DirectHandle<Object> iso_day_obj, DirectHandle<Object> calendar_like,
     DirectHandle<Object> reference_iso_year_obj) {
   // 1. If NewTarget is undefined, then
-  if (IsUndefined(*new_target, isolate)) {
+  if (IsUndefined(*new_target)) {
     // a. Throw a TypeError exception.
     THROW_NEW_ERROR(isolate,
                     NewTypeError(MessageTemplate::kMethodInvokedOnWrongType,
@@ -5237,7 +5249,7 @@ JSTemporalPlainYearMonth::Constructor(
     DirectHandle<Object> iso_month_obj, DirectHandle<Object> calendar_like,
     DirectHandle<Object> reference_iso_day_obj) {
   // 1. If NewTarget is undefined, then
-  if (IsUndefined(*new_target, isolate)) {
+  if (IsUndefined(*new_target)) {
     // a. Throw a TypeError exception.
     THROW_NEW_ERROR(isolate,
                     NewTypeError(MessageTemplate::kMethodInvokedOnWrongType,
@@ -5522,7 +5534,7 @@ MaybeDirectHandle<JSTemporalPlainTime> JSTemporalPlainTime::Constructor(
     DirectHandle<Object> millisecond_obj, DirectHandle<Object> microsecond_obj,
     DirectHandle<Object> nanosecond_obj) {
   // 1. If NewTarget is undefined, then
-  if (IsUndefined(*new_target, isolate)) {
+  if (IsUndefined(*new_target)) {
     // a. Throw a TypeError exception.
     THROW_NEW_ERROR(isolate,
                     NewTypeError(MessageTemplate::kMethodInvokedOnWrongType,
@@ -5941,7 +5953,7 @@ MaybeDirectHandle<JSTemporalZonedDateTime> JSTemporalZonedDateTime::Constructor(
     DirectHandle<Object> epoch_nanoseconds_obj,
     DirectHandle<Object> time_zone_like, DirectHandle<Object> calendar_like) {
   // 1. If NewTarget is undefined, throw a TypeError exception.
-  if (IsUndefined(*new_target, isolate)) {
+  if (IsUndefined(*new_target)) {
     THROW_NEW_ERROR(isolate,
                     NewTypeError(MessageTemplate::kMethodInvokedOnWrongType,
                                  isolate->factory()->NewStringFromAsciiChecked(
@@ -6130,7 +6142,7 @@ JSTemporalZonedDateTime::WithPlainTime(
   // (handled later in Rust, idempotent)
 
   DirectHandle<JSTemporalPlainTime> plain_time_obj;
-  std::shared_ptr<const temporal_rs::PlainTime> plain_time;
+  Managed<temporal_rs::PlainTime>::Ptr plain_time;
 
   // 6. If plainTimeLike is undefined, then
   if (IsUndefined(*plain_time_like)) {
@@ -6161,7 +6173,7 @@ JSTemporalZonedDateTime::WithPlainTime(
 
   return ConstructRustWrappingType<JSTemporalZonedDateTime>(
       isolate, zoned_date_time->wrapped_rust()->with_plain_time_and_provider(
-                   plain_time.get(), TimeZoneProvider()));
+                   plain_time.raw(), TimeZoneProvider()));
 }
 
 // https://tc39.es/proposal-temporal/#sec-temporal.zoneddatetime.prototype.withtimezone
@@ -6432,7 +6444,7 @@ MaybeDirectHandle<JSTemporalDuration> JSTemporalZonedDateTime::Since(
 
 // https://tc39.es/proposal-temporal/#sec-temporal.now.instant
 MaybeDirectHandle<JSTemporalInstant> JSTemporalInstant::Now(Isolate* isolate) {
-  auto ns = temporal::SystemUTCEpochNanoseconds();
+  auto ns = temporal::SystemUTCEpochNanoseconds(isolate);
   return ConstructRustWrappingType<JSTemporalInstant>(
       isolate, temporal_rs::Instant::try_new(ns));
 }
@@ -6618,7 +6630,7 @@ MaybeDirectHandle<JSTemporalInstant> JSTemporalInstant::Constructor(
     DirectHandle<HeapObject> new_target,
     DirectHandle<Object> epoch_nanoseconds_obj) {
   // 1. If NewTarget is undefined, then
-  if (IsUndefined(*new_target, isolate)) {
+  if (IsUndefined(*new_target)) {
     // a. Throw a TypeError exception.
     THROW_NEW_ERROR(isolate,
                     NewTypeError(MessageTemplate::kMethodInvokedOnWrongType,

@@ -24,6 +24,7 @@
 #include "content/public/common/url_constants.h"
 #include "media/media_buildflags.h"
 #include "printing/buildflags/buildflags.h"
+#include "url/gurl.h"
 
 namespace chrome {
 
@@ -58,7 +59,7 @@ inline constexpr char kChromeUIAppsWithForceInstalledDeprecationDialogURL[] =
 inline constexpr char kChromeUIAutofillAiPath[] = "/enhancedAutofill";
 inline constexpr char kChromeUIAutofillPath[] = "/autofill";
 inline constexpr char kChromeUIAutofillInternalsHost[] = "autofill-internals";
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS)
 inline constexpr char kChromeUIBatchUploadHost[] = "batch-upload";
 inline constexpr char kChromeUIBatchUploadURL[] = "chrome://batch-upload/";
 #endif
@@ -95,13 +96,11 @@ inline constexpr char kChromeUIContentAnnotatorInternalsHost[] =
 inline constexpr char kChromeUIContentAnnotatorInternalsURL[] =
     "chrome://content-annotator-internals/";
 #endif
+inline constexpr char kChromeUIContextHubHost[] = "context-hub";
+inline constexpr char kChromeUIContextHubURL[] = "chrome://context-hub/";
 inline constexpr char kChromeUIContextualTasksHost[] = "contextual-tasks";
 inline constexpr char kChromeUIContextualTasksURL[] =
     "chrome://contextual-tasks/";
-#if BUILDFLAG(IS_ANDROID)
-inline constexpr char kChromeUINativeContextualTasksHost[] =
-    "contextual-tasks-page";
-#endif
 inline constexpr char kChromeUIContentSettingsURL[] =
     "chrome://settings/content";
 inline constexpr char16_t kChromeUIContentSettingsURL16[] =
@@ -137,6 +136,11 @@ inline constexpr char kChromeUIDiceWebSigninInterceptURL[] =
 inline constexpr char kChromeUIDownloadInternalsHost[] = "download-internals";
 inline constexpr char kChromeUIDownloadsHost[] = "downloads";
 inline constexpr char kChromeUIDownloadsURL[] = "chrome://downloads/";
+inline constexpr char kChromeUIDrivePickerHostHost[] = "drive-picker-host";
+inline constexpr char kChromeUIDrivePickerHostURL[] =
+    "chrome://drive-picker-host/";
+inline constexpr char kChromeUIDrivePickerHostUntrustedURL[] =
+    "chrome-untrusted://drive-picker-host/";
 inline constexpr char kChromeUIEDUCoexistenceLoginURLV2[] =
     "chrome://chrome-signin/edu-coexistence";
 inline constexpr char kChromeUIExtensionIconHost[] = "extension-icon";
@@ -151,6 +155,11 @@ inline constexpr char kChromeUIExtensionsZeroStatePromoURL[] =
     "chrome://extensions-zero-state";
 inline constexpr char kChromeUIFamilyLinkUserInternalsHost[] =
     "family-link-user-internals";
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+inline constexpr char kChromeUIFeatureShowcaseHost[] = "feature-showcase";
+inline constexpr char kChromeUIFeatureShowcaseURL[] =
+    "chrome://feature-showcase/";
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 inline constexpr char kChromeUIFavicon2Host[] = "favicon2";
 inline constexpr char kChromeUIFaviconHost[] = "favicon";
 inline constexpr char kChromeUIFaviconURL[] = "chrome://favicon/";
@@ -171,6 +180,10 @@ inline constexpr char kChromeUIGlicUntrustedHost[] = "glic";
 inline constexpr char kChromeUIGlicUntrustedURL[] = "chrome-untrusted://glic/";
 inline constexpr char kChromeUIGlicSelectionOverlayURL[] =
     "chrome-untrusted://glic/selection-overlay/";
+inline constexpr char kChromeUIGlicExperimentalOptInHost[] =
+    "glic-experimental-opt-in";
+inline constexpr char kChromeUIGlicExperimentalOptInURL[] =
+    "chrome://glic-experimental-opt-in";
 inline constexpr char kChromeUIHangUIHost[] = "uithreadhang";
 inline constexpr char kChromeUIHelpHost[] = "help";
 inline constexpr char kChromeUIHelpURL[] = "chrome://help/";
@@ -216,7 +229,9 @@ inline constexpr char kChromeUINewTabPageThirdPartyHost[] =
 inline constexpr char kChromeUINewTabPageThirdPartyURL[] =
     "chrome://new-tab-page-third-party/";
 inline constexpr char kChromeUINewTabPageURL[] = "chrome://new-tab-page/";
+const GURL& ChromeUINewTabPageURLAsGURL();
 inline constexpr char kChromeUINewTabURL[] = "chrome://newtab/";
+const GURL& ChromeUINewTabURLAsGURL();
 inline constexpr char kChromeUINewTabFooterURL[] = "chrome://newtab-footer/";
 inline constexpr char kChromeUIUntrustedNtpMicrosoftAuthHost[] =
     "ntp-microsoft-auth";
@@ -242,7 +257,12 @@ inline constexpr char kChromeUIPasswordManagerURL[] =
     "chrome://password-manager";
 inline constexpr char kChromeUiPasswordChangeUrl[] =
     "chrome://password-manager/settings/password-change";
+inline constexpr char kChromeUIPersonalContextInternalsHost[] =
+    "personal-context-internals";
+inline constexpr char kChromeUIPersonalContextInternalsURL[] =
+    "chrome://personal-context-internals/";
 inline constexpr char kChromeUIPolicyHost[] = "policy";
+inline constexpr char kChromeUIPolicyLogsURL[] = "chrome://policy/logs";
 inline constexpr char kChromeUIPolicyTestURL[] = "chrome://policy/test";
 inline constexpr char kChromeUIPolicyURL[] = "chrome://policy/";
 inline constexpr char kChromeUIPredictorsHost[] = "predictors";
@@ -294,6 +314,8 @@ inline constexpr char kChromeUISkillsYourSkillsPath[] = "yourSkills";
 inline constexpr char kChromeUISkillsBrowsePath[] = "browse";
 inline constexpr char kChromeUISplitViewNewTabPageURL[] =
     "chrome://tab-search.top-chrome/split_new_tab_page.html";
+inline constexpr char kChromeUISubresourceFilterInternalsHost[] =
+    "subresource-filter-internals";
 inline constexpr char kChromeUISuggestInternalsHost[] = "suggest-internals";
 inline constexpr char kChromeUISuggestInternalsURL[] =
     "chrome://suggest-internals/";
@@ -352,6 +374,7 @@ inline constexpr char kChromeUIWebUIToolbarHost[] = "webui-toolbar.top-chrome";
 inline constexpr char kChromeUIWebNNInternalsHost[] = "webnn-internals";
 inline constexpr char kChromeUIWebNNInternalsURL[] =
     "chrome://webnn-internals/";
+inline constexpr char kChromeUIIndigoInternalsHost[] = "indigo-internals";
 
 #if BUILDFLAG(IS_ANDROID)
 inline constexpr char kChromeUIJavaCrashURL[] = "chrome://java-crash/";
@@ -398,6 +421,8 @@ inline constexpr char kChromeUILensUntrustedSidePanelURL[] =
 inline constexpr char kChromeUILensOverlayHost[] = "lens-overlay";
 inline constexpr char kChromeUILensOverlayUntrustedURL[] =
     "chrome-untrusted://lens-overlay/";
+inline constexpr char kChromeUIMultistepFilterInternalsHost[] =
+    "multistep-filter-internals";
 inline constexpr char kChromeUINearbyInternalsHost[] = "nearby-internals";
 inline constexpr char kChromeUINearbyShareHost[] = "nearby";
 inline constexpr char kChromeUINearbyShareURL[] = "chrome://nearby/";
@@ -458,6 +483,13 @@ inline constexpr char kChromeUIWhatsNewHost[] = "whats-new";
 inline constexpr char kChromeUIWhatsNewURL[] = "chrome://whats-new/";
 #endif
 
+#if BUILDFLAG(IS_WIN)
+inline constexpr char kChromeUIDefaultBrowserVisualGuidedSetterURL[] =
+    "chrome://default-browser/";
+inline constexpr char kChromeUIDefaultBrowserVisualGuidedSetterHost[] =
+    "default-browser";
+#endif
+
 #if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_MAC) && !BUILDFLAG(IS_ANDROID)
 inline constexpr char kChromeUILinuxProxyConfigHost[] = "linux-proxy-config";
 #endif
@@ -473,6 +505,12 @@ inline constexpr char kChromeUIBrowserSwitchURL[] = "chrome://browser-switch/";
 inline constexpr char kChromeUIIntroDefaultBrowserSubPage[] = "default-browser";
 inline constexpr char kChromeUIIntroDefaultBrowserURL[] =
     "chrome://intro/default-browser";
+inline constexpr char kChromeUIIntroFinishOrContinueSubPage[] =
+    "finish-or-continue";
+inline constexpr char kChromeUIIntroSignInCelebrationSubPage[] =
+    "sign-in-celebration";
+inline constexpr char kChromeUIIntroSignInCelebrationURL[] =
+    "chrome://intro/sign-in-celebration";
 inline constexpr char kChromeUIIntroHost[] = "intro";
 inline constexpr char kChromeUIIntroURL[] = "chrome://intro";
 inline constexpr char kChromeUIManagedUserProfileNoticeHost[] =
@@ -513,11 +551,6 @@ inline constexpr char kChromeUISessionServiceInternalsPath[] =
     "session-service";
 #endif
 
-#if BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
-inline constexpr char kChromeUITabStripHost[] = "tab-strip.top-chrome";
-inline constexpr char kChromeUITabStripURL[] = "chrome://tab-strip.top-chrome";
-#endif
-
 #if BUILDFLAG(ENTERPRISE_WATERMARK)
 inline constexpr char kChromeUIWatermarkHost[] = "watermark";
 inline constexpr char kChromeUIWatermarkURL[] = "chrome://watermark/";
@@ -536,6 +569,7 @@ inline constexpr char kChromeUITabStripInternalsURL[] =
 // AutocompleteProvider.
 
 inline constexpr char kAccessibilitySubPage[] = "accessibility";
+inline constexpr char kAccountSubPage[] = "account";
 inline constexpr char kAddressesSubPage[] = "addresses";
 inline constexpr char kAdPrivacySubPage[] = "adPrivacy";
 inline constexpr char kAllSitesSettingsSubpage[] = "content/all";
@@ -590,6 +624,7 @@ inline constexpr char kSearchSubPage[] = "search";
 inline constexpr char kSecuritySubPage[] = "security";
 inline constexpr char kSignOutSubPage[] = "signOut";
 inline constexpr char kSiteDetailsSubpage[] = "content/siteDetails";
+inline constexpr char kSuggestionsSubPage[] = "ai/suggestions";
 inline constexpr char kSyncSetupSubPage[] = "syncSetup";
 inline constexpr char kSyncSetupAdvancedSubPage[] = "syncSetup/advanced";
 inline constexpr char kTriggeredResetProfileSettingsSubPage[] =

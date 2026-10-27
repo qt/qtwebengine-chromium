@@ -30,6 +30,15 @@ COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(kShowBlockedSensitiveDownload);
 
 // Whether to show the download scanning state on download home.
 COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(kShowDownloadScanningState);
+
+// Whether to offer a compact list view (small thumbnails + text metadata) for
+// images and videos on the Android Downloads page, in place of the default
+// large preview cards. See crbug.com/505631139.
+COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(kDownloadsCompactListView);
+
+// Whether to remap generic MIME types (like application/octet-stream) to more
+// specific MIME types deduced from the filename extension on Android.
+COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(kRemapGenericMimeType);
 #endif
 
 // Whether download notification service uses new unified API based on offline
@@ -69,6 +78,10 @@ COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(
 // Whether to enable save package for off the record mode.
 COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(
     kEnableSavePackageForOffTheRecord);
+
+// Whether to open the downloaded file in Files app if cannot open in Chrome.
+COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(
+    kOpenDownloadInFilesAppIfNoHandlerFound);
 #endif  // BUILDFLAG(IS_ANDROID)
 }  // namespace features
 

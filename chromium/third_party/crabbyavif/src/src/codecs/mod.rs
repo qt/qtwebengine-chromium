@@ -69,7 +69,7 @@ pub(crate) trait Decoder {
         image: &mut Image,
         category: Category,
         item: Option<&Item>,
-        #[cfg(feature = "android_mediacodec")] signal_eos: bool,
+        signal_eos: bool,
     ) -> AvifResult<()>;
     // Decode a list of input images and outputs them into the |grid_image_helper|.
     fn get_next_image_grid(
@@ -77,6 +77,14 @@ pub(crate) trait Decoder {
         payloads: &[Vec<u8>],
         spatial_id: u8,
         grid_image_helper: &mut GridImageHelper,
+    ) -> AvifResult<()>;
+    // Decode a list of input images and write the output of the last decoded image into |image|.
+    fn get_last_image(
+        &mut self,
+        payloads: &[Vec<u8>],
+        spatial_id: u8,
+        image: &mut Image,
+        category: Category,
     ) -> AvifResult<()>;
     // Destruction must be implemented using Drop.
 }

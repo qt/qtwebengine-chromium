@@ -1,4 +1,6 @@
 // Benchmarks for matrix power functions: sqrt, pow, cos, sin, cosh, sinh.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>
@@ -85,15 +87,11 @@ static void BM_MatrixSinh(benchmark::State& state) {
   }
 }
 
-static void MatPowerSizes(::benchmark::Benchmark* b) {
-  for (int n : {4, 8, 16, 32, 64}) {
-    b->Arg(n);
-  }
-}
+#define MAT_POWER_SIZES ->Arg(4)->Arg(8)->Arg(16)->Arg(32)->Arg(64)
 
-BENCHMARK(BM_MatrixSqrt)->Apply(MatPowerSizes);
-BENCHMARK(BM_MatrixPow)->Apply(MatPowerSizes);
-BENCHMARK(BM_MatrixCos)->Apply(MatPowerSizes);
-BENCHMARK(BM_MatrixSin)->Apply(MatPowerSizes);
-BENCHMARK(BM_MatrixCosh)->Apply(MatPowerSizes);
-BENCHMARK(BM_MatrixSinh)->Apply(MatPowerSizes);
+BENCHMARK(BM_MatrixSqrt) MAT_POWER_SIZES;
+BENCHMARK(BM_MatrixPow) MAT_POWER_SIZES;
+BENCHMARK(BM_MatrixCos) MAT_POWER_SIZES;
+BENCHMARK(BM_MatrixSin) MAT_POWER_SIZES;
+BENCHMARK(BM_MatrixCosh) MAT_POWER_SIZES;
+BENCHMARK(BM_MatrixSinh) MAT_POWER_SIZES;

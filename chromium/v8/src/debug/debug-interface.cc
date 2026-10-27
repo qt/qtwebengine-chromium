@@ -4,8 +4,13 @@
 
 #include "src/debug/debug-interface.h"
 
+#include <stdint.h>
+
+#include <vector>
+
 #include "include/v8-function.h"
 #include "src/api/api-inl.h"
+#include "src/base/logging.h"
 #include "src/base/utils/random-number-generator.h"
 #include "src/codegen/compiler.h"
 #include "src/codegen/script-details.h"
@@ -18,6 +23,8 @@
 #include "src/execution/vm-state-inl.h"
 #include "src/heap/heap.h"
 #include "src/objects/js-generator-inl.h"
+#include "src/objects/script-inl.h"
+#include "src/objects/shared-function-info-inl.h"
 #include "src/profiler/heap-profiler.h"
 #include "src/strings/string-builder-inl.h"
 
@@ -25,6 +32,7 @@
 #include "src/debug/debug-wasm-objects-inl.h"
 #include "src/wasm/wasm-disassembler.h"
 #include "src/wasm/wasm-engine.h"
+#include "src/wasm/wasm-objects-inl.h"
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 namespace v8 {
@@ -190,8 +198,9 @@ MaybeLocal<Array> GetInternalProperties(Isolate* v8_isolate,
   EnterV8NoScriptNoExceptionScope api_scope(isolate);
   i::DirectHandle<i::Object> val = Utils::OpenDirectHandle(*value);
   i::DirectHandle<i::JSArray> result;
-  if (!i::Runtime::GetInternalProperties(isolate, val).ToHandle(&result))
+  if (!i::Runtime::GetInternalProperties(isolate, val).ToHandle(&result)) {
     return MaybeLocal<Array>();
+  }
   return Utils::ToLocal(result);
 }
 
@@ -448,13 +457,15 @@ size_t ScriptSource::Length() const {
 }
 
 size_t ScriptSource::Size() const {
+  auto source = Utils::OpenDirectHandle(this);
 #if V8_ENABLE_WEBASSEMBLY
-  MemorySpan<const uint8_t> wasm_bytecode;
-  if (WasmBytecode().To(&wasm_bytecode)) {
-    return wasm_bytecode.size();
+  if (IsForeign(*source)) {
+    return i::Cast<i::Managed<i::wasm::NativeModule>>(*source)
+        ->ptr()
+        ->wire_bytes()
+        .size();
   }
 #endif  // V8_ENABLE_WEBASSEMBLY
-  auto source = Utils::OpenDirectHandle(this);
   if (!IsString(*source)) return 0;
   auto string = i::Cast<i::String>(source);
   return string->length() * (string->IsTwoByteRepresentation() ? 2 : 1);
@@ -467,12 +478,14 @@ MaybeLocal<String> ScriptSource::JavaScriptCode() const {
 }
 
 #if V8_ENABLE_WEBASSEMBLY
-Maybe<MemorySpan<const uint8_t>> ScriptSource::WasmBytecode() const {
+Maybe<std::vector<uint8_t>> ScriptSource::GetWasmBytecode(
+    size_t max_size) const {
   auto source = Utils::OpenDirectHandle(this);
   if (!IsForeign(*source)) return {};
-  base::Vector<const uint8_t> wire_bytes =
-      i::Cast<i::Managed<i::wasm::NativeModule>>(*source)->raw()->wire_bytes();
-  return Just(MemorySpan<const uint8_t>{wire_bytes.begin(), wire_bytes.size()});
+  auto ptr = i::Cast<i::Managed<i::wasm::NativeModule>>(*source)->ptr();
+  base::Vector<const uint8_t> wire_bytes = ptr->wire_bytes();
+  if (wire_bytes.size() > max_size) return Just(std::vector<uint8_t>());
+  return Just(std::vector<uint8_t>(wire_bytes.begin(), wire_bytes.end()));
 }
 #endif  // V8_ENABLE_WEBASSEMBLY
 
@@ -780,7 +793,13 @@ bool Script::SetInstrumentationBreakpoint(BreakpointId* id) const {
   i::SharedFunctionInfo::ScriptIterator it(isolate, *script);
   for (i::Tagged<i::SharedFunctionInfo> sfi = it.Next(); !sfi.is_null();
        sfi = it.Next()) {
-    if (sfi->is_toplevel()) {
+    // Node.js compiles CJS modules via ScriptCompiler::CompileFunction so that
+    // module-local bindings like __filename can be injected as function
+    // parameters without leaking into the global scope. The resulting Script
+    // carries two SFIs: a synthetic toplevel that just returns the wrapped
+    // function, and the wrapped SFI that the embedder actually invokes. For
+    // such scripts we should pick the wrapped SFI.
+    if (script->is_wrapped() ? sfi->is_wrapped() : sfi->is_toplevel()) {
       return isolate->debug()->SetBreakpointForFunction(
           handle(sfi, isolate), isolate->factory()->empty_string(), id,
           internal::Debug::kInstrumentation);
@@ -830,6 +849,7 @@ Maybe<WasmScript::DebugSymbols::Type> GetDebugSymbolType(
     case i::wasm::WasmDebugSymbols::Type::None:
       return {};
   }
+  UNREACHABLE();
 }
 
 std::vector<WasmScript::DebugSymbols> WasmScript::GetDebugSymbols() const {
@@ -850,8 +870,7 @@ std::vector<WasmScript::DebugSymbols> WasmScript::GetDebugSymbols() const {
         script->wasm_native_module()->wire_bytes());
     i::wasm::WasmName external_url =
         wire_bytes.GetNameOrNull(symbol.external_url);
-    MemorySpan<const char> span = {external_url.data(), external_url.size()};
-    debug_symbols.push_back({type.FromJust(), span});
+    debug_symbols.push_back({type.FromJust(), external_url});
   }
   return debug_symbols;
 }
@@ -1284,7 +1303,8 @@ void GlobalLexicalScopeNames(v8::Local<v8::Context> v8_context,
   i::Isolate* isolate = i::Isolate::Current();
   i::DirectHandle<i::ScriptContextTable> table(
       context->native_context()->script_context_table(), isolate);
-  for (int i = 0; i < table->length(kAcquireLoad); i++) {
+  const uint32_t len = table->length(kAcquireLoad).value();
+  for (uint32_t i = 0; i < len; i++) {
     i::DirectHandle<i::Context> script_context(table->get(i), isolate);
     DCHECK(script_context->IsScriptContext());
     i::DirectHandle<i::ScopeInfo> scope_info(script_context->scope_info(),
@@ -1337,6 +1357,16 @@ PostponeInterruptsScope::PostponeInterruptsScope(v8::Isolate* isolate)
                                          i::StackGuard::API_INTERRUPT)) {}
 
 PostponeInterruptsScope::~PostponeInterruptsScope() = default;
+
+DisallowGarbageCollectionScope::DisallowGarbageCollectionScope() {
+  new (internal_) i::DisallowGarbageCollectionInRelease();
+}
+
+DisallowGarbageCollectionScope::~DisallowGarbageCollectionScope() {
+  using i::DisallowGarbageCollectionInRelease;
+  reinterpret_cast<DisallowGarbageCollectionInRelease*>(internal_)
+      ->~DisallowGarbageCollectionInRelease();
+}
 
 DisableBreakScope::DisableBreakScope(v8::Isolate* isolate)
     : scope_(std::make_unique<i::DisableBreak>(
@@ -1478,7 +1508,7 @@ MaybeLocal<Message> GetMessageFromPromise(Local<Promise> p) {
   i::DirectHandle<i::Object> maybeMessage =
       i::JSReceiver::GetDataProperty(isolate, promise, key);
 
-  if (!IsJSMessageObject(*maybeMessage, isolate)) return MaybeLocal<Message>();
+  if (!IsJSMessageObject(*maybeMessage)) return MaybeLocal<Message>();
   return ToApiHandle<Message>(i::Cast<i::JSMessageObject>(maybeMessage));
 }
 

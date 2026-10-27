@@ -1,4 +1,10 @@
 // IWYU pragma: private
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
+#ifndef EIGEN_NONLINEAROPTIMIZATION_R1MPYQ_H
+#define EIGEN_NONLINEAROPTIMIZATION_R1MPYQ_H
+
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {
@@ -31,3 +37,5 @@ void r1mpyq(DenseIndex m, DenseIndex n, Scalar *a, const std::vector<JacobiRotat
 }  // end namespace internal
 
 }  // end namespace Eigen
+
+#endif  // EIGEN_NONLINEAROPTIMIZATION_R1MPYQ_H

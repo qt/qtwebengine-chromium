@@ -4,6 +4,7 @@
 
 #include "src/wasm/constant-expression.h"
 
+#include "src/base/logging.h"
 #include "src/handles/handles.h"
 #include "src/heap/factory-inl.h"
 #include "src/heap/factory.h"
@@ -13,7 +14,7 @@
 #include "src/wasm/function-body-decoder-impl.h"
 #include "src/wasm/wasm-code-manager.h"
 #include "src/wasm/wasm-module.h"
-#include "src/wasm/wasm-objects.h"
+#include "src/wasm/wasm-objects-inl.h"
 #include "src/wasm/wasm-opcodes-inl.h"
 
 namespace v8 {
@@ -95,6 +96,7 @@ ValueOrError EvaluateConstantExpression(
       return result;
     }
   }
+  UNREACHABLE();
 }
 
 }  // namespace wasm

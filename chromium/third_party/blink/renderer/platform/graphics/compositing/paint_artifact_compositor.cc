@@ -12,6 +12,8 @@
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/logging.h"
+#include "base/metrics/histogram_macros.h"
+#include "base/rand_util.h"
 #include "cc/base/features.h"
 #include "cc/layers/solid_color_scrollbar_layer.h"
 #include "cc/paint/display_item_list.h"
@@ -868,7 +870,11 @@ void PaintArtifactCompositor::Layerizer::LayerizeGroup(
             new_layer.GetPropertyTreeState()
                 .Transform()
                 .NearestDirectlyCompositedAncestor()) {
-      if (directly_composited_transforms_.insert(composited_transform)
+      if ((!RuntimeEnabledFeatures::MergeFixedLayersEnabled() ||
+           !composited_transform->RequiresCompositingForFixedPositionOnly()) &&
+          (!RuntimeEnabledFeatures::MergeStickyLayersEnabled() ||
+           !composited_transform->RequiresCompositingForStickyPositionOnly()) &&
+          directly_composited_transforms_.insert(composited_transform)
               .is_new_entry) {
         continue;
       }
@@ -988,13 +994,14 @@ SynthesizedClip& PaintArtifactCompositor::CreateOrReuseSynthesizedClipLayer(
     bool needs_layer,
     CompositorElementId& mask_isolation_id,
     CompositorElementId& mask_effect_id) {
-  auto entry =
-      std::ranges::find_if(synthesized_clip_cache_, [&clip](const auto& entry) {
-        return entry.key == &clip && !entry.in_use;
+  auto entry = std::ranges::find_if(
+      synthesized_clip_cache_, [&clip, &transform](const auto& entry) {
+        return entry.clip_key == &clip && !entry.in_use &&
+               entry.transform_key == &transform;
       });
   if (entry == synthesized_clip_cache_.end()) {
     synthesized_clip_cache_.push_back(SynthesizedClipEntry{
-        &clip, std::make_unique<SynthesizedClip>(), false});
+        &clip, std::make_unique<SynthesizedClip>(), false, &transform});
     entry = UNSAFE_TODO(synthesized_clip_cache_.end() - 1);
   }
 
@@ -1136,6 +1143,13 @@ void PaintArtifactCompositor::Update(
     property_tree_manager.EnsureCompositorScrollAndTransformNode(*node);
   }
 
+  // For metrics.
+  const bool report_metrics = base::ShouldRecordSubsampledMetric(0.01);
+  int fixed_count = 0;
+  int merged_fixed_count = 0;
+  int sticky_count = 0;
+  int merged_sticky_count = 0;
+
   cc::LayerSelection layer_selection;
   HashSet<int> layers_having_text;
   HashSet<int> layers_having_video;
@@ -1167,16 +1181,21 @@ void PaintArtifactCompositor::Update(
       static_cast<cc::PictureLayer&>(layer).SetIsBackdropFilterMask(true);
       layer.SetElementId(effect.GetCompositorElementId());
       auto& effect_tree = host->property_trees()->effect_tree_mutable();
-      auto* cc_node = effect_tree.Node(effect_id);
-      auto* parent_node = effect_tree.Node(cc_node->parent_id);
+      const auto& cc_node = effect_tree.Node(effect_id);
+      int parent_id = cc_node.parent_id;
+      if (parent_id != cc::kInvalidPropertyNodeId) {
+        auto& parent_node = effect_tree.MutableNode(parent_id);
 
-      // Only set backdrop_mask_element_id if the parent has backdrop_filters.
-      // When synthetic nodes are created for clipping (e.g., overflow:hidden +
-      // border-radius), the backdrop properties are transferred to the
-      // synthetic node, leaving the parent scope node without backdrop_filters.
-      // Setting the mask there causes double-masking. See crbug.com/40778541.
-      if (!parent_node->backdrop_filters.IsEmpty()) {
-        parent_node->backdrop_mask_element_id = effect.GetCompositorElementId();
+        // Only set backdrop_mask_element_id if the parent has backdrop_filters.
+        // When synthetic nodes are created for clipping (e.g., overflow:hidden
+        // + border-radius), the backdrop properties are transferred to the
+        // synthetic node, leaving the parent scope node without
+        // backdrop_filters. Setting the mask there causes double-masking. See
+        // crbug.com/40778541.
+        if (!parent_node.backdrop_filters.IsEmpty()) {
+          parent_node.backdrop_mask_element_id =
+              effect.GetCompositorElementId();
+        }
       }
     } else if (pending_layer.GetContentLayerClient() &&
                !effect.RequiresCompositingForBackdropFilterMask() &&
@@ -1213,6 +1232,28 @@ void PaintArtifactCompositor::Update(
 
     if (layer.subtree_property_changed())
       root_layer_->SetNeedsCommit();
+
+    if (report_metrics) {
+      if (transform.RequiresCompositingForFixedPosition()) {
+        ++fixed_count;
+        merged_fixed_count +=
+            pending_layer.MergedAcrossCompositingBoundaryCount();
+      }
+      if (transform.RequiresCompositingForStickyPosition()) {
+        ++sticky_count;
+        merged_sticky_count +=
+            pending_layer.MergedAcrossCompositingBoundaryCount();
+      }
+    }
+  }
+
+  if (report_metrics) {
+    UMA_HISTOGRAM_COUNTS_100("Blink.Compositor.FixedLayerCount", fixed_count);
+    UMA_HISTOGRAM_COUNTS_100("Blink.Compositor.MergedFixedLayerCount",
+                             merged_fixed_count);
+    UMA_HISTOGRAM_COUNTS_100("Blink.Compositor.StickyLayerCount", sticky_count);
+    UMA_HISTOGRAM_COUNTS_100("Blink.Compositor.MergedStickyLayerCount",
+                             merged_sticky_count);
   }
 
   root_layer_->layer_tree_host()->RegisterSelection(layer_selection);
@@ -1328,7 +1369,8 @@ bool PaintArtifactCompositor::CanDirectlyUpdateProperties() const {
     return false;
   }
 
-  return root_layer_ && root_layer_->layer_tree_host();
+  return root_layer_ && root_layer_->layer_tree_host() &&
+         !root_layer_->layer_tree_host()->in_will_commit();
 }
 
 bool PaintArtifactCompositor::DirectlyUpdateCompositedOpacityValue(

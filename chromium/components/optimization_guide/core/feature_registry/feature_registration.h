@@ -13,8 +13,6 @@ namespace optimization_guide {
 
 namespace prefs {
 COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
-extern const char kTabOrganizationEnterprisePolicyAllowed[];
-COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
 extern const char kComposeEnterprisePolicyAllowed[];
 COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
 extern const char kWallpaperSearchEnterprisePolicyAllowed[];
@@ -32,6 +30,8 @@ COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
 extern const char kContextualTasksContextEnterprisePolicyAllowed[];
 COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
 extern const char kFindsEnterprisePolicyAllowed[];
+COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
+extern const char kChromeSuggestionsSettings[];
 }  // namespace prefs
 
 namespace features {
@@ -39,8 +39,6 @@ BASE_DECLARE_FEATURE(kActorLoginMqlsLogging);
 COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
 COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
 BASE_DECLARE_FEATURE(kComposeMqlsLogging);
-COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
-BASE_DECLARE_FEATURE(kTabOrganizationMqlsLogging);
 COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
 BASE_DECLARE_FEATURE(kWallpaperSearchMqlsLogging);
 COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)

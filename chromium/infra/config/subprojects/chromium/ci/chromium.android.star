@@ -30,7 +30,7 @@ ci.defaults.set(
     os = os.LINUX_DEFAULT,
     gardener_rotations = gardener_rotations.ANDROID,
     tree_closing_notifiers = ci_constants.DEFAULT_TREE_CLOSING_NOTIFIERS,
-    execution_timeout = ci_constants.DEFAULT_EXECUTION_TIMEOUT,
+    execution_timeout = 4 * time.hour,
     experiments = {
         "chromium_tests.resultdb_module": 100,
     },
@@ -125,7 +125,6 @@ ci.builder(
     ),
     cq_mirrors_console_view = "mirrors",
     contact_team_email = "clank-engprod@google.com",
-    execution_timeout = 4 * time.hour,
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CI,
 )
 
@@ -411,7 +410,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "x86",
-            "strip_debug_info",
             "android_fastbuild",
             "webview_trichrome",
             "webview_shell",
@@ -784,7 +782,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "arm64",
-            "strip_debug_info",
             "android_fastbuild",
             "webview_trichrome",
         ],
@@ -868,14 +865,12 @@ ci.builder(
             ),
             "chrome_public_test_apk": targets.mixin(
                 args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_12l.chrome_public_test_apk.filter",
                     # Don't enable render tests on non-CQ builders
                     "--skia-gold-consider-unsupported",
                 ],
             ),
             "chrome_public_unit_test_apk": targets.mixin(
                 args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_12l.chrome_public_unit_test_apk.filter",
                     # Don't enable render tests on non-CQ builders
                     "--skia-gold-consider-unsupported",
                 ],
@@ -1068,7 +1063,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "arm64",
-            "strip_debug_info",
             "webview_google",
         ],
     ),
@@ -1157,7 +1151,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "x64",
-            "strip_debug_info",
             "android_fastbuild",
             "webview_trichrome",
             "webview_shell",
@@ -1200,7 +1193,6 @@ ci.builder(
         short_name = "bfc",
     ),
     contact_team_email = "clank-engprod@google.com",
-    execution_timeout = 4 * time.hour,
 )
 
 ci.builder(
@@ -1317,7 +1309,6 @@ ci.builder(
             "release_builder",
             "remoteexec",
             "minimal_symbols",
-            "strip_debug_info",
         ],
     ),
     targets = targets.bundle(
@@ -1415,7 +1406,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "arm64",
-            "strip_debug_info",
         ],
     ),
     targets = targets.bundle(
@@ -1512,7 +1502,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "riscv64",
-            "strip_debug_info",
         ],
     ),
     targets = targets.bundle(
@@ -2225,7 +2214,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "x86",
-            "strip_debug_info",
         ],
     ),
     targets = targets.bundle(
@@ -2276,7 +2264,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "x64",
-            "strip_debug_info",
         ],
     ),
     targets = targets.bundle(
@@ -2329,6 +2316,7 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "x86",
+            # See crbug.com/507825820
             "strip_debug_info",
             "android_fastbuild",
             "webview_trichrome",
@@ -2381,9 +2369,6 @@ ci.builder(
 
             # If you change this, make similar changes in android-x86-code-coverage
             "chrome_public_test_apk": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_10.chrome_public_test_apk.filter",
-                ],
                 swarming = targets.swarming(
                     dimensions = {
                         # use 8-core to shorten runtime
@@ -2413,7 +2398,7 @@ ci.builder(
             ),
             # If you change this, make similar changes in android-x86-code-coverage
             "content_shell_crash_test": targets.remove(
-                reason = "crbug.com/1084353",
+                reason = "crbug.com/40131701",
             ),
             # If you change this, make similar changes in android-x86-code-coverage
             "content_shell_test_apk": targets.mixin(
@@ -2585,7 +2570,6 @@ ci.builder(
             ),
             "chrome_public_test_apk": targets.mixin(
                 args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_10.chrome_public_test_apk.filter",
                     "--disable-field-trial-config",
                     "--skia-gold-consider-unsupported",
                 ],
@@ -2621,7 +2605,7 @@ ci.builder(
                 ),
             ),
             "content_shell_crash_test": targets.remove(
-                reason = "crbug.com/1084353",
+                reason = "crbug.com/40131701",
             ),
             "content_shell_test_apk": targets.mixin(
                 args = [
@@ -2744,7 +2728,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "x86",
-            "strip_debug_info",
             "android_fastbuild",
             "webview_trichrome",
             "webview_shell",
@@ -2845,7 +2828,6 @@ ci.builder(
         category = "builder_tester|x86",
         short_name = "11",
     ),
-    execution_timeout = 4 * time.hour,
 )
 
 ci.builder(
@@ -2880,7 +2862,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "x64",
-            "strip_debug_info",
             "android_fastbuild",
             "webview_trichrome",
             "webview_shell",
@@ -2934,7 +2915,6 @@ ci.builder(
             ),
             "chrome_public_test_apk": targets.mixin(
                 args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_12.chrome_public_test_apk.filter",
                     "--timeout-scale=2.0",
                 ],
                 # TODO(crbug.com/40188616): Remove experiment and ci_only
@@ -2943,9 +2923,6 @@ ci.builder(
                 experiment_percentage = 100,
             ),
             "chrome_public_unit_test_apk": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_12.chrome_public_unit_test_apk.filter",
-                ],
                 ci_only = True,
             ),
             "components_unittests": targets.mixin(
@@ -3020,7 +2997,6 @@ ci.builder(
         short_name = "12",
     ),
     contact_team_email = "clank-engprod@google.com",
-    execution_timeout = 4 * time.hour,
 )
 
 ci.builder(
@@ -3055,7 +3031,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "x64",
-            "strip_debug_info",
             "android_fastbuild",
             "webview_trichrome",
             "webview_shell",
@@ -3103,17 +3078,9 @@ ci.builder(
                 ],
             ),
             "chrome_public_test_apk": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_13.chrome_public_test_apk.filter",
-                ],
                 swarming = targets.swarming(
                     shards = 40,
                 ),
-            ),
-            "chrome_public_unit_test_apk": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_13.chrome_public_unit_test_apk.filter",
-                ],
             ),
             "content_browsertests": targets.mixin(
                 args = [
@@ -3207,7 +3174,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "arm64",
-            "strip_debug_info",
             "webview_trichrome",
         ],
     ),
@@ -3225,6 +3191,9 @@ ci.builder(
         ],
         per_test_modifications = {
             "android_browsertests": targets.mixin(
+                # TODO Re-enable on CQ once the high
+                # pending time is gone
+                ci_only = True,
                 swarming = targets.swarming(
                     shards = 7,
                 ),
@@ -3263,7 +3232,6 @@ ci.builder(
     ),
     cq_mirrors_console_view = "mirrors",
     contact_team_email = "clank-engprod@google.com",
-    execution_timeout = 4 * time.hour,
 )
 
 ci.builder(
@@ -3299,7 +3267,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "x64",
-            "strip_debug_info",
             "android_fastbuild",
             "webview_trichrome",
             "webview_shell",
@@ -3346,17 +3313,11 @@ ci.builder(
             ),
             "chrome_public_test_apk": targets.mixin(
                 args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_14.chrome_public_test_apk.filter",
                     "--emulator-debug-tags=all,-qemud,-sensors",
                 ],
                 swarming = targets.swarming(
                     shards = 40,
                 ),
-            ),
-            "chrome_public_unit_test_apk": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_14.chrome_public_unit_test_apk.filter",
-                ],
             ),
             "components_browsertests": targets.mixin(
                 args = [
@@ -3441,7 +3402,6 @@ ci.builder(
         short_name = "14",
     ),
     contact_team_email = "clank-engprod@google.com",
-    execution_timeout = 4 * time.hour,
 )
 
 ci.builder(
@@ -3477,7 +3437,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "x64",
-            "strip_debug_info",
             "android_fastbuild",
         ],
     ),
@@ -3515,7 +3474,6 @@ ci.builder(
         short_name = "14A",
     ),
     contact_team_email = "clank-engprod@google.com",
-    execution_timeout = 4 * time.hour,
 )
 
 ci.builder(
@@ -3549,7 +3507,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "arm64",
-            "strip_debug_info",
             "webview_trichrome",
         ],
     ),
@@ -3633,7 +3590,6 @@ ci.builder(
         short_name = "14T-L",
     ),
     contact_team_email = "clank-engprod@google.com",
-    execution_timeout = 3 * time.hour,
     # crbug.com/372192123 - downloading with "minimum" strategy doesn't work
     # well for Android builds because some steps have additional inputs/outputs
     # they are not configured in the build graph.
@@ -3673,7 +3629,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "x64",
-            "strip_debug_info",
             "android_fastbuild",
             "webview_trichrome",
             "webview_shell",
@@ -3718,7 +3673,6 @@ ci.builder(
             ),
             "chrome_public_test_apk": targets.mixin(
                 args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_15.chrome_public_test_apk.filter",
                     "--emulator-debug-tags=all",
                 ],
                 swarming = targets.swarming(
@@ -3797,7 +3751,6 @@ ci.builder(
         short_name = "15",
     ),
     contact_team_email = "clank-engprod@google.com",
-    execution_timeout = 4 * time.hour,
 )
 
 ci.builder(
@@ -3833,7 +3786,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "x64",
-            "strip_debug_info",
             "android_fastbuild",
         ],
     ),
@@ -3871,7 +3823,6 @@ ci.builder(
         short_name = "15T-L",
     ),
     contact_team_email = "clank-engprod@google.com",
-    execution_timeout = 4 * time.hour,
 )
 
 ci.builder(
@@ -3907,7 +3858,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "x64",
-            "strip_debug_info",
             "android_fastbuild",
         ],
     ),
@@ -3999,7 +3949,6 @@ ci.builder(
         short_name = "15T",
     ),
     contact_team_email = "clank-engprod@google.com",
-    execution_timeout = 4 * time.hour,
 )
 
 ci.builder(
@@ -4116,7 +4065,6 @@ ci.builder(
         short_name = "16",
     ),
     contact_team_email = "clank-engprod@google.com",
-    execution_timeout = 4 * time.hour,
 )
 
 ci.builder(
@@ -4151,7 +4099,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "x64",
-            "strip_debug_info",
             "android_fastbuild",
             "webview_trichrome",
             "webview_shell",
@@ -4161,6 +4108,7 @@ ci.builder(
         targets = [
             "android_16_emulator_gtests",
             "android_rel_isolated_scripts",
+            "content_shell_freeze_test",
             "gtests_once",
         ],
         mixins = [
@@ -4173,12 +4121,12 @@ ci.builder(
         per_test_modifications = {
             "android_browsertests": targets.mixin(
                 swarming = targets.swarming(
-                    shards = 10,
+                    shards = 25,
                 ),
             ),
             "android_sync_integration_tests": targets.mixin(
                 swarming = targets.swarming(
-                    shards = 2,
+                    shards = 4,
                 ),
             ),
             "base_unittests": targets.mixin(
@@ -4191,8 +4139,12 @@ ci.builder(
             ),
             "components_browsertests": targets.mixin(
                 swarming = targets.swarming(
-                    shards = 23,
+                    shards = 3,
                 ),
+            ),
+            "content_shell_freeze_test": targets.mixin(
+                # TODO (b/511219429): Remove once stability is established and also add to android_rel_isolated_scripts
+                ci_only = True,
             ),
             "chrome_public_test_apk": targets.mixin(
                 args = [
@@ -4257,6 +4209,9 @@ ci.builder(
                 args = [
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_14_15_16.unit_tests.filter",
                 ],
+                swarming = targets.swarming(
+                    shards = 4,
+                ),
             ),
             "webview_ui_test_app_test_apk_no_field_trial": targets.mixin(
                 ci_only = True,
@@ -4277,7 +4232,6 @@ ci.builder(
         short_name = "16",
     ),
     contact_team_email = "clank-engprod@google.com",
-    execution_timeout = 4 * time.hour,
 )
 
 ci.builder(
@@ -4314,7 +4268,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "x64",
-            "strip_debug_info",
             "android_fastbuild",
             "webview_trichrome",
             "webview_shell",
@@ -4375,7 +4328,6 @@ ci.builder(
             "remoteexec",
             "minimal_symbols",
             "arm64",
-            "strip_debug_info",
             "full_mte",
         ],
     ),

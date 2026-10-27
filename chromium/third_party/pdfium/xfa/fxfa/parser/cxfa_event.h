@@ -21,10 +21,6 @@ class CXFA_Event final : public CXFA_Node {
   XFA_Element GetEventType() const;
   CXFA_Script* GetScriptIfExists();
 
-#ifdef PDF_XFA_ELEMENT_SUBMIT_ENABLED
-  CXFA_Submit* GetSubmitIfExists();
-#endif  // PDF_XFA_ELEMENT_SUBMIT_ENABLED
-
   WideString GetRef();
 
  private:

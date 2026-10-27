@@ -460,8 +460,8 @@ void Int32DivideWithOverflow::GenerateCode(MaglevAssembler* masm,
   // TODO(leszeks): peephole optimise division by a constant.
 
   // Pre-check for overflow, since idiv throws a division exception on overflow
-  // rather than setting the overflow flag. Logic copied from
-  // effect-control-linearizer.cc
+  // rather than setting the overflow flag. Logic is identical to
+  // REDUCE(WordBinopDeoptOnOverflow) in machine-lowering-reducer-inl.h
 
   // Check if {right} is positive (and not zero).
   __ CmpS32(right, Operand::Zero(), r0);
@@ -520,7 +520,7 @@ void Int32ModulusWithOverflow::GenerateCode(MaglevAssembler* masm,
   //   deopt if lhs < 0  // Minus zero.
   //   0
 
-  // Using same algorithm as in EffectControlLinearizer:
+  // Using same algorithm as in MachineLoweringReducer:
   //   if rhs <= 0 then
   //     rhs = -rhs
   //     deopt if rhs == 0
@@ -762,6 +762,13 @@ void Float64Abs::GenerateCode(MaglevAssembler* masm,
   __ fabs(out, in);
 }
 
+void Float64RoundToFloat32::GenerateCode(MaglevAssembler* masm,
+                                         const ProcessingState& state) {
+  DoubleRegister input = ToDoubleRegister(ValueInput());
+  DoubleRegister result = ToDoubleRegister(this->result());
+  __ frsp(result, input);
+}
+
 void Float64Round::GenerateCode(MaglevAssembler* masm,
                                 const ProcessingState& state) {
   DoubleRegister in = ToDoubleRegister(ValueInput());
@@ -780,15 +787,20 @@ void Float64Round::GenerateCode(MaglevAssembler* masm,
     __ fcmpu(temp, temp2);
     Label done;
     __ JumpIf(ne, &done, Label::kNear);
+    // Copy the sign bit from `out` which carries the sign bit from the original
+    // input.
+    __ fmr(temp, out);
     __ fadd(out, temp2, out);
     __ fadd(out, temp2, out);
     // Add fcpsgn make sure -0.5 rounds to -0.0 instead of 0.0
-    __ fcpsgn(out, in, out);
+    __ fcpsgn(out, temp, out);
     __ bind(&done);
   } else if (kind_ == Kind::kCeil) {
     __ frip(out, in);
   } else if (kind_ == Kind::kFloor) {
     __ frim(out, in);
+  } else if (kind_ == Kind::kTrunc) {
+    __ friz(out, in);
   }
 }
 
@@ -907,7 +919,7 @@ void LoadTypedArrayLength::GenerateCode(MaglevAssembler* masm,
   }
 
   __ LoadBoundedSizeFromObject(result_register, object,
-                               JSTypedArray::kRawByteLengthOffset);
+                               offsetof(JSArrayBufferView, raw_byte_length_));
   int shift_size = ElementsKindToShiftSize(elements_kind_);
   if (shift_size > 0) {
     // TODO(leszeks): Merge this shift with the one in LoadBoundedSize.

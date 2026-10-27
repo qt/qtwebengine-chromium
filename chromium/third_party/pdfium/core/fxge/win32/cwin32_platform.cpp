@@ -163,11 +163,11 @@ CFX_Win32FontInfo::~CFX_Win32FontInfo() {
 bool CFX_Win32FontInfo::IsSupportedFont(const LOGFONTA* plf) {
   HFONT hFont = CreateFontIndirectA(plf);
   bool ret = false;
-  size_t font_size = GetFontData(hFont, 0, {});
+  size_t font_size = GetFontData(hFont, SystemFontInfoIface::kTableNone, {});
   if (font_size != GDI_ERROR && font_size >= sizeof(uint32_t)) {
     uint32_t header;
     auto span = pdfium::as_writable_bytes(pdfium::span_from_ref(header));
-    GetFontData(hFont, 0, span);
+    GetFontData(hFont, SystemFontInfoIface::kTableNone, span);
     header = fxcrt::GetUInt32MSBFirst(span);
     ret = header == FXBSTR_ID('O', 'T', 'T', 'O') ||
           header == FXBSTR_ID('t', 't', 'c', 'f') ||

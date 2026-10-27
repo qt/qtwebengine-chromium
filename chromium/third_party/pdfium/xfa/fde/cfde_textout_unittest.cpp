@@ -74,12 +74,12 @@ class CFDETextOutTest : public testing::Test {
   CFDE_TextOut& text_out() { return *text_out_; }
 
   ByteString GetBitmapChecksum() {
-    CRYPT_md5_context context = CRYPT_MD5Start();
+    CryptMd5Context context = CryptMd5Start();
     for (int i = 0; i < bitmap_->GetHeight(); ++i) {
-      CRYPT_MD5Update(&context, bitmap_->GetScanline(i));
+      CryptMd5Update(&context, bitmap_->GetScanline(i));
     }
     uint8_t digest[16];
-    CRYPT_MD5Finish(&context, digest);
+    CryptMd5Finish(&context, digest);
     return ByteString(CryptToBase16(digest).c_str());
   }
 

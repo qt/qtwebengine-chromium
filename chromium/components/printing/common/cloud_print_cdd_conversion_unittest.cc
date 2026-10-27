@@ -15,12 +15,6 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 
-#if BUILDFLAG(IS_CHROMEOS)
-#include "base/test/scoped_feature_list.h"
-#include "base/test/with_feature_override.h"
-#include "printing/printing_features.h"  // nogncheck
-#endif  // BUILDFLAG(IS_CHROMEOS)
-
 namespace cloud_print {
 
 namespace {
@@ -338,49 +332,6 @@ constexpr char kExpectedMarginsWiderPaper[] = R"json({
 ]})json";
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
-#if BUILDFLAG(IS_WIN)
-constexpr char kExpectedPageOutputQuality[] = R"json([
-  {
-    "display_name": "Page output quality",
-    "id": "page_output_quality",
-    "select_cap": {
-      "option": [ {
-        "display_name": "Normal",
-        "value": "ns000:Normal"
-      }, {
-        "display_name": "Draft",
-        "value": "ns000:Draft",
-        "is_default": true
-      }, {
-        "display_name": "Advance",
-        "value": "ns000:Advance"
-      } ]
-    },
-    "type": "SELECT"
-  }
-])json";
-
-constexpr char kExpectedPageOutputQualityNullDefault[] = R"json([
-  {
-    "display_name": "Page output quality",
-    "id": "page_output_quality",
-    "select_cap": {
-      "option": [ {
-        "display_name": "Normal",
-        "value": "ns000:Normal"
-      }, {
-        "display_name": "Draft",
-        "value": "ns000:Draft"
-      }, {
-        "display_name": "Advance",
-        "value": "ns000:Advance"
-      } ]
-    },
-    "type": "SELECT"
-  }
-])json";
-#endif  // BUILDFLAG(IS_WIN)
-
 const base::DictValue* GetPrinterDict(const base::Value& caps_value) {
   const base::DictValue* caps_dict = caps_value.GetIfDict();
   if (!caps_dict || !caps_dict->contains(kKeyVersion) ||
@@ -394,23 +345,7 @@ const base::DictValue* GetPrinterDict(const base::Value& caps_value) {
 
 }  // namespace
 
-#if BUILDFLAG(IS_CHROMEOS)
-class CloudPrintCddConversionParamTest : public base::test::WithFeatureOverride,
-                                         public testing::Test {
- public:
-  CloudPrintCddConversionParamTest()
-      : base::test::WithFeatureOverride(
-            printing::features::kApiPrintingMarginsAndScale) {}
-
-  bool UsePrinterMarginsAndScale() const { return IsParamFeatureEnabled(); }
-};
-
-INSTANTIATE_FEATURE_OVERRIDE_TEST_SUITE(CloudPrintCddConversionParamTest);
-
-TEST_P(CloudPrintCddConversionParamTest, ValidCloudPrintCddConversion) {
-#else
 TEST(CloudPrintCddConversionTest, ValidCloudPrintCddConversion) {
-#endif
   const printing::PrinterSemanticCapsAndDefaults input =
       printing::GenerateSamplePrinterSemanticCapsAndDefaults({});
   const base::Value output = PrinterSemanticCapsAndDefaultsToCdd(input);
@@ -418,8 +353,7 @@ TEST(CloudPrintCddConversionTest, ValidCloudPrintCddConversion) {
   ASSERT_TRUE(printer_dict);
   size_t expected_dict_size = 9;
 #if BUILDFLAG(IS_CHROMEOS)
-  expected_dict_size = UsePrinterMarginsAndScale() ? expected_dict_size + 2
-                                                   : expected_dict_size + 1;
+  expected_dict_size += 2;
 #endif  // BUILDFLAG(IS_CHROMEOS)
   ASSERT_EQ(expected_dict_size, printer_dict->size());
   EXPECT_THAT(
@@ -443,12 +377,8 @@ TEST(CloudPrintCddConversionTest, ValidCloudPrintCddConversion) {
   EXPECT_THAT(printer_dict->Find("pin"),
               Pointee(base::test::IsJson(kExpectedPinSupportedFalse)));
   ASSERT_FALSE(printer_dict->contains("fit_to_page"));
-  if (UsePrinterMarginsAndScale()) {
-    EXPECT_THAT(printer_dict->Find("margins"),
-                Pointee(base::test::IsJson(kExpectedMargins)));
-  } else {
-    ASSERT_FALSE(printer_dict->contains("margins"));
-  }
+  EXPECT_THAT(printer_dict->Find("margins"),
+              Pointee(base::test::IsJson(kExpectedMargins)));
 #endif  // BUILDFLAG(IS_CHROMEOS)
 }
 
@@ -488,10 +418,6 @@ TEST(CloudPrintCddConversionTest, CollateDefaultIsFalse) {
 }
 
 TEST(CloudPrintCddConversionTest, WiderPaper) {
-#if BUILDFLAG(IS_CHROMEOS)
-  base::test::ScopedFeatureList feature_list(
-      printing::features::kApiPrintingMarginsAndScale);
-#endif  // BUILDFLAG(IS_CHROMEOS)
   // Test that a Paper that has a larger width swaps its width and height when
   // converting to a CDD.  Additionally, create the printable area such that
   // none of the margins are equal.  Create margins as so:  left: 1000,
@@ -565,10 +491,6 @@ TEST(CloudPrintCddConversionTest, PinAndAdvancedCapabilities) {
 }
 
 TEST(CloudPrintCddConversionTest, MarginsAndFitToPageCapabilities) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndDisableFeature(
-      printing::features::kApiPrintingMarginsAndScale);
-
   printing::PrinterSemanticCapsAndDefaults input =
       printing::GenerateSamplePrinterSemanticCapsAndDefaults(
           printing::SampleWithScaleAndPinAndAdvancedCapabilities());
@@ -576,20 +498,7 @@ TEST(CloudPrintCddConversionTest, MarginsAndFitToPageCapabilities) {
   const base::DictValue* printer_dict = GetPrinterDict(output);
 
   ASSERT_TRUE(printer_dict);
-  size_t expected_dict_size = 11;
-  ASSERT_EQ(expected_dict_size, printer_dict->size());
-  EXPECT_FALSE(printer_dict->contains("fit_to_page"));
-  EXPECT_FALSE(printer_dict->contains("margins"));
-
-  feature_list.Reset();
-  feature_list.InitAndEnableFeature(
-      printing::features::kApiPrintingMarginsAndScale);
-
-  output = PrinterSemanticCapsAndDefaultsToCdd(input);
-  printer_dict = GetPrinterDict(output);
-
-  ASSERT_TRUE(printer_dict);
-  expected_dict_size += 2;
+  size_t expected_dict_size = 13;
   ASSERT_EQ(expected_dict_size, printer_dict->size());
   EXPECT_THAT(
       *printer_dict,
@@ -601,8 +510,6 @@ TEST(CloudPrintCddConversionTest, MarginsAndFitToPageCapabilities) {
 }
 
 TEST(CloudPrintCddConversionTest, FitToPageNoCapability) {
-  base::test::ScopedFeatureList feature_list(
-      printing::features::kApiPrintingMarginsAndScale);
 
   printing::PrinterSemanticCapsAndDefaults printer_info;
 
@@ -616,8 +523,6 @@ TEST(CloudPrintCddConversionTest, FitToPageNoCapability) {
 }
 
 TEST(CloudPrintCddConversionTest, FitToPageSingleValue) {
-  base::test::ScopedFeatureList feature_list(
-      printing::features::kApiPrintingMarginsAndScale);
 
   printing::PrinterSemanticCapsAndDefaults printer_info;
   printer_info.print_scaling_types = {
@@ -637,8 +542,6 @@ TEST(CloudPrintCddConversionTest, FitToPageSingleValue) {
 }
 
 TEST(CloudPrintCddConversionTest, FitToPageDefaultValueOnly) {
-  base::test::ScopedFeatureList feature_list(
-      printing::features::kApiPrintingMarginsAndScale);
 
   printing::PrinterSemanticCapsAndDefaults printer_info;
   printer_info.print_scaling_type_default =
@@ -654,8 +557,6 @@ TEST(CloudPrintCddConversionTest, FitToPageDefaultValueOnly) {
 }
 
 TEST(CloudPrintCddConversionTest, FitToPageNoDefaultInSupported) {
-  base::test::ScopedFeatureList feature_list(
-      printing::features::kApiPrintingMarginsAndScale);
 
   printing::PrinterSemanticCapsAndDefaults printer_info;
   printer_info.print_scaling_types = {
@@ -673,8 +574,6 @@ TEST(CloudPrintCddConversionTest, FitToPageNoDefaultInSupported) {
 }
 
 TEST(CloudPrintCddConversionTest, FitToPageUnknownDefault) {
-  base::test::ScopedFeatureList feature_list(
-      printing::features::kApiPrintingMarginsAndScale);
 
   printing::PrinterSemanticCapsAndDefaults printer_info;
   printer_info.print_scaling_type_default =
@@ -700,8 +599,6 @@ TEST(CloudPrintCddConversionTest, FitToPageUnknownDefault) {
 }
 
 TEST(CloudPrintCddConversionTest, FitToPageUnknownsOnly) {
-  base::test::ScopedFeatureList feature_list(
-      printing::features::kApiPrintingMarginsAndScale);
 
   printing::PrinterSemanticCapsAndDefaults printer_info;
   printer_info.print_scaling_type_default =
@@ -719,8 +616,6 @@ TEST(CloudPrintCddConversionTest, FitToPageUnknownsOnly) {
 }
 
 TEST(CloudPrintCddConversionTest, FitToPageCorrectMapping) {
-  base::test::ScopedFeatureList feature_list(
-      printing::features::kApiPrintingMarginsAndScale);
 
   struct ScalingTypeToString {
     printing::mojom::PrintScalingType type;
@@ -768,35 +663,5 @@ TEST(CloudPrintCddConversionTest, FitToPageCorrectMapping) {
   }
 }
 #endif  // BUILDFLAG(IS_CHROMEOS)
-
-#if BUILDFLAG(IS_WIN)
-TEST(CloudPrintCddConversionTest, PageOutputQualityWithDefaultQuality) {
-  printing::PrinterSemanticCapsAndDefaults input =
-      printing::GenerateSamplePrinterSemanticCapsAndDefaults(
-          printing::SampleWithPageOutputQuality());
-  input.page_output_quality->default_quality = printing::kDefaultQuality;
-  const base::Value output = PrinterSemanticCapsAndDefaultsToCdd(input);
-  const base::DictValue* printer_dict = GetPrinterDict(output);
-
-  ASSERT_TRUE(printer_dict);
-  ASSERT_EQ(10u, printer_dict->size());
-  EXPECT_THAT(printer_dict->Find("vendor_capability"),
-              Pointee(base::test::IsJson(kExpectedPageOutputQuality)));
-}
-
-TEST(CloudPrintCddConversionTest, PageOutputQualityNullDefaultQuality) {
-  printing::PrinterSemanticCapsAndDefaults input =
-      printing::GenerateSamplePrinterSemanticCapsAndDefaults(
-          printing::SampleWithPageOutputQuality());
-  const base::Value output = PrinterSemanticCapsAndDefaultsToCdd(input);
-  const base::DictValue* printer_dict = GetPrinterDict(output);
-
-  ASSERT_TRUE(printer_dict);
-  ASSERT_EQ(10u, printer_dict->size());
-  EXPECT_THAT(
-      printer_dict->Find("vendor_capability"),
-      Pointee(base::test::IsJson(kExpectedPageOutputQualityNullDefault)));
-}
-#endif  // BUILDFLAG(IS_WIN)
 
 }  // namespace cloud_print

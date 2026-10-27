@@ -11,6 +11,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "components/viz/common/resources/shared_image_format.h"
+#include "gpu/command_buffer/common/shared_image_info.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_backing.h"
 #include "gpu/config/gpu_preferences.h"
@@ -23,7 +24,6 @@
 
 namespace gfx {
 class Size;
-class ColorSpace;
 }  // namespace gfx
 
 namespace gpu {
@@ -46,35 +46,17 @@ class GPU_GLES2_EXPORT SharedImageBackingFactory {
 
   virtual std::unique_ptr<SharedImageBacking> CreateSharedImage(
       const Mailbox& mailbox,
-      viz::SharedImageFormat format,
+      const SharedImageInfo& si_info,
       SurfaceHandle surface_handle,
-      const gfx::Size& size,
-      const gfx::ColorSpace& color_space,
-      GrSurfaceOrigin surface_origin,
-      SkAlphaType alpha_type,
-      SharedImageUsageSet usage,
-      std::string debug_label,
       bool is_thread_safe);
   virtual std::unique_ptr<SharedImageBacking> CreateSharedImage(
       const Mailbox& mailbox,
-      viz::SharedImageFormat format,
-      const gfx::Size& size,
-      const gfx::ColorSpace& color_space,
-      GrSurfaceOrigin surface_origin,
-      SkAlphaType alpha_type,
-      SharedImageUsageSet usage,
-      std::string debug_label,
+      const SharedImageInfo& si_info,
       bool is_thread_safe,
       base::span<const uint8_t> pixel_data);
   virtual std::unique_ptr<SharedImageBacking> CreateSharedImage(
       const Mailbox& mailbox,
-      viz::SharedImageFormat format,
-      const gfx::Size& size,
-      const gfx::ColorSpace& color_space,
-      GrSurfaceOrigin surface_origin,
-      SkAlphaType alpha_type,
-      SharedImageUsageSet usage,
-      std::string debug_label,
+      const SharedImageInfo& si_info,
       bool is_thread_safe,
       gfx::GpuMemoryBufferHandle handle);
 
@@ -85,14 +67,8 @@ class GPU_GLES2_EXPORT SharedImageBackingFactory {
   // and we have a mapping between shared image usage and BufferUsage.
   virtual std::unique_ptr<SharedImageBacking> CreateSharedImage(
       const Mailbox& mailbox,
-      viz::SharedImageFormat format,
+      const SharedImageInfo& si_info,
       SurfaceHandle surface_handle,
-      const gfx::Size& size,
-      const gfx::ColorSpace& color_space,
-      GrSurfaceOrigin surface_origin,
-      SkAlphaType alpha_type,
-      SharedImageUsageSet usage,
-      std::string debug_label,
       bool is_thread_safe,
       gfx::BufferUsage buffer_usage);
 
@@ -106,7 +82,11 @@ class GPU_GLES2_EXPORT SharedImageBackingFactory {
                             base::span<const uint8_t> pixel_data);
 
   // Returns true if the backing created by this factory will support the given
-  // access stream.
+  // access stream. This method is called by `SharedImageFactory` before
+  // `CanCreateSharedImage` (and the virtual `IsSupported`) to act as a
+  // thread-safe guard. Implementation that access thread-bound state in
+  // `IsSupported` should override this method to verify thread/context
+  // affinity (e.g., by comparing `SharedContextState` pointers).
   virtual bool IsSupportedForAccessStream(SharedImageAccessStream stream,
                                           viz::SharedImageFormat format,
                                           const AccessParams* params) const;

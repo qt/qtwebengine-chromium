@@ -13069,19 +13069,16 @@ _NEON2SSE_GLOBAL float32x4_t vcvtq_f32_s32(int32x4_t a); // VCVT.F32.S32 q0, q0
 
 _NEON2SSESTORAGE float32x4_t vcvtq_f32_u32(uint32x4_t a); // VCVT.F32.U32 q0, q0
 _NEON2SSE_INLINE float32x4_t vcvtq_f32_u32(uint32x4_t a) // VCVT.F32.U32 q0, q0
-{
-    //solution may be not optimal
-    __m128 two16, fHi, fLo;
-    __m128i hi, lo;
-    two16 = _mm_set1_ps((float)0x10000); //2^16
-    // Avoid double rounding by doing two exact conversions
-    // of high and low 16-bit segments
-    hi = _mm_srli_epi32(a, 16);
-    lo = _mm_srli_epi32(_mm_slli_epi32(a, 16), 16);
-    fHi = _mm_mul_ps(_mm_cvtepi32_ps(hi), two16);
-    fLo = _mm_cvtepi32_ps(lo);
-    // do single rounding according to current rounding mode
-    return _mm_add_ps(fHi, fLo);
+{//divide a by 2 to fit into signed integer, then  restore after conversion
+    __m128i ah, a1;
+    __m128 ahalf, a1f, af;
+    __m128i one = _mm_set1_epi32(1);
+    ah = _mm_srli_epi32(a, 1); // a/2
+    a1 = _mm_and_si128(a, one);  // a = a & 1
+    ahalf = _mm_cvtepi32_ps(ah);
+    a1f = _mm_cvtepi32_ps(a1);
+    af = _mm_add_ps(ahalf, ahalf);
+    return _mm_add_ps(af, a1f);
 }
 
 // ***** Convert to the float from fixed point  with   the number of fraction bits specified by b ***********
@@ -15179,13 +15176,13 @@ _NEON2SSE_INLINE int32x4_t vclzq_s32(int32x4_t a)
     // input integer a,  result r,  f = (float)(a & -(a>>8));
     //r = 158 - (*(int32_t *)&f >> 23);
     __m128i c158 = _mm_set1_epi32(158);
-    __m128i c32 = _mm_set_epi16(0, 32, 0, 32, 0, 32, 0, 32);
-    __m128i lsr = _mm_srai_epi32(a, 8);
+    __m128i c32 = _mm_set1_epi32(32);
+    __m128i lsr = _mm_srli_epi32(a, 8);
     __m128i atrunc = _mm_andnot_si128(lsr, a); //truncation
     __m128 atruncf = _mm_cvtepi32_ps(atrunc);
     __m128i res = _mm_castps_si128(atruncf);
      res = _mm_srli_epi32(res, 23);
-     res = _mm_sub_epi32(c158, res);
+     res = _mm_subs_epu16(c158, res); // res >>23 always fits to 16 bits
      return _mm_min_epi16(res, c32);
 }
 
@@ -15197,24 +15194,18 @@ _NEON2SSE_GLOBAL uint16x8_t vclzq_u16(uint16x8_t a); // VCLZ.I16 q0,q0
 
 _NEON2SSESTORAGE uint32x4_t vclzq_u32(uint32x4_t a); // VCLZ.I32 q0,q0
 _NEON2SSE_INLINE uint32x4_t vclzq_u32(uint32x4_t a)
-{ // compute count of leading zero bits using floating-point conversion trick
-    //same as for signed ints but to emulate unsigned conversion we divide a/2  before the conversion, then double and increment after the conversion
-    // input integer a,  result r,  float f = (float)(int)((a >> 1) & ~(a >> 2)); f = 2*f + 1.0
-    //r = (*(uint32_t *)&f >> 23) - 0x7f;
-    __m128i zero = _mm_setzero_si128();
-    __m128 fp1 = _mm_set_ps1(1.0f);
+{// compute count of leading zero bits using floating-point conversion trick
+    // input integer a,  result r,  f = (float)(a & -(a>>8));
+    //r = 158 - (*(uint32_t *)&f >> 23);
     __m128i c158 = _mm_set1_epi32(158);
-    __m128i mask = _mm_cmpeq_epi32(a, zero);
-    __m128i lsr1 = _mm_srli_epi32(a, 1);
-    __m128i lsr2 = _mm_srli_epi32(a, 2);
-    __m128i atrunc = _mm_andnot_si128(lsr2, lsr1);
-    __m128 atruncf = _mm_cvtepi32_ps(atrunc);
-    __m128 atruncf2 = _mm_add_ps(atruncf, atruncf);
-    __m128 conv = _mm_add_ps(atruncf2, fp1);
-    __m128i res = _mm_castps_si128(conv);
+    __m128i c32 = _mm_set1_epi32(32);
+    __m128i lsr = _mm_srli_epi32(a, 8);
+    __m128i atrunc = _mm_andnot_si128(lsr, a); //truncation
+    __m128 atruncf = vcvtq_f32_u32(atrunc);
+    __m128i res = _mm_castps_si128(atruncf);
     res = _mm_srli_epi32(res, 23);
-    res = _mm_sub_epi32(c158, res);
-    return _mm_sub_epi32(res, mask);
+    res = _mm_subs_epu16(c158, res); // res >>23 always fits to 16 bits
+    return _mm_min_epi16(res, c32);
 }
 
 //************** Count leading sign bits **************************
@@ -17107,5 +17098,31 @@ _NEON2SSESTORAGE float32x4_t vmlaq_laneq_f32(float32x4_t a, float32x4_t b, float
 
 _NEON2SSE_GLOBAL float32x4_t vfmaq_laneq_f32(float32x4_t a, float32x4_t b, float32x4_t v, const int lane);
 #define vfmaq_laneq_f32 vmlaq_laneq_f32
+
+// Define (overload) bitwise operators in C++ code for 128-bit SIMD types
+#ifdef __cplusplus
+    //#warning "The following code doesn't work for GCC and was tested with  Microsoft Compiler only, operators overloading may not work as expected for other compilers"
+#ifdef _MSC_VER
+    _NEON2SSE_INLINE  __m128i operator|( __m128i a,  __m128i b)
+    {
+        return _mm_or_si128(a, b);
+    }
+
+    _NEON2SSE_INLINE __m128i operator&( __m128i a,  __m128i b)
+    {
+        return _mm_and_si128(a, b);
+    }
+
+    _NEON2SSE_INLINE __m128i operator^( __m128i a,  __m128i b)
+    {
+        return _mm_xor_si128(a, b);
+    }
+
+    _NEON2SSE_INLINE __m128i operator~( __m128i a)
+    {
+        return _mm_xor_si128(a, _mm_cmpeq_epi8(a, a)); // xor with 0xfff;
+    }
+#endif
+#endif
 
 #endif /* NEON2SSE_H */

@@ -11,6 +11,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "build/ios_buildflags.h"
 #include "components/viz/common/surfaces/surface_id.h"
 #include "content/browser/renderer_host/browser_compositor_ios.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
@@ -92,6 +93,7 @@ class CONTENT_EXPORT RenderWidgetHostViewIOS
   const viz::FrameSinkId& GetFrameSinkId() const override;
   const viz::LocalSurfaceId& GetLocalSurfaceId() const override;
   viz::SurfaceId GetCurrentSurfaceId() const override;
+  bool HasSavedCompositorFrame() const override;
   void InitAsPopup(RenderWidgetHostView* parent_host_view,
                    const gfx::Rect& pos,
                    const gfx::Rect& anchor_rect) override;
@@ -101,6 +103,10 @@ class CONTENT_EXPORT RenderWidgetHostViewIOS
   void ShowWithVisibility(PageVisibilityState page_visibility) override;
   gfx::Rect GetBoundsInRootWindow() override;
   gfx::Size GetRequestedRendererSize() override;
+#if !BUILDFLAG(IS_IOS_TVOS)
+  gfx::Size GetVisibleViewportSize() override;
+  gfx::Size GetVisibleViewportSizeDevicePx() override;
+#endif  // !BUILDFLAG(IS_IOS_TVOS)
   std::optional<DisplayFeature> GetDisplayFeature() override;
   void DisableDisplayFeatureOverrideForEmulation() override;
   void OverrideDisplayFeatureForEmulation(
@@ -165,7 +171,7 @@ class CONTENT_EXPORT RenderWidgetHostViewIOS
       blink::mojom::InputEventResultState ack_result) override;
 
   // ui::CALayerFrameSink overrides:
-  void UpdateCALayerTree(const gfx::CALayerParams& ca_layer_params) override;
+  void UpdateCALayerTree(gfx::CALayerParams ca_layer_params) override;
 
   // ui::GestureProviderClient implementation.
   void OnGestureEvent(const ui::GestureEventData& gesture) override;
@@ -219,6 +225,9 @@ class CONTENT_EXPORT RenderWidgetHostViewIOS
   bool CanBecomeFirstResponderForTesting() const;
   bool CanResignFirstResponderForTesting() const;
   void ContentInsetChanged();
+#if !BUILDFLAG(IS_IOS_TVOS)
+  void OnKeyboardVisibilityChanged();
+#endif  // !BUILDFLAG(IS_IOS_TVOS)
   void ExtendSelectionAndDelete(int32_t before, int32_t after);
   void ExtendSelectionAndReplace(uint32_t before,
                                  uint32_t after,

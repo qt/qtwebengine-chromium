@@ -18,7 +18,6 @@
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/metrics_hashes.h"
-#include "base/notreached.h"
 #include "base/strings/strcat.h"
 #include "base/strings/to_string.h"
 #include "base/task/thread_pool.h"
@@ -46,6 +45,7 @@
 #include "components/optimization_guide/core/optimization_guide_util.h"
 #include "components/optimization_guide/proto/model_execution.pb.h"
 #include "components/optimization_guide/public/mojom/model_broker.mojom.h"
+#include "components/optimization_guide/public/mojom/model_broker_debug.mojom.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
@@ -121,6 +121,36 @@ void RecordOnDeviceLoadModelResult(
       "OptimizationGuide.ModelExecution.OnDeviceBaseModelLoadResult", result);
 }
 
+ml::ModelBackendType GetBackendType(
+    const proto::OnDeviceModelPerformanceHint& performance_hint) {
+  if (performance_hint == proto::OnDeviceModelPerformanceHint::
+                              ON_DEVICE_MODEL_PERFORMANCE_HINT_CPU) {
+    return ml::ModelBackendType::kCpuBackend;
+  }
+  // Update once we support more backend types for performance hints.
+  return ml::ModelBackendType::kGpuBackend;
+}
+
+ml::ModelPerformanceHint ConvertPerformanceHint(
+    const proto::OnDeviceModelPerformanceHint& performance_hint) {
+  switch (performance_hint) {
+    case proto::OnDeviceModelPerformanceHint::
+        ON_DEVICE_MODEL_PERFORMANCE_HINT_HIGHEST_QUALITY:
+      return ml::ModelPerformanceHint::kHighestQuality;
+    case proto::OnDeviceModelPerformanceHint::
+        ON_DEVICE_MODEL_PERFORMANCE_HINT_FASTEST_INFERENCE:
+      return ml::ModelPerformanceHint::kFastestInference;
+    case proto::OnDeviceModelPerformanceHint::
+        ON_DEVICE_MODEL_PERFORMANCE_HINT_UNSPECIFIED:
+    case proto::OnDeviceModelPerformanceHint::
+        ON_DEVICE_MODEL_PERFORMANCE_HINT_CPU:
+      // Default to highest quality if the performance hint is unspecified or
+      // CPU performance hint is used. For the latter, there's no submodel
+      // support for CPU which is only used if fastest inference is hinted.
+      return ml::ModelPerformanceHint::kHighestQuality;
+  }
+}
+
 }  // namespace
 
 OnDeviceModelServiceController::OnDeviceModelServiceController(
@@ -146,6 +176,20 @@ OnDeviceModelServiceController::OnDeviceModelServiceController(
 }
 
 OnDeviceModelServiceController::~OnDeviceModelServiceController() = default;
+
+std::vector<mojom::BrokerModelInfoPtr>
+OnDeviceModelServiceController::GetBrokerModels() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  std::vector<mojom::BrokerModelInfoPtr> models;
+  if (base_model_controller_ && base_model_controller_->model_metadata()) {
+    auto model_info = mojom::BrokerModelInfo::New();
+    model_info->name = "Base Model";
+    model_info->weights_path =
+        base_model_controller_->model_metadata()->model_path().AsUTF8Unsafe();
+    models.push_back(std::move(model_info));
+  }
+  return models;
+}
 
 void OnDeviceModelServiceController::SetLanguageDetectionModel(
     base::optional_ref<const ModelInfo> model_info) {
@@ -258,7 +302,7 @@ OnDeviceModelServiceController::GetSolution(mojom::OnDeviceFeature feature) {
   bool is_background_download_enabled_for_feature =
       features::IsOnDeviceModelBackgroundDownloadEnabledForFeature(feature);
 
-  if (!usage_tracker_->WasOnDeviceEligibleFeatureRecentlyUsed(feature) &&
+  if (!usage_tracker_->WasUseCaseRecentlyUsed(ToUseCaseName(feature)) &&
       !is_background_download_enabled_for_feature) {
     return base::unexpected(
         OnDeviceModelEligibilityReason::kNoOnDeviceFeatureUsed);
@@ -330,7 +374,7 @@ OnDeviceModelServiceController::BaseModelController::BaseModelController(
 
   // Check if the model needs validation, which may mark it pending validation,
   // blocking session creation.
-  if (!access_controller().ShouldValidateModel(model_metadata_->version())) {
+  if (!access_controller().MaybeBeginValidation(model_metadata_->version())) {
     return;
   }
 
@@ -446,17 +490,27 @@ on_device_model::ModelAssetPaths
 OnDeviceModelServiceController::BaseModelController::PopulateModelPaths() {
   on_device_model::ModelAssetPaths model_paths;
   model_paths.weights = model_metadata_->model_path().Append(kWeightsFile);
+  const ml::ModelBackendType backend_type =
+      GetBackendType(model_metadata_->performance_hint());
 
-  // TODO(crbug.com/400998489): Cache files are experimental for now.
-  if (model_metadata_->performance_hint() ==
-      proto::ON_DEVICE_MODEL_PERFORMANCE_HINT_CPU) {
-    model_paths.cache =
-        model_metadata_->model_path().Append(kExperimentalCacheFile);
+  if (backend_type == ml::ModelBackendType::kCpuBackend) {
+    // Weights cache is used for CPU backend (XNNPACK) only and re-built when
+    // it's deemed stale by version compatibility (see crbug.com/400998489).
+    model_paths.cache = model_metadata_->model_path().Append(kWeightCacheFile);
   }
   model_paths.encoder_cache =
       model_metadata_->model_path().Append(kEncoderCacheFile);
   model_paths.adapter_cache =
       model_metadata_->model_path().Append(kAdapterCacheFile);
+  // TODO(crbug.com/461547475): GPU cache is experimental for now, remove
+  // once feature flag is no longer needed.
+  if (base::FeatureList::IsEnabled(
+          on_device_model::features::kOnDeviceModelGpuCache) &&
+      backend_type == ml::ModelBackendType::kGpuBackend) {
+    // Program cache will be used for GPU backend only.
+    model_paths.program_cache =
+        model_metadata_->model_path().Append(kProgramCacheFile);
+  }
 
   return model_paths;
 }
@@ -468,19 +522,14 @@ void OnDeviceModelServiceController::BaseModelController::OnModelAssetsLoaded(
               "OnDeviceModelServiceController::BaseModelController::"
               "OnModelAssetsLoaded");
   auto params = on_device_model::mojom::LoadModelParams::New();
-  params->backend_type = ml::ModelBackendType::kGpuBackend;
   params->assets = std::move(assets);
   params->max_tokens = kOnDeviceModelMaxTokens;
   params->adaptation_ranks = supported_adaptation_ranks_;
 
   proto::OnDeviceModelPerformanceHint hint =
       model_metadata_->performance_hint();
-  if (hint == proto::ON_DEVICE_MODEL_PERFORMANCE_HINT_CPU) {
-    params->backend_type = ml::ModelBackendType::kCpuBackend;
-  } else if (hint ==
-             proto::ON_DEVICE_MODEL_PERFORMANCE_HINT_FASTEST_INFERENCE) {
-    params->performance_hint = ml::ModelPerformanceHint::kFastestInference;
-  }
+  params->backend_type = GetBackendType(hint);
+  params->performance_hint = ConvertPerformanceHint(hint);
   controller_->service_client_->Get()->LoadModel(
       std::move(params), std::move(model),
       base::BindOnce(&RecordOnDeviceLoadModelResult));

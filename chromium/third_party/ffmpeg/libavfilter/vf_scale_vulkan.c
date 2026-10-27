@@ -26,6 +26,7 @@
 #include "filters.h"
 #include "colorspace.h"
 #include "video.h"
+#include "libswscale/swscale.h"
 
 extern const unsigned char ff_debayer_comp_spv_data[];
 extern const unsigned int ff_debayer_comp_spv_len;
@@ -46,6 +47,7 @@ enum DebayerFunc {
 
 typedef struct ScaleVulkanContext {
     FFVulkanContext vkctx;
+    SwsContext *sws;
 
     int initialized;
     FFVkExecPool e;
@@ -352,27 +354,10 @@ static int scale_vulkan_filter_frame(AVFilterLink *link, AVFrame *in)
         goto fail;
     }
 
-    s->qf = ff_vk_qf_find(&s->vkctx, VK_QUEUE_COMPUTE_BIT, 0);
-    if (!s->qf) {
-        av_log(ctx, AV_LOG_ERROR, "Device has no compute queues\n");
-        err = AVERROR(ENOTSUP);
-        goto fail;
-    }
-
-    if (!s->initialized) {
-        if (s->vkctx.input_format == AV_PIX_FMT_BAYER_RGGB16)
-            RET(init_debayer(ctx, in));
-        else
-            RET(init_filter(ctx, in));
-    }
-
     s->opts.crop_x = in->crop_left;
     s->opts.crop_y = in->crop_top;
     s->opts.crop_w = in->width - (in->crop_left + in->crop_right);
     s->opts.crop_h = in->height - (in->crop_top + in->crop_bottom);
-
-    RET(ff_vk_filter_process_simple(&s->vkctx, &s->e, &s->shd, out, in,
-                                    s->sampler, &s->opts, sizeof(s->opts)));
 
     err = av_frame_copy_props(out, in);
     if (err < 0)
@@ -387,6 +372,29 @@ static int scale_vulkan_filter_frame(AVFilterLink *link, AVFrame *in)
         out->color_range = s->out_range;
     if (s->vkctx.output_format != s->vkctx.input_format)
         out->chroma_location = AVCHROMA_LOC_TOPLEFT;
+
+    if (!s->sws) {
+        if (!s->initialized) {
+            s->qf = ff_vk_qf_find(&s->vkctx, VK_QUEUE_COMPUTE_BIT, 0);
+            if (!s->qf) {
+                av_log(ctx, AV_LOG_ERROR, "Device has no compute queues\n");
+                err = AVERROR(ENOTSUP);
+                goto fail;
+            }
+
+            if (s->vkctx.input_format == AV_PIX_FMT_BAYER_RGGB16)
+                RET(init_debayer(ctx, in));
+            else
+                RET(init_filter(ctx, in));
+        }
+
+        RET(ff_vk_filter_process_simple(&s->vkctx, &s->e, &s->shd, out, in,
+                                        s->sampler, 1, &s->opts, sizeof(s->opts)));
+    } else {
+        err = sws_scale_frame(s->sws, out, in);
+        if (err < 0)
+            goto fail;
+    }
 
     av_frame_free(&in);
 
@@ -412,8 +420,10 @@ static int scale_vulkan_config_output(AVFilterLink *outlink)
     if (err < 0)
         return err;
 
-    ff_scale_adjust_dimensions(inlink, &vkctx->output_width, &vkctx->output_height,
-                               SCALE_FORCE_OAR_DISABLE, 1, 1.f);
+    err = ff_scale_adjust_dimensions(inlink, &vkctx->output_width, &vkctx->output_height,
+                                     SCALE_FORCE_OAR_DISABLE, 1, 1.f);
+    if (err < 0)
+        return err;
 
     outlink->w = vkctx->output_width;
     outlink->h = vkctx->output_height;
@@ -439,6 +449,12 @@ static int scale_vulkan_config_output(AVFilterLink *outlink)
             av_log(avctx, AV_LOG_ERROR, "Scaling is not supported with debayering\n");
             return AVERROR_PATCHWELCOME;
         }
+    } else if ((inlink->w == outlink->w || inlink->h == outlink->h) &&
+               (s->vkctx.input_format != s->vkctx.output_format)) {
+        s->sws = sws_alloc_context();
+        if (!s->sws)
+            return AVERROR(ENOMEM);
+        av_opt_set(s->sws, "sws_flags", "unstable", 0);
     } else if (s->vkctx.output_format != s->vkctx.input_format) {
         if (!ff_vk_mt_is_np_rgb(s->vkctx.input_format)) {
             av_log(avctx, AV_LOG_ERROR, "Unsupported input format for conversion\n");
@@ -466,6 +482,7 @@ static void scale_vulkan_uninit(AVFilterContext *avctx)
 
     ff_vk_exec_pool_free(vkctx, &s->e);
     ff_vk_shader_free(vkctx, &s->shd);
+    sws_free_context(&s->sws);
 
     if (s->sampler)
         vk->DestroySampler(vkctx->hwctx->act_dev, s->sampler,

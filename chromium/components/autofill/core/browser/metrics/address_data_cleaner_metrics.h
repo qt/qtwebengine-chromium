@@ -7,7 +7,9 @@
 
 #include <stddef.h>
 
-#include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
+#include <string>
+
+#include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
 
 namespace autofill::autofill_metrics {
 
@@ -16,7 +18,7 @@ void LogNumberOfNamesMigratedDuringCleanup(size_t num_names);
 void LogNumberOfProfilesConsideredForDedupe(size_t num_considered);
 
 void LogNumberOfProfilesConsideredForDedupePerCountryCode(
-    const std::vector<AutofillProfile>& profiles);
+    const absl::flat_hash_map<std::string, int>& profile_count_by_country_code);
 
 void LogNumberOfProfilesRemovedDuringDedupe(size_t num_removed);
 

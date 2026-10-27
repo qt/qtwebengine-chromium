@@ -6,16 +6,17 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_GLOBAL_FUNCTIONS_H
-#define EIGEN_CXX11_TENSOR_TENSOR_GLOBAL_FUNCTIONS_H
+#ifndef EIGEN_TENSOR_TENSOR_GLOBAL_FUNCTIONS_H
+#define EIGEN_TENSOR_TENSOR_GLOBAL_FUNCTIONS_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {
 
-/** \cpp11 \returns an expression of the coefficient-wise betainc(\a x, \a a, \a b) to the given tensors.
+/** \returns an expression of the coefficient-wise betainc(\a x, \a a, \a b) to the given tensors.
  *
  * This function computes the regularized incomplete beta function (integral).
  *
@@ -33,4 +34,4 @@ betainc(const Eigen::TensorBase<ADerived, ReadOnlyAccessors>& a,
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_GLOBAL_FUNCTIONS_H
+#endif  // EIGEN_TENSOR_TENSOR_GLOBAL_FUNCTIONS_H

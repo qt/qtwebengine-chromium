@@ -50,6 +50,7 @@
 #include "printing/buildflags/buildflags.h"
 #include "sandbox/policy/switches.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
+#include "third_party/blink/public/mojom/picture_in_picture/picture_in_picture.mojom.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/switches.h"
 
@@ -60,22 +61,12 @@
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 
 #if (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)) && defined(HEADLESS_USE_PREFS)
-#include "components/os_crypt/sync/os_crypt.h"  // nogncheck
 #include "content/public/browser/network_service_util.h"
 #endif
 
 #if BUILDFLAG(IS_MAC)
 #include "services/device/public/cpp/geolocation/geolocation_system_permission_manager.h"
 #endif
-
-#if defined(HEADLESS_USE_POLICY)
-#include "components/policy/content/policy_blocklist_navigation_throttle.h"  // nogncheck
-#include "components/policy/content/safe_search_service.h"  // nogncheck
-#include "components/user_prefs/user_prefs.h"               // nogncheck
-#include "content/public/browser/navigation_handle.h"
-#include "content/public/browser/navigation_throttle.h"
-#include "headless/lib/browser/policy/headless_policy_blocklist_service_factory.h"  // nogncheck
-#endif  // defined(HEADLESS_USE_POLICY)
 
 #if BUILDFLAG(ENABLE_PRINTING)
 #include "components/printing/browser/headless/headless_print_manager.h"
@@ -126,6 +117,8 @@ class HeadlessVideoOverlayWindow : public content::VideoOverlayWindow {
 
   void SetSurfaceId(const viz::SurfaceId& surface_id) override {}
   void SetPlaybackControlsVisibility(bool is_visible) override {}
+  void SetImmersiveVideoOptions(
+      blink::mojom::ImmersiveOptionsPtr options) override {}
 
  private:
   gfx::Size size_;
@@ -482,27 +475,9 @@ void HeadlessContentBrowserClient::SessionEnding(
 }
 #endif
 
-#if defined(HEADLESS_USE_POLICY)
-void HeadlessContentBrowserClient::CreateThrottlesForNavigation(
-    content::NavigationThrottleRegistry& registry) {
-  // Avoid creating naviagtion throttle if preferences are not available
-  // (happens in tests).
-  content::NavigationHandle& handle = registry.GetNavigationHandle();
-  if (browser_->GetPrefs()) {
-    content::BrowserContext* context =
-        handle.GetWebContents()->GetBrowserContext();
-    registry.AddThrottle(std::make_unique<PolicyBlocklistNavigationThrottle>(
-        registry, user_prefs::UserPrefs::Get(context),
-        HeadlessPolicyBlocklistServiceFactory::GetForBrowserContext(context),
-        SafeSearchFactory::GetForBrowserContext(context)));
-  }
-}
-#endif  // defined(HEADLESS_USE_POLICY)
-
 void HeadlessContentBrowserClient::OnNetworkServiceCreated(
     ::network::mojom::NetworkService* network_service) {
   HandleExplicitlyAllowedPorts(network_service);
-  SetEncryptionKey(network_service);
 }
 
 void HeadlessContentBrowserClient::GetHyphenationDictionary(
@@ -547,21 +522,6 @@ void HeadlessContentBrowserClient::HandleExplicitlyAllowedPorts(
   }
 
   network_service->SetExplicitlyAllowedPorts(explicitly_allowed_ports);
-}
-
-void HeadlessContentBrowserClient::SetEncryptionKey(
-    ::network::mojom::NetworkService* network_service) {
-#if (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)) && defined(HEADLESS_USE_PREFS)
-  // The OSCrypt keys are process bound, so if network service is out of
-  // process, send it the required key if it is available.
-  if (content::IsOutOfProcessNetworkService()
-#if BUILDFLAG(IS_WIN)
-      && OSCrypt::IsEncryptionAvailable()
-#endif
-  ) {
-    network_service->SetEncryptionKey(OSCrypt::GetRawEncryptionKey());
-  }
-#endif
 }
 
 content::BluetoothDelegate*

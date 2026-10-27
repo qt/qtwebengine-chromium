@@ -184,7 +184,67 @@ def fixChaiExports():
         pkg_json.truncate()
 
 
+def apply_patches():
+    patch_path = "scripts/deps/node_module_patches/karma-mocha.patch"
+
+    cwd = devtools_paths.devtools_root_path()
+    env = os.environ.copy()
+
+    # Check if the patch can be applied.
+    check_cmd = ["git", "apply", "--check", patch_path]
+    if subprocess.run(check_cmd, cwd=cwd, env=env,
+                      capture_output=True).returncode == 0:
+        return exec_command(["git", "apply", patch_path])
+
+    # If it cannot be applied, check if it is already applied.
+    reverse_check_cmd = ["git", "apply", "--reverse", "--check", patch_path]
+    if subprocess.run(reverse_check_cmd, cwd=cwd, env=env,
+                      capture_output=True).returncode == 0:
+        return False
+
+    # If it's neither applicable nor already applied, run it for real to report the error.
+    return exec_command(["git", "apply", patch_path])
+
+
+def check_npm_version():
+    try:
+        new_env = os.environ.copy()
+        version_str = subprocess.check_output(
+            ['npm', '--version'],
+            cwd=devtools_paths.devtools_root_path(),
+            env=new_env,
+            text=True).strip()
+    except Exception as error:
+        print(f'Failed to run "npm --version": {error}')
+        return True
+
+    if version_str.startswith('v'):
+        version_str = version_str[1:]
+    base_version = version_str.split('-')[0].split('+')[0]
+
+    try:
+        version_parts = [int(x) for x in base_version.split('.')]
+    except ValueError:
+        print(f'Invalid npm version format: {version_str}')
+        return True
+
+    required_parts = [11, 10, 0]
+    while len(version_parts) < 3:
+        version_parts.append(0)
+
+    if version_parts < required_parts:
+        print(
+            f'npm version {version_str} is too old. DevTools requires at least 11.10.0.'
+        )
+        return True
+
+    return False
+
+
 def run_npm_command():
+    if check_npm_version():
+        return True
+
     for (name, version) in DEPS.items():
         if (version.find('^') == 0):
             print(
@@ -215,6 +275,9 @@ def run_npm_command():
         return True
 
     fixChaiExports()
+
+    if apply_patches():
+        return True
 
     return ensure_licenses()
 

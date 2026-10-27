@@ -5,6 +5,9 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_FORM_PARSING_AUTOFILL_PARSING_UTILS_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_FORM_PARSING_AUTOFILL_PARSING_UTILS_H_
 
+#include <stdint.h>
+
+#include "base/check.h"
 #include "base/check_op.h"
 #include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/form_field_data.h"
@@ -61,14 +64,12 @@ enum class RegexFeature : uint8_t {
   kUnusedDummyFeature = 0,
   kAutofillGreekRegexes = 1,
   kAutofillSupportPhoneticNameForJP = 2,
-  kAutofillSupportLastNamePrefix = 3,
-  kAutofillSupportSplitZipCode = 4,
-  kAutofillDisallowMoreHyphenLikeLabels = 5,
-  kAutofillFixStateCountryMisclassification = 6,
-  kAutofillFixCivilStateMisclassificationForESPT = 7,
-  kAutofillAddressImproveBuildingNumberRegex = 8,
-  kAutofillNewRegexForPhoneCountryCode = 9,
-  kAutofillSupportCombinedZipAndCityFR = 10,
+  kAutofillSupportSplitZipCode = 3,
+  kAutofillDisallowMoreHyphenLikeLabels = 4,
+  kAutofillFixStateCountryMisclassification = 5,
+  kAutofillFixCivilStateMisclassificationForESPT = 6,
+  kAutofillNewRegexForPhoneCountryCode = 7,
+  kAutofillSupportCombinedZipAndCityFR = 8,
   kMaxValue = kAutofillSupportCombinedZipAndCityFR,
 };
 

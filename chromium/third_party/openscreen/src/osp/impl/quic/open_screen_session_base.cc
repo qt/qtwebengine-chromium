@@ -89,11 +89,6 @@ quic::QuicStream* OpenScreenSessionBase::CreateIncomingStream(
   return stream_ptr;
 }
 
-quic::QuicStream* OpenScreenSessionBase::CreateIncomingStream(
-    quic::PendingStream* /*pending*/) {
-  OSP_NOTREACHED();
-}
-
 bool OpenScreenSessionBase::ShouldKeepConnectionAlive() const {
   // OpenScreen connections stay alive until they're explicitly closed.
   return true;

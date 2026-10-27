@@ -139,7 +139,7 @@ GEMM_BENCH_CODE = """\
 $if CPP_CHECK:
   #if ${CPP_CHECK}
 static void ${UKERNEL_NAME}(benchmark::State& state) {
-  GEMMBenchmark(state,
+  ${BENCHMARK_FUN}(state,
     ${GEMM},
     $if INIT_PARAMS is not None:
       ${INIT_PARAMS},
@@ -152,7 +152,7 @@ static void ${UKERNEL_NAME}(benchmark::State& state) {
       /*mr_packed=*/${MR_PACKED},
     /*arch_flags=*/${ARCH_FLAGS});
 }\n
-BENCHMARK_GEMM(${UKERNEL_NAME})
+${BENCHMARK_MACRO}(${UKERNEL_NAME})
 $if CPP_CHECK:
   #endif  // ${CPP_CHECK}
 """
@@ -764,7 +764,7 @@ def generate_test_cases(
   ukernel_type = "gemm"
   activation = "linear"
   for token in ukernel.split("ukernel", 1)[0].split("_")[1:]:
-    if token in {"minmax", "linear", "relu"}:
+    if token in {"minmax", "linear"}:
       activation = token
     elif token in {
         "f32",
@@ -791,7 +791,7 @@ def generate_test_cases(
       weights_datatype = token
     elif token in {"f32acc"}:
       accum_type = token
-    elif token in {"fp32", "fp32acc", "rndnu", "rndnu16", "ppmm"}:
+    elif token in {"fp32", "fp16", "fp32acc", "rndnu", "rndnu16", "ppmm"}:
       features = token
     elif token:
       print(f'Unknown token "{token}" in "{ukernel}".')
@@ -824,6 +824,7 @@ def generate_test_cases(
         "xnn_%s_requantize_%s" % (requantization_datatype, requantization)
     )
 
+  output_datatype = output_datatype or input_datatype
   output_datatype = init_fn.split("_")[2] if init_fn else output_datatype
 
   nr_scale = ""
@@ -879,6 +880,8 @@ def generate_test_cases(
       GEMM_BENCH_CODE,
       {
           "UKERNEL_NAME": ukernel_name,
+          "BENCHMARK_FUN": "IGEMMBenchmark" if ukernel_type == "igemm" else "GEMMBenchmark",
+          "BENCHMARK_MACRO": "BENCHMARK_CONV" if ukernel_type == "igemm" else "BENCHMARK_GEMM",
           "GEMM": ukernel,
           "WEIGHTS_DATATYPE": weights_datatype,
           "INPUT_DATATYPE": input_datatype,
@@ -921,6 +924,9 @@ struct ConstantOrFunction {
 };
 """
 
+    is_any_igemm = any("igemm" in spec["name"] for spec in spec_yaml)
+    xnnpack_gemm_header = '#include "src/xnnpack/gemm.h"\n#include "src/xnnpack/igemm.h"' if is_any_igemm else '#include "src/xnnpack/gemm.h"'
+
     tests = """\
 // clang-format off
 // Copyright (c) Facebook, Inc. and its affiliates.
@@ -944,9 +950,8 @@ struct ConstantOrFunction {
 #include <gtest/gtest.h>
 #include "src/xnnpack/allocator.h"
 #include "src/xnnpack/common.h"
-#include "src/xnnpack/gemm.h"
+{xnnpack_gemm_header}
 #include "src/xnnpack/hardware-config.h"
-#include "src/xnnpack/igemm.h"
 #include "src/xnnpack/microparams-init.h"
 #include "src/xnnpack/pack-lh.h"
 #include "src/xnnpack/pack.h"
@@ -959,7 +964,7 @@ struct ConstantOrFunction {
 namespace {{
 
 {constant_or_function}
-""".format(specification=options.spec, generator=sys.argv[0], constant_or_function=constant_or_function)
+""".format(specification=options.spec, generator=sys.argv[0], constant_or_function=constant_or_function, xnnpack_gemm_header=xnnpack_gemm_header)
 
     benches = """\
 // clang-format off
@@ -979,7 +984,7 @@ namespace {{
 #include "bench/gemm-benchmark.h"
 #include "bench/utils.h"
 #include "src/xnnpack/common.h"
-#include "src/xnnpack/gemm.h"
+{xnnpack_gemm_header}
 #include "src/xnnpack/hardware-config.h"
 #include "src/xnnpack/microfnptr.h"
 #include "src/xnnpack/microparams-init.h"
@@ -988,7 +993,7 @@ namespace {{
 
 namespace {{
 
-""".format(specification=options.spec, generator=sys.argv[0])
+""".format(specification=options.spec, generator=sys.argv[0], xnnpack_gemm_header=xnnpack_gemm_header)
 
     test_outputs = collections.defaultdict(str)
     bench_outputs = benches

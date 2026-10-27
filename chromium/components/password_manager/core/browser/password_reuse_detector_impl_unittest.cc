@@ -16,6 +16,7 @@
 #include "components/password_manager/core/browser/hash_password_manager.h"
 #include "components/password_manager/core/browser/password_form.h"
 #include "components/password_manager/core/browser/password_manager_test_utils.h"
+#include "components/password_manager/core/browser/password_store/password_form_converters.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -74,23 +75,22 @@ std::vector<TestData> GetTestDomainsPasswordsForAccountStore() {
   };
 }
 
-std::unique_ptr<PasswordForm> GetForm(const std::string& domain,
-                                      const std::string& username,
-                                      const std::string& password,
-                                      PasswordForm::Store store) {
-  auto form = std::make_unique<PasswordForm>();
-  form->signon_realm = domain;
-  form->url = GURL(domain);
-  form->password_value = ASCIIToUTF16(password);
-  form->username_value = ASCIIToUTF16(username);
-  form->in_store = store;
-  return form;
+StoredCredential GetForm(const std::string& domain,
+                         const std::string& username,
+                         const std::string& password,
+                         PasswordForm::Store store) {
+  StoredCredential cred;
+  cred.signon_realm = domain;
+  cred.url = GURL(domain);
+  cred.password_value = ASCIIToUTF16(password);
+  cred.username_value = ASCIIToUTF16(username);
+  cred.in_store = store;
+  return cred;
 }
 
 // Convert a vector of TestData structs into a vector of PasswordForms.
-std::vector<std::unique_ptr<PasswordForm>> GetForms(
-    std::vector<TestData> test_data) {
-  std::vector<std::unique_ptr<PasswordForm>> result;
+std::vector<StoredCredential> GetForms(std::vector<TestData> test_data) {
+  std::vector<StoredCredential> result;
   for (const auto& data : test_data) {
     // Some passwords are used on multiple domains.
     for (const auto& domain : base::SplitString(
@@ -104,10 +104,10 @@ std::vector<std::unique_ptr<PasswordForm>> GetForms(
 
 PasswordStoreChangeList GetChangeList(
     PasswordStoreChange::Type type,
-    const std::vector<std::unique_ptr<PasswordForm>>& forms) {
+    const std::vector<StoredCredential>& creds) {
   PasswordStoreChangeList changes;
-  for (const auto& form : forms) {
-    changes.push_back(PasswordStoreChange(type, *form));
+  for (const auto& cred : creds) {
+    changes.emplace_back(type, CloneStoredCredential(cred));
   }
 
   return changes;
@@ -231,6 +231,36 @@ TEST_F(PasswordReuseDetectorTest, NoPSLMatchReuseEvent) {
                             &mockConsumer);
 }
 
+TEST_F(PasswordReuseDetectorTest, EmptyRegistryControlledDomainReuseEvent) {
+  PasswordReuseDetectorImpl reuse_detector;
+  // Store a credential for a local IP address.
+  std::vector<StoredCredential> credentials_with_empty_registry = GetForms({
+      {"http://192.168.1.1/", "routerAdmin", "router_secret_password"},
+  });
+  reuse_detector.OnGetPasswordStoreResults(
+      std::move(credentials_with_empty_registry));
+  MockPasswordReuseDetectorConsumer mockConsumer;
+
+  // Typing the password on the same IP address should not raise a reuse event.
+  EXPECT_CALL(mockConsumer, OnReuseCheckDone(false, _, _, _, _, _, _));
+  reuse_detector.CheckReuse(u"router_secret_password", "http://192.168.1.1/",
+                            &mockConsumer);
+  testing::Mock::VerifyAndClearExpectations(&mockConsumer);
+
+  // Typing the password on a different IP address or intranet host should raise
+  // a reuse event.
+  const std::vector<MatchingReusedCredential> expected_credentials = {
+      {"http://192.168.1.1/", GURL("http://192.168.1.1/"), u"routerAdmin",
+       PasswordForm::Store::kProfileStore}};
+  EXPECT_CALL(mockConsumer,
+              OnReuseCheckDone(true, strlen("router_secret_password"),
+                               Matches(NO_GAIA_OR_ENTERPRISE_REUSE),
+                               UnorderedElementsAreArray(expected_credentials),
+                               1, _, _));
+  reuse_detector.CheckReuse(u"router_secret_password", "http://192.168.1.100/",
+                            &mockConsumer);
+}
+
 TEST_F(PasswordReuseDetectorTest, TooShortPasswordNoReuseEvent) {
   PasswordReuseDetectorImpl reuse_detector;
   reuse_detector.OnGetPasswordStoreResults(
@@ -283,7 +313,7 @@ TEST_F(PasswordReuseDetectorTest, OnLoginsChanged) {
 
 TEST_F(PasswordReuseDetectorTest, AddAndRemoveSameLogin) {
   PasswordReuseDetectorImpl reuse_detector;
-  std::vector<std::unique_ptr<PasswordForm>> login_credentials =
+  std::vector<StoredCredential> login_credentials =
       GetForms(GetTestDomainsPasswordsForProfileStore());
   // Add the test domain passwords into the saved passwords map.
   PasswordStoreChangeList add_changes =
@@ -328,7 +358,7 @@ TEST_F(PasswordReuseDetectorTest, AddAndRemoveSameLoginWithMultipleForms) {
   // These credentials mimic a user using "secretword" on "https://example1.com"
   // and "https://example2.com" and then changing the password on
   // "https://example1.com" to "secretword1".
-  std::vector<std::unique_ptr<PasswordForm>> login_credentials = GetForms({
+  std::vector<StoredCredential> login_credentials = GetForms({
       {"https://example1.com", "example1Username", "secretword"},
       {"https://example1.com", "example1Username", "secretword1"},
       {"https://example2.com", "example2Username", "secretword"},
@@ -339,8 +369,8 @@ TEST_F(PasswordReuseDetectorTest, AddAndRemoveSameLoginWithMultipleForms) {
   reuse_detector.OnLoginsChanged(add_changes);
 
   std::vector<MatchingReusedCredential> expected_matching_reused_credentials;
-  expected_matching_reused_credentials.emplace_back(*login_credentials[0]);
-  expected_matching_reused_credentials.emplace_back(*login_credentials[2]);
+  expected_matching_reused_credentials.emplace_back(login_credentials[0]);
+  expected_matching_reused_credentials.emplace_back(login_credentials[2]);
 
   MockPasswordReuseDetectorConsumer mockConsumer;
   int valid_passwords = login_credentials.size();
@@ -364,7 +394,7 @@ TEST_F(PasswordReuseDetectorTest, AddAndRemoveSameLoginWithMultipleForms) {
       GetForms({{"https://example1.com", "example1Username", "secretword"}}));
   reuse_detector.OnLoginsChanged(remove_changes);
   expected_matching_reused_credentials.clear();
-  expected_matching_reused_credentials.emplace_back(*login_credentials[2]);
+  expected_matching_reused_credentials.emplace_back(login_credentials[2]);
 
   EXPECT_CALL(
       mockConsumer,
@@ -620,13 +650,13 @@ TEST_F(PasswordReuseDetectorTest,
        MatchSavedPasswordButNotGaiaPasswordInAccountStore) {
   PasswordReuseDetectorImpl reuse_detector;
 
-  auto account_store_form = std::make_unique<PasswordForm>();
-  account_store_form->signon_realm = "https://twitter.com";
-  account_store_form->url = GURL(account_store_form->signon_realm);
-  account_store_form->username_value = u"twitterUsername";
-  account_store_form->password_value = u"saved_password";
-  account_store_form->in_store = PasswordForm::Store::kAccountStore;
-  std::vector<std::unique_ptr<PasswordForm>> account_store_forms;
+  StoredCredential account_store_form;
+  account_store_form.signon_realm = "https://twitter.com";
+  account_store_form.url = GURL(account_store_form.signon_realm);
+  account_store_form.username_value = u"twitterUsername";
+  account_store_form.password_value = u"saved_password";
+  account_store_form.in_store = PasswordForm::Store::kAccountStore;
+  std::vector<StoredCredential> account_store_forms;
   account_store_forms.push_back(std::move(account_store_form));
   reuse_detector.OnGetPasswordStoreResults(std::move(account_store_forms));
 
@@ -803,17 +833,20 @@ TEST_F(PasswordReuseDetectorTest, ClearGaiaPasswordHash) {
 TEST_F(PasswordReuseDetectorTest, PasswordStoreRespectedOnRemove) {
   PasswordReuseDetectorImpl reuse_detector;
 
-  std::vector<std::unique_ptr<PasswordForm>> profile_credentials =
+  std::vector<StoredCredential> profile_credentials =
       GetForms(GetTestDomainsPasswordsForProfileStore());
-  std::vector<std::unique_ptr<PasswordForm>> account_credentials =
+  std::vector<StoredCredential> account_credentials =
       GetForms(GetTestDomainsPasswordsForAccountStore());
   // The credential duplicated in both stores
-  PasswordForm account_store_form = *account_credentials[2];
+  StoredCredential account_store_form =
+      CloneStoredCredential(account_credentials[2]);
 
   std::vector<MatchingReusedCredential> expected_credentials;
-  expected_credentials.emplace_back(*profile_credentials[4]);
-  expected_credentials.emplace_back(*profile_credentials[5]);
-  expected_credentials.emplace_back(account_store_form);
+  expected_credentials.emplace_back(
+      CloneStoredCredential(profile_credentials[4]));
+  expected_credentials.emplace_back(
+      CloneStoredCredential(profile_credentials[5]));
+  expected_credentials.emplace_back(CloneStoredCredential(account_store_form));
 
   reuse_detector.OnGetPasswordStoreResults(std::move(profile_credentials));
   reuse_detector.OnGetPasswordStoreResults(std::move(account_credentials));
@@ -831,8 +864,8 @@ TEST_F(PasswordReuseDetectorTest, PasswordStoreRespectedOnRemove) {
 
   // Simulate the removal of the account stored credential.
   PasswordStoreChangeList remove_changes;
-  remove_changes.push_back(
-      PasswordStoreChange(PasswordStoreChange::REMOVE, account_store_form));
+  remove_changes.emplace_back(PasswordStoreChange::REMOVE,
+                              CloneStoredCredential(account_store_form));
   reuse_detector.OnLoginsChanged(remove_changes);
   expected_credentials.pop_back();
 
@@ -847,15 +880,18 @@ TEST_F(PasswordReuseDetectorTest, PasswordStoreRespectedOnRemove) {
 TEST_F(PasswordReuseDetectorTest, AccountPasswordsCleared) {
   PasswordReuseDetectorImpl reuse_detector;
 
-  std::vector<std::unique_ptr<PasswordForm>> profile_credentials =
+  std::vector<StoredCredential> profile_credentials =
       GetForms(GetTestDomainsPasswordsForProfileStore());
-  std::vector<std::unique_ptr<PasswordForm>> account_credentials =
+  std::vector<StoredCredential> account_credentials =
       GetForms(GetTestDomainsPasswordsForAccountStore());
 
   std::vector<MatchingReusedCredential> expected_credentials;
-  expected_credentials.emplace_back(*profile_credentials[4]);
-  expected_credentials.emplace_back(*profile_credentials[5]);
-  expected_credentials.emplace_back(*account_credentials[2]);
+  expected_credentials.emplace_back(
+      CloneStoredCredential(profile_credentials[4]));
+  expected_credentials.emplace_back(
+      CloneStoredCredential(profile_credentials[5]));
+  expected_credentials.emplace_back(
+      CloneStoredCredential(account_credentials[2]));
 
   reuse_detector.OnGetPasswordStoreResults(std::move(profile_credentials));
   reuse_detector.OnGetPasswordStoreResults(std::move(account_credentials));
@@ -897,12 +933,8 @@ TEST_F(PasswordReuseDetectorTest, OnLoginsRetained) {
 
   // Remove the first test data entry corresponding to "saved_password".
   test_data.erase(test_data.begin());
-  std::vector<PasswordForm> retained_forms;
-  for (const auto& form : GetForms(test_data)) {
-    retained_forms.push_back(*form);
-  }
   reuse_detector.OnLoginsRetained(PasswordForm::Store::kProfileStore,
-                                  retained_forms);
+                                  GetForms(test_data));
 
   EXPECT_CALL(mockConsumer, OnReuseCheckDone(false, _, _, _, _, _, _));
   reuse_detector.CheckReuse(u"saved_password", "https://evil.com",
@@ -928,12 +960,8 @@ TEST_F(PasswordReuseDetectorTest, OnLoginsRetainedCalledForEachStore) {
 
   // Remove the first test data entry corresponding to "saved_password".
   profile_passwords.erase(profile_passwords.begin());
-  std::vector<PasswordForm> retained_forms_in_profile_store;
-  for (const auto& form : GetForms(profile_passwords)) {
-    retained_forms_in_profile_store.push_back(*form);
-  }
   reuse_detector.OnLoginsRetained(PasswordForm::Store::kProfileStore,
-                                  retained_forms_in_profile_store);
+                                  GetForms(profile_passwords));
 
   // Reuse found (another password was removed, not the checked one).
   EXPECT_CALL(mockConsumer, OnReuseCheckDone(true, _, _, _, _, _, _));

@@ -198,20 +198,20 @@ The generic `operator()` can also takes as input an arbitrary list of row or col
 <table class="example">
 <tr><th>Example:</th><th>Output:</th></tr>
 <tr><td>
-\include Slicing_stdvector_cxx11.cpp
+\include Slicing_stdvector.cpp
 </td>
 <td>
-\verbinclude Slicing_stdvector_cxx11.out
+\verbinclude Slicing_stdvector.out
 </td></tr></table>
 
 You can also directly pass a static array:
 <table class="example">
 <tr><th>Example:</th><th>Output:</th></tr>
 <tr><td>
-\include Slicing_rawarray_cxx11.cpp
+\include Slicing_rawarray.cpp
 </td>
 <td>
-\verbinclude Slicing_rawarray_cxx11.out
+\verbinclude Slicing_rawarray.out
 </td></tr></table>
 
 or expressions:
@@ -241,10 +241,10 @@ Here is an example enlarging a given matrix while padding the additional first r
 <table class="example">
 <tr><th>Example:</th><th>Output:</th></tr>
 <tr><td>
-\include Slicing_custom_padding_cxx11.cpp
+\include Slicing_custom_padding.cpp
 </td>
 <td>
-\verbinclude Slicing_custom_padding_cxx11.out
+\verbinclude Slicing_custom_padding.out
 </td></tr></table>
 
 <br>

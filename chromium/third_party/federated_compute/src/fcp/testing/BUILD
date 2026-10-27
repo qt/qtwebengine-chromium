@@ -12,14 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//fcp:config.bzl", "FCP_COPTS")
 load("//fcp/tracing:build_defs.bzl", "tracing_schema_cc_library")
 
 package(
+    default_applicable_licenses = ["//fcp:license"],
     default_visibility = ["//fcp:internal"],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 tracing_schema_cc_library(
@@ -39,7 +42,7 @@ cc_library(
     deps = [
         "//fcp/base:error",
         "//fcp/base:result",
-        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_for_library",
     ],
 )
 
@@ -64,11 +67,13 @@ cc_library(
     deps = [
         ":parse_text_proto",
         "//fcp/base",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_googletest//:gtest_for_library",
+        "@com_google_protobuf//:differencer",
     ],
 )
 

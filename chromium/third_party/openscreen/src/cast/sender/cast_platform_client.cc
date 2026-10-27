@@ -126,7 +126,7 @@ void CastPlatformClient::OnMessage(VirtualConnectionRouter* router,
     return;
   }
   ErrorOr<Json::Value> dict_or_error = json::Parse(GetPayload(message));
-  if (dict_or_error.is_error()) {
+  if (dict_or_error.is_error() || !dict_or_error.value().isObject()) {
     return;
   }
 

@@ -16,6 +16,7 @@
 #include "common/utilities.h"
 #include "libANGLE/Config.h"
 #include "libANGLE/Context.h"
+#include "libANGLE/ErrorStrings.h"
 #include "libANGLE/Image.h"
 #include "libANGLE/State.h"
 #include "libANGLE/Surface.h"
@@ -184,14 +185,7 @@ GLuint TextureState::getEffectiveMaxLevel() const
         clampedMaxLevel        = std::min(clampedMaxLevel, mImmutableLevels - 1);
         return clampedMaxLevel;
     }
-    if (IsMipmapSupported(mType) && IsMipmapFiltered(mSamplerState.getMinFilter()))
-    {
-        return mMaxLevel;
-    }
-    else
-    {
-        return std::max(mMaxLevel, mBaseLevel);
-    }
+    return std::max(mMaxLevel, mBaseLevel);
 }
 
 GLuint TextureState::getMipmapMaxLevel() const
@@ -528,7 +522,11 @@ bool TextureState::computeMipmapCompleteness() const
 {
     const GLuint maxLevel  = getMipmapMaxLevel();
     const GLuint baseLevel = getEffectiveBaseLevel();
-    if (baseLevel > maxLevel)
+    // Max level is always clamped to base level in the helpers.  For completeness check, ensure
+    // that the real max level is not below base level.
+    ASSERT(maxLevel >= baseLevel);
+    if (!mImmutableFormat && IsMipmapSupported(mType) &&
+        IsMipmapFiltered(mSamplerState.getMinFilter()) && mMaxLevel < baseLevel)
     {
         return false;
     }
@@ -626,9 +624,7 @@ GLuint TextureState::getEnabledLevelCount() const
     GLuint levelCount      = 0;
     const GLuint baseLevel = getEffectiveBaseLevel();
     GLuint maxLevel        = getMipmapMaxLevel();
-
-    // In edge case where base level > max level, make sure to get at least one level.
-    maxLevel = std::max(baseLevel, maxLevel);
+    ASSERT(maxLevel >= baseLevel);
 
     // Note: for cube textures, we only check the first face.
     TextureTarget target         = TextureTypeToTarget(mType, 0);
@@ -1061,6 +1057,19 @@ GLfloat Texture::getMaxLod() const
     return mState.mSamplerState.getMaxLod();
 }
 
+void Texture::setLodBias(const Context *context, GLfloat lodBias)
+{
+    if (mState.mSamplerState.setLodBias(lodBias))
+    {
+        signalDirtyState(DIRTY_BIT_LOD_BIAS_QCOM);
+    }
+}
+
+GLfloat Texture::getLodBias() const
+{
+    return mState.mSamplerState.getLodBias();
+}
+
 void Texture::setCompareMode(const Context *context, GLenum compareMode)
 {
     if (mState.mSamplerState.setCompareMode(compareMode))
@@ -1374,7 +1383,15 @@ GLint Texture::getLevelMemorySize(TextureTarget target, GLint level) const
 
 void Texture::signalDirtyStorage(InitState initState)
 {
-    mState.mInitState = initState;
+    // If initState is InitState::Initialized, some subresource is initialized.  Instead of
+    // checking all the subresources to update mState.mInitState appropriately, leave it be until
+    // ensureInitialized() syncs it if needed.
+    //
+    // If initState is InitState::MayNeedInit, then the texture definitely needs initialization.
+    if (initState == InitState::MayNeedInit)
+    {
+        mState.mInitState = InitState::MayNeedInit;
+    }
     invalidateCompletenessCache();
     mState.mCachedSamplerFormatValid = false;
     onStateChange(angle::SubjectMessage::SubjectChanged);
@@ -1643,6 +1660,9 @@ angle::Result Texture::copyRenderbufferSubData(Context *context,
                                                 dstLevel, dstX, dstY, dstZ, srcWidth, srcHeight,
                                                 srcDepth));
 
+    // Incorrect: must set initialized only if the entire subresource is covered, and only for the
+    // corresponding ImageDesc.  Image must be initialized before copy if not writing to entire
+    // subresource.  http://anglebug.com/505317123
     signalDirtyStorage(InitState::Initialized);
 
     return angle::Result::Continue;
@@ -1666,6 +1686,9 @@ angle::Result Texture::copyTextureSubData(Context *context,
                                            dstLevel, dstX, dstY, dstZ, srcWidth, srcHeight,
                                            srcDepth));
 
+    // Incorrect: must set initialized only if the entire subresource is covered, and only for the
+    // corresponding ImageDesc.  Image must be initialized before copy if not writing to entire
+    // subresource.  http://anglebug.com/505317123
     signalDirtyStorage(InitState::Initialized);
 
     return angle::Result::Continue;
@@ -2482,6 +2505,50 @@ bool Texture::isSamplerCompleteForCopyImage(const Context *context,
     return mState.computeSamplerCompletenessForCopyImage(samplerState, contextState);
 }
 
+bool Texture::isFramebufferAttachmentComplete(GLuint attachmentMipLevel, const char **error) const
+{
+    if (getImmutableFormat())
+    {
+        return true;
+    }
+
+    if (mState.mType == TextureType::CubeMap && !mState.isCubeComplete())
+    {
+        *error = err::kFramebufferIncompleteAttachmentNotCubeComplete;
+        return false;
+    }
+
+    // From the ES 3.0 spec, pg 213:
+    // If the value of FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE is TEXTURE and the value of
+    // FRAMEBUFFER_ATTACHMENT_OBJECT_NAME does not name an immutable-format texture,
+    // then the value of FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL must be in the
+    // range[levelbase, q], where levelbase is the value of TEXTURE_BASE_LEVEL and q is
+    // the effective maximum texture level defined in the Mipmapping discussion of
+    // section 3.8.10.4.
+    // The above condition works only if FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL is not
+    // the same as levelbase.
+    if (attachmentMipLevel != mState.mBaseLevel &&
+        (attachmentMipLevel < mState.mBaseLevel || attachmentMipLevel > mState.getMipmapMaxLevel()))
+    {
+        *error = err::kFramebufferIncompleteAttachmentLevelOutOfBaseMaxLevelRange;
+        return false;
+    }
+
+    // Form the ES 3.0 spec, pg 213/214:
+    // If the value of FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE is TEXTURE and the value of
+    // FRAMEBUFFER_ATTACHMENT_OBJECT_NAME does not name an immutable-format texture and
+    // the value of FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL is not levelbase, then the
+    // texture must be mipmap complete, and if FRAMEBUFFER_ATTACHMENT_OBJECT_NAME names
+    // a cubemap texture, the texture must also be cube complete.
+    if (attachmentMipLevel != mState.mBaseLevel && !isMipmapComplete())
+    {
+        *error = err::kFramebufferIncompleteAttachmentLevelNotBaseLevelForIncompleteMipTexture;
+        return false;
+    }
+
+    return true;
+}
+
 Texture::SamplerCompletenessCache::SamplerCompletenessCache()
     : context({0}), samplerState(), samplerComplete(false)
 {}
@@ -2640,6 +2707,9 @@ void Texture::onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMess
 {
     switch (message)
     {
+        case angle::SubjectMessage::ObjectReallocated:
+            onStateChange(angle::SubjectMessage::ObjectReallocated);
+            break;
         case angle::SubjectMessage::DirtyBitsFlagged:
             signalDirtyState(DIRTY_BIT_IMPLEMENTATION);
 
@@ -2696,10 +2766,6 @@ void Texture::onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMess
             }
         }
         break;
-        case angle::SubjectMessage::InitializationComplete:
-            ASSERT(index == rx::kTextureImageImplObserverMessageIndex);
-            setInitState(InitState::Initialized);
-            break;
         case angle::SubjectMessage::InternalMemoryAllocationChanged:
             // Need to mark the texture dirty to give the back end a chance to handle the new
             // buffer. For example, the Vulkan back end needs to create a new buffer view that

@@ -113,12 +113,14 @@ CORE_EXPORT ax::mojom::blink::Role FocusgroupMinimumAriaRole(
 // attribute). Returns kUnknown if no mapping should be implied.
 CORE_EXPORT ax::mojom::blink::Role FocusgroupItemMinimumAriaRole(
     const FocusgroupData& data);
+
+// Returns true if |token| is a recognized focusgroup attribute token.
+CORE_EXPORT bool IsValidFocusgroupToken(const AtomicString& token);
 }  // namespace focusgroup
 
-// The "::blink" prefix is to avoid false-positive of audit_non_blink_usages.py.
-using FocusgroupFlags = ::blink::focusgroup::FocusgroupFlags;
-using FocusgroupBehavior = ::blink::focusgroup::FocusgroupBehavior;
-using FocusgroupData = ::blink::focusgroup::FocusgroupData;
+using FocusgroupFlags = focusgroup::FocusgroupFlags;
+using FocusgroupBehavior = focusgroup::FocusgroupBehavior;
+using FocusgroupData = focusgroup::FocusgroupData;
 
 }  // namespace blink
 

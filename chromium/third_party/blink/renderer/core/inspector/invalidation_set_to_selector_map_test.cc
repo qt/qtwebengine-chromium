@@ -4,8 +4,8 @@
 
 #include "third_party/blink/renderer/core/inspector/invalidation_set_to_selector_map.h"
 
-#include "base/test/trace_event_analyzer.h"
-#include "base/test/trace_test_utils.h"
+#include "base/test/tracing/trace_event_analyzer.h"
+#include "base/test/tracing/trace_test_utils.h"
 #include "third_party/blink/public/web/web_css_origin.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_css_style_sheet_init.h"
 #include "third_party/blink/renderer/core/css/css_test_helpers.h"
@@ -827,8 +827,16 @@ TEST_F(InvalidationSetToSelectorMapTest,
   EXPECT_EQ(found_event_count, 1u);
 }
 
+// TODO(crbug.com/514878860): Flaky on android-15-tablet-x64-rel
+#if BUILDFLAG(IS_ANDROID)
+#define MAYBE_StartTracingLateWithSubtreeInvalidation_InsertedSibling \
+  DISABLED_StartTracingLateWithSubtreeInvalidation_InsertedSibling
+#else
+#define MAYBE_StartTracingLateWithSubtreeInvalidation_InsertedSibling \
+  StartTracingLateWithSubtreeInvalidation_InsertedSibling
+#endif
 TEST_F(InvalidationSetToSelectorMapTest,
-       StartTracingLateWithSubtreeInvalidation_InsertedSibling) {
+       MAYBE_StartTracingLateWithSubtreeInvalidation_InsertedSibling) {
   SetBodyInnerHTML(R"HTML(
     <style>
       .a + * { background-color: red; }

@@ -7,6 +7,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
 #include "base/test/gmock_callback_support.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "base/test/test_mock_time_task_runner.h"
@@ -16,6 +17,7 @@
 #include "components/password_manager/core/browser/actor_login/test/actor_login_test_util.h"
 #include "components/password_manager/core/browser/actor_login/test/mock_actor_login_permission_service.h"
 #include "components/password_manager/core/browser/password_form.h"
+#include "components/password_manager/core/browser/password_store/password_form_converters.h"
 #include "components/password_manager/core/browser/password_store/test_password_store.h"
 #include "components/sync/test/test_sync_service.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -40,14 +42,14 @@ class MockObserver : public ActorLoginPermissionsManager::Observer {
   MOCK_METHOD(void, OnPermissionsChanged, (), (override));
 };
 
-
-PasswordForm CreateApprovedForm(const std::string& signon_realm,
-                                const std::u16string& username) {
-  PasswordForm form =
-      CreateSavedPasswordForm(GURL(signon_realm), username, u"password");
-  form.actor_login_approved = true;
-  form.in_store = PasswordForm::Store::kProfileStore;
-  return form;
+password_manager::StoredCredential CreateApprovedForm(
+    const std::string& signon_realm,
+    const std::u16string& username) {
+  password_manager::StoredCredential cred = password_manager::FromPasswordForm(
+      CreateSavedPasswordForm(GURL(signon_realm), username, u"password"));
+  cred.actor_login_approved = true;
+  cred.in_store = PasswordForm::Store::kProfileStore;
+  return cred;
 }
 
 }  // namespace
@@ -56,8 +58,8 @@ class ActorLoginPermissionsManagerTest : public testing::Test {
  public:
   void SetUp() override {
     test_sync_service_.SetSignedIn(signin::ConsentLevel::kSync);
-    profile_store_->Init(/*affiliated_match_helper=*/nullptr);
-    account_store_->Init(/*affiliated_match_helper=*/nullptr);
+    profile_store_->Init();
+    account_store_->Init();
     ON_CALL(actor_login_permission_service_, ListAllPermissions)
         .WillByDefault(base::test::RunOnceCallbackRepeatedly<0>(
             std::vector<FederatedPermission>()));
@@ -82,7 +84,8 @@ class ActorLoginPermissionsManagerTest : public testing::Test {
   }
 
  protected:
-  base::test::SingleThreadTaskEnvironment task_environment_;
+  base::test::SingleThreadTaskEnvironment task_environment_{
+      base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   affiliations::FakeAffiliationService affiliation_service_;
   syncer::TestSyncService test_sync_service_;
   scoped_refptr<TestPasswordStore> profile_store_ =
@@ -100,6 +103,36 @@ TEST_F(ActorLoginPermissionsManagerTest, InitiallyEmpty) {
   permissions_manager_->GetAllPermissions(GetSyncService(),
                                           future.GetCallback());
   EXPECT_TRUE(future.Get().empty());
+}
+
+// Tests that latency is recorded when `GetAllPermissions` is called after the
+// password stores are already fully initialized (which is handled by
+// `SetUp()`). Only the federated permissions service call is asynchronous here.
+TEST_F(ActorLoginPermissionsManagerTest, GetAllPermissions_RecordsLatency) {
+  base::HistogramTester histogram_tester;
+
+  base::TimeDelta delay = base::Milliseconds(45);
+  EXPECT_CALL(actor_login_permission_service_, ListAllPermissions)
+      .WillOnce(
+          [delay](base::OnceCallback<void(std::vector<FederatedPermission>)>
+                      callback) {
+            base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+                FROM_HERE,
+                base::BindOnce(std::move(callback),
+                               std::vector<FederatedPermission>()),
+                delay);
+          });
+
+  base::test::TestFuture<base::flat_set<password_manager::ActorLoginPermission>>
+      future;
+  permissions_manager_->GetAllPermissions(GetSyncService(),
+                                          future.GetCallback());
+
+  task_environment_.FastForwardBy(delay);
+  EXPECT_TRUE(future.Wait());
+
+  histogram_tester.ExpectUniqueTimeSample(
+      "PasswordManager.ActorLogin.GetPermissions.Latency", delay, 1);
 }
 
 TEST_F(ActorLoginPermissionsManagerTest, GetAllPermissions_OnlyPassword) {
@@ -121,14 +154,7 @@ TEST_F(ActorLoginPermissionsManagerTest, GetAllPermissions_OnlyPassword) {
       future;
   permissions_manager_->GetAllPermissions(GetSyncService(),
                                           future.GetCallback());
-#if !BUILDFLAG(IS_ANDROID)
   EXPECT_EQ(future.Get().size(), 2u);
-#else
-  // Permissions rely on passwords grouper to get credentials and the grouper is
-  // not available on Android. We still want to be able to build on Android but
-  // the actual support needs to be implemented.
-  EXPECT_THAT(future.Get(), IsEmpty());
-#endif
 }
 
 TEST_F(ActorLoginPermissionsManagerTest, RevokePermission_Success) {
@@ -142,7 +168,6 @@ TEST_F(ActorLoginPermissionsManagerTest, RevokePermission_Success) {
   profile_store_->AddLogin(CreateApprovedForm("https://example.com", u"user1"));
   add_run_loop.Run();
 
-#if !BUILDFLAG(IS_ANDROID)
   FederatedPermission federated_permission;
   federated_permission.rp_embedder_origin =
       url::Origin::Create(GURL("https://example.com/"));
@@ -194,16 +219,6 @@ TEST_F(ActorLoginPermissionsManagerTest, RevokePermission_Success) {
   permissions_manager_->GetAllPermissions(GetSyncService(),
                                           after_revoke_future.GetCallback());
   EXPECT_THAT(after_revoke_future.Get(), IsEmpty());
-#else
-  // Permissions rely on passwords grouper to get credentials and the grouper is
-  // not available on Android. We still want to be able to build on Android but
-  // the actual support needs to be implemented.
-  base::test::TestFuture<base::flat_set<password_manager::ActorLoginPermission>>
-      future;
-  permissions_manager_->GetAllPermissions(GetSyncService(),
-                                          future.GetCallback());
-  EXPECT_THAT(future.Get(), IsEmpty());
-#endif
 }
 
 TEST_F(ActorLoginPermissionsManagerTest,
@@ -218,7 +233,6 @@ TEST_F(ActorLoginPermissionsManagerTest,
   profile_store_->AddLogin(CreateApprovedForm("https://example.com", u"user1"));
   add_run_loop.Run();
 
-#if !BUILDFLAG(IS_ANDROID)
   FederatedPermission federated_permission;
   federated_permission.rp_embedder_origin =
       url::Origin::Create(GURL("https://example.com/"));
@@ -261,16 +275,6 @@ TEST_F(ActorLoginPermissionsManagerTest,
                                           after_revoke_future.GetCallback());
   // Federated permission is still present and is returned.
   EXPECT_EQ(after_revoke_future.Get().size(), 1u);
-#else
-  // Permissions rely on passwords grouper to get credentials and the grouper is
-  // not available on Android. We still want to be able to build on Android but
-  // the actual support needs to be implemented.
-  base::test::TestFuture<base::flat_set<password_manager::ActorLoginPermission>>
-      future;
-  permissions_manager_->GetAllPermissions(GetSyncService(),
-                                          future.GetCallback());
-  EXPECT_THAT(future.Get(), IsEmpty());
-#endif
 }
 
 TEST_F(ActorLoginPermissionsManagerTest, GetAllPermissions_OnlyFederated) {
@@ -350,7 +354,6 @@ TEST_F(ActorLoginPermissionsManagerTest,
   base::flat_set<password_manager::ActorLoginPermission> permissions =
       future.Get();
 
-#if !BUILDFLAG(IS_ANDROID)
   EXPECT_EQ(permissions.size(), 4u);
   EXPECT_THAT(base::ToVector(permissions,
                              [](const auto& p) {
@@ -362,19 +365,6 @@ TEST_F(ActorLoginPermissionsManagerTest,
                   std::pair(u"password_user", "https://password.com/"),
                   std::pair(u"user2", "https://example.com/"),
                   std::pair(u"user1", "https://other.com/")));
-#else
-  // Grouper is not supported on Android yet, so password permissions are not
-  // returned.
-  EXPECT_EQ(permissions.size(), 3u);
-  EXPECT_THAT(
-      base::ToVector(permissions,
-                     [](const auto& p) {
-                       return std::pair(p.username, p.domain_info.signon_realm);
-                     }),
-      testing::UnorderedElementsAre(std::pair(u"user1", "https://example.com/"),
-                                    std::pair(u"user2", "https://example.com/"),
-                                    std::pair(u"user1", "https://other.com/")));
-#endif
 }
 
 TEST_F(ActorLoginPermissionsManagerTest,
@@ -465,12 +455,12 @@ class ActorLoginPermissionsManagerInitializationTest : public ::testing::Test {
     profile_store_ = base::MakeRefCounted<password_manager::PasswordStore>(
         std::make_unique<password_manager::FakePasswordStoreBackend>(
             IsAccountStore(false), profile_store_backend_runner()));
-    profile_store_->Init(/*affiliated_match_helper=*/nullptr);
+    profile_store_->Init();
 
     account_store_ = base::MakeRefCounted<password_manager::PasswordStore>(
         std::make_unique<password_manager::FakePasswordStoreBackend>(
             IsAccountStore(true), account_store_backend_runner()));
-    account_store_->Init(/*affiliated_match_helper=*/nullptr);
+    account_store_->Init();
 
     ON_CALL(actor_login_permission_service(), ListAllPermissions)
         .WillByDefault(base::test::RunOnceCallbackRepeatedly<0>(
@@ -513,6 +503,7 @@ class ActorLoginPermissionsManagerInitializationTest : public ::testing::Test {
   MockActorLoginPermissionService& actor_login_permission_service() {
     return actor_login_permission_service_;
   }
+  base::test::SingleThreadTaskEnvironment& task_env() { return task_env_; }
 
  private:
   base::test::SingleThreadTaskEnvironment task_env_{
@@ -580,6 +571,67 @@ TEST_F(ActorLoginPermissionsManagerInitializationTest,
   EXPECT_FALSE(manager.IsWaitingForPasswordStore());
   EXPECT_TRUE(future1.IsReady());
   EXPECT_TRUE(future2.IsReady());
+}
+
+// Tests that latency is correctly measured and recorded when
+// `GetAllPermissions` is called while the manager is still waiting for the
+// password stores to initialize. The recorded latency should cover the entire
+// duration from the request start until both stores finish initializing and
+// responding, even if the federated permission service completes its fetch
+// earlier.
+TEST_F(ActorLoginPermissionsManagerInitializationTest,
+       GetAllPermissions_RecordsLatencyWhenWaitingForPasswordStore) {
+  base::HistogramTester histogram_tester;
+  ActorLoginPermissionsManagerImpl manager(&affiliation_service(),
+                                           &actor_login_permission_service(),
+                                           profile_store(), account_store());
+
+  base::TimeDelta service_delay = base::Milliseconds(10);
+  EXPECT_CALL(actor_login_permission_service(), ListAllPermissions)
+      .WillOnce([service_delay](
+                    base::OnceCallback<void(std::vector<FederatedPermission>)>
+                        callback) {
+        base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+            FROM_HERE,
+            base::BindOnce(std::move(callback),
+                           std::vector<FederatedPermission>()),
+            service_delay);
+      });
+
+  base::test::TestFuture<base::flat_set<password_manager::ActorLoginPermission>>
+      future;
+
+  manager.GetAllPermissions(GetSyncService(), future.GetCallback());
+
+  EXPECT_TRUE(manager.IsWaitingForPasswordStore());
+  EXPECT_FALSE(future.IsReady());
+  histogram_tester.ExpectTotalCount(
+      "PasswordManager.ActorLogin.GetPermissions.Latency", 0);
+
+  // Fast forward to complete the federated permissions service fetch.
+  // The manager should still be waiting for the password stores.
+  task_env().FastForwardBy(service_delay);
+  EXPECT_TRUE(manager.IsWaitingForPasswordStore());
+  EXPECT_FALSE(future.IsReady());
+  histogram_tester.ExpectTotalCount(
+      "PasswordManager.ActorLogin.GetPermissions.Latency", 0);
+
+  // Profile store finishes initializing 20ms later (total 30ms since start).
+  task_env().FastForwardBy(base::Milliseconds(20));
+  ProcessBackendTasks(profile_store_backend_runner());
+  EXPECT_TRUE(manager.IsWaitingForPasswordStore());
+  EXPECT_FALSE(future.IsReady());
+  histogram_tester.ExpectTotalCount(
+      "PasswordManager.ActorLogin.GetPermissions.Latency", 0);
+
+  // Account store finishes initializing 15ms later (total 45ms since start).
+  task_env().FastForwardBy(base::Milliseconds(15));
+  ProcessBackendTasks(account_store_backend_runner());
+  EXPECT_FALSE(manager.IsWaitingForPasswordStore());
+  EXPECT_TRUE(future.IsReady());
+  histogram_tester.ExpectUniqueTimeSample(
+      "PasswordManager.ActorLogin.GetPermissions.Latency",
+      base::Milliseconds(45), 1);
 }
 
 }  // namespace actor_login

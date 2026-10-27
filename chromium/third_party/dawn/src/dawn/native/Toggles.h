@@ -33,9 +33,9 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
-#include "dawn/common/ityp_bitset.h"
 #include "dawn/native/DawnNative.h"
-#include "dawn/native/Serializable.h"
+#include "src/dawn/common/ityp_bitset.h"
+#include "src/dawn/native/Serializable.h"
 
 namespace dawn::native {
 
@@ -85,7 +85,6 @@ enum class Toggle {
     FxcOptimizations,
     RecordDetailedTimingInTraceEvents,
     DisableTimestampQueryConversion,
-    TimestampQueryConversionEvenIf1NS,
     TimestampQuantization,
     ClearBufferBeforeResolveQueries,
     VulkanUseZeroInitializeWorkgroupMemoryExtension,
@@ -155,6 +154,7 @@ enum class Toggle {
     MetalPolyfillClampFloat,
     SubgroupShuffleClamped,
     VulkanSampleCompareDepthCubeArrayWorkaround,
+    VulkanSampleCompare2DWorkaround,
     MetalDisableModuleConstantF16,
     EnableImmediateErrorHandling,
     VulkanUseStorageInputOutput16,
@@ -178,6 +178,7 @@ enum class Toggle {
     EnableShaderPrint,
     BlobCacheHashValidation,
     DecomposeUniformBuffers,
+    D3D12DecomposeWorkgroupAccess,
     CollapseSubgroupMinMax,
     VulkanEnableF16OnNvidia,
     EnableRenderDocProcessInjection,
@@ -188,9 +189,14 @@ enum class Toggle {
     VulkanCooperativeMatrixStrideIsMatrixElements,
     VulkanUseExtendedDynamicState,
     VulkanForceStaticSamplersForExternalTextures,
+    D3D12UseHLSL2021,
+    MetalFixU32DivMod,
 
     // Once all backends have been updated to be thread safe for waiting, we can remove this toggle.
     WaitIsThreadSafe,
+
+    // If/when all backends support spontaneous queue events, we can then remove this toggle.
+    SpontaneousQueueEvents,
 
     // Unresolved issues.
     NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,

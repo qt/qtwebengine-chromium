@@ -382,6 +382,10 @@ export function markBeingEdited(element: Element, value: boolean): boolean {
   return true;
 }
 
+export function resetElementsBeingEditedForTest(): void {
+  elementsBeingEdited.clear();
+}
+
 const elementsBeingEdited = new Set<Element>();
 
 // Avoids Infinity, NaN, and scientific notation (e.g. 1e20), see crbug.com/81165.
@@ -2285,7 +2289,6 @@ export const bindToSetting =
         }
       }
 
-      const jslogBuilder = jslog ? VisualLogging.toggle(setting.name).track({change: true}) : null;
       // We can't use `setValue` as the change listener directly, otherwise we won't
       // be able to remove it again.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2295,21 +2298,44 @@ export const bindToSetting =
       }
 
       if (setting.type() === Common.Settings.SettingType.BOOLEAN || typeof setting.defaultValue === 'boolean') {
+        let attachedButton: Buttons.Button.Button|undefined;
+        let clickListener: (() => void)|undefined;
+
         return Directives.ref(e => {
           if (e === undefined) {
             setting.removeChangeListener(settingChanged);
+            if (attachedButton && clickListener) {
+              attachedButton.removeEventListener('click', clickListener);
+              attachedButton = undefined;
+            }
             return;
           }
-          if (jslogBuilder) {
+          if (jslog) {
+            const isButton = e instanceof Buttons.Button.Button;
+            const jslogBuilder = VisualLogging.toggle(setting.name).track(isButton ? {click: true} : {change: true});
             e.setAttribute('jslog', jslogBuilder.toString());
           }
 
           setting.addChangeListener(settingChanged);
-          setValue =
-              bindCheckboxImpl(e as CheckboxLabel, (setting as Common.Settings.Setting<boolean>).set.bind(setting));
+
+          if (e instanceof Buttons.Button.Button) {
+            attachedButton = e;
+            clickListener = (): void => {
+              (setting as Common.Settings.Setting<boolean>).set(!setting.get());
+            };
+            e.addEventListener('click', clickListener);
+            setValue = (value: boolean): void => {
+              e.toggled = value;
+            };
+          } else {
+            setValue =
+                bindCheckboxImpl(e as CheckboxLabel, (setting as Common.Settings.Setting<boolean>).set.bind(setting));
+          }
           setValue(setting.get());
         });
       }
+
+      const jslogBuilder = jslog ? VisualLogging.toggle(setting.name).track({change: true}) : null;
 
       if (setting.type() === Common.Settings.SettingType.REGEX || setting instanceof Common.Settings.RegExpSetting) {
         return Directives.ref(e => {

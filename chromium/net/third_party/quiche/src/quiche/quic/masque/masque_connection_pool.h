@@ -79,19 +79,29 @@ class QUIC_NO_EXPORT MasqueConnectionPool : public MasqueH2Connection::Visitor {
     virtual ~Visitor() = default;
     virtual void OnPoolResponse(MasqueConnectionPool* pool,
                                 RequestId request_id,
-                                absl::StatusOr<Message>&& response) = 0;
+                                absl::StatusOr<Message>&& response,
+                                bool end_stream) = 0;
+    virtual void OnPoolData(MasqueConnectionPool* pool, RequestId request_id,
+                            absl::string_view data, bool end_stream) = 0;
   };
 
   // If the request fails immediately, the error will be returned. Otherwise, a
   // request ID will be returned and the result (the response or an error) will
   // be delivered later with that same request ID via Visitor::OnResponse.
   absl::StatusOr<RequestId> SendRequest(const Message& request,
-                                        bool mtls = false);
+                                        bool mtls = false,
+                                        bool end_stream = true,
+                                        bool stream_response = false);
+
+  // Sends a body chunk for an existing request.
+  absl::Status SendBodyChunk(RequestId request_id, const std::string& body,
+                             bool end_stream);
 
   // `event_loop`, `ssl_ctx`, and `visitor` must outlive this object.
   explicit MasqueConnectionPool(QuicEventLoop* event_loop, SSL_CTX* ssl_ctx,
                                 bool disable_certificate_verification,
-                                const DnsConfig& dns_config, Visitor* visitor);
+                                const DnsConfig& dns_config, Visitor* visitor,
+                                absl::string_view info_string);
 
   QuicEventLoop* event_loop() { return event_loop_; }
   SSL_CTX* GetSslCtx(bool mtls) { return mtls ? mtls_ssl_ctx_ : tls_ssl_ctx_; }
@@ -106,9 +116,11 @@ class QUIC_NO_EXPORT MasqueConnectionPool : public MasqueH2Connection::Visitor {
                  const std::string& body) override;
   void OnResponse(MasqueH2Connection* connection, int32_t stream_id,
                   const quiche::HttpHeaderBlock& headers,
-                  const std::string& body) override;
+                  const std::string& body, bool end_stream) override;
   void OnStreamFailure(MasqueH2Connection* connection, int32_t stream_id,
                        absl::Status error) override;
+  void OnDataForStream(MasqueH2Connection* connection, int32_t stream_id,
+                       absl::string_view data, bool end_stream) override;
 
   static absl::StatusOr<bssl::UniquePtr<SSL_CTX>> CreateSslCtx(
       const std::string& client_cert_file,
@@ -117,6 +129,8 @@ class QUIC_NO_EXPORT MasqueConnectionPool : public MasqueH2Connection::Visitor {
   static absl::StatusOr<bssl::UniquePtr<SSL_CTX>> CreateSslCtxFromData(
       const std::string& client_cert_pem_data,
       const std::string& client_cert_key_data);
+
+  const std::string& info() const { return info_; }
 
  private:
   class ConnectionState : public QuicSocketEventListener {
@@ -144,11 +158,16 @@ class QUIC_NO_EXPORT MasqueConnectionPool : public MasqueH2Connection::Visitor {
     bssl::UniquePtr<SSL> ssl_;
     std::unique_ptr<MasqueH2Connection> connection_;
     bool mtls_ = false;
+    const std::string info_;
   };
   struct PendingRequest {
     Message request;
+    bool end_stream_pending = true;
+    std::string pending_data;
     MasqueH2Connection* connection = nullptr;  // Not owned.
     int32_t stream_id = -1;
+    bool response_done = false;
+    bool stream_response = false;
   };
 
   absl::StatusOr<MasqueConnectionPool::ConnectionState*>
@@ -172,7 +191,26 @@ class QUIC_NO_EXPORT MasqueConnectionPool : public MasqueH2Connection::Visitor {
   absl::flat_hash_map<RequestId, std::unique_ptr<PendingRequest>>
       pending_requests_;
   RequestId next_request_id_ = 0;
+  const std::string info_;
 };
+
+// Synchronously performs an HTTP fetch using a single-use MasqueConnectionPool.
+// Returns the HTTP response message or an error. `info_string` is used to
+// identify the request in logs.
+absl::StatusOr<MasqueConnectionPool::Message> MasqueSimpleFetch(
+    const MasqueConnectionPool::Message& request, absl::string_view info_string,
+    const MasqueConnectionPool::DnsConfig& dns_config =
+        MasqueConnectionPool::DnsConfig(),
+    bool disable_certificate_verification = false);
+
+// Synchronously performs an HTTP GET using a single-use MasqueConnectionPool.
+// Returns the HTTP response message or an error. `info_string` is used to
+// identify the request in logs.
+absl::StatusOr<MasqueConnectionPool::Message> MasqueSimpleGet(
+    absl::string_view url_string, absl::string_view info_string,
+    const MasqueConnectionPool::DnsConfig& dns_config =
+        MasqueConnectionPool::DnsConfig(),
+    bool disable_certificate_verification = false);
 
 }  // namespace quic
 

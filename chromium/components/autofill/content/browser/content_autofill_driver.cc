@@ -31,6 +31,7 @@
 #include "mojo/public/cpp/bindings/message.h"
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-shared.h"
 #include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "url/origin.h"
@@ -118,15 +119,13 @@ FieldGlobalId Lift(ContentAutofillDriver& source, FieldRendererId id) {
 
 PasswordSuggestionRequest Lift(ContentAutofillDriver& source,
                                PasswordSuggestionRequest request) {
-  // These indices are equal to fields().size() for manual requests.
-  if (request.username_field_index > request.form_data.fields().size() ||
-      request.password_field_index > request.form_data.fields().size()) {
-    mojo::ReportBadMessage(
-        "username_field_index or password_field_index cannot be greater than "
-        "form.fields.size()!");
-  }
   request.form_data = Lift(source, std::move(request.form_data));
   request.field.bounds = Lift(source, std::move(request.field.bounds));
+  request.field.element_id = Lift(source, request.field.element_id.renderer_id);
+  request.username_field_id =
+      Lift(source, request.username_field_id.renderer_id);
+  request.password_field_id =
+      Lift(source, request.password_field_id.renderer_id);
   return request;
 }
 
@@ -199,8 +198,8 @@ auto& WithNewVersion(const std::optional<FormData>& browser_form) {
   return browser_form;
 }
 
-auto& WithNewVersion(const std::vector<FormData>& browser_forms) {
-  for (const FormData& form : browser_forms) {
+std::vector<FormData> WithNewVersion(std::vector<FormData> browser_forms) {
+  for (FormData& form : browser_forms) {
     WithNewVersion(form);
   }
   return browser_forms;
@@ -420,20 +419,24 @@ AutofillManager& ContentAutofillDriver::GetAutofillManager() {
 
 std::optional<LocalFrameToken> ContentAutofillDriver::Resolve(
     FrameToken query) {
-  if (std::holds_alternative<LocalFrameToken>(query)) {
-    return std::get<LocalFrameToken>(query);
-  }
-  DCHECK(std::holds_alternative<RemoteFrameToken>(query));
   content::RenderProcessHost* rph = render_frame_host_->GetProcess();
-  blink::RemoteFrameToken blink_remote_token(
-      std::get<RemoteFrameToken>(query).value());
-  content::RenderFrameHost* remote_rfh =
-      content::RenderFrameHost::FromPlaceholderToken(rph->GetDeprecatedID(),
-                                                     blink_remote_token);
-  if (!remote_rfh) {
+  content::RenderFrameHost* rfh = std::visit(
+      absl::Overload{[&](const LocalFrameToken& token) {
+                       return content::RenderFrameHost::FromFrameToken(
+                           content::GlobalRenderFrameHostToken(
+                               rph->GetDeprecatedID(),
+                               blink::LocalFrameToken(token.value())));
+                     },
+                     [&](const RemoteFrameToken& token) {
+                       return content::RenderFrameHost::FromPlaceholderToken(
+                           rph->GetDeprecatedID(),
+                           blink::RemoteFrameToken(token.value()));
+                     }},
+      query);
+  if (!rfh || rfh->GetParent() != &*render_frame_host_) {
     return std::nullopt;
   }
-  return LocalFrameToken(remote_rfh->GetFrameToken().value());
+  return LocalFrameToken(rfh->GetFrameToken().value());
 }
 
 ukm::SourceId ContentAutofillDriver::GetPageUkmSourceId() const {
@@ -567,12 +570,20 @@ void ContentAutofillDriver::RendererShouldSetSuggestionAvailability(
                suggestion_availability);
 }
 
-void ContentAutofillDriver::DispatchEmailVerifiedEvent(
-    FieldGlobalId field_id,
-    const std::string& presentation_token) {
-  RouteToAgent(router(), &AutofillDriverRouter::DispatchEmailVerifiedEvent,
-               &mojom::AutofillAgent::DispatchEmailVerifiedEvent, field_id,
-               presentation_token);
+void ContentAutofillDriver::SendEmailVerificationToken(
+    FieldGlobalId email_field_id,
+    const std::string& email,
+    FieldGlobalId token_field_id,
+    const std::string& token) {
+  RouteToAgent(router(), &AutofillDriverRouter::SendEmailVerificationToken,
+               &mojom::AutofillAgent::SendEmailVerificationToken,
+               email_field_id, email, token_field_id, token);
+}
+
+void ContentAutofillDriver::OnEmailVerificationTokenShared(
+    FieldRendererId field_id) {
+  FieldGlobalId global_id = {GetFrameToken(), field_id};
+  autofill_manager_->OnEmailVerificationTokenShared(global_id);
 }
 
 void ContentAutofillDriver::FormsSeen(

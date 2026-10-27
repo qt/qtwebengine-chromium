@@ -15,6 +15,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/common/child_process_id.h"
 #include "content/public/common/content_features.h"
 #include "extensions/browser/api/extensions_api_client.h"
 #include "extensions/browser/browser_frame_context_data.h"
@@ -85,12 +86,12 @@ bool ExtensionsGuestViewManagerDelegate::IsGuestAvailableToContextWithFeature(
       ProcessManager::Get(context)->GetExtensionForRenderFrameHost(
           guest->owner_rfh());
 
-  const GURL& owner_site_url = guest->GetOwnerSiteURL();
+  const GURL owner_site_url = guest->GetOwnerSiteURL();
   // Ok for |owner_extension| to be nullptr, the embedder might be WebUI.
   Feature::Availability availability = feature->IsAvailableToContext(
       owner_extension,
       process_map->GetMostLikelyContextType(
-          owner_extension, guest->owner_rfh()->GetProcess()->GetDeprecatedID(),
+          owner_extension, guest->owner_rfh()->GetProcess()->GetID(),
           &owner_site_url),
       owner_site_url, util::GetBrowserContextId(context),
       BrowserFrameContextData(guest->owner_rfh()));
@@ -165,7 +166,7 @@ bool ExtensionsGuestViewManagerDelegate::IsOwnedByControlledFrameEmbedder(
 
 void ExtensionsGuestViewManagerDelegate::RegisterAdditionalGuestViewTypes(
     GuestViewManager* manager) {
-#if BUILDFLAG(ENABLE_PLATFORM_APPS)
+#if BUILDFLAG(IS_CHROMEOS)
   manager->RegisterGuestViewType(AppViewGuest::Type,
                                  base::BindRepeating(&AppViewGuest::Create),
                                  base::NullCallback());

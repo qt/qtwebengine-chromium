@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #include "common.h"
 
@@ -22,18 +23,27 @@ struct functor_traits<scalar_norm1_op> {
 }  // namespace internal
 }  // namespace Eigen
 
+// computes |Re(z)| + |Im(z)| of a complex number z.
+extern "C" RealScalar EIGEN_CAT(REAL_SCALAR_SUFFIX, EIGEN_CAT(cabs1, EIGEN_BLAS_FUNC_SUFFIX))(Complex *z) {
+  return Eigen::numext::norm1(*z);
+}
+
 // computes the sum of magnitudes of all vector elements or, for a complex vector x, the sum
 // res = |Rex1| + |Imx1| + |Rex2| + |Imx2| + ... + |Rexn| + |Imxn|, where x is a vector of order n
 extern "C" RealScalar EIGEN_CAT(REAL_SCALAR_SUFFIX, EIGEN_BLAS_FUNC_NAME(asum))(int *n, RealScalar *px, int *incx) {
-  //   std::cerr << "__asum " << *n << " " << *incx << "\n";
-  Complex *x = reinterpret_cast<Complex *>(px);
-
   if (*n <= 0) return 0;
 
+  // std::complex<T> is layout-compatible with T[2], so we can reinterpret
+  // a complex vector of length n as a real vector of length 2*n and use
+  // the fully vectorized cwiseAbs().sum() path.
   if (*incx == 1)
-    return make_vector(x, *n).unaryExpr<scalar_norm1_op>().sum();
-  else
+    return make_vector(px, 2 * *n).cwiseAbs().sum();
+  else {
+    // For non-unit stride, fall back to the scalar_norm1_op approach since
+    // the real components are not contiguous across complex elements.
+    Complex *x = reinterpret_cast<Complex *>(px);
     return make_vector(x, *n, std::abs(*incx)).unaryExpr<scalar_norm1_op>().sum();
+  }
 }
 
 extern "C" int EIGEN_CAT(i, EIGEN_BLAS_FUNC_NAME(amax))(int *n, RealScalar *px, int *incx) {

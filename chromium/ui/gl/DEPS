@@ -18,6 +18,9 @@ specific_include_rules = {
   "angle_platform_impl.cc": [
     "+third_party/angle/include/platform/PlatformMethods.h",
   ],
+  "dc_layer_tree.h": [
+    "+third_party/microsoft_dxheaders/src/include/experimental-composition/experimental-dcomp.h"
+  ],
   "delegated_ink_point_renderer_gpu_unittest.cc": [
     "+ui/base/win/hidden_window.h",
   ],
@@ -27,6 +30,9 @@ specific_include_rules = {
     "+ui/base/win/hidden_window.h",
     "+ui/platform_window",
   ],
+  "direct_composition_support.cc": [
+    "+third_party/microsoft_dxheaders/src/include/experimental-composition/experimental-dcomp.h"
+  ],
   "direct_composition_surface_win_unittest.cc": [
     "+ui/base/win/hidden_window.h",
     "+ui/platform_window",
@@ -34,7 +40,7 @@ specific_include_rules = {
   "egl_api_unittest.cc": [
     "+ui/ozone/public/ozone_platform.h",
   ],
-  "egl_surface_io_surface\.(cc|h)": [
+  "egl_surface_io_surface\\.(cc|h)": [
     "+components/viz/common/resources/shared_image_format.h",
   ],
   "gl_angle_util_vulkan.cc": [
@@ -61,7 +67,7 @@ specific_include_rules = {
     "+media/base/win/d3d11_mocks.h",
   ],
   # NOTE: See comment in ./BUILD.gn with respect to this dependency.
-  "gl_image_gl_texture_unittest\.cc": [
+  "gl_image_gl_texture_unittest\\.cc": [
     "+media/gpu/vaapi/gl_image_gl_texture.h"
   ],
 }

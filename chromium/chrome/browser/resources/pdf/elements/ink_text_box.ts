@@ -7,10 +7,11 @@ import {EventTracker} from 'chrome://resources/js/event_tracker.js';
 import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import type {PropertyValues} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
-import type {TextAttributes, TextBoxRect} from '../constants.js';
+import type {TextAnnotation, TextAttributes, TextBoxRect} from '../constants.js';
 import {TextTypeface} from '../constants.js';
 import {colorsEqual, convertRotatedCoordinates, Ink2Manager, MIN_TEXTBOX_SIZE_PX, stylesEqual} from '../ink2_manager.js';
 import type {TextBoxInit, ViewportParams} from '../ink2_manager.js';
+import {PdfViewerPrivateProxyImpl} from '../pdf_viewer_private_proxy.js';
 import {colorToHex} from '../pdf_viewer_utils.js';
 
 import {getCss} from './ink_text_box.css.js';
@@ -110,6 +111,8 @@ export class InkTextBoxElement extends InkTextBoxElementBase {
   private pageY_: number = 0;
   private pointerStart_: {x: number, y: number}|null = null;
   private startPosition_: TextBoxRect|null = null;
+  // Force commitTextAnnotation() calls to happen in order
+  private whenTextAnnotationsCommitted_: Promise<void> = Promise.resolve();
 
   override connectedCallback() {
     super.connectedCallback();
@@ -130,9 +133,6 @@ export class InkTextBoxElement extends InkTextBoxElementBase {
 
   override disconnectedCallback() {
     super.disconnectedCallback();
-    // This element is disconnected when the user exits text annotation mode.
-    // Send the current annotation to the backend.
-    this.commitTextAnnotation();
     this.eventTracker_.removeAll();
   }
 
@@ -289,48 +289,72 @@ export class InkTextBoxElement extends InkTextBoxElementBase {
     }
   }
 
-  commitTextAnnotation() {
-    // If the user is still dragging the box by holding down a key or pointer,
-    // reset location to the start of the drag and remove listeners before
-    // deactivating the box and committing the annotation.
-    this.resetDrag_();
+  async commitTextAnnotation() {
+    this.whenTextAnnotationsCommitted_ =
+        this.whenTextAnnotationsCommitted_
+            .then(async () => {
+              // If the user is still dragging the box by holding down a key or
+              // pointer, reset location to the start of the drag and remove
+              // listeners before deactivating the box and committing the
+              // annotation.
+              this.resetDrag_();
 
-    // If this is a new/inactive box or a new box edited to empty, nothing to do
-    // unless it was initialized from an existing annotation. If this was
-    // an existing annotation, we need to notify the backend to re-render it,
-    // if unchanged, or delete it, if the text was set to empty.
-    if ((this.state_ !== TextBoxState.EDITED || this.textValue_ === '') &&
-        !this.existing_) {
-      this.state_ = TextBoxState.INACTIVE;
-      return;
-    }
+              // If this is a new/inactive box or a new box edited to empty,
+              // nothing to do unless it was initialized from an existing
+              // annotation. If this was an existing annotation, we need to
+              // notify the backend to re-render it, if unchanged, or delete it,
+              // if the text was set to empty.
+              if ((this.state_ !== TextBoxState.EDITED ||
+                   this.textValue_ === '') &&
+                  !this.existing_) {
+                this.state_ = TextBoxState.INACTIVE;
+                return;
+              }
 
-    // Notify the backend.
-    assert(this.attributes_);
-    Ink2Manager.getInstance().commitTextAnnotation(
-        {
-          text: this.textValue_,
-          id: this.id_,
-          pageIndex: this.pageIndex_,
-          textAttributes: this.attributes_,
-          textBoxRect: {
-            height: this.height_,
-            locationX: this.locationX_,
-            locationY: this.locationY_,
-            width: this.width_,
-          },
-          textOrientation: this.textOrientation_,
-        },
-        this.state_ === TextBoxState.EDITED);
+              // Save the existing state and immediately mark this text box as
+              // inactive.
+              assert(this.attributes_);
+              const isEdited = this.state_ === TextBoxState.EDITED;
+              this.state_ = TextBoxState.INACTIVE;
 
-    this.state_ = TextBoxState.INACTIVE;
+              const result =
+                  await PdfViewerPrivateProxyImpl.getInstance().getTextInfo(
+                      this.$.textbox,
+                      Ink2Manager.getInstance().getKnownFontIds());
+
+              for (const typeface of result.typefaces) {
+                Ink2Manager.getInstance().addKnownFontId(typeface.uniqueId);
+              }
+
+              // Notify the backend.
+              const annotation: TextAnnotation = {
+                id: this.id_,
+                mojoTextInfo: result.mojoTextInfo,
+                pageIndex: this.pageIndex_,
+                text: this.textValue_,
+                textAttributes: this.attributes_,
+                textBoxRect: {
+                  height: this.height_,
+                  locationX: this.locationX_,
+                  locationY: this.locationY_,
+                  width: this.width_,
+                },
+                textOrientation: this.textOrientation_,
+              };
+              Ink2Manager.getInstance().commitTextAnnotation(
+                  annotation, isEdited, result.typefaces);
+            })
+            .catch(e => {
+              console.error('Error committing text annotation:', e);
+            });
+    return this.whenTextAnnotationsCommitted_;
   }
 
-  private onInitializeTextBox_(data: TextBoxInit) {
+  private async onInitializeTextBox_(data: TextBoxInit) {
     // If we are already editing an annotation, commit it first before
     // switching to the new one.
     if (this.state_ !== TextBoxState.INACTIVE) {
-      this.commitTextAnnotation();
+      await this.commitTextAnnotation();
     }
 
     // Update is in screen coordinates.
@@ -409,6 +433,7 @@ export class InkTextBoxElement extends InkTextBoxElementBase {
     const target = e.composedPath()[0];
     if (target === this.$.textbox) {
       this.focus();
+      this.fire('ink-text-box-focused-for-test');
     } else {
       this.commitTextAnnotation();
     }
@@ -424,9 +449,10 @@ export class InkTextBoxElement extends InkTextBoxElementBase {
       return;
     }
 
-    // Delete key not in the textbox deletes the annotation.
-    if (e.key === 'Delete') {
+    // Backspace/Delete key not in the textbox deletes the annotation.
+    if (e.key === 'Backspace' || e.key === 'Delete') {
       this.textValue_ = '';
+      this.textBoxEdited_();
       this.commitTextAnnotation();
       return;
     }

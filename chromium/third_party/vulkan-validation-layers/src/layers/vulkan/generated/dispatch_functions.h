@@ -2933,6 +2933,70 @@ static inline VkResult DispatchGetMemoryAndroidHardwareBufferANDROID(VkDevice de
     return dispatch->GetMemoryAndroidHardwareBufferANDROID(device, pInfo, pBuffer);
 }
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
+
+static inline VkResult DispatchCreateGpaSessionAMD(VkDevice device, const VkGpaSessionCreateInfoAMD* pCreateInfo,
+                                                   const VkAllocationCallbacks* pAllocator, VkGpaSessionAMD* pGpaSession) {
+    auto dispatch = vvl::GetDispatchDevice(device);
+    return dispatch->CreateGpaSessionAMD(device, pCreateInfo, pAllocator, pGpaSession);
+}
+
+static inline void DispatchDestroyGpaSessionAMD(VkDevice device, VkGpaSessionAMD gpaSession,
+                                                const VkAllocationCallbacks* pAllocator) {
+    auto dispatch = vvl::GetDispatchDevice(device);
+    dispatch->DestroyGpaSessionAMD(device, gpaSession, pAllocator);
+}
+
+static inline VkResult DispatchSetGpaDeviceClockModeAMD(VkDevice device, VkGpaDeviceClockModeInfoAMD* pInfo) {
+    auto dispatch = vvl::GetDispatchDevice(device);
+    return dispatch->SetGpaDeviceClockModeAMD(device, pInfo);
+}
+
+static inline VkResult DispatchGetGpaDeviceClockInfoAMD(VkDevice device, VkGpaDeviceGetClockInfoAMD* pInfo) {
+    auto dispatch = vvl::GetDispatchDevice(device);
+    return dispatch->GetGpaDeviceClockInfoAMD(device, pInfo);
+}
+
+static inline VkResult DispatchCmdBeginGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession) {
+    auto dispatch = vvl::GetDispatchDevice(commandBuffer);
+    return dispatch->CmdBeginGpaSessionAMD(commandBuffer, gpaSession);
+}
+
+static inline VkResult DispatchCmdEndGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession) {
+    auto dispatch = vvl::GetDispatchDevice(commandBuffer);
+    return dispatch->CmdEndGpaSessionAMD(commandBuffer, gpaSession);
+}
+
+static inline VkResult DispatchCmdBeginGpaSampleAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                                    const VkGpaSampleBeginInfoAMD* pGpaSampleBeginInfo, uint32_t* pSampleID) {
+    auto dispatch = vvl::GetDispatchDevice(commandBuffer);
+    return dispatch->CmdBeginGpaSampleAMD(commandBuffer, gpaSession, pGpaSampleBeginInfo, pSampleID);
+}
+
+static inline void DispatchCmdEndGpaSampleAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession, uint32_t sampleID) {
+    auto dispatch = vvl::GetDispatchDevice(commandBuffer);
+    dispatch->CmdEndGpaSampleAMD(commandBuffer, gpaSession, sampleID);
+}
+
+static inline VkResult DispatchGetGpaSessionStatusAMD(VkDevice device, VkGpaSessionAMD gpaSession) {
+    auto dispatch = vvl::GetDispatchDevice(device);
+    return dispatch->GetGpaSessionStatusAMD(device, gpaSession);
+}
+
+static inline VkResult DispatchGetGpaSessionResultsAMD(VkDevice device, VkGpaSessionAMD gpaSession, uint32_t sampleID,
+                                                       size_t* pSizeInBytes, void* pData) {
+    auto dispatch = vvl::GetDispatchDevice(device);
+    return dispatch->GetGpaSessionResultsAMD(device, gpaSession, sampleID, pSizeInBytes, pData);
+}
+
+static inline VkResult DispatchResetGpaSessionAMD(VkDevice device, VkGpaSessionAMD gpaSession) {
+    auto dispatch = vvl::GetDispatchDevice(device);
+    return dispatch->ResetGpaSessionAMD(device, gpaSession);
+}
+
+static inline void DispatchCmdCopyGpaSessionResultsAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession) {
+    auto dispatch = vvl::GetDispatchDevice(commandBuffer);
+    dispatch->CmdCopyGpaSessionResultsAMD(commandBuffer, gpaSession);
+}
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 
 static inline VkResult DispatchCreateExecutionGraphPipelinesAMDX(VkDevice device, VkPipelineCache pipelineCache,
@@ -3119,7 +3183,7 @@ static inline void DispatchDestroyAccelerationStructureNV(VkDevice device, VkAcc
 }
 
 static inline void DispatchGetAccelerationStructureMemoryRequirementsNV(
-    VkDevice device, const VkAccelerationStructureMemoryRequirementsInfoNV* pInfo, VkMemoryRequirements2KHR* pMemoryRequirements) {
+    VkDevice device, const VkAccelerationStructureMemoryRequirementsInfoNV* pInfo, VkMemoryRequirements2* pMemoryRequirements) {
     auto dispatch = vvl::GetDispatchDevice(device);
     dispatch->GetAccelerationStructureMemoryRequirementsNV(device, pInfo, pMemoryRequirements);
 }
@@ -3628,6 +3692,11 @@ static inline void DispatchGetPrivateDataEXT(VkDevice device, VkObjectType objec
     auto dispatch = vvl::GetDispatchDevice(device);
     dispatch->GetPrivateDataEXT(device, objectType, objectHandle, privateDataSlot, pData);
 }
+
+static inline VkResult DispatchQueueSetPerfHintQCOM(VkQueue queue, const VkPerfHintInfoQCOM* pPerfHintInfo) {
+    auto dispatch = vvl::GetDispatchDevice(queue);
+    return dispatch->QueueSetPerfHintQCOM(queue, pPerfHintInfo);
+}
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 
 static inline VkResult DispatchCreateCudaModuleNV(VkDevice device, const VkCudaModuleCreateInfoNV* pCreateInfo,
@@ -3893,7 +3962,7 @@ static inline VkResult DispatchGetMemoryRemoteAddressNV(VkDevice device,
     return dispatch->GetMemoryRemoteAddressNV(device, pMemoryGetRemoteAddressInfo, pAddress);
 }
 
-static inline VkResult DispatchGetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoEXT* pPipelineInfo,
+static inline VkResult DispatchGetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoKHR* pPipelineInfo,
                                                         VkBaseOutStructure* pPipelineProperties) {
     auto dispatch = vvl::GetDispatchDevice(device);
     return dispatch->GetPipelinePropertiesEXT(device, pPipelineInfo, pPipelineProperties);
@@ -4054,6 +4123,12 @@ static inline void DispatchCmdDrawClusterIndirectHUAWEI(VkCommandBuffer commandB
 static inline void DispatchSetDeviceMemoryPriorityEXT(VkDevice device, VkDeviceMemory memory, float priority) {
     auto dispatch = vvl::GetDispatchDevice(device);
     dispatch->SetDeviceMemoryPriorityEXT(device, memory, priority);
+}
+
+static inline void DispatchCmdSetDispatchParametersARM(VkCommandBuffer commandBuffer,
+                                                       const VkDispatchParametersARM* pDispatchParameters) {
+    auto dispatch = vvl::GetDispatchDevice(commandBuffer);
+    dispatch->CmdSetDispatchParametersARM(commandBuffer, pDispatchParameters);
 }
 
 static inline void DispatchGetDescriptorSetLayoutHostMappingInfoVALVE(VkDevice device,
@@ -4589,6 +4664,14 @@ static inline void DispatchGetPhysicalDeviceQueueFamilyDataGraphProcessingEngine
         physicalDevice, pQueueFamilyDataGraphProcessingEngineInfo, pQueueFamilyDataGraphProcessingEngineProperties);
 }
 
+static inline VkResult DispatchGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+    const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, VkBaseOutStructure* pProperties) {
+    auto dispatch = vvl::GetDispatchInstance(physicalDevice);
+    return dispatch->GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+        physicalDevice, queueFamilyIndex, pQueueFamilyDataGraphProperties, pProperties);
+}
+
 static inline void DispatchCmdSetAttachmentFeedbackLoopEnableEXT(VkCommandBuffer commandBuffer, VkImageAspectFlags aspectMask) {
     auto dispatch = vvl::GetDispatchDevice(commandBuffer);
     dispatch->CmdSetAttachmentFeedbackLoopEnableEXT(commandBuffer, aspectMask);
@@ -4822,6 +4905,17 @@ static inline void DispatchCmdBeginCustomResolveEXT(VkCommandBuffer commandBuffe
     dispatch->CmdBeginCustomResolveEXT(commandBuffer, pBeginCustomResolveInfo);
 }
 
+static inline VkResult DispatchGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+    const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties,
+    const VkDataGraphOpticalFlowImageFormatInfoARM* pOpticalFlowImageFormatInfo, uint32_t* pFormatCount,
+    VkDataGraphOpticalFlowImageFormatPropertiesARM* pImageFormatProperties) {
+    auto dispatch = vvl::GetDispatchInstance(physicalDevice);
+    return dispatch->GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+        physicalDevice, queueFamilyIndex, pQueueFamilyDataGraphProperties, pOpticalFlowImageFormatInfo, pFormatCount,
+        pImageFormatProperties);
+}
+
 static inline void DispatchCmdSetComputeOccupancyPriorityNV(VkCommandBuffer commandBuffer,
                                                             const VkComputeOccupancyPriorityParametersNV* pParameters) {
     auto dispatch = vvl::GetDispatchDevice(commandBuffer);
@@ -4841,6 +4935,11 @@ static inline VkBool32 DispatchGetPhysicalDeviceUbmPresentationSupportSEC(VkPhys
     return dispatch->GetPhysicalDeviceUbmPresentationSupportSEC(physicalDevice, queueFamilyIndex, device);
 }
 #endif  // VK_USE_PLATFORM_UBM_SEC
+
+static inline void DispatchCmdSetPrimitiveRestartIndexEXT(VkCommandBuffer commandBuffer, uint32_t primitiveRestartIndex) {
+    auto dispatch = vvl::GetDispatchDevice(commandBuffer);
+    dispatch->CmdSetPrimitiveRestartIndexEXT(commandBuffer, primitiveRestartIndex);
+}
 
 static inline VkResult DispatchCreateAccelerationStructureKHR(VkDevice device,
                                                               const VkAccelerationStructureCreateInfoKHR* pCreateInfo,

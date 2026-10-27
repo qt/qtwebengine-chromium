@@ -10,7 +10,6 @@ devtools_entrypoint("shell") {
 
   deps = [
     "../../Images:optimize_images",
-    "../../core/dom_extension:bundle",
     "../../core/sdk:meta",
     "../../entrypoints/main:meta",
     "../../models/logs:meta",
@@ -28,6 +27,7 @@ devtools_entrypoint("shell") {
     "../../panels/protocol_monitor:meta",
     "../../panels/settings:meta",
     "../../panels/sources:meta",
+    "../../ui/dom_extension:bundle",
     "../../ui/legacy/components/object_ui:meta",
     "../../ui/legacy/components/perf_ui:meta",
     "../../ui/legacy/components/quick_open:meta",

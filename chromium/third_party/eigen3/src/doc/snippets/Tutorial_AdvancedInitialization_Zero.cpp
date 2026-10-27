@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 std::cout << "A fixed-size array:\n";
 Array33f a1 = Array33f::Zero();
 std::cout << a1 << "\n\n";

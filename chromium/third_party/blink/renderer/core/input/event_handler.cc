@@ -41,7 +41,6 @@
 #include "third_party/blink/public/mojom/frame/user_activation_notification_type.mojom-blink.h"
 #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-blink.h"
 #include "third_party/blink/public/platform/task_type.h"
-#include "third_party/blink/public/web/web_link_preview_triggerer.h"
 #include "third_party/blink/renderer/core/clipboard/data_transfer.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -726,7 +725,8 @@ std::optional<ui::Cursor> EventHandler::SelectCursor(
                 PhysicalOffset::FromPointFFloor(scaled_hot_spot),
             PhysicalSize::FromSizeFFloor(scaled_size));
 
-        PhysicalRect frame_rect(page->GetVisualViewport().VisibleContentRect());
+        PhysicalRect frame_rect(
+            page->GetVisualViewport().VisibleContentRect(kExcludeScrollbars));
         frame_->ContentLayoutObject()->MapToVisualRectInAncestorSpace(
             nullptr, frame_rect);
 
@@ -1035,12 +1035,6 @@ void EventHandler::HandleMouseLeaveEvent(const WebMouseEvent& event) {
   Page* page = frame_->GetPage();
   if (page)
     page->GetChromeClient().ClearToolTip(*frame_);
-
-  WebLinkPreviewTriggerer* triggerer =
-      frame_->GetOrCreateLinkPreviewTriggerer();
-  if (triggerer) {
-    triggerer->MaybeChangedKeyEventModifier(WebInputEvent::kNoModifiers);
-  }
 
   HandleMouseMoveOrLeaveEvent(event, Vector<WebMouseEvent>(),
                               Vector<WebMouseEvent>());
@@ -1416,17 +1410,9 @@ WebInputEventResult EventHandler::UpdateDragAndDrop(
       event_result = target_frame->GetEventHandler().UpdateDragAndDrop(
           event, data_transfer);
     } else if (drag_target_) {
-      Element* related_target = new_target;
-      if (RuntimeEnabledFeatures::DontLeakShadowTreesInDragEventsEnabled() &&
-          related_target) {
-        // Avoid exposing the shadow DOM details to the drag target.
-        // See https://crbug.com/328662546.
-        related_target =
-            &drag_target_->GetTreeScope().Retarget(*related_target);
-      }
-      mouse_event_manager_->DispatchDragEvent(
-          event_type_names::kDragleave, drag_target_.Get(), related_target,
-          event, data_transfer);
+      mouse_event_manager_->DispatchDragEvent(event_type_names::kDragleave,
+                                              drag_target_.Get(), new_target,
+                                              event, data_transfer);
     }
 
     if (new_target) {
@@ -2440,6 +2426,10 @@ WebInputEventResult EventHandler::KeyEvent(
 void EventHandler::DefaultKeyboardEventHandler(KeyboardEvent* event) {
   keyboard_event_manager_->DefaultKeyboardEventHandler(
       event, mouse_event_manager_->MousePressNode());
+}
+
+bool EventHandler::DefaultTabEventHandler(KeyboardEvent* event) {
+  return keyboard_event_manager_->DefaultTabEventHandler(event);
 }
 
 void EventHandler::DragSourceEndedAt(

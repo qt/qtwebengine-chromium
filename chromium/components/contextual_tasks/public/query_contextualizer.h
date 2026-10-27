@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "base/functional/callback_forward.h"
@@ -31,6 +32,36 @@ class ContextualSearchSessionHandle;
 }  // namespace contextual_search
 
 namespace contextual_tasks {
+
+// Represents a single turn in a thread.
+struct ThreadTurn {
+  ThreadTurn();
+  ThreadTurn(const ThreadTurn&);
+  ThreadTurn& operator=(const ThreadTurn&);
+  ~ThreadTurn();
+
+  // User query for this turn.
+  std::string query;
+};
+
+// Represents a conversation thread, including current and previous turns.
+struct ConversationThread {
+  ConversationThread();
+  ConversationThread(const ConversationThread&);
+  ConversationThread& operator=(const ConversationThread&);
+  ~ConversationThread();
+
+  // The query from the current turn.
+  std::string query;
+
+  // Previous turns in the thread, in chronological order (oldest first).
+  // The first element in this vector is the first turn in the thread.
+  std::vector<ThreadTurn> previous_turns;
+
+  // Titles of shared (attached as context) tabs.
+  // These are union of tabs shared across all previous turns.
+  std::vector<std::string> shared_tab_titles;
+};
 
 // Helper class to orchestrate contextualization of tabs right before submitting
 // a query. It is strictly an on-submit orchestrator helper, and is not the only
@@ -91,6 +122,8 @@ class QueryContextualizer {
         base::OnceCallback<void(std::vector<TabId>)> callback) = 0;
   };
 
+  // `service` can be nullptr if task-scoped context decoration is not needed
+  // (e.g. standard Omnibox unimodal search).
   QueryContextualizer(ContextualTasksService* service, Delegate* delegate);
   virtual ~QueryContextualizer();
 
@@ -126,7 +159,8 @@ class QueryContextualizer {
       bool enable_smart_tab_selection);
 
   // Extracts URLs from the query text.
-  static std::vector<GURL> ExtractUrlsFromQuery(const std::string& query_text);
+  static std::vector<std::string> ExtractUrlsFromQuery(
+      const std::string& query_text);
 
  private:
   void OnRelevantTabsFetched(

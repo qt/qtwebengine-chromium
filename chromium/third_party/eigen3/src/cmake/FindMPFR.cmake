@@ -11,6 +11,7 @@
 #  MPFR_INCLUDES - the MPFR include directory
 #  MPFR_LIBRARIES - the MPFR library
 #  MPFR_VERSION - MPFR version
+# SPDX-License-Identifier: MPL-2.0
 
 # Copyright (c) 2006, 2007 Montel Laurent, <montel@kde.org>
 # Copyright (c) 2008, 2009 Gael Guennebaud, <g.gael@free.fr>

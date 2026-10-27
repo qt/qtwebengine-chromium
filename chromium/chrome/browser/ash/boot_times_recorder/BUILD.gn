@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
-
 assert(is_chromeos)
 
 static_library("boot_times_recorder") {
@@ -15,6 +13,7 @@ static_library("boot_times_recorder") {
   ]
 
   deps = [
+    "//ash/constants",
     "//base",
     "//chrome/common",
     "//chromeos/ash/components/metrics",

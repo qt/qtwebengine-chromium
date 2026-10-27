@@ -27,13 +27,13 @@
 
 #include "base/check_op.h"
 #include "base/dcheck_is_on.h"
+#include "base/functional/function_ref.h"
 #include "base/types/pass_key.h"
 #include "third_party/blink/public/common/input/pointer_id.h"
 #include "third_party/blink/public/common/metrics/document_update_reason.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom-blink.h"
 #include "third_party/blink/public/mojom/scroll/scroll_into_view_params.mojom-blink-forward.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
-#include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_typedefs.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/css_primitive_value.h"
@@ -55,7 +55,6 @@
 #include "third_party/blink/renderer/core/dom/whitespace_attacher.h"
 #include "third_party/blink/renderer/core/html/parser/fragment_parser.h"
 #include "third_party/blink/renderer/core/html_names.h"
-#include "third_party/blink/renderer/core/scroll/scoped_scroll_promise_resolver.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
 #include "third_party/blink/renderer/core/trustedtypes/trusted_types_names.h"
 #include "third_party/blink/renderer/core/trustedtypes/trusted_types_util.h"
@@ -98,6 +97,7 @@ class ColumnPseudoElement;
 class ComputedStyleBuilder;
 class ContainerQueryData;
 class ContainerQueryEvaluator;
+class ContainerQueryList;
 class ContentData;
 class CSSPropertyName;
 class CSSPropertyValueSet;
@@ -121,6 +121,7 @@ class ExceptionState;
 class FocusOptions;
 class GetAnimationsOptions;
 class HTMLElement;
+class HTMLSubmitButtonBehavior;
 class HTMLTemplateElement;
 class Image;
 class InputDeviceCapabilities;
@@ -142,6 +143,7 @@ class ScriptState;
 class ScriptValue;
 class ScrollIntoViewOptions;
 class ScrollMarkerGroupData;
+class ScrollPromiseResolver;
 class ScrollResult;
 class ScrollMarkerPseudoElement;
 class ScrollToOptions;
@@ -202,8 +204,9 @@ enum class ElementFlags {
   kContainsPersistentVideo = 1 << 5,
   kIsEligibleForElementCapture = 1 << 6,
   kHasCheckedElementCaptureEligibility = 1 << 7,
+  kIsUnboundedElementActive = 1 << 8,
 
-  kNumberOfElementFlags = 8,  // Size of bitfield used to store the flags.
+  kNumberOfElementFlags = 9,  // Size of bitfield used to store the flags.
 };
 
 enum class ShadowRootMode;
@@ -266,8 +269,6 @@ enum class CommandEventType {
   kToggleMuted,
   // Menu
   kToggleMenu,
-  kHideMenu,
-  kShowMenu,
   // Scroll
   kPageUp,
   kPageDown,
@@ -408,7 +409,21 @@ class CORE_EXPORT Element : public ContainerNode {
   Element* GetElementAttributeResolvingReferenceTarget(
       const QualifiedName& name) const;
   void SetElementAttribute(const QualifiedName&, Element*);
+  // GetAttrAssociatedElements returns the result of the 'get the
+  // attr-associated elements' algorithm [1]. It returns null if and only if the
+  // IDL attribute's explicitly set elements [2] is null and the content
+  // attribute is not set. GetAttrAssociatedElementsResolvingReferenceTarget
+  // returns null under the same conditions. It returns the result of resolving
+  // the reference target [3] on each member of the result of
+  // GetAttrAssociatedElements, discarding the values for which resolving the
+  // reference target returns null.
+  // [1] https://html.spec.whatwg.org/#attr-associated-elements
+  // [2] https://html.spec.whatwg.org/#explicitly-set-attr-elements
+  // [3] https://github.com/whatwg/html/pull/10995
   GCedHeapVector<Member<Element>>* GetAttrAssociatedElements(
+      const QualifiedName& name) const;
+  GCedHeapVector<Member<Element>>*
+  GetAttrAssociatedElementsResolvingReferenceTarget(
       const QualifiedName& name) const;
 
   // If treescope_element is connected, then we will search treescope_element's
@@ -439,6 +454,7 @@ class CORE_EXPORT Element : public ContainerNode {
   // Call this to get the value of an attribute that is known not to be the
   // style attribute or one of the SVG animatable attributes.
   bool FastHasAttribute(const QualifiedName&) const;
+  bool FastHasAttribute(const QualifiedNameWithHash&) const;
   const AtomicString& FastGetAttribute(const QualifiedName&) const;
 #if DCHECK_IS_ON()
   bool FastAttributeLookupAllowed(const QualifiedName&) const;
@@ -464,7 +480,7 @@ class CORE_EXPORT Element : public ContainerNode {
                                      const AtomicString& local_name) const;
 
   void setAttribute(AtomicString name,
-                    String value,
+                    AtomicString value,
                     ExceptionState& exception_state = ASSERT_NO_EXCEPTION) {
     AtomicStringTable::WeakResult weak_lowercase_name =
         WeakLowercaseIfNecessary(name);
@@ -494,7 +510,7 @@ class CORE_EXPORT Element : public ContainerNode {
       ExceptionState&);
   void setAttributeNS(const AtomicString& namespace_uri,
                       const AtomicString& qualified_name,
-                      String value,
+                      AtomicString value,
                       ExceptionState& exception_state);
   void setAttributeNS(const AtomicString& namespace_uri,
                       const AtomicString& qualified_name,
@@ -518,8 +534,8 @@ class CORE_EXPORT Element : public ContainerNode {
   AtomicStringTable::WeakResult WeakLowercaseIfNecessary(
       const AtomicString&) const;
 
-  // NoncedElement implementation: this is only used by HTMLElement and
-  // SVGElement, but putting the implementation here allows us to use
+  // NoncedElement implementation: this is only used by HTMLElement, SVGElement
+  // and MathMLElement but putting the implementation here allows us to use
   // ElementRareData to hold the data.
   const AtomicString& nonce() const;
   void setNonce(const AtomicString&);
@@ -543,10 +559,12 @@ class CORE_EXPORT Element : public ContainerNode {
   // JavaScript and also easily identifiable (it is a single attribute).
   AttributeCollection AttributesWithoutStyleUpdate() const;
 
-  void scrollIntoViewWithOptions(const ScrollIntoViewOptions*);
+  void scrollIntoViewWithOptions(const ScrollIntoViewOptions*,
+                                 ScrollPromiseResolver* = nullptr);
   void ScrollIntoViewNoVisualUpdate(mojom::blink::ScrollIntoViewParamsPtr,
                                     const Element* container = nullptr,
-                                    bool include_self = false);
+                                    bool include_self = false,
+                                    ScrollPromiseResolver* = nullptr);
   void scrollIntoViewIfNeeded(bool center_if_needed = true);
 
   int OffsetLeft();
@@ -562,8 +580,8 @@ class CORE_EXPORT Element : public ContainerNode {
   int clientWidth();
   int clientHeight();
   double currentCSSZoom();
-  double scrollLeft();
-  double scrollTop();
+  virtual double scrollLeft();
+  virtual double scrollTop();
   void setScrollLeft(double);
   void setScrollTop(double);
   virtual int scrollWidth();
@@ -591,8 +609,7 @@ class CORE_EXPORT Element : public ContainerNode {
   void scrollByForTesting(double x, double y);
   void scrollToForTesting(double x, double y);
 
-  bool ScrollTo(const ScrollToOptions*,
-                std::unique_ptr<ScopedScrollPromiseResolver> = nullptr);
+  bool ScrollTo(const ScrollToOptions*, ScrollPromiseResolver* = nullptr);
 
   // Returns the bounds of this Element, unclipped, in the coordinate space of
   // the local root's widget. That is, in the outermost main frame, this will
@@ -626,6 +643,8 @@ class CORE_EXPORT Element : public ContainerNode {
   gfx::RectF GetBoundingClientRectNoLifecycleUpdate() const;
   DOMRect* GetBoundingClientRect();
   DOMRect* GetBoundingClientRectForBinding();
+
+  ContainerQueryList* matchContainer(const String& query);
 
   // Call the NoLifecycleUpdate variants if you are sure that the lifcycle is
   // already updated to at least pre-paint clean.
@@ -702,7 +721,8 @@ class CORE_EXPORT Element : public ContainerNode {
   Element& CloneWithChildren(NodeCloningData& data,
                              Document*,
                              ContainerNode*,
-                             CustomElementRegistry*,
+                             CustomElementRegistry* registry,
+                             CustomElementRegistry* fallback_registry,
                              ExceptionState& = ASSERT_NO_EXCEPTION) const;
   Element& CloneWithoutChildren(NodeCloningData& data,
                                 CustomElementRegistry*,
@@ -794,13 +814,23 @@ class CORE_EXPORT Element : public ContainerNode {
     const AttributeModificationReason reason;
   };
 
-  // |attributeChanged| is called whenever an attribute is added, changed or
+  // |AttributeChanged| is called whenever an attribute is added, changed or
   // removed. It handles very common attributes such as id, class, name, style,
   // and slot.
   //
   // While the owner document is parsed, this function is called after all
   // attributes in a start tag were added to the element.
+  //
+  // Most callers should use AttributeChangedWithInvalidations() instead,
+  // which additionally performs cache invalidation and change propagation.
+  // Direct calls to AttributeChanged() should be reserved for batch
+  // operations (e.g., ParserSetAttributes) that handle invalidation
+  // separately.
   virtual void AttributeChanged(const AttributeModificationParams&);
+
+  // Calls AttributeChanged() and additionally increments the DOM tree version,
+  // invalidates node list caches in ancestors, and notifies accessibility.
+  void AttributeChangedWithInvalidations(const AttributeModificationParams&);
 
   // |ParseAttribute()| is called by |AttributeChanged()|. If an element
   // implementation needs to check an attribute update, override this function.
@@ -837,6 +867,9 @@ class CORE_EXPORT Element : public ContainerNode {
   // matching the given name. Is allowed to return false positives.
   bool CouldHaveAttribute(const QualifiedName& attribute_name) const {
     return CouldMatchFilter(FilterForAttribute(attribute_name));
+  }
+  bool CouldHaveAttribute(const QualifiedNameWithHash& attribute_name) const {
+    return CouldMatchFilter(attribute_name.bloom_filter);
   }
   bool CouldHaveClass(const AtomicString& class_name) const {
     return CouldMatchFilter(FilterForString(class_name));
@@ -1103,7 +1136,7 @@ class CORE_EXPORT Element : public ContainerNode {
     return HasElementFlag(ElementFlags::kIsCanvasOrInCanvasSubtree);
   }
   // Called when `IsCanvasOrInCanvasSubtree()` has changed.
-  virtual void DidChangeIsCanvasOrInCanvasSubtree() {}
+  virtual void DidChangeIsCanvasOrInCanvasSubtree();
   // Like `IsCanvasOrInCanvasSubtree()`, but excludes the outermost <canvas>.
   bool IsInCanvasSubtree() const;
 
@@ -1469,6 +1502,7 @@ class CORE_EXPORT Element : public ContainerNode {
   // script elements and some SVG elements for similar purposes, but making
   // parsing a special case in this respect should be avoided if possible.
   virtual void FinishParsingChildren();
+  void DidFinishParsingChildren();
 
   void BeginParsingChildren() { SetIsFinishedParsingChildren(false); }
 
@@ -1507,6 +1541,8 @@ class CORE_EXPORT Element : public ContainerNode {
 
   bool PseudoElementStylesDependOnFontMetrics() const;
   bool PseudoElementStylesDependOnAttr() const;
+  bool PseudoElementStylesDependOnFunc(
+      base::FunctionRef<bool(const ComputedStyle&)> func) const;
 
   // Retrieve the ComputedStyle (if any) corresponding to the provided
   // PseudoId from cache, calculating the ComputedStyle on-demand if it's
@@ -1550,9 +1586,11 @@ class CORE_EXPORT Element : public ContainerNode {
 
   virtual bool MatchesDefaultPseudoClass() const { return false; }
   virtual bool MatchesEnabledPseudoClass() const { return false; }
+  virtual bool MatchesDisabledPseudoClass() const { return false; }
   virtual bool MatchesReadOnlyPseudoClass() const { return false; }
   virtual bool MatchesReadWritePseudoClass() const { return false; }
   virtual bool MatchesValidityPseudoClasses() const { return false; }
+  bool MatchesOverscrollOpen() const;
 
   virtual bool MayTriggerVirtualKeyboard() const;
 
@@ -1567,6 +1605,8 @@ class CORE_EXPORT Element : public ContainerNode {
   virtual bool ShouldAppearIndeterminate() const { return false; }
 
   DOMTokenList& classList();
+
+  DOMTokenList& focusGroup();
 
   DOMStringMap& dataset();
 
@@ -1626,6 +1666,15 @@ class CORE_EXPORT Element : public ContainerNode {
   bool DidAttachInternals() const;
   ElementInternals& EnsureElementInternals();
   const ElementInternals* GetElementInternals() const;
+
+  // Returns the HTMLSubmitButtonBehavior for this element, if any.
+  HTMLSubmitButtonBehavior* SubmitBehavior() const;
+
+  // Activated-submit flag for form submission. For native submit buttons
+  // (HTMLButtonElement, HTMLInputElement), subclasses override these. For
+  // custom elements with HTMLSubmitButtonBehavior, delegates to the behavior.
+  virtual void SetActivatedSubmit(bool flag);
+  virtual bool IsActivatedSubmit() const;
 
   bool ContainsFullScreenElement() const {
     return HasElementFlag(ElementFlags::kContainsFullScreenElement);
@@ -1961,7 +2010,7 @@ class CORE_EXPORT Element : public ContainerNode {
   // 2) The Element is part of the active document.
   // See https://github.com/whatwg/html/pull/2373
   //
-  // This applies to the element of the HTML and SVG namespaces.
+  // This applies to the element of the HTML, SVG and MathML namespaces.
   //
   // This function clears the "nonce" attribute whenever conditions (1) and (2)
   // are met.
@@ -2042,6 +2091,22 @@ class CORE_EXPORT Element : public ContainerNode {
   void SetHasBeenHeuristicCustomPasswordCSS();
 
  protected:
+  // Returns true if this element is a native password field or has been
+  // identified as a custom password field via CSS or JS heuristics.
+  virtual bool IsNativeOrHeuristicPassword() const;
+
+  // Returns true if the element's coordinates should currently be tracked
+  // by the compositor for redaction purposes.
+  virtual bool ShouldTrackPassword() const;
+
+  // Updates the TrackedElementSubRect on feature `kPasswordTracking` for this
+  // element.
+  void UpdatePasswordTracking();
+
+  bool HasElementFlag(ElementFlags mask) const;
+  void SetElementFlag(ElementFlags, bool value = true);
+  void ClearElementFlag(ElementFlags);
+
   bool HasElementData() const { return static_cast<bool>(element_data_); }
   const ElementData* GetElementData() const { return element_data_.Get(); }
   UniqueElementData& EnsureUniqueElementData();
@@ -2166,8 +2231,6 @@ class CORE_EXPORT Element : public ContainerNode {
 
   ShadowRoot* GetShadowRootInternal() const;
 
-  template <typename Functor>
-  bool PseudoElementStylesDependOnFunc(Functor& func) const;
 
   // Returns true if the element satisfies conditions for focusability for
   // spatial navigation, even if the spatial navigation is not currently
@@ -2180,18 +2243,15 @@ class CORE_EXPORT Element : public ContainerNode {
   // containment by modifying the box tree outside the container during layout.
   bool HasSiblingBoxPseudoElements() const;
 
-  bool ScrollLayoutBoxBy(const ScrollToOptions*,
-                         std::unique_ptr<ScopedScrollPromiseResolver>);
-  bool ScrollLayoutBoxTo(const ScrollToOptions*,
-                         std::unique_ptr<ScopedScrollPromiseResolver>);
-  bool ScrollFrameBy(const ScrollToOptions*,
-                     std::unique_ptr<ScopedScrollPromiseResolver>);
-  bool ScrollFrameTo(const ScrollToOptions*,
-                     std::unique_ptr<ScopedScrollPromiseResolver>);
-
-  bool HasElementFlag(ElementFlags mask) const;
-  void SetElementFlag(ElementFlags, bool value = true);
-  void ClearElementFlag(ElementFlags);
+  // The following four methods return true if the scroll requests cause any
+  // change in scroll positions (vs no scrolling because of errors or early
+  // returns). The `ScrollPromiseResolver` holds a Promise for the JS side,
+  // which gets resolved either through a `ScrollableArea` affected by these
+  // methods, or by the caller if no `ScrollableArea` is affected.
+  bool ScrollLayoutBoxBy(const ScrollToOptions*, ScrollPromiseResolver*);
+  bool ScrollLayoutBoxTo(const ScrollToOptions*, ScrollPromiseResolver*);
+  bool ScrollFrameBy(const ScrollToOptions*, ScrollPromiseResolver*);
+  bool ScrollFrameTo(const ScrollToOptions*, ScrollPromiseResolver*);
 
   void ClearPseudoElement(PseudoId,
                           const AtomicString& pseudo_argument = g_null_atom);
@@ -2360,10 +2420,10 @@ class CORE_EXPORT Element : public ContainerNode {
   }
 
   void AttachSucceedingPseudoElements(AttachContext& context) {
-    AttachPseudoElement(kPseudoIdInterestHint, context);
-    AttachPseudoElement(kPseudoIdPickerIcon, context);
-    AttachPseudoElement(kPseudoIdExpandIcon, context);
     AttachPseudoElement(kPseudoIdAfter, context);
+    AttachPseudoElement(kPseudoIdExpandIcon, context);
+    AttachPseudoElement(kPseudoIdPickerIcon, context);
+    AttachPseudoElement(kPseudoIdInterestButton, context);
     AttachDocumentElementSucceedingPseudoElements(context);
     AttachPseudoElement(kPseudoIdBackdrop, context);
     UpdateFirstLetterPseudoElement(StyleUpdatePhase::kAttachLayoutTree);
@@ -2398,10 +2458,10 @@ class CORE_EXPORT Element : public ContainerNode {
   }
 
   void DetachSucceedingPseudoElements(bool performing_reattach) {
-    DetachPseudoElement(kPseudoIdInterestHint, performing_reattach);
-    DetachPseudoElement(kPseudoIdPickerIcon, performing_reattach);
-    DetachPseudoElement(kPseudoIdExpandIcon, performing_reattach);
     DetachPseudoElement(kPseudoIdAfter, performing_reattach);
+    DetachPseudoElement(kPseudoIdExpandIcon, performing_reattach);
+    DetachPseudoElement(kPseudoIdPickerIcon, performing_reattach);
+    DetachPseudoElement(kPseudoIdInterestButton, performing_reattach);
     DetachPseudoElement(kPseudoIdScrollButtonBlockStart, performing_reattach);
     DetachPseudoElement(kPseudoIdScrollButtonInlineStart, performing_reattach);
     DetachPseudoElement(kPseudoIdScrollButtonInlineEnd, performing_reattach);
@@ -2469,18 +2529,14 @@ class CORE_EXPORT Element : public ContainerNode {
                                const AtomicString& value,
                                AttributeModificationReason);
   void RemoveAttributeInternal(wtf_size_t index, AttributeModificationReason);
-  String TrustedTypesCheckForAttribute(const QualifiedName&,
-                                       String value,
-                                       const char* legacy_sink_name,
-                                       ExceptionState&) const;
-  String TrustedTypesCheckForAttribute(const QualifiedName&,
-                                       const V8TrustedType* value,
-                                       const char* legacy_sink_name,
-                                       ExceptionState&) const;
-  String TrustedTypesCheckForAttribute(const QualifiedName&,
-                                       const AtomicString&,
-                                       const char* legacy_sink_name,
-                                       ExceptionState&) const;
+  AtomicString TrustedTypesCheckForAttribute(const QualifiedName&,
+                                             AtomicString value,
+                                             const char* legacy_sink_name,
+                                             ExceptionState&) const;
+  AtomicString TrustedTypesCheckForAttribute(const QualifiedName&,
+                                             const V8TrustedType* value,
+                                             const char* legacy_sink_name,
+                                             ExceptionState&) const;
 
   // These Hinted versions of the functions are subtle hot path
   // optimizations designed to reduce the number of unnecessary AtomicString
@@ -2498,7 +2554,7 @@ class CORE_EXPORT Element : public ContainerNode {
                                   AtomicStringTable::WeakResult hint) const;
   void SetAttributeHinted(AtomicString name,
                           AtomicStringTable::WeakResult hint,
-                          String value,
+                          AtomicString value,
                           ExceptionState& = ASSERT_NO_EXCEPTION);
   void SetAttributeHinted(AtomicString name,
                           AtomicStringTable::WeakResult hint,
@@ -2697,6 +2753,15 @@ inline bool Element::FastHasAttribute(const QualifiedName& name) const {
          GetElementData()->Attributes().Find(name);
 }
 
+inline bool Element::FastHasAttribute(const QualifiedNameWithHash& name) const {
+#if DCHECK_IS_ON()
+  DCHECK(FastAttributeLookupAllowed(name))
+      << TagQName().ToString().Utf8() << "/@" << name.ToString().Utf8();
+#endif
+  return CouldHaveAttribute(name) && HasElementData() &&
+         GetElementData()->Attributes().Find(name);
+}
+
 inline const AtomicString& Element::FastGetAttribute(
     const QualifiedName& name) const {
 #if DCHECK_IS_ON()
@@ -2704,28 +2769,33 @@ inline const AtomicString& Element::FastGetAttribute(
       << TagQName().ToString().Utf8() << "/@" << name.ToString().Utf8();
 #endif
   if (CouldHaveAttribute(name) && HasElementData()) {
-    if (const Attribute* attribute = GetElementData()->Attributes().Find(name))
+    if (const Attribute* attribute =
+            GetElementData()->Attributes().Find(name)) {
       return attribute->Value();
+    }
   }
   return g_null_atom;
 }
 
 inline AttributeCollection Element::Attributes() const {
-  if (!HasElementData())
+  if (!HasElementData()) {
     return AttributeCollection();
+  }
   SynchronizeAllAttributes();
   return GetElementData()->Attributes();
 }
 
 inline AttributeCollection Element::AttributesWithoutUpdate() const {
-  if (!HasElementData())
+  if (!HasElementData()) {
     return AttributeCollection();
+  }
   return GetElementData()->Attributes();
 }
 
 inline AttributeCollection Element::AttributesWithoutStyleUpdate() const {
-  if (!HasElementData())
+  if (!HasElementData()) {
     return AttributeCollection();
+  }
   SynchronizeAllAttributesExceptStyle();
   return GetElementData()->Attributes();
 }
@@ -2748,10 +2818,12 @@ inline const AtomicString& Element::GetNameAttribute() const {
 }
 
 inline const AtomicString& Element::GetClassAttribute() const {
-  if (!HasClass())
+  if (!HasClass()) {
     return g_null_atom;
-  if (IsSVGElement())
+  }
+  if (IsSVGElement()) {
     return getAttribute(html_names::kClassAttr);
+  }
   return FastGetAttribute(html_names::kClassAttr);
 }
 
@@ -2779,16 +2851,19 @@ inline bool Element::HasClass() const {
 }
 
 inline UniqueElementData& Element::EnsureUniqueElementData() {
-  if (!HasElementData() || !GetElementData()->IsUnique())
+  if (!HasElementData() || !GetElementData()->IsUnique()) {
     CreateUniqueElementData();
+  }
   return To<UniqueElementData>(*element_data_);
 }
 
 inline const CSSPropertyValueSet* Element::PresentationAttributeStyle() {
-  if (!HasElementData())
+  if (!HasElementData()) {
     return nullptr;
-  if (GetElementData()->presentation_attribute_style_is_dirty())
+  }
+  if (GetElementData()->presentation_attribute_style_is_dirty()) {
     UpdatePresentationAttributeStyle();
+  }
   // Need to call elementData() again since updatePresentationAttributeStyle()
   // might swap it with a UniqueElementData.
   return GetElementData()->PresentationAttributeStyle();

@@ -621,7 +621,7 @@ const CPDF_ContentMarks* CPDF_PageContentGenerator::ProcessContentMarks(
         break;
       }
       case CPDF_ContentMarkItem::kPropertiesDict: {
-        *buf << "/" << item->GetPropertyName() << " ";
+        *buf << "/" << PDF_NameEncode(item->GetPropertyName()) << " ";
         break;
       }
       case CPDF_ContentMarkItem::kNone:

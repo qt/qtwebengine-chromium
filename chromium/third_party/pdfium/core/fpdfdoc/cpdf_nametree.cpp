@@ -246,7 +246,7 @@ RetainPtr<const CPDF_Object> SearchNameNodeByNameInternal(
 
   if (pLimits) {
     // When lookup-only: do not truncate the /Limits array.
-    if (!node_to_insert) {
+    if (node_to_insert) {
       TrimNodeLimits(pLimits.Get());
     }
     auto [left, right] = GetNodeLimits(pLimits.Get());

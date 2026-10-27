@@ -29,6 +29,7 @@
  *     LLt decomposition based on LAPACKE_?potrf function.
  ********************************************************************************
 */
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef EIGEN_LLT_LAPACKE_H
 #define EIGEN_LLT_LAPACKE_H

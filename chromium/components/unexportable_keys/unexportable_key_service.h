@@ -16,19 +16,21 @@
 
 namespace unexportable_keys {
 
-// Service providing access to `UnexportableSigningKey`s.
+// Service providing access to `UnexportableSigningKey`s and
+// `UnexportableAttestationKey`s.
 //
 // The service doesn't give clients direct access to the keys. Instead,
-// `UnexportableKeyService` returns a key handle, `UnexportableKeyId`, that can
-// be passed back to the service to perform operations with the key.
+// `UnexportableKeyService` returns a key handle, `UnexportableKeyId` (or its
+// subclasses `UnexportableSigningKeyId` and `UnexportableAttestationKeyId`),
+// that can be passed back to the service to perform operations with the key.
 //
 // To use the same key across several sessions, a client should perform the
-// following steps:
+// following steps (shown for signing keys, but similar for attestation keys):
 //
 // 1. Generate a new `UnexportableSigningKey` and obtain its key ID:
 //
 //  UnexportableKeyService& service = GetUnexportableKeyService();
-//  ServiceErrorOr<UnexportableKeyId> key_id;
+//  ServiceErrorOr<UnexportableSigningKeyId> key_id;
 //  service.GenerateSigningKeySlowlyAsync(
 //      kAlgorithm, kPriority, [&key_id](auto result) { key_id = result; });
 //
@@ -41,7 +43,7 @@ namespace unexportable_keys {
 //    the wrapped key:
 //
 //  UnexportableKeyService& service = GetUnexportableKeyService();
-//  ServiceErrorOr<UnexportableKeyId> key_id;
+//  ServiceErrorOr<UnexportableSigningKeyId> key_id;
 //  std::vector<uint8_t> wrapped_key = ReadFromDisk();
 //  service.FromWrappedSigningKeySlowlyAsync(
 //    wrapped_key, kPriority, [&key_id](auto result) { key_id = result; });
@@ -59,8 +61,8 @@ class COMPONENT_EXPORT(UNEXPORTABLE_KEYS) UnexportableKeyService {
   virtual ~UnexportableKeyService() = default;
 
   // Generates a new signing key asynchronously and returns an ID of this key.
-  // Returned `UnexportableKeyId` can be used later to perform key operations on
-  // this `UnexportableKeyService`.
+  // Returned `UnexportableSigningKeyId` can be used later to perform key
+  // operations on this `UnexportableKeyService`.
   // The first supported value of `acceptable_algorithms` determines the type of
   // the key.
   // Invokes `callback` with a `ServiceError` if no supported hardware exists,
@@ -70,16 +72,17 @@ class COMPONENT_EXPORT(UNEXPORTABLE_KEYS) UnexportableKeyService {
       base::span<const crypto::SignatureVerifier::SignatureAlgorithm>
           acceptable_algorithms,
       BackgroundTaskPriority priority,
-      base::OnceCallback<void(ServiceErrorOr<UnexportableKeyId>)> callback) = 0;
+      base::OnceCallback<void(ServiceErrorOr<UnexportableSigningKeyId>)>
+          callback) = 0;
 
   // Creates a new signing key from a `wrapped_key` asynchronously and returns
   // an ID of this key.
-  // Returned `UnexportableKeyId` can be used later to perform key operations on
-  // this `UnexportableKeyService`.
+  // Returned `UnexportableSigningKeyId` can be used later to perform key
+  // operations on this `UnexportableKeyService`.
   // `wrapped_key` can be read from disk but must have initially resulted from
-  // calling `GetWrappedKey()` on a previous instance of `UnexportableKeyId`.
-  // Invokes `callback` with a `ServiceError` if `wrapped_key` cannot be
-  // imported.
+  // calling `GetWrappedKey()` on a previous instance of
+  // `UnexportableSigningKeyId`. Invokes `callback` with a `ServiceError` if
+  // `wrapped_key` cannot be imported.
   //
   // This method is also a supported way of transferring a key between
   // `UnexportableKeyService` instances. A key's lifetime is controlled by the
@@ -88,7 +91,41 @@ class COMPONENT_EXPORT(UNEXPORTABLE_KEYS) UnexportableKeyService {
   virtual void FromWrappedSigningKeySlowlyAsync(
       base::span<const uint8_t> wrapped_key,
       BackgroundTaskPriority priority,
-      base::OnceCallback<void(ServiceErrorOr<UnexportableKeyId>)> callback) = 0;
+      base::OnceCallback<void(ServiceErrorOr<UnexportableSigningKeyId>)>
+          callback) = 0;
+
+  // Generates a new attestation key asynchronously and returns an ID of this
+  // key. Returned `UnexportableAttestationKeyId` can be used later to perform
+  // key operations on this `UnexportableKeyService`. The first supported value
+  // of `acceptable_algorithms` determines the type of the key. Invokes
+  // `callback` with a `ServiceError` if no supported hardware exists, if no
+  // value in `acceptable_algorithms` is supported, or if there was an error
+  // creating the key.
+  //
+  // TODO(crbug.com/501306852): Attestation keys are not really useful yet, but
+  // a CertifySlowly() API involving them will be added shortly.
+  virtual void GenerateAttestationKeySlowlyAsync(
+      base::span<const crypto::SignatureVerifier::SignatureAlgorithm>
+          acceptable_algorithms,
+      BackgroundTaskPriority priority,
+      base::OnceCallback<void(ServiceErrorOr<UnexportableAttestationKeyId>)>
+          callback) = 0;
+
+  // Creates a new attestation key from a `wrapped_key` asynchronously and
+  // returns an ID of this key. Returned `UnexportableAttestationKeyId` can be
+  // used later to perform key operations on this `UnexportableKeyService`.
+  // `wrapped_key` can be read from disk but must have initially resulted from
+  // calling `GetWrappedKey()` on a previous instance of
+  // `UnexportableAttestationKeyId`. Invokes `callback` with a `ServiceError` if
+  // `wrapped_key` cannot be imported.
+  //
+  // TODO(crbug.com/501306852): Attestation keys are not really useful yet, but
+  // a CertifySlowly() API involving them will be added shortly.
+  virtual void FromWrappedAttestationKeySlowlyAsync(
+      base::span<const uint8_t> wrapped_key,
+      BackgroundTaskPriority priority,
+      base::OnceCallback<void(ServiceErrorOr<UnexportableAttestationKeyId>)>
+          callback) = 0;
 
   // Returns all signing keys currently stored by the OS that are have been
   // managed by this service.
@@ -125,10 +162,10 @@ class COMPONENT_EXPORT(UNEXPORTABLE_KEYS) UnexportableKeyService {
   //
   //
   // UnexportableKeyService& service = GetUnexportableKeyService();
-  // service.GetAllSigningKeysForGarbageCollectionSlowlyAsync(
+  // service.GetAllKeysForGarbageCollectionSlowlyAsync(
   //     kPriority,
   //     base::BindOnce(OnKeys));
-  virtual void GetAllSigningKeysForGarbageCollectionSlowlyAsync(
+  virtual void GetAllKeysForGarbageCollectionSlowlyAsync(
       BackgroundTaskPriority priority,
       base::OnceCallback<void(ServiceErrorOr<std::vector<UnexportableKeyId>>)>
           callback) = 0;
@@ -141,7 +178,7 @@ class COMPONENT_EXPORT(UNEXPORTABLE_KEYS) UnexportableKeyService {
   // `key_id` must have resulted from calling `GenerateSigningKeySlowlyAsync()`
   // or `FromWrappedSigningKeySlowlyAsync()`.
   virtual void SignSlowlyAsync(
-      UnexportableKeyId key_id,
+      UnexportableSigningKeyId key_id,
       base::span<const uint8_t> data,
       BackgroundTaskPriority priority,
       base::OnceCallback<void(ServiceErrorOr<std::vector<uint8_t>>)>

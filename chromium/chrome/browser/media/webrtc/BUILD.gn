@@ -129,10 +129,12 @@ source_set("webrtc") {
     "//chrome/app:command_ids",
     "//chrome/app:generated_resources",
     "//chrome/app:generated_resources_grit",
+    "//chrome/browser:bad_message",
     "//chrome/browser:browser_features",
     "//chrome/browser:browser_process",
     "//chrome/browser/content_settings:content_settings_factory",
     "//chrome/browser/content_settings:content_settings_util",
+    "//chrome/browser/media",
     "//chrome/browser/media:access_handler",
     "//chrome/browser/media/prefs",
     "//chrome/browser/permissions/system",
@@ -142,6 +144,8 @@ source_set("webrtc") {
     "//chrome/browser/profiles:profile_util",
     "//chrome/browser/safe_browsing",
     "//chrome/browser/status_icons",
+    "//chrome/browser/ui:simple_message_box_headers",
+    "//chrome/browser/ui:tab_modal_confirm_dialog_delegate",
     "//chrome/browser/ui:ui_features",
     "//chrome/common",
     "//chrome/common:channel_info",
@@ -205,7 +209,6 @@ source_set("webrtc") {
     ]
     deps += [
       "//chrome/browser/controlled_frame:media_access_handler",
-      "//chrome/browser/ui:browser_list",
       "//chrome/browser/ui/tabs:tab_strip",
       "//chrome/browser/ui/web_applications",
       "//extensions/browser",
@@ -216,6 +219,9 @@ source_set("webrtc") {
 
   if (enable_screen_capture) {
     sources += [
+      # This avoids header circular dependencies with //c/b/media.
+      "../capture_access_handler_base.cc",
+      "../capture_access_handler_base.h",
       "desktop_capture_devices_util.cc",
       "desktop_capture_devices_util.h",
       "desktop_media_picker_factory_impl.cc",
@@ -227,6 +233,19 @@ source_set("webrtc") {
       "//chrome/browser/glic",
       "//chrome/browser/ui:url_identity",
     ]
+
+    if (is_android) {
+      sources += [
+        # This avoids header circular dependencies with //c/b/media.
+        "../android/desktop_media_picker_android.cc",
+        "../android/desktop_media_picker_android.h",
+        "../android/media_capture_picker_manager_bridge.cc",
+        "../android/media_capture_picker_manager_bridge.h",
+        "../android/tab_sharing_indicator_android.cc",
+        "../android/tab_sharing_indicator_android.h",
+      ]
+      deps += [ "//chrome/android:chrome_jni_headers" ]
+    }
 
     if (is_win) {
       sources += [

@@ -17,6 +17,7 @@
 #include "src/numbers/conversions.h"
 #include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/js-promise-inl.h"
+#include "src/objects/managed.h"
 #include "src/objects/objects-inl.h"
 #include "src/tasks/cancelable-task.h"
 
@@ -324,11 +325,10 @@ Tagged<Object> FutexEmulation::WaitWasm64(Isolate* isolate,
 }
 
 #if V8_ENABLE_WEBASSEMBLY
-Tagged<Object> FutexEmulation::WaitWasmManagedObject(Isolate* isolate,
-                                                     Tagged<HeapObject> object,
-                                                     int32_t offset,
-                                                     int32_t expected_value,
-                                                     int64_t rel_timeout_ns) {
+Tagged<Object> FutexEmulation::WaitWasmManagedObject(
+    Isolate* isolate, Tagged<HeapObject> object, int32_t offset,
+    Tagged<Managed<FutexManagedObjectWaitList>> waitqueue,
+    int32_t expected_value, int64_t rel_timeout_ns) {
   VMState<ATOMICS_WAIT> state(isolate);
   base::TimeDelta rel_timeout =
       base::TimeDelta::FromNanoseconds(rel_timeout_ns);
@@ -343,11 +343,7 @@ Tagged<Object> FutexEmulation::WaitWasmManagedObject(Isolate* isolate,
     timeout_time = current_time + rel_timeout;
   }
 
-  // TODO(manoskouk): Do we need an atomic load here?
-  Tagged<Managed<FutexManagedObjectWaitList>> managed =
-      Cast<Managed<FutexManagedObjectWaitList>>(TaggedField<Object>::load(
-          object, offset + wasm::kWaitQueueManagedOffset));
-  const std::shared_ptr<FutexManagedObjectWaitList> wait_list = managed->get();
+  Managed<FutexManagedObjectWaitList>::Ptr wait_list = waitqueue->ptr();
   NoGarbageCollectionMutexGuard lock_guard(GetWaitList()->mutex());
 
   int32_t loaded_control_value =
@@ -355,7 +351,7 @@ Tagged<Object> FutexEmulation::WaitWasmManagedObject(Isolate* isolate,
           ->load();
 
   return *WaitSyncImpl<FutexManagedObjectWaitList>(
-      isolate, wait_list.get(), node, lock_guard, use_timeout, timeout_time,
+      isolate, wait_list.raw(), node, lock_guard, use_timeout, timeout_time,
       expected_value, loaded_control_value, {});
 }
 #endif  // V8_ENABLE_WEBASSEMBLY
@@ -472,7 +468,7 @@ DirectHandle<Object> FutexEmulation::WaitSyncImpl(
 
       lock_guard.Lock();
 
-      if (IsExceptionHole(interrupt_object, isolate)) {
+      if (IsExceptionHole(interrupt_object)) {
         result = direct_handle(interrupt_object, isolate);
         break;
       }
@@ -721,10 +717,14 @@ int FutexEmulation::Wake(void* wait_location, uint32_t num_waiters_to_wake) {
     // ---
     // Code below handles the unlikely case that this node's backing store was
     // deleted during an async wait and a new one was allocated in its place.
-    // We delete the node if possible (no timeout, or context is gone).
+    // If there's no timeout, we clean up the node here. Otherwise, the timeout
+    // task will eventually fire and clean it up.
     // ---
-    bool delete_this_node = false;
     DCHECK(node->IsAsync());
+    // Retrieve the next node to iterate before calling NotifyAsyncWaiter, since
+    // NotifyAsyncWaiter takes the node out of this list and re-links it onto
+    // another one, clobbering node->next_.
+    FutexWaitListNode* next_node = node->next_;
     if (node->async_state_->timeout_time.IsNull()) {
       // Backing store has been deleted and the node is still waiting, and
       // there's no timeout. It's never going to be woken up, so we can clean it
@@ -737,24 +737,7 @@ int FutexEmulation::Wake(void* wait_location, uint32_t num_waiters_to_wake) {
       DCHECK(node->IsAsync());
       DCHECK_EQ(CancelableTaskManager::kInvalidTaskId,
                 node->async_state_->timeout_task_id);
-      delete_this_node = true;
-    }
-    if (node->async_state_->native_context.IsEmpty()) {
-      // The NativeContext related to the async waiter has been deleted.
-      // Ditto, clean up now.
 
-      // Using the CancelableTaskManager here is OK since the Isolate is
-      // guaranteed to be alive - FutexEmulation::IsolateDeinit removes all
-      // FutexWaitListNodes owned by an Isolate which is going to die.
-      if (node->CancelTimeoutTask()) {
-        delete_this_node = true;
-      }
-      // If cancelling the timeout task failed, the timeout task is already
-      // running and will clean up the node.
-    }
-
-    FutexWaitListNode* next_node = node->next_;
-    if (delete_this_node) {
       node->async_state_->waiting_for_main_thread_cleanup = true;
       node->waiting_ = false;
       // This will schedule a task to call ResolveAsyncWaiterPromises, which
@@ -768,17 +751,13 @@ int FutexEmulation::Wake(void* wait_location, uint32_t num_waiters_to_wake) {
 }
 
 #if V8_ENABLE_WEBASSEMBLY
-int FutexEmulation::Wake(Address raw_object, int32_t offset,
-                         uint32_t num_waiters_to_wake) {
+int FutexEmulation::Wake(Address raw_waitqueue, uint32_t num_waiters_to_wake) {
   DisallowGarbageCollection no_gc;
   int num_waiters_woken = 0;
 
-  // TODO(manoskouk): Do we need an atomic load here?
-  Tagged<Managed<FutexManagedObjectWaitList>> managed =
-      Cast<Managed<FutexManagedObjectWaitList>>(TaggedField<Object>::load(
-          Cast<HeapObject>(Tagged<Object>(raw_object)),
-          offset + wasm::kWaitQueueManagedOffset));
-  const std::shared_ptr<FutexManagedObjectWaitList> wait_list = managed->get();
+  auto managed =
+      Cast<Managed<FutexManagedObjectWaitList>>(Tagged<Object>(raw_waitqueue));
+  Managed<FutexManagedObjectWaitList>::Ptr wait_list = managed->ptr();
 
   NoGarbageCollectionMutexGuard lock_guard(GetWaitList()->mutex());
 
@@ -993,7 +972,7 @@ void FutexEmulation::IsolateDeinit(Isolate* isolate) {
 
 int FutexEmulation::NumWaitersForTesting(Tagged<JSArrayBuffer> array_buffer,
                                          size_t addr) {
-  void* wait_location = FutexWaitList::ToWaitLocation(*array_buffer, addr);
+  void* wait_location = FutexWaitList::ToWaitLocation(array_buffer, addr);
   FutexWaitList* wait_list = GetWaitList();
   NoGarbageCollectionMutexGuard lock_guard(wait_list->mutex());
 

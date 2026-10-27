@@ -62,8 +62,7 @@ NvshmemCollectivePermuteThunk::NvshmemCollectivePermuteThunk(
     int64_t replica_count, int64_t partition_count,
     const std::vector<CollectiveThunk::Buffer>& buffers,
     bool p2p_memcpy_enabled)
-    : NvshmemCollectiveThunk(Thunk::kNvshmemCollectivePermute, thunk_info,
-                             /*is_p2p=*/false),
+    : NvshmemCollectiveThunk(Thunk::kNvshmemCollectivePermute, thunk_info),
       config_(GetNvshmemP2PConfig(instr, replica_count, partition_count)),
       buffers_(buffers),
       p2p_memcpy_enabled_(p2p_memcpy_enabled) {}
@@ -130,8 +129,7 @@ NvshmemCollectivePermuteThunk::NvshmemCollectivePermuteThunk(
     ThunkInfo thunk_info, P2PConfig config,
     std::vector<CollectiveThunk::Buffer> buffers, bool p2p_memcpy_enabled)
     : NvshmemCollectiveThunk(Thunk::kNvshmemCollectivePermute,
-                             std::move(thunk_info),
-                             /*is_p2p=*/false),
+                             std::move(thunk_info)),
       config_(std::move(config)),
       buffers_(std::move(buffers)),
       p2p_memcpy_enabled_(p2p_memcpy_enabled) {}
@@ -140,8 +138,8 @@ absl::StatusOr<ThunkProto> NvshmemCollectivePermuteThunk::ToProto() const {
   ThunkProto proto;
   *proto.mutable_thunk_info() = thunk_info().ToProto();
 
-  NvshmemCollectivePermuteStartThunkProto* thunk_proto =
-      proto.mutable_nvshmem_collective_permute_start_thunk();
+  NvshmemCollectivePermuteThunkProto* thunk_proto =
+      proto.mutable_nvshmem_collective_permute_thunk();
 
   *thunk_proto->mutable_p2p_config() = P2PConfigToProto(config_);
 
@@ -156,8 +154,7 @@ absl::StatusOr<ThunkProto> NvshmemCollectivePermuteThunk::ToProto() const {
 
 absl::StatusOr<std::unique_ptr<NvshmemCollectivePermuteThunk>>
 NvshmemCollectivePermuteThunk::FromProto(
-    ThunkInfo thunk_info,
-    const NvshmemCollectivePermuteStartThunkProto& thunk_proto,
+    ThunkInfo thunk_info, const NvshmemCollectivePermuteThunkProto& thunk_proto,
     absl::Span<const BufferAllocation> buffer_allocations) {
   std::vector<CollectiveThunk::Buffer> buffers;
   buffers.reserve(thunk_proto.buffers_size());
@@ -239,16 +236,15 @@ absl::Status RunCollectivePermute(P2PConfig::SourceTargetMapEntry source_target,
           RankId(*target_id), GpuCollectives::On(stream));
       TF_RETURN_IF_ERROR(send_future.Await());
     }
+  }
+  if (source_id) {
+    // NVSHMEM put/get API is one-way communication - the sender initiates the
+    // transfer and the receiver doesn't need to explicitly receive. We use a
+    // barrier here to ensure all puts have completed before proceeding.
+    VLOG(1) << "CollectivePermute: rank " << device_ordinal
+            << " receiving data from source " << *source_id;
 
-    if (source_id) {
-      // NVSHMEM put/get API is one-way communication - the sender initiates the
-      // transfer and the receiver doesn't need to explicitly receive. We use a
-      // barrier here to ensure all puts have completed before proceeding.
-      VLOG(1) << "CollectivePermute: rank " << device_ordinal
-              << " receiving data from source " << *source_id;
-
-      TF_RETURN_IF_ERROR(nvshmem_comm->Barrier(GpuCollectives::On(stream)));
-    }
+    TF_RETURN_IF_ERROR(nvshmem_comm->Barrier(GpuCollectives::On(stream)));
   }
 
   if (!source_id) {

@@ -60,7 +60,7 @@ void CXFA_FFPasswordEdit::UpdateWidgetProperty() {
 
   WideString password = password_node_->GetPasswordChar();
   if (!password.IsEmpty()) {
-    pWidget->SetAliasChar(password[0]);
+    pWidget->SetAliasChar(password.Front());
   }
   if (!node_->IsHorizontalScrollPolicyOff()) {
     dwExtendedStyle |= FWL_STYLEEXT_EDT_AutoHScroll;

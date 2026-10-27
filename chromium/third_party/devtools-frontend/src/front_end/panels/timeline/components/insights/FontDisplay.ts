@@ -73,6 +73,10 @@ export class FontDisplay extends BaseInsightComponent<FontDisplayInsightModel> {
       return Lit.nothing;
     }
 
+    if (this.model.fonts.length === 0) {
+      return html`<div class="insight-section">${i18nString(UIStrings.noFonts)}</div>`;
+    }
+
     const rows = createLimitedRows(this.model.fonts, this);
 
     // clang-format off

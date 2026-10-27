@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import type {JSONSchema7} from 'json-schema';
+
 import type * as Common from '../../core/common/common.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../bindings/bindings.js';
-import type * as StackTrace from '../stack_trace/stack_trace.js';
+import * as StackTrace from '../stack_trace/stack_trace.js';
 
 export const enum Events {
   TOOLS_ADDED = 'ToolsAdded',
@@ -16,16 +18,79 @@ export const enum Events {
   TOOL_RESPONDED = 'ToolResponded',
 }
 
+export interface ExceptionDetails {
+  readonly error: SDK.RemoteObject.RemoteObject;
+  readonly description: string;
+  readonly frames: StackTrace.ErrorStackParser.ParsedErrorFrame[];
+  readonly cause?: ExceptionDetails;
+}
+
+export class Result {
+  readonly status: Protocol.WebMCP.InvocationStatus;
+  readonly output?: unknown;
+  readonly errorText?: string;
+  // TODO(crbug.com/494516094) Clean this up if the target disappears?
+  readonly #exception?: SDK.RemoteObject.RemoteObject;
+  #exceptionDetails?: Promise<ExceptionDetails|undefined>;
+
+  constructor(
+      status: Protocol.WebMCP.InvocationStatus, output: unknown|undefined, errorText: string|undefined,
+      exception: SDK.RemoteObject.RemoteObject|undefined) {
+    this.status = status;
+    this.errorText = errorText;
+    this.#exception = exception;
+    this.output = output;
+  }
+
+  get exceptionDetails(): Promise<ExceptionDetails|undefined>|undefined {
+    if (!this.#exceptionDetails) {
+      this.#exceptionDetails = this.#resolveExceptionDetails(this.#exception);
+    }
+    return this.#exceptionDetails;
+  }
+
+  async #resolveExceptionDetails(errorObj: SDK.RemoteObject.RemoteObject|undefined):
+      Promise<ExceptionDetails|undefined> {
+    if (!errorObj) {
+      return undefined;
+    }
+    const error = SDK.RemoteObject.RemoteError.objectAsError(errorObj);
+    const [details, cause] = await Promise.all([error.exceptionDetails(), error.cause()]);
+    const description = error.errorStack;
+
+    const frames =
+        StackTrace.ErrorStackParser.parseSourcePositionsFromErrorStack(errorObj.runtimeModel(), error.errorStack) || [];
+    if (details?.stackTrace) {
+      StackTrace.ErrorStackParser.augmentErrorStackWithScriptIds(frames, details.stackTrace);
+    }
+
+    if (cause?.subtype === 'error') {
+      return {error: errorObj, description, frames, cause: await this.#resolveExceptionDetails(cause)};
+    }
+
+    if (cause?.type === 'string') {
+      return {
+        error: errorObj,
+        description,
+        frames,
+        cause: {
+          error: cause,
+          description: cause.value as string,
+          frames: [],
+        }
+      };
+    }
+
+    return {error: errorObj, description, frames};
+  }
+}
+
 export interface Call {
   invocationId: string;
   tool: Tool;
   input: string;
-  result?: {
-    status: Protocol.WebMCP.InvocationStatus,
-    output?: unknown,
-    errorText?: string,
-    exception?: Protocol.Runtime.RemoteObject,
-  };
+  result?: Result;
+  cancel: () => void;
 }
 
 export class Tool {
@@ -53,6 +118,18 @@ export class Tool {
     return this.#protocolTool.description;
   }
 
+  get inputSchema(): JSONSchema7 {
+    let rawSchema = this.#protocolTool.inputSchema;
+    if (typeof rawSchema === 'string') {
+      try {
+        rawSchema = JSON.parse(rawSchema);
+      } catch {
+        rawSchema = {};
+      }
+    }
+    return (typeof rawSchema === 'object' && rawSchema !== null) ? rawSchema as JSONSchema7 : {};
+  }
+
   get frame(): SDK.ResourceTreeModel.ResourceTreeFrame|undefined {
     return this.#target.deref()
                ?.model(SDK.ResourceTreeModel.ResourceTreeModel)
@@ -68,6 +145,19 @@ export class Tool {
     const target = this.#target.deref();
     return this.#protocolTool.backendNodeId && target &&
         new SDK.DOMModel.DeferredDOMNode(target, this.#protocolTool.backendNodeId);
+  }
+
+  async invoke(input: unknown): Promise<string|undefined> {
+    const target = this.#target.deref();
+    const response = await target?.webMCPAgent().invoke_invokeTool({
+      toolName: this.name,
+      frameId: this.#protocolTool.frameId,
+      input,
+    });
+    if (!response || response.getError()) {
+      return undefined;
+    }
+    return response.invocationId;
   }
 }
 export interface EventTypes {
@@ -103,6 +193,10 @@ export class WebMCPModel extends SDK.SDKModel.SDKModel<EventTypes> implements Pr
 
   get toolCalls(): Call[] {
     return [...this.#calls.values()];
+  }
+
+  toolCallForId(invocationId: string): Call|undefined {
+    return this.#calls.get(invocationId);
   }
 
   clearCalls(): void {
@@ -161,9 +255,14 @@ export class WebMCPModel extends SDK.SDKModel.SDKModel<EventTypes> implements Pr
       return;
     }
     const call: Call = {
-      invocationId: params.invocationId,
-      input: params.input,
       tool,
+      input: params.input,
+      invocationId: params.invocationId,
+      cancel: () => {
+        if (call.result === undefined) {
+          void this.agent.invoke_cancelInvocation({invocationId: params.invocationId});
+        }
+      },
     };
     this.#calls.set(params.invocationId, call);
     this.dispatchEventToListeners(Events.TOOL_INVOKED, call);
@@ -174,12 +273,9 @@ export class WebMCPModel extends SDK.SDKModel.SDKModel<EventTypes> implements Pr
     if (!call) {
       return;
     }
-    call.result = {
-      status: params.status,
-      output: params.output,
-      errorText: params.errorText,
-      exception: params.exception,
-    };
+    const exception =
+        params.exception && this.target().model(SDK.RuntimeModel.RuntimeModel)?.createRemoteObject(params.exception);
+    call.result = new Result(params.status, params.output, params.errorText, exception);
     this.dispatchEventToListeners(Events.TOOL_RESPONDED, call);
   }
 }

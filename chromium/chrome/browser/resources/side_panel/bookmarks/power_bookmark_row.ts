@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'chrome://resources/cr_elements/cr_expand_button/cr_expand_button.js';
 import './power_bookmark_row_item.js';
+import '//bookmarks-side-panel.top-chrome/shared/sp_heading.js';
 
 import type {PriceTrackingBrowserProxy} from '//resources/cr_components/commerce/price_tracking_browser_proxy.js';
 import {PriceTrackingBrowserProxyImpl} from '//resources/cr_components/commerce/price_tracking_browser_proxy.js';
@@ -11,7 +11,6 @@ import type {BookmarkProductInfo} from '//resources/cr_components/commerce/share
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 import {CrUrlListItemSize} from 'chrome://resources/cr_elements/cr_url_list_item/cr_url_list_item.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {isRTL} from 'chrome://resources/js/util.js';
 
 import type {BookmarksTreeNode} from './bookmarks.mojom-webui.js';
@@ -21,7 +20,7 @@ import {getHtml} from './power_bookmark_row.html.js';
 import type {PowerBookmarkRowItemElement} from './power_bookmark_row_item.js';
 import {PowerBookmarksService} from './power_bookmarks_service.js';
 
-export const NESTED_BOOKMARKS_BASE_MARGIN = 28;
+export const NESTED_BOOKMARKS_BASE_MARGIN = 40;
 export const NESTED_BOOKMARKS_MARGIN_PER_DEPTH = 12;
 export const BOOKMARK_ROW_LOAD_EVENT = 'bookmark-row-connected-event';
 
@@ -42,7 +41,6 @@ export class PowerBookmarkRowElement extends CrLitElement {
     return {
       bookmark: {type: Object},
       compact: {type: Boolean},
-      bookmarksTreeViewEnabled: {type: Boolean},
       contextMenuBookmark: {type: Object},
       depth: {
         type: Number,
@@ -62,13 +60,13 @@ export class PowerBookmarkRowElement extends CrLitElement {
       trailingIconTooltip: {type: String},
       listItemSize: {type: String},
       toggleExpand: {type: Boolean},
-      isSelected: {type: Boolean},
       updatedElementIds: {type: Array},
       canDrag: {type: Boolean},
       hasActiveDrag: {type: Boolean},
       activeFolderPath: {type: Array},
       hasFolders: {type: Boolean, reflect: true},
       activeSortIndex: {type: Number},
+      rowHeading: {type: String},
     };
   }
 
@@ -85,8 +83,6 @@ export class PowerBookmarkRowElement extends CrLitElement {
   };
   accessor compact: boolean = false;
   accessor contextMenuBookmark: BookmarksTreeNode|undefined;
-  accessor bookmarksTreeViewEnabled: boolean =
-      loadTimeData.getBoolean('bookmarksTreeViewEnabled');
   accessor depth: number = 0;
   accessor hasCheckbox: boolean = false;
   accessor selectedBookmarks: BookmarksTreeNode[] = [];
@@ -96,7 +92,6 @@ export class PowerBookmarkRowElement extends CrLitElement {
   accessor rowAriaDescription: string = '';
   accessor trailingIconTooltip: string = '';
   accessor toggleExpand: boolean = false;
-  accessor isSelected: boolean = false;
   accessor imageUrls: {[key: string]: string} = {};
   accessor updatedElementIds: string[] = [];
   accessor isPriceTracked: boolean = false;
@@ -106,6 +101,7 @@ export class PowerBookmarkRowElement extends CrLitElement {
   accessor hasFolders: boolean = false;
   accessor activeSortIndex: number = 0;
   accessor listItemSize: CrUrlListItemSize = CrUrlListItemSize.COMPACT;
+  accessor rowHeading: string = '';
 
   private bookmarksService_: PowerBookmarksService =
       PowerBookmarksService.getInstance();
@@ -159,16 +155,11 @@ export class PowerBookmarkRowElement extends CrLitElement {
       }
     }
 
-    if (changedProperties.has('activeFolderPath')) {
-      this.isSelected = this.activeFolderPath?.length > 0 &&
-          this.activeFolderPath[this.activeFolderPath.length - 1].id ===
-              this.bookmark.id;
-    }
 
     if (changedProperties.has('compact')) {
       this.listItemSize =
           this.compact ? CrUrlListItemSize.COMPACT : CrUrlListItemSize.LARGE;
-      if (this.bookmarksTreeViewEnabled && this.compact) {
+      if (this.compact) {
         // Set custom margins for nested bookmarks in tree view.
         this.style.setProperty(
             '--base-margin', `${NESTED_BOOKMARKS_BASE_MARGIN}px`);
@@ -319,9 +310,8 @@ export class PowerBookmarkRowElement extends CrLitElement {
     return !!this.bookmarksService_.getPriceTrackedInfo(this.bookmark);
   }
 
-  protected shouldExpand_(): boolean|null {
-    return this.bookmark?.children && this.bookmarksTreeViewEnabled &&
-        this.compact;
+  protected shouldExpand_(): boolean {
+    return !!(this.bookmark?.children && this.compact);
   }
 
   protected isFolder_(): boolean {
@@ -332,8 +322,8 @@ export class PowerBookmarkRowElement extends CrLitElement {
     return this.isFolder_() && !!this.bookmark.children?.length;
   }
 
-  protected getWrapperId_(): string {
-    return this.compact && this.bookmarksTreeViewEnabled ? 'bookmark' : '';
+  protected getListItemCssClass_(): string {
+    return this.compact ? 'bookmark' : '';
   }
 }
 

@@ -140,26 +140,24 @@ BorderStyleInfo GetBorderStyleInfo(const CPDF_Dictionary* border_style_dict) {
 
   const ByteString border_style_string =
       border_style_dict->GetByteStringFor("S");
-  if (border_style_string.GetLength()) {
-    switch (border_style_string[0]) {
-      case 'S':
-        border_style_info.style = BorderStyle::kSolid;
-        break;
-      case 'D':
-        border_style_info.style = BorderStyle::kDash;
-        break;
-      case 'B':
-        border_style_info.style = BorderStyle::kBeveled;
-        border_style_info.width *= 2;
-        break;
-      case 'I':
-        border_style_info.style = BorderStyle::kInset;
-        border_style_info.width *= 2;
-        break;
-      case 'U':
-        border_style_info.style = BorderStyle::kUnderline;
-        break;
-    }
+  switch (border_style_string.Front()) {  // Front() safe when empty.
+    case 'S':
+      border_style_info.style = BorderStyle::kSolid;
+      break;
+    case 'D':
+      border_style_info.style = BorderStyle::kDash;
+      break;
+    case 'B':
+      border_style_info.style = BorderStyle::kBeveled;
+      border_style_info.width *= 2;
+      break;
+    case 'I':
+      border_style_info.style = BorderStyle::kInset;
+      border_style_info.width *= 2;
+      break;
+    case 'U':
+      border_style_info.style = BorderStyle::kUnderline;
+      break;
   }
 
   RetainPtr<const CPDF_Array> dash_array = border_style_dict->GetArrayFor("D");

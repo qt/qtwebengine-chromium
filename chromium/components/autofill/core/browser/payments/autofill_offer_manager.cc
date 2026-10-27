@@ -4,22 +4,11 @@
 
 #include "components/autofill/core/browser/payments/autofill_offer_manager.h"
 
-#include <algorithm>
-#include <ranges>
 
 #include "base/check_deref.h"
-#include "base/functional/bind.h"
 #include "components/autofill/core/browser/data_manager/payments/payments_data_manager.h"
-#include "components/autofill/core/browser/data_manager/personal_data_manager.h"
 #include "components/autofill/core/browser/data_model/payments/autofill_offer_data.h"
-#include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
-#include "components/autofill/core/browser/suggestions/suggestion_type.h"
-#include "components/autofill/core/common/autofill_features.h"
-#include "components/autofill/core/common/autofill_payments_features.h"
-#include "components/feature_engagement/public/feature_constants.h"
-#include "components/strings/grit/components_strings.h"
-#include "ui/base/l10n/l10n_util.h"
 
 namespace autofill {
 AutofillOfferManager::AutofillOfferManager(
@@ -37,47 +26,6 @@ void AutofillOfferManager::OnPaymentsDataChanged() {
 
 void AutofillOfferManager::OnDidNavigateFrame(AutofillClient& client) {
   notification_handler_.UpdateOfferNotificationVisibility(client);
-}
-
-AutofillOfferManager::CardLinkedOffersMap
-AutofillOfferManager::GetCardLinkedOffersMap(
-    const GURL& last_committed_primary_main_frame_url) const {
-  GURL last_committed_primary_main_frame_origin =
-      last_committed_primary_main_frame_url.DeprecatedGetOriginAsURL();
-
-  if (!eligible_merchant_domains_.contains(
-          last_committed_primary_main_frame_origin)) {
-    return {};
-  }
-
-  const std::vector<const CreditCard*> cards =
-      payments_data_manager_->GetCreditCards();
-  AutofillOfferManager::CardLinkedOffersMap card_linked_offers_map;
-
-  for (const AutofillOfferData* offer :
-       payments_data_manager_->GetAutofillOffers()) {
-    // Ensure the offer is valid.
-    if (!offer->IsActiveAndEligibleForOrigin(
-            last_committed_primary_main_frame_origin)) {
-      continue;
-    }
-
-    // Ensure the offer is a card-linked offer.
-    if (!offer->IsCardLinkedOffer()) {
-      continue;
-    }
-
-    for (const CreditCard* card : cards) {
-      // If card has an offer, add the card's guid id to the map. There is
-      // currently a one-to-one mapping between cards and offer data.
-      if (std::ranges::contains(offer->GetEligibleInstrumentIds(),
-                                card->instrument_id())) {
-        card_linked_offers_map[card->guid()] = offer;
-      }
-    }
-  }
-
-  return card_linked_offers_map;
 }
 
 bool AutofillOfferManager::IsUrlEligible(

@@ -67,6 +67,7 @@ add_avif_gtest(gainmap_tests)
 add_avif_gtest(image_tests)
 add_avif_gtest(incremental_tests)
 add_avif_gtest(reformat_tests)
+add_avif_gtest(sk_crabby_avif_codec_tests)
 
 # Conformance test.
 add_executable(conformance_tests conformance_tests.cc)

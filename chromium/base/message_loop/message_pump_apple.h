@@ -40,7 +40,6 @@
 #include "base/memory/raw_ptr.h"
 #include "base/message_loop/message_pump.h"
 #include "base/run_loop.h"
-#include "base/types/pass_key.h"
 #include "build/build_config.h"
 
 #if defined(__OBJC__)
@@ -59,10 +58,6 @@
 @end
 #endif  // BUILDFLAG(IS_IOS)
 #endif  // defined(__OBJC__)
-
-namespace content {
-class TextInputClientMac;
-}
 
 namespace base {
 
@@ -147,6 +142,13 @@ class BASE_EXPORT MessagePumpCFRunLoopBase : public MessagePump {
   int GetModeMask() const;
 
  protected:
+  // Observer callback called when the run loop starts and stops, at the
+  // beginning and end of calls to CFRunLoopRun.  This is used to maintain
+  // |nesting_level_|.  Associated with |enter_exit_observer_|.
+  static void EnterExitObserver(CFRunLoopObserverRef observer,
+                                CFRunLoopActivity activity,
+                                void* info);
+
   raw_ptr<Delegate> delegate() { return delegate_; }
 
  private:
@@ -205,13 +207,6 @@ class BASE_EXPORT MessagePumpCFRunLoopBase : public MessagePump {
   // Observer callback called before the run loop processes any sources.
   // Associated with |pre_source_observer_|.
   static void PreSourceObserver(CFRunLoopObserverRef observer,
-                                CFRunLoopActivity activity,
-                                void* info);
-
-  // Observer callback called when the run loop starts and stops, at the
-  // beginning and end of calls to CFRunLoopRun.  This is used to maintain
-  // |nesting_level_|.  Associated with |enter_exit_observer_|.
-  static void EnterExitObserver(CFRunLoopObserverRef observer,
                                 CFRunLoopActivity activity,
                                 void* info);
 
@@ -332,7 +327,7 @@ class BASE_EXPORT MessagePumpNSRunLoop : public MessagePumpCFRunLoopBase {
 // This is a fake message pump.  It attaches sources to the main thread's
 // CFRunLoop, so PostTask() will work, but it is unable to drive the loop
 // directly, so calling Run() or Quit() are errors.
-class MessagePumpUIApplication : public MessagePumpCFRunLoopBase {
+class BASE_EXPORT MessagePumpUIApplication : public MessagePumpCFRunLoopBase {
  public:
   MessagePumpUIApplication();
 
@@ -342,6 +337,15 @@ class MessagePumpUIApplication : public MessagePumpCFRunLoopBase {
   ~MessagePumpUIApplication() override;
   void DoRun(Delegate* delegate) override;
   bool DoQuit() override;
+
+  // Sets the initial run loop nesting `depth` for the current thread.
+  // This is a thread_local and one-shot configuration; it applies only to the
+  // next message pump initialized on this thread and is automatically reset to
+  // default immediately after being read.
+  static void SetNextInitialNestingLevelForCurrentThread(int depth);
+
+  // Resets the initial nesting level for the current thread. For testing only.
+  static void ResetNextInitialNestingLevelForTesting();
 
   // MessagePumpCFRunLoopBase.
   // MessagePumpUIApplication can not spin the main message loop directly.
@@ -386,7 +390,6 @@ class MessagePumpNSApplication : public MessagePumpCFRunLoopBase {
 
  private:
   friend class ScopedPumpMessagesInPrivateModes;
-  friend class ScopedRestrictNSEventMask;
 
   void EnterExitRunLoop(CFRunLoopActivity activity) override;
 
@@ -399,9 +402,6 @@ class MessagePumpNSApplication : public MessagePumpCFRunLoopBase {
   // True if Quit() was called while a modal window was shown and needed to be
   // deferred.
   bool quit_pending_ = false;
-
-  // The mask of NSEvent types to be pumped by DoRun() in a nested run loop.
-  uint64_t nested_event_mask_;
 };
 
 class MessagePumpCrApplication : public MessagePumpNSApplication {
@@ -417,31 +417,6 @@ class MessagePumpCrApplication : public MessagePumpNSApplication {
   // Returns false if NSApp is currently in the middle of calling -sendEvent.
   // Requires NSApp implementing CrAppProtocol.
   bool ShouldCreateAutoreleasePool() override;
-};
-
-// While in scope, restricts the types of NSEvents that are pumped by
-// MessagePumpNSApplication::DoRun(). This only applies to nested run loops.
-// NSEventTypeApplicationDefined events are always pumped, regardless of `mask`,
-// because they're used internally by the message pump.
-class BASE_EXPORT ScopedRestrictNSEventMask {
- public:
-  // Public constructor is limited to TextInputClientMac.
-  explicit ScopedRestrictNSEventMask(PassKey<content::TextInputClientMac>,
-                                     uint64_t mask = 0u)
-      : ScopedRestrictNSEventMask(mask) {}
-
-  ~ScopedRestrictNSEventMask();
-
-  ScopedRestrictNSEventMask(const ScopedRestrictNSEventMask&) = delete;
-  ScopedRestrictNSEventMask& operator=(const ScopedRestrictNSEventMask&) =
-      delete;
-
- private:
-  friend class MessagePumpAppleScopedRestrictNSEventMaskTest;
-
-  explicit ScopedRestrictNSEventMask(uint64_t mask = 0u);
-
-  uint64_t old_mask_;
 };
 
 #endif  // !BUILDFLAG(IS_IOS)

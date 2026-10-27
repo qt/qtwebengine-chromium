@@ -65,7 +65,7 @@ source_set("permissions") {
     "//chrome/browser:browser_public_dependencies",
     "//chrome/browser/media/webrtc",
     "//chrome/browser/permissions/system",
-    "//chrome/browser/ui:browser_navigator_params_headers",
+    "//chrome/browser/ui/navigator",
   ]
 
   deps = [
@@ -83,6 +83,7 @@ source_set("permissions") {
     "//chrome/browser/favicon",
     "//chrome/browser/geolocation",
     "//chrome/browser/idle",
+    "//chrome/browser/media",
     "//chrome/browser/metrics",
     "//chrome/browser/nfc",
     "//chrome/browser/optimization_guide",
@@ -95,9 +96,11 @@ source_set("permissions") {
     "//chrome/browser/serial",
     "//chrome/browser/storage",
     "//chrome/browser/storage_access_api",
+    "//chrome/browser/subresource_filter",
     "//chrome/browser/tab_contents",
     "//chrome/browser/top_level_storage_access_api:permissions",
     "//chrome/browser/translate",
+    "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/hats",
     "//chrome/browser/ui/page_info",
     "//chrome/browser/ui/safety_hub",
@@ -170,6 +173,10 @@ source_set("permissions") {
     deps += [ "//chrome/browser/clipboard" ]
   }
 
+  if (enable_extensions && !is_android) {
+    deps += [ "//extensions/browser/mime_handler" ]
+  }
+
   if (is_chromeos) {
     deps += [
       "//chrome/browser/ash/app_mode/isolated_web_app",
@@ -231,6 +238,7 @@ source_set("unit_tests") {
   testonly = true
 
   sources = [
+    "chrome_permissions_client_unittest.cc",
     "crowd_deny_preload_data_unittest.cc",
     "crowd_deny_safe_browsing_request_unittest.cc",
     "notifications_engagement_service_unittest.cc",
@@ -285,6 +293,12 @@ source_set("unit_tests") {
   } else {
     sources += [ "permission_hats_trigger_unittest.cc" ]
     deps += [ "//chrome/browser/ui/hats" ]
+    if (enable_extensions) {
+      deps += [
+        "//extensions/browser/mime_handler:stream_container",
+        "//extensions/browser/mime_handler:test_helpers",
+      ]
+    }
   }
 
   if (is_chromeos) {
@@ -306,6 +320,7 @@ if (!is_android) {
     defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
 
     sources = [
+      "device_sensor_browsertest.cc",
       "geolocation_element_browsertest.cc",
       "one_time_permissions_browsertest.cc",
       "permission_delegation_browsertest.cc",
@@ -321,6 +336,7 @@ if (!is_android) {
       ":permissions",
       ":test_support",
       "//chrome/browser/content_settings:content_settings_factory",
+      "//chrome/browser/contextual_tasks:ui",
       "//chrome/browser/custom_handlers",
       "//chrome/browser/geolocation",
       "//chrome/browser/media/webrtc",
@@ -331,10 +347,19 @@ if (!is_android) {
       "//chrome/browser/ui:ui_features",
       "//chrome/test:test_support",
       "//components/back_forward_cache",
+      "//components/contextual_tasks/public",
       "//components/optimization_guide/core:test_support",
       "//components/passage_embeddings/core:test_support",
       "//components/permissions/prediction_service",
     ]
+
+    if (enable_extensions) {
+      deps += [
+        "//chrome/browser/extensions",
+        "//extensions:test_support",
+        "//extensions/browser/mime_handler",
+      ]
+    }
 
     if (is_chromeos) {
       sources += [ "system/system_permission_settings_chromeos_unittest.cc" ]

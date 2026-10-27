@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 black='\E[30m'
 red='\E[31m'

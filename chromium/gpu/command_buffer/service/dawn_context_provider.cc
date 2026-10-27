@@ -46,13 +46,15 @@
 #include "third_party/skia/include/gpu/graphite/Context.h"
 #include "third_party/skia/include/gpu/graphite/dawn/DawnBackendContext.h"
 #include "third_party/skia/include/gpu/graphite/dawn/DawnUtils.h"
+#include "ui/gl/gl_features.h"
 #include "ui/gl/gl_implementation.h"
-#include "ui/gl/gl_switches.h"
 
 #if BUILDFLAG(IS_WIN)
 #include <d3d11_4.h>
+#include <d3d11on12.h>
 
 #include "third_party/dawn/include/dawn/native/D3D11Backend.h"
+#include "third_party/dawn/include/dawn/native/D3D12Backend.h"
 #include "ui/gl/direct_composition_support.h"
 #include "ui/gl/gl_angle_util_win.h"
 #endif
@@ -69,6 +71,9 @@ namespace {
 
 // Used as a flag to test dawn initialization failure.
 BASE_FEATURE(kForceDawnInitializeFailure, base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Controls if ShaderF16 Dawn feature is enabled for Graphite.
+BASE_FEATURE(kSkiaGraphiteF16, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Sets crash key in thread safe manner. This should be used for any crash keys
 // set from dawn error or device lost callbacks that may run on multiple
@@ -140,6 +145,11 @@ std::vector<const char*> GetDisabledToggles(
     disabled_toggles.push_back(toggle.c_str());
   }
 
+  if (!features::kSkiaGraphiteDawnBackendDebugLabels.Get()) {
+    // Note: This toggle needs to be explicitly enabled or disabled.
+    disabled_toggles.push_back("use_user_defined_labels_in_backend");
+  }
+
   // TODO(crbug.com/486866985): Remove this once dynamic rendering perf
   // regressions are investigated.
   disabled_toggles.push_back("vulkan_use_dynamic_rendering");
@@ -167,6 +177,7 @@ std::vector<const char*> GetEnabledToggles(
   // The following toggles are all device-scoped toggles so it's not necessary
   // to pass them when creating the Instance above.
   if (features::kSkiaGraphiteDawnBackendDebugLabels.Get()) {
+    // Note: This toggle needs to be explicitly enabled or disabled.
     enabled_toggles.push_back("use_user_defined_labels_in_backend");
   }
 
@@ -263,6 +274,11 @@ std::vector<wgpu::FeatureName> GetRequiredFeatures(
     features.push_back(wgpu::FeatureName::ANGLETextureSharing);
   }
 
+  if (base::FeatureList::IsEnabled(kSkiaGraphiteF16) &&
+      adapter.HasFeature(wgpu::FeatureName::ShaderF16)) {
+    features.push_back(wgpu::FeatureName::ShaderF16);
+  }
+
   constexpr wgpu::FeatureName kOptionalFeatures[] = {
       wgpu::FeatureName::BGRA8UnormStorage,
       wgpu::FeatureName::BufferMapExtendedUsages,
@@ -289,11 +305,13 @@ std::vector<wgpu::FeatureName> GetRequiredFeatures(
       wgpu::FeatureName::SharedTextureMemoryAHardwareBuffer,
       wgpu::FeatureName::SharedFenceSyncFD,
       wgpu::FeatureName::RenderPassRenderArea,
+      wgpu::FeatureName::OpaqueYCbCrAndroidForExternalTexture,
 
       // The following features are always supported by the the D3D backends.
       wgpu::FeatureName::SharedTextureMemoryD3D11Texture2D,
       wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle,
       wgpu::FeatureName::SharedFenceDXGISharedHandle,
+      wgpu::FeatureName::SharedTextureMemoryD3D12Resource,
 
       // The following feature is always supported by the the D3D12 backend.
       wgpu::FeatureName::SharedBufferMemoryD3D12Resource,
@@ -490,6 +508,37 @@ class DawnSharedContext : public base::RefCountedThreadSafe<DawnSharedContext>,
   Microsoft::WRL::ComPtr<ID3D11Device> GetD3D11Device() const {
     if (backend_type() == wgpu::BackendType::D3D11) {
       return dawn::native::d3d11::GetD3D11Device(device_.Get());
+    }
+
+    // Even if the backend is D3D12, use D3D11On12 to get a D3D11 device. This
+    // will bridge the gap in places where SharedImage code uses D3D11 for
+    // internal operations like copying to staging textures.
+    // TODO(crbug.com/425864542) Transition shared image copy code to D3D12.
+    if (backend_type() == wgpu::BackendType::D3D12 &&
+        base::FeatureList::IsEnabled(features::kDCompOnD3D12)) {
+      // If the backend is D3D12, we can use D3D11On12 device.
+      Microsoft::WRL::ComPtr<ID3D11On12Device> d3d11on12_device =
+          dawn::native::d3d12::GetOrCreateD3D11On12Device(device_.Get());
+
+      // If the user's platform version does not support ID3D11On12Device2,
+      // return nullptr. This will prevent Chromium from using
+      // D3D11On12 APIs.
+      Microsoft::WRL::ComPtr<ID3D11On12Device2> d3d11on12_device_2;
+      if (FAILED(d3d11on12_device.As(&d3d11on12_device_2))) {
+        return nullptr;
+      }
+
+      Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device;
+      HRESULT hr = d3d11on12_device.As(&d3d11_device);
+      CHECK_EQ(hr, S_OK);
+      return d3d11_device;
+    }
+    return nullptr;
+  }
+
+  Microsoft::WRL::ComPtr<ID3D12CommandQueue> GetD3D12CommandQueue() const {
+    if (backend_type() == wgpu::BackendType::D3D12) {
+      return dawn::native::d3d12::GetD3D12CommandQueue(device_.Get());
     }
     return nullptr;
   }
@@ -1307,6 +1356,11 @@ void DawnContextProvider::SetCachingInterface(
 Microsoft::WRL::ComPtr<ID3D11Device> DawnContextProvider::GetD3D11Device()
     const {
   return dawn_shared_context_->GetD3D11Device();
+}
+
+Microsoft::WRL::ComPtr<ID3D12CommandQueue>
+DawnContextProvider::GetD3D12CommandQueue() const {
+  return dawn_shared_context_->GetD3D12CommandQueue();
 }
 #endif
 

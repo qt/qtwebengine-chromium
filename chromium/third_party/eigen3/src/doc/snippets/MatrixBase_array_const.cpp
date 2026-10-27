@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 Vector3d v(-1, 2, -3);
 cout << "the absolute values:" << endl << v.array().abs() << endl;
 cout << "the absolute values plus one:" << endl << v.array().abs() + 1 << endl;

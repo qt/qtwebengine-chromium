@@ -29,7 +29,6 @@
 #include <memory>
 
 #include "base/memory/scoped_refptr.h"
-#include "base/rand_util.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
 #include "third_party/blink/public/common/features.h"
@@ -106,6 +105,8 @@ class CORE_EXPORT HTMLDocumentParser : public ScriptableDocumentParser,
  public:
   HTMLDocumentParser(HTMLDocument&,
                      ParserSynchronizationPolicy,
+                     CustomElementRegistry* registry,
+                     StreamingSanitizer* sanitizer = nullptr,
                      ParserPrefetchPolicy prefetch_policy = kAllowPrefetching);
   HTMLDocumentParser(DocumentFragment* fragment_target,
                      Element* context_element,
@@ -122,7 +123,8 @@ class CORE_EXPORT HTMLDocumentParser : public ScriptableDocumentParser,
       DocumentFragment*,
       Element* context_element,
       CustomElementRegistry*,
-      ParserContentPolicy = kAllowScriptingContent);
+      ParserContentPolicy = kAllowScriptingContent,
+      StreamingSanitizer* sanitizer = nullptr);
 
   // Exposed for testing.
   HTMLParserScriptRunnerHost* AsHTMLParserScriptRunnerHostForTesting() {
@@ -214,11 +216,13 @@ class CORE_EXPORT HTMLDocumentParser : public ScriptableDocumentParser,
   // execute script.
   ALWAYS_INLINE NextTokenStatus
   CanTakeNextToken(base::TimeDelta& time_executing_script) {
-    if (IsStopped())
+    if (IsStopped()) {
       return kNoTokens;
+    }
 
-    if (!tree_builder_->HasParserBlockingScript())
+    if (!tree_builder_->HasParserBlockingScript()) {
       return IsPaused() ? kNoTokens : kHaveTokens;
+    }
 
     // If we're paused waiting for a script, we try to execute scripts before
     // continuing.
@@ -342,8 +346,6 @@ class CORE_EXPORT HTMLDocumentParser : public ScriptableDocumentParser,
   // performance.mark() as a resuming signal is called.
   bool is_waiting_for_user_timing_ = false;
   base::TimeTicks time_waiting_for_user_timing_;
-
-  base::MetricsSubSampler metrics_sub_sampler_;
 };
 
 }  // namespace blink

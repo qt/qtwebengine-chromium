@@ -492,6 +492,33 @@ void PostCallRecordGetMemoryAndroidHardwareBufferANDROID(VkDevice device, const 
                                                          struct AHardwareBuffer** pBuffer, const RecordObject& record_obj) override;
 
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
+void PostCallRecordCreateGpaSessionAMD(VkDevice device, const VkGpaSessionCreateInfoAMD* pCreateInfo,
+                                       const VkAllocationCallbacks* pAllocator, VkGpaSessionAMD* pGpaSession,
+                                       const RecordObject& record_obj) override;
+
+void PostCallRecordSetGpaDeviceClockModeAMD(VkDevice device, VkGpaDeviceClockModeInfoAMD* pInfo,
+                                            const RecordObject& record_obj) override;
+
+void PostCallRecordGetGpaDeviceClockInfoAMD(VkDevice device, VkGpaDeviceGetClockInfoAMD* pInfo,
+                                            const RecordObject& record_obj) override;
+
+void PostCallRecordCmdBeginGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                         const RecordObject& record_obj) override;
+
+void PostCallRecordCmdEndGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                       const RecordObject& record_obj) override;
+
+void PostCallRecordCmdBeginGpaSampleAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                        const VkGpaSampleBeginInfoAMD* pGpaSampleBeginInfo, uint32_t* pSampleID,
+                                        const RecordObject& record_obj) override;
+
+void PostCallRecordGetGpaSessionStatusAMD(VkDevice device, VkGpaSessionAMD gpaSession, const RecordObject& record_obj) override;
+
+void PostCallRecordGetGpaSessionResultsAMD(VkDevice device, VkGpaSessionAMD gpaSession, uint32_t sampleID, size_t* pSizeInBytes,
+                                           void* pData, const RecordObject& record_obj) override;
+
+void PostCallRecordResetGpaSessionAMD(VkDevice device, VkGpaSessionAMD gpaSession, const RecordObject& record_obj) override;
+
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 void PostCallRecordCreateExecutionGraphPipelinesAMDX(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
                                                      const VkExecutionGraphPipelineCreateInfoAMDX* pCreateInfos,
@@ -647,6 +674,9 @@ void PostCallRecordCreatePrivateDataSlotEXT(VkDevice device, const VkPrivateData
 void PostCallRecordSetPrivateDataEXT(VkDevice device, VkObjectType objectType, uint64_t objectHandle,
                                      VkPrivateDataSlot privateDataSlot, uint64_t data, const RecordObject& record_obj) override;
 
+void PostCallRecordQueueSetPerfHintQCOM(VkQueue queue, const VkPerfHintInfoQCOM* pPerfHintInfo,
+                                        const RecordObject& record_obj) override;
+
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 void PostCallRecordCreateCudaModuleNV(VkDevice device, const VkCudaModuleCreateInfoNV* pCreateInfo,
                                       const VkAllocationCallbacks* pAllocator, VkCudaModuleNV* pModule,
@@ -720,7 +750,7 @@ void PostCallRecordGetDeviceSubpassShadingMaxWorkgroupSizeHUAWEI(VkDevice device
 void PostCallRecordGetMemoryRemoteAddressNV(VkDevice device, const VkMemoryGetRemoteAddressInfoNV* pMemoryGetRemoteAddressInfo,
                                             VkRemoteAddressNV* pAddress, const RecordObject& record_obj) override;
 
-void PostCallRecordGetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoEXT* pPipelineInfo,
+void PostCallRecordGetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoKHR* pPipelineInfo,
                                             VkBaseOutStructure* pPipelineProperties, const RecordObject& record_obj) override;
 
 void PostCallRecordCreateMicromapEXT(VkDevice device, const VkMicromapCreateInfoEXT* pCreateInfo,

@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
 
 package(
-    licenses = ["notice"],  # Apache 2.0
+    default_applicable_licenses = ["//fcp:license"],
+    licenses = ["notice"],
 )
 
 py_library(
@@ -28,13 +30,14 @@ py_library(
     name = "dp_mf_aggregator",
     srcs = ["dp_mf_aggregator.py"],
     tags = ["manual"],
+    visibility = ["//visibility:public"],
     deps = [
-        "//third_party/py/optax",
         "@federated_language//federated_language",
         "@org_tensorflow_federated//tensorflow_federated",
-        "@pypi_jax//:pkg",
-        "@pypi_jax_privacy//:pkg",
-        "@pypi_tensorflow//:pkg",
+        "@pypi//jax",
+        "@pypi//jax_privacy",
+        "@pypi//optax",
+        "@pypi//tensorflow",
     ],
 )
 
@@ -42,6 +45,19 @@ py_library(
     name = "external_service_handle",
     srcs = ["external_service_handle.py"],
     visibility = ["//visibility:public"],
+    deps = [
+        "@org_tensorflow_federated//tensorflow_federated/cc/core/impl/aggregation/core:tensor_py_pb2",
+    ],
+)
+
+py_test(
+    name = "external_service_handle_test",
+    srcs = ["external_service_handle_test.py"],
+    deps = [
+        ":external_service_handle",
+        "@org_tensorflow_federated//tensorflow_federated/cc/core/impl/aggregation/core:tensor_py_pb2",
+        "@pypi//absl_py",
+    ],
 )
 
 py_test(
@@ -50,11 +66,11 @@ py_test(
     tags = ["manual"],
     deps = [
         ":dp_mf_aggregator",
-        "//third_party/py/optax",
         "@federated_language//federated_language",
-        "@pypi_absl_py//:pkg",
-        "@pypi_numpy//:pkg",
-        "@pypi_tensorflow//:pkg",
+        "@pypi//absl_py",
+        "@pypi//numpy",
+        "@pypi//optax",
+        "@pypi//tensorflow",
     ],
 )
 
@@ -64,15 +80,18 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":constants",
-        ":program_input_provider",
+        ":external_service_handle",
         "//fcp/protos/confidentialcompute:file_info_py_pb2",
+        "//fcp/protos/confidentialcompute:min_sep_data_source_py_pb2",
         "@com_google_protobuf//:protobuf_python",
         "@federated_language//federated_language",
         "@federated_language//federated_language/proto:array_py_pb2",
         "@federated_language//federated_language/proto:computation_py_pb2",
         "@federated_language//federated_language/proto:data_type_py_pb2",
         "@org_tensorflow_federated//tensorflow_federated/cc/core/impl/aggregation/core:tensor_py_pb2",
-        "@pypi_absl_py//:pkg",
+        "@pypi//absl_py",
+        "@pypi//jax",
+        "@pypi//numpy",
     ],
 )
 
@@ -80,47 +99,37 @@ py_test(
     name = "min_sep_data_source_test",
     srcs = ["min_sep_data_source_test.py"],
     deps = [
+        ":external_service_handle",
         ":min_sep_data_source",
-        ":program_input_provider",
         "//fcp/protos/confidentialcompute:file_info_py_pb2",
         "@federated_language//federated_language/proto:array_py_pb2",
         "@federated_language//federated_language/proto:computation_py_pb2",
         "@federated_language//federated_language/proto:data_type_py_pb2",
         "@org_tensorflow_federated//tensorflow_federated/cc/core/impl/aggregation/core:tensor_py_pb2",
-        "@pypi_absl_py//:pkg",
-    ],
-)
-
-py_library(
-    name = "program_input_provider",
-    srcs = ["program_input_provider.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@org_tensorflow_federated//tensorflow_federated/cc/core/impl/aggregation/core:tensor_py_pb2",
-    ],
-)
-
-py_test(
-    name = "program_input_provider_test",
-    srcs = ["program_input_provider_test.py"],
-    deps = [
-        ":program_input_provider",
-        "@org_tensorflow_federated//tensorflow_federated/cc/core/impl/aggregation/core:tensor_py_pb2",
-        "@pypi_absl_py//:pkg",
+        "@pypi//absl_py",
     ],
 )
 
 py_library(
     name = "accounting",
     srcs = ["accounting.py"],
-    deps = ["@pypi_numpy//:pkg"],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//jax_privacy",
+        "@pypi//numpy",
+    ],
 )
 
 py_test(
     name = "accounting_test",
     srcs = ["accounting_test.py"],
+    tags = ["manual"],
     deps = [
         ":accounting",
-        "@pypi_absl_py//:pkg",
+        "@pypi//absl_py",
+        "@pypi//jax",
+        "@pypi//jax_privacy",
+        "@pypi//numpy",
     ],
 )

@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_MATRIX_SQUARE_ROOT
 #define EIGEN_MATRIX_SQUARE_ROOT
@@ -324,7 +325,7 @@ class MatrixSquareRootReturnValue : public ReturnByValue<MatrixSquareRootReturnV
   Index cols() const { return m_src.cols(); }
 
  protected:
-  const DerivedNested m_src;
+  DerivedNested m_src;
 };
 
 namespace internal {
@@ -342,4 +343,4 @@ const MatrixSquareRootReturnValue<Derived> MatrixBase<Derived>::sqrt() const {
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_MATRIX_FUNCTION
+#endif  // EIGEN_MATRIX_SQUARE_ROOT

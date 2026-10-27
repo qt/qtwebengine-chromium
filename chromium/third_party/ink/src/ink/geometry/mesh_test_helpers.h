@@ -17,6 +17,8 @@
 
 #include <cstdint>
 
+#include "absl/status/statusor.h"
+#include "absl/strings/string_view.h"
 #include "ink/geometry/affine_transform.h"
 #include "ink/geometry/mesh_format.h"
 #include "ink/geometry/mutable_mesh.h"
@@ -110,6 +112,12 @@ PartitionedMesh MakeStarPartitionedMesh(
     uint32_t n_triangles, const MeshFormat& format = MeshFormat(),
     const AffineTransform& vertex_transform = {});
 
+constexpr std::array<absl::string_view, 2> kTestMeshFiles = {
+    "spring_shape_mesh.binarypb", "straight_line_mesh.binarypb"};
+
+// Returns a mesh loaded from the given `CodedMesh` binary proto test file
+// located in `testdata/`.
+absl::StatusOr<Mesh> LoadMesh(absl::string_view filename);
 }  // namespace ink
 
 #endif  // INK_GEOMETRY_MESH_TEST_HELPERS_H_

@@ -39,7 +39,6 @@
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/signin_util.h"
 #include "chrome/browser/sync/sync_service_factory.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/color/chrome_color_id.h"
@@ -204,7 +203,7 @@ base::DictValue CreateProfileState(const ProfileAttributesEntry* entry,
 void OpenLearnMoreURL(bool is_profile_list_empty, Browser* browser) {
   // Browser may be closing if the Profile was locked after being loaded for
   // example.
-  if (!browser || browser->is_delete_scheduled()) {
+  if (!browser || browser->IsDeleteScheduled()) {
     return;
   }
 
@@ -254,15 +253,6 @@ void ProfilePickerHandler::RegisterMessages() {
       "launchGuestProfile",
       base::BindRepeating(&ProfilePickerHandler::HandleLaunchGuestProfile,
                           base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "launchAllProfiles",
-      base::BindRepeating(&ProfilePickerHandler::HandleLaunchAllProfiles,
-                          base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "recordOpenAllProfilesButtonShown",
-      base::BindRepeating(
-          &ProfilePickerHandler::HandleRecordOpenAllProfilesButtonShown,
-          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "askOnStartupChanged",
       base::BindRepeating(&ProfilePickerHandler::HandleAskOnStartupChanged,
@@ -494,59 +484,6 @@ void ProfilePickerHandler::DisplayForceSigninErrorDialog(
                     base::Value(profile_path.AsUTF16Unsafe()));
 }
 
-void ProfilePickerHandler::HandleLaunchAllProfiles(
-    const base::ListValue& args) {
-  CHECK(base::FeatureList::IsEnabled(
-      switches::kOpenAllProfilesFromProfilePickerExperiment));
-  base::UmaHistogramEnumeration(
-      "ProfilePicker.OpenAllProfilesButtonAction",
-      ProfilePickerOpenAllProfilesButtonAction::kClicked);
-  if (args.size() <= 1u ||
-      args.size() >
-          static_cast<size_t>(
-              switches::kMaxProfilesCountToShowOpenAllButtonInProfilePicker
-                  .Get())) {
-    return;
-  }
-
-  bool should_record_startup_metrics = !creation_time_on_startup_.is_null();
-
-  // Parse the profile paths to take into account only valid paths.
-  std::vector<base::FilePath> profile_paths;
-  for (const base::Value& profile_path_value : args) {
-    std::optional<base::FilePath> profile_path =
-        base::ValueToFilePath(profile_path_value);
-    if (profile_path) {
-      profile_paths.push_back(*profile_path);
-    }
-  }
-
-  for (size_t i = 0; i < profile_paths.size(); ++i) {
-    const base::FilePath& profile_path = profile_paths[i];
-
-    // Picker should be closed and buttons reset only after the last profile
-    // is opened.
-    bool is_last_profile = i == args.size() - 1;
-    ProfilePicker::PickProfile(
-        profile_path,
-        ProfilePicker::ProfilePickingArgs{
-            .open_settings = false,
-            .should_record_startup_metrics = should_record_startup_metrics,
-            .exit_flow_after_profile_picked = is_last_profile},
-        is_last_profile
-            ? base::BindOnce(&ProfilePickerHandler::OnResetPickerButtons,
-                             weak_factory_.GetWeakPtr())
-            : base::OnceCallback<void(bool)>());
-  }
-}
-
-void ProfilePickerHandler::HandleRecordOpenAllProfilesButtonShown(
-    const base::ListValue& args) {
-  base::UmaHistogramEnumeration(
-      "ProfilePicker.OpenAllProfilesButtonAction",
-      ProfilePickerOpenAllProfilesButtonAction::kShown);
-}
-
 void ProfilePickerHandler::HandleLaunchGuestProfile(
     const base::ListValue& args) {
   // TODO(crbug.com/40123459): Add check |IsGuestModeEnabled| once policy
@@ -728,10 +665,10 @@ void ProfilePickerHandler::HandleRemoveProfile(const base::ListValue& args) {
   RecordProfilePickerAction(ProfilePickerAction::kDeleteProfile);
   DCHECK(profile_statistics_keep_alive_);
 
-  // Deleting the profile may delete `this` (see See https://crbug.com/1488267),
-  // if the profile picker was shown in a tab. Keep the `ScopedProfileKeepAlive`
-  // until the end of the function, to avoid the profile being unloaded and
-  // reloaded.
+  // Deleting the profile may delete `this` (see See
+  // https://crbug.com/40934491), if the profile picker was shown in a tab. Keep
+  // the `ScopedProfileKeepAlive` until the end of the function, to avoid the
+  // profile being unloaded and reloaded.
   std::unique_ptr<ScopedProfileKeepAlive> profile_statistics_keep_alive =
       std::move(profile_statistics_keep_alive_);
   webui::DeleteProfileAtPath(*profile_path,
@@ -933,7 +870,7 @@ void ProfilePickerHandler::AddProfileToListAndPushUpdates(
       profiles_order_.insert({profile_path, number_of_profiles});
   // We shouldn't add the same profile to the list more than once. Use
   // `insert()` to not corrput the map in case this happens.
-  // https://crbug.com/1195784
+  // https://crbug.com/40759222
   DCHECK(it_and_whether_inserted.second);
 
   MaybeUpdateGuestMode();

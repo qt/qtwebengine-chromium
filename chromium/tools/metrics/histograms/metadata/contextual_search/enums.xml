@@ -63,6 +63,7 @@ chromium-metrics-reviews@google.com.
   <int value="1" label="LensImage"/>
   <int value="2" label="LensFile"/>
   <int value="3" label="BrowserTab"/>
+  <int value="4" label="Drive"/>
 </enum>
 
 <!-- LINT.ThenChange(//components/omnibox/composebox/composebox_query.mojom:InputType) -->
@@ -74,9 +75,10 @@ chromium-metrics-reviews@google.com.
   <int value="1" label="WithTabContext"/>
   <int value="2" label="WithNonTabContext"/>
   <int value="3" label="WithContextNoText"/>
+  <int value="4" label="WithDriveContext"/>
 </enum>
 
-<!-- LINT.ThenChange(//components/contextual_search/contextual_search_metrics_recorder.h:ContextualSearchContextState,//ui/webui/resources/cr_components/searchbox/searchbox.ts:ContextualSearchContextState) -->
+<!-- LINT.ThenChange(//components/contextual_search/contextual_search_metrics_recorder.h:ContextualSearchContextState, //chrome/browser/resources/new_tab_page/ntp_searchbox.ts:ContextualSearchContextState) -->
 
 <!-- LINT.IfChange(ContextualSearchErrorPage) -->
 
@@ -113,6 +115,18 @@ chromium-metrics-reviews@google.com.
   <int value="1" label="File Only"/>
   <int value="2" label="Text and File"/>
 </enum>
+
+<!-- LINT.IfChange(ContextualSearchNoAcMatchState) -->
+
+<enum name="ContextualSearchNoAcMatchState">
+  <int value="0" label="Only Context"/>
+  <int value="1" label="Only Text"/>
+  <int value="2" label="Text and Context"/>
+  <int value="3" label="No Text or Context"/>
+  <int value="4" label="AcMatch"/>
+</enum>
+
+<!-- LINT.ThenChange(//components/contextual_search/contextual_search_metrics_recorder.h:ContextualSearchNoAcMatchState) -->
 
 <!-- LINT.IfChange(ContextualSearchSource) -->
 

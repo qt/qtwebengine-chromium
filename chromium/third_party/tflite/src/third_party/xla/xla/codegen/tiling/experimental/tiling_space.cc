@@ -17,20 +17,26 @@ limitations under the License.
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
 
+#include "absl/algorithm/container.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
+#include "absl/status/status.h"
+#include "absl/strings/str_format.h"
 #include "absl/types/span.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
-#include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Support/LLVM.h"
 #include "xla/codegen/tiling/experimental/tile.h"
 #include "xla/hlo/analysis/interval.h"
+#include "xla/hlo/analysis/symbolic_expr.h"
+#include "xla/hlo/analysis/symbolic_map.h"
 #include "xla/hlo/ir/hlo_casting_utils.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
@@ -41,8 +47,6 @@ limitations under the License.
 
 namespace xla::gpu::experimental {
 namespace {
-
-using ::mlir::AffineExpr;
 
 std::string HloPtrToString(const HloInstruction* hlo) {
   return hlo == nullptr ? "nullptr" : hlo->ToString();
@@ -55,8 +59,8 @@ std::string TilingSpace::DimensionInfo::ToString() const {
   ss << id << " type: "
      << (type == DimensionSemantics::kParallel ? "parallel" : "sequential")
      << " size: " << dimension_size;
-  if (IsTileSizeSet()) {
-    ss << " tile size: " << tile_size;
+  if (tile_size.has_value()) {
+    ss << " tile size: " << *tile_size;
   }
   ss << " dim ID:" << dim_position << " hlo: " << HloPtrToString(hlo);
   return ss.str();
@@ -65,8 +69,8 @@ std::string TilingSpace::DimensionInfo::ToString() const {
 void TilingSpace::AppendDimension(const HloInstruction* hlo,
                                   int64_t dim_position, int64_t dim_size,
                                   DimensionSemantics dim_type) {
-  dimensions_.push_back(DimensionInfo{static_cast<ID>(dimensions_.size()),
-                                      dim_size, dim_type, hlo, dim_position});
+  dimensions_.push_back(DimensionInfo{TiledDimId(dimensions_.size()), dim_size,
+                                      dim_type, hlo, dim_position});
   hlo_to_dimension_[std::make_pair(hlo, dim_position)] = &dimensions_.back();
 }
 
@@ -74,7 +78,7 @@ void TilingSpace::AppendRTVar(const HloInstruction* hlo, int64_t operand_id,
                               const HloInstruction* rt_var,
                               int64_t upper_bound) {
   rt_vars_.push_back(RTVarInfo{
-      static_cast<ID>(rt_vars_.size()),
+      static_cast<int64_t>(rt_vars_.size()),
       Interval{0, upper_bound},
       rt_var,
   });
@@ -165,6 +169,13 @@ std::string TilingSpace::ToString() const {
   if (!constraints_.IsAlwaysSatisfied()) {
     ss << "Constraints:\n" << constraints_.ToString() << "\n";
   }
+  if (!divisibility_constraints_.empty()) {
+    ss << "Divisibility constraints:\n";
+    for (const auto& c : divisibility_constraints_) {
+      ss << c.expr.ToString(dimensions_.size()) << " is multiple of "
+         << c.tile_size.ToString(dimensions_.size()) << "\n";
+    }
+  }
   return ss.str();
 }
 
@@ -177,27 +188,56 @@ const TilingSpace::DimensionInfo& TilingSpace::GetDimensionInfo(
   return *it->second;
 }
 
-const TilingSpace::RTVarInfo& TilingSpace::GetRTVarInfo(
+std::optional<const TilingSpace::RTVarInfo*> TilingSpace::GetRTVarInfo(
     const HloInstruction& hlo, int64_t operand_id) const {
   auto it = hlo_to_rt_var_.find(std::make_pair(&hlo, operand_id));
-  CHECK(it != hlo_to_rt_var_.end())
-      << "Runtime variable not found for " << hlo.ToString() << " operand "
-      << operand_id;
-  return *it->second;
+  if (it == hlo_to_rt_var_.end()) {
+    return std::nullopt;
+  }
+  return it->second;
 }
 
-void TilingSpace::AssignTileSizes(absl::Span<const int64_t> tile_sizes) {
+absl::Status TilingSpace::AssignTileSizes(
+    absl::Span<const int64_t> tile_sizes) {
   CHECK_EQ(tile_sizes.size(), dimensions_.size());
   is_symbolic_ = false;
-  mlir::DenseMap<AffineExpr, AffineExpr> replacement_map;
+
+  llvm::DenseMap<SymbolicExpr, SymbolicExpr> replacement_map;
   for (const auto& [index, dim] : llvm::enumerate(dimensions_)) {
     dim.tile_size = tile_sizes[index];
-    replacement_map[getAffineSymbolExpr(dim.id, mlir_context_)] =
-        getAffineConstantExpr(tile_sizes[index], mlir_context_);
+    replacement_map[CreateSymbolExpr(dim.id.value(), dimensions_.size(),
+                                     mlir_context_)] =
+        CreateSymbolicConstant(tile_sizes[index], mlir_context_);
+
+    // If the tile size is greater than or equal to the dimension size, then
+    // the dimension is trivial and can be replaced with 0.
+    if (dim.dimension_size <= tile_sizes[index]) {
+      replacement_map[CreateDimExpr(dim.id.value(), mlir_context_)] =
+          CreateSymbolicConstant(0, mlir_context_);
+    }
   }
+  for (const auto& c : divisibility_constraints_) {
+    SymbolicExpr replaced_size = c.tile_size.Replace(replacement_map);
+    if (replaced_size.GetType() != SymbolicExprType::kConstant) {
+      return absl::InternalError(absl::StrFormat(
+          "Expected tile size symbol to evaluate to a constant after "
+          "replacement, but got %s.",
+          replaced_size.ToString(dimensions_.size())));
+    }
+    int64_t concrete_tile_size = replaced_size.GetValue();
+    SymbolicExpr replaced_expr = c.expr.Replace(replacement_map);
+    if (!replaced_expr.IsMultipleOf(concrete_tile_size)) {
+      return absl::InvalidArgumentError(absl::StrFormat(
+          "Divisibility constraint not satisfied: %s is not a clean multiple "
+          "of %d.",
+          replaced_expr.ToString(dimensions_.size()), concrete_tile_size));
+    }
+  }
+
   for (auto& tiled_root : tiled_roots_) {
     tiled_root.Replace(replacement_map);
   }
+  return absl::OkStatus();
 }
 
 std::unique_ptr<TilingSpace> TilingSpace::Create(const HloFusionAdaptor& fusion,
@@ -205,6 +245,10 @@ std::unique_ptr<TilingSpace> TilingSpace::Create(const HloFusionAdaptor& fusion,
   auto tiling_space = std::make_unique<TilingSpace>();
   tiling_space->mlir_context_ = ctx;
   auto roots = fusion.GetRoots();
+
+  // First pass: Append all dimensions. This is necessary because symbols
+  // are created using the total number of dimensions, which needs to be known
+  // before any symbols are generated.
   for (const HloInstructionAdaptor& root : roots) {
     const Shape& root_shape = root.shape();
     if (!root.shape().IsArray() && root.opcode() != HloOpcode::kReduce) {
@@ -214,13 +258,32 @@ std::unique_ptr<TilingSpace> TilingSpace::Create(const HloFusionAdaptor& fusion,
     // TODO(goncharov): why do we only care about the first shape of a tuple?
     absl::Span<const int64_t> dims =
         GetFirstShape(&root.instruction()).dimensions();
+    for (auto [index, dim] : llvm::enumerate(dims)) {
+      // Dimensions must be appended first so that the total count is known
+      // when creating Symbols.
+      tiling_space->AppendDimension(&root.instruction(), index, dim,
+                                    DimensionSemantics::kParallel);
+    }
+  }
+
+  // Iterator in reversed post-order (use-before-def).
+  auto post_order = fusion.MakeInstructionPostOrder();
+  for (auto it = post_order.rbegin(); it != post_order.rend(); ++it) {
+    tiling_space->ProcessInstruction(it->instruction());
+  }
+
+  // Second pass: Create the root tiles now that
+  // `tiling_space->num_dimensions()` is known.
+  for (const HloInstructionAdaptor& root : roots) {
+    const Shape& root_shape = root.shape();
+    absl::Span<const int64_t> dims =
+        GetFirstShape(&root.instruction()).dimensions();
     llvm::SmallVector<DimTile> dim_tiles;
     dim_tiles.reserve(dims.size());
     for (auto [index, dim] : llvm::enumerate(dims)) {
-      tiling_space->AppendDimension(&root.instruction(), index, dim,
-                                    DimensionSemantics::kParallel);
-      dim_tiles.push_back(
-          GetDefaultDimTile(index, getAffineSymbolExpr(index, ctx), dim));
+      dim_tiles.push_back(GetDefaultDimTile(
+          index, CreateSymbolExpr(index, tiling_space->num_dimensions(), ctx),
+          dim));
     }
     Tile tile{*tiling_space, std::move(dim_tiles)};
     if (root_shape.IsTuple()) {
@@ -231,12 +294,14 @@ std::unique_ptr<TilingSpace> TilingSpace::Create(const HloFusionAdaptor& fusion,
     }
     tiling_space->tiled_roots_.push_back(std::move(tile));
   }
-  // Iterator in reversed post-order (use-before-def).
-  auto post_order = fusion.MakeInstructionPostOrder();
-  for (auto it = post_order.rbegin(); it != post_order.rend(); ++it) {
-    tiling_space->ProcessInstruction(it->instruction());
-  }
+
   return tiling_space;
+}
+
+int64_t TilingSpace::num_parallel_dimensions() const {
+  return absl::c_count_if(dimensions_, [](const DimensionInfo& dim) {
+    return dim.type == DimensionSemantics::kParallel;
+  });
 }
 
 }  // namespace xla::gpu::experimental

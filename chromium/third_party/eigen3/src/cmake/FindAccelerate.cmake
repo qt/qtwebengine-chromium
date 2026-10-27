@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
+
 if (Accelerate_INCLUDES AND Accelerate_LIBRARIES)
   set(Accelerate_FIND_QUIETLY TRUE)
 endif ()

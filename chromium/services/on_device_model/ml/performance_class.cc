@@ -4,6 +4,7 @@
 
 #include "services/on_device_model/ml/performance_class.h"
 
+#include "base/byte_size.h"
 #include "base/compiler_specific.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
@@ -70,7 +71,6 @@ uint64_t GetHighRamThresholdMb() {
   return static_cast<uint64_t>(kHighRAMThreshold.Get());
 }
 
-DISABLE_CFI_DLSYM
 COMPONENT_EXPORT(ON_DEVICE_MODEL_ML)
 std::pair<on_device_model::mojom::DevicePerformanceInfoPtr,
           on_device_model::mojom::DeviceInfoPtr>
@@ -79,7 +79,7 @@ GetDeviceAndPerformanceInfo(const ChromeML& chrome_ml) {
   auto device_info = on_device_model::mojom::DeviceInfo::New();
 
   ml::DeviceInfo query_device_info =
-      ml::QueryDeviceInfo(chrome_ml.api(), /*log_histogram=*/true);
+      ml::QueryDeviceInfo(chrome_ml, /*log_histogram=*/true);
   if (query_device_info.gpu_blocked_reason != GpuBlockedReason::kNotBlocked) {
     perf_info->performance_class =
         on_device_model::mojom::PerformanceClass::kGpuBlocked;
@@ -93,7 +93,7 @@ GetDeviceAndPerformanceInfo(const ChromeML& chrome_ml) {
   device_info->supports_fp16 = query_device_info.supports_fp16;
 
   ChromeMLPerformanceInfo info;
-  bool success = chrome_ml.api().GetEstimatedPerformance(&info);
+  bool success = chrome_ml.GetEstimatedPerformance(&info);
   base::UmaHistogramBoolean("OnDeviceModel.BenchmarkSuccess", success);
   if (!success) {
     perf_info->performance_class =
@@ -105,7 +105,7 @@ GetDeviceAndPerformanceInfo(const ChromeML& chrome_ml) {
   const float output_speed = info.output_speed;
   const bool is_integrated_gpu = info.is_integrated_gpu;
 
-  int system_ram = base::SysInfo::AmountOfPhysicalMemory().InMiB();
+  int system_ram = base::SysInfo::AmountOfTotalPhysicalMemory().InMiB();
   base::UmaHistogramMemoryLargeMB(
       base::StrCat({"OnDeviceModel.SystemRAM.",
                     is_integrated_gpu ? "Integrated" : "Discrete"}),

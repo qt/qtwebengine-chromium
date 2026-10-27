@@ -29,16 +29,104 @@
 
 #include "third_party/blink/renderer/core/style/basic_shapes.h"
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 #include "third_party/blink/renderer/platform/geometry/length.h"
 #include "third_party/blink/renderer/platform/geometry/length_functions.h"
 #include "third_party/blink/renderer/platform/geometry/path.h"
 #include "third_party/blink/renderer/platform/geometry/path_builder.h"
+#include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size_f.h"
 #include "ui/gfx/geometry/vector2d_f.h"
 
 namespace blink {
+
+namespace {
+
+// Minimum length (in pixels) for edges and rounding radii below which rounding
+// is skipped. Values smaller than this won't produce visually noticeable
+// rounding (sub-pixel), so we avoid the computation entirely.
+constexpr float kMinRoundingThreshold = 0.5f;
+
+struct RoundedPolygonEdge {
+  gfx::Vector2dF unit;
+  float length = 0.0f;
+  bool is_valid_for_rounding = false;
+
+  RoundedPolygonEdge(const gfx::PointF& p1, const gfx::PointF& p2) {
+    gfx::Vector2dF vector = p2 - p1;
+    length = vector.Length();
+    if (length > kMinRoundingThreshold) {
+      is_valid_for_rounding = true;
+      unit = vector;
+      unit.InvScale(length);
+    }
+  }
+};
+
+float GetRoundedPolygonRadius(const RoundedPolygonEdge& incoming,
+                              const RoundedPolygonEdge& outgoing,
+                              float requested_radius) {
+  if (requested_radius <= 0 || !incoming.is_valid_for_rounding ||
+      !outgoing.is_valid_for_rounding) {
+    return 0.0f;
+  }
+
+  // The interior angle at the vertex: the angle between the vectors pointing
+  // from the vertex toward the previous and next vertices. Since incoming.unit
+  // points INTO the vertex, negate it to get the outward direction.
+  const double cos_interior =
+      std::clamp(-gfx::DotProduct(incoming.unit, outgoing.unit), -1.0, 1.0);
+  const double interior_angle = std::acos(cos_interior);
+
+  if (interior_angle <= std::numeric_limits<double>::epsilon() ||
+      std::abs(interior_angle - kPiDouble) <=
+          std::numeric_limits<double>::epsilon()) {
+    return 0.0f;
+  }
+
+  const double tan_half_interior = std::tan(interior_angle / 2.0);
+  if (!std::isfinite(tan_half_interior) ||
+      tan_half_interior <= std::numeric_limits<double>::epsilon()) {
+    return 0.0f;
+  }
+
+  // The spec clamps the radius so it never exceeds
+  // tan(interior_angle/2) × segment / 2 for either adjacent segment.
+  // Spec: https://www.w3.org/TR/css-shapes-1/#funcdef-basic-shape-polygon
+  const double max_radius = std::min(tan_half_interior * incoming.length * 0.5,
+                                     tan_half_interior * outgoing.length * 0.5);
+  const double radius =
+      std::min(static_cast<double>(requested_radius), max_radius);
+
+  if (radius <= std::numeric_limits<double>::epsilon()) {
+    return 0.0f;
+  }
+
+  return ClampTo<float>(radius);
+}
+
+// Compute the distance from |center| to the closest or farthest corner of a
+// box of size |box_size|. Named similarly to RadiusToCorner in
+// css_gradient_value.cc for discoverability.
+float RadiusToCorner(const gfx::PointF& center,
+                     const gfx::SizeF& box_size,
+                     bool closest) {
+  float dx0 = center.x();
+  float dx1 = box_size.width() - center.x();
+  float dy0 = center.y();
+  float dy1 = box_size.height() - center.y();
+
+  float dx = closest ? std::min(dx0, dx1) : std::max(dx0, dx1);
+  float dy = closest ? std::min(dy0, dy1) : std::max(dy0, dy1);
+  return hypotf(dx, dy);
+}
+
+}  // namespace
 
 gfx::PointF PointForCenterCoordinate(const BasicShapeCenterCoordinate& center_x,
                                      const BasicShapeCenterCoordinate& center_y,
@@ -61,6 +149,13 @@ float BasicShapeCircle::FloatValueForRadiusInBox(
     return FloatValueForLength(
         radius_.Value(),
         hypotf(box_size.width(), box_size.height()) / sqrtf(2));
+  }
+
+  if (radius_.GetType() == BasicShapeRadius::kClosestCorner) {
+    return RadiusToCorner(center, box_size, /*closest=*/true);
+  }
+  if (radius_.GetType() == BasicShapeRadius::kFarthestCorner) {
+    return RadiusToCorner(center, box_size, /*closest=*/false);
   }
 
   float width_delta = std::abs(box_size.width() - center.x());
@@ -112,9 +207,30 @@ float BasicShapeEllipse::FloatValueForRadiusInBox(
   if (radius.GetType() == BasicShapeRadius::kClosestSide) {
     return std::min(std::abs(center), width_or_height_delta);
   }
+  if (radius.GetType() == BasicShapeRadius::kFarthestSide) {
+    return std::max(center, width_or_height_delta);
+  }
 
-  DCHECK_EQ(radius.GetType(), BasicShapeRadius::kFarthestSide);
-  return std::max(center, width_or_height_delta);
+  // closest-corner/farthest-corner require both axes for Euclidean distance.
+  // Use ResolveRadii() for those values.
+  NOTREACHED();
+}
+
+gfx::SizeF BasicShapeEllipse::ResolveRadii(const gfx::PointF& center,
+                                           const gfx::SizeF& box_size) const {
+  auto resolve_radius = [&](const BasicShapeRadius& radius, float center_coord,
+                            float box_dim) -> float {
+    if (radius.GetType() == BasicShapeRadius::kClosestCorner) {
+      return RadiusToCorner(center, box_size, /*closest=*/true);
+    }
+    if (radius.GetType() == BasicShapeRadius::kFarthestCorner) {
+      return RadiusToCorner(center, box_size, /*closest=*/false);
+    }
+    return FloatValueForRadiusInBox(radius, center_coord, box_dim);
+  };
+
+  return gfx::SizeF(resolve_radius(radius_x_, center.x(), box_size.width()),
+                    resolve_radius(radius_y_, center.y(), box_size.height()));
 }
 
 Path BasicShapeEllipse::GetPath(const gfx::RectF& bounding_box,
@@ -130,14 +246,11 @@ Path BasicShapeEllipse::GetPathFromCenter(const gfx::PointF& center,
                                           float path_scale) const {
   const gfx::PointF scaled_center =
       gfx::ScalePoint(center + bounding_box.OffsetFromOrigin(), path_scale);
-  const gfx::Vector2dF scaled_radius = gfx::ScaleVector2d(
-      gfx::Vector2dF(
-          FloatValueForRadiusInBox(radius_x_, center.x(), bounding_box.width()),
-          FloatValueForRadiusInBox(radius_y_, center.y(),
-                                   bounding_box.height())),
-      path_scale);
+  const gfx::SizeF radii = ResolveRadii(center, bounding_box.size());
+  const gfx::SizeF scaled_radii = gfx::ScaleSize(radii, path_scale);
 
-  return Path::MakeEllipse(scaled_center, scaled_radius.x(), scaled_radius.y());
+  return Path::MakeEllipse(scaled_center, scaled_radii.width(),
+                           scaled_radii.height());
 }
 
 Path BasicShapePolygon::GetPath(const gfx::RectF& bounding_box,
@@ -152,29 +265,75 @@ Path BasicShapePolygon::GetPath(const gfx::RectF& bounding_box,
     return builder.Finalize();
   }
 
-  builder.MoveTo(gfx::ScalePoint(
-      gfx::PointF(FloatValueForLength(values_.at(0), bounding_box.width()) +
-                      bounding_box.x(),
-                  FloatValueForLength(values_.at(1), bounding_box.height()) +
-                      bounding_box.y()),
-      path_scale));
-  for (wtf_size_t i = 2; i < length; i = i + 2) {
-    builder.LineTo(gfx::ScalePoint(
+  Vector<gfx::PointF> points(length / 2);
+  for (wtf_size_t i = 0; i < length; i += 2) {
+    points[i / 2] = gfx::ScalePoint(
         gfx::PointF(
             FloatValueForLength(values_.at(i), bounding_box.width()) +
                 bounding_box.x(),
             FloatValueForLength(values_.at(i + 1), bounding_box.height()) +
                 bounding_box.y()),
-        path_scale));
+        path_scale);
   }
-  builder.Close();
 
+  // The rounding radius is a <length>, so the reference size for percentage
+  // resolution is irrelevant here.
+  const float requested_radius =
+      FloatValueForLength(rounding_radius_, 0) * path_scale;
+  if (requested_radius <= kMinRoundingThreshold || points.size() < 3) {
+    builder.MoveTo(points.front());
+    for (wtf_size_t i = 1; i < points.size(); ++i) {
+      builder.LineTo(points.at(i));
+    }
+    builder.Close();
+    return builder.Finalize();
+  }
+
+  // Start the path at the midpoint between the last and first vertices,
+  // rather than exactly at points.front(). This achieves two things:
+  // 1. Tangent Generation: The underlying Skia implementation of arcTo(SkPoint
+  //    p1, SkPoint p2, SkScalar radius) requires an existing path coordinate
+  //    to construct the incoming tangent ray.
+  // 2. Correctness: To prevent the final close() command from drawing backwards
+  //    across the last rounded corner, AND to prevent the first arcTo() from
+  //    drawing backwards because the initial position overshot the arc's start,
+  //    the path's starting position must be outside the radii of both arcs.
+  //    It must also be collinear with the original edge. Because the CSS spec
+  //    clamps rounding radii to never consume more than 50% of an adjacent
+  //    segment, the segment's midpoint is the only point guaranteed to satisfy
+  //    all these conditions.
+  //
+  //    https://www.w3.org/TR/css-shapes-1/#funcdef-basic-shape-polygon
+  const gfx::PointF& p_last = points.back();
+  const gfx::PointF& p_first = points.front();
+  builder.MoveTo(gfx::PointF(0.5f * p_last.x() + 0.5f * p_first.x(),
+                             0.5f * p_last.y() + 0.5f * p_first.y()));
+  RoundedPolygonEdge incoming_edge(p_last, p_first);
+  for (wtf_size_t i = 0; i < points.size(); ++i) {
+    const gfx::PointF& current = points[i];
+    const gfx::PointF& next = points[(i + 1) % points.size()];
+
+    RoundedPolygonEdge outgoing_edge(current, next);
+
+    float radius =
+        GetRoundedPolygonRadius(incoming_edge, outgoing_edge, requested_radius);
+
+    if (radius > 0.0f) {
+      builder.ArcTo(current, next, radius);
+    } else {
+      builder.LineTo(current);
+    }
+    incoming_edge = outgoing_edge;
+  }
+
+  builder.Close();
   return builder.Finalize();
 }
 
 bool BasicShapePolygon::IsEqualAssumingSameType(const BasicShape& o) const {
   const BasicShapePolygon& other = To<BasicShapePolygon>(o);
-  return wind_rule_ == other.wind_rule_ && values_ == other.values_;
+  return wind_rule_ == other.wind_rule_ &&
+         rounding_radius_ == other.rounding_radius_ && values_ == other.values_;
 }
 
 bool BasicShapeInset::IsEqualAssumingSameType(const BasicShape& o) const {

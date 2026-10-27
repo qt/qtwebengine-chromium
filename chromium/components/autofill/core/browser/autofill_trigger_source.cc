@@ -4,6 +4,10 @@
 
 #include "components/autofill/core/browser/autofill_trigger_source.h"
 
+#include "base/notreached.h"
+#include "build/buildflag.h"
+#include "components/autofill/core/common/aliases.h"
+
 namespace autofill {
 
 AutofillTriggerSource TriggerSourceFromSuggestionTriggerSource(
@@ -24,6 +28,7 @@ AutofillTriggerSource TriggerSourceFromSuggestionTriggerSource(
     case AutofillSuggestionTriggerSource::kPlusAddressUpdatedInBrowserProcess:
     case AutofillSuggestionTriggerSource::kAtMemory:
     case AutofillSuggestionTriggerSource::kAtMemoryContextMenu:
+    case AutofillSuggestionTriggerSource::kAtMemoryInactivityNudge:
       // On Android, no popup exists. Instead, the keyboard accessory is used.
 #if BUILDFLAG(IS_ANDROID)
       return AutofillTriggerSource::kKeyboardAccessoryOrBottomSheet;
@@ -31,7 +36,6 @@ AutofillTriggerSource TriggerSourceFromSuggestionTriggerSource(
       return AutofillTriggerSource::kPopup;
 #endif  // BUILDFLAG(IS_ANDROID)
     case AutofillSuggestionTriggerSource::kManualFallbackPasswords:
-    case AutofillSuggestionTriggerSource::kManualFallbackPlusAddresses:
       // Manual fallbacks are both a suggestion trigger source (e.g. through the
       // context menu) and a trigger source (by selecting a suggestion generated
       // through the context menu).

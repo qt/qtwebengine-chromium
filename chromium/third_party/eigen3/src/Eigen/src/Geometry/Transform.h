@@ -8,6 +8,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_TRANSFORM_H
 #define EIGEN_TRANSFORM_H
@@ -198,7 +199,7 @@ class Transform {
     Options = Options_,
     Dim = Dim_,       ///< space dimension in which the transformation holds
     HDim = Dim_ + 1,  ///< size of a respective homogeneous vector
-    Rows = int(Mode) == (AffineCompact) ? Dim : HDim
+    Rows = int(Mode) == int(AffineCompact) ? Dim : HDim
   };
   /** the scalar type of the coefficients */
   typedef Scalar_ Scalar;
@@ -248,6 +249,11 @@ class Transform {
         m_matrix);
   }
 
+  // These conversion ctors are intentionally `explicit`: keeping copy-init
+  // (`Transform t = rot;`) from compiling stops a Dim+1 x Dim+1 matrix
+  // from being silently materialized in function-call argument lists.
+  // Use direct-init (`Transform t(rot);`) or assignment (`Transform t; t = rot;`)
+  // instead. See bug #1209.
   EIGEN_DEVICE_FUNC inline explicit Transform(const TranslationType& t) {
     check_template_params();
     *this = t;
@@ -268,7 +274,7 @@ class Transform {
   template <typename OtherDerived>
   EIGEN_DEVICE_FUNC inline explicit Transform(const EigenBase<OtherDerived>& other) {
     EIGEN_STATIC_ASSERT(
-        (internal::is_same<Scalar, typename OtherDerived::Scalar>::value),
+        (std::is_same<Scalar, typename OtherDerived::Scalar>::value),
         YOU_MIXED_DIFFERENT_NUMERIC_TYPES__YOU_NEED_TO_USE_THE_CAST_METHOD_OF_MATRIXBASE_TO_CAST_NUMERIC_TYPES_EXPLICITLY);
 
     check_template_params();
@@ -279,7 +285,7 @@ class Transform {
   template <typename OtherDerived>
   EIGEN_DEVICE_FUNC inline Transform& operator=(const EigenBase<OtherDerived>& other) {
     EIGEN_STATIC_ASSERT(
-        (internal::is_same<Scalar, typename OtherDerived::Scalar>::value),
+        (std::is_same<Scalar, typename OtherDerived::Scalar>::value),
         YOU_MIXED_DIFFERENT_NUMERIC_TYPES__YOU_NEED_TO_USE_THE_CAST_METHOD_OF_MATRIXBASE_TO_CAST_NUMERIC_TYPES_EXPLICITLY);
 
     internal::transform_construct_from_matrix<OtherDerived, Mode, Options, Dim, HDim>::run(this, other.derived());
@@ -1423,7 +1429,7 @@ struct transform_left_product_impl<Other, Mode, Options, Dim, HDim, Dim, Dim> {
   typedef TransformType ResultType;
   static EIGEN_DEVICE_FUNC ResultType run(const Other& other, const TransformType& tr) {
     TransformType res;
-    if (Mode != int(AffineCompact)) res.matrix().row(Dim) = tr.matrix().row(Dim);
+    EIGEN_IF_CONSTEXPR(Mode != int(AffineCompact)) res.matrix().row(Dim) = tr.matrix().row(Dim);
     res.matrix().template topRows<Dim>().noalias() = other * tr.matrix().template topRows<Dim>();
     return res;
   }

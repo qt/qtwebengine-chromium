@@ -45,7 +45,7 @@ enum OriginTypeMask {
   EXTENSION = chrome_browsing_data_remover::ORIGIN_TYPE_EXTENSION
 };
 
-// TODO(http://crbug.com/1266606): appcache is a noop and should be removed.
+// TODO(http://crbug.com/40802227): appcache is a noop and should be removed.
 // TODO(http://crbug.com/420857719): webSQL is a noop and should be removed.
 const char kRemoveEverythingArguments[] =
     R"([{"since": 1000}, {
@@ -61,8 +61,7 @@ class BrowsingDataApiTest : public ExtensionServiceTestBase {
   void SetUp() override {
 #if !BUILDFLAG(IS_ANDROID)
     scoped_feature_list_.InitWithFeatures(
-        /*enabled_features=*/{browsing_data::features::kDbdRevampDesktop,
-                              browsing_data::features::
+        /*enabled_features=*/{browsing_data::features::
                                   kPasswordRemovalExtensionErrorKillSwitch},
         /*disabled_features=*/{});
 #endif  // !BUILDFLAG(IS_ANDROID)

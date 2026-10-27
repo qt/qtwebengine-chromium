@@ -1,0 +1,23 @@
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v5.0.0
+  hooks:
+  - id: end-of-file-fixer
+  - id: trailing-whitespace
+  - id: check-merge-conflict
+  - id: check-symlinks
+  - id: no-commit-to-branch
+    args: ['--branch', 'main']
+- repo: https://github.com/charliermarsh/ruff-pre-commit
+  rev: v0.9.4
+  hooks:
+  - id: ruff
+    args: ['--ignore=E741,E501', '.', 'proto/ei-scanner']
+  - id: ruff-format
+    args: ['.', 'proto/ei-scanner']
+- repo: local
+  hooks:
+  - id: ci-fairy-generate-template
+    name: ci-fairy-generate-template
+    entry: bash -c 'command -v ci-fairy && ci-fairy generate-template || true'
+    language: system

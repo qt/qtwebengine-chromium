@@ -84,6 +84,7 @@
 #include "third_party/blink/renderer/core/testing/core_unit_test_helper.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/platform/animation/compositor_animation.h"
+#include "third_party/blink/renderer/platform/bindings/script_forbidden_scope.h"
 #include "third_party/blink/renderer/platform/bindings/v8_per_isolate_data.h"
 #include "third_party/blink/renderer/platform/graphics/compositing/paint_artifact_compositor.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -291,10 +292,10 @@ class AnimationAnimationTestNoCompositing : public PaintTestConfigurations,
     auto* pac = GetDocument().GetFrame()->View()->GetPaintArtifactCompositor();
     auto* property_trees =
         pac->RootLayer()->layer_tree_host()->property_trees();
-    const auto* cc_scroll = property_trees->scroll_tree().Node(
-        box.FirstFragment().PaintProperties()->Scroll()->CcNodeId(
-            property_trees->sequence_number()));
-    return cc_scroll && cc_scroll->is_composited;
+    int node_id = box.FirstFragment().PaintProperties()->Scroll()->CcNodeId(
+        property_trees->sequence_number());
+    return node_id != cc::kInvalidPropertyNodeId &&
+           property_trees->scroll_tree().Node(node_id).is_composited;
   }
 
 #define EXPECT_TIME(expected, observed) \
@@ -1499,6 +1500,29 @@ TEST_P(AnimationAnimationTestCompositing, PreCommitWithUnresolvedStartTimes) {
   EXPECT_FALSE(animation->pending());
 }
 
+TEST_P(AnimationAnimationTestCompositing, PreCommitDefersOutdatedAnimation) {
+  // Regression test for an on-demand timing update in post-paint PreCommit:
+  // outdated animations must be deferred because sampling can dirty style.
+  UpdateAllLifecyclePhasesForTest();
+  ASSERT_GE(GetDocument().Lifecycle().GetState(),
+            DocumentLifecycle::kPaintClean);
+  ASSERT_TRUE(animation->CurrentTimeInternal());
+  animation->SetOutdated();
+  animation->SetCompositorPending(
+      Animation::CompositorPendingReason::kPendingUpdate);
+  ASSERT_TRUE(animation->Outdated());
+
+  {
+    BlinkLifecycleScopeWillBeScriptForbidden forbid_script;
+    EXPECT_FALSE(animation->PreCommit(1, nullptr, true));
+  }
+  EXPECT_TRUE(animation->Outdated());
+
+  animation->Update(kTimingUpdateForAnimationFrame);
+  EXPECT_FALSE(animation->Outdated());
+  EXPECT_TRUE(animation->PreCommit(1, nullptr, true));
+}
+
 // Cancel is synchronous on the main thread, but asynchronously deferred on the
 // compositor to reduce thread contention.
 TEST_P(AnimationAnimationTestCompositing, AsynchronousCancel) {
@@ -1992,7 +2016,8 @@ TEST_P(AnimationAnimationTestCompositing,
       (keyframe_model->start_time() - base::TimeTicks()).InMillisecondsF();
   double progress_percent = (start_time_ms / timeline_duration_ms) * 100;
   EXPECT_NEAR(progress_percent, TEST_START_PERCENT, 1e-3);
-  EXPECT_EQ(keyframe_model->time_offset(), base::TimeDelta());
+  EXPECT_EQ(keyframe_model->start_delay(), base::TimeDelta());
+  EXPECT_FALSE(keyframe_model->hold_time().has_value());
 }
 
 // Verifies correctness of scroll linked animation current and start times in

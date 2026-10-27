@@ -445,6 +445,7 @@ void FeatureList::AssociateReportingFieldTrial(
     const std::string& feature_name,
     OverrideState for_overridden_state,
     FieldTrial* field_trial) {
+  DCHECK(!initialized_);
   DCHECK(
       IsFeatureOverriddenFromCommandLine(feature_name, for_overridden_state));
 
@@ -1130,7 +1131,7 @@ FeatureList::OverrideState FeatureList::Accessor::GetOverrideStateByFeatureName(
 
 bool FeatureList::Accessor::GetParamsByFeatureName(
     std::string_view feature_name,
-    std::map<std::string, std::string>* params) {
+    FieldTrialParams* params) {
   base::FieldTrial* trial =
       feature_list_->GetAssociatedFieldTrialByFeatureName(feature_name);
   return FieldTrialParamAssociator::GetInstance()->GetFieldTrialParams(trial,

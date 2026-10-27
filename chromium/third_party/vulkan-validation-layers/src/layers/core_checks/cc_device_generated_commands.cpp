@@ -667,8 +667,15 @@ bool CoreChecks::ValidateGeneratedCommandsInfo(const vvl::CommandBuffer& cb_stat
                                                                generated_commands_info.sequenceCountAddress);
     }
 
-    skip |= ValidateDeviceAddress(info_loc.dot(Field::indirectAddress), LogObjectList(cb_state.Handle()),
-                                  generated_commands_info.indirectAddress);
+    {
+        BufferAddressValidation<1> buffer_address_validator = {
+            {{{"VUID-VkGeneratedCommandsInfoEXT-indirectAddress-12407",
+               [](const vvl::Buffer& buffer_state) { return (buffer_state.usage & VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT) == 0; },
+               []() { return "The following buffers are missing VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT"; }, kUsageErrorMsgBuffer}}}};
+
+        skip |= buffer_address_validator.ValidateDeviceAddress(
+            *this, info_loc.dot(Field::indirectAddress), LogObjectList(cb_state.Handle()), generated_commands_info.indirectAddress);
+    }
 
     return skip;
 }
@@ -726,9 +733,11 @@ bool CoreChecks::PreCallValidateCmdExecuteGeneratedCommandsEXT(VkCommandBuffer c
     }
 
     uint32_t view_mask = cb_state.GetViewMask();
-    if (view_mask != 0) {
+    if (view_mask != 0 && pGeneratedCommandsInfo->indirectExecutionSet != VK_NULL_HANDLE) {
         skip |= LogError("VUID-vkCmdExecuteGeneratedCommandsEXT-None-11062", commandBuffer, error_obj.location,
-                         "The active render pass contains a non-zero viewMask (0x%" PRIx32 ").", view_mask);
+                         "The active render pass contains a non-zero viewMask (0x%" PRIx32
+                         ") but pGeneratedCommandsInfo->indirectExecutionSet (%s) is not VK_NULL_HANDLE.",
+                         view_mask, FormatHandle(pGeneratedCommandsInfo->indirectExecutionSet).c_str());
     }
 
     if (auto indirect_execution_set = Get<vvl::IndirectExecutionSet>(pGeneratedCommandsInfo->indirectExecutionSet)) {
@@ -761,8 +770,7 @@ bool CoreChecks::PreCallValidateCmdExecuteGeneratedCommandsEXT(VkCommandBuffer c
         const VkPipelineBindPoint vk_bind_point = ConvertStageToBindPoint(pGeneratedCommandsInfo->shaderStages);
         const vvl::BindPoint vvl_bind_point = ConvertToVvlBindPoint(vk_bind_point);
         const LastBound& last_bound = cb_state.lastBound[vvl_bind_point];
-        const vvl::DrawDispatchVuid& vuid = vvl::GetDrawDispatchVuid(error_obj.location.function);
-        skip |= ValidateActionState(last_bound, vuid);
+        skip |= ValidateActionState(last_bound, error_obj.location);
     }
 
     return skip;
@@ -1166,8 +1174,6 @@ bool CoreChecks::PreCallValidateUpdateIndirectExecutionSetShaderEXT(VkDevice dev
     }
 
     vvl::unordered_map<uint32_t, uint32_t> unique_indexes;
-    const VkShaderEXT init_shader_handle = indirect_execution_set->safe_create_info.info.pShaderInfo->pInitialShaders[0];
-    const auto init_shader_object = Get<vvl::ShaderObject>(init_shader_handle);
 
     for (uint32_t i = 0; i < executionSetWriteCount; i++) {
         const VkWriteIndirectExecutionSetShaderEXT& set_shader = pExecutionSetWrites[i];
@@ -1293,20 +1299,20 @@ bool CoreChecks::PreCallValidateUpdateIndirectExecutionSetShaderEXT(VkDevice dev
                 }
             }
         }
-        if (indirect_execution_set->safe_create_info.info.pShaderInfo->shaderCount > 0) {
-            if (init_shader_object && update_shader_object &&
-                init_shader_object->descriptor_heap_mode != update_shader_object->descriptor_heap_mode) {
-                const LogObjectList objlist(init_shader_object->Handle(), update_shader_object->Handle());
-                const char* vuid = init_shader_object->descriptor_heap_mode
-                                       ? "VUID-vkUpdateIndirectExecutionSetShaderEXT-pInitialShaders-11327"
-                                       : "VUID-vkUpdateIndirectExecutionSetShaderEXT-pInitialShaders-11326";
 
-                skip |= LogError(vuid, objlist, set_write_loc.dot(Field::shader),
-                                 "was %screated with VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT, but pInitialShaders[0] "
-                                 "was %screated with VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT.",
-                                 update_shader_object->descriptor_heap_mode ? "" : "not ",
-                                 init_shader_object->descriptor_heap_mode ? "" : "not ");
-            }
+        const auto init_shader_object = indirect_execution_set->initial_shader_object;
+        if (init_shader_object && update_shader_object &&
+            init_shader_object->descriptor_heap_mode != update_shader_object->descriptor_heap_mode) {
+            const LogObjectList objlist(init_shader_object->Handle(), update_shader_object->Handle());
+            const char* vuid = init_shader_object->descriptor_heap_mode
+                                   ? "VUID-vkUpdateIndirectExecutionSetShaderEXT-pInitialShaders-11327"
+                                   : "VUID-vkUpdateIndirectExecutionSetShaderEXT-pInitialShaders-11326";
+
+            skip |= LogError(vuid, objlist, set_write_loc.dot(Field::shader),
+                             "was %screated with VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT, but pInitialShaders[0] "
+                             "was %screated with VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT.",
+                             update_shader_object->descriptor_heap_mode ? "" : "not ",
+                             init_shader_object->descriptor_heap_mode ? "" : "not ");
         }
     }
 

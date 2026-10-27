@@ -7,82 +7,38 @@ See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts
 for more details about the presubmit API built into depot_tools.
 """
 
+from __future__ import annotations
+
 import pathlib
-import tempfile
+import sys
 
 PRESUBMIT_VERSION = '2.0.0'
 USE_PYTHON3 = True
 
 
-def CheckBuildpWpr(input_api, output_api):
-    # Note: CheckGoTests() doesn't build the main function, that's why this
-    # separate check exists.
-    cmd_name = 'Test wpr builds'
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out_path = str(pathlib.PurePath(tmpdir) / "wpr")
-        test_cmd = input_api.Command(
-            name=cmd_name,
-            cmd=['go', 'build', '-o', out_path, './src/wpr.go'],
-            kwargs={'cwd': input_api.PresubmitLocalPath()},
-            message=output_api.PresubmitError)
-        return input_api.RunTests([test_cmd])
-
-
-def CheckBuildHttpArchive(input_api, output_api):
-    # Note: CheckGoTests() doesn't build the main function, that's why this
-    # separate check exists.
-    cmd_name = 'Test httparchive builds'
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out_path = str(pathlib.Path(tmpdir) / "httparchive")
-        test_cmd = input_api.Command(
-            name=cmd_name,
-            cmd=['go', 'build', '-o', out_path, './src/httparchive.go'],
-            kwargs={'cwd': input_api.PresubmitLocalPath()},
-            message=output_api.PresubmitError)
-        return input_api.RunTests([test_cmd])
-
-
 def CheckGoTests(input_api, output_api):
-    cmd_name = 'WebPageReplay go tests'
-    if input_api.verbose:
-        print(f'Running {cmd_name}')
-    results = []
-    results.extend(
-        input_api.RunTests([
-            input_api.Command(
-                name=cmd_name,
-                cmd=['go', 'test', './webpagereplay'],
-                kwargs={
-                    'cwd':
-                    str(pathlib.Path(input_api.PresubmitLocalPath()) / 'src')
-                },
-                message=output_api.PresubmitError)
-        ]))
-    results.extend(
-        input_api.RunTests([
-            input_api.Command(
-                name='wpr.go tests',
-                cmd=['go', 'test', 'wpr.go', 'wpr_test.go'],
-                kwargs={
-                    'cwd':
-                    str(pathlib.Path(input_api.PresubmitLocalPath()) / 'src')
-                },
-                message=output_api.PresubmitError)
-        ]))
-    return results
+    sys.path.append(
+        str(pathlib.Path(input_api.PresubmitLocalPath()) / 'scripts'))
+    import go_utils
+    sys.path.pop()
 
-
-def CheckPrebuiltBinaryUpdated(input_api, output_api):
-    files = input_api.UnixLocalPaths()
-    if (not any(f.endswith('binary_dependencies.json') for f in files) and any(
-            f.endswith('.go') and not f.endswith('_test.go') for f in files)):
-        return [
-            output_api.PresubmitError(
-                'You changed go files, but didn\'t run scripts/'
-                'upload_new_binaries.py')
-        ]
-
-    return []
+    go_path = str(go_utils.get_go_compiler_path())
+    src_path = str(pathlib.Path(input_api.PresubmitLocalPath()) / 'src')
+    return input_api.RunTests([
+        input_api.Command(name='webpagereplay package tests',
+                          cmd=[go_path, 'test', './webpagereplay'],
+                          kwargs={'cwd': src_path},
+                          message=output_api.PresubmitError),
+        input_api.Command(name='wpr.go tests',
+                          cmd=[go_path, 'test', 'wpr.go', 'wpr_test.go'],
+                          kwargs={'cwd': src_path},
+                          message=output_api.PresubmitError),
+        input_api.Command(
+            name='httparchive tests',
+            cmd=[go_path, 'test', 'httparchive.go', 'httparchive_test.go'],
+            kwargs={'cwd': src_path},
+            message=output_api.PresubmitError)
+    ])
 
 
 def CheckPanProjectChecks(input_api, output_api):
@@ -105,10 +61,21 @@ def CheckPythonAndJavascriptFormat(input_api, output_api):
 
 
 def CheckGoFormat(input_api, output_api):
-    cmd_name = 'Checking go format'
-    test_cmd = input_api.Command(
-        name=cmd_name,
-        cmd=['scripts/check_go_format.py'],
-        kwargs={'cwd': input_api.PresubmitLocalPath()},
-        message=output_api.PresubmitError)
-    return input_api.RunTests([test_cmd])
+    return input_api.RunTests([
+        input_api.Command(name='Checking go format',
+                          cmd=['scripts/check_go_format.py'],
+                          kwargs={'cwd': input_api.PresubmitLocalPath()},
+                          message=output_api.PresubmitError)
+    ])
+
+
+def CheckRuff(input_api, output_api):
+    return input_api.RunTests([
+        input_api.Command(name='Checking ruff format',
+                          cmd=[
+                              'vpython3', '-m', 'ruff', 'check', '--select',
+                              'E,F,W,B,I,UP', '--config', 'exclude=[]'
+                          ],
+                          kwargs={'cwd': input_api.PresubmitLocalPath()},
+                          message=output_api.PresubmitError)
+    ])

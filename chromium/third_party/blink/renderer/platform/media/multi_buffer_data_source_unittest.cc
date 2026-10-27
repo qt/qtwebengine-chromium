@@ -131,8 +131,15 @@ class TestUrlData : public UrlData {
               CorsMode cors_mode,
               base::WeakPtr<UrlIndex> url_index,
               UrlData::CacheMode cache_mode,
-              scoped_refptr<base::SingleThreadTaskRunner> task_runner)
-      : UrlData(url, cors_mode, url_index, cache_mode, task_runner),
+              scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+              media::DataSource::EncodingMode encoding_mode =
+                  media::DataSource::EncodingMode::kIdentity)
+      : UrlData(url,
+                cors_mode,
+                encoding_mode,
+                url_index,
+                cache_mode,
+                task_runner),
         block_shift_(url_index->block_shift()),
         task_runner_(std::move(task_runner)) {}
 
@@ -167,12 +174,15 @@ class TestUrlIndex : public UrlIndex {
       : UrlIndex(fetch_context, task_runner),
         task_runner_(std::move(task_runner)) {}
 
-  scoped_refptr<UrlData> NewUrlData(const KURL& url,
-                                    UrlData::CorsMode cors_mode,
-                                    UrlData::CacheMode cache_mode) override {
+  scoped_refptr<UrlData> NewUrlData(
+      const KURL& url,
+      UrlData::CorsMode cors_mode,
+      UrlData::CacheMode cache_mode,
+      media::DataSource::EncodingMode encoding_mode) override {
     NotifyNewUrlData(url, cors_mode, cache_mode);
     last_url_data_ = base::MakeRefCounted<TestUrlData>(
-        url, cors_mode, weak_factory_.GetWeakPtr(), cache_mode, task_runner_);
+        url, cors_mode, weak_factory_.GetWeakPtr(), cache_mode, task_runner_,
+        encoding_mode);
     return last_url_data_;
   }
 
@@ -575,8 +585,7 @@ TEST_F(MultiBufferDataSourceTest, Range_SupportedButReturned200) {
   Initialize(kHttpUrl, true);
   EXPECT_CALL(host_, SetTotalBytes(response_generator_->content_length()));
   WebURLResponse response = response_generator_->Generate200();
-  response.SetHttpHeaderField(WebString::FromUTF8("Accept-Ranges"),
-                              WebString::FromUTF8("bytes"));
+  response.SetHttpHeaderField(WebString("Accept-Ranges"), WebString("bytes"));
   Respond(response);
 
   EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize));
@@ -1641,8 +1650,8 @@ TEST_F(MultiBufferDataSourceTest, PreserveCachingModeAfterRedirect) {
   WebURLResponse data_response(redir);
   data_response.SetHttpStatusCode(200);
   data_response.SetExpectedContentLength(kDataSize);
-  data_response.SetHttpHeaderField(WebString::FromUTF8("Accept-Ranges"),
-                                   WebString::FromUTF8("bytes"));
+  data_response.SetHttpHeaderField(WebString("Accept-Ranges"),
+                                   WebString("bytes"));
 
   // Create a data source for a url which redirects. This will create a new
   // UrlData that bypasses any cache lookups (but can still be added to the
@@ -1741,7 +1750,7 @@ TEST_F(MultiBufferDataSourceTest, LengthKnownAtEOF) {
   Initialize(kHttpUrl, true);
   // Server responds without content-length.
   WebURLResponse response = response_generator_->Generate200();
-  response.ClearHttpHeaderField(WebString::FromUTF8("Content-Length"));
+  response.ClearHttpHeaderField(WebString("Content-Length"));
   response.SetExpectedContentLength(kPositionNotSpecified);
   Respond(response);
   EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize));
@@ -1770,8 +1779,8 @@ TEST_F(MultiBufferDataSourceTest, FileSizeLessThanBlockSize) {
   WebURLResponse response(url);
   response.SetHttpStatusCode(200);
   response.SetHttpHeaderField(
-      WebString::FromUTF8("Content-Length"),
-      WebString::FromUTF8(base::NumberToString(kDataSize / 2)));
+      WebString("Content-Length"),
+      WebString::FromUtf8(base::NumberToString(kDataSize / 2)));
   response.SetExpectedContentLength(kDataSize / 2);
   Respond(response);
   EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize / 2));
@@ -1887,8 +1896,7 @@ TEST_F(MultiBufferDataSourceTest, EtagTest) {
   EXPECT_CALL(host_, SetTotalBytes(response_generator_->content_length()));
   WebURLResponse response = response_generator_->Generate206(0);
   const std::string etag("\"arglebargle glop-glyf?\"");
-  response.SetHttpHeaderField(WebString::FromUTF8("Etag"),
-                              WebString::FromUTF8(etag));
+  response.SetHttpHeaderField(WebString("Etag"), WebString::FromUtf8(etag));
   Respond(response);
   EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize));
   ReceiveData(kDataSize);
@@ -2117,11 +2125,16 @@ TEST_F(MultiBufferDataSourceTest, FactoryCreation) {
   MultiBufferDataSource::Factory factory(
       std::move(media_log),
       base::BindRepeating(
-          [](UrlIndex* url_index, const GURL& url, bool ignore_cache,
+          [](UrlIndex* url_index, const GURL& url,
+             media::DataSource::CacheMode cache_mode,
+             media::DataSource::EncodingMode encoding_mode,
              base::OnceCallback<void(scoped_refptr<UrlData>)> cb) {
             std::move(cb).Run(url_index->GetByUrl(
                 KURL(url), UrlData::CORS_UNSPECIFIED,
-                ignore_cache ? UrlData::kCacheDisabled : UrlData::kNormal));
+                cache_mode == media::DataSource::CacheMode::kBypassCache
+                    ? UrlData::kCacheDisabled
+                    : UrlData::kNormal,
+                encoding_mode));
           },
           base::Unretained(&url_index_)),
       /*is_audio_element=*/true,
@@ -2132,7 +2145,8 @@ TEST_F(MultiBufferDataSourceTest, FactoryCreation) {
       /*tick_clock=*/nullptr, task_runner_);
 
   std::unique_ptr<media::DataSource> created_source;
-  factory.Create(GURL(kHttpUrl), false,
+  factory.Create(GURL(kHttpUrl), media::DataSource::CacheMode::kHitCache,
+                 media::DataSource::EncodingMode::kIdentity,
                  base::BindOnce(
                      [](std::unique_ptr<media::DataSource>* out_source,
                         std::unique_ptr<media::DataSource> source) {
@@ -2157,13 +2171,19 @@ TEST_F(MultiBufferDataSourceTest, FactoryCreation) {
 TEST_F(MultiBufferDataSourceTest, FactoryCreationDefault) {
   auto media_log = std::make_unique<NiceMock<media::MockMediaLog>>();
   MultiBufferDataSource::Factory factory(
-      std::move(media_log),
+      /*media_log=*/std::move(media_log),
+      /*get_url_data=*/
       base::BindRepeating(
-          [](UrlIndex* url_index, const GURL& url, bool ignore_cache,
+          [](UrlIndex* url_index, const GURL& url,
+             media::DataSource::CacheMode cache_mode,
+             media::DataSource::EncodingMode encoding_mode,
              base::OnceCallback<void(scoped_refptr<UrlData>)> cb) {
             std::move(cb).Run(url_index->GetByUrl(
                 KURL(url), UrlData::CORS_UNSPECIFIED,
-                ignore_cache ? UrlData::kCacheDisabled : UrlData::kNormal));
+                cache_mode == media::DataSource::CacheMode::kBypassCache
+                    ? UrlData::kCacheDisabled
+                    : UrlData::kNormal,
+                encoding_mode));
           },
           base::Unretained(&url_index_)),
       /*is_audio_element=*/false,
@@ -2171,7 +2191,8 @@ TEST_F(MultiBufferDataSourceTest, FactoryCreationDefault) {
       task_runner_);
 
   std::unique_ptr<media::DataSource> created_source;
-  factory.Create(GURL(kHttpUrl), false,
+  factory.Create(GURL(kHttpUrl), media::DataSource::CacheMode::kHitCache,
+                 media::DataSource::EncodingMode::kIdentity,
                  base::BindOnce(
                      [](std::unique_ptr<media::DataSource>* out_source,
                         std::unique_ptr<media::DataSource> source) {

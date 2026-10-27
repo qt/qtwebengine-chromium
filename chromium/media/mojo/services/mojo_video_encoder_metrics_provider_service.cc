@@ -121,9 +121,6 @@ class MojoVideoEncoderMetricsProviderService::EncoderMetricsHandler {
   void ReportUMA() const {
     const std::string_view use_case_str = UseCaseStr();
     if (use_case_str.empty()) {
-      mojo::ReportBadMessage(base::StrCat(
-          {"Unknown use case",
-           base::NumberToString(static_cast<int>(encoder_use_case_))}));
       return;
     }
     const std::string uma_prefix =
@@ -138,8 +135,14 @@ class MojoVideoEncoderMetricsProviderService::EncoderMetricsHandler {
                                   encode_size_.width());
     base::UmaHistogramCounts10000(base::StrCat({uma_prefix, "Height"}),
                                   encode_size_.height());
+
+    base::CheckedNumeric<int> area = encode_size_.GetCheckedArea();
+    constexpr int kMaxResolutionBucket = 8200;
+    constexpr int kMaxArea = kMaxResolutionBucket * kMaxResolutionBucket;
+    const int reported_area =
+        std::min<int>(area.ValueOrDefault(kMaxArea), kMaxArea) / 100;
     base::UmaHistogramCounts1M(base::StrCat({uma_prefix, "Area"}),
-                               encode_size_.GetArea() / 100);
+                               reported_area);
     base::UmaHistogramEnumeration(base::StrCat({uma_prefix, "Status"}),
                                   encoder_status_.code());
     // One million frames is about 9.25 hours in 30 fps. That should be enough
@@ -196,6 +199,7 @@ void MojoVideoEncoderMetricsProviderService::SetEncodedFrameCount(
     uint64_t num_encoded_frames) {
   auto it = encoders_.find(encoder_id);
   if (it == encoders_.end()) {
+    CHECK(mojo::IsInMessageDispatch());
     mojo::ReportBadMessage(base::StrCat(
         {"Unknown encoder id: ", base::NumberToString(encoder_id)}));
     return;
@@ -212,6 +216,7 @@ void MojoVideoEncoderMetricsProviderService::SetError(
   }
   auto it = encoders_.find(encoder_id);
   if (it == encoders_.end()) {
+    CHECK(mojo::IsInMessageDispatch());
     mojo::ReportBadMessage(base::StrCat(
         {"Unknown encoder id: ", base::NumberToString(encoder_id)}));
     return;
@@ -221,6 +226,7 @@ void MojoVideoEncoderMetricsProviderService::SetError(
 
 void MojoVideoEncoderMetricsProviderService::Complete(uint64_t encoder_id) {
   if (encoders_.erase(encoder_id) == 0u) {
+    CHECK(mojo::IsInMessageDispatch());
     mojo::ReportBadMessage(base::StrCat(
         {"Unknown encoder id: ", base::NumberToString(encoder_id)}));
   }

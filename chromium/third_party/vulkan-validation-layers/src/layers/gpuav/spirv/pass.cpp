@@ -245,6 +245,18 @@ const Instruction* Pass::GetMemberDecoration(uint32_t id, uint32_t member_index,
     return nullptr;
 }
 
+void Pass::GetDescriptorSetAndBinding(uint32_t variable_id, uint32_t& out_set, uint32_t& out_binding) const {
+    for (const auto& annotation : module_.annotations_) {
+        if (annotation->Opcode() == spv::OpDecorate && annotation->Word(1) == variable_id) {
+            if (annotation->Word(2) == spv::DecorationDescriptorSet) {
+                out_set = annotation->Word(3);
+            } else if (annotation->Word(2) == spv::DecorationBinding) {
+                out_binding = annotation->Word(3);
+            }
+        }
+    }
+}
+
 // In an ideal world, this would be baked into the Type class when we construct it. The core issue is OpTypeMatrix size can be
 // different depending where it is used. Because of this, we need to have a higher level view what is going on in order to correctly
 // figure out the size of a given type.
@@ -370,7 +382,7 @@ uint32_t Pass::GetLastByte(const Type& descriptor_type, const std::vector<const 
     // }
     //
     // it will get us to 20 bytes
-    auto access_chain_iter = access_chain_insts.rbegin();
+    auto access_chain_iter = access_chain_insts.begin();
 
     // This occurs in things like Slang where they have a single OpAccessChain for the descriptor
     // (GLSL/HLSL will combine 2 indexes into the last OpAccessChain)
@@ -379,7 +391,7 @@ uint32_t Pass::GetLastByte(const Type& descriptor_type, const std::vector<const 
         ac_word_index = reset_ac_word;
     }
 
-    while (access_chain_iter != access_chain_insts.rend()) {
+    while (access_chain_iter != access_chain_insts.end()) {
         const uint32_t ac_index_id = (*access_chain_iter)->Word(ac_word_index);
         uint32_t current_offset_id = 0;
 
@@ -568,7 +580,7 @@ uint32_t Pass::FindOffsetInStruct(uint32_t struct_id, const CooperativeMatrixAcc
     bool col_major = false;
     bool in_matrix = false;
 
-    auto access_chain_iter = access_chain_insts.rbegin();
+    auto access_chain_iter = access_chain_insts.begin();
 
     // This occurs in things like Slang where they have a single OpAccessChain for the descriptor
     // (GLSL/HLSL will combine 2 indexes into the last OpAccessChain)
@@ -579,7 +591,7 @@ uint32_t Pass::FindOffsetInStruct(uint32_t struct_id, const CooperativeMatrixAcc
 
     uint32_t current_type_id = struct_id;
     // Walk down access chains to build up the offset
-    while (access_chain_iter != access_chain_insts.rend()) {
+    while (access_chain_iter != access_chain_insts.end()) {
         const uint32_t ac_index_id = (*access_chain_iter)->Word(ac_word_index);
         const Constant* index_constant = type_manager_.FindConstantById(ac_index_id);
         if (!index_constant || index_constant->inst_.Opcode() != spv::OpConstant) {

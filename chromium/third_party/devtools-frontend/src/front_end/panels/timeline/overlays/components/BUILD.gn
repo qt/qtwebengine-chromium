@@ -43,7 +43,6 @@ devtools_ui_module("components") {
     "../../../../ui/legacy/theme_support:bundle",
     "../../../../ui/lit:bundle",
     "../../../../ui/visual_logging:bundle",
-    "../../utils:bundle",
   ]
 }
 
@@ -58,6 +57,7 @@ devtools_entrypoint("bundle") {
   visibility = [
     ":*",
     "..:*",
+    "../..:*",
     "../../../ui/components/docs/*",
   ]
 }
@@ -69,7 +69,7 @@ devtools_ui_module("unittests") {
 
   deps = [
     ":bundle",
+    "../../../../models/trace:bundle",
     "../../../../testing",
-    "../../../../ui/components/render_coordinator:bundle",
   ]
 }

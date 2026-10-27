@@ -69,11 +69,9 @@ void init_buffer(slinky::raw_buffer& buffer, size_t elem_size, size_t num_dims,
 
 extern "C" {
 
-ynn_status ynn_define_tensor_value(ynn_subgraph_t subgraph, enum ynn_type type,
-                                   size_t rank, const size_t* dims,
-                                   const void* data, uint32_t zero_point_id,
-                                   uint32_t scale_id, uint32_t flags,
-                                   uint32_t* id_out) {
+ynn_status ynn_define_tensor(ynn_subgraph_t subgraph, enum ynn_type type,
+                             size_t rank, const size_t* dims, const void* data,
+                             uint32_t flags, uint32_t* id_out) {
   YNN_RETURN_IF_ERROR(validate_subgraph("define_tensor", subgraph));
   if (rank > YNN_MAX_TENSOR_RANK) {
     YNN_LOG_ERROR() << "rank " << rank << " exceeds YNN_MAX_TENSOR_RANK "
@@ -82,15 +80,6 @@ ynn_status ynn_define_tensor_value(ynn_subgraph_t subgraph, enum ynn_type type,
   }
   if (!id_out) {
     YNN_LOG_ERROR() << "id_out must be non-null";
-    return ynn_status_invalid_parameter;
-  }
-  if (scale_id != YNN_INVALID_VALUE_ID && !subgraph->is_valid_value(scale_id)) {
-    YNN_LOG_ERROR() << "scale_id must be a valid value ID";
-    return ynn_status_invalid_parameter;
-  }
-  if (zero_point_id != YNN_INVALID_VALUE_ID &&
-      !subgraph->is_valid_value(zero_point_id)) {
-    YNN_LOG_ERROR() << "zero_point_id must be a valid value ID";
     return ynn_status_invalid_parameter;
   }
 
@@ -107,8 +96,8 @@ ynn_status ynn_define_tensor_value(ynn_subgraph_t subgraph, enum ynn_type type,
   }
   value->type = type;
   value->flags = flags;
-  value->scale_id = scale_id;
-  value->zero_point_id = zero_point_id;
+  value->scale_id = YNN_INVALID_VALUE_ID;
+  value->zero_point_id = YNN_INVALID_VALUE_ID;
 
   *id_out = value->id;
   if (!(data || value->is_external())) {
@@ -130,8 +119,7 @@ ynn_status ynn_define_tensor_value(ynn_subgraph_t subgraph, enum ynn_type type,
         // Any (logical) extent 1 dimensions of static values may be implicitly
         // broadcasted.
         const slinky::index_t logical = dims[rank - 1 - d];
-        const slinky::index_t physical = physical_dims[rank - 1 - d];
-        value->extents.push_back(logical == 1 ? slinky::expr{} : physical);
+        value->extents.push_back(logical == 1 ? slinky::expr{} : logical);
       }
     }
   }
@@ -154,7 +142,14 @@ ynn_status ynn_define_tensor_value(ynn_subgraph_t subgraph, enum ynn_type type,
     // Replace any constant 0 dimensions with dynamic extents.
     for (size_t d = 0; d < rank; ++d) {
       if (!dims || physical_dims[rank - 1 - d] == 0) {
-        value->extents[d] = buffer_max(value->symbol, d) + 1;
+        slinky::expr extent_d = buffer_max(value->symbol, d) + 1;
+        if (d == 0) {
+          int elem_count = ynn::type_element_count(type);
+          if (elem_count != 1) {
+            extent_d *= elem_count;
+          }
+        }
+        value->extents[d] = extent_d;
       }
     }
   }
@@ -167,14 +162,6 @@ ynn_status ynn_define_tensor_value(ynn_subgraph_t subgraph, enum ynn_type type,
   }
 
   return ynn_status_success;
-}
-
-ynn_status ynn_define_tensor(ynn_subgraph_t subgraph, enum ynn_type type,
-                             size_t rank, const size_t* dims, const void* data,
-                             uint32_t flags, uint32_t* id_out) {
-  return ynn_define_tensor_value(subgraph, type, rank, dims, data,
-                                 YNN_INVALID_VALUE_ID, YNN_INVALID_VALUE_ID,
-                                 flags, id_out);
 }
 
 }  // extern "C"

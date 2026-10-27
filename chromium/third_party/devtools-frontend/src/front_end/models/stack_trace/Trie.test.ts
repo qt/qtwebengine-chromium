@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import {protocolCallFrame} from '../../testing/StackTraceHelpers.js';
 
 // TODO(crbug.com/444191656): Expose a `testing` bundle.
@@ -126,6 +128,19 @@ describe('Trie', () => {
       });
 
       assert.deepEqual(visited, [nodeA, nodeB, nodeD]);
+    });
+  });
+
+  describe('FrameNode.evalOrigin', () => {
+    const {FrameNode, EvalOrigin} = StackTraceImpl.Trie;
+    const {FrameImpl} = StackTraceImpl.StackTraceImpl;
+
+    it('correctly returns evalOrigin if set directly', () => {
+      const node = new FrameNode(protocolCallFrame('foo.js:1:foo:1:10'), {parent: null, children: []});
+      const origin = new EvalOrigin([new FrameImpl('origin.js', undefined, 'originFn', 5, 5)]);
+      node.evalOrigin = origin;
+
+      assert.strictEqual(node.evalOrigin, origin);
     });
   });
 });

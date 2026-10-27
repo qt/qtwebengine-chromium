@@ -2390,8 +2390,24 @@ std::cout << b << "\n";
 ### (Operation) concatenate(const OtherDerived& other, Axis axis)
 
 Returns a view of two tensors joined along a specified axis.
-The dimensions of the two tensors must match on all axes except the concatenation axis.
+Both operands must have the same static rank (i.e. the same `NumDimensions`
+template parameter). Eigen Tensor expressions are fully typed at compile time
+on a fixed rank, so a rank-`N` tensor cannot be concatenated directly with a
+rank-`M` tensor; reshape one of the operands explicitly if you want to mix
+ranks.
+The dimensions of the two tensors must match on all axes except the
+concatenation axis.
 The resulting tensor has the same rank as the inputs.
+
+For example, to join a rank-2 tensor of shape `(2, 3)` and a rank-3 tensor of
+shape `(2, 3, 1)` along axis 0, reshape the rank-2 operand to rank 3 first:
+
+```cpp
+Eigen::Tensor<int, 2> left(2, 3);
+Eigen::Tensor<int, 3> right(2, 3, 1);
+Eigen::Tensor<int, 3> result =
+    left.reshape(Eigen::Tensor<int, 3>::Dimensions(2, 3, 1)).concatenate(right, 0);
+```
 
 ```cpp
 Eigen::Tensor<int, 2> a(2, 3);

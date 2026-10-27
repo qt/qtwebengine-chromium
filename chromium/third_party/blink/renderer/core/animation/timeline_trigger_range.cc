@@ -356,12 +356,13 @@ TimelineTriggerRange::ComputeTriggerBoundaries(double current_offset,
   return boundaries;
 }
 
-std::optional<TimelineTriggerState> TimelineTriggerRange::UpdateState() {
-  last_snapshot_state_ = ComputeState().value_or(last_snapshot_state_);
-  return last_snapshot_state_;
+std::optional<TimelineTriggerRange::State> TimelineTriggerRange::UpdateState() {
+  state_ = ComputeState().value_or(state_);
+  return state_;
 }
 
-std::optional<TimelineTriggerState> TimelineTriggerRange::ComputeState() {
+std::optional<TimelineTriggerRange::State>
+TimelineTriggerRange::ComputeState() {
   if (!timeline_ || !timeline_->IsActive()) {
     return std::nullopt;
   }
@@ -403,7 +404,7 @@ std::optional<TimelineTriggerState> TimelineTriggerRange::ComputeState() {
       WithinRange(boundaries.current_offset, boundaries.active_start,
                   boundaries.active_end);
 
-  State previous_state = last_snapshot_state_;
+  State previous_state = state_;
   State new_state = previous_state;
 
   if (within_activation_range) {

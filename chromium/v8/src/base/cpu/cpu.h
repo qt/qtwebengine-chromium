@@ -127,6 +127,7 @@ class V8_BASE_EXPORT CPU final {
   bool has_hbc() const { return has_hbc_; }
   bool has_cssc() const { return has_cssc_; }
   bool has_mops() const { return has_mops_; }
+  bool has_sve() const { return has_sve_; }
   bool has_svebitperm() const { return has_svebitperm_; }
 
   // mips features
@@ -139,6 +140,8 @@ class V8_BASE_EXPORT CPU final {
   bool has_zba() const { return has_zba_; }
   bool has_zbb() const { return has_zbb_; }
   bool has_zbs() const { return has_zbs_; }
+  bool has_zfa() const { return has_zfa_; }
+  bool has_rvc() const { return has_rvc_; }
   enum class RV_MMU_MODE {
     kRiscvSV39,
     kRiscvSV48,
@@ -212,6 +215,7 @@ class V8_BASE_EXPORT CPU final {
   bool has_hbc_ = false;
   bool has_cssc_ = false;
   bool has_mops_ = false;
+  bool has_sve_ = false;
   bool has_svebitperm_ = false;
   bool is_fp64_mode_ = false;
   bool has_non_stop_time_stamp_counter_ = false;
@@ -223,6 +227,8 @@ class V8_BASE_EXPORT CPU final {
   bool has_zba_ = false;
   bool has_zbb_ = false;
   bool has_zbs_ = false;
+  bool has_zfa_ = false;
+  bool has_rvc_ = false;
   bool has_lsx_ = false;
   bool has_lasx_ = false;
 };

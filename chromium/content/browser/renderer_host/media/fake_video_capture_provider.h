@@ -28,8 +28,18 @@ class FakeVideoCaptureProvider : public VideoCaptureProvider {
       base::OnceCallback<void(DesktopMediaID::Id)> created_callback,
       base::OnceCallback<void(webrtc::DesktopCapturer::Source)> picker_callback,
       base::OnceCallback<void()> cancel_callback,
-      base::OnceCallback<void()> error_callback) override;
+      base::OnceCallback<void()> error_callback,
+      base::OnceCallback<void(DesktopMediaID::Id)> stop_audio_callback)
+      override;
   void CloseNativeScreenCapturePicker(DesktopMediaID device_id) override;
+
+#if BUILDFLAG(IS_MAC)
+  void GetApplicationAudioCaptureId(
+      DesktopMediaID::Id session_id,
+      base::OnceCallback<void(
+          const std::optional<desktop_capture::ApplicationAudioCaptureId>&)>
+          callback) override;
+#endif
 
  private:
   media::VideoCaptureSystemImpl system_;

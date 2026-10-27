@@ -42,7 +42,12 @@ const UIStrings = {
   /**
    * @description title for history intervention documentation page.
    */
-  historyManipulationInterventionPageTitle: 'History manipulation intervention explainer'
+  historyManipulationInterventionPageTitle: 'History manipulation intervention explainer',
+
+  /**
+   * @description title for back-to-ad intervention documentation page.
+   */
+  backToAdInterventionPageTitle: 'Back-to-ad intervention explainer',
 } as const;
 
 const str_ = i18n.i18n.registerUIStrings('models/issues_manager/GenericIssue.ts', UIStrings);
@@ -193,6 +198,39 @@ export const genericNavigationEntryMarkedSkippable = {
   }],
 };
 
+export const genericBackUINavigationWouldSkipAd = {
+  file: 'genericBackUINavigationWouldSkipAd.md',
+  links: [{
+    link: 'https://chromium.googlesource.com/chromium/src/+/main/docs/history_manipulation_intervention.md',
+    linkTitle: i18nLazyString(UIStrings.backToAdInterventionPageTitle),
+  }],
+};
+
+export const genericFormModelContextMissingToolName = {
+  file: 'genericFormModelContextMissingToolName.md',
+  links: [],
+};
+
+export const genericFormModelContextMissingToolDescription = {
+  file: 'genericFormModelContextMissingToolDescription.md',
+  links: [],
+};
+
+export const genericFormModelContextParameterMissingTitleAndDescription = {
+  file: 'genericFormModelContextParameterMissingTitleAndDescription.md',
+  links: [],
+};
+
+export const genericFormModelContextRequiredParameterMissingName = {
+  file: 'genericFormModelContextRequiredParameterMissingName.md',
+  links: [],
+};
+
+export const genericFormModelContextParameterMissingName = {
+  file: 'genericFormModelContextParameterMissingName.md',
+  links: [],
+};
+
 const issueDescriptions = new Map<Protocol.Audits.GenericIssueErrorType, LazyMarkdownIssueDescription>([
   [Protocol.Audits.GenericIssueErrorType.FormLabelForNameError, genericFormLabelForNameError],
   [Protocol.Audits.GenericIssueErrorType.FormInputWithNoLabelError, genericFormInputWithNoLabelError],
@@ -233,6 +271,30 @@ const issueDescriptions = new Map<Protocol.Audits.GenericIssueErrorType, LazyMar
     Protocol.Audits.GenericIssueErrorType.NavigationEntryMarkedSkippable,
     genericNavigationEntryMarkedSkippable,
   ],
+  [
+    Protocol.Audits.GenericIssueErrorType.BackUINavigationWouldSkipAd,
+    genericBackUINavigationWouldSkipAd,
+  ],
+  [
+    Protocol.Audits.GenericIssueErrorType.FormModelContextMissingToolName,
+    genericFormModelContextMissingToolName,
+  ],
+  [
+    Protocol.Audits.GenericIssueErrorType.FormModelContextMissingToolDescription,
+    genericFormModelContextMissingToolDescription,
+  ],
+  [
+    Protocol.Audits.GenericIssueErrorType.FormModelContextParameterMissingTitleAndDescription,
+    genericFormModelContextParameterMissingTitleAndDescription,
+  ],
+  [
+    Protocol.Audits.GenericIssueErrorType.FormModelContextRequiredParameterMissingName,
+    genericFormModelContextRequiredParameterMissingName,
+  ],
+  [
+    Protocol.Audits.GenericIssueErrorType.FormModelContextParameterMissingName,
+    genericFormModelContextParameterMissingName,
+  ],
 ]);
 
 const issueTypes = new Map<Protocol.Audits.GenericIssueErrorType, IssueKind>([
@@ -249,5 +311,9 @@ const issueTypes = new Map<Protocol.Audits.GenericIssueErrorType, IssueKind>([
   [Protocol.Audits.GenericIssueErrorType.FormLabelForMatchesNonExistingIdError, IssueKind.PAGE_ERROR],
   [Protocol.Audits.GenericIssueErrorType.FormLabelHasNeitherForNorNestedInputError, IssueKind.IMPROVEMENT],
   [Protocol.Audits.GenericIssueErrorType.FormInputHasWrongButWellIntendedAutocompleteValueError, IssueKind.IMPROVEMENT],
-
+  [Protocol.Audits.GenericIssueErrorType.FormModelContextMissingToolName, IssueKind.PAGE_ERROR],
+  [Protocol.Audits.GenericIssueErrorType.FormModelContextMissingToolDescription, IssueKind.PAGE_ERROR],
+  [Protocol.Audits.GenericIssueErrorType.FormModelContextParameterMissingTitleAndDescription, IssueKind.PAGE_ERROR],
+  [Protocol.Audits.GenericIssueErrorType.FormModelContextRequiredParameterMissingName, IssueKind.PAGE_ERROR],
+  [Protocol.Audits.GenericIssueErrorType.FormModelContextParameterMissingName, IssueKind.PAGE_ERROR],
 ]);

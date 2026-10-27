@@ -15,14 +15,12 @@
  * [android-nissa-uldren-8gb-perf](https://ci.chromium.org/p/chrome/builders/ci/android-nissa-uldren-8gb-perf): Nissa SKU uldren_99C4LZ/Q1XT/6W_8GB.
  * [android-pixel-fold-perf](https://ci.chromium.org/p/chrome/builders/ci/android-pixel-fold-perf): Android U.
  * [android-pixel-tangor-perf](https://ci.chromium.org/p/chrome/builders/ci/android-pixel-tangor-perf): Android U.
- * [android-pixel25-ultra-perf](https://ci.chromium.org/p/chrome/builders/ci/android-pixel25-ultra-perf): Android B.
- * [android-pixel25-ultra-xl-perf](https://ci.chromium.org/p/chrome/builders/ci/android-pixel25-ultra-xl-perf): Android B.
+ * [android-pixel10-perf](https://ci.chromium.org/p/chrome/builders/ci/android-pixel10-perf): Android B.
+ * [android-pixel10_webview-perf](https://ci.chromium.org/p/chrome/builders/ci/android-pixel10_webview-perf): Android B.
  * [android-pixel4-perf](https://ci.chromium.org/p/chrome/builders/ci/android-pixel4-perf): Android R.
  * [android-pixel4_webview-perf](https://ci.chromium.org/p/chrome/builders/ci/android-pixel4_webview-perf): Android R.
  * [android-pixel4_webview-perf-pgo](https://ci.chromium.org/p/chrome/builders/ci/android-pixel4_webview-perf-pgo): Android R.
- * [android-pixel6-perf](https://ci.chromium.org/p/chrome/builders/ci/android-pixel6-perf): Android U.
  * [android-pixel6-perf-pgo](https://ci.chromium.org/p/chrome/builders/ci/android-pixel6-perf-pgo): Android U.
- * [android-pixel6-pro-perf](https://ci.chromium.org/p/chrome/builders/ci/android-pixel6-pro-perf): Android T.
  * [android-pixel9-perf](https://ci.chromium.org/p/chrome/builders/ci/android-pixel9-perf): Android B.
  * [android-pixel9-pro-perf](https://ci.chromium.org/p/chrome/builders/ci/android-pixel9-pro-perf): Android B.
  * [android-pixel9-pro-xl-perf](https://ci.chromium.org/p/chrome/builders/ci/android-pixel9-pro-xl-perf): Android B.
@@ -44,6 +42,8 @@
  * [mac-m2-pro-perf](https://ci.chromium.org/p/chrome/builders/ci/mac-m2-pro-perf): Mac M2 PRO Baremetal ARM.
  * [mac-m3-pro-perf](https://ci.chromium.org/p/chrome/builders/ci/mac-m3-pro-perf): Mac M3 PRO ARM.
  * [mac-m4-mini-perf](https://ci.chromium.org/p/chrome/builders/ci/mac-m4-mini-perf): Mac M4 mini ARM.
+ * [mac-m4-pro-perf](https://ci.chromium.org/p/chrome/builders/ci/mac-m4-pro-perf): MacBook Pro M4 ARM.
+ * [mac-m5-pro-perf](https://ci.chromium.org/p/chrome/builders/ci/mac-m5-pro-perf): Mac M5 PRO ARM.
 
 ### Win
 

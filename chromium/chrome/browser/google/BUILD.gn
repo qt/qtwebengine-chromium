@@ -31,6 +31,7 @@ source_set("google") {
 
     deps += [
       "//chrome/browser:browser_process",
+      "//chrome/browser:browser_process_platform_part",
       "//chrome/browser/ash/policy/core",
       "//chromeos/ash/components/system",
       "//components/policy/core/common:common_constants",
@@ -59,6 +60,7 @@ source_set("google") {
 
     deps += [
       "//chrome/app:generated_resources_grit",
+      "//chrome/browser/component_updater",
       "//chrome/common",
       "//chrome/install_static:install_static_util",
       "//chrome/installer/util:with_no_strings",

@@ -7,6 +7,7 @@
 
 #include <string_view>
 
+#include "base/time/time.h"
 #include "build/build_config.h"
 
 class PrefRegistrySimple;
@@ -31,6 +32,10 @@ inline constexpr std::string_view kAutofillAblationSeedPref =
 // Otherwise, saving and filling of these entities is disabled.
 inline constexpr char kAutofillAiIdentityEntitiesEnabled[] =
     "autofill.autofill_ai.identity_entities_enabled";
+// Boolean that is true if shopping-related entities of Autofill AI are enabled.
+// Otherwise, filling of these entities is disabled.
+inline constexpr char kAutofillAiShoppingEntitiesEnabled[] =
+    "autofill.autofill_ai.shopping_entities_enabled";
 // Boolean that is true if Autofill AI synced pref is enabled.
 // This pref supersedes the non-synced pref `kAutofillAiOptInStatus`, which is
 // in the process of being deprecated. Users who have previously interacted with
@@ -86,6 +91,18 @@ inline constexpr char kAutofillCreditCardFidoAuthEnabled[] =
 inline constexpr char kAutofillCreditCardFidoAuthOfferCheckboxState[] =
     "autofill.credit_card_fido_auth_offer_checkbox_state";
 #endif  // BUILDFLAG(IS_ANDROID)
+// Boolean that is true if email verification is enabled.
+inline constexpr char kAutofillEmailVerificationEnabled[] =
+    "autofill.email_verification_enabled";
+
+// Dictionary that contains email addresses and their verification status.
+// The value is a dictionary mapping email addresses to a dictionary containing:
+// - `allowed`: boolean indicating if the user allowed it.
+// - `issuer_site`: string indicating the site that issued the token.
+// - `timestamp`: timestamp when the decision was made.
+inline constexpr char kAutofillEmailVerificationState[] =
+    "autofill.email_verification_state";
+
 // Boolean that is true if a form with an IBAN field has ever been submitted, or
 // an IBAN has ever been saved via Chrome payments settings page. This helps to
 // enable IBAN functionality for those users who are not in a country where IBAN
@@ -286,6 +303,10 @@ bool IsPaymentCardBenefitsEnabled(const PrefService* prefs);
 void SetPaymentCardBenefits(PrefService* prefs, bool value);
 
 void ClearSyncTransportOptIns(PrefService* prefs);
+
+void ClearEmailVerificationState(PrefService* prefs,
+                                 const base::Time& delete_begin,
+                                 const base::Time& delete_end);
 
 void SetFacilitatedPaymentsEwallet(PrefService* prefs, bool value);
 

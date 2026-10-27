@@ -33,7 +33,7 @@ FieldIndex FieldIndex::ForSmiLoadHandler(Tagged<Map> map, int32_t handler) {
   if (is_inobject) {
     first_field_offset_in_storage = map->GetInObjectPropertyOffset(0);
   } else {
-    first_field_offset_in_storage = PropertyArray::kHeaderSize;
+    first_field_offset_in_storage = OFFSET_OF_DATA_START(PropertyArray);
   }
   return FieldIndex(
       is_inobject,
@@ -54,12 +54,12 @@ FieldIndex FieldIndex::ForPropertyIndex(Tagged<Map> map, int property_index,
     offset = map->GetInObjectPropertyOffset(property_index);
   } else {
     // Have to have these static asserts somewhere, why not here.
-    static_assert(PropertyArray::kHeaderSize <
+    static_assert(OFFSET_OF_DATA_START(PropertyArray) <
                   (1 << FieldIndex::kPropertyArrayDataStartBitCount));
-    static_assert(PropertyArray::kHeaderSize >=
+    static_assert(OFFSET_OF_DATA_START(PropertyArray) >=
                   (1 << (FieldIndex::kPropertyArrayDataStartBitCount - 1)));
 
-    first_field_offset_in_storage = PropertyArray::kHeaderSize;
+    first_field_offset_in_storage = OFFSET_OF_DATA_START(PropertyArray);
     property_index -= inobject_property_count;
     offset = PropertyArray::OffsetOfElementAt(property_index);
   }
@@ -70,7 +70,7 @@ FieldIndex FieldIndex::ForPropertyIndex(Tagged<Map> map, int property_index,
 
 // Returns the index format accepted by the LoadFieldByIndex instruction.
 // (In-object: zero-based from (object start + JSObject::kHeaderSize),
-// out-of-object: zero-based from PropertyArray::kHeaderSize.)
+// out-of-object: zero-based from OFFSET_OF_DATA_START(PropertyArray).)
 int FieldIndex::GetLoadByFieldIndex() const {
   // For efficiency, the LoadByFieldIndex instruction takes an index that is
   // optimized for quick access. If the property is inline, the index is
@@ -82,7 +82,7 @@ int FieldIndex::GetLoadByFieldIndex() const {
   if (is_inobject()) {
     result -= JSObject::kHeaderSize / kTaggedSize;
   } else {
-    result -= PropertyArray::kHeaderSize / kTaggedSize;
+    result -= OFFSET_OF_DATA_START(PropertyArray) / kTaggedSize;
     result = -result - 1;
   }
   result = static_cast<uint32_t>(result) << 1;
@@ -91,15 +91,8 @@ int FieldIndex::GetLoadByFieldIndex() const {
 
 FieldIndex FieldIndex::ForDescriptor(Tagged<Map> map,
                                      InternalIndex descriptor_index) {
-  PtrComprCageBase cage_base = GetPtrComprCageBase(map);
-  return ForDescriptor(cage_base, map, descriptor_index);
-}
-
-FieldIndex FieldIndex::ForDescriptor(PtrComprCageBase cage_base,
-                                     Tagged<Map> map,
-                                     InternalIndex descriptor_index) {
-  PropertyDetails details = map->instance_descriptors(cage_base, kAcquireLoad)
-                                ->GetDetails(descriptor_index);
+  PropertyDetails details =
+      map->instance_descriptors(kAcquireLoad)->GetDetails(descriptor_index);
   return ForDetails(map, details);
 }
 
@@ -112,7 +105,7 @@ FieldIndex FieldIndex::ForDetails(Tagged<Map> map, PropertyDetails details) {
   if (is_inobject) {
     first_field_offset_in_storage = map->GetInObjectPropertyOffset(0);
   } else {
-    first_field_offset_in_storage = PropertyArray::kHeaderSize;
+    first_field_offset_in_storage = OFFSET_OF_DATA_START(PropertyArray);
   }
   return FieldIndex(is_inobject, offset, encoding, inobject_property_count,
                     first_field_offset_in_storage);

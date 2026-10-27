@@ -200,7 +200,6 @@ const char* VK_LAYER_GPUAV_SAFE_MODE = "gpuav_safe_mode";
 const char* VK_LAYER_GPUAV_SHADER_INSTRUMENTATION = "gpuav_shader_instrumentation";
 const char* VK_LAYER_GPUAV_DESCRIPTOR_CHECKS = "gpuav_descriptor_checks";
 const char* VK_LAYER_GPUAV_BUFFER_ADDRESS_OOB = "gpuav_buffer_address_oob";
-const char* VK_LAYER_GPUAV_VALIDATE_RAY_QUERY = "gpuav_validate_ray_query";
 const char* VK_LAYER_GPUAV_VALIDATE_TRACE_RAY = "gpuav_validate_trace_ray";
 const char* VK_LAYER_GPUAV_MESH_SHADING = "gpuav_mesh_shading";
 const char* VK_LAYER_GPUAV_POST_PROCESS_DESCRIPTOR_INDEXING = "gpuav_post_process_descriptor_indexing";
@@ -210,6 +209,8 @@ const char* VK_LAYER_GPUAV_SHARED_MEMORY_DATA_RACE = "gpuav_shared_memory_data_r
 const char* VK_LAYER_GPUAV_MAX_INDICES_COUNT = "gpuav_max_indices_count";
 const char* VK_LAYER_GPUAV_SELECT_INSTRUMENTED_SHADERS = "gpuav_select_instrumented_shaders";
 const char* VK_LAYER_GPUAV_SHADERS_TO_INSTRUMENT = "gpuav_shaders_to_instrument";
+// This was removed right after 1.4.350 SDK
+const char* REMOVED_VK_LAYER_GPUAV_VALIDATE_RAY_QUERY = "gpuav_validate_ray_query";
 
 const char* VK_LAYER_GPUAV_BUFFERS_VALIDATION = "gpuav_buffers_validation";
 const char* VK_LAYER_GPUAV_INDIRECT_DRAWS_BUFFERS = "gpuav_indirect_draws_buffers";
@@ -250,8 +251,12 @@ const char* VK_LAYER_REPORT_FLAGS = "report_flags";
 // Used for working with VK_EXT_descriptor_buffer/VK_EXT_descriptor_heap
 // Every draw/dispatch/traceRays dump out information about the bound descriptor buffer/heap
 const char* VK_LAYER_GPU_DUMP_DESCRIPTORS = "gpu_dump_descriptors";
+const char* VK_LAYER_GPU_DUMP_COPY_MEMORY_INDIRECT = "gpu_dump_copy_memory_indirect";
+const char* VK_LAYER_GPU_DUMP_DEVICE_GENERATED_COMMANDS = "gpu_dump_device_generated_commands";
 // Print to stdout
 const char* VK_LAYER_GPU_DUMP_TO_STDOUT = "gpu_dump_to_stdout";
+// Experimental
+const char* VK_LAYER_GPU_DUMP_DEVICE_COPY = "gpu_dump_device_copy";
 
 // Don't need any setting helper when using self vvl and don't want unused function warnings
 #if !defined(BUILD_SELF_VVL)
@@ -757,21 +762,31 @@ static void ProcessDebugReportSettings(ConfigAndEnvSettings* settings_data, VkuL
     }
 
     if (settings_data->enabled[gpu_dump]) {
-        if (settings_data->gpu_dump_settings->to_stdout && (debug_action & VK_DBG_LAYER_ACTION_LOG_MSG)) {
-            if (is_stdout) {
-                setting_warnings.emplace_back(
-                    "The debug callback is already logging to stdout, but " + std::string(VK_LAYER_GPU_DUMP_TO_STDOUT) +
-                    " is also enabled. GPU Dump will skip the debug callback in favor of a direct stdout write.");
-            } else {
-                setting_warnings.emplace_back("The logging to " + log_filename + " will not contain any GPU Dump info because " +
-                                              std::string(VK_LAYER_GPU_DUMP_TO_STDOUT) + " is enabled.");
+        if (settings_data->gpu_dump_settings->to_stdout) {
+            if ((debug_action & VK_DBG_LAYER_ACTION_LOG_MSG)) {
+                if (is_stdout) {
+                    setting_warnings.emplace_back(
+                        "The debug callback is already logging to stdout, but " + std::string(VK_LAYER_GPU_DUMP_TO_STDOUT) +
+                        " is also enabled. GPU Dump will skip the debug callback in favor of a direct stdout write.");
+                } else {
+                    setting_warnings.emplace_back("The logging to " + log_filename +
+                                                  " will not contain any GPU Dump info because " +
+                                                  std::string(VK_LAYER_GPU_DUMP_TO_STDOUT) + " is enabled.");
+                }
             }
-        }
-        if (!settings_data->gpu_dump_settings->to_stdout && ((report_flags & kInformationBit) == 0)) {
-            setting_warnings.emplace_back(
-                "GPU Dump logs to the Information message severity, enabling Information level logging otherwise the message "
-                "will not be seen.");
-            report_flags |= kInformationBit;
+        } else if (!settings_data->gpu_dump_settings->to_stdout) {
+            if ((report_flags & kInformationBit) == 0) {
+                setting_warnings.emplace_back(
+                    "GPU Dump logs to the Information message severity, enabling Information level logging otherwise the message "
+                    "will not be seen.");
+                report_flags |= kInformationBit;
+            }
+            if ((report_flags & kWarningBit) == 0) {
+                setting_warnings.emplace_back(
+                    "GPU Dump can log to the Warning message severity, enabling Warning level logging otherwise the message "
+                    "will not be seen.");
+                report_flags |= kWarningBit;
+            }
         }
     }
 
@@ -914,10 +929,10 @@ static const char* GetDefaultPrefix() {
 }
 #endif  // !defined(BUILD_SELF_VVL)
 
-// Global list of sType,size identifiers
-std::vector<std::pair<uint32_t, uint32_t>>& GetCustomStypeInfo() {
-    static std::vector<std::pair<uint32_t, uint32_t>> custom_stype_info{};
-    return custom_stype_info;
+// This is a (less than desired) way to allow Statless validation tracking a setting
+bool& HasCustomStypeInfo() {
+    static bool allow_custom_types = false;
+    return allow_custom_types;
 }
 
 #if !defined(BUILD_SELF_VVL)
@@ -959,7 +974,7 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings* settings_data) {
     std::vector<std::string> setting_warnings;
 
     // If not cleared, garbage has been seen in some Android run effecting the error message
-    GetCustomStypeInfo().clear();
+    HasCustomStypeInfo() = false;
 
     VkuLayerSettingSet layer_setting_set = VK_NULL_HANDLE;
     auto layer_setting_create_info = vkuFindLayerSettingsCreateInfo(settings_data->create_info);
@@ -1005,7 +1020,13 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings* settings_data) {
     }
 
     if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_CUSTOM_STYPE_LIST)) {
-        vkuGetLayerSettingValues(layer_setting_set, VK_LAYER_CUSTOM_STYPE_LIST, GetCustomStypeInfo());
+        // We use to support this, but feel no one is using this
+        // As a transition, we will allow to be used and just skip the 1 VU check if anything is set
+        // (added after SDK 1.4.341)
+        setting_warnings.emplace_back(
+            "VK_LAYER_CUSTOM_STYPE_LIST is set, but currently the feature seems unused, we plan to drop this support, so please "
+            "report if seeing this warning");
+        HasCustomStypeInfo() = true;
     }
 
     GpuAVSettings& gpuav_settings = *settings_data->gpuav_settings;
@@ -1044,16 +1065,16 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings* settings_data) {
                                     gpuav_settings.shader_instrumentation.buffer_device_address);
         }
 
-        if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_VALIDATE_RAY_QUERY)) {
-            vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_VALIDATE_RAY_QUERY,
-                                    gpuav_settings.shader_instrumentation.ray_query);
-        }
-
         if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_VALIDATE_TRACE_RAY)) {
             vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_VALIDATE_TRACE_RAY,
                                     gpuav_settings.shader_instrumentation.trace_ray);
         }
 
+        if (vkuHasLayerSetting(layer_setting_set, REMOVED_VK_LAYER_GPUAV_VALIDATE_RAY_QUERY)) {
+            setting_warnings.emplace_back(std::string(REMOVED_VK_LAYER_GPUAV_VALIDATE_RAY_QUERY) +
+                                          " advanced setting was removed, just use " +
+                                          std::string(VK_LAYER_GPUAV_VALIDATE_TRACE_RAY) + " now.");
+        }
         if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_SHADER_SANITIZER)) {
             vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_SHADER_SANITIZER,
                                     gpuav_settings.shader_instrumentation.sanitizer);
@@ -1226,8 +1247,21 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings* settings_data) {
         vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPU_DUMP_DESCRIPTORS, gpu_dump_settings.descriptors);
     }
 
+    if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPU_DUMP_COPY_MEMORY_INDIRECT)) {
+        vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPU_DUMP_COPY_MEMORY_INDIRECT, gpu_dump_settings.copy_memory_indirect);
+    }
+
+    if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPU_DUMP_DEVICE_GENERATED_COMMANDS)) {
+        vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPU_DUMP_DEVICE_GENERATED_COMMANDS,
+                                gpu_dump_settings.device_generated_commands);
+    }
+
     if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPU_DUMP_TO_STDOUT)) {
         vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPU_DUMP_TO_STDOUT, gpu_dump_settings.to_stdout);
+    }
+
+    if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPU_DUMP_DEVICE_COPY)) {
+        vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPU_DUMP_DEVICE_COPY, gpu_dump_settings.device_copy);
     }
 
     const char* REMOVED_VK_LAYER_SYNCVAL_MESSAGE_EXTRA_PROPERTIES_PRETTY_PRINT = "syncval_message_extra_properties_pretty_print";
@@ -1361,7 +1395,8 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings* settings_data) {
         // sync val relies on the information from spirv::Module being parsed and stored
         if (!settings_data->enabled[sync_validation]) {
             // GPU-AV/DebugPrintf relies on spirv::Module to hold the original SPIR-V
-            if (!settings_data->enabled[gpu_validation] && !settings_data->enabled[debug_printf_validation]) {
+            if (!settings_data->enabled[gpu_validation] && !settings_data->enabled[debug_printf_validation] &&
+                !settings_data->enabled[gpu_dump]) {
                 global_settings.spirv_store = false;
             } else if (settings_data->disabled[shader_validation]) {
                 setting_warnings.emplace_back(

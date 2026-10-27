@@ -1065,6 +1065,11 @@
         Dismiss the card.
       </message>
 
+      <!-- Tab Strip Hover Card strings -->
+      <message name="IDS_TAB_HOVER_CARD_MEMORY_USAGE" desc="Text at the bottom of a hovercard that shows how much memory a specific tab is using.">
+        Memory usage: <ph name="MEMORY_USAGE">%1$s<ex>300 MB</ex></ph>
+      </message>
+
       <!-- Tab context menu -->
       <message name="IDS_SELECT_TAB" desc="Content description for an action which selects a singular tab.">
         Select tab
@@ -1077,6 +1082,7 @@
           =1 {Move tab to new window}
           other {Move tab to another window}}
       </message>
+
       <message name="IDS_MOVE_TABS_LEFT" desc="Menu item for moving tab(s) to the left in the tab strip order.">
         {TAB_COUNT, plural,
           =1 {Move tab left}
@@ -1137,6 +1143,26 @@
       </message>
       <message name="IDS_DUPLICATE_TAB_MENU_ITEM" desc="Content description for an action which duplicates a selection of tabs.">
         Duplicate
+      </message>
+      <message name="IDS_CLOSE_OTHER_TABS_MENU_ITEM" desc="Content description for an action which closes all tabs not currently selected.">
+        Close other tabs
+      </message>
+      <message name="IDS_CLOSE_TABS_TO_THE_RIGHT_MENU_ITEM" desc="Content description for an action which closes all tabs to the right of the right most selected tab.">
+        Close tabs to the right
+      </message>
+      <message name="IDS_NEW_TAB_TO_THE_RIGHT_MENU_ITEM" desc="Content description for an action which creates a new tab to the right of the current tab.">
+        New tab to the right
+      </message>
+      <message name="IDS_ADD_TAB_TO_READING_LIST_MENU_ITEM" desc="Content description for an action which adds the currently selected tabs to the reading list.">
+        {TAB_COUNT, plural,
+          =1 {Add tab to reading list}
+          other {Add tabs to reading list}}
+      </message>
+      <message name="IDS_SHOW_TABS_VERTICALLY" desc="Context menu item text to show the vertical tabs.">
+        Show tabs vertically
+      </message>
+      <message name="IDS_SHOW_TABS_HORIZONTALLY" desc="Context menu item text to show the horizontal tabs.">
+        Show tabs horizontally
       </message>
 
       <!-- Tab Group List Bottom Sheet -->

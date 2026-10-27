@@ -21,8 +21,9 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/log/check.h"
+#include "absl/log/absl_check.h"
 #include "absl/status/status.h"
+#include "absl/status/status_matchers.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/escaping.h"
 #include "absl/strings/string_view.h"
@@ -30,13 +31,13 @@
 #include "absl/time/time.h"
 #include "fcp/client/test_helpers.h"
 #include "fcp/testing/testing.h"
+#include "third_party/gloop/util/time/protoutil.h"
 #include "proto/attestation/endorsement.pb.h"
 #include "proto/attestation/evidence.pb.h"
 #include "proto/attestation/reference_value.pb.h"
 #include "proto/attestation/verification.pb.h"
 #include "proto/digest.pb.h"
 #include "proto/validity.pb.h"
-#include "util/time/protoutil.h"
 
 namespace fcp::client::rust::oak_attestation_verification_ffi {
 namespace {
@@ -65,7 +66,7 @@ std::string GetFileContents(absl::string_view filename) {
   std::filesystem::path full_path =
       std::filesystem::path(testing::SrcDir()) / kTestDataDir / filename;
   std::string contents;
-  CHECK(LoadFileAsString(full_path, &contents));
+  ABSL_CHECK(LoadFileAsString(full_path, &contents));
   return contents;
 }
 
@@ -75,14 +76,14 @@ std::string ConvertPemToRaw(absl::string_view public_key_pem) {
   stripped = absl::StripSuffix(stripped, kPemFooter);
 
   std::string decoded;
-  CHECK(absl::Base64Unescape(stripped, &decoded));
+  ABSL_CHECK(absl::Base64Unescape(stripped, &decoded));
   return decoded;
 }
 
 TEST(OakAttestationVerificationFfiTest, VerifyEndorsementFailure) {
   // Error message is: "no endorsement in signed endorsement", as expected.
   EXPECT_THAT(VerifyEndorsement(absl::UniversalEpoch(), {}, {}),
-              IsCode(absl::StatusCode::kFailedPrecondition));
+              absl_testing::StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
 TEST(OakAttestationVerificationFfiTest, VerifyEndorsementSuccess) {
@@ -127,7 +128,7 @@ TEST(OakAttestationVerificationFfiTest, VerifyEndorsementSuccess) {
 
   auto s = VerifyEndorsement(absl::FromUnixMillis(kNowUtcMillis),
                              signed_endorsement, ref_value);
-  EXPECT_OK(s);
+  ABSL_EXPECT_OK(s);
 
   EndorsementDetails details = s.value();
   EXPECT_EQ(absl::BytesToHexString(details.subject_digest().sha2_256()),

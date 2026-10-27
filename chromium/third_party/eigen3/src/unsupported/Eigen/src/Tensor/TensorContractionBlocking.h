@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_CONTRACTION_BLOCKING_H
-#define EIGEN_CXX11_TENSOR_TENSOR_CONTRACTION_BLOCKING_H
+#ifndef EIGEN_TENSOR_TENSOR_CONTRACTION_BLOCKING_H
+#define EIGEN_TENSOR_TENSOR_CONTRACTION_BLOCKING_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -67,4 +68,4 @@ class TensorContractionBlocking {
 }  // end namespace internal
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_CONTRACTION_BLOCKING_H
+#endif  // EIGEN_TENSOR_TENSOR_CONTRACTION_BLOCKING_H

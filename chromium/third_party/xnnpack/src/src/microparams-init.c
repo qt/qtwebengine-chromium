@@ -407,7 +407,7 @@ void xnn_init_qs8_qc8w_scale_fp32_params(
   for (size_t tile_start = 0; tile_start < channels; tile_start += channels_tile) {
     const size_t tile_size = min(channels - tile_start, channels_tile);
     for (size_t tile_offset = 0; tile_offset < tile_size; tile_offset++) {
-      unaligned_indexed_store_f32(packed_w, tile_offset, scale[tile_start + tile_offset]);
+      unaligned_indexed_store_f32(packed_w, tile_offset, unaligned_indexed_load_f32(scale, tile_start + tile_offset));
     }
     packed_w = (void*) ((uintptr_t) packed_w + stride);
   }
@@ -446,7 +446,8 @@ void xnn_init_blockwise_scale_fp32_params(
       for (size_t tile_offset = 0; tile_offset < tile_size; tile_offset++) {
         size_t scale_index = (tile_start + tile_offset) * num_blocks + block_start;
         // 1/16 because the weight are << 4 in the innermost loop to save a shift
-        unaligned_indexed_store_f32(packed_w, tile_offset, scale[scale_index] / 16.0f);
+        unaligned_indexed_store_f32(packed_w, tile_offset,
+          unaligned_indexed_load_f32(scale, scale_index) / 16.0f);
       }
       packed_w = (void*) ((uintptr_t) packed_w + stride);
     }
@@ -469,8 +470,10 @@ void xnn_init_blockwise_scale_bf16_params(
       const size_t tile_size = min(channels - tile_start, channels_tile);
       for (size_t tile_offset = 0; tile_offset < tile_size; tile_offset++) {
         size_t scale_index = (tile_start + tile_offset) * num_blocks + block_start;
+        xnn_bfloat16 vscale = xnn_bfloat16_from_bits(
+            unaligned_indexed_load_u16(scale, scale_index));
         // 1/16 because the weight are << 4 in the innermost loop to save a shift
-        float scale_16 = math_cvt_bf16_fp32(xnn_bfloat16_to_float(scale[scale_index]) / 16.0f);
+        float scale_16 = math_cvt_bf16_fp32(xnn_bfloat16_to_float(vscale) / 16.0f);
         unaligned_indexed_store_u16(packed_w, tile_offset, scale_16);
       }
       packed_w = (void*) ((uintptr_t) packed_w + stride);
@@ -1113,6 +1116,17 @@ size_t xnn_init_qs8_mul_minmax_rndnu_neon_params(
   return sizeof(uparams->rndnu_neon);
 }
 #endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
+
+size_t xnn_init_bf16_qs8_cvt_scalar_params(
+  union xnn_unary_uparams* params,
+  const union xnn_unary_params* op_params,
+  const struct xnn_quantization_params* input_quantization,
+  const struct xnn_quantization_params* output_quantization)
+{
+  params->bf16_qs8_cvt.scalar.scale = xnn_bfloat16_from_float(1.0f / output_quantization->scale);
+  params->bf16_qs8_cvt.scalar.output_zero_point = output_quantization->zero_point;
+  return sizeof(params->bf16_qs8_cvt);
+}
 
 size_t xnn_init_f16_qs8_cvt_scalar_params(
   union xnn_unary_uparams* params,

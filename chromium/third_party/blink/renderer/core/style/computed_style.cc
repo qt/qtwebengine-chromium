@@ -28,9 +28,9 @@
 #include <utility>
 
 #include "base/check_op.h"
+#include "base/compiler_specific.h"
 #include "base/debug/alias.h"
 #include "base/memory/values_equivalent.h"
-#include "base/metrics/histogram_functions.h"
 #include "base/numerics/clamped_math.h"
 #include "build/build_config.h"
 #include "cc/input/overscroll_behavior.h"
@@ -64,7 +64,6 @@
 #include "third_party/blink/renderer/core/layout/layout_text_combine.h"
 #include "third_party/blink/renderer/core/layout/layout_theme.h"
 #include "third_party/blink/renderer/core/layout/map_coordinates_flags.h"
-#include "third_party/blink/renderer/core/layout/text_autosizer.h"
 #include "third_party/blink/renderer/core/paint/compositing/compositing_reason_finder.h"
 #include "third_party/blink/renderer/core/style/applied_text_decoration.h"
 #include "third_party/blink/renderer/core/style/basic_shapes.h"
@@ -253,22 +252,26 @@ static bool PseudoElementStylesEqual(const ComputedStyle& old_style,
   return true;
 }
 
-static bool DiffAffectsContainerQueries(const ComputedStyle& old_style,
-                                        const ComputedStyle& new_style) {
-  if (!base::ValuesEquivalent(old_style.ContainerName(),
-                              new_style.ContainerName()) ||
-      old_style.ContainerType() != new_style.ContainerType()) {
-    return true;
-  }
-  if (!old_style.IsContainerForSizeContainerQueries() &&
-      !new_style.IsContainerForSizeContainerQueries() &&
-      !old_style.IsContainerForScrollStateContainerQueries() &&
-      !new_style.IsContainerForScrollStateContainerQueries()) {
+bool ComputedStyle::DiffAffectsContainerQueries(
+    const ComputedStyle* old_style,
+    const ComputedStyle* new_style) {
+  if (!old_style || !new_style) {
     return false;
   }
-  if (new_style.Display() != old_style.Display()) {
-    if (new_style.Display() == EDisplay::kNone ||
-        new_style.Display() == EDisplay::kContents) {
+  if (!base::ValuesEquivalent(old_style->ContainerName(),
+                              new_style->ContainerName()) ||
+      old_style->ContainerType() != new_style->ContainerType()) {
+    return true;
+  }
+  if (!old_style->IsContainerForSizeContainerQueries() &&
+      !new_style->IsContainerForSizeContainerQueries() &&
+      !old_style->IsContainerForScrollStateContainerQueries() &&
+      !new_style->IsContainerForScrollStateContainerQueries()) {
+    return false;
+  }
+  if (new_style->Display() != old_style->Display()) {
+    if (new_style->Display() == EDisplay::kNone ||
+        new_style->Display() == EDisplay::kContents) {
       return true;
     }
   }
@@ -440,10 +443,6 @@ ComputedStyle::ComputeDifferenceIgnoringInheritedFirstLineStyle(
   if (old_style.ScrollMarkerGroupNone() != new_style.ScrollMarkerGroupNone()) {
     return Difference::kDescendantAffecting;
   }
-  // TODO(crbug.com/1213888): Only recalc affected descendants.
-  if (DiffAffectsContainerQueries(old_style, new_style)) {
-    return Difference::kDescendantAffecting;
-  }
   if (!old_style.NonIndependentInheritedEqual(new_style)) {
     return Difference::kInherited;
   }
@@ -605,34 +604,6 @@ bool ComputedStyle::HighlightPseudoElementStylesDependOnContainerUnits() const {
   return false;
 }
 
-bool ComputedStyle::HighlightPseudoElementStylesDependOnViewportUnits() const {
-  const StyleHighlightData& highlight_data = HighlightData();
-  if (highlight_data.Selection() &&
-      highlight_data.Selection()->HasViewportUnits()) {
-    return true;
-  }
-  if (highlight_data.TargetText() &&
-      highlight_data.TargetText()->HasViewportUnits()) {
-    return true;
-  }
-  if (highlight_data.SpellingError() &&
-      highlight_data.SpellingError()->HasViewportUnits()) {
-    return true;
-  }
-  if (highlight_data.GrammarError() &&
-      highlight_data.GrammarError()->HasViewportUnits()) {
-    return true;
-  }
-  const CustomHighlightsStyleMap& custom_highlights =
-      highlight_data.CustomHighlights();
-  for (const auto& custom_highlight : custom_highlights) {
-    if (custom_highlight.value->HasViewportUnits()) {
-      return true;
-    }
-  }
-
-  return false;
-}
 
 bool ComputedStyle::HighlightPseudoElementStylesHaveVariableReferences() const {
   const StyleHighlightData& highlight_data = HighlightData();
@@ -853,7 +824,11 @@ StyleDifference ComputedStyle::VisualInvalidationDiff(
   if (field_diff & kFilterData) {
     diff.filter_changed = true;
   }
-
+  if (field_diff & kInert) {
+    if (IsInert() != other.IsInert()) {
+      diff.ax_visibility_or_inert_changed = true;
+    }
+  }
   if (field_diff & kMask) {
     diff.mask_changed = true;
   }
@@ -893,6 +868,7 @@ StyleDifference ComputedStyle::VisualInvalidationDiff(
         (other.Visibility() == EVisibility::kCollapse)) {
       diff.SetNeedsFullLayout();
     }
+    diff.ax_visibility_or_inert_changed = true;
   }
   if (field_diff & kZIndex) {
     diff.z_index_changed = true;
@@ -1008,7 +984,7 @@ bool ComputedStyle::DiffNeedsFullLayout(const Document& document,
     }
   }
 
-  if (IsDisplayLayoutCustomBox() &&
+  if (IsDisplayLayoutCustom() &&
       DiffNeedsFullLayoutForLayoutCustom(document, other)) {
     return true;
   }
@@ -1044,7 +1020,7 @@ bool ComputedStyle::DiffNeedsFullLayout(const Document& document,
 bool ComputedStyle::DiffNeedsFullLayoutForLayoutCustom(
     const Document& document,
     const ComputedStyle& other) const {
-  DCHECK(IsDisplayLayoutCustomBox());
+  DCHECK(IsDisplayLayoutCustom());
 
   LayoutWorklet* worklet = LayoutWorklet::From(*document.domWindow());
   const AtomicString& name = DisplayLayoutCustomName();
@@ -1893,7 +1869,7 @@ static String DisableNewGeorgianCapitalLetters(const String& text) {
   // |input| must be well-formed UTF-16 so that there's no worry
   // about surrogate handling.
   for (unsigned i = 0; i < length; ++i) {
-    UChar character = input[i];
+    UChar character = UNSAFE_TODO(input[i]);
     if (Character::IsModernGeorgianUppercase(character)) {
       result.Append(Character::LowercaseModernGeorgianUppercase(character));
     } else {
@@ -2434,21 +2410,6 @@ StyleScrollbarColor* ComputedStyle::UsedScrollbarColor() const {
   return ScrollbarColor();
 }
 
-Length ComputedStyle::LineHeight() const {
-  const Length& lh = LineHeightInternal();
-  // Unlike getFontDescription().computedSize() and hence fontSize(), this is
-  // recalculated on demand as we only store the specified line height.
-  // FIXME: Should consider scaling the fixed part of any calc expressions
-  // too, though this involves messily poking into CalcExpressionLength.
-  if (lh.IsFixed()) {
-    float multiplier = TextAutosizingMultiplier();
-    return Length::Fixed(TextAutosizer::ComputeAutosizedFontSize(
-        lh.Pixels(), multiplier, EffectiveZoom()));
-  }
-
-  return lh;
-}
-
 float ComputedStyle::ComputedLineHeight(const Length& lh, const Font& font) {
   // For "normal" line-height use the font's built-in spacing if available.
   if (lh.IsAuto()) {
@@ -2543,6 +2504,15 @@ Color ComputedStyle::VisitedDependentColor(const Longhand& color_property,
 
   blink::Color unvisited_color =
       color_property.ColorIncludingFallback(false, *this, is_current_color);
+  return VisitedDependentColor(unvisited_color, color_property,
+                               is_current_color);
+}
+
+Color ComputedStyle::VisitedDependentColor(const blink::Color& unvisited_color,
+                                           const Longhand& color_property,
+                                           bool* is_current_color) const {
+  DCHECK(!color_property.IsVisited());
+
   if (InsideLink() != EInsideLink::kInsideVisitedLink) {
     return unvisited_color;
   }
@@ -2582,7 +2552,6 @@ Color ComputedStyle::VisitedDependentColor(const Longhand& color_property,
 
 blink::Color ComputedStyle::VisitedDependentGapColor(
     const StyleColor& gap_color,
-    const ComputedStyle& style,
     bool is_column_rule) const {
   CHECK(RuntimeEnabledFeatures::CSSGapDecorationEnabled());
   blink::Color unvisited_gap_color;
@@ -2597,27 +2566,17 @@ blink::Color ComputedStyle::VisitedDependentGapColor(
         GetCurrentColor(), UsedColorScheme(), /*is_current_color=*/nullptr);
   }
 
-  if (InsideLink() != EInsideLink::kInsideVisitedLink) {
-    return unvisited_gap_color;
-  }
-
-  // For `row-rule-color`, :visited styling is not supported.
+  // For `row-rule-color`, :visited styling is not supported. We currently
+  // support visited styling for `column-rule-color` due to backwards
+  // compatibility (before CSSGapDecorations). As a result, it is important
+  // to note that we only supported visited styling for single values,
+  // rather than value lists (which GapDecorations introduced).
   if (!is_column_rule) {
     return unvisited_gap_color;
   }
 
-  blink::Color visited_gap_color;
-  if (ShouldForceColor(gap_color)) {
-    visited_gap_color =
-        GetInternalForcedVisitedCurrentColor(/*is_current_color=*/nullptr);
-  } else {
-    visited_gap_color =
-        style.InternalVisitedColumnRuleColor().GetLegacyValue().Resolve(
-            GetInternalVisitedCurrentColor(), UsedColorScheme(),
-            /*is_current_color=*/nullptr);
-  }
-
-  return visited_gap_color;
+  return VisitedDependentColor(unvisited_gap_color,
+                               GetCSSPropertyColumnRuleColor());
 }
 
 blink::Color ComputedStyle::VisitedDependentContextFill(
@@ -2649,11 +2608,20 @@ blink::Color ComputedStyle::VisitedDependentContextPaint(
   if (!context_visited_paint.HasColor()) {
     return unvisited_color;
   }
+  blink::Color visited_color;
   if (ShouldForceColor(context_visited_paint.GetColor())) {
-    return GetInternalForcedVisitedCurrentColor(nullptr);
+    visited_color = GetInternalForcedVisitedCurrentColor(nullptr);
+  } else {
+    visited_color = context_visited_paint.GetColor().Resolve(
+        GetInternalVisitedCurrentColor(), UsedColorScheme(), nullptr);
   }
-  return context_visited_paint.GetColor().Resolve(
-      GetInternalVisitedCurrentColor(), UsedColorScheme(), nullptr);
+  // Take the RGB from the visited color, but clamp alpha to the unvisited
+  // color's alpha. This prevents :visited from changing transparency, which
+  // would allow history sniffing via pixel-based side channels.
+  return Color::FromColorSpace(visited_color.GetColorSpace(),
+                               visited_color.Param0(), visited_color.Param1(),
+                               visited_color.Param2(),
+                               unvisited_color.Alpha());
 }
 
 blink::Color ComputedStyle::ResolvedColor(const StyleColor& color,
@@ -2844,6 +2812,18 @@ std::optional<blink::Color> ComputedStyle::AccentColorResolved() const {
   return auto_color.Resolve(GetCurrentColor(), UsedColorScheme());
 }
 
+std::optional<blink::Color> ComputedStyle::ResolvedCaretTextColor() const {
+  const StyleAutoColor& text_color = CaretColor().TextColor();
+  if (text_color.IsAutoColor()) {
+    return std::nullopt;
+  }
+  const StyleColor& style_color = text_color.ToStyleColor();
+  if (ShouldForceColor(style_color)) {
+    return GetInternalForcedCurrentColor(nullptr);
+  }
+  return style_color.Resolve(GetCurrentColor(), UsedColorScheme(), nullptr);
+}
+
 std::optional<blink::Color> ComputedStyle::ScrollbarThumbColorResolved() const {
   if (const StyleScrollbarColor* scrollbar_color = UsedScrollbarColor()) {
     return scrollbar_color->GetThumbColor().Resolve(GetCurrentColor(),
@@ -2883,7 +2863,7 @@ bool ComputedStyle::ShouldApplyAnyContainment(const Element& element,
     return true;
   }
   return (effective_containment & (kContainsLayout | kContainsPaint)) &&
-         (!IsDisplayTableType(display) || IsDisplayTableBox(display) ||
+         (!IsDisplayTableType(display) || IsDisplayTable(display) ||
           display == EDisplay::kTableCell ||
           display == EDisplay::kTableCaption);
 }
@@ -2987,12 +2967,21 @@ bool ComputedStyle::GapRuleColorIsTransparent(
 
 bool ComputedStyle::IsRenderedInTopLayer(const Element& element) const {
   if (RuntimeEnabledFeatures::OverlayPropertyEnabled()) {
-    return (element.IsInTopLayer() && Overlay() == EOverlay::kAuto) ||
-           StyleType() == kPseudoIdBackdrop;
+    if (element.IsInTopLayer() && Overlay() == EOverlay::kAuto) {
+      return true;
+    }
+    if (StyleType() == kPseudoIdBackdrop) {
+      return To<PseudoElement>(element)
+          .UltimateOriginatingElement()
+          .IsInTopLayer();
+    }
+    return false;
   }
 
   if (StyleType() == kPseudoIdBackdrop) {
-    return true;
+    return To<PseudoElement>(element)
+        .UltimateOriginatingElement()
+        .IsInTopLayer();
   }
   if (!element.IsInTopLayer()) {
     return false;
@@ -3110,13 +3099,6 @@ bool ComputedStyleBuilder::SetEffectiveZoom(float f) {
     return false;
   }
   SetEffectiveZoomInternal(clamped_effective_zoom);
-  // Record UMA for the effective zoom in order to assess the relative
-  // importance of sub-pixel behavior, and related features and bugs.
-  // Clamp to a max of 400%, to make the histogram behave better at no
-  // real cost to our understanding of the zooms in use.
-  base::UmaHistogramSparse(
-      "Blink.EffectiveZoom",
-      std::clamp<float>(clamped_effective_zoom * 100, 0, 400));
   return true;
 }
 
@@ -3152,34 +3134,6 @@ void ComputedStyleBuilder::UpdateFontOrientation() {
   FontDescription font_description = GetFontDescription();
   font_description.SetOrientation(orientation);
   SetFontDescription(font_description);
-}
-
-void ComputedStyleBuilder::SetTextAutosizingMultiplier(float multiplier) {
-  if (TextAutosizingMultiplier() == multiplier) {
-    return;
-  }
-
-  SetTextAutosizingMultiplierInternal(multiplier);
-
-  float size = GetFontDescription().SpecifiedSize();
-
-  DCHECK(std::isfinite(size));
-  if (!std::isfinite(size) || size < 0) {
-    size = 0;
-  } else {
-    size = std::min(kMaximumAllowedFontSize, size);
-  }
-
-  FontDescription desc(GetFontDescription());
-  desc.SetSpecifiedSize(size);
-
-  float computed_size = size * EffectiveZoom();
-
-  float autosized_font_size = TextAutosizer::ComputeAutosizedFontSize(
-      computed_size, multiplier, EffectiveZoom());
-  desc.SetComputedSize(std::min(kMaximumAllowedFontSize, autosized_font_size));
-
-  SetFontDescription(desc);
 }
 
 void ComputedStyleBuilder::SetUsedColorScheme(
@@ -3256,6 +3210,8 @@ STATIC_ASSERT_ENUM(cc::OverscrollBehavior::Type::kAuto,
                    EOverscrollBehavior::kAuto);
 STATIC_ASSERT_ENUM(cc::OverscrollBehavior::Type::kContain,
                    EOverscrollBehavior::kContain);
+STATIC_ASSERT_ENUM(cc::OverscrollBehavior::Type::kChain,
+                   EOverscrollBehavior::kChain);
 STATIC_ASSERT_ENUM(cc::OverscrollBehavior::Type::kNone,
                    EOverscrollBehavior::kNone);
 

@@ -67,17 +67,37 @@ import {cloneCustomElement, ElementFocusRestorer} from './UIUtils.js';
  *            large.
  */
 export class TextPromptElement extends HTMLElement {
-  static readonly observedAttributes = ['editing', 'completions', 'placeholder'];
+  static readonly observedAttributes = ['editing', 'completions', 'placeholder', 'cancel-on-blur'];
+  static formAssociated = true;
   readonly #shadow = this.attachShadow({mode: 'open'});
+  readonly #internals = this.attachInternals();
   readonly #entrypoint = this.#shadow.createChild('span');
   readonly #slot = this.#entrypoint.createChild('slot');
   readonly #textPrompt = new TextPrompt();
   #completionTimeout: number|null = null;
   #completionObserver = new MutationObserver(this.#onMutate.bind(this));
+  #validator?: (value: string) => null | Platform.UIString.LocalizedString;
+  #cancelOnBlur = false;
 
   constructor() {
     super();
     this.#textPrompt.initialize(this.#willAutoComplete.bind(this));
+  }
+
+  set validator(v: (value: string) => (null | Platform.UIString.LocalizedString)) {
+    this.#validator = v;
+  }
+
+  get validator(): undefined|((value: string) => (null | Platform.UIString.LocalizedString)) {
+    return this.#validator;
+  }
+
+  set cancelOnBlur(cancelOnBlur: boolean) {
+    this.setAttribute('cancel-on-blur', `${cancelOnBlur}`);
+  }
+
+  get cancelOnBlur(): boolean {
+    return this.#cancelOnBlur;
   }
 
   #onMutate(changes: MutationRecord[]): void {
@@ -103,17 +123,27 @@ export class TextPromptElement extends HTMLElement {
       this.#updateCompletions();
     }
   }
-
   attributeChangedCallback(name: string, oldValue: string|null, newValue: string|null): void {
     if (oldValue === newValue) {
       return;
     }
 
+    const isTruthy = (value: string|null): boolean => value !== null && value !== 'false';
+
     switch (name) {
+      case 'cancel-on-blur':
+        if (isTruthy(newValue)) {
+          this.#cancelOnBlur = true;
+        } else {
+          this.#cancelOnBlur = false;
+        }
+        break;
       case 'editing':
         if (this.isConnected) {
-          if (newValue !== null && newValue !== 'false' && oldValue === null) {
-            this.#startEditing();
+          if (isTruthy(newValue)) {
+            if (!isTruthy(oldValue)) {
+              this.#startEditing();
+            }
           } else {
             this.#stopEditing();
           }
@@ -166,9 +196,11 @@ export class TextPromptElement extends HTMLElement {
     }
     this.#slot.remove();
 
-    const proxy = this.#textPrompt.attachAndStartEditing(placeholder, e => this.#done(e, /* commit=*/ true));
+    const proxy =
+        this.#textPrompt.attachAndStartEditing(placeholder, e => this.#done(e, /* commit=*/ !this.#cancelOnBlur));
     proxy.addEventListener('keydown', this.#editingValueKeyDown.bind(this));
     placeholder.getComponentSelection()?.selectAllChildren(placeholder);
+    this.#textPrompt.focus();
   }
 
   #stopEditing(): void {
@@ -183,10 +215,26 @@ export class TextPromptElement extends HTMLElement {
     }
   }
 
+  disconnectedCallback(): void {
+    if (this.hasAttribute('editing')) {
+      this.#stopEditing();
+    }
+  }
+
   #done(e: Event, commit: boolean): void {
     const target = e.target as HTMLElement;
     const text = target.textContent || '';
+    this.#internals.setValidity({});
     if (commit) {
+      const validationMessage = this.#validator?.(text) ?? '';
+      if (validationMessage) {
+        this.#internals.setValidity({customError: true}, validationMessage, this.#entrypoint);
+      }
+
+      if (!this.#internals.reportValidity()) {
+        return;
+      }
+
       this.dispatchEvent(new TextPromptElement.CommitEvent(text));
     } else {
       this.dispatchEvent(new TextPromptElement.CancelEvent());
@@ -198,6 +246,7 @@ export class TextPromptElement extends HTMLElement {
     if (event.handled || !(event instanceof KeyboardEvent)) {
       return;
     }
+    this.#internals.setValidity({});
 
     if (event.key === 'Enter') {
       this.#done(event, /* commit=*/ true);
@@ -226,7 +275,7 @@ export namespace TextPromptElement {
       super('commit', {detail});
     }
   }
-  export class CancelEvent extends CustomEvent<string> {
+  export class CancelEvent extends CustomEvent<void> {
     constructor() {
       super('cancel');
     }
@@ -251,9 +300,9 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper<EventTypes> i
   private proxyElementDisplay: string;
   private autocompletionTimeout: number;
   #title: string;
-  private queryRange: TextUtils.TextRange.TextRange|null;
+  protected queryRange: TextUtils.TextRange.TextRange|null;
   private previousText: string;
-  private currentSuggestion: Suggestion|null;
+  #currentSuggestion: Suggestion|null;
   private completionRequestId: number;
   private ghostTextElement: HTMLSpanElement;
   private leftParenthesesIndices: number[];
@@ -288,7 +337,7 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper<EventTypes> i
     this.#title = '';
     this.queryRange = null;
     this.previousText = '';
-    this.currentSuggestion = null;
+    this.#currentSuggestion = null;
     this.completionRequestId = 0;
     this.ghostTextElement = document.createElement('span');
     this.ghostTextElement.classList.add('auto-complete-text');
@@ -409,10 +458,10 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper<EventTypes> i
 
   textWithCurrentSuggestion(): string {
     const text = this.text();
-    if (!this.queryRange || !this.currentSuggestion) {
+    if (!this.queryRange || !this.#currentSuggestion) {
       return text;
     }
-    const suggestion = this.currentSuggestion.text;
+    const suggestion = this.#currentSuggestion.text;
     return text.substring(0, this.queryRange.startColumn) + suggestion + text.substring(this.queryRange.endColumn);
   }
 
@@ -574,7 +623,7 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper<EventTypes> i
         }
         break;
       case 'Escape':
-        if (this.isSuggestBoxVisible() || this.currentSuggestion) {
+        if (this.isSuggestBoxVisible() || this.#currentSuggestion) {
           this.clearAutocomplete();
           handled = true;
         }
@@ -597,13 +646,14 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper<EventTypes> i
   }
 
   private acceptSuggestionOnStopCharacters(key: string): boolean {
-    if (!this.currentSuggestion || !this.queryRange || key.length !== 1 ||
-        !this.completionStopCharacters?.includes(key)) {
+    if (!this.#currentSuggestion || !this.queryRange || key.length !== 1 ||
+        !this.completionStopCharacters?.includes(key) ||
+        this.#currentSuggestion.disableAcceptSuggestionOnStopCharacters) {
       return false;
     }
 
     const query = this.text().substring(this.queryRange.startColumn, this.queryRange.endColumn);
-    if (query && this.currentSuggestion.text.startsWith(query + key)) {
+    if (query && this.#currentSuggestion.text.startsWith(query + key)) {
       this.queryRange.endColumn += 1;
       return this.acceptAutoComplete();
     }
@@ -678,7 +728,7 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper<EventTypes> i
     if (beforeText !== this.textWithCurrentSuggestion()) {
       this.dispatchEventToListeners(Events.TEXT_CHANGED);
     }
-    this.currentSuggestion = null;
+    this.#currentSuggestion = null;
   }
 
   private onBlur(): void {
@@ -686,14 +736,14 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper<EventTypes> i
   }
 
   private refreshGhostText(): void {
-    if (this.currentSuggestion?.hideGhostText) {
+    if (this.#currentSuggestion?.hideGhostText) {
       this.ghostTextElement.remove();
       return;
     }
-    if (this.queryRange && this.currentSuggestion && this.isCaretAtEndOfPrompt() &&
-        this.currentSuggestion.text.startsWith(this.text().substring(this.queryRange.startColumn))) {
+    if (this.queryRange && this.#currentSuggestion && this.isCaretAtEndOfPrompt() &&
+        this.#currentSuggestion.text.startsWith(this.text().substring(this.queryRange.startColumn))) {
       this.ghostTextElement.textContent =
-          this.currentSuggestion.text.substring(this.queryRange.endColumn - this.queryRange.startColumn);
+          this.#currentSuggestion.text.substring(this.queryRange.endColumn - this.queryRange.startColumn);
       this.element().appendChild(this.ghostTextElement);
     } else {
       this.ghostTextElement.remove();
@@ -825,7 +875,7 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper<EventTypes> i
   }
 
   applySuggestion(suggestion: Suggestion|null, isIntermediateSuggestion?: boolean): void {
-    this.currentSuggestion = suggestion;
+    this.#currentSuggestion = suggestion;
     this.refreshGhostText();
     if (isIntermediateSuggestion) {
       this.dispatchEventToListeners(Events.TEXT_CHANGED);
@@ -841,8 +891,8 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper<EventTypes> i
       return false;
     }
 
-    const suggestionLength = this.currentSuggestion ? this.currentSuggestion.text.length : 0;
-    const selectionRange = this.currentSuggestion ? this.currentSuggestion.selectionRange : null;
+    const suggestionLength = this.#currentSuggestion ? this.#currentSuggestion.text.length : 0;
+    const selectionRange = this.#currentSuggestion ? this.#currentSuggestion.selectionRange : null;
     const endColumn = selectionRange ? selectionRange.endColumn : suggestionLength;
     const startColumn = selectionRange ? selectionRange.startColumn : suggestionLength;
     this.element().textContent = this.textWithCurrentSuggestion();
@@ -992,6 +1042,10 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper<EventTypes> i
 
   suggestBoxForTest(): SuggestBox|undefined {
     return this.suggestBox;
+  }
+
+  currentSuggestion(): Suggestion|null {
+    return this.#currentSuggestion;
   }
 }
 

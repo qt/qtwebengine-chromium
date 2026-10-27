@@ -51,7 +51,6 @@ class CFX_SkiaDeviceDriver final : public RenderDeviceDriverIface {
   // RenderDeviceDriverIface:
   DeviceType GetDeviceType() const override;
   bool RenderCapGetBits() const override;
-  bool RenderCapAlphaPath() const override;
   bool RenderCapAlphaImage() const override;
   bool RenderCapBlendMode() const override;
   bool RenderCapSoftClip() const override;

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 RowVectorXf v = RowVectorXf::LinSpaced(20, 0, 19);
 cout << "Input:" << endl << v << endl;
 Map<RowVectorXf, 0, InnerStride<2> > v2(v.data(), v.size() / 2);

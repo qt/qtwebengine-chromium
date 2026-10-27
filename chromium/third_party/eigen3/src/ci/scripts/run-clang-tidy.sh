@@ -9,7 +9,13 @@
 #
 # For header files under Eigen/src/<Module>/, the script generates a minimal
 # driver .cpp that includes the parent module header so that
-# InternalHeaderCheck.h does not #error out.
+# InternalHeaderCheck.h does not #error out. The umbrella name is read from
+# the header's own `#error "Please include <X>"` directive (or a sibling
+# InternalHeaderCheck.h), with a fallback to the heuristic <root>/<Module>
+# for deeply-nested files (e.g. arch-specific backends) that don't carry
+# their own directive.
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 set -euo pipefail
 
@@ -22,9 +28,12 @@ if [ ! -f "${BUILD_DIR}/compile_commands.json" ]; then
   exit 1
 fi
 
-# External-dependency modules that require third-party headers we don't have,
-# and utility-only directories with no standalone module header.
-SKIP_MODULES="AccelerateSupport|CholmodSupport|KLUSupport|MetisSupport|PaStiXSupport|PardisoSupport|SPQRSupport|SuperLUSupport|UmfPackSupport|TensorUtil|misc"
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# External-dependency modules that require third-party headers we don't
+# install in the clang-tidy CI image. The umbrella exists, but `#include`-ing
+# it would fail at preprocessor time (e.g. cholmod.h not found).
+EXTERNAL_DEP_MODULES="AccelerateSupport|CholmodSupport|KLUSupport|MetisSupport|PaStiXSupport|PardisoSupport|SPQRSupport|SuperLUSupport|UmfPackSupport"
 
 # Get changed files (Added, Modified, Renamed).
 CHANGED_FILES=$(git diff --name-only --diff-filter=AMR "${BASE_SHA}" HEAD)
@@ -39,14 +48,18 @@ trap 'rm -rf "${TMPDIR}"' EXIT
 
 ERRORS=0
 
-# Map a header path under Eigen/src/<Module>/ to its module include.
-# e.g. Eigen/src/SVD/BDCSVD.h -> Eigen/SVD
+# Determine which umbrella header to include when linting a given source-tree
+# header. The source of truth is the `#error "Please include <X>"` directive
+# carried either by the header itself (e.g. Eigen/src/StlSupport/StdDeque.h
+# -> Eigen/StdDeque) or by its sibling InternalHeaderCheck.h (the common
+# case for Eigen/src/<Module>/*.h).
 module_include_for_header() {
   local header="$1"
   local module
+  local hint
+  local candidate
 
-  # Handle Eigen/src/<Module>/... and unsupported/Eigen/src/<Module>/...
-  # Extract just the bare module name first.
+  # Restrict to header files inside the src trees.
   if [[ "${header}" =~ ^Eigen/src/([^/]+)/ ]]; then
     module="${BASH_REMATCH[1]}"
   elif [[ "${header}" =~ ^unsupported/Eigen/src/([^/]+)/ ]]; then
@@ -55,16 +68,44 @@ module_include_for_header() {
     return 1
   fi
 
-  # Skip external-dependency modules and utility-only directories.
-  if [[ "${module}" =~ ^(${SKIP_MODULES})$ ]]; then
+  # Modules whose umbrella requires a third-party library we don't install.
+  if [[ "${module}" =~ ^(${EXTERNAL_DEP_MODULES})$ ]]; then
     return 1
   fi
 
+  # Parse `#error "Please include <X>"` from the header or its sibling
+  # InternalHeaderCheck.h.
+  for candidate in "${REPO_ROOT}/${header}" \
+                   "${REPO_ROOT}/$(dirname "${header}")/InternalHeaderCheck.h"; do
+    if [ -f "${candidate}" ]; then
+      hint=$(grep "Please include" "${candidate}" 2>/dev/null \
+             | sed -nE 's/.*"Please include ([^ "]+).*/\1/p' \
+             | head -n1)
+      if [ -n "${hint}" ] && [ -f "${REPO_ROOT}/${hint}" ]; then
+        echo "${hint}"
+        return 0
+      fi
+    fi
+  done
+
+  # Fallback: route through <root>/<Module> if it exists. This catches files
+  # nested deeper than the module's top-level src/ (e.g. arch-specific
+  # backends under Eigen/src/Core/arch/<ISA>/) that don't carry their own
+  # `#error` directive.
   if [[ "${header}" =~ ^unsupported/ ]]; then
-    echo "unsupported/Eigen/${module}"
+    hint="unsupported/Eigen/${module}"
   else
-    echo "Eigen/${module}"
+    hint="Eigen/${module}"
   fi
+  if [ -f "${REPO_ROOT}/${hint}" ]; then
+    echo "${hint}"
+    return 0
+  fi
+
+  # No parseable directive and no matching umbrella file — likely a
+  # utility/details file shared across umbrellas (e.g. StlSupport/details.h).
+  # Skip silently.
+  return 1
 }
 
 # Pick a compile command from compile_commands.json to use as a template.

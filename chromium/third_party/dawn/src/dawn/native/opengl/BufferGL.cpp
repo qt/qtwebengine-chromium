@@ -25,16 +25,17 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/opengl/BufferGL.h"
+#include "src/dawn/native/opengl/BufferGL.h"
 
 #include <algorithm>
 #include <utility>
 #include <vector>
 
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/CommandBuffer.h"
-#include "dawn/native/opengl/DeviceGL.h"
-#include "dawn/native/opengl/UtilsGL.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/CommandBuffer.h"
+#include "src/dawn/native/opengl/DeviceGL.h"
+#include "src/dawn/native/opengl/UtilsGL.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native::opengl {
 
@@ -73,14 +74,15 @@ ResultOrError<Ref<Buffer>> Buffer::Create(Device* device,
         DAWN_GL_TRY(gl, GenBuffers(1, &buffer->mBuffer));
         DAWN_GL_TRY(gl, BindBuffer(GL_ARRAY_BUFFER, buffer->mBuffer));
 
+        auto allocatedSize = buffer->mAllocatedSize.value();
         if (clear) {
-            std::vector<uint8_t> clearValues(buffer->mAllocatedSize, 1u);
-            DAWN_GL_TRY_ALWAYS_CHECK(gl, BufferData(GL_ARRAY_BUFFER, buffer->mAllocatedSize,
-                                                    clearValues.data(), GL_STATIC_DRAW));
+            std::vector<uint8_t> clearValues(allocatedSize, 1u);
+            DAWN_GL_TRY_ALWAYS_CHECK(
+                gl, BufferData(GL_ARRAY_BUFFER, allocatedSize, clearValues.data(), GL_STATIC_DRAW));
         } else {
             // Buffers start uninitialized if you pass nullptr to glBufferData.
             DAWN_GL_TRY_ALWAYS_CHECK(
-                gl, BufferData(GL_ARRAY_BUFFER, buffer->mAllocatedSize, nullptr, GL_STATIC_DRAW));
+                gl, BufferData(GL_ARRAY_BUFFER, allocatedSize, nullptr, GL_STATIC_DRAW));
         }
         return {};
     }));
@@ -263,7 +265,7 @@ MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) 
 
             // The frontend asks that the pointer returned by GetMappedPointer is from the start of
             // the resource but OpenGL gives us the pointer at offset. Remove the offset.
-            self->mMappedData = static_cast<uint8_t*>(mappedData) - offset;
+            self->mMappedData = DAWN_UNSAFE_TODO(static_cast<uint8_t*>(mappedData) - offset);
             return {};
         });
 }
@@ -291,7 +293,7 @@ void Buffer::UnmapImpl(BufferState oldState, BufferState newState) {
             if (self->mCPUStaging.size() > 0) {
                 auto mappedData = DAWN_GL_TRY_ALWAYS_CHECK(
                     gl, MapBufferRange(GL_ARRAY_BUFFER, 0, self->GetSize(), GL_MAP_WRITE_BIT));
-                memcpy(mappedData, self->mCPUStaging.data(), self->GetSize());
+                DAWN_UNSAFE_TODO(memcpy(mappedData, self->mCPUStaging.data(), self->GetSize()));
                 self->mCPUStaging.resize(0);
             }
             DAWN_GL_TRY(gl, UnmapBuffer(GL_ARRAY_BUFFER));

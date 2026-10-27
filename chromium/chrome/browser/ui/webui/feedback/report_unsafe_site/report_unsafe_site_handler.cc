@@ -32,17 +32,27 @@ safe_browsing::ClientSideDetectionHost* GetClientSideDetectionHost(
 }  // anonymous namespace
 
 ReportUnsafeSitePageHandler::ReportUnsafeSitePageHandler(
+    base::WeakPtr<TopChromeWebUIController::Embedder> embedder,
     base::WeakPtr<content::WebContents> triggering_web_contents,
     base::WeakPtr<views::Widget> dialog,
     std::unique_ptr<feedback::ScreenshotTaker> screenshot_taker,
+    base::OnceClosure show_toast_callback,
     mojo::PendingReceiver<feedback::report_unsafe_site::mojom::PageHandler>
         receiver)
-    : triggering_web_contents_(triggering_web_contents),
+    : embedder_(embedder),
+      triggering_web_contents_(triggering_web_contents),
       dialog_(dialog),
       screenshot_taker_(std::move(screenshot_taker)),
+      show_toast_callback_(std::move(show_toast_callback)),
       receiver_(this, std::move(receiver)) {}
 
 ReportUnsafeSitePageHandler::~ReportUnsafeSitePageHandler() = default;
+
+void ReportUnsafeSitePageHandler::ShowUi() {
+  if (embedder_) {
+    embedder_->ShowUI();
+  }
+}
 
 void ReportUnsafeSitePageHandler::GetTriggeringPageInfo(
     GetTriggeringPageInfoCallback callback) {
@@ -82,14 +92,19 @@ void ReportUnsafeSitePageHandler::SendReport(bool include_screenshot,
   if (!include_screenshot) {
     screenshot_ = SkBitmap();
   }
-  client_side_detection_host->ReportUnsafeSite(screenshot_);
-  std::move(callback).Run();
+  client_side_detection_host->ReportUnsafeSite(screenshot_,
+                                               std::move(callback));
 }
 
 void ReportUnsafeSitePageHandler::CloseDialog() {
   if (!dialog_) {
     return;
   }
+
+  if (was_report_button_clicked_ && show_toast_callback_) {
+    std::move(show_toast_callback_).Run();
+  }
+
   dialog_->CloseWithReason(
       was_report_button_clicked_
           ? views::Widget::ClosedReason::kAcceptButtonClicked

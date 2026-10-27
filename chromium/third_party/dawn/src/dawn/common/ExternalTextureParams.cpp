@@ -25,9 +25,9 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/common/ExternalTextureParams.h"
+#include "src/dawn/common/ExternalTextureParams.h"
 
-#include "dawn/common/ColorSpace.h"
+#include "src/dawn/common/ColorSpace.h"
 
 namespace dawn {
 
@@ -126,6 +126,7 @@ wgpu::Status ComputeExternalTextureParams(const wgpu::ColorSpaceDawn& srcColorSp
     }
 
     TransferFunction srcEOTF;
+    float srcLuminanceOf1 = kSDRLuminanceOf1;
     switch (srcColorSpace.transfer) {
         case wgpu::ColorSpaceTransferDawn::Identity:
             srcEOTF = kEOTF_Identity;
@@ -140,9 +141,11 @@ wgpu::Status ComputeExternalTextureParams(const wgpu::ColorSpaceDawn& srcColorSp
             srcEOTF = kEOTF_SMPTE_170M;
             break;
         case wgpu::ColorSpaceTransferDawn::HLG:
+            srcLuminanceOf1 = kHLGLuminanceOf1;
             srcEOTF = kEOTF_HLG;
             break;
         case wgpu::ColorSpaceTransferDawn::PQ:
+            srcLuminanceOf1 = kPQLuminanceOf1;
             srcEOTF = kEOTF_PQ;
             break;
         default:
@@ -151,6 +154,7 @@ wgpu::Status ComputeExternalTextureParams(const wgpu::ColorSpaceDawn& srcColorSp
 
     math::Mat3x3f dstXYZToRGB;
     TransferFunction dstOETF;
+    float dstLuminanceOf1 = kSDRLuminanceOf1;
     switch (dstColorSpace) {
         case wgpu::PredefinedColorSpace::SRGB:
             dstXYZToRGB = kXYZToRGB_sRGB;
@@ -181,7 +185,9 @@ wgpu::Status ComputeExternalTextureParams(const wgpu::ColorSpaceDawn& srcColorSp
     }
 
     // The gamut matrix is passed column-major.
-    math::Mat3x3f gamutConversionMatrix = math::Mul(dstXYZToRGB, srcRGBToXYZ);
+    float luminanceAdjustment = srcLuminanceOf1 / dstLuminanceOf1;
+    math::Mat3x3f gamutConversionMatrix = math::Mul(dstXYZToRGB, srcRGBToXYZ) * luminanceAdjustment;
+
     for (size_t x = 0; x < 3; x++) {
         for (size_t y = 0; y < 3; y++) {
             out->gamutConversionMatrix[y + 3 * x] = gamutConversionMatrix[x][y];

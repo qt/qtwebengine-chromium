@@ -6,11 +6,13 @@
 
 #include <optional>
 
+#include "src/base/logging.h"
 #include "src/base/memory.h"
 #include "src/base/numerics/safe_conversions.h"
 #include "src/codegen/interface-descriptors-inl.h"
 #include "src/codegen/register-configuration.h"
 #include "src/codegen/reloc-info.h"
+#include "src/compiler-dispatcher/optimizing-compile-dispatcher.h"
 #include "src/debug/debug.h"
 #include "src/deoptimizer/deoptimized-frame-info.h"
 #include "src/deoptimizer/materialized-object-store.h"
@@ -29,6 +31,9 @@
 #include "src/objects/oddball.h"
 #include "src/snapshot/embedded/embedded-data.h"
 #include "src/utils/utils.h"
+#if V8_ENABLE_MAGLEV
+#include "src/maglev/maglev-concurrent-dispatcher.h"
+#endif  // V8_ENABLE_MAGLEV
 
 #if V8_ENABLE_WEBASSEMBLY
 #include "src/wasm/baseline/liftoff-compiler.h"
@@ -39,6 +44,7 @@
 #include "src/wasm/wasm-deopt-data.h"
 #include "src/wasm/wasm-engine.h"
 #include "src/wasm/wasm-linkage.h"
+#include "src/wasm/wasm-objects-inl.h"
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 namespace v8 {
@@ -100,7 +106,7 @@ Tagged<Code> DeoptimizableCodeIterator::Next() {
           state_ = kDone;
           [[fallthrough]];
         case kDone:
-          return Code();
+          return {};
       }
     }
     Tagged<InstructionStream> istream =
@@ -174,13 +180,9 @@ class FrameWriter {
 
   void PushTranslatedValue(const TranslatedFrame::iterator& iterator,
                            const char* debug_hint = "") {
-    Tagged<Object> obj = iterator->GetRawValue();
-    PushRawObject(obj, debug_hint);
-    if (trace_scope_ != nullptr) {
-      PrintF(trace_scope_->file(), " (input #%d)\n", iterator.input_index());
-    }
-    deoptimizer_->QueueValueForMaterialization(output_address(top_offset_), obj,
-                                               iterator);
+    CHECK_GE(top_offset_, kSystemPointerSize);
+    top_offset_ -= kSystemPointerSize;
+    WriteTranslatedValueAt(top_offset_, iterator, debug_hint);
   }
 
   void PushFeedbackVectorForMaterialization(
@@ -194,14 +196,18 @@ class FrameWriter {
 
   void PushStackJSArguments(TranslatedFrame::iterator& iterator,
                             int parameters_count) {
-    std::vector<TranslatedFrame::iterator> parameters;
-    parameters.reserve(parameters_count);
+    // Walk values forward (receiver first, argN last) and write each into its
+    // destination slot. The layout matches a reverse-push: receiver lands at
+    // the lowest offset and argN at the highest. This avoids buffering
+    // iterators in a temporary vector.
+    CHECK_GE(top_offset_, parameters_count * kSystemPointerSize);
+    const unsigned final_top_offset =
+        top_offset_ - parameters_count * kSystemPointerSize;
     for (int i = 0; i < parameters_count; ++i, ++iterator) {
-      parameters.push_back(iterator);
+      const unsigned slot_offset = final_top_offset + i * kSystemPointerSize;
+      WriteTranslatedValueAt(slot_offset, iterator, "stack parameter");
     }
-    for (auto& parameter : base::Reversed(parameters)) {
-      PushTranslatedValue(parameter, "stack parameter");
-    }
+    top_offset_ = final_top_offset;
   }
 
   unsigned top_offset() const { return top_offset_; }
@@ -219,6 +225,19 @@ class FrameWriter {
     Address output_address =
         static_cast<Address>(frame_->GetTop()) + output_offset;
     return output_address;
+  }
+
+  void WriteTranslatedValueAt(unsigned offset,
+                              const TranslatedFrame::iterator& iterator,
+                              const char* debug_hint) {
+    Tagged<Object> obj = iterator->GetRawValue();
+    frame_->SetFrameSlot(offset, obj.ptr());
+    if (trace_scope_ != nullptr) {
+      DebugPrintOutputObject(obj, offset, debug_hint);
+      PrintF(trace_scope_->file(), " (input #%d)\n", iterator.input_index());
+    }
+    deoptimizer_->QueueValueForMaterialization(output_address(offset), obj,
+                                               iterator);
   }
 
   void DebugPrintOutputValue(intptr_t value, const char* debug_hint = "") {
@@ -457,7 +476,7 @@ void Deoptimizer::DeoptimizeMarkedCode(Isolate* isolate) {
 void Deoptimizer::DeoptimizeAll(Isolate* isolate) {
   RCS_SCOPE(isolate, RuntimeCallCounterId::kDeoptimizeCode);
   TimerEventScope<TimerEventDeoptimizeCode> timer(isolate);
-  TRACE_EVENT0("v8", "V8.DeoptimizeCode");
+  TRACE_EVENT("v8", "V8.DeoptimizeCode");
   TraceDeoptAll(isolate);
   isolate->AbortConcurrentOptimization(BlockingBehavior::kBlock);
 
@@ -480,7 +499,7 @@ void Deoptimizer::DeoptimizeFunction(Tagged<JSFunction> function,
   Isolate* isolate = Isolate::Current();
   RCS_SCOPE(isolate, RuntimeCallCounterId::kDeoptimizeCode);
   TimerEventScope<TimerEventDeoptimizeCode> timer(isolate);
-  TRACE_EVENT0("v8", "V8.DeoptimizeCode");
+  TRACE_EVENT("v8", "V8.DeoptimizeCode");
   function->ResetIfCodeFlushed(isolate);
   if (code.is_null()) code = function->code(isolate);
 
@@ -498,10 +517,22 @@ void Deoptimizer::DeoptimizeAllOptimizedCodeWithFunction(
     Isolate* isolate, DirectHandle<SharedFunctionInfo> function) {
   RCS_SCOPE(isolate, RuntimeCallCounterId::kDeoptimizeCode);
   TimerEventScope<TimerEventDeoptimizeCode> timer(isolate);
-  TRACE_EVENT0("v8", "V8.DeoptimizeAllOptimizedCodeWithFunction");
+  TRACE_EVENT("v8", "V8.DeoptimizeAllOptimizedCodeWithFunction");
 
-  // Make sure no new code is compiled with the function.
-  isolate->AbortConcurrentOptimization(BlockingBehavior::kBlock);
+  // Wait for ongoing compilation jobs to complete and finalize them. If we
+  // aborted ongoing jobs, we would risk aborting unrelated jobs, and if we're
+  // e.g. stepping a lot, this could lead to abort loops.
+  if (isolate->concurrent_recompilation_enabled()) {
+    isolate->optimizing_compile_dispatcher()->WaitUntilCompilationJobsDone();
+    isolate->optimizing_compile_dispatcher()->InstallOptimizedFunctions();
+
+#if V8_ENABLE_MAGLEV
+    if (isolate->maglev_concurrent_dispatcher()->is_enabled()) {
+      isolate->maglev_concurrent_dispatcher()->AwaitCompileJobs();
+      isolate->maglev_concurrent_dispatcher()->FinalizeFinishedJobs();
+    }
+#endif  // V8_ENABLE_MAGLEV
+  }
 
   // Mark all code that inlines this function, then deoptimize.
   bool any_marked = false;
@@ -557,8 +588,9 @@ Address Deoptimizer::EnsureValidReturnAddress(Isolate* isolate,
 
   // NotifyDeoptimized is used for continuation.
   if (builtins->code(Builtin::kNotifyDeoptimized)->instruction_start() ==
-      address)
+      address) {
     return address;
+  }
 
 #if V8_ENABLE_WEBASSEMBLY
   if (v8_flags.wasm_deopt &&
@@ -591,6 +623,7 @@ const char* Deoptimizer::MessageFor(DeoptimizeKind kind) {
     case DeoptimizeKind::kLazy:
       return "deopt-lazy";
   }
+  UNREACHABLE();
 }
 
 Deoptimizer::Deoptimizer(Isolate* isolate, Tagged<JSFunction> function,
@@ -789,6 +822,7 @@ Builtin Deoptimizer::GetDeoptimizationEntry(DeoptimizeKind kind) {
     case DeoptimizeKind::kLazy:
       return Builtin::kDeoptimizationEntry_Lazy;
   }
+  UNREACHABLE();
 }
 
 namespace {
@@ -826,6 +860,7 @@ const char* CodeValidityToString(Deoptimizer::CodeValidity code_validity) {
     case Deoptimizer::CodeValidity::kUnknown:
       return "unknown";
   }
+  UNREACHABLE();
 }
 
 }  // namespace
@@ -1492,10 +1527,10 @@ void Deoptimizer::GetWasmStackSlotsCounts(const wasm::FunctionSig* sig,
   }
   sig = GetI32Sig(&*zone_, sig);
 #endif
-  int untagged_slots, untagged_return_slots;  // Unused.
-  wasm::IterateSignatureImpl(sig, false, result_collector, &untagged_slots,
-                             parameter_stack_slots, &untagged_return_slots,
-                             return_stack_slots);
+  wasm::IterateSignatureImpl(
+      sig, false, result_collector, nullptr /* untagged_slots */,
+      parameter_stack_slots, nullptr /* untagged_return_slots */,
+      return_stack_slots);
 }
 #endif  // V8_ENABLE_WEBASSEMBLY
 
@@ -1995,12 +2030,15 @@ void Deoptimizer::DoComputeUnoptimizedFrame(TranslatedFrame* translated_frame,
   {
     AllowSandboxAccess sandbox_access(
         "Fetching DebugBytecodeArray via SFI. This is probably unsafe but we "
-        "only do it when debugging is enabled. See the TODO below");
+        "only do it when debugging is enabled. Just in case the defence in "
+        "depth checks below should protect against swaps.");
     std::optional<Tagged<DebugInfo>> debug_info =
         translated_frame->raw_shared_info()->TryGetDebugInfo(isolate());
     if (debug_info.has_value() && debug_info.value()->HasBreakInfo()) {
-      // TODO(leszeks): Validate this bytecode.
       bytecode_array = debug_info.value()->DebugBytecodeArray(isolate());
+      // Defence-in-depth in case bytecode is swapped.
+      SBXCHECK_EQ(bytecode_array->parameter_count(), parameters_count);
+      SBXCHECK_EQ(bytecode_array->register_count(), locals_count);
     }
   }
 
@@ -2338,8 +2376,9 @@ void Deoptimizer::DoComputeInlinedExtraArguments(
     // frame will do that.
     value_iterator++;  // Skip function.
     value_iterator++;  // Skip receiver.
-    for (int i = 0; i < formal_parameter_count_without_receiver; i++)
+    for (int i = 0; i < formal_parameter_count_without_receiver; i++) {
       value_iterator++;
+    }
     frame_writer.PushStackJSArguments(value_iterator, extra_argument_count);
   }
 }

@@ -10,6 +10,7 @@ import * as Buttons from '../../../ui/components/buttons/buttons.js';
 import * as Snackbars from '../../../ui/components/snackbars/snackbars.js';
 import * as UI from '../../../ui/legacy/legacy.js';
 import * as Lit from '../../../ui/lit/lit.js';
+import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 
 import styles from './exportForAgentsDialog.css.js';
 
@@ -19,7 +20,7 @@ const UIStrings = {
   /**
    * @description Title for the export for agents dialog.
    */
-  exportForAgents: 'Copy for your coding agent',
+  exportForAgents: 'Copy to coding agent',
   /**
    * @description Button text for copying to clipboard.
    */
@@ -29,13 +30,13 @@ const UIStrings = {
    */
   copiedToClipboard: 'Copied to clipboard',
   /**
-   * @description Label for the 'as prompt' radio button in the export for agents dialog.
+   * @description Label for the 'summary prompt' radio button in the export for agents dialog.
    */
-  asPrompt: 'As prompt',
+  asPrompt: 'Summary prompt',
   /**
-   * @description Label for the 'as markdown' radio button in the export for agents dialog.
+   * @description Label for the 'full conversation' radio button in the export for agents dialog.
    */
-  asMarkdown: 'As markdown',
+  asMarkdown: 'Full conversation',
   /**
    * @description Button text for saving content as a markdown file.
    */
@@ -59,6 +60,8 @@ export const enum StateType {
   CONVERSATION = 'conversation',
 }
 
+const DEFAULT_STATE_TYPE = StateType.PROMPT;
+
 export interface State {
   activeType: StateType;
   promptText: string;
@@ -78,26 +81,26 @@ type View = (input: ViewInput, output: undefined, target: HTMLElement) => void;
 export const DEFAULT_VIEW: View = (input, _output, target): void => {
   const isPrompt = input.state.activeType === StateType.PROMPT;
   const buttonText = isPrompt ? i18nString(UIStrings.copyToClipboard) : i18nString(UIStrings.saveAsMarkdown);
-  const exportText = isPrompt && input.state.isPromptLoading ?
-      i18nString(UIStrings.generatingSummary) :
-      (isPrompt ? input.state.promptText : input.state.conversationText);
+  const exportText = isPrompt ? input.state.promptText : input.state.conversationText;
   // clang-format off
 
   render(html`
     <style>${styles}</style>
-    <div class="export-for-agents-dialog">
+    <div class="export-for-agents-dialog" jslog=${VisualLogging.dialog('ai-export-for-agents')}>
       <header>
-        <h2 tabindex="-1">
+        <h1 id="export-for-agents-dialog-title" tabindex="-1">
           ${i18nString(UIStrings.exportForAgents)}
-        </h2>
+        </h1>
       </header>
-      <div class="state-selection">
+      <div class="state-selection" role="radiogroup" aria-labelledby="export-for-agents-dialog-title">
         <label>
           <input
             type="radio"
             value="prompt"
             name="export-state"
             .checked=${isPrompt}
+            autofocus
+            aria-label=${i18nString(UIStrings.asPrompt)}
             @change=${() => input.onStateChange(StateType.PROMPT)}
           >
           ${i18nString(UIStrings.asPrompt)}
@@ -108,19 +111,23 @@ export const DEFAULT_VIEW: View = (input, _output, target): void => {
             value="conversation"
             name="export-state"
             .checked=${!isPrompt}
+            aria-label=${i18nString(UIStrings.asMarkdown)}
             @change=${() => input.onStateChange(StateType.CONVERSATION)}
           >
           ${i18nString(UIStrings.asMarkdown)}
         </label>
       </div>
       <main>
-        ${input.state.isPromptLoading ? html`
+        ${isPrompt && input.state.isPromptLoading ? html`
           <span class="prompt-loading">
             <devtools-spinner></devtools-spinner>
             ${i18nString(UIStrings.generatingSummary)}
           </span>
           ` : Lit.nothing}
-        <textarea readonly .value=${input.state.isPromptLoading ? '' : exportText}></textarea>
+        ${isPrompt ?
+          html`<textarea class="prompt" readonly .value=${input.state.isPromptLoading ? '' : exportText}></textarea>` :
+          html`<textarea class="conversation" readonly .value=${exportText}></textarea>`
+        }
       </main>
       <div class="disclaimer">${i18nString(UIStrings.disclaimer)}</div>
       <footer>
@@ -130,6 +137,7 @@ export const DEFAULT_VIEW: View = (input, _output, target): void => {
             .jslogContext=${input.jslogContext}
             .variant=${Buttons.Button.Variant.PRIMARY}
             .disabled=${isPrompt && input.state.isPromptLoading}
+            .accessibleLabel=${buttonText}
           >
             ${buttonText}
           </devtools-button>
@@ -141,6 +149,7 @@ export const DEFAULT_VIEW: View = (input, _output, target): void => {
 };
 
 export class ExportForAgentsDialog extends UI.Widget.VBox {
+  static #lastSelectedType: StateType = DEFAULT_STATE_TYPE;
   readonly #view: View;
   readonly #dialog: UI.Dialog.Dialog;
   #state: State;
@@ -157,7 +166,7 @@ export class ExportForAgentsDialog extends UI.Widget.VBox {
     super();
     this.#dialog = options.dialog;
     this.#state = {
-      activeType: StateType.PROMPT,
+      activeType: ExportForAgentsDialog.#lastSelectedType,
       promptText: typeof options.promptText === 'string' ? options.promptText : '',
       conversationText: options.markdownText,
       isPromptLoading: typeof options.promptText !== 'string',
@@ -176,8 +185,13 @@ export class ExportForAgentsDialog extends UI.Widget.VBox {
     this.requestUpdate();
   }
 
+  static clearPersistedViewState(): void {
+    ExportForAgentsDialog.#lastSelectedType = DEFAULT_STATE_TYPE;
+  }
+
   #onStateChange = (newState: StateType): void => {
     this.#state.activeType = newState;
+    ExportForAgentsDialog.#lastSelectedType = newState;
     this.requestUpdate();
   };
 
@@ -191,9 +205,10 @@ export class ExportForAgentsDialog extends UI.Widget.VBox {
         onButtonClick = (event: Event): void => {
           event.preventDefault();
           Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(this.#state.promptText);
-          Snackbars.Snackbar.Snackbar.show({
+          const snackbar = Snackbars.Snackbar.Snackbar.show({
             message: i18nString(UIStrings.copiedToClipboard),
           });
+          snackbar.setAttribute('aria-label', i18nString(UIStrings.copiedToClipboard));
           this.#dialog.hide();
         };
         break;

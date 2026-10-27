@@ -76,6 +76,6 @@ void ScopedWakeLockMac::ReleaseWakeLock() {
   OSP_CHECK_EQ(result, kIOReturnSuccess);
 }
 
-ScopedWakeLockMac::LockState ScopedWakeLockMac::lock_state_{};
+ScopedWakeLockMac::LockState ScopedWakeLockMac::lock_state_;
 
 }  // namespace openscreen

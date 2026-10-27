@@ -1,0 +1,22 @@
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build_overrides/build.gni")
+import("../../gni/openscreen.gni")
+import("../streaming/external_libraries.gni")
+
+# This component should only be built if FFMPEG is enabled.
+assert(have_ffmpeg, "FFMPEG must be enabled to build this target")
+
+openscreen_source_set("ffmpeg_glue") {
+  testonly = true
+  visibility = [ "../*" ]
+
+  public = [ "ffmpeg_glue.h" ]
+  sources = [ "ffmpeg_glue.cc" ]
+  include_dirs = ffmpeg_include_dirs
+  lib_dirs = external_lib_dirs + ffmpeg_lib_dirs
+  libs = ffmpeg_libs
+  deps = [ "../../util" ]
+}

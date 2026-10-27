@@ -24,10 +24,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
-#include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/str_cat.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/time/clock.h"
 #include "fcp/base/monitoring.h"
@@ -37,7 +35,6 @@
 #include "fcp/client/simple_task_environment.h"
 #include "fcp/protos/data_type.pb.h"
 #include "fcp/protos/plan.pb.h"
-#include "tensorflow/core/protobuf/struct.pb.h"
 
 namespace fcp {
 namespace client {
@@ -45,52 +42,12 @@ namespace engine {
 
 using ::google::internal::federated::plan::ExampleQuerySpec;
 using ::google::internal::federated::plan::ExampleSelector;
-using ::google::internal::federated::plan::TensorflowSpec;
 
 PlanResult::PlanResult(PlanOutcome outcome, absl::Status status)
     : outcome(outcome), original_status(std::move(status)) {
   if (outcome == PlanOutcome::kSuccess) {
     FCP_CHECK(original_status.ok());
   }
-}
-
-absl::Status ValidateTensorflowSpec(
-    const TensorflowSpec& tensorflow_spec,
-    const absl::flat_hash_set<std::string>& expected_input_tensor_names_set,
-    const std::vector<std::string>& output_names) {
-  // Check that all inputs have corresponding TensorSpecProtos.
-  if (expected_input_tensor_names_set.size() !=
-      tensorflow_spec.input_tensor_specs_size()) {
-    return absl::InvalidArgumentError(
-        "Unexpected number of input_tensor_specs");
-  }
-
-  for (const tensorflow::TensorSpecProto& it :
-       tensorflow_spec.input_tensor_specs()) {
-    if (!expected_input_tensor_names_set.contains(it.name())) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Missing expected TensorSpecProto for input ", it.name()));
-    }
-  }
-  // Check that all outputs have corresponding TensorSpecProtos.
-  absl::flat_hash_set<std::string> expected_output_tensor_names_set(
-      output_names.begin(), output_names.end());
-  if (expected_output_tensor_names_set.size() !=
-      tensorflow_spec.output_tensor_specs_size()) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Unexpected number of output_tensor_specs: ",
-                     expected_output_tensor_names_set.size(), " vs. ",
-                     tensorflow_spec.output_tensor_specs_size()));
-  }
-  for (const tensorflow::TensorSpecProto& it :
-       tensorflow_spec.output_tensor_specs()) {
-    if (!expected_output_tensor_names_set.count(it.name())) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Missing expected TensorSpecProto for output ", it.name()));
-    }
-  }
-
-  return absl::OkStatus();
 }
 
 PhaseOutcome ConvertPlanOutcomeToPhaseOutcome(PlanOutcome plan_outcome) {
@@ -124,7 +81,7 @@ absl::Status ConvertPlanOutcomeToStatus(PlanOutcome outcome) {
 }
 
 void ExampleIteratorStatus::SetStatus(absl::Status status) {
-  absl::MutexLock lock(&mu_);
+  absl::MutexLock lock(mu_);
   // We ignores normal status such as ok and outOfRange to avoid running into a
   // race condition when an error happened, then an outofRange or ok status
   // returned in a different thread which overrides the error status.
@@ -135,7 +92,7 @@ void ExampleIteratorStatus::SetStatus(absl::Status status) {
 }
 
 absl::Status ExampleIteratorStatus::GetStatus() {
-  absl::MutexLock lock(&mu_);
+  absl::MutexLock lock(mu_);
   return status_;
 }
 
@@ -180,7 +137,7 @@ DatasetIterator::~DatasetIterator() {
 
 // Returns the next entry from the dataset.
 absl::StatusOr<std::string> DatasetIterator::GetNext() {
-  absl::MutexLock locked(&iterator_lock_);
+  absl::MutexLock locked(iterator_lock_);
   if (iterator_finished_) {
     // If we've reached the end of the iterator, always return OUT_OF_RANGE.
     return absl::OutOfRangeError("End of iterator reached");

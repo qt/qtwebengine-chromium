@@ -13,8 +13,8 @@ cc_library(
     name = "generic",
     hdrs = [
         "generic.h",
-        "min_max_accumulator.h",
-        "sum_accumulator.h",
+        "min_max.h",
+        "sum.h",
     ],
     compatible_with = _COMPATIBLE_WITH,
     deps = [
@@ -42,7 +42,9 @@ ynn_cc_library(
         "arm_neonfma": ["arm_neonfma.cc"],
         "arm_neondot": ["arm_neondot.cc"],
         "arm_neon": ["arm_neon.cc"],
+        "arm64_neon": ["arm64_neon.cc"],
         "hexagon_hvx": ["hexagon_hvx.cc"],
+        "wasm_simd128": ["wasm_simd128.cc"],
         "x86_ssse3": ["x86_ssse3.cc"],
         "x86_sse2": ["x86_sse2.cc"],
         "x86_sse41": ["x86_sse41.cc"],
@@ -88,7 +90,11 @@ cc_test(
     srcs = ["test.cc"],
     linkopts = ynn_binary_linkopts(),
     malloc = ynn_binary_malloc(),
-    shard_count = 10,
+    shard_count = select({
+        "//ynnpack:hexagon": 20,
+        "//ynnpack:arm": 10,
+        "//conditions:default": 1,
+    }),
     deps = [
         ":reduce",
         "//ynnpack/base",
@@ -98,6 +104,17 @@ cc_test(
         "//ynnpack/base/test:tensor",
         "//ynnpack/base/test:util",
         "@slinky//slinky/base",
+    ] + ynn_test_deps(),
+)
+
+cc_test(
+    name = "pi_test",
+    srcs = ["pi_test.cc"],
+    linkopts = ynn_binary_linkopts(),
+    malloc = ynn_binary_malloc(),
+    deps = [
+        ":reduce",
+        "//ynnpack/base",
     ] + ynn_test_deps(),
 )
 

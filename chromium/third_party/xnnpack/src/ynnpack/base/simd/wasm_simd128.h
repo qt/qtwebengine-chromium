@@ -15,6 +15,7 @@
 #include <tuple>
 #include <type_traits>
 
+#include "ynnpack/base/arithmetic.h"
 #include "ynnpack/base/base.h"
 #include "ynnpack/base/bfloat16.h"
 #include "ynnpack/base/half.h"
@@ -483,21 +484,33 @@ YNN_ALWAYS_INLINE s8x16 operator~(s8x16 a) { return s8x16{wasm_v128_not(a.v)}; }
 YNN_ALWAYS_INLINE f32x4 min(f32x4 a, f32x4 b) {
   return f32x4{wasm_f32x4_min(a.v, b.v)};
 }
+YNN_ALWAYS_INLINE u16x8 min(u16x8 a, u16x8 b) {
+  return u16x8{wasm_u16x8_min(a.v, b.v)};
+}
 YNN_ALWAYS_INLINE s16x8 min(s16x8 a, s16x8 b) {
   return s16x8{wasm_i16x8_min(a.v, b.v)};
 }
 YNN_ALWAYS_INLINE u8x16 min(u8x16 a, u8x16 b) {
   return u8x16{wasm_u8x16_min(a.v, b.v)};
 }
+YNN_ALWAYS_INLINE s8x16 min(s8x16 a, s8x16 b) {
+  return s8x16{wasm_i8x16_min(a.v, b.v)};
+}
 
 YNN_ALWAYS_INLINE f32x4 max(f32x4 a, f32x4 b) {
   return f32x4{wasm_f32x4_max(a.v, b.v)};
+}
+YNN_ALWAYS_INLINE u16x8 max(u16x8 a, u16x8 b) {
+  return u16x8{wasm_u16x8_max(a.v, b.v)};
 }
 YNN_ALWAYS_INLINE s16x8 max(s16x8 a, s16x8 b) {
   return s16x8{wasm_i16x8_max(a.v, b.v)};
 }
 YNN_ALWAYS_INLINE u8x16 max(u8x16 a, u8x16 b) {
   return u8x16{wasm_u8x16_max(a.v, b.v)};
+}
+YNN_ALWAYS_INLINE s8x16 max(s8x16 a, s8x16 b) {
+  return s8x16{wasm_i8x16_max(a.v, b.v)};
 }
 
 YNN_ALWAYS_INLINE f32x4 abs(f32x4 a) { return f32x4{wasm_f32x4_abs(a.v)}; }
@@ -511,6 +524,50 @@ YNN_ALWAYS_INLINE f32x4 round(f32x4 a) {
   return f32x4{wasm_f32x4_nearest(a.v)};
 }
 YNN_ALWAYS_INLINE f32x4 sqrt(f32x4 a) { return f32x4{wasm_f32x4_sqrt(a.v)}; }
+
+YNN_ALWAYS_INLINE f32x4 floor_log2(f32x4 a) {
+  const v128_t sign_mask = wasm_f32x4_splat(-0.0f);
+  const v128_t is_zero = wasm_f32x4_eq(a.v, wasm_f32x4_splat(0.0f));
+  a.v = wasm_v128_or(wasm_v128_and(is_zero, sign_mask), a.v);
+
+  const v128_t sign_and_exp_mask = wasm_i32x4_splat(0xFF800000);
+  v128_t exp = wasm_v128_and(a.v, sign_and_exp_mask);
+
+  const v128_t infinity =
+      wasm_f32x4_splat(std::numeric_limits<float>::infinity());
+  const v128_t is_inf = wasm_f32x4_eq(a.v, infinity);
+
+  exp = wasm_i32x4_shr(exp, 8);
+
+  const v128_t bias_256 = wasm_f32x4_splat(256.0f);
+  const v128_t bias_383 = wasm_f32x4_splat(383.0f);
+  const v128_t res = wasm_f32x4_sub(wasm_v128_or(bias_256, exp), bias_383);
+  return f32x4{wasm_v128_bitselect(infinity, res, is_inf)};
+}
+
+YNN_ALWAYS_INLINE f64x2 floor_log2(f64x2 a) {
+  return f64x2{wasm_f64x2_make(
+      ynn::floor_log2(wasm_f64x2_extract_lane(a.v, 0)),
+      ynn::floor_log2(wasm_f64x2_extract_lane(a.v, 1)))};
+}
+
+YNN_ALWAYS_INLINE f32x4 exp2_round(f32x4 a) {
+  const v128_t magic = wasm_f32x4_splat(127.0f + static_cast<float>(1 << 23));
+  const v128_t res_bits = wasm_f32x4_add(a.v, magic);
+  return f32x4{wasm_i32x4_shl(res_bits, 23)};
+}
+YNN_ALWAYS_INLINE f64x2 exp2_round(f64x2 a) {
+  return f64x2{wasm_f64x2_make(
+      ynn::exp2_round(wasm_f64x2_extract_lane(a.v, 0)),
+      ynn::exp2_round(wasm_f64x2_extract_lane(a.v, 1)))};
+}
+
+YNN_ALWAYS_INLINE f32x4 copynan(f32x4 x, f32x4 nan) {
+  return f32x4{wasm_v128_bitselect(nan.v, x.v, wasm_f32x4_ne(nan.v, nan.v))};
+}
+YNN_ALWAYS_INLINE f64x2 copynan(f64x2 x, f64x2 nan) {
+  return f64x2{wasm_v128_bitselect(nan.v, x.v, wasm_f64x2_ne(nan.v, nan.v))};
+}
 
 YNN_ALWAYS_INLINE s16x16 cast(s8x16 a, int16_t) {
   return {s16x8{wasm_i16x8_extend_low_i8x16(a.v)},
@@ -544,37 +601,35 @@ YNN_ALWAYS_INLINE f32x4 cast(s32x4 x, float) {
   return f32x4{wasm_f32x4_convert_i32x4(x.v)};
 }
 
-YNN_ALWAYS_INLINE s32x4 cast(f32x4 x, int32_t) {
-  return s32x4{wasm_i32x4_trunc_sat_f32x4(x.v)};
-}
-
-YNN_ALWAYS_INLINE s16x8 saturate_cast(s32x8 a, int16_t) {
+YNN_ALWAYS_INLINE s16x8 cast(s32x8 a, int16_t) {
   return s16x8{wasm_i16x8_narrow_i32x4(a.lo().v, a.hi().v)};
 }
 
-YNN_ALWAYS_INLINE s8x16 saturate_cast(s16x16 a, int8_t) {
+YNN_ALWAYS_INLINE s8x16 cast(s16x16 a, int8_t) {
   return s8x16{wasm_i8x16_narrow_i16x8(a.lo().v, a.hi().v)};
 }
 
-YNN_ALWAYS_INLINE u8x16 saturate_cast(s16x16 a, uint8_t) {
+YNN_ALWAYS_INLINE u8x16 cast(s16x16 a, uint8_t) {
   return u8x16{wasm_u8x16_narrow_i16x8(a.lo().v, a.hi().v)};
 }
 
-YNN_ALWAYS_INLINE s16x8 round_float_to_int(f32x8 f, int16_t) {
+YNN_ALWAYS_INLINE s32x4 cast(f32x4 f, int32_t) {
+  return s32x4{wasm_i32x4_trunc_sat_f32x4(wasm_f32x4_nearest(f.v))};
+}
+
+YNN_ALWAYS_INLINE s16x8 cast(f32x8 f, int16_t) {
   const v128_t i0 = wasm_i32x4_trunc_sat_f32x4(wasm_f32x4_nearest(f.lo().v));
   const v128_t i1 = wasm_i32x4_trunc_sat_f32x4(wasm_f32x4_nearest(f.hi().v));
-  return saturate_cast(s32x8(s32x4(i0), s32x4(i1)), int16_t());
+  return cast(s32x8(s32x4(i0), s32x4(i1)), int16_t());
 }
 
-YNN_ALWAYS_INLINE s8x16 round_float_to_int(f32x16 f, int8_t) {
-  const s16x8 i01 =
-      round_float_to_int(f32x8(f.lo().lo(), f.lo().hi()), int16_t());
-  const s16x8 i23 =
-      round_float_to_int(f32x8(f.hi().lo(), f.hi().hi()), int16_t());
-  return saturate_cast(s16x16(i01, i23), int8_t());
+YNN_ALWAYS_INLINE s8x16 cast(f32x16 f, int8_t) {
+  const s16x8 i01 = cast(f32x8(f.lo().lo(), f.lo().hi()), int16_t());
+  const s16x8 i23 = cast(f32x8(f.hi().lo(), f.hi().hi()), int16_t());
+  return cast(s16x16(i01, i23), int8_t());
 }
 
-YNN_ALWAYS_INLINE u8x16 round_float_to_int(f32x16 f, uint8_t) {
+YNN_ALWAYS_INLINE u8x16 cast(f32x16 f, uint8_t) {
   const v128_t i0 =
       wasm_i32x4_trunc_sat_f32x4(wasm_f32x4_nearest(f.lo().lo().v));
   const v128_t i1 =
@@ -586,6 +641,207 @@ YNN_ALWAYS_INLINE u8x16 round_float_to_int(f32x16 f, uint8_t) {
   const v128_t i01_16 = wasm_i16x8_narrow_i32x4(i0, i1);
   const v128_t i23_16 = wasm_i16x8_narrow_i32x4(i2, i3);
   return u8x16{wasm_u8x16_narrow_i16x8(i01_16, i23_16)};
+}
+
+YNN_ALWAYS_INLINE void kahan_sum(f32x4 a, f32x4& acc, f32x4& error) {
+  f32x4 y = a - error;
+  f32x4 t = acc + y;
+  error = (t - acc) - y;
+  v128_t mask = wasm_i32x4_splat(0x7F800000);
+  v128_t is_inf = wasm_i32x4_eq(wasm_v128_and(error.v, mask), mask);
+  error = f32x4{wasm_v128_andnot(error.v, is_inf)};
+  acc = t;
+}
+
+YNN_ALWAYS_INLINE float horizontal_sum(f32x4 a) {
+  v128_t sum =
+      wasm_f32x4_add(a.v, wasm_v8x16_shuffle(a.v, a.v, 8, 9, 10, 11, 12, 13, 14,
+                                             15, 0, 1, 2, 3, 4, 5, 6, 7));
+  sum = wasm_f32x4_add(sum, wasm_v8x16_shuffle(sum, sum, 4, 5, 6, 7, 0, 1, 2, 3,
+                                               12, 13, 14, 15, 8, 9, 10, 11));
+  return wasm_f32x4_extract_lane(sum, 0);
+}
+YNN_ALWAYS_INLINE int32_t horizontal_sum(s32x4 a) {
+  v128_t sum =
+      wasm_i32x4_add(a.v, wasm_v8x16_shuffle(a.v, a.v, 8, 9, 10, 11, 12, 13, 14,
+                                             15, 0, 1, 2, 3, 4, 5, 6, 7));
+  sum = wasm_i32x4_add(sum, wasm_v8x16_shuffle(sum, sum, 4, 5, 6, 7, 0, 1, 2, 3,
+                                               12, 13, 14, 15, 8, 9, 10, 11));
+  return wasm_i32x4_extract_lane(sum, 0);
+}
+
+YNN_ALWAYS_INLINE int8_t horizontal_max(s8x16 a) {
+  v128_t max =
+      wasm_i8x16_max(a.v, wasm_v8x16_shuffle(a.v, a.v, 8, 9, 10, 11, 12, 13, 14,
+                                             15, 0, 1, 2, 3, 4, 5, 6, 7));
+  max = wasm_i8x16_max(max, wasm_v8x16_shuffle(max, max, 4, 5, 6, 7, 0, 1, 2, 3,
+                                               12, 13, 14, 15, 8, 9, 10, 11));
+  max = wasm_i8x16_max(max, wasm_v8x16_shuffle(max, max, 2, 3, 0, 1, 6, 7, 4, 5,
+                                               10, 11, 8, 9, 14, 15, 12, 13));
+  max = wasm_i8x16_max(max, wasm_v8x16_shuffle(max, max, 1, 0, 3, 2, 5, 4, 7, 6,
+                                               9, 8, 11, 10, 13, 12, 15, 14));
+  return wasm_i8x16_extract_lane(max, 0);
+}
+YNN_ALWAYS_INLINE uint8_t horizontal_max(u8x16 a) {
+  v128_t max =
+      wasm_u8x16_max(a.v, wasm_v8x16_shuffle(a.v, a.v, 8, 9, 10, 11, 12, 13, 14,
+                                             15, 0, 1, 2, 3, 4, 5, 6, 7));
+  max = wasm_u8x16_max(max, wasm_v8x16_shuffle(max, max, 4, 5, 6, 7, 0, 1, 2, 3,
+                                               12, 13, 14, 15, 8, 9, 10, 11));
+  max = wasm_u8x16_max(max, wasm_v8x16_shuffle(max, max, 2, 3, 0, 1, 6, 7, 4, 5,
+                                               10, 11, 8, 9, 14, 15, 12, 13));
+  max = wasm_u8x16_max(max, wasm_v8x16_shuffle(max, max, 1, 0, 3, 2, 5, 4, 7, 6,
+                                               9, 8, 11, 10, 13, 12, 15, 14));
+  return wasm_u8x16_extract_lane(max, 0);
+}
+YNN_ALWAYS_INLINE int16_t horizontal_max(s16x8 a) {
+  v128_t max =
+      wasm_i16x8_max(a.v, wasm_v8x16_shuffle(a.v, a.v, 8, 9, 10, 11, 12, 13, 14,
+                                             15, 0, 1, 2, 3, 4, 5, 6, 7));
+  max = wasm_i16x8_max(max, wasm_v8x16_shuffle(max, max, 4, 5, 6, 7, 0, 1, 2, 3,
+                                               12, 13, 14, 15, 8, 9, 10, 11));
+  max = wasm_i16x8_max(max, wasm_v8x16_shuffle(max, max, 2, 3, 0, 1, 6, 7, 4, 5,
+                                               10, 11, 8, 9, 14, 15, 12, 13));
+  return wasm_i16x8_extract_lane(max, 0);
+}
+YNN_ALWAYS_INLINE int32_t horizontal_max(s32x4 a) {
+  v128_t max =
+      wasm_i32x4_max(a.v, wasm_v8x16_shuffle(a.v, a.v, 8, 9, 10, 11, 12, 13, 14,
+                                             15, 0, 1, 2, 3, 4, 5, 6, 7));
+  max = wasm_i32x4_max(max, wasm_v8x16_shuffle(max, max, 4, 5, 6, 7, 0, 1, 2, 3,
+                                               12, 13, 14, 15, 8, 9, 10, 11));
+  return wasm_i32x4_extract_lane(max, 0);
+}
+YNN_ALWAYS_INLINE float horizontal_max(f32x4 a) {
+  v128_t max =
+      wasm_f32x4_max(a.v, wasm_v8x16_shuffle(a.v, a.v, 8, 9, 10, 11, 12, 13, 14,
+                                             15, 0, 1, 2, 3, 4, 5, 6, 7));
+  max = wasm_f32x4_max(max, wasm_v8x16_shuffle(max, max, 4, 5, 6, 7, 0, 1, 2, 3,
+                                               12, 13, 14, 15, 8, 9, 10, 11));
+  return wasm_f32x4_extract_lane(max, 0);
+}
+YNN_ALWAYS_INLINE int8_t horizontal_min(s8x16 a) {
+  v128_t min =
+      wasm_i8x16_min(a.v, wasm_v8x16_shuffle(a.v, a.v, 8, 9, 10, 11, 12, 13, 14,
+                                             15, 0, 1, 2, 3, 4, 5, 6, 7));
+  min = wasm_i8x16_min(min, wasm_v8x16_shuffle(min, min, 4, 5, 6, 7, 0, 1, 2, 3,
+                                               12, 13, 14, 15, 8, 9, 10, 11));
+  min = wasm_i8x16_min(min, wasm_v8x16_shuffle(min, min, 2, 3, 0, 1, 6, 7, 4, 5,
+                                               10, 11, 8, 9, 14, 15, 12, 13));
+  min = wasm_i8x16_min(min, wasm_v8x16_shuffle(min, min, 1, 0, 3, 2, 5, 4, 7, 6,
+                                               9, 8, 11, 10, 13, 12, 15, 14));
+  return wasm_i8x16_extract_lane(min, 0);
+}
+YNN_ALWAYS_INLINE uint8_t horizontal_min(u8x16 a) {
+  v128_t min =
+      wasm_u8x16_min(a.v, wasm_v8x16_shuffle(a.v, a.v, 8, 9, 10, 11, 12, 13, 14,
+                                             15, 0, 1, 2, 3, 4, 5, 6, 7));
+  min = wasm_u8x16_min(min, wasm_v8x16_shuffle(min, min, 4, 5, 6, 7, 0, 1, 2, 3,
+                                               12, 13, 14, 15, 8, 9, 10, 11));
+  min = wasm_u8x16_min(min, wasm_v8x16_shuffle(min, min, 2, 3, 0, 1, 6, 7, 4, 5,
+                                               10, 11, 8, 9, 14, 15, 12, 13));
+  min = wasm_u8x16_min(min, wasm_v8x16_shuffle(min, min, 1, 0, 3, 2, 5, 4, 7, 6,
+                                               9, 8, 11, 10, 13, 12, 15, 14));
+  return wasm_u8x16_extract_lane(min, 0);
+}
+YNN_ALWAYS_INLINE int16_t horizontal_min(s16x8 a) {
+  v128_t min =
+      wasm_i16x8_min(a.v, wasm_v8x16_shuffle(a.v, a.v, 8, 9, 10, 11, 12, 13, 14,
+                                             15, 0, 1, 2, 3, 4, 5, 6, 7));
+  min = wasm_i16x8_min(min, wasm_v8x16_shuffle(min, min, 4, 5, 6, 7, 0, 1, 2, 3,
+                                               12, 13, 14, 15, 8, 9, 10, 11));
+  min = wasm_i16x8_min(min, wasm_v8x16_shuffle(min, min, 2, 3, 0, 1, 6, 7, 4, 5,
+                                               10, 11, 8, 9, 14, 15, 12, 13));
+  return wasm_i16x8_extract_lane(min, 0);
+}
+YNN_ALWAYS_INLINE int32_t horizontal_min(s32x4 a) {
+  v128_t min =
+      wasm_i32x4_min(a.v, wasm_v8x16_shuffle(a.v, a.v, 8, 9, 10, 11, 12, 13, 14,
+                                             15, 0, 1, 2, 3, 4, 5, 6, 7));
+  min = wasm_i32x4_min(min, wasm_v8x16_shuffle(min, min, 4, 5, 6, 7, 0, 1, 2, 3,
+                                               12, 13, 14, 15, 8, 9, 10, 11));
+  return wasm_i32x4_extract_lane(min, 0);
+}
+YNN_ALWAYS_INLINE float horizontal_min(f32x4 a) {
+  v128_t min =
+      wasm_f32x4_min(a.v, wasm_v8x16_shuffle(a.v, a.v, 8, 9, 10, 11, 12, 13, 14,
+                                             15, 0, 1, 2, 3, 4, 5, 6, 7));
+  min = wasm_f32x4_min(min, wasm_v8x16_shuffle(min, min, 4, 5, 6, 7, 0, 1, 2, 3,
+                                               12, 13, 14, 15, 8, 9, 10, 11));
+  return wasm_f32x4_extract_lane(min, 0);
+}
+
+namespace internal {
+
+// These are helpers for implementing interleave/transpose.
+YNN_ALWAYS_INLINE v128_t unpacklo_x32x4(v128_t a, v128_t b) {
+  return wasm_v32x4_shuffle(a, b, 0, 4, 1, 5);
+}
+YNN_ALWAYS_INLINE v128_t unpackhi_x32x4(v128_t a, v128_t b) {
+  return wasm_v32x4_shuffle(a, b, 2, 6, 3, 7);
+}
+
+YNN_ALWAYS_INLINE v128_t unpacklo_x8x16(v128_t a, v128_t b) {
+  return wasm_v8x16_shuffle(a, b, 0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6,
+                            22, 7, 23);
+}
+YNN_ALWAYS_INLINE v128_t unpackhi_x8x16(v128_t a, v128_t b) {
+  return wasm_v8x16_shuffle(a, b, 8, 24, 9, 25, 10, 26, 11, 27, 12, 28, 13, 29,
+                            14, 30, 15, 31);
+}
+
+YNN_ALWAYS_INLINE v128_t movehl(v128_t a, v128_t b) {
+  return wasm_v32x4_shuffle(a, b, 6, 7, 2, 3);
+}
+YNN_ALWAYS_INLINE v128_t movelh(v128_t a, v128_t b) {
+  return wasm_v32x4_shuffle(a, b, 0, 1, 4, 5);
+}
+
+}  // namespace internal
+
+YNN_ALWAYS_INLINE std::tuple<u8x16, u8x16> interleave(
+    std::integral_constant<size_t, 64>, u8x16 x0, u8x16 x1) {
+  return {u8x16{internal::movelh(x0.v, x1.v)},
+          u8x16{internal::movehl(x1.v, x0.v)}};
+}
+YNN_ALWAYS_INLINE std::tuple<u8x16, u8x16> interleave(
+    std::integral_constant<size_t, 32>, u8x16 x0, u8x16 x1) {
+  return {u8x16{internal::unpacklo_x32x4(x0.v, x1.v)},
+          u8x16{internal::unpackhi_x32x4(x0.v, x1.v)}};
+}
+YNN_ALWAYS_INLINE std::tuple<u8x16, u8x16> interleave(
+    std::integral_constant<size_t, 16>, u8x16 x0, u8x16 x1) {
+  return {u8x16{wasm_v16x8_shuffle(x0.v, x1.v, 0, 8, 1, 9, 2, 10, 3, 11)},
+          u8x16{wasm_v16x8_shuffle(x0.v, x1.v, 4, 12, 5, 13, 6, 14, 7, 15)}};
+}
+YNN_ALWAYS_INLINE std::tuple<u8x16, u8x16> interleave(
+    std::integral_constant<size_t, 8>, u8x16 x0, u8x16 x1) {
+  return {u8x16{internal::unpacklo_x8x16(x0.v, x1.v)},
+          u8x16{internal::unpackhi_x8x16(x0.v, x1.v)}};
+}
+YNN_ALWAYS_INLINE std::tuple<u8x16, u8x16> interleave(
+    std::integral_constant<size_t, 4>, u8x16 x0, u8x16 x1) {
+  v128_t mask = wasm_i8x16_splat(0xf0);
+  v128_t x1_shl = wasm_i8x16_shl(x1.v, 4);
+  v128_t x0_shr = wasm_u8x16_shr(x0.v, 4);
+  u8x16 t0{wasm_v128_bitselect(x1_shl, x0.v, mask)};
+  u8x16 t1{wasm_v128_bitselect(x1.v, x0_shr, mask)};
+  return interleave(std::integral_constant<size_t, 8>{}, t0, t1);
+}
+
+template <typename T>
+YNN_ALWAYS_INLINE std::array<vec<T, 4>, 4> transpose(
+    std::array<vec<T, 4>, 4> x) {
+  vec<T, 4> t0{internal::unpacklo_x32x4(x[0].v, x[1].v)};
+  vec<T, 4> t1{internal::unpacklo_x32x4(x[2].v, x[3].v)};
+  vec<T, 4> t2{internal::unpackhi_x32x4(x[0].v, x[1].v)};
+  vec<T, 4> t3{internal::unpackhi_x32x4(x[2].v, x[3].v)};
+  return {{
+      vec<T, 4>{internal::movelh(t0.v, t1.v)},
+      vec<T, 4>{internal::movehl(t1.v, t0.v)},
+      vec<T, 4>{internal::movelh(t2.v, t3.v)},
+      vec<T, 4>{internal::movehl(t3.v, t2.v)},
+  }};
 }
 
 }  // namespace simd

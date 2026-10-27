@@ -137,9 +137,7 @@ export class TextEditor extends HTMLElement {
   }
 
   override focus(): void {
-    if (this.#activeEditor) {
-      this.#activeEditor.focus();
-    }
+    this.editor.focus();
   }
 
   #ensureSettingListeners(): void {

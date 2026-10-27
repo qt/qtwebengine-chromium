@@ -8,9 +8,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_CONTRACTION_GPU_H
-#define EIGEN_CXX11_TENSOR_TENSOR_CONTRACTION_GPU_H
+#ifndef EIGEN_TENSOR_TENSOR_CONTRACTION_GPU_H
+#define EIGEN_TENSOR_TENSOR_CONTRACTION_GPU_H
 
 #if defined(EIGEN_USE_GPU) && defined(EIGEN_GPUCC)
 
@@ -393,7 +394,8 @@ __device__ EIGEN_STRONG_INLINE void EigenContractionKernelInternal(const LhsMapp
   // the sum across all big k blocks of the product of little k block of index (x, y)
   // with block of index (y, z). To compute the final output, we need to reduce
   // the 8 threads over y by summation.
-#if defined(EIGEN_HIPCC) || (defined(EIGEN_CUDA_SDK_VER) && EIGEN_CUDA_SDK_VER < 90000)
+  // HIP uses non-sync warp shuffles; CUDA requires the _sync variants.
+#if defined(EIGEN_HIPCC)
 #define shuffleInc(i, j, mask) res(i, j) += __shfl_xor(res(i, j), mask)
 #else
 #define shuffleInc(i, j, mask) res(i, j) += __shfl_xor_sync(0xFFFFFFFF, res(i, j), mask)
@@ -622,7 +624,7 @@ __device__ __forceinline__ void EigenFloatContractionKernelInternal16x16(const L
       x1 = rhs_pf0.x;
       x2 = rhs_pf0.z;
     }
-#if defined(EIGEN_HIPCC) || (defined(EIGEN_CUDA_SDK_VER) && EIGEN_CUDA_SDK_VER < 90000)
+#if defined(EIGEN_HIPCC)
     x1 = __shfl_xor(x1, 4);
     x2 = __shfl_xor(x2, 4);
 #else
@@ -1258,7 +1260,7 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
   typedef typename RightEvaluator::Dimensions RightDimensions;
 
   TensorEvaluator(const XprType& op, const Device& device) : Base(op, device) {
-    EIGEN_STATIC_ASSERT((internal::is_same<OutputKernelType, const NoOpOutputKernel>::value),
+    EIGEN_STATIC_ASSERT((std::is_same<OutputKernelType, const NoOpOutputKernel>::value),
                         GPU_TENSOR_CONTRACTION_DOES_NOT_SUPPORT_OUTPUT_KERNELS);
   }
 
@@ -1377,13 +1379,6 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
                   this->m_right_contracting_strides, this->m_k_strides);
 
     OutputMapper output(buffer, m);
-
-#if defined(EIGEN_USE_HIP)
-    setGpuSharedMemConfig(hipSharedMemBankSizeEightByte);
-#else
-    setGpuSharedMemConfig(cudaSharedMemBankSizeEightByte);
-#endif
-
     LaunchKernels<LhsScalar, RhsScalar, Index, LhsMapper, RhsMapper, OutputMapper>::Run(lhs, rhs, output, m, n, k,
                                                                                         this->m_device);
   }
@@ -1392,4 +1387,4 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
 }  // end namespace Eigen
 
 #endif  // EIGEN_USE_GPU and EIGEN_GPUCC
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_CONTRACTION_GPU_H
+#endif  // EIGEN_TENSOR_TENSOR_CONTRACTION_GPU_H

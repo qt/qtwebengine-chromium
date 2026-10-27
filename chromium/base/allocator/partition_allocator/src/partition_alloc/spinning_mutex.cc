@@ -86,14 +86,6 @@ class ScopedLockAcquisitionTimer {
 }  // namespace
 
 // static
-std::atomic<int> SpinningMutex::s_spin_count{SpinningMutex::kSpinCount};
-
-// static
-void SpinningMutex::SetSpinCount(int spin_count) {
-  s_spin_count.store(spin_count, std::memory_order_relaxed);
-}
-
-// static
 void SpinningMutex::SetLockMetricsRecorder(
     LockMetricsRecorderInterface* recorder) {
   auto* old_recorder =
@@ -119,7 +111,6 @@ void SpinningMutex::Reinit() {
 void SpinningMutex::AcquireSpinThenBlock() {
   int tries = 0;
   int backoff = 1;
-  const int spin_count = s_spin_count.load(std::memory_order_relaxed);
 
   do {
     if (Try()) [[likely]] {
@@ -145,7 +136,7 @@ void SpinningMutex::AcquireSpinThenBlock() {
     }
     constexpr int kMaxBackoff = 16;
     backoff = std::min(kMaxBackoff, backoff << 1);
-  } while (tries < spin_count);
+  } while (tries < kSpinCount);
 
   ScopedLockAcquisitionTimer timer;
   LockSlow();
@@ -163,10 +154,11 @@ PA_ALWAYS_INLINE long FutexSyscall(volatile void* ftx, int op, int value) {
                         nullptr, 0);
   if (retval == -1) {
     // These are programming errors, check them.
-    PA_DCHECK((errno != EPERM) || (errno != EACCES) || (errno != EINVAL) ||
-              (errno != ENOSYS))
+    [[maybe_unused]] const int futex_errno = errno;
+    PA_DCHECK((futex_errno != EPERM) && (futex_errno != EACCES) &&
+              (futex_errno != EINVAL) && (futex_errno != ENOSYS))
         << "FutexSyscall(" << reinterpret_cast<uintptr_t>(ftx) << ", " << op
-        << ", " << value << ")  failed with errno " << errno;
+        << ", " << value << ")  failed with errno " << futex_errno;
   }
 
   errno = saved_errno;

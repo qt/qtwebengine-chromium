@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -21,37 +23,54 @@ package(
 
 cc_binary(
     name = "libink.so",
-    additional_linker_inputs = ["jni.lds"],
-    features = ["-legacy_whole_archive"],
-    linkopts = [
-        # Use a linker script to limit exported symbols to JNI functions.
-        "-Wl,--version-script=$(location :jni.lds)",
+    additional_linker_inputs = [
+        "exported_symbols.txt",
+        "jni.lds",
     ],
+    features = ["-legacy_whole_archive"],
+    linkopts = selects.with_or({
+        (
+            "@platforms//os:ios",
+            "@platforms//os:macos",
+        ): [
+            "-Wl,-exported_symbols_list,$(location :exported_symbols.txt)",
+        ],
+        "//conditions:default": [
+            # Use a linker script to limit exported symbols to JNI functions.
+            "-Wl,--version-script=$(location :jni.lds)",
+        ],
+    }),
     linkshared = 1,
     linkstatic = 1,
     deps = [
-        ":jni.lds",
-        ":jni_onload",
-        "//ink/color/internal/jni:native",
-        "//ink/geometry/internal/jni:native",
-        "//ink/jni/internal:jni_defines",
-        "//ink/jni/internal:jni_jvm_interface",
-        "//ink/rendering/skia/common_internal/jni:native",
-        "//ink/storage/internal/jni:native",
-        "//ink/strokes/internal/jni:native",
+        ":android_all_jni",
+    ],
+)
+
+build_test(
+    name = "libink_so_build_test",
+    targets = [":libink.so"],
+)
+
+cc_library(
+    name = "android_no_proto_jni",
+    tags = ["keep_dep"],
+    visibility = ["//ink:__subpackages__"],
+    deps = [
+        "//ink/brush/internal/jni",
+        "//ink/geometry/internal/jni",
+        "//ink/jni/internal:jni",
+        "//ink/rendering/android/internal/jni",
+        "//ink/strokes/internal/jni",
     ],
 )
 
 cc_library(
-    name = "jni_onload",
-    srcs = ["jni_onload.cc"],
+    name = "android_all_jni",
+    tags = ["keep_dep"],
+    visibility = ["//ink:__subpackages__"],
     deps = [
-        "//ink/jni/internal:jni_jvm_interface",
-        "@com_google_absl//absl/log:absl_check",
-    ] + select({
-        "@platforms//os:android": [],
-        "//conditions:default": [
-            "@rules_jni//jni",
-        ],
-    }),
+        ":android_no_proto_jni",
+        "//ink/storage/internal/jni",
+    ],
 )

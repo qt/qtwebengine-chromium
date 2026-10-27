@@ -30,7 +30,7 @@
 #include <vector>
 
 #include "src/tint/api/helpers/generate_bindings.h"
-#include "src/tint/cmd/fuzz/ir/fuzz.h"
+#include "src/tint/cmd/fuzz/common/ir_fuzzer.h"
 #include "src/tint/lang/core/ir/disassembler.h"
 #include "src/tint/lang/core/ir/referenced_module_vars.h"
 #include "src/tint/lang/spirv/validate/validate.h"
@@ -80,6 +80,7 @@ struct FuzzedOptions {
     SpvVersion spirv_version;
     SubstituteOverridesConfig substitute_overrides_config;
     bool texture_sample_compare_depth_cube_array;
+    bool texture_sample_compare_2d_polyfill;
     bool polyfill_saturate_as_min_max_f16;
     bool multisampled_framebuffer_fetch;
     bool cooperative_matrix_stride_is_matrix_elements;
@@ -116,6 +117,7 @@ struct FuzzedOptions {
                  spirv_version,
                  substitute_overrides_config,
                  texture_sample_compare_depth_cube_array,
+                 texture_sample_compare_2d_polyfill,
                  polyfill_saturate_as_min_max_f16,
                  multisampled_framebuffer_fetch,
                  cooperative_matrix_stride_is_matrix_elements,
@@ -304,7 +306,9 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
     options.disable_polyfill_integer_div_mod = fuzzed_options.disable_polyfill_integer_div_mod;
     options.disable_integer_range_analysis = !fuzzed_options.enable_integer_range_analysis;
     options.emit_vertex_point_size = fuzzed_options.emit_vertex_point_size;
-    options.polyfill_pixel_center = fuzzed_options.polyfill_pixel_center;
+    if (fuzzed_options.polyfill_pixel_center) {
+        options.polyfill_pixel_center = 99;  // Number bigger then is normally allowed in WGSL
+    }
     options.workarounds.polyfill_case_switch = fuzzed_options.polyfill_case_switch;
     options.workarounds.scalarize_max_min_clamp = fuzzed_options.scalarize_max_min_clamp;
     options.workarounds.dva_transform_handle = fuzzed_options.dva_transform_handle;
@@ -331,6 +335,8 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
     options.substitute_overrides_config = fuzzed_options.substitute_overrides_config;
     options.workarounds.texture_sample_compare_depth_cube_array =
         fuzzed_options.texture_sample_compare_depth_cube_array;
+    options.workarounds.texture_sample_compare_2d_polyfill =
+        fuzzed_options.texture_sample_compare_2d_polyfill;
     options.workarounds.polyfill_saturate_as_min_max_f16 =
         fuzzed_options.polyfill_saturate_as_min_max_f16;
     options.workarounds.polyfill_length_scalar_float = fuzzed_options.polyfill_length_scalar_float;

@@ -240,6 +240,8 @@
   E_CPONLY(kColorSysAiIllustrationShapeSurfaceGradientEnd) \
   /* Experimentation. */ \
   E_CPONLY(kColorSysOmniboxContainer) \
+  E_CPONLY(kColorSysSurfaceSection) \
+  E_CPONLY(kColorSysBaseContainerOnSurface) \
   /* Deprecated */ \
   E_CPONLY(kColorSysStateHover) \
   E_CPONLY(kColorSysStateFocus) \
@@ -358,6 +360,8 @@
   E_CPONLY(kColorFrameActive) \
   E_CPONLY(kColorFrameActiveUnthemed) \
   E_CPONLY(kColorFrameCaptionButtonUnfocused) \
+  E_CPONLY(kColorFrameCaptionForegroundActive) \
+  E_CPONLY(kColorFrameCaptionForegroundInactive) \
   E_CPONLY(kColorFrameInactive) \
   E_CPONLY(kColorHelpIconActive) \
   E_CPONLY(kColorHelpIconInactive) \
@@ -581,6 +585,7 @@
   E_CPONLY(kColorWebNativeControlScrollbarArrowBackgroundPressed) \
   E_CPONLY(kColorWebNativeControlScrollbarArrowForeground) \
   E_CPONLY(kColorWebNativeControlScrollbarArrowForegroundDisabled) \
+  E_CPONLY(kColorWebNativeControlScrollbarArrowForegroundHovered) \
   E_CPONLY(kColorWebNativeControlScrollbarArrowForegroundPressed) \
   E_CPONLY(kColorWebNativeControlScrollbarCorner) \
   E_CPONLY(kColorWebNativeControlScrollbarThumb) \

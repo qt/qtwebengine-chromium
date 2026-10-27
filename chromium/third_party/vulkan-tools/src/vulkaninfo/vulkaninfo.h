@@ -754,6 +754,9 @@ struct AppInstance {
             if (strcmp(VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME, ext.extensionName) == 0) {
                 inst_extensions.push_back(ext.extensionName);
             }
+            if (strcmp(VK_KHR_DEVICE_GROUP_CREATION_EXTENSION_NAME, ext.extensionName) == 0) {
+                inst_extensions.push_back(ext.extensionName);
+            }
         }
     }
 
@@ -1947,23 +1950,31 @@ std::vector<VkPhysicalDeviceToolPropertiesEXT> GetToolingInfo(AppGpu &gpu) {
 }
 
 std::vector<VkCooperativeMatrixPropertiesKHR> GetCooperativeMatrixInfo(AppGpu &gpu) {
-    if (vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR == nullptr) return {};
+    if (vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR == nullptr ||
+        !gpu.CheckPhysicalDeviceExtensionIncluded("VK_KHR_cooperative_matrix"))
+        return {};
     return GetVector<VkCooperativeMatrixPropertiesKHR>("vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR",
                                                        vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR, gpu.phys_device);
 }
 std::vector<VkTimeDomainKHR> GetTimeDomainInfo(AppGpu &gpu) {
-    if (vkGetPhysicalDeviceCalibrateableTimeDomainsKHR == nullptr) return {};
+    if (vkGetPhysicalDeviceCalibrateableTimeDomainsKHR == nullptr ||
+        !gpu.CheckPhysicalDeviceExtensionIncluded("VK_KHR_calibrated_timestamps"))
+        return {};
     return GetVector<VkTimeDomainKHR>("vkGetPhysicalDeviceCalibrateableTimeDomainsKHR",
                                       vkGetPhysicalDeviceCalibrateableTimeDomainsKHR, gpu.phys_device);
 }
 std::vector<VkPhysicalDeviceFragmentShadingRateKHR> GetFragmentShadingRateInfo(AppGpu &gpu) {
-    if (vkGetPhysicalDeviceFragmentShadingRatesKHR == nullptr) return {};
+    if (vkGetPhysicalDeviceFragmentShadingRatesKHR == nullptr ||
+        !gpu.CheckPhysicalDeviceExtensionIncluded("VK_KHR_fragment_shading_rate"))
+        return {};
     return GetVector<VkPhysicalDeviceFragmentShadingRateKHR>("vkGetPhysicalDeviceFragmentShadingRatesKHR",
                                                              vkGetPhysicalDeviceFragmentShadingRatesKHR, gpu.phys_device);
 }
 // Returns vector where each index maps to VkSampleCountFlagBits
 std::vector<VkMultisamplePropertiesEXT> GetSampleLocationInfo(AppGpu &gpu) {
-    if (vkGetPhysicalDeviceMultisamplePropertiesEXT == nullptr) return {};
+    if (vkGetPhysicalDeviceMultisamplePropertiesEXT == nullptr ||
+        !gpu.CheckPhysicalDeviceExtensionIncluded("VK_EXT_sample_locations"))
+        return {};
     std::vector<VkMultisamplePropertiesEXT> result;
     // 7 covers VK_SAMPLE_COUNT_1_BIT to 64_BIT
     for (uint32_t i = 0; i < 7; i++) {

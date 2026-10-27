@@ -47,6 +47,7 @@ const core::ir::Capabilities kPrinterCapabilities{
     core::ir::Capability::kAllowHandleVarsWithoutBindings,
     core::ir::Capability::kAllowDuplicateBindings,
     core::ir::Capability::kLoosenValidationForShaderIO,
+    core::ir::Capability::kAllow16BitIntegers,
 };
 
 /// @returns the generated GLSL shader on success, or failure

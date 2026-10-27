@@ -285,7 +285,7 @@ bool CFX_GlobalData::LoadGlobalPersistentVariablesFromBuffer(
     return false;
   }
 
-  CRYPT_ArcFourCryptBlock(buffer, kRC4KEY);
+  CryptArcFourCryptBlock(buffer, kRC4KEY);
 
   UNSAFE_TODO({
     uint8_t* p = buffer.data();
@@ -417,7 +417,7 @@ bool CFX_GlobalData::SaveGlobalPersisitentVariables() {
   sFile.AppendUint32(dwSize);
   sFile.AppendSpan(sData.GetSpan());
 
-  CRYPT_ArcFourCryptBlock(sFile.GetMutableSpan(), kRC4KEY);
+  CryptArcFourCryptBlock(sFile.GetMutableSpan(), kRC4KEY);
   return delegate_->StoreBuffer(sFile.GetSpan());
 }
 

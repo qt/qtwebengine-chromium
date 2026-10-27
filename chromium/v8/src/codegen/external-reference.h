@@ -32,7 +32,6 @@ enum class IsolateFieldId : uint8_t;
     "Isolate::handle_scope_implementer_address")                               \
   V(address_of_interpreter_entry_trampoline_instruction_start,                 \
     "Address of the InterpreterEntryTrampoline instruction start")             \
-  V(interpreter_dispatch_counters, "Interpreter::dispatch_counters")           \
   V(interpreter_dispatch_table_address, "Interpreter::dispatch_table_address") \
   V(force_slow_path, "Isolate::force_slow_path_address()")                     \
   V(isolate_root, "Isolate::isolate_root()")                                   \
@@ -91,6 +90,15 @@ enum class IsolateFieldId : uint8_t;
 #else
 #define EXTERNAL_REFERENCE_LIST_WITH_ISOLATE_SANDBOX(V)
 #endif  // V8_ENABLE_SANDBOX
+
+#ifdef V8_ENABLE_REGEXP_DIAGNOSTICS
+#define EXTERNAL_REFERENCE_LIST_REGEXP_DIAGNOSTICS(V)             \
+  V(address_of_trace_regexp_exec, "v8_flags.trace_regexp_exec")   \
+  V(address_of_regexp_trace_begin, "RegExp::TraceExecutionBegin") \
+  V(address_of_regexp_trace_end, "RegExp::TraceExecutionEnd")
+#else
+#define EXTERNAL_REFERENCE_LIST_REGEXP_DIAGNOSTICS(V)
+#endif  // V8_ENABLE_REGEXP_DIAGNOSTICS
 
 #define EXTERNAL_REFERENCE_LIST(V)                                             \
   V(abort_with_reason, "abort_with_reason")                                    \
@@ -223,7 +231,8 @@ enum class IsolateFieldId : uint8_t;
   V(new_deoptimizer_function, "Deoptimizer::New()")                            \
   V(orderedhashmap_gethash_raw, "orderedhashmap_gethash_raw")                  \
   V(printf_function, "printf")                                                 \
-  V(refill_math_random, "MathRandom::RefillCache")                             \
+  V(initialize_and_maybe_refill_math_random,                                   \
+    "MathRandom::InitializeAndMaybeRefillCache")                               \
   V(search_string_raw_one_one, "search_string_raw_one_one")                    \
   V(search_string_raw_one_two, "search_string_raw_one_two")                    \
   V(search_string_raw_two_one, "search_string_raw_two_one")                    \
@@ -306,12 +315,12 @@ enum class IsolateFieldId : uint8_t;
           "wasm::float64_to_uint64_sat_wrapper")                               \
   IF_WASM(V, wasm_float16_to_float32, "wasm::float16_to_float32_wrapper")      \
   IF_WASM(V, wasm_float32_to_float16, "wasm::float32_to_float16_wrapper")      \
-  IF_WASM(V, wasm_int64_div, "wasm::int64_div")                                \
-  IF_WASM(V, wasm_int64_mod, "wasm::int64_mod")                                \
+  IF_TARGET_ARCH_32_BIT(IF_WASM, V, wasm_int64_div, "wasm::int64_div")         \
+  IF_TARGET_ARCH_32_BIT(IF_WASM, V, wasm_int64_mod, "wasm::int64_mod")         \
+  IF_TARGET_ARCH_32_BIT(IF_WASM, V, wasm_uint64_div, "wasm::uint64_div")       \
+  IF_TARGET_ARCH_32_BIT(IF_WASM, V, wasm_uint64_mod, "wasm::uint64_mod")       \
   IF_WASM(V, wasm_int64_to_float32, "wasm::int64_to_float32_wrapper")          \
   IF_WASM(V, wasm_int64_to_float64, "wasm::int64_to_float64_wrapper")          \
-  IF_WASM(V, wasm_uint64_div, "wasm::uint64_div")                              \
-  IF_WASM(V, wasm_uint64_mod, "wasm::uint64_mod")                              \
   IF_WASM(V, wasm_uint64_to_float32, "wasm::uint64_to_float32_wrapper")        \
   IF_WASM(V, wasm_uint64_to_float64, "wasm::uint64_to_float64_wrapper")        \
   IF_WASM(V, wasm_word32_ctz, "wasm::word32_ctz")                              \
@@ -320,6 +329,10 @@ enum class IsolateFieldId : uint8_t;
   IF_WASM(V, wasm_word32_ror, "wasm::word32_ror")                              \
   IF_WASM(V, wasm_word64_rol, "wasm::word64_rol")                              \
   IF_WASM(V, wasm_word64_ror, "wasm::word64_ror")                              \
+  IF_WASM(V, wasm_int128_add, "wasm::wasm_int128_add_wrapper")                 \
+  IF_WASM(V, wasm_int128_sub, "wasm::wasm_int128_sub_wrapper")                 \
+  IF_WASM(V, wasm_int64_mul_wide_s, "wasm::wasm_int64_mul_wide_s_wrapper")     \
+  IF_WASM(V, wasm_int64_mul_wide_u, "wasm::wasm_int64_mul_wide_u_wrapper")     \
   IF_WASM(V, wasm_word64_ctz, "wasm::word64_ctz")                              \
   IF_WASM(V, wasm_word64_popcnt, "wasm::word64_popcnt")                        \
   IF_WASM(V, wasm_f64x2_ceil, "wasm::f64x2_ceil_wrapper")                      \
@@ -369,7 +382,7 @@ enum class IsolateFieldId : uint8_t;
   IF_WASM(V, wasm_array_fill, "wasm::array_fill")                              \
   IF_WASM(V, wasm_string_to_f64, "wasm_string_to_f64")                         \
   IF_WASM(V, wasm_atomic_notify, "wasm_atomic_notify")                         \
-  IF_WASM(V, wasm_managed_object_notify, "wasm_managed_object_notify")         \
+  IF_WASM(V, wasm_waitqueue_notify, "wasm_waitqueue_notify")                   \
   IF_WASM(V, wasm_WebAssemblyCompile, "wasm::WebAssemblyCompile")              \
   IF_WASM(V, wasm_WebAssemblyException, "wasm::WebAssemblyException")          \
   IF_WASM(V, wasm_WebAssemblyExceptionGetArg,                                  \
@@ -424,7 +437,7 @@ enum class IsolateFieldId : uint8_t;
   V(address_of_wasm_i16x8_splat_0x0001, "wasm_16x8_splat_0x0001")              \
   V(address_of_wasm_f64x2_convert_low_i32x4_u_int_mask,                        \
     "wasm_f64x2_convert_low_i32x4_u_int_mask")                                 \
-  V(supports_wasm_simd_128_address, "wasm::supports_wasm_simd_128_address")    \
+  V(supports_simd_128_address, "CpuFeatures::supports_simd_128_address")       \
   V(address_of_wasm_double_2_power_52, "wasm_double_2_power_52")               \
   V(address_of_wasm_int32_max_as_double, "wasm_int32_max_as_double")           \
   V(address_of_wasm_uint32_max_as_double, "wasm_uint32_max_as_double")         \
@@ -495,11 +508,16 @@ enum class IsolateFieldId : uint8_t;
   V(re_atom_exec_raw, "RegExp::AtomExecRaw")                                   \
   V(allocate_regexp_result_vector, "regexp::ResultVector::Allocate")           \
   V(free_regexp_result_vector, "regexp::ResultVector::Free")                   \
+  EXTERNAL_REFERENCE_LIST_REGEXP_DIAGNOSTICS(V)                                \
   V(typed_array_and_rab_gsab_typed_array_elements_kind_shifts,                 \
     "TypedArrayAndRabGsabTypedArrayElementsKindShifts")                        \
   V(typed_array_and_rab_gsab_typed_array_elements_kind_sizes,                  \
     "TypedArrayAndRabGsabTypedArrayElementsKindSizes")                         \
   V(allocate_buffer, "AllocateBuffer")                                         \
+  V(compare_operation_feedback_transition_table,                               \
+    "compare_operation_feedback_transition_table")                             \
+  V(compare_operation_feedback_encode_table,                                   \
+    "compare_operation_feedback_encode_table")                                 \
   EXTERNAL_REFERENCE_LIST_INTL(V)                                              \
   EXTERNAL_REFERENCE_LIST_SANDBOX(V)                                           \
   EXTERNAL_REFERENCE_LIST_CET_SHADOW_STACK(V)

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import {renderElementIntoDOM} from '../../../testing/DOMHelpers.js';
 import * as UI from '../../legacy/legacy.js';
 import * as Lit from '../../lit/lit.js';
@@ -320,7 +322,7 @@ describe('Tooltip', () => {
   const eventsNotToPropagate = ['click', 'mouseup'];
 
   eventsNotToPropagate.forEach(eventName => {
-    it('should stop propagation of click events', () => {
+    it(`should stop propagation of ${eventName} events`, () => {
       const container = renderTooltip();
       const callback = sinon.spy();
       container.addEventListener(eventName, callback);
@@ -333,7 +335,7 @@ describe('Tooltip', () => {
     });
   });
 
-  it('should print a warning if rich tooltip is used with wrong aria label on anchor', () => {
+  it('should print a warning if rich tooltip is defined without aria-details', () => {
     const consoleSpy = sinon.stub(console, 'warn');
     renderTooltip({variant: 'rich'});
     sinon.assert.calledOnce(consoleSpy);

@@ -57,21 +57,26 @@ class BrowserAutofillManagerTestApi : public AutofillManagerTestApi {
     manager_->bnpl_manager_ = std::move(bnpl_manager);
   }
 
+  void set_autofill_ai_access_manager(
+      std::unique_ptr<AutofillAiAccessManager> manager) {
+    manager_->autofill_ai_access_manager_ = std::move(manager);
+  }
+
   void OnFormProcessed(const FormData& form,
                        const FormStructure& form_structure) {
     manager_->OnFormProcessed(form, form_structure);
   }
 
   void OnIndividualSuggestionsGenerated(
-      const FormGlobalId& form_id,
-      const FieldGlobalId& field_id,
+      const FormData& form,
+      const FormFieldData& field,
       AutofillSuggestionTriggerSource trigger_source,
       SuggestionsContext context,
       base::TimeTicks suggestion_generation_start_time,
       std::vector<SuggestionGenerator::ReturnedSuggestions>
           returned_suggestions) {
     manager_->OnIndividualSuggestionsGenerated(
-        form_id, field_id, trigger_source, std::move(context),
+        form, field, trigger_source, std::move(context),
         suggestion_generation_start_time, std::move(returned_suggestions));
   }
 
@@ -86,17 +91,12 @@ class BrowserAutofillManagerTestApi : public AutofillManagerTestApi {
     manager_->form_filler_ = std::move(form_filler);
   }
 
-  std::vector<Suggestion> GetProfileSuggestions(
-      const FormData& form,
-      const FormFieldData& field,
-      std::optional<std::string> plus_address_override = std::nullopt) {
-    FormStructure* form_structure;
-    AutofillField* autofill_field;
-    CHECK(manager_->GetCachedFormAndField(form.global_id(), field.global_id(),
-                                          &form_structure, &autofill_field));
+  std::vector<Suggestion> GetProfileSuggestions(const FormData& form,
+                                                const FormFieldData& field) {
+    auto [form_structure, autofill_field] =
+        manager_->GetCachedFormAndField(form.global_id(), field.global_id());
     return manager_->GetProfileSuggestions(
         form, CHECK_DEREF(form_structure), field, CHECK_DEREF(autofill_field),
-        std::move(plus_address_override),
         mojom::AutofillSuggestionTriggerSource::kFormControlElementClicked);
   }
 

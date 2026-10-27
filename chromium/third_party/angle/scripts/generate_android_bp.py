@@ -32,7 +32,7 @@ BLUEPRINT_COMMENT_PROPERTY = '__android_bp_comment'
 
 CURRENT_SDK_VERSION = 'current'
 MIN_SDK_VERSION = '28'
-TARGET_SDK_VERSION = '35'
+TARGET_SDK_VERSION = '37'
 STL = 'libc++_static'
 
 ABI_ARM = 'arm'
@@ -1179,7 +1179,6 @@ def main():
         'optimize': {
             'enabled': True,
             'shrink': True,
-            'proguard_compatibility': False,
         },
         'asset_dirs': ['src/android_system_settings/assets',],
     }))
@@ -1212,7 +1211,6 @@ def main():
         'optimize': {
             'enabled': True,
             'shrink': True,
-            'proguard_compatibility': False,
         },
         'asset_dirs': ['src/android_system_settings/assets',],
     }))

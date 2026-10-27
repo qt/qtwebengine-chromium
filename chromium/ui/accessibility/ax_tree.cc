@@ -1195,8 +1195,9 @@ std::set<AXNodeID> AXTree::GetNodeIdsForChildTreeId(
 
 const std::set<AXTreeID> AXTree::GetAllChildTreeIds() const {
   std::set<AXTreeID> result;
-  for (auto entry : child_tree_id_reverse_map_)
-    result.insert(entry.first);
+  for (const auto& [child_tree_id, _] : child_tree_id_reverse_map_) {
+    result.insert(child_tree_id);
+  }
   return result;
 }
 
@@ -2890,8 +2891,8 @@ void AXTree::ComputeSetSizePosInSetAndCache(const AXNode& node,
   // Iterate over all items from OrderedSetItemsMap to compute and cache each
   // ordered set item's PosInSet and SetSize and corresponding ordered set
   // container's SetSize.
-  for (auto& element : items_map_to_be_populated.items_map_) {
-    for (const OrderedSetContent& ordered_set_content : element.second) {
+  for (const auto& [_, sets_list] : items_map_to_be_populated.items_map_) {
+    for (const OrderedSetContent& ordered_set_content : sets_list) {
       ComputeSetSizePosInSetAndCacheHelper(ordered_set_content);
     }
   }
@@ -3085,6 +3086,20 @@ std::optional<int> AXTree::GetSetSize(const AXNode& node) {
       node_set_size_pos_in_set_info_map_[node.id()].set_size =
           controlled_item_set_size;
       return controlled_item_set_size;
+    }
+
+    // We want screen readers to announce buttons that pop up a menulist as
+    // pop up buttons. That means exposing their role to kPopUpButton. But
+    // for elements with the kPopUpButton role that aren't linked
+    // to their popups (via aria-controls), the set size calculation returns 0.
+    // <menulist>s aren't linked to their invoker buttons, and we don't want the
+    // invoker buttons to have a setsize anyway, so just return null here,
+    // making the <menulist>-invoking buttons have a setsize property at all.
+    // Unlinked explicit popup buttons get caught here too, but exposing no
+    // setsize for <button aria-haspopup="menu">button</button> seems fine.
+    if (node.GetRole() == ax::mojom::Role::kPopUpButton) {
+      node_set_size_pos_in_set_info_map_[node.id()].set_size = std::nullopt;
+      return std::nullopt;
     }
   }
 

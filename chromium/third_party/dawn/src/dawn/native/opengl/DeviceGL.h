@@ -34,17 +34,18 @@
 #include <utility>
 #include <vector>
 
-#include "dawn/common/MutexProtected.h"
-#include "dawn/common/Platform.h"
-#include "dawn/native/Device.h"
-#include "dawn/native/ExecutionQueue.h"
-#include "dawn/native/QuerySet.h"
-#include "dawn/native/dawn_platform.h"
-#include "dawn/native/opengl/ContextEGL.h"
-#include "dawn/native/opengl/EGLFunctions.h"
-#include "dawn/native/opengl/Forward.h"
-#include "dawn/native/opengl/GLFormat.h"
-#include "dawn/native/opengl/OpenGLFunctions.h"
+#include "src/dawn/common/MutexProtected.h"
+#include "src/dawn/native/Device.h"
+#include "src/dawn/native/ExecutionQueue.h"
+#include "src/dawn/native/QuerySet.h"
+#include "src/dawn/native/dawn_platform.h"
+#include "src/dawn/native/opengl/ContextEGL.h"
+#include "src/dawn/native/opengl/EGLFunctions.h"
+#include "src/dawn/native/opengl/Forward.h"
+#include "src/dawn/native/opengl/GLFormat.h"
+#include "src/dawn/native/opengl/OpenGLFunctions.h"
+#include "src/utils/compiler.h"
+#include "src/utils/platform.h"
 
 namespace dawn::native {
 class AHBFunctions;
@@ -156,10 +157,10 @@ class Device final : public DeviceBase {
 
         // Call is deferred; must copy data.
         auto* d = static_cast<const char*>(data);
-        return EnqueueGL(
-            [data = std::vector<char>(d, d + size), work](const OpenGLFunctions& gl) -> MaybeError {
-                return work(gl, data.data(), data.size());
-            });
+        return EnqueueGL([data = std::vector<char>(d, DAWN_UNSAFE_TODO(d + size)),
+                          work](const OpenGLFunctions& gl) -> MaybeError {
+            return work(gl, data.data(), data.size());
+        });
     }
 
     // Flush any pending GL commands enqueued via EnqueueGL().

@@ -15,8 +15,8 @@ namespace password_manager {
 StubPasswordManagerDriver::StubPasswordManagerDriver() = default;
 StubPasswordManagerDriver::~StubPasswordManagerDriver() = default;
 
-int StubPasswordManagerDriver::GetId() const {
-  return 0;
+DriverId StubPasswordManagerDriver::GetId() const {
+  return DriverId(1);
 }
 
 void StubPasswordManagerDriver::PropagateFillDataOnParsingCompletion(
@@ -84,6 +84,11 @@ StubPasswordManagerDriver::GetPasswordAutofillManager() {
   return nullptr;
 }
 
+autofill::PasswordManagerDelegate*
+StubPasswordManagerDriver::GetPasswordManagerDelegate() {
+  return nullptr;
+}
+
 bool StubPasswordManagerDriver::IsDirectChildOfPrimaryMainFrame() const {
   return false;
 }
@@ -101,7 +106,7 @@ bool StubPasswordManagerDriver::CanShowAutofillUi() const {
 }
 
 int StubPasswordManagerDriver::GetFrameId() const {
-  return GetId();
+  return GetId().GetUnsafeValue();
 }
 
 const GURL& StubPasswordManagerDriver::GetLastCommittedURL() const {
@@ -110,6 +115,10 @@ const GURL& StubPasswordManagerDriver::GetLastCommittedURL() const {
 
 const url::Origin& StubPasswordManagerDriver::GetLastCommittedOrigin() const {
   return opaque_origin_;
+}
+
+bool StubPasswordManagerDriver::HasCrossOriginAncestor() const {
+  return false;
 }
 
 gfx::RectF StubPasswordManagerDriver::TransformToRootCoordinates(

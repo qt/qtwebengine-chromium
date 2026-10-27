@@ -169,7 +169,7 @@ bool IsRightToLeft(const CPDF_TextObject& text_obj) {
   for (size_t i = 0; i < nItems; ++i) {
     CPDF_TextObject::Item item = text_obj.GetItemInfo(i);
     WideString unicode = font->UnicodeFromCharCode(item.char_code_);
-    wchar_t wChar = !unicode.IsEmpty() ? unicode[0] : 0;
+    wchar_t wChar = unicode.Front();  // Front() safe when empty.
     if (wChar == 0) {
       wChar = item.char_code_;
     }
@@ -309,8 +309,13 @@ CFX_FloatRect GetLooseBounds(const CPDF_TextPage::CharInfo& charinfo) {
       return char_box;
     }
 
-    const int ascent = font->GetTypeAscent();
-    const int descent = font->GetTypeDescent();
+    int ascent = font->GetTypeAscent();
+    int descent = font->GetTypeDescent();
+    const FX_RECT& font_bbox = font->GetFontBBox();
+    if (font_bbox.top > font_bbox.bottom) {
+      ascent = std::min(ascent, font_bbox.top);
+      descent = std::max(descent, font_bbox.bottom);
+    }
     if (ascent != descent) {
       // Compute `left` and `right` based on the individual character's `width`.
       float width = text_object->GetCharWidth(charinfo.char_code());
@@ -1218,7 +1223,7 @@ CPDF_TextPage::GenerateCharacter CPDF_TextPage::ProcessInsertObject(
     unicode += static_cast<wchar_t>(item.char_code_);
   }
 
-  wchar_t curChar = unicode[0];
+  wchar_t curChar = unicode.Front();
   if (WritingMode == TextOrientation::kHorizontal) {
     if (EndHorizontalLine(this_rect, prev_rect)) {
       return IsHyphen(curChar) ? GenerateCharacter::kHyphen
@@ -1346,7 +1351,7 @@ bool CPDF_TextPage::ProcessGenerateCharacter(GenerateCharacter type,
         if (unicode.IsEmpty()) {
           unicode += static_cast<wchar_t>(item.char_code_);
         }
-        wchar_t curChar = unicode[0];
+        wchar_t curChar = unicode.Front();
         if (IsHyphenCode(curChar)) {
           return false;
         }

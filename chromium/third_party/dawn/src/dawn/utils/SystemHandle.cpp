@@ -29,11 +29,11 @@
 
 #include <utility>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/Log.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/Log.h"
 
 #if DAWN_PLATFORM_IS(WINDOWS)
-#include "dawn/common/windows_with_undefs.h"
+#include "src/utils/windows_with_undefs.h"
 #elif DAWN_PLATFORM_IS(FUCHSIA)
 #include <zircon/syscalls.h>
 #elif DAWN_PLATFORM_IS(POSIX)
@@ -55,13 +55,15 @@ inline bool IsHandleValid(HANDLE handle) {
 inline HANDLE DuplicateHandle(HANDLE handle) {
     HANDLE currentProcess = ::GetCurrentProcess();
     HANDLE outHandle;
-    DAWN_CHECK(::DuplicateHandle(currentProcess, handle, currentProcess, &outHandle, 0, FALSE,
-                                 DUPLICATE_SAME_ACCESS));
+    bool success = ::DuplicateHandle(currentProcess, handle, currentProcess, &outHandle, 0, FALSE,
+                                     DUPLICATE_SAME_ACCESS);
+    DAWN_CHECK(success);
     return outHandle;
 }
 
 inline void CloseHandle(HANDLE handle) {
-    DAWN_CHECK(::CloseHandle(handle));
+    bool success = ::CloseHandle(handle);
+    DAWN_CHECK(success);
 }
 
 #elif DAWN_PLATFORM_IS(FUCHSIA)
@@ -74,12 +76,14 @@ inline bool IsHandleValid(zx_handle_t handle) {
 
 inline zx_handle_t DuplicateHandle(zx_handle_t handle) {
     zx_handle_t outHandle = ZX_HANDLE_INVALID;
-    DAWN_CHECK(zx_handle_duplicate(handle, ZX_RIGHT_SAME_RIGHTS, &outHandle) == ZX_OK);
+    auto status = zx_handle_duplicate(handle, ZX_RIGHT_SAME_RIGHTS, &outHandle);
+    DAWN_CHECK(status == ZX_OK);
     return outHandle;
 }
 
 inline void CloseHandle(zx_handle_t handle) {
-    DAWN_CHECK(zx_handle_close(handle) == ZX_OK);
+    auto status = zx_handle_close(handle);
+    DAWN_CHECK(status == ZX_OK);
 }
 
 #elif DAWN_PLATFORM_IS(POSIX)
@@ -97,7 +101,8 @@ inline int DuplicateHandle(int handle) {
 }
 
 inline void CloseHandle(int handle) {
-    DAWN_CHECK(close(handle) >= 0);
+    int status = close(handle);
+    DAWN_CHECK(status >= 0);
 }
 
 #endif

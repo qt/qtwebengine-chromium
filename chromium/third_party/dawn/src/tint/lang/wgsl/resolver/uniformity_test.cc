@@ -7915,6 +7915,87 @@ test:5:13 note: reading from read_write storage buffer 'v' may result in a non-u
 )");
 }
 
+TEST_F(UniformityAnalysisTest, VectorSwizzleAssignment_FullSwizzle_UniformPromotion) {
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> v_rw : vec3<i32>;
+@group(0) @binding(1) var<storage> v_u : vec3<i32>;
+
+fn foo() {
+  var x = v_rw;
+  x.xyz = v_u;
+  if (x.x == 0) {
+    workgroupBarrier();
+  }
+}
+)";
+
+    RunTest(src, true);
+}
+
+TEST_F(UniformityAnalysisTest, VectorSwizzleAssignment_FullPermutation_UniformPromotion) {
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> v_rw : vec3<i32>;
+@group(0) @binding(1) var<storage> v_u : vec3<i32>;
+
+fn foo() {
+  var x = v_rw;
+  x.zyx = v_u;
+  if (x.x == 0) {
+    workgroupBarrier();
+  }
+}
+)";
+
+    RunTest(src, true);
+}
+
+TEST_F(UniformityAnalysisTest, VectorSwizzleAssignment_Chained_FullSwizzle_UniformPromotion) {
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> v_rw : vec3<i32>;
+@group(0) @binding(1) var<storage> v_u : vec3<i32>;
+
+fn foo() {
+  var x = v_rw;
+  x.xyz.yxz = v_u;
+  if (x.x == 0) {
+    workgroupBarrier();
+  }
+}
+)";
+
+    RunTest(src, true);
+}
+
+TEST_F(UniformityAnalysisTest, VectorSwizzleAssignment_PartialSwizzle_NoUniformPromotion) {
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> v_rw : vec3<i32>;
+@group(0) @binding(1) var<storage> v_u : vec2<i32>;
+
+fn foo() {
+  var x = v_rw;
+  x.xy = v_u;
+  if (x.x == 0) {
+    workgroupBarrier();
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:9:5 error: 'workgroupBarrier' must only be called from uniform control flow
+    workgroupBarrier();
+    ^^^^^^^^^^^^^^^^
+
+test:8:3 note: control flow depends on possibly non-uniform value
+  if (x.x == 0) {
+  ^^
+
+test:6:11 note: reading from read_write storage buffer 'v_rw' may result in a non-uniform value
+  var x = v_rw;
+          ^^^^
+)");
+}
+
 TEST_F(UniformityAnalysisTest, VectorElement_BecomesNonUniform_BeforeCondition) {
     std::string src = R"(
 @group(0) @binding(0) var<storage, read_write> rw : i32;
@@ -9905,6 +9986,43 @@ test:7:12 note: reading from read_write storage buffer 'rw' may result in a non-
 )");
 }
 
+TEST_F(UniformityAnalysisTest,
+       ArrayElement_ElementBecomesUniform_ThroughCapturedPartialPointerLetChain) {
+    // For aggregate types, we conservatively consider them to be non-uniform once they
+    // become non-uniform. Test that after assigning a uniform value to an element through a
+    // pointer, the whole array is still considered to be non-uniform.
+    std::string src = R"(
+@group(0) @binding(0) var<storage, read_write> rw : i32;
+
+fn foo() {
+  var arr : array<i32, 4>;
+  let pa1 = &arr[2];
+  let pa2 = pa1;
+  let pa3 = pa2;
+  arr[1] = rw;
+  *pa3 = 42;
+  if (arr[1] == 0) {
+    workgroupBarrier();
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:12:5 error: 'workgroupBarrier' must only be called from uniform control flow
+    workgroupBarrier();
+    ^^^^^^^^^^^^^^^^
+
+test:11:3 note: control flow depends on possibly non-uniform value
+  if (arr[1] == 0) {
+  ^^
+
+test:9:12 note: reading from read_write storage buffer 'rw' may result in a non-uniform value
+  arr[1] = rw;
+           ^^
+)");
+}
+
 TEST_F(UniformityAnalysisTest, ArrayElement_ElementBecomesUniform_ThroughCapturedPointer) {
     // For aggregate types, we conservatively consider them to be non-uniform once they
     // become non-uniform. Test that after assigning a uniform value to an element through a
@@ -10223,6 +10341,43 @@ test:12:3 note: control flow depends on possibly non-uniform value
 test:10:17 note: reading from module-scope private variable 'non_uniform' may result in a non-uniform value
   let p = &(arr[non_uniform]);
                 ^^^^^^^^^^^
+)");
+}
+
+TEST_F(UniformityAnalysisTest,
+       ArrayElement_AssignUniformToDifferentElement_ViaPartialPointerParameter) {
+    std::string src = R"(
+var<private> non_uniform : i32;
+
+fn bar(p : ptr<function, i32>) {
+  *p = 0;
+}
+
+fn foo() {
+  var arr : array<i32, 4>;
+  arr[0] = non_uniform;
+
+  let p = &(arr[1]);
+  bar(p);
+  if (arr[0] == 0) {
+    workgroupBarrier();
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:15:5 error: 'workgroupBarrier' must only be called from uniform control flow
+    workgroupBarrier();
+    ^^^^^^^^^^^^^^^^
+
+test:14:3 note: control flow depends on possibly non-uniform value
+  if (arr[0] == 0) {
+  ^^
+
+test:10:12 note: reading from module-scope private variable 'non_uniform' may result in a non-uniform value
+  arr[0] = non_uniform;
+           ^^^^^^^^^^^
 )");
 }
 
@@ -13241,6 +13396,30 @@ test:15:11 note: reading from module-scope private variable 'non_uniform' may re
   var f = non_uniform;
           ^^^^^^^^^^^
 )");
+}
+
+TEST_F(UniformityAnalysisTest, AssignmentEval_LHS_BufferView) {
+    std::string src = R"(
+var<workgroup> b : buffer<128>;
+
+fn main() {
+  *bufferView<u32>(&b, 0) = 0;
+}
+)";
+
+    RunTest(src, true);
+}
+
+TEST_F(UniformityAnalysisTest, AssignmentEval_LHS_BufferArrayView) {
+    std::string src = R"(
+var<workgroup> b : buffer<128>;
+
+fn main() {
+  bufferArrayView<array<u32>>(&b, 0, 128)[0] = 0;
+}
+)";
+
+    RunTest(src, true);
 }
 
 class SubgroupUniformityTest : public UniformityAnalysisTestBase,

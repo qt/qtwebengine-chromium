@@ -15,6 +15,8 @@
 #   FFTW_LIBRARY            ... fftw library to use
 #   FFTW_INCLUDE_DIR        ... fftw include directory
 #
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 #If environment variable FFTWDIR is specified, it has same effect as FFTW_ROOT
 if( NOT FFTW_ROOT AND ENV{FFTWDIR} )

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 MatrixXd X = MatrixXd::Random(4, 4);
 MatrixXd A = X * X.transpose();
 cout << "Here is a random positive-definite matrix, A:" << endl << A << endl << endl;

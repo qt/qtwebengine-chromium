@@ -97,10 +97,10 @@ static int lcevc_metadata_handle_vui(AVBSFContext *bsf,
     if (ctx->chroma_sample_loc_type >= 0) {
         vui->chroma_loc_info_present_flag = 1;
         vui->chroma_sample_loc_type_top_field = ctx->chroma_sample_loc_type;
-        vui->chroma_sample_loc_type_top_field = ctx->chroma_sample_loc_type;
+        vui->chroma_sample_loc_type_bottom_field = ctx->chroma_sample_loc_type;
     }
 
-    err = ff_cbs_lcevc_add_process_block(ctx->common.output, au, position,
+    err = ff_cbs_lcevc_add_process_block(ctx->common.output, au, position + 1,
                                          LCEVC_PAYLOAD_TYPE_ADDITIONAL_INFO,
                                          ai, NULL);
     if (err < 0)

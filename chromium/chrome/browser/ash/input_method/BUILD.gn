@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
-
 assert(is_chromeos)
 
 static_library("input_method") {
@@ -187,11 +185,13 @@ static_library("input_method") {
   deps = [
     "//ash/constants",
     "//ash/keyboard/ui",
+    "//ash/strings",
     "//ash/webui/settings/public/constants:mojom",
     "//base:i18n",
     "//build:branding_buildflags",
     "//chrome/app:generated_resources",
     "//chrome/browser:browser_process",
+    "//chrome/browser:browser_process_platform_part",
     "//chrome/browser:resources",
     "//chrome/browser/ash/browser_delegate",
     "//chrome/browser/ash/file_manager",
@@ -201,6 +201,7 @@ static_library("input_method") {
     "//chrome/browser/feedback",
     "//chrome/browser/manta",
     "//chrome/browser/manta:impl",
+    "//chrome/browser/metrics",
     "//chrome/browser/profiles:profile_manager",
     "//chrome/browser/signin",
     "//chrome/browser/ui/aura/accessibility",
@@ -315,6 +316,7 @@ source_set("unit_tests") {
     "fake_suggestion_handler.h",
     "grammar_manager_unittest.cc",
     "grammar_service_client_unittest.cc",
+    "ime_service_connector_unittest.cc",
     "input_method_configuration_unittest.cc",
     "input_method_engine_unittest.cc",
     "input_method_manager_impl_unittest.cc",
@@ -344,7 +346,6 @@ source_set("unit_tests") {
     "//base",
     "//base:i18n",
     "//base/test:test_support",
-    "//chrome/app:generated_resources",
     "//chrome/browser",
     "//chrome/browser:global_features",
     "//chrome/browser/ash/browser_delegate:impl",
@@ -363,6 +364,7 @@ source_set("unit_tests") {
     "//chromeos/ash/components/editor_menu/public/cpp",
     "//chromeos/ash/components/language_preferences",
     "//chromeos/ash/components/login/session",
+    "//chromeos/ash/services/ime:constants",
     "//chromeos/ash/services/ime/public/cpp:structs",
     "//chromeos/ash/services/ime/public/mojom",
     "//chromeos/components/kiosk:test_support",

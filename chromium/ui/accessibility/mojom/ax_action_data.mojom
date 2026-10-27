@@ -18,7 +18,6 @@ struct AXActionData {
   // vice versa.
   int32 target_node_id;
   int32 request_id;
-  int32 flags;
   int32 anchor_node_id;
   int32 anchor_offset;
   int32 focus_node_id;
@@ -35,4 +34,6 @@ struct AXActionData {
   // Note that `target_role` should not be set if `target_node_id` is set, or
   // vice versa.
   ax.mojom.Role target_role = ax.mojom.Role.kUnknown;
+  map<ax.mojom.IntListAttribute, array<int32>> intlist_attributes;
+  map<ax.mojom.StringListAttribute, array<string>> stringlist_attributes;
 };

@@ -325,9 +325,6 @@
       <message name="IDS_ALWAYS" desc="Generic label for a user to select an always option">
         Always
       </message>
-      <message name="IDS_PROVIDED_BY_GOOGLE" desc="Generic label for something that comes from Google servers.">
-        Provided by Google
-      </message>
       <message name="IDS_TURN_ON" desc="Generic label for a user to turn">
         Turn on
       </message>
@@ -578,20 +575,17 @@
           =1 {Chrome will block cookies again tomorrow}
           other {# days until cookies are blocked again}}
       </message>
-      <message name="IDS_PAGE_INFO_COOKIES_SEND_FEEDBACK_DESCRIPTION" desc="Text asking the user for feedback on why they allowed third-party cookies for this particular site.">
-        Help us improve Chrome by telling us why you allowed third-party cookies. <ph name="BEGIN_LINK">&lt;link&gt;</ph>Send feedback<ph name="END_LINK">&lt;/link&gt;</ph>
-      </message>
       <message name="IDS_PAGE_INFO_COOKIES_PERMANENT_ALLOWED_TITLE" desc="A subtitle in the Page Info UI if cookies were allowed by the user and they won't be automatically blocked again the future.">
         You allowed third-party cookies on this site
-      </message>
-      <message name="IDS_PAGE_INFO_COOKIES_TRACKING_PROTECTION_PERMANENT_ALLOWED_DESCRIPTION" desc="Descriptive text in the page info third-party cookies subpage if the user is visiting a site on their third-party cookies allow list." formatter_data="android_java">
-        This means site features should work as expected, but you may have less browsing protection. <ph name="BEGIN_LINK">&lt;link&gt;</ph>Send feedback<ph name="END_LINK">&lt;/link&gt;</ph>
       </message>
       <message name="IDS_PAGE_INFO_COOKIES_SITE_NOT_WORKING_TITLE" desc="Label shown on a dialog that allows users to turn off third-party cookie blocking for a specific site.">
         Site not working?
       </message>
       <message name="IDS_PAGE_INFO_COOKIES_SITE_NOT_WORKING_DESCRIPTION_TRACKING_PROTECTION" desc="Descriptive text in the Page Info UI explaining the trade-off of temporarily allowing third-party cookies for this site, a change that will automatically expire in the future.">
         Try temporarily allowing third-party cookies, which means less browsing protection but site features are more likely to work as expected.
+      </message>
+      <message name="IDS_PAGE_INFO_COOKIES_SITE_NOT_WORKING_DESCRIPTION" desc="Descriptive text in the Page Info UI explaining the trade-off of allowing third-party cookies for the current site.">
+        Try allowing third-party cookies, which means less browsing protection but site features are more likely to work as expected.
       </message>
       <message name="IDS_PAGE_INFO_COOKIES_SUBTITLE_ALLOWED" desc="Description text in the Page Info dialog to indicate that third-party cookies are allowed on this site.">
         Third-party cookies allowed
@@ -719,9 +713,6 @@
       <message name="IDS_BOOKMARKS_BAR_EMPTY_MESSAGE" desc="Message shown in a popup menu when a bookmarks bar folder is opened and contains no bookmarks.">
         This folder is empty
       </message>
-      <message name="IDS_BOOKMARKS_BAR_IPH_MESSAGE" desc="IPH text bubble encouraging users to turn on the bookmarks bar in settings.">
-        You can turn on the bookmarks bar in Settings > Appearance
-      </message>
       <!-- USB -->
       <message name="IDS_CONNECTED_TO_USB_DEVICE_NOTIFICATION_TITLE" desc="Text to be shown as a notification when a website is connected to a USB device.">
         Connected to a USB device
@@ -837,8 +828,14 @@
       <message name="IDS_CONTACTS_PICKER_SELECT_CONTACTS" desc="The label at the top of the dialog that allows users to select contacts from their device and share the details with a web page.">
         Select contacts
       </message>
+      <message name="IDS_CONTACTS_PICKER_SHARE_CONTACTS" desc="The label at the top of the dialog that allows users to review the contacts and details to be shared with a web page.">
+        Share contacts
+      </message>
       <message name="IDS_CONTACTS_PICKER_SELECT_CONTACT" desc="The label at the top of the dialog that allows users to select a single contact from their device and share the details with a web page.">
         Select a contact
+      </message>
+      <message name="IDS_CONTACTS_PICKER_SHARE_CONTACT" desc="The label at the top of the dialog that allows users to review a single contact and details to be shared with a web page.">
+        Share a contact
       </message>
       <message name="IDS_CONTACTS_PICKER_ALL_CONTACTS" desc="The label associated with the select all checkbox, indicating that all the contacts will be selected.">
         All contacts
@@ -1222,9 +1219,6 @@
       </message>
 
       <!-- Educational tip module strings -->
-      <message name="IDS_EDUCATIONAL_TIP_MODULE_TITLE" desc="Title of the educational tip module on NTP.">
-        Chrome Tips
-      </message>
       <message name="IDS_EDUCATIONAL_TIP_MODULE_NAME" desc="The string that is shown in settings to customize whether the educational tip card should be enabled.">
         Chrome tips
       </message>
@@ -1260,6 +1254,15 @@
       </message>
       <message name="IDS_EDUCATIONAL_TIP_TAB_GROUP_SYNC_DESCRIPTION" desc="Description of the Tab group promo in the educational tip module on NTP.">
         You’ll find your groups in the tab group section across all your devices
+      </message>
+      <message name="IDS_EDUCATIONAL_TIP_NTP_THEME_TITLE" desc="Title of the NTP theme promo in the educational tip module on NTP.">
+        Customize your homepage
+      </message>
+      <message name="IDS_EDUCATIONAL_TIP_NTP_THEME_DESCRIPTION" desc="Description of the NTP theme promo in the educational tip module on NTP.">
+        Make Chrome your own with custom colors and images for your homepage
+      </message>
+      <message name="IDS_EDUCATIONAL_TIP_NTP_THEME_PROMO_BUTTON" desc="Text on the clickable button for the ntp theme promo in the Educational tip module on NTP.">
+        Try it now
       </message>
       <message name="IDS_EDUCATIONAL_TIP_QUICK_DELETE_TITLE" desc="Title of the quick delete promo in the educational tip module on NTP.">
         Manage your browsing data
@@ -1305,15 +1308,6 @@
       </message>
       <message name="IDS_EDUCATIONAL_TIP_HISTORY_SYNC_BUTTON_LETS_GO" desc="Text on the clickable button on the history sync promo that invites users to turn on history sync in the educational tip module on NTP.">
         Let’s go
-      </message>
-      <message name="IDS_EDUCATIONAL_TIP_TIPS_NOTIFICATIONS_TITLE" desc="Title of the tips notifications promo that invites users to turn on tips notifications in the educational tip module on NTP.">
-        Get Chrome tips notifications
-      </message>
-      <message name="IDS_EDUCATIONAL_TIP_TIPS_NOTIFICATIONS_DESCRIPTION" desc="Description of the tips notifications promo that invites users to turn on tips notifications in the educational tip module on NTP.">
-        Turn on notifications for useful tips to help you get the best of Chrome
-      </message>
-      <message name="IDS_EDUCATIONAL_TIP_TIPS_NOTIFICATIONS_BUTTON" desc="Text on the clickable button on the tips notifications promo that invites users to turn on tips notifications in the educational tip module on NTP.">
-        Notify me
       </message>
 
       <!-- Setup List strings -->
@@ -1466,6 +1460,9 @@
       <message name="IDS_NTP_CUSTOMIZATION_SUBTITLE" desc="Subtitle of the new tab page customization bottom sheet">
         Quickly get to what matters to you
       </message>
+      <message name="IDS_NTP_CUSTOMIZATION_MORE_OPTIONS_TITLE" desc="Title of more colors and options section on the new tab page customization bottom sheet">
+        More colors &amp; options
+      </message>
       <message name="IDS_NTP_CUSTOMIZATION_MVT_SETTINGS_TITLE" desc="the title of the bottom sheet to customize the most visited tiles section on the new tab page">
         My shortcuts
       </message>
@@ -1474,6 +1471,18 @@
       </message>
       <message name="IDS_NTP_CUSTOMIZATION_THEME_TITLE" desc="Open setting page for NTP appearance customization when clicked">
         Appearance
+      </message>
+      <message name="IDS_NTP_CUSTOMIZATION_THEME_TIP_TITLE" desc="Title for the NTP theme tip bottom sheet.">
+        Now you can customize your homepage
+      </message>
+      <message name="IDS_NTP_CUSTOMIZATION_THEME_TIP_DESCRIPTION" desc="Description for the NTP theme tip bottom sheet.">
+        Make Chrome your own by choosing a custom theme
+      </message>
+      <message name="IDS_NTP_CUSTOMIZATION_THEME_TIP_CUSTOMIZE_BUTTON" desc="Button text for the NTP theme tip bottom sheet to go to customization.">
+        Customize my homepage
+      </message>
+      <message name="IDS_NTP_CUSTOMIZATION_THEME_SNACKBAR_TEXT" desc="A notification snackbar message advising the user that they can customize their homepage later from the three dots menu.">
+        Edit your homepage later via the 3-dots menu.
       </message>
       <message name="IDS_NTP_CUSTOMIZATION_MAIN_BOTTOM_SHEET_OPENED_FULL" desc="Accessibility string that describes the new tab page customization main bottom sheet is fully opened.">
         Customize your new tab page bottom sheet opened at full height
@@ -1513,6 +1522,12 @@
       </message>
       <message name="IDS_NTP_CUSTOMIZATION_MAIN_BOTTOM_SHEET_CLOSED" desc="Accessibility string that describes a new tab page customization bottom sheet is closed">
         Customize your new tab page bottom sheet closed
+      </message>
+      <message name="IDS_NTP_CUSTOMIZATION_THEME_TIP_BOTTOM_SHEET_OPENED_FULL" desc="Accessibility string that describes the new tab page customization theme tip bottom sheet is fully opened.">
+        Customize your homepage promo bottom sheet opened at full height
+      </message>
+      <message name="IDS_NTP_CUSTOMIZATION_THEME_TIP_BOTTOM_SHEET_OPENED_HALF" desc="Accessibility string that describes the new tab page customization theme tip bottom sheet is fully opened.">
+        Customize your homepage promo bottom sheet opened at half height
       </message>
       <message name="IDS_NTP_CUSTOMIZATION_FEED_SWITCH_DESCRIPTION" desc="Title of the list items in the new tab page customization discover feed bottom sheet">
         Get suggested articles on the New Tab page
@@ -1665,6 +1680,11 @@
       </message>
       <message name="IDS_JAVASCRIPT_OPTIMIZER_DISABLED_DUE_TO_ADVANCED_PROTECTION_SETTINGS_MESSAGE" desc="Message displayed in Javascript-Optimizer site-settings page to inform user that Javascript-Optimizer toggle is disabled because Android Advanced Protection was enabled in Android OS Settings.">
         This setting is disabled because you turned on Advanced Protection in Android Settings.
+      </message>
+      <message name="IDS_OFFLINE_ITEMS_TRUNCATED" desc="Toast message shown when only some items could be loaded due to low memory. The first placeholder is the number of items shown, and the second is the total number of items. [ICU Syntax]">
+        {LOADED_COUNT, plural,
+          =1 {Showing 1 of {TOTAL_COUNT} items due to low memory}
+          other {Showing # of {TOTAL_COUNT} items due to low memory}}
       </message>
     </messages>
   </release>

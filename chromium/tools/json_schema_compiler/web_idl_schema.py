@@ -38,6 +38,10 @@ finally:
 
 IDLNode = idl_node.IDLNode  # Used for type hints.
 
+# Currently we only explicitly support these buffer source types, but more could
+# be added here if there was a use case for them.
+_SUPPORTED_BUFFER_SOURCE_TYPES = ['ArrayBuffer', 'Uint8Array']
+
 
 class SchemaCompilerError(Exception):
 
@@ -156,8 +160,8 @@ def AddEventOptionsExtendedAttributes(node: IDLNode, properties: dict):
 
   Extracts extended attributes that are only specific to Event definitions.
   TODO(crbug.com/487746350): Add support for declarative event related
-  properties (`supportsFilters`, `supportsListeners`, `supportsRules`) to this
-  function as required for WebIDL schema conversions.
+  properties (`supportsListeners`, `supportsRules`) to this function as
+  required for WebIDL schema conversions.
 
   Args:
     node: The IDLNode to look for the extended attributes on.
@@ -167,6 +171,11 @@ def AddEventOptionsExtendedAttributes(node: IDLNode, properties: dict):
     if 'options' not in properties:
       properties['options'] = {}
     properties['options']['maxListeners'] = int(value)
+
+  if HasExtendedAttribute(node, 'supportsFilters'):
+    if 'options' not in properties:
+      properties['options'] = {}
+    properties['options']['supportsFilters'] = True
 
 
 def _ExtractNodeComment(node: IDLNode) -> str:
@@ -409,9 +418,9 @@ class Type():
     elif type_details.IsA('Typeref'):
       # Some common types don't actually have a custom class backing them and
       # are just Typerefs with a string name.
-      if type_details.GetName() == 'ArrayBuffer':
+      if type_details.GetName() in _SUPPORTED_BUFFER_SOURCE_TYPES:
         properties['type'] = 'binary'
-        properties['isInstanceOf'] = 'ArrayBuffer'
+        properties['isInstanceOf'] = type_details.GetName()
       else:
         # Other Typerefs will either be referencing a custom type defined as a
         # Dictionary/Enum or a function defined as a Callback in the schema
@@ -700,31 +709,45 @@ class Operation:
     # Return type processing.
     return_type = FunctionReturn(
         self.node, description_data.parameter_descriptions).Process()
-    if 'type' in return_type and return_type['type'] is UndefinedType:
-      # This is an Undefined return, so we don't add anything.
-      pass
-    # If no type was specified but there is a parameters property, we can infer
-    # this is a promise definition for an asynchronous return.
-    elif 'type' not in return_type and 'parameters' in return_type:
-      # TODO(tjudkins): The optionality of the callback is only relevant for
-      # contexts that don't support promise based calls and for the few
-      # functions which don't support promise based calls, as the callback is
-      # always inherently optional when using a promise based call instead. It
-      # would be nice to just get rid of the 'optional' property here and always
-      # treat it as optional when we remove the context restrictions for promise
-      # based calls.
-      if not HasExtendedAttribute(self.node, 'requiredCallback'):
-        return_type['optional'] = True
-      # For legacy reasons Promise based returns are represented on a
-      # "returns_async" property.
-      # TODO(crbug.com/428187556): Once we've migrated schemas to WebIDL, we
-      # should be able to just use the 'returns' field with 'type' = 'promise'
-      # instead of the 'returns_async' property.
-      properties['returns_async'] = return_type
+
+    # A few functions with asynchronous returns don't support promises and
+    # instead use a trailing callback parameter. We need to pop this off and put
+    # it into the `returns_async` field.
+    # Note: We only do this for normal Operation definitions which are not
+    # marked with the `trailingCallbackIsFunctionParameter` extended attribute.
+    if (self.node.GetClass() == 'Operation' and not HasExtendedAttribute(
+        self.node, 'trailingCallbackIsFunctionParameter')
+        and len(parameters) > 0 and parameters[-1].get('type') == 'function'):
+      # Pop the callback from the parameters and format it as returns_async.
+      returns_async = parameters.pop()
+      returns_async.pop('type')
+      returns_async['does_not_support_promises'] = True
+
+      properties['returns_async'] = returns_async
+
+      # Add any synchronous return if it's not Undefined for functions with both
+      # a synchronous and asynchronous return.
+      if 'type' not in return_type or return_type['type'] is not UndefinedType:
+        properties['returns'] = return_type
+
+    # Otherwise we process the returns/returns_async normally.
     else:
-      # Otherwise this is a typed return using either the 'type' key or '$ref'
-      # key to reference the underlying type.
-      properties['returns'] = return_type
+      if 'type' in return_type and return_type['type'] is UndefinedType:
+        # This is an Undefined return, so we don't add anything.
+        pass
+      # If no type was specified but there is a parameters property, we can
+      # infer this is a promise definition for an asynchronous return.
+      elif 'type' not in return_type and 'parameters' in return_type:
+        # For legacy reasons Promise based returns are represented on a
+        # "returns_async" property.
+        # TODO(crbug.com/428187556): Once we've migrated schemas to WebIDL, we
+        # should be able to just use the 'returns' field with 'type' = 'promise'
+        # instead of the 'returns_async' property.
+        properties['returns_async'] = return_type
+      else:
+        # Otherwise this is a typed return using either the 'type' key or '$ref'
+        # key to reference the underlying type.
+        properties['returns'] = return_type
 
     return properties
 
@@ -1096,7 +1119,7 @@ class IDLSchema:
       namespace_node = GetChildWithName(self.idl, 'ExtensionManifest')
       if namespace_node is None or namespace_node.GetClass() != 'Dictionary':
         raise SchemaCompilerError(
-            'Schema must contain either a paritial Browser interface (for '
+            'Schema must contain either a partial Browser interface (for '
             'APIs) or a partial ExtensionManifest dictionary (for manifest '
             'stubs).', self.idl)
 

@@ -1,7 +1,12 @@
 // Benchmarks for Eigen Tensor morphing operations: reshape, slice, chip, pad, stride.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
+#define EIGEN_USE_THREADS
 
 #include <benchmark/benchmark.h>
-#include <unsupported/Eigen/CXX11/Tensor>
+#include <unsupported/Eigen/Tensor>
+#include <unsupported/Eigen/ThreadPool>
 
 using namespace Eigen;
 
@@ -107,36 +112,90 @@ static void BM_Stride(benchmark::State& state) {
   state.SetBytesProcessed(state.iterations() * outM * outN * sizeof(Scalar));
 }
 
-static void MorphSizes(::benchmark::Benchmark* b) {
-  for (int size : {256, 1024}) {
-    b->Args({size, size});
+// --- ThreadPool variants ---
+
+static void BM_Slice_ThreadPool(benchmark::State& state) {
+  const int M = state.range(0);
+  const int N = state.range(1);
+  const int threads = state.range(2);
+
+  Tensor<Scalar, 2> A(M, N);
+  A.setRandom();
+
+  int sliceM = M / 2;
+  int sliceN = N / 2;
+  Eigen::array<Index, 2> offsets = {0, 0};
+  Eigen::array<Index, 2> extents = {sliceM, sliceN};
+
+  ThreadPool tp(threads);
+  ThreadPoolDevice dev(&tp, threads);
+
+  Tensor<Scalar, 2> B(sliceM, sliceN);
+
+  for (auto _ : state) {
+    B.device(dev) = A.slice(offsets, extents);
+    benchmark::DoNotOptimize(B.data());
+    benchmark::ClobberMemory();
   }
+  state.SetBytesProcessed(state.iterations() * sliceM * sliceN * sizeof(Scalar));
+  state.counters["threads"] = threads;
 }
 
-static void ChipSizes(::benchmark::Benchmark* b) {
-  b->Args({32, 256, 256});
-  b->Args({64, 128, 128});
-  b->Args({8, 512, 512});
-}
+static void BM_Pad_ThreadPool(benchmark::State& state) {
+  const int M = state.range(0);
+  const int N = state.range(1);
+  const int threads = state.range(2);
 
-static void PadSizes(::benchmark::Benchmark* b) {
-  for (int size : {256, 1024}) {
-    for (int pad : {1, 4, 16}) {
-      b->Args({size, size, pad});
-    }
+  Tensor<Scalar, 2> A(M, N);
+  A.setRandom();
+
+  Eigen::array<std::pair<int, int>, 2> paddings;
+  paddings[0] = {4, 4};
+  paddings[1] = {4, 4};
+
+  int outM = M + 8;
+  int outN = N + 8;
+
+  ThreadPool tp(threads);
+  ThreadPoolDevice dev(&tp, threads);
+
+  Tensor<Scalar, 2> B(outM, outN);
+
+  for (auto _ : state) {
+    B.device(dev) = A.pad(paddings);
+    benchmark::DoNotOptimize(B.data());
+    benchmark::ClobberMemory();
   }
+  state.SetBytesProcessed(state.iterations() * outM * outN * sizeof(Scalar));
+  state.counters["threads"] = threads;
 }
 
-static void StrideSizes(::benchmark::Benchmark* b) {
-  for (int size : {256, 1024}) {
-    for (int stride : {2, 4}) {
-      b->Args({size, size, stride});
-    }
-  }
-}
+// clang-format off
+#define MORPH_SIZES \
+  ->Args({256, 256})->Args({1024, 1024})
 
-BENCHMARK(BM_Reshape)->Apply(MorphSizes);
-BENCHMARK(BM_Slice)->Apply(MorphSizes);
-BENCHMARK(BM_Chip)->Apply(ChipSizes);
-BENCHMARK(BM_Pad)->Apply(PadSizes);
-BENCHMARK(BM_Stride)->Apply(StrideSizes);
+#define CHIP_SIZES \
+  ->Args({32, 256, 256})->Args({64, 128, 128})->Args({8, 512, 512})
+
+#define PAD_SIZES \
+  ->Args({256, 256, 1})->Args({256, 256, 4})->Args({256, 256, 16}) \
+  ->Args({1024, 1024, 1})->Args({1024, 1024, 4})->Args({1024, 1024, 16})
+
+#define STRIDE_SIZES \
+  ->Args({256, 256, 2})->Args({256, 256, 4}) \
+  ->Args({1024, 1024, 2})->Args({1024, 1024, 4})
+
+#define MORPH_THREADPOOL_SIZES \
+  ->Args({256, 256, 1})->Args({256, 256, 2})->Args({256, 256, 4}) \
+  ->Args({256, 256, 8})->Args({256, 256, 12})->Args({256, 256, 16}) \
+  ->Args({1024, 1024, 1})->Args({1024, 1024, 2})->Args({1024, 1024, 4}) \
+  ->Args({1024, 1024, 8})->Args({1024, 1024, 12})->Args({1024, 1024, 16})
+// clang-format on
+
+BENCHMARK(BM_Reshape) MORPH_SIZES;
+BENCHMARK(BM_Slice) MORPH_SIZES;
+BENCHMARK(BM_Chip) CHIP_SIZES;
+BENCHMARK(BM_Pad) PAD_SIZES;
+BENCHMARK(BM_Stride) STRIDE_SIZES;
+BENCHMARK(BM_Slice_ThreadPool) MORPH_THREADPOOL_SIZES->UseRealTime();
+BENCHMARK(BM_Pad_ThreadPool) MORPH_THREADPOOL_SIZES->UseRealTime();

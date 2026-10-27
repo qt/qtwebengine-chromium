@@ -352,14 +352,15 @@ public class ScopeChangeControllerTest {
                 /* isPrimaryMainFrameFragmentNavigation= */ false,
                 /* isDownload= */ false,
                 /* isValidSearchFormUrl= */ false,
-                /* transition */ 0,
+                /* transition= */ 0,
                 /* errorCode= */ 0,
                 /* errorDescription= */ "",
                 /* httpStatuscode= */ 0,
                 /* isExternalProtocol= */ false,
                 /* isPdf= */ false,
                 /* mimeType= */ "",
-                Page.createForTesting());
+                Page.createForTesting(),
+                /* isSameOrigin= */ true);
         return handle;
     }
 }

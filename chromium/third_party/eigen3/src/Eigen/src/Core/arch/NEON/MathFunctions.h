@@ -4,6 +4,8 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_MATH_FUNCTIONS_NEON_H
 #define EIGEN_MATH_FUNCTIONS_NEON_H
@@ -50,7 +52,7 @@ EIGEN_STRONG_INLINE Packet4bf pldexp(const Packet4bf& a, const Packet4bf& expone
 
 //---------- double ----------
 
-#if EIGEN_ARCH_ARM64 && !EIGEN_APPLE_DOUBLE_NEON_BUG
+#if EIGEN_ARCH_ARM64
 
 EIGEN_INSTANTIATE_GENERIC_MATH_FUNCS_DOUBLE(Packet2d)
 

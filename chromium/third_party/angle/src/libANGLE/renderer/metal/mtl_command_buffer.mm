@@ -184,7 +184,7 @@ inline void SetVertexBufferCmd(id<MTLRenderCommandEncoder> encoder,
                                IntermediateCommandStream *stream)
 {
     id<MTLBuffer> buffer = stream->fetch<id<MTLBuffer>>();
-    uint32_t offset      = stream->fetch<uint32_t>();
+    size_t offset        = stream->fetch<size_t>();
     uint32_t index       = stream->fetch<uint32_t>();
     [encoder setVertexBuffer:buffer offset:offset atIndex:index];
     [buffer ANGLE_MTL_RELEASE];
@@ -193,7 +193,7 @@ inline void SetVertexBufferCmd(id<MTLRenderCommandEncoder> encoder,
 inline void SetVertexBufferOffsetCmd(id<MTLRenderCommandEncoder> encoder,
                                      IntermediateCommandStream *stream)
 {
-    uint32_t offset = stream->fetch<uint32_t>();
+    size_t offset   = stream->fetch<size_t>();
     uint32_t index  = stream->fetch<uint32_t>();
     [encoder setVertexBufferOffset:offset atIndex:index];
 }
@@ -235,7 +235,7 @@ inline void SetFragmentBufferCmd(id<MTLRenderCommandEncoder> encoder,
                                  IntermediateCommandStream *stream)
 {
     id<MTLBuffer> buffer = stream->fetch<id<MTLBuffer>>();
-    uint32_t offset      = stream->fetch<uint32_t>();
+    size_t offset        = stream->fetch<size_t>();
     uint32_t index       = stream->fetch<uint32_t>();
     [encoder setFragmentBuffer:buffer offset:offset atIndex:index];
     [buffer ANGLE_MTL_RELEASE];
@@ -244,8 +244,8 @@ inline void SetFragmentBufferCmd(id<MTLRenderCommandEncoder> encoder,
 inline void SetFragmentBufferOffsetCmd(id<MTLRenderCommandEncoder> encoder,
                                        IntermediateCommandStream *stream)
 {
-    uint32_t offset = stream->fetch<uint32_t>();
-    uint32_t index  = stream->fetch<uint32_t>();
+    size_t offset  = stream->fetch<size_t>();
+    uint32_t index = stream->fetch<uint32_t>();
     [encoder setFragmentBufferOffset:offset atIndex:index];
 }
 
@@ -358,7 +358,7 @@ inline void DrawIndexedInstancedBaseVertexBaseInstanceCmd(id<MTLRenderCommandEnc
     id<MTLBuffer> indexBuffer      = stream->fetch<id<MTLBuffer>>();
     size_t bufferOffset            = stream->fetch<size_t>();
     uint32_t instances             = stream->fetch<uint32_t>();
-    uint32_t baseVertex            = stream->fetch<uint32_t>();
+    int32_t baseVertex             = stream->fetch<int32_t>();
     uint32_t baseInstance          = stream->fetch<uint32_t>();
     [encoder drawIndexedPrimitives:primitiveType
                         indexCount:indexCount
@@ -1302,7 +1302,7 @@ void RenderCommandEncoderShaderStates::reset()
         buffer = nil;
     }
 
-    for (uint32_t &offset : bufferOffsets)
+    for (size_t &offset : bufferOffsets)
     {
         offset = 0;
     }
@@ -1922,7 +1922,7 @@ RenderCommandEncoder &RenderCommandEncoder::setBlendColor(float r, float g, floa
 
 RenderCommandEncoder &RenderCommandEncoder::setBuffer(gl::ShaderType shaderType,
                                                       const BufferRef &buffer,
-                                                      uint32_t offset,
+                                                      size_t offset,
                                                       uint32_t index)
 {
     if (index >= kMaxShaderBuffers)
@@ -1939,7 +1939,7 @@ RenderCommandEncoder &RenderCommandEncoder::setBuffer(gl::ShaderType shaderType,
 
 RenderCommandEncoder &RenderCommandEncoder::setBufferForWrite(gl::ShaderType shaderType,
                                                               const BufferRef &buffer,
-                                                              uint32_t offset,
+                                                              size_t offset,
                                                               uint32_t index)
 {
     if (index >= kMaxShaderBuffers)
@@ -1956,7 +1956,7 @@ RenderCommandEncoder &RenderCommandEncoder::setBufferForWrite(gl::ShaderType sha
 
 RenderCommandEncoder &RenderCommandEncoder::commonSetBuffer(gl::ShaderType shaderType,
                                                             id<MTLBuffer> mtlBuffer,
-                                                            uint32_t offset,
+                                                            size_t offset,
                                                             uint32_t index)
 {
     RenderCommandEncoderShaderStates &shaderStates = mStateCache.perShaderStates[shaderType];
@@ -2199,7 +2199,7 @@ RenderCommandEncoder &RenderCommandEncoder::drawIndexedInstancedBaseVertexBaseIn
     const BufferRef &indexBuffer,
     size_t bufferOffset,
     uint32_t instances,
-    uint32_t baseVertex,
+    int32_t baseVertex,
     uint32_t baseInstance)
 {
     ASSERT(mPipelineStateSet &&
@@ -2677,7 +2677,7 @@ ComputeCommandEncoder &ComputeCommandEncoder::setComputePipelineState(
 }
 
 ComputeCommandEncoder &ComputeCommandEncoder::setBuffer(const BufferRef &buffer,
-                                                        uint32_t offset,
+                                                        size_t offset,
                                                         uint32_t index)
 {
     if (index >= kMaxShaderBuffers)
@@ -2693,7 +2693,7 @@ ComputeCommandEncoder &ComputeCommandEncoder::setBuffer(const BufferRef &buffer,
 }
 
 ComputeCommandEncoder &ComputeCommandEncoder::setBufferForWrite(const BufferRef &buffer,
-                                                                uint32_t offset,
+                                                                size_t offset,
                                                                 uint32_t index)
 {
     if (index >= kMaxShaderBuffers)

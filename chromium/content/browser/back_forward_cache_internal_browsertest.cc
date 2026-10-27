@@ -13,9 +13,9 @@
 #include "base/test/test_timeouts.h"
 #include "base/types/expected.h"
 #include "build/build_config.h"
+#include "content/browser/back_forward_cache/back_forward_cache_disable.h"
+#include "content/browser/back_forward_cache/back_forward_cache_impl.h"
 #include "content/browser/back_forward_cache_browsertest.h"
-#include "content/browser/renderer_host/back_forward_cache_disable.h"
-#include "content/browser/renderer_host/back_forward_cache_impl.h"
 #include "content/browser/renderer_host/navigation_request.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
@@ -47,6 +47,7 @@
 #include "media/base/media_switches.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/controllable_http_response.h"
+#include "net/test/embedded_test_server/expectation_handler.h"
 #include "third_party/blink/public/common/features.h"
 #include "ui/accessibility/ax_action_data.h"
 #include "ui/accessibility/ax_location_and_scroll_updates.h"
@@ -2081,8 +2082,8 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheDisabledThroughCommandLineBrowserTest,
 // request loading).
 IN_PROC_BROWSER_TEST_F(BackForwardCacheDisabledThroughCommandLineBrowserTest,
                        BFCacheDisabled_NetworkRequests) {
-  net::test_server::ControllableHttpResponse image_response(
-      embedded_test_server(), "/image.png");
+  net::test_server::ExpectationHandler handler(embedded_test_server());
+  handler.OnRequest("/image.png").RespondWith("image/png", "image_body");
   ASSERT_TRUE(embedded_test_server()->Start());
   GURL url_a(embedded_test_server()->GetURL("a.com", "/title1.html"));
   GURL url_b(embedded_test_server()->GetURL("b.com", "/title1.html"));
@@ -2113,10 +2114,6 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheDisabledThroughCommandLineBrowserTest,
       image.src = "image.png";
       document.body.appendChild(image);
     )"));
-  image_response.WaitForRequest();
-  image_response.Send(net::HTTP_OK, "image/png");
-  image_response.Send("image_body");
-  image_response.Done();
 
   // 2) Navigate to B.
   EXPECT_TRUE(NavigateToURL(shell(), url_b));
@@ -2249,22 +2246,8 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
             rfh_a->GetProcess()->GetEffectiveImportance());
 }
 
-class BackForwardCacheInternalSubframeImportanceBrowserTest
-    : public BackForwardCacheBrowserTest {
- protected:
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    BackForwardCacheBrowserTest::SetUpCommandLine(command_line);
-    feature_list_.InitWithFeatures(
-        /* enabled_features= */ {features::kSubframeImportance},
-        /* disabled_features= */ {});
-  }
-
- private:
-  base::test::ScopedFeatureList feature_list_;
-};
-
 IN_PROC_BROWSER_TEST_F(
-    BackForwardCacheInternalSubframeImportanceBrowserTest,
+    BackForwardCacheBrowserTest,
     ChildImportanceTestForBackForwardCachedPagesWithSubframeTest) {
   IsolateAllSitesForTesting(base::CommandLine::ForCurrentProcess());
 
@@ -2381,55 +2364,6 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
   EXPECT_EQ(1u, rwh_b->GetPriority().frame_depth);
 }
 
-IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest, PageshowMetrics) {
-  // TODO(crbug.com/40702446): Do not check for unexpected messages
-  // because the input task queue is not currently frozen, causing flakes in
-  // this test.
-  DoNotFailForUnexpectedMessagesWhileCached();
-  ASSERT_TRUE(embedded_test_server()->Start());
-
-  const char kHistogramName[] =
-      "BackForwardCache.MainFrameHasPageshowListenersOnRestore";
-
-  const GURL url1(embedded_test_server()->GetURL("a.com", "/title1.html"));
-  const GURL url2(embedded_test_server()->GetURL("b.com", "/title1.html"));
-
-  // 1) Navigate to the page.
-  EXPECT_TRUE(NavigateToURL(shell(), url1));
-  EXPECT_TRUE(ExecJs(current_frame_host(), R"(
-    window.foo = 42;
-  )"));
-
-  // 2) Navigate away and back.
-  EXPECT_TRUE(NavigateToURL(shell(), url2));
-  ASSERT_TRUE(HistoryGoBack(web_contents()));
-
-  // As we don't get an explicit ACK when the page is restored (yet), force
-  // a round-trip to the renderer to effectively flush the queue.
-  EXPECT_EQ(42, EvalJs(current_frame_host(), "window.foo"));
-
-  // Expect the back-forward restore without pageshow to be detected.
-  content::FetchHistogramsFromChildProcesses();
-  EXPECT_THAT(histogram_tester().GetAllSamples(kHistogramName),
-              ElementsAre(base::Bucket(0, 1)));
-
-  EXPECT_TRUE(ExecJs(current_frame_host(), R"(
-    window.addEventListener("pageshow", () => {});
-  )"));
-
-  // 3) Navigate away and back (again).
-  EXPECT_TRUE(NavigateToURL(shell(), url2));
-  ASSERT_TRUE(HistoryGoBack(web_contents()));
-
-  // As we don't get an explicit ACK when the page is restored (yet), force
-  // a round-trip to the renderer to effectively flush the queue.
-  EXPECT_EQ(42, EvalJs(current_frame_host(), "window.foo"));
-
-  // Expect the back-forward restore with pageshow to be detected.
-  content::FetchHistogramsFromChildProcesses();
-  EXPECT_THAT(histogram_tester().GetAllSamples(kHistogramName),
-              ElementsAre(base::Bucket(0, 1), base::Bucket(1, 1)));
-}
 
 // Navigate from A(B) to C and check IsActive status for RenderFrameHost A
 // and B before and after entering back-forward cache.

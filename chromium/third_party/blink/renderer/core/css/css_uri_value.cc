@@ -19,8 +19,8 @@ CSSURIValue::~CSSURIValue() = default;
 
 SVGResource* CSSURIValue::EnsureResourceReference() const {
   if (!resource_) {
-    resource_ =
-        MakeGarbageCollected<ExternalSVGResourceDocumentContent>(AbsoluteUrl());
+    resource_ = MakeGarbageCollected<ExternalSVGResourceDocumentContent>(
+        AbsoluteUrl(), UrlData().GetModifiers());
   }
   return resource_.Get();
 }
@@ -60,7 +60,11 @@ const AtomicString& CSSURIValue::NormalizedFragmentIdentifier() const {
 }
 
 KURL CSSURIValue::AbsoluteUrl() const {
-  return KURL(UrlData().ResolvedUrl());
+  KURL url(UrlData().ResolvedUrl());
+  if (UrlData().IsPotentiallyDanglingMarkup()) {
+    url.SetPotentiallyDanglingMarkup();
+  }
+  return url;
 }
 
 bool CSSURIValue::IsLocal(const Document& document) const {

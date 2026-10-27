@@ -59,7 +59,8 @@ TEST(CBSTest, Skip) {
 
 TEST(CBSTest, GetUint) {
   static const uint8_t kData[] = {1,  2,  3,  4,  5,  6,  7,  8,  9,  10,
-                                  11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+                                  11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+                                  21, 22, 23, 24, 25, 26};
   uint8_t u8;
   uint16_t u16;
   uint32_t u32;
@@ -75,12 +76,14 @@ TEST(CBSTest, GetUint) {
   EXPECT_EQ(0x40506u, u32);
   ASSERT_TRUE(CBS_get_u32(&data, &u32));
   EXPECT_EQ(0x708090au, u32);
+  ASSERT_TRUE(CBS_get_u48(&data, &u64));
+  EXPECT_EQ(0xb0c0d0e0f10u, u64);
   ASSERT_TRUE(CBS_get_u64(&data, &u64));
-  EXPECT_EQ(0xb0c0d0e0f101112u, u64);
+  EXPECT_EQ(0x1112131415161718u, u64);
   ASSERT_TRUE(CBS_get_last_u8(&data, &u8));
-  EXPECT_EQ(0x14u, u8);
+  EXPECT_EQ(0x1au, u8);
   ASSERT_TRUE(CBS_get_last_u8(&data, &u8));
-  EXPECT_EQ(0x13u, u8);
+  EXPECT_EQ(0x19u, u8);
   EXPECT_FALSE(CBS_get_u8(&data, &u8));
   EXPECT_FALSE(CBS_get_last_u8(&data, &u8));
 
@@ -151,6 +154,54 @@ TEST(CBSTest, GetUntilFirst) {
   EXPECT_EQ(CBS_len(&prefix), 2u);
   EXPECT_EQ(CBS_data(&data), kData + 2);
   EXPECT_EQ(CBS_len(&data), sizeof(kData) - 2);
+}
+
+TEST(CBSTest, GetUntilFirstOf) {
+  static const uint8_t kData[] = {0, 'a', 'b', 'c', 0, 'a', 'b', 'c'};
+  CBS data;
+  CBS_init(&data, kData, sizeof(kData));
+
+  CBS prefix;
+  EXPECT_FALSE(CBS_get_until_first_of(&data, &prefix, "A"));
+  EXPECT_EQ(CBS_data(&data), kData);
+  EXPECT_EQ(CBS_len(&data), sizeof(kData));
+
+  ASSERT_TRUE(CBS_get_until_first_of(&data, &prefix, "Abc"));
+  EXPECT_EQ(CBS_data(&prefix), kData);
+  EXPECT_EQ(CBS_len(&prefix), 2u);
+  EXPECT_EQ(CBS_data(&data), kData + 2);
+  EXPECT_EQ(CBS_len(&data), sizeof(kData) - 2);
+}
+
+TEST(CBSTest, GetUntilFirstNotOf) {
+  {
+    static const uint8_t kData[] = {'a', 'b', 'c', 'd', 'a', 'b', 'c'};
+    CBS data;
+    CBS_init(&data, kData, sizeof(kData));
+
+    CBS prefix;
+    EXPECT_FALSE(CBS_get_until_first_not_of(&data, &prefix, "abcd"));
+    EXPECT_EQ(CBS_data(&data), kData);
+    EXPECT_EQ(CBS_len(&data), sizeof(kData));
+
+    ASSERT_TRUE(CBS_get_until_first_not_of(&data, &prefix, "abcD"));
+    EXPECT_EQ(CBS_data(&prefix), kData);
+    EXPECT_EQ(CBS_len(&prefix), 3u);
+    EXPECT_EQ(CBS_data(&data), kData + 3);
+    EXPECT_EQ(CBS_len(&data), sizeof(kData) - 3);
+  }
+  {
+    static const uint8_t kData[] = {'a', 'b', 'c', 0, 'a', 'b', 'c'};
+    CBS data;
+    CBS_init(&data, kData, sizeof(kData));
+
+    CBS prefix;
+    EXPECT_TRUE(CBS_get_until_first_not_of(&data, &prefix, "abcd"));
+    EXPECT_EQ(CBS_data(&prefix), kData);
+    EXPECT_EQ(CBS_len(&prefix), 3u);
+    EXPECT_EQ(CBS_data(&data), kData + 3);
+    EXPECT_EQ(CBS_len(&data), sizeof(kData) - 3);
+  }
 }
 
 TEST(CBSTest, GetASN1) {
@@ -1248,6 +1299,14 @@ TEST(CBBTest, Zero) {
   CBB_zero(&cbb);
   // Calling |CBB_cleanup| on a zero-state |CBB| must not crash.
   CBB_cleanup(&cbb);
+}
+
+TEST(CBBTest, ScopedCBBCleanup) {
+  // It is valid to |CBB_cleanup| a |ScopedCBB|.
+  ScopedCBB cbb;
+  ASSERT_TRUE(CBB_init(cbb.get(), 32));
+  CBB_cleanup(cbb.get());
+  // ASAN should not detect a double free here.
 }
 
 TEST(CBBTest, Reserve) {

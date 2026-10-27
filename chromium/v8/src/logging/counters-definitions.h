@@ -14,7 +14,6 @@ namespace internal {
 // HR(name, caption, min, max, num_buckets)
 #define HISTOGRAM_RANGE_LIST(HR)                                               \
   HR(code_cache_reject_reason, V8.CodeCacheRejectReason, 1, 9, 9)              \
-  HR(errors_thrown_per_context, V8.ErrorsThrownPerContext, 0, 200, 20)         \
   HR(incremental_marking_reason, V8.GCIncrementalMarkingReason, 0,             \
      kGarbageCollectionReasonMaxValue, kGarbageCollectionReasonMaxValue + 1)   \
   HR(incremental_marking_sum, V8.GCIncrementalMarkingSum, 0, 10000, 101)       \
@@ -38,7 +37,6 @@ namespace internal {
      13)                                                                       \
   HR(array_buffer_new_size_failures, V8.ArrayBufferNewSizeFailures, 0, 4096,   \
      13)                                                                       \
-  HR(shared_array_allocations, V8.SharedArrayAllocationSizes, 0, 4096, 13)     \
   HR(wasm_asm_huge_function_size_bytes, V8.WasmHugeFunctionSizeBytes.asm,      \
      100 * KB, GB, 51)                                                         \
   HR(wasm_wasm_huge_function_size_bytes, V8.WasmHugeFunctionSizeBytes.wasm,    \
@@ -107,7 +105,9 @@ namespace internal {
   HR(external_pointer_table_compaction_outcome,                                \
      V8.ExternalPointerTableCompactionOutcome, 0, 2, 3)                        \
   HR(wasm_compilation_method, V8.WasmCompilationMethod, 0, 4, 5)               \
-  HR(asmjs_instantiate_result, V8.AsmjsInstantiateResult, 0, 1, 2)
+  HR(asmjs_instantiate_result, V8.AsmjsInstantiateResult, 0, 1, 2)             \
+  HR(esm_modules_per_page, V8.ESMModulesPerPage, 1, 1024, 30)                  \
+  HR(esm_import_graph_depth, V8.ESMImportGraphDepth, 1, 128, 20)
 
 #if V8_ENABLE_DRUMBRAKE
 #define HISTOGRAM_RANGE_LIST_SLOW(HR)                                         \
@@ -317,22 +317,14 @@ namespace internal {
 #define AGGREGATABLE_HISTOGRAM_TIMER_LIST(AHT) \
   AHT(compile_lazy, V8.CompileLazyMicroSeconds)
 
-#define HISTOGRAM_PERCENTAGE_LIST(HP)                                          \
-  /* Heap fragmentation. */                                                    \
-  HP(external_fragmentation_total, V8.MemoryExternalFragmentationTotal)        \
-  HP(external_fragmentation_old_space, V8.MemoryExternalFragmentationOldSpace) \
-  HP(external_fragmentation_code_space,                                        \
-     V8.MemoryExternalFragmentationCodeSpace)                                  \
-  HP(external_fragmentation_map_space, V8.MemoryExternalFragmentationMapSpace) \
-  HP(external_fragmentation_lo_space, V8.MemoryExternalFragmentationLoSpace)
+#define HISTOGRAM_PERCENTAGE_LIST(HP) \
+  /* Heap fragmentation. */           \
+  HP(external_fragmentation_total, V8.MemoryExternalFragmentationTotal)
 
 // Note: These use Histogram with options (min=1000, max=500000, buckets=50).
 #define HISTOGRAM_LEGACY_MEMORY_LIST(HM)                                      \
   HM(heap_sample_total_committed, V8.MemoryHeapSampleTotalCommitted)          \
-  HM(heap_sample_total_used, V8.MemoryHeapSampleTotalUsed)                    \
-  HM(heap_sample_map_space_committed, V8.MemoryHeapSampleMapSpaceCommitted)   \
-  HM(heap_sample_code_space_committed, V8.MemoryHeapSampleCodeSpaceCommitted) \
-  HM(heap_sample_maximum_committed, V8.MemoryHeapSampleMaximumCommitted)
+  HM(heap_sample_total_used, V8.MemoryHeapSampleTotalUsed)
 
 #define STATS_COUNTER_LIST(SC)                                                 \
   /* Global handle count. */                                                   \

@@ -219,6 +219,7 @@ if (is_win || is_mac || is_linux) {
       ":version_header",
       "//base",
       "//base:i18n",
+      "//build:branding_buildflags",
       "//build:chromeos_buildflags",
       "//chrome/enterprise_companion:client",
       "//chrome/enterprise_companion:constants_prod",
@@ -361,6 +362,8 @@ if (is_win || is_mac || is_linux) {
         "win/ui/complete_wnd.h",
         "win/ui/l10n_util.cc",
         "win/ui/l10n_util.h",
+        "win/ui/message_loop.cc",
+        "win/ui/message_loop.h",
         "win/ui/owner_draw_controls.cc",
         "win/ui/owner_draw_controls.h",
         "win/ui/progress_wnd.cc",
@@ -379,6 +382,8 @@ if (is_win || is_mac || is_linux) {
         "win/ui/webview2ui.h",
         "win/ui/webview_progress_wnd.cc",
         "win/ui/webview_progress_wnd.h",
+        "win/ui/window_impl.cc",
+        "win/ui/window_impl.h",
       ]
       deps += [
         "//build:branding_buildflags",
@@ -400,7 +405,7 @@ if (is_win || is_mac || is_linux) {
         "//chrome/windows_services/service_program:lib",
         "//components/winhttp",
         "//third_party/webview2:webview2_static",
-        "//third_party/wtl",
+        "//ui/gfx",
       ]
 
       configs -= [ "//build/config/win:winver" ]
@@ -410,7 +415,9 @@ if (is_win || is_mac || is_linux) {
       ]
 
       libs = [
+        "comctl32.lib",
         "msxml2.lib",
+        "uxtheme.lib",
         "wtsapi32.lib",
       ]
     }
@@ -558,6 +565,7 @@ if (is_win || is_mac || is_linux) {
     visibility = [
       "//chrome/browser",
       "//chrome/browser/ui",
+      "//chrome/browser/ui/webui/updater:*",
       "//chrome/browser/updater:*",
       "//chrome/enterprise_companion:*",
       "//chrome/enterprise_companion/device_management_storage:*",
@@ -571,8 +579,11 @@ if (is_win || is_mac || is_linux) {
       "certificate_tag.cc",
       "certificate_tag.h",
       "certificate_tag_internal.h",
+      "pkg_tag.cc",
+      "pkg_tag.h",
       "tag.cc",
       "tag.h",
+      "tag_internal.h",
     ]
 
     deps = [ "//base" ]
@@ -903,6 +914,7 @@ if (is_win || is_mac || is_linux) {
       "branded_constants_unittest.cc",
       "certificate_tag_unittest.cc",
       "cleanup_task_unittest.cc",
+      "constants_unittest.cc",
       "enum_traits_unittest.cc",
       "event_history_unittest.cc",
       "event_logger_unittest.cc",
@@ -913,6 +925,7 @@ if (is_win || is_mac || is_linux) {
       "get_updater_scope_unittest.cc",
       "installer_unittest.cc",
       "net/fallback_net_fetcher_unittest.cc",
+      "net/network_fetcher_unittest.cc",
       "net/network_unittest.cc",
       "out_of_process_unzipper_unittest.cc",
       "persisted_data_unittest.cc",
@@ -975,6 +988,7 @@ if (is_win || is_mac || is_linux) {
       "//testing/gtest",
       "//third_party/abseil-cpp:absl",
       "//third_party/crashpad/crashpad/client",
+      "//third_party/fuzztest",
       "//third_party/re2",
       "//third_party/zlib/google:compression_utils",
       "//url",
@@ -999,6 +1013,7 @@ if (is_win || is_mac || is_linux) {
       "test/data/tagged_msi/GUH-size-greater-than-max.msi",
       "test/data/tagged_msi/GUH-special-value.msi",
       "test/data/tagged_msi/GUH-untagged.msi",
+      "test/data/tagged_pkg/sample.pkg",
     ]
 
     data_deps = [
@@ -1038,6 +1053,7 @@ if (is_win || is_mac || is_linux) {
         "win/ui/l10n_util_unittest.cc",
         "win/ui/progress_wnd_unittest.cc",
         "win/updater_tests.rc",
+        "win/user_info_unittest.cc",
       ]
 
       configs -= [ "//build/config/win:winver" ]
@@ -1060,7 +1076,6 @@ if (is_win || is_mac || is_linux) {
         "win/test:test_executables",
         "win/test:test_strings",
         "win/ui/resources",
-        "//third_party/wtl",
       ]
 
       data_deps += [
@@ -1271,6 +1286,24 @@ if (is_win || is_mac || is_linux) {
       ]
       outputs = [ "$root_build_dir/test_service/{{source_file_part}}" ]
     }
+  }
+
+  test("updater_fuzztests") {
+    testonly = true
+    sources = [ "tag_fuzztest.cc" ]
+    fuzztests = [
+      "TagFuzzTest.FuzzParseBroad",
+      "TagFuzzTest.FuzzParseShared",
+      "TagFuzzTest.FuzzReadTag",
+    ]
+    deps = [
+      ":base",
+      ":constants_test",
+      ":tagging",
+      "//base",
+      "//base/test:run_all_unittests",
+      "//third_party/fuzztest",
+    ]
   }
 
   # These tests are run serially since they mutate system state.

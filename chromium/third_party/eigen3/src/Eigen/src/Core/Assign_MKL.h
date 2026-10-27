@@ -30,6 +30,7 @@
  *   MKL VML support for coefficient-wise unary Eigen expressions like a=b.sin()
  ********************************************************************************
 */
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef EIGEN_ASSIGN_VML_H
 #define EIGEN_ASSIGN_VML_H

@@ -117,6 +117,7 @@ Result<SuccessType> OffsetFirstIndex(core::ir::Module& ir, const OffsetFirstInde
                     core::ir::Capability::kAllowHandleVarsWithoutBindings,
                     core::ir::Capability::kAllowDuplicateBindings,
                     core::ir::Capability::kLoosenValidationForShaderIO,
+                    core::ir::Capability::kAllow16BitIntegers,
                 },
                 "before glsl.OffsetFirstIndex");
 

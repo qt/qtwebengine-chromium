@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
+
 echo "Running ${CI_JOB_NAME}"
 
 # Print configuration variables.

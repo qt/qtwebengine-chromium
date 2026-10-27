@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/run_loop.h"
 #include "base/test/test_message_loop.h"
 #include "media/base/decryptor.h"
@@ -385,6 +386,30 @@ TEST_F(MojoDecryptorTest, DestroyService) {
   mojo_decryptor_->DecryptAndDecodeVideo(
       std::move(buffer), base::BindRepeating(&MojoDecryptorTest::VideoDecoded,
                                              base::Unretained(this)));
+  base::RunLoop().RunUntilIdle();
+}
+
+TEST_F(MojoDecryptorTest, InitializeVideoDecoder_InvalidConfig) {
+  Initialize();
+
+  mojo::test::BadMessageObserver bad_message_observer;
+
+
+  EXPECT_CALL(*decryptor_, InitializeVideoDecoder(_, _)).Times(0);
+
+  gfx::Size coded_size(65536, 65536);
+  gfx::Rect visible_rect(0, 0, 65536, 65536);
+  gfx::Size natural_size(65536, 65536);
+  VideoDecoderConfig config(VideoCodec::kVP9, VP9PROFILE_PROFILE3,
+                            VideoDecoderConfig::AlphaMode::kIsOpaque,
+                            VideoColorSpace(), kNoTransformation, coded_size,
+                            visible_rect, natural_size, std::vector<uint8_t>(),
+                            EncryptionScheme());
+
+  mojo_decryptor_->InitializeVideoDecoder(config, base::DoNothing());
+
+  std::string bad_message = bad_message_observer.WaitForBadMessage();
+  EXPECT_EQ(bad_message, "Invalid VideoDecoderConfig");
   base::RunLoop().RunUntilIdle();
 }
 

@@ -10,7 +10,9 @@
 #include <string>
 #include <vector>
 
+#include "base/check_op.h"
 #include "base/functional/callback.h"
+#include "base/memory/weak_ptr.h"
 #include "base/observer_list_types.h"
 
 namespace passage_embeddings {
@@ -115,48 +117,75 @@ class EmbedderMetadataProvider {
 };
 
 // Encapsulate embeddings and related helpers.
+//
+// Invariants for Embeddings produced by passage_embeddings::Embedder:
+// * Embeddings always have non-zero lengths.
+// * Embeddings are always normalized to unit length (magnitude 1.0).
+// * Embeddings produced in the same run of Chrome will have consistent lengths.
+// * Embeddings produced in different runs of Chrome can have different lengths
+//   only if the embeddings model version was changed.
 class Embedding {
  public:
   explicit Embedding(std::vector<float> data);
-  Embedding(std::vector<float> data, size_t passage_word_count);
-  Embedding();
   ~Embedding();
   Embedding(const Embedding&);
   Embedding& operator=(const Embedding&);
   Embedding(Embedding&&);
   Embedding& operator=(Embedding&&);
-  bool operator==(const Embedding&) const;
-
-  // The number of elements in the data vector.
-  size_t Dimensions() const;
-
-  // The length of the vector.
-  float Magnitude() const;
-
-  // Scale the vector to unit length.
-  void Normalize();
 
   // Compares one embedding with another and returns a similarity measure.
+  //
+  // Note: Even if embeddings correspond to semantically unrelated texts the
+  // similarity could be substantially high (and this is not a bug). This
+  // phenomenon is known as "embedding anisotropy": embedding vectors might
+  // belong to a narrow cone (instead of spreading across the entire space),
+  // causing unrelated words or texts to have high similarity.
+  //
+  // In practice this means:
+  // - You should calibrate the usage of embeddings similarity score according
+  //   to your use case (e.g., "Is 0.5 a good threshold for your use case?").
+  //   Also, consider using a downstream model which would use embeddings as its
+  //   inputs.
+  // - Alternatively, whenever possible, instead of relying on the absolute
+  //   value of similarity score - consider using it for sorting (ranking).
   float ScoreWith(const Embedding& other_embedding) const;
+
+  // Scale the vector to unit length. Returns nullopt if the vector has
+  // near-zero magnitude and cannot be normalized.
+  static std::optional<std::vector<float>> Normalize(std::vector<float> data);
 
   // Const accessor used for storage.
   const std::vector<float>& GetData() const { return data_; }
 
-  // Used for search filtering of passages with low word count.
-  size_t GetPassageWordCount() const { return passage_word_count_; }
-  void SetPassageWordCount(size_t passage_word_count) {
-    passage_word_count_ = passage_word_count;
-  }
-
  private:
   std::vector<float> data_;
-  size_t passage_word_count_ = 0;
 };
 
 // Computes embeddings for passages. Allows for cancellation of tasks.
 class Embedder {
  public:
   using TaskId = uint64_t;
+
+  // Move-only RAII handle for an embeddings generation task. Cancellation is
+  // triggered on destruction if the job has not already completed.
+  class Job {
+   public:
+    Job(base::WeakPtr<Embedder> embedder, TaskId task_id);
+    Job(const Job&) = delete;
+    Job& operator=(const Job&) = delete;
+    Job(Job&&);
+    Job& operator=(Job&&);
+    ~Job();
+
+    // Updates the priority of this task.
+    void Reprioritize(PassagePriority priority);
+
+    TaskId task_id() const { return task_id_; }
+
+   private:
+    base::WeakPtr<Embedder> embedder_;
+    TaskId task_id_ = 0;
+  };
 
   virtual ~Embedder() = default;
 
@@ -165,28 +194,46 @@ class Embedder {
   // the same number of passages and embeddings and in the same order as
   // `passages`. Otherwise the callback will return the original passages but
   // with an empty embeddings vector.
+  //
+  // Requirements on the implementation of this interface:
+  // * Embeddings must always have non-zero lengths.
+  // * Embeddings must be normalized to unit length (magnitude 1.0).
+  // * Embeddings produced in the same run of Chrome must have consistent
+  //   lengths.
+  // * Embeddings produced in different runs of Chrome can have different
+  //   lengths only if the embeddings model version was changed.
   using ComputePassagesEmbeddingsCallback =
       base::OnceCallback<void(std::vector<std::string> passages,
                               std::vector<Embedding> embeddings,
                               TaskId task_id,
                               ComputeEmbeddingsStatus status)>;
-  virtual TaskId ComputePassagesEmbeddings(
+  [[nodiscard]] virtual Job ComputePassagesEmbeddings(
       PassagePriority priority,
       std::vector<std::string> passages,
       ComputePassagesEmbeddingsCallback callback) = 0;
 
+  virtual base::WeakPtr<Embedder> GetWeakPtr() = 0;
+
   // Updates all pending tasks to have the specified priority.
   virtual void ReprioritizeTasks(PassagePriority priority,
                                  const std::set<TaskId>& tasks) = 0;
+
+  // Comparator for Embedder::Job by TaskId, supporting heterogeneous lookup.
+  struct JobTaskIdComparator {
+    using is_transparent = void;
+    bool operator()(const Job& a, const Job& b) const;
+    bool operator()(const Job& a, TaskId b) const;
+    bool operator()(TaskId a, const Job& b) const;
+  };
+
+ protected:
+  Embedder();
 
   // Cancels computation of embeddings iff none of the passages given to
   // `ComputePassagesEmbeddings()` has been submitted for embedding yet.
   // If successful, the callback for the canceled task will be invoked with
   // `ComputeEmbeddingsStatus::kCanceled` status.
   virtual bool TryCancel(TaskId task_id) = 0;
-
- protected:
-  Embedder() = default;
 };
 
 }  // namespace passage_embeddings

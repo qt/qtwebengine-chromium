@@ -45,6 +45,7 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/notreached.h"
+#include "base/numerics/safe_conversions.h"
 #include "build/build_config.h"
 #include "third_party/blink/renderer/platform/fonts/font.h"
 #include "third_party/blink/renderer/platform/fonts/font_description.h"
@@ -155,7 +156,7 @@ void CheckShapeResultRange(const ShapeResult* result,
     SkString family_name;
     typeface->getFamilyName(&family_name);
     log.Append(", primary=");
-    log.Append(family_name.c_str());
+    log.Append(base::as_byte_span(family_name));
   }
 
   // Log the text to shape.
@@ -1174,12 +1175,15 @@ void HarfBuzzShaper::GetGlyphData(const SimpleFontData& font_data,
                                : HB_DIRECTION_TTB);
   if (text_.Is8Bit()) {
     auto span = text_.Span8();
-    hb_buffer_add_latin1(hb_buffer, span.data(), span.size(), 0,
+    hb_buffer_add_latin1(hb_buffer, span.data(),
+                         base::checked_cast<int>(span.size()), 0,
                          text_.length());
   } else {
     static_assert(sizeof(uint16_t) == sizeof(UChar));
     auto span = text_.SpanUint16();
-    hb_buffer_add_utf16(hb_buffer, span.data(), span.size(), 0, text_.length());
+    hb_buffer_add_utf16(hb_buffer, span.data(),
+                        base::checked_cast<int>(span.size()), 0,
+                        text_.length());
   }
 
   const FontPlatformData& platform_data = font_data.PlatformData();

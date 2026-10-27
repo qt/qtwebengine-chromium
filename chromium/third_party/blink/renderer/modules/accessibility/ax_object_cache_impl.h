@@ -191,7 +191,8 @@ class MODULES_EXPORT AXObjectCacheImpl : public AXObjectCacheBase {
     IncrementGenerationalCacheId();
 
     CHECK(FocusedObject());
-    DUMP_WILL_BE_CHECK(!IsDirty());
+    // TODO(crbug.com/500793607): Investigate and convert to CHECK.
+    DCHECK(!IsDirty());
   }
   void Thaw() override {
     CHECK_GE(frozen_count_, 1);
@@ -512,6 +513,7 @@ class MODULES_EXPORT AXObjectCacheImpl : public AXObjectCacheBase {
 
   // Returns the parent of the given object due to aria-owns, if valid.
   AXObject* ValidatedAriaOwner(const AXObject*) const;
+  AXRelationCache* RelationCache() { return relation_cache_.get(); }
 
   // Given an object that has an aria-owns attribute, return the validated
   // set of aria-owned children.
@@ -904,6 +906,14 @@ class MODULES_EXPORT AXObjectCacheImpl : public AXObjectCacheBase {
   // Helper to clean up any references to the AXObject's AXID.
   void RemoveReferencesToAXID(AXID);
 
+  // Recursive implementation for RemoveSubtree(). |removing_subtree_axids|
+  // is scoped to a single top-level removal and prevents cycles through cached
+  // child references from re-entering the same AXObject.
+  void RemoveSubtreeInternal(const Node*,
+                             bool remove_root,
+                             bool notify_parent,
+                             HashSet<AXID>& removing_subtree_axids);
+
   HeapMojoRemote<mojom::blink::RenderAccessibilityHost>&
   GetOrCreateRemoteRenderAccessibilityHost();
   WebLocalFrameClient* GetWebLocalFrameClient() const;
@@ -1206,7 +1216,6 @@ class MODULES_EXPORT AXObjectCacheImpl : public AXObjectCacheBase {
   // `processing_deferred_events_` for more details.
   void NotifyParentChildrenChanged(AXObject* parent);
 
-  void MaybeSendCanvasHasNonTrivialFallbackUKM(const AXObject* canvas);
 
   void IncrementGenerationalCacheId() { ++generational_cache_id_; }
 
@@ -1426,8 +1435,6 @@ class MODULES_EXPORT AXObjectCacheImpl : public AXObjectCacheBase {
 
   // Whether or not the load event was sent in a previous serialization.
   bool load_sent_ = false;
-
-  bool has_emitted_canvas_fallback_ukm_ = false;
 
   // Used to determine if a previously computed attribute is from the same
   // serialization update.

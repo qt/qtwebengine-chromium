@@ -18,6 +18,7 @@
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/functional/callback.h"
+#include "base/functional/function_ref.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/notimplemented.h"
@@ -97,6 +98,11 @@ BASE_FEATURE(kIdbSqliteExclusiveDatabaseFileLock,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
+// The delay before a released `DatabaseConnection` actually destructs. This
+// gives the page a chance to re-open the same database without the overhead of
+// closing and re-opening the underlying SQLite connection.
+constexpr base::TimeDelta kDestructionGracePeriod = base::Seconds(2);
+
 namespace {
 
 // Persisted to disk; do not reuse or change values.
@@ -147,7 +153,7 @@ uint32_t GetPageCount(sql::Database& db) {
   if (!statement.Step()) {
     return 0;
   }
-  return static_cast<uint32_t>(statement.ColumnInt(0));
+  return base::checked_cast<uint32_t>(statement.ColumnInt(0));
 }
 
 uint32_t GetFreelistCount(sql::Database& db) {
@@ -155,26 +161,27 @@ uint32_t GetFreelistCount(sql::Database& db) {
   if (!statement.Step()) {
     return 0;
   }
-  return static_cast<uint32_t>(statement.ColumnInt(0));
+  return base::checked_cast<uint32_t>(statement.ColumnInt(0));
 }
 
-uint16_t GetPageSize(sql::Database& db) {
+base::ByteSize GetPageSize(sql::Database& db) {
   // The maximum page size is 65536 bytes.
   sql::Statement statement(db.GetReadonlyStatement("PRAGMA page_size"));
   if (!statement.Step()) {
-    return 0;
+    return base::ByteSize();
   }
-  return static_cast<uint16_t>(statement.ColumnInt(0));
+  return base::ByteSize(static_cast<uint64_t>(statement.ColumnInt(0)));
 }
 
 // Returns the size of the used portion of the database (excluding free pages).
-uint64_t GetUsedSize(sql::Database& db) {
+base::ByteSize GetUsedSize(sql::Database& db) {
   uint32_t page_count = GetPageCount(db);
   uint32_t freelist_count = GetFreelistCount(db);
-  if (page_count < freelist_count) {
-    return 0;
+  if (page_count <= freelist_count) {
+    return base::ByteSize();
   }
-  return static_cast<uint64_t>(page_count - freelist_count) * GetPageSize(db);
+
+  return GetPageSize(db) * (page_count - freelist_count);
 }
 
 // The separator used to join the strings when encoding an `IndexedDBKeyPath` of
@@ -273,8 +280,10 @@ StatusOr<mojo_base::BigBuffer> DoDecompress(
 // numeric values should never be reused.
 // LINT.IfChange(VacuumEvent)
 enum class VacuumEvent {
-  // Vacuuming requested because conditions were met.
-  kRequested = 1,
+  // Unused.
+  kObsolete = 0,
+  // Vacuuming requested on close because conditions were met.
+  kRequestedOnClose = 1,
   // Vacuuming succeeded.
   kSucceeded = 2,
   // Skipped because the backing store was being force-closed.
@@ -285,11 +294,71 @@ enum class VacuumEvent {
   kInsufficientDiskSpace = 5,
   // Attempted but failed at the SQLite layer.
   kFailed = 6,
-  kMaxValue = kFailed,
+  // Vacuuming requested on long idle because conditions were met.
+  kRequestedOnLongIdle = 7,
+  // Checkpoint before vacuuming failed.
+  kCheckpointFailed = 8,
+  kMaxValue = kCheckpointFailed,
 };
 // LINT.ThenChange(//tools/metrics/histograms/metadata/storage/enums.xml:IndexedDbSqliteVacuumEvent)
 void LogVacuumEvent(VacuumEvent event) {
   base::UmaHistogramEnumeration("IndexedDB.SQLite.VacuumEvent", event);
+}
+
+std::tuple<bool, unsigned int /*freelist_percentage*/> NeedsVacuum(
+    sql::Database& db) {
+  unsigned int freelist_percentage =
+      base::ClampDiv(GetFreelistCount(db) * 100, GetPageCount(db));
+  // Default autovacuum is enabled on Android, so reclaiming free space is
+  // not a reason to vacuum.
+  // TODO(crbug.com/436880909): consider vacuuming old-ish databases that
+  // may be fragmented.
+#if !BUILDFLAG(IS_ANDROID)
+  // Note that //sql configures a multi-page chunk size for large DBs, so if
+  // this threshold is too low (<25%), vacuuming may not always reduce the
+  // file size. See SQLITE_FCNTL_CHUNK_SIZE.
+  constexpr unsigned int kMinFreelistPercentageForVacuum = 33;
+  if (freelist_percentage >= kMinFreelistPercentageForVacuum) {
+    return {true, freelist_percentage};
+  }
+#endif
+  return {false, freelist_percentage};
+}
+
+// Returns `true` if vacuuming was attempted and succeeded. Logs success/error
+// `VacuumEvent`s as appropriate. Runs `checkpoint` right before attempting
+// vacuuming, which is expected to checkpoint the WAL (after dropping open
+// resources if needed). Vacuuming is not attempted if this fails.
+bool TryVacuum(sql::Database& db,
+               const base::FilePath& db_path,
+               base::FunctionRef<bool()> checkpoint) {
+  // VACUUM copies the used pages into a temp database and then overwrites the
+  // original, requiring approximately twice the used size in free space:
+  // https://www.sqlite.org/lang_vacuum.html.
+  base::ByteSize needed_space = GetUsedSize(db) * 2;
+  std::optional<base::SysInfo::DiskSpaceInfo> disk_space =
+      base::SysInfo::AmountOfDiskSpace(db_path.DirName());
+  if (needed_space.is_zero() || !disk_space ||
+      disk_space->total < disk_space->available) {
+    LogVacuumEvent(VacuumEvent::kErrorComputingSpaceRequirements);
+    return false;
+  }
+  // Leave a buffer of 1% of total disk space since other write operations
+  // may be in progress.
+  base::ByteSize buffer = disk_space->total / 100;
+  if (needed_space + buffer > disk_space->available) {
+    LogVacuumEvent(VacuumEvent::kInsufficientDiskSpace);
+    return false;
+  }
+  // Checkpointing is needed before vacuuming to ensure deleted data is
+  // wiped from disk. See crbug.com/483899632.
+  if (!checkpoint()) {
+    LogVacuumEvent(VacuumEvent::kCheckpointFailed);
+    return false;
+  }
+  bool success = db.Execute("VACUUM");
+  LogVacuumEvent(success ? VacuumEvent::kSucceeded : VacuumEvent::kFailed);
+  return success;
 }
 
 // Key used in MetaTable to track the data encoding version used by Blink/V8.
@@ -928,17 +997,27 @@ StatusOr<std::unique_ptr<DatabaseConnection>> DatabaseConnection::Open(
       base::WrapUnique(new DatabaseConnection(path, backing_store));
   Status s = connection->Init(name);
   if (!path.empty() && !s.ok()) {
+    bool should_retry_opening = true;
     IndexedDBDataLossInfo loss;
     if (connection->marked_for_permanent_deletion_) {
-      loss.status = blink::mojom::IDBDataLoss::Total;
-      loss.message = s.ToString();
+      if (!name) {
+        // Don't bother retrying since the caller doesn't want to create the DB.
+        should_retry_opening = false;
+      } else {
+        // Capture and surface data loss info.
+        loss.status = blink::mojom::IDBDataLoss::Total;
+        loss.message = s.ToString();
+      }
     }
-    // If opening fails, recover or destroy the DB and try once more.
-    std::move(*connection).GetCleanupTask().Run(/*force_closing=*/false);
-    connection = base::WrapUnique(new DatabaseConnection(path, backing_store));
-    s = connection->Init(name);
-    connection->data_loss_info_ = std::move(loss);
-    s.Log("IndexedDB.SQLite.OpenRetryResult");
+    if (should_retry_opening) {
+      // Recover or destroy the DB and try once more.
+      std::move(*connection).GetCleanupTask().Run(/*force_closing=*/false);
+      connection =
+          base::WrapUnique(new DatabaseConnection(path, backing_store));
+      s = connection->Init(name);
+      connection->data_loss_info_ = std::move(loss);
+      s.Log("IndexedDB.SQLite.OpenRetryResult");
+    }
   }
   if (s.ok() && erase_if_zygotic && connection->IsZygotic()) {
     s = Status::Corruption(
@@ -959,8 +1038,31 @@ void DatabaseConnection::Release(base::WeakPtr<DatabaseConnection> db) {
     return;
   }
 
-  // TODO(crbug.com/419203257):  Consider delaying destruction by a short period
-  // in case the page reopens the same database soon.
+  // Just destruct immediately if:
+  // 1. the database isn't finished initializing, or
+  // 2. the database had an error
+  if (db->IsZygotic() || !sql::IsSqliteSuccessCode(sql::ToSqliteResultCode(
+                             db->db_->GetErrorCode()))) {
+    MaybeSelfDestruct(std::move(db));
+    return;
+  }
+
+  // Delay destruction by a short period in case the page reopens the same
+  // database soon. This is effectively equivalent to the 2 second "grace
+  // period" before backing store shutdown in `BucketContext`.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(&DatabaseConnection::MaybeSelfDestruct, std::move(db)),
+      kDestructionGracePeriod);
+}
+
+// static
+void DatabaseConnection::MaybeSelfDestruct(
+    base::WeakPtr<DatabaseConnection> db) {
+  if (!db) {
+    return;
+  }
+
   DatabaseConnection* db_ptr = db.get();
   db.reset();
 
@@ -1004,29 +1106,10 @@ void DatabaseConnection::CloseDatabase(
   }
 
   if (should_vacuum) {
-    // VACUUM copies the used pages into a temp database and then overwrites the
-    // original, requiring approximately twice the used size in free space:
-    // https://www.sqlite.org/lang_vacuum.html.
-    uint64_t needed_space = 2 * GetUsedSize(*db);
-    std::optional<int64_t> free_space =
-        base::SysInfo::AmountOfFreeDiskSpace(db_path.DirName());
-    std::optional<int64_t> total_space =
-        base::SysInfo::AmountOfTotalDiskSpace(db_path.DirName());
-    if (needed_space == 0 || !free_space || *free_space < 0 || !total_space ||
-        *total_space < 0 || *total_space < *free_space) {
-      LogVacuumEvent(VacuumEvent::kErrorComputingSpaceRequirements);
-    } else {
-      // Leave a buffer of 1% of total disk space since other write operations
-      // may be in progress.
-      uint64_t used_space = static_cast<uint64_t>(*total_space - *free_space);
-      if (used_space + needed_space > 99.0 / 100 * *total_space) {
-        LogVacuumEvent(VacuumEvent::kInsufficientDiskSpace);
-      } else {
-        bool success = db->Execute("VACUUM");
-        LogVacuumEvent(success ? VacuumEvent::kSucceeded
-                               : VacuumEvent::kFailed);
-      }
-    }
+    TryVacuum(*db, db_path,
+              [&]() { return db->CheckpointDatabase(/*truncate=*/false); });
+    // No need to explicitly truncate-checkpoint after the vacuum here since
+    // closing the database deletes the WAL file.
   }
 
   if (known_legacy_blob_ids) {
@@ -1105,24 +1188,13 @@ base::OnceCallback<void(bool)> DatabaseConnection::GetCleanupTask() && {
 
     // Determine whether to vacuum.
     if (!had_sql_error && !should_delete_db) {
-      unsigned int freelist_percentage =
-          base::ClampDiv(GetFreelistCount(*db_) * 100, GetPageCount(*db_));
+      unsigned int freelist_percentage;
+      std::tie(should_vacuum, freelist_percentage) = NeedsVacuum(*db_);
       base::UmaHistogramPercentage("IndexedDB.SQLite.FreelistPercentageAtClose",
                                    freelist_percentage);
-      // Default autovacuum is enabled on Android, so reclaiming free space is
-      // not a reason to vacuum.
-      // TODO(crbug.com/436880909): consider vacuuming old-ish databases that
-      // may be fragmented.
-#if !BUILDFLAG(IS_ANDROID)
-      // Note that //sql configures a multi-page chunk size for large DBs, so if
-      // this threshold is too low (<25%), vacuuming may not always reduce the
-      // file size. See SQLITE_FCNTL_CHUNK_SIZE.
-      constexpr const unsigned int kMinFreelistPercentageForVacuum = 33;
-      if (freelist_percentage >= kMinFreelistPercentageForVacuum) {
-        should_vacuum = true;
-        LogVacuumEvent(VacuumEvent::kRequested);
+      if (should_vacuum) {
+        LogVacuumEvent(VacuumEvent::kRequestedOnClose);
       }
-#endif
     }
 
     // Skip if `legacy_blob_files_to_move_` is non-empty, which would indicate
@@ -1184,6 +1256,10 @@ Status DatabaseConnection::Init(std::optional<std::u16string_view> name) {
 
   const bool is_new_db = !sql::MetaTable::DoesTableExist(db_.get());
   if (is_new_db) {
+    if (!name) {
+      return Fatal(Status::Corruption("Missing meta table"),
+                   SpecificEvent::kMissingMetaTable);
+    }
     IDB_RETURN_IF_ERROR(CreateSchema(db_.get(), *name));
   }
 
@@ -1313,7 +1389,7 @@ bool DatabaseConnection::Checkpoint(bool truncate) {
   return success;
 }
 
-void DatabaseConnection::PerformIdleMaintenance() {
+void DatabaseConnection::PerformIdleMaintenance(bool long_idle) {
   if (active_rw_transaction_) {
     return;
   }
@@ -1321,7 +1397,17 @@ void DatabaseConnection::PerformIdleMaintenance() {
     db_->TrimMemory();
     return;
   }
-  if (is_wal_dirty_) {
+  if (long_idle) {
+    if (std::get<bool>(NeedsVacuum(*db_))) {
+      LogVacuumEvent(VacuumEvent::kRequestedOnLongIdle);
+      if (TryVacuum(*db_, path_,
+                    [this]() { return Checkpoint(/*truncate=*/false); })) {
+        // Disk space used by the WAL file (during vacuum) is not reclaimed
+        // until a TRUNCATE checkpoint. See crbug.com/483988149.
+        Checkpoint(/*truncate=*/true);
+      }
+    }
+  } else if (is_wal_dirty_) {
     Checkpoint(/*truncate=*/false);
   }
 }
@@ -1335,12 +1421,12 @@ int64_t DatabaseConnection::GetCommittedVersion() const {
 }
 
 uint64_t DatabaseConnection::GetSize() const {
-  uint64_t used_size = GetUsedSize(*db_);
-  if (used_size == 0) {
+  base::ByteSize used_size = GetUsedSize(*db_);
+  if (used_size.is_zero()) {
     // Can only happen if one of the pragmas failed. Log under a common bucket.
     LogEvent(SpecificEvent::kPragmaPageCountFailed);
   }
-  return used_size;
+  return used_size.InBytes();
 }
 
 std::unique_ptr<BackingStoreDatabaseImpl>
@@ -2768,6 +2854,11 @@ void DatabaseConnection::OverrideMaxBlobSizeForTesting(base::ByteSize size) {
 // static
 void DatabaseConnection::OverrideVfsNameForTesting(const char* vfs_name) {
   g_vfs_name_override = vfs_name;
+}
+
+// static
+base::TimeDelta DatabaseConnection::GetDestructionGracePeriodForTesting() {
+  return kDestructionGracePeriod;
 }
 
 }  // namespace content::indexed_db::sqlite

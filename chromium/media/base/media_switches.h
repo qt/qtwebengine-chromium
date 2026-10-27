@@ -105,8 +105,11 @@ MEDIA_EXPORT extern const char kSystemAecEnabled[];
 MEDIA_EXPORT extern const char kUseCras[];
 #endif  // BUILDFLAG(USE_CRAS)
 
-#if BUILDFLAG(USE_V4L2_CODEC)
+#if BUILDFLAG(USE_V4L2_CODEC) || BUILDFLAG(USE_VAAPI)
 MEDIA_EXPORT extern const char kEnablePrimaryNodeAccessForVkmsTesting[];
+#endif  // BUILDFLAG(USE_V4L2_CODEC) || BUILDFLAG(USE_VAAPI)
+
+#if BUILDFLAG(USE_V4L2_CODEC)
 MEDIA_EXPORT extern const char kHardwareVideoDecodeFrameRate[];
 #endif  // BUILDFLAG(USE_V4L2_CODEC)
 
@@ -132,6 +135,7 @@ MEDIA_EXPORT BASE_DECLARE_FEATURE(kAudioDuckingWin);
 
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kAudioFocusDuckFlash);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kAutoPictureInPictureForVideoPlayback);
+MEDIA_EXPORT BASE_DECLARE_FEATURE(kAutoPictureInPictureOnWindowOccluded);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kAutoPictureInPictureSurveys);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kAutoplayBypassForMicCamera);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kAutoplayDisableSettings);
@@ -168,6 +172,7 @@ MEDIA_EXPORT BASE_DECLARE_FEATURE(kCastStreamingMacHardwareH264);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kCastStreamingWinHardwareH264);
 #endif
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kCdmHostVerification);
+MEDIA_EXPORT BASE_DECLARE_FEATURE(kContextMenu2026);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kContextMenuCopyVideoFrame);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kContextMenuSaveVideoFrameAs);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kContextMenuSearchForVideoFrame);
@@ -227,6 +232,9 @@ MEDIA_EXPORT BASE_DECLARE_FEATURE(kFileDialogsTuckPictureInPicture);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kForceSoftwareForRtcLowResolutions);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kGetDisplayMediaConfersActivation);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kGlobalMediaControlsAutoDismiss);
+#if BUILDFLAG(IS_ANDROID)
+MEDIA_EXPORT BASE_DECLARE_FEATURE(kMediaCodecColorSpaceCleanup);
+#endif  // BUILDFLAG(IS_ANDROID)
 #if !BUILDFLAG(IS_ANDROID)
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kMediaRemotingWithoutFullscreen);
 #endif
@@ -250,11 +258,14 @@ MEDIA_EXPORT BASE_DECLARE_FEATURE(kHardwareSecureDecryptionVp9);
 #if BUILDFLAG(IS_WIN)
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kProtectedMediaIdentifierIndicator);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kHardwareSecureDecryptionRequireServerCert);
+MEDIA_EXPORT BASE_DECLARE_FEATURE(kMediaFoundationMultiGpuAdapterSelection);
 #endif
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kInternalMediaSession);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kOnDeviceWebSpeech);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kOnDeviceWebSpeechGeminiNano);
+MEDIA_EXPORT BASE_DECLARE_FEATURE(kOnDeviceWebSpeechSmallExpertModel);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kLiveCaption);
+MEDIA_EXPORT BASE_DECLARE_FEATURE(kPreemptiveSodaDownload);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kLiveCaptionAutomaticLanguageDownload);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kLiveCaptionRightClick);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kLiveCaptionLogFlickerRate);
@@ -349,6 +360,7 @@ MEDIA_EXPORT BASE_DECLARE_FEATURE(kVaapiIgnoreDriverChecks);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kVaapiOnNvidiaGPUs);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kVaapiLowPowerEncoderGen9x);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kVaapiVideoMinResolutionForPerformance);
+MEDIA_EXPORT BASE_DECLARE_FEATURE(kVaapiEarlyPPSParsingForCENCv1);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kGlobalVaapiLock);
 #if defined(ARCH_CPU_X86_FAMILY) && BUILDFLAG(IS_CHROMEOS)
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kVaapiH264SWBitrateController);
@@ -371,6 +383,8 @@ MEDIA_EXPORT BASE_DECLARE_FEATURE(kResolutionBasedDecoderPriority);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kMatchSourceAudioChannelLayout);
 
 #if BUILDFLAG(IS_ANDROID)
+MEDIA_EXPORT BASE_DECLARE_FEATURE(kAndroidEnableBackgroundMediaCapturing);
+MEDIA_EXPORT BASE_DECLARE_FEATURE(kAllowAudioPlaybackCapture);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kAllowDelayedAudioFocusGainAndroid);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kAllowEnhancedPipTransition);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kAllowMediaCodecSoftwareDecoder);
@@ -378,7 +392,6 @@ MEDIA_EXPORT BASE_DECLARE_FEATURE(kAndroidZeroCopyVideoCapture);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kAutoDocPiPPermissionPromptAndroid);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kAutoPictureInPictureAndroid);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kContextMenuPictureInPictureAndroid);
-MEDIA_EXPORT BASE_DECLARE_FEATURE(kEnableAudioMonitoringOnAndroid);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kFullscreenVideoPictureInPicture);
 
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kMediaCodecBlockModel);
@@ -389,8 +402,10 @@ MEDIA_EXPORT BASE_DECLARE_FEATURE(kMediaDrmPreprovisioning);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kMediaDrmPreprovisioningAtStartup);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kMediaDrmGetStatusForPolicy);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kMediaDrmQueryInSeparateProcess);
+MEDIA_EXPORT BASE_DECLARE_FEATURE(kPauseMediaOnSystemSleepAndroid);
+MEDIA_EXPORT BASE_DECLARE_FEATURE(kNoPauseMediaOnHeadphoneUnplug);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kRequestSystemAudioFocus);
-MEDIA_EXPORT BASE_DECLARE_FEATURE(kSurfaceInputForAndroidVEA);
+
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kUseAudioLatencyFromHAL);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kUseAudioManagerMaxChannelLayout);
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kUseSecurityLevelWhenCheckingMediaDrmVersion);
@@ -473,9 +488,12 @@ MEDIA_EXPORT BASE_DECLARE_FEATURE(kUseTaskRunnerForMojoAudioDecoderService);
 
 #if BUILDFLAG(IS_FUCHSIA)
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kFuchsiaMediacodecVideoEncoder);
+MEDIA_EXPORT BASE_DECLARE_FEATURE(kFuchsiaCdmStoragePathMigration);
 #endif  // BUILDFLAG(IS_FUCHSIA)
 
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kVideoDecodeBatching);
+
+MEDIA_EXPORT BASE_DECLARE_FEATURE(kValidateEncryptionPatternSize);
 
 MEDIA_EXPORT BASE_DECLARE_FEATURE(
     kClearPipCachedBoundsWhenPermissionPromptVisible);
@@ -486,7 +504,6 @@ MEDIA_EXPORT BASE_DECLARE_FEATURE(kMediaLogToConsole);
 
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kAomVpxUsePresentationThreadType);
 
-MEDIA_EXPORT BASE_DECLARE_FEATURE(kUseRustJpegParser);
 
 #if BUILDFLAG(IS_WIN)
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kD3D12VideoDecoder);
@@ -530,6 +547,15 @@ MEDIA_EXPORT BASE_DECLARE_FEATURE(kAutoPictureInPicturePageInfoDetails);
 // Causes the AVC parser to output Treats H.264 SEI recovery points with a
 // `recovery_frame_cnt=0` as keyframes.
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kParseSEIRecoveryPoints);
+
+// When enabled, non-IDR H.264 frames with SEI recovery points
+// (recovery_frame_cnt=0) are promoted to keyframes for MSE random access,
+// and SPS/PPS parameter sets are injected for these frames so the hardware
+// decoder can initialize after a seek/reset. This enables playback of
+// open-GOP content in SourceBuffer. Limited to clear content to work
+// around hardware decoders that don't handle non-IDR keyframes (some older
+// Intel/AMD devices mishandle SEI + SPS/PPS); see https://crbug.com/451536366.
+MEDIA_EXPORT BASE_DECLARE_FEATURE(kMediaSourceSeiRecoveryPointKeyframe);
 
 // When enabled, H.264 keyframe detection becomes stricter for samples whose avc
 // config does not provide SPS/PPS. In that case, an IDR alone is not

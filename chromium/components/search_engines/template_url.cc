@@ -36,12 +36,15 @@
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "components/google/core/common/google_util.h"
+#include "components/omnibox/common/omnibox_feature_configs.h"
 #include "components/omnibox/common/omnibox_features.h"
 #include "components/search_engines/regulatory_extension_type.h"
 #include "components/search_engines/search_engine_utils.h"
 #include "components/search_engines/search_engines_switches.h"
 #include "components/search_engines/search_terms_data.h"
 #include "components/search_engines/template_url_data.h"
+#include "components/search_engines/template_url_service.h"
+#include "components/search_engines/template_url_data_util.h"
 #include "components/search_engines/template_url_prepopulate_data.h"
 #include "components/search_engines/template_url_starter_pack_data.h"
 #include "components/strings/grit/components_strings.h"
@@ -56,6 +59,7 @@
 #include "ui/base/device_form_factor.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
+#include "base/logging.h"
 
 #if BUILDFLAG(ENABLE_BUILTIN_SEARCH_PROVIDER_ASSETS) && !BUILDFLAG(IS_ANDROID)
 #include "third_party/search_engines_data/search_engine_descriptions_strings_map.h"
@@ -105,8 +109,8 @@ const size_t kMaxStringEncodeStringLength = 1'000'000;
 // |original_query| is always escaped as query. If |force_encode| is true
 // encoding ignores errors and function always returns true. Otherwise function
 // returns whether the encoding process succeeded.
-bool TryEncoding(const std::u16string& terms,
-                 const std::u16string& original_query,
+bool TryEncoding(std::u16string_view terms,
+                 std::u16string_view original_query,
                  const char* encoding,
                  bool is_in_query,
                  bool force_encode,
@@ -118,7 +122,7 @@ bool TryEncoding(const std::u16string& terms,
   // Both |base::UTF16ToCodepage()| and |net::Escape*()| invocations below
   // create strings longer than their inputs. To ensure doing so does not crash,
   // this truncates |terms| to |kMaxStringEncodeStringLength|.
-  const std::u16string& truncated_terms =
+  const std::u16string_view truncated_terms =
       terms.size() > kMaxStringEncodeStringLength
           ? terms.substr(0, kMaxStringEncodeStringLength)
           : terms;
@@ -281,6 +285,7 @@ size_t TemplateURLRef::SearchTermsArgs::EstimateMemoryUsage() const {
   res += base::trace_event::EstimateMemoryUsage(input_state);
   res += base::trace_event::EstimateMemoryUsage(image_translate_source_locale);
   res += base::trace_event::EstimateMemoryUsage(image_translate_target_locale);
+  res += base::trace_event::EstimateMemoryUsage(previous_query);
 
   return res;
 }
@@ -459,7 +464,7 @@ std::string TemplateURLRef::ReplaceSearchTerms(
     const SearchTermsArgs& search_terms_args,
     const SearchTermsData& search_terms_data,
     PostContent* post_content,
-    std::string url_override) const {
+    std::string_view url_override) const {
   ParseIfNecessary(search_terms_data, url_override);
   if (!valid_) {
     return std::string();
@@ -838,6 +843,8 @@ bool TemplateURLRef::ParseParameter(size_t start,
     replacements->push_back(Replacement(GOOGLE_SEARCH_CLIENT, start));
   } else if (parameter == "google:searchFieldtrialParameter") {
     replacements->push_back(Replacement(GOOGLE_SEARCH_FIELDTRIAL_GROUP, start));
+  } else if (parameter == "google:searchSource") {
+    replacements->push_back(Replacement(GOOGLE_SEARCH_SOURCE, start));
   } else if (parameter == "google:searchVersion") {
     replacements->push_back(Replacement(GOOGLE_SEARCH_VERSION, start));
   } else if (parameter == "google:sessionToken") {
@@ -847,6 +854,8 @@ bool TemplateURLRef::ParseParameter(size_t start,
   } else if (parameter == "google:suggestAPIKeyParameter") {
     url->insert(start,
                 base::EscapeQueryParamValue(google_apis::GetAPIKey(), false));
+  } else if (parameter == "google:suggestPath") {
+    replacements->push_back(Replacement(GOOGLE_SUGGEST_PATH, start));
   } else if (parameter == "google:suggestClient") {
     replacements->push_back(Replacement(GOOGLE_SUGGEST_CLIENT, start));
   } else if (parameter == "google:suggestRid") {
@@ -931,19 +940,19 @@ std::string TemplateURLRef::ParseURL(const std::string& url,
          base::SplitStringPiece(post_params_string, ",", base::TRIM_WHITESPACE,
                                 base::SPLIT_WANT_ALL)) {
       // The '=' delimiter is required and the name must be not empty.
-      std::vector<std::string> parts = base::SplitString(
+      std::vector<std::string_view> parts = base::SplitStringPiece(
           cur, "=", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
       if ((parts.size() != 2U) || parts[0].empty()) {
         return std::string();
       }
 
-      std::string& value = parts[1];
+      std::string value(parts[1]);
       size_t replacements_size = replacements->size();
       if (IsTemplateParameterString(value)) {
         ParseParameter(0, value.length() - 1, &value, replacements);
       }
-      PostParam param = {parts[0], value};
-      post_params->push_back(param);
+      PostParam param = {std::string(parts[0]), std::move(value)};
+      post_params->push_back(std::move(param));
       // If there was a replacement added, points its index to last added
       // PostParam.
       if (replacements->size() > replacements_size) {
@@ -961,13 +970,14 @@ std::string TemplateURLRef::ParseURL(const std::string& url,
 }
 
 void TemplateURLRef::ParseIfNecessary(const SearchTermsData& search_terms_data,
-                                      std::string url_override) const {
+                                      std::string_view url_override) const {
   bool url_override_is_valid = GURL(url_override).is_valid();
   if (!parsed_ || url_override_is_valid) {
     InvalidateCachedValues();
     parsed_ = true;
-    parsed_url_ = ParseURL(url_override_is_valid ? url_override : GetURL(),
-                           &replacements_, &post_params_, &valid_);
+    parsed_url_ =
+        ParseURL(url_override_is_valid ? std::string(url_override) : GetURL(),
+                 &replacements_, &post_params_, &valid_);
     supports_replacements_ = false;
     if (valid_) {
       bool has_only_one_search_term = false;
@@ -1024,6 +1034,19 @@ void TemplateURLRef::ParseHostAndSearchTermKey(
   base::ReplaceSubstringsAfterOffset(
       &url_string, 0, "{google:baseSuggestURL}",
       search_terms_data.GoogleBaseSuggestURLValue());
+  std::string suggest_path = TemplateURLService::kSuggestPath;
+  if (base::FeatureList::GetInstance()) {
+    const auto& config =
+        omnibox_feature_configs::SuggestPathClientConfig::Get();
+    if (config.enabled && config.enable_for_all) {
+      suggest_path = TemplateURLService::kShortSuggestPath;
+    }
+  }
+  // TODO(crbug.com/509448052): ParseHostAndSearchTermKey manually replaces a
+  // subset of structural placeholders. This logic should ideally be unified
+  // with HandleReplacements to avoid duplication.
+  base::ReplaceSubstringsAfterOffset(&url_string, 0, "{google:suggestPath}",
+                                     suggest_path);
   base::ReplaceSubstringsAfterOffset(&url_string, 0, "{yandex:searchPath}",
                                      YandexSearchPathFromDeviceFormFactor());
 
@@ -1393,6 +1416,27 @@ std::string TemplateURLRef::HandleReplacements(
         // url.insert(replacement.index, used_www ? "gcx=w&" : "gcx=c&");
         break;
 
+      case GOOGLE_SEARCH_SOURCE: {
+        DCHECK(!replacement.is_post_param);
+        using OEP = ::metrics::OmniboxEventProto;
+        std::string source_param;
+        const auto pc = search_terms_args.page_classification;
+        if (pc == OEP::NTP ||
+            pc == OEP::INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS ||
+            pc == OEP::SEARCH_RESULT_PAGE_NO_SEARCH_TERM_REPLACEMENT ||
+            pc == OEP::SEARCH_RESULT_PAGE_DOING_SEARCH_TERM_REPLACEMENT ||
+            pc == OEP::SEARCH_RESULT_PAGE_ON_CCT ||
+            pc == OEP::SRP_ZPS_PREFETCH || pc == OEP::OTHER) {
+          source_param = "chrome.ob";
+        } else if (pc == OEP::NTP_REALBOX) {
+          source_param = "chrome.rb";
+        }
+        if (!source_param.empty()) {
+          HandleReplacement("source", source_param, replacement, &url);
+        }
+        break;
+      }
+
       case GOOGLE_SEARCH_SOURCE_ID: {
         DCHECK(!replacement.is_post_param);
         switch (search_terms_args.request_source) {
@@ -1427,72 +1471,39 @@ std::string TemplateURLRef::HandleReplacements(
         break;
       }
 
-      case GOOGLE_SUGGEST_CLIENT:
-        switch (search_terms_args.request_source) {
-          case RequestSource::NTP_MODULE:
-#if BUILDFLAG(IS_ANDROID)
-            HandleReplacement(std::string(),
-                              "chrome-android-search-resumption-module",
-                              replacement, &url);
-            break;
-#elif BUILDFLAG(IS_IOS)
-            HandleReplacement(std::string(), "chrome-ios-ntp", replacement,
-                              &url);
-            break;
-#else
-            NOTREACHED();
-#endif
-          case RequestSource::SEARCHBOX:
-          case RequestSource::CROS_APP_LIST:
-#if BUILDFLAG(IS_ANDROID)
-            if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_PHONE) {
-              HandleReplacement(std::string(), "chrome", replacement, &url);
-              break;
-            }
-            HandleReplacement(std::string(), "chrome-omni", replacement, &url);
-#elif BUILDFLAG(IS_IOS)
-            HandleReplacement(std::string(), "chrome", replacement, &url);
-#else
-            HandleReplacement(std::string(), "chrome-omni", replacement, &url);
-#endif
-            break;
-          case RequestSource::NTP_COMPOSEBOX: {
-            // Co-browsing composebox uses a different client since its zps
-            // behave differently.
-            if (search_terms_args.page_classification ==
-                metrics::OmniboxEventProto::CO_BROWSING_COMPOSEBOX) {
-              HandleReplacement(std::string(), "chrome-cobrowse-compose",
-                                replacement, &url);
-              break;
-            }
-            // RequestSource::NTP_COMPOSEBOX will use "chrome-omni" for delayed
-            // context uploads. TODO(crbug.com/460858102) Figure out how to
-            // support delayed uploads using "chrome-compose."
-            std::string client_replacement =
-                base::FeatureList::IsEnabled(
-                    omnibox::kComposeboxUsesChromeComposeClient)
-                    ? (search_terms_args.page_classification ==
-                                   metrics::OmniboxEventProto::NTP_COMPOSEBOX &&
-                               !search_terms_args.current_page_url.empty()
-                           ? "chrome-omni"
-                           : omnibox::kComposeboxClientOverride.Get())
-                    : "chrome-omni";
-            HandleReplacement(std::string(), client_replacement, replacement,
-                              &url);
-            break;
-          }
-          case RequestSource::NTP_ACTION_CHIPS: {
-            HandleReplacement(std::string(), "chrome-ntp-action", replacement,
-                              &url);
-            break;
-          }
-          case RequestSource::LENS_OVERLAY:
-            // No replacement. Lens Overlay searchboxes don't rely on
-            // TemplateURL replacement and set `client=` in
-            // //components/omnibox/browser/remote_suggestions_service.cc.
-            break;
+      case GOOGLE_SUGGEST_CLIENT: {
+        std::string client_name =
+            TemplateURL::GetSuggestionClient(search_terms_args);
+        if (!client_name.empty()) {
+          HandleReplacement(std::string(), client_name, replacement, &url);
         }
         break;
+      }
+
+      case GOOGLE_SUGGEST_PATH: {
+        if (search_terms_args.request_source ==
+            SearchTermsData::RequestSource::LENS_OVERLAY) {
+          // For LENS_OVERLAY requests, we don't have access to the client name
+          // here so the final URL construction, including
+          // the appropriate client and path, is handled entirely within the
+          // RemoteSuggestionsService. We insert a placeholder here, which the
+          // RemoteSuggestionsService is responsible for replacing with the
+          // correct path.
+          HandleReplacement(
+              std::string(),
+              TemplateURLService::kLensOverlaySuggestPathPlaceholder,
+              replacement, &url);
+          break;
+        }
+
+        const std::string path = TemplateURL::GetSuggestionPath(
+            TemplateURL::GetSuggestionClient(search_terms_args));
+        HandleReplacement(std::string(), path, replacement, &url);
+        base::UmaHistogramBoolean(
+            "Omnibox.SuggestionShown.SuggestionResultType",
+            path == TemplateURLService::kShortSuggestPath);
+        break;
+      }
 
       case GOOGLE_SUGGEST_REQUEST_ID:
         switch (search_terms_args.request_source) {
@@ -1756,6 +1767,9 @@ bool TemplateURL::IsBetterThanConflictingEngine(
         engine->CreatedByDefaultSearchProviderPolicy(),
         // Policy-enforced engines always win over policy-recommended engines.
         engine->enforced_by_policy(),
+        // Favor starter pack engines over other engines.
+        engine->starter_pack_id() !=
+            template_url_starter_pack_data::StarterPackId::kNone,
         // The integral value of the type enum is used to sort next.
         // This makes extension-controlled engines win.
         engine->type(),
@@ -1769,9 +1783,6 @@ bool TemplateURL::IsBetterThanConflictingEngine(
         engine->CreatedByRegulatoryProgram(),
         // Favor prepopulated engines over other auto-generated engines.
         engine->prepopulate_id() > 0,
-        // Favor starter pack engines over other auto-generated engines.
-        engine->starter_pack_id() !=
-            template_url_starter_pack_data::StarterPackId::kNone,
         // Favor engines derived from OpenSearch descriptions over
         // autogenerated engines heuristically generated from searchable forms.
         engine->originating_url().is_valid(),
@@ -1814,6 +1825,83 @@ GURL TemplateURL::GenerateFaviconURL(const GURL& url) {
   rep.ClearQuery();
   rep.ClearRef();
   return url.ReplaceComponents(rep);
+}
+
+// static
+std::string TemplateURL::GetSuggestionClient(
+    const TemplateURLRef::SearchTermsArgs& search_terms_args) {
+  switch (search_terms_args.request_source) {
+    case SearchTermsData::RequestSource::NTP_MODULE:
+#if BUILDFLAG(IS_ANDROID)
+      return "chrome-android-search-resumption-module";
+#elif BUILDFLAG(IS_IOS)
+      return "chrome-ios-ntp";
+#else
+      NOTREACHED();
+#endif
+    case SearchTermsData::RequestSource::SEARCHBOX:
+    case SearchTermsData::RequestSource::CROS_APP_LIST:
+#if BUILDFLAG(IS_ANDROID)
+      if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_PHONE) {
+        return "chrome";
+      }
+      return "chrome-omni";
+#elif BUILDFLAG(IS_IOS)
+      return "chrome";
+#else
+      return "chrome-omni";
+#endif
+    case SearchTermsData::RequestSource::NTP_COMPOSEBOX: {
+      // Co-browsing composebox uses a different client since its zps
+      // behave differently.
+      if (search_terms_args.page_classification ==
+          metrics::OmniboxEventProto::CO_BROWSING_COMPOSEBOX) {
+        return "chrome-cobrowse-compose";
+      }
+      // SearchTermsData::RequestSource::NTP_COMPOSEBOX will use
+      // "chrome-omni" for delayed context uploads.
+      // TODO(crbug.com/460858102): Figure out how to support delayed uploads
+      // using "chrome-compose."
+      if (base::FeatureList::IsEnabled(
+              omnibox::kComposeboxUsesChromeComposeClient)) {
+        // `kComposeboxUsesChromeComposeClient` is ENABLED
+        if (search_terms_args.page_classification ==
+                metrics::OmniboxEventProto::NTP_COMPOSEBOX &&
+            !search_terms_args.current_page_url.empty()) {
+          return "chrome-omni";
+        } else {
+          return omnibox::kComposeboxClientOverride.Get();
+        }
+      } else {
+        // `kComposeboxUsesChromeComposeClient` is DISABLED
+        return "chrome-omni";
+      }
+    }
+    case SearchTermsData::RequestSource::NTP_ACTION_CHIPS: {
+      return "chrome-ntp-action";
+    }
+    case SearchTermsData::RequestSource::LENS_OVERLAY: {
+      // No replacement. Lens Overlay searchboxes don't rely on
+      // TemplateURL replacement and set `client=` in
+      // //components/omnibox/browser/remote_suggestions_service.cc.
+      return "";
+    }
+  }
+
+  return "";
+}
+
+// static
+std::string TemplateURL::GetSuggestionPath(const std::string& client_name) {
+  if (base::FeatureList::GetInstance()) {
+    const auto& config =
+        omnibox_feature_configs::SuggestPathClientConfig::Get();
+    if (config.ShouldUseShortPath(client_name)) {
+      return TemplateURLService::kShortSuggestPath;
+    }
+  }
+
+  return TemplateURLService::kSuggestPath;
 }
 
 // static

@@ -17,6 +17,7 @@
 #include "components/prefs/pref_service.h"
 #include "components/sessions/core/session_id.h"
 #include "third_party/metrics_proto/omnibox_event.pb.h"
+#include "ui/base/ui_base_features.h"
 #include "url/gurl.h"
 
 namespace {
@@ -130,7 +131,9 @@ std::string LensSearchboxHandler::AutocompleteIconToResourceName(
   // The default icon for contextual suggestions is the subdirectory arrow right
   // icon. For the Lens searchbox, we want to stay consistent with the search
   // spark loupe instead.
-  if (icon.name == omnibox::kSubdirectoryArrowRightIcon.name) {
+  if (icon.name == (features::IsRoundedIconsEnabled()
+                        ? omnibox::kSubdirectoryArrowRightIcon.name
+                        : omnibox::kSubdirectoryArrowRightOldIcon.name)) {
     return searchbox_internal::kSearchSparkIconResourceName;
   }
 
@@ -143,10 +146,22 @@ void LensSearchboxHandler::OnFocusChanged(bool focused) {
 }
 
 void LensSearchboxHandler::QueryAutocomplete(const std::u16string& input,
-                                             bool prevent_inline_autocomplete) {
+                                             bool prevent_inline_autocomplete,
+                                             uint32_t cursor_position) {
+  QueryAutocompleteWithSuggestInventory(
+      input, prevent_inline_autocomplete, cursor_position,
+      omnibox::SuggestInventory::SUGGEST_INVENTORY_DEFAULT);
+}
+
+void LensSearchboxHandler::QueryAutocompleteWithSuggestInventory(
+    const std::u16string& input,
+    bool prevent_inline_autocomplete,
+    uint32_t cursor_position,
+    omnibox::SuggestInventory suggest_inventory) {
   lens_searchbox_client_->OnTextModified();
 
-  SearchboxHandler::QueryAutocomplete(input, prevent_inline_autocomplete);
+  SearchboxHandler::QueryAutocompleteWithSuggestInventory(
+      input, prevent_inline_autocomplete, cursor_position, suggest_inventory);
 }
 
 void LensSearchboxHandler::SetInputText(const std::string& input_text) {

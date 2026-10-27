@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 EigenSolver<MatrixXf> es;
 MatrixXf A = MatrixXf::Random(4, 4);
 es.compute(A, /* computeEigenvectors = */ false);

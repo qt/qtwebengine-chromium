@@ -37,7 +37,7 @@ try_.defaults.set(
     siso_output_local_strategy = "greedy",
     siso_project = siso.project.DEFAULT_UNTRUSTED,
     siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
-    siso_remote_linking = True,
+    siso_remote_linking = False,
 )
 
 targets.builder_defaults.set(
@@ -90,6 +90,18 @@ try_.builder(
         ],
     ),
     contact_team_email = "chrome-desktop-engprod@google.com",
+    properties = {
+        # The format of these properties is defined at archive/properties.proto
+        "$build/archive": {
+            "source_side_spec_path": [
+                "src",
+                "infra",
+                "archive_config",
+                "win-arm64-archive-rel.json",
+            ],
+            "verify_paths_only": True,
+        },
+    },
 )
 
 try_.builder(
@@ -117,6 +129,18 @@ try_.builder(
         ],
     ),
     contact_team_email = "chrome-desktop-engprod@google.com",
+    properties = {
+        # The format of these properties is defined at archive/properties.proto
+        "$build/archive": {
+            "source_side_spec_path": [
+                "src",
+                "infra",
+                "archive_config",
+                "win-archive-rel.json",
+            ],
+            "verify_paths_only": True,
+        },
+    },
 )
 
 try_.builder(
@@ -134,13 +158,15 @@ try_.builder(
     ),
     builderless = False,
     os = os.WINDOWS_ANY,
+    cq_settings = try_.cq_settings(
+        on_default_cq = True,
+    ),
     experiments = {
         # crbug/940930
         "chromium.enable_cleandead": 100,
     },
     main_list_view = "try",
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CQ,
-    tryjob = try_.job(),
 )
 
 try_.builder(
@@ -178,6 +204,12 @@ try_.orchestrator_builder(
     ),
     compilator = "win-rel-compilator",
     coverage_test_types = ["unit", "overall"],
+    # TODO (crbug.com/1372179): Use orchestrator pool once overloaded test pools
+    # are addressed
+    #use_orchestrator_pool = True,
+    cq_settings = try_.cq_settings(
+        on_default_cq = True,
+    ),
     experiments = {
         # go/nplus1shardsproposal
         "chromium.add_one_test_shard": 5,
@@ -185,10 +217,6 @@ try_.orchestrator_builder(
         "chromium.enable_cleandead": 100,
     },
     main_list_view = "try",
-    # TODO (crbug.com/1372179): Use orchestrator pool once overloaded test pools
-    # are addressed
-    #use_orchestrator_pool = True,
-    tryjob = try_.job(),
     use_clang_coverage = True,
 )
 
@@ -213,6 +241,18 @@ try_.builder(
         ],
     ),
     contact_team_email = "chrome-desktop-engprod@google.com",
+    properties = {
+        # The format of these properties is defined at archive/properties.proto
+        "$build/archive": {
+            "source_side_spec_path": [
+                "src",
+                "infra",
+                "archive_config",
+                "win32-archive-rel.json",
+            ],
+            "verify_paths_only": True,
+        },
+    },
 )
 
 try_.builder(
@@ -233,13 +273,14 @@ try_.builder(
     builderless = False,
     cores = 16,
     ssd = True,
-    main_list_view = "try",
-    siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CQ,
-    tryjob = try_.job(
+    cq_settings = try_.cq_settings(
         # TODO(crbug.com/40847153) Remove once cancelling doesn't wipe
         # out builder cache
         cancel_stale = False,
+        on_default_cq = True,
     ),
+    main_list_view = "try",
+    siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CQ,
 )
 
 try_.builder(
@@ -327,14 +368,14 @@ try_.builder(
     os = os.WINDOWS_10,
     contact_team_email = "chrome-desktop-engprod@google.com",
     coverage_test_types = ["unit", "overall"],
-    # The size of the testing pool is limited.
-    max_concurrent_builds = 3,
-    tryjob = try_.job(
+    cq_settings = try_.cq_settings(
         location_filters = [
             "sandbox/win/.+",
             "sandbox/policy/win/.+",
         ],
     ),
+    # The size of the testing pool is limited.
+    max_concurrent_builds = 3,
     use_clang_coverage = True,
 )
 
@@ -359,19 +400,19 @@ try_.builder(
     builderless = True,
     os = os.WINDOWS_10,
     contact_team_email = "chrome-desktop-engprod@google.com",
-    main_list_view = "try",
-    # The size of the testing pool is limited.
-    max_concurrent_builds = 4,
-    siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CQ,
     # TODO (crbug.com/1372179): Use orchestrator pool once overloaded test pools
     # are addressed
     #use_orchestrator_pool = True,
-    tryjob = try_.job(
+    cq_settings = try_.cq_settings(
         location_filters = [
             "sandbox/win/.+",
             "sandbox/policy/win/.+",
         ],
     ),
+    main_list_view = "try",
+    # The size of the testing pool is limited.
+    max_concurrent_builds = 4,
+    siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CQ,
 )
 
 try_.builder(
@@ -395,13 +436,17 @@ try_.builder(
     cores = None,
     os = os.WINDOWS_10,
     contact_team_email = "chrome-desktop-engprod@google.com",
-    main_list_view = "try",
-    siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CQ,
-    tryjob = try_.job(
+    cq_settings = try_.cq_settings(
         # TODO(crbug.com/40847153) Remove once cancelling doesn't wipe
         # out builder cache
         cancel_stale = False,
+        on_default_cq = True,
     ),
+    main_list_view = "try",
+    siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CQ,
+    # TODO: crbug.com/509602362 - Temporarily enable remote linking builder by builder.
+    # Will enable it for all CQ builds again after resolving RBE-CAS issue.
+    siso_remote_linking = True,
 )
 
 try_.builder(
@@ -453,16 +498,31 @@ try_.builder(
     name = "win10-code-coverage",
     mirrors = ["ci/win10-code-coverage"],
     gn_args = "ci/win10-code-coverage",
-    execution_timeout = 20 * time.hour,
+    execution_timeout = 10 * time.hour,
 )
 
 try_.builder(
-    name = "win-treesinviz-enabled-rel",
+    name = "win-treesinviz-disabled-rel",
     mirrors = [
-        "ci/win-treesinviz-enabled-rel",
+        "ci/win-treesinviz-disabled-rel",
     ],
-    gn_args = "ci/win-treesinviz-enabled-rel",
+    gn_args = "ci/win-treesinviz-disabled-rel",
     contact_team_email = "chrome-gpu-team@google.com",
+)
+
+try_.builder(
+    name = "windows-no-initial-webui-rel",
+    mirrors = [
+        "ci/Win x64 Builder",
+        "ci/windows-no-initial-webui-rel",
+    ],
+    gn_args = gn_args.config(
+        configs = [
+            "ci/Win x64 Builder",
+            "release_try_builder",
+        ],
+    ),
+    contact_team_email = "chrome-webium-product-eng@google.com",
 )
 
 try_.builder(
@@ -540,6 +600,9 @@ gpu.try_.optional_tests_builder(
             "webgl2_conformance_d3d11_passthrough_tests 8086:9bc5": targets.remove(
                 reason = "TODO(crbug.com/41483572): Re-add this when capacity issues are resolved.",
             ),
+            "webgl_conformance_d3d9_passthrough_tests 8086:9bc5": targets.remove(
+                reason = "Flaky crashes crbug.com/486945324",
+            ),
             "webgl_conformance_vulkan_passthrough_tests 10de:2184": targets.remove(
                 reason = "TODO(crbug.com/380431384): flaky crashes in random tests.",
             ),
@@ -563,6 +626,9 @@ gpu.try_.optional_tests_builder(
     free_space = None,
     alerts_enabled = False,
     contact_team_email = "chrome-gpu-infra@google.com",
+    cq_settings = try_.cq_settings(
+        location_filters = gpu.try_.optional_trybot_location_filters.WINDOWS,
+    ),
     # default is 6 in _gpu_optional_tests_builder()
     execution_timeout = 5 * time.hour,
     main_list_view = "try",
@@ -573,7 +639,4 @@ gpu.try_.optional_tests_builder(
     # overloading the testing hardware.
     max_concurrent_builds = 9,
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CQ,
-    tryjob = try_.job(
-        location_filters = gpu.try_.optional_trybot_location_filters.WINDOWS,
-    ),
 )

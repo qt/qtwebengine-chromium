@@ -42,7 +42,7 @@ export interface EventDisplayColumnConfig {
 }
 
 export const enum MediaEventColumnKeys {
-  TIMESTAMP = 'display-timestamp',
+  TIMESTAMP = 'displayTimestamp',
   EVENT = 'event',
   VALUE = 'value',
 }

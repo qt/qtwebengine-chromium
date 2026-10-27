@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 MatrixXd A(3, 3);
 A << 4, -1, 2, -1, 6, 0, 2, 0, 5;
 cout << "The matrix A is" << endl << A << endl;

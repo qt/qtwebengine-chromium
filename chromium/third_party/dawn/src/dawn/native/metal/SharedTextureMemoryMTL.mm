@@ -25,17 +25,18 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/metal/SharedTextureMemoryMTL.h"
+#include "src/dawn/native/metal/SharedTextureMemoryMTL.h"
 
 #include <CoreVideo/CVPixelBuffer.h>
 
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/metal/CommandRecordingContext.h"
-#include "dawn/native/metal/DeviceMTL.h"
-#include "dawn/native/metal/QueueMTL.h"
-#include "dawn/native/metal/SharedFenceMTL.h"
-#include "dawn/native/metal/TextureMTL.h"
-#include "dawn/native/metal/UtilsMetal.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/metal/CommandRecordingContext.h"
+#include "src/dawn/native/metal/DeviceMTL.h"
+#include "src/dawn/native/metal/QueueMTL.h"
+#include "src/dawn/native/metal/SharedFenceMTL.h"
+#include "src/dawn/native/metal/TextureMTL.h"
+#include "src/dawn/native/metal/UtilsMetal.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native::metal {
 
@@ -202,7 +203,7 @@ MaybeError SharedTextureMemory::BeginAccessImpl(
     const UnpackedPtr<BeginAccessDescriptor>& descriptor) {
     DAWN_TRY(descriptor.ValidateSubset<>());
     for (size_t i = 0; i < descriptor->fenceCount; ++i) {
-        SharedFenceBase* fence = descriptor->fences[i];
+        SharedFenceBase* fence = DAWN_UNSAFE_TODO(descriptor->fences[i]);
 
         SharedFenceExportInfo exportInfo;
         DAWN_TRY(fence->ExportInfo(&exportInfo));

@@ -97,9 +97,7 @@
 #include "ui/display/win/screen_win.h"
 #include "ui/gfx/mojom/dxgi_info.mojom.h"
 #endif  // BUILDFLAG(IS_WIN)
-#if BUILDFLAG(IS_CASTOS)
-#include "chromecast/chromecast_buildflags.h"  // nogncheck
-#endif                                         // BUILDFLAG(IS_CASTOS)
+
 
 namespace content {
 
@@ -520,14 +518,6 @@ void GpuDataManagerImplPrivate::InitializeGpuModes() {
 
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kDisableGpu)) {
-    // Chomecast audio-only builds run with the flag --disable-gpu. The GPU
-    // process should not access hardware GPU in this case.
-#if BUILDFLAG(IS_CASTOS)
-#if BUILDFLAG(IS_CAST_AUDIO_ONLY)
-    fallback_modes_.clear();
-    fallback_modes_.push_back(gpu::GpuMode::DISPLAY_COMPOSITOR);
-#endif  // BUILDFLAG(IS_CAST_AUDIO_ONLY)
-#endif  // BUILDFLAG(IS_CASTOS)
 
 #if (BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CAST_ANDROID)) || \
     BUILDFLAG(IS_CHROMEOS)
@@ -582,6 +572,12 @@ void GpuDataManagerImplPrivate::SetSkiaGraphiteEnabledForTesting(bool enabled) {
       gpu::kGpuFeatureStatusEnabled;
   gpu_feature_info_.status_values[gpu::GPU_FEATURE_TYPE_SKIA_GRAPHITE] =
       enabled ? gpu::kGpuFeatureStatusEnabled : gpu::kGpuFeatureStatusDisabled;
+}
+
+void GpuDataManagerImplPrivate::SetInitializedForTesting(bool initialized) {
+  gpu_feature_info_.status_values[gpu::GPU_FEATURE_TYPE_ACCELERATED_GL] =
+      initialized ? gpu::kGpuFeatureStatusEnabled
+                  : gpu::kGpuFeatureStatusUndefined;
 }
 
 gpu::GPUInfo GpuDataManagerImplPrivate::GetGPUInfo() const {
@@ -1242,7 +1238,15 @@ void GpuDataManagerImplPrivate::UpdateGpuFeatureInfo(
              gpu_feature_info_
                      .status_values[gpu::GPU_FEATURE_TYPE_SKIA_GRAPHITE] !=
                  gpu::GpuFeatureStatus::kGpuFeatureStatusEnabled) {
-    FallBackToNextGpuMode();
+    if (gpu_feature_info_.status_values[gpu::GPU_FEATURE_TYPE_VULKAN] ==
+        gpu::GpuFeatureStatus::kGpuFeatureStatusEnabled) {
+      // TODO(crbug.com/496616828): For Pixel devices Graphite can silently be
+      // replaced with Ganesh/Vulkan. Remove this once Graphite works on
+      // Imagination GPUs.
+      gpu_mode_ = gpu::GpuMode::HARDWARE_VULKAN;
+    } else {
+      FallBackToNextGpuMode();
+    }
   }
 #endif  // !BUILDFLAG(IS_FUCHSIA)
   if (!gpu_feature_info_for_hardware_gpu_.IsInitialized()) {

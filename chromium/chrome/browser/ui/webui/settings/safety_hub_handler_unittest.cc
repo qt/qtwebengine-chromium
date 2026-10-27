@@ -55,6 +55,7 @@
 #include "components/content_settings/core/common/features.h"
 #include "components/crx_file/id_util.h"
 #include "components/desktop_to_mobile_promos/features.h"
+#include "components/password_manager/core/browser/password_manager_test_utils.h"
 #include "components/password_manager/core/browser/password_store/test_password_store.h"
 #include "components/permissions/constants.h"
 #include "components/safe_browsing/core/common/features.h"
@@ -245,8 +246,8 @@ class SafetyHubHandlerTest : public testing::Test {
   }
 
   void CreateLeakedCredential() {
-    profile_store().AddLogin(
-        MakeForm(kUsername, kCompromisedPassword, kUsedTestSite, true));
+    profile_store().AddLogin(password_manager::FromPasswordForm(
+        MakeForm(kUsername, kCompromisedPassword, kUsedTestSite, true)));
     PasswordStatusCheckService* password_service =
         PasswordStatusCheckServiceFactory::GetForProfile(profile());
     safety_hub_test_util::UpdatePasswordCheckServiceAsync(password_service);
@@ -254,8 +255,8 @@ class SafetyHubHandlerTest : public testing::Test {
   }
 
   void FixLeakedCredential() {
-    profile_store().UpdateLogin(
-        MakeForm(kUsername, u"new_fnlsr4@cm^mls@fkspnsg3d"));
+    profile_store().UpdateLogin(password_manager::FromPasswordForm(
+        MakeForm(kUsername, u"new_fnlsr4@cm^mls@fkspnsg3d")));
     PasswordStatusCheckService* password_service =
         PasswordStatusCheckServiceFactory::GetForProfile(profile());
     safety_hub_test_util::UpdatePasswordCheckServiceAsync(password_service);
@@ -679,20 +680,30 @@ TEST_F(SafetyHubHandlerTest, PopulateAbusiveAndUnusedSitePermissionsData) {
   auto* revoked_permission_list_unused =
       revoked_permissions[0].GetDict().FindList(site_settings::kPermissions);
   EXPECT_EQ(revoked_permission_list_unused->size(), 1u);
-  EXPECT_EQ((*revoked_permission_list_unused)[0], "location");
+  EXPECT_EQ(*(*revoked_permission_list_unused)[0].GetDict().FindString(
+                site_settings::kType),
+            "location");
 
   // Abusive and unused site url should have both notifications and unused
   // permissions in permission list.
   auto* revoked_permission_list_abusive_and_unused =
       revoked_permissions[1].GetDict().FindList(site_settings::kPermissions);
   EXPECT_EQ(revoked_permission_list_abusive_and_unused->size(), 2u);
-  EXPECT_EQ((*revoked_permission_list_abusive_and_unused)[0], "location");
-  EXPECT_EQ((*revoked_permission_list_abusive_and_unused)[1], "notifications");
+  EXPECT_EQ(
+      *(*revoked_permission_list_abusive_and_unused)[0].GetDict().FindString(
+          site_settings::kType),
+      "location");
+  EXPECT_EQ(
+      *(*revoked_permission_list_abusive_and_unused)[1].GetDict().FindString(
+          site_settings::kType),
+      "notifications");
 
   // Abusive notification url should have notifications in permission list.
   auto* revoked_permission_list_abusive =
       revoked_permissions[2].GetDict().FindList(site_settings::kPermissions);
-  EXPECT_EQ((*revoked_permission_list_abusive)[0], "notifications");
+  EXPECT_EQ(*(*revoked_permission_list_abusive)[0].GetDict().FindString(
+                site_settings::kType),
+            "notifications");
 
   // Notifications should not be allowed.
   ExpectRevokedAbusiveNotificationPermission(kAbusiveAndUnusedTestSite);
@@ -1038,6 +1049,8 @@ TEST_F(SafetyHubHandlerTest, RevokeAllContentSettingTypes) {
           ContentSettingsType::CAMERA_PAN_TILT_ZOOM,
           ContentSettingsType::FILE_SYSTEM_ACCESS_EXTENDED_PERMISSION,
           ContentSettingsType::POINTER_LOCK,
+          ContentSettingsType::LOCAL_NETWORK_ACCESS,
+          ContentSettingsType::SUB_APPS_WITHOUT_PROMPTS,
           // clang-format on
       });
 
@@ -1465,7 +1478,9 @@ TEST_P(SafetyHubHandlerUnusedPermissionRevocationDisabledTest,
 
     auto* revoked_permission_list =
         revoked_permissions[0].GetDict().FindList(site_settings::kPermissions);
-    EXPECT_EQ((*revoked_permission_list)[0], "notifications");
+    EXPECT_EQ(*(*revoked_permission_list)[0].GetDict().FindString(
+                  site_settings::kType),
+              "notifications");
     // Notifications should not be allowed.
     ExpectRevokedAbusiveNotificationPermission(kAbusiveTestSite);
   } else {

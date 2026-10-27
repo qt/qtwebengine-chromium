@@ -49,6 +49,8 @@
  */
 
 import '../cr_icon/cr_icon.js';
+
+import {isMac} from '//resources/js/platform.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 
@@ -188,6 +190,7 @@ export class CrIconButtonElement extends CrIconbuttonElementBase {
     icons.forEach(async icon => {
       const crIcon = document.createElement('cr-icon');
       crIcon.icon = icon;
+      crIcon.setAttribute('part', 'icon');
       this.$.icon.appendChild(crIcon);
       await crIcon.updateComplete;
       crIcon.shadowRoot.querySelectorAll('svg, img')
@@ -196,7 +199,7 @@ export class CrIconButtonElement extends CrIconbuttonElementBase {
   }
 
   private onKeyDown_(e: KeyboardEvent) {
-    if (e.key !== ' ' && e.key !== 'Enter') {
+    if (e.key !== ' ' && (e.key !== 'Enter' || (isMac && e.ctrlKey))) {
       return;
     }
 
@@ -214,7 +217,7 @@ export class CrIconButtonElement extends CrIconbuttonElementBase {
   }
 
   private onKeyUp_(e: KeyboardEvent) {
-    if (e.key === ' ' || e.key === 'Enter') {
+    if (e.key === ' ' || (e.key === 'Enter' && !(isMac && e.ctrlKey))) {
       e.preventDefault();
       e.stopPropagation();
     }

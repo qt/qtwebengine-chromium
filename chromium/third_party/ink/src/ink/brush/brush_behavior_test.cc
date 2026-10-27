@@ -69,23 +69,22 @@ TEST(BrushBehaviorTest, StringifySource) {
             "kDistanceTraveledInMultiplesOfBrushSize");
   EXPECT_EQ(absl::StrCat(BrushBehavior::Source::kTimeOfInputInSeconds),
             "kTimeOfInputInSeconds");
-  EXPECT_EQ(absl::StrCat(BrushBehavior::Source::kTimeOfInputInMillis),
-            "kTimeOfInputInMillis");
+  EXPECT_EQ(
+      absl::StrCat(BrushBehavior::Source::kTimeFromInputToStrokeEndInSeconds),
+      "kTimeFromInputToStrokeEndInSeconds");
   EXPECT_EQ(absl::StrCat(BrushBehavior::Source::
                              kPredictedDistanceTraveledInMultiplesOfBrushSize),
             "kPredictedDistanceTraveledInMultiplesOfBrushSize");
   EXPECT_EQ(absl::StrCat(BrushBehavior::Source::kPredictedTimeElapsedInSeconds),
             "kPredictedTimeElapsedInSeconds");
-  EXPECT_EQ(absl::StrCat(BrushBehavior::Source::kPredictedTimeElapsedInMillis),
-            "kPredictedTimeElapsedInMillis");
   EXPECT_EQ(
       absl::StrCat(
           BrushBehavior::Source::kDistanceRemainingInMultiplesOfBrushSize),
       "kDistanceRemainingInMultiplesOfBrushSize");
   EXPECT_EQ(absl::StrCat(BrushBehavior::Source::kTimeSinceInputInSeconds),
             "kTimeSinceInputInSeconds");
-  EXPECT_EQ(absl::StrCat(BrushBehavior::Source::kTimeSinceInputInMillis),
-            "kTimeSinceInputInMillis");
+  EXPECT_EQ(absl::StrCat(BrushBehavior::Source::kTimeSinceStrokeEndInSeconds),
+            "kTimeSinceStrokeEndInSeconds");
   EXPECT_EQ(
       absl::StrCat(BrushBehavior::Source::
                        kAccelerationInMultiplesOfBrushSizePerSecondSquared),
@@ -106,39 +105,37 @@ TEST(BrushBehaviorTest, StringifySource) {
                 BrushBehavior::Source::
                     kAccelerationLateralInMultiplesOfBrushSizePerSecondSquared),
             "kAccelerationLateralInMultiplesOfBrushSizePerSecondSquared");
+  EXPECT_EQ(absl::StrCat(BrushBehavior::Source::kSpeedInCentimetersPerSecond),
+            "kSpeedInCentimetersPerSecond");
   EXPECT_EQ(
-      absl::StrCat(BrushBehavior::Source::kInputSpeedInCentimetersPerSecond),
-      "kInputSpeedInCentimetersPerSecond");
-  EXPECT_EQ(absl::StrCat(
-                BrushBehavior::Source::kInputVelocityXInCentimetersPerSecond),
-            "kInputVelocityXInCentimetersPerSecond");
-  EXPECT_EQ(absl::StrCat(
-                BrushBehavior::Source::kInputVelocityYInCentimetersPerSecond),
-            "kInputVelocityYInCentimetersPerSecond");
+      absl::StrCat(BrushBehavior::Source::kVelocityXInCentimetersPerSecond),
+      "kVelocityXInCentimetersPerSecond");
   EXPECT_EQ(
-      absl::StrCat(BrushBehavior::Source::kInputDistanceTraveledInCentimeters),
-      "kInputDistanceTraveledInCentimeters");
+      absl::StrCat(BrushBehavior::Source::kVelocityYInCentimetersPerSecond),
+      "kVelocityYInCentimetersPerSecond");
+  EXPECT_EQ(absl::StrCat(BrushBehavior::Source::kDistanceTraveledInCentimeters),
+            "kDistanceTraveledInCentimeters");
+  EXPECT_EQ(absl::StrCat(
+                BrushBehavior::Source::kPredictedDistanceTraveledInCentimeters),
+            "kPredictedDistanceTraveledInCentimeters");
   EXPECT_EQ(
       absl::StrCat(
-          BrushBehavior::Source::kPredictedInputDistanceTraveledInCentimeters),
-      "kPredictedInputDistanceTraveledInCentimeters");
-  EXPECT_EQ(absl::StrCat(BrushBehavior::Source::
-                             kInputAccelerationInCentimetersPerSecondSquared),
-            "kInputAccelerationInCentimetersPerSecondSquared");
-  EXPECT_EQ(absl::StrCat(BrushBehavior::Source::
-                             kInputAccelerationXInCentimetersPerSecondSquared),
-            "kInputAccelerationXInCentimetersPerSecondSquared");
-  EXPECT_EQ(absl::StrCat(BrushBehavior::Source::
-                             kInputAccelerationYInCentimetersPerSecondSquared),
-            "kInputAccelerationYInCentimetersPerSecondSquared");
+          BrushBehavior::Source::kAccelerationInCentimetersPerSecondSquared),
+      "kAccelerationInCentimetersPerSecondSquared");
   EXPECT_EQ(
-      absl::StrCat(BrushBehavior::Source::
-                       kInputAccelerationForwardInCentimetersPerSecondSquared),
-      "kInputAccelerationForwardInCentimetersPerSecondSquared");
+      absl::StrCat(
+          BrushBehavior::Source::kAccelerationXInCentimetersPerSecondSquared),
+      "kAccelerationXInCentimetersPerSecondSquared");
   EXPECT_EQ(
-      absl::StrCat(BrushBehavior::Source::
-                       kInputAccelerationLateralInCentimetersPerSecondSquared),
-      "kInputAccelerationLateralInCentimetersPerSecondSquared");
+      absl::StrCat(
+          BrushBehavior::Source::kAccelerationYInCentimetersPerSecondSquared),
+      "kAccelerationYInCentimetersPerSecondSquared");
+  EXPECT_EQ(absl::StrCat(BrushBehavior::Source::
+                             kAccelerationForwardInCentimetersPerSecondSquared),
+            "kAccelerationForwardInCentimetersPerSecondSquared");
+  EXPECT_EQ(absl::StrCat(BrushBehavior::Source::
+                             kAccelerationLateralInCentimetersPerSecondSquared),
+            "kAccelerationLateralInCentimetersPerSecondSquared");
   EXPECT_EQ(
       absl::StrCat(
           BrushBehavior::Source::kDistanceRemainingAsFractionOfStrokeLength),
@@ -182,7 +179,8 @@ TEST(BrushBehaviorTest, StringifyTarget) {
             "kHueOffsetInRadians");
   EXPECT_EQ(absl::StrCat(BrushBehavior::Target::kSaturationMultiplier),
             "kSaturationMultiplier");
-  EXPECT_EQ(absl::StrCat(BrushBehavior::Target::kLuminosity), "kLuminosity");
+  EXPECT_EQ(absl::StrCat(BrushBehavior::Target::kLuminosityOffset),
+            "kLuminosityOffset");
   EXPECT_EQ(absl::StrCat(BrushBehavior::Target::kOpacityMultiplier),
             "kOpacityMultiplier");
   EXPECT_EQ(absl::StrCat(static_cast<BrushBehavior::Target>(91)), "Target(91)");
@@ -220,30 +218,23 @@ TEST(BrushBehaviorTest, StringifyEnabledToolTypes) {
             "unknown/mouse/touch");
 }
 
-TEST(BrushBehaviorTest, StringifyOptionalInputProperty) {
-  EXPECT_EQ(absl::StrCat(BrushBehavior::OptionalInputProperty::kPressure),
-            "kPressure");
-  EXPECT_EQ(absl::StrCat(BrushBehavior::OptionalInputProperty::kTilt), "kTilt");
-  EXPECT_EQ(absl::StrCat(BrushBehavior::OptionalInputProperty::kOrientation),
-            "kOrientation");
-  EXPECT_EQ(absl::StrCat(BrushBehavior::OptionalInputProperty::kTiltXAndY),
-            "kTiltXAndY");
-  EXPECT_EQ(absl::StrCat(static_cast<BrushBehavior::OptionalInputProperty>(73)),
-            "OptionalInputProperty(73)");
-}
-
 TEST(BrushBehaviorTest, StringifyBinaryOp) {
   EXPECT_EQ(absl::StrCat(BrushBehavior::BinaryOp::kProduct), "kProduct");
   EXPECT_EQ(absl::StrCat(BrushBehavior::BinaryOp::kSum), "kSum");
+  EXPECT_EQ(absl::StrCat(BrushBehavior::BinaryOp::kMin), "kMin");
+  EXPECT_EQ(absl::StrCat(BrushBehavior::BinaryOp::kMax), "kMax");
+  EXPECT_EQ(absl::StrCat(BrushBehavior::BinaryOp::kAndThen), "kAndThen");
+  EXPECT_EQ(absl::StrCat(BrushBehavior::BinaryOp::kOrElse), "kOrElse");
+  EXPECT_EQ(absl::StrCat(BrushBehavior::BinaryOp::kXorElse), "kXorElse");
   EXPECT_EQ(absl::StrCat(static_cast<BrushBehavior::BinaryOp>(147)),
             "BinaryOp(147)");
 }
 
-TEST(BrushBehaviorTest, StringifyDampingSource) {
-  EXPECT_EQ(absl::StrCat(BrushBehavior::DampingSource::kTimeInSeconds),
+TEST(BrushBehaviorTest, StringifyProgressDomain) {
+  EXPECT_EQ(absl::StrCat(BrushBehavior::ProgressDomain::kTimeInSeconds),
             "kTimeInSeconds");
-  EXPECT_EQ(absl::StrCat(static_cast<BrushBehavior::DampingSource>(73)),
-            "DampingSource(73)");
+  EXPECT_EQ(absl::StrCat(static_cast<BrushBehavior::ProgressDomain>(73)),
+            "ProgressDomain(73)");
 }
 
 TEST(BrushBehaviorTest, StringifyInterpolation) {
@@ -263,11 +254,11 @@ TEST(BrushBehaviorTest, StringifySourceNode) {
       "SourceNode{source=kNormalizedPressure, source_value_range={0.5, 0.75}}");
   EXPECT_EQ(
       absl::StrCat(BrushBehavior::SourceNode{
-          .source = BrushBehavior::Source::kInputDistanceTraveledInCentimeters,
+          .source = BrushBehavior::Source::kDistanceTraveledInCentimeters,
           .source_out_of_range_behavior = BrushBehavior::OutOfRange::kRepeat,
           .source_value_range = {0, 1},
       }),
-      "SourceNode{source=kInputDistanceTraveledInCentimeters, "
+      "SourceNode{source=kDistanceTraveledInCentimeters, "
       "source_out_of_range_behavior=kRepeat, "
       "source_value_range={0, 1}}");
 }
@@ -280,16 +271,10 @@ TEST(BrushBehaviorTest, StringifyConstantNode) {
 TEST(BrushBehaviorTest, StringifyNoiseNode) {
   EXPECT_EQ(absl::StrCat(BrushBehavior::NoiseNode{
                 .seed = 0xEffaced,
-                .vary_over = BrushBehavior::DampingSource::kTimeInSeconds,
+                .vary_over = BrushBehavior::ProgressDomain::kTimeInSeconds,
                 .base_period = 0.25f}),
             "NoiseNode{seed=0x0effaced, vary_over=kTimeInSeconds, "
             "base_period=0.25}");
-}
-
-TEST(BrushBehaviorTest, StringifyFallbackFilterNode) {
-  EXPECT_EQ(absl::StrCat(BrushBehavior::FallbackFilterNode{
-                BrushBehavior::OptionalInputProperty::kPressure}),
-            "FallbackFilterNode{kPressure}");
 }
 
 TEST(BrushBehaviorTest, StringifyToolTypeFilterNode) {
@@ -301,7 +286,7 @@ TEST(BrushBehaviorTest, StringifyToolTypeFilterNode) {
 
 TEST(BrushBehaviorTest, StringifyDampingNode) {
   EXPECT_EQ(absl::StrCat(BrushBehavior::DampingNode{
-                .damping_source = BrushBehavior::DampingSource::kTimeInSeconds,
+                .damping_source = BrushBehavior::ProgressDomain::kTimeInSeconds,
                 .damping_gap = 0.25f,
             }),
             "DampingNode{damping_source=kTimeInSeconds, damping_gap=0.25}");
@@ -311,6 +296,18 @@ TEST(BrushBehaviorTest, StringifyResponseNode) {
   EXPECT_EQ(absl::StrCat(BrushBehavior::ResponseNode{
                 EasingFunction::Predefined::kEaseIn}),
             "ResponseNode{kEaseIn}");
+}
+
+TEST(BrushBehaviorTest, StringifyIntegralNode) {
+  EXPECT_EQ(
+      absl::StrCat(BrushBehavior::IntegralNode{
+          .integrate_over =
+              BrushBehavior::ProgressDomain::kDistanceInCentimeters,
+          .integral_out_of_range_behavior = BrushBehavior::OutOfRange::kRepeat,
+          .integral_value_range = {1, 5},
+      }),
+      "IntegralNode{integrate_over=kDistanceInCentimeters, "
+      "integral_out_of_range_behavior=kRepeat, integral_value_range={1, 5}}");
 }
 
 TEST(BrushBehaviorTest, StringifyBinaryOpNode) {
@@ -356,18 +353,21 @@ TEST(BrushBehaviorTest, StringifyPolarTargetNode) {
 
 TEST(BrushBehaviorTest, StringifyBrushBehavior) {
   EXPECT_EQ(absl::StrCat(BrushBehavior{{}}), "BrushBehavior{nodes={}}");
-  EXPECT_EQ(
-      absl::StrCat(BrushBehavior{{
-          BrushBehavior::ConstantNode{1.f},
-          BrushBehavior::TargetNode{
-              .target =
-                  BrushBehavior::Target::kPositionOffsetXInMultiplesOfBrushSize,
-              .target_modifier_range = {0, 0.5},
-          },
-      }}),
-      "BrushBehavior{nodes={ConstantNode{1}, "
-      "TargetNode{target=kPositionOffsetXInMultiplesOfBrushSize, "
-      "target_modifier_range={0, 0.5}}}}");
+  EXPECT_EQ(absl::StrCat(BrushBehavior{
+                .nodes =
+                    {
+                        BrushBehavior::ConstantNode{1.f},
+                        BrushBehavior::TargetNode{
+                            .target = BrushBehavior::Target::
+                                kPositionOffsetXInMultiplesOfBrushSize,
+                            .target_modifier_range = {0, 0.5},
+                        },
+                    },
+                .developer_comment = "foobar",
+            }),
+            "BrushBehavior{nodes={ConstantNode{1}, "
+            "TargetNode{target=kPositionOffsetXInMultiplesOfBrushSize, "
+            "target_modifier_range={0, 0.5}}}, developer_comment=\"foobar\"}");
 }
 
 TEST(BrushBehaviorTest, EnabledToolTypesHasAllTypes) {
@@ -458,42 +458,29 @@ TEST(BrushBehaviorTest, ConstantNodeEqualAndNotEqual) {
 TEST(BrushBehaviorTest, NoiseNodeEqualAndNotEqual) {
   BrushBehavior::NoiseNode node = {
       .seed = 12345,
-      .vary_over = BrushBehavior::DampingSource::kTimeInSeconds,
+      .vary_over = BrushBehavior::ProgressDomain::kTimeInSeconds,
       .base_period = 0.25f};
   EXPECT_EQ((BrushBehavior::NoiseNode{
                 .seed = 12345,
-                .vary_over = BrushBehavior::DampingSource::kTimeInSeconds,
+                .vary_over = BrushBehavior::ProgressDomain::kTimeInSeconds,
                 .base_period = 0.25f}),
             node);
   EXPECT_NE((BrushBehavior::NoiseNode{
                 .seed = 54321,  // different
-                .vary_over = BrushBehavior::DampingSource::kTimeInSeconds,
+                .vary_over = BrushBehavior::ProgressDomain::kTimeInSeconds,
                 .base_period = 0.25f}),
             node);
   EXPECT_NE(
       (BrushBehavior::NoiseNode{.seed = 12345,
-                                .vary_over = BrushBehavior::DampingSource::
+                                .vary_over = BrushBehavior::ProgressDomain::
                                     kDistanceInCentimeters,  // different
                                 .base_period = 0.25f}),
       node);
   EXPECT_NE((BrushBehavior::NoiseNode{
                 .seed = 12345,
-                .vary_over = BrushBehavior::DampingSource::kTimeInSeconds,
+                .vary_over = BrushBehavior::ProgressDomain::kTimeInSeconds,
                 .base_period = 0.75f}),  // different
             node);
-}
-
-TEST(BrushBehaviorTest, FallbackFilterNodeEqualAndNotEqual) {
-  BrushBehavior::FallbackFilterNode node = {
-      .is_fallback_for = BrushBehavior::OptionalInputProperty::kPressure};
-  EXPECT_EQ(
-      (BrushBehavior::FallbackFilterNode{
-          .is_fallback_for = BrushBehavior::OptionalInputProperty::kPressure}),
-      node);
-  EXPECT_NE(
-      (BrushBehavior::FallbackFilterNode{
-          .is_fallback_for = BrushBehavior::OptionalInputProperty::kTilt}),
-      node);
 }
 
 TEST(BrushBehaviorTest, ToolTypeFilterNodeEqualAndNotEqual) {
@@ -509,22 +496,22 @@ TEST(BrushBehaviorTest, ToolTypeFilterNodeEqualAndNotEqual) {
 
 TEST(BrushBehaviorTest, DampingNodeEqualAndNotEqual) {
   BrushBehavior::DampingNode node = {
-      .damping_source = BrushBehavior::DampingSource::kTimeInSeconds,
+      .damping_source = BrushBehavior::ProgressDomain::kTimeInSeconds,
       .damping_gap = 0.5,
   };
   EXPECT_EQ((BrushBehavior::DampingNode{
-                .damping_source = BrushBehavior::DampingSource::kTimeInSeconds,
+                .damping_source = BrushBehavior::ProgressDomain::kTimeInSeconds,
                 .damping_gap = 0.5,
             }),
             node);
   EXPECT_NE((BrushBehavior::DampingNode{
-                .damping_source = static_cast<BrushBehavior::DampingSource>(
+                .damping_source = static_cast<BrushBehavior::ProgressDomain>(
                     123),  // different
                 .damping_gap = 0.5,
             }),
             node);
   EXPECT_NE((BrushBehavior::DampingNode{
-                .damping_source = BrushBehavior::DampingSource::kTimeInSeconds,
+                .damping_source = BrushBehavior::ProgressDomain::kTimeInSeconds,
                 .damping_gap = 0.75,  // different
             }),
             node);
@@ -539,6 +526,28 @@ TEST(BrushBehaviorTest, ResponseNodeEqualAndNotEqual) {
   EXPECT_NE((BrushBehavior::ResponseNode{
                 .response_curve = {EasingFunction::Predefined::kEaseOut}}),
             node);
+}
+
+TEST(BrushBehaviorTest, IntegralNodeEqualAndNotEqual) {
+  BrushBehavior::IntegralNode node = {
+      .integrate_over = BrushBehavior::ProgressDomain::kTimeInSeconds,
+      .integral_out_of_range_behavior = BrushBehavior::OutOfRange::kRepeat,
+      .integral_value_range = {0, 5},
+  };
+  EXPECT_EQ(
+      (BrushBehavior::IntegralNode{
+          .integrate_over = BrushBehavior::ProgressDomain::kTimeInSeconds,
+          .integral_out_of_range_behavior = BrushBehavior::OutOfRange::kRepeat,
+          .integral_value_range = {0, 5},
+      }),
+      node);
+  EXPECT_NE(
+      (BrushBehavior::IntegralNode{
+          .integrate_over = BrushBehavior::ProgressDomain::kTimeInSeconds,
+          .integral_out_of_range_behavior = BrushBehavior::OutOfRange::kRepeat,
+          .integral_value_range = {0, 6},  // different
+      }),
+      node);
 }
 
 TEST(BrushBehaviorTest, BinaryOpNodeEqualAndNotEqual) {
@@ -663,94 +672,107 @@ TEST(BrushBehaviorTest, BrushBehaviorEqualAndNotEqual) {
 }
 
 TEST(BrushBehaviorTest, ValidateSourceNode) {
-  EXPECT_EQ(
+  EXPECT_THAT(
       brush_internal::ValidateBrushBehaviorNode(BrushBehavior::SourceNode{
-          .source = BrushBehavior::Source::kInputDistanceTraveledInCentimeters,
+          .source = BrushBehavior::Source::kDistanceTraveledInCentimeters,
           .source_out_of_range_behavior = BrushBehavior::OutOfRange::kMirror,
           .source_value_range = {0, 2},
       }),
-      absl::OkStatus());
+      IsOk());
 
-  absl::Status status =
+  EXPECT_THAT(
       brush_internal::ValidateBrushBehaviorNode(BrushBehavior::SourceNode{
           .source = static_cast<BrushBehavior::Source>(123),
           .source_out_of_range_behavior = BrushBehavior::OutOfRange::kMirror,
           .source_value_range = {0, 2},
-      });
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("non-enumerator value 123"));
+      }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("non-enumerator value 123")));
 
-  status = brush_internal::ValidateBrushBehaviorNode(BrushBehavior::SourceNode{
-      .source = BrushBehavior::Source::kInputDistanceTraveledInCentimeters,
-      .source_out_of_range_behavior =
-          static_cast<BrushBehavior::OutOfRange>(123),
-      .source_value_range = {0, 2},
-  });
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("non-enumerator value 123"));
-
-  status = brush_internal::ValidateBrushBehaviorNode(BrushBehavior::SourceNode{
-      .source = BrushBehavior::Source::kTimeSinceInputInSeconds,
-      .source_out_of_range_behavior = BrushBehavior::OutOfRange::kRepeat,
-      .source_value_range = {0, 2},
-  });
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(),
-              HasSubstr("kTimeSinceInput*` must only be used with "
-                        "`source_out_of_range_behavior` of `kClamp"));
-
-  status = brush_internal::ValidateBrushBehaviorNode(BrushBehavior::SourceNode{
-      .source = BrushBehavior::Source::kInputDistanceTraveledInCentimeters,
-      .source_out_of_range_behavior = BrushBehavior::OutOfRange::kMirror,
-      .source_value_range = {0, kInfinity},
-  });
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
   EXPECT_THAT(
-      status.message(),
-      HasSubstr("source_value_range` must hold 2 finite and distinct values"));
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::SourceNode{
+          .source = BrushBehavior::Source::kDistanceTraveledInCentimeters,
+          .source_out_of_range_behavior =
+              static_cast<BrushBehavior::OutOfRange>(123),
+          .source_value_range = {0, 2},
+      }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("non-enumerator value 123")));
 
-  status = brush_internal::ValidateBrushBehaviorNode(BrushBehavior::SourceNode{
-      .source = BrushBehavior::Source::kInputDistanceTraveledInCentimeters,
-      .source_out_of_range_behavior = BrushBehavior::OutOfRange::kMirror,
-      .source_value_range = {2, 2},
-  });
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
   EXPECT_THAT(
-      status.message(),
-      HasSubstr("source_value_range` must hold 2 finite and distinct values"));
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::SourceNode{
+          .source = BrushBehavior::Source::kTimeSinceInputInSeconds,
+          .source_out_of_range_behavior = BrushBehavior::OutOfRange::kRepeat,
+          .source_value_range = {0, 2},
+      }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("`kTimeSince*` sources can only be used with a "
+                         "`source_out_of_range_behavior` of `kClamp`")));
+
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::SourceNode{
+          .source = BrushBehavior::Source::kTimeSinceStrokeEndInSeconds,
+          .source_out_of_range_behavior = BrushBehavior::OutOfRange::kMirror,
+          .source_value_range = {0, 2},
+      }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("`kTimeSince*` sources can only be used with a "
+                         "`source_out_of_range_behavior` of `kClamp`")));
+
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::SourceNode{
+          .source = BrushBehavior::Source::kDistanceTraveledInCentimeters,
+          .source_out_of_range_behavior = BrushBehavior::OutOfRange::kMirror,
+          .source_value_range = {0, kInfinity},
+      }),
+      StatusIs(
+          absl::StatusCode::kInvalidArgument,
+          HasSubstr(
+              "source_value_range` must hold 2 finite and distinct values")));
+
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::SourceNode{
+          .source = BrushBehavior::Source::kDistanceTraveledInCentimeters,
+          .source_out_of_range_behavior = BrushBehavior::OutOfRange::kMirror,
+          .source_value_range = {2, 2},
+      }),
+      StatusIs(
+          absl::StatusCode::kInvalidArgument,
+          HasSubstr(
+              "source_value_range` must hold 2 finite and distinct values")));
 }
 
 TEST(BrushBehaviorTest, ValidateConstantNode) {
-  EXPECT_EQ(brush_internal::ValidateBrushBehaviorNode(
-                BrushBehavior::ConstantNode{-1}),
-            absl::OkStatus());
-  EXPECT_EQ(
+  EXPECT_THAT(brush_internal::ValidateBrushBehaviorNode(
+                  BrushBehavior::ConstantNode{-1}),
+              IsOk());
+  EXPECT_THAT(
       brush_internal::ValidateBrushBehaviorNode(BrushBehavior::ConstantNode{7}),
-      absl::OkStatus());
+      IsOk());
 
-  absl::Status status = brush_internal::ValidateBrushBehaviorNode(
-      BrushBehavior::ConstantNode{kInfinity});
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("must be finite"));
+  EXPECT_THAT(brush_internal::ValidateBrushBehaviorNode(
+                  BrushBehavior::ConstantNode{kInfinity}),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("must be finite")));
 
-  status = brush_internal::ValidateBrushBehaviorNode(
-      BrushBehavior::ConstantNode{kNan});
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("must be finite"));
+  EXPECT_THAT(brush_internal::ValidateBrushBehaviorNode(
+                  BrushBehavior::ConstantNode{kNan}),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("must be finite")));
 }
 
 TEST(BrushBehaviorTest, ValidateNoiseNode) {
   EXPECT_THAT(
       brush_internal::ValidateBrushBehaviorNode(BrushBehavior::NoiseNode{
           .seed = 12345,
-          .vary_over = BrushBehavior::DampingSource::kTimeInSeconds,
+          .vary_over = BrushBehavior::ProgressDomain::kTimeInSeconds,
           .base_period = 0.25,
       }),
       IsOk());
   EXPECT_THAT(
       brush_internal::ValidateBrushBehaviorNode(BrushBehavior::NoiseNode{
           .seed = 12345,
-          .vary_over = static_cast<BrushBehavior::DampingSource>(123),
+          .vary_over = static_cast<BrushBehavior::ProgressDomain>(123),
           .base_period = 0.25,
       }),
       StatusIs(absl::StatusCode::kInvalidArgument,
@@ -758,7 +780,7 @@ TEST(BrushBehaviorTest, ValidateNoiseNode) {
   EXPECT_THAT(
       brush_internal::ValidateBrushBehaviorNode(BrushBehavior::NoiseNode{
           .seed = 12345,
-          .vary_over = BrushBehavior::DampingSource::kTimeInSeconds,
+          .vary_over = BrushBehavior::ProgressDomain::kTimeInSeconds,
           .base_period = 0,
       }),
       StatusIs(absl::StatusCode::kInvalidArgument,
@@ -766,24 +788,11 @@ TEST(BrushBehaviorTest, ValidateNoiseNode) {
   EXPECT_THAT(
       brush_internal::ValidateBrushBehaviorNode(BrushBehavior::NoiseNode{
           .seed = 12345,
-          .vary_over = BrushBehavior::DampingSource::kTimeInSeconds,
+          .vary_over = BrushBehavior::ProgressDomain::kTimeInSeconds,
           .base_period = kInfinity,
       }),
       StatusIs(absl::StatusCode::kInvalidArgument,
                HasSubstr("base_period` must be finite and positive")));
-}
-
-TEST(BrushBehaviorTest, ValidateFallbackFilterNode) {
-  EXPECT_EQ(brush_internal::ValidateBrushBehaviorNode(
-                BrushBehavior::FallbackFilterNode{
-                    BrushBehavior::OptionalInputProperty::kPressure}),
-            absl::OkStatus());
-
-  absl::Status status = brush_internal::ValidateBrushBehaviorNode(
-      BrushBehavior::FallbackFilterNode{
-          static_cast<BrushBehavior::OptionalInputProperty>(123)});
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("non-enumerator value 123"));
 }
 
 TEST(BrushBehaviorTest, ValidateToolTypeFilterNode) {
@@ -800,112 +809,152 @@ TEST(BrushBehaviorTest, ValidateToolTypeFilterNode) {
 }
 
 TEST(BrushBehaviorTest, ValidateDampingNode) {
-  EXPECT_EQ(
+  EXPECT_THAT(
       brush_internal::ValidateBrushBehaviorNode(BrushBehavior::DampingNode{
-          .damping_source = BrushBehavior::DampingSource::kTimeInSeconds,
+          .damping_source = BrushBehavior::ProgressDomain::kTimeInSeconds,
           .damping_gap = 0.25,
       }),
-      absl::OkStatus());
+      IsOk());
 
-  absl::Status status =
+  EXPECT_THAT(
       brush_internal::ValidateBrushBehaviorNode(BrushBehavior::DampingNode{
-          .damping_source = static_cast<BrushBehavior::DampingSource>(123),
+          .damping_source = static_cast<BrushBehavior::ProgressDomain>(123),
           .damping_gap = 0.25,
-      });
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("non-enumerator value 123"));
+      }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("non-enumerator value 123")));
 
-  status = brush_internal::ValidateBrushBehaviorNode(BrushBehavior::DampingNode{
-      .damping_source = BrushBehavior::DampingSource::kTimeInSeconds,
-      .damping_gap = -1,
-  });
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(),
-              HasSubstr("damping_gap` must be finite and non-negative"));
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::DampingNode{
+          .damping_source = BrushBehavior::ProgressDomain::kTimeInSeconds,
+          .damping_gap = -1,
+      }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("damping_gap` must be finite and non-negative")));
 
-  status = brush_internal::ValidateBrushBehaviorNode(BrushBehavior::DampingNode{
-      .damping_source = BrushBehavior::DampingSource::kTimeInSeconds,
-      .damping_gap = kInfinity,
-  });
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(),
-              HasSubstr("damping_gap` must be finite and non-negative"));
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::DampingNode{
+          .damping_source = BrushBehavior::ProgressDomain::kTimeInSeconds,
+          .damping_gap = kInfinity,
+      }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("damping_gap` must be finite and non-negative")));
 }
 
 TEST(BrushBehaviorTest, ValidateResponseNode) {
-  EXPECT_EQ(
+  EXPECT_THAT(
       brush_internal::ValidateBrushBehaviorNode(
           BrushBehavior::ResponseNode{EasingFunction::Predefined::kEaseIn}),
-      absl::OkStatus());
+      IsOk());
 
-  absl::Status status = brush_internal::ValidateBrushBehaviorNode(
-      BrushBehavior::ResponseNode{EasingFunction::Steps{
-          .step_count = -1,
-          .step_position = EasingFunction::StepPosition::kJumpEnd,
-      }});
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(brush_internal::ValidateBrushBehaviorNode(
+                  BrushBehavior::ResponseNode{EasingFunction::Steps{
+                      .step_count = -1,
+                      .step_position = EasingFunction::StepPosition::kJumpEnd,
+                  }}),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(BrushBehaviorTest, ValidateIntegralNode) {
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::IntegralNode{
+          .integrate_over = BrushBehavior::ProgressDomain::kTimeInSeconds,
+          .integral_out_of_range_behavior = BrushBehavior::OutOfRange::kRepeat,
+          .integral_value_range = {0, 5},
+      }),
+      IsOk());
+
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::IntegralNode{
+          .integrate_over = static_cast<BrushBehavior::ProgressDomain>(123),
+          .integral_out_of_range_behavior = BrushBehavior::OutOfRange::kRepeat,
+          .integral_value_range = {0, 5},
+      }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("non-enumerator value 123")));
+
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::IntegralNode{
+          .integrate_over = BrushBehavior::ProgressDomain::kTimeInSeconds,
+          .integral_out_of_range_behavior =
+              static_cast<BrushBehavior::OutOfRange>(111),
+          .integral_value_range = {0, 5},
+      }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("non-enumerator value 111")));
+
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::IntegralNode{
+          .integrate_over = BrushBehavior::ProgressDomain::kTimeInSeconds,
+          .integral_out_of_range_behavior = BrushBehavior::OutOfRange::kRepeat,
+          .integral_value_range = {1, 1},
+      }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("integral_value_range` must hold 2 finite and distinct"
+                         " values")));
 }
 
 TEST(BrushBehaviorTest, ValidateBinaryOpNode) {
-  EXPECT_EQ(brush_internal::ValidateBrushBehaviorNode(
-                BrushBehavior::BinaryOpNode{BrushBehavior::BinaryOp::kSum}),
-            absl::OkStatus());
+  EXPECT_THAT(brush_internal::ValidateBrushBehaviorNode(
+                  BrushBehavior::BinaryOpNode{BrushBehavior::BinaryOp::kSum}),
+              IsOk());
 
-  absl::Status status = brush_internal::ValidateBrushBehaviorNode(
-      BrushBehavior::BinaryOpNode{static_cast<BrushBehavior::BinaryOp>(123)});
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("non-enumerator value 123"));
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::BinaryOpNode{
+          static_cast<BrushBehavior::BinaryOp>(123)}),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("non-enumerator value 123")));
 }
 
 TEST(BrushBehaviorTest, ValidateInterpolationNode) {
-  EXPECT_EQ(brush_internal::ValidateBrushBehaviorNode(
-                BrushBehavior::InterpolationNode{
-                    .interpolation = BrushBehavior::Interpolation::kLerp,
-                }),
-            absl::OkStatus());
+  EXPECT_THAT(brush_internal::ValidateBrushBehaviorNode(
+                  BrushBehavior::InterpolationNode{
+                      .interpolation = BrushBehavior::Interpolation::kLerp,
+                  }),
+              IsOk());
 
-  absl::Status status = brush_internal::ValidateBrushBehaviorNode(
-      BrushBehavior::InterpolationNode{
-          .interpolation = static_cast<BrushBehavior::Interpolation>(123),
-      });
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("non-enumerator value 123"));
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(
+          BrushBehavior::InterpolationNode{
+              .interpolation = static_cast<BrushBehavior::Interpolation>(123),
+          }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("non-enumerator value 123")));
 }
 
 TEST(BrushBehaviorTest, ValidateTargetNode) {
-  EXPECT_EQ(brush_internal::ValidateBrushBehaviorNode(BrushBehavior::TargetNode{
-                .target = BrushBehavior::Target::kSizeMultiplier,
-                .target_modifier_range = {0, 2},
-            }),
-            absl::OkStatus());
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::TargetNode{
+          .target = BrushBehavior::Target::kSizeMultiplier,
+          .target_modifier_range = {0, 2},
+      }),
+      IsOk());
 
-  absl::Status status =
+  EXPECT_THAT(
       brush_internal::ValidateBrushBehaviorNode(BrushBehavior::TargetNode{
           .target = static_cast<BrushBehavior::Target>(123),
           .target_modifier_range = {0, 2},
-      });
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("non-enumerator value 123"));
+      }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("non-enumerator value 123")));
 
-  status = brush_internal::ValidateBrushBehaviorNode(BrushBehavior::TargetNode{
-      .target = BrushBehavior::Target::kSizeMultiplier,
-      .target_modifier_range = {0, kInfinity},
-  });
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
   EXPECT_THAT(
-      status.message(),
-      HasSubstr(
-          "target_modifier_range` must hold 2 finite and distinct values"));
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::TargetNode{
+          .target = BrushBehavior::Target::kSizeMultiplier,
+          .target_modifier_range = {0, kInfinity},
+      }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("target_modifier_range` must hold 2 finite and "
+                         "distinct values")));
 
-  status = brush_internal::ValidateBrushBehaviorNode(BrushBehavior::TargetNode{
-      .target = BrushBehavior::Target::kSizeMultiplier,
-      .target_modifier_range = {2, 2},
-  });
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
   EXPECT_THAT(
-      status.message(),
-      HasSubstr(
-          "target_modifier_range` must hold 2 finite and distinct values"));
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::TargetNode{
+          .target = BrushBehavior::Target::kSizeMultiplier,
+          .target_modifier_range = {2, 2},
+      }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("target_modifier_range` must hold 2 finite and "
+                         "distinct values")));
 }
 
 TEST(BrushBehaviorTest, ValidatePolarTargetNode) {
@@ -986,10 +1035,8 @@ TEST(BrushBehaviorTest, ValidateBrushBehavior) {
               .source_value_range = {0.5, 0.75},
           },
           BrushBehavior::ToolTypeFilterNode{{.stylus = true}},
-          BrushBehavior::FallbackFilterNode{
-              BrushBehavior::OptionalInputProperty::kTilt},
           BrushBehavior::DampingNode{
-              .damping_source = BrushBehavior::DampingSource::kTimeInSeconds,
+              .damping_source = BrushBehavior::ProgressDomain::kTimeInSeconds,
               .damping_gap = 0.25,
           },
           BrushBehavior::ConstantNode{0.75},
@@ -1039,10 +1086,8 @@ TEST(BrushBehaviorTest, ValidateBrushBehaviorTopLevel) {
               .source_value_range = {0.5, 0.75},
           },
           BrushBehavior::ToolTypeFilterNode{{.stylus = true}},
-          BrushBehavior::FallbackFilterNode{
-              BrushBehavior::OptionalInputProperty::kTilt},
           BrushBehavior::DampingNode{
-              .damping_source = BrushBehavior::DampingSource::kTimeInSeconds,
+              .damping_source = BrushBehavior::ProgressDomain::kTimeInSeconds,
               .damping_gap = 0.25,
           },
           BrushBehavior::ConstantNode{0.75},
@@ -1070,13 +1115,13 @@ TEST(BrushBehaviorTest, ValidateBrushBehaviorTopLevel) {
 }
 
 void CanValidateValidBrushBehavior(const BrushBehavior& behavior) {
-  EXPECT_EQ(absl::OkStatus(), brush_internal::ValidateBrushBehavior(behavior));
+  EXPECT_THAT(brush_internal::ValidateBrushBehavior(behavior), IsOk());
 }
 FUZZ_TEST(EasingFunctionTest, CanValidateValidBrushBehavior)
     .WithDomains(ValidBrushBehavior());
 
 void CanValidateValidBrushBehaviorNode(const BrushBehavior::Node& node) {
-  EXPECT_EQ(absl::OkStatus(), brush_internal::ValidateBrushBehaviorNode(node));
+  EXPECT_THAT(brush_internal::ValidateBrushBehaviorNode(node), IsOk());
 }
 FUZZ_TEST(EasingFunctionTest, CanValidateValidBrushBehaviorNode)
     .WithDomains(ValidBrushBehaviorNode());

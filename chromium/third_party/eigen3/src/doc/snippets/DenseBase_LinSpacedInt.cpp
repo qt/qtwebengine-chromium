@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 cout << "Even spacing inputs:" << endl;
 cout << VectorXi::LinSpaced(8, 1, 4).transpose() << endl;
 cout << VectorXi::LinSpaced(8, 1, 8).transpose() << endl;

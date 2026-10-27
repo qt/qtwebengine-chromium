@@ -12,11 +12,11 @@ import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import {ApplicationPanelSidebar, StorageCategoryView} from './ApplicationPanelSidebar.js';
+import type {StorageMetadataView} from './components/components.js';
 import {CookieItemsView} from './CookieItemsView.js';
 import type {DeviceBoundSessionsModel} from './DeviceBoundSessionsModel.js';
 import {DeviceBoundSessionsView} from './DeviceBoundSessionsView.js';
 import {DOMStorageItemsView} from './DOMStorageItemsView.js';
-import type {DOMStorage} from './DOMStorageModel.js';
 import {ExtensionStorageItemsView} from './ExtensionStorageItemsView.js';
 import type {ExtensionStorage} from './ExtensionStorageModel.js';
 import type * as PreloadingHelper from './preloading/helper/helper.js';
@@ -27,8 +27,8 @@ let resourcesPanelInstance: ResourcesPanel;
 
 export class ResourcesPanel extends UI.Panel.PanelWithSidebar {
   private readonly resourcesLastSelectedItemSetting: Common.Settings.Setting<Platform.DevToolsPath.UrlString[]>;
-  visibleView: UI.Widget.Widget|null;
-  private pendingViewPromise: Promise<UI.Widget.Widget>|null;
+  visibleView: UI.Widget.AnyWidget|null;
+  private pendingViewPromise: Promise<UI.Widget.AnyWidget>|null;
   private categoryView: StorageCategoryView|null;
   storageViews: HTMLElement;
   private readonly storageViewToolbar: UI.Toolbar.Toolbar;
@@ -83,7 +83,7 @@ export class ResourcesPanel extends UI.Panel.PanelWithSidebar {
     return resourcesPanelInstance;
   }
 
-  private static shouldCloseOnReset(view: UI.Widget.Widget): boolean {
+  private static shouldCloseOnReset(view: UI.Widget.AnyWidget): boolean {
     const viewClassesToClose = [
       SourceFrame.ResourceSourceFrame.ResourceSourceFrame,
       SourceFrame.ImageView.ImageView,
@@ -116,7 +116,7 @@ export class ResourcesPanel extends UI.Panel.PanelWithSidebar {
     }
   }
 
-  showView(view: UI.Widget.Widget|null): void {
+  showView(view: UI.Widget.AnyWidget|null): void {
     this.pendingViewPromise = null;
     if (this.visibleView === view) {
       return;
@@ -141,7 +141,7 @@ export class ResourcesPanel extends UI.Panel.PanelWithSidebar {
     }
   }
 
-  async scheduleShowView(viewPromise: Promise<UI.Widget.Widget>): Promise<UI.Widget.Widget|null> {
+  async scheduleShowView(viewPromise: Promise<UI.Widget.AnyWidget>): Promise<UI.Widget.AnyWidget|null> {
     this.pendingViewPromise = viewPromise;
     const view = await viewPromise;
     if (this.pendingViewPromise !== viewPromise) {
@@ -165,7 +165,7 @@ export class ResourcesPanel extends UI.Panel.PanelWithSidebar {
     this.showView(this.categoryView);
   }
 
-  showDOMStorage(domStorage: DOMStorage): void {
+  showDOMStorage(domStorage: SDK.DOMStorageModel.DOMStorage): void {
     if (!domStorage) {
       return;
     }
@@ -258,5 +258,12 @@ export class AttemptViewWithFilterRevealer implements
   async reveal(filter: PreloadingHelper.PreloadingForward.AttemptViewWithFilter): Promise<void> {
     const sidebar = await ResourcesPanel.showAndGetSidebar();
     sidebar.showPreloadingAttemptViewWithFilter(filter);
+  }
+}
+
+export class StorageBucketRevealer implements Common.Revealer.Revealer<StorageMetadataView.StorageBucketRevealInfo> {
+  async reveal(revealInfo: StorageMetadataView.StorageBucketRevealInfo): Promise<void> {
+    const sidebar = await ResourcesPanel.showAndGetSidebar();
+    sidebar.showStorageBucket(revealInfo.bucketInfo);
   }
 }

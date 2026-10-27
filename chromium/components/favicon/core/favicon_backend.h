@@ -26,18 +26,6 @@ class FilePath;
 
 namespace favicon {
 
-// This is only used when the only available fallback URLs during favicon lookup
-// for a page URL are for pages with redirects. If enabled, this will use the
-// icon of the most recently visited page URL for the origin instead of always
-// picking the favicon for the page URL for the origin which comes first in
-// alphabetical order.
-BASE_DECLARE_FEATURE(kUseLastVisitedFallbackURLFavicon);
-
-// The favicon sizes that will be tracked in the histograms. This should be kept
-// in sync with the variants here:
-// tools/metrics/histograms/metadata/favicons/histograms.xml.
-static const std::array<int, 3> icon_sizes = {16, 24, 48};
-
 // The maximum number of bitmaps for a single icon URL which can be stored in
 // the favicon database.
 static const size_t kMaxFaviconBitmapsPerIconURL = 8;

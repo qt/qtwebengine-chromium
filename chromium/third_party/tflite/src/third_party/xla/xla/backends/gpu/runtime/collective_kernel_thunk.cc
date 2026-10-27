@@ -23,6 +23,7 @@ limitations under the License.*/
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/container/inlined_vector.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
@@ -33,7 +34,7 @@ limitations under the License.*/
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
-#include "llvm/ADT/bit.h"
+#include "xla/tsl/platform/status_macros.h"
 #include "xla/backends/gpu/collectives/gpu_clique_key.h"
 #include "xla/backends/gpu/runtime/all_reduce.h"
 #include "xla/backends/gpu/runtime/collective_kernel_api.h"
@@ -41,7 +42,9 @@ limitations under the License.*/
 #include "xla/backends/gpu/runtime/collective_thunk.h"
 #include "xla/backends/gpu/runtime/thunk.h"
 #include "xla/core/collectives/rank_id.h"
+#include "xla/core/collectives/reduction_kind.h"
 #include "xla/runtime/device_id.h"
+#include "xla/service/buffer_assignment.h"
 #include "xla/service/collective_ops_utils.h"
 #include "xla/service/gpu/gpu_constants.h"
 #include "xla/service/gpu/launch_dimensions.h"
@@ -152,56 +155,17 @@ absl::Status CopyCollectiveMetadataToDevice(
 absl::StatusOr<bool> CollectiveKernelThunk::IsSupported(
     const GpuCliqueKey& clique_key, se::StreamExecutor& executor,
     const CollectiveParams& collective_params) const {
-  if (!collective_kernel_enabled_) {
-    XLA_VLOG_DEVICE(3, executor.device_ordinal())
-        << "Collective kernel is not enabled.";
+  absl::Status status = IsAllReduceKernelSupported(
+      collective_kernel_enabled_, executor.GetDeviceDescription(),
+      /*num_operands= */ buffers_.size(), reduction_kind_,
+      clique_key.num_local_participants(), buffers_[0].element_count,
+      collective_config_.operand_element_type[0], clique_key.is_local(),
+      is_multimem_enabled_, collective_config_.replica_groups);
+  if (absl::IsUnimplemented(status)) {
+    VLOG(3) << "Collective kernel not supported: " << status.message();
     return false;
   }
-  const auto compute_capability =
-      executor.GetDeviceDescription().cuda_compute_capability();
-  if (!compute_capability.IsAtLeastHopper()) {
-    XLA_VLOG_DEVICE(3, executor.device_ordinal())
-        << "Collective kernel is not supported for compute capability less "
-           "than 9.0. Got "
-        << compute_capability.ToString() << ".";
-    return false;
-  }
-  if (collective_config_.replica_groups.empty()) {
-    XLA_VLOG_DEVICE(3, executor.device_ordinal())
-        << "Replica groups must be explicitly provided for collective kernels.";
-    return false;
-  }
-  // TODO(b/407736956): Support variadic all-reduce.
-  if (buffers_.size() != 1) {
-    XLA_VLOG_DEVICE(3, executor.device_ordinal())
-        << "Variadic arguments are not implemented for collective kernels.";
-    return false;
-  }
-  const int64_t num_elements = buffers_[0].element_count;
-  const int64_t input_size_bytes = GetInputSizeBytes();
-  const AllReduceStrategy strategy =
-      GetAllReduceStrategy(input_size_bytes, is_multimem_enabled_);
-  // Custom all-reduce strategy is only supported for small inputs.
-  if (input_size_bytes > GetMaxSupportedAllReduceSizeBytes(strategy)) {
-    XLA_VLOG_DEVICE(3, executor.device_ordinal())
-        << "Custom all-reduce strategy is only supported for small inputs.";
-    return false;
-  }
-
-  // Only single-host collectives are supported for now.
-  if (!clique_key.is_local()) {
-    XLA_VLOG_DEVICE(3, executor.device_ordinal())
-        << "Cross-host symmetric memory collectives are not supported.";
-    return false;
-  }
-  const int64_t num_devices = clique_key.num_local_participants();
-  if (!llvm::has_single_bit(static_cast<uint64_t>(num_devices))) {
-    XLA_VLOG_DEVICE(3, executor.device_ordinal())
-        << "Collective kernel thunk is only supported for power of 2 number of "
-           "devices. Got "
-        << num_devices << ".";
-    return false;
-  }
+  TF_RETURN_IF_ERROR(status);
   for (const GlobalDeviceId& device : clique_key.devices()) {
     TF_ASSIGN_OR_RETURN(const int peer_device_id,
                         GetLocalDeviceId(device, collective_params));
@@ -211,10 +175,7 @@ absl::StatusOr<bool> CollectiveKernelThunk::IsSupported(
       return false;
     }
   }
-
-  return IsAllReduceKernelSupported(
-      clique_key.num_local_participants(), num_elements,
-      collective_config_.operand_element_type[0], reduction_kind_, strategy);
+  return true;
 }
 
 absl::Status CollectiveKernelThunk::Prepare(const PrepareParams& params) {
@@ -223,8 +184,7 @@ absl::Status CollectiveKernelThunk::Prepare(const PrepareParams& params) {
 
   TF_ASSIGN_OR_RETURN(
       GpuCliqueKey clique_key,
-      GetCollectiveGpuCliqueKey(*params.collective_params, collective_config_,
-                                /*is_p2p=*/false));
+      GetCollectiveGpuCliqueKey(*params.collective_params, collective_config_));
 
   TF_ASSIGN_OR_RETURN(
       bool use_collective_kernel,
@@ -240,8 +200,12 @@ absl::Status CollectiveKernelThunk::Prepare(const PrepareParams& params) {
                                     collective_config_.replica_groups,
                                     collective_config_.group_mode));
 
+  // Sort device groups: RequestClique expects pre-sorted groups.
+  absl::c_for_each(device_groups, [](auto& group) { absl::c_sort(group); });
+  absl::c_sort(device_groups);
+
   TF_RETURN_IF_ERROR(params.collective_clique_requests->RequestClique(
-      clique_key, std::move(device_groups)));
+      clique_key, device_groups));
 
   absl::MutexLock lock(mutex_);
   if (!per_stream_memory_.contains(params.executor)) {
@@ -305,8 +269,7 @@ int64_t CollectiveKernelThunk::GetInputSizeBytes() const {
 absl::Status CollectiveKernelThunk::Initialize(const InitializeParams& params) {
   TF_ASSIGN_OR_RETURN(
       GpuCliqueKey clique_key,
-      GetCollectiveGpuCliqueKey(*params.collective_params, collective_config_,
-                                /*is_p2p=*/false));
+      GetCollectiveGpuCliqueKey(*params.collective_params, collective_config_));
   const std::optional<RankId> rank =
       clique_key.rank(params.collective_params->global_device_id);
   TF_RET_CHECK(rank.has_value())
@@ -324,27 +287,32 @@ absl::Status CollectiveKernelThunk::Initialize(const InitializeParams& params) {
       // the buffer. The kernel will take care of leaving the buffer in
       // correct state after use, so we don't need to zero out after
       // initialization.
-      TF_RETURN_IF_ERROR(params.executor->SynchronousMemZero(
+      TF_RETURN_IF_ERROR(params.stream->MemZero(
           memory_state->signal_buffers_handle.address_ptr(),
           memory_state->signal_buffers_handle.address().size()));
+      TF_RETURN_IF_ERROR(params.stream->BlockHostUntilDone());
       // Create a kernel for execution.
       std::unique_ptr<se::Kernel> kernel = nullptr;
       if (!kernel_name_.empty()) {
         TF_RET_CHECK(launch_dimensions_.has_value())
             << "Launch dimensions are not set for when using emitted "
                "collective kernel.";
-        if (!params.src.binary.empty()) {
-          TF_ASSIGN_OR_RETURN(
+        if (cubin_.has_value()) {
+          ASSIGN_OR_RETURN(
+              kernel, CreateKernel(kernel_name_, kAllReduceArgsCount, *cubin_,
+                                   params.executor, shmem_bytes_));
+        } else if (!params.src.binary.empty()) {
+          ASSIGN_OR_RETURN(
               kernel,
               CreateKernel(kernel_name_, kAllReduceArgsCount, params.src.binary,
                            params.executor, shmem_bytes_));
-
         } else {
-          TF_ASSIGN_OR_RETURN(
+          ASSIGN_OR_RETURN(
               kernel,
               CreateKernel(kernel_name_, kAllReduceArgsCount, params.src.text,
                            params.executor, shmem_bytes_));
         }
+        kernel->set_use_pdl(use_pdl_);
       }
       // Step2: Emplace into the stream state.
       per_stream_state_.emplace(
@@ -470,8 +438,7 @@ absl::Status CollectiveKernelThunk::ExecuteOnStream(
 
   TF_ASSIGN_OR_RETURN(
       GpuCliqueKey clique_key,
-      GetCollectiveGpuCliqueKey(*params.collective_params, collective_config_,
-                                /*is_p2p=*/false));
+      GetCollectiveGpuCliqueKey(*params.collective_params, collective_config_));
   const int32_t num_devices = clique_key.num_devices();
 
   // TODO(b/407736956): Support variadic all-reduce.
@@ -591,4 +558,80 @@ CollectiveKernelThunk::GetParameterDeviceMemoryBase(
       (parameter_index * num_devices) * sizeof(void*),
       /*size_bytes=*/num_devices * sizeof(void*));
 }
+
+absl::StatusOr<std::unique_ptr<CollectiveKernelThunk>>
+CollectiveKernelThunk::FromProto(
+    ThunkInfo thunk_info, const CollectiveKernelThunkProto& thunk_proto,
+    absl::Span<const BufferAllocation> buffer_allocations) {
+  CollectiveConfig collective_config =
+      CollectiveConfig::FromProto(thunk_proto.collective_config());
+
+  ASSIGN_OR_RETURN(ReductionKind reduction_kind,
+                   FromReductionKindProto(thunk_proto.reduction_kind()));
+
+  std::vector<CollectiveThunk::Buffer> buffers;
+  buffers.reserve(thunk_proto.buffers_size());
+  for (const CollectiveBufferProto& proto : thunk_proto.buffers()) {
+    ASSIGN_OR_RETURN(
+        CollectiveThunk::Buffer buffer,
+        CollectiveThunk::Buffer::FromProto(proto, buffer_allocations));
+    buffers.push_back(std::move(buffer));
+  }
+
+  std::optional<LaunchDimensions> launch_dimensions = std::nullopt;
+  if (thunk_proto.has_launch_dimensions()) {
+    ASSIGN_OR_RETURN(launch_dimensions, LaunchDimensions::FromProto(
+                                            thunk_proto.launch_dimensions()));
+  }
+
+  std::optional<std::vector<uint8_t>> cubin = std::nullopt;
+  if (thunk_proto.has_cubin()) {
+    cubin = std::vector<uint8_t>{thunk_proto.cubin().begin(),
+                                 thunk_proto.cubin().end()};
+  }
+
+  return std::make_unique<CollectiveKernelThunk>(
+      std::move(thunk_info), std::move(collective_config), reduction_kind,
+      thunk_proto.is_async(), std::move(buffers),
+      thunk_proto.collective_kernel_enabled(), thunk_proto.kernel_name(),
+      launch_dimensions, thunk_proto.shmem_bytes(),
+      thunk_proto.is_multimem_enabled(), std::move(cubin),
+      thunk_proto.use_pdl());
+}
+
+absl::StatusOr<ThunkProto> CollectiveKernelThunk::ToProto() const {
+  ThunkProto proto;
+  *proto.mutable_thunk_info() = thunk_info().ToProto();
+
+  CollectiveKernelThunkProto* thunk_proto =
+      proto.mutable_collective_kernel_thunk();
+
+  *thunk_proto->mutable_collective_config() = collective_config_.ToProto();
+  thunk_proto->set_reduction_kind(ToReductionKindProto(reduction_kind_));
+  thunk_proto->set_is_async(is_async_);
+
+  for (const CollectiveThunk::Buffer& buffer : buffers_) {
+    ASSIGN_OR_RETURN(*thunk_proto->add_buffers(), buffer.ToProto());
+  }
+
+  thunk_proto->set_collective_kernel_enabled(collective_kernel_enabled_);
+  thunk_proto->set_kernel_name(kernel_name_);
+
+  if (launch_dimensions_.has_value()) {
+    *thunk_proto->mutable_launch_dimensions() = launch_dimensions_->ToProto();
+  }
+
+  thunk_proto->set_shmem_bytes(shmem_bytes_);
+  thunk_proto->set_is_multimem_enabled(is_multimem_enabled_);
+
+  if (cubin_.has_value()) {
+    thunk_proto->set_cubin(reinterpret_cast<const char*>(cubin_->data()),
+                           cubin_->size());
+  }
+
+  thunk_proto->set_use_pdl(use_pdl_);
+
+  return proto;
+}
+
 }  // namespace xla::gpu

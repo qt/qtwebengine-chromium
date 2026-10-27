@@ -37,6 +37,10 @@ dashboard](https://goto.google.com/chrome-security-bugs).  You do that by
 filling in missing fields on the bugs and assigning them to engineers who will
 fix them.
 
+If you are `chrome-security-shepherds-1`: you are responsible for all the
+bugs in the `Shepherd 1` tab. If you are `chrome-security-shepherds-2`, you are
+responsible for the `Shepherd 2` tab.
+
 To actually triage a report, you go through several steps. On a _new_ bug
 report:
 
@@ -91,9 +95,13 @@ which _are_ valid. As a rule:
 
 * If the bug is **not probably valid**, WontFix
 * If the bug is a duplicate of an existing bug (the bug tracker will surface
-  some candidates for you), mark it as a duplicate. Do **not** CC the reporter
-  into the canonical bug unless the canonical bug is already public. If
-  reporters ask to be CCed, tell them to email product-security@chromium.org.
+  some candidates for you), mark it as a duplicate. Use the `Mark as Duplicate`
+  button at the upper right of the report pane. This will provide a pop-up to
+  input the bug number of the canonical report that you are merging this report
+  into as a duplicate of. This button does not CC the reporter on the duplicate.
+  Do **not** manually CC the reporter into the canonical bug unless the
+  canonical bug is already public. If reporters ask to be CCed, tell them to
+  email product-security@chromium.org.
 * If the bug is probably valid but doesn't have security consequences,
   change it to type Bug and remove visibility restrictions
 * If the bug is probably valid but you're missing something critical
@@ -101,25 +109,23 @@ which _are_ valid. As a rule:
   etc) or you need the reporter to minimize the PoC, close the issue as
   WontFix and note what is missing.
 * If the report points to a commit or bisect within the last seven days, remind
-  the reporter that we do accept security bugs found on HEAD and close the issue
-  as WontFix.
+  the reporter that we do not accept security bugs found on HEAD and close the
+  issue as WontFix.
 
 ### Handling special-case bugs
 
 * **If the bug is an in-the-wild report**:
     * Start a thread in the Shepherding chat immediately
 * Is the bug eligible for [delegated triage](delegated-triage.md)?:
-    * If it's a GPU bug, put it in [https://b.corp.google.com/hotlists/8198490][hotlist 8198490]
+    * If it's a Graphics bug (including Skia, Dawn, ANGLE), put it in [hotlist 8198490](https://issues.chromium.org/hotlists/8198490)
+    * If it's a UI bug, put it in [hotlist 8210976](https://issues.chromium.org/hotlists/8210976)
+    * If it's a BoringSSL bug, put it in [component 1590116](https://issues.chromium.org/components/1590116)
+    * If it's a V8 (Javascript or WebAssembly) bug, put it in [hotlist 8308879](https://issues.chromium.org/hotlists/8308879)
+    * If it only affects ChromeOS then move the issue into the ChromeOS security
+      triage queue which is [component 1335705](https://b.corp.google.com/components/1335705).
+      Since this bug is being moved between trackers you will need to use your
+      google.com account to move the bug into that tracker component.
     * TODO: add more here :)
-    * You are now done triaging this bug, congratulations!
-* If the bug is a v8 bug (including wasm):
-    * Do not attempt to reproduce!
-    * Assign it to [the current v8 shepherd](https://goto.google.com/current-v8-sheriff)
-    * Set it to High Severity (S1)
-    * Set the OS field to all platforms we use v8 on (everything except iOS)
-    * Set FoundIn to the oldest [active
-      branch](https://chromiumdash.appspot.com/branches)
-    * Set the component to `Chromium > Blink > JavaScript`
     * You are now done triaging this bug, congratulations!
 * If the bug is a privacy bug, rather than a security bug:
     * Add yourself and any other security team members who may need
@@ -162,7 +168,7 @@ benefits a lot from judgment and experience!
 ### Attempt to reproduce Medium, High and Critical Bugs
 
 [ClusterFuzz](clusterfuzz-for-shepherds.md) is far quicker than manual
-reproduction, and will automatically do bisection and set FoundIn for you, so
+reproduction, and will automatically do bisection and set Found In for you, so
 you should use ClusterFuzz if at all possible. If you have to manually reproduce
 a bug instead:
 
@@ -189,7 +195,7 @@ a bug instead:
   again using a different job type with a more mature tool (e.g. ASan on Linux).
   It may give more complete information.
 
-### Assessing FoundIn and OS
+### Assessing Found In and OS
 
 At this point, you need the ability to know if a specific OS + version
 combination (up to the oldest [active
@@ -202,7 +208,7 @@ you need to either:
   for PoCs that work on and are safe to run on ClusterFuzz, or
 * Manually reproduce it yourself across OS + version combos to check
 
-In all cases, FoundIn should contain the _oldest_ milestone number which is
+In all cases, Found In should contain the _oldest_ milestone number which is
 still [active](https://chromiumdash.appspot.com/branches) and has the bug. This
 should be based on your investigation and the evidence in the bug, **not** on
 what versions the reporter reported the bug against - those are often just what
@@ -287,11 +293,11 @@ What do I do here?
 
 You are not responsible for handling merges or approving a fix for backmerge.
 If the issue is resolved and there is a landed CL, please ensure the bug is
-closed as Fixed. Please also make sure the bug has a severity and FoundIn set.
+closed as Fixed. Please also make sure the bug has a severity and Found In set.
 This will allow the bot (Sheriffbot) to add the appropriately update the Merge
 custom field with the appropriate request-MMM or review-MMM labels, where MMM =
 the milestones for backmerge consideration (based on rules driven by severity
-(and `Security_Impact`, derived from FoundIn). See
+(and `Security_Impact`, derived from Found In). See
 [security merge triage](../process/merge_request.md#Security-merge-triage)
 for more information.
 

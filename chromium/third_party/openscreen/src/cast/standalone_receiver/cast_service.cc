@@ -101,6 +101,19 @@ CastService::~CastService() {
   }
 }
 
+void CastService::AddApplicationNamespace(
+    std::string_view namespace_,
+    MirroringApplication::CustomMessageCallback handler) {
+  mirroring_application_.AddCustomNamespace(namespace_);
+  mirroring_application_.SetCustomMessageHandler(namespace_,
+                                                 std::move(handler));
+}
+
+void CastService::RemoveApplicationNamespace(std::string_view namespace_) {
+  mirroring_application_.RemoveCustomNamespace(namespace_);
+  mirroring_application_.SetCustomMessageHandler(namespace_, nullptr);
+}
+
 void CastService::OnFatalError(const Error& error) {
   OSP_LOG_FATAL << "Encountered fatal discovery error: " << error;
 }

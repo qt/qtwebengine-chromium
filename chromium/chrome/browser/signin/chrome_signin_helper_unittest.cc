@@ -26,6 +26,7 @@
 #include "components/signin/core/browser/signin_header_helper.h"
 #include "components/signin/public/base/account_consistency_method.h"
 #include "components/signin/public/base/signin_buildflags.h"
+#include "components/signin/public/base/signin_metrics.h"
 #include "components/signin/public/identity_manager/tribool.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "content/public/browser/web_contents.h"
@@ -209,7 +210,9 @@ class MockSigninBridge : public SigninBridge {
               StartAddAccountFlow,
               (TabAndroid * window,
                const std::string& prefilled_email,
-               const GURL& continue_url),
+               const GURL& continue_url,
+               bool is_web_signin,
+               signin_metrics::AccessPoint access_point),
               (override));
 
   MOCK_METHOD(void,
@@ -222,7 +225,9 @@ class MockSigninBridge : public SigninBridge {
               OpenAccountPickerBottomSheet,
               (content::WebContents * web_contents,
                const GURL& continue_url,
-               const std::optional<CoreAccountId>& account_id),
+               const std::optional<CoreAccountId>& account_id,
+               bool is_web_signin,
+               signin_metrics::AccessPoint access_point),
               (override));
 
   MOCK_METHOD(void,
@@ -316,8 +321,8 @@ TEST_F(ChromeSigninHelperTest, FixAccountConsistencyRequestHeader) {
   scoped_refptr<content_settings::CookieSettings> cookie_settings =
       new content_settings::CookieSettings(
           settings_map.get(), &prefs, /*is_incognito=*/false,
-          content_settings::CookieSettings::NoFedCmSharingPermissionsCallback(),
-          /*tpcd_metadata_manager=*/nullptr);
+          content_settings::CookieSettings::
+              NoFedCmSharingPermissionsCallback());
 
   {
     // Non-elligible request, no header.
@@ -486,6 +491,7 @@ TEST_F(ChromeSigninHelperTest, MirrorGoIncognitoInactiveWebContents) {
 // Tests that receiving an ADDSESSION action within kChromeManageAccountsHeader
 // opens the bottom sheet with the correct continue URL.
 TEST_F(ChromeSigninHelperTest, AddSessionOpensBottomSheet) {
+  base::HistogramTester histogram_tester;
   std::unique_ptr<content::WebContents> web_contents(CreateTestWebContents());
 
   TestTabModel tab_model(profile());
@@ -508,16 +514,22 @@ TEST_F(ChromeSigninHelperTest, AddSessionOpensBottomSheet) {
   // with the correct continue URL.
   EXPECT_CALL(
       *signin_bridge(),
-      StartAddAccountFlow(_, "test@gmail.com", GURL("http://example.com")));
+      StartAddAccountFlow(_, "test@gmail.com", GURL("http://example.com"),
+                          /*is_web_signin=*/true,
+                          signin_metrics::AccessPoint::kWebSignin));
 
   signin::ProcessAccountConsistencyResponseHeaders(&response_adapter, GURL(),
                                                    /*is_off_the_record=*/false);
   task_environment()->RunUntilIdle();
+  histogram_tester.ExpectUniqueSample(
+      "Signin.ProcessMirrorHeaders.Event",
+      signin::MirrorHeaderEvent::kAccountNotOnDevice, 1);
 }
 
 // Tests that receiving an ADDSESSION action within kChromeManageAccountsHeader
 // opens the wait for cookies bridge if account is already on device.
 TEST_F(ChromeSigninHelperTest, WaitForCookiesAndRedirectWhenAccountAvailable) {
+  base::HistogramTester histogram_tester;
   InitializeIdentityTestEnvironment();
   CoreAccountId account_id =
       identity_test_env()
@@ -550,6 +562,9 @@ TEST_F(ChromeSigninHelperTest, WaitForCookiesAndRedirectWhenAccountAvailable) {
   signin::ProcessAccountConsistencyResponseHeaders(&response_adapter, GURL(),
                                                    /*is_off_the_record=*/false);
   task_environment()->RunUntilIdle();
+  histogram_tester.ExpectUniqueSample(
+      "Signin.ProcessMirrorHeaders.Event",
+      signin::MirrorHeaderEvent::kAccountRecentlyAdded, 1);
 }
 
 // Tests that receiving an action with show_consistency_promo parameter and a
@@ -584,7 +599,9 @@ TEST_F(ChromeSigninHelperTest,
   // Check that the sign-in bridge is called to open the sign-in bottom sheet
   // with the correct continue URL.
   EXPECT_CALL(*signin_bridge(), OpenAccountPickerBottomSheet(
-                                    _, GURL("http://example.com"), account_id));
+                                    _, GURL("http://example.com"), account_id,
+                                    /*is_web_signin=*/true,
+                                    signin_metrics::AccessPoint::kWebSignin));
 
   signin::ProcessAccountConsistencyResponseHeaders(&response_adapter, GURL(),
                                                    /*is_off_the_record=*/false);
@@ -622,9 +639,10 @@ TEST_F(ChromeSigninHelperTest,
   // Check that the sign-in bridge is called to open the sign-in bottom sheet
   // with the correct continue URL and no account id as the email is not on the
   // device.
-  EXPECT_CALL(*signin_bridge(),
-              OpenAccountPickerBottomSheet(_, GURL("http://example.com"),
-                                           Eq(std::nullopt)));
+  EXPECT_CALL(*signin_bridge(), OpenAccountPickerBottomSheet(
+                                    _, GURL("http://example.com"),
+                                    Eq(std::nullopt), /*is_web_signin=*/true,
+                                    signin_metrics::AccessPoint::kWebSignin));
 
   signin::ProcessAccountConsistencyResponseHeaders(&response_adapter, GURL(),
                                                    /*is_off_the_record=*/false);
@@ -658,9 +676,10 @@ TEST_F(ChromeSigninHelperTest, OpenBottomSheetWithConsistencyParameter) {
 
   // Check that the sign-in bridge is called to open the sign-in bottom sheet
   // with the correct continue URL.
-  EXPECT_CALL(*signin_bridge(),
-              OpenAccountPickerBottomSheet(_, GURL("http://example.com"),
-                                           Eq(std::nullopt)));
+  EXPECT_CALL(*signin_bridge(), OpenAccountPickerBottomSheet(
+                                    _, GURL("http://example.com"),
+                                    Eq(std::nullopt), /*is_web_signin=*/true,
+                                    signin_metrics::AccessPoint::kWebSignin));
 
   signin::ProcessAccountConsistencyResponseHeaders(&response_adapter, GURL(),
                                                    /*is_off_the_record=*/false);
@@ -672,6 +691,7 @@ TEST_F(ChromeSigninHelperTest, OpenBottomSheetWithConsistencyParameter) {
 // continue URL.
 TEST_F(ChromeSigninHelperTest, StartReauthFlowWhenInPersistentErrorState) {
   InitializeIdentityTestEnvironment();
+  base::HistogramTester histogram_tester;
   CoreAccountId account_id =
       identity_test_env()
           ->MakePrimaryAccountAvailable("test@gmail.com",
@@ -708,6 +728,9 @@ TEST_F(ChromeSigninHelperTest, StartReauthFlowWhenInPersistentErrorState) {
   signin::ProcessAccountConsistencyResponseHeaders(&response_adapter, GURL(),
                                                    /*is_off_the_record=*/false);
   task_environment()->RunUntilIdle();
+  histogram_tester.ExpectUniqueSample(
+      "Signin.ProcessMirrorHeaders.Event",
+      signin::MirrorHeaderEvent::kAccountInPersistentError, 1);
 }
 
 // Tests that receiving DEFAULT action within kChromeManageAccountsHeader

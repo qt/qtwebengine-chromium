@@ -28,12 +28,12 @@
 #ifndef SRC_DAWN_NATIVE_PASSRESOURCEUSAGETRACKER_H_
 #define SRC_DAWN_NATIVE_PASSRESOURCEUSAGETRACKER_H_
 
-#include <vector>
-
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
-#include "dawn/native/PassResourceUsage.h"
-#include "dawn/native/dawn_platform.h"
+#include "src/dawn/common/ityp_vector.h"
+#include "src/dawn/native/IntegerTypes.h"
+#include "src/dawn/native/PassResourceUsage.h"
+#include "src/dawn/native/dawn_platform.h"
 
 namespace dawn::native {
 
@@ -43,7 +43,7 @@ class ExternalTextureBase;
 class QuerySetBase;
 class TextureBase;
 
-using QueryAvailabilityMap = absl::flat_hash_map<QuerySetBase*, std::vector<bool>>;
+using QueryAvailabilityMap = absl::flat_hash_map<QuerySetBase*, ityp::vector<QueryIndex, bool>>;
 
 // Helper class to build SyncScopeResourceUsages
 class SyncScopeUsageTracker {
@@ -111,8 +111,10 @@ class RenderPassResourceUsageTracker : public SyncScopeUsageTracker {
 
     RenderPassResourceUsageTracker& operator=(RenderPassResourceUsageTracker&&);
 
-    void TrackQueryAvailability(QuerySetBase* querySet, uint32_t queryIndex);
+    void TrackQueryAvailability(QuerySetBase* querySet, QueryIndex queryIndex);
     const QueryAvailabilityMap& GetQueryAvailabilityMap() const;
+
+    void MarkFramebufferFetchUsed();
 
     RenderPassResourceUsage AcquireResourceUsage();
 
@@ -123,6 +125,8 @@ class RenderPassResourceUsageTracker : public SyncScopeUsageTracker {
 
     // Tracks queries used in the render pass to validate that they aren't written twice.
     QueryAvailabilityMap mQueryAvailabilities;
+
+    bool mFramebufferFetchUsed = false;
 };
 
 }  // namespace dawn::native

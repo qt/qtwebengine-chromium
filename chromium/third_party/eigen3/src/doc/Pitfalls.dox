@@ -28,7 +28,7 @@ It contains detailed information about how to deal with each known cause for tha
 Now what if you don't care about vectorization and so don't want to be annoyed with these alignment issues? Then read \link getrid how to get rid of them \endlink.
 
 
-\section TopicPitfalls_auto_keyword C++11 and the auto keyword
+\section TopicPitfalls_auto_keyword The auto keyword
 
 In short: do not use the auto keywords with %Eigen's expressions, unless you are 100% sure about what you are doing. In particular, do not use the auto keyword as a replacement for a \c Matrix<> type. Here is an example:
 

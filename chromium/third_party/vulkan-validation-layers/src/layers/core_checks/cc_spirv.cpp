@@ -195,7 +195,7 @@ bool CoreChecks::ValidatePushConstantUsage(const spirv::Module& module_state, co
                 skip |= LogError(
                     GetSpirvInterfaceVariableVUID(loc, vvl::SpirvInterfaceVariableError::PushConstantRange_10069), objlist, loc,
                     "shader %s has a push constant buffer Block with range [%" PRIu32 ", %" PRIu32
-                    "] which outside the VkPushConstantRange of [%" PRIu32 ", %" PRIu32 "].",
+                    "] which is outside the VkPushConstantRange of [%" PRIu32 ", %" PRIu32 "].",
                     entrypoint.Describe().c_str(), push_constant_variable->offset, push_constant_end, range.offset, range_end);
                 break;
             }
@@ -220,198 +220,6 @@ bool CoreChecks::ValidatePushConstantUsage(const spirv::Module& module_state, co
                          loc, "%s", ss.str().c_str());
     }
     return skip;
-}
-
-struct ShaderResourceType {
-    // All possible VkDescriptorSet
-    vvl::unordered_set<uint32_t> descriptor_type_set;
-    // Way to print out extra useful information
-    bool is_buffer_block{false};
-
-    bool HasType(VkDescriptorType type) { return descriptor_type_set.find(type) != descriptor_type_set.end(); }
-
-    std::string Describe(bool hints) {
-        std::ostringstream ss;
-        for (auto it = descriptor_type_set.begin(); it != descriptor_type_set.end(); ++it) {
-            if (ss.tellp()) ss << " or ";
-            ss << string_VkDescriptorType(VkDescriptorType(*it));
-        }
-
-        // Currently this is used for 2 checks
-        // - When there is no binding found at all
-        // - When it is found, but the mismatch, here we want to help give hints
-        if (hints) {
-            ss << "\nInfo on SPIR-V mapping for each type:";
-            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_SAMPLER)) {
-                ss << "\n - VK_DESCRIPTOR_TYPE_SAMPLER is an OpTypeSampler with UniformConstant";
-            }
-            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)) {
-                ss << "\n - VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER is an OpTypeSampledImage that consumes both a OpTypeSampler "
-                      "and OpTypeImage in UniformConstant";
-            }
-            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)) {
-                ss << "\n - VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE is an OpTypeImage, with Sampled = 1, in UniformConstant";
-            }
-            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)) {
-                ss << "\n - VK_DESCRIPTOR_TYPE_STORAGE_IMAGE is an OpTypeImage, with Sampled = 2, in UniformConstant";
-            }
-            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER)) {
-                ss << "\n - VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER is an OpTypeImage, with Sampled = 1 and Dim = Buffer, in "
-                      "UniformConstant";
-            }
-            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER)) {
-                ss << "\n - VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER is an OpTypeImage, with Sampled = 2 and Dim = Buffer, in "
-                      "UniformConstant";
-            }
-            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)) {
-                ss << "\n - VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER/VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK is an OpTypeStruct as "
-                      "Uniform";
-            }
-            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)) {
-                ss << "\n - VK_DESCRIPTOR_TYPE_STORAGE_BUFFER is an OpTypeStruct as ";
-                if (is_buffer_block) {
-                    ss << "Uniform, with BufferBlock (Vulkan 1.0 didn't have a dedicated StorageBuffer storage class, more info at "
-                          "https://docs.vulkan.org/guide/latest/extensions/"
-                          "shader_features.html#VK_KHR_storage_buffer_storage_class)";
-                } else {
-                    ss << "StorageBuffer";
-                }
-            }
-            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT)) {
-                ss << "\n - VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT is an OpTypeImage, with Sampled = 2 and Dim = SubpassData, in "
-                      "UniformConstant";
-            }
-            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)) {
-                ss << "\n - VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR is an OpTypeAccelerationStructureKHR in UniformConstant";
-            }
-            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV)) {
-                ss << "\n - VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV is an OpTypeAccelerationStructureKHR in "
-                      "UniformConstant";
-            }
-            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_TENSOR_ARM)) {
-                ss << "\n - VK_DESCRIPTOR_TYPE_TENSOR_ARM is an OpTypeTensorARM in UniformConstant";
-            }
-            ss << "\nFull list of mappings can be found at "
-                  "https://docs.vulkan.org/spec/latest/chapters/interfaces.html#interfaces-resources-storage-class-correspondence";
-        }
-        return ss.str();
-    }
-};
-
-// This function is matching the VkDescriptorType to the SPIR-V.
-// We return back a set, because things like a Uniform in SPIR-V could be one of many possible matching VkDescriptorType.
-// https://docs.vulkan.org/spec/latest/chapters/interfaces.html#interfaces-resources-storage-class-correspondence
-static void TypeToDescriptorTypeSet(const spirv::Module& module_state, uint32_t type_id, uint32_t data_type_id,
-                                    ShaderResourceType& out_data) {
-    const spirv::Instruction* type = module_state.FindDef(type_id);
-    assert(type->Opcode() == spv::OpTypePointer || type->Opcode() == spv::OpTypeUntypedPointerKHR);
-    bool is_storage_buffer = type->StorageClass() == spv::StorageClassStorageBuffer;
-
-    if (data_type_id != 0) {
-        type = module_state.FindDef(data_type_id);
-    }
-
-    // Strip off any array or ptrs. Where we remove array levels, adjust the  descriptor count for each dimension.
-    while (type->IsArray() || type->Opcode() == spv::OpTypePointer) {
-        if (type->Opcode() == spv::OpTypeRuntimeArray) {
-            type = module_state.FindDef(type->Word(2));
-        } else if (type->Opcode() == spv::OpTypeArray) {
-            type = module_state.FindDef(type->Word(2));
-        } else {
-            if (type->StorageClass() == spv::StorageClassStorageBuffer) {
-                is_storage_buffer = true;
-            }
-            type = module_state.FindDef(type->Word(3));
-        }
-    }
-
-    switch (type->Opcode()) {
-        case spv::OpTypeStruct: {
-            for (const spirv::Instruction* insn : module_state.static_data_.decoration_inst) {
-                if (insn->Word(1) == type->ResultId()) {
-                    if (insn->Word(2) == spv::DecorationBlock) {
-                        if (is_storage_buffer) {
-                            out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-                            out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
-                        } else {
-                            out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-                            out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC);
-                            out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK);
-                        }
-                    } else if (insn->Word(2) == spv::DecorationBufferBlock) {
-                        out_data.is_buffer_block = true;
-                        out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-                        out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
-                    }
-                    break;
-                }
-            }
-            return;
-        }
-
-        case spv::OpTypeSampler:
-            out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_SAMPLER);
-            out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-            return;
-
-        case spv::OpTypeSampledImage: {
-            // Slight relaxation for some GLSL historical madness: samplerBuffer doesn't really have a sampler, and a texel
-            // buffer descriptor doesn't really provide one. Allow this slight mismatch.
-            const spirv::Instruction* image_type = module_state.FindDef(type->Word(2));
-            auto dim = image_type->Word(3);
-            auto sampled = image_type->Word(7);
-            if (dim == spv::DimBuffer && sampled == 1) {
-                out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER);
-            } else {
-                out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-            }
-            return;
-        }
-        case spv::OpTypeImage: {
-            // Many descriptor types backing image types-- depends on dimension and whether the image will be used with a sampler.
-            // SPIRV for Vulkan requires that sampled be 1 or 2 -- leaving the decision to runtime is unacceptable.
-            auto dim = type->Word(3);
-            auto sampled = type->Word(7);
-
-            if (dim == spv::DimSubpassData) {
-                out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT);
-            } else if (dim == spv::DimBuffer) {
-                if (sampled == 1) {
-                    out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER);
-                } else {
-                    out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER);
-                }
-            } else if (sampled == 1) {
-                out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-                out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-            } else {
-                out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-            }
-            return;
-        }
-
-        // The OpType are alias, but the Descriptor Types are different
-        case spv::OpTypeAccelerationStructureKHR:
-            // Only KHR or NV base acceleration structure is selected
-            if (module_state.HasCapability(spv::CapabilityRayTracingNV)) {
-                out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV);
-            } else {
-                out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
-            }
-            // Additionally allow PTLAS if shader uses cluster acceleration structure features
-            if (module_state.HasCapability(spv::CapabilityRayTracingClusterAccelerationStructureNV)) {
-                out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV);
-            }
-            return;
-        case spv::OpTypeTensorARM: {
-            out_data.descriptor_type_set.insert(VK_DESCRIPTOR_TYPE_TENSOR_ARM);
-            return;
-        }
-
-        default:
-            // We shouldn't really see any other junk types -- but if we do, they're a mismatch.
-            return;  // Matches nothing
-    }
 }
 
 // Map SPIR-V type to VK_COMPONENT_TYPE enum
@@ -1620,27 +1428,14 @@ bool CoreChecks::ValidateShaderInterfaceVariable(const spirv::Module& module_sta
         // If the variable is a struct, all members must contain NonWritable
         if (!variable.type_struct_info ||
             !variable.type_struct_info->decorations.AllMemberHave(spirv::DecorationSet::nonwritable_bit)) {
-            auto print_type = [variable]() {
-                if (variable.is_storage_image) {
-                    return "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE";
-                } else if (variable.is_storage_texel_buffer) {
-                    return "VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER";
-                } else if (variable.is_storage_buffer) {
-                    return "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER";
-                } else if (variable.is_storage_tensor) {
-                    return "VK_DESCRIPTOR_TYPE_TENSOR_ARM";
-                } else {
-                    return "Unknown VkDescriptorType";
-                }
-            };
-
             switch (variable.stage) {
                 case VK_SHADER_STAGE_FRAGMENT_BIT:
                     if (!enabled_features.fragmentStoresAndAtomics) {
                         skip |= LogError("VUID-RuntimeSpirv-NonWritable-06340", module_state.handle(), loc,
                                          "shader %s uses descriptor %s (type %s) which is not "
                                          "marked with NonWritable, but fragmentStoresAndAtomics was not enabled.",
-                                         entrypoint.Describe().c_str(), variable.DescribeDescriptor().c_str(), print_type());
+                                         entrypoint.Describe().c_str(), variable.DescribeDescriptor().c_str(),
+                                         string_VkDescriptorType(variable.GetPotentialDescriptorType()));
                     }
                     break;
                 case VK_SHADER_STAGE_VERTEX_BIT:
@@ -1651,7 +1446,8 @@ bool CoreChecks::ValidateShaderInterfaceVariable(const spirv::Module& module_sta
                         skip |= LogError("VUID-RuntimeSpirv-NonWritable-06341", module_state.handle(), loc,
                                          "shader %s uses descriptor %s (type %s) which is not marked with NonWritable, but "
                                          "vertexPipelineStoresAndAtomics was not enabled.",
-                                         entrypoint.Describe().c_str(), variable.DescribeDescriptor().c_str(), print_type());
+                                         entrypoint.Describe().c_str(), variable.DescribeDescriptor().c_str(),
+                                         string_VkDescriptorType(variable.GetPotentialDescriptorType()));
                     }
                     break;
                 default:
@@ -1687,6 +1483,83 @@ bool CoreChecks::ValidateShaderInterfaceVariable(const spirv::Module& module_sta
     return skip;
 }
 
+struct ShaderResourceType {
+    const spirv::ResourceInterfaceVariable& resource_variable;
+    const vvl::unordered_set<VkDescriptorType> descriptor_type_set;
+
+    explicit ShaderResourceType(const spirv::ResourceInterfaceVariable& variable)
+        : resource_variable(variable), descriptor_type_set(variable.GetAllDescriptorTypes()) {}
+
+    bool HasType(VkDescriptorType type) { return descriptor_type_set.find(type) != descriptor_type_set.end(); }
+
+    std::string Describe(bool hints) {
+        std::ostringstream ss;
+        for (auto it = descriptor_type_set.begin(); it != descriptor_type_set.end(); ++it) {
+            if (ss.tellp()) ss << " or ";
+            ss << string_VkDescriptorType(VkDescriptorType(*it));
+        }
+
+        // Currently this is used for 2 checks
+        // - When there is no binding found at all
+        // - When it is found, but the mismatch, here we want to help give hints
+        if (hints) {
+            ss << "\nInfo on SPIR-V mapping for each type:";
+            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_SAMPLER)) {
+                ss << "\n - VK_DESCRIPTOR_TYPE_SAMPLER is an OpTypeSampler with UniformConstant";
+            }
+            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)) {
+                ss << "\n - VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER is an OpTypeSampledImage that consumes both a OpTypeSampler "
+                      "and OpTypeImage in UniformConstant";
+            }
+            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)) {
+                ss << "\n - VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE is an OpTypeImage, with Sampled = 1, in UniformConstant";
+            }
+            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)) {
+                ss << "\n - VK_DESCRIPTOR_TYPE_STORAGE_IMAGE is an OpTypeImage, with Sampled = 2, in UniformConstant";
+            }
+            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER)) {
+                ss << "\n - VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER is an OpTypeImage, with Sampled = 1 and Dim = Buffer, in "
+                      "UniformConstant";
+            }
+            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER)) {
+                ss << "\n - VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER is an OpTypeImage, with Sampled = 2 and Dim = Buffer, in "
+                      "UniformConstant";
+            }
+            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)) {
+                ss << "\n - VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER/VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK is an OpTypeStruct as "
+                      "Uniform";
+            }
+            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)) {
+                ss << "\n - VK_DESCRIPTOR_TYPE_STORAGE_BUFFER is an OpTypeStruct as ";
+                if (resource_variable.is_buffer_block) {
+                    ss << "Uniform, with BufferBlock (Vulkan 1.0 didn't have a dedicated StorageBuffer storage class, more info at "
+                          "https://docs.vulkan.org/guide/latest/extensions/"
+                          "shader_features.html#VK_KHR_storage_buffer_storage_class)";
+                } else {
+                    ss << "StorageBuffer";
+                }
+            }
+            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT)) {
+                ss << "\n - VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT is an OpTypeImage, with Sampled = 2 and Dim = SubpassData, in "
+                      "UniformConstant";
+            }
+            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)) {
+                ss << "\n - VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR is an OpTypeAccelerationStructureKHR in UniformConstant";
+            }
+            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV)) {
+                ss << "\n - VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV is an OpTypeAccelerationStructureKHR in "
+                      "UniformConstant";
+            }
+            if (descriptor_type_set.count(VK_DESCRIPTOR_TYPE_TENSOR_ARM)) {
+                ss << "\n - VK_DESCRIPTOR_TYPE_TENSOR_ARM is an OpTypeTensorARM in UniformConstant";
+            }
+            ss << "\nFull list of mappings can be found at "
+                  "https://docs.vulkan.org/spec/latest/chapters/interfaces.html#interfaces-resources-storage-class-correspondence";
+        }
+        return ss.str();
+    }
+};
+
 bool CoreChecks::ValidateShaderInterfaceVariableDSL(const spirv::Module& module_state, const spirv::EntryPoint& entrypoint,
                                                     const ShaderStageState& stage_state,
                                                     const spirv::ResourceInterfaceVariable& variable, const Location& loc) const {
@@ -1717,9 +1590,7 @@ bool CoreChecks::ValidateShaderInterfaceVariableDSL(const spirv::Module& module_
         return ss.str();
     };
 
-    // Pass as reference to not copy the unordered_set on a return
-    ShaderResourceType resource_type;
-    TypeToDescriptorTypeSet(module_state, variable.type_id, variable.data_type_id, resource_type);
+    ShaderResourceType resource_type(variable);
 
     // If no binding nothing left to validate
     if (!binding) {
@@ -1801,7 +1672,7 @@ bool CoreChecks::ValidateShaderYcbcrSampler(const spirv::Module& module_state, c
     }
 
     // YCbCr is only allowed for Combined Image Samplers (error is caught before)
-    if (!variable.is_type_sampled_image) {
+    if (!variable.is_combined_image_sampler) {
         return skip;
     }
 
@@ -1837,7 +1708,7 @@ bool CoreChecks::ValidateShaderYcbcrSampler(const spirv::Module& module_state, c
         if (!variable.all_constant_integral_expressions) {
             std::ostringstream ss;
             ss << "shader " << entrypoint.Describe() << " has " << variable.DescribeDescriptor()
-               << " which is an COMBINED_SAMPLED_IMAGE tied to an array of YCbCr samplers and it trying to be accessed with a "
+               << " which is an COMBINED_SAMPLED_IMAGE tied to an array of YCbCr samplers and it is trying to be accessed with a "
                   "non-constant index value.\nRegardless if it is uniform or not, you can't dynamically index into an array of "
                   "YCbCr samplers "
                   "in your shader and you need a constant value.\nThis is because the driver's compiler needs to know the exact "
@@ -1869,7 +1740,7 @@ bool CoreChecks::ValidateTransformFeedbackPipeline(const spirv::Module& module_s
         if (pipeline.pre_raster_state) {
             if (entrypoint.stage != pipeline.pre_raster_state->last_stage) {
                 skip |= LogError("VUID-VkGraphicsPipelineCreateInfo-pStages-02318", module_state.handle(), loc,
-                                 "shader %s has OpExecutionMode of Xfb , but %s is the last last pre-rasterization shader stage "
+                                 "shader %s has OpExecutionMode of Xfb , but %s is the last pre-rasterization shader stage "
                                  "(and must be %s).",
                                  entrypoint.Describe().c_str(), string_VkShaderStageFlagBits(pipeline.pre_raster_state->last_stage),
                                  string_VkShaderStageFlagBits(entrypoint.stage));
@@ -2043,14 +1914,14 @@ bool CoreChecks::ValidateShaderStage(const ShaderStageState& stage_state, const 
             auto entry_point = stage_state.spirv_state->static_data_.entry_points[0];
             if (entry_point) {
                 if (entry_point->stage != stage) {
-                    err << " (Seems like you accidently created your SPIR-V with "
+                    err << " (Seems like you accidentally created your SPIR-V with "
                         << string_VkShaderStageFlagBits(entry_point->stage) << " so the entry point is not matching up)";
                 } else {
                     err << " (The only entry point found was \"" << entry_point->name << "\" for "
                         << string_VkShaderStageFlagBits(entry_point->stage) << ")";
                     if (entry_point->name == "main") {
                         err << "\nSome shading languages will let you name the main function something else, but when "
-                               "compiled to SPIR-V, it will keep it as 'main' to match defaults found in other shading langauges "
+                               "compiled to SPIR-V, it will keep it as 'main' to match defaults found in other shading languages "
                                "such "
                                "as GLSL. It is also valid in a single SPIR-V binary to have 'main' for two different stages.";
                     }
@@ -2090,15 +1961,23 @@ bool CoreChecks::ValidateShaderStage(const ShaderStageState& stage_state, const 
             specialization_info->pMapEntries != nullptr) {
             // Gather the specialization-constant values.
             auto const& specialization_data = reinterpret_cast<uint8_t const*>(specialization_info->pData);
-            std::unordered_map<uint32_t, std::vector<uint32_t>> id_value_map;  // note: this must be std:: to work with spvtools
+            // This must be std:: (instead of vvl::) to work with spvtools
+            // The value here is a vector because SPIR-V is a list of 32-bit words, so for 64-bit constants, it takes 2 words
+            // Also there is now OpSpecConstantData that can take any number of values
+            std::unordered_map<uint32_t, std::vector<uint32_t>> id_value_map;
             id_value_map.reserve(specialization_info->mapEntryCount);
+
+            // < spec_id, map_entry_index >
+            vvl::unordered_map<uint32_t, uint32_t> spec_constant_data;
 
             // spirv-val makes sure every OpSpecConstant has a OpDecoration.
             for (const auto& [result_id, spec_id] : module_state_ptr->static_data_.id_to_spec_id) {
                 VkSpecializationMapEntry map_entry = {spirv::kInvalidValue, 0, 0};
+                uint32_t map_entry_index = 0;
                 for (uint32_t i = 0; i < specialization_info->mapEntryCount; i++) {
                     if (specialization_info->pMapEntries[i].constantID == spec_id) {
                         map_entry = specialization_info->pMapEntries[i];
+                        map_entry_index = i;
                         break;
                     }
                 }
@@ -2113,8 +1992,9 @@ bool CoreChecks::ValidateShaderStage(const ShaderStageState& stage_state, const 
                 const spirv::Instruction* def_insn = module_state_ptr->FindDef(result_id);
                 const spirv::Instruction* type_insn = module_state_ptr->FindDef(def_insn->Word(1));
 
-                // Specialization constants can only be of type bool, scalar integer, or scalar floating point
-                switch (type_insn->Opcode()) {
+                // Specialization constants can only be scalar (or array of scalar)
+                const uint32_t type_opcode = type_insn->Opcode();
+                switch (type_opcode) {
                     case spv::OpTypeBool:
                         // "If the specialization constant is of type boolean, size must be the byte size of VkBool32"
                         spec_const_size = sizeof(VkBool32);
@@ -2123,25 +2003,33 @@ bool CoreChecks::ValidateShaderStage(const ShaderStageState& stage_state, const 
                     case spv::OpTypeFloat:
                         spec_const_size = type_insn->Word(2) / 8;
                         break;
-                    default:
-                        // spirv-val should catch if SpecId is not used on a
-                        // OpSpecConstantTrue/OpSpecConstantFalse/OpSpecConstant and OpSpecConstant is validated to be a
-                        // OpTypeInt or OpTypeFloat
+                    case spv::OpTypeArray:
+                        // Array is not allowed for other spec constants
+                        assert(def_insn->Opcode() == spv::OpSpecConstantDataKHR);
                         break;
+                    default:
+                        break;  // spirv-val should catch this
                 }
 
-                if (map_entry.size != spec_const_size) {
-                    std::ostringstream name;
+                if (def_insn->Opcode() == spv::OpSpecConstantDataKHR) {
+                    spec_constant_data.emplace(spec_id, map_entry_index);
+                } else if (map_entry.size != spec_const_size) {
+                    std::ostringstream ss;
+                    ss << "specialization constant (OpDecorate %" << result_id << " SpecId " << spec_id << ") ";
                     if (module_state_ptr->handle() != NullVulkanTypedHandle) {
-                        name << "shader module " << FormatHandle(module_state_ptr->handle());
-                    } else {
-                        name << "shader object";
+                        // if inlined or shader object, not handle to print
+                        ss << "in " << FormatHandle(module_state_ptr->handle());
                     }
-                    skip |= LogError("VUID-VkSpecializationMapEntry-constantID-00776", device, loc,
-                                     "specialization constant (ID = %" PRIu32 ", entry = %" PRIu32
-                                     ") has invalid size %zu in %s. Expected size is %" PRIu32 " from shader definition.",
-                                     map_entry.constantID, spec_id, map_entry.size,
-                                     FormatHandle(module_state_ptr->handle()).c_str(), spec_const_size);
+                    ss << " is mapped to pMapEntries[" << map_entry_index << "].size of " << map_entry.size
+                       << ", but the shader references a ";
+                    if (type_opcode == spv::OpTypeBool) {
+                        ss << "OpTypeBool is defined as sizeof(VkBool32) (" << sizeof(VkBool32) << " bytes";
+                    } else if (type_opcode == spv::OpTypeInt) {
+                        ss << type_insn->Word(2) << "-bit OpTypeInt which requires " << spec_const_size << " bytes";
+                    } else if (type_opcode == spv::OpTypeFloat) {
+                        ss << type_insn->Word(2) << "-bit OpTypeFloat which requires " << spec_const_size << " bytes";
+                    }
+                    skip |= LogError("VUID-VkSpecializationMapEntry-constantID-00776", device, loc, "%s", ss.str().c_str());
                 }
 
                 if ((map_entry.offset + map_entry.size) <= specialization_info->dataSize) {
@@ -2153,6 +2041,65 @@ bool CoreChecks::ValidateShaderStage(const ShaderStageState& stage_state, const 
 
                     std::copy(start_in_p, end_in_p, out_p);
                     id_value_map.emplace(map_entry.constantID, std::move(entry_data));
+                }
+            }
+
+            // We need to validate the size of OpSpecConstantData afterwards because the lenght is likely an OpSpecConstant and we
+            // need to get the value
+            for (auto& [spec_id, map_entry_index] : spec_constant_data) {
+                VkSpecializationMapEntry map_entry = specialization_info->pMapEntries[map_entry_index];
+                uint32_t result_id = 0;
+                for (const auto& [search_result_id, search_spec_id] : module_state_ptr->static_data_.id_to_spec_id) {
+                    if (search_spec_id == spec_id) {
+                        result_id = search_result_id;
+                        break;
+                    }
+                }
+                assert(result_id != 0);  // we already found above, so can find again here
+
+                const spirv::Instruction* def_insn = module_state_ptr->FindDef(result_id);
+                const spirv::Instruction* type_insn = module_state_ptr->FindDef(def_insn->Word(1));
+                // Result Type must be an array of scalar integer type elements
+                assert(type_insn->Opcode() == spv::OpTypeArray);
+                const spirv::Instruction* element_inst = module_state_ptr->FindDef(type_insn->Word(2));
+                assert(element_inst->Opcode() == spv::OpTypeInt);
+                const uint32_t byte_width = element_inst->Word(2) / 8;
+                const spirv::Instruction* length_inst = module_state_ptr->FindDef(type_insn->Word(3));
+
+                uint32_t length = 0;
+                if (length_inst->Opcode() == spv::OpConstant) {
+                    length = length_inst->Word(3);
+                } else if (length_inst->Opcode() == spv::OpSpecConstant) {
+                    // Need to do yet-another-reverse lookup to get the length SpecId
+                    uint32_t length_spec_id = spirv::kInvalidValue;
+                    for (const auto& [search_result_id, search_spec_id] : module_state_ptr->static_data_.id_to_spec_id) {
+                        if (search_result_id == length_inst->ResultId()) {
+                            length_spec_id = search_spec_id;
+                            break;
+                        }
+                    }
+
+                    auto it = id_value_map.find(length_spec_id);
+                    if (it != id_value_map.end()) {
+                        // Hard assumption this is not a 64-bit spec constant
+                        length = it->second[0];
+                    } else {
+                        length = length_inst->Word(3);  // use the default
+                    }
+                } else {
+                    assert(false);  // spirv-val should catch
+                }
+
+                if ((length * byte_width) != map_entry.size) {
+                    std::ostringstream ss;
+                    ss << "specialization constant (OpDecorate %" << result_id << " SpecId " << spec_id << ") ";
+                    if (module_state_ptr->handle() != NullVulkanTypedHandle) {
+                        ss << "in " << FormatHandle(module_state_ptr->handle());
+                    }
+                    ss << " is mapped to pMapEntries[" << map_entry_index << "].size of " << map_entry.size << ", but should be "
+                       << (length * byte_width) << " since the shader references an OpSpecConstantDataKHR where each element is "
+                       << byte_width << " bytes and the OpTypeArray has a length of " << length;
+                    skip |= LogError("VUID-VkSpecializationMapEntry-constantID-00776", device, loc, "%s", ss.str().c_str());
                 }
             }
 
@@ -2190,7 +2137,7 @@ bool CoreChecks::ValidateShaderStage(const ShaderStageState& stage_state, const 
                                             : "VUID-VkShaderCreateInfoEXT-pCode-08460";
                 std::string name = pipeline ? FormatHandle(module_state_ptr->handle()) : "shader object";
                 skip |= LogError(vuid, device, loc,
-                                 "After specialization was applied, %s produces a spirv-val error (stage %s):\n%s\nCommand to "
+                                 "after specialization was applied, %s produces a spirv-val error (stage %s):\n%s\nCommand to "
                                  "reproduce:\n\t%s\n",
                                  name.c_str(), string_VkShaderStageFlagBits(stage),
                                  diag && diag->error ? diag->error : "(no error text)", spirv_val_command.c_str());
@@ -2279,7 +2226,7 @@ bool CoreChecks::ValidateShaderStage(const ShaderStageState& stage_state, const 
                 skip |=
                     LogError("VUID-VkGraphicsPipelineCreateInfo-renderPass-06061", device, loc,
                              "shader %s is being created with fragment shader with InputAttachment capability, but renderPass is "
-                             "VK_NULL_HANDLE. (It is only possbile to use input attachments with dynamic rendering if the "
+                             "VK_NULL_HANDLE. (It is only possible to use input attachments with dynamic rendering if the "
                              "dynamicRenderingLocalRead feature is enabled)",
                              entrypoint.Describe().c_str());
             }
@@ -2460,7 +2407,7 @@ bool CoreChecks::ValidateShaderModuleCreateInfo(const VkShaderModuleCreateInfo& 
     if (!IsIntegerMultipleOf(create_info.codeSize, 4)) {
         skip |=
             LogError("VUID-VkShaderModuleCreateInfo-codeSize-08735", device, create_info_loc.dot(Field::codeSize),
-                     "(%zu) must be a multiple of 4. You might have forget to multiply by sizeof(uint32_t).", create_info.codeSize);
+                     "(%zu) must be a multiple of 4. You might have forgot to multiply by sizeof(uint32_t).", create_info.codeSize);
     } else if (first_dword != spv::MagicNumber) {
         skip |= LogError("VUID-VkShaderModuleCreateInfo-pCode-08738", device, create_info_loc.dot(Field::pCode),
                          "doesn't point to a SPIR-V module. The first dword (0x%" PRIx32
@@ -3240,7 +3187,7 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
         // If not flag, this is just a "normal" vulkan 1.0 situtation
         if (stage_state.descriptor_heap_mode) {
             for (const spirv::ResourceInterfaceVariable& resource_variable : entrypoint.resource_interface_variables) {
-                if (resource_variable.decorations.IsDescriptorSet()) {
+                if (!resource_variable.IsHeap()) {
                     skip |= LogError(
                         vvl::GetSpirvInterfaceVariableVUID(loc, vvl::SpirvInterfaceVariableError::DescriptorHeapMapping_11312),
                         module_state.handle(), loc,
@@ -3271,31 +3218,26 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
     std::unordered_set<const spirv::ResourceInterfaceVariable*> unmapped_variables;
 
     for (const spirv::ResourceInterfaceVariable& resource_variable : entrypoint.resource_interface_variables) {
-        if (!resource_variable.decorations.IsDescriptorSet()) {
+        if (resource_variable.IsHeap()) {
             continue;
         }
-        const uint32_t descriptor_set = resource_variable.decorations.set;
-        const uint32_t descriptor_binding = resource_variable.decorations.binding;
 
         bool found_mapping = false;
         for (uint32_t i = 0; i < mapping_info->mappingCount; i++) {
             const auto& mapping = mapping_info->pMappings[i];
-            if (mapping.descriptorSet != descriptor_set || descriptor_binding < mapping.firstBinding ||
-                descriptor_binding >= mapping.firstBinding + uint64_t(mapping.bindingCount) ||
-                !ResourceTypeMatchesBinding(mapping.resourceMask, resource_variable)) {
+            if (!IsResourceVaribleInMapping(mapping, resource_variable)) {
                 continue;
             }
             used_mapping_set[i] = true;
             found_mapping = true;
 
+            const std::shared_ptr<const spirv::TypeStructInfo>& type_struct_info = resource_variable.type_struct_info;
             if (IsValueIn(mapping.source, {VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT,
                                            VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT,
                                            VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT,
                                            VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT,
                                            VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT})) {
-                const spirv::Instruction& base_type = resource_variable.base_type;
-                const uint32_t base_opcode = base_type.Opcode();
-                const bool is_sampler = (base_opcode == spv::OpTypeSampledImage) || resource_variable.is_type_sampled_image;
+                const uint32_t base_opcode = resource_variable.base_type.Opcode();
 
                 struct MappingSourceInfo {
                     uint32_t offset = 0;
@@ -3305,10 +3247,10 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
                     Field align_field = Field::Empty;
                 } info;
 
-                if (is_sampler) {
-                    info.vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-11254";
-                    info.align = phys_dev_ext_props.descriptor_heap_props.samplerDescriptorAlignment;
-                    info.align_field = Field::samplerDescriptorAlignment;
+                if (base_opcode == spv::OpTypeSampledImage) {
+                    info.vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-12406";
+                    info.align = phys_dev_ext_props.descriptor_heap_props.imageDescriptorAlignment;
+                    info.align_field = Field::imageDescriptorAlignment;
                 } else if (base_opcode == spv::OpTypeImage) {
                     info.vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-11251";
                     info.align = phys_dev_ext_props.descriptor_heap_props.imageDescriptorAlignment;
@@ -3331,82 +3273,146 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
 
                 if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT) {
                     const auto& source_data = mapping.sourceData.constantOffset;
-                    info.offset = is_sampler ? source_data.samplerHeapOffset : source_data.heapOffset;
-                    info.array_stride = is_sampler ? source_data.samplerHeapArrayStride : source_data.heapArrayStride;
+                    info.offset = source_data.heapOffset;
+                    info.array_stride = source_data.heapArrayStride;
                 } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT) {
                     const auto& source_data = mapping.sourceData.pushIndex;
-                    info.offset = is_sampler ? source_data.samplerHeapOffset : source_data.heapOffset;
-                    info.array_stride = is_sampler ? source_data.samplerHeapArrayStride : source_data.heapArrayStride;
+                    info.offset = source_data.heapOffset;
+                    info.array_stride = source_data.heapArrayStride;
                 } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT) {
                     const auto& source_data = mapping.sourceData.indirectIndex;
-                    info.offset = is_sampler ? source_data.samplerHeapOffset : source_data.heapOffset;
-                    info.array_stride = is_sampler ? source_data.samplerHeapArrayStride : source_data.heapArrayStride;
+                    info.offset = source_data.heapOffset;
+                    info.array_stride = source_data.heapArrayStride;
                 } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT) {
                     const auto& source_data = mapping.sourceData.indirectIndexArray;
-                    info.offset = is_sampler ? source_data.samplerHeapOffset : source_data.heapOffset;
+                    info.offset = source_data.heapOffset;
                 } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT) {
                     const auto& source_data = mapping.sourceData.shaderRecordIndex;
-                    info.offset = is_sampler ? source_data.samplerHeapOffset : source_data.heapOffset;
-                    info.array_stride = is_sampler ? source_data.samplerHeapArrayStride : source_data.heapArrayStride;
+                    info.offset = source_data.heapOffset;
+                    info.array_stride = source_data.heapArrayStride;
+                }
+
+                if (mapping.source != VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT &&
+                    resource_variable.IsArray() && info.array_stride == 0) {
+                    // Trying to make a proper VU here https://gitlab.khronos.org/vulkan/vulkan/-/issues/4815
+                    skip |= LogWarning(
+                        "WARNING-VkDescriptorSetAndBindingMappingEXT-heapArrayStride-zero", module_state.handle(),
+                        loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i).dot(Field::source),
+                        "(%s) is used to map descriptor %s in %s which is a descriptor array, but heapArrayStride is zero. This "
+                        "mean every index of the descriptor array will be the same descriptor, which is likely not desired.",
+                        string_VkDescriptorMappingSourceEXT(mapping.source), resource_variable.DescribeDescriptor().c_str(),
+                        entrypoint.Describe().c_str());
                 }
 
                 if (!IsIntegerMultipleOf(info.offset, info.align) || !IsIntegerMultipleOf(info.array_stride, info.align)) {
                     const Field source_field = vvl::Field_VkDescriptorMappingSourceDataEXT(mapping.source);
-                    const Field offset_field = is_sampler ? Field::samplerHeapOffset : Field::heapOffset;
-                    const Field stride_field = is_sampler ? Field::samplerHeapArrayStride : Field::heapArrayStride;
 
                     std::stringstream ss;
                     ss << "(" << string_VkDescriptorMappingSourceEXT(mapping.source) << ") is used to map descriptor "
-                       << resource_variable.DescribeDescriptor() << " in %s " << entrypoint.Describe() << " but it is unaligned.\n"
-                       << String(source_field) << "." << String(offset_field) << " (" << info.offset << ") ";
+                       << resource_variable.DescribeDescriptor() << " in " << entrypoint.Describe() << " but it is unaligned.\n"
+                       << String(source_field) << ".heapOffset (" << info.offset << ") ";
                     if (mapping.source != VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT) {
-                        ss << "and " << String(source_field) << "." << String(stride_field) << " (" << info.array_stride
-                           << ") both ";
+                        ss << "and " << String(source_field) << ".heapArrayStride (" << info.array_stride << ") both ";
                     }
-                    ss << "must be aligned with " << String(info.align_field) << " (" << info.align << ")";
+                    ss << "must be zero or aligned with " << String(info.align_field) << " (" << info.align << ")";
 
                     skip |= LogError(
                         info.vuid, module_state.handle(),
                         loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i).dot(Field::source),
                         "%s", ss.str().c_str());
                 }
+
+                // Combined Image Sampler is only spot we need to check twice
+                if (base_opcode == spv::OpTypeSampledImage) {
+                    if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT) {
+                        const auto& source_data = mapping.sourceData.constantOffset;
+                        info.offset = source_data.samplerHeapOffset;
+                        info.array_stride = source_data.samplerHeapArrayStride;
+                    } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT) {
+                        const auto& source_data = mapping.sourceData.pushIndex;
+                        info.offset = source_data.samplerHeapOffset;
+                        info.array_stride = source_data.samplerHeapArrayStride;
+                    } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT) {
+                        const auto& source_data = mapping.sourceData.indirectIndex;
+                        info.offset = source_data.samplerHeapOffset;
+                        info.array_stride = source_data.samplerHeapArrayStride;
+                    } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT) {
+                        const auto& source_data = mapping.sourceData.indirectIndexArray;
+                        info.offset = source_data.samplerHeapOffset;
+                    } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT) {
+                        const auto& source_data = mapping.sourceData.shaderRecordIndex;
+                        info.offset = source_data.samplerHeapOffset;
+                        info.array_stride = source_data.samplerHeapArrayStride;
+                    }
+
+                    info.align = phys_dev_ext_props.descriptor_heap_props.samplerDescriptorAlignment;
+
+                    if (!IsIntegerMultipleOf(info.offset, info.align) || !IsIntegerMultipleOf(info.array_stride, info.align)) {
+                        const Field source_field = vvl::Field_VkDescriptorMappingSourceDataEXT(mapping.source);
+
+                        std::stringstream ss;
+                        ss << "(" << string_VkDescriptorMappingSourceEXT(mapping.source) << ") is used to map descriptor "
+                           << resource_variable.DescribeDescriptor() << " in " << entrypoint.Describe() << " but it is unaligned.\n"
+                           << String(source_field) << ".samplerHeapOffset (" << info.offset << ") ";
+                        if (mapping.source != VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT) {
+                            ss << "and " << String(source_field) << ".samplerHeapArrayStride (" << info.array_stride << ") both ";
+                        }
+                        ss << "must be zero or aligned with samplerDescriptorAlignment (" << info.align << ")";
+
+                        skip |= LogError("VUID-VkDescriptorSetAndBindingMappingEXT-source-11254", module_state.handle(),
+                                         loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i)
+                                             .dot(Field::source),
+                                         "%s", ss.str().c_str());
+                    }
+                }
             } else if (IsValueIn(mapping.source,
                                  {VK_DESCRIPTOR_MAPPING_SOURCE_PUSH_DATA_EXT, VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_DATA_EXT,
                                   VK_DESCRIPTOR_MAPPING_SOURCE_RESOURCE_HEAP_DATA_EXT})) {
-                const bool block = resource_variable.type_struct_info &&
-                                   resource_variable.type_struct_info->decorations.Has(spirv::DecorationSet::block_bit);
-                if (!block || resource_variable.storage_class != spv::StorageClassUniform) {
+                if (!resource_variable.is_uniform_buffer) {
                     const char* vuid =
                         pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11315" : "VUID-VkShaderCreateInfoEXT-pNext-11315";
-                    const bool is_uniform = resource_variable.storage_class == spv::StorageClassUniform;
+                    const VkDescriptorType potential_descriptor_type = resource_variable.GetPotentialDescriptorType();
+                    std::ostringstream ss;
+                    ss << "(" << string_VkDescriptorMappingSourceEXT(mapping.source) << ") is used to map descriptor "
+                       << resource_variable.DescribeDescriptor() << " in " << entrypoint.Describe() << " with StorageClass "
+                       << string_SpvStorageClass(resource_variable.storage_class);
+                    // Prevent more confusion with the cases
+                    if (potential_descriptor_type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER && !resource_variable.is_buffer_block) {
+                        ss << " (likely " << string_VkDescriptorType(potential_descriptor_type) << ")";
+                    }
+                    if (resource_variable.is_buffer_block) {
+                        ss << ", but it is decorated with BufferBlock (which is the Vulkan 1.0 way to turn the Uniform "
+                              "StorageClass into a Storage Buffer)";
+                    } else {
+                        ss << ", but it must be a Uniform Buffer (StorageClass Uniform) when using this mapping source as the "
+                              "descriptor is read only.\nHint: Did "
+                              "you mean to use VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT instead?";
+                    }
                     skip |= LogError(
                         vuid, module_state.handle(),
                         loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i).dot(Field::source),
-                        "(%s) is used to map descriptor %s in %s with storage class %s, but it %s",
-                        string_VkDescriptorMappingSourceEXT(mapping.source), resource_variable.DescribeDescriptor().c_str(),
-                        entrypoint.Describe().c_str(), string_SpvStorageClass(resource_variable.storage_class),
-                        !is_uniform ? "must be StorageClass Uniform (Uniform Buffers)\nHint: Did you mean to use "
-                                      "VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT instead?"
-                                    : "is not decorated with Block");
-                } else if (resource_variable.storage_class == spv::StorageClassUniform && resource_variable.IsArray()) {
-                    // Additional VU because we currently mark array of Block Structs the same in |resource_variable|
+                        "%s", ss.str().c_str());
+                } else if (resource_variable.IsArray()) {
+                    // Additional message for descriptor array case
                     const char* vuid =
                         pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11315" : "VUID-VkShaderCreateInfoEXT-pNext-11315";
                     skip |= LogError(
                         vuid, module_state.handle(),
                         loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i).dot(Field::source),
                         "(%s) is used to map descriptor %s in %s with storage class Uniform, but it is an array.\n"
-                        "Array of descriptors are not allowed, it must only be a Block structure type",
+                        "Descriptor arrays are not allowed for this mapping as it is not defined where each index would get the "
+                        "descriptor from.%s",
                         string_VkDescriptorMappingSourceEXT(mapping.source), resource_variable.DescribeDescriptor().c_str(),
-                        entrypoint.Describe().c_str());
+                        entrypoint.Describe().c_str(),
+                        resource_variable.array_length == 1 ? "(array of length 1 is also not allowed)" : "");
                 }
             }
             if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_PUSH_DATA_EXT) {
                 // If there is a runtime array, we can't detect statically, but should be handled in some GPU-AV check
-                if (resource_variable.type_struct_info && !resource_variable.type_struct_info->has_runtime_array) {
-                    const uint64_t struct_size = (uint64_t)resource_variable.type_struct_info->GetSize(module_state).size;
+                if (type_struct_info && !type_struct_info->has_runtime_array) {
+                    const uint64_t struct_size = (uint64_t)type_struct_info->GetSize(module_state).size;
                     if (struct_size >
-                        (uint64_t)(mapping.sourceData.pushDataOffset + phys_dev_ext_props.descriptor_heap_props.maxPushDataSize)) {
+                        (uint64_t)(phys_dev_ext_props.descriptor_heap_props.maxPushDataSize - mapping.sourceData.pushDataOffset)) {
                         const char* vuid = pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11316"
                                                     : "VUID-VkShaderCreateInfoEXT-pNext-11316";
                         skip |=
@@ -3414,16 +3420,15 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
                                      loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i)
                                          .dot(Field::source),
                                      "(VK_DESCRIPTOR_MAPPING_SOURCE_PUSH_DATA_EXT) is used to map descriptor %s in %s which has a "
-                                     "structure size of %" PRIu64 ", which is larger than the sum of pushDataOffset (%" PRIu32
-                                     ") and maxPushDataSize (%" PRIu64 ").",
+                                     "structure size of %" PRIu64 ", which when the pushDataOffset (%" PRIu32
+                                     ") is applied, will be larger than the maxPushDataSize (%" PRIu64 ").",
                                      resource_variable.DescribeDescriptor().c_str(), entrypoint.Describe().c_str(), struct_size,
                                      mapping.sourceData.pushDataOffset, phys_dev_ext_props.descriptor_heap_props.maxPushDataSize);
                     }
                 }
             }
             if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_DATA_EXT) {
-                const uint32_t struct_size =
-                    resource_variable.type_struct_info ? resource_variable.type_struct_info->GetSize(module_state).size : 0;
+                const uint32_t struct_size = type_struct_info ? type_struct_info->GetSize(module_state).size : 0;
                 if (mapping.sourceData.shaderRecordDataOffset + struct_size >
                     phys_dev_ext_props.ray_tracing_props_khr.maxShaderGroupStride) {
                     const char* vuid =
@@ -3439,34 +3444,46 @@ bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::M
                         mapping.sourceData.shaderRecordDataOffset, phys_dev_ext_props.ray_tracing_props_khr.maxShaderGroupStride);
                 }
             }
-            if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_ADDRESS_EXT ||
-                mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_PUSH_ADDRESS_EXT) {
-                const auto* type_struct_info = resource_variable.type_struct_info.get();
-                const bool block_bit = type_struct_info && type_struct_info->decorations.Has(spirv::DecorationSet::block_bit);
-                const bool buffer_block_bit =
-                    type_struct_info && type_struct_info->decorations.Has(spirv::DecorationSet::buffer_block_bit);
-                const spirv::Instruction* type = module_state.FindDef(resource_variable.type_id);
-                uint32_t opcode = type ? type->Opcode() : vvl::kNoIndex32;
-                if (opcode == spv::OpTypePointer) {
-                    opcode = module_state.FindDef(type->Word(3))->Opcode();
-                }
-                const bool block_uniform = block_bit && (resource_variable.storage_class == spv::StorageClassUniform);
-                const bool buffer_block_uniform = buffer_block_bit && (resource_variable.storage_class == spv::StorageClassUniform);
-                const bool block_sb = block_bit && (resource_variable.storage_class == spv::StorageClassStorageBuffer);
-                const bool as = opcode == spv::OpTypeAccelerationStructureKHR;
-                if (!(block_uniform || buffer_block_uniform || block_sb || as)) {
+
+            if (IsValueIn(mapping.source,
+                          {VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_ADDRESS_EXT, VK_DESCRIPTOR_MAPPING_SOURCE_PUSH_ADDRESS_EXT,
+                           VK_DESCRIPTOR_MAPPING_SOURCE_INDIRECT_ADDRESS_EXT})) {
+                if (!resource_variable.is_uniform_buffer && !resource_variable.is_storage_buffer &&
+                    !resource_variable.is_acceleration_structure && !resource_variable.is_acceleration_structure_nv) {
+                    const char* vuid =
+                        pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11318" : "VUID-VkShaderCreateInfoEXT-pNext-11318";
+
+                    std::ostringstream ss;
+                    ss << "(" << string_VkDescriptorMappingSourceEXT(mapping.source) << ") is used to map descriptor "
+                       << resource_variable.DescribeDescriptor() << " in " << entrypoint.Describe() << " with StorageClass "
+                       << string_SpvStorageClass(resource_variable.storage_class) << " (likely "
+                       << string_VkDescriptorType(resource_variable.GetPotentialDescriptorType())
+                       << ") but it must be a Uniform Buffer, Storage Buffer, or Acceleration Structure when using this mapping "
+                          "source.\nHint: Did you mean to use VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT instead?";
                     skip |= LogError(
-                        pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11318" : "VUID-VkShaderCreateInfoEXT-pNext-11318",
-                        module_state.handle(),
+                        vuid, module_state.handle(),
                         loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i).dot(Field::source),
-                        "(%s) is used to map descriptor %s in %s but is not valid SPIR-V instruction to map too.\n  Storage class: "
-                        "%s\n  "
-                        "Opcode: %s\n  OpTypeStruct Id: %" PRIu32
-                        "\n  Has Block decoration: %s\n  Has BufferBlock decoration: %s\n",
-                        string_VkDescriptorMappingSourceEXT(mapping.source), resource_variable.DescribeDescriptor().c_str(),
-                        entrypoint.Describe().c_str(), string_SpvStorageClass(resource_variable.storage_class),
-                        string_SpvOpcode(opcode), type_struct_info ? type_struct_info->id : 0, block_bit ? "yes" : "no",
-                        buffer_block_bit ? "yes" : "no");
+                        "%s", ss.str().c_str());
+                } else if (resource_variable.IsArray()) {
+                    // Additional message for descriptor array case
+                    const char* vuid =
+                        pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11318" : "VUID-VkShaderCreateInfoEXT-pNext-11318";
+
+                    std::ostringstream ss;
+                    ss << "(" << string_VkDescriptorMappingSourceEXT(mapping.source) << ") is used to map descriptor "
+                       << resource_variable.DescribeDescriptor() << " in " << entrypoint.Describe() << " with StorageClass "
+                       << string_SpvStorageClass(resource_variable.storage_class) << " (likely "
+                       << string_VkDescriptorType(resource_variable.GetPotentialDescriptorType())
+                       << ") but it is an array.\nDescriptor arrays are not allowed for this mapping as it is not defined where "
+                          "each index would get the descriptor from.";
+                    if (resource_variable.array_length == 1) {
+                        ss << " (array of length 1 is also not allowed)";
+                    }
+                    ss << "\nHint: Did you mean to use VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT instead?";
+                    skip |= LogError(
+                        vuid, module_state.handle(),
+                        loc.pNext(Struct::VkShaderDescriptorSetAndBindingMappingInfoEXT, Field::pMappings, i).dot(Field::source),
+                        "%s", ss.str().c_str());
                 }
             }
 

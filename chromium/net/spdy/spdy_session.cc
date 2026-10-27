@@ -1603,7 +1603,8 @@ bool SpdySession::ChangeSocketTag(const SocketTag& new_tag) {
       spdy_session_key_.proxy_chain(), spdy_session_key_.session_usage(),
       new_tag, spdy_session_key_.network_anonymization_key(),
       spdy_session_key_.secure_dns_policy(),
-      spdy_session_key_.disable_cert_verification_network_fetches());
+      spdy_session_key_.disable_cert_verification_network_fetches(),
+      spdy_session_key_.target_network());
   spdy_session_key_ = new_key;
 
   return true;
@@ -1893,8 +1894,15 @@ void SpdySession::ResetStreamIterator(ActiveStreamMap::iterator it,
   RequestPriority priority = it->second->priority();
   EnqueueResetStreamFrame(stream_id, priority, error_code, description);
 
-  // Removes any pending writes for the stream except for possibly an
-  // in-flight one.
+  // EnqueueResetStreamFrame() can synchronously call DoDrainSession() ->
+  // StartGoingAway() -> CloseActiveStreamIterator(), which erases entries
+  // from `active_streams_` and invalidates `it`. Re-look-up the stream by
+  // ID; if it was already closed by the drain, there is nothing left to do.
+  it = active_streams_.find(stream_id);
+  if (it == active_streams_.end()) {
+    return;
+  }
+
   CloseActiveStreamIterator(it, error);
 }
 
@@ -2872,12 +2880,36 @@ void SpdySession::OnRstStream(spdy::SpdyStreamId stream_id,
   auto it = active_streams_.find(stream_id);
   if (it == active_streams_.end()) {
     // NOTE:  it may just be that the stream was cancelled.
-    LOG(WARNING) << "Received RST for invalid stream" << stream_id;
+    DLOG(WARNING) << "Received RST for invalid stream " << stream_id;
     return;
   }
 
   DCHECK(it->second);
   CHECK_EQ(it->second->stream_id(), stream_id);
+
+  // A server may ask the client to stop uploading after a complete response
+  // with NO_ERROR. Some intermediaries send CANCEL or STREAM_CLOSED after
+  // forwarding a final non-2xx response; keep that response visible to the
+  // caller, but do not hide resets after successful responses.
+  if (it->second->IsRemoteClosed()) {
+    if (error_code == spdy::ERROR_CODE_NO_ERROR) {
+      CloseActiveStreamIterator(it, OK);
+      return;
+    }
+
+    if (error_code == spdy::ERROR_CODE_CANCEL ||
+        error_code == spdy::ERROR_CODE_STREAM_CLOSED) {
+      const quiche::HttpHeaderBlock& response_headers =
+          it->second->response_headers();
+      auto status_it = response_headers.find(spdy::kHttp2StatusHeader);
+      int status = 0;
+      if (status_it != response_headers.end() &&
+          base::StringToInt(status_it->second, &status) && status >= 300) {
+        CloseActiveStreamIterator(it, OK);
+        return;
+      }
+    }
+  }
 
   if (error_code == spdy::ERROR_CODE_NO_ERROR) {
     CloseActiveStreamIterator(it, ERR_HTTP2_RST_STREAM_NO_ERROR_RECEIVED);
@@ -3273,10 +3305,11 @@ void SpdySession::IncreaseSendWindowSize(int delta_window_size) {
     RecordProtocolErrorHistogram(PROTOCOL_ERROR_INVALID_WINDOW_UPDATE_SIZE);
     DoDrainSession(
         ERR_HTTP2_PROTOCOL_ERROR,
-        "Received WINDOW_UPDATE [delta: " +
-            base::NumberToString(delta_window_size) +
-            "] for session overflows session_send_window_size_ [current: " +
-            base::NumberToString(session_send_window_size_) + "]");
+        base::StrCat(
+            {"Received WINDOW_UPDATE [delta: ",
+             base::NumberToString(delta_window_size),
+             "] for session overflows session_send_window_size_ [current: ",
+             base::NumberToString(session_send_window_size_), "]"}));
     return;
   }
 
@@ -3365,9 +3398,10 @@ void SpdySession::DecreaseRecvWindowSize(int32_t delta_window_size) {
     RecordProtocolErrorHistogram(PROTOCOL_ERROR_RECEIVE_WINDOW_VIOLATION);
     DoDrainSession(
         ERR_HTTP2_FLOW_CONTROL_ERROR,
-        "delta_window_size is " + base::NumberToString(delta_window_size) +
-            " in DecreaseRecvWindowSize, which is larger than the receive " +
-            "window size of " + base::NumberToString(receiving_window_size));
+        base::StrCat(
+            {"delta_window_size is ", base::NumberToString(delta_window_size),
+             " in DecreaseRecvWindowSize, which is larger than the receive ",
+             "window size of ", base::NumberToString(receiving_window_size)}));
     return;
   }
 

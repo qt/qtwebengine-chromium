@@ -6,6 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+
+#ifndef EIGEN_FFT_FFTW_IMPL_H
+#define EIGEN_FFT_FFTW_IMPL_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -159,32 +163,32 @@ struct fftw_impl {
 
   // complex-to-complex forward FFT
   inline void fwd(Complex *dst, const Complex *src, int nfft) {
-    get_plan(nfft, false, dst, src).fwd(fftw_cast(dst), fftw_cast(src), nfft);
+    get_plan(nfft, false, /*real_io=*/false, dst, src).fwd(fftw_cast(dst), fftw_cast(src), nfft);
   }
 
   // real-to-complex forward FFT
   inline void fwd(Complex *dst, const Scalar *src, int nfft) {
-    get_plan(nfft, false, dst, src).fwd(fftw_cast(dst), fftw_cast(src), nfft);
+    get_plan(nfft, false, /*real_io=*/true, dst, src).fwd(fftw_cast(dst), fftw_cast(src), nfft);
   }
 
   // 2-d complex-to-complex
   inline void fwd2(Complex *dst, const Complex *src, int n0, int n1) {
-    get_plan(n0, n1, false, dst, src).fwd2(fftw_cast(dst), fftw_cast(src), n0, n1);
+    get_plan(n0, n1, false, /*real_io=*/false, dst, src).fwd2(fftw_cast(dst), fftw_cast(src), n0, n1);
   }
 
   // inverse complex-to-complex
   inline void inv(Complex *dst, const Complex *src, int nfft) {
-    get_plan(nfft, true, dst, src).inv(fftw_cast(dst), fftw_cast(src), nfft);
+    get_plan(nfft, true, /*real_io=*/false, dst, src).inv(fftw_cast(dst), fftw_cast(src), nfft);
   }
 
   // half-complex to scalar
   inline void inv(Scalar *dst, const Complex *src, int nfft) {
-    get_plan(nfft, true, dst, src).inv(fftw_cast(dst), fftw_cast(src), nfft);
+    get_plan(nfft, true, /*real_io=*/true, dst, src).inv(fftw_cast(dst), fftw_cast(src), nfft);
   }
 
   // 2-d complex-to-complex
   inline void inv2(Complex *dst, const Complex *src, int n0, int n1) {
-    get_plan(n0, n1, true, dst, src).inv2(fftw_cast(dst), fftw_cast(src), n0, n1);
+    get_plan(n0, n1, true, /*real_io=*/false, dst, src).inv2(fftw_cast(dst), fftw_cast(src), n0, n1);
   }
 
  protected:
@@ -196,17 +200,23 @@ struct fftw_impl {
 
   PlanMap m_plans;
 
-  inline PlanData &get_plan(int nfft, bool inverse, void *dst, const void *src) {
+  // Pack (inverse, real_io, inplace, aligned) into 4 contiguous low bits of
+  // the cache key.  real_io distinguishes r2c/c2r from c2c so that reusing
+  // the same FFT object across real-input and complex-input transforms
+  // doesn't return a cached plan of the wrong kind.
+  static int64_t plan_flags(bool inverse, bool real_io, void *dst, const void *src) {
     bool inplace = (dst == src);
     bool aligned = ((reinterpret_cast<size_t>(src) & 15) | (reinterpret_cast<size_t>(dst) & 15)) == 0;
-    int64_t key = ((nfft << 3) | (inverse << 2) | (inplace << 1) | aligned) << 1;
+    return (inverse << 3) | (real_io << 2) | (inplace << 1) | aligned;
+  }
+
+  inline PlanData &get_plan(int nfft, bool inverse, bool real_io, void *dst, const void *src) {
+    int64_t key = ((nfft << 4) | plan_flags(inverse, real_io, dst, src)) << 1;
     return m_plans[key];
   }
 
-  inline PlanData &get_plan(int n0, int n1, bool inverse, void *dst, const void *src) {
-    bool inplace = (dst == src);
-    bool aligned = ((reinterpret_cast<size_t>(src) & 15) | (reinterpret_cast<size_t>(dst) & 15)) == 0;
-    int64_t key = (((((int64_t)n0) << 30) | (n1 << 3) | (inverse << 2) | (inplace << 1) | aligned) << 1) + 1;
+  inline PlanData &get_plan(int n0, int n1, bool inverse, bool real_io, void *dst, const void *src) {
+    int64_t key = (((((int64_t)n0) << 31) | (n1 << 4) | plan_flags(inverse, real_io, dst, src)) << 1) + 1;
     return m_plans[key];
   }
 };
@@ -214,3 +224,5 @@ struct fftw_impl {
 }  // end namespace internal
 
 }  // end namespace Eigen
+
+#endif  // EIGEN_FFT_FFTW_IMPL_H

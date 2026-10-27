@@ -135,7 +135,7 @@ void VideoCaptureManager::RegisterListener(
   // track foreground/background state if this feature is DISABLED,
   // ensuring that capture is stopped when the app is no longer active.
   if (!base::FeatureList::IsEnabled(
-          features::kAndroidEnableBackgroundMediaCapturing)) {
+          media::kAndroidEnableBackgroundMediaCapturing)) {
     application_state_has_running_activities_ = true;
     app_status_listener_ =
         base::android::ApplicationStatusListener::New(base::BindRepeating(
@@ -452,16 +452,30 @@ void VideoCaptureManager::OpenNativeScreenCapturePicker(
     base::OnceCallback<void(DesktopMediaID::Id)> created_callback,
     base::OnceCallback<void(webrtc::DesktopCapturer::Source)> picker_callback,
     base::OnceCallback<void()> cancel_callback,
-    base::OnceCallback<void()> error_callback) {
+    base::OnceCallback<void()> error_callback,
+    base::OnceCallback<void(DesktopMediaID::Id)> stop_audio_callback) {
   video_capture_provider_->OpenNativeScreenCapturePicker(
       type, std::move(created_callback), std::move(picker_callback),
-      std::move(cancel_callback), std::move(error_callback));
+      std::move(cancel_callback), std::move(error_callback),
+      std::move(stop_audio_callback));
 }
 
 void VideoCaptureManager::CloseNativeScreenCapturePicker(
     DesktopMediaID device_id) {
   video_capture_provider_->CloseNativeScreenCapturePicker(device_id);
 }
+
+#if BUILDFLAG(IS_MAC)
+void VideoCaptureManager::GetApplicationAudioCaptureId(
+    DesktopMediaID::Id session_id,
+    base::OnceCallback<
+        void(const std::optional<desktop_capture::ApplicationAudioCaptureId>&)>
+        callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  video_capture_provider_->GetApplicationAudioCaptureId(session_id,
+                                                        std::move(callback));
+}
+#endif
 
 void VideoCaptureManager::ConnectClient(
     const media::VideoCaptureSessionId& session_id,

@@ -25,6 +25,12 @@ config("protobuf_config") {
   if (!is_win) {
     defines += [ "HAVE_PTHREAD" ]
   }
+  if (is_clang) {
+    cflags = [
+      # Prevent errors from deprecated absl::disjunction
+      "-Wno-deprecated",
+    ]
+  }
 }
 
 config("protobuf_config_internal") {

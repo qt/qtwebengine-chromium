@@ -28,6 +28,7 @@
 #include "net/base/completion_once_callback.h"
 #include "net/base/features.h"
 #include "net/base/net_errors.h"
+#include "net/base/network_handle.h"
 #include "net/base/network_isolation_key.h"
 #include "net/base/port_util.h"
 #include "net/base/privacy_mode.h"
@@ -485,7 +486,7 @@ class CapturePreconnectsTransportSocketPool : public TransportClientSocketPool {
       const CommonConnectJobParams* common_connect_job_params)
       : TransportClientSocketPool(/*max_sockets=*/0,
                                   /*max_sockets_per_group=*/0,
-                                  SocketPoolAdditionalCapacity::Create(),
+                                  SocketPoolAdditionalCapacity::CreateEmpty(),
                                   base::TimeDelta(),
                                   ProxyChain::Direct(),
                                   /*is_for_websockets=*/false,
@@ -728,7 +729,8 @@ TEST_P(HttpStreamFactoryTest, PreconnectDirectWithExistingSpdySession) {
                        ProxyChain::Direct(), SessionUsage::kDestination,
                        SocketTag(), NetworkAnonymizationKey(),
                        SecureDnsPolicy::kAllow,
-                       /*disable_cert_verification_network_fetches=*/false);
+                       /*disable_cert_verification_network_fetches=*/false,
+                       handles::kInvalidNetworkHandle);
     std::ignore = CreateFakeSpdySession(session->spdy_session_pool(), key);
 
     if (base::FeatureList::IsEnabled(features::kHappyEyeballsV3)) {

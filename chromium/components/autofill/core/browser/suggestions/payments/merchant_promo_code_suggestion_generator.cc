@@ -4,15 +4,25 @@
 
 #include "components/autofill/core/browser/suggestions/payments/merchant_promo_code_suggestion_generator.h"
 
-#include "base/containers/to_vector.h"
+#include <utility>
+#include <vector>
+
+#include "base/check.h"
+#include "base/functional/callback.h"
 #include "base/functional/function_ref.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/data_manager/payments/payments_data_manager.h"
+#include "components/autofill/core/browser/data_model/payments/autofill_offer_data.h"
+#include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/suggestions/payments/payments_suggestion_generator_util.h"
+#include "components/autofill/core/browser/suggestions/suggestion.h"
+#include "components/autofill/core/browser/suggestions/suggestion_type.h"
 #include "components/strings/grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "url/gurl.h"
 
 namespace autofill {
 namespace {
@@ -21,6 +31,10 @@ namespace {
 // suggestions that can be displayed to the user for a promo code field.
 std::vector<Suggestion> GetPromoCodeSuggestionsFromPromoCodeOffers(
     const std::vector<const AutofillOfferData*>& promo_code_offers) {
+  if (promo_code_offers.empty()) {
+    return {};
+  }
+
   std::vector<Suggestion> suggestions;
   GURL footer_offer_details_url;
   for (const AutofillOfferData* promo_code_offer : promo_code_offers) {
@@ -46,9 +60,7 @@ std::vector<Suggestion> GetPromoCodeSuggestionsFromPromoCodeOffers(
     }
   }
 
-  // Ensure that there are suggestions and that we were able to find at least
-  // one suggestion with a valid offer details url before adding the footer.
-  DCHECK(suggestions.size() > 0);
+  CHECK(!suggestions.empty());
   if (!footer_offer_details_url.is_empty()) {
     // Add the footer separator since we will now have a footer in the offers
     // suggestions popup.
@@ -79,22 +91,17 @@ MerchantPromoCodeSuggestionGenerator::MerchantPromoCodeSuggestionGenerator() =
 MerchantPromoCodeSuggestionGenerator::~MerchantPromoCodeSuggestionGenerator() =
     default;
 
-void MerchantPromoCodeSuggestionGenerator::FetchSuggestionData(
+void MerchantPromoCodeSuggestionGenerator::GenerateSuggestions(
     const FormData& form,
     const FormFieldData& trigger_field,
     const FormStructure* form_structure,
     const AutofillField* trigger_autofill_field,
-    const AutofillClient& client,
-    base::OnceCallback<
-        void(std::pair<SuggestionDataSource,
-                       std::vector<SuggestionGenerator::SuggestionData>>)>
-        callback) {
-  FetchSuggestionData(
+    AutofillClient& client,
+    base::OnceCallback<void(ReturnedSuggestions)> callback) {
+  GenerateSuggestions(
       form, trigger_field, form_structure, trigger_autofill_field, client,
-      [&callback](std::pair<SuggestionDataSource,
-                            std::vector<SuggestionGenerator::SuggestionData>>
-                      suggestion_data) {
-        std::move(callback).Run(std::move(suggestion_data));
+      [&callback](ReturnedSuggestions returned_suggestions) {
+        std::move(callback).Run(std::move(returned_suggestions));
       });
 }
 
@@ -103,28 +110,8 @@ void MerchantPromoCodeSuggestionGenerator::GenerateSuggestions(
     const FormFieldData& trigger_field,
     const FormStructure* form_structure,
     const AutofillField* trigger_autofill_field,
-    const AutofillClient& client,
-    const base::flat_map<SuggestionDataSource, std::vector<SuggestionData>>&
-        all_suggestion_data,
-    base::OnceCallback<void(ReturnedSuggestions)> callback) {
-  GenerateSuggestions(
-      form, trigger_field, form_structure, trigger_autofill_field, client,
-      all_suggestion_data,
-      [&callback](ReturnedSuggestions returned_suggestions) {
-        std::move(callback).Run(std::move(returned_suggestions));
-      });
-}
-
-void MerchantPromoCodeSuggestionGenerator::FetchSuggestionData(
-    const FormData& form,
-    const FormFieldData& trigger_field,
-    const FormStructure* form_structure,
-    const AutofillField* trigger_autofill_field,
-    const AutofillClient& client,
-    base::FunctionRef<
-        void(std::pair<SuggestionDataSource,
-                       std::vector<SuggestionGenerator::SuggestionData>>)>
-        callback) {
+    AutofillClient& client,
+    base::FunctionRef<void(ReturnedSuggestions)> callback) {
   // The field is eligible only if it's focused on a merchant promo code.
   if (!form_structure || !trigger_autofill_field ||
       !trigger_autofill_field->Type().GetTypes().contains(
@@ -155,42 +142,8 @@ void MerchantPromoCodeSuggestionGenerator::FetchSuggestionData(
     }
   }
 
-  std::vector<SuggestionData> suggestion_data = base::ToVector(
-      std::move(promo_code_offers),
-      [](const AutofillOfferData* offer) { return SuggestionData(*offer); });
-  callback({SuggestionDataSource::kMerchantPromoCode, suggestion_data});
-}
-
-void MerchantPromoCodeSuggestionGenerator::GenerateSuggestions(
-    const FormData& form,
-    const FormFieldData& trigger_field,
-    const FormStructure* form_structure,
-    const AutofillField* trigger_autofill_field,
-    const AutofillClient& client,
-    const base::flat_map<SuggestionDataSource, std::vector<SuggestionData>>&
-        all_suggestion_data,
-    base::FunctionRef<void(ReturnedSuggestions)> callback) {
-  auto it = all_suggestion_data.find(SuggestionDataSource::kMerchantPromoCode);
-  std::vector<SuggestionData> promo_code_suggestion_data =
-      it != all_suggestion_data.end() ? it->second
-                                      : std::vector<SuggestionData>();
-  if (promo_code_suggestion_data.empty()) {
-    callback({FillingProduct::kMerchantPromoCode, {}});
-    return;
-  }
-
-  std::vector<AutofillOfferData> promo_code_offers =
-      base::ToVector(std::move(promo_code_suggestion_data),
-                     [](SuggestionData& suggestion_data) {
-                       return std::get<autofill::AutofillOfferData>(
-                           std::move(suggestion_data));
-                     });
-  std::vector<const AutofillOfferData*> promo_code_offers_ptrs =
-      base::ToVector(std::move(promo_code_offers),
-                     [](const AutofillOfferData& offer) { return &offer; });
-  callback(
-      {FillingProduct::kMerchantPromoCode,
-       GetPromoCodeSuggestionsFromPromoCodeOffers(promo_code_offers_ptrs)});
+  callback({SuggestionDataSource::kMerchantPromoCode,
+            GetPromoCodeSuggestionsFromPromoCodeOffers(promo_code_offers)});
 }
 
 }  // namespace autofill

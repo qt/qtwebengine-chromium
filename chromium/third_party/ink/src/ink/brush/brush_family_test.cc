@@ -15,7 +15,6 @@
 #include "ink/brush/brush_family.h"
 
 #include <limits>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -38,12 +37,12 @@
 #include "ink/brush/type_matchers.h"
 #include "ink/geometry/angle.h"
 #include "ink/geometry/point.h"
-#include "ink/geometry/vec.h"
 #include "ink/types/duration.h"
 
 namespace ink {
 namespace {
 
+using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
@@ -73,14 +72,11 @@ BrushTip CreatePressureTestTip() {
           BrushBehavior::ToolTypeFilterNode{
               .enabled_tool_types = {.touch = true, .stylus = true},
           },
-          BrushBehavior::FallbackFilterNode{
-              .is_fallback_for = BrushBehavior::OptionalInputProperty::kTilt,
-          },
           BrushBehavior::ResponseNode{
               .response_curve = {EasingFunction::Predefined::kEaseInOut},
           },
           BrushBehavior::DampingNode{
-              .damping_source = BrushBehavior::DampingSource::kTimeInSeconds,
+              .damping_source = BrushBehavior::ProgressDomain::kTimeInSeconds,
               .damping_gap = 0.1,
           },
           BrushBehavior::TargetNode{
@@ -92,14 +88,9 @@ BrushTip CreatePressureTestTip() {
 }
 
 BrushPaint CreateTestPaint() {
-  return {.texture_layers = {
-              {.client_texture_id = std::string(kTestTextureId),
-               .mapping = BrushPaint::TextureMapping::kStamping,
-               .size_unit = BrushPaint::TextureSizeUnit::kBrushSize,
-               .size = {3, 5},
-               .size_jitter = {0.1, 2},
-               .keyframes = {{.progress = 0.1, .rotation = kFullTurn / 8}},
-               .blend_mode = BrushPaint::BlendMode::kDstIn}}};
+  return {.texture_layers = {BrushPaint::StampingTexture{
+              .client_texture_id = std::string(kTestTextureId),
+              .blend_mode = BrushPaint::BlendMode::kDstIn}}};
 }
 
 BrushCoat CreateTestCoat() {
@@ -110,11 +101,9 @@ BrushCoat CreateTestCoat() {
 }
 
 TEST(BrushFamilyTest, StringifyInputModel) {
-  EXPECT_EQ(absl::StrCat(BrushFamily::InputModel{BrushFamily::SpringModel{}}),
-            "SpringModel");
-  EXPECT_EQ(absl::StrCat(
-                BrushFamily::InputModel{BrushFamily::ExperimentalNaiveModel{}}),
-            "ExperimentalNaiveModel");
+  EXPECT_EQ(
+      absl::StrCat(BrushFamily::InputModel{BrushFamily::PassthroughModel{}}),
+      "PassthroughModel");
   EXPECT_EQ(
       absl::StrCat(BrushFamily::InputModel{BrushFamily::SlidingWindowModel{
           .window_size = Duration32::Millis(125),
@@ -128,43 +117,34 @@ TEST(BrushFamilyTest, StringifyWithNoId) {
                .corner_rounding = 0,
                .particle_gap_distance_scale = 0.1,
                .particle_gap_duration = Duration32::Seconds(2)},
-      CreateTestPaint());
-  ASSERT_EQ(family.status(), absl::OkStatus());
-  EXPECT_EQ(absl::StrCat(*family),
-            "BrushFamily(coats=[BrushCoat{tip=BrushTip{scale=<3, 3>, "
-            "corner_rounding=0, particle_gap_distance_scale=0.1, "
-            "particle_gap_duration=2s}, "
-            "paint_preferences={BrushPaint{texture_layers={TextureLayer{"
-            "client_texture_id=test-paint, mapping=kStamping, "
-            "origin=kStrokeSpaceOrigin, size_unit=kBrushSize, wrap_x=kRepeat, "
-            "wrap_y=kRepeat, size=<3, 5>, offset=<0, 0>, rotation=0π, "
-            "size_jitter=<0.1, 2>, offset_jitter=<0, 0>, rotation_jitter=0π, "
-            "opacity=1, animation_frames=1, animation_rows=1, "
-            "animation_columns=1, animation_duration=1s, "
-            "keyframes={TextureKeyframe{progress=0.1, "
-            "rotation=0.25π}}, blend_mode=kDstIn}}, "
-            "self_overlap=kAny}}}], input_model=SpringModel)");
+      CreateTestPaint(), BrushFamily::PassthroughModel{});
+  ASSERT_THAT(family, IsOk());
+  EXPECT_EQ(
+      absl::StrCat(*family),
+      "BrushFamily(coats=[BrushCoat{tip=BrushTip{scale=<3, 3>, "
+      "corner_rounding=0, particle_gap_distance_scale=0.1, "
+      "particle_gap_duration=2s}, "
+      "paint_preferences={BrushPaint{texture_layers={StampingTexture{"
+      "client_texture_id=test-paint, animation_frames=1, animation_rows=1, "
+      "animation_columns=1, animation_duration=1s, blend_mode=kDstIn}}, "
+      "self_overlap=kAny}}}], input_model=PassthroughModel)");
 }
 
 TEST(BrushFamilyTest, StringifyWithId) {
   absl::StatusOr<BrushFamily> family =
       BrushFamily::Create(BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-                          CreateTestPaint(), "big-square");
-  ASSERT_EQ(family.status(), absl::OkStatus());
-  EXPECT_EQ(absl::StrCat(*family),
-            "BrushFamily(coats=[BrushCoat{tip=BrushTip{scale=<3, 3>, "
-            "corner_rounding=0}, "
-            "paint_preferences={BrushPaint{texture_layers={TextureLayer{client_"
-            "texture_id=test-paint, mapping=kStamping, "
-            "origin=kStrokeSpaceOrigin, size_unit=kBrushSize, wrap_x=kRepeat, "
-            "wrap_y=kRepeat, size=<3, 5>, offset=<0, 0>, rotation=0π, "
-            "size_jitter=<0.1, 2>, offset_jitter=<0, 0>, rotation_jitter=0π, "
-            "opacity=1, animation_frames=1, animation_rows=1, "
-            "animation_columns=1, animation_duration=1s, "
-            "keyframes={TextureKeyframe{progress=0.1, "
-            "rotation=0.25π}}, blend_mode=kDstIn}}, "
-            "self_overlap=kAny}}}], "
-            "client_brush_family_id='big-square', input_model=SpringModel)");
+                          CreateTestPaint(), BrushFamily::PassthroughModel{},
+                          {.client_brush_family_id = "big-square"});
+  ASSERT_THAT(family, IsOk());
+  EXPECT_EQ(
+      absl::StrCat(*family),
+      "BrushFamily(coats=[BrushCoat{"
+      "tip=BrushTip{scale=<3, 3>, corner_rounding=0}, "
+      "paint_preferences={BrushPaint{texture_layers={StampingTexture{client_"
+      "texture_id=test-paint, animation_frames=1, animation_rows=1, "
+      "animation_columns=1, animation_duration=1s, blend_mode=kDstIn}}, "
+      "self_overlap=kAny}}}], input_model=PassthroughModel, "
+      "client_brush_family_id='big-square')");
 }
 
 TEST(BrushFamilyTest, CreateWithoutId) {
@@ -172,40 +152,41 @@ TEST(BrushFamilyTest, CreateWithoutId) {
 
   absl::StatusOr<BrushFamily> family = BrushFamily::Create({coat});
 
-  ASSERT_EQ(family.status(), absl::OkStatus());
+  ASSERT_THAT(family, IsOk());
   EXPECT_THAT(family->GetCoats(), ElementsAre(BrushCoatEq(coat)));
-  EXPECT_THAT(family->GetClientBrushFamilyId(), "");
+  EXPECT_THAT(family->GetMetadata().client_brush_family_id, "");
 }
 
 TEST(BrushFamilyTest, CreateWithId) {
   BrushCoat coat = CreateTestCoat();
   absl::StatusOr<BrushFamily> family =
-      BrushFamily::Create({coat}, "test-family");
+      BrushFamily::Create({coat}, BrushFamily::DefaultInputModel(),
+                          {.client_brush_family_id = "test-family"});
 
-  ASSERT_EQ(family.status(), absl::OkStatus());
+  ASSERT_THAT(family, IsOk());
   EXPECT_THAT(family->GetCoats(), ElementsAre(BrushCoatEq(coat)));
-  EXPECT_EQ(family->GetClientBrushFamilyId(), "test-family");
+  EXPECT_EQ(family->GetMetadata().client_brush_family_id, "test-family");
 }
 
 TEST(BrushFamilyTest, CreateWithNoCoats) {
   absl::StatusOr<BrushFamily> family = BrushFamily::Create({});
-  ASSERT_EQ(family.status(), absl::OkStatus());
+  ASSERT_THAT(family, IsOk());
   EXPECT_THAT(family->GetCoats(), IsEmpty());
 }
 
 TEST(BrushFamilyTest, CreateWithMultipleCoats) {
   absl::StatusOr<BrushFamily> family =
       BrushFamily::Create({CreateTestCoat(), CreateTestCoat()});
-  ASSERT_EQ(family.status(), absl::OkStatus());
+  ASSERT_THAT(family, IsOk());
   EXPECT_THAT(family->GetCoats(), SizeIs(2));
 }
 
 TEST(BrushFamilyTest, CreateWithTooManyCoats) {
   std::vector<BrushCoat> coats(BrushFamily::MaxBrushCoats() + 1,
                                CreateTestCoat());
-  absl::StatusOr<BrushFamily> family = BrushFamily::Create(coats);
-  EXPECT_EQ(family.status().code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(family.status().message(), HasSubstr("coats.size()"));
+  EXPECT_THAT(
+      BrushFamily::Create(coats),
+      StatusIs(absl::StatusCode::kInvalidArgument, HasSubstr("coats.size()")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidInputModel) {
@@ -213,213 +194,95 @@ TEST(BrushFamilyTest, CreateWithInvalidInputModel) {
   BrushFamily::InputModel input_model = {
       BrushFamily::SlidingWindowModel{.window_size = Duration32::Zero()}};
   EXPECT_THAT(
-      BrushFamily::Create(coats, "", input_model),
+      BrushFamily::Create(coats, input_model),
       StatusIs(absl::StatusCode::kInvalidArgument, HasSubstr("window_size")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidTipScale) {
-  {
-    absl::Status status =
-        BrushFamily::Create({.scale = {kInfinity, 1}}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("scale"));
-  }
-  {
-    absl::Status status =
-        BrushFamily::Create({.scale = {1, kInfinity}}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("scale"));
-  }
+  EXPECT_THAT(BrushFamily::Create({.scale = {kInfinity, 1}}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("scale")));
+  EXPECT_THAT(BrushFamily::Create({.scale = {1, kInfinity}}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("scale")));
 
-  {
-    absl::Status status =
-        BrushFamily::Create({.scale = {kNan, 1}}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("scale"));
-  }
-  {
-    absl::Status status =
-        BrushFamily::Create({.scale = {1, kNan}}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("scale"));
-  }
+  EXPECT_THAT(BrushFamily::Create({.scale = {kNan, 1}}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("scale")));
+  EXPECT_THAT(BrushFamily::Create({.scale = {1, kNan}}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("scale")));
 
-  {
-    absl::Status status = BrushFamily::Create({.scale = {-1, 1}}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("scale"));
-  }
-  {
-    absl::Status status = BrushFamily::Create({.scale = {1, -1}}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("scale"));
-  }
+  EXPECT_THAT(BrushFamily::Create({.scale = {-1, 1}}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("scale")));
+  EXPECT_THAT(BrushFamily::Create({.scale = {1, -1}}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("scale")));
 
-  {
-    absl::Status status = BrushFamily::Create({.scale = {0, 0}}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("scale"));
-  }
+  EXPECT_THAT(BrushFamily::Create({.scale = {0, 0}}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("scale")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidTipCornerRounding) {
-  {
-    absl::Status status =
-        BrushFamily::Create({.corner_rounding = -kInfinity}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("corner_rounding"));
-  }
-  {
-    absl::Status status =
-        BrushFamily::Create({.corner_rounding = kInfinity}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("corner_rounding"));
-  }
-  {
-    absl::Status status =
-        BrushFamily::Create({.corner_rounding = kNan}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("corner_rounding"));
-  }
-  {
-    absl::Status status =
-        BrushFamily::Create({.corner_rounding = -1}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("corner_rounding"));
-  }
-  {
-    absl::Status status =
-        BrushFamily::Create({.corner_rounding = 2}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("corner_rounding"));
-  }
+  EXPECT_THAT(BrushFamily::Create({.corner_rounding = -kInfinity}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("corner_rounding")));
+  EXPECT_THAT(BrushFamily::Create({.corner_rounding = kInfinity}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("corner_rounding")));
+  EXPECT_THAT(BrushFamily::Create({.corner_rounding = kNan}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("corner_rounding")));
+  EXPECT_THAT(BrushFamily::Create({.corner_rounding = -1}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("corner_rounding")));
+  EXPECT_THAT(BrushFamily::Create({.corner_rounding = 2}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("corner_rounding")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidTipPinch) {
-  {
-    absl::Status status =
-        BrushFamily::Create({.pinch = -kInfinity}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("pinch"));
-  }
-  {
-    absl::Status status =
-        BrushFamily::Create({.pinch = kInfinity}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("pinch"));
-  }
-  {
-    absl::Status status = BrushFamily::Create({.pinch = kNan}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("pinch"));
-  }
-  {
-    absl::Status status = BrushFamily::Create({.pinch = -1}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("pinch"));
-  }
-  {
-    absl::Status status = BrushFamily::Create({.pinch = 2}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("pinch"));
-  }
+  EXPECT_THAT(BrushFamily::Create({.pinch = -kInfinity}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("pinch")));
+  EXPECT_THAT(BrushFamily::Create({.pinch = kInfinity}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("pinch")));
+  EXPECT_THAT(BrushFamily::Create({.pinch = kNan}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("pinch")));
+  EXPECT_THAT(BrushFamily::Create({.pinch = -1}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("pinch")));
+  EXPECT_THAT(BrushFamily::Create({.pinch = 2}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("pinch")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidTipRotation) {
-  {
-    absl::Status status =
-        BrushFamily::Create({.rotation = Angle::Radians(kInfinity)}, {})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("rotation"));
-  }
-  {
-    absl::Status status =
-        BrushFamily::Create({.rotation = -Angle::Radians(kInfinity)}, {})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("rotation"));
-  }
-  {
-    absl::Status status =
-        BrushFamily::Create({.rotation = -Angle::Radians(kNan)}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("rotation"));
-  }
+  EXPECT_THAT(BrushFamily::Create({.rotation = Angle::Radians(kInfinity)}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("rotation")));
+  EXPECT_THAT(BrushFamily::Create({.rotation = -Angle::Radians(kInfinity)}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("rotation")));
+  EXPECT_THAT(BrushFamily::Create({.rotation = -Angle::Radians(kNan)}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("rotation")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidTipSlant) {
-  {
-    absl::Status status =
-        BrushFamily::Create({.slant = Angle::Radians(kInfinity)}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("slant"));
-  }
-  {
-    absl::Status status =
-        BrushFamily::Create({.slant = -Angle::Radians(kInfinity)}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("slant"));
-  }
-  {
-    absl::Status status =
-        BrushFamily::Create({.slant = -Angle::Radians(kNan)}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("slant"));
-  }
-  {
-    absl::Status status =
-        BrushFamily::Create({.slant = -kHalfTurn}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("slant"));
-  }
-  {
-    absl::Status status =
-        BrushFamily::Create({.slant = kHalfTurn}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("slant"));
-  }
+  EXPECT_THAT(BrushFamily::Create({.slant = Angle::Radians(kInfinity)}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("slant")));
+  EXPECT_THAT(BrushFamily::Create({.slant = -Angle::Radians(kInfinity)}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("slant")));
+  EXPECT_THAT(BrushFamily::Create({.slant = -Angle::Radians(kNan)}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("slant")));
+  EXPECT_THAT(BrushFamily::Create({.slant = -kHalfTurn}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("slant")));
+  EXPECT_THAT(BrushFamily::Create({.slant = kHalfTurn}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("slant")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidTipParticleGapDistanceScale) {
-  {
-    absl::Status status =
-        BrushFamily::Create({.particle_gap_distance_scale = kInfinity}, {})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("particle_gap_distance_scale"));
-  }
-  {
-    absl::Status status =
-        BrushFamily::Create({.particle_gap_distance_scale = kNan}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("particle_gap_distance"));
-  }
-  {
-    absl::Status status =
-        BrushFamily::Create({.particle_gap_distance_scale = -1.f}, {}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("particle_gap_distance"));
-  }
+  EXPECT_THAT(
+      BrushFamily::Create({.particle_gap_distance_scale = kInfinity}, {}),
+      StatusIs(kInvalidArgument, HasSubstr("particle_gap_distance_scale")));
+  EXPECT_THAT(BrushFamily::Create({.particle_gap_distance_scale = kNan}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("particle_gap_distance")));
+  EXPECT_THAT(BrushFamily::Create({.particle_gap_distance_scale = -1.f}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("particle_gap_distance")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidTipParticleGapDuration) {
-  {
-    absl::Status status =
-        BrushFamily::Create({.particle_gap_duration = Duration32::Infinite()},
-                            {})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("particle_gap_duration"));
-  }
-  {
-    absl::Status status =
-        BrushFamily::Create({.particle_gap_duration = -Duration32::Seconds(1)},
-                            {})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("particle_gap_duration"));
-  }
+  EXPECT_THAT(BrushFamily::Create(
+                  {.particle_gap_duration = Duration32::Infinite()}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("particle_gap_duration")));
+  EXPECT_THAT(BrushFamily::Create(
+                  {.particle_gap_duration = -Duration32::Seconds(1)}, {}),
+              StatusIs(kInvalidArgument, HasSubstr("particle_gap_duration")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidBehaviorSource) {
@@ -435,9 +298,8 @@ TEST(BrushFamilyTest, CreateWithInvalidBehaviorSource) {
           },
       }}},
   };
-  absl::Status status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("source"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("source")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidBehaviorTarget) {
@@ -453,9 +315,8 @@ TEST(BrushFamilyTest, CreateWithInvalidBehaviorTarget) {
           },
       }}},
   };
-  absl::Status status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("target"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("target")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidBehaviorOutOfRange) {
@@ -473,9 +334,9 @@ TEST(BrushFamilyTest, CreateWithInvalidBehaviorOutOfRange) {
           },
       }}},
   };
-  absl::Status status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("source_out_of_range_behavior"));
+  EXPECT_THAT(
+      BrushFamily::Create(brush_tip, BrushPaint{}),
+      StatusIs(kInvalidArgument, HasSubstr("source_out_of_range_behavior")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidBehaviorSourceValueRange) {
@@ -494,40 +355,37 @@ TEST(BrushFamilyTest, CreateWithInvalidBehaviorSourceValueRange) {
       &std::get<BrushBehavior::SourceNode>(brush_tip.behaviors[0].nodes[0]);
 
   source_node->source_value_range = {kInfinity, 0};
-  absl::Status status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("source_value_range"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("source_value_range")));
 
   source_node->source_value_range = {0, kInfinity};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("source_value_range"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("source_value_range")));
 
   source_node->source_value_range = {kNan, 0};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("source_value_range"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("source_value_range")));
 
   source_node->source_value_range = {0, kNan};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("source_value_range"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("source_value_range")));
 
   source_node->source_value_range = {0, 0};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("source_value_range"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("source_value_range")));
 
   source_node->source_value_range = {5, 5};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("source_value_range"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("source_value_range")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidBehaviorSourceAndOutOfRangeBehavior) {
   BrushTip brush_tip = {
       .behaviors = {BrushBehavior{{
           BrushBehavior::SourceNode{
+              .source = BrushBehavior::Source::kTimeSinceInputInSeconds,
+              .source_out_of_range_behavior =
+                  BrushBehavior::OutOfRange::kRepeat,
               .source_value_range = {0, 1},
           },
           BrushBehavior::TargetNode{
@@ -536,26 +394,11 @@ TEST(BrushFamilyTest, CreateWithInvalidBehaviorSourceAndOutOfRangeBehavior) {
           },
       }}},
   };
-  BrushBehavior::SourceNode* source_node =
-      &std::get<BrushBehavior::SourceNode>(brush_tip.behaviors[0].nodes[0]);
-
-  source_node->source = BrushBehavior::Source::kTimeSinceInputInSeconds;
-  source_node->source_out_of_range_behavior =
-      BrushBehavior::OutOfRange::kRepeat;
-  absl::Status status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(),
-              HasSubstr("kTimeSinceInput*` must only be used with "
-                        "`source_out_of_range_behavior` of `kClamp"));
-
-  source_node->source = BrushBehavior::Source::kTimeSinceInputInMillis;
-  source_node->source_out_of_range_behavior =
-      BrushBehavior::OutOfRange::kMirror;
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(),
-              HasSubstr("kTimeSinceInput*` must only be used with "
-                        "`source_out_of_range_behavior` of `kClamp"));
+  EXPECT_THAT(
+      BrushFamily::Create(brush_tip, BrushPaint{}),
+      StatusIs(kInvalidArgument,
+               HasSubstr("`kTimeSince*` sources can only be used with a "
+                         "`source_out_of_range_behavior` of `kClamp`")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidBehaviorTargetModifierRange) {
@@ -574,34 +417,28 @@ TEST(BrushFamilyTest, CreateWithInvalidBehaviorTargetModifierRange) {
       &std::get<BrushBehavior::TargetNode>(brush_tip.behaviors[0].nodes[1]);
 
   target_node->target_modifier_range = {kInfinity, 0};
-  absl::Status status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("target_modifier_range"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("target_modifier_range")));
 
   target_node->target_modifier_range = {0, kInfinity};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("target_modifier_range"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("target_modifier_range")));
 
   target_node->target_modifier_range = {kNan, 0};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("target_modifier_range"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("target_modifier_range")));
 
   target_node->target_modifier_range = {0, kNan};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("target_modifier_range"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("target_modifier_range")));
 
   target_node->target_modifier_range = {0, 0};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("target_modifier_range"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("target_modifier_range")));
 
   target_node->target_modifier_range = {5, 5};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("target_modifier_range"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("target_modifier_range")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidBehaviorPredefinedResponseCurve) {
@@ -620,9 +457,8 @@ TEST(BrushFamilyTest, CreateWithInvalidBehaviorPredefinedResponseCurve) {
           },
       }}},
   };
-  absl::Status status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("Predefined"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("Predefined")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidBehaviorCubicBezierResponseCurve) {
@@ -644,63 +480,53 @@ TEST(BrushFamilyTest, CreateWithInvalidBehaviorCubicBezierResponseCurve) {
 
   response_node->response_curve.parameters =
       EasingFunction::CubicBezier{.x1 = -1, .y1 = 0, .x2 = 1, .y2 = 1};
-  absl::Status status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("CubicBezier"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("CubicBezier")));
 
   response_node->response_curve.parameters =
       EasingFunction::CubicBezier{.x1 = 0, .y1 = 0, .x2 = 2, .y2 = 1};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("CubicBezier"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("CubicBezier")));
 
   response_node->response_curve.parameters =
       EasingFunction::CubicBezier{.x1 = kInfinity, .y1 = 0, .x2 = 1, .y2 = 1};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("CubicBezier"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("CubicBezier")));
 
   response_node->response_curve.parameters =
       EasingFunction::CubicBezier{.x1 = 0, .y1 = kInfinity, .x2 = 1, .y2 = 1};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("CubicBezier"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("CubicBezier")));
 
   response_node->response_curve.parameters =
       EasingFunction::CubicBezier{.x1 = 0, .y1 = 0, .x2 = kInfinity, .y2 = 1};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("CubicBezier"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("CubicBezier")));
 
   response_node->response_curve.parameters =
       EasingFunction::CubicBezier{.x1 = 0, .y1 = 0, .x2 = 1, .y2 = kInfinity};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("CubicBezier"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("CubicBezier")));
 
   response_node->response_curve.parameters =
       EasingFunction::CubicBezier{.x1 = kNan, .y1 = 0, .x2 = 1, .y2 = 1};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("CubicBezier"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("CubicBezier")));
 
   response_node->response_curve.parameters =
       EasingFunction::CubicBezier{.x1 = 0, .y1 = kNan, .x2 = 1, .y2 = 1};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("CubicBezier"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("CubicBezier")));
 
   response_node->response_curve.parameters =
       EasingFunction::CubicBezier{.x1 = 0, .y1 = 0, .x2 = kNan, .y2 = 1};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("CubicBezier"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("CubicBezier")));
 
   response_node->response_curve.parameters =
       EasingFunction::CubicBezier{.x1 = 0, .y1 = 0, .x2 = 1, .y2 = kNan};
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("CubicBezier"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("CubicBezier")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidBehaviorLinearResponseCurve) {
@@ -725,55 +551,27 @@ TEST(BrushFamilyTest, CreateWithInvalidBehaviorLinearResponseCurve) {
         BrushPaint{});
   };
   // Non-finite Y-position:
-  {
-    absl::Status status = create_family_with_linear({{0, kNan}}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("y-position"));
-  }
-  {
-    absl::Status status = create_family_with_linear({{0, kInfinity}}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("y-position"));
-  }
-  {
-    absl::Status status = create_family_with_linear({{0, -kInfinity}}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("y-position"));
-  }
+  EXPECT_THAT(create_family_with_linear({{0, kNan}}),
+              StatusIs(kInvalidArgument, HasSubstr("y-position")));
+  EXPECT_THAT(create_family_with_linear({{0, kInfinity}}),
+              StatusIs(kInvalidArgument, HasSubstr("y-position")));
+  EXPECT_THAT(create_family_with_linear({{0, -kInfinity}}),
+              StatusIs(kInvalidArgument, HasSubstr("y-position")));
   // Non-finite X-position:
-  {
-    absl::Status status = create_family_with_linear({{kNan, 0}}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("x-position"));
-  }
-  {
-    absl::Status status = create_family_with_linear({{kInfinity, 0}}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("x-position"));
-  }
-  {
-    absl::Status status = create_family_with_linear({{-kInfinity, 0}}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("x-position"));
-  }
+  EXPECT_THAT(create_family_with_linear({{kNan, 0}}),
+              StatusIs(kInvalidArgument, HasSubstr("x-position")));
+  EXPECT_THAT(create_family_with_linear({{kInfinity, 0}}),
+              StatusIs(kInvalidArgument, HasSubstr("x-position")));
+  EXPECT_THAT(create_family_with_linear({{-kInfinity, 0}}),
+              StatusIs(kInvalidArgument, HasSubstr("x-position")));
   // X-position out of range:
-  {
-    absl::Status status = create_family_with_linear({{-0.1, 0}}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("x-position"));
-  }
-  {
-    absl::Status status = create_family_with_linear({{1.1, 0}}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("x-position"));
-  }
+  EXPECT_THAT(create_family_with_linear({{-0.1, 0}}),
+              StatusIs(kInvalidArgument, HasSubstr("x-position")));
+  EXPECT_THAT(create_family_with_linear({{1.1, 0}}),
+              StatusIs(kInvalidArgument, HasSubstr("x-position")));
   // X-positions that aren't monotonicly non-decreasing:
-  {
-    absl::Status status =
-        create_family_with_linear({{0.75, 0}, {0.25, 1}}).status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("monotonic"));
-  }
+  EXPECT_THAT(create_family_with_linear({{0.75, 0}, {0.25, 1}}),
+              StatusIs(kInvalidArgument, HasSubstr("monotonic")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidBehaviorStepsResponseCurve) {
@@ -797,25 +595,22 @@ TEST(BrushFamilyTest, CreateWithInvalidBehaviorStepsResponseCurve) {
       .step_count = 0,
       .step_position = EasingFunction::StepPosition::kJumpEnd,
   };
-  absl::Status status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("Steps"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("Steps")));
 
   response_node->response_curve.parameters = EasingFunction::Steps{
       .step_count = 1,
       .step_position = static_cast<EasingFunction::StepPosition>(-1),
   };
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("Steps"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("Steps")));
 
   response_node->response_curve.parameters = EasingFunction::Steps{
       .step_count = 1,
       .step_position = EasingFunction::StepPosition::kJumpNone,
   };
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("Steps"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("Steps")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidBehaviorDampingGap) {
@@ -826,7 +621,7 @@ TEST(BrushFamilyTest, CreateWithInvalidBehaviorDampingGap) {
               .source_value_range = {0, 3},
           },
           BrushBehavior::DampingNode{
-              .damping_source = BrushBehavior::DampingSource::kTimeInSeconds,
+              .damping_source = BrushBehavior::ProgressDomain::kTimeInSeconds,
           },
           BrushBehavior::TargetNode{
               .target = BrushBehavior::Target::kPinchOffset,
@@ -838,14 +633,12 @@ TEST(BrushFamilyTest, CreateWithInvalidBehaviorDampingGap) {
       &std::get<BrushBehavior::DampingNode>(brush_tip.behaviors[0].nodes[1]);
 
   damping_node->damping_gap = -0.1;
-  absl::Status status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("damping_gap"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("damping_gap")));
 
   damping_node->damping_gap = kInfinity;
-  status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("damping_gap"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("damping_gap")));
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidEnabledToolTypes) {
@@ -867,416 +660,150 @@ TEST(BrushFamilyTest, CreateWithInvalidEnabledToolTypes) {
           },
       }}},
   };
-  absl::Status status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("enabled_tool_types"));
-}
-
-TEST(BrushFamilyTest, CreateWithInvalidBehaviorFallbackSource) {
-  BrushTip brush_tip = {
-      .behaviors = {BrushBehavior{{
-          BrushBehavior::SourceNode{
-              .source = BrushBehavior::Source::kOrientationInRadians,
-              .source_value_range = {0, 3},
-          },
-          BrushBehavior::FallbackFilterNode{
-              .is_fallback_for =
-                  static_cast<BrushBehavior::OptionalInputProperty>(-1),
-          },
-          BrushBehavior::TargetNode{
-              .target = BrushBehavior::Target::kPinchOffset,
-              .target_modifier_range = {0, .2},
-          },
-      }}},
-  };
-  absl::Status status = BrushFamily::Create(brush_tip, BrushPaint{}).status();
-  EXPECT_EQ(status.code(), kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("is_fallback_for"));
+  EXPECT_THAT(BrushFamily::Create(brush_tip, BrushPaint{}),
+              StatusIs(kInvalidArgument, HasSubstr("enabled_tool_types")));
 }
 
 TEST(BrushFamilyTest, DefaultConstruction) {
   BrushFamily family;
   EXPECT_THAT(family.GetCoats(),
               ElementsAre(BrushCoatEq(BrushCoat{.tip = BrushTip{}})));
-  EXPECT_THAT(family.GetClientBrushFamilyId(), IsEmpty());
+  EXPECT_THAT(family.GetInputModel(),
+              BrushFamilyInputModelEq(BrushFamily::DefaultInputModel()));
+  EXPECT_THAT(family.GetMetadata().client_brush_family_id, IsEmpty());
 }
 
 TEST(BrushFamilyTest, CopyAndMove) {
   {
-    auto family =
-        BrushFamily::Create(CreatePressureTestTip(), CreateTestPaint(),
-                            "/brush-family:test-family");
-    ASSERT_EQ(absl::OkStatus(), family.status());
+    auto family = BrushFamily::Create(
+        CreatePressureTestTip(), CreateTestPaint(),
+        BrushFamily::DefaultInputModel(),
+        {.client_brush_family_id = "/brush-family:test-family"});
+    ASSERT_THAT(family, IsOk());
 
     BrushFamily copied_family = *family;
     EXPECT_THAT(copied_family.GetCoats(),
                 Pointwise(BrushCoatEq(), family->GetCoats()));
-    EXPECT_EQ(copied_family.GetClientBrushFamilyId(),
-              family->GetClientBrushFamilyId());
+    EXPECT_EQ(copied_family.GetMetadata().client_brush_family_id,
+              family->GetMetadata().client_brush_family_id);
   }
   {
-    auto family =
-        BrushFamily::Create(CreatePressureTestTip(), CreateTestPaint(),
-                            "/brush-family:test-family");
-    ASSERT_EQ(absl::OkStatus(), family.status());
+    auto family = BrushFamily::Create(
+        CreatePressureTestTip(), CreateTestPaint(),
+        BrushFamily::DefaultInputModel(),
+        {.client_brush_family_id = "/brush-family:test-family"});
+    ASSERT_THAT(family, IsOk());
 
     BrushFamily copied_family;
     copied_family = *family;
     EXPECT_THAT(copied_family.GetCoats(),
                 Pointwise(BrushCoatEq(), family->GetCoats()));
-    EXPECT_EQ(copied_family.GetClientBrushFamilyId(),
-              family->GetClientBrushFamilyId());
+    EXPECT_EQ(copied_family.GetMetadata().client_brush_family_id,
+              family->GetMetadata().client_brush_family_id);
   }
   {
-    auto family =
-        BrushFamily::Create(CreatePressureTestTip(), CreateTestPaint(),
-                            "/brush-family:test-family");
-    ASSERT_EQ(absl::OkStatus(), family.status());
+    auto family = BrushFamily::Create(
+        CreatePressureTestTip(), CreateTestPaint(),
+        BrushFamily::DefaultInputModel(),
+        {.client_brush_family_id = "/brush-family:test-family"});
+    ASSERT_THAT(family, IsOk());
 
     BrushFamily copied_family = *family;
     BrushFamily moved_family = *std::move(family);
     EXPECT_THAT(moved_family.GetCoats(),
                 Pointwise(BrushCoatEq(), copied_family.GetCoats()));
-    EXPECT_EQ(moved_family.GetClientBrushFamilyId(),
-              copied_family.GetClientBrushFamilyId());
+    EXPECT_EQ(moved_family.GetMetadata().client_brush_family_id,
+              copied_family.GetMetadata().client_brush_family_id);
   }
   {
-    auto family =
-        BrushFamily::Create(CreatePressureTestTip(), CreateTestPaint(),
-                            "/brush-family:test-family");
-    ASSERT_EQ(absl::OkStatus(), family.status());
+    auto family = BrushFamily::Create(
+        CreatePressureTestTip(), CreateTestPaint(),
+        BrushFamily::DefaultInputModel(),
+        {.client_brush_family_id = "/brush-family:test-family"});
+    ASSERT_THAT(family, IsOk());
 
     BrushFamily copied_family = *family;
     BrushFamily moved_family;
     moved_family = *std::move(family);
     EXPECT_THAT(moved_family.GetCoats(),
                 Pointwise(BrushCoatEq(), copied_family.GetCoats()));
-    EXPECT_EQ(moved_family.GetClientBrushFamilyId(),
-              copied_family.GetClientBrushFamilyId());
+    EXPECT_EQ(moved_family.GetMetadata().client_brush_family_id,
+              copied_family.GetMetadata().client_brush_family_id);
   }
 }
 
 TEST(BrushFamilyTest, CreateWithInvalidBrushPaint) {
-  // `TextureLayer::mapping` has invalid enum value
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers =
-                 {{.client_texture_id = std::string(kTestTextureId),
-                   .mapping = static_cast<BrushPaint::TextureMapping>(-1),
-                   .size = {1, 4}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::texture_layers::mapping"));
-  }
   // `TextureLayer::origin` has invalid enum value
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .origin =
-                                     static_cast<BrushPaint::TextureOrigin>(-1),
-                                 .size = {1, 4}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::texture_layers::origin"));
-  }
+  EXPECT_THAT(BrushFamily::Create(
+                  BrushTip{.scale = {3, 3}, .corner_rounding = 0},
+                  {.texture_layers = {BrushPaint::TilingTexture{
+                       .client_texture_id = std::string(kTestTextureId),
+                       .origin = static_cast<BrushPaint::TextureOrigin>(-1),
+                       .size = {1, 4}}}}),
+              StatusIs(kInvalidArgument,
+                       HasSubstr("BrushPaint::TilingTexture::origin")));
   // TextureLayer::size_unit has invalid enum value
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers =
-                 {{.client_texture_id = std::string(kTestTextureId),
-                   .size_unit = static_cast<BrushPaint::TextureSizeUnit>(-1),
-                   .size = {1, 4}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::texture_layers::size_unit"));
-  }
+  EXPECT_THAT(
+      BrushFamily::Create(
+          BrushTip{.scale = {3, 3}, .corner_rounding = 0},
+          {.texture_layers = {BrushPaint::TilingTexture{
+               .client_texture_id = std::string(kTestTextureId),
+               .size_unit = static_cast<BrushPaint::TextureSizeUnit>(-1),
+               .size = {1, 4}}}}),
+      StatusIs(kInvalidArgument,
+               HasSubstr("BrushPaint::TilingTexture::size_unit")));
   // `TextureLayer::size` has negative component.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {-1, 4}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("BrushPaint::TextureLayer::size"));
-  }
+  EXPECT_THAT(
+      BrushFamily::Create(BrushTip{.scale = {3, 3}, .corner_rounding = 0},
+                          {.texture_layers = {BrushPaint::TilingTexture{
+                               .client_texture_id = std::string(kTestTextureId),
+                               .size = {-1, 4}}}}),
+      StatusIs(kInvalidArgument, HasSubstr("BrushPaint::TilingTexture::size")));
   // `TextureLayer::size` has zero-size component.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {0, 4}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("BrushPaint::TextureLayer::size"));
-  }
+  EXPECT_THAT(
+      BrushFamily::Create(BrushTip{.scale = {3, 3}, .corner_rounding = 0},
+                          {.texture_layers = {BrushPaint::TilingTexture{
+                               .client_texture_id = std::string(kTestTextureId),
+                               .size = {0, 4}}}}),
+      StatusIs(kInvalidArgument, HasSubstr("BrushPaint::TilingTexture::size")));
   // `TextureLayer::size` is non-finite.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {3, kInfinity}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(), HasSubstr("BrushPaint::TextureLayer::size"));
-  }
+  EXPECT_THAT(
+      BrushFamily::Create(BrushTip{.scale = {3, 3}, .corner_rounding = 0},
+                          {.texture_layers = {BrushPaint::TilingTexture{
+                               .client_texture_id = std::string(kTestTextureId),
+                               .size = {3, kInfinity}}}}),
+      StatusIs(kInvalidArgument, HasSubstr("BrushPaint::TilingTexture::size")));
   // `TextureLayer::offset` is infinite.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {1, 3},
-                                 .offset = {kInfinity, 0.4}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::TextureLayer::offset"));
-  }
+  EXPECT_THAT(
+      BrushFamily::Create(BrushTip{.scale = {3, 3}, .corner_rounding = 0},
+                          {.texture_layers = {BrushPaint::TilingTexture{
+                               .client_texture_id = std::string(kTestTextureId),
+                               .size = {1, 3},
+                               .offset = {kInfinity, 0.4}}}}),
+      StatusIs(kInvalidArgument,
+               HasSubstr("BrushPaint::TilingTexture::offset")));
   // `TextureLayer::offset` is NaN.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {1, 3},
-                                 .offset = {1, kNan}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::TextureLayer::offset"));
-  }
-  // `TextureLayer::size_jitter` has negative component.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {1, 3},
-                                 .size_jitter = {-0.1, 0.4}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::TextureLayer::size_jitter"));
-  }
-  // `TextureLayer::size_jitter` is greater than size component.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {1, 3},
-                                 .size_jitter = {0.1, 4}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::TextureLayer::size_jitter"));
-  }
-  // `TextureLayer::offset_jitter` has negative component.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {1, 3},
-                                 .offset = {0.8, 0.7},
-                                 .offset_jitter = {-0.1, 0.4}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::TextureLayer::offset_jitter"));
-  }
-  // `TextureLayer::offset_jitter` is greater than 1.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {1, 3},
-                                 .offset = {0.8, 0.7},
-                                 .offset_jitter = {0.1, 4}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::TextureLayer::offset_jitter"));
-  }
-  // `TextureLayer::size_jitter` has negative component.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {1, 3},
-                                 .size_jitter = {-0.1, 0.4}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::TextureLayer::size_jitter"));
-  }
-  // `TextureLayer::opacity` is negative.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {1, 3},
-                                 .opacity = -1}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::TextureLayer::opacity"));
-  }
-  // `TextureLayer::opacity` is negative.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {1, 3},
-                                 .opacity = -1}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::TextureLayer::opacity"));
-  }
-  // `TextureLayer::opacity` is greater than 1.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {1, 3},
-                                 .opacity = 3}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::TextureLayer::opacity"));
-  }
-  // `TextureLayer::TextureKeyframes::progress` is greater than 1.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {1, 3},
-                                 .keyframes = {{.progress = 3}}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::TextureKeyframe::progress"));
-  }
-  // `TextureLayer::TextureKeyframes::size` has infinite component.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {1, 3},
-                                 .keyframes = {{.size = std::optional<Vec>(
-                                                    {4, kInfinity})}}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::TextureKeyframe::size"));
-  }
-  // `TextureLayer::TextureKeyframes::offset` has negative component.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers =
-                 {{.client_texture_id = std::string(kTestTextureId),
-                   .size = {1, 3},
-                   .keyframes = {{.offset = std::optional<Vec>({-2, 4})}}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::TextureKeyframe::offset"));
-  }
-  // `TextureLayer::TextureKeyframes::rotation` has infinite radians.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers =
-                 {{.client_texture_id = std::string(kTestTextureId),
-                   .size = {1, 3},
-                   .keyframes = {{.rotation = Angle::Radians(kInfinity)}}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::TextureKeyframe::rotation"));
-  }
-  // `TextureLayer::TextureKeyframes::opacity` is greater than 1.
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {1, 3},
-                                 .keyframes = {{.opacity = 3}}}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::TextureKeyframe::opacity"));
-  }
-  // `TextureLayer::blend_mode` has invalid enum value
-  {
-    absl::Status status =
-        BrushFamily::Create(
-            BrushTip{.scale = {3, 3}, .corner_rounding = 0},
-            {.texture_layers = {{.client_texture_id =
-                                     std::string(kTestTextureId),
-                                 .size = {1, 4},
-                                 .blend_mode =
-                                     static_cast<BrushPaint::BlendMode>(-1)}}})
-            .status();
-    EXPECT_EQ(status.code(), kInvalidArgument);
-    EXPECT_THAT(status.message(),
-                HasSubstr("BrushPaint::texture_layers::blend_mode"));
-  }
+  EXPECT_THAT(
+      BrushFamily::Create(BrushTip{.scale = {3, 3}, .corner_rounding = 0},
+                          {.texture_layers = {BrushPaint::TilingTexture{
+                               .client_texture_id = std::string(kTestTextureId),
+                               .size = {1, 3},
+                               .offset = {1, kNan}}}}),
+      StatusIs(kInvalidArgument,
+               HasSubstr("BrushPaint::TilingTexture::offset")));
 }
 
 void CanCreateAnyValidBrushFamily(absl::Span<const BrushCoat> coats,
-                                  absl::string_view id) {
-  absl::StatusOr<BrushFamily> family = BrushFamily::Create(coats, id);
-  ASSERT_EQ(family.status(), absl::OkStatus());
+                                  const BrushFamily::InputModel& input_model) {
+  absl::StatusOr<BrushFamily> family = BrushFamily::Create(coats, input_model);
+  ASSERT_THAT(family, IsOk());
   EXPECT_THAT(family->GetCoats(), Pointwise(BrushCoatEq(), coats));
-  EXPECT_EQ(family->GetClientBrushFamilyId(), id);
+  EXPECT_THAT(family->GetInputModel(), BrushFamilyInputModelEq(input_model));
 }
 FUZZ_TEST(BrushFamilyTest, CanCreateAnyValidBrushFamily)
     .WithDomains(fuzztest::VectorOf(ValidBrushCoat())
                      .WithMaxSize(BrushFamily::MaxBrushCoats()),
-                 fuzztest::Arbitrary<std::string>());
+                 ValidBrushFamilyInputModel());
 
 }  // namespace
 }  // namespace ink

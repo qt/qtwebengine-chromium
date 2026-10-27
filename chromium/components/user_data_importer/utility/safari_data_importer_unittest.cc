@@ -51,12 +51,14 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#if !BUILDFLAG(IS_IOS)
+#if BUILDFLAG(IS_IOS)
+#include "ios/web/public/test/web_task_environment.h"
+#else
 #include "components/user_data_importer/content/content_bookmark_parser.h"
 #include "components/user_data_importer/content/fake_bookmark_html_parser.h"
 #include "components/user_data_importer/mojom/bookmark_html_parser.mojom.h"
 #include "content/public/test/browser_task_environment.h"  // nogncheck
-#endif  // !BUILDFLAG(IS_IOS)
+#endif  // BUILDFLAG(IS_IOS)
 
 using bookmarks::test::IsFolder;
 using bookmarks::test::IsUrlBookmark;
@@ -132,7 +134,7 @@ class SafariDataImporterTest : public testing::Test {
 
  protected:
 #if BUILDFLAG(IS_IOS)
-  base::test::TaskEnvironment task_environment_{
+  web::WebTaskEnvironment task_environment_{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
 #else
   content::BrowserTaskEnvironment task_environment_{
@@ -192,8 +194,8 @@ class SafariDataImporterTest : public testing::Test {
     importer_->password_importer_->SetDeleteFileForTesting(
         mock_delete_file_.Get());
 
-    profile_store_->Init(/*affiliated_match_helper=*/nullptr);
-    account_store_->Init(/*affiliated_match_helper=*/nullptr);
+    profile_store_->Init();
+    account_store_->Init();
     // Use of Unretained below is safe because the RunUntil loop below
     // guarantees this outlives the tasks.
     presenter_.Init(base::BindOnce(&SafariDataImporterTest::OnPresenterReady,
@@ -325,8 +327,8 @@ class SafariDataImporterTest : public testing::Test {
 
     CompleteImport({});
 
-    EXPECT_THAT(account_store()->stored_passwords(), SizeIs(1));
-    EXPECT_THAT(profile_store()->stored_passwords(), IsEmpty());
+    EXPECT_THAT(GetAllLoginsSync(account_store()), SizeIs(1));
+    EXPECT_THAT(GetAllLoginsSync(profile_store()), IsEmpty());
   }
 
   // Helper function for the "sync disabled" test.
@@ -356,8 +358,8 @@ class SafariDataImporterTest : public testing::Test {
 
     CompleteImport({});
 
-    EXPECT_THAT(profile_store()->stored_passwords(), SizeIs(1));
-    EXPECT_THAT(account_store()->stored_passwords(), IsEmpty());
+    EXPECT_THAT(GetAllLoginsSync(profile_store()), SizeIs(1));
+    EXPECT_THAT(GetAllLoginsSync(account_store()), IsEmpty());
   }
 
   // Helper to set up common expectations for the "Ready" phase of an
@@ -1238,7 +1240,8 @@ TEST_F(SafariDataImporterTest, ImportToBothStoresSequentially) {
 
   // Clear the account store before the next import since
   // `PasswordsImportToProfileStore` expects account store to be empty.
-  account_store()->Clear();
+  account_store()->RemoveLoginsCreatedBetween(FROM_HERE, base::Time(),
+                                              base::Time::Max());
 
   PasswordsImportToProfileStore();
 }
@@ -1266,8 +1269,8 @@ TEST_F(SafariDataImporterTest, ImportPasswordsBlockedByPolicy) {
 
   CompleteImport({});
 
-  EXPECT_THAT(profile_store()->stored_passwords(), IsEmpty());
-  EXPECT_THAT(account_store()->stored_passwords(), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(profile_store()), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(account_store()), IsEmpty());
 }
 
 // Tests that password import is directed to the local store when password sync
@@ -1304,8 +1307,8 @@ TEST_F(SafariDataImporterTest,
 
   CompleteImport({});
 
-  EXPECT_THAT(profile_store()->stored_passwords(), SizeIs(1));
-  EXPECT_THAT(account_store()->stored_passwords(), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(profile_store()), SizeIs(1));
+  EXPECT_THAT(GetAllLoginsSync(account_store()), IsEmpty());
 }
 
 // Tests that history import is blocked when disabled by enterprise policy.

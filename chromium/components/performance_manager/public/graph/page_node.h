@@ -13,6 +13,7 @@
 #include "base/containers/flat_set.h"
 #include "base/observer_list_types.h"
 #include "base/time/time.h"
+#include "base/unguessable_token.h"
 #include "components/performance_manager/public/graph/node.h"
 #include "components/performance_manager/public/graph/node_set_view.h"
 #include "components/performance_manager/public/mojom/lifecycle.mojom.h"
@@ -39,6 +40,8 @@ enum class PageType {
   kTab,
   // An extension background page.
   kExtension,
+  // A non-tab WebUI surface (e.g., Top Chrome WebUI, Side Panel).
+  kNonTabWebUI,
   // Anything else.
   kUnknown,
 };
@@ -88,7 +91,7 @@ class PageNode : public TypedNode<PageNode> {
   ~PageNode() override;
 
   // Returns the unique ID of the browser context that this page belongs to.
-  virtual const std::string& GetBrowserContextID() const = 0;
+  virtual const base::UnguessableToken& GetBrowserContextID() const = 0;
 
   // Returns the opener frame node, if there is one. This may change over the
   // lifetime of this page. See "OnOpenerFrameNodeChanged".
@@ -322,7 +325,9 @@ class PageNodeObserver : public base::CheckedObserver {
   // Invoked when the UkmSourceId property changes.
   virtual void OnUkmSourceIdChanged(const PageNode* page_node) {}
 
-  // Invoked when the PageLifecycleState property changes.
+  // Invoked when the PageLifecycleState property changes. Note that if the
+  // property changes because a frame is added or removed from the page, this
+  // may be invoked before OnFrameNodeAdded or after OnBeforeFrameNodeRemoved.
   virtual void OnPageLifecycleStateChanged(const PageNode* page_node) {}
 
   // Invoked when the IsHoldingWebLock property changes.

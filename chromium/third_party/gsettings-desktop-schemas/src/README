@@ -1,0 +1,30 @@
+gsettings-desktop-schemas
+=========================
+
+gsettings-desktop-schemas contains a collection of GSettings schemas for
+settings shared by various components of a desktop.
+
+You may download updates to the package from:
+
+   https://download.gnome.org/sources/gsettings-desktop-schemas/
+
+To discuss gsettings-desktop-schemas, you may use the GNOME forum:
+
+   https://discourse.gnome.org/c/platform/
+
+
+How to report bugs
+==================
+
+Bugs should be reported to the GNOME bug tracking system:
+
+   https://gitlab.gnome.org/GNOME/gsettings-desktop-schemas/-/issues/
+
+You will need to create an account for yourself.
+
+Please read the following page on how to prepare a useful bug report:
+
+   https://wiki.gnome.org/GettingInTouch/BugReportingGuidelines
+
+Please read the HACKING file for information on where to send changes or
+bugfixes for this package.

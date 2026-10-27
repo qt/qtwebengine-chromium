@@ -47,6 +47,21 @@ gpu::SyncToken XRWebGLFrameTransportDelegate::GenerateSyncToken() {
   return sync_token;
 }
 
+void XRWebGLFrameTransportDelegate::VerifySyncToken(
+    gpu::SyncToken& sync_token) {
+  if (!context_provider_) {
+    return;
+  }
+
+  gpu::gles2::GLES2Interface* gl = context_provider_->ContextGL();
+  if (!gl) {
+    return;
+  }
+
+  int8_t* sync_token_data = sync_token.GetData();
+  gl->VerifySyncTokensCHROMIUM(&sync_token_data, 1);
+}
+
 std::pair<gfx::GpuMemoryBufferHandle, gpu::SyncToken>
 XRWebGLFrameTransportDelegate::CopyImage(SharedImageHolder* image,
                                          bool last_transfer_succeeded) {
@@ -66,6 +81,10 @@ XRWebGLFrameTransportDelegate::CopyImage(SharedImageHolder* image,
   client->DrawingBufferClientRestoreRenderbufferBinding();
 
   return std::make_pair(std::move(gpu_memory_buffer_handle), sync_token);
+}
+
+bool XRWebGLFrameTransportDelegate::IsContextLost() {
+  return !context_provider_ || !context_provider_->ContextGL();
 }
 
 void XRWebGLFrameTransportDelegate::Trace(Visitor* visitor) const {

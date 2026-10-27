@@ -104,36 +104,12 @@ where
 ///
 /// This type represents a `Remote` which has not yet been bound to a
 /// sequence, and is therefore unable to send messages.
-pub struct PendingRemote<T>
-where
-    T: DynMojomInterface + ?Sized,
-{
-    endpoint: MessageEndpoint,
-    _phantom: PhantomData<T>,
-}
+pub type PendingRemote<T> = crate::pending_endpoint::PendingRemote<T>;
 
 impl<T> PendingRemote<T>
 where
     T: DynMojomInterface + ?Sized,
 {
-    /// Create a new PendingRemote from a raw pipe endpoint.
-    ///
-    /// If you want to create a new remote/receiver pair, use
-    /// `new_pipe` instead. This function is mostly useful for creating a new
-    /// `Remote` from an endpoint received via mojo or FFI.
-    ///
-    /// Note that the caller is responsible for ensuring that `Self` has the
-    /// right instantiation of `T` as the other endpoint, or else incoming
-    /// messages will be incomprehensible.
-    pub fn new(endpoint: MessageEndpoint) -> Self {
-        Self { endpoint, _phantom: PhantomData }
-    }
-
-    /// Consume this PendingRemote and return the underlying endpoint.
-    pub fn into_endpoint(self) -> MessageEndpoint {
-        self.endpoint
-    }
-
     /// Bind this pending remote to the current default sequence.
     pub fn bind(self) -> Remote<T> {
         Remote::new(self.endpoint)
@@ -150,19 +126,6 @@ where
                 .expect("Must be called in a context with a default SequencedTaskRunner")
         });
         Remote::new_with_options(self.endpoint, runner, disconnect_handler)
-    }
-
-    /// Create a new Mojo message pipe corresponding to `T`'s interface, and
-    /// return the endpoints
-    ///
-    /// This can only fail if the system has run out of resources to create new
-    /// pipes.
-    pub fn new_pipe() -> Option<(PendingRemote<T>, super::receiver::PendingReceiver<T>)> {
-        let (endpoint1, endpoint2) = MessageEndpoint::create_pipe().ok()?;
-        return Some((
-            PendingRemote::new(endpoint1),
-            super::receiver::PendingReceiver::new(endpoint2),
-        ));
     }
 }
 
@@ -202,6 +165,7 @@ where
             runner,
             message_handler,
             disconnect_handler,
+            /* begin_processing_immediately = */ true,
         )
         .expect("System ran out of resources to create new mojo objects.");
 
@@ -211,21 +175,6 @@ where
             next_request_id: 1, // Reserve 0 in case it gets a special meaning later
             _phantom: PhantomData,
         }
-    }
-
-    /// Unbind this `Remote` from the current sequence, turning it back into
-    /// a `PendingRemote` which can be rebound later.
-    ///
-    /// If the remote has responses pending, they will be silently ignored.
-    // This function is included for completeness, but is not `pub` because this
-    // is a tricky operation. We need to be careful about unbinding a remote that
-    // has responses pending, in case it gets re-bound. We need to either ensure
-    // that there are no pending responses, or that we can distinguish "old"
-    // responses from new ones. In either case, we'll defer that problem until
-    // someone has a use for this function.
-    #[allow(unused)]
-    fn unbind(self) -> PendingRemote<T> {
-        PendingRemote::new(self.endpoint_watcher.into_endpoint())
     }
 
     // Construct a header for the provided message ID and payload, and send it
@@ -275,13 +224,8 @@ where
     /// the map, and invoke the interface's response handler with
     /// it.
     fn incoming_message_handler(raw_message: RawMojoMessage, callback_map: &CallbackMap<T>) {
-        let message: MojomMessage = match MojomMessage::from_raw(&raw_message) {
-            Ok(msg) => msg,
-            Err(err) => {
-                // The error here is a reminder to return immediately, which we do
-                let _ = raw_message.report_bad_message(&err.to_string());
-                return;
-            }
+        let Some(mut message) = MojomMessage::parse_raw_or_report_bad_message(raw_message) else {
+            return;
         };
         let response_callback = callback_map
             .lock()
@@ -291,7 +235,7 @@ where
             Some(callback) => callback,
             None => {
                 // The error here is a reminder to return immediately, which we do
-                let _ = raw_message.report_bad_message(&format!(
+                let _ = message.report_bad_message(&format!(
                     "Received message with unknown request_id {}",
                     message.header.request_id
                 ));

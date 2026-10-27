@@ -680,6 +680,12 @@ struct FeaturesGL : FeatureSetBase
         &members,
     };
 
+    FeatureInfo expandFragmentOutputsToVec4 = {
+        "expandFragmentOutputsToVec4",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
     FeatureInfo recreateMipmapLevelsBeforeGenerate = {
         "recreateMipmapLevelsBeforeGenerate",
         FeatureCategory::OpenGLWorkarounds,
@@ -694,6 +700,18 @@ struct FeaturesGL : FeatureSetBase
 
     FeatureInfo recreateFboUponFlush = {
         "recreateFboUponFlush",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
+    FeatureInfo reattachFboDepthStencilOnReallocation = {
+        "reattachFboDepthStencilOnReallocation",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
+    FeatureInfo disableClearTexture = {
+        "disableClearTexture",
         FeatureCategory::OpenGLWorkarounds,
         &members,
     };

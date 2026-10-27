@@ -77,7 +77,7 @@ namespace blink {
 
 namespace {
 
-const cc::EffectNode* GetEffectNode(const cc::Layer* layer) {
+const cc::EffectNode& GetEffectNode(const cc::Layer* layer) {
   return layer->layer_tree_host()->property_trees()->effect_tree().Node(
       layer->effect_tree_index());
 }
@@ -129,8 +129,8 @@ class VisualViewportTest : public testing::Test,
     // TODO(crbug.com/751425): We should use the mock functionality
     // via |helper_|.
     url_test_helpers::RegisterMockedURLLoadFromBase(
-        WebString::FromUTF8(base_url_), blink::test::CoreTestDataPath(),
-        WebString::FromUTF8(fileName));
+        WebString::FromUtf8(base_url_), blink::test::CoreTestDataPath(),
+        WebString::FromUtf8(fileName));
   }
 
   void RegisterMockedHttpURLLoad(const std::string& url,
@@ -139,7 +139,7 @@ class VisualViewportTest : public testing::Test,
     // via |helper_|.
     url_test_helpers::RegisterMockedURLLoad(
         ToKURL(url),
-        blink::test::CoreTestDataPath(WebString::FromUTF8(fileName)));
+        blink::test::CoreTestDataPath(WebString::FromUtf8(fileName)));
   }
 
   WebViewImpl* WebView() const { return helper_.GetWebView(); }
@@ -275,8 +275,9 @@ TEST_P(VisualViewportTest, TestResizeAtFullyScrolledPreservesViewportLocation) {
   ASSERT_EQ(ScrollOffset(200, 1400),
             frame_view.LayoutViewport()->GetScrollOffset());
 
-  gfx::Point expected_location =
-      frame_view.GetScrollableArea()->VisibleContentRect().origin();
+  gfx::Point expected_location = frame_view.GetScrollableArea()
+                                     ->VisibleContentRect(kExcludeScrollbars)
+                                     .origin();
 
   // Shrink the WebView, this should cause both viewports to shrink and
   // WebView should do whatever it needs to do to preserve the visible
@@ -286,16 +287,18 @@ TEST_P(VisualViewportTest, TestResizeAtFullyScrolledPreservesViewportLocation) {
       WebView()->GetBrowserControls().Params());
   UpdateAllLifecyclePhases();
 
-  EXPECT_EQ(expected_location,
-            frame_view.GetScrollableArea()->VisibleContentRect().origin());
+  EXPECT_EQ(expected_location, frame_view.GetScrollableArea()
+                                   ->VisibleContentRect(kExcludeScrollbars)
+                                   .origin());
 
   WebView()->ResizeWithBrowserControls(
       gfx::Size(800, 600), gfx::Size(800, 600),
       WebView()->GetBrowserControls().Params());
   UpdateAllLifecyclePhases();
 
-  EXPECT_EQ(expected_location,
-            frame_view.GetScrollableArea()->VisibleContentRect().origin());
+  EXPECT_EQ(expected_location, frame_view.GetScrollableArea()
+                                   ->VisibleContentRect(kExcludeScrollbars)
+                                   .origin());
 }
 
 // Test that the VisualViewport works as expected in case of a scaled
@@ -2284,8 +2287,8 @@ TEST_P(VisualViewportTest, EnsureEffectNodeForScrollbars) {
   EXPECT_EQ(horizontal_scrollbar->offset_to_transform_parent(),
             gfx::Vector2dF(0, 400 - scrollbar_thickness));
 
-  EXPECT_EQ(GetEffectNode(vertical_scrollbar)->parent_id,
-            GetEffectNode(horizontal_scrollbar)->parent_id);
+  EXPECT_EQ(GetEffectNode(vertical_scrollbar).parent_id,
+            GetEffectNode(horizontal_scrollbar).parent_id);
 }
 
 // Make sure we don't crash when the visual viewport's height is 0. This can
@@ -2444,7 +2447,8 @@ TEST_F(VisualViewportScrollIntoViewTest, ScrollingToFixed) {
       /*make_visible_in_visual_viewport=*/true,
       mojom::blink::ScrollBehavior::kInstant);
   WebView().GetPage()->GetVisualViewport().ScrollIntoView(
-      bottom_element->BoundingBox(), PhysicalBoxStrut(), scroll_params);
+      bottom_element->BoundingBox(), PhysicalBoxStrut(), scroll_params,
+      nullptr);
   EXPECT_EQ(100.f, visual_viewport.GetScrollOffset().y());
 }
 
@@ -2561,7 +2565,7 @@ TEST_P(VisualViewportTest, PaintScrollbar) {
                              ->property_trees()
                              ->transform_tree()
                              .Node(scrollbar->transform_tree_index())
-                             ->local);
+                             .local);
   };
 
   // The last layer should be the vertical scrollbar.

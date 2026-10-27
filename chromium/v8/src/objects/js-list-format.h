@@ -31,8 +31,7 @@ namespace internal {
 
 #include "torque-generated/src/objects/js-list-format-tq.inc"
 
-class JSListFormat
-    : public TorqueGeneratedJSListFormat<JSListFormat, JSObject> {
+V8_OBJECT class JSListFormat : public JSObject {
  public:
   // Creates relative time format object with properties derived from input
   // locales and options.
@@ -61,7 +60,16 @@ class JSListFormat
   Handle<String> TypeAsString(Isolate* isolate) const;
 
   // ListFormat accessors.
-  DECL_ACCESSORS(icu_formatter, Tagged<Managed<icu::ListFormatter>>)
+  inline Tagged<String> locale() const;
+  inline void set_locale(Tagged<String> value,
+                         WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+
+  inline Tagged<Managed<icu::ListFormatter>> icu_formatter() const;
+  inline void set_icu_formatter(Tagged<Managed<icu::ListFormatter>> value,
+                                WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+
+  inline int flags() const;
+  inline void set_flags(int value);
 
   // Style: identifying the relative time format style used.
   //
@@ -96,9 +104,17 @@ class JSListFormat
   static_assert(TypeBits::is_valid(Type::UNIT));
 
   DECL_PRINTER(JSListFormat)
+  DECL_VERIFIER(JSListFormat)
 
-  TQ_OBJECT_CONSTRUCTORS(JSListFormat)
-};
+  static const int kHeaderSize;
+
+ public:
+  TaggedMember<String> locale_;
+  TaggedMember<Foreign> icu_formatter_;
+  TaggedMember<Smi> flags_;
+} V8_OBJECT_END;
+
+inline constexpr int JSListFormat::kHeaderSize = sizeof(JSListFormat);
 
 }  // namespace internal
 }  // namespace v8

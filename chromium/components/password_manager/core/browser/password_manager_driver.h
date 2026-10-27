@@ -9,11 +9,13 @@
 
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
+#include "base/types/id_type.h"
 #include "base/types/strong_alias.h"
 #include "components/autofill/core/common/aliases.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
 #include "components/autofill/core/common/unique_ids.h"
+#include "components/password_manager/core/common/driver_id.h"
 #include "ui/accessibility/ax_tree_id.h"
 #include "url/origin.h"
 
@@ -25,6 +27,7 @@ struct ParsingResult;
 struct PasswordFormGenerationData;
 struct PasswordFormFillData;
 class AutofillDriver;
+class PasswordManagerDelegate;
 }  // namespace autofill
 
 namespace gfx {
@@ -49,7 +52,7 @@ class PasswordManagerDriver {
   virtual ~PasswordManagerDriver() = default;
 
   // Returns driver id which is unique in the current tab.
-  virtual int GetId() const = 0;
+  virtual DriverId GetId() const = 0;
 
   // Propagates `form_data` to the renderer, in order to store values for
   // filling on account select, or fill on pageload if appliccable.
@@ -186,6 +189,13 @@ class PasswordManagerDriver {
   // Returns the PasswordAutofillManager associated with this instance.
   virtual PasswordAutofillManager* GetPasswordAutofillManager() = 0;
 
+  // Returns the PasswordManagerDelegate associated with this instance. Unlike
+  // `GetPasswordAutofillManager`, this method returns a less concrete class for
+  // the callers that do not need a full `PasswordAutofillManager`.
+  // TODO: crbug.com/519154771 - Try to find a better split between the
+  // `PasswordAutofillManager` and `PasswordManagerDelegate`.
+  virtual autofill::PasswordManagerDelegate* GetPasswordManagerDelegate() = 0;
+
   // Sends a message to the renderer whether logging to
   // chrome://password-manager-internals is available.
   virtual void SendLoggingAvailability() {}
@@ -216,6 +226,10 @@ class PasswordManagerDriver {
 
   // Returns the last committed origin of the frame.
   virtual const url::Origin& GetLastCommittedOrigin() const = 0;
+
+  // Returns true if the frame has any ancestor that is cross-origin relative to
+  // this frame.
+  virtual bool HasCrossOriginAncestor() const = 0;
 
   // Annotate password related (username, password) DOM input elements with
   // corresponding HTML attributes. It is used only for debugging.

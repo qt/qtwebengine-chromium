@@ -6,6 +6,7 @@
 
 #include "components/viz/common/resources/shared_image_format.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
+#include "gpu/command_buffer/common/shared_image_info.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/shared_context_state.h"
@@ -35,44 +36,25 @@ class TestSharedImageBackingFactory : public SharedImageBackingFactory {
   // SharedImageBackingFactory implementation.
   std::unique_ptr<SharedImageBacking> CreateSharedImage(
       const Mailbox& mailbox,
-      viz::SharedImageFormat format,
+      const SharedImageInfo& si_info,
       SurfaceHandle surface_handle,
-      const gfx::Size& size,
-      const gfx::ColorSpace& color_space,
-      GrSurfaceOrigin surface_origin,
-      SkAlphaType alpha_type,
-      SharedImageUsageSet usage,
-      std::string debug_label,
       bool is_thread_safe) override {
     if (allocations_should_fail_)
       return nullptr;
 
-    return std::make_unique<TestImageBacking>(
-        mailbox, format, size, color_space, surface_origin, alpha_type, usage,
-        kTestBackingSize);
+    return std::make_unique<TestImageBacking>(mailbox, si_info,
+                                              kTestBackingSize);
   }
   std::unique_ptr<SharedImageBacking> CreateSharedImage(
       const Mailbox& mailbox,
-      viz::SharedImageFormat format,
-      const gfx::Size& size,
-      const gfx::ColorSpace& color_space,
-      GrSurfaceOrigin surface_origin,
-      SkAlphaType alpha_type,
-      SharedImageUsageSet usage,
-      std::string debug_label,
+      const SharedImageInfo& si_info,
       bool is_thread_safe,
       base::span<const uint8_t> pixel_data) override {
     return nullptr;
   }
   std::unique_ptr<SharedImageBacking> CreateSharedImage(
       const Mailbox& mailbox,
-      viz::SharedImageFormat format,
-      const gfx::Size& size,
-      const gfx::ColorSpace& color_space,
-      GrSurfaceOrigin surface_origin,
-      SkAlphaType alpha_type,
-      SharedImageUsageSet usage,
-      std::string debug_label,
+      const SharedImageInfo& si_info,
       bool is_thread_safe,
       gfx::GpuMemoryBufferHandle handle) override {
     return nullptr;
@@ -168,7 +150,6 @@ class CompoundImageBackingTest : public testing::Test {
       std::unique_ptr<SharedImageBacking> backing) {
     backing->SetNotRefCounted();
     return std::unique_ptr<CompoundImageBacking>(new CompoundImageBacking(
-        /*is_thread_safe=*/false,
         /*buffer_usage=*/std::nullopt, std::move(backing), copy_manager_,
         /*shared_image_factory=*/nullptr));
   }
@@ -187,8 +168,9 @@ class CompoundImageBackingTest : public testing::Test {
 
     return CompoundImageBacking::CreateSharedMemoryForTesting(
         &test_factory_, copy_manager_, Mailbox::Generate(),
-        viz::SinglePlaneFormat::kRGBA_8888, size, gfx::ColorSpace(),
-        kTopLeft_GrSurfaceOrigin, kOpaque_SkAlphaType, usage, "TestLabel",
+        SharedImageInfo(viz::SinglePlaneFormat::kRGBA_8888, size,
+                        gfx::ColorSpace(), kTopLeft_GrSurfaceOrigin,
+                        kOpaque_SkAlphaType, usage, "TestLabel"),
         buffer_usage);
   }
 
@@ -199,11 +181,12 @@ class CompoundImageBackingTest : public testing::Test {
 
     return CompoundImageBacking::CreateSharedMemoryForTesting(
         &test_factory_, copy_manager_, Mailbox::Generate(),
-        viz::MultiPlaneFormat::kNV12, size, gfx::ColorSpace(),
-        kTopLeft_GrSurfaceOrigin, kOpaque_SkAlphaType,
-        SharedImageUsageSet(
-            {SHARED_IMAGE_USAGE_DISPLAY_READ, SHARED_IMAGE_USAGE_SCANOUT}),
-        "TestLabel", buffer_usage);
+        SharedImageInfo(
+            viz::MultiPlaneFormat::kNV12, size, gfx::ColorSpace(),
+            kTopLeft_GrSurfaceOrigin, kOpaque_SkAlphaType,
+            {SHARED_IMAGE_USAGE_DISPLAY_READ, SHARED_IMAGE_USAGE_SCANOUT},
+            "TestLabel"),
+        buffer_usage);
   }
 
  protected:
@@ -457,6 +440,26 @@ TEST_F(CompoundImageBackingTest, LazyAllocationFailsFactoryInvalidated) {
   // The backing factory to create GPU backing should be reset to avoid logging
   // about destroyed image multiple times.
   EXPECT_FALSE(HasGpuCreateBackingCallback(compound_backing));
+}
+
+TEST_F(CompoundImageBackingTest,
+       GetSharedMemoryPixmaps_ChecksOnWrongBackingType) {
+  auto tiny = std::make_unique<TestImageBacking>(
+      Mailbox::Generate(),
+      SharedImageInfo(viz::SinglePlaneFormat::kRGBA_8888, gfx::Size(10, 10),
+                      gfx::ColorSpace(), kTopLeft_GrSurfaceOrigin,
+                      kOpaque_SkAlphaType, {SHARED_IMAGE_USAGE_DISPLAY_READ},
+                      "TestLabel"),
+      kTestBackingSize);
+
+  // WrapExternalBacking constructor sets elements_[0].access_streams =
+  // AccessStreamSet::All(), which includes kMemory. GetSharedMemoryPixmaps()
+  // then performs an unchecked static_cast to SharedMemoryImageBacking*.
+  auto compound = WrapExternal(std::move(tiny));
+
+  // Verify that the security fix correctly triggers a CHECK failure when
+  // the backing is not of type SharedMemoryImageBacking.
+  EXPECT_DEATH_IF_SUPPORTED(CallGetSharedMemoryPixmaps(compound.get()), "");
 }
 
 TEST_F(CompoundImageBackingTest, Multiplanar) {

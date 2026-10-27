@@ -34,18 +34,15 @@
 #include "cc/paint/paint_flags.h"
 #include "cc/paint/paint_image.h"
 #include "cc/paint/record_paint_canvas.h"
-#include "cc/paint/refcounted_buffer.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_frame_metadata.h"
 #include "media/base/video_transformation.h"
 #include "third_party/blink/public/common/features.h"
-#include "third_party/blink/public/mojom/frame/color_scheme.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
 #include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_object_objectarray_string.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_begin_layer_options.h"
-#include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_2d_gpu_transfer_option.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_fill_rule.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_texture_format.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_typedefs.h"
@@ -723,7 +720,8 @@ void Canvas2DRecorderContext::endLayer(ExceptionState& exception_state) {
   cc::PaintCanvas& parent_canvas = recorder->getRecordingCanvas();
   SkIRect clip_bounds;
   if (parent_canvas.getDeviceClipBounds(&clip_bounds)) {
-    WillDraw(clip_bounds, CanvasPerformanceMonitor::DrawType::kOther);
+    WillDraw(gfx::SkIRectToRect(clip_bounds),
+             CanvasPerformanceMonitor::DrawType::kOther);
   }
 
   ValidateStateStack();
@@ -840,7 +838,7 @@ void Canvas2DRecorderContext::ResetInternal() {
   if (cc::PaintCanvas* c = GetPaintCanvas()) {
     int width = Width();  // Keeping results to avoid repetitive virtual calls.
     int height = Height();
-    WillDraw(SkIRect::MakeXYWH(0, 0, width, height),
+    WillDraw(gfx::Rect(width, height),
              CanvasPerformanceMonitor::DrawType::kOther);
     c->drawRect(SkRect::MakeXYWH(0.0f, 0.0f, width, height), GetClearFlags());
   }
@@ -1009,7 +1007,7 @@ ColorParseResult Canvas2DRecorderContext::ParseColorOrCurrentColor(
         .text_link_colors = text_link_colors,
         .used_color_scheme = color_scheme_,
         .color_provider = GetColorProvider(),
-        .is_in_web_app_scope = IsInWebAppScope()};
+        .can_expose_accent_color = IsInWebAppScope()};
     const StyleColor style_color = ResolveColorValue(*color_value, context);
     color = style_color.Resolve(GetCurrentColor(), color_scheme_);
     return ColorParseResult::kColor;
@@ -1962,12 +1960,14 @@ void Canvas2DRecorderContext::clearRect(double x,
   if (RectContainsTransformedRect(rect, clip_bounds)) {
     CheckOverdraw(&clear_flags, CanvasRenderingContext2DState::kNoImage,
                   OverdrawOp::kClearRect);
-    WillDraw(clip_bounds, CanvasPerformanceMonitor::DrawType::kOther);
+    WillDraw(gfx::SkIRectToRect(clip_bounds),
+             CanvasPerformanceMonitor::DrawType::kOther);
     c->drawRect(gfx::RectFToSkRect(rect), clear_flags);
   } else {
     SkIRect dirty_rect;
     if (ComputeDirtyRect(rect, clip_bounds, &dirty_rect)) {
-      WillDraw(clip_bounds, CanvasPerformanceMonitor::DrawType::kOther);
+      WillDraw(gfx::SkIRectToRect(clip_bounds),
+               CanvasPerformanceMonitor::DrawType::kOther);
       c->drawRect(gfx::RectFToSkRect(rect), clear_flags);
     }
   }
@@ -2165,7 +2165,8 @@ void Canvas2DRecorderContext::DrawImageInternal(
     c->translate(-src_rect.x(), -src_rect.y());
     HTMLVideoElement* video = static_cast<HTMLVideoElement*>(image_source);
     video->PaintCurrentFrame(
-        c, gfx::Rect(video->videoWidth(), video->videoHeight()), image_flags);
+        c, gfx::Rect(video->videoWidth(), video->videoHeight()), image_flags,
+        /*force_pixel_readback*/ false);
   } else if (image_source->IsVideoFrame()) {
     VideoFrame* frame = static_cast<VideoFrame*>(image_source);
     auto media_frame = frame->frame();
@@ -2442,7 +2443,7 @@ CanvasPattern* Canvas2DRecorderContext::createPattern(
     return nullptr;
   }
 
-  SourceImageStatus status;
+  SourceImageStatus status = kInvalidSourceImageStatus;
 
   gfx::SizeF default_object_size(Width(), Height());
   scoped_refptr<Image> image_for_rendering =

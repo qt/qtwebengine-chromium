@@ -73,6 +73,7 @@ cc_test(
     deps = [
         ":angle",
         ":fuzz_domains",
+        ":type_matchers",
         "//ink/types:numbers",
         "@com_google_absl//absl/hash:hash_testing",
         "@com_google_absl//absl/strings",
@@ -264,6 +265,7 @@ cc_library(
     deps = [
         ":point",
         ":vec",
+        "//ink/geometry/internal:lerp",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -363,6 +365,7 @@ cc_test(
         ":triangle",
         ":type_matchers",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -525,6 +528,7 @@ cc_test(
         "//ink/types:small_array",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@com_google_fuzztest//fuzztest",
@@ -568,6 +572,7 @@ cc_test(
         ":type_matchers",
         "//ink/geometry/internal:mesh_packing",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -579,16 +584,26 @@ cc_library(
     testonly = 1,
     srcs = ["mesh_test_helpers.cc"],
     hdrs = ["mesh_test_helpers.h"],
+    data = [
+        "//ink/geometry/testdata",
+    ],
     deps = [
         ":affine_transform",
         ":angle",
+        ":mesh",
         ":mesh_format",
         ":mutable_mesh",
         ":partitioned_mesh",
         ":point",
         ":vec",
+        "//:gtest_for_library_testonly",
+        "//ink/storage:mesh",
+        "//ink/storage/proto:mesh_cc_proto",
         "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -598,6 +613,7 @@ cc_test(
     deps = [
         ":affine_transform",
         ":angle",
+        ":mesh",
         ":mesh_format",
         ":mesh_test_helpers",
         ":mutable_mesh",
@@ -605,6 +621,7 @@ cc_test(
         ":type_matchers",
         ":vec",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
@@ -711,6 +728,24 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "mutable_mesh_benchmark",
+    srcs = ["mutable_mesh_benchmark.cc"],
+    deps = [
+        ":mesh",
+        ":mesh_test_helpers",
+        ":mutable_mesh",
+        ":point",
+        "//ink/types:small_array",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_benchmark//:benchmark",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

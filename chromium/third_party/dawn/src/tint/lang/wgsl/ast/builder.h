@@ -322,11 +322,8 @@ class Builder {
     /// @param args the remaining arguments to pass to the constructor
     /// @returns the node pointer
     template <typename T, typename ARG0, typename... ARGS>
-    std::enable_if_t</* T is ast::Node and ARG0 is not Source */
-                     traits::IsTypeOrDerived<T, ast::Node> &&
-                         !traits::IsTypeOrDerived<ARG0, Source>,
-                     T>*
-    create(ARG0&& arg0, ARGS&&... args) {
+        requires(traits::IsTypeOrDerived<T, ast::Node> && !traits::IsTypeOrDerived<ARG0, Source>)
+    T* create(ARG0&& arg0, ARGS&&... args) {
         AssertNotMoved();
         return ast_nodes_.Create<T>(AllocateNodeID(), source_, std::forward<ARG0>(arg0),
                                     std::forward<ARGS>(args)...);
@@ -1157,19 +1154,10 @@ class Builder {
         /// @returns the sampler
         ast::Type sampler(core::type::SamplerKind kind) const;
 
-        /// @param filtering the filtering setting
-        /// @returns the sampler
-        ast::Type sampler(core::SamplerFiltering filtering) const;
-
         /// @param source the Source of the node
         /// @param kind the kind of sampler
         /// @returns the sampler
         ast::Type sampler(const Source& source, core::type::SamplerKind kind) const;
-
-        /// @param source the Source of the node
-        /// @param filtering the sampler filtering
-        /// @returns the sampler
-        ast::Type sampler(const Source& source, core::SamplerFiltering filtering) const;
 
         /// @param dims the dimensionality of the texture
         /// @returns the depth texture
@@ -1195,14 +1183,6 @@ class Builder {
         /// @returns the sampled texture
         ast::Type sampled_texture(core::type::TextureDimension dims, ast::Type subtype) const;
 
-        /// @param dims the dimensionality of the texture
-        /// @param subtype the texture subtype.
-        /// @param filterable the filterability
-        /// @returns the sampled texture
-        ast::Type sampled_texture(core::type::TextureDimension dims,
-                                  ast::Type subtype,
-                                  core::TextureFilterable filterable) const;
-
         /// @param source the Source of the node
         /// @param dims the dimensionality of the texture
         /// @param subtype the texture subtype.
@@ -1210,16 +1190,6 @@ class Builder {
         ast::Type sampled_texture(const Source& source,
                                   core::type::TextureDimension dims,
                                   ast::Type subtype) const;
-
-        /// @param source the Source of the node
-        /// @param dims the dimensionality of the texture
-        /// @param subtype the texture subtype.
-        /// @param filterable the filterability
-        /// @returns the sampled texture
-        ast::Type sampled_texture(const Source& source,
-                                  core::type::TextureDimension dims,
-                                  ast::Type subtype,
-                                  core::TextureFilterable filterable) const;
 
         /// @param dims the dimensionality of the texture
         /// @param subtype the texture subtype.
@@ -1386,7 +1356,8 @@ class Builder {
 
     /// @param enumerator the enumerator
     /// @return a Symbol with the given enum value
-    template <typename ENUM, typename = std::enable_if_t<std::is_enum_v<std::decay_t<ENUM>>>>
+    template <typename ENUM>
+        requires(std::is_enum_v<std::decay_t<ENUM>>)
     Symbol Sym(ENUM&& enumerator) {
         return Sym(tint::ToString(enumerator));
     }
@@ -1416,7 +1387,8 @@ class Builder {
     /// @param identifier the identifier symbol
     /// @param args the templated identifier arguments
     /// @return an ast::Identifier with the given symbol and template arguments
-    template <typename IDENTIFIER, typename... ARGS, typename = DisableIfSource<IDENTIFIER>>
+    template <typename IDENTIFIER, typename... ARGS>
+        requires(!IsSource<std::decay_t<IDENTIFIER>>)
     const ast::Identifier* Ident(IDENTIFIER&& identifier, ARGS&&... args) {
         return Ident(source_, std::forward<IDENTIFIER>(identifier), std::forward<ARGS>(args)...);
     }
@@ -1459,7 +1431,8 @@ class Builder {
 
     /// @param name the identifier name
     /// @return an ast::IdentifierExpression with the given name
-    template <typename NAME, typename = EnableIfIdentifierLike<NAME>>
+    template <typename NAME>
+        requires(IsIdentifierLike<std::decay_t<NAME>>)
     const ast::IdentifierExpression* Expr(NAME&& name) {
         auto* ident = Ident(source_, name);
         return create<ast::IdentifierExpression>(ident->source, ident);
@@ -1468,7 +1441,8 @@ class Builder {
     /// @param source the source information
     /// @param name the identifier name
     /// @return an ast::IdentifierExpression with the given name
-    template <typename NAME, typename = EnableIfIdentifierLike<NAME>>
+    template <typename NAME>
+        requires(IsIdentifierLike<std::decay_t<NAME>>)
     const ast::IdentifierExpression* Expr(const Source& source, NAME&& name) {
         return create<ast::IdentifierExpression>(source, Ident(source, name));
     }
@@ -1491,9 +1465,8 @@ class Builder {
     /// @param value the boolean value
     /// @return a Scalar constructor for the given value
     template <typename BOOL>
-    std::enable_if_t<std::is_same_v<BOOL, bool>, const ast::BoolLiteralExpression*> Expr(
-        const Source& source,
-        BOOL value) {
+        requires(std::is_same_v<BOOL, bool>)
+    const ast::BoolLiteralExpression* Expr(const Source& source, BOOL value) {
         return create<ast::BoolLiteralExpression>(source, value);
     }
 
@@ -3544,8 +3517,8 @@ class Builder {
     /// by the Resolver.
     /// @param args a mix of ast::Expression, ast::Statement, ast::Variables.
     /// @returns the function
-    template <typename... ARGS,
-              typename = std::enable_if_t<(CanWrapInStatement<ARGS>::value && ...)>>
+    template <typename... ARGS>
+        requires(CanWrapInStatement<ARGS>::value && ...)
     const ast::Function* WrapInFunction(ARGS&&... args) {
         Vector stmts{
             WrapInStatement(std::forward<ARGS>(args))...,

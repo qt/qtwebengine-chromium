@@ -22,13 +22,14 @@ source_set("base") {
     "circular_queue.h",
     "clock_snapshots.h",
     "container_annotations.h",
+    "cpu_info.h",
+    "cpu_info_features_allowlist.h",
     "crash_keys.h",
     "ctrl_c_handler.h",
     "dynamic_string_writer.h",
     "endian.h",
     "event_fd.h",
     "file_utils.h",
-    "fixed_string_writer.h",
     "flags.h",
     "flat_hash_map.h",
     "flat_hash_map_v1.h",
@@ -47,7 +48,6 @@ source_set("base") {
     "periodic_task.h",
     "pipe.h",
     "platform.h",
-    "regex.h",
     "rt_mutex.h",
     "scoped_file.h",
     "scoped_mmap.h",
@@ -86,6 +86,10 @@ source_set("base") {
   }
   public_configs = [ "../../../../gn:asan_instrumentation" ]
   public_deps = [ "../../base" ]
+}
+
+source_set("regex") {
+  sources = [ "regex.h" ]
 }
 
 source_set("version") {

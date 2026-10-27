@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_ROLL_H
-#define EIGEN_CXX11_TENSOR_TENSOR_ROLL_H
+#ifndef EIGEN_TENSOR_TENSOR_ROLL_H
+#define EIGEN_TENSOR_TENSOR_ROLL_H
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
@@ -41,7 +42,7 @@ struct nested<TensorRollOp<RollDimensions, XprType>, 1, typename eval<TensorRoll
 }  // end namespace internal
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Tensor roll (circular shift) elements class.
  *
@@ -110,13 +111,14 @@ struct TensorEvaluator<const TensorRollOp<RollDimensions, ArgType>, Device> {
 
     // Compute strides
     m_dimensions = m_impl.dimensions();
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_strides[0] = 1;
       for (int i = 1; i < NumDims; ++i) {
         m_strides[i] = m_strides[i - 1] * m_dimensions[i - 1];
         if (m_strides[i] > 0) m_fast_strides[i] = IndexDivisor(m_strides[i]);
       }
-    } else {
+    }
+    else {
       m_strides[NumDims - 1] = 1;
       for (int i = NumDims - 2; i >= 0; --i) {
         m_strides[i] = m_strides[i + 1] * m_dimensions[i + 1];
@@ -162,7 +164,7 @@ struct TensorEvaluator<const TensorRollOp<RollDimensions, ArgType>, Device> {
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index rollIndex(Index index) const {
     eigen_assert(index < dimensions().TotalSize());
     Index rolledIndex = 0;
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       EIGEN_UNROLL_LOOP
       for (int i = NumDims - 1; i > 0; --i) {
         Index idx = index / m_fast_strides[i];
@@ -170,7 +172,8 @@ struct TensorEvaluator<const TensorRollOp<RollDimensions, ArgType>, Device> {
         rolledIndex += roll(idx, m_rolls[i], m_dimensions[i]) * m_strides[i];
       }
       rolledIndex += roll(index, m_rolls[0], m_dimensions[0]);
-    } else {
+    }
+    else {
       EIGEN_UNROLL_LOOP
       for (int i = 0; i < NumDims - 1; ++i) {
         Index idx = index / m_fast_strides[i];
@@ -189,13 +192,28 @@ struct TensorEvaluator<const TensorRollOp<RollDimensions, ArgType>, Device> {
   template <int LoadMode>
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PacketReturnType packet(Index index) const {
     eigen_assert(index + PacketSize - 1 < dimensions().TotalSize());
+
+    // Fast path: when the entire packet stays inside one inner-most slice
+    // of both the output and the rolled input (no modular wrap on the
+    // inner dim), the PacketSize coeff() calls collapse to a single
+    // contiguous packet load from the underlying tensor.
+    constexpr int inner_dim = (static_cast<int>(Layout) == static_cast<int>(ColMajor)) ? 0 : NumDims - 1;
+    const Index inner_size = m_dimensions[inner_dim];
+    const Index inner_pos = index - (index / inner_size) * inner_size;
+    if (inner_pos + PacketSize <= inner_size) {
+      const Index rolled_inner_pos = roll(inner_pos, m_rolls[inner_dim], inner_size);
+      if (rolled_inner_pos + PacketSize <= inner_size) {
+        return m_impl.template packet<Unaligned>(rollIndex(index));
+      }
+    }
+
+    // Slow path: the packet straddles a slice boundary on either side.
     EIGEN_ALIGN_MAX std::remove_const_t<CoeffReturnType> values[PacketSize];
     EIGEN_UNROLL_LOOP
     for (int i = 0; i < PacketSize; ++i) {
       values[i] = coeff(index + i);
     }
-    PacketReturnType rslt = internal::pload<PacketReturnType>(values);
-    return rslt;
+    return internal::pload<PacketReturnType>(values);
   }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE internal::TensorBlockResourceRequirements getResourceRequirements() const {
@@ -236,7 +254,7 @@ struct TensorEvaluator<const TensorRollOp<RollDimensions, ArgType>, Device> {
     const typename TensorBlock::Storage block_storage = TensorBlock::prepareStorage(desc, scratch);
     CoeffReturnType* block_buffer = block_storage.data();
 
-    static const int inner_dim = is_col_major ? 0 : NumDims - 1;
+    static constexpr int inner_dim = is_col_major ? 0 : NumDims - 1;
     const Index inner_dim_size = it[0].size;
 
     while (it[NumDims - 1].count < it[NumDims - 1].size) {
@@ -273,7 +291,9 @@ struct TensorEvaluator<const TensorRollOp<RollDimensions, ArgType>, Device> {
     for (int i = 0; i < NumDims; ++i) {
       compute_cost += 2 * TensorOpCost::AddCost<Index>();
     }
-    return m_impl.costPerCoeff(vectorized) + TensorOpCost(0, 0, compute_cost, false /* vectorized */, PacketSize);
+    // The inner-slice fast path runs the per-coeff index math once per packet,
+    // so the amortized compute cost matches the vectorized convention.
+    return m_impl.costPerCoeff(vectorized) + TensorOpCost(0, 0, compute_cost, vectorized, PacketSize);
   }
 
   EIGEN_DEVICE_FUNC typename Storage::Type data() const { return nullptr; }
@@ -287,14 +307,15 @@ struct TensorEvaluator<const TensorRollOp<RollDimensions, ArgType>, Device> {
   const Device EIGEN_DEVICE_REF m_device;
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void extract_coordinates(Index index, array<Index, NumDims>& coords) const {
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = NumDims - 1; i > 0; --i) {
         const Index idx = index / m_fast_strides[i];
         index -= idx * m_strides[i];
         coords[i] = idx;
       }
       coords[0] = index;
-    } else {
+    }
+    else {
       for (int i = 0; i < NumDims - 1; ++i) {
         const Index idx = index / m_fast_strides[i];
         index -= idx * m_strides[i];
@@ -358,4 +379,4 @@ struct TensorEvaluator<TensorRollOp<RollDimensions, ArgType>, Device>
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_ROLL_H
+#endif  // EIGEN_TENSOR_TENSOR_ROLL_H

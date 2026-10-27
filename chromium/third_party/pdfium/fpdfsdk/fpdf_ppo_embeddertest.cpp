@@ -172,6 +172,10 @@ TEST_F(FPDFPPOEmbedderTest, ImportPageToXObject) {
         FPDF_NewXObjectFromPage(output_doc.get(), document(), 0);
     ASSERT_TRUE(xobject);
 
+    // After creating `xobject`, the source document is no longer required.
+    // Explicitly close it to show this works.
+    CloseDocument();
+
     for (int i = 0; i < 2; ++i) {
       ScopedFPDFPage page(FPDFPage_New(output_doc.get(), 0, 612, 792));
       ASSERT_TRUE(page);

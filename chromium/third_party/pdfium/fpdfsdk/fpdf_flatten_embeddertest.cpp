@@ -124,3 +124,16 @@ TEST_F(FPDFFlattenEmbedderTest, Bug896366) {
 
   VerifySavedDocumentWithExpectationSuffix("bug_896366");
 }
+
+TEST_F(FPDFFlattenEmbedderTest, FlattenShouldRemoveAcroForm) {
+  ASSERT_TRUE(OpenDocument("text_form.pdf"));
+  ScopedPage page = LoadScopedPage(0);
+  ASSERT_TRUE(page);
+  EXPECT_EQ(FPDFPage_Flatten(page.get(), FLAT_NORMALDISPLAY), FLATTEN_SUCCESS);
+
+  EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
+  ScopedSavedDoc saved_doc = OpenScopedSavedDocument();
+  ASSERT_TRUE(saved_doc);
+  // TODO(crbug.com/498010830): this should be FORMTYPE_NONE
+  EXPECT_EQ(FORMTYPE_ACRO_FORM, FPDF_GetFormType(saved_doc.get()));
+}

@@ -114,6 +114,7 @@ action("gen_buildflags") {
     "PERFETTO_ENABLE_SOCK_INOTIFY=$enable_perfetto_sock_inotify",
     "PERFETTO_RE2=$enable_perfetto_re2",
     "PERFETTO_PCRE2=$enable_perfetto_pcre2",
+    "PERFETTO_AMALGAMATED_SDK=$perfetto_amalgamated_sdk",
   ]
 
   rel_out_path = rebase_path(gen_header_path, "$root_build_dir")
@@ -238,6 +239,7 @@ protobuf_full_deps_allowlist = [
   "../src/protozero/filtering:filter_util",
   "../src/trace_processor:trace_processor_shell_lib",
   "../src/trace_processor/shell:*",
+  "../src/protovm/compiler:*",
   "../tools/*",
   "../src/tools/*",
   "../contrib/rust-sdk/tools/*",
@@ -492,6 +494,9 @@ perfetto_py_library("protobuf_py") {
 
 # Android Java SDK libraries wich need to be provided by other build systems.
 perfetto_android_library("android_test_common") {
+}
+
+perfetto_android_library("error_prone_annotations") {
 }
 
 if (enable_perfetto_etm_importer) {

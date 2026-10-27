@@ -16,19 +16,9 @@ import six.moves.urllib.request # pylint: disable=import-error
 
 import py_utils
 from py_utils import atexit_with_log
-from py_utils import binary_manager
-
-TELEMETRY_PROJECT_CONFIG = os.path.join(
-    py_utils.GetCatapultDir(), 'telemetry', 'telemetry',
-    'binary_dependencies.json')
-
-CHROME_BINARY_CONFIG = os.path.join(
-    py_utils.GetCatapultDir(), 'common', 'py_utils', 'py_utils',
-    'chrome_binaries.json')
 
 RECORD = '--record'
 INJECT_SCRIPTS = '--inject_scripts='
-USE_LOCAL_WPR = '--use-local-wpr'
 DISABLE_FUZZY_URL_MATCHING = '--disable-fuzzy-url-matching'
 
 class ReplayError(Exception):
@@ -74,10 +64,8 @@ class ReplayServer():
        self.WaitUntil(...)
   """
 
-  _go_binary_path = None
-
   def __init__(self, archive_path, replay_host, http_port, https_port,
-               replay_options, binary_downloader=None):
+               replay_options):
     """Initialize ReplayServer.
 
     Args:
@@ -88,8 +76,6 @@ class ReplayServer():
       https_port: an integer port on which to serve HTTPS traffic. May be zero
           to let the OS choose an available port.
       replay_options: an iterable of options strings to forward to replay.py.
-      binary_downloader: a function to be used to fetch binary. May be None to
-          use py_utils.binary_manager.FetchPath as default downloader.
     """
     self.archive_path = archive_path
     self._replay_host = replay_host
@@ -99,11 +85,9 @@ class ReplayServer():
     # subprocess.
     self._temp_log_file_path = None
 
-    self._downloader = binary_downloader
     self._replay_options = replay_options
-    self._cmd_line = self._GetCommandLine(
-        self._GetGoBinaryPath(replay_options), http_port, https_port,
-        replay_options, archive_path)
+    self._cmd_line = self._GetCommandLine(http_port, https_port, replay_options,
+                                          archive_path)
 
     if RECORD in replay_options or 'record' in replay_options:
       self._AssertPathExists('archive directory',
@@ -112,60 +96,6 @@ class ReplayServer():
       self._AssertPathExists('archive file', self.archive_path)
 
     self.replay_process = None
-
-  def _GetDownloader(self):
-    """Gets the downloader used to download wpr_go binary from GCS."""
-    if ReplayServer._go_binary_path:
-      # If the _go_binary_path was already set, then no need to use downloader
-      # to download via binary_manager.
-      self._downloader = None
-    elif not self._downloader:
-      configs = [CHROME_BINARY_CONFIG, TELEMETRY_PROJECT_CONFIG]
-      self._downloader = binary_manager.BinaryManager(configs).FetchPath
-    return self._downloader
-
-  def _GetGoBinaryPath(self, replay_options):
-    """Gets the _go_binary_path if it already set, or downloads it."""
-    if USE_LOCAL_WPR in replay_options:
-      # Build WPR
-      go_folder = os.path.join(py_utils.GetWebPageReplayDir(), 'src')
-      cur_cwd = os.getcwd()
-      os.chdir(go_folder)
-      try:
-        print(subprocess.check_output(
-            ['go', 'build', os.path.join(go_folder, 'wpr.go')]))
-      except subprocess.CalledProcessError:
-        sys.exit(1)
-      os.chdir(cur_cwd)
-
-      return os.path.join(go_folder, 'wpr')
-
-    if not ReplayServer._go_binary_path:
-      downloader = self._GetDownloader()
-      if not downloader:
-        raise RuntimeError('downloader should not be None '
-                           'while _go_binary_path is None')
-      ReplayServer._go_binary_path = downloader(
-          'wpr_go', py_utils.GetHostOsName(), py_utils.GetHostArchName())
-    return ReplayServer._go_binary_path
-
-  @classmethod
-  def SetGoBinaryPath(cls, go_binary_path):
-    """Overrides the _go_binary_path.
-
-    This allows the server to use WPRGO files retrieved from somewhere
-    other than GCS via binary_manager, such as test isolation.
-
-    For chromium project to use WPR, it is encourage to use test isolation,
-    and therefore should call SetGoBinaryPath to set _go_binary_path.
-
-    For Catapult/Telemetry project, the tradition is to download wpr_go
-    binary via binary_manager. So do not call SetGoBinaryPath.
-    """
-    if not os.path.exists(go_binary_path):
-      raise ValueError('SetGoBinaryPath could not set {} as it does not exist'
-                       .format(go_binary_path))
-    cls._go_binary_path = go_binary_path
 
   @property
   def http_port(self):
@@ -176,13 +106,11 @@ class ReplayServer():
     return self._started_ports['https']
 
   @staticmethod
-  def _GetCommandLine(go_binary_path, http_port, https_port,
-                      options, archive_path):
+  def _GetCommandLine(http_port, https_port, options, archive_path):
     """Set WPR command-line arguments. Can be overridden if needed.
 
     Keyword arguments:
 
-    * go_binary_path: A string of the path to the wpr.go binary.
     * http_port: A decimal of the port that handles http requests.
     * https_port: A decimal of the port that handles https requests.
     * options: A list of options, such as '--record',
@@ -192,23 +120,22 @@ class ReplayServer():
     """
     bad_options = []
     for option in options:
-      if option not in [RECORD, INJECT_SCRIPTS,
-                        USE_LOCAL_WPR, DISABLE_FUZZY_URL_MATCHING]:
+      if option not in [RECORD, INJECT_SCRIPTS, DISABLE_FUZZY_URL_MATCHING]:
         bad_options.append(option)
     if len(bad_options) > 0:
       raise ValueError("Invalid replay options %s" % bad_options)
 
-    cmd_line = [go_binary_path]
+    wpr_dir = py_utils.GetWebPageReplayDir()
+    cmd_line = [sys.executable, os.path.join(wpr_dir, 'scripts', 'run_wpr.py')]
     if RECORD in options:
       cmd_line.append('record')
     else:
       cmd_line.append('replay')
     if DISABLE_FUZZY_URL_MATCHING in options:
       cmd_line.append('--disable_fuzzy_url_matching')
-    key_file = os.path.join(py_utils.GetWebPageReplayDir(), 'wpr_key.pem')
-    cert_file = os.path.join(py_utils.GetWebPageReplayDir(), 'wpr_cert.pem')
-    inject_script = os.path.join(py_utils.GetWebPageReplayDir(),
-                                 'deterministic.js')
+    key_file = os.path.join(wpr_dir, 'wpr_key.pem')
+    cert_file = os.path.join(wpr_dir, 'wpr_cert.pem')
+    inject_script = os.path.join(wpr_dir, 'deterministic.js')
     cmd_line.extend([
         '--http_port=%s' % http_port,
         '--https_port=%s' % https_port,
@@ -307,8 +234,11 @@ class ReplayServer():
     with self._OpenLogFile() as log_fh:
       # pylint: disable=subprocess-popen-preexec-fn
       self.replay_process = subprocess.Popen(
-          self._cmd_line, stdout=log_fh, stderr=subprocess.STDOUT,
-          preexec_fn=(_ResetInterruptHandler if is_posix else None))
+          self._cmd_line,
+          stdout=log_fh,
+          stderr=subprocess.STDOUT,
+          preexec_fn=(_ResetInterruptHandler if is_posix else None),
+          cwd=py_utils.GetWebPageReplayDir())
     try:
       # TODO(crbug.com/805418): consider changing this to wait with I/O timeout.
       # The 120s timeout is based on past failures (e.g: crbug.com/812639).
@@ -385,8 +315,7 @@ class ReplayServer():
   def _CleanUpTempLogFilePath(self, log_level):
     if not self._temp_log_file_path:
       return ''
-    if logging.getLogger('').isEnabledFor(log_level) or USE_LOCAL_WPR \
-       in self._replay_options:
+    if logging.getLogger('').isEnabledFor(log_level):
       with open(self._temp_log_file_path, 'r') as f:
         wpr_log_output = f.read()
       asterisk_str = '**************************'

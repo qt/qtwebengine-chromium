@@ -32,12 +32,10 @@
 #include <bitset>
 #include <limits>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/BitSetRangeIterator.h"
-#include "dawn/common/Math.h"
-#include "dawn/common/Platform.h"
-#include "dawn/common/TypedInteger.h"
-#include "dawn/common/UnderlyingType.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/BitSetRangeIterator.h"
+#include "src/dawn/common/Math.h"
+#include "src/utils/underlying_type.h"
 
 namespace dawn {
 namespace ityp {
@@ -62,7 +60,7 @@ class Iterator64 final {
 
 template <typename Index, size_t N>
 Iterator64<Index, N>& Iterator64<Index, N>::operator++() {
-    DAWN_ASSERT(mBits != 0);
+    DAWN_RELEASE_ASSUME(mBits != 0);
     uint32_t currentBit = getNextBit();
     // Clear the previous current bit.
     mBits = mBits & ~(static_cast<uint64_t>(1) << currentBit);
@@ -73,7 +71,7 @@ template <typename Index, size_t N>
 Index Iterator64<Index, N>::operator*() const {
     using U = UnderlyingType<Index>;
     uint32_t currentBit = getNextBit();
-    DAWN_ASSERT(static_cast<U>(currentBit) <= std::numeric_limits<U>::max());
+    DAWN_RELEASE_ASSUME(static_cast<U>(currentBit) <= std::numeric_limits<U>::max());
     return static_cast<Index>(static_cast<U>(currentBit));
 }
 
@@ -119,7 +117,7 @@ IteratorArray<Index, N>::IteratorArray(const std::bitset<N>& bits) : mBits(bits)
 
 template <typename Index, size_t N>
 IteratorArray<Index, N>& IteratorArray<Index, N>::operator++() {
-    DAWN_ASSERT(mBits.any());
+    DAWN_RELEASE_ASSUME(mBits.any());
     mBits.set(mCurrentBit - mOffset, 0);
     mCurrentBit = getNextBit();
     return *this;
@@ -128,7 +126,7 @@ IteratorArray<Index, N>& IteratorArray<Index, N>::operator++() {
 template <typename Index, size_t N>
 Index IteratorArray<Index, N>::operator*() const {
     using U = UnderlyingType<Index>;
-    DAWN_ASSERT(static_cast<U>(mCurrentBit) <= std::numeric_limits<U>::max());
+    DAWN_RELEASE_ASSUME(static_cast<U>(mCurrentBit) <= std::numeric_limits<U>::max());
     return static_cast<Index>(static_cast<U>(mCurrentBit));
 }
 
@@ -157,7 +155,11 @@ class bitset : private ::std::bitset<N> {
     using I = UnderlyingType<Index>;
     using Base = ::std::bitset<N>;
 
-    static_assert(sizeof(I) <= sizeof(size_t));
+    static_assert(HasUnsignedUnderlyingType<Index>, "Index type must be unsigned");
+    // If this needs to be relaxed, look at ityp::vector for code to share.
+    static_assert(std::numeric_limits<I>::max() <= std::numeric_limits<size_t>::max(),
+                  "Index type must fit within size_t");
+    static_assert(N <= std::numeric_limits<I>::max());
 
     explicit constexpr bitset(const Base& rhs) : Base(rhs) {}
 
@@ -185,7 +187,7 @@ class bitset : private ::std::bitset<N> {
             // NOTE: If value is a const expression, this will result in a compile-time failure
             // complaining that `HandleAssertionFailure` cannot be used in a constant expression, or
             // similar.
-            DAWN_ASSERT((value >> N) == 0);
+            DAWN_RELEASE_ASSUME((value >> N) == 0);
         }
     }
 

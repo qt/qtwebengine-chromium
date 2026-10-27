@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import {createTarget} from '../../testing/EnvironmentHelpers.js';
@@ -21,8 +23,8 @@ describe('StackTraceModel', () => {
 
   const identityTranslateFn: StackTraceImpl.StackTraceModel.TranslateRawFrames = (frames, _target) =>
       Promise.resolve(frames.map(f => [{
-                                   url: f.url,
-                                   name: f.functionName,
+                                   url: f.url || undefined,
+                                   name: f.functionName || undefined,
                                    line: f.lineNumber,
                                    column: f.columnNumber,
                                  }]));
@@ -101,8 +103,8 @@ describe('StackTraceModel', () => {
       const {model, connection} = setup();
       {
         let index = 0;
-        connection.setHandler(
-            'Debugger.enable', () => ({result: {debuggerId: `target${index++}` as Protocol.Runtime.UniqueDebuggerId}}));
+        connection.setSuccessHandler(
+            'Debugger.enable', () => ({debuggerId: `target${index++}` as Protocol.Runtime.UniqueDebuggerId}));
         sinon.stub(SDK.DebuggerModel.DebuggerModel, 'resyncDebuggerIdForModels');
       }
       const [model1, model2] = [
@@ -499,6 +501,185 @@ describe('StackTraceModel', () => {
       assert.strictEqual(stackTrace.syncFragment.frames[0].rawName, 'foo');
       assert.strictEqual(stackTrace.syncFragment.frames[1].rawName, 'foo');
       assert.strictEqual(stackTrace.syncFragment.frames[2].rawName, 'foo');
+    });
+  });
+
+  describe('createFromErrorStackLikeString', () => {
+    it('correctly translates builtin frames resulting in no url and -1 for line/column', async () => {
+      const {model} = setup();
+
+      const stackTrace = await model.createFromErrorStackLikeString(
+          `Error: foo
+              at Array.map (<anonymous>)`,
+          identityTranslateFn);
+
+      assert.exists(stackTrace);
+      assert.lengthOf(stackTrace.syncFragment.frames, 1);
+      const frame = stackTrace.syncFragment.frames[0];
+      assert.isUndefined(frame.url);
+      assert.isUndefined(frame.uiSourceCode);
+      assert.strictEqual(frame.line, -1);
+      assert.strictEqual(frame.column, -1);
+      assert.strictEqual(frame.name, 'Array.map');
+    });
+
+    it('correctly handles a stack trace with sync and async fragments', async () => {
+      const {model} = setup();
+
+      const stackTrace = await model.createFromErrorStackLikeString(
+          `Error: foo
+              at foo (foo.js:1:10)
+              at bar (foo.js:2:20)`,
+          identityTranslateFn, {
+            exceptionId: 1,
+            text: 'Uncaught Error: foo',
+            lineNumber: 0,
+            columnNumber: 0,
+            stackTrace: {
+              callFrames: [
+                {
+                  functionName: 'foo',
+                  url: 'foo.js',
+                  scriptId: 'id1' as Protocol.Runtime.ScriptId,
+                  lineNumber: 0,
+                  columnNumber: 9,
+                },
+                {
+                  functionName: 'bar',
+                  url: 'foo.js',
+                  scriptId: 'id1' as Protocol.Runtime.ScriptId,
+                  lineNumber: 1,
+                  columnNumber: 19,
+                },
+              ],
+              parent: {
+                description: 'setTimeout',
+                callFrames: [
+                  {
+                    functionName: 'barFnX',
+                    url: 'bar.js',
+                    scriptId: 'id2' as Protocol.Runtime.ScriptId,
+                    lineNumber: 0,
+                    columnNumber: 9,
+                  },
+                ],
+              },
+            },
+          });
+
+      assert.exists(stackTrace);
+      assert.strictEqual(stringifyStackTrace(stackTrace), [
+        'at foo (foo.js:0:9)',
+        'at bar (foo.js:1:19)',
+        '--- setTimeout -------------------------',
+        'at barFnX (bar.js:0:9)',
+      ].join('\n'));
+    });
+
+    it('correctly translates evalOrigin frames', async () => {
+      const {model} = setup();
+
+      const translateFn: StackTraceImpl.StackTraceModel.TranslateRawFrames = (frames, _target) => {
+        // Expand the evalOrigin into 2 frames to simulate inlining.
+        return Promise.resolve(frames.map(f => {
+          if (f.functionName === 'outerEval') {  // the evalOrigin frame
+            return [
+              {url: 'inlined.js', name: 'inlinedFn', line: 5, column: 5},
+              {url: f.url, name: f.functionName, line: f.lineNumber, column: f.columnNumber},
+            ];
+          }
+          return [{
+            url: f.url,
+            name: f.functionName,
+            line: f.lineNumber,
+            column: f.columnNumber,
+          }];
+        }));
+      };
+
+      const stackTrace = await model.createFromErrorStackLikeString(
+          `Error: foo
+              at eval (eval at outerEval (foo.js:10:5), <anonymous>:1:1)`,
+          translateFn);
+
+      assert.exists(stackTrace);
+      const frames = stackTrace.syncFragment.frames as StackTrace.StackTrace.ParsedErrorStackFrame[];
+      assert.lengthOf(frames, 1);
+      assert.strictEqual(frames[0].url, '<anonymous>');
+      assert.strictEqual(frames[0].line, 0);
+
+      assert.exists(frames[0].evalOrigin);
+      // The evalOrigin is represented as a single ParsedErrorStackFrame that points to the top-most inlined frame
+      assert.strictEqual(frames[0].evalOrigin?.url, 'inlined.js');
+      assert.strictEqual(frames[0].evalOrigin?.name, 'inlinedFn');
+      assert.strictEqual(frames[0].evalOrigin?.line, 5);
+
+      // NOTE: Because evalOrigin only surfaces a single ParsedErrorStackFrame,
+      // the remaining inlined frames ('outerEval' at 'foo.js:10:5') are technically dropped in the public API!
+      // This is a known limitation of having evalOrigin as a single frame rather than an array.
+    });
+
+    it('correctly translates complex recursive nested evalOrigin frames', async () => {
+      const {model} = setup();
+
+      const translateFn: StackTraceImpl.StackTraceModel.TranslateRawFrames = (frames, _target) => {
+        // Expand baseCaller into 2 frames to simulate inlining.
+        return Promise.resolve(frames.map(f => {
+          if (f.functionName === 'baseCaller') {
+            return [
+              {url: 'inlined_base.js', name: 'inlinedBaseFn', line: 12, column: 12},
+              {url: f.url, name: f.functionName, line: f.lineNumber, column: f.columnNumber},
+            ];
+          }
+          if (f.functionName === 'intermediate1') {
+            return [{url: 'inter1.js', name: 'inter1Fn', line: 20, column: 20}];
+          }
+          if (f.functionName === 'intermediate2') {
+            return [{url: 'inter2.js', name: 'inter2Fn', line: 30, column: 30}];
+          }
+          return [{
+            url: f.url,
+            name: f.functionName,
+            line: f.lineNumber,
+            column: f.columnNumber,
+          }];
+        }));
+      };
+
+      const stackTrace = await model.createFromErrorStackLikeString(
+          `Error: foo
+              at end (eval at intermediate2 (eval at intermediate1 (eval at baseCaller (foo.js:10:5))), <anonymous>:1:1)`,
+          translateFn);
+
+      assert.exists(stackTrace);
+      const {frames} = stackTrace.syncFragment;
+      assert.lengthOf(frames, 1);
+      assert.strictEqual(frames[0].url, '<anonymous>');
+      assert.strictEqual(frames[0].line, 0);
+
+      // Level 1: intermediate2
+      const origin1 = frames[0].evalOrigin;
+      assert.exists(origin1);
+      assert.strictEqual(origin1?.url, 'inter2.js');
+      assert.strictEqual(origin1?.name, 'inter2Fn');
+      assert.strictEqual(origin1?.line, 30);
+
+      // Level 2: intermediate1
+      const origin2 = origin1?.evalOrigin;
+      assert.exists(origin2);
+      assert.strictEqual(origin2?.url, 'inter1.js');
+      assert.strictEqual(origin2?.name, 'inter1Fn');
+      assert.strictEqual(origin2?.line, 20);
+
+      // Level 3: baseCaller
+      const origin3 = origin2?.evalOrigin;
+      assert.exists(origin3);
+      assert.strictEqual(origin3?.url, 'inlined_base.js');
+      assert.strictEqual(origin3?.name, 'inlinedBaseFn');
+      assert.strictEqual(origin3?.line, 12);
+
+      // Level 4 (Outermost): undefined
+      assert.isUndefined(origin3?.evalOrigin);
     });
   });
 });

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use crate::image::YuvRange;
+use crate::internal_utils::TryClone;
 use crate::utils::*;
 use crate::*;
 
@@ -97,6 +98,17 @@ impl PartialEq for GainMap {
             && self.alt_plane_count == other.alt_plane_count
             && self.alt_plane_depth == other.alt_plane_depth
             && self.alt_clli == other.alt_clli
+    }
+}
+
+impl GainMap {
+    pub(crate) fn try_deep_clone(&self) -> AvifResult<Self> {
+        Ok(GainMap {
+            image: self.image.try_deep_clone()?,
+            metadata: self.metadata.clone(),
+            alt_icc: self.alt_icc.try_clone()?,
+            ..*self
+        })
     }
 }
 

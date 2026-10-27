@@ -2,9 +2,156 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
+  "aggregation": {
+    "export_items": false,
+    "map_aliases": {
+      "AD": "ES",
+      "AF": "ZZ",
+      "AG": "ZZ",
+      "AI": "ZZ",
+      "AM": "RU",
+      "AN": "NL",
+      "AO": "ZZ",
+      "AQ": "ZZ",
+      "AS": "US",
+      "AW": "NL",
+      "AX": "FI",
+      "AZ": "RU",
+      "BB": "ZZ",
+      "BD": "ZZ",
+      "BF": "FR",
+      "BJ": "FR",
+      "BL": "FR",
+      "BM": "GB",
+      "BS": "ZZ",
+      "BT": "ZZ",
+      "BV": "NO",
+      "BW": "ZZ",
+      "CC": "AU",
+      "CD": "FR",
+      "CF": "FR",
+      "CG": "FR",
+      "CI": "FR",
+      "CK": "NZ",
+      "CM": "FR",
+      "CQ": "GB",
+      "CU": "ZZ",
+      "CV": "PT",
+      "CX": "AU",
+      "DJ": "FR",
+      "DM": "ZZ",
+      "EA": "ES",
+      "EH": "MA",
+      "ER": "ZZ",
+      "ET": "ZZ",
+      "FJ": "ZZ",
+      "FK": "GB",
+      "FM": "ZZ",
+      "GA": "FR",
+      "GD": "ZZ",
+      "GE": "ZZ",
+      "GF": "FR",
+      "GG": "GB",
+      "GH": "ZZ",
+      "GI": "GB",
+      "GL": "DK",
+      "GM": "ZZ",
+      "GN": "FR",
+      "GP": "FR",
+      "GQ": "ZZ",
+      "GS": "GB",
+      "GU": "US",
+      "GW": "PT",
+      "GY": "ZZ",
+      "HM": "AU",
+      "HT": "FR",
+      "IC": "ES",
+      "IM": "GB",
+      "IO": "GB",
+      "JE": "GB",
+      "KG": "RU",
+      "KH": "ZZ",
+      "KI": "ZZ",
+      "KM": "ZZ",
+      "KN": "ZZ",
+      "KP": "ZZ",
+      "KY": "GB",
+      "LA": "ZZ",
+      "LC": "ZZ",
+      "LK": "ZZ",
+      "LR": "ZZ",
+      "LS": "ZZ",
+      "MF": "FR",
+      "MG": "ZZ",
+      "MH": "ZZ",
+      "ML": "FR",
+      "MM": "ZZ",
+      "MN": "ZZ",
+      "MO": "CN",
+      "MP": "US",
+      "MQ": "FR",
+      "MR": "SA",
+      "MS": "GB",
+      "MU": "ZZ",
+      "MV": "ZZ",
+      "MW": "ZZ",
+      "MZ": "PT",
+      "NA": "ZZ",
+      "NC": "FR",
+      "NE": "FR",
+      "NF": "AU",
+      "NG": "ZZ",
+      "NP": "ZZ",
+      "NR": "ZZ",
+      "NU": "NZ",
+      "PF": "FR",
+      "PG": "ZZ",
+      "PM": "FR",
+      "PN": "GB",
+      "PS": "SA",
+      "PW": "ZZ",
+      "RE": "FR",
+      "SB": "ZZ",
+      "SC": "ZZ",
+      "SD": "SA",
+      "SH": "GB",
+      "SJ": "NO",
+      "SL": "ZZ",
+      "SM": "IT",
+      "SN": "FR",
+      "SO": "ZZ",
+      "SR": "ZZ",
+      "ST": "PT",
+      "SZ": "ZZ",
+      "TC": "GB",
+      "TD": "FR",
+      "TF": "FR",
+      "TG": "FR",
+      "TJ": "RU",
+      "TK": "NZ",
+      "TL": "PT",
+      "TM": "RU",
+      "TO": "ZZ",
+      "TV": "ZZ",
+      "UG": "ZZ",
+      "UM": "US",
+      "UZ": "RU",
+      "VA": "IT",
+      "VC": "ZZ",
+      "VG": "GB",
+      "VI": "US",
+      "VU": "ZZ",
+      "WF": "FR",
+      "WS": "ZZ",
+      "YT": "FR",
+      "ZM": "ZZ"
+    },
+    "map_key_type": "country_codes::CountryId",
+    "name": "kRegionalSettings",
+    "type": "map"
+  },
   "elements": {
     "AE": {
-      // United Arab Emirates
       "search_engines": [
         "&google",
         "&bing",
@@ -14,7 +161,6 @@
       ]
     },
     "AL": {
-      // Albania
       "search_engines": [
         "&google",
         "&bing",
@@ -24,7 +170,6 @@
       ]
     },
     "AR": {
-      // Armenia
       "search_engines": [
         "&google",
         "&bing",
@@ -34,7 +179,6 @@
       ]
     },
     "AT": {
-      // Austria
       "search_engines": [
         "&google",
         "&brave",
@@ -47,7 +191,6 @@
       ]
     },
     "AU": {
-      // Australia
       "search_engines": [
         "&google",
         "&bing",
@@ -57,7 +200,6 @@
       ]
     },
     "BA": {
-      // Bosnia and Herzegovina
       "search_engines": [
         "&google",
         "&bing",
@@ -67,7 +209,6 @@
       ]
     },
     "BE": {
-      // Belgium
       "search_engines": [
         "&google",
         "&brave",
@@ -80,7 +221,6 @@
       ]
     },
     "BG": {
-      // Bulgaria
       "search_engines": [
         "&google",
         "&brave",
@@ -93,7 +233,6 @@
       ]
     },
     "BH": {
-      // Bahrain
       "search_engines": [
         "&google",
         "&bing",
@@ -103,7 +242,6 @@
       ]
     },
     "BI": {
-      // Burundi
       "search_engines": [
         "&google",
         "&bing",
@@ -113,7 +251,6 @@
       ]
     },
     "BN": {
-      // Brunei
       "search_engines": [
         "&google",
         "&bing",
@@ -123,7 +260,6 @@
       ]
     },
     "BO": {
-      // Bolivia
       "search_engines": [
         "&google",
         "&bing",
@@ -133,7 +269,6 @@
       ]
     },
     "BR": {
-      // Brazil
       "search_engines": [
         "&google",
         "&bing",
@@ -143,7 +278,6 @@
       ]
     },
     "BY": {
-      // Belarus
       "search_engines": [
         "&google",
         "&yandex_by",
@@ -153,7 +287,6 @@
       ]
     },
     "BZ": {
-      // Belize
       "search_engines": [
         "&google",
         "&bing",
@@ -163,7 +296,6 @@
       ]
     },
     "CA": {
-      // Canada
       "search_engines": [
         "&google",
         "&bing",
@@ -173,7 +305,6 @@
       ]
     },
     "CH": {
-      // Switzerland
       "search_engines": [
         "&google",
         "&bing",
@@ -183,7 +314,6 @@
       ]
     },
     "CL": {
-      // Chile
       "search_engines": [
         "&google",
         "&bing",
@@ -193,11 +323,15 @@
       ]
     },
     "CN": {
-      // China
-      "search_engines": ["&baidu", "&bing", "&sogou", "&so_360", "&google"]
+      "search_engines": [
+        "&baidu",
+        "&bing",
+        "&sogou",
+        "&so_360",
+        "&google"
+      ]
     },
     "CO": {
-      // Colombia
       "search_engines": [
         "&google",
         "&bing",
@@ -207,7 +341,6 @@
       ]
     },
     "CR": {
-      // Costa Rica
       "search_engines": [
         "&google",
         "&bing",
@@ -217,7 +350,6 @@
       ]
     },
     "CY": {
-      // Republic of Cyprus
       "search_engines": [
         "&google",
         "&brave",
@@ -230,7 +362,6 @@
       ]
     },
     "CZ": {
-      // Czechia
       "search_engines": [
         "&google",
         "&seznam",
@@ -243,7 +374,6 @@
       ]
     },
     "DE": {
-      // Germany
       "search_engines": [
         "&google",
         "&duckduckgo",
@@ -256,7 +386,6 @@
       ]
     },
     "DK": {
-      // Denmark
       "search_engines": [
         "&google",
         "&brave",
@@ -269,7 +398,6 @@
       ]
     },
     "DO": {
-      // Dominican Republic
       "search_engines": [
         "&google",
         "&bing",
@@ -279,7 +407,6 @@
       ]
     },
     "DZ": {
-      // Algeria
       "search_engines": [
         "&google",
         "&bing",
@@ -289,7 +416,6 @@
       ]
     },
     "EC": {
-      // Ecuador
       "search_engines": [
         "&google",
         "&bing",
@@ -299,7 +425,6 @@
       ]
     },
     "EE": {
-      // Estonia
       "search_engines": [
         "&google",
         "&brave",
@@ -312,7 +437,6 @@
       ]
     },
     "EG": {
-      // Egypt
       "search_engines": [
         "&google",
         "&bing",
@@ -322,7 +446,6 @@
       ]
     },
     "ES": {
-      // Spain
       "search_engines": [
         "&google",
         "&brave",
@@ -335,7 +458,6 @@
       ]
     },
     "FI": {
-      // Finland
       "search_engines": [
         "&google",
         "&brave",
@@ -348,7 +470,6 @@
       ]
     },
     "FO": {
-      // Faroe Islands
       "search_engines": [
         "&google",
         "&bing",
@@ -358,7 +479,6 @@
       ]
     },
     "FR": {
-      // France
       "search_engines": [
         "&google",
         "&brave",
@@ -371,7 +491,6 @@
       ]
     },
     "GB": {
-      // United Kingdom
       "search_engines": [
         "&google",
         "&bing",
@@ -381,7 +500,6 @@
       ]
     },
     "GR": {
-      // Greece
       "search_engines": [
         "&google",
         "&brave",
@@ -394,7 +512,6 @@
       ]
     },
     "GT": {
-      // Guatemala
       "search_engines": [
         "&google",
         "&bing",
@@ -404,11 +521,15 @@
       ]
     },
     "HK": {
-      // Hong Kong
-      "search_engines": ["&google", "&bing", "&yahoo_hk", "&baidu", "&so_360"]
+      "search_engines": [
+        "&google",
+        "&bing",
+        "&yahoo_hk",
+        "&baidu",
+        "&so_360"
+      ]
     },
     "HN": {
-      // Honduras
       "search_engines": [
         "&google",
         "&bing",
@@ -418,7 +539,6 @@
       ]
     },
     "HR": {
-      // Croatia
       "search_engines": [
         "&google",
         "&brave",
@@ -431,7 +551,6 @@
       ]
     },
     "HU": {
-      // Hungary
       "search_engines": [
         "&google",
         "&brave",
@@ -444,7 +563,6 @@
       ]
     },
     "ID": {
-      // Indonesia
       "search_engines": [
         "&google",
         "&yandex_com",
@@ -454,7 +572,6 @@
       ]
     },
     "IE": {
-      // Ireland
       "search_engines": [
         "&google",
         "&duckduckgo",
@@ -467,7 +584,6 @@
       ]
     },
     "IL": {
-      // Israel
       "search_engines": [
         "&google",
         "&bing",
@@ -477,7 +593,6 @@
       ]
     },
     "IN": {
-      // India
       "search_engines": [
         "&google",
         "&bing",
@@ -487,7 +602,6 @@
       ]
     },
     "IQ": {
-      // Iraq
       "search_engines": [
         "&google",
         "&bing",
@@ -497,7 +611,6 @@
       ]
     },
     "IR": {
-      // Iran
       "search_engines": [
         "&google",
         "&bing",
@@ -507,7 +620,6 @@
       ]
     },
     "IS": {
-      // Iceland
       "search_engines": [
         "&google",
         "&duckduckgo",
@@ -520,7 +632,6 @@
       ]
     },
     "IT": {
-      // Italy
       "search_engines": [
         "&google",
         "&brave",
@@ -533,7 +644,6 @@
       ]
     },
     "JM": {
-      // Jamaica
       "search_engines": [
         "&google",
         "&bing",
@@ -543,7 +653,6 @@
       ]
     },
     "JO": {
-      // Jordan
       "search_engines": [
         "&google",
         "&bing",
@@ -553,7 +662,6 @@
       ]
     },
     "JP": {
-      // Japan
       "search_engines": [
         "&google",
         "&yahoo_jp",
@@ -563,7 +671,6 @@
       ]
     },
     "KE": {
-      // Kenya
       "search_engines": [
         "&google",
         "&bing",
@@ -573,11 +680,15 @@
       ]
     },
     "KR": {
-      // South Korea
-      "search_engines": ["&google", "&naver", "&bing", "&daum", "&coccoc"]
+      "search_engines": [
+        "&google",
+        "&naver",
+        "&bing",
+        "&daum",
+        "&coccoc"
+      ]
     },
     "KW": {
-      // Kuwait
       "search_engines": [
         "&google",
         "&bing",
@@ -587,11 +698,15 @@
       ]
     },
     "KZ": {
-      // Kazakhstan
-      "search_engines": ["&google", "&yandex_kz", "&bing", "&mail_ru", "&yahoo"]
+      "search_engines": [
+        "&google",
+        "&yandex_kz",
+        "&bing",
+        "&mail_ru",
+        "&yahoo"
+      ]
     },
     "LB": {
-      // Lebanon
       "search_engines": [
         "&google",
         "&bing",
@@ -601,7 +716,6 @@
       ]
     },
     "LI": {
-      // Liechtenstein
       "search_engines": [
         "&google",
         "&duckduckgo",
@@ -614,7 +728,6 @@
       ]
     },
     "LT": {
-      // Lithuania
       "search_engines": [
         "&google",
         "&brave",
@@ -627,7 +740,6 @@
       ]
     },
     "LU": {
-      // Luxembourg
       "search_engines": [
         "&google",
         "&brave",
@@ -640,7 +752,6 @@
       ]
     },
     "LV": {
-      // Latvia
       "search_engines": [
         "&google",
         "&brave",
@@ -653,7 +764,6 @@
       ]
     },
     "LY": {
-      // Libya
       "search_engines": [
         "&google",
         "&bing",
@@ -663,7 +773,6 @@
       ]
     },
     "MA": {
-      // Morocco
       "search_engines": [
         "&google",
         "&bing",
@@ -673,7 +782,6 @@
       ]
     },
     "MC": {
-      // Monaco
       "search_engines": [
         "&google",
         "&bing",
@@ -683,7 +791,6 @@
       ]
     },
     "MD": {
-      // Moldova
       "search_engines": [
         "&google",
         "&yandex_ru",
@@ -693,7 +800,6 @@
       ]
     },
     "ME": {
-      // Montenegro
       "search_engines": [
         "&google",
         "&bing",
@@ -703,7 +809,6 @@
       ]
     },
     "MK": {
-      // Macedonia
       "search_engines": [
         "&google",
         "&bing",
@@ -713,7 +818,6 @@
       ]
     },
     "MT": {
-      // Malta
       "search_engines": [
         "&google",
         "&brave",
@@ -726,7 +830,6 @@
       ]
     },
     "MX": {
-      // Mexico
       "search_engines": [
         "&google",
         "&bing",
@@ -736,7 +839,6 @@
       ]
     },
     "MY": {
-      // Malaysia
       "search_engines": [
         "&google",
         "&bing",
@@ -746,7 +848,6 @@
       ]
     },
     "NI": {
-      // Nicaragua
       "search_engines": [
         "&google",
         "&bing",
@@ -756,7 +857,6 @@
       ]
     },
     "NL": {
-      // Netherlands
       "search_engines": [
         "&google",
         "&duckduckgo",
@@ -769,7 +869,6 @@
       ]
     },
     "NO": {
-      // Norway
       "search_engines": [
         "&google",
         "&duckduckgo",
@@ -782,7 +881,6 @@
       ]
     },
     "NZ": {
-      // New Zealand
       "search_engines": [
         "&google",
         "&bing",
@@ -792,7 +890,6 @@
       ]
     },
     "OM": {
-      // Oman
       "search_engines": [
         "&google",
         "&bing",
@@ -802,7 +899,6 @@
       ]
     },
     "PA": {
-      // Panama
       "search_engines": [
         "&google",
         "&bing",
@@ -812,7 +908,6 @@
       ]
     },
     "PE": {
-      // Peru
       "search_engines": [
         "&google",
         "&bing",
@@ -822,7 +917,6 @@
       ]
     },
     "PH": {
-      // Philippines
       "search_engines": [
         "&google",
         "&bing",
@@ -832,7 +926,6 @@
       ]
     },
     "PK": {
-      // Pakistan
       "search_engines": [
         "&google",
         "&bing",
@@ -842,7 +935,6 @@
       ]
     },
     "PL": {
-      // Poland
       "search_engines": [
         "&google",
         "&brave",
@@ -855,7 +947,6 @@
       ]
     },
     "PR": {
-      // Puerto Rico
       "search_engines": [
         "&google",
         "&bing",
@@ -865,7 +956,6 @@
       ]
     },
     "PT": {
-      // Portugal
       "search_engines": [
         "&google",
         "&brave",
@@ -878,7 +968,6 @@
       ]
     },
     "PY": {
-      // Paraguay
       "search_engines": [
         "&google",
         "&bing",
@@ -888,7 +977,6 @@
       ]
     },
     "QA": {
-      // Quatar
       "search_engines": [
         "&google",
         "&bing",
@@ -898,7 +986,6 @@
       ]
     },
     "RO": {
-      // Romania
       "search_engines": [
         "&google",
         "&brave",
@@ -911,7 +998,6 @@
       ]
     },
     "RS": {
-      // Serbia
       "search_engines": [
         "&google",
         "&bing",
@@ -921,7 +1007,6 @@
       ]
     },
     "RU": {
-      // Russia
       "search_engines": [
         "&yandex_ru",
         "&google",
@@ -931,7 +1016,6 @@
       ]
     },
     "RW": {
-      // Rwanda
       "search_engines": [
         "&google",
         "&bing",
@@ -941,7 +1025,6 @@
       ]
     },
     "SA": {
-      // Saudi Arabia
       "search_engines": [
         "&google",
         "&bing",
@@ -951,7 +1034,6 @@
       ]
     },
     "SE": {
-      // Sweden
       "search_engines": [
         "&google",
         "&duckduckgo",
@@ -964,7 +1046,6 @@
       ]
     },
     "SG": {
-      // Singapore
       "search_engines": [
         "&google",
         "&bing",
@@ -974,7 +1055,6 @@
       ]
     },
     "SI": {
-      // Slovenia
       "search_engines": [
         "&google",
         "&brave",
@@ -987,7 +1067,6 @@
       ]
     },
     "SK": {
-      // Slovakia
       "search_engines": [
         "&google",
         "&brave",
@@ -1000,7 +1079,6 @@
       ]
     },
     "SV": {
-      // El Salvador
       "search_engines": [
         "&google",
         "&bing",
@@ -1010,7 +1088,6 @@
       ]
     },
     "SY": {
-      // Syria
       "search_engines": [
         "&google",
         "&bing",
@@ -1020,7 +1097,6 @@
       ]
     },
     "TH": {
-      // Thailand
       "search_engines": [
         "&google",
         "&bing",
@@ -1030,7 +1106,6 @@
       ]
     },
     "TN": {
-      // Tunisia
       "search_engines": [
         "&google",
         "&bing",
@@ -1040,7 +1115,6 @@
       ]
     },
     "TR": {
-      // Turkey
       "search_engines": [
         "&google",
         "&yandex_tr",
@@ -1050,7 +1124,6 @@
       ]
     },
     "TT": {
-      // Trinidad and Tobago
       "search_engines": [
         "&google",
         "&bing",
@@ -1060,11 +1133,15 @@
       ]
     },
     "TW": {
-      // Taiwan
-      "search_engines": ["&google", "&yahoo_tw", "&bing", "&coccoc", "&baidu"]
+      "search_engines": [
+        "&google",
+        "&yahoo_tw",
+        "&bing",
+        "&coccoc",
+        "&baidu"
+      ]
     },
     "TZ": {
-      // Tanzania
       "search_engines": [
         "&google",
         "&duckduckgo",
@@ -1074,7 +1151,6 @@
       ]
     },
     "UA": {
-      // Ukraine
       "search_engines": [
         "&google",
         "&yandex_ru",
@@ -1084,7 +1160,6 @@
       ]
     },
     "US": {
-      // United States
       "search_engines": [
         "&google",
         "&bing",
@@ -1094,7 +1169,6 @@
       ]
     },
     "UY": {
-      // Uruguay
       "search_engines": [
         "&google",
         "&bing",
@@ -1104,7 +1178,6 @@
       ]
     },
     "VE": {
-      // Venezuela
       "search_engines": [
         "&google",
         "&bing",
@@ -1114,11 +1187,15 @@
       ]
     },
     "VN": {
-      // Vietnam
-      "search_engines": ["&google", "&coccoc", "&yahoo", "&bing", "&duckduckgo"]
+      "search_engines": [
+        "&google",
+        "&coccoc",
+        "&yahoo",
+        "&bing",
+        "&duckduckgo"
+      ]
     },
     "YE": {
-      // Yemen
       "search_engines": [
         "&google",
         "&bing",
@@ -1128,7 +1205,6 @@
       ]
     },
     "ZA": {
-      // South Africa
       "search_engines": [
         "&google",
         "&bing",
@@ -1138,163 +1214,20 @@
       ]
     },
     "ZW": {
-      // Zimbabwe
-      "search_engines": ["&google", "&bing", "&yahoo", "&duckduckgo", "&sogou"]
+      "search_engines": [
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&sogou"
+      ]
     },
-    // Fallback / default country. Occupies a user-assignable alpha-2 code,
-    // representing unknown or invalid territory.
-    // See https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2#ZZ
     "ZZ": {
-      // Default
-      "search_engines": ["&google", "&bing", "&yahoo"]
-    }
-  },
-  "aggregation": {
-    "type": "map",
-    "name": "kRegionalSettings",
-    "export_items": false,
-    "map_key_type": "country_codes::CountryId",
-    "map_aliases": {
-      "AD": "ES", // Andorra
-      "AF": "ZZ", // Afghanistan
-      "AG": "ZZ", // Antigua and Barbuda
-      "AI": "ZZ", // Anguilla
-      "AM": "RU", // Armenia
-      "AN": "NL", // Netherlands Antilles
-      "AO": "ZZ", // Angola
-      "AQ": "ZZ", // Antarctica
-      "AS": "US", // American Samoa
-      "AW": "NL", // Aruba
-      "AX": "FI", // Aland Islands
-      "AZ": "RU", // Azerbaijan
-      "BB": "ZZ", // Barbados
-      "BD": "ZZ", // Bangladesh
-      "BF": "FR", // Burkina Faso
-      "BJ": "FR", // Benin
-      "BL": "FR", // St. Barthélemy
-      "BM": "GB", // Bermuda
-      "BS": "ZZ", // Bahamas
-      "BT": "ZZ", // Bhutan
-      "BV": "NO", // Bouvet Island
-      "BW": "ZZ", // Botswana
-      "CC": "AU", // Cocos Islands
-      "CD": "FR", // Congo - Kinshasa
-      "CF": "FR", // Central African Republic
-      "CG": "FR", // Congo - Brazzaville
-      "CI": "FR", // Ivory Coast
-      "CK": "NZ", // Cook Islands
-      "CM": "FR", // Cameroon
-      "CQ": "GB", // Sark
-      "CU": "ZZ", // Cuba
-      "CV": "PT", // Cape Verde
-      "CX": "AU", // Christmas Islands
-      "DJ": "FR", // Djibouti
-      "DM": "ZZ", // Dominica
-      "EA": "ES", // Ceuta and Melila (not in ISO3166-1)
-      "EH": "MA", // Western Sahara
-      "ER": "ZZ", // Eritrea
-      "ET": "ZZ", // Ethiopia
-      "FJ": "ZZ", // Fiji
-      "FK": "GB", // Falkland Islands
-      "FM": "ZZ", // Micronesia
-      "GA": "FR", // Gabon
-      "GD": "ZZ", // Grenada
-      "GE": "ZZ", // Georgia
-      "GF": "FR", // French Guiana
-      "GG": "GB", // Gernsey
-      "GH": "ZZ", // Ghana
-      "GI": "GB", // Gibraltar
-      "GL": "DK", // Greenland
-      "GM": "ZZ", // Gambia
-      "GN": "FR", // Guinea
-      "GP": "FR", // Guadeloupe
-      "GQ": "ZZ", // Equatorial Guinea
-      "GS": "GB", // South Georgia and the South Sandwich Islands
-      "GU": "US", // Guam
-      "GW": "PT", // Guinea-Bissau
-      "GY": "ZZ", // Guyana
-      "HM": "AU", // Heard Island and McDonald Islands
-      "HT": "FR", // Haiti
-      "IC": "ES", // Canary Islands (not in ISO3166-1)
-      "IM": "GB", // Isle of Man
-      "IO": "GB", // British Indian Ocean Territory
-      "JE": "GB", // Jersey
-      "KG": "RU", // Kyrgyzstan
-      "KH": "ZZ", // Cambodia
-      "KI": "ZZ", // Kiribati
-      "KM": "ZZ", // Comoros
-      "KN": "ZZ", // Saint Kitts and Nevis
-      "KP": "ZZ", // North Korea
-      "KY": "GB", // Cayman Islands
-      "LA": "ZZ", // Laos
-      "LC": "ZZ", // Saint Lucia
-      "LK": "ZZ", // Sri Lanka
-      "LR": "ZZ", // Liberia
-      "LS": "ZZ", // Lesotho
-      "MF": "FR", // Saint Martin
-      "MG": "ZZ", // Madagascar
-      "MH": "ZZ", // Marshall Islands
-      "ML": "FR", // Mali
-      "MM": "ZZ", // Myanmar
-      "MN": "ZZ", // Mongolia
-      "MO": "CN", // Macao
-      "MP": "US", // Northern Mariana Islands
-      "MQ": "FR", // Martinique
-      "MR": "SA", // Mauritania
-      "MS": "GB", // Montserrat
-      "MU": "ZZ", // Mauritius
-      "MV": "ZZ", // Maldives
-      "MW": "ZZ", // Malawi
-      "MZ": "PT", // Mozambique
-      "NA": "ZZ", // Namibia
-      "NC": "FR", // New Caledonia
-      "NE": "FR", // Niger
-      "NF": "AU", // Norfolk Island
-      "NG": "ZZ", // Nigeria
-      "NP": "ZZ", // Nepal
-      "NR": "ZZ", // Nauru
-      "NU": "NZ", // Niue
-      "PF": "FR", // French Polynesia
-      "PG": "ZZ", // Papua New Guinea
-      "PM": "FR", // Saint Pierre and Miquelon
-      "PN": "GB", // Pitcairn Islands
-      "PS": "SA", // Palestinian Territory
-      "PW": "ZZ", // Palau
-      "RE": "FR", // Reunion
-      "SB": "ZZ", // Solomon Islands
-      "SC": "ZZ", // Seychelles
-      "SD": "SA", // Sudan
-      "SH": "GB", // Saint Helena, Ascension Island, Tristan da Cunha
-      "SJ": "NO", // Svalbard and Jan Mayen
-      "SL": "ZZ", // Sierra Leone
-      "SM": "IT", // San Marino
-      "SN": "FR", // Senegal
-      "SO": "ZZ", // Somalia
-      "SR": "ZZ", // Suriname
-      "ST": "PT", // Sao Tome and Principe
-      "SZ": "ZZ", // Swaziland
-      "TC": "GB", // Turks and Caicos Islands
-      "TD": "FR", // Chad
-      "TF": "FR", // French Southern Territories
-      "TG": "FR", // Togo
-      "TJ": "RU", // Tajikistan
-      "TK": "NZ", // Tokelau
-      "TL": "PT", // Timor-Leste
-      "TM": "RU", // Turkmenistan
-      "TO": "ZZ", // Tonga
-      "TV": "ZZ", // Tuvalu
-      "UG": "ZZ", // Uganda
-      "UM": "US", // U.S. Minor Outlying Islands
-      "UZ": "RU", // Uzbekistan
-      "VA": "IT", // Vatican
-      "VC": "ZZ", // Saint Vincent and the Grenadines
-      "VG": "GB", // British Virgin Islands
-      "VI": "US", // U.S. Virgin Islands
-      "VU": "ZZ", // Vanuatu
-      "WF": "FR", // Wallis and Futuna
-      "WS": "ZZ", // Samoa
-      "YT": "FR", // Mayotte
-      "ZM": "ZZ" // Zambia
+      "search_engines": [
+        "&google",
+        "&bing",
+        "&yahoo"
+      ]
     }
   }
 }

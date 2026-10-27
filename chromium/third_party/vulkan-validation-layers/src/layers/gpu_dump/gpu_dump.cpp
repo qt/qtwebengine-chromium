@@ -15,7 +15,11 @@
  */
 
 #include "gpu_dump.h"
+#include <cstdint>
 #include "chassis/layer_object_id.h"
+#include "generated/dispatch_functions.h"
+#include "state_tracker/buffer_state.h"
+#include "state_tracker/device_memory_state.h"
 
 namespace gpudump {
 
@@ -23,5 +27,88 @@ GpuDump::GpuDump(vvl::DispatchDevice* dev, gpudump::Instance* instance_vo)
     : vvl::DeviceProxy(dev, instance_vo, LayerObjectTypeGpuDump) {}
 
 GpuDump::~GpuDump() {}
+
+std::vector<uint8_t> GpuDump::CopyDataFromMemory(VkDeviceAddress memory_addresss, VkDeviceSize copy_size) {
+    std::vector<uint8_t> result;
+    vvl::span<vvl::Buffer* const> buffer_list = device_state->GetBuffersByAddress(memory_addresss);
+    if (buffer_list.empty()) {
+        return result;
+    }
+
+    auto buffer_state = *buffer_list.begin();
+    const vvl::DeviceMemory& memory_state = *buffer_state->MemoryState();
+
+    // Prevent copying OOB of a buffer
+    if ((memory_addresss + copy_size) > buffer_state->DeviceAddressRange().end) {
+        return result;
+    }
+
+    VkDeviceSize offset = memory_addresss - buffer_state->DeviceAddressRange().begin;
+    if (memory_state.mappable) {
+        uint8_t* data_ptr = static_cast<uint8_t*>(memory_state.p_driver_data);
+
+        if (!memory_state.p_driver_data) {
+            // Just use WHOLE_SIZE to avoid issues with partial mappings
+            // Example:
+            //  The |memory_address| is 0x1001 and |copy_size| is 4, the driver (or at least TestICD) will return back something
+            //  aligned to a value like 64, so if the buffer is only 64 bytes, you will now be accessing data over it
+            DispatchMapMemory(device, memory_state.VkHandle(), offset, VK_WHOLE_SIZE, 0, (void**)&data_ptr);
+
+            // Skip checking if coherent memory or not
+            VkMappedMemoryRange memory_range = vku::InitStructHelper();
+            memory_range.memory = memory_state.VkHandle();
+            memory_range.offset = offset;
+            memory_range.size = copy_size;
+            DispatchInvalidateMappedMemoryRanges(device, 1, &memory_range);
+        }
+
+        data_ptr += offset;
+        result.resize(static_cast<uint32_t>(copy_size));
+        memcpy(result.data(), data_ptr, static_cast<uint32_t>(copy_size));
+
+        if (!memory_state.p_driver_data) {
+            DispatchUnmapMemory(device, memory_state.VkHandle());
+        }
+    } else {
+        // TODO - Handle non-host visible memory
+        // When we add, we need to guard against if trying to read non-aligned data
+        //   (which should have a warning already)
+    }
+
+    return result;
+}
+
+// return for warning if no buffer found
+bool GpuDump::ListBuffers(std::ostringstream& ss, VkDeviceAddress address, uint32_t indents, bool new_line_start) {
+    if (new_line_start) {
+        ss << "\n";
+    }
+
+    auto buffer_states = GetBuffersByAddress(address);
+    for (uint32_t i = 0; i < indents; i++) {
+        ss << "    ";
+    }
+
+    for (uint32_t i = 0; i < buffer_states.size(); i++) {
+        if (i != 0) {
+            ss << '\n';
+            for (uint32_t j = 0; j < indents; j++) {
+                ss << "    ";
+            }
+        }
+        auto& buffer_state = buffer_states[i];
+        ss << "- " << buffer_state->Describe(*this);
+    }
+
+    if (buffer_states.empty()) {
+        ss << "- [WARNING] No VkBuffer found at 0x" << std::hex << address;
+    }
+
+    if (!new_line_start) {
+        ss << "\n";
+    }
+
+    return buffer_states.empty();
+}
 
 }  // namespace gpudump

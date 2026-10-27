@@ -54,8 +54,9 @@ class FlatMap final : public std::vector<std::pair<Key, Value>> {
   // element in the sequence.
   decltype(auto) erase_key(const Key& key) {
     auto it = find(key);
-    // This will otherwise segfault on platforms, as it is undefined behavior.
-    OSP_CHECK(it != this->end()) << "failed to erase: element not found";
+    if (it == this->end()) {
+      return this->end();
+    }
     return static_cast<std::vector<std::pair<Key, Value>>*>(this)->erase(it);
   }
 };

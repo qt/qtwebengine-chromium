@@ -479,12 +479,7 @@ base::Value ToValue(
     const blink::mojom::PublicKeyCredentialRequestOptionsPtr& options) {
   CHECK(!options->extensions.is_null());
   base::DictValue value;
-  if (options->challenge.has_value()) {
-    value.Set("challenge", Base64UrlEncode(*options->challenge));
-  } else {
-    CHECK(options->challenge_url.has_value());
-    value.Set("challengeUrl", options->challenge_url->spec());
-  }
+  value.Set("challenge", Base64UrlEncode(options->challenge));
   value.Set("rpId", options->relying_party_id);
 
   base::ListValue allow_credentials;
@@ -560,6 +555,11 @@ base::Value ToValue(
   if (options->extensions->supplemental_pub_keys) {
     extensions.Set("supplementalPubKeys",
                    ToValue(options->extensions->supplemental_pub_keys));
+  }
+
+  if (options->extensions->cross_device_fallback_url) {
+    extensions.Set("crossDeviceFallbackUrl",
+                   options->extensions->cross_device_fallback_url->spec());
   }
 
   if (!extensions.empty()) {
@@ -954,6 +954,13 @@ GetAssertionResponseFromValue(const base::Value& value) {
       return InvalidGetAssertionField("supplementalPubKeys");
     }
     response->extensions->supplemental_pub_keys = std::move(*maybe_result);
+  }
+
+  const std::optional<bool> cross_device_fallback_url =
+      client_extension_results->FindBool("crossDeviceFallbackUrl");
+  if (cross_device_fallback_url) {
+    response->extensions->cross_device_fallback_url =
+        *cross_device_fallback_url;
   }
 
   return {std::move(response), ""};

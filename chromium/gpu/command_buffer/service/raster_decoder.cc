@@ -24,6 +24,7 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/memory/aligned_memory.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
@@ -204,12 +205,14 @@ class SharedImageProviderImpl final : public cc::SharedImageProvider {
       scoped_refptr<SharedContextState> shared_context_state,
       SkSurface* output_surface,
       std::vector<GrBackendSemaphore>* end_semaphores,
-      gles2::ErrorState* error_state)
+      gles2::ErrorState* error_state,
+      const gpu::Mailbox& active_write_mailbox)
       : shared_image_factory_(shared_image_factory),
         shared_context_state_(std::move(shared_context_state)),
         output_surface_(output_surface),
         end_semaphores_(end_semaphores),
-        error_state_(error_state) {
+        error_state_(error_state),
+        active_write_mailbox_(active_write_mailbox) {
     DCHECK(shared_image_factory_);
     DCHECK(shared_context_state_);
     DCHECK(output_surface_);
@@ -223,6 +226,16 @@ class SharedImageProviderImpl final : public cc::SharedImageProvider {
 
   sk_sp<SkImage> OpenSharedImageForRead(const gpu::Mailbox& mailbox,
                                         Error& error) override {
+    if (mailbox == active_write_mailbox_) {
+      ERRORSTATE_SET_GL_ERROR(error_state_, GL_INVALID_OPERATION,
+                              "SharedImageProviderImpl::OpenSharedImageForRead",
+                              ("Attempting to read from the active output mailbox:" +
+                               mailbox.ToDebugString())
+                                  .c_str());
+      error = Error::kNoAccess;
+      return nullptr;
+    }
+
     auto it = read_accessors_.find(mailbox);
     error = Error::kNoError;
     if (it != read_accessors_.end()) {
@@ -308,6 +321,7 @@ class SharedImageProviderImpl final : public cc::SharedImageProvider {
     sk_sp<SkImage> read_access_sk_image;
   };
   base::flat_map<gpu::Mailbox, SharedImageReadAccess> read_accessors_;
+  gpu::Mailbox active_write_mailbox_;
 };
 
 class RasterCommandsCompletedQuery : public QueryManager::Query {
@@ -483,6 +497,7 @@ class RasterDecoderImpl final : public RasterDecoder,
   void SetUpForRasterCHROMIUMForTest() override;
   void SetOOMErrorForTest() override;
   void DisableFlushWorkaroundForTest() override;
+  cc::SharedImageProvider* GetSharedImageProviderForTest() const override;
   gles2::GLES2Util* GetGLES2Util() override { return &util_; }
 
   // DecoderContext implementation.
@@ -1672,6 +1687,10 @@ void RasterDecoderImpl::DisableFlushWorkaroundForTest() {
   flush_workaround_disabled_for_test_ = true;
 }
 
+cc::SharedImageProvider* RasterDecoderImpl::GetSharedImageProviderForTest() const {
+  return paint_op_shared_image_provider_.get();
+}
+
 void RasterDecoderImpl::OnContextLostError() {
   if (!WasContextLost()) {
     // Need to lose current context before broadcasting!
@@ -2641,7 +2660,7 @@ void RasterDecoderImpl::DoReadbackYUVImagePixelsINTERNAL(
   if (graphite_shared_context()) {
     // SkImage/SkSurface asyncRescaleAndReadPixels methods won't be implemented
     // for Graphite. Instead the equivalent methods will be on Graphite Context.
-    graphite_shared_context()->asyncRescaleAndReadPixelsYUV420(
+    graphite_shared_context()->asyncRescaleAndReadPixelsYUV420AndSubmit(
         sk_image.get(), kJPEG_Full_SkYUVColorSpace, SkColorSpace::MakeSRGB(),
         src_rect, dst_size, SkImage::RescaleGamma::kSrc,
         SkImage::RescaleMode::kRepeatedLinear,
@@ -2663,10 +2682,10 @@ void RasterDecoderImpl::DoReadbackYUVImagePixelsINTERNAL(
           shared_context_state_->vk_context_provider(), &flush_info);
       gr_context()->flush(flush_info);
     }
-  }
 
-  // TODO(crbug.com/40106956): Use COMMANDS_COMPLETED query for async readback.
-  DoFinish();
+    // TODO(crbug.com/40106956): Use COMMANDS_COMPLETED query for async readback.
+    DoFinish();
+  }
 
   // The call above will sync up gpu and CPU, resulting in callback being run
   // during DoFinish(). To prevent UAF make sure it indeed happened.
@@ -2911,7 +2930,7 @@ void RasterDecoderImpl::DoBeginRasterCHROMIUM(GLfloat r,
 
   paint_op_shared_image_provider_ = std::make_unique<SharedImageProviderImpl>(
       &shared_image_representation_factory_, shared_context_state_, sk_surface_,
-      &end_semaphores_, error_state_.get());
+      &end_semaphores_, error_state_.get(), mailbox);
 
   // All or nothing clearing, as no way to validate the client's input on what
   // is the "used" part of the texture.  A separate |needs_clear| flag is needed
@@ -2953,15 +2972,16 @@ error::Error RasterDecoderImpl::DoRasterCHROMIUM(GLuint raster_shm_id,
   }
   DCHECK(transfer_cache());
 
-  char* paint_buffer_memory = GetSharedMemoryAs<char*>(
-      raster_shm_id, raster_shm_offset, raster_shm_size);
-  if (!paint_buffer_memory) {
+  auto paint_buffer_opt =
+      GetSharedMemoryAsSpan(raster_shm_id, raster_shm_offset, raster_shm_size);
+  if (paint_buffer_opt.value_or({}).empty()) {
     LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glRasterCHROMIUM",
                        "Can not read paint buffer.");
     return error::kNoError;
   }
+  base::span<uint8_t> paint_buffer = *paint_buffer_opt;
 
-  if (paint_buffer_memory != base::bits::AlignUp(paint_buffer_memory, 16u)) {
+  if (!base::IsAligned(paint_buffer.data(), 16u)) {
     LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glRasterCHROMIUM",
                        "Buffer is not aligned with 16 bytes.");
     return error::kNoError;
@@ -2983,7 +3003,6 @@ error::Error RasterDecoderImpl::DoRasterCHROMIUM(GLuint raster_shm_id,
   alignas(cc::PaintOpBuffer::kPaintOpAlign) char
       data[cc::kLargestPaintOpAlignedSize];
 
-  size_t paint_buffer_size = raster_shm_size;
   gl::ScopedProgressReporter report_progress(
       shared_context_state_->progress_reporter());
 
@@ -2993,25 +3012,25 @@ error::Error RasterDecoderImpl::DoRasterCHROMIUM(GLuint raster_shm_id,
     DCHECK(!deferred_raster_paint_buffer_offset_.has_value());
     auto* paint_op_buffer =
         scoped_shared_image_raster_write_->paint_op_buffer();
-    paint_op_buffer->Deserialize(paint_buffer_memory, raster_shm_size, options);
+    paint_op_buffer->Deserialize(paint_buffer, options);
     return error::kNoError;
   }
 
   if (deferred_raster_paint_buffer_offset_.has_value()) {
-    CHECK(*deferred_raster_paint_buffer_offset_ <= paint_buffer_size);
-    paint_buffer_size -= *deferred_raster_paint_buffer_offset_;
-    UNSAFE_TODO(paint_buffer_memory += *deferred_raster_paint_buffer_offset_);
+    CHECK(*deferred_raster_paint_buffer_offset_ <= paint_buffer.size());
+    paint_buffer = paint_buffer.subspan(*deferred_raster_paint_buffer_offset_);
     deferred_raster_paint_buffer_offset_.reset();
   } else {
     if (font_shm_size > 0) {
       // Deserialize fonts before raster.
-      base::span<volatile uint8_t> font_buffer =
-          GetSharedMemoryAsSpan(font_shm_id, font_shm_offset, font_shm_size);
-      if (font_buffer.empty()) {
+      auto font_buffer_opt = GetSharedMemoryAsSpan<volatile uint8_t>(
+          font_shm_id, font_shm_offset, font_shm_size);
+      if (font_buffer_opt.value_or({}).empty()) {
         LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glRasterCHROMIUM",
                            "Can not read font buffer.");
         return error::kNoError;
       }
+      base::span<volatile uint8_t> font_buffer = *font_buffer_opt;
 
       std::vector<SkDiscardableHandleId> new_locked_handles;
       if (!font_manager_->Deserialize(font_buffer, &new_locked_handles)) {
@@ -3026,11 +3045,10 @@ error::Error RasterDecoderImpl::DoRasterCHROMIUM(GLuint raster_shm_id,
 
   size_t processed_commands = 0;
 
-  while (paint_buffer_size > 0) {
+  while (!paint_buffer.empty()) {
     size_t skip = 0;
-    cc::PaintOp* deserialized_op =
-        cc::PaintOp::Deserialize(paint_buffer_memory, paint_buffer_size, data,
-                                 std::size(data), &skip, options);
+    cc::PaintOp* deserialized_op = cc::PaintOp::Deserialize(
+        paint_buffer, data, std::size(data), &skip, options);
     if (!deserialized_op) {
       LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glRasterCHROMIUM",
                          "RasterCHROMIUM: serialization failure");
@@ -3040,17 +3058,16 @@ error::Error RasterDecoderImpl::DoRasterCHROMIUM(GLuint raster_shm_id,
     deserialized_op->Raster(raster_canvas_, playback_params);
     deserialized_op->DestroyThis();
 
-    paint_buffer_size -= skip;
-    UNSAFE_TODO(paint_buffer_memory += skip);
+    paint_buffer = paint_buffer.subspan(skip);
     processed_commands++;
 
     if (check_for_yield_op_count_.has_value() &&
         processed_commands % check_for_yield_op_count_.value() == 0 &&
-        paint_buffer_size && client()->ShouldYield()) {
+        !paint_buffer.empty() && client()->ShouldYield()) {
       // Pause command batch to check if we should yield execution.
       TRACE_EVENT0("gpu", "RasterDecoderImpl::DoRasterCHROMIUM::Yield");
       deferred_raster_paint_buffer_offset_ =
-          raster_shm_size - paint_buffer_size;
+          raster_shm_size - paint_buffer.size();
       return error::kDeferCommandUntilLater;
     }
   }

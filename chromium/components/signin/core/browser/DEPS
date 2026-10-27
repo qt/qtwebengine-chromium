@@ -5,6 +5,7 @@ include_rules = [
   "+components/signin/public/identity_manager",
   "+components/supervised_user/core/common/features.h",
   "+components/supervised_user/core/common/buildflags.h",
+  "+components/sync/base/data_type.h",
 ]
 
 specific_include_rules = {
@@ -16,5 +17,8 @@ specific_include_rules = {
   ],
   "chrome_connected_header_helper.cc": [
     "+chromeos/crosapi/mojom/crosapi.mojom.h"
+  ],
+  "mirror_account_reconcilor_delegate.cc": [
+    "+components/sync/base/features.h"
   ],
 }

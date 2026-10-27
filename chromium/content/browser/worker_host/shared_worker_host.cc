@@ -34,6 +34,7 @@
 #include "content/browser/worker_host/shared_worker_content_settings_proxy_impl.h"
 #include "content/browser/worker_host/shared_worker_service_impl.h"
 #include "content/browser/worker_host/worker_script_fetcher.h"
+#include "content/common/features.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -41,9 +42,9 @@
 #include "content/public/browser/permission_controller.h"
 #include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/service_worker_context.h"
+#include "content/public/browser/site_isolation_policy.h"
 #include "content/public/common/child_process_id_util.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/content_features.h"
 #include "net/base/isolation_info.h"
 #include "net/cookies/site_for_cookies.h"
 #include "services/metrics/public/cpp/delegating_ukm_recorder.h"
@@ -224,7 +225,7 @@ SharedWorkerHost::~SharedWorkerHost() {
       lock_manager->RemoveLockObserver(token().value());
     }
 
-    GetStoragePartitionImpl()->ClearNoncesInNetworkContextAfterDelay({
+    GetStoragePartitionImpl()->ClearNetworkRestrictionsAfterDelay({
         network_restrictions_id_,
     });
   }
@@ -288,6 +289,16 @@ void SharedWorkerHost::Start(
 
     policy_container_host = std::move(creator_policy_container_host_);
   } else {
+    CHECK(result.main_script_load_params->response_head);
+
+    if (SiteIsolationPolicy::ShouldUrlUseApplicationIsolationLevel(
+            GetProcessHost()->GetBrowserContext(), result.final_response_url)) {
+      GetContentClient()->browser()->EnsureRequiredHeadersForIsolatedApp(
+          GetProcessHost()->GetBrowserContext(), result.final_response_url,
+          result.main_script_load_params->response_head.get(),
+          /*frame_tree_node=*/std::nullopt);
+    }
+
     // https://html.spec.whatwg.org/C/#creating-a-policy-container-from-a-fetch-response
     // This does not parse the referrer policy, which will be
     // updated in `SharedWorkerGlobalScope::Initialize()`.
@@ -602,7 +613,7 @@ void SharedWorkerHost::CreateLockManager(
                                                             this);
 }
 
-void SharedWorkerHost::OnLockContention() {
+bool SharedWorkerHost::OnLockContention() {
   std::vector<RenderFrameHostImpl*> bf_cached_clients;
 
   for (const ClientInfo& info : clients_) {
@@ -611,7 +622,7 @@ void SharedWorkerHost::OnLockContention() {
       continue;
     }
     if (rfh->IsActive()) {
-      return;
+      return false;
     }
     if (rfh->IsInBackForwardCache()) {
       bf_cached_clients.push_back(rfh);
@@ -620,10 +631,12 @@ void SharedWorkerHost::OnLockContention() {
 
   // If we reach here, all the clients are in the back-forward cache. Evict
   // them to avoid deadlock.
+  bool evicted = !bf_cached_clients.empty();
   for (RenderFrameHostImpl* rfh_to_evict : bf_cached_clients) {
     rfh_to_evict->EvictFromBackForwardCacheWithReason(
         BackForwardCacheMetrics::NotRestoredReason::kWebLocksContention);
   }
+  return evicted;
 }
 
 void SharedWorkerHost::GetSandboxedFileSystemForBucket(
@@ -690,13 +703,39 @@ void SharedWorkerHost::CreateWebSocketConnector(
       std::make_unique<WebSocketConnectorImpl>(
           GlobalRenderFrameHostId(GetProcessHost()->GetID(),
                                   IPC::mojom::kRoutingIdNone),
-          storage_key.origin(), storage_key.ToPartialNetIsolationInfo(),
+          storage_key.origin(), ComputeIsolationInfoForWebSocket(),
           worker_client_security_state_->Clone(),
           // TODO(crbug.com/492462310): Pass network_restrictions_id so
           // Connection-Allowlist is enforced for shared worker WebSocket
           // connections.
           /*network_restrictions_id=*/std::nullopt),
       std::move(receiver));
+}
+
+net::IsolationInfo SharedWorkerHost::ComputeIsolationInfoForWebSocket() const {
+  const blink::StorageKey& storage_key = GetWorkerStorageKey();
+  net::IsolationInfo isolation_info = storage_key.ToPartialNetIsolationInfo();
+
+  base::UmaHistogramBoolean(
+      "Content.SharedWorker.WebSocket.DoesRequireCrossSiteRequestForCookies",
+      instance_.DoesRequireCrossSiteRequestForCookies());
+
+  if (instance_.DoesRequireCrossSiteRequestForCookies()) {
+    if (base::FeatureList::IsEnabled(
+            features::kRestrictSharedWorkerWebSocketCrossSiteCookies)) {
+      // If the worker requires cross-site cookie semantics (e.g. a worker in a
+      // third-party context or created via the Storage Access API), we must
+      // ensure that the SiteForCookies is null. This prevents the network
+      // service from incorrectly attaching SameSite=Strict/Lax cookies to the
+      // WebSocket handshake.
+      CHECK(!isolation_info.IsEmpty());
+      isolation_info = net::IsolationInfo::Create(
+          isolation_info.request_type(), *isolation_info.top_frame_origin(),
+          *isolation_info.frame_origin(), net::SiteForCookies(),
+          isolation_info.nonce());
+    }
+  }
+  return isolation_info;
 }
 
 void SharedWorkerHost::BindCacheStorage(
@@ -743,8 +782,10 @@ void SharedWorkerHost::CreateBlobUrlStoreProvider(
       base::BindRepeating([]() -> bool { return false; }),
       !(GetContentClient()->browser()->IsBlobUrlPartitioningEnabled(
           GetProcessHost()->GetBrowserContext())),
-      storage::BlobURLValidityCheckBehavior::
-          ALLOW_OPAQUE_ORIGIN_STORAGE_KEY_MISMATCH);
+      base::FeatureList::IsEnabled(blink::features::kDataUrlWorkerOpaqueOrigin)
+          ? storage::BlobURLValidityCheckBehavior::DEFAULT
+          : storage::BlobURLValidityCheckBehavior::
+                ALLOW_OPAQUE_ORIGIN_STORAGE_KEY_MISMATCH);
 }
 
 void SharedWorkerHost::CreateBucketManagerHost(

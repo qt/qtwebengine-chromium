@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSORSYMMETRY_DYNAMICSYMMETRY_H
-#define EIGEN_CXX11_TENSORSYMMETRY_DYNAMICSYMMETRY_H
+#ifndef EIGEN_TENSORSYMMETRY_DYNAMICSYMMETRY_H
+#define EIGEN_TENSORSYMMETRY_DYNAMICSYMMETRY_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -60,8 +61,8 @@ class DynamicSGroup {
     eigen_assert(N >= m_numIndices &&
                  "Can only apply symmetry group to objects that have at least the required amount of indices.");
     for (std::size_t i = 0; i < size(); i++)
-      initial = Op::run(h_permute(i, idx, typename internal::gen_numeric_list<int, N>::type()), m_elements[i].flags,
-                        initial, std::forward<Args>(args)...);
+      initial = Op::run(h_permute(i, idx, std::make_integer_sequence<int, N>{}), m_elements[i].flags, initial,
+                        std::forward<Args>(args)...);
     return initial;
   }
 
@@ -116,7 +117,7 @@ class DynamicSGroup {
 
   template <typename Index, std::size_t N, int... n>
   inline std::array<Index, N> h_permute(std::size_t which, const std::array<Index, N>& idx,
-                                        internal::numeric_list<int, n...>) const {
+                                        std::integer_sequence<int, n...>) const {
     return std::array<Index, N>{{idx[n >= m_numIndices ? n : m_elements[which].representation[n]]...}};
   }
 
@@ -289,7 +290,7 @@ inline void DynamicSGroup::updateGlobalFlags(int flagDiffOfSameGenerator) {
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSORSYMMETRY_DYNAMICSYMMETRY_H
+#endif  // EIGEN_TENSORSYMMETRY_DYNAMICSYMMETRY_H
 
 /*
  * kate: space-indent on; indent-width 2; mixedindent off; indent-mode cstyle;

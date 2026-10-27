@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
+
 set(CMAKE_CXX_STANDARD 17)
 # Forward CMake options as preprocessor definitions
 if(EIGEN_SYCL_USE_DEFAULT_SELECTOR)

@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "base/functional/callback.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/scoped_observation.h"
@@ -20,6 +21,10 @@
 
 class GURL;
 class PrefService;
+
+namespace contextual_tasks {
+struct ThreadTurn;
+}  // namespace contextual_tasks
 
 namespace lens {
 enum class MimeType;
@@ -122,15 +127,20 @@ class ContextualSearchSessionHandle {
   // token must have been previously returned by `CreateContextToken`.
   virtual void StartUrlContextUploadFlow(
       const base::UnguessableToken& file_token,
-      const GURL& url);
+      const std::string& url);
+
+  struct DriveUploadParams {
+    std::string drive_id;
+    std::optional<std::string> resource_key;
+    std::string mime_type;
+    std::string file_name;
+  };
 
   // Starts the Drive context upload flow for the given file token. The file
   // token must have been previously returned by `CreateContextToken`.
   virtual void StartDriveContextUploadFlow(
       const base::UnguessableToken& file_token,
-      const std::string& drive_id,
-      const std::string& resource_key,
-      const std::string& mime_type_string);
+      const DriveUploadParams& params);
 
   // Starts the Modality Chip upload flow for the given file token. The file
   // token must have been previously returned by `CreateContextToken`.
@@ -145,7 +155,7 @@ class ContextualSearchSessionHandle {
   // Clear all context controller files from this particular instance of the
   // session handle. This does not clear the internal state of the context
   // controller, which may be shared with other session handles.
-  void ClearFiles();
+  void ClearFiles(bool query_submitted = false);
 
   // Returns the search url for a new query for opening. If the request info
   // contains file tokens, only those provided tokens are used. If the request
@@ -197,12 +207,24 @@ class ContextualSearchSessionHandle {
   // confirmation that they are available on the server.
   std::vector<FileInfo> GetSubmittedContextFileInfos() const;
 
+  // Returns all the tab titles corresponding to the submitted context tokens.
+  virtual std::vector<std::string> GetSubmittedContextTabTitles() const;
+
   // Returns whether the current session_id is part of the uploaded context.
   bool IsTabInContext(SessionID session_id) const;
+
+  // Accessors for the last query and public turns in the contextual session.
+  void AddThreadTurn(const contextual_tasks::ThreadTurn& turn);
+  const std::vector<contextual_tasks::ThreadTurn>& previous_turns() const {
+    return previous_turns_;
+  }
 
  private:
   friend class ContextualSearchService;
   friend class MockContextualSearchSessionHandle;
+  FRIEND_TEST_ALL_PREFIXES(
+      ContextualSearchSessionHandleTest,
+      NotifyQuerySubmittedSessionState_TabAttachmentCount);
 
   ContextualSearchSessionHandle(
       base::WeakPtr<ContextualSearchService> service,
@@ -213,6 +235,9 @@ class ContextualSearchSessionHandle {
   // information about the presence of tab and non-tab context.
   void NotifyQuerySubmittedSessionState(const std::vector<FileInfo>& file_infos,
                                         int query_text_length);
+
+  // Returns true if the token corresponds to a tab context.
+  bool IsTabToken(const base::UnguessableToken& token) const;
 
   // The list of uploaded but not yet committed context tokens for this
   // particular instance of the session. This list is unique to this instance of
@@ -241,6 +266,10 @@ class ContextualSearchSessionHandle {
   // apply to entrypoints like contextual suggestions in the Omnibox or the
   // contextual searchbox within the Lens overlay.
   bool is_contextual_lens_session_ = false;
+
+  // The list of previous turns in the contextual session, from oldest to
+  // newest.
+  std::vector<contextual_tasks::ThreadTurn> previous_turns_;
 
   // This needs to be the last member to ensure all outstanding WeakPtrs are
   // invalidated before the rest of the members.

@@ -25,6 +25,7 @@
 #include "components/content_settings/core/browser/content_settings_rule.h"
 #include "components/content_settings/core/browser/content_settings_utils.h"
 #include "components/content_settings/core/browser/website_settings_registry.h"
+#include "components/content_settings/core/common/content_settings_enums.mojom-shared.h"
 #include "components/content_settings/core/common/content_settings_metadata.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
 #include "components/content_settings/core/common/content_settings_types.h"
@@ -63,6 +64,9 @@ constexpr char kObsoletePrivateNetworkChooserDataPref[] =
 
 constexpr char kGeolocationMigrateExceptionsPref[] =
     "profile.content_settings.exceptions.migrate_geolocation";
+
+constexpr char kObsoleteTpcdHeuristicsGrantsPref[] =
+    "profile.content_settings.exceptions.3pcd_heuristics_grants";
 
 #if !BUILDFLAG(IS_IOS)
 constexpr char kObsoleteTpcdTrialExceptionsPref[] =
@@ -122,6 +126,7 @@ void PrefProvider::RegisterProfilePrefs(
   registry->RegisterListPref(
       kObsoleteFederatedIdentityActiveSesssionExceptionsPref);
   registry->RegisterDictionaryPref(kObsoletePrivateNetworkChooserDataPref);
+  registry->RegisterDictionaryPref(kObsoleteTpcdHeuristicsGrantsPref);
 #if !BUILDFLAG(IS_IOS)
   registry->RegisterDictionaryPref(kObsoleteTpcdTrialExceptionsPref);
   registry->RegisterDictionaryPref(kObsoleteTopLevelTpcdTrialExceptionsPref);
@@ -171,8 +176,8 @@ PrefProvider::PrefProvider(PrefService* prefs,
                                               base::Unretained(this)))));
   }
 
-  MigrateGeolocationExceptions();
 #if !BUILDFLAG(IS_IOS)
+  MigrateGeolocationExceptions();
   MigrateLocalNetworkAccessExceptions();
 #endif  // !BUILDFLAG(IS_IOS)
 
@@ -224,7 +229,7 @@ bool PrefProvider::SetWebsiteSetting(
     const ContentSettingsPattern& primary_pattern,
     const ContentSettingsPattern& secondary_pattern,
     ContentSettingsType content_type,
-    base::Value&& in_value,
+    const base::Value& in_value,
     const ContentSettingConstraints& constraints) {
   DCHECK(CalledOnValidThread());
   DCHECK(prefs_);
@@ -257,23 +262,85 @@ bool PrefProvider::SetWebsiteSetting(
                                 ? GetCoarseVisitedTime(clock_->Now())
                                 : base::Time();
 
-  // If mojom::SessionModel is ONE_TIME, we know for sure that a one time
-  // permission has been set by the One Time Provider, therefore we reset a
-  // potentially existing Allow Always setting.
-  if (constraints.session_model() == mojom::SessionModel::ONE_TIME) {
-    DCHECK(std::ranges::contains(GetTypesWithTemporaryGrantsInHcsm(),
-                                 content_type));
-    in_value = base::Value();
-  }
-
   RuleMetaData metadata;
   metadata.set_last_modified(modified_time);
   metadata.set_last_visited(last_visited);
   metadata.SetFromConstraints(constraints);
+
+  // If mojom::SessionModel is ONE_TIME, we know for sure that a one time
+  // permission has been set by the One Time Provider.
+  if (constraints.session_model() == mojom::SessionModel::ONE_TIME) {
+    DCHECK(std::ranges::contains(GetTypesWithTemporaryGrantsInHcsm(),
+                                 content_type));
+
+    mojom::SessionModel session_model;
+    std::optional<base::Value> new_value = ValueForHandlingEphemeralGrant(
+        primary_pattern, secondary_pattern, content_type, in_value, constraints,
+        &session_model);
+    if (new_value.has_value()) {
+      metadata.set_session_model(session_model);
+      GetPref(content_type)
+          ->SetWebsiteSetting(primary_pattern, secondary_pattern,
+                              std::move(new_value).value(),
+                              std::move(metadata));
+    }
+    return true;
+  }
+
   GetPref(content_type)
-      ->SetWebsiteSetting(primary_pattern, secondary_pattern,
-                          std::move(in_value), std::move(metadata));
+      ->SetWebsiteSetting(primary_pattern, secondary_pattern, in_value.Clone(),
+                          std::move(metadata));
   return true;
+}
+
+std::optional<base::Value> PrefProvider::ValueForHandlingEphemeralGrant(
+    const ContentSettingsPattern& primary_pattern,
+    const ContentSettingsPattern& secondary_pattern,
+    ContentSettingsType content_type,
+    const base::Value& in_value,
+    const ContentSettingConstraints& constraints,
+    mojom::SessionModel* session_model) {
+  // If we should clear the persistent grant, let's just do it.
+  if (constraints.ephemeral_clears_persistent_grant()) {
+    return base::Value();
+  }
+
+  // Otherwise reset potentially BLOCKED states to ASK.
+  auto* info = content_settings::PermissionSettingsRegistry::GetInstance()->Get(
+      content_type);
+  CHECK(info);
+
+  std::optional<PermissionSetting> setting =
+      info->delegate().FromValue(in_value);
+  if (!setting.has_value()) {
+    return std::nullopt;
+  }
+  std::unique_ptr<Rule> current_rule =
+      GetPref(content_type)
+          ->GetRule(primary_pattern.ToRepresentativeUrl(),
+                    secondary_pattern.ToRepresentativeUrl(), off_the_record_);
+  if (!current_rule) {
+    return std::nullopt;
+  }
+  CHECK_EQ(current_rule->primary_pattern, primary_pattern);
+  CHECK_EQ(current_rule->secondary_pattern, secondary_pattern);
+  std::optional<PermissionSetting> current_setting =
+      info->delegate().FromValue(current_rule->value);
+  *session_model = current_rule->metadata.session_model();
+  if (!current_setting) {
+    // Invalid setting, let's clean it up.
+    return base::Value();
+  }
+  PermissionSetting new_setting =
+      info->delegate().RemoveBlockedPermissionsForEphemeralGrant(
+          *current_setting, *setting);
+  if (new_setting != *current_setting) {
+    return info->delegate().IsUndecided(new_setting)
+               ? base::Value()
+               : info->delegate().ToValue(new_setting);
+  } else {
+    return std::nullopt;
+  }
 }
 
 bool PrefProvider::UpdateLastVisitTime(
@@ -452,6 +519,7 @@ void PrefProvider::DiscardOrMigrateObsoletePreferences() {
       kObsoleteGetDisplayMediaSetAutoSelectAllScreensAllowedForUrlsExceptionsPref);
   prefs_->ClearPref(kObsoleteFederatedIdentityActiveSesssionExceptionsPref);
   prefs_->ClearPref(kObsoletePrivateNetworkChooserDataPref);
+  prefs_->ClearPref(kObsoleteTpcdHeuristicsGrantsPref);
 
 #if !BUILDFLAG(IS_IOS)
   prefs_->ClearPref(kObsoleteTpcdTrialExceptionsPref);
@@ -463,6 +531,7 @@ void PrefProvider::DiscardOrMigrateObsoletePreferences() {
 #endif  // !BUILDFLAG(IS_IOS)
 }
 
+#if !BUILDFLAG(IS_IOS)
 void PrefProvider::MigrateGeolocationExceptions() {
   if (off_the_record_) {
     return;
@@ -515,7 +584,6 @@ void PrefProvider::MigrateGeolocationExceptions() {
   }
 }
 
-#if !BUILDFLAG(IS_IOS)
 void PrefProvider::MigrateLocalNetworkAccessExceptions() {
   if (off_the_record_) {
     return;
@@ -526,13 +594,11 @@ void PrefProvider::MigrateLocalNetworkAccessExceptions() {
     return;
   }
 
-  // Migrate when the feature gets enabled the first time.
+  // Migrate only once, if the pref is not set yet.
   // All exceptions get migrated to LOCAL_NETWORK, but only ALLOW exceptions get
   // migrated to LOOPBACK_NETWORK, as the old prompt language was biased towards
   // LOCAL_NETWORK.
-  if (base::FeatureList::IsEnabled(
-          network::features::kLocalNetworkAccessChecksSplitPermissions) &&
-      !prefs_->GetBoolean(kLocalNetworkAccessMigrateExceptionsPref)) {
+  if (!prefs_->GetBoolean(kLocalNetworkAccessMigrateExceptionsPref)) {
     auto* old_pref = GetPref(ContentSettingsType::LOCAL_NETWORK_ACCESS);
     auto* local_pref = GetPref(ContentSettingsType::LOCAL_NETWORK);
     auto* loopback_pref = GetPref(ContentSettingsType::LOOPBACK_NETWORK);
@@ -553,22 +619,6 @@ void PrefProvider::MigrateLocalNetworkAccessExceptions() {
     it.reset();
     old_pref->ClearAllContentSettingsRules();
     prefs_->SetBoolean(kLocalNetworkAccessMigrateExceptionsPref, true);
-  }
-
-  // If the feature is turned off, then don't attempt to migrate back, as it is
-  // unclear in all cases of how to reconcile the differences. But make sure to
-  // clear the new exceptions and unset the migration pref so that when the
-  // feature gets turned back on we'll migrate again.
-  if (base::FeatureList::IsEnabled(
-          network::features::kLocalNetworkAccessChecks) &&
-      !base::FeatureList::IsEnabled(
-          network::features::kLocalNetworkAccessChecksSplitPermissions) &&
-      prefs_->GetBoolean(kLocalNetworkAccessMigrateExceptionsPref)) {
-    auto* local_pref = GetPref(ContentSettingsType::LOCAL_NETWORK);
-    local_pref->ClearAllContentSettingsRules();
-    auto* loopback_pref = GetPref(ContentSettingsType::LOOPBACK_NETWORK);
-    loopback_pref->ClearAllContentSettingsRules();
-    prefs_->SetBoolean(kLocalNetworkAccessMigrateExceptionsPref, false);
   }
 }
 #endif  // !BUILDFLAG(IS_IOS)

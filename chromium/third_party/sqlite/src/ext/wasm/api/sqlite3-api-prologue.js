@@ -27,13 +27,14 @@
 /**
    sqlite3ApiBootstrap() is the only global symbol persistently
    exposed by this API. It is intended to be called one time at the
-   end of the API amalgamation process, passed configuration details
-   for the current environment, and then optionally be removed from
-   the global object using `delete globalThis.sqlite3ApiBootstrap`.
+   end of the API amalgamation process and passed configuration details
+   for the current environment.
 
    This function is not intended for client-level use. It is intended
    for use in creating bundles configured for specific WASM
-   environments.
+   environments. That said, the "sqlite3-api.js" intermediary build
+   file aims to be suitable for dropping in to custom builds, and it
+   exposes only this function.
 
    This function expects a configuration object, intended to abstract
    away details specific to any given WASM environment, primarily so
@@ -93,9 +94,17 @@
      can be replaced with (e.g.) empty functions to squelch all such
      output.
 
-   - `wasmfsOpfsDir`[^1]: Specifies the "mount point" of the OPFS-backed
-     filesystem in WASMFS-capable builds.
+   - `wasmfsOpfsDir`[^1]: Specifies the "mount point" of the
+     OPFS-backed filesystem in WASMFS-capable builds. This is only
+     used in WASMFS-capable builds of the library (which the canonical
+     builds do not include).
 
+     - `disable` (as of 3.53.0) may be an object with the following
+     properties:
+       - `vfs`, an object, may contain a map of VFS names to booleans.
+       Any mapping to falsy are disabled. The supported names
+       are: "kvvfs", "opfs", "opfs-sahpool", "opfs-wl".
+       - Other disabling options may be added in the future.
 
    [^1] = This property may optionally be a function, in which case
           this function calls that function to fetch the value,
@@ -125,7 +134,8 @@
    Both sqlite3ApiBootstrap.defaultConfig and
    globalThis.sqlite3ApiConfig get deleted by sqlite3ApiBootstrap()
    because any changes to them made after that point would have no
-   useful effect.
+   useful effect. This function also deletes itself from globalThis
+   when it's called.
 
    This function returns a Promise to the sqlite3 namespace object,
    which resolves after the async pieces of the library init are
@@ -142,7 +152,8 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
     );
     return sqlite3ApiBootstrap.sqlite3;
   }
-  const config = Object.assign(Object.create(null),{
+  const nu = (...obj)=>Object.assign(Object.create(null),...obj);
+  const config = nu({
     exports: undefined,
     memory: undefined,
     bigIntEnabled: !!globalThis.BigInt64Array,
@@ -159,7 +170,7 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
        certain wasm.xWrap.resultAdapter()s.
     */
     useStdAlloc: false
-  }, apiConfig || {});
+  }, apiConfig);
 
   Object.assign(config, {
     allocExportName: config.useStdAlloc ? 'malloc' : 'sqlite3_malloc',
@@ -178,14 +189,6 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
   });
 
   /**
-     Eliminate any confusion about whether these config objects may
-     be used after library initialization by eliminating the outward-facing
-     objects...
-  */
-  delete globalThis.sqlite3ApiConfig;
-  delete sqlite3ApiBootstrap.defaultConfig;
-
-  /**
       The main sqlite3 binding API gets installed into this object,
       mimicking the C API as closely as we can. The numerous members
       names with prefixes 'sqlite3_' and 'SQLITE_' behave, insofar as
@@ -200,7 +203,7 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
       not documented are installed as 1-to-1 proxies for their
       C-side counterparts.
   */
-  const capi = Object.create(null);
+  const capi = nu();
   /**
      Holds state which are specific to the WASM-related
      infrastructure and glue code.
@@ -209,7 +212,7 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
      dynamically after the api object is fully constructed, so
      not all are documented in this file.
   */
-  const wasm = Object.create(null);
+  const wasm = nu();
 
   /** Internal helper for SQLite3Error ctor. */
   const __rcStr = (rc)=>{
@@ -757,6 +760,12 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
     toss: function(...args){throw new Error(args.join(' '))},
     toss3,
     typedArrayPart: wasm.typedArrayPart,
+    nu,
+    assert: function(arg,msg){
+      if( !arg ){
+        util.toss("Assertion failed:",msg);
+      }
+    },
     /**
        Given a byte array or ArrayBuffer, this function throws if the
        lead bytes of that buffer do not hold a SQLite3 database header,
@@ -796,25 +805,10 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
 
   /**
      wasm.X properties which are used for configuring the wasm
-     environment via whwashutil.js.
+     environment via whwashutil.js. This object gets fleshed out with
+     a number of WASM-specific utilities, in sqlite3-api-glue.c-pp.js.
   */
   Object.assign(wasm, {
-    /**
-       The WASM IR (Intermediate Representation) value for
-       pointer-type values. If set then it MUST be one of 'i32' or
-       'i64' (else an exception will be thrown). If it's not set, it
-       will default to 'i32'.
-    */
-    pointerIR: config.wasmPtrIR,
-
-    /**
-       True if BigInt support was enabled via (e.g.) the
-       Emscripten -sWASM_BIGINT flag, else false. When
-       enabled, certain 64-bit sqlite3 APIs are enabled which
-       are not otherwise enabled due to JS/WASM int64
-       impedance mismatches.
-    */
-    bigIntEnabled: !!config.bigIntEnabled,
 
     /**
        The symbols exported by the WASM environment.
@@ -825,14 +819,38 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
     /**
        When Emscripten compiles with `-sIMPORTED_MEMORY`, it
        initializes the heap and imports it into wasm, as opposed to
-       the other way around. In this case, the memory is not
-       available via this.exports.memory.
+       the other way around. In this case, the memory is not available
+       via this.exports.memory so the client must pass it in via
+       config.memory.
     */
     memory: config.memory
       || config.exports['memory']
       || toss3("API config object requires a WebAssembly.Memory object",
               "in either config.exports.memory (exported)",
               "or config.memory (imported)."),
+
+    /**
+       The WASM pointer size. If set then it MUST be one of 4 or 8 and
+       it MUST correspond to the WASM environment's pointer size. We
+       figure out the size by calling some un-JS-wrapped WASM function
+       which returns a pointer-type value. If that value is a BigInt,
+       it's 64-bit, else it's 32-bit. The pieces which populate
+       sqlite3.wasm (whwasmutil.js) can figure this out _if_ they can
+       allocate, but we have a chicken/egg situation there which makes
+       it illegal for that code to invoke wasm.dealloc() at the time
+       it would be needed. So we need to configure it ahead of time
+       (here) instead.
+    */
+    pointerSize: ('number'===typeof config.exports.sqlite3_libversion()) ? 4 : 8,
+
+    /**
+       True if BigInt support was enabled via (e.g.) the
+       Emscripten -sWASM_BIGINT flag, else false. When
+       enabled, certain 64-bit sqlite3 APIs are enabled which
+       are not otherwise enabled due to JS/WASM int64
+       impedance mismatches.
+    */
+    bigIntEnabled: !!config.bigIntEnabled,
 
     /**
        WebAssembly.Table object holding the indirect function call
@@ -883,7 +901,7 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
 
        Like this.alloc.impl(), this.realloc.impl() is a direct binding
        to the underlying realloc() implementation which does not throw
-       exceptions, instead returning 0 on allocation error.
+       exceptions, instead returning 0 (or 0n) on allocation error.
     */
     realloc: undefined/*installed later*/,
 
@@ -949,7 +967,11 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
     };
     wasm.realloc.impl = wasm.exports[keyRealloc];
     wasm.dealloc = function f(m){
-      f.impl(wasm.ptr.coerce(m)/*tag:64bit*/);
+      f.impl(wasm.ptr.coerce(m)/*tag:64bit*/)
+      /* This coerce() is the reason we have to set wasm.pointerSize before
+         calling WhWasmUtilInstaller(). If we don't, that code will call
+         into this very early in its init, before wasm.ptr has been set up,
+         resulting in a null deref here. */;
     };
     wasm.dealloc.impl = wasm.exports[keyDealloc];
   }
@@ -995,7 +1017,7 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
           rv[1] = m ? (f._rxInt.test(m[2]) ? +m[2] : m[2]) : true;
         };
       }
-      const rc = Object.create(null), ov = [0,0];
+      const rc = nu(), ov = [0,0];
       let i = 0, k;
       while((k = capi.sqlite3_compileoption_get(i++))){
         f._opt(k,ov);
@@ -1003,7 +1025,7 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
       }
       return f._result = rc;
     }else if(Array.isArray(optName)){
-      const rc = Object.create(null);
+      const rc = nu();
       optName.forEach((v)=>{
         rc[v] = capi.sqlite3_compileoption_used(v);
       });
@@ -1020,18 +1042,18 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
   }/*compileOptionUsed()*/;
 
   /**
-     sqlite3.wasm.pstack (pseudo-stack) holds a special-case intended
-     solely for short-lived, small data. In practice, it's primarily
-     used to allocate output pointers. It mus not be used for any
-     memory which needs to outlive the scope in which it's obtained
-     from pstack.
+     sqlite3.wasm.pstack (pseudo-stack) holds a special-case allocator
+     intended solely for short-lived, small data. In practice, it's
+     primarily used to allocate output pointers. It must not be used
+     for any memory which needs to outlive the scope in which it's
+     obtained from pstack.
 
      The library guarantees only that a minimum of 2kb are available
      in this allocator, and it may provide more (it's a build-time
      value). pstack.quota and pstack.remaining can be used to get the
      total resp. remaining amount of memory.
 
-     It has only a single intended usage:
+     It has only a single intended usage pattern:
 
      ```
      const stackPos = pstack.pointer;
@@ -1048,15 +1070,13 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
      ```
 
      This allocator is much faster than a general-purpose one but is
-     limited to usage patterns like the one shown above.
+     limited to usage patterns like the one shown above (which are
+     pretty common when using sqlite3.capi).
 
-     It operates from a static range of memory which lives outside of
-     space managed by Emscripten's stack-management, so does not
-     collide with Emscripten-provided stack allocation APIs. The
-     memory lives in the WASM heap and can be used with routines such
-     as wasm.poke() and wasm.heap8u().slice().
+     The memory lives in the WASM heap and can be used with routines
+     such as wasm.poke() and wasm.heap8u().slice().
   */
-  wasm.pstack = Object.assign(Object.create(null),{
+  wasm.pstack = nu({
     /**
        Sets the current pstack position to the given pointer. Results
        are undefined if the passed-in value did not come from
@@ -1128,7 +1148,7 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
        argument: if it's 1, it returns a single pointer value. If it's
        more than 1, it returns the same as allocChunks().
 
-       When a returned pointers will refer to a 64-bit value, e.g. a
+       When a returned pointer will refer to a 64-bit value, e.g. a
        double or int64, and that value must be written or fetched,
        e.g. using wasm.poke() or wasm.peek(), it is
        important that the pointer in question be aligned to an 8-byte
@@ -1196,6 +1216,9 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
     }
   })/*wasm.pstack properties*/;
 
+  /**
+     Docs: https://sqlite.org/wasm/doc/trunk/api-c-style.md#sqlite3_randomness
+  */
   capi.sqlite3_randomness = (...args)=>{
     if(1===args.length
        && util.isTypedArray(args[0])
@@ -1230,8 +1253,6 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
     wasm.exports.sqlite3_randomness(...args);
   };
 
-  /** State for sqlite3_wasmfs_opfs_dir(). */
-  let __wasmfsOpfsDir = undefined;
   /**
      If the wasm environment has a WASMFS/OPFS-backed persistent
      storage directory, its path is returned by this function. If it
@@ -1255,7 +1276,7 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
      WASMFS capability requires a custom build.
   */
   capi.sqlite3_wasmfs_opfs_dir = function(){
-    if(undefined !== __wasmfsOpfsDir) return __wasmfsOpfsDir;
+    if(undefined !== this.dir) return this.dir;
     // If we have no OPFS, there is no persistent dir
     const pdir = config.wasmfsOpfsDir;
     if(!pdir
@@ -1263,21 +1284,21 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
        || !globalThis.FileSystemDirectoryHandle
        || !globalThis.FileSystemFileHandle
        || !wasm.exports.sqlite3__wasm_init_wasmfs){
-      return __wasmfsOpfsDir = "";
+      return this.dir = "";
     }
     try{
       if(pdir && 0===wasm.xCallWrapped(
         'sqlite3__wasm_init_wasmfs', 'i32', ['string'], pdir
       )){
-        return __wasmfsOpfsDir = pdir;
+        return this.dir = pdir;
       }else{
-        return __wasmfsOpfsDir = "";
+        return this.dir = "";
       }
     }catch(e){
       // sqlite3__wasm_init_wasmfs() is not available
-      return __wasmfsOpfsDir = "";
+      return this.dir = "";
     }
-  };
+  }.bind(nu());
 
   /**
      Returns true if sqlite3.capi.sqlite3_wasmfs_opfs_dir() is a
@@ -1333,7 +1354,7 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
   */
   capi.sqlite3_js_vfs_list = function(){
     const rc = [];
-    let pVfs = capi.sqlite3_vfs_find(wasm.ptr.coerce(0));
+    let pVfs = capi.sqlite3_vfs_find(wasm.ptr.null);
     while(pVfs){
       const oVfs = new capi.sqlite3_vfs(pVfs);
       rc.push(wasm.cstrToJs(oVfs.$zName));
@@ -1401,7 +1422,7 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
      or not provided, then "main" is assumed.
   */
   capi.sqlite3_js_db_vfs =
-    (dbPointer, dbName=0)=>util.sqlite3__wasm_db_vfs(dbPointer, dbName);
+    (dbPointer, dbName=wasm.ptr.null)=>util.sqlite3__wasm_db_vfs(dbPointer, dbName);
 
   /**
      A thin wrapper around capi.sqlite3_aggregate_context() which
@@ -1597,86 +1618,6 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
     return x===v ? undefined : x;
   }
 
-  if( util.isUIThread() ){
-    /* Features specific to the main window thread... */
-
-    /**
-       Internal helper for sqlite3_js_kvvfs_clear() and friends.
-       Its argument should be one of ('local','session',"").
-    */
-    const __kvvfsInfo = function(which){
-      const rc = Object.create(null);
-      rc.prefix = 'kvvfs-'+which;
-      rc.stores = [];
-      if('session'===which || ""===which) rc.stores.push(globalThis.sessionStorage);
-      if('local'===which || ""===which) rc.stores.push(globalThis.localStorage);
-      return rc;
-    };
-
-    /**
-       Clears all storage used by the kvvfs DB backend, deleting any
-       DB(s) stored there. Its argument must be either 'session',
-       'local', or "". In the first two cases, only sessionStorage
-       resp. localStorage is cleared. If it's an empty string (the
-       default) then both are cleared. Only storage keys which match
-       the pattern used by kvvfs are cleared: any other client-side
-       data are retained.
-
-       This function is only available in the main window thread.
-
-       Returns the number of entries cleared.
-    */
-    capi.sqlite3_js_kvvfs_clear = function(which=""){
-      let rc = 0;
-      const kvinfo = __kvvfsInfo(which);
-      kvinfo.stores.forEach((s)=>{
-        const toRm = [] /* keys to remove */;
-        let i;
-        for( i = 0; i < s.length; ++i ){
-          const k = s.key(i);
-          if(k.startsWith(kvinfo.prefix)) toRm.push(k);
-        }
-        toRm.forEach((kk)=>s.removeItem(kk));
-        rc += toRm.length;
-      });
-      return rc;
-    };
-
-    /**
-       This routine guesses the approximate amount of
-       window.localStorage and/or window.sessionStorage in use by the
-       kvvfs database backend. Its argument must be one of
-       ('session', 'local', ""). In the first two cases, only
-       sessionStorage resp. localStorage is counted. If it's an empty
-       string (the default) then both are counted. Only storage keys
-       which match the pattern used by kvvfs are counted. The returned
-       value is the "length" value of every matching key and value,
-       noting that JavaScript stores each character in 2 bytes.
-
-       Note that the returned size is not authoritative from the
-       perspective of how much data can fit into localStorage and
-       sessionStorage, as the precise algorithms for determining
-       those limits are unspecified and may include per-entry
-       overhead invisible to clients.
-    */
-    capi.sqlite3_js_kvvfs_size = function(which=""){
-      let sz = 0;
-      const kvinfo = __kvvfsInfo(which);
-      kvinfo.stores.forEach((s)=>{
-        let i;
-        for(i = 0; i < s.length; ++i){
-          const k = s.key(i);
-          if(k.startsWith(kvinfo.prefix)){
-            sz += k.length;
-            sz += s.getItem(k).length;
-          }
-        }
-      });
-      return sz * 2 /* because JS uses 2-byte char encoding */;
-    };
-
-  }/* main-window-only bits */
-
   /**
      Wraps all known variants of the C-side variadic
      sqlite3_db_config().
@@ -1711,6 +1652,7 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
       case capi.SQLITE_DBCONFIG_ENABLE_ATTACH_CREATE:
       case capi.SQLITE_DBCONFIG_ENABLE_ATTACH_WRITE:
       case capi.SQLITE_DBCONFIG_ENABLE_COMMENTS:
+      case capi.SQLITE_DBCONFIG_FP_DIGITS:
         if( !this.ip ){
           this.ip = wasm.xWrap('sqlite3__wasm_db_config_ip','int',
                                ['sqlite3*', 'int', 'int', '*']);
@@ -1732,7 +1674,7 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
       default:
         return capi.SQLITE_MISUSE;
     }
-  }.bind(Object.create(null));
+  }.bind(nu());
 
   /**
      Given a (sqlite3_value*), this function attempts to convert it
@@ -1953,55 +1895,115 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
     return (0===v) ? undefined : capi.sqlite3_value_to_js(v, throwIfCannotConvert);
   };
 
-  /**
-     Internal impl of sqlite3_preupdate_new/old_js() and
-     sqlite3changeset_new/old_js().
-  */
-  const __newOldValue = function(pObj, iCol, impl){
-    impl = capi[impl];
-    if(!this.ptr) this.ptr = wasm.allocPtr();
-    else wasm.pokePtr(this.ptr, 0);
-    const rc = impl(pObj, iCol, this.ptr);
-    if(rc) return SQLite3Error.toss(rc,arguments[2]+"() failed with code "+rc);
-    const pv = wasm.peekPtr(this.ptr);
-    return pv ? capi.sqlite3_value_to_js( pv, true ) : undefined;
-  }.bind(Object.create(null));
+  if( true ){ /* changeset/preupdate additions... */
+    /**
+       Internal impl of sqlite3_preupdate_new/old_js() and
+       sqlite3changeset_new/old_js().
+    */
+    const __newOldValue = function(pObj, iCol, impl){
+      impl = capi[impl];
+      if(!this.ptr) this.ptr = wasm.allocPtr();
+      else wasm.pokePtr(this.ptr, 0);
+      const rc = impl(pObj, iCol, this.ptr);
+      if(rc) return SQLite3Error.toss(rc,arguments[2]+"() failed with code "+rc);
+      const pv = wasm.peekPtr(this.ptr);
+      return pv ? capi.sqlite3_value_to_js( pv, true ) : undefined;
+    }.bind(nu());
+
+    /**
+       A wrapper around sqlite3_preupdate_new() which fetches the
+       sqlite3_value at the given index and returns the result of
+       passing it to sqlite3_value_to_js(). Throws on error.
+    */
+    capi.sqlite3_preupdate_new_js =
+      (pDb, iCol)=>__newOldValue(pDb, iCol, 'sqlite3_preupdate_new');
+
+    /**
+       The sqlite3_preupdate_old() counterpart of
+       sqlite3_preupdate_new_js(), with an identical interface.
+    */
+    capi.sqlite3_preupdate_old_js =
+      (pDb, iCol)=>__newOldValue(pDb, iCol, 'sqlite3_preupdate_old');
+
+    /**
+       A wrapper around sqlite3changeset_new() which fetches the
+       sqlite3_value at the given index and returns the result of
+       passing it to sqlite3_value_to_js(). Throws on error.
+
+       If sqlite3changeset_new() succeeds but has no value to report,
+       this function returns the undefined value, noting that
+       undefined is not a valid conversion from an `sqlite3_value`, so
+       is unambiguous.
+    */
+    capi.sqlite3changeset_new_js =
+      (pChangesetIter, iCol) => __newOldValue(pChangesetIter, iCol,
+                                              'sqlite3changeset_new');
+
+    /**
+       The sqlite3changeset_old() counterpart of
+       sqlite3changeset_new_js(), with an identical interface.
+    */
+    capi.sqlite3changeset_old_js =
+      (pChangesetIter, iCol)=>__newOldValue(pChangesetIter, iCol,
+                                            'sqlite3changeset_old');
+  }/*changeset/preupdate additions*/
 
   /**
-     A wrapper around sqlite3_preupdate_new() which fetches the
-     sqlite3_value at the given index and returns the result of
-     passing it to sqlite3_value_to_js(). Throws on error.
-  */
-  capi.sqlite3_preupdate_new_js =
-    (pDb, iCol)=>__newOldValue(pDb, iCol, 'sqlite3_preupdate_new');
+     sqlite3_js_retry_busy(maxTimes,callback[,beforeRetry])
 
-  /**
-     The sqlite3_preupdate_old() counterpart of
-     sqlite3_preupdate_new_js(), with an identical interface.
-  */
-  capi.sqlite3_preupdate_old_js =
-    (pDb, iCol)=>__newOldValue(pDb, iCol, 'sqlite3_preupdate_old');
+     Calls the given _synchronous_ callback function. If that function
+     returns sqlite3.capi.SQLITE_BUSY _or_ throws an SQLite3Error
+     with a resultCode property of that value then it will suppress
+     that error and try again, up to the given maximum number of
+     times. If the callback returns any other value than that,
+     it is returned. If the maximum number of retries has been
+     reached, an SQLite3Error with a resultCode value of
+     sqlite3.capi.SQLITE_BUSY is thrown. If the callback throws any
+     exception other than the aforementioned BUSY exception, it is
+     propagated. If it throws a BUSY exception on its final attempt,
+     that is propagated as well.
 
-  /**
-     A wrapper around sqlite3changeset_new() which fetches the
-     sqlite3_value at the given index and returns the result of
-     passing it to sqlite3_value_to_js(). Throws on error.
+     If the beforeRetry argument is given, it must be a _synchronous_
+     function.  It is called immediately before each retry of the
+     callback (not for the initial call), passed the attempt number
+     (so it starts with 2, not 1). If it throws, the exception is
+     handled as described above. Its result value is ignored.
 
-     If sqlite3changeset_new() succeeds but has no value to report,
-     this function returns the undefined value, noting that undefined
-     is a valid conversion from an `sqlite3_value`, so is unambiguous.
-  */
-  capi.sqlite3changeset_new_js =
-    (pChangesetIter, iCol) => __newOldValue(pChangesetIter, iCol,
-                                            'sqlite3changeset_new');
+     To effectively retry "forever", pass a huge maxTimes value such
+     as Number.MAX_SAFE_INTEGER, with the caveat that there is no
+     recovery from that unless the beforeRetry() can figure out when
+     to throw.
 
-  /**
-     The sqlite3changeset_old() counterpart of
-     sqlite3changeset_new_js(), with an identical interface.
+     Added in 3.53.0.
+
+     TODO?: an async variant of this.
   */
-  capi.sqlite3changeset_old_js =
-    (pChangesetIter, iCol)=>__newOldValue(pChangesetIter, iCol,
-                                          'sqlite3changeset_old');
+  capi.sqlite3_js_retry_busy = function(maxTimes, callback, beforeRetry){
+    for(let n = 1; n <= maxTimes; ++n){
+      try{
+        if( beforeRetry && n>1 ) beforeRetry(n);
+        const rc = callback();
+        if( capi.SQLITE_BUSY===rc ){
+          if( n===maxTimes ){
+            throw new SQLite3Error(rc, [
+              "sqlite3_js_retry_busy() max retry attempts (",
+              maxTimes,
+              ") reached."
+            ].join(''));
+          }
+          continue;
+        }
+        return rc;
+      }catch(e){
+        if( n<maxTimes
+            && (e instanceof SQLite3Error)
+            && e.resultCode===capi.SQLITE_BUSY ){
+          continue;
+        }
+        throw e;
+      }
+    }
+  };
 
   /* The remainder of the API will be set up in later steps. */
   const sqlite3 = {
@@ -2013,15 +2015,15 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
     config,
     /**
        Holds the version info of the sqlite3 source tree from which
-       the generated sqlite3-api.js gets built. Note that its version
-       may well differ from that reported by sqlite3_libversion(), but
-       that should be considered a source file mismatch, as the JS and
-       WASM files are intended to be built and distributed together.
+       the generated sqlite3-api.js gets built. Its version may well
+       differ from that reported by sqlite3_libversion(), but that
+       should be considered a source file mismatch, as the JS and WASM
+       files are intended to be built and distributed together.
 
        This object is initially a placeholder which gets replaced by a
        build-generated object.
     */
-    version: Object.create(null),
+    version: nu(),
 
     /**
        The library reserves the 'client' property for client-side use
@@ -2041,9 +2043,7 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
        async init will be fatal to the init as a whole, but init
        routines are themselves welcome to install dummy catch()
        handlers which are not fatal if their failure should be
-       considered non-fatal. If called more than once, the second and
-       subsequent calls are no-ops which return a pre-resolved
-       Promise.
+       considered non-fatal.
 
        Ideally this function is called as part of the Promise chain
        which handles the loading and bootstrapping of the API.  If not
@@ -2060,19 +2060,16 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
     */
     asyncPostInit: async function ff(){
       if(ff.isReady instanceof Promise) return ff.isReady;
-      let lia = sqlite3ApiBootstrap.initializersAsync;
-      delete sqlite3ApiBootstrap.initializersAsync;
+      let lia = this.initializersAsync;
+      delete this.initializersAsync;
       const postInit = async ()=>{
         if(!sqlite3.__isUnderTest){
           /* Delete references to internal-only APIs which are used by
              some initializers. Retain them when running in test mode
              so that we can add tests for them. */
           delete sqlite3.util;
-          /* It's conceivable that we might want to expose
-             StructBinder to client-side code, but it's only useful if
-             clients build their own sqlite3.wasm which contains their
-             own C struct types. */
           delete sqlite3.StructBinder;
+          delete sqlite3.opfs;
         }
         return sqlite3;
       };
@@ -2090,21 +2087,26 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
       let p = Promise.resolve(sqlite3);
       while(lia.length) p = p.then(lia.shift());
       return ff.isReady = p.catch(catcher);
-    },
+    }.bind(sqlite3ApiBootstrap),
     /**
-       scriptInfo ideally gets injected into this object by the
-       infrastructure which assembles the JS/WASM module. It contains
-       state which must be collected before sqlite3ApiBootstrap() can
-       be declared. It is not necessarily available to any
-       sqlite3ApiBootstrap.initializers but "should" be in place (if
-       it's added at all) by the time that
-       sqlite3ApiBootstrap.initializersAsync is processed.
+       scriptInfo holds information about the currenty-loading script
+       so that we can locate the WASM file if it's somewhere other
+       than the build-time-defined directory. It ideally gets injected
+       into this object by the infrastructure which assembles the
+       JS/WASM module. It contains state which must be collected
+       before sqlite3ApiBootstrap() can be declared. It is not
+       necessarily available to any sqlite3ApiBootstrap.initializers
+       but "should" be in place (if it's added at all) by the time
+       that sqlite3ApiBootstrap.initializersAsync is processed.
 
        This state is not part of the public API, only intended for use
        with the sqlite3 API bootstrapping and wasm-loading process.
     */
     scriptInfo: undefined
   };
+  if( 'undefined'!==typeof sqlite3IsUnderTest/* from post-js-header.js */ ){
+    sqlite3.__isUnderTest = !!sqlite3IsUnderTest;
+  }
   try{
     sqlite3ApiBootstrap.initializers.forEach((f)=>{
       f(sqlite3);
@@ -2117,16 +2119,34 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
   }
   delete sqlite3ApiBootstrap.initializers;
   sqlite3ApiBootstrap.sqlite3 = sqlite3;
-  delete globalThis.sqlite3ApiBootstrap;
-  delete globalThis.sqlite3ApiConfig;
-  sqlite3InitScriptInfo.debugModule(
-    "sqlite3ApiBootstrap() complete", sqlite3
-  );
-  sqlite3.scriptInfo /* used by some async init code */ =
-    sqlite3InitScriptInfo /* from post-js-header.js */;
-  if( (sqlite3.__isUnderTest = sqlite3IsUnderTest /* from post-js-header.js */) ){
-    sqlite3.config.emscripten = EmscriptenModule;
-    const iw = sqlite3InitScriptInfo.instantiateWasm;
+  if( 'undefined'!==typeof sqlite3InitScriptInfo/* from post-js-header.js */ ){
+    sqlite3InitScriptInfo.debugModule(
+      "sqlite3ApiBootstrap() complete", sqlite3
+    );
+    sqlite3.scriptInfo
+    /* Used by some async init code. As of 2025-11-15 this is still
+       in use by the OPFS VFS for locating its worker. In non-Emscripten
+       builds, this would need to be injected in somewhere to get
+       that VFS loading. */ = sqlite3InitScriptInfo;
+  }
+  if( sqlite3.__isUnderTest ){
+    if( 'undefined'!==typeof EmscriptenModule ){
+      sqlite3.config.emscripten = EmscriptenModule;
+    }
+    /*
+      The problem with exposing these pieces (in non-testing runs) via
+      sqlite3.wasm is that it exposes non-SQLite pieces to the
+      clients, who may come to expect it to remain. _We_ only have
+      these data because we've overridden Emscripten's wasm file
+      loader, and if we lose that capability for some reason then
+      we'll lose access to this metadata.
+
+      These data are interesting for exploring how the wasm/JS pieces
+      connect, e.g. for exploring exactly what Emscripten imports into
+      WASM from its JS glue, but it's not SQLite-related and is not
+      required for the library to work.
+    */
+    const iw = sqlite3.scriptInfo?.instantiateWasm;
     if( iw ){
       /* Metadata injected by the custom Module.instantiateWasm()
          in pre-js.c-pp.js. */
@@ -2135,10 +2155,21 @@ globalThis.sqlite3ApiBootstrap = async function sqlite3ApiBootstrap(
       sqlite3.wasm.imports = iw.imports;
     }
   }
+
+  /**
+     Eliminate any confusion about whether these config objects may
+     be used after library initialization by eliminating the outward-facing
+     objects...
+  */
+  delete globalThis.sqlite3ApiConfig;
+  delete globalThis.sqlite3ApiBootstrap;
+  delete sqlite3ApiBootstrap.defaultConfig;
   return sqlite3.asyncPostInit().then((s)=>{
-    sqlite3InitScriptInfo.debugModule(
-      "sqlite3.asyncPostInit() complete", sqlite3
-    );
+    if( 'undefined'!==typeof sqlite3InitScriptInfo/* from post-js-header.js */ ){
+      sqlite3InitScriptInfo.debugModule(
+        "sqlite3.asyncPostInit() complete", s
+      );
+    }
     delete s.asyncPostInit;
     delete s.scriptInfo;
     delete s.emscripten;

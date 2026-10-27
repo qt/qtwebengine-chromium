@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import {dispatchKeyDownEvent, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import * as Lit from '../../ui/lit/lit.js';
 
@@ -18,7 +20,7 @@ describe('TreeOutline', () => {
       tree.appendChild(parent);
       parent.select();
 
-      dispatchKeyDownEvent(tree.contentElement, {bubbles: true, key: 'Enter'});
+      dispatchKeyDownEvent(parent.listItemNode, {bubbles: true, key: 'Enter'});
       assert.isTrue(parent.expanded, 'Enter key was supposed to expand the parent node');
     });
 
@@ -32,7 +34,7 @@ describe('TreeOutline', () => {
       parent.select();
       parent.expand();
 
-      dispatchKeyDownEvent(tree.contentElement, {bubbles: true, key: 'Enter'});
+      dispatchKeyDownEvent(parent.listItemNode, {bubbles: true, key: 'Enter'});
       assert.isFalse(parent.expanded, 'Enter key was supposed to collapse the parent node');
     });
   });

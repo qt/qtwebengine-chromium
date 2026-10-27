@@ -7,9 +7,7 @@
 #include <utility>
 
 #include "base/metrics/histogram_macros.h"
-#include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
-#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "ui/display/mac/vsync_provider_mac.h"
 
 namespace viz {
@@ -19,20 +17,13 @@ ExternalBeginFrameSourceMojoMac::ExternalBeginFrameSourceMojoMac(
         controller_receiver,
     mojo::PendingRemote<mojom::ExternalBeginFrameControllerClient>
         controller_remote_client,
-    base::RepeatingClosure update_vsync_displays_cb)
-    : receiver_(std::in_place_type<Receiver>, this),
+    base::RepeatingCallback<void(int64_t, bool)> update_vsync_displays_cb)
+    : receiver_(this),
       remote_client_(std::move(controller_remote_client)),
       update_vsync_displays_cb_(std::move(update_vsync_displays_cb)) {
   CHECK(remote_client_);
 
-  if (mojo::IsDirectReceiverSupported() &&
-      features::IsVizDirectCompositorThreadIpcFrameSinkManagerEnabled()) {
-    receiver_.emplace<DirectReceiver>(mojo::DirectReceiverKey{}, this);
-  }
-
-  std::visit(
-      [&](auto& receiver) { receiver.Bind(std::move(controller_receiver)); },
-      receiver_);
+  receiver_.Bind(std::move(controller_receiver));
 
   ui::NeedsBeginFrameCB callback = base::BindRepeating(
       &ExternalBeginFrameSourceMojoMac::NeedsBeginFrameWithId,
@@ -63,11 +54,22 @@ void ExternalBeginFrameSourceMojoMac::IssueExternalVSync(
 
 void ExternalBeginFrameSourceMojoMac::SetSupportedDisplayLinkId(
     int64_t display_id,
-    bool is_supported) {
-  ui::VSyncProviderMac::GetInstance()->SetSupportedDisplayLinkId(display_id,
-                                                                 is_supported);
-  // Update DisplayLinkMac in every ExternalBeginFrameSourceMac if needed.
-  update_vsync_displays_cb_.Run();
+    bool is_browser_vsync_supported) {
+  if (ui::VSyncProviderMac::GetInstance()->IsDisplayLinkInBrowserValid(
+          display_id) == is_browser_vsync_supported) {
+    return;
+  }
+
+  // Update VSyncProvider on whether the CADisplayLink created in the Browser
+  // process is still valid or not. This allows ExternalBeginFrameSourceMac to
+  // recreate DisplayLinkMac accordingly.
+  ui::VSyncProviderMac::GetInstance()->SetSupportedDisplayLinkId(
+      display_id, is_browser_vsync_supported);
+
+  // When ExternalBeginFrameSourceMac is using DisplayLink in Browser, destroy
+  // and recreate a DisplayLinkMac in every ExternalBeginFrameSourceMac if
+  // needed.
+  update_vsync_displays_cb_.Run(display_id, is_browser_vsync_supported);
 }
 
 void ExternalBeginFrameSourceMojoMac::IssueExternalBeginFrame(

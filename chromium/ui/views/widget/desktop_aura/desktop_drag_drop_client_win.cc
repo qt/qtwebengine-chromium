@@ -81,7 +81,6 @@ ui::mojom::DragOperation DesktopDragDropClientWin::StartDragAndDrop(
   }
   gfx::Point touch_screen_point;
   if (source == ui::mojom::DragEventSource::kTouch) {
-    source_window->GetHost()->ConvertDIPToPixels(&touch_screen_point);
     display::Screen* screen = display::Screen::Get();
     CHECK(screen);
     aura::Window* window =

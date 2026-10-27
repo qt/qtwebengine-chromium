@@ -9,6 +9,8 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 /*****************************************************************
  * TensorScanSycl.h
@@ -34,8 +36,8 @@
  *1, no. 1 (2008): 1-17.
  *****************************************************************/
 
-#ifndef UNSUPPORTED_EIGEN_CXX11_SRC_TENSOR_TENSOR_SYCL_SYCL_HPP
-#define UNSUPPORTED_EIGEN_CXX11_SRC_TENSOR_TENSOR_SYCL_SYCL_HPP
+#ifndef UNSUPPORTED_EIGEN_SRC_TENSOR_TENSOR_SYCL_SYCL_HPP
+#define UNSUPPORTED_EIGEN_SRC_TENSOR_TENSOR_SYCL_SYCL_HPP
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -503,4 +505,4 @@ struct ScanLauncher<Self, Reducer, Eigen::SyclDevice, vectorize> {
 }  // namespace internal
 }  // namespace Eigen
 
-#endif  // UNSUPPORTED_EIGEN_CXX11_SRC_TENSOR_TENSOR_SYCL_SYCL_HPP
+#endif  // UNSUPPORTED_EIGEN_SRC_TENSOR_TENSOR_SYCL_SYCL_HPP

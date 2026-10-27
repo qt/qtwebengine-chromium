@@ -66,9 +66,6 @@ uint64_t vvl::Queue::PreSubmit(std::vector<vvl::QueueSubmission>&& submissions) 
     if (!submissions.empty()) {
         submissions.back().is_last_submission = true;
     }
-    for (auto& item : sub_states_) {
-        item.second->PreSubmit(submissions);
-    }
     uint64_t last_batch_seq = 0;
     for (QueueSubmission& submission : submissions) {
         for (CommandBufferSubmission& cb_submission : submission.cb_submissions) {
@@ -88,7 +85,7 @@ uint64_t vvl::Queue::PreSubmit(std::vector<vvl::QueueSubmission>&& submissions) 
         submission.BeginUse();
         for (SemaphoreInfo& wait : submission.wait_semaphores) {
             wait.semaphore->EnqueueWait(SubmissionReference(this, submission.seq), wait.payload);
-            timeline_wait_count_ += (wait.semaphore->type == VK_SEMAPHORE_TYPE_TIMELINE) ? 1 : 0;
+            timeline_wait_count_.fetch_add((wait.semaphore->type == VK_SEMAPHORE_TYPE_TIMELINE) ? 1 : 0);
         }
 
         for (SemaphoreInfo& signal : submission.signal_semaphores) {
@@ -100,12 +97,16 @@ uint64_t vvl::Queue::PreSubmit(std::vector<vvl::QueueSubmission>&& submissions) 
                 submission.has_external_fence = true;
             }
         }
-        {
-            auto guard = Lock();
-            submissions_.emplace_back(std::move(submission));
-            if (!thread_) {
-                thread_ = std::make_unique<std::thread>(&Queue::ThreadFunc, this);
-            }
+    }
+    for (auto& item : sub_states_) {
+        item.second->PreSubmit(submissions);
+    }
+    {
+        auto guard = Lock();
+        submissions_.insert(submissions_.end(), std::make_move_iterator(submissions.begin()),
+                            std::make_move_iterator(submissions.end()));
+        if (!thread_) {
+            thread_ = std::make_unique<std::thread>(&Queue::ThreadFunc, this);
         }
     }
     return last_batch_seq;
@@ -172,7 +173,7 @@ std::optional<vvl::SemaphoreInfo> vvl::Queue::FindTimelineWaitWithoutResolvingSi
     small_vector<SemaphoreInfo, 8> timeline_waits;
     {
         auto guard = Lock();
-        for (auto it = submissions_.rbegin(); it != submissions_.rend() && processed_waits < timeline_wait_count_; ++it) {
+        for (auto it = submissions_.rbegin(); it != submissions_.rend() && processed_waits < timeline_wait_count_.load(); ++it) {
             const vvl::QueueSubmission& submission = *it;
             if (submission.seq <= until_seq) {
                 for (const auto& wait_info : submission.wait_semaphores) {
@@ -298,7 +299,7 @@ void vvl::Queue::Retire(QueueSubmission& submission) {
     submission.EndUse();
     for (auto& wait : submission.wait_semaphores) {
         wait.semaphore->RetireWait(this, wait.payload, submission.loc.Get(), true);
-        timeline_wait_count_ -= (wait.semaphore->type == VK_SEMAPHORE_TYPE_TIMELINE) ? 1 : 0;
+        timeline_wait_count_.fetch_sub((wait.semaphore->type == VK_SEMAPHORE_TYPE_TIMELINE) ? 1 : 0);
     }
 
     // When device is lost skip updating substates which might access destroyed/garbage objects.

@@ -7,6 +7,7 @@
 
 #include "chrome/browser/ui/webui/webui_toolbar/utils/split_tabs_utils.h"
 #include "ui/base/window_open_disposition.h"
+#include "url/gurl.h"
 
 namespace browser_controls_api {
 
@@ -25,10 +26,9 @@ class BrowserControlsAdapter {
   virtual void BackButtonHovered() = 0;
   virtual void CreateNewSplitTab() = 0;
   virtual void NavigateHome(WindowOpenDisposition disposition) = 0;
+  virtual void Navigate(const GURL& url) = 0;
   // These should probably be pulled to their own adapter.
   virtual webui_toolbar::TabSplitStatus ComputeSplitTabStatus() = 0;
-  virtual bool IsButtonPinned(
-      toolbar_ui_api::mojom::ToolbarButtonType type) = 0;
 };
 
 }  // namespace browser_controls_api

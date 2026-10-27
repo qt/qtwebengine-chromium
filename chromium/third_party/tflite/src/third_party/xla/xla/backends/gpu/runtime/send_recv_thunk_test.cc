@@ -26,6 +26,7 @@ limitations under the License.
 #include "xla/backends/gpu/runtime/command_buffer_cmd_emitter.h"
 #include "xla/backends/gpu/runtime/command_buffer_thunk.h"
 #include "xla/backends/gpu/runtime/command_executor.h"
+#include "xla/backends/gpu/runtime/execution_stream_id.h"
 #include "xla/backends/gpu/runtime/recv_thunk.h"
 #include "xla/backends/gpu/runtime/send_thunk.h"
 #include "xla/backends/gpu/runtime/thunk.h"
@@ -46,6 +47,7 @@ limitations under the License.
 #include "xla/stream_executor/platform.h"
 #include "xla/stream_executor/stream.h"
 #include "xla/stream_executor/stream_executor.h"
+#include "xla/stream_executor/sycl/sycl_platform_id.h"
 #include "xla/tests/hlo_test_base_legacy.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/tsl/platform/test.h"
@@ -133,8 +135,7 @@ ENTRY computation {
   send_sequence.push_back(std::move(send_thunk));
 
   auto async_start = std::make_unique<AsyncStartThunk>(
-      Thunk::ThunkInfo{}, AsyncStartThunk::AsyncKind::kCommunication,
-      std::move(send_sequence));
+      Thunk::ThunkInfo{}, CommunicationStreamId(0), std::move(send_sequence));
 
   auto async_done = std::make_unique<AsyncDoneThunk>(
       Thunk::ThunkInfo{}, async_start->async_execution());
@@ -228,8 +229,7 @@ ENTRY computation {
   recv_sequence.push_back(std::move(recv_thunk));
 
   auto async_start = std::make_unique<AsyncStartThunk>(
-      Thunk::ThunkInfo{}, AsyncStartThunk::AsyncKind::kCommunication,
-      std::move(recv_sequence));
+      Thunk::ThunkInfo{}, CommunicationStreamId(0), std::move(recv_sequence));
 
   auto async_done = std::make_unique<AsyncDoneThunk>(
       Thunk::ThunkInfo{}, async_start->async_execution());
@@ -280,6 +280,10 @@ ENTRY computation {
                           ParseAndReturnVerifiedModule(hlo_text, config));
 
   se::StreamExecutor* executor = backend().default_stream_executor();
+  // TODO(Intel-tf): To remove this check once command buffer is implemented.
+  if (executor->GetPlatform()->id() == se::sycl::kSyclPlatformId) {
+    GTEST_SKIP() << "Command buffer is not supported on SYCL platform yet.";
+  }
 
   TF_ASSERT_OK_AND_ASSIGN(
       std::unique_ptr<HloModule> compiled_module,
@@ -292,7 +296,7 @@ ENTRY computation {
                                        /*device_allocator=*/nullptr));
   // Downcast to GPU executable
   xla::gpu::GpuExecutable* gpu_executable =
-      tensorflow::down_cast<xla::gpu::GpuExecutable*>(executable.get());
+      absl::down_cast<GpuExecutable*>(executable.get());
   ASSERT_NE(gpu_executable, nullptr);
 
   // Get the thunk sequence and check its size and type
@@ -315,7 +319,7 @@ ENTRY computation {
     kinds.push_back(thunk->kind());
   }
   // Verify that the inner Thunks match the expected sequence from the HLO
-  EXPECT_THAT(kinds, UnorderedElementsAre(Kind::kReplicaId, Kind::kKernel,
+  EXPECT_THAT(kinds, UnorderedElementsAre(Kind::kReplicaId, Kind::kCustomKernel,
                                           Kind::kAsyncStart, Kind::kAsyncDone,
                                           Kind::kAsyncStart, Kind::kAsyncDone));
 }

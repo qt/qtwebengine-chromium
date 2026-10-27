@@ -78,7 +78,6 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_content_settings_client.h"
-#include "third_party/blink/public/web/web_link_preview_triggerer.h"
 #include "third_party/blink/public/web/web_print_page_description.h"
 #include "third_party/blink/renderer/bindings/core/v8/capture_source_location.h"
 #include "third_party/blink/renderer/bindings/core/v8/frozen_array.h"
@@ -291,7 +290,6 @@
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/pagination_utils.h"
-#include "third_party/blink/renderer/core/layout/text_autosizer.h"
 #include "third_party/blink/renderer/core/lcp_critical_path_predictor/lcp_critical_path_predictor.h"
 #include "third_party/blink/renderer/core/loader/anchor_element_interaction_tracker.h"
 #include "third_party/blink/renderer/core/loader/cookie_jar.h"
@@ -357,7 +355,9 @@
 #include "third_party/blink/renderer/core/svg/svg_use_element.h"
 #include "third_party/blink/renderer/core/svg_element_factory.h"
 #include "third_party/blink/renderer/core/svg_names.h"
+#include "third_party/blink/renderer/core/timing/dom_window_performance.h"
 #include "third_party/blink/renderer/core/timing/render_blocking_metrics_reporter.h"
+#include "third_party/blink/renderer/core/timing/window_performance.h"
 #include "third_party/blink/renderer/core/trustedtypes/trusted_html.h"
 #include "third_party/blink/renderer/core/view_transition/page_reveal_event.h"
 #include "third_party/blink/renderer/core/view_transition/view_transition_supplement.h"
@@ -539,13 +539,6 @@ constexpr double kUkmSamplingRate = 0.001;
 }  // namespace
 
 static const unsigned kCMaxWriteRecursionDepth = 21;
-
-// This amount of time must have elapsed before we will even consider scheduling
-// a layout without a delay.
-// FIXME: For faster machines this value can really be lowered to 200.  250 is
-// adequate, but a little high for dual G5s. :)
-static const base::TimeDelta kCLayoutScheduleThreshold =
-    base::Milliseconds(250);
 
 namespace {
 
@@ -1893,7 +1886,8 @@ void Document::setXMLStandalone(bool standalone,
   xml_standalone_ = standalone ? kStandalone : kNotStandalone;
 }
 
-void Document::SetContent(const String& content) {
+void Document::SetContent(const String& content,
+                          StreamingSanitizer* sanitizer) {
   // Only set the content of the document if it is ready to be set. This method
   // could be called at any time.
   if (ScriptableDocumentParser* parser = GetScriptableDocumentParser()) {
@@ -1903,9 +1897,13 @@ void Document::SetContent(const String& content) {
   if (ignore_opens_during_unload_count_)
     return;
 
+  sanitizer_ = sanitizer;
+
   open();
   parser_->Append(content);
   close();
+
+  sanitizer_ = nullptr;
 }
 
 using AllowState = blink::Document::DeclarativeShadowRootAllowState;
@@ -2428,7 +2426,8 @@ void Document::ScheduleLayoutTreeUpdate() {
   DCHECK(NeedsLayoutTreeUpdate());
 
   if (!View()->CanThrottleRendering() && ShouldScheduleLayout()) {
-    GetPage()->Animator().ScheduleVisualUpdate(GetFrame());
+    GetPage()->Animator().ScheduleVisualUpdate(
+        GetFrame(), cc::BeginMainFrameReason::kStyleInvalidation);
   }
 
   // FrameSelection caches visual selection information, which must be
@@ -2481,7 +2480,7 @@ static void AssertLayoutTreeUpdatedForPseudoElements(const Element& element) {
                                  kPseudoIdAfter,
                                  kPseudoIdExpandIcon,
                                  kPseudoIdPickerIcon,
-                                 kPseudoIdInterestHint,
+                                 kPseudoIdInterestButton,
                                  kPseudoIdMarker,
                                  kPseudoIdBackdrop,
                                  kPseudoIdScrollMarkerGroupBefore,
@@ -3240,11 +3239,6 @@ void Document::Initialize() {
   AttachContext context;
   AttachLayoutTree(context);
 
-  // The TextAutosizer can't update layout view info while the Document is
-  // detached, so update now in case anything changed.
-  if (TextAutosizer* autosizer = GetTextAutosizer())
-    autosizer->UpdatePageInfo();
-
   GetFrame()->DidAttachDocument();
   lifecycle_.AdvanceTo(DocumentLifecycle::kStyleClean);
 
@@ -3394,6 +3388,18 @@ void Document::Shutdown() {
   ViewTransitionUtils::ForEachTransition(
       *this, [](ViewTransition& transition) { transition.SkipTransition(); });
 
+  // Preserve the global custom element registry on the TreeScope before the
+  // window reference is cleared. This ensures that
+  // Document.customElementRegistry continues to return the correct registry
+  // even after the document's browsing context is destroyed (e.g., when an
+  // iframe is removed from the DOM).
+  if (RuntimeEnabledFeatures::ScopedCustomElementRegistryEnabled() &&
+      dom_window_) {
+    if (CustomElementRegistry* registry = dom_window_->MaybeCustomElements()) {
+      SetCustomElementRegistry(registry);
+    }
+  }
+
   // This is required, as our LocalFrame might delete itself as soon as it
   // detaches us. However, this violates Node::detachLayoutTree() semantics, as
   // it's never possible to re-attach. Eventually Document::detachLayoutTree()
@@ -3407,7 +3413,8 @@ void Document::AddedEventListener(
     const AtomicString& event_type,
     RegisteredEventListener& registered_listener) {
   ContainerNode::AddedEventListener(event_type, registered_listener);
-  if (event_type == event_type_names::kAutofill) {
+  if (event_type == event_type_names::kAutofill &&
+      RuntimeEnabledFeatures::AutofillEventEnabled(GetExecutionContext())) {
     UseCounter::Count(*this, WebFeature::kAutofillEvent);
   }
 }
@@ -3577,8 +3584,12 @@ CanvasFontCache* Document::GetCanvasFontCache() {
 
 DocumentParser* Document::CreateParser() {
   if (auto* html_document = DynamicTo<HTMLDocument>(this)) {
-    return MakeGarbageCollected<HTMLDocumentParser>(*html_document,
-                                                    parser_sync_policy_);
+    CustomElementRegistry* registry = nullptr;
+    if (RuntimeEnabledFeatures::ScopedCustomElementRegistryEnabled()) {
+      registry = CustomElementRegistry::DefaultRegistry(*this);
+    }
+    return MakeGarbageCollected<HTMLDocumentParser>(
+        *html_document, parser_sync_policy_, registry, sanitizer_.Get());
   }
 
   data_->using_rust_xml_parser_ = false;
@@ -3675,6 +3686,7 @@ void Document::SetPrinting(PrintingState state) {
     // We force the color-scheme to light for printing.
     ColorSchemeChanged();
     // StyleResolver::InitialStyleForElement uses different zoom for printing.
+    GetStyleEngine().InvalidateInitialStyle();
     GetStyleEngine().MarkViewportStyleDirty();
     // Separate UA sheet for printing.
     GetStyleEngine().MarkAllElementsForStyleRecalc(
@@ -4106,6 +4118,15 @@ void Document::WillInsertBody() {
     render_blocking_resource_manager_->WillInsertDocumentBody();
   }
 
+  // Clear the last natural size of the owner `<iframe>` if this document isn't
+  // opted-in to responsive iframes.
+  if (RuntimeEnabledFeatures::ResponsiveIframesEnabled() && GetFrame() &&
+      GetFrame()->Tree().Parent() && !responsive_embedded_sizing_) {
+    if (FrameOwner* owner = GetFrame()->Owner()) {
+      owner->ClearLastNaturalSizingInfo();
+    }
+  }
+
   // If we get to the <body> try to resume commits since we should have content
   // to paint now.
   // TODO(esprehn): Is this really optimal? We might start producing frames
@@ -4226,30 +4247,6 @@ void Document::close() {
   CheckCompleted();
 }
 
-namespace {
-bool NeedsStyleAndLayoutUpdateAtClose(Document& document) {
-  if (!document.HaveRenderBlockingStylesheetsLoaded()) {
-    return false;
-  }
-  if (document.GetFrame()->IsMainFrame()) {
-    return true;
-  }
-  if (!document.Loader()->HasLoadedNonInitialEmptyDocument()) {
-    return false;
-  }
-  if (!RuntimeEnabledFeatures::
-          AvoidForcedLayoutOnInvisibleDocumentCloseEnabled()) {
-    return true;
-  }
-
-  // We don't need to update the style and layout if the subframe is not
-  // visible. This style/layout update is needed mainly for browser features
-  // (like autofill) that rely on a stable layout/style state when a document
-  // finished parsing, however that is irrelevant for invisible subframes.
-  return document.GetFrame()->View()->IsVisible();
-}
-}  // namespace
-
 void Document::DispatchLoadEventAndFinalize() {
   DCHECK(!InStyleRecalc());
 
@@ -4283,23 +4280,17 @@ void Document::DispatchLoadEventAndFinalize() {
     return;
   }
 
-  if (GetFrame()->Loader().HasProvisionalNavigation() &&
-      start_time_.Elapsed() < kCLayoutScheduleThreshold) {
-    // Just bail out. Before or during the onload we were shifted to another
-    // page.  The old i-Bench suite does this. When this happens don't bother
-    // painting or laying out.
-    load_event_progress_ = kLoadEventCompleted;
-    return;
-  }
-
   // The initial empty document might be loaded synchronously.
   // When this occurs and we also synchronously update the style and layout
   // here, which is needed for things like autofill, it creates a chain
   // reaction where inserting iframes without a src to a document causes
   // expensive layout thrashing of the embedding document. Since this is a
   // common scenario, special-casing it here, and avoiding that layout if
-  // this is an initial-empty document in a subframe.
-  if (NeedsStyleAndLayoutUpdateAtClose(*this)) {
+  // this is a subframe that is either initial or hidden.
+  if (HaveRenderBlockingStylesheetsLoaded() &&
+      (GetFrame()->IsMainFrame() ||
+       (Loader()->HasLoadedNonInitialEmptyDocument() &&
+        GetFrame()->View()->IsVisible()))) {
     UpdateStyleAndLayout(DocumentUpdateReason::kUnknown);
   }
 
@@ -4631,6 +4622,12 @@ void Document::DispatchUnloadEvents(UnloadEventTimingInfo* unload_timing_info) {
   // |dispatched_pagehide_persisted| above, if we enable same-site
   // ProactivelySwapBrowsingInstance but not BackForwardCache.
   if (window && !GetPage()->DispatchedPagehideAndStillHidden()) {
+    // The navigation is past the point of being canceled (beforeunload ran
+    // without canceling). Promote any pending navigationDestinationURL
+    // stashed during the navigate event so that JS pagehide handlers can
+    // observe it via performance.getSpeculations().
+    DOMWindowPerformance::performance(*window)
+        ->PromoteNavigationDestinationURL();
     window->DispatchEvent(
         *PageTransitionEvent::Create(event_type_names::kPagehide, false), this);
   }
@@ -5229,6 +5226,19 @@ void Document::ExecuteScriptsWaitingForResources() {
 
 void Document::UnblockScriptExecutionForPrerenderActivation() {
   CHECK(!IsScriptBlockedUntilPrerenderActivation());
+  ResumeBlockedScriptExecution();
+}
+
+void Document::UnblockScriptExecutionForPrerenderUpgrade() {
+  // The Page has already cleared should_pause_javascript_execution, so
+  // IsScriptBlockedUntilPrerenderActivation() returns false.
+  CHECK(!IsScriptBlockedUntilPrerenderActivation());
+  // The page should still be in prerendering state after upgrade.
+  CHECK(is_prerendering_);
+  ResumeBlockedScriptExecution();
+}
+
+void Document::ResumeBlockedScriptExecution() {
   if (ScriptableDocumentParser* parser = GetScriptableDocumentParser()) {
     parser->ExecuteScriptsWaitingForPrerenderActivation();
   }
@@ -5686,25 +5696,7 @@ void Document::DynamicViewportUnitsChanged() {
 using InclusiveAncestorsForActiveOrHover =
     TraversalRange<TraversalIterator<UserActionElementTraversal>>;
 
-void EmitDidChangeHoverElement(Document& document, Element* new_hover_element) {
-  LocalFrame* local_frame = document.GetFrame();
-  if (!local_frame) {
-    return;
-  }
-
-  WebLinkPreviewTriggerer* triggerer =
-      local_frame->GetOrCreateLinkPreviewTriggerer();
-  if (!triggerer) {
-    return;
-  }
-
-  WebElement web_element = WebElement(DynamicTo<Element>(new_hover_element));
-  triggerer->DidChangeHoverElement(web_element);
-}
-
 void Document::SetHoverElement(Element* new_hover_element) {
-  EmitDidChangeHoverElement(*this, new_hover_element);
-
   hover_element_ = new_hover_element;
 }
 
@@ -6248,25 +6240,12 @@ Element* Document::SequentialFocusNavigationStartingPoint(
   return nullptr;
 }
 
-void Document::SetSelectorFragmentAnchorCSSTarget(Element* new_target) {
-  SetCSSTarget(new_target);
-  if (css_target_) {
-    css_target_is_selector_fragment_ = true;
-    css_target_->PseudoStateChanged(CSSSelector::kPseudoSelectorFragmentAnchor);
-  }
-}
-
 void Document::SetCSSTarget(Element* new_target) {
   if (css_target_) {
     css_target_->PseudoStateChanged(CSSSelector::kPseudoTarget);
-    if (css_target_is_selector_fragment_) {
-      css_target_->PseudoStateChanged(
-          CSSSelector::kPseudoSelectorFragmentAnchor);
-    }
     css_target_->ClearTargetedSnapAreaIdsForSnapContainers();
   }
   css_target_ = new_target;
-  css_target_is_selector_fragment_ = false;
   if (css_target_) {
     css_target_->PseudoStateChanged(CSSSelector::kPseudoTarget);
     css_target_->SetTargetedSnapAreaIdsForSnapContainers();
@@ -6573,19 +6552,17 @@ void Document::EnqueueOverscrollEvent(const AtomicString& type,
                                       bool overscrolling) {
   OverscrollEventInit* init = OverscrollEventInit::Create();
   init->setOverscrollTarget(overscroll_target);
+  init->setOverscrolling(overscrolling);
   // We bubble if we're on the document.
   init->setBubbles(target->IsDocumentNode());
-  if (type == event_type_names::kOverscrollchanging) {
-    init->setOverscrolling(overscrolling);
-  }
   Event* overscroll_event = OverscrollEvent::Create(type, init);
   overscroll_event->SetTarget(target);
   scripted_animation_controller_->EnqueuePerFrameEvent(overscroll_event);
 }
 
 void Document::EnqueueMoveEvent() {
-  CHECK(
-      RuntimeEnabledFeatures::DesktopPWAsAdditionalWindowingControlsEnabled());
+  CHECK(RuntimeEnabledFeatures::
+            DesktopPWAsAdditionalWindowingControlsOnMoveEnabled());
 
   Event* event = Event::Create(event_type_names::kMove);
   event->SetTarget(domWindow());
@@ -7057,11 +7034,10 @@ net::SiteForCookies Document::SiteForCookies() const {
   }
 
   const Frame* current_frame = GetFrame();
-  if (SchemeRegistry::
-          ShouldTreatURLSchemeAsFirstPartyWhenTopLevelEmbeddingSecure(
-              origin->Protocol(), current_frame->GetSecurityContext()
-                                      ->GetSecurityOrigin()
-                                      ->Protocol())) {
+  if (SchemeRegistry::ShouldTreatURLAsFirstPartyWhenTopLevelEmbeddingSecure(
+          origin.get(), current_frame->GetSecurityContext()
+                            ->GetSecurityOrigin()
+                            ->Protocol())) {
     return candidate;
   }
 
@@ -7543,7 +7519,7 @@ void Document::SetEncodingData(const DocumentEncodingData& new_data) {
     std::string original_bytes = title_element_->textContent().Latin1();
     std::unique_ptr<TextCodec> codec = NewTextCodec(new_data.Encoding());
     String correctly_decoded_title = codec->Decode(
-        base::as_byte_span(original_bytes), FlushBehavior::kDataEOF);
+        base::as_byte_span(original_bytes), FlushBehavior::kDataEof);
     title_element_->setTextContent(correctly_decoded_title);
   }
 
@@ -7942,10 +7918,7 @@ void Document::FinishedParsing() {
   DocumentParserTiming::From(*this).MarkParserStop();
 
   if (RuntimeEnabledFeatures::WebMCPEnabled(GetExecutionContext())) {
-    auto* navigator = domWindow() ? domWindow()->navigator() : nullptr;
-    auto* model_context =
-        navigator ? ModelContextSupplement::modelContext(*navigator) : nullptr;
-    if (model_context) {
+    if (auto* model_context = ModelContextSupplement::GetIfExists(*this)) {
       model_context->DidFinishParsing();
     }
   }
@@ -8295,20 +8268,6 @@ void Document::RequestResizeResponsiveIframe(ExceptionState* exception_state) {
   }
 }
 
-void Document::ResponsiveEmbeddedSizingChanged() {
-  DCHECK(RuntimeEnabledFeatures::ResponsiveIframesEnabled());
-  responsive_embedded_sizing_ = false;
-  if (const auto* root_element = documentElement()) {
-    for (const HTMLMetaElement& meta_element :
-         Traversal<HTMLMetaElement>::DescendantsOf(*root_element)) {
-      if (EqualIgnoringAsciiCase(meta_element.GetName(),
-                                 keywords::kResponsiveEmbeddedSizing)) {
-        responsive_embedded_sizing_ = true;
-        break;
-      }
-    }
-  }
-}
 
 bool Document::TextScaleMetaTagPresent() const {
   return RuntimeEnabledFeatures::TextScaleMetaTagEnabled() &&
@@ -8335,8 +8294,7 @@ void Document::SetTextScaleMetaTagPresent(bool present) {
       // No matter if the page just added or just removed meta,
       // SetTextZoomFactor will do the right thing if we give it the original
       // font scale factor here.
-      if (settings->GetScaleAllFontsIfNoMetaTextScaleTag() &&
-          !settings->GetTextAutosizingEnabled()) {
+      if (settings->GetScaleAllFontsIfNoMetaTextScaleTag()) {
         frame->SetTextZoomFactor(settings->GetAccessibilityFontScaleFactor());
       }
     }
@@ -9112,12 +9070,6 @@ float Document::DevicePixelRatio() const {
   return GetFrame() ? GetFrame()->DevicePixelRatio() : 1.0;
 }
 
-TextAutosizer* Document::GetTextAutosizer() {
-  if (!text_autosizer_)
-    text_autosizer_ = MakeGarbageCollected<TextAutosizer>(this);
-  return text_autosizer_.Get();
-}
-
 bool Document::SetPseudoStateForTesting(Element& element,
                                         const String& pseudo,
                                         bool matches) {
@@ -9506,6 +9458,7 @@ void Document::Trace(Visitor* visitor) const {
   visitor->Trace(top_layer_elements_pending_removal_);
   visitor->Trace(popover_auto_stack_);
   visitor->Trace(popover_hint_stack_);
+  visitor->Trace(popover_hint_stack_parent_);
   visitor->Trace(popover_pointerdown_target_);
   visitor->Trace(dialog_pointerdown_target_);
   visitor->Trace(popover_picker_pointerdown_info_);
@@ -9528,11 +9481,11 @@ void Document::Trace(Visitor* visitor) const {
   visitor->Trace(dom_window_);
   visitor->Trace(fetcher_);
   visitor->Trace(parser_);
+  visitor->Trace(sanitizer_);
   visitor->Trace(http_refresh_scheduler_);
   visitor->Trace(document_timing_);
   visitor->Trace(media_query_matcher_);
   visitor->Trace(scripted_animation_controller_);
-  visitor->Trace(text_autosizer_);
   visitor->Trace(element_data_cache_clear_timer_);
   visitor->Trace(element_data_cache_);
   visitor->Trace(use_elements_needing_update_);
@@ -9596,7 +9549,8 @@ bool Document::IsSlotAssignmentDirty() const {
          slot_assignment_engine_->HasPendingSlotAssignmentRecalc();
 }
 
-bool Document::IsFocusAllowed(FocusTrigger trigger) const {
+bool Document::IsFocusAllowed(FocusTrigger trigger,
+                              const LocalFrame& initiator_frame) const {
   LocalFrame* frame = GetFrame();
   if (!frame || frame->IsMainFrame() ||
       LocalFrame::HasTransientUserActivation(frame)) {
@@ -9623,12 +9577,49 @@ bool Document::IsFocusAllowed(FocusTrigger trigger) const {
            : WebFeature::kFocusWithoutUserActivationNotSandboxedNotAdFrame;
   }
   CountUse(uma_type);
-  if (!RuntimeEnabledFeatures::BlockingFocusWithoutUserActivationEnabled())
+
+  // All logic below is part of the BlockingFocusWithoutUserActivation feature.
+  if (!RuntimeEnabledFeatures::BlockingFocusWithoutUserActivationEnabled(
+          GetExecutionContext())) {
     return true;
-  return trigger == FocusTrigger::kUserGesture ||
-         GetExecutionContext()->IsFeatureEnabled(
-             network::mojom::PermissionsPolicyFeature::
-                 kFocusWithoutUserActivation);
+  }
+
+  if (trigger == FocusTrigger::kUserGesture) {
+    return true;
+  }
+
+  // Check the focus setter's permissions policy to see if it allows focus
+  // without user activation.
+  const ExecutionContext* initiator_context = initiator_frame.DomWindow();
+  if (initiator_context && initiator_context->IsFeatureEnabled(
+                               network::mojom::PermissionsPolicyFeature::
+                                   kFocusWithoutUserActivation)) {
+    CountUse(WebFeature::kFocusWithoutUserActivationAllowedByPolicy);
+    return true;
+  }
+
+  // Allow focus if the currently focused frame is an inclusive descendant of
+  // the focus setter's frame. This means the setter (or one of its children)
+  // already has focus, so moving focus within is not stealing it from a parent.
+  // `initiator_frame` is the frame whose script (or internal API) initiated the
+  // focus call. See Element::Focus() and DOMWindow::focus().
+  // See https://github.com/whatwg/html/issues/11839
+  if (Page* page = frame->GetPage()) {
+    Frame* focused_frame =
+        page->GetFocusController().FocusedFrameIncludingRemote();
+    if (focused_frame && focused_frame->IsDescendantOf(&initiator_frame)) {
+      CountUse(WebFeature::kFocusWithoutUserActivationAllowedByDescendant);
+      return true;
+    }
+  }
+
+  AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
+      ConsoleMessage::Source::kOther, ConsoleMessage::Level::kWarning,
+      "Blocked focus call from a frame because its "
+      "'focus-without-user-activation' permissions policy is denied."));
+
+  CountUse(WebFeature::kFocusWithoutUserActivationBlocked);
+  return false;
 }
 
 LazyLoadMediaObserver& Document::EnsureLazyLoadMediaObserver() {
@@ -9648,6 +9639,8 @@ void Document::ExecuteJavaScriptUrls() {
   urls_to_execute.swap(pending_javascript_urls_);
 
   for (auto& url_to_execute : urls_to_execute) {
+    probe::AsyncTask async_task(GetExecutionContext(),
+                                &url_to_execute->async_task_context);
     dom_window_->GetScriptController().ExecuteJavaScriptURL(
         url_to_execute->url, network::mojom::CSPDisposition::CHECK,
         url_to_execute->world.Get());
@@ -9663,8 +9656,8 @@ void Document::ProcessJavaScriptUrl(const KURL& url,
   if (is_initial_empty_document_)
     load_event_progress_ = kLoadEventNotRun;
   GetFrame()->Loader().Progress().ProgressStarted();
-  pending_javascript_urls_.push_back(
-      MakeGarbageCollected<PendingJavascriptUrl>(url, world));
+  pending_javascript_urls_.push_back(MakeGarbageCollected<PendingJavascriptUrl>(
+      GetExecutionContext(), url, world));
   if (!javascript_url_task_handle_.IsActive()) {
     javascript_url_task_handle_ = PostCancellableTask(
         *GetTaskRunner(TaskType::kNetworking), FROM_HERE,
@@ -9692,6 +9685,13 @@ bool Document::IsInWebAppScope() const {
 
   DCHECK_EQ(KURL(web_app_scope).GetString(), web_app_scope);
   return Url().GetString().starts_with(web_app_scope);
+}
+
+bool Document::IsInitialProfile() const {
+  if (!GetSettings()) {
+    return false;
+  }
+  return GetSettings()->GetIsInitialProfile();
 }
 
 bool Document::ChildrenCanHaveStyle() const {
@@ -9988,9 +9988,13 @@ Document::PaintPreviewScope::~PaintPreviewScope() {
 }
 
 Document::PendingJavascriptUrl::PendingJavascriptUrl(
+    ExecutionContext* context,
     const KURL& input_url,
     const DOMWrapperWorld* world)
-    : url(input_url), world(world) {}
+    : url(input_url), world(world) {
+  async_task_context.Schedule(context, "javascriptURL",
+                              probe::AsyncTaskContext::ScanForAds::kTrue);
+}
 
 Document::PendingJavascriptUrl::~PendingJavascriptUrl() = default;
 
@@ -10130,6 +10134,7 @@ void Document::UpdateRenderFrameRate() {
 // static
 Document* Document::parseHTMLInternal(ExecutionContext* context,
                                       const String& html,
+                                      StreamingSanitizer* sanitizer,
                                       ExceptionState& exception_state) {
   Document* doc = DocumentInit::Create()
                       .WithTypeFrom(keywords::kTextHtml)
@@ -10137,8 +10142,11 @@ Document* Document::parseHTMLInternal(ExecutionContext* context,
                       .WithAgent(*context->GetAgent())
                       .CreateDocument();
   doc->setAllowDeclarativeShadowRoots(true);
-  doc->SetContent(html);
+  doc->SetContent(html, sanitizer);
   doc->SetMimeType(keywords::kTextHtml);
+  if (sanitizer) {
+    sanitizer->DidParseDocument(doc);
+  }
   return doc;
 }
 
@@ -10153,13 +10161,52 @@ Document* Document::parseHTMLUnsafe(ExecutionContext* context,
   if (exception_state.HadException()) {
     return nullptr;
   }
-  return parseHTMLInternal(context, compliant_html, exception_state);
+
+  FragmentParserOptions fragment_options;
+  if (RuntimeEnabledFeatures::TrustedTypesCreateParserOptionsEnabled()) {
+    auto trusted_options = TrustedTypesCheckForParserOptions(
+        fragment_options, MarkupInsertionMode::kFragment, context,
+        trusted_types_names::kDocument, trusted_types_names::kParseHTMLUnsafe,
+        exception_state);
+    if (exception_state.HadException()) {
+      return nullptr;
+    }
+    if (trusted_options) {
+      fragment_options = *trusted_options;
+    }
+  }
+
+  auto* streaming_sanitizer =
+      RuntimeEnabledFeatures::StreamingSanitizerEnabled()
+          ? SanitizerAPI::CreateStreamingSanitizer(
+                Sanitizer::Mode::kUnsafe, fragment_options, exception_state)
+          : nullptr;
+
+  if (exception_state.HadException()) {
+    return nullptr;
+  }
+
+  Document* doc = parseHTMLInternal(context, compliant_html,
+                                    streaming_sanitizer, exception_state);
+  if (exception_state.HadException()) {
+    return nullptr;
+  }
+  if (!streaming_sanitizer) {
+    SanitizerAPI::SanitizeInternal(Sanitizer::Mode::kUnsafe,
+                                   /*context_element*/ doc,
+                                   /*root_element*/ doc, fragment_options,
+                                   exception_state);
+  }
+  if (exception_state.HadException()) {
+    return nullptr;
+  }
+  return doc;
 }
 
 // static
 Document* Document::parseHTMLUnsafe(ExecutionContext* context,
                                     const V8UnionStringOrTrustedHTML* html,
-                                    SetHTMLUnsafeOptions* options,
+                                    ParseHTMLUnsafeOptions* options,
                                     ExceptionState& exception_state) {
   UseCounter::Count(context, WebFeature::kHTMLUnsafeMethods);
   CHECK(RuntimeEnabledFeatures::SanitizerAPIEnabled());
@@ -10169,11 +10216,81 @@ Document* Document::parseHTMLUnsafe(ExecutionContext* context,
   if (exception_state.HadException()) {
     return nullptr;
   }
-  Document* doc = parseHTMLInternal(context, compliant_html, exception_state);
-  SanitizerAPI::SanitizeInternal(Sanitizer::Mode::kUnsafe,
-                                 /*context_element*/ doc, /*root_element*/ doc,
-                                 FragmentParserOptions(options),
-                                 exception_state);
+
+  FragmentParserOptions fragment_options(options);
+  if (RuntimeEnabledFeatures::TrustedTypesCreateParserOptionsEnabled()) {
+    auto trusted_options = TrustedTypesCheckForParserOptions(
+        fragment_options, MarkupInsertionMode::kFragment, context,
+        trusted_types_names::kDocument, trusted_types_names::kParseHTMLUnsafe,
+        exception_state);
+    CHECK_EQ(exception_state.HadException(), !trusted_options);
+    if (!trusted_options) {
+      return nullptr;
+    }
+    fragment_options = *trusted_options;
+  }
+
+  auto* streaming_sanitizer =
+      RuntimeEnabledFeatures::StreamingSanitizerEnabled()
+          ? SanitizerAPI::CreateStreamingSanitizer(
+                Sanitizer::Mode::kUnsafe, fragment_options, exception_state)
+          : nullptr;
+
+  if (exception_state.HadException()) {
+    return nullptr;
+  }
+  Document* doc = parseHTMLInternal(context, compliant_html,
+                                    streaming_sanitizer, exception_state);
+  if (!RuntimeEnabledFeatures::StreamingSanitizerEnabled()) {
+    CHECK(!streaming_sanitizer);
+    SanitizerAPI::SanitizeInternal(Sanitizer::Mode::kUnsafe,
+                                   /*context_element*/ doc,
+                                   /*root_element*/ doc, fragment_options,
+                                   exception_state);
+  }
+  if (exception_state.HadException()) {
+    return nullptr;
+  }
+  return doc;
+}
+
+// static
+Document* Document::parseHTMLUnsafe(ExecutionContext* context,
+                                    const V8UnionStringOrTrustedHTML* html,
+                                    TrustedParserOptions* options,
+                                    ExceptionState& exception_state) {
+  CHECK(RuntimeEnabledFeatures::TrustedTypesCreateParserOptionsEnabled());
+  UseCounter::Count(context, WebFeature::kHTMLUnsafeMethods);
+  String compliant_html = TrustedTypesCheckForHTML(
+      html, context, trusted_types_names::kDocument,
+      trusted_types_names::kParseHTMLUnsafe, exception_state);
+  if (exception_state.HadException()) {
+    return nullptr;
+  }
+
+  FragmentParserOptions fragment_options(options);
+
+  auto* streaming_sanitizer =
+      RuntimeEnabledFeatures::StreamingSanitizerEnabled()
+          ? SanitizerAPI::CreateStreamingSanitizer(
+                Sanitizer::Mode::kUnsafe, fragment_options, exception_state)
+          : nullptr;
+
+  if (exception_state.HadException()) {
+    return nullptr;
+  }
+
+  Document* doc = parseHTMLInternal(context, compliant_html,
+                                    streaming_sanitizer, exception_state);
+  if (exception_state.HadException()) {
+    return nullptr;
+  }
+  if (!streaming_sanitizer) {
+    SanitizerAPI::SanitizeInternal(Sanitizer::Mode::kUnsafe,
+                                   /*context_element*/ doc,
+                                   /*root_element*/ doc, fragment_options,
+                                   exception_state);
+  }
   if (exception_state.HadException()) {
     return nullptr;
   }
@@ -10186,11 +10303,20 @@ Document* Document::parseHTML(ExecutionContext* context,
                               SetHTMLOptions* options,
                               ExceptionState& exception_state) {
   CHECK(RuntimeEnabledFeatures::SanitizerAPIEnabled());
-  Document* doc = parseHTMLInternal(context, html, exception_state);
-  SanitizerAPI::SanitizeInternal(Sanitizer::Mode::kSafe,
-                                 /*context_element*/ doc, /*root_element*/ doc,
-                                 FragmentParserOptions(options),
-                                 exception_state);
+  auto* streaming_sanitizer =
+      RuntimeEnabledFeatures::StreamingSanitizerEnabled()
+          ? SanitizerAPI::CreateStreamingSanitizer(
+                Sanitizer::Mode::kSafe, FragmentParserOptions(options),
+                exception_state)
+          : nullptr;
+  Document* doc =
+      parseHTMLInternal(context, html, streaming_sanitizer, exception_state);
+  if (!streaming_sanitizer) {
+    SanitizerAPI::SanitizeInternal(
+        Sanitizer::Mode::kSafe,
+        /*context_element*/ doc, /*root_element*/ doc,
+        FragmentParserOptions(options), exception_state);
+  }
   if (exception_state.HadException()) {
     return nullptr;
   }

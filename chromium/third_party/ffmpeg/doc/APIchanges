@@ -2,6 +2,35 @@ The last version increases of all libraries were on 2025-03-28
 
 API changes, most recent first:
 
+2026-05-17 - xxxxxxxxxxx - lavf 62.17.100 - avformat.h
+  Add AV_STREAM_GROUP_PARAMS_TREF.
+  Add AVStreamGroupTREF.
+
+2026-05-16 - xxxxxxxxxxx - lavf 62.16.100 - avformat.h
+  Add AVFMT_FIXED_FRAMESIZE.
+
+2026-05-16 - xxxxxxxxxxx - lavc 62.33.100 - avcodec.h
+  Add AV_CODEC_FLAG2_FIXED_FRAME_SIZE.
+
+2026-05-12 - xxxxxxxxxx - lavu 60.31.100 - frame.h
+Add IAMF frame side data types to enum AVFrameSideDataType:
+- AV_FRAME_DATA_IAMF_MIX_GAIN_PARAM
+- AV_FRAME_DATA_IAMF_DEMIXING_INFO_PARAM
+- AV_FRAME_DATA_IAMF_RECON_GAIN_INFO_PARAM
+
+2026-05-05 - xxxxxxxxxxx - lavf 62.15.100 - avformat.h
+  Add av_program_copy().
+
+2026-05-05 - xxxxxxxxxxx - lavf 62.14.100 - avformat.h
+  Add av_program_add_stream_index2().
+
+2026-04-14 - 7faa6ee2aa - lavc 62.30.100 - packet.h
+  Add AV_PKT_DATA_DYNAMIC_HDR_SMPTE_2094_APP5 side data type.
+
+2026-04-09 - 6ba6db4f19 - lavu 60.30.100 - hdr_dynamic_metadata.h frame.h
+  Add AVDynamicHDRSmpte2094App5 struct and functions.
+  Add AV_FRAME_DATA_DYNAMIC_HDR_SMPTE_2094_APP5 side data type.
+
 2026-03-14 - xxxxxxxxxx - lavu 60.29.100 - hwcontext_vulkan.h
   Deprecate AVVulkanDeviceContext.lock_queue and
   AVVulkanDeviceContext.unlock_queue without replacement.

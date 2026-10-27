@@ -173,10 +173,8 @@ impl Y4MReader {
                 "F" => {
                     // TODO: Handle frame rate.
                 }
-                "X" => {
-                    if part[1..] == *"COLORRANGE=FULL" {
-                        y4m.range = YuvRange::Full;
-                    }
+                "X" if part[1..] == *"COLORRANGE=FULL" => {
+                    y4m.range = YuvRange::Full;
                 }
                 _ => {}
             }
@@ -227,12 +225,12 @@ impl Reader for Y4MReader {
             let plane_data = image.plane_data(plane).unwrap();
             for y in 0..plane_data.height {
                 if self.depth == 8 {
-                    let row = image.row_exact_mut(plane, y)?;
+                    let row = image.row_mut(plane, y)?;
                     reader
                         .read_exact(row)
                         .map_err(AvifError::map_unknown_error)?;
                 } else {
-                    let row = image.row16_exact_mut(plane, y)?;
+                    let row = image.row16_mut(plane, y)?;
                     let mut pixel_bytes: [u8; 2] = [0, 0];
                     for pixel in row {
                         reader

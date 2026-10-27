@@ -30,13 +30,12 @@ std::vector<std::string> GetSomeRules() {
       "||ex.com$image",
       "|http://example.com/?key=value$~third-party,domain=ex.com",
       "&key1=value1&key2=value2|$script,image,font",
-      "domain1.com,domain1.com###id",
       "@@allowlisted.com$document,domain=example.com|~sub.example.com",
-      "###absolute_evil_id",
       "@@allowlisted.com$match-case,document,domain=another.example.com",
-      "domain.com,~sub.domain.com,sub.sub.domain.com#@#id",
-      "#@#absolute_good_id",
       "host$websocket",
+      "###absolute_evil_id",
+      "#@#absolute_good_id",
+      "domain1.com,domain1.com###id",
   };
 }
 
@@ -65,7 +64,7 @@ std::vector<std::string> GetSomeChromeUnfriendlyRules() {
 // Generates and returns many rules in text format.
 std::vector<std::string> GetManyRules() {
   constexpr size_t kNumberOfUrlRules = 10123;
-  constexpr size_t kNumberOfCssRules = 5321;
+  constexpr size_t kNumberOfStyleRules = 5321;
 
   std::vector<std::string> text_rules;
 
@@ -86,11 +85,8 @@ std::vector<std::string> GetManyRules() {
     text_rules.push_back(text_rule);
   }
 
-  for (size_t i = 0; i != kNumberOfCssRules; ++i) {
+  for (size_t i = 0; i != kNumberOfStyleRules; ++i) {
     std::string text_rule = "domain.com";
-    if (i & 1) {
-      text_rule += ",~but_not.domain.com";
-    }
     text_rule += (i & 3) ? "##" : "#@#";
     text_rule += "#id" + base::NumberToString(i);
     text_rules.push_back(text_rule);
@@ -110,7 +106,7 @@ void ReadHalfRulesOfTestRulesetAndExpectContents(
   TestRulesetContents contents;
 
   bool take_url_rule = true;
-  bool take_css_rule = true;
+  bool take_style_rule = true;
   url_pattern_index::proto::RuleType rule_type =
       url_pattern_index::proto::RULE_TYPE_UNSPECIFIED;
   while ((rule_type = input->FetchNextRule()) !=
@@ -121,11 +117,11 @@ void ReadHalfRulesOfTestRulesetAndExpectContents(
       }
       take_url_rule = !take_url_rule;
     } else {
-      ASSERT_EQ(url_pattern_index::proto::RULE_TYPE_CSS, rule_type);
-      if (take_css_rule) {
-        contents.css_rules.push_back(input->GetCssRule());
+      ASSERT_EQ(url_pattern_index::proto::RULE_TYPE_STYLE, rule_type);
+      if (take_style_rule) {
+        contents.style_rules.push_back(input->GetStyleRule());
       }
-      take_css_rule = !take_css_rule;
+      take_style_rule = !take_style_rule;
     }
   }
 
@@ -146,16 +142,43 @@ TEST(RuleStreamTest, WriteAndReadRuleset) {
     TestRulesetContents only_url_rules;
     only_url_rules.url_rules = contents.url_rules;
 
+    std::stable_partition(contents.style_rules.begin(),
+                          contents.style_rules.end(),
+                          [](const url_pattern_index::proto::StyleRule& rule) {
+                            return !rule.domains().empty();
+                          });
+
     for (auto format : {RulesetFormat::kFilterList, RulesetFormat::kProto,
                         RulesetFormat::kUnindexedRuleset}) {
       ScopedTempRulesetFile ruleset_file(format);
       ruleset_file.WriteRuleset(contents);
-      // Note: kUnindexedRuleset discards CSS rules, test it differently.
-      EXPECT_EQ(ruleset_file.ReadContents(),
-                format == RulesetFormat::kUnindexedRuleset ? only_url_rules
-                                                           : contents);
+      EXPECT_EQ(ruleset_file.ReadContents(), contents);
     }
   }
+}
+
+TEST(RuleStreamTest, SortStyleRulesInProto) {
+  url_pattern_index::proto::StyleRule generic_rule;
+  generic_rule.set_selector(".generic");
+
+  url_pattern_index::proto::StyleRule site_rule;
+  site_rule.set_selector(".site");
+  site_rule.add_domains()->set_domain("example.com");
+
+  TestRulesetContents contents;
+  // Add site rule first, then generic rule.
+  contents.style_rules.push_back(site_rule);
+  contents.style_rules.push_back(generic_rule);
+
+  ScopedTempRulesetFile ruleset_file(RulesetFormat::kProto);
+  ruleset_file.WriteRuleset(contents);
+
+  TestRulesetContents read_contents = ruleset_file.ReadContents();
+
+  ASSERT_EQ(2u, read_contents.style_rules.size());
+  // The site-specific rule should have been moved to the front.
+  EXPECT_EQ(".site", read_contents.style_rules[0].selector());
+  EXPECT_EQ(".generic", read_contents.style_rules[1].selector());
 }
 
 TEST(RuleStreamTest, WriteAndReadHalfRuleset) {
@@ -166,8 +189,8 @@ TEST(RuleStreamTest, WriteAndReadHalfRuleset) {
   for (size_t i = 0, size = contents.url_rules.size(); i < size; i += 2) {
     half_contents.url_rules.push_back(contents.url_rules[i]);
   }
-  for (size_t i = 0, size = contents.css_rules.size(); i < size; i += 2) {
-    half_contents.css_rules.push_back(contents.css_rules[i]);
+  for (size_t i = 0, size = contents.style_rules.size(); i < size; i += 2) {
+    half_contents.style_rules.push_back(contents.style_rules[i]);
   }
 
   TestRulesetContents half_url_rules;
@@ -177,11 +200,7 @@ TEST(RuleStreamTest, WriteAndReadHalfRuleset) {
                       RulesetFormat::kUnindexedRuleset}) {
     ScopedTempRulesetFile ruleset_file(format);
     ruleset_file.WriteRuleset(contents);
-    // Note: kUnindexedRuleset discards CSS rules, test it differently.
-    ReadHalfRulesOfTestRulesetAndExpectContents(
-        ruleset_file, format == RulesetFormat::kUnindexedRuleset
-                          ? half_url_rules
-                          : half_contents);
+    ReadHalfRulesOfTestRulesetAndExpectContents(ruleset_file, half_contents);
   }
 }
 
@@ -218,11 +237,11 @@ TEST(RuleStreamTest, TransferUrlRulesToOneStream) {
   input.reset();
   output.reset();
 
-  contents.css_rules.clear();
+  contents.style_rules.clear();
   EXPECT_EQ(target_ruleset.ReadContents(), contents);
 }
 
-TEST(RuleStreamTest, TransferCssRulesToOneStream) {
+TEST(RuleStreamTest, TransferStyleRulesToOneStream) {
   TestRulesetContents contents;
   contents.AppendRules(GetManyRules());
 
@@ -290,7 +309,7 @@ TEST(RuleStreamTest, TransferRulesAndDiscardRegexpRules) {
                   return rule.url_pattern_type() ==
                          url_pattern_index::proto::URL_PATTERN_TYPE_REGEXP;
                 });
-  contents.css_rules.clear();
+  contents.style_rules.clear();
   EXPECT_EQ(target_ruleset.ReadContents(), contents);
 }
 
@@ -325,13 +344,17 @@ TEST(RuleStreamTest, TransferRulesChromeVersion) {
 
 TEST(RuleStreamTest, TransferRulesFromFilterListWithUnsupportedOptions) {
   std::vector<std::string> text_rules = GetSomeRules();
-  const size_t number_of_correct_rules = text_rules.size();
+  // We expect one rule (#@#absolute_good_id) to be filtered out because it is
+  // a global rule without anchors (unsupported/slow).
+  const size_t number_of_correct_rules = text_rules.size() - 1;
 
   // Insert several rules with non-critical parse errors.
   text_rules.insert(text_rules.begin(), "host1$donottrack");
   text_rules.push_back("");
   text_rules.insert(text_rules.begin() + text_rules.size() / 2,
                     "host3$collapse");
+  // Style rule with ~ is unsupported and should be ignored.
+  text_rules.push_back("example.com,~however.example.com##div.blocked_class");
 
   ScopedTempRulesetFile source_ruleset(RulesetFormat::kFilterList);
   ScopedTempRulesetFile target_ruleset(RulesetFormat::kFilterList);
@@ -353,8 +376,75 @@ TEST(RuleStreamTest, TransferRulesFromFilterListWithUnsupportedOptions) {
   }
 
   EXPECT_EQ(number_of_correct_rules,
-            contents.url_rules.size() + contents.css_rules.size());
+            contents.url_rules.size() + contents.style_rules.size());
   EXPECT_EQ(target_ruleset.ReadContents(), contents);
+}
+
+TEST(RuleStreamTest, FilterStyleRules) {
+  const std::vector<std::string> text_rules = {
+      "##.class",            // Supported: global with class anchor
+      "###id",               // Supported: global with id anchor
+      "example.com##div",    // Supported: site-specific tag
+      "##div",               // UNSUPPORTED: global tag
+      "~example.com##div",   // UNSUPPORTED: ~ in domains is not allowed for
+                             // style rules
+      "##div:hover",         // UNSUPPORTED: global pseudo
+      "example.com##:hover"  // UNSUPPORTED: site-specific pseudo without anchor
+  };
+
+  TestRulesetContents contents;
+  contents.AppendRules(text_rules, true /* allow_errors */);
+
+  // We expect only the first 3 rules to be preserved.
+  ASSERT_EQ(3u, contents.style_rules.size());
+  EXPECT_EQ(".class", contents.style_rules[0].selector());
+  EXPECT_EQ("#id", contents.style_rules[1].selector());
+  EXPECT_EQ("div", contents.style_rules[2].selector());
+
+  // Verify that anchors were correctly extracted.
+  EXPECT_THAT(contents.style_rules[0].classes(),
+              ::testing::ElementsAre("class"));
+  EXPECT_THAT(contents.style_rules[1].ids(), ::testing::ElementsAre("id"));
+
+  // Now test transferring with raw unsupported rules.
+  ScopedTempRulesetFile source_ruleset(RulesetFormat::kFilterList);
+  std::string joined_rules = base::JoinString(text_rules, "\n");
+  base::WriteFile(source_ruleset.ruleset_path(), joined_rules);
+
+  for (auto format : {RulesetFormat::kFilterList, RulesetFormat::kProto,
+                      RulesetFormat::kUnindexedRuleset}) {
+    ScopedTempRulesetFile target_ruleset(format);
+    std::unique_ptr<RuleInputStream> input = source_ruleset.OpenForInput();
+    std::unique_ptr<RuleOutputStream> output = target_ruleset.OpenForOutput();
+    TransferRules(input.get(), nullptr, output.get());
+    EXPECT_TRUE(output->Finish());
+
+    TestRulesetContents target_contents = target_ruleset.ReadContents();
+    ASSERT_EQ(3u, target_contents.style_rules.size())
+        << "Failed for format: " << static_cast<int>(format);
+
+    if (format == RulesetFormat::kProto) {
+      EXPECT_EQ("div", target_contents.style_rules[0].selector());
+      EXPECT_EQ(".class", target_contents.style_rules[1].selector());
+      EXPECT_EQ("#id", target_contents.style_rules[2].selector());
+
+      EXPECT_THAT(target_contents.style_rules[1].classes(),
+                  ::testing::ElementsAre("class"));
+      EXPECT_THAT(target_contents.style_rules[2].ids(),
+                  ::testing::ElementsAre("id"));
+    } else {
+      EXPECT_EQ(".class", target_contents.style_rules[0].selector());
+      EXPECT_EQ("#id", target_contents.style_rules[1].selector());
+      EXPECT_EQ("div", target_contents.style_rules[2].selector());
+
+      if (format == RulesetFormat::kUnindexedRuleset) {
+        EXPECT_THAT(target_contents.style_rules[0].classes(),
+                    ::testing::ElementsAre("class"));
+        EXPECT_THAT(target_contents.style_rules[1].ids(),
+                    ::testing::ElementsAre("id"));
+      }
+    }
+  }
 }
 
 TEST(RuleStreamTest, DeleteUrlRuleOrAmend) {

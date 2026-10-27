@@ -4,6 +4,8 @@
 # This module first tries to find CHOLMOD via its CMake config-mode package
 # (shipped with SuiteSparse >= 7.0). If that fails, it falls back to a
 # manual header/library search for compatibility with older installations.
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 if (CHOLMOD_INCLUDES AND CHOLMOD_LIBRARIES)
   set(CHOLMOD_FIND_QUIETLY TRUE)

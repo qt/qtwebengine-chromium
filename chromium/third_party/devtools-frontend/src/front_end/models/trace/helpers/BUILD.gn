@@ -21,8 +21,7 @@ devtools_module("helpers") {
   deps = [
     "../../../core/common:bundle",
     "../../../core/platform:bundle",
-    "../../../core/root:bundle",
-    "../../../generated:protocol",
+    "../../../generated",
     "../../../models/cpu_profile:bundle",
     "../../../third_party/third-party-web:bundle",
     "../types:bundle",
@@ -54,8 +53,9 @@ ts_library("unittests") {
   ]
 
   deps = [
-    "../../../core/platform:bundle",
+    "../../../generated",
     "../../../models/trace:bundle",
     "../../../testing",
+    "../../cpu_profile:bundle",
   ]
 }

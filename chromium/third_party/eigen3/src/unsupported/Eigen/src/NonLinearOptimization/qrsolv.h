@@ -1,4 +1,10 @@
 // IWYU pragma: private
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
+#ifndef EIGEN_NONLINEAROPTIMIZATION_QRSOLV_H
+#define EIGEN_NONLINEAROPTIMIZATION_QRSOLV_H
+
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {
@@ -87,3 +93,5 @@ void qrsolv(Matrix<Scalar, Dynamic, Dynamic> &s,
 }  // end namespace internal
 
 }  // end namespace Eigen
+
+#endif  // EIGEN_NONLINEAROPTIMIZATION_QRSOLV_H

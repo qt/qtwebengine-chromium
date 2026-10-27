@@ -52,15 +52,41 @@ enum class ContextualSearchMultimodalState {
   kMaxValue = kTextAndFile,
 };
 
+// LINT.IfChange(ContextualSearchAttachmentButtonType)
+enum class ContextualSearchAttachmentButtonType {
+  kCurrentTab = 0,
+  kTabPicker = 1,
+  kCamera = 2,
+  kGallery = 3,
+  kFiles = 4,
+  kClipboard = 5,
+  kSuggestedTab = 6,
+  kRecentTab = 7,
+  kMaxValue = kRecentTab
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/contextual_search/histograms.xml:ContextualSearchAttachmentButtonType)
+
 // LINT.IfChange(ContextualSearchContextState)
 enum class ContextualSearchContextState {
   kWithoutContext = 0,
   kWithTabContext = 1,
   kWithNonTabContext = 2,
   kWithContextNoText = 3,
-  kMaxValue = kWithContextNoText,
+  kWithDriveContext = 4,
+  kMaxValue = kWithDriveContext,
 };
 // LINT.ThenChange(//tools/metrics/histograms/metadata/contextual_search/enums.xml:ContextualSearchContextState)
+
+// LINT.IfChange(ContextualSearchNoAcMatchState)
+enum class ContextualSearchNoAcMatchState {
+  kOnlyContext = 0,
+  kOnlyText = 1,
+  kTextAndContext = 2,
+  kNoTextOrContext = 3,
+  kAcMatch = 4,
+  kMaxValue = kAcMatch,
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/contextual_search/enums.xml:ContextualSearchNoAcMatchState)
 
 enum class SessionState {
   kNone = 0,
@@ -120,7 +146,8 @@ class ContextualSearchMetricsRecorder {
   virtual void NotifyQuerySubmitted(bool has_tab_context,
                                     bool has_non_tab_context,
                                     int query_text_length,
-                                    int file_count);
+                                    int file_count,
+                                    bool has_drive_context);
 
   // Activates a funnel for metrics logging.
   virtual void ActivateMetricsFunnel(const std::string& funnel_name);
@@ -144,9 +171,13 @@ class ContextualSearchMetricsRecorder {
   void RecordQueryMetrics(bool has_tab_context,
                           bool has_non_tab_context,
                           int text_length,
-                          int file_count);
+                          int file_count,
+                          bool has_drive_context);
 
   void RecordFileSizeMetric(lens::MimeType mime_type, uint64_t file_size_bytes);
+
+  void RecordTabPartsSizes(uint64_t viewport_screenshot_size_bytes,
+                           uint64_t page_contents_size_bytes);
 
   // Should be called when a file has been deleted.
   void RecordFileDeletedMetrics(bool success,
@@ -170,6 +201,33 @@ class ContextualSearchMetricsRecorder {
 
   // Records the model mode (i.e. Gemini Pro, Gemini Pro Autoroute, etc.).
   virtual void RecordModelMode(omnibox::ModelMode model_mode);
+
+  // Records the count of attachments of a specific button type when picked.
+  virtual void RecordFilePickedCount(
+      ContextualSearchAttachmentButtonType button_type,
+      int count);
+
+  // Records the count of attachments of a specific type at query submission.
+  virtual void RecordAttachmentCountAtSubmission(lens::MimeType mime_type,
+                                                 int count);
+
+  // Records when a tool is explicitly selected by the user in the menu.
+  virtual void RecordToolSelected(omnibox::ToolMode tool_mode);
+
+  // Records when a model is explicitly selected by the user in the menu.
+  virtual void RecordModelSelected(omnibox::ModelMode model_mode);
+
+  // Records when an attachment button is shown.
+  virtual void RecordAttachmentButtonShown(
+      ContextualSearchAttachmentButtonType button_type);
+
+  // Records when an attachment button is used.
+  virtual void RecordAttachmentButtonUsed(
+      ContextualSearchAttachmentButtonType button_type);
+
+  // Records true when the attachments menu is opened, and false when the menu
+  // is closed without user action.
+  virtual void RecordAttachmentsMenuToggled(bool open);
 
   // Records that a specific tool mode is available for use.
   virtual void RecordToolModeShown(omnibox::ToolMode tool_mode);
@@ -211,6 +269,11 @@ class ContextualSearchMetricsRecorder {
 
   // Records when a typed suggestion is clicked.
   virtual void RecordTypedSuggestNavigation(bool is_verbatim);
+
+  // Debug metric for no AC match submit query.
+  void RecordNoAcMatchSubmitQuery(int text_length,
+                                  int file_count,
+                                  bool is_ac_match = false);
 
  private:
   // Called when the session starts to correctly track session

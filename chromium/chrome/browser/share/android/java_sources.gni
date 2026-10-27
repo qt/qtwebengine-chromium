@@ -23,6 +23,7 @@ share_java_sources = [
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/long_screenshots/LongScreenshotsAreaSelectionDialogViewBinder.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/long_screenshots/LongScreenshotsCoordinator.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/long_screenshots/LongScreenshotsMediator.java",
+  "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/long_screenshots/LongScreenshotsUtils.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/long_screenshots/bitmap_generation/BitmapGenerator.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/long_screenshots/bitmap_generation/EntryManager.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/long_screenshots/bitmap_generation/LongScreenshotsCompositor.java",
@@ -48,7 +49,6 @@ share_java_sources = [
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/screenshot/ScreenshotShareSheetDialog.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/screenshot/ScreenshotShareSheetDialogCoordinator.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/screenshot/ScreenshotShareSheetMediator.java",
-  "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/screenshot/ScreenshotShareSheetMetrics.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/screenshot/ScreenshotShareSheetSaveDelegate.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/screenshot/ScreenshotShareSheetView.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/screenshot/ScreenshotShareSheetViewBinder.java",
@@ -66,6 +66,7 @@ share_java_sources = [
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/NotificationSharedPrefManager.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/SendTabToSelfAndroidBridge.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/SendTabToSelfCoordinator.java",
+  "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/SendTabToSelfGestureDetector.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/SendTabToSelfMetricsRecorder.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/send_tab_to_self/TargetDeviceInfo.java",
   "//chrome/browser/share/android/java/src/org/chromium/chrome/browser/share/share_sheet/ChromeProvidedSharingOptionsProvider.java",
@@ -81,5 +82,6 @@ share_java_sources = [
 share_java_deps = [
   "//components/feature_engagement/public:public_java",
   "//components/shared_highlighting/core/common:shared_highlighting_android_enums_java",
+  "//components/strings:components_strings_grd",
   "//components/sync_device_info:sync_device_info_java",
 ]

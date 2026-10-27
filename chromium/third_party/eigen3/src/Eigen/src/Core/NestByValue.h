@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_NESTBYVALUE_H
 #define EIGEN_NESTBYVALUE_H
@@ -39,7 +40,7 @@ template <typename ExpressionType>
 class NestByValue : public internal::dense_xpr_base<NestByValue<ExpressionType> >::type {
  public:
   typedef typename internal::dense_xpr_base<NestByValue>::type Base;
-  static constexpr bool HasDirectAccess = internal::has_direct_access<ExpressionType>::ret;
+  static constexpr bool HasDirectAccess = internal::has_direct_access<ExpressionType>::value;
 
   EIGEN_DENSE_PUBLIC_INTERFACE(NestByValue)
 

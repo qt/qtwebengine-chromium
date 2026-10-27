@@ -483,6 +483,20 @@
         "description": "The four directions for scrolling."
       },
       {
+        "id": "TenjiData",
+        "type": "object",
+        "properties": {
+          "wasm": {
+            "type": "binary",
+            "description": "The contents of the tenji_wasm_wrapper.wasm file as a Uint8Array."
+          },
+          "wrapperJs": {
+            "type": "binary",
+            "description": "The contents of the tenji_wasm_wrapper.js file as a Uint8Array."
+          }
+        }
+      },
+      {
         "id": "FacialGesture",
         "type": "string",
         "description": "The facial gestures supported by FaceGaze. Keep this in sync with facial_gestures.ts, FacialGesturesToMediapipeGestures in facegaze/gesture_detector.ts, and ConvertFacialGestureType in accessibility_extension_api_ash.cc.",
@@ -593,6 +607,22 @@
             {
               "name": "assets",
               "$ref": "FaceGazeAssets"
+            }
+          ]
+        }
+      },
+      {
+        "name": "installTenji",
+        "type": "function",
+        "description": "Installs the Tenji Braille DLC",
+        "parameters": [],
+        "returns_async": {
+          "name": "callback",
+          "description": "Resolves when Tenji download finishes.",
+          "parameters": [
+            {
+              "name": "data",
+              "$ref": "TenjiData"
             }
           ]
         }
@@ -1268,6 +1298,18 @@
             "type": "integer"
           }
         ]
+      },
+      {
+        "name": "onTwoFingerTouchStart",
+        "type": "function",
+        "description": "Fired when we first detect two fingers are held down, which can be used to toggle spoken feedback on some touch-only devices.",
+        "parameters": []
+      },
+      {
+        "name": "onTwoFingerTouchStop",
+        "type": "function",
+        "description": "Fired when the user is no longer holding down two fingers (including releasing one, holding down three, or moving them).",
+        "parameters": []
       },
       {
         "name": "onSelectToSpeakContextMenuClicked",

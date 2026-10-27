@@ -17,7 +17,6 @@
 #include "core/fxge/cfx_face.h"
 
 class CFPF_SkiaFont;
-class CFPF_SkiaPathFont;
 
 class CFPF_SkiaFontMgr {
  public:
@@ -32,14 +31,26 @@ class CFPF_SkiaFontMgr {
   RetainPtr<CFX_Face> GetFontFace(const ByteString& path, int32_t face_index);
 
  private:
+  struct Entry {
+    Entry();
+    ~Entry();
+
+    ByteString path;
+    ByteString family;
+    uint32_t style;
+    int32_t face_index;
+    uint32_t charsets;
+    int32_t glyph_num;
+  };
+
   void ScanPath(const ByteString& path);
   void ScanFile(const ByteString& file);
-  std::unique_ptr<CFPF_SkiaPathFont> ReportFace(RetainPtr<CFX_Face> face,
-                                                const ByteString& file,
-                                                int face_index);
+  std::unique_ptr<Entry> ReportFace(RetainPtr<CFX_Face> face,
+                                    const ByteString& file,
+                                    int face_index);
 
   bool loaded_fonts_ = false;
-  std::vector<std::unique_ptr<CFPF_SkiaPathFont>> font_faces_;
+  std::vector<std::unique_ptr<Entry>> font_faces_;
   // Key is a hash based on CreateFont() parameters.
   std::map<uint32_t, std::unique_ptr<CFPF_SkiaFont>> family_font_map_;
 };

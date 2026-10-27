@@ -19,11 +19,11 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/timer/timer.h"
 #include "base/types/expected.h"
-#include "chrome/browser/signin/binding_key_registration_token_helper.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/signin/core/browser/account_reconcilor.h"
 #include "components/signin/core/browser/signin_header_helper.h"
 #include "components/signin/public/base/account_consistency_method.h"
+#include "components/signin/public/base/binding_key_registration_token_result.h"
 #include "components/signin/public/base/signin_buildflags.h"
 #include "components/unexportable_keys/unexportable_key_id.h"
 #include "components/unexportable_keys/unexportable_key_service.h"
@@ -75,6 +75,11 @@ class ProcessDiceHeaderDelegate {
       const std::string& email,
       const GoogleServiceAuthError& error) = 0;
 
+  // Called when the entire Dice signin session is complete (all fetches
+  // finished).
+  virtual void OnDiceSigninSessionComplete(
+      std::vector<CoreAccountId> secondary_accounts) = 0;
+
   virtual signin_metrics::AccessPoint GetAccessPoint() = 0;
 };
 
@@ -91,10 +96,6 @@ enum class PrimaryAccountSettingGaiaIntegrationState {
 // Processes the Dice responses from Gaia.
 class DiceResponseHandler : public KeyedService {
  public:
-  using RegistrationTokenHelperFactory =
-      base::RepeatingCallback<std::unique_ptr<BindingKeyRegistrationTokenHelper>(
-          BindingKeyRegistrationTokenHelper::KeyInitParam key_init_param)>;
-
   // These values are persisted to logs. Entries should not be renumbered and
   // numeric values should never be reused.
   // Public for testing.
@@ -111,14 +112,10 @@ class DiceResponseHandler : public KeyedService {
   };
   // LINT.ThenChange(//tools/metrics/histograms/metadata/signin/enums.xml:DiceTokenBindingOutcome)
 
-  // `registration_token_helper_factory` might be null. If that's the case,
-  // Chrome won't make an attempt to bind a refresh token.
-  DiceResponseHandler(
-      SigninClient* signin_client,
-      signin::IdentityManager* identity_manager,
-      AccountReconcilor* account_reconcilor,
-      AboutSigninInternals* about_signin_internals,
-      RegistrationTokenHelperFactory registration_token_helper_factory);
+  DiceResponseHandler(SigninClient* signin_client,
+                      signin::IdentityManager* identity_manager,
+                      AccountReconcilor* account_reconcilor,
+                      AboutSigninInternals* about_signin_internals);
 
   DiceResponseHandler(const DiceResponseHandler&) = delete;
   DiceResponseHandler& operator=(const DiceResponseHandler&) = delete;
@@ -126,7 +123,7 @@ class DiceResponseHandler : public KeyedService {
   ~DiceResponseHandler() override;
 
   // Must be called when receiving a Dice response header.
-  void ProcessDiceHeader(const signin::DiceResponseParams& dice_params,
+  void ProcessDiceHeader(signin::DiceResponseParams dice_params,
                          std::unique_ptr<ProcessDiceHeaderDelegate> delegate);
 
   // Returns the number of pending DiceTokenFetchers. Exposed for testing.
@@ -135,25 +132,22 @@ class DiceResponseHandler : public KeyedService {
   // Sets |task_runner_| for testing.
   void SetTaskRunner(scoped_refptr<base::SequencedTaskRunner> task_runner);
 
-  // Sets a `registration_token_helper_factory_` factory callback for testing.
-  void SetRegistrationTokenHelperFactoryForTesting(
-      RegistrationTokenHelperFactory factory);
-
  private:
+  class DiceSigninSession;
+
   // Helper class to fetch a refresh token from an authorization code.
   class DiceTokenFetcher : public GaiaAuthConsumer {
    public:
-    DiceTokenFetcher(
-        const GaiaId& gaia_id,
-        const std::string& email,
-        const std::string& authorization_code,
-        bool mtls_token_binding,
-        SigninClient* signin_client,
-        AccountReconcilor* account_reconcilor,
-        std::unique_ptr<ProcessDiceHeaderDelegate> delegate,
-        base::expected<raw_ref<BindingKeyRegistrationTokenHelper>,
-                       TokenBindingOutcome> registration_token_helper_or_error,
-        DiceResponseHandler* dice_response_handler);
+    DiceTokenFetcher(const GaiaId& gaia_id,
+                     const std::string& email,
+                     const std::string& authorization_code,
+                     bool mtls_token_binding,
+                     SigninClient* signin_client,
+                     AccountReconcilor* account_reconcilor,
+                     signin::IdentityManager* identity_manager,
+                     base::expected<std::string, TokenBindingOutcome>
+                         supported_algorithms_or_error,
+                     DiceSigninSession* session);
 
     DiceTokenFetcher(const DiceTokenFetcher&) = delete;
     DiceTokenFetcher& operator=(const DiceTokenFetcher&) = delete;
@@ -170,7 +164,6 @@ class DiceResponseHandler : public KeyedService {
       should_enable_sync_ = should_enable_sync;
     }
     bool mtls_token_binding() const { return mtls_token_binding_; }
-    ProcessDiceHeaderDelegate* delegate() { return delegate_.get(); }
 
    private:
     // Called by |timeout_closure_| when the request times out.
@@ -183,10 +176,10 @@ class DiceResponseHandler : public KeyedService {
 
     void StartTokenFetch();
 
-    void StartBindingKeyGeneration(
-        BindingKeyRegistrationTokenHelper& registration_token_helper);
+    void StartBindingKeyGeneration(signin::IdentityManager* identity_manager,
+                                   std::string_view supported_algorithms);
     void OnRegistrationTokenGenerated(
-        std::optional<BindingKeyRegistrationTokenHelper::Result> result);
+        std::optional<signin::BindingKeyRegistrationTokenResult> result);
 
     // Lock the account reconcilor while tokens are being fetched.
     std::unique_ptr<AccountReconcilor::Lock> account_reconcilor_lock_;
@@ -195,8 +188,7 @@ class DiceResponseHandler : public KeyedService {
     const std::string email_;
     const std::string authorization_code_;
     const bool mtls_token_binding_ = false;
-    const std::unique_ptr<ProcessDiceHeaderDelegate> delegate_;
-    const raw_ptr<DiceResponseHandler> dice_response_handler_ = nullptr;
+    const raw_ptr<DiceSigninSession> session_ = nullptr;
     const raw_ptr<SigninClient> signin_client_ = nullptr;
     base::CancelableOnceClosure timeout_closure_;
     bool should_enable_sync_ = false;
@@ -208,17 +200,63 @@ class DiceResponseHandler : public KeyedService {
     std::vector<uint8_t> wrapped_binding_key_;
   };
 
-  // Deletes the token fetcher.
-  void DeleteTokenFetcher(DiceTokenFetcher* token_fetcher);
+  // Manages a session of concurrent token fetches for a single Dice header.
+  class DiceSigninSession {
+   public:
+    DiceSigninSession(DiceResponseHandler* handler,
+                      std::unique_ptr<ProcessDiceHeaderDelegate> delegate,
+                      signin::DiceResponseParams::SigninInfo signin_info);
+    ~DiceSigninSession();
+
+    // Starts fetching tokens for accounts.
+    void StartTokenFetches();
+
+    // Called by DiceTokenFetcher on success.
+    void OnTokenExchangeSuccess(
+        DiceTokenFetcher* fetcher,
+        const std::string& refresh_token,
+        bool is_under_advanced_protection,
+        const std::vector<uint8_t>& wrapped_binding_key);
+    // Called by DiceTokenFetcher on failure.
+    void OnTokenExchangeFailure(DiceTokenFetcher* fetcher,
+                                const GoogleServiceAuthError& error);
+
+    ProcessDiceHeaderDelegate* delegate() { return delegate_.get(); }
+
+    // Exposed for testing.
+    size_t GetPendingDiceTokenFetchersCountForTesting() const {
+      return token_fetchers_.size();
+    }
+
+    bool IsFetchingForAccount(const CoreAccountId& account_id) const;
+
+    // Note: This might lead to the session being deleted synchronously inside
+    // handler_->DeleteSession(this).
+    bool CancelFetchForAccount(const CoreAccountId& account_id);
+
+    bool MarkEnableSyncIfFetching(const GaiaId& gaia_id,
+                                  const std::string& email);
+
+   private:
+    void FetchTokenForAccount(
+        const signin::DiceResponseParams::SigninInfo::SigninAccount& account);
+    void DeleteFetcher(DiceTokenFetcher* fetcher);
+
+    enum class FetchMode { kAll, kInitiatorFirst };
+    FetchMode GetFetchMode() const;
+
+    const raw_ptr<DiceResponseHandler> handler_;
+    std::unique_ptr<ProcessDiceHeaderDelegate> delegate_;
+    signin::DiceResponseParams::SigninInfo signin_info_;
+    std::vector<std::unique_ptr<DiceTokenFetcher>> token_fetchers_;
+  };
+
+  // Deletes the session.
+  void DeleteSession(DiceSigninSession* session);
 
   // Process the Dice signin action.
   void ProcessDiceSigninHeader(
-      const GaiaId& gaia_id,
-      const std::string& email,
-      const std::string& authorization_code,
-      bool no_authorization_code,
-      const std::string& supported_algorithms_for_token_binding,
-      bool mtls_token_binding,
+      signin::DiceResponseParams::SigninInfo signin_info,
       std::unique_ptr<ProcessDiceHeaderDelegate> delegate);
 
   // Process the Dice enable sync action.
@@ -232,42 +270,27 @@ class DiceResponseHandler : public KeyedService {
       const std::vector<signin::DiceResponseParams::AccountInfo>&
           account_infos);
 
-  // Called after exchanging an OAuth 2.0 authorization code for a refresh token
-  // after DiceAction::SIGNIN.
-  void OnTokenExchangeSuccess(DiceTokenFetcher* token_fetcher,
-                              const std::string& refresh_token,
-                              bool is_under_advanced_protection,
-                              const std::vector<uint8_t>& wrapped_binding_key);
-  void OnTokenExchangeFailure(DiceTokenFetcher* token_fetcher,
-                              const GoogleServiceAuthError& error);
+  // Called when an account has no authorization code due to an outage.
+  void OnNoAuthorizationCode();
   // Called to unlock the reconcilor after a SLO outage.
   void OnTimeoutUnlockReconcilor();
 
-  // Returns a `BindingKeyRegistrationTokenHelper` if `this` should attempt to
-  // bind a refresh token given the configuration parameters and a list of
-  // `supported_algorithms` provided by the server. Otherwise, returns the
-  // reason for why the refresh token wasn't bound.
-  // Returned `BindingKeyRegistrationTokenHelper` is owned by `this`. See
-  // `registration_token_helper_` for the description of its lifetime.
-  base::expected<raw_ref<BindingKeyRegistrationTokenHelper>, TokenBindingOutcome>
-  MaybeGetBindingRegistrationTokenHelper(
+  // Returns `supported_algorithms` if `this` should attempt to bind a refresh
+  // token given the configuration parameters. Otherwise, returns the reason for
+  // why the refresh token wasn't bound.
+  base::expected<std::string, TokenBindingOutcome> CheckTokenBindingEligibility(
       std::string_view supported_algorithms);
 
   const raw_ptr<SigninClient> signin_client_;
   const raw_ptr<signin::IdentityManager> identity_manager_;
   const raw_ptr<AccountReconcilor> account_reconcilor_;
   const raw_ptr<AboutSigninInternals> about_signin_internals_;
-  // Shared between all fetches in `token_fetchers_` and must outlive them.
-  // Must be cleaned up as soon as `token_fetchers_` becomes empty.
-  std::unique_ptr<BindingKeyRegistrationTokenHelper>
-      registration_token_helper_;
-  std::vector<std::unique_ptr<DiceTokenFetcher>> token_fetchers_;
+  std::vector<std::unique_ptr<DiceSigninSession>> sessions_;
   // Lock the account reconcilor for kLockAccountReconcilorTimeoutHours
   // when there was OAuth outage in Dice.
   std::unique_ptr<AccountReconcilor::Lock> lock_;
   std::unique_ptr<base::OneShotTimer> timer_;
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
-  RegistrationTokenHelperFactory registration_token_helper_factory_;
 };
 
 #endif  // CHROME_BROWSER_SIGNIN_DICE_RESPONSE_HANDLER_H_

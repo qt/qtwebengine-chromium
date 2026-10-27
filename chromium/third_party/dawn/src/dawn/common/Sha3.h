@@ -31,6 +31,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <type_traits>
 
 namespace dawn {
@@ -65,8 +66,9 @@ class Sha3 {
 
     Output Finalize();
 
-    // Helper function to compute the hash directly.
+    // Helper functions to compute the hash directly.
     static Output Hash(const void* data, size_t size);
+    static Output Hash(std::span<const std::byte> data);
 
   private:
     static_assert(BitOutputLength == 224 || BitOutputLength == 256 || BitOutputLength == 384 ||

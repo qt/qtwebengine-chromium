@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import type * as Protocol from '../../generated/protocol.js';
 import {
   createTarget,
@@ -13,6 +15,7 @@ import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
 import {TestUniverse} from '../../testing/TestUniverse.js';
 import * as Host from '../host/host.js';
 import * as Platform from '../platform/platform.js';
+import type * as ProtocolClient from '../protocol_client/protocol_client.js';
 
 import * as SDK from './sdk.js';
 
@@ -264,15 +267,15 @@ describe('PageResourceLoader', () => {
         Promise<Protocol.Network.LoadNetworkResourceRequest> {
       return new Promise(resolve => {
         let contentToRead: string|null = 'foo';
-        connection.setHandler('IO.read', () => {
+        connection.setSuccessHandler('IO.read', () => {
           const data = contentToRead;
           contentToRead = null;
-          return {result: {data} as Protocol.IO.ReadResponse};
+          return {data} as Protocol.IO.ReadResponse;
         });
-        connection.setHandler('IO.close', () => ({result: {}}));
-        connection.setHandler('Network.loadNetworkResource', request => {
+        connection.setSuccessHandler('IO.close', () => ({}));
+        connection.setSuccessHandler('Network.loadNetworkResource', request => {
           resolve(request);
-          return {result: {resource: {success: true, stream, statusCode: 200}}};
+          return {resource: {success: true, stream, statusCode: 200}};
         });
       });
     }
@@ -302,26 +305,22 @@ describe('PageResourceLoader', () => {
       settings.moduleSetting('cache-disabled').set(false);
       const connection = new MockCDPConnection();
 
-      connection.setHandler('Network.getSecurityIsolationStatus', () => {
+      connection.setSuccessHandler('Network.getSecurityIsolationStatus', () => {
         return {
-          result: {
-            status: {
-              csp: [{
-                effectiveDirectives: 'connect-src \'none\'',
-                isEnforced: true,
-                source: 'HTTP' as Protocol.Network.ContentSecurityPolicySource,
-              }],
-            },
+          status: {
+            csp: [{
+              effectiveDirectives: 'connect-src \'none\'',
+              isEnforced: true,
+              source: 'HTTP' as Protocol.Network.ContentSecurityPolicySource,
+            }],
           },
         };
       });
 
-      connection.setHandler('Network.loadNetworkResource', () => {
+      connection.setFailureHandler('Network.loadNetworkResource', () => {
         return {
-          error: {
-            code: -32000,
-            message: 'Frame not found',
-          },
+          code: -32000 as ProtocolClient.CDPConnection.CDPErrorStatus,
+          message: 'Frame not found',
         };
       });
 
@@ -348,22 +347,18 @@ describe('PageResourceLoader', () => {
       settings.moduleSetting('cache-disabled').set(false);
       const connection = new MockCDPConnection();
 
-      connection.setHandler('Network.getSecurityIsolationStatus', () => {
+      connection.setSuccessHandler('Network.getSecurityIsolationStatus', () => {
         return {
-          result: {
-            status: {
-              csp: [],
-            },
+          status: {
+            csp: [],
           },
         };
       });
 
-      connection.setHandler('Network.loadNetworkResource', () => {
+      connection.setFailureHandler('Network.loadNetworkResource', () => {
         return {
-          error: {
-            code: -32000,
-            message: 'Frame not found',
-          },
+          code: -32000 as ProtocolClient.CDPConnection.CDPErrorStatus,
+          message: 'Frame not found',
         };
       });
 

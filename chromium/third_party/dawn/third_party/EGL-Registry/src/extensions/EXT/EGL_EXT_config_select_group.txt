@@ -30,7 +30,7 @@ Number
 
 Extension Type
 
-    EGL client extension
+    EGL display extension
 
 Dependencies
 
@@ -79,7 +79,7 @@ Additions to the EGL 1.5 Specification
     override the default sorting rules, by collecting configurations into
     groups. It is not accepted by the <attrib_list> parameter of
     eglChooseConfig, but it is accepted as the <attribute> in
-    eglGetConfigAtrrib."
+    eglGetConfigAttrib."
 
     In section 3.4 "Configuration Management", under the "Sorting of EGLConfigs"
     heading, append to table 3.4 the following:
@@ -97,6 +97,9 @@ Issues
     None
 
 Revision History
+
+    Version 5, 2024-05-09 (Kyle Brenneman)
+        - Corrected extension type to display extension.
 
     Version 4, 2021-06-24 (Robert Mader)
         - Moved to EXT, changed enum value to 0x34C0.

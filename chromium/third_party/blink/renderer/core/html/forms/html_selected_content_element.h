@@ -17,21 +17,31 @@ class HTMLSelectedContentElement : public HTMLElement {
  public:
   explicit HTMLSelectedContentElement(Document&);
 
+  bool IsDisabled() const { return disabled_; }
+
   ElementType GetElementType() const final {
     return ElementType::kHTMLSelectedContentElement;
   }
 
-  // TODO(crbug.com/357649033): Make this clone all selected options, not just
-  // one, for <select multiple>
-  void CloneContentsFromOptionElement(const HTMLOptionElement* option);
+  // CloneContentsFromOptionElement clones the contents of a single option
+  // element into this selectedcontent element, which is used for select
+  // elements without the multiple attribute.
+  void CloneContentsFromOptionElement(const HTMLOptionElement*);
+  // CloneMultipleOptionsFromSelectElement clones the contents of each selected
+  // option element into this selectedcontent element, which is used for select
+  // elements with the multiple attribute.
+  void CloneMultipleOptionsFromSelectElement(HTMLSelectElement&);
 
   Node::InsertionNotificationRequest InsertedInto(ContainerNode&) override;
   void DidNotifySubtreeInsertionsToDocument() override;
   void RemovedFrom(ContainerNode&) override;
+  void MovedFrom(ContainerNode&) override;
 
   void Trace(Visitor*) const override;
 
  private:
+  void UpdateFromAncestorSelect();
+
   // When this is true, cloning is disabled.
   bool disabled_ = false;
 

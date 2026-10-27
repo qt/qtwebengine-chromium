@@ -55,10 +55,25 @@ khronos_validation.enable_message_limit = true
 # Enable fine grained locking for Core Validation, which should improve performance in multithreaded applications. This setting allows the optimization to be disabled for debugging.
 khronos_validation.fine_grained_locking = true
 
-# Dump Descriptors
+# Dump VK_KHR_copy_memory_indirect
 # =====================
-# Dump VK_EXT_descriptor_buffer/VK_EXT_descriptor_heap descriptor information for draw/dispatch/traceRays
+# Dump information at each copy command when recording
+khronos_validation.gpu_dump_copy_memory_indirect = false
+
+# Dump Descriptors (VK_EXT_descriptor_buffer and VK_EXT_descriptor_heap)
+# =====================
+# Dump all the information at every draw/dispatch when recording
 khronos_validation.gpu_dump_descriptors = false
+
+# Force Device Copy
+# =====================
+# [Very experimental] For non-host visible memory, try and do a device copy during command recording to view the data inside a buffer.
+khronos_validation.gpu_dump_device_copy = false
+
+# Dump VK_EXT_device_generated_commands
+# =====================
+# Dump information at each vkCmdExecuteGeneratedCommands when recording
+khronos_validation.gpu_dump_device_generated_commands = false
 
 # Redirect all GPU Dump to stdout
 # =====================
@@ -175,14 +190,9 @@ khronos_validation.gpuav_shaders_to_instrument =
 # Detects data races on shared memory (Compute shaders only). Limitations: This does not handle mixing atomics and non-atomics on the same locations without a barrier in between, this could lead to false positives. This assumes barrier() is used for all shared memory synchronization.
 khronos_validation.gpuav_shared_memory_data_race = true
 
-# RayQuery SPIR-V instructions
-# =====================
-# Enable shader instrumentation on OpRayQueryInitializeKHR
-khronos_validation.gpuav_validate_ray_query = true
-
 # TraceRay SPIR-V instructions
 # =====================
-# Enable shader instrumentation on OpTraceRayKHR, OpHitObject*
+# Enable shader instrumentation on OpTraceRayKHR, OpHitObject*, OpReportIntersectionKHR, OpRayQueryInitializeKHR
 khronos_validation.gpuav_validate_trace_ray = true
 
 # Out of bounds vertex attribute fetching

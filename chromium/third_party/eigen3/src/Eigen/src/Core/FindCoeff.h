@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_FIND_COEFF_H
 #define EIGEN_FIND_COEFF_H
@@ -173,6 +174,10 @@ struct find_coeff_loop<Evaluator, Func, /*Linear*/ false, /*Vectorize*/ true> {
                                            Index& inner) {
     Index outerSize = eval.outerSize();
     Index innerSize = eval.innerSize();
+    if (innerSize < PacketSize) {
+      ScalarImpl::run(eval, func, result, outer, inner);
+      return;
+    }
     Index packetEnd = numext::round_down(innerSize, PacketSize);
 
     /* initialization performed in calling function */
@@ -229,6 +234,10 @@ struct find_coeff_loop<Evaluator, Func, /*Linear*/ true, /*Vectorize*/ true> {
 
   static EIGEN_DEVICE_FUNC inline void run(const Evaluator& eval, Func& func, Scalar& result, Index& index) {
     Index size = eval.size();
+    if (size < PacketSize) {
+      ScalarImpl::run(eval, func, result, index);
+      return;
+    }
     Index packetEnd = numext::round_down(size, PacketSize);
 
     /* initialization performed in calling function */

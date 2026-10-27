@@ -28,12 +28,12 @@
 #ifndef SRC_DAWN_NATIVE_VULKAN_RENDERPIPELINEVK_H_
 #define SRC_DAWN_NATIVE_VULKAN_RENDERPIPELINEVK_H_
 
-#include "dawn/common/vulkan_platform.h"
-#include "dawn/native/Error.h"
-#include "dawn/native/RenderPipeline.h"
-#include "dawn/native/vulkan/PipelineLayoutVk.h"
-#include "dawn/native/vulkan/PipelineVk.h"
-#include "dawn/native/vulkan/RefCountedVkHandle.h"
+#include "src/dawn/common/vulkan_platform.h"
+#include "src/dawn/native/Error.h"
+#include "src/dawn/native/RenderPipeline.h"
+#include "src/dawn/native/vulkan/PipelineLayoutVk.h"
+#include "src/dawn/native/vulkan/PipelineVk.h"
+#include "src/dawn/native/vulkan/RefCountedVkHandle.h"
 
 namespace dawn::native::vulkan {
 
@@ -54,11 +54,26 @@ class RenderPipeline final : public RenderPipelineBase {
     VkPipeline GetHandle() const;
     VkPipelineLayout GetVkLayout() const;
 
+    void ApplyDynamicState(VkCommandBuffer& commands, const RenderPipeline* prevPipeline) const;
+
     // Dawn API
     void SetLabelImpl() override;
 
   private:
+    struct DynamicState {
+        VkPrimitiveTopology primitiveTopology;
+        VkCullModeFlags cullMode;
+        VkFrontFace frontFace;
+        VkBool32 depthTestEnable;
+        VkBool32 depthWriteEnable;
+        VkCompareOp depthCompareOp;
+        VkBool32 stencilTestEnable;
+        uint16_t packedFrontStencil;
+        uint16_t packedBackStencil;
+    };
+
     ~RenderPipeline() override;
+
     void DestroyImpl(DestroyReason reason) override;
     using RenderPipelineBase::RenderPipelineBase;
     MaybeError InitializeImpl() override;
@@ -90,7 +105,9 @@ class RenderPipeline final : public RenderPipelineBase {
     // specialization has mHandle cached directly but mHandle is also kept separately for
     // efficiency.
     bool mRequiresSpecialization = false;
-    absl::flat_hash_map<Specialization, SpecializationResult> mSpecializations;
+    MutexProtected<absl::flat_hash_map<Specialization, SpecializationResult>> mSpecializations;
+
+    DynamicState mDynamicState = {};
 
     // Whether the pipeline has any input attachment being used in the frag shader.
     bool mHasInputAttachment = false;

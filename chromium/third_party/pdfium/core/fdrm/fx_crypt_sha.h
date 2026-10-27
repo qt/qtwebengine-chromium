@@ -14,45 +14,45 @@
 #include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/span.h"
 
-struct CRYPT_sha1_context {
+struct CryptSha1Context {
   uint64_t total_bytes;
   uint32_t blkused;  // Constrained to [0, 64).
   std::array<uint32_t, 5> h;
   std::array<uint8_t, 64> block;
 };
 
-struct CRYPT_sha2_context {
+struct CryptSha2Context {
   uint64_t total_bytes;
   std::array<uint64_t, 8> state;
   uint8_t buffer[128];
 };
 
-void CRYPT_SHA1Start(CRYPT_sha1_context* context);
-void CRYPT_SHA1Update(CRYPT_sha1_context* context,
-                      pdfium::span<const uint8_t> data);
-void CRYPT_SHA1Finish(CRYPT_sha1_context* context,
-                      pdfium::span<uint8_t, 20> digest);
-DataVector<uint8_t> CRYPT_SHA1Generate(pdfium::span<const uint8_t> data);
+void CryptSha1Start(CryptSha1Context* context);
+void CryptSha1Update(CryptSha1Context* context,
+                     pdfium::span<const uint8_t> data);
+void CryptSha1Finish(CryptSha1Context* context,
+                     pdfium::span<uint8_t, 20> digest);
+DataVector<uint8_t> CryptSha1Generate(pdfium::span<const uint8_t> data);
 
-void CRYPT_SHA256Start(CRYPT_sha2_context* context);
-void CRYPT_SHA256Update(CRYPT_sha2_context* context,
-                        pdfium::span<const uint8_t> data);
-void CRYPT_SHA256Finish(CRYPT_sha2_context* context,
-                        pdfium::span<uint8_t, 32> digest);
-DataVector<uint8_t> CRYPT_SHA256Generate(pdfium::span<const uint8_t> data);
+void CryptSha256Start(CryptSha2Context* context);
+void CryptSha256Update(CryptSha2Context* context,
+                       pdfium::span<const uint8_t> data);
+void CryptSha256Finish(CryptSha2Context* context,
+                       pdfium::span<uint8_t, 32> digest);
+DataVector<uint8_t> CryptSha256Generate(pdfium::span<const uint8_t> data);
 
-void CRYPT_SHA384Start(CRYPT_sha2_context* context);
-void CRYPT_SHA384Update(CRYPT_sha2_context* context,
-                        pdfium::span<const uint8_t> data);
-void CRYPT_SHA384Finish(CRYPT_sha2_context* context,
-                        pdfium::span<uint8_t, 48> digest);
-DataVector<uint8_t> CRYPT_SHA384Generate(pdfium::span<const uint8_t> data);
+void CryptSha384Start(CryptSha2Context* context);
+void CryptSha384Update(CryptSha2Context* context,
+                       pdfium::span<const uint8_t> data);
+void CryptSha384Finish(CryptSha2Context* context,
+                       pdfium::span<uint8_t, 48> digest);
+DataVector<uint8_t> CryptSha384Generate(pdfium::span<const uint8_t> data);
 
-void CRYPT_SHA512Start(CRYPT_sha2_context* context);
-void CRYPT_SHA512Update(CRYPT_sha2_context* context,
-                        pdfium::span<const uint8_t> data);
-void CRYPT_SHA512Finish(CRYPT_sha2_context* context,
-                        pdfium::span<uint8_t, 64> digest);
-DataVector<uint8_t> CRYPT_SHA512Generate(pdfium::span<const uint8_t> data);
+void CryptSha512Start(CryptSha2Context* context);
+void CryptSha512Update(CryptSha2Context* context,
+                       pdfium::span<const uint8_t> data);
+void CryptSha512Finish(CryptSha2Context* context,
+                       pdfium::span<uint8_t, 64> digest);
+DataVector<uint8_t> CryptSha512Generate(pdfium::span<const uint8_t> data);
 
 #endif  // CORE_FDRM_FX_CRYPT_SHA_H_

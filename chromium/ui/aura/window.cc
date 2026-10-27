@@ -148,18 +148,31 @@ class ScopedCursorHider {
   ScopedCursorHider& operator=(const ScopedCursorHider&) = delete;
 
   ~ScopedCursorHider() {
-    if (!window_->IsRootWindow())
+    // Store the raw window pointer in a local variable and clear the `window_`
+    // raw_ptr to nullptr before carrying out the rest of the destructor. Since
+    // the window can be synchronously destroyed inside display query sink calls
+    // below, clearing the raw_ptr while the window is still alive prevents
+    // Chromium's dangling raw_ptr checks from triggering on destruction.
+    Window* window = window_;
+    window_ = nullptr;
+
+    if (!window->IsRootWindow()) {
       return;
+    }
 
     // Update the device scale factor of the cursor client only when the last
     // mouse location is on this root window.
     if (hid_cursor_) {
-      client::CursorClient* cursor_client = client::GetCursorClient(window_);
-      if (cursor_client) {
-        const display::Display& display =
-            display::Screen::Get()->GetDisplayNearestWindow(window_);
-        cursor_client->SetDisplay(display);
-        cursor_client->ShowCursor();
+      aura::WindowTracker tracker;
+      tracker.Add(window);
+      const display::Display& display =
+          display::Screen::Get()->GetDisplayNearestWindow(window);
+      if (tracker.Contains(window)) {
+        client::CursorClient* cursor_client = client::GetCursorClient(window);
+        if (cursor_client) {
+          cursor_client->SetDisplay(display);
+          cursor_client->ShowCursor();
+        }
       }
     }
   }
@@ -186,6 +199,8 @@ Window::Window(WindowDelegate* delegate, client::WindowType type)
 }
 
 Window::~Window() {
+  CHECK_EQ(delete_block_count_, 0u);
+
   // TODO(crbug.com/461127606): Crash on re-entrant destruction.
   // TODO(crbug.com/497548912): Continue crashing on re-entrant destruction
   // on Chrome M149 or newer.
@@ -1029,6 +1044,7 @@ void Window::RemoveOrDestroyChildren() {
 }
 
 void Window::AfterPropertyChange(const void* key, int64_t old_value) {
+  ScopedDeleteBlocker blocker(this);
   for (WindowObserver& observer : observers_)
     observer.OnWindowPropertyChanged(this, key, old_value);
 }
@@ -1089,22 +1105,31 @@ void Window::SetVisibleInternal(bool visible) {
 
   WindowOcclusionTracker::ScopedPause pause_occlusion_tracking;
 
-  for (WindowObserver& observer : observers_)
-    observer.OnWindowVisibilityChanging(this, visible);
+  {
+    // Delegate methods called in this block should not delete the window.
+    ScopedDeleteBlocker blocker(this);
 
-  client::VisibilityClient* visibility_client =
-      client::GetVisibilityClient(this);
-  if (visibility_client)
-    visibility_client->UpdateLayerVisibility(this, visible);
-  else
-    layer()->SetVisible(visible);
-  visible_ = visible;
-  SchedulePaint();
-  if (parent_ && parent_->layout_manager_)
-    parent_->layout_manager_->OnChildWindowVisibilityChanged(this, visible);
+    for (WindowObserver& observer : observers_) {
+      observer.OnWindowVisibilityChanging(this, visible);
+    }
 
-  if (delegate_)
-    delegate_->OnWindowTargetVisibilityChanged(visible);
+    client::VisibilityClient* visibility_client =
+        client::GetVisibilityClient(this);
+    if (visibility_client) {
+      visibility_client->UpdateLayerVisibility(this, visible);
+    } else {
+      layer()->SetVisible(visible);
+    }
+    visible_ = visible;
+    SchedulePaint();
+    if (parent_ && parent_->layout_manager_) {
+      parent_->layout_manager_->OnChildWindowVisibilityChanged(this, visible);
+    }
+
+    if (delegate_) {
+      delegate_->OnWindowTargetVisibilityChanged(visible);
+    }
+  }
 
   NotifyWindowVisibilityChanged(this, visible);
 }
@@ -1119,6 +1144,7 @@ void Window::SetOcclusionInfo(OcclusionState occlusion_state,
   occlusion_state_ = occlusion_state;
   occluded_region_in_root_ = occluded_region;
 
+  ScopedDeleteBlocker blocker(this);
   if (delegate_)
     delegate_->OnWindowOcclusionChanged(old_occlusion_state, occlusion_state);
 
@@ -1166,6 +1192,7 @@ void Window::OnParentChanged() {
 void Window::StackChildRelativeTo(Window* child,
                                   Window* target,
                                   StackDirection direction) {
+  ScopedDeleteBlocker blocker(this);
   DCHECK_NE(child, target);
   DCHECK(child);
   DCHECK(target);
@@ -1217,11 +1244,13 @@ void Window::StackChildLayerRelativeTo(Window* child,
 }
 
 void Window::OnStackingChanged() {
+  ScopedDeleteBlocker blocker(this);
   for (WindowObserver& observer : observers_)
     observer.OnWindowStackingChanged(this);
 }
 
 void Window::NotifyRemovingFromRootWindow(Window* new_root) {
+  ScopedDeleteBlocker blocker(this);
   if (frame_sink_id_.is_valid())
     UnregisterFrameSinkId();
   for (WindowObserver& observer : observers_)
@@ -1234,6 +1263,7 @@ void Window::NotifyRemovingFromRootWindow(Window* new_root) {
 }
 
 void Window::NotifyAddedToRootWindow() {
+  ScopedDeleteBlocker blocker(this);
   if (frame_sink_id_.is_valid())
     RegisterFrameSinkId();
   for (WindowObserver& observer : observers_)
@@ -1304,11 +1334,14 @@ bool Window::NotifyWindowVisibilityChangedAtReceiver(aura::Window* target,
   // |this| may be deleted during a call to OnWindowVisibilityChanged() on one
   // of the observers. We create an local observer for that. In that case we
   // exit without further access to any members.
-  WindowTracker tracker;
-  tracker.Add(this);
-  for (WindowObserver& observer : observers_)
+  auto weak_this = GetWeakPtr();
+  for (WindowObserver& observer : observers_) {
     observer.OnWindowVisibilityChanged(target, visible);
-  return tracker.Contains(this);
+    if (!weak_this) {
+      break;
+    }
+  }
+  return !!weak_this;
 }
 
 bool Window::NotifyWindowVisibilityChangedDown(aura::Window* target,
@@ -1316,17 +1349,17 @@ bool Window::NotifyWindowVisibilityChangedDown(aura::Window* target,
   if (!NotifyWindowVisibilityChangedAtReceiver(target, visible))
     return false;  // |this| was deleted.
 
-  WindowTracker this_tracker;
-  this_tracker.Add(this);
+  auto weak_this = GetWeakPtr();
+
   // Copy |children_| in case iterating mutates |children_|, or destroys an
   // existing child.
   WindowTracker children(children_);
 
-  while (!this_tracker.windows().empty() && !children.windows().empty())
+  while (weak_this && !children.windows().empty()) {
     children.Pop()->NotifyWindowVisibilityChangedDown(target, visible);
+  }
 
-  const bool this_still_valid = !this_tracker.windows().empty();
-  return this_still_valid;
+  return !!weak_this;
 }
 
 void Window::NotifyWindowVisibilityChangedUp(aura::Window* target,
@@ -1335,7 +1368,7 @@ void Window::NotifyWindowVisibilityChangedUp(aura::Window* target,
   // in NotifyWindowVisibilityChangedDown.
   for (Window* window = parent(); window; window = window->parent()) {
     bool ret = window->NotifyWindowVisibilityChangedAtReceiver(target, visible);
-    DCHECK(ret);
+    CHECK(ret);
   }
 }
 
@@ -1560,6 +1593,8 @@ void Window::OnPaintLayer(const ui::PaintContext& context) {
 void Window::OnLayerBoundsChanged(const gfx::Rect& old_bounds,
                                   ui::PropertyChangeReason reason) {
   WindowOcclusionTracker::ScopedPause pause_occlusion_tracking;
+
+  ScopedDeleteBlocker blocker(this);
 
   bounds_ = layer()->bounds();
 

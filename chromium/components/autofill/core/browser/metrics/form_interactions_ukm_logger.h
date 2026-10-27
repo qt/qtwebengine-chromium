@@ -5,18 +5,24 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_METRICS_FORM_INTERACTIONS_UKM_LOGGER_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_METRICS_FORM_INTERACTIONS_UKM_LOGGER_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <optional>
 
-#include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
 #include "base/time/time.h"
-#include "base/types/pass_key.h"
 #include "components/autofill/core/browser/data_model/payments/credit_card.h"
+#include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_structure.h"
+#include "components/autofill/core/browser/form_types.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
+#include "components/autofill/core/browser/metrics/form_events/form_events.h"
 #include "components/autofill/core/browser/metrics/prediction_quality_metrics.h"
-#include "services/metrics/public/cpp/ukm_recorder.h"
+#include "components/autofill/core/browser/suggestions/suggestion_util.h"
+#include "components/autofill/core/common/dense_set.h"
+#include "components/autofill/core/common/signatures.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 
 namespace autofill::autofill_metrics {
@@ -95,6 +101,11 @@ class FormInteractionsUkmLogger {
                            const AutofillField& field,
                            base::TimeTicks form_parsed_timestamp,
                            bool off_the_record);
+  void LogSuggestionAccepted(ukm::SourceId ukm_source_id,
+                             const FormStructure& form_structure,
+                             const AutofillField& autofill_field,
+                             SuggestionType accepted_suggestion_type,
+                             int accepted_suggestion_position);
   // For address suggestions, the `record_type` is irrelevant.
   void LogDidFillSuggestion(ukm::SourceId ukm_source_id,
                             const FormStructure& form,

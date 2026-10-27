@@ -86,6 +86,13 @@ class CONTENT_EXPORT ClipboardEndpoint {
                                  data_transfer_endpoint);
 
   // This constructor should be called when the endpoint represents a Chrome tab
+  // that has yet to be loaded (i.e., has no render frame host or web contents,
+  // but may have a URL or profile).
+  ClipboardEndpoint(
+      base::optional_ref<const ui::DataTransferEndpoint> data_transfer_endpoint,
+      base::RepeatingCallback<BrowserContext*()> browser_context_fetcher);
+
+  // This constructor should be called when the endpoint represents a Chrome tab
   // that is still alive.
   ClipboardEndpoint(
       base::optional_ref<const ui::DataTransferEndpoint> data_transfer_endpoint,
@@ -155,6 +162,14 @@ CONTENT_EXPORT void GetSourceClipboardEndpoint(
 CONTENT_EXPORT void AddSourceDataToClipboardWriter(
     ui::ScopedClipboardWriter& clipboard_writer,
     content::RenderFrameHost& rfh);
+
+// Creates a `ui::DataTransferEndpoint` representing the last committed URL.
+CONTENT_EXPORT std::optional<ui::DataTransferEndpoint> CreateDataEndpoint(
+    content::RenderFrameHost& rfh);
+
+// Creates a `content::ClipboardEndpoint` representing the last committed URL.
+CONTENT_EXPORT ClipboardEndpoint
+CreateClipboardEndpoint(content::RenderFrameHost& rfh);
 
 }  // namespace content
 

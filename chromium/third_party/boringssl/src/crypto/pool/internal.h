@@ -53,13 +53,13 @@ class CryptoBuffer : public crypto_buffer_st {
   // Instead of subclassing RefCounted<T>, implement refcounting by hand.
   // CryptoBuffer's refcounting must synchronize with CryptoBufferPool.
   static constexpr bool kAllowRefCountedUniquePtr = true;
-  void UpRefInternal();
+  void UpRefInternal() const;
   void DecRefInternal();
 
   UniquePtr<CryptoBufferPoolHandle> pool_handle_;
   uint8_t *data_ = nullptr;
   size_t len_ = 0;
-  CRYPTO_refcount_t references_ = 1;
+  mutable CRYPTO_refcount_t references_ = 1;
   bool data_is_static_ = false;
 
  private:
@@ -68,23 +68,26 @@ class CryptoBuffer : public crypto_buffer_st {
 
 DEFINE_LHASH_OF(CryptoBuffer)
 
-class CryptoBufferPool : public crypto_buffer_pool_st {
+class CryptoBufferPool : public crypto_buffer_pool_st,
+                         public RefCounted<CryptoBufferPool> {
  public:
-  static constexpr bool kAllowUniquePtr = true;
   CryptoBufferPool();
-  ~CryptoBufferPool();
 
-  // Hash returns the hash of |data|.
+  // Hash returns the hash of `data`.
   uint32_t Hash(Span<const uint8_t> data) const;
 
-  // FindBufferLocked looks for a buffer with hash |hash| and contents |data|.
-  // It returns it if found and nullptr otherwise. |handle_->lock_| must be
+  // FindBufferLocked looks for a buffer with hash `hash` and contents `data`.
+  // It returns it if found and nullptr otherwise. `handle_->lock_` must be
   // locked for reading or writing before calling this.
   CryptoBuffer *FindBufferLocked(uint32_t hash, Span<const uint8_t> data);
 
   UniquePtr<CryptoBufferPoolHandle> handle_;
   LHASH_OF(CryptoBuffer) *bufs_ = nullptr;
   uint64_t hash_key_[2];
+
+ private:
+  friend RefCounted;
+  ~CryptoBufferPool();
 };
 
 BSSL_NAMESPACE_END

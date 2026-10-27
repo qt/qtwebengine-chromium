@@ -28,6 +28,7 @@
  *   Content : Eigen bindings to Intel(R) MKL PARDISO
  ********************************************************************************
 */
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef EIGEN_PARDISOSUPPORT_H
 #define EIGEN_PARDISOSUPPORT_H

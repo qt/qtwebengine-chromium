@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_PARTIALLU_H
 #define EIGEN_PARTIALLU_H
@@ -338,9 +339,10 @@ struct partial_lu_impl {
     const Index rows = lu.rows();
     const Index cols = lu.cols();
     const Index size = (std::min)(rows, cols);
-    // For small compile-time matrices it is worth processing the last row separately:
+    // For small compile-time matrices and square runtime matrices it is worth processing the last row separately:
     //  speedup: +100% for 2x2, +10% for others.
-    const Index endk = UnBlockedAtCompileTime ? size - 1 : size;
+    const bool process_last_row_separately = UnBlockedAtCompileTime || rows == cols;
+    const Index endk = process_last_row_separately ? size - 1 : size;
     nb_transpositions = 0;
     Index first_zero_pivot = -1;
     for (Index k = 0; k < endk; ++k) {
@@ -366,13 +368,14 @@ struct partial_lu_impl {
         first_zero_pivot = k;
       }
 
-      if (k < rows - 1)
+      // Skip the trailing update for rectangular panels with no remaining columns.
+      if (rrows > 0 && rcols > 0)
         lu.bottomRightCorner(fix<RRows>(rrows), fix<RCols>(rcols)).noalias() -=
             lu.col(k).tail(fix<RRows>(rrows)) * lu.row(k).tail(fix<RCols>(rcols));
     }
 
     // special handling of the last entry
-    if (UnBlockedAtCompileTime) {
+    if (process_last_row_separately) {
       Index k = endk;
       row_transpositions[k] = PivIndex(k);
       if (numext::is_exactly_zero(Scoring()(lu(k, k))) && first_zero_pivot == -1) first_zero_pivot = k;
@@ -427,7 +430,6 @@ struct partial_lu_impl {
       //                          A00 | A01 | A02
       // lu  = A_0 | A_1 | A_2 =  A10 | A11 | A12
       //                          A20 | A21 | A22
-      BlockType A_0 = lu.block(0, 0, rows, k);
       BlockType A_2 = lu.block(0, k + bs, rows, tsize);
       BlockType A11 = lu.block(k, k, bs, bs);
       BlockType A12 = lu.block(k, k + bs, bs, tsize);
@@ -443,9 +445,12 @@ struct partial_lu_impl {
 
       nb_transpositions += nb_transpositions_in_panel;
       // update permutations and apply them to A_0
-      for (Index i = k; i < k + bs; ++i) {
-        Index piv = (row_transpositions[i] += internal::convert_index<PivIndex>(k));
-        A_0.row(i).swap(A_0.row(piv));
+      if (k > 0) {
+        BlockType A_0 = lu.block(0, 0, rows, k);
+        for (Index i = k; i < k + bs; ++i) {
+          Index piv = (row_transpositions[i] += internal::convert_index<PivIndex>(k));
+          A_0.row(i).swap(A_0.row(piv));
+        }
       }
 
       if (trows) {
@@ -481,6 +486,29 @@ void partial_lu_inplace(MatrixType& lu, TranspositionType& row_transpositions,
                   internal::min_size_prefer_fixed(MatrixType::RowsAtCompileTime, MatrixType::ColsAtCompileTime)>::
       blocked_lu(lu.rows(), lu.cols(), &lu.coeffRef(0, 0), lu.outerStride(), &row_transpositions.coeffRef(0),
                  nb_transpositions);
+}
+
+/** \internal returns the determinant computed from an in-place partial-pivoting
+ * LU decomposition of \a m without constructing a PartialPivLU object.
+ */
+template <typename Derived>
+typename traits<Derived>::Scalar partial_lu_determinant(const Derived& m) {
+  typedef typename traits<Derived>::Scalar Scalar;
+  if (m.rows() == 0) return Scalar(1);
+  EIGEN_STATIC_ASSERT_NON_INTEGER(Scalar)
+
+  typedef typename plain_matrix_type<Derived>::type PlainObject;
+  typedef Transpositions<PlainObject::RowsAtCompileTime, PlainObject::MaxRowsAtCompileTime, DefaultPermutationIndex>
+      TranspositionType;
+
+  eigen_assert(m.rows() < NumTraits<DefaultPermutationIndex>::highest());
+  PlainObject lu(m);
+
+  TranspositionType row_transpositions(lu.rows());
+  typename TranspositionType::StorageIndex nb_transpositions;
+  partial_lu_inplace(lu, row_transpositions, nb_transpositions);
+
+  return Scalar((nb_transpositions % 2) ? -1 : 1) * lu.diagonal().prod();
 }
 
 }  // end namespace internal

@@ -10,20 +10,19 @@
 #include "ash/constants/webui_url_constants.h"
 #include "ash/webui/common/trusted_types_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/webui/ash/lock_screen_reauth/lock_screen_reauth_handler.h"
 #include "chrome/browser/ui/webui/ash/login/oobe_ui.h"
 #include "chrome/browser/ui/webui/metrics_handler.h"
-#include "chrome/grit/browser_resources.h"
 #include "chrome/grit/gaia_action_buttons_resources.h"
 #include "chrome/grit/gaia_action_buttons_resources_map.h"
 #include "chrome/grit/gaia_auth_host_resources_map.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/lock_screen_reauth_resources.h"
 #include "chrome/grit/lock_screen_reauth_resources_map.h"
+#include "chromeos/ash/components/browser_context_helper/browser_context_types.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -34,8 +33,7 @@ namespace ash {
 
 bool LockScreenStartReauthUIConfig::IsWebUIEnabled(
     content::BrowserContext* browser_context) {
-  return ash::ProfileHelper::IsLockScreenProfile(
-      Profile::FromBrowserContext(browser_context));
+  return IsLockScreenBrowserContext(browser_context);
 }
 
 LockScreenStartReauthUI::LockScreenStartReauthUI(content::WebUI* web_ui)
@@ -135,5 +133,7 @@ LockScreenStartReauthUI::LockScreenStartReauthUI(content::WebUI* web_ui)
 }
 
 LockScreenStartReauthUI::~LockScreenStartReauthUI() = default;
+
+WEB_UI_CONTROLLER_TYPE_IMPL(LockScreenStartReauthUI)
 
 }  // namespace ash

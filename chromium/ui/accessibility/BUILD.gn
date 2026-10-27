@@ -39,10 +39,10 @@ mojom_component("ax_features_mojo") {
   output_prefix = "ui_accessibility_ax_features_mojom"
 }
 
-# A tiny subset of accessibility code that's allowed to be
-# included by Blink. The rule of thumb (for now) is that it's
-# anything platform-neutral (no platform/ directory) that
-# relates to data structs (actions, nodes, trees, etc) and interfaces. No heavy weight logic yet.
+# A tiny subset of accessibility code that's allowed to be included by Blink.
+# The rule of thumb (for now) is that it's anything platform-neutral (no
+# platform/ directory) that relates to data structs (actions, nodes, trees, etc)
+# and interfaces. No heavy weight logic yet.
 component("ax_base") {
   defines = [ "AX_BASE_IMPLEMENTATION" ]
 
@@ -434,6 +434,7 @@ test("accessibility_unittests") {
         "platform/browser_accessibility_manager_win_unittest.cc",
         "platform/browser_accessibility_win_unittest.cc",
         "platform/iaccessible2/scoped_co_mem_array_unittest.cc",
+        "platform/uia_client_info_source_win_unittest.cc",
       ]
 
       deps += [
@@ -479,13 +480,19 @@ test("accessibility_unittests") {
 fuzzer_test("ax_tree_fuzzer") {
   sources = [ "ax_tree_fuzzer.cc" ]
 
-  deps = [ ":accessibility" ]
+  deps = [
+    ":accessibility",
+    "//testing/libfuzzer:libfuzzer_base_wrappers",
+  ]
 }
 
 fuzzer_test("ax_table_fuzzer") {
   sources = [ "ax_table_fuzzer.cc" ]
 
-  deps = [ ":accessibility" ]
+  deps = [
+    ":accessibility",
+    "//testing/libfuzzer:libfuzzer_base_wrappers",
+  ]
 
   seed_corpus = "fuzz_corpus"
 }

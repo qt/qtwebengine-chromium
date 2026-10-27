@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "xla/stream_executor/cuda/cuda_kernel.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -26,6 +27,8 @@ limitations under the License.
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "absl/synchronization/mutex.h"
+#include "xla/tsl/platform/status_macros.h"
 #include "third_party/gpus/cuda/include/cuda.h"
 #include "xla/stream_executor/activate_context.h"
 #include "xla/stream_executor/cuda/cuda_status.h"
@@ -101,7 +104,7 @@ absl::Status CudaKernel::UpdateMaxDynamicSharedMemoryBytes(
     return absl::OkStatus();
   }
 
-  absl::MutexLock lock(&mu_);
+  absl::MutexLock lock(mu_);
   if (shared_memory_bytes <=
       max_dynamic_shared_memory_bytes_.load(std::memory_order_relaxed)) {
     return absl::OkStatus();
@@ -155,7 +158,12 @@ absl::Status CudaKernel::Launch(const ThreadDim& thread_dims,
 
   // If arguments are already packed we can just launch the kernel.
   if (auto* packed = DynCast<KernelArgsPackedArrayBase>(&args)) {
-    return launch(*packed);
+    auto& pack = args_packing();
+    if (!pack) {
+      return launch(*packed);
+    }
+    ASSIGN_OR_RETURN(auto repacked, pack(*this, *packed));
+    return launch(*repacked);
   }
 
   // For device memory array we rely on a custom kernel arguments packing.
@@ -167,7 +175,7 @@ absl::Status CudaKernel::Launch(const ThreadDim& thread_dims,
           "memory arguments array");
     }
 
-    TF_ASSIGN_OR_RETURN(auto packed, pack(*this, *device_mem));
+    ASSIGN_OR_RETURN(auto packed, pack(*this, *device_mem));
     return launch(*packed);
   }
 

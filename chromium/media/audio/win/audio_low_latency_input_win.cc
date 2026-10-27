@@ -212,10 +212,10 @@ std::string GetOpenLogString(WASAPIAudioInputStream::StreamOpenResult result,
 
 void LogFakeAudioCaptureTimestamps(bool use_fake_audio_capture_timestamps,
                                    base::TimeDelta abs_delta_time) {
-  TRACE_EVENT_INSTANT2(
-      "audio", "AudioCaptureWinTimestamps", TRACE_EVENT_SCOPE_THREAD,
-      "use_fake_audio_capture_timestamps", use_fake_audio_capture_timestamps,
-      "abs_timestamp_diff_ms", abs_delta_time.InMilliseconds());
+  TRACE_EVENT_INSTANT("audio", "AudioCaptureWinTimestamps",
+                      "use_fake_audio_capture_timestamps",
+                      use_fake_audio_capture_timestamps,
+                      "abs_timestamp_diff_ms", abs_delta_time.InMilliseconds());
   base::UmaHistogramBoolean("Media.Audio.Capture.Win.FakeTimestamps",
                             use_fake_audio_capture_timestamps);
   base::UmaHistogramLongTimes("Media.Audio.Capture.Win.AbsTimestampDiffMs",
@@ -668,7 +668,8 @@ WASAPIAudioInputStream::WASAPIAudioInputStream(
     const AudioParameters& params,
     const std::string& device_id,
     AudioManager::LogCallback log_callback)
-    : manager_(manager),
+    : id_(base::UnguessableToken::Create()),
+      manager_(manager),
       params_(params),
       peak_detector_(base::BindRepeating(&AudioManager::TraceAmplitudePeak,
                                          base::Unretained(manager_),
@@ -1196,8 +1197,8 @@ void WASAPIAudioInputStream::SetOutputDeviceForAec(
 
 void WASAPIAudioInputStream::SendLogMessage(std::string message) {
   if (log_callback_) {
-    log_callback_.Run(
-        base::StringPrintf("WAIS[%p]: %s", this, message.c_str()));
+    log_callback_.Run(base::StringPrintf(
+        "WAIS[id=%s]: %s", id_.ToString().c_str(), message.c_str()));
   }
 }
 
@@ -1742,8 +1743,7 @@ HRESULT WASAPIAudioInputStream::ActivateAudioClientInterface() {
       VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK, __uuidof(IAudioClient),
       &propvariant, completion_handler.Get(), &async_op);
   if (FAILED(hr)) {
-    TRACE_EVENT_INSTANT0("audio", "ActivateAudioInterfaceAsync failed",
-                         TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT("audio", "ActivateAudioInterfaceAsync failed");
     SendLogMessage(base::StrCat(
         {__func__, " => (ERROR: ActivateAudioInterfaceAsync::Run=[",
          ErrorToString(hr), "])"}));
@@ -1759,8 +1759,7 @@ HRESULT WASAPIAudioInputStream::ActivateAudioClientInterface() {
     base::UmaHistogramTimes("Media.Audio.Capture.Win.TimeToGetAudioClient",
                             timer.Elapsed());
   } else {
-    TRACE_EVENT_INSTANT0("audio", "GetAudioClient timed out",
-                         TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT("audio", "GetAudioClient timed out");
   }
 
   if (FAILED(hr)) {
@@ -2050,15 +2049,21 @@ HRESULT WASAPIAudioInputStream::InitializeAudioEngine() {
           ? &kCommunicationsSessionId
           : nullptr);
 
+  base::UmaHistogramBoolean(
+      "Media.Audio.Capture.Win.InitError.SystemPermissionDenied",
+      hr == E_ACCESSDENIED);
+
   if (FAILED(hr)) {
     SendLogMessage(
         base::StrCat({__func__, " => (ERROR: IAudioClient::Initialize=[",
                       ErrorToString(hr), "])"}));
     open_result_ = OPEN_RESULT_AUDIO_CLIENT_INIT_FAILED;
-    base::UmaHistogramSparse("Media.Audio.Capture.Win.InitError", hr);
-    if (is_process_loopback_capture_) {
-      base::UmaHistogramSparse(
-          "Media.Audio.Capture.Win.ProcessLoopbackInitError", hr);
+    if (hr != E_ACCESSDENIED) {
+      base::UmaHistogramSparse("Media.Audio.Capture.Win.InitError2", hr);
+      if (is_process_loopback_capture_) {
+        base::UmaHistogramSparse(
+            "Media.Audio.Capture.Win.ProcessLoopbackInitError2", hr);
+      }
     }
     MaybeReportFormatRelatedInitError(hr);
     return hr;

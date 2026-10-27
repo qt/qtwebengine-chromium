@@ -1552,6 +1552,12 @@ tr.b.unittest.testSuite(function() {
     assert.strictEqual(table.resolvedRowHighlightStyle, HighlightStyle.NONE);
     assert.strictEqual(table.resolvedCellHighlightStyle, HighlightStyle.LIGHT);
 
+    // Explicit outline highlight styles.
+    table.rowHighlightStyle = HighlightStyle.OUTLINE;
+    table.cellHighlightStyle = HighlightStyle.OUTLINE;
+    assert.strictEqual(table.resolvedRowHighlightStyle, HighlightStyle.OUTLINE);
+    assert.strictEqual(table.resolvedCellHighlightStyle, HighlightStyle.OUTLINE);
+
     // Back to default highlight styles.
     table.cellHighlightStyle = HighlightStyle.DEFAULT;
     table.rowHighlightStyle = HighlightStyle.DEFAULT;

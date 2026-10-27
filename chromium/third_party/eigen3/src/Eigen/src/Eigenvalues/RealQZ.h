@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_REAL_QZ_H
 #define EIGEN_REAL_QZ_H
@@ -544,9 +545,11 @@ RealQZ<MatrixType>& RealQZ<MatrixType>::compute(const MatrixType& A_in, const Ma
         // and T.block(f,f, l-f+1,l-f+1) is invertible uper-triangular, which allows to
         // apply a QR-like iteration to rows and columns f..l.
         step(f, l, local_iter);
-        local_iter++;
+        // count QR-like steps
         m_global_iter++;
       }
+      // count iterations toward m_maxIters
+      local_iter++;
     }
   }
   // check if we converged before reaching iterations limit
@@ -584,4 +587,4 @@ RealQZ<MatrixType>& RealQZ<MatrixType>::compute(const MatrixType& A_in, const Ma
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_REAL_QZ
+#endif  // EIGEN_REAL_QZ_H

@@ -228,6 +228,9 @@ class GaiaCookieManagerService
   // will be called.
   signin::AccountsInCookieJarInfo ListAccounts();
 
+  // Returns the cached list of accounts.
+  signin::AccountsInCookieJarInfo GetCachedListAccounts();
+
   // Triggers a ListAccounts fetch. This is public so that callers that know
   // that a check which GAIA should be done can force it.
   void TriggerListAccounts();
@@ -323,6 +326,7 @@ class GaiaCookieManagerService
       GaiaAuthConsumer* consumer,
       const gaia::GaiaSource& source) override;
   network::mojom::CookieManager* GetCookieManagerForPartition() override;
+  signin::PartitionSuffix GetPartitionSuffix() const override;
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
   std::unique_ptr<signin::BoundSessionOAuthMultiLoginDelegate>
   CreateBoundSessionOAuthMultiLoginDelegateForPartition() override;

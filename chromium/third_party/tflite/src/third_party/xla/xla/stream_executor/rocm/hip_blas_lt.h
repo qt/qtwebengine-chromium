@@ -29,7 +29,13 @@ limitations under the License.
 
 #if TF_HIPBLASLT
 
+#include "rocm/include/hipblaslt/hipblaslt-ext.hpp"
 #include "xla/stream_executor/rocm/hip_blas_utils.h"
+
+namespace hipblaslt_ext {
+class GroupedGemm;
+struct UserArguments;
+}  // namespace hipblaslt_ext
 
 namespace stream_executor {
 
@@ -49,8 +55,7 @@ class BlasLt : public gpu::BlasLt {
 
    private:
     MatrixLayout(hipblasLtMatrixLayout_t handle, hipDataType datatype)
-        : handle_(handle, wrap::hipblasLtMatrixLayoutDestroy),
-          datatype_(datatype) {}
+        : handle_(handle, hipblasLtMatrixLayoutDestroy), datatype_(datatype) {}
 
     Owned<hipblasLtMatrixLayout_t> handle_;
     hipDataType datatype_;
@@ -79,7 +84,7 @@ class BlasLt : public gpu::BlasLt {
     MatmulDesc(hipblasLtMatmulDesc_t handle, hipblasComputeType_t compute_type,
                hipDataType datatype, bool bias_epilogue,
                gpu::ScaleMode scale_mode)
-        : handle_(handle, wrap::hipblasLtMatmulDescDestroy),
+        : handle_(handle, hipblasLtMatmulDescDestroy),
           compute_type_(compute_type),
           datatype_(datatype),
           has_bias_epilogue_(bias_epilogue),
@@ -93,6 +98,7 @@ class BlasLt : public gpu::BlasLt {
   };
 
   struct MatmulPlan : public gpu::BlasLt::MatmulPlan {
+    // Constructor for regular matmul
     MatmulPlan(MatmulDesc&& op_desc, MatrixLayout&& a_desc,
                MatrixLayout&& b_desc, MatrixLayout&& c_desc,
                MatrixLayout&& d_desc, xla::complex128 alpha, double beta,
@@ -104,7 +110,8 @@ class BlasLt : public gpu::BlasLt {
           d_desc_(std::move(d_desc)),
           alpha_(alpha),
           beta_(beta),
-          must_swap_operands_(must_swap_operands) {}
+          must_swap_operands_(must_swap_operands),
+          grouped_gemm_(nullptr) {}
 
     ~MatmulPlan() override = default;
 
@@ -113,13 +120,23 @@ class BlasLt : public gpu::BlasLt {
         blas::ProfileResult* profile_result) const override;
 
     absl::StatusOr<std::vector<MatmulAlgorithm>> GetAlgorithms(
-        const Stream* stream, size_t max_algorithm_count,
-        size_t max_workspace_size) const override;
+        const Stream* stream, size_t max_algorithm_count = 128,
+        size_t max_workspace_size = 1ll << 32) const override;
 
     absl::Status SetAlgorithm(const MatmulAlgorithm& algorithm) override {
       algorithm_ = algorithm;
+      algorithm_must_be_initialized_ = true;
       return absl::OkStatus();
     }
+
+    bool is_grouped() const { return grouped_gemm_ != nullptr; }
+
+    // Static factory for grouped-GEMM plans. Creates a fully-initialized
+    // MatmulPlan or returns an error; it is impossible to construct a grouped
+    // MatmulPlan without going through this function.
+    static absl::StatusOr<std::unique_ptr<MatmulPlan>> InitializeGroupedGemm(
+        gpu::GroupedGemmConfig cfg, Epilogue epilogue,
+        hipblasLtHandle_t blas_lt_handle, blas::ComputationType compute_type);
 
    protected:
     absl::Status DoMatmul(Stream* stream, const void* alpha, const void* beta,
@@ -127,20 +144,57 @@ class BlasLt : public gpu::BlasLt {
                           blas::ProfileResult* profile_result) const;
 
    private:
+    // Private constructor for grouped matmul. Callers must use
+    // InitializeGroupedGemm() instead.
+    MatmulPlan(gpu::GroupedGemmConfig&& cfg, bool must_swap_operands,
+               Epilogue epilogue)
+        : must_swap_operands_(must_swap_operands),
+          cfg_(std::move(cfg)),
+          grouped_gemm_epilogue_(epilogue),
+          grouped_gemm_(nullptr) {}
+
+    // Performs the hipBLASLt grouped-GEMM initialization work. Called by the
+    // static factory InitializeGroupedGemm().
+    absl::Status DoInitializeGroupedGemm(hipblasLtHandle_t blas_lt_handle,
+                                         blas::ComputationType compute_type);
+
+    absl::StatusOr<std::vector<MatmulAlgorithm>> GetAlgorithmsForGroupedMatmul(
+        const Stream* stream, size_t max_algorithm_count,
+        size_t max_workspace_size) const;
+    absl::StatusOr<std::vector<MatmulAlgorithm>> GetAlgorithmsForMatmul(
+        const Stream* stream, size_t max_algorithm_count,
+        size_t max_workspace_size) const;
+    absl::Status ExecuteRegularMatmul(
+        Stream* stream, const gpu::BlasLt::MemoryArgs& args,
+        blas::ProfileResult* profile_result) const;
+    absl::Status ExecuteGroupedMatmul(
+        Stream* stream, const gpu::BlasLt::MemoryArgs& args,
+        blas::ProfileResult* profile_result) const;
+
     // TODO(cjfj): Add consistency checks for types, shapes, etc.?
-    MatmulDesc op_desc_;
-    MatrixLayout a_desc_;
-    MatrixLayout b_desc_;
-    MatrixLayout c_desc_;
-    MatrixLayout d_desc_;
-    xla::complex128 alpha_;
-    double beta_;
+    // Regular matmul members (optional for grouped matmul)
+    std::optional<MatmulDesc> op_desc_;
+    std::optional<MatrixLayout> a_desc_;
+    std::optional<MatrixLayout> b_desc_;
+    std::optional<MatrixLayout> c_desc_;
+    std::optional<MatrixLayout> d_desc_;
+    std::optional<xla::complex128> alpha_;
+    std::optional<double> beta_;
     bool must_swap_operands_;
     std::optional<MatmulAlgorithm> algorithm_;  // selected algorithm
+    // Grouped matmul members
+    std::optional<gpu::GroupedGemmConfig> cfg_;
+    Epilogue grouped_gemm_epilogue_ = Epilogue::kDefault;
+    std::unique_ptr<hipblaslt_ext::GroupedGemm> grouped_gemm_;
+    mutable bool algorithm_must_be_initialized_ = false;
+    mutable DeviceAddressBase saved_address_workspace_{};
+    // Saved default activation parameters from hipBLASLt
+    int32_t activation_type_ = 0;
+    int8_t bias_type_ = 0;
   };  // class MatmulPlan
 
   explicit BlasLt(StreamExecutor* parent)
-      : parent_(parent), blas_lt_(nullptr, wrap::hipblasLtDestroy) {}
+      : parent_(parent), blas_lt_(nullptr, hipblasLtDestroy) {}
 
   absl::Status Init() override;
 
@@ -148,8 +202,7 @@ class BlasLt : public gpu::BlasLt {
                                               Epilogue epilogue) const override;
 
   absl::StatusOr<MatmulPlanPtr> GetGroupedMatmulPlan(
-      gpu::GroupedGemmConfig& config,
-      const std::vector<Epilogue>& epilogues) const override;
+      gpu::GroupedGemmConfig& config, Epilogue epilogue) const override;
 
   ~BlasLt() override = default;
 

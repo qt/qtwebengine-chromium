@@ -7,7 +7,7 @@
 #include <sstream>
 #include <utility>
 
-#include "cast/standalone_receiver/avcodec_glue.h"
+#include "cast/standalone_common/ffmpeg_glue.h"
 #include "util/enum_name_table.h"
 #include "util/osp_logging.h"
 #include "util/trace_logging.h"

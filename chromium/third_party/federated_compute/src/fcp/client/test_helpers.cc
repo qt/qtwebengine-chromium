@@ -17,7 +17,6 @@
 
 #include <fcntl.h>
 
-#include <cstdint>
 #include <fstream>
 #include <functional>
 #include <sstream>
@@ -27,6 +26,7 @@
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/cord.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/time.h"
@@ -41,8 +41,6 @@
 #include "fcp/client/runner_common.h"
 #include "fcp/protos/plan.pb.h"
 #include "google/protobuf/message_lite.h"
-#include "google/protobuf/repeated_field.h"
-#include "google/protobuf/repeated_ptr_field.h"
 
 namespace fcp {
 namespace client {
@@ -115,26 +113,6 @@ absl::StatusOr<std::string> SimpleExampleIterator::Next() {
     return examples_[index_++];
   }
   return absl::OutOfRangeError("");
-}
-
-std::string ExtractSingleString(const tensorflow::Example& example,
-                                const char key[]) {
-  return example.features().feature().at(key).bytes_list().value().at(0);
-}
-
-google::protobuf::RepeatedPtrField<std::string> ExtractRepeatedString(
-    const tensorflow::Example& example, const char key[]) {
-  return example.features().feature().at(key).bytes_list().value();
-}
-
-int64_t ExtractSingleInt64(const tensorflow::Example& example,
-                           const char key[]) {
-  return example.features().feature().at(key).int64_list().value().at(0);
-}
-
-google::protobuf::RepeatedField<int64_t> ExtractRepeatedInt64(
-    const tensorflow::Example& example, const char key[]) {
-  return example.features().feature().at(key).int64_list().value();
 }
 
 engine::PlanResult

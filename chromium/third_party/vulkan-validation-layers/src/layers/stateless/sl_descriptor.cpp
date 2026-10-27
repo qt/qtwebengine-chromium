@@ -335,7 +335,7 @@ bool Device::ValidateSamplerImageProcessingQCOM(const VkSamplerCreateInfo& creat
         skip |= LogError("VUID-VkSamplerCreateInfo-flags-06968", device, create_info_loc.dot(Field::flags),
                          "includes VK_SAMPLER_CREATE_IMAGE_PROCESSING_BIT_QCOM, "
                          "so if either addressModeU (%s) or addressModeV (%s) is "
-                         "VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, then"
+                         "VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, then "
                          "borderColor (%s) must be VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK.",
                          string_VkSamplerAddressMode(create_info.addressModeU),
                          string_VkSamplerAddressMode(create_info.addressModeV), string_VkBorderColor(create_info.borderColor));
@@ -1690,6 +1690,15 @@ bool Device::manual_PreCallValidateWriteResourceDescriptorsEXT(VkDevice device, 
                                      "(0x%" PRIx64 ") is not aligned to minUniformBufferOffsetAlignment (%" PRIu64 ")",
                                      resource.data.pAddressRange->address, phys_dev_props.limits.minUniformBufferOffsetAlignment);
                     }
+                    if (resource.data.pAddressRange->size > phys_dev_props.limits.maxUniformBufferRange) {
+                        // VUID being added in https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/8269/diffs
+                        skip |=
+                            LogError("UNASSIGNED-VkResourceDescriptorInfoEXT-size-UBO", device,
+                                     data_loc.dot(Field::pAddressRange).dot(Field::size),
+                                     "(%" PRIu64 ") is greater than maxUniformBufferRange (%" PRIu32
+                                     ")\nHint: You can have multiple descriptors point to different parts of the Uniform Buffer.",
+                                     resource.data.pAddressRange->size, phys_dev_props.limits.maxUniformBufferRange);
+                    }
                 } else if (resource.type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
                     if (!IsPointerAligned(resource.data.pAddressRange->address,
                                           phys_dev_props.limits.minStorageBufferOffsetAlignment)) {
@@ -1699,6 +1708,18 @@ bool Device::manual_PreCallValidateWriteResourceDescriptorsEXT(VkDevice device, 
                                      "(0x%" PRIx64 ") is not aligned to minStorageBufferOffsetAlignment (%" PRIu64 ")",
                                      resource.data.pAddressRange->address, phys_dev_props.limits.minStorageBufferOffsetAlignment);
                     }
+
+                    if (!enabled_features.shader64BitIndexing &&
+                        resource.data.pAddressRange->size > phys_dev_props.limits.maxStorageBufferRange) {
+                        // VUID being added in https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/8269/diffs
+                        skip |= LogError("UNASSIGNED-VkResourceDescriptorInfoEXT-size-SSBO", device,
+                                         data_loc.dot(Field::pAddressRange).dot(Field::size),
+                                         "(%" PRIu64 ") is greater than maxStorageBufferRange (%" PRIu32
+                                         ")\nHint: You can have multiple descriptors point to different parts of the Storage "
+                                         "Buffer\nHint: This can be relaxed if shader64BitIndexing is enabled",
+                                         resource.data.pAddressRange->size, phys_dev_props.limits.maxStorageBufferRange);
+                    }
+
                 } else if (IsValueIn(resource.type,
                                      {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV,
                                       VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV})) {

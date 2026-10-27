@@ -37,7 +37,7 @@ class FakeSecureChannel : public SecureChannel {
   }
 
   void send_back_response(const proto::PrivateAiResponse& response);
-  void send_back_error(ErrorCode error);
+  void send_back_error(StatusCode status_code);
 
  private:
   ResponseCallback response_callback_;
@@ -58,6 +58,7 @@ class FakeSecureChannelFactory : public SecureChannel::Factory {
 
   // SecureChannel::Factory implementation:
   std::unique_ptr<SecureChannel> Create(
+      base::OnceClosure on_established,
       SecureChannel::ResponseCallback callback) override;
 
  private:

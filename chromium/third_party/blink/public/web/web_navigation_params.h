@@ -63,6 +63,15 @@ class TickClock;
 
 namespace blink {
 
+// Information about a resource preloaded by an Early Hints response.
+struct BLINK_EXPORT WebEarlyHintsPreloadInfo {
+  WebURL url;
+  network::mojom::LinkAsAttribute as =
+      network::mojom::LinkAsAttribute::kUnspecified;
+  network::mojom::CrossOriginAttribute cross_origin =
+      network::mojom::CrossOriginAttribute::kUnspecified;
+};
+
 class WebDocumentLoader;
 class WebServiceWorkerNetworkProvider;
 
@@ -109,6 +118,11 @@ struct BLINK_EXPORT WebNavigationInfo {
 
   // Whether the navigation is a result of client redirect.
   bool is_client_redirect = false;
+
+  // If the navigation was triggered by a script tool, this contains the
+  // ID of the tool invocation. This helps the browser to associate the
+  // navigation with the tool that caused it.
+  std::optional<base::UnguessableToken> script_tool_invocation_id;
 
   // Whether the navigation initiator frame has the
   // |network::mojom::blink::WebSandboxFlags::kDownloads| bit set in its sandbox
@@ -206,10 +220,6 @@ struct BLINK_EXPORT WebNavigationInfo {
   // NavigationStateKeepAlive alive until we create the NavigationRequest.
   CrossVariantMojoRemote<mojom::NavigationStateKeepAliveHandleInterfaceBase>
       initiator_navigation_state_keep_alive_handle;
-
-  // The initiator frame's LocalDOMWindow's Storage Access API status.
-  net::StorageAccessApiStatus storage_access_api_status =
-      net::StorageAccessApiStatus::kNone;
 
   // Whether this navigation was initiated by the container, e.g. iframe changed
   // src. Only container-initiated navigation report resource timing to the
@@ -375,6 +385,7 @@ struct BLINK_EXPORT WebNavigationParams {
   WebHistoryItem history_item;
   // Whether this navigation is a result of client redirect.
   bool is_client_redirect = false;
+
   // Cache mode to be used for subresources, instead of the one determined
   // by |frame_load_type|.
   std::optional<blink::mojom::FetchCacheMode> force_fetch_cache_mode;
@@ -407,6 +418,11 @@ struct BLINK_EXPORT WebNavigationParams {
   // has the `kOrigin` sandbox flag, null for regular cross-document navigation
   // commit, which use `DocumentLoader::origin_to_commit_` instead.
   std::unique_ptr<base::UnguessableToken> sandbox_origin_token;
+
+  // If the navigation was triggered by a script tool, this contains the
+  // ID of the tool invocation. This helps the browser to associate the
+  // navigation with the tool that caused it.
+  std::optional<base::UnguessableToken> script_tool_invocation_id;
 
   // Seed for all PAAPI Auction Nonces generated in this document.
   base::Uuid base_auction_nonce;
@@ -517,11 +533,10 @@ struct BLINK_EXPORT WebNavigationParams {
   std::vector<WebHistoryItem> navigation_api_forward_entries;
   WebHistoryItem navigation_api_previous_entry;
 
-  // List of URLs which are preloaded by HTTP Early Hints.
-  // TODO(https://crbug.com/1317936): Pass information more than URL such as
-  // request destination so that ResourceFetcher can provide more useful
-  // console messages when Early Hints preloaded resources are not used.
-  std::vector<WebURL> early_hints_preloaded_resources;
+  // List of resources preloaded by HTTP Early Hints, including URL and
+  // request attributes (destination from "as", credentials mode from
+  // "crossorigin").
+  std::vector<WebEarlyHintsPreloadInfo> early_hints_preloaded_resources;
 
   // If this is a navigation to fenced frame from an interest group auction,
   // contains URNs mapped to the ad components returned by the winning bid.

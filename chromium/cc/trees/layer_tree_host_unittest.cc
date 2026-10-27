@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <memory>
 
 #include "base/auto_reset.h"
@@ -43,7 +44,7 @@
 #include "cc/resources/ui_resource_manager.h"
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/fake_frame_info.h"
-#include "cc/test/fake_layer_tree_host_client.h"
+#include "cc/test/fake_layer_tree_host_delegate.h"
 #include "cc/test/fake_paint_image_generator.h"
 #include "cc/test/fake_picture_layer.h"
 #include "cc/test/fake_picture_layer_impl.h"
@@ -91,6 +92,8 @@
 #include "components/viz/common/quads/tile_draw_quad.h"
 #include "components/viz/service/display/output_surface.h"
 #include "components/viz/service/display/skia_output_surface.h"
+#include "components/viz/service/layers/layer_context_impl.h"
+#include "components/viz/service/layers/viz_layer_tree_host_impl.h"
 #include "components/viz/test/begin_frame_args_test.h"
 #include "components/viz/test/fake_output_surface.h"
 #include "components/viz/test/test_raster_interface.h"
@@ -122,8 +125,10 @@ namespace {
 bool LayerSubtreeHasCopyRequest(Layer* layer) {
   const LayerTreeHost* host = layer->layer_tree_host();
   int index = layer->effect_tree_index();
-  const auto* node = host->property_trees()->effect_tree().Node(index);
-  return node->subtree_has_copy_request;
+  return host->property_trees()
+      ->effect_tree()
+      .Node(index)
+      .subtree_has_copy_request;
 }
 
 FrameInfo CreateFakeImplDroppedFrameInfo() {
@@ -849,8 +854,8 @@ class LayerTreeHostTestSetNeedsCommit1 : public LayerTreeHostTest {
   }
 
  private:
-  int num_commits_;
-  int num_draws_;
+  std::atomic<int> num_commits_;
+  std::atomic<int> num_draws_;
 };
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestSetNeedsCommit1);
@@ -885,13 +890,11 @@ class LayerTreeHostTestSetNeedsCommit2 : public LayerTreeHostTest {
   }
 
  private:
-  int num_commits_;
-  int num_draws_;
+  std::atomic<int> num_commits_;
+  std::atomic<int> num_draws_;
 };
 
-// TODO(crbug.com/485089667): Flaky. Reenable it.
-TEST_F(LayerTreeHostTestSetNeedsCommit2,
-       DISABLED_RunMultiThread_DelegatingRenderer) {
+TEST_F(LayerTreeHostTestSetNeedsCommit2, RunMultiThread_DelegatingRenderer) {
   RunTest(CompositorMode::THREADED);
 }
 
@@ -948,7 +951,7 @@ class LayerTreeHostTestPushPropertiesTo : public LayerTreeHostTest {
   void VerifyAfterValues(LayerImpl* layer) {
     const EffectTree& tree =
         layer->layer_tree_impl()->property_trees()->effect_tree();
-    const EffectNode* node = tree.Node(layer->effect_tree_index());
+    const EffectNode& node = tree.Node(layer->effect_tree_index());
     switch (static_cast<Properties>(index_)) {
       case STARTUP:
       case DONE:
@@ -1149,21 +1152,21 @@ class LayerTreeHostTestPushNodeOwnerToNodeIdMap : public LayerTreeHostTest {
   void CommitCompleteOnThread(LayerTreeHostImpl* impl) override {
     PropertyTrees* property_trees = impl->sync_tree()->property_trees();
     const TransformNode* root_transform_node =
-        property_trees->transform_tree().Node(root_transform_index_);
+        &property_trees->transform_tree().Node(root_transform_index_);
     const TransformNode* child_transform_node =
-        property_trees->transform_tree().Node(child_transform_index_);
+        &property_trees->transform_tree().Node(child_transform_index_);
     const EffectNode* root_effect_node =
-        property_trees->effect_tree().Node(root_effect_index_);
+        &property_trees->effect_tree().Node(root_effect_index_);
     const EffectNode* child_effect_node =
-        property_trees->effect_tree().Node(child_effect_index_);
+        &property_trees->effect_tree().Node(child_effect_index_);
     const ClipNode* root_clip_node =
-        property_trees->clip_tree().Node(root_clip_index_);
+        &property_trees->clip_tree().Node(root_clip_index_);
     const ClipNode* child_clip_node =
-        property_trees->clip_tree().Node(child_clip_index_);
+        &property_trees->clip_tree().Node(child_clip_index_);
     const ScrollNode* root_scroll_node =
-        property_trees->scroll_tree().Node(root_scroll_index_);
+        &property_trees->scroll_tree().Node(root_scroll_index_);
     const ScrollNode* child_scroll_node =
-        property_trees->scroll_tree().Node(child_scroll_index_);
+        &property_trees->scroll_tree().Node(child_scroll_index_);
     switch (impl->sync_tree()->source_frame_number()) {
       case 0:
         // root_ should create transform, scroll and effect tree nodes but not
@@ -2177,27 +2180,27 @@ class LayerTreeHostTestEffectTreeSync : public LayerTreeHostTest {
   void DidCommit() override {
     EffectTree& effect_tree =
         layer_tree_host()->property_trees()->effect_tree_mutable();
-    EffectNode* node = effect_tree.Node(root_effect_tree_index_);
+    EffectNode& node = effect_tree.MutableNode(root_effect_tree_index_);
     switch (layer_tree_host()->SourceFrameNumber()) {
       case 1:
-        node->opacity = 0.5f;
+        node.opacity = 0.5f;
         break;
       case 2:
         break;
       case 3:
         break;
       case 4:
-        node->opacity = 0.25f;
+        node.opacity = 0.25f;
         break;
       case 5:
-        node->filters = blur_filter_;
+        node.filters = blur_filter_;
         break;
       case 6:
         break;
       case 7:
         break;
       case 8:
-        node->filters = sepia_filter_;
+        node.filters = sepia_filter_;
         break;
     }
   }
@@ -2206,7 +2209,7 @@ class LayerTreeHostTestEffectTreeSync : public LayerTreeHostTest {
     EffectTree& effect_tree =
         impl->sync_tree()->property_trees()->effect_tree_mutable();
     LayerImpl* root = impl->sync_tree()->root_layer();
-    EffectNode* node = effect_tree.Node(root_effect_tree_index_);
+    EffectNode& node = effect_tree.MutableNode(root_effect_tree_index_);
     switch (impl->sync_tree()->source_frame_number()) {
       case 0:
         impl->sync_tree()->SetOpacityMutated(root->element_id(), 0.75f);
@@ -2214,21 +2217,21 @@ class LayerTreeHostTestEffectTreeSync : public LayerTreeHostTest {
         break;
       case 1:
         impl->sync_tree()->SetOpacityMutated(root->element_id(), 0.75f);
-        EXPECT_EQ(node->opacity, 0.75f);
+        EXPECT_EQ(node.opacity, 0.75f);
         PostSetNeedsCommitToMainThread();
         break;
       case 2:
         impl->sync_tree()->SetOpacityMutated(root->element_id(), 0.75f);
-        EXPECT_EQ(node->opacity, 0.75f);
+        EXPECT_EQ(node.opacity, 0.75f);
         impl->sync_tree()->SetOpacityMutated(root->element_id(), 0.75f);
         PostSetNeedsCommitToMainThread();
         break;
       case 3:
-        EXPECT_EQ(node->opacity, 0.5f);
+        EXPECT_EQ(node.opacity, 0.5f);
         PostSetNeedsCommitToMainThread();
         break;
       case 4:
-        EXPECT_EQ(node->opacity, 0.25f);
+        EXPECT_EQ(node.opacity, 0.25f);
         impl->sync_tree()->SetFilterMutated(root->element_id(),
                                             brightness_filter_);
         PostSetNeedsCommitToMainThread();
@@ -2236,21 +2239,21 @@ class LayerTreeHostTestEffectTreeSync : public LayerTreeHostTest {
       case 5:
         impl->sync_tree()->SetFilterMutated(root->element_id(),
                                             brightness_filter_);
-        EXPECT_EQ(node->filters, brightness_filter_);
+        EXPECT_EQ(node.filters, brightness_filter_);
         PostSetNeedsCommitToMainThread();
         break;
       case 6:
         impl->sync_tree()->SetFilterMutated(root->element_id(),
                                             brightness_filter_);
-        EXPECT_EQ(node->filters, brightness_filter_);
+        EXPECT_EQ(node.filters, brightness_filter_);
         PostSetNeedsCommitToMainThread();
         break;
       case 7:
-        EXPECT_EQ(node->filters, blur_filter_);
+        EXPECT_EQ(node.filters, blur_filter_);
         PostSetNeedsCommitToMainThread();
         break;
       case 8:
-        EXPECT_EQ(node->filters, sepia_filter_);
+        EXPECT_EQ(node.filters, sepia_filter_);
         EndTest();
         break;
     }
@@ -2289,23 +2292,23 @@ class LayerTreeHostTestTransformTreeSync : public LayerTreeHostTest {
   void DidCommit() override {
     TransformTree& transform_tree =
         layer_tree_host()->property_trees()->transform_tree_mutable();
-    TransformNode* node = transform_tree.Node(transform_tree_index_);
+    TransformNode& node = transform_tree.MutableNode(transform_tree_index_);
     gfx::Transform rotate10;
     rotate10.Rotate(10.f);
     switch (layer_tree_host()->SourceFrameNumber()) {
       case 1:
-        node->local = rotate10;
-        node->is_currently_animating = true;
+        node.local = rotate10;
+        node.is_currently_animating = true;
         break;
       case 2:
-        node->is_currently_animating = true;
+        node.is_currently_animating = true;
         break;
       case 3:
-        node->is_currently_animating = false;
+        node.is_currently_animating = false;
         break;
       case 4:
-        node->local = gfx::Transform();
-        node->is_currently_animating = true;
+        node.local = gfx::Transform();
+        node.is_currently_animating = true;
         break;
     }
   }
@@ -2314,7 +2317,7 @@ class LayerTreeHostTestTransformTreeSync : public LayerTreeHostTest {
     TransformTree& transform_tree =
         impl->sync_tree()->property_trees()->transform_tree_mutable();
     const LayerImpl* layer = impl->sync_tree()->LayerById(layer_->id());
-    const TransformNode* node =
+    const TransformNode& node =
         transform_tree.Node(layer->transform_tree_index());
     gfx::Transform rotate10;
     rotate10.Rotate(10.f);
@@ -2327,20 +2330,20 @@ class LayerTreeHostTestTransformTreeSync : public LayerTreeHostTest {
         break;
       case 1:
         impl->sync_tree()->SetTransformMutated(layer->element_id(), rotate20);
-        EXPECT_EQ(node->local, rotate20);
+        EXPECT_EQ(node.local, rotate20);
         PostSetNeedsCommitToMainThread();
         break;
       case 2:
         impl->sync_tree()->SetTransformMutated(layer->element_id(), rotate20);
-        EXPECT_EQ(node->local, rotate20);
+        EXPECT_EQ(node.local, rotate20);
         PostSetNeedsCommitToMainThread();
         break;
       case 3:
-        EXPECT_EQ(node->local, rotate10);
+        EXPECT_EQ(node.local, rotate10);
         PostSetNeedsCommitToMainThread();
         break;
       case 4:
-        EXPECT_EQ(node->local, gfx::Transform());
+        EXPECT_EQ(node.local, gfx::Transform());
         EndTest();
     }
   }
@@ -2543,8 +2546,8 @@ class LayerTreeHostTestSetNeedsRedraw : public LayerTreeHostTest {
   }
 
  private:
-  int num_commits_;
-  int num_draws_;
+  std::atomic<int> num_commits_;
+  std::atomic<int> num_draws_;
 };
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestSetNeedsRedraw);
@@ -2599,7 +2602,7 @@ class LayerTreeHostTestSetNeedsRedrawRect : public LayerTreeHostTest {
   void AfterTest() override { EXPECT_EQ(2, num_draws_); }
 
  private:
-  int num_draws_;
+  std::atomic<int> num_draws_;
   const gfx::Size bounds_;
   const gfx::Rect invalid_rect_;
   FakeContentLayerClient client_;
@@ -6212,7 +6215,7 @@ class LayerTreeHostTestElasticOverscroll_ScaledAnimation
     ElementId scroller_element_id =
         LayerIdToElementIdForTesting(child_scroller_id_);
     TransformNode* node =
-        transform_tree.FindNodeFromElementId(scroller_element_id);
+        transform_tree.MutableFindNodeFromElementId(scroller_element_id);
 
     // Simulate the animation starting just as the interaction begins.
     if (layer_tree_host()->SourceFrameNumber() == 0) {
@@ -9354,7 +9357,7 @@ MULTI_THREAD_TEST_F(LayerTreeHostTopControlsDeltaTriggersViewportUpdate);
 
 #if BUILDFLAG(IS_CHROMEOS)
 // Tests that custom sequence metrics tracking result is reported to
-// LayerTreeHostClient.
+// LayerTreeHostDelegate.
 constexpr MutatorHost::TrackedAnimationSequenceId kSequenceId = 1u;
 class LayerTreeHostCustomMetricsTrackerTest : public LayerTreeHostTest {
  public:
@@ -9705,6 +9708,8 @@ class LayerTreeHostTestEventsMetrics : public LayerTreeHostTest {
   void SimulateEventOnMain() {
     base::SimpleTestTickClock tick_clock;
     tick_clock.Advance(base::Microseconds(10));
+    base::TimeTicks scroll_begin_arrival_timestamp = tick_clock.NowTicks();
+    tick_clock.Advance(base::Microseconds(10));
     base::TimeTicks event_time = tick_clock.NowTicks();
     tick_clock.Advance(base::Microseconds(10));
     base::TimeTicks arrived_in_browser_main_timestamp = tick_clock.NowTicks();
@@ -9714,8 +9719,11 @@ class LayerTreeHostTestEventsMetrics : public LayerTreeHostTest {
             ui::EventType::kGestureScrollUpdate, ui::ScrollInputType::kWheel,
             /*is_inertial=*/false,
             ScrollUpdateEventMetrics::ScrollUpdateType::kContinued,
-            /*delta=*/10.0f, event_time, arrived_in_browser_main_timestamp,
-            &tick_clock, std::nullopt);
+            /*delta=*/10.0f, /*timestamp=*/event_time,
+            /*arrived_in_browser_main_timestamp=*/
+            arrived_in_browser_main_timestamp,
+            /*tick_clock=*/&tick_clock, /*trace_id=*/std::nullopt,
+            /*scroll_begin_arrival_timestamp=*/scroll_begin_arrival_timestamp);
     DCHECK_NE(metrics, nullptr);
     {
       tick_clock.Advance(base::Microseconds(10));
@@ -9965,8 +9973,7 @@ class LayerTreeHostTestKeepEventsMetricsForDeferredCommit
   }
 
   void StopDeferringCommitOnMain() {
-    layer_tree_host()->StopDeferringCommits(
-        PaintHoldingCommitTrigger::kFirstContentfulPaint);
+    layer_tree_host()->StopDeferringCommits();
   }
 
   void PostStopDeferringCommit() {
@@ -10246,11 +10253,11 @@ class LayerTreeHostTestCommitPropertySnapshot : public LayerTreeHostTest {
     TransformTree& tree =
         layer_tree_host()->property_trees()->transform_tree_mutable();
     node_id_ = tree.Insert(TransformNode(), kRootPropertyNodeId);
-    TransformNode* node = tree.Node(node_id_);
-    node->local = gfx::Transform::MakeScale(2.f);
-    node->origin = gfx::Point3F(3, 4, 5);
-    node->needs_local_transform_update = true;
-    node->SetTransformChanged(DamageReason::kUntracked);
+    TransformNode& node = tree.MutableNode(node_id_);
+    node.local = gfx::Transform::MakeScale(2.f);
+    node.origin = gfx::Point3F(3, 4, 5);
+    node.needs_local_transform_update = true;
+    node.SetTransformChanged(DamageReason::kUntracked);
     tree.set_needs_update(true);
     layer_tree_host()->property_trees()->set_changed(true);
 
@@ -10262,10 +10269,10 @@ class LayerTreeHostTestCommitPropertySnapshot : public LayerTreeHostTest {
     // both main thread and CommitState versions of the node.
     TransformTree& main_tree =
         layer_tree_host()->property_trees()->transform_tree_mutable();
-    TransformNode* main_node = main_tree.Node(node_id_);
+    TransformNode& main_node = main_tree.MutableNode(node_id_);
     const TransformTree& commit_tree =
         commit_state.property_trees.transform_tree();
-    const TransformNode* commit_node = commit_tree.Node(node_id_);
+    const TransformNode& commit_node = commit_tree.Node(node_id_);
 
     switch (layer_tree_host()->SourceFrameNumber()) {
       case 0u:
@@ -10274,7 +10281,7 @@ class LayerTreeHostTestCommitPropertySnapshot : public LayerTreeHostTest {
 
         // Change tracking should have been reset on main property trees.
         EXPECT_FALSE(layer_tree_host()->property_trees()->changed());
-        EXPECT_FALSE(main_node->transform_changed());
+        EXPECT_FALSE(main_node.transform_changed());
 
         // draw_property_utils::UpdatePropertyTrees should have cleared this
         // prior to the snapshot.
@@ -10282,48 +10289,48 @@ class LayerTreeHostTestCommitPropertySnapshot : public LayerTreeHostTest {
 
         // Change tracking on CommitState property trees should be intact.
         EXPECT_TRUE(commit_state.property_trees.changed());
-        EXPECT_TRUE(commit_node->transform_changed());
+        EXPECT_TRUE(commit_node.transform_changed());
 
         // Modifications to the main property trees should not affect
         // CommitState.
-        main_node->local = gfx::Transform::MakeScale(3.f);
-        main_node->origin = gfx::Point3F(6, 7, 8);
-        main_node->needs_local_transform_update = true;
-        main_node->SetTransformChanged(DamageReason::kUntracked);
+        main_node.local = gfx::Transform::MakeScale(3.f);
+        main_node.origin = gfx::Point3F(6, 7, 8);
+        main_node.needs_local_transform_update = true;
+        main_node.SetTransformChanged(DamageReason::kUntracked);
         main_tree.set_needs_update(true);
         layer_tree_host()->property_trees()->set_changed(true);
-        EXPECT_EQ(commit_node->local, gfx::Transform::MakeScale(2.f));
-        EXPECT_EQ(commit_node->origin, gfx::Point3F(3, 4, 5));
+        EXPECT_EQ(commit_node.local, gfx::Transform::MakeScale(2.f));
+        EXPECT_EQ(commit_node.origin, gfx::Point3F(3, 4, 5));
         break;
       case 1u:
         // Change tracking should have been reset on main property trees.
         EXPECT_FALSE(layer_tree_host()->property_trees()->changed());
-        EXPECT_FALSE(main_node->transform_changed());
+        EXPECT_FALSE(main_node.transform_changed());
 
         // Commit PropertyTrees *have* been changed.
         EXPECT_TRUE(commit_state.property_trees.changed());
-        EXPECT_TRUE(commit_node->transform_changed());
+        EXPECT_TRUE(commit_node.transform_changed());
 
         // Modifications from prior commits should persist.
-        EXPECT_EQ(main_node->local, gfx::Transform::MakeScale(3.f));
-        EXPECT_EQ(main_node->origin, gfx::Point3F(6, 7, 8));
-        EXPECT_EQ(commit_node->local, gfx::Transform::MakeScale(3.f));
-        EXPECT_EQ(commit_node->origin, gfx::Point3F(6, 7, 8));
+        EXPECT_EQ(main_node.local, gfx::Transform::MakeScale(3.f));
+        EXPECT_EQ(main_node.origin, gfx::Point3F(6, 7, 8));
+        EXPECT_EQ(commit_node.local, gfx::Transform::MakeScale(3.f));
+        EXPECT_EQ(commit_node.origin, gfx::Point3F(6, 7, 8));
         break;
       case 2u:
         // Change tracking should have been reset on main property trees.
         EXPECT_FALSE(layer_tree_host()->property_trees()->changed());
-        EXPECT_FALSE(main_node->transform_changed());
+        EXPECT_FALSE(main_node.transform_changed());
 
         // No changes since last commit.
         EXPECT_FALSE(commit_state.property_trees.changed());
-        EXPECT_FALSE(commit_node->transform_changed());
+        EXPECT_FALSE(commit_node.transform_changed());
 
         // Modifications from prior commits should persist.
-        EXPECT_EQ(main_node->local, gfx::Transform::MakeScale(3.f));
-        EXPECT_EQ(main_node->origin, gfx::Point3F(6, 7, 8));
-        EXPECT_EQ(commit_node->local, gfx::Transform::MakeScale(3.f));
-        EXPECT_EQ(commit_node->origin, gfx::Point3F(6, 7, 8));
+        EXPECT_EQ(main_node.local, gfx::Transform::MakeScale(3.f));
+        EXPECT_EQ(main_node.origin, gfx::Point3F(6, 7, 8));
+        EXPECT_EQ(commit_node.local, gfx::Transform::MakeScale(3.f));
+        EXPECT_EQ(commit_node.origin, gfx::Point3F(6, 7, 8));
         break;
       default:
         ASSERT_TRUE(false);
@@ -10333,24 +10340,24 @@ class LayerTreeHostTestCommitPropertySnapshot : public LayerTreeHostTest {
   void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) override {
     const TransformTree& tree =
         host_impl->sync_tree()->property_trees()->transform_tree();
-    const TransformNode* node = tree.Node(node_id_);
+    const TransformNode& node = tree.Node(node_id_);
     switch (commit_count_++) {
       case 0u:
         // Modifications to main property trees after WillCommit should not show
         // up in pending tree.
-        EXPECT_EQ(node->local, gfx::Transform::MakeScale(2.f));
-        EXPECT_EQ(node->origin, gfx::Point3F(3, 4, 5));
+        EXPECT_EQ(node.local, gfx::Transform::MakeScale(2.f));
+        EXPECT_EQ(node.origin, gfx::Point3F(3, 4, 5));
         PostSetNeedsCommitToMainThread();
         break;
       case 1u:
         // Modifications to main property trees should appear now.
-        EXPECT_EQ(node->local, gfx::Transform::MakeScale(3.f));
-        EXPECT_EQ(node->origin, gfx::Point3F(6, 7, 8));
+        EXPECT_EQ(node.local, gfx::Transform::MakeScale(3.f));
+        EXPECT_EQ(node.origin, gfx::Point3F(6, 7, 8));
         PostSetNeedsCommitToMainThread();
         break;
       case 2u:
-        EXPECT_EQ(node->local, gfx::Transform::MakeScale(3.f));
-        EXPECT_EQ(node->origin, gfx::Point3F(6, 7, 8));
+        EXPECT_EQ(node.local, gfx::Transform::MakeScale(3.f));
+        EXPECT_EQ(node.origin, gfx::Point3F(6, 7, 8));
         break;
       default:
         ASSERT_TRUE(false);
@@ -10361,26 +10368,26 @@ class LayerTreeHostTestCommitPropertySnapshot : public LayerTreeHostTest {
     // Modifications to main property trees after WillCommit should persist.
     TransformTree& tree =
         layer_tree_host()->property_trees()->transform_tree_mutable();
-    TransformNode* node = tree.Node(node_id_);
-    EXPECT_EQ(node->local, gfx::Transform::MakeScale(3.f));
-    EXPECT_EQ(node->origin, gfx::Point3F(6, 7, 8));
+    TransformNode& node = tree.MutableNode(node_id_);
+    EXPECT_EQ(node.local, gfx::Transform::MakeScale(3.f));
+    EXPECT_EQ(node.origin, gfx::Point3F(6, 7, 8));
 
     // Change tracking should be up-to-date
     switch (layer_tree_host()->SourceFrameNumber()) {
       case 1u:
         EXPECT_TRUE(layer_tree_host()->property_trees()->changed());
         EXPECT_TRUE(tree.needs_update());
-        EXPECT_TRUE(node->transform_changed());
+        EXPECT_TRUE(node.transform_changed());
         break;
       case 2u:
         EXPECT_FALSE(layer_tree_host()->property_trees()->changed());
         EXPECT_FALSE(tree.needs_update());
-        EXPECT_FALSE(node->transform_changed());
+        EXPECT_FALSE(node.transform_changed());
         break;
       case 3u:
         EXPECT_FALSE(layer_tree_host()->property_trees()->changed());
         EXPECT_FALSE(tree.needs_update());
-        EXPECT_FALSE(node->transform_changed());
+        EXPECT_FALSE(node.transform_changed());
         EndTest();
         break;
       default:
@@ -10604,8 +10611,8 @@ class LayerTreeHostTestDelayRecreateTiling
   void WillCommit(const CommitState&) override {
     TransformTree& transform_tree =
         layer_tree_host()->property_trees()->transform_tree_mutable();
-    TransformNode* node =
-        transform_tree.Node(layer_on_main_->transform_tree_index());
+    TransformNode& node =
+        transform_tree.MutableNode(layer_on_main_->transform_tree_index());
 
     gfx::Transform transform;
     transform.Scale(2.0f, 1.0f);
@@ -10616,7 +10623,7 @@ class LayerTreeHostTestDelayRecreateTiling
         // in frame1, translation changed and animation start
         transform_tree.OnTransformAnimated(layer_on_main_->element_id(),
                                            transform);
-        node->has_potential_animation = true;
+        node.has_potential_animation = true;
         break;
     }
   }
@@ -10629,8 +10636,8 @@ class LayerTreeHostTestDelayRecreateTiling
 
     TransformTree& transform_tree =
         host_impl->pending_tree()->property_trees()->transform_tree_mutable();
-    TransformNode* node =
-        transform_tree.Node(layer_impl->transform_tree_index());
+    TransformNode& node =
+        transform_tree.MutableNode(layer_impl->transform_tree_index());
 
     if (host_impl->pending_tree()->source_frame_number() == 2) {
       // delay Activation for this pending tree
@@ -10642,7 +10649,7 @@ class LayerTreeHostTestDelayRecreateTiling
       // commitcomplete -> beginimpl -> draw (pending's updatedrawproperties)
       // in beginimpl, scroll can be handled, so transform can be changed
       // in draw, UpdateAnimationState can change animation status
-      node->has_potential_animation = false;
+      node.has_potential_animation = false;
       transform_tree.set_needs_update(true);
       host_impl->pending_tree()->set_needs_update_draw_properties();
 
@@ -10741,8 +10748,8 @@ class LayerTreeHostTestInvalidateImplSideForRerasterTiling
   void WillCommit(const CommitState&) override {
     TransformTree& transform_tree =
         layer_tree_host()->property_trees()->transform_tree_mutable();
-    TransformNode* node =
-        transform_tree.Node(layer_on_main_->transform_tree_index());
+    TransformNode& node =
+        transform_tree.MutableNode(layer_on_main_->transform_tree_index());
 
     gfx::Transform transform;
     transform.Scale(2.0f, 1.0f);
@@ -10753,7 +10760,7 @@ class LayerTreeHostTestInvalidateImplSideForRerasterTiling
         // in frame1, translation changed and animation start
         transform_tree.OnTransformAnimated(layer_on_main_->element_id(),
                                            transform);
-        node->has_potential_animation = true;
+        node.has_potential_animation = true;
         break;
     }
   }
@@ -10767,10 +10774,10 @@ class LayerTreeHostTestInvalidateImplSideForRerasterTiling
 
     TransformTree& transform_tree =
         tree_impl->property_trees()->transform_tree_mutable();
-    TransformNode* node =
-        transform_tree.Node(layer_impl->transform_tree_index());
+    TransformNode& node =
+        transform_tree.MutableNode(layer_impl->transform_tree_index());
 
-    node->has_potential_animation = false;
+    node.has_potential_animation = false;
     transform_tree.set_needs_update(true);
     tree_impl->set_needs_update_draw_properties();
   }
@@ -10780,7 +10787,7 @@ class LayerTreeHostTestInvalidateImplSideForRerasterTiling
     TransformTree& transform_tree =
         tree_impl->property_trees()->transform_tree_mutable();
     TransformNode* node =
-        transform_tree.Node(layer_impl->transform_tree_index());
+        &transform_tree.MutableNode(layer_impl->transform_tree_index());
     return node;
   }
 
@@ -12091,7 +12098,165 @@ class LayerTreeHostTestTrackedElementRects
   void DidEndScroll() override {}
 #endif
 };
+
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestTrackedElementRects);
+
+class LayerTreeHostTestTrackedElementRectsTreesInViz
+    : public LayerTreeHostTestTrackedElementRects {
+ public:
+  LayerTreeHostTestTrackedElementRectsTreesInViz() {
+    feature_list_.InitAndEnableFeature(features::kTreesInViz);
+  }
+
+  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
+    base::AutoLock lock(client_host_impl_lock_);
+    client_host_impl_ = host_impl;
+  }
+
+  void DisplayReceivedCompositorFrameOnThread(
+      const viz::CompositorFrame& frame) override {
+    LayerTreeHostImpl* host_impl = nullptr;
+    {
+      // Add a lock to prevent a data race between this and
+      // DidActivateTreeOnThread() / AfterTest().
+      base::AutoLock lock(client_host_impl_lock_);
+      host_impl = client_host_impl_;
+    }
+    if (!host_impl) {
+      return;
+    }
+
+    // Verify service-side tracked element rects.
+    auto* frame_sink = static_cast<TestLayerTreeFrameSink*>(
+        host_impl->layer_tree_frame_sink());
+    viz::LayerContextImpl* layer_context =
+        frame_sink->support()->layer_context_for_testing();
+    ASSERT_TRUE(layer_context);
+    auto* service_host_impl = layer_context->host_impl();
+    ASSERT_TRUE(service_host_impl);
+
+    // Read rects from client from the service-side host impl.
+    const auto& rects = service_host_impl->tracked_element_rects_from_client();
+
+    // Expected compositor frame rects have kFeature1 and kId2 and Rect(0, 0,
+    // 10, 5).
+    EXPECT_EQ(rects.size(), 1u);
+    ASSERT_TRUE(rects.contains(kFeature1));
+    const auto& element_list = rects.at(kFeature1);
+    EXPECT_EQ(element_list.size(), 1u);
+    EXPECT_EQ(element_list[0].id, kId2);
+    EXPECT_EQ(element_list[0].visible_bounds, gfx::Rect(0, 0, 10, 5));
+
+    EndTest();
+  }
+
+  void AfterTest() override {
+    base::AutoLock lock(client_host_impl_lock_);
+    client_host_impl_ = nullptr;
+  }
+
+ private:
+  mutable base::Lock client_host_impl_lock_;
+  raw_ptr<LayerTreeHostImpl> client_host_impl_ = nullptr;
+  base::test::ScopedFeatureList feature_list_;
+};
+
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestTrackedElementRectsTreesInViz);
+
+class LayerTreeHostTestTreesInVizSyncViewportDeltas : public LayerTreeHostTest {
+ public:
+  LayerTreeHostTestTreesInVizSyncViewportDeltas() {
+    SetUseLayerLists();
+    feature_list_.InitAndEnableFeature(features::kTreesInViz);
+  }
+
+  void SetupTree() override {
+    SetInitialRootBounds(gfx::Size(100, 100));
+    LayerTreeHostTest::SetupTree();
+    Layer* root_layer = layer_tree_host()->root_layer();
+
+    SetupViewport(root_layer, gfx::Size(100, 100), gfx::Size(100, 100));
+  }
+
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
+
+  void DidCommit() override {
+    if (layer_tree_host()->SourceFrameNumber() == 1) {
+      // Trigger a second frame without changing browser controls.
+      PostSetNeedsCommitWithForcedRedrawToMainThread();
+    }
+  }
+
+  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
+    client_host_impl_ = host_impl;
+    if (host_impl->active_tree()->source_frame_number() == 1) {
+      // Modify the deltas on the active tree. We do this after
+      // UpdateViewportContainerSizes() has run (which happened during
+      // activation).
+      host_impl->active_tree()
+          ->property_trees()
+          ->SetInnerViewportContainerBoundsDelta(gfx::Vector2dF(0.f, 25.f));
+      host_impl->active_tree()
+          ->property_trees()
+          ->SetOuterViewportContainerBoundsDelta(gfx::Vector2dF(0.f, 25.f));
+      host_impl->active_tree()->property_trees()->set_changed(true);
+
+      // Ensure that these changes are sent to the service.
+      host_impl->SetNeedsRedraw(false, false);
+    }
+  }
+
+  void DisplayReceivedCompositorFrameOnThread(
+      const viz::CompositorFrame& frame) override {
+    if (!client_host_impl_) {
+      return;
+    }
+
+    // Verify service-side deltas.
+    auto* frame_sink = static_cast<TestLayerTreeFrameSink*>(
+        client_host_impl_->layer_tree_frame_sink());
+    viz::LayerContextImpl* layer_context =
+        frame_sink->support()->layer_context_for_testing();
+    ASSERT_TRUE(layer_context);
+    auto* service_host_impl = layer_context->host_impl();
+    ASSERT_TRUE(service_host_impl);
+
+    // We only care about the frame that corresponds to our manual delta change.
+    if (service_host_impl->active_tree()->source_frame_number() != 1) {
+      return;
+    }
+
+    float inner_delta_y = service_host_impl->active_tree()
+                              ->property_trees()
+                              ->inner_viewport_container_bounds_delta()
+                              .y();
+    float outer_delta_y = service_host_impl->active_tree()
+                              ->property_trees()
+                              ->outer_viewport_container_bounds_delta()
+                              .y();
+
+    // It is possible that we receive a frame for source_frame_number 1 before
+    // the manual delta change was applied on the client impl thread and sent
+    // to the service. If so, just wait for the next frame.
+    if (inner_delta_y == 0.f) {
+      return;
+    }
+
+    // The deltas should be synced to the service-side active tree.
+    EXPECT_EQ(inner_delta_y, 25.f);
+    EXPECT_EQ(outer_delta_y, 25.f);
+
+    EndTest();
+  }
+
+  void AfterTest() override { client_host_impl_ = nullptr; }
+
+ private:
+  raw_ptr<LayerTreeHostImpl> client_host_impl_ = nullptr;
+  base::test::ScopedFeatureList feature_list_;
+};
+
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestTreesInVizSyncViewportDeltas);
 
 }  // namespace
 }  // namespace cc

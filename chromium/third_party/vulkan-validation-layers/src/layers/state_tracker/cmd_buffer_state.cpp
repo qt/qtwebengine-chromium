@@ -3,6 +3,7 @@
  * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (C) 2015-2026 Google Inc.
  * Copyright (c) 2025 Arm Limited.
+ * Copyright (C) 2026 Qualcomm Technologies, Inc.
  * Modifications Copyright (C) 2020,2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -31,6 +32,7 @@
 #include "state_tracker/render_pass_state.h"
 #include "state_tracker/pipeline_state.h"
 #include "state_tracker/buffer_state.h"
+#include "state_tracker/event_state.h"
 #include "state_tracker/image_state.h"
 #include "state_tracker/queue_state.h"
 #include "state_tracker/vertex_index_buffer_state.h"
@@ -51,12 +53,12 @@ using RangeGenerator = subresource_adapter::RangeGenerator;
 // Dynamic Rendering we know it is depth only, but for VkRenderPass, we need to check incase it is a stencil only attachment
 bool AttachmentInfo::IsDepth() const {
     return type == Type::Depth ||
-           (type == Type::DepthStencil && image_view && vkuFormatHasDepth(image_view->image_state->create_info.format));
+           (type == Type::DepthStencil && image_view && vkuFormatHasDepth(image_view->image_state->GetFormat()));
 }
 
 bool AttachmentInfo::IsStencil() const {
     return type == Type::Stencil ||
-           (type == Type::DepthStencil && image_view && vkuFormatHasStencil(image_view->image_state->create_info.format));
+           (type == Type::DepthStencil && image_view && vkuFormatHasStencil(image_view->image_state->GetFormat()));
 }
 
 // For Traditional RenderPasses, the index is simply the index into the VkRenderPassCreateInfo::pAttachments,
@@ -113,32 +115,7 @@ std::string AttachmentInfo::Describe(const vvl::CommandBuffer& cb_state, uint32_
     return ss.str();
 }
 
-#ifdef VK_USE_PLATFORM_METAL_EXT
-static bool GetMetalExport(const VkEventCreateInfo* info) {
-    bool retval = false;
-    auto export_metal_object_info = vku::FindStructInPNextChain<VkExportMetalObjectCreateInfoEXT>(info->pNext);
-    while (export_metal_object_info) {
-        if (export_metal_object_info->exportObjectType == VK_EXPORT_METAL_OBJECT_TYPE_METAL_SHARED_EVENT_BIT_EXT) {
-            retval = true;
-            break;
-        }
-        export_metal_object_info = vku::FindStructInPNextChain<VkExportMetalObjectCreateInfoEXT>(export_metal_object_info->pNext);
-    }
-    return retval;
-}
-#endif  // VK_USE_PLATFORM_METAL_EXT
-
 namespace vvl {
-
-Event::Event(VkEvent handle, const VkEventCreateInfo* create_info)
-    : StateObject(handle, kVulkanObjectTypeEvent),
-      flags(create_info->flags)
-#ifdef VK_USE_PLATFORM_METAL_EXT
-      ,
-      metal_event_export(GetMetalExport(create_info))
-#endif  // VK_USE_PLATFORM_METAL_EXT
-{
-}
 
 CommandPool::CommandPool(DeviceState& dev, VkCommandPool handle, const VkCommandPoolCreateInfo* create_info, VkQueueFlags flags)
     : StateObject(handle, kVulkanObjectTypeCommandPool),
@@ -244,7 +221,7 @@ void CommandBuffer::RemoveChild(std::shared_ptr<StateObject>& child_node) {
 //   - Set graphics to use classic descriptor
 //   - Set compute to use Descriptor buffer
 //   - Override both using Heaps
-// To "properly" do this, we woudl need to really devide LastBound state into 3 structs for each
+// To "properly" do this, we would need to really devide LastBound state into 3 structs for each
 // For the practical future, we will try and get away just assuming these crazy cases are not happening
 void CommandBuffer::SetDescriptorMode(vvl::DescriptorMode new_mode, vvl::Func function) {
     // 99% of time, all LastBound will be the same mode
@@ -270,16 +247,21 @@ void CommandBuffer::SetDescriptorMode(vvl::DescriptorMode new_mode, vvl::Func fu
 
         lastBound[i].SetDescriptorMode(new_mode, function);
     }
+
+    if (new_mode == vvl::DescriptorMode::DescriptorModeHeap) {
+        push_constant_ranges_layout.reset();
+    }
 }
 
 // Some functions like vkCmdPushConstant are valid in Classic/Buffer, but invalid in Heap
 // So calling it doesn't "set" a mode, but instead only "invalidates"
-void CommandBuffer::InvalidateDescriptorMode(vvl::DescriptorMode invalidate_mode, vvl::Func function) {
+void CommandBuffer::InvalidateDescriptorMode(vvl::DescriptorMode invalidate_mode, vvl::DescriptorMode new_mode,
+                                             vvl::Func function) {
     for (uint32_t i = 0; i < vvl::BindPointCount; i++) {
         const vvl::DescriptorMode current_mode = lastBound[i].GetDescriptorMode();
         if (current_mode == invalidate_mode) {
-            // This will happen calling vkCmdPushConstant when in heap, go to "Classic" as a fallback
-            SetDescriptorMode(vvl::DescriptorModeClassic, function);
+            SetDescriptorMode(new_mode, function);
+            break;
         }
     }
 }
@@ -297,6 +279,8 @@ void CommandBuffer::ResetCBState() {
 
     begin_info_flags = 0;
     has_inheritance = false;
+    inheritance_info = {};
+    inheritance_descriptor_heap_info = {};
 
     state = CbState::New;
     command_count = 0;
@@ -316,6 +300,7 @@ void CommandBuffer::ResetCBState() {
 
     has_render_pass_instance = false;
     resumes_render_pass_instance = false;
+    per_tile_execution_model_enabled = false;
     last_suspend_state = SuspendState::Empty;
     first_action_or_sync_command = Func::Empty;
     first_rendering_info = {};
@@ -332,9 +317,7 @@ void CommandBuffer::ResetCBState() {
     active_subpass_contents = VK_SUBPASS_CONTENTS_INLINE;
     SetActiveSubpass(0);
     rendering_attachments.Reset();
-    waited_events.clear();
     events.clear();
-    write_events_before_wait.clear();
     active_queries.clear();
     started_queries.clear();
     render_pass_queries.clear();
@@ -345,6 +328,9 @@ void CommandBuffer::ResetCBState() {
     linked_command_buffers.clear();
     bound_tile_memory = nullptr;
 
+    // Both SetDescriptorMode and lastBound.Reset() will reset the descriptor mode, but SetDescriptorMode will also clear up the
+    // descriptor heaps/buffers state if used, so it needs to be called first
+    SetDescriptorMode(vvl::DescriptorModeUnknown, vvl::Func::Empty);
     for (auto& item : lastBound) {
         item.Reset();
     }
@@ -372,7 +358,6 @@ void CommandBuffer::ResetCBState() {
     bind_vertex_buffer_3_used = false;
     stride_set_with_bind_vertex_buffer_3 = false;
 
-    SetDescriptorMode(vvl::DescriptorModeUnknown, vvl::Func::Empty);
     // Need to reset on initalization
     descriptor_heap.Reset();
     descriptor_buffer.Reset();
@@ -886,6 +871,7 @@ void CommandBuffer::RecordEndRenderPass(const VkSubpassEndInfo* subpass_end_info
     SetActiveSubpass(0);
     active_framebuffer = VK_NULL_HANDLE;
     sample_locations_begin_info = {};
+    per_tile_execution_model_enabled = false;
 }
 
 static void InitDefaultRenderingAttachments(CommandBuffer::RenderingAttachment& attachments, uint32_t count) {
@@ -1052,6 +1038,7 @@ void CommandBuffer::RecordEndRendering(const VkRenderingEndInfoEXT* pRenderingEn
     RecordCommand(loc);
     active_render_pass = nullptr;
     active_color_attachments_index.clear();
+    per_tile_execution_model_enabled = false;
 }
 
 void CommandBuffer::RecordBeginCustomResolve(const Location& loc) {
@@ -1512,7 +1499,7 @@ void CommandBuffer::PushDescriptorSetState(VkPipelineBindPoint pipelineBindPoint
     UpdateLastBoundDescriptorSets(pipelineBindPoint, pipeline_layout, set, 1, nullptr, push_descriptor_set, 0, nullptr, loc);
 
     // Now that we have either the new or extant push_descriptor set ... do the write updates against it
-    push_descriptor_set->PerformPushDescriptorsUpdate(descriptorWriteCount, pDescriptorWrites);
+    push_descriptor_set->PerformPushDescriptorsUpdate(*this, descriptorWriteCount, pDescriptorWrites);
 }
 
 // Generic function to handle state update for all CmdDraw* type functions
@@ -1542,8 +1529,24 @@ void CommandBuffer::RecordTraceRay(const Location& loc) {
     }
 }
 
+void CommandBuffer::RecordExecuteGeneratedCommands(const VkGeneratedCommandsInfoEXT& info, const Location& loc) {
+    const VkPipelineBindPoint bind_point = ConvertStageToBindPoint(info.shaderStages);
+    if (bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS) {
+        RecordDraw(loc);
+    } else if (bind_point == VK_PIPELINE_BIND_POINT_COMPUTE) {
+        RecordDispatch(loc);
+    } else if (bind_point == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR) {
+        RecordTraceRay(loc);
+    }
+
+    for (auto& item : sub_states_) {
+        item.second->RecordExecuteGeneratedCommands(info, bind_point, loc);
+    }
+}
+
 void CommandBuffer::RecordBindPipeline(VkPipelineBindPoint bind_point, vvl::Pipeline& pipeline) {
-    BindLastBoundPipeline(ConvertToVvlBindPoint(bind_point), &pipeline);
+    auto& last_bound = lastBound[ConvertToVvlBindPoint(bind_point)];
+    last_bound.BindPipeline(&pipeline);
 
     for (auto& item : sub_states_) {
         item.second->RecordBindPipeline(bind_point, pipeline);
@@ -1606,6 +1609,12 @@ void CommandBuffer::RecordBindPipeline(VkPipelineBindPoint bind_point, vvl::Pipe
     }
 
     dirty_static_state = false;
+}
+
+void CommandBuffer::RecordBindShaderObject(VkShaderStageFlagBits shader_stage,
+                                           const std::shared_ptr<ShaderObject>& shader_object_state) {
+    auto& last_bound = lastBound[ConvertStageToVvlBindPoint(shader_stage)];
+    last_bound.BindShaderObject(shader_stage, shader_object_state);
 }
 
 // Helper for descriptor set (and buffer) updates.
@@ -1825,7 +1834,7 @@ void CommandBuffer::TrackImageFirstLayout(const vvl::Image& image_state, const V
     if (auto image_layout_map = GetOrCreateImageLayoutMap(image_state)) {
         VkImageSubresourceRange normalized_subresource_range = image_state.NormalizeSubresourceRange(subresource_range);
 
-        if (depth_extent != 0 && CanTransitionDepthSlices(dev_data.extensions, image_state.create_info)) {
+        if (depth_extent != 0 && CanTransitionDepthSlices(dev_data.extensions, image_state.GetImageType(), image_state.create_flags)) {
             normalized_subresource_range.baseArrayLayer = (uint32_t)depth_offset;
             normalized_subresource_range.layerCount = depth_extent;
         }
@@ -1948,6 +1957,20 @@ void CommandBuffer::RecordCopyBuffer2(vvl::Buffer& src_buffer_state, vvl::Buffer
     }
 }
 
+void CommandBuffer::RecordBindIndexbuffer(const Location& loc) {
+    RecordCommand(loc);
+    for (auto& item : sub_states_) {
+        item.second->RecordBindIndexbuffer();
+    }
+}
+
+void CommandBuffer::RecordSetPrimitiveRestartIndex(uint32_t primitive_restart_index, const Location& loc) {
+    RecordCommand(loc);
+    for (auto& item : sub_states_) {
+        item.second->RecordSetPrimitiveRestartIndex(primitive_restart_index);
+    }
+}
+
 void CommandBuffer::RecordCopyImage(vvl::Image& src_image_state, vvl::Image& dst_image_state, VkImageLayout src_image_layout,
                                     VkImageLayout dst_image_layout, uint32_t region_count, const VkImageCopy* regions,
                                     const Location& loc) {
@@ -2036,6 +2059,20 @@ void CommandBuffer::RecordBlitImage(vvl::Image& src_image_state, vvl::Image& dst
     }
 }
 
+void CommandBuffer::RecordCopyMemoryIndirect(const VkCopyMemoryIndirectInfoKHR& info, const Location& loc) {
+    RecordCommand(loc);
+    for (auto& item : sub_states_) {
+        item.second->RecordCopyMemoryIndirect(info, loc);
+    }
+}
+
+void CommandBuffer::RecordCopyMemoryToImageIndirect(const VkCopyMemoryToImageIndirectInfoKHR& info, const Location& loc) {
+    RecordCommand(loc);
+    for (auto& item : sub_states_) {
+        item.second->RecordCopyMemoryToImageIndirect(info, loc);
+    }
+}
+
 void CommandBuffer::RecordBlitImage2(vvl::Image& src_image_state, vvl::Image& dst_image_state, VkImageLayout src_image_layout,
                                      VkImageLayout dst_image_layout, uint32_t region_count, const VkImageBlit2* regions,
                                      const Location& loc) {
@@ -2114,22 +2151,30 @@ void CommandBuffer::RecordUpdateMemory(VkDeviceAddressRangeKHR range, const Loca
     (void)range;
 }
 
-void CommandBuffer::RecordSetEvent(VkEvent event, VkPipelineStageFlags2 stage_mask, const VkDependencyInfo* dependency_info,
-                                   const Location& loc) {
+void CommandBuffer::RecordSetEvent(VkEvent event, VkPipelineStageFlags stage_mask, const Location& loc) {
     RecordCommand(loc);
     for (auto& item : sub_states_) {
-        item.second->RecordSetEvent(event, stage_mask, dependency_info);
+        item.second->RecordSetEvent(event, stage_mask);
     }
-
     if (!dev_data.disabled[command_buffer_state]) {
         if (auto event_state = dev_data.Get<vvl::Event>(event)) {
             AddChild(event_state);
         }
     }
     events.push_back(event);
-    if (!waited_events.count(event)) {
-        write_events_before_wait.push_back(event);
+}
+
+void CommandBuffer::RecordSetEvent2(VkEvent event, const VkDependencyInfo& dependency_info, const Location& loc) {
+    RecordCommand(loc);
+    for (auto& item : sub_states_) {
+        item.second->RecordSetEvent2(event, dependency_info);
     }
+    if (!dev_data.disabled[command_buffer_state]) {
+        if (auto event_state = dev_data.Get<vvl::Event>(event)) {
+            AddChild(event_state);
+        }
+    }
+    events.push_back(event);
 }
 
 void CommandBuffer::RecordResetEvent(VkEvent event, VkPipelineStageFlags2 stage_mask, const Location& loc) {
@@ -2144,26 +2189,32 @@ void CommandBuffer::RecordResetEvent(VkEvent event, VkPipelineStageFlags2 stage_
         }
     }
     events.push_back(event);
-    if (!waited_events.count(event)) {
-        write_events_before_wait.push_back(event);
-    }
 }
 
-void CommandBuffer::RecordWaitEvents(uint32_t eventCount, const VkEvent* pEvents, VkPipelineStageFlags2 src_stage_mask,
-                                     const VkDependencyInfo* dependency_info, const Location& loc) {
+void CommandBuffer::RecordWaitEvents(vvl::span<const VkEvent> events, VkPipelineStageFlags src_stage_mask, const Location& loc) {
     for (auto& item : sub_states_) {
-        item.second->RecordWaitEvents(eventCount, pEvents, src_stage_mask, dependency_info, loc);
+        item.second->RecordWaitEvents(events, src_stage_mask, loc);
     }
-    for (uint32_t i = 0; i < eventCount; ++i) {
-        const VkEvent event_hanle = pEvents[i];
+    for (const VkEvent event : events) {
         if (!dev_data.disabled[command_buffer_state]) {
-            if (auto event_state = dev_data.Get<vvl::Event>(event_hanle)) {
+            if (auto event_state = dev_data.Get<vvl::Event>(event)) {
                 AddChild(event_state);
             }
         }
-        waited_events.insert(event_hanle);
-        events.push_back(event_hanle);
+        this->events.push_back(event);
     }
+}
+
+void CommandBuffer::RecordWaitEvent2(VkEvent event, const VkDependencyInfo& dependency_info, const Location& dep_info_loc) {
+    for (auto& item : sub_states_) {
+        item.second->RecordWaitEvent2(event, dependency_info, dep_info_loc);
+    }
+    if (!dev_data.disabled[command_buffer_state]) {
+        if (auto event_state = dev_data.Get<vvl::Event>(event)) {
+            AddChild(event_state);
+        }
+    }
+    events.push_back(event);
 }
 
 void CommandBuffer::RecordBarrierObjects(uint32_t buffer_barrier_count, const VkBufferMemoryBarrier* buffer_barriers,
@@ -2232,18 +2283,16 @@ void CommandBuffer::RecordPushConstants(const vvl::PipelineLayout& pipeline_layo
 
     for (auto& item : sub_states_) {
         item.second->RecordPushConstants(pipeline_layout_state.VkHandle(), stage_flags, offset, size, values);
+        item.second->ClearPushData();  // vkspec.html#descriptorheaps-invalidate-sets
     }
 }
 
-void CommandBuffer::RecordCmdPushDataEXT(const VkPushDataInfoEXT& push_data_info, const Location& loc) {
+void CommandBuffer::RecordPushData(const VkPushDataInfoEXT& push_data_info, const Location& loc) {
     RecordCommand(loc);
-    if (push_data_info.data.size > 0) {
-        const size_t begin = push_data_info.offset;
-        const size_t end = push_data_info.offset + push_data_info.data.size;
-        if (descriptor_heap.push_data.size() < end) {
-            descriptor_heap.push_data.resize(end);
-        }
-        memset(descriptor_heap.push_data.data() + begin, 1, end - begin);
+
+    for (auto& item : sub_states_) {
+        item.second->RecordPushData(push_data_info);
+        item.second->ClearPushConstants();  // vkspec.html#descriptorheaps-invalidate-sets
     }
 }
 
@@ -2332,13 +2381,6 @@ bool CommandBuffer::HasExternalFormatResolveAttachment() const {
                VK_RESOLVE_MODE_EXTERNAL_FORMAT_DOWNSAMPLE_BIT_ANDROID;
     }
     return false;
-}
-
-void CommandBuffer::BindShader(VkShaderStageFlagBits shader_stage, vvl::ShaderObject* shader_object_state) {
-    auto& last_bound_state = lastBound[ConvertStageToVvlBindPoint(shader_stage)];
-    const auto stage_index = static_cast<uint32_t>(VkShaderStageToShaderObjectStage(shader_stage));
-    last_bound_state.shader_object_bound[stage_index] = true;
-    last_bound_state.shader_object_states[stage_index] = shader_object_state;
 }
 
 // Only called for Graphics and during Multiview

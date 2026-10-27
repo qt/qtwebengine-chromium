@@ -25,19 +25,20 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/vulkan/ResourceTableVk.h"
+#include "src/dawn/native/vulkan/ResourceTableVk.h"
 
 #include <vector>
 
-#include "dawn/common/Enumerator.h"
-#include "dawn/common/MatchVariant.h"
-#include "dawn/native/DynamicUploader.h"
-#include "dawn/native/ResourceTableDefaultResources.h"
-#include "dawn/native/vulkan/DeviceVk.h"
-#include "dawn/native/vulkan/SamplerVk.h"
-#include "dawn/native/vulkan/TextureVk.h"
-#include "dawn/native/vulkan/UtilsVulkan.h"
-#include "dawn/native/vulkan/VulkanError.h"
+#include "src/dawn/common/Enumerator.h"
+#include "src/dawn/common/MatchVariant.h"
+#include "src/dawn/native/DynamicUploader.h"
+#include "src/dawn/native/ResourceTableDefaultResources.h"
+#include "src/dawn/native/vulkan/DeviceVk.h"
+#include "src/dawn/native/vulkan/SamplerVk.h"
+#include "src/dawn/native/vulkan/TextureVk.h"
+#include "src/dawn/native/vulkan/UtilsVulkan.h"
+#include "src/dawn/native/vulkan/VulkanError.h"
+#include "src/utils/compiler.h"
 namespace dawn::native::vulkan {
 
 // static
@@ -116,7 +117,7 @@ MaybeError ResourceTable::Initialize() {
 
     Device* device = ToBackend(GetDevice());
 
-    uint32_t sampledImageCount = uint32_t(GetSizeWithDefaultResources());
+    uint32_t sampledImageCount = uint32_t{GetSizeWithDefaultResources()};
 
     // Allocate mPool.
     {
@@ -194,8 +195,8 @@ MaybeError ResourceTable::ApplyPendingUpdates(CommandRecordingContext* recording
     if (!updates.metadataUpdates.empty()) {
         DAWN_TRY(UpdateMetadataBuffer(recordingContext, updates.metadataUpdates));
     }
-    if (!updates.resourceUpdates.empty()) {
-        DAWN_TRY(UpdateResourceBindings(updates.resourceUpdates));
+    if (!updates.resourceDiffs.empty()) {
+        DAWN_TRY(UpdateResourceBindings(updates.resourceDiffs));
     }
 
     return {};
@@ -225,7 +226,7 @@ MaybeError ResourceTable::UpdateMetadataBuffer(CommandRecordingContext* recordin
             // Prepare the copies.
             std::vector<VkBufferCopy> copies(updates.size());
             for (auto [i, update] : Enumerate(updates)) {
-                stagedData[i] = update.data;
+                DAWN_UNSAFE_TODO(stagedData[i]) = update.data;
 
                 VkBufferCopy copy{
                     .srcOffset = reservation.offsetInBuffer + i * sizeof(uint32_t),
@@ -249,47 +250,44 @@ MaybeError ResourceTable::UpdateMetadataBuffer(CommandRecordingContext* recordin
         });
 }
 
-MaybeError ResourceTable::UpdateResourceBindings(const std::vector<ResourceUpdate>& updates) {
+MaybeError ResourceTable::UpdateResourceBindings(const std::vector<ResourceDiff>& diffs) {
     Device* device = ToBackend(GetDevice());
 
-    ityp::span<ResourceTableSlot, ResourceTableDefaultResources::Resource> defaultResources;
-    DAWN_TRY_ASSIGN(defaultResources,
-                    device->GetResourceTableDefaultResources()->GetOrCreate(device));
+    ResourceTableDefaultResources* defaultResources;
+    DAWN_TRY_ASSIGN(defaultResources, device->GetOrCreateResourceTableDefaultsResource());
 
-    // For combined texture samplers, the exact type of texture or sampler we set in the descriptor
-    // doesn't matter as long as it's not used by the shader, so we grab any one of each.
-    auto textureIndex =
-        ResourceTableDefaultResources::IndexOf(tint::ResourceType::kTexture1d_f32_filterable);
-    auto samplerIndex =
-        ResourceTableDefaultResources::IndexOf(tint::ResourceType::kSampler_filtering);
-    auto unusedTextureView = std::get<Ref<TextureViewBase>>(defaultResources[textureIndex]);
-    auto unusedSampler = std::get<Ref<SamplerBase>>(defaultResources[samplerIndex]);
+    TextureView* placeholderTextureView =
+        ToBackend(defaultResources->GetPlaceholderSampleableTexture());
+    Sampler* placeholderSampler = ToBackend(defaultResources->GetPlaceholderSampler());
 
     std::vector<VkDescriptorImageInfo> imageWrites;
     std::vector<uint32_t> arrayElements;
 
-    for (const ResourceUpdate& update : updates) {
+    for (const ResourceDiff& diff : diffs) {
         // TODO(https://issues.chromium.org/473444515): Support buffer, texel buffers and storage
         // textures.
 
         MatchVariant(
-            update.resource,
-            [&](TextureViewBase* textureView) {
+            diff.added,
+            [&](std::monostate) {
+                // Nothing to do
+            },
+            [&](Ref<TextureViewBase> textureView) {
                 VkImageView handle = ToBackend(textureView)->GetHandle();
                 if (handle == nullptr) {
                     return;
                 }
 
                 VkDescriptorImageInfo imageWrite = {
-                    .sampler = ToBackend(unusedSampler)->GetHandle(),
+                    .sampler = placeholderSampler->GetHandle(),
                     .imageView = handle,
-                    .imageLayout = VulkanImageLayout(textureView->GetFormat(),
-                                                     wgpu::TextureUsage::TextureBinding),
+                    .imageLayout = ToBackend(textureView)
+                                       ->VulkanImageLayout(wgpu::TextureUsage::TextureBinding),
                 };
                 imageWrites.push_back(imageWrite);
-                arrayElements.push_back(uint32_t{update.slot});
+                arrayElements.push_back(uint32_t{diff.slot});
             },
-            [&](SamplerBase* sampler) {
+            [&](Ref<SamplerBase> sampler) {
                 VkSampler handle = ToBackend(sampler)->GetHandle();
                 if (handle == nullptr) {
                     return;
@@ -297,11 +295,11 @@ MaybeError ResourceTable::UpdateResourceBindings(const std::vector<ResourceUpdat
 
                 VkDescriptorImageInfo imageWrite = {
                     .sampler = handle,
-                    .imageView = ToBackend(unusedTextureView)->GetHandle(),
+                    .imageView = placeholderTextureView->GetHandle(),
                     .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
                 };
                 imageWrites.push_back(imageWrite);
-                arrayElements.push_back(uint32_t{update.slot});
+                arrayElements.push_back(uint32_t{diff.slot});
             });
     }
 

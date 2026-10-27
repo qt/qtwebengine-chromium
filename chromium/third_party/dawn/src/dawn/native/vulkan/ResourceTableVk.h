@@ -28,12 +28,11 @@
 #ifndef SRC_DAWN_NATIVE_VULKAN_RESOURCETABLEVK_H_
 #define SRC_DAWN_NATIVE_VULKAN_RESOURCETABLEVK_H_
 
-#include <memory>
 #include <vector>
 
-#include "dawn/common/vulkan_platform.h"
-#include "dawn/native/Error.h"
-#include "dawn/native/ResourceTable.h"
+#include "src/dawn/common/vulkan_platform.h"
+#include "src/dawn/native/Error.h"
+#include "src/dawn/native/ResourceTable.h"
 
 namespace dawn::native::vulkan {
 
@@ -65,7 +64,7 @@ class ResourceTable final : public ResourceTableBase {
 
     MaybeError UpdateMetadataBuffer(CommandRecordingContext* recordingContext,
                                     const std::vector<MetadataUpdate>& updates);
-    MaybeError UpdateResourceBindings(const std::vector<ResourceUpdate>& updates);
+    MaybeError UpdateResourceBindings(const std::vector<ResourceDiff>& diffs);
 
     VkDescriptorPool mPool = VK_NULL_HANDLE;
     VkDescriptorSet mSet = VK_NULL_HANDLE;

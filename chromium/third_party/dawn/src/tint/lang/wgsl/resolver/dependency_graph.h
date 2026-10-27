@@ -29,7 +29,6 @@
 #define SRC_TINT_LANG_WGSL_RESOLVER_DEPENDENCY_GRAPH_H_
 
 #include <string>
-#include <vector>
 
 #include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/wgsl/ast/module.h"
@@ -124,24 +123,6 @@ class ResolvedIdentifier {
         return core::TexelFormat::kUndefined;
     }
 
-    /// @return the texture filterable if the ResolvedIdentifier holds type::TextureFilterable,
-    /// otherwise core::TextureFilterable::kUndefined
-    core::TextureFilterable TextureFilterable() const {
-        if (auto n = std::get_if<core::TextureFilterable>(&value_)) {
-            return *n;
-        }
-        return core::TextureFilterable::kUndefined;
-    }
-
-    /// @return the texture filterable if the ResolvedIdentifier holds type::SamplerFiltering,
-    /// otherwise core::SamplerFiltering::kUndefined
-    core::SamplerFiltering SamplerFiltering() const {
-        if (auto n = std::get_if<core::SamplerFiltering>(&value_)) {
-            return *n;
-        }
-        return core::SamplerFiltering::kUndefined;
-    }
-
     /// @param value the value to compare the ResolvedIdentifier to
     /// @return true if the ResolvedIdentifier is equal to @p value
     template <typename T>
@@ -169,9 +150,7 @@ class ResolvedIdentifier {
                  core::Access,
                  core::AddressSpace,
                  core::BuiltinType,
-                 core::TexelFormat,
-                 core::TextureFilterable,
-                 core::SamplerFiltering>
+                 core::TexelFormat>
         value_;
 };
 
@@ -198,12 +177,6 @@ struct DependencyGraph {
 
     /// Map of ast::Identifier to a ResolvedIdentifier
     Hashmap<const ast::Identifier*, ResolvedIdentifier, 64> resolved_identifiers;
-
-    /// Map of ast::Variable to a type, function, or variable that is shadowed by
-    /// the variable key. A declaration (X) shadows another (Y) if X and Y use
-    /// the same symbol, and X is declared in a sub-scope of the scope that
-    /// declares Y.
-    Hashmap<const ast::Variable*, const ast::Node*, 16> shadows;
 };
 
 }  // namespace tint::resolver

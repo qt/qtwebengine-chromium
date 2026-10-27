@@ -6,6 +6,9 @@ import("//build/config/features.gni")
 
 source_set("browser") {
   sources = [
+    "cmtg_device_key_provider.h",
+    "cryptauth_cmtg_device_key_provider.cc",
+    "cryptauth_cmtg_device_key_provider.h",
     "passkey_data_type_controller.cc",
     "passkey_data_type_controller.h",
   ]
@@ -13,15 +16,14 @@ source_set("browser") {
     "//base",
     "//components/sync",
     "//components/webauthn:features",
+    "//crypto",
     "//net",
     "//services/network/public/cpp",
     "//url",
   ]
 
-  if (!is_android && !is_ios) {
+  if (!is_android && use_blink) {
     sources += [
-      "immediate_request_rate_limiter.cc",
-      "immediate_request_rate_limiter.h",
       "passkey_change_quota_tracker.cc",
       "passkey_change_quota_tracker.h",
       "rate_limiter_slide_window.cc",
@@ -29,7 +31,7 @@ source_set("browser") {
     ]
   }
 
-  if (!is_ios) {
+  if (use_blink) {
     sources += [ "internal_authenticator.h" ]
 
     deps += [
@@ -100,22 +102,35 @@ source_set("common_utils") {
     "//services/network/public/mojom",
     "//url",
   ]
+
+  # has to be in this form because of how checks are
+  # implemented in  components/webapps/isolated_web_apps/BUILD.gn
+  if (is_chromeos || is_win || is_mac || is_linux) {
+    deps += [ "//components/webapps/isolated_web_apps:scheme" ]
+  }
 }
 
 source_set("unit_tests") {
   testonly = true
-  sources = [ "webauthn_security_utils_unittest.cc" ]
+  sources = [
+    "cryptauth_cmtg_device_key_provider_unittest.cc",
+    "remote_validation_unittest.cc",
+    "webauthn_security_utils_unittest.cc",
+  ]
   deps = [
+    ":browser",
     ":common_utils",
+    "//base/test:test_support",
+    "//services/network:test_support",
+    "//services/network/public/cpp",
     "//testing/gtest",
     "//url",
   ]
 
   if (!is_android) {
     sources += [ "passkey_model_utils_unittest.cc" ]
-    if (!is_ios) {
+    if (use_blink) {
       sources += [
-        "immediate_request_rate_limiter_unittest.cc",
         "passkey_change_quota_tracker_unittest.cc",
         "rate_limiter_slide_window_unittest.cc",
       ]
@@ -131,7 +146,7 @@ source_set("unit_tests") {
       "//testing/gmock",
       "//testing/gtest",
     ]
-    if (!is_ios) {
+    if (use_blink) {
       deps += [
         ":browser",
         "//url",
@@ -153,6 +168,8 @@ static_library("test_support") {
     sources += [
       "mock_internal_authenticator.cc",
       "mock_internal_authenticator.h",
+      "webauthn_test_utils.cc",
+      "webauthn_test_utils.h",
     ]
     deps += [
       ":browser",

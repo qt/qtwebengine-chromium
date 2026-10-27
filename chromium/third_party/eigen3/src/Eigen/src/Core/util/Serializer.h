@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SERIALIZER_H
 #define EIGEN_SERIALIZER_H
@@ -28,8 +29,7 @@ class Serializer;
 
 // Specialization for POD types.
 template <typename T>
-class Serializer<T,
-                 typename std::enable_if_t<std::is_trivially_copyable<T>::value && std::is_standard_layout<T>::value>> {
+class Serializer<T, std::enable_if_t<std::is_trivially_copyable<T>::value && std::is_standard_layout<T>::value>> {
  public:
   /**
    * Determines the required size of the serialization buffer for a value.

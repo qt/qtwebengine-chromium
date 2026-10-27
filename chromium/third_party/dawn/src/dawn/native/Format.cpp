@@ -25,18 +25,18 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/Format.h"
+#include "src/dawn/native/Format.h"
 
 #include <bitset>
 #include <optional>
 #include <utility>
 
-#include "dawn/common/MatchVariant.h"
-#include "dawn/common/TypedInteger.h"
-#include "dawn/native/Device.h"
-#include "dawn/native/EnumMaskIterator.h"
-#include "dawn/native/Features.h"
-#include "dawn/native/Texture.h"
+#include "src/dawn/common/MatchVariant.h"
+#include "src/dawn/common/TypedInteger.h"
+#include "src/dawn/native/Device.h"
+#include "src/dawn/native/EnumMaskIterator.h"
+#include "src/dawn/native/Features.h"
+#include "src/dawn/native/Texture.h"
 
 namespace dawn::native {
 
@@ -141,10 +141,10 @@ const AspectInfo& Format::GetAspectInfo(wgpu::TextureAspect aspect) const {
 }
 
 const AspectInfo& Format::GetAspectInfo(Aspect aspect) const {
-    DAWN_ASSERT(HasOneBit(aspect));
-    DAWN_ASSERT(aspects & aspect);
+    DAWN_CHECK(HasOneBit(aspect));
+    DAWN_CHECK(aspects & aspect);
     const size_t aspectIndex = GetAspectIndex(aspect);
-    DAWN_ASSERT(aspectIndex < GetAspectCount(aspects));
+    DAWN_CHECK(aspectIndex < GetAspectCount(aspects));
     return aspectInfo[aspectIndex];
 }
 
@@ -210,7 +210,7 @@ void ComputeFormatCapabilities(const DeviceBase* device, FormatTable& table) {
 
         for (wgpu::TextureFormat fmt : formats) {
             FormatIndex index = ComputeFormatIndex(fmt);
-            DAWN_ASSERT(index < table.size());
+            DAWN_CHECK(index < table.size());
             Format& format = table[index];
 
             if (supported) {
@@ -230,10 +230,10 @@ void ComputeFormatCapabilities(const DeviceBase* device, FormatTable& table) {
 
     // Add caps for the supported formats
     auto AddCaps = [&](std::initializer_list<wgpu::TextureFormat> formats, Cap caps) {
-        DAWN_ASSERT(caps != Cap::None);
+        DAWN_CHECK(caps != Cap::None);
         for (wgpu::TextureFormat fmt : formats) {
             FormatIndex index = ComputeFormatIndex(fmt);
-            DAWN_ASSERT(index < table.size());
+            DAWN_CHECK(index < table.size());
             Format& format = table[index];
 
             if (!format.IsSupported()) {
@@ -410,17 +410,17 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
 
     auto AddFormat = [&table, &formatsSet](Format format) {
         FormatIndex index = ComputeFormatIndex(format.format);
-        DAWN_ASSERT(index < table.size());
+        DAWN_CHECK(index < table.size());
 
         // This checks that each format is set at most once, the first part of checking that all
         // formats are set exactly once.
-        DAWN_ASSERT(!formatsSet[index]);
+        DAWN_CHECK(!formatsSet[index]);
 
         // Vulkan describes bytesPerRow in units of texels. If there's any format for which this
-        // DAWN_ASSERT isn't true, then additional validation on bytesPerRow must be added.
+        // DAWN_CHECK isn't true, then additional validation on bytesPerRow must be added.
         const bool hasMultipleAspects = !HasOneBit(format.aspects);
-        DAWN_ASSERT(hasMultipleAspects ||
-                    (kTextureBytesPerRowAlignment % format.aspectInfo[0].block.byteSize) == 0);
+        DAWN_CHECK(hasMultipleAspects ||
+                   (kTextureBytesPerRowAlignment % format.aspectInfo[0].block.byteSize) == 0);
 
         table[index] = format;
         formatsSet.set(index);
@@ -664,7 +664,7 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
         //    stencil8 aspect of depth-stencil8 formats.
         //  - aspectInfo[1] is the actual info used in the rest of Dawn since
         //    GetAspectIndex(Aspect::Stencil) is 1.
-        DAWN_ASSERT(GetAspectIndex(Aspect::Stencil) == 1);
+        DAWN_CHECK(GetAspectIndex(Aspect::Stencil) == 1);
 
         internalFormat.aspectInfo[0].block.byteSize = 1;
         internalFormat.aspectInfo[0].block.width = 1;
@@ -759,10 +759,10 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
             const FormatIndex firstFormatIndex = ComputeFormatIndex(firstFormat);
             const FormatIndex secondFormatIndex = ComputeFormatIndex(secondFormat);
 
-            DAWN_ASSERT(table[firstFormatIndex].aspectInfo[0].format !=
-                        wgpu::TextureFormat::Undefined);
-            DAWN_ASSERT(table[secondFormatIndex].aspectInfo[0].format !=
-                        wgpu::TextureFormat::Undefined);
+            DAWN_CHECK(table[firstFormatIndex].aspectInfo[0].format !=
+                       wgpu::TextureFormat::Undefined);
+            DAWN_CHECK(table[secondFormatIndex].aspectInfo[0].format !=
+                       wgpu::TextureFormat::Undefined);
 
             internalFormat.aspectInfo[0] = table[firstFormatIndex].aspectInfo[0];
             internalFormat.aspectInfo[1] = table[secondFormatIndex].aspectInfo[0];
@@ -880,14 +880,14 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
     // This checks that each format is set at least once, the second part of checking that all
     // formats are checked exactly once. If this assertion is failing and texture formats have
     // been added or removed recently, check that kKnownFormatCount has been updated.
-    DAWN_ASSERT(formatsSet.all());
+    DAWN_CHECK(formatsSet.all());
 
     for (const Format& f : table) {
         if (f.format != f.baseFormat) {
             auto& baseViewFormat = table[ComputeFormatIndex(f.baseFormat)].baseViewFormat;
             // Currently, Dawn only supports sRGB reinterpretation, so there should only be one
             // view format.
-            DAWN_ASSERT(baseViewFormat == wgpu::TextureFormat::Undefined);
+            DAWN_CHECK(baseViewFormat == wgpu::TextureFormat::Undefined);
             baseViewFormat = f.format;
         }
     }

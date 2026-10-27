@@ -5,26 +5,38 @@
 #include "components/autofill/core/browser/integrators/autofill_ai/metrics/autofill_ai_logger.h"
 
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <utility>
 
+#include "base/check.h"
+#include "base/check_deref.h"
+#include "base/containers/flat_set.h"
 #include "base/containers/map_util.h"
+#include "base/containers/span.h"
+#include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/notreached.h"
 #include "base/strings/strcat.h"
 #include "base/strings/stringprintf.h"
 #include "components/autofill/core/browser/autofill_ai_form_rationalization.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
+#include "components/autofill/core/browser/filling/filling_product.h"
 #include "components/autofill/core/browser/form_processing/autofill_ai/determine_attribute_types.h"
+#include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/integrators/autofill_ai/metrics/autofill_ai_metrics.h"
 #include "components/autofill/core/browser/integrators/autofill_ai/metrics/autofill_ai_ukm_logger.h"
 #include "components/autofill/core/browser/permissions/autofill_ai/autofill_ai_permission_utils.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/dense_set.h"
+#include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/unique_ids.h"
+#include "components/metrics/profile_metrics_service.h"
+#include "services/metrics/public/cpp/ukm_source_id.h"
 
 namespace autofill {
 
@@ -64,7 +76,8 @@ void LogFunnelMetric(std::string_view funnel_metric_name,
 void LogKeyMetric(std::string_view key_metric_name,
                   std::optional<EntityType> entity_type,
                   std::optional<EntityInstance::RecordType> record_type,
-                  bool metric_value) {
+                  bool metric_value,
+                  metrics::ProfileMetricsService& profile_metrics_service) {
   // Only entity-type-specific histograms are split by record type.
   CHECK(!record_type || entity_type);
 
@@ -79,7 +92,7 @@ void LogKeyMetric(std::string_view key_metric_name,
           ? base::StrCat({".", EntityRecordTypeToMetricsString(*record_type)})
           : "";
 
-  base::UmaHistogramBoolean(
+  profile_metrics_service.UmaHistogramBoolean(
       base::StringPrintf(kKeyMetricsHistogramMask, key_metric_name,
                          entity_type_str, record_type_str),
       metric_value);
@@ -88,7 +101,9 @@ void LogKeyMetric(std::string_view key_metric_name,
 }  // namespace
 
 AutofillAiLogger::AutofillAiLogger(AutofillClient* client)
-    : ukm_logger_(client) {}
+    : ukm_logger_(client),
+      profile_metrics_service_(
+          CHECK_DEREF(client->GetProfileMetricsService())) {}
 AutofillAiLogger::~AutofillAiLogger() {
   for (const auto& [form_id, states] : form_states_) {
     if (!submitted_forms_.contains(form_id)) {
@@ -317,16 +332,17 @@ void AutofillAiLogger::RecordKeyMetricsForState(
     std::optional<EntityType> entity_type,
     std::optional<EntityInstance::RecordType> record_type) const {
   LogKeyMetric("FillingReadiness", entity_type, record_type,
-               funnel_state.has_data_to_fill);
+               funnel_state.has_data_to_fill, *profile_metrics_service_);
   LogKeyMetric("FillingAssistance", entity_type, record_type,
-               funnel_state.did_fill_suggestions);
+               funnel_state.did_fill_suggestions, *profile_metrics_service_);
   if (funnel_state.suggestions_shown) {
     LogKeyMetric("FillingAcceptance", entity_type, record_type,
-                 funnel_state.did_fill_suggestions);
+                 funnel_state.did_fill_suggestions, *profile_metrics_service_);
   }
   if (funnel_state.did_fill_suggestions) {
     LogKeyMetric("FillingCorrectness", entity_type, record_type,
-                 !funnel_state.edited_autofilled_field);
+                 !funnel_state.edited_autofilled_field,
+                 *profile_metrics_service_);
   }
 }
 
@@ -342,7 +358,6 @@ void AutofillAiLogger::RecordNumberOfFieldsFilled(
           case FillingProduct::kMerchantPromoCode:
           case FillingProduct::kIban:
           case FillingProduct::kPassword:
-          case FillingProduct::kPlusAddresses:
           case FillingProduct::kAutofillAi:
           case FillingProduct::kLoyaltyCard:
           case FillingProduct::kIdentityCredential:

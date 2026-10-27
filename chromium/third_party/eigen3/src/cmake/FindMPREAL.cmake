@@ -11,6 +11,7 @@
 #  MPREAL_INCLUDES - MPREAL required include directories
 #  MPREAL_LIBRARIES - MPREAL required libraries
 #  MPREAL_VERSION - MPREAL version
+# SPDX-License-Identifier: MPL-2.0
 
 # Copyright (c) 2020 The Eigen Authors.
 # Redistribution and use is allowed according to the terms of the BSD license.

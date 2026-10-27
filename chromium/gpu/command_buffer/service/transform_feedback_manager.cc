@@ -36,9 +36,19 @@ TransformFeedback::TransformFeedback(TransformFeedbackManager* manager,
 
 TransformFeedback::~TransformFeedback() {
   if (!manager_->lost_context()) {
-    if (active_)
+    if (active_ && is_bound_) {
       glEndTransformFeedback();
+    }
     glDeleteTransformFeedbacks(1, &service_id_);
+  }
+  // ForceUnbindBuffers() manages purely CPU-side state tracking/refcounting of
+  // the attached buffers. We must run it even if the context is lost (unlike
+  // the GL driver calls above) to ensure that the buffer reference counts are
+  // correctly decremented, preventing state leaks or triggering BufferManager
+  // DCHECKs upon destruction of an active but unbound transform feedback
+  // object.
+  if (active_ && !is_bound_) {
+    ForceUnbindBuffers();
   }
 }
 
@@ -71,6 +81,10 @@ void TransformFeedback::DoBindTransformFeedback(
     }
     SetIsBound(true);
   }
+}
+
+bool TransformFeedback::AttachedBuffersAreLocked() const {
+  return is_bound_ || active_;
 }
 
 void TransformFeedback::SetActiveProgram(Program* program) {
@@ -195,6 +209,23 @@ TransformFeedback* TransformFeedbackManager::GetTransformFeedback(
 void TransformFeedbackManager::RemoveTransformFeedback(GLuint client_id) {
   if (client_id) {
     transform_feedbacks_.erase(client_id);
+  }
+}
+
+ScopedPauseResumeTransformFeedback::ScopedPauseResumeTransformFeedback(
+    TransformFeedback* transform_feedback)
+    : transform_feedback_(transform_feedback) {
+  if (transform_feedback_ && transform_feedback_->active() &&
+      !transform_feedback_->paused()) {
+    transform_feedback_->DoPauseTransformFeedback();
+  } else {
+    transform_feedback_ = nullptr;
+  }
+}
+
+ScopedPauseResumeTransformFeedback::~ScopedPauseResumeTransformFeedback() {
+  if (transform_feedback_) {
+    transform_feedback_->DoResumeTransformFeedback();
   }
 }
 

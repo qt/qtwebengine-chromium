@@ -39,7 +39,6 @@
 #include "src/dawn/node/binding/GPUBindGroup.h"
 #include "src/dawn/node/binding/GPUBindGroupLayout.h"
 #include "src/dawn/node/binding/GPUBuffer.h"
-#include "src/dawn/node/binding/GPUCommandBuffer.h"
 #include "src/dawn/node/binding/GPUCommandEncoder.h"
 #include "src/dawn/node/binding/GPUComputePipeline.h"
 #include "src/dawn/node/binding/GPUPipelineLayout.h"
@@ -47,12 +46,14 @@
 #include "src/dawn/node/binding/GPUQueue.h"
 #include "src/dawn/node/binding/GPURenderBundleEncoder.h"
 #include "src/dawn/node/binding/GPURenderPipeline.h"
+#include "src/dawn/node/binding/GPUResourceTable.h"
 #include "src/dawn/node/binding/GPUSampler.h"
 #include "src/dawn/node/binding/GPUShaderModule.h"
 #include "src/dawn/node/binding/GPUSupportedFeatures.h"
 #include "src/dawn/node/binding/GPUSupportedLimits.h"
 #include "src/dawn/node/binding/GPUTexture.h"
 #include "src/dawn/node/utils/Debug.h"
+#include "src/utils/compiler.h"
 
 namespace wgpu::binding {
 
@@ -98,11 +99,11 @@ void chunkedWrite(wgpu::StringView msg) {
     while (msg.length != 0) {
         int n;
         if (msg.length > 4096) {
-            n = printf("%.4096s", msg.data);
+            n = DAWN_UNSAFE_TODO(printf("%.4096s", msg.data));
         } else {
-            n = printf("%.*s", static_cast<int>(msg.length), msg.data);
+            n = DAWN_UNSAFE_TODO(printf("%.*s", static_cast<int>(msg.length), msg.data));
         }
-        msg.data += n;
+        DAWN_UNSAFE_TODO(msg.data += n);
         msg.length -= n;
     }
 }
@@ -203,7 +204,7 @@ GPUDevice::GPUDevice(Napi::Env env,
       lost_promise_(lost_promise),
       label_(CopyLabel(desc.label)) {
     device_.SetLoggingCallback([](wgpu::LoggingType type, wgpu::StringView message) {
-        printf("%s:\n", str(type));
+        DAWN_UNSAFE_TODO(printf("%s:\n", str(type)));
         chunkedWrite(message);
     });
     {
@@ -233,10 +234,11 @@ void GPUDevice::handleUncapturedError(ErrorType type, wgpu::StringView message) 
 
     auto error = createErrorFromWGPUError(env_, type, message);
     if (!error.has_value()) {
-        fprintf(stderr,
-                "GPUDevice::handleUncapturedError: Failed to create GPUError object for error type "
-                "%s.\n",
-                str(type));
+        DAWN_UNSAFE_TODO(fprintf(
+            stderr,
+            "GPUDevice::handleUncapturedError: Failed to create GPUError object for error type "
+            "%s.\n",
+            str(type)));
         return;
     }
 
@@ -250,7 +252,7 @@ void GPUDevice::handleUncapturedError(ErrorType type, wgpu::StringView message) 
 
     bool doDefault = dispatchEvent(env_, eventObj);
     if (doDefault) {
-        printf("%s:\n", str(type));
+        DAWN_UNSAFE_TODO(printf("%s:\n", str(type)));
         chunkedWrite(message);
     }
 }
@@ -422,6 +424,13 @@ interop::Interface<interop::GPUPipelineLayout> GPUDevice::createPipelineLayout(
         return {};
     }
 
+    wgpu::PipelineLayoutResourceTable resourceTable{};
+    if (descriptor.usesResourceTable) {
+        resourceTable.usesResourceTable = true;
+        resourceTable.nextInChain = desc.nextInChain;
+        desc.nextInChain = &resourceTable;
+    }
+
     return interop::GPUPipelineLayout::Create<GPUPipelineLayout>(
         env, desc, device_.CreatePipelineLayout(&desc));
 }
@@ -589,6 +598,20 @@ interop::Interface<interop::GPURenderBundleEncoder> GPUDevice::createRenderBundl
 
     return interop::GPURenderBundleEncoder::Create<GPURenderBundleEncoder>(
         env, desc, device_.CreateRenderBundleEncoder(&desc));
+}
+
+interop::Interface<interop::GPUResourceTable> GPUDevice::createResourceTable(
+    Napi::Env env,
+    interop::GPUResourceTableDescriptor descriptor) {
+    Converter conv(env, device_);
+
+    wgpu::ResourceTableDescriptor desc{};
+    if (!conv(desc.label, descriptor.label) || !conv(desc.size, descriptor.size)) {
+        return {};
+    }
+
+    return interop::GPUResourceTable::Create<GPUResourceTable>(env, desc,
+                                                               device_.CreateResourceTable(&desc));
 }
 
 interop::Interface<interop::GPUQuerySet> GPUDevice::createQuerySet(

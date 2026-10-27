@@ -7,6 +7,8 @@ import '//resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 import type {Tab as TabData} from '/tab_strip_api/tab_strip_api_data_model.mojom-webui.js';
+import {TabStripUIController} from '/tab_strip_api/tab_strip_ui_controller.mojom-webui.js';
+import type {TabStripUIControllerRemote} from '/tab_strip_api/tab_strip_ui_controller.mojom-webui.js';
 
 import {TabNetworkState} from '../tabs.mojom-webui.js';
 
@@ -28,7 +30,7 @@ export class TabElement extends CrLitElement {
 
   static override get properties() {
     return {
-      data: {type: Object},
+      tabData: {type: Object},
       dragInProgress: {
         type: Boolean,
         reflect: true,
@@ -40,7 +42,7 @@ export class TabElement extends CrLitElement {
     };
   }
 
-  accessor data: TabData = {
+  accessor tabData: TabData = {
     alertStates: [],
     favicon: {dataUrl: 'chrome://favicon2/'},
     id: '',
@@ -50,30 +52,52 @@ export class TabElement extends CrLitElement {
     networkState: TabNetworkState.kNone,
     title: '',
     url: '',
-    lastActiveTimeTicks: {internalValue: 0n},
-    lastActiveElapsedText: '',
   };
 
   protected accessor dragInProgress = false;
   protected accessor active = false;
 
+  private readonly tabStripUiController_: TabStripUIControllerRemote;
+
+  constructor() {
+    super();
+
+    this.tabStripUiController_ = TabStripUIController.getRemote();
+  }
+
+  override connectedCallback() {
+    super.connectedCallback();
+
+    this.addEventListener('contextmenu', this.onContextMenu_.bind(this));
+  }
+
+  private onContextMenu_(e: MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+
+    this.tabStripUiController_.showTabContextMenu(this.tabData.id, {
+      x: e.screenX,
+      y: e.screenY,
+    });
+  }
+
   override willUpdate(changedProperties: PropertyValues<this>) {
     super.willUpdate(changedProperties);
 
-    if (changedProperties.has('data')) {
-      this.active = this.data.isActive;
+    if (changedProperties.has('tabData' as keyof TabElement)) {
+      this.active = this.tabData.isActive;
     }
   }
 
   override updated(changedProperties: PropertyValues<this>) {
     super.updated(changedProperties);
 
-    if (changedProperties.has('data')) {
-      if (this.data.favicon.dataUrl) {
+    if (changedProperties.has('tabData' as keyof TabElement)) {
+      if (this.tabData.favicon.dataUrl) {
         this.style.setProperty(
-            '--favicon-url', `url(${this.data.favicon.dataUrl})`);
+            '--favicon-url', `url(${this.tabData.favicon.dataUrl})`);
       }
-      this.style.setProperty('z-index', this.data.isActive ? '1' : '0');
+      this.style.setProperty('z-index', this.tabData.isActive ? '1' : '0');
     }
   }
 
@@ -86,7 +110,7 @@ export class TabElement extends CrLitElement {
   }
 
   protected onCloseClick() {
-    this.fire('tab-close-click', {id: this.data.id});
+    this.fire('tab-close-click', {id: this.tabData.id});
   }
 }
 

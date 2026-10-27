@@ -25,16 +25,16 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/d3d12/BindGroupLayoutD3D12.h"
+#include "src/dawn/native/d3d12/BindGroupLayoutD3D12.h"
 
 #include <utility>
 
-#include "dawn/common/MatchVariant.h"
-#include "dawn/native/d3d12/DeviceD3D12.h"
-#include "dawn/native/d3d12/SamplerD3D12.h"
-#include "dawn/native/d3d12/SamplerHeapCacheD3D12.h"
-#include "dawn/native/d3d12/StagingDescriptorAllocatorD3D12.h"
-#include "dawn/native/d3d12/UtilsD3D12.h"
+#include "src/dawn/common/MatchVariant.h"
+#include "src/dawn/native/d3d12/DeviceD3D12.h"
+#include "src/dawn/native/d3d12/SamplerD3D12.h"
+#include "src/dawn/native/d3d12/SamplerHeapCacheD3D12.h"
+#include "src/dawn/native/d3d12/StagingDescriptorAllocatorD3D12.h"
+#include "src/dawn/native/d3d12/UtilsD3D12.h"
 
 namespace dawn::native::d3d12 {
 namespace {
@@ -91,6 +91,9 @@ D3D12_DESCRIPTOR_RANGE_TYPE WGPUBindingInfoToDescriptorRangeType(const BindingIn
             DAWN_UNREACHABLE();
         });
 }
+
+const uint32_t kInvalidShaderRegister = 0xFFFFFFFF;
+
 }  // anonymous namespace
 
 // static
@@ -104,7 +107,7 @@ BindGroupLayout::BindGroupLayout(Device* device,
                                  const UnpackedPtr<BindGroupLayoutDescriptor>& descriptor)
     : BindGroupLayoutInternalBase(device, descriptor),
       mDescriptorHeapOffsets(GetBindingCount()),
-      mShaderRegisters(GetBindingCount()),
+      mShaderRegisters(GetBindingCount(), kInvalidShaderRegister),
       mCbvUavSrvDescriptorCount(0),
       mSamplerDescriptorCount(0),
       mViewSizeIncrement(0),
@@ -294,6 +297,7 @@ ityp::span<BindingIndex, const uint32_t> BindGroupLayout::GetDescriptorHeapOffse
 }
 
 uint32_t BindGroupLayout::GetShaderRegister(BindingIndex bindingIndex) const {
+    DAWN_ASSERT(mShaderRegisters[bindingIndex] != kInvalidShaderRegister);
     return mShaderRegisters[bindingIndex];
 }
 

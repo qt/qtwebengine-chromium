@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_EXECUTOR_H
-#define EIGEN_CXX11_TENSOR_TENSOR_EXECUTOR_H
+#ifndef EIGEN_TENSOR_TENSOR_EXECUTOR_H
+#define EIGEN_TENSOR_TENSOR_EXECUTOR_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -28,36 +29,28 @@ namespace internal {
 // TODO(ezhulenev): Add specializations for all other types of Tensor ops.
 
 template <typename Expression>
-struct ExpressionHasTensorBroadcastingOp {
-  enum { value = false };
-};
+struct ExpressionHasTensorBroadcastingOp : std::false_type {};
 
 template <typename LhsXprType, typename RhsXprType>
-struct ExpressionHasTensorBroadcastingOp<const TensorAssignOp<LhsXprType, RhsXprType> > {
-  enum { value = ExpressionHasTensorBroadcastingOp<RhsXprType>::value };
-};
+struct ExpressionHasTensorBroadcastingOp<const TensorAssignOp<LhsXprType, RhsXprType> >
+    : ExpressionHasTensorBroadcastingOp<RhsXprType> {};
 
 template <typename UnaryOp, typename XprType>
-struct ExpressionHasTensorBroadcastingOp<const TensorCwiseUnaryOp<UnaryOp, XprType> > {
-  enum { value = ExpressionHasTensorBroadcastingOp<XprType>::value };
-};
+struct ExpressionHasTensorBroadcastingOp<const TensorCwiseUnaryOp<UnaryOp, XprType> >
+    : ExpressionHasTensorBroadcastingOp<XprType> {};
 
 template <typename BinaryOp, typename LhsXprType, typename RhsXprType>
-struct ExpressionHasTensorBroadcastingOp<const TensorCwiseBinaryOp<BinaryOp, LhsXprType, RhsXprType> > {
-  enum {
-    value = ExpressionHasTensorBroadcastingOp<LhsXprType>::value || ExpressionHasTensorBroadcastingOp<RhsXprType>::value
-  };
-};
+struct ExpressionHasTensorBroadcastingOp<const TensorCwiseBinaryOp<BinaryOp, LhsXprType, RhsXprType> >
+    : std::integral_constant<bool, ExpressionHasTensorBroadcastingOp<LhsXprType>::value ||
+                                       ExpressionHasTensorBroadcastingOp<RhsXprType>::value> {};
 
 template <typename Broadcast, typename XprType>
-struct ExpressionHasTensorBroadcastingOp<const TensorBroadcastingOp<Broadcast, XprType> > {
-  enum { value = true };
-};
+struct ExpressionHasTensorBroadcastingOp<const TensorBroadcastingOp<Broadcast, XprType> > : std::true_type {};
 
 // -------------------------------------------------------------------------- //
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief The tensor executor class.
  *
@@ -667,4 +660,4 @@ class TensorExecutor<Expression, Eigen::SyclDevice, Vectorizable, Tiling> {
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_EXECUTOR_H
+#endif  // EIGEN_TENSOR_TENSOR_EXECUTOR_H

@@ -3697,7 +3697,7 @@ static bool FindMemoryPreferences(
             return false;
         }
         // This relies on values of VK_IMAGE_USAGE_TRANSFER* being the same VK_BUFFER_IMAGE_TRANSFER*.
-        const bool deviceAccess = (bufImgUsage & ~(VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT)) != 0;
+        const bool deviceAccess = (bufImgUsage & ~static_cast<VkFlags>(VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT)) != 0;
         const bool hostAccessSequentialWrite = (allocCreateInfo.flags & VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT) != 0;
         const bool hostAccessRandom = (allocCreateInfo.flags & VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT) != 0;
         const bool hostAccessAllowTransferInstead = (allocCreateInfo.flags & VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT) != 0;
@@ -11853,11 +11853,11 @@ VkResult VmaDeviceMemoryBlock::Map(VmaAllocator hAllocator, uint32_t count, void
 
     VmaMutexLock lock(m_MapAndBindMutex, hAllocator->m_UseMutex);
     const uint32_t oldTotalMapCount = m_MapCount + m_MappingHysteresis.GetExtraMapping();
-    m_MappingHysteresis.PostMap();
     if (oldTotalMapCount != 0)
     {
-        m_MapCount += count;
         VMA_ASSERT(m_pMappedData != VMA_NULL);
+        m_MappingHysteresis.PostMap();
+        m_MapCount += count;
         if (ppData != VMA_NULL)
         {
             *ppData = m_pMappedData;
@@ -11875,11 +11875,13 @@ VkResult VmaDeviceMemoryBlock::Map(VmaAllocator hAllocator, uint32_t count, void
             &m_pMappedData);
         if (result == VK_SUCCESS)
         {
+            VMA_ASSERT(m_pMappedData != VMA_NULL);
+            m_MappingHysteresis.PostMap();
+            m_MapCount = count;
             if (ppData != VMA_NULL)
             {
                 *ppData = m_pMappedData;
             }
-            m_MapCount = count;
         }
         return result;
     }
@@ -15635,7 +15637,7 @@ VkResult VmaAllocator_T::BindBufferMemory(
     VkBuffer hBuffer,
     const void* pNext)
 {
-    VkResult res = VK_ERROR_UNKNOWN;
+    VkResult res = VK_ERROR_UNKNOWN_COPY;
     switch(hAllocation->GetType())
     {
     case VmaAllocation_T::ALLOCATION_TYPE_DEDICATED:
@@ -15660,7 +15662,7 @@ VkResult VmaAllocator_T::BindImageMemory(
     VkImage hImage,
     const void* pNext)
 {
-    VkResult res = VK_ERROR_UNKNOWN;
+    VkResult res = VK_ERROR_UNKNOWN_COPY;
     switch(hAllocation->GetType())
     {
     case VmaAllocation_T::ALLOCATION_TYPE_DEDICATED:

@@ -15,14 +15,17 @@
 # Description:
 #   SecAgg components shared between client and server.
 
+load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//fcp:config.bzl", "FCP_COPTS")
 
 package(
+    default_applicable_licenses = ["//fcp:license"],
     default_visibility = ["//fcp:internal"],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 proto_library(
@@ -82,13 +85,13 @@ cc_library(
         "//fcp/base",
         "@boringssl//:crypto",
         "@com_google_absl//absl/base:core_headers",
-        "@com_google_absl//absl/base:endian",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:node_hash_map",
         "@com_google_absl//absl/numeric:bits",
         "@com_google_absl//absl/numeric:int128",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:resize_and_overwrite",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
     ],

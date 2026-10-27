@@ -891,9 +891,8 @@ class ManagementApiUnitTestMV2DisableWithReEnableUnitTest
     : public ManagementApiUnitTest {
  public:
   ManagementApiUnitTestMV2DisableWithReEnableUnitTest() {
-    feature_list_.InitWithFeatures(
-        {extensions_features::kExtensionManifestV2Disabled},
-        {extensions_features::kExtensionManifestV2Unsupported});
+    feature_list_.InitAndDisableFeature(
+        extensions_features::kExtensionManifestV2Unsupported);
   }
   ~ManagementApiUnitTestMV2DisableWithReEnableUnitTest() override = default;
 
@@ -1328,7 +1327,7 @@ TEST_F(ManagementApiSupervisedUserTest,
 
 // Tests enabling an extension via management API after it was disabled due to
 // permission increase for supervised users.
-// Prevents a regression to crbug/1068660.
+// Prevents a regression to crbug.com/40683584.
 TEST_F(ManagementApiSupervisedUserTest, SetEnabled_AfterIncreasedPermissions) {
   // Preconditions.
   ASSERT_TRUE(profile()->IsChild());
@@ -1414,7 +1413,7 @@ TEST_F(ManagementApiSupervisedUserTest, SetEnabled_AfterIncreasedPermissions) {
 // Tests that if an extension still requires parental consent, the supervised
 // user approving it for permissions increase won't enable the extension and
 // bypass parental consent.
-// Prevents a regression to crbug/1070760.
+// Prevents a regression to crbug.com/40684737.
 TEST_F(ManagementApiSupervisedUserTest,
        SetEnabled_CustodianApprovalRequiredAndPermissionsIncrease) {
   // Preconditions.

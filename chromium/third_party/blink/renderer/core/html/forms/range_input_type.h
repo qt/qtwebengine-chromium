@@ -66,7 +66,6 @@ class RangeInputType final : public InputType, public InputTypeView {
   void CreateShadowSubtree() override;
   Decimal ParseToNumber(const String&, const Decimal&) const override;
   String Serialize(const Decimal&) const override;
-  void AccessKeyAction(SimulatedClickCreationScope creation_scope) override;
   void SanitizeValueInResponseToMinOrMaxAttributeChange() override;
   void StepAttributeChanged() override;
   void WarnIfValueIsInvalid(const String&) const override;
@@ -78,7 +77,7 @@ class RangeInputType final : public InputType, public InputTypeView {
   void DidSetValue(const String&, bool value_changed) override;
   String SanitizeValue(const String& proposed_value) const override;
   bool ShouldRespectListAttribute() override;
-  void DisabledAttributeChanged() override;
+  void DisabledAttributeChanged(DisabledChangedReason) override;
   void ListAttributeTargetChanged() override;
   Decimal FindClosestTickMarkValue(const Decimal&) override;
 

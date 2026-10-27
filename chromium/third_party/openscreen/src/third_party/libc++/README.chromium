@@ -1,0 +1,13 @@
+Name: libcxx
+Short Name: libc++
+URL: http://libcxx.llvm.org/
+Version: 1.0
+Revision: 07572e7b169225ef3a999584cba9d9004631ae66
+License: NCSA, Apache-with-LLVM-Exception, MIT
+License File: src/LICENSE.TXT
+Security Critical: yes
+Shipped: yes
+
+Description:
+
+libc++ for Open Screen.

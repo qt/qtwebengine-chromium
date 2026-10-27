@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_CONTRACTION_MAPPER_H
-#define EIGEN_CXX11_TENSOR_TENSOR_CONTRACTION_MAPPER_H
+#ifndef EIGEN_TENSOR_TENSOR_CONTRACTION_MAPPER_H
+#define EIGEN_TENSOR_TENSOR_CONTRACTION_MAPPER_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -450,7 +451,7 @@ class TensorContractionSubMapper {
   template <typename PacketT, int AlignmentType>
   EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE PacketT load(Index i) const {
     static_assert(std::is_same<PacketT, PacketT>::value, "YOU_MADE_A_PROGRAMMING_MISTAKE");
-    const int ActualAlignment = (AlignmentType == Aligned) && (Alignment == Aligned) ? Aligned : Unaligned;
+    constexpr int ActualAlignment = (AlignmentType == Aligned) && (Alignment == Aligned) ? Aligned : Unaligned;
     if (UseDirectOffsets) {
       return m_base_mapper.template loadPacket<PacketT, ActualAlignment>(i, 0);
     }
@@ -526,4 +527,4 @@ struct TensorContractionInputMapperTrait<
 }  // end namespace internal
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_CONTRACTION_MAPPER_H
+#endif  // EIGEN_TENSOR_TENSOR_CONTRACTION_MAPPER_H

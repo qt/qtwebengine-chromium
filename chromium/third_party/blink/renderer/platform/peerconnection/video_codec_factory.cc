@@ -58,8 +58,12 @@ std::unique_ptr<webrtc::VideoDecoder> CreateDecoder(
     webrtc::VideoDecoderFactory* factory,
     const webrtc::Environment& env,
     const webrtc::SdpVideoFormat& format) {
-  if (!IsFormatSupported(factory, format))
+  if (!factory || !factory
+                       ->QueryCodecSupport(format, /*reference_scaling=*/false,
+                                           /*resolution=*/std::nullopt)
+                       .is_supported) {
     return nullptr;
+  }
   return factory->Create(env, format);
 }
 
@@ -109,8 +113,7 @@ class EncoderAdapter : public webrtc::VideoEncoderFactory {
     // trust supported formats reported by |software_encoder_factory_| and do
     // not allow profile mismatch when only software encoder factory is used for
     // creating the simulcast encoder adapter.
-    if (base::EqualsCaseInsensitiveASCII(format.name.c_str(),
-                                         webrtc::kH264CodecName) &&
+    if (base::EqualsCaseInsensitiveASCII(format.name, webrtc::kH264CodecName) &&
         supported_in_hardware) {
       allow_h264_profile_fallback = IsFormatSupported(
           &software_encoder_factory_,
@@ -152,15 +155,16 @@ class EncoderAdapter : public webrtc::VideoEncoderFactory {
 
   webrtc::VideoEncoderFactory::CodecSupport QueryCodecSupport(
       const webrtc::SdpVideoFormat& format,
-      std::optional<std::string> scalability_mode) const override {
+      std::optional<std::string> scalability_mode,
+      std::optional<webrtc::Resolution> resolution) const override {
     webrtc::VideoEncoderFactory::CodecSupport codec_support =
         hardware_encoder_factory_
-            ? hardware_encoder_factory_->QueryCodecSupport(format,
-                                                           scalability_mode)
+            ? hardware_encoder_factory_->QueryCodecSupport(
+                  format, scalability_mode, resolution)
             : webrtc::VideoEncoderFactory::CodecSupport();
     if (!codec_support.is_supported) {
-      codec_support =
-          software_encoder_factory_.QueryCodecSupport(format, scalability_mode);
+      codec_support = software_encoder_factory_.QueryCodecSupport(
+          format, scalability_mode, resolution);
     }
     return codec_support;
   }
@@ -210,15 +214,16 @@ class DecoderAdapter : public webrtc::VideoDecoderFactory {
 
   webrtc::VideoDecoderFactory::CodecSupport QueryCodecSupport(
       const webrtc::SdpVideoFormat& format,
-      bool reference_scaling) const override {
+      bool reference_scaling,
+      std::optional<webrtc::Resolution> resolution) const override {
     webrtc::VideoDecoderFactory::CodecSupport codec_support =
         hardware_decoder_factory_
-            ? hardware_decoder_factory_->QueryCodecSupport(format,
-                                                           reference_scaling)
+            ? hardware_decoder_factory_->QueryCodecSupport(
+                  format, reference_scaling, resolution)
             : webrtc::VideoDecoderFactory::CodecSupport();
     if (!codec_support.is_supported) {
       codec_support = software_decoder_factory_.QueryCodecSupport(
-          format, reference_scaling);
+          format, reference_scaling, resolution);
     }
     return codec_support;
   }

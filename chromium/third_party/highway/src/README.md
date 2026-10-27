@@ -31,9 +31,9 @@ changes/compiler updates than autovectorization.
 
 **Works on widely-used platforms**: Highway supports seven architectures; the
 same application code can target various instruction sets, including those with
-'scalable' vectors (size unknown at compile time). Highway only requires C++11
-and supports four families of compilers. If you would like to use Highway on
-other platforms, please raise an issue.
+'scalable' vectors (size unknown at compile time). Highway only requires C++17
+(language features, not necessarily the library) and supports four families of
+compilers. If you want to use Highway on other platforms, please raise an issue.
 
 **Flexible to deploy**: Applications using Highway can run on heterogeneous
 clouds or client devices, choosing the best available instruction set at
@@ -226,6 +226,16 @@ If you have existing code using x86/NEON intrinsics, you may be interested in
 [SIMDe](https://github.com/simd-everywhere/simde), which emulates those
 intrinsics using other platforms' intrinsics or autovectorization.
 
+[xSIMD](https://github.com/xtensor-stack/xsimd) is a header only C++ library.
+It supports Arm, Power, RISC-V, WebAssembly and x86 targets.  Has a high level
+interface, but fewer supported operations.
+
+[NumKong](https://github.com/ashvardanian/NumKong) a SIMD accelerated math C
+library focused on operations such as dot products and mixed precision matrix
+multiplications.  It can be used from C++, Go, Python, Rust, Swift and
+WebAssembly.  Accelerated operations are availble on ARM, LoongArch, Power,
+RISC-V and x86.
+
 ## Installation
 
 This project uses CMake to generate and build. In a Debian-based system you can
@@ -267,13 +277,16 @@ When building for Armv7, a limitation of current compilers requires you to add
 `-DHWY_CMAKE_ARM7:BOOL=ON` to the CMake command line; see #834 and #1032. We
 understand that work is underway to remove this limitation.
 
+To benefit from Armv8/v9 vusdot and vusdotq instructions, you can add "+i8mm" to
+the -march compiler flag, assuming the target CPU(s) support that.
+
 Building on 32-bit x86 is not officially supported, and AVX2/3 are disabled by
 default there. Note that johnplatts has successfully built and run the Highway
 tests on 32-bit x86, including AVX2/3, on GCC 7/8 and Clang 8/11/12. On Ubuntu
 22.04, Clang 11 and 12, but not later versions, require extra compiler flags
 `-m32 -isystem /usr/i686-linux-gnu/include`. Clang 10 and earlier require the
 above plus `-isystem /usr/i686-linux-gnu/include/c++/12/i686-linux-gnu`. See
-#1279.
+[#1279](https://github.com/google/highway/issues/1279).
 
 ## Building highway - Using vcpkg
 

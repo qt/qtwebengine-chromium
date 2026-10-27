@@ -258,9 +258,13 @@ class IfrtToVifrtTypeConverter : public VifrtTypeConverterBuiltin {
                                 << array.getDevicesAttr() << '\n');
         return {};
       }
-      return VifrtArrayV1Type::get(array.getContext(), array.getShape(),
-                                   sharding_attr, devices_attr,
-                                   memory_kind_attr, layout_attr);
+      mlir::RankedTensorType shape = array.getShape();
+      if (llvm::isa<IfrtTokenType>(shape.getElementType())) {
+        shape = mlir::RankedTensorType::get(
+            {}, VifrtTokenV1Type::get(array.getContext()));
+      }
+      return VifrtArrayV1Type::get(array.getContext(), shape, sharding_attr,
+                                   devices_attr, memory_kind_attr, layout_attr);
     });
     addConversion([](IfrtControlType type) -> mlir::Type {
       return VifrtControlV1Type::get(type.getContext());
@@ -434,10 +438,7 @@ struct IfrtLegalizeToVifrtPass
         [](mlir::func::FuncOp func_op) {
           // FuncOps that are not IFRT functions are either VIFRT functions or
           // legal because they will be removed by DCE.
-          if (func_op->hasAttr(kIfrtFunctionAttrName)) {
-            return false;
-          }
-          return true;
+          return !IsIfrtFunction(func_op);
         });
     target->addDynamicallyLegalOp<mlir::func::CallOp>(
         [](mlir::func::CallOp call_op) {
@@ -446,14 +447,11 @@ struct IfrtLegalizeToVifrtPass
           auto func_op =
               mlir::SymbolTable::lookupNearestSymbolFrom<mlir::func::FuncOp>(
                   call_op, call_op.getCalleeAttr());
-          if (func_op->hasAttr(kIfrtFunctionAttrName)) {
-            return false;
-          }
-          return true;
+          return !IsIfrtFunction(func_op);
         });
     target->addDynamicallyLegalOp<mlir::func::ReturnOp>(
         [](mlir::func::ReturnOp return_op) {
-          if (return_op->getParentOp()->hasAttr(kIfrtFunctionAttrName) ||
+          if (IsIfrtFunction(return_op->getParentOp()) ||
               return_op->getParentOp()->hasAttr(kVifrtFunctionAttrName)) {
             return false;
           }

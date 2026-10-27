@@ -122,6 +122,8 @@
 *> \ingroup doubleOTHERauxiliary
 *
 *  =====================================================================
+*> SPDX-FileCopyrightText: The Eigen Authors
+*> SPDX-License-Identifier: BSD-3-Clause
       SUBROUTINE DLARF( SIDE, M, N, V, INCV, TAU, C, LDC, WORK )
 *
 *  -- LAPACK auxiliary routine (version 3.4.0) --

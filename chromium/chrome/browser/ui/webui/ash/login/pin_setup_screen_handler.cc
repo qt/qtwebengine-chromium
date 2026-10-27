@@ -7,6 +7,7 @@
 #include <string>
 #include <utility>
 
+#include "ash/strings/grit/ash_strings.h"
 #include "base/i18n/number_formatting.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
@@ -99,19 +100,27 @@ void PinSetupScreenHandler::DeclareLocalizedValues(
                IDS_SETTINGS_PEOPLE_CONFIGURE_PIN_COMPLEXITY_ERROR_MEDIUM);
   builder->Add("configurePinComplexityErrorHigh",
                IDS_SETTINGS_PEOPLE_CONFIGURE_PIN_COMPLEXITY_ERROR_HIGH);
+  builder->Add("configurePinComplexityRepeating",
+               IDS_SETTINGS_PEOPLE_CONFIGURE_PIN_REPEATING_DIGITS);
+  builder->Add("configurePinComplexityOrdered",
+               IDS_SETTINGS_PEOPLE_CONFIGURE_PIN_ORDERED_SEQUENCE);
+  builder->Add("configurePinComplexityTooShort",
+               IDS_SETTINGS_PEOPLE_CONFIGURE_PIN_COMPLEXITY_TOO_SHORT);
 }
 
 void PinSetupScreenHandler::Show(const std::string& token,
                                  bool is_child_account,
                                  bool has_login_support,
                                  bool using_pin_as_main_factor,
-                                 bool is_recovery_mode) {
+                                 bool is_recovery_mode,
+                                 bool cannot_skip_flow) {
   ShowInWebUI(base::DictValue()
                   .Set("authToken", base::Value(token))
                   .Set("isChildAccount", is_child_account)
                   .Set("hasLoginSupport", has_login_support)
                   .Set("usingPinAsMainSignInFactor", using_pin_as_main_factor)
-                  .Set("isRecoveryMode", is_recovery_mode));
+                  .Set("isRecoveryMode", is_recovery_mode)
+                  .Set("cannotSkipFlow", cannot_skip_flow));
 }
 
 base::WeakPtr<PinSetupScreenView> PinSetupScreenHandler::AsWeakPtr() {

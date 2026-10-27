@@ -27,7 +27,7 @@ CPWL_ComboBox::CPWL_ComboBox(
     const CreateParams& cp,
     std::unique_ptr<IPWL_FillerNotify::PerWindowData> pAttachedData)
     : CPWL_Wnd(cp, std::move(pAttachedData)) {
-  GetCreationParams()->dwFlags &= ~PWS_VSCROLL;
+  GetCreationParams()->dwFlags &= ~Mask<Styles>{Styles::kWindowVScroll};
 }
 
 CPWL_ComboBox::~CPWL_ComboBox() = default;
@@ -150,15 +150,16 @@ void CPWL_ComboBox::CreateEdit(const CreateParams& cp) {
   }
 
   CreateParams ecp = cp;
-  ecp.dwFlags =
-      PWS_VISIBLE | PWS_BORDER | PES_CENTER | PES_AUTOSCROLL | PES_UNDO;
+  ecp.dwFlags = {Styles::kWindowVisible, Styles::kWindowBorder,
+                 Styles::kEditCenter, Styles::kEditAutoScroll,
+                 Styles::kEditUndo};
 
-  if (HasFlag(PWS_AUTOFONTSIZE)) {
-    ecp.dwFlags |= PWS_AUTOFONTSIZE;
+  if (HasFlag(Styles::kWindowAutoFontSize)) {
+    ecp.dwFlags |= Styles::kWindowAutoFontSize;
   }
 
-  if (!HasFlag(PCBS_ALLOWCUSTOMTEXT)) {
-    ecp.dwFlags |= PWS_READONLY;
+  if (!HasFlag(Styles::kComboboxAllowCustomText)) {
+    ecp.dwFlags |= Styles::kWindowReadOnly;
   }
 
   ecp.rcRectWnd = CFX_FloatRect();
@@ -177,7 +178,8 @@ void CPWL_ComboBox::CreateButton(const CreateParams& cp) {
   }
 
   CreateParams bcp = cp;
-  bcp.dwFlags = PWS_VISIBLE | PWS_BORDER | PWS_BACKGROUND;
+  bcp.dwFlags = {Styles::kWindowVisible, Styles::kWindowBorder,
+                 Styles::kWindowBackground};
   bcp.sBackgroundColor = CFX_Color(CFX_Color::Type::kRGB, 220.0f / 255.0f,
                                    220.0f / 255.0f, 220.0f / 255.0f);
   bcp.sBorderColor = kDefaultBlackColor;
@@ -197,13 +199,15 @@ void CPWL_ComboBox::CreateListBox(const CreateParams& cp) {
   }
 
   CreateParams lcp = cp;
-  lcp.dwFlags = PWS_BORDER | PWS_BACKGROUND | PLBS_HOVERSEL | PWS_VSCROLL;
+  lcp.dwFlags = {Styles::kWindowBorder, Styles::kWindowBackground,
+                 Styles::kListboxHoverSel, Styles::kWindowVScroll};
   lcp.nBorderStyle = BorderStyle::kSolid;
   lcp.dwBorderWidth = 1;
   lcp.eCursorType = IPWL_FillerNotify::CursorStyle::kArrow;
   lcp.rcRectWnd = CFX_FloatRect();
-  lcp.fFontSize =
-      (cp.dwFlags & PWS_AUTOFONTSIZE) ? kComboBoxDefaultFontSize : cp.fFontSize;
+  lcp.fFontSize = (cp.dwFlags & Styles::kWindowAutoFontSize)
+                      ? kComboBoxDefaultFontSize
+                      : cp.fFontSize;
 
   if (cp.sBorderColor.nColorType == CFX_Color::Type::kTransparent) {
     lcp.sBorderColor = kDefaultBlackColor;
@@ -297,7 +301,7 @@ bool CPWL_ComboBox::RepositionChildWnd() {
 }
 
 void CPWL_ComboBox::SelectAll() {
-  if (edit_ && HasFlag(PCBS_ALLOWCUSTOMTEXT)) {
+  if (edit_ && HasFlag(Styles::kComboboxAllowCustomText)) {
     edit_->SelectAllText();
   }
 }
@@ -418,7 +422,7 @@ bool CPWL_ComboBox::OnKeyDown(FWL_VKEYCODE nKeyCode,
     default:
       break;
   }
-  if (this_observed->HasFlag(PCBS_ALLOWCUSTOMTEXT)) {
+  if (this_observed->HasFlag(Styles::kComboboxAllowCustomText)) {
     return this_observed->edit_->OnKeyDown(nKeyCode, nFlag);
   }
   return false;
@@ -444,7 +448,7 @@ bool CPWL_ComboBox::OnChar(uint16_t nChar, Mask<FWL_EVENTFLAG> nFlag) {
     case pdfium::ascii::kSpace:
       // Show the combo box options with space only if the combo box is not
       // editable
-      if (!this_observed->HasFlag(PCBS_ALLOWCUSTOMTEXT)) {
+      if (!this_observed->HasFlag(Styles::kComboboxAllowCustomText)) {
         if (!this_observed->IsPopup()) {
           if (!this_observed->SetPopup(/*bPopUp=*/true)) {
             return false;
@@ -459,7 +463,7 @@ bool CPWL_ComboBox::OnChar(uint16_t nChar, Mask<FWL_EVENTFLAG> nFlag) {
   }
 
   this_observed->select_item_ = -1;
-  if (this_observed->HasFlag(PCBS_ALLOWCUSTOMTEXT)) {
+  if (this_observed->HasFlag(Styles::kComboboxAllowCustomText)) {
     return this_observed->edit_->OnChar(nChar, nFlag);
   }
   if (this_observed->GetFillerNotify()->OnPopupPreOpen(GetAttachedData(),

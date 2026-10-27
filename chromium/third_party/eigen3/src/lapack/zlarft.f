@@ -161,6 +161,8 @@
 *> \endverbatim
 *>
 *  =====================================================================
+*> SPDX-FileCopyrightText: The Eigen Authors
+*> SPDX-License-Identifier: BSD-3-Clause
       SUBROUTINE ZLARFT( DIRECT, STOREV, N, K, V, LDV, TAU, T, LDT )
 *
 *  -- LAPACK auxiliary routine (version 3.4.1) --

@@ -1,0 +1,136 @@
+{% for interface in interfaces %}
+{% if interface.name == extra.interface %}
+---
+title: "{{interface.name}}"
+draft: false
+weight: {{loop.index}}
+---
+
+# {{interface.description.summary|title}}
+
+
+{{interface.description.text|ei_escape_names}}
+
+
+{% if interface.enums %}
+# Enums
+
+{% raw %}
+{{% notice style="info" %}}
+Enum names are shown here in uppercase. The exact name depends on the language bindings.
+{{% /notice %}}
+{% endraw %}
+
+{% for enum in interface.enums %}
+## {{interface.name}}.{{enum.name}}
+
+{{enum.description.text|ei_escape_names}}
+
+| Name | Value | Summary |
+| ---- | ----- | ------- |
+{% for entry in enum.entries %}
+| `{{entry.name|upper}}` | {{entry.value}} | {{entry.summary}} |
+{% endfor %}
+
+{% endfor %}
+{% endif %}
+
+
+{% if interface.requests %}
+# Requests
+
+{% for request in interface.requests %}
+
+## {{interface.name}}.{{request.name}}
+
+{% raw %}{{% badge style="primary" title="Since Version" %}}{% endraw %}{{request.since}}{% raw %}{{% /badge %}}{% endraw %}
+
+{% raw %}{{% badge style="secondary" title="Request Opcode" %}}{% endraw %}{{request.opcode}}{% raw %}{{% /badge %}}{% endraw %}
+
+```
+{{interface.name}}.{{request.name}}({{request.arguments|join(", ", attribute="name")}})
+```
+
+{% if request.arguments %}
+| Argument | Type | Summary |
+| -------- | ---- | ------- |
+{% for arg in request.arguments %}
+| {{arg.name}} | `{{arg.protocol_type}}` | {{arg.summary}} |
+{% endfor %}
+{% endif %}
+
+{% if request.is_destructor %}
+{% raw %}
+{{% notice default "Destructor" "skull-crossbones" %}}
+{% endraw %}
+Immediately after sending this request, the object is considered destroyed
+by the EIS implementation. It must no longer be used by the client.
+{% raw %}
+{{% /notice %}}
+{% endraw %}
+{% endif %}
+
+{% if request.context_type %}
+{% raw %}
+{{% notice style="note" %}}
+{% endraw %}
+This request is only available for clients of `ei_handshake.context_type.{{request.context_type}}`.
+{% raw %}
+{{% /notice %}}
+{% endraw %}
+{% endif %}
+
+{{request.description.text|ei_escape_names}}
+
+{% endfor %}
+{% endif %}
+
+{% if interface.events %}
+# Events
+{% for event in interface.events %}
+## {{interface.name}}.{{event.name}}
+
+{% raw %}{{% badge style="primary" title="Since Version" %}}{% endraw %}{{event.since}}{% raw %}{{% /badge %}}{% endraw %}
+
+{% raw %}{{% badge style="secondary" title="Event Opcode" %}}{% endraw %}{{event.opcode}}{% raw %}{{% /badge %}}{% endraw %}
+
+```
+{{interface.name}}.{{event.name}}({{event.arguments|join(", ", attribute="name")}})
+```
+{% if event.arguments %}
+| Argument| Type | Summary |
+| ------- | ---- | ------- |
+{% for arg in event.arguments %}
+| {{arg.name}} | `{{arg.protocol_type}}` | {{arg.summary}} |
+{% endfor %}
+{% endif %}
+
+{% if event.is_destructor %}
+{% raw %}
+{{% notice default "Destructor" "skull-crossbones" %}}
+{% endraw %}
+Immediately after sending this request, the object is considered destroyed
+by the EIS implementation. It must no longer be used by the client.
+{% raw %}
+{{% /notice %}}
+{% endraw %}
+{% endif %}
+
+{% if event.context_type %}
+{% raw %}
+{{% notice style="note" %}}
+{% endraw %}
+This event is only available for clients of `ei_handshake.context_type.{{event.context_type}}`.
+{% raw %}
+{{% /notice %}}
+{% endraw %}
+{% endif %}
+
+{{event.description.text|ei_escape_names}}
+
+
+{% endfor %}
+{% endif %}
+
+{% endif %}
+{% endfor %}

@@ -1860,11 +1860,6 @@ GLuint GLES2TraceImplementation::GetMaxValueInBufferCHROMIUM(GLuint buffer_id,
   return gl_->GetMaxValueInBufferCHROMIUM(buffer_id, count, type, offset);
 }
 
-GLboolean GLES2TraceImplementation::EnableFeatureCHROMIUM(const char* feature) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "GLES2Trace::EnableFeatureCHROMIUM");
-  return gl_->EnableFeatureCHROMIUM(feature);
-}
-
 void* GLES2TraceImplementation::MapBufferCHROMIUM(GLuint target,
                                                   GLenum access) {
   TRACE_EVENT_BINARY_EFFICIENT0("gpu", "GLES2Trace::MapBufferCHROMIUM");
@@ -1888,26 +1883,6 @@ void GLES2TraceImplementation::UnmapBufferSubDataCHROMIUM(const void* mem) {
   TRACE_EVENT_BINARY_EFFICIENT0("gpu",
                                 "GLES2Trace::UnmapBufferSubDataCHROMIUM");
   gl_->UnmapBufferSubDataCHROMIUM(mem);
-}
-
-void* GLES2TraceImplementation::MapBufferRange(GLenum target,
-                                               GLintptr offset,
-                                               GLsizeiptr size,
-                                               GLbitfield access) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "GLES2Trace::MapBufferRange");
-  return gl_->MapBufferRange(target, offset, size, access);
-}
-
-GLboolean GLES2TraceImplementation::UnmapBuffer(GLenum target) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "GLES2Trace::UnmapBuffer");
-  return gl_->UnmapBuffer(target);
-}
-
-void GLES2TraceImplementation::FlushMappedBufferRange(GLenum target,
-                                                      GLintptr offset,
-                                                      GLsizeiptr size) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "GLES2Trace::FlushMappedBufferRange");
-  gl_->FlushMappedBufferRange(target, offset, size);
 }
 
 void* GLES2TraceImplementation::MapTexSubImage2DCHROMIUM(GLenum target,
@@ -2131,6 +2106,14 @@ GLuint GLES2TraceImplementation::GetLastFlushIdCHROMIUM() {
 void GLES2TraceImplementation::SetActiveURLCHROMIUM(const char* url) {
   TRACE_EVENT_BINARY_EFFICIENT0("gpu", "GLES2Trace::SetActiveURLCHROMIUM");
   gl_->SetActiveURLCHROMIUM(url);
+}
+
+void GLES2TraceImplementation::GetBufferSubDataCHROMIUM(GLenum target,
+                                                        GLintptr offset,
+                                                        GLsizeiptr size,
+                                                        void* data) {
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "GLES2Trace::GetBufferSubDataCHROMIUM");
+  gl_->GetBufferSubDataCHROMIUM(target, offset, size, data);
 }
 
 void GLES2TraceImplementation::ContextVisibilityHintCHROMIUM(

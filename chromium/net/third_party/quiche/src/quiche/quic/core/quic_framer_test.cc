@@ -37,6 +37,8 @@
 #include "quiche/quic/test_tools/quic_framer_peer.h"
 #include "quiche/quic/test_tools/quic_test_utils.h"
 #include "quiche/quic/test_tools/simple_data_producer.h"
+#include "quiche/common/platform/api/quiche_flags.h"
+#include "quiche/common/quiche_endian.h"
 #include "quiche/common/test_tools/quiche_test_utils.h"
 
 using testing::_;
@@ -609,10 +611,7 @@ class TestQuicVisitor : public QuicFramerVisitorInterface {
     return token == kTestStatelessResetToken;
   }
 
-  void OnAuthenticatedIetfStatelessResetPacket(
-      const QuicIetfStatelessResetPacket& packet) override {
-    stateless_reset_packet_ =
-        std::make_unique<QuicIetfStatelessResetPacket>(packet);
+  void OnAuthenticatedIetfStatelessResetPacket() override {
     EXPECT_EQ(0u, framer_->current_received_frame_type());
   }
 
@@ -623,6 +622,8 @@ class TestQuicVisitor : public QuicFramerVisitorInterface {
   void OnDecryptedFirstPacketInKeyPhase() override {
     decrypted_first_packet_in_key_phase_count_++;
   }
+
+  void OnSconePacket(uint8_t signal) override { scone_signal_ = signal; }
 
   std::unique_ptr<QuicDecrypter> AdvanceKeysAndCreateCurrentOneRttDecrypter()
       override {
@@ -653,7 +654,6 @@ class TestQuicVisitor : public QuicFramerVisitorInterface {
   bool accept_public_header_;
 
   std::unique_ptr<QuicPacketHeader> header_;
-  std::unique_ptr<QuicIetfStatelessResetPacket> stateless_reset_packet_;
   std::unique_ptr<QuicVersionNegotiationPacket> version_negotiation_packet_;
   std::unique_ptr<QuicConnectionId> retry_original_connection_id_;
   std::unique_ptr<QuicConnectionId> retry_new_connection_id_;
@@ -692,6 +692,7 @@ class TestQuicVisitor : public QuicFramerVisitorInterface {
   std::vector<std::unique_ptr<std::string>> stream_data_;
   std::vector<std::unique_ptr<std::string>> crypto_data_;
   QuicTransportVersion transport_version_;
+  std::optional<uint8_t> scone_signal_;
   QuicFramer* framer_;
 };
 
@@ -1416,6 +1417,204 @@ TEST_P(QuicFramerTest, ParsePublicHeaderProxBadSourceConnectionIdLength) {
             retry_token_length_length);
   EXPECT_EQ(absl::string_view(), retry_token);
   EXPECT_EQ(IETF_QUIC_LONG_HEADER_PACKET, format);
+}
+
+TEST_P(QuicFramerTest, SconeCoalescedShortHeader) {
+  if (!framer_.version().IsIetfQuic()) {
+    return;
+  }
+  framer_.set_parse_scone_packets(true);
+  SetDecrypterLevel(ENCRYPTION_FORWARD_SECURE);
+
+  // Construct SCONE header
+  unsigned char scone_header[] = {
+      // type byte (long header)
+      0xE3,
+      // version SconeHigh: 0xef7dc0fd
+      0xef,
+      0x7d,
+      0xc0,
+      0xfd,
+      // destination connection ID length
+      0x08,
+      // destination connection ID
+      0xFE,
+      0xDC,
+      0xBA,
+      0x98,
+      0x76,
+      0x54,
+      0x32,
+      0x10,
+      // source connection ID length
+      0x00,
+  };
+
+  // Construct Short Header Ping packet
+  unsigned char short_header_packet[] = {
+      // type (short header, 4 byte packet number)
+      0x43,
+      // connection ID
+      0xFE,
+      0xDC,
+      0xBA,
+      0x98,
+      0x76,
+      0x54,
+      0x32,
+      0x10,
+      // packet number
+      0x13,
+      0x37,
+      0x42,
+      0x33,
+      // Ping frame (0x01)
+      0x01,
+  };
+
+  // Coalesce them
+  std::string coalesced_data(AsChars(scone_header), sizeof(scone_header));
+  coalesced_data.append(AsChars(short_header_packet),
+                        sizeof(short_header_packet));
+  QuicEncryptedPacket encrypted(coalesced_data.data(), coalesced_data.length(),
+                                false);
+
+  EXPECT_TRUE(framer_.ProcessPacket(encrypted));
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
+
+  // Verify SCONE header was parsed and reported.
+  ASSERT_TRUE(visitor_.header_.get());
+  EXPECT_FALSE(visitor_.header_->version.IsKnown());
+  EXPECT_EQ(visitor_.scone_signal_, 71);
+
+  // Verify Short Header packet was passed to OnCoalescedPacket.
+  ASSERT_EQ(1u, visitor_.coalesced_packets_.size());
+  EXPECT_EQ(sizeof(short_header_packet),
+            visitor_.coalesced_packets_[0]->length());
+  EXPECT_EQ(0,
+            memcmp(short_header_packet, visitor_.coalesced_packets_[0]->data(),
+                   sizeof(short_header_packet)));
+
+  // Now process the coalesced packet to verify the Ping frame.
+  visitor_.header_.reset();
+  EXPECT_TRUE(framer_.ProcessPacket(*visitor_.coalesced_packets_[0]));
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
+  ASSERT_TRUE(visitor_.header_.get());
+  EXPECT_EQ(FramerTestConnectionId(),
+            visitor_.header_->destination_connection_id);
+  EXPECT_EQ(1u, visitor_.ping_frames_.size());
+}
+
+TEST_P(QuicFramerTest, TwoSconePacketsCoalescedShortHeader) {
+  if (!framer_.version().IsIetfQuic()) {
+    return;
+  }
+  framer_.set_parse_scone_packets(true);
+  SetDecrypterLevel(ENCRYPTION_FORWARD_SECURE);
+
+  // Construct SCONE header
+  unsigned char scone_header[] = {
+      // type byte (long header)
+      0xE3,
+      // version SconeHigh: 0xef7dc0fd
+      0xef,
+      0x7d,
+      0xc0,
+      0xfd,
+      // destination connection ID length
+      0x08,
+      // destination connection ID
+      0xFE,
+      0xDC,
+      0xBA,
+      0x98,
+      0x76,
+      0x54,
+      0x32,
+      0x10,
+      // source connection ID length
+      0x00,
+  };
+
+  // Construct second SCONE header
+  unsigned char scone_header2[] = {
+      // type byte (long header)
+      0xC3,
+      // version SconeHigh: 0xef7dc0fd
+      0xef,
+      0x7d,
+      0xc0,
+      0xfd,
+      // destination connection ID length
+      0x08,
+      // destination connection ID
+      0xFE,
+      0xDC,
+      0xBA,
+      0x98,
+      0x76,
+      0x54,
+      0x32,
+      0x10,
+      // source connection ID length
+      0x00,
+  };
+
+  // Construct Short Header Ping packet
+  unsigned char short_header_packet[] = {
+      // type (short header, 4 byte packet number)
+      0x43,
+      // connection ID
+      0xFE,
+      0xDC,
+      0xBA,
+      0x98,
+      0x76,
+      0x54,
+      0x32,
+      0x10,
+      // packet number
+      0x13,
+      0x37,
+      0x42,
+      0x33,
+      // Ping frame (0x01)
+      0x01,
+  };
+
+  // Coalesce them
+  std::string coalesced_data(AsChars(scone_header), sizeof(scone_header));
+  coalesced_data.append(AsChars(scone_header2), sizeof(scone_header2));
+  coalesced_data.append(AsChars(short_header_packet),
+                        sizeof(short_header_packet));
+  QuicEncryptedPacket encrypted(coalesced_data.data(), coalesced_data.length(),
+                                false);
+
+  EXPECT_TRUE(framer_.ProcessPacket(encrypted));
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
+
+  // Only the first value is reported.
+  ASSERT_TRUE(visitor_.header_.get());
+  EXPECT_FALSE(visitor_.header_->version.IsKnown());
+  EXPECT_EQ(visitor_.scone_signal_, 71);
+
+  // Verify there are two coalesced packets. The second one is the Short Header
+  // packet.
+  ASSERT_EQ(2u, visitor_.coalesced_packets_.size());
+  EXPECT_EQ(sizeof(short_header_packet),
+            visitor_.coalesced_packets_[1]->length());
+  EXPECT_EQ(0,
+            memcmp(short_header_packet, visitor_.coalesced_packets_[1]->data(),
+                   sizeof(short_header_packet)));
+
+  // Now process the coalesced packet to verify the Ping frame.
+  visitor_.header_.reset();
+  EXPECT_TRUE(framer_.ProcessPacket(*visitor_.coalesced_packets_[1]));
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
+  ASSERT_TRUE(visitor_.header_.get());
+  EXPECT_EQ(FramerTestConnectionId(),
+            visitor_.header_->destination_connection_id);
+  EXPECT_EQ(1u, visitor_.ping_frames_.size());
 }
 
 TEST_P(QuicFramerTest, ClientConnectionIdFromShortHeaderToClient) {
@@ -3414,7 +3613,7 @@ TEST_P(QuicFramerTest, AckFrameTwoTimeStampsMultipleAckBlocks) {
        // Receive Timestamps.
        { "Unable to read receive timestamp range count.",
          { kVarInt62OneByte + 0x01 }},
-       { "Unable to read receive timestamp gap.",
+       { "Unable to read receive timestamp delta largest acked.",
          { kVarInt62OneByte + 0x01 }},
        { "Unable to read receive timestamp count.",
          { kVarInt62OneByte + 0x02 }},
@@ -3487,7 +3686,7 @@ TEST_P(QuicFramerTest, AckFrameMultipleReceiveTimestampRanges) {
          { kVarInt62OneByte + 0x03 }},
 
        // Timestamp range 1 (three packets).
-       { "Unable to read receive timestamp gap.",
+       { "Unable to read receive timestamp delta largest acked.",
          { kVarInt62OneByte + 0x02 }},
        { "Unable to read receive timestamp count.",
          { kVarInt62OneByte + 0x03 }},
@@ -3499,16 +3698,16 @@ TEST_P(QuicFramerTest, AckFrameMultipleReceiveTimestampRanges) {
          { kVarInt62OneByte + 0x01}},
 
        // Timestamp range 2 (one packet).
-       { "Unable to read receive timestamp gap.",
-         { kVarInt62OneByte + 0x05 }},
+       { "Unable to read receive timestamp delta largest acked.",
+         { kVarInt62OneByte + 0x0b }},
        { "Unable to read receive timestamp count.",
          { kVarInt62OneByte + 0x01 }},
        { "Unable to read receive timestamp delta.",
          { kVarInt62TwoBytes + 0x10, 0x00 }},
 
        // Timestamp range 3 (two packets).
-       { "Unable to read receive timestamp gap.",
-         { kVarInt62OneByte + 0x08 }},
+       { "Unable to read receive timestamp delta largest acked.",
+         { kVarInt62OneByte + 0x15 }},
        { "Unable to read receive timestamp count.",
          { kVarInt62OneByte + 0x02 }},
        { "Unable to read receive timestamp delta.",
@@ -3577,7 +3776,7 @@ TEST_P(QuicFramerTest, AckFrameReceiveTimestampWithExponent) {
        // Receive Timestamps.
        { "Unable to read receive timestamp range count.",
          { kVarInt62OneByte + 0x01 }},
-       { "Unable to read receive timestamp gap.",
+       { "Unable to read receive timestamp delta largest acked.",
          { kVarInt62OneByte + 0x00 }},
        { "Unable to read receive timestamp count.",
          { kVarInt62OneByte + 0x03 }},
@@ -3645,7 +3844,7 @@ TEST_P(QuicFramerTest, AckFrameReceiveTimestampGapTooHigh) {
        // Receive Timestamps.
        { "Unable to read receive timestamp range count.",
          { kVarInt62OneByte + 0x01 }},
-       { "Unable to read receive timestamp gap.",
+       { "Unable to read receive timestamp delta largest acked.",
          { kVarInt62FourBytes + 0x12, 0x34, 0x56, 0x79 }},
        { "Unable to read receive timestamp count.",
          { kVarInt62OneByte + 0x01 }},
@@ -3660,7 +3859,7 @@ TEST_P(QuicFramerTest, AckFrameReceiveTimestampGapTooHigh) {
   framer_.set_process_timestamps(true);
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
   EXPECT_TRUE(absl::StartsWith(framer_.detailed_error(),
-                               "Receive timestamp gap too high."));
+                               "Receive delta largest acked too high."));
 }
 
 TEST_P(QuicFramerTest, AckFrameReceiveTimestampCountTooHigh) {
@@ -3699,7 +3898,7 @@ TEST_P(QuicFramerTest, AckFrameReceiveTimestampCountTooHigh) {
        // Receive Timestamps.
        { "Unable to read receive timestamp range count.",
          { kVarInt62OneByte + 0x01 }},
-       { "Unable to read receive timestamp gap.",
+       { "Unable to read receive timestamp delta largest acked.",
          { kVarInt62OneByte + 0x02 }},
        { "Unable to read receive timestamp count.",
          { kVarInt62OneByte + 0x02 }},
@@ -3755,7 +3954,7 @@ TEST_P(QuicFramerTest, AckFrameReceiveTimestampDeltaTooHigh) {
        // Receive Timestamps.
        { "Unable to read receive timestamp range count.",
          { kVarInt62OneByte + 0x01 }},
-       { "Unable to read receive timestamp gap.",
+       { "Unable to read receive timestamp delta largest acked.",
          { kVarInt62OneByte + 0x02 }},
        { "Unable to read receive timestamp count.",
          { kVarInt62FourBytes + 0x12, 0x34, 0x56, 0x77 }},
@@ -5084,9 +5283,6 @@ TEST_P(QuicFramerTest, IetfStatelessResetPacket) {
   QuicEncryptedPacket encrypted(AsChars(packet), ABSL_ARRAYSIZE(packet), false);
   EXPECT_TRUE(framer_.ProcessPacket(encrypted));
   ASSERT_THAT(framer_.error(), IsQuicNoError());
-  ASSERT_TRUE(visitor_.stateless_reset_packet_.get());
-  EXPECT_EQ(kTestStatelessResetToken,
-            visitor_.stateless_reset_packet_->stateless_reset_token);
 }
 
 TEST_P(QuicFramerTest, IetfStatelessResetPacketInvalidStatelessResetToken) {
@@ -5122,7 +5318,6 @@ TEST_P(QuicFramerTest, IetfStatelessResetPacketInvalidStatelessResetToken) {
   QuicEncryptedPacket encrypted(AsChars(packet), ABSL_ARRAYSIZE(packet), false);
   EXPECT_FALSE(framer_.ProcessPacket(encrypted));
   EXPECT_THAT(framer_.error(), IsError(QUIC_DECRYPTION_FAILURE));
-  ASSERT_FALSE(visitor_.stateless_reset_packet_);
 }
 
 TEST_P(QuicFramerTest, VersionNegotiationPacketClient) {
@@ -6270,7 +6465,7 @@ TEST_P(QuicFramerTest, BuildAckReceiveTimestampsFrameMultipleRanges) {
       kVarInt62OneByte + 0x03,
 
       // Timestamp range 1 (three packets).
-      // Gap
+      // Delta Largest Acknowledged
       kVarInt62OneByte + 0x02,
       // Timestamp Range Count
       kVarInt62OneByte + 0x03,
@@ -6286,8 +6481,8 @@ TEST_P(QuicFramerTest, BuildAckReceiveTimestampsFrameMultipleRanges) {
       kVarInt62OneByte + 0x01,
 
       // Timestamp range 2 (one packet).
-      // Gap
-      kVarInt62OneByte + 0x05,
+      // Delta Largest Acknowledged
+      kVarInt62OneByte + 0x0b,
       // Timestamp Range Count
       kVarInt62OneByte + 0x01,
       // Timestamp Delta
@@ -6295,8 +6490,8 @@ TEST_P(QuicFramerTest, BuildAckReceiveTimestampsFrameMultipleRanges) {
       0x00,
 
       // Timestamp range 3 (two packets).
-      // Gap
-      kVarInt62OneByte + 0x08,
+      // Delta Largest Acknowledged
+      kVarInt62OneByte + 0x15,
       // Timestamp Range Count
       kVarInt62OneByte + 0x02,
       // Timestamp Delta
@@ -6380,7 +6575,7 @@ TEST_P(QuicFramerTest, BuildAckReceiveTimestampsFrameExceedsMaxTimestamps) {
       kVarInt62OneByte + 0x02,
 
       // Timestamp range 1 (three packets).
-      // Gap
+      // Delta Largest Acknowledged
       kVarInt62OneByte + 0x00,
       // Timestamp Range Count
       kVarInt62OneByte + 0x03,
@@ -6396,8 +6591,8 @@ TEST_P(QuicFramerTest, BuildAckReceiveTimestampsFrameExceedsMaxTimestamps) {
       kVarInt62OneByte + 0x01,
 
       // Timestamp range 2 (one packet).
-      // Gap
-      kVarInt62OneByte + 0x05,
+      // Delta Largest Acknowledged
+      kVarInt62OneByte + 0x09,
       // Timestamp Range Count
       kVarInt62OneByte + 0x01,
       // Timestamp Delta
@@ -6479,7 +6674,7 @@ TEST_P(QuicFramerTest, BuildAckReceiveTimestampsFrameWithExponentEncoding) {
       kVarInt62OneByte + 0x02,
 
       // Timestamp range 1 (three packets).
-      // Gap
+      // Delta Largest Acknowledged
       kVarInt62OneByte + 0x02,
       // Timestamp Range Count
       kVarInt62OneByte + 0x04,
@@ -6496,8 +6691,8 @@ TEST_P(QuicFramerTest, BuildAckReceiveTimestampsFrameWithExponentEncoding) {
       kVarInt62OneByte + 0x01,
 
       // Timestamp range 2 (one packet).
-      // Gap
-      kVarInt62OneByte + 0x04,
+      // Delta Largest Acknowledged
+      kVarInt62OneByte + 0x0b,
       // Timestamp Range Count
       kVarInt62OneByte + 0x02,
       // Timestamp Delta
@@ -10389,6 +10584,48 @@ TEST_P(QuicFramerTest, InvalidRetirePriorToNewConnectionIdFrame) {
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
   EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_NEW_CONNECTION_ID_DATA));
   EXPECT_EQ("Retire_prior_to > sequence_number.", framer_.detailed_error());
+}
+
+TEST_P(QuicFramerTest, InvalidEmptyNewConnectionIdFrame) {
+  if (!VersionIsIetfQuic(framer_.transport_version())) {
+    // The NEW_CONNECTION_ID frame is only for IETF QUIC.
+    return;
+  }
+  SetQuicheReloadableFlag(quic_reject_empty_cid_in_ncid, true);
+  SetDecrypterLevel(ENCRYPTION_FORWARD_SECURE);
+  // clang-format off
+  PacketFragments packet_ietf = {
+      // type (short header, 4 byte packet number)
+      {"",
+       {0x43}},
+      // connection_id
+      {"",
+       {0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10}},
+      // packet number
+      {"",
+       {0x12, 0x34, 0x56, 0x78}},
+      // frame type (IETF_NEW_CONNECTION_ID frame)
+      {"",
+       {0x18}},
+      // error code
+      {"Unable to read new connection ID frame sequence number.",
+       {kVarInt62OneByte + 0x11}},
+      {"Unable to read new connection ID frame retire_prior_to.",
+       {kVarInt62OneByte + 0x0a}},
+      {"Connection ID with zero length",
+       {0x00}},  // connection ID length
+      {"Can not read new connection ID frame reset token.",
+       {0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57,
+        0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f}}
+  };
+  // clang-format on
+
+  std::unique_ptr<QuicEncryptedPacket> encrypted(
+      AssemblePacketFromFragments(packet_ietf));
+  EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_NEW_CONNECTION_ID_DATA));
+  EXPECT_EQ("Connection IDs in NEW_CONNECTION_ID cannot be empty.",
+            framer_.detailed_error());
 }
 
 TEST_P(QuicFramerTest, BuildNewConnectionIdFramePacket) {

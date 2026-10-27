@@ -11,6 +11,7 @@ import "third_party/blink/public/mojom/ai/ai_proofreader.mojom";
 import "third_party/blink/public/mojom/ai/ai_rewriter.mojom";
 import "third_party/blink/public/mojom/ai/ai_summarizer.mojom";
 import "third_party/blink/public/mojom/ai/ai_writer.mojom";
+import "third_party/blink/public/mojom/ai/ai_classifier.mojom";
 
 // LINT.IfChange(ModelAvailabilityCheckResult)
 enum ModelAvailabilityCheckResult {
@@ -70,8 +71,9 @@ enum ModelAvailabilityCheckResult {
   // The on-device model is not available because the enterprise policy
   // disables the feature.
   kUnavailableEnterprisePolicyDisabled = 20,
-  // The model cannot be created because the preference is not supported.
-  kUnavailableUnsupportedPerformancePreference = 21,
+  // The specified options are not supported with the requested performance
+  // preference.
+  kUnavailableIncompatiblePreferenceOptions = 21,
 
   // Append new line here
 };
@@ -121,6 +123,17 @@ interface AIManagerCreateProofreaderClient {
   OnError(AIManagerCreateClientError error, QuotaErrorInfo? quota_error_info);
 };
 
+// The client interface that receives an AIClassifier from an AIManager.
+interface AIManagerCreateClassifierClient {
+  // Called with a created classifier's mojo interface as a result for the
+  // CreateClassifier() method of the AIManager.
+  OnResult(pending_remote<blink.mojom.AIClassifier> classifier);
+
+  // Called when the manager cannot create an AIClassifier.
+  // `quota_error_info` may provide additional info for kInitialInputTooLarge.
+  OnError(AIManagerCreateClientError error, QuotaErrorInfo? quota_error_info);
+};
+
 // The manager that could create a new session for the model.
 interface AIManager {
   // Returns language model availability info from the underlying service.
@@ -130,7 +143,8 @@ interface AIManager {
   // Creation will be aborted if the client is disconnected.
   CreateLanguageModel(
     pending_remote<AIManagerCreateLanguageModelClient> client,
-    AILanguageModelCreateOptions options
+    AILanguageModelCreateOptions options,
+    pending_remote<on_device_model.mojom.DownloadObserver>? monitor
   );
   // Returns summarizer model availability info from the underlying service.
   // TODO(crbug.com/390477782): `options` field is optional since it is not
@@ -142,7 +156,8 @@ interface AIManager {
   // Creation will be aborted if the client is disconnected.
   CreateSummarizer(
     pending_remote<AIManagerCreateSummarizerClient> client,
-    AISummarizerCreateOptions options);
+    AISummarizerCreateOptions options,
+    pending_remote<on_device_model.mojom.DownloadObserver>? monitor);
   // Returns the model params for the language model API.
   GetLanguageModelParams() => (
     AILanguageModelParams? language_model_params
@@ -155,7 +170,8 @@ interface AIManager {
   // `shared_context` in `options` is a string that is set in the
   // AIWriterCreateOptions when the JS API `ai.writer.create()` is called.
   CreateWriter(pending_remote<AIManagerCreateWriterClient> client,
-               AIWriterCreateOptions options);
+               AIWriterCreateOptions options,
+               pending_remote<on_device_model.mojom.DownloadObserver>? monitor);
   // Returns rewriter model availability info from the underlying service.
   CanCreateRewriter(AIRewriterCreateOptions options) =>
       (ModelAvailabilityCheckResult result);
@@ -164,19 +180,22 @@ interface AIManager {
   // `shared_context`, `tone` and `length` in `options` are set in the
   // AIRewriterCreateOptions when the JS API `ai.rewriter.create()` is called.
   CreateRewriter(pending_remote<AIManagerCreateRewriterClient> client,
-                 AIRewriterCreateOptions options);
+                 AIRewriterCreateOptions options,
+                 pending_remote<on_device_model.mojom.DownloadObserver>? monitor);
   // Returns proofreader model availability info from the underlying service.
   CanCreateProofreader(AIProofreaderCreateOptions options) =>
       (ModelAvailabilityCheckResult result);
   // Creates a new proofreader, passing the result or error to the client.
   // Creation will be aborted if the client is disconnected.
   CreateProofreader(pending_remote<AIManagerCreateProofreaderClient> client,
-                    AIProofreaderCreateOptions options);
-  // Registers the observer that will be notified when the on device model
-  // download progress is updated. The registration of the observer won't
-  // trigger the model download and the completion of the model download
-  // won't remove the observer or close the connection.
-  AddModelDownloadProgressObserver(
-    pending_remote<on_device_model.mojom.DownloadObserver> observer_remote
-  );
+                    AIProofreaderCreateOptions options,
+                    pending_remote<on_device_model.mojom.DownloadObserver>? monitor);
+  // Returns classifier model availability info from the underlying service.
+  CanCreateClassifier(AIClassifierCreateOptions options) =>
+      (ModelAvailabilityCheckResult result);
+  // Creates a new classifier, passing the result or error to the client.
+  // Creation will be aborted if the client is disconnected.
+  CreateClassifier(pending_remote<AIManagerCreateClassifierClient> client,
+                   AIClassifierCreateOptions options,
+                   pending_remote<on_device_model.mojom.DownloadObserver>? monitor);
 };

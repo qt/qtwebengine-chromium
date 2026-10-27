@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -185,7 +187,11 @@ describe('StylesSidebarPane', () => {
     });
 
     describe('collapsing non-contributing sections', () => {
+      const enableCollapse = () =>
+          Common.Settings.Settings.instance().moduleSetting('collapse-non-contributing-css-rules').set(true);
+
       it('collapses a section where all properties are overloaded', async () => {
+        enableCollapse();
         const stylesSidebarPane =
             new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
         const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
@@ -251,7 +257,59 @@ describe('StylesSidebarPane', () => {
             'Section with active properties should not be collapsed');
       });
 
+      it('does not collapse non-contributing sections when the setting is disabled', async () => {
+        Common.Settings.Settings.instance().moduleSetting('collapse-non-contributing-css-rules').set(false);
+        const stylesSidebarPane =
+            new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
+        const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
+        node.id = 1 as Protocol.DOM.NodeId;
+        const matchedStyles = await getMatchedStyles({
+          cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
+          node,
+          matchedPayload: [
+            {
+              rule: {
+                selectorList: {selectors: [{text: 'div'}], text: 'div'},
+                origin: Protocol.CSS.StyleSheetOrigin.Regular,
+                style: {
+                  cssProperties: [{name: 'color', value: 'blue'}],
+                  shorthandEntries: [],
+                },
+              },
+              matchingSelectors: [0],
+            },
+            {
+              rule: {
+                selectorList: {selectors: [{text: '#id'}], text: '#id'},
+                origin: Protocol.CSS.StyleSheetOrigin.Regular,
+                style: {
+                  cssProperties: [{name: 'color', value: 'red'}],
+                  shorthandEntries: [],
+                },
+              },
+              matchingSelectors: [0],
+            },
+          ],
+        });
+
+        const sectionBlocks = await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(
+            matchedStyles, new Map(), new Map(), null);
+
+        const overloadedSection = sectionBlocks[0].sections.find(section => section.headerText() === 'div');
+        if (!overloadedSection) {
+          assert.fail('Expected div section to exist');
+        }
+
+        assert.isFalse(
+            overloadedSection.element.classList.contains('collapsed'),
+            'Section with all overloaded properties should not collapse when the setting is disabled');
+        assert.isFalse(
+            overloadedSection.element.classList.contains('collapsible'),
+            'Section should not be marked collapsible when automatic collapsing is disabled');
+      });
+
       it('collapses an empty section (no leading properties)', async () => {
+        enableCollapse();
         const stylesSidebarPane =
             new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
         const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
@@ -300,6 +358,7 @@ describe('StylesSidebarPane', () => {
       });
 
       it('does NOT collapse a section containing only disabled properties', async () => {
+        enableCollapse();
         const stylesSidebarPane =
             new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
         const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
@@ -349,6 +408,7 @@ describe('StylesSidebarPane', () => {
       });
 
       it('does NOT collapse a section with at least one active property', async () => {
+        enableCollapse();
         const stylesSidebarPane =
             new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
         const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
@@ -399,6 +459,7 @@ describe('StylesSidebarPane', () => {
       });
 
       it('expands a collapsed section when jump-to targets it', async () => {
+        enableCollapse();
         const stylesSidebarPane =
             new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
         const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
@@ -471,6 +532,7 @@ describe('StylesSidebarPane', () => {
       });
 
       it('can be manually expanded and re-collapsed via toggle', async () => {
+        enableCollapse();
         const stylesSidebarPane =
             new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
         const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
@@ -529,7 +591,77 @@ describe('StylesSidebarPane', () => {
             'Section should retain collapsible class after manual expand');
       });
 
+      it('reacts to toggling the collapse-non-contributing-css-rules setting at runtime', async () => {
+        enableCollapse();
+        const collapseSetting =
+            Common.Settings.Settings.instance().moduleSetting('collapse-non-contributing-css-rules');
+        const stylesSidebarPane =
+            new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
+        const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
+        node.id = 1 as Protocol.DOM.NodeId;
+        const matchedStyles = await getMatchedStyles({
+          cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
+          node,
+          matchedPayload: [
+            {
+              rule: {
+                selectorList: {selectors: [{text: 'div'}], text: 'div'},
+                origin: Protocol.CSS.StyleSheetOrigin.Regular,
+                style: {
+                  cssProperties: [{name: 'color', value: 'blue'}],
+                  shorthandEntries: [],
+                },
+              },
+              matchingSelectors: [0],
+            },
+            {
+              rule: {
+                selectorList: {selectors: [{text: '#id'}], text: '#id'},
+                origin: Protocol.CSS.StyleSheetOrigin.Regular,
+                style: {
+                  cssProperties: [{name: 'color', value: 'red'}],
+                  shorthandEntries: [],
+                },
+              },
+              matchingSelectors: [0],
+            },
+          ],
+        });
+
+        const sectionBlocks = await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(
+            matchedStyles, new Map(), new Map(), null);
+        // `allSections()` reads from `sectionBlocks`, which the test helper doesn't populate.
+        (stylesSidebarPane as unknown as {sectionBlocks: Elements.StylesSidebarPane.SectionBlock[]}).sectionBlocks =
+            sectionBlocks;
+
+        const overloadedSection = sectionBlocks[0].sections.find(section => section.headerText() === 'div');
+        if (!overloadedSection) {
+          assert.fail('Expected div section to exist');
+        }
+
+        assert.isTrue(
+            overloadedSection.element.classList.contains('collapsed'),
+            'Section should be collapsed while the setting is enabled');
+
+        collapseSetting.set(false);
+        assert.isFalse(
+            overloadedSection.element.classList.contains('collapsed'),
+            'Section should expand when the setting is turned off');
+        assert.isFalse(
+            overloadedSection.element.classList.contains('collapsible'),
+            'Section should drop the collapsible marker when the setting is turned off');
+
+        collapseSetting.set(true);
+        assert.isTrue(
+            overloadedSection.element.classList.contains('collapsed'),
+            'Section should collapse again when the setting is re-enabled');
+        assert.isTrue(
+            overloadedSection.element.classList.contains('collapsible'),
+            'Section should be marked collapsible again when the setting is re-enabled');
+      });
+
       it('expands collapsed sections before adding a new blank property', async () => {
+        enableCollapse();
         const stylesSidebarPane =
             new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
         const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
@@ -586,6 +718,7 @@ describe('StylesSidebarPane', () => {
       });
 
       it('collapses inherited sections with all overloaded properties', async () => {
+        enableCollapse();
         const stylesSidebarPane =
             new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
         const node = sinon.createStubInstance(SDK.DOMModel.DOMNode);
@@ -652,7 +785,7 @@ describe('StylesSidebarPane', () => {
       });
     });
 
-    it('should add @font-* section to the end', async () => {
+    it('should add "Other @rules" section to the end', async () => {
       const stylesSidebarPane =
           new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
       const matchedStyles = await getMatchedStyles({
@@ -693,7 +826,7 @@ describe('StylesSidebarPane', () => {
           await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(matchedStyles, new Map(), new Map(), null);
 
       assert.lengthOf(sectionBlocks, 2);
-      assert.strictEqual(sectionBlocks[1].titleElement()?.textContent, '@font-*');
+      assert.strictEqual(sectionBlocks[1].titleElement()?.textContent, 'Other @rules');
       assert.lengthOf(sectionBlocks[1].sections, 3);
       const contents = [
         '@font-palette-values --palette {    font-family: Bixa;    override-colors: 0 red;}',
@@ -730,6 +863,7 @@ describe('StylesSidebarPane', () => {
                     condition: {
                       containerQueries: {
                         text: '(width > 300px)',
+                        conditionText: '--foo (width > 300px)',
                       },
                       conditionText: '<unused>',
                       children: [
@@ -775,7 +909,7 @@ describe('StylesSidebarPane', () => {
       assert.instanceOf(sectionBlocks[1].sections[0], Elements.StylePropertiesSection.FunctionRuleSection);
       assert.strictEqual(
           sectionBlocks[1].sections[0].element.deepTextContent().replaceAll(/\s+/g, ' ').trim(),
-          '--f(--x, --y) { @media (width > 400px) { @container (width > 300px) { @supports (color: red) { result: var(--y); } } } result: var(--x);}');
+          '--f(--x, --y) { @media (width > 400px) { @container --foo (width > 300px) { @supports (color: red) { result: var(--y); } } } result: var(--x);}');
     });
 
     describe('Animation styles', () => {
@@ -825,6 +959,41 @@ describe('StylesSidebarPane', () => {
             matchedStyles, new Map(), new Map(), null);
         assert.lengthOf(sectionBlocks[0].sections, 0);
       });
+
+      it('should render transition & animation styles when the animations panel is not visible but the css-animations-only-when-animations-tab-open setting is disabled',
+         async () => {
+           Common.Settings.Settings.instance().moduleSetting('css-animations-only-when-animations-tab-open').set(false);
+           const stylesSidebarPane = new Elements.StylesSidebarPane.StylesSidebarPane(
+               new ComputedStyle.ComputedStyleModel.ComputedStyleModel());
+           const matchedStyles = await getMatchedStyles({
+             cssModel: stylesSidebarPane.cssModel() as SDK.CSSModel.CSSModel,
+             node: sinon.createStubInstance(SDK.DOMModel.DOMNode),
+             animationStylesPayload: [
+               {
+                 name: '--animation-name',
+                 style: {
+                   cssProperties: [{
+                     name: 'background-color',
+                     value: 'blue',
+                   }],
+                   shorthandEntries: [],
+                 },
+               },
+             ],
+             transitionsStylePayload: {
+               cssProperties: [{
+                 name: 'color',
+                 value: 'red',
+               }],
+               shorthandEntries: [],
+             },
+             inheritedAnimatedPayload: [],
+           });
+
+           const sectionBlocks = await stylesSidebarPane.rebuildSectionsForMatchedStyleRulesForTest(
+               matchedStyles, new Map(), new Map(), null);
+           assert.lengthOf(sectionBlocks[0].sections, 2);
+         });
 
       it('should render transition & animation styles in the styles tab when the animations panel is visible',
          async () => {
@@ -1255,7 +1424,8 @@ describe('StylesSidebarPane', () => {
       });
 
       it('shows a loading state when a request is triggered', async () => {
-        const setLoadingSpy = sinon.stub(PanelsCommon.AiCodeCompletionSummaryToolbar.prototype, 'setLoading');
+        const setLoadingSpy = sinon.stub(
+            PanelsCommon.AiCodeCompletionSummaryToolbar.AiCodeCompletionSummaryToolbar.prototype, 'setLoading');
         const providerConfig = stylesSidebarPane.aiCodeCompletionConfig;
         assert.exists(providerConfig);
         providerConfig.onFeatureEnabled();
@@ -1267,7 +1437,8 @@ describe('StylesSidebarPane', () => {
       });
 
       it('hides the loading indicator when a response is received', async () => {
-        const setLoadingSpy = sinon.stub(PanelsCommon.AiCodeCompletionSummaryToolbar.prototype, 'setLoading');
+        const setLoadingSpy = sinon.stub(
+            PanelsCommon.AiCodeCompletionSummaryToolbar.AiCodeCompletionSummaryToolbar.prototype, 'setLoading');
         const providerConfig = stylesSidebarPane.aiCodeCompletionConfig;
         assert.exists(providerConfig);
         providerConfig.onFeatureEnabled();
@@ -1282,7 +1453,8 @@ describe('StylesSidebarPane', () => {
       });
 
       it('attaches the citations toolbar when a suggestion with citations is accepted', async () => {
-        const updateCitationsSpy = sinon.spy(PanelsCommon.AiCodeCompletionSummaryToolbar.prototype, 'updateCitations');
+        const updateCitationsSpy = sinon.spy(
+            PanelsCommon.AiCodeCompletionSummaryToolbar.AiCodeCompletionSummaryToolbar.prototype, 'updateCitations');
         const providerConfig = stylesSidebarPane.aiCodeCompletionConfig;
         assert.exists(providerConfig);
 
@@ -1296,7 +1468,8 @@ describe('StylesSidebarPane', () => {
       });
 
       it('does not attach the citations toolbar if there are no citations', async () => {
-        const updateCitationsSpy = sinon.spy(PanelsCommon.AiCodeCompletionSummaryToolbar.prototype, 'updateCitations');
+        const updateCitationsSpy = sinon.spy(
+            PanelsCommon.AiCodeCompletionSummaryToolbar.AiCodeCompletionSummaryToolbar.prototype, 'updateCitations');
         const providerConfig = stylesSidebarPane.aiCodeCompletionConfig;
         assert.exists(providerConfig);
 
@@ -1735,6 +1908,23 @@ color: pink !important;`;
           // On second Tab, the AI suggestion is committed.
           sinon.assert.calledOnce(section.commitActiveAiSuggestion);
         });
+
+        it('accepts traditional autocomplete suggestion on Tab when suggest box is hidden but inline suggestion is active',
+           async () => {
+             const cssPropertyPrompt = new CSSPropertyPrompt(mockTreeItem, true);
+             cssPropertyPrompt.attachAndStartEditing(attachedElement, noop);
+
+             cssPropertyPrompt.setText('flex-g');
+             await cssPropertyPrompt.complete(true);
+
+             assert.isFalse(cssPropertyPrompt.isSuggestBoxVisible());
+             assert.strictEqual(cssPropertyPrompt.currentSuggestion()?.text, 'flex-grow');
+
+             const tabEvent = new KeyboardEvent('keydown', {key: 'Tab'});
+             cssPropertyPrompt.onKeyDown(tabEvent);
+
+             assert.strictEqual(cssPropertyPrompt.text(), 'flex-grow');
+           });
       });
 
       describe('updateAiCodeSuggestion', () => {

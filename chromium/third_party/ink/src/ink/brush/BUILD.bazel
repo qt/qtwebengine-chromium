@@ -71,6 +71,7 @@ cc_test(
         "//ink/geometry:angle",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
@@ -82,9 +83,9 @@ cc_library(
     srcs = ["brush_coat.cc"],
     hdrs = ["brush_coat.h"],
     deps = [
-        ":brush_behavior",
         ":brush_paint",
         ":brush_tip",
+        ":version",
         "//ink/geometry:mesh_format",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/container:inlined_vector",
@@ -106,6 +107,7 @@ cc_test(
         "//ink/geometry:mesh_format",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings",
         "@com_google_fuzztest//fuzztest",
         "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
@@ -120,11 +122,24 @@ cc_library(
         ":brush_coat",
         ":brush_paint",
         ":brush_tip",
+        ":version",
         "//ink/types:duration",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "brush_family_internal_accessor",
+    hdrs = ["internal/brush_family_internal_accessor.h"],
+    visibility = [
+        "//ink/brush:__subpackages__",
+        "//ink/storage:__subpackages__",
+    ],
+    deps = [
+        ":brush_family",
     ],
 )
 
@@ -142,7 +157,6 @@ cc_test(
         ":type_matchers",
         "//ink/geometry:angle",
         "//ink/geometry:point",
-        "//ink/geometry:vec",
         "//ink/types:duration",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_matchers",
@@ -160,11 +174,11 @@ cc_library(
     hdrs = ["brush_tip.h"],
     deps = [
         ":brush_behavior",
+        ":version",
         "//ink/geometry:angle",
         "//ink/geometry:mesh_format",
         "//ink/geometry:vec",
         "//ink/types:duration",
-        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
@@ -190,6 +204,7 @@ cc_library(
     srcs = ["color_function.cc"],
     hdrs = ["color_function.h"],
     deps = [
+        ":version",
         "//ink/color",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
@@ -219,6 +234,7 @@ cc_library(
     srcs = ["easing_function.cc"],
     hdrs = ["easing_function.h"],
     deps = [
+        ":version",
         "//ink/geometry:point",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
@@ -233,6 +249,7 @@ cc_test(
         ":easing_function",
         ":fuzz_domains",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings",
         "@com_google_fuzztest//fuzztest",
         "@com_google_fuzztest//fuzztest:fuzztest_gtest_main",
@@ -245,6 +262,7 @@ cc_library(
     hdrs = ["brush_behavior.h"],
     deps = [
         ":easing_function",
+        ":version",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
@@ -258,7 +276,6 @@ cc_test(
         ":brush_behavior",
         ":easing_function",
         ":fuzz_domains",
-        "//ink/types:duration",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings",
@@ -273,10 +290,12 @@ cc_library(
     hdrs = ["brush_paint.h"],
     deps = [
         ":color_function",
+        ":version",
         "//ink/geometry:angle",
         "//ink/geometry:mesh_format",
         "//ink/geometry:vec",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/functional:overload",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
@@ -325,12 +344,65 @@ cc_library(
         "//ink/geometry:point",
         "//ink/geometry:vec",
         "//ink/types:fuzz_domains",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
         "@com_google_fuzztest//fuzztest",
+    ],
+)
+
+cc_library(
+    name = "stock_brushes",
+    srcs = ["stock_brushes.cc"],
+    hdrs = ["stock_brushes.h"],
+    deps = [
+        ":brush_behavior",
+        ":brush_coat",
+        ":brush_family",
+        ":brush_paint",
+        ":brush_tip",
+        ":easing_function",
+        "//ink/geometry:angle",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "stock_brushes_test_params",
+    testonly = True,
+    srcs = ["stock_brushes_test_params.cc"],
+    hdrs = ["stock_brushes_test_params.h"],
+    deps = [
+        ":brush_family",
+        ":brush_paint",
+        ":stock_brushes",
+    ],
+)
+
+cc_library(
+    name = "version",
+    hdrs = ["version.h"],
+    deps = [
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_test(
+    name = "stock_brushes_test",
+    srcs = ["stock_brushes_test.cc"],
+    deps = [
+        ":brush_behavior",
+        ":brush_tip",
+        ":stock_brushes",
+        ":stock_brushes_test_params",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

@@ -50,14 +50,10 @@ builtin_module("_Builtin_stdalign") {
 builtin_module("_Builtin_stdarg") {
 }
 
-builtin_module("_Builtin_stdatomic") {
-  public_deps = [
-    ":_Builtin_stddef",
-    ":_Builtin_stdint",
-  ]
+builtin_module("_Builtin_stdbool") {
 }
 
-builtin_module("_Builtin_stdbool") {
+builtin_module("_Builtin_stdckdint") {
 }
 
 builtin_module("_Builtin_stdcountof") {
@@ -114,7 +110,6 @@ apple_sysroot_module("_DarwinFoundation3") {
     ":_Builtin_stdint",
     ":_DarwinFoundation1",
     ":_DarwinFoundation2",
-    ":std_ctype_h",
   ]
 }
 
@@ -134,6 +129,7 @@ apple_sysroot_module("libunwind") {
     ":_Builtin_stddef",
     ":_Builtin_stdint",
     ":_DarwinFoundation1",
+    ":ptrauth",
     ":unwind",
   ]
 }
@@ -173,18 +169,17 @@ apple_sysroot_module("sched") {
 
 libcxx_module("std") {
   public_deps = [
+    ":_Builtin_float",
+    ":_Builtin_inttypes",
     ":_Builtin_limits",
     ":_Builtin_stdalign",
     ":_Builtin_stdarg",
     ":_Builtin_stddef",
+    ":_DarwinFoundation1",
     ":_DarwinFoundation2",
     ":_DarwinFoundation3",
     ":std_core",
-    ":std_ctype_h",
     ":std_errno_h",
-    ":std_fenv_h",
-    ":std_float_h",
-    ":std_inttypes_h",
     ":std_math_h",
     ":std_private_mbstate_t",
     ":std_string_h",
@@ -205,27 +200,8 @@ libcxx_module("std_core") {
   ]
 }
 
-libcxx_module("std_ctype_h") {
-  public_deps = [ ":_DarwinFoundation2" ]
-}
-
 libcxx_module("std_errno_h") {
   public_deps = [ ":_DarwinFoundation1" ]
-}
-
-libcxx_module("std_fenv_h") {
-  public_deps = [ ":_DarwinFoundation1" ]
-}
-
-libcxx_module("std_float_h") {
-  public_deps = [ ":_Builtin_float" ]
-}
-
-libcxx_module("std_inttypes_h") {
-  public_deps = [
-    ":_Builtin_inttypes",
-    ":_Builtin_stdint",
-  ]
 }
 
 libcxx_module("std_math_h") {
@@ -240,7 +216,7 @@ libcxx_module("std_private_mbstate_t") {
 }
 
 libcxx_module("std_stdatomic_h") {
-  public_deps = [ ":_Builtin_stdatomic" ]
+  public_deps = [ ":std" ]
 }
 
 libcxx_module("std_string_h") {
@@ -339,8 +315,8 @@ group("all_modules") {
     ":_Builtin_limits",
     ":_Builtin_stdalign",
     ":_Builtin_stdarg",
-    ":_Builtin_stdatomic",
     ":_Builtin_stdbool",
+    ":_Builtin_stdckdint",
     ":_Builtin_stdcountof",
     ":_Builtin_stddef",
     ":_Builtin_stddef_wint_t",
@@ -361,11 +337,7 @@ group("all_modules") {
     ":std",
     ":std_complex_h",
     ":std_core",
-    ":std_ctype_h",
     ":std_errno_h",
-    ":std_fenv_h",
-    ":std_float_h",
-    ":std_inttypes_h",
     ":std_math_h",
     ":std_private_mbstate_t",
     ":std_stdatomic_h",

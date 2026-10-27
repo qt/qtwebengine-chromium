@@ -53,6 +53,7 @@ component("gpu") {
     "//media/gpu/test/*",
     "//media/gpu/vaapi/*",
     "//media/mojo/*",
+    "//media/parsers:unit_tests",
     "//remoting/codec:encoder",
     "//third_party/blink/renderer/modules:unit_tests",
     "//third_party/blink/renderer/modules/mediarecorder",
@@ -169,8 +170,6 @@ component("gpu") {
       "android/video_frame_factory.h",
       "android/video_frame_factory_impl.cc",
       "android/video_frame_factory_impl.h",
-      "android/video_frame_gl_surface_renderer.cc",
-      "android/video_frame_gl_surface_renderer.h",
     ]
     if (proprietary_codecs) {
       sources += [
@@ -182,13 +181,7 @@ component("gpu") {
       "aaudio",
       "mediandk",
     ]
-    deps += [
-      # TODO(crbug.com/40552063): This can be removed once CdmManager is removed.
-      "//gpu/ipc/common",
-      "//media/mojo:buildflags",
-      "//services/service_manager/public/cpp",
-      "//third_party/libgav1:libgav1_parser",
-    ]
+    deps += [ "//third_party/libgav1:libgav1_parser" ]
     if (enable_vulkan) {
       deps += [ "//gpu/vulkan" ]
     }
@@ -355,6 +348,8 @@ source_set("common") {
     "gpu_video_decode_accelerator_helpers.h",
     "gpu_video_encode_accelerator_helpers.cc",
     "gpu_video_encode_accelerator_helpers.h",
+    "h264_builder.cc",
+    "h264_builder.h",
     "h264_decoder.cc",
     "h264_decoder.h",
     "h264_dpb.cc",
@@ -427,8 +422,6 @@ source_set("common") {
     sources += [
       "av1_builder.cc",
       "av1_builder.h",
-      "h264_builder.cc",
-      "h264_builder.h",
       "svc_layers.cc",
       "svc_layers.h",
     ]
@@ -449,13 +442,16 @@ source_set("common") {
       "av1_picture.cc",
       "av1_picture.h",
     ]
-    public_deps += [ "//third_party/libgav1:libgav1_parser" ]
+    public_deps += [
+      "//third_party/libgav1:libgav1_parser",
+      "//third_party/libgav1:libgav1_utils_constants",
+    ]
   }
 }
 
 if (is_linux || is_chromeos) {
-  # The buffer validation functionality is in its own component so that it can be
-  # depended on without pulling the entire //media/gpu target.
+  # The buffer validation functionality is in its own component so that it can
+  # be depended on without pulling the entire //media/gpu target.
   component("buffer_validation") {
     defines = [ "IS_MEDIA_GPU_BUFFER_VALIDATION_IMPL" ]
     sources = [
@@ -597,7 +593,6 @@ source_set("android_video_decode_accelerator_unittests") {
       "android/promotion_hint_aggregator_impl_unittest.cc",
       "android/surface_chooser_helper_unittest.cc",
       "android/video_frame_factory_impl_unittest.cc",
-      "android/video_frame_gl_surface_renderer_test.cc",
     ]
     deps = [
       ":gpu",

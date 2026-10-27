@@ -365,6 +365,8 @@ constexpr const char *kSkippedMessages[] = {
     "VUID-vkCmdEndQuery-None-07007",
     // https://anglebug.com/475549551
     "VUID-VkGraphicsPipelineCreateInfo-renderPass-09652",
+    // https://anglebug.com/512394647
+    "VUID-VkImageCreateInfo-imageCreateMaxMipLevels-02251",
 };
 
 // Validation messages that should be ignored only when VK_EXT_primitive_topology_list_restart is
@@ -2176,8 +2178,8 @@ void Renderer::onDestroy(vk::ErrorContext *context)
     cleanupGarbage(nullptr);
     ASSERT(!hasSharedGarbage());
     ASSERT(mOrphanedBufferBlockList.empty());
-    ASSERT(mOrphanedSamplers.empty());
-    ASSERT(mOrphanedSamplerYcbcrConversions.empty());
+    mSamplerCache.destroy(this);
+    mYuvConversionCache.destroy(this);
 
     mRefCountedEventRecycler.destroy(mDevice);
 
@@ -5030,7 +5032,10 @@ std::string Renderer::getVersionString(bool includeFullVersion) const
         // The major version for the new QCOM drivers seems to be 512, which results in a major
         // version of 0 and a non-zero variant field when using the VK_API_VERSION_x macros.
         // Therefore, the version string is updated to show the correct major version.
-        else if (mPhysicalDeviceProperties.vendorID == VENDOR_ID_QUALCOMM)
+        else if (mPhysicalDeviceProperties.vendorID == VENDOR_ID_QUALCOMM &&
+                 !IsQualcommOpenSource(mPhysicalDeviceProperties.vendorID,
+                                       mDriverProperties.driverID,
+                                       mPhysicalDeviceProperties.deviceName))
         {
             strstr << (512 | VK_API_VERSION_MAJOR(driverVersion)) << ".";
             strstr << VK_API_VERSION_MINOR(driverVersion) << ".";
@@ -5827,15 +5832,7 @@ void Renderer::initFeatures(const vk::ExtensionNameList &deviceExtensionNames,
         &mFeatures, supportsImageDrmFormatModifier,
         ExtensionFound(VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME, deviceExtensionNames));
 
-    // http://anglebug.com/42261756
-    // Precision qualifiers are disabled for Pixel 2 before the driver included relaxed precision.
-    const bool isPixel4 =
-        IsPixel4(mPhysicalDeviceProperties.vendorID, mPhysicalDeviceProperties.deviceID);
-    ANGLE_FEATURE_CONDITION(
-        &mFeatures, enablePrecisionQualifiers,
-        !(IsPixel2(mPhysicalDeviceProperties.vendorID, mPhysicalDeviceProperties.deviceID) &&
-          (driverVersion < angle::VersionTriple(512, 490, 0))) &&
-            !isPixel4);
+    ANGLE_FEATURE_CONDITION(&mFeatures, enablePrecisionQualifiers, true);
 
     // http://anglebug.com/42265957
     ANGLE_FEATURE_CONDITION(&mFeatures, varyingsRequireMatchingPrecisionInSpirv,
@@ -5968,7 +5965,7 @@ void Renderer::initFeatures(const vk::ExtensionNameList &deviceExtensionNames,
     // ES 3.2, it should be unlisted.
     ANGLE_FEATURE_CONDITION(&mFeatures, exposeES32ForTesting,
                             mFeatures.exposeNonConformantExtensionsAndVersions.enabled &&
-                                (isSoftwareRenderer || isPixel4 || (IsWindows() && isIntel)));
+                                (isSoftwareRenderer || (IsWindows() && isIntel)));
 
     ANGLE_FEATURE_CONDITION(
         &mFeatures, supportsMemoryBudget,
@@ -6014,16 +6011,14 @@ void Renderer::initFeatures(const vk::ExtensionNameList &deviceExtensionNames,
     // -
     // VK_PIPELINE_DEPTH_STENCIL_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_STENCIL_ACCESS_BIT_EXT
     //
-    // But the check for framebuffer fetch is not accurate enough and those bits can have great
-    // impact on Qualcomm (it only affects the open source driver because the proprietary driver
-    // does not expose the extension).  Let's disable it on Qualcomm.
-    //
-    // https://issuetracker.google.com/issues/255837430
     ANGLE_FEATURE_CONDITION(
         &mFeatures, supportsRasterizationOrderAttachmentAccess,
-        !isQualcomm &&
-            mRasterizationOrderAttachmentAccessFeatures.rasterizationOrderColorAttachmentAccess ==
-                VK_TRUE);
+        mRasterizationOrderAttachmentAccessFeatures.rasterizationOrderColorAttachmentAccess ==
+            VK_TRUE);
+
+    ANGLE_FEATURE_CONDITION(
+        &mFeatures, addFramebufferFetchBarrierOnUseMidRenderPass,
+        mFeatures.supportsRasterizationOrderAttachmentAccess.enabled && isQualcomm);
 
     // The VK_EXT_surface_maintenance1 and VK_EXT_swapchain_maintenance1 extensions are used for a
     // variety of improvements:
@@ -6035,6 +6030,12 @@ void Renderer::initFeatures(const vk::ExtensionNameList &deviceExtensionNames,
     ANGLE_FEATURE_CONDITION(&mFeatures, supportsSwapchainMaintenance1,
                             mSwapchainMaintenance1Features.swapchainMaintenance1 == VK_TRUE &&
                                 useVulkanSwapchain == UseVulkanSwapchain::Yes);
+
+    // ANI crashes on NVIDIA/Wayland on a swapchain with deferred memory allocation.
+    // http://anglebug.com/499347835
+    ANGLE_FEATURE_CONDITION(
+        &mFeatures, swapchainDeferredMemoryAllocation,
+        mFeatures.supportsSwapchainMaintenance1.enabled && !(IsWayland() && isNvidia));
 
     // The VK_EXT_legacy_dithering extension enables dithering support without emulation
     // Disable the usage of VK_EXT_legacy_dithering on ARM until the driver bug
@@ -6135,8 +6136,7 @@ void Renderer::initFeatures(const vk::ExtensionNameList &deviceExtensionNames,
     // Some platforms perform better using BGR565 than RGB565.
     bool isBGR565Renderable = hasImageFormatFeatureBits(angle::FormatID::B5G6R5_UNORM,
                                                         VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
-    ANGLE_FEATURE_CONDITION(&mFeatures, preferBGR565ToRGB565,
-                            isBGR565Renderable && isQualcomm && !isPixel4);
+    ANGLE_FEATURE_CONDITION(&mFeatures, preferBGR565ToRGB565, isBGR565Renderable && isQualcomm);
 
     // Emit SPIR-V 1.4 when supported.  The following old drivers have various bugs with SPIR-V 1.4:
     //
@@ -6173,16 +6173,13 @@ void Renderer::initFeatures(const vk::ExtensionNameList &deviceExtensionNames,
     //
     // On Pixel devices, the issues have been fixed since r44, but on others since r44p1.
     //
-    // Regressions have been detected using r46 on older architectures though
+    // Regressions have been detected using r46 on older architectures, which are fixed in r51.
     // http://issuetracker.google.com/336411904
     const bool isARMExtendedDynamicStateBuggy =
         isARMProprietary &&
         (driverVersion < angle::VersionTriple(44, 1, 0) ||
-         (isMaliJobManagerBasedGPU && driverVersion >= angle::VersionTriple(46, 0, 0)));
-
-    // Vertex input binding stride is buggy for Windows/Intel drivers before 100.9684.
-    const bool isVertexInputBindingStrideBuggy =
-        IsWindows() && isIntel && driverVersion < angle::VersionTriple(100, 9684, 0);
+         (isMaliJobManagerBasedGPU && driverVersion >= angle::VersionTriple(46, 0, 0) &&
+          driverVersion < angle::VersionTriple(51, 0, 0)));
 
     // Intel driver has issues with VK_EXT_vertex_input_dynamic_state
     // http://anglebug.com/42265637#comment9
@@ -6211,6 +6208,16 @@ void Renderer::initFeatures(const vk::ExtensionNameList &deviceExtensionNames,
     // VK_EXT_vertex_input_dynamic_state enables dynamic state for the full vertex input state. As
     // such, when available use supportsVertexInputDynamicState instead of
     // useVertexInputBindingStrideDynamicState.
+    //
+    // Vertex input binding stride is buggy for Windows/Intel drivers before 100.9684
+    // (https://anglebug.com/42266992).
+    //
+    // |vkCmdBindVertexBuffers2| applies strides to the wrong index on ARM proprietary drivers prior
+    // to r48, according to the errata:
+    // https://developer.arm.com/documentation/SDEN-3735689/0100/?lang=en
+    const bool isVertexInputBindingStrideBuggy =
+        (IsWindows() && isIntel && driverVersion < angle::VersionTriple(100, 9684, 0)) ||
+        (isARMProprietary && driverVersion < angle::VersionTriple(48, 0, 0));
     ANGLE_FEATURE_CONDITION(&mFeatures, useVertexInputBindingStrideDynamicState,
                             mFeatures.supportsExtendedDynamicState.enabled &&
                                 !mFeatures.supportsVertexInputDynamicState.enabled &&
@@ -6763,10 +6770,10 @@ void Renderer::initFeatures(const vk::ExtensionNameList &deviceExtensionNames,
         &mFeatures, supportsShaderNonSemanticInfo,
         ExtensionFound(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME, deviceExtensionNames));
 
-    // Don't expose these 2 extensions on Samsung devices -
-    // 1. ANGLE_rgbx_internal_format
-    // 2. GL_APPLE_clip_distance
-    ANGLE_FEATURE_CONDITION(&mFeatures, supportsAngleRgbxInternalFormat, !isSamsung);
+    // Unconditionally enable GL_ANGLE_rgbx_internal_format extension
+    ANGLE_FEATURE_CONDITION(&mFeatures, supportsAngleRgbxInternalFormat, true);
+
+    // Don't expose GL_APPLE_clip_distance on Samsung devices
     ANGLE_FEATURE_CONDITION(&mFeatures, supportsAppleClipDistance, !isSamsung);
 
     // Force enable sample usage for AHB images for Samsung
@@ -6858,6 +6865,10 @@ void Renderer::initFeatures(const vk::ExtensionNameList &deviceExtensionNames,
         isSamsung && driverVersion < angle::VersionTriple(25, 0, 0);
     ANGLE_FEATURE_CONDITION(&mFeatures, enableMergeClientAttribBuffer,
                             !isSamsungDriverWithVertexAttributePackingBug);
+
+    // Enable this feature to avoid image allocation overhead when repeatedly uploading the same
+    // texture that has already been uploaded, outside a render pass.
+    ANGLE_FEATURE_CONDITION(&mFeatures, avoidImageGhostOutsideRenderPass, true);
 }
 
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -7451,57 +7462,10 @@ void Renderer::cleanupGarbage(bool *anyGarbageCleanedOut)
     // Clean up RefCountedEvent that are done resetting
     anyCleaned = mRefCountedEventRecycler.cleanupResettingEvents(this) > 0 || anyCleaned;
 
-    // Clean up samplers that couldn't be destroyed when the share group was.
-    anyCleaned = cleanupOrphanedSamplers() || anyCleaned;
-
     if (anyGarbageCleanedOut != nullptr)
     {
         *anyGarbageCleanedOut = anyCleaned;
     }
-}
-
-bool Renderer::cleanupOrphanedSamplers()
-{
-    std::unique_lock<angle::SimpleMutex> lock(mOrphanedSamplerMutex);
-
-    if (mOrphanedSamplers.empty() && mOrphanedSamplerYcbcrConversions.empty())
-    {
-        return false;
-    }
-
-    // Destroy any sampler that is no longer referenced.
-    const size_t samplerCountBefore = mOrphanedSamplers.size();
-    // Using remove_if to avoid unnecessary reference counter updates.
-    mOrphanedSamplers.erase(
-        std::remove_if(mOrphanedSamplers.begin(), mOrphanedSamplers.end(),
-                       [](SharedSamplerPtr &sampler) { return sampler.unique(); }),
-        mOrphanedSamplers.end());
-    const size_t destroyedSamplerCount = samplerCountBefore - mOrphanedSamplers.size();
-
-    bool anyCleaned = destroyedSamplerCount > 0;
-
-    if (anyCleaned)
-    {
-        onDeallocateHandle(vk::HandleType::Sampler, static_cast<uint32_t>(destroyedSamplerCount));
-    }
-
-    // If all samplers are gone, destroy all the ycbcr conversion objects too.  We don't track which
-    // samplers use which ycbcr conversion objects, so they are destroyed conservatively.
-    if (mOrphanedSamplers.empty() && !mOrphanedSamplerYcbcrConversions.empty())
-    {
-        anyCleaned = true;
-        for (VkSamplerYcbcrConversion handle : mOrphanedSamplerYcbcrConversions)
-        {
-            vk::SamplerYcbcrConversion conversion;
-            conversion.setHandle(handle);
-            conversion.destroy(mDevice);
-        }
-        onDeallocateHandle(vk::HandleType::SamplerYcbcrConversion,
-                           static_cast<uint32_t>(mOrphanedSamplerYcbcrConversions.size()));
-        mOrphanedSamplerYcbcrConversions.clear();
-    }
-
-    return anyCleaned;
 }
 
 void Renderer::cleanupPendingSubmissionGarbage()
@@ -7948,18 +7912,6 @@ void Renderer::releaseQueueSerialIndex(SerialIndex index)
 angle::Result Renderer::cleanupSomeGarbage(ErrorContext *context, bool *anyGarbageCleanedOut)
 {
     return mCommandQueue.cleanupSomeGarbage(context, 0, anyGarbageCleanedOut);
-}
-
-void Renderer::addSamplerToOrphanList(SharedSamplerPtr sampler)
-{
-    std::unique_lock<angle::SimpleMutex> lock(mOrphanedSamplerMutex);
-    mOrphanedSamplers.push_back(sampler);
-}
-
-void Renderer::addSamplerYcbcrConversionToOrphanList(VkSamplerYcbcrConversion conversion)
-{
-    std::unique_lock<angle::SimpleMutex> lock(mOrphanedSamplerMutex);
-    mOrphanedSamplerYcbcrConversions.push_back(conversion);
 }
 
 void Renderer::logFeatures() const

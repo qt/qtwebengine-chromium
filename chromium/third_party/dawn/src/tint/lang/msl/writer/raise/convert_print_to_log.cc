@@ -253,6 +253,7 @@ Result<SuccessType> ConvertPrintToLog(core::ir::Module& ir) {
     AssertValid(ir,
                 core::ir::Capabilities{
                     core::ir::Capability::kAllowDuplicateBindings,
+                    core::ir::Capability::kAllow8BitIntegers,
                 },
                 "before msl.ConvertPrintToLog");
 

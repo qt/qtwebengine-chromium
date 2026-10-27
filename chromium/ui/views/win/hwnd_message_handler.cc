@@ -442,6 +442,10 @@ HWNDMessageHandler::~HWNDMessageHandler() {
   // Clear pointer to this in `hwnd()`'s user data, to prevent installed hooks
   // from calling back into this after deletion.
   ClearUserData();
+
+  // If the window is a fullscreen window then remove its references from the
+  // full screen window map.
+  RemoveCurrentWindowFromFullscreenMonitorMap();
 }
 
 void HWNDMessageHandler::Init(HWND parent, const gfx::Rect& bounds) {
@@ -926,13 +930,12 @@ void HWNDMessageHandler::ClearNativeFocus() {
 }
 
 void HWNDMessageHandler::SetCapture() {
-  // We may need to change this to !HasCapture() || release_capture_errno_ to
-  // avoid checking when the call to `::ReleaseCapture` below fails.
-  // Logging release_capture_errno_ will tell us if the DCHECK below is caused
-  // by ::ReleaseCapture failing.
-  DCHECK(!HasCapture()) << " release capture error = "
-                        << logging::SystemErrorCodeToString(
-                               release_capture_errno_);
+  if (HasCapture()) {
+    DCHECK_EQ(release_capture_errno_, 0u)
+        << " release capture error = "
+        << logging::SystemErrorCodeToString(release_capture_errno_);
+    return;
+  }
   ::SetCapture(hwnd());
 }
 
@@ -1027,12 +1030,7 @@ void HWNDMessageHandler::SetWindowIcons(const gfx::ImageSkia& window_icon,
 void HWNDMessageHandler::SetFullscreen(bool fullscreen,
                                        int64_t target_display_id) {
   // Erase any prior reference to this window in the fullscreen window map.
-  HMONITOR monitor = ::MonitorFromWindow(hwnd(), MONITOR_DEFAULTTOPRIMARY);
-  FullscreenWindowMonitorMap::iterator iter =
-      fullscreen_monitor_map_.Get().find(monitor);
-  if (iter != fullscreen_monitor_map_.Get().end()) {
-    fullscreen_monitor_map_.Get().erase(iter);
-  }
+  RemoveCurrentWindowFromFullscreenMonitorMap();
 
   background_fullscreen_hack_ = false;
   auto ref = msg_handler_weak_factory_.GetWeakPtr();
@@ -2090,19 +2088,8 @@ void HWNDMessageHandler::OnGetMinMaxInfo(MINMAXINFO* minmax_info) {
   // Add the native frame border size to the minimum and maximum size if the
   // view reports its size as the client size.
   if (delegate_->WidgetSizeIsClientSize()) {
-    RECT client_rect, window_rect;
-    ::GetClientRect(hwnd(), &client_rect);
-    ::GetWindowRect(hwnd(), &window_rect);
-    CR_DEFLATE_RECT(&window_rect, &client_rect);
-    min_window_size.Enlarge(window_rect.right - window_rect.left,
-                            window_rect.bottom - window_rect.top);
-    // Either axis may be zero, so enlarge them independently.
-    if (max_window_size.width()) {
-      max_window_size.Enlarge(window_rect.right - window_rect.left, 0);
-    }
-    if (max_window_size.height()) {
-      max_window_size.Enlarge(0, window_rect.bottom - window_rect.top);
-    }
+    InflateClientSizeConstraintsInPixels(hwnd(), min_window_size,
+                                         max_window_size);
   }
   minmax_info->ptMinTrackSize.x = min_window_size.width();
   minmax_info->ptMinTrackSize.y = min_window_size.height();
@@ -2133,6 +2120,7 @@ LRESULT HWNDMessageHandler::OnGetObject(UINT message,
   // only the low-order 32-bits are preserved.
   switch (static_cast<LONG>(l_param)) {
     case UiaRootObjectId:
+      ui::AXPlatform::GetInstance().SetUiaRequested();
       if (ui::AXPlatform::GetInstance().IsUiaProviderEnabled()) {
         // Return the IRawElementProviderSimple for the window's client area to
         // a UI Automation client.
@@ -2150,6 +2138,7 @@ LRESULT HWNDMessageHandler::OnGetObject(UINT message,
       break;
 
     case OBJID_CLIENT:
+      ui::AXPlatform::GetInstance().SetMsaaRequested();
       // Return the IAccessible for the window's client area to an MSAA client.
       if (auto root_accessible = delegate_->GetNativeViewAccessible()) {
         return ::LresultFromObject(IID_IAccessible, w_param, root_accessible);
@@ -3332,7 +3321,11 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
     w_param = static_cast<WPARAM>(::SendMessage(
         hwnd(), WM_NCHITTEST, 0, MAKELPARAM(screen_point.x, screen_point.y)));
     if (w_param == HTCAPTION || w_param == HTSYSMENU) {
-      ShowSystemMenuAtScreenPixelLocation(hwnd(), gfx::Point(screen_point));
+      if (delegate_->UsesNativeSystemMenu()) {
+        ShowSystemMenuAtScreenPixelLocation(hwnd(), gfx::Point(screen_point));
+      } else {
+        delegate_->ShowCustomSystemMenu(gfx::Point(screen_point));
+      }
       return 0;
     }
   } else if (message == WM_NCLBUTTONDOWN &&
@@ -3364,7 +3357,9 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
     // We SetCapture() to ensure we only show the menu when the button
     // down and up are both on the caption. Note: this causes the button up to
     // be WM_RBUTTONUP instead of WM_NCRBUTTONUP.
-    SetCapture();
+    if (delegate_->UsesNativeSystemMenu()) {
+      SetCapture();
+    }
   }
 
   LONG message_time = GetMessageTime();
@@ -3374,6 +3369,24 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
                     l_param,
                     static_cast<DWORD>(message_time),
                     {CR_GET_X_LPARAM(l_param), CR_GET_Y_LPARAM(l_param)}};
+  // Windows generates these events even if the mouse does not leave the window
+  // when the mouse is crossing between Client area and Non Client area.
+  // Do not map these events to kMouseExited in that case, because the mouse is
+  // not exiting the window.
+  if (message == WM_MOUSELEAVE || message == WM_NCMOUSELEAVE) {
+    // These messages do not have location information.
+    POINT cursor_pos;
+    ::GetCursorPos(&cursor_pos);
+    HWND hwnd_at_position = ::WindowFromPoint(cursor_pos);
+    // Do not generate the kMouseExit if the mouse is still on the window.
+    if (hwnd() == hwnd_at_position || ::IsChild(hwnd(), hwnd_at_position)) {
+      return 0;
+    }
+
+    msg.pt.x = cursor_pos.x;
+    msg.pt.y = cursor_pos.y;
+  }
+
   ui::MouseEvent event(msg);
   if (IsSynthesizedMouseMessage(message, message_time, l_param)) {
     event.SetFlags(event.flags() | ui::EF_FROM_TOUCH);
@@ -3894,6 +3907,11 @@ void HWNDMessageHandler::SizeWindowToAspectRatio(UINT param,
   min_window_size = delegate_->DIPToScreenSize(min_window_size);
   max_window_size = delegate_->DIPToScreenSize(max_window_size);
 
+  if (delegate_->WidgetSizeIsClientSize()) {
+    InflateClientSizeConstraintsInPixels(hwnd(), min_window_size,
+                                         max_window_size);
+  }
+
   std::optional<gfx::Size> max_size_param;
   if (!max_window_size.IsEmpty()) {
     max_size_param = max_window_size;
@@ -3918,12 +3936,8 @@ POINT HWNDMessageHandler::GetCursorPos() const {
 }
 
 void HWNDMessageHandler::RemoveCurrentWindowFromFullscreenMonitorMap() {
-  auto& map = fullscreen_monitor_map_.Get();
-  const auto i = std::ranges::find(
-      map, this, &FullscreenWindowMonitorMap::value_type::second);
-  if (i != map.end()) {
-    map.erase(i);
-  }
+  std::erase_if(fullscreen_monitor_map_.Get(),
+                [this](const auto& kv) { return kv.second == this; });
 }
 
 void HWNDMessageHandler::UpdateFullscreenMonitorMap() {

@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #include "common.h"
 
@@ -69,15 +70,21 @@ EIGEN_BLAS_FUNC(copy)(int *n, RealScalar *px, int *incx, RealScalar *py, int *in
   // be careful, *incx==0 is allowed !!
   if (*incx == 1 && *incy == 1)
     make_vector(y, *n) = make_vector(x, *n);
-  else {
-    if (*incx < 0) x = x - (*n - 1) * (*incx);
+  else if (*incx == 0) {
+    // Broadcast: copy x[0] to all elements of y.
     if (*incy < 0) y = y - (*n - 1) * (*incy);
     for (int i = 0; i < *n; ++i) {
       *y = *x;
-      x += *incx;
       y += *incy;
     }
-  }
+  } else if (*incx > 0 && *incy > 0)
+    make_vector(y, *n, *incy) = make_vector(x, *n, *incx);
+  else if (*incx > 0 && *incy < 0)
+    make_vector(y, *n, -*incy).reverse() = make_vector(x, *n, *incx);
+  else if (*incx < 0 && *incy > 0)
+    make_vector(y, *n, *incy) = make_vector(x, *n, -*incx).reverse();
+  else if (*incx < 0 && *incy < 0)
+    make_vector(y, *n, -*incy) = make_vector(x, *n, -*incx);
 }
 
 EIGEN_BLAS_FUNC(rotg)(RealScalar *pa, RealScalar *pb, RealScalar *pc, RealScalar *ps) {

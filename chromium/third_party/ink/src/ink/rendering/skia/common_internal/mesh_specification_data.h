@@ -22,6 +22,7 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "ink/geometry/mesh_format.h"
+#include "ink/rendering/common/stroke_attribute_helpers.h"
 #include "ink/types/small_array.h"
 
 namespace ink::skia_common_internal {
@@ -53,11 +54,7 @@ struct MeshSpecificationData {
   //
   // Note that enumerators with equivalent names are given the same underlying
   // value to simplify passing the values across the JNI boundary.
-  enum class AttributeType {
-    kFloat2 = 1,
-    kFloat3 = 2,
-    kUByte4 = 4,
-  };
+  using AttributeType = ink::rendering::AttributeType;
   enum class VaryingType {
     kFloat2 = 1,
     kFloat4 = 3,
@@ -81,7 +78,7 @@ struct MeshSpecificationData {
     kPositionUnpackingTransform = 2,
     kSideDerivativeUnpackingTransform = 3,
     kForwardDerivativeUnpackingTransform = 4,
-    // The `BrushPaint::TextureMapping` value.
+    // The `std::variant::index()` of the `BrushPaint::TextureLayer` being used.
     // TODO: b/375203215 - Get rid of this uniform once we are able to mix
     // different texture mapping modes in a single `BrushPaint`.
     kTextureMapping = 5,

@@ -295,15 +295,34 @@ void WebRtcLoggingController::StopRtpDump(RtpDumpType type,
 }
 
 void WebRtcLoggingController::StartEventLogging(
+    webrtc_logging::ApiType api_type,
     const std::string& session_id,
     size_t max_log_size_bytes,
     int output_period_ms,
     size_t web_app_id,
-    const StartEventLoggingCallback& callback) {
+    StartEventLoggingCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  WebRtcEventLogManager::GetInstance()->StartRemoteLogging(
-      render_process_id_, session_id, max_log_size_bytes, output_period_ms,
-      web_app_id, callback);
+  if ((api_type == webrtc_logging::ApiType::kWeb &&
+       !IsWebApiDiagnosticLoggingStarted()) ||
+      !CanOperationProceedInWebApiMode()) {
+    std::move(callback).Run(false, "", "Invalid state");
+    return;
+  }
+
+  if (api_type == webrtc_logging::ApiType::kWeb &&
+      !web_api_settings_->should_upload_on_stop) {
+    // TODO(https://crbug.com/481412281): Add support for local event logging.
+    std::move(callback).Run(false, "", "Local event logging not supported");
+  } else {
+    std::optional<std::string> diagnostic_uuid;
+    if (api_type == webrtc_logging::ApiType::kWeb &&
+        web_api_settings_.has_value()) {
+      diagnostic_uuid = web_api_settings_->uuid;
+    }
+    WebRtcEventLogManager::GetInstance()->StartRemoteLogging(
+        render_process_id_, session_id, max_log_size_bytes, output_period_ms,
+        web_app_id, std::move(diagnostic_uuid), std::move(callback));
+  }
 }
 
 base::RepeatingCallback<void(const std::string&)>
@@ -571,7 +590,7 @@ void WebRtcLoggingController::DoUploadLogAndRtpDumps(
     }
 
     // Do not fire callback if it is null. Nesting null callbacks is not
-    // allowed, as it can lead to crashes. See https://crbug.com/1071475
+    // allowed, as it can lead to crashes. See https://crbug.com/40685126
     if (!callback.is_null()) {
       base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE, base::BindOnce(std::move(callback), false, "",
@@ -618,7 +637,7 @@ void WebRtcLoggingController::DoUploadLogAndRtpDumps(
   log_uploader->background_task_runner()->PostTask(
       FROM_HERE,
       base::BindOnce(
-          [](const std::string& content_name,
+          [](WebRtcLogUploadSite site,
              std::unique_ptr<WebRtcLogBuffer> log_buffer,
              std::unique_ptr<WebRtcLogMetaDataMap> meta_data,
              WebRtcLogUploader::UploadDoneData upload_done_data,
@@ -632,10 +651,10 @@ void WebRtcLoggingController::DoUploadLogAndRtpDumps(
               return;
             }
             uploader->OnLoggingStopped(
-                content_name, std::move(log_buffer), std::move(meta_data),
+                site, std::move(log_buffer), std::move(meta_data),
                 std::move(upload_done_data), is_text_log_upload_allowed);
           },
-          GetContentName(), std::move(log_buffer), std::move(meta_data),
+          GetUploadSite(), std::move(log_buffer), std::move(meta_data),
           std::move(upload_done_data), is_text_log_upload_allowed));
 }
 
@@ -706,24 +725,26 @@ webrtc_logging::ApiType WebRtcLoggingController::GetApiType() const {
                                        : webrtc_logging::ApiType::kExtension;
 }
 
-std::string WebRtcLoggingController::GetContentName() const {
+bool WebRtcLoggingController::IsWebApiDiagnosticLoggingStarted() const {
+  return web_api_settings_.has_value();
+}
+
+WebRtcLogUploadSite WebRtcLoggingController::GetUploadSite() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  static constexpr char kUploadSiteContentName[] = "webrtc_log";
-  static constexpr char kNonUploadSiteContentName[] = "other_webrtc_log";
   WebRtcLogUploader* uploader = WebRtcLogUploader::GetInstance();
   if (!uploader) {
-    return kNonUploadSiteContentName;
+    return WebRtcLogUploadSite::kCrossSite;
   }
   const url::Origin upload_site_origin =
       url::Origin::Create(uploader->upload_url());
   switch (GetApiType()) {
     case webrtc_logging::ApiType::kExtension:
-      return kUploadSiteContentName;
+      return WebRtcLogUploadSite::kSameSite;
     case webrtc_logging::ApiType::kWeb:
       return net::SchemefulSite::IsSameSite(web_api_settings_->origin,
                                             upload_site_origin)
-                 ? kUploadSiteContentName
-                 : kNonUploadSiteContentName;
+                 ? WebRtcLogUploadSite::kSameSite
+                 : WebRtcLogUploadSite::kCrossSite;
   }
 }
 

@@ -16,6 +16,7 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
+#include "base/types/zip.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/features.h"
 #include "content/browser/bad_message.h"
@@ -31,7 +32,7 @@
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/features_generated.h"
 #include "third_party/blink/public/common/permissions/permission_utils.h"
-#include "third_party/blink/public/mojom/permissions/permission.mojom-shared.h"
+#include "third_party/blink/public/mojom/permissions/permission.mojom.h"
 #include "third_party/blink/public/mojom/permissions/permission_status.mojom.h"
 #include "url/origin.h"
 
@@ -47,13 +48,25 @@ namespace content {
 
 namespace {
 
-// This function allows the usage of the the multiple request map with single
-// requests.
-void PermissionRequestResponseCallbackWrapper(
-    base::OnceCallback<void(PermissionStatusWithDetailsPtr)> callback,
-    std::vector<blink::mojom::PermissionStatusWithDetailsPtr> results) {
-  DCHECK_EQ(results.size(), 1ul);
-  std::move(callback).Run(std::move(results[0]));
+bool ValidatePermissionDescriptor(
+    const blink::mojom::PermissionDescriptorPtr& descriptor) {
+  if (!descriptor->extension) {
+    return true;
+  }
+  switch (descriptor->extension->which()) {
+    case blink::mojom::PermissionDescriptorExtension::Tag::kMidi:
+      return descriptor->name == PermissionName::MIDI;
+    case blink::mojom::PermissionDescriptorExtension::Tag::kClipboard:
+      return descriptor->name == PermissionName::CLIPBOARD_READ ||
+             descriptor->name == PermissionName::CLIPBOARD_WRITE;
+    case blink::mojom::PermissionDescriptorExtension::Tag::kCameraDevice:
+      return descriptor->name == PermissionName::VIDEO_CAPTURE;
+    case blink::mojom::PermissionDescriptorExtension::Tag::
+        kTopLevelStorageAccess:
+      return descriptor->name == PermissionName::TOP_LEVEL_STORAGE_ACCESS;
+    case blink::mojom::PermissionDescriptorExtension::Tag::kFullscreen:
+      return descriptor->name == PermissionName::FULLSCREEN;
+  }
 }
 
 // Helper converts given `PermissionStatus` to `EmbeddedPermissionControlResult`
@@ -74,12 +87,22 @@ PermissionStatusToEmbeddedPermissionControlResult(PermissionStatus status) {
 // Helper wraps `RequestPageEmbeddedPermissionCallback` to
 // `RequestPermissionsCallback`.
 void EmbeddedPermissionRequestCallbackWrapper(
+    PermissionStatus initial_status,
     base::OnceCallback<void(EmbeddedPermissionControlResult)> callback,
     const std::vector<PermissionResult>& results) {
   DCHECK(!results.empty());
   DCHECK(std::ranges::all_of(results, [&](auto const& result) {
     return results[0].status == result.status;
   }));
+
+  if (initial_status == results[0].status) {
+    // If the permission status did not change, the user dismissed the prompt
+    // (e.g. clicking 'Continue not allowing' on PREVIOUSLY_DENIED, or
+    // 'Continue allowing' on PREVIOUSLY_GRANTED).
+    std::move(callback).Run(EmbeddedPermissionControlResult::kDismissed);
+    return;
+  }
+
   std::move(callback).Run(
       PermissionStatusToEmbeddedPermissionControlResult(results[0].status));
 }
@@ -197,6 +220,10 @@ void PermissionServiceImpl::RegisterPageEmbeddedPermissionControl(
       web_contents->GetPrimaryPage());
   std::set<PermissionName> permission_names;
   for (const auto& permission : permissions) {
+    if (!ValidatePermissionDescriptor(permission)) {
+      ReceivedBadMessage();
+      return;
+    }
     // Check for duplicates, and ensure we're only handling permission types
     // which can be accessed through embedded controls:
     if (PermissionUtil::IsEmbeddablePermission(permission) &&
@@ -262,6 +289,10 @@ void PermissionServiceImpl::RequestPageEmbeddedPermission(
     return;
   }
 
+  if (!std::ranges::all_of(permissions, &ValidatePermissionDescriptor)) {
+    ReceivedBadMessage();
+    return;
+  }
   const base::Feature* required_feature = nullptr;
   switch (descriptor->detail->which()) {
     case blink::mojom::EmbeddedPermissionControlDescriptorExtension::Tag::
@@ -292,12 +323,15 @@ void PermissionServiceImpl::RequestPageEmbeddedPermission(
       return;
     }
 
+    PermissionStatus initial_status =
+        GetPermissionResultForCurrentContext(permissions[0]).status;
+
     RequestPermissionsInternal(
         browser_context,
         PermissionRequestDescription(std::move(permissions),
                                      std::move(descriptor)),
         base::BindOnce(&EmbeddedPermissionRequestCallbackWrapper,
-                       std::move(callback)));
+                       initial_status, std::move(callback)));
   }
 }
 
@@ -306,14 +340,24 @@ void PermissionServiceImpl::RequestPermission(
     RequestPermissionCallback callback) {
   std::vector<PermissionDescriptorPtr> permissions;
   permissions.push_back(std::move(permission));
-  RequestPermissions(std::move(permissions),
-                     base::BindOnce(&PermissionRequestResponseCallbackWrapper,
-                                    std::move(callback)));
+  RequestPermissions(
+      std::move(permissions),
+      base::BindOnce(
+          [](std::vector<blink::mojom::PermissionStatusWithDetailsPtr>
+                 results) {
+            CHECK_EQ(results.size(), 1ul);
+            return std::move(results[0]);
+          })
+          .Then(std::move(callback)));
 }
 
 void PermissionServiceImpl::RequestPermissions(
     std::vector<PermissionDescriptorPtr> permissions,
     RequestPermissionsCallback callback) {
+  if (!std::ranges::all_of(permissions, &ValidatePermissionDescriptor)) {
+    ReceivedBadMessage();
+    return;
+  }
   BrowserContext* browser_context = context_->GetBrowserContext();
   if (!browser_context) {
     return;
@@ -335,7 +379,7 @@ void PermissionServiceImpl::RequestPermissions(
     std::move(callback).Run(base::ToVector(
         permissions, [this](const PermissionDescriptorPtr& permission) {
           return PermissionUtil::ToPermissionStatusWithDetails(
-              GetPermissionResult(permission));
+              permission->name, GetPermissionResult(permission));
         }));
     return;
   }
@@ -345,20 +389,28 @@ void PermissionServiceImpl::RequestPermissions(
     return;
   }
 
+  PermissionRequestDescription permission_request_description(
+      mojo::Clone(permissions),
+      context_->render_frame_host()->HasTransientUserActivation());
   RequestPermissionsInternal(
-      browser_context,
-      PermissionRequestDescription(
-          std::move(permissions),
-          context_->render_frame_host()->HasTransientUserActivation()),
+      browser_context, std::move(permission_request_description),
       base::BindOnce(
           // TODO(crbug.com/494089503): Simplify this once the migration to
           // PermissionStatusWithDetails is complete.
-          [](RequestPermissionsCallback callback,
+          [](std::vector<PermissionDescriptorPtr> permissions,
              const std::vector<PermissionResult>& results) {
-            std::move(callback).Run(base::ToVector(
-                results, PermissionUtil::ToPermissionStatusWithDetails));
+            std::vector<PermissionStatusWithDetailsPtr> statuses;
+            statuses.reserve(results.size());
+            CHECK_EQ(permissions.size(), results.size());
+            for (auto&& [permission, result] :
+                 base::zip(permissions, results)) {
+              statuses.push_back(PermissionUtil::ToPermissionStatusWithDetails(
+                  permission->name, result));
+            }
+            return statuses;
           },
-          std::move(callback)));
+          std::move(permissions))
+          .Then(std::move(callback)));
 }
 
 void PermissionServiceImpl::RequestPermissionsInternal(
@@ -419,13 +471,21 @@ void PermissionServiceImpl::OnRequestPermissionsResponse(
 
 void PermissionServiceImpl::HasPermission(PermissionDescriptorPtr permission,
                                           HasPermissionCallback callback) {
+  if (!ValidatePermissionDescriptor(permission)) {
+    ReceivedBadMessage();
+    return;
+  }
   std::move(callback).Run(PermissionUtil::ToPermissionStatusWithDetails(
-      GetPermissionResult(permission)));
+      permission->name, GetPermissionResult(permission)));
 }
 
 void PermissionServiceImpl::RevokePermission(
     PermissionDescriptorPtr permission,
     RevokePermissionCallback callback) {
+  if (!ValidatePermissionDescriptor(permission)) {
+    ReceivedBadMessage();
+    return;
+  }
   auto permission_type =
       blink::MaybePermissionDescriptorToPermissionType(permission);
   if (!permission_type) {
@@ -437,21 +497,25 @@ void PermissionServiceImpl::RevokePermission(
   // Resetting the permission should only be possible if the permission is
   // already granted.
   if (result.status != PermissionStatus::GRANTED) {
-    std::move(callback).Run(
-        PermissionUtil::ToPermissionStatusWithDetails(result));
+    std::move(callback).Run(PermissionUtil::ToPermissionStatusWithDetails(
+        permission->name, result));
     return;
   }
 
   ResetPermissionStatus(*permission_type);
 
   std::move(callback).Run(PermissionUtil::ToPermissionStatusWithDetails(
-      GetPermissionResultForCurrentContext(permission)));
+      permission->name, GetPermissionResultForCurrentContext(permission)));
 }
 
 void PermissionServiceImpl::AddPermissionObserver(
     PermissionDescriptorPtr permission,
     blink::mojom::PermissionStatusWithDetailsPtr last_known_status,
     mojo::PendingRemote<blink::mojom::PermissionObserver> observer) {
+  if (!ValidatePermissionDescriptor(permission)) {
+    ReceivedBadMessage();
+    return;
+  }
   auto type = blink::MaybePermissionDescriptorToPermissionType(permission);
   if (!type) {
     ReceivedBadMessage();
@@ -468,6 +532,10 @@ void PermissionServiceImpl::AddPageEmbeddedPermissionObserver(
     PermissionDescriptorPtr permission,
     PermissionStatus last_known_status,
     mojo::PendingRemote<blink::mojom::PermissionObserver> observer) {
+  if (!ValidatePermissionDescriptor(permission)) {
+    ReceivedBadMessage();
+    return;
+  }
   auto type = blink::MaybePermissionDescriptorToPermissionType(permission);
   if (!type) {
     ReceivedBadMessage();
@@ -490,6 +558,10 @@ void PermissionServiceImpl::NotifyEventListener(
     blink::mojom::PermissionDescriptorPtr permission,
     const std::string& event_type,
     bool is_added) {
+  if (!ValidatePermissionDescriptor(permission)) {
+    ReceivedBadMessage();
+    return;
+  }
   auto type = blink::MaybePermissionDescriptorToPermissionType(permission);
   if (!type) {
     ReceivedBadMessage();

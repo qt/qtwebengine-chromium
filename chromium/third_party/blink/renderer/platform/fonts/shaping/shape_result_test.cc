@@ -5,6 +5,7 @@
 #include <array>
 
 #include "base/containers/span.h"
+#include "base/numerics/safe_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/fonts/font.h"
 #include "third_party/blink/renderer/platform/fonts/font_test_utilities.h"
@@ -12,6 +13,7 @@
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result_run.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result_spacing.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result_test_info.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/shape_result_view.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/testing/font_test_base.h"
@@ -403,7 +405,8 @@ Vector<float> RecordPositionBeforeApplyingSpacing(ShapeResult* result,
 
 Vector<OffsetWithSpacing, 16> RecordExpectedSpacing(
     const std::vector<wtf_size_t>& offsets_data) {
-  Vector<OffsetWithSpacing, 16> offsets(offsets_data.size());
+  Vector<OffsetWithSpacing, 16> offsets(
+      base::checked_cast<wtf_size_t>(offsets_data.size()));
   std::generate_n(offsets.begin(), offsets_data.size(), [&, i = -1]() mutable {
     ++i;
     return OffsetWithSpacing{.offset = offsets_data[i],
@@ -449,8 +452,8 @@ TEST_F(ShapeResultTest, DISABLED_ComputeInkBoundsWithNonZeroOffset) {
   EXPECT_FALSE(result->ComputeInkBounds().IsEmpty());
 }
 
-TEST_F(ShapeResultTest, LetterSpacingNotAppliedForCursiveScripts) {
-  // خطية النصية
+TEST_F(ShapeResultTest, LetterSpacingAppliedToSpacesInCursiveScripts) {
+  // خطية النصية (two Arabic words separated by a space)
   String string(
       u"\u062E\u0637\u0651\u064E\u064A\u0651\u064E\u0020"
       u"\u0627\u0644\u0646\u0651\u064E\u0635\u0651\u064E");
@@ -458,15 +461,32 @@ TEST_F(ShapeResultTest, LetterSpacingNotAppliedForCursiveScripts) {
   HarfBuzzShaper shaper(string);
   auto* result = shaper.Shape(GetFont(kArabicFont), TextDirection::kRtl);
 
-  // Letter spacing should not be applied.
+  // Letter spacing should not be applied to cursive characters, but is
+  // applied to the 'space' between words per CSS Text 4 §8.2.1.
   ShapeResultSpacing spacing(string);
   FontDescription font_description;
   font_description.SetLetterSpacing(Length::Fixed(5));
   font_description.SetWordSpacing(Length::Fixed(20));
   spacing.SetSpacing(font_description);
   result->ApplySpacing(spacing);
-  EXPECT_FALSE(spacing.IsLetterSpacingAppliedForTesting());
+  EXPECT_TRUE(spacing.IsLetterSpacingAppliedForTesting());
   EXPECT_TRUE(spacing.IsWordSpacingAppliedForTesting());
+}
+
+TEST_F(ShapeResultTest, LetterSpacingNotAppliedWithinCursiveWord) {
+  // خطية (single Arabic word with no spaces)
+  String string(u"\u062E\u0637\u0651\u064E\u064A\u0651\u064E");
+
+  HarfBuzzShaper shaper(string);
+  auto* result = shaper.Shape(GetFont(kArabicFont), TextDirection::kRtl);
+
+  // Letter spacing is not applied between cursive script characters.
+  ShapeResultSpacing spacing(string);
+  FontDescription font_description;
+  font_description.SetLetterSpacing(Length::Fixed(5));
+  spacing.SetSpacing(font_description);
+  result->ApplySpacing(spacing);
+  EXPECT_FALSE(spacing.IsLetterSpacingAppliedForTesting());
 }
 
 // Tests for CaretPositionForOffset
@@ -923,6 +943,41 @@ TEST_F(ShapeResultCursorTest, StartIndex) {
   EXPECT_EQ(cursor.glyph_index_, 2u);
   EXPECT_EQ(cursor.CharacterIndex(), 4u);
   EXPECT_EQ(cursor.GlyphData().glyph, 24u);
+}
+
+TEST_F(ShapeResultTest, ForEachGraphemeClustersBoundsCheck) {
+  ShapeResult* result =
+      MakeGarbageCollected<ShapeResult>(0, 10, TextDirection::kLtr);
+  result->InsertRunForTesting(0, 10, TextDirection::kLtr);
+  const String text = "0123456789";
+
+  struct Context {
+    Vector<unsigned> called_indices;
+  };
+  const auto callback = [](void* context_ptr, unsigned character_index,
+                           float total_advance, unsigned graphemes_in_cluster,
+                           float cluster_advance,
+                           CanvasRotationInVertical rotation) {
+    auto* ctx = static_cast<Context*>(context_ptr);
+    ctx->called_indices.push_back(character_index);
+  };
+  {
+    Context context;
+    result->ForEachGraphemeClusters(text, 0.0f, 0, 8, 0, callback, &context);
+    EXPECT_EQ(context.called_indices.size(), 8u);
+    for (unsigned i = 0; i < context.called_indices.size(); ++i) {
+      EXPECT_EQ(context.called_indices[i], i);
+    }
+  }
+  {
+    const ShapeResultView* view = ShapeResultView::Create(result);
+    Context context;
+    view->ForEachGraphemeClusters(text, 0.0f, 0, 8, 0, callback, &context);
+    EXPECT_EQ(context.called_indices.size(), 8u);
+    for (unsigned i = 0; i < 8; ++i) {
+      EXPECT_EQ(context.called_indices[i], i);
+    }
+  }
 }
 
 }  // namespace blink

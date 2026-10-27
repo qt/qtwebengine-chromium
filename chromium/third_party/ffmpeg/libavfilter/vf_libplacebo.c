@@ -1114,6 +1114,8 @@ props_done:
     struct pl_render_params tmp_params = opts->params;
     for (int i = 0; i < s->nb_inputs; i++) {
         LibplaceboInput *in = &s->inputs[i];
+        if (!in->renderer)
+            continue; /* input was already freed */
         FilterLink *il = ff_filter_link(ctx->inputs[i]);
         FilterLink *ol = ff_filter_link(outlink);
         int high_fps = av_cmp_q(il->frame_rate, ol->frame_rate) >= 0;
@@ -1293,6 +1295,9 @@ static int libplacebo_activate(AVFilterContext *ctx)
             LibplaceboInput *in = &s->inputs[i];
             FilterLink *l = ff_filter_link(outlink);
             if (in->status && out_pts >= in->status_pts) {
+                /* Free up resources which will never be needed again */
+                pl_renderer_destroy(&in->renderer);
+                pl_queue_destroy(&in->queue);
                 in->qstatus = PL_QUEUE_EOF;
                 continue;
             }
@@ -1494,9 +1499,9 @@ static int libplacebo_config_output(AVFilterLink *outlink)
         }
     }
 
-    ff_scale_adjust_dimensions(inlink, &outlink->w, &outlink->h,
-                               force_oar, s->force_divisible_by,
-                               s->reset_sar ? sar_in : 1.0);
+    RET(ff_scale_adjust_dimensions(inlink, &outlink->w, &outlink->h,
+                                   force_oar, s->force_divisible_by,
+                                   s->reset_sar ? sar_in : 1.0));
 
     if (s->fit_mode == FIT_SCALE_DOWN && s->fit_sense == FIT_CONSTRAINT) {
         int w_adj = s->reset_sar ? sar_in * inlink->w : inlink->w;

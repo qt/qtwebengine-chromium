@@ -112,7 +112,7 @@ exports.default = (0, util_1.createRule)({
                 return innerType.types.some(recursivelyCheckType);
             }
             return ((0, util_1.isTypeFlagSet)(innerType, typescript_1.TypeFlags.StringLike) ||
-                (0, type_utils_1.typeMatchesSomeSpecifier)(innerType, allow, program) ||
+                (0, util_1.matchesTypeOrBaseType)(services, type => (0, type_utils_1.typeMatchesSomeSpecifier)(type, allow, program), innerType) ||
                 enabledOptionTesters.some(({ tester }) => tester(innerType, checker, recursivelyCheckType)));
         }
     },

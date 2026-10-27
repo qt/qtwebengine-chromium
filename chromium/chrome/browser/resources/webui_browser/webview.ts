@@ -6,9 +6,8 @@ import {assert} from '//resources/js/assert.js';
 import {loadTimeData} from '//resources/js/load_time_data.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 
+import {browserProxyFactory, GuestHandlerRemote} from './browser.mojom-webui.js';
 import type {SecurityIcon} from './browser.mojom-webui.js';
-import {GuestHandlerRemote} from './browser.mojom-webui.js';
-import {BrowserProxy} from './browser_proxy.js';
 import {getCss} from './webview.css.js';
 import {getHtml} from './webview.html.js';
 
@@ -112,7 +111,11 @@ export class TabWebviewElement extends WebviewElement {
   setActive(active: boolean) {
     if (active) {
       this.classList.add('active');
-      this.getContentElement().focus();
+      const content = this.shadowRoot.querySelector<HTMLElement>('.content');
+      // The .content element might not be available during browser startup.
+      if (content) {
+        content.focus();
+      }
     } else {
       this.classList.remove('active');
     }
@@ -128,7 +131,8 @@ export class TabWebviewElement extends WebviewElement {
   }
 
   private attachTabContents() {
-    BrowserProxy.getPageHandler()
+    browserProxyFactory.getInstance()
+        .handler
         .getGuestIdForTabId(
             this.tabId, this.guestHandler.$.bindNewPipeAndPassReceiver())
         .then(({guestId}) => {

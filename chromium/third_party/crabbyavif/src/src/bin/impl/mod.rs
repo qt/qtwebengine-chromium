@@ -27,14 +27,6 @@ use crabby_avif::utils::IFraction;
 use crabby_avif::utils::UFraction;
 use crabby_avif::*;
 
-#[cfg(all(feature = "encoder", feature = "gif"))]
-use crabby_avif::utils::reader::gif::GifReader;
-#[cfg(all(feature = "encoder", feature = "jpeg"))]
-use crabby_avif::utils::reader::jpeg::JpegReader;
-#[cfg(all(feature = "encoder", feature = "png"))]
-use crabby_avif::utils::reader::png::PngReader;
-#[cfg(feature = "encoder")]
-use crabby_avif::utils::reader::y4m::Y4MReader;
 #[cfg(feature = "encoder")]
 use crabby_avif::utils::reader::Config;
 #[cfg(feature = "encoder")]
@@ -742,21 +734,7 @@ fn read_file(filepath: &String) -> io::Result<Vec<u8>> {
 #[cfg(feature = "encoder")]
 fn encode(args: &CommandLineArgs, input_file: &str, output_file: &str) -> AvifResult<()> {
     const DEFAULT_ENCODE_QUALITY: f32 = 90.0;
-    let input_extension = get_extension(input_file);
-    let mut reader: Box<dyn Reader> = match input_extension.as_str() {
-        "y4m" => Box::new(Y4MReader::create(input_file)?),
-        #[cfg(feature = "jpeg")]
-        "jpg" | "jpeg" => Box::new(JpegReader::create(input_file)?),
-        #[cfg(feature = "png")]
-        "png" => Box::new(PngReader::create(input_file)?),
-        #[cfg(feature = "gif")]
-        "gif" => Box::new(GifReader::create(input_file)?),
-        _ => {
-            return Err(AvifError::UnknownError(format!(
-                "Unknown input file extension ({input_extension})"
-            )));
-        }
-    };
+    let mut reader = <dyn Reader>::create(input_file)?;
     let reader_config = Config {
         yuv_format: args.yuv_format,
         depth: args.depth,

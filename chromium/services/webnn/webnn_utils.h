@@ -67,6 +67,12 @@ std::vector<uint32_t> COMPONENT_EXPORT(WEBNN_SERVICE)
 webnn::Pool2dKind COMPONENT_EXPORT(WEBNN_SERVICE)
     FromMojoPool2dType(mojom::Pool2d::Kind kind);
 
+webnn::ReduceKind COMPONENT_EXPORT(WEBNN_SERVICE)
+    FromMojoReduceType(mojom::Reduce::Kind kind);
+
+webnn::PaddingMode COMPONENT_EXPORT(WEBNN_SERVICE)
+    FromMojoPaddingMode(mojom::PaddingMode::Tag tag);
+
 }  // namespace webnn
 
 #endif  // SERVICES_WEBNN_WEBNN_UTILS_H_

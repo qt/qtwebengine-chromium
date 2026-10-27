@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 Array44i a = Array44i::Random();
 cout << "Here is the array a:" << endl << a << endl;
 cout << "Here is a.rightCols(2):" << endl;

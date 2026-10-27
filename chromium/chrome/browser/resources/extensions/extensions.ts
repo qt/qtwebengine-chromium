@@ -4,6 +4,7 @@
 
 import './manager.js';
 
+export {COLORS_CSS_SELECTOR} from 'chrome://resources/cr_components/color_change_listener/colors_css_updater.js';
 export {CrCheckboxElement} from 'chrome://resources/cr_elements/cr_checkbox/cr_checkbox.js';
 export {CrIconElement} from 'chrome://resources/cr_elements/cr_icon/cr_icon.js';
 export {getToastManager} from 'chrome://resources/cr_elements/cr_toast/cr_toast_manager.js';
@@ -34,7 +35,6 @@ export {LoadErrorElement} from './load_error.js';
 export {ExtensionsManagerElement} from './manager.js';
 export {UserAction} from './metrics_util.js';
 export {ExtensionsMv2DeprecationPanelElement} from './mv2_deprecation_panel.js';
-export {Mv2ExperimentStage} from './mv2_deprecation_util.js';
 export type {PageState} from './navigation_helper.js';
 export {Dialog, navigation, NavigationHelper, Page} from './navigation_helper.js';
 export {ExtensionsOptionsDialogElement, OptionsDialogMaxHeight, OptionsDialogMinWidth} from './options_dialog.js';

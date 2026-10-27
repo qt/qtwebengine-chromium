@@ -141,6 +141,7 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   private inspectedTabId?: string;
   private readonly extensionAPITestHook?: (server: unknown, api: unknown) => unknown;
   private themeChangeHandlers = new Map<string, MessagePort>();
+  private readonly recorderViewPortMap: Map<string, MessagePort>;
   readonly #pendingExtensions: Host.InspectorFrontendHostAPI.ExtensionDescriptor[] = [];
 
   private constructor() {
@@ -148,6 +149,7 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     this.clientObjects = new Map();
     this.handlers = new Map();
     this.subscribers = new Map();
+    this.recorderViewPortMap = new Map();
     this.subscriptionStartHandlers = new Map();
     this.subscriptionStopHandlers = new Map();
     this.extraHeaders = new Map();
@@ -430,8 +432,10 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
           'command', `expected ${Extensions.ExtensionAPI.PrivateAPI.Commands.RegisterRecorderExtensionPlugin}`);
     }
     const {pluginName, mediaType, port, capabilities} = message;
+    const extensionOrigin = this.getExtensionOrigin(_shared_port);
     Extensions.RecorderPluginManager.RecorderPluginManager.instance().addPlugin(
-        new Extensions.RecorderExtensionEndpoint.RecorderExtensionEndpoint(pluginName, port, capabilities, mediaType));
+        new Extensions.RecorderExtensionEndpoint.RecorderExtensionEndpoint(
+            pluginName, port, capabilities, extensionOrigin, mediaType));
     return this.status.OK();
   }
 
@@ -483,11 +487,14 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     return this.status.OK();
   }
 
-  private onShowRecorderView(message: Extensions.ExtensionAPI.PrivateAPI.ExtensionServerRequestMessage): Record
-      |undefined {
+  private onShowRecorderView(
+      message: Extensions.ExtensionAPI.PrivateAPI.ExtensionServerRequestMessage, port: MessagePort): Record|undefined {
     if (message.command !== Extensions.ExtensionAPI.PrivateAPI.Commands.ShowRecorderView) {
       return this.status.E_BADARG(
           'command', `expected ${Extensions.ExtensionAPI.PrivateAPI.Commands.ShowRecorderView}`);
+    }
+    if (this.recorderViewPortMap.get(message.id) !== port) {
+      return this.status.E_FAILED('Permission denied');
     }
     Extensions.RecorderPluginManager.RecorderPluginManager.instance().showView(message.id);
     return undefined;
@@ -516,7 +523,8 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
       return this.status.E_EXISTS(id);
     }
 
-    const pagePath = ExtensionServer.expandResourcePath(this.getExtensionOrigin(port), message.pagePath);
+    const extensionOrigin = this.getExtensionOrigin(port);
+    const pagePath = ExtensionServer.expandResourcePath(extensionOrigin, message.pagePath);
     if (pagePath === undefined) {
       return this.status.E_BADARG('pagePath', 'Resources paths cannot point to non-extension resources');
     }
@@ -528,7 +536,9 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
       title: message.title,
       onShown,
       onHidden,
+      extensionOrigin,
     });
+    this.recorderViewPortMap.set(id, port);
     return this.status.OK();
   }
 
@@ -614,15 +624,25 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     return undefined;
   }
 
-  private onAddRequestHeaders(message: Extensions.ExtensionAPI.PrivateAPI.ExtensionServerRequestMessage): Record
-      |undefined {
+  private onAddRequestHeaders(
+      message: Extensions.ExtensionAPI.PrivateAPI.ExtensionServerRequestMessage, port: MessagePort): Record|undefined {
     if (message.command !== Extensions.ExtensionAPI.PrivateAPI.Commands.AddRequestHeaders) {
       return this.status.E_BADARG(
           'command', `expected ${Extensions.ExtensionAPI.PrivateAPI.Commands.AddRequestHeaders}`);
     }
-    const id = message.extensionId;
-    if (typeof id !== 'string') {
-      return this.status.E_BADARGTYPE('extensionId', typeof id, 'string');
+    // Use the authenticated port origin instead of the caller-supplied extensionId to
+    // prevent one extension from manipulating another extension's header set.
+    const id = this.getExtensionOrigin(port);
+    const extension = this.registeredExtensions.get(id);
+    if (!extension) {
+      return this.status.E_FAILED('Permission denied');
+    }
+    // Refuse the request if the extension has any runtime_blocked_hosts policy entries.
+    // MultitargetNetworkManager fans out setExtraHTTPHeaders to every attached network
+    // agent (including OOPIF/subframe targets), so there is no safe per-target URL check
+    // here. Blocking the call when blocked hosts exist is the minimal safe mitigation.
+    if (extension.hostsPolicy.runtimeBlockedHosts.length > 0) {
+      return this.status.E_FAILED('Permission denied');
     }
     let extensionHeaders = this.extraHeaders.get(id);
     if (!extensionHeaders) {
@@ -977,8 +997,6 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     }
     const options = (message.options || {});
 
-    SDK.NetworkManager.MultitargetNetworkManager.instance().setUserAgentOverride(
-        typeof options.userAgent === 'string' ? options.userAgent : '', null);
     let injectedScript;
     if (options.injectedScript) {
       injectedScript = '(function(){' + options.injectedScript + '})()';
@@ -991,6 +1009,11 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     if (!this.extensionAllowedOnTarget(target, port)) {
       return this.status.E_FAILED('Permission denied');
     }
+    // Apply the UA override only after confirming the extension is allowed on this target,
+    // so that extensions blocked by runtime_blocked_hosts cannot override the UA for the
+    // primary page (and, via singleton persistence, for future targets that attach later).
+    SDK.NetworkManager.MultitargetNetworkManager.instance().setUserAgentOverride(
+        typeof options.userAgent === 'string' ? options.userAgent : '', null);
     resourceTreeModel?.reloadPage(Boolean(options.ignoreCache), injectedScript);
     return this.status.OK();
   }

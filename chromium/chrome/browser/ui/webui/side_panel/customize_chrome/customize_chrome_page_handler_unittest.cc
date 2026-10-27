@@ -24,9 +24,9 @@
 #include "chrome/browser/global_features.h"
 #include "chrome/browser/new_tab_page/modules/modules_constants.h"
 #include "chrome/browser/new_tab_page/modules/new_tab_page_modules.h"
+#include "chrome/browser/new_tab_page/ntp_pref_names.h"
 #include "chrome/browser/search/background/ntp_background_service_factory.h"
 #include "chrome/browser/search/background/ntp_custom_background_service.h"
-#include "chrome/browser/search/background/ntp_custom_background_service_observer.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_engines/template_url_service_factory_test_util.h"
 #include "chrome/browser/themes/theme_service.h"
@@ -35,7 +35,6 @@
 #include "chrome/browser/ui/color/chrome_color_id.h"
 #include "chrome/browser/ui/search/ntp_user_data_types.h"
 #include "chrome/browser/ui/select_file_policy/chrome_select_file_policy.h"
-#include "chrome/browser/ui/webui/new_tab_page/ntp_pref_names.h"
 #include "chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome.mojom.h"
 #include "chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_section.h"
 #include "chrome/common/pref_names.h"
@@ -53,6 +52,7 @@
 #include "components/search/ntp_features.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/themes/ntp_background_data.h"
+#include "components/themes/ntp_custom_background_service_observer.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/scoped_web_ui_controller_factory_registration.h"
@@ -1173,13 +1173,13 @@ TEST_F(CustomizeChromePageHandlerTest, AttachedTabStateUpdated) {
           {side_panel::mojom::NewTabPageType::kNone,
            GURL("chrome-extension://someinvaldextension/index.html")},
           {side_panel::mojom::NewTabPageType::kFirstPartyWebUI,
-           GURL(chrome::kChromeUINewTabPageURL)},
+           chrome::ChromeUINewTabPageURLAsGURL()},
           {side_panel::mojom::NewTabPageType::kThirdPartyWebUI,
            GURL(chrome::kChromeUINewTabPageThirdPartyURL)},
           {side_panel::mojom::NewTabPageType::kIncognito,
-           GURL(chrome::kChromeUINewTabURL)},
+           chrome::ChromeUINewTabURLAsGURL()},
           {side_panel::mojom::NewTabPageType::kGuestMode,
-           GURL(chrome::kChromeUINewTabURL)}};
+           chrome::ChromeUINewTabURLAsGURL()}};
 
   for (const auto& ntp_type_and_url : ntp_types_and_urls) {
     if (ntp_type_and_url.first ==

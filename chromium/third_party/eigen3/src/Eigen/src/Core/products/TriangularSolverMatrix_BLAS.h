@@ -29,6 +29,7 @@
  *   Triangular matrix * matrix product functionality based on ?TRMM.
  ********************************************************************************
 */
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef EIGEN_TRIANGULAR_SOLVER_MATRIX_BLAS_H
 #define EIGEN_TRIANGULAR_SOLVER_MATRIX_BLAS_H

@@ -26,7 +26,7 @@
 #include "cc/test/fake_layer_tree_host.h"
 #include "cc/test/fake_rendering_stats_instrumentation.h"
 #include "cc/test/layer_test_common.h"
-#include "cc/test/stub_layer_tree_host_single_thread_client.h"
+#include "cc/test/stub_layer_tree_host_single_thread_delegate.h"
 #include "cc/test/test_task_graph_runner.h"
 #include "cc/trees/compositor_commit_data.h"
 #include "cc/trees/effect_node.h"
@@ -123,10 +123,10 @@ class TreeSynchronizerTest : public testing::Test {
     // on animation_host_ that was installed by the newly created
     // LayerTreeHost.
     host_.reset();
-    host_ = FakeLayerTreeHost::Create(&client_, &task_graph_runner_,
+    host_ = FakeLayerTreeHost::Create(&delegate_, &task_graph_runner_,
                                       animation_host_.get(), settings);
     host_->InitializeSingleThreaded(
-        &single_thread_client_,
+        &single_thread_delegate_,
         base::SingleThreadTaskRunner::GetCurrentDefault());
     host_->host_impl()->CreatePendingTree();
   }
@@ -168,8 +168,8 @@ class TreeSynchronizerTest : public testing::Test {
 
   const FakeLayerTreeHost* const_host() const { return host_.get(); }
 
-  FakeLayerTreeHostClient client_;
-  StubLayerTreeHostSingleThreadClient single_thread_client_;
+  FakeLayerTreeHostDelegate delegate_;
+  StubLayerTreeHostSingleThreadDelegate single_thread_delegate_;
   TestTaskGraphRunner task_graph_runner_;
   std::unique_ptr<AnimationHost> animation_host_;
   std::unique_ptr<FakeLayerTreeHost> host_;
@@ -370,7 +370,8 @@ TEST_F(TreeSynchronizerTest, SyncSimpleTreeAndTrackStackingOrderChange) {
                           host_->active_tree());
 
   host_->active_tree()->SetPropertyTrees(
-      *layer_tree_root->layer_tree_host()->property_trees());
+      *layer_tree_root->layer_tree_host()->property_trees(),
+      layer_tree_root->layer_tree_host()->viewport_property_ids());
   TreeSynchronizer::PushLayerProperties(
       *host_->GetPendingCommitState(),
       const_cast<const FakeLayerTreeHost*>(host_.get())
@@ -607,7 +608,7 @@ TEST_F(TreeSynchronizerTest, SyncMaskLayer) {
 
 TEST_F(TreeSynchronizerTest, SynchronizeCurrentlyScrollingNode) {
   LayerTreeSettings settings;
-  FakeLayerTreeHostImplClient client;
+  FakeLayerTreeHostImplDelegate delegate;
   FakeImplTaskRunnerProvider task_runner_provider;
   FakeRenderingStatsInstrumentation stats_instrumentation;
   TestTaskGraphRunner task_graph_runner;
@@ -634,10 +635,11 @@ TEST_F(TreeSynchronizerTest, SynchronizeCurrentlyScrollingNode) {
                           host_impl->active_tree()->root_layer(),
                           host_impl->active_tree());
 
-  ScrollNode* scroll_node =
-      host_impl->active_tree()->property_trees()->scroll_tree_mutable().Node(
-          scroll_layer->scroll_tree_index());
-  host_impl->active_tree()->SetCurrentlyScrollingNode(scroll_node);
+  ScrollNode& scroll_node = host_impl->active_tree()
+                                ->property_trees()
+                                ->scroll_tree_mutable()
+                                .MutableNode(scroll_layer->scroll_tree_index());
+  host_impl->active_tree()->SetCurrentlyScrollingNode(&scroll_node);
   transient_scroll_layer->SetScrollable(gfx::Size(0, 0));
   host_->BuildPropertyTreesForTesting();
 
@@ -651,7 +653,7 @@ TEST_F(TreeSynchronizerTest, SynchronizeCurrentlyScrollingNode) {
 
 TEST_F(TreeSynchronizerTest, SynchronizeScrollTreeScrollOffsetMap) {
   LayerTreeSettings settings;
-  FakeLayerTreeHostImplClient client;
+  FakeLayerTreeHostImplDelegate delegate;
   FakeImplTaskRunnerProvider task_runner_provider;
   FakeRenderingStatsInstrumentation stats_instrumentation;
   TestTaskGraphRunner task_graph_runner;
@@ -732,8 +734,9 @@ TEST_F(TreeSynchronizerTest, SynchronizeScrollTreeScrollOffsetMap) {
   // More update to ScrollOffset active delta: gfx::Vector2dF(20, 20)
   scroll_tree.SetScrollOffset(scroll_layer_impl->element_id(),
                               gfx::PointF(40, 50));
+  // TODO(500458345): Convert this to const ref.
   host_impl->active_tree()->SetCurrentlyScrollingNode(
-      scroll_tree.Node(scroll_layer_impl->scroll_tree_index()));
+      &scroll_tree.Node(scroll_layer_impl->scroll_tree_index()));
 
   // Change the scroll tree topology by removing transient_scroll_layer.
   transient_scroll_layer->RemoveFromParent();
@@ -766,7 +769,7 @@ TEST_F(TreeSynchronizerTest, SynchronizeScrollTreeScrollOffsetMap) {
 
 TEST_F(TreeSynchronizerTest, RefreshPropertyTreesCachedData) {
   LayerTreeSettings settings;
-  FakeLayerTreeHostImplClient client;
+  FakeLayerTreeHostImplDelegate delegate;
   FakeImplTaskRunnerProvider task_runner_provider;
   FakeRenderingStatsInstrumentation stats_instrumentation;
   TestTaskGraphRunner task_graph_runner;

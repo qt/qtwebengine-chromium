@@ -1,0 +1,31 @@
+// Copyright 2019 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+import * as Root from '../../core/root/root.js';
+
+import type {App} from './App.js';
+
+export interface AppProvider {
+  createApp(): App;
+}
+
+const registeredAppProvider: AppProviderRegistration[] = [];
+
+export function registerAppProvider(registration: AppProviderRegistration): void {
+  registeredAppProvider.push(registration);
+}
+export function getRegisteredAppProviders(): AppProviderRegistration[] {
+  return registeredAppProvider
+      .filter(provider => Root.Runtime.Runtime.isDescriptorEnabled({condition: provider.condition}))
+      .sort((firstProvider, secondProvider) => {
+        const order1 = firstProvider.order || 0;
+        const order2 = secondProvider.order || 0;
+        return order1 - order2;
+      });
+}
+export interface AppProviderRegistration {
+  loadAppProvider: () => Promise<AppProvider>;
+  condition?: Root.Runtime.Condition;
+  order: number;
+}

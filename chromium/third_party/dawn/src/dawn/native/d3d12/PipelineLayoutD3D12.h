@@ -30,12 +30,12 @@
 
 #include <vector>
 
-#include "dawn/common/Constants.h"
-#include "dawn/common/ityp_array.h"
-#include "dawn/common/ityp_vector.h"
-#include "dawn/native/BindingInfo.h"
-#include "dawn/native/PipelineLayout.h"
-#include "dawn/native/d3d12/d3d12_platform.h"
+#include "src/dawn/common/Constants.h"
+#include "src/dawn/common/ityp_array.h"
+#include "src/dawn/common/ityp_vector.h"
+#include "src/dawn/native/BindingInfo.h"
+#include "src/dawn/native/PipelineLayout.h"
+#include "src/dawn/native/d3d12/d3d12_platform.h"
 
 namespace dawn::native::d3d12 {
 
@@ -47,7 +47,8 @@ class PipelineLayout final : public PipelineLayoutBase {
         Device* device,
         const UnpackedPtr<PipelineLayoutDescriptor>& descriptor);
 
-    uint32_t GetResourceTableRootParameterIndex() const;
+    uint32_t GetResourceTableCbvUavSrvRootParameterIndex() const;
+    uint32_t GetResourceTableSamplerRootParameterIndex() const;
     uint32_t GetBaseResourceTableRegisterSpace() const;
 
     uint32_t GetCbvUavSrvRootParameterIndex(BindGroupIndex group) const;
@@ -118,7 +119,8 @@ class PipelineLayout final : public PipelineLayoutBase {
     PerBindGroup<uint32_t> mSamplerRootParameterIndices;
     PerBindGroup<ityp::vector<BindingIndex, uint32_t>> mDynamicUniformRootParameterIndices;
     DynamicStorageBufferInfo mDynamicStorageBufferInfo;
-    uint32_t mResourceTableRootParameterIndex;
+    uint32_t mResourceTableCbvUavSrvRootParameterIndex;
+    uint32_t mResourceTableSamplerRootParameterIndex;
     uint32_t mFirstIndexOffsetParameterIndex;
     uint32_t mNumWorkgroupsParameterIndex;
     uint32_t mDynamicStorageBufferLengthsParameterIndex;

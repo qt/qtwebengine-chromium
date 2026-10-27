@@ -19,6 +19,7 @@ GPU_CONFIG_EXPORT extern const char kIgnoreGpuBlocklist[];
 GPU_CONFIG_EXPORT extern const char kGpuDiskCacheSizeKB[];
 GPU_CONFIG_EXPORT extern const char kDisableGpuShaderDiskCache[];
 GPU_CONFIG_EXPORT extern const char kDisableGpuProcessForDX12InfoCollection[];
+GPU_CONFIG_EXPORT extern const char kEnableWebGLDraftExtensions[];
 GPU_CONFIG_EXPORT extern const char kEnableUnsafeWebGPU[];
 GPU_CONFIG_EXPORT extern const char kForceHighPerformanceGPU[];
 GPU_CONFIG_EXPORT extern const char kEnableWebGPUDeveloperFeatures[];
@@ -55,7 +56,6 @@ GPU_CONFIG_EXPORT extern const char kDisableSkiaGraphite[];
 GPU_CONFIG_EXPORT extern const char kEnableSkiaGraphite[];
 GPU_CONFIG_EXPORT extern const char kDisableSkiaGraphitePrecompilation[];
 GPU_CONFIG_EXPORT extern const char kEnableSkiaGraphitePrecompilation[];
-GPU_CONFIG_EXPORT extern const char kUseRedistributableDirectML[];
 GPU_CONFIG_EXPORT extern const char kEnableGpuMainTimeKeeperMetrics[];
 GPU_CONFIG_EXPORT extern const char kSuppressPerformanceLogs[];
 

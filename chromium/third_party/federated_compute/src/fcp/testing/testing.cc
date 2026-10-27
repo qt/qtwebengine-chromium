@@ -47,7 +47,7 @@ std::string TestCaseName() {
 std::string GetTestDataPath(absl::string_view relative_path) {
   auto env = getenv("TEST_SRCDIR");
   std::string test_srcdir = env ? env : "";
-  return ConcatPath(test_srcdir, ConcatPath("com_google_fcp", relative_path));
+  return ConcatPath(test_srcdir, ConcatPath("_main", relative_path));
 }
 
 std::string TemporaryTestFile(absl::string_view suffix) {
@@ -191,8 +191,8 @@ absl::StatusOr<std::string> ComputeDiff(absl::string_view baseline_file,
   return diff_result;
 }
 
-StatusOr<std::string> VerifyAgainstBaseline(absl::string_view baseline_file,
-                                            absl::string_view content) {
+absl::StatusOr<std::string> VerifyAgainstBaseline(
+    absl::string_view baseline_file, absl::string_view content) {
   auto status_or_diff_result = ComputeDiff(baseline_file, content);
   if (!status_or_diff_result.ok()) {
     return status_or_diff_result;
@@ -251,8 +251,5 @@ StatusOr<std::string> VerifyAgainstBaseline(absl::string_view baseline_file,
   }
   return diff_result;
 }
-
-StatusMatcher IsCode(StatusCode code) { return StatusMatcher(code); }
-StatusMatcher IsOk() { return IsCode(OK); }
 
 }  // namespace fcp

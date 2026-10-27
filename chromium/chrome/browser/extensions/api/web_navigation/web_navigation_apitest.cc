@@ -80,9 +80,8 @@
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/renderer_context_menu/render_view_context_menu_test_util.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_navigator_params.h"
+#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+#include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/test/base/ui_test_utils.h"
 #endif
 
@@ -133,7 +132,7 @@ class DelayLoadStartAndExecuteJavascript : public content::WebContentsObserver {
     explicit TabHelper(DelayLoadStartAndExecuteJavascript* owner)
         : owner_(owner) {
       // Assume only one window open, which is fine for these tests.
-      CHECK_EQ(chrome::GetTotalBrowserCount(), 1u);
+      CHECK_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
       BrowserWindowInterface* const browser =
           GetLastActiveBrowserWindowInterfaceWithAnyProfile();
       browser->GetTabStripModel()->AddObserver(this);
@@ -570,7 +569,14 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, ServerRedirectSingleProcess) {
 }
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
-IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, ForwardBack) {
+// TODO(crbug.com/511975946): Fix flaky test.
+// TODO(crbug.com/510034821): Fix flaky test.
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#define MAYBE_ForwardBack DISABLED_ForwardBack
+#else
+#define MAYBE_ForwardBack ForwardBack
+#endif
+IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, MAYBE_ForwardBack) {
   ASSERT_TRUE(RunTest("webnavigation/forwardBack")) << message_;
 }
 
@@ -582,7 +588,7 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiBackForwardCacheTest,
 }
 
 #if BUILDFLAG(IS_MAC) && defined(ARCH_CPU_ARM64)
-// https://crbug.com/1223028
+// https://crbug.com/40187444
 #define MAYBE_IFrame DISABLED_IFrame
 #else
 #define MAYBE_IFrame IFrame

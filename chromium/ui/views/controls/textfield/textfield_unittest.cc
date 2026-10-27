@@ -2323,7 +2323,8 @@ TEST_F(TextfieldTest, DragAndDrop_AcceptDrop) {
   bad_data.SetFilename(base::FilePath(FILE_PATH_LITERAL("x")));
   ui::ClipboardFormatType fmt = ui::ClipboardFormatType::BitmapType();
   bad_data.SetPickledData(fmt, base::Pickle());
-  bad_data.SetFileContents(base::FilePath(L"x"), "x");
+  bad_data.SetFileContents(base::FilePath(L"x"),
+                           base::byte_span_from_cstring("x"));
   bad_data.SetHtml(std::u16string(u"x"), GURL("x.org"));
   ui::DownloadFileInfo download(base::FilePath(), nullptr);
   bad_data.provider().SetDownloadFileInfo(&download);
@@ -4450,6 +4451,10 @@ TEST_F(TextfieldTest, SetAccessibleNameNotifiesAccessibilityEvent) {
   EXPECT_EQ(data.GetNameFrom(), ax::mojom::NameFrom::kAttribute);
 }
 
+// TODO(crbug.com/40672441): Remove this once ViewsAX is enabled on Windows.
+// kTextChanged from SetValue() is only fired on Windows so that UIA fires
+// UIA_Text_TextChangedEventId.
+#if BUILDFLAG(IS_WIN)
 // Changing the value of the textfield should trigger a kTextChanged event.
 TEST_F(TextfieldTest, SetValueAccessibilityEvents) {
   InitTextfield();
@@ -4460,6 +4465,7 @@ TEST_F(TextfieldTest, SetValueAccessibilityEvents) {
   EXPECT_EQ(1, counter.GetCount(ax::mojom::Event::kTextChanged));
   EXPECT_EQ(value, textfield_->GetViewAccessibility().GetValue());
 }
+#endif
 
 #if BUILDFLAG(IS_WIN)
 TEST_F(TextfieldTest, AccessibilityAttributes) {

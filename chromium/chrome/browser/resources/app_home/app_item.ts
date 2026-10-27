@@ -9,12 +9,16 @@ import type {CrActionMenuElement} from '//resources/cr_elements/cr_action_menu/c
 import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import type {AppInfo, ClickEvent} from './app_home.mojom-webui.js';
-import {AppType, RunOnOsLoginMode} from './app_home.mojom-webui.js';
+import {AppType, browserProxyFactory, RunOnOsLoginMode} from './app_home.mojom-webui.js';
 import {AppHomeUserAction, recordUserAction} from './app_home_utils.js';
 import {getCss} from './app_item.css.js';
 import {getHtml} from './app_item.html.js';
-import {BrowserProxy} from './browser_proxy.js';
 import {UserDisplayMode} from './user_display_mode.mojom-webui.js';
+
+interface ItemPosition {
+  top: number;
+  left: number;
+}
 
 export interface AppItemElement {
   $: {
@@ -85,7 +89,7 @@ export class AppItemElement extends CrLitElement {
     e.stopPropagation();
   }
 
-  private isValidPosition(position: any) {
+  private isValidPosition(position: ItemPosition) {
     const rect = this.shadowRoot.getElementById(
                                     'objectContainer')!.getBoundingClientRect();
     if (!rect) {
@@ -97,7 +101,7 @@ export class AppItemElement extends CrLitElement {
         position.left >= rect.left && position.left <= rect.right);
   }
 
-  private getPositionForEvent_(e: Event) {
+  private getPositionForEvent_(e: Event): ItemPosition {
     if (e instanceof MouseEvent) {
       return {top: e.clientY, left: e.clientX};
     } else {
@@ -138,7 +142,8 @@ export class AppItemElement extends CrLitElement {
     } else {
       recordUserAction(AppHomeUserAction.LAUNCH_WEB_APP);
     }
-    BrowserProxy.getInstance().handler.launchApp(this.appInfo.id, clickEvent);
+    browserProxyFactory.getInstance().handler.launchApp(
+        this.appInfo.id, clickEvent);
 
     e.preventDefault();
     e.stopPropagation();
@@ -233,11 +238,11 @@ export class AppItemElement extends CrLitElement {
   protected onOpenInWindowItemChange_(e: CustomEvent<boolean>) {
     const checked = e.detail;
     if (!checked) {
-      BrowserProxy.getInstance().handler.setUserDisplayMode(
+      browserProxyFactory.getInstance().handler.setUserDisplayMode(
           this.appInfo.id, UserDisplayMode.kBrowser);
       recordUserAction(AppHomeUserAction.OPEN_IN_WINDOW_UNCHECKED);
     } else {
-      BrowserProxy.getInstance().handler.setUserDisplayMode(
+      browserProxyFactory.getInstance().handler.setUserDisplayMode(
           this.appInfo.id, UserDisplayMode.kStandalone);
       recordUserAction(AppHomeUserAction.OPEN_IN_WINDOW_CHECKED);
     }
@@ -250,11 +255,11 @@ export class AppItemElement extends CrLitElement {
     }
 
     if (this.isLaunchOnStartUp_()) {
-      BrowserProxy.getInstance().handler.setRunOnOsLoginMode(
+      browserProxyFactory.getInstance().handler.setRunOnOsLoginMode(
           this.appInfo.id, RunOnOsLoginMode.kNotRun);
       recordUserAction(AppHomeUserAction.LAUNCH_AT_STARTUP_UNCHECKED);
     } else {
-      BrowserProxy.getInstance().handler.setRunOnOsLoginMode(
+      browserProxyFactory.getInstance().handler.setRunOnOsLoginMode(
           this.appInfo.id, RunOnOsLoginMode.kWindowed);
       recordUserAction(AppHomeUserAction.LAUNCH_AT_STARTUP_CHECKED);
     }
@@ -262,7 +267,8 @@ export class AppItemElement extends CrLitElement {
 
   protected onCreateShortcutItemClick_() {
     if (this.appInfo.id) {
-      BrowserProxy.getInstance().handler.createAppShortcut(this.appInfo.id);
+      browserProxyFactory.getInstance().handler.createAppShortcut(
+          this.appInfo.id);
       recordUserAction(AppHomeUserAction.CREATE_SHORTCUT);
     }
     this.closeContextMenu();
@@ -270,7 +276,8 @@ export class AppItemElement extends CrLitElement {
 
   protected onInstallLocallyItemClick_() {
     if (this.appInfo.id) {
-      BrowserProxy.getInstance().handler.installAppLocally(this.appInfo.id);
+      browserProxyFactory.getInstance().handler.installAppLocally(
+          this.appInfo.id);
       recordUserAction(AppHomeUserAction.INSTALL_APP_LOCALLY);
     }
     this.closeContextMenu();
@@ -278,7 +285,7 @@ export class AppItemElement extends CrLitElement {
 
   protected onUninstallItemClick_() {
     if (this.appInfo.id) {
-      BrowserProxy.getInstance().handler.uninstallApp(this.appInfo.id);
+      browserProxyFactory.getInstance().handler.uninstallApp(this.appInfo.id);
       recordUserAction(AppHomeUserAction.UNINSTALL);
     }
     this.closeContextMenu();
@@ -286,7 +293,8 @@ export class AppItemElement extends CrLitElement {
 
   protected onAppSettingsItemClick_() {
     if (this.appInfo.id) {
-      BrowserProxy.getInstance().handler.showAppSettings(this.appInfo.id);
+      browserProxyFactory.getInstance().handler.showAppSettings(
+          this.appInfo.id);
       recordUserAction(AppHomeUserAction.OPEN_APP_SETTINGS);
     }
     this.closeContextMenu();

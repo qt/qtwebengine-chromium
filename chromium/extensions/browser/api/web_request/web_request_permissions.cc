@@ -10,6 +10,7 @@
 #include "base/strings/string_util.h"
 #include "build/chromeos_buildflags.h"
 #include "content/public/browser/child_process_security_policy.h"
+#include "content/public/common/child_process_id.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/browser/api/extensions_api_client.h"
 #include "extensions/browser/api/web_request/permission_helper.h"
@@ -256,7 +257,15 @@ bool WebRequestPermissions::HideRequest(
     return false;
   }
 
-  bool is_request_from_browser = request.render_process_id == -1;
+  // TODO(crbug.com/379869738): Remove GetUnsafeValue once there is a better way
+  // to identify prefetch requests from the browser.  Changing this to the
+  // correct code of `is_null()` breaks functionality as the magic value 0 is
+  // actually used for prefetches, even though it's usually used by the browser
+  // process.  When uses are correctly ported to content::ChildProcessId we
+  // should be able to fix this.  See also
+  // ChromeExtensionsAPIClient::ShouldHideBrowserNetworkRequest.
+  bool is_request_from_browser =
+      request.global_id.child_id.GetUnsafeValue() == -1;
 
   if (is_request_from_browser) {
     // Browser initiated service worker script requests (e.g., for update check)
@@ -293,7 +302,7 @@ bool WebRequestPermissions::HideRequest(
   // Hide requests from the Chrome WebStore App.
   if (!is_request_from_browser &&
       permission_helper->process_map()->Contains(extensions::kWebStoreAppId,
-                                                 request.render_process_id)) {
+                                                 request.global_id.child_id)) {
     return true;
   }
 
@@ -310,10 +319,11 @@ bool WebRequestPermissions::HideRequest(
 
   const GURL& url = request.url;
 
+  // TODO(crbug.com/379869738): Remove GetUnsafeValue.
   bool is_request_from_webui_renderer =
       !is_request_from_browser &&
       content::ChildProcessSecurityPolicy::GetInstance()->HasWebUIBindings(
-          request.render_process_id);
+          request.global_id.child_id.GetUnsafeValue());
 
   if (is_request_from_webui_renderer) {
 #if DCHECK_IS_ON()

@@ -115,8 +115,7 @@ int CalcAlpha(int src, int alpha) {
 }
 
 void MergeGammaAdjust(uint8_t src, int channel, int alpha, uint8_t* dest) {
-  *dest =
-      FXDIB_ALPHA_MERGE(*dest, channel, CalcAlpha(TextGammaAdjust(src), alpha));
+  *dest = AlphaMerge(*dest, channel, CalcAlpha(TextGammaAdjust(src), alpha));
 }
 
 void MergeGammaAdjustRgb(const uint8_t* src,
@@ -140,9 +139,9 @@ uint8_t CalculateDestAlpha(uint8_t back_alpha, int src_alpha) {
 void ApplyAlpha(pdfium::span<uint8_t, 3> dest,
                 const FX_BGRA_STRUCT<uint8_t>& bgra,
                 int alpha) {
-  dest[0] = FXDIB_ALPHA_MERGE(dest[0], bgra.blue, alpha);
-  dest[1] = FXDIB_ALPHA_MERGE(dest[1], bgra.green, alpha);
-  dest[2] = FXDIB_ALPHA_MERGE(dest[2], bgra.red, alpha);
+  dest[0] = AlphaMerge(dest[0], bgra.blue, alpha);
+  dest[1] = AlphaMerge(dest[1], bgra.green, alpha);
+  dest[2] = AlphaMerge(dest[2], bgra.red, alpha);
 }
 
 void ApplyDestAlpha(uint8_t back_alpha,
@@ -543,7 +542,6 @@ void CFX_RenderDevice::InitDeviceInfo() {
   height_ = device_driver_->GetPixelHeight();
   bpp_ = device_driver_->GetBitsPerPixel();
   render_cap_get_bits_ = device_driver_->RenderCapGetBits();
-  render_cap_alpha_path_ = device_driver_->RenderCapAlphaPath();
   render_cap_alpha_image_ = device_driver_->RenderCapAlphaImage();
   render_cap_blend_mode_ = device_driver_->RenderCapBlendMode();
   render_cap_soft_clip_ = device_driver_->RenderCapSoftClip();
@@ -570,10 +568,7 @@ void CFX_RenderDevice::RestoreState(bool bKeepSaved) {
   }
 }
 
-int CFX_RenderDevice::GetBitsPerPixel() const {
-  return device_driver_->GetBitsPerPixel();
-}
-
+#if BUILDFLAG(IS_WIN)
 int CFX_RenderDevice::GetHorzSize() const {
   return device_driver_->GetHorzSize();
 }
@@ -581,6 +576,7 @@ int CFX_RenderDevice::GetHorzSize() const {
 int CFX_RenderDevice::GetVertSize() const {
   return device_driver_->GetVertSize();
 }
+#endif
 
 RetainPtr<CFX_DIBitmap> CFX_RenderDevice::GetBitmap() {
   return bitmap_;
@@ -856,6 +852,7 @@ bool CFX_RenderDevice::FillRect(const FX_RECT& rect, uint32_t fill_color) {
     return true;
   }
 
+#if BUILDFLAG(IS_WIN)
   if (!render_cap_get_bits_) {
     return false;
   }
@@ -877,6 +874,10 @@ bool CFX_RenderDevice::FillRect(const FX_RECT& rect, uint32_t fill_color) {
   device_driver_->SetDIBits(std::move(bitmap), /*color=*/0, src_rect, rect.left,
                             rect.top, BlendMode::kNormal);
   return true;
+#else
+  CHECK(!render_cap_get_bits_);
+  return false;
+#endif
 }
 
 bool CFX_RenderDevice::DrawCosmeticLine(

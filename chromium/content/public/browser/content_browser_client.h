@@ -74,6 +74,7 @@
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "services/network/public/cpp/cross_origin_embedder_policy.h"
 #include "services/network/public/cpp/permissions_policy/permissions_policy_declaration.h"
+#include "services/network/public/mojom/fetch_api.mojom-forward.h"
 #include "services/network/public/mojom/ip_address_space.mojom-forward.h"
 #include "services/network/public/mojom/network_context.mojom-forward.h"
 #include "services/network/public/mojom/proxy_config.mojom-forward.h"
@@ -84,10 +85,10 @@
 #include "services/network/public/mojom/websocket.mojom-forward.h"
 #include "storage/browser/file_system/file_system_context.h"
 #include "third_party/blink/public/common/mediastream/media_devices.h"
+#include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 #include "third_party/blink/public/mojom/ai/ai_manager.mojom-forward.h"
 #include "third_party/blink/public/mojom/browsing_topics/browsing_topics.mojom-forward.h"
-#include "third_party/blink/public/mojom/cpu_performance.mojom-forward.h"
 #include "third_party/blink/public/mojom/file_system_access/file_system_access_cloud_identifier.mojom-forward.h"
 #include "third_party/blink/public/mojom/file_system_access/file_system_access_error.mojom-forward.h"
 #include "third_party/blink/public/mojom/manifest/manifest.mojom-forward.h"
@@ -203,6 +204,7 @@ namespace mojom {
 class NetworkContext;
 class NetworkService;
 class TrustedURLLoaderHeaderClient;
+class URLResponseHead;
 }  // namespace mojom
 struct ResourceRequest;
 }  // namespace network
@@ -555,19 +557,19 @@ class CONTENT_EXPORT ContentBrowserClient {
   // TODO(chlily): This doesn't take into account the
   // matching_scheme_cookies_allowed_schemes, but maybe we should remove that
   // anyway.
-  virtual bool ShouldTreatURLSchemeAsFirstPartyWhenTopLevel(
-      std::string_view scheme,
+  virtual bool ShouldTreatAsFirstPartyWhenTopLevel(
+      const url::Origin& top_frame_origin,
       bool is_embedded_origin_secure);
 
   // Similar to the above. Returns whether SameSite cookie restrictions should
-  // be ignored when the site_for_cookies's scheme is |scheme|.
+  // be ignored when the site_for_cookies's origin is |top_frame_origin|.
   // |is_embedded_origin_secure| refers to whether the origin that is embedded
-  // in a document with the given scheme is secure.
+  // in a document with the given origin is secure.
   // This is a separate function from the above because the allowed schemes can
   // be different, as SameSite restrictions and third-party cookie blocking are
   // related but have different semantics.
   virtual bool ShouldIgnoreSameSiteCookieRestrictionsWhenTopLevel(
-      std::string_view scheme,
+      const url::Origin& top_frame_origin,
       bool is_embedded_origin_secure);
 
   // Gets a user friendly display name for a given |site_url| to be used in the
@@ -647,6 +649,11 @@ class CONTENT_EXPORT ContentBrowserClient {
                                       const std::string& scheme);
 
   // Returns whether a browser context involves WebRequest API.
+  // Note: In ChromeContentBrowserClient, the behavior changes based on the
+  // kOptimizeWebRequestProxyForServiceWorkerAutoPreload feature. When disabled,
+  // it returns true if any extension with 'webview' permission is installed.
+  // When enabled, it returns false for such extensions (returning true only
+  // for actual 'webRequest' or 'declarativeNetRequest' extensions).
   virtual bool HasWebRequestAPIProxy(BrowserContext* browser_context);
 
   // Returns whether the given process is allowed to commit |url|.  This is a
@@ -709,6 +716,22 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual std::vector<blink::mojom::IsolatedAppPermissionPolicyEntryPtr>
   GetBaselinePermissionsPolicyForIsolatedApp(BrowserContext* browser_context,
                                              const url::Origin& app_origin);
+
+  // Isolated Apps rely on specific COOP/COEP/CSP headers as a a protective
+  // measure; however, it's possible for an Isolated App page to register a
+  // service worker with a fetch handler and accidentally bypass this protection
+  // layer. This function allows the embedder to inspect the headers that are
+  // about to be served as part of the response for an Isolated App resource
+  // request and modify them accordingly.
+  // `frame_tree_node` is only expected to be non-null for navigations.
+  // For dedicated/shared workers, it should be std::nullopt as they are
+  // only expected to run for already installed IWAs, where the source
+  // can be determined without an inspection context.
+  virtual void EnsureRequiredHeadersForIsolatedApp(
+      BrowserContext* browser_context,
+      const GURL& url,
+      network::mojom::URLResponseHead* response_head,
+      const std::optional<FrameTreeNodeId>& frame_tree_node);
 
   // Returns whether a new process should be created or an existing one should
   // be reused based on the URL we want to load. This should return false,
@@ -827,17 +850,16 @@ class CONTENT_EXPORT ContentBrowserClient {
   // false on platforms that do not support Top Chrome WebUIs, e.g., Android.
   virtual bool IsTopChromeWebUIURL(const GURL& url);
 
-  // Allows the embedder to enable access to Isolated Context Web APIs for the
-  // given |lock_url| -- the URL to which the renderer process is locked.
-  // See [IsolatedContext] IDL attribute for more details.
-  virtual bool IsIsolatedContextAllowedForUrl(BrowserContext* browser_context,
-                                              const GURL& lock_url);
-
   // Returns whether the application running in the |render_frame_host| is
   // allowed to automatically capture all screens by using the
   // getAllScreensMedia API.
   virtual bool IsMultiCaptureAllowed(
       content::RenderFrameHost* render_frame_host);
+
+  // Returns the WebContents associated with the given window if it is allowed
+  // to expose a capture handle. Returns nullptr otherwise.
+  virtual content::WebContents* GetWebContentsFromWindowIfCaptureHandleAllowed(
+      gfx::NativeWindow window);
 
   // Allow the embedder to control the maximum renderer process count. Only
   // applies if it is set to a non-zero value.  Once this limit is exceeded,
@@ -970,10 +992,17 @@ class CONTENT_EXPORT ContentBrowserClient {
   // https://w3c.github.io/ServiceWorker/#control-and-use-worker-client.
   virtual bool AllowSharedWorkerBlobURLFix(BrowserContext* context);
 
+  // Return whether data: URL web workers should have opaque origins.
+  virtual bool IsDataUrlInWebWorkerOpaqueOriginEnabled(BrowserContext* context);
+
   // Allow the shared worker to have extended lifetime.
   virtual bool AllowSharedWorkerExtendedLifetime(BrowserContext* context);
 
   virtual bool IsDataSaverEnabled(BrowserContext* context);
+
+  // Returns whether pinch-to-zoom is allowed for the given BrowserContext.
+  // Defaults to true.
+  virtual bool IsPinchToZoomAllowed(BrowserContext* context);
 
   // Updates the given prefs for Service Worker and Shared Worker. The prefs
   // are to be sent to the renderer process when a worker is created. Note that
@@ -1421,8 +1450,10 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Returns whether on-device speech recognition is available.
   virtual media::mojom::AvailabilityStatus
-  GetOnDeviceSpeechRecognitionAvailabilityStatus(BrowserContext* context,
-                                                 const std::string& language);
+  GetOnDeviceSpeechRecognitionAvailabilityStatus(
+      BrowserContext* context,
+      const std::string& language,
+      media::mojom::SpeechRecognitionQuality quality);
 
 #if BUILDFLAG(IS_CHROMEOS)
   // Allows the embedder to return a delegate for the TtsController.
@@ -1669,7 +1700,8 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Handles an unhandled incoming interface binding request from a Utility
   // process. Called on the IO thread.
-  virtual void BindUtilityHostReceiver(mojo::GenericPendingReceiver receiver) {}
+  virtual void BindUtilityHostReceiver(const std::string& service_name,
+                                       mojo::GenericPendingReceiver receiver) {}
 
   // Called on the main thread to handle an unhandled interface receiver binding
   // request from a render process. See |RenderThread::BindHostReceiver()|.
@@ -1927,6 +1959,8 @@ class CONTENT_EXPORT ContentBrowserClient {
   // process. The caller must not send any of |factories| to any other process.
   virtual void RegisterNonNetworkWorkerMainResourceURLLoaderFactories(
       BrowserContext* browser_context,
+      const std::optional<url::Origin>& request_initiator,
+      network::mojom::RequestDestination request_destination,
       NonNetworkURLLoaderFactoryMap* factories);
 
   // Allows the embedder to register per-scheme URLLoaderFactory
@@ -2593,13 +2627,15 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void StartRtcDiagnosticLogging(
       RenderFrameHost& frame_host,
       bool should_upload_on_stop,
-      base::flat_map<std::string, std::string> metadata,
+      const base::flat_map<std::string, std::string>& metadata,
       base::OnceCallback<void(const std::string&)> callback);
 
   // Finishes RTC diagnostic logging if a session is ongoing.
   // The results of logging are stored to disk and potentially uploaded.
-  virtual void FinishRtcDiagnosticLogging(RenderFrameHost& frame_host,
-                                          base::OnceClosure callback);
+  virtual void FinishRtcDiagnosticLogging(
+      RenderFrameHost& frame_host,
+      const base::flat_map<std::string, std::string>& metadata,
+      base::OnceClosure callback);
 
   // Cancels RTC diagnostic logging if a session is ongoing. If a session is
   // cancelled, the results of logging are not stored in a file or uploaded.
@@ -3012,7 +3048,8 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Checks if file or directory pickers from the file system access web API
   // require a user gesture (transient activation). They usually do, but this
   // can be bypassed via admin policy.
-  virtual bool IsTransientActivationRequiredForShowFileOrDirectoryPicker(
+  [[nodiscard]] virtual bool
+  IsTransientActivationRequiredForShowFileOrDirectoryPicker(
       WebContents* web_contents);
 
   // Checks if the file picker from the file system access web API should be
@@ -3024,6 +3061,54 @@ class CONTENT_EXPORT ContentBrowserClient {
   // in RenderFrameHostImpl. Currently in Chrome, this is true for all
   // extension origins.
   virtual bool ShouldUseFirstPartyStorageKey(const url::Origin& origin);
+
+  // Returns the RenderFrameHost that should act as the effective top-level
+  // frame for `render_frame_host`, or nullptr to fall back to the document
+  // tree. Used in:
+  //   - partitioning (StorageKey, IsolationInfo, NetworkIsolationKey,
+  //     SiteForCookies)
+  //   - ancestor-policy walks (CSP frame-ancestors, X-Frame-Options
+  //     SAMEORIGIN, Embedding-requires-opt-in, Location.ancestorOrigins)
+  //
+  // The primary use case is MIME handler extensions (e.g., a full-page PDF
+  // where Chrome wants the extension RFH, not the wrapper that embeds it,
+  // to act as the effective top). Other embedders may decide to use this
+  // hook for analogous cases.
+  //
+  // Implementations must return a non-null frame only when that frame is
+  // genuinely the outermost user-meaningful frame. When an HTML page
+  // explicitly iframes a sub-resource (e.g., `<iframe src="foo.pdf">`),
+  // the embedder is a real web ancestor and must not be hidden;
+  // implementations should return nullptr in that case.
+  virtual RenderFrameHost* GetEffectiveTopFrameForPartitioning(
+      RenderFrameHost* render_frame_host);
+
+  // Allows the embedder to provide an alternate target RenderFrameHost for a
+  // postMessage sent to `target_rfh`. This is used, for example, to route
+  // messages in special cases. nullptr is returned if no override is needed.
+  virtual RenderFrameHost* GetPostMessageTargetOverride(
+      RenderFrameHost* target_rfh,
+      const std::optional<blink::LocalFrameToken>& source_frame_token,
+      const url::Origin& source_origin,
+      const std::optional<url::Origin>& target_origin);
+
+  // Browser-side authoritative permission check, allowing embedders to grant
+  // a file picker exemption to a known-trusted cross-origin subframe.
+  // Called only when `render_frame_host`'s `requesting_origin` differs from
+  // the outermost main frame's origin; the same-origin case is allowed by
+  // default and never reaches this hook. Returns true if the embedder
+  // considers `render_frame_host` exempt (e.g., a MIME handler extension
+  // frame). Default: false.
+  virtual bool IsCrossOriginSubframeAllowedToShowFilePicker(
+      RenderFrameHost* render_frame_host,
+      const url::Origin& requesting_origin);
+
+  // Returns an override that fully replaces the parent-imposed
+  // `frame_policy.container_policy` at commit, or `std::nullopt` to
+  // leave it untouched. Called from `CommitNavigation()` only; not
+  // invoked on page-activating navigations (BFCache, prerender).
+  virtual std::optional<network::ParsedPermissionsPolicy>
+  GetContainerPolicyOverrideForCommit(NavigationHandle& navigation_handle);
 
   // Checks if the BeforeUnload Dialog event should be skipped.
   virtual bool ShouldSkipBeforeUnloadDialog(content::RenderFrameHost* rfh);
@@ -3292,9 +3377,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   // the destination.
   virtual bool ShouldAnimateBackForwardTransitions();
 
-  // Returns the CPU performance tier, which exposes some information about how
-  // powerful the user device is.
-  virtual blink::mojom::PerformanceTier GetCpuPerformanceTier();
+  // Returns the enterprise policy or user setting override for the CPU
+  // performance tier, if one is configured.
+  virtual std::optional<int> GetCpuPerformanceTierOverride(
+      BrowserContext* browser_context);
 
   // Describes the type of logins assisted by the browser via passkeys or
   // federation.

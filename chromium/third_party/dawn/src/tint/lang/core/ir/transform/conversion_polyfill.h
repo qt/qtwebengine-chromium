@@ -29,7 +29,7 @@
 #define SRC_TINT_LANG_CORE_IR_TRANSFORM_CONVERSION_POLYFILL_H_
 
 #include "src/tint/lang/core/ir/validator.h"
-#include "src/tint/utils/reflection.h"
+#include "src/tint/utils/reflection/reflection.h"
 #include "src/tint/utils/result.h"
 
 // Forward declarations.

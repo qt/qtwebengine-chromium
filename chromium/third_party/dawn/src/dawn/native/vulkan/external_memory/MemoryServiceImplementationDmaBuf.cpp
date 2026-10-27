@@ -25,18 +25,19 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/vulkan/external_memory/MemoryServiceImplementationDmaBuf.h"
+#include "src/dawn/native/vulkan/external_memory/MemoryServiceImplementationDmaBuf.h"
 
 #include <vector>
 
-#include "dawn/common/Assert.h"
-#include "dawn/native/vulkan/BackendVk.h"
-#include "dawn/native/vulkan/DeviceVk.h"
-#include "dawn/native/vulkan/PhysicalDeviceVk.h"
-#include "dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
-#include "dawn/native/vulkan/UtilsVulkan.h"
-#include "dawn/native/vulkan/VulkanError.h"
-#include "dawn/native/vulkan/external_memory/MemoryServiceImplementation.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/native/vulkan/BackendVk.h"
+#include "src/dawn/native/vulkan/DeviceVk.h"
+#include "src/dawn/native/vulkan/PhysicalDeviceVk.h"
+#include "src/dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
+#include "src/dawn/native/vulkan/UtilsVulkan.h"
+#include "src/dawn/native/vulkan/VulkanError.h"
+#include "src/dawn/native/vulkan/external_memory/MemoryServiceImplementation.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native::vulkan::external_memory {
 
@@ -209,7 +210,7 @@ class ServiceImplementationDmaBuf : public ServiceImplementation {
 
         // For mutable vkimage of multi-planar format, we also need to make sure the each
         // plane's view format can be supported.
-        std::array<VkFormat, 2> viewFormats;
+        std::array<VkFormat, 2> viewFormats{};
         VkImageFormatListCreateInfo imageFormatListInfo = {};
 
         if (planeCount > 1) {
@@ -350,11 +351,14 @@ class ServiceImplementationDmaBuf : public ServiceImplementation {
 
         VkSubresourceLayout planeLayouts[ExternalImageDescriptorDmaBuf::kMaxPlanes];
         for (uint32_t plane = 0u; plane < planeCount; ++plane) {
-            planeLayouts[plane].offset = dmaBufDescriptor->planeLayouts[plane].offset;
-            planeLayouts[plane].size = 0;  // VK_EXT_image_drm_format_modifier mandates size = 0.
-            planeLayouts[plane].rowPitch = dmaBufDescriptor->planeLayouts[plane].stride;
-            planeLayouts[plane].arrayPitch = 0;  // Not an array texture
-            planeLayouts[plane].depthPitch = 0;  // Not a depth texture
+            DAWN_UNSAFE_TODO(planeLayouts[plane]).offset =
+                dmaBufDescriptor->planeLayouts[plane].offset;
+            DAWN_UNSAFE_TODO(planeLayouts[plane]).size =
+                0;  // VK_EXT_image_drm_format_modifier mandates size = 0.
+            DAWN_UNSAFE_TODO(planeLayouts[plane]).rowPitch =
+                dmaBufDescriptor->planeLayouts[plane].stride;
+            DAWN_UNSAFE_TODO(planeLayouts[plane]).arrayPitch = 0;  // Not an array texture
+            DAWN_UNSAFE_TODO(planeLayouts[plane]).depthPitch = 0;  // Not a depth texture
         }
 
         VkImageDrmFormatModifierExplicitCreateInfoEXT explicitCreateInfo = {};

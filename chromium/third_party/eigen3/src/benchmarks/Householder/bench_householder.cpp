@@ -3,6 +3,8 @@
 // Tests makeHouseholder, makeHouseholderInPlace, applyHouseholderOnTheLeft,
 // applyHouseholderOnTheRight, HouseholderSequence evaluation, and block
 // Householder operations.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Householder>
@@ -263,108 +265,89 @@ static void BM_BlockHouseholder_ApplyLeft(benchmark::State& state) {
 }
 
 // =============================================================================
-// Size configurations
+// Size configurations: chained ->Arg / ->Args macros applied at registration.
 // =============================================================================
 
-static void VectorSizes(::benchmark::Benchmark* b) {
-  for (int n : {8, 16, 32, 64, 128, 256, 512, 1024, 4096}) b->Arg(n);
-}
+// clang-format off
+#define VECTOR_SIZES \
+  ->Arg(8)->Arg(16)->Arg(32)->Arg(64)->Arg(128)->Arg(256)->Arg(512)->Arg(1024)->Arg(4096)
 
-static void SquareSizes(::benchmark::Benchmark* b) {
-  for (int n : {32, 48, 64, 80, 96, 112, 128, 160, 192, 256, 384, 512, 768, 1024}) b->Args({n, n});
-}
+#define SQUARE_SIZES \
+  ->Args({32, 32})->Args({48, 48})->Args({64, 64})->Args({80, 80})->Args({96, 96}) \
+  ->Args({112, 112})->Args({128, 128})->Args({160, 160})->Args({192, 192})->Args({256, 256}) \
+  ->Args({384, 384})->Args({512, 512})->Args({768, 768})->Args({1024, 1024})
 
 // Fine-grained sizes around the blocking threshold to find the crossover point.
-static void SquareSizesFine(::benchmark::Benchmark* b) {
-  for (int n : {32, 40, 48, 56, 64, 72, 80, 88, 96, 112, 128, 160, 192, 256}) b->Args({n, n});
-}
+#define SQUARE_SIZES_FINE \
+  ->Args({32, 32})->Args({40, 40})->Args({48, 48})->Args({56, 56})->Args({64, 64}) \
+  ->Args({72, 72})->Args({80, 80})->Args({88, 88})->Args({96, 96})->Args({112, 112}) \
+  ->Args({128, 128})->Args({160, 160})->Args({192, 192})->Args({256, 256})
 
 // Rectangular: many rows, fewer columns (m_length = cols, dst is rows x rows).
-static void RectApplyRight(::benchmark::Benchmark* b) {
-  // Square
-  for (int n : {48, 64, 96, 128, 256, 512, 1024}) b->Args({n, n});
-  // Wide dst * narrow Q: dst is (rows x rows), Q is (cols x cols), so rows > cols.
-  b->Args({256, 64});
-  b->Args({256, 128});
-  b->Args({512, 64});
-  b->Args({512, 128});
-  b->Args({1024, 64});
-  b->Args({1024, 128});
-  b->Args({1024, 256});
-}
+// Wide dst * narrow Q: dst is (rows x rows), Q is (cols x cols), so rows > cols.
+#define RECT_APPLY_RIGHT_SIZES \
+  ->Args({48, 48})->Args({64, 64})->Args({96, 96})->Args({128, 128}) \
+  ->Args({256, 256})->Args({512, 512})->Args({1024, 1024}) \
+  ->Args({256, 64})->Args({256, 128}) \
+  ->Args({512, 64})->Args({512, 128}) \
+  ->Args({1024, 64})->Args({1024, 128})->Args({1024, 256})
 
-static void RectSizes(::benchmark::Benchmark* b) {
-  // Square
-  for (int n : {32, 64, 128, 256, 512, 1024}) b->Args({n, n});
-  // Tall-thin
-  b->Args({1000, 32});
-  b->Args({1000, 100});
-  b->Args({10000, 32});
-  b->Args({10000, 100});
-}
+// Square plus tall-thin shapes.
+#define RECT_SIZES \
+  ->Args({32, 32})->Args({64, 64})->Args({128, 128}) \
+  ->Args({256, 256})->Args({512, 512})->Args({1024, 1024}) \
+  ->Args({1000, 32})->Args({1000, 100})->Args({10000, 32})->Args({10000, 100})
 
-static void BlockSizes(::benchmark::Benchmark* b) {
-  for (int n : {64, 128, 256, 512, 1024}) {
-    b->Args({n, n});
-    b->Args({n, 32});
-  }
-}
+#define BLOCK_SIZES \
+  ->Args({64, 64})->Args({64, 32}) \
+  ->Args({128, 128})->Args({128, 32}) \
+  ->Args({256, 256})->Args({256, 32}) \
+  ->Args({512, 512})->Args({512, 32}) \
+  ->Args({1024, 1024})->Args({1024, 32})
+// clang-format on
 
 // =============================================================================
 // Register benchmarks: float
 // =============================================================================
 
-BENCHMARK(BM_MakeHouseholderInPlace<float>)->Apply(VectorSizes)->Name("MakeHouseholderInPlace_float");
-BENCHMARK(BM_MakeHouseholder<float>)->Apply(VectorSizes)->Name("MakeHouseholder_float");
-BENCHMARK(BM_ApplyHouseholderOnTheLeft<float>)->Apply(RectSizes)->Name("ApplyHouseholderOnTheLeft_float");
-BENCHMARK(BM_ApplyHouseholderOnTheRight<float>)->Apply(RectSizes)->Name("ApplyHouseholderOnTheRight_float");
-BENCHMARK(BM_HouseholderSequence_EvalTo<float>)->Apply(SquareSizesFine)->Name("HouseholderSequence_EvalTo_float");
-BENCHMARK(BM_HouseholderSequence_ApplyLeft<float>)->Apply(RectSizes)->Name("HouseholderSequence_ApplyLeft_float");
+BENCHMARK(BM_MakeHouseholderInPlace<float>) VECTOR_SIZES->Name("MakeHouseholderInPlace_float");
+BENCHMARK(BM_MakeHouseholder<float>) VECTOR_SIZES->Name("MakeHouseholder_float");
+BENCHMARK(BM_ApplyHouseholderOnTheLeft<float>) RECT_SIZES->Name("ApplyHouseholderOnTheLeft_float");
+BENCHMARK(BM_ApplyHouseholderOnTheRight<float>) RECT_SIZES->Name("ApplyHouseholderOnTheRight_float");
+BENCHMARK(BM_HouseholderSequence_EvalTo<float>) SQUARE_SIZES_FINE->Name("HouseholderSequence_EvalTo_float");
+BENCHMARK(BM_HouseholderSequence_ApplyLeft<float>) RECT_SIZES->Name("HouseholderSequence_ApplyLeft_float");
 BENCHMARK(BM_HouseholderSequence_ApplyRight<float>)
-    ->Apply(RectApplyRight)
-    ->Name("HouseholderSequence_ApplyRight_float");
+RECT_APPLY_RIGHT_SIZES->Name("HouseholderSequence_ApplyRight_float");
 BENCHMARK(BM_HouseholderSequence_AdjointApplyLeft<float>)
-    ->Apply(RectSizes)
-    ->Name("HouseholderSequence_AdjointApplyLeft_float");
-BENCHMARK(BM_BlockHouseholder_TriangularFactor<float>)
-    ->Apply(VectorSizes)
-    ->Name("BlockHouseholder_TriangularFactor_float");
-BENCHMARK(BM_BlockHouseholder_ApplyLeft<float>)->Apply(BlockSizes)->Name("BlockHouseholder_ApplyLeft_float");
+RECT_SIZES->Name("HouseholderSequence_AdjointApplyLeft_float");
+BENCHMARK(BM_BlockHouseholder_TriangularFactor<float>) VECTOR_SIZES->Name("BlockHouseholder_TriangularFactor_float");
+BENCHMARK(BM_BlockHouseholder_ApplyLeft<float>) BLOCK_SIZES->Name("BlockHouseholder_ApplyLeft_float");
 
 // =============================================================================
 // Register benchmarks: double
 // =============================================================================
 
-BENCHMARK(BM_MakeHouseholderInPlace<double>)->Apply(VectorSizes)->Name("MakeHouseholderInPlace_double");
-BENCHMARK(BM_MakeHouseholder<double>)->Apply(VectorSizes)->Name("MakeHouseholder_double");
-BENCHMARK(BM_ApplyHouseholderOnTheLeft<double>)->Apply(RectSizes)->Name("ApplyHouseholderOnTheLeft_double");
-BENCHMARK(BM_ApplyHouseholderOnTheRight<double>)->Apply(RectSizes)->Name("ApplyHouseholderOnTheRight_double");
-BENCHMARK(BM_HouseholderSequence_EvalTo<double>)->Apply(SquareSizesFine)->Name("HouseholderSequence_EvalTo_double");
-BENCHMARK(BM_HouseholderSequence_ApplyLeft<double>)->Apply(RectSizes)->Name("HouseholderSequence_ApplyLeft_double");
+BENCHMARK(BM_MakeHouseholderInPlace<double>) VECTOR_SIZES->Name("MakeHouseholderInPlace_double");
+BENCHMARK(BM_MakeHouseholder<double>) VECTOR_SIZES->Name("MakeHouseholder_double");
+BENCHMARK(BM_ApplyHouseholderOnTheLeft<double>) RECT_SIZES->Name("ApplyHouseholderOnTheLeft_double");
+BENCHMARK(BM_ApplyHouseholderOnTheRight<double>) RECT_SIZES->Name("ApplyHouseholderOnTheRight_double");
+BENCHMARK(BM_HouseholderSequence_EvalTo<double>) SQUARE_SIZES_FINE->Name("HouseholderSequence_EvalTo_double");
+BENCHMARK(BM_HouseholderSequence_ApplyLeft<double>) RECT_SIZES->Name("HouseholderSequence_ApplyLeft_double");
 BENCHMARK(BM_HouseholderSequence_ApplyRight<double>)
-    ->Apply(RectApplyRight)
-    ->Name("HouseholderSequence_ApplyRight_double");
+RECT_APPLY_RIGHT_SIZES->Name("HouseholderSequence_ApplyRight_double");
 BENCHMARK(BM_HouseholderSequence_AdjointApplyLeft<double>)
-    ->Apply(RectSizes)
-    ->Name("HouseholderSequence_AdjointApplyLeft_double");
-BENCHMARK(BM_BlockHouseholder_TriangularFactor<double>)
-    ->Apply(VectorSizes)
-    ->Name("BlockHouseholder_TriangularFactor_double");
-BENCHMARK(BM_BlockHouseholder_ApplyLeft<double>)->Apply(BlockSizes)->Name("BlockHouseholder_ApplyLeft_double");
+RECT_SIZES->Name("HouseholderSequence_AdjointApplyLeft_double");
+BENCHMARK(BM_BlockHouseholder_TriangularFactor<double>) VECTOR_SIZES->Name("BlockHouseholder_TriangularFactor_double");
+BENCHMARK(BM_BlockHouseholder_ApplyLeft<double>) BLOCK_SIZES->Name("BlockHouseholder_ApplyLeft_double");
 
 // =============================================================================
 // Register benchmarks: std::complex<double>
 // =============================================================================
 
-BENCHMARK(BM_MakeHouseholderInPlace<std::complex<double>>)
-    ->Apply(VectorSizes)
-    ->Name("MakeHouseholderInPlace_complexdouble");
+BENCHMARK(BM_MakeHouseholderInPlace<std::complex<double>>) VECTOR_SIZES->Name("MakeHouseholderInPlace_complexdouble");
 BENCHMARK(BM_ApplyHouseholderOnTheLeft<std::complex<double>>)
-    ->Apply(RectSizes)
-    ->Name("ApplyHouseholderOnTheLeft_complexdouble");
+RECT_SIZES->Name("ApplyHouseholderOnTheLeft_complexdouble");
 BENCHMARK(BM_HouseholderSequence_EvalTo<std::complex<double>>)
-    ->Apply(SquareSizes)
-    ->Name("HouseholderSequence_EvalTo_complexdouble");
+SQUARE_SIZES->Name("HouseholderSequence_EvalTo_complexdouble");
 BENCHMARK(BM_HouseholderSequence_ApplyLeft<std::complex<double>>)
-    ->Apply(SquareSizes)
-    ->Name("HouseholderSequence_ApplyLeft_complexdouble");
+SQUARE_SIZES->Name("HouseholderSequence_ApplyLeft_complexdouble");

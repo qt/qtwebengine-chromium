@@ -25,13 +25,14 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/common/SystemUtils.h"
+#include "src/dawn/common/SystemUtils.h"
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/Log.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/Log.h"
+#include "src/utils/compiler.h"
 
 #if DAWN_PLATFORM_IS(WINDOWS)
-#include "dawn/common/windows_with_undefs.h"
+#include "src/utils/windows_with_undefs.h"
 
 #include <vector>
 #elif DAWN_PLATFORM_IS(LINUX)
@@ -120,7 +121,7 @@ std::optional<std::string> GetExecutablePath() {
 }
 #elif DAWN_PLATFORM_IS(LINUX)
 std::optional<std::string> GetExecutablePath() {
-    std::array<char, PATH_MAX> path;
+    std::array<char, PATH_MAX> path = {};
     ssize_t result = readlink("/proc/self/exe", path.data(), PATH_MAX - 1);
     if (result < 0 || static_cast<size_t>(result) >= PATH_MAX - 1) {
         return {};
@@ -175,7 +176,7 @@ std::optional<std::string> GetModulePath() {
         return {};
     }
 
-    std::array<char, PATH_MAX> absolutePath;
+    std::array<char, PATH_MAX> absolutePath = {};
     if (realpath(dlInfo.dli_fname, absolutePath.data()) == nullptr) {
         return {};
     }
@@ -220,6 +221,57 @@ std::optional<std::string> GetModuleDirectory() {
     }
     return modPath->substr(0, lastPathSepLoc + 1);
 }
+
+#if DAWN_PLATFORM_IS(WINDOWS)
+// Referenced from base/win/windows_version.cc in Chromium
+WindowsVersion GetCurrentWindowsVersion() {
+    // Referenced from base/win/registry.cc in Chromium
+    auto ReadFromSZRegistryKey = [](HKEY registerKey, const char* registerKeyName) -> uint32_t {
+        DWORD valueType;
+        DWORD returnSize;
+        if (RegQueryValueExA(registerKey, registerKeyName, nullptr, &valueType, nullptr,
+                             &returnSize) != ERROR_SUCCESS) {
+            return 0;
+        }
+        std::vector<char> returnStringValue(returnSize);
+        auto hr = RegQueryValueExA(registerKey, registerKeyName, nullptr, &valueType,
+                                   reinterpret_cast<LPBYTE>(returnStringValue.data()), &returnSize);
+        if (hr != ERROR_SUCCESS || valueType != REG_SZ) {
+            return 0;
+        }
+        constexpr int32_t kRadix = 10;
+        return static_cast<uint32_t>(
+            DAWN_UNSAFE_TODO(strtol(returnStringValue.data(), nullptr, kRadix)));
+    };
+
+    // Referenced from base/win/registry.cc in Chromium
+    auto ReadFromDWORDRegistryKey = [](HKEY registerKey, const char* registerKeyName) -> uint32_t {
+        DWORD valueType;
+        DWORD value = 0;
+        DWORD valueSize = sizeof(value);
+        if (RegQueryValueExA(registerKey, registerKeyName, nullptr, &valueType,
+                             reinterpret_cast<LPBYTE>(&value), &valueSize) != ERROR_SUCCESS ||
+            valueType != REG_DWORD) {
+            return 0;
+        }
+        return value;
+    };
+
+    constexpr wchar_t kRegKeyWindowsNTCurrentVersion[] =
+        L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
+    HKEY hKey;
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, kRegKeyWindowsNTCurrentVersion, 0, KEY_QUERY_VALUE,
+                      &hKey) != ERROR_SUCCESS) {
+        return {0, 0};
+    }
+
+    WindowsVersion version = {};
+    version.buildNumber = ReadFromSZRegistryKey(hKey, "CurrentBuildNumber");
+    version.updateBuildRevision = ReadFromDWORDRegistryKey(hKey, "UBR");
+    RegCloseKey(hKey);
+    return version;
+}
+#endif
 
 // ScopedEnvironmentVar
 

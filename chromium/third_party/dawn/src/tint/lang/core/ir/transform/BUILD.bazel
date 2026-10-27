@@ -34,13 +34,16 @@
 #                       Do not modify this file directly
 ################################################################################
 
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 load("//src/tint:flags.bzl", "COPTS")
 load("@bazel_skylib//lib:selects.bzl", "selects")
+
+exports_files(glob(["*.def", "*.tmpl"], allow_empty = True))
+
 cc_library(
   name = "transform",
   srcs = [
-    "array_length_from_immediate.cc",
-    "array_length_from_uniform.cc",
+    "array_length_from.cc",
     "bgra8unorm_polyfill.cc",
     "binary_polyfill.cc",
     "binding_remapper.cc",
@@ -78,8 +81,7 @@ cc_library(
     "zero_init_workgroup_memory.cc",
   ],
   hdrs = [
-    "array_length_from_immediate.h",
-    "array_length_from_uniform.h",
+    "array_length_from.h",
     "bgra8unorm_polyfill.h",
     "binary_polyfill.h",
     "binding_remapper.h",
@@ -133,6 +135,7 @@ cc_library(
     "//src/tint/utils/macros",
     "//src/tint/utils/math",
     "//src/tint/utils/memory",
+    "//src/tint/utils/reflection",
     "//src/tint/utils/rtti",
     "//src/tint/utils/symbol",
     "//src/tint/utils/text",
@@ -198,6 +201,7 @@ cc_library(
     "//src/tint/utils/macros",
     "//src/tint/utils/math",
     "//src/tint/utils/memory",
+    "//src/tint/utils/reflection",
     "//src/tint/utils/rtti",
     "//src/tint/utils/symbol",
     "//src/tint/utils/text",

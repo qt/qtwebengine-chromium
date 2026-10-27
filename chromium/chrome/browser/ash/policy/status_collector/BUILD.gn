@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
-
 assert(is_chromeos)
 
 static_library("status_collector") {
@@ -127,6 +125,7 @@ source_set("unit_tests") {
   deps = [
     "//base",
     "//base/test:test_support",
+    "//chrome/browser:chrome_content_browser_client",
     "//chrome/browser/apps/app_service",
     "//chrome/browser/apps/app_service:test_support",
     "//chrome/browser/apps/app_service/publishers",
@@ -138,7 +137,7 @@ source_set("unit_tests") {
     "//chrome/browser/ash/crostini:test_support",
     "//chrome/browser/ash/guest_os",
     "//chrome/browser/ash/login/demo_mode:test_support",
-    "//chrome/browser/ash/login/users:test_support",
+    "//chrome/browser/ash/login/users",
     "//chrome/browser/ash/ownership",
     "//chrome/browser/ash/policy/status_collector",
     "//chrome/browser/ash/profiles",
@@ -166,6 +165,7 @@ source_set("unit_tests") {
     "//components/session_manager:base",
     "//components/session_manager/core",
     "//components/session_manager/core:test_support",
+    "//components/session_manager/test:test_support",
     "//components/sync_preferences:test_support",
     "//components/user_manager",
     "//components/webapps/common",

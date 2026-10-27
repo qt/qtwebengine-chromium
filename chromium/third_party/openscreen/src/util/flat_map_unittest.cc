@@ -8,51 +8,56 @@
 #include <string_view>
 
 #include "gtest/gtest.h"
+#include "util/no_destructor.h"
 
 namespace openscreen {
 
 namespace {
 
-const FlatMap<int, std::string_view> kSimpleFlatMap{{-1, "bar"},
-                                                    {123, "foo"},
-                                                    {10000, "baz"},
-                                                    {0, ""}};
+const FlatMap<int, std::string_view>& GetSimpleFlatMap() {
+  static const NoDestructor<FlatMap<int, std::string_view>> kSimpleFlatMap(
+      FlatMap<int, std::string_view>{
+          {-1, "bar"}, {123, "foo"}, {10000, "baz"}, {0, ""}});
+  return *kSimpleFlatMap;
+}
 
 }  // namespace
 
 TEST(FlatMapTest, Find) {
-  EXPECT_EQ(kSimpleFlatMap.begin(), kSimpleFlatMap.find(-1));
-  EXPECT_EQ("bar", kSimpleFlatMap.find(-1)->second);
-  EXPECT_EQ("foo", kSimpleFlatMap.find(123)->second);
-  EXPECT_EQ("baz", kSimpleFlatMap.find(10000)->second);
-  EXPECT_EQ("", kSimpleFlatMap.find(0)->second);
-  EXPECT_EQ(kSimpleFlatMap.end(), kSimpleFlatMap.find(2));
+  const auto& map = GetSimpleFlatMap();
+  EXPECT_EQ(map.begin(), map.find(-1));
+  EXPECT_EQ("bar", map.find(-1)->second);
+  EXPECT_EQ("foo", map.find(123)->second);
+  EXPECT_EQ("baz", map.find(10000)->second);
+  EXPECT_EQ("", map.find(0)->second);
+  EXPECT_EQ(map.end(), map.find(2));
 }
 
 // Since it is backed by a vector, we don't expose an operator[] due
 // to potential confusion. If the type of Key is int or std::size_t, do
 // you want the std::pair<Key, Value> or just the Value?
 TEST(FlatMapTest, Access) {
-  EXPECT_EQ("bar", kSimpleFlatMap[0].second);
-  EXPECT_EQ("foo", kSimpleFlatMap[1].second);
-  EXPECT_EQ("baz", kSimpleFlatMap[2].second);
-  EXPECT_EQ("", kSimpleFlatMap[3].second);
+  const auto& map = GetSimpleFlatMap();
+  EXPECT_EQ("bar", map[0].second);
+  EXPECT_EQ("foo", map[1].second);
+  EXPECT_EQ("baz", map[2].second);
+  EXPECT_EQ("", map[3].second);
 
   // NOTE: vector doesn't do any range checking for operator[], only at().
-  EXPECT_EQ("bar", kSimpleFlatMap.at(0).second);
-  EXPECT_EQ("foo", kSimpleFlatMap.at(1).second);
-  EXPECT_EQ("baz", kSimpleFlatMap.at(2).second);
-  EXPECT_EQ("", kSimpleFlatMap.at(3).second);
+  EXPECT_EQ("bar", map.at(0).second);
+  EXPECT_EQ("foo", map.at(1).second);
+  EXPECT_EQ("baz", map.at(2).second);
+  EXPECT_EQ("", map.at(3).second);
   // The error message varies widely depending on how the test is run.
   // NOTE: Google Test doesn't support death tests on some platforms, such
   // as iOS.
 #if defined(GTEST_HAS_DEATH_TEST)
-  EXPECT_DEATH(std::ignore = kSimpleFlatMap.at(31337), ".*");
+  EXPECT_DEATH(std::ignore = map.at(31337), ".*");
 #endif
 }
 
 TEST(FlatMapTest, ErasureAndEmplacement) {
-  auto mutable_vector = kSimpleFlatMap;
+  auto mutable_vector = GetSimpleFlatMap();
   EXPECT_NE(mutable_vector.find(-1), mutable_vector.end());
   mutable_vector.erase_key(-1);
   EXPECT_EQ(mutable_vector.find(-1), mutable_vector.end());
@@ -60,11 +65,8 @@ TEST(FlatMapTest, ErasureAndEmplacement) {
   mutable_vector.emplace_back(-1, "bar");
   EXPECT_NE(mutable_vector.find(-1), mutable_vector.end());
 
-  // We absolutely should fail to erase something that's not there.
-#if defined(GTEST_HAS_DEATH_TEST)
-  EXPECT_DEATH(mutable_vector.erase_key(12345),
-               ".*failed to erase: element not found.*");
-#endif
+  // We shouldn't crash when erasing something that's not there.
+  EXPECT_EQ(mutable_vector.erase_key(12345), mutable_vector.end());
 }
 
 TEST(FlatMapTest, Mutation) {
@@ -76,10 +78,11 @@ TEST(FlatMapTest, Mutation) {
 }
 
 TEST(FlatMapTest, GenerallyBehavesLikeAVector) {
-  EXPECT_EQ(kSimpleFlatMap, kSimpleFlatMap);
-  EXPECT_TRUE(kSimpleFlatMap == kSimpleFlatMap);
+  const auto& map = GetSimpleFlatMap();
+  EXPECT_EQ(map, map);
+  EXPECT_TRUE(map == map);
 
-  for (auto& entry : kSimpleFlatMap) {
+  for (auto& entry : map) {
     if (entry.first != 0) {
       EXPECT_LT(0u, entry.second.size());
     }

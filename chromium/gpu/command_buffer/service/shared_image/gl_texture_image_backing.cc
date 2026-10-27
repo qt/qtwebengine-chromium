@@ -14,6 +14,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
+#include "gpu/command_buffer/common/shared_image_info.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
 #include "gpu/command_buffer/service/context_state.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
@@ -69,7 +70,7 @@ class GLTextureImageRepresentationImpl : public GLTextureImageRepresentation {
 
  private:
   // GLTextureImageRepresentation:
-  gles2::Texture* GetTexture(int plane_index) override {
+  gles2::Texture* GetTexture(size_t plane_index) override {
     DCHECK(format().IsValidPlaneIndex(plane_index));
     return textures_[plane_index];
   }
@@ -98,7 +99,7 @@ class GLTexturePassthroughImageRepresentationImpl
  private:
   // GLTexturePassthroughImageRepresentation:
   const scoped_refptr<gles2::TexturePassthrough>& GetTexturePassthrough(
-      int plane_index) override {
+      size_t plane_index) override {
     DCHECK(format().IsValidPlaneIndex(plane_index));
     return textures_[plane_index];
   }
@@ -262,28 +263,17 @@ bool GLTextureImageBacking::SupportsPixelUploadWithFormat(
 }
 
 GLTextureImageBacking::GLTextureImageBacking(const Mailbox& mailbox,
-                                             viz::SharedImageFormat format,
-                                             const gfx::Size& size,
-                                             const gfx::ColorSpace& color_space,
-                                             GrSurfaceOrigin surface_origin,
-                                             SkAlphaType alpha_type,
-                                             SharedImageUsageSet usage,
-                                             std::string debug_label,
+                                             const SharedImageInfo& si_info,
                                              bool is_passthrough)
-    : ClearTrackingSharedImageBacking(mailbox,
-                                      format,
-                                      size,
-                                      color_space,
-                                      surface_origin,
-                                      alpha_type,
-                                      usage,
-                                      std::move(debug_label),
-                                      format.EstimatedSizeInBytes(size),
-                                      /*is_thread_safe=*/false),
+    : ClearTrackingSharedImageBacking(
+          mailbox,
+          si_info,
+          si_info.format.EstimatedSizeInBytes(si_info.size),
+          /*is_thread_safe=*/false),
       is_passthrough_(is_passthrough) {
   // With validating command decoder the clear rect tracking doesn't work with
   // multi-planar textures.
-  DCHECK(is_passthrough_ || format.is_single_plane());
+  DCHECK(is_passthrough_ || si_info.format.is_single_plane());
 }
 
 GLTextureImageBacking::~GLTextureImageBacking() {
@@ -353,7 +343,6 @@ bool GLTextureImageBacking::UploadFromMemory(
     const std::vector<SkPixmap>& pixmaps) {
   DCHECK_EQ(pixmaps.size(), textures_.size());
   DCHECK(SupportsPixelUploadWithFormat(format()));
-  DCHECK(gl::GLContext::GetCurrent());
 
   for (size_t i = 0; i < textures_.size(); ++i) {
     if (!textures_[i].UploadFromMemory(pixmaps[i])) {
@@ -366,7 +355,6 @@ bool GLTextureImageBacking::UploadFromMemory(
 bool GLTextureImageBacking::ReadbackToMemory(
     const std::vector<SkPixmap>& pixmaps) {
   DCHECK_EQ(pixmaps.size(), textures_.size());
-  DCHECK(gl::GLContext::GetCurrent());
 
   // TODO(kylechar): Ideally there would be a usage that stated readback was
   // required so support could be verified at creation time and then asserted
@@ -509,6 +497,14 @@ void GLTextureImageBacking::InitializeGLTexture(
     base::span<const uint8_t> pixel_data,
     gl::ProgressReporter* progress_reporter,
     bool framebuffer_attachment_angle) {
+  // Drain any pre-existing GL errors so the post-allocation check below is
+  // attributable to the storage call. Silently squelching these errors is
+  // unfortunate, but is done in order to mirror other allocation checks done in
+  // the command decoder.
+  gl::GLApi* const api = gl::g_current_gl_context;
+  while (api->glGetErrorFn() != GL_NO_ERROR) {
+  }
+
   const std::string debug_label =
       "GLSharedImage_" + SharedImageBacking::debug_label();
   int num_planes = format().NumberOfPlanes();
@@ -522,8 +518,23 @@ void GLTextureImageBacking::InitializeGLTexture(
                                 debug_label);
   }
 
-  if (!pixel_data.empty()) {
-    SetCleared();
+  // Update the cleared state for passthrough textures if the pixel data upload
+  // was successful. We don't need to update the cleared state for validating
+  // decoder textures because we track the cleared state in the decoder texture
+  // objects whose cleared state is set in TextureHolder::Initialize above.
+  if (is_passthrough_ && !pixel_data.empty()) {
+    // The storage allocation allocates undefined-content storage on a context
+    // without robust-resource-init. If the subsequent upload failed (e.g.
+    // GL_OUT_OF_MEMORY) the storage is still uninitialised; only mark the
+    // backing cleared if no GL error was raised.
+    GLenum error = api->glGetErrorFn();
+    if (error == GL_NO_ERROR) {
+      SetCleared();
+    } else {
+      LOG(ERROR)
+          << "GLTextureImageBacking: initial pixel upload failed (GL error 0x"
+          << std::hex << error << ")";
+    }
   }
 }
 

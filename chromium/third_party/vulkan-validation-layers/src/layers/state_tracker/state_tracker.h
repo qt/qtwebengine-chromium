@@ -3,6 +3,7 @@
  * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (C) 2015-2025 Google Inc.
  * Copyright (C) 2025 Arm Limited.
+ * Copyright (C) 2026 Qualcomm Technologies, Inc.
  * Modifications Copyright (C) 2020,2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -43,7 +44,6 @@
 
 namespace vvl {
 struct AllocateDescriptorSetsData;
-struct SubmissionBatch;
 class Fence;
 class DescriptorPool;
 class DescriptorSet;
@@ -79,12 +79,12 @@ class IndirectCommandsLayout;
 class QueryPool;
 class Tensor;
 class TensorView;
-struct DedicatedBinding;
 struct ShaderModule;
 struct ShaderObject;
 class VideoSession;
 class VideoSessionParameters;
 class DataGraphPipelineSession;
+class SubmitTimeTracker;
 }  // namespace vvl
 
 namespace chassis {
@@ -1230,7 +1230,7 @@ class DeviceState : public vvl::BaseDevice {
     void PostCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence,
                                    const RecordObject& record_obj) override;
     void PostCallRecordQueueWaitIdle(VkQueue queue, const RecordObject& record_obj) override;
-    void PreCallRecordSetEvent(VkDevice device, VkEvent event, const RecordObject& record_obj) override;
+    void PostCallRecordSetEvent(VkDevice device, VkEvent event, const RecordObject& record_obj) override;
     void PostCallRecordWaitForFences(VkDevice device, uint32_t fenceCount, const VkFence* pFences, VkBool32 waitAll,
                                      uint64_t timeout, const RecordObject& record_obj) override;
     void PreCallRecordWaitSemaphores(VkDevice device, const VkSemaphoreWaitInfo* pWaitInfo, uint64_t timeout,
@@ -1284,7 +1284,7 @@ class DeviceState : public vvl::BaseDevice {
 
     virtual std::shared_ptr<vvl::DeviceMemory> CreateDeviceMemoryState(
         VkDeviceMemory handle, const VkMemoryAllocateInfo* allocate_infos, uint64_t fake_address, const VkMemoryType& memory_type,
-        const VkMemoryHeap& memory_heap, std::optional<vvl::DedicatedBinding>&& dedicated_binding, uint32_t physical_device_count);
+        const VkMemoryHeap& memory_heap, VulkanTypedHandle dedicated_binding, uint32_t physical_device_count);
 
     // Memory mapping
     void PostCallRecordMapMemory(VkDevice device, VkDeviceMemory mem, VkDeviceSize offset, VkDeviceSize size, VkFlags flags,
@@ -1347,6 +1347,9 @@ class DeviceState : public vvl::BaseDevice {
                                                     const VkBindTransformFeedbackBuffer2InfoEXT* pCounterInfo,
                                                     uint32_t counterOffset, uint32_t vertexStride,
                                                     const RecordObject& record_obj) override;
+    void PostCallRecordCmdDrawIndirectByteCountEXT(VkCommandBuffer commandBuffer, uint32_t instanceCount, uint32_t firstInstance,
+                                                   VkBuffer counterBuffer, VkDeviceSize counterBufferOffset, uint32_t counterOffset,
+                                                   uint32_t vertexStride, const RecordObject& record_obj) override;
     void PostCallRecordCmdWriteMarkerToMemoryAMD(VkCommandBuffer commandBuffer, const VkMemoryMarkerInfoAMD* pInfo,
                                                  const RecordObject& record_obj) override;
     void PostCallRecordCmdBeginConditionalRenderingEXT(VkCommandBuffer commandBuffer,
@@ -1358,6 +1361,10 @@ class DeviceState : public vvl::BaseDevice {
                                                         const RecordObject& record_obj) override;
     void PostCallRecordCmdBindTileMemoryQCOM(VkCommandBuffer commandBuffer, const VkTileMemoryBindInfoQCOM* pTileMemoryBindInfo,
                                              const RecordObject& record_obj) override;
+    void PostCallRecordCmdBeginPerTileExecutionQCOM(VkCommandBuffer commandBuffer, const VkPerTileBeginInfoQCOM* pPerTileBeginInfo,
+                                                    const RecordObject& record_obj) override;
+    void PostCallRecordCmdEndPerTileExecutionQCOM(VkCommandBuffer commandBuffer, const VkPerTileEndInfoQCOM* pPerTileEndInfo,
+                                                  const RecordObject& record_obj) override;
     void PostCallRecordCmdBindDescriptorSets2(VkCommandBuffer commandBuffer,
                                               const VkBindDescriptorSetsInfo* pBindDescriptorSetsInfo,
                                               const RecordObject& record_obj) override;
@@ -2004,7 +2011,8 @@ class DeviceState : public vvl::BaseDevice {
     void PostCallRecordGetShaderModuleCreateInfoIdentifierEXT(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo,
                                                               VkShaderModuleIdentifierEXT* pIdentifier,
                                                               const RecordObject& record_obj) override;
-
+    void PostCallRecordCmdSetPrimitiveRestartIndexEXT(VkCommandBuffer commandBuffer, uint32_t primitiveRestartIndex,
+                                                      const RecordObject& record_obj) override;
     void PostCallRecordCmdBindTransformFeedbackBuffersEXT(VkCommandBuffer commandBuffer, uint32_t firstBinding,
                                                           uint32_t bindingCount, const VkBuffer* pBuffers,
                                                           const VkDeviceSize* pOffsets, const VkDeviceSize* pSizes,
@@ -2352,14 +2360,22 @@ class DeviceProxy : public vvl::BaseDevice {
     virtual void Created(vvl::ShaderObject& state) {}
     virtual void Created(vvl::Pipeline& state){};
 
-    // Validate submission batch and update state if necessary.
-    // Called by SubmitTimeTracker and protected by the mutex. Only one batch is processed at a time.
+    // Validate a submission batch and update state if needed.
+    // This call is protected by the global submit-time mutex.
     //
-    // NOTE: Classic Validate/Record split made it a challenge to synchronize threaded queues,
-    // especialy when timeline signal resolves pending work on another queue.
-    // This became increasingly important after the spec allowed internally synchronized queues,
-    // meaning the same queue can be used from multiple threads.
-    virtual bool ProcessSubmissionBatch(SubmissionBatch& batch) { return false; }
+    // NOTE: The classic Validate/Record split made threaded queues difficult to synchronize,
+    // especially when a timeline signal resolves pending work on another queue.
+    // This became even more important after the spec allowed internally synchronized queues,
+    // which means the same queue can be used from multiple threads
+    virtual bool ProcessSubmissionBatch(const SubmitTimeTracker& tracker,
+                                        const std::vector<std::shared_ptr<vvl::CommandBuffer>>& command_buffers,
+                                        vvl::span<const VkSemaphoreSubmitInfo> signal_semaphores, const Location& submit_loc) {
+        return false;
+    }
+
+    // Validate a submission batch and update state if needed.
+    // This call is protected by the global submit-time mutex
+    virtual bool ProcessPresentBatch(const vvl::Image& swapchain_image, const Location& present_info_loc) { return false; }
 
     // callbacks for image layout validation, which is implemented in both core validation and gpu-av
     // TODO - It would be nice to have a way to not need a duplicate copy in both CoreChecks and GPU-AV code
@@ -2380,11 +2396,11 @@ class DeviceProxy : public vvl::BaseDevice {
         return false;
     }
     virtual bool ValidateProtectedTensor(const vvl::CommandBuffer& cb_state, const vvl::Tensor& tensor_state,
-                                         const Location& tensor_loc, const char* vuid, const char* more_message = "") const {
+                                         const Location& tensor_loc, const char* more_message = "") const {
         return false;
     }
     virtual bool ValidateUnprotectedTensor(const vvl::CommandBuffer& cb_state, const vvl::Tensor& tensor_state,
-                                           const Location& tensor_loc, const char* vuid, const char* more_message = "") const {
+                                           const Location& tensor_loc, const char* more_message = "") const {
         return false;
     }
     virtual bool ValidateBoundTileMemory(const vvl::Bindable& bindable, const vvl::CommandBuffer& cb_state,

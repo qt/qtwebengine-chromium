@@ -56,9 +56,7 @@ using ::testing::Return;
 TestPaymentsAutofillClient::TestPaymentsAutofillClient(AutofillClient* client)
     : client_(CHECK_DEREF(client)),
       mock_save_and_fill_manager_(
-          std::make_unique<NiceMock<MockSaveAndFillManager>>()),
-      mock_merchant_promo_code_manager_(
-          &client_->GetPersonalDataManager().payments_data_manager()) {
+          std::make_unique<NiceMock<MockSaveAndFillManager>>()) {
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
   if (base::FeatureList::IsEnabled(features::kAutofillEnableOmniboxAutofill)) {
     omnibox_autofill_delegate_ =
@@ -157,7 +155,8 @@ void TestPaymentsAutofillClient::VirtualCardEnrollCompleted(
     PaymentsRpcResult result) {}
 
 void TestPaymentsAutofillClient::OnCardDataAvailable(
-    const FilledCardInformationBubbleOptions& options) {}
+    const FilledCardInformationBubbleOptions& options,
+    const url::Origin& origin) {}
 
 void TestPaymentsAutofillClient::ConfirmSaveIbanLocally(
     const Iban& iban,
@@ -309,12 +308,6 @@ bool TestPaymentsAutofillClient::IsRiskBasedAuthEffectivelyAvailable() const {
 bool TestPaymentsAutofillClient::IsMandatoryReauthEnabled() {
   return GetPaymentsDataManager().IsPaymentMethodsMandatoryReauthEnabled();
 }
-
-#if BUILDFLAG(IS_IOS)
-bool TestPaymentsAutofillClient::IsUsingCustomCardIconEnabled() const {
-  return true;
-}
-#endif  // BUILDFLAG(IS_IOS)
 
 void TestPaymentsAutofillClient::ShowMandatoryReauthOptInPrompt(
     base::OnceClosure accept_mandatory_reauth_callback,
@@ -495,6 +488,16 @@ BnplUiDelegate* TestPaymentsAutofillClient::GetBnplUiDelegate() {
 OmniboxAutofillDelegate*
 TestPaymentsAutofillClient::GetOmniboxAutofillDelegate() {
   return omnibox_autofill_delegate_.get();
+}
+
+void TestPaymentsAutofillClient::ShowOmniboxAutofillChip() {
+  omnibox_autofill_chip_shown_ = true;
+  omnibox_autofill_chip_hidden_ = false;
+}
+
+void TestPaymentsAutofillClient::HideOmniboxAutofillChip() {
+  omnibox_autofill_chip_hidden_ = true;
+  omnibox_autofill_chip_shown_ = false;
 }
 #endif
 

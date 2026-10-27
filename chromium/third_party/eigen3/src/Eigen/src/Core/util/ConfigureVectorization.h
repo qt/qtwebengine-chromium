@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_CONFIGURE_VECTORIZATION_H
 #define EIGEN_CONFIGURE_VECTORIZATION_H
@@ -84,7 +85,11 @@
 #elif defined __HVX__ && (__HVX_LENGTH__ == 128)
 #define EIGEN_IDEAL_MAX_ALIGN_BYTES 128
 #elif defined(EIGEN_RISCV64_USE_RVV10)
+#if __riscv_v_fixed_vlen <= 512
 #define EIGEN_IDEAL_MAX_ALIGN_BYTES 64
+#else
+#define EIGEN_IDEAL_MAX_ALIGN_BYTES 128
+#endif
 #else
 #define EIGEN_IDEAL_MAX_ALIGN_BYTES 16
 #endif
@@ -359,9 +364,8 @@
 // so, to avoid compile errors when windows.h is included after Eigen/Core, ensure intrinsics are extern "C" here too.
 // notice that since these are C headers, the extern "C" is theoretically needed anyways.
 extern "C" {
-// In theory we should only include immintrin.h and not the other *mmintrin.h header files directly.
-// Doing so triggers some issues with ICC. However old gcc versions may not have this file, thus:
-#if EIGEN_COMP_ICC >= 1110 || EIGEN_COMP_EMSCRIPTEN
+// ICC and Emscripten need the umbrella header instead of direct *mmintrin.h includes.
+#if EIGEN_COMP_ICC || EIGEN_COMP_EMSCRIPTEN
 #include <immintrin.h>
 #else
 #include <mmintrin.h>
@@ -458,7 +462,11 @@ extern "C" {
 #endif
 
 #undef EIGEN_STACK_ALLOCATION_LIMIT
+#if __riscv_v_fixed_vlen <= 512
 #define EIGEN_STACK_ALLOCATION_LIMIT 196608
+#else
+#define EIGEN_STACK_ALLOCATION_LIMIT 393216
+#endif
 
 #if defined(__riscv_zvfh) && defined(__riscv_zfh)
 #define EIGEN_VECTORIZE_RVV10FP16
@@ -524,7 +532,7 @@ extern "C" {
 #define EIGEN_VECTORIZE_FMA
 #endif
 
-#if defined(__F16C__) && !defined(EIGEN_GPUCC) && (!EIGEN_COMP_CLANG_STRICT || EIGEN_CLANG_STRICT_AT_LEAST(3, 8, 0))
+#if defined(__F16C__) && !defined(EIGEN_GPUCC)
 // We can use the optimized fp16 to float and float to fp16 conversion routines
 #define EIGEN_HAS_FP16_C
 
@@ -541,20 +549,15 @@ extern "C" {
 #if defined EIGEN_CUDACC
 #define EIGEN_VECTORIZE_GPU
 #include <vector_types.h>
-#if EIGEN_CUDA_SDK_VER >= 70500
-#define EIGEN_HAS_CUDA_FP16
-#endif
-#endif
-
-#if defined(EIGEN_HAS_CUDA_FP16)
 #include <cuda_runtime_api.h>
+#if defined(EIGEN_HAS_CUDA_FP16)
 #include <cuda_fp16.h>
+#endif
 #endif
 
 #if defined(EIGEN_HIPCC)
 #define EIGEN_VECTORIZE_GPU
 #include <hip/hip_vector_types.h>
-#define EIGEN_HAS_HIP_FP16
 #include <hip/hip_fp16.h>
 #define EIGEN_HAS_HIP_BF16
 #include <hip/hip_bfloat16.h>
@@ -602,6 +605,8 @@ inline static const char* SimdInstructionSetsInUse(void) {
   return "MIPS MSA";
 #elif defined(EIGEN_VECTORIZE_LSX)
   return "LOONGARCH64 LSX";
+#elif defined(EIGEN_VECTORIZE_RVV10)
+  return "RVV";
 #else
   return "None";
 #endif

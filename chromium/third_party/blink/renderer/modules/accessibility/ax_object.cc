@@ -56,7 +56,10 @@
 #include "third_party/blink/renderer/core/dom/indexed_pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/dom/slot_assignment_engine.h"
+#include "third_party/blink/renderer/core/editing/character_range_mapper.h"
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
+#include "third_party/blink/renderer/core/editing/frame_selection.h"
+#include "third_party/blink/renderer/core/editing/selection_template.h"
 #include "third_party/blink/renderer/core/events/keyboard_event.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -104,6 +107,7 @@
 #include "third_party/blink/renderer/core/input/context_menu_allowed_scope.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
 #include "third_party/blink/renderer/core/input_type_names.h"
+#include "third_party/blink/renderer/core/keywords.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_box_model_object.h"
 #include "third_party/blink/renderer/core/layout/layout_image.h"
@@ -124,6 +128,7 @@
 #include "third_party/blink/renderer/modules/accessibility/aria_notification.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_enums.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_object-inl.h"
+#include "third_party/blink/renderer/modules/accessibility/ax_relation_cache.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_to_number.h"
 #if AX_FAIL_FAST_BUILD()
@@ -222,6 +227,30 @@ void AddIntListAttributeFromObjects(ax::mojom::blink::IntListAttribute attr,
   }
   if (!ids.empty())
     node_data->AddIntListAttribute(attr, ids);
+}
+
+// Returns true if |target| satisfies the Author MUST requirements for
+// aria-actions targets per the spec PR
+// (https://github.com/w3c/aria/pull/1805) #aria-actions. The UA drops targets
+// that fail these checks. Validates accessible name, click-handler
+// availability, and keyboard accessibility.
+bool IsValidAriaActionsTarget(const AXObject& target) {
+  String name = target.ComputedName();
+  if (name.StripWhiteSpace().empty()) {
+    return false;
+  }
+  // IsClickable() is virtually dispatched to AXNodeObject::IsClickable(),
+  // which considers mouse-button event listeners, contenteditable, native
+  // clickable roles, and correctly returns false for disabled elements.
+  if (!target.IsClickable()) {
+    return false;
+  }
+  // CanSetFocusAttribute() accepts elements that are either mouse-focusable
+  // (native focusable roles, tabindex>=0, or tabindex=-1 inside a
+  // managed-focus widget) or keyboard-focusable. It rejects disabled,
+  // hidden, and inert elements. The const overload returns the cached
+  // value, which has been updated by the surrounding serialization path.
+  return target.CanSetFocusAttribute();
 }
 
 // Max length for attributes such as aria-label.
@@ -427,7 +456,7 @@ void AXObject::SetAncestorsHaveDirtyDescendants() {
   AXObject* ancestor = this;
 
   while (true) {
-    ancestor = ancestor->ParentObject();
+    ancestor = ancestor->ParentObjectIfPresent();
     if (!ancestor) {
       break;
     }
@@ -442,15 +471,15 @@ void AXObject::SetAncestorsHaveDirtyDescendants() {
     if (!ancestor->CachedIsIncludedInTree()) {
       continue;
     }
-    if (ancestor->has_dirty_descendants_) {
-      break;
+    if (!ancestor->has_dirty_descendants_) {
+      ancestor->SetHasDirtyDescendants(true);
     }
-    ancestor->SetHasDirtyDescendants(true);
   }
 #if AX_FAIL_FAST_BUILD()
   // Walk up the tree looking for dirty bits that failed to be set. If any
   // are found, this is a bug.
-  for (auto* obj = ParentObject(); obj; obj = obj->ParentObject()) {
+  for (auto* obj = ParentObjectIfPresent(); obj;
+       obj = obj->ParentObjectIfPresent()) {
     if (obj->CachedIsIncludedInTree() && !obj->has_dirty_descendants_) {
       NOTREACHED() << "Failed to set dirty bits on some ancestors:\n"
                    << ParentChainToStringHelper(this);
@@ -592,7 +621,8 @@ void AXObject::SetParent(AXObject* new_parent) {
   if (parent_ && new_parent != parent_ && !parent_->NeedsToUpdateChildren() &&
       !parent_->IsDetached()) {
     for (const auto& child : parent_->ChildrenIncludingIgnored()) {
-      DUMP_WILL_BE_CHECK(child != this)
+      // TODO(crbug.com/500774799): Investigate and convert to CHECK.
+      DCHECK(child != this)
           << "Previous parent still has |this| child:\n"
           << this << " should be a child of " << new_parent << " not of "
           << parent_;
@@ -634,13 +664,15 @@ bool AXObject::IsMissingParent() const {
     // object, because hidden ones are purposely kept around without being in
     // the tree, and without a parent, for potential later reuse.
     bool is_missing = !IsRoot();
-    DUMP_WILL_BE_CHECK(!is_missing || !AXObjectCache().IsFrozen())
+    // TODO(crbug.com/500793607): Investigate and convert to CHECK.
+    DCHECK(!is_missing || !AXObjectCache().IsFrozen())
         << "Should not have missing parent in frozen tree: " << this;
     return is_missing;
   }
 
   if (parent_->IsDetached()) {
-    DUMP_WILL_BE_CHECK(!AXObjectCache().IsFrozen())
+    // TODO(crbug.com/500793607): Investigate and convert to CHECK.
+    DCHECK(!AXObjectCache().IsFrozen())
         << "Should not have detached parent in frozen tree: " << this;
     return true;
   }
@@ -1439,8 +1471,9 @@ void AXObject::SerializeImplicitActions(ui::AXNodeData* node_data) const {
   auto actions_ids = node_data->GetIntListAttribute(
       ax::mojom::blink::IntListAttribute::kActionsIds);
   for (const auto& child : potential_actions) {
-    if (child->RoleValue() == ax::mojom::blink::Role::kButton ||
-        child->RoleValue() == ax::mojom::blink::Role::kLink) {
+    if ((child->RoleValue() == ax::mojom::blink::Role::kButton ||
+         child->RoleValue() == ax::mojom::blink::Role::kLink) &&
+        IsValidAriaActionsTarget(*child)) {
       actions_ids.push_back(child->AXObjectID());
     }
   }
@@ -2022,10 +2055,19 @@ void AXObject::SerializeRelationAttributes(ui::AXNodeData* node_data) const {
         active_descendant->AXObjectID());
   }
 
-  if (RuntimeEnabledFeatures::AriaActionsEnabled()) {
+  if (RuntimeEnabledFeatures::AriaActionsEnabled() &&
+      RoleSupportsAriaAttribute(RoleValue(), html_names::kAriaActionsAttr)) {
+    AXObjectVector action_targets =
+        RelationVectorFromAria(html_names::kAriaActionsAttr);
+    AXObjectVector valid_targets;
+    for (const auto& target : action_targets) {
+      if (IsValidAriaActionsTarget(*target)) {
+        valid_targets.push_back(target);
+      }
+    }
     AddIntListAttributeFromObjects(
-        ax::mojom::blink::IntListAttribute::kActionsIds,
-        RelationVectorFromAria(html_names::kAriaActionsAttr), node_data);
+        ax::mojom::blink::IntListAttribute::kActionsIds, valid_targets,
+        node_data);
   }
 
   AddIntListAttributeFromObjects(
@@ -2344,11 +2386,6 @@ void AXObject::SerializeUnignoredAttributes(ui::AXNodeData* node_data,
     TruncateAndAddStringAttribute(
         node_data, ax::mojom::blink::StringAttribute::kKeyShortcuts,
         AriaAttribute(html_names::kAriaKeyshortcutsAttr));
-    if (RuntimeEnabledFeatures::AccessibilityAriaVirtualContentEnabled()) {
-      TruncateAndAddStringAttribute(
-          node_data, ax::mojom::blink::StringAttribute::kVirtualContent,
-          AriaAttribute(html_names::kAriaVirtualcontentAttr));
-    }
 
     if (IsAriaAttributeTrue(html_names::kAriaBusyAttr)) {
       node_data->AddBoolAttribute(ax::mojom::blink::BoolAttribute::kBusy, true);
@@ -2425,17 +2462,20 @@ void AXObject::SerializeUnignoredAttributes(ui::AXNodeData* node_data,
     }
   }
 
-  // Check for presence of aria-actions. Even if the value is empty or the
-  // targets are hidden, we still want to expose that there could be actions.
-  if (RuntimeEnabledFeatures::AriaActionsEnabled() &&
-      HasAriaAttribute(html_names::kAriaActionsAttr)) {
-    node_data->AddState(ax::mojom::blink::State::kHasActions);
-  }
-
   // Author-defined actions should take precedence over implicit ones.
   if (RuntimeEnabledFeatures::AccessibilityImplicitActionsEnabled() &&
       !HasAriaAttribute(html_names::kAriaActionsAttr)) {
     SerializeImplicitActions(node_data);
+  }
+
+  // Expose kHasActions when at least one valid actions target was
+  // serialized. Targets without an accessible name are dropped per the
+  // spec PR (https://github.com/w3c/aria/pull/1805) #aria-actions; this
+  // gate covers both author-defined targets (aria-actions) and implicit
+  // targets derived from children of menuitem-like roles.
+  if (node_data->HasIntListAttribute(
+          ax::mojom::blink::IntListAttribute::kActionsIds)) {
+    node_data->AddState(ax::mojom::blink::State::kHasActions);
   }
 
   if (IsScrollableContainer())
@@ -2507,17 +2547,6 @@ void AXObject::SerializeComputedDetailsRelation(
         {static_cast<int32_t>(popover->AXObjectID())});
     node_data->SetDetailsFrom(ax::mojom::blink::DetailsFrom::kPopoverTarget);
     return;
-  }
-
-  // Add aria-details for the element anchored to this object.
-  if (!RuntimeEnabledFeatures::NoAriaDetailsForAnchorPosEnabled()) {
-    if (AXObject* positioned_obj = GetPositionedObjectForAnchor(node_data)) {
-      node_data->AddIntListAttribute(
-          ax::mojom::blink::IntListAttribute::kDetailsIds,
-          {static_cast<int32_t>(positioned_obj->AXObjectID())});
-      node_data->SetDetailsFrom(ax::mojom::blink::DetailsFrom::kCssAnchor);
-      return;
-    }
   }
 
   // Add aria-details for a scroll marker pseudo-element.
@@ -2618,9 +2647,7 @@ AXObject* AXObject::GetCommandForElementForDetailsRelation() const {
   if (action != CommandEventType::kTogglePopover &&
       action != CommandEventType::kShowPopover &&
       action != CommandEventType::kHidePopover &&
-      action != CommandEventType::kToggleMenu &&
-      action != CommandEventType::kShowMenu &&
-      action != CommandEventType::kHideMenu) {
+      action != CommandEventType::kToggleMenu) {
     return nullptr;
   }
 
@@ -2643,10 +2670,6 @@ AXObject* AXObject::GetCommandForElementForDetailsRelation() const {
 // DOM (depth first search order).
 AXObject* AXObject::GetInterestForTargetPopover() const {
   if (!GetElement()) {
-    return nullptr;
-  }
-
-  if (!RuntimeEnabledFeatures::HTMLInterestForAttributeEnabled()) {
     return nullptr;
   }
 
@@ -2678,46 +2701,6 @@ AXObject* AXObject::GetInterestForTargetPopover() const {
   }
 
   return ax_popover;
-}
-
-AXObject* AXObject::GetPositionedObjectForAnchor(ui::AXNodeData* data) const {
-  CHECK(!RuntimeEnabledFeatures::NoAriaDetailsForAnchorPosEnabled());
-  AXObject* positioned_obj = AXObjectCache().GetPositionedObjectForAnchor(this);
-  if (!positioned_obj) {
-    return nullptr;
-  }
-
-  // Check for cases where adding an aria-details relationship between the
-  // anchor and the positioned elements would add extra noise.
-  // https://github.com/w3c/html-aam/issues/545
-  if (positioned_obj->RoleValue() == ax::mojom::blink::Role::kTooltip) {
-    return nullptr;
-  }
-
-  // Elements are direct DOM siblings.
-  if (ElementTraversal::NextSkippingChildren(*GetNode()) ==
-      positioned_obj->GetElement()) {
-    return nullptr;
-  }
-
-  // Check for existing labelledby/describedby/controls relationships.
-  for (auto attr : {ax::mojom::blink::IntListAttribute::kLabelledbyIds,
-                    ax::mojom::blink::IntListAttribute::kDescribedbyIds,
-                    ax::mojom::blink::IntListAttribute::kControlsIds}) {
-    auto attr_ids = data->GetIntListAttribute(attr);
-    if (std::find(attr_ids.begin(), attr_ids.end(),
-                  positioned_obj->AXObjectID()) != attr_ids.end()) {
-      return nullptr;
-    }
-  }
-
-  // Check for existing parent/child relationship (includes case where the
-  // anchor has an aria-owns relationship with the positioned element).
-  if (positioned_obj->ParentObject() == this) {
-    return nullptr;
-  }
-
-  return positioned_obj;
 }
 
 AXObject* AXObject::GetScrollMarkerTarget() const {
@@ -2992,7 +2975,7 @@ ax::mojom::blink::Role AXObject::ComputeFinalRoleForSerialization() const {
     bool is_item =
         element->IsKeyboardFocusableSlow(
             Element::UpdateBehavior::kNoneForAccessibility) &&
-        element->GetFocusgroupData().behavior != FocusgroupBehavior::kOptOut;
+        !FocusgroupControllerUtils::IsExcludedFromAncestorFocusgroup(element);
     Element* focusgroup_owner =
         is_item ? focusgroup::FindFocusgroupOwner(element) : nullptr;
     if (focusgroup_owner) {
@@ -3532,7 +3515,8 @@ bool AXObject::IsIncludedInTree() {
 
 void AXObject::CheckCanAccessCachedValues() const {
   if (!IsDetached() && AXObjectCache().IsFrozen()) {
-    DUMP_WILL_BE_CHECK(!NeedsToUpdateCachedValues())
+    // TODO(crbug.com/500793607): Investigate and convert to CHECK.
+    DCHECK(!NeedsToUpdateCachedValues())
         << "Stale values: " << this;
   }
 }
@@ -3569,7 +3553,8 @@ void AXObject::UpdateCachedAttributeValuesIfNeeded(
 #if AX_FAIL_FAST_BUILD()
     parent_chain = "\n* Parent Chain:\n" + ParentChainToStringHelper(this);
 #endif
-    DUMP_WILL_BE_CHECK(false)
+    // TODO(crbug.com/500774800): Investigate and convert to CHECK.
+    DCHECK(false)
         << AXObjectCache() << "\n* Object: " << this << parent_chain;
   }
 
@@ -3589,7 +3574,8 @@ void AXObject::UpdateCachedAttributeValuesIfNeeded(
       << GetDocument()->Lifecycle().ToString();
 #endif  // DCHECK_IS_ON()
 
-  DUMP_WILL_BE_CHECK(!IsMissingParent()) << "Missing parent: " << this;
+  // TODO(crbug.com/500774799): Investigate and convert to CHECK.
+  DCHECK(!IsMissingParent()) << "Missing parent: " << this;
 
   const ComputedStyle* style = GetComputedStyle();
 
@@ -3748,7 +3734,8 @@ void AXObject::UpdateCachedAttributeValuesIfNeeded(
     // The document root is never a live region root.
     cached_live_region_root_ = nullptr;
   } else {
-    DUMP_WILL_BE_CHECK(!IsMissingParent()) << this;
+    // TODO(crbug.com/500774799): Investigate and convert to CHECK.
+    DCHECK(!IsMissingParent()) << this;
     // Is a live region root if this or an ancestor is a live region.
     if (IsLiveRegionRoot()) {
       cached_live_region_root_ = this;
@@ -3830,7 +3817,8 @@ bool AXObject::ComputeIsIgnored(
 
 bool AXObject::ShouldIgnoreForHiddenOrInert(
     IgnoredReasons* ignored_reasons) const {
-  DUMP_WILL_BE_CHECK(!cached_values_need_update_)
+  // TODO(crbug.com/500793607): Investigate and convert to CHECK.
+  DCHECK(!cached_values_need_update_)
       << "Tried to compute ignored value without up-to-date hidden/inert "
          "values on "
       << this;
@@ -4499,6 +4487,11 @@ ax::mojom::blink::Role AXObject::DetermineRoleValue() {
 #endif
 
   return NativeRoleIgnoringAria();
+}
+
+void AXObject::UpdateRole() {
+  DCHECK(!IsDetached());
+  role_ = DetermineRoleValue();
 }
 
 bool AXObject::CanSetValueAttribute() const {
@@ -5736,7 +5729,6 @@ const AtomicString& AXObject::LiveRegionStatus() const {
                       ("assertive"));
   DEFINE_STATIC_LOCAL(const AtomicString, live_region_status_polite,
                       ("polite"));
-  DEFINE_STATIC_LOCAL(const AtomicString, live_region_status_off, ("off"));
   DEFINE_STATIC_LOCAL(const AtomicString, live_region_status_undefined,
                       ("undefined"));
 
@@ -5758,8 +5750,8 @@ const AtomicString& AXObject::LiveRegionStatus() const {
   if (implicit_value == live_region_status_polite) {
     return live_region_status_polite;
   }
-  if (implicit_value == live_region_status_off) {
-    return live_region_status_off;
+  if (implicit_value == keywords::kOff) {
+    return keywords::kOff;
   }
 
   return g_null_atom;
@@ -5837,12 +5829,12 @@ ax::mojom::blink::Role AXObject::RawAriaRole() const {
   return ax::mojom::blink::Role::kUnknown;
 }
 
-ax::mojom::blink::Role AXObject::DetermineRawAriaRole() const {
-  const Element* element = GetElement();
-  if (!element) {
+ax::mojom::blink::Role AXObject::DetermineRawAriaRoleWithContext() const {
+  if (!GetElement()) {
     return ax::mojom::blink::Role::kUnknown;
   }
-  return DetermineRawAriaRole(*element);
+  const AtomicString& role_str = AriaAttribute(html_names::kRoleAttr);
+  return FirstValidRoleInRoleStringWithContext(role_str);
 }
 
 // static
@@ -5857,12 +5849,235 @@ ax::mojom::blink::Role AXObject::DetermineRawAriaRole(const Element& element) {
   return FirstValidRoleInRoleString(aria_role);
 }
 
+bool AXObject::HasRequiredParentContext(ax::mojom::blink::Role role) const {
+  const Element* element = GetElement();
+  if (!element) {
+    return true;
+  }
+
+  if (role == ax::mojom::blink::Role::kListItem) {
+    return !IsOrphanedListItem(*element);
+  }
+
+  if (role == ax::mojom::blink::Role::kListBoxOption) {
+    return !IsOrphanedOption(*element);
+  }
+
+  if (role == ax::mojom::blink::Role::kTreeItem) {
+    return !IsOrphanedTreeItem(*element);
+  }
+
+  return true;
+}
+
+bool AXObject::IsOrphanedListItem(const Element& element) const {
+  // Check if owned via aria-owns (Relation Cache lookup).
+  AXRelationCache* relation_cache = AXObjectCache().RelationCache();
+  if (relation_cache && relation_cache->IsAriaOwned(this)) {
+    AXObject* owner = relation_cache->ValidatedAriaOwner(this);
+    if (owner) {
+      ax::mojom::blink::Role owner_role = owner->RoleValue();
+      if (owner_role == ax::mojom::blink::Role::kList ||
+          owner_role == ax::mojom::blink::Role::kGroup) {
+        return false;  // It has a valid owner, so it is not an orphan.
+      }
+    }
+  }
+
+  // Walk up the DOM tree looking for a valid list container.
+  for (Node* curr = LayoutTreeBuilderTraversal::Parent(element); curr;
+       curr = LayoutTreeBuilderTraversal::Parent(*curr)) {
+    auto* parent = DynamicTo<Element>(curr);
+    if (!parent) {
+      continue;
+    }
+
+    // Valid list element tags.
+    if (parent->HasTagName(html_names::kUlTag) ||
+        parent->HasTagName(html_names::kOlTag) ||
+        parent->HasTagName(html_names::kMenuTag)) {
+      return false;  // Found valid list, so it is not an orphan.
+    }
+
+    // Valid list ARIA roles.
+    const AtomicString& role_str =
+        AXObject::AriaAttribute(*parent, html_names::kRoleAttr);
+    ax::mojom::blink::Role parent_role = ax::mojom::blink::Role::kUnknown;
+    if (!role_str.empty()) {
+      parent_role = FirstValidRoleInRoleString(role_str);
+    }
+    if (parent_role == ax::mojom::blink::Role::kList ||
+        parent_role == ax::mojom::blink::Role::kGroup) {
+      return false;  // Found valid list, so it is not an orphan.
+    }
+
+    // Skip presentational wrappers that do not affect tree structure.
+    if (ui::IsPresentational(parent_role)) {
+      continue;
+    }
+
+    // Skip anonymous/generic <div> wrappers without explicit roles.
+    if (parent->HasTagName(html_names::kDivTag) && role_str.empty()) {
+      continue;
+    }
+
+    // Any other non-generic structural element interrupts the context.
+    break;
+  }
+
+  return true;  // No list parent found, it is an orphan.
+}
+
+bool AXObject::IsOrphanedOption(const Element& element) const {
+  // Check if owned via aria-owns.
+  AXRelationCache* relation_cache = AXObjectCache().RelationCache();
+  if (relation_cache && relation_cache->IsAriaOwned(this)) {
+    AXObject* owner = relation_cache->ValidatedAriaOwner(this);
+    if (owner) {
+      ax::mojom::blink::Role owner_role = owner->RoleValue();
+      if (owner_role == ax::mojom::blink::Role::kListBox ||
+          owner_role == ax::mojom::blink::Role::kGroup) {
+        return false;
+      }
+    }
+  }
+
+  // Walk up the DOM tree looking for a valid select/listbox.
+  for (Node* curr = LayoutTreeBuilderTraversal::Parent(element); curr;
+       curr = LayoutTreeBuilderTraversal::Parent(*curr)) {
+    auto* parent = DynamicTo<Element>(curr);
+    if (!parent) {
+      continue;
+    }
+
+    if (parent->HasTagName(html_names::kSelectTag)) {
+      return false;
+    }
+
+    const AtomicString& role_str =
+        AXObject::AriaAttribute(*parent, html_names::kRoleAttr);
+    ax::mojom::blink::Role parent_role = ax::mojom::blink::Role::kUnknown;
+    if (!role_str.empty()) {
+      parent_role = FirstValidRoleInRoleString(role_str);
+    }
+    if (parent_role == ax::mojom::blink::Role::kListBox ||
+        parent_role == ax::mojom::blink::Role::kGroup) {
+      return false;
+    }
+
+    // Skip presentational wrappers that do not affect tree structure.
+    if (ui::IsPresentational(parent_role)) {
+      continue;
+    }
+
+    if (parent->HasTagName(html_names::kDivTag) && role_str.empty()) {
+      continue;
+    }
+
+    break;
+  }
+
+  return true;
+}
+
+bool AXObject::IsOrphanedTreeItem(const Element& element) const {
+  // Check if owned via aria-owns (Relation Cache lookup).
+  AXRelationCache* relation_cache = AXObjectCache().RelationCache();
+  if (relation_cache && relation_cache->IsAriaOwned(this)) {
+    AXObject* owner = relation_cache->ValidatedAriaOwner(this);
+    if (owner) {
+      ax::mojom::blink::Role owner_role = owner->RoleValue();
+      if (owner_role == ax::mojom::blink::Role::kTree ||
+          owner_role == ax::mojom::blink::Role::kGroup) {
+        return false;  // It has a valid owner, so it is not an orphan.
+      }
+    }
+  }
+
+  // Walk up the DOM tree looking for a valid tree or group container parent.
+  for (Node* curr = LayoutTreeBuilderTraversal::Parent(element); curr;
+       curr = LayoutTreeBuilderTraversal::Parent(*curr)) {
+    auto* parent = DynamicTo<Element>(curr);
+    if (!parent) {
+      continue;
+    }
+
+    const AtomicString& role_str =
+        AXObject::AriaAttribute(*parent, html_names::kRoleAttr);
+    ax::mojom::blink::Role parent_role = ax::mojom::blink::Role::kUnknown;
+    if (!role_str.empty()) {
+      parent_role = FirstValidRoleInRoleString(role_str);
+    }
+    if (parent_role == ax::mojom::blink::Role::kTree ||
+        parent_role == ax::mojom::blink::Role::kGroup) {
+      return false;  // Found valid tree/group parent, so it is not an orphan.
+    }
+
+    // Allow walking up through parent treeitem elements in nested tree
+    // structures.
+    if (parent_role == ax::mojom::blink::Role::kTreeItem) {
+      continue;
+    }
+
+    // Skip presentational wrappers that do not affect tree structure.
+    if (ui::IsPresentational(parent_role)) {
+      continue;
+    }
+
+    // Skip anonymous/generic <div> wrappers without explicit roles.
+    if (parent->HasTagName(html_names::kDivTag) && role_str.empty()) {
+      continue;
+    }
+
+    // Skip anonymous/generic <span> wrappers without explicit roles.
+    if (parent->HasTagName(html_names::kSpanTag) && role_str.empty()) {
+      continue;
+    }
+
+    // Skip generic custom element wrappers (e.g. <cr-tree-item>) without
+    // explicit roles.
+    if (parent->IsCustomElement() && role_str.empty()) {
+      continue;
+    }
+
+    // Any other non-generic structural element interrupts the context.
+    break;
+  }
+
+  return true;  // No tree/group parent found, it is an orphan.
+}
+
+ax::mojom::blink::Role AXObject::FirstValidRoleInRoleStringWithContext(
+    const String& role_str,
+    bool ignore_form_and_region) const {
+  if (role_str.empty()) {
+    return ax::mojom::blink::Role::kUnknown;
+  }
+
+  Vector<String> role_tokens = role_str.SimplifyWhiteSpace().Split(' ');
+
+  for (const String& token : role_tokens) {
+    if (token.empty()) {
+      continue;
+    }
+    ax::mojom::blink::Role role =
+        FirstValidRoleInRoleString(token, ignore_form_and_region);
+    if (role != ax::mojom::blink::Role::kUnknown) {
+      if (HasRequiredParentContext(role)) {
+        return role;
+      }
+    }
+  }
+
+  return ax::mojom::blink::Role::kUnknown;
+}
+
 ax::mojom::blink::Role AXObject::DetermineAriaRole() const {
   if (!GetElement()) {
     return ax::mojom::blink::Role::kUnknown;
   }
 
-  ax::mojom::blink::Role role = DetermineRawAriaRole();
+  ax::mojom::blink::Role role = DetermineRawAriaRoleWithContext();
 
   if ((role == ax::mojom::blink::Role::kForm ||
        role == ax::mojom::blink::Role::kRegion) &&
@@ -5876,9 +6091,10 @@ ax::mojom::blink::Role AXObject::DetermineAriaRole() const {
     // ChromeVox will ignore the aria-roledescription. It only speaks the role
     // description on certain roles, and ignores it on the generic role.
     // See also https://github.com/w3c/aria/issues/1463.
-    if (const AtomicString& role_str = AriaAttribute(html_names::kRoleAttr)) {
-      return FirstValidRoleInRoleString(role_str,
-                                        /*ignore_form_and_region*/ true);
+    const AtomicString& role_str = AriaAttribute(html_names::kRoleAttr);
+    if (!role_str.empty()) {
+      return FirstValidRoleInRoleStringWithContext(
+          role_str, /*ignore_form_and_region*/ true);
     }
     return ax::mojom::blink::Role::kUnknown;
   }
@@ -6071,7 +6287,7 @@ bool AXObject::LiveRegionAtomic() const {
   }
 
   const String& implicit_value = GetImplicitAriaAtomic(RoleValue());
-  return implicit_value == "true";
+  return implicit_value == keywords::kTrue;
 }
 
 const AtomicString& AXObject::ContainerLiveRegionStatus() const {
@@ -6490,14 +6706,17 @@ AXObject* AXObject::UnignoredPreviousInPreOrderSlow() const {
 }
 
 AXObject* AXObject::ParentObject() const {
-  DUMP_WILL_BE_CHECK(!IsDetached());
-  DUMP_WILL_BE_CHECK(!IsMissingParent()) << "Missing parent: " << this;
+  // TODO(crbug.com/500774799): Investigate and convert to CHECK.
+  DCHECK(!IsDetached());
+  // TODO(crbug.com/500774799): Investigate and convert to CHECK.
+  DCHECK(!IsMissingParent()) << "Missing parent: " << this;
 
   return parent_;
 }
 
 AXObject* AXObject::ParentObject() {
-  DUMP_WILL_BE_CHECK(!IsDetached());
+  // TODO(crbug.com/500774799): Investigate and convert to CHECK.
+  DCHECK(!IsDetached());
   // Calling IsMissingParent can cause us to dereference pointers that
   // are null on detached objects, return early here to avoid crashing.
   // TODO(accessibility) Remove early return and change above assertion
@@ -6505,11 +6724,20 @@ AXObject* AXObject::ParentObject() {
   if (IsDetached()) {
     return nullptr;
   }
-  DUMP_WILL_BE_CHECK(!IsMissingParent()) << "Missing parent: " << this;
+  // TODO(crbug.com/500774799): Investigate and convert to CHECK.
+  DCHECK(!IsMissingParent()) << "Missing parent: " << this;
 
   // TODO(crbug.com/337178753): this should not be necessary once subtree
   // removals can be immediate, complete and safe.
   if (IsMissingParent()) {
+    // If the node is still in the document, do not self-prune. The parent will
+    // be re-established when tree building reaches this node's ancestor. This
+    // avoids crashing when aria-owns re-evaluation during eager subtree
+    // construction clears the parent before the natural parent's AXObject
+    // exists. See crbug.com/501371770.
+    if (GetNode() && GetNode()->isConnected()) {
+      return nullptr;
+    }
     AXObjectCache().RemoveSubtree(GetNode());
     return nullptr;
   }
@@ -6625,7 +6853,8 @@ void AXObject::UpdateChildrenIfNecessary() {
   }
 
   if (AXObjectCache().IsFrozen()) {
-    DUMP_WILL_BE_CHECK(!AXObjectCache().IsFrozen())
+    // TODO(crbug.com/500793607): Investigate and convert to CHECK.
+    DCHECK(!AXObjectCache().IsFrozen())
         << "Object should have already had its children updated in "
            "AXObjectCacheImpl::FinalizeTree(): "
         << this;
@@ -6869,11 +7098,6 @@ void AXObject::ChildrenChangedWithCleanLayout() {
       ax_parent->ChildrenChangedWithCleanLayout();
       return;
     }
-  }
-
-  // TODO(accessibility) Move this up.
-  if (!CanHaveChildren()) {
-    return;
   }
 
   DCHECK(!IsDetached()) << "None of the above should be able to detach |this|: "
@@ -7453,6 +7677,8 @@ bool AXObject::PerformAction(const ui::AXActionData& action_data) {
       return RequestFocusAction();
     case ax::mojom::blink::Action::kIncrement:
       return RequestIncrementAction();
+    case ax::mojom::blink::Action::kReplaceRanges:
+      return RequestReplaceRangesAction(action_data);
     case ax::mojom::blink::Action::kScrollToPoint:
       return RequestScrollToGlobalPointAction(action_data.target_point);
     case ax::mojom::blink::Action::kSetAccessibilityFocus:
@@ -7536,8 +7762,10 @@ bool AXObject::OnNativeClickAction() {
       document->GetFrame(),
       mojom::blink::UserActivationNotificationType::kInteraction);
 
-  if (IsTextField())
-    return OnNativeFocusAction();
+  // Text elements activate IME on focus
+  if (IsTextField()) {
+    OnNativeFocusAction();
+  }
 
   Element* element = GetClosestElement();
 
@@ -7561,8 +7789,10 @@ bool AXObject::OnNativeClickAction() {
       }
     }
 
-    // For most elements, AccessKeyAction triggers sending a simulated
+    // For most elements, `AccessKeyAction()` triggers sending a simulated
     // click, including simulating the mousedown, mouseup, and click events.
+    // For some elements (e.g. <option> inside <select>), `AccessKeyAction()`
+    // has special handling that needs to be available to assistive tools.
     element->AccessKeyAction(SimulatedClickCreationScope::kFromAccessibility);
     return true;
   }
@@ -7654,6 +7884,161 @@ bool AXObject::RequestCollapseAction() {
     return OnNativeKeyboardAction(ax::mojom::blink::Action::kCollapse);
   }
   return RequestClickAction();
+}
+
+struct ReplaceRangeParams {
+  DOMNodeId scope_node_id;
+  CharacterRange character_range;
+  std::string replacement_string;
+};
+
+bool AXObject::RequestReplaceRangesAction(const ui::AXActionData& action_data) {
+  Document* document = GetDocument();
+  if (!document) {
+    return false;
+  }
+
+  if (!action_data.HasIntListAttribute(
+          ax::mojom::blink::IntListAttribute::kTextOperationStartAnchorIds) ||
+      !action_data.HasIntListAttribute(
+          ax::mojom::blink::IntListAttribute::kTextOperationStartOffsets) ||
+      !action_data.HasIntListAttribute(
+          ax::mojom::blink::IntListAttribute::kTextOperationEndAnchorIds) ||
+      !action_data.HasIntListAttribute(
+          ax::mojom::blink::IntListAttribute::kTextOperationEndOffsets) ||
+      !action_data.HasStringListAttribute(
+          ax::mojom::blink::StringListAttribute::
+              kTextOperationReplacementStrings)) {
+    return false;
+  }
+
+  std::vector<int32_t> start_anchor_ids = action_data.GetIntListAttribute(
+      ax::mojom::blink::IntListAttribute::kTextOperationStartAnchorIds);
+  std::vector<int32_t> start_offsets = action_data.GetIntListAttribute(
+      ax::mojom::blink::IntListAttribute::kTextOperationStartOffsets);
+  std::vector<int32_t> end_anchor_ids = action_data.GetIntListAttribute(
+      ax::mojom::blink::IntListAttribute::kTextOperationEndAnchorIds);
+  std::vector<int32_t> end_offsets = action_data.GetIntListAttribute(
+      ax::mojom::blink::IntListAttribute::kTextOperationEndOffsets);
+  std::vector<std::string> replacement_strings =
+      action_data.GetStringListAttribute(ax::mojom::blink::StringListAttribute::
+                                             kTextOperationReplacementStrings);
+
+  size_t size = replacement_strings.size();
+  if (start_anchor_ids.size() != size || end_anchor_ids.size() != size ||
+      start_offsets.size() != size || end_offsets.size() != size) {
+    return false;
+  }
+
+  // Convert all the AXPosition-based replacement ranges into character ranges
+  // relative to the first position within their editable container. This
+  // enables a more reliable batch of replacements since the node referenced in
+  // the AXPosition may be orphaned after we perform a replacement.
+  Vector<ReplaceRangeParams> replace_ranges_params;
+  for (size_t i = 0; i < size; ++i) {
+    AXObject* start_anchor =
+        AXObjectCache().ObjectFromAXID(start_anchor_ids[i]);
+    AXObject* end_anchor = AXObjectCache().ObjectFromAXID(end_anchor_ids[i]);
+
+    if (!start_anchor || !end_anchor) {
+      continue;
+    }
+
+    AXObject* text_field_ancestor = start_anchor->GetTextFieldAncestor();
+    AXObject* end_text_field_ancestor = end_anchor->GetTextFieldAncestor();
+
+    // Ensuring that the range is contained in same editable field.
+    if (!text_field_ancestor ||
+        text_field_ancestor != end_text_field_ancestor) {
+      continue;
+    }
+
+    Node* scope_node = text_field_ancestor->GetNode();
+    if (!scope_node) {
+      continue;
+    }
+
+    if (auto* text_control = DynamicTo<TextControlElement>(scope_node)) {
+      // Use the inner editor element as the scope for <input> and <textarea>.
+      scope_node = text_control->InnerEditorElement();
+      if (!scope_node) {
+        continue;
+      }
+    }
+
+    AXPosition start_position =
+        AXPosition::CreatePositionInTextObject(*start_anchor, start_offsets[i]);
+    AXPosition end_position =
+        AXPosition::CreatePositionInTextObject(*end_anchor, end_offsets[i]);
+
+    if (!start_position.IsValid() || !end_position.IsValid()) {
+      continue;
+    }
+
+    if (end_position < start_position) {
+      std::swap(start_position, end_position);
+    }
+
+    const EphemeralRange scope = EphemeralRange::RangeOfContents(*scope_node);
+    const EphemeralRange replacement_range = EphemeralRange(
+        start_position.ToPosition(AXPositionAdjustmentBehavior::kMoveRight),
+        end_position.ToPosition(AXPositionAdjustmentBehavior::kMoveLeft));
+
+    CharacterRange char_range =
+        CharacterRangeMapper::CreateCharacterRange(scope, replacement_range);
+
+    replace_ranges_params.push_back(ReplaceRangeParams{
+        scope_node->GetDomNodeId(),
+        char_range,
+        replacement_strings[i],
+    });
+  }
+
+  // Use the characters ranges constructed above along with their editable
+  // container node to reconstruct the appropriate Positions for selecting
+  // the replacement range.
+  for (auto& params : replace_ranges_params) {
+    Node* scope_node = Node::FromDomNodeId(params.scope_node_id);
+    if (!scope_node) {
+      continue;
+    }
+
+    const EphemeralRange scope = EphemeralRange::RangeOfContents(*scope_node);
+    const EphemeralRange replacement_range =
+        CharacterRangeMapper::ResolveCharacterRange(scope,
+                                                    params.character_range);
+
+    const Position start_position = replacement_range.StartPosition();
+    const Position end_position = replacement_range.EndPosition();
+    if (!start_position || !end_position) {
+      continue;
+    }
+
+    LocalFrame* frame = document->GetFrame();
+    if (!frame) {
+      return false;
+    }
+
+    const SelectionInDOMTree selection = SelectionInDOMTree::Builder()
+                                             .Collapse(start_position)
+                                             .Extend(end_position)
+                                             .Build();
+
+    const SetSelectionOptions options =
+        SetSelectionOptions::Builder()
+            .SetIsDirectional(true)
+            .SetShouldCloseTyping(true)
+            .SetShouldClearTypingStyle(true)
+            .SetSetSelectionBy(SetSelectionBy::kUser)
+            .Build();
+
+    FrameSelection& frame_selection = frame->Selection();
+    frame_selection.SetSelectionForAccessibility(selection, options);
+    InsertTextAndSendInputEventsOfTypeInsertReplacementText(
+        *frame, String::FromUtf8(params.replacement_string));
+  }
+
+  return true;
 }
 
 bool AXObject::OnNativeKeyboardAction(const ax::mojom::Action action) {
@@ -8240,8 +8625,7 @@ const String AXObject::InternalRoleName(ax::mojom::blink::Role role) {
   // For example, kStaticText becomes StaticText.
   // Many conversions, but this isn't used in performance-sensitive code.
   std::string role_name_std = role_name.str().substr(1, std::string::npos);
-  String role_name_wtf_string = role_name_std.c_str();
-  return role_name_wtf_string;
+  return String(role_name_std);
 }
 
 // static

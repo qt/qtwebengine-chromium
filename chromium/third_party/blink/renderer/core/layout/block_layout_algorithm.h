@@ -218,6 +218,8 @@ class CORE_EXPORT BlockLayoutAlgorithm
                               : child_percentage_size_;
   }
 
+  NOINLINE void SetupLineClamp();
+
   BoxStrut CalculateMargins(LayoutInputNode child,
                             bool is_new_fc,
                             LayoutUnit* additional_line_offset);
@@ -366,6 +368,10 @@ class CORE_EXPORT BlockLayoutAlgorithm
   // Look for a better breakpoint (than we already have) between lines (i.e. a
   // class B breakpoint), and store it.
   void UpdateEarlyBreakBetweenLines();
+
+  // Returns baseline offset if we can get `SimpleFontData` from the primary
+  // font.
+  std::optional<LayoutUnit> BaselineForEmptyLine() const;
 
   // Propagates the baseline from the given |child| if needed.
   void PropagateBaselineFromLineBox(const PhysicalFragment& child,

@@ -13,9 +13,11 @@
 #include "base/files/file.h"
 #include "base/files/file_util.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/not_fatal_until.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
 #include "base/synchronization/lock.h"
+#include "components/sqlite_vfs/file_system_id.h"
 #include "components/sqlite_vfs/file_type.h"
 #include "components/sqlite_vfs/metrics_util.h"
 #include "components/sqlite_vfs/sandboxed_file.h"
@@ -55,6 +57,13 @@ FileType GetFileType(int sqlite_requested_type) {
       return FileType::kWal;
   }
   NOTREACHED();
+}
+
+// Returns true if `file1` and `file2` have the same cached ID.
+bool IsSameFile(const SandboxedFile& file1, const SandboxedFile& file2) {
+  const auto& id1 = file1.file_system_id();
+  const auto& id2 = file2.file_system_id();
+  return id1.has_value() && id2.has_value() && *id1 == *id2;
 }
 
 }  // namespace
@@ -150,6 +159,16 @@ SqliteSandboxedVfsDelegate::GetPathAccess(const base::FilePath& file_path) {
     return std::nullopt;
   }
 
+  // SQLite truncates files to zero length rather than deleting them in various
+  // places (e.g., the main journal file when using journal_mode=TRUNCATE). To
+  // accommodate this, the built-in VFSes all treat a zero-length file as if it
+  // does not exist. The same must be done here. One side-effect of not doing
+  // this is that the SQLite pager will treat the presence of an empty
+  // write-ahead log file as an indication that the database is in WAL mode.
+  if (it->second->GetFile().GetLength() == 0) {
+    return std::nullopt;
+  }
+
   // The files will never be received without read access.
   // Write access is conditional on the file being opened for write.
   return sql::SandboxedVfs::PathAccessInfo{
@@ -178,7 +197,7 @@ void SqliteSandboxedVfsDelegate::UnregisterSandboxedFiles(
   num_erased = sandboxed_files_map_.erase(
       sqlite_vfs_file_set.GetJournalVirtualFilePath());
   CHECK_EQ(num_erased, 1U);
-  if (sqlite_vfs_file_set.wal_journal_mode()) {
+  if (sqlite_vfs_file_set.has_wal_file()) {
     num_erased = sandboxed_files_map_.erase(
         sqlite_vfs_file_set.GetWalJournalVirtualFilePath());
     CHECK_EQ(num_erased, 1U);
@@ -191,6 +210,39 @@ SqliteSandboxedVfsDelegate::RegisterSandboxedFiles(
     const SqliteVfsFileSet& sqlite_vfs_file_set) {
   base::AutoLock lock(files_map_lock_);
 
+  const SandboxedFile* incoming_db = sqlite_vfs_file_set.GetSandboxedDbFile();
+  const base::UnguessableToken incoming_shm_guid =
+      sqlite_vfs_file_set.is_single_connection()
+          ? base::UnguessableToken()
+          : sqlite_vfs_file_set.GetSharedLock().GetGUID();
+
+  for (const auto& [virtual_path, sandboxed_file] : sandboxed_files_map_) {
+    if (sandboxed_file->file_type() == FileType::kMainDb &&
+        IsSameFile(*sandboxed_file, *incoming_db)) {
+      const base::UnguessableToken registered_shm_guid =
+          sandboxed_file->shared_locks_id();
+
+      // If either database connection is opened in single-connection mode (no
+      // shared locks segment GUID), it cannot co-exist with any other
+      // connection targeting the same physical file in this process.
+      CHECK(!registered_shm_guid.is_empty() && !incoming_shm_guid.is_empty(),
+            base::NotFatalUntil::M151);
+
+      // Allow duplicate registrations of shared databases if at least one of
+      // the two has been abandoned. In this case, only one of the two will be
+      // able to use the database; the other will consistently fail with
+      // SQLITE_IOERR_LOCK.
+      if (sandboxed_file->IsAbandoned() || incoming_db->IsAbandoned()) {
+        continue;
+      }
+
+      // Two connections to the same database file with different shared locks
+      // results in data corruption.
+      CHECK_EQ(registered_shm_guid, incoming_shm_guid,
+               base::NotFatalUntil::M151);
+    }
+  }
+
   auto [it, inserted] =
       sandboxed_files_map_.emplace(sqlite_vfs_file_set.GetDbVirtualFilePath(),
                                    sqlite_vfs_file_set.GetSandboxedDbFile());
@@ -199,7 +251,7 @@ SqliteSandboxedVfsDelegate::RegisterSandboxedFiles(
       sqlite_vfs_file_set.GetJournalVirtualFilePath(),
       sqlite_vfs_file_set.GetSandboxedJournalFile());
   CHECK(inserted);
-  if (sqlite_vfs_file_set.wal_journal_mode()) {
+  if (sqlite_vfs_file_set.has_wal_file()) {
     std::tie(it, inserted) = sandboxed_files_map_.emplace(
         sqlite_vfs_file_set.GetWalJournalVirtualFilePath(),
         sqlite_vfs_file_set.GetSandboxedWalJournalFile());

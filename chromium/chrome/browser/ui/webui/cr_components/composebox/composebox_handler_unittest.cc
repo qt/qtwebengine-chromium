@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/json/values_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/test/bind.h"
@@ -22,11 +23,13 @@
 #include "chrome/browser/contextual_search/contextual_search_web_contents_helper.h"
 #include "chrome/browser/ui/webui/searchbox/contextual_searchbox_test_utils.h"
 #include "chrome/browser/ui/webui/searchbox/searchbox_test_utils.h"
+#include "chrome/common/pref_names.h"
 #include "components/contextual_search/contextual_search_service.h"
 #include "components/contextual_search/mock_contextual_search_context_controller.h"
 #include "components/contextual_tasks/public/features.h"
 #include "components/contextual_tasks/public/prefs.h"
 #include "components/omnibox/browser/searchbox.mojom.h"
+#include "components/prefs/scoped_user_pref_update.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -119,7 +122,8 @@ class ComposeboxHandlerTest : public ContextualSearchboxHandlerTestHarness {
 
   void SubmitQueryAndWaitForNavigation() {
     content::TestNavigationObserver navigation_observer(web_contents());
-    handler().SubmitQuery(kQueryText, 1, false, false, false, false);
+    handler().SubmitQuery(kQueryText, 1, false, false, false, false,
+                          /*is_voice_search=*/false);
     auto navigation = content::NavigationSimulator::CreateFromPending(
         web_contents()->GetController());
     ASSERT_TRUE(navigation);
@@ -305,4 +309,172 @@ TEST_F(ComposeboxHandlerTest, OnContextMenuOpenedTriggersFetch) {
 
   EXPECT_CALL(query_controller(), TriggerFetchClusterInfo());
   handler().OnContextMenuOpened();
+}
+
+// Verifies that when views deletes context, it notifies the webUI to update.
+TEST_F(ComposeboxHandlerTest, DeleteContext_NotifiesPage) {
+  base::UnguessableToken delete_file_token = base::UnguessableToken::Create();
+
+  std::unique_ptr<contextual_search::FileInfo> file_info =
+      std::make_unique<contextual_search::FileInfo>();
+  file_info->file_name = "test.png";
+  file_info->mime_type = lens::MimeType::kImage;
+  file_info->upload_status =
+      contextual_search::ContextUploadStatus::kNotUploaded;
+
+  EXPECT_CALL(query_controller(), GetFileInfo(delete_file_token))
+      .WillRepeatedly(testing::Return(file_info.get()));
+  EXPECT_CALL(query_controller(), DeleteFile(delete_file_token))
+      .WillOnce(testing::Return(true));
+
+  // Verify that C++ notifies WebUI page with kUploadReplaced status.
+  EXPECT_CALL(mock_searchbox_page_,
+              OnContextualInputStatusChanged(
+                  delete_file_token,
+                  contextual_search::ContextUploadStatus::kUploadReplaced,
+                  std::optional<contextual_search::ContextUploadErrorType>()))
+      .Times(1);
+
+  handler().DeleteContextFromBrowser(delete_file_token,
+                                     /*from_automatic_chip=*/false);
+  mock_searchbox_page_.FlushForTesting();
+}
+
+// Verifies that when views does not delete context,
+// it does not notify the webUI to update.
+TEST_F(ComposeboxHandlerTest, DeleteContext_MojoDoesNotNotifyPage) {
+  base::UnguessableToken delete_file_token = base::UnguessableToken::Create();
+
+  std::unique_ptr<contextual_search::FileInfo> file_info =
+      std::make_unique<contextual_search::FileInfo>();
+  file_info->file_name = "test.png";
+  file_info->mime_type = lens::MimeType::kImage;
+  file_info->upload_status =
+      contextual_search::ContextUploadStatus::kNotUploaded;
+
+  EXPECT_CALL(query_controller(), GetFileInfo(delete_file_token))
+      .WillRepeatedly(testing::Return(file_info.get()));
+  EXPECT_CALL(query_controller(), DeleteFile(delete_file_token))
+      .WillOnce(testing::Return(true));
+
+  // Verify that C++ does NOT notify WebUI page.
+  EXPECT_CALL(mock_searchbox_page_, OnContextualInputStatusChanged).Times(0);
+
+  handler().DeleteContext(delete_file_token, /*from_automatic_chip=*/false);
+  mock_searchbox_page_.FlushForTesting();
+}
+
+TEST_F(ComposeboxHandlerTest, NextboxAnimationLimiting) {
+  PrefService* prefs = profile()->GetPrefs();
+
+  // 1. Initially allowed, counts are 0.
+  {
+    base::test::TestFuture<bool> future;
+    handler().CanShowNextboxAnimation(future.GetCallback());
+    EXPECT_TRUE(future.Take());
+
+    const base::DictValue& dict =
+        prefs->GetDict(prefs::kContextMenuAnimationState);
+    EXPECT_EQ(std::nullopt, dict.FindInt("nextbox_daily_count"));
+    EXPECT_EQ(std::nullopt, dict.FindInt("nextbox_lifetime_count"));
+  }
+
+  // 2. Record 1st impression.
+  {
+    handler().RecordNextboxAnimationImpression();
+
+    const base::DictValue& dict =
+        prefs->GetDict(prefs::kContextMenuAnimationState);
+    EXPECT_THAT(dict.FindInt("nextbox_daily_count"), testing::Optional(1));
+    EXPECT_THAT(dict.FindInt("nextbox_lifetime_count"), testing::Optional(1));
+  }
+
+  // 3. Play 4 more times (total 5 daily impressions recorded).
+  for (int i = 0; i < 4; ++i) {
+    base::test::TestFuture<bool> future;
+    handler().CanShowNextboxAnimation(future.GetCallback());
+    EXPECT_TRUE(future.Take());
+    handler().RecordNextboxAnimationImpression();
+  }
+
+  // Verify counts are now 5 daily and 5 lifetime.
+  {
+    const base::DictValue& dict =
+        prefs->GetDict(prefs::kContextMenuAnimationState);
+    EXPECT_THAT(dict.FindInt("nextbox_daily_count"), testing::Optional(5));
+    EXPECT_THAT(dict.FindInt("nextbox_lifetime_count"), testing::Optional(5));
+  }
+
+  // 4. The 6th time, it should not be allowed and record should do nothing.
+  {
+    base::test::TestFuture<bool> future;
+    handler().CanShowNextboxAnimation(future.GetCallback());
+    EXPECT_FALSE(future.Take());
+
+    handler().RecordNextboxAnimationImpression();
+
+    const base::DictValue& dict =
+        prefs->GetDict(prefs::kContextMenuAnimationState);
+    EXPECT_THAT(dict.FindInt("nextbox_daily_count"), testing::Optional(5));
+    EXPECT_THAT(dict.FindInt("nextbox_lifetime_count"), testing::Optional(5));
+  }
+
+  // 5. Simulate a new day (change the date string in prefs).
+  {
+    ScopedDictPrefUpdate update(profile()->GetPrefs(),
+                                prefs::kContextMenuAnimationState);
+    update->Set("nextbox_last_impression_time",
+                base::TimeToValue(base::Time::Now() - base::Days(1)));
+  }
+
+  // 6. Requesting now should reset daily count and allow more impressions.
+  {
+    base::test::TestFuture<bool> future;
+    handler().CanShowNextboxAnimation(future.GetCallback());
+    EXPECT_TRUE(future.Take());
+
+    handler().RecordNextboxAnimationImpression();
+
+    const base::DictValue& dict =
+        prefs->GetDict(prefs::kContextMenuAnimationState);
+    EXPECT_THAT(dict.FindInt("nextbox_daily_count"), testing::Optional(1));
+    EXPECT_THAT(dict.FindInt("nextbox_lifetime_count"), testing::Optional(6));
+  }
+
+  // 7. Bring lifetime count to 19 and verify it caps after 20.
+  {
+    ScopedDictPrefUpdate update(profile()->GetPrefs(),
+                                prefs::kContextMenuAnimationState);
+    update->Set("nextbox_lifetime_count", 19);
+    update->Set("nextbox_daily_count",
+                0);  // Reset daily for today so we don't hit daily cap.
+  }
+
+  // 20th lifetime impression should still play.
+  {
+    base::test::TestFuture<bool> future;
+    handler().CanShowNextboxAnimation(future.GetCallback());
+    EXPECT_TRUE(future.Take());
+
+    handler().RecordNextboxAnimationImpression();
+
+    const base::DictValue& dict =
+        prefs->GetDict(prefs::kContextMenuAnimationState);
+    EXPECT_THAT(dict.FindInt("nextbox_daily_count"), testing::Optional(1));
+    EXPECT_THAT(dict.FindInt("nextbox_lifetime_count"), testing::Optional(20));
+  }
+
+  // 21st lifetime impression should be blocked.
+  {
+    base::test::TestFuture<bool> future;
+    handler().CanShowNextboxAnimation(future.GetCallback());
+    EXPECT_FALSE(future.Take());
+
+    handler().RecordNextboxAnimationImpression();
+
+    const base::DictValue& dict =
+        prefs->GetDict(prefs::kContextMenuAnimationState);
+    EXPECT_THAT(dict.FindInt("nextbox_daily_count"), testing::Optional(1));
+    EXPECT_THAT(dict.FindInt("nextbox_lifetime_count"), testing::Optional(20));
+  }
 }

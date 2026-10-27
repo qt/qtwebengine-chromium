@@ -37,6 +37,18 @@
 #include "swscale_internal.h"
 #include "graph.h"
 #include "ops.h"
+#include "ops_dispatch.h"
+
+int ff_sws_pass_aligned_width(const SwsPass *pass, int width)
+{
+    if (!pass)
+        return width;
+
+    size_t aligned_w = width;
+    aligned_w = FFALIGN(aligned_w, pass->output->width_align);
+    aligned_w += pass->output->width_pad;
+    return aligned_w <= INT_MAX ? aligned_w : width;
+}
 
 /* Allocates one buffer per plane */
 static int frame_alloc_planes(AVFrame *dst)
@@ -141,10 +153,6 @@ int ff_sws_graph_add_pass(SwsGraph *graph, enum AVPixelFormat fmt,
         goto fail;
     }
 
-    ret = pass_alloc_output(input);
-    if (ret < 0)
-        goto fail;
-
     if (!align) {
         pass->slice_h = pass->height;
         pass->num_slices = 1;
@@ -155,8 +163,9 @@ int ff_sws_graph_add_pass(SwsGraph *graph, enum AVPixelFormat fmt,
     }
 
     /* Align output buffer to include extra slice padding */
-    pass->output->width  = pass->width;
     pass->output->height = pass->slice_h * pass->num_slices;
+    pass->output->width  = pass->width;
+    pass->output->width_align = 1;
 
     ret = av_dynarray_add_nofree(&graph->passes, &graph->num_passes, pass);
     if (ret < 0)
@@ -557,50 +566,24 @@ static int add_legacy_sws_pass(SwsGraph *graph, const SwsFormat *src,
     return init_legacy_subpass(graph, sws, input, output);
 }
 
-/*********************
- * Format conversion *
- *********************/
+/*********************************
+ * Format conversion and scaling *
+ *********************************/
 
 #if CONFIG_UNSTABLE
 static int add_convert_pass(SwsGraph *graph, const SwsFormat *src,
                             const SwsFormat *dst, SwsPass *input,
                             SwsPass **output)
 {
-    const SwsPixelType type = SWS_PIXEL_F32;
-
     SwsContext *ctx = graph->ctx;
-    SwsOpList *ops = NULL;
     int ret = AVERROR(ENOTSUP);
 
     /* Mark the entire new ops infrastructure as experimental for now */
     if (!(ctx->flags & SWS_UNSTABLE))
         goto fail;
 
-    /* The new format conversion layer cannot scale for now */
-    if (src->width != dst->width || src->height != dst->height)
-        goto fail;
-
-    /* The new code does not yet support alpha blending */
-    if (src->desc->flags & AV_PIX_FMT_FLAG_ALPHA &&
-        ctx->alpha_blend != SWS_ALPHA_BLEND_NONE)
-        goto fail;
-
-    ops = ff_sws_op_list_alloc();
-    if (!ops)
-        return AVERROR(ENOMEM);
-    ops->src = *src;
-    ops->dst = *dst;
-
-    ret = ff_sws_decode_pixfmt(ops, src->format);
-    if (ret < 0)
-        goto fail;
-    ret = ff_sws_decode_colors(ctx, type, ops, src, &graph->incomplete);
-    if (ret < 0)
-        goto fail;
-    ret = ff_sws_encode_colors(ctx, type, ops, src, dst, &graph->incomplete);
-    if (ret < 0)
-        goto fail;
-    ret = ff_sws_encode_pixfmt(ops, dst->format);
+    SwsOpList *ops;
+    ret = ff_sws_op_list_generate(ctx, src, dst, &ops, &graph->incomplete);
     if (ret < 0)
         goto fail;
 
@@ -610,7 +593,7 @@ static int add_convert_pass(SwsGraph *graph, const SwsFormat *src,
     av_log(ctx, AV_LOG_DEBUG, "Unoptimized operation list:\n");
     ff_sws_op_list_print(ctx, AV_LOG_DEBUG, AV_LOG_TRACE, ops);
 
-    ret = ff_sws_compile_pass(graph, &ops, SWS_OP_FLAG_OPTIMIZE, input, output);
+    ret = ff_sws_compile_pass(graph, NULL, &ops, SWS_OP_FLAG_OPTIMIZE, input, output);
     if (ret < 0)
         goto fail;
 
@@ -618,7 +601,6 @@ static int add_convert_pass(SwsGraph *graph, const SwsFormat *src,
     /* fall through */
 
 fail:
-    ff_sws_op_list_free(&ops);
     if (ret == AVERROR(ENOTSUP))
         return add_legacy_sws_pass(graph, src, dst, input, output);
     return ret;
@@ -702,8 +684,10 @@ static int adapt_colors(SwsGraph *graph, SwsFormat src, SwsFormat dst,
         SwsFormat tmp = src;
         tmp.format = fmt_in;
         ret = add_convert_pass(graph, &src, &tmp, input, &input);
-        if (ret < 0)
+        if (ret < 0) {
+            ff_sws_lut3d_free(&lut);
             return ret;
+        }
     }
 
     ret = ff_sws_lut3d_generate(lut, fmt_in, fmt_out, &map);
@@ -762,13 +746,30 @@ static void sws_graph_worker(void *priv, int jobnr, int threadnr, int nb_jobs,
     pass->run(graph->exec.output, graph->exec.input, slice_y, slice_h, pass);
 }
 
-int ff_sws_graph_create(SwsContext *ctx, const SwsFormat *dst, const SwsFormat *src,
-                        int field, SwsGraph **out_graph)
+SwsGraph *ff_sws_graph_alloc(void)
+{
+    return av_mallocz(sizeof(SwsGraph));
+}
+
+static void graph_uninit(SwsGraph *graph)
+{
+    avpriv_slicethread_free(&graph->slicethread);
+
+    for (int i = 0; i < graph->num_passes; i++)
+        pass_free(graph->passes[i]);
+    av_free(graph->passes);
+
+    memset(graph, 0, sizeof(*graph));
+}
+
+int ff_sws_graph_init(SwsGraph *graph, SwsContext *ctx, const SwsFormat *dst,
+                      const SwsFormat *src, int field)
 {
     int ret;
-    SwsGraph *graph = av_mallocz(sizeof(*graph));
-    if (!graph)
-        return AVERROR(ENOMEM);
+    if (graph->ctx) {
+        av_log(ctx, AV_LOG_ERROR, "Graph is already initialized\n");
+        return AVERROR(EINVAL);
+    }
 
     graph->ctx = ctx;
     graph->src = *src;
@@ -795,12 +796,42 @@ int ff_sws_graph_create(SwsContext *ctx, const SwsFormat *dst, const SwsFormat *
     if (ret < 0)
         goto error;
 
-    *out_graph = graph;
+    /* Resolve output buffers for all intermediate passes */
+    for (int i = 0; i < graph->num_passes; i++) {
+        ret = pass_alloc_output(graph->passes[i]->input);
+        if (ret < 0)
+            goto error;
+    }
+
     return 0;
 
 error:
-    ff_sws_graph_free(&graph);
+    graph_uninit(graph);
     return ret;
+}
+
+int ff_sws_graph_create(SwsContext *ctx, const SwsFormat *dst, const SwsFormat *src,
+                        int field, SwsGraph **out_graph)
+{
+    SwsGraph *graph = ff_sws_graph_alloc();
+    if (!graph)
+        return AVERROR(ENOMEM);
+
+    int ret = ff_sws_graph_init(graph, ctx, dst, src, field);
+    if (ret < 0) {
+        ff_sws_graph_free(&graph);
+        return ret;
+    }
+
+    *out_graph = graph;
+    return 0;
+}
+
+void ff_sws_graph_rollback(SwsGraph *graph, int since_idx)
+{
+    for (int i = since_idx; i < graph->num_passes; i++)
+        pass_free(graph->passes[i]);
+    graph->num_passes = since_idx;
 }
 
 void ff_sws_graph_free(SwsGraph **pgraph)
@@ -809,12 +840,7 @@ void ff_sws_graph_free(SwsGraph **pgraph)
     if (!graph)
         return;
 
-    avpriv_slicethread_free(&graph->slicethread);
-
-    for (int i = 0; i < graph->num_passes; i++)
-        pass_free(graph->passes[i]);
-    av_free(graph->passes);
-
+    graph_uninit(graph);
     av_free(graph);
     *pgraph = NULL;
 }
@@ -838,20 +864,18 @@ static int opts_equal(const SwsContext *c1, const SwsContext *c2)
 
 }
 
-int ff_sws_graph_reinit(SwsContext *ctx, const SwsFormat *dst, const SwsFormat *src,
-                        int field, SwsGraph **out_graph)
+int ff_sws_graph_reinit(SwsGraph *graph, SwsContext *ctx, const SwsFormat *dst,
+                        const SwsFormat *src, int field)
 {
-    SwsGraph *graph = *out_graph;
-    if (graph && ff_fmt_equal(&graph->src, src) &&
-                 ff_fmt_equal(&graph->dst, dst) &&
-                 opts_equal(ctx, &graph->opts_copy))
+    if (ff_fmt_equal(&graph->src, src) && ff_fmt_equal(&graph->dst, dst) &&
+        opts_equal(ctx, &graph->opts_copy))
     {
         ff_sws_graph_update_metadata(graph, &src->color);
         return 0;
     }
 
-    ff_sws_graph_free(out_graph);
-    return ff_sws_graph_create(ctx, dst, src, field, out_graph);
+    graph_uninit(graph);
+    return ff_sws_graph_init(graph, ctx, dst, src, field);
 }
 
 void ff_sws_graph_update_metadata(SwsGraph *graph, const SwsColor *color)

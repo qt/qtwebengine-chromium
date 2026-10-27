@@ -1,6 +1,6 @@
-/* Copyright (c) 2024-2025 The Khronos Group Inc.
- * Copyright (c) 2024-2025 Valve Corporation
- * Copyright (c) 2024-2025 LunarG, Inc.
+/* Copyright (c) 2024-2026 The Khronos Group Inc.
+ * Copyright (c) 2024-2026 Valve Corporation
+ * Copyright (c) 2024-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,20 @@
 
 #pragma once
 
-#include "state_tracker/semaphore_state.h"
+#include "state_tracker/event_state.h"
 #include "containers/custom_containers.h"
+#include <vulkan/vulkan_core.h>
+#include <optional>
 
 class CoreChecks;
+struct Location;
+
+namespace vvl {
+class CommandBuffer;
+class Queue;
+class Semaphore;
+enum class Func;
+}  // namespace vvl
 
 // Tracks semaphore state changes during the validation phase of QueueSubmit commands.
 // Semaphore state object (vvl::Semaphore) is updated later in the record phase.
@@ -59,4 +69,24 @@ struct SemaphoreSubmitState {
     bool ValidateBinarySignal(const Location &semaphore_loc, const vvl::Semaphore &semaphore_state);
     bool ValidateTimelineSignal(const Location &semaphore_loc, const vvl::Semaphore &semaphore_state, uint64_t value);
     bool ValidateSignalSemaphore(const Location &semaphore_loc, const vvl::Semaphore &semaphore_state, uint64_t value);
+};
+
+struct WaitEventSubmitInfo {
+    std::vector<VkEvent> wait_events;
+    VkPipelineStageFlags wait_src_stage_mask = VK_PIPELINE_STAGE_NONE;
+
+    // Subset of waited events with known signaling state
+    EventSignalingStateMap signaling_states;
+
+    bool Validate(const CoreChecks& core, const vvl::Queue& queue_state, const vvl::CommandBuffer& cb_state,
+                  EventSignalingStateMap& submit_signaling_states, const Location& loc) const;
+};
+
+struct WaitEvent2SubmitInfo {
+    VkEvent wait_event = VK_NULL_HANDLE;
+    vku::safe_VkDependencyInfo wait_dependency_info;
+    std::optional<EventSignalingState> signaling_state;
+
+    bool Validate(const CoreChecks& core, const vvl::Queue& queue_state, const vvl::CommandBuffer& cb_state,
+                  EventSignalingStateMap& submit_signaling_states, const Location& loc) const;
 };

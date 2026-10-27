@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SELFADJOINTRANK2UPTADE_H
 #define EIGEN_SELFADJOINTRANK2UPTADE_H
@@ -188,7 +189,7 @@ struct selfadjoint_rank2_update_selector<Scalar, Index, Upper> {
 
 template <bool Cond, typename T>
 using conj_expr_if =
-    std::conditional<!Cond, const T&, CwiseUnaryOp<scalar_conjugate_op<typename traits<T>::Scalar>, T>>;
+    std::conditional_t<!Cond, const T&, CwiseUnaryOp<scalar_conjugate_op<typename traits<T>::Scalar>, T>>;
 
 }  // end namespace internal
 
@@ -219,7 +220,7 @@ EIGEN_DEVICE_FUNC SelfAdjointView<MatrixType, UpLo>& SelfAdjointView<MatrixType,
 
   Scalar actualAlpha = alpha * UBlasTraits::extractScalarFactor(u.derived()) *
                        numext::conj(VBlasTraits::extractScalarFactor(v.derived()));
-  if (IsRowMajor) actualAlpha = numext::conj(actualAlpha);
+  EIGEN_IF_CONSTEXPR(IsRowMajor) { actualAlpha = numext::conj(actualAlpha); }
 
   const Index size = u.size();
 
@@ -228,11 +229,11 @@ EIGEN_DEVICE_FUNC SelfAdjointView<MatrixType, UpLo>& SelfAdjointView<MatrixType,
       static_u;
   ei_declare_aligned_stack_constructed_variable(Scalar, uPtr, size,
                                                 (UseUDirectly ? const_cast<Scalar*>(actualU.data()) : static_u.data()));
-  if (!UseUDirectly) {
-    if (NeedConjU)
-      Map<typename ActualUType_::PlainObject>(uPtr, size) = actualU.conjugate();
-    else
+  EIGEN_IF_CONSTEXPR(!UseUDirectly) {
+    EIGEN_IF_CONSTEXPR(NeedConjU) { Map<typename ActualUType_::PlainObject>(uPtr, size) = actualU.conjugate(); }
+    else {
       Map<typename ActualUType_::PlainObject>(uPtr, size) = actualU;
+    }
   }
 
   // Copy v to contiguous buffer, applying conjugation if needed
@@ -240,15 +241,17 @@ EIGEN_DEVICE_FUNC SelfAdjointView<MatrixType, UpLo>& SelfAdjointView<MatrixType,
       static_v;
   ei_declare_aligned_stack_constructed_variable(Scalar, vPtr, size,
                                                 (UseVDirectly ? const_cast<Scalar*>(actualV.data()) : static_v.data()));
-  if (!UseVDirectly) {
-    if (NeedConjV)
-      Map<typename ActualVType_::PlainObject>(vPtr, size) = actualV.conjugate();
-    else
+  EIGEN_IF_CONSTEXPR(!UseVDirectly) {
+    EIGEN_IF_CONSTEXPR(NeedConjV) { Map<typename ActualVType_::PlainObject>(vPtr, size) = actualV.conjugate(); }
+    else {
       Map<typename ActualVType_::PlainObject>(vPtr, size) = actualV;
+    }
   }
 
-  internal::selfadjoint_rank2_update_selector<Scalar, Index, (IsRowMajor ? int(UpLo == Upper ? Lower : Upper) : UpLo)>::
-      run(size, _expression().const_cast_derived().data(), _expression().outerStride(), uPtr, vPtr, actualAlpha);
+  internal::selfadjoint_rank2_update_selector<
+      Scalar, Index, (IsRowMajor ? int(UpLo == Upper ? Lower : Upper) : UpLo)>::run(size, nestedExpression().data(),
+                                                                                    nestedExpression().outerStride(),
+                                                                                    uPtr, vPtr, actualAlpha);
 
   return *this;
 }

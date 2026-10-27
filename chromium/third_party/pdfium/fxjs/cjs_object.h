@@ -24,7 +24,7 @@ struct JSConstSpec {
 struct JSPropertySpec {
   const char* pName;
   v8::AccessorNameGetterCallback pPropGet;
-  v8::AccessorNameSetterCallback pPropPut;
+  v8::AccessorNameSetterCallbackV2 pPropPut;
 };
 
 struct JSMethodSpec {

@@ -25,13 +25,13 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/wire/client/Client.h"
+#include "src/dawn/wire/client/Client.h"
 
 #include <algorithm>
 
-#include "dawn/common/Compiler.h"
-#include "dawn/common/StringViewUtils.h"
-#include "dawn/wire/client/Device.h"
+#include "src/dawn/common/Compiler.h"
+#include "src/dawn/common/StringViewUtils.h"
+#include "src/dawn/wire/client/Device.h"
 
 namespace dawn::wire::client {
 
@@ -181,20 +181,10 @@ void Client::Disconnect() {
         eventManager->TransitionTo(EventManager::State::ClientDropped);
     }
 
-    {
-        auto& deviceList = mObjects[ObjectType::Device];
-        for (auto object : deviceList.GetAllObjects()) {
-            if (object != nullptr) {
-                static_cast<Device*>(object)->HandleDeviceLost(
-                    WGPUDeviceLostReason_Unknown, ToOutputStringView("GPU connection lost"));
-            }
-        }
-    }
-    for (auto& objectList : mObjects) {
-        for (auto object : objectList.GetAllObjects()) {
-            if (object != nullptr) {
-                object->CancelCallbacksForDisconnect();
-            }
+    for (auto object : mObjects[ObjectType::Device].GetAllObjects()) {
+        if (object != nullptr) {
+            static_cast<Device*>(object)->HandleDeviceLost(
+                WGPUDeviceLostReason_Unknown, ToOutputStringView("GPU connection lost"));
         }
     }
 }

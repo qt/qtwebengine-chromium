@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 #include <iostream>
 #define EIGEN_USE_SYCL
 #include <unsupported/Eigen/Tensor>

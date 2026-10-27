@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_HVX_PACKET_MATH_H
 #define EIGEN_HVX_PACKET_MATH_H

@@ -35,7 +35,14 @@ class CORE_EXPORT HTMLMenuItemElement final : public HTMLElement {
   bool setChecked(bool);
   bool ShouldAppearChecked() const;
 
-  HTMLMenuOwnerElement* OwningMenuElement() const;
+  HTMLMenuOwnerElement* OwningMenuElement() const {
+    return owning_menu_element_;
+  }
+
+  HTMLMenuOwnerElement* OwnerElementForList() const {
+    return owning_menu_element_;
+  }
+
   HTMLFieldSetElement* NearestAncestorFieldSet() const {
     return nearest_ancestor_field_set_.Get();
   }
@@ -63,12 +70,14 @@ class CORE_EXPORT HTMLMenuItemElement final : public HTMLElement {
   void ParseAttribute(const AttributeModificationParams&) override;
   bool ShouldHaveFocusAppearance() const override;
 
+  // Returns true if this menuitem is scrolled into view within its ancestor
+  // menu owner element.
+  bool IsVisibleInViewport();
+
  protected:
   FocusableState SupportsFocus(UpdateBehavior update_behavior) const override;
 
  private:
-  int DefaultTabIndex() const override;
-
   // This is generally used when a menuitem has been selected, and the "tree" of
   // menus should now close. It finds the innermost (nearest ancestor) menulist
   // containing this menuitem, and then walks the tree of command invokers up

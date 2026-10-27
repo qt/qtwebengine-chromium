@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_PACKET_MATH_AVX512_H
 #define EIGEN_PACKET_MATH_AVX512_H
@@ -93,27 +94,17 @@ EIGEN_STRONG_INLINE void _eigen_mm_storeu_epi32(void* to, const __m128i& from) {
 }
 
 template <>
-struct is_arithmetic<__m512> {
-  enum { value = true };
-};
+struct is_arithmetic<__m512> : std::true_type {};
 template <>
-struct is_arithmetic<__m512i> {
-  enum { value = true };
-};
+struct is_arithmetic<__m512i> : std::true_type {};
 template <>
-struct is_arithmetic<__m512d> {
-  enum { value = true };
-};
+struct is_arithmetic<__m512d> : std::true_type {};
 template <>
-struct is_arithmetic<Packet8l> {
-  enum { value = true };
-};
+struct is_arithmetic<Packet8l> : std::true_type {};
 
 #ifndef EIGEN_VECTORIZE_AVX512FP16
 template <>
-struct is_arithmetic<Packet16h> {
-  enum { value = true };
-};
+struct is_arithmetic<Packet16h> : std::true_type {};
 
 template <>
 struct packet_traits<half> : default_packet_traits {
@@ -1486,26 +1477,19 @@ EIGEN_STRONG_INLINE Packet8d pldexp<Packet8d>(const Packet8d& a, const Packet8d&
   const Packet8d max_exponent = pset1<Packet8d>(2099.0);
   const Packet8i e = _mm512_cvtpd_epi32(pmin(pmax(exponent, pnegate(max_exponent)), max_exponent));
 
-  // Split 2^e into four factors and multiply.
+  // 4-way split + depth-3 multiply tree; see pldexp_generic for derivation.
+  // 2^b and 2^(e-3b) are built by widening the biased int32 exponent to int64
+  // with vpmovsxdq and shifting into the double exponent field with vpsllq.
   const Packet8i bias = pset1<Packet8i>(1023);
-  Packet8i b = parithmetic_shift_right<2>(e);  // floor(e/4)
+  const Packet8i b = parithmetic_shift_right<2>(e);           // floor(e/4)
+  const Packet8i b_remainder = psub(psub(e, b), padd(b, b));  // e - 3b (depth 2)
+  const Packet8d c1 = _mm512_castsi512_pd(_mm512_slli_epi64(_mm512_cvtepi32_epi64(padd(b, bias)), 52));  // 2^b
+  const Packet8d c2 =
+      _mm512_castsi512_pd(_mm512_slli_epi64(_mm512_cvtepi32_epi64(padd(b_remainder, bias)), 52));  // 2^(e-3b)
 
-  // 2^b
-  const Packet8i permute_idx = _mm256_setr_epi32(0, 4, 1, 5, 2, 6, 3, 7);
-  Packet8i hi = _mm256_permutevar8x32_epi32(padd(b, bias), permute_idx);
-  Packet8i lo = _mm256_slli_epi64(hi, 52);
-  hi = _mm256_slli_epi64(_mm256_srli_epi64(hi, 32), 52);
-  Packet8d c = _mm512_castsi512_pd(_mm512_inserti64x4(_mm512_castsi256_si512(lo), hi, 1));
-  Packet8d out = pmul(pmul(pmul(a, c), c), c);  // a * 2^(3b)
-
-  // 2^(e - 3b)
-  b = psub(psub(psub(e, b), b), b);  // e - 3b
-  hi = _mm256_permutevar8x32_epi32(padd(b, bias), permute_idx);
-  lo = _mm256_slli_epi64(hi, 52);
-  hi = _mm256_slli_epi64(_mm256_srli_epi64(hi, 32), 52);
-  c = _mm512_castsi512_pd(_mm512_inserti64x4(_mm512_castsi256_si512(lo), hi, 1));
-  out = pmul(out, c);  // a * 2^e
-  return out;
+  const Packet8d c1_squared = pmul(c1, c1);
+  const Packet8d a_c1 = pmul(a, c1);
+  return pmul(pmul(a_c1, c1_squared), c2);  // a * 2^e
 }
 
 #ifdef EIGEN_VECTORIZE_AVX512DQ
@@ -2557,9 +2541,7 @@ EIGEN_STRONG_INLINE void ptranspose(PacketBlock<Packet16h, 4>& kernel) {
 #endif  // EIGEN_VECTORIZE_AVX512FP16
 
 template <>
-struct is_arithmetic<Packet16bf> {
-  enum { value = true };
-};
+struct is_arithmetic<Packet16bf> : std::true_type {};
 
 template <>
 struct packet_traits<bfloat16> : default_packet_traits {

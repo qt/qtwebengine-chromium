@@ -45,6 +45,9 @@ IdentityUrlLoaderThrottle::IdentityUrlLoaderThrottle(SetIdpStatusCallback cb)
 IdentityUrlLoaderThrottle::~IdentityUrlLoaderThrottle() = default;
 
 void IdentityUrlLoaderThrottle::DetachFromCurrentSequence() {
+  // This gets called when the load is moved to a different thread, so we need
+  // to post a task to the original thread to set the signin status.
+  // See https://crbug.com/40285364 and https://crbug.com/40244488.
   set_idp_status_cb_ = base::BindRepeating(
       [](scoped_refptr<base::SequencedTaskRunner> task_runner,
          SetIdpStatusCallback original_cb,
@@ -78,9 +81,7 @@ void IdentityUrlLoaderThrottle::WillRedirectRequest(
     net::RedirectInfo* redirect_info,
     const network::mojom::URLResponseHead& response_head,
     bool* defer,
-    std::vector<std::string>* to_be_removed_request_headers,
-    net::HttpRequestHeaders* modified_request_headers,
-    net::HttpRequestHeaders* modified_cors_exempt_request_headers) {
+    network::HttpRequestHeadersUpdateParams* headers_update_params) {
   // We want to check headers for each redirect. It is common that the header
   // is on the initial load which then redirects back to a homepage.
   HandleResponseOrRedirect(request_url_, response_head);

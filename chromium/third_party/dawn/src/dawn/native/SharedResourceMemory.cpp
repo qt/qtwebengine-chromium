@@ -25,16 +25,17 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/SharedResourceMemory.h"
+#include "src/dawn/native/SharedResourceMemory.h"
 
 #include <algorithm>
 #include <utility>
 
-#include "dawn/native/Buffer.h"
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/Device.h"
-#include "dawn/native/Queue.h"
-#include "dawn/native/Texture.h"
+#include "src/dawn/native/Buffer.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/Device.h"
+#include "src/dawn/native/Queue.h"
+#include "src/dawn/native/Texture.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native {
 
@@ -71,7 +72,7 @@ bool SharedResourceMemoryContents::HasAccess() const {
 }
 
 void SharedResourceMemory::Initialize() {
-    DAWN_ASSERT(!IsError());
+    DAWN_CHECK(!IsError());
     mContents = CreateContents();
 }
 
@@ -121,8 +122,14 @@ MaybeError SharedResourceMemory::BeginAccess(Resource* resource,
     UnpackedPtr<BeginAccessDescriptor> descriptor;
     DAWN_TRY_ASSIGN(descriptor, ValidateAndUnpack(rawDescriptor));
 
+    // TODO(https://crbug.com/515272361): Introduce a wgpu::SharedFenceAndSignalValue struct instead
+    // of having two arrays that need to have the same size.
+    DAWN_INVALID_IF(descriptor->fenceCount != descriptor->signaledValueCount,
+                    "fenceCount (%i) doesn't match signaledValueCount (%i).",
+                    descriptor->fenceCount, descriptor->signaledValueCount);
+
     for (size_t i = 0; i < descriptor->fenceCount; ++i) {
-        DAWN_TRY(GetDevice()->ValidateObject(descriptor->fences[i]));
+        DAWN_UNSAFE_TODO(DAWN_TRY(GetDevice()->ValidateObject(descriptor->fences[i])));
     }
 
     DAWN_TRY(ValidateResourceCreatedFromSelf(resource));
@@ -141,7 +148,7 @@ MaybeError SharedResourceMemory::BeginAccess(Resource* resource,
 
         if (static_cast<TextureBase*>(resource)->IsReadOnly()) {
             if (descriptor->concurrentRead) {
-                DAWN_ASSERT(!mExclusiveAccess);
+                DAWN_CHECK(!mExclusiveAccess);
                 DAWN_INVALID_IF(!descriptor->initialized, "Concurrent reading an uninitialized %s.",
                                 resource);
                 ++mContents->mReadAccessCount;
@@ -176,17 +183,21 @@ MaybeError SharedResourceMemory::BeginAccess(Resource* resource,
     for (size_t i = 0; i < descriptor->fenceCount; ++i) {
         // Add the fences to mPendingFences if they are not already contained in the list.
         // This loop is O(n*m), but there shouldn't be very many fences.
-        auto it = std::find_if(
-            mContents->mPendingFences.begin(), mContents->mPendingFences.end(),
-            [&](const auto& fence) { return fence.object.Get() == descriptor->fences[i]; });
+        auto it =
+            std::find_if(mContents->mPendingFences.begin(), mContents->mPendingFences.end(),
+                         [&](const auto& fence) {
+                             return fence.object.Get() == DAWN_UNSAFE_TODO(descriptor->fences[i]);
+                         });
         if (it != mContents->mPendingFences.end()) {
-            it->signaledValue = std::max(it->signaledValue, descriptor->signaledValues[i]);
+            it->signaledValue =
+                std::max(it->signaledValue, DAWN_UNSAFE_TODO(descriptor->signaledValues[i]));
             continue;
         }
-        mContents->mPendingFences.push_back({descriptor->fences[i], descriptor->signaledValues[i]});
+        mContents->mPendingFences.push_back({DAWN_UNSAFE_TODO(descriptor->fences[i]),
+                                             DAWN_UNSAFE_TODO(descriptor->signaledValues[i])});
     }
 
-    DAWN_ASSERT(!resource->IsError());
+    DAWN_CHECK(!resource->IsError());
     resource->OnBeginAccess();
     resource->SetInitialized(descriptor->initialized);
     return {};
@@ -246,23 +257,23 @@ MaybeError SharedResourceMemory::EndAccess(Resource* resource, EndAccessState* s
     DAWN_INVALID_IF(!resource->HasAccess(), "%s is not currently being accessed.", resource);
     if constexpr (std::is_same_v<Resource, TextureBase>) {
         if (static_cast<TextureBase*>(resource)->IsReadOnly()) {
-            DAWN_ASSERT(!mContents->HasWriteAccess());
+            DAWN_CHECK(!mContents->HasWriteAccess());
             if (mContents->HasExclusiveReadAccess()) {
-                DAWN_ASSERT(mContents->mReadAccessCount == 0);
+                DAWN_CHECK(mContents->mReadAccessCount == 0);
                 mContents->mSharedResourceAccessState = SharedResourceAccessState::NotAccessed;
                 mExclusiveAccess = nullptr;
             } else {
-                DAWN_ASSERT(mContents->mSharedResourceAccessState ==
-                            SharedResourceAccessState::SimultaneousRead);
-                DAWN_ASSERT(mExclusiveAccess == nullptr);
+                DAWN_CHECK(mContents->mSharedResourceAccessState ==
+                           SharedResourceAccessState::SimultaneousRead);
+                DAWN_CHECK(mExclusiveAccess == nullptr);
                 --mContents->mReadAccessCount;
                 if (mContents->mReadAccessCount == 0) {
                     mContents->mSharedResourceAccessState = SharedResourceAccessState::NotAccessed;
                 }
             }
         } else {
-            DAWN_ASSERT(mContents->mSharedResourceAccessState == SharedResourceAccessState::Write);
-            DAWN_ASSERT(mContents->mReadAccessCount == 0);
+            DAWN_CHECK(mContents->mSharedResourceAccessState == SharedResourceAccessState::Write);
+            DAWN_CHECK(mContents->mReadAccessCount == 0);
             mContents->mSharedResourceAccessState = SharedResourceAccessState::NotAccessed;
             mExclusiveAccess = nullptr;
         }
@@ -285,7 +296,7 @@ MaybeError SharedResourceMemory::EndAccess(Resource* resource, EndAccessState* s
         mContents->AcquirePendingFences(&fenceList);
     }
 
-    DAWN_ASSERT(!resource->IsError());
+    DAWN_CHECK(!resource->IsError());
     ExecutionSerial lastUsageSerial = resource->OnEndAccess();
 
     // If the last usage serial is non-zero, the texture was used.
@@ -313,16 +324,18 @@ MaybeError SharedResourceMemory::EndAccess(Resource* resource, EndAccessState* s
         auto* fences = new SharedFenceBase*[fenceCount];
         uint64_t* signaledValues = new uint64_t[fenceCount];
         for (size_t i = 0; i < fenceCount; ++i) {
-            fences[i] = ReturnToAPI(std::move(fenceList[i].object));
-            signaledValues[i] = fenceList[i].signaledValue;
+            DAWN_UNSAFE_TODO(fences[i]) = ReturnToAPI(std::move(fenceList[i].object));
+            DAWN_UNSAFE_TODO(signaledValues[i]) = fenceList[i].signaledValue;
         }
 
         state->fenceCount = fenceCount;
         state->fences = fences;
+        state->signaledValueCount = fenceCount;
         state->signaledValues = signaledValues;
     } else {
         state->fenceCount = 0;
         state->fences = nullptr;
+        state->signaledValueCount = 0;
         state->signaledValues = nullptr;
     }
     state->initialized = resource->IsInitialized();
@@ -336,8 +349,10 @@ ResultOrError<FenceAndSignalValue> SharedResourceMemory::EndAccessInternal(
     EndAccessState* rawState) {
     UnpackedPtr<EndAccessState> state;
     DAWN_TRY_ASSIGN(state, ValidateAndUnpack(rawState));
-    // Ensure that commands are submitted before exporting fences with the last usage serial.
-    DAWN_TRY(GetDevice()->GetQueue()->EnsureCommandsFlushed(lastUsageSerial));
+    if (!GetDevice()->IsLost()) {
+        // Ensure that commands are submitted before exporting fences with the last usage serial.
+        DAWN_TRY(GetDevice()->GetQueue()->EnsureCommandsFlushed(lastUsageSerial));
+    }
     return EndAccessImpl(resource, lastUsageSerial, state);
 }
 

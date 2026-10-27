@@ -25,14 +25,25 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//src/tint:flags.bzl", "COPTS")
 
 cc_library(
   name = "utils",
   hdrs = [
     "compiler.h",
+    "force_crash.h",
+    "non_copyable.h",
+    "non_movable.h",
     "numeric.h",
-  ],
+    "platform.h",
+    "underlying_type.h",
+  ] + select({
+    "//src/tint:tint_build_is_win_true": [
+      "windows_with_undefs.h",
+    ],
+    "//conditions:default": [],
+  }),
   srcs = [
     "placeholder.cc",
   ],

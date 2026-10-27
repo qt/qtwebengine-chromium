@@ -7,6 +7,7 @@
 #include <map>
 #include <string>
 
+#include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -16,6 +17,7 @@
 #include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/metrics/user_action_tester.h"
+#include "base/test/run_until.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/enterprise/signin/profile_management_disclaimer_service.h"
@@ -39,10 +41,9 @@
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/hats/hats_service_factory.h"
 #include "chrome/browser/ui/hats/mock_hats_service.h"
 #include "chrome/browser/ui/hats/survey_config.h"
@@ -89,6 +90,7 @@
 #include "content/public/test/test_launcher.h"
 #include "google_apis/gaia/gaia_id.h"
 #include "google_apis/gaia/gaia_urls.h"
+#include "net/dns/mock_host_resolver.h"
 #include "services/network/test/test_url_loader_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -220,6 +222,9 @@ Profile* InterceptAndWaitProfileCreation(content::WebContents* contents,
                                        signin_metrics::AccessPoint::kWebSignin,
                                        /*is_new_account=*/true,
                                        /*is_sync_signin=*/false);
+  // Simulate the terminal session completion since the browser test bypasses
+  // the actual DiceResponseHandler token exchange flow.
+  interceptor->OnDiceSigninSessionComplete(account_id, {});
   // Wait for the interception to be complete.
   return profile_waiter.WaitForProfileAdded();
 }
@@ -402,7 +407,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest, SwitchAndLoad) {
   EXPECT_EQ(new_profile->GetPath(), profile_path);
 
   // Add the account to the cookies (simulates the account reconcilor).
-  EXPECT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  EXPECT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   ui_test_utils::BrowserCreatedObserver browser_created_observer;
   signin::SetCookieAccounts(new_identity_manager, test_url_loader_factory(),
                             {{account_info.email, account_info.gaia}});
@@ -411,7 +416,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest, SwitchAndLoad) {
   ASSERT_TRUE(added_browser);
 
   // A browser has been created for the new profile and the tab was moved there.
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 2u);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 2u);
   EXPECT_EQ(added_browser->GetProfile(), new_profile);
   EXPECT_EQ(browser()->GetTabStripModel()->count(), original_tab_count - 1);
   EXPECT_EQ(added_browser->GetTabStripModel()
@@ -452,7 +457,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest, SwitchAlreadyOpen) {
   const BrowserWindowInterface* const other_browser =
       browser_created_observer.Wait();
   ASSERT_TRUE(other_browser);
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 2u);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 2u);
   ASSERT_EQ(other_browser->GetProfile(), other_profile);
   // Add the account to the other profile.
   signin::IdentityManager* other_identity_manager =
@@ -477,14 +482,19 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest, SwitchAlreadyOpen) {
                                        signin_metrics::AccessPoint::kWebSignin,
                                        /*is_new_account=*/true,
                                        /*is_sync_signin=*/false);
+  interceptor->OnDiceSigninSessionComplete(account_info.account_id, {});
 
   // Add the account to the cookies (simulates the account reconcilor).
   signin::SetCookieAccounts(other_identity_manager, test_url_loader_factory(),
                             {{account_info.email, account_info.gaia}});
 
+  // Wait until the tab is moved to the other browser.
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return browser()->tab_strip_model()->count() == original_tab_count - 1;
+  }));
+
   // The tab was moved to the new browser.
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 2u);
-  EXPECT_EQ(browser()->tab_strip_model()->count(), original_tab_count - 1);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 2u);
   EXPECT_EQ(other_browser->GetTabStripModel()->count(),
             other_original_tab_count + 1);
   EXPECT_EQ(other_browser->GetTabStripModel()
@@ -499,8 +509,134 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest, SwitchAlreadyOpen) {
   EXPECT_EQ(GetInterceptorDelegate(GetProfile())->fre_browser(), nullptr);
 }
 
+// Custom fixture that maps GAIA URLs to the local HTTPS test server and
+// overrides GaiaUrls.
+class DiceWebSigninInterceptorGaiaBrowserTest
+    : public DiceWebSigninInterceptorBrowserTest {
+ public:
+  DiceWebSigninInterceptorGaiaBrowserTest()
+      : https_server_(net::EmbeddedTestServer::TYPE_HTTPS) {
+    https_server_.AddDefaultHandlers(
+        base::FilePath(FILE_PATH_LITERAL("chrome/test/data")));
+    https_server_.SetCertHostnames({"accounts.google.com"});
+  }
+
+  void SetUpOnMainThread() override {
+    DiceWebSigninInterceptorBrowserTest::SetUpOnMainThread();
+
+    // Map accounts.google.com to 127.0.0.1.
+    host_resolver()->AddRule("accounts.google.com", "127.0.0.1");
+
+    // Start the HTTPS server.
+    ASSERT_TRUE(https_server_.Start());
+
+    // Get the local HTTPS test server URL for accounts.google.com.
+    GURL gaia_test_url = https_server_.GetURL("accounts.google.com", "/");
+
+    // Modify the command line to override the Gaia URL.
+    base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+        "gaia-url", gaia_test_url.spec());
+
+    // Re-create GaiaUrls for testing to pick up the new command line switch.
+    custom_gaia_urls_ = std::make_unique<GaiaUrls>();
+    GaiaUrls::SetInstanceForTesting(custom_gaia_urls_.get());
+  }
+
+  void TearDownOnMainThread() override {
+    // Reset GaiaUrls override.
+    GaiaUrls::SetInstanceForTesting(nullptr);
+    custom_gaia_urls_.reset();
+
+    DiceWebSigninInterceptorBrowserTest::TearDownOnMainThread();
+  }
+
+  net::EmbeddedTestServer* gaia_server() { return &https_server_; }
+
+ private:
+  net::EmbeddedTestServer https_server_;
+  std::unique_ptr<GaiaUrls> custom_gaia_urls_;
+};
+
+// Tests that performing a Gaia navigation during the profile switch flow does
+// not trigger a reentrant iteration crash in AccountReconcilor observers.
+// Regression test for b/504560109.
+IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorGaiaBrowserTest,
+                       SwitchAlreadyOpen_GaiaNavigationCrashRegression) {
+  base::HistogramTester histogram_tester;
+
+  AccountInfo account_info = MakeAccountInfoAvailableAndUpdate(
+      "alice@example.com", /*hosted_domain=*/std::string());
+  // Create another profile with a browser window.
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  const base::FilePath profile_path =
+      profile_manager->GenerateNextProfileDirectoryPath();
+  ui_test_utils::BrowserCreatedObserver browser_created_observer;
+  base::RunLoop loop;
+  Profile* other_profile = nullptr;
+  base::OnceCallback<void(Browser*)> callback =
+      base::BindLambdaForTesting([&other_profile, &loop](Browser* browser) {
+        other_profile = browser->profile();
+        loop.Quit();
+      });
+  profiles::SwitchToProfile(profile_path, /*always_create=*/true,
+                            std::move(callback));
+  loop.Run();
+  ASSERT_TRUE(other_profile);
+  const BrowserWindowInterface* const other_browser =
+      browser_created_observer.Wait();
+  ASSERT_TRUE(other_browser);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 2u);
+  ASSERT_EQ(other_browser->GetProfile(), other_profile);
+  // Add the account to the other profile.
+  signin::IdentityManager* other_identity_manager =
+      IdentityManagerFactory::GetForProfile(other_profile);
+  signin::MakePrimaryAccountAvailable(other_identity_manager,
+                                      account_info.email,
+                                      signin::ConsentLevel::kSignin);
+
+  // Add a tab with a GAIA URL!
+  GURL intercepted_url =
+      gaia_server()->GetURL("accounts.google.com", "/defaultresponse");
+  content::WebContents* web_contents = AddTab(intercepted_url);
+  int original_tab_count = browser()->tab_strip_model()->count();
+  int other_original_tab_count = other_browser->GetTabStripModel()->count();
+
+  // Start the interception.
+  GetInterceptorDelegate(GetProfile())
+      ->set_expected_interception_type(
+          WebSigninInterceptor::SigninInterceptionType::kProfileSwitch);
+  DiceWebSigninInterceptor* interceptor =
+      DiceWebSigninInterceptorFactory::GetForProfile(GetProfile());
+  interceptor->MaybeInterceptWebSignin(web_contents, account_info.account_id,
+                                       signin_metrics::AccessPoint::kWebSignin,
+                                       /*is_new_account=*/true,
+                                       /*is_sync_signin=*/false);
+  interceptor->OnDiceSigninSessionComplete(account_info.account_id, {});
+
+  // Add the account to the cookies (simulates the account reconcilor).
+  signin::SetCookieAccounts(other_identity_manager, test_url_loader_factory(),
+                            {{account_info.email, account_info.gaia}});
+
+  // Wait until the tab is moved to the other browser.
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return browser()->tab_strip_model()->count() == original_tab_count - 1;
+  }));
+
+  // The tab was moved to the new browser.
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 2u);
+  EXPECT_EQ(other_browser->GetTabStripModel()->count(),
+            other_original_tab_count + 1);
+  EXPECT_EQ(other_browser->GetTabStripModel()
+                ->GetActiveWebContents()
+                ->GetVisibleURL(),
+            intercepted_url);
+
+  CheckHistograms(histogram_tester,
+                  SigninInterceptionHeuristicOutcome::kInterceptProfileSwitch);
+}
+
 // Close the source tab during the interception and check that the NTP is opened
-// in the new profile (regression test for https://crbug.com/1153321).
+// in the new profile (regression test for https://crbug.com/40159041).
 IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest, CloseSourceTab) {
   // Setup profile for interception.
   AccountInfo primary_account_info =
@@ -524,6 +660,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest, CloseSourceTab) {
                                        signin_metrics::AccessPoint::kWebSignin,
                                        /*is_new_account=*/true,
                                        /*is_sync_signin=*/false);
+  interceptor->OnDiceSigninSessionComplete(account_info.account_id, {});
   // Close the source tab during the profile creation.
   contents->Close();
   // Wait for the interception to be complete.
@@ -535,7 +672,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest, CloseSourceTab) {
       account_info.account_id));
 
   // Add the account to the cookies (simulates the account reconcilor).
-  EXPECT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  EXPECT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   ui_test_utils::BrowserCreatedObserver browser_created_observer;
   signin::SetCookieAccounts(new_identity_manager, test_url_loader_factory(),
                             {{account_info.email, account_info.gaia}});
@@ -544,7 +681,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest, CloseSourceTab) {
   ASSERT_TRUE(added_browser);
 
   // A browser has been created for the new profile on the new tab page.
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 2u);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 2u);
   EXPECT_EQ(added_browser->GetProfile(), new_profile);
   EXPECT_EQ(browser()->GetTabStripModel()->count(), original_tab_count - 1);
   EXPECT_EQ(added_browser->GetTabStripModel()
@@ -1282,6 +1419,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorSigninBubbleBrowserTest,
                                        signin_metrics::AccessPoint::kWebSignin,
                                        /*is_new_account=*/true,
                                        /*is_sync_signin=*/false);
+  interceptor->OnDiceSigninSessionComplete(secondary_account_info.account_id, {});
 
   // New Profile created from accepting the signin interception.
   Profile* new_profile = waiter.WaitForProfileAdded();
@@ -1589,6 +1727,7 @@ IN_PROC_BROWSER_TEST_P(
                                        signin_metrics::AccessPoint::kWebSignin,
                                        /*is_new_account=*/true,
                                        /*is_sync_signin=*/false);
+  interceptor->OnDiceSigninSessionComplete(account_info.account_id, {});
 
   if (params.expect_bubble_shown) {
     // Wait for the interception to be complete.
@@ -1655,6 +1794,7 @@ IN_PROC_BROWSER_TEST_P(
                                        signin_metrics::AccessPoint::kWebSignin,
                                        /*is_new_account=*/true,
                                        /*is_sync_signin=*/false);
+  interceptor->OnDiceSigninSessionComplete(account_info.account_id, {});
 
   if (params.expect_bubble_shown) {
     // Wait for the interception to be complete.
@@ -1715,7 +1855,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest,
   int original_tab_count = browser()->tab_strip_model()->count();
 
   // Do the signin interception.
-  EXPECT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  EXPECT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   FakeDiceWebSigninInterceptorDelegate* source_interceptor_delegate =
       GetInterceptorDelegate(GetProfile());
   source_interceptor_delegate->set_expected_interception_type(
@@ -1753,7 +1893,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest,
   // A browser has been created for the new profile and the tab was moved there.
   Browser* added_browser = ui_test_utils::WaitForBrowserToOpen();
   ASSERT_TRUE(added_browser);
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 2u);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 2u);
   EXPECT_EQ(added_browser->profile(), new_profile);
   EXPECT_EQ(browser()->tab_strip_model()->count(), original_tab_count - 1);
   EXPECT_EQ(
@@ -1798,7 +1938,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest,
   int original_tab_count = browser()->tab_strip_model()->count();
 
   // Do the signin interception.
-  EXPECT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  EXPECT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   FakeDiceWebSigninInterceptorDelegate* source_interceptor_delegate =
       GetInterceptorDelegate(GetProfile());
   source_interceptor_delegate->set_expected_interception_type(
@@ -1823,7 +1963,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest,
   EXPECT_TRUE(
       identity_manager->HasAccountWithRefreshToken(account_info.account_id));
 
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   EXPECT_EQ(browser()->tab_strip_model()->count(), original_tab_count);
   EXPECT_EQ(
       browser()->tab_strip_model()->GetActiveWebContents()->GetVisibleURL(),
@@ -1871,7 +2011,7 @@ IN_PROC_BROWSER_TEST_F(
             primary_account_info.account_id);
 
   // Do the signin interception.
-  EXPECT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  EXPECT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
 
   // Start the interception.
   DiceWebSigninInterceptor* interceptor =
@@ -1903,7 +2043,7 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_TRUE(
       identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSignin));
 
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   EXPECT_EQ(browser()->tab_strip_model()->count(), original_tab_count);
   EXPECT_EQ(
       browser()->tab_strip_model()->GetActiveWebContents()->GetVisibleURL(),
@@ -1934,7 +2074,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest,
   int original_tab_count = browser()->tab_strip_model()->count();
 
   // Do the signin interception.
-  EXPECT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  EXPECT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   FakeDiceWebSigninInterceptorDelegate* source_interceptor_delegate =
       GetInterceptorDelegate(GetProfile());
   source_interceptor_delegate->set_expected_interception_type(
@@ -1968,7 +2108,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest,
   EXPECT_FALSE(
       identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSignin));
 
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   EXPECT_EQ(browser()->tab_strip_model()->count(), original_tab_count);
   EXPECT_EQ(
       browser()->tab_strip_model()->GetActiveWebContents()->GetVisibleURL(),
@@ -2001,7 +2141,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest,
   int original_tab_count = browser()->tab_strip_model()->count();
 
   // Do the signin interception.
-  EXPECT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  EXPECT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   FakeDiceWebSigninInterceptorDelegate* source_interceptor_delegate =
       GetInterceptorDelegate(GetProfile());
   source_interceptor_delegate->set_expected_interception_type(
@@ -2039,7 +2179,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest,
   // A browser has been created for the new profile and the tab was moved there.
   Browser* added_browser = ui_test_utils::WaitForBrowserToOpen();
   ASSERT_TRUE(added_browser);
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 2u);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 2u);
   EXPECT_EQ(added_browser->profile(), new_profile);
   EXPECT_EQ(browser()->tab_strip_model()->count(), original_tab_count - 1);
   EXPECT_EQ(
@@ -2079,7 +2219,7 @@ IN_PROC_BROWSER_TEST_F(
   content::WebContents* web_contents = AddTab(intercepted_url);
 
   // Do the signin interception.
-  EXPECT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  EXPECT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   FakeDiceWebSigninInterceptorDelegate* source_interceptor_delegate =
       GetInterceptorDelegate(GetProfile());
   source_interceptor_delegate->set_expected_interception_type(
@@ -2132,7 +2272,7 @@ IN_PROC_BROWSER_TEST_F(
   int original_tab_count = browser()->tab_strip_model()->count();
 
   // Do the signin interception.
-  EXPECT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  EXPECT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   FakeDiceWebSigninInterceptorDelegate* source_interceptor_delegate =
       GetInterceptorDelegate(GetProfile());
   source_interceptor_delegate->set_expected_interception_type(
@@ -2157,7 +2297,7 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_FALSE(
       identity_manager->HasAccountWithRefreshToken(account_info.account_id));
 
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   EXPECT_EQ(browser()->tab_strip_model()->count(), original_tab_count);
   EXPECT_EQ(
       browser()->tab_strip_model()->GetActiveWebContents()->GetVisibleURL(),
@@ -2191,7 +2331,7 @@ IN_PROC_BROWSER_TEST_F(
   int original_tab_count = browser()->tab_strip_model()->count();
 
   // Do the signin interception.
-  EXPECT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  EXPECT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   FakeDiceWebSigninInterceptorDelegate* source_interceptor_delegate =
       GetInterceptorDelegate(GetProfile());
   source_interceptor_delegate->set_expected_interception_type(
@@ -2216,7 +2356,7 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_FALSE(
       identity_manager->HasAccountWithRefreshToken(account_info.account_id));
 
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   EXPECT_EQ(browser()->tab_strip_model()->count(), original_tab_count);
   EXPECT_EQ(
       browser()->tab_strip_model()->GetActiveWebContents()->GetVisibleURL(),
@@ -2246,7 +2386,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest,
   int original_tab_count = browser()->tab_strip_model()->count();
 
   // Do the signin interception.
-  EXPECT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  EXPECT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   FakeDiceWebSigninInterceptorDelegate* source_interceptor_delegate =
       GetInterceptorDelegate(GetProfile());
   source_interceptor_delegate->set_expected_interception_type(
@@ -2284,7 +2424,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest,
   // A browser has been created for the new profile and the tab was moved there.
   Browser* added_browser = ui_test_utils::WaitForBrowserToOpen();
   ASSERT_TRUE(added_browser);
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 2u);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 2u);
   EXPECT_EQ(added_browser->profile(), new_profile);
   EXPECT_EQ(browser()->tab_strip_model()->count(), original_tab_count - 1);
   EXPECT_EQ(
@@ -2329,7 +2469,7 @@ IN_PROC_BROWSER_TEST_F(
   int original_tab_count = browser()->tab_strip_model()->count();
 
   // Do the signin interception.
-  EXPECT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  EXPECT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   FakeDiceWebSigninInterceptorDelegate* source_interceptor_delegate =
       GetInterceptorDelegate(GetProfile());
   source_interceptor_delegate->set_expected_interception_type(
@@ -2350,7 +2490,7 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_TRUE(IdentityManagerFactory::GetForProfile(GetProfile())
                   ->HasAccountWithRefreshToken(account_info.account_id));
 
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   EXPECT_EQ(browser()->tab_strip_model()->count(), original_tab_count);
   EXPECT_EQ(
       browser()->tab_strip_model()->GetActiveWebContents()->GetVisibleURL(),
@@ -2386,7 +2526,7 @@ IN_PROC_BROWSER_TEST_F(
   content::WebContents* web_contents = AddTab(intercepted_url);
   int original_tab_count = browser()->tab_strip_model()->count();
 
-  EXPECT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  EXPECT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   enterprise_util::SetUserAcceptedAccountManagement(GetProfile(), true);
   // Start the interception.
   DiceWebSigninInterceptor* interceptor =
@@ -2404,7 +2544,7 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_TRUE(IdentityManagerFactory::GetForProfile(GetProfile())
                   ->HasAccountWithRefreshToken(account_info.account_id));
 
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   EXPECT_EQ(browser()->tab_strip_model()->count(), original_tab_count);
   EXPECT_EQ(
       browser()->tab_strip_model()->GetActiveWebContents()->GetVisibleURL(),
@@ -2464,7 +2604,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest,
   EXPECT_EQ(new_profile->GetPath(), profile_path);
 
   // Add the account to the cookies (simulates the account reconcilor).
-  EXPECT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  EXPECT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   ui_test_utils::BrowserCreatedObserver browser_created_observer;
   signin::SetCookieAccounts(new_identity_manager, test_url_loader_factory(),
                             {{account_info.email, account_info.gaia}});
@@ -2473,7 +2613,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest,
   ASSERT_TRUE(added_browser);
 
   // A browser has been created for the new profile and the tab was moved there.
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 2u);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 2u);
   EXPECT_EQ(added_browser->GetProfile(), new_profile);
   EXPECT_EQ(browser()->GetTabStripModel()->count(), original_tab_count - 1);
   EXPECT_EQ(added_browser->GetTabStripModel()
@@ -2521,7 +2661,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest,
   const BrowserWindowInterface* const other_browser =
       browser_created_observer.Wait();
   ASSERT_TRUE(other_browser);
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 2u);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 2u);
   ASSERT_EQ(other_browser->GetProfile(), other_profile);
   // Add the account to the other profile.
   signin::IdentityManager* other_identity_manager =
@@ -2548,14 +2688,19 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest,
                                        signin_metrics::AccessPoint::kWebSignin,
                                        /*is_new_account=*/true,
                                        /*is_sync_signin=*/false);
+  interceptor->OnDiceSigninSessionComplete(account_info.account_id, {});
 
   // Add the account to the cookies (simulates the account reconcilor).
   signin::SetCookieAccounts(other_identity_manager, test_url_loader_factory(),
                             {{account_info.email, account_info.gaia}});
 
+  // Wait until the tab is moved to the other browser.
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return browser()->GetTabStripModel()->count() == original_tab_count - 1;
+  }));
+
   // The tab was moved to the new browser.
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 2u);
-  EXPECT_EQ(browser()->GetTabStripModel()->count(), original_tab_count - 1);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 2u);
   EXPECT_EQ(other_browser->GetTabStripModel()->count(),
             other_original_tab_count + 1);
   EXPECT_EQ(other_browser->GetTabStripModel()
@@ -2603,7 +2748,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest, InterceptionTest) {
   int original_tab_count = browser()->tab_strip_model()->count();
 
   // Do the signin interception.
-  EXPECT_EQ(chrome::GetTotalBrowserCount(), 1u);
+  EXPECT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 1u);
   Profile* new_profile =
       InterceptAndWaitProfileCreation(web_contents, account_info.account_id);
   ASSERT_TRUE(new_profile);
@@ -2646,7 +2791,7 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest, InterceptionTest) {
   // A browser has been created for the new profile and the tab was moved there.
   Browser* added_browser = ui_test_utils::WaitForBrowserToOpen();
   ASSERT_TRUE(added_browser);
-  ASSERT_EQ(chrome::GetTotalBrowserCount(), 2u);
+  ASSERT_EQ(GlobalBrowserCollection::GetInstance()->GetSize(), 2u);
   EXPECT_EQ(added_browser->profile(), new_profile);
   EXPECT_EQ(browser()->tab_strip_model()->count(), original_tab_count - 1);
   EXPECT_EQ(
@@ -2667,4 +2812,227 @@ IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorBrowserTest, InterceptionTest) {
   EXPECT_EQ(new_interceptor_delegate->fre_account_id(),
             account_info.account_id);
   EXPECT_EQ(source_interceptor_delegate->fre_browser(), nullptr);
+}
+
+// =============================================================================
+// Regression test for b/504183747
+// =============================================================================
+//
+// This test verifies that any ongoing policy fetch is cancelled when the
+// interception info fetch timeout fires, preventing use-after-free issues from
+// late policy responses arriving during profile creation.
+//
+// Scenario (mirrors production):
+//  1) A managed account is web-signed-in. ProcessInterceptionOrWait() is called
+//     with an AccountInfo whose `is_subject_to_parental_controls` capability is
+//     still kUnknown (capabilities fetch hasn't completed). This starts the
+//     UserCloudSigninRestrictionPolicyFetcher with that stale AccountInfo
+//     bound by value into the completion callback, and starts observing the
+//     IdentityManager.
+//  2) The 5s interception-info timeout fires.
+//     OnInterceptionInfoFetchTimeout() explicitly cancels any pending policy
+//     fetch, completely eliminating the possibility of a late response.
+//  3) The user clicks Accept. OnProfileCreationChoice() is invoked and starts
+//     the DiceSignedInProfileCreator, which kicks off async profile creation.
+//
+// Before the fix:
+//     The IdentityManager observation was reset, but the pending policy fetcher
+//     was left active.
+//     If the user clicked Accept and profile creation began, a late policy
+//     response could arrive, re-register the IdentityManager observer, and
+//     cause a use-after-free when MoveAccount() later triggered account removal
+//     notifications.
+//
+// After the fix:
+//     The fetcher is explicitly cancelled on timeout, preventing any late
+//     policy response from re-registering the observer.
+//
+// In this browser test, we use IdentityTestEnvironment for accounts and call
+// the private timer callback directly (via friend access) to simulate the
+// timeout.
+
+namespace {
+
+// Delegate that captures the interception-bubble callback so the test can
+// invoke it at a precise point (simulating the user clicking "Accept" after
+// the timeout but before the late policy response).
+class CapturingInterceptorDelegate : public DiceWebSigninInterceptorDelegate {
+ public:
+  std::unique_ptr<ScopedWebSigninInterceptionBubbleHandle>
+  ShowSigninInterceptionBubble(
+      content::WebContents* web_contents,
+      const BubbleParameters& bubble_parameters,
+      base::OnceCallback<void(SigninInterceptionResult)> callback) override {
+    callback_ = std::move(callback);
+    bubble_shown_ = true;
+    return std::make_unique<FakeBubbleHandle>();
+  }
+
+  void ShowFirstRunExperienceInNewProfile(
+      Browser* browser,
+      const CoreAccountId& account_id,
+      WebSigninInterceptor::SigninInterceptionType type) override {}
+
+  void ShowSigninError(content::WebContents* web_contents,
+                       const SigninUIError& error) override {}
+
+  bool bubble_shown() const { return bubble_shown_; }
+  base::OnceCallback<void(SigninInterceptionResult)> TakeCallback() {
+    return std::move(callback_);
+  }
+
+  base::WeakPtr<CapturingInterceptorDelegate> GetWeakPtr() {
+    return weak_factory_.GetWeakPtr();
+  }
+
+ private:
+  bool bubble_shown_ = false;
+  base::OnceCallback<void(SigninInterceptionResult)> callback_;
+  base::WeakPtrFactory<CapturingInterceptorDelegate> weak_factory_{this};
+};
+
+}  // namespace
+
+class DiceWebSigninInterceptorLatePolicyCallbackUAFTest
+    : public SigninBrowserTestBase {
+ public:
+  DiceWebSigninInterceptorLatePolicyCallbackUAFTest()
+      : SigninBrowserTestBase(/*use_main_profile=*/true) {}
+
+  content::WebContents* AddTab(const GURL& url) {
+    ui_test_utils::NavigateToURLWithDisposition(
+        browser(), url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
+        ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
+    return browser()->tab_strip_model()->GetActiveWebContents();
+  }
+
+  CapturingInterceptorDelegate* delegate() { return delegate_.get(); }
+
+  // Directly invoke the private 5s-timeout handler (this is exactly what the
+  // PostDelayedTask at dice_web_signin_interceptor.cc:627 would call).
+  void FireInfoFetchTimeout(DiceWebSigninInterceptor* interceptor) {
+    interceptor->OnInterceptionInfoFetchTimeout();
+  }
+
+  bool IsObservingIdentityManager(DiceWebSigninInterceptor* interceptor) {
+    return interceptor->account_info_update_observation_.IsObserving();
+  }
+
+  bool HasPendingFetcher(DiceWebSigninInterceptor* interceptor) {
+    return interceptor->state_
+               ->account_level_signin_restriction_policy_fetcher_ != nullptr;
+  }
+
+  bool HasProfileCreator(DiceWebSigninInterceptor* interceptor) {
+    return interceptor->state_->dice_signed_in_profile_creator_ != nullptr;
+  }
+
+ protected:
+  void SetUpOnMainThread() override {
+    SigninBrowserTestBase::SetUpOnMainThread();
+    ASSERT_TRUE(embedded_test_server()->Start());
+  }
+
+ private:
+  void OnWillCreateBrowserContextServices(
+      content::BrowserContext* context) override {
+    SigninBrowserTestBase::OnWillCreateBrowserContextServices(context);
+    DiceWebSigninInterceptorFactory::GetInstance()->SetTestingFactory(
+        context,
+        base::BindRepeating(&DiceWebSigninInterceptorLatePolicyCallbackUAFTest::
+                                BuildInterceptor,
+                            base::Unretained(this)));
+  }
+
+  std::unique_ptr<KeyedService> BuildInterceptor(
+      content::BrowserContext* context) {
+    auto delegate = std::make_unique<CapturingInterceptorDelegate>();
+    if (!delegate_) {
+      delegate_ = delegate->GetWeakPtr();
+    }
+    return std::make_unique<DiceWebSigninInterceptor>(
+        Profile::FromBrowserContext(context), std::move(delegate),
+        &profile_metrics_service_);
+  }
+
+  base::WeakPtr<CapturingInterceptorDelegate> delegate_;
+  metrics::ProfileMetricsService profile_metrics_service_{
+      metrics::ProfileMetricsContext(1)};
+  web_app::OsIntegrationTestOverrideBlockingRegistration faked_os_integration_;
+};
+
+IN_PROC_BROWSER_TEST_F(DiceWebSigninInterceptorLatePolicyCallbackUAFTest,
+                       UseAfterFreeOnLatePolicyResponse) {
+  // (1) Source profile already has a primary account (so the bubble type is
+  //     SigninInterceptionType::kEnterprise -> OnProfileCreationChoice).
+  identity_test_env()->MakePrimaryAccountAvailable(
+      "primary@gmail.com", signin::ConsentLevel::kSignin);
+
+  // Intercepted managed account: IsRequiredExtendedAccountInfoAvailable() is
+  // true but is_subject_to_parental_controls() is left kUnknown so
+  // IsFullExtendedAccountInfoAvailable() is false. This is exactly the state
+  // of a freshly-DICE-added managed account before the capabilities fetch
+  // completes.
+  AccountInfo account_info =
+      identity_test_env()->MakeAccountAvailable("alice@example.com");
+  account_info = AccountInfo::Builder(account_info)
+                     .SetFullName("fullname")
+                     .SetGivenName("givenname")
+                     .SetHostedDomain("example.com")
+                     .SetAvatarUrl("https://example.com")
+                     .SetLocale("en")
+                     .Build();
+  AccountCapabilitiesTestMutator mutator(&account_info.capabilities);
+  mutator.set_is_subject_to_enterprise_features(true);
+  mutator.set_is_subject_to_account_level_enterprise_policies(true);
+  ASSERT_TRUE(account_info.IsValid());
+  ASSERT_EQ(signin::Tribool::kUnknown,
+            account_info.capabilities.is_subject_to_parental_controls());
+  identity_test_env()->UpdateAccountInfoForAccount(account_info);
+
+  content::WebContents* web_contents =
+      AddTab(embedded_test_server()->GetURL("/defaultresponse"));
+
+  DiceWebSigninInterceptor* interceptor =
+      DiceWebSigninInterceptorFactory::GetForProfile(GetProfile());
+  // Do NOT pre-set profile-separation policies for testing: we want the real
+  // UserCloudSigninRestrictionPolicyFetcher to be created so its callback (with
+  // the stale AccountInfo bound by value) is left pending.
+  interceptor->SetInterceptedAccountProfileSeparationPoliciesForTesting(
+      std::nullopt);
+
+  // This is what ProcessDiceHeaderDelegateImpl calls after the Gaia DICE token
+  // exchange completes.
+  interceptor->MaybeInterceptWebSignin(web_contents, account_info.account_id,
+                                       signin_metrics::AccessPoint::kWebSignin,
+                                       /*is_new_account=*/true,
+                                       /*is_sync_signin=*/false);
+  interceptor->OnDiceSigninSessionComplete(account_info.account_id, {});
+
+  // The fetcher was created (its access-token request is pending in the test
+  // IdentityManager and is never answered, simulating a slow/stalled policy
+  // endpoint), and the IdentityManager is being observed.
+  ASSERT_TRUE(HasPendingFetcher(interceptor));
+  ASSERT_TRUE(IsObservingIdentityManager(interceptor));
+  ASSERT_FALSE(delegate()->bubble_shown());
+
+  // (2) The 5s timeout fires. account_info_update_observation_ is reset and the
+  //     pending policy fetcher is cancelled. The bubble is shown.
+  FireInfoFetchTimeout(interceptor);
+  ASSERT_TRUE(delegate()->bubble_shown());
+  ASSERT_FALSE(HasPendingFetcher(interceptor));
+  ASSERT_FALSE(IsObservingIdentityManager(interceptor));
+
+  // (3) The user clicks Accept. OnProfileCreationChoice() passes the
+  //     CHECK(!IsObserving()) and constructs DiceSignedInProfileCreator, which
+  //     asynchronously starts CreateMultiProfileAsync.
+  ProfileWaiter profile_waiter;
+  delegate()->TakeCallback().Run(SigninInterceptionResult::kAccepted);
+  ASSERT_TRUE(HasProfileCreator(interceptor));
+  ASSERT_FALSE(IsObservingIdentityManager(interceptor));
+
+  // Let the async profile creation complete. The observer is not active,
+  // so calling MoveAccount() will not trigger a premature Reset() and
+  // destruction of DiceSignedInProfileCreator.
+  profile_waiter.WaitForProfileAdded();
 }

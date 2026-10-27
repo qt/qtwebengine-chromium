@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
 import("//gpu/vulkan/features.gni")
 import("//ui/base/ui_features.gni")
 
@@ -143,6 +142,7 @@ source_set("x11_unittests") {
     "test/events_x_unittest.cc",
     "test/x11_event_translation_unittest.cc",
     "test/x11_window_unittest.cc",
+    "test/xinput_util_unittest.cc",
     "x11_screen_ozone_unittest.cc",
     "x11_window_ozone_unittest.cc",
   ]

@@ -32,7 +32,7 @@
 #include "cc/resources/ui_resource_request.h"
 #include "cc/trees/begin_main_frame_trace_id.h"
 #include "cc/trees/browser_controls_params.h"
-#include "cc/trees/layer_tree_host_client.h"
+#include "cc/trees/layer_tree_host_delegate.h"
 #include "cc/trees/presentation_time_callback_buffer.h"
 #include "cc/trees/render_frame_metadata.h"
 #include "cc/trees/swap_promise.h"
@@ -86,7 +86,6 @@ struct CC_EXPORT CommitState {
   bool is_viewport_mobile_optimized = false;
   bool may_throttle_if_undrawn_frames = true;
   bool prefers_reduced_motion = false;
-  bool prefer_efficient_scheduling = false;
   BrowserControlsParams browser_controls_params;
   std::array<EventListenerProperties, kEventListenerClassCount>
       event_listener_properties = {EventListenerProperties::kNone};
@@ -170,9 +169,6 @@ struct CC_EXPORT CommitState {
   std::vector<std::unique_ptr<SwapPromise>> swap_promises;
   std::vector<UIResourceRequest> ui_resource_request_queue;
   base::flat_map<UIResourceId, gfx::Size> ui_resource_sizes;
-  // TODO(crbug.com/492147921): This shouldn't be tracked separately from
-  // property_trees.
-  PropertyTreesChangeState property_trees_change_state;
   base::flat_set<int> layer_ids_that_should_push_properties;
   base::flat_set<int> picture_layer_ids_with_new_raster_source;
   base::flat_map<int, gfx::Rect> layer_update_rects;

@@ -1544,8 +1544,12 @@ HloInstruction* SelectOperandForScatterIndexPassthroughDimensions(
   // Update partition_id for partial replicate.
   auto partition_id = indices.state().partition_id;
   if (indices.sharding().HasPartialReplication()) {
+    HloSharding tiled_sharding =
+        indices.sharding().UseNamedShardingLeaf()
+            ? HloSharding::V3ToV2Sharding(indices.sharding().named_sharding())
+            : indices.sharding();
     auto sharding_grouped = hlo_sharding_util::GroupShardingOnDims(
-        indices.sharding(), {indices.sharding().SubgroupReplicationDim()});
+        tiled_sharding, {tiled_sharding.SubgroupReplicationDim()});
     partition_id =
         GetInGroupPartitionId(partition_id, sharding_grouped.device_groups, b);
   }
@@ -2007,7 +2011,10 @@ absl::Status SpmdPartitioningVisitor::HandleScatterWithoutConflicts(
     select_operand = SelectOperandForScatterIndexPassthroughDimensions(
         scatter, indices, operands[0], b);
     if (!select_operand) {
-      indices.ReplicatePartial(index_passthrough_dims.indices_dims);
+      return absl::InternalError(
+          "Failed to find a reduction identity for sharded scatter implicit "
+          "batching dimensions. This indicates a mismatch between Shardy "
+          "sharding rules and the GSPMD partitioner.");
     }
   }
 
@@ -2051,9 +2058,11 @@ absl::Status SpmdPartitioningVisitor::HandleScatter(HloInstruction* hlo) {
   if (hlo->sharding().IsSingleDevice()) {
     return DefaultAction(hlo);
   }
+
   if (!options_.need_resolve_conflicts) {
     return HandleScatterWithoutConflicts(hlo);
   }
+
   const auto scatter = Cast<HloScatterInstruction>(hlo);
   // Check all operands have the same shapes and shardings, and all updates have
   // the same shapes and shardings, and live with this assumption during scatter

@@ -9,6 +9,7 @@
 #include <string>
 
 #include "ash/constants/webui_url_constants.h"
+#include "base/check_deref.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/json/json_writer.h"
@@ -29,8 +30,6 @@
 #include "chrome/browser/ui/webui/ash/lock_screen_reauth/lock_screen_network_dialog.h"
 #include "chrome/browser/ui/webui/ash/lock_screen_reauth/lock_screen_reauth_handler.h"
 #include "chrome/browser/ui/webui/ash/lock_screen_reauth/lock_screen_start_reauth_ui.h"
-#include "chrome/grit/browser_resources.h"
-#include "chrome/grit/generated_resources.h"
 #include "chromeos/ash/components/network/network_connection_handler.h"
 #include "chromeos/ash/components/network/network_handler.h"
 #include "chromeos/ash/components/network/network_state_handler.h"
@@ -306,7 +305,8 @@ LockScreenReauthHandler* LockScreenStartReauthDialog::GetHandler() {
   if (!controller) {
     return nullptr;
   }
-  return static_cast<LockScreenStartReauthUI*>(controller)->GetMainHandler();
+  auto* reauth_ui = &CHECK_DEREF(controller->GetAs<LockScreenStartReauthUI>());
+  return reauth_ui->GetMainHandler();
 }
 
 void LockScreenStartReauthDialog::TerminateAutoReload() {

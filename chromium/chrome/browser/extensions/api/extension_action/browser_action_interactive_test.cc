@@ -5,6 +5,7 @@
 #include <array>
 #include <memory>
 
+#include "base/feature_list.h"
 #include "base/files/file_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
@@ -18,9 +19,11 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+#include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
 #include "chrome/browser/ui/extensions/extension_action_test_helper.h"
 #include "chrome/browser/ui/toolbar/toolbar_action_view_model.h"
 #include "chrome/browser/ui/toolbar/toolbar_actions_model.h"
@@ -35,6 +38,7 @@
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/common/content_features.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/download_test_observer.h"
@@ -307,12 +311,15 @@ IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest, TestOpenPopup) {
   Browser* new_browser = nullptr;
   {
     // Open a new window.
-    new_browser = chrome::FindBrowserWithTab(browser()->OpenURL(
-        content::OpenURLParams(GURL("about:blank"), content::Referrer(),
-                               WindowOpenDisposition::NEW_WINDOW,
-                               ui::PAGE_TRANSITION_TYPED, false),
-        /*navigation_handle_callback=*/{}));
-    ui_test_utils::BrowserActivationWaiter waiter(new_browser);
+    BrowserWindowInterface* new_browser_interface =
+        GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+            browser()->OpenURL(
+                content::OpenURLParams(GURL("about:blank"), content::Referrer(),
+                                       WindowOpenDisposition::NEW_WINDOW,
+                                       ui::PAGE_TRANSITION_TYPED, false),
+                /*navigation_handle_callback=*/{}));
+    ui_test_utils::BrowserActivationWaiter waiter(new_browser_interface);
+    new_browser = new_browser_interface->GetBrowserForMigrationOnly();
     waiter.WaitForActivation();
 
     // Pin the extension to test that it opens when the action is on the
@@ -338,25 +345,52 @@ IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest, TestOpenPopup) {
 
 // Tests opening a popup in an incognito window.
 // TODO(crbug.com/345091943): Extremely flaky on Mac release builds.
-#if BUILDFLAG(IS_MAC) && defined(NDEBUG)
+// TODO(crbug.com/506956204): Extremely flaky on Linux builds.
+#if (BUILDFLAG(IS_MAC) && defined(NDEBUG))
 #define MAYBE_TestOpenPopupIncognito DISABLED_TestOpenPopupIncognito
 #else
 #define MAYBE_TestOpenPopupIncognito TestOpenPopupIncognito
 #endif
 IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest,
                        MAYBE_TestOpenPopupIncognito) {
+#if BUILDFLAG(IS_MAC)
+  if (base::FeatureList::IsEnabled(features::kInitialWebUI)) {
+    GTEST_SKIP() << "Skipping test because it fails with InitialWebUI enabled "
+                    "on Mac. See crbug.com/464087732.";
+  }
+#endif  // BUILDFLAG(IS_MAC)
+
+  // Load the extension with incognito support.
+  const Extension* extension = LoadExtension(
+      test_data_dir_.AppendASCII("browser_action").AppendASCII("open_popup"),
+      {.allow_in_incognito = true});
+  ASSERT_TRUE(extension);
+
   Profile* incognito_profile =
       profile()->GetPrimaryOTRProfile(/*create_if_needed=*/true);
   ExtensionHostTestHelper host_helper(incognito_profile);
   host_helper.RestrictToType(mojom::ViewType::kExtensionPopup);
 
-  ASSERT_TRUE(RunExtensionTest(
-      "browser_action/open_popup",
-      {.extension_url = "open_popup_succeeds.html", .open_in_incognito = true},
-      {.allow_in_incognito = true}))
-      << message_;
+  // Open an incognito window.
+  Browser* incognito_browser =
+      OpenURLOffTheRecord(profile(), GURL("about:blank"));
+  ASSERT_TRUE(incognito_browser);
 
+  // Ensure the incognito browser is fully active.
+  ui_test_utils::BrowserActivationWaiter waiter(incognito_browser);
+  waiter.WaitForActivation();
+
+  ResultCatcher catcher;
+
+  // Navigate to the extension URL in the incognito browser to trigger the
+  // popup.
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      incognito_browser,
+      extension->GetResourceURL("open_popup_succeeds.html")));
+
+  ASSERT_TRUE(catcher.GetNextResult()) << message_;
   ASSERT_TRUE(host_helper.WaitForHostCompletedFirstLoad());
+
   // Non-Aura Linux uses a singleton for the popup, so it looks like all windows
   // have popups if there is any popup open.
 #if !((BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)) && !defined(USE_AURA))
@@ -364,9 +398,7 @@ IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest,
   EXPECT_FALSE(ExtensionActionTestHelper::Create(browser())->HasPopup());
 #endif
   // Incognito window should have a popup.
-  auto test_util = ExtensionActionTestHelper::Create(
-      GetLastActiveBrowserWindowInterfaceWithAnyProfile()
-          ->GetBrowserForMigrationOnly());
+  auto test_util = ExtensionActionTestHelper::Create(incognito_browser);
   EXPECT_TRUE(test_util->HasPopup());
   test_util->HidePopup();
 }
@@ -376,6 +408,12 @@ IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest,
 // (crbug.com/40401189)
 IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest,
                        TestOpenPopupIncognitoFromBackground) {
+  if (base::FeatureList::IsEnabled(features::kInitialWebUI)) {
+    GTEST_SKIP()
+        << "Skipping test because it's flaky with InitialWebUI enabled. "
+           "See crbug.com/477426026.";
+  }
+
   const Extension* extension =
       LoadExtension(test_data_dir_.AppendASCII("browser_action")
                         .AppendASCII("open_popup_background"),
@@ -795,7 +833,7 @@ IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest, OpenPopupOnPopup) {
   params.window_action = NavigateParams::WindowAction::kShowWindow;
   ui_test_utils::NavigateToURL(&params);
   ASSERT_TRUE(params.browser);
-  Browser* popup_browser = params.browser->GetBrowserForMigrationOnly();
+  BrowserWindowInterface* popup_browser = params.browser;
   // Verify it is a popup, and it is the active window.
   // The window isn't considered "active" on MacOSX for odd reasons. The more
   // important test is that it *is* considered the last active browser, since
@@ -805,13 +843,15 @@ IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest, OpenPopupOnPopup) {
 #if !BUILDFLAG(IS_MAC)
   ui_test_utils::BrowserActivationWaiter waiter(popup_browser);
   waiter.WaitForActivation();
-  EXPECT_TRUE(popup_browser->window()->IsActive());
+  EXPECT_TRUE(popup_browser->GetWindow()->IsActive());
 #endif
   EXPECT_FALSE(browser()->window()->IsActive());
-  EXPECT_FALSE(popup_browser->SupportsWindowFeature(
-      Browser::WindowFeature::kFeatureToolbar));
+  EXPECT_FALSE(
+      popup_browser->GetBrowserForMigrationOnly()->SupportsWindowFeature(
+          Browser::WindowFeature::kFeatureToolbar));
   EXPECT_EQ(popup_browser,
-            chrome::FindLastActiveWithProfile(browser()->profile()));
+            ProfileBrowserCollection::GetForProfile(browser()->profile())
+                ->GetLastActiveBrowser());
 
   // Load up the extension, which will call chrome.browserAction.openPopup()
   // when it is loaded and verify that the popup didn't open.

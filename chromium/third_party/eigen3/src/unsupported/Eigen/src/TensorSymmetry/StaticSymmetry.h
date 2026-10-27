@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSORSYMMETRY_STATICSYMMETRY_H
-#define EIGEN_CXX11_TENSORSYMMETRY_STATICSYMMETRY_H
+#ifndef EIGEN_TENSORSYMMETRY_STATICSYMMETRY_H
+#define EIGEN_TENSORSYMMETRY_STATICSYMMETRY_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -21,7 +22,7 @@ template <typename list>
 struct tensor_static_symgroup_permutate;
 
 template <int... nn>
-struct tensor_static_symgroup_permutate<numeric_list<int, nn...>> {
+struct tensor_static_symgroup_permutate<std::integer_sequence<int, nn...>> {
   constexpr static std::size_t N = sizeof...(nn);
 
   template <typename T>
@@ -36,23 +37,30 @@ struct tensor_static_symgroup_element {
   constexpr static int flags = flags_;
 };
 
+template <typename Gen, int... indices>
+constexpr std::integer_sequence<int,
+                                ((indices == Gen::One) ? Gen::Two : ((indices == Gen::Two) ? Gen::One : indices))...>
+tensor_static_symgroup_swapped_indices(std::integer_sequence<int, indices...>) {
+  return {};
+}
+
 template <typename Gen, int N>
 struct tensor_static_symgroup_element_ctor {
-  typedef tensor_static_symgroup_element<typename gen_numeric_list_swapped_pair<int, N, Gen::One, Gen::Two>::type,
-                                         Gen::Flags>
+  typedef tensor_static_symgroup_element<
+      decltype(tensor_static_symgroup_swapped_indices<Gen>(std::make_integer_sequence<int, N>{})), Gen::Flags>
       type;
 };
 
 template <int N>
 struct tensor_static_symgroup_identity_ctor {
-  typedef tensor_static_symgroup_element<typename gen_numeric_list<int, N>::type, 0> type;
+  typedef tensor_static_symgroup_element<std::make_integer_sequence<int, N>, 0> type;
 };
 
 template <typename iib>
 struct tensor_static_symgroup_multiply_helper {
   template <int... iia>
-  constexpr static numeric_list<int, get<iia, iib>::value...> helper(numeric_list<int, iia...>) {
-    return numeric_list<int, get<iia, iib>::value...>();
+  constexpr static std::integer_sequence<int, get<iia, iib>::value...> helper(std::integer_sequence<int, iia...>) {
+    return {};
   }
 };
 
@@ -65,7 +73,7 @@ struct tensor_static_symgroup_multiply {
   constexpr static int ffb = B::flags;
 
  public:
-  static_assert(iia::count == iib::count, "Cannot multiply symmetry elements with different number of indices.");
+  static_assert(iia::size() == iib::size(), "Cannot multiply symmetry elements with different number of indices.");
 
   typedef tensor_static_symgroup_element<decltype(tensor_static_symgroup_multiply_helper<iib>::helper(iia())),
                                          ffa ^ ffb>
@@ -78,9 +86,9 @@ struct tensor_static_symgroup_equality {
   typedef typename B::indices iib;
   constexpr static int ffa = A::flags;
   constexpr static int ffb = B::flags;
-  static_assert(iia::count == iib::count, "Cannot compare symmetry elements with different number of indices.");
+  static_assert(iia::size() == iib::size(), "Cannot compare symmetry elements with different number of indices.");
 
-  constexpr static bool value = is_same<iia, iib>::value;
+  constexpr static bool value = std::is_same<iia, iib>::value;
 
  private:
   /* this should be zero if they are identical, or else the tensor
@@ -108,14 +116,14 @@ struct tensor_static_symgroup {
 
 template <typename Index, std::size_t N, int... ii, int... jj>
 constexpr static std::array<Index, N> tensor_static_symgroup_index_permute(std::array<Index, N> idx,
-                                                                           internal::numeric_list<int, ii...>,
-                                                                           internal::numeric_list<int, jj...>) {
-  return {{idx[ii]..., idx[jj]...}};
+                                                                           std::integer_sequence<int, ii...>,
+                                                                           std::integer_sequence<int, jj...>) {
+  return {{idx[ii]..., idx[sizeof...(ii) + jj]...}};
 }
 
 template <typename Index, int... ii>
 static inline std::vector<Index> tensor_static_symgroup_index_permute(std::vector<Index> idx,
-                                                                      internal::numeric_list<int, ii...>) {
+                                                                      std::integer_sequence<int, ii...>) {
   std::vector<Index> result{{idx[ii]...}};
   std::size_t target_size = idx.size();
   for (std::size_t i = result.size(); i < target_size; i++) result.push_back(idx[i]);
@@ -132,8 +140,8 @@ struct tensor_static_symgroup_do_apply<internal::type_list<first, next...>> {
   static inline RV run(const std::array<Index, NumIndices>& idx, RV initial, Args&&... args) {
     static_assert(NumIndices >= SGNumIndices,
                   "Can only apply symmetry group to objects that have at least the required amount of indices.");
-    typedef typename internal::gen_numeric_list<int, NumIndices - SGNumIndices, SGNumIndices>::type remaining_indices;
-    initial = Op::run(tensor_static_symgroup_index_permute(idx, typename first::indices(), remaining_indices()),
+    initial = Op::run(tensor_static_symgroup_index_permute(
+                          idx, typename first::indices(), std::make_integer_sequence<int, NumIndices - SGNumIndices>{}),
                       first::flags, initial, std::forward<Args>(args)...);
     return tensor_static_symgroup_do_apply<internal::type_list<next...>>::template run<Op, RV, SGNumIndices>(
         idx, initial, args...);
@@ -216,7 +224,7 @@ class StaticSGroup {
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSORSYMMETRY_STATICSYMMETRY_H
+#endif  // EIGEN_TENSORSYMMETRY_STATICSYMMETRY_H
 
 /*
  * kate: space-indent on; indent-width 2; mixedindent off; indent-mode cstyle;

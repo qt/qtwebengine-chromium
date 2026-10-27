@@ -4,6 +4,8 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SPECIALFUNCTIONS_HALF_H
 #define EIGEN_SPECIALFUNCTIONS_HALF_H
@@ -14,7 +16,6 @@
 namespace Eigen {
 namespace numext {
 
-#if EIGEN_HAS_C99_MATH
 template <>
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::half lgamma(const Eigen::half& a) {
   return Eigen::half(Eigen::numext::lgamma(static_cast<float>(a)));
@@ -65,7 +66,6 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::half betainc(const Eigen::half& a, 
                                                           const Eigen::half& x) {
   return Eigen::half(Eigen::numext::betainc(static_cast<float>(a), static_cast<float>(b), static_cast<float>(x)));
 }
-#endif
 
 }  // end namespace numext
 }  // end namespace Eigen

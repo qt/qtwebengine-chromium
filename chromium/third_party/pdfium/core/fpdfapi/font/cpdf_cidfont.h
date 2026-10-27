@@ -19,14 +19,14 @@
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
 
-enum CIDSet : uint8_t {
-  CIDSET_UNKNOWN,
-  CIDSET_GB1,
-  CIDSET_CNS1,
-  CIDSET_JAPAN1,
-  CIDSET_KOREA1,
-  CIDSET_UNICODE,
-  CIDSET_NUM_SETS
+enum class CIDSet : uint8_t {
+  kUnknown,
+  kGB1,
+  kCNS1,
+  kJapan1,
+  kKorea1,
+  kUnicode,
+  kNumSets
 };
 
 struct CIDTransform {
@@ -95,7 +95,7 @@ class CPDF_CIDFont final : public CPDF_Font {
   bool cid_is_gid_ = false;
   bool ansi_widths_fixed_ = false;
   bool adobe_courier_std_ = false;
-  CIDSet charset_ = CIDSET_UNKNOWN;
+  CIDSet charset_ = CIDSet::kUnknown;
   int16_t default_width_ = 1000;
   int16_t default_vy_ = 880;
   int16_t default_w1_ = -1000;

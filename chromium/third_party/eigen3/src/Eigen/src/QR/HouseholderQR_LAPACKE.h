@@ -30,6 +30,7 @@
  *    LAPACKE_?geqrf function.
  ********************************************************************************
 */
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef EIGEN_QR_LAPACKE_H
 #define EIGEN_QR_LAPACKE_H

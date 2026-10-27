@@ -9,27 +9,45 @@
 
 #include "ash/constants/url_constants.h"
 #include "ash/constants/webui_url_constants.h"
+#include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
-#include "base/strings/utf_string_conversions.h"
+#include "base/functional/callback_helpers.h"
 #include "build/branding_buildflags.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/signin/ash/inline_login_dialog.h"
+#include "chrome/grit/account_manager_resources.h"
 #include "chrome/grit/browser_resources.h"
 #include "chrome/grit/generated_resources.h"
 #include "chromeos/ash/components/account_manager/account_manager_factory.h"
-#include "components/account_manager_core/account_manager_facade.h"
-#include "content/public/browser/web_contents.h"
+#include "components/account_manager_core/account_manager_metrics.h"
+#include "components/account_manager_core/chromeos/account_manager_mojo_service.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/web_ui_data_source.h"
-#include "net/base/url_util.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/strings/grit/ui_strings.h"
-#include "ui/web_dialogs/web_dialog_delegate.h"
 #include "ui/webui/webui_util.h"
 
 namespace ash {
 
 namespace {
+
+// Launches account reauthentication dialog for provided `email`.
+// Note: the added/reauthenticated account may not match the account provided
+// in the `email` field if user decided to edit the email inside the dialog.
+void ShowMigrationWelcomeAccountReauthDialog(
+    content::BrowserContext* browser_context,
+    const std::string& email) {
+  CHECK(browser_context);
+
+  crosapi::AccountManagerMojoService* account_manager_mojo_service =
+      AccountManagerFactory::Get()->GetAccountManagerMojoService(
+          browser_context->GetPath().value());
+  CHECK(account_manager_mojo_service);
+
+  account_manager_mojo_service->ShowReauthAccountDialog(
+      account_manager::AccountAdditionSource::
+          kAccountManagerMigrationWelcomeScreen,
+      email, base::DoNothing());
+}
 
 class MigrationMessageHandler : public content::WebUIMessageHandler {
  public:
@@ -61,13 +79,8 @@ class MigrationMessageHandler : public content::WebUIMessageHandler {
     CHECK(!args.empty());
     const std::string& account_email = args[0].GetString();
 
-    Profile* profile = Profile::FromWebUI(web_ui());
-    AccountManagerFactory::Get()
-        ->GetAccountManagerFacade(profile->GetPath().value())
-        ->ShowReauthAccountDialog(
-            account_manager::AccountManagerFacade::AccountAdditionSource::
-                kAccountManagerMigrationWelcomeScreen,
-            account_email, base::DoNothing());
+    ShowMigrationWelcomeAccountReauthDialog(Profile::FromWebUI(web_ui()),
+                                            account_email);
     HandleCloseDialog(args);
   }
 
@@ -105,23 +118,30 @@ AccountMigrationWelcomeUI::AccountMigrationWelcomeUI(content::WebUI* web_ui)
                          ash::external_urls::kAccountManagerLearnMoreURL);
 
   // Add required resources.
-  html_source->AddResourcePath("account_migration_welcome_app.js",
-                               IDR_ACCOUNT_MIGRATION_WELCOME_APP_JS);
-  html_source->AddResourcePath("account_migration_welcome_app.html.js",
-                               IDR_ACCOUNT_MIGRATION_WELCOME_APP_HTML_JS);
-  html_source->AddResourcePath("account_manager_shared.css.js",
-                               IDR_ACCOUNT_MANAGER_SHARED_CSS_JS);
-  html_source->AddResourcePath("account_manager_browser_proxy.js",
-                               IDR_ACCOUNT_MANAGER_BROWSER_PROXY_JS);
+  html_source->AddResourcePath(
+      "account_migration_welcome_app.js",
+      IDR_ACCOUNT_MANAGER_ACCOUNT_MIGRATION_WELCOME_APP_JS);
+  html_source->AddResourcePath(
+      "account_migration_welcome_app.html.js",
+      IDR_ACCOUNT_MANAGER_ACCOUNT_MIGRATION_WELCOME_APP_HTML_JS);
+  html_source->AddResourcePath(
+      "account_manager_shared.css.js",
+      IDR_ACCOUNT_MANAGER_ACCOUNT_MANAGER_SHARED_CSS_JS);
+  html_source->AddResourcePath(
+      "account_manager_browser_proxy.js",
+      IDR_ACCOUNT_MANAGER_ACCOUNT_MANAGER_BROWSER_PROXY_JS);
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-  html_source->AddResourcePath("account_manager_welcome_1x.png",
-                               IDR_ACCOUNT_MANAGER_WELCOME_1X_PNG);
-  html_source->AddResourcePath("account_manager_welcome_2x.png",
-                               IDR_ACCOUNT_MANAGER_WELCOME_2X_PNG);
+  html_source->AddResourcePath(
+      "account_manager_welcome_1x.png",
+      IDR_ACCOUNT_MANAGER_ACCOUNT_MANAGER_WELCOME_1X_PNG);
+  html_source->AddResourcePath(
+      "account_manager_welcome_2x.png",
+      IDR_ACCOUNT_MANAGER_ACCOUNT_MANAGER_WELCOME_2X_PNG);
   html_source->AddResourcePath("googleg.svg",
                                IDR_ACCOUNT_MANAGER_WELCOME_GOOGLE_LOGO_SVG);
 #endif
-  html_source->SetDefaultResource(IDR_ACCOUNT_MIGRATION_WELCOME_HTML);
+  html_source->SetDefaultResource(
+      IDR_ACCOUNT_MANAGER_ACCOUNT_MIGRATION_WELCOME_HTML);
 
   web_ui->AddMessageHandler(std::make_unique<MigrationMessageHandler>(
       base::BindRepeating(&WebDialogUI::CloseDialog, weak_factory_.GetWeakPtr(),

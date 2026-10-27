@@ -15,6 +15,10 @@
 #include "content/public/browser/devtools_agent_host.h"
 #include "url/gurl.h"
 
+namespace base {
+class DictValue;
+}  // namespace base
+
 namespace content {
 
 class DevToolsAgentHostClientChannel;
@@ -69,6 +73,11 @@ class CONTENT_EXPORT DevToolsManagerDelegate {
 
   // Returns DevToolsAgentHost title to use for given |web_contents| target.
   virtual std::string GetTargetDescription(WebContents* web_contents);
+
+  // Returns embedder-specific metadata to include in TargetInfo for
+  // `agent_host`.
+  virtual std::unique_ptr<base::DictValue> GetTargetEmbedderData(
+      DevToolsAgentHost* agent_host);
 
   // Returns whether embedder allows to inspect given |rfh|.
   virtual bool AllowInspectingRenderFrameHost(RenderFrameHost* rfh);
@@ -134,9 +143,12 @@ class CONTENT_EXPORT DevToolsManagerDelegate {
   virtual void ClientAttached(DevToolsAgentHostClientChannel* channel);
   virtual void ClientDetached(DevToolsAgentHostClientChannel* channel);
 
+  // Returns whether embedder allows to inspect given |agent_host|.
+  virtual bool AllowInspectingTarget(DevToolsAgentHost* agent_host);
+
   // Call callback if command was not handled.
   using NotHandledCallback =
-      base::OnceCallback<void(base::span<const uint8_t>)>;
+      base::RepeatingCallback<void(base::span<const uint8_t>)>;
   virtual void HandleCommand(DevToolsAgentHostClientChannel* channel,
                              base::span<const uint8_t> message,
                              NotHandledCallback callback);

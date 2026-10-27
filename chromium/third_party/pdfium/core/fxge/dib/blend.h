@@ -7,9 +7,9 @@
 #ifndef CORE_FXGE_DIB_BLEND_H_
 #define CORE_FXGE_DIB_BLEND_H_
 
-enum class BlendMode;
-
 namespace fxge {
+
+enum class BlendMode;
 
 // Note that Blend() only handles separable blend modes.
 int Blend(BlendMode blend_mode, int back_color, int src_color);

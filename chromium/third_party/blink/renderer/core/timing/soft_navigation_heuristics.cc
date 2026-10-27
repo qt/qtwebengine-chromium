@@ -29,7 +29,9 @@
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/navigation_api/navigation_type_util.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/core/paint/timing/largest_contentful_paint_calculator.h"
 #include "third_party/blink/renderer/core/paint/timing/paint_timing_detector.h"
+#include "third_party/blink/renderer/core/paint/timing/paint_timing_record.h"
 #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
 #include "third_party/blink/renderer/core/timing/interaction_effects_monitor.h"
 #include "third_party/blink/renderer/core/timing/performance_timing_for_reporting.h"
@@ -158,6 +160,29 @@ SoftNavigationHeuristics* GetHeuristicsForNodeIfShouldTrack(const Node& node) {
   return window->GetSoftNavigationHeuristics();
 }
 
+using LcpCandidates = LargestContentfulPaintCalculator::LcpCandidates;
+using ContextToCandidatesMap =
+    HeapHashMap<Member<SoftNavigationContext>, Member<LcpCandidates>>;
+
+template <IsDerivedFromPaintTimingRecord T>
+void GroupLcpCandidatesByContext(const HeapVector<Member<T>>& records,
+                                 ContextToCandidatesMap& context_map) {
+  for (const auto& record : records) {
+    SoftNavigationContext* context = record->GetSoftNavigationContext();
+    if (!context || !context->IsRecordingLargestContentfulPaint()) {
+      continue;
+    }
+    LcpCandidates* candidates = nullptr;
+    if (auto iter = context_map.find(context); iter != context_map.end()) {
+      candidates = iter->value.Get();
+    } else {
+      candidates = MakeGarbageCollected<LcpCandidates>();
+      context_map.insert(context, candidates);
+    }
+    candidates->MaybeUpdateCandidate(record);
+  }
+}
+
 }  // namespace
 
 SoftNavigationHeuristics::SoftNavigationHeuristics(LocalDOMWindow* window)
@@ -270,7 +295,7 @@ SoftNavigationHeuristics::GetRelevantContextForNavigation(
 
   CHECK(!context_for_task || !context_for_id ||
             context_for_task == context_for_id,
-        base::NotFatalUntil::M151);
+        base::NotFatalUntil::M153);
 
   return context_for_id ? context_for_id : context_for_task;
 }
@@ -340,7 +365,7 @@ void SoftNavigationHeuristics::SameDocumentNavigationCommitted(
       "loading", "SoftNavigationHeuristics::SameDocumentNavigationCommitted",
       perfetto::Track::FromPointer(context), "context", *context);
 
-  MaybeCommitNavigationOrEmitSoftNavigationEntry(context);
+  MaybeCommitNavigationOrEmitSoftNavigation(context);
 }
 
 bool SoftNavigationHeuristics::ModifiedDOM(Node* node) {
@@ -354,7 +379,7 @@ bool SoftNavigationHeuristics::ModifiedDOM(Node* node) {
   }
   paint_attribution_tracker_->MarkNodeAsDirectlyModified(node, context);
 
-  MaybeCommitNavigationOrEmitSoftNavigationEntry(context);
+  MaybeCommitNavigationOrEmitSoftNavigation(context);
   return true;
 }
 
@@ -366,7 +391,7 @@ void SoftNavigationHeuristics::ModifiedAttribute(
   ModifiedNode(element);
 }
 
-void SoftNavigationHeuristics::MaybeCommitNavigationOrEmitSoftNavigationEntry(
+void SoftNavigationHeuristics::MaybeCommitNavigationOrEmitSoftNavigation(
     SoftNavigationContext* context) {
   // This is already a soft nav, and the performance entry has already been
   // emitted.
@@ -379,7 +404,7 @@ void SoftNavigationHeuristics::MaybeCommitNavigationOrEmitSoftNavigationEntry(
   // nothing, since we don't want to count it twice.
   if (context->HasNavigationId()) {
     if (context->HasFirstContentfulPaint()) {
-      EmitSoftNavigationEntry(context);
+      EmitSoftNavigation(context);
     }
     return;
   }
@@ -430,10 +455,10 @@ void SoftNavigationHeuristics::MaybeCommitNavigationOrEmitSoftNavigationEntry(
     contexts_waiting_for_paint_timestamp_.insert(context);
     return;
   }
-  EmitSoftNavigationEntry(context);
+  EmitSoftNavigation(context);
 }
 
-void SoftNavigationHeuristics::EmitSoftNavigationEntry(
+void SoftNavigationHeuristics::EmitSoftNavigation(
     SoftNavigationContext* context) {
   context->EmitSoftNavigation();
 
@@ -455,7 +480,7 @@ SoftNavigationHeuristics::MaybeGetSoftNavigationContextForTiming(Node* node) {
 void SoftNavigationHeuristics::OnPaintFinished() {
   for (const auto& context : interaction_id_to_context_.Values()) {
     if (context->OnPaintFinished()) {
-      MaybeCommitNavigationOrEmitSoftNavigationEntry(context);
+      MaybeCommitNavigationOrEmitSoftNavigation(context);
     }
   }
 }
@@ -469,16 +494,19 @@ void SoftNavigationHeuristics::OnInputOrScroll() {
   }
 }
 
-void SoftNavigationHeuristics::UpdateSoftLcpCandidate() {
-  // First, update the LCP candidate and emit an ICP entry for the active
+void SoftNavigationHeuristics::OnFramePresented(
+    const HeapVector<Member<ImageRecord>>& image_records,
+    const HeapVector<Member<TextRecord>>& text_records) {
+  // First, group the records by context, ignoring records that aren't needed.
+  ContextToCandidatesMap candidates_per_context;
+  GroupLcpCandidatesByContext(image_records, candidates_per_context);
+  GroupLcpCandidatesByContext(text_records, candidates_per_context);
+
+  // Next, update the LCP candidate and emit an ICP entry for the active
   // context, if any. We do this before unblocking entries waiting for FCP
   // below, since that also emits and updates metrics.
-  //
-  // Note: this is called from PaintTimingMixin on every paint timing update,
-  // without feature flag check. We shouldn't have a url context without the
-  // feature.
-  for (const auto& context : interaction_id_to_context_.Values()) {
-    context->TryUpdateLcpCandidate();
+  for (const auto& context_and_records : candidates_per_context) {
+    context_and_records.key->OnFramePresented(context_and_records.value);
   }
 
   // If we're waiting on FCP presentation feedback to emit entries, check if we
@@ -486,7 +514,7 @@ void SoftNavigationHeuristics::UpdateSoftLcpCandidate() {
   if (!contexts_waiting_for_paint_timestamp_.empty()) {
     for (auto& context : contexts_waiting_for_paint_timestamp_) {
       CHECK(!context->WasEmitted());
-      MaybeCommitNavigationOrEmitSoftNavigationEntry(context);
+      MaybeCommitNavigationOrEmitSoftNavigation(context);
     }
     contexts_waiting_for_paint_timestamp_.erase_if(
         [&](const auto& context) { return context->WasEmitted(); });
@@ -583,7 +611,7 @@ std::optional<scheduler::TaskAttributionTracker::TaskScope>
 SoftNavigationHeuristics::MaybeCreateTaskScopeForEvent(
     PerformanceEventTiming* entry) {
   CHECK(entry);
-  if (!entry->IsKnownToBeAnInteraction()) {
+  if (!entry->IsInteraction()) {
     return std::nullopt;
   }
   PerformanceTimelineEntryIdInfo interaction_id =
@@ -676,8 +704,6 @@ void SoftNavigationHeuristics::InsertedNode(Node* inserted_node,
   // When a child node, which is an HTML-element, is modified within a parent
   // (added, moved, etc), mark that child as modified by soft navigation.
   // Otherwise, if the child is not an HTML-element, mark the parent instead.
-  // TODO(crbug.com/41494072): This does not filter out updates from isolated
-  // worlds. Should it?
   heuristics->ModifiedDOM(inserted_node->IsHTMLElement() ? inserted_node
                                                          : container_node);
 }

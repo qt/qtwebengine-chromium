@@ -21,6 +21,7 @@
 #include "components/vector_icons/vector_icons.h"
 #include "ui/actions/actions.h"
 #include "ui/base/models/image_model.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/color/color_provider.h"
 #include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
@@ -86,9 +87,19 @@ AiOverlayDialogPageHandler::AiOverlayDialogPageHandler(
     BrowserWindowInterface* browser)
     : receiver_(this, std::move(receiver)),
       page_(std::move(remote)),
-      browser_(browser) {}
+      browser_(browser) {
+  if (auto* controller = AiOverlayDialogController::From(browser_)) {
+    controller->AddObserver(this);
+    page_->SetCaptionsVisible(controller->captions_visible());
+    page_->SetUsePersona(controller->use_persona());
+  }
+}
 
-AiOverlayDialogPageHandler::~AiOverlayDialogPageHandler() = default;
+AiOverlayDialogPageHandler::~AiOverlayDialogPageHandler() {
+  if (auto* controller = AiOverlayDialogController::From(browser_)) {
+    controller->RemoveObserver(this);
+  }
+}
 
 void AiOverlayDialogPageHandler::GetMockAudioData(
     GetMockAudioDataCallback callback) {
@@ -129,8 +140,11 @@ void AiOverlayDialogPageHandler::UpdateAudioEnergy(float energy) {
     auto* controller = AiOverlayDialogController::From(browser_);
     const gfx::VectorIcon* base_icon =
         (controller && controller->IsOverlayShowing())
-            ? &vector_icons::kPauseIcon
-            : &vector_icons::kMicIcon;
+            ? &(features::IsRoundedIconsEnabled()
+                    ? vector_icons::kPauseFilledIcon
+                    : vector_icons::kPauseOldIcon)
+            : &(features::IsRoundedIconsEnabled() ? vector_icons::kMicFilledIcon
+                                                  : vector_icons::kMicOldIcon);
 
     overlay_action_item_->SetImage(ui::ImageModel::FromImageGenerator(
         base::BindRepeating(
@@ -174,6 +188,14 @@ void AiOverlayDialogPageHandler::UpdateCurrentPageContext(
   VLOG(1) << "\tContent: " << content.substr(0, 200) << "...";
 
   page_->UpdateCurrentPageContext(base::UTF16ToUTF8(title), content);
+}
+
+void AiOverlayDialogPageHandler::OnCaptionsVisibleChanged(bool visible) {
+  page_->SetCaptionsVisible(visible);
+}
+
+void AiOverlayDialogPageHandler::OnUsePersonaChanged(bool use_persona) {
+  page_->SetUsePersona(use_persona);
 }
 
 }  // namespace ttc

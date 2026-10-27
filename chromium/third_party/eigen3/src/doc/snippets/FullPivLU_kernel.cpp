@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 MatrixXf m = MatrixXf::Random(3, 5);
 cout << "Here is the matrix m:" << endl << m << endl;
 MatrixXf ker = m.fullPivLu().kernel();

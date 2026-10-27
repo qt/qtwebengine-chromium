@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 Matrix4f A = MatrixXf::Random(4, 4);
 cout << "Here is a random 4x4 matrix:" << endl << A << endl;
 HessenbergDecomposition<MatrixXf> hessOfA(A);

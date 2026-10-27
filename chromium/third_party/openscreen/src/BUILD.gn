@@ -23,6 +23,9 @@ config("features") {
 
   root = rebase_path("./", "//")
   defines = [ "OPENSCREEN_TEST_DATA_DIR=\"$root/test/data/\"" ]
+  if (is_clang) {
+    cflags = [ "-Werror=exit-time-destructors" ]
+  }
 }
 
 # All compilable non-test targets in the repository (both executables and
@@ -74,6 +77,8 @@ group("gn_all") {
   if (is_linux || is_mac || is_chromeos || is_android) {
     deps += [ "cast/standalone_receiver:cast_receiver" ]
   }
+
+  visibility = []
 }
 
 openscreen_source_set("openscreen_unittests_all") {

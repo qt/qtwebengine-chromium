@@ -62,7 +62,6 @@
 #include "fcp/client/http/protocol_request_helper.h"
 #include "fcp/client/interruptible_runner.h"
 #include "fcp/client/log_manager.h"
-#include "fcp/client/parsing_utils.h"
 #include "fcp/client/secagg_event_publisher.h"
 #include "fcp/client/secagg_runner.h"
 #include "fcp/client/stats.h"
@@ -315,7 +314,7 @@ absl::StatusOr<UriOrInlineData> ConvertResourceToUriOrInlineData(
         }
       }
       return UriOrInlineData::CreateInlineData(
-          absl::Cord(resource.inline_resource().data()), compression_format);
+          resource.inline_resource().data(), compression_format);
     }
     case Resource::ResourceCase::RESOURCE_NOT_SET:
       // If neither field is set at all, we'll just act as if we got an empty
@@ -536,7 +535,7 @@ HttpFederatedProtocol::HandleEligibilityEvalTaskResponse(
   }
 
   EligibilityEvalTaskResponse response_proto;
-    if (!response_proto.ParseFromString(std::string(http_response->body))) {
+  if (!response_proto.ParseFromString(http_response->body)) {
     return absl::InvalidArgumentError("Could not parse response_proto");
   }
 
@@ -919,8 +918,6 @@ HttpFederatedProtocol::HandleTaskAssignmentInnerResponse(
     // initialized willow_agg_info.
     default_task_info_.willow_agg_info = FederatedProtocol::WillowAggInfo{
         .input_spec = task_resources->willow_input_spec,
-        .max_flattened_domain_size =
-            result.willow_agg_info->max_flattened_domain_size,
         .max_number_of_clients = result.willow_agg_info->max_number_of_clients,
     };
   }
@@ -958,8 +955,6 @@ FederatedProtocol::TaskAssignment HttpFederatedProtocol::CreateTaskAssignment(
     // Create the WillowAggInfo struct and get the number of clients
     // immediately. The input spec will be populated after it's been fetched.
     result.willow_agg_info = WillowAggInfo{
-        .max_flattened_domain_size = task_assignment.willow_aggregation_info()
-                                         .max_flattened_domain_size(),
         .max_number_of_clients =
             task_assignment.willow_aggregation_info().max_number_of_clients()};
   }
@@ -1156,7 +1151,7 @@ HttpFederatedProtocol::HandleMultipleTaskAssignmentsInnerResponse(
   }
 
   PerformMultipleTaskAssignmentsResponse response_proto;
-    if (!response_proto.ParseFromString(std::string(http_response->body))) {
+  if (!response_proto.ParseFromString(http_response->body)) {
     return absl::InvalidArgumentError("Could not parse response_proto");
   }
 
@@ -1242,8 +1237,6 @@ HttpFederatedProtocol::HandleMultipleTaskAssignmentsInnerResponse(
         task_info_map_[task_assignment.task_identifier].willow_agg_info =
             FederatedProtocol::WillowAggInfo{
                 .input_spec = task_assignment.willow_agg_info->input_spec,
-                .max_flattened_domain_size =
-                    task_assignment.willow_agg_info->max_flattened_domain_size,
                 .max_number_of_clients =
                     task_assignment.willow_agg_info->max_number_of_clients,
             };
@@ -1831,8 +1824,8 @@ HttpFederatedProtocol::ValidateConfidentialEncryptionConfig(
   confidentialcompute::SignedEndorsements signed_endorsements;
   if (task_info.signed_endorsements.has_value() &&
       !task_info.signed_endorsements->empty()) {
-      if(!signed_endorsements.ParseFromString(
-          std::string(task_info.signed_endorsements.value()))) {
+    if (!signed_endorsements.ParseFromString(
+            task_info.signed_endorsements.value())) {
       return absl::InvalidArgumentError("Could not parse signed_endorsements");
     }
   }
@@ -2524,7 +2517,7 @@ absl::StatusOr<T> HttpFederatedProtocol::FetchProtoResource(
                                      response.status().ToString()));
   }
   T parsed_proto;
-  if (!ParseFromStringOrCord(parsed_proto, response->body)) {
+  if (!parsed_proto.ParseFromString(response->body)) {
     return absl::InvalidArgumentError(
         absl::StrCat("Unable to parse ", readable_name, " resource."));
   }

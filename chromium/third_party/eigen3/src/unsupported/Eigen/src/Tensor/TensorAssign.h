@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_ASSIGN_H
-#define EIGEN_CXX11_TENSOR_TENSOR_ASSIGN_H
+#ifndef EIGEN_TENSOR_TENSOR_ASSIGN_H
+#define EIGEN_TENSOR_TENSOR_ASSIGN_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -46,7 +47,7 @@ struct nested<TensorAssignOp<LhsXprType, RhsXprType>, 1, typename eval<TensorAss
 }  // end namespace internal
 
 /** The tensor assignment class.
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * This class represents the assignment of the values resulting from the evaluation of
  * the rhs expression to the memory locations denoted by the lhs expression.
@@ -64,7 +65,10 @@ class TensorAssignOp : public TensorBase<TensorAssignOp<LhsXprType, RhsXprType> 
   static constexpr int NumDims = Eigen::internal::traits<TensorAssignOp>::NumDimensions;
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorAssignOp(LhsXprType& lhs, const RhsXprType& rhs)
-      : m_lhs_xpr(lhs), m_rhs_xpr(rhs) {}
+      : m_lhs_xpr(lhs), m_rhs_xpr(rhs) {
+    EIGEN_STATIC_ASSERT((internal::traits<LhsXprType>::NumDimensions == internal::traits<RhsXprType>::NumDimensions),
+                        Number_of_dimensions_must_match)
+  }
 
   /** \returns the nested expressions */
   EIGEN_DEVICE_FUNC internal::remove_all_t<typename LhsXprType::Nested>& lhsExpression() const {
@@ -156,8 +160,8 @@ struct TensorEvaluator<const TensorAssignOp<LeftArgType, RightArgType>, Device> 
     m_leftImpl.coeffRef(i) = m_rightImpl.coeff(i);
   }
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void evalPacket(Index i) const {
-    const int LhsStoreMode = TensorEvaluator<LeftArgType, Device>::IsAligned ? Aligned : Unaligned;
-    const int RhsLoadMode = TensorEvaluator<RightArgType, Device>::IsAligned ? Aligned : Unaligned;
+    constexpr int LhsStoreMode = TensorEvaluator<LeftArgType, Device>::IsAligned ? Aligned : Unaligned;
+    constexpr int RhsLoadMode = TensorEvaluator<RightArgType, Device>::IsAligned ? Aligned : Unaligned;
     m_leftImpl.template writePacket<LhsStoreMode>(i, m_rightImpl.template packet<RhsLoadMode>(i));
   }
   EIGEN_DEVICE_FUNC CoeffReturnType coeff(Index index) const { return m_leftImpl.coeff(index); }
@@ -208,4 +212,4 @@ struct TensorEvaluator<const TensorAssignOp<LeftArgType, RightArgType>, Device> 
 
 }  // namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_ASSIGN_H
+#endif  // EIGEN_TENSOR_TENSOR_ASSIGN_H

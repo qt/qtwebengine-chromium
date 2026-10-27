@@ -37,9 +37,8 @@ namespace {
 void CreateAndAddSignInInternalsHTMLSource(Profile* profile) {
   content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
       profile, chrome::kChromeUISignInInternalsHost);
-  webui::SetupWebUIDataSource(
-      source, base::span<const webui::ResourcePath>(kSigninInternalsResources),
-      IDR_SIGNIN_INTERNALS_SIGNIN_INDEX_HTML);
+  webui::SetupWebUIDataSource(source, kSigninInternalsResources,
+                              IDR_SIGNIN_INTERNALS_SIGNIN_INDEX_HTML);
 }
 
 #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
@@ -99,7 +98,7 @@ SignInInternalsHandler::SignInInternalsHandler() = default;
 
 SignInInternalsHandler::~SignInInternalsHandler() {
   // This handler can be destroyed without OnJavascriptDisallowed() ever being
-  // called (https://crbug.com/1199198). Call it to ensure that `this` is
+  // called (https://crbug.com/40055554). Call it to ensure that `this` is
   // removed as an observer.
   OnJavascriptDisallowed();
 }

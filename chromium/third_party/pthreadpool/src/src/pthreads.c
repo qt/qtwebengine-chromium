@@ -806,15 +806,15 @@ void pthreadpool_destroy(struct pthreadpool* threadpool) {
     /* Tell all threads to stop. */
     pthreadpool_release_all_threads(threadpool);
 
-    // Wait for any recruited threads to leave.
-    wait_on_num_recruited_threads(threadpool, 0);
-
     if (!threadpool->executor.num_threads) {
       /* Wait until all threads return */
       for (size_t thread = 1; thread < threadpool->max_num_threads; thread++) {
         pthreadpool_thread_join(threadpool->threads[thread].thread_object,
                                 NULL);
       }
+    } else {
+      /* Wait for executor-provided threads. */
+      wait_on_num_recruited_threads(threadpool, 0);
     }
 
     /* Release resources */

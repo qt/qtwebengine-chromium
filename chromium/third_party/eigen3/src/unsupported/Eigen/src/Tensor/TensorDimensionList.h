@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_DIMENSION_LIST_H
-#define EIGEN_CXX11_TENSOR_TENSOR_DIMENSION_LIST_H
+#ifndef EIGEN_TENSOR_TENSOR_DIMENSION_LIST_H
+#define EIGEN_TENSOR_TENSOR_DIMENSION_LIST_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -17,7 +18,7 @@ namespace Eigen {
 
 /** \internal
  *
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Special case of tensor index list used to list all the dimensions of a tensor of rank n.
  *
@@ -110,4 +111,4 @@ struct index_statically_lt_impl<const DimensionList<Index, Rank> > {
 }  // end namespace internal
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_DIMENSION_LIST_H
+#endif  // EIGEN_TENSOR_TENSOR_DIMENSION_LIST_H

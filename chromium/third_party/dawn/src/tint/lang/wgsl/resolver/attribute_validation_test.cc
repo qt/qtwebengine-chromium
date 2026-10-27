@@ -267,7 +267,7 @@ struct TestWithParams : ResolverTestWithParam<TestParams> {
                 break;
             case AttributeKind::kSubgroupSize:
                 Enable(wgsl::Extension::kSubgroups);
-                Enable(wgsl::Extension::kChromiumExperimentalSubgroupSizeControl);
+                Enable(wgsl::Extension::kSubgroupSizeControl);
                 break;
             default:
                 break;

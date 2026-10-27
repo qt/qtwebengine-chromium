@@ -111,9 +111,6 @@ BASE_DECLARE_FEATURE(kLocalNetworkAccessChecksWebSockets);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kLocalNetworkAccessChecksWebTransport);
 
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kLocalNetworkAccessChecksSplitPermissions);
-
 // If enabled, then the network service will parse the Cookie-Indices header.
 // This does not currently control changing cache behavior according to the
 // value of this header.
@@ -131,9 +128,6 @@ BASE_DECLARE_FEATURE(kCompressionDictionaryTTL);
 
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kIntegrityPolicyScript);
-
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kReduceTransferSizeUpdatedIPC);
 
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kRendererSideContentDecoding);
@@ -284,12 +278,6 @@ BASE_DECLARE_FEATURE_PARAM(int, kInterestGroupStorageMaxNegativeGroupsPerOwner);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE_PARAM(int, kInterestGroupStorageMaxOpsBeforeMaintenance);
 
-// When enabled, returns the output of GetCookiesString when calling
-// SetCookiesString, so that it can be cached in the renderer to avoid an IPC
-// on subsequent Get requests.
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kGetCookiesOnSet);
-
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kIncreaseCookieAccessCacheSize);
 
@@ -361,11 +349,6 @@ BASE_DECLARE_FEATURE_PARAM(bool, kNetworkServiceTaskSchedulerResourceScheduler);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE_PARAM(bool, kNetworkServiceTaskSchedulerURLLoader);
 
-// When enabled, Network Service Task Scheduler supports
-// per-net::RequestrPriority task queues for each RequestPriority variant.
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kNetworkServicePerPriorityTaskQueues);
-
 // When enabled, URLLoader in Network Service check header consistency for the
 // ServiceWorker SyntheticResponse.
 // TODO(crbug.com/447039330): This is temporary for the SyntheticResponse
@@ -421,6 +404,16 @@ BASE_DECLARE_FEATURE_PARAM(int, kDurableMessagesGlobalBufferSize);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kBypassRequestForbiddenHeadersCheck);
 
+// When enabled, the network service will prohibit modifications to the Origin
+// header in FollowRedirect.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kBlockOriginHeaderModificationOnRedirect);
+
+// If enabled, the variations headers for allowlisted domains will be included
+// in the Reporting API uploads.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kReportingApiEnableVariationsHeaders);
+
 // When enabled, NetworkContext, and all mojoms passed through it, will receive
 // IPCs directly without the intermediate I/O thread hop. This is relevant when
 // the NetworkService is run in the browser process (i.e. on Android).
@@ -437,6 +430,22 @@ COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kDelayInitialDohProbeTimeout);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE_PARAM(base::TimeDelta, kDelayInitialDohProbeTimeoutParam);
+
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kRestrictForbiddenSecurityHeaders);
+
+// Enables the Declarative Performance Observer feature.
+// When enabled, the network service will parse the `Performance-Observer`
+// HTTP response header to extract the telemetry policy for the document.
+// https://github.com/explainers-by-googlers/declarative-performance-observer
+// for more details.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kDeclarativePerformanceObserver);
+
+// Enables validating browser-initiated file upload requests from the network
+// service.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kBrowserInitiatedFileUploadValidation);
 
 }  // namespace network::features
 

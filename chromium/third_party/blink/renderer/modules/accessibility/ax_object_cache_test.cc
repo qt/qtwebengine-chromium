@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/test/metrics/histogram_tester.h"
+#include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_tester.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
@@ -15,6 +16,7 @@
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/pseudo_element.h"
 #include "third_party/blink/renderer/core/frame/frame_test_helpers.h"
+#include "third_party/blink/renderer/core/html/forms/html_input_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_select_element.h"
 #include "third_party/blink/renderer/core/testing/mock_function_scope.h"
 #include "third_party/blink/renderer/core/view_transition/dom_view_transition.h"
@@ -29,6 +31,10 @@
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "ui/accessibility/ax_action_data.h"
 #include "ui/gfx/geometry/rect.h"
+
+#if BUILDFLAG(IS_WIN)
+#include "third_party/blink/public/web/win/web_font_rendering.h"
+#endif
 
 namespace blink {
 
@@ -221,6 +227,41 @@ TEST_F(AccessibilityTest, UpdateAXForAllDocumentsAfterPausedUpdates) {
   ax_object_cache->UpdateAXForAllDocuments();
   ScopedFreezeAXCache freeze(*ax_object_cache);
   CHECK(!root->NeedsToUpdateCachedValues());
+}
+
+TEST_F(AccessibilityTest,
+       FinalizeTreeClearsDirtyDescendantsBelowCleanIgnoredObject) {
+  SetBodyInnerHTML(R"HTML(
+      <p id="before">before</p>
+      <div>
+        <p id="paragraph">paragraph</p>
+      </div>
+      <p id="after">after</p>)HTML");
+
+  auto& cache = GetAXObjectCache();
+  AXObject* body = GetAXBodyObject();
+  ASSERT_NE(nullptr, body);
+  ASSERT_EQ(3, body->ChildCountIncludingIgnored());
+  AXObject* ignored_div = body->ChildAtIncludingIgnored(1);
+  ASSERT_NE(nullptr, ignored_div);
+  ASSERT_TRUE(ignored_div->IsIgnored());
+  AXObject* paragraph = GetAXObjectByElementId("paragraph");
+  ASSERT_NE(nullptr, paragraph);
+  ASSERT_EQ(ignored_div, paragraph->ParentObjectIncludedInTree());
+  AXObject* text = paragraph->FirstChildIncludingIgnored();
+  ASSERT_NE(nullptr, text);
+  ASSERT_EQ(ax::mojom::Role::kStaticText, text->RoleValue());
+
+  text->SetNeedsToUpdateChildren();
+  ASSERT_TRUE(paragraph->HasDirtyDescendants());
+  ASSERT_TRUE(ignored_div->HasDirtyDescendants());
+
+  // Simulate a state that can occur mid-finalization: the ignored ancestor was
+  // already processed and had its dirty-descendant bit cleared, but a
+  // descendant below it was dirtied later in the same tree update.
+  ignored_div->SetHasDirtyDescendants(false);
+  cache.UpdateAXForAllDocuments();
+  EXPECT_FALSE(paragraph->HasDirtyDescendants());
 }
 
 TEST_F(AccessibilityTest, AccessibilityFocus) {
@@ -521,56 +562,6 @@ class AccessibilityEnabledLaterTest : public AccessibilityTest {
   }
 };
 
-TEST_F(AccessibilityEnabledLaterTest, CSSAnchorPositioning) {
-  if (RuntimeEnabledFeatures::NoAriaDetailsForAnchorPosEnabled()) {
-    // This test can be removed when this flag is removed.
-    return;
-  }
-  SetHtmlInnerHTML(R"HTML(
-    <style>
-      .anchor {
-        anchor-name: --anchor-el;
-       }
-      .anchored-notice {
-        position: absolute;
-        position-anchor: --anchor-el;
-        bottom: anchor(top);
-        right: anchor(right);
-      }
-    </style>
-    <body>
-      <button id="1" class="anchor">
-        <p>anchor</p>
-      </button>
-      <div id="2" class="anchored-notice">
-        <p>positioned element tethered to the top-right of the anchor at bottom-right</p>
-      </div>
-    </body>
-  )HTML");
-
-  // Turning on a11y later should still set anchor relationships correctly.
-  UpdateAllLifecyclePhasesForTest();
-  DCHECK(!GetDocument().ExistingAXObjectCache());
-  DCHECK(GetElementById("1")
-             ->GetComputedStyle()
-             ->AnchorName()
-             ->GetNames()[0]
-             ->GetName() == "--anchor-el");
-  DCHECK(GetElementById("2")
-             ->GetComputedStyle()
-             ->PositionAnchor()
-             .GetName()
-             .GetName() == "--anchor-el");
-
-  EnableAccessibility();
-  AXObject* anchor = GetAXObjectByElementId("1");
-  AXObject* positioned_object = GetAXObjectByElementId("2");
-  EXPECT_EQ(GetAXObjectCache().GetPositionedObjectForAnchor(anchor),
-            positioned_object);
-  EXPECT_EQ(GetAXObjectCache().GetAnchorForPositionedObject(positioned_object),
-            anchor);
-}
-
 TEST_F(AccessibilityTest, CanvasWithContentVisibilityAutoShouldNotCrash) {
   // Test that canvas fallback content with content-visibility: auto
   // doesn't cause display lock crashes when accessibility is enabled.
@@ -579,6 +570,92 @@ TEST_F(AccessibilityTest, CanvasWithContentVisibilityAutoShouldNotCrash) {
       <div>Canvas fallback content</div>
     </canvas>
   )HTML");
+}
+
+TEST_F(AccessibilityTest, ValidationMessageIncludedInRootChildren) {
+#if BUILDFLAG(IS_WIN)
+  blink::WebFontRendering::SetMenuFontMetrics(
+      blink::WebString::FromAscii("Arial"), 12);
+#endif
+  SetBodyInnerHTML(R"HTML(<input id="input">)HTML");
+
+  AXObject* root = GetAXRootObject();
+  ASSERT_TRUE(root);
+
+  auto* input = To<HTMLInputElement>(GetElementById("input"));
+  ASSERT_TRUE(input);
+  input->setCustomValidity("Error");
+  input->reportValidity();
+  GetDocument().View()->UpdateAllLifecyclePhasesForTest();
+
+  AXObject* message = GetAXObjectCache().ValidationMessageObjectIfInvalid();
+  ASSERT_TRUE(message);
+  EXPECT_TRUE(root->CachedChildrenIncludingIgnored().Contains(message));
+}
+
+TEST_F(AccessibilityTest, RestoreAriaOwnsAfterAriaHiddenRemoved) {
+  SetBodyInnerHTML(R"HTML(
+      <div id="container">
+        <ul id="list" aria-owns="item1 item2"></ul>
+      </div>
+      <li id="item1">Item 1</li>
+      <li id="item2">Item 2</li>
+  )HTML");
+
+  AXObject* list = GetAXObjectByElementId("list");
+  ASSERT_NE(nullptr, list);
+
+  AXObject* item1 = GetAXObjectByElementId("item1");
+  ASSERT_NE(nullptr, item1);
+
+  AXObject* item2 = GetAXObjectByElementId("item2");
+  ASSERT_NE(nullptr, item2);
+
+  // Initial state: list owns item1 and item2.
+  EXPECT_EQ(2u, list->ChildrenIncludingIgnored().size());
+  EXPECT_EQ(list, item1->ParentObject());
+  EXPECT_EQ(list, item2->ParentObject());
+
+  // Set aria-hidden on container.
+  Element* container = GetElementById("container");
+  ASSERT_NE(nullptr, container);
+  container->setAttribute(html_names::kAriaHiddenAttr, AtomicString("true"));
+  GetDocument().View()->UpdateAllLifecyclePhasesForTest();
+
+  // list should now be hidden/ignored, and the items should not be owned by it.
+  list = GetAXObjectByElementId("list");
+  if (list) {
+    EXPECT_TRUE(list->IsIgnored());
+    EXPECT_EQ(0u, list->ChildrenIncludingIgnored().size());
+  }
+
+  // item1 and item2 should have their parent restored.
+  item1 = GetAXObjectByElementId("item1");
+  ASSERT_NE(nullptr, item1);
+  EXPECT_NE(list, item1->ParentObject());
+
+  item2 = GetAXObjectByElementId("item2");
+  ASSERT_NE(nullptr, item2);
+  EXPECT_NE(list, item2->ParentObject());
+
+  // Remove aria-hidden from container.
+  container->removeAttribute(html_names::kAriaHiddenAttr);
+  GetDocument().View()->UpdateAllLifecyclePhasesForTest();
+
+  // list should be restored and own the items again.
+  list = GetAXObjectByElementId("list");
+  ASSERT_NE(nullptr, list);
+  EXPECT_FALSE(list->IsIgnored());
+
+  item1 = GetAXObjectByElementId("item1");
+  ASSERT_NE(nullptr, item1);
+
+  item2 = GetAXObjectByElementId("item2");
+  ASSERT_NE(nullptr, item2);
+
+  EXPECT_EQ(2u, list->ChildrenIncludingIgnored().size());
+  EXPECT_EQ(list, item1->ParentObject());
+  EXPECT_EQ(list, item2->ParentObject());
 }
 
 }  // namespace blink

@@ -8,9 +8,10 @@
 #include <string>
 
 #include "base/memory/weak_ptr.h"
-#include "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
 #include "components/password_manager/core/browser/password_manager_driver.h"
+#include "components/password_manager/core/browser/password_ui_utils.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace password_manager {
 
@@ -18,7 +19,6 @@ namespace password_manager {
 // passwords) using a PasswordManagerDriver. It can also submit the form.
 class PasswordCredentialFiller {
  public:
-  using SubmissionReadinessState = autofill::mojom::SubmissionReadinessState;
 
   // The destructor of the implementation should make sure the class is cleaned
   // (i.e. by checking !IsReadyToFill())
@@ -42,6 +42,9 @@ class PasswordCredentialFiller {
 
   // Returns the frame URL this filler is interacting with.
   virtual GURL GetFrameUrl() const = 0;
+
+  // Returns the frame origin this filler is interacting with.
+  virtual url::Origin GetFrameOrigin() const = 0;
 
   // Get a WeakPtr to the instance.
   virtual base::WeakPtr<PasswordCredentialFiller> AsWeakPtr() = 0;

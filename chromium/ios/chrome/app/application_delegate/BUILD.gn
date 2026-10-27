@@ -158,6 +158,7 @@ source_set("app_state") {
     "//ios/chrome/browser/crash_report/model",
     "//ios/chrome/browser/device_orientation/ui_bundled",
     "//ios/chrome/browser/shared/coordinator/scene:scene_state_header",
+    "//ios/chrome/browser/shared/coordinator/scene/state",
     "//ios/chrome/browser/shared/model/application_context",
     "//ios/chrome/browser/shared/public/commands",
     "//ios/chrome/browser/shared/public/features",
@@ -196,6 +197,7 @@ source_set("url_opener") {
     "//ios/chrome/app/startup",
     "//ios/chrome/browser/policy/model:policy_util",
     "//ios/chrome/browser/shared/coordinator/scene:scene_state_header",
+    "//ios/chrome/browser/shared/model/prefs:pref_names",
     "//ios/chrome/browser/shared/model/url",
     "//ios/chrome/browser/shared/model/url:constants",
     "//ios/chrome/browser/shared/public/features",
@@ -293,10 +295,28 @@ source_set("test_support") {
 source_set("eg2_tests") {
   configs += [ "//build/config/ios:xctest_config" ]
   testonly = true
-  sources = [ "x_callback_url_opener_egtest.mm" ]
+  sources = [
+    "task_request_user_activity_egtest.mm",
+    "x_callback_url_opener_egtest.mm",
+  ]
   deps = [
+    "//components/handoff",
+    "//components/version_info",
     "//ios/chrome/browser/authentication/test:eg_test_support+eg2",
+    "//ios/chrome/browser/bookmarks/public:constants",
+    "//ios/chrome/browser/bookmarks/test:eg_test_support+eg2",
+    "//ios/chrome/browser/device_reauth/test:eg_test_support+eg2",
+    "//ios/chrome/browser/history/ui_bundled:constants",
+    "//ios/chrome/browser/intents/model:constants",
+    "//ios/chrome/browser/reading_list/ui_bundled:eg_test_support+eg2",
+    "//ios/chrome/browser/reading_list/ui_bundled:reading_list_constants",
+    "//ios/chrome/browser/recent_tabs/public:ui_constants",
     "//ios/chrome/browser/search_engines/model:eg_test_support+eg2",
+    "//ios/chrome/browser/settings/ui_bundled:constants",
+    "//ios/chrome/browser/settings/ui_bundled/autofill:constants",
+    "//ios/chrome/browser/settings/ui_bundled/password:password_constants",
+    "//ios/chrome/browser/shared/model/url:constants",
+    "//ios/chrome/browser/shared/public/features",
     "//ios/chrome/browser/signin/model:fake_system_identity",
     "//ios/chrome/test/earl_grey:eg_test_support+eg2",
     "//ios/chrome/test/earl_grey:switches",

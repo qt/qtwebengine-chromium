@@ -26,11 +26,12 @@
 #include "cc_synchronization.h"
 #include "core_validation.h"
 #include "core_checks/cc_state_tracker.h"
+#include "generated/dispatch_functions.h"
 #include "state_tracker/queue_state.h"
 #include "state_tracker/semaphore_state.h"
 #include "state_tracker/image_state.h"
 #include "state_tracker/buffer_state.h"
-#include "state_tracker/event_map.h"
+#include "state_tracker/event_state.h"
 #include "state_tracker/cmd_buffer_state.h"
 #include "state_tracker/tensor_state.h"
 
@@ -48,7 +49,7 @@ struct CommandBufferSubmitState {
     // The "local" prefix is about tracking state accross command buffers of a *single* QueueSubmit command.
     // This does not accumulate state from the previous submissions.
     QueryMap local_query_to_state_map;
-    EventMap local_event_signal_info;
+    EventSignalingStateMap local_event_signal_info;
     vvl::unordered_map<VkVideoSessionKHR, vvl::VideoSessionDeviceState> local_video_session_state{};
 
     CommandBufferSubmitState(const CoreChecks& c, const vvl::Queue& q) : core(c), queue_state(q) {
@@ -75,10 +76,15 @@ struct CommandBufferSubmitState {
         }
 
         auto& cb_sub_state = core::SubState(cb_state);
-        for (auto& function : cb_sub_state.event_updates) {
-            skip |= function(const_cast<vvl::CommandBuffer&>(cb_state), /*do_validate*/ true, local_event_signal_info,
-                             queue_state.VkHandle(), loc);
+
+        for (const WaitEventSubmitInfo& submit_info : cb_sub_state.wait_event_submit_infos) {
+            skip |= submit_info.Validate(core, queue_state, cb_state, local_event_signal_info, loc);
         }
+        for (const WaitEvent2SubmitInfo& submit_info : cb_sub_state.wait_event2_submit_infos) {
+            skip |= submit_info.Validate(core, queue_state, cb_state, local_event_signal_info, loc);
+        }
+        UpdateEventSignalingStates(local_event_signal_info, cb_sub_state.event_signaling_states);
+
         VkQueryPool first_perf_query_pool = VK_NULL_HANDLE;
         for (auto& function : cb_sub_state.query_updates) {
             skip |= function(const_cast<vvl::CommandBuffer&>(cb_state), /*do_validate*/ true, first_perf_query_pool, perf_pass,
@@ -290,7 +296,6 @@ bool CoreChecks::PreCallValidateQueueSubmit(VkQueue queue, uint32_t submitCount,
                                  chained_device_group_struct->commandBufferCount, submit.commandBufferCount);
             }
         }
-        skip |= submit_time_tracker.ProcessSubmissionBatch(submit);
     }
 
     return skip;
@@ -562,19 +567,19 @@ bool CoreChecks::ValidateQueueFamilyIndices(const Location& loc, const vvl::Comm
         switch (state_object->Type()) {
             case kVulkanObjectTypeImage: {
                 auto image_state = static_cast<const vvl::Image*>(state_object.get());
-                if (image_state && image_state->create_info.sharingMode == VK_SHARING_MODE_CONCURRENT) {
-                    skip |= ValidImageBufferQueue(cb_state, image_state->Handle(), queue_state.queue_family_index,
-                                                  image_state->create_info.queueFamilyIndexCount,
-                                                  image_state->create_info.pQueueFamilyIndices, loc);
+                if (image_state && image_state->GetSharingMode() == VK_SHARING_MODE_CONCURRENT) {
+                    skip |=
+                        ValidImageBufferQueue(cb_state, image_state->Handle(), queue_state.queue_family_index,
+                                              image_state->GetQueueFamilyIndexCount(), image_state->GetQueueFamilyIndices(), loc);
                 }
                 break;
             }
             case kVulkanObjectTypeBuffer: {
                 auto buffer_state = static_cast<const vvl::Buffer*>(state_object.get());
-                if (buffer_state && buffer_state->create_info.sharingMode == VK_SHARING_MODE_CONCURRENT) {
+                if (buffer_state && buffer_state->GetSharingMode() == VK_SHARING_MODE_CONCURRENT) {
                     skip |= ValidImageBufferQueue(cb_state, buffer_state->Handle(), queue_state.queue_family_index,
-                                                  buffer_state->create_info.queueFamilyIndexCount,
-                                                  buffer_state->create_info.pQueueFamilyIndices, loc);
+                                                  buffer_state->GetQueueFamilyIndexCount(),
+                                                  buffer_state->GetQueueFamilyIndices(), loc);
                 }
                 break;
             }
@@ -633,8 +638,9 @@ bool CoreChecks::ValidateCommandBufferSimultaneousUse(const Location& loc, const
         !(cb_state.begin_info_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)) {
         const auto& vuid = GetQueueSubmitVUID(loc, vvl::SubmitError::kCmdNotSimultaneous);
 
-        skip |= LogError(vuid, device, loc, "%s is already in use and is not marked for simultaneous use.",
-                         FormatHandle(cb_state).c_str());
+        skip |= LogError(vuid, device, loc, "%s is already in use and is not marked for simultaneous use.%s",
+                         FormatHandle(cb_state).c_str(),
+                         is_device_lost ? "\n(a VK_ERROR_DEVICE_LOST has occurred, the command buffer must be freed)" : "");
     }
     return skip;
 }
@@ -763,9 +769,8 @@ bool CoreChecks::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindInfo
                 ASSERT_AND_CONTINUE(image_state);
 
                 if (!image_state->sparse_residency) {
-                    skip |=
-                        LogError("VUID-VkSparseImageMemoryBindInfo-image-02901", image_bind.image, bind_loc.dot(Field::image),
-                                 "was created with flags %s.", string_VkImageCreateFlags(image_state->create_info.flags).c_str());
+                    skip |= LogError("VUID-VkSparseImageMemoryBindInfo-image-02901", image_bind.image, bind_loc.dot(Field::image),
+                                     "was created with flags %s.", string_VkImageCreateFlags(image_state->create_flags).c_str());
                 }
 
                 for (uint32_t image_bind_idx = 0; image_bind_idx < image_bind.bindCount; ++image_bind_idx) {
@@ -776,5 +781,85 @@ bool CoreChecks::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindInfo
             }
         }
     }
+    return skip;
+}
+
+static Location GetSignaledSemaphoreLocation(const Location& submit_loc, uint32_t index) {
+    vvl::Field field = vvl::Field::Empty;
+    if (submit_loc.function == vvl::Func::vkQueueSubmit || submit_loc.function == vvl::Func::vkQueueBindSparse) {
+        field = vvl::Field::pSignalSemaphores;
+    } else if (submit_loc.function == vvl::Func::vkQueueSubmit2 || submit_loc.function == vvl::Func::vkQueueSubmit2KHR) {
+        field = vvl::Field::pSignalSemaphoreInfos;
+    } else {
+        assert(false && "Unhandled signaling function");
+    }
+    return submit_loc.dot(field, index);
+}
+
+bool CoreChecks::ProcessSubmissionBatch(const vvl::SubmitTimeTracker& tracker,
+                                        const std::vector<std::shared_ptr<vvl::CommandBuffer>>& command_buffers,
+                                        vvl::span<const VkSemaphoreSubmitInfo> signal_semaphores, const Location& submit_loc) {
+    bool skip = false;
+    // Validate image layouts on the command buffer boundaries
+    {
+        vvl::unordered_map<const vvl::Image*, ImageLayoutMap> local_image_layout_map;
+        for (const auto& cb : command_buffers) {
+            if (cb) {
+                auto cb_guard = cb->ReadLock();
+                skip |= ValidateCmdBufImageLayouts(submit_loc, *cb, local_image_layout_map);
+            }
+        }
+    }
+    // Ensure that timeline signals are monotonically increasing values
+    for (uint32_t i = 0; i < (uint32_t)signal_semaphores.size(); ++i) {
+        const VkSemaphore semaphore = signal_semaphores[i].semaphore;
+        const std::optional<uint64_t> current_value = tracker.GetTimelineValue(semaphore);
+        if (!current_value.has_value()) {
+            continue;
+        }
+        // Validate the case where the signal value is less than the current payload.
+        // Equality, which is also invalid, is handled earlier by SemaphoreSubmitState::ValidateTimelineSignal.
+        // Equality can be checked early because it is invalid regardless submit order.
+        // For not equal values, the comparison depends on submit ordering and is handled here
+        const uint64_t signal_value = signal_semaphores[i].value;
+        const bool invlid_signal_value = signal_value < *current_value;
+        if (invlid_signal_value) {
+            const Location signal_semaphore_loc = GetSignaledSemaphoreLocation(submit_loc, i);
+            const auto& vuid = GetQueueSubmitVUID(signal_semaphore_loc, vvl::SubmitError::kTimelineSemSmallValue);
+            LogError(vuid, semaphore, signal_semaphore_loc,
+                     "(%s) signaled with value %" PRIu64 " which is smaller than the current value %" PRIu64,
+                     FormatHandle(semaphore).c_str(), signal_value, *current_value);
+        }
+    }
+    if (!skip) {
+        for (const auto& cb : command_buffers) {
+            if (cb) {
+                auto cb_guard = cb->WriteLock();
+                for (const vvl::CommandBuffer* secondary : cb->linked_command_buffers) {
+                    UpdateCmdBufImageLayouts(*secondary);
+                }
+                UpdateCmdBufImageLayouts(*cb);
+            }
+        }
+    }
+    return skip;
+}
+
+bool CoreChecks::PreCallValidateQueueSetPerfHintQCOM(VkQueue queue, const VkPerfHintInfoQCOM* pPerfHintInfo,
+                                                     const ErrorObject& error_obj) const {
+    bool skip = false;
+    const auto queue_state = Get<vvl::Queue>(queue);
+
+    // Query here as should not be a common call to need to save in state tracker
+    VkPhysicalDeviceQueuePerfHintPropertiesQCOM queue_perf_hint_props = vku::InitStructHelper();
+    VkPhysicalDeviceProperties2 props2 = vku::InitStructHelper(&queue_perf_hint_props);
+    DispatchGetPhysicalDeviceProperties2Helper(api_version, physical_device, &props2);
+
+    if ((queue_state->GetQueueFlags() & queue_perf_hint_props.supportedQueues) == 0) {
+        skip |= LogError("VUID-vkQueueSetPerfHintQCOM-queue-12388", queue, error_obj.location,
+                         "the queue with flags (%s) doesn't support queue performance hints.",
+                         string_VkQueueFlags(queue_state->GetQueueFlags()).c_str());
+    }
+
     return skip;
 }

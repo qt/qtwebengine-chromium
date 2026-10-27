@@ -33,16 +33,17 @@
 #include "components/autofill/core/browser/data_manager/valuables/valuables_data_manager.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
 #include "components/autofill/core/browser/data_quality/addresses/test_address_normalizer.h"
+#include "components/autofill/core/browser/filling/filling_product.h"
 #include "components/autofill/core/browser/form_predictions_tracker.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
 #include "components/autofill/core/browser/foundations/autofill_driver_factory.h"
 #include "components/autofill/core/browser/foundations/test_autofill_driver_factory.h"
 #include "components/autofill/core/browser/integrators/autofill_ai/mock_autofill_ai_manager.h"
+#include "components/autofill/core/browser/integrators/compose/autofill_compose_delegate.h"
 #include "components/autofill/core/browser/integrators/identity_credential/identity_credential_delegate.h"
 #include "components/autofill/core/browser/integrators/one_time_tokens/otp_phish_guard_delegate.h"
 #include "components/autofill/core/browser/integrators/optimization_guide/mock_autofill_optimization_guide_decider.h"
 #include "components/autofill/core/browser/integrators/password_manager/password_manager_delegate.h"
-#include "components/autofill/core/browser/integrators/plus_addresses/autofill_plus_address_delegate.h"
 #include "components/autofill/core/browser/logging/log_manager.h"
 #include "components/autofill/core/browser/logging/log_router.h"
 #include "components/autofill/core/browser/logging/text_log_receiver.h"
@@ -60,6 +61,7 @@
 #include "components/autofill/core/browser/suggestions/suggestion_hiding_reason.h"
 #include "components/autofill/core/browser/suggestions/suggestion_type.h"
 #include "components/autofill/core/browser/test_utils/autofill_test_utils.h"
+#include "components/autofill/core/browser/ui/autofill_suggestion_delegate.h"
 #include "components/autofill/core/browser/ui/payments/card_unmask_prompt_options.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service_test_helper.h"
@@ -69,10 +71,12 @@
 #include "components/autofill/core/common/autofill_prefs.h"
 #include "components/consent_auditor/fake_consent_auditor.h"
 #include "components/device_reauth/mock_device_authenticator.h"
+#include "components/metrics/profile_metrics_service.h"
 #include "components/one_time_tokens/core/browser/one_time_token_service_impl.h"
 #include "components/one_time_tokens/core/browser/sms_otp_backend.h"
 #include "components/optimization_guide/core/feature_registry/feature_registration.h"
 #include "components/optimization_guide/core/model_execution/model_execution_prefs.h"
+#include "components/personal_context/core/personal_context_types.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_registry.h"
 #include "components/prefs/pref_service.h"
@@ -206,13 +210,19 @@ class TestAutofillClientTemplate : public T {
     return &mock_autocomplete_history_manager_;
   }
 
-  AutofillPlusAddressDelegate* GetPlusAddressDelegate() override {
-    return plus_address_delegate_.get();
-  }
-
   accessibility_annotator::AccessibilityQueryService*
   GetAccessibilityQueryService() override {
     return accessibility_query_service_.get();
+  }
+
+  personal_context::PersonalContextEnablementState
+  GetPersonalContextEnablementState() const override {
+    return personal_context_enablement_state_;
+  }
+
+  void set_personal_context_enablement_state(
+      personal_context::PersonalContextEnablementState state) {
+    personal_context_enablement_state_ = state;
   }
 
   IdentityCredentialDelegate* GetIdentityCredentialDelegate() override {
@@ -224,10 +234,11 @@ class TestAutofillClientTemplate : public T {
     return password_manager_delegate_.get();
   }
 
+  AutofillComposeDelegate* GetComposeDelegate() override {
+    return compose_delegate_.get();
+  }
+
   test::AutofillTestingPrefService* GetPrefs() override {
-    if (!prefs_) {
-      prefs_ = autofill::test::PrefServiceForTesting();
-    }
     return prefs_.get();
   }
 
@@ -246,6 +257,10 @@ class TestAutofillClientTemplate : public T {
     return identity_test_env_.identity_manager();
   }
 
+  metrics::ProfileMetricsService* GetProfileMetricsService() override {
+    return &test_profile_metrics_service_;
+  }
+
   FormDataImporter* GetFormDataImporter() override {
     if (!form_data_importer_) {
       form_data_importer_ = std::make_unique<FormDataImporter>(
@@ -256,10 +271,6 @@ class TestAutofillClientTemplate : public T {
   }
 
   payments::TestPaymentsAutofillClient* GetPaymentsAutofillClient() override {
-    if (!payments_autofill_client_) {
-      payments_autofill_client_ =
-          std::make_unique<payments::TestPaymentsAutofillClient>(this);
-    }
     return payments_autofill_client_.get();
   }
 
@@ -331,8 +342,10 @@ class TestAutofillClientTemplate : public T {
       const AutofillClient::PopupOpenArgs& open_args,
       base::WeakPtr<AutofillSuggestionDelegate> delegate) override {
     is_showing_popup_ = true;
+    active_suggestion_delegate_ = std::move(delegate);
     static AutofillClient::SuggestionUiSessionId::Generator generator;
-    return generator.GenerateNextId();
+    suggestion_ui_session_id_ = generator.GenerateNextId();
+    return *suggestion_ui_session_id_;
   }
 
   void UpdateAutofillDataListValues(
@@ -357,9 +370,19 @@ class TestAutofillClientTemplate : public T {
     return suggestion_ui_session_id_;
   }
 
-  void HideAutofillSuggestions(SuggestionHidingReason reason) override {
+  void HideSuggestions(SuggestionHidingReason reason,
+                       std::optional<FillingProduct> product) override {
+    // If a `product` filter is specified, only hide if it matches the active
+    // popup.
+    if (product && active_suggestion_delegate_ &&
+        product != active_suggestion_delegate_->GetMainFillingProduct()) {
+      return;
+    }
+
+    active_suggestion_delegate_.reset();
     popup_hidden_reason_ = reason;
     is_showing_popup_ = false;
+    suggestion_ui_session_id_.reset();
   }
 
   bool IsShowingAutofillPopup() { return is_showing_popup_; }
@@ -437,6 +460,10 @@ class TestAutofillClientTemplate : public T {
     return format_for_large_keyboard_accessory_;
   }
 
+  bool IsAndroidLargeFormFactor() const override {
+    return is_device_large_form_factor_;
+  }
+
   std::unique_ptr<device_reauth::DeviceAuthenticator> GetDeviceAuthenticator(
       std::string histogram) const override {
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID) || \
@@ -471,10 +498,6 @@ class TestAutofillClientTemplate : public T {
 
   base::span<const AutofillProfile> GetTestAddresses() const override {
     return test_addresses_;
-  }
-
-  void SetPrefs(std::unique_ptr<test::AutofillTestingPrefService> prefs) {
-    prefs_ = std::move(prefs);
   }
 
   void SetAutofillProfileEnabled(bool autofill_profile_enabled) {
@@ -589,6 +612,10 @@ class TestAutofillClientTemplate : public T {
     format_for_large_keyboard_accessory_ = format_for_large_keyboard_accessory;
   }
 
+  void set_is_device_large_form_factor(bool is_device_large_form_factor) {
+    is_device_large_form_factor_ = is_device_large_form_factor;
+  }
+
   void set_app_locale(std::string app_locale) {
     app_locale_ = std::move(app_locale);
   }
@@ -619,11 +646,6 @@ class TestAutofillClientTemplate : public T {
     test_shared_loader_factory_ = url_loader_factory;
   }
 
-  void set_plus_address_delegate(
-      std::unique_ptr<AutofillPlusAddressDelegate> plus_address_delegate) {
-    plus_address_delegate_ = std::move(plus_address_delegate);
-  }
-
   void set_accessibility_query_service(
       std::unique_ptr<accessibility_annotator::AccessibilityQueryService>
           accessibility_query_service) {
@@ -639,6 +661,11 @@ class TestAutofillClientTemplate : public T {
   void set_password_manager_delegate(
       std::unique_ptr<PasswordManagerDelegate> password_manager_delegate) {
     password_manager_delegate_ = std::move(password_manager_delegate);
+  }
+
+  void set_compose_delegate(
+      std::unique_ptr<AutofillComposeDelegate> compose_delegate) {
+    compose_delegate_ = std::move(compose_delegate);
   }
 
   void set_suggestion_ui_session_id(
@@ -692,13 +719,18 @@ class TestAutofillClientTemplate : public T {
  private:
   ukm::TestAutoSetUkmRecorder test_ukm_recorder_;
   signin::IdentityTestEnvironment identity_test_env_;
+  metrics::ProfileMetricsService test_profile_metrics_service_{
+      metrics::ProfileMetricsContext(1)};
   raw_ptr<syncer::SyncService> test_sync_service_ = nullptr;
   std::unique_ptr<OtpPhishGuardDelegate> otp_phish_guard_delegate_;
-  std::unique_ptr<AutofillPlusAddressDelegate> plus_address_delegate_;
   std::unique_ptr<accessibility_annotator::AccessibilityQueryService>
       accessibility_query_service_;
+  personal_context::PersonalContextEnablementState
+      personal_context_enablement_state_ =
+          personal_context::PersonalContextEnablementState::kEnabled;
   std::unique_ptr<IdentityCredentialDelegate> identity_credential_delegate_;
   std::unique_ptr<PasswordManagerDelegate> password_manager_delegate_;
+  std::unique_ptr<AutofillComposeDelegate> compose_delegate_;
   TestAddressNormalizer test_address_normalizer_;
   std::unique_ptr<::testing::NiceMock<MockAutofillOptimizationGuideDecider>>
       mock_autofill_optimization_guide_decider_ = std::make_unique<
@@ -722,8 +754,8 @@ class TestAutofillClientTemplate : public T {
   bool autofill_profile_enabled_ = true;
   bool wallet_public_pass_storage_enabled_ = true;
 
-  // NULL by default.
-  std::unique_ptr<test::AutofillTestingPrefService> prefs_;
+  std::unique_ptr<test::AutofillTestingPrefService> prefs_ =
+      autofill::test::PrefServiceForTesting();
   std::unique_ptr<TestStrikeDatabase> test_strike_database_;
 
   std::unique_ptr<TestPersonalDataManager> test_personal_data_manager_;
@@ -733,7 +765,8 @@ class TestAutofillClientTemplate : public T {
   // The below objects must be destroyed before `TestPersonalDataManager`
   // because they keep a reference to it.
   std::unique_ptr<payments::TestPaymentsAutofillClient>
-      payments_autofill_client_;
+      payments_autofill_client_ =
+          std::make_unique<payments::TestPaymentsAutofillClient>(this);
   std::unique_ptr<SingleFieldFillRouter> single_field_fill_router_;
   std::unique_ptr<FormDataImporter> form_data_importer_;
   std::unique_ptr<WalletPassAccessManager> wallet_pass_access_manager_;
@@ -747,6 +780,8 @@ class TestAutofillClientTemplate : public T {
   bool should_save_autofill_profiles_ = true;
 
   bool format_for_large_keyboard_accessory_ = false;
+
+  bool is_device_large_form_factor_ = false;
 
   std::string app_locale_ = "en-US";
 
@@ -787,6 +822,8 @@ class TestAutofillClientTemplate : public T {
 
   std::optional<AutofillClient::SuggestionUiSessionId>
       suggestion_ui_session_id_;
+
+  base::WeakPtr<AutofillSuggestionDelegate> active_suggestion_delegate_;
 
   std::optional<base::RepeatingCallback<void(AutofillClient::IphFeature)>>
       notify_iph_feature_used_mock_callback_;

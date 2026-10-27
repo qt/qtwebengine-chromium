@@ -198,8 +198,8 @@ TEST_F(CJSPublicMethodsEmbedderTest, AFSimpleCalculateSum) {
   runtime.GetCurrentEventContext()->SetValueForTest(&result);
 
   auto ary = runtime.NewArray();
-  runtime.PutArrayElement(ary, 0, runtime.NewString("Calc1_A"));
-  runtime.PutArrayElement(ary, 1, runtime.NewString("Calc1_B"));
+  runtime.PutArrayElementReentrant(ary, 0, runtime.NewString("Calc1_A"));
+  runtime.PutArrayElementReentrant(ary, 1, runtime.NewString("Calc1_B"));
 
   v8::LocalVector<v8::Value> params(runtime.GetIsolate());
   params.push_back(runtime.NewString("SUM"));

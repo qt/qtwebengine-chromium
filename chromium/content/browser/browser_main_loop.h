@@ -81,7 +81,6 @@ class HostFrameSinkManager;
 namespace content {
 class BrowserAccessibilityStateImpl;
 class BrowserMainParts;
-class BackgroundTracingManager;
 class BrowserOnlineStateObserver;
 class BrowserThreadImpl;
 class MediaKeysListenerManagerImpl;
@@ -92,6 +91,12 @@ class SmsProvider;
 class SpeechRecognitionManagerImpl;
 class StartupTaskRunner;
 class TracingControllerImpl;
+}  // namespace content
+namespace tracing {
+class StartupTracingController;
+class BackgroundTracingManager;
+}
+namespace content {
 struct MainFunctionParams;
 
 namespace responsiveness {
@@ -155,6 +160,10 @@ class CONTENT_EXPORT BrowserMainLoop {
 
   // Performs the pre-shutdown steps.
   void PreShutdown();
+
+  tracing::StartupTracingController* startup_tracing_controller() {
+    return startup_tracing_controller_.get();
+  }
 
   // Performs the shutdown sequence, starting with PostMainMessageLoopRun
   // through stopping threads to PostDestroyThreads.
@@ -368,7 +377,10 @@ class CONTENT_EXPORT BrowserMainLoop {
   std::unique_ptr<MediaStreamManager> media_stream_manager_;
   scoped_refptr<SaveFileManager> save_file_manager_;
   std::unique_ptr<content::TracingControllerImpl> tracing_controller_;
-  std::unique_ptr<BackgroundTracingManager> background_tracing_manager_;
+  std::unique_ptr<tracing::StartupTracingController>
+      startup_tracing_controller_;
+  std::unique_ptr<tracing::BackgroundTracingManager>
+      background_tracing_manager_;
 #if !BUILDFLAG(IS_ANDROID)
   std::unique_ptr<viz::HostFrameSinkManager> host_frame_sink_manager_;
 

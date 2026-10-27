@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import * as Platform from '../platform/platform.js';
+
 import {InspectorFrontendHostInstance} from './InspectorFrontendHost.js';
 import type {DispatchHttpRequestRequest, DispatchHttpRequestResult} from './InspectorFrontendHostAPI.js';
 
@@ -56,7 +58,7 @@ export async function makeHttpRequest<R>(
 }
 
 function isDebugMode(): boolean {
-  return Boolean(localStorage.getItem('debugDispatchHttpRequestEnabled'));
+  return Boolean(Platform.HostRuntime.HOST_RUNTIME.getLocalStorage()?.getItem('debugDispatchHttpRequestEnabled'));
 }
 
 function debugLog(...log: unknown[]): void {
@@ -69,10 +71,11 @@ function debugLog(...log: unknown[]): void {
 }
 
 function setDebugDispatchHttpRequestEnabled(enabled: boolean): void {
+  const localStorage = Platform.HostRuntime.HOST_RUNTIME.getLocalStorage();
   if (enabled) {
-    localStorage.setItem('debugDispatchHttpRequestEnabled', 'true');
+    localStorage?.setItem('debugDispatchHttpRequestEnabled', 'true');
   } else {
-    localStorage.removeItem('debugDispatchHttpRequestEnabled');
+    localStorage?.removeItem('debugDispatchHttpRequestEnabled');
   }
 }
 

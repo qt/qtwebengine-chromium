@@ -7,7 +7,7 @@ import '../../../ui/kit/kit.js';
 import '../../../ui/components/node_text/node_text.js';
 
 import * as i18n from '../../../core/i18n/i18n.js';
-import type * as SDK from '../../../core/sdk/sdk.js';
+import * as SDK from '../../../core/sdk/sdk.js';
 import * as ComponentHelpers from '../../../ui/components/helpers/helpers.js';
 import * as RenderCoordinator from '../../../ui/components/render_coordinator/render_coordinator.js';
 import * as Lit from '../../../ui/lit/lit.js';
@@ -15,7 +15,6 @@ import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 
 import elementsBreadcrumbsStyles from './elementsBreadcrumbs.css.js';
 import {crumbsToRender, type UserScrollPosition} from './ElementsBreadcrumbsUtils.js';
-import type {DOMNode} from './Helper.js';
 
 const {html} = Lit;
 
@@ -39,25 +38,25 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export class NodeSelectedEvent extends Event {
   static readonly eventName = 'breadcrumbsnodeselected';
-  legacyDomNode: SDK.DOMModel.DOMNode;
+  node: SDK.DOMModel.DOMNode;
 
-  constructor(node: DOMNode) {
+  constructor(node: SDK.DOMModel.DOMNode) {
     super(NodeSelectedEvent.eventName, {});
-    this.legacyDomNode = node.legacyDomNode;
+    this.node = node;
   }
 }
 
 export interface ElementsBreadcrumbsData {
-  selectedNode: DOMNode|null;
-  crumbs: DOMNode[];
+  selectedNode: SDK.DOMModel.DOMNode|null;
+  crumbs: SDK.DOMModel.DOMNode[];
 }
 
 export class ElementsBreadcrumbs extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
   readonly #resizeObserver = new ResizeObserver(() => this.#checkForOverflowOnResize());
 
-  #crumbsData: readonly DOMNode[] = [];
-  #selectedDOMNode: Readonly<DOMNode>|null = null;
+  #crumbsData: readonly SDK.DOMModel.DOMNode[] = [];
+  #selectedDOMNode: SDK.DOMModel.DOMNode|null = null;
   #overflowing = false;
   #userScrollPosition: UserScrollPosition = 'start';
   #isObservingResize = false;
@@ -75,7 +74,7 @@ export class ElementsBreadcrumbs extends HTMLElement {
     this.#resizeObserver.disconnect();
   }
 
-  #onCrumbClick(node: DOMNode): (event: Event) => void {
+  #onCrumbClick(node: SDK.DOMModel.DOMNode): (event: Event) => void {
     return (event: Event): void => {
       event.preventDefault();
       this.dispatchEvent(new NodeSelectedEvent(node));
@@ -121,20 +120,20 @@ export class ElementsBreadcrumbs extends HTMLElement {
     void this.#updateScrollState(crumbWindow);
   }
 
-  #onCrumbMouseMove(node: DOMNode): () => void {
-    return (): void => node.highlightNode();
+  #onCrumbMouseMove(node: SDK.DOMModel.DOMNode): () => void {
+    return (): void => node.highlight();
   }
 
-  #onCrumbMouseLeave(node: DOMNode): () => void {
-    return (): void => node.clearHighlight();
+  #onCrumbMouseLeave(): void {
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
   }
 
-  #onCrumbFocus(node: DOMNode): () => void {
-    return (): void => node.highlightNode();
+  #onCrumbFocus(node: SDK.DOMModel.DOMNode): () => void {
+    return (): void => node.highlight();
   }
 
-  #onCrumbBlur(node: DOMNode): () => void {
-    return (): void => node.clearHighlight();
+  #onCrumbBlur(): void {
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
   }
 
   #engageResizeObserver(): void {
@@ -306,9 +305,9 @@ export class ElementsBreadcrumbs extends HTMLElement {
                     jslog=${VisualLogging.item().track({click:true, resize:true})}
                     @click=${this.#onCrumbClick(crumb.node)}
                     @mousemove=${this.#onCrumbMouseMove(crumb.node)}
-                    @mouseleave=${this.#onCrumbMouseLeave(crumb.node)}
+                    @mouseleave=${this.#onCrumbMouseLeave}
                     @focus=${this.#onCrumbFocus(crumb.node)}
-                    @blur=${this.#onCrumbBlur(crumb.node)}
+                    @blur=${this.#onCrumbBlur}
                   >
                     <devtools-node-text data-node-title=${crumb.title.main} .data=${{
                       nodeTitle: crumb.title.main,

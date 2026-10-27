@@ -59,6 +59,16 @@ YNN_ALWAYS_INLINE std::tuple<u8x32, u8x32> interleave(
                     u8x32{_mm256_or_si256(_mm256_slli_epi16(even1, 4), even0)},
                     u8x32{_mm256_or_si256(odd1, _mm256_srli_epi16(odd0, 4))});
 }
+YNN_ALWAYS_INLINE std::tuple<u8x32, u8x32> interleave(
+    std::integral_constant<size_t, 2>, u8x32 x0, u8x32 x1) {
+  __m256i even0 = _mm256_and_si256(x0.v, _mm256_set1_epi8(0x33));
+  __m256i even1 = _mm256_and_si256(x1.v, _mm256_set1_epi8(0x33));
+  __m256i odd0 = _mm256_and_si256(x0.v, _mm256_set1_epi8(0xcc));
+  __m256i odd1 = _mm256_and_si256(x1.v, _mm256_set1_epi8(0xcc));
+  return interleave(std::integral_constant<size_t, 4>{},
+                    u8x32{_mm256_or_si256(_mm256_slli_epi16(even1, 2), even0)},
+                    u8x32{_mm256_or_si256(odd1, _mm256_srli_epi16(odd0, 2))});
+}
 
 YNN_ALWAYS_INLINE s32x8 operator+(s32x8 a, s32x8 b) {
   return s32x8{_mm256_add_epi32(a.v, b.v)};
@@ -153,6 +163,28 @@ YNN_ALWAYS_INLINE u32x8 abs(s32x8 a) { return u32x8{_mm256_abs_epi32(a.v)}; }
 YNN_ALWAYS_INLINE f32x8 cast(bf16x8 a, float) {
   return f32x8{_mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(a.v),
       16))};
+}
+
+YNN_ALWAYS_INLINE f32x8 exp2_round(f32x8 a) {
+  const __m256 magic = _mm256_set1_ps(127.0f + static_cast<float>(1 << 23));
+  const __m256 res_bits = _mm256_add_ps(a.v, magic);
+  return f32x8{_mm256_castsi256_ps(
+      _mm256_slli_epi32(_mm256_castps_si256(res_bits), 23))};
+}
+YNN_ALWAYS_INLINE f64x4 exp2_round(f64x4 a) {
+  const __m256d magic = _mm256_set1_pd(1023.0 + static_cast<double>(1ll << 52));
+  const __m256d res_bits = _mm256_add_pd(a.v, magic);
+  return f64x4{_mm256_castsi256_pd(
+      _mm256_slli_epi64(_mm256_castpd_si256(res_bits), 52))};
+}
+
+YNN_ALWAYS_INLINE f32x8 copynan(f32x8 x, f32x8 nan) {
+  return f32x8{
+      _mm256_blendv_ps(x.v, nan.v, _mm256_cmp_ps(nan.v, nan.v, _CMP_UNORD_Q))};
+}
+YNN_ALWAYS_INLINE f64x4 copynan(f64x4 x, f64x4 nan) {
+  return f64x4{
+      _mm256_blendv_pd(x.v, nan.v, _mm256_cmp_pd(nan.v, nan.v, _CMP_UNORD_Q))};
 }
 
 }  // namespace simd

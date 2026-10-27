@@ -195,7 +195,7 @@ bool CPWL_ScrollBar::OnLButtonDown(Mask<FWL_EVENTFLAG> nFlag,
                                    const CFX_PointF& point) {
   CPWL_Wnd::OnLButtonDown(nFlag, point);
 
-  if (HasFlag(PWS_AUTOTRANSPARENT)) {
+  if (HasFlag(Styles::kWindowAutoTransparent)) {
     if (GetTransparency() != 255) {
       SetTransparency(255);
       if (!InvalidateRect(nullptr)) {
@@ -241,7 +241,7 @@ bool CPWL_ScrollBar::OnLButtonUp(Mask<FWL_EVENTFLAG> nFlag,
                                  const CFX_PointF& point) {
   CPWL_Wnd::OnLButtonUp(nFlag, point);
 
-  if (HasFlag(PWS_AUTOTRANSPARENT)) {
+  if (HasFlag(Styles::kWindowAutoTransparent)) {
     if (GetTransparency() != kTransparency) {
       SetTransparency(kTransparency);
       if (!InvalidateRect(nullptr)) {
@@ -308,7 +308,8 @@ void CPWL_ScrollBar::CreateButtons(const CreateParams& cp) {
   CreateParams scp = cp;
   scp.dwBorderWidth = 2;
   scp.nBorderStyle = BorderStyle::kBeveled;
-  scp.dwFlags = PWS_VISIBLE | PWS_BORDER | PWS_BACKGROUND | PWS_NOREFRESHCLIP;
+  scp.dwFlags = {Styles::kWindowVisible, Styles::kWindowBorder,
+                 Styles::kWindowBackground, Styles::kWindowNoRefreshClip};
 
   if (!this_observed->min_button_) {
     auto pButton =

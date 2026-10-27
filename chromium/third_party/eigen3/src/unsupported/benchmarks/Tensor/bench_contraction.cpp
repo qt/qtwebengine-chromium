@@ -1,11 +1,13 @@
 // Benchmarks for Eigen Tensor contraction (generalized GEMM).
 // Tests single-threaded (DefaultDevice) and multi-threaded (ThreadPoolDevice) variants.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #define EIGEN_USE_THREADS
 
 #include <benchmark/benchmark.h>
-#include <unsupported/Eigen/CXX11/Tensor>
-#include <unsupported/Eigen/CXX11/ThreadPool>
+#include <unsupported/Eigen/Tensor>
+#include <unsupported/Eigen/ThreadPool>
 
 using namespace Eigen;
 
@@ -120,32 +122,29 @@ static void BM_Contraction_RowMajor(benchmark::State& state) {
       benchmark::Counter(2.0 * M * N * K, benchmark::Counter::kIsIterationInvariantRate, benchmark::Counter::kIs1000);
 }
 
-static void ContractionSizes(::benchmark::Benchmark* b) {
-  for (int size : {32, 64, 128, 256, 512, 1024}) {
-    b->Args({size, size, size});
-  }
-  // Non-square
-  b->Args({256, 256, 1024});
-  b->Args({1024, 64, 64});
-}
+// clang-format off
+#define CONTRACTION_SIZES \
+  ->Args({32, 32, 32})->Args({64, 64, 64})->Args({128, 128, 128}) \
+  ->Args({256, 256, 256})->Args({512, 512, 512})->Args({1024, 1024, 1024}) \
+  ->Args({256, 256, 1024})->Args({1024, 64, 64})
 
-static void ThreadPoolSizes(::benchmark::Benchmark* b) {
-  for (int size : {64, 256, 512, 1024}) {
-    for (int threads : {1, 2, 4, 8, 16}) {
-      b->Args({size, size, size, threads});
-    }
-  }
-}
+#define CONTRACTION_THREADPOOL_SIZES \
+  ->Args({64, 64, 64, 1})->Args({64, 64, 64, 2})->Args({64, 64, 64, 4}) \
+  ->Args({64, 64, 64, 8})->Args({64, 64, 64, 16}) \
+  ->Args({256, 256, 256, 1})->Args({256, 256, 256, 2})->Args({256, 256, 256, 4}) \
+  ->Args({256, 256, 256, 8})->Args({256, 256, 256, 16}) \
+  ->Args({512, 512, 512, 1})->Args({512, 512, 512, 2})->Args({512, 512, 512, 4}) \
+  ->Args({512, 512, 512, 8})->Args({512, 512, 512, 16}) \
+  ->Args({1024, 1024, 1024, 1})->Args({1024, 1024, 1024, 2})->Args({1024, 1024, 1024, 4}) \
+  ->Args({1024, 1024, 1024, 8})->Args({1024, 1024, 1024, 16})
 
-static void BatchSizes(::benchmark::Benchmark* b) {
-  for (int batch : {1, 8, 32}) {
-    for (int size : {64, 256}) {
-      b->Args({batch, size, size, size});
-    }
-  }
-}
+#define BATCH_SIZES \
+  ->Args({1, 64, 64, 64})->Args({1, 256, 256, 256}) \
+  ->Args({8, 64, 64, 64})->Args({8, 256, 256, 256}) \
+  ->Args({32, 64, 64, 64})->Args({32, 256, 256, 256})
+// clang-format on
 
-BENCHMARK(BM_Contraction)->Apply(ContractionSizes);
-BENCHMARK(BM_Contraction_RowMajor)->Apply(ContractionSizes);
-BENCHMARK(BM_Contraction_ThreadPool)->Apply(ThreadPoolSizes);
-BENCHMARK(BM_BatchContraction)->Apply(BatchSizes);
+BENCHMARK(BM_Contraction) CONTRACTION_SIZES;
+BENCHMARK(BM_Contraction_RowMajor) CONTRACTION_SIZES;
+BENCHMARK(BM_Contraction_ThreadPool) CONTRACTION_THREADPOOL_SIZES;
+BENCHMARK(BM_BatchContraction) BATCH_SIZES;

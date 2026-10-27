@@ -16,6 +16,7 @@
 #include <optional>
 #include <string>
 
+#include "base/byte_size.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ptr_exclusion.h"
@@ -44,6 +45,7 @@
 
 namespace net {
 
+class CacheBodyDecompressor;
 class PartialData;
 struct HttpRequestInfo;
 struct LoadTimingInfo;
@@ -146,9 +148,9 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
            int buf_len,
            CompletionOnceCallback callback) override;
   void StopCaching() override;
-  int64_t GetTotalReceivedBytes() const override;
-  int64_t GetTotalSentBytes() const override;
-  int64_t GetReceivedBodyBytes() const override;
+  base::ByteSize GetTotalReceivedBytes() const override;
+  base::ByteSize GetTotalSentBytes() const override;
+  base::ByteSize GetReceivedBodyBytes() const override;
   void DoneReading() override;
   const HttpResponseInfo* GetResponseInfo() const override;
   LoadState GetLoadState() const override;
@@ -208,9 +210,9 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
     // 304 and 206 response cases, as the network transaction may be destroyed
     // before the caller requests load timing information.
     std::unique_ptr<LoadTimingInfo> old_network_trans_load_timing;
-    int64_t total_received_bytes = 0;
-    int64_t total_sent_bytes = 0;
-    int64_t received_body_bytes = 0;
+    base::ByteSize total_received_bytes;
+    base::ByteSize total_sent_bytes;
+    base::ByteSize received_body_bytes;
     ConnectionAttempts old_connection_attempts;
     IPEndPoint old_remote_endpoint;
   };
@@ -673,6 +675,14 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
   // shallow copy of `request_`, and then modify `request_` to point to it.
   void EnsureMutableRequest();
 
+  // Tears down `decompressor_` and resets `compressed_disk_offset_`, ensuring
+  // the matching HTTP_CACHE_DECOMPRESS NetLog End event is emitted with the
+  // given `reason`. No-op when `decompressor_` is null. Use this everywhere
+  // a decompressor is destroyed outside the normal data-phase EOF/error
+  // sites — destructor, restart paths, replacement-response branch — so
+  // every BeginEvent is paired with an EndEvent.
+  void TeardownDecompressor(std::string_view reason);
+
   State next_state_{STATE_NONE};
 
   // Set when a HTTPCache transaction is pending in parallel with other IO.
@@ -757,6 +767,14 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
 
   int io_buf_len_ = 0;
   int read_offset_ = 0;
+  // Disk offset for reads on the compressed cache path. Advances by the
+  // number of compressed bytes consumed from disk on each decompression
+  // step. This is a disk position, not a count of bytes delivered to the
+  // consumer, so it must not be compared against Content-Length.
+  //
+  // size_t: accumulated from size_t bytes_consumed (zstd output);
+  // checked_cast<int> at the ReadData() call site.
+  size_t compressed_disk_offset_ = 0;
   int effective_load_flags_ = 0;
   std::unique_ptr<PartialData> partial_;  // We are dealing with range requests.
   CompletionRepeatingCallback io_callback_;
@@ -766,6 +784,16 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
   // Error code to be returned from a subsequent Read call if shared writing
   // failed in a separate transaction.
   int shared_writing_error_ = OK;
+
+  // --- Decompression state for zstd-compressed cache entries ---
+
+  // Helper class that encapsulates all zstd decompression state and logic.
+  // Created in DoCacheReadResponseComplete() when
+  // zstd_uncompressed_body_size is present; destroyed when the read completes
+  // or the transaction is destroyed.
+  // Non-null indicates the cache entry body is zstd-compressed and needs
+  // decompression.
+  std::unique_ptr<CacheBodyDecompressor> decompressor_;
 
   // Members used to track data for histograms.
   // This cache_entry_status_ takes precedence over
@@ -779,8 +807,8 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
   base::TimeTicks send_request_since_;
   base::TimeTicks read_headers_since_;
   base::TimeTicks last_disk_cache_access_start_time_;
-  base::TimeDelta total_disk_cache_read_time_;
-  base::TimeDelta total_disk_cache_write_time_;
+  std::optional<base::TimeDelta> total_disk_cache_read_time_;
+  std::optional<base::TimeDelta> total_disk_cache_write_time_;
   base::TimeTicks first_nvs_cache_lookup_end_time_;
   bool recorded_histograms_ = false;
   bool has_opened_or_created_entry_ = false;

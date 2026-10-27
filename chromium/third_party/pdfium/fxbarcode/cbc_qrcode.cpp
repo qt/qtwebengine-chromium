@@ -33,12 +33,10 @@ CBC_QRCode::CBC_QRCode() : CBC_CodeBase(std::make_unique<CBC_QRCodeWriter>()) {}
 CBC_QRCode::~CBC_QRCode() = default;
 
 bool CBC_QRCode::Encode(WideStringView contents) {
-  int32_t width;
-  int32_t height;
   CBC_QRCodeWriter* pWriter = GetQRCodeWriter();
-  DataVector<uint8_t> data = pWriter->Encode(
-      contents, pWriter->error_correction_level(), &width, &height);
-  return pWriter->RenderResult(data, width, height);
+  CBC_TwoDimWriter::EncodeResult result =
+      pWriter->Encode(contents, pWriter->error_correction_level());
+  return pWriter->RenderResult(result);
 }
 
 bool CBC_QRCode::RenderDevice(CFX_RenderDevice* device,

@@ -17,11 +17,16 @@ void VirtualWallet::SetCredential(
 }
 
 std::optional<DigitalIdentityProvider::DigitalCredential>
-VirtualWallet::GetCredential() {
+VirtualWallet::GetCredential() const {
   if (!stored_credential_.has_value()) {
     return std::nullopt;
   }
   return stored_credential_->Clone();
+}
+
+void VirtualWallet::Clear() {
+  stored_credential_.reset();
+  behavior_.reset();
 }
 
 }  // namespace content

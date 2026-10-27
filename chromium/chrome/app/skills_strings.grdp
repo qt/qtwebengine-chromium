@@ -38,10 +38,16 @@
 
   <!-- chrome://skills error page -->
   <message name="IDS_SKILLS_ERROR_PAGE_TITLE" desc="Title of the error page that occurs when chrome://skills is not accessible">
-    Skills isn't available
+    Skills aren't available
   </message>
-  <message name="IDS_SKILLS_ERROR_PAGE_DESCRIPTION" desc="Description of the error page that occurs when chrome://skills is not accessible">
+  <message name="IDS_SKILLS_ERROR_PAGE_DESCRIPTION" desc="Description of the error page that occurs when chrome://skills is not accessible because Glic is not enabled">
     To use Skills, sign in to Chrome with a Google account that has Gemini in Chrome enabled
+  </message>
+  <message name="IDS_SKILLS_DISABLED_ERROR_PAGE_DESCRIPTION" desc="Description of the error page that occurs when chrome://skills is disabled by the settings toggle">
+    The Skills feature is currently disabled. Update your Chrome Settings to get started.
+  </message>
+  <message name="IDS_SKILLS_GO_TO_SETTINGS" desc="Label of the button that navigates the user to Chrome Settings page for Skills.">
+    Go to Settings
   </message>
   <message name="IDS_SKILLS_NO_SEARCH_RESULT_TITLE" desc="Title of the page that occurs when chrome://skills has no search results">
     No search results
@@ -54,11 +60,14 @@
   <message name="IDS_SKILL_PAGE_BROWSE_SKILLS_TITLE" desc="Text for the title of the chrome://skills/browse-skills page.">
     Browse skills
   </message>
-  <message name="IDS_SKILL_PAGE_BROWSE_SKILLS_TOP_PICKS_TITLE" desc="Title for the top skill picks in the chrome://skills/browse-skills page.">
-    Our top picks
-  </message>
   <message name="IDS_SKILL_PAGE_FIRST_PARTY_ADD_SKILL_ERROR_TOAST" desc="Text on the toast if a skill no longer exists in the 1p catalog in the chrome://skills/browse-skills page.">
     Unable to add skill
+  </message>
+  <message name="IDS_SKILLS_PAGE_ALL_CATEGORY" desc="Text for the all category filter in the chrome://skills/browse-skills page.">
+    All
+  </message>
+  <message name="IDS_SKILLS_CURATED_PREFIX" desc="Prefix text indicating the curator of the skill.">
+    By
   </message>
 
   <!-- chrome://skills/user-skills page-->

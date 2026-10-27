@@ -142,7 +142,7 @@ WideString CPDF_ToUnicodeMap::StringToWideString(ByteStringView str) {
 }
 
 void CPDF_ToUnicodeMap::Load(RetainPtr<const CPDF_Stream> pStream) {
-  CIDSet cid_set = CIDSET_UNKNOWN;
+  CIDSet cid_set = CIDSet::kUnknown;
   auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(std::move(pStream));
   pAcc->LoadAllDataFiltered();
   CPDF_SimpleParser parser(pAcc->GetSpan());
@@ -158,18 +158,18 @@ void CPDF_ToUnicodeMap::Load(RetainPtr<const CPDF_Stream> pStream) {
     } else if (word == "beginbfrange") {
       word = HandleBeginBFRange(parser, previous_word);
     } else if (word == "/Adobe-Korea1-UCS2") {
-      cid_set = CIDSET_KOREA1;
+      cid_set = CIDSet::kKorea1;
     } else if (word == "/Adobe-Japan1-UCS2") {
-      cid_set = CIDSET_JAPAN1;
+      cid_set = CIDSet::kJapan1;
     } else if (word == "/Adobe-CNS1-UCS2") {
-      cid_set = CIDSET_CNS1;
+      cid_set = CIDSet::kCNS1;
     } else if (word == "/Adobe-GB1-UCS2") {
-      cid_set = CIDSET_GB1;
+      cid_set = CIDSet::kGB1;
     }
 
     previous_word = word;
   }
-  if (cid_set != CIDSET_UNKNOWN) {
+  if (cid_set != CIDSet::kUnknown) {
     base_map_ = CPDF_FontGlobals::GetInstance()->GetCID2UnicodeMap(cid_set);
   }
 }
@@ -301,7 +301,7 @@ ByteStringView CPDF_ToUnicodeMap::HandleBeginBFRange(
 
     WideString destcode = StringToWideString(start);
     if (destcode.GetLength() == 1) {
-      uint32_t start_value = pdfium::checked_cast<uint32_t>(destcode[0]);
+      uint32_t start_value = pdfium::checked_cast<uint32_t>(destcode.Front());
       CHECK_LE(start_value, 0xffff);
       ranges.push_back(MultimapSingleDestRange{.low_code = lowcode,
                                                .high_code = highcode,
@@ -364,9 +364,8 @@ void CPDF_ToUnicodeMap::SetCode(uint32_t srccode, WideString destcode) {
   if (len == 0) {
     return;
   }
-
   if (len == 1) {
-    InsertIntoMaps(srccode, destcode[0]);
+    InsertIntoMaps(srccode, destcode.Front());
   } else {
     InsertIntoMaps(srccode, GetMultiCharIndexIndicator());
     multi_char_vec_.push_back(destcode);

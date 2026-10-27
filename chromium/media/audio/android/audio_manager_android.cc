@@ -70,6 +70,7 @@ namespace {
 
 // Maximum number of output streams that can be open simultaneously.
 constexpr int kMaxOutputStreams = 10;
+constexpr int kDesktopMaxOutputStreams = 50;
 
 constexpr int kDefaultInputBufferSize = 1024;
 constexpr int kDefaultOutputBufferSize = 2048;
@@ -121,38 +122,34 @@ class JniDelegateImpl : public AudioManagerAndroid::JniDelegate {
   }
 
   std::vector<JniAudioDevice> GetDevices(bool inputs) override {
+    JNIEnv* env = AttachCurrentThread();
     ScopedJavaLocalRef<jobjectArray> j_devices =
-        Java_AudioManagerAndroid_getDevices(AttachCurrentThread(),
-                                            j_audio_manager_, inputs);
+        Java_AudioManagerAndroid_getDevices(env, j_audio_manager_, inputs);
     std::vector<JniAudioDevice> devices;
-    for (ScopedJavaLocalRef<jobject> j_device :
-         j_devices.ReadElements<jobject>()) {
-      devices.emplace_back(
-          Java_AudioDevice_id(AttachCurrentThread(), j_device),
-          Java_AudioDevice_name(AttachCurrentThread(), j_device),
-          Java_AudioDevice_type(AttachCurrentThread(), j_device),
-          Java_AudioDevice_sampleRates(AttachCurrentThread(), j_device));
+    for (ScopedJavaLocalRef<jobject> j_device : j_devices.CreateView(env)) {
+      devices.emplace_back(Java_AudioDevice_id(env, j_device),
+                           Java_AudioDevice_name(env, j_device),
+                           Java_AudioDevice_type(env, j_device),
+                           Java_AudioDevice_sampleRates(env, j_device));
     }
     return devices;
   }
 
   std::optional<std::vector<JniAudioDevice>> GetCommunicationDevices()
       override {
+    JNIEnv* env = AttachCurrentThread();
     ScopedJavaLocalRef<jobjectArray> j_devices =
-        Java_AudioManagerAndroid_getCommunicationDevices(AttachCurrentThread(),
-                                                         j_audio_manager_);
+        Java_AudioManagerAndroid_getCommunicationDevices(env, j_audio_manager_);
     if (j_devices.is_null()) {
       return std::nullopt;
     }
 
     std::vector<JniAudioDevice> devices;
-    for (ScopedJavaLocalRef<jobject> j_device :
-         j_devices.ReadElements<jobject>()) {
-      devices.emplace_back(
-          Java_AudioDevice_id(AttachCurrentThread(), j_device),
-          Java_AudioDevice_name(AttachCurrentThread(), j_device),
-          Java_AudioDevice_type(AttachCurrentThread(), j_device),
-          Java_AudioDevice_sampleRates(AttachCurrentThread(), j_device));
+    for (ScopedJavaLocalRef<jobject> j_device : j_devices.CreateView(env)) {
+      devices.emplace_back(Java_AudioDevice_id(env, j_device),
+                           Java_AudioDevice_name(env, j_device),
+                           Java_AudioDevice_type(env, j_device),
+                           Java_AudioDevice_sampleRates(env, j_device));
     }
     return devices;
   }
@@ -363,6 +360,11 @@ static void JNI_AudioManagerAndroid_OnDevicesChanged(JNIEnv* env, bool added) {
   }
 }
 
+static bool JNI_AudioManagerAndroid_IsAudioPlaybackCaptureAllowedFeatureEnabled(
+    JNIEnv* env) {
+  return base::FeatureList::IsEnabled(media::kAllowAudioPlaybackCapture);
+}
+
 std::unique_ptr<AudioManager> CreateAudioManager(
     std::unique_ptr<AudioThread> audio_thread,
     AudioLogFactory* audio_log_factory) {
@@ -397,7 +399,10 @@ AudioManagerAndroid::AudioManagerAndroid(
       communication_mode_is_on_(false),
       output_volume_override_set_(false),
       output_volume_override_(0) {
-  SetMaxOutputStreamsAllowed(kMaxOutputStreams);
+  const int max_output_streams = base::android::device_info::is_desktop()
+                                     ? kDesktopMaxOutputStreams
+                                     : kMaxOutputStreams;
+  SetMaxOutputStreamsAllowed(max_output_streams);
 }
 
 AudioManagerAndroid::~AudioManagerAndroid() = default;
@@ -425,13 +430,13 @@ bool AudioManagerAndroid::HasAudioInputDevices() {
   return true;
 }
 
-void AudioManagerAndroid::GetAudioInputDeviceNames(
+bool AudioManagerAndroid::GetAudioInputDeviceNames(
     AudioDeviceNames* device_names) {
   DCHECK(GetTaskRunner()->BelongsToCurrentThread());
 
   if (UseAAudioPerStreamDeviceSelection()) {
     GetDeviceNames(device_names, AudioDeviceDirection::kInput);
-    return;
+    return true;
   }
 
   // Android devices in general do not have robust support for specifying
@@ -455,15 +460,16 @@ void AudioManagerAndroid::GetAudioInputDeviceNames(
   // but each one can be controlled via appropriate Android API calls, e.g.
   // AudioManager#startBluetoothSco() for Bluetooth.
   GetCommunicationDeviceNames(device_names);
+  return true;
 }
 
-void AudioManagerAndroid::GetAudioOutputDeviceNames(
+bool AudioManagerAndroid::GetAudioOutputDeviceNames(
     AudioDeviceNames* device_names) {
   DCHECK(GetTaskRunner()->BelongsToCurrentThread());
 
   if (UseAAudioPerStreamDeviceSelection()) {
     GetDeviceNames(device_names, AudioDeviceDirection::kOutput);
-    return;
+    return true;
   }
 
   // Android devices in general do not have robust support for specifying
@@ -482,6 +488,7 @@ void AudioManagerAndroid::GetAudioOutputDeviceNames(
   // which an input device is automatically chosen, it could be more
   // appropriate to invert the input and output device lists.
   AddDefaultDevice(device_names);
+  return true;
 }
 
 void AudioManagerAndroid::GetDeviceNames(AudioDeviceNames* device_names,
@@ -897,15 +904,15 @@ AudioInputStream* AudioManagerAndroid::MakeLowLatencyInputStream(
 }
 
 // Manages the Bluetooth SCO state when a Bluetooth SCO input device is
-// explicitly requested. The Android framework strictly requires the SCO state
-// to be set via the framework API prior to the stream starting (see
-// b/459531858). `state` should be true before starting the stream, and false
-// if the start fails.
-void AudioManagerAndroid::OnPrepareToStartAAudioInputStream(
-    AAudioInputStream* stream) {
+// requested, either explicitly or system decided (implicitly chosen). The
+// Android framework strictly requires the SCO state to be set via the framework
+// API prior to the stream starting (see b/459531858 and b/514903919). The SCO
+// state should be acquired before starting the stream, and released if the
+// start fails.
+void AudioManagerAndroid::AcquireScoState(AAudioInputStream* stream) {
   DCHECK(GetTaskRunner()->BelongsToCurrentThread());
 
-  if (!stream->IsExplicitlyRequestingBluetoothSco()) {
+  if (!IsUsingBluetoothSco(stream)) {
     return;
   }
 
@@ -913,8 +920,7 @@ void AudioManagerAndroid::OnPrepareToStartAAudioInputStream(
   GetJniDelegate().MaybeSetBluetoothScoState(true);
 }
 
-void AudioManagerAndroid::OnFailedToStartAAudioInputStream(
-    AAudioInputStream* stream) {
+void AudioManagerAndroid::ReleaseScoState(AAudioInputStream* stream) {
   DCHECK(GetTaskRunner()->BelongsToCurrentThread());
 
   if (input_streams_requiring_sco_.erase(stream) == 0) {
@@ -964,66 +970,28 @@ bool AudioManagerAndroid::IsUsingBluetoothSco(AAudioInputStream* stream) {
   return actual_device->second.GetType() == AudioDeviceType::kBluetoothSco;
 }
 
-void AudioManagerAndroid::OnStartAAudioInputStream(AAudioInputStream* stream) {
-  // Enable Bluetooth SCO for Bluetooth SCO input streams when per-stream device
-  // selection is enabled. This should be done both in the case where a
-  // Bluetooth device was explicitly requested, and in the case where a
-  // Bluetooth device was implicitly chosen for a default stream.
 
-  DCHECK(GetTaskRunner()->BelongsToCurrentThread());
-
-  // OnPrepareToStartAAudioInputStream might already inserted the stream when
-  // it explicitly requests SCO.
-  if (input_streams_requiring_sco_.contains(stream) ||
-      !IsUsingBluetoothSco(stream)) {
-    return;
-  }
-
-  input_streams_requiring_sco_.insert(stream);
-
-  // SCO can safely be re-enabled even if it is already on.
-  GetJniDelegate().MaybeSetBluetoothScoState(true);
-}
 
 void AudioManagerAndroid::OnAAudioInputStreamDeviceChanged(
     AAudioInputStream* stream) {
   DCHECK(GetTaskRunner()->BelongsToCurrentThread());
 
-  // If BT SCO is explicitly requested on this tream, fine to ignore the
+  // If BT SCO is explicitly requested on this stream, fine to ignore the
   // device changed callback from system.
   if (stream->IsExplicitlyRequestingBluetoothSco()) {
     return;
   }
 
   const bool was_requiring_sco = input_streams_requiring_sco_.contains(stream);
-  const bool is_requiring_sco = IsUsingBluetoothSco(stream);
 
   if (was_requiring_sco) {
-    // Always stop to handle BT-to-BT cycle and BT-to-Speaker transitions
-    // correctly.
-    OnStopAAudioInputStream(stream);
+    // Always release the current SCO state to handle BT-to-BT cycle and
+    // BT-to-Speaker transitions correctly.
+    ReleaseScoState(stream);
   }
 
-  if (is_requiring_sco) {
-    // Start will re-evaluate and re-enable SCO if necessary.
-    OnStartAAudioInputStream(stream);
-  }
-}
-
-void AudioManagerAndroid::OnStopAAudioInputStream(AAudioInputStream* stream) {
-  // Disable Bluetooth SCO when it is no longer needed by any input streams.
-
-  DCHECK(GetTaskRunner()->BelongsToCurrentThread());
-
-  // Only disable SCO if the last stream requiring it was just stopped
-  if (input_streams_requiring_sco_.erase(stream) == 0) {
-    return;
-  }
-  if (!input_streams_requiring_sco_.empty()) {
-    return;
-  }
-
-  GetJniDelegate().MaybeSetBluetoothScoState(false);
+  // Re-acquire the SCO state if the new device requires it.
+  AcquireScoState(stream);
 }
 
 void AudioManagerAndroid::SetMute(JNIEnv* env, bool muted) {
@@ -1173,9 +1141,7 @@ AudioManagerAndroid::JniDelegate& AudioManagerAndroid::GetJniDelegate() {
 
     // These features are checked for on the native side in order to avoid build
     // dependency conflicts when using the Java `ChromeFeatureList`.
-    if (base::FeatureList::IsEnabled(features::kAndroidAudioDeviceListener)) {
-      jni_delegate_->InitDeviceListener();
-    }
+    jni_delegate_->InitDeviceListener();
     if (base::FeatureList::IsEnabled(
             features::kAAudioPerStreamDeviceSelection)) {
       // Listen for SCO state changes to forward them to

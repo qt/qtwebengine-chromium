@@ -1,0 +1,3877 @@
+# Bulgarian translation of gsettings-desktop-schemas po-file.
+# Copyright (C) 2013 Free Software Foundation, Inc.
+# Copyright (C) 2022, 2025 Alexander Shopov <ash@kambanaria.org>.
+# Copyright (C) 2024 twlvnn kraftwerk <kraft_werk@tutanota.com>.
+# This file is distributed under the same license as the gsettings-desktop-schemas package.
+# Alexander Shopov <ash@kambanaria.org>, 2013, 2022, 2025.
+# twlvnn kraftwerk <kraft_werk@tutanota.com>, 2024.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: gsettings-desktop-schemas master\n"
+"Report-Msgid-Bugs-To: https://gitlab.gnome.org/GNOME/gsettings-desktop-"
+"schemas/issues/\n"
+"POT-Creation-Date: 2025-02-23 06:45+0000\n"
+"PO-Revision-Date: 2025-02-23 11:44+0100\n"
+"Last-Translator: twlvnn kraftwerk <kraft_werk@tutanota.com>\n"
+"Language-Team: Bulgarian <dict@ludost.net>\n"
+"Language: bg\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1)\n"
+"X-Generator: Gtranslator 46.1\n"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:6
+msgid "On-screen keyboard"
+msgstr "Екранна клавиатура"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:7
+msgid "Whether the on-screen keyboard is turned on."
+msgstr "Дали екранната клавиатура е включена."
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:11
+msgid "Screen magnifier"
+msgstr "Лупа"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:12
+msgid "Whether the screen magnifier is turned on."
+msgstr "Дали лупата за екрана е включена."
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:16
+msgid "Screen reader"
+msgstr "Екранен четец"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:17
+msgid "Whether the screen reader is turned on."
+msgstr "Дали екранният четец е включен."
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:6
+msgid "Always show the Universal Access status icon"
+msgstr "Иконата за универсалния достъп да се показва винаги"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:7
+msgid ""
+"This key overrides the automatic hiding of the Universal Access status icon "
+"when no accessibility features are enabled."
+msgstr ""
+"Този ключ предотвратява автоматичното скриване на иконата за състоянието на "
+"универсалния достъп, когато никоя от възможностите за достъпност не е "
+"включена."
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:14
+msgid "Always show the text caret"
+msgstr "Винаги показване на текстовия курсор"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:15
+msgid ""
+"This key overrides the hiding of the text caret in noneditable text in "
+"applications."
+msgstr ""
+"Този ключ предотвратява автоматичното скриване на курсора в полетата с "
+"текст, които не може да се редактират."
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:6
+msgid "High contrast"
+msgstr "Висок контраст"
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:7
+msgid "Whether to use the high contrast style."
+msgstr "Дали да се ползва стил на висок контраст."
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:13
+msgid "Show status shapes"
+msgstr "Показване на форми на състоянието"
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:14
+msgid ""
+"Whether to use shapes to indicate status in addition or instead of color."
+msgstr ""
+"Дали да се използват форми за посочване на състоянието в допълнение или "
+"вместо цвят."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:6
+msgid "Enable accessibility keyboard shortcuts"
+msgstr "Включване на клавишните комбинации за достъпността"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:10
+msgid "Beep when a keyboard accessibility feature changes"
+msgstr "Звук при промяна на настройките за достъпност на клавиатурата"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:11
+msgid ""
+"Whether to beep when a keyboard accessibility feature is enabled or disabled."
+msgstr ""
+"Дали да се известява със звук за превключване на някоя настройка на "
+"достъпността на клавиатурата."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:15
+msgid "Disable keyboard accessibility after a timeout"
+msgstr ""
+"Изключване на достъпността на клавиатурата след определен интервал от време"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:16
+msgid ""
+"Whether to disable keyboard accessibility after a timeout, useful for shared "
+"machines."
+msgstr ""
+"Дали достъпността на клавиатурата да се изключва след определено време. "
+"Удобно е за машини, които се ползват от повече хора."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:20
+msgid "Duration of the disabling timeout"
+msgstr "Продължителност на интервала за изключване на достъпността"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:21
+msgid "Duration of the timeout before disabling the keyboard accessibility."
+msgstr ""
+"Продължителност на интервала преди изключване на достъпността на "
+"клавиатурата."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:25
+msgid "Enable “Bounce Keys”"
+msgstr "Включване на „Подскачащи клавиши“"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:26
+msgid "Whether the “Bounce Keys” keyboard accessibility feature is turned on."
+msgstr "Дали технологията за достъпност „Подскачащи клавиши“ е включена."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:30
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:65
+msgid "Minimum interval in milliseconds"
+msgstr "Минимален интервал в милисекунди"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:31
+msgid "Ignore multiple presses of the same key within this many milliseconds."
+msgstr ""
+"Пренебрегване на повторните натискания в рамките на този брой милисекунди на "
+"същия клавиш."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:35
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:80
+msgid "Beep when a key is rejected"
+msgstr "Звуков сигнал при отхвърлянето на клавиш"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:36
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:81
+msgid "Whether to beep when a key is rejected."
+msgstr "Дали да се произведе звуков сигнал при отхвърлянето на клавиш"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:40
+msgid "Enable “Mouse Keys”"
+msgstr "Включване на „Бутони за мишката“"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:41
+msgid "Whether the “Mouse Keys” accessibility feature is turned on."
+msgstr "Дали технологията за достъпност „Бутони за мишката“ е включена."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:45
+msgid "Pixels per seconds"
+msgstr "Пиксели в секунда"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:46
+msgid "How many pixels per second to move at the maximum speed."
+msgstr "Колко пиксела в секунда да се движи при максимална скорост."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:50
+msgid "How long to accelerate in milliseconds"
+msgstr "Период на ускорение в милисекунди"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:51
+msgid "How many milliseconds it takes to go from 0 to maximum speed."
+msgstr ""
+"Колко милисекунди са необходими за ускоряване от 0 до максималната скорост."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:55
+msgid "Initial delay in milliseconds"
+msgstr "Първоначално забавяне в милисекунди"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:56
+msgid ""
+"How many milliseconds to wait before mouse movement keys start to operate."
+msgstr ""
+"Изчакване в милисекунди преди клавишите за движение на мишката се включат."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:60
+msgid "Enable “Slow Keys”"
+msgstr "Включване на „Бавни клавиши“"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:61
+msgid "Whether the “Slow Keys” accessibility feature is turned on."
+msgstr "Дали технологията за достъпност „Бавни клавиши“ е включена."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:66
+msgid ""
+"Do not accept a key as being pressed unless held for this many milliseconds."
+msgstr ""
+"Да не се приема, че някой клавиш е натиснат, освен ако не е задържан този "
+"брой милисекунди."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:70
+msgid "Beep when a key is first pressed"
+msgstr "Звуков сигнал при първото натискане на клавиш"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:71
+msgid "Whether to beep when a key is first pressed."
+msgstr "Дали да се издава звуков сигнал при първото натискане на клавиш."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:75
+msgid "Beep when a key is accepted"
+msgstr "Звуков сигнал при приемането на клавиш"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:76
+msgid "Whether to beep when a key is accepted."
+msgstr "Дали да се издава звуков сигнал при приемането на клавиш за натиснат."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:85
+msgid "Enable sticky keys"
+msgstr "Включване на лепкавите клавиши"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:86
+msgid "Whether the sticky keys accessibility feature is turned on."
+msgstr "Дали технологията за достъпност за лепкави клавиши е включена."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:90
+msgid "Disable when two keys are pressed at the same time"
+msgstr "Изключване, когато два клавиша са натиснати заедно"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:91
+msgid ""
+"Whether to disable sticky keys if two keys are pressed at the same time."
+msgstr ""
+"Дали технологията за лепкави клавиши да се изключва, когато два клавиша са "
+"натиснати заедно."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:95
+msgid "Beep when a modifier is pressed."
+msgstr "Звуков сигнал при натискането на модификатор"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:96
+msgid "Whether to beep when a modifier key is pressed."
+msgstr "Дали да се издава звуков сигнал при натискането на модификатор."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:100
+msgid "Enable “Toggle Keys”"
+msgstr "Включване на „Превключващи клавиши“"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:101
+msgid "Whether the “Toggle Keys” accessibility feature is turned on."
+msgstr "Дали технологията за достъпност „Превключващи клавиши“ е включена."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:8
+msgid "Mouse Tracking Mode"
+msgstr "Режим на следене на мишката"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:9
+msgid ""
+"Determines the position of the magnified mouse image within the magnified "
+"view and how it reacts to system mouse movement. The values are • none: no "
+"mouse tracking; • centered: the mouse image is displayed at the center of "
+"the zoom region (which also represents the point under the system mouse) and "
+"the magnified contents are scrolled as the system mouse moves; • "
+"proportional: the position of the magnified mouse in the zoom region is "
+"proportionally the same as the position of the system mouse on screen; • "
+"push: when the magnified mouse intersects a boundary of the zoom region, the "
+"contents are scrolled into view."
+msgstr ""
+"Определя позицията на увеличеното изображение спрямо увеличения изглед и "
+"реакцията към местенето на мишката. Възможните стойности са: „none“ — без "
+"следене на мишката; „centered“ — показалецът е центриран в средата на "
+"увеличения регион (което съответства на точката под системната мишка) и "
+"увеличеното съдържание се мести заедно с мишката; „proportional“ — "
+"местоположението на увеличената мишка в увеличения регион е пропорционално "
+"същото като положението на системната мишка на екрана; „push“: при "
+"достигането на увеличената мишка до границите на увеличения изглед, той бива "
+"избутван в съответната посока."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:26
+msgid "Focus Tracking Mode"
+msgstr "Следене по фокус"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:27
+msgid ""
+"Determines the position of the focused widget within magnified view. The "
+"values are: • none: no focus tracking • centered: the focused image is "
+"displayed at the center of the zoom region (which also represents the point "
+"under the system focus) and the magnified contents are scrolled as the "
+"system focus moves • proportional: the position of the magnified focus in "
+"the zoom region is proportionally the same as the position of the system "
+"focus on screen • push: when the magnified focus intersects a boundary of "
+"the zoom region, the contents are scrolled into view"
+msgstr ""
+"Определя позицията на фокусирания обект спрямо увеличения изглед. Възможните "
+"стойности са: „none“ — без следене на фокуса; „centered“ — фокусираният "
+"обект е центриран в средата на увеличения регион (което съответства на "
+"точката под системния фокус) и увеличеното съдържание се мести заедно с "
+"фокуса; „proportional“ — местоположението на фокусирания обект в увеличения "
+"регион е пропорционално същото като положението на системния фокус на "
+"екрана; „push“: при достигането на фокуса до границите на увеличения изглед, "
+"той бива избутван в съответната посока."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:46
+msgid "Caret Tracking Mode"
+msgstr "Следене по курсор"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:47
+msgid ""
+"Determines the position of the caret within magnified view. The values are: "
+"• none: no caret tracking • centered: the image of the caret is displayed at "
+"the center of the zoom region (which also represents the point under the "
+"system caret) and the magnified contents are scrolled as the system caret "
+"moves • proportional: the position of the magnified caret in the zoom region "
+"is proportionally the same as the position of the system caret on screen • "
+"push: when the magnified caret intersects a boundary of the zoom region, the "
+"contents are scrolled into view"
+msgstr ""
+"Определя позицията на курсора спрямо увеличения изглед. Възможните стойности "
+"са: „none“ — без следене на курсора; „centered“ — курсорът е центриран в "
+"средата на увеличения регион (което съответства на точката под системния "
+"курсор) и увеличеното съдържание се мести заедно с курсора; „proportional“ — "
+"местоположението на курсора в увеличения регион е пропорционално същото като "
+"положението на системния курсор на екрана; „push“: при достигането на "
+"курсора до границите на увеличения изглед, той бива избутван в съответната "
+"посока."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:64
+msgid "Screen position"
+msgstr "Местоположение на екрана"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:65
+msgid ""
+"The magnified view either fills the entire screen, or occupies the top-half, "
+"bottom-half, left-half, or right-half of the screen."
+msgstr ""
+"Увеличеният изглед или запълва екрана, или заема някоя от половините на "
+"екрана — горна, долна, лява или дясна."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:73
+msgid "Magnification factor"
+msgstr "Коефициент на увеличение"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:74
+msgid ""
+"The power of the magnification. A value of 1.0 means no magnification. A "
+"value of 2.0 doubles the size."
+msgstr ""
+"Коефициентът на увеличението. 1.0 означава без увеличение, а 2.0 удвоява "
+"размера."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:81
+msgid "Enable lens mode"
+msgstr "Режим на леща"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:82
+msgid ""
+"Whether the magnified view should be centered over the location of the "
+"system mouse and move with it."
+msgstr ""
+"Дали увеличеният изглед да е центриран върху показалеца на мишката и да се "
+"премества с него."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:89
+msgid "Scroll magnified contents beyond the edges of the desktop"
+msgstr "Превъртане на увеличеното съдържание извън краищата на работния плот"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:92
+msgid ""
+"For centered mouse tracking, when the system pointer is at or near the edge "
+"of the screen, the magnified contents continue to scroll such that the "
+"screen edge moves into the magnified view."
+msgstr ""
+"При центрирано следене на екрана, когато показалецът е близо до ръба на "
+"екрана, увеличеното съдържание може да включи и себе си."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:102
+msgid "Show or hide crosshairs"
+msgstr "Превключване на кръстачка"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:103
+msgid ""
+"Enables/disables display of crosshairs centered on the magnified mouse "
+"sprite."
+msgstr ""
+"Превключване на кръстачка върху показваното увеличено изображение на "
+"показалеца на мишката."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:110
+msgid "Thickness of the crosshairs in pixels"
+msgstr "Дебелина в пиксели на кръстачката"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:111
+msgid ""
+"Width in pixels of the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr ""
+"Широчина в пиксели на хоризонталната и вертикалната линии на кръстачката."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:117
+msgid "Color of the crosshairs"
+msgstr "Цвят на кръстачката"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:118
+msgid ""
+"The color of the the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr "Цвят на на хоризонталната и вертикалната линии на кръстачката."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:126
+msgid "Opacity of the crosshairs"
+msgstr "Непрозрачност на кръстачката"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:127
+msgid ""
+"Determines the transparency of the crosshairs, from fully opaque to fully "
+"transparent."
+msgstr ""
+"Определя непрозрачността на кръстачката, от напълно непрозрачна до напълно "
+"прозрачна."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:135
+msgid "Length of the crosshairs in pixels"
+msgstr "Дължина на кръстачката в пиксели"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:136
+msgid ""
+"Determines the length in pixels of the vertical and horizontal lines that "
+"make up the crosshairs."
+msgstr ""
+"Дължина в пиксели на хоризонталната и вертикалната линии на кръстачката."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:143
+msgid "Clip the crosshairs at the center"
+msgstr "Дупка в средата на кръстачката"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:144
+msgid ""
+"Determines whether the crosshairs intersect the magnified mouse sprite, or "
+"are clipped such that the ends of the horizontal and vertical lines surround "
+"the mouse image."
+msgstr ""
+"Определя дали линиите на кръстачката се пресичат или прекъсват малко преди "
+"да достигнат показалеца на мишката, така че да го заграждат, без да го "
+"покриват."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:152
+msgid "Inverse lightness"
+msgstr "Инверсия на светлината"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:153
+msgid ""
+"Determines whether the lightness values are inverted: darker colors become "
+"lighter and vice versa, and white and black are interchanged."
+msgstr ""
+"Дали светлината се обръща: тъмните цветове стават светли и обратно. Бялото "
+"става черно, а черното — бяло."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:161
+msgid "Color Saturation"
+msgstr "Наситеност на цветовете"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:162
+msgid ""
+"Represents a change to the color saturation, from 0.0 (grayscale) to 1.0 "
+"(full color)."
+msgstr ""
+"Дали да се променя наситеността на цвета, от 0.0 (степени на сивото) до 1.0 "
+"(пълноцветно)."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:170
+msgid "Change brightness of red"
+msgstr "Яркост на червеното"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:171
+msgid ""
+"Represents a change to the default brightness of the red component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Дали да се променя стандартната яркост на червения компонент. 0 означава без "
+"промяна, положителна стойност указва увеличение, а отрицателната — намаление "
+"на яркостта."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:180
+msgid "Change brightness of green"
+msgstr "Яркост на зеленото"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:181
+msgid ""
+"Represents a change to the default brightness for the green component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Дали да се променя стандартната яркост на зеления компонент. 0 означава без "
+"промяна, положителна стойност указва увеличение, а отрицателната — намаление "
+"на яркостта."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:190
+msgid "Change brightness of blue"
+msgstr "Яркост на синьото"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:191
+msgid ""
+"Represents a change to the default brightness for the blue component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Дали да се променя стандартната яркост на синия компонент. 0 означава без "
+"промяна, положителна стойност указва увеличение, а отрицателната — намаление "
+"на яркостта."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:200
+msgid "Change contrast of red"
+msgstr "Яркост на червеното"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:201
+msgid ""
+"Represents a change to the default contrast of the red component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Дали да се променя стандартния контраст на червения компонент. 0 означава "
+"без промяна, положителна стойност указва увеличение, а отрицателната — "
+"намаление на контраста."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:210
+msgid "Change contrast of green"
+msgstr "Контраст на зеленото"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:211
+msgid ""
+"Represents a change to the default contrast of the green component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Дали да се променя стандартния контраст на зеления компонент. 0 означава без "
+"промяна, положителна стойност указва увеличение, а отрицателната — намаление "
+"на контраста."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:220
+msgid "Change contrast of blue"
+msgstr "Контраст на синьото"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:221
+msgid ""
+"Represents a change to the default contrast of the blue component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Дали да се променя стандартния контраст на синия компонент. 0 означава без "
+"промяна, положителна стойност указва увеличение, а отрицателната — намаление "
+"на контраста."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:6
+msgid "Dwell click time"
+msgstr "Време на задържане за натискане"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:7
+msgid "Time in seconds before a click is triggered."
+msgstr "Време в секунди преди отчитане на извършено натискане."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:11
+msgid "Movement threshold"
+msgstr "Праг на изтегляне"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:12
+msgid "Distance in pixels before movement will be recognized."
+msgstr "Разстояние в пиксели преди отчитане на преместване."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:16
+msgid "Gesture single click"
+msgstr "Жест за единично натискане"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:17
+msgid "Direction to perform a single click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Посока за извършване на единично натискане: „left“ (наляво), „right“ "
+"(надясно), „up“ (нагори), „down“ (надолу)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:21
+msgid "Gesture double click"
+msgstr "Жест за двойно натискане"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:22
+msgid "Direction to perform a double click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Посока за извършване на двойно натискане: „left“ (наляво), „right“ "
+"(надясно), „up“ (нагори), „down“ (надолу)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:26
+msgid "Gesture drag click"
+msgstr "Жест за натискане с провлачване"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:27
+msgid "Direction to perform dragging (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Посока за извършване на натискане с провлачване: „left“ (наляво), „right“ "
+"(надясно), „up“ (нагори), „down“ (надолу)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:31
+msgid "Gesture secondary click"
+msgstr "Жест за натискане с другия бутон"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:32
+msgid "Direction to perform a secondary click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Посока за извършване на натискане с другия бутон: „left“ (наляво), „right“ "
+"(надясно), „up“ (нагори), „down“ (надолу)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:36
+msgid "Dwell click mode"
+msgstr "Режим на натискане със задържане"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:37
+msgid ""
+"The active dwell click mode. Possible values are “window” and “gesture”."
+msgstr ""
+"Действащ режим на натискане със задържане. Възможните стойности са „window“ "
+"(прозорец) и „gesture“ (жест)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:41
+msgid "Show click type window"
+msgstr "Показване на прозорец за вид натискане"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:42
+msgid "Show click type window."
+msgstr "Показване на прозорец за вид натискане."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:46
+msgid "Enable dwell clicks"
+msgstr "Включване на натискане със задържане"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:47
+msgid "Enable dwell clicks."
+msgstr "Включване на натискане със задържане."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:51
+msgid "Secondary click enabled"
+msgstr "Симулация на натискането на другия бутон"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:52
+msgid "Enable simulated secondary clicks"
+msgstr "Включване на симулацията на натискането на другия бутон на мишката"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:56
+msgid "Secondary click time"
+msgstr "Време за натискането на другия бутон"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:57
+msgid "Time in seconds before a simulated secondary click is triggered."
+msgstr ""
+"Време в секунди преди отчитане на натискане на другия бутон на мишката."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:6
+msgid "Folder children"
+msgstr "Папки-наследници"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:7
+msgid ""
+"List of relative settings paths at which app-folders are stored. Each folder "
+"uses the org.gnome.desktop.app-folders.folder schema."
+msgstr ""
+"Списък с относителни пътища за настройки, в които се запазват папки с "
+"конфигурации. Всяка папка ползва схемата „org.gnome.desktop.app-"
+"folders.folder“."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:15
+msgid "Folder name"
+msgstr "Име на папка"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:16
+msgid "The name of the application folder."
+msgstr "Името на папката за програми"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:20
+msgid "Translate the name"
+msgstr "Преобразуване на името"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:21
+msgid ""
+"Whether the name key is a filename to be looked up in /usr/share/desktop-"
+"directories."
+msgstr ""
+"Дали ключът за името е файл, който да се търси в някоя от папките „/usr/"
+"share/desktop-directories“."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:26
+msgid "Applications"
+msgstr "Програми"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:27
+msgid ""
+"The list of IDs of applications that are explicitly included in this folder."
+msgstr ""
+"Списък с идентификатори на програми, които са включени изрично в тази папка."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:32
+msgid "Categories"
+msgstr "Категории"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:33
+msgid ""
+"A list of categories for which apps will be placed into this folder by "
+"default, in addition to the apps that are listed in the apps key."
+msgstr ""
+"Списък с категории приложения, които стандартно да се добавят към тази "
+"папка, заедно с програмите, които са зададени в ключа за тях."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:39
+msgid "Excluded applications"
+msgstr "Изключени програми"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:40
+msgid ""
+"A list of IDs of applications that are excluded from this folder. This can "
+"be used to remove applications that would otherwise be included by category."
+msgstr ""
+"Списък с идентификатори на програми, които да се извадят от тази папка. Може "
+"да се ползва за изключването на приложения, които иначе биха били включени "
+"по категория."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:6
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:90
+msgid "Picture Options"
+msgstr "Настройки на изображението"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:7
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:91
+msgid ""
+"Determines how the image set by wallpaper_filename is rendered. Possible "
+"values are “none”, “wallpaper”, “centered”, “scaled”, “stretched”, “zoom”, "
+"“spanned”."
+msgstr ""
+"Определя начина на показване на изображението зададено с ключа "
+"„wallpaper_filename“. Възможните стойности са „none“ (без), „wallpaper“ "
+"(тапет), „centered“ (центрирано), „scaled“ (мащабирано), „stretched“ "
+"(разтеглено), „zoom“ (увеличено), „spanned“ (разпределено)."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:15
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:99
+msgid "Picture URI"
+msgstr "Адрес на изображението"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:16
+#: schemas/org.gnome.desktop.background.gschema.xml.in:24
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:100
+msgid ""
+"URI to use for the background image. Note that the backend only supports "
+"local (file://) URIs."
+msgstr ""
+"Адрес на изображението за фона. Поддържат се само локални адреси (които "
+"почват с „file://“)."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:23
+msgid "Picture URI (dark)"
+msgstr "Адрес на изображението (тъмно)"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:32
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:108
+msgid "Picture Opacity"
+msgstr "Непрозрачност на изображението"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:33
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:109
+msgid "Opacity with which to draw the background picture."
+msgstr "Изобразяването на фона с тази непрозрачност."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:39
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:115
+msgid "Primary Color"
+msgstr "Основен цвят"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:40
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:116
+msgid "Left or Top color when drawing gradients, or the solid color."
+msgstr "Горен/ляв цвят на градиента или единствен цвят."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:46
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:122
+msgid "Secondary Color"
+msgstr "Вторичен цвят"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:47
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:123
+msgid "Right or Bottom color when drawing gradients, not used for solid color."
+msgstr "Долен/десен цвят на градиента, не се ползва при единствен цвят."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:53
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:129
+msgid "Color Shading Type"
+msgstr "Вид градиент (или липса на такъв)"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:54
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:130
+msgid ""
+"How to shade the background color. Possible values are “horizontal”, "
+"“vertical”, and “solid”."
+msgstr ""
+"Как са се изобразява цветът на фона. Възможните стойности са „horizontal“ "
+"(хоризонтален градиент), „vertical“ (вертикален градиент) и „solid“ (един "
+"цвят)."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:61
+msgid "Have file manager handle the desktop"
+msgstr "Мениджърът на файлове да управлява работния плот"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:62
+msgid "If set to true, then file manager will draw the icons on the desktop."
+msgstr ""
+"Ако е зададено, файловият мениджър ще изобразява икони на работния плот."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:10
+msgid "List of breaks that are currently enabled"
+msgstr "Списък с включените в момента почивки"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:22
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:87
+msgid "Time between breaks"
+msgstr "Време между почивките"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:23
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:88
+msgid "The time between rest breaks, in seconds."
+msgstr "Време между почивките, в секунди."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:29
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:94
+msgid "Duration of each break"
+msgstr "Продължителност на всяка почивка"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:30
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:95
+msgid "The duration of each rest break, in seconds."
+msgstr "Продължителност на всяка почивка, в секунди."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:36
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:101
+msgid "Amount to delay break if requested"
+msgstr "Време за забавяне на почивката при заявка"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:37
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:102
+msgid ""
+"The amount to delay taking the break by, if the user requests a delay, in "
+"seconds."
+msgstr ""
+"Време за забавяне на почивката при заявка от потребителя за това, в секунди."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:43
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:108
+msgid "Fade screen during breaks"
+msgstr "Затъмняване на екрана между почивките"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:44
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:109
+msgid "True to fade the screen during rest breaks."
+msgstr "Задайте да е истина, за затъмняване на екрана между почивките."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:49
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:114
+msgid "Lock screen during breaks"
+msgstr "Заключване на екрана между почивките"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:50
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:115
+msgid "True to lock the screen during rest breaks."
+msgstr "Задайте да е истина, за заключване на екрана между почивките."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:55
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:120
+msgid "Play sound when a break finishes"
+msgstr "Звук при приключване на почивката"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:56
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:121
+msgid "True to play a sound when a break finishes."
+msgstr ""
+"Задайте да е истина, за изпълнение на звук при приключване на почивката."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:61
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:79
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:126
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:144
+msgid "Notify when a break is due"
+msgstr "Известяване при предстояща почивка"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:62
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:127
+msgid "True to emit a notification when a break is due to start."
+msgstr ""
+"Задайте да е истина, за извеждане на известяване при предстояща почивка."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:67
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:132
+msgid "Notify when a break is upcoming"
+msgstr "Известяване при приближаваща почивка"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:68
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:133
+msgid "True to emit a notification a few minutes before a break is due."
+msgstr ""
+"Задайте да е истина, за извеждане на известяване при приближаваща почивка."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:73
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:138
+msgid "Notify when a break is overdue"
+msgstr "Известяване при забавена почивка"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:74
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:139
+msgid "True to emit a notification when a break is overdue."
+msgstr "Задайте да е истина, за извеждане на известяване при забавена почивка."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:80
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:145
+msgid "True to show a prominent countdown shortly before a break is due."
+msgstr ""
+"Задайте да е истина, за обратен брояч малко преди започването на почивка."
+
+#: schemas/org.gnome.desktop.calendar.gschema.xml.in:6
+msgid "Show the week date in the calendar"
+msgstr "Номер на седмицата в календара"
+
+#: schemas/org.gnome.desktop.calendar.gschema.xml.in:7
+msgid "If true, display the ISO week date in the calendar."
+msgstr "Ако е зададено, ще се изобразява номерът на седмицата по ISO."
+
+#: schemas/org.gnome.desktop.datetime.gschema.xml.in:6
+msgid "Automatically update timezone"
+msgstr "Автоматично обновяване на часовия пояс"
+
+#: schemas/org.gnome.desktop.datetime.gschema.xml.in:7
+msgid "Whether to automatically update the timezone using geolocation."
+msgstr "Дали часовия пояс да се обновява автоматично според местоположението."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:14
+msgid "Default calendar"
+msgstr "Стандартен календар"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:15
+msgid ""
+"Default calendar application DEPRECATED: This key is deprecated and ignored. "
+"The preferred calendar application is the application handling the text/"
+"calendar mime type."
+msgstr ""
+"Стандартна програма за календар. Този ключ е остарял и вече не се ползва. "
+"Предпочитаната програма за календар управлява обектите с вид по MIME „text/"
+"calendar“."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:24
+msgid "Calendar needs terminal"
+msgstr "Програмата за календар ползва терминал"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:25
+msgid ""
+"Whether the default calendar application needs a terminal to run. "
+"DEPRECATED: This key is deprecated and ignored. The preferred calendar "
+"application is the application handling the text/calendar mime type, whether "
+"it needs a terminal is taken from its desktop file."
+msgstr ""
+"Дали стандартната програма за календар се изпълнява в терминал. Този ключ е "
+"остарял и вече не се ползва. Предпочитаната програма за календар управлява "
+"обектите с вид по MIME „text/calendar“. Ползването на терминал се указва в "
+"съответния файл „.desktop“."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:37
+msgid "Default tasks"
+msgstr "Стандартни задачи"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:38
+msgid "Default tasks application."
+msgstr "Стандартна програма за задачи."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:44
+msgid "Tasks needs terminal"
+msgstr "Програмата за задачи ползва терминал"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:45
+msgid "Whether the default tasks application needs a terminal to run."
+msgstr "Дали стандартната програма за задачи се изпълнява в терминал."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:53
+msgid "Terminal application"
+msgstr "Програма за терминал"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:54
+msgid ""
+"Terminal program to use when starting applications that require one. "
+"DEPRECATED: This key is deprecated and ignored. The default terminal is "
+"handled in GIO."
+msgstr ""
+"Програма за терминал, която се ползва, когато някое приложение изисква "
+"такава. Този ключ е остарял и вече не се ползва. Задаването на стандартен "
+"терминал е изместено в „GIO“."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:63
+msgid "Exec Arguments"
+msgstr "Аргументи при изпълнение"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:64
+msgid ""
+"Argument used to execute programs in the terminal defined by the “exec” key. "
+"DEPRECATED: This key is deprecated and ignored. The default terminal and how "
+"to invoke it is handled in GIO."
+msgstr ""
+"Аргументи, които да се подадат към командата за терминал, зададена в ключа "
+"„exec“. Този ключ е остарял и вече не се ползва. Задаването на стандартен "
+"терминал и стартирането му е изместено в „GIO“."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:7
+msgid "Current input source"
+msgstr "Текущ метод за вход"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:8
+msgid ""
+"The zero-based index into the input sources list specifying the current one "
+"in effect. The value is automatically capped to remain in the range [0, "
+"sources_length) as long as the sources list isn’t empty. DEPRECATED: This "
+"key is deprecated and ignored."
+msgstr ""
+"Индекс с начало 0 в списъка с методи за вход, указващ текущо ползвания "
+"метод. Стойността автоматично се привежда да е в диапазона [0, "
+"дължина_на_списъка) стига списъкът да не е празен. Този ключ е остарял и "
+"вече не се ползва."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:19
+msgid "List of input sources"
+msgstr "Списък с методите за вход"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:20
+msgid ""
+"List of input source identifiers available. Each source is specified as a "
+"tuple of 2 strings. The first string is the type and can be one of “xkb” or "
+"“ibus”. For “xkb” sources the second string is “xkb_layout+xkb_variant” or "
+"just “xkb_layout” if a XKB variant isn’t needed. For “ibus” sources the "
+"second string is the IBus engine name. An empty list means that the X "
+"server’s current XKB layout and variant won’t be touched and IBus won’t be "
+"used."
+msgstr ""
+"Списък с указатели на методите за вход. Всеки от указателите е двойка "
+"низове. Първият указва вида и може да е „xkb“ или „ibus“. За източниците от "
+"вида „xkb“ вторият низ е „подредба_на_xkb+вариант_на_xkb“ или просто "
+"„подредба_на_xkb“, ако няма нужда от вариант. За източниците от вида „ibus“ "
+"вторият низ е името на модула на „IBus“. Празен списък означава, че текущата "
+"подредба и вариант на X сървъра няма да се променят и няма да се ползва "
+"„IBus“."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:33
+msgid "List of most recently used input sources"
+msgstr "Списък с последно ползваните методи за вход"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:34
+msgid ""
+"List of most recently used input sources. The value is in the same format as "
+"the available sources list."
+msgstr ""
+"Списък с последно ползваните методи за вход. Форматът е същият както на "
+"списъка с методите за вход."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:41
+msgid "List of XKB options"
+msgstr "Списък с настройки на XKB"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:42
+msgid ""
+"List of XKB options. Each option is an XKB option string as defined by "
+"xkeyboard-config’s rules files."
+msgstr ""
+"Списък с настройки на XKB. Всяка от тях е настройка на опция за XKB както е "
+"дефинирана във файловете с правила на xkeyboard-config."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:49
+msgid "XKB model to use"
+msgstr "Модел на XKB за използване"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:50
+msgid ""
+"The XKB model to use. The value is the same identifier as defined by "
+"xkeyboard-config’s geometry files."
+msgstr ""
+"Моделът на XKB, който да се използва. Стойността е същият идентификатор, "
+"който е зададен от геометричните файлове на xkeyboard-config."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:57
+msgid "Show all installed input sources"
+msgstr "Извеждане на всички методи за вход"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:58
+msgid ""
+"Makes all installed input sources available for choosing in System Settings."
+msgstr ""
+"Всички инсталирани методи да са налични за избор в настройките на системата."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:65
+msgid "Use different input sources for each window"
+msgstr "Отдѐлен метод за вход за всеки прозорец"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:66
+msgid ""
+"When enabled, input sources get attached to the currently focused window "
+"when activated."
+msgstr ""
+"Когато е активно, методът за вход зависи от текущо фокусирания прозорец."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:6
+msgid "Enable Toolkit Accessibility"
+msgstr "Включване на достъпността на графичната среда"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:7
+msgid "Whether toolkits should load accessibility related modules."
+msgstr ""
+"Дали графичните обекти да се зареждат с модулите за поддръжка на достъпност "
+"на средата"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:13
+msgid "Enable Animations"
+msgstr "Включване на анимациите"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:14
+msgid ""
+"Whether animations should be displayed. Note: This is a global key, it "
+"changes the behaviour of the window manager, the panel etc."
+msgstr ""
+"Дали да се ползват анимации. Това е глобален ключ, той променя поведението "
+"на мениджъра на прозорци, панела и др."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:21
+msgid "Menus Have Tearoff"
+msgstr "Откъсване на менютата"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:22
+msgid "Whether menus should have a tearoff."
+msgstr "Дали менютата да може да се откъсват."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:28
+msgid "Can Change Accels"
+msgstr "Промяна на клавишните комбинации"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:29
+msgid ""
+"Whether the user can dynamically type a new accelerator when positioned over "
+"an active menuitem."
+msgstr ""
+"Дали потребителят да може динамично да сменя клавишната комбинация за "
+"действие, докато обектът от менюто, отговарящ за него, е активен."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:36
+msgid "Toolbar Style"
+msgstr "Стил на лентата с инструменти"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:37
+msgid ""
+"Toolbar Style. Valid values are “both”, “both-horiz”, “icons”, and “text”."
+msgstr ""
+"Стил на лентата с инструменти. Възможните стойности са „both“ (икони с "
+"текст), „both-horiz“ (икони с текст хоризонтално), „icons“ (икони) и „text“ "
+"(текст)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:44
+msgid "Menubar Detachable"
+msgstr "Отделима лента с меню"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:45
+msgid "Whether the user can detach menubars and move them around."
+msgstr ""
+"Дали потребителят може да отдѐля лентите с меню и дали може да ги мести."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:51
+msgid "Toolbar Detachable"
+msgstr "Отделима лента с инструменти"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:52
+msgid "Whether the user can detach toolbars and move them around."
+msgstr ""
+"Дали потребителят може да отдѐля лентите с инструменти и дали може да ги "
+"мести."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:58
+msgid "Toolbar Icon Size"
+msgstr "Размер на иконите"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:59
+msgid "Size of icons in toolbars, either “small” or “large”."
+msgstr "Размер на иконите в лентите: „small“ (малък) или „large“ (голям)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:65
+msgid "Cursor Blink"
+msgstr "Мигащ курсор"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:66
+msgid "Whether the cursor should blink."
+msgstr "Дали курсорът да мига."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:73
+msgid "Cursor Blink Time"
+msgstr "Време на мигане на курсора"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:74
+msgid "Length of the cursor blink cycle, in milliseconds."
+msgstr "Дължина на цикъла за премигване на курсора в милисекунди."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:81
+msgid "Cursor Blink Timeout"
+msgstr "Време за спиране на мигането на курсора"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:82
+msgid "Time after which the cursor stops blinking, in seconds."
+msgstr "Време, след което курсорът спира да премигва, в секунди."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:88
+msgid "Icon Theme"
+msgstr "Тема на иконите"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:89
+msgid "Icon theme to use for the panel, nautilus etc."
+msgstr "Тема за иконите в панела, nautilus и т.н."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:95
+msgid "Gtk+ Theme"
+msgstr "Тема за Gtk+"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:96
+msgid "Basename of the default theme used by gtk+."
+msgstr "Име на темата, ползвана за gtk+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:102
+msgid "Gtk+ Keybinding Theme"
+msgstr "Схема на клавишните комбинации"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:103
+msgid "Basename of the default keybinding theme used by gtk+."
+msgstr "Име на схемата на клавишните комбинации в gtk+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:109
+msgid "Default font"
+msgstr "Стандартен шрифт"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:110
+msgid "Name of the default font used by gtk+."
+msgstr "Име на стандартния шрифт в gtk+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:116
+msgid "Directories with avatar faces"
+msgstr "Папки с аватари"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:117
+msgid ""
+"Directories to override the default avatar faces installed by gnome-control-"
+"center."
+msgstr ""
+"Папки с изображения, които заменят стандартните изображения на аватари в "
+"gnome-control-center."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:124
+msgid "Text scaling factor"
+msgstr "Коефициент на мащабиране на текста"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:125
+msgid ""
+"Factor used to enlarge or reduce text display, without changing font size."
+msgstr ""
+"Коефициент на увеличаване или намаляване на изобразения текст без смяна на "
+"кегела."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:131
+msgid "Window scaling factor"
+msgstr "Коефициент на мащабиране на прозорците"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:132
+msgid ""
+"Integer factor used to scale windows by. For use on high-dpi screens. 0 "
+"means pick automatically based on monitor."
+msgstr ""
+"Целочислен коефициент на увеличаване на прозорците, предназначен е за екрани "
+"с висока разделителна способност. 0 означава автоматичен избор според "
+"монитора."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:139
+msgid "GTK IM Preedit Style"
+msgstr "Стил за предварително редактиране на метода за вход"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:140
+msgid "Name of the GTK+ input method Preedit Style used by gtk+."
+msgstr "Име на стила за предварително редактиране на метода за вход на GTK+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:146
+msgid "GTK IM Status Style"
+msgstr "Стил за състоянието на метода за вход"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:147
+msgid "Name of the GTK+ input method Status Style used by gtk+."
+msgstr "Име на стила за състоянието на метода за вход на GTK+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:153
+msgid "GTK IM Module"
+msgstr "Модул за метода за вход"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:154
+msgid "Name of the input method module used by GTK+."
+msgstr "Име на модула за метода за вход на GTK+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:160
+msgid "Document font"
+msgstr "Шрифт за документите"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:161
+msgid "Name of the default font used for reading documents."
+msgstr "Име на стандартния шрифт при изобразяване на документи."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:167
+msgid "Monospace font"
+msgstr "Равноширок шрифт"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:168
+msgid ""
+"Name of a monospaced (fixed-width) font for use in locations like terminals."
+msgstr "Име на равноширок шрифт за терминали и др."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:175
+msgid "Menubar accelerator"
+msgstr "Клавишна комбинация за лентата за меню"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:176
+msgid "Keyboard shortcut to open the menu bars."
+msgstr "Клавишна комбинация за отваряне на лентата за меню."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:182
+msgid "Cursor theme"
+msgstr "Тема на показалеца"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:183
+msgid ""
+"Cursor theme name. Used only by Xservers that support the Xcursor extension."
+msgstr ""
+"Име за темата за показалеца на мишката. Използва се от варианти на X сървъри "
+"с поддръжка на разширението Xcursor."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:187
+msgid "Cursor size"
+msgstr "Размер на показалеца"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:188
+msgid "Size of the cursor used as cursor theme."
+msgstr "Размер на показалеца за темата."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:192
+msgid "Timeout before click repeat"
+msgstr "Време за първо повтаряне"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:193
+msgid ""
+"Timeout in milliseconds before a click starts repeating (on spinner buttons "
+"for example)."
+msgstr ""
+"Време в милисекунди преди отчитане на първото повторно натискане (примерно "
+"на полета със стрелки за избор на числена стойност)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:197
+msgid "Timeout between click repeats"
+msgstr "Време за следващо повтаряне"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:198
+msgid ""
+"Timeout in milliseconds between repeated clicks when a button is left "
+"pressed."
+msgstr ""
+"Време в милисекунди преди отчитане на следващо повторно натискане при "
+"задържан натиснат бутон на мишката."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:202
+msgid "Palette used in the color selector"
+msgstr "Палитра при избор на цвят"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:203
+msgid ""
+"Palette used in the color selector as defined by the “gtk-color-palette” "
+"setting"
+msgstr "Палитра за избор на цвят според настройката „gtk-color-palette“."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:207
+msgid "List of symbolic names and color equivalents"
+msgstr "Списък с имена на цвят и числовото им представяне"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:208
+msgid ""
+"A “\\n” separated list of “name:color” as defined by the “gtk-color-scheme” "
+"setting"
+msgstr ""
+"Списък от двойки „име:цвят“, разделени с „\\n“ според настройката „gtk-color-"
+"scheme“."
+
+#. TRANSLATORS: select your locale's default clock format, this should be '12h' or '24h' (with the quotes!)
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:212
+msgid "'24h'"
+msgstr "'24h'"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:213
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:214
+msgid "Whether the clock displays in 24h or 12h format"
+msgstr "Дали се ползва 24-часов или 12-часов формат на времето"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:220
+msgid "Whether the clock shows seconds"
+msgstr "Дали часовникът показва секундите"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:221
+msgid "If true, display seconds in the clock."
+msgstr "Когато е зададено, в часовника се показват и секундите."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:227
+msgid "Show date in clock"
+msgstr "Показване на дата в часовника"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:228
+msgid "If true, display date in the clock, in addition to time."
+msgstr "Когато е зададено, в часовника се извежда и датата към времето."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:234
+msgid "Show weekday in clock"
+msgstr "Показване на деня от седмицата"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:235
+msgid "If true, display weekday in the clock, in addition to time."
+msgstr ""
+"Когато е зададено, в часовника се извежда и денят от седмицата към времето."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:241
+msgid "Enable hot corners"
+msgstr "Активни ъгли"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:242
+msgid ""
+"If true, the activities overview can be accessed by moving the mouse to the "
+"top-left corner."
+msgstr ""
+"Когато е зададено, прегледът на дейностите се показва при преместване на "
+"показалеца на мишката в горния ляв ъгъл."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:249
+msgid "Show battery percentage"
+msgstr "Процент заряд на батерията"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:250
+msgid ""
+"If true, display battery percentage in the status menu, in addition to the "
+"icon."
+msgstr ""
+"Когато е зададено, в лентата за състояние се извежда и процентът заряд на "
+"батерията, заедно с иконата за това."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:256
+msgid "Enable the primary paste selection"
+msgstr "Копиране със средния бутон"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:257
+msgid ""
+"If true, gtk+ uses the primary paste selection, usually triggered by a "
+"middle mouse button click."
+msgstr ""
+"Когато е зададено, gtk+ ползва поставяне на основния избор, което обикновено "
+"се задейства със средния бутон на мишката."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:263
+msgid "Allow overlay scrolling"
+msgstr "Ленти за придвижване"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:264
+msgid ""
+"Whether scrollbars should be overlayed as indicators. Depending on input "
+"devices in use, permanent scrollbars may still be displayed."
+msgstr ""
+"Дали лентите за придвижване да се показват като индикатори. В зависимост от "
+"устройствата за вход, може да се показват и постоянни ленти за придвижване."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:272
+msgid "Highlights the current location of the pointer."
+msgstr "Открояване на текущото местоположение на показалеца"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:273
+msgid ""
+"If true, pressing a key will highlight the current pointer location on "
+"screen."
+msgstr ""
+"Когато е зададено, натискането на клавиш ще доведе до открояване на текущото "
+"местоположение на показалеца на мишката."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:279
+msgid "Antialiasing"
+msgstr "Заглаждане"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:280
+msgid ""
+"The type of antialiasing to use when rendering fonts. Possible values are: "
+"“none” for no antialiasing, “grayscale” for standard grayscale antialiasing, "
+"and “rgba” for subpixel antialiasing (LCD screens only)."
+msgstr ""
+"Видът заглаждане за изобразяваните шрифтове. Възможните стойности са „none“ "
+"за изключване на заглаждането, „grayscale“ за степени на сивото и „rgba“ за "
+"подпикселно заглаждане (само за LCD екрани)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:286
+msgid "Hinting"
+msgstr "Шрифтови подсказки"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:287
+msgid ""
+"The type of hinting to use when rendering fonts. Possible values are: “none” "
+"for no hinting and “slight” for fitting only to the Y-axis like Microsoft’s "
+"ClearType, DirectWrite and Adobe’s proprietary font rendering engine. "
+"Ignores native hinting within the font, generates hints algorithmically. "
+"Used on Ubuntu by default. Recommended. The meaning of “medium” and “full” "
+"depends on the font format (.ttf, .otf, .pfa/.pfb) and the installed version "
+"of FreeType. They usually try to fit glyphs to both the X and the Y axis "
+"(except for .otf: Y-only). This can lead to distortion and/or inconsistent "
+"rendering depending on the quality of the font, the font format and the "
+"state of FreeType’s font engines."
+msgstr ""
+"Видът подсказки при изобразяването на шрифтове. Възможните стойности са: "
+"„none“ — без подсказки, „slight“ — леки, напасване само по вертикалната ос, "
+"подобно на ClearType и DirectWrite от Microsoft, както собственическия модул "
+"на Adobe за изобразяване на шрифтове. Подсказките се генерират алгоритмично, "
+"не се ползват вградените в шрифта. Стандартна настройка за Ubuntu и се "
+"препоръчва. Значението на „medium“ (средни) и „full“ (пълни) зависи от "
+"форма̀та на шрифта (.ttf, .otf, .pfa/.pfb), както и на версията на FreeType. "
+"Обикновено се извършва напасване на глифите и по двете оси (с изключение "
+"на .otf: пак е само по вертикалната ос. Това може да доведе до изкривяване "
+"или различно изобразяване на знаците в зависимост от качеството на шрифта, "
+"форматът му, както и версията на FreeType."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:293
+msgid "RGBA order"
+msgstr "Ред на RGBA"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:294
+msgid ""
+"The order of subpixel elements on an LCD screen; only used when antialiasing "
+"is set to “rgba”. Possible values are: “rgb” for red on left (most common), "
+"“bgr” for blue on left, “vrgb” for red on top, “vbgr” for red on bottom."
+msgstr ""
+"Подредба на цветовите компоненти в рамките на отдѐлен пиксел. Използва се "
+"само при подпикселно заглаждане (rgba). Възможните стойности са „rgb“ за "
+"червено отляво (най-чест вариант), „bgr“ червено отдясно, „vrgb“ червено "
+"отгоре, „vbgr“ червено отдолу."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:300
+msgid "Color scheme"
+msgstr "Цветова схема"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:301
+msgid ""
+"The preferred color scheme for the user interface. Valid values are "
+"“default”, “prefer-dark”, “prefer-light”."
+msgstr ""
+"Име на предпочитаната цветова схема на потребителския интерфейс. Валидните "
+"стойности са „default“ (стандартна), „prefer-dark“ (предпочитано тъмна), "
+"„prefer-light“ (предпочитано светла)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:307
+msgid "Font rendering"
+msgstr "Изобразяване на шрифтове"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:308
+msgid ""
+"Preference to indicate whether font rendering should follow the low-level "
+"`font-hinting` and `font-antialiasing` and `font-rgba-order` settings, or "
+"take environmental factors such as screen resolution and scaling into "
+"account. Possible values are: \"manual\" for respecting the low-level "
+"settings, or \"automatic\" for letting the toolkit make its own decisions."
+msgstr ""
+"Настройка как да се определя начина на изобразяване на шрифтове. Дали от "
+"вътрешните настройки за „font-hinting“ (подсказки за шрифтове), „font-"
+"antialiasing“ (заглаждане на шрифтове) или „font-rgba-order“ "
+"(последователност на цветовете в пиксел) или на базата на разделителната "
+"способност на екрана и мащабирането. Възможните стойности са „manual“ — на "
+"база вътрешните настройки и „automatic“ — на база решението на графичната "
+"среда."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:316
+msgid "Accent color"
+msgstr "Акцентиращ цвят"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:317
+msgid ""
+"The preferred accent color for the user interface. Valid values are "
+"\"blue\", \"teal\", \"green\", \"yellow\", \"orange\", \"red\", \"pink\", "
+"\"purple\", \"slate\"."
+msgstr ""
+"Предпочитаният акцентиращ цвят за потребителския интерфейс. Валидни са "
+"стойностите:\n"
+"„blue“ (синьо), „teal“ (синьо-зелено), „green“ (зелено), „yellow“ (жълто), "
+"„orange“ (оранжево), „red“ (червено), „pink“ (розово), „purple“ (виолетово), "
+"„slate“ (тъмносиво)."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:6
+msgid "Disable command line"
+msgstr "Изключване на командния ред"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:7
+msgid ""
+"Prevent the user from accessing the terminal or specifying a command line to "
+"be executed. For example, this would disable access to the panel’s “Run "
+"Application” dialog."
+msgstr ""
+"Предотвратяване на достъпа на потребителя до терминал или възможността да "
+"укаже команда за изпълнение. Напр. това изключва достъпа до диалоговия "
+"прозорец „Стартиране на програма“ на панела."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:15
+msgid "Disable saving files to disk"
+msgstr "Изключване на запазването на файлове на диска"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:16
+msgid ""
+"Prevent the user from saving files to disk. For example, this would disable "
+"access to all applications’ “Save as” dialogs."
+msgstr ""
+"Предотвратяване на записването на файлове от потребителя. Напр. това "
+"изключва диалоговия прозорец „Запазване като“ във всички програми."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:23
+msgid "Disable printing"
+msgstr "Изключване на печата"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:24
+msgid ""
+"Prevent the user from printing. For example, this would disable access to "
+"all applications’ “Print” dialogs."
+msgstr ""
+"Предотвратяване на печата от потребителя. Напр. това изключва диалоговия "
+"прозорец „Печат“ във всички програми."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:31
+msgid "Disable print setup"
+msgstr "Изключване на настройките на печата"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:32
+msgid ""
+"Prevent the user from modifying print settings. For example, this would "
+"disable access to all applications’ “Print Setup” dialogs."
+msgstr ""
+"Предотвратяване на настройването на печата от потребителя. Напр. това "
+"изключва диалоговия прозорец „Настройки на печата“ във всички програми."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:39
+msgid "Disable user switching"
+msgstr "Изключване на смяната на потребител"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:40
+msgid ""
+"Prevent the user from switching to another account while their session is "
+"active."
+msgstr ""
+"Предотвратяване на смяната на потребител докато първоначалната сесия работи."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:47
+msgid "Disable lock screen"
+msgstr "Изключване на заключването на екрана"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:48
+msgid "Prevent the user from locking their screen."
+msgstr "Предотвратяване на заключването на екрана от потребителите."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:54
+msgid "Disable URL and MIME type handlers"
+msgstr "Изключване на обработката според адреса и вида MIME"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:55
+msgid "Prevent running any URL or MIME type handler applications."
+msgstr ""
+"Предотвратяване на стартиране на приложения, регистрирали поддръжка на "
+"определен вид адрес или MIME."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:61
+msgid "Disable log out"
+msgstr "Изключване на изхода от сесията"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:62
+msgid "Prevent the user from logging out."
+msgstr "Предотвратяване на изхода на отделния потребител."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:68
+msgid "Disable user administration"
+msgstr "Изключване на администрирането на потребители"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:69
+msgid ""
+"Stop the user from modifying user accounts. By default, we allow adding and "
+"removing users, as well as changing other users settings."
+msgstr ""
+"Предотвратяване на промяната на регистрациите на потребителите. Стандартно "
+"се позволява добавянето и премахването на потребители, както и промяната на "
+"настройките на другите потребители."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:76
+msgid "Mount removable storage devices as read-only"
+msgstr "Преносимите носители да се монтират само за четене"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:77
+msgid ""
+"Prevent users from writing or modifying files on removable storage devices "
+"(i.e. flash disks, mobile phones, cameras)."
+msgstr ""
+"Предотвратяване на запазването или промяната на файлове на преносими "
+"носители (напр. памет, мобилни телефони, фотоапарати и т.н.)"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:84
+msgid "Disable password showing"
+msgstr "Изключване на показването на паролите"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:85
+msgid "Disable the \"Show Password\" menu item in password entries."
+msgstr ""
+"Изключване на възможността за „Показване на паролата“ в диалоговите прозорци "
+"за пароли."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:6
+msgid "Whether to automatically mount media"
+msgstr "Дали преносимите носители да се монтират автоматично"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:7
+msgid ""
+"If set to true, then Nautilus will automatically mount media such as user-"
+"visible hard disks and removable media on start-up and media insertion."
+msgstr ""
+"Ако е включено, Nautilus автоматично ще монтира дискове и преносими носители "
+"при стартирането си и при поставянето им."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:11
+msgid "Whether to automatically open a folder for automounted media"
+msgstr "Дали автоматично да се отваря папка с монтирания носител"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:12
+msgid ""
+"If set to true, then Nautilus will automatically open a folder when media is "
+"automounted. This only applies to media where no known x-content/* type was "
+"detected; for media where a known x-content type is detected, the user "
+"configurable action will be taken instead."
+msgstr ""
+"Ако е зададено, Nautilus ще отваря папка с автоматично монтирания носител. "
+"Това се отнася само за носителите без познат вид „x-content/*“. Ако такъв е "
+"засечен, ще се изпълни настроеното действие."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:16
+msgid "Never prompt or autorun/autostart programs when media are inserted"
+msgstr ""
+"Без запитване и без автоматично изпълнение на програми при поставяне на "
+"носител"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:17
+msgid ""
+"If set to true, then Nautilus will never prompt nor autorun/autostart "
+"programs when a medium is inserted."
+msgstr ""
+"Когато е включено, Nautilus няма да предлага и няма да стартира програми при "
+"поставяне на носител."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:21
+msgid ""
+"List of x-content/* types where the preferred application will be launched"
+msgstr ""
+"Списък с видове „x-content/*“, за които ще се изпълни предпочитана програма"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:22
+msgid ""
+"List of x-content/* types for which the user have chosen to start an "
+"application in the preference capplet. The preferred application for the "
+"given type will be started on insertion on media matching these types."
+msgstr ""
+"Списък с видове „x-content/*“, за които потребителят е настроил стартиране "
+"на програма. При поставянето на медия от този вид приложението ще бъде "
+"изпълнено."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:26
+msgid "List of x-content/* types set to “Do Nothing”"
+msgstr "Списък с видове „x-content/*“, за които няма да се прави нищо"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:27
+msgid ""
+"List of x-content/* types for which the user have chosen “Do Nothing” in the "
+"preference capplet. No prompt will be shown nor will any matching "
+"application be started on insertion of media matching these types."
+msgstr ""
+"Списък с видове „x-content/*“, за които потребителят е настроил да не се "
+"прави нищо. При поставянето на медия от този вид няма да се стартира "
+"приложение и няма да се отваря прозорец със запитване."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:31
+msgid "List of x-content/* types set to “Open Folder”"
+msgstr "Списък с видове „x-content/*“, за които да се отваря папка"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:32
+msgid ""
+"List of x-content/* types for which the user have chosen “Open Folder” in "
+"the preferences capplet. A folder window will be opened on insertion of "
+"media matching these types."
+msgstr ""
+"Списък с видове „x-content/*“, за които потребителят е настроил „Отваряне на "
+"папка“. При поставянето на медия от този ще се отваря съответната ѝ папка."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:6
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:55
+msgid "Show notification banners"
+msgstr "Показване на известия"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:7
+msgid "Whether notification banners are visible for application notifications."
+msgstr "Дали известията от програми изрично да се показват."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:14
+msgid "Show notifications in the lock screen"
+msgstr "Известия при заключен екран"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:15
+msgid "Whether notifications are shown in the lock screen or not."
+msgstr "Дали известията да се показват при заключен екран или не."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:31
+msgid "Application ID"
+msgstr "Идентификатор на програма"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:32
+msgid "The application that this policy is for."
+msgstr "За кое приложение се отнася тази политика."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:39
+msgid "Enable notifications"
+msgstr "Включване на известията"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:40
+msgid "Whether notifications are globally enabled for this application."
+msgstr "Дали известията са включени глобално за тази програма."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:47
+msgid "Enable sound alerts"
+msgstr "Включване на звуковите известия"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:48
+msgid "Whether notifications should be accompanied by sound alerts."
+msgstr "Дали известията да се придружават със звуци."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:56
+msgid ""
+"Whether notification banners for this application are shown or not. Does not "
+"affect clicking on message tray buttons."
+msgstr ""
+"Дали известията от това приложение изрично да се показват. Това не влияе на "
+"показването им при натискана на бутоните в системната тава."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:64
+msgid "Force automatic expanding of banners"
+msgstr "Автоматично разширяване на известията"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:65
+msgid ""
+"Whether notifications from this application are expanded automatically when "
+"in banner mode."
+msgstr ""
+"Дали известията от програмата автоматично да се разширяват, когато бъдат "
+"показани."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:72
+msgid "Show in the lock screen"
+msgstr "Извеждане и при заключен екран"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:73
+msgid ""
+"Whether notifications from this application are shown when the screen is "
+"locked."
+msgstr ""
+"Дали известията от тази програма да се показват, когато екранът е заключен."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:80
+msgid "Show details in the lock screen"
+msgstr "Подробности при заключен екран"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:81
+msgid ""
+"Whether the summary and body of notifications from this application will be "
+"visible in the locked screen."
+msgstr ""
+"Дали не само заглавието, а и тялото на съобщението ще се показва при "
+"заключен екран."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:15
+msgid "Whether edge scrolling is enabled"
+msgstr "Придвижване със сензорния панел"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:16
+msgid ""
+"When enabled, touchpads that support edge scrolling will have that feature "
+"enabled."
+msgstr ""
+"Когато е включено и сензорният панел го поддържа, ще може да се придвижвате "
+"в прозорците чрез плъзгане по ръбовете на панела."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:20
+msgid "Whether two-finger scrolling is enabled"
+msgstr "Придвижване с два пръста"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:21
+msgid ""
+"When enabled, touchpads that support two-finger scrolling will have that "
+"feature enabled."
+msgstr ""
+"Когато е включено и сензорният панел го поддържа, ще може да се придвижвате "
+"в прозорците чрез плъзгане на два пръста."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:25
+msgid "Whether to disable the touchpad while typing"
+msgstr "Изключване на сензорния панел докато клавиатурата се ползва"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:26
+msgid "When enabled, touchpads will be disabled while typing on the keyboard."
+msgstr ""
+"Когато е включено, сензорният панел не отчита действия, докато ползвате "
+"клавиатурата."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:30
+msgid "Enable mouse clicks with touchpad"
+msgstr "Включване на натискане на бутоните на мишката чрез сензорния панел"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:31
+msgid ""
+"Set this to TRUE to be able to send mouse clicks by tapping on the touchpad."
+msgstr ""
+"Задайте да е истина, за да подавате натискания на бутоните на мишката чрез "
+"потупване по сензорния панел."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:35
+msgid "Tap Button Map"
+msgstr "Съответствия на потупванията"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:36
+msgid ""
+"Defines the mapping between the number of fingers and touchpad buttons. The "
+"default is to have a 1, 2 and 3 finger tap to map to the left, right and "
+"middle button (\"lrm\"), respectively."
+msgstr ""
+"Определя съответствието на броя на пръстите при потупване на сензорния панел "
+"и бутона, който се счита за натиснат. Стандартно потупванията с 1, 2 и 3 "
+"пръста съответстван на натискане на основния, допълнителния и средния бутони "
+"на мишката („lrm“ означава ляв, десен, среден)."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:40
+msgid "Enable tap-and-drag with touchpad"
+msgstr "Включване на потупване и влачене"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:41
+msgid ""
+"Set this to TRUE to be able to start a drag by tapping and immediately "
+"moving the finger that’s now pressed on the touchpad."
+msgstr ""
+"Включете, за да започвате провлачване с потупване и местене на пръста докато "
+"е натиснат върху сензорния панел."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:45
+msgid "Enable tap-and-drag-lock with touchpad"
+msgstr "Включване на потупване и влачене без натискане"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:46
+msgid ""
+"Set this to TRUE to lock the dragging process within a short timeout when "
+"the finger is lifted on the touchpad and the tap-and-drag setting is enabled."
+msgstr ""
+"Включете, за да започвате провлачване с потупване и местене на пръста, без "
+"натискане на сензорния панел."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:50
+msgid "Touchpad enabled"
+msgstr "Сензорен панел"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:51
+msgid "Defines the situations in which the touchpad is enabled."
+msgstr "Управление на ситуациите, в които сензорният панел е включен."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:55
+msgid "Touchpad button orientation"
+msgstr "Ориентация на бутоните на сензорния панел"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:56
+msgid ""
+"Swap left and right mouse buttons for left-handed mice with “left”, “right” "
+"for right-handed, “mouse” to follow the mouse setting."
+msgstr ""
+"Задаване на основния бутон да като за мишка за левичари с „left“, като за "
+"мишка за десничари с „right“ и „mouse“, за да се ползват настройките на "
+"мишката."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:60
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:131
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:261
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:279
+msgid "Acceleration profile"
+msgstr "Профил на ускорение"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:61
+msgid ""
+"Acceleration profile used for connected touchpads. The acceleration profile "
+"can be set to either default (“default”) which uses the default acceleration "
+"profile for each device, flat (“flat”), which accelerates by a device "
+"specific constant factor derived from the configured pointer speed, or "
+"adaptive (“adaptive”) which adapts the acceleration depending on the mouse "
+"movement. If a touchpad doesn’t support the configured profile, “default” "
+"will be used."
+msgstr ""
+"Профил на ускорение за свързаните сензорни панели. Той може да се зададе да "
+"е „default“ (стандартния), който ползва стандартния профил за всяко "
+"устройство, „flat“ (плосък), при който ускорението е с постоянен коефициент "
+"на базата на настроената скорост на мишката или „adaptive“ (адаптивен), при "
+"който ускорението зависи от движението на мишката. Ако мишката не поддържа "
+"настроения профил, се ползва „default“."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:65
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:120
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:273
+msgid "Pointer speed"
+msgstr "Скорост на показалеца"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:66
+msgid ""
+"Pointer speed for the touchpad. Accepted values are in the [-1..1] range "
+"(from “unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Скорост на показалеца за сензорния панел. Стандартните стойности са в "
+"интервала [-1;1] (от „unaccelerated“ — без ускорение, до „fast“ — голямо "
+"ускорение). Стойност 0 е стандартната за системата."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:71
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:126
+msgid "Natural scrolling"
+msgstr "Естествено придвижване"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:72
+msgid "Set this to TRUE to enable natural (reverse) scrolling for touchpads."
+msgstr ""
+"Включете за задействането на естественото (обърнато) придвижване чрез "
+"сензорния панел."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:76
+msgid "Click method"
+msgstr "Начин на натискане"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:77
+msgid ""
+"How to generate software-emulated buttons, either disabled (“none”), through "
+"specific areas (“areas”), number of fingers (“fingers”) or left as hardware "
+"default (“default”)."
+msgstr ""
+"Как софтуерно да се имитират бутони. Може да е „none“ — изключено, „areas“ — "
+"чрез определени области, „fingers“ — чрез броя на пръстите „default“ — както "
+"е стандартно за хардуера."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:81
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:136
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:266
+msgid "Emulate middle click"
+msgstr "Имитация на натискане със среден бутон"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:82
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:137
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:267
+msgid ""
+"Set this to TRUE to enable middle click during simultaneous left and right "
+"click."
+msgstr ""
+"Включете за имитирането на натискане със среден бутон, когато едновременно "
+"са натиснати главния и втория бутони."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:88
+msgid "Keyboard repeat"
+msgstr "Повтаряне на клавишите"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:89
+msgid "Set this to TRUE to enable keyboard repeat."
+msgstr "Включете за повтаряне на клавишите."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:93
+msgid "Key Repeat Interval"
+msgstr "Интервал за повтаряне на клавишите"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:94
+msgid "Delay between repeats in milliseconds."
+msgstr "Забавяне в милисекунди между повторенията."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:98
+msgid "Initial Key Repeat Delay"
+msgstr "Забавяне преди първото повторение"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:99
+msgid "Initial key repeat delay in milliseconds."
+msgstr "Забавяне в милисекунди преди първото повторение."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:103
+msgid "Remember NumLock state"
+msgstr "Запомняне на състоянието на NumLock"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:104
+msgid ""
+"When set to true, GNOME will remember the state of the NumLock LED between "
+"sessions."
+msgstr ""
+"Когато е включено, GNOME помни и възстановява състоянието на NumLock в "
+"следващата сесия."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:108
+msgid "NumLock state"
+msgstr "Състояние на NumLock"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:109
+msgid "The remembered state of the NumLock LED."
+msgstr "Запомненото състояние на NumLock."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:115
+msgid "Mouse button orientation"
+msgstr "Ориентация на бутоните на мишката"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:116
+msgid "Swap left and right mouse buttons for left-handed mice."
+msgstr "Замяна на левия и десния бутон на мишката за левичари."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:121
+msgid ""
+"Pointer speed for mice. Accepted values are in the [-1..1] range (from "
+"“unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Скорост на показалеца за мишката. Стандартните стойности са в интервала "
+"[-1;1] (от „unaccelerated“ — без ускорение, до „fast“ — голямо ускорение). "
+"Стойност 0 е стандартната за системата."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:127
+msgid "Set this to TRUE to enable natural (reverse) scrolling for mice."
+msgstr ""
+"Включете за задействането на естественото (обърнато) придвижване чрез "
+"мишката."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:132
+msgid ""
+"Acceleration profile used for connected mice. The acceleration profile can "
+"be set to either default (“default”) which uses the default acceleration "
+"profile for each device, flat (“flat”), which accelerates by a device "
+"specific constant factor derived from the configured pointer speed, or "
+"adaptive (“adaptive”) which adapts the acceleration depending on the mouse "
+"movement. If a mouse doesn’t support the configured profile, “default” will "
+"be used."
+msgstr ""
+"Профил на ускорение за свързаните мишки. Той може да се зададе да е "
+"„default“ (стандартния), който ползва стандартния профил за всяко "
+"устройство, „flat“ (плосък), при който ускорението е с постоянен коефициент "
+"на базата на настроената скорост на мишката или „adaptive“ (адаптивен), при "
+"който ускорението зависи от движението на мишката. Ако мишката не поддържа "
+"настроения профил, се ползва „default“."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:141
+msgid "Double click time"
+msgstr "Време за двойно натискане"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:142
+msgid "Length of a double click in milliseconds."
+msgstr "Време за двойно натискане в милисекунди."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:146
+msgid "Drag threshold"
+msgstr "Праг за влачене"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:147
+msgid "Distance before a drag is started."
+msgstr "Минимално разстояние за начало на влачене."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:153
+msgid "Drawing tablet mapping"
+msgstr "Съответствие на таблета за рисуване"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:154
+msgid ""
+"EDID information of the output the tablet is mapped to. Must be in the "
+"format [vendor, product, serial]. [\"\",\"\",\"\"] relies on automatic "
+"mapping."
+msgstr ""
+"Информация по EDID за съответствие на изхода на таблета. Форматът е "
+"[ПРОИЗВОДИТЕЛ, ПРОДУКТ, СЕРИЕН_НОМЕР]. [\"\",\"\",\"\"] означава автоматично "
+"присвояване."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:158
+msgid "Tablet mapping"
+msgstr "Съответствие на таблета"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:159
+msgid "How input affects the pointer on the screen"
+msgstr "Как входа се отразява на показалеца на екрана"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:163
+msgid "Tablet area"
+msgstr "Област на таблета"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:164
+msgid ""
+"Dead area padding around the active area, in percentages. Respectively "
+"applied to left,right,top and bottom sides."
+msgstr ""
+"Мъртва област около действащата, в проценти. Съответно се прилага за левия, "
+"десния, горния и долния ръб."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:168
+msgid "Tablet aspect ratio"
+msgstr "Отношение на страните на таблета"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:169
+msgid ""
+"Enable this to restrict the tablet area to match the aspect ratio of the "
+"output."
+msgstr ""
+"Когато това е включено, областта на таблета се ограничава до отношението на "
+"страните на изхода."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:173
+msgid "Tablet left-handed mode"
+msgstr "Таблет за левичари"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:174
+msgid ""
+"Enable this to allow physically rotating the tablet for left-handed setups"
+msgstr ""
+"Включете настройката, за да позволите физическото завъртане на таблета за "
+"левичари."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:180
+msgid "Stylus pressure curve"
+msgstr "Крива на на̀тиска на писалката"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:181
+msgid ""
+"Set this to x1, y1 and x2, y2 of the pressure curve applied to the stylus."
+msgstr "Координатите на кривата за натиска за писалката (x1, y1 и x2, y2)."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:185
+msgid "Stylus pressure range"
+msgstr "Диапазон на на̀тиска на писалката"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:186
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:196
+msgid ""
+"Set this to the percentage of the physical pressure range that should map to "
+"the logical range."
+msgstr ""
+"Задайте да е процент от диапазона на физически натиск, който да се "
+"преобразува до диапазон на логически натиск."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:190
+msgid "Eraser pressure curve"
+msgstr "Крива на на̀тиска на гумата"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:191
+msgid ""
+"Set this to x1, y1 and x2, y2 of the pressure curve applied to the eraser."
+msgstr "Координатите на кривата за натиска за гумата (x1, y1 и x2, y2)."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:195
+msgid "Eraser pressure range"
+msgstr "Диапазон на на̀тиска на гумата"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:200
+msgid "Button action"
+msgstr "Действие на бутона"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:201
+msgid "Stylus button action, this button is located along the pen handle."
+msgstr "Действие на бутона на писалката, обикновено този бутон е по тялото ѝ."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:205
+msgid "Secondary button action"
+msgstr "Действие на втория бутон"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:206
+msgid ""
+"Secondary stylus button action, this button is located along the pen handle "
+"on some styli like the Grip Pen. Other styli like the Airbrush Pen or the "
+"Inking Pen only have one button, this setting is ineffective on those."
+msgstr ""
+"Действие на втория бутон на писалката, обикновено този бутон е по тялото ѝ. "
+"Не всички писалки притежават такъв. Примерно Grip Pen я има, а Airbrush Pen "
+"и Inking Pen — не. Съответно тази настройка не влияе на вторите."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:210
+msgid "Tertiary button action"
+msgstr "Действие на третия бутон"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:211
+msgid ""
+"Tertiary stylus button action, this button is located along the pen handle "
+"on some styli like the 3D Pen. Other styli like the Grip Pen only have two "
+"buttons, this setting is ineffective on those."
+msgstr ""
+"Действие на третия бутон на писалката, обикновено този бутон е по тялото ѝ. "
+"Не всички писалки притежават такъв. Примерно 3D Pen я има, а Grip Pen — не. "
+"Съответно тази настройка не влияе на втората."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:215
+msgid "Key combination for the primary button"
+msgstr "Клавишна комбинация за основния бутон"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:216
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:221
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:226
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:238
+msgid ""
+"The keyboard shortcut generated when the button is pressed for custom "
+"actions."
+msgstr ""
+"Клавишната комбинация, която се генерира при натискането на бутона за "
+"потребителско действие."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:220
+msgid "Key combination for the secondary button"
+msgstr "Клавишна комбинация за втория бутон"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:225
+msgid "Key combination for the tertiary button"
+msgstr "Клавишна комбинация за третия бутон"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:232
+msgid "Pad button action type"
+msgstr "Действие чрез натискане"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:233
+msgid "The type of action triggered by the button being pressed."
+msgstr "Видът на действието задействано чрез натискане на бутона."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:237
+msgid "Key combination for the custom action"
+msgstr "Клавишна комбинация за потребителско действие"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:244
+msgid "Touchscreen output mapping"
+msgstr "Съответствие на сензорния екран"
+
+# fuzzy
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:245
+msgid ""
+"EDID information of the output the touchscreen is mapped to. Must be in the "
+"format [vendor, product, serial]. [\"\",\"\",\"\"] relies on automatic "
+"mapping."
+msgstr ""
+"Информация по EDID за съответствие на изхода на сензорния екран. Форматът е "
+"[ПРОИЗВОДИТЕЛ, ПРОДУКТ, СЕРИЕН_НОМЕР]. [\"\",\"\",\"\"] означава автоматично "
+"присвояване."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:252
+msgid "Mouse wheel emulation button. 0 to disable the feature."
+msgstr "Имитация на колелце на мишка. 0 изключва тази възможност."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:256
+msgid "Mouse wheel emulation button lock"
+msgstr "Заключване на имитацията на колелце на мишка"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:257
+msgid ""
+"Set this to TRUE to enable button locking for the wheel emulation button. If "
+"enabled, the first click of the button enables scrolling, the second click "
+"disables scrolling again."
+msgstr ""
+"Включете настройката за заключване на имитацията на колелце на мишка. Така "
+"първото натискане на бутона включва имитацията, а второто го изключва."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:262
+msgid ""
+"Acceleration profile used for the trackball. The acceleration profile can be "
+"set to either default (“default”) which uses the default acceleration "
+"profile, flat (“flat”), which accelerates by a device specific constant "
+"factor derived from the configured speed, or adaptive (“adaptive”) which "
+"adapts the acceleration depending on the movement. If the trackball doesn’t "
+"support the configured profile, “default” will be used."
+msgstr ""
+"Профил на ускорение за свързания трекбол. Той може да се зададе да е "
+"„default“ (стандартния), който ползва стандартния профил за всяко "
+"устройство, „flat“ (плосък), при който ускорението е с постоянен коефициент "
+"на базата на настроената скорост на мишката или „adaptive“ (адаптивен), при "
+"който ускорението зависи от движението на мишката. Ако трекболът не поддържа "
+"настроения профил, се ползва „default“."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:274
+msgid ""
+"Pointer speed for pointing sticks. Accepted values are in the [-1..1] range "
+"(from “unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Скорост на показалеца за указващо лостче. Стандартните стойности са в "
+"интервала [-1;1] (от „unaccelerated“ — без ускорение, до „fast“ — голямо "
+"ускорение). Стойност 0 е стандартната за системата."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:280
+msgid ""
+"Acceleration profile used for the pointing stick. The acceleration profile "
+"can be set to either default (“default”) which uses the default acceleration "
+"profile, flat (“flat”), which accelerates by a device specific constant "
+"factor derived from the configured speed, or adaptive (“adaptive”) which "
+"adapts the acceleration depending on the movement. If the pointing stick "
+"doesn’t support the configured profile, “default” will be used."
+msgstr ""
+"Профил на ускорение за указващото лостче. Той може да се зададе да е "
+"„default“ (стандартния), който ползва стандартния профил за всяко "
+"устройство, „flat“ (плосък), при който ускорението е с постоянен коефициент "
+"на базата на настроената скорост на мишката или „adaptive“ (адаптивен), при "
+"който ускорението зависи от движението на мишката. Ако трекболът не поддържа "
+"настроения профил, се ползва „default“."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:284
+msgid "Scrolling method"
+msgstr "Начин на придвижване"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:285
+msgid ""
+"Scrolling method used for pointing sticks. The scrolling method can be set "
+"to either default (“default”) which uses the default method, none (“none”), "
+"which disables scrolling, or middle-button (“on-button-down”) which enables "
+"scrolling whilst the middle button is held down."
+msgstr ""
+"Начин на придвижване за указващото лостче. Той може да е: „default“, при "
+"което се ползва стандартният метод; „none“, при което придвижването се "
+"изключва; или „on-button-down“, при което придвижване се извършва при "
+"натиснат среден бутон."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:6
+msgid "Controls visibility of personal information"
+msgstr "Видимост на личната информация"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:7
+msgid ""
+"If set to true, the system will make an effort to not divulge the user’s "
+"identity on screen or on the network."
+msgstr ""
+"Когато е зададено, системата ще се опита да не показва идентичността на "
+"потребителя нито на екрана, нито по мрежата."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:12
+msgid "Show full name in the user menu"
+msgstr "Пълно име в менюто с потребители"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:13
+msgid "Whether the users full name is shown in the user menu or not."
+msgstr "Дали потребителите да се показват с пълно име в менюто за тях или не."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:17
+msgid "Whether to remove old files from the trash automatically"
+msgstr "Дали старите обекти автоматично да се изчистват от кошчето"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:18
+msgid ""
+"If TRUE, automatically remove files from the trash when they are older than "
+"“old-files-age” days."
+msgstr ""
+"Когато е зададено, файловете, които са били в кошчето повече от „old-files-"
+"age“ дни, се трият."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:23
+msgid "Whether to remove old temporary files automatically"
+msgstr "Дали старите временни файлове автоматично да се трият."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:24
+msgid ""
+"If TRUE, automatically remove temporary files when they are older than “old-"
+"files-age” days."
+msgstr ""
+"Когато е зададено, временните файлове, които са по-стори от „old-files-age“ "
+"дни, се трият."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:29
+msgid "Number of days to keep trash and temporary files"
+msgstr ""
+"Брой дни преди автоматичното триене на файлове от кошчето и временни файлове"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:30
+msgid "Consider trash and temporary files old after this many days."
+msgstr ""
+"Автоматично триене на временни файлове, както и тези в кошчето след този "
+"брой дни."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:35
+msgid "Whether to remember recently used files"
+msgstr "Дали да се помнят наскоро ползваните файлове"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:36
+msgid "If FALSE, applications will not remember recently used files."
+msgstr "Ако не е включено, програмите няма да помнят скоро ползваните файлове."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:41
+msgid "Number of days to remember recently used files for"
+msgstr "Брой дни за помнене на последно ползваните файлове"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:42
+msgid ""
+"Recently used files will be remembered for this many days. If set to 0, "
+"recent files will not be remembered; if set to -1, they will be retained "
+"indefinitely."
+msgstr ""
+"Брой дни за помнене на последно ползваните файлове. Ако е 0, няма да се "
+"помнят файлове, а стойност -1 означава да се помнят завинаги."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:48
+msgid "Whether to remember application usage"
+msgstr "Помнене на ползваните програми"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:49
+msgid "If FALSE, application usage will not be monitored and recorded."
+msgstr "Когато е изключено, не се наблюдава и помни кои програми са ползвани."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:54
+msgid "Send statistics when applications are removed or installed"
+msgstr "Изпращане на статистика при инсталиране/деинсталиране на програми"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:55
+msgid ""
+"If FALSE, no anonymous installation or removal information will be sent to "
+"the vendor."
+msgstr ""
+"Когато е изключено, няма де се пращат дори и анонимизираните данни кои "
+"приложения се инсталират/деинсталират."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:59
+msgid "Send reports of technical problems to the vendor"
+msgstr "Изпращане на данни за техническите проблеми"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:60
+msgid "If TRUE, anonymized reports will be sent automatically to the vendor."
+msgstr ""
+"Когато е включено, се пращат анонимизирани данни при забиване на програми"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:64
+msgid "Don’t allow applications to access the microphone"
+msgstr "Да не се позволява на програмите да ползват микрофон"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:65
+msgid "If TRUE, applications should not use the microphone."
+msgstr "Когато е включено, програмите нямат никакъв достъп до микрофон."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:69
+msgid "Don’t allow applications to access the camera"
+msgstr "Да не се позволява на програмите да ползват камера"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:70
+msgid "If TRUE, applications should not use the camera."
+msgstr "Когато е включено, програмите нямат никакъв достъп до камера."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:74
+msgid "Don’t allow applications to output sound"
+msgstr "Да не се позволява на програмите да изпълняват звуци"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:75
+msgid "If TRUE, applications should not make sound."
+msgstr "Когато е включено, програмите не може да изпълняват звуци въобще."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:79
+msgid "Whether to protect USB devices"
+msgstr "Защита на устройствата по USB"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:80
+msgid ""
+"If the USBGuard service is present and this setting is enabled, USB devices "
+"will be protected as configured in the usb-protection-level setting."
+msgstr ""
+"Когато настройката е включена и услугата USBGuard е налична, се задейства "
+"защитата срещу злонамерени устройства по USB, както е зададено в настройката "
+"„usb-protection-level“."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:87
+msgid "When USB devices should be rejected"
+msgstr "Кога да се отхвърлят нови устройства по USB"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:88
+msgid ""
+"If set to “lockscreen”, only when the lock screen is present new USB devices "
+"will be rejected; if set to “always”, all new USB devices will always be "
+"rejected."
+msgstr ""
+"Ако е „lockscreen“, нови устройства по USB ще се отхвърлят, когато екранът е "
+"включен. Ако е „always“, всички нови устройства по USB ще се отказват."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:95
+msgid "Whether the privacy screen is enabled"
+msgstr "Дали поверителността на екрана е включена"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:96
+msgid ""
+"If the underlying hardware has privacy screen support and this setting is "
+"enabled, the panels supporting this technology will be obscured from lateral "
+"view."
+msgstr ""
+"Ако хардуерът на екрана поддържа вградена защита на поверителността и тази "
+"настройка е включена, защитата срещу наблюдение на монитора отстрани ще бъде "
+"включена."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:6
+msgid "Activate when idle"
+msgstr "Включване при бездействие"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:7
+msgid ""
+"Set this to TRUE to activate the screensaver when the session is idle. "
+"DEPRECATED: This key is deprecated and ignored. Set "
+"org.gnome.desktop.session idle-delay to 0 if you do not want to activate the "
+"screensaver."
+msgstr ""
+"Включете настройката, за да може по време на бездействие да се включва "
+"програмата за защита на екрана. Този ключ е остарял и вече не се ползва. "
+"Задайте „idle-delay“ в „org.gnome.desktop.session idle-delay“ да е 0, за да "
+"изключите защитата на екрана."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:16
+msgid "Lock on activation"
+msgstr "Заключване при задействане"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:17
+msgid "Set this to TRUE to lock the screen when the screensaver goes active."
+msgstr ""
+"Включете настройката и екранът ще се заключва при задействане на програмата "
+"за защитата му."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:21
+msgid "Time before locking"
+msgstr "Време преди заключване"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:22
+msgid ""
+"The number of seconds after screensaver activation before locking the screen."
+msgstr ""
+"Брой секунди след задействане на програмата за защита на екрана преди "
+"заключването му."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:26
+msgid "Show full name in the lock screen"
+msgstr "Извеждане на пълното име в екрана при заключване"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:27
+msgid ""
+"Whether the user’s full name is shown in the lock screen or not. This only "
+"affects the screen shield, the name is always shown in the unlock dialog."
+msgstr ""
+"Дали пълното име на потребителя да се извежда в екрана при заключване. Това "
+"се отнася само за общия екран. Краткото, системно име винаги се показва."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:31
+msgid "Allow embedding a keyboard into the window"
+msgstr "Виртуална клавиатура при отключване"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:32
+msgid ""
+"Set this to TRUE to allow embedding a keyboard into the window when trying "
+"to unlock. The “keyboard_command” key must be set with the appropriate "
+"command. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Включете настройката, за вграждането на визуална клавиатура в прозореца при "
+"опит за отключване. Ключът „keyboard_command“ трябва да съдържа съответната "
+"команда. Този ключ е остарял и вече не се ползва."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:40
+msgid "Embedded keyboard command"
+msgstr "Команда за вграждане на клавиатура"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:41
+msgid ""
+"The command that will be run, if the “embedded_keyboard_enabled” key is set "
+"to TRUE, to embed a keyboard widget into the window. This command should "
+"implement an XEMBED plug interface and output a window XID on the standard "
+"output. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Когато настройката „embedded_keyboard_enabled“ е включена, командата в този "
+"ключ се изпълнява за вграждането на графичен обект с клавиатура в прозореца. "
+"Командата трябва да поддържа интерфейса XEMBED и да изведе идентификатора "
+"XID на прозореца си на стандартния изход. Този ключ е остарял и вече не се "
+"ползва."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:49
+msgid "Allow logout"
+msgstr "Разрешаване на изхода"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:50
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to allow logging "
+"out after a delay. The delay is specified in the “logout_delay” key. "
+"DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Настройката определя дали диалоговият прозорец за отключване да включва "
+"опция за изход след изчакване. Самото то се задава с настройката "
+"„logout_delay“. Този ключ е остарял и вече не се ползва."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:58
+msgid "Time before logout option"
+msgstr "Забавяне преди позволяване на изход"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:59
+msgid ""
+"The number of seconds after the screensaver activation before a logout "
+"option will appear in the unlock dialog. This key has effect only if the "
+"“logout_enable” key is set to TRUE. DEPRECATED: This key is deprecated and "
+"ignored"
+msgstr ""
+"Брой секунди след включване на програмата за защита на екрана, преди "
+"възможността за изход да се появи в прозореца за отключване. Ключът е в "
+"сила, само ако настройката „logout_enable“ е включена. Този ключ е остарял и "
+"вече не се ползва."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:67
+msgid "Logout command"
+msgstr "Команда при изход"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:68
+msgid ""
+"The command to invoke when the logout button is clicked. This command should "
+"simply log the user out without any interaction. This key has effect only if "
+"the “logout_enable” key is set to TRUE. DEPRECATED: This key is deprecated "
+"and ignored."
+msgstr ""
+"Команда, която да се извика при натискането на бутон за изход. Командата "
+"трябва да приключи сесията на потребителя без нужда от какъвто и да е вход "
+"от потребителя. Ключът е в сила, само ако настройката „logout_enable“ е "
+"включена. Този ключ е остарял и вече не се ползва."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:76
+msgid "Allow user switching"
+msgstr "Позволяване на смяна на потребителя"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:77
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to switch to a "
+"different user account."
+msgstr ""
+"Включете настройката, за да се появи възможност за смяна на потребителя в "
+"диалоговия прозорец за отключване на компютъра."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:81
+msgid "Allow the session status message to be displayed"
+msgstr "Позволяване на съобщение за състоянието на сесията"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:82
+msgid ""
+"Allow the session status message to be displayed when the screen is locked. "
+"DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Позволяване на показването на съобщение за състоянието на сесията при "
+"заключен екран. Този ключ е остарял и вече не се ползва."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:9
+msgid "Enable screen time history"
+msgstr "Включване на проследяването на времето пред екрана"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:10
+msgid ""
+"Enable basic screen time functionality, recording usage data for viewing "
+"history."
+msgstr ""
+"Включване на основната функционалност за ограничаване на времето пред "
+"екрана, като се записват данни за ползването."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:17
+msgid "Enable daily screen time limit"
+msgstr "Включване на ограничаване на времето пред екрана"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:18
+msgid ""
+"Enable imposing a screen time limit on the user, as set in daily-limit-"
+"seconds."
+msgstr ""
+"Включване на ограничаване на времето пред екрана за потребителя [секунди/ден]"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:23
+msgid "Daily screen time limit"
+msgstr "Позволено време на ден пред екрана за потребителя"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:24
+msgid ""
+"The limit on the amount of daily screen time the user is allowed, in seconds."
+msgstr "Позволено време за ползване на компютъра, в секунди на ден."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:30
+msgid "Grayscale once limit is reached"
+msgstr "Изключване на цветовете при достигане на ограничението"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:31
+msgid ""
+"Whether to make the screen grayscale once the user’s screen time limit is "
+"reached."
+msgstr ""
+"Дали екранът да премине в режим на степени на сивото при достигане на "
+"дневното ограничение на времето пред него."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:7
+msgid "Disable all external search providers"
+msgstr "Изключване на всички външни доставчици на резултати при търсене"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:8
+msgid ""
+"Set to true to disable all external search provider programs, whether or not "
+"they are independently disabled or enabled. External search providers are "
+"installed by applications in $XDG_DATA_DIR/gnome-shell/search-providers."
+msgstr ""
+"Когато настройката е зададена, всички външни програми за резултати при "
+"търсене генерално се изключват, независимо дали са включени или изключени "
+"поотделно. Външни програми за търсене се задават с ключовете за приложения в "
+"„$XDG_DATA_DIR/gnome-shell/search-providers“."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:18
+msgid ""
+"List of desktop file IDs for which the associated default-enabled search "
+"provider should be disabled"
+msgstr ""
+"Списък с идентификатори на програми за резултати при търсене, които да се "
+"изключат от стандартно включените доставчици на резултати"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:22
+msgid ""
+"Results for applications contained in this list will not be displayed when "
+"searching."
+msgstr ""
+"Резултатите от търсене с тези програми не се показват в общия резултат."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:30
+msgid ""
+"List of desktop file IDs for which the associated default-disabled search "
+"provider should be enabled"
+msgstr ""
+"Списък с идентификатори на програми за резултати при търсене, които да се "
+"включат в стандартно включените доставчици на резултати"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:34
+msgid ""
+"Results for applications contained in this list will be displayed when "
+"searching."
+msgstr "Резултатите от търсене с тези програми се показват в общия резултат."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:42
+msgid "List of desktop file IDs for search providers sort order"
+msgstr ""
+"Списък с идентификатори на програми, указващ подредбата на резултатите при "
+"търсене"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:43
+msgid ""
+"Results for applications contained in this list will be displayed in the "
+"specified order. Results for applications not specified in this list will be "
+"displayed last, sorted alphabetically."
+msgstr ""
+"Резултатите от програмите в този списък ще бъдат изведени първи, подредени "
+"според него. Резултатите от програмите извън него, ще се покажат в общ, "
+"поазбучен ред след предните."
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:6
+msgid "Time before session is considered idle"
+msgstr "Време преди отчитането на бездействие"
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:7
+msgid ""
+"The number of seconds of inactivity before the session is considered idle."
+msgstr ""
+"Брой секунди бездействие, преди да започне отчитането на цялата сесия като "
+"бездействаща."
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:11
+msgid "Session type"
+msgstr "Вид сесия"
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:12
+msgid "The name of the session to use. Known value is “gnome”."
+msgstr "Името на ползваната сесия. Една от възможните стойности е „gnome“."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:6
+msgid "Sounds for events"
+msgstr "Звуци при събития"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:7
+msgid "Whether to play sounds on user events."
+msgstr "Дали да се изпълняват звуци при възникването на потребителско събитие."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:11
+msgid "Sound theme name"
+msgstr "Име на аудио темата"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:12
+msgid "The XDG sound theme to use for event sounds."
+msgstr "Името на аудио темата за системните звуци по XDG."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:16
+msgid "Input feedback sounds"
+msgstr "Звуци при вход"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:17
+msgid "Whether to play sounds on input events."
+msgstr "Дали да се изпълнява звук при входни действия."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:21
+msgid "Allow volume above 100%"
+msgstr "Сила на звука над 100%"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:22
+msgid "Whether volume can be set above 100%, using software amplification."
+msgstr ""
+"Дали силата на звука може да се увеличи над 100% чрез софтуерно усилване."
+
+#: schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in:6
+msgid ""
+"Maximum age for thumbnails in the cache, in days. Set to -1 to disable "
+"cleaning."
+msgstr ""
+"Максимално време на съхранение на миниатюрите в кеша. За изключването на "
+"изчистването задайте -1."
+
+#: schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in:10
+msgid ""
+"Maximum size of the thumbnail cache, in megabytes. Set to -1 to disable "
+"cleaning."
+msgstr ""
+"Максимален размер на кеша за миниатюрите. За изключването на изчистването "
+"задайте -1."
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:6
+msgid "Disable all external thumbnailers"
+msgstr "Изключване на всички външни програми за миниатюри"
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:7
+msgid ""
+"Set to true to disable all external thumbnailer programs, independent on "
+"whether they are independently disabled/enabled."
+msgstr ""
+"Когато настройката е зададена, всички външни програми за създаването на "
+"миниатюри генерално се изключват, независимо дали са включени или изключени "
+"поотделно."
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:15
+msgid ""
+"List of mime-types for which external thumbnailer programs will be disabled"
+msgstr ""
+"Списък от видове по MIME, за които външните програми за миниатюри ще се "
+"изключат"
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:19
+msgid ""
+"Thumbnails will not be created for files whose mime-type is contained in the "
+"list."
+msgstr ""
+"Няма да се създават миниатюри за файловете с видове по MIME от този списък."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:8
+msgid "Switch to workspace 1"
+msgstr "Превключване към работен плот 1"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:12
+msgid "Switch to workspace 2"
+msgstr "Превключване към работен плот 2"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:16
+msgid "Switch to workspace 3"
+msgstr "Превключване към работен плот 3"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:20
+msgid "Switch to workspace 4"
+msgstr "Превключване към работен плот 4"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:24
+msgid "Switch to workspace 5"
+msgstr "Превключване към работен плот 5"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:28
+msgid "Switch to workspace 6"
+msgstr "Превключване към работен плот 6"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:32
+msgid "Switch to workspace 7"
+msgstr "Превключване към работен плот 7"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:36
+msgid "Switch to workspace 8"
+msgstr "Превключване към работен плот 8"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:40
+msgid "Switch to workspace 9"
+msgstr "Превключване към работен плот 9"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:44
+msgid "Switch to workspace 10"
+msgstr "Превключване към работен плот 10"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:48
+msgid "Switch to workspace 11"
+msgstr "Превключване към работен плот 11"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:52
+msgid "Switch to workspace 12"
+msgstr "Превключване към работен плот 12"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:56
+msgid "Switch to workspace left"
+msgstr "Превключване към левия работен плот"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:60
+msgid "Switch to workspace right"
+msgstr "Превключване към десния работен плот"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:64
+msgid "Switch to workspace above"
+msgstr "Превключване към горния работен плот"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:68
+msgid "Switch to workspace below"
+msgstr "Превключване към долния работен плот"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:72
+msgid "Switch to last workspace"
+msgstr "Превключване към последния работен плот"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:76
+msgid "Switch windows of an application"
+msgstr "Преместване на фокуса между прозорците на една програма"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:80
+msgid "Reverse switch windows of an application"
+msgstr ""
+"Преместване на фокуса между прозорците на едно приложение в обратен ред"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:84
+msgid "Switch applications"
+msgstr "Преместване на фокуса между програмите"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:88
+msgid "Reverse switch applications"
+msgstr "Преместване на фокуса между програмите в обратен ред"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:92
+msgid "Switch windows"
+msgstr "Преместване на фокуса между прозорците"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:96
+msgid "Reverse switch windows"
+msgstr "Преместване на фокуса в обратен ред"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:100
+msgid "Switch system controls"
+msgstr "Към следващия служебен обект"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:104
+msgid "Reverse switch system controls"
+msgstr "Преместване на фокуса между служебните обекти в обратен ред"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:108
+msgid "Switch windows of an app directly"
+msgstr "Незабавно преместване на фокуса между прозорците на една програма"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:112
+msgid "Reverse switch windows of an app directly"
+msgstr ""
+"Незабавно преместване на фокуса между прозорците на едно приложение в "
+"обратен ред"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:116
+msgid "Switch windows directly"
+msgstr "Незабавно преместване на фокуса между прозорците"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:120
+msgid "Reverse switch windows directly"
+msgstr "Незабавно преместване на фокуса между програмите в обратен ред"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:124
+msgid "Switch system controls directly"
+msgstr "Незабавно преместване на фокуса между служебните обекти"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:128
+msgid "Reverse switch system controls directly"
+msgstr "Незабавно преместване на фокуса между служебните обекти в обратен ред"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:132
+msgid "Hide all normal windows"
+msgstr "Скриване на всички обикновени прозорци"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:136
+msgid "DEPRECATED: This key is deprecated and ignored."
+msgstr "Този ключ е остарял и вече не се ползва."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:140
+msgid "Show the run command prompt"
+msgstr "Показване на прозореца за стартиране на команда"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:144
+msgid "Don’t use"
+msgstr "Не се ползва"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:148
+msgid "Activate the window menu"
+msgstr "Задействане на менюто за прозорците"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:152
+msgid "Toggle fullscreen mode"
+msgstr "Превключване на режима за цял екран"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:156
+msgid "Toggle maximization state"
+msgstr "Превключване на състоянието на максимизиране"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:160
+msgid "Toggle window always appearing on top"
+msgstr "Превключване на състоянието винаги отгоре"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:164
+msgid "Maximize window"
+msgstr "Максимизиране на прозорец"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:168
+msgid "Restore window"
+msgstr "Възстановяване на прозорец"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:172
+msgid "Minimize window"
+msgstr "Минимизиране на прозореца"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:176
+msgid "Close window"
+msgstr "Затваряне на прозореца"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:180
+msgid "Move window"
+msgstr "Преместване на прозорец"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:184
+msgid "Resize window"
+msgstr "Преоразмеряване на прозорец"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:188
+msgid "Toggle window on all workspaces or one"
+msgstr "Превключване на появата на прозореца на всички работни места"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:192
+msgid "Move window to workspace 1"
+msgstr "Преместване на прозореца на работен плот 1"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:196
+msgid "Move window to workspace 2"
+msgstr "Преместване на прозореца на работен плот 2"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:200
+msgid "Move window to workspace 3"
+msgstr "Преместване на прозореца на работен плот 3"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:204
+msgid "Move window to workspace 4"
+msgstr "Преместване на прозореца на работен плот 4"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:208
+msgid "Move window to workspace 5"
+msgstr "Преместване на прозореца на работен плот 5"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:212
+msgid "Move window to workspace 6"
+msgstr "Преместване на прозореца на работен плот 6"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:216
+msgid "Move window to workspace 7"
+msgstr "Преместване на прозореца на работен плот 7"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:220
+msgid "Move window to workspace 8"
+msgstr "Преместване на прозореца на работен плот 8"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:224
+msgid "Move window to workspace 9"
+msgstr "Преместване на прозореца на работен плот 9"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:228
+msgid "Move window to workspace 10"
+msgstr "Преместване на прозореца на работен плот 10"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:232
+msgid "Move window to workspace 11"
+msgstr "Преместване на прозореца на работен плот 11"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:236
+msgid "Move window to workspace 12"
+msgstr "Преместване на прозореца на работен плот 12"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:240
+msgid "Move window to last workspace"
+msgstr "Преместване на прозореца на последния работен плот"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:244
+msgid "Move window one workspace to the left"
+msgstr "Преместване на прозореца един работен плот наляво"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:248
+msgid "Move window one workspace to the right"
+msgstr "Преместване на прозореца един работен плот надясно"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:252
+msgid "Move window one workspace up"
+msgstr "Преместване на прозореца един работен плот нагоре"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:256
+msgid "Move window one workspace down"
+msgstr "Преместване на прозореца един работен плот надолу"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:260
+msgid "Move window to the next monitor on the left"
+msgstr "Преместване на прозореца един екран наляво"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:264
+msgid "Move window to the next monitor on the right"
+msgstr "Преместване на прозореца един екран надясно"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:268
+msgid "Move window to the next monitor above"
+msgstr "Преместване на прозореца един екран нагоре"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:272
+msgid "Move window to the next monitor below"
+msgstr "Преместване на прозореца един екран надолу"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:276
+msgid "Raise window if covered, otherwise lower it"
+msgstr "Ако прозорецът е под друг, го издига, иначе го понижава"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:280
+msgid "Raise window above other windows"
+msgstr "Издигане на прозореца над другите"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:284
+msgid "Lower window below other windows"
+msgstr "Понижаване на прозореца под другите прозорци"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:288
+msgid "Maximize window vertically"
+msgstr "Максимизиране на прозореца вертикално"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:292
+msgid "Maximize window horizontally"
+msgstr "Максимизиране на прозореца хоризонтално"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:296
+msgid "Move window to top left corner"
+msgstr "Преместване на прозореца в горния ляв ъгъл на екрана"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:300
+msgid "Move window to top right corner"
+msgstr "Преместване на прозореца в горния десен ъгъл на екрана"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:304
+msgid "Move window to bottom left corner"
+msgstr "Преместване на прозореца в долния ляв ъгъл на екрана"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:308
+msgid "Move window to bottom right corner"
+msgstr "Преместване на прозореца в долния десен ъгъл на екрана"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:312
+msgid "Move window to top edge of screen"
+msgstr "Преместване на прозореца в горната част на екрана"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:316
+msgid "Move window to bottom edge of screen"
+msgstr "Преместване на прозореца в долната част на екрана"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:320
+msgid "Move window to right side of screen"
+msgstr "Преместване на прозореца в дясната част на екрана"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:324
+msgid "Move window to left side of screen"
+msgstr "Преместване на прозореца в лявата част на екрана"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:328
+msgid "Move window to center of screen"
+msgstr "Преместване на прозореца в средата на екрана"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:332
+msgid "Switch input source"
+msgstr "Към следващия източник на аудио"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:333
+msgid "Binding to select the next input source"
+msgstr "Клавишна комбинация за отиване на следващия източник на аудио."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:337
+msgid "Switch input source backward"
+msgstr "Към предишния източник на аудио"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:338
+msgid "Binding to select the previous input source"
+msgstr "Клавишна комбинация за отиване на предишния източник на аудио."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:342
+msgid "Toggle window to be always on top"
+msgstr "Превключване на задържането на прозорец най-отгоре"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:343
+msgid "Set or unset window to appear always on top"
+msgstr ""
+"Превключване на задържането на прозорец най-отгоре върху другите прозорци"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:8
+msgid "Modifier to use for modified window click actions"
+msgstr ""
+"Модификатор, който да се ползва за модифицираните действия с натискания по "
+"прозорците"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:9
+msgid ""
+"Clicking a window while holding down this modifier key will move the window "
+"(left click), resize the window (middle click), or show the window menu "
+"(right click). The middle and right click operations may be swapped using "
+"the “resize-with-right-button” key. Modifier is expressed as “<Alt>” or "
+"“<Super>” for example."
+msgstr ""
+"Натискането по прозорец при задържането на този модифициращ клавиш позволява "
+"преместване на прозореца (с основния бутон), преоразмеряване (със средния "
+"бутон) и показване на менюто на прозореца (с втория бутон). Действията на "
+"втория и средния бутон може да се разменят с ключа „resize-with-right-"
+"button“. Модификаторът се дава с „<Alt>“ или „<Super>“."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:19
+msgid "Whether to resize with the right button"
+msgstr "Дали да се преоразмерява с десния бутон"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:20
+msgid ""
+"Set this to true to resize with the right button and show a menu with the "
+"middle button while holding down the key given in “mouse-button-modifier”; "
+"set it to false to make it work the opposite way around."
+msgstr ""
+"Включете настройката за преоразмеряване с втория бутон и показване на меню "
+"при натискане на средния бутон придружен с натискане на клавиша указан в "
+"„mouse-button-modifier“. Когато настройката изключена, посочените бутони "
+"разменят действието си."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:29
+msgid "Arrangement of buttons on the titlebar"
+msgstr "Подредба на бутоните в заглавната лента"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:30
+msgid ""
+"Arrangement of buttons on the titlebar. The value should be a string, such "
+"as “menu:minimize,maximize,spacer,close”; the colon separates the left "
+"corner of the window from the right corner, and the button names are comma-"
+"separated. Duplicate buttons are not allowed. Unknown button names are "
+"silently ignored so that buttons can be added in future metacity versions "
+"without breaking older versions. A special spacer tag can be used to insert "
+"some space between two adjacent buttons."
+msgstr ""
+"Подредба на бутоните в заглавната лента. Стойността е низ от стойности "
+"разделени със запетаи. Двоеточието разделя двата ъгъла на прозореца. Не се "
+"позволяват повторения. Пример:  „menu:minimize,maximize,spacer,close“. "
+"Непознатите стойности се прескачат, за да се осигури съвместимост с новите "
+"версии. Наличието на интервал означава вмъкването на малко, разделящо "
+"пространство между съседните бутони."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:43
+msgid "Window focus mode"
+msgstr "Режим на фокусиране на прозорци"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:44
+msgid ""
+"The window focus mode indicates how windows are activated. It has three "
+"possible values; “click” means windows must be clicked in order to focus "
+"them, “sloppy” means windows are focused when the mouse enters the window, "
+"and “mouse” means windows are focused when the mouse enters the window and "
+"unfocused when the mouse leaves the window."
+msgstr ""
+"Режимът на фокусиране на прозорци обозначава как те се задействат. Има три "
+"възможни стойности: „click“ означава, че трябва да натиснете по прозорец за "
+"фокусирането му; „sloppy“ означава, че прозорците се фокусират при "
+"посочването им с мишка, без да е необходимо натискане, а „mouse“ означава, "
+"не само, че прозорецът се фокусира при влизане на показалеца в областта му, "
+"но и че губи фокуса при излизането на показалеца."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:55
+msgid "Control how new windows get focus"
+msgstr "Кога новите прозорци получават фокуса"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:56
+msgid ""
+"This option provides additional control over how newly created windows get "
+"focus. It has two possible values; “smart” applies the user’s normal focus "
+"mode, and “strict” results in new windows not being given focus "
+"automatically."
+msgstr ""
+"Настройката дава допълнителен контрол върху начина, по който новосъздадените "
+"прозорци получават фокуса. Една от следните две стойности: „smart“ ползва "
+"режима на фокусиране, зададен от потребителя, и „strict“, при който "
+"новосъздадените прозорците не получават автоматично фокуса."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:65
+msgid "Whether windows should be raised when their client area is clicked"
+msgstr ""
+"Дали прозорците да се издигат при натискане на бутон на мишката в "
+"клиентската им област"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:68
+msgid ""
+"The default, true, indicates that a window will be raised whenever its "
+"client area or its frame is clicked. Setting this to false means that a "
+"window will not be raised if it is clicked on the client area. To raise it, "
+"one can click anywhere in the window’s frame, or Super-click on any part of "
+"the window. This mode is useful if one uses many overlapping windows."
+msgstr ""
+"Стандартно е зададено и означава, че при натискането на рамката или на "
+"клиентската област прозорецът се издига най-отгоре. При изключване на "
+"настройката дори и при натискане на клиентската област прозорецът не се "
+"издига. Това се случва, само при натискане на рамката на прозореца. За "
+"издигане, натискането някъде по прозореца трябва де се съпътства с натиснат "
+"клавиш „Super“. Този режим е полезен при работа с много, застъпващи се "
+"прозорци."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:82
+msgid "Action on title bar double-click"
+msgstr "Действие при двойно натискане върху заглавната лента"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:83
+msgid ""
+"This option determines the effects of double-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Тази настройка определя действието при двойно натискане по заглавната лента. "
+"Поддържат се стойностите: „toggle-maximize“ — максимизиране/демаксимизиране "
+"на прозореца, „toggle-maximize-horizontally“ и „toggle-maximize-vertically“ "
+"максимизиране/демаксимизиране на прозореца хоризонтално или вертикално, "
+"„minimize“ — минимизиране на прозореца „menu“ — извеждане на менюто за "
+"прозореца, „lower“ — преместване прозореца най-отзад и „none“ — няма да се "
+"прави нищо."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:105
+msgid "Action on title bar middle-click"
+msgstr ""
+"Действие при натискане със средния бутон на мишката върху заглавната лента"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:106
+msgid ""
+"This option determines the effects of middle-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Тази настройка определя действието при натискането на средния бутон върху "
+"заглавната лента. Поддържат се стойностите: „toggle-maximize“ — "
+"максимизиране/демаксимизиране на прозореца, „toggle-maximize-horizontally“ и "
+"„toggle-maximize-vertically“ максимизиране/демаксимизиране на прозореца "
+"хоризонтално или вертикално, „minimize“ — минимизиране на прозореца „menu“ — "
+"извеждане на менюто за прозореца, „lower“ — преместване прозореца най-отзад "
+"и „none“ — няма да се прави нищо."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:129
+msgid "Action on title bar right-click"
+msgstr ""
+"Действие при натискане с десния бутон на мишката върху заглавната лента"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:130
+msgid ""
+"This option determines the effects of right-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Тази настройка определя действието при натискането на втория бутон върху "
+"заглавната лента. Поддържат се стойностите: „toggle-maximize“ — "
+"максимизиране/демаксимизиране на прозореца, „toggle-maximize-horizontally“ и "
+"„toggle-maximize-vertically“ максимизиране/демаксимизиране на прозореца "
+"хоризонтално или вертикално, „minimize“ — минимизиране на прозореца, „menu“ "
+"— извеждане на менюто за прозореца, „lower“ — преместване прозореца най-"
+"отзад и „none“ — няма да се прави нищо."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:152
+msgid "Automatically raises the focused window"
+msgstr "Автоматично издигане на фокусирания прозорец"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:153
+msgid ""
+"If set to true, and the focus mode is either “sloppy” or “mouse” then the "
+"focused window will be automatically raised after a delay specified by the "
+"auto-raise-delay key. This is not related to clicking on a window to raise "
+"it, nor to entering a window during drag-and-drop."
+msgstr ""
+"Ако настройката е включена, а режимът на фокусиране е „sloppy“ или „mouse“, "
+"фокусираният прозорец се издига над другите след изтичане на времето, "
+"указано в ключа „auto-raise-delay“. Това не се отнася до натискането върху "
+"прозорец за издигането му, както и до влизането в областта на прозорец при "
+"влачене."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:163
+msgid "Delay in milliseconds for the auto raise option"
+msgstr "Забавяне в милисекунди за настройката за автоматично издигане"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:164
+msgid ""
+"The time delay before raising a window if auto-raise is set to true. The "
+"delay is given in thousandths of a second."
+msgstr ""
+"Забавяне преди автоматичното издигане на прозорец, когато настройката „auto-"
+"raise“ е включена. The delay is given in thousandths of a second."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:171
+msgid "Current theme"
+msgstr "Текуща тема"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:172
+msgid ""
+"The theme determines the appearance of window borders, titlebar, and so "
+"forth. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Темата определя изгледа на границите па прозорците, заглавната им лента и "
+"т.н. Този ключ е остарял и вече не се ползва."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:181
+msgid "Use standard system font in window titles"
+msgstr "Използване на стандартния системен шрифт за заглавията на прозорците"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:182
+msgid ""
+"If true, ignore the titlebar-font option, and use the standard application "
+"font for window titles."
+msgstr ""
+"Ако е зададено, настройката „titlebar-font“ се прескача, а за шрифт за "
+"заглавията на прозорци се ползва стандартният за документи."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:189
+msgid "Window title font"
+msgstr "Шрифт за заглавията на прозорците"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:190
+msgid ""
+"A font description string describing a font for window titlebars. The size "
+"from the description will only be used if the titlebar-font-size option is "
+"set to 0. Also, this option is disabled if the titlebar-uses-desktop-font "
+"option is set to true."
+msgstr ""
+"Описание на шрифт за заглавните ленти на прозорците. Кегелът от описанието "
+"ще се ползва, само когато настройката „titlebar-font-size“ е 0. Тази "
+"настройка не се ползва, ако настройката „titlebar-uses-desktop-font“ е "
+"включена."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:200
+msgid "Number of workspaces"
+msgstr "Брой работни плотове"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:201
+msgid ""
+"Number of workspaces. Must be more than zero, and has a fixed maximum to "
+"prevent making the desktop unusable by accidentally asking for too many "
+"workspaces."
+msgstr ""
+"Брой работни плотове. Трябва да е над 0. Има горна граница (за да се "
+"предотврати случайното разрушаване на средата, ако поискате прекалено много "
+"работни места)."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:209
+msgid "System Bell is Audible"
+msgstr "Системният звънец е звуков"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:210
+msgid ""
+"Determines whether applications or the system can generate audible “beeps”; "
+"may be used in conjunction with “visual bell” to allow silent “beeps”."
+msgstr ""
+"Определя дали програмата или системата ще генерират аудио сигнал. Може да се "
+"ползва заедно с визуалния звънец, за да се позволи тихо известяване."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:218
+msgid "Enable Visual Bell"
+msgstr "Включване на визуалния звънец"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:219
+msgid ""
+"Turns on a visual indication when an application or the system issues a "
+"“bell” or “beep”; useful for the hard-of-hearing and for use in noisy "
+"environments."
+msgstr ""
+"Включване на визуална индикация, че някоя програма изпълнява системния "
+"звънец. Това е помощ за хората, които не чуват добре или при работа в шумна "
+"среда."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:228
+msgid "Visual Bell Type"
+msgstr "Вид визуален звънец"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:229
+msgid ""
+"Tells the WM how to implement the visual indication that the system bell or "
+"another application “bell” indicator has been rung. Currently there are two "
+"valid values, “fullscreen-flash”, which causes a fullscreen white-black "
+"flash, and “frame-flash” which causes the titlebar of the application which "
+"sent the bell signal to flash. If the application which sent the bell is "
+"unknown (as is usually the case for the default “system beep”), the "
+"currently focused window’s titlebar is flashed."
+msgstr ""
+"Настройката указва на мениджъра на прозорци да показва визуално, че "
+"системният звънец или звънецът на програма е издал звук. Поддържат се "
+"следните две стойности: „fullscreen-flash“, при което целият екран премигва, "
+"и „frame-flash“, при което премигва заглавната лента на програмата, която "
+"звънна. Ако програмата не може да се определи, както е в случая на системния "
+"звънец, премигва заглавната лента на текущо фокусирания прозорец."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:250
+msgid "Disable misfeatures that are required by old or broken applications"
+msgstr ""
+"Изключва неправилното поведение изисквано от стари приложения или такива с "
+"грешки"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:253
+msgid ""
+"Some applications disregard specifications in ways that result in window "
+"manager misfeatures. This option puts the WM in a rigorously correct mode, "
+"which gives a more consistent user interface, provided one does not need to "
+"run any misbehaving applications."
+msgstr ""
+"Някои приложения не спазват стандартите, което пречи на управлението на "
+"прозорци. Опцията задава нарочно коректен режим на мениджъра на прозорци, "
+"което води до много по-еднакъв потребителски интерфейс, стига да не се "
+"стартират програми с неправилно поведение."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:263
+msgid "The names of the workspaces"
+msgstr "Имена на работните плотове"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:264
+msgid ""
+"Defines the names that should be assigned to workspaces. If the list is too "
+"long for the current number of workspaces, names in excess will be ignored. "
+"If the list is too short, or includes empty names, missing values will be "
+"replaced with the default (“Workspace N”)."
+msgstr ""
+"Имената, които се задават на работните плотове. Ако списъкът е твърде дълъг, "
+"излишните стойности не се ползват. Ако списъкът е твърде къс или някои от "
+"имената са празни, допълнително ще се ползват стандартни имена (като „Плот "
+"5…“, напр.)."
+
+#: schemas/org.gnome.system.locale.gschema.xml.in:6
+msgid "The locale to use for dates / numbers formats"
+msgstr "Локал за форматите на датите/числата"
+
+#: schemas/org.gnome.system.locale.gschema.xml.in:7
+msgid ""
+"Specify the locale to be used for displaying dates, times and numbers "
+"formats."
+msgstr "Указване на локала за извежданите дати, времена и числа."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:7
+msgid "Geolocation services are enabled."
+msgstr "Услугите за местоположението са включени."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:8
+msgid "If true, applications are allowed to access location information."
+msgstr ""
+"Когато е зададено, програмите може да имат достъп до информацията за "
+"местоположението."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:14
+msgid "The maximum accuracy level of location."
+msgstr "Максимална точност на местоположението"
+
+#: schemas/org.gnome.system.location.gschema.xml.in:15
+msgid ""
+"Configures the maximum level of location accuracy applications are allowed "
+"to see. Valid options are “country”, “city”, “neighborhood”, “street”, and "
+"“exact” (typically requires GPS receiver). Please keep in mind that this "
+"only controls what GeoClue will allow applications to see and they can find "
+"user’s location on their own using network resources (albeit with street-"
+"level accuracy at best)."
+msgstr ""
+"Определя максималната точност на местоположението, които програмите виждат. "
+"Възможните стойности са: „country“ (държава), „city“ (град), „neighborhood“ "
+"(квартал), „street“ (улица) и „exact“ (точно — за това е необходим GPS). "
+"Настройката определя само какво библиотеката GeoClue ще подаде към "
+"приложенията. Самите приложения може да открият местоположението като "
+"ползват мрежата (типично с точност улица)."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:10
+msgid "Proxy configuration mode"
+msgstr "Режим на настройки на сървърите-посредници"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:11
+msgid ""
+"Select the proxy configuration mode. Supported values are “none”, “manual”, "
+"“auto”. If this is “none”, then proxies are not used. If it is “auto”, the "
+"autoconfiguration URL described by the “autoconfig-url” key is used. If it "
+"is “manual”, then the proxies described by “/system/proxy/http”, “/system/"
+"proxy/https”, “/system/proxy/ftp” and “/system/proxy/socks” will be used. "
+"Each of the 4 proxy types is enabled if its “host” key is non-empty and its "
+"“port” key is non-0. If an http proxy is configured, but an https proxy is "
+"not, then the http proxy is also used for https. If a SOCKS proxy is "
+"configured, it is used for all protocols, except that the http, https, and "
+"ftp proxy settings override it for those protocols only."
+msgstr ""
+"Избор на режима да настройване на сървъра-посредник. Поддържаните стойности "
+"са „none“, „manual“ и „auto“. Когато е „none“, сървър посредник не се "
+"ползва. Ако е „auto“ се ползва адресът за автоматично настройване, който е "
+"зададен в ключа „autoconfig-url“. Ако е „manual“, се ползват посредниците "
+"зададени с ключовете „/system/proxy/http“, „/system/proxy/https“, „/system/"
+"proxy/ftp“ и „/system/proxy/socks“. Всеки от 4-те вида се считат за "
+"зададени, ако ключът „host“ не е празен, а ключът „port“ не е 0. Ако има "
+"посредник за http, но няма за https — ще се ползва същия сървър за двата "
+"протокола. Ако има зададен сървър за SOCKS, той се ползва за всички "
+"протоколи, но настройките в ключовете за http, https и ftp се взимат с "
+"предимство за съответните протоколи."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:36
+msgid "Automatic proxy configuration URL"
+msgstr "Автоматично настройване на адреса на сървъра-посредник"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:37
+msgid ""
+"URL that provides proxy configuration values. When mode is “auto”, this URL "
+"is used to look up proxy information for all protocols."
+msgstr ""
+"Адрес с настройките на сървъра-посредник. Когато режимът е „auto“ "
+"(автоматично), от този адрес се получава информацията за сървърите-"
+"посредници за всички протоколи."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:45
+msgid "Non-proxy hosts"
+msgstr "Без сървъри-посредници"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:46
+msgid ""
+"This key contains a list of hosts which are connected to directly, rather "
+"than via the proxy (if it is active). The values can be hostnames, domains "
+"(using an initial wildcard like *.foo.com), IP host addresses (both IPv4 and "
+"IPv6) and network addresses with a netmask (something like 192.168.0.0/24)."
+msgstr ""
+"Този ключ съдържа списък с компютри, към които да се осъществява директна "
+"връзка, а не такава през сървър-посредник (ако такъв се ползва). Стойностите "
+"може да са имена на хостове, домейни (чрез начален шаблонен знак като "
+"„*.foo.com“), IP адреси (както по IPv4, така и IPv6) и адреси на мрежи с "
+"маски (напр. „192.168.0.0/24“)."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:56
+msgid "Use HTTP proxy for all protocols"
+msgstr "Ползване на сървъра-посредник за HTTP за всички протоколи"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:57
+msgid "Whether to use the HTTP proxy for all protocols or not."
+msgstr "Дали сървърът-посредник за HTTP да се ползва за всички протоколи"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:65
+msgid "Unused; ignore"
+msgstr "Не се ползва"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:66
+msgid ""
+"This key is not used; HTTP proxying is enabled when the host key is non-"
+"empty and the port is non-0."
+msgstr ""
+"Този ключ не се ползва. Сървърът-посредник за HTTP се включва, когато ключът "
+"host за машина не е празен, а ключът port за порт не е 0."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:73
+msgid "HTTP proxy host name"
+msgstr "Име на сървър-посредник за HTTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:74
+msgid "The machine name to proxy HTTP through."
+msgstr "Машината, която да посредничи за трафика по HTTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:81
+msgid "HTTP proxy port"
+msgstr "Порт на сървъра-посредник за HTTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:82
+msgid ""
+"The port on the machine defined by “/system/proxy/http/host” that you proxy "
+"through."
+msgstr ""
+"Портът на машината зададена в ключа „/system/proxy/http/host“, чрез който се "
+"посредничи за HTTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:89
+msgid "Authenticate proxy server connections"
+msgstr "Идентификация за връзката към сървъра-посредник"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:90
+msgid ""
+"If true, then connections to the proxy server require authentication. The "
+"username/password combo is defined by “/system/proxy/http/authentication-"
+"user” and “/system/proxy/http/authentication-password”. This applies only to "
+"the http proxy; when using a separate https proxy, there is currently no way "
+"to specify that it should use authentication."
+msgstr ""
+"Когато е включено, връзките към сървъра посредник ще изискват идентификация. "
+"Комбинацията потребител/парола се задава с ключовете „/system/proxy/http/"
+"authentication-user“ и „/system/proxy/http/authentication-password“. Това се "
+"отнася само за сървър посредник по http. Ако се ползва отделен сървър за "
+"https, няма начин да се укаже идентификация за него."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:103
+msgid "HTTP proxy username"
+msgstr "Име на потребител за посредника за HTTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:104
+msgid "User name to pass as authentication when doing HTTP proxying."
+msgstr ""
+"Потребителско име за идентификация при ползването на сървър-посредник за "
+"HTTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:110
+msgid "HTTP proxy password"
+msgstr "Парола за посредника за HTTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:111
+msgid "Password to pass as authentication when doing HTTP proxying."
+msgstr "Парола за идентификация при ползването на сървър-посредник за HTTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:119
+msgid "Secure HTTP proxy host name"
+msgstr "Име на сървър-посредник за HTTPS"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:120
+msgid "The machine name to proxy secure HTTP through."
+msgstr "Машината, която да посредничи за трафика по HTTPS."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:127
+msgid "Secure HTTP proxy port"
+msgstr "Порт на сървъра-посредник за HTTPS"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:128
+msgid ""
+"The port on the machine defined by “/system/proxy/https/host” that you proxy "
+"through."
+msgstr ""
+"Портът на машината зададена в ключа „/system/proxy/https/host“, чрез който "
+"се посредничи за HTTPS."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:137
+msgid "FTP proxy host name"
+msgstr "Име на сървър-посредник за FTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:138
+msgid "The machine name to proxy FTP through."
+msgstr "Машината, която да посредничи за трафика по FTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:145
+msgid "FTP proxy port"
+msgstr "Порт на сървъра-посредник за FTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:146
+msgid ""
+"The port on the machine defined by “/system/proxy/ftp/host” that you proxy "
+"through."
+msgstr ""
+"Портът на машината зададена в ключа „/system/proxy/ftp/host“, чрез който се "
+"посредничи за FTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:155
+msgid "SOCKS proxy host name"
+msgstr "Име на сървър-посредник за SOCKS"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:156
+msgid "The machine name to use as a SOCKS proxy."
+msgstr "Машината, която да посредничи за трафика по SOCKS."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:163
+msgid "SOCKS proxy port"
+msgstr "Порт на сървъра-посредник за SOCKS"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:164
+msgid ""
+"The port on the machine defined by “/system/proxy/socks/host” that you proxy "
+"through."
+msgstr ""
+"Портът на машината зададена в ключа „/system/proxy/socks/host“, чрез който "
+"се посредничи за SOCKS."

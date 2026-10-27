@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 Matrix3d m;
 m << 1.1, 2.2, 3.3, 4.4, 5.5, 6.6, 7.7, 8.8, 9.9;
 cout << "Here's the matrix m:" << endl << m << endl;

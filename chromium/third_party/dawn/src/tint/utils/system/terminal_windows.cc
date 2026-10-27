@@ -25,15 +25,12 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/439062058): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 // GEN_BUILD:CONDITION(tint_build_is_win)
 
 #include "src/tint/utils/macros/defer.h"
 #include "src/tint/utils/system/env.h"
 #include "src/tint/utils/system/terminal.h"
+#include "src/utils/compiler.h"
 
 #define WIN32_LEAN_AND_MEAN 1
 #include <Windows.h>
@@ -79,7 +76,8 @@ std::optional<bool> TerminalIsDark(FILE* out) {
             CONSOLE_SCREEN_BUFFER_INFOEX info{};
             info.cbSize = sizeof(info);
             if (GetConsoleScreenBufferInfoEx(screen_buffer, &info)) {
-                COLORREF background = info.ColorTable[(info.wAttributes & 0xf0) >> 4];
+                COLORREF background =
+                    DAWN_UNSAFE_TODO(info.ColorTable[(info.wAttributes & 0xf0) >> 4]);
                 // https://en.wikipedia.org/wiki/Relative_luminance
                 float r = static_cast<float>((background >> 0) & 0xff) / 255.0f;
                 float g = static_cast<float>((background >> 8) & 0xff) / 255.0f;

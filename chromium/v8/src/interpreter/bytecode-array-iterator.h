@@ -145,12 +145,12 @@ class V8_EXPORT_PRIVATE BytecodeArrayIterator {
   Register GetStarTargetRegister() const;
   std::pair<Register, Register> GetRegisterPairOperand(int operand_index) const;
   RegisterList GetRegisterListOperand(int operand_index) const;
-  int GetRegisterOperandRange(int operand_index) const;
+  uint32_t GetRegisterOperandRange(int operand_index) const;
   Runtime::FunctionId GetRuntimeIdOperand(int operand_index) const;
   Runtime::FunctionId GetIntrinsicIdOperand(int operand_index) const;
   uint32_t GetNativeContextIndexOperand(int operand_index) const;
   AbortReason GetAbortReasonOperand(int operand_index) const;
-  uint32_t GetEmbeddedFeedback(int operand_index) const;
+  uint8_t GetEmbeddedFeedback(int operand_index) const;
   Tagged<Object> GetConstantAtIndex(int offset) const;
   Handle<Object> GetConstantAtIndex(int offset, Isolate* isolate) const;
   Handle<Object> GetConstantAtIndex(int offset, LocalIsolate* isolate) const;

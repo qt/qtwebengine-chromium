@@ -134,7 +134,7 @@ void vvl::Semaphore::EnqueueWait(const SubmissionReference& wait_submit, uint64_
     auto guard = WriteLock();
     if (type == VK_SEMAPHORE_TYPE_BINARY) {
         // Update the swapchain image acquire state if the semaphore was used by the acquire operation
-        if (acquired_image_swapchain_) {
+        if (acquired_image_swapchain_ && !acquired_image_swapchain_->Destroyed()) {
             assert(acquired_image_index_ != vvl::kNoIndex32);
             acquired_image_swapchain_->images[acquired_image_index_].acquire_semaphore_status = AcquireSyncStatus::WasWaitedOn;
             acquired_image_swapchain_.reset();
@@ -407,7 +407,7 @@ bool vvl::Semaphore::CanRetireTimelineWait(const vvl::Queue* current_queue, uint
             continue;
         }
         // If the next signal is on the waiting (current) queue, it can't be a resolving signal (blocked by wait).
-        // QueueSubmissionValidator will also report an error about non-increasing signal values
+        // Submit time validation will also report an error about non-increasing signal values
         if (t.signal_submit->queue != nullptr && t.signal_submit->queue == current_queue) {
             continue;
         }
@@ -450,7 +450,7 @@ void vvl::Semaphore::RetireWait(vvl::Queue* current_queue, uint64_t payload, con
                 auto payload_it = timeline_.insert({payload, TimePoint{}}).first;
 
                 // Search existing signal. If found, notify corresponding submission.
-                // (external payload, which is already reached by the gpu, is larger then found signal,
+                // (external payload, which is already reached by the gpu, is larger than found signal,
                 // this means that earlier signals were also processed, so we can retire them)
                 for (auto it = std::make_reverse_iterator(payload_it); it != timeline_.rend(); ++it) {
                     const TimePoint& t = it->second;

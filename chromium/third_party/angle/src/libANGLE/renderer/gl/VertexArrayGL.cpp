@@ -347,8 +347,8 @@ angle::Result VertexArrayGL::syncIndexData(const gl::Context *context,
         if (requiredStreamingBufferSize > mStreamingElementArrayBufferSize)
         {
             // Copy the indices in while resizing the buffer
-            ANGLE_GL_TRY(context,
-                         functions->bufferData(GL_ELEMENT_ARRAY_BUFFER, requiredStreamingBufferSize,
+            ANGLE_GL_TRY_ALWAYS_CHECK(
+                context, functions->bufferData(GL_ELEMENT_ARRAY_BUFFER, requiredStreamingBufferSize,
                                                indices, GL_DYNAMIC_DRAW));
             mStreamingElementArrayBufferSize = requiredStreamingBufferSize;
         }
@@ -394,7 +394,7 @@ void VertexArrayGL::computeStreamingAttributeSizes(
         size_t typeSize        = ComputeVertexAttributeTypeSize(attrib);
         GLuint adjustedDivisor = GetAdjustedDivisor(mAppliedNumViews, binding.getDivisor());
         size_t streamedVertexCount = ComputeVertexBindingElementCount(
-            adjustedDivisor, indexRange.vertexCount(), instanceCount);
+            adjustedDivisor, indexRange.vertexCount(), std::max(instanceCount, 1), 0);
         if (applyExtraOffsetWorkaroundForInstancedAttributes && adjustedDivisor > 0)
         {
             streamedVertexCount =
@@ -443,8 +443,9 @@ angle::Result VertexArrayGL::streamAttributes(
     stateManager->bindBuffer(gl::BufferBinding::Array, mStreamingArrayBuffer);
     if (requiredBufferSize > mStreamingArrayBufferSize)
     {
-        ANGLE_GL_TRY(context, functions->bufferData(GL_ARRAY_BUFFER, requiredBufferSize, nullptr,
-                                                    GL_DYNAMIC_DRAW));
+        ANGLE_GL_TRY_ALWAYS_CHECK(
+            context,
+            functions->bufferData(GL_ARRAY_BUFFER, requiredBufferSize, nullptr, GL_DYNAMIC_DRAW));
         mStreamingArrayBufferSize = requiredBufferSize;
     }
 
@@ -475,7 +476,7 @@ angle::Result VertexArrayGL::streamAttributes(
             // streamedVertexCount is only going to be modified by
             // shiftInstancedArrayDataWithOffset workaround, otherwise it's const
             size_t streamedVertexCount = ComputeVertexBindingElementCount(
-                adjustedDivisor, indexRange.vertexCount(), instanceCount);
+                adjustedDivisor, indexRange.vertexCount(), std::max(instanceCount, 1), 0);
             const size_t originalStreamedVertexCount = streamedVertexCount;
 
             const size_t sourceStride = ComputeVertexAttributeStride(attrib, binding);

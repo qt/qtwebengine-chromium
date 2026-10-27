@@ -64,6 +64,7 @@ export const enum ParameterType {
   BOOLEAN = 'boolean',
   ARRAY = 'array',
   OBJECT = 'object',
+  UNKNOWN = 'unknown',
 }
 
 interface BaseParameter {
@@ -100,7 +101,13 @@ interface ObjectParameter extends BaseParameter {
   value?: Parameter[];
 }
 
-export type Parameter = ArrayParameter|NumberParameter|StringParameter|BooleanParameter|ObjectParameter;
+interface UnknownParameter extends BaseParameter {
+  type: ParameterType.UNKNOWN;
+  value?: string;
+}
+
+export type Parameter =
+    ArrayParameter|NumberParameter|StringParameter|BooleanParameter|ObjectParameter|UnknownParameter;
 
 export interface Command {
   command: string;
@@ -128,6 +135,9 @@ interface ViewInput {
   onParameterKeydown: (event: KeyboardEvent) => void;
   onParameterKeyBlur: (event: Event) => void;
   onParameterValueBlur: (event: Event) => void;
+  displayTargetSelector?: boolean;
+  displayCommandInput?: boolean;
+  displayToolbar?: boolean;
 }
 
 export type View = (input: ViewInput, output: object, target: HTMLElement) => void;
@@ -149,6 +159,7 @@ const defaultValueByType = new Map<string, string|number|boolean>([
   ['string', ''],
   ['number', 0],
   ['boolean', false],
+  ['unknown', ''],
 ]);
 
 const DUMMY_DATA = 'dummy';
@@ -176,6 +187,9 @@ export class JSONEditor extends Common.ObjectWrapper.eventMixin<EventTypes, type
   #targetId?: string;
   #hintPopoverHelper?: UI.PopoverHelper.PopoverHelper;
   #view: View;
+  displayTargetSelector = true;
+  displayCommandInput = true;
+  displayToolbar = true;
 
   constructor(element: HTMLElement, view = DEFAULT_VIEW) {
     super(element, {useShadowDom: true});
@@ -238,6 +252,10 @@ export class JSONEditor extends Common.ObjectWrapper.eventMixin<EventTypes, type
       this.#command = command;
       this.requestUpdate();
     }
+  }
+
+  set commandToDisplay(data: {command: string, parameters?: Record<string, unknown>}) {
+    this.displayCommand(data.command, data.parameters ?? {});
   }
 
   get targetId(): string|undefined {
@@ -311,6 +329,13 @@ export class JSONEditor extends Common.ObjectWrapper.eventMixin<EventTypes, type
             nestedArrayParameters.push(formatParameterValue(subParameter));
           }
           return nestedArrayParameters.length === 0 ? [] : nestedArrayParameters;
+        }
+        case ParameterType.UNKNOWN: {
+          try {
+            return JSON.parse(parameter.value as string);
+          } catch {
+            return parameter.value;
+          }
         }
         default: {
           return parameter.value;
@@ -387,7 +412,7 @@ export class JSONEditor extends Common.ObjectWrapper.eventMixin<EventTypes, type
       typeRef: schema?.typeRef,
       value,
       description,
-    } as Parameter;
+    } as unknown as Parameter;
   }
 
   #convertPrimitiveParameter(key: string, value: unknown, schema?: Parameter): Parameter {
@@ -484,12 +509,12 @@ export class JSONEditor extends Common.ObjectWrapper.eventMixin<EventTypes, type
     const [head, tail] = splitDescription(elementData.description);
     const type = elementData.type;
     const replyArgs = elementData.replyArgs;
-    let popupContent = '';
+    let popupContent: Lit.LitTemplate|string;
     // replyArgs and type cannot get into conflict because replyArgs is attached to a command and type to a parameter
     if (replyArgs && replyArgs.length > 0) {
-      popupContent = tail + `Returns: ${replyArgs}<br>`;
+      popupContent = html`${tail}Returns: ${replyArgs}<br>`;
     } else if (type) {
-      popupContent = tail + `<br>Type: ${type}<br>`;
+      popupContent = html`${tail}<br>Type: ${type}<br>`;
     } else {
       popupContent = tail;
     }
@@ -498,7 +523,7 @@ export class JSONEditor extends Common.ObjectWrapper.eventMixin<EventTypes, type
       box: hintElement.boxInWindow(),
       show: async (popover: UI.GlassPane.GlassPane) => {
         const popupElement = new ElementsComponents.CSSHintDetailsView.CSSHintDetailsView({
-          getMessage: () => `<span>${head}</span>`,
+          getMessage: () => html`<span>${head}</span>`,
           getPossibleFixMessage: () => popupContent,
           getLearnMoreLink: () =>
               `https://chromedevtools.github.io/devtools-protocol/tot/${this.command.split('.')[0]}/`,
@@ -967,6 +992,9 @@ export class JSONEditor extends Common.ObjectWrapper.eventMixin<EventTypes, type
       computeDropdownValues: (parameter: Parameter) => {
         return this.#computeDropdownValues(parameter);
       },
+      displayTargetSelector: this.displayTargetSelector,
+      displayCommandInput: this.displayCommandInput,
+      displayToolbar: this.displayToolbar,
     };
     const viewOutput = {};
     this.#view(viewInput, viewOutput, this.contentElement);
@@ -1229,7 +1257,8 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
   render(html`
     <div class="wrapper" @keydown=${input.onKeydown} jslog=${VisualLogging.pane('command-editor').track({resize: true})}>
       <div class="editor-wrapper">
-        ${renderTargetSelectorRow(input)}
+        ${input.displayTargetSelector !== false ? renderTargetSelectorRow(input) : nothing}
+        ${input.displayCommandInput !== false ? html`
         <div class="row attribute padded">
           <div class="command">command<span class="separator">:</span></div>
           <devtools-suggestion-input
@@ -1241,7 +1270,7 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
             @blur=${input.onCommandInputBlur}
             class=${classMap({'json-input': true})}
           ></devtools-suggestion-input>
-        </div>
+        </div>` : nothing}
         ${input.parameters.length ? html`
         <div class="row attribute padded">
           <div>parameters<span class="separator">:</span></div>
@@ -1249,6 +1278,7 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
           ${renderParameters(input, input.parameters)}
         ` : nothing}
       </div>
+      ${input.displayToolbar !== false ? html`
       <devtools-toolbar class="protocol-monitor-sidebar-toolbar">
         <devtools-button title=${i18nString(UIStrings.copyCommand)}
                         .iconName=${'copy'}
@@ -1262,6 +1292,7 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
                         .variant=${Buttons.Button.Variant.PRIMARY_TOOLBAR}
                         @click=${input.onCommandSend}></devtools-button>
       </devtools-toolbar>
+      ` : nothing}
     </div>`, target);
   // clang-format on
 };

@@ -29,6 +29,7 @@ class CC_ANIMATION_EXPORT TimelineTrigger : public AnimationTrigger {
 
   static scoped_refptr<TimelineTrigger> Create(
       int id,
+      State state,
       scoped_refptr<AnimationTimeline> timeline,
       Boundaries Boundaries);
 
@@ -39,10 +40,15 @@ class CC_ANIMATION_EXPORT TimelineTrigger : public AnimationTrigger {
 
   // Update the state of the trigger based on the current time of the timeline,
   // queueing up trigger events and triggering animations if necessary.
-  void Update(const ScrollTree& scroll_tree, AnimationEvents* events);
+  void Update(const ScrollTree& scroll_tree,
+              AnimationEvents* events,
+              base::TimeTicks monotonic_time);
+
+  State GetStateForTest() const { return state_; }
 
  protected:
   explicit TimelineTrigger(int id,
+                           State state,
                            scoped_refptr<AnimationTimeline> timeline,
                            Boundaries boundaries);
   ~TimelineTrigger() override;
@@ -60,6 +66,8 @@ class CC_ANIMATION_EXPORT TimelineTrigger : public AnimationTrigger {
   // ranges.
   Boundaries boundaries_;
   // The most recently observed state of the trigger.
+  // TODO(crbug.com/451238244): Move state_ to AnimationTrigger class. It
+  // applies to all types of triggers.
   State state_ = State::kIdle;
 };
 

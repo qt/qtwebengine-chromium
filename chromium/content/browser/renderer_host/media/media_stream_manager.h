@@ -35,6 +35,7 @@
 #include "content/browser/renderer_host/media/media_stream_power_logger.h"
 #include "content/browser/renderer_host/media/media_stream_provider.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/desktop_capture.h"
 #include "content/public/browser/desktop_media_id.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/media_request_state.h"
@@ -425,6 +426,13 @@ class CONTENT_EXPORT MediaStreamManager
       const base::UnguessableToken& session_id,
       const std::optional<gfx::Rect>& region_capture_rect);
 
+  void OpenNativeScreenCapturePicker(
+      DesktopMediaID::Type type,
+      base::OnceCallback<void(DesktopMediaID::Id)> created_callback,
+      base::OnceCallback<void(webrtc::DesktopCapturer::Source)> picker_callback,
+      base::OnceCallback<void()> cancel_callback,
+      base::OnceCallback<void()> error_callback);
+
 #if BUILDFLAG(ENABLE_SCREEN_CAPTURE)
   // Determines whether the captured surface (tab/window) should be focused.
   // This can be called at most once, and only within the first 1s of the
@@ -547,6 +555,12 @@ class CONTENT_EXPORT MediaStreamManager
   // doesn't use any devices as a consequence, the request is deleted.
   void StopDevice(blink::mojom::MediaStreamType type,
                   const base::UnguessableToken& session_id);
+
+  // Used by the native screen capture picker to stop application-audio for a
+  // specific session ID. Note: this only affects application audio; if
+  // system-audio is captured, it will not be stopped.
+  void StopApplicationAudioForPickerSessionId(
+      DesktopMediaID::Id picker_session_id);
 
   // Calls the correct capture manager and closes the device with |session_id|.
   // All requests that use the device are updated.
@@ -772,18 +786,19 @@ class CONTENT_EXPORT MediaStreamManager
       int page_request_id,
       PermissionResult permission_result);
 
-  // Start tracking capture-handle changes for tab-capture.
+  // Start tracking capture-handle changes for tab and window capture.
   void MaybeStartTrackingCaptureHandleConfig(
       const std::string& label,
       const blink::MediaStreamDevice& captured_device,
       DeviceRequest& request);
 
-  // Stop tracking capture-handle changes for tab-capture.
+  // Stop tracking capture-handle changes for tab and window capture.
   void MaybeStopTrackingCaptureHandleConfig(
       const std::string& label,
       const blink::MediaStreamDevice& captured_device);
 
-  // When device changes, update which tabs' capture-handles are tracked.
+  // When device changes, update which tabs/windows' capture-handles are
+  // tracked.
   void MaybeUpdateTrackedCaptureHandleConfigs(
       const std::string& label,
       const blink::mojom::StreamDevicesSet& new_stream_devices_set,
@@ -857,7 +872,7 @@ class CONTENT_EXPORT MediaStreamManager
   // * Otherwise, the capturing tab will capture itself.
   std::optional<WebContentsMediaCaptureId> fake_ui_factory_captured_tab_id_;
 
-  // Observes changes of captured tabs' CaptureHandleConfig and reports
+  // Observes changes of captured tabs/windows' CaptureHandleConfig and reports
   // this changes back to their capturers. This object lives on the UI thread
   // and must be accessed on it and torn down from it.
   CaptureHandleManager capture_handle_manager_;
@@ -883,6 +898,8 @@ class CONTENT_EXPORT MediaStreamManager
 
   std::unique_ptr<media::SystemEventMonitorImpl> system_event_monitor_;
 #endif
+
+  base::WeakPtrFactory<MediaStreamManager> weak_ptr_factory_{this};
 };
 
 }  // namespace content

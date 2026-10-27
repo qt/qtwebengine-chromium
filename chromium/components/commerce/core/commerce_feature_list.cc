@@ -46,6 +46,10 @@ const CountryLocaleMap& GetAllowedCountryToLocaleMap() {
     map[&kPriceAnnotations] = {{"us", {"en-us"}}};
 #endif  // BUILDFLAG(IS_ANDROID)
 
+#if BUILDFLAG(IS_IOS)
+    map[&kTabResumptionShopCard] = {{"us", {"en-us"}}};
+#endif  // BUILDFLAG(IS_IOS)
+
 #if !BUILDFLAG(IS_IOS)
     map[&kEnableDiscountInfoApi] = {{"us", {"en-us"}}};
 #endif  // !BUILDFLAG(IS_IOS)
@@ -153,9 +157,6 @@ BASE_FEATURE(kDiscountAutofill, base::FEATURE_DISABLED_BY_DEFAULT);
 // Shopping variations to Tab resumption.
 BASE_FEATURE(kTabResumptionShopCard, base::FEATURE_DISABLED_BY_DEFAULT);
 
-// Impression limits on ShopCards
-BASE_FEATURE(kShopCardImpressionLimits, base::FEATURE_DISABLED_BY_DEFAULT);
-
 // Discount on navigation
 BASE_FEATURE(kEnableDiscountInfoApi, base::FEATURE_DISABLED_BY_DEFAULT);
 
@@ -222,6 +223,8 @@ BASE_FEATURE(kShoppingPDPMetrics, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kSubscriptionsApi, base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE(kInStockNotification, base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kShoppingPageTypes, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kRetailCoupons, base::FEATURE_ENABLED_BY_DEFAULT);
@@ -229,19 +232,6 @@ BASE_FEATURE(kRetailCoupons, base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kCommerceDeveloper, base::FEATURE_DISABLED_BY_DEFAULT);
 
 const char kRetailCouponsWithCodeParam[] = "RetailCouponsWithCodeParam";
-
-extern const char kShopCardArm1[] = "arm_1";
-extern const char kShopCardArm3[] = "arm_3";
-extern const char kShopCardArm4[] = "arm_4";
-// Regular Tab Resumption with same impression limits as ShopCard
-// (max 3 impressions). So ShopCard variations of Tab Resumption can
-// be conclusively benchmarked against regular Tab Resumption.
-extern const char kShopCardArm5[] = "arm_5";
-// Similar to arm 3, but price drop and product image data acquisition
-// occurs after the card is rendered and is updated if applicable.
-extern const char kShopCardArm6[] = "arm_6";
-extern const char kShopCardFrontPosition[] = "shop_card_front";
-extern const char kShopCardMaxImpressions[] = "max_impressions";
 
 const char kRevertIconOnFailureParam[] =
     "shopping-list-revert-page-action-icon-on-failure";

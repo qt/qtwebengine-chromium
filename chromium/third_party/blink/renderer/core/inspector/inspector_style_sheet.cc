@@ -29,7 +29,11 @@
 #include <memory>
 
 #include "third_party/blink/renderer/core/css/css_container_rule.h"
+#include "third_party/blink/renderer/core/css/css_counter_style_rule.h"
 #include "third_party/blink/renderer/core/css/css_font_palette_values_rule.h"
+#include "third_party/blink/renderer/core/css/css_function_declarations_rule.h"
+#include "third_party/blink/renderer/core/css/css_function_descriptors.h"
+#include "third_party/blink/renderer/core/css/css_function_rule.h"
 #include "third_party/blink/renderer/core/css/css_grouping_rule.h"
 #include "third_party/blink/renderer/core/css/css_import_rule.h"
 #include "third_party/blink/renderer/core/css/css_keyframe_rule.h"
@@ -247,11 +251,40 @@ bool VerifyNestedDeclarations(Document* document, const String& rule_text) {
   }
   // It is not allowed to create a CSSNestedDeclarations rule without
   // any valid properties.
-  // TODO(crbug.com/363985597): List this restriction.
+  // TODO(crbug.com/363985597): Lift this restriction.
   auto is_valid = [](const CSSPropertySourceData& data) {
     return data.parsed_ok && !data.disabled;
   };
   if (!std::ranges::any_of(rule_data.child_rules[1]->property_data, is_valid)) {
+    return false;
+  }
+  return true;
+}
+
+bool VerifyFunctionDeclarations(Document* document, const String& rule_text) {
+  auto* style_sheet = MakeGarbageCollected<StyleSheetContents>(
+      ParserContextForDocument(document));
+  CSSRuleSourceDataList source_data;
+  String text = StrCat({"@function --func() { ", rule_text, " }"});
+  InspectorCSSParserObserver observer(text, document, &source_data);
+  CSSParser::ParseSheetForInspector(ParserContextForDocument(document),
+                                    style_sheet, text, observer);
+
+  unsigned rule_count = source_data.size();
+  if (rule_count != 1 || source_data.at(0)->type != StyleRule::kFunction) {
+    return false;
+  }
+  const CSSRuleSourceData& rule_data = *source_data.front();
+  if (rule_data.child_rules.size() != 1) {
+    return false;
+  }
+  // It is not allowed to create a CSSFunctionDeclarations rule without
+  // any valid properties.
+  // TODO(crbug.com/363985597): Lift this restriction.
+  auto is_valid = [](const CSSPropertySourceData& data) {
+    return data.parsed_ok && !data.disabled;
+  };
+  if (!std::ranges::any_of(rule_data.child_rules[0]->property_data, is_valid)) {
     return false;
   }
   return true;
@@ -563,6 +596,8 @@ void FlattenSourceData(const CSSRuleSourceDataList& data_list,
       case StyleRule::kViewTransition:
       case StyleRule::kFontPaletteValues:
       case StyleRule::kFontFeatureValues:
+      case StyleRule::kCounterStyle:
+      case StyleRule::kFunctionDeclarations:
         result->push_back(data);
         break;
       case StyleRule::kStyle:
@@ -575,6 +610,7 @@ void FlattenSourceData(const CSSRuleSourceDataList& data_list,
       case StyleRule::kProperty:
       case StyleRule::kStartingStyle:
       case StyleRule::kNavigation:
+      case StyleRule::kFunction:
         result->push_back(data);
         FlattenSourceData(data->child_rules, result);
         break;
@@ -639,6 +675,14 @@ CSSRuleList* AsCSSRuleList(CSSRule* rule) {
     return navigation_rule->cssRules();
   }
 
+  if (auto* counter_style_rule = DynamicTo<CSSCounterStyleRule>(rule)) {
+    return counter_style_rule->cssRules();
+  }
+
+  if (auto* function_rule = DynamicTo<CSSFunctionRule>(rule)) {
+    return function_rule->cssRules();
+  }
+
   return nullptr;
 }
 
@@ -662,6 +706,8 @@ void CollectFlatRules(RuleList rule_list, CSSRuleVector* result) {
       case CSSRule::kViewTransitionRule:
       case CSSRule::kFontPaletteValuesRule:
       case CSSRule::kFontFeatureValuesRule:
+      case CSSRule::kCounterStyleRule:
+      case CSSRule::kFunctionDeclarationsRule:
         result->push_back(rule);
         break;
       case CSSRule::kStyleRule:
@@ -674,6 +720,7 @@ void CollectFlatRules(RuleList rule_list, CSSRuleVector* result) {
       case CSSRule::kPropertyRule:
       case CSSRule::kStartingStyleRule:
       case CSSRule::kNavigationRule:
+      case CSSRule::kFunctionRule:
         result->push_back(rule);
         CollectFlatRules(AsCSSRuleList(rule), result);
         break;
@@ -780,7 +827,7 @@ std::unique_ptr<protocol::CSS::CSSStyle> InspectorStyle::BuildObjectForStyle(
     if (success) {
       const SourceRange& declarations_range =
           source_data_->rule_declarations_range;
-      result->setCssText(sheet_text.Substring(
+      result->setCssText(sheet_text.DeprecatedSubstring(
           declarations_range.start,
           declarations_range.end - declarations_range.start));
     }
@@ -807,7 +854,8 @@ bool InspectorStyle::TextForRange(const SourceRange& range, String* result) {
   DCHECK(0 <= range.start);
   DCHECK_LE(range.start, range.end);
   DCHECK_LE(range.end, style_sheet_text.length());
-  *result = style_sheet_text.Substring(range.start, range.end - range.start);
+  *result = style_sheet_text.DeprecatedSubstring(range.start,
+                                                 range.end - range.start);
   return true;
 }
 
@@ -1336,9 +1384,14 @@ CSSRule* InspectorStyleSheet::SetStyleText(
     return nullptr;
   }
 
+  CSSRule* rule = RuleForSourceData(source_data);
   if (source_data->type == StyleRule::RuleType::kStyle &&
       source_data->rule_header_range.length() == 0u &&
-      !VerifyNestedDeclarations(page_style_sheet_->OwnerDocument(), text)) {
+      !(IsA<CSSFunctionDeclarationsRule>(rule)
+            ? VerifyFunctionDeclarations(page_style_sheet_->OwnerDocument(),
+                                         text)
+            : VerifyNestedDeclarations(page_style_sheet_->OwnerDocument(),
+                                       text))) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kSyntaxError,
         "Style text would cause rule to disappear");
@@ -1347,12 +1400,12 @@ CSSRule* InspectorStyleSheet::SetStyleText(
     return nullptr;
   }
 
-  CSSRule* rule = RuleForSourceData(source_data);
   if (!rule || !rule->parentStyleSheet() ||
       (!IsA<CSSStyleRule>(rule) && !IsA<CSSKeyframeRule>(rule) &&
        !IsA<CSSPropertyRule>(rule) && !IsA<CSSFontPaletteValuesRule>(rule) &&
        !IsA<CSSPositionTryRule>(rule) && !IsA<CSSFontFeatureValuesRule>(rule) &&
-       !IsA<CSSFontFaceRule>(rule))) {
+       !IsA<CSSFontFaceRule>(rule) && !IsA<CSSCounterStyleRule>(rule) &&
+       !IsA<CSSFunctionDeclarationsRule>(rule))) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kNotFoundError,
         "Source range didn't match existing style source range");
@@ -1380,10 +1433,10 @@ CSSRule* InspectorStyleSheet::SetStyleText(
     // so if we extract the text from the start of the header to the end of the
     // body, we only need to add `@font-feature-values ` and `}` to have the
     // full rule text.
-    auto old_prefix = text_.Substring(
+    auto old_prefix = text_.DeprecatedSubstring(
         parent_source_data->rule_header_range.start,
         range.start - parent_source_data->rule_header_range.start);
-    auto old_suffix = text_.Substring(
+    auto old_suffix = text_.DeprecatedSubstring(
         range.end, parent_source_data->rule_body_range.end - range.end);
 
     if (!(old_prefix.ends_with('{') && old_suffix.starts_with('}'))) {
@@ -1436,6 +1489,12 @@ CSSRule* InspectorStyleSheet::SetStyleText(
       style = position_try_rule->style();
     } else if (auto* font_face_rule = DynamicTo<CSSFontFaceRule>(rule)) {
       style = font_face_rule->style();
+    } else if (auto* counter_style_rule =
+                   DynamicTo<CSSCounterStyleRule>(rule)) {
+      style = counter_style_rule->MutableStyleForInspector();
+    } else if (auto* function_declarations_rule =
+                   DynamicTo<CSSFunctionDeclarationsRule>(rule)) {
+      style = function_declarations_rule->style();
     } else {
       style = To<CSSKeyframeRule>(rule)->style();
     }
@@ -1492,20 +1551,18 @@ CSSMediaRule* InspectorStyleSheet::SetMediaRuleText(
   return media_rule;
 }
 
-CSSContainerRule* InspectorStyleSheet::SetContainerRuleText(
-    const SourceRange& range,
-    const String& text,
-    SourceRange* new_range,
-    String* old_text,
+CSSContainerRule* InspectorStyleSheet::ContainerRuleFromSourceData(
+    const String& query_text,
+    CSSRuleSourceData* source_data,
     ExceptionState& exception_state) {
-  if (!VerifyContainerQueryText(page_style_sheet_->OwnerDocument(), text)) {
+  if (!VerifyContainerQueryText(page_style_sheet_->OwnerDocument(),
+                                query_text)) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kSyntaxError,
         "Selector or container query text is not valid.");
     return nullptr;
   }
 
-  CSSRuleSourceData* source_data = FindRuleByHeaderRange(range);
   if (!source_data || !source_data->HasContainer()) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kNotFoundError,
@@ -1522,15 +1579,43 @@ CSSContainerRule* InspectorStyleSheet::SetContainerRuleText(
     return nullptr;
   }
 
-  CSSContainerRule* container_rule =
-      InspectorCSSAgent::AsCSSContainerRule(rule);
-  container_rule->SetConditionText(
-      page_style_sheet_->OwnerDocument()->GetExecutionContext(), text);
+  return InspectorCSSAgent::AsCSSContainerRule(rule);
+}
 
-  ReplaceText(source_data->rule_header_range, text, new_range, old_text);
-  OnStyleSheetTextChanged();
+CSSContainerRule* InspectorStyleSheet::SetContainerRuleText(
+    const SourceRange& range,
+    const String& text,
+    SourceRange* new_range,
+    String* old_text,
+    ExceptionState& exception_state) {
+  CSSRuleSourceData* source_data = FindRuleByHeaderRange(range);
+  if (CSSContainerRule* container_rule =
+          ContainerRuleFromSourceData(text, source_data, exception_state)) {
+    container_rule->SetQueryText(
+        page_style_sheet_->OwnerDocument()->GetExecutionContext(), text);
+    ReplaceText(source_data->rule_header_range, text, new_range, old_text);
+    OnStyleSheetTextChanged();
+    return container_rule;
+  }
+  return nullptr;
+}
 
-  return container_rule;
+CSSContainerRule* InspectorStyleSheet::SetContainerRuleConditionText(
+    const SourceRange& range,
+    const String& text,
+    SourceRange* new_range,
+    String* old_text,
+    ExceptionState& exception_state) {
+  CSSRuleSourceData* source_data = FindRuleByHeaderRange(range);
+  if (CSSContainerRule* container_rule =
+          ContainerRuleFromSourceData(text, source_data, exception_state)) {
+    container_rule->SetConditionText(
+        page_style_sheet_->OwnerDocument()->GetExecutionContext(), text);
+    ReplaceText(source_data->rule_header_range, text, new_range, old_text);
+    OnStyleSheetTextChanged();
+    return container_rule;
+  }
+  return nullptr;
 }
 
 CSSSupportsRule* InspectorStyleSheet::SetSupportsRuleText(
@@ -1903,7 +1988,7 @@ void InspectorStyleSheet::ReplaceText(const SourceRange& range,
                                       String* old_text) {
   String sheet_text = text_;
   if (old_text) {
-    *old_text = sheet_text.Substring(range.start, range.length());
+    *old_text = sheet_text.DeprecatedSubstring(range.start, range.length());
   }
   sheet_text.replace(range.start, range.length(), text);
   if (new_range) {
@@ -2152,7 +2237,8 @@ InspectorStyleSheet::SelectorsFromSource(CSSRuleSourceData* source_data,
   for (wtf_size_t i = 0, size = ranges.size(); i < size && obj_selector;
        ++i, obj_selector = CSSSelectorList::Next(*obj_selector)) {
     const SourceRange& range = ranges.at(i);
-    String selector = sheet_text.Substring(range.start, range.length());
+    String selector =
+        sheet_text.DeprecatedSubstring(range.start, range.length());
 
     if (comment) {
       // We don't want to see any comments in the selector components, only the
@@ -2314,6 +2400,30 @@ InspectorStyleSheet::BuildAtRuleObjectForFontPaletteValuesRule(
           .setName(std::move(name_text))
           .setOrigin(origin_)
           .setStyle(BuildObjectForStyle(values_rule->Style(), nullptr))
+          .build();
+  if (CanBindOrigin() && !Id().empty()) {
+    result->setStyleSheetId(Id());
+  }
+  return result;
+}
+
+std::unique_ptr<protocol::CSS::CSSAtRule>
+InspectorStyleSheet::BuildAtRuleObjectForCounterStyleRule(
+    CSSCounterStyleRule* counter_style_rule) {
+  std::unique_ptr<protocol::CSS::Value> name_text =
+      protocol::CSS::Value::create()
+          .setText(counter_style_rule->name())
+          .build();
+  CSSRuleSourceData* source_data = SourceDataForRule(counter_style_rule);
+  if (source_data) {
+    name_text->setRange(BuildSourceRangeObject(source_data->rule_header_range));
+  }
+  std::unique_ptr<protocol::CSS::CSSAtRule> result =
+      protocol::CSS::CSSAtRule::create()
+          .setType(protocol::CSS::CSSAtRule::TypeEnum::CounterStyle)
+          .setName(std::move(name_text))
+          .setOrigin(origin_)
+          .setStyle(BuildObjectForStyle(counter_style_rule->Style(), nullptr))
           .build();
   if (CanBindOrigin() && !Id().empty()) {
     result->setStyleSheetId(Id());

@@ -17,6 +17,7 @@
 #include "content/public/browser/overscroll_configuration.h"
 #include "content/public/browser/preloading.h"
 #include "ui/aura/window.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_delegate.h"
 #include "ui/compositor/paint_recorder.h"
@@ -223,11 +224,15 @@ Affordance::Affordance(GestureNavSimple* owner,
   DCHECK(mode_ == OVERSCROLL_EAST || mode_ == OVERSCROLL_WEST ||
          mode_ == OVERSCROLL_SOUTH);
   if (mode_ == OVERSCROLL_EAST) {
-    arrow_icon_ = &vector_icons::kBackArrowIcon;
+    arrow_icon_ =
+        &(features::IsRoundedIconsEnabled() ? vector_icons::kArrowBackIcon
+                                            : vector_icons::kBackArrowOldIcon);
   } else if (mode_ == OVERSCROLL_WEST) {
-    arrow_icon_ = &vector_icons::kForwardArrowIcon;
+    arrow_icon_ = &(features::IsRoundedIconsEnabled()
+                        ? vector_icons::kArrowForwardIcon
+                        : vector_icons::kForwardArrowOldIcon);
   } else if (mode_ == OVERSCROLL_SOUTH) {
-    arrow_icon_ = &vector_icons::kReloadIcon;
+    arrow_icon_ = &vector_icons::kReloadCustomIcon;
   }
 
   DCHECK(arrow_icon_);
@@ -523,13 +528,13 @@ void GestureNavSimple::OnOverscrollModeChange(OverscrollMode old_mode,
   // Do not start a new gesture-nav if overscroll-behavior-x is not auto.
   if ((new_mode == OverscrollMode::OVERSCROLL_EAST ||
        new_mode == OverscrollMode::OVERSCROLL_WEST) &&
-      behavior.x != cc::OverscrollBehavior::Type::kAuto) {
+      !behavior.PropagatesXScroll()) {
     return;
   }
 
   // Do not start a new pull-to-refresh if overscroll-behavior-y is not auto.
   if (new_mode == OverscrollMode::OVERSCROLL_SOUTH &&
-      behavior.y != cc::OverscrollBehavior::Type::kAuto) {
+      !behavior.PropagatesYScroll()) {
     return;
   }
 

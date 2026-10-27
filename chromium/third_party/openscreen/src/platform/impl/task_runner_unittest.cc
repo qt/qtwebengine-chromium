@@ -15,6 +15,7 @@
 #include "platform/api/time.h"
 #include "platform/test/fake_clock.h"
 #include "util/chrono_helpers.h"
+#include "util/no_destructor.h"
 namespace openscreen {
 namespace {
 
@@ -70,18 +71,18 @@ class TaskRunnerWithWaiterFactory {
  public:
   static std::unique_ptr<TaskRunnerImpl> Create(
       ClockNowFunctionPtr now_function) {
-    fake_waiter = std::make_unique<FakeTaskWaiter>(now_function);
+    fake_waiter() = std::make_unique<FakeTaskWaiter>(now_function);
     auto runner = std::make_unique<TaskRunnerImpl>(
-        now_function, fake_waiter.get(), std::chrono::hours(1));
-    fake_waiter->SetTaskRunner(runner.get());
+        now_function, fake_waiter().get(), std::chrono::hours(1));
+    fake_waiter()->SetTaskRunner(runner.get());
     return runner;
   }
 
-  static std::unique_ptr<FakeTaskWaiter> fake_waiter;
+  static std::unique_ptr<FakeTaskWaiter>& fake_waiter() {
+    static NoDestructor<std::unique_ptr<FakeTaskWaiter>> instance;
+    return *instance;
+  }
 };
-
-// static
-std::unique_ptr<FakeTaskWaiter> TaskRunnerWithWaiterFactory::fake_waiter;
 
 }  // anonymous namespace
 
@@ -229,7 +230,8 @@ TEST(TaskRunnerImplTest, TaskRunnerUsesEventWaiter) {
   });
 
   const Clock::time_point start1 = Clock::now();
-  FakeTaskWaiter* fake_waiter = TaskRunnerWithWaiterFactory::fake_waiter.get();
+  FakeTaskWaiter* fake_waiter =
+      TaskRunnerWithWaiterFactory::fake_waiter().get();
   while ((Clock::now() - start1) < kWaitTimeout && !fake_waiter->IsWaiting()) {
     std::this_thread::sleep_for(kTaskRunnerSleepTime);
   }
@@ -253,7 +255,8 @@ TEST(TaskRunnerImplTest, WakesEventWaiterOnPostTask) {
   std::thread t([&runner] { runner.get()->RunUntilStopped(); });
 
   const Clock::time_point start1 = Clock::now();
-  FakeTaskWaiter* fake_waiter = TaskRunnerWithWaiterFactory::fake_waiter.get();
+  FakeTaskWaiter* fake_waiter =
+      TaskRunnerWithWaiterFactory::fake_waiter().get();
   while ((Clock::now() - start1) < kWaitTimeout && !fake_waiter->IsWaiting()) {
     std::this_thread::sleep_for(kTaskRunnerSleepTime);
   }

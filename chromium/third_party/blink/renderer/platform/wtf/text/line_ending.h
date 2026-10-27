@@ -38,22 +38,22 @@
 
 namespace blink {
 
-// Normalize all line-endings in the given string to CRLF.
-WTF_EXPORT String NormalizeLineEndingsToCRLF(const String& from);
+// Normalize all line-endings in the given string to CR LF.
+WTF_EXPORT String NormalizeLineEndingsToCrLf(const String& from);
 
 // Normalize all line-endings in the given string to LF.
-WTF_EXPORT String NormalizeLineEndingsToLF(const String& from);
+WTF_EXPORT String NormalizeLineEndingsToLf(const String& from);
 
 // Normalize all line-endings in the given string to LF and append the result to
 // the given buffer.
-WTF_EXPORT void NormalizeLineEndingsToLF(const std::string& from,
-                                         Vector<char>& result);
+WTF_EXPORT void NormalizeLineEndingsToLf(const std::string& from,
+                                         Vector<uint8_t>& result);
 
 // Normalize all line-endings in the given string to the native line-endings and
 // append the result to the given buffer.
 // (Normalize to CRLF on Windows and normalize to LF on all other platforms.)
 WTF_EXPORT void NormalizeLineEndingsToNative(const std::string& from,
-                                             Vector<char>& result);
+                                             Vector<uint8_t>& result);
 
 }  // namespace blink
 

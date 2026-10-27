@@ -110,6 +110,9 @@ template("system_webview_apk_or_module_tmpl") {
     if (defined(invoker.jinja_extra_includes)) {
       includes += invoker.jinja_extra_includes
     }
+    if (enable_javaless_renderers) {
+      variables += [ "javaless_renderers=true" ]
+    }
   }
   if (defined(invoker.target_type)) {
     _target_type = invoker.target_type
@@ -198,11 +201,14 @@ template("system_webview_apk_or_module_tmpl") {
           (android_64bit_target_cpu && _include_64_bit_webview)) {
         if (use_webview_pgo_profile) {
           _using_webview_toolchain = true
-          shared_libraries = [ "//android_webview:libwebviewchromium($webview_toolchain)" ]
+          shared_libraries =
+              [ "//android_webview:libwebviewchromium($webview_toolchain)" ]
           if (!defined(data_deps)) {
             data_deps = []
           }
-          # This needs to be a swarming runtime dep for the orderfile bot to work.
+
+          # This needs to be a swarming runtime dep for the orderfile bot to
+          # work.
           data_deps += [ "//android_webview:copy_webview_lib_unstripped" ]
         } else {
           shared_libraries = [ "//android_webview:libwebviewchromium" ]
@@ -300,7 +306,8 @@ template("system_webview_apk_or_module_tmpl") {
       # Removes metadata needed for Resources.getIdentifier("resource_name").
       strip_resource_names = !is_java_debug
 
-      # Shortens resource file names in apk eg: res/drawable/button.xml -> res/a.xml
+      # Shortens resource file names in apk eg: res/drawable/button.xml ->
+      # res/a.xml
       short_resource_paths = !is_java_debug
 
       # Removes unused resources from the apk. Only enabled on official builds

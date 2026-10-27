@@ -137,6 +137,12 @@ void LoopingFileCastAgent::OnMessage(VirtualConnectionRouter* router,
     const ErrorOr<Json::Value> payload = json::Parse(GetPayload(message));
     if (payload.is_error()) {
       OSP_LOG_ERROR << "Failed to parse message: " << payload.error();
+      return;
+    }
+
+    if (!payload.value().isObject()) {
+      OSP_LOG_ERROR << "Parsed message is not a JSON object";
+      return;
     }
 
     if (HasType(payload.value(), CastMessageType::kReceiverStatus)) {

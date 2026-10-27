@@ -65,6 +65,7 @@ std::string GetSpecialUse(vvl::Extension extension_name) {
         {vvl::Extension::_VK_MESA_image_alignment_control, "d3demulation"},
         {vvl::Extension::_VK_ARM_performance_counters_by_region, "devtools"},
         {vvl::Extension::_VK_ARM_shader_instrumentation, "devtools"},
+        {vvl::Extension::_VK_EXT_primitive_restart_index, "glemulation"},
     };
 
     auto it = special_use_extensions.find(extension_name);
@@ -1231,6 +1232,52 @@ void BestPractices::PostCallRecordGetMemoryAndroidHardwareBufferANDROID(VkDevice
 }
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
 
+void BestPractices::PostCallRecordCreateGpaSessionAMD(VkDevice device, const VkGpaSessionCreateInfoAMD* pCreateInfo,
+                                                      const VkAllocationCallbacks* pAllocator, VkGpaSessionAMD* pGpaSession,
+                                                      const RecordObject& record_obj) {
+    bp_state::LogResult(*this, device, record_obj);
+}
+
+void BestPractices::PostCallRecordSetGpaDeviceClockModeAMD(VkDevice device, VkGpaDeviceClockModeInfoAMD* pInfo,
+                                                           const RecordObject& record_obj) {
+    bp_state::LogResult(*this, device, record_obj);
+}
+
+void BestPractices::PostCallRecordGetGpaDeviceClockInfoAMD(VkDevice device, VkGpaDeviceGetClockInfoAMD* pInfo,
+                                                           const RecordObject& record_obj) {
+    bp_state::LogResult(*this, device, record_obj);
+}
+
+void BestPractices::PostCallRecordCmdBeginGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                                        const RecordObject& record_obj) {
+    bp_state::LogResult(*this, commandBuffer, record_obj);
+}
+
+void BestPractices::PostCallRecordCmdEndGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                                      const RecordObject& record_obj) {
+    bp_state::LogResult(*this, commandBuffer, record_obj);
+}
+
+void BestPractices::PostCallRecordCmdBeginGpaSampleAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                                       const VkGpaSampleBeginInfoAMD* pGpaSampleBeginInfo, uint32_t* pSampleID,
+                                                       const RecordObject& record_obj) {
+    bp_state::LogResult(*this, commandBuffer, record_obj);
+}
+
+void BestPractices::PostCallRecordGetGpaSessionStatusAMD(VkDevice device, VkGpaSessionAMD gpaSession,
+                                                         const RecordObject& record_obj) {
+    bp_state::LogResult(*this, device, record_obj);
+}
+
+void BestPractices::PostCallRecordGetGpaSessionResultsAMD(VkDevice device, VkGpaSessionAMD gpaSession, uint32_t sampleID,
+                                                          size_t* pSizeInBytes, void* pData, const RecordObject& record_obj) {
+    bp_state::LogResult(*this, device, record_obj);
+}
+
+void BestPractices::PostCallRecordResetGpaSessionAMD(VkDevice device, VkGpaSessionAMD gpaSession, const RecordObject& record_obj) {
+    bp_state::LogResult(*this, device, record_obj);
+}
+
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 void BestPractices::PostCallRecordCreateExecutionGraphPipelinesAMDX(VkDevice device, VkPipelineCache pipelineCache,
                                                                     uint32_t createInfoCount,
@@ -1552,6 +1599,11 @@ void BestPractices::PostCallRecordSetPrivateDataEXT(VkDevice device, VkObjectTyp
     PostCallRecordSetPrivateData(device, objectType, objectHandle, privateDataSlot, data, record_obj);
 }
 
+void BestPractices::PostCallRecordQueueSetPerfHintQCOM(VkQueue queue, const VkPerfHintInfoQCOM* pPerfHintInfo,
+                                                       const RecordObject& record_obj) {
+    bp_state::LogResult(*this, queue, record_obj);
+}
+
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 void BestPractices::PostCallRecordCreateCudaModuleNV(VkDevice device, const VkCudaModuleCreateInfoNV* pCreateInfo,
                                                      const VkAllocationCallbacks* pAllocator, VkCudaModuleNV* pModule,
@@ -1691,7 +1743,7 @@ void BestPractices::PostCallRecordGetMemoryRemoteAddressNV(VkDevice device,
     bp_state::LogResult(*this, device, record_obj);
 }
 
-void BestPractices::PostCallRecordGetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoEXT* pPipelineInfo,
+void BestPractices::PostCallRecordGetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoKHR* pPipelineInfo,
                                                            VkBaseOutStructure* pPipelineProperties,
                                                            const RecordObject& record_obj) {
     bp_state::LogResult(*this, device, record_obj);
@@ -1899,6 +1951,13 @@ void bp_state::Instance::PostCallRecordGetPhysicalDeviceQueueFamilyDataGraphProp
     bp_state::LogResult(*this, physicalDevice, record_obj);
 }
 
+void bp_state::Instance::PostCallRecordGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+    const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, VkBaseOutStructure* pProperties,
+    const RecordObject& record_obj) {
+    bp_state::LogResult(*this, physicalDevice, record_obj);
+}
+
 #ifdef VK_USE_PLATFORM_SCREEN_QNX
 void BestPractices::PostCallRecordGetScreenBufferPropertiesQNX(VkDevice device, const struct _screen_buffer* buffer,
                                                                VkScreenBufferPropertiesQNX* pProperties,
@@ -1984,6 +2043,14 @@ void BestPractices::PostCallRecordGetShaderInstrumentationValuesARM(VkDevice dev
                                                                     VkShaderInstrumentationValuesFlagsARM flags,
                                                                     const RecordObject& record_obj) {
     bp_state::LogResult(*this, device, record_obj);
+}
+
+void bp_state::Instance::PostCallRecordGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+    const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties,
+    const VkDataGraphOpticalFlowImageFormatInfoARM* pOpticalFlowImageFormatInfo, uint32_t* pFormatCount,
+    VkDataGraphOpticalFlowImageFormatPropertiesARM* pImageFormatProperties, const RecordObject& record_obj) {
+    bp_state::LogResult(*this, physicalDevice, record_obj);
 }
 
 #ifdef VK_USE_PLATFORM_UBM_SEC

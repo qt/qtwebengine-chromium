@@ -8,16 +8,14 @@
 #include <string>
 
 #include "content/common/content_export.h"
+#include "content/public/browser/cpu_performance.h"
 #include "third_party/blink/public/mojom/cpu_performance.mojom-shared.h"
 
 namespace content::cpu_performance {
 
-using Tier = blink::mojom::PerformanceTier;
-
-// Returns the CPU performance tier, which exposes some information about
-// how powerful the user device is. This function contains the default
-// implementation for //content, which can be overridden by embedders.
-CONTENT_EXPORT Tier GetTier();
+// Returns the CPU performance tier from an integer. The value must be
+// within the valid range of PerformanceTier.
+CONTENT_EXPORT Tier TierFromInt(int value);
 
 enum class Manufacturer {
   kUnknown,
@@ -31,7 +29,6 @@ enum class Manufacturer {
   kSamsung,
 };
 
-CONTENT_EXPORT Manufacturer GetManufacturer(std::string_view cpu_model);
 CONTENT_EXPORT std::pair<Manufacturer, std::string> SplitCpuModel(
     std::string_view cpu_model);
 

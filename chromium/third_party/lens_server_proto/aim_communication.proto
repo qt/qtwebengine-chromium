@@ -41,6 +41,9 @@ enum FeatureCapability {
 
   // lockInput() method
   LOCK_INPUT = 26;
+
+  // openLinkInSidePanelMode() method
+  OPEN_LINK_IN_SIDE_PANEL_MODE = 31;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -140,6 +143,7 @@ message AimToClientMessage {
     RemoveInjectedInput remove_injected_input = 11;
     UnlockInput unlock_input = 12;
     LockInput lock_input = 13;
+    OpenLinkInSidePanelMode open_link_in_side_panel_mode = 14;
   }
 }
 
@@ -192,6 +196,9 @@ message Context {
     Pdf pdf = 3;
     Webpage webpage = 4;
   }
+
+  // True if the context/media is derived from a Chrome tab.
+  bool has_chrome_tab_data = 23;
 }
 
 message Image {
@@ -233,4 +240,9 @@ message InjectInput {
 message RemoveInjectedInput {
   // The ID of the input to remove.
   string id = 1;
+}
+
+// Message AIM sends to clients to notify to open a link in the side panel.
+message OpenLinkInSidePanelMode {
+  string url = 1;
 }

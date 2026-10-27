@@ -11,10 +11,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
 #include "components/password_manager/core/browser/password_store/password_store_consumer.h"
+#include "components/password_manager/core/browser/password_store/stored_credential.h"
 
 namespace password_manager {
-
-struct PasswordForm;
 
 // A helper class that synchronously waits until the password store handles a
 // GetLogins() request.
@@ -29,16 +28,17 @@ class PasswordStoreResultsObserver : public PasswordStoreConsumer {
   ~PasswordStoreResultsObserver() override;
 
   // Waits for OnGetPasswordStoreResults() and returns the result.
-  std::vector<std::unique_ptr<PasswordForm>> WaitForResults();
+  std::vector<StoredCredential> WaitForResults();
 
   base::WeakPtr<PasswordStoreConsumer> GetWeakPtr();
 
  private:
-  void OnGetPasswordStoreResults(
-      std::vector<std::unique_ptr<PasswordForm>> results) override;
+  void OnGetPasswordStoreResultsOrErrorFrom(
+      PasswordStoreInterface* store,
+      LoginsResultOrError results_or_error) override;
 
   base::RunLoop run_loop_;
-  std::vector<std::unique_ptr<PasswordForm>> results_;
+  std::vector<StoredCredential> results_;
   base::WeakPtrFactory<PasswordStoreResultsObserver> weak_ptr_factory_{this};
 };
 

@@ -36,6 +36,7 @@
 #include "dawn/native/DawnNative.h"
 #include "src/dawn/node/interop/NodeAPI.h"
 #include "src/dawn/node/interop/WebGPU.h"
+#include "src/utils/compiler.h"
 
 namespace wgpu::binding {
 
@@ -65,6 +66,9 @@ class GPURenderBundleEncoder final : public interop::GPURenderBundleEncoder {
                        interop::AllowSharedBufferSource data,
                        interop::GPUSize64 dataOffsetElements,
                        std::optional<interop::GPUSize64> sizeElements) override;
+    void setResourceTable(
+        Napi::Env,
+        std::optional<interop::Interface<interop::GPUResourceTable>> table) override;
     void pushDebugGroup(Napi::Env, std::string groupLabel) override;
     void popDebugGroup(Napi::Env) override;
     void insertDebugMarker(Napi::Env, std::string markerLabel) override;

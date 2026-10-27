@@ -244,8 +244,6 @@ target_sources(vvl PRIVATE
     core_checks/cc_shader_object.cpp
     core_checks/cc_state_tracker.h
     core_checks/cc_state_tracker.cpp
-    core_checks/cc_submit.h
-    core_checks/cc_submit.cpp
     core_checks/cc_sync_vuid_maps.h
     core_checks/cc_sync_vuid_maps.cpp
     core_checks/cc_synchronization.h
@@ -302,6 +300,8 @@ target_sources(vvl PRIVATE
     ${API_TYPE}/generated/thread_safety_instance_defs.h
     ${API_TYPE}/generated/gpuav_offline_spirv.h
     ${API_TYPE}/generated/gpuav_offline_spirv.cpp
+    ${API_TYPE}/generated/extended_flags_helper_generator.h
+    ${API_TYPE}/generated/extended_flags_helper_generator.cpp
     gpuav/core/gpuav.h
     gpuav/core/gpuav_constants.h
     gpuav/core/gpuav_features.cpp
@@ -340,7 +340,6 @@ target_sources(vvl PRIVATE
     gpuav/instrumentation/descriptor_checks.cpp
     gpuav/instrumentation/mesh_shading.cpp
     gpuav/instrumentation/post_process_descriptor_indexing.cpp
-    gpuav/instrumentation/ray_query.cpp
     gpuav/instrumentation/register_validation.h
     gpuav/instrumentation/sanitizer.cpp
     gpuav/instrumentation/shared_memory_data_race.cpp
@@ -354,10 +353,13 @@ target_sources(vvl PRIVATE
     gpuav/shaders/gpuav_error_codes.h
     gpuav/shaders/gpuav_error_header.h
     gpuav/shaders/gpuav_shaders_constants.h
+    gpuav/shaders/setup/descriptor_encoding_update.h
     gpuav/shaders/validation_cmd/push_data.h
     gpu_dump/gpu_dump.h
     gpu_dump/gpu_dump.cpp
+    gpu_dump/gpu_dump_copy_memory_indirect.cpp
     gpu_dump/gpu_dump_descriptor.cpp
+    gpu_dump/gpu_dump_device_generated_commands.cpp
     gpu_dump/gpu_dump_settings.h
     gpu_dump/gpu_dump_state.h
     gpu_dump/gpu_dump_state.cpp
@@ -383,7 +385,8 @@ target_sources(vvl PRIVATE
     state_tracker/device_range_state.h
     state_tracker/device_state.cpp
     state_tracker/device_state.h
-    state_tracker/event_map.h
+    state_tracker/event_state.cpp
+    state_tracker/event_state.h
     state_tracker/fence_state.cpp
     state_tracker/fence_state.h
     state_tracker/image_layout_map.cpp
@@ -450,6 +453,7 @@ target_sources(vvl PRIVATE
     stateless/sl_image.cpp
     stateless/sl_instance_device.cpp
     stateless/sl_pipeline.cpp
+    stateless/sl_queue.cpp
     stateless/sl_ray_tracing.cpp
     stateless/sl_ray_tracing_micromap.cpp
     stateless/sl_ray_tracing_nv.cpp

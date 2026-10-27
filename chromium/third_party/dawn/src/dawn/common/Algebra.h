@@ -34,7 +34,7 @@
 #include <cstdint>
 #include <type_traits>
 
-#include "dawn/common/Assert.h"
+#include "src/dawn/common/Assert.h"
 
 // Use a nested namespace so that we can fill it with shorthand functions like `Mul` and shorthand
 // type aliases.
@@ -275,6 +275,18 @@ class Matrix {
     constexpr const Column& operator[](size_t i) const { return data[i]; }
 
     constexpr bool operator==(const Self& other) const = default;
+
+    constexpr Self operator*(const Scalar& s) const {
+        Self result;
+        for (size_t i = 0; i < Cols; i++) {
+            result[i] = data[i] * s;
+        }
+        return result;
+    }
+    constexpr Self& operator*=(const Scalar& other) {
+        *this = *this * other;
+        return *this;
+    }
 
     constexpr Self operator/(const Scalar& s) const {
         Self result;

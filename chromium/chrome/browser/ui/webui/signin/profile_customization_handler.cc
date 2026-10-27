@@ -13,11 +13,11 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/lifetime/application_lifetime_desktop.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_attributes_entry.h"
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/profiles/profile_colors_util.h"
 #include "chrome/browser/ui/profiles/profile_customization_util.h"
 #include "chrome/browser/ui/profiles/profile_picker.h"
@@ -178,9 +178,8 @@ void ProfileCustomizationHandler::HandleDeleteProfile(
 void ProfileCustomizationHandler::HandleSetAvatarIcon(
     const base::ListValue& args) {
   CHECK_EQ(1u, args.size());
-  size_t avatar_icon_index = args[0].GetInt();
-
-  profiles::SetDefaultProfileAvatarIndex(profile_, avatar_icon_index);
+  profiles::SetDefaultProfileAvatarIndex(
+      profile_, profiles::GetSanitizedAvatarIndex(args[0].GetInt()));
 }
 
 void ProfileCustomizationHandler::UpdateProfileInfo(

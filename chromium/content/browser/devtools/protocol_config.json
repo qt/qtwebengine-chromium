@@ -25,7 +25,7 @@
             },
             {
                 "domain": "DOM",
-                "include": ["setFileInputFiles"],
+                "include": ["setFileInputFiles", "getFileInfo"],
                 "include_events": []
             },
             {
@@ -49,7 +49,6 @@
 
                   "setPressureSourceOverrideEnabled",
                   "setPressureStateOverride",
-                  "setPressureDataOverride",
 
                   "setIdleOverride",
                   "clearIdleOverride",
@@ -67,8 +66,7 @@
                 "async": [
                   "getOverriddenSensorInformation",
                   "setSensorOverrideReadings",
-                  "setPressureStateOverride",
-                  "setPressureDataOverride"
+                  "setPressureStateOverride"
                 ]
             },
             {
@@ -130,6 +128,7 @@
                   "enableReportingApi",
                   "enableDeviceBoundSessions",
                   "fetchSchemefulSite",
+                  "deleteDeviceBoundSession",
                   "setCookieControls",
                   "configureDurableMessages"
                 ],
@@ -158,7 +157,8 @@
                 "domain": "Page",
                 "include": ["enable", "disable", "reload", "navigate", "stopLoading", "getNavigationHistory", "navigateToHistoryEntry", "resetNavigationHistory", "captureScreenshot",
                     "startScreencast", "stopScreencast", "screencastFrameAck", "handleJavaScriptDialog", "setColorPickerEnabled",
-                    "bringToFront", "setDownloadBehavior", "getAppManifest", "crash", "close", "setWebLifecycleState", "captureSnapshot", "getInstallabilityErrors", "getManifestIcons", "setBypassCSP", "getAppId", "addCompilationCache", "setPrerenderingAllowed", "getAnnotatedPageContent"],
+                    "bringToFront", "setDownloadBehavior", "getAppManifest", "crash", "close", "setWebLifecycleState", "captureSnapshot", "getInstallabilityErrors", "getManifestIcons", "setBypassCSP", "getAppId", "addCompilationCache", "setPrerenderingAllowed", "getAnnotatedPageContent",
+                    "addScriptToEvaluateOnNewDocument", "removeScriptToEvaluateOnNewDocument", "addScriptToEvaluateOnLoad", "removeScriptToEvaluateOnLoad"],
                 "include_events": ["frameDetached", "colorPicked", "interstitialShown", "interstitialHidden", "javascriptDialogOpening",
                      "javascriptDialogClosed", "downloadWillBegin", "downloadProgress", "screencastVisibilityChanged", "screencastFrame",
                      "backForwardCacheNotUsed", "frameStartedLoading", "frameStoppedLoading", "frameStartedNavigating"],
@@ -244,6 +244,10 @@
             },
             {
                 "domain": "SmartCardEmulation"
+            },
+            {
+                "domain": "WebMCP",
+                "async": ["invokeTool"]
             }
         ]
     },

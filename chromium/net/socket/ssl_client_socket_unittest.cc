@@ -1657,6 +1657,52 @@ TEST_P(SSLClientSocketReadTest, Read) {
   EXPECT_EQ(0, rv);
 }
 
+TEST_F(SSLClientSocketTest, MldsaSignature) {
+  auto [leaf, root] = CertBuilder::CreateSimpleChain2();
+  leaf->GenerateMldsa44Key();
+
+  EmbeddedTestServer::ServerCertificateConfig cert_config;
+  cert_config.cert_and_key = EmbeddedTestServer::CertAndKey(
+      leaf->DupCertBuffer(), bssl::UpRef(leaf->GetKey()));
+
+  ASSERT_TRUE(StartEmbeddedTestServer(cert_config, SSLServerConfig()));
+
+  cert_verifier_->set_default_result(OK);
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndEnableFeature(features::kTlsMldsaSignatures);
+
+    TestCompletionCallback callback;
+    auto transport = std::make_unique<TCPClientSocket>(addr(), nullptr, nullptr,
+                                                       nullptr, NetLogSource());
+    EXPECT_THAT(callback.GetResult(transport->Connect(callback.callback())),
+                IsOk());
+
+    std::unique_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
+        std::move(transport), host_port_pair(), SSLConfig()));
+    EXPECT_THAT(callback.GetResult(sock->Connect(callback.callback())), IsOk());
+  }
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndDisableFeature(features::kTlsMldsaSignatures);
+    // The connection should fail when the client doesn't have ML-DSA support
+    // enabled.
+
+    TestCompletionCallback callback;
+    auto transport = std::make_unique<TCPClientSocket>(addr(), nullptr, nullptr,
+                                                       nullptr, NetLogSource());
+    EXPECT_THAT(callback.GetResult(transport->Connect(callback.callback())),
+                IsOk());
+
+    std::unique_ptr<SSLClientSocket> sock(CreateSSLClientSocket(
+        std::move(transport), host_port_pair(), SSLConfig()));
+    EXPECT_THAT(callback.GetResult(sock->Connect(callback.callback())),
+                IsError(ERR_SSL_VERSION_OR_CIPHER_MISMATCH));
+  }
+}
+
 // Tests that SSLClientSocket properly handles when the underlying transport
 // synchronously fails a transport write in during the handshake.
 TEST_F(SSLClientSocketTest, Connect_WithSynchronousError) {
@@ -6669,6 +6715,97 @@ TEST_P(SSLClientSocketAlpsTest, UnusedProtocols) {
   int rv;
   ASSERT_TRUE(CreateAndConnectSSLClientSocket(client_config, &rv));
   EXPECT_THAT(rv, IsOk());
+}
+
+TEST_F(SSLClientSocketTest, ServerPaddingSupported) {
+  SSLServerConfig server_config;
+  server_config.server_padding_enabled = true;
+  ASSERT_TRUE(
+      StartEmbeddedTestServer(EmbeddedTestServer::CERT_OK, server_config));
+
+  SSLConfig ssl_config;
+  ssl_config.server_padding_to_request = 128;
+  int rv;
+  ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
+  EXPECT_THAT(rv, IsOk());
+
+  SSLInfo ssl_info;
+  ASSERT_TRUE(sock_->GetSSLInfo(&ssl_info));
+  EXPECT_TRUE(ssl_info.server_padding_requested);
+  EXPECT_TRUE(ssl_info.server_padding_received);
+
+  auto entries = log_observer_.GetEntries();
+  EXPECT_TRUE(LogContainsEndEvent(entries, -1, NetLogEventType::SSL_CONNECT));
+  EXPECT_EQ(true, entries.back().params.FindBool("requested_server_padding"));
+  EXPECT_EQ(true, entries.back().params.FindBool("received_server_padding"));
+}
+
+TEST_F(SSLClientSocketTest, ServerPaddingSupportedZeroPadding) {
+  SSLServerConfig server_config;
+  server_config.server_padding_enabled = true;
+  ASSERT_TRUE(
+      StartEmbeddedTestServer(EmbeddedTestServer::CERT_OK, server_config));
+
+  SSLConfig ssl_config;
+  ssl_config.server_padding_to_request = 0;
+  int rv;
+  ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
+  EXPECT_THAT(rv, IsOk());
+
+  SSLInfo ssl_info;
+  ASSERT_TRUE(sock_->GetSSLInfo(&ssl_info));
+  EXPECT_TRUE(ssl_info.server_padding_requested);
+  EXPECT_TRUE(ssl_info.server_padding_received);
+
+  auto entries = log_observer_.GetEntries();
+  EXPECT_TRUE(LogContainsEndEvent(entries, -1, NetLogEventType::SSL_CONNECT));
+  EXPECT_EQ(true, entries.back().params.FindBool("requested_server_padding"));
+  EXPECT_EQ(true, entries.back().params.FindBool("received_server_padding"));
+}
+
+TEST_F(SSLClientSocketTest, ServerPaddingSupportedNoPaddingRequested) {
+  SSLServerConfig server_config;
+  server_config.server_padding_enabled = true;
+  ASSERT_TRUE(
+      StartEmbeddedTestServer(EmbeddedTestServer::CERT_OK, server_config));
+
+  SSLConfig ssl_config;
+  int rv;
+  ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
+  EXPECT_THAT(rv, IsOk());
+
+  SSLInfo ssl_info;
+  ASSERT_TRUE(sock_->GetSSLInfo(&ssl_info));
+  EXPECT_FALSE(ssl_info.server_padding_requested);
+  EXPECT_FALSE(ssl_info.server_padding_received);
+
+  auto entries = log_observer_.GetEntries();
+  EXPECT_TRUE(LogContainsEndEvent(entries, -1, NetLogEventType::SSL_CONNECT));
+  EXPECT_EQ(false, entries.back().params.FindBool("requested_server_padding"));
+  EXPECT_EQ(false, entries.back().params.FindBool("received_server_padding"));
+}
+
+TEST_F(SSLClientSocketTest, ServerPaddingUnsupported) {
+  SSLServerConfig server_config;
+  server_config.server_padding_enabled = false;
+  ASSERT_TRUE(
+      StartEmbeddedTestServer(EmbeddedTestServer::CERT_OK, server_config));
+
+  SSLConfig ssl_config;
+  ssl_config.server_padding_to_request = 128;
+  int rv;
+  ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
+  EXPECT_THAT(rv, IsOk());
+
+  SSLInfo ssl_info;
+  ASSERT_TRUE(sock_->GetSSLInfo(&ssl_info));
+  EXPECT_TRUE(ssl_info.server_padding_requested);
+  EXPECT_FALSE(ssl_info.server_padding_received);
+
+  auto entries = log_observer_.GetEntries();
+  EXPECT_TRUE(LogContainsEndEvent(entries, -1, NetLogEventType::SSL_CONNECT));
+  EXPECT_EQ(true, entries.back().params.FindBool("requested_server_padding"));
+  EXPECT_EQ(false, entries.back().params.FindBool("received_server_padding"));
 }
 
 }  // namespace net

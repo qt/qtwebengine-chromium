@@ -187,7 +187,8 @@ class MetricsWebContentsObserver
       std::vector<mojom::SoftNavigationMetricsPtr> soft_navigation_metrics,
       std::vector<mojom::LargestContentfulPaintTimingPtr>
           soft_largest_contentful_paint,
-      std::vector<mojom::CustomUserTimingMarkPtr> user_timings);
+      std::vector<mojom::CustomUserTimingMarkPtr> user_timings,
+      mojom::FontLoadingMetricsPtr font_loading_metrics);
 
   void OnCustomUserTimingUpdated(content::RenderFrameHost* rfh,
                                  mojom::CustomUserTimingMarkPtr custom_timing);
@@ -212,6 +213,12 @@ class MetricsWebContentsObserver
 
   // Returns the time this MetricsWebContentsObserver was created.
   base::TimeTicks GetCreated();
+
+  // Retrieves the PageLoadMetricsObserverInterface matching `name` for the
+  // specified `render_frame_host`. Returns null if the observer is not found.
+  base::WeakPtr<PageLoadMetricsObserverInterface> GetMetricsObserver(
+      content::RenderFrameHost* render_frame_host,
+      const char* name);
 
   base::WeakPtr<MetricsWebContentsObserver> AsWeakPtr() {
     return weak_ptr_factory_.GetWeakPtr();
@@ -271,7 +278,8 @@ class MetricsWebContentsObserver
       std::vector<mojom::SoftNavigationMetricsPtr> soft_navigation_metrics,
       std::vector<mojom::LargestContentfulPaintTimingPtr>
           soft_largest_contentful_paint,
-      std::vector<mojom::CustomUserTimingMarkPtr> user_timings) override;
+      std::vector<mojom::CustomUserTimingMarkPtr> user_timings,
+      mojom::FontLoadingMetricsPtr font_loading_metrics) override;
   void AddCustomUserTiming(
       mojom::CustomUserTimingMarkPtr custom_timing) override;
 

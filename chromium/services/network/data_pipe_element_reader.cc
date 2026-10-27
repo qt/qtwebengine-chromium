@@ -4,6 +4,8 @@
 
 #include "services/network/data_pipe_element_reader.h"
 
+#include <algorithm>
+
 #include "base/check_op.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
@@ -87,8 +89,12 @@ int DataPipeElementReader::Read(net::IOBuffer* buf,
 }
 
 void DataPipeElementReader::ReadCallback(int32_t status, uint64_t size) {
-  if (status == net::OK)
+  if (status == net::OK) {
     size_ = size;
+  } else if (status > 0 || status == net::ERR_IO_PENDING) {
+    mojo::ReportBadMessage("Only net::Errors allowed.");
+    status = net::ERR_INVALID_ARGUMENT;
+  }
   if (init_callback_)
     std::move(init_callback_).Run(status);
 }
@@ -101,30 +107,36 @@ void DataPipeElementReader::OnHandleReadable(MojoResult result) {
   int read_result;
   if (result == MOJO_RESULT_OK) {
     read_result = ReadInternal(buf_.get(), buf_length_);
+    // Unclear if this can happen, but if it can, shouldn't clear `buf_` or
+    // `buf_length_`.
+    if (read_result == net::ERR_IO_PENDING) {
+      return;
+    }
   } else {
     read_result = net::ERR_FAILED;
   }
 
   buf_ = nullptr;
   buf_length_ = 0;
-
-  if (read_result != net::ERR_IO_PENDING)
-    std::move(read_callback_).Run(read_result);
+  std::move(read_callback_).Run(read_result);
 }
 
 int DataPipeElementReader::ReadInternal(net::IOBuffer* buf, int buf_length) {
-  DCHECK(buf);
-  DCHECK_GT(buf_length, 0);
+  CHECK(buf);
+  CHECK_GT(buf_length, 0);
 
   if (BytesRemaining() == 0)
     return net::OK;
 
-  size_t num_bytes = base::checked_cast<size_t>(buf_length);
+  // Don't try to read more bytes than the advertised size of the element.
+  size_t max_bytes = std::min(base::checked_cast<size_t>(buf_length),
+                              base::checked_cast<size_t>(BytesRemaining()));
+  size_t bytes_received;
   MojoResult rv = data_pipe_->ReadData(MOJO_READ_DATA_FLAG_NONE,
-                                       buf->first(num_bytes), num_bytes);
+                                       buf->first(max_bytes), bytes_received);
   if (rv == MOJO_RESULT_OK) {
-    bytes_read_ += num_bytes;
-    return base::checked_cast<int>(num_bytes);
+    bytes_read_ += bytes_received;
+    return base::checked_cast<int>(bytes_received);
   }
 
   if (rv == MOJO_RESULT_SHOULD_WAIT) {

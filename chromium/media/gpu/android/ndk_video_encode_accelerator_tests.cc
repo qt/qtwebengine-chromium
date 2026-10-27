@@ -55,6 +55,7 @@
 #include "third_party/libyuv/include/libyuv.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
+#include "ui/gl/gl_surface_egl.h"
 #include "ui/gl/init/gl_factory.h"
 
 #if BUILDFLAG(ENABLE_FFMPEG_VIDEO_DECODERS)
@@ -92,7 +93,6 @@ class MockCommandBufferHelper : public CommandBufferHelper {
 struct VideoParams {
   VideoCodecProfile profile;
   VideoPixelFormat pixel_format;
-  bool use_gl_surface = false;
   bool use_shared_image = false;
 };
 
@@ -120,20 +120,9 @@ class NdkVideoEncoderAcceleratorTest
     enabled_features.push_back(kPlatformHEVCEncoderSupport);
 #endif
 
-    if (args.use_gl_surface) {
-      if (__builtin_available(android 35, *)) {
-        SetupSharedImages();
-      } else {
-        GTEST_SKIP() << "Not supported Android version. "
-                     << "Surface input needs Android 15 or newer.";
-      }
-      enabled_features.push_back(kSurfaceInputForAndroidVEA);
-    } else {
-      disabled_features.push_back(kSurfaceInputForAndroidVEA);
-      if (args.use_shared_image) {
-        enabled_features.push_back(media::kAndroidZeroCopyVideoCapture);
-        SetupSharedImages();
-      }
+    if (args.use_shared_image) {
+      enabled_features.push_back(media::kAndroidZeroCopyVideoCapture);
+      SetupSharedImages();
     }
     feature_list_.InitWithFeatures(enabled_features, disabled_features);
 
@@ -154,17 +143,7 @@ class NdkVideoEncoderAcceleratorTest
   void TearDown() override {
     accelerator_.reset();
     RunUntilIdle();
-    auto args = GetParam();
     si_refs.clear();
-    if (args.use_gl_surface) {
-      if (context_state_) {
-        context_state_->MakeCurrent(gl_surface_.get(), true);
-        context_state_.reset();
-        gl_context_.reset();
-        gl_surface_.reset();
-      }
-      gl::init::ShutdownGL(nullptr, false);
-    }
   }
 
   // Implementation for VEA::Client
@@ -336,8 +315,10 @@ class NdkVideoEncoderAcceleratorTest
       gmb_handle.android_hardware_buffer = std::move(ahb_handle);
 
       backing = backing_factory_->CreateSharedImage(
-          mailbox, viz_format, size, color_space, surface_origin, alpha_type,
-          usage, "TestLabel", /*is_thread_safe=*/false, std::move(gmb_handle));
+          mailbox,
+          gpu::SharedImageInfo(viz_format, size, color_space, surface_origin,
+                               alpha_type, usage, "TestLabel"),
+          /*is_thread_safe=*/false, std::move(gmb_handle));
 
     } else {
       CHECK_EQ(software_frame->format(), PIXEL_FORMAT_XBGR);
@@ -382,8 +363,10 @@ class NdkVideoEncoderAcceleratorTest
       gmb_handle.android_hardware_buffer = std::move(ahb_handle);
 
       backing = backing_factory_->CreateSharedImage(
-          mailbox, viz_format, size, color_space, surface_origin, alpha_type,
-          usage, "TestLabel", /*is_thread_safe=*/false, std::move(gmb_handle));
+          mailbox,
+          gpu::SharedImageInfo(viz_format, size, color_space, surface_origin,
+                               alpha_type, usage, "TestLabel"),
+          /*is_thread_safe=*/false, std::move(gmb_handle));
     }
     CHECK(backing);
 
@@ -417,6 +400,21 @@ class NdkVideoEncoderAcceleratorTest
     config.gop_length = 1000;
     config.required_encoder_type =
         VideoEncodeAccelerator::Config::EncoderType::kNoPreference;
+    return config;
+  }
+
+  VideoEncodeAccelerator::Config GetDefaultSvcConfig(
+      size_t num_temporal_layers) {
+    auto config = GetDefaultConfig();
+    config.spatial_layers.clear();
+    config.spatial_layers.emplace_back();
+    auto& layer = config.spatial_layers.back();
+    layer.width = config.input_visible_size.width();
+    layer.height = config.input_visible_size.height();
+    layer.bitrate_bps = config.bitrate.target_bps();
+    layer.framerate = config.framerate;
+    layer.max_qp = 30;
+    layer.num_of_temporal_layers = num_temporal_layers;
     return config;
   }
 
@@ -554,7 +552,6 @@ class NdkVideoEncoderAcceleratorTest
   VideoCodec codec_;
   VideoCodecProfile profile_;
   VideoPixelFormat pixel_format_;
-  bool use_gl_surface_ = false;
 
   base::test::TaskEnvironment task_environment_{
       base::test::TaskEnvironment::ThreadingMode::MULTIPLE_THREADS};
@@ -608,7 +605,7 @@ class NdkVideoEncoderAcceleratorE2ETest
     std::unique_ptr<VideoDecoder> decoder;
     if (codec_ == VideoCodec::kH264) {
 #if BUILDFLAG(ENABLE_FFMPEG_VIDEO_DECODERS)
-      decoder = std::make_unique<FFmpegVideoDecoder>(&media_log_);
+      decoder = std::make_unique<FFmpegVideoDecoder>(media_log_.Clone());
 #endif
     } else if (codec_ == VideoCodec::kVP8 || codec_ == VideoCodec::kVP9) {
 #if BUILDFLAG(ENABLE_LIBVPX)
@@ -672,8 +669,8 @@ TEST_P(NdkVideoEncoderAcceleratorTest, InitializeAndDestroy) {
 }
 
 TEST_P(NdkVideoEncoderAcceleratorTest, WorkaroundDisablesZeroCopy) {
-  if (!GetParam().use_shared_image || GetParam().use_gl_surface) {
-    GTEST_SKIP() << "Test only relevant for shared image input without surface";
+  if (!GetParam().use_shared_image) {
+    GTEST_SKIP() << "Test only relevant for shared image input";
   }
 
   std::vector<int32_t> workaround_list;
@@ -825,15 +822,7 @@ TEST_P(NdkVideoEncoderAcceleratorTest, EncodeWithTemporalLayers) {
     GTEST_SKIP() << "SVC is only supported for H.264, VP9 and AV1.";
   }
 
-  auto config = GetDefaultConfig();
-  // Set 2 temporal layers
-  config.spatial_layers.emplace_back();
-  config.spatial_layers[0].width = config.input_visible_size.width();
-  config.spatial_layers[0].height = config.input_visible_size.height();
-  config.spatial_layers[0].bitrate_bps = config.bitrate.target_bps();
-  config.spatial_layers[0].framerate = config.framerate;
-  config.spatial_layers[0].max_qp = 30;
-  config.spatial_layers[0].num_of_temporal_layers = 2;
+  auto config = GetDefaultSvcConfig(/*num_temporal_layers=*/2);
 
   const size_t total_frames_count = 10;
   accelerator_ = MakeNdkAccelerator();
@@ -965,9 +954,6 @@ TEST_P(NdkVideoEncoderAcceleratorE2ETest, EncodeAndDecode) {
 std::string PrintTestParams(const testing::TestParamInfo<VideoParams>& info) {
   auto result = GetProfileName(info.param.profile) + "__" +
                 VideoPixelFormatToString(info.param.pixel_format);
-  if (info.param.use_gl_surface) {
-    result += "__Surface";
-  }
   if (info.param.use_shared_image) {
     result += "__SharedImage";
   }
@@ -1028,6 +1014,25 @@ TEST_P(NdkVideoEncoderAcceleratorTest, Histograms) {
   EXPECT_GT(latency_samples, 1u);
 }
 
+TEST_P(NdkVideoEncoderAcceleratorTest, SvcHistograms) {
+  if (codec_ != VideoCodec::kH264 && codec_ != VideoCodec::kVP9 &&
+      codec_ != VideoCodec::kAV1) {
+    GTEST_SKIP() << "SVC is only supported for H.264, VP9 and AV1.";
+  }
+
+  auto config = GetDefaultSvcConfig(/*num_temporal_layers=*/2);
+
+  accelerator_ = MakeNdkAccelerator();
+
+  base::HistogramTester histogram_tester;
+  std::ignore = accelerator_->Initialize(config, this, NullLog());
+  // We don't care if initialization fails; the capability histograms are logged
+  // before the hardware encoder configuration is actually attempted.
+
+  histogram_tester.ExpectTotalCount(
+      "Media.VideoEncoder.NDKVEA.TemporalLayerEncodingEnabled", 1);
+}
+
 std::vector<VideoParams> GenerateVariants(
     base::span<const VideoParams> params) {
   std::vector<VideoParams> result;
@@ -1035,33 +1040,18 @@ std::vector<VideoParams> GenerateVariants(
     switch (param.pixel_format) {
       case PIXEL_FORMAT_I420:
         param.use_shared_image = false;
-        param.use_gl_surface = false;
         result.push_back(param);
         break;
       case PIXEL_FORMAT_NV12:
         param.use_shared_image = false;
-        param.use_gl_surface = false;
         result.push_back(param);
 
         param.use_shared_image = true;
-        param.use_gl_surface = false;
-        result.push_back(param);
-
-        param.use_shared_image = true;
-        param.use_gl_surface = true;
-        result.push_back(param);
-
-        param.use_shared_image = false;
-        param.use_gl_surface = true;
         result.push_back(param);
         break;
       case PIXEL_FORMAT_XBGR:
         // RGB always assumes shared image input
         param.use_shared_image = true;
-        param.use_gl_surface = false;
-        result.push_back(param);
-
-        param.use_gl_surface = true;
         result.push_back(param);
         break;
       default:

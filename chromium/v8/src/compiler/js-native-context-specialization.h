@@ -107,7 +107,13 @@ class V8_EXPORT_PRIVATE JSNativeContextSpecialization final
                                  AccessMode access_mode);
   Reduction ReduceNamedAccess(Node* node, Node* value,
                               NamedAccessFeedback const& feedback,
-                              AccessMode access_mode, Node* key = nullptr);
+                              AccessMode access_mode,
+                              FeedbackSource const& source,
+                              Node* key = nullptr);
+  Reduction ReduceHomomorphicAccess(
+      Node* node, Node* value,
+      HomomorphicPropertyAccessFeedback const& feedback, AccessMode access_mode,
+      Node* key = nullptr);
   Reduction ReduceMegaDOMPropertyAccess(
       Node* node, Node* value, MegaDOMPropertyAccessFeedback const& feedback,
       FeedbackSource const& source);
@@ -153,11 +159,12 @@ class V8_EXPORT_PRIVATE JSNativeContextSpecialization final
       Node* lookup_start_object, Node* receiver, Node* value, Node* context,
       Node* frame_state, Node* effect, Node* control, NameRef name,
       ZoneVector<Node*>* if_exceptions, PropertyAccessInfo const& access_info,
-      AccessMode access_mode);
+      AccessMode access_mode, FeedbackSource const& source);
   std::optional<ValueEffectControl> BuildPropertyLoad(
       Node* lookup_start_object, Node* receiver, Node* context,
       Node* frame_state, Node* effect, Node* control, NameRef name,
-      ZoneVector<Node*>* if_exceptions, PropertyAccessInfo const& access_info);
+      ZoneVector<Node*>* if_exceptions, PropertyAccessInfo const& access_info,
+      FeedbackSource const& source);
 
   std::optional<ValueEffectControl> BuildPropertyStore(
       Node* receiver, Node* value, Node* context, Node* frame_state,

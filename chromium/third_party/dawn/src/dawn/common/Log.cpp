@@ -25,24 +25,20 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/439062058): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
-#include "dawn/common/Log.h"
+#include "src/dawn/common/Log.h"
 
 #include <cstdio>
 #include <string>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/Platform.h"
+#include "src/dawn/common/Assert.h"
+#include "src/utils/compiler.h"
+#include "src/utils/platform.h"
 
 #if DAWN_PLATFORM_IS(ANDROID)
 #include <android/log.h>
 #endif
 #if DAWN_PLATFORM_IS(WINDOWS)
-#include "dawn/common/windows_with_undefs.h"
+#include "src/utils/windows_with_undefs.h"
 #endif
 
 namespace dawn {
@@ -135,7 +131,7 @@ LogMessage::~LogMessage() {
 #endif  // DAWN_PLATFORM_IS(WINDOWS) && defined(OFFICIAL_BUILD)
 
     // Note: we use fprintf because <iostream> includes static initializers.
-    fprintf(outputStream, "%s: %s\n", severityName, fullMessage.c_str());
+    DAWN_UNSAFE_TODO(fprintf(outputStream, "%s: %s\n", severityName, fullMessage.c_str()));
     fflush(outputStream);
 #endif  // DAWN_PLATFORM_IS(ANDROID)
 }

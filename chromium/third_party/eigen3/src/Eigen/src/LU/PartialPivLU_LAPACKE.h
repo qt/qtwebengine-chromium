@@ -29,6 +29,7 @@
  *     LU decomposition with partial pivoting based on LAPACKE_?getrf function.
  ********************************************************************************
 */
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef EIGEN_PARTIALLU_LAPACK_H
 #define EIGEN_PARTIALLU_LAPACK_H

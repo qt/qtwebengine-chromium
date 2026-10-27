@@ -14,6 +14,7 @@
 #include "cc/layers/painted_scrollbar_layer_impl.h"
 #include "cc/layers/solid_color_scrollbar_layer_impl.h"
 #include "cc/test/fake_layer_tree_frame_sink.h"
+#include "cc/trees/client_layer_tree_host_impl.h"
 #include "cc/trees/compositor_commit_data.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/test/begin_frame_args_test.h"
@@ -22,6 +23,30 @@
 namespace cc {
 
 using ScrollThread = InputHandler::ScrollThread;
+
+std::unique_ptr<LayerTreeHostImpl> CreateLayerTreeHostImplForTesting(
+    const LayerTreeSettings& settings,
+    LayerTreeHostImplDelegate* delegate,
+    TaskRunnerProvider* task_runner_provider,
+    RenderingStatsInstrumentation* rendering_stats_instrumentation,
+    TaskGraphRunner* task_graph_runner,
+    std::unique_ptr<MutatorHost> mutator_host,
+    RasterDarkModeFilter* dark_mode_filter,
+    int id,
+    scoped_refptr<base::SequencedTaskRunner> image_worker_task_runner,
+    LayerTreeHostSchedulingDelegate* scheduling_delegate) {
+  if (settings.trees_in_viz_in_viz_process) {
+    return TestVizLayerTreeHostImpl::Create(
+        settings, delegate, task_runner_provider,
+        rendering_stats_instrumentation, task_graph_runner,
+        std::move(mutator_host), dark_mode_filter, id,
+        std::move(image_worker_task_runner), scheduling_delegate);
+  }
+  return ClientLayerTreeHostImpl::Create(
+      settings, delegate, task_runner_provider, rendering_stats_instrumentation,
+      task_graph_runner, std::move(mutator_host), dark_mode_filter, id,
+      std::move(image_worker_task_runner), scheduling_delegate);
+}
 
 TestFrameData::TestFrameData() {
   // Set ack to something valid, so DCHECKs don't complain.
@@ -131,7 +156,8 @@ void LayerTreeHostImplTestBase::EnsureSyncTree() {
 }
 
 void LayerTreeHostImplTestBase::CreatePendingTree() {
-  host_impl_->CreatePendingTree();
+  // TODO(496580137): Move this to ClientLayerTreeHostImpl specific tests.
+  static_cast<ClientLayerTreeHostImpl*>(host_impl_.get())->CreatePendingTree();
   LayerTreeImpl* pending_tree = host_impl_->pending_tree();
   pending_tree->SetDeviceViewportRect(
       host_impl_->active_tree()->GetDeviceViewport());
@@ -155,7 +181,8 @@ void LayerTreeHostImplTestBase::OnCanDrawStateChanged(bool can_draw) {
 }
 void LayerTreeHostImplTestBase::NotifyReadyToActivate() {
   did_notify_ready_to_activate_ = true;
-  host_impl_->ActivateSyncTree();
+  // TODO(496580137): Move this to ClientLayerTreeHostImpl specific tests.
+  static_cast<ClientLayerTreeHostImpl*>(host_impl_.get())->ActivateSyncTree();
 }
 bool LayerTreeHostImplTestBase::IsReadyToActivate() {
   // in NotifyReadyToActivate(), call ActivateSyncTree() directly
@@ -172,7 +199,8 @@ void LayerTreeHostImplTestBase::SetNeedsOneBeginImplFrameOnImplThread() {
 void LayerTreeHostImplTestBase::SetNeedsPrepareTilesOnImplThread() {
   did_request_prepare_tiles_ = true;
 }
-void LayerTreeHostImplTestBase::SetNeedsCommitOnImplThread(bool urgent) {
+void LayerTreeHostImplTestBase::SetNeedsCommitOnImplThread(BeginMainFrameReason,
+                                                           bool urgent) {
   did_request_commit_ = true;
 }
 void LayerTreeHostImplTestBase::SetVideoNeedsBeginFrames(
@@ -275,7 +303,7 @@ bool LayerTreeHostImplTestBase::CreateHostImpl(
   }
   host_impl_.reset();
   InitializeImageWorker(settings);
-  host_impl_ = LayerTreeHostImpl::Create(
+  host_impl_ = CreateLayerTreeHostImplForTesting(
       settings, this, &task_runner_provider_, &stats_instrumentation_,
       &task_graph_runner_,
       AnimationHost::CreateForTesting(ThreadInstance::kImpl), nullptr, 0,
@@ -968,15 +996,18 @@ LayerTreeHostImplTest::LayerTreeHostImplTest() {
     case CommitToActiveTreeTreesInVizClient:
     case CommitToPendingTreeTreesInVizClient:
     case CommitToActiveTreeTreesInVizService:
-      scoped_feature_list_.InitAndEnableFeature(features::kTreesInViz);
+      scoped_feature_list_.InitWithFeatures({features::kTreesInViz},
+                                            {features::kSnapFlingNearExtremes});
       break;
     case CommitToActiveTreeAnimationsInVizService:
       scoped_feature_list_.InitWithFeatures(
-          {features::kTreesInViz, features::kTreeAnimationsInViz}, {});
+          {features::kTreesInViz, features::kTreeAnimationsInViz},
+          {features::kSnapFlingNearExtremes});
       break;
     case CommitToActiveTree:
     case CommitToPendingTree:
-      scoped_feature_list_.InitAndDisableFeature(features::kTreesInViz);
+      scoped_feature_list_.InitWithFeatures(
+          {}, {features::kTreesInViz, features::kSnapFlingNearExtremes});
       break;
   }
 }

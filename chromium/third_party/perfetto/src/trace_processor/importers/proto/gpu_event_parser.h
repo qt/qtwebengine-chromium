@@ -30,6 +30,7 @@
 #include "perfetto/protozero/field.h"
 #include "protos/perfetto/common/gpu_counter_descriptor.pbzero.h"
 #include "protos/perfetto/trace/gpu/gpu_render_stage_event.pbzero.h"
+#include "src/trace_processor/importers/common/args_tracker.h"
 #include "src/trace_processor/importers/proto/packet_sequence_state_generation.h"
 #include "src/trace_processor/importers/proto/vulkan_memory_tracker.h"
 #include "src/trace_processor/storage/trace_storage.h"
@@ -103,13 +104,27 @@ class GpuEventParser {
       int32_t gpu_id,
       const protos::pbzero::GpuCounterDescriptor::GpuCounterSpec::Decoder&
           spec);
+  struct GroupMetadata {
+    StringId name;
+    StringId description;
+  };
+  using GroupMetadataMap = base::FlatHashMap<int32_t, GroupMetadata>;
+  GroupMetadataMap BuildGroupMetadata(
+      const protos::pbzero::GpuCounterDescriptor::Decoder& desc);
   void InsertCounterGroups(
       TrackId track_id,
-      const protos::pbzero::GpuCounterDescriptor::GpuCounterSpec::Decoder&
-          spec);
+      const protos::pbzero::GpuCounterDescriptor::GpuCounterSpec::Decoder& spec,
+      const GroupMetadataMap& group_metadata);
+  void InsertCustomCounterGroups(
+      const protos::pbzero::GpuCounterDescriptor::Decoder& desc,
+      const base::FlatHashMap<uint32_t, TrackId>& counter_id_to_track);
+  // Pushes a counter sample for a GPU counter, handling both the
+  // backwards-looking and forwards-looking conventions (see
+  // GpuCounterSpec.ValueDirection).
   void PushGpuCounterValue(int64_t ts,
                            double value,
                            TrackId track_id,
+                           bool forwards_looking,
                            std::optional<tables::CounterTable::Id>* last_id);
 
   TraceProcessorContext* const context_;
@@ -136,6 +151,7 @@ class GpuEventParser {
   struct GpuCounterState {
     TrackId track_id;
     std::optional<tables::CounterTable::Id> last_id;
+    bool forwards_looking;
   };
   base::FlatHashMap<uint32_t, GpuCounterState> gpu_counter_state_;
 
@@ -150,6 +166,15 @@ class GpuEventParser {
     StringId description;
   };
   const StringId category_id_;
+  const StringId kernel_name_id_;
+  const StringId kernel_demangled_name_id_;
+  const StringId arch_id_;
+  const StringId grid_x_id_;
+  const StringId grid_y_id_;
+  const StringId grid_z_id_;
+  const StringId workgroup_x_id_;
+  const StringId workgroup_y_id_;
+  const StringId workgroup_z_id_;
   const StringId description_id_;
   const StringId correlation_id_;
   const StringId counter_id_key_id_;
@@ -157,8 +182,25 @@ class GpuEventParser {
   std::vector<std::optional<HwQueueInfo>> gpu_hw_queue_ids_;
   base::FlatHashMap<uint64_t, bool> gpu_hw_queue_ids_name_to_set_;
 
+  void ParseExtraComputeArg(PacketSequenceStateGeneration* sequence_state,
+                            protozero::ConstBytes bytes,
+                            ArgsTracker::BoundInserter* inserter);
+  void ParseComputeKernel(PacketSequenceStateGeneration* sequence_state,
+                          uint64_t kernel_iid,
+                          ArgsTracker::BoundInserter* inserter);
+  void ParseComputeKernelLaunch(PacketSequenceStateGeneration* sequence_state,
+                                protozero::ConstBytes bytes,
+                                ArgsTracker::BoundInserter* inserter);
+
+  void InternGpuContext(
+      uint64_t context_id,
+      const protos::pbzero::InternedGraphicsContext::Decoder& ctx);
+
   // Map of stage ID -> pair(stage name, stage description)
   std::vector<std::pair<StringId, StringId>> gpu_render_stage_ids_;
+
+  // Graphics contexts already inserted into gpu_context table.
+  base::FlatHashMap<uint64_t, bool> gpu_contexts_inserted_;
 
   // For VulkanMemoryEvent
   std::unordered_map<protos::pbzero::VulkanMemoryEvent::AllocationScope,

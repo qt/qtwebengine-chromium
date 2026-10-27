@@ -6,20 +6,25 @@
 
 #include <memory>
 
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_params.h"
+#include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
+#include "components/content_settings/core/browser/permission_settings_registry.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
+#include "components/content_settings/core/common/content_settings_utils.h"
 #include "components/content_settings/core/common/features.h"
 #include "components/permissions/content_setting_permission_context_base.h"
 #include "components/permissions/features.h"
 #include "components/permissions/permission_request_manager.h"
 #include "components/permissions/permission_util.h"
+#include "components/permissions/resolvers/permission_prompt_options.h"
 #include "components/permissions/test/mock_permission_prompt_factory.h"
 #include "components/permissions/test/permission_test_util.h"
 #include "components/permissions/test/test_permissions_client.h"
@@ -151,10 +156,18 @@ class PermissionManagerTest : public content::RenderViewHostTestHarness {
                      const GURL& embedding_origin,
                      PermissionType type,
                      PermissionStatus value) {
-    GetHostContentSettingsMap()->SetContentSettingDefaultScope(
-        requesting_origin, embedding_origin,
-        permissions::PermissionUtil::PermissionTypeToContentSettingsType(type),
-        permissions::PermissionUtil::PermissionStatusToContentSetting(value));
+    ContentSettingsType content_settings_type =
+        permissions::PermissionUtil::PermissionTypeToContentSettingsType(type);
+    PermissionSetting permission_setting =
+        content_settings::PermissionSettingsRegistry::GetInstance()
+            ->Get(content_settings_type)
+            ->delegate()
+            .ToPermissionSetting(
+                permissions::PermissionUtil::PermissionStatusToContentSetting(
+                    value));
+    GetHostContentSettingsMap()->SetPermissionSettingDefaultScope(
+        requesting_origin, embedding_origin, content_settings_type,
+        permission_setting);
   }
 
   void RequestPermissionFromCurrentDocument(PermissionType type,
@@ -493,7 +506,7 @@ TEST_F(PermissionManagerTest, PermissionIgnoredCleanup) {
 
   NavigateAndCommit(url());
 
-  RequestPermissionFromCurrentDocumentNonBlocking(PermissionType::GEOLOCATION,
+  RequestPermissionFromCurrentDocumentNonBlocking(PermissionType::MIDI_SYSEX,
                                                   main_rfh());
 
   EXPECT_FALSE(PendingRequestsEmpty());
@@ -556,7 +569,7 @@ TEST_F(PermissionManagerTest, KillSwitchOnIsNotOverridable) {
   // Turn on kill switch for GEOLOCATION.
   std::map<std::string, std::string> params;
   params[PermissionUtil::GetPermissionString(
-      ContentSettingsType::GEOLOCATION)] =
+      content_settings::GeolocationContentSettingsType())] =
       PermissionContextBase::kPermissionsKillSwitchBlockedValue;
   base::AssociateFieldTrialParams(
       PermissionContextBase::kPermissionsKillSwitchFieldStudy, "TestGroup",
@@ -633,6 +646,11 @@ TEST_F(PermissionManagerTest, GetPermissionStatusDelegation) {
       PermissionRequestManager::FromWebContents(web_contents());
   auto prompt_factory = std::make_unique<MockPermissionPromptFactory>(manager);
   prompt_factory->set_response_type(PermissionRequestManager::ACCEPT_ALL);
+  if (base::FeatureList::IsEnabled(
+          content_settings::features::kApproximateGeolocationPermission)) {
+    prompt_factory->set_response_prompt_options(GeolocationPromptOptions{
+        .selected_accuracy = GeolocationAccuracy::kPrecise});
+  }
   prompt_factory->DocumentOnLoadCompletedInPrimaryMainFrame();
 
   RequestPermissionFromCurrentDocument(PermissionType::GEOLOCATION, child);
@@ -794,6 +812,102 @@ TEST_F(PermissionManagerTest, MAYBE_UpdatePermissionStatusWithDeviceStatus) {
                           test.expected_status,
                           /*should_include_device_status=*/true);
   }
+}
+
+// Counts wildcard-pattern OnPermissionChanged notifications. Per-origin
+// notifications are filtered out to isolate the signal from
+// MaybeUpdateCachedHasDevicePermission's cross-origin invalidation.
+class WildcardPermissionObserver : public permissions::Observer {
+ public:
+  void OnPermissionChanged(const ContentSettingsPattern& primary_pattern,
+                           const ContentSettingsPattern& secondary_pattern,
+                           ContentSettingsTypeSet content_type_set) override {
+    if (primary_pattern == ContentSettingsPattern::Wildcard() &&
+        secondary_pattern == ContentSettingsPattern::Wildcard()) {
+      ++wildcard_count_;
+    }
+  }
+
+  int wildcard_count() const { return wildcard_count_; }
+
+ private:
+  int wildcard_count_ = 0;
+};
+
+// TODO(crbug.com/377264243): Enable when device permission is supported on
+// Android.
+#if BUILDFLAG(IS_ANDROID)
+#define MAYBE_DeviceStatusRefreshIsAsyncForNonGranted \
+  DISABLED_DeviceStatusRefreshIsAsyncForNonGranted
+#else
+#define MAYBE_DeviceStatusRefreshIsAsyncForNonGranted \
+  DeviceStatusRefreshIsAsyncForNonGranted
+#endif
+// On the non-GRANTED hot path, MaybeUpdateCachedHasDevicePermission is
+// posted asynchronously. Verifies the wildcard notification does not fire
+// inline and does fire after the posted task runs.
+TEST_F(PermissionManagerTest, MAYBE_DeviceStatusRefreshIsAsyncForNonGranted) {
+  PermissionContextBase* context =
+      GetPermissionManager()->GetPermissionContextForTesting(
+          ContentSettingsType::NOTIFICATIONS);
+  ASSERT_TRUE(context);
+
+  // Prime the cached state so a subsequent flip is a real change.
+  SetPermission(PermissionType::NOTIFICATIONS, PermissionStatus::GRANTED);
+  permissions_client().SetHasDevicePermission(true);
+  permissions_client().SetCanRequestDevicePermission(true);
+  CheckPermissionStatus(PermissionType::NOTIFICATIONS,
+                        PermissionStatus::GRANTED,
+                        /*should_include_device_status=*/true);
+
+  WildcardPermissionObserver observer;
+  context->AddObserver(&observer);
+
+  // Switch to the non-GRANTED hot path and revoke the OS-level permission.
+  SetPermission(PermissionType::NOTIFICATIONS, PermissionStatus::ASK);
+  permissions_client().SetHasDevicePermission(false);
+
+  CheckPermissionStatus(PermissionType::NOTIFICATIONS, PermissionStatus::ASK,
+                        /*should_include_device_status=*/true);
+
+  // Not fired inline.
+  EXPECT_EQ(0, observer.wildcard_count());
+
+  // Fired after the posted task runs.
+  ASSERT_TRUE(
+      base::test::RunUntil([&]() { return observer.wildcard_count() >= 1; }));
+
+  context->RemoveObserver(&observer);
+}
+
+#if BUILDFLAG(IS_ANDROID)
+#define MAYBE_DeviceStatusRefreshIsSyncForGranted \
+  DISABLED_DeviceStatusRefreshIsSyncForGranted
+#else
+#define MAYBE_DeviceStatusRefreshIsSyncForGranted \
+  DeviceStatusRefreshIsSyncForGranted
+#endif
+// Counterpart to the test above: on the GRANTED path, the cache refresh
+// must be synchronous, otherwise a revoked OS permission would return a
+// stale GRANTED.
+TEST_F(PermissionManagerTest, MAYBE_DeviceStatusRefreshIsSyncForGranted) {
+  // Prime the cache so the subsequent flip is a real change.
+  SetPermission(PermissionType::NOTIFICATIONS, PermissionStatus::GRANTED);
+  permissions_client().SetHasDevicePermission(true);
+  permissions_client().SetCanRequestDevicePermission(true);
+  CheckPermissionStatus(PermissionType::NOTIFICATIONS,
+                        PermissionStatus::GRANTED,
+                        /*should_include_device_status=*/true);
+
+  // Revoking the OS permission must synchronously downgrade to ASK.
+  permissions_client().SetHasDevicePermission(false);
+  CheckPermissionStatus(PermissionType::NOTIFICATIONS, PermissionStatus::ASK,
+                        /*should_include_device_status=*/true);
+
+  // And to DENIED when can_request is also false.
+  permissions_client().SetCanRequestDevicePermission(false);
+  CheckPermissionStatus(PermissionType::NOTIFICATIONS, PermissionStatus::DENIED,
+                        /*should_include_device_status=*/true);
 }
 
 TEST_F(PermissionManagerTest,

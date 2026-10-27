@@ -557,6 +557,9 @@ void SimplifiedLoweringVerifier::VisitNode(Node* node,
       CASE(CheckedUint64ToTaggedSigned)
       CASE(CheckedFloat64ToAdditiveSafeInteger)
       CASE(CheckedFloat64ToInt64)
+      CASE(CheckedInt32ToUint64)
+      CASE(CheckedInt64ToUint64)
+      CASE(CheckedFloat64ToUint64)
       CASE(CheckedTaggedSignedToInt32)
       CASE(CheckedTaggedToInt32)
       CASE(CheckedTaggedToArrayIndex)
@@ -564,6 +567,7 @@ void SimplifiedLoweringVerifier::VisitNode(Node* node,
       CASE(CheckedTaggedToFloat64)
       CASE(CheckedTaggedToAdditiveSafeInteger)
       CASE(CheckedTaggedToInt64)
+      CASE(CheckedTaggedToUint64)
       SIMPLIFIED_COMPARE_BINOP_LIST(CASE)
       SIMPLIFIED_NUMBER_BINOP_LIST(CASE)
       SIMPLIFIED_BIGINT_BINOP_LIST(CASE)
@@ -752,7 +756,7 @@ void SimplifiedLoweringVerifier::VisitNode(Node* node,
         break;
       }
       MACHINE_SIMD128_OP_LIST(CASE)
-      IF_WASM(MACHINE_SIMD256_OP_LIST, CASE)
+      IF_SIMD256(MACHINE_SIMD256_OP_LIST, CASE)
       IF_WASM(SIMPLIFIED_WASM_OP_LIST, CASE) {
         // SIMD operators should not be in the graph, yet.
         UNREACHABLE();

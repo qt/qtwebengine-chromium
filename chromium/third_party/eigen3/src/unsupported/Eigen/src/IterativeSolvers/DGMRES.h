@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_DGMRES_H
 #define EIGEN_DGMRES_H
@@ -316,18 +317,31 @@ Index DGMRES<MatrixType_, Preconditioner_>::dgmresCycle(const MatrixType& mat, c
       m_H(i, it) = coef;
       m_Hes(i, it) = coef;
     }
-    // Normalize the vector
+    // Normalize the vector. coef == 0 is an Arnoldi happy breakdown: the new
+    // direction lies in span(V[0..it]), so skip the division (which would
+    // poison m_V.col(it+1) with NaN) and fall through to the termination
+    // check below.
     coef = tv1.norm();
-    m_V.col(it + 1) = tv1 / coef;
+    const bool happy_breakdown = numext::is_exactly_zero(coef);
+    if (!happy_breakdown) {
+      m_V.col(it + 1) = tv1 / coef;
+    }
     m_H(it + 1, it) = coef;
     //     m_Hes(it+1,it) = coef;
-
-    // FIXME: Check for happy breakdown.
 
     // Update Hessenberg matrix with Givens rotations
     for (Index i = 1; i <= it; ++i) {
       m_H.col(it).applyOnTheLeft(i - 1, i, gr[i - 1].adjoint());
     }
+
+    // If the rotated diagonal is also zero, the reduced triangular system
+    // becomes singular and the back-substitution below would produce Inf/NaN.
+    // Stop with NumericalIssue instead of polluting x.
+    if (happy_breakdown && numext::is_exactly_zero(m_H(it, it))) {
+      m_info = NumericalIssue;
+      break;
+    }
+
     // Compute the new plane rotation
     gr[it].makeGivens(m_H(it, it), m_H(it + 1, it));
     // Apply the new rotation
@@ -339,15 +353,15 @@ Index DGMRES<MatrixType_, Preconditioner_>::dgmresCycle(const MatrixType& mat, c
     it++;
     nbIts++;
 
-    if (m_error < m_tolerance) {
-      // The method has converged
+    if (m_error < m_tolerance || happy_breakdown) {
+      // Happy breakdown: residual on the current subspace is exactly zero, so
+      // the it-dim triangular system yields the exact solution.
       m_info = Success;
       break;
     }
   }
 
-  // Compute the new coefficients by solving the least square problem
-  // FIXME: Check first if the matrix is singular (zero diagonal).
+  // Compute the new coefficients by solving the least square problem.
   DenseVector nrs(m_restart);
   nrs = m_H.topLeftCorner(it, it).template triangularView<Upper>().solve(g.head(it));
 

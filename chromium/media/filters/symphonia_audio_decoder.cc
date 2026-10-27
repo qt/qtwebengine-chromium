@@ -12,6 +12,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -19,6 +20,7 @@
 #include "base/memory/aligned_memory.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/rand_util.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
@@ -44,6 +46,18 @@ namespace {
 // PCM specific property for the maximum number of frames per packet. This
 // value covers up to ~85ms of audio per chunk.
 constexpr int kDefaultMaxFramesPerPcmPacket = 4096;
+
+// We sample 1% of Symphonia related errors for dumping.
+static constexpr double kSampleRate = 0.01;
+
+DecoderStatus MaybeDumpError(DecoderStatus&& status) {
+  // TODO(crbug.com/491162892): remove temporary DUMP_WILL_BE_CHECK once
+  // Symphonia is sufficiently stable.
+  if (base::RandDouble() < kSampleRate) {
+    DUMP_WILL_BE_CHECK(false) << status << ": " << status.message();
+  }
+  return std::move(status);
+}
 
 SymphoniaAudioCodec ToSymphoniaCodec(AudioCodec codec,
                                      SampleFormat sample_format) {
@@ -176,6 +190,105 @@ SampleFormat ToSampleFormat(SymphoniaSampleFormat value) {
   NOTREACHED();
 }
 
+DecoderStatus ToDecoderStatus(SymphoniaInitResult& result) {
+  switch (result.status) {
+    case SymphoniaInitStatus::Ok:
+      return OkStatus();
+    case SymphoniaInitStatus::InvalidConfig:
+    case SymphoniaInitStatus::XiphVorbisUnpackError:
+      return MaybeDumpError(
+          {DecoderStatus::Codes::kUnsupportedConfig, result.error_str.c_str()});
+    case SymphoniaInitStatus::UnsupportedCodec:
+    case SymphoniaInitStatus::SymphoniaUnsupported:
+      return MaybeDumpError({
+          DecoderStatus::Codes::kUnsupportedCodec,
+          result.error_str.c_str(),
+      });
+    case SymphoniaInitStatus::DecoderError:
+      return MaybeDumpError({
+          DecoderStatus::Codes::kFailedToCreateDecoder,
+          result.error_str.c_str(),
+      });
+    case SymphoniaInitStatus::SymphoniaDecodeError:
+      return MaybeDumpError({
+          DecoderStatus::Codes::kMalformedBitstream,
+          result.error_str.c_str(),
+      });
+    case SymphoniaInitStatus::SymphoniaIoError:
+      return MaybeDumpError({
+          DecoderStatus::Codes::kDecoderStreamDemuxerError,
+          result.error_str.c_str(),
+      });
+    case SymphoniaInitStatus::SymphoniaLimitError:
+      return MaybeDumpError({
+          DecoderStatus::Codes::kFailed,
+          result.error_str.c_str(),
+      });
+    case SymphoniaInitStatus::kMaxValue:
+      NOTREACHED();
+  }
+}
+
+DecoderStatus ToDecoderStatus(SymphoniaDecodeResult& result) {
+  switch (result.status) {
+    case SymphoniaDecodeStatus::Ok:
+      return OkStatus();
+    case SymphoniaDecodeStatus::InvalidDecoderState:
+      return MaybeDumpError({
+          DecoderStatus::Codes::kNotInitialized,
+          result.error_str.c_str(),
+      });
+    case SymphoniaDecodeStatus::DecodeError:
+      return MaybeDumpError({
+          DecoderStatus::Codes::kMalformedBitstream,
+          result.error_str.c_str(),
+      });
+    case SymphoniaDecodeStatus::IoError:
+      return MaybeDumpError({
+          DecoderStatus::Codes::kDecoderStreamDemuxerError,
+          result.error_str.c_str(),
+      });
+    case SymphoniaDecodeStatus::Unsupported:
+      return MaybeDumpError({
+          DecoderStatus::Codes::kUnsupportedCodec,
+          result.error_str.c_str(),
+      });
+    case SymphoniaDecodeStatus::InsufficentData:
+    case SymphoniaDecodeStatus::InvalidDecodedBufferSampleFormat:
+    case SymphoniaDecodeStatus::UnexpectedEndOfStream:
+    case SymphoniaDecodeStatus::ResetRequired:
+    case SymphoniaDecodeStatus::SeekError:
+    case SymphoniaDecodeStatus::Error:
+      return MaybeDumpError({
+          DecoderStatus::Codes::kFailed,
+          result.error_str.c_str(),
+      });
+    case SymphoniaDecodeStatus::kMaxValue:
+      NOTREACHED();
+  }
+}
+
+// A templated ExternalMemory implementation that wraps and owns a rust::Box<T>,
+// automatically deriving the span from the box's `data` member (expected to be
+// a contiguous buffer like rust::Vec<uint8_t>).
+template <typename T>
+class BoxedMemory : public AudioBuffer::ExternalMemory {
+ public:
+  explicit BoxedMemory(rust::Box<T> box)
+      : ExternalMemory(box->data), box_(std::move(box)) {}
+  ~BoxedMemory() override = default;
+
+ private:
+  rust::Box<T> box_;
+};
+
+// Helper function to automatically deduce the template argument T from
+// rust::Box<T>.
+template <typename T>
+std::unique_ptr<BoxedMemory<T>> WrapBoxedMemory(rust::Box<T> box) {
+  return std::make_unique<BoxedMemory<T>>(std::move(box));
+}
+
 }  // namespace
 
 SymphoniaAudioDecoder::SymphoniaAudioDecoder(
@@ -229,9 +342,9 @@ void SymphoniaAudioDecoder::Initialize(const AudioDecoderConfig& config,
     return;
   }
 
-  if (!ConfigureDecoder(config)) {
-    // ConfigureDecoder logs the specific error.
-    std::move(bound_init_cb).Run(DecoderStatus::Codes::kUnsupportedConfig);
+  const auto configure_result = ConfigureDecoder(config);
+  if (!configure_result.is_ok()) {
+    std::move(bound_init_cb).Run(std::move(configure_result));
     return;
   }
 
@@ -306,10 +419,10 @@ void SymphoniaAudioDecoder::DecodeBuffer(scoped_refptr<DecoderBuffer> buffer,
   }
 
   // Pass the buffer to the Symphonia decoder.
-  if (!SymphoniaDecode(*buffer)) {
-    // SymphoniaDecode logs the error.
+  const DecoderStatus status = SymphoniaDecode(*buffer);
+  if (!status.is_ok()) {
     state_ = DecoderState::kError;
-    std::move(decode_cb_bound).Run(DecoderStatus::Codes::kFailed);
+    std::move(decode_cb_bound).Run(std::move(status));
     return;
   }
 
@@ -354,7 +467,8 @@ bool SymphoniaAudioDecoder::IsCodecSupported(AudioCodec codec) {
   return false;
 }
 
-bool SymphoniaAudioDecoder::SymphoniaDecode(const DecoderBuffer& buffer) {
+DecoderStatus SymphoniaAudioDecoder::SymphoniaDecode(
+    const DecoderBuffer& buffer) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // The first frame only has a valid timestamp if it is not EOS.
@@ -387,7 +501,7 @@ bool SymphoniaAudioDecoder::SymphoniaDecode(const DecoderBuffer& buffer) {
       DCHECK(!processed);
     }
 
-    return true;
+    return DecoderStatus::Codes::kOk;
   }
   // Sanity check: if Symphonia thinks things are OK and returned a valid
   // buffer, then the input buffer should definitely not have been end of
@@ -397,7 +511,7 @@ bool SymphoniaAudioDecoder::SymphoniaDecode(const DecoderBuffer& buffer) {
   if (result.status != SymphoniaDecodeStatus::Ok) {
     MEDIA_LOG(ERROR, media_log_)
         << "Symphonia error occurred: " << result.error_str.c_str();
-    return false;
+    return ToDecoderStatus(result);
   }
 
   // TODO(crbug.com/40074653): similar to FFMPEG audio decoder, add support
@@ -407,7 +521,7 @@ bool SymphoniaAudioDecoder::SymphoniaDecode(const DecoderBuffer& buffer) {
   // timestamp.
   const base::TimeDelta timestamp = buffer.timestamp();
   scoped_refptr<AudioBuffer> decoded_audio =
-      ToMediaAudioBuffer(*result.buffer, timestamp);
+      ToMediaAudioBuffer(std::move(result.buffer), timestamp);
   CHECK(decoded_audio);
 
   // Process potential discards.
@@ -421,29 +535,30 @@ bool SymphoniaAudioDecoder::SymphoniaDecode(const DecoderBuffer& buffer) {
     output_cb_.Run(std::move(decoded_audio));
   }
 
-  return true;
+  return DecoderStatus::Codes::kOk;
 }
 
 scoped_refptr<AudioBuffer> SymphoniaAudioDecoder::ToMediaAudioBuffer(
-    const SymphoniaAudioBuffer& symphonia_buffer,
+    rust::Box<SymphoniaAudioBuffer> symphonia_buffer,
     base::TimeDelta timestamp) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  // Create the AudioBuffer.
-  // TODO(crbug.com/40074653): long term we want a WrapOrCopy implementation,
-  // since we own the Symphonia audio buffer.
-  const uint8_t* data = symphonia_buffer.data.data();
+  const SampleFormat sample_format =
+      ToSampleFormat(symphonia_buffer->sample_format);
+  const int channel_count = symphonia_buffer->channel_count;
+  const int sample_rate = symphonia_buffer->sample_rate;
+  const int num_frames = symphonia_buffer->num_frames;
 
-  const bool count_changed = symphonia_buffer.channel_count !=
-                             static_cast<uint32_t>(config_.channels());
+  const bool count_changed = channel_count != config_.channels();
   const auto layout = count_changed
-                          ? ChannelMaskToLayout(symphonia_buffer.channel_mask)
+                          ? ChannelMaskToLayout(symphonia_buffer->channel_mask)
                           : config_.channel_layout();
 
-  return AudioBuffer::CopyFrom(
-      ToSampleFormat(symphonia_buffer.sample_format), layout,
-      symphonia_buffer.channel_count, symphonia_buffer.sample_rate,
-      symphonia_buffer.num_frames, &data, timestamp, pool_);
+  auto external_memory = WrapBoxedMemory(std::move(symphonia_buffer));
+
+  return AudioBuffer::CreateFromExternalMemory(
+      sample_format, layout, channel_count, sample_rate, num_frames, timestamp,
+      std::move(external_memory));
 }
 
 void SymphoniaAudioDecoder::ReleaseSymphoniaResources() {
@@ -451,7 +566,8 @@ void SymphoniaAudioDecoder::ReleaseSymphoniaResources() {
   symphonia_decoder_.reset();
 }
 
-bool SymphoniaAudioDecoder::ConfigureDecoder(const AudioDecoderConfig& config) {
+DecoderStatus SymphoniaAudioDecoder::ConfigureDecoder(
+    const AudioDecoderConfig& config) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(config.IsValidConfig());
   CHECK(!config.is_encrypted());
@@ -471,12 +587,12 @@ bool SymphoniaAudioDecoder::ConfigureDecoder(const AudioDecoderConfig& config) {
         << "Could not initialize Symphonia audio decoder: "
         << result.error_str.c_str();
     state_ = DecoderState::kUninitialized;
-    return false;
+    return ToDecoderStatus(result);
   }
 
   ResetTimestampState(config);
   symphonia_decoder_ = std::move(result.decoder);
-  return true;
+  return DecoderStatus::Codes::kOk;
 }
 
 // The Symphonia audio decoder implementation currently needs the same discard

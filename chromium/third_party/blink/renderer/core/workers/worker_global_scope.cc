@@ -32,6 +32,7 @@
 #include "base/trace_event/typed_macros.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "services/metrics/public/cpp/mojo_ukm_recorder.h"
+#include "third_party/blink/public/common/loader/javascript_framework_detection.h"
 #include "third_party/blink/public/common/thread_safe_browser_interface_broker_proxy.h"
 #include "third_party/blink/public/mojom/browser_interface_broker.mojom-blink.h"
 #include "third_party/blink/public/mojom/devtools/inspector_issue.mojom-blink.h"
@@ -62,7 +63,10 @@
 #include "third_party/blink/renderer/core/messaging/blink_transferable_message.h"
 #include "third_party/blink/renderer/core/messaging/message_port.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
+#include "third_party/blink/renderer/core/scheduler/task_attribution_util.h"
 #include "third_party/blink/renderer/core/script/classic_script.h"
+#include "third_party/blink/renderer/core/script/detect_javascript_frameworks.h"
+#include "third_party/blink/renderer/core/timing/resource_timing_context.h"
 #include "third_party/blink/renderer/core/trustedtypes/trusted_script_url.h"
 #include "third_party/blink/renderer/core/trustedtypes/trusted_type_policy_factory.h"
 #include "third_party/blink/renderer/core/url/dom_origin.h"
@@ -543,6 +547,16 @@ void WorkerGlobalScope::RunWorkerScript() {
   bool is_success = false;
   if (ScriptState* script_state = ScriptController()->GetScriptState()) {
     v8::HandleScope handle_scope(script_state->GetIsolate());
+
+    std::optional<scheduler::TaskAttributionTracker::TaskScope>
+        task_attribution_resource_timing_scope;
+    if (RuntimeEnabledFeatures::ResourceTimingInitiatorEnabled()) {
+      ResourceTimingContext* resource_timing_context =
+          MakeGarbageCollected<ResourceTimingContext>(
+              worker_script_->SourceUrl());
+      task_attribution_resource_timing_scope =
+          SetTaskStateVariable(resource_timing_context, GetExecutionContext());
+    }
     ScriptEvaluationResult result =
         std::move(worker_script_)
             ->RunScriptOnScriptStateAndReturnValue(script_state);
@@ -582,7 +596,11 @@ void WorkerGlobalScope::RunWorkerScript() {
         break;
     }
   }
-  ReportingProxy().DidEvaluateTopLevelScript(is_success);
+  JavaScriptFrameworkDetectionResult result;
+  if (is_success) {
+    DetectJavascriptFrameworksOnWorkerLoad(*this, result);
+  }
+  ReportingProxy().DidEvaluateTopLevelScript(is_success, result);
 
   if (debugger && stack_id_)
     debugger->ExternalAsyncTaskFinished(*stack_id_);

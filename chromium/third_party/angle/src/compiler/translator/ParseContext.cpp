@@ -18,6 +18,7 @@
 // a fallback to AST maintained at the same time.
 
 #include "compiler/translator/ParseContext.h"
+#include "compiler/translator/Compiler.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -401,11 +402,13 @@ angle::base::CheckedNumeric<size_t> CalculateVariableSize(const TType *type, boo
         return elementSize * type->getArraySizeProduct();
     }
 
-    if (type->getBasicType() == EbtStruct)
+    if (type->getBasicType() == EbtStruct || type->getBasicType() == EbtInterfaceBlock)
     {
-        const TStructure *structure                   = type->getStruct();
+        const TFieldList &fields                      = type->getBasicType() == EbtStruct
+                                                            ? type->getStruct()->fields()
+                                                            : type->getInterfaceBlock()->fields();
         angle::base::CheckedNumeric<size_t> totalSize = 0;
-        for (const TField *field : structure->fields())
+        for (const TField *field : fields)
         {
             const TType *fieldType = field->type();
             totalSize += CalculateVariableSize(fieldType, isStd140);
@@ -531,7 +534,13 @@ TParseContext::TParseContext(TSymbolTable &symt,
       mDefaultBufferBlockStorage(sh::IsWebGLBasedSpec(spec) ? EbsStd140 : EbsShared),
       mDiagnostics(diagnostics),
       mDirectiveHandler(ext, *mDiagnostics, *this, mShaderType),
-      mPreprocessor(mDiagnostics, &mDirectiveHandler, angle::pp::PreprocessorSettings(spec)),
+      mPreprocessor(mDiagnostics,
+                    &mDirectiveHandler,
+                    angle::pp::PreprocessorSettings(
+                        spec,
+                        options.allowExtensionDisableAfterNonPPTokensInWebGL
+                            ? angle::pp::WebGLExtensionDisableBehavior::AnywhereInShader
+                            : angle::pp::WebGLExtensionDisableBehavior::Standard)),
       mScanner(nullptr),
       mComputeShaderLocalSizeDeclared(false),
       mComputeShaderLocalSize(-1),
@@ -546,6 +555,7 @@ TParseContext::TParseContext(TSymbolTable &symt,
           ShouldEnforceESSL100LoopAndIndexingLimitations(spec, mShaderVersion, options)),
       mFragmentOutputIndex1Used(false),
       mFragmentOutputFragDepthUsed(false),
+      mMaxFragDataArrayIndexUsed(0),
       mGeometryShaderInputPrimitiveType(EptUndefined),
       mGeometryShaderOutputPrimitiveType(EptUndefined),
       mGeometryShaderInvocations(0),
@@ -588,12 +598,100 @@ ir::IR TParseContext::getIR()
     return ir::Builder::destroy(std::move(mIRBuilder));
 }
 
-void TParseContext::onShaderVersionDeclared(int version)
+void TParseContext::onShaderVersionDeclared(const TSourceLoc &loc, int version)
 {
     mShaderVersion = version;
+    checkShaderVersion(loc);
     // Update cached decisions that depend on the shader version
     mValidateESSL100Limitations = ShouldEnforceESSL100LoopAndIndexingLimitations(
         mShaderSpec, mShaderVersion, mCompileOptions);
+}
+
+void TParseContext::fatal(const TSourceLoc &loc, const char *reason)
+{
+    error(loc, reason, "");
+    mPreprocessor.forceEOF();
+}
+
+bool TParseContext::checkShaderVersion(const TSourceLoc &loc)
+{
+    if (GetMaxShaderVersionForSpec(mShaderSpec) < mShaderVersion)
+    {
+        std::stringstream reasonStream = sh::InitializeStream<std::stringstream>();
+        reasonStream << "unsupported shader version ";
+        reasonStream << mShaderVersion;
+        fatal(loc, reasonStream.str().c_str());
+        return false;
+    }
+
+    switch (mShaderType)
+    {
+        case GL_COMPUTE_SHADER:
+            if (mShaderVersion < 310)
+            {
+                fatal(loc, "Compute shader is not supported in this shader version.");
+                return false;
+            }
+            break;
+
+        case GL_GEOMETRY_SHADER_EXT:
+            if (mShaderVersion < 310)
+            {
+                fatal(loc, "Geometry shader is not supported in this shader version.");
+                return false;
+            }
+            break;
+
+        case GL_TESS_CONTROL_SHADER_EXT:
+        case GL_TESS_EVALUATION_SHADER_EXT:
+            if (mShaderVersion < 310)
+            {
+                fatal(loc, "Tessellation shaders are not supported in this shader version.");
+                return false;
+            }
+            break;
+
+        default:
+            break;
+    }
+
+    return true;
+}
+
+bool TParseContext::checkCanUseShaderType(const TSourceLoc &loc)
+{
+    switch (mShaderType)
+    {
+        case GL_GEOMETRY_SHADER_EXT:
+            if (mShaderVersion == 310)
+            {
+                if (!checkCanUseOneOfExtensions(
+                        loc, std::array<TExtension, 2u>{{TExtension::EXT_geometry_shader,
+                                                         TExtension::OES_geometry_shader}}))
+                {
+                    return false;
+                }
+            }
+            break;
+
+        case GL_TESS_CONTROL_SHADER_EXT:
+        case GL_TESS_EVALUATION_SHADER_EXT:
+            if (mShaderVersion == 310)
+            {
+                if (!checkCanUseOneOfExtensions(
+                        loc, std::array<TExtension, 2u>{{TExtension::EXT_tessellation_shader,
+                                                         TExtension::OES_tessellation_shader}}))
+                {
+                    return false;
+                }
+            }
+            break;
+
+        default:
+            break;
+    }
+
+    return true;
 }
 
 bool TParseContext::anyMultiviewExtensionAvailable()
@@ -3574,22 +3672,33 @@ bool TParseContext::executeInitializer(const TSourceLoc &line,
         IsExtensionEnabled(mDirectiveHandler.extensionBehavior(),
                            TExtension::EXT_shader_non_constant_global_initializers);
     bool globalInitWarning = false;
-    if (symbolTable.atGlobalLevel() &&
-        !ValidateGlobalInitializer(initializer, mShaderVersion, sh::IsWebGLBasedSpec(mShaderSpec),
-                                   nonConstGlobalInitializers, &globalInitWarning))
+    bool tooComplex        = false;
+    if (symbolTable.atGlobalLevel())
     {
-        // Error message does not completely match behavior with ESSL 1.00, but
-        // we want to steer developers towards only using constant expressions.
-        error(line, "global variable initializers must be constant expressions", "=");
-        return false;
-    }
-    if (globalInitWarning)
-    {
-        warning(
-            line,
-            "global variable initializers should be constant expressions "
-            "(uniforms and globals are allowed in global initializers for legacy compatibility)",
-            "=");
+        bool valid = ValidateGlobalInitializer(
+            initializer, mShaderVersion, sh::IsWebGLBasedSpec(mShaderSpec),
+            nonConstGlobalInitializers, &globalInitWarning, &tooComplex);
+        if (!valid || tooComplex)
+        {
+            // Error message does not completely match behavior with ESSL 1.00, but
+            // we want to steer developers towards only using constant expressions.
+            //
+            // Note: the "Expression too complex" check can be removed once IR is the only path, as
+            // it's not sensitive to expression depth.
+            error(line,
+                  tooComplex ? "Expression too complex"
+                             : "global variable initializers must be constant expressions",
+                  "=");
+            return false;
+        }
+        if (globalInitWarning)
+        {
+            warning(line,
+                    "global variable initializers should be constant expressions "
+                    "(uniforms and globals are allowed in global initializers for legacy "
+                    "compatibility)",
+                    "=");
+        }
     }
 
     // identifier must be of type constant, a global, or a temporary
@@ -6796,6 +6905,7 @@ TIntermDeclaration *TParseContext::addInterfaceBlock(
         new TVariable(&symbolTable, instanceName, interfaceBlockType,
                       instanceName.empty() ? SymbolType::Empty : instanceSymbolType);
 
+    checkVariableSize(nameLine, blockName, interfaceBlockType);
     checkVariableLocations(nameLine, instanceVariable);
     declareIRVariable(instanceVariable, sized);
 
@@ -7121,18 +7231,16 @@ TIntermTyped *TParseContext::addIndexExpression(TIntermTyped *baseExpression,
 
         if (!baseExpression->getType().isUnsizedArray())
         {
-            if (baseExpression->isArray())
+            if (baseExpression->isArray() && baseExpression->getQualifier() == EvqFragData)
             {
-                if (baseExpression->getQualifier() == EvqFragData && index > 0)
+                mMaxFragDataArrayIndexUsed = std::max(mMaxFragDataArrayIndexUsed, index);
+                if (index > 0 && !isExtensionEnabled(TExtension::EXT_draw_buffers))
                 {
-                    if (!isExtensionEnabled(TExtension::EXT_draw_buffers))
-                    {
-                        outOfRangeError(outOfRangeIndexIsError, location,
-                                        "array index for gl_FragData must be zero when "
-                                        "GL_EXT_draw_buffers is disabled",
-                                        "[]");
-                        safeIndex = 0;
-                    }
+                    outOfRangeError(outOfRangeIndexIsError, location,
+                                    "array index for gl_FragData must be zero when "
+                                    "GL_EXT_draw_buffers is disabled",
+                                    "[]");
+                    safeIndex = 0;
                 }
             }
             // Only do generic out-of-range check if similar error hasn't already been reported.
@@ -7287,6 +7395,18 @@ TIntermTyped *TParseContext::addFieldSelectionExpression(TIntermTyped *baseExpre
             if (fieldFound)
             {
                 mIRBuilder.structField(i);
+
+                // The AST RewriteStructSamplers transformation cannot handle (..., struct).sampler.
+                // Fail compilation until the IR.
+                if (!mCompileOptions.useIR && baseExpression->getAsBinaryNode() &&
+                    baseExpression->getAsBinaryNode()->getOp() == EOpComma &&
+                    baseExpression->getType().isStructureContainingSamplers())
+                {
+                    error(dotLocation,
+                          "accessing fields of the result of a comma expression that is a "
+                          "structure with samplers is not currently supported",
+                          "Internal Error");
+                }
 
                 TIntermTyped *index = CreateIndexNode(i);
                 index->setLine(fieldLocation);
@@ -8782,8 +8902,10 @@ bool TParseContext::binaryOpCommonCheck(TOperator op,
             // Samplers as l-values are disallowed also in ESSL 3.00, see section 4.1.7,
             // we interpret the spec so that this extends to structs containing samplers,
             // similarly to ESSL 1.00 spec.
-            if ((mShaderVersion < 300 || op == EOpAssign || op == EOpInitialize) &&
-                left->getType().isStructureContainingSamplers())
+            //
+            // ESSL 3.00 doesn't disallow comparison between structs with samplers, but glslang, the
+            // reference implementation does, as do many drivers.
+            if (left->getType().isStructureContainingSamplers())
             {
                 error(loc, "undefined operation for structs containing samplers",
                       GetOperatorString(op));
@@ -10300,6 +10422,24 @@ void TParseContext::postParseValidateFragmentOutputLocations()
                   variable.variable->name());
         }
     }
+
+    // If gl_SecondaryFragDataEXT is used, then indices to gl_FragData must be smaller than
+    // gl_MaxDualSourceDrawBuffersEXT.  This cannot be validated until the end of the shader because
+    // it would be unknown if gl_SecondaryFragDataEXT is ever used.
+    //
+    // Note that gl_SecondaryFragColorEXT is not checked, because simultaneous use of gl_FragData
+    // and gl_SecondaryFragColorEXT is already forbidden.  Additionally, mFragmentOutputIndex1Used
+    // is not checked as it pertains to ESSL 300+.
+    const bool secondaryFragDataUsed =
+        symbolTable.gl_SecondaryFragDataEXT() != nullptr &&
+        symbolTable.isStaticallyUsed(*symbolTable.gl_SecondaryFragDataEXT());
+    if (secondaryFragDataUsed && mMaxFragDataArrayIndexUsed >= mResources.MaxDualSourceDrawBuffers)
+    {
+        mDiagnostics->globalError(
+            "array index for gl_FragData must be less than "
+            "GL_MAX_DUAL_SOURCE_DRAW_BUFFERS_EXT when "
+            "gl_SecondaryFragDataEXT is used");
+    }
 }
 
 bool TParseContext::postParseChecks()
@@ -10434,6 +10574,11 @@ bool TParseContext::postParseChecks()
     {
         mEarlyFragmentTestsSpecified = true;
         // No need to set it for the IR, the PLS rewrite transformation will do that.
+    }
+
+    if (!checkCanUseShaderType(kNoSourceLoc))
+    {
+        return false;
     }
 
     checkCallGraph();

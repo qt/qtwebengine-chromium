@@ -50,7 +50,6 @@ class MojoUkmRecorder;
 class AXTreeDistiller;
 class DependencyParserModel;
 class ReadAnythingAppControllerTest;
-class ReadAnythingAppControllerScreen2xDataCollectionModeTest;
 class ReadAnythingAppControllerReadabilityTest;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -131,11 +130,13 @@ class ReadAnythingAppController
   void OnTreeRemoved(ui::AXTree* tree) override;
 
   // Returns whether the processing of accessibility updates should be paused.
-  bool IsUpdateProcessingPaused() const;
+  // If allow_selection_updates is true (e.g. while immersive is opening),
+  // pending selection updates may be allowed to process.
+  bool IsUpdateProcessingPaused(bool allow_selection_updates = false) const;
 
   // If the update-processing system is not paused, applies pending updates and
   // triggers necessary actions. If paused, does nothing.
-  void ProcessPendingUpdatesIfAllowed();
+  void ProcessPendingUpdatesIfAllowed(bool allow_selection_updates = false);
 
   // read_anything::mojom::UntrustedPage:
   void AccessibilityEventReceived(
@@ -267,6 +268,7 @@ class ReadAnythingAppController
   int LineFocusStaticLine() const;
   int LineFocusCursorLine() const;
   int MaxLineWidth() const;
+  int ActivePresentationState() const;
   int InHiddenPresentationState() const;
   int InSidePanelPresentationState() const;
   int InImmersiveOverlayPresentationState() const;
@@ -310,12 +312,18 @@ class ReadAnythingAppController
                          int anchor_offset,
                          ui::AXNodeID focus_node_id,
                          int focus_offset);
-  void OnCollapseSelection() const;
+  void OnCollapseSelection();
+  void AttemptLogEarlySelection(bool from_side_panel);
   void OnDistilled(int word_count);
+  void OnRenderedTextBlocksAvailable(const std::vector<std::u16string>& blocks);
+  v8::Local<v8::Value> GetAXMapping(int index);
   bool IsGoogleDocs() const;
+  bool IsPdf() const;
   bool IsImmersiveEnabled() const;
+  bool IsImprovedReadAloudEnabled() const;
   bool IsTsTextSegmentationEnabled() const;
   bool IsReadabilityEnabled() const;
+  bool IsReadabilitySelectTextEnabled() const;
   bool IsLineFocusEnabled() const;
   bool IsReadabilityWithLinksEnabled() const;
   bool IsChromeOsAsh() const;
@@ -330,7 +338,8 @@ class ReadAnythingAppController
   void OnLanguagePrefChange(const std::string& lang, bool enabled);
   bool RequiresDistillation();
   void OnHighlightGranularityChanged(int granularity);
-  void OnLineFocusChanged(int line_focus);
+  void OnLineFocusChanged(int current_line_focus,
+                          int last_non_disabled_line_focus);
   double GetLineSpacingValue(int line_spacing) const;
   double GetLetterSpacingValue(int letter_spacing) const;
   std::vector<std::string> GetSupportedFonts();
@@ -350,6 +359,7 @@ class ReadAnythingAppController
   void TogglePresentation();
   void TogglePinState();
   void OnPinStatusReceived(bool pin_state) override;
+  void OnSpeechEngineFirstStall();
   void OnSpeechEngineStalled();
 
   // Returns the current active distillation method state as an integer.
@@ -435,19 +445,22 @@ class ReadAnythingAppController
 
  private:
   friend ReadAnythingAppControllerTest;
-  friend ReadAnythingAppControllerScreen2xDataCollectionModeTest;
   friend ReadAnythingAppControllerReadabilityTest;
   // The fallback language code if GetLanguageCodeForSpeech has an error.
   // However, this may be the same value as GetLanguageCodeForSpeech.
   const std::string& GetDefaultLanguageCodeForSpeech() const;
 
-  void Distill(bool for_training_data = false);
+  void Distill();
   void DrawSelection();
   void DrawEmptyState();
 
   // Helper function that restarts the distillation logging timer and triggers a
   // new distillation if the tree is ready.
   void DistillNewTree();
+
+  // Helper function that resets the distillation state and metrics in
+  // preparation for a new content distillation.
+  void PrepareForNewContentDistillation();
 
   // Returns the initial distillation method state based on feature flags and
   // page type (e.g. if it's PDF).
@@ -467,14 +480,20 @@ class ReadAnythingAppController
   // processed accessibility events.
   void ProcessModelUpdates();
 
-  // Applies accessibility updates to ensure links are properly synced
-  // between distilled Readability content and what's in the accessibility tree.
-  // This should only be called when Readability is being used as a distillation
-  // method and links are supported.
-  void ApplyAccessibilityUpdatesForReadabilityLinks(
+  // Applies accessibility updates to ensure links and readability's text
+  // selection algorithm are properly synced between distilled Readability
+  // content and what's in the accessibility tree. This should only be called
+  // when Readability is being used as a distillation method and links are
+  // supported.
+  void ApplyAccessibilityUpdatesForReadability(
       const ui::AXTreeID& tree_id,
       const std::vector<ui::AXTreeUpdate>& updates,
       const std::vector<ui::AXEvent>& events);
+
+  // Triggers the text mapping algorithm if both the accessibility tree and the
+  // rendered text blocks from the WebUI are ready if
+  // IsReadabilitySelectTextEnabled.
+  void MaybeMapRenderedTextToTree();
 
   // Helper for forwarding reading mode hide events to the webui so we can
   // perform cleaning operations on it.
@@ -524,6 +543,10 @@ class ReadAnythingAppController
 
   void LogSpeechStop(int source);
 
+  // Logs the duration a user spent reading a page, broken down by page type
+  // (PDF vs WebPage) and view mode (FullPage overlay vs SidePanel).
+  void LogPageDuration();
+
   // Methods for logging line focus session info.
   void StartLineFocusSession();
   void LogLineFocusSession();
@@ -533,6 +556,8 @@ class ReadAnythingAppController
   void IncrementLineFocusSpeechLines();
 
   void OnUrlInformationSet();
+
+  void OnPdfDebounceFinished();
 
   // Stores a screenshot of the page and triggers distillation to record protos.
   // This function is not used in production and is behind the disabled
@@ -560,6 +585,13 @@ class ReadAnythingAppController
 
   bool waiting_for_tree_id_ = false;
 
+  // Tracks whether the rendered text blocks ready metric has been recorded for
+  // the current active tree ID.
+  bool rendered_text_blocks_ready_recorded_ = false;
+
+  // Tracks the time since the active tree ID was last changed.
+  base::TimeTicks active_tree_changed_start_time_;
+
   // Model that holds Reading mode state for this controller.
   ReadAnythingAppModel model_;
 
@@ -586,6 +618,12 @@ class ReadAnythingAppController
   // A timer that causes a distillation after a user stops typing for a set
   // number of seconds.
   std::unique_ptr<base::RetainingOneShotTimer> post_user_entry_draw_timer_;
+
+  // A timer for debouncing draws for a PDF. Since most of the content updates
+  // occur via SUBTREE_CREATED a11y events, PDFs end up redrawing several
+  // times in a row which can be jarring. Wait for all the updates before
+  // drawing instead.
+  std::unique_ptr<base::RetainingOneShotTimer> pdf_draw_debouncer_;
 
   base::OneShotTimer timer_;
 

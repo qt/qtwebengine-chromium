@@ -4,34 +4,44 @@
 
 #include "components/autofill/core/browser/metrics/form_events/form_event_logger_base.h"
 
-#include <cstddef>
-#include <cstdint>
-#include <string>
+#include <stddef.h>
 
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include "base/check.h"
 #include "base/check_deref.h"
-#include "base/feature_list.h"
+#include "base/check_op.h"
+#include "base/containers/span.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
-#include "base/notreached.h"
 #include "base/strings/strcat.h"
 #include "base/time/time.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/field_type_utils.h"
+#include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_qualifiers.h"
 #include "components/autofill/core/browser/form_structure.h"
+#include "components/autofill/core/browser/form_types.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
 #include "components/autofill/core/browser/foundations/autofill_driver.h"
 #include "components/autofill/core/browser/foundations/browser_autofill_manager.h"
 #include "components/autofill/core/browser/logging/log_manager.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics_utils.h"
+#include "components/autofill/core/browser/metrics/form_events/form_events.h"
 #include "components/autofill/core/browser/metrics/form_interactions_ukm_logger.h"
+#include "components/autofill/core/browser/studies/autofill_ablation_study.h"
 #include "components/autofill/core/browser/suggestions/suggestion_util.h"
-#include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_internals/log_message.h"
 #include "components/autofill/core/common/autofill_internals/logging_scope.h"
-#include "components/autofill/core/common/autofill_payments_features.h"
+#include "components/autofill/core/common/dense_set.h"
+#include "components/autofill/core/common/logging/log_buffer.h"
+#include "components/autofill/core/common/logging/log_macros.h"
 #include "components/autofill/core/common/unique_ids.h"
+#include "components/metrics/profile_metrics_service.h"
 
 namespace autofill::autofill_metrics {
 
@@ -405,8 +415,11 @@ void FormEventLoggerBase::RecordKeyMetrics() {
 
 void FormEventLoggerBase::RecordFillingReadiness(LogBuffer& logs) const {
   const bool has_logged_data_to_fill_available = HasLoggedDataToFillAvailable();
+  metrics::ProfileMetricsService* profile_metrics_service =
+      owner_->client().GetProfileMetricsService();
+  CHECK(profile_metrics_service);
   for (std::string_view form_type : GetParsedFormTypesAsStringViews()) {
-    base::UmaHistogramBoolean(
+    profile_metrics_service->UmaHistogramBoolean(
         base::StrCat({"Autofill.KeyMetrics.FillingReadiness.", form_type}),
         has_logged_data_to_fill_available);
   }
@@ -415,8 +428,11 @@ void FormEventLoggerBase::RecordFillingReadiness(LogBuffer& logs) const {
 }
 
 void FormEventLoggerBase::RecordFillingAcceptance(LogBuffer& logs) const {
+  metrics::ProfileMetricsService* profile_metrics_service =
+      owner_->client().GetProfileMetricsService();
+  CHECK(profile_metrics_service);
   for (std::string_view form_type : GetParsedFormTypesAsStringViews()) {
-    base::UmaHistogramBoolean(
+    profile_metrics_service->UmaHistogramBoolean(
         base::StrCat({"Autofill.KeyMetrics.FillingAcceptance.", form_type}),
         has_logged_form_filling_suggestion_filled_);
     base::UmaHistogramBoolean(
@@ -450,8 +466,11 @@ void FormEventLoggerBase::RecordFillingAcceptance(LogBuffer& logs) const {
 }
 
 void FormEventLoggerBase::RecordFillingCorrectness(LogBuffer& logs) const {
+  metrics::ProfileMetricsService* profile_metrics_service =
+      owner_->client().GetProfileMetricsService();
+  CHECK(profile_metrics_service);
   for (std::string_view form_type : GetParsedFormTypesAsStringViews()) {
-    base::UmaHistogramBoolean(
+    profile_metrics_service->UmaHistogramBoolean(
         base::StrCat({"Autofill.KeyMetrics.FillingCorrectness.", form_type}),
         !has_logged_edited_autofilled_field_);
   }
@@ -460,8 +479,11 @@ void FormEventLoggerBase::RecordFillingCorrectness(LogBuffer& logs) const {
 }
 
 void FormEventLoggerBase::RecordFillingAssistance(LogBuffer& logs) const {
+  metrics::ProfileMetricsService* profile_metrics_service =
+      owner_->client().GetProfileMetricsService();
+  CHECK(profile_metrics_service);
   for (std::string_view form_type : GetParsedFormTypesAsStringViews()) {
-    base::UmaHistogramBoolean(
+    profile_metrics_service->UmaHistogramBoolean(
         base::StrCat({"Autofill.KeyMetrics.FillingAssistance.", form_type}),
         has_logged_form_filling_suggestion_filled_);
   }

@@ -4,6 +4,11 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
+#ifndef EIGEN_FFT_IMKLFFT_IMPL_H
+#define EIGEN_FFT_IMKLFFT_IMPL_H
 
 #include <mkl_dfti.h>
 
@@ -187,56 +192,56 @@ struct imklfft_impl {
 
   // complex-to-complex forward FFT
   inline void fwd(Complex* dst, const Complex* src, int nfft) {
-    MKL_LONG size = nfft;
-    get_plan(nfft, dst, src).forward(complex_cast(dst), complex_cast(src), size);
+    get_plan(nfft, /*real_io=*/false, dst, src).forward(complex_cast(dst), complex_cast(src), nfft);
   }
 
   // real-to-complex forward FFT
   inline void fwd(Complex* dst, const Scalar* src, int nfft) {
-    MKL_LONG size = nfft;
-    get_plan(nfft, dst, src).forward(complex_cast(dst), const_cast<Scalar*>(src), nfft);
+    get_plan(nfft, /*real_io=*/true, dst, src).forward(complex_cast(dst), const_cast<Scalar*>(src), nfft);
   }
 
   // 2-d complex-to-complex
   inline void fwd2(Complex* dst, const Complex* src, int n0, int n1) {
-    get_plan(n0, n1, dst, src).forward2(complex_cast(dst), complex_cast(src), n0, n1);
+    get_plan(n0, n1, /*real_io=*/false, dst, src).forward2(complex_cast(dst), complex_cast(src), n0, n1);
   }
 
   // inverse complex-to-complex
   inline void inv(Complex* dst, const Complex* src, int nfft) {
-    MKL_LONG size = nfft;
-    get_plan(nfft, dst, src).inverse(complex_cast(dst), complex_cast(src), nfft);
+    get_plan(nfft, /*real_io=*/false, dst, src).inverse(complex_cast(dst), complex_cast(src), nfft);
   }
 
   // half-complex to scalar
   inline void inv(Scalar* dst, const Complex* src, int nfft) {
-    MKL_LONG size = nfft;
-    get_plan(nfft, dst, src).inverse(const_cast<Scalar*>(dst), complex_cast(src), nfft);
+    get_plan(nfft, /*real_io=*/true, dst, src).inverse(const_cast<Scalar*>(dst), complex_cast(src), nfft);
   }
 
   // 2-d complex-to-complex
   inline void inv2(Complex* dst, const Complex* src, int n0, int n1) {
-    get_plan(n0, n1, dst, src).inverse2(complex_cast(dst), complex_cast(src), n0, n1);
+    get_plan(n0, n1, /*real_io=*/false, dst, src).inverse2(complex_cast(dst), complex_cast(src), n0, n1);
   }
 
  private:
   std::map<int64_t, plan<Scalar>> m_plans;
 
-  inline plan<Scalar>& get_plan(int nfft, void* dst, const void* src) {
-    int inplace = dst == src ? 1 : 0;
+  // Pack (real_io, inplace, aligned) into 3 contiguous low bits of the cache
+  // key.  real_io distinguishes plans built with DFTI_REAL from those built
+  // with DFTI_COMPLEX so reusing the same FFT object across real-input and
+  // complex-input transforms doesn't return a cached plan of the wrong domain.
+  // MKL DFTI descriptors are bidirectional, so forward and inverse share
+  // slots intentionally.
+  static int64_t plan_flags(bool real_io, void* dst, const void* src) {
+    int inplace = (dst == src) ? 1 : 0;
     int aligned = ((reinterpret_cast<size_t>(src) & 15) | (reinterpret_cast<size_t>(dst) & 15)) == 0 ? 1 : 0;
-    int64_t key = ((nfft << 2) | (inplace << 1) | aligned) << 1;
+    return (int(real_io) << 2) | (inplace << 1) | aligned;
+  }
 
-    // Create element if key does not exist.
+  inline plan<Scalar>& get_plan(int nfft, bool real_io, void* dst, const void* src) {
+    int64_t key = ((nfft << 3) | plan_flags(real_io, dst, src)) << 1;
     return m_plans[key];
   }
 
-  inline plan<Scalar>& get_plan(int n0, int n1, void* dst, const void* src) {
-    int inplace = (dst == src) ? 1 : 0;
-    int aligned = ((reinterpret_cast<size_t>(src) & 15) | (reinterpret_cast<size_t>(dst) & 15)) == 0 ? 1 : 0;
-    int64_t key = (((((int64_t)n0) << 31) | (n1 << 2) | (inplace << 1) | aligned) << 1) + 1;
-
-    // Create element if key does not exist.
+  inline plan<Scalar>& get_plan(int n0, int n1, bool real_io, void* dst, const void* src) {
+    int64_t key = (((((int64_t)n0) << 31) | (n1 << 3) | plan_flags(real_io, dst, src)) << 1) + 1;
     return m_plans[key];
   }
 };
@@ -246,3 +251,5 @@ struct imklfft_impl {
 }  // namespace imklfft
 }  // namespace internal
 }  // namespace Eigen
+
+#endif  // EIGEN_FFT_IMKLFFT_IMPL_H

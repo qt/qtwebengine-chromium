@@ -11,6 +11,8 @@ import argparse
 import os
 import sys
 
+from cli_utils import print_error
+
 FORMAT_STRING = """#pragma once
 
 namespace openscreen {{
@@ -25,33 +27,32 @@ constexpr char {1}[] = R"(
 """
 
 
-def ToCamelCase(snake_case):
+def _to_camel_case(snake_case: str) -> str:
     """Converts snake_case to TitleCamelCase."""
     return ''.join(x.title() for x in snake_case.split('_'))
 
 
-def GetVariableName(path):
+def _get_variable_name(path: str) -> str:
     """Converts a snake case file name into a kCamelCase variable name."""
     file_name = os.path.splitext(os.path.split(path)[1])[0]
-    return 'k' + ToCamelCase(file_name)
+    return 'k' + _to_camel_case(file_name)
 
 
-def Convert(namespace, input_path, output_path):
+def convert(namespace: str, input_path: str, output_path: str) -> int:
     """Takes an input file, such as a JSON file, and converts it into a C++
        data file, in the form of a character array constant in a header."""
     if not os.path.exists(input_path):
-        print('\tERROR: failed to generate, invalid path supplied: ' +
-              input_path)
+        print_error(f'Failed to generate, invalid path supplied: {input_path}')
         return 1
 
-    content = False
     with open(input_path, 'r') as f:
         content = f.read()
 
     with open(output_path, 'w') as f:
         f.write(
-            FORMAT_STRING.format(namespace, GetVariableName(input_path),
+            FORMAT_STRING.format(namespace, _get_variable_name(input_path),
                                  content))
+    return 0
 
 
 def main():
@@ -66,7 +67,7 @@ def main():
 
     input_path = os.path.abspath(args.input_path)
     output_path = os.path.abspath(args.output_path)
-    Convert(args.namespace, input_path, output_path)
+    return convert(args.namespace, input_path, output_path)
 
 
 if __name__ == '__main__':

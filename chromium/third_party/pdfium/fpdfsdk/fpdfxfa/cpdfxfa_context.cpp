@@ -335,7 +335,7 @@ WideString CPDFXFA_Context::GetAppTitle() const {
 }
 
 WideString CPDFXFA_Context::GetAppName() {
-  return form_fill_env_ ? form_fill_env_->FFI_GetAppName() : WideString();
+  return form_fill_env_ ? form_fill_env_->GetXfaAppName() : WideString();
 }
 
 WideString CPDFXFA_Context::GetLanguage() {

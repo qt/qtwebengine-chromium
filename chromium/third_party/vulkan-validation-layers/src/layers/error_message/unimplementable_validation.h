@@ -334,7 +334,6 @@ const char* unimplementable_validation[] = {
     "VUID-VkAccelerationStructureTrianglesOpacityMicromapEXT-ppUsageCounts-parameter",
     "VUID-VkAccelerationStructureTrianglesDisplacementMicromapNV-pUsageCounts-parameter",
     "VUID-VkAccelerationStructureTrianglesDisplacementMicromapNV-ppUsageCounts-parameter",
-    "VUID-VkShaderCreateInfoEXT-pSetLayouts-parameter",
     "VUID-VkShaderCreateInfoEXT-pPushConstantRanges-parameter",
     "VUID-VkLatencySurfaceCapabilitiesNV-pPresentModes-parameter",
     "VUID-vkCmdBeginTransformFeedbackEXT-pCounterBufferOffsets-parameter",
@@ -406,6 +405,7 @@ const char* unimplementable_validation[] = {
     "VUID-vkCmdBeginTransformFeedback2EXT-pCounterInfos-parameter",
     "VUID-vkCmdEndTransformFeedback2EXT-pCounterInfos-parameter",
     "VUID-vkCmdBindTransformFeedbackBuffers2EXT-pBindingInfos-parameter",
+    "VUID-vkGetDeviceFaultReportsKHR-pFaultInfo-parameter",
     "VUID-VkGraphicsPipelineCreateInfo-pDynamicStates-04058",
     // These occur in stateless validation when a pointer member is optional and the length member is null
     "VUID-VkDeviceCreateInfo-pEnabledFeatures-parameter",
@@ -827,6 +827,7 @@ const char* not_going_to_do[] = {
 
 // VUs from deprecated extensions that would require complex codegen to get working
 const char* deprecated_validation[] = {
+    // NV Ray tracing that is now KHR ray tracing
     "VUID-VkAccelerationStructureCreateInfoNV-info-parameter",
     "VUID-VkAccelerationStructureInfoNV-type-parameter",
     "VUID-VkAccelerationStructureMotionInstanceNV-flags-zerobitmask",
@@ -865,6 +866,11 @@ const char* deprecated_validation[] = {
     // No one wants to own VK_EXT_opacity_micromap with the KHR coming out
     // ... sad
     "VUID-VkAccelerationStructureTrianglesOpacityMicromapEXT-micromap-parameter",
+
+    // VK_NV_per_stage_descriptor_set now deprecated for VK_EXT_descriptor_heap
+    "VUID-VkDescriptorSetLayoutCreateInfo-flags-09463",
+    "VUID-VkDescriptorSetLayoutCreateInfo-flags-09464",
+    "VUID-VkDescriptorSetLayoutBinding-flags-09466",
 };
 
 // clang-format on

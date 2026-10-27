@@ -358,6 +358,13 @@ int X509_up_ref(X509 *x) {
   return 1;
 }
 
+X509 *X509_dup_ref(const X509 *x) {
+  auto *x_ref = const_cast<X509 *>(x);
+  // We know that this call always returns one.
+  X509_up_ref(x_ref);
+  return x_ref;
+}
+
 int X509_get_ex_new_index(long argl, void *argp, CRYPTO_EX_unused *unused,
                           CRYPTO_EX_dup *dup_unused,
                           CRYPTO_EX_free *free_func) {
@@ -500,13 +507,7 @@ int X509_set1_signature_algo(X509 *x509, const X509_ALGOR *algo) {
 }
 
 int X509_set1_signature_value(X509 *x509, const uint8_t *sig, size_t sig_len) {
-  auto *impl = FromOpaque(x509);
-  if (!ASN1_STRING_set(&impl->signature, sig, sig_len)) {
-    return 0;
-  }
-  impl->signature.flags &= ~(ASN1_STRING_FLAG_BITS_LEFT | 0x07);
-  impl->signature.flags |= ASN1_STRING_FLAG_BITS_LEFT;
-  return 1;
+  return ASN1_STRING_set(&FromOpaque(x509)->signature, sig, sig_len);
 }
 
 void X509_get0_signature(const ASN1_BIT_STRING **psig, const X509_ALGOR **palg,

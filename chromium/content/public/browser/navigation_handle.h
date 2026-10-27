@@ -14,6 +14,7 @@
 #include "base/memory/advanced_memory_safety_checks.h"
 #include "base/memory/safe_ref.h"
 #include "base/supports_user_data.h"
+#include "base/unguessable_token.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/error_navigation_trigger.h"
 #include "content/public/browser/frame_tree_node_id.h"
@@ -33,6 +34,7 @@
 #include "net/dns/public/resolve_error_info.h"
 #include "net/http/http_connection_info.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
+#include "services/network/public/mojom/declarative_performance_observer.mojom-forward.h"
 #include "services/network/public/mojom/web_sandbox_flags.mojom-forward.h"
 #include "third_party/blink/public/common/navigation/impression.h"
 #include "third_party/blink/public/common/runtime_feature_state/runtime_feature_state_context.h"
@@ -190,6 +192,11 @@ class CONTENT_EXPORT NavigationHandle : public base::SupportsUserData {
   // value remains constant over the navigation lifetime.
   // See docs/frame_trees.md for more details.
   virtual bool IsInPrimaryMainFrame() const = 0;
+
+  // If the navigation was triggered by a script tool, this contains the
+  // ID of the tool invocation.
+  virtual const std::optional<base::UnguessableToken>&
+  GetScriptToolInvocationId() const = 0;
 
   // Whether the navigation is taking place in a main frame which does not have
   // an outer document. For example, this will return true for the primary main
@@ -372,6 +379,11 @@ class CONTENT_EXPORT NavigationHandle : public base::SupportsUserData {
   // the BackForwardCache or Prerender).
   virtual bool IsPageActivation() const = 0;
 
+  // Whether this navigation is originating from either the initial empty
+  // document, or a synchronously committed about:blank document at frame
+  // creation. See |is_on_initial_empty_document_| in FrameTreeNode for details.
+  virtual bool IsNavigatingFromInitialEmptyDocument() const = 0;
+
   // Navigation control flow --------------------------------------------------
 
   // The net error code if an error happened prior to commit, or the navigation
@@ -489,6 +501,10 @@ class CONTENT_EXPORT NavigationHandle : public base::SupportsUserData {
   // initiated redirect causes such replacement.
   virtual bool DidReplaceEntry() = 0;
 
+  // Returns the number of subsequent duplicate navigations that were ignored in
+  // favor of this navigation. This will be used for metrics.
+  virtual size_t GetIgnoredDuplicateNavigationCount() const = 0;
+
   // Returns true if the browser history should be updated. Otherwise only
   // the session history will be updated. E.g., on unreachable urls or other
   // navigations that the users may not think of as navigations (such as
@@ -539,6 +555,11 @@ class CONTENT_EXPORT NavigationHandle : public base::SupportsUserData {
   // redirect). The headers returned should not be modified, as modifications
   // will not be reflected in the network stack.
   virtual const net::HttpResponseHeaders* GetResponseHeaders() = 0;
+
+  // Returns the parsed Declarative Performance Observer policy for the request,
+  // or nullptr if it hasn't been received yet.
+  virtual const network::mojom::DeclarativePerformanceObserverPolicy*
+  GetDeclarativePerformanceObserverPolicy() = 0;
 
   // Returns the connection info for the request, the default value is
   // HttpConnectionInfo::kUNKNOWN if there hasn't been a response (or redirect)
@@ -783,7 +804,7 @@ class CONTENT_EXPORT NavigationHandle : public base::SupportsUserData {
   // Prerender2:
   // Used for metrics.
   virtual PreloadingTriggerType GetPrerenderTriggerType() = 0;
-  virtual std::string GetPrerenderEmbedderHistogramSuffix() = 0;
+  virtual std::string GetPrerenderHistogramSuffix() = 0;
   virtual bool IsPrerenderHostReused() = 0;
 
   // Returns a SafeRef to this handle.

@@ -1386,6 +1386,14 @@ var LibraryWebGPU = {
     }
   },
 
+  wgpuComputePassEncoderSetImmediates: (passPtr, offset, data, size) => {
+    var pass = WebGPU.getJsObject(passPtr);
+    // There is a size limitation for ArrayBufferView. Work around by passing in a subarray
+    // instead of the whole heap. crbug.com/1201109
+    var subarray = HEAPU8.subarray(data, data + size);
+    pass.setImmediates(offset, subarray, 0, size);
+  },
+
   wgpuComputePassEncoderSetPipeline: (passPtr, pipelinePtr) => {
     var pass = WebGPU.getJsObject(passPtr);
     var pipeline = WebGPU.getJsObject(pipelinePtr);
@@ -1690,6 +1698,7 @@ var LibraryWebGPU = {
       "label": WebGPU.makeStringFromOptionalStringView(
         descriptor + {{{ C_STRUCTS.WGPUPipelineLayoutDescriptor.label }}}),
       "bindGroupLayouts": bgls,
+      "immediateSize": {{{ makeGetValue('descriptor', C_STRUCTS.WGPUPipelineLayoutDescriptor.immediateSize, 'u32') }}},
     };
 
     var device = WebGPU.getJsObject(devicePtr);
@@ -2252,6 +2261,14 @@ var LibraryWebGPU = {
     }
   },
 
+  wgpuRenderBundleEncoderSetImmediates: (passPtr, offset, data, size) => {
+    var pass = WebGPU.getJsObject(passPtr);
+    // There is a size limitation for ArrayBufferView. Work around by passing in a subarray
+    // instead of the whole heap. crbug.com/1201109
+    var subarray = HEAPU8.subarray(data, data + size);
+    pass.setImmediates(offset, subarray, 0, size);
+  },
+
   wgpuRenderBundleEncoderSetIndexBuffer: (passPtr, bufferPtr, format, offset, size) => {
     var pass = WebGPU.getJsObject(passPtr);
     var buffer = WebGPU.getJsObject(bufferPtr);
@@ -2375,6 +2392,14 @@ var LibraryWebGPU = {
     } else {
       pass.setBindGroup(groupIndex, group, HEAPU32, {{{ getHeapOffset('dynamicOffsetsPtr', 'u32') }}}, dynamicOffsetCount);
     }
+  },
+
+  wgpuRenderPassEncoderSetImmediates: (passPtr, offset, data, size) => {
+    var pass = WebGPU.getJsObject(passPtr);
+    // There is a size limitation for ArrayBufferView. Work around by passing in a subarray
+    // instead of the whole heap. crbug.com/1201109
+    var subarray = HEAPU8.subarray(data, data + size);
+    pass.setImmediates(offset, subarray, 0, size);
   },
 
   wgpuRenderPassEncoderSetBlendConstant: (passPtr, colorPtr) => {

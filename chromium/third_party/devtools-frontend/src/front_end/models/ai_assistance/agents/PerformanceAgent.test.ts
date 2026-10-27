@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import type * as Common from '../../../core/common/common.js';
+import {assert} from 'chai';
+
+import * as Common from '../../../core/common/common.js';
 import * as Host from '../../../core/host/host.js';
 import * as Platform from '../../../core/platform/platform.js';
 import * as SDK from '../../../core/sdk/sdk.js';
 import type * as Protocol from '../../../generated/protocol.js';
-import {mockAidaClient} from '../../../testing/AiAssistanceHelpers.js';
+import {createNetworkRequest, mockAidaClient} from '../../../testing/AiAssistanceHelpers.js';
 import {
   createTarget,
   restoreUserAgentForTesting,
@@ -20,12 +22,16 @@ import {SnapshotTester} from '../../../testing/SnapshotTester.js';
 import {allThreadEntriesInTrace} from '../../../testing/TraceHelpers.js';
 import {TraceLoader} from '../../../testing/TraceLoader.js';
 import * as Bindings from '../../bindings/bindings.js';
+import * as Logs from '../../logs/logs.js';
+import type * as SourceMapScopes from '../../source_map_scopes/source_map_scopes.js';
+import * as TextUtils from '../../text_utils/text_utils.js';
 import * as Trace from '../../trace/trace.js';
 import type {SerializableKey} from '../../trace/types/File.js';
 import * as Workspace from '../../workspace/workspace.js';
 import {
   AiAgent,
   AICallTree,
+  AIContext,
   PerformanceAgent,
   PerformanceTraceFormatter,
 } from '../ai_assistance.js';
@@ -195,6 +201,33 @@ describeWithMockConnection('PerformanceAgent', function() {
           },
         ]);
       });
+
+      it('yields TIMELINE_RANGE_SUMMARY and BOTTOM_UP_TREE widgets for call tree focus on initialization',
+         async function() {
+           const parsedTrace = await TraceLoader.traceEngine(this, 'web-dev-outermost-frames.json.gz');
+           const events = allThreadEntriesInTrace(parsedTrace);
+           const layoutEvt = events.find(event => event.ts === 465457096322);
+           assert.exists(layoutEvt);
+
+           const aiCallTree = AICallTree.AICallTree.fromEvent(layoutEvt, parsedTrace);
+           assert.exists(aiCallTree);
+
+           const agent = new PerformanceAgent.PerformanceAgent({
+             aidaClient: mockAidaClient([[{explanation: 'done'}]]),
+           });
+
+           const context = PerformanceAgent.PerformanceTraceContext.fromCallTree(aiCallTree);
+           const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+
+           deleteAllWidgetData(responses);
+
+           const contextResponse = responses.find(r => r.type === AiAgent.ResponseType.CONTEXT);
+           assert.exists(contextResponse);
+           assert.exists(contextResponse.widgets);
+           assert.lengthOf(contextResponse.widgets, 2);
+           assert.strictEqual(contextResponse.widgets[0].name, 'TIMELINE_RANGE_SUMMARY');
+           assert.strictEqual(contextResponse.widgets[1].name, 'BOTTOM_UP_TREE');
+         });
     });
 
     describe('enhanceQuery', () => {
@@ -533,19 +566,87 @@ code
       });
     });
 
-    it('can call getMainThreadTrackSummary', async function() {
+    it('can call getResourceContent and yields SOURCE_CODE widget', async function() {
+      const parsedTrace = await TraceLoader.traceEngine(this, 'lcp-images.json.gz');
+      assert.isOk(parsedTrace.insights);
+      const [firstNav] = parsedTrace.data.Meta.mainFrameNavigations;
+      const lcpBreakdown = getInsightOrError('LCPBreakdown', parsedTrace.insights, firstNav);
+
+      const url = 'https://chromedevtools.github.io/performance-stories/lcp-large-image/index.html';
+      const agent = createAgentForConversation({
+        aidaClient: mockAidaClient(
+            [[{explanation: '', functionCalls: [{name: 'getResourceContent', args: {url}}]}], [{explanation: 'done'}]])
+      });
+      const context = PerformanceAgent.PerformanceTraceContext.fromInsight(parsedTrace, lcpBreakdown);
+
+      // Mock scripts in trace
+      parsedTrace.data.Scripts.scripts.push({
+        url,
+        content: 'console.log("hello world");',
+      } as unknown as Trace.Handlers.ModelHandlers.Scripts.Script);
+
+      const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+      const action = responses.find(response => response.type === AiAgent.ResponseType.ACTION);
+      assert.exists(action);
+      assert.exists(action.widgets);
+      assert.lengthOf(action.widgets, 1);
+      const widget = action.widgets[0] as AiAgent.SourceCodeAiWidget;
+      assert.strictEqual(widget.name, 'SOURCE_CODE');
+      assert.strictEqual(widget.data.url, url);
+      assert.strictEqual(widget.data.code, 'console.log("hello world");');
+    });
+
+    it('can call getFunctionCode and yields SOURCE_CODE widget', async function() {
+      const parsedTrace = await TraceLoader.traceEngine(this, 'lcp-images.json.gz');
+      assert.isOk(parsedTrace.insights);
+      const [firstNav] = parsedTrace.data.Meta.mainFrameNavigations;
+      const lcpBreakdown = getInsightOrError('LCPBreakdown', parsedTrace.insights, firstNav);
+
+      const scriptUrl = 'https://chromedevtools.github.io/performance-stories/lcp-large-image/app.js';
+      const agent = createAgentForConversation({
+        aidaClient: mockAidaClient([
+          [{explanation: '', functionCalls: [{name: 'getFunctionCode', args: {scriptUrl, line: 10, column: 5}}]}],
+          [{explanation: 'done'}]
+        ])
+      });
+      const context = PerformanceAgent.PerformanceTraceContext.fromInsight(parsedTrace, lcpBreakdown);
+
+      // Stub prototype methods of PerformanceTraceFormatter
+      sinon.stub(PerformanceTraceFormatter.PerformanceTraceFormatter.prototype, 'resolveFunctionCodeAtLocation')
+          .resolves({
+            code: 'function test() {}',
+            codeWithContext: '<FUNCTION_START>function test() {}<FUNCTION_END>',
+            formattedCost: [],
+          } as unknown as SourceMapScopes.FunctionCodeResolver.FunctionCode);
+      sinon.stub(PerformanceTraceFormatter.PerformanceTraceFormatter.prototype, 'formatFunctionCode')
+          .returns('function test() {}');
+
+      const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+      const action = responses.find(response => response.type === AiAgent.ResponseType.ACTION);
+      assert.exists(action);
+      assert.exists(action.widgets);
+      assert.lengthOf(action.widgets, 1);
+      const widget = action.widgets[0] as AiAgent.SourceCodeAiWidget;
+      assert.strictEqual(widget.name, 'SOURCE_CODE');
+      assert.strictEqual(widget.data.url, scriptUrl);
+      assert.strictEqual(widget.data.line, 10);
+      assert.strictEqual(widget.data.column, 5);
+      assert.strictEqual(widget.data.code, 'function test() {}');
+    });
+
+    it('can call getMainThreadTrackSummaryByLabel', async function() {
       const metricsSpy = sinon.spy(Host.userMetrics, 'performanceAIMainThreadActivityResponseSize');
 
       const parsedTrace = await TraceLoader.traceEngine(this, 'lcp-discovery-delay.json.gz');
       assert.isOk(parsedTrace.insights);
       const [firstNav] = parsedTrace.data.Meta.mainFrameNavigations;
       const lcpBreakdown = getInsightOrError('LCPBreakdown', parsedTrace.insights, firstNav);
-      const bounds = parsedTrace.data.Meta.traceBounds;
+
       const agent = createAgentForConversation({
         aidaClient: mockAidaClient([
           [{
             explanation: '',
-            functionCalls: [{name: 'getMainThreadTrackSummary', args: {min: bounds.min, max: bounds.max}}]
+            functionCalls: [{name: 'getMainThreadTrackSummaryByLabel', args: {label: 'LCPBreakdown'}}]
           }],
           [{explanation: 'done'}]
         ])
@@ -553,14 +654,17 @@ code
       const context = PerformanceAgent.PerformanceTraceContext.fromInsight(parsedTrace, lcpBreakdown);
 
       const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+      deleteAllWidgetData(responses);
+
       const titleResponse = responses.find(response => response.type === AiAgent.ResponseType.TITLE);
       assert.exists(titleResponse);
-      assert.strictEqual(titleResponse.title, 'Investigating main thread activity');
+      assert.strictEqual(titleResponse.title, 'Investigating main thread activity: LCP breakdown insight');
 
       const action = responses.find(response => response.type === AiAgent.ResponseType.ACTION);
       assert.exists(action);
 
       const formatter = new PerformanceTraceFormatter.PerformanceTraceFormatter(context.getItem());
+      const bounds = Trace.Insights.Common.insightBounds(lcpBreakdown, context.getItem().primaryInsightSet!.bounds);
       const summary = await formatter.formatMainThreadTrackSummary(bounds);
       assert.isOk(summary);
 
@@ -574,17 +678,79 @@ code
       assert.lengthOf(action.widgets, 2);
       assert.strictEqual(action.widgets[0].name, 'TIMELINE_RANGE_SUMMARY');
       assert.strictEqual(action.widgets[1].name, 'BOTTOM_UP_TREE');
-      // @ts-expect-error
-      assert.deepEqual(action.widgets[0].data.bounds, bounds);
+      assert.strictEqual(action.code, 'getMainThreadTrackSummaryByLabel(\'LCPBreakdown\')');
+      assert.strictEqual(action.output, expectedOutput);
+      assert.isFalse(action.canceled);
+      assert.strictEqual(action.type, 'action');
+    });
 
-      delete action.widgets;
+    it('can call getEventByKey and yields TIMELINE_EVENT_SUMMARY widget', async function() {
+      const parsedTrace = await TraceLoader.traceEngine(this, 'lcp-discovery-delay.json.gz');
+      assert.isOk(parsedTrace.insights);
+      const [firstNav] = parsedTrace.data.Meta.mainFrameNavigations;
+      const lcpBreakdown = getInsightOrError('LCPBreakdown', parsedTrace.insights, firstNav);
 
-      assert.deepEqual(action, {
-        type: 'action' as AiAgent.ActionResponse['type'],
-        output: expectedOutput,
-        code: 'getMainThreadTrackSummary({min: 197695826524, max: 197698633660})',
-        canceled: false,
+      const event = allThreadEntriesInTrace(parsedTrace)[0];
+      assert.exists(event);
+      const eventKey = 'r-0';
+
+      const agent = createAgentForConversation({
+        aidaClient: mockAidaClient(
+            [[{explanation: '', functionCalls: [{name: 'getEventByKey', args: {eventKey}}]}], [{explanation: 'done'}]])
       });
+      const context = PerformanceAgent.PerformanceTraceContext.fromInsight(parsedTrace, lcpBreakdown);
+
+      sinon.stub(context.getItem(), 'lookupEvent').withArgs(eventKey).returns(event);
+
+      const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+      const action = responses.find(response => response.type === AiAgent.ResponseType.ACTION);
+      assert.exists(action);
+      assert.exists(action.widgets);
+      assert.lengthOf(action.widgets, 1);
+      const widget = action.widgets[0] as AiAgent.TimelineEventSummaryAiWidget;
+      assert.strictEqual(widget.name, 'TIMELINE_EVENT_SUMMARY');
+      assert.strictEqual(widget.data.event, event);
+      assert.strictEqual(widget.data.parsedTrace, parsedTrace);
+    });
+
+    it('can call selectEventByKey and yields TIMELINE_EVENT_SUMMARY widget', async function() {
+      const parsedTrace = await TraceLoader.traceEngine(this, 'lcp-discovery-delay.json.gz');
+      assert.isOk(parsedTrace.insights);
+      const [firstNav] = parsedTrace.data.Meta.mainFrameNavigations;
+      const lcpBreakdown = getInsightOrError('LCPBreakdown', parsedTrace.insights, firstNav);
+
+      const event = allThreadEntriesInTrace(parsedTrace)[0];
+      assert.exists(event);
+      const eventKey = 'r-0';
+
+      const agent = createAgentForConversation({
+        aidaClient: mockAidaClient([
+          [{explanation: '', functionCalls: [{name: 'selectEventByKey', args: {eventKey}}]}], [{explanation: 'done'}]
+        ])
+      });
+      const context = PerformanceAgent.PerformanceTraceContext.fromInsight(parsedTrace, lcpBreakdown);
+
+      sinon.stub(context.getItem(), 'lookupEvent').withArgs(eventKey).returns(event);
+      const revealStub = sinon.stub();
+      Common.Revealer.registerRevealer({
+        contextTypes: () => [SDK.TraceObject.RevealableEvent],
+        loadRevealer: async () => ({
+          reveal: revealStub,
+        }),
+      });
+
+      const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+      const action = responses.find(response => response.type === AiAgent.ResponseType.ACTION);
+      assert.exists(action);
+      assert.exists(action.widgets);
+      assert.lengthOf(action.widgets, 1);
+      const widget = action.widgets[0] as AiAgent.TimelineEventSummaryAiWidget;
+      assert.strictEqual(widget.name, 'TIMELINE_EVENT_SUMMARY');
+      assert.strictEqual(widget.data.event, event);
+      assert.strictEqual(widget.data.parsedTrace, parsedTrace);
+
+      sinon.assert.calledOnce(revealStub);
+      Common.Revealer.RevealerRegistry.removeInstance();
     });
 
     it('will not send facts from a previous insight if the context changes', async function() {
@@ -595,7 +761,7 @@ code
       const renderBlocking = getInsightOrError('RenderBlocking', parsedTrace.insights, firstNav);
       const agent = createAgentForConversation({
         aidaClient: mockAidaClient([
-          [{explanation: '', functionCalls: [{name: 'getMainThreadTrackSummary', args: {}}]}],
+          [{explanation: '', functionCalls: [{name: 'getNetworkTrackSummary', args: {}}]}],
         ])
       });
       const lcpContext = PerformanceAgent.PerformanceTraceContext.fromInsight(parsedTrace, lcpBreakdown);
@@ -617,10 +783,8 @@ code
       const [firstNav] = parsedTrace.data.Meta.mainFrameNavigations;
       const lcpBreakdown = getInsightOrError('LCPBreakdown', parsedTrace.insights, firstNav);
       const agent = createAgentForConversation({
-        aidaClient: mockAidaClient([
-          [{explanation: '', functionCalls: [{name: 'getMainThreadTrackSummary', args: {}}]}],
-          [{explanation: '', functionCalls: [{name: 'getNetworkTrackSummary', args: {}}]}], [{explanation: 'done'}]
-        ])
+        aidaClient: mockAidaClient(
+            [[{explanation: '', functionCalls: [{name: 'getNetworkTrackSummary', args: {}}]}], [{explanation: 'done'}]])
       });
       const context = PerformanceAgent.PerformanceTraceContext.fromInsight(parsedTrace, lcpBreakdown);
       await Array.fromAsync(agent.run('test 1', {selected: context}));
@@ -635,12 +799,11 @@ code
           [
             // https://www.youtube.com/watch?v=Vhh_GeBPOhs
             'devtools', 'devtools', 'devtools', 'devtools', 'devtools', 'devtools', 'devtools', 'devtools',
-            'getMainThreadTrackSummary({min: 197695826524, max: 197698633660})',
             'getNetworkTrackSummary({min: 197695826524, max: 197698633660})'
           ]);
     });
 
-    it('deduplicates DOM tree widgets within a single response for the same node', async function() {
+    it('yields multiple DOM tree widgets within a single response for the same node', async function() {
       const parsedTrace = await TraceLoader.traceEngine(this, 'lcp-images.json.gz');
       assert.isOk(parsedTrace.insights);
       const [firstNav] = parsedTrace.data.Meta.mainFrameNavigations;
@@ -691,12 +854,14 @@ code
       const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
       assert.lengthOf(actions, 2);
 
-      // The first call should have a widget, the second one should not as it is within the same response.
+      // The first call should have a widget, the second one should also have it as deduplication now happens in the UI.
       assert.exists(actions[0].widgets);
-      assert.lengthOf(actions[0].widgets!, 1);
+      assert.lengthOf(actions[0].widgets!, 2);
       assert.strictEqual(actions[0].widgets![0].name, 'DOM_TREE');
 
-      assert.lengthOf(actions[1].widgets!, 0);
+      assert.exists(actions[1].widgets);
+      assert.lengthOf(actions[1].widgets!, 2);
+      assert.strictEqual(actions[1].widgets![0].name, 'DOM_TREE');
     });
 
     it('does NOT deduplicate DOM tree widgets across different responses for the same node', async function() {
@@ -754,7 +919,7 @@ code
       const firstActions = firstResponses.filter(r => r.type === AiAgent.ResponseType.ACTION);
       assert.lengthOf(firstActions, 1);
       assert.exists(firstActions[0].widgets);
-      assert.lengthOf(firstActions[0].widgets!, 1);
+      assert.lengthOf(firstActions[0].widgets!, 2);
 
       // Second run for the same node
       const secondResponses = await Array.fromAsync(agent.run('second test', {selected: context}));
@@ -762,50 +927,683 @@ code
       assert.lengthOf(secondActions, 1);
       // It should show the widget again because it's a new response.
       assert.exists(secondActions[0].widgets);
-      assert.lengthOf(secondActions[0].widgets!, 1);
+      assert.lengthOf(secondActions[0].widgets!, 2);
     });
 
-    it('yields an LCP_BREAKDOWN widget when getInsightDetails is called for LCPBreakdown', async function() {
+    it('populates imageContent for DOM_TREE widget if lcpRequest is present', async function() {
       const parsedTrace = await TraceLoader.traceEngine(this, 'lcp-images.json.gz');
       assert.isOk(parsedTrace.insights);
-      const [nav] = parsedTrace.data.Meta.mainFrameNavigations;
-      const lcpDiscovery = getInsightOrError('LCPDiscovery', parsedTrace.insights, nav);
+      const [firstNav] = parsedTrace.data.Meta.mainFrameNavigations;
+      const lcpDiscovery = getInsightOrError('LCPDiscovery', parsedTrace.insights, firstNav);
       const insightSetId = [...parsedTrace.insights.keys()][0];
       const insightSet = parsedTrace.insights.get(insightSetId)!;
 
-      // Mock the LCPBreakdown insight
+      const lcpRequest = parsedTrace.data.NetworkRequests.byTime.find(r => r.args.data.url.endsWith('50.jpg'));
+      assert.exists(lcpRequest);
+
       insightSet.model.LCPBreakdown = {
         insightKey: 'LCPBreakdown',
         state: 'fail',
-        lcpMs: 1000 as Trace.Types.Timing.Milli,
+        lcpMs: 1 as Trace.Types.Timing.Milli,
         lcpEvent: {
           name: 'largestContentfulPaint::Candidate',
           args: {data: {nodeId: 4}},
         } as unknown as Trace.Types.Events.LargestContentfulPaintCandidate,
+        lcpRequest,
       } as Trace.Insights.Types.InsightModels['LCPBreakdown'];
 
       const context = PerformanceAgent.PerformanceTraceContext.fromInsight(parsedTrace, lcpDiscovery);
 
-      const agent = createAgentForConversation({
+      const agent = new PerformanceAgent.PerformanceAgent({
         aidaClient: mockAidaClient([
           [{
             explanation: '',
             functionCalls: [
-              {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'LCPBreakdown'}},
+              {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'LCPDiscovery'}},
             ]
           }],
           [{explanation: 'done'}]
         ])
       });
 
+      const target = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
+      assert.exists(target);
+      const domModel = target.model(SDK.DOMModel.DOMModel);
+      assert.exists(domModel);
+
+      sinon.stub(domModel, 'pushNodesByBackendIdsToFrontend').resolves(new Map([[
+        4 as Protocol.DOM.BackendNodeId,
+        {takeSnapshot: sinon.stub().resolves({root: {nodeName: 'IMG'}})} as unknown as SDK.DOMModel.DOMNode
+      ]]));
+
+      const mockRequest = createNetworkRequest();
+      sinon.stub(mockRequest, 'contentType').returns({
+        isImage: () => true
+      } as unknown as Common.ResourceType.ResourceType);
+      sinon.stub(mockRequest, 'requestContentData')
+          .resolves(new TextUtils.ContentData.ContentData('base64', true, 'image/jpeg'));
+      sinon.stub(Logs.NetworkLog.NetworkLog.instance(), 'requestByManagerAndId').returns(mockRequest);
+
+      const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+      const action = responses.find(r => r.type === AiAgent.ResponseType.ACTION) as AiAgent.ActionResponse;
+      assert.exists(action);
+      assert.exists(action.widgets);
+      const domTreeWidget = action.widgets?.find(w => w.name === 'DOM_TREE') as AiAgent.DomTreeAiWidget;
+      assert.exists(domTreeWidget);
+      assert.exists(domTreeWidget.data.networkRequest?.imageContent);
+      assert.strictEqual(domTreeWidget.data.networkRequest?.imageContent?.base64, 'base64');
+    });
+
+    describe('getInsightDetails yields PERF_INSIGHT widget', () => {
+      let parsedTrace: Trace.TraceModel.ParsedTrace;
+      let insightSet: Trace.Insights.Types.InsightSet;
+      let context: PerformanceAgent.PerformanceTraceContext;
+
+      beforeEach(async function() {
+        parsedTrace = await TraceLoader.traceEngine(this, 'lcp-images.json.gz');
+        assert.isOk(parsedTrace.insights);
+        const [nav] = parsedTrace.data.Meta.mainFrameNavigations;
+        const lcpDiscovery = getInsightOrError('LCPDiscovery', parsedTrace.insights, nav);
+        const insightSetId = [...parsedTrace.insights.keys()][0];
+        insightSet = parsedTrace.insights.get(insightSetId)!;
+        context = PerformanceAgent.PerformanceTraceContext.fromInsight(parsedTrace, lcpDiscovery);
+      });
+
+      it('yields a PERF_INSIGHT widget for LCPBreakdown', async function() {
+        insightSet.model.LCPBreakdown = {
+          insightKey: 'LCPBreakdown',
+          state: 'fail',
+          lcpMs: 1000 as Trace.Types.Timing.Milli,
+          lcpEvent: {
+            name: 'largestContentfulPaint::Candidate',
+            args: {data: {nodeId: 4}},
+          } as unknown as Trace.Types.Events.LargestContentfulPaintCandidate,
+        } as Trace.Insights.Types.InsightModels['LCPBreakdown'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'LCPBreakdown'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.LCP_BREAKDOWN);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.LCPBreakdown);
+      });
+
+      it('yields a PERF_INSIGHT widget for RenderBlocking', async function() {
+        insightSet.model.RenderBlocking = {
+          insightKey: 'RenderBlocking',
+          state: 'fail',
+          renderBlockingRequests: [],
+        } as unknown as Trace.Insights.Types.InsightModels['RenderBlocking'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'RenderBlocking'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.RENDER_BLOCKING);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.RenderBlocking);
+      });
+
+      it('yields a PERF_INSIGHT widget for LCPDiscovery', async function() {
+        insightSet.model.LCPDiscovery = {
+          insightKey: 'LCPDiscovery',
+          state: 'fail',
+        } as unknown as Trace.Insights.Types.InsightModels['LCPDiscovery'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'LCPDiscovery'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.LCP_DISCOVERY);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.LCPDiscovery);
+      });
+
+      it('yields a PERF_INSIGHT widget for CLSCulprits', async function() {
+        insightSet.model.CLSCulprits = {
+          insightKey: 'CLSCulprits',
+          state: 'fail',
+          clusters: [],
+          worstCluster: null,
+        } as unknown as Trace.Insights.Types.InsightModels['CLSCulprits'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'CLSCulprits'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.CLS_CULPRITS);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.CLSCulprits);
+      });
+
+      it('yields a PERF_INSIGHT widget for NetworkDependencyTree', async function() {
+        insightSet.model.NetworkDependencyTree = {
+          insightKey: 'NetworkDependencyTree',
+          state: 'fail',
+          rootNodes: [],
+          maxTime: 0,
+          preconnectedOrigins: [],
+          preconnectCandidates: [],
+        } as unknown as Trace.Insights.Types.InsightModels['NetworkDependencyTree'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'NetworkDependencyTree'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.NETWORK_DEPENDENCY_TREE);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.NetworkDependencyTree);
+      });
+
+      it('yields a PERF_INSIGHT widget for ThirdParties', async function() {
+        insightSet.model.ThirdParties = {
+          insightKey: 'ThirdParties',
+          state: 'fail',
+          entitySummaries: [],
+        } as unknown as Trace.Insights.Types.InsightModels['ThirdParties'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'ThirdParties'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.THIRD_PARTIES);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.ThirdParties);
+      });
+
+      it('yields a PERF_INSIGHT widget for ForcedReflow', async function() {
+        insightSet.model.ForcedReflow = {
+          insightKey: 'ForcedReflow',
+          state: 'fail',
+          aggregatedBottomUpData: [],
+        } as unknown as Trace.Insights.Types.InsightModels['ForcedReflow'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'ForcedReflow'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.FORCED_REFLOW);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.ForcedReflow);
+      });
+
+      it('yields a PERF_INSIGHT widget for Cache', async function() {
+        insightSet.model.Cache = {
+          insightKey: 'Cache',
+          state: 'fail',
+          requests: [],
+        } as unknown as Trace.Insights.Types.InsightModels['Cache'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'Cache'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.CACHE);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.Cache);
+      });
+
+      it('yields a PERF_INSIGHT widget for INPBreakdown', async function() {
+        insightSet.model.INPBreakdown = {
+          insightKey: 'INPBreakdown',
+          state: 'fail',
+        } as unknown as Trace.Insights.Types.InsightModels['INPBreakdown'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'INPBreakdown'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.INP_BREAKDOWN);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.INPBreakdown);
+      });
+
+      it('yields a PERF_INSIGHT widget for DocumentLatency', async function() {
+        insightSet.model.DocumentLatency = {
+          insightKey: 'DocumentLatency',
+          state: 'fail',
+        } as unknown as Trace.Insights.Types.InsightModels['DocumentLatency'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'DocumentLatency'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.DOCUMENT_LATENCY);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.DocumentLatency);
+      });
+
+      it('yields a PERF_INSIGHT widget for DOMSize', async function() {
+        insightSet.model.DOMSize = {
+          insightKey: 'DOMSize',
+          state: 'fail',
+          largeLayoutUpdates: [],
+          largeStyleRecalcs: [],
+        } as unknown as Trace.Insights.Types.InsightModels['DOMSize'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'DOMSize'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.DOM_SIZE);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.DOMSize);
+      });
+
+      it('yields a PERF_INSIGHT widget for DuplicatedJavaScript', async function() {
+        insightSet.model.DuplicatedJavaScript = {
+          insightKey: 'DuplicatedJavaScript',
+          state: 'fail',
+          duplicationGroupedByNodeModules: new Map(),
+          wastedBytes: 0,
+        } as unknown as Trace.Insights.Types.InsightModels['DuplicatedJavaScript'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'DuplicatedJavaScript'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.DUPLICATE_JAVASCRIPT);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.DuplicatedJavaScript);
+      });
+
+      it('yields a PERF_INSIGHT widget for ImageDelivery', async function() {
+        insightSet.model.ImageDelivery = {
+          insightKey: 'ImageDelivery',
+          state: 'fail',
+          optimizableImages: [],
+          wastedBytes: 0,
+        } as unknown as Trace.Insights.Types.InsightModels['ImageDelivery'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'ImageDelivery'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.IMAGE_DELIVERY);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.ImageDelivery);
+      });
+
+      it('yields a PERF_INSIGHT widget for FontDisplay', async function() {
+        insightSet.model.FontDisplay = {
+          insightKey: 'FontDisplay',
+          state: 'fail',
+          fonts: [],
+        } as unknown as Trace.Insights.Types.InsightModels['FontDisplay'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'FontDisplay'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.FONT_DISPLAY);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.FontDisplay);
+      });
+
+      it('yields a PERF_INSIGHT widget for SlowCSSSelector', async function() {
+        insightSet.model.SlowCSSSelector = {
+          insightKey: 'SlowCSSSelector',
+          state: 'fail',
+          totalElapsedMs: 0,
+          totalMatchAttempts: 0,
+          totalMatchCount: 0,
+        } as unknown as Trace.Insights.Types.InsightModels['SlowCSSSelector'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'SlowCSSSelector'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.SLOW_CSS_SELECTOR);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.SlowCSSSelector);
+      });
+
+      it('yields a PERF_INSIGHT widget for LegacyJavaScript', async function() {
+        insightSet.model.LegacyJavaScript = {
+          insightKey: 'LegacyJavaScript',
+          state: 'fail',
+          legacyJavaScriptResults: new Map(),
+        } as unknown as Trace.Insights.Types.InsightModels['LegacyJavaScript'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'LegacyJavaScript'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.LEGACY_JAVASCRIPT);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.LegacyJavaScript);
+      });
+
+      it('yields a PERF_INSIGHT widget for Viewport', async function() {
+        insightSet.model.Viewport = {
+          insightKey: 'Viewport',
+          state: 'fail',
+          mobileOptimized: false,
+        } as unknown as Trace.Insights.Types.InsightModels['Viewport'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'Viewport'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.VIEWPORT);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.Viewport);
+      });
+
+      it('yields a PERF_INSIGHT widget for ModernHTTP', async function() {
+        insightSet.model.ModernHTTP = {
+          insightKey: 'ModernHTTP',
+          state: 'fail',
+          http1Requests: [],
+        } as unknown as Trace.Insights.Types.InsightModels['ModernHTTP'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'ModernHTTP'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.MODERN_HTTP);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.ModernHTTP);
+      });
+
+      it('yields a PERF_INSIGHT widget for CharacterSet', async function() {
+        insightSet.model.CharacterSet = {
+          insightKey: 'CharacterSet',
+          state: 'fail',
+          data: {hasHttpCharset: false, metaCharsetDisposition: 'missing'},
+        } as unknown as Trace.Insights.Types.InsightModels['CharacterSet'];
+
+        const agent = createAgentForConversation({
+          aidaClient: mockAidaClient([
+            [{
+              explanation: '',
+              functionCalls: [
+                {name: 'getInsightDetails', args: {insightSetId: insightSet.id, insightName: 'CharacterSet'}},
+              ]
+            }],
+            [{explanation: 'done'}]
+          ])
+        });
+
+        const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+        const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+        assert.lengthOf(actions, 1);
+        assert.exists(actions[0].widgets);
+        const widget = actions[0].widgets?.find(w => w.name === 'PERF_INSIGHT');
+        assert.exists(widget);
+        assert.strictEqual(widget?.data.insight, Trace.Insights.Types.InsightKeys.CHARACTER_SET);
+        assert.strictEqual(widget?.data.insightData, insightSet.model.CharacterSet);
+      });
+    });
+
+    it('yields a BOTTOM_UP_TREE widget when getDetailedCallTree is called', async function() {
+      const parsedTrace = await TraceLoader.traceEngine(this, 'web-dev-outermost-frames.json.gz');
+      const events = allThreadEntriesInTrace(parsedTrace);
+      const layoutEvt = events.find(event => event.ts === 465457096322);
+      assert.exists(layoutEvt);
+
+      const serializer = new Trace.EventsSerializer.EventsSerializer();
+      const key = serializer.keyForEvent(layoutEvt);
+
+      const agent = createAgentForConversation({
+        aidaClient: mockAidaClient([
+          [{
+            explanation: '',
+            functionCalls: [
+              {name: 'getDetailedCallTree', args: {eventKey: key}},
+            ]
+          }],
+          [{explanation: 'done'}]
+        ])
+      });
+
+      const context = PerformanceAgent.PerformanceTraceContext.fromParsedTrace(parsedTrace);
+
       const responses = await Array.fromAsync(agent.run('test', {selected: context}));
       const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
       assert.lengthOf(actions, 1);
 
       assert.exists(actions[0].widgets);
-      const lcpWidget = actions[0].widgets?.find(w => w.name === 'LCP_BREAKDOWN');
-      assert.exists(lcpWidget);
-      assert.strictEqual(lcpWidget?.data.lcpData, insightSet.model.LCPBreakdown);
+      const bottomUpWidget = actions[0].widgets?.find(w => w.name === 'BOTTOM_UP_TREE');
+      assert.exists(bottomUpWidget);
+
+      const rangeSummaryWidget = actions[0].widgets?.find(w => w.name === 'TIMELINE_RANGE_SUMMARY');
+      assert.exists(rangeSummaryWidget);
     });
   });
 
@@ -981,6 +1779,189 @@ code
       assert.strictEqual(suggestions[1].title, 'How can I reduce the size of my DOM?');
       assert.strictEqual(suggestions[2].title, 'How can I reduce the number of render-blocking requests?');
       assert.strictEqual(suggestions[3].title, 'Did anything slow down the request for this document?');
+    });
+  });
+
+  describe('getEventByKey', () => {
+    it('sanitizes headers for network requests', async function() {
+      const agent = createAgentForConversation({
+        aidaClient: mockAidaClient([
+          [{
+            explanation: '',
+            functionCalls: [
+              {name: 'getEventByKey', args: {eventKey: 'valid-event-key'}},
+            ]
+          }],
+          [{explanation: 'done'}]
+        ])
+      });
+
+      const parsedTrace = {
+        insights: new Map(),
+        metadata: {
+          cpuThrottling: undefined,
+          networkThrottling: undefined,
+        },
+        data: {
+          Meta: {
+            mainFrameNavigations: [],
+            traceBounds: {min: 0, max: 100},
+            mainFrameURL: 'https://example.com',
+          }
+        }
+      } as unknown as Trace.TraceModel.ParsedTrace;
+
+      const context = PerformanceAgent.PerformanceTraceContext.fromParsedTrace(parsedTrace);
+      await agent.run('test', {selected: context}).next();
+
+      const focus = context.getItem();
+      assert.exists(focus);
+
+      const mockNetworkEvent = {
+        name: Trace.Types.Events.Name.SYNTHETIC_NETWORK_REQUEST,
+        args: {
+          data: {
+            responseHeaders: [
+              {name: 'x-csrf-token', value: 'secret'},
+              {name: 'content-type', value: 'text/html'},
+            ],
+          },
+        },
+      };
+
+      sinon.stub(focus, 'lookupEvent').callsFake(key => {
+        if (key === 'valid-event-key' as SerializableKey) {
+          return mockNetworkEvent as unknown as Trace.Types.Events.Event;
+        }
+        return null;
+      });
+
+      const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+      const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+      assert.lengthOf(actions, 1);
+
+      const action = actions[0] as AiAgent.ActionResponse;
+      assert.exists(action.output);
+
+      const parsedOutput = JSON.parse(action.output);
+      const details = JSON.parse(parsedOutput.details);
+      const responseHeaders = details.args.data.responseHeaders;
+
+      assert.deepEqual(responseHeaders, [
+        {name: 'x-csrf-token', value: '<redacted>'},
+        {name: 'content-type', value: 'text/html'},
+      ]);
+    });
+
+    it('sanitizes headers for ResourceReceiveResponse events', async function() {
+      const agent = createAgentForConversation({
+        aidaClient: mockAidaClient([
+          [{
+            explanation: '',
+            functionCalls: [
+              {name: 'getEventByKey', args: {eventKey: 'valid-event-key'}},
+            ]
+          }],
+          [{explanation: 'done'}]
+        ])
+      });
+
+      const parsedTrace = {
+        insights: new Map(),
+        metadata: {
+          cpuThrottling: undefined,
+          networkThrottling: undefined,
+        },
+        data: {
+          Meta: {
+            mainFrameNavigations: [],
+            traceBounds: {min: 0, max: 100},
+            mainFrameURL: 'https://example.com',
+          }
+        }
+      } as unknown as Trace.TraceModel.ParsedTrace;
+
+      const context = PerformanceAgent.PerformanceTraceContext.fromParsedTrace(parsedTrace);
+      await agent.run('test', {selected: context}).next();
+
+      const focus = context.getItem();
+      assert.exists(focus);
+
+      const mockResourceEvent = {
+        name: 'ResourceReceiveResponse',
+        args: {
+          data: {
+            headers: [
+              {name: 'x-csrf-token', value: 'secret'},
+              {name: 'content-type', value: 'text/html'},
+            ],
+          },
+        },
+      };
+
+      sinon.stub(focus, 'lookupEvent').callsFake(key => {
+        if (key === 'valid-event-key' as SerializableKey) {
+          return mockResourceEvent as unknown as Trace.Types.Events.Event;
+        }
+        return null;
+      });
+
+      const responses = await Array.fromAsync(agent.run('test', {selected: context}));
+      const actions = responses.filter(r => r.type === AiAgent.ResponseType.ACTION);
+      assert.lengthOf(actions, 1);
+
+      const action = actions[0] as AiAgent.ActionResponse;
+      assert.exists(action.output);
+
+      const parsedOutput = JSON.parse(action.output);
+      const details = JSON.parse(parsedOutput.details);
+      const headers = details.args.data.headers;
+
+      assert.deepEqual(headers, [
+        {name: 'x-csrf-token', value: '<redacted>'},
+        {name: 'content-type', value: 'text/html'},
+      ]);
+    });
+  });
+
+  describe('getLabelName', () => {
+    it('returns correct names for static labels', async function() {
+      const parsedTrace = await TraceLoader.traceEngine(this, 'lcp-discovery-delay.json.gz');
+      const focus = AIContext.AgentFocus.fromParsedTrace(parsedTrace);
+      assert.strictEqual(PerformanceAgent.getLabelName('nav-to-lcp', focus), 'navigation to LCP');
+      assert.strictEqual(PerformanceAgent.getLabelName('lcp-ttfb', focus), 'LCP to TTFB');
+      assert.strictEqual(PerformanceAgent.getLabelName('lcp-render-delay', focus), 'LCP render delay');
+      assert.strictEqual(PerformanceAgent.getLabelName('trace-bounds', focus), 'the entire trace');
+      assert.strictEqual(
+          PerformanceAgent.getLabelName('NO_NAVIGATION', focus), 'the period before the first navigation');
+    });
+
+    it('returns correct name for navigation labels', async function() {
+      const parsedTrace = await TraceLoader.traceEngine(this, 'lcp-discovery-delay.json.gz');
+      const focus = AIContext.AgentFocus.fromParsedTrace(parsedTrace);
+      const insightSet = Array.from(parsedTrace.insights!.values())[0];
+      const navId = insightSet.id;
+      assert.exists(navId);
+      assert.strictEqual(
+          PerformanceAgent.getLabelName(navId as PerformanceAgent.MainThreadSectionLabel, focus),
+          `navigation to ${insightSet.url.href}`,
+      );
+    });
+
+    it('returns correct name for insight labels', async function() {
+      const parsedTrace = await TraceLoader.traceEngine(this, 'lcp-discovery-delay.json.gz');
+      const focus = AIContext.AgentFocus.fromParsedTrace(parsedTrace);
+      assert.strictEqual(PerformanceAgent.getLabelName('LCPBreakdown', focus), 'LCP breakdown insight');
+      assert.strictEqual(PerformanceAgent.getLabelName('CLSCulprits', focus), 'Layout shift culprits insight');
+    });
+
+    it('returns the label itself for unknown labels', async function() {
+      const parsedTrace = await TraceLoader.traceEngine(this, 'lcp-discovery-delay.json.gz');
+      const focus = AIContext.AgentFocus.fromParsedTrace(parsedTrace);
+      assert.strictEqual(
+          PerformanceAgent.getLabelName('unknown-label' as PerformanceAgent.MainThreadSectionLabel, focus),
+          'unknown-label',
+      );
     });
   });
 });

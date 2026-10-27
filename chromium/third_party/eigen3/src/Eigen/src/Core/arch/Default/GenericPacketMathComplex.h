@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_ARCH_GENERIC_PACKET_MATH_COMPLEX_H
 #define EIGEN_ARCH_GENERIC_PACKET_MATH_COMPLEX_H
@@ -34,7 +35,7 @@ EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pdiv_complex(const Pa
 
   const RealPacket mask = pcmp_lt(abs_y, abs_y_flip);  // |c| < |d|
   RealPacket y_scaled = pselect(mask, pdiv(abs_y, abs_y_flip), one);
-  y_scaled = por(y_scaled, pandnot(y.v, abs_y));    // copy signs in case |c| == |d|
+  y_scaled = por(y_scaled, pandnot(y.v, abs_y));  // copy signs in case |c| == |d|
   RealPacket denom = pmul(y.v, y_scaled);
   denom = padd(denom, pcplxflip(Packet(denom)).v);  // c * c' + d * d'
   Packet num = pmul(x, pconj(Packet(y_scaled)));    // a * c' + b * d', -a * d + b * c

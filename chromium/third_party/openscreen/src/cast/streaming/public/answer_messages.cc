@@ -177,6 +177,11 @@ bool AspectRatio::IsValid() const {
 
 // static
 ErrorOr<AudioConstraints> AudioConstraints::TryParse(const Json::Value& root) {
+  if (!root.isObject()) {
+    return Error(Error::Code::kJsonParseError,
+                 "Audio constraints is not a JSON object");
+  }
+
   AudioConstraints out;
   if (!json::TryParseInt(root[kMaxSampleRate], &out.max_sample_rate) ||
       !json::TryParseInt(root[kMaxChannels], &out.max_channels) ||
@@ -218,6 +223,11 @@ bool AudioConstraints::IsValid() const {
 
 // static
 ErrorOr<VideoConstraints> VideoConstraints::TryParse(const Json::Value& root) {
+  if (!root.isObject()) {
+    return Error(Error::Code::kJsonParseError,
+                 "Video constraints is not a JSON object");
+  }
+
   VideoConstraints out;
 
   auto max_dimensions = Dimensions::TryParse(root[kMaxDimensions]);
@@ -287,6 +297,11 @@ Json::Value VideoConstraints::ToJson() const {
 
 // static
 ErrorOr<Constraints> Constraints::TryParse(const Json::Value& root) {
+  if (!root.isObject()) {
+    return Error(Error::Code::kJsonParseError,
+                 "Constraints is not a JSON object");
+  }
+
   Constraints out;
 
   auto audio = AudioConstraints::TryParse(root[kAudio]);
@@ -322,6 +337,11 @@ Json::Value Constraints::ToJson() const {
 // static
 ErrorOr<DisplayDescription> DisplayDescription::TryParse(
     const Json::Value& root) {
+  if (!root.isObject()) {
+    return Error(Error::Code::kJsonParseError,
+                 "Display description is not a JSON object");
+  }
+
   DisplayDescription out;
 
   auto dimensions = ParseOptional<Dimensions>(root[kDimensions]);
@@ -390,6 +410,10 @@ Json::Value DisplayDescription::ToJson() const {
 }
 
 ErrorOr<Answer> Answer::TryParse(const Json::Value& root) {
+  if (!root.isObject()) {
+    return Error(Error::Code::kJsonParseError, "Answer is not a JSON object");
+  }
+
   Answer out;
   if (!json::TryParseInt(root[kUdpPort], &out.udp_port) ||
       !json::TryParseIntArray(root[kSendIndexes], &out.send_indexes) ||

@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_REF_H
 #define EIGEN_REF_H
@@ -34,7 +35,7 @@ struct traits<Ref<PlainObjectType_, Options_, StrideType_> >
   struct match {
     enum {
       IsVectorAtCompileTime = PlainObjectType::IsVectorAtCompileTime || Derived::IsVectorAtCompileTime,
-      HasDirectAccess = internal::has_direct_access<Derived>::ret,
+      HasDirectAccess = internal::has_direct_access<Derived>::value,
       StorageOrderMatch =
           IsVectorAtCompileTime || ((PlainObjectType::Flags & RowMajorBit) == (Derived::Flags & RowMajorBit)),
       InnerStrideMatch = int(InnerStrideAtCompileTime) == int(Dynamic) ||
@@ -51,11 +52,11 @@ struct traits<Ref<PlainObjectType_, Options_, StrideType_> >
       AlignmentMatch = (int(traits<PlainObjectType>::Alignment) == int(Unaligned)) ||
                        (DerivedAlignment >= int(Alignment)),  // FIXME the first condition is not very clear, it should
                                                               // be replaced by the required alignment
-      ScalarTypeMatch = internal::is_same<typename PlainObjectType::Scalar, typename Derived::Scalar>::value,
+      ScalarTypeMatch = std::is_same<typename PlainObjectType::Scalar, typename Derived::Scalar>::value,
       MatchAtCompileTime = HasDirectAccess && StorageOrderMatch && InnerStrideMatch && OuterStrideMatch &&
                            AlignmentMatch && ScalarTypeMatch
     };
-    typedef std::conditional_t<MatchAtCompileTime, internal::true_type, internal::false_type> type;
+    typedef std::conditional_t<MatchAtCompileTime, std::true_type, std::false_type> type;
   };
 };
 
@@ -125,11 +126,12 @@ class RefBase : public MapBase<Derived> {
     // Determine runtime rows and columns.
     Index rows = expr.rows();
     Index cols = expr.cols();
-    if (PlainObjectType::RowsAtCompileTime == 1) {
+    EIGEN_IF_CONSTEXPR(PlainObjectType::RowsAtCompileTime == 1) {
       eigen_assert(expr.rows() == 1 || expr.cols() == 1);
       rows = 1;
       cols = expr.size();
-    } else if (PlainObjectType::ColsAtCompileTime == 1) {
+    }
+    else EIGEN_IF_CONSTEXPR(PlainObjectType::ColsAtCompileTime == 1) {
       eigen_assert(expr.rows() == 1 || expr.cols() == 1);
       rows = expr.size();
       cols = 1;
@@ -360,15 +362,15 @@ class Ref<const TPlainObjectType, Options, StrideType>
 
  protected:
   template <typename Expression>
-  EIGEN_DEVICE_FUNC void construct(const Expression& expr, internal::true_type) {
+  EIGEN_DEVICE_FUNC void construct(const Expression& expr, std::true_type) {
     // Check if we can use the underlying expr's storage directly, otherwise call the copy version.
     if (!Base::construct(expr)) {
-      construct(expr, internal::false_type());
+      construct(expr, std::false_type());
     }
   }
 
   template <typename Expression>
-  EIGEN_DEVICE_FUNC void construct(const Expression& expr, internal::false_type) {
+  EIGEN_DEVICE_FUNC void construct(const Expression& expr, std::false_type) {
     internal::call_assignment_no_alias(m_object, expr, internal::assign_op<Scalar, Scalar>());
     const bool success = Base::construct(m_object);
     EIGEN_ONLY_USED_FOR_DEBUG(success);

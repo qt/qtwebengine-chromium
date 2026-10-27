@@ -1,0 +1,23 @@
+Name: Noto Sans Bengali Font
+URL: https://github.com/notofonts/bengali
+Version: Noto Sans Bengali V3.011
+Revision: 85d80394cbbbb798ca0a41c983902e6cf77be3a3
+License: OFL-1.1
+License File: LICENSE
+Update Mechanism: Static
+Security Critical: no
+Shipped: no
+
+Description:
+NotoSansBengali-Regular.subset.ttf contains a subset of NotoSansBengali-Regular
+font. This font file is used for FPDFEditEmbedderTest, and it is included as a
+real-world example for testing PDFium's APIs with complex scripts.
+
+Local Modifications:
+
+NotoSansBengali-Regular.subset.ttf is a subset of NotoSansBengali-Regular font.
+Command to generate this font subset:
+$ fonttools subset NotoSansBengali-Regular.ttf \
+  --unicodes="U+09AA,U+09B0,U+09BF,U+0995,U+09B2,U+09CD,U+09AA,U+09A8,U+09BE"
+
+where fonttools comes from https://github.com/behdad/fonttools (version 4.62.2).

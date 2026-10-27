@@ -38,7 +38,19 @@ class Type:
     return self.type_class in ("float", "bfloat")
 
   def __str__(self):
-    return f"{self.type_class}{self.size}x{self.lanes}_t"
+    if self.lanes == 1:
+      if self.type_class == "int" and self.size == 2:
+        return "int2x4"
+      elif self.type_class == "uint" and self.size == 2:
+        return "uint2x4"
+      elif self.type_class == "int" and self.size == 4:
+        return "int4x2"
+      elif self.type_class == "uint" and self.size == 4:
+        return "uint4x2"
+      else:
+        return self.to_c_decl(False)
+    else:
+      return f"{self.type_class}{self.size}x{self.lanes}_t"
 
   def __repr__(self):
     return str(self)
@@ -73,6 +85,8 @@ class Type:
         result += "half"
       elif self.type_class == "float" and self.size == 32:
         result += "float"
+      elif self.type_class == "float" and self.size == 64:
+        result += "double"
       elif self.type_class == "bfloat" and self.size == 16:
         result += "bfloat16"
       else:
@@ -129,7 +143,10 @@ fn_ops = []
 def wrap(y):
   result = y
   if isinstance(y, int):
-    result = Constant(Int(32), y)
+    if builtins.abs(y) > 2**31 - 1:
+      result = Constant(Int(64), y)
+    else:
+      result = Constant(Int(32), y)
   elif isinstance(y, float):
     result = Constant(Float(32), y)
   return result
@@ -424,6 +441,21 @@ def floor(value):
 
 
 @intrinsic
+def floor_log2(value):
+  return Op(value.ty, "floor_log2", [value])
+
+
+@intrinsic
+def exp2_round(value):
+  return Op(value.ty, "exp2_round", [value])
+
+
+@intrinsic
+def copynan(value, nan):
+  return Op(value.ty, "copynan", [value, nan])
+
+
+@intrinsic
 def sqrt(value):
   return Op(value.ty, "sqrt", [value])
 
@@ -538,13 +570,13 @@ def saturating_narrow(x):
 
 @intrinsic
 def min(x, y):
-  assert x.ty == y.ty
+  (x, y) = promote_types(x, y)
   return Op(wrap(x).ty, "min", [x, y])
 
 
 @intrinsic
 def max(x, y):
-  assert x.ty == y.ty
+  (x, y) = promote_types(x, y)
   return Op(x.ty, "max", [x, y])
 
 
@@ -679,8 +711,16 @@ def i32(value):
   return Constant(Int(32), value)
 
 
+def i64(value):
+  return Constant(Int(64), value)
+
+
 def f32(value):
   return Constant(Float(32), value)
+
+
+def f64(value):
+  return Constant(Float(64), value)
 
 
 class BroadcastMode(enum.Enum):
@@ -701,6 +741,13 @@ class BroadcastMode(enum.Enum):
   AUTO = 5
 
 
+class Scalar:
+
+  def __init__(self, name, ty):
+    self.name = name
+    self.ty = ty
+
+
 class Buffer:
 
   def __init__(
@@ -713,6 +760,8 @@ class Buffer:
 
 
 buffer_args = []
+scalar_args = []
+
 op_name = "unknown"
 code = ""
 
@@ -807,12 +856,16 @@ YNN_INTRINSIC simd::vec<T, N> select_greater_than(simd::vec<T, N> a, simd::vec<T
 """
 
 
-def scalar(name, ty):
+def params(*ps):
+  """Decorator to add scalar parameters to the function."""
   def actual_decorator(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
+      assert len(ps) > 0
+      scalar_args.extend(ps)
       # fn_args.append((name, ty, 0))
-      args += (Var(name, ty),)
+      for p in ps:
+        args += (Var(p.name, p.ty),)
       return func(*args, **kwargs)
 
     return wrapper
@@ -952,6 +1005,9 @@ class Target:
         "store",
         "round",
         "floor",
+        "floor_log2",
+        "exp2_round",
+        "copynan",
         "ceil",
         "sqrt",
         "reinterpret_cast",
@@ -983,6 +1039,12 @@ class Target:
       b = next((buf for buf in buffers if buf.name == arg.name), None)
     return b
 
+  def is_scalar_arg(self, arg):
+    s = None
+    if isinstance(arg, Var):
+      s = next((s for s in scalar_args if s.name == arg.name), None)
+    return s
+
   def compute_all_features(self, features, implied_features, all_features):
     for feature in features:
       if feature in all_features:
@@ -1008,6 +1070,10 @@ class Target:
     if ty.lanes == 1:
       return ty.to_c_decl(is_const)
     else:
+      if ty.type_class == "int" and ty.size == 2:
+        return f"simd::s2x{ty.lanes}"
+      elif ty.type_class == "int" and ty.size == 4:
+        return f"simd::s4x{ty.lanes}"
       return f"simd::vec<{ty.scalar().to_c_decl(is_const)}, {ty.lanes}>"
 
   def legalize_op(self, op):
@@ -1023,9 +1089,9 @@ class Target:
           f" {self.legalize_type(op.args[0].ty)}>"
       )
     elif op.name == "saturating_cast":
-      return "simd::saturate_cast"
+      return "simd::cast"
     elif op.name == "saturating_rounding_cast":
-      return "round_float_to_int"
+      return "simd::cast"
     elif op.name == "min" or op.name == "max":
       return f"simd::{op.name}"
     return op.name
@@ -1158,6 +1224,8 @@ class Target:
         f" base_{args[-1].name}"
     )
 
+    arity = self.get_arity_string(args)
+    args_str.append(f"{self.indent()}const {arity}_params* params")
     self.result += ",\n".join(args_str)
     self.result += ") {\n"
 
@@ -1263,10 +1331,18 @@ class Target:
         self.result += "\n"
 
   def advance_pointers(self, buffers, var, step):
+    """Emit code to advance pointers."""
     for b in buffers:
       stride = ""
       if b.broadcast_mode == BroadcastMode.NONE:
-        stride = str(b.ty.size // 8)
+        if b.ty.size < 8:
+          self.result += (
+              f"{self.indent()} {b.name} = offset_bytes({b.name},"
+              f" ({step} * {b.ty.size}) / 8);\n"
+          )
+          continue
+        else:
+          stride = str(b.ty.size // 8)
       elif b.broadcast_mode == BroadcastMode.ALWAYS:
         stride = "0"
       else:
@@ -1287,6 +1363,20 @@ class Target:
       self.result += (
           f"{self.indent()}const {const_type} {k} ="
           f" {self.legalize_op(v)}({v.args[0]});\n"
+      )
+
+  def emit_scalar_arguments(self, scalars, tile_width):
+    """Emits scalar arguments."""
+
+    if scalars:
+      self.result += f"{self.indent()}assert(params != nullptr);\n"
+
+    for s in scalars:
+      self.result += (
+          f"{self.indent()}const"
+          f" {self.legalize_type(s.ty.with_lanes(tile_width))} {s.name} ="
+          f" {self.legalize_op(broadcast(Constant(s.ty, 0), tile_width))}(reinterpret_cast<const"
+          f" {op_name}_params*>(params)->{s.name});\n"
       )
 
   def emit_op(self, i, j, is_rem_width, buffers, constants, tile_width):
@@ -1320,9 +1410,12 @@ class Target:
     for arg in args:
       b = self.as_buffer(arg, buffers)
       if b is not None:
-        t = self.legalize_type(b.ty, False)
-        if is_load:
-          t = "const " + t
+        if is_load and b.ty.size < 8:
+          t = "const int8_t"
+        else:
+          t = self.legalize_type(b.ty, False)
+          if is_load:
+            t = "const " + t
         row_offset = "0"
         stride_n = ""
         if b.broadcast_mode == BroadcastMode.NONE:
@@ -1345,7 +1438,9 @@ class Target:
       else:
         if isinstance(arg, Constant):
           str_args.append(f"{arg}")
-        elif isinstance(arg, Var) and arg in constants:
+        elif isinstance(arg, Var) and (
+            arg in constants or (self.is_scalar_arg(arg) is not None)
+        ):
           str_args.append(f"{arg}{self.simd_suffix(op)}")
         else:
           str_args.append(f"{arg}_{j}{self.simd_suffix(op)}")
@@ -1356,11 +1451,20 @@ class Target:
     mem_op = ""
     if is_load:
       mem_op = "simd::load"
-      if is_rem_width:
-        str_args.append("j")
-        str_args.append(f"simd::undef<{op.ty.lanes}>()")
+      b = self.as_buffer(op.index, buffers)
+      if b is not None and b.ty.size < 8:
+        byte_lanes = tile_width * b.ty.size // 8
+        if is_rem_width:
+          str_args.append(f"ceil_div<size_t>(j * {b.ty.size}, 8)")
+          str_args.append(f"simd::undef<{byte_lanes}>()")
+        else:
+          str_args.append(f"simd::vec<int8_t, {byte_lanes}>::N")
       else:
-        str_args.append(f"{self.legalize_type(op.ty)}::N")
+        if is_rem_width:
+          str_args.append("j")
+          str_args.append(f"simd::undef<{op.ty.lanes}>()")
+        else:
+          str_args.append(f"{self.legalize_type(op.ty)}::N")
     elif is_store:
       mem_op = "simd::store"
       if is_rem_width:
@@ -1376,7 +1480,17 @@ class Target:
         str_args.append(f"{self.legalize_type(op.ty.scalar())}{{}}")
       mem_op = self.legalize_op(op)
 
-    if op.name in self.infix_ops:
+    b = None
+    if is_load:
+      b = self.as_buffer(op.index, buffers)
+
+    if is_load and b is not None and b.ty.size < 8:
+      byte_lanes = tile_width * b.ty.size // 8
+      self.result += (
+          f"bit_cast<{result_type}, simd::vec<int8_t,"
+          f" {byte_lanes}>>({mem_op}({', '.join(str_args)}));\n"
+      )
+    elif op.name in self.infix_ops:
       self.result += f"{str_args[0]} {self.infix_ops[op.name]} {str_args[1]};\n"
     elif self.needs_simd_wrapper(op):
       self.result += f"{result_type}({mem_op}({', '.join(str_args)}));\n"
@@ -1569,6 +1683,7 @@ class Target:
       if len(buffers) > 2:
         self.emit_asserts(buffers)
 
+      self.emit_scalar_arguments(scalar_args, tile_width)
       self.emit_constants(constants)
 
       self.handle_specialize(
@@ -1590,9 +1705,20 @@ class Target:
   def arch_string(self):
     return "x86_" + "_".join([i.lower() for i in self.features])
 
+  def get_arity_string(self, buffers):
+    if len(buffers) == 4:
+      return "ternary"
+    elif len(buffers) == 3:
+      return "binary"
+    elif len(buffers) == 2:
+      return "unary"
+    else:
+      assert False, "Unsupported number of buffers."
+
   def compile_function(self, name, fn, tile_shapes):
     self.result = ""
     buffer_args.clear()
+    scalar_args.clear()
     global op_name
     op_name = "unknown"
     result = fn()
@@ -1613,12 +1739,8 @@ class Target:
     )
 
     src = '#include "ynnpack/kernels/'
-    if len(buffer_args) == 4:
-      src += "ternary/ternary.h"
-    elif len(buffer_args) == 3:
-      src += "binary/binary.h"
-    elif len(buffer_args) == 2:
-      src += "unary/unary.h"
+    arity = self.get_arity_string(buffer_args)
+    src += f"{arity}/{arity}.h"
     src += '"\n'
     src += "namespace ynn {\n"
     src += self.compile(func_name, buffer_args, result, tile_shapes)

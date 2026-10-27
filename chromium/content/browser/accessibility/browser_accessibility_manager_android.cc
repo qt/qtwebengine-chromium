@@ -62,8 +62,7 @@ BrowserAccessibilityManagerAndroid::BrowserAccessibilityManagerAndroid(
     ui::AXNodeIdDelegate& node_id_delegate,
     ui::AXPlatformTreeManagerDelegate* delegate)
     : ui::BrowserAccessibilityManager(node_id_delegate, delegate),
-      web_contents_accessibility_(std::move(web_contents_accessibility)),
-      prune_tree_for_screen_reader_(true) {
+      web_contents_accessibility_(std::move(web_contents_accessibility)) {
   if (base::FeatureList::IsEnabled(
           features::kAccessibilityRequestScopedContentChangedEvents)) {
     SetAccessibilityEventsCallbackForTesting(
@@ -306,15 +305,7 @@ void BrowserAccessibilityManagerAndroid::FireDocumentSelectionChangedEvent(
           static_cast<BrowserAccessibilityAndroid*>(
               GetFromAXNode(ax_tree()->root()));
       ClearNodeInfoCacheForGivenId(android_root_object->GetUniqueId());
-      if (selection.has_value()) {
-        wcax->HandleExtendedSelectionChanged(
-            android_root_object->GetUniqueId(),
-            selection->focus_object->GetUniqueId(), selection->focus_offset);
-      } else {
-        wcax->HandleExtendedSelectionChanged(
-            android_root_object->GetUniqueId(), ui::kAXAndroidInvalidViewId,
-            ui::kAXAndroidUndefinedSelectionIndex);
-      }
+      wcax->HandleTextSelectionChanged(android_root_object->GetUniqueId());
       return;
     }
   } else if (!selection.has_value()) {
@@ -422,6 +413,15 @@ void BrowserAccessibilityManagerAndroid::FireGeneratedEvent(
           ANDROID_ACCESSIBILITY_EVENT_CONTENT_CHANGE_TYPE_TEXT);
       break;
     }
+    case ui::AXEventGenerator::Event::INVALID_STATUS_CHANGED: {
+      if (base::FeatureList::IsEnabled(
+              features::kAccessibilityAriaInvalidAndErrorMessage)) {
+        wcax->HandleWindowContentChange(
+            android_node->GetUniqueId(),
+            ANDROID_ACCESSIBILITY_EVENT_CONTENT_CHANGE_TYPE_CONTENT_INVALID);
+      }
+      break;
+    }
     case ui::AXEventGenerator::Event::LIVE_REGION_CHANGED: {
       // When a change is made within a live region, this event is fired on the
       // root node of that live region. For atomic live regions, we should begin
@@ -449,10 +449,9 @@ void BrowserAccessibilityManagerAndroid::FireGeneratedEvent(
           wcax->HandleLiveRegionNodeChanged(android_node->GetUniqueId());
         }
       }
-      // TODO(crbug.com/470048610): When the Finch experiment for
-      // kAccessibilityAtomicLiveRegions is complete, we should convert these
-      // two if-statements into an if-else statement. However, for the
-      // experiment, we need both code paths to be preserved.
+      // TODO(crbug.com/507858294): Remove TYPE_ANNOUNCE and new live region
+      // behavior flags once stability has been reached in several stable
+      // releases.
       if (!base::FeatureList::IsEnabled(
               features::kAccessibilityDeprecateTypeAnnounce)) {
         // If we don't support WINDOW_CONTENT_CHANGED events BUT have not yet
@@ -524,6 +523,8 @@ void BrowserAccessibilityManagerAndroid::FireGeneratedEvent(
       break;
     }
     case ui::AXEventGenerator::Event::VALUE_IN_TEXT_FIELD_CHANGED:
+    case ui::AXEventGenerator::Event::VALUE_IN_SPIN_BUTTON_DECREMENTED:
+    case ui::AXEventGenerator::Event::VALUE_IN_SPIN_BUTTON_INCREMENTED:
       // Sometimes `RetargetForEvents` will walk up to the lowest platform leaf
       // and fire the same event on that node. However, in some rare cases the
       // leaf node might not be a text field. For example, in the unusual case
@@ -581,7 +582,6 @@ void BrowserAccessibilityManagerAndroid::FireGeneratedEvent(
     case ui::AXEventGenerator::Event::HIERARCHICAL_LEVEL_CHANGED:
     case ui::AXEventGenerator::Event::HIGHLIGHT_MARKER_CHANGED:
     case ui::AXEventGenerator::Event::IGNORED_CHANGED:
-    case ui::AXEventGenerator::Event::INVALID_STATUS_CHANGED:
     case ui::AXEventGenerator::Event::KEY_SHORTCUTS_CHANGED:
     case ui::AXEventGenerator::Event::LABELED_BY_CHANGED:
     case ui::AXEventGenerator::Event::LANGUAGE_CHANGED:
@@ -852,24 +852,24 @@ void BrowserAccessibilityManagerAndroid::OnAtomicUpdateFinished(
                                                       changes);
 
   WebContentsAccessibilityAndroid* wcax = GetWebContentsAXFromRootManager();
-  if (!wcax) {
-    return;
-  }
+  if (wcax) {
+    // Reset content changed events counter every time we finish an atomic
+    // update.
+    wcax->ResetContentChangedEventsCounter();
 
-  // Reset content changed events counter every time we finish an atomic update.
-  wcax->ResetContentChangedEventsCounter();
+    // When the root changes, send the new root id and a navigate signal to
+    // Java.
+    if (root_changed) {
+      auto* root_manager = static_cast<BrowserAccessibilityManagerAndroid*>(
+          GetManagerForRootFrame());
+      DCHECK(root_manager);
 
-  // When the root changes, send the new root id and a navigate signal to Java.
-  if (root_changed) {
-    auto* root_manager = static_cast<BrowserAccessibilityManagerAndroid*>(
-        GetManagerForRootFrame());
-    DCHECK(root_manager);
+      auto* root = static_cast<BrowserAccessibilityAndroid*>(
+          root_manager->GetBrowserAccessibilityRoot());
+      DCHECK(root);
 
-    auto* root = static_cast<BrowserAccessibilityAndroid*>(
-        root_manager->GetBrowserAccessibilityRoot());
-    DCHECK(root);
-
-    wcax->HandleNavigate(root->GetUniqueId());
+      wcax->HandleNavigate(root->GetUniqueId());
+    }
   }
 
   // Invalidate java-side cache for structural generated events. This
@@ -884,12 +884,21 @@ void BrowserAccessibilityManagerAndroid::OnAtomicUpdateFinished(
     CHECK(wrapper);
 
     auto event_type = targeted_event.event_params->event;
-    if (event_type == ui::AXEventGenerator::Event::CHILDREN_CHANGED ||
-        event_type == ui::AXEventGenerator::Event::PARENT_CHANGED) {
-      // Structural changes in the unignored/platform tree requires the leaf
-      // cache be invalidated.
-      BrowserAccessibilityAndroid::ResetLeafCache();
-      ClearNodeInfoCacheForGivenId(wrapper->GetUniqueId());
+    switch (event_type) {
+      case ui::AXEventGenerator::Event::CHILDREN_CHANGED:
+      case ui::AXEventGenerator::Event::PARENT_CHANGED:
+        // Structural changes in the unignored/platform tree requires the leaf
+        // cache be invalidated.
+        BrowserAccessibilityAndroid::ResetLeafCache();
+        ClearNodeInfoCacheForGivenId(wrapper->GetUniqueId());
+        break;
+      case ui::AXEventGenerator::Event::NAME_CHANGED:
+      case ui::AXEventGenerator::Event::ROLE_CHANGED:
+      case ui::AXEventGenerator::Event::STATE_CHANGED:
+        wrapper->EraseLeafCacheDataForNode();
+        break;
+      default:
+        break;
     }
   }
 }

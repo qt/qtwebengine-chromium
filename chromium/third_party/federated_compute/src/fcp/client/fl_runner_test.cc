@@ -35,6 +35,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/cord.h"
 #include "absl/strings/str_cat.h"
@@ -68,9 +69,6 @@
 #include "fcp/testing/testing.h"
 #include "google/protobuf/map.h"
 #include "google/protobuf/repeated_ptr_field.h"
-#include "tensorflow/core/example/example.pb.h"
-#include "tensorflow/core/framework/tensor_shape.pb.h"
-#include "tensorflow/core/protobuf/struct.pb.h"
 
 namespace fcp {
 namespace client {
@@ -109,6 +107,7 @@ using ::testing::Pair;
 using ::testing::Return;
 using ::testing::SaveArg;
 using ::testing::StrictMock;
+using ::testing::UnorderedElementsAre;
 using ::testing::VariantWith;
 
 constexpr NetworkStats kFederatedSelectNetworkStats = {
@@ -224,9 +223,6 @@ class FlRunnerTestBase : public ::testing::Test {
   // value.
   void MockEligibilityEvalDisabled();
 
-  void MockSuccessfulEligibilityPlanExecution(
-      const TaskEligibilityInfo& task_eligibility_info);
-
   void MockSuccessfulPlanExecution(
       bool has_checkpoint, bool has_secagg_output,
       testing::Matcher<const ClientOnlyPlan&> plan_matcher = _);
@@ -282,6 +278,9 @@ class FlRunnerTestBase : public ::testing::Test {
 };
 
 FlRunnerTestBase::FlRunnerTestBase() {
+  EXPECT_CALL(mock_task_env_, GetAttestationMeasurement(testing::_))
+      .Times(testing::AnyNumber())
+      .WillRepeatedly(testing::Return("test_attest"));
   EXPECT_CALL(mock_flags_, condition_polling_period_millis())
       .WillRepeatedly(Return(1000));
   EXPECT_CALL(mock_flags_, tf_execution_teardown_grace_period_millis())
@@ -296,7 +295,7 @@ FlRunnerTestBase::FlRunnerTestBase() {
   // boolean field.
   EXPECT_CALL(mock_task_env_, TrainingConditionsSatisfied())
       .WillRepeatedly(
-          Invoke([this]() { return training_conditions_satisfied_.load(); }));
+          [this]() { return training_conditions_satisfied_.load(); });
 
   mock_federated_select_iterator_factory_ =
       new NiceMock<MockFederatedSelectExampleIteratorFactory>();
@@ -364,7 +363,7 @@ void FlRunnerTestBase::MockSuccessfulPlanExecution(
       std::move(plan_result));
   if (has_checkpoint) {
     auto checkpoint_file = files_impl_.CreateTempFile("output", ".ckpt");
-    ASSERT_OK(checkpoint_file);
+    ABSL_ASSERT_OK(checkpoint_file);
     WriteContentToFile(*checkpoint_file, "output_checkpoint");
     plan_result_and_checkpoint_file.checkpoint_filename =
         std::move(*checkpoint_file);
@@ -374,19 +373,6 @@ void FlRunnerTestBase::MockSuccessfulPlanExecution(
       RunPlanWithTensorflowSpec(_, _, _, _, _, _, plan_matcher, _, _, _))
       .WillOnce(Return(std::move(plan_result_and_checkpoint_file)))
       .RetiresOnSaturation();
-}
-
-void FlRunnerTestBase::MockSuccessfulEligibilityPlanExecution(
-    const TaskEligibilityInfo& task_eligibility_info) {
-  engine::PlanResult plan_result(engine::PlanOutcome::kSuccess,
-                                 absl::OkStatus());
-  plan_result.example_stats.example_count = 5;
-  plan_result.example_stats.example_size_bytes = 10;
-  plan_result.task_eligibility_info = task_eligibility_info;
-  EXPECT_CALL(
-      *mock_tensorflow_runner_,
-      RunEligibilityEvalPlanWithTensorflowSpec(_, _, _, _, _, _, _, _, _, _))
-      .WillOnce(Return(std::move(plan_result)));
 }
 
 void FlRunnerTestBase::ExpectEligibilityCheckinCompletedLogEvent() {
@@ -538,10 +524,32 @@ void FlRunnerEligibilityEvalTest::SetUpEligibilityEvalTask() {
       PopulationEligibilitySpec::TaskInfo::TASK_ASSIGNMENT_MODE_SINGLE);
   task_info->add_eligibility_policy_indices(0);
   auto policy = population_eligibility_spec.add_eligibility_policies();
-  policy->set_name("custom_tf_policy");
-  *policy->mutable_tf_custom_policy()->mutable_arguments() = "tfl_policy_args";
+  policy->set_name("data_availability_policy");
+  auto data_availability_policy = policy->mutable_data_availability_policy();
+  data_availability_policy->set_min_example_count(1);
+  ExampleSelector example_selector;
+  example_selector.set_collection_uri(kEligibilityEvalCollectionUri);
+  *data_availability_policy->mutable_selector() = example_selector;
+
   eligibility_eval_artifacts_.population_eligibility_spec =
       population_eligibility_spec;
+
+  Dataset dataset;
+  auto client_data = dataset.add_client_data();
+  client_data->set_client_id("client_1");
+  auto selected_example = client_data->add_selected_example();
+  *selected_example->mutable_selector() = example_selector;
+  selected_example->add_example("example");
+  eligibility_eval_artifacts_.dataset = dataset;
+
+  EXPECT_CALL(mock_task_env_,
+              CreateExampleIterator(EqualsProto(example_selector), _))
+      .Times(AtMost(1))
+      .WillOnce(DoAll(SaveArg<1>(&latest_eligibility_selector_context_),
+                      Return(ByMove(std::make_unique<SimpleExampleIterator>(
+                          eligibility_eval_artifacts_.dataset,
+                          kEligibilityEvalCollectionUri)))))
+      .RetiresOnSaturation();
 }
 
 class FlRunnerEligibilityEvalWithCriteriaTest : public FlRunnerTestBase {
@@ -583,8 +591,7 @@ void FlRunnerEligibilityEvalWithCriteriaTest::SetUpEligibilityEvalTask() {
   auto data_availability_policy = policy->mutable_data_availability_policy();
   data_availability_policy->set_min_example_count(2);
   ExampleSelector example_selector;
-  example_selector.set_collection_uri(
-      std::string(kEligibilityEvalCollectionUri));
+  example_selector.set_collection_uri(kEligibilityEvalCollectionUri);
   google::internal::federated::plan::AverageOptions average_options;
   average_options.set_average_stat_name("count");
   example_selector.mutable_criteria()->PackFrom(average_options);
@@ -659,8 +666,7 @@ void FlRunnerExampleQueryEligibilityEvalTest::SetUpEligibilityEvalTask() {
   auto data_availability_policy = policy->mutable_data_availability_policy();
   data_availability_policy->set_min_example_count(5);
   ExampleSelector example_selector;
-  example_selector.set_collection_uri(
-      std::string(kEligibilityEvalCollectionUri));
+  example_selector.set_collection_uri(kEligibilityEvalCollectionUri);
   google::internal::federated::plan::AverageOptions average_options;
   average_options.set_average_stat_name("count");
   example_selector.mutable_criteria()->PackFrom(average_options);
@@ -837,15 +843,10 @@ void FlRunnerExampleQueryTest::SetUpDirectDataUploadTask() {
         ->mutable_federated_example_query()
         ->mutable_aggregations())["data_upload_tensor"] = aggregation_config;
 
-  tensorflow::Example example;
-  (*example.mutable_features()->mutable_feature())["col1"]
-      .mutable_int64_list()
-      ->add_value(1);
-
   dataset_.clear_client_data();
   Dataset::ClientDataset client_dataset;
   client_dataset.set_client_id("client_id");
-  client_dataset.add_example(example.SerializeAsString());
+  client_dataset.add_example("example");
   dataset_.mutable_client_data()->Add(std::move(client_dataset));
 
   // Set up the mock example iterator for running the "regular" task payload.
@@ -899,7 +900,7 @@ void FlRunnerExampleQueryTest::ExpectComputationFailureWithInvalidArgument() {
   EXPECT_CALL(mock_phase_logger_, LogCheckinStarted());
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_client_only_plan_.SerializeAsString(), ""},
+          {single_task_assignment_client_only_plan_.SerializeAsCord(), {}},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
           std::nullopt,
@@ -928,7 +929,7 @@ void FlRunnerExampleQueryTest::ExpectComputationFailureWithInvalidArgument() {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_EQ(result->contribution_result(), FLRunnerResult::FAIL);
 }
 
@@ -962,11 +963,11 @@ void FlRunnerMultipleTaskAssignmentsTest::SetUp() {
   task_assignment_1_.sec_agg_info = kSecAggInfoForMixedSecAgg;
   task_assignment_1_.task_name = kSwor24HourTaskName;
   task_assignment_1_.task_identifier = kTaskIdentifier1;
-  task_assignment_1_.payloads.checkpoint = std::string(kInitialCheckpoint);
+  task_assignment_1_.payloads.checkpoint = kInitialCheckpoint;
   *plan_1_.mutable_phase()
        ->mutable_tensorflow_spec()
        ->mutable_dataset_token_tensor_name() = "plan_1_dataset_token";
-  task_assignment_1_.payloads.plan = plan_1_.SerializeAsString();
+  task_assignment_1_.payloads.plan = plan_1_.SerializeAsCord();
 
   // Set up the second task assignment.
   task_assignment_2_.federated_select_uri_template =
@@ -976,11 +977,11 @@ void FlRunnerMultipleTaskAssignmentsTest::SetUp() {
   task_assignment_2_.sec_agg_info = kSecAggInfoForPureSecAggTask;
   task_assignment_2_.task_name = kRequires5ExamplesTaskName;
   task_assignment_2_.task_identifier = kTaskIdentifier2;
-  task_assignment_2_.payloads.checkpoint = std::string(kInitialCheckpoint);
+  task_assignment_2_.payloads.checkpoint = kInitialCheckpoint;
   *plan_2_.mutable_phase()
        ->mutable_tensorflow_spec()
        ->mutable_dataset_token_tensor_name() = "plan_2_dataset_token";
-  task_assignment_2_.payloads.plan = plan_2_.SerializeAsString();
+  task_assignment_2_.payloads.plan = plan_2_.SerializeAsCord();
 }
 
 void FlRunnerMultipleTaskAssignmentsTest::SetUpPopulationEligibilitySpec() {
@@ -991,20 +992,41 @@ void FlRunnerMultipleTaskAssignmentsTest::SetUpPopulationEligibilitySpec() {
       PopulationEligibilitySpec::TaskInfo::TASK_ASSIGNMENT_MODE_SINGLE);
   task_info->add_eligibility_policy_indices(0);
   auto policy = population_eligibility_spec.add_eligibility_policies();
-  policy->set_name("custom_tf_policy");
-  *policy->mutable_tf_custom_policy()->mutable_arguments() = "tfl_policy_args";
+  policy->set_name("data_availability_policy");
+  auto data_availability_policy = policy->mutable_data_availability_policy();
+  data_availability_policy->set_min_example_count(1);
+  ExampleSelector example_selector;
+  example_selector.set_collection_uri(kEligibilityEvalCollectionUri);
+  *data_availability_policy->mutable_selector() = example_selector;
   auto mta_task_info_1 = population_eligibility_spec.add_task_info();
-  mta_task_info_1->set_task_name(std::string(kSwor24HourTaskName));
+  mta_task_info_1->set_task_name(kSwor24HourTaskName);
   mta_task_info_1->set_task_assignment_mode(
       PopulationEligibilitySpec::TaskInfo::TASK_ASSIGNMENT_MODE_MULTIPLE);
   mta_task_info_1->add_eligibility_policy_indices(0);
   auto mta_task_info_2 = population_eligibility_spec.add_task_info();
-  mta_task_info_2->set_task_name(std::string(kRequires5ExamplesTaskName));
+  mta_task_info_2->set_task_name(kRequires5ExamplesTaskName);
   mta_task_info_2->set_task_assignment_mode(
       PopulationEligibilitySpec::TaskInfo::TASK_ASSIGNMENT_MODE_MULTIPLE);
   mta_task_info_2->add_eligibility_policy_indices(0);
   eligibility_eval_artifacts_.population_eligibility_spec =
       population_eligibility_spec;
+
+  Dataset dataset;
+  auto client_data = dataset.add_client_data();
+  client_data->set_client_id("client_1");
+  auto selected_example = client_data->add_selected_example();
+  *selected_example->mutable_selector() = example_selector;
+  selected_example->add_example("example");
+  eligibility_eval_artifacts_.dataset = dataset;
+
+  EXPECT_CALL(mock_task_env_,
+              CreateExampleIterator(EqualsProto(example_selector), _))
+      .Times(AtMost(1))
+      .WillOnce(DoAll(SaveArg<1>(&latest_eligibility_selector_context_),
+                      Return(ByMove(std::make_unique<SimpleExampleIterator>(
+                          eligibility_eval_artifacts_.dataset,
+                          kEligibilityEvalCollectionUri)))))
+      .RetiresOnSaturation();
 }
 
 // Setup the expectations for running the eligibility task which returns 3
@@ -1040,7 +1062,7 @@ void FlRunnerMultipleTaskAssignmentsTest::MockEligibilityEvalCheckIn() {
 
   EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
       .WillOnce(Return(FederatedProtocol::EligibilityEvalTask{
-          {eligibility_eval_artifacts_.plan.SerializeAsString(),
+          {eligibility_eval_artifacts_.plan.SerializeAsCord(),
            eligibility_eval_artifacts_.checkpoint},
           kEligibilityEvalExecutionId,
           population_spec}));
@@ -1076,7 +1098,7 @@ TEST_F(FlRunnerSourceIdSeedTest, GeneratesSourceIdSeedWhenNoneExists) {
   EXPECT_CALL(mock_opstats_db_, Transform(_))
       .WillOnce(DoAll(SaveArg<0>(&transform_fn), Return(absl::OkStatus())));
 
-  ASSERT_OK(RunFederatedComputation(
+  ABSL_ASSERT_OK(RunFederatedComputation(
       &mock_task_env_, mock_phase_logger_, &mock_event_publisher_, &files_impl_,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
@@ -1099,7 +1121,7 @@ TEST_F(FlRunnerSourceIdSeedTest, UsesExistingSourceIdSeed) {
   // dtor will still commit, so we expect at most one call.
   EXPECT_CALL(mock_opstats_db_, Transform(_)).Times(AtMost(1));
 
-  ASSERT_OK(RunFederatedComputation(
+  ABSL_ASSERT_OK(RunFederatedComputation(
       &mock_task_env_, mock_phase_logger_, &mock_event_publisher_, &files_impl_,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
@@ -1120,7 +1142,7 @@ TEST_F(FlRunnerImmediateAbortTest, ImmediateAbort) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -1135,7 +1157,7 @@ TEST_F(FlRunnerHttpInvalidEntryUriTest, HttpProtocolWithInvalidEntryUri) {
                   &mock_log_manager_, &mock_flags_, "http://invalid", "api_key",
                   "test_cert_path", kSessionName, kPopulationName,
                   "retry_token", "client_version", "attestation_measurement"),
-              IsCode(absl::StatusCode::kInvalidArgument));
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST_F(FlRunnerTensorflowTaskTest, MockCheckinFails) {
@@ -1154,7 +1176,7 @@ TEST_F(FlRunnerTensorflowTaskTest, MockCheckinFails) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -1176,7 +1198,7 @@ TEST_F(FlRunnerTensorflowTaskTest, RejectionTest) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -1187,7 +1209,7 @@ TEST_F(FlRunnerTensorflowTaskTest, RejectionTest) {
 TEST_F(FlRunnerTensorflowTaskTest, SimpleAggregationPlan) {
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -1218,7 +1240,7 @@ TEST_F(FlRunnerTensorflowTaskTest, SimpleAggregationPlan) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -1237,7 +1259,7 @@ TEST_F(FlRunnerTensorflowTaskTest, SimpleAggregationPlanWithMinSepPolicy) {
 
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -1271,65 +1293,12 @@ TEST_F(FlRunnerTensorflowTaskTest, SimpleAggregationPlanWithMinSepPolicy) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
   expected_result.set_contribution_result(FLRunnerResult::SUCCESS);
   expected_result.mutable_contributed_task_names()->Add(kTaskName);
-  EXPECT_THAT(*result, EqualsProto(expected_result));
-  // There should be one checkpoint and no secagg results.
-  EXPECT_THAT(computation_results,
-              ElementsAre(Pair(kTensorflowCheckpointAggregand,
-                               VariantWith<TFCheckpoint>(Not(IsEmpty())))));
-}
-
-TEST_F(FlRunnerTensorflowTaskTest,
-       SimpleAggregationPlanWithTaskResourcesAsAbslCord) {
-  // We return the task resources as absl::Cords instead of std::strings, to
-  // exercise the absl::Cord-specific code paths.
-  EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
-      .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {absl::Cord(
-               single_task_assignment_artifacts_.plan.SerializeAsString()),
-           absl::Cord(single_task_assignment_artifacts_.checkpoint)},
-          /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
-          /*aggregation_session_id=*/kAggregationSessionId,
-          std::nullopt,
-          std::nullopt,
-          std::nullopt,
-          kTaskName}));
-
-  ComputationResults computation_results;
-  EXPECT_CALL(mock_federated_protocol_, MockReportCompleted(_, _, _))
-      .WillOnce([&](ComputationResults reported_results,
-                    absl::Duration plan_duration,
-                    std::optional<std::string> aggregation_session_id) {
-        computation_results = std::move(reported_results);
-        return ReportResult::FromStatus(absl::OkStatus());
-      });
-
-  {
-    InSequence seq;
-    ExpectCheckinTrainingReportLogEvents();
-    EXPECT_CALL(mock_task_env_, OnTaskCompleted(IsTaskResultSuccess()))
-        .WillOnce(Return(true));
-  }
-
-  MockSuccessfulPlanExecution(/*has_checkpoint=*/true,
-                              /*has_secagg_output=*/false);
-
-  absl::StatusOr<FLRunnerResult> result = RunFederatedComputation(
-      &mock_task_env_, mock_phase_logger_, &mock_event_publisher_, &files_impl_,
-      &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
-      &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
-      /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
-  FLRunnerResult expected_result;
-  *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
-      mock_federated_protocol_.GetLatestRetryWindow());
-  expected_result.set_contribution_result(FLRunnerResult::SUCCESS);
-  expected_result.add_contributed_task_names(kTaskName);
   EXPECT_THAT(*result, EqualsProto(expected_result));
   // There should be one checkpoint and no secagg results.
   EXPECT_THAT(computation_results,
@@ -1343,7 +1312,7 @@ TEST_F(FlRunnerTensorflowTaskTest,
        SimpleAggregationPlanWithReportAbortedErrorReturnsRetryWindow) {
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -1376,7 +1345,7 @@ TEST_F(FlRunnerTensorflowTaskTest,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
   // Even though the ReportCompleted(...) call fails, it should result in an
   // FLRunnerResult with the most recent RetryWindow.
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -1391,7 +1360,7 @@ TEST_F(FlRunnerTensorflowTaskTest,
        SimpleAggregationPlanWithReportUnavailableErrorReturnsRetryWindow) {
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -1426,7 +1395,7 @@ TEST_F(FlRunnerTensorflowTaskTest,
   // Even though the ReportCompleted(...) call fails, it should result in an
   // FLRunnerResult with the most recent RetryWindow. This is the new
   // behavior.
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -1440,7 +1409,7 @@ TEST_F(FlRunnerTensorflowTaskTest,
        SimpleAggregationPlanWithReportPartialSuccess) {
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -1476,7 +1445,7 @@ TEST_F(FlRunnerTensorflowTaskTest,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -1491,7 +1460,7 @@ TEST_F(FlRunnerTensorflowTaskTest, TfPlanLightweightComputationIdNull) {
 
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -1527,7 +1496,7 @@ TEST_F(FlRunnerTensorflowTaskTest, TfPlanLightweightComputationIdNull) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
 
   // Computation id should not be calculated for TF based tasks if
   // enable_computation_id is false.
@@ -1540,7 +1509,7 @@ TEST_F(FlRunnerTensorflowTaskTest, TfPlanLightweightComputationIdNull) {
 TEST_F(FlRunnerTensorflowTaskTest, SecaggPlan) {
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -1575,7 +1544,7 @@ TEST_F(FlRunnerTensorflowTaskTest, SecaggPlan) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -1598,7 +1567,7 @@ TEST_F(FlRunnerTensorflowTaskTest, SecaggPlanOnlySecaggOutputTensors) {
       .minimum_clients_in_server_visible_aggregate = 2};
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -1632,7 +1601,7 @@ TEST_F(FlRunnerTensorflowTaskTest, SecaggPlanOnlySecaggOutputTensors) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -1647,7 +1616,7 @@ TEST_F(FlRunnerTensorflowTaskTest, SecaggPlanOnlySecaggOutputTensors) {
 TEST_F(FlRunnerTensorflowTaskTest, AbortPlan) {
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -1688,7 +1657,7 @@ TEST_F(FlRunnerTensorflowTaskTest, AbortPlan) {
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
 
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -1699,7 +1668,7 @@ TEST_F(FlRunnerTensorflowTaskTest, AbortPlan) {
 TEST_F(FlRunnerTensorflowTaskTest, ExampleIteratorError) {
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -1741,7 +1710,7 @@ TEST_F(FlRunnerTensorflowTaskTest, ExampleIteratorError) {
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
 
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -1754,7 +1723,7 @@ TEST_F(FlRunnerTensorflowTaskTest, ComputationInvalidArgument) {
   EXPECT_CALL(mock_phase_logger_, LogCheckinStarted());
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -1792,14 +1761,15 @@ TEST_F(FlRunnerTensorflowTaskTest, ComputationInvalidArgument) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_EQ(result->contribution_result(), FLRunnerResult::FAIL);
 }
 
 TEST_F(FlRunnerTensorflowTaskTest, MockCheckinInvalidPlan) {
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {"im_not_a_plan", single_task_assignment_artifacts_.checkpoint},
+          {absl::Cord("im_not_a_plan"),
+           single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
           std::nullopt,
@@ -1821,14 +1791,14 @@ TEST_F(FlRunnerTensorflowTaskTest, MockCheckinInvalidPlan) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_EQ(result->contribution_result(), FLRunnerResult::FAIL);
 }
 
 TEST_F(FlRunnerTensorflowTaskTest, TaskCompletionCallbackEnabledUploadFailed) {
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -1858,7 +1828,7 @@ TEST_F(FlRunnerTensorflowTaskTest, TaskCompletionCallbackEnabledUploadFailed) {
   MockSuccessfulPlanExecution(/*has_checkpoint=*/true,
                               /*has_secagg_output=*/false);
 
-  ASSERT_OK(RunFederatedComputation(
+  ABSL_ASSERT_OK(RunFederatedComputation(
       &mock_task_env_, mock_phase_logger_, &mock_event_publisher_, &files_impl_,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
@@ -1882,7 +1852,7 @@ TEST_F(FlRunnerEligibilityEvalTest, EvalCheckinFails) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -1909,7 +1879,7 @@ TEST_F(FlRunnerEligibilityEvalTest, EvalCheckinRejected) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -1921,7 +1891,7 @@ TEST_F(FlRunnerEligibilityEvalTest, EvalCheckinSucceedsRegularCheckinFails) {
   // Mock a successful eligibility eval checkin.
   EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
       .WillOnce(Return(FederatedProtocol::EligibilityEvalTask{
-          {eligibility_eval_artifacts_.plan.SerializeAsString(),
+          {eligibility_eval_artifacts_.plan.SerializeAsCord(),
            eligibility_eval_artifacts_.checkpoint},
           kEligibilityEvalExecutionId}));
 
@@ -1948,49 +1918,7 @@ TEST_F(FlRunnerEligibilityEvalTest, EvalCheckinSucceedsRegularCheckinFails) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
-  FLRunnerResult expected_result;
-  *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
-      mock_federated_protocol_.GetLatestRetryWindow());
-  expected_result.set_contribution_result(FLRunnerResult::FAIL);
-  EXPECT_THAT(*result, EqualsProto(expected_result));
-}
-
-TEST_F(FlRunnerEligibilityEvalTest,
-       EvalCheckinSucceedsWithTaskResourcesAsAbslCordRegularCheckinFails) {
-  // Mock a successful eligibility eval checkin.
-  // We return the task resources as absl::Cords instead of std::strings, to
-  // exercise the absl::Cord-specific code paths.
-  EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
-      .WillOnce(Return(FederatedProtocol::EligibilityEvalTask{
-          {absl::Cord(eligibility_eval_artifacts_.plan.SerializeAsString()),
-           absl::Cord(eligibility_eval_artifacts_.checkpoint)},
-          kEligibilityEvalExecutionId}));
-
-  // Make the subsequent Checkin(...) method fail due to interruption.
-  EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
-      .WillOnce(Return(absl::CancelledError("foo")));
-
-  {
-    InSequence seq;
-    // The eligibility plan execution will log a set of training-related log
-    // events, followed by a single checkin related log events for the regular
-    // checkin.
-    ExpectEligibilityEvalLogEvents();
-    EXPECT_CALL(mock_phase_logger_, SetModelIdentifier(""));
-    EXPECT_CALL(mock_phase_logger_, LogCheckinStarted());
-    EXPECT_CALL(mock_phase_logger_, LogCheckinClientInterrupted(_, _, _, _));
-  }
-
-  // Even though the Checkin(...) method fails with a network error, we expect
-  // an FLRunnerResult to be returned with the most recent RetryWindow, when
-  // the flag above is on.
-  absl::StatusOr<FLRunnerResult> result = RunFederatedComputation(
-      &mock_task_env_, mock_phase_logger_, &mock_event_publisher_, &files_impl_,
-      &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
-      &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
-      /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -2003,7 +1931,7 @@ TEST_F(FlRunnerEligibilityEvalTest, EvalCheckinInvalidPlan) {
   // proto.
   EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
       .WillOnce(Return(FederatedProtocol::EligibilityEvalTask{
-          {"im_not_a_plan", eligibility_eval_artifacts_.checkpoint},
+          {absl::Cord("im_not_a_plan"), eligibility_eval_artifacts_.checkpoint},
           kEligibilityEvalExecutionId}));
   EXPECT_CALL(mock_federated_protocol_,
               MockReportEligibilityEvalError(
@@ -2027,7 +1955,7 @@ TEST_F(FlRunnerEligibilityEvalTest, EvalCheckinInvalidPlan) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(result->contribution_result(), FLRunnerResult::FAIL);
 }
 
@@ -2035,7 +1963,7 @@ TEST_F(FlRunnerEligibilityEvalTest, EvalCheckinSucceedsRegularCheckinRejected) {
   // Mock a successful eligibility eval checkin.
   EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
       .WillOnce(Return(FederatedProtocol::EligibilityEvalTask{
-          {eligibility_eval_artifacts_.plan.SerializeAsString(),
+          {eligibility_eval_artifacts_.plan.SerializeAsCord(),
            eligibility_eval_artifacts_.checkpoint},
           kEligibilityEvalExecutionId}));
 
@@ -2060,7 +1988,7 @@ TEST_F(FlRunnerEligibilityEvalTest, EvalCheckinSucceedsRegularCheckinRejected) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   // Ensure fl_runner.cc used the most recent RetryWindow, after the final
   // failed checkin request.
   FLRunnerResult expected_result;
@@ -2077,7 +2005,7 @@ TEST_F(FlRunnerEligibilityEvalTest, EvalCheckinSucceedsRegularCheckinSucceeds) {
   // Checkin(...) request.
   EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
       .WillOnce(Return(FederatedProtocol::EligibilityEvalTask{
-          {eligibility_eval_artifacts_.plan.SerializeAsString(),
+          {eligibility_eval_artifacts_.plan.SerializeAsCord(),
            eligibility_eval_artifacts_.checkpoint},
           kEligibilityEvalExecutionId,
           eligibility_eval_artifacts_.population_eligibility_spec}));
@@ -2090,11 +2018,10 @@ TEST_F(FlRunnerEligibilityEvalTest, EvalCheckinSucceedsRegularCheckinSucceeds) {
   TaskWeight* task_weight = expected_eligibility_info.add_task_weights();
   task_weight->set_task_name(kTaskName);
   task_weight->set_weight(1);
-  MockSuccessfulEligibilityPlanExecution(expected_eligibility_info);
   EXPECT_CALL(mock_federated_protocol_,
               MockCheckin(Optional(EqualsProto(expected_eligibility_info)), _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -2125,7 +2052,7 @@ TEST_F(FlRunnerEligibilityEvalTest, EvalCheckinSucceedsRegularCheckinSucceeds) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -2144,7 +2071,7 @@ TEST_F(FlRunnerEligibilityEvalTest,
   // Checkin(...) request.
   EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
       .WillOnce(Return(FederatedProtocol::EligibilityEvalTask{
-          {eligibility_eval_artifacts_.plan.SerializeAsString(),
+          {eligibility_eval_artifacts_.plan.SerializeAsCord(),
            eligibility_eval_artifacts_.checkpoint},
           kEligibilityEvalExecutionId,
           eligibility_eval_artifacts_.population_eligibility_spec}));
@@ -2157,11 +2084,10 @@ TEST_F(FlRunnerEligibilityEvalTest,
   TaskWeight* task_weight = expected_eligibility_info.add_task_weights();
   task_weight->set_task_name(kTaskName);
   task_weight->set_weight(1);
-  MockSuccessfulEligibilityPlanExecution(expected_eligibility_info);
   EXPECT_CALL(mock_federated_protocol_,
               MockCheckin(Optional(EqualsProto(expected_eligibility_info)), _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -2193,7 +2119,7 @@ TEST_F(FlRunnerEligibilityEvalTest,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -2220,7 +2146,7 @@ TEST_F(FlRunnerEligibilityEvalWithCriteriaTest, ComputationIdSet) {
 
   EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
       .WillOnce(Return(FederatedProtocol::EligibilityEvalTask{
-          {eligibility_eval_artifacts_.plan.SerializeAsString(),
+          {eligibility_eval_artifacts_.plan.SerializeAsCord(),
            eligibility_eval_artifacts_.checkpoint},
           kEligibilityEvalExecutionId,
           eligibility_eval_artifacts_.population_eligibility_spec}));
@@ -2233,7 +2159,7 @@ TEST_F(FlRunnerEligibilityEvalWithCriteriaTest, ComputationIdSet) {
   EXPECT_CALL(mock_federated_protocol_,
               MockCheckin(Optional(EqualsProto(expected_eligibility_info)), _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -2259,7 +2185,7 @@ TEST_F(FlRunnerEligibilityEvalWithCriteriaTest, ComputationIdSet) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -2302,7 +2228,7 @@ TEST_F(FlRunnerExampleQueryEligibilityEvalTest, UseExampleQueryResultFormat) {
 
   EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
       .WillOnce(Return(FederatedProtocol::EligibilityEvalTask{
-          {eligibility_eval_artifacts_.plan.SerializeAsString(),
+          {eligibility_eval_artifacts_.plan.SerializeAsCord(),
            eligibility_eval_artifacts_.checkpoint},
           kEligibilityEvalExecutionId,
           eligibility_eval_artifacts_.population_eligibility_spec}));
@@ -2316,7 +2242,7 @@ TEST_F(FlRunnerExampleQueryEligibilityEvalTest, UseExampleQueryResultFormat) {
   EXPECT_CALL(mock_federated_protocol_,
               MockCheckin(Optional(EqualsProto(expected_eligibility_info)), _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -2342,7 +2268,7 @@ TEST_F(FlRunnerExampleQueryEligibilityEvalTest, UseExampleQueryResultFormat) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -2373,7 +2299,7 @@ TEST_F(FlRunnerExampleQueryEligibilityEvalTest, UseExampleQueryResultFormat) {
 TEST_F(FlRunnerExampleQueryTest, TaskSucceeds) {
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_client_only_plan_.SerializeAsString(), ""},
+          {single_task_assignment_client_only_plan_.SerializeAsCord(), {}},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
           std::nullopt,
@@ -2412,7 +2338,7 @@ TEST_F(FlRunnerExampleQueryTest, TaskSucceeds) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -2436,7 +2362,7 @@ TEST_F(FlRunnerExampleQueryTest, TaskSucceeds) {
 TEST_F(FlRunnerExampleQueryTest, FederatedComputeWireFormat) {
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_client_only_plan_.SerializeAsString(), ""},
+          {single_task_assignment_client_only_plan_.SerializeAsCord(), {}},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
           std::nullopt,
@@ -2463,7 +2389,7 @@ TEST_F(FlRunnerExampleQueryTest, FederatedComputeWireFormat) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -2504,7 +2430,7 @@ TEST_F(FlRunnerExampleQueryTest, FCCheckpointAggregationEnabled) {
 
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_client_only_plan_.SerializeAsString(), ""},
+          {single_task_assignment_client_only_plan_.SerializeAsCord(), {}},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
           std::nullopt,
@@ -2530,7 +2456,7 @@ TEST_F(FlRunnerExampleQueryTest, FCCheckpointAggregationEnabled) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -2561,11 +2487,11 @@ TEST_F(FlRunnerExampleQueryTest, LightweightTaskDoesNotCreateTempFiles) {
 
   absl::StatusOr<std::unique_ptr<cache::TempFiles>> temp_files =
       cache::TempFiles::Create(root_dir, &mock_log_manager_);
-  ASSERT_OK(temp_files);
+  ABSL_ASSERT_OK(temp_files);
 
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_client_only_plan_.SerializeAsString(), ""},
+          {single_task_assignment_client_only_plan_.SerializeAsCord(), {}},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
           std::nullopt,
@@ -2594,7 +2520,7 @@ TEST_F(FlRunnerExampleQueryTest, LightweightTaskDoesNotCreateTempFiles) {
       &mock_flags_, &mock_federated_protocol_, &mock_fedselect_manager_,
       timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -2622,7 +2548,7 @@ TEST_F(FlRunnerExampleQueryTest, NoExampleQueryIORouter) {
   EXPECT_CALL(mock_phase_logger_, LogCheckinStarted());
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_client_only_plan_.SerializeAsString(), ""},
+          {single_task_assignment_client_only_plan_.SerializeAsCord(), {}},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
           std::nullopt,
@@ -2651,7 +2577,7 @@ TEST_F(FlRunnerExampleQueryTest, NoExampleQueryIORouter) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_EQ(result->contribution_result(), FLRunnerResult::FAIL);
 }
 
@@ -2721,7 +2647,7 @@ TEST_F(FlRunnerExampleQueryTest, ExampleQueryPlanLightweightComputation) {
 
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_client_only_plan_.SerializeAsString(), ""},
+          {single_task_assignment_client_only_plan_.SerializeAsCord(), {}},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
           std::nullopt,
@@ -2758,7 +2684,7 @@ TEST_F(FlRunnerExampleQueryTest, ExampleQueryPlanLightweightComputation) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -2822,7 +2748,7 @@ TEST_F(FlRunnerExampleQueryTest, ConfidentialAggInSelectorContext) {
 
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_client_only_plan_.SerializeAsString(), ""},
+          {single_task_assignment_client_only_plan_.SerializeAsCord(), {}},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
           std::nullopt,
@@ -2859,7 +2785,7 @@ TEST_F(FlRunnerExampleQueryTest, ConfidentialAggInSelectorContext) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
 
   EXPECT_TRUE(latest_selector_context_.computation_properties()
                   .federated()
@@ -2872,7 +2798,7 @@ TEST_F(FlRunnerExampleQueryTest, DirectDataUploadTaskSucceeds) {
   SetUpDirectDataUploadTask();
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_client_only_plan_.SerializeAsString(), ""},
+          {single_task_assignment_client_only_plan_.SerializeAsCord(), {}},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
           std::nullopt,
@@ -2898,7 +2824,7 @@ TEST_F(FlRunnerExampleQueryTest, DirectDataUploadTaskSucceeds) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -2984,7 +2910,7 @@ TEST_F(FlRunnerExampleQueryTest, ExampleQueryWithEventTimeRange) {
 
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_client_only_plan_.SerializeAsString(), ""},
+          {single_task_assignment_client_only_plan_.SerializeAsCord(), {}},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
           std::nullopt,
@@ -3014,7 +2940,7 @@ TEST_F(FlRunnerExampleQueryTest, ExampleQueryWithEventTimeRange) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -3044,14 +2970,14 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest, EmptyPopulationSpec) {
   // EligibilityEvalTask contains no population eligibility spec.
   EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
       .WillOnce(Return(FederatedProtocol::EligibilityEvalTask{
-          {eligibility_eval_artifacts_.plan.SerializeAsString(),
+          {eligibility_eval_artifacts_.plan.SerializeAsCord(),
            eligibility_eval_artifacts_.checkpoint},
           kEligibilityEvalExecutionId}));
 
   // The client should proceed to single task assignment directly.
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -3084,7 +3010,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest, EmptyPopulationSpec) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -3106,11 +3032,11 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   // multiple task assignments is enabled.
   PopulationEligibilitySpec population_spec;
   auto task_info_1 = population_spec.add_task_info();
-  task_info_1->set_task_name(std::string(kSwor24HourTaskName));
+  task_info_1->set_task_name(kSwor24HourTaskName);
   task_info_1->set_task_assignment_mode(
       PopulationEligibilitySpec::TaskInfo::TASK_ASSIGNMENT_MODE_MULTIPLE);
   auto task_info_2 = population_spec.add_task_info();
-  task_info_2->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_info_2->set_task_name(kRequires5ExamplesTaskName);
   task_info_2->set_task_assignment_mode(
       PopulationEligibilitySpec::TaskInfo::TASK_ASSIGNMENT_MODE_MULTIPLE);
   auto task_info_3 = population_spec.add_task_info();
@@ -3129,8 +3055,8 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       task_assignment_2_;
   EXPECT_CALL(mock_federated_protocol_,
               MockPerformMultipleTaskAssignments(
-                  ElementsAre(std::string(kSwor24HourTaskName),
-                              std::string(kRequires5ExamplesTaskName)),
+                  UnorderedElementsAre(std::string(kSwor24HourTaskName),
+                                       std::string(kRequires5ExamplesTaskName)),
                   _, _))
       .WillOnce(Return(std::move(multiple_task_assignments)));
 
@@ -3167,7 +3093,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
 
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(Eq(std::nullopt), _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -3257,7 +3183,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -3297,11 +3223,11 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   // multiple task assignments.
   PopulationEligibilitySpec population_spec;
   auto task_info_1 = population_spec.add_task_info();
-  task_info_1->set_task_name(std::string(kSwor24HourTaskName));
+  task_info_1->set_task_name(kSwor24HourTaskName);
   task_info_1->set_task_assignment_mode(
       PopulationEligibilitySpec::TaskInfo::TASK_ASSIGNMENT_MODE_MULTIPLE);
   auto task_info_2 = population_spec.add_task_info();
-  task_info_2->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_info_2->set_task_name(kRequires5ExamplesTaskName);
   task_info_2->set_task_assignment_mode(
       PopulationEligibilitySpec::TaskInfo::TASK_ASSIGNMENT_MODE_MULTIPLE);
   EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
@@ -3316,8 +3242,8 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       task_assignment_2_;
   EXPECT_CALL(mock_federated_protocol_,
               MockPerformMultipleTaskAssignments(
-                  ElementsAre(std::string(kSwor24HourTaskName),
-                              std::string(kRequires5ExamplesTaskName)),
+                  UnorderedElementsAre(std::string(kSwor24HourTaskName),
+                                       std::string(kRequires5ExamplesTaskName)),
                   _, _))
       .WillOnce(Return(std::move(multiple_task_assignments)));
   ComputationResults multiple_task_assignment_computation_results_1;
@@ -3416,7 +3342,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -3448,22 +3374,23 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest, MultipleTaskAssignmentsTurnedAway) {
   TaskEligibilityInfo task_eligibility_info;
   task_eligibility_info.set_version(1);
   TaskWeight* task_weight = task_eligibility_info.add_task_weights();
-  task_weight->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_weight->set_task_name(kRequires5ExamplesTaskName);
   task_weight->set_weight(1);
   TaskWeight* task_weight_2 = task_eligibility_info.add_task_weights();
   task_weight_2->set_task_name(kTaskName);
   task_weight_2->set_weight(1);
 
-  MockSuccessfulEligibilityPlanExecution(task_eligibility_info);
   // Mock a multiple task assignment request which returns no task.
   EXPECT_CALL(mock_federated_protocol_,
               MockPerformMultipleTaskAssignments(
-                  ElementsAre(std::string(kRequires5ExamplesTaskName)), _, _))
+                  UnorderedElementsAre(std::string(kSwor24HourTaskName),
+                                       std::string(kRequires5ExamplesTaskName)),
+                  _, _))
       .WillOnce(Return(FederatedProtocol::MultipleTaskAssignments{}));
   // The client should proceed to single task assignment directly.
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -3507,7 +3434,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest, MultipleTaskAssignmentsTurnedAway) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -3530,22 +3457,23 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest, MultipleTaskAssignmentsIOError) {
   TaskEligibilityInfo task_eligibility_info;
   task_eligibility_info.set_version(1);
   TaskWeight* task_weight = task_eligibility_info.add_task_weights();
-  task_weight->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_weight->set_task_name(kRequires5ExamplesTaskName);
   task_weight->set_weight(1);
   TaskWeight* task_weight_2 = task_eligibility_info.add_task_weights();
   task_weight_2->set_task_name(kTaskName);
   task_weight_2->set_weight(1);
 
-  MockSuccessfulEligibilityPlanExecution(task_eligibility_info);
   // Mock a multiple task assignment request which fails with IO error.
   EXPECT_CALL(mock_federated_protocol_,
               MockPerformMultipleTaskAssignments(
-                  ElementsAre(std::string(kRequires5ExamplesTaskName)), _, _))
+                  UnorderedElementsAre(std::string(kSwor24HourTaskName),
+                                       std::string(kRequires5ExamplesTaskName)),
+                  _, _))
       .WillOnce(Return(absl::InternalError("Something's wrong")));
   // The client should proceed to single task assignment directly.
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -3575,7 +3503,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest, MultipleTaskAssignmentsIOError) {
     EXPECT_CALL(mock_phase_logger_, LogMultipleTaskAssignmentsStarted());
     EXPECT_CALL(mock_phase_logger_,
                 LogMultipleTaskAssignmentsIOError(
-                    IsCode(absl::StatusCode::kInternal),
+                    absl_testing::StatusIs(absl::StatusCode::kInternal),
                     MockFederatedProtocol::
                         kMultipleTaskAssignmentsPlanUriReceivedNetworkStats,
                     _, _));
@@ -3590,7 +3518,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest, MultipleTaskAssignmentsIOError) {
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -3614,22 +3542,23 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   TaskEligibilityInfo task_eligibility_info;
   task_eligibility_info.set_version(1);
   TaskWeight* task_weight = task_eligibility_info.add_task_weights();
-  task_weight->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_weight->set_task_name(kRequires5ExamplesTaskName);
   task_weight->set_weight(1);
   TaskWeight* task_weight_2 = task_eligibility_info.add_task_weights();
   task_weight_2->set_task_name(kTaskName);
   task_weight_2->set_weight(1);
 
-  MockSuccessfulEligibilityPlanExecution(task_eligibility_info);
   // Mock a multiple task assignment request which is aborted by the server.
   EXPECT_CALL(mock_federated_protocol_,
               MockPerformMultipleTaskAssignments(
-                  ElementsAre(std::string(kRequires5ExamplesTaskName)), _, _))
+                  UnorderedElementsAre(std::string(kSwor24HourTaskName),
+                                       std::string(kRequires5ExamplesTaskName)),
+                  _, _))
       .WillOnce(Return(absl::AbortedError("Abort")));
   // The client should proceed to single task assignment directly.
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -3660,7 +3589,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
     EXPECT_CALL(mock_phase_logger_, LogMultipleTaskAssignmentsStarted());
     EXPECT_CALL(mock_phase_logger_,
                 LogMultipleTaskAssignmentsServerAborted(
-                    IsCode(absl::StatusCode::kAborted),
+                    absl_testing::StatusIs(absl::StatusCode::kAborted),
                     MockFederatedProtocol::
                         kMultipleTaskAssignmentsPlanUriReceivedNetworkStats,
                     _, _));
@@ -3675,7 +3604,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -3699,22 +3628,23 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   TaskEligibilityInfo task_eligibility_info;
   task_eligibility_info.set_version(1);
   TaskWeight* task_weight = task_eligibility_info.add_task_weights();
-  task_weight->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_weight->set_task_name(kRequires5ExamplesTaskName);
   task_weight->set_weight(1);
   TaskWeight* task_weight_2 = task_eligibility_info.add_task_weights();
   task_weight_2->set_task_name(kTaskName);
   task_weight_2->set_weight(1);
 
-  MockSuccessfulEligibilityPlanExecution(task_eligibility_info);
   // Mock a multiple task assignment request which is cancelled by the client.
   EXPECT_CALL(mock_federated_protocol_,
               MockPerformMultipleTaskAssignments(
-                  ElementsAre(std::string(kRequires5ExamplesTaskName)), _, _))
+                  UnorderedElementsAre(std::string(kSwor24HourTaskName),
+                                       std::string(kRequires5ExamplesTaskName)),
+                  _, _))
       .WillOnce(Return(absl::CancelledError("Client side cancellation.")));
   // The client should proceed to single task assignment directly.
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -3745,7 +3675,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
     EXPECT_CALL(mock_phase_logger_, LogMultipleTaskAssignmentsStarted());
     EXPECT_CALL(mock_phase_logger_,
                 LogMultipleTaskAssignmentsClientInterrupted(
-                    IsCode(absl::StatusCode::kCancelled),
+                    absl_testing::StatusIs(absl::StatusCode::kCancelled),
                     MockFederatedProtocol::
                         kMultipleTaskAssignmentsPlanUriReceivedNetworkStats,
                     _, _));
@@ -3760,7 +3690,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -3785,27 +3715,30 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   TaskEligibilityInfo task_eligibility_info;
   task_eligibility_info.set_version(1);
   TaskWeight* task_weight = task_eligibility_info.add_task_weights();
-  task_weight->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_weight->set_task_name(kRequires5ExamplesTaskName);
   task_weight->set_weight(1);
   TaskWeight* task_weight_2 = task_eligibility_info.add_task_weights();
   task_weight_2->set_task_name(kTaskName);
   task_weight_2->set_weight(1);
 
-  MockSuccessfulEligibilityPlanExecution(task_eligibility_info);
   // Mock a multiple task assignment request which 1) the artifact uris for all
   // of the requested tasks are received; 2) IO error happened during the
   // retrieval of computation artifact.
   FederatedProtocol::MultipleTaskAssignments multiple_task_assignments;
   multiple_task_assignments.task_assignments[kRequires5ExamplesTaskName] =
       absl::InternalError("Something's wrong");
+  multiple_task_assignments.task_assignments[kSwor24HourTaskName] =
+      absl::InternalError("Something's wrong");
   EXPECT_CALL(mock_federated_protocol_,
               MockPerformMultipleTaskAssignments(
-                  ElementsAre(std::string(kRequires5ExamplesTaskName)), _, _))
+                  UnorderedElementsAre(std::string(kSwor24HourTaskName),
+                                       std::string(kRequires5ExamplesTaskName)),
+                  _, _))
       .WillOnce(Return(std::move(multiple_task_assignments)));
   // The client should proceed to single task assignment directly.
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -3841,8 +3774,14 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
                     _));
     EXPECT_CALL(mock_phase_logger_,
                 SetModelIdentifier(kRequires5ExamplesTaskName));
-    EXPECT_CALL(mock_phase_logger_, LogMultipleTaskAssignmentsPayloadIOError(
-                                        IsCode(absl::StatusCode::kInternal)));
+    EXPECT_CALL(mock_phase_logger_,
+                LogMultipleTaskAssignmentsPayloadIOError(
+                    absl_testing::StatusIs(absl::StatusCode::kInternal)));
+    EXPECT_CALL(mock_phase_logger_, SetModelIdentifier(""));
+    EXPECT_CALL(mock_phase_logger_, SetModelIdentifier(kSwor24HourTaskName));
+    EXPECT_CALL(mock_phase_logger_,
+                LogMultipleTaskAssignmentsPayloadIOError(
+                    absl_testing::StatusIs(absl::StatusCode::kInternal)));
     EXPECT_CALL(mock_phase_logger_, SetModelIdentifier(""));
     EXPECT_CALL(mock_phase_logger_,
                 LogMultipleTaskAssignmentsPartialCompleted(
@@ -3860,7 +3799,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -3885,31 +3824,37 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   TaskEligibilityInfo task_eligibility_info;
   task_eligibility_info.set_version(1);
   TaskWeight* task_weight = task_eligibility_info.add_task_weights();
-  task_weight->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_weight->set_task_name(kRequires5ExamplesTaskName);
   task_weight->set_weight(1);
   TaskWeight* task_weight_2 = task_eligibility_info.add_task_weights();
   task_weight_2->set_task_name(kTaskName);
   task_weight_2->set_weight(1);
 
-  MockSuccessfulEligibilityPlanExecution(task_eligibility_info);
 
   // Mock a multiple task assignment request which 1) the artifact uris for all
   // of the requested tasks are received; 2) one of the downloaded artifacts is
   // invalid.
   FederatedProtocol::TaskAssignment invalid_task_assignment =
       task_assignment_2_;
-  invalid_task_assignment.payloads.plan = "INVALID_PLAN";
+  invalid_task_assignment.payloads.plan = absl::Cord("INVALID_PLAN");
   FederatedProtocol::MultipleTaskAssignments multiple_task_assignments;
   multiple_task_assignments.task_assignments[kRequires5ExamplesTaskName] =
       invalid_task_assignment;
+  FederatedProtocol::TaskAssignment invalid_task_assignment_1 =
+      task_assignment_1_;
+  invalid_task_assignment_1.payloads.plan = absl::Cord("INVALID_PLAN");
+  multiple_task_assignments.task_assignments[kSwor24HourTaskName] =
+      invalid_task_assignment_1;
   EXPECT_CALL(mock_federated_protocol_,
               MockPerformMultipleTaskAssignments(
-                  ElementsAre(std::string(kRequires5ExamplesTaskName)), _, _))
+                  UnorderedElementsAre(std::string(kSwor24HourTaskName),
+                                       std::string(kRequires5ExamplesTaskName)),
+                  _, _))
       .WillOnce(Return(std::move(multiple_task_assignments)));
   // The client should proceed to single task assignment directly.
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -3948,6 +3893,10 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
     EXPECT_CALL(mock_phase_logger_,
                 LogMultipleTaskAssignmentsInvalidPayload(_));
     EXPECT_CALL(mock_phase_logger_, SetModelIdentifier(""));
+    EXPECT_CALL(mock_phase_logger_, SetModelIdentifier(kSwor24HourTaskName));
+    EXPECT_CALL(mock_phase_logger_,
+                LogMultipleTaskAssignmentsInvalidPayload(_));
+    EXPECT_CALL(mock_phase_logger_, SetModelIdentifier(""));
     EXPECT_CALL(mock_phase_logger_,
                 LogMultipleTaskAssignmentsPartialCompleted(
                     MockFederatedProtocol::
@@ -3964,7 +3913,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -3988,16 +3937,14 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   TaskEligibilityInfo task_eligibility_info;
   task_eligibility_info.set_version(1);
   TaskWeight* task_weight = task_eligibility_info.add_task_weights();
-  task_weight->set_task_name(std::string(kSwor24HourTaskName));
+  task_weight->set_task_name(kSwor24HourTaskName);
   task_weight->set_weight(1);
   TaskWeight* task_weight_2 = task_eligibility_info.add_task_weights();
-  task_weight_2->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_weight_2->set_task_name(kRequires5ExamplesTaskName);
   task_weight_2->set_weight(1);
   TaskWeight* task_weight_3 = task_eligibility_info.add_task_weights();
   task_weight_3->set_task_name(kTaskName);
   task_weight_3->set_weight(1);
-
-  MockSuccessfulEligibilityPlanExecution(task_eligibility_info);
 
   // Mock a multiple task assignment request which the server assigned some of
   // the requested tasks, not all.
@@ -4006,8 +3953,8 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       task_assignment_1_;
   EXPECT_CALL(mock_federated_protocol_,
               MockPerformMultipleTaskAssignments(
-                  ElementsAre(std::string(kSwor24HourTaskName),
-                              std::string(kRequires5ExamplesTaskName)),
+                  UnorderedElementsAre(std::string(kSwor24HourTaskName),
+                                       std::string(kRequires5ExamplesTaskName)),
                   _, _))
       .WillOnce(Return(std::move(multiple_task_assignments)));
   ComputationResults multiple_task_assignment_computation_results_1;
@@ -4027,7 +3974,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   // The client should proceed to single task assignment.
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -4098,7 +4045,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -4132,16 +4079,14 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   TaskEligibilityInfo task_eligibility_info;
   task_eligibility_info.set_version(1);
   TaskWeight* task_weight = task_eligibility_info.add_task_weights();
-  task_weight->set_task_name(std::string(kSwor24HourTaskName));
+  task_weight->set_task_name(kSwor24HourTaskName);
   task_weight->set_weight(1);
   TaskWeight* task_weight_2 = task_eligibility_info.add_task_weights();
-  task_weight_2->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_weight_2->set_task_name(kRequires5ExamplesTaskName);
   task_weight_2->set_weight(1);
   TaskWeight* task_weight_3 = task_eligibility_info.add_task_weights();
   task_weight_3->set_task_name(kTaskName);
   task_weight_3->set_weight(1);
-
-  MockSuccessfulEligibilityPlanExecution(task_eligibility_info);
 
   // Mock a successful multiple task assignment request.
   FederatedProtocol::MultipleTaskAssignments multiple_task_assignments;
@@ -4151,8 +4096,8 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       task_assignment_2_;
   EXPECT_CALL(mock_federated_protocol_,
               MockPerformMultipleTaskAssignments(
-                  ElementsAre(std::string(kSwor24HourTaskName),
-                              std::string(kRequires5ExamplesTaskName)),
+                  UnorderedElementsAre(std::string(kSwor24HourTaskName),
+                                       std::string(kRequires5ExamplesTaskName)),
                   _, _))
       .WillOnce(Return(std::move(multiple_task_assignments)));
   ComputationResults multiple_task_assignment_computation_results_1;
@@ -4184,7 +4129,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
 
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -4278,7 +4223,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -4313,24 +4258,43 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
 // population, so regular check-in is not expected.
 TEST_F(FlRunnerMultipleTaskAssignmentsTest,
        MultipleTaskAssignmentsSucceededRegularCheckInDisabled) {
-  SetUpEligibilityEvalTask();
-
   // Mock a successful eligibility eval checkin.
   // Population only supports multiple task assignments.
   PopulationEligibilitySpec population_spec;
   auto task_info_1 = population_spec.add_task_info();
-  task_info_1->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_info_1->set_task_name(kRequires5ExamplesTaskName);
   task_info_1->set_task_assignment_mode(
       PopulationEligibilitySpec::TaskInfo::TASK_ASSIGNMENT_MODE_MULTIPLE);
   task_info_1->add_eligibility_policy_indices(0);
   auto policy = population_spec.add_eligibility_policies();
-  policy->set_name("custom_tf_policy");
-  *policy->mutable_tf_custom_policy()->mutable_arguments() = "tfl_policy_args";
+  policy->set_name("data_availability_policy");
+  auto data_availability_policy = policy->mutable_data_availability_policy();
+  data_availability_policy->set_min_example_count(1);
+  ExampleSelector example_selector;
+  example_selector.set_collection_uri(kEligibilityEvalCollectionUri);
+  *data_availability_policy->mutable_selector() = example_selector;
   eligibility_eval_artifacts_.population_eligibility_spec = population_spec;
+
+  Dataset dataset;
+  auto client_data = dataset.add_client_data();
+  client_data->set_client_id("client_1");
+  auto selected_example = client_data->add_selected_example();
+  *selected_example->mutable_selector() = example_selector;
+  selected_example->add_example("example");
+  eligibility_eval_artifacts_.dataset = dataset;
+
+  EXPECT_CALL(mock_task_env_,
+              CreateExampleIterator(EqualsProto(example_selector), _))
+      .Times(AtMost(1))
+      .WillOnce(DoAll(SaveArg<1>(&latest_eligibility_selector_context_),
+                      Return(ByMove(std::make_unique<SimpleExampleIterator>(
+                          eligibility_eval_artifacts_.dataset,
+                          kEligibilityEvalCollectionUri)))))
+      .RetiresOnSaturation();
 
   EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
       .WillOnce(Return(FederatedProtocol::EligibilityEvalTask{
-          {eligibility_eval_artifacts_.plan.SerializeAsString(),
+          {eligibility_eval_artifacts_.plan.SerializeAsCord(),
            eligibility_eval_artifacts_.checkpoint},
           kEligibilityEvalExecutionId,
           population_spec}));
@@ -4338,18 +4302,18 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   TaskEligibilityInfo task_eligibility_info;
   task_eligibility_info.set_version(1);
   TaskWeight* task_weight = task_eligibility_info.add_task_weights();
-  task_weight->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_weight->set_task_name(kRequires5ExamplesTaskName);
   task_weight->set_weight(1);
 
-  MockSuccessfulEligibilityPlanExecution(task_eligibility_info);
 
   // Mock a successful multiple task assignment request.
   FederatedProtocol::MultipleTaskAssignments multiple_task_assignments;
   multiple_task_assignments.task_assignments[kRequires5ExamplesTaskName] =
       task_assignment_2_;
-  EXPECT_CALL(mock_federated_protocol_,
-              MockPerformMultipleTaskAssignments(
-                  ElementsAre(std::string(kRequires5ExamplesTaskName)), _, _))
+  EXPECT_CALL(
+      mock_federated_protocol_,
+      MockPerformMultipleTaskAssignments(
+          UnorderedElementsAre(std::string(kRequires5ExamplesTaskName)), _, _))
       .WillOnce(Return(std::move(multiple_task_assignments)));
 
   ComputationResults multiple_task_assignment_computation_results_1;
@@ -4408,7 +4372,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -4437,16 +4401,16 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   // Population only supports multiple task assignments.
   PopulationEligibilitySpec population_spec;
   auto task_info_1 = population_spec.add_task_info();
-  task_info_1->set_task_name(std::string(kSwor24HourTaskName));
+  task_info_1->set_task_name(kSwor24HourTaskName);
   task_info_1->set_task_assignment_mode(
       PopulationEligibilitySpec::TaskInfo::TASK_ASSIGNMENT_MODE_MULTIPLE);
   auto task_info_2 = population_spec.add_task_info();
-  task_info_2->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_info_2->set_task_name(kRequires5ExamplesTaskName);
   task_info_2->set_task_assignment_mode(
       PopulationEligibilitySpec::TaskInfo::TASK_ASSIGNMENT_MODE_MULTIPLE);
   EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
       .WillOnce(Return(FederatedProtocol::EligibilityEvalTask{
-          {eligibility_eval_artifacts_.plan.SerializeAsString(),
+          {eligibility_eval_artifacts_.plan.SerializeAsCord(),
            eligibility_eval_artifacts_.checkpoint},
           kEligibilityEvalExecutionId,
           population_spec}));
@@ -4454,13 +4418,12 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   TaskEligibilityInfo task_eligibility_info;
   task_eligibility_info.set_version(1);
   TaskWeight* task_weight_1 = task_eligibility_info.add_task_weights();
-  task_weight_1->set_task_name(std::string(kSwor24HourTaskName));
+  task_weight_1->set_task_name(kSwor24HourTaskName);
   task_weight_1->set_weight(1);
   TaskWeight* task_weight_2 = task_eligibility_info.add_task_weights();
-  task_weight_2->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_weight_2->set_task_name(kRequires5ExamplesTaskName);
   task_weight_2->set_weight(1);
 
-  MockSuccessfulEligibilityPlanExecution(task_eligibility_info);
 
   // Mock a successful multiple task assignment request.
   FederatedProtocol::MultipleTaskAssignments multiple_task_assignments;
@@ -4564,7 +4527,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
 
   // Call RunFederatedComputation, we don't check results in this test because
   // we have already set expectations above.
-  ASSERT_OK(RunFederatedComputation(
+  ABSL_ASSERT_OK(RunFederatedComputation(
       &mock_task_env_, mock_phase_logger_, &mock_event_publisher_, &files_impl_,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
@@ -4584,16 +4547,14 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   TaskEligibilityInfo task_eligibility_info;
   task_eligibility_info.set_version(1);
   TaskWeight* task_weight_1 = task_eligibility_info.add_task_weights();
-  task_weight_1->set_task_name(std::string(kSwor24HourTaskName));
+  task_weight_1->set_task_name(kSwor24HourTaskName);
   task_weight_1->set_weight(1);
   TaskWeight* task_weight_2 = task_eligibility_info.add_task_weights();
-  task_weight_2->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_weight_2->set_task_name(kRequires5ExamplesTaskName);
   task_weight_2->set_weight(1);
   TaskWeight* task_weight_3 = task_eligibility_info.add_task_weights();
   task_weight_3->set_task_name(kTaskName);
   task_weight_3->set_weight(1);
-
-  MockSuccessfulEligibilityPlanExecution(task_eligibility_info);
 
   // Mock a successful multiple task assignment request.
   FederatedProtocol::MultipleTaskAssignments multiple_task_assignments;
@@ -4616,7 +4577,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
 
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -4653,7 +4614,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   EXPECT_CALL(phase_logger, UpdateRetryWindowAndNetworkStats(_, _))
       .WillRepeatedly(DoAll(SaveArg<0>(&latest_opstats_retry_window_),
                             SaveArg<1>(&logged_network_stats_)));
-  ASSERT_OK(RunFederatedComputation(
+  ABSL_ASSERT_OK(RunFederatedComputation(
       &mock_task_env_, phase_logger, &mock_event_publisher_, &files_impl_,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
@@ -4672,16 +4633,14 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   TaskEligibilityInfo task_eligibility_info;
   task_eligibility_info.set_version(1);
   TaskWeight* task_weight_1 = task_eligibility_info.add_task_weights();
-  task_weight_1->set_task_name(std::string(kSwor24HourTaskName));
+  task_weight_1->set_task_name(kSwor24HourTaskName);
   task_weight_1->set_weight(1);
   TaskWeight* task_weight_2 = task_eligibility_info.add_task_weights();
-  task_weight_2->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_weight_2->set_task_name(kRequires5ExamplesTaskName);
   task_weight_2->set_weight(1);
   TaskWeight* task_weight_3 = task_eligibility_info.add_task_weights();
   task_weight_3->set_task_name(kTaskName);
   task_weight_3->set_weight(1);
-
-  MockSuccessfulEligibilityPlanExecution(task_eligibility_info);
 
   // Mock a successful multiple task assignment request.
   FederatedProtocol::MultipleTaskAssignments multiple_task_assignments;
@@ -4691,8 +4650,8 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       task_assignment_2_;
   EXPECT_CALL(mock_federated_protocol_,
               MockPerformMultipleTaskAssignments(
-                  ElementsAre(std::string(kSwor24HourTaskName),
-                              std::string(kRequires5ExamplesTaskName)),
+                  UnorderedElementsAre(std::string(kSwor24HourTaskName),
+                                       std::string(kRequires5ExamplesTaskName)),
 
                   _, _))
       .WillOnce(Return(std::move(multiple_task_assignments)));
@@ -4705,7 +4664,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       .WillOnce(Return(absl::OkStatus()));
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -4757,7 +4716,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   EXPECT_CALL(phase_logger, UpdateRetryWindowAndNetworkStats(_, _))
       .WillRepeatedly(DoAll(SaveArg<0>(&latest_opstats_retry_window_),
                             SaveArg<1>(&logged_network_stats_)));
-  ASSERT_OK(RunFederatedComputation(
+  ABSL_ASSERT_OK(RunFederatedComputation(
       &mock_task_env_, phase_logger, &mock_event_publisher_, &files_impl_,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
@@ -4777,16 +4736,14 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   TaskEligibilityInfo task_eligibility_info;
   task_eligibility_info.set_version(1);
   TaskWeight* task_weight_1 = task_eligibility_info.add_task_weights();
-  task_weight_1->set_task_name(std::string(kSwor24HourTaskName));
+  task_weight_1->set_task_name(kSwor24HourTaskName);
   task_weight_1->set_weight(1);
   TaskWeight* task_weight_2 = task_eligibility_info.add_task_weights();
-  task_weight_2->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_weight_2->set_task_name(kRequires5ExamplesTaskName);
   task_weight_2->set_weight(1);
   TaskWeight* task_weight_3 = task_eligibility_info.add_task_weights();
   task_weight_3->set_task_name(kTaskName);
   task_weight_3->set_weight(1);
-
-  MockSuccessfulEligibilityPlanExecution(task_eligibility_info);
 
   // Mock a successful multiple task assignment request.
   FederatedProtocol::MultipleTaskAssignments multiple_task_assignments;
@@ -4796,8 +4753,8 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       task_assignment_2_;
   EXPECT_CALL(mock_federated_protocol_,
               MockPerformMultipleTaskAssignments(
-                  ElementsAre(std::string(kSwor24HourTaskName),
-                              std::string(kRequires5ExamplesTaskName)),
+                  UnorderedElementsAre(std::string(kSwor24HourTaskName),
+                                       std::string(kRequires5ExamplesTaskName)),
                   _, _))
       .WillOnce(Return(std::move(multiple_task_assignments)));
   // First task failed upload.
@@ -4812,7 +4769,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
 
   EXPECT_CALL(mock_federated_protocol_, MockCheckin(_, _))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -4858,7 +4815,7 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   EXPECT_CALL(phase_logger, UpdateRetryWindowAndNetworkStats(_, _))
       .WillRepeatedly(DoAll(SaveArg<0>(&latest_opstats_retry_window_),
                             SaveArg<1>(&logged_network_stats_)));
-  ASSERT_OK(RunFederatedComputation(
+  ABSL_ASSERT_OK(RunFederatedComputation(
       &mock_task_env_, phase_logger, &mock_event_publisher_, &files_impl_,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
@@ -4867,9 +4824,6 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
 
 TEST_F(FlRunnerEligibilityEvalTest,
        AttestationMeasurementCallbackEnabled_SingleTaskAssignment) {
-  EXPECT_CALL(mock_flags_, move_device_attestation_to_start_task_assignment())
-      .WillRepeatedly(Return(true));
-
   std::string content_binding = "test_content_binding";
 
   // The EligibilityEvalCheckin() will result in an eval task payload being
@@ -4878,7 +4832,7 @@ TEST_F(FlRunnerEligibilityEvalTest,
   // Checkin(...) request.
   EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
       .WillOnce(Return(FederatedProtocol::EligibilityEvalTask{
-          {eligibility_eval_artifacts_.plan.SerializeAsString(),
+          {eligibility_eval_artifacts_.plan.SerializeAsCord(),
            eligibility_eval_artifacts_.checkpoint},
           kEligibilityEvalExecutionId,
           eligibility_eval_artifacts_.population_eligibility_spec,
@@ -4896,12 +4850,11 @@ TEST_F(FlRunnerEligibilityEvalTest,
   TaskWeight* task_weight = expected_eligibility_info.add_task_weights();
   task_weight->set_task_name(kTaskName);
   task_weight->set_weight(1);
-  MockSuccessfulEligibilityPlanExecution(expected_eligibility_info);
   EXPECT_CALL(mock_federated_protocol_,
               MockCheckin(Optional(EqualsProto(expected_eligibility_info)),
                           Eq(attestation_measurement)))
       .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
+          {single_task_assignment_artifacts_.plan.SerializeAsCord(),
            single_task_assignment_artifacts_.checkpoint},
           /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
           /*aggregation_session_id=*/kAggregationSessionId,
@@ -4932,7 +4885,7 @@ TEST_F(FlRunnerEligibilityEvalTest,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   FLRunnerResult expected_result;
   *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
       mock_federated_protocol_.GetLatestRetryWindow());
@@ -4941,82 +4894,10 @@ TEST_F(FlRunnerEligibilityEvalTest,
   EXPECT_THAT(*result, EqualsProto(expected_result));
 }
 
-TEST_F(FlRunnerEligibilityEvalTest,
-       AttestationMeasurementCallbackDisabled_SingleTaskAssignment) {
-  EXPECT_CALL(mock_flags_, move_device_attestation_to_start_task_assignment())
-      .WillRepeatedly(Return(false));
 
-  // The EligibilityEvalCheckin() will result in an eval task payload being
-  // returned. This payload should be run by the runner, and the payload's
-  // TaskEligibilityInfo result should be passed to the subsequent
-  // Checkin(...) request.
-  EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
-      .WillOnce(Return(FederatedProtocol::EligibilityEvalTask{
-          {eligibility_eval_artifacts_.plan.SerializeAsString(),
-           eligibility_eval_artifacts_.checkpoint},
-          kEligibilityEvalExecutionId,
-          eligibility_eval_artifacts_.population_eligibility_spec,
-          "unused_content_binding"}));
-
-  EXPECT_CALL(mock_task_env_, GetAttestationMeasurement(_)).Times(0);
-  // Check that the Checkin(...) call after the EligibilityEvalCheckin() call
-  // uses the expected TaskEligibilityInfo (as generated by the test
-  // TffEligibilityEvalTask).
-  TaskEligibilityInfo expected_eligibility_info;
-  expected_eligibility_info.set_version(1);
-  TaskWeight* task_weight = expected_eligibility_info.add_task_weights();
-  task_weight->set_task_name(kTaskName);
-  task_weight->set_weight(1);
-  MockSuccessfulEligibilityPlanExecution(expected_eligibility_info);
-  EXPECT_CALL(mock_federated_protocol_,
-              MockCheckin(Optional(EqualsProto(expected_eligibility_info)),
-                          Eq(std::nullopt)))
-      .WillOnce(Return(FederatedProtocol::TaskAssignment{
-          {single_task_assignment_artifacts_.plan.SerializeAsString(),
-           single_task_assignment_artifacts_.checkpoint},
-          /*federated_select_uri_template=*/kFederatedSelectUriTemplate,
-          /*aggregation_session_id=*/kAggregationSessionId,
-          std::nullopt,
-          std::nullopt,
-          std::nullopt,
-          kTaskName}));
-  MockSuccessfulPlanExecution(/*has_checkpoint=*/true,
-                              /*has_secagg_output=*/false);
-  // We expect the regular plan to execute successfully, resulting in a
-  // ReportCompleted call.
-  EXPECT_CALL(mock_federated_protocol_, MockReportCompleted(_, _, _))
-      .WillOnce(Return(ReportResult::FromStatus(absl::OkStatus())));
-
-  {
-    InSequence seq;
-    // The eligibility plan execution will log a set of training-related log
-    // events, followed by a full set of checkin-training-upload related log
-    // events for the regular plan.
-    ExpectEligibilityEvalLogEvents();
-    ExpectCheckinTrainingReportLogEvents();
-    EXPECT_CALL(mock_task_env_, OnTaskCompleted(IsTaskResultSuccess()))
-        .WillOnce(Return(true));
-  }
-
-  absl::StatusOr<FLRunnerResult> result = RunFederatedComputation(
-      &mock_task_env_, mock_phase_logger_, &mock_event_publisher_, &files_impl_,
-      &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
-      &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
-      /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_);
-  ASSERT_OK(result);
-  FLRunnerResult expected_result;
-  *expected_result.mutable_retry_info() = CreateRetryInfoFromRetryWindow(
-      mock_federated_protocol_.GetLatestRetryWindow());
-  expected_result.set_contribution_result(FLRunnerResult::SUCCESS);
-  expected_result.mutable_contributed_task_names()->Add(kTaskName);
-  EXPECT_THAT(*result, EqualsProto(expected_result));
-}
 
 TEST_F(FlRunnerMultipleTaskAssignmentsTest,
        AttestationMeasurementCallbackEnabled_MultipleTaskAssignment) {
-  EXPECT_CALL(mock_flags_, move_device_attestation_to_start_task_assignment())
-      .WillRepeatedly(Return(true));
-
   SetUpEligibilityEvalTask();
 
   std::string content_binding = "test_content_binding";
@@ -5025,16 +4906,16 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   // Population only supports multiple task assignments.
   PopulationEligibilitySpec population_spec;
   auto task_info_1 = population_spec.add_task_info();
-  task_info_1->set_task_name(std::string(kSwor24HourTaskName));
+  task_info_1->set_task_name(kSwor24HourTaskName);
   task_info_1->set_task_assignment_mode(
       PopulationEligibilitySpec::TaskInfo::TASK_ASSIGNMENT_MODE_MULTIPLE);
   auto task_info_2 = population_spec.add_task_info();
-  task_info_2->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_info_2->set_task_name(kRequires5ExamplesTaskName);
   task_info_2->set_task_assignment_mode(
       PopulationEligibilitySpec::TaskInfo::TASK_ASSIGNMENT_MODE_MULTIPLE);
   EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
       .WillOnce(Return(FederatedProtocol::EligibilityEvalTask{
-          {eligibility_eval_artifacts_.plan.SerializeAsString(),
+          {eligibility_eval_artifacts_.plan.SerializeAsCord(),
            eligibility_eval_artifacts_.checkpoint},
           kEligibilityEvalExecutionId,
           population_spec,
@@ -5043,13 +4924,12 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
   TaskEligibilityInfo task_eligibility_info;
   task_eligibility_info.set_version(1);
   TaskWeight* task_weight_1 = task_eligibility_info.add_task_weights();
-  task_weight_1->set_task_name(std::string(kSwor24HourTaskName));
+  task_weight_1->set_task_name(kSwor24HourTaskName);
   task_weight_1->set_weight(1);
   TaskWeight* task_weight_2 = task_eligibility_info.add_task_weights();
-  task_weight_2->set_task_name(std::string(kRequires5ExamplesTaskName));
+  task_weight_2->set_task_name(kRequires5ExamplesTaskName);
   task_weight_2->set_weight(1);
 
-  MockSuccessfulEligibilityPlanExecution(task_eligibility_info);
 
   std::string attestation_measurement = "test_attestation_measurement";
   EXPECT_CALL(mock_task_env_, GetAttestationMeasurement(Eq(content_binding)))
@@ -5066,8 +4946,8 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
       kMultipleTaskAggregationSessionId1;
   EXPECT_CALL(mock_federated_protocol_,
               MockPerformMultipleTaskAssignments(
-                  ElementsAre(std::string(kSwor24HourTaskName),
-                              std::string(kRequires5ExamplesTaskName)),
+                  UnorderedElementsAre(std::string(kSwor24HourTaskName),
+                                       std::string(kRequires5ExamplesTaskName)),
                   _, Eq(attestation_measurement)))
       .WillOnce(Return(std::move(multiple_task_assignments)));
 
@@ -5157,162 +5037,14 @@ TEST_F(FlRunnerMultipleTaskAssignmentsTest,
 
   // Call RunFederatedComputation, we don't check results in this test because
   // we have already set expectations above.
-  ASSERT_OK(RunFederatedComputation(
+  ABSL_ASSERT_OK(RunFederatedComputation(
       &mock_task_env_, mock_phase_logger_, &mock_event_publisher_, &files_impl_,
       &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
       &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
       /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_));
 }
 
-TEST_F(FlRunnerMultipleTaskAssignmentsTest,
-       AttestationMeasurementCallbackDisabled_MultipleTaskAssignment) {
-  EXPECT_CALL(mock_flags_, move_device_attestation_to_start_task_assignment())
-      .WillRepeatedly(Return(false));
 
-  SetUpEligibilityEvalTask();
-
-  std::string content_binding = "test_content_binding";
-
-  // Mock a successful eligibility eval checkin.
-  // Population only supports multiple task assignments.
-  PopulationEligibilitySpec population_spec;
-  auto task_info_1 = population_spec.add_task_info();
-  task_info_1->set_task_name(std::string(kSwor24HourTaskName));
-  task_info_1->set_task_assignment_mode(
-      PopulationEligibilitySpec::TaskInfo::TASK_ASSIGNMENT_MODE_MULTIPLE);
-  auto task_info_2 = population_spec.add_task_info();
-  task_info_2->set_task_name(std::string(kRequires5ExamplesTaskName));
-  task_info_2->set_task_assignment_mode(
-      PopulationEligibilitySpec::TaskInfo::TASK_ASSIGNMENT_MODE_MULTIPLE);
-  EXPECT_CALL(mock_federated_protocol_, MockEligibilityEvalCheckin())
-      .WillOnce(Return(FederatedProtocol::EligibilityEvalTask{
-          {eligibility_eval_artifacts_.plan.SerializeAsString(),
-           eligibility_eval_artifacts_.checkpoint},
-          kEligibilityEvalExecutionId,
-          population_spec,
-          content_binding}));
-
-  TaskEligibilityInfo task_eligibility_info;
-  task_eligibility_info.set_version(1);
-  TaskWeight* task_weight_1 = task_eligibility_info.add_task_weights();
-  task_weight_1->set_task_name(std::string(kSwor24HourTaskName));
-  task_weight_1->set_weight(1);
-  TaskWeight* task_weight_2 = task_eligibility_info.add_task_weights();
-  task_weight_2->set_task_name(std::string(kRequires5ExamplesTaskName));
-  task_weight_2->set_weight(1);
-
-  MockSuccessfulEligibilityPlanExecution(task_eligibility_info);
-
-  EXPECT_CALL(mock_task_env_, GetAttestationMeasurement(_)).Times(0);
-
-  // Mock a successful multiple task assignment request.
-  FederatedProtocol::MultipleTaskAssignments multiple_task_assignments;
-  multiple_task_assignments.task_assignments[kSwor24HourTaskName] =
-      task_assignment_1_;
-  multiple_task_assignments.task_assignments[kRequires5ExamplesTaskName] =
-      task_assignment_2_;
-  // Let the second task share the same aggregation session id as the first.
-  task_assignment_2_.aggregation_session_id =
-      kMultipleTaskAggregationSessionId1;
-  EXPECT_CALL(mock_federated_protocol_,
-              MockPerformMultipleTaskAssignments(
-                  ElementsAre(std::string(kSwor24HourTaskName),
-                              std::string(kRequires5ExamplesTaskName)),
-                  _, Eq(std::nullopt)))
-      .WillOnce(Return(std::move(multiple_task_assignments)));
-
-  MockSuccessfulPlanExecution(/*has_checkpoint=*/true,
-                              /*has_secagg_output=*/true, EqualsProto(plan_1_));
-
-  MockSuccessfulPlanExecution(/*has_checkpoint=*/false,
-                              /*has_secagg_output=*/true, EqualsProto(plan_2_));
-
-  ComputationResults multiple_task_assignment_computation_results_1;
-  ComputationResults multiple_task_assignment_computation_results_2;
-  EXPECT_CALL(mock_federated_protocol_,
-              MockReportCompleted(_, _, Eq(kTaskIdentifier1)))
-      .WillOnce([&](ComputationResults reported_results,
-                    absl::Duration plan_duration,
-                    std::optional<std::string> task_identifier) {
-        multiple_task_assignment_computation_results_1 =
-            std::move(reported_results);
-        return ReportResult::FromStatus(absl::OkStatus());
-      });
-  EXPECT_CALL(mock_federated_protocol_,
-              MockReportCompleted(_, _, Eq(kTaskIdentifier2)))
-      .WillOnce([&](ComputationResults reported_results,
-                    absl::Duration plan_duration,
-                    std::optional<std::string> task_identifier) {
-        multiple_task_assignment_computation_results_2 =
-            std::move(reported_results);
-        return ReportResult::FromStatus(absl::OkStatus());
-      });
-
-  // Set up PhaseLogger expectations
-  {
-    InSequence seq;
-    ExpectEventsForEligibilityEvalComputationWithThreeEligibleTasks();
-    EXPECT_CALL(mock_phase_logger_, SetModelIdentifier(""));
-    EXPECT_CALL(mock_phase_logger_, LogMultipleTaskAssignmentsStarted());
-    EXPECT_CALL(mock_phase_logger_,
-                LogMultipleTaskAssignmentsPlanUriReceived(
-                    MockFederatedProtocol::
-                        kMultipleTaskAssignmentsPlanUriReceivedNetworkStats,
-                    _));
-    EXPECT_CALL(mock_phase_logger_,
-                LogMultipleTaskAssignmentsCompleted(
-                    MockFederatedProtocol::
-                        kMultipleTaskAssignmentsArtifactRetrievalNetworkStats,
-                    _, _, _));
-
-    EXPECT_CALL(mock_phase_logger_,
-                SetModelIdentifier(kRequires5ExamplesTaskName));
-    EXPECT_CALL(mock_phase_logger_,
-                LogComputationStarted(kRequires5ExamplesTaskName));
-    EXPECT_CALL(
-        mock_phase_logger_,
-        LogComputationCompleted(FieldsAre(Gt(0), Gt(0)),
-                                EqualsNetworkStats(NetworkStats()), _, _, _));
-    EXPECT_CALL(mock_phase_logger_, LogResultUploadStarted())
-        .WillOnce(Return(absl::OkStatus()));
-
-    EXPECT_CALL(mock_phase_logger_,
-                LogResultUploadCompleted(
-                    EqualsNetworkStats(
-                        MockFederatedProtocol::kReportCompletedNetworkStats),
-                    _, _));
-
-    EXPECT_CALL(mock_task_env_, OnTaskCompleted(IsTaskResultSuccess()))
-        .WillOnce(Return(true))
-        .RetiresOnSaturation();
-
-    EXPECT_CALL(mock_phase_logger_, SetModelIdentifier(kSwor24HourTaskName));
-    EXPECT_CALL(mock_phase_logger_, LogComputationStarted(kSwor24HourTaskName));
-    EXPECT_CALL(
-        mock_phase_logger_,
-        LogComputationCompleted(FieldsAre(Gt(0), Gt(0)),
-                                EqualsNetworkStats(NetworkStats()), _, _, _));
-    EXPECT_CALL(mock_phase_logger_, LogResultUploadStarted())
-        .WillOnce(Return(absl::OkStatus()));
-
-    EXPECT_CALL(mock_phase_logger_,
-                LogResultUploadCompleted(
-                    EqualsNetworkStats(
-                        MockFederatedProtocol::kReportCompletedNetworkStats),
-                    _, _));
-    EXPECT_CALL(mock_task_env_, OnTaskCompleted(IsTaskResultSuccess()))
-        .WillOnce(Return(true))
-        .RetiresOnSaturation();
-  }
-
-  // Call RunFederatedComputation, we don't check results in this test because
-  // we have already set expectations above.
-  ASSERT_OK(RunFederatedComputation(
-      &mock_task_env_, mock_phase_logger_, &mock_event_publisher_, &files_impl_,
-      &mock_log_manager_, &mock_opstats_logger_, &mock_flags_,
-      &mock_federated_protocol_, &mock_fedselect_manager_, timing_config_,
-      /*reference_time=*/absl::Now(), kSessionName, kPopulationName, clock_));
-}
 }  // namespace
 }  // namespace client
 }  // namespace fcp

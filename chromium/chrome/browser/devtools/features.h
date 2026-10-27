@@ -78,6 +78,8 @@ extern const base::FeatureParam<DevToolsFreestylerUserTier>
 
 BASE_DECLARE_FEATURE(kDevToolsAiAssistanceAccessibilityAgent);
 
+BASE_DECLARE_FEATURE(kDevToolsAiAssistanceStorageAgent);
+
 BASE_DECLARE_FEATURE(kDevToolsAiCodeCompletion);
 extern const base::FeatureParam<std::string> kDevToolsAiCodeCompletionModelId;
 extern const base::FeatureParam<double> kDevToolsAiCodeCompletionTemperature;
@@ -131,6 +133,8 @@ extern const base::FeatureParam<bool>
 
 BASE_DECLARE_FEATURE(kDevToolsAiAssistanceV2);
 
+BASE_DECLARE_FEATURE(kDevToolsAiV2Architecture);
+
 BASE_DECLARE_FEATURE(kDevToolsProtocolMonitor);
 
 BASE_DECLARE_FEATURE(kDevToolsGeminiRebranding);
@@ -138,6 +142,8 @@ BASE_DECLARE_FEATURE(kDevToolsGeminiRebranding);
 BASE_DECLARE_FEATURE(kDevToolsAiOriginTrialsApis);
 
 BASE_DECLARE_FEATURE(kDevToolsUseGcaApi);
+
+BASE_DECLARE_FEATURE(kDevToolsPlusButton);
 }  // namespace features
 
 #endif  // CHROME_BROWSER_DEVTOOLS_FEATURES_H_

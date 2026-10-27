@@ -4,9 +4,15 @@
 
 #include "chrome/browser/ui/webui/feedback/feedback_ui.h"
 
+#include "base/functional/bind.h"
 #include "chrome/browser/feedback/report_unsafe_site_dialog.h"
 #include "chrome/browser/feedback/show_feedback_page.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+#include "chrome/browser/ui/toasts/api/toast_id.h"
+#include "chrome/browser/ui/toasts/toast_controller.h"
 #include "chrome/browser/ui/webui/feedback/report_unsafe_site/report_unsafe_site_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/webui_url_constants.h"
@@ -53,6 +59,7 @@ void AddStringResources(content::WebUIDataSource* source,
       {"pageTitle", IDS_FEEDBACK_REPORT_PAGE_TITLE},
       {"pageUrl", IDS_FEEDBACK_REPORT_URL_LABEL},
       {"privacyNote", IDS_FEEDBACK_PRIVACY_NOTE},
+      {"reportUnsafeSiteA11yImageText", IDS_REPORT_UNSAFE_SITE_A11Y_IMAGE_TEXT},
       {"reportUnsafeSiteDialogDescription",
        IDS_REPORT_UNSAFE_SITE_DIALOG_DESCRIPTION},
       {"reportUnsafeSiteDialogFooter", IDS_REPORT_UNSAFE_SITE_DIALOG_FOOTER},
@@ -60,6 +67,8 @@ void AddStringResources(content::WebUIDataSource* source,
        IDS_REPORT_UNSAFE_SITE_DIALOG_INCLUDE_SCREENSHOT_CHECKBOX_LABEL},
       {"reportUnsafeSiteDialogSendButtonLabel",
        IDS_REPORT_UNSAFE_SITE_DIALOG_SEND_BUTTON_LABEL},
+      {"reportUnsafeSiteDialogSendingButtonLabel",
+       IDS_REPORT_UNSAFE_SITE_DIALOG_SENDING_BUTTON_LABEL},
       {"reportUnsafeSiteDialogTitle", IDS_REPORT_UNSAFE_SITE_DIALOG_TITLE},
       {"reportUnsafeSiteDialogUrlLabel",
        IDS_REPORT_UNSAFE_SITE_DIALOG_URL_LABEL},
@@ -120,9 +129,25 @@ void FeedbackUI::BindInterface(
 
 void FeedbackUI::CreatePageHandler(
     mojo::PendingReceiver<feedback_mojom::PageHandler> handler) {
+  auto show_toast_callback = base::BindOnce(
+      [](base::WeakPtr<content::WebContents> web_contents) {
+        if (!web_contents) {
+          return;
+        }
+        BrowserWindowInterface* browser =
+            GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+                web_contents.get());
+        if (browser && browser->GetFeatures().toast_controller()) {
+          browser->GetFeatures().toast_controller()->MaybeShowToast(
+              ToastParams(ToastId::kReportUnsafeSiteConfirmation));
+        }
+      },
+      triggering_web_contents_);
+
   report_unsafe_site_page_handler_ =
       std::make_unique<ReportUnsafeSitePageHandler>(
-          triggering_web_contents_, dialog_, std::move(screenshot_taker_),
+          embedder_, triggering_web_contents_, dialog_,
+          std::move(screenshot_taker_), std::move(show_toast_callback),
           std::move(handler));
 }
 

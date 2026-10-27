@@ -65,6 +65,7 @@ inline constexpr char kUserVerifyingPlatformAuthenticator[] =
     "userVerifyingPlatformAuthenticator";
 inline constexpr char kRelatedOrigins[] = "relatedOrigins";
 inline constexpr char kImmediateGet[] = "immediateGet";
+inline constexpr char kAmbientGet[] = "ambientGet";
 inline constexpr char kSignalAllAcceptedCredentials[] =
     "signalAllAcceptedCredentials";
 inline constexpr char kSignalCurrentUserDetails[] = "signalCurrentUserDetails";
@@ -359,12 +360,6 @@ class CONTENT_EXPORT AuthenticatorCommonImpl : public AuthenticatorCommon {
       blink::mojom::GetCredentialOptionsPtr options,
       blink::mojom::PaymentOptionsPtr payment_options,
       blink::mojom::Authenticator::GetCredentialCallback callback);
-
-  void UpdateChallengeFromUrl(
-      webauthn::ClientDataJsonParams params,
-      blink::mojom::PaymentOptionsPtr payment_options,
-      std::string payment_rp,
-      std::optional<base::span<const uint8_t>> challenge);
 
   // Get an identifier for the current request. Callbacks that might span a
   // cancelation must hold one of these values to check whether they're still

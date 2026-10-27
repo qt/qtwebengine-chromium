@@ -40,7 +40,7 @@
 #include "src/tint/api/common/substitute_overrides_config.h"
 #include "src/tint/lang/core/enums.h"
 #include "src/tint/utils/math/hash.h"
-#include "src/tint/utils/reflection.h"
+#include "src/tint/utils/reflection/reflection.h"
 
 namespace tint::hlsl::writer {
 
@@ -128,7 +128,8 @@ struct Options {
     /// The downstream compiler to be used
     enum class Compiler : uint8_t {
         kFXC,
-        kDXC,
+        kDXC_2018,  // DXC with HLSL 2018. Will be removed when 2021 is always used.
+        kDXC_2021,  // DXC with HLSL 2021.
     };
 
     /// The set of options to work around driver issues
@@ -147,6 +148,9 @@ struct Options {
         /// Set to `true` to generate polyfill for `subgroupBroadcast(f16)`
         bool polyfill_subgroup_broadcast_f16 = false;
 
+        /// Set to `true` to decompose workgroup accesses via DecomposeAccess.
+        bool d3d12_decompose_workgroup_access = false;
+
         /// Set to `true` to collapse redundant subgroup min and max operations
         bool collapse_subgroup_min_max = false;
 
@@ -154,6 +158,7 @@ struct Options {
                      scalarize_max_min_clamp,
                      polyfill_reflect_vec2_f32,
                      polyfill_subgroup_broadcast_f16,
+                     d3d12_decompose_workgroup_access,
                      collapse_subgroup_min_max);
         bool operator==(const Workarounds&) const = default;
     };
@@ -222,7 +227,7 @@ struct Options {
     Extensions extensions{};
 
     /// The downstream compiler which will be used
-    Compiler compiler = Compiler::kDXC;
+    Compiler compiler = Compiler::kDXC_2021;
 
     /// Options used to specify a mapping of binding points to indices into a UBO
     /// from which to load buffer sizes.
@@ -250,6 +255,9 @@ struct Options {
 
     /// Offsets of num_workgroups push constant.
     std::optional<uint32_t> num_workgroups_start_offset;
+
+    /// Set to `true` to generate polyfill for `sampleMask` builtin
+    bool polyfill_sample_mask = false;
 
     /// The bindings
     Bindings bindings;
@@ -287,6 +295,7 @@ struct Options {
                  first_index_offset,
                  first_instance_offset,
                  num_workgroups_start_offset,
+                 polyfill_sample_mask,
                  bindings,
                  ignored_by_robustness_transform,
                  pixel_local,
@@ -301,7 +310,7 @@ namespace tint {
 
 /// Reflect valid value ranges for the PixelLocalAttachment::TexelFormat enum.
 TINT_REFLECT_ENUM_RANGE(hlsl::writer::PixelLocalAttachment::TexelFormat, kR32Sint, kR32Float);
-TINT_REFLECT_ENUM_RANGE(hlsl::writer::Options::Compiler, kFXC, kDXC);
+TINT_REFLECT_ENUM_RANGE(hlsl::writer::Options::Compiler, kFXC, kDXC_2021);
 
 }  // namespace tint
 

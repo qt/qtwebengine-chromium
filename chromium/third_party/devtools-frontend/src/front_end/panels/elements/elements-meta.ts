@@ -38,17 +38,6 @@ const UIStrings = {
    */
   properties: 'Properties',
   /**
-   * @description Command for showing the 'Stack Trace' tool. Stack trace refers to the location in
-   * the code where the program was at a point in time.
-   */
-  showStackTrace: 'Show Stack Trace',
-  /**
-   * @description Text for the execution stack trace tool, which shows the stack trace from when this
-   * HTML element was created. Stack trace refers to the location in the code where the program was
-   * at a point in time.
-   */
-  stackTrace: 'Stack Trace',
-  /**
    * @description Command for showing the 'Layout' tool
    */
   showLayout: 'Show Layout',
@@ -163,6 +152,14 @@ const UIStrings = {
    * @description Command for toggling the eye dropper when the color picker is open
    */
   toggleEyeDropper: 'Toggle eye dropper',
+  /**
+   * @description Title of a setting under the Elements category.
+   */
+  cssAnimationsOnlyWhenAnimationsTabOpen: 'Show animation styles only when the Animations tab is open',
+  /**
+   * @description Whether CSS rules that do not apply active styles in the Styles pane are collapsed by default.
+   */
+  collapseNonContributingCSSRules: 'Collapse non-contributing CSS rules',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/elements/elements-meta.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
@@ -238,20 +235,6 @@ UI.ViewManager.registerViewExtension({
   async loadView() {
     const Elements = await loadElementsModule();
     return new Elements.PropertiesWidget.PropertiesWidget();
-  },
-});
-
-UI.ViewManager.registerViewExtension({
-  experiment: Root.ExperimentNames.ExperimentName.CAPTURE_NODE_CREATION_STACKS,
-  location: UI.ViewManager.ViewLocationValues.ELEMENTS_SIDEBAR,
-  id: 'elements.dom-creation',
-  commandPrompt: i18nLazyString(UIStrings.showStackTrace),
-  title: i18nLazyString(UIStrings.stackTrace),
-  order: 10,
-  persistence: UI.ViewManager.ViewPersistence.PERMANENT,
-  async loadView() {
-    const Elements = await loadElementsModule();
-    return new Elements.NodeStackTraceWidget.NodeStackTraceWidget();
   },
 });
 
@@ -567,6 +550,26 @@ Common.Settings.registerSettingExtension({
   settingName: 'show-detailed-inspect-tooltip',
   settingType: Common.Settings.SettingType.BOOLEAN,
   defaultValue: true,
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.ELEMENTS,
+  storageType: Common.Settings.SettingStorageType.SYNCED,
+  order: 6,
+  title: i18nLazyString(UIStrings.cssAnimationsOnlyWhenAnimationsTabOpen),
+  settingName: 'css-animations-only-when-animations-tab-open',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: true,
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.ELEMENTS,
+  storageType: Common.Settings.SettingStorageType.SYNCED,
+  order: 7,
+  title: i18nLazyString(UIStrings.collapseNonContributingCSSRules),
+  settingName: 'collapse-non-contributing-css-rules',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: false,
 });
 
 Common.Settings.registerSettingExtension({

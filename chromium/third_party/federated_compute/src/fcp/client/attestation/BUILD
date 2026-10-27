@@ -17,10 +17,11 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
+    default_applicable_licenses = ["//fcp:license"],
     default_visibility = [
         "//fcp:internal",
     ],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 cc_library(
@@ -42,8 +43,9 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:cord",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
-        "@com_google_protobuf//:protobuf",
+        "@com_google_protobuf//:protobuf_lite",
     ],
 )
 
@@ -62,7 +64,9 @@ cc_test(
         "//fcp/protos/federatedcompute:confidential_encryption_config_cc_proto",
         "//fcp/testing",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -81,8 +85,8 @@ cc_library(
         "//fcp/protos/federatedcompute:federated_compute_cc_proto",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:cord",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -114,11 +118,11 @@ cc_test(
         ":log_attestation_records",
         ":test_values",
         "//fcp/base:compression",
-        "//fcp/client:parsing_utils",
         "//fcp/protos/confidentialcompute:access_policy_cc_proto",
         "//fcp/protos/confidentialcompute:verification_record_cc_proto",
         "//fcp/protos/federatedcompute:federated_compute_cc_proto",
         "//fcp/testing",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:cord",
@@ -136,7 +140,6 @@ cc_library(
         "//fcp/base",
         "//fcp/base:compression",
         "//fcp/base:digest",
-        "//fcp/client:parsing_utils",
         "//fcp/protos/confidentialcompute:verification_record_cc_proto",
         "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/status:statusor",
@@ -152,7 +155,6 @@ cc_test(
         ":extract_attestation_records_lib",
         ":log_attestation_records",
         ":test_values",
-        "//fcp/client:parsing_utils",
         "//fcp/protos/confidentialcompute:access_policy_cc_proto",
         "//fcp/protos/confidentialcompute:verification_record_cc_proto",
         "//fcp/protos/federatedcompute:federated_compute_cc_proto",

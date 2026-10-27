@@ -31,8 +31,7 @@ bool CPDF_ScaledRenderBuffer::Initialize(CPDF_RenderContext* context,
                                          const CPDF_PageObject* pObj,
                                          const CPDF_RenderOptions& options,
                                          int max_dpi) {
-  matrix_ = CPDF_DeviceBuffer::CalculateMatrix(device_, rect_, max_dpi,
-                                               /*scale=*/true);
+  matrix_ = CPDF_DeviceBuffer::CalculateMatrix(device_, rect_, max_dpi);
   FXDIB_Format dibFormat = device_->RenderCapAlphaOutput() ? FXDIB_Format::kBgra
                                                            : FXDIB_Format::kBgr;
   while (true) {

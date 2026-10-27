@@ -25,17 +25,18 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/Commands.h"
+#include "src/dawn/native/Commands.h"
 
-#include "dawn/native/BindGroup.h"
-#include "dawn/native/Buffer.h"
-#include "dawn/native/CommandAllocator.h"
-#include "dawn/native/ComputePipeline.h"
-#include "dawn/native/QuerySet.h"
-#include "dawn/native/RenderBundle.h"
-#include "dawn/native/RenderPipeline.h"
-#include "dawn/native/ResourceTable.h"
-#include "dawn/native/Texture.h"
+#include "src/dawn/native/BindGroup.h"
+#include "src/dawn/native/Buffer.h"
+#include "src/dawn/native/CommandAllocator.h"
+#include "src/dawn/native/ComputePipeline.h"
+#include "src/dawn/native/QuerySet.h"
+#include "src/dawn/native/RenderBundle.h"
+#include "src/dawn/native/RenderPipeline.h"
+#include "src/dawn/native/ResourceTable.h"
+#include "src/dawn/native/Texture.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native {
 
@@ -141,7 +142,7 @@ void FreeCommands(CommandIterator* commands) {
                 ExecuteBundlesCmd* cmd = commands->NextCommand<ExecuteBundlesCmd>();
                 auto bundles = commands->NextData<Ref<RenderBundleBase>>(cmd->count);
                 for (size_t i = 0; i < cmd->count; ++i) {
-                    (&bundles[i])->~Ref<RenderBundleBase>();
+                    (&DAWN_UNSAFE_TODO(bundles[i]))->~Ref<RenderBundleBase>();
                 }
                 cmd->~ExecuteBundlesCmd();
                 break;
@@ -422,9 +423,7 @@ void SkipCommand(CommandIterator* commands, Command type) {
 
         case Command::WriteBuffer: {
             auto cmd = commands->NextCommand<WriteBufferCmd>();
-            if (cmd->size > 0) {
-                commands->NextData<uint8_t>(cmd->size);
-            }
+            commands->NextData<uint8_t>(cmd->size);
             break;
         }
 
@@ -435,16 +434,16 @@ void SkipCommand(CommandIterator* commands, Command type) {
     }
 }
 
-const char* AddNullTerminatedString(CommandAllocator* allocator, StringView s, uint32_t* length) {
+const char* AddNullTerminatedString(CommandAllocator* allocator, StringView s, size_t* length) {
     std::string_view view = s;
-    *length = static_cast<uint32_t>(view.length());
+    *length = view.length();
 
     // Include extra null-terminator character. The string_view may not be null-terminated. It also
     // may already have a null-terminator inside of it, in which case adding the null-terminator is
     // unnecessary. However, this is unlikely, so always include the extra character.
     char* out = allocator->AllocateData<char>(view.length() + 1);
-    memcpy(out, view.data(), view.length());
-    out[view.length()] = '\0';
+    DAWN_UNSAFE_TODO(memcpy(out, view.data(), view.length()));
+    DAWN_UNSAFE_TODO(out[view.length()]) = '\0';
 
     return out;
 }

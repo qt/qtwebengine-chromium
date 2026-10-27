@@ -91,6 +91,21 @@ export interface GoToOptions extends WaitForOptions {
 /**
  * @public
  */
+export interface SetContentWaitForOptions extends WaitForOptions {
+  /**
+   * When to consider waiting succeeds. Given an array of event strings, waiting
+   * is considered to be successful after all events have been fired.
+   *
+   * @defaultValue `'load'`
+   */
+  waitUntil?:
+    | Exclude<PuppeteerLifeCycleEvent, 'networkidle0' | 'networkidle2'>
+    | Array<Exclude<PuppeteerLifeCycleEvent, 'networkidle0' | 'networkidle2'>>;
+}
+
+/**
+ * @public
+ */
 export interface FrameWaitForFunctionOptions {
   /**
    * An interval at which the `pageFunction` is executed, defaults to `raf`. If
@@ -348,6 +363,8 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
    * - the remote server does not respond or is unreachable.
    *
    * - the main resource failed to load.
+   *
+   * - the URL is blocked by blocklist/allowlist rules.
    */
   abstract goto(
     url: string,
@@ -821,7 +838,10 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
    * @param options - Options to configure how long before timing out and at
    * what point to consider the content setting successful.
    */
-  abstract setContent(html: string, options?: WaitForOptions): Promise<void>;
+  abstract setContent(
+    html: string,
+    options?: SetContentWaitForOptions,
+  ): Promise<void>;
 
   /**
    * @internal
@@ -1200,4 +1220,13 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
   abstract waitForDevicePrompt(
     options?: WaitTimeoutOptions,
   ): Promise<DeviceRequestPrompt>;
+
+  /**
+   * Retrieves the list of extension execution realms associated with this frame.
+   * Extension execution realms are created by extension content scripts injected
+   * into the frame.
+   *
+   * @public
+   */
+  abstract extensionRealms(): Realm[];
 }

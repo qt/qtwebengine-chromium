@@ -32,7 +32,10 @@ pub mod msl {
     pub mod ensure_loop_forward_progress;
 }
 #[cfg(angle_enable_spirv)]
-pub mod spirv {}
+pub mod spirv {
+    pub mod pass1;
+    mod vertex_instance_id;
+}
 #[cfg(angle_enable_wgsl)]
 pub mod wgsl {}
 
@@ -41,7 +44,7 @@ macro_rules! run {
     ($func:ident $(::$path:ident)*, $ir:expr $(, $params:expr)*$(,)*) => {
         {
             let result = $crate::transform::$func$(::$path)*::run($ir $(, $params)*);
-            $crate::ir::validate!($ir);
+            $crate::ir::validate!($ir, stringify!($func$(::$path)*));
             result
         }
     };

@@ -12,6 +12,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SVDBASE_H
 #define EIGEN_SVDBASE_H
@@ -423,10 +424,12 @@ bool SVDBase<Derived>::allocate(Index rows, Index cols, unsigned int computation
 
   m_diagSize.setValue(numext::mini(m_rows.value(), m_cols.value()));
   m_singularValues.resize(m_diagSize.value());
-  if (RowsAtCompileTime == Dynamic)
+  EIGEN_IF_CONSTEXPR(RowsAtCompileTime == Dynamic) {
     m_matrixU.resize(m_rows.value(), m_computeFullU ? m_rows.value() : m_computeThinU ? m_diagSize.value() : 0);
-  if (ColsAtCompileTime == Dynamic)
+  }
+  EIGEN_IF_CONSTEXPR(ColsAtCompileTime == Dynamic) {
     m_matrixV.resize(m_cols.value(), m_computeFullV ? m_cols.value() : m_computeThinV ? m_diagSize.value() : 0);
+  }
 
   return false;
 }

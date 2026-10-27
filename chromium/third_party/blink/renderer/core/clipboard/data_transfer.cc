@@ -43,6 +43,7 @@
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
 #include "third_party/blink/renderer/core/html/forms/text_control_element.h"
 #include "third_party/blink/renderer/core/html/html_image_element.h"
+#include "third_party/blink/renderer/core/keywords.h"
 #include "third_party/blink/renderer/core/layout/layout_image.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
@@ -59,7 +60,6 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
 #include "third_party/blink/renderer/platform/network/http_names.h"
 #include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/skia/include/core/SkSurface.h"
 #include "ui/base/clipboard/clipboard_constants.h"
@@ -177,7 +177,7 @@ std::optional<DragOperationsMask> ConvertEffectAllowedToDragOperationsMask(
   if (op == keywords::kUninitialized) {
     return kDragOperationEvery;
   }
-  if (op == "none")
+  if (op == keywords::kNone)
     return kDragOperationNone;
   if (op == "copy")
     return kDragOperationCopy;
@@ -305,7 +305,7 @@ void DataTransfer::setDropEffect(const AtomicString& effect) {
 
   // The attribute must ignore any attempts to set it to a value other than
   // none, copy, link, and move.
-  if (effect != "none" && effect != "copy" && effect != "link" &&
+  if (effect != keywords::kNone && effect != "copy" && effect != "link" &&
       effect != "move")
     return;
 
@@ -539,7 +539,7 @@ static void WriteImageToDataObject(DataObject* data_object,
     return;
 
   data_object->AddFileSharedBuffer(
-      image_buffer, cached_image->IsAccessAllowed(), image_url,
+      image_buffer, cached_image->IsCorsSameOrigin(), image_url,
       image->FilenameExtension(),
       cached_image->GetResponse().HttpHeaderFields().Get(
           http_names::kContentDisposition));
@@ -590,7 +590,7 @@ void DataTransfer::WriteSelection(const FrameSelection& selection) {
 
   String str = selection.SelectedTextForClipboard();
 #if BUILDFLAG(IS_WIN)
-  str = NormalizeLineEndingsToCRLF(str);
+  str = NormalizeLineEndingsToCrLf(str);
 #endif
   ReplaceNBSPWithSpace(str);
   data_object_->SetData(ui::kMimeTypePlainText, str);

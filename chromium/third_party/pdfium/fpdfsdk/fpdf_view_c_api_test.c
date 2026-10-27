@@ -209,6 +209,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFPageObjMark_SetFloatParam);
     CHK(FPDFPageObjMark_SetIntParam);
     CHK(FPDFPageObjMark_SetStringParam);
+    CHK(FPDFPageObj_AddExistingMark);
     CHK(FPDFPageObj_AddMark);
     CHK(FPDFPageObj_CountMarks);
     CHK(FPDFPageObj_CreateNewPath);
@@ -274,11 +275,13 @@ int CheckPDFiumCApi() {
     CHK(FPDFTextObj_GetRenderedBitmap);
     CHK(FPDFTextObj_GetText);
     CHK(FPDFTextObj_GetTextRenderMode);
+    CHK(FPDFTextObj_SetFontSize);
     CHK(FPDFTextObj_SetTextRenderMode);
     CHK(FPDFText_LoadCidType2Font);
     CHK(FPDFText_LoadFont);
     CHK(FPDFText_LoadStandardFont);
     CHK(FPDFText_SetCharcodes);
+    CHK(FPDFText_SetPositions);
     CHK(FPDFText_SetText);
     CHK(FPDF_CreateNewDocument);
     CHK(FPDF_MovePages);

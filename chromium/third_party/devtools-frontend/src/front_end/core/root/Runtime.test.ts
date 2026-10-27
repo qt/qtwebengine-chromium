@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import type * as Platform from '../platform/platform.js';
 
 import * as Root from './root.js';
@@ -9,6 +11,14 @@ import * as Root from './root.js';
 describe('Runtime', () => {
   beforeEach(() => {
     Root.Runtime.experiments.clearForTest();
+  });
+
+  it('getChromeVersion result has the correct shape', () => {
+    const version = Root.Runtime.getChromeVersion();
+    if (!version) {
+      return;
+    }
+    assert.isTrue(/^\d{3}\.0\.0\.0$/.test(version));
   });
 
   describe('Module', () => {
@@ -54,19 +64,24 @@ describe('Runtime', () => {
   });
 
   it('allConfigurableExperiments returns all registered experiments', () => {
-    Root.Runtime.experiments.register(
-        Root.ExperimentNames.ExperimentName.FONT_EDITOR, 'font editor' as Platform.UIString.LocalizedString);
-    Root.Runtime.experiments.register(
-        Root.ExperimentNames.ExperimentName.APCA, 'apca' as Platform.UIString.LocalizedString);
+    const dummyExperiment1 = 'dummy-experiment-1' as Root.ExperimentNames.ExperimentName;
+    Root.Runtime.experiments.register(dummyExperiment1, 'dummy experiment 1' as Platform.UIString.LocalizedString);
+
+    const dummyExperiment2 = 'dummy-experiment-2' as Root.ExperimentNames.ExperimentName;
+    Root.Runtime.experiments.register(dummyExperiment2, 'dummy experiment 2' as Platform.UIString.LocalizedString);
 
     const experiments = Root.Runtime.experiments.allConfigurableExperiments();
 
-    assert.deepEqual(
-        experiments.map(experiment => experiment.name),
-        [Root.ExperimentNames.ExperimentName.FONT_EDITOR, Root.ExperimentNames.ExperimentName.APCA]);
+    assert.deepEqual(experiments.map(experiment => experiment.name), [dummyExperiment1, dummyExperiment2]);
   });
 
   describe('ExperimentsSupport', () => {
+    beforeEach(() => {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('experiments');
+      }
+    });
+
     it('throws for unknown experiment', () => {
       const support = new Root.Runtime.ExperimentsSupport();
       assert.throws(() => support.isEnabled('test-experiment' as Root.ExperimentNames.ExperimentName));
@@ -81,6 +96,15 @@ describe('Runtime', () => {
             'experiment' as Root.ExperimentNames.ExperimentName,
             'experiment title' as Platform.UIString.LocalizedString);
       });
+    });
+
+    it('registers an experiment', () => {
+      const support = new Root.Runtime.ExperimentsSupport();
+      support.register(
+          'experiment' as Root.ExperimentNames.ExperimentName, 'experiment title' as Platform.UIString.LocalizedString);
+      assert.isFalse(support.isEnabled('experiment' as Root.ExperimentNames.ExperimentName));
+      support.setEnabled('experiment' as Root.ExperimentNames.ExperimentName, true);
+      assert.isTrue(support.isEnabled('experiment' as Root.ExperimentNames.ExperimentName));
     });
 
     it('registers a host experiment', () => {
@@ -108,6 +132,22 @@ describe('Runtime', () => {
       assert.isTrue(support.isEnabled('experiment' as Root.ExperimentNames.ExperimentName));
     });
 
+    it('enables an experiment by default', () => {
+      const support = new Root.Runtime.ExperimentsSupport();
+      support.register(
+          'experiment' as Root.ExperimentNames.ExperimentName, 'experiment title' as Platform.UIString.LocalizedString);
+      support.enableExperimentsByDefault(['experiment' as Root.ExperimentNames.ExperimentName]);
+      assert.isTrue(support.isEnabled('experiment' as Root.ExperimentNames.ExperimentName));
+    });
+
+    it('enables an experiment via the server', () => {
+      const support = new Root.Runtime.ExperimentsSupport();
+      support.register(
+          'experiment' as Root.ExperimentNames.ExperimentName, 'experiment title' as Platform.UIString.LocalizedString);
+      support.setServerEnabledExperiments(['experiment' as Root.ExperimentNames.ExperimentName]);
+      assert.isTrue(support.isEnabled('experiment' as Root.ExperimentNames.ExperimentName));
+    });
+
     it('enables a host experiment via initialization', () => {
       const support = new Root.Runtime.ExperimentsSupport();
       support.registerHostExperiment({
@@ -117,6 +157,15 @@ describe('Runtime', () => {
         isEnabled: true,
         requiresChromeRestart: false,
       });
+      assert.isTrue(support.isEnabled('experiment' as Root.ExperimentNames.ExperimentName));
+    });
+
+    it('enables an experiment for test', () => {
+      const support = new Root.Runtime.ExperimentsSupport();
+      support.register(
+          'experiment' as Root.ExperimentNames.ExperimentName, 'experiment title' as Platform.UIString.LocalizedString);
+      assert.isFalse(support.isEnabled('experiment' as Root.ExperimentNames.ExperimentName));
+      support.enableForTest('experiment' as Root.ExperimentNames.ExperimentName);
       assert.isTrue(support.isEnabled('experiment' as Root.ExperimentNames.ExperimentName));
     });
 

@@ -24,10 +24,10 @@ source_set("fxjs") {
     sources += [
       "cfx_globaldata.cpp",
       "cfx_globaldata.h",
+      "cfx_isolate_wrapper.cpp",
+      "cfx_isolate_wrapper.h",
       "cfx_keyvalue.cpp",
       "cfx_keyvalue.h",
-      "cfx_v8.cpp",
-      "cfx_v8.h",
       "cfx_v8_array_buffer_allocator.cpp",
       "cfx_v8_array_buffer_allocator.h",
       "cfxjs_engine.cpp",
@@ -136,8 +136,6 @@ source_set("fxjs") {
         "xfa/cfxjse_resolveprocessor.h",
         "xfa/cfxjse_runtimedata.cpp",
         "xfa/cfxjse_runtimedata.h",
-        "xfa/cfxjse_value.cpp",
-        "xfa/cfxjse_value.h",
         "xfa/cjx_boolean.cpp",
         "xfa/cjx_boolean.h",
         "xfa/cjx_container.cpp",
@@ -244,7 +242,7 @@ if (pdf_enable_v8) {
   pdfium_unittest_source_set("unittests") {
     sources = [
       "cfx_globaldata_unittest.cpp",
-      "cfx_v8_unittest.cpp",
+      "cfx_isolate_wrapper_unittest.cpp",
       "cfxjs_engine_unittest.cpp",
       "cjs_publicmethods_unittest.cpp",
       "cjs_util_unittest.cpp",
@@ -292,7 +290,6 @@ if (pdf_enable_v8) {
       sources += [
         "xfa/cfxjse_app_embeddertest.cpp",
         "xfa/cfxjse_formcalc_context_embeddertest.cpp",
-        "xfa/cfxjse_value_embeddertest.cpp",
         "xfa/cjx_hostpseudomodel_embeddertest.cpp",
         "xfa/cjx_list_embeddertest.cpp",
         "xfa/cjx_object_embeddertest.cpp",

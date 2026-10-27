@@ -25,23 +25,19 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/439062058): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
-#include "dawn/wire/client/Queue.h"
+#include "src/dawn/wire/client/Queue.h"
 
 #include <memory>
 #include <string>
 #include <utility>
 
-#include "dawn/common/Atomic.h"
-#include "dawn/common/StringViewUtils.h"
-#include "dawn/wire/BufferConsumer_impl.h"
-#include "dawn/wire/client/Client.h"
-#include "dawn/wire/client/EventManager.h"
 #include "partition_alloc/pointers/raw_ptr.h"
+#include "src/dawn/common/Atomic.h"
+#include "src/dawn/common/StringViewUtils.h"
+#include "src/dawn/wire/BufferConsumer_impl.h"
+#include "src/dawn/wire/client/Client.h"
+#include "src/dawn/wire/client/EventManager.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::wire::client {
 namespace {
@@ -209,7 +205,7 @@ void Queue::WriteBufferXL(WGPUBuffer cBuffer,
     writeHandleCreateInfoLength = writeHandle->SerializeCreateSize();
 
     // Write the data to the allocated memory.
-    memcpy(writeHandle->GetData(), data, size);
+    DAWN_UNSAFE_TODO(memcpy(writeHandle->GetData(), data, size));
 
     // Prepare to serialize data update command.
     size_t writeDataUpdateInfoLength = writeHandle->SizeOfSerializeDataUpdate(0u, size);
@@ -232,8 +228,11 @@ void Queue::WriteBufferXL(WGPUBuffer cBuffer,
         CommandExtension{
             writeHandleCreateInfoLength,
             [&](char* writeHandleBuffer) { writeHandle->SerializeCreate(writeHandleBuffer); }},
+        // TODO(492456046): Spanify this lambda and compute the input span in `SerializeCommand`.
         CommandExtension{writeDataUpdateInfoLength, [&](char* writeHandleBuffer) {
-                             writeHandle->SerializeDataUpdate(writeHandleBuffer, 0u, cmd.size);
+                             std::span<char> writeHandleBufferSpan(writeHandleBuffer,
+                                                                   writeDataUpdateInfoLength);
+                             writeHandle->SerializeDataUpdate(writeHandleBufferSpan, 0u);
                          }});
 }
 
@@ -277,7 +276,7 @@ void Queue::WriteTextureXL(const WGPUTexelCopyTextureInfo* destination,
     writeHandleCreateInfoLength = writeHandle->SerializeCreateSize();
 
     // Write the data to the allocated memory.
-    memcpy(writeHandle->GetData(), data, dataSize);
+    DAWN_UNSAFE_TODO(memcpy(writeHandle->GetData(), data, dataSize));
 
     // Prepare to serialize data update command.
     size_t writeDataUpdateInfoLength = writeHandle->SizeOfSerializeDataUpdate(0u, dataSize);
@@ -301,8 +300,11 @@ void Queue::WriteTextureXL(const WGPUTexelCopyTextureInfo* destination,
         CommandExtension{
             writeHandleCreateInfoLength,
             [&](char* writeHandleBuffer) { writeHandle->SerializeCreate(writeHandleBuffer); }},
+        // TODO(492456046): Spanify this lambda and compute the input span in `SerializeCommand`.
         CommandExtension{writeDataUpdateInfoLength, [&](char* writeHandleBuffer) {
-                             writeHandle->SerializeDataUpdate(writeHandleBuffer, 0u, cmd.dataSize);
+                             std::span<char> writeHandleBufferSpan(writeHandleBuffer,
+                                                                   writeDataUpdateInfoLength);
+                             writeHandle->SerializeDataUpdate(writeHandleBufferSpan, 0u);
                          }});
 }
 

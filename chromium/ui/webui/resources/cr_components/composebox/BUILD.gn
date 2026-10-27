@@ -4,8 +4,9 @@
 
 import("//mojo/public/tools/bindings/mojom.gni")
 import("//ui/webui/resources/tools/build_webui.gni")
+import("//ui/webui/webui_features.gni")
 
-assert(!is_android && !is_ios)
+assert(!is_ios)
 
 mojom("mojo_bindings") {
   sources = [ "composebox.mojom" ]
@@ -14,7 +15,7 @@ mojom("mojo_bindings") {
   public_deps = [
     "//components/omnibox/browser:mojo_bindings",
     "//components/omnibox/composebox:mojo_bindings",
-    "//mojo/public//mojom/base",
+    "//mojo/public/mojom/base",
   ]
 }
 
@@ -24,6 +25,8 @@ build_webui("build") {
     "common.ts",
     "composebox.html.ts",
     "composebox.ts",
+    "composebox_favicon_group.html.ts",
+    "composebox_favicon_group.ts",
     "composebox_context_menu.html.ts",
     "composebox_mixin.ts",
     "composebox_dropdown.html.ts",
@@ -65,6 +68,7 @@ build_webui("build") {
   ]
   css_files = [
     "composebox.css",
+    "composebox_favicon_group.css",
     "composebox_submit.css",
     "composebox_dropdown.css",
     "composebox_input.css",

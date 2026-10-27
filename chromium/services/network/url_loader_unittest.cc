@@ -157,6 +157,7 @@ using ::net::test::IsOk;
 using ::testing::Contains;
 using ::testing::ElementsAre;
 using ::testing::Eq;
+using ::testing::Ge;
 using ::testing::Key;
 using ::testing::Not;
 using ::testing::Optional;
@@ -979,7 +980,8 @@ class URLLoaderTest : public testing::Test {
 
     if (expect_redirect_) {
       client_.RunUntilRedirectReceived();
-      loader->FollowRedirect({}, {}, {}, std::nullopt);
+      loader->FollowRedirect(/*headers_update_params=*/{},
+                             /*new_url=*/std::nullopt);
     }
 
     if (body) {
@@ -989,9 +991,8 @@ class URLLoaderTest : public testing::Test {
 
     client_.RunUntilComplete();
     if (body) {
-      EXPECT_EQ(body->size(),
-                static_cast<size_t>(
-                    client()->completion_status().decoded_body_length));
+      EXPECT_EQ(static_cast<int64_t>(body->size()),
+                client()->completion_status().decoded_body_length);
     }
 
     delete_run_loop.Run();
@@ -1015,17 +1016,14 @@ class URLLoaderTest : public testing::Test {
     EXPECT_EQ(expected, body);
     // The file isn't compressed, so both encoded and decoded body lengths
     // should match the read body length.
-    EXPECT_EQ(
-        expected.size(),
-        static_cast<size_t>(client()->completion_status().decoded_body_length));
-    EXPECT_EQ(
-        expected.size(),
-        static_cast<size_t>(client()->completion_status().encoded_body_length));
+    EXPECT_EQ(static_cast<int64_t>(expected.size()),
+              client()->completion_status().decoded_body_length);
+    EXPECT_EQ(static_cast<int64_t>(expected.size()),
+              client()->completion_status().encoded_body_length);
     // Over the wire length should include headers, so should be longer.
     // TODO(mmenke): Worth adding better tests for encoded_data_length?
-    EXPECT_LT(
-        expected.size(),
-        static_cast<size_t>(client()->completion_status().encoded_data_length));
+    EXPECT_LT(static_cast<int64_t>(expected.size()),
+              client()->completion_status().encoded_data_length);
   }
 
   void SetUpContext(const GURL& url, bool is_trusted) {
@@ -3655,10 +3653,10 @@ TEST_F(URLLoaderTest, RedirectModifiedHeaders) {
   EXPECT_EQ(request_headers1.end(), request_headers1.find("Header3"));
 
   // Overwrite Header2 and add Header3.
-  net::HttpRequestHeaders redirect_headers;
-  redirect_headers.SetHeader("Header2", "");
-  redirect_headers.SetHeader("Header3", "Value3");
-  loader->FollowRedirect({}, redirect_headers, {}, std::nullopt);
+  network::HttpRequestHeadersUpdateParams headers_update_params;
+  headers_update_params.modified_headers.SetHeader("Header2", "");
+  headers_update_params.modified_headers.SetHeader("Header3", "Value3");
+  loader->FollowRedirect(std::move(headers_update_params), std::nullopt);
 
   client()->RunUntilComplete();
   delete_run_loop.Run();
@@ -3696,9 +3694,9 @@ TEST_F(URLLoaderTest, RedirectFailsOnModifyUnsafeHeader) {
 
     client.RunUntilRedirectReceived();
 
-    net::HttpRequestHeaders redirect_headers;
-    redirect_headers.SetHeader(unsafe_header, "foo");
-    loader->FollowRedirect({}, redirect_headers, {}, std::nullopt);
+    network::HttpRequestHeadersUpdateParams headers_update_params;
+    headers_update_params.modified_headers.SetHeader(unsafe_header, "foo");
+    loader->FollowRedirect(std::move(headers_update_params), std::nullopt);
 
     client.RunUntilComplete();
     delete_run_loop.Run();
@@ -3733,8 +3731,9 @@ TEST_F(URLLoaderTest, RedirectRemoveHeader) {
   EXPECT_EQ("Value2", request_headers1.find("Header2")->second);
 
   // Remove Header1.
-  std::vector<std::string> removed_headers = {"Header1"};
-  loader->FollowRedirect(removed_headers, {}, {}, std::nullopt);
+  network::HttpRequestHeadersUpdateParams headers_update_params;
+  headers_update_params.removed_headers = {"Header1"};
+  loader->FollowRedirect(std::move(headers_update_params), std::nullopt);
 
   client()->RunUntilComplete();
   delete_run_loop.Run();
@@ -3770,10 +3769,10 @@ TEST_F(URLLoaderTest, RedirectRemoveHeaderAndAddItBack) {
   EXPECT_EQ("Value2", request_headers1.find("Header2")->second);
 
   // Remove Header1 and add it back using a different value.
-  std::vector<std::string> removed_headers = {"Header1"};
-  net::HttpRequestHeaders modified_headers;
-  modified_headers.SetHeader("Header1", "NewValue1");
-  loader->FollowRedirect(removed_headers, modified_headers, {}, std::nullopt);
+  network::HttpRequestHeadersUpdateParams headers_update_params;
+  headers_update_params.removed_headers = {"Header1"};
+  headers_update_params.modified_headers.SetHeader("Header1", "NewValue1");
+  loader->FollowRedirect(std::move(headers_update_params), std::nullopt);
 
   client()->RunUntilComplete();
   delete_run_loop.Run();
@@ -3812,7 +3811,8 @@ TEST_F(URLLoaderTest, UpgradeAddsSecHeaders) {
   EXPECT_EQ(request_headers1.end(), request_headers1.find("Sec-Fetch-User"));
 
   // Now follow the redirect to the final destination and validate again.
-  loader->FollowRedirect({}, {}, {}, std::nullopt);
+  loader->FollowRedirect(/*headers_update_params=*/{},
+                         /*new_url=*/std::nullopt);
   client()->RunUntilComplete();
   delete_run_loop.Run();
 
@@ -3861,7 +3861,8 @@ TEST_F(URLLoaderTest, DowngradeRemovesSecHeaders) {
   EXPECT_EQ(request_headers1.end(), request_headers1.find("Sec-Fetch-User"));
 
   // Now follow the redirect to the final destination and validate again.
-  loader->FollowRedirect({}, {}, {}, std::nullopt);
+  loader->FollowRedirect(/*headers_update_params=*/{},
+                         /*new_url=*/std::nullopt);
   client()->RunUntilComplete();
   delete_run_loop.Run();
 
@@ -3915,7 +3916,8 @@ TEST_F(URLLoaderTest, RedirectChainRemovesAndAddsSecHeaders) {
   EXPECT_EQ(request_headers1.end(), request_headers1.find("Sec-Fetch-User"));
 
   // Follow our redirect and then verify again.
-  loader->FollowRedirect({}, {}, {}, std::nullopt);
+  loader->FollowRedirect(/*headers_update_params=*/{},
+                         /*new_url=*/std::nullopt);
   client()->ClearHasReceivedRedirect();
   client()->RunUntilRedirectReceived();
 
@@ -3931,7 +3933,8 @@ TEST_F(URLLoaderTest, RedirectChainRemovesAndAddsSecHeaders) {
 
   // Now follow the final redirect back to a trustworthy destination and
   // re-validate.
-  loader->FollowRedirect({}, {}, {}, std::nullopt);
+  loader->FollowRedirect(/*headers_update_params=*/{},
+                         /*new_url=*/std::nullopt);
   client()->RunUntilComplete();
   delete_run_loop.Run();
 
@@ -4809,8 +4812,10 @@ TEST_F(URLLoaderTest, FollowRedirectTwice) {
 
   client()->RunUntilRedirectReceived();
 
-  url_loader->FollowRedirect({}, {}, {}, std::nullopt);
-  EXPECT_NOTREACHED_DEATH(url_loader->FollowRedirect({}, {}, {}, std::nullopt));
+  url_loader->FollowRedirect(/*headers_update_params=*/{},
+                             /*new_url=*/std::nullopt);
+  EXPECT_NOTREACHED_DEATH(url_loader->FollowRedirect(
+      /*headers_update_params=*/{}, /*new_url=*/std::nullopt));
 
   client()->RunUntilComplete();
   delete_run_loop.Run();
@@ -4909,7 +4914,8 @@ TEST_F(URLLoaderTest, ClientAuthRespondTwice) {
   EXPECT_EQ(0, private_key->sign_count());
 
   client()->RunUntilRedirectReceived();
-  loader->FollowRedirect({}, {}, {}, std::nullopt);
+  loader->FollowRedirect(/*headers_update_params=*/{},
+                         /*new_url=*/std::nullopt);
   // MockNetworkServiceClient gives away the private key when it invokes
   // ContinueWithCertificate, so we have to give it the key again.
   client_cert_observer.set_private_key(private_key);
@@ -5482,7 +5488,8 @@ TEST_F(StorageAccessHeaderURLLoaderTest, RedirectWithLoad) {
       client()->CreateRemote());
 
   client()->RunUntilRedirectReceived();
-  url_loader->FollowRedirect({}, {}, {}, std::nullopt);
+  url_loader->FollowRedirect(/*headers_update_params=*/{},
+                             /*new_url=*/std::nullopt);
 
   client()->RunUntilComplete();
   delete_run_loop.Run();
@@ -5529,7 +5536,8 @@ TEST_F(StorageAccessHeaderURLLoaderTest,
   EXPECT_TRUE(client()->response_head()->load_with_storage_access);
   test_network_delegate()->set_storage_access_status(
       net::cookie_util::StorageAccessStatus::kNone);
-  url_loader->FollowRedirect({}, {}, {}, std::nullopt);
+  url_loader->FollowRedirect(/*headers_update_params=*/{},
+                             /*new_url=*/std::nullopt);
 
   client()->RunUntilComplete();
   delete_run_loop.Run();
@@ -5574,7 +5582,8 @@ TEST_F(StorageAccessHeaderURLLoaderTest,
   EXPECT_FALSE(client()->response_head()->load_with_storage_access);
   test_network_delegate()->set_storage_access_status(
       net::cookie_util::StorageAccessStatus::kActive);
-  url_loader->FollowRedirect({}, {}, {}, std::nullopt);
+  url_loader->FollowRedirect(/*headers_update_params=*/{},
+                             /*new_url=*/std::nullopt);
 
   client()->RunUntilComplete();
   delete_run_loop.Run();
@@ -6117,7 +6126,8 @@ TEST_F(URLLoaderTest, CookieReportingRedirect) {
       loader_client.CreateRemote());
 
   loader_client.RunUntilRedirectReceived();
-  loader->FollowRedirect({}, {}, {}, std::nullopt);
+  loader->FollowRedirect(/*headers_update_params=*/{},
+                         /*new_url=*/std::nullopt);
   loader_client.RunUntilComplete();
   delete_run_loop.Run();
   EXPECT_EQ(net::OK, loader_client.completion_status().error_code);
@@ -6188,7 +6198,7 @@ TEST_F(URLLoaderTest, RawRequestCookies) {
         cookie_url, "a=b", base::Time::Now(), net::CookieSourceType::kOther);
     url_request_context()->cookie_store()->SetCanonicalCookieAsync(
         std::move(cookie), cookie_url, net::CookieOptions::MakeAllInclusive(),
-        base::DoNothing());
+        base::DoNothing(), /*cookie_access_result=*/std::nullopt);
 
     base::RunLoop delete_run_loop;
     mojo::PendingRemote<mojom::URLLoader> loader;
@@ -6232,7 +6242,7 @@ TEST_F(URLLoaderTest, RawRequestCookiesFlagged) {
         net::CookieSourceType::kOther);
     url_request_context()->cookie_store()->SetCanonicalCookieAsync(
         std::move(cookie), cookie_url, net::CookieOptions::MakeAllInclusive(),
-        base::DoNothing());
+        base::DoNothing(), /*cookie_access_result=*/std::nullopt);
 
     base::RunLoop delete_run_loop;
     mojo::PendingRemote<mojom::URLLoader> loader;
@@ -6371,7 +6381,8 @@ TEST_F(URLLoaderTest, RawResponseCookiesRedirect) {
                   "Set-Cookie: server-redirect=true"),
               std::string::npos);
 
-    loader->FollowRedirect({}, {}, {}, std::nullopt);
+    loader->FollowRedirect(/*headers_update_params=*/{},
+                           /*new_url=*/std::nullopt);
     loader_client.RunUntilComplete();
     delete_run_loop.Run();
     EXPECT_EQ(net::OK, loader_client.completion_status().error_code);
@@ -6412,7 +6423,8 @@ TEST_F(URLLoaderTest, RawResponseCookiesRedirect) {
         loader_client.CreateRemote());
 
     loader_client.RunUntilRedirectReceived();
-    loader->FollowRedirect({}, {}, {}, std::nullopt);
+    loader->FollowRedirect(/*headers_update_params=*/{},
+                           /*new_url=*/std::nullopt);
     loader_client.RunUntilComplete();
     delete_run_loop.Run();
     EXPECT_EQ(net::OK, loader_client.completion_status().error_code);
@@ -8323,6 +8335,96 @@ TEST_F(URLLoaderTest,
   EXPECT_FALSE(devtools_observer.local_network_request_params());
 }
 
+namespace {
+
+// A mock URLRequestJob that simulates the requirement of platform-specific
+// local network access permission.
+class URLRequestPlatformLocalNetworkAccessPermissionJob
+    : public net::URLRequestJob {
+ public:
+  explicit URLRequestPlatformLocalNetworkAccessPermissionJob(
+      net::URLRequest* request)
+      : net::URLRequestJob(request) {}
+
+  void Start() override {
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE,
+        base::BindOnce(
+            &URLRequestPlatformLocalNetworkAccessPermissionJob::StartAsync,
+            weak_factory_.GetWeakPtr()));
+  }
+
+  void SetPlatformLocalNetworkAccessGranted() override {
+    NotifyHeadersComplete();
+  }
+
+  void CancelPlatformLocalNetworkAccessRequest() override {
+    NotifyStartError(net::ERR_LOCAL_NETWORK_PERMISSION_MISSING);
+  }
+
+ private:
+  void StartAsync() { NotifyPlatformLocalNetworkAccessPermissionRequired(); }
+
+  base::WeakPtrFactory<URLRequestPlatformLocalNetworkAccessPermissionJob>
+      weak_factory_{this};
+};
+
+// An interceptor that creates
+// URLRequestPlatformLocalNetworkAccessPermissionJob.
+class PlatformLocalNetworkAccessPermissionInterceptor
+    : public net::URLRequestInterceptor {
+ public:
+  std::unique_ptr<net::URLRequestJob> MaybeInterceptRequest(
+      net::URLRequest* request) const override {
+    return std::make_unique<URLRequestPlatformLocalNetworkAccessPermissionJob>(
+        request);
+  }
+};
+
+}  // namespace
+
+TEST_F(URLLoaderTest, PlatformLocalNetworkPermissionWithoutObserver) {
+  // Do not set network observer.
+  GURL url("http://fake-endpoint");
+  net::URLRequestFilter::GetInstance()->AddUrlInterceptor(
+      url, std::make_unique<PlatformLocalNetworkAccessPermissionInterceptor>());
+
+  ResourceRequest request = CreateCrossOriginResourceRequest();
+  request.url = url;
+
+  EXPECT_EQ(net::ERR_LOCAL_NETWORK_PERMISSION_MISSING, LoadRequest(request));
+}
+
+TEST_F(URLLoaderTest, PlatformLocalNetworkPermissionDenied) {
+  TestURLLoaderNetworkObserver observer;
+  observer.set_platform_local_network_permission_response(false);
+  set_network_observer_for_next_request(&observer);
+
+  GURL url("http://fake-endpoint");
+  net::URLRequestFilter::GetInstance()->AddUrlInterceptor(
+      url, std::make_unique<PlatformLocalNetworkAccessPermissionInterceptor>());
+
+  ResourceRequest request = CreateCrossOriginResourceRequest();
+  request.url = url;
+
+  EXPECT_NE(net::OK, LoadRequest(request));
+}
+
+TEST_F(URLLoaderTest, PlatformLocalNetworkPermissionGranted) {
+  TestURLLoaderNetworkObserver observer;
+  observer.set_platform_local_network_permission_response(true);
+  set_network_observer_for_next_request(&observer);
+
+  GURL url("http://fake-endpoint");
+  net::URLRequestFilter::GetInstance()->AddUrlInterceptor(
+      url, std::make_unique<PlatformLocalNetworkAccessPermissionInterceptor>());
+
+  ResourceRequest request = CreateCrossOriginResourceRequest();
+  request.url = url;
+
+  EXPECT_EQ(net::OK, LoadRequest(request));
+}
+
 // An empty ACCEPT_CH frame should skip the client call.
 TEST_F(URLLoaderFakeTransportInfoTest, AcceptCHFrameEmptyString) {
   net::TransportInfo info = net::DefaultTransportInfo();
@@ -8463,8 +8565,8 @@ TEST_F(URLLoaderTest, ReadAndDiscardBody) {
   const std::string file = "simple_page.html";
   const GURL url = test_server()->GetURL("/" + file);
   std::optional<int64_t> file_size = base::GetFileSize(GetTestFilePath(file));
-  ASSERT_TRUE(file_size.has_value());
-  int64_t actual_size = file_size.value();
+  ASSERT_THAT(file_size, Optional(Ge(0)));
+  const base::ByteSize actual_size(base::as_unsigned(file_size.value()));
 
   TestURLLoaderClient loader_client;
   ResourceRequest request = CreateResourceRequest("GET", url);
@@ -8486,8 +8588,10 @@ TEST_F(URLLoaderTest, ReadAndDiscardBody) {
   loader_client.RunUntilComplete();
   const auto& completion_status = loader_client.completion_status();
   EXPECT_EQ(completion_status.error_code, net::OK);
-  EXPECT_EQ(completion_status.decoded_body_length, actual_size);
-  EXPECT_EQ(completion_status.encoded_body_length, actual_size);
+  EXPECT_EQ(completion_status.decoded_body_length,
+            static_cast<int64_t>(actual_size.InBytes()));
+  EXPECT_EQ(completion_status.encoded_body_length,
+            static_cast<int64_t>(actual_size.InBytes()));
 
   delete_run_loop.Run();
 }
@@ -8761,9 +8865,8 @@ TEST_F(SharedStorageRequestHelperURLLoaderTest, SimpleRedirect) {
   // Follow redirect is called by the client. Even if the shared storage request
   // helper updates headers, `FollowRedirect()` could still be called by the
   // client without headers changes.
-  url_loader_->FollowRedirect(/*removed_headers=*/{}, /*modified_headers=*/{},
-                              /*modified_cors_exempt_headers=*/{},
-                              std::nullopt);
+  url_loader_->FollowRedirect(/*headers_update_params=*/{},
+                              /*new_url=*/std::nullopt);
   client()->RunUntilComplete();
 
   delete_run_loop_.Run();
@@ -8803,9 +8906,8 @@ TEST_F(SharedStorageRequestHelperURLLoaderTest, MultipleRedirects) {
   // Follow redirect is called by the client. Even if the shared storage request
   // helper updates headers, `FollowRedirect()` could still be called by the
   // client without headers changes.
-  url_loader_->FollowRedirect(/*removed_headers=*/{}, /*modified_headers=*/{},
-                              /*modified_cors_exempt_headers=*/{},
-                              std::nullopt);
+  url_loader_->FollowRedirect(/*headers_update_params=*/{},
+                              /*new_url=*/std::nullopt);
   client()->RunUntilRedirectReceived();
   ASSERT_TRUE(client()->has_received_redirect());
 
@@ -8815,9 +8917,8 @@ TEST_F(SharedStorageRequestHelperURLLoaderTest, MultipleRedirects) {
   // Follow redirect is called by the client. Even if the shared storage request
   // helper updates headers, `FollowRedirect()` could still be called by the
   // client without headers changes.
-  url_loader_->FollowRedirect(/*removed_headers=*/{}, /*modified_headers=*/{},
-                              /*modified_cors_exempt_headers=*/{},
-                              std::nullopt);
+  url_loader_->FollowRedirect(/*headers_update_params=*/{},
+                              /*new_url=*/std::nullopt);
   client()->RunUntilComplete();
   WaitForHeadersReceived(2);
 
@@ -8861,9 +8962,8 @@ TEST_F(SharedStorageRequestHelperURLLoaderTest, CrossSiteRedirect) {
   // Follow redirect is called by the client. Even if the shared storage request
   // helper updates headers, `FollowRedirect()` could still be called by the
   // client without headers changes.
-  url_loader_->FollowRedirect(/*removed_headers=*/{}, /*modified_headers=*/{},
-                              /*modified_cors_exempt_headers=*/{},
-                              std::nullopt);
+  url_loader_->FollowRedirect(/*headers_update_params=*/{},
+                              /*new_url=*/std::nullopt);
   client()->RunUntilComplete();
   WaitForHeadersReceived(1);
 
@@ -8898,13 +8998,11 @@ TEST_F(SharedStorageRequestHelperURLLoaderTest, RedirectNoLongerEligible) {
 
   // Simulate having permission revoked by the client, the effect of which is
   // the request header is removed.
-  std::vector<std::string> removed_headers(
-      {std::string(kSecSharedStorageWritableHeader.data(),
-                   kSecSharedStorageWritableHeader.size())});
-  url_loader_->FollowRedirect(removed_headers,
-                              /*modified_headers=*/{},
-                              /*modified_cors_exempt_headers=*/{},
-                              std::nullopt);
+  network::HttpRequestHeadersUpdateParams headers_update_params;
+  headers_update_params.removed_headers = {
+      std::string(kSecSharedStorageWritableHeader.data(),
+                  kSecSharedStorageWritableHeader.size())};
+  url_loader_->FollowRedirect(std::move(headers_update_params), std::nullopt);
 
   // The `SharedStorageRequestHelper` has `shared_storage_writable_eligible_`
   // now set to false because the request header was removed.
@@ -8938,12 +9036,10 @@ TEST_F(SharedStorageRequestHelperURLLoaderTest, RedirectBecomesEligible) {
 
   // Simulate having permission restored by the client, the effect of which is
   // the request header is added.
-  net::HttpRequestHeaders modified_headers;
-  modified_headers.SetHeader(kSecSharedStorageWritableHeader,
-                             kSecSharedStorageWritableValue);
-  url_loader_->FollowRedirect(/*removed_headers=*/{}, modified_headers,
-                              /*modified_cors_exempt_headers=*/{},
-                              std::nullopt);
+  network::HttpRequestHeadersUpdateParams headers_update_params;
+  headers_update_params.modified_headers.SetHeader(
+      kSecSharedStorageWritableHeader, kSecSharedStorageWritableValue);
+  url_loader_->FollowRedirect(std::move(headers_update_params), std::nullopt);
 
   // The `SharedStorageRequestHelper` has `shared_storage_writable_eligible_`
   // now set to true because the request header was added.
@@ -9111,6 +9207,31 @@ TEST_F(URLLoaderTest, PerformSyntheticResponseFallbackFailure) {
 
   // Load the request and expect it to fail with net::ERR_INSUFFICIENT_RESOURCES.
   EXPECT_EQ(net::ERR_INSUFFICIENT_RESOURCES, LoadRequest(request));
+}
+
+TEST_F(URLLoaderTest, LogsRequestedUrlLengthForLongUrls) {
+  base::HistogramTester histogram_tester;
+  std::string long_path(8200, 'a');
+  GURL long_url = test_server()->GetURL("/" + long_path);
+
+  ResourceRequest request = CreateResourceRequest("GET", long_url);
+  EXPECT_EQ(LoadRequest(request), net::OK);
+
+  histogram_tester.ExpectUniqueSample(
+      "Net.RequestedUrlLength", long_url.GetWithoutRef().spec().length(), 1);
+}
+
+TEST_F(URLLoaderTest, DoesNotLogRequestedUrlLengthForShortUrls) {
+  base::HistogramTester histogram_tester;
+  size_t base_len = test_server()->GetURL("/").spec().length();
+  std::string path(1000 - base_len, 'a');
+  GURL short_url = test_server()->GetURL("/" + path);
+  ASSERT_EQ(1000u, short_url.spec().length());
+
+  ResourceRequest request = CreateResourceRequest("GET", short_url);
+  EXPECT_EQ(LoadRequest(request), net::OK);
+
+  histogram_tester.ExpectTotalCount("Net.RequestedUrlLength", 0);
 }
 
 }  // namespace network

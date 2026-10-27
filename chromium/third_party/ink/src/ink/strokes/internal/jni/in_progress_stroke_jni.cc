@@ -20,24 +20,23 @@
 #include "absl/log/absl_check.h"
 #include "absl/status/status.h"
 #include "absl/types/span.h"
-#include "ink/brush/internal/jni/brush_jni_helper.h"
+#include "ink/brush/internal/jni/brush_native_helper.h"
 #include "ink/geometry/envelope.h"
 #include "ink/geometry/internal/jni/box_accumulator_jni_helper.h"
-#include "ink/geometry/internal/jni/mesh_format_jni_helper.h"
+#include "ink/geometry/internal/jni/mesh_format_native_helper.h"
 #include "ink/geometry/internal/jni/vec_jni_helper.h"
 #include "ink/geometry/mutable_mesh.h"
 #include "ink/geometry/point.h"
 #include "ink/jni/internal/jni_defines.h"
-#include "ink/jni/internal/jni_throw_util.h"
+#include "ink/jni/internal/status_jni_helper.h"
 #include "ink/strokes/in_progress_stroke.h"
 #include "ink/strokes/input/stroke_input.h"
 #include "ink/strokes/input/stroke_input_batch.h"
 #include "ink/strokes/internal/jni/in_progress_stroke_jni_helper.h"
+#include "ink/strokes/internal/jni/stroke_input_batch_native_helper.h"
 #include "ink/strokes/internal/jni/stroke_input_jni_helper.h"
 #include "ink/strokes/internal/jni/stroke_jni_helper.h"
 #include "ink/types/duration.h"
-
-namespace {
 
 using ::ink::Duration32;
 using ::ink::Envelope;
@@ -45,22 +44,20 @@ using ::ink::InProgressStroke;
 using ::ink::Point;
 using ::ink::StrokeInput;
 using ::ink::StrokeInputBatch;
-using ::ink::jni::CastToBrush;
 using ::ink::jni::CastToInProgressStrokeWrapper;
 using ::ink::jni::CastToMutableInProgressStrokeWrapper;
-using ::ink::jni::CastToMutableStrokeInputBatch;
-using ::ink::jni::CastToStrokeInputBatch;
 using ::ink::jni::DeleteNativeInProgressStroke;
 using ::ink::jni::FillJBoxAccumulatorOrThrow;
-using ::ink::jni::FillJMutableVecFromPointOrThrow;
+using ::ink::jni::FillJMutableVecOrThrow;
 using ::ink::jni::InProgressStrokeWrapper;
 using ::ink::jni::NewNativeInProgressStroke;
-using ::ink::jni::NewNativeMeshFormat;
 using ::ink::jni::NewNativeStroke;
 using ::ink::jni::ThrowExceptionFromStatus;
-using ::ink::jni::UpdateJObjectInputOrThrow;
-
-}  // namespace
+using ::ink::jni::UpdateJStrokeInputOrThrow;
+using ::ink::native::CastToBrush;
+using ::ink::native::CastToMutableStrokeInputBatch;
+using ::ink::native::CastToStrokeInputBatch;
+using ::ink::native::NewNativeMeshFormat;
 
 extern "C" {
 
@@ -193,7 +190,7 @@ JNI_METHOD(strokes, InProgressStrokeNative, void, getAndOverwriteInput)
   const InProgressStroke& in_progress_stroke =
       CastToInProgressStrokeWrapper(native_pointer).Stroke();
   StrokeInput input = in_progress_stroke.GetInputs().Get(index);
-  UpdateJObjectInputOrThrow(env, input, j_input);
+  UpdateJStrokeInputOrThrow(env, input, j_input);
 }
 
 JNI_METHOD(strokes, InProgressStrokeNative, jint, getBrushCoatCount)
@@ -254,7 +251,17 @@ JNI_METHOD(strokes, InProgressStrokeNative, void, fillOutlinePosition)
       in_progress_stroke.GetCoatOutlines(coat_index)[outline_index];
   Point position = in_progress_stroke.GetMesh(coat_index)
                        .VertexPosition(outline[outline_vertex_index]);
-  FillJMutableVecFromPointOrThrow(env, out_position, position);
+  FillJMutableVecOrThrow(env, position, out_position);
+}
+
+JNI_METHOD(strokes, InProgressStrokeNative, void, fillPosition)
+(JNIEnv* env, jobject thiz, jlong native_pointer, jint coat_index,
+ jint partition_index, jint vertex_index, jobject out_position) {
+  const InProgressStroke& in_progress_stroke =
+      CastToInProgressStrokeWrapper(native_pointer).Stroke();
+  Point position =
+      in_progress_stroke.GetMesh(coat_index).VertexPosition(vertex_index);
+  FillJMutableVecOrThrow(env, position, out_position);
 }
 
 JNI_METHOD(strokes, InProgressStrokeNative, jint, getMeshPartitionCount)

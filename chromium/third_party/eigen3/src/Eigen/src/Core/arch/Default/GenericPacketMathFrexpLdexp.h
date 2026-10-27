@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_ARCH_GENERIC_PACKET_MATH_FREXP_LDEXP_H
 #define EIGEN_ARCH_GENERIC_PACKET_MATH_FREXP_LDEXP_H
@@ -50,7 +51,7 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Packet pfrexp_generic_get_biased_exponent(
 template <typename Packet>
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Packet pfrexp_generic(const Packet& a, Packet& exponent) {
   typedef typename unpacket_traits<Packet>::type Scalar;
-  typedef typename make_unsigned<typename make_integer<Scalar>::type>::type ScalarUI;
+  typedef std::make_unsigned_t<typename make_integer<Scalar>::type> ScalarUI;
   static constexpr int TotalBits = sizeof(Scalar) * CHAR_BIT, MantissaBits = numext::numeric_limits<Scalar>::digits - 1,
                        ExponentBits = TotalBits - MantissaBits - 1;
 
@@ -109,26 +110,34 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Packet pldexp_generic(const Packet& a, con
   //
   // Set e = min(max(exponent, -278), 278);
   //     b = floor(e/4);
-  //   out = ((((a * 2^(b)) * 2^(b)) * 2^(b)) * 2^(e-3*b))
+  //     c1 = 2^b
+  //     c2 = 2^(e - 3b)
+  //   out = a * c1^3 * c2  (= a * 2^e)
   //
-  // This will avoid any intermediate overflows and correctly handle 0, inf,
-  // NaN cases.
+  // Re-associate as (a * c1) * (c1 * c1) * c2 so c1*c1 runs in parallel with
+  // a*c1; the dependent-multiply chain is 3 deep instead of 4.  Multiplying
+  // by c1 (the downscale factor) first is required for safety: for negative
+  // exponents the remainder factor c2 = 2^(e-3b) can be > 1 (e.g. e=-1 ->
+  // b=-1 -> c2=4), so a*c2 would overflow at |a| near max even when the
+  // final ldexp result is finite.
   typedef typename unpacket_traits<Packet>::integer_packet PacketI;
   typedef typename unpacket_traits<Packet>::type Scalar;
   typedef typename unpacket_traits<PacketI>::type ScalarI;
   static constexpr int TotalBits = sizeof(Scalar) * CHAR_BIT, MantissaBits = numext::numeric_limits<Scalar>::digits - 1,
                        ExponentBits = TotalBits - MantissaBits - 1;
 
-  const Packet max_exponent = pset1<Packet>(Scalar((ScalarI(1) << ExponentBits) + ScalarI(MantissaBits - 1)));  // 278
-  const PacketI bias = pset1<PacketI>((ScalarI(1) << (ExponentBits - 1)) - ScalarI(1));                         // 127
-  const PacketI e = pcast<Packet, PacketI>(pmin(pmax(exponent, pnegate(max_exponent)), max_exponent));
-  PacketI b = parithmetic_shift_right<2>(e);                                          // floor(e/4);
-  Packet c = preinterpret<Packet>(plogical_shift_left<MantissaBits>(padd(b, bias)));  // 2^b
-  Packet out = pmul(pmul(pmul(a, c), c), c);                                          // a * 2^(3b)
-  b = pnmadd(pset1<PacketI>(3), b, e);                                                // e - 3b
-  c = preinterpret<Packet>(plogical_shift_left<MantissaBits>(padd(b, bias)));         // 2^(e-3*b)
-  out = pmul(out, c);
-  return out;
+  constexpr ScalarI max_exp_value = (ScalarI(1) << ExponentBits) + ScalarI(MantissaBits - 1);  // 278
+  const Packet max_exponent = pset1<Packet>(Scalar(max_exp_value));
+  const Packet neg_max_exponent = pset1<Packet>(Scalar(-max_exp_value));
+  const PacketI bias = pset1<PacketI>((ScalarI(1) << (ExponentBits - 1)) - ScalarI(1));  // 127
+  const PacketI e = pcast<Packet, PacketI>(pmin(pmax(exponent, neg_max_exponent), max_exponent));
+  const PacketI b = parithmetic_shift_right<2>(e);                                                     // floor(e/4);
+  const PacketI b_remainder = pnmadd(pset1<PacketI>(3), b, e);                                         // e - 3b
+  const Packet c1 = preinterpret<Packet>(plogical_shift_left<MantissaBits>(padd(b, bias)));            // 2^b
+  const Packet c2 = preinterpret<Packet>(plogical_shift_left<MantissaBits>(padd(b_remainder, bias)));  // 2^(e-3*b)
+  const Packet c1_squared = pmul(c1, c1);
+  const Packet a_c1 = pmul(a, c1);
+  return pmul(pmul(a_c1, c1_squared), c2);
 }
 
 // Explicitly multiplies

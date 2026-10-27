@@ -19,19 +19,19 @@
 #include "base/uuid.h"
 #include "components/gcm_driver/crypto/gcm_encryption_provider.h"
 #include "components/gcm_driver/instance_id/instance_id_driver.h"
+#include "components/send_tab_to_self/fake_send_tab_to_self_model.h"
 #include "components/send_tab_to_self/features.h"
 #include "components/send_tab_to_self/page_context.h"
 #include "components/send_tab_to_self/send_tab_to_self_entry.h"
-#include "components/send_tab_to_self/test_send_tab_to_self_model.h"
 #include "components/sharing_message/features.h"
 #include "components/sharing_message/mock_sharing_device_source.h"
 #include "components/sharing_message/mock_sharing_message_sender.h"
 #include "components/sharing_message/proto/sharing_message.pb.h"
+#include "components/sharing_message/sharing_channel_sender.h"
 #include "components/sharing_message/sharing_constants.h"
 #include "components/sharing_message/sharing_device_registration.h"
 #include "components/sharing_message/sharing_device_registration_result.h"
 #include "components/sharing_message/sharing_fcm_handler.h"
-#include "components/sharing_message/sharing_fcm_sender.h"
 #include "components/sharing_message/sharing_handler_registry.h"
 #include "components/sharing_message/sharing_message_handler.h"
 #include "components/sharing_message/sharing_sync_preference.h"
@@ -98,7 +98,7 @@ class MockSharingFCMHandler : public SharingFCMHandler {
   MockSharingFCMHandler()
       : SharingFCMHandler(/*gcm_driver=*/nullptr,
                           /*device_info_tracker=*/nullptr,
-                          /*sharing_fcm_sender=*/nullptr,
+                          /*sharing_channel_sender=*/nullptr,
                           /*handler_registry=*/nullptr) {}
   ~MockSharingFCMHandler() override = default;
 
@@ -142,6 +142,8 @@ class FakeSharingDeviceRegistration : public SharingDeviceRegistration {
   bool IsOneTimeTokenBackendNotificationSupported() const override {
     return false;
   }
+
+  bool IsGlicExperimentalTriggeringSupported() const override { return false; }
 
   void SetEnabledFeaturesForTesting(
       std::set<syncer::DeviceInfo::SharingFeature> enabled_features) override {}
@@ -231,7 +233,7 @@ class SharingServiceTest : public testing::Test {
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   syncer::FakeDeviceInfoSyncService fake_device_info_sync_service;
   syncer::TestSyncService test_sync_service_;
-  send_tab_to_self::TestSendTabToSelfModel send_tab_to_self_model_;
+  send_tab_to_self::FakeSendTabToSelfModel send_tab_to_self_model_;
   sync_preferences::TestingPrefServiceSyncable prefs_;
 
  private:
@@ -302,7 +304,6 @@ TEST_F(SharingServiceTest, SendMessageToDeviceSuccess) {
   auto run_callback = [&](const SharingTargetDeviceInfo& device_info,
                           base::TimeDelta response_timeout,
                           components_sharing_message::SharingMessage message,
-                          SharingMessageSender::DelegateType delegate_type,
                           SharingMessageSender::ResponseCallback callback) {
     std::unique_ptr<components_sharing_message::ResponseMessage>
         response_message =
@@ -314,8 +315,7 @@ TEST_F(SharingServiceTest, SendMessageToDeviceSuccess) {
   };
 
   ON_CALL(*sharing_message_sender_,
-          SendMessageToDevice(testing::_, testing::_, testing::_, testing::_,
-                              testing::_))
+          SendMessageToDevice(testing::_, testing::_, testing::_, testing::_))
       .WillByDefault(run_callback);
 
   GetSharingService()->SendMessageToDevice(
@@ -365,16 +365,15 @@ TEST_F(SharingServiceTest, SendTabEntryAddedLocally) {
   push_notification_entry->set_entry_unique_guid(guid);
 
   EXPECT_CALL(*sharing_message_sender_,
-              SendUnencryptedMessageToDevice(testing::_,
-                                             base::test::EqualsProto(message),
-                                             testing::_, testing::_));
+              SendIosPushMessageToDevice(
+                  testing::_, base::test::EqualsProto(message), testing::_));
 
   send_tab_to_self::SendTabToSelfEntry entry =
       send_tab_to_self::SendTabToSelfEntry(
           guid, GURL(destination_url), title, base::Time(), device_name, guid,
           send_tab_to_self::PageContext(),
           send_tab_to_self::NavigationHistory());
-  GetSharingService()->EntryAddedLocally(&entry);
+  GetSharingService()->OnEntryAddedLocally(&entry);
 }
 
 TEST_F(SharingServiceTest, SendTabEntryAddedLocally_NonIOSDevice) {
@@ -391,15 +390,14 @@ TEST_F(SharingServiceTest, SendTabEntryAddedLocally_NonIOSDevice) {
                                        /*last_updated_timestamp=*/base::Time());
       });
 
-  EXPECT_CALL(*sharing_message_sender_, SendUnencryptedMessageToDevice)
-      .Times(0);
+  EXPECT_CALL(*sharing_message_sender_, SendIosPushMessageToDevice).Times(0);
 
   send_tab_to_self::SendTabToSelfEntry entry =
       send_tab_to_self::SendTabToSelfEntry(
           "guid", GURL("https://www.example.com"), "title", base::Time(),
           "device name", guid, send_tab_to_self::PageContext(),
           send_tab_to_self::NavigationHistory());
-  GetSharingService()->EntryAddedLocally(&entry);
+  GetSharingService()->OnEntryAddedLocally(&entry);
 }
 
 TEST_F(SharingServiceTest, DeviceRegistration) {

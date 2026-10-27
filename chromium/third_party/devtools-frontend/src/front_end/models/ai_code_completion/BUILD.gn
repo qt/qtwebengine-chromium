@@ -14,7 +14,6 @@ devtools_module("ai_code_completion") {
   ]
 
   deps = [
-    "../../core/common:bundle",
     "../../core/host:bundle",
     "../../core/root:bundle",
   ]
@@ -29,6 +28,7 @@ devtools_entrypoint("bundle") {
     ":*",
     "../../panels/common/*",
     "../../panels/console/*",
+    "../../panels/elements/*",
     "../../panels/sources/*",
     "../../ui/components/text_editor/*",
   ]
@@ -43,6 +43,8 @@ ts_library("unittests") {
 
   deps = [
     ":bundle",
+    "../../core/host:bundle",
     "../../testing",
+    "../../ui/components/text_editor:bundle",
   ]
 }

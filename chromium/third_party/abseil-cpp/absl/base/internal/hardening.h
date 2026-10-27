@@ -17,39 +17,114 @@
 // File: hardening.h
 // -----------------------------------------------------------------------------
 //
-// This header file defines macros and functions for checking bounds on
-// accesses to Abseil container types.
+// This header file defines macros and functions for performing Abseil
+// hardening checks and aborts.
 
 #ifndef ABSL_BASE_INTERNAL_HARDENING_H_
 #define ABSL_BASE_INTERNAL_HARDENING_H_
 
-#include "absl/base/attributes.h"
 #include "absl/base/config.h"
 #include "absl/base/macros.h"
 #include "absl/base/options.h"
-
-#ifdef ABSL_INTERNAL_ATTRIBUTE_NO_MERGE
-#error ABSL_INTERNAL_ATTRIBUTE_NO_MERGE cannot be directly set
-#elif ABSL_HAVE_CPP_ATTRIBUTE(clang::nomerge)
-#define ABSL_INTERNAL_ATTRIBUTE_NO_MERGE [[clang::nomerge]]
-#else
-#define ABSL_INTERNAL_ATTRIBUTE_NO_MERGE
-#endif
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN
 
 namespace base_internal {
 
-[[noreturn]] ABSL_ATTRIBUTE_NOINLINE void FailedBoundsCheckAbort();
-
-inline void HardeningAssertInBounds(size_t index, size_t size) {
+// `HardeningAssert` performs runtime checks when Abseil Hardening is enabled,
+// even if `NDEBUG` is defined.
+//
+// When `NDEBUG` is not defined, `HardeningAssert`'s behavior is identical to
+// `ABSL_ASSERT`.
+//
+// Prefer a more specific assertion function over this more general one,
+// as assertion functions which perform the comparison themselves
+// can have the cost of the comparison attributed to them.
+constexpr void HardeningAssert(bool cond) {
+  ABSL_ASSERT(cond);
 #if (ABSL_OPTION_HARDENED == 1 || ABSL_OPTION_HARDENED == 2) && defined(NDEBUG)
-  if (ABSL_PREDICT_FALSE(index >= size)) {
-    ABSL_INTERNAL_ATTRIBUTE_NO_MERGE FailedBoundsCheckAbort();
+  if (ABSL_PREDICT_FALSE(!cond)) {
+    base_internal::HardeningAbort();
   }
-#else
-  ABSL_ASSERT(index < size);
+#endif
+}
+
+// `HardeningAssertSlow` is used to perform runtime checks which are too
+// computationally expensive to enable widely by default.
+//
+// When `NDEBUG` is not defined, `HardeningAssertSlow`'s behavior is identical
+// to `ABSL_ASSERT`.
+constexpr void HardeningAssertSlow(bool cond) {
+  ABSL_ASSERT(cond);
+#if (ABSL_OPTION_HARDENED == 1) && defined(NDEBUG)
+  if (ABSL_PREDICT_FALSE(!cond)) {
+    base_internal::HardeningAbort();
+  }
+#endif
+}
+
+template <typename T>
+constexpr void HardeningAssertGT(T val1, T val2) {
+  ABSL_ASSERT(val1 > val2);
+#if (ABSL_OPTION_HARDENED == 1 || ABSL_OPTION_HARDENED == 2) && defined(NDEBUG)
+  if (!ABSL_PREDICT_TRUE(val1 > val2)) {
+    base_internal::HardeningAbort();
+  }
+#endif
+}
+
+template <typename T>
+constexpr void HardeningAssertGE(T val1, T val2) {
+  ABSL_ASSERT(val1 >= val2);
+#if (ABSL_OPTION_HARDENED == 1 || ABSL_OPTION_HARDENED == 2) && defined(NDEBUG)
+  if (!ABSL_PREDICT_TRUE(val1 >= val2)) {
+    base_internal::HardeningAbort();
+  }
+#endif
+}
+
+template <typename T>
+constexpr void HardeningAssertLT(T val1, T val2) {
+  ABSL_ASSERT(val1 < val2);
+#if (ABSL_OPTION_HARDENED == 1 || ABSL_OPTION_HARDENED == 2) && defined(NDEBUG)
+  if (!ABSL_PREDICT_TRUE(val1 < val2)) {
+    base_internal::HardeningAbort();
+  }
+#endif
+}
+
+template <typename T>
+constexpr void HardeningAssertLE(T val1, T val2) {
+  ABSL_ASSERT(val1 <= val2);
+#if (ABSL_OPTION_HARDENED == 1 || ABSL_OPTION_HARDENED == 2) && defined(NDEBUG)
+  if (!ABSL_PREDICT_TRUE(val1 <= val2)) {
+    base_internal::HardeningAbort();
+  }
+#endif
+}
+
+constexpr void HardeningAssertInBounds(size_t index, size_t size) {
+  HardeningAssertLT(index, size);
+}
+
+template <typename T>
+constexpr void HardeningAssertNonEmpty(const T& container) {
+  ABSL_ASSERT(!container.empty());
+#if (ABSL_OPTION_HARDENED == 1 || ABSL_OPTION_HARDENED == 2) && defined(NDEBUG)
+  if (ABSL_PREDICT_FALSE(container.empty())) {
+    base_internal::HardeningAbort();
+  }
+#endif
+}
+
+template <typename T>
+constexpr void HardeningAssertNonNull(T ptr) {
+  ABSL_ASSERT(ptr != nullptr);
+#if (ABSL_OPTION_HARDENED == 1 || ABSL_OPTION_HARDENED == 2) && defined(NDEBUG)
+  if (ABSL_PREDICT_FALSE(ptr == nullptr)) {
+    base_internal::HardeningAbort();
+  }
 #endif
 }
 
@@ -57,7 +132,5 @@ inline void HardeningAssertInBounds(size_t index, size_t size) {
 
 ABSL_NAMESPACE_END
 }  // namespace absl
-
-#undef ABSL_INTERNAL_ATTRIBUTE_NO_MERGE
 
 #endif  // ABSL_BASE_INTERNAL_HARDENING_H_

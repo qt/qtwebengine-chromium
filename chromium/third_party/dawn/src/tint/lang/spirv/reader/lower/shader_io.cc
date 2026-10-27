@@ -742,12 +742,11 @@ struct State {
 Result<SuccessType> ShaderIO(core::ir::Module& ir) {
     AssertValid(ir,
                 core::ir::Capabilities{
-                    core::ir::Capability::kAllowMultipleEntryPoints,
-                    core::ir::Capability::kAllowOverrides,
                     core::ir::Capability::kAllowPhonyInstructions,
                     core::ir::Capability::kAllowNonCoreTypes,
                     core::ir::Capability::kAllowStructMatrixDecorations,
                     core::ir::Capability::kAllowLocationForNumericElements,
+                    core::ir::Capability::kAllowPointSizeBuiltin,
                     core::ir::Capability::kAllowPointerToHandle,
                     core::ir::Capability::kLoosenValidationForShaderIO,
                 },

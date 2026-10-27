@@ -11,6 +11,7 @@
 #include "base/test/task_environment.h"
 #include "components/password_manager/core/browser/features/password_features.h"
 #include "components/password_manager/core/browser/password_manager_test_utils.h"
+#include "components/password_manager/core/browser/password_store/password_form_converters.h"
 #include "components/password_manager/core/browser/password_store/test_password_store.h"
 #include "components/password_manager/core/browser/ui/saved_passwords_presenter.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -39,8 +40,8 @@ PasswordForm CreatePasswordForm() {
 class PasswordUndoHelperTest : public testing::Test {
  protected:
   PasswordUndoHelperTest() {
-    profile_store_->Init(/*affiliated_match_helper=*/nullptr);
-    account_store_->Init(/*affiliated_match_helper=*/nullptr);
+    profile_store_->Init();
+    account_store_->Init();
   }
 
   ~PasswordUndoHelperTest() override {
@@ -70,53 +71,56 @@ class PasswordUndoHelperTest : public testing::Test {
 
 TEST_F(PasswordUndoHelperTest, UndoSingleForm) {
   PasswordForm form = CreatePasswordForm();
-  ProfileStore()->AddLogin(form);
+  ProfileStore()->AddLogin(password_manager::FromPasswordForm(form));
 
   RunUntilIdle();
 
-  ASSERT_THAT(ProfileStore()->stored_passwords(),
+  ASSERT_THAT(GetAllLoginsSync(ProfileStore()),
               ElementsAre(Pair(form.signon_realm, ElementsAre(form))));
 
   // Remove form
   UndoHelper().StartGroupingActions();
-  ProfileStore()->RemoveLogin(FROM_HERE, form);
+  ProfileStore()->RemoveLogin(FROM_HERE,
+                              password_manager::FromPasswordForm(form));
   UndoHelper().PasswordRemoved(form);
   UndoHelper().EndGroupingActions();
   RunUntilIdle();
 
-  EXPECT_THAT(ProfileStore()->stored_passwords(), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(ProfileStore()), IsEmpty());
 
   UndoHelper().Undo();
   RunUntilIdle();
-  EXPECT_THAT(ProfileStore()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(ProfileStore()),
               ElementsAre(Pair(form.signon_realm, ElementsAre(form))));
 }
 
 TEST_F(PasswordUndoHelperTest, UndoSingleBackupPasswordForm) {
   PasswordForm form_without_backup = CreatePasswordForm();
   PasswordForm form_with_backup(form_without_backup);
-  ProfileStore()->AddLogin(form_with_backup);
+  ProfileStore()->AddLogin(
+      password_manager::FromPasswordForm(form_with_backup));
 
   RunUntilIdle();
 
-  ASSERT_THAT(ProfileStore()->stored_passwords(),
+  ASSERT_THAT(GetAllLoginsSync(ProfileStore()),
               ElementsAre(Pair(form_with_backup.signon_realm,
                                ElementsAre(form_with_backup))));
 
   // Remove backup
   UndoHelper().StartGroupingActions();
-  ProfileStore()->UpdateLogin(form_without_backup);
+  ProfileStore()->UpdateLogin(
+      password_manager::FromPasswordForm(form_without_backup));
   UndoHelper().BackupPasswordRemoved(form_without_backup);
   UndoHelper().EndGroupingActions();
   RunUntilIdle();
 
-  EXPECT_THAT(ProfileStore()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(ProfileStore()),
               ElementsAre(Pair(form_with_backup.signon_realm,
                                ElementsAre(form_without_backup))));
 
   UndoHelper().Undo();
   RunUntilIdle();
-  EXPECT_THAT(ProfileStore()->stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(ProfileStore()),
               ElementsAre(Pair(form_with_backup.signon_realm,
                                ElementsAre(form_with_backup))));
 }
@@ -129,36 +133,40 @@ TEST_F(PasswordUndoHelperTest, UndoMultipleForms) {
   PasswordForm form_1_duplicate = form_1;
   form_1_duplicate.username_element = u"element";
 
-  ProfileStore()->AddLogin(form_1);
-  ProfileStore()->AddLogin(form_2);
-  ProfileStore()->AddLogin(form_1_duplicate);
+  ProfileStore()->AddLogin(password_manager::FromPasswordForm(form_1));
+  ProfileStore()->AddLogin(password_manager::FromPasswordForm(form_2));
+  ProfileStore()->AddLogin(
+      password_manager::FromPasswordForm(form_1_duplicate));
 
   RunUntilIdle();
 
   ASSERT_THAT(
-      ProfileStore()->stored_passwords(),
+      GetAllLoginsSync(ProfileStore()),
       UnorderedElementsAre(Pair(form_1.signon_realm,
                                 UnorderedElementsAre(form_1, form_1_duplicate)),
                            Pair(form_2.signon_realm, ElementsAre(form_2))));
 
   // Remove all forms
   UndoHelper().StartGroupingActions();
-  ProfileStore()->RemoveLogin(FROM_HERE, form_1);
-  ProfileStore()->RemoveLogin(FROM_HERE, form_2);
-  ProfileStore()->RemoveLogin(FROM_HERE, form_1_duplicate);
+  ProfileStore()->RemoveLogin(FROM_HERE,
+                              password_manager::FromPasswordForm(form_1));
+  ProfileStore()->RemoveLogin(FROM_HERE,
+                              password_manager::FromPasswordForm(form_2));
+  ProfileStore()->RemoveLogin(
+      FROM_HERE, password_manager::FromPasswordForm(form_1_duplicate));
   UndoHelper().PasswordRemoved(form_1);
   UndoHelper().PasswordRemoved(form_2);
   UndoHelper().PasswordRemoved(form_1_duplicate);
   UndoHelper().EndGroupingActions();
   RunUntilIdle();
 
-  EXPECT_THAT(ProfileStore()->stored_passwords(), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(ProfileStore()), IsEmpty());
   // Undo forms removal.
   UndoHelper().Undo();
   RunUntilIdle();
 
   EXPECT_THAT(
-      ProfileStore()->stored_passwords(),
+      GetAllLoginsSync(ProfileStore()),
       UnorderedElementsAre(Pair(form_1.signon_realm,
                                 UnorderedElementsAre(form_1, form_1_duplicate)),
                            Pair(form_2.signon_realm, ElementsAre(form_2))));
@@ -169,36 +177,38 @@ TEST_F(PasswordUndoHelperTest, UndoFormsMultipleStores) {
   PasswordForm account_form = CreatePasswordForm();
   account_form.in_store = password_manager::PasswordForm::Store::kAccountStore;
 
-  ProfileStore()->AddLogin(profile_form);
-  AccountStore()->AddLogin(account_form);
+  ProfileStore()->AddLogin(password_manager::FromPasswordForm(profile_form));
+  AccountStore()->AddLogin(password_manager::FromPasswordForm(account_form));
   RunUntilIdle();
 
   ASSERT_THAT(
-      ProfileStore()->stored_passwords(),
+      GetAllLoginsSync(ProfileStore()),
       ElementsAre(Pair(profile_form.signon_realm, ElementsAre(profile_form))));
   ASSERT_THAT(
-      AccountStore()->stored_passwords(),
+      GetAllLoginsSync(AccountStore()),
       ElementsAre(Pair(account_form.signon_realm, ElementsAre(account_form))));
 
   // Remove forms
   UndoHelper().StartGroupingActions();
-  ProfileStore()->RemoveLogin(FROM_HERE, profile_form);
-  AccountStore()->RemoveLogin(FROM_HERE, account_form);
+  ProfileStore()->RemoveLogin(FROM_HERE,
+                              password_manager::FromPasswordForm(profile_form));
+  AccountStore()->RemoveLogin(FROM_HERE,
+                              password_manager::FromPasswordForm(account_form));
   UndoHelper().PasswordRemoved(profile_form);
   UndoHelper().PasswordRemoved(account_form);
   UndoHelper().EndGroupingActions();
   RunUntilIdle();
 
-  EXPECT_THAT(ProfileStore()->stored_passwords(), IsEmpty());
-  EXPECT_THAT(AccountStore()->stored_passwords(), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(ProfileStore()), IsEmpty());
+  EXPECT_THAT(GetAllLoginsSync(AccountStore()), IsEmpty());
 
   UndoHelper().Undo();
   RunUntilIdle();
   EXPECT_THAT(
-      ProfileStore()->stored_passwords(),
+      GetAllLoginsSync(ProfileStore()),
       ElementsAre(Pair(profile_form.signon_realm, ElementsAre(profile_form))));
   EXPECT_THAT(
-      AccountStore()->stored_passwords(),
+      GetAllLoginsSync(AccountStore()),
       ElementsAre(Pair(account_form.signon_realm, ElementsAre(account_form))));
 }
 

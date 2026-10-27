@@ -9,6 +9,8 @@
 
 #include "base/check.h"
 #include "base/command_line.h"
+#include "base/containers/span.h"
+#include "base/containers/to_vector.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
@@ -39,9 +41,11 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/context_menu_params.h"
 #include "content/public/browser/global_request_id.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/javascript_dialog_manager.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/security_principal.h"
 #include "content/public/browser/ssl_host_state_delegate.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -52,6 +56,7 @@
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_features.h"
+#include "content/public/common/drop_data.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "content/public/test/back_forward_cache_util.h"
@@ -888,7 +893,10 @@ TEST_F(WebContentsImplTest, NavigateFromSitelessUrl) {
   EXPECT_EQ(native_url, contents()->GetLastCommittedURL());
   EXPECT_EQ(native_url, contents()->GetVisibleURL());
   EXPECT_EQ(orig_instance, contents()->GetSiteInstance());
-  EXPECT_EQ(GURL(), contents()->GetSiteInstance()->GetSiteURL());
+  EXPECT_EQ(GURL(), contents()
+                        ->GetSiteInstance()
+                        ->GetSecurityPrincipal()
+                        .GetDeprecatedSiteURL());
   EXPECT_FALSE(orig_instance->HasSite());
 
   // Navigate to new site (should keep same site instance, but might change
@@ -929,8 +937,8 @@ TEST_F(WebContentsImplTest, NavigateFromSitelessUrl) {
 
   EXPECT_EQ(orig_instance, contents()->GetSiteInstance());
   if (AreStrictSiteInstancesEnabled()) {
-    EXPECT_TRUE(
-        contents()->GetSiteInstance()->GetSiteURL().DomainIs("google.com"));
+    EXPECT_EQ("google.com",
+              contents()->GetSiteInstance()->GetSecurityPrincipal().GetHost());
   } else {
     // Verify that the empty SiteInstance gets converted into a default
     // SiteInstance because |url| does not require a dedicated process.
@@ -990,7 +998,10 @@ TEST_F(WebContentsImplTest, NavigateFromRestoredSitelessUrl) {
   navigation->Commit();
 
   EXPECT_EQ(orig_instance, contents()->GetSiteInstance());
-  EXPECT_EQ(GURL(), contents()->GetSiteInstance()->GetSiteURL());
+  EXPECT_EQ(GURL(), contents()
+                        ->GetSiteInstance()
+                        ->GetSecurityPrincipal()
+                        .GetDeprecatedSiteURL());
   EXPECT_FALSE(orig_instance->HasSite());
 
   // Navigate to a regular site and verify that the SiteInstance was kept.
@@ -1564,9 +1575,9 @@ TEST_F(WebContentsImplTest, NavigationExitsFullscreen) {
   // Toggle fullscreen mode on (as if initiated via IPC from renderer).
   EXPECT_FALSE(contents()->IsFullscreen());
   EXPECT_FALSE(fake_delegate.IsFullscreenForTabOrPending(contents()));
-  main_test_rfh()->frame_tree_node()->UpdateUserActivationState(
+  EXPECT_TRUE(main_test_rfh()->frame_tree_node()->UpdateUserActivationState(
       blink::mojom::UserActivationUpdateType::kNotifyActivation,
-      blink::mojom::UserActivationNotificationType::kTest);
+      blink::mojom::UserActivationNotificationType::kTest));
   orig_rfh->EnterFullscreen(blink::mojom::FullscreenOptions::New(),
                             base::BindOnce(&ExpectTrue));
   EXPECT_TRUE(contents()->IsFullscreen());
@@ -1600,9 +1611,9 @@ TEST_F(WebContentsImplTest, FullscreenNoExitOnIframeNavigate) {
 
   // Make the top page fullscreen.
   EXPECT_FALSE(contents()->IsFullscreen());
-  main_rfh->frame_tree_node()->UpdateUserActivationState(
+  EXPECT_TRUE(main_rfh->frame_tree_node()->UpdateUserActivationState(
       blink::mojom::UserActivationUpdateType::kNotifyActivation,
-      blink::mojom::UserActivationNotificationType::kTest);
+      blink::mojom::UserActivationNotificationType::kTest));
   main_rfh->EnterFullscreen(blink::mojom::FullscreenOptions::New(),
                             base::BindOnce(&ExpectTrue));
   EXPECT_TRUE(contents()->IsFullscreen());
@@ -1636,9 +1647,9 @@ TEST_F(WebContentsImplTest, FullscreenNoExitOnIframeSameDocumentNavigate) {
 
   // Make the top page fullscreen.
   EXPECT_FALSE(contents()->IsFullscreen());
-  main_rfh->frame_tree_node()->UpdateUserActivationState(
+  EXPECT_TRUE(main_rfh->frame_tree_node()->UpdateUserActivationState(
       blink::mojom::UserActivationUpdateType::kNotifyActivation,
-      blink::mojom::UserActivationNotificationType::kTest);
+      blink::mojom::UserActivationNotificationType::kTest));
   main_rfh->EnterFullscreen(blink::mojom::FullscreenOptions::New(),
                             base::BindOnce(&ExpectTrue));
   EXPECT_TRUE(contents()->IsFullscreen());
@@ -1679,9 +1690,9 @@ TEST_F(WebContentsImplTest,
 
   // Make the subframe fullscreen.
   EXPECT_FALSE(contents()->IsFullscreen());
-  sub_rfh->frame_tree_node()->UpdateUserActivationState(
+  EXPECT_TRUE(sub_rfh->frame_tree_node()->UpdateUserActivationState(
       blink::mojom::UserActivationUpdateType::kNotifyActivation,
-      blink::mojom::UserActivationNotificationType::kTest);
+      blink::mojom::UserActivationNotificationType::kTest));
   sub_rfh->EnterFullscreen(blink::mojom::FullscreenOptions::New(),
                            base::BindOnce(&ExpectTrue));
   EXPECT_TRUE(contents()->IsFullscreen());
@@ -1721,9 +1732,9 @@ TEST_F(WebContentsImplTest,
 
   // Make the subframe fullscreen.
   EXPECT_FALSE(contents()->IsFullscreen());
-  sub_rfh->frame_tree_node()->UpdateUserActivationState(
+  EXPECT_TRUE(sub_rfh->frame_tree_node()->UpdateUserActivationState(
       blink::mojom::UserActivationUpdateType::kNotifyActivation,
-      blink::mojom::UserActivationNotificationType::kTest);
+      blink::mojom::UserActivationNotificationType::kTest));
   sub_rfh->EnterFullscreen(blink::mojom::FullscreenOptions::New(),
                            base::BindOnce(&ExpectTrue));
   EXPECT_TRUE(contents()->IsFullscreen());
@@ -1768,9 +1779,9 @@ TEST_F(WebContentsImplTest, HistoryNavigationExitsFullscreen) {
 
   for (int i = 0; i < 2; ++i) {
     // Toggle fullscreen mode on (as if initiated via IPC from renderer).
-    main_test_rfh()->frame_tree_node()->UpdateUserActivationState(
+    EXPECT_TRUE(main_test_rfh()->frame_tree_node()->UpdateUserActivationState(
         blink::mojom::UserActivationUpdateType::kNotifyActivation,
-        blink::mojom::UserActivationNotificationType::kTest);
+        blink::mojom::UserActivationNotificationType::kTest));
     main_test_rfh()->EnterFullscreen(blink::mojom::FullscreenOptions::New(),
                                      base::BindOnce(&ExpectTrue));
     EXPECT_TRUE(contents()->IsFullscreen());
@@ -1804,9 +1815,9 @@ TEST_F(WebContentsImplTest, CrashExitsFullscreen) {
   // Toggle fullscreen mode on (as if initiated via IPC from renderer).
   EXPECT_FALSE(contents()->IsFullscreen());
   EXPECT_FALSE(fake_delegate.IsFullscreenForTabOrPending(contents()));
-  main_test_rfh()->frame_tree_node()->UpdateUserActivationState(
+  EXPECT_TRUE(main_test_rfh()->frame_tree_node()->UpdateUserActivationState(
       blink::mojom::UserActivationUpdateType::kNotifyActivation,
-      blink::mojom::UserActivationNotificationType::kTest);
+      blink::mojom::UserActivationNotificationType::kTest));
   main_test_rfh()->EnterFullscreen(blink::mojom::FullscreenOptions::New(),
                                    base::BindOnce(&ExpectTrue));
   EXPECT_TRUE(contents()->IsFullscreen());
@@ -2138,6 +2149,32 @@ TEST_F(WebContentsImplTest,
   // The view should be re-hidden if the WebContents leaves PiP.
   contents()->SetHasPictureInPictureDocument(false);
   EXPECT_FALSE(view->is_showing());
+}
+
+class BlockedDocPipDelegate : public WebContentsDelegate {
+ public:
+  bool IsDocumentPictureInPictureBlockedBySystem() const override {
+    return true;
+  }
+};
+
+TEST_F(WebContentsImplTest, CreateNewWindowBlockedBySystem) {
+  BlockedDocPipDelegate delegate;
+  contents()->SetDelegate(&delegate);
+
+  mojom::CreateNewWindowParams params;
+  params.disposition = WindowOpenDisposition::NEW_PICTURE_IN_PICTURE;
+
+  FrameTree* result =
+      static_cast<WebContentsImpl*>(contents())
+          ->CreateNewWindow(contents()->GetPrimaryMainFrame(), params,
+                            /*is_new_browsing_instance=*/false,
+                            /*has_user_gesture=*/false,
+                            /*session_storage_namespace=*/nullptr);
+
+  EXPECT_EQ(nullptr, result);
+
+  contents()->SetDelegate(nullptr);
 }
 
 namespace {
@@ -3426,7 +3463,8 @@ TEST_F(WebContentsImplTest, BadDownloadImageResponseFromRenderer) {
 TEST_F(WebContentsImplTest,
        GetCaptureHandleConfigBeforeSetIsCalledReturnsEmptyConfig) {
   const auto empty_config = blink::mojom::CaptureHandleConfig::New();
-  EXPECT_EQ(contents()->GetCaptureHandleConfig(), *empty_config);
+  EXPECT_EQ(contents()->GetPrimaryPage().GetCaptureHandleConfig(),
+            *empty_config);
 }
 
 TEST_F(WebContentsImplTest, SetAndGetCaptureHandleConfig) {
@@ -3434,16 +3472,16 @@ TEST_F(WebContentsImplTest, SetAndGetCaptureHandleConfig) {
   {
     auto config = blink::mojom::CaptureHandleConfig::New();
     config->capture_handle = u"Pay not attention";
-    contents()->SetCaptureHandleConfig(config->Clone());
-    EXPECT_EQ(*config, contents()->GetCaptureHandleConfig());
+    contents()->GetPrimaryPage().SetCaptureHandleConfig(config->Clone());
+    EXPECT_EQ(*config, contents()->GetPrimaryPage().GetCaptureHandleConfig());
   }
 
   // New value set - new value returned.
   {
     auto config = blink::mojom::CaptureHandleConfig::New();
     config->capture_handle = u"to the man behind the curtain.";
-    contents()->SetCaptureHandleConfig(config->Clone());
-    EXPECT_EQ(*config, contents()->GetCaptureHandleConfig());
+    contents()->GetPrimaryPage().SetCaptureHandleConfig(config->Clone());
+    EXPECT_EQ(*config, contents()->GetPrimaryPage().GetCaptureHandleConfig());
   }
 }
 
@@ -3451,14 +3489,14 @@ TEST_F(WebContentsImplTest, NoOnCaptureHandleConfigUpdateCallIfResettingEmpty) {
   const auto empty_config = blink::mojom::CaptureHandleConfig::New();
 
   // Reminder - empty in the beginning.
-  ASSERT_EQ(contents()->GetCaptureHandleConfig(),
+  ASSERT_EQ(contents()->GetPrimaryPage().GetCaptureHandleConfig(),
             *blink::mojom::CaptureHandleConfig::New());
 
   TestWebContentsObserver observer(contents());
   // Note that ExpectOnCaptureHandleConfigUpdate() is NOT called.
   // If OnCaptureHandleConfigUpdate() is called, the test will fail.
 
-  contents()->SetCaptureHandleConfig(empty_config.Clone());
+  contents()->GetPrimaryPage().SetCaptureHandleConfig(empty_config.Clone());
 }
 
 TEST_F(WebContentsImplTest,
@@ -3466,7 +3504,7 @@ TEST_F(WebContentsImplTest,
   {
     auto config = blink::mojom::CaptureHandleConfig::New();
     config->capture_handle = u"Some handle.";
-    contents()->SetCaptureHandleConfig(config.Clone());
+    contents()->GetPrimaryPage().SetCaptureHandleConfig(config.Clone());
   }
 
   {
@@ -3474,7 +3512,7 @@ TEST_F(WebContentsImplTest,
     config->capture_handle = u"A different handle.";
     TestWebContentsObserver observer(contents());
     observer.ExpectOnCaptureHandleConfigUpdate(config.Clone());
-    contents()->SetCaptureHandleConfig(config.Clone());
+    contents()->GetPrimaryPage().SetCaptureHandleConfig(config.Clone());
   }
 }
 
@@ -3483,7 +3521,7 @@ TEST_F(WebContentsImplTest,
   {
     auto config = blink::mojom::CaptureHandleConfig::New();
     config->capture_handle = u"The ministry of redundancy ministry.";
-    contents()->SetCaptureHandleConfig(config.Clone());
+    contents()->GetPrimaryPage().SetCaptureHandleConfig(config.Clone());
   }
 
   {
@@ -3492,7 +3530,7 @@ TEST_F(WebContentsImplTest,
     TestWebContentsObserver observer(contents());
     // Note that ExpectOnCaptureHandleConfigUpdate() is NOT called.
     // If OnCaptureHandleConfigUpdate() is called, the test will fail.
-    contents()->SetCaptureHandleConfig(config.Clone());
+    contents()->GetPrimaryPage().SetCaptureHandleConfig(config.Clone());
   }
 }
 
@@ -3500,12 +3538,12 @@ TEST_F(WebContentsImplTest,
        OnCaptureHandleConfigUpdateCalledWhenClearingTheConfig) {
   auto config = blink::mojom::CaptureHandleConfig::New();
   config->capture_handle = u"Some handle.";
-  contents()->SetCaptureHandleConfig(config.Clone());
+  contents()->GetPrimaryPage().SetCaptureHandleConfig(config.Clone());
 
   auto empty_config = blink::mojom::CaptureHandleConfig::New();
   TestWebContentsObserver observer(contents());
   observer.ExpectOnCaptureHandleConfigUpdate(empty_config.Clone());
-  contents()->SetCaptureHandleConfig(empty_config.Clone());
+  contents()->GetPrimaryPage().SetCaptureHandleConfig(empty_config.Clone());
 }
 
 TEST_F(WebContentsImplTest,
@@ -3521,7 +3559,7 @@ TEST_F(WebContentsImplTest,
   // Set a capture handle.
   auto config = blink::mojom::CaptureHandleConfig::New();
   config->capture_handle = u"Some handle.";
-  contents()->SetCaptureHandleConfig(config.Clone());
+  contents()->GetPrimaryPage().SetCaptureHandleConfig(config.Clone());
 
   // Expect that navigation to a new site will reset the capture handle config.
   const auto empty_config = blink::mojom::CaptureHandleConfig::New();
@@ -3531,10 +3569,11 @@ TEST_F(WebContentsImplTest,
   // Navigate to the second site.
   auto new_site_navigation = NavigationSimulator::CreateBrowserInitiated(
       GURL("http://www.google.com/b.html"), contents());
-  new_site_navigation->ReadyToCommit();
+  new_site_navigation->Commit();
 
   // Further proof that the config was reset.
-  EXPECT_EQ(contents()->GetCaptureHandleConfig(), *empty_config);
+  EXPECT_EQ(contents()->GetPrimaryPage().GetCaptureHandleConfig(),
+            *empty_config);
 }
 
 TEST_F(WebContentsImplTest,
@@ -3550,7 +3589,7 @@ TEST_F(WebContentsImplTest,
   // Set a capture handle.
   auto config = blink::mojom::CaptureHandleConfig::New();
   config->capture_handle = u"Some handle.";
-  contents()->SetCaptureHandleConfig(config.Clone());
+  contents()->GetPrimaryPage().SetCaptureHandleConfig(config.Clone());
 
   // ExpectOnCaptureHandleConfigUpdate() not called - the test will fail
   // if OnCaptureHandleConfigUpdate() is called.
@@ -3562,7 +3601,7 @@ TEST_F(WebContentsImplTest,
   new_site_navigation->ReadyToCommit();
 
   // Further proof that the config was not reset.
-  EXPECT_EQ(contents()->GetCaptureHandleConfig(), *config);
+  EXPECT_EQ(contents()->GetPrimaryPage().GetCaptureHandleConfig(), *config);
 }
 
 TEST_F(WebContentsImplTest,
@@ -3582,7 +3621,7 @@ TEST_F(WebContentsImplTest,
   // Set a capture handle.
   auto config = blink::mojom::CaptureHandleConfig::New();
   config->capture_handle = u"Some handle.";
-  contents()->SetCaptureHandleConfig(config.Clone());
+  contents()->GetPrimaryPage().SetCaptureHandleConfig(config.Clone());
 
   // ExpectOnCaptureHandleConfigUpdate() not called - the test will fail
   // if OnCaptureHandleConfigUpdate() is called.
@@ -3592,7 +3631,7 @@ TEST_F(WebContentsImplTest,
       GURL("http://www.google.com/c.html"), subframe);
 
   // Further proof that the config was not reset.
-  EXPECT_EQ(contents()->GetCaptureHandleConfig(), *config);
+  EXPECT_EQ(contents()->GetPrimaryPage().GetCaptureHandleConfig(), *config);
 }
 
 class TestCanonicalUrlLocalFrame : public content::FakeLocalFrame,
@@ -4015,6 +4054,87 @@ TEST_F(WebContentsImplTest, SetIgnoreZoomGestures) {
   EXPECT_CALL(delegate, PreHandleGestureEvent(::testing::_, ::testing::_))
       .WillOnce(::testing::Return(false));
   EXPECT_FALSE(contents()->PreHandleGestureEvent(scroll_event));
+}
+
+TEST_F(WebContentsImplTest, DragProvenanceLifecycle) {
+  DropData drop_data;
+  drop_data.file_contents =
+      base::ToVector(base::byte_span_from_cstring("test content"));
+  drop_data.file_contents_filename_extension = FILE_PATH_LITERAL("txt");
+  drop_data.file_contents_source_url = GURL("https://example.com/file.txt");
+
+  GlobalRenderFrameHostToken source_rfh_token =
+      main_test_rfh()->GetGlobalFrameToken();
+
+  // 1. Verify stashing on drag start.
+  GURL page_url("https://example.com/page.html");
+  NavigationSimulator::NavigateAndCommitFromBrowser(contents(), page_url);
+  const std::u16string page_title = u"Test Page";
+  contents()->UpdateTitleForEntry(
+      contents()->GetController().GetLastCommittedEntry(), page_title);
+
+  contents()->OnStartDragging(&drop_data, source_rfh_token);
+
+  auto it = drop_data.custom_data.find(u"chromium/x-drag-id");
+  ASSERT_NE(it, drop_data.custom_data.end())
+      << "drag_id should be added to custom_data when file_contents is "
+         "present.";
+
+  std::string drag_id_str = base::UTF16ToASCII(it->second);
+  std::optional<base::UnguessableToken> drag_id =
+      base::UnguessableToken::DeserializeFromString(drag_id_str);
+  ASSERT_TRUE(drag_id.has_value());
+
+  // 2. Verify global lookup works.
+  EXPECT_EQ(WebContents::FromDragId(contents()->GetBrowserContext(),
+                                    WebContents::DragId(*drag_id)),
+            contents());
+
+  // 3. Verify drag id is NOT cleaned up on drag end (due to async race
+  // conditions, especially on Mac).
+  contents()->OnDragSourceEnded();
+  EXPECT_EQ(WebContents::FromDragId(contents()->GetBrowserContext(),
+                                    WebContents::DragId(*drag_id)),
+            contents());
+}
+
+TEST_F(WebContentsImplTest, NoStashIfNoFileContents) {
+  DropData drop_data;
+  // Intentionally leaving file_contents empty.
+
+  contents()->OnStartDragging(&drop_data, GlobalRenderFrameHostToken());
+
+  EXPECT_EQ(drop_data.custom_data.find(u"chromium/x-drag-id"),
+            drop_data.custom_data.end())
+      << "No drag_id should be created if file_contents is empty.";
+}
+
+TEST_F(WebContentsImplTest, MultipleDragProvenancesAreIsolated) {
+  // Simulate two separate drags (though only one is typically active).
+  GlobalRenderFrameHostToken source_rfh_token =
+      main_test_rfh()->GetGlobalFrameToken();
+
+  DropData data1;
+  data1.file_contents =
+      base::ToVector(base::byte_span_from_cstring("content 1"));
+  contents()->OnStartDragging(&data1, source_rfh_token);
+  base::UnguessableToken id1 = *base::UnguessableToken::DeserializeFromString(
+      base::UTF16ToASCII(data1.custom_data[u"chromium/x-drag-id"]));
+
+  DropData data2;
+  data2.file_contents =
+      base::ToVector(base::byte_span_from_cstring("content 2"));
+  contents()->OnStartDragging(&data2, source_rfh_token);
+  base::UnguessableToken id2 = *base::UnguessableToken::DeserializeFromString(
+      base::UTF16ToASCII(data2.custom_data[u"chromium/x-drag-id"]));
+
+  EXPECT_NE(id1, id2);
+  EXPECT_EQ(WebContents::FromDragId(contents()->GetBrowserContext(),
+                                    WebContents::DragId(id1)),
+            contents());
+  EXPECT_EQ(WebContents::FromDragId(contents()->GetBrowserContext(),
+                                    WebContents::DragId(id2)),
+            contents());
 }
 
 }  // namespace content

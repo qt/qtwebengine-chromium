@@ -6,6 +6,9 @@
 
 #include "base/feature_list.h"
 #include "build/build_config.h"
+#if BUILDFLAG(IS_MAC)
+#include "content/browser/media/capture/desktop_capture_util_mac.h"
+#endif
 #include "content/browser/media/capture/pip_screen_capture_coordinator.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/browser/renderer_host/media/video_capture_manager.h"
@@ -50,7 +53,7 @@ namespace content::desktop_capture {
 // (e.g., PowerPoint) when the user shares the slideshow window.
 // TODO(crbug.com/409473386): Remove this feature once it has been in stable for
 // at least one milestone.
-BASE_FEATURE(kUseHeuristicForFindingEditor, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kUseHeuristicForFindingEditor, base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
 webrtc::DesktopCaptureOptions CreateDesktopCaptureOptions() {
@@ -144,11 +147,9 @@ void OpenNativeScreenCapturePicker(
     base::OnceCallback<void(webrtc::DesktopCapturer::Source)> picker_callback,
     base::OnceCallback<void()> cancel_callback,
     base::OnceCallback<void()> error_callback) {
-  content::MediaStreamManager::GetInstance()
-      ->video_capture_manager()
-      ->OpenNativeScreenCapturePicker(
-          type, std::move(created_callback), std::move(picker_callback),
-          std::move(cancel_callback), std::move(error_callback));
+  content::MediaStreamManager::GetInstance()->OpenNativeScreenCapturePicker(
+      type, std::move(created_callback), std::move(picker_callback),
+      std::move(cancel_callback), std::move(error_callback));
 }
 
 void CloseNativeScreenCapturePicker(DesktopMediaID source_id) {
@@ -157,13 +158,13 @@ void CloseNativeScreenCapturePicker(DesktopMediaID source_id) {
       ->CloseNativeScreenCapturePicker(source_id);
 }
 
-std::optional<DesktopMediaID::Id> GetPipWindowToExcludeFromScreenCapture(
-    DesktopMediaID::Id desktop_id) {
-  if (auto* coordinator = content::PipScreenCaptureCoordinator::GetInstance()) {
-    return coordinator->GetPipWindowToExcludeFromScreenCapture(desktop_id);
-  }
-
-  return std::nullopt;
+#if BUILDFLAG(IS_MAC)
+void GetApplicationAudioCaptureId(
+    DesktopMediaID desktop_media_id,
+    GetApplicationAudioCaptureIdCallback callback) {
+  content::GetApplicationAudioCaptureIdInternal(desktop_media_id,
+                                                std::move(callback));
 }
+#endif  // #if BUILDFLAG(IS_MAC)
 
 }  // namespace content::desktop_capture

@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
-
 assert(is_chromeos)
 
 static_library("plugin_vm") {
@@ -12,8 +10,6 @@ static_library("plugin_vm") {
     "plugin_vm_diagnostics.h",
     "plugin_vm_drive_image_download_service.cc",
     "plugin_vm_drive_image_download_service.h",
-    "plugin_vm_engagement_metrics_service.cc",
-    "plugin_vm_engagement_metrics_service.h",
     "plugin_vm_features.cc",
     "plugin_vm_features.h",
     "plugin_vm_files.cc",
@@ -31,8 +27,6 @@ static_library("plugin_vm") {
     "plugin_vm_manager_factory.h",
     "plugin_vm_manager_impl.cc",
     "plugin_vm_manager_impl.h",
-    "plugin_vm_metrics_util.cc",
-    "plugin_vm_metrics_util.h",
     "plugin_vm_pref_names.cc",
     "plugin_vm_pref_names.h",
     "plugin_vm_uninstaller_notification.cc",
@@ -71,6 +65,7 @@ static_library("plugin_vm") {
   deps = [
     "//ash/constants",
     "//ash/public/cpp",
+    "//ash/strings",
     "//chrome/app:generated_resources",
     "//chrome/app:generated_resources_grit",
     "//chrome/app/vector_icons",
@@ -83,6 +78,7 @@ static_library("plugin_vm") {
     "//chrome/browser/notifications",
     "//chrome/browser/profiles",
     "//chrome/browser/signin",
+    "//chrome/browser/ui:simple_message_box_headers",
     "//chrome/common:chrome_features",
     "//chromeos/ash/components/dbus/cicerone",
     "//chromeos/ash/components/dbus/cicerone:cicerone_proto",

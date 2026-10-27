@@ -22,6 +22,19 @@ constexpr char kPasswordTrigger[] = "PASSWORD_ENTRY";
 
 }  // namespace
 
+TEST(ReportingUtilsTest, EventResultToString) {
+  EXPECT_EQ("EVENT_RESULT_UNKNOWN", EventResultToString(EventResult::UNKNOWN));
+  EXPECT_EQ("EVENT_RESULT_ALLOWED", EventResultToString(EventResult::ALLOWED));
+  EXPECT_EQ("EVENT_RESULT_WARNED", EventResultToString(EventResult::WARNED));
+  EXPECT_EQ("EVENT_RESULT_BLOCKED", EventResultToString(EventResult::BLOCKED));
+  EXPECT_EQ("EVENT_RESULT_BYPASSED",
+            EventResultToString(EventResult::BYPASSED));
+  EXPECT_EQ("EVENT_RESULT_FORCED_SAVE_TO_CLOUD",
+            EventResultToString(EventResult::FORCED_SAVE_TO_CLOUD));
+  EXPECT_EQ("EVENT_RESULT_CANCELLED",
+            EventResultToString(EventResult::CANCELLED));
+}
+
 TEST(ReportingUtilsTest, GetPasswordBreachEventReturnsValidEvent) {
   std::vector<std::pair<GURL, std::u16string>> identities = {
       {GURL("https://google.com/"), u"username"}};
@@ -70,11 +83,17 @@ TEST(ReportingUtilsTest,
 }
 
 TEST(ReportingUtilsTest, GetPasswordReuseEventWithWarning) {
+  ReferrerChain chain;
+  auto* entry1 = chain.Add();
+  entry1->set_url("https://referrer1.com/");
+  entry1->add_ip_addresses("1.2.3.4");
+
   auto event = GetPasswordReuseEvent(
       /*url=*/GURL("https://google.com/"), /*user_name=*/kUsername,
       /*is_phishing_url=*/false, /*warning_shown=*/true,
       /*profile_identifier=*/"identifier",
-      /*profile_username=*/"profile_username");
+      /*profile_username=*/"profile_username",
+      /*referrer_chain=*/chain);
   ASSERT_EQ(event.url(), "https://google.com/");
   ASSERT_EQ(event.user_name(), kUsername);
   ASSERT_FALSE(event.is_phishing_url());
@@ -82,14 +101,23 @@ TEST(ReportingUtilsTest, GetPasswordReuseEventWithWarning) {
             chrome::cros::reporting::proto::EVENT_RESULT_WARNED);
   ASSERT_EQ(event.profile_identifier(), "identifier");
   ASSERT_EQ(event.profile_user_name(), "profile_username");
+  if (base::FeatureList::IsEnabled(safe_browsing::kEnhancedFieldsForSecOps)) {
+    ASSERT_EQ(event.referrers_size(), 1);
+    EXPECT_EQ(event.referrers(0).url(), "https://referrer1.com/");
+    EXPECT_EQ(event.referrers(0).ip(), "1.2.3.4");
+  } else {
+    ASSERT_EQ(event.referrers_size(), 0);
+  }
 }
 
 TEST(ReportingUtilsTest, GetPasswordReuseEventWithoutWarning) {
+  ReferrerChain chain;
   auto event = GetPasswordReuseEvent(
       /*url=*/GURL("https://google.com/"), /*user_name=*/kUsername,
       /*is_phishing_url=*/false, /*warning_shown=*/true,
       /*profile_identifier=*/"identifier",
-      /*profile_username=*/"profile_username");
+      /*profile_username=*/"profile_username",
+      /*referrer_chain=*/chain);
   ASSERT_EQ(event.url(), "https://google.com/");
   ASSERT_EQ(event.user_name(), kUsername);
   ASSERT_FALSE(event.is_phishing_url());
@@ -219,6 +247,9 @@ TEST(ReportingUtilsTest, GetBrowserCrashEvent) {
 }
 
 TEST(ReportingUtilsTest, GetUnscannedFileEvent) {
+  ReferrerChain referrer_chain;
+  referrer_chain.Add(test::MakeReferrerChainEntry());
+
   auto event = GetUnscannedFileEvent(
       /*url=*/GURL("https://google.com/"), /*tab_url=*/GURL("about:blank"),
       /*source=*/"source", /*destination=*/"destination",
@@ -230,6 +261,7 @@ TEST(ReportingUtilsTest, GetUnscannedFileEvent) {
       /*content_transfer_method=*/"CONTENT_TRANSFER_METHOD_DRAG_AND_DROP",
       /*profile_identifier=*/"identifier",
       /*profile_username=*/"profile_username", /*content_size=*/-1,
+      /*referrer_chain=*/referrer_chain,
       /*event_result=*/EventResult::ALLOWED);
 
   ASSERT_EQ(event.url(), "https://google.com/");
@@ -254,6 +286,38 @@ TEST(ReportingUtilsTest, GetUnscannedFileEvent) {
   ASSERT_FALSE(event.content_size());
   ASSERT_EQ(event.event_result(),
             chrome::cros::reporting::proto::EventResult::EVENT_RESULT_ALLOWED);
+
+  if (base::FeatureList::IsEnabled(safe_browsing::kEnhancedFieldsForSecOps)) {
+    ASSERT_EQ(event.referrers_size(), 1);
+    auto referrer = event.referrers()[0];
+    ASSERT_EQ(referrer.url(), "https://referrer.com");
+    ASSERT_EQ(referrer.ip(), "1.2.3.4");
+  } else {
+    ASSERT_EQ(event.referrers_size(), 0);
+  }
+}
+
+TEST(ReportingUtilsTest, GetUnscannedFileEventUserCancelled) {
+  ReferrerChain referrer_chain;
+
+  auto event = GetUnscannedFileEvent(
+      /*url=*/GURL("https://google.com/"), /*tab_url=*/GURL("about:blank"),
+      /*source=*/"source", /*destination=*/"destination",
+      /*file_name=*/"encrypted.zip",
+      /*download_digest_sha256=*/"sha256_of_data",
+      /*mime_type=*/"application/zip", /*trigger=*/"FILE_UPLOAD",
+      /*scan_id=*/"123",
+      /*reason=*/"USER_CANCELLED",
+      /*content_transfer_method=*/"CONTENT_TRANSFER_METHOD_DRAG_AND_DROP",
+      /*profile_identifier=*/"identifier",
+      /*profile_username=*/"profile_username", /*content_size=*/-1,
+      /*referrer_chain=*/referrer_chain,
+      /*event_result=*/EventResult::CANCELLED);
+
+  ASSERT_EQ(event.unscanned_reason(),
+            chrome::cros::reporting::proto::UnscannedFileEvent::USER_CANCELLED);
+  ASSERT_EQ(event.event_result(), chrome::cros::reporting::proto::EventResult::
+                                      EVENT_RESULT_CANCELLED_BY_USER);
 }
 
 TEST(ReportingUtilsTest, GetDlpSensitiveDataEvent) {

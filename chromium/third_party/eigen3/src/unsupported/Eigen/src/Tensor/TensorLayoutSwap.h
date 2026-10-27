@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_LAYOUT_SWAP_H
-#define EIGEN_CXX11_TENSOR_TENSOR_LAYOUT_SWAP_H
+#ifndef EIGEN_TENSOR_TENSOR_LAYOUT_SWAP_H
+#define EIGEN_TENSOR_TENSOR_LAYOUT_SWAP_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -42,7 +43,7 @@ struct nested<TensorLayoutSwapOp<XprType>, 1, typename eval<TensorLayoutSwapOp<X
 }  // end namespace internal
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Swap the layout from col-major to row-major, or row-major
  * to col-major, and invert the order of the dimensions.
@@ -96,14 +97,27 @@ struct TensorEvaluator<const TensorLayoutSwapOp<ArgType>, Device> {
   enum {
     IsAligned = TensorEvaluator<ArgType, Device>::IsAligned,
     PacketAccess = TensorEvaluator<ArgType, Device>::PacketAccess,
-    BlockAccess = false,
+    // Layout swap is a no-op at the flat-memory level; expose block access
+    // whenever the underlying expression has a raw data pointer we can
+    // hand off to TensorMaterializedBlock.
+    BlockAccess = TensorEvaluator<ArgType, Device>::RawAccess && NumDims > 0,
     PreferBlockAccess = TensorEvaluator<ArgType, Device>::PreferBlockAccess,
     CoordAccess = false,  // to be implemented
     RawAccess = TensorEvaluator<ArgType, Device>::RawAccess
   };
 
+  typedef typename XprType::Scalar Scalar;
+  typedef typename XprType::CoeffReturnType CoeffReturnType;
+  typedef typename PacketType<CoeffReturnType, Device>::type PacketReturnType;
+  typedef StorageMemory<CoeffReturnType, Device> Storage;
+  typedef typename Storage::Type EvaluatorPointerType;
+
+  typedef std::remove_const_t<Scalar> ScalarNoConst;
+
   //===- Tensor block evaluation strategy (see TensorBlock.h) -------------===//
-  typedef internal::TensorBlockNotImplemented TensorBlock;
+  typedef internal::TensorBlockDescriptor<NumDims, Index> TensorBlockDesc;
+  typedef internal::TensorBlockScratchAllocator<Device> TensorBlockScratch;
+  typedef typename internal::TensorMaterializedBlock<ScalarNoConst, NumDims, Layout, Index> TensorBlock;
   //===--------------------------------------------------------------------===//
 
   EIGEN_STRONG_INLINE TensorEvaluator(const XprType& op, const Device& device) : m_impl(op.expression(), device) {
@@ -111,12 +125,6 @@ struct TensorEvaluator<const TensorLayoutSwapOp<ArgType>, Device> {
       m_dimensions[i] = m_impl.dimensions()[NumDims - 1 - i];
     }
   }
-
-  typedef typename XprType::Scalar Scalar;
-  typedef typename XprType::CoeffReturnType CoeffReturnType;
-  typedef typename PacketType<CoeffReturnType, Device>::type PacketReturnType;
-  typedef StorageMemory<CoeffReturnType, Device> Storage;
-  typedef typename Storage::Type EvaluatorPointerType;
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const Dimensions& dimensions() const { return m_dimensions; }
 
@@ -132,6 +140,16 @@ struct TensorEvaluator<const TensorLayoutSwapOp<ArgType>, Device> {
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorOpCost costPerCoeff(bool vectorized) const {
     return m_impl.costPerCoeff(vectorized);
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE internal::TensorBlockResourceRequirements getResourceRequirements() const {
+    return internal::TensorBlockResourceRequirements::any();
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorBlock block(TensorBlockDesc& desc, TensorBlockScratch& scratch,
+                                                          bool /*root_of_expr_ast*/ = false) const {
+    eigen_assert(m_impl.data() != nullptr);
+    return TensorBlock::materialize(m_impl.data(), m_dimensions, desc, scratch);
   }
 
   EIGEN_DEVICE_FUNC typename Storage::Type data() const { return constCast(m_impl.data()); }
@@ -182,4 +200,4 @@ struct TensorEvaluator<TensorLayoutSwapOp<ArgType>, Device>
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_LAYOUT_SWAP_H
+#endif  // EIGEN_TENSOR_TENSOR_LAYOUT_SWAP_H

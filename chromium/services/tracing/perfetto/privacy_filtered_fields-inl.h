@@ -353,19 +353,24 @@ constexpr int kRealIndices[] = {1, 2, 3, -1};
 constexpr MessageInfo kReal = {kRealIndices, nullptr};
 
 // Proto Message: Synthetic
-constexpr int kSyntheticIndices[] = {1, -1};
+constexpr int kSyntheticIndices[] = {1, 2, -1};
 constexpr MessageInfo kSynthetic = {kSyntheticIndices, nullptr};
 
 // Proto Message: ScrollUpdates
-constexpr int kScrollUpdatesIndices[] = {1, 2, 3, -1};
+constexpr int kScrollUpdatesIndices[] = {1, 2, 3, 4, -1};
 constexpr MessageInfo const* kScrollUpdatesComplexMessages[] = {
-    &kReal, &kSynthetic, nullptr};
+    &kReal, &kSynthetic, nullptr, nullptr};
 constexpr MessageInfo kScrollUpdates = {kScrollUpdatesIndices,
                                         kScrollUpdatesComplexMessages};
 
+// Proto Message: FrameStageCalculation
+constexpr int kFrameStageCalculationIndices[] = {1, 2, -1};
+constexpr MessageInfo kFrameStageCalculation = {kFrameStageCalculationIndices,
+                                                nullptr};
+
 // Proto Message: ScrollJankV4Result
-constexpr int kScrollJankV4ResultIndices[] = {1, 2, 3,  4,  5,  6,  7,
-                                              8, 9, 10, 11, 12, 13, -1};
+constexpr int kScrollJankV4ResultIndices[] = {1, 2,  3,  4,  5,  6,  7, 8,
+                                              9, 10, 11, 12, 13, 14, -1};
 constexpr MessageInfo const* kScrollJankV4ResultComplexMessages[] = {
     nullptr, &kMissedVsyncsForJankReason,
     nullptr, nullptr,
@@ -373,16 +378,17 @@ constexpr MessageInfo const* kScrollJankV4ResultComplexMessages[] = {
     nullptr, nullptr,
     nullptr, &kScrollUpdates,
     nullptr, nullptr,
-    nullptr};
+    nullptr, &kFrameStageCalculation};
 constexpr MessageInfo kScrollJankV4Result = {
     kScrollJankV4ResultIndices, kScrollJankV4ResultComplexMessages};
 
 // Proto Message: EventLatency
-constexpr int kEventLatencyIndices[] = {1, 2, 4, 5, 6, 7, 8, 9, 10, -1};
+constexpr int kEventLatencyIndices[] = {1, 2, 4, 5, 6, 7, 8, 9, 10, 11, -1};
 constexpr MessageInfo const* kEventLatencyComplexMessages[] = {
     nullptr, nullptr, nullptr,
     nullptr, nullptr, nullptr,
-    nullptr, nullptr, &kScrollJankV4Result};
+    nullptr, nullptr, &kScrollJankV4Result,
+    nullptr};
 constexpr MessageInfo kEventLatency = {kEventLatencyIndices,
                                        kEventLatencyComplexMessages};
 
@@ -561,10 +567,11 @@ constexpr int kFrameTimelineIndices[] = {1, 2, 3, -1};
 constexpr MessageInfo kFrameTimeline = {kFrameTimelineIndices, nullptr};
 
 // Proto Message: AndroidChoreographerFrameCallbackData
-constexpr int kAndroidChoreographerFrameCallbackDataIndices[] = {1, 2, 3, -1};
+constexpr int kAndroidChoreographerFrameCallbackDataIndices[] = {1, 2, 3, 4,
+                                                                 -1};
 constexpr MessageInfo const*
     kAndroidChoreographerFrameCallbackDataComplexMessages[] = {
-        nullptr, &kFrameTimeline, nullptr};
+        nullptr, &kFrameTimeline, nullptr, &kFrameTimeline};
 constexpr MessageInfo kAndroidChoreographerFrameCallbackData = {
     kAndroidChoreographerFrameCallbackDataIndices,
     kAndroidChoreographerFrameCallbackDataComplexMessages};
@@ -840,9 +847,15 @@ constexpr int kFinchHashIndices[] = {1, 2, -1};
 constexpr MessageInfo kFinchHash = {kFinchHashIndices, nullptr};
 
 // Proto Message: ChromeMetadataPacket
-constexpr int kChromeMetadataPacketIndices[] = {1, 2, 3, 4, -1};
+constexpr int kChromeMetadataPacketIndices[] = {1, 2, 3, 4, 6, 7, 8, -1};
 constexpr MessageInfo const* kChromeMetadataPacketComplexMessages[] = {
-    &kBackgroundTracingMetadata, nullptr, nullptr, &kFinchHash};
+    &kBackgroundTracingMetadata,
+    nullptr,
+    nullptr,
+    &kFinchHash,
+    nullptr,
+    nullptr,
+    nullptr};
 constexpr MessageInfo kChromeMetadataPacket = {
     kChromeMetadataPacketIndices, kChromeMetadataPacketComplexMessages};
 

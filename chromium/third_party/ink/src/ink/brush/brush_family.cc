@@ -14,6 +14,7 @@
 
 #include "ink/brush/brush_family.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <variant>
@@ -28,12 +29,13 @@
 #include "ink/brush/brush_coat.h"
 #include "ink/brush/brush_paint.h"
 #include "ink/brush/brush_tip.h"
+#include "ink/brush/version.h"
 #include "ink/types/duration.h"
 
 namespace ink {
 
 BrushFamily::InputModel BrushFamily::DefaultInputModel() {
-  return SpringModel{};
+  return SlidingWindowModel{};
 }
 
 uint32_t BrushFamily::MaxBrushCoats() {
@@ -46,23 +48,24 @@ uint32_t BrushFamily::MaxBrushCoats() {
 }
 
 BrushFamily::BrushFamily(absl::Span<const BrushCoat> coats,
-                         absl::string_view client_brush_family_id,
-                         const InputModel& input_model)
+                         const InputModel& input_model,
+                         const Metadata& metadata)
     : coats_(coats.begin(), coats.end()),
-      client_brush_family_id_(client_brush_family_id),
-      input_model_(input_model) {}
+      input_model_(input_model),
+      metadata_(metadata) {}
 
-absl::StatusOr<BrushFamily> BrushFamily::Create(
-    const BrushTip& tip, const BrushPaint& paint,
-    absl::string_view client_brush_family_id, const InputModel& input_model) {
+absl::StatusOr<BrushFamily> BrushFamily::Create(const BrushTip& tip,
+                                                const BrushPaint& paint,
+                                                const InputModel& input_model,
+                                                const Metadata& metadata) {
   BrushCoat coat = {.tip = tip, .paint_preferences = {paint}};
-  return BrushFamily::Create(absl::MakeConstSpan(&coat, 1),
-                             client_brush_family_id, input_model);
+  return BrushFamily::Create(absl::MakeConstSpan(&coat, 1), input_model,
+                             metadata);
 }
 
 absl::StatusOr<BrushFamily> BrushFamily::Create(
-    absl::Span<const BrushCoat> coats, absl::string_view client_brush_family_id,
-    const InputModel& input_model) {
+    absl::Span<const BrushCoat> coats, const InputModel& input_model,
+    const Metadata& metadata) {
   if (coats.size() > MaxBrushCoats()) {
     return absl::InvalidArgumentError(
         absl::StrCat("A `BrushFamily` cannot have more than ", MaxBrushCoats(),
@@ -78,29 +81,38 @@ absl::StatusOr<BrushFamily> BrushFamily::Create(
       !status.ok()) {
     return status;
   }
-  return BrushFamily(coats, client_brush_family_id, input_model);
+  return BrushFamily(coats, input_model, metadata);
 }
 
 std::string BrushFamily::ToFormattedString() const {
   std::string formatted =
-      absl::StrCat("BrushFamily(coats=[", absl::StrJoin(coats_, ", "), "]");
-  if (!client_brush_family_id_.empty()) {
+      absl::StrCat("BrushFamily(coats=[", absl::StrJoin(coats_, ", "),
+                   "], input_model=", input_model_);
+  if (!metadata_.client_brush_family_id.empty()) {
     absl::StrAppend(&formatted, ", client_brush_family_id='",
-                    client_brush_family_id_, "'");
+                    metadata_.client_brush_family_id, "'");
   }
-  absl::StrAppend(&formatted, ", input_model=", input_model_, ")");
+  absl::StrAppend(&formatted, ")");
   return formatted;
+}
+
+Version BrushFamily::CalculateMinimumRequiredVersion() const {
+  Version max_version = Version::k0Jetpack1_0_0();
+  for (const auto& coat : coats_) {
+    max_version = std::max(
+        max_version, brush_internal::CalculateMinimumRequiredVersion(coat));
+  }
+  return max_version;
+}
+
+bool BrushFamily::HasFallbacks() const {
+  return !opaque_decoded_proto_bytes_with_fallbacks_.empty();
 }
 
 namespace brush_internal {
 namespace {
 
-absl::Status ValidateInputModel(const BrushFamily::SpringModel& model) {
-  return absl::OkStatus();
-}
-
-absl::Status ValidateInputModel(
-    const BrushFamily::ExperimentalNaiveModel& model) {
+absl::Status ValidateInputModel(const BrushFamily::PassthroughModel& model) {
   return absl::OkStatus();
 }
 
@@ -119,13 +131,8 @@ absl::Status ValidateInputModel(const BrushFamily::SlidingWindowModel& model) {
   return absl::OkStatus();
 }
 
-std::string ToFormattedString(const BrushFamily::SpringModel& model) {
-  return "SpringModel";
-}
-
-std::string ToFormattedString(
-    const BrushFamily::ExperimentalNaiveModel& model) {
-  return "ExperimentalNaiveModel";
+std::string ToFormattedString(const BrushFamily::PassthroughModel& model) {
+  return "PassthroughModel";
 }
 
 std::string ToFormattedString(const BrushFamily::SlidingWindowModel& model) {

@@ -24,8 +24,6 @@ class CBCDataMatrixWriterTest : public testing::Test {
 
 TEST_F(CBCDataMatrixWriterTest, Encode) {
   CBC_DataMatrixWriter writer;
-  int32_t width = -1;
-  int32_t height = -1;
 
   {
     static constexpr int kExpectedDimension = 10;
@@ -43,11 +41,11 @@ TEST_F(CBCDataMatrixWriterTest, Encode) {
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1
     };
     // clang-format on
-    DataVector<uint8_t> data = writer.Encode(L"", &width, &height);
-    ASSERT_EQ(std::size(kExpectedData), data.size());
-    ASSERT_EQ(kExpectedDimension, width);
-    ASSERT_EQ(kExpectedDimension, height);
-    EXPECT_THAT(data, ElementsAreArray(kExpectedData));
+    CBC_TwoDimWriter::EncodeResult result = writer.Encode(L"");
+    ASSERT_EQ(std::size(kExpectedData), result.code.size());
+    ASSERT_EQ(kExpectedDimension, result.width);
+    ASSERT_EQ(kExpectedDimension, result.height);
+    EXPECT_THAT(result.code, ElementsAreArray(kExpectedData));
   }
   {
     static constexpr int kExpectedDimension = 14;
@@ -69,11 +67,11 @@ TEST_F(CBCDataMatrixWriterTest, Encode) {
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
     };
     // clang-format on
-    DataVector<uint8_t> data = writer.Encode(L"helloworld", &width, &height);
-    ASSERT_EQ(std::size(kExpectedData), data.size());
-    ASSERT_EQ(kExpectedDimension, width);
-    ASSERT_EQ(kExpectedDimension, height);
-    EXPECT_THAT(data, ElementsAreArray(kExpectedData));
+    CBC_TwoDimWriter::EncodeResult result = writer.Encode(L"helloworld");
+    ASSERT_EQ(std::size(kExpectedData), result.code.size());
+    ASSERT_EQ(kExpectedDimension, result.width);
+    ASSERT_EQ(kExpectedDimension, result.height);
+    EXPECT_THAT(result.code, ElementsAreArray(kExpectedData));
   }
   {
     static constexpr int kExpectedDimension = 10;
@@ -91,11 +89,11 @@ TEST_F(CBCDataMatrixWriterTest, Encode) {
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1
     };
     // clang-format on
-    DataVector<uint8_t> data = writer.Encode(L"12345", &width, &height);
-    ASSERT_EQ(std::size(kExpectedData), data.size());
-    ASSERT_EQ(kExpectedDimension, width);
-    ASSERT_EQ(kExpectedDimension, height);
-    EXPECT_THAT(data, ElementsAreArray(kExpectedData));
+    CBC_TwoDimWriter::EncodeResult result = writer.Encode(L"12345");
+    ASSERT_EQ(std::size(kExpectedData), result.code.size());
+    ASSERT_EQ(kExpectedDimension, result.width);
+    ASSERT_EQ(kExpectedDimension, result.height);
+    EXPECT_THAT(result.code, ElementsAreArray(kExpectedData));
   }
   {
     static constexpr int kExpectedDimension = 18;
@@ -121,23 +119,23 @@ TEST_F(CBCDataMatrixWriterTest, Encode) {
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
     };
     // clang-format on
-    DataVector<uint8_t> data =
-        writer.Encode(L"abcdefghijklmnopqrst", &width, &height);
-    ASSERT_EQ(std::size(kExpectedData), data.size());
-    ASSERT_EQ(kExpectedDimension, width);
-    ASSERT_EQ(kExpectedDimension, height);
-    EXPECT_THAT(data, ElementsAreArray(kExpectedData));
+    CBC_TwoDimWriter::EncodeResult result =
+        writer.Encode(L"abcdefghijklmnopqrst");
+    ASSERT_EQ(std::size(kExpectedData), result.code.size());
+    ASSERT_EQ(kExpectedDimension, result.width);
+    ASSERT_EQ(kExpectedDimension, result.height);
+    EXPECT_THAT(result.code, ElementsAreArray(kExpectedData));
   }
   {
-    DataVector<uint8_t> data = writer.Encode(L"hello world", &width, &height);
-    ASSERT_TRUE(data.empty());
+    CBC_TwoDimWriter::EncodeResult result = writer.Encode(L"hello world");
+    ASSERT_TRUE(result.code.empty());
+    EXPECT_EQ(result.height, 0);
+    EXPECT_EQ(result.width, 0);
   }
 }
 
 TEST_F(CBCDataMatrixWriterTest, EncodeLimitAlphaNumeric) {
   CBC_DataMatrixWriter writer;
-  int32_t width = -1;
-  int32_t height = -1;
 
   static constexpr int kMaxInputLength = 2335;  // Per spec.
   WideString input;
@@ -147,28 +145,24 @@ TEST_F(CBCDataMatrixWriterTest, EncodeLimitAlphaNumeric) {
 
   {
     static constexpr int kExpectedDimension = 144;
-    DataVector<uint8_t> data = writer.Encode(input.c_str(), &width, &height);
-    EXPECT_EQ(20736u, data.size());
-    EXPECT_EQ(kExpectedDimension, width);
-    EXPECT_EQ(kExpectedDimension, height);
+    CBC_TwoDimWriter::EncodeResult result = writer.Encode(input.c_str());
+    EXPECT_EQ(20736u, result.code.size());
+    EXPECT_EQ(kExpectedDimension, result.width);
+    EXPECT_EQ(kExpectedDimension, result.height);
   }
 
   // Go over the limit.
   input.InsertAtBack(L'a');
   {
-    width = -1;
-    height = -1;
-    DataVector<uint8_t> data = writer.Encode(input.c_str(), &width, &height);
-    EXPECT_EQ(0u, data.size());
-    EXPECT_EQ(-1, width);
-    EXPECT_EQ(-1, height);
+    CBC_TwoDimWriter::EncodeResult result = writer.Encode(input.c_str());
+    EXPECT_EQ(0u, result.code.size());
+    EXPECT_EQ(0, result.width);
+    EXPECT_EQ(0, result.height);
   }
 }
 
 TEST_F(CBCDataMatrixWriterTest, EncodeLimitNumbers) {
   CBC_DataMatrixWriter writer;
-  int32_t width = -1;
-  int32_t height = -1;
 
   static constexpr int kMaxInputLength = 3116;  // Per spec.
   WideString input;
@@ -178,20 +172,18 @@ TEST_F(CBCDataMatrixWriterTest, EncodeLimitNumbers) {
 
   {
     static constexpr int kExpectedDimension = 144;
-    DataVector<uint8_t> data = writer.Encode(input.c_str(), &width, &height);
-    EXPECT_EQ(20736u, data.size());
-    EXPECT_EQ(kExpectedDimension, width);
-    EXPECT_EQ(kExpectedDimension, height);
+    CBC_TwoDimWriter::EncodeResult result = writer.Encode(input.c_str());
+    EXPECT_EQ(20736u, result.code.size());
+    EXPECT_EQ(kExpectedDimension, result.width);
+    EXPECT_EQ(kExpectedDimension, result.height);
   }
 
   // Go over the limit.
   input.InsertAtBack(L'1');
   {
-    width = -1;
-    height = -1;
-    DataVector<uint8_t> data = writer.Encode(input.c_str(), &width, &height);
-    EXPECT_EQ(0u, data.size());
-    EXPECT_EQ(-1, width);
-    EXPECT_EQ(-1, height);
+    CBC_TwoDimWriter::EncodeResult result = writer.Encode(input.c_str());
+    EXPECT_EQ(0u, result.code.size());
+    EXPECT_EQ(0, result.width);
+    EXPECT_EQ(0, result.height);
   }
 }

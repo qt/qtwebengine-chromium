@@ -15,6 +15,7 @@
 #include "components/password_manager/core/browser/password_manager_client.h"
 #include "components/password_manager/core/browser/password_reuse_detector.h"
 #include "components/password_manager/core/browser/password_reuse_detector_consumer.h"
+#include "components/password_manager/core/browser/password_store/password_form_converters.h"
 #include "components/password_manager/core/browser/password_store/password_store_consumer.h"
 #include "components/password_manager/core/browser/password_store/psl_matching_helper.h"
 #include "components/safe_browsing/core/common/features.h"
@@ -60,6 +61,40 @@ std::optional<PasswordHashData> FindPasswordReuse(
   return longest_match;
 }
 
+// Returns true if typing a password on `active_url` represents an authorized
+// reuse (e.g. because the domain or, in case of an empty domain, the host,
+// matches one of the saved credentials).
+bool IsAuthorizedReuse(const std::string& active_url_string,
+                       const std::set<MatchingReusedCredential>& credentials) {
+  const GURL active_url(active_url_string);
+  const std::string active_registry_controlled_domain =
+      GetRegistryControlledDomain(active_url);
+
+  // For IP addresses and single-label intranet hosts, the registry-controlled
+  // domain is empty. In this case, we compare the exact hosts to prevent
+  // distinct IP addresses or intranet sites from incorrectly matching each
+  // other as authorized domain exceptions.
+  if (active_registry_controlled_domain.empty()) {
+    std::string_view active_host = active_url.host();
+    for (const auto& credential : credentials) {
+      if (GetRegistryControlledDomain(credential.url).empty() &&
+          credential.url.host() == active_host) {
+        return true;
+      }
+    }
+  } else {
+    // For standard domains, we check if any credential matches the registry-
+    // controlled domain of the active page.
+    for (const auto& credential : credentials) {
+      if (GetRegistryControlledDomain(credential.url) ==
+          active_registry_controlled_domain) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 bool ReverseStringLess::operator()(const std::u16string& lhs,
@@ -89,10 +124,10 @@ PasswordReuseDetectorImpl::~PasswordReuseDetectorImpl() {
 }
 
 void PasswordReuseDetectorImpl::OnGetPasswordStoreResults(
-    std::vector<std::unique_ptr<PasswordForm>> results) {
+    std::vector<StoredCredential> results) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  for (const auto& form : results) {
-    AddPassword(*form);
+  for (auto& cred : results) {
+    AddPassword(cred);
   }
 }
 
@@ -102,24 +137,24 @@ void PasswordReuseDetectorImpl::OnLoginsChanged(
   for (const auto& change : changes) {
     if (change.type() == PasswordStoreChange::ADD ||
         change.type() == PasswordStoreChange::UPDATE) {
-      AddPassword(change.form());
+      AddPassword(change.credential());
     }
     if (change.type() == PasswordStoreChange::REMOVE) {
-      RemovePassword(change.form());
+      RemovePassword(change.credential());
     }
   }
 }
 
 void PasswordReuseDetectorImpl::OnLoginsRetained(
     PasswordForm::Store password_store_type,
-    const std::vector<PasswordForm>& retained_passwords) {
+    const std::vector<StoredCredential>& retained_credentials) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   RemoveAllLoginsByStoreType(password_store_type);
 
-  // |retained_passwords| contains also blacklisted entities, but since they
+  // |retained_credentials| contains also blacklisted entities, but since they
   // don't have password value they will be skipped inside AddPassword().
-  for (const auto& form : retained_passwords) {
-    AddPassword(form);
+  for (const auto& cred : retained_credentials) {
+    AddPassword(cred);
   }
 }
 
@@ -248,9 +283,6 @@ PasswordReuseDetectorImpl::CheckSavedPasswordReuseBasedOnHash(
     pwd_lengths.insert(it.second.password_length);
   }
 
-  const std::string registry_controlled_domain =
-      GetRegistryControlledDomain(GURL(domain));
-
   // Goes over all possible password lengths and checks input suffix of that
   // length against known password hashes.
   for (auto len : pwd_lengths) {
@@ -272,13 +304,7 @@ PasswordReuseDetectorImpl::CheckSavedPasswordReuseBasedOnHash(
         passwords_iterator->second.matching_credentials;
     CHECK(!credentials.empty());
 
-    std::set<std::string> domains;
-    for (const auto& credential : credentials) {
-      domains.insert(GetRegistryControlledDomain(credential.url));
-    }
-    // If the page's URL matches a saved domain for this password,
-    // this isn't password-reuse.
-    if (domains.contains(registry_controlled_domain)) {
+    if (IsAuthorizedReuse(domain, credentials)) {
       continue;
     }
 
@@ -367,26 +393,28 @@ void PasswordReuseDetectorImpl::ClearAllNonGmailPasswordHash() {
       });
 }
 
-void PasswordReuseDetectorImpl::AddPassword(const PasswordForm& form) {
+void PasswordReuseDetectorImpl::AddPassword(const StoredCredential& cred) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (form.password_value.size() < kMinPasswordLengthToCheck) {
+  if (cred.password_value.size() < kMinPasswordLengthToCheck) {
     return;
   }
 
-  uint64_t password_hash = CalculatePasswordHash(form.password_value, salt_);
+  uint64_t password_hash = CalculatePasswordHash(cred.password_value, salt_);
   password_hashes_with_matching_reused_credentials_[password_hash]
-      .matching_credentials.insert(MatchingReusedCredential(form));
+      .matching_credentials.insert(MatchingReusedCredential(
+          cred.signon_realm, cred.url, cred.username_value, cred.in_store));
   password_hashes_with_matching_reused_credentials_[password_hash]
-      .password_length = form.password_value.size();
+      .password_length = cred.password_value.size();
 }
 
-void PasswordReuseDetectorImpl::RemovePassword(const PasswordForm& form) {
+void PasswordReuseDetectorImpl::RemovePassword(const StoredCredential& cred) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (form.password_value.size() < kMinPasswordLengthToCheck) {
+  if (cred.password_value.size() < kMinPasswordLengthToCheck) {
     return;
   }
 
-  MatchingReusedCredential credential_criteria(form);
+  MatchingReusedCredential credential_criteria(
+      cred.signon_realm, cred.url, cred.username_value, cred.in_store);
   auto password_value_iter =
       passwords_with_matching_reused_credentials_.begin();
   while (password_value_iter !=
@@ -396,7 +424,7 @@ void PasswordReuseDetectorImpl::RemovePassword(const PasswordForm& form) {
     // Remove only the password for the specific domain and username.
     // Don't remove all passwords from
     // |passwords_with_matching_reused_credentials_| with a given
-    // |form.password_value|.
+    // |cred.password_value|.
     const auto credential_to_remove =
         stored_credentials_for_password_value.find(credential_criteria);
     if (credential_to_remove != stored_credentials_for_password_value.end()) {
@@ -413,7 +441,7 @@ void PasswordReuseDetectorImpl::RemovePassword(const PasswordForm& form) {
     }
   }
 
-  uint64_t password_hash = CalculatePasswordHash(form.password_value, salt_);
+  uint64_t password_hash = CalculatePasswordHash(cred.password_value, salt_);
   auto password_hash_iterator =
       password_hashes_with_matching_reused_credentials_.find(password_hash);
   if (password_hash_iterator ==

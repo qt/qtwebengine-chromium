@@ -123,13 +123,13 @@ void PrintEventDetails(TestRunner* test_runner,
 
 blink::WebPluginContainer::TouchEventRequestType ParseTouchEventRequestType(
     const blink::WebString& string) {
-  if (string == blink::WebString::FromUTF8("raw")) {
+  if (string == blink::WebString("raw")) {
     return blink::WebPluginContainer::kTouchEventRequestTypeRaw;
   }
-  if (string == blink::WebString::FromUTF8("raw-lowlatency")) {
+  if (string == blink::WebString("raw-lowlatency")) {
     return blink::WebPluginContainer::kTouchEventRequestTypeRawLowLatency;
   }
-  if (string == blink::WebString::FromUTF8("synthetic")) {
+  if (string == blink::WebString("synthetic")) {
     return blink::WebPluginContainer::kTouchEventRequestTypeSynthesizedMouse;
   }
   return blink::WebPluginContainer::kTouchEventRequestTypeNone;
@@ -725,6 +725,15 @@ const blink::WebString& TestPlugin::PluginPersistsMimeType() {
 bool TestPlugin::IsSupportedMimeType(const blink::WebString& mime_type) {
   return mime_type == TestPlugin::MimeType() ||
          mime_type == PluginPersistsMimeType();
+}
+
+void TestPlugin::Paint(cc::PaintCanvas* canvas, const gfx::Rect& rect) {
+  cc::PaintFlags flags;
+  flags.setColor(
+      SkColorSetARGB(scene_.opacity * 255, scene_.background_color[0],
+                     scene_.background_color[1], scene_.background_color[2]));
+  flags.setStyle(cc::PaintFlags::kFill_Style);
+  canvas->drawRect(gfx::RectToSkRect(rect), flags);
 }
 
 }  // namespace content

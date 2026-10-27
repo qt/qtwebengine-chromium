@@ -7,9 +7,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_TRACE_H
-#define EIGEN_CXX11_TENSOR_TENSOR_TRACE_H
+#ifndef EIGEN_TENSOR_TENSOR_TRACE_H
+#define EIGEN_TENSOR_TENSOR_TRACE_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -46,7 +47,7 @@ struct nested<TensorTraceOp<Dims, XprType>, 1, typename eval<TensorTraceOp<Dims,
 }  // end namespace internal
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Tensor Trace class.
  */
@@ -158,12 +159,13 @@ struct TensorEvaluator<const TensorTraceOp<Dims, ArgType>, Device> {
 
     // Compute the output strides
     if (NumOutputDims > 0) {
-      if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+      EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
         m_outputStrides[0] = 1;
         for (int i = 1; i < NumOutputDims; ++i) {
           m_outputStrides[i] = m_outputStrides[i - 1] * m_dimensions[i - 1];
         }
-      } else {
+      }
+      else {
         m_outputStrides.back() = 1;
         for (int i = NumOutputDims - 2; i >= 0; --i) {
           m_outputStrides[i] = m_outputStrides[i + 1] * m_dimensions[i + 1];
@@ -174,12 +176,13 @@ struct TensorEvaluator<const TensorTraceOp<Dims, ArgType>, Device> {
     // Compute the input strides
     if (NumInputDims > 0) {
       array<Index, NumInputDims> input_strides;
-      if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+      EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
         input_strides[0] = 1;
         for (int i = 1; i < NumInputDims; ++i) {
           input_strides[i] = input_strides[i - 1] * input_dims[i - 1];
         }
-      } else {
+      }
+      else {
         input_strides.back() = 1;
         for (int i = NumInputDims - 2; i >= 0; --i) {
           input_strides[i] = input_strides[i + 1] * input_dims[i + 1];
@@ -246,14 +249,15 @@ struct TensorEvaluator<const TensorTraceOp<Dims, ArgType>, Device> {
   // Given the output index, finds the first index in the input tensor used to compute the trace
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index firstInput(Index index) const {
     Index startInput = 0;
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = NumOutputDims - 1; i > 0; --i) {
         const Index idx = index / m_outputStrides[i];
         startInput += idx * m_preservedStrides[i];
         index -= idx * m_outputStrides[i];
       }
       startInput += index * m_preservedStrides[0];
-    } else {
+    }
+    else {
       for (int i = 0; i < NumOutputDims - 1; ++i) {
         const Index idx = index / m_outputStrides[i];
         startInput += idx * m_preservedStrides[i];
@@ -278,4 +282,4 @@ struct TensorEvaluator<const TensorTraceOp<Dims, ArgType>, Device> {
 
 }  // End namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_TRACE_H
+#endif  // EIGEN_TENSOR_TENSOR_TRACE_H

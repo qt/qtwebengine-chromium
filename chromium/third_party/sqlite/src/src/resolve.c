@@ -936,7 +936,7 @@ static int exprProbability(Expr *p){
   double r = -1.0;
   if( p->op!=TK_FLOAT ) return -1;
   assert( !ExprHasProperty(p, EP_IntValue) );
-  sqlite3AtoF(p->u.zToken, &r, sqlite3Strlen30(p->u.zToken), SQLITE_UTF8);
+  sqlite3AtoF(p->u.zToken, &r);
   assert( r>=0.0 );
   if( r>1.0 ) return -1;
   return (int)(r*134217728.0);
@@ -1656,10 +1656,8 @@ static int resolveCompoundOrderBy(
         /* Convert the ORDER BY term into an integer column number iCol,
         ** taking care to preserve the COLLATE clause if it exists. */
         if( !IN_RENAME_OBJECT ){
-          Expr *pNew = sqlite3Expr(db, TK_INTEGER, 0);
+          Expr *pNew = sqlite3ExprInt32(db, iCol);
           if( pNew==0 ) return 1;
-          pNew->flags |= EP_IntValue;
-          pNew->u.iValue = iCol;
           if( pItem->pExpr==pE ){
             pItem->pExpr = pNew;
           }else{
@@ -2013,10 +2011,6 @@ static int resolveSelectStep(Walker *pWalker, Select *p){
     }
 #endif
 
-    /* The ORDER BY and GROUP BY clauses may not refer to terms in
-    ** outer queries
-    */
-    sNC.pNext = 0;
     sNC.ncFlags |= NC_AllowAgg|NC_AllowWin;
 
     /* If this is a converted compound query, move the ORDER BY clause from

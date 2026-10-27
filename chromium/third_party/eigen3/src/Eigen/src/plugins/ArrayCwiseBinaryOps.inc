@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 /** \returns an expression of the coefficient wise product of \c *this and \a other
  *

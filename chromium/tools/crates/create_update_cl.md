@@ -63,12 +63,10 @@ OWNER will be automatically assigned.
 
 ## New transitive dependencies
 
-Notes from `//third_party/rust/OWNERS-review-checklist.md` apply:
-
-* The dependency will need to go through security review.
-* An FYI email should be sent to
-  [chrome-atls-discuss@google.com](mailto:chrome-atls-discuss@google.com)
-  in order to record the addition.
+Notes from `//third_party/rust/OWNERS-review-checklist.md` apply, in
+particular, an FYI email should be sent to
+[chrome-atls-discuss@google.com](mailto:chrome-atls-discuss@google.com)
+in order to record the addition.
 
 ### Optional: Adding the transitive dependency in its own CL
 
@@ -251,8 +249,7 @@ For maximal control, the script can be used in `manual` mode:
        version of the crate (or crates) you want to update.
        **Important**: Do not edit `Cargo.lock` (e.g. don't run `gnrt vendor`
        etc.).
-    1. `git add third_party/rust/chromium_crates_io/Cargo.toml`
-    1. `git commit -m "Manual edit of Cargo.toml"`
+    1. `git commit -m "Manual edit of Cargo.toml" third_party/rust/chromium_crates_io/Cargo.toml`
     1. `git cl upload -m "Manual edit of Cargo.toml" --bypass-hooks --skip-title --force`
 1. Run the helper script as follows:
    `tools/crates/create_update_cl.py manual

@@ -80,10 +80,6 @@ declare namespace chrome {
     let highContrastTheme: number;
     let lowContrastLightTheme: number;
     let lowContrastDarkTheme: number;
-    let undefinedPresentationState: number;
-    let inHiddenPresentationState: number;
-    let inSidePanelPresentationState: number;
-    let inImmersiveOverlayPresentationState: number;
     let autoHighlighting: number;
     let wordHighlighting: number;
     let phraseHighlighting: number;
@@ -112,11 +108,17 @@ declare namespace chrome {
     // Whether the Immersive Read Anything feature flag is enabled.
     let isImmersiveEnabled: boolean;
 
+    // Whether the Improved Read Aloud feature flag is enabled.
+    let isImprovedReadAloudEnabled: boolean;
+
     // Whether Read Anything is pinned to the toolbar.
     let isReadAnythingPinned: boolean;
 
     // Whether Readability.js is used as the primary distillation method.
     let isReadabilityEnabled: boolean;
+
+    // Whether select text for readability distillation is enabled.
+    let isReadabilitySelectTextEnabled: boolean;
 
     // Whether the phrase highlighting feature flag is enabled.
     let isPhraseHighlightingEnabled: boolean;
@@ -124,12 +126,11 @@ declare namespace chrome {
     // Whether the line focus feature flag is enabled.
     let isLineFocusEnabled: boolean;
 
-    // Whether the links can be enabled when the Readability feature flag is
-    // enabled.
-    let isReadabilityWithLinksEnabled: boolean;
-
     // Indicates if this page is a Google doc.
     let isGoogleDocs: boolean;
+
+    // Indicates if this page is a PDF.
+    let isPdf: boolean;
 
     // Fonts supported by the user's current language.
     let supportedFonts: string[];
@@ -176,6 +177,17 @@ declare namespace chrome {
     // The constant value representing the Readability (HTML string)
     // distillation method.
     let distillationTypeReadability: number;
+
+    // The active presentation state of Reading mode.
+    let activePresentationState: number;
+    let inHiddenPresentationState: number;
+    let inSidePanelPresentationState: number;
+    let inImmersiveOverlayPresentationState: number;
+
+    // Returns the AXTree mapping segments for the distilled block at the given
+    // index. A segment links a character range within the block to its AXnode.
+    function getAxMapping(index: number): Array<
+        {axNodeId: number, start: number, end: number, axNodeOffset: number}>;
 
     // Returns whether the reading highlight is currently on.
     function isHighlightOn(): boolean;
@@ -295,7 +307,8 @@ declare namespace chrome {
     function onHighlightGranularityChanged(value: number): void;
 
     // Called when the line focus mode is changed via the webui toolbar.
-    function onLineFocusChanged(value: number): void;
+    function onLineFocusChanged(
+        currentValue: number, lastNonDisabledLineFocus: number): void;
 
     // Called when a language is enabled/disabled for Read Aloud
     // via the webui language menu.
@@ -326,6 +339,14 @@ declare namespace chrome {
 
     // Called when distillation completes with the word count.
     function onDistilled(wordCount: number): void;
+
+    // Reports a user selection attempt. A metric is logged if text mapping is
+    // still in progress. (One time per-navigation).
+    function attemptLogEarlySelection(fromSidePanel: boolean): void;
+
+    // Called by the Read Anything app to provide the rendered text blocks from
+    // the distilled content for AXTree mapping.
+    function onRenderedTextBlocksAvailable(blocks: string[]): void;
 
     // Called when the number of words seen by a reading mode user changes.
     function updateWordsSeen(wordsSeen: number): void;
@@ -378,6 +399,9 @@ declare namespace chrome {
 
     // Called by the Read Anything app to close the Read Anything UI.
     function close(): void;
+
+    // Called when the speech engine stalls for 10 seconds.
+    function onSpeechEngineFirstStall(): void;
 
     // Called when the speech engine stalls.
     function onSpeechEngineStalled(): void;
@@ -453,6 +477,10 @@ declare namespace chrome {
 
     // Resets the granularity index.
     function resetGranularityIndex(): void;
+
+    // Called after the ReadAnythingAppController maps the readability text
+    // blocks to the AXTree.
+    function onRenderedTextMappingReady(): void;
 
     // Increments the processed_granularity_index_ in ReadAnythingAppModel,
     // effectively updating ReadAloud's state of the current granularity to

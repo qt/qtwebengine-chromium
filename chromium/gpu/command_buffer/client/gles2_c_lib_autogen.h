@@ -1283,9 +1283,6 @@ GLuint GL_APIENTRY GLES2GetMaxValueInBufferCHROMIUM(GLuint buffer_id,
   return gles2::GetGLContext()->GetMaxValueInBufferCHROMIUM(buffer_id, count,
                                                             type, offset);
 }
-GLboolean GL_APIENTRY GLES2EnableFeatureCHROMIUM(const char* feature) {
-  return gles2::GetGLContext()->EnableFeatureCHROMIUM(feature);
-}
 void* GL_APIENTRY GLES2MapBufferCHROMIUM(GLuint target, GLenum access) {
   return gles2::GetGLContext()->MapBufferCHROMIUM(target, access);
 }
@@ -1301,20 +1298,6 @@ void* GL_APIENTRY GLES2MapBufferSubDataCHROMIUM(GLuint target,
 }
 void GL_APIENTRY GLES2UnmapBufferSubDataCHROMIUM(const void* mem) {
   gles2::GetGLContext()->UnmapBufferSubDataCHROMIUM(mem);
-}
-void* GL_APIENTRY GLES2MapBufferRange(GLenum target,
-                                      GLintptr offset,
-                                      GLsizeiptr size,
-                                      GLbitfield access) {
-  return gles2::GetGLContext()->MapBufferRange(target, offset, size, access);
-}
-GLboolean GL_APIENTRY GLES2UnmapBuffer(GLenum target) {
-  return gles2::GetGLContext()->UnmapBuffer(target);
-}
-void GL_APIENTRY GLES2FlushMappedBufferRange(GLenum target,
-                                             GLintptr offset,
-                                             GLsizeiptr size) {
-  gles2::GetGLContext()->FlushMappedBufferRange(target, offset, size);
 }
 void* GL_APIENTRY GLES2MapTexSubImage2DCHROMIUM(GLenum target,
                                                 GLint level,
@@ -1476,6 +1459,12 @@ GLuint GL_APIENTRY GLES2GetLastFlushIdCHROMIUM() {
 }
 void GL_APIENTRY GLES2SetActiveURLCHROMIUM(const char* url) {
   gles2::GetGLContext()->SetActiveURLCHROMIUM(url);
+}
+void GL_APIENTRY GLES2GetBufferSubDataCHROMIUM(GLenum target,
+                                               GLintptr offset,
+                                               GLsizeiptr size,
+                                               void* data) {
+  gles2::GetGLContext()->GetBufferSubDataCHROMIUM(target, offset, size, data);
 }
 void GL_APIENTRY GLES2ContextVisibilityHintCHROMIUM(GLboolean visibility) {
   gles2::GetGLContext()->ContextVisibilityHintCHROMIUM(visibility);
@@ -2770,10 +2759,6 @@ extern const NameToFunc g_gles2_function_table[] = {
         reinterpret_cast<GLES2FunctionPointer>(glGetMaxValueInBufferCHROMIUM),
     },
     {
-        "glEnableFeatureCHROMIUM",
-        reinterpret_cast<GLES2FunctionPointer>(glEnableFeatureCHROMIUM),
-    },
-    {
         "glMapBufferCHROMIUM",
         reinterpret_cast<GLES2FunctionPointer>(glMapBufferCHROMIUM),
     },
@@ -2788,18 +2773,6 @@ extern const NameToFunc g_gles2_function_table[] = {
     {
         "glUnmapBufferSubDataCHROMIUM",
         reinterpret_cast<GLES2FunctionPointer>(glUnmapBufferSubDataCHROMIUM),
-    },
-    {
-        "glMapBufferRange",
-        reinterpret_cast<GLES2FunctionPointer>(glMapBufferRange),
-    },
-    {
-        "glUnmapBuffer",
-        reinterpret_cast<GLES2FunctionPointer>(glUnmapBuffer),
-    },
-    {
-        "glFlushMappedBufferRange",
-        reinterpret_cast<GLES2FunctionPointer>(glFlushMappedBufferRange),
     },
     {
         "glMapTexSubImage2DCHROMIUM",
@@ -2910,6 +2883,10 @@ extern const NameToFunc g_gles2_function_table[] = {
     {
         "glSetActiveURLCHROMIUM",
         reinterpret_cast<GLES2FunctionPointer>(glSetActiveURLCHROMIUM),
+    },
+    {
+        "glGetBufferSubDataCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(glGetBufferSubDataCHROMIUM),
     },
     {
         "glContextVisibilityHintCHROMIUM",

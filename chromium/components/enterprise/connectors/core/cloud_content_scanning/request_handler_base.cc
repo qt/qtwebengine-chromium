@@ -4,7 +4,9 @@
 
 #include "components/enterprise/connectors/core/cloud_content_scanning/request_handler_base.h"
 
+#include "base/notreached.h"
 #include "components/enterprise/connectors/core/cloud_content_scanning/binary_upload_service.h"
+#include "components/enterprise/connectors/core/reporting_constants.h"
 #include "components/enterprise/connectors/core/reporting_utils.h"
 #include "components/safe_browsing/core/common/features.h"
 
@@ -40,6 +42,35 @@ void RequestHandlerBase::AppendFinalActionsTo(
 
 BinaryUploadService* RequestHandlerBase::GetBinaryUploadService() {
   return upload_service_.get();
+}
+
+base::TimeTicks RequestHandlerBase::upload_start_time() const {
+  return upload_start_time_;
+}
+
+DeepScanAccessPoint RequestHandlerBase::access_point() const {
+  return access_point_;
+}
+
+ContentAnalysisInfoBase* RequestHandlerBase::content_analysis_info() const {
+  return content_analysis_info_.get();
+}
+
+std::string RequestHandlerBase::access_point_string() const {
+  switch (access_point_) {
+    case DeepScanAccessPoint::FILE_TRANSFER:
+      return kFileTransferDataTransferEventTrigger;
+    case DeepScanAccessPoint::UPLOAD:
+    case DeepScanAccessPoint::DRAG_AND_DROP:
+    case DeepScanAccessPoint::PASTE:
+    case DeepScanAccessPoint::ACTOR:
+      return kFileUploadDataTransferEventTrigger;
+    case DeepScanAccessPoint::DOWNLOAD:
+      return kFileDownloadDataTransferEventTrigger;
+    case DeepScanAccessPoint::PRINT:
+      break;
+  }
+  NOTREACHED();
 }
 
 }  // namespace enterprise_connectors

@@ -1,7 +1,12 @@
 // Benchmarks for Eigen Tensor shuffling (transpose / permutation).
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
+#define EIGEN_USE_THREADS
 
 #include <benchmark/benchmark.h>
-#include <unsupported/Eigen/CXX11/Tensor>
+#include <unsupported/Eigen/Tensor>
+#include <unsupported/Eigen/ThreadPool>
 
 using namespace Eigen;
 
@@ -85,31 +90,80 @@ static void BM_Shuffle4D_NCHW_to_NHWC(benchmark::State& state) {
   state.SetBytesProcessed(state.iterations() * N * C * H * H * sizeof(Scalar) * 2);
 }
 
-static void Shuffle2DSizes(::benchmark::Benchmark* b) {
-  for (int size : {256, 1024}) {
-    b->Args({size, size});
+// --- ThreadPool variants ---
+
+static void BM_Shuffle2D_ThreadPool(benchmark::State& state) {
+  const int M = state.range(0);
+  const int N = state.range(1);
+  const int threads = state.range(2);
+
+  Tensor<Scalar, 2> A(M, N);
+  Tensor<Scalar, 2> B(N, M);
+  A.setRandom();
+
+  ThreadPool tp(threads);
+  ThreadPoolDevice dev(&tp, threads);
+
+  Eigen::array<int, 2> perm = {1, 0};
+
+  for (auto _ : state) {
+    B.device(dev) = A.shuffle(perm);
+    benchmark::DoNotOptimize(B.data());
+    benchmark::ClobberMemory();
   }
-  b->Args({64, 4096});
-  b->Args({4096, 64});
+  state.SetBytesProcessed(state.iterations() * M * N * sizeof(Scalar) * 2);
+  state.counters["threads"] = threads;
 }
 
-static void Shuffle3DSizes(::benchmark::Benchmark* b) {
-  b->Args({64, 64, 64});
-  b->Args({128, 128, 64});
-  b->Args({32, 256, 256});
-}
+static void BM_Shuffle4D_NCHW_to_NHWC_ThreadPool(benchmark::State& state) {
+  const int N = state.range(0);
+  const int C = state.range(1);
+  const int H = state.range(2);
+  const int threads = state.range(3);
 
-static void Shuffle4DSizes(::benchmark::Benchmark* b) {
-  for (int batch : {1, 8}) {
-    for (int c : {3, 64}) {
-      for (int h : {32, 64}) {
-        b->Args({batch, c, h});
-      }
-    }
+  Tensor<Scalar, 4> A(N, C, H, H);
+  Tensor<Scalar, 4> B(N, H, H, C);
+  A.setRandom();
+
+  ThreadPool tp(threads);
+  ThreadPoolDevice dev(&tp, threads);
+
+  // NCHW -> NHWC: permute (0, 2, 3, 1)
+  Eigen::array<int, 4> perm = {0, 2, 3, 1};
+
+  for (auto _ : state) {
+    B.device(dev) = A.shuffle(perm);
+    benchmark::DoNotOptimize(B.data());
+    benchmark::ClobberMemory();
   }
+  state.SetBytesProcessed(state.iterations() * N * C * H * H * sizeof(Scalar) * 2);
+  state.counters["threads"] = threads;
 }
 
-BENCHMARK(BM_Shuffle2D)->Apply(Shuffle2DSizes);
-BENCHMARK(BM_ShuffleIdentity)->Apply(Shuffle2DSizes);
-BENCHMARK(BM_Shuffle3D)->Apply(Shuffle3DSizes);
-BENCHMARK(BM_Shuffle4D_NCHW_to_NHWC)->Apply(Shuffle4DSizes);
+// clang-format off
+#define SHUFFLE_2D_SIZES \
+  ->Args({256, 256})->Args({1024, 1024}) \
+  ->Args({64, 4096})->Args({4096, 64})
+
+#define SHUFFLE_3D_SIZES \
+  ->Args({64, 64, 64})->Args({128, 128, 64})->Args({32, 256, 256})
+
+// {batch, channels, h}: pure Cartesian product.
+#define SHUFFLE_4D_SIZES ->ArgsProduct({{1, 8}, {3, 64}, {32, 64}})
+
+#define SHUFFLE_2D_THREADPOOL_SIZES \
+  ->Args({256, 256, 1})->Args({256, 256, 2})->Args({256, 256, 4}) \
+  ->Args({256, 256, 8})->Args({256, 256, 12})->Args({256, 256, 16}) \
+  ->Args({1024, 1024, 1})->Args({1024, 1024, 2})->Args({1024, 1024, 4}) \
+  ->Args({1024, 1024, 8})->Args({1024, 1024, 12})->Args({1024, 1024, 16})
+
+// {batch, channels, h, threads}: pure Cartesian product.
+#define SHUFFLE_4D_THREADPOOL_SIZES ->ArgsProduct({{1, 8}, {64}, {32, 64}, {1, 2, 4, 8, 12, 16}})
+// clang-format on
+
+BENCHMARK(BM_Shuffle2D) SHUFFLE_2D_SIZES;
+BENCHMARK(BM_ShuffleIdentity) SHUFFLE_2D_SIZES;
+BENCHMARK(BM_Shuffle3D) SHUFFLE_3D_SIZES;
+BENCHMARK(BM_Shuffle4D_NCHW_to_NHWC) SHUFFLE_4D_SIZES;
+BENCHMARK(BM_Shuffle2D_ThreadPool) SHUFFLE_2D_THREADPOOL_SIZES->UseRealTime();
+BENCHMARK(BM_Shuffle4D_NCHW_to_NHWC_ThreadPool) SHUFFLE_4D_THREADPOOL_SIZES->UseRealTime();

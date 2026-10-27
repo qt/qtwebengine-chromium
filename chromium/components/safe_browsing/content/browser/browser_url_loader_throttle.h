@@ -93,9 +93,7 @@ class BrowserURLLoaderThrottle : public blink::URLLoaderThrottle {
       net::RedirectInfo* redirect_info,
       const network::mojom::URLResponseHead& response_head,
       bool* defer,
-      std::vector<std::string>* to_be_removed_headers,
-      net::HttpRequestHeaders* modified_headers,
-      net::HttpRequestHeaders* modified_cors_exempt_headers) override;
+      network::HttpRequestHeadersUpdateParams* headers_update_params) override;
   void WillProcessResponse(const GURL& response_url,
                            network::mojom::URLResponseHead* response_head,
                            bool* defer) override;
@@ -211,6 +209,9 @@ class BrowserURLLoaderThrottle : public blink::URLLoaderThrottle {
   UrlCheckerHolder::GetDelegateCallback delegate_getter_;
   base::RepeatingCallback<content::WebContents*()> web_contents_getter_;
   SessionID tab_id_ = SessionID::InvalidValue();
+
+  // The current URL of the request, updated on redirects.
+  GURL current_url_;
 
   // Checkers used to perform Safe Browsing checks. |sync_sb_checker_| may defer
   // the URL loader. |async_sb_checker_| doesn't defer the URL loader and may

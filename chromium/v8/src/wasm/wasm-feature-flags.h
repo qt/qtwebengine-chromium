@@ -24,12 +24,6 @@
 
 // Experimental features (disabled by default).
 #define FOREACH_WASM_EXPERIMENTAL_FEATURE_FLAG(V) /*     (force 80 columns) */ \
-  /* Type reflection proposal. */                                              \
-  /* https://github.com/webassembly/js-types */                                \
-  /* V8 side owner: ahaas */                                                   \
-  /* Staged in v7.8, unstaged in v13.6 (see https://crbug.com/402340845) */    \
-  V(type_reflection, "wasm type reflection in JS", false)                      \
-                                                                               \
   /* Instruction Tracing tool convention (early prototype, might change) */    \
   /* Tool convention: https://github.com/WebAssembly/tool-conventions */       \
   /* V8 side owner: jabraham */                                                \
@@ -50,16 +44,10 @@
   /* V8 side owner: irezvov */                                                 \
   V(fp16, "fp16", false)                                                       \
                                                                                \
-  /* Wide Arithmetic proposal */                                               \
-  /* https://github.com/WebAssembly/wide-arithmetic */                         \
-  /* V8 side owner: ryandiaz */                                                \
-  V(wide_arithmetic, "wide arithmetic", false)                                 \
-                                                                               \
   /* Memory Control proposal */                                                \
   /* https://github.com/WebAssembly/memory-control */                          \
   /* V8 side owner: ahaas */                                                   \
   V(memory_control, "memory control", false)                                   \
-                                                                               \
   /* Core stack switching, main proposal */                                    \
   /* https://github.com/WebAssembly/stack-switching */                         \
   /* V8 side owner: fgm */                                                     \
@@ -95,6 +83,11 @@
   /* No upstream repo yet. */                                                  \
   /* V8 side owner: jkummerow */                                               \
   V(imported_strings_utf8, "imported strings (utf8 features)", false)          \
+                                                                               \
+  /* Wide Arithmetic proposal */                                               \
+  /* https://github.com/WebAssembly/wide-arithmetic */                         \
+  /* V8 side owner: ryandiaz */                                                \
+  V(wide_arithmetic, "wide arithmetic", false)                                 \
   // add pre-staged features right before this line
 
 // #############################################################################

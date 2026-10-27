@@ -26,7 +26,7 @@ source_set("sync") {
     ]
   }
 
-  if (toolkit_views && !is_chromeos) {
+  if (toolkit_views) {
     sources += [ "sync_passphrase_dialog.h" ]
     public_deps += [ "//ui/base/interaction" ]
   }
@@ -39,6 +39,7 @@ source_set("impl") {
     "//base",
     "//chrome/browser/complex_tasks",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/supervised_user",
     "//components/sessions",
     "//components/sync/base:features",
     "//components/sync_sessions",
@@ -58,7 +59,6 @@ source_set("impl") {
       "browser_synced_window_delegates_getter.cc",
     ]
     deps += [
-      "//chrome/browser/history",
       "//chrome/browser/sync",
       "//chrome/browser/ui/tabs:tab_strip",
       "//components/bookmarks/browser",
@@ -68,18 +68,15 @@ source_set("impl") {
   }
 
   if (toolkit_views) {
-    deps += [ "//chrome/common" ]
-
-    if (!is_chromeos) {
-      sources += [ "sync_passphrase_dialog.cc" ]
-      deps += [
-        "//chrome/browser:browser_process",
-        "//chrome/browser/ui/dialogs",
-        "//components/strings",
-        "//ui/base",
-        "//url",
-      ]
-    }
+    sources += [ "sync_passphrase_dialog.cc" ]
+    deps += [
+      "//chrome/browser:browser_process",
+      "//chrome/browser/ui/dialogs",
+      "//chrome/common",
+      "//components/strings",
+      "//ui/base",
+      "//url",
+    ]
   }
 }
 
@@ -103,7 +100,6 @@ source_set("unit_tests") {
     deps += [
       "//chrome/browser:browser_process",
       "//chrome/browser/extensions:test_support",
-      "//chrome/browser/history",
       "//chrome/browser/prefs",
       "//components/bookmarks/test",
       "//components/pref_registry",

@@ -5,16 +5,15 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_UI_AUTOFILL_SUGGESTION_DELEGATE_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_UI_AUTOFILL_SUGGESTION_DELEGATE_H_
 
+#include <string>
 #include <variant>
 
 #include "base/containers/span.h"
-#include "base/functional/callback_forward.h"
 #include "components/autofill/core/browser/filling/filling_product.h"
 #include "components/autofill/core/browser/suggestions/suggestion.h"
 #include "components/autofill/core/browser/suggestions/suggestion_hiding_reason.h"
 #include "components/autofill/core/browser/ui/suggestion_button_action.h"
 #include "components/autofill/core/browser/ui/tabbed_pane_enums.h"
-#include "components/autofill/core/common/aliases.h"
 
 namespace password_manager {
 class PasswordManagerDriver;
@@ -38,9 +37,24 @@ class AutofillSuggestionDelegate {
     // Defines whether the suggestion appeared on a search result list (i.e.
     // the search input is not empty).
     bool from_search_result = false;
+
+    friend bool operator==(const SuggestionMetadata& lhs,
+                           const SuggestionMetadata& rhs) = default;
   };
 
   virtual ~AutofillSuggestionDelegate() = default;
+
+  // Called when the user has typed in the search bar.
+  // Returns true if the delegate handles the filter change.
+  virtual bool OnFilterChanged(const std::u16string& filter) = 0;
+
+  // Called when the user has explicitly submitted the search (e.g. by hitting
+  // Enter).
+  // Returns true if the delegate handles the search submission.
+  virtual bool OnSearchSubmitted(const std::u16string& filter) = 0;
+
+  // Returns true if a search is currently in progress.
+  virtual bool IsSearching() const = 0;
 
   virtual std::variant<AutofillDriver*,
                        password_manager::PasswordManagerDriver*>

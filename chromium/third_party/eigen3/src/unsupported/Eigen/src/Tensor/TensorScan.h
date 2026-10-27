@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_SCAN_H
-#define EIGEN_CXX11_TENSOR_TENSOR_SCAN_H
+#ifndef EIGEN_TENSOR_TENSOR_SCAN_H
+#define EIGEN_TENSOR_TENSOR_SCAN_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -41,7 +42,7 @@ struct nested<TensorScanOp<Op, XprType>, 1, typename eval<TensorScanOp<Op, XprTy
 }  // end namespace internal
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Tensor scan class.
  */
@@ -365,14 +366,21 @@ struct TensorEvaluator<const TensorScanOp<Op, ArgType>, Device> {
   enum {
     IsAligned = false,
     PacketAccess = (PacketType<CoeffReturnType, Device>::size > 1),
-    BlockAccess = false,
+    // Scan eagerly materializes its result into m_output; once that buffer
+    // exists, exposing block access is just a wrapper around it. Leave
+    // PreferBlockAccess false so the executor still uses the cheaper
+    // raw/packet paths by default; the flag matters only when an outer
+    // expression calls block() directly.
+    BlockAccess = (NumDims > 0),
     PreferBlockAccess = false,
     CoordAccess = false,
     RawAccess = true
   };
 
   //===- Tensor block evaluation strategy (see TensorBlock.h) -------------===//
-  typedef internal::TensorBlockNotImplemented TensorBlock;
+  typedef internal::TensorBlockDescriptor<NumDims, Index> TensorBlockDesc;
+  typedef internal::TensorBlockScratchAllocator<Device> TensorBlockScratch;
+  typedef typename internal::TensorMaterializedBlock<Scalar, NumDims, Layout, Index> TensorBlock;
   //===--------------------------------------------------------------------===//
 
   EIGEN_STRONG_INLINE TensorEvaluator(const XprType& op, const Device& device)
@@ -390,11 +398,12 @@ struct TensorEvaluator<const TensorScanOp<Op, ArgType>, Device> {
 
     // Compute stride of scan axis
     const Dimensions& dims = m_impl.dimensions();
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = 0; i < op.axis(); ++i) {
         m_stride = m_stride * dims[i];
       }
-    } else {
+    }
+    else {
       // dims can only be indexed through unsigned integers,
       // so use an unsigned type to let the compiler know.
       // This prevents spurious warnings: "'*((void*)(& evaluator)+64)[18446744073709551615]' may be used uninitialized
@@ -442,6 +451,16 @@ struct TensorEvaluator<const TensorScanOp<Op, ArgType>, Device> {
     return internal::ploadt<PacketReturnType, LoadMode>(m_output + index);
   }
 
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE internal::TensorBlockResourceRequirements getResourceRequirements() const {
+    return internal::TensorBlockResourceRequirements::any();
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorBlock block(TensorBlockDesc& desc, TensorBlockScratch& scratch,
+                                                          bool /*root_of_expr_ast*/ = false) const {
+    eigen_assert(m_output != nullptr);
+    return TensorBlock::materialize(m_output, m_impl.dimensions(), desc, scratch);
+  }
+
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE EvaluatorPointerType data() const { return m_output; }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoeffReturnType coeff(Index index) const { return m_output[index]; }
@@ -471,4 +490,4 @@ struct TensorEvaluator<const TensorScanOp<Op, ArgType>, Device> {
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_SCAN_H
+#endif  // EIGEN_TENSOR_TENSOR_SCAN_H

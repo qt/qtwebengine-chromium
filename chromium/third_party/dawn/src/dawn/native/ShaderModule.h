@@ -40,26 +40,26 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/string_view.h"
-#include "dawn/common/Constants.h"
-#include "dawn/common/ContentLessObjectCacheable.h"
-#include "dawn/common/MutexProtected.h"
-#include "dawn/common/RefCountedWithExternalCount.h"
-#include "dawn/common/Sha3.h"
-#include "dawn/common/ityp_array.h"
-#include "dawn/native/BindingInfo.h"
-#include "dawn/native/CachedObject.h"
-#include "dawn/native/CompilationMessages.h"
-#include "dawn/native/Error.h"
-#include "dawn/native/ErrorData.h"
-#include "dawn/native/Format.h"
-#include "dawn/native/Forward.h"
-#include "dawn/native/IntegerTypes.h"
-#include "dawn/native/Limits.h"
-#include "dawn/native/LogEmitter.h"
-#include "dawn/native/ObjectBase.h"
-#include "dawn/native/PerStage.h"
-#include "dawn/native/Serializable.h"
-#include "dawn/native/dawn_platform.h"
+#include "src/dawn/common/Constants.h"
+#include "src/dawn/common/ContentLessObjectCacheable.h"
+#include "src/dawn/common/MutexProtected.h"
+#include "src/dawn/common/RefCountedWithExternalCount.h"
+#include "src/dawn/common/Sha3.h"
+#include "src/dawn/common/ityp_array.h"
+#include "src/dawn/native/BindingInfo.h"
+#include "src/dawn/native/CachedObject.h"
+#include "src/dawn/native/CompilationMessages.h"
+#include "src/dawn/native/Error.h"
+#include "src/dawn/native/ErrorData.h"
+#include "src/dawn/native/Format.h"
+#include "src/dawn/native/Forward.h"
+#include "src/dawn/native/IntegerTypes.h"
+#include "src/dawn/native/Limits.h"
+#include "src/dawn/native/LogEmitter.h"
+#include "src/dawn/native/ObjectBase.h"
+#include "src/dawn/native/PerStage.h"
+#include "src/dawn/native/Serializable.h"
+#include "src/dawn/native/dawn_platform.h"
 #include "tint/tint.h"
 
 namespace tint {
@@ -150,7 +150,7 @@ DAWN_SERIALIZABLE(struct, ShaderModuleParseResult, SHADER_MODULE_PARSE_RESULT_ME
 #undef SHADER_MODULE_PARSE_RESULT_MEMBER
 
 struct ShaderModuleEntryPoint {
-    bool defaulted;
+    bool defaulted = false;
     std::string name;
 };
 
@@ -176,11 +176,6 @@ ResultOrError<Extent3D> ValidateComputeStageWorkgroupSize(
     uint32_t maxSubgroupSize,
     const LimitsForCompilationRequest& limits,
     const LimitsForCompilationRequest& adaterSupportedlimits);
-
-MaybeError ValidateExplicitComputeSubgroupSize(const tint::WorkgroupInfo& workgroupInfo,
-                                               uint32_t minExplicitSubgroupSize,
-                                               uint32_t maxExplicitSubgroupSize,
-                                               uint32_t maxComputeWorkgroupSubgroups);
 
 MaybeError ValidateSubgroupMatrixConfiguration(const tint::SubgroupMatrixInfo& smInfo,
                                                const std::vector<SubgroupMatrixConfig>& cfg);
@@ -319,6 +314,7 @@ using OverridesMap = absl::flat_hash_map<std::string, Override>;
     X(bool, usesInstanceIndex)                                                                    \
     X(bool, usesNumWorkgroups)                                                                    \
     X(bool, usesSampleMaskOutput)                                                                 \
+    X(bool, usesSampleMaskInput)                                                                  \
     X(bool, usesSampleIndex)                                                                      \
     X(bool, usesVertexIndex)                                                                      \
     X(bool, usesGlobalInvocationIndex)                                                            \
@@ -331,7 +327,7 @@ using OverridesMap = absl::flat_hash_map<std::string, Override>;
     /* Immediate Data block byte size */                                                          \
     X(uint32_t, immediateDataRangeByteSize)                                                       \
     /* Immediate Data block used slots */                                                         \
-    X(ImmediateConstantMask, immediateDataUsedSlots)
+    X(ImmediateMask, immediateDataUsedSlots)
 DAWN_SERIALIZABLE(struct, EntryPointMetadata, ENTRY_POINT_METADATA_MEMBER) {
     using SamplerTexturePair = detail::SamplerTexturePair;
     // TODO(crbug.com/409438000): Remove the hack of sampler placeholders for non-sampler texture.
@@ -350,7 +346,7 @@ DAWN_SERIALIZABLE(struct, EntryPointMetadata, ENTRY_POINT_METADATA_MEMBER) {
 // The WebGPU override variables only support these scalar types
 union OverrideScalar {
     // Use int32_t for boolean to initialize the full 32bit
-    int32_t b;
+    int32_t b = 0;
     float f32;
     int32_t i32;
     uint32_t u32;
@@ -441,14 +437,14 @@ class ShaderModuleBase : public RefCountedWithExternalCount<ApiObjectBase>,
 
     // The original data in the descriptor for caching.
     enum class Type : uint8_t { Undefined, Spirv, Wgsl };
-    Type mType;
+    Type mType = Type::Undefined;
     bool mAllowSpirvNonUniformDerivitives = false;
     std::vector<uint32_t> mOriginalSpirv;
     std::string mWgsl;
 
     // Secure hash computed from shader code and other metadata to be used as a cache key
     // representing the shader module.
-    ShaderModuleHash mHash;
+    ShaderModuleHash mHash = {};
 
     // TODO(dawn:2503): Remove the optional when Dawn can has a consistent default across backends.
     // Right now D3D uses strictness by default, and Vulkan/Metal use fast math by default.
@@ -466,7 +462,7 @@ class ShaderModuleBase : public RefCountedWithExternalCount<ApiObjectBase>,
     struct CompiledState {
         EntryPointMetadataTable entryPoints;
         PerStage<std::string> defaultEntryPointNames;
-        PerStage<size_t> entryPointCounts;
+        PerStage<size_t> entryPointCounts = {};
 
         MutexProtected<TintData> tintData;
 

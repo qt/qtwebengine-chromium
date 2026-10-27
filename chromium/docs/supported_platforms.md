@@ -18,6 +18,10 @@ ANGLE or V8 currently support more platforms.
 listed as [per-file OWNERS of the
 doc](https://source.chromium.org/chromium/chromium/src/+/main:docs/OWNERS;l=1?q=docs%2FOWNERS&sq=&ss=chromium).
 
+**Note**: If you notice gaps between accessibility and accountability (e.g.,
+accountability for upholding performance on benchmarks to which you don't have
+access), reach out to chrome-atls@google.com to inform them of the gap.
+
 Definitions of Terms
 --------------------
 
@@ -162,7 +166,7 @@ supported OS version for Android Automotive is Android R.
 
 ### ChromeOS
 
-Chrome for ChromeOS supports both x86-64 and ARM architectures. For
+Chrome for ChromeOS supports both x86-64 and ARM64 architectures. For
 development and testing, the linux-chromeos build serves as an emulator,
 providing a functional ChromeOS environment on Linux.
 
@@ -183,7 +187,7 @@ policy](https://support.google.com/chrome/a/answer/6220366).
 [This page](https://support.google.com/chrome/a/answer/7100626) details
 minimum operating system and hardware requirements.
 
-As of March 2026, official support on ARM is
+As of March 2026, official support on ARM64 is
 [upcoming](https://blog.chromium.org/2026/03/bringing-chrome-to-arm64-linux-devices.html).
 
 Many more platforms/distributions are community-supported (per the definition

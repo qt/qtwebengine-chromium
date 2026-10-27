@@ -40,6 +40,7 @@
 #include "utils/file_system_utils.h"
 #include "utils/spirv_tools_utils.h"
 #include "containers/container_utils.h"
+#include "generated/extended_flags_helper_generator.h"
 
 bool CoreChecks::ValidateDeviceQueueFamily(uint32_t queue_family, const Location& loc, const char* vuid,
                                            bool optional = false) const {
@@ -63,13 +64,15 @@ bool CoreChecks::ValidatePhysicalDeviceQueueFamilies(uint32_t queue_family_count
                                                      const Location& loc, const char* vuid) const {
     bool skip = false;
     if (queue_families) {
-        vvl::unordered_set<uint32_t> set;
+        vvl::unordered_map<uint32_t, uint32_t> first_queue_family_index;
         for (uint32_t i = 0; i < queue_family_count; ++i) {
-            if (set.count(queue_families[i])) {
-                skip |= LogError(vuid, device, loc.dot(Field::pQueueFamilyIndices, i),
-                                 "(%" PRIu32 ") is also in pQueueFamilyIndices[0].", queue_families[i]);
+            if (const auto duplicate = first_queue_family_index.find(queue_families[i]);
+                duplicate != first_queue_family_index.end()) {
+                skip |=
+                    LogError(vuid, device, loc.dot(Field::pQueueFamilyIndices, i),
+                             "(%" PRIu32 ") is also in pQueueFamilyIndices[%" PRIu32 "].", queue_families[i], duplicate->second);
             } else {
-                set.insert(queue_families[i]);
+                first_queue_family_index.emplace(queue_families[i], i);
                 if (queue_families[i] == VK_QUEUE_FAMILY_IGNORED) {
                     skip |= LogError(vuid, device, loc.dot(Field::pQueueFamilyIndices, i),
                                      "is VK_QUEUE_FAMILY_IGNORED, but it is required to provide a valid queue family index value.");
@@ -90,33 +93,30 @@ bool CoreChecks::ValidatePhysicalDeviceQueueFamilies(uint32_t queue_family_count
 bool CoreChecks::GetPhysicalDeviceImageFormatProperties(vvl::Image& image_state, const char* vuid_string,
                                                         const Location& loc) const {
     bool skip = false;
-    const auto image_create_info = image_state.create_info;
     VkResult image_properties_result = VK_SUCCESS;
     Func command = Func::vkGetPhysicalDeviceImageFormatProperties;
-    if (image_create_info.tiling != VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
+    if (image_state.GetTiling() != VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
         image_properties_result = DispatchGetPhysicalDeviceImageFormatProperties(
-            physical_device, image_create_info.format, image_create_info.imageType, image_create_info.tiling,
-            image_create_info.usage, image_create_info.flags, &image_state.image_format_properties);
+            physical_device, image_state.GetFormat(), image_state.GetImageType(), image_state.GetTiling(), image_state.usage,
+            image_state.create_flags, &image_state.image_format_properties);
     } else {
         command = Func::vkGetPhysicalDeviceImageFormatProperties2;
-        VkPhysicalDeviceImageFormatInfo2 image_format_info = vku::InitStructHelper();
-        image_format_info.type = image_create_info.imageType;
-        image_format_info.format = image_create_info.format;
-        image_format_info.tiling = image_create_info.tiling;
-        image_format_info.usage = image_create_info.usage;
-        image_format_info.flags = image_create_info.flags;
+        VkPhysicalDeviceImageFormatInfo2 image_format_info = image_state.GetImageFormatInfo2();
         VkImageFormatProperties2 image_format_properties = vku::InitStructHelper();
         image_properties_result = DispatchGetPhysicalDeviceImageFormatProperties2Helper(
             api_version, physical_device, &image_format_info, &image_format_properties);
         image_state.image_format_properties = image_format_properties.imageFormatProperties;
     }
     if (image_properties_result != VK_SUCCESS) {
-        skip |= LogError(vuid_string, device, loc,
-                         "internal call to %s unexpectedly "
-                         "failed with result = %s, "
-                         "when called for validation with following VkImageCreateInfo\n%s",
-                         String(command), string_VkResult(image_properties_result),
-                         string_VkPhysicalDeviceImageFormatInfo2(image_create_info).c_str());
+        skip |=
+            LogError(vuid_string, device, loc,
+                     "internal call to %s unexpectedly "
+                     "failed with result = %s, "
+                     "when called for validation with following VkImageCreateInfo\n%s",
+                     String(command), string_VkResult(image_properties_result),
+                     string_VkPhysicalDeviceImageFormatInfo2(image_state.create_flags, image_state.usage, image_state.GetFormat(),
+                                                             image_state.GetImageType(), image_state.GetTiling())
+                         .c_str());
     }
     return skip;
 }
@@ -355,7 +355,9 @@ void CoreChecks::FinishDeviceSetup(const VkDeviceCreateInfo* pCreateInfo, const 
 
 void CoreChecks::PreCallRecordDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator,
                                             const RecordObject& record_obj) {
-    if (!device) return;
+    if (!device) {
+        return;
+    }
 
     vvl::DeviceProxy::PreCallRecordDestroyDevice(device, pAllocator, record_obj);
 
@@ -484,12 +486,13 @@ bool core::Instance::ValidateGetPhysicalDeviceImageFormatProperties2(VkPhysicalD
     bool skip = false;
     const auto* copy_perf_query = vku::FindStructInPNextChain<VkHostImageCopyDevicePerformanceQuery>(pImageFormatProperties->pNext);
     if (copy_perf_query) {
-        if ((pImageFormatInfo->usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT) == 0) {
+        const VkImageUsageFlags usage_flags = GetImageUsageFlags(*pImageFormatInfo);
+        if ((usage_flags & VK_IMAGE_USAGE_HOST_TRANSFER_BIT) == 0) {
             skip |= LogError("VUID-vkGetPhysicalDeviceImageFormatProperties2-pNext-09004", gpu, error_obj.location,
                              "pImageFormatProperties includes a chained "
                              "VkHostImageCopyDevicePerformanceQuery struct, but pImageFormatInfo->usage (%s) does not contain "
                              "VK_IMAGE_USAGE_HOST_TRANSFER_BIT",
-                             string_VkImageUsageFlags(pImageFormatInfo->usage).c_str());
+                             string_VkImageUsageFlags(usage_flags).c_str());
         }
     }
     return skip;
@@ -661,8 +664,9 @@ bool CoreChecks::PreCallValidateResetCommandPool(VkDevice device, VkCommandPool 
         auto cb_state = entry.second;
         if (cb_state->InUse()) {
             const LogObjectList objlist(cb_state->Handle(), commandPool);
-            skip |= LogError("VUID-vkResetCommandPool-commandPool-00040", objlist, error_obj.location, "(%s) is in use.",
-                             FormatHandle(cb_state->Handle()).c_str());
+            skip |= LogError("VUID-vkResetCommandPool-commandPool-00040", objlist, error_obj.location, "(%s) is in use.%s",
+                             FormatHandle(cb_state->Handle()).c_str(),
+                             is_device_lost ? "\n(a VK_ERROR_DEVICE_LOST has occurred, the command pool must be destroyed)" : "");
         }
     }
     return skip;

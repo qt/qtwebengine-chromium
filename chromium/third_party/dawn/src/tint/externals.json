@@ -115,7 +115,7 @@
     },
     "src_utils": {
         "IncludePatterns": [
-            "src/utils/*",
+            "src/utils/*"
         ]
     },
     "src_utils_chromium_test_compat": {

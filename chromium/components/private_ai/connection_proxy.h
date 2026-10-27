@@ -15,6 +15,7 @@
 #include "base/time/time.h"
 #include "components/private_ai/connection.h"
 #include "components/private_ai/phosphor/data_types.h"
+#include "components/private_ai/private_ai_network_driver.h"
 #include "components/private_ai/proto/private_ai.pb.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "services/network/public/mojom/network_context.mojom.h"
@@ -51,8 +52,9 @@ class ConnectionProxy : public Connection {
   ConnectionProxy(const GURL& proxy_url,
                   PrivateAiLogger* logger,
                   phosphor::TokenManager* token_manager,
+                  PrivateAiNetworkDriver* network_driver,
                   InnerConnectionFactory inner_connection_factory,
-                  base::OnceCallback<void(ErrorCode)> on_disconnect);
+                  base::OnceCallback<void(StatusCode)> on_disconnect);
   ~ConnectionProxy() override;
 
   ConnectionProxy(const ConnectionProxy&) = delete;
@@ -63,7 +65,7 @@ class ConnectionProxy : public Connection {
             base::TimeDelta timeout,
             OnRequestCallback callback) override;
 
-  void OnDestroy(ErrorCode error) override;
+  void OnDestroy(StatusCode status_code) override;
 
  private:
   struct PendingRequest {
@@ -82,15 +84,16 @@ class ConnectionProxy : public Connection {
 
   void FetchToken();
   void OnProxyToken(std::optional<phosphor::BlindSignedAuthToken> auth_token);
-  void CallOnDisconnect(ErrorCode error_code);
+  void CallOnDisconnect(StatusCode status_code);
 
   const GURL proxy_url_;
   raw_ptr<PrivateAiLogger> logger_;
   raw_ptr<phosphor::TokenManager> token_manager_;
+  raw_ptr<PrivateAiNetworkDriver> network_driver_;
   InnerConnectionFactory inner_connection_factory_;
 
   // Called to trigger a disconnect and destruction of the connection.
-  base::OnceCallback<void(ErrorCode)> on_disconnect_;
+  base::OnceCallback<void(StatusCode)> on_disconnect_;
 
   mojo::Remote<network::mojom::NetworkContext> proxied_context_;
   std::unique_ptr<Connection> inner_connection_;

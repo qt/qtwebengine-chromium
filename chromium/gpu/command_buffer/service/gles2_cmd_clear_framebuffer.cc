@@ -7,6 +7,7 @@
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/shader_manager.h"
+#include "gpu/command_buffer/service/transform_feedback_manager.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace {
@@ -78,6 +79,7 @@ void ClearFramebufferResourceManager::Destroy() {
 
 void ClearFramebufferResourceManager::ClearFramebuffer(
     const gles2::GLES2Decoder* decoder,
+    TransformFeedback* transform_feedback,
     const gfx::Size& max_viewport_size,
     GLbitfield mask,
     GLfloat clear_color_red,
@@ -112,6 +114,13 @@ void ClearFramebufferResourceManager::ClearFramebuffer(
     glDeleteShader(fragment_shader);
     glDeleteShader(vertex_shader);
   }
+
+  // Cannot use glUseProgram if transform feedback is active and not paused.
+  // This is a workaround for glClear which isn't part of vertex processing
+  // anyway.
+  ScopedPauseResumeTransformFeedback pause_transform_feedback(
+      transform_feedback);
+
   glUseProgram(program_);
 
 #if DCHECK_IS_ON()

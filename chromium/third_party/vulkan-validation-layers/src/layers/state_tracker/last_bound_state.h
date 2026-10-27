@@ -49,7 +49,7 @@ struct LastBound {
     // All shader stages for a used pipeline bind point must be bound to with a valid shader or VK_NULL_HANDLE
     // We have to track shader_object_bound, because shader_object_states will be nullptr when VK_NULL_HANDLE is used
     bool shader_object_bound[kShaderObjectStageCount]{false};
-    vvl::ShaderObject *shader_object_states[kShaderObjectStageCount]{nullptr};
+    std::shared_ptr<vvl::ShaderObject> shader_object_states[kShaderObjectStageCount]{nullptr};
     // The compatible layout used binding descriptor sets (track location to provide better error message)
     std::shared_ptr<const vvl::PipelineLayout> desc_set_pipeline_layout;
     vvl::Func desc_set_bound_command = vvl::Func::Empty;  // will be something like vkCmdBindDescriptorSets
@@ -83,6 +83,9 @@ struct LastBound {
 
     // Ordered bound set tracking where index is set# that given set is bound to
     std::vector<DescriptorSetSlot> ds_slots;
+
+    void BindPipeline(vvl::Pipeline* pipe_state);
+    void BindShaderObject(VkShaderStageFlagBits shader_stage, const std::shared_ptr<vvl::ShaderObject>& shader_object_state);
 
     void Reset();
 
@@ -166,6 +169,7 @@ struct LastBound {
         descriptor_mode = new_mode;
         set_descriptor_mode = function;
     };
+    vvl::Func GetDescriptorModeFunc() const { return set_descriptor_mode; }
     std::string DescribeInvalidDescriptorMode() const;
 
   private:

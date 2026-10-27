@@ -102,8 +102,9 @@ class CC_ANIMATION_EXPORT AnimationTrigger
 
   // Perform the relevant actions for the associated animations based on the
   // trigger's state.
-  void PerformActivate(AnimationEvents* events);
-  void PerformDeactivate(AnimationEvents* events);
+  void PerformActivate(AnimationEvents* events, base::TimeTicks monotonic_time);
+  void PerformDeactivate(AnimationEvents* events,
+                         base::TimeTicks monotonic_time);
 
   void SetAnimationTriggerDelegate(AnimationTriggerDelegate* delegate);
 
@@ -111,12 +112,26 @@ class CC_ANIMATION_EXPORT AnimationTrigger
   // animation trigger delegate (the main thread trigger).
   void DispatchAnimationTriggerEvent(const AnimationTriggerEvent& event);
 
+  void PerformActivateForTesting(AnimationEvents* events,
+                                 base::TimeTicks monotonic_time) {
+    PerformActivate(events, monotonic_time);
+  }
+
  protected:
   explicit AnimationTrigger(int id);
   ~AnimationTrigger() override;
 
  private:
   friend class base::RefCounted<AnimationTrigger>;
+  friend class CompositorTimelineTriggerBehaviorTest;
+
+  void PerformPlay(Animation& animation, base::TimeTicks monotonic_time);
+  void PerformPause(Animation& animation, base::TimeTicks monotonic_time);
+  void PerformReplay(Animation& animation, base::TimeTicks monotonic_time);
+
+  void PerformBehavior(Animation& animation,
+                       Behavior behavior,
+                       base::TimeTicks monotonic_time);
 
   const int id_;
 

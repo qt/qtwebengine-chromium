@@ -108,19 +108,23 @@ void VpxEncoder::Initialize() {
 
 void VpxEncoder::ConfigureForNewFrameSize(const gfx::Size& frame_size) {
   if (is_initialized()) {
-    // NOTE: Do we need this workaround for VP9?
-    // Workaround for VP8 bug: If the new size is strictly less-than-or-equal to
-    // the old size, in terms of area, the existing encoder instance can
-    // continue.  Otherwise, completely tear-down and re-create a new encoder to
-    // avoid a shutdown crash.
-    if (frame_size.GetArea() <= gfx::Size(config_.g_w, config_.g_h).GetArea()) {
+    // Workaround for libvpx bug: If the new size is strictly less-than-or-equal
+    // to the old size, in terms of both dimensions, the existing encoder
+    // instance can continue.  Otherwise, completely tear-down and re-create a
+    // new encoder to avoid a shutdown crash or OOB read/write.
+    // More info can be found here:
+    //   https://bugs.chromium.org/p/webm/issues/detail?id=1642
+    //   https://bugs.chromium.org/p/webm/issues/detail?id=912
+    if (frame_size.width() <= last_init_size_->width() &&
+        frame_size.height() <= last_init_size_->height()) {
       DVLOG(1) << "Continuing to use existing encoder at smaller frame size: "
-               << gfx::Size(config_.g_w, config_.g_h).ToString() << " --> "
+               << last_init_size_->ToString() << " --> "
                << frame_size.ToString();
       config_.g_w = frame_size.width();
       config_.g_h = frame_size.height();
       config_.rc_min_quantizer = codec_params_->min_qp;
       if (vpx_codec_enc_config_set(&encoder_, &config_) == VPX_CODEC_OK) {
+        last_init_size_ = frame_size;
         return;
       }
       DVLOG(1) << "libvpx rejected the attempt to use a smaller frame size in "
@@ -128,9 +132,9 @@ void VpxEncoder::ConfigureForNewFrameSize(const gfx::Size& frame_size) {
     }
 
     DVLOG(1) << "Destroying/Re-Creating encoder for larger frame size: "
-             << gfx::Size(config_.g_w, config_.g_h).ToString() << " --> "
-             << frame_size.ToString();
+             << last_init_size_->ToString() << " --> " << frame_size.ToString();
     vpx_codec_destroy(&encoder_);
+    last_init_size_.reset();
   } else {
     DVLOG(1) << "Creating encoder for the first frame; size: "
              << frame_size.ToString();
@@ -186,7 +190,9 @@ void VpxEncoder::ConfigureForNewFrameSize(const gfx::Size& frame_size) {
         {media::EncoderStatus::Codes::kEncoderInitializationError,
          base::StrCat(
              {"libvpx failed to initialize: ", vpx_codec_err_to_string(ret)})});
+    return;
   }
+  last_init_size_ = frame_size;
 
   // Raise the threshold for considering macroblocks as static.  The default is
   // zero, so this setting makes the encoder less sensitive to motion.  This
@@ -238,8 +244,12 @@ void VpxEncoder::Encode(scoped_refptr<media::VideoFrame> video_frame,
   // Initialize on-demand.  Later, if the video frame size has changed, update
   // the encoder configuration.
   const gfx::Size frame_size = video_frame->visible_rect().size();
-  if (!is_initialized() || gfx::Size(config_.g_w, config_.g_h) != frame_size) {
+  if (!is_initialized() || *last_init_size_ != frame_size) {
     ConfigureForNewFrameSize(frame_size);
+  }
+
+  if (!is_initialized()) {
+    return;
   }
 
   // Wrapper for vpx_codec_encode() to access the YUV data in the |video_frame|.
@@ -317,12 +327,12 @@ void VpxEncoder::Encode(scoped_refptr<media::VideoFrame> video_frame,
           &encoder_, &vpx_image, 0, predicted_frame_duration.InMicroseconds(),
           key_frame_requested_ ? VPX_EFLAG_FORCE_KF : 0, VPX_DL_REALTIME);
       ret != VPX_CODEC_OK) {
+    const char* error_detail = vpx_codec_error_detail(&encoder_);
     metrics_provider_->SetError(
         {media::EncoderStatus::Codes::kEncoderFailedEncode,
-         base::StrCat(
-             {"libvpx failed to encode: ", vpx_codec_err_to_string(ret), " - ",
-              vpx_codec_error_detail(&encoder_)})});
-    LOG(FATAL) << "BUG: Invalid arguments passed to vpx_codec_encode().";
+         base::StrCat({"libvpx failed to encode: ", vpx_codec_err_to_string(ret),
+                       " - ", error_detail ? error_detail : "none"})});
+    return;
   }
 
   // Pull data from the encoder, populating a new EncodedFrame.

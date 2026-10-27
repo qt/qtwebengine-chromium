@@ -32,6 +32,9 @@ namespace webnn {
 
 namespace {
 
+// Used by concat/split to validate operand count limit.
+constexpr uint32_t kMaxValidTensorCount = 8192;
+
 struct Conv2dInputOutputInfo {
   uint32_t batches;
   uint32_t channels;
@@ -583,6 +586,13 @@ base::expected<OperandDescriptor, std::string> ValidateConcatAndInferOutput(
         ErrorWithLabel(label, "The inputs should not be empty."));
   }
 
+  if (inputs.size() > kMaxValidTensorCount) {
+    return base::unexpected(ErrorWithLabel(
+        label, base::StringPrintf(
+                   "The number of inputs must be less than or equal to %u.",
+                   kMaxValidTensorCount)));
+  }
+
   for (const auto& input : inputs) {
     if (!context_properties.data_type_limits.concat_inputs.Supports(input)) {
       return base::unexpected(ErrorWithLabel(
@@ -1128,12 +1138,13 @@ base::expected<OperandDescriptor, std::string> ValidateExpandAndInferOutput(
                    input, context_properties.data_type_limits.expand_input)));
   }
 
+  uint32_t new_rank = base::checked_cast<uint32_t>(new_shape.size());
   if (!context_properties.data_type_limits.expand_input.ranks.Supports(
-          new_shape.size())) {
+          new_rank)) {
     return base::unexpected(ErrorWithLabel(
-        label, NotSupportedOpOutputRankError(
-                   static_cast<uint32_t>(new_shape.size()),
-                   context_properties.data_type_limits.expand_input.ranks)));
+        label,
+        NotSupportedOpOutputRankError(
+            new_rank, context_properties.data_type_limits.expand_input.ranks)));
   }
 
   std::optional<std::vector<uint32_t>> output_shape =
@@ -1296,10 +1307,12 @@ base::expected<OperandDescriptor, std::string> ValidateGatherNDAndInferOutput(
 
   std::vector<uint32_t> output_shape;
   output_shape.reserve(checked_output_rank.ValueOrDie());
-  std::ranges::copy(indices.shape().begin(), indices.shape().end() - 1,
+  base::span<const uint32_t> indices_shape = indices.shape();
+  std::ranges::copy(indices_shape.first(indices_shape.size() - 1),
                     std::back_inserter(output_shape));
-  std::ranges::copy(input.shape().begin() + indices_last_dimension_size,
-                    input.shape().end(), std::back_inserter(output_shape));
+  base::span<const uint32_t> input_shape = input.shape();
+  std::ranges::copy(input_shape.subspan(indices_last_dimension_size),
+                    std::back_inserter(output_shape));
 
   return OperandDescriptor::Create(context_properties, input.data_type(),
                                    output_shape, label);
@@ -2700,10 +2713,11 @@ base::expected<OperandDescriptor, std::string> ValidateScatterNDAndInferOutput(
 
   std::vector<uint32_t> expected_updates_shape;
   expected_updates_shape.reserve(checked_updates_rank.ValueOrDie());
-  std::ranges::copy(indices.shape().begin(), indices.shape().end() - 1,
+  base::span<const uint32_t> indices_shape = indices.shape();
+  std::ranges::copy(indices_shape.first(indices_shape.size() - 1),
                     std::back_inserter(expected_updates_shape));
-  std::ranges::copy(input.shape().begin() + indices_last_dim_size,
-                    input.shape().end(),
+  base::span<const uint32_t> input_shape = input.shape();
+  std::ranges::copy(input_shape.subspan(indices_last_dim_size),
                     std::back_inserter(expected_updates_shape));
 
   if (expected_updates_shape != updates.shape()) {
@@ -2796,6 +2810,14 @@ base::expected<OperandDescriptor, std::string> ValidateSliceAndInferOutput(
                              i, input.shape()[i])));
     }
 
+    if (attributes.strides[i] > attributes.sizes[i]) {
+      return base::unexpected(ErrorWithLabel(
+          label,
+          base::StringPrintf("For dimension (%u): the stride (%u) must not be "
+                             "greater than the size to slice (%u).",
+                             i, attributes.strides[i], attributes.sizes[i])));
+    }
+
     uint32_t output_size = attributes.sizes[i] / attributes.strides[i] +
                            (attributes.sizes[i] % attributes.strides[i] != 0);
     output_shape.push_back(output_size);
@@ -2852,6 +2874,13 @@ ValidateSplitAndInferOutput(const ContextProperties& context_properties,
           ErrorWithLabel(label, "The splits must be greater than zero."));
     }
 
+    if (splits > kMaxValidTensorCount) {
+      return base::unexpected(ErrorWithLabel(
+          label,
+          base::StringPrintf("The splits must be less than or equal to %u.",
+                             kMaxValidTensorCount)));
+    }
+
     if (input.shape()[attributes.axis] % splits != 0) {
       return base::unexpected(
           ErrorWithLabel(label,
@@ -2876,6 +2905,18 @@ ValidateSplitAndInferOutput(const ContextProperties& context_properties,
                  attributes.splits)) {
     const auto& splits =
         std::get<base::span<const uint32_t>>(attributes.splits);
+    if (splits.empty()) {
+      return base::unexpected(
+          ErrorWithLabel(label, "The splits should not be empty."));
+    }
+
+    if (splits.size() > kMaxValidTensorCount) {
+      return base::unexpected(ErrorWithLabel(
+          label, base::StringPrintf(
+                     "The number of splits must be less than or equal to %u.",
+                     kMaxValidTensorCount)));
+    }
+
     if (std::ranges::any_of(splits,
                             [](uint32_t split) { return split == 0; })) {
       return base::unexpected(

@@ -21,6 +21,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/base/casts.h"
 #include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -42,7 +43,7 @@ namespace {
 
 absl::Status ConvolutionThunkToProto(const Thunk& thunk, ThunkProto& proto) {
   const auto& convolution_thunk =
-      tsl::down_cast<const ConvolutionThunk&>(thunk);
+      absl::down_cast<const ConvolutionThunk&>(thunk);
 
   ConvolutionThunkProto* convolution_thunk_proto =
       proto.mutable_convolution_thunk();

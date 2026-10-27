@@ -143,6 +143,11 @@ class NetworkHandler : public DevToolsDomainHandler,
                   std::optional<bool> enable_durable_messages) override;
   Response Disable() override;
 
+  // Used to set a storage partition for a service worker agent host
+  // before the service worker agent host has a renderer. The storage
+  // partition will be updated via SetRenderer once the renderer is available.
+  void SetStoragePartition(StoragePartition* storage_partition);
+
 #if BUILDFLAG(ENABLE_REPORTING)
   void OnReportAdded(const net::ReportingReport& report) override;
   void OnReportUpdated(const net::ReportingReport& report) override;
@@ -165,6 +170,8 @@ class NetworkHandler : public DevToolsDomainHandler,
 #endif  // BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
 
   Response EnableDeviceBoundSessions(bool enable) override;
+  Response DeleteDeviceBoundSession(
+      std::unique_ptr<protocol::Network::DeviceBoundSessionKey> key) override;
 
   Response FetchSchemefulSite(const std::string& origin,
                               std::string* schemeful_site) override;
@@ -227,7 +234,8 @@ class NetworkHandler : public DevToolsDomainHandler,
       std::optional<int> packet_queue_length,
       std::optional<bool> packet_reordering) override;
   Response EmulateNetworkConditionsByRule(
-      bool offline,
+      std::optional<bool> offline,
+      std::optional<bool> emulate_offline_service_worker,
       std::unique_ptr<protocol::Array<protocol::Network::NetworkConditions>>
           matched_network_conditions,
       std::unique_ptr<protocol::Array<String>>* rule_ids_result) override;
@@ -388,9 +396,7 @@ class NetworkHandler : public DevToolsDomainHandler,
       std::unique_ptr<LoadNetworkResourceCallback> callback) override;
 
   DispatchResponse SetCookieControls(
-      bool enable_third_party_cookie_restriction,
-      bool disable_third_party_cookie_metadata,
-      bool disable_third_party_cookie_heuristics) override;
+      bool enable_third_party_cookie_restriction) override;
 
   // Protocol builders.
   static String BuildLocalNetworkAccessRequestPolicy(
@@ -455,8 +461,6 @@ class NetworkHandler : public DevToolsDomainHandler,
   raw_ptr<RenderFrameHostImpl> host_;
   bool enabled_ = false;
   bool enable_third_party_cookie_restriction_ = false;
-  bool disable_third_party_cookie_metadata_ = false;
-  bool disable_third_party_cookie_heuristics_ = false;
   bool enable_durable_messages_ = false;
   int durable_message_max_total_size_ = 0;
 
@@ -482,6 +486,8 @@ class NetworkHandler : public DevToolsDomainHandler,
   bool did_modifications_ = false;
   base::OnceClosure cleanup_after_modifications_callback_;
   const raw_ref<DevToolsSession> root_session_;
+  const base::UnguessableToken throttling_client_id_;
+  bool network_conditions_configured_ = false;
   base::WeakPtrFactory<NetworkHandler> weak_factory_{this};
 };
 

@@ -43,6 +43,7 @@
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/render_widget_host_observer.h"
+#include "content/public/browser/security_principal.h"
 #include "content/public/browser/site_isolation_policy.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -109,7 +110,7 @@ class RenderFrameHostManagerTestWebUIControllerFactory
 
   ~RenderFrameHostManagerTestWebUIControllerFactory() override {}
 
-  // WebUIFactory implementation.
+  // WebUIControllerFactory implementation.
   std::unique_ptr<WebUIController> CreateWebUIControllerForURL(
       WebUI* web_ui,
       const GURL& url) override {
@@ -448,7 +449,7 @@ class RenderFrameHostManagerTest
     RenderViewHostImplTestHarness::SetUp();
 
     if (IsIsolatedOriginRequiredToGuaranteeDedicatedProcess()) {
-      // Isolate |isolated_cross_site_url()|so it cannot share a process
+      // Isolate |isolated_cross_site_url()| so it cannot share a process
       // with another site.
       ChildProcessSecurityPolicyImpl::GetInstance()->AddFutureIsolatedOrigins(
           {url::Origin::Create(isolated_cross_site_url())},
@@ -942,8 +943,8 @@ class EnableViewSourceLocalFrame : public content::FakeLocalFrame,
 
 // When there is an error with the specified page, renderer exits view-source
 // mode. See WebFrameImpl::DidFail(). We check by this test that
-// EnableViewSourceMode message is sent on every navigation regardless
-// `blink::WebView` is being newly created or reused.
+// EnableViewSourceMode message is sent on every navigation regardless of
+// whether `blink::WebView` is being newly created or reused.
 TEST_P(RenderFrameHostManagerTest, AlwaysSendEnableViewSourceMode) {
   const GURL kChromeUrl(GetWebUIURL("foo"));
   const GURL kUrl("http://foo/");
@@ -1170,7 +1171,9 @@ TEST_P(RenderFrameHostManagerTest, WebUI) {
   // try to re-use the SiteInstance/process for non Web UI things that may
   // get loaded in between.
   EXPECT_TRUE(host->GetSiteInstance()->HasSite());
-  EXPECT_EQ(kUrl, host->GetSiteInstance()->GetSiteURL());
+  EXPECT_EQ(
+      kUrl,
+      host->GetSiteInstance()->GetSecurityPrincipal().GetDeprecatedSiteURL());
 
   // There will be a WebUI because GetFrameHostForNavigation was already called
   // twice.
@@ -1269,7 +1272,7 @@ TEST_P(RenderFrameHostManagerTest, WebUIWasReused) {
   WebUIImpl* web_ui = main_test_rfh()->web_ui();
   EXPECT_TRUE(web_ui);
 
-  // Navigate to another WebUI page which should be same-site the same WebUI
+  // Navigate to another WebUI page which should be same-site, so the same WebUI
   // object is reused if the RenderFrameHost is reused.
   const GURL kUrl2(GetWebUIURL("foo/bar"));
   contents()->NavigateAndCommit(kUrl2);
@@ -1294,7 +1297,7 @@ TEST_P(RenderFrameHostManagerTest, WebUIWasCleared) {
   EXPECT_FALSE(main_test_rfh()->web_ui());
 }
 
-// Ensure that we can go back and forward even if a unload ACK isn't received.
+// Ensure that we can go back and forward even if an unload ACK isn't received.
 // See http://crbug.com/93427.
 TEST_P(RenderFrameHostManagerTest, NavigateAfterMissingUnloadACK) {
   // When a page enters the BackForwardCache, the RenderFrameHost is not
@@ -1644,6 +1647,7 @@ TEST_P(RenderFrameHostManagerTest, GuestNavigations) {
   RenderFrameHostManager* manager =
       web_contents->GetPrimaryFrameTree().root()->render_manager();
   RenderFrameHostImpl* initial_host = manager->current_frame_host();
+  auto initial_process_id = initial_host->GetProcess()->GetID();
 
   // 1) First navigation. ------------------------
   // Start the first navigation, but do not commit.
@@ -1664,14 +1668,16 @@ TEST_P(RenderFrameHostManagerTest, GuestNavigations) {
   EXPECT_TRUE(first_instance->GetSecurityPrincipal().IsGuest());
 
   // We have to swap SiteInstances and RenderFrameHosts, since the initial
-  // SiteInstance (`instance`) has an empty site and process lock, whereas the
-  // navigation needs a SiteInstance with the site URL that corresponds to
-  // `kUrl1`.  Note that there will be no speculative RenderFrameHost in that
-  // case, since the new RenderFrameHost will be committed right away due to
-  // the early commit optimization. This behavior may change if the early
-  // commit optimization is removed in https://crbug.com/1072817.
+  // SiteInstance (`initial_instance`) has an empty site and process lock,
+  // whereas the navigation needs a SiteInstance with the site URL that
+  // corresponds to `kUrl1`.  Note that there will be no speculative
+  // RenderFrameHost in that case, since the new RenderFrameHost will be
+  // committed right away due to the early commit optimization. This behavior
+  // may change if the early commit optimization is removed in
+  // https://crbug.com/1072817.
   EXPECT_NE(first_instance, initial_instance);
   EXPECT_NE(host, initial_host);
+  EXPECT_EQ(host->GetProcess()->GetID(), initial_process_id);
   // This test may run without strict site isolation, e.g. on Android.  In
   // that case, the navigation will end up in a default SiteInstance.
   if (AreStrictSiteInstancesEnabled()) {
@@ -2421,7 +2427,7 @@ TEST_P(RenderFrameHostManagerTestWithSiteIsolation,
 
   // Navigate `contents2` back to previous host, which still has an active
   // Renderer. This should notify the RenderWidgetHostView that there is no
-  // new FallbackSurface to take, and that it should update it's currently
+  // new FallbackSurface to take, and that it should update its currently
   // cached one.
   contents2->NavigateAndCommit(kUrl1);
   TestRenderWidgetHostView* return_nav_view =
@@ -2939,7 +2945,7 @@ TEST_P(RenderFrameHostManagerTest, PageFocusPropagatesToSubframeProcesses) {
 
   // Focus the main page, and verify that the focus message was sent to all
   // processes.  The message to A should be sent through the main frame's
-  // RenderViewHost, and the message to B and C should be send through proxies
+  // RenderViewHost, and the message to B and C should be sent through proxies
   // that the main frame has for B and C.
   main_test_rfh()->GetRenderWidgetHost()->Focus();
   base::RunLoop().RunUntilIdle();

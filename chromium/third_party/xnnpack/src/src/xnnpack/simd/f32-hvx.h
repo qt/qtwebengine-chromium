@@ -11,7 +11,7 @@
 #include <hexagon_protos.h>
 #include <hexagon_types.h>
 #include <hvx_hexagon_protos.h>
-#include <math.h>  // for roundf
+#include <math.h>  // for rintf
 #include <stddef.h>
 #include <string.h>  // for memcpy
 
@@ -89,7 +89,7 @@ static XNN_INLINE xnn_simd_f32_t xnn_fnmadd_f32(xnn_simd_f32_t a,
 #if __HVX_ARCH__ >= 81
   return Q6_Vsf_vsub_VsfVsf(c, Q6_Vsf_vmpy_VsfVsf(a, b));
 #else
-  return Q6_Vsf_equals_Vqf32(Q6_Vqf32_vadd_Vqf32Vsf(Q6_Vqf32_vsub_Vqf32Vqf32(Q6_V_vzero(), Q6_Vqf32_vmpy_VsfVsf(a, b)), c));
+  return Q6_Vsf_equals_Vqf32(Q6_Vqf32_vadd_Vqf32Vsf(Q6_Vqf32_vmpy_VsfVsf(Q6_V_vxor_VV(a, Q6_V_vsplat_R(0x80000000)), b), c));
 #endif
 }
 
@@ -130,21 +130,56 @@ static XNN_INLINE xnn_simd_f32_t xnn_neg_f32(xnn_simd_f32_t a) {
   return Q6_V_vxor_VV(a, Q6_V_vsplat_R(0x80000000));
 }
 
-// todo: v81 use rnd
-#if __HVX_ARCH__ >= 73
+#if __HVX_ARCH__ >= 81
 static XNN_INLINE xnn_simd_f32_t xnn_round_f32(xnn_simd_f32_t a) {
-  const HVX_Vector vabs_a = Q6_V_vand_VV(a, Q6_V_vsplat_R(0x7FFFFFFF));
-  const HVX_Vector vhalf = Q6_V_vsplat_R(float_as_uint32(0.5f));
-  const HVX_Vector vroundup =
-      Q6_Vsf_equals_Vqf32(Q6_Vqf32_vadd_VsfVsf(vabs_a, vhalf));
-
-  const HVX_Vector vsign_a = Q6_V_vand_VV(a, Q6_V_vsplat_R(0x80000000));
-  const HVX_Vector vresult = Q6_V_vor_VV(vroundup, vsign_a);
-
   const HVX_Vector vmax_non_int_val =
-      Q6_V_vsplat_R(float_as_uint32(8388607.0f));  // 2^23-1
-  const HVX_VectorPred vfilter = Q6_Q_vcmp_gt_VsfVsf(vabs_a, vmax_non_int_val);
-  return Q6_V_vmux_QVV(vfilter, a, vresult);
+      Q6_V_vsplat_R(float_as_uint32(8388608.0f));  // 2^23.
+  const HVX_Vector vabs_a = xnn_abs_f32(a);
+  const HVX_VectorPred vfilter = Q6_Q_vcmp_gt_VsfVsf(vmax_non_int_val, vabs_a);
+
+  const HVX_Vector vmagic =
+      Q6_V_vsplat_R(float_as_uint32(12582912.0f));  // 1.5 * 2^23
+  const HVX_Vector vsign_mask = Q6_V_vsplat_R(0x80000000);
+  const HVX_Vector vround = xnn_sub_f32(xnn_add_f32(vabs_a, vmagic), vmagic);
+  const HVX_Vector vresult = Q6_V_vor_VV(vround, Q6_V_vand_VV(a, vsign_mask));
+
+  return Q6_V_vmux_QVV(vfilter, vresult, a);
+}
+#elif __HVX_ARCH__ >= 73
+static XNN_INLINE xnn_simd_f32_t xnn_round_f32(xnn_simd_f32_t a) {
+  const HVX_Vector vmax_non_int_val =
+      Q6_V_vsplat_R(float_as_uint32(8388608.0f));  // 2^23.
+  const HVX_Vector vabs_a = xnn_abs_f32(a);
+  const HVX_VectorPred vfilter = Q6_Q_vcmp_gt_VsfVsf(vmax_non_int_val, vabs_a);
+
+  const HVX_Vector vabs_truncint = Q6_Vw_equals_Vsf(vabs_a);
+  const HVX_Vector vabs_trunc_f32 = Q6_Vsf_equals_Vw(vabs_truncint);
+
+  const HVX_Vector fraction_bits = Q6_Vw_vsub_VwVw(vabs_a, vabs_trunc_f32);
+  const HVX_Vector v_E = Q6_Vuw_vlsr_VuwR(vabs_a, 23);
+  const HVX_Vector v_shift = Q6_Vw_vsub_VwVw(Q6_V_vsplat_R(149), v_E);
+  const HVX_Vector half_bits = Q6_Vw_vasl_VwVw(Q6_V_vsplat_R(1), v_shift);
+
+  const HVX_VectorPred pred_gt = Q6_Q_vcmp_gt_VwVw(fraction_bits, half_bits);
+  const HVX_VectorPred pred_eq = Q6_Q_vcmp_eq_VwVw(fraction_bits, half_bits);
+  const HVX_Vector is_odd = Q6_V_vand_VV(vabs_truncint, Q6_V_vsplat_R(1));
+  const HVX_VectorPred pred_is_odd = Q6_Q_vcmp_eq_VwVw(is_odd, Q6_V_vsplat_R(1));
+  const HVX_VectorPred pred_round_up_eq = Q6_Q_and_QQ(pred_eq, pred_is_odd);
+  const HVX_VectorPred pred_round_up = Q6_Q_or_QQ(pred_gt, pred_round_up_eq);
+
+  const HVX_Vector vabs_rounded_int_ge1 = Q6_Vw_vadd_VwVw(vabs_truncint, Q6_V_vand_QR(pred_round_up, 1));
+
+  const HVX_VectorPred v_less_than_one = Q6_Q_vcmp_gt_VwVw(Q6_V_vsplat_R(float_as_uint32(1.0f)), vabs_a);
+  const HVX_VectorPred pred_half = Q6_Q_vcmp_gt_VwVw(vabs_a, Q6_V_vsplat_R(float_as_uint32(0.5f)));
+
+  const HVX_Vector vabs_rounded_int = Q6_V_vmux_QVV(v_less_than_one, Q6_V_vand_QR(pred_half, 1), vabs_rounded_int_ge1);
+
+  const HVX_Vector vabs_rounded_float = Q6_Vsf_equals_Vw(vabs_rounded_int);
+
+  const HVX_Vector vsign_mask = Q6_V_vsplat_R(0x80000000);
+  const HVX_Vector vresult = Q6_V_vor_VV(vabs_rounded_float, Q6_V_vand_VV(a, vsign_mask));
+
+  return Q6_V_vmux_QVV(vfilter, vresult, a);
 }
 #else
 static XNN_INLINE xnn_simd_f32_t xnn_round_f32(xnn_simd_f32_t a) {
@@ -152,11 +187,11 @@ static XNN_INLINE xnn_simd_f32_t xnn_round_f32(xnn_simd_f32_t a) {
   XNN_ALIGN(128) float output[xnn_simd_size_f32];
   *((HVX_Vector*)input) = a;
   for (size_t k = 0; k < xnn_simd_size_f32; ++k) {
-    output[k] = roundf(input[k]);
+    output[k] = rintf(input[k]);
   }
   return *((HVX_Vector*)output);
 }
-#endif  // __HVX_ARCH__ >= 73
+#endif
 
 #if __HVX_ARCH__ >= 73
 static XNN_INLINE xnn_simd_f32_t xnn_trunc_f32(xnn_simd_f32_t a) {

@@ -7,7 +7,6 @@
 #include "fxjs/xfa/cjx_datawindow.h"
 
 #include "core/fxcrt/span.h"
-#include "fxjs/xfa/cfxjse_value.h"
 #include "xfa/fxfa/parser/cscript_datawindow.h"
 
 const CJX_MethodSpec CJX_DataWindow::MethodSpecs[] = {

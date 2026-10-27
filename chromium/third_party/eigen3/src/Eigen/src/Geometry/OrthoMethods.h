@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_ORTHOMETHODS_H
 #define EIGEN_ORTHOMETHODS_H
@@ -149,19 +150,20 @@ EIGEN_DEVICE_FUNC const typename VectorwiseOp<ExpressionType, Direction>::CrossR
 VectorwiseOp<ExpressionType, Direction>::cross(const MatrixBase<OtherDerived>& other) const {
   EIGEN_STATIC_ASSERT_VECTOR_SPECIFIC_SIZE(OtherDerived, 3)
   EIGEN_STATIC_ASSERT(
-      (internal::is_same<Scalar, typename OtherDerived::Scalar>::value),
+      (std::is_same<Scalar, typename OtherDerived::Scalar>::value),
       YOU_MIXED_DIFFERENT_NUMERIC_TYPES__YOU_NEED_TO_USE_THE_CAST_METHOD_OF_MATRIXBASE_TO_CAST_NUMERIC_TYPES_EXPLICITLY)
 
   typename internal::nested_eval<ExpressionType, 2>::type mat(_expression());
   typename internal::nested_eval<OtherDerived, 2>::type vec(other.derived());
 
   CrossReturnType res(_expression().rows(), _expression().cols());
-  if (Direction == Vertical) {
+  EIGEN_IF_CONSTEXPR(Direction == Vertical) {
     eigen_assert(CrossReturnType::RowsAtCompileTime == 3 && "the matrix must have exactly 3 rows");
     res.row(0) = (mat.row(1) * vec.coeff(2) - mat.row(2) * vec.coeff(1)).conjugate();
     res.row(1) = (mat.row(2) * vec.coeff(0) - mat.row(0) * vec.coeff(2)).conjugate();
     res.row(2) = (mat.row(0) * vec.coeff(1) - mat.row(1) * vec.coeff(0)).conjugate();
-  } else {
+  }
+  else {
     eigen_assert(CrossReturnType::ColsAtCompileTime == 3 && "the matrix must have exactly 3 columns");
     res.col(0) = (mat.col(1) * vec.coeff(2) - mat.col(2) * vec.coeff(1)).conjugate();
     res.col(1) = (mat.col(2) * vec.coeff(0) - mat.col(0) * vec.coeff(2)).conjugate();

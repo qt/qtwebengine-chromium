@@ -28,6 +28,36 @@ TEST(FxDibTest, ArgbToBGRAStruct) {
   EXPECT_EQ(0xab, abeebead.alpha);
 }
 
+TEST(FxDibTest, AlphaMerge) {
+  EXPECT_EQ(0, AlphaMerge(0, 0, 0));
+  EXPECT_EQ(0, AlphaMerge(0, 0, 127));
+  EXPECT_EQ(0, AlphaMerge(0, 0, 255));
+  EXPECT_EQ(0, AlphaMerge(0, 127, 0));
+  EXPECT_EQ(63, AlphaMerge(0, 127, 127));
+  EXPECT_EQ(127, AlphaMerge(0, 127, 255));
+  EXPECT_EQ(0, AlphaMerge(0, 255, 0));
+  EXPECT_EQ(127, AlphaMerge(0, 255, 127));
+  EXPECT_EQ(255, AlphaMerge(0, 255, 255));
+  EXPECT_EQ(127, AlphaMerge(127, 0, 0));
+  EXPECT_EQ(63, AlphaMerge(127, 0, 127));
+  EXPECT_EQ(0, AlphaMerge(127, 0, 255));
+  EXPECT_EQ(127, AlphaMerge(127, 127, 0));
+  EXPECT_EQ(127, AlphaMerge(127, 127, 127));
+  EXPECT_EQ(127, AlphaMerge(127, 127, 255));
+  EXPECT_EQ(127, AlphaMerge(127, 255, 0));
+  EXPECT_EQ(190, AlphaMerge(127, 255, 127));
+  EXPECT_EQ(255, AlphaMerge(127, 255, 255));
+  EXPECT_EQ(255, AlphaMerge(255, 0, 0));
+  EXPECT_EQ(128, AlphaMerge(255, 0, 127));
+  EXPECT_EQ(0, AlphaMerge(255, 0, 255));
+  EXPECT_EQ(255, AlphaMerge(255, 127, 0));
+  EXPECT_EQ(191, AlphaMerge(255, 127, 127));
+  EXPECT_EQ(127, AlphaMerge(255, 127, 255));
+  EXPECT_EQ(255, AlphaMerge(255, 255, 0));
+  EXPECT_EQ(255, AlphaMerge(255, 255, 127));
+  EXPECT_EQ(255, AlphaMerge(255, 255, 255));
+}
+
 #if defined(PDF_USE_SKIA)
 TEST(PreMultiplyTest, PreMultiplyColor) {
   FX_ABGR_STRUCT<uint8_t> result = PreMultiplyColor(FX_ABGR_STRUCT<uint8_t>{

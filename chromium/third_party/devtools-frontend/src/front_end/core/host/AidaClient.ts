@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 import * as Common from '../common/common.js';
+import * as Platform from '../platform/platform.js';
 import * as Root from '../root/root.js';
 
 import {
   AidaAccessPreconditions,
   type AidaChunkResponse,
-  type AidaFunctionCallResponse,
+  type AidaFunctionCall,
   AidaInferenceLanguage,
   type AidaRegisterClientEvent,
   ClientFeature,
@@ -109,7 +110,7 @@ export class AidaClient {
   }
 
   static async checkAccessPreconditions(): Promise<AidaAccessPreconditions> {
-    if (!navigator.onLine) {
+    if (!Platform.HostRuntime.HOST_RUNTIME.getOnLine()) {
       return AidaAccessPreconditions.NO_INTERNET;
     }
 
@@ -210,7 +211,7 @@ export class AidaClient {
     let chunk;
     const text = [];
     let inCodeChunk = false;
-    const functionCalls: AidaFunctionCallResponse[] = [];
+    const functionCalls: AidaFunctionCall[] = [];
     let metadata: ResponseMetadata = {rpcGlobalId: 0};
     while ((chunk = await stream.read())) {
       debugLog('doConversation stream chunk:', chunk);
@@ -245,11 +246,12 @@ export class AidaClient {
           functionCalls.push({
             name: result.functionCallChunk.functionCall.name,
             args: result.functionCallChunk.functionCall.args,
+            thoughtSignature: result.functionCallChunk.functionCall.thoughtSignature,
           });
         } else if ('error' in result) {
           throw new Error(`Server responded: ${JSON.stringify(result)}`);
         } else {
-          throw new Error('Unknown chunk result');
+          throw new Error(`Unknown chunk result ${JSON.stringify(result)}`);
         }
       }
       if (textUpdated) {
@@ -263,8 +265,7 @@ export class AidaClient {
     yield {
       explanation: text.join('') + (inCodeChunk ? CODE_CHUNK_SEPARATOR() : ''),
       metadata,
-      functionCalls: functionCalls.length ? functionCalls as [AidaFunctionCallResponse, ...AidaFunctionCallResponse[]] :
-                                            undefined,
+      functionCalls: functionCalls.length ? functionCalls as [AidaFunctionCall, ...AidaFunctionCall[]] : undefined,
       completed: true,
     };
   }
@@ -426,10 +427,18 @@ export function convertToUserTierEnum(userTier: string|undefined): UserTier {
   return UserTier.PUBLIC;
 }
 
+export function getClientFeatureName(feature: ClientFeature): string {
+  const name = ClientFeature[feature];
+  if (typeof name !== 'string') {
+    throw new Error(`Invalid ClientFeature: ${feature}`);
+  }
+  return name;
+}
+
 let hostConfigTrackerInstance: HostConfigTracker|undefined;
 
 export class HostConfigTracker extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
-  #pollTimer?: number;
+  #pollTimer?: ReturnType<typeof setTimeout>;
   #aidaAvailability?: AidaAccessPreconditions;
 
   private constructor() {
@@ -448,7 +457,7 @@ export class HostConfigTracker extends Common.ObjectWrapper.ObjectWrapper<EventT
     const isFirst = !this.hasEventListeners(eventType);
     const eventDescriptor = super.addEventListener(eventType, listener);
     if (isFirst) {
-      window.clearTimeout(this.#pollTimer);
+      clearTimeout(this.#pollTimer);
       void this.pollAidaAvailability();
     }
     return eventDescriptor;
@@ -458,12 +467,12 @@ export class HostConfigTracker extends Common.ObjectWrapper.ObjectWrapper<EventT
       void {
     super.removeEventListener(eventType, listener);
     if (!this.hasEventListeners(eventType)) {
-      window.clearTimeout(this.#pollTimer);
+      clearTimeout(this.#pollTimer);
     }
   }
 
   async pollAidaAvailability(): Promise<void> {
-    this.#pollTimer = window.setTimeout(() => this.pollAidaAvailability(), 2000);
+    this.#pollTimer = setTimeout(() => this.pollAidaAvailability(), 2000);
     const currentAidaAvailability = await AidaClient.checkAccessPreconditions();
     if (currentAidaAvailability !== this.#aidaAvailability) {
       this.#aidaAvailability = currentAidaAvailability;

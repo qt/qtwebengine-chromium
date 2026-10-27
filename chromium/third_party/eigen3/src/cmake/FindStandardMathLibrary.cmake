@@ -12,6 +12,7 @@
 # Copyright (c) 2010 Benoit Jacob <jacob.benoit.1@gmail.com>
 #               2020 Susi Lehtola <susi.lehtola@gmail.com>
 # Redistribution and use is allowed according to the terms of the 2-clause BSD license.
+# SPDX-License-Identifier: MPL-2.0
 
 
 include(CheckCXXSourceCompiles)

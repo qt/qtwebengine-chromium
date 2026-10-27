@@ -25,32 +25,33 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/ShaderModule.h"
+#include "src/dawn/native/ShaderModule.h"
 
 #include <algorithm>
 #include <limits>
 #include <sstream>
 #include <utility>
 
-#include "dawn/common/Constants.h"
-#include "dawn/common/MatchVariant.h"
-#include "dawn/common/Sha3.h"
-#include "dawn/native/BindGroupLayoutInternal.h"
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/CompilationMessages.h"
-#include "dawn/native/Device.h"
-#include "dawn/native/Error.h"
-#include "dawn/native/Instance.h"
-#include "dawn/native/ObjectContentHasher.h"
-#include "dawn/native/Pipeline.h"
-#include "dawn/native/PipelineLayout.h"
-#include "dawn/native/RenderPipeline.h"
-#include "dawn/native/Sampler.h"
-#include "dawn/native/ShaderModuleParseRequest.h"
-#include "dawn/native/TintUtils.h"
+#include "src/dawn/common/Constants.h"
+#include "src/dawn/common/MatchVariant.h"
+#include "src/dawn/common/Sha3.h"
+#include "src/dawn/native/BindGroupLayoutInternal.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/CompilationMessages.h"
+#include "src/dawn/native/Device.h"
+#include "src/dawn/native/Error.h"
+#include "src/dawn/native/Instance.h"
+#include "src/dawn/native/ObjectContentHasher.h"
+#include "src/dawn/native/Pipeline.h"
+#include "src/dawn/native/PipelineLayout.h"
+#include "src/dawn/native/RenderPipeline.h"
+#include "src/dawn/native/Sampler.h"
+#include "src/dawn/native/ShaderModuleParseRequest.h"
+#include "src/dawn/native/TintUtils.h"
+#include "src/utils/compiler.h"
 
 #ifdef DAWN_ENABLE_SPIRV_VALIDATION
-#include "dawn/native/SpirvValidation.h"
+#include "src/dawn/native/SpirvValidation.h"
 #endif
 
 #include "tint/tint.h"
@@ -471,12 +472,12 @@ MaybeError ParseWGSL(std::unique_ptr<tint::Source::File> file,
     if (program.IsValid()) {
         outputParseResult->tintProgram = UnsafeUnserializedValue<std::optional<Ref<TintProgram>>>(
             AcquireRef(new TintProgram(std::move(program), std::move(file))));
-        DAWN_ASSERT(outputParseResult->HasTintProgram() && !outputParseResult->HasError());
+        DAWN_CHECK(outputParseResult->HasTintProgram() && !outputParseResult->HasError());
     } else {
         // Otherwise, store the validation error messages to outputParseResult.
         outputParseResult->SetValidationError(
             DAWN_VALIDATION_ERROR("Error while parsing WGSL: %s\n", program.Diagnostics().Str()));
-        DAWN_ASSERT(!outputParseResult->HasTintProgram() && outputParseResult->HasError());
+        DAWN_CHECK(!outputParseResult->HasTintProgram() && outputParseResult->HasError());
     }
 
     return {};
@@ -493,7 +494,7 @@ MaybeError ParseSPIRV(const std::vector<uint32_t>& spirv,
     if (irResult != tint::Success) {
         outputParseResult->SetValidationError(
             DAWN_VALIDATION_ERROR("Error while parsing SPIR-V: %s\n", irResult.Failure().reason));
-        DAWN_ASSERT(!outputParseResult->HasTintProgram() && outputParseResult->HasError());
+        DAWN_CHECK(!outputParseResult->HasTintProgram() && outputParseResult->HasError());
         return {};
     }
 
@@ -512,12 +513,12 @@ MaybeError ParseSPIRV(const std::vector<uint32_t>& spirv,
 
         outputParseResult->tintProgram = UnsafeUnserializedValue<std::optional<Ref<TintProgram>>>(
             AcquireRef(new TintProgram(std::move(program), nullptr)));
-        DAWN_ASSERT(outputParseResult->HasTintProgram() && !outputParseResult->HasError());
+        DAWN_CHECK(outputParseResult->HasTintProgram() && !outputParseResult->HasError());
     } else {
         // Otherwise, store the validation error messages to outputParseResult.
         outputParseResult->SetValidationError(DAWN_VALIDATION_ERROR(
             "Error while generating WGSL: %s\n", wgslResult.Failure().reason));
-        DAWN_ASSERT(!outputParseResult->HasTintProgram() && outputParseResult->HasError());
+        DAWN_CHECK(!outputParseResult->HasTintProgram() && outputParseResult->HasError());
     }
 
     return {};
@@ -538,7 +539,7 @@ std::vector<uint64_t> GetBindGroupMinBufferSizes(const BindingGroupInfoMap& shad
             continue;
         }
 
-        DAWN_ASSERT(packedIdx < requiredBufferSizes.size());
+        DAWN_CHECK(packedIdx < requiredBufferSizes.size());
         const auto& shaderInfo = shaderBindings.find(bindingInfo.binding);
         if (shaderInfo != shaderBindings.end()) {
             auto* shaderBufferInfo =
@@ -667,8 +668,8 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
         [&](const StorageTextureBindingInfo& shaderBindingInfo) -> MaybeError {
             const StorageTextureBindingInfo& bindingLayout =
                 std::get<StorageTextureBindingInfo>(layoutInfo.bindingLayout);
-            DAWN_ASSERT(bindingLayout.format != wgpu::TextureFormat::Undefined);
-            DAWN_ASSERT(shaderBindingInfo.format != wgpu::TextureFormat::Undefined);
+            DAWN_CHECK(bindingLayout.format != wgpu::TextureFormat::Undefined);
+            DAWN_CHECK(shaderBindingInfo.format != wgpu::TextureFormat::Undefined);
 
             DAWN_INVALID_IF(!IsShaderCompatibleWithPipelineLayoutOnStorageTextureAccess(
                                 bindingLayout, shaderBindingInfo),
@@ -690,8 +691,8 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
         [&](const TexelBufferBindingInfo& shaderBindingInfo) -> MaybeError {
             const TexelBufferBindingInfo& bindingLayout =
                 std::get<TexelBufferBindingInfo>(layoutInfo.bindingLayout);
-            DAWN_ASSERT(bindingLayout.format != wgpu::TextureFormat::Undefined);
-            DAWN_ASSERT(shaderBindingInfo.format != wgpu::TextureFormat::Undefined);
+            DAWN_CHECK(bindingLayout.format != wgpu::TextureFormat::Undefined);
+            DAWN_CHECK(shaderBindingInfo.format != wgpu::TextureFormat::Undefined);
 
             DAWN_INVALID_IF(bindingLayout.access != shaderBindingInfo.access,
                             "The layout's binding access (%s) doesn't match the shader's binding "
@@ -770,7 +771,7 @@ MaybeError ValidateCompatibilityOfSingleBindingWithLayout(const DeviceBase* devi
             const InputAttachmentBindingInfo& bindingLayout =
                 std::get<InputAttachmentBindingInfo>(layoutInfo.bindingLayout);
 
-            DAWN_ASSERT(bindingLayout.sampleType == shaderBindingInfo.sampleType);
+            DAWN_CHECK(bindingLayout.sampleType == shaderBindingInfo.sampleType);
 
             return {};
         });
@@ -824,11 +825,11 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
                 auto [_, inserted] =
                     metadata->uninitializedOverrides.emplace(std::move(identifier));
                 // The insertion should have taken place
-                DAWN_ASSERT(inserted);
+                DAWN_CHECK(inserted);
             } else {
                 auto [_, inserted] = metadata->initializedOverrides.emplace(std::move(identifier));
                 // The insertion should have taken place
-                DAWN_ASSERT(inserted);
+                DAWN_CHECK(inserted);
             }
         }
     }
@@ -869,19 +870,18 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
 
     // Immediate data byte size must be 4-byte aligned.
     if (entryPoint.immediate_data_size) {
-        DAWN_ASSERT(IsAligned(entryPoint.immediate_data_size, 4u));
+        DAWN_CHECK(IsAligned(entryPoint.immediate_data_size, 4u));
         metadata->immediateDataRangeByteSize = entryPoint.immediate_data_size;
 
         // Avoid calling GetImmediateBlockInfo if the size exceeds the limit,
         // as it might cause an assertion in Tint. The error is recorded
         // to be caught at pipeline creation time.
         if (!DelayedInvalidIf(
-                entryPoint.immediate_data_size > kMaxExternalImmediateConstantsPerPipeline * 4,
+                entryPoint.immediate_data_size > kMaxExternalImmediatesPerPipeline * 4,
                 "Immediate data size (%u) exceeds the maximum allowed size (%u).",
-                entryPoint.immediate_data_size, kMaxExternalImmediateConstantsPerPipeline * 4)) {
+                entryPoint.immediate_data_size, kMaxExternalImmediatesPerPipeline * 4)) {
             auto immediateBlockInfo = inspector->GetImmediateBlockInfo(entryPoint.name);
-            metadata->immediateDataUsedSlots =
-                ImmediateConstantMask(immediateBlockInfo.to_ullong());
+            metadata->immediateDataUsedSlots = ImmediateMask(immediateBlockInfo.to_ullong());
         }
     }
 
@@ -972,7 +972,7 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
         for (const auto& inputVar : entryPoint.input_variables) {
             // Skip over @color framebuffer fetch, it is handled below.
             if (!inputVar.attributes.location.has_value()) {
-                DAWN_ASSERT(inputVar.attributes.color.has_value());
+                DAWN_CHECK(inputVar.attributes.color.has_value());
                 continue;
             }
 
@@ -1008,6 +1008,7 @@ ResultOrError<std::unique_ptr<EntryPointMetadata>> ReflectEntryPointUsingTint(
 
         // Other fragment metadata
         metadata->usesSampleMaskOutput = entryPoint.output_sample_mask_used;
+        metadata->usesSampleMaskInput = entryPoint.input_sample_mask_used;
         metadata->usesSampleIndex = entryPoint.sample_index_used;
 
         struct BoolName {
@@ -1433,40 +1434,15 @@ ResultOrError<Extent3D> ValidateComputeStageWorkgroupSize(
     return Extent3D{workgroupInfo.x, workgroupInfo.y, workgroupInfo.z};
 }
 
-MaybeError ValidateExplicitComputeSubgroupSize(const tint::WorkgroupInfo& workgroupInfo,
-                                               uint32_t minExplicitSubgroupSize,
-                                               uint32_t maxExplicitSubgroupSize,
-                                               uint32_t maxComputeWorkgroupSubgroups) {
-    if (workgroupInfo.subgroup_size.has_value()) {
-        DAWN_ASSERT(minExplicitSubgroupSize > 0 && maxExplicitSubgroupSize > 0);
-        const uint32_t explicitSubgroupSize = workgroupInfo.subgroup_size.value();
-        DAWN_INVALID_IF(
-            explicitSubgroupSize < minExplicitSubgroupSize ||
-                explicitSubgroupSize > maxExplicitSubgroupSize,
-            "The subgroup_size attribute (%u) is not in the allowed range "
-            "[minExplicitComputeSubgroupSize, maxExplicitComputeSubgroupSize] ([%u, %u]).",
-            explicitSubgroupSize, minExplicitSubgroupSize, maxExplicitSubgroupSize);
-        uint64_t numInvocations =
-            static_cast<uint64_t>(workgroupInfo.x) * workgroupInfo.y * workgroupInfo.z;
-        DAWN_INVALID_IF(
-            numInvocations > maxComputeWorkgroupSubgroups * explicitSubgroupSize,
-            "The total number of workgroup invocations (%u) exceeds the product of"
-            "maxComputeWorkgroupSubgroups and the subgroup_size attribute (%u * %u = %u).",
-            numInvocations, maxComputeWorkgroupSubgroups, explicitSubgroupSize, numInvocations);
-    }
-
-    return {};
-}
-
 CachedValidationError::CachedValidationError(std::unique_ptr<ErrorData>&& errorData) {
     DAWN_ASSERT(errorData->GetType() == InternalErrorType::Validation);
     message = errorData->GetMessage();
     contexts = errorData->GetContexts();
-    DAWN_ASSERT(!message.empty());
+    DAWN_CHECK(!message.empty());
 }
 
 std::unique_ptr<ErrorData> CachedValidationError::ToErrorData() const {
-    DAWN_ASSERT(!message.empty());
+    DAWN_CHECK(!message.empty());
     auto error = std::make_unique<ErrorData>(InternalErrorType::Validation, message);
     std::for_each(contexts.begin(), contexts.end(), [&error](auto c) { error->AppendContext(c); });
     return error;
@@ -1819,14 +1795,14 @@ ShaderModuleBase::ShaderModuleBase(DeviceBase* device,
                                    std::vector<tint::wgsl::Extension> internalExtensions,
                                    ApiObjectBase::UntrackedByDeviceTag tag)
     : Base(device, ObjectBase::kDelayedInitialization, descriptor->label),
-      mType(Type::Undefined),
       mInternalExtensions(std::move(internalExtensions)) {
     size_t shaderCodeByteSize = 0;
     uint8_t* shaderCode = nullptr;
 
     if (auto* spirvDesc = descriptor.Get<ShaderSourceSPIRV>()) {
         mType = Type::Spirv;
-        mOriginalSpirv.assign(spirvDesc->code, spirvDesc->code + spirvDesc->codeSize);
+        mOriginalSpirv.assign(spirvDesc->code,
+                              DAWN_UNSAFE_TODO(spirvDesc->code + spirvDesc->codeSize));
         shaderCodeByteSize = mOriginalSpirv.size() * sizeof(decltype(mOriginalSpirv)::value_type);
         shaderCode = reinterpret_cast<uint8_t*>(mOriginalSpirv.data());
         if (auto* spirvOptions = descriptor.Get<DawnShaderModuleSPIRVOptionsDescriptor>()) {
@@ -1879,7 +1855,7 @@ ShaderModuleBase::ShaderModuleBase(DeviceBase* device,
                                    ObjectBase::ErrorTag tag,
                                    StringView label,
                                    ParsedCompilationMessages&& compilationMessages)
-    : Base(device, tag, label), mType(Type::Undefined) {
+    : Base(device, tag, label) {
     mCompiledState.compilationMessages =
         std::make_unique<OwnedCompilationMessages>(std::move(compilationMessages));
 }
@@ -1920,7 +1896,7 @@ void ShaderModuleBase::Initialize() {
 
             // Move the compilation messages regardless of compilation success. Compilation messages
             // should be inject only once for each shader module.
-            DAWN_ASSERT(resultState.compilationMessages == nullptr);
+            DAWN_CHECK(resultState.compilationMessages == nullptr);
             // Move the compilationMessages into the shader module and emit the tint errors and
             // warnings
             resultState.compilationMessages = std::make_unique<OwnedCompilationMessages>(

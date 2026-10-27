@@ -25,13 +25,14 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/Features.h"
+#include "src/dawn/native/Features.h"
 
 #include <array>
 #include <utility>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/ityp_array.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/ityp_array.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native {
 namespace {
@@ -437,12 +438,12 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
       FeatureInfo::FeatureState::Experimental}},
     {Feature::ChromiumExperimentalSamplingResourceTable,
      {"Experimental support for the bindless sampling resource table",
-      "https://github.com/Kangz/gpuweb/blob/bindless/proposals/bindless.md",
+      "https://github.com/gpuweb/gpuweb/blob/main/proposals/bindless.md",
       FeatureInfo::FeatureState::Experimental}},
-    {Feature::ChromiumExperimentalSubgroupSizeControl,
-     {"Support the \"enable chromium_experimental_subgroup_size_control;\" directive in WGSL.",
+    {Feature::SubgroupSizeControl,
+     {"Support the \"enable subgroup_size_control;\" directive in WGSL.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/tint/extensions/"
-      "chromium_experimental_subgroup_size_control.md",
+      "subgroup_size_control.md",
       FeatureInfo::FeatureState::Experimental}},
     {Feature::AtomicVec2uMinMax,
      {"Support the \"enable atomic_vec2u_min_max;\" directive for 64-bit atomics via vec2<u32> "
@@ -472,12 +473,6 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
       "render_pass_render_area.md",
       FeatureInfo::FeatureState::Experimental}},
-    {Feature::DawnNativeSpontaneousQueueEvents,
-     {"Support spontaneous queue event completion in native. When this feature is supported and "
-      "enabled, queue events may complete spontaneously on any thread.",
-      "https://github.com/webgpu-native/webgpu-headers/blob/main/doc/articles/"
-      "Asynchronous%20Operations.md",
-      FeatureInfo::FeatureState::Stable}},
 
     // Comment to separate the } so it is clearer what to copy-paste to add a feature.
 };
@@ -520,7 +515,7 @@ void FeaturesSet::ToSupportedFeatures(SupportedFeatures* supportedFeatures) cons
     wgpu::FeatureName* features = new wgpu::FeatureName[count];
     uint32_t index = 0;
     for (Feature f : featuresBitSet) {
-        features[index++] = ToAPI(f);
+        DAWN_UNSAFE_TODO(features[index++]) = ToAPI(f);
     }
     DAWN_ASSERT(index == count);
     supportedFeatures->features = features;

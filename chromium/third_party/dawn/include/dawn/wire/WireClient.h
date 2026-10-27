@@ -29,6 +29,7 @@
 #define INCLUDE_DAWN_WIRE_WIRECLIENT_H_
 
 #include <memory>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -139,17 +140,12 @@ class DAWN_WIRE_EXPORT MemoryTransferService {
         virtual const void* GetData() = 0;
 
         // Gets called when a MapReadCallback resolves.
-        // deserialize the data update and apply
-        // it to the range (offset, offset + size) of allocation
-        // There could be nothing to be deserialized (if using shared memory)
-        // Needs to check potential offset/size OOB and overflow
-        // TODO(https://issues.chromium.org/492456046): Pass deserializePointer+deserializeSize as a
-        // span, and the region to update as a span as well. It also seems that `size` is redundant
-        // with deserializeSize?
-        virtual bool DeserializeDataUpdate(const void* deserializePointer,
-                                           size_t deserializeSize,
-                                           size_t offset,
-                                           size_t size) = 0;
+        // Deserializes |deserializeData| and applies it starting at |offset| in the allocation.
+        // |deserializeData.size()| gives the number of bytes to update.
+        // There could be nothing to be deserialized (if using shared memory).
+        // Needs to check potential offset OOB.
+        virtual bool DeserializeDataUpdate(std::span<const uint8_t> deserializeData,
+                                           size_t offset) = 0;
 
       private:
         ReadHandle(const ReadHandle&) = delete;
@@ -179,12 +175,10 @@ class DAWN_WIRE_EXPORT MemoryTransferService {
         // Get the required serialization size for SerializeDataUpdate
         virtual size_t SizeOfSerializeDataUpdate(size_t offset, size_t size) = 0;
 
-        // Serialize a command to send the modified contents of
-        // the subrange (offset, offset + size) of the allocation at buffer unmap
-        // This subrange is always the whole mapped region for now
-        // There could be nothing to be serialized (if using shared memory)
-        // TODO(https://issues.chromium.org/492456046): Pass serializePointer as a span.
-        virtual void SerializeDataUpdate(void* serializePointer, size_t offset, size_t size) = 0;
+        // Serializes the modified contents starting at |offset| in the allocation into
+        // |serializeData| at buffer unmap. |serializeData.size()| gives the number of bytes to
+        // serialize. There could be nothing to be serialized (if using shared memory).
+        virtual void SerializeDataUpdate(std::span<char> serializeData, size_t offset) = 0;
 
       private:
         WriteHandle(const WriteHandle&) = delete;

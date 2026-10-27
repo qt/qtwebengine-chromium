@@ -14,7 +14,6 @@
                      minorValue:(NSString*)minorValue
              displayDescription:(NSString*)displayDescription
                            icon:(UIImage*)icon
-          hasCustomCardArtImage:(BOOL)hasCustomCardArtImage
                            type:(autofill::SuggestionType)type
                         payload:(autofill::Suggestion::Payload)payload
     fieldByFieldFillingTypeUsed:(autofill::FieldType)fieldByFieldFillingTypeUsed
@@ -32,7 +31,6 @@
     _minorValue = [minorValue copy];
     _displayDescription = [displayDescription copy];
     _icon = [icon copy];
-    _hasCustomCardArtImage = hasCustomCardArtImage;
     _type = type;
     _payload = payload;
     _fieldByFieldFillingTypeUsed = fieldByFieldFillingTypeUsed;
@@ -48,34 +46,6 @@
 }
 
 + (FormSuggestion*)suggestionWithValue:(NSString*)value
-                            minorValue:(NSString*)minorValue
-                    displayDescription:(NSString*)displayDescription
-                                  icon:(UIImage*)icon
-                 hasCustomCardArtImage:(BOOL)hasCustomCardArtImage
-                                  type:(autofill::SuggestionType)type
-                               payload:(autofill::Suggestion::Payload)payload
-           fieldByFieldFillingTypeUsed:
-               (autofill::FieldType)fieldByFieldFillingTypeUsed
-                        requiresReauth:(BOOL)requiresReauth
-            acceptanceA11yAnnouncement:(NSString*)acceptanceA11yAnnouncement {
-  return [[FormSuggestion alloc] initWithValue:value
-                                    minorValue:minorValue
-                            displayDescription:displayDescription
-                                          icon:icon
-                         hasCustomCardArtImage:hasCustomCardArtImage
-                                          type:type
-                                       payload:payload
-                   fieldByFieldFillingTypeUsed:fieldByFieldFillingTypeUsed
-                                requiresReauth:requiresReauth
-                    acceptanceA11yAnnouncement:acceptanceA11yAnnouncement
-                                      metadata:FormSuggestionMetadata()
-                                        params:std::nullopt
-                                      provider:nil
-                                 featureForIPH:SuggestionFeatureForIPH::kUnknown
-                            suggestionIconType:SuggestionIconType::kNone];
-}
-
-+ (FormSuggestion*)suggestionWithValue:(NSString*)value
                     displayDescription:(NSString*)displayDescription
                                   icon:(UIImage*)icon
                                   type:(autofill::SuggestionType)type
@@ -87,7 +57,6 @@
                                     minorValue:nil
                             displayDescription:displayDescription
                                           icon:icon
-                         hasCustomCardArtImage:NO
                                           type:type
                                        payload:payload
                    fieldByFieldFillingTypeUsed:autofill::FieldType::EMPTY_TYPE
@@ -114,7 +83,6 @@
                                     minorValue:minorValue
                             displayDescription:displayDescription
                                           icon:icon
-                         hasCustomCardArtImage:NO
                                           type:type
                                        payload:payload
                    fieldByFieldFillingTypeUsed:fieldByFieldFillingTypeUsed
@@ -137,7 +105,6 @@
                                     minorValue:nil
                             displayDescription:displayDescription
                                           icon:icon
-                         hasCustomCardArtImage:NO
                                           type:type
                                        payload:payload
                    fieldByFieldFillingTypeUsed:autofill::FieldType::EMPTY_TYPE
@@ -158,7 +125,6 @@
                        minorValue:formSuggestionToCopy.minorValue
                displayDescription:formSuggestionToCopy.displayDescription
                              icon:formSuggestionToCopy.icon
-            hasCustomCardArtImage:formSuggestionToCopy.hasCustomCardArtImage
                              type:formSuggestionToCopy.type
                           payload:formSuggestionToCopy.payload
       fieldByFieldFillingTypeUsed:formSuggestionToCopy
@@ -169,6 +135,27 @@
                          metadata:formSuggestionToCopy.metadata
                            params:params
                          provider:provider
+                    featureForIPH:formSuggestionToCopy.featureForIPH
+               suggestionIconType:formSuggestionToCopy.suggestionIconType];
+}
+
++ (FormSuggestion*)copy:(FormSuggestion*)formSuggestionToCopy
+           withMetadata:(FormSuggestionMetadata)metadata {
+  return [[FormSuggestion alloc]
+                    initWithValue:formSuggestionToCopy.value
+                       minorValue:formSuggestionToCopy.minorValue
+               displayDescription:formSuggestionToCopy.displayDescription
+                             icon:formSuggestionToCopy.icon
+                             type:formSuggestionToCopy.type
+                          payload:formSuggestionToCopy.payload
+      fieldByFieldFillingTypeUsed:formSuggestionToCopy
+                                      .fieldByFieldFillingTypeUsed
+                   requiresReauth:formSuggestionToCopy.requiresReauth
+       acceptanceA11yAnnouncement:formSuggestionToCopy
+                                      .acceptanceA11yAnnouncement
+                         metadata:metadata
+                           params:formSuggestionToCopy.params
+                         provider:formSuggestionToCopy.provider
                     featureForIPH:formSuggestionToCopy.featureForIPH
                suggestionIconType:formSuggestionToCopy.suggestionIconType];
 }

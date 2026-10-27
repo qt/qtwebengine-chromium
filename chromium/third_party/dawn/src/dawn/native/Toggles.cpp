@@ -25,14 +25,15 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/Toggles.h"
+#include "src/dawn/native/Toggles.h"
 
 #include <array>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/Log.h"
-#include "dawn/native/dawn_platform.h"
-#include "dawn/native/stream/Stream.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/Log.h"
+#include "src/dawn/native/dawn_platform.h"
+#include "src/dawn/native/stream/Stream.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native {
 namespace {
@@ -265,11 +266,6 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
      {"disable_timestamp_query_conversion",
       "Resolve timestamp queries into ticks instead of nanoseconds.", "https://crbug.com/dawn/1305",
       ToggleStage::Device}},
-    {Toggle::TimestampQueryConversionEvenIf1NS,
-     {"timestamp_query_conversion_even_if_1ns",
-      "Force timestamp query conversion to run even if it isn't needed (unless "
-      "disable_timestamp_query_conversion).",
-      "https://crbug.com/499211666", ToggleStage::Device}},
     {Toggle::TimestampQuantization,
      {"timestamp_quantization",
       "Enable timestamp queries quantization to reduce the precision of timers that can be created "
@@ -632,8 +628,13 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "https://crbug.com/dawn/2502", ToggleStage::Device}},
     {Toggle::VulkanSampleCompareDepthCubeArrayWorkaround,
      {"vulkan_sample_compare_depth_cube_array_workaround",
-      "Polyfill specific case of TextureSampleCompare(Level) with workaround.",
+      "Polyfill specific case of textureSampleCompare(Level) with workaround.",
       "https://crbug.com/465179684", ToggleStage::Device}},
+    {Toggle::VulkanSampleCompare2DWorkaround,
+     {"vulkan_sample_compare_2d_workaround",
+      "Polyfill specific case of textureSampleCompare(Level) with bilinear interpolation of "
+      "textureGatherCompare.",
+      "https://crbug.com/469328925", ToggleStage::Device}},
     {Toggle::MetalDisableModuleConstantF16,
      {"metal_disable_module_constant_f16",
       "Disable module constant hoisting for values that contain f16 types.",
@@ -743,6 +744,11 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
      {"decompose_uniform_buffers",
       "Decompose uniform buffers into arrays of vec4<u32> on backends for Vulkan and OpenGL.",
       "https://crbug.com/448452698", ToggleStage::Adapter}},
+    {Toggle::D3D12DecomposeWorkgroupAccess,
+     {"d3d12_decompose_workgroup_access",
+      "Decompose workgroup memory variables into flat scalar arrays and rewrite accesses as "
+      "element-wise loads/stores with bitcasts on selected Intel GPUs on D3D12",
+      "https://crbug.com/341991439", ToggleStage::Device}},
     {Toggle::CollapseSubgroupMinMax,
      {"collapse_subgroup_min_max",
       "Collapse redundant subgroup min and max operations (e.g., subgroupMin(subgroupMin(x))) into "
@@ -787,10 +793,22 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "samplers are only require to sample YCbCr AHB on Android, this is useful for testing on "
       "other devices.",
       "https://crbug.com/468988322", ToggleStage::Device}},
+    {Toggle::D3D12UseHLSL2021,
+     {"d3d12_use_hlsl_2021", "Use HLSL 2021 when targeting DXC.", "https://crbug.com/508342536",
+      ToggleStage::Device}},
+    {Toggle::MetalFixU32DivMod,
+     {"metal_fix_u32_div_mod",
+      "Workaround a driver bug on Apple Silicon with u32 div and mod operations.",
+      "https://crbug.com/517225032", ToggleStage::Device}},
     {Toggle::WaitIsThreadSafe,
      {"wait_is_thread_safe",
       "WaitFor* functions are thread-safe and can be called without the device-lock if implicit "
       "synchronization is enabled.",
+      "https://crbug.com/412761228", ToggleStage::Device}},
+    {Toggle::SpontaneousQueueEvents,
+     {"spontaneous_queue_events",
+      "Queue events spontaneously complete, either via a dedicated Dawn owned thread, or backend "
+      "specific implementations.",
       "https://crbug.com/412761228", ToggleStage::Device}},
     {Toggle::NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
      {"no_workaround_sample_mask_becomes_zero_for_all_but_last_color_target",
@@ -877,14 +895,14 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
 }  // anonymous namespace
 
 void TogglesSet::Set(Toggle toggle, bool enabled) {
-    DAWN_ASSERT(toggle != Toggle::InvalidEnum);
-    const uint32_t toggleIndex = uint32_t(toggle);
+    DAWN_CHECK(toggle != Toggle::InvalidEnum);
+    const uint32_t toggleIndex = static_cast<uint32_t>(toggle);
     bitset.set(toggleIndex, enabled);
 }
 
 bool TogglesSet::Has(Toggle toggle) const {
-    DAWN_ASSERT(toggle != Toggle::InvalidEnum);
-    const uint32_t toggleIndex = uint32_t(toggle);
+    DAWN_CHECK(toggle != Toggle::InvalidEnum);
+    const uint32_t toggleIndex = static_cast<uint32_t>(toggle);
     return bitset.test(toggleIndex);
 }
 
@@ -904,7 +922,8 @@ TogglesState TogglesState::CreateFromTogglesDescriptor(const DawnTogglesDescript
 
     TogglesInfo togglesInfo;
     for (uint32_t i = 0; i < togglesDesc->enabledToggleCount; ++i) {
-        Toggle toggle = togglesInfo.ToggleNameToEnum(togglesDesc->enabledToggles[i]);
+        Toggle toggle =
+            togglesInfo.ToggleNameToEnum(DAWN_UNSAFE_TODO(togglesDesc->enabledToggles[i]));
         if (toggle != Toggle::InvalidEnum) {
             const ToggleInfo* toggleInfo = togglesInfo.GetToggleInfo(toggle);
             // Accept the required toggles of current and earlier stage to allow override
@@ -916,7 +935,8 @@ TogglesState TogglesState::CreateFromTogglesDescriptor(const DawnTogglesDescript
         }
     }
     for (uint32_t i = 0; i < togglesDesc->disabledToggleCount; ++i) {
-        Toggle toggle = togglesInfo.ToggleNameToEnum(togglesDesc->disabledToggles[i]);
+        Toggle toggle =
+            togglesInfo.ToggleNameToEnum(DAWN_UNSAFE_TODO(togglesDesc->disabledToggles[i]));
         if (toggle != Toggle::InvalidEnum) {
             const ToggleInfo* toggleInfo = togglesInfo.GetToggleInfo(toggle);
             // Accept the required toggles of current and earlier stage to allow override
@@ -932,7 +952,7 @@ TogglesState TogglesState::CreateFromTogglesDescriptor(const DawnTogglesDescript
 }
 
 TogglesState& TogglesState::InheritFrom(const TogglesState& inheritedToggles) {
-    DAWN_ASSERT(inheritedToggles.GetStage() < mStage);
+    DAWN_CHECK(inheritedToggles.GetStage() < mStage);
 
     // Do inheritance. All toggles that are force-set in the inherited toggles states would
     // be force-set in the result toggles state, and all toggles that are set in the inherited
@@ -940,7 +960,7 @@ TogglesState& TogglesState::InheritFrom(const TogglesState& inheritedToggles) {
     // state.
     for (uint32_t i : inheritedToggles.mTogglesSet) {
         const Toggle& toggle = static_cast<Toggle>(i);
-        DAWN_ASSERT(TogglesInfo::GetToggleInfo(toggle)->stage < mStage);
+        DAWN_CHECK(TogglesInfo::GetToggleInfo(toggle)->stage < mStage);
         bool isEnabled = inheritedToggles.mEnabledToggles.Has(toggle);
         bool isForced = inheritedToggles.mForcedToggles.Has(toggle);
         // Only inherit a toggle if it is not set by user requirement or is forced in earlier stage.
@@ -957,8 +977,8 @@ TogglesState& TogglesState::InheritFrom(const TogglesState& inheritedToggles) {
 
 // Set a toggle to given state, if the toggle has not been already set. Do nothing otherwise.
 void TogglesState::Default(Toggle toggle, bool enabled) {
-    DAWN_ASSERT(toggle != Toggle::InvalidEnum);
-    DAWN_ASSERT(TogglesInfo::GetToggleInfo(toggle)->stage == mStage);
+    DAWN_CHECK(toggle != Toggle::InvalidEnum);
+    DAWN_CHECK(TogglesInfo::GetToggleInfo(toggle)->stage == mStage);
     if (IsSet(toggle)) {
         return;
     }
@@ -967,10 +987,10 @@ void TogglesState::Default(Toggle toggle, bool enabled) {
 }
 
 void TogglesState::ForceSet(Toggle toggle, bool enabled) {
-    DAWN_ASSERT(toggle != Toggle::InvalidEnum);
-    DAWN_ASSERT(TogglesInfo::GetToggleInfo(toggle)->stage == mStage);
+    DAWN_CHECK(toggle != Toggle::InvalidEnum);
+    DAWN_CHECK(TogglesInfo::GetToggleInfo(toggle)->stage == mStage);
     // Make sure that each toggle is force-set at most once.
-    DAWN_ASSERT(!mForcedToggles.Has(toggle));
+    DAWN_CHECK(!mForcedToggles.Has(toggle));
     if (mTogglesSet.Has(toggle) && mEnabledToggles.Has(toggle) != enabled) {
         dawn::WarningLog() << "Forcing toggle \"" << ToggleEnumToName(toggle) << "\" to " << enabled
                            << " when it was " << !enabled;
@@ -981,7 +1001,7 @@ void TogglesState::ForceSet(Toggle toggle, bool enabled) {
 }
 
 TogglesState& TogglesState::SetForTesting(Toggle toggle, bool enabled, bool forced) {
-    DAWN_ASSERT(toggle != Toggle::InvalidEnum);
+    DAWN_CHECK(toggle != Toggle::InvalidEnum);
     mTogglesSet.Set(toggle, true);
     mEnabledToggles.Set(toggle, enabled);
     mForcedToggles.Set(toggle, forced);
@@ -991,14 +1011,14 @@ TogglesState& TogglesState::SetForTesting(Toggle toggle, bool enabled, bool forc
 
 bool TogglesState::IsSet(Toggle toggle) const {
     // Ensure that the toggle never used earlier than its stage.
-    DAWN_ASSERT(TogglesInfo::GetToggleInfo(toggle)->stage <= mStage);
+    DAWN_CHECK(TogglesInfo::GetToggleInfo(toggle)->stage <= mStage);
     return mTogglesSet.Has(toggle);
 }
 
 // Return true if the toggle is provided in enable list, and false otherwise.
 bool TogglesState::IsEnabled(Toggle toggle) const {
     // Ensure that the toggle never used earlier than its stage.
-    DAWN_ASSERT(TogglesInfo::GetToggleInfo(toggle)->stage <= mStage);
+    DAWN_CHECK(TogglesInfo::GetToggleInfo(toggle)->stage <= mStage);
     return mEnabledToggles.Has(toggle);
 }
 
@@ -1013,7 +1033,7 @@ std::vector<const char*> TogglesState::GetEnabledToggleNames() const {
     for (uint32_t i : mEnabledToggles) {
         const Toggle& toggle = static_cast<Toggle>(i);
         // All enabled toggles must be provided.
-        DAWN_ASSERT(mTogglesSet.Has(toggle));
+        DAWN_CHECK(mTogglesSet.Has(toggle));
         const char* toggleName = ToggleEnumToName(toggle);
         enabledTogglesName[index] = toggleName;
         ++index;
@@ -1049,11 +1069,11 @@ void StreamIn(stream::Sink* s, const TogglesState& togglesState) {
 }
 
 const char* ToggleEnumToName(Toggle toggle) {
-    DAWN_ASSERT(toggle != Toggle::InvalidEnum);
+    DAWN_CHECK(toggle != Toggle::InvalidEnum);
 
     const ToggleEnumAndInfo& toggleNameAndInfo =
         kToggleNameAndInfoList[static_cast<size_t>(toggle)];
-    DAWN_ASSERT(toggleNameAndInfo.toggle == toggle);
+    DAWN_CHECK(toggleNameAndInfo.toggle == toggle);
     return toggleNameAndInfo.info.name;
 }
 
@@ -1073,7 +1093,7 @@ TogglesInfo::TogglesInfo() = default;
 TogglesInfo::~TogglesInfo() = default;
 
 const ToggleInfo* TogglesInfo::GetToggleInfo(const char* toggleName) {
-    DAWN_ASSERT(toggleName);
+    DAWN_CHECK(toggleName);
 
     EnsureToggleNameToEnumMapInitialized();
 
@@ -1085,13 +1105,13 @@ const ToggleInfo* TogglesInfo::GetToggleInfo(const char* toggleName) {
 }
 
 const ToggleInfo* TogglesInfo::GetToggleInfo(Toggle toggle) {
-    DAWN_ASSERT(toggle != Toggle::InvalidEnum);
+    DAWN_CHECK(toggle != Toggle::InvalidEnum);
 
     return &kToggleNameAndInfoList[static_cast<size_t>(toggle)].info;
 }
 
 Toggle TogglesInfo::ToggleNameToEnum(const char* toggleName) {
-    DAWN_ASSERT(toggleName);
+    DAWN_CHECK(toggleName);
 
     EnsureToggleNameToEnumMapInitialized();
 

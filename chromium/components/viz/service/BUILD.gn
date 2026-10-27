@@ -5,6 +5,7 @@
 import("//build/config/ozone.gni")
 import("//build/config/ui.gni")
 import("//components/viz/viz.gni")
+import("//components/vrp_flags/features.gni")
 import("//gpu/vulkan/features.gni")
 import("//media/gpu/args.gni")
 import("//skia/features.gni")
@@ -43,6 +44,7 @@ static_library("viz_debugger") {
     "//base",
     "//components/viz/common:buildflags",
     "//components/viz/service/debugger/mojom",
+    "//components/vrp_flags:buildflags",
     "//mojo/public/cpp/bindings",
     "//skia",
     "//skia:skia_core_public_headers",
@@ -95,6 +97,8 @@ viz_component("service") {
     "display/draw_polygon.h",
     "display/external_use_client.cc",
     "display/external_use_client.h",
+    "display/frame_deadline_decider.cc",
+    "display/frame_deadline_decider.h",
     "display/frame_interval_decider.cc",
     "display/frame_interval_decider.h",
     "display/frame_interval_matchers.cc",
@@ -248,6 +252,8 @@ viz_component("service") {
     "input/render_input_router_support_child_frame.h",
     "layers/layer_context_impl.cc",
     "layers/layer_context_impl.h",
+    "layers/viz_layer_tree_host_impl.cc",
+    "layers/viz_layer_tree_host_impl.h",
     "performance_hint/boost_manager.cc",
     "performance_hint/boost_manager.h",
     "performance_hint/hint_session.cc",
@@ -335,6 +341,7 @@ viz_component("service") {
     "//cc",
     "//cc/debug",
     "//components/viz/common",
+    "//components/vrp_flags:buildflags",
     "//gpu/command_buffer/service:gles2",
     "//gpu/ipc/service",
     "//gpu/vulkan:buildflags",
@@ -546,7 +553,8 @@ viz_component("service") {
       ]
     }
 
-    # TODO(crbug.com/40193891): ideally, ozone_platform_x11 should not be used outside
+    # TODO(crbug.com/40193891): ideally, ozone_platform_x11 should not be used
+    # outside
     # ui/ozone.
     if (ozone_platform_x11) {
       sources += [
@@ -583,6 +591,10 @@ viz_component("service") {
       "//third_party/dawn/src/dawn/native",
     ]
   }
+
+  if (enable_vrp_flags) {
+    deps += [ "//components/vrp_flags" ]
+  }
 }
 
 viz_source_set("unit_tests") {
@@ -606,6 +618,7 @@ viz_source_set("unit_tests") {
     "display/display_unittest.cc",
     "display/display_utils_unittest.cc",
     "display/draw_polygon_unittest.cc",
+    "display/frame_deadline_decider_unittest.cc",
     "display/frame_interval_decider_unittest.cc",
     "display/frame_interval_matchers_unittest.cc",
     "display/occlusion_culler_unittest.cc",
@@ -627,6 +640,7 @@ viz_source_set("unit_tests") {
     "display_embedder/vsync_parameter_listener_unittest.cc",
     "frame_sinks/begin_frame_tracker_unittest.cc",
     "frame_sinks/compositor_frame_sink_support_unittest.cc",
+    "frame_sinks/external_begin_frame_source_mojo_unittest.cc",
     "frame_sinks/frame_sink_bundle_impl_unittest.cc",
     "frame_sinks/frame_sink_manager_priority_unittest.cc",
     "frame_sinks/frame_sink_manager_unittest.cc",
@@ -653,10 +667,12 @@ viz_source_set("unit_tests") {
     "layers/layer_context_impl_view_transition_unittest.cc",
     "layers/viz_layer_context_unittest.cc",
     "layers/viz_layer_context_unittest.h",
+    "layers/viz_layer_tree_host_impl_unittest.cc",
     "main/viz_compositor_thread_runner_impl_unittest.cc",
     "main/viz_main_impl_unittest.cc",
     "performance_hint/boost_manager_unittest.cc",
     "surfaces/referenced_surface_tracker_unittest.cc",
+    "surfaces/surface_saved_frame_unittest.cc",
     "surfaces/surface_unittest.cc",
     "transitions/transferable_resource_tracker_unittest.cc",
   ]
@@ -691,6 +707,7 @@ viz_source_set("unit_tests") {
     "//components/viz/service/main",
     "//components/viz/test:test_suite",
     "//components/viz/test:test_support",
+    "//components/vrp_flags:buildflags",
     "//gpu/command_buffer/client",
     "//gpu/command_buffer/client:raster_interface",
     "//gpu/ipc:gl_in_process_context",
@@ -728,6 +745,7 @@ viz_source_set("unit_tests") {
     sources += [
       "display/overlay_ca_unittest.cc",
       "display_embedder/software_output_device_mac_unittest.mm",
+      "frame_sinks/external_begin_frame_source_mac_unittest.cc",
     ]
     frameworks = [ "IOSurface.framework" ]
   }
@@ -736,6 +754,7 @@ viz_source_set("unit_tests") {
     sources += [
       "display/overlay_dc_unittest.cc",
       "display_embedder/output_device_backing_unittest.cc",
+      "display_embedder/skia_output_device_dcomp_unittest.cc",
       "display_embedder/software_output_device_win_swapchain_unittest.cc",
       "display_embedder/software_output_device_win_unittest.cc",
       "display_embedder/test_support/dcomp_mocks.cc",
@@ -795,6 +814,7 @@ viz_source_set("perf_tests") {
     "//cc/mojo_embedder",
     "//components/viz/client",
     "//components/viz/test:test_support",
+    "//components/vrp_flags:buildflags",
     "//testing/gtest",
     "//testing/perf",
     "//third_party/zlib/google:zip",
@@ -810,6 +830,7 @@ fuzzer_test("hit_test_manager_fuzzer") {
     ":service",
     "//base/test:test_support",
     "//components/viz/test:test_support",
+    "//components/vrp_flags:buildflags",
     "//ui/gfx:test_support",
   ]
 }
@@ -819,6 +840,7 @@ if (is_android) {
     deps = [
       "//base:base_java",
       "//build/android:build_java",
+      "//components/vrp_flags:buildflags",
       "//third_party/androidx:androidx_annotation_annotation_java",
       "//third_party/jni_zero:jni_zero_java",
       "//ui/android:ui_no_recycler_view_java",

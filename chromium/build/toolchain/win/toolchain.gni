@@ -218,6 +218,12 @@ template("msvc_toolchain") {
       show_includes = "/showIncludes"
     }
 
+    # -fmodule-name is not supported by MSVC.
+    module_name_flag = ""
+    if (toolchain_is_clang) {
+      module_name_flag = " \"-fmodule-name={{cc_module_name}}_Private\""
+    }
+
     tool("cc") {
       precompiled_header_type = "msvc"
       pdbname = "{{target_out_dir}}/{{label_name}}_c.pdb"
@@ -231,7 +237,7 @@ template("msvc_toolchain") {
 
       # Note that the code coverage wrapper scripts assumes that {{source}}
       # comes immediately after /c.
-      command = "$coverage_wrapper$env_wrapper$cl /c {{source}} /nologo $show_includes $sys_include_flags{{defines}} {{include_dirs}} {{cflags}} {{cflags_c}} /Fo{{output}} /Fd\"$pdbname\""
+      command = "$coverage_wrapper$env_wrapper$cl /c {{source}} /nologo $show_includes $sys_include_flags{{defines}} {{include_dirs}} {{cflags}} {{cflags_c}}${module_name_flag} /Fo{{output}} /Fd\"$pdbname\""
     }
 
     tool("cxx_module") {
@@ -239,7 +245,7 @@ template("msvc_toolchain") {
       depsformat = "msvc"
       description = "CXX_MODULE {{output}}"
       outputs = [ "$object_subdir/{{source_name_part}}.pcm" ]
-      command = "$env_wrapper$cl /Fo{{output}} /nologo $show_includes $sys_include_flags{{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}} {{module_deps_no_self}} /Fd\"$pdbname\" -fmodule-name={{cc_module_name}} /c -x c++ -Xclang -emit-module {{source}}"
+      command = "$env_wrapper$cl /Fo{{output}} /nologo $show_includes $sys_include_flags{{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}} {{module_deps_no_self}} -fmodule-name=\"{{cc_module_name}}\" /Fd\"$pdbname\" /c -x c++ -Xclang -emit-module {{source}}"
     }
 
     tool("cxx") {
@@ -255,7 +261,7 @@ template("msvc_toolchain") {
 
       # Note that the code coverage wrapper scripts assumes that {{source}}
       # comes immediately after /c.
-      command = "$coverage_wrapper$env_wrapper$cl /c {{source}} /Fo{{output}} /nologo $show_includes $sys_include_flags{{defines}} {{include_dirs}} {{cflags}} /TP {{cflags_cc}} {{module_deps_no_self}} /Fd\"$pdbname\""
+      command = "$coverage_wrapper$env_wrapper$cl /c {{source}} /Fo{{output}} /nologo $show_includes $sys_include_flags{{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}} /TP {{module_deps}}${module_name_flag} /Fd\"$pdbname\""
     }
 
     tool("rc") {
@@ -355,18 +361,6 @@ template("msvc_toolchain") {
       rustc_wrapper += " --target-windows --rustc=$rustc"
 
       rustc_windows_args = " -Clinker=$link$rust_linkflags $rustc_common_args"
-
-      rustc_wrapper_inputs = [
-        "//build/action_helpers.py",
-        "//build/gn_helpers.py",
-        "//build/rust/gni_impl/rustc_wrapper.py",
-      ]
-
-      if (host_os == "win") {
-        rustc_wrapper_inputs += [ "//third_party/rust-toolchain/bin/rustc.exe" ]
-      } else {
-        rustc_wrapper_inputs += [ "//third_party/rust-toolchain/bin/rustc" ]
-      }
 
       tool("rust_staticlib") {
         libname = "{{output_dir}}/{{target_output_name}}{{output_extension}}"
@@ -487,6 +481,49 @@ template("msvc_toolchain") {
             "$rustc_windows_args {{rustdeps}} {{externs}} SOURCES {{sources}}"
         dynamic_link_switch = ""
         command = "$rustc_wrapper --depfile=$depfile --emit=dep-info=$depfile,link -o $dllname -- {{source}} LDFLAGS {{ldflags}} $sys_lib_flags /PDB:$pdbname /IMPLIB:$libname RUSTENV {{rustenv}}"
+        rust_sysroot = rust_sysroot_relative
+        inputs = rustc_wrapper_inputs
+
+        # Since the above commands only updates the .lib file when it changes,
+        # ask Ninja to check if the timestamp actually changed to know if
+        # downstream dependencies should be recompiled.
+        restat = true
+      }
+
+      tool("rust_dylib") {
+        # E.g. "foo.dll":
+        dllname = "{{output_dir}}/{{target_output_name}}{{output_extension}}"
+        libname = "$dllname.lib"  # e.g. foo.dll.lib
+        pdbname = "$dllname.pdb"
+        rspfile = rustc_rsp_path
+        depfile = "$dllname.d"
+        pool = "//build/toolchain:link_pool($default_toolchain)"
+        rmetaname = "{{output_dir}}/lib{{target_output_name}}.rmeta"
+
+        default_output_extension = ".dll"
+        default_output_dir = "{{root_out_dir}}"
+        description = "RUST(DYLIB) {{output}}"
+        outputs = [
+          # The first entry here is used for dependency tracking. Dylibs are
+          # linked into other targets and that linking must be done through
+          # the .lib file, not the .dll file. So the .lib file is the primary
+          # output here.
+          libname,
+          dllname,
+          pdbname,
+          rmetaname,
+          rustc_env_and_flags_path,
+          "${rspfile}.rust",
+        ]
+        runtime_outputs = [
+          dllname,
+          pdbname,
+        ]
+
+        rspfile_content =
+            "$rustc_windows_args {{rustdeps}} {{externs}} SOURCES {{sources}}"
+        dynamic_link_switch = ""
+        command = "$rustc_wrapper --depfile=$depfile --emit=dep-info=$depfile,link,metadata=$rmetaname -o $dllname -- {{source}} LDFLAGS {{ldflags}} $sys_lib_flags /PDB:$pdbname /IMPLIB:$libname RUSTENV {{rustenv}}"
         rust_sysroot = rust_sysroot_relative
         inputs = rustc_wrapper_inputs
 

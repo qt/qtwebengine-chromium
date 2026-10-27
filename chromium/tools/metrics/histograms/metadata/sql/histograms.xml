@@ -78,15 +78,18 @@ chromium-metrics-reviews@google.com.
   <variant name="PowerBookmarks" summary="PowerBookmarks"/>
   <variant name="Predictor" summary="Predictor"/>
   <variant name="PrivateAggregation" summary="PrivateAggregation"/>
+  <variant name="PrivateVerificationTokens"
+      summary="PrivateVerificationTokens"/>
   <variant name="Quota" summary="Quota"/>
   <variant name="RazeNullDB" summary="RazeNullDB"/>
   <variant name="Recovery" summary="Recovery"/>
-  <variant name="ReplayCapabilities" summary="ReplayCapabilities"/>
+  <variant name="ReplayTasks" summary="ReplayTasks"/>
   <variant name="ReportingAndNEL" summary="ReportingAndNEL"/>
   <variant name="ServerCertificate" summary="ServerCertificate"/>
   <variant name="SessionStorage" summary="SessionStorage, on-disk"/>
   <variant name="SessionStorageEphemeral" summary="SessionStorage, in-memory"/>
   <variant name="ShaderCache"/>
+  <variant name="SharedCacheIndex" summary="SharedCacheIndex"/>
   <variant name="SharedDictionary" summary="SharedDictionary"/>
   <variant name="SharedStorage" summary="SharedStorage"/>
   <variant name="Shortcuts" summary="Shortcuts"/>
@@ -116,7 +119,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Sql.Database.Open.FailureReason.{DatabaseTag}"
-    enum="OpenDatabaseFailedReason" expires_after="2026-08-09">
+    enum="OpenDatabaseFailedReason" expires_after="2026-10-11">
   <owner>anthonyvd@chromium.org</owner>
   <owner>etienneb@chromium.org</owner>
   <summary>
@@ -127,7 +130,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Sql.Database.Open.FirstAttempt.Error.{DatabaseTag}"
-    enum="SqliteResultCode" expires_after="2026-08-09">
+    enum="SqliteResultCode" expires_after="2026-10-11">
   <owner>anthonyvd@chromium.org</owner>
   <owner>etienneb@chromium.org</owner>
   <summary>
@@ -138,7 +141,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Sql.Database.Open.SecondAttempt.Error.{DatabaseTag}"
-    enum="SqliteResultCode" expires_after="2026-08-09">
+    enum="SqliteResultCode" expires_after="2026-10-11">
   <owner>anthonyvd@chromium.org</owner>
   <owner>etienneb@chromium.org</owner>
   <summary>
@@ -151,7 +154,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Sql.Database.Raze.FailureReason.{DatabaseTag}"
-    enum="RazeDatabaseFailedReason" expires_after="2026-08-02">
+    enum="RazeDatabaseFailedReason" expires_after="2026-10-04">
   <owner>etienneb@chromium.org</owner>
   <owner>grt@chromium.org</owner>
   <summary>
@@ -162,7 +165,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Sql.Database.Raze.UnhandledErrorCode.{DatabaseTag}"
-    enum="SqliteResultCode" expires_after="2026-08-02">
+    enum="SqliteResultCode" expires_after="2026-10-04">
   <owner>etienneb@chromium.org</owner>
   <owner>jpgravel@chromium.org</owner>
   <summary>
@@ -173,7 +176,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Sql.Database.RazeTime.{DatabaseTag}" units="microseconds"
-    expires_after="2026-08-02">
+    expires_after="2026-10-04">
   <owner>etienneb@chromium.org</owner>
   <owner>grt@chromium.org</owner>
   <summary>
@@ -186,7 +189,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Sql.Database.Statement.Error.{DatabaseTag}"
-    enum="SqliteErrorCode" expires_after="2026-08-02">
+    enum="SqliteErrorCode" expires_after="2026-10-04">
   <owner>etienneb@chromium.org</owner>
   <owner>grt@chromium.org</owner>
   <summary>
@@ -350,7 +353,7 @@ chromium-metrics-reviews@google.com.
   <token key="DatabaseTag" variants="DatabaseTag"/>
 </histogram>
 
-<histogram name="Sql.vfs.SyncTime" units="ms" expires_after="2026-09-13">
+<histogram name="Sql.vfs.SyncTime" units="ms" expires_after="2026-11-15">
   <owner>etienneb@chromium.org</owner>
   <owner>estade@chromium.org</owner>
   <owner>chrome-catan@google.com</owner>

@@ -260,6 +260,14 @@ ElementRareDataVector* ElementRareDataVector::SetClassList(
   return SetField(FieldId::kClassList, class_list);
 }
 
+DOMTokenList* ElementRareDataVector::GetFocusgroupTokenList() const {
+  return static_cast<DOMTokenList*>(GetField(FieldId::kFocusgroupTokenList));
+}
+ElementRareDataVector* ElementRareDataVector::SetFocusgroupTokenList(
+    DOMTokenList* token_list) {
+  return SetField(FieldId::kFocusgroupTokenList, token_list);
+}
+
 DatasetDOMStringMap* ElementRareDataVector::Dataset() const {
   return static_cast<DatasetDOMStringMap*>(GetField(FieldId::kDataset));
 }
@@ -731,6 +739,23 @@ ElementRareDataVector::EnsureDisplayAdElementMonitor(
     AdProvenance ad_provenance) {
   return EnsureField<DisplayAdElementMonitor>(
       FieldId::kDisplayAdElementMonitor, element, std::move(ad_provenance));
+}
+
+FocusgroupData ElementRareDataVector::GetFocusgroupData() const {
+  if (auto* value = GetWrappedField<FocusgroupData>(FieldId::kFocusgroupData)) {
+    return *value;
+  }
+  return FocusgroupData();
+}
+
+ElementRareDataVector* ElementRareDataVector::SetFocusgroupData(
+    FocusgroupData data) {
+  return SetWrappedField<FocusgroupData>(FieldId::kFocusgroupData, data);
+}
+
+void ElementRareDataVector::ClearFocusgroupData() {
+  SetFieldToNullIfExists(FieldId::kFocusgroupData);
+  SetFieldToNullIfExists(FieldId::kFocusgroupLastFocused);
 }
 
 ElementRareDataVector* ElementRareDataVector::SetFocusgroupLastFocused(

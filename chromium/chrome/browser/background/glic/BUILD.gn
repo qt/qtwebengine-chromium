@@ -6,10 +6,7 @@ source_set("glic") {
   sources = [ "glic_launcher_configuration.h" ]
 
   if (!is_android) {
-    sources += [
-      "glic_background_mode_manager.h",
-      "glic_controller.h",
-    ]
+    sources += [ "glic_background_mode_manager.h" ]
   }
 
   public_deps = [
@@ -32,9 +29,14 @@ source_set("impl") {
   if (!is_android) {
     sources += [
       "glic_background_mode_manager.cc",
-      "glic_controller.cc",
       "glic_status_icon.cc",
       "glic_status_icon.h",
+    ]
+  }
+  if (is_mac) {
+    sources += [
+      "os_icon_provider_mac.h",
+      "os_icon_provider_mac.mm",
     ]
   }
   if (is_win) {
@@ -61,6 +63,7 @@ source_set("impl") {
     "//chrome/browser/background",
     "//chrome/browser/glic",
     "//chrome/browser/glic/resources:browser_resources",
+    "//chrome/browser/lifetime",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/profiles:profile_manager",
     "//chrome/browser/resources/glic:resources_grit",
@@ -75,7 +78,6 @@ source_set("impl") {
   if (!is_android) {
     deps += [
       "//chrome/browser/glic/browser_ui",
-      "//chrome/browser/ui:browser_list",
       "//components/keep_alive_registry",
     ]
   }
@@ -96,6 +98,9 @@ source_set("unit_tests") {
       "glic_launcher_configuration_unittest.cc",
       "glic_status_icon_unittest.cc",
     ]
+  }
+  if (is_mac) {
+    sources += [ "os_icon_provider_mac_unittest.mm" ]
   }
   deps = []
   if (!is_android) {
@@ -122,10 +127,7 @@ if (!is_android) {
   source_set("interactive_ui_tests") {
     testonly = true
     defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
-    sources = [
-      "glic_background_mode_manager_interactive_uitest.cc",
-      "glic_controller_interactive_uitest.cc",
-    ]
+    sources = [ "glic_background_mode_manager_interactive_uitest.cc" ]
     deps = [
       ":glic",
       ":impl",

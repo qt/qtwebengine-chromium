@@ -19,6 +19,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/base/casts.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
@@ -97,22 +98,24 @@ absl::Status Autotune(HloModule& module) {
   TF_ASSIGN_OR_RETURN(std::unique_ptr<Compiler> compiler,
                       xla::Compiler::GetForPlatform(platform->id()));
   se::StreamExecutor* stream_executor = platform->ExecutorForDevice(0).value();
-  auto* gpu_compiler = tensorflow::down_cast<GpuCompiler*>(compiler.get());
+  auto* gpu_compiler = absl::down_cast<GpuCompiler*>(compiler.get());
   auto alias_info =
       gpu_compiler->GetAliasInfo(stream_executor->GetDeviceDescription());
   DebugOptions debug_options = GetDebugOptionsFromFlags();
   Compiler::GpuTargetConfig target_config(stream_executor);
 
-  mlir::MLIRContext mlir_context;
-  xla::RegisterSymbolicExprStorage(&mlir_context);
-  TF_ASSIGN_OR_RETURN(std::vector<std::unique_ptr<CodegenBackend>> backends,
-                      gpu_compiler->GetAutotunerBackends(
-                          stream_executor, &target_config, alias_info.get(),
-                          debug_options, &mlir_context));
-
   std::unique_ptr<se::DeviceAddressAllocator> allocator =
       std::make_unique<stream_executor::StreamExecutorAddressAllocator>(
           stream_executor);
+
+  mlir::MLIRContext mlir_context;
+  xla::RegisterSymbolicExprStorage(&mlir_context);
+  TF_ASSIGN_OR_RETURN(
+      std::vector<std::unique_ptr<CodegenBackend>> backends,
+      AutotunerPass::GetGpuAutotunerBackends(
+          stream_executor, allocator.get(), &target_config, alias_info.get(),
+          debug_options, &mlir_context, gpu_compiler->ShapeSizeBytesFunction(),
+          gpu_compiler, platform->id()));
 
   tsl::thread::ThreadPool thread_pool(tsl::Env::Default(), "autotuner",
                                       tsl::port::MaxParallelism());
@@ -187,7 +190,11 @@ int main(int argc, char* argv[]) {
   tsl::port::InitMain(usage_string.c_str(), &argc, &argv);
   auto module = xla::gpu::GetModule(hlo_file);
   CHECK_OK(module.status());
-  CHECK_OK(xla::gpu::Autotune(*module.value()));
+  auto status = xla::gpu::Autotune(*module.value());
+  if (!status.ok()) {
+    std::cerr << "Error: " << status.ToString() << std::endl;
+    return 1;
+  }
   std::cout << module.value()->ToString() << std::endl;
   return 0;
 }

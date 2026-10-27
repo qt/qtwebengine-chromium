@@ -7,7 +7,6 @@
 #include <algorithm>
 
 #include "cast/streaming/impl/packet_util.h"
-#include "cast/streaming/public/receiver.h"
 #include "platform/base/span.h"
 #include "util/osp_logging.h"
 #include "util/stringprintf.h"
@@ -21,23 +20,23 @@ ReceiverPacketRouter::~ReceiverPacketRouter() {
   OSP_CHECK(receivers_.empty());
 }
 
-void ReceiverPacketRouter::OnReceiverCreated(Ssrc sender_ssrc,
-                                             Receiver* receiver) {
+void ReceiverPacketRouter::RegisterPacketConsumer(Ssrc sender_ssrc,
+                                                  PacketConsumer* receiver) {
   OSP_CHECK(receivers_.find(sender_ssrc) == receivers_.end());
   receivers_.emplace_back(sender_ssrc, receiver);
 
-  // If there were no Receiver instances before, resume receiving packets for
-  // dispatch. Reset/Clear the remote endpoint, in preparation for later setting
-  // it to the source of the first packet received.
+  // If there were no PacketConsumer instances before, resume receiving packets
+  // for dispatch. Reset/Clear the remote endpoint, in preparation for later
+  // setting it to the source of the first packet received.
   if (receivers_.size() == 1) {
     environment_.set_remote_endpoint(IPEndpoint{});
     environment_.ConsumeIncomingPackets(this);
   }
 }
 
-void ReceiverPacketRouter::OnReceiverDestroyed(Ssrc sender_ssrc) {
+void ReceiverPacketRouter::DeregisterPacketConsumer(Ssrc sender_ssrc) {
   receivers_.erase_key(sender_ssrc);
-  // If there are no longer any Receivers, suspend receiving packets.
+  // If there are no longer any PacketConsumers, suspend receiving packets.
   if (receivers_.empty()) {
     environment_.DropIncomingPackets();
   }
@@ -93,7 +92,7 @@ void ReceiverPacketRouter::OnReceivedPacket(const IPEndpoint& source,
   if (seems_like.first == ApparentPacketType::RTP) {
     it->second->OnReceivedRtpPacket(arrival_time, std::move(packet));
   } else if (seems_like.first == ApparentPacketType::RTCP) {
-    it->second->OnReceivedRtcpPacket(arrival_time, std::move(packet));
+    it->second->OnReceivedRtcpPacket(arrival_time, packet);
   }
 }
 

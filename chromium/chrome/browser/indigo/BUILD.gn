@@ -4,14 +4,21 @@
 
 assert(!is_android)
 
+import("//third_party/protobuf/proto_library.gni")
+
+proto_library("indigo_prompts_proto") {
+  sources = [ "proto/indigo_prompts.proto" ]
+}
+
 source_set("indigo") {
   sources = [
+    "api_client.h",
     "indigo_agent_host.h",
-    "indigo_alpha_rpc.h",
+    "indigo_extension_utils.h",
+    "indigo_image_replacement.h",
     "indigo_image_replacement_manager.h",
     "indigo_page_action_controller.h",
     "indigo_prefs.h",
-    "indigo_script_loader.h",
     "indigo_service.h",
     "indigo_service_factory.h",
   ]
@@ -19,6 +26,7 @@ source_set("indigo") {
   public_deps = [
     "//base",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/page_action",
     "//chrome/browser/ui/tabs",
     "//chrome/browser/ui/views/indigo",
     "//chrome/common:mojo_bindings",
@@ -37,56 +45,95 @@ source_set("indigo") {
 
 source_set("impl") {
   sources = [
+    "api_client.cc",
     "indigo_agent_host.cc",
-    "indigo_alpha_rpc.cc",
+    "indigo_extension_utils.cc",
+    "indigo_image_replacement.cc",
     "indigo_image_replacement_manager.cc",
     "indigo_page_action_controller.cc",
     "indigo_prefs.cc",
-    "indigo_script_loader.cc",
     "indigo_service.cc",
     "indigo_service_factory.cc",
   ]
 
   deps = [
     ":indigo",
+    ":indigo_prompts_proto",
     "//base",
+    "//chrome/browser:global_features",
+    "//chrome/browser/component_updater",
+    "//chrome/browser/extensions",
+    "//chrome/browser/glic",
     "//chrome/browser/indigo/onboarding",
+    "//chrome/browser/indigo/resources:browser_resources",
+    "//chrome/browser/indigo/resources:indigo_strings",
     "//chrome/browser/optimization_guide",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/resources/indigo:resources",
     "//chrome/browser/signin",
+    "//chrome/browser/skills",
     "//chrome/browser/ui",
     "//chrome/browser/ui/actions:actions_headers",
+    "//chrome/browser/ui/side_panel",
+    "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+    "//chrome/browser/ui/toasts",
     "//chrome/browser/ui/views/indigo:impl",
     "//chrome/browser/ui/views/page_action",
     "//chrome/common:chrome_features",
     "//chrome/common:mojo_bindings",
+    "//components/application_locale_storage",
     "//components/optimization_guide/core",
     "//components/signin/public/identity_manager",
+    "//components/skills/public",
     "//content/public/browser",
+    "//google_apis/common",
     "//net",
     "//services/network/public/cpp",
     "//services/network/public/mojom",
     "//third_party/blink/public/common",
   ]
 }
+source_set("test_support") {
+  testonly = true
+  sources = [
+    "fake_api.cc",
+    "fake_api.h",
+  ]
+  deps = [
+    ":indigo",
+    "//base",
+    "//net",
+    "//net:test_support",
+    "//third_party/blink/public/common",
+    "//url",
+  ]
+}
 
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "api_client_unittest.cc",
     "indigo_agent_host_unittest.cc",
-    "indigo_alpha_rpc_unittest.cc",
     "indigo_page_action_controller_unittest.cc",
-    "indigo_script_loader_unittest.cc",
     "indigo_service_unittest.cc",
   ]
   deps = [
     ":impl",
     ":indigo",
+    ":indigo_prompts_proto",
+    ":test_support",
     "//base/test:test_support",
+    "//chrome/browser/component_updater",
+    "//chrome/browser/extensions",
+    "//chrome/browser/glic/test_support",
+    "//chrome/browser/indigo/onboarding",
     "//chrome/browser/optimization_guide:test_support",
+    "//chrome/browser/skills",
+    "//chrome/browser/ui/side_panel:test_support",
     "//chrome/browser/ui/views/page_action:test_support",
     "//chrome/common:chrome_features",
     "//chrome/test:test_support",
+    "//components/skills/mocks",
     "//services/network:test_support",
     "//services/network/public/cpp",
     "//testing/gmock",

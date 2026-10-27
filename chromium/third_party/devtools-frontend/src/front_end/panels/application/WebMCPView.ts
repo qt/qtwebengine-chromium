@@ -8,7 +8,10 @@ import '../../ui/components/node_text/node_text.js';
 import '../../ui/legacy/components/data_grid/data_grid.js';
 import '../../ui/legacy/legacy.js';
 
+import type {JSONSchema7, JSONSchema7Definition} from 'json-schema';
+
 import * as Common from '../../core/common/common.js';
+import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -30,6 +33,7 @@ import {
   type TemplateResult,
 } from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
+import * as ProtocolMonitor from '../protocol_monitor/protocol_monitor.js';
 
 import webMCPViewStyles from './webMCPView.css.js';
 
@@ -130,7 +134,7 @@ const UIStrings = {
   /**
    * @description Text for the status of a tool call that succeeded
    */
-  success: 'Success',
+  completed: 'Completed',
   /**
    * @description Text for the status of a tool call that has failed
    */
@@ -155,6 +159,42 @@ const UIStrings = {
    * @example {1} PH1
    */
   inProgressCount: '{PH1} In Progress',
+  /**
+   * @description Context menu action to copy the name of a tool
+   */
+  copyName: 'Copy name',
+  /**
+   * @description Context menu action to copy the description of a tool
+   */
+  copyDescription: 'Copy description',
+  /**
+   * @description Context menu action to cancel an in-progress tool call
+   */
+  cancelCall: 'Cancel',
+  /**
+   * @description Text for the header of the tool run section
+   */
+  runTool: 'Run Tool',
+  /**
+   * @description Context menu action to reveal the tool in the tool list
+   */
+  revealTool: 'Reveal tool',
+  /**
+   * @description Context menu action to edit and run the tool
+   */
+  editAndRun: 'Edit and run',
+  /**
+   * @description Tooltip for the paste button
+   */
+  paste: 'Paste',
+  /**
+   * @description Notice to display when a tool has been unregistered
+   */
+  toolUnregisteredNotice: 'This tool has been unregistered',
+  /**
+   * @description Text preceding a nested error in a stack trace
+   */
+  causedBy: 'Caused by:',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/application/WebMCPView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -167,9 +207,10 @@ export interface FilterState {
     declarative?: boolean,
   };
   statusTypes?: {
-    success?: boolean,
+    completed?: boolean,
     error?: boolean,
     pending?: boolean,
+    canceled?: boolean,
   };
 }
 
@@ -182,17 +223,30 @@ export interface FilterMenuButtons {
   toolTypes: FilterMenuButton;
   statusTypes: FilterMenuButton;
 }
+export const enum TabId {
+  DETAILS = 'webmcp.tool-details',
+  INPUT = 'webmcp.call-inputs',
+  OUTPUT = 'webmcp.call-outputs',
+}
+export interface SelectedTool {
+  tool: WebMCP.WebMCPModel.Tool;
+  parameters?: Record<string, unknown>;
+}
 export interface ViewInput {
   tools: WebMCP.WebMCPModel.Tool[];
-  selectedTool: WebMCP.WebMCPModel.Tool|null;
+  selectedTool: SelectedTool|null;
   onToolSelect: (tool: WebMCP.WebMCPModel.Tool|null) => void;
+  onRevealTool: (tool: WebMCP.WebMCPModel.Tool, parameters?: Record<string, unknown>) => void;
   selectedCall: WebMCP.WebMCPModel.Call|null;
-  onCallSelect: (call: WebMCP.WebMCPModel.Call|null) => void;
+  selectedTab?: TabId;
+  onCallSelect: (call: WebMCP.WebMCPModel.Call|null, tabId?: TabId) => void;
   filters: FilterState;
   filterButtons: FilterMenuButtons;
   onClearLogClick: () => void;
   onFilterChange: (filters: FilterState) => void;
   toolCalls: WebMCP.WebMCPModel.Call[];
+  onRunTool: (event: Common.EventTarget.EventTargetEvent<ProtocolMonitor.JSONEditor.Command>) => void;
+  onPaste: () => void;
 }
 
 export function filterToolCalls(
@@ -202,11 +256,14 @@ export function filterToolCalls(
   const statusTypes = filterState.statusTypes;
   if (statusTypes) {
     filtered = filtered.filter(call => {
-      const {success, error, pending} = statusTypes;
-      if (success && call.result?.status === Protocol.WebMCP.InvocationStatus.Success) {
+      const {completed, error, pending, canceled} = statusTypes;
+      if (completed && call.result?.status === Protocol.WebMCP.InvocationStatus.Completed) {
         return true;
       }
       if (error && call.result?.status === Protocol.WebMCP.InvocationStatus.Error) {
+        return true;
+      }
+      if (canceled && call.result?.status === Protocol.WebMCP.InvocationStatus.Canceled) {
         return true;
       }
       if (pending && call.result === undefined) {
@@ -242,63 +299,54 @@ export function filterToolCalls(
   return filtered;
 }
 export type View = (input: ViewInput, output: object, target: HTMLElement) => void;
+
+type ToolStats = Map<Protocol.WebMCP.InvocationStatus|undefined, number>;
+
 function calculateToolStats(calls: WebMCP.WebMCPModel.Call[]):
-    {total: number, success: number, failed: number, canceled: number, inProgress: number} {
-  let total = 0, success = 0, failed = 0, canceled = 0, inProgress = 0;
+    {stats: Map<WebMCP.WebMCPModel.Tool, ToolStats>, totals: ToolStats} {
+  const stats = new Map<WebMCP.WebMCPModel.Tool, ToolStats>();
+  const totals: ToolStats = new Map();
+
   for (const call of calls) {
-    total++;
-    if (call.result?.status === Protocol.WebMCP.InvocationStatus.Error) {
-      failed++;
-    } else if (call.result?.status === Protocol.WebMCP.InvocationStatus.Canceled) {
-      canceled++;
-    } else if (call.result?.status === Protocol.WebMCP.InvocationStatus.Success) {
-      success++;
-    } else if (call.result === undefined) {
-      inProgress++;
+    let toolStats = stats.get(call.tool);
+    if (!toolStats) {
+      toolStats = new Map();
+      stats.set(call.tool, toolStats);
     }
+    toolStats.set(call.result?.status, (toolStats.get(call.result?.status) ?? 0) + 1);
+    totals.set(call.result?.status, (totals.get(call.result?.status) ?? 0) + 1);
   }
-  return {total, success, failed, canceled, inProgress};
+  return {totals, stats};
 }
 
-function getIconGroupsFromStats(toolStats: ReturnType<typeof calculateToolStats>):
-    IconButton.IconButton.IconWithTextData[] {
-  const groups = [];
-  if (toolStats.success > 0) {
-    groups.push({
-      iconName: 'check-circle',
-      iconColor: 'var(--sys-color-green)',
-      iconWidth: '16px',
-      iconHeight: '16px',
-      text: String(toolStats.success),
-    });
+function toolStatsIcon(status: Protocol.WebMCP.InvocationStatus|undefined): {iconName: string, iconColor?: string} {
+  switch (status) {
+    case Protocol.WebMCP.InvocationStatus.Completed:
+      return {iconName: 'check-circle', iconColor: 'var(--sys-color-green)'};
+    case Protocol.WebMCP.InvocationStatus.Error:
+      return {iconName: 'cross-circle-filled', iconColor: 'var(--sys-color-error)'};
+    case Protocol.WebMCP.InvocationStatus.Canceled:
+      return {iconName: 'record-stop', iconColor: 'var(--sys-color-on-surface-light)'};
+    case undefined:
+      return {iconName: 'watch'};
   }
-  if (toolStats.failed > 0) {
-    groups.push({
-      iconName: 'cross-circle-filled',
-      iconColor: 'var(--sys-color-error)',
-      iconWidth: '16px',
-      iconHeight: '16px',
-      text: String(toolStats.failed),
-    });
-  }
-  if (toolStats.canceled > 0) {
-    groups.push({
-      iconName: 'record-stop',
-      iconColor: 'var(--sys-color-on-surface-light)',
-      iconWidth: '16px',
-      iconHeight: '16px',
-      text: String(toolStats.canceled),
-    });
-  }
-  if (toolStats.inProgress > 0) {
-    groups.push({
-      iconName: 'dots-circle',
-      iconWidth: '16px',
-      iconHeight: '16px',
-      text: String(toolStats.inProgress),
-    });
-  }
-  return groups;
+}
+
+function getIconGroupsFromStats(toolStats?: ToolStats):
+    Array<IconButton.IconButton.IconWithTextData&{status: Protocol.WebMCP.InvocationStatus | undefined}> {
+  const status = [
+    Protocol.WebMCP.InvocationStatus.Completed, Protocol.WebMCP.InvocationStatus.Error,
+    Protocol.WebMCP.InvocationStatus.Canceled, undefined
+  ];
+  return status
+      .map(status => ({
+             ...toolStatsIcon(status),
+             iconWidth: 'var(--sys-size-8)',
+             iconHeight: 'var(--sys-size-8)',
+             text: String(toolStats?.get(status) ?? 0),
+             status,
+           }))
+      .filter(({text}) => text !== '0');
 }
 
 export function parsePayload(payload?: unknown): {
@@ -318,9 +366,32 @@ export function parsePayload(payload?: unknown): {
   return {valueObject: payload, valueString: undefined};
 }
 
+export function getJSONEditorParameters(tool: WebMCP.WebMCPModel.Tool): {
+  metadataByCommand: Map<string, {
+    parameters: ProtocolMonitor.JSONEditor.Parameter[],
+    description: string,
+    replyArgs: string[],
+  }>,
+  typesByName: Map<string, ProtocolMonitor.JSONEditor.Parameter[]>,
+  enumsByName: Map<string, Record<string, string>>,
+} {
+  const parsedSchema = parseToolSchema(tool.inputSchema);
+  const metadataByCommand = new Map();
+  metadataByCommand.set(tool.name, {
+    parameters: parsedSchema.parameters,
+    description: tool.description,
+    replyArgs: [],
+  });
+  return {
+    metadataByCommand,
+    typesByName: parsedSchema.typesByName,
+    enumsByName: parsedSchema.enumsByName,
+  };
+}
 export const DEFAULT_VIEW: View = (input, output, target) => {
   const tools = input.tools;
-  const stats = calculateToolStats(input.toolCalls);
+  let editorWidget: ProtocolMonitor.JSONEditor.JSONEditor|null = null;
+  const toolStats = calculateToolStats(input.toolCalls);
   const isFilterActive =
       Boolean(input.filters.text) || Boolean(input.filters.toolTypes) || Boolean(input.filters.statusTypes);
   const iconName = (call: WebMCP.WebMCPModel.Call): string => {
@@ -330,7 +401,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
       case Protocol.WebMCP.InvocationStatus.Canceled:
         return 'record-stop';
       case undefined:
-        return 'dots-circle';
+        return 'watch';
       default:
         return '';
     }
@@ -341,11 +412,38 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
         return i18nString(UIStrings.error);
       case Protocol.WebMCP.InvocationStatus.Canceled:
         return i18nString(UIStrings.canceled);
-      case Protocol.WebMCP.InvocationStatus.Success:
-        return i18nString(UIStrings.success);
+      case Protocol.WebMCP.InvocationStatus.Completed:
+        return i18nString(UIStrings.completed);
       default:
         return i18nString(UIStrings.inProgress);
     }
+  };
+  const onIconClick = (toolName: string, status: Protocol.WebMCP.InvocationStatus|undefined): void => {
+    let statusTypes: FilterState['statusTypes'] = undefined;
+    if (status === Protocol.WebMCP.InvocationStatus.Completed) {
+      statusTypes = {completed: true};
+    } else if (status === Protocol.WebMCP.InvocationStatus.Error) {
+      statusTypes = {error: true};
+    } else if (status === Protocol.WebMCP.InvocationStatus.Canceled) {
+      statusTypes = {canceled: true};
+    } else if (status === undefined) {
+      statusTypes = {pending: true};
+    }
+    input.onFilterChange({
+      ...input.filters,
+      text: toolName,
+      statusTypes,
+    });
+  };
+  const onToolContextMenu = (event: Event, tool: WebMCP.WebMCPModel.Tool): void => {
+    const contextMenu = new UI.ContextMenu.ContextMenu(event);
+    contextMenu.defaultSection().appendItem(i18nString(UIStrings.copyName), () => {
+      Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(tool.name);
+    }, {jslogContext: 'webmcp.copy-tool-name'});
+    contextMenu.defaultSection().appendItem(i18nString(UIStrings.copyDescription), () => {
+      Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(tool.description);
+    }, {jslogContext: 'webmcp.copy-tool-description'});
+    void contextMenu.show();
   };
   // clang-format off
   render(html`
@@ -362,9 +460,9 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
             <div class="toolbar-divider"></div>
             <devtools-toolbar-input type="filter"
                                     placeholder=${i18nString(UIStrings.filter)}
-                                    .value=${input.filters.text}
                                     @change=${(e: CustomEvent<string>) =>
-                                      input.onFilterChange({...input.filters, text: e.detail})}>
+                                      input.onFilterChange({...input.filters, text: e.detail})}
+                                    .value=${input.filters.text}>
             </devtools-toolbar-input>
             <div class="toolbar-divider"></div>
             ${input.filterButtons.toolTypes.button.element}
@@ -403,9 +501,46 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
                       'status-error': call.result?.status === Protocol.WebMCP.InvocationStatus.Error,
                       'status-cancelled': call.result?.status === Protocol.WebMCP.InvocationStatus.Canceled,
                       selected: call === input.selectedCall,
-                    })} @click=${() => input.onCallSelect(call)}>
-                      <td>${call.tool.name}</td>
-                      <td>
+                    })} @click=${() => input.onCallSelect(call)}
+                        @contextmenu=${(e: CustomEvent<UI.ContextMenu.ContextMenu>) => {
+                          const contextMenu = e.detail;
+                          const isUnregistered = !input.tools.includes(call.tool);
+                          contextMenu.defaultSection().appendItem(i18nString(UIStrings.revealTool), () => {
+                            input.onRevealTool(call.tool);
+                          }, {jslogContext: 'webmcp.reveal-tool', disabled: isUnregistered});
+                          contextMenu.defaultSection().appendItem(i18nString(UIStrings.editAndRun), () => {
+                            const payload = parsePayload(call.input);
+                            input.onRevealTool(call.tool, payload.valueObject as Record<string, unknown> | undefined);
+                          }, {jslogContext: 'webmcp.edit-and-run', disabled: isUnregistered});
+                          if (call.result === undefined) {
+                            contextMenu.defaultSection().appendItem(i18nString(UIStrings.cancelCall), () => {
+                              call.cancel();
+                            }, {jslogContext: 'webmcp.cancel-call'});
+                          }
+                        }}>
+                      <td @click=${(e: Event) => {
+                        e.stopPropagation();
+                        input.onCallSelect(call, TabId.DETAILS);
+                      }}>
+                        <div class="name-cell">
+                          <span>${call.tool.name}</span>
+                          <button class="run-tool-action-button"
+                                  title=${i18nString(UIStrings.editAndRun)}
+                                  aria-label=${i18nString(UIStrings.editAndRun)}
+                                  @click=${(e: Event) => {
+                                    e.stopPropagation();
+                                    const payload = parsePayload(call.input);
+                                    input.onRevealTool(call.tool,
+                                                       payload.valueObject as Record<string, unknown> | undefined);
+                                  }}>
+                            <devtools-icon name="goto-filled"></devtools-icon>
+                          </button>
+                        </div>
+                      </td>
+                      <td @click=${(e: Event) => {
+                        e.stopPropagation();
+                        input.onCallSelect(call, TabId.OUTPUT);
+                      }}>
                         <div class="status-cell">
                           ${iconName(call) ? html`<devtools-icon class="small" name=${iconName(call)}></devtools-icon>`
                                            : ''}
@@ -413,8 +548,14 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
                         </div>
                       </td>
                       ${!input.selectedCall ? html`
-                        <td>${call.input}</td>
-                        <td>${call.result?.output ? JSON.stringify(call.result.output)
+                        <td @click=${(e: Event) => {
+                          e.stopPropagation();
+                          input.onCallSelect(call, TabId.INPUT);
+                        }}>${call.input}</td>
+                        <td @click=${(e: Event) => {
+                          e.stopPropagation();
+                          input.onCallSelect(call, TabId.OUTPUT);
+                        }}>${call.result?.output ? JSON.stringify(call.result.output)
                                                     : call.result?.errorText ?? ''}</td>
                         ` : nothing}
                     </tr>
@@ -433,33 +574,44 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
                   @click=${() => input.onCallSelect(null)}
                 ></devtools-button>
                 <devtools-widget
-                  id="details"
+                  id=${TabId.DETAILS}
+                  ?selected=${input.selectedTab === TabId.DETAILS}
                   title=${i18nString(UIStrings.toolDetails)}
-                  ${widget(ToolDetailsWidget, {tool: input.selectedCall?.tool})}>
+                  ${widget(ToolDetailsWidget, {tool: input.selectedCall?.tool, isUnregistered: input.selectedCall ? !input.tools.includes(input.selectedCall.tool) : false})}>
                 </devtools-widget>
                 <devtools-widget
-                  id="inputs"
+                  id=${TabId.INPUT}
+                  ?selected=${input.selectedTab === TabId.INPUT}
                   title=${i18nString(UIStrings.input)}
                   ${widget(PayloadWidget, parsePayload(input.selectedCall?.input))}>
                 </devtools-widget>
                 <devtools-widget
-                  id="outputs"
+                  id=${TabId.OUTPUT}
+                  ?selected=${input.selectedTab === TabId.OUTPUT}
                   title=${i18nString(UIStrings.output)}
-                  ${widget(PayloadWidget, parsePayload(input.selectedCall?.result?.output))}>
+                  ${widget(PayloadWidget, {
+                          valueObject: input.selectedCall?.result?.output,
+                          errorText: input.selectedCall?.result?.errorText,
+                          exceptionDetails: input.selectedCall?.result?.exceptionDetails,
+                  })}>
                 </devtools-widget>
               </devtools-tabbed-pane>
             </div>
           </devtools-split-view>
           <div class="webmcp-toolbar-container" role="toolbar">
             <devtools-toolbar class="webmcp-toolbar" role="presentation" wrappable>
-              <span class="toolbar-text">${i18nString(UIStrings.totalCalls, {PH1: stats.total})}</span>
+              <span class="toolbar-text">${i18nString(UIStrings.totalCalls, {PH1: input.toolCalls.length})}</span>
               <div class="toolbar-divider"></div>
-              <span class="toolbar-text status-error-text">${i18nString(UIStrings.failed, {PH1: stats.failed})}</span>
+              <span class="toolbar-text status-error-text">${
+                i18nString(UIStrings.failed,
+                           {PH1: toolStats.totals.get(Protocol.WebMCP.InvocationStatus.Error) ?? 0})}</span>
               <div class="toolbar-divider"></div>
               <span class="toolbar-text status-cancelled-text">${
-                  i18nString(UIStrings.canceledCount, {PH1: stats.canceled})}</span>
+                  i18nString(UIStrings.canceledCount,
+                             {PH1: toolStats.totals.get(Protocol.WebMCP.InvocationStatus.Canceled) ?? 0})}</span>
               <div class="toolbar-divider"></div>
-              <span class="toolbar-text">${i18nString(UIStrings.inProgressCount, {PH1: stats.inProgress})}</span>
+              <span class="toolbar-text">${i18nString(UIStrings.inProgressCount,
+                                                      {PH1: toolStats.totals.get(undefined) ?? 0})}</span>
             </devtools-toolbar>
           </div>
         ` : html`
@@ -478,22 +630,26 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
           ${UI.Widget.widget(UI.EmptyWidget.EmptyWidget, {header: i18nString(UIStrings.noToolsPlaceholderTitle),
                                                           text: i18nString(UIStrings.noToolsPlaceholder)})}
           ` : html`
-            <devtools-list>
-              ${tools.map(tool => {
-                const toolStats = calculateToolStats(input.toolCalls.filter(c => c.tool === tool));
-                const groups = getIconGroupsFromStats(toolStats);
-                return html`
-                    <div class=${Directives.classMap({'tool-item': true, selected: tool === input.selectedTool})}
-                         @click=${() => input.onToolSelect(tool)}>
+            <devtools-list class="square-corners">
+              ${tools.map(tool => html`
+                    <div class=${Directives.classMap({'tool-item': true, selected: tool === input.selectedTool?.tool})}
+                         @click=${() => input.onToolSelect(tool)}
+                         @contextmenu=${(e: Event) => onToolContextMenu(e, tool)}>
                     <div class="tool-name-container">
                       <div class="tool-name source-code">${tool.name}</div>
-                      ${groups.length > 0 ? html`<icon-button .data=${
-                          {groups, compact: false} as IconButton.IconButton.IconButtonData}></icon-button>` : ''}
+                    <div class="tool-icons">
+                      ${getIconGroupsFromStats(toolStats.stats.get(tool)).map(group => html`
+                        <icon-button
+                          .data=${{
+                            groups: [group],
+                            compact: false,
+                            clickHandler: () => onIconClick(tool.name, group.status),
+                          } as IconButton.IconButton.IconButtonData}
+                          @click=${(e: Event) => e.stopPropagation()}></icon-button>`)}
+                    </div>
                     </div>
                     <div class="tool-description">${tool.description}</div>
-                  </div>
-                `;
-              })}
+                </div>`)}
             </devtools-list>
           `}
         </div>
@@ -508,7 +664,53 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
             ></devtools-button>
             <span>${i18nString(UIStrings.toolDetails)}</span>
           </div>
-          ${widget(ToolDetailsWidget, {tool: input.selectedTool})}
+          ${input.selectedTool ? html`
+            <div class="sidebar-tool-details">
+              ${widget(ToolDetailsWidget, {tool: input.selectedTool.tool})}
+            </div>
+            <div class="section-title">
+              <span>${i18nString(UIStrings.runTool)}</span>
+              <div style="flex: auto;"></div>
+              <devtools-button
+                .iconName=${'import'}
+                .size=${Buttons.Button.Size.SMALL}
+                .variant=${Buttons.Button.Variant.TEXT}
+                title=${i18nString(UIStrings.paste)}
+                @click=${input.onPaste}
+              >${i18nString(UIStrings.paste)}</devtools-button>
+            </div>
+            <devtools-widget
+              class="json-editor-widget"
+              ${widget(ProtocolMonitor.JSONEditor.JSONEditor, {
+                displayTargetSelector: false,
+                displayCommandInput: false,
+                displayToolbar: false,
+                ...getJSONEditorParameters(input.selectedTool.tool),
+                commandToDisplay: {
+                  command: input.selectedTool.tool.name,
+                  parameters: input.selectedTool.parameters || {}
+                },
+                })}
+              ${UI.Widget.widgetRef(ProtocolMonitor.JSONEditor.JSONEditor, e => { editorWidget = e; })}
+              @submiteditor=${(e: CustomEvent<ProtocolMonitor.JSONEditor.Command>) => input.onRunTool({data: e.detail})}
+            ></devtools-widget>
+            <devtools-button
+              class="webmcp-run-tool-button"
+              .variant=${Buttons.Button.Variant.OUTLINED}
+              .size=${Buttons.Button.Size.SMALL}
+              jslogContext="webmcp.run-tool"
+              @click=${() => {
+                if (editorWidget && input.selectedTool) {
+                  const params = editorWidget.getParameters();
+                  input.onRunTool({
+                    data: {
+                      command: input.selectedTool.tool.name,
+                      parameters: params,
+                    } as ProtocolMonitor.JSONEditor.Command
+                  });
+                }
+              }}>Run tool</devtools-button>
+          ` : nothing}
         </div>
       </devtools-split-view>
     </devtools-split-view>
@@ -518,8 +720,10 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
 
 export class WebMCPView extends UI.Widget.VBox {
   readonly #view: View;
-  #selectedTool: WebMCP.WebMCPModel.Tool|null = null;
+  #selectedTool: SelectedTool|null = null;
   #selectedCall: WebMCP.WebMCPModel.Call|null = null;
+  #selectedTab: TabId|undefined = undefined;
+  #lastDevToolsInvocationId: string|null = null;
 
   #filterState: FilterState = {
     text: '',
@@ -596,38 +800,57 @@ export class WebMCPView extends UI.Widget.VBox {
   }
 
   #showStatusTypesContextMenu(contextMenu: UI.ContextMenu.ContextMenu): void {
-    const toggle = (key: 'success'|'error'|'pending'): void => {
+    const toggle = (key: 'completed'|'error'|'pending'|'canceled'): void => {
       const current = this.#filterState.statusTypes ?? {};
       const next = {...current, [key]: !current[key]};
       let statusTypesToPass: FilterState['statusTypes'] = next;
-      if (!next.success && !next.error && !next.pending) {
+      if (!next.completed && !next.error && !next.pending && !next.canceled) {
         statusTypesToPass = undefined;
       }
       this.#handleFilterChange({...this.#filterState, statusTypes: statusTypesToPass});
     };
 
     contextMenu.defaultSection().appendCheckboxItem(
-        i18nString(UIStrings.success), () => toggle('success'),
-        {checked: this.#filterState.statusTypes?.['success'] ?? false, jslogContext: 'webmcp.success'});
+        i18nString(UIStrings.completed), () => toggle('completed'),
+        {checked: this.#filterState.statusTypes?.['completed'] ?? false, jslogContext: 'webmcp.completed'});
     contextMenu.defaultSection().appendCheckboxItem(
         i18nString(UIStrings.error), () => toggle('error'),
         {checked: this.#filterState.statusTypes?.['error'] ?? false, jslogContext: 'webmcp.error'});
+    contextMenu.defaultSection().appendCheckboxItem(
+        i18nString(UIStrings.canceled), () => toggle('canceled'),
+        {checked: this.#filterState.statusTypes?.['canceled'] ?? false, jslogContext: 'webmcp.canceled'});
     contextMenu.defaultSection().appendCheckboxItem(
         i18nString(UIStrings.pending), () => toggle('pending'),
         {checked: this.#filterState.statusTypes?.['pending'] ?? false, jslogContext: 'webmcp.pending'});
   }
   #webMCPModelAdded(model: WebMCP.WebMCPModel.WebMCPModel): void {
     model.addEventListener(WebMCP.WebMCPModel.Events.TOOLS_ADDED, this.requestUpdate, this);
-    model.addEventListener(WebMCP.WebMCPModel.Events.TOOLS_REMOVED, this.requestUpdate, this);
-    model.addEventListener(WebMCP.WebMCPModel.Events.TOOL_INVOKED, this.requestUpdate, this);
+    model.addEventListener(WebMCP.WebMCPModel.Events.TOOLS_REMOVED, this.#toolsRemoved, this);
+    model.addEventListener(WebMCP.WebMCPModel.Events.TOOL_INVOKED, this.#toolInvoked, this);
     model.addEventListener(WebMCP.WebMCPModel.Events.TOOL_RESPONDED, this.requestUpdate, this);
   }
 
   #webMCPModelRemoved(model: WebMCP.WebMCPModel.WebMCPModel): void {
     model.removeEventListener(WebMCP.WebMCPModel.Events.TOOLS_ADDED, this.requestUpdate, this);
-    model.removeEventListener(WebMCP.WebMCPModel.Events.TOOLS_REMOVED, this.requestUpdate, this);
-    model.removeEventListener(WebMCP.WebMCPModel.Events.TOOL_INVOKED, this.requestUpdate, this);
+    model.removeEventListener(WebMCP.WebMCPModel.Events.TOOLS_REMOVED, this.#toolsRemoved, this);
+    model.removeEventListener(WebMCP.WebMCPModel.Events.TOOL_INVOKED, this.#toolInvoked, this);
     model.removeEventListener(WebMCP.WebMCPModel.Events.TOOL_RESPONDED, this.requestUpdate, this);
+  }
+
+  #toolInvoked(event: Common.EventTarget.EventTargetEvent<WebMCP.WebMCPModel.Call>): void {
+    const call = event.data;
+    if (call.invocationId === this.#lastDevToolsInvocationId) {
+      this.#selectedCall = call;
+      this.#lastDevToolsInvocationId = null;
+    }
+    this.requestUpdate();
+  }
+
+  #toolsRemoved(event: Common.EventTarget.EventTargetEvent<readonly WebMCP.WebMCPModel.Tool[]>): void {
+    if (this.#selectedTool && event.data.includes(this.#selectedTool.tool)) {
+      this.#selectedTool = null;
+    }
+    this.requestUpdate();
   }
 
   #handleClearLogClick = (): void => {
@@ -661,16 +884,29 @@ export class WebMCPView extends UI.Widget.VBox {
     const models = SDK.TargetManager.TargetManager.instance().models(WebMCP.WebMCPModel.WebMCPModel);
     const toolCalls = models.flatMap(model => model.toolCalls);
     const filteredCalls = filterToolCalls(toolCalls, this.#filterState);
+    const tools = this.#getTools();
     const input: ViewInput = {
-      tools: this.#getTools(),
+      tools,
       selectedTool: this.#selectedTool,
       onToolSelect: tool => {
-        this.#selectedTool = tool;
+        this.#selectedTool = tool ? {tool} : null;
+        this.requestUpdate();
+      },
+      onRevealTool: (tool, parameters) => {
+        this.#selectedTool = {tool, parameters};
         this.requestUpdate();
       },
       selectedCall: this.#selectedCall,
-      onCallSelect: call => {
-        this.#selectedCall = call;
+      selectedTab: this.#selectedTab,
+      onCallSelect: (call, tabId) => {
+        if (call === null) {
+          this.#selectedCall = null;
+        } else if (this.#selectedCall === null) {
+          this.#selectedCall = call;
+          this.#selectedTab = tabId;
+        } else {
+          this.#selectedCall = call;
+        }
         this.requestUpdate();
       },
       toolCalls: filteredCalls,
@@ -678,17 +914,50 @@ export class WebMCPView extends UI.Widget.VBox {
       filterButtons: this.#filterButtons,
       onClearLogClick: this.#handleClearLogClick,
       onFilterChange: this.#handleFilterChange,
+      onRunTool: async event => {
+        if (this.#selectedTool) {
+          this.#selectedTool.parameters = event.data.parameters || {};
+          this.#lastDevToolsInvocationId = await this.#selectedTool.tool.invoke(this.#selectedTool.parameters) ?? null;
+          if (this.#lastDevToolsInvocationId) {
+            const models = SDK.TargetManager.TargetManager.instance().models(WebMCP.WebMCPModel.WebMCPModel);
+            const call =
+                models.flatMap(model => model.toolCalls).find(c => c.invocationId === this.#lastDevToolsInvocationId);
+            if (call) {
+              this.#selectedCall = call;
+              this.#lastDevToolsInvocationId = null;
+            }
+          }
+          this.requestUpdate();
+        }
+      },
+      onPaste: async () => {
+        try {
+          const text = await navigator.clipboard.readText();
+          const json = JSON.parse(text);
+          if (typeof json !== 'object' || json === null || Array.isArray(json)) {
+            throw new Error('Pasted JSON must be an object');
+          }
+          if (this.#selectedTool) {
+            this.#selectedTool.parameters = json as Record<string, unknown>;
+            this.requestUpdate();
+          }
+        } catch {
+        }
+      },
     };
     this.#view(input, {}, this.contentElement);
+    this.#selectedTab = undefined;
   }
 }
 export interface PayloadViewInput {
   valueObject?: unknown;
   valueString?: string;
+  errorText?: string;
+  exceptionDetails?: WebMCP.WebMCPModel.ExceptionDetails;
 }
 
 export const PAYLOAD_DEFAULT_VIEW = (input: PayloadViewInput, output: object, target: HTMLElement): void => {
-  if (input.valueObject === undefined && input.valueString === undefined) {
+  if (!input.valueObject && !input.valueString && !input.errorText && !input.exceptionDetails) {
     render(nothing, target);
     return;
   }
@@ -715,6 +984,54 @@ export const PAYLOAD_DEFAULT_VIEW = (input: PayloadViewInput, output: object, ta
   };
 
   const createSourceText = (text: string): TemplateResult => html`<div class="payload-value source-code">${text}</div>`;
+  const createErrorText = (text: string): TemplateResult =>
+      html`<div class="payload-value source-code error-text">${text}</div>`;
+
+  const createException = (
+      details: WebMCP.WebMCPModel.ExceptionDetails,
+      linkifier: Components.Linkifier.Linkifier = new Components.Linkifier.Linkifier(),
+      ): TemplateResult => {
+    const renderFrame = (
+        frame: StackTrace.ErrorStackParser.ParsedErrorFrame,
+        index: number,
+        array: StackTrace.ErrorStackParser.ParsedErrorFrame[],
+        ): TemplateResult => {
+      const newline = index < array.length - 1 ? '\n' : '';
+      const {line, link, isCallFrame} = frame;
+
+      if (!isCallFrame) {
+        return html`<span>${line}${newline}</span>`;
+      }
+
+      if (!link) {
+        return html`<span class="formatted-builtin-stack-frame">${line}${newline}</span>`;
+      }
+
+      const scriptLocationLink = linkifier.linkifyScriptLocation(
+          details.error.runtimeModel().target(),
+          link.scriptId || null,
+          link.url,
+          link.lineNumber,
+          {
+            columnNumber: link.columnNumber,
+            inlineFrameIndex: 0,
+            showColumnNumber: true,
+          },
+      );
+      scriptLocationLink.tabIndex = -1;
+
+      return html`<span class="formatted-stack-frame">${link.prefix}${scriptLocationLink}${link.suffix}${
+          newline}</span>`;
+    };
+
+    return html`
+      <div class="payload-value source-code error-text">
+        ${details.frames.length === 0 && details.description ? html`<span>${details.description}\n</span>` : nothing}
+        <div>${details.frames.map(renderFrame)}</div>
+        ${
+        details.cause ? html`\n${i18nString(UIStrings.causedBy)}\n${createException(details.cause, linkifier)}` :
+                        nothing}</div>`;
+  };
 
   render(
       html`
@@ -723,7 +1040,10 @@ export const PAYLOAD_DEFAULT_VIEW = (input: PayloadViewInput, output: object, ta
       <div class="call-payload-content">
             ${
           isParsable ? createPayload(input.valueObject) :
-                       (input.valueString !== undefined ? createSourceText(input.valueString) : nothing)}
+                       (input.valueString !== undefined ?
+                            createSourceText(input.valueString) :
+                            (input.exceptionDetails ? createException(input.exceptionDetails) :
+                                                      (input.errorText ? createErrorText(input.errorText) : nothing)))}
       </div>
     </div>
   `,
@@ -733,6 +1053,9 @@ export const PAYLOAD_DEFAULT_VIEW = (input: PayloadViewInput, output: object, ta
 export class PayloadWidget extends UI.Widget.Widget {
   #valueObject?: unknown;
   #valueString?: string;
+  #errorText?: string;
+  #exceptionDetailsPromise?: Promise<WebMCP.WebMCPModel.ExceptionDetails|undefined>;
+  #exceptionDetails?: WebMCP.WebMCPModel.ExceptionDetails;
   #view: typeof PAYLOAD_DEFAULT_VIEW;
 
   constructor(element?: HTMLElement, view = PAYLOAD_DEFAULT_VIEW) {
@@ -758,6 +1081,37 @@ export class PayloadWidget extends UI.Widget.Widget {
     return this.#valueString;
   }
 
+  set errorText(errorText: string|undefined) {
+    this.#errorText = errorText;
+    this.requestUpdate();
+  }
+
+  get errorText(): string|undefined {
+    return this.#errorText;
+  }
+
+  async #updateExceptionDetails(
+      exceptionDetailsPromise: Promise<WebMCP.WebMCPModel.ExceptionDetails|undefined>|undefined): Promise<void> {
+    if (this.#exceptionDetailsPromise === exceptionDetailsPromise) {
+      return;
+    }
+    this.#exceptionDetailsPromise = exceptionDetailsPromise;
+    this.#exceptionDetails = undefined;
+    this.requestUpdate();
+    const exceptionDetails = await exceptionDetailsPromise;
+    if (this.#exceptionDetailsPromise === exceptionDetailsPromise) {
+      this.#exceptionDetails = exceptionDetails;
+      this.requestUpdate();
+    }
+  }
+
+  set exceptionDetails(exceptionDetailsPromise: Promise<WebMCP.WebMCPModel.ExceptionDetails|undefined>|undefined) {
+    void this.#updateExceptionDetails(exceptionDetailsPromise);
+  }
+
+  get exceptionDetails(): Promise<WebMCP.WebMCPModel.ExceptionDetails|undefined>|undefined {
+    return this.#exceptionDetailsPromise;
+  }
   override wasShown(): void {
     super.wasShown();
     this.requestUpdate();
@@ -767,6 +1121,8 @@ export class PayloadWidget extends UI.Widget.Widget {
     const input: PayloadViewInput = {
       valueObject: this.#valueObject,
       valueString: this.#valueString,
+      errorText: this.#errorText,
+      exceptionDetails: this.#exceptionDetails,
     };
     this.#view(input, {}, this.contentElement);
   }
@@ -774,6 +1130,7 @@ export class PayloadWidget extends UI.Widget.Widget {
 
 export interface ToolDetailsViewInput {
   tool: WebMCP.WebMCPModel.Tool|null|undefined;
+  isUnregistered?: boolean;
   origin: SDK.DOMModel.DOMNode|StackTrace.StackTrace.StackTrace|undefined;
   highlightNode: (node: SDK.DOMModel.DOMNode) => void;
   clearHighlight: () => void;
@@ -825,11 +1182,21 @@ const TOOL_DETAILS_VIEW = (input: ToolDetailsViewInput, output: undefined, targe
            ></devtools-button>
       </div>` : origin ? html`
       <div class="label">Origin</div>
-      <div class="value">
+      <div class="value stack-trace">
         ${widget(Components.JSPresentationUtils.StackTracePreviewContent,
                  {stackTrace: origin, options: { expandable: true}})}
       </div>` : nothing}
     </div>
+    ${input.isUnregistered ? html`
+      <div class="call-to-action">
+        <div class="call-to-action-body">
+          <div class="explanation">
+            <devtools-icon class="inline-icon medium" name="warning-filled"></devtools-icon>
+            ${i18nString(UIStrings.toolUnregisteredNotice)}
+          </div>
+        </div>
+      </div>
+    ` : nothing}
   `, target);
 };
 // clang-format on
@@ -837,6 +1204,7 @@ const TOOL_DETAILS_VIEW = (input: ToolDetailsViewInput, output: undefined, targe
 export class ToolDetailsWidget extends UI.Widget.Widget {
   #tool: WebMCP.WebMCPModel.Tool|null|undefined = null;
   #origin: SDK.DOMModel.DOMNode|StackTrace.StackTrace.StackTrace|undefined;
+  #isUnregistered = false;
 
   #view: typeof TOOL_DETAILS_VIEW;
 
@@ -845,6 +1213,17 @@ export class ToolDetailsWidget extends UI.Widget.Widget {
     this.#view = view;
   }
 
+  set isUnregistered(isUnregistered: boolean) {
+    if (this.#isUnregistered === isUnregistered) {
+      return;
+    }
+    this.#isUnregistered = isUnregistered;
+    this.requestUpdate();
+  }
+
+  get isUnregistered(): boolean {
+    return this.#isUnregistered;
+  }
   set tool(tool: WebMCP.WebMCPModel.Tool|null|undefined) {
     if (this.#tool === tool) {
       return;
@@ -886,6 +1265,7 @@ export class ToolDetailsWidget extends UI.Widget.Widget {
   override performUpdate(): void {
     const viewInput = {
       tool: this.#tool,
+      isUnregistered: this.#isUnregistered,
       origin: this.#origin,
       highlightNode: this.#highlightNode,
       clearHighlight: this.#clearHighlight,
@@ -898,4 +1278,233 @@ export class ToolDetailsWidget extends UI.Widget.Widget {
     super.wasShown();
     this.requestUpdate();
   }
+}
+
+export interface ParsedToolSchema {
+  parameters: ProtocolMonitor.JSONEditor.Parameter[];
+  typesByName: Map<string, ProtocolMonitor.JSONEditor.Parameter[]>;
+  enumsByName: Map<string, Record<string, string>>;
+}
+
+const parsedSchemaCache = new WeakMap<object, ParsedToolSchema>();
+
+export function parseToolSchema(schema: JSONSchema7): ParsedToolSchema {
+  if (typeof schema === 'object' && schema !== null) {
+    const cached = parsedSchemaCache.get(schema);
+    if (cached) {
+      return cached;
+    }
+  }
+
+  const typesByName = new Map<string, ProtocolMonitor.JSONEditor.Parameter[]>();
+  const enumsByName = new Map<string, Record<string, string>>();
+  const simpleTypesByName = new Map<string, ProtocolMonitor.JSONEditor.ParameterType>();
+  let typeCount = 0;
+
+  function createEnumRecord(values: unknown[]): Record<string, string> {
+    const enumRecord: Record<string, string> = {};
+    for (const val of values) {
+      enumRecord[String(val)] = String(val);
+    }
+    return enumRecord;
+  }
+
+  function preScanDefinition(name: string, def: JSONSchema7Definition): void {
+    if (typeof def === 'boolean') {
+      return;
+    }
+    if (def.type === 'string' && def.enum) {
+      enumsByName.set(name, createEnumRecord(def.enum));
+    } else if (def.type && typeof def.type === 'string' && def.type !== 'object' && def.type !== 'array') {
+      let paramType = ProtocolMonitor.JSONEditor.ParameterType.STRING;
+      switch (def.type) {
+        case 'number':
+        case 'integer':
+          paramType = ProtocolMonitor.JSONEditor.ParameterType.NUMBER;
+          break;
+        case 'boolean':
+          paramType = ProtocolMonitor.JSONEditor.ParameterType.BOOLEAN;
+          break;
+      }
+      simpleTypesByName.set(name, paramType);
+    }
+  }
+
+  function parseDefinition(name: string, def: JSONSchema7Definition): void {
+    if (typeof def === 'boolean') {
+      return;
+    }
+    if (def.type === 'object' && def.properties) {
+      const nestedParams: ProtocolMonitor.JSONEditor.Parameter[] = [];
+      for (const [key, value] of Object.entries(def.properties)) {
+        const isOpt = !(def.required || []).includes(key);
+        nestedParams.push(parseProperty(key, value, isOpt));
+      }
+      typesByName.set(name, nestedParams);
+    }
+  }
+
+  // First pass: populate enums and simple types
+  if (schema.definitions) {
+    for (const [name, def] of Object.entries(schema.definitions)) {
+      preScanDefinition(name, def);
+    }
+  }
+  if (schema.$defs) {
+    for (const [name, def] of Object.entries(schema.$defs)) {
+      preScanDefinition(name, def);
+    }
+  }
+
+  // Second pass: parse objects
+  if (schema.definitions) {
+    for (const [name, def] of Object.entries(schema.definitions)) {
+      parseDefinition(name, def);
+    }
+  }
+  if (schema.$defs) {
+    for (const [name, def] of Object.entries(schema.$defs)) {
+      parseDefinition(name, def);
+    }
+  }
+
+  function parseProperty(
+      name: string, propDef: JSONSchema7Definition, optional: boolean): ProtocolMonitor.JSONEditor.Parameter {
+    if (typeof propDef === 'boolean') {
+      return {
+        name,
+        optional,
+        description: '',
+        type: ProtocolMonitor.JSONEditor.ParameterType.STRING,
+        isCorrectType: true,
+      };
+    }
+    const prop = propDef;
+    if (prop.$ref) {
+      const typeRef = prop.$ref.split('/').pop() || '';
+      let paramType = ProtocolMonitor.JSONEditor.ParameterType.OBJECT;
+      if (enumsByName.has(typeRef)) {
+        paramType = ProtocolMonitor.JSONEditor.ParameterType.STRING;
+      } else {
+        const simpleType = simpleTypesByName.get(typeRef);
+        if (simpleType !== undefined) {
+          paramType = simpleType;
+        }
+      }
+      return {
+        name,
+        optional,
+        description: prop.description || '',
+        type: paramType,
+        typeRef,
+        isCorrectType: true,
+      };
+    }
+
+    const typeStr = Array.isArray(prop.type) ? prop.type[0] : prop.type;
+    let type: string|undefined = typeStr === 'integer' ? 'number' : typeStr;
+    if (!typeStr) {
+      if (prop.properties) {
+        type = 'object';
+      } else if (prop.items) {
+        type = 'array';
+      } else {
+        type = 'unknown';
+      }
+    }
+    const description = prop.description || '';
+
+    let paramType = ProtocolMonitor.JSONEditor.ParameterType.UNKNOWN;
+    switch (type) {
+      case 'string':
+        paramType = ProtocolMonitor.JSONEditor.ParameterType.STRING;
+        break;
+      case 'number':
+        paramType = ProtocolMonitor.JSONEditor.ParameterType.NUMBER;
+        break;
+      case 'boolean':
+        paramType = ProtocolMonitor.JSONEditor.ParameterType.BOOLEAN;
+        break;
+      case 'object':
+        paramType = ProtocolMonitor.JSONEditor.ParameterType.OBJECT;
+        break;
+      case 'array':
+        paramType = ProtocolMonitor.JSONEditor.ParameterType.ARRAY;
+        break;
+    }
+
+    const base: ProtocolMonitor.JSONEditor.Parameter = {
+      name,
+      optional,
+      description,
+      type: paramType,
+      isCorrectType: true,
+    };
+
+    if (type === 'object') {
+      if (prop.properties) {
+        const typeRef = `Object_${++typeCount}`;
+        const nestedParams: ProtocolMonitor.JSONEditor.Parameter[] = [];
+        for (const [key, value] of Object.entries(prop.properties)) {
+          const isOpt = !(prop.required || []).includes(key);
+          nestedParams.push(parseProperty(key, value, isOpt));
+        }
+        typesByName.set(typeRef, nestedParams);
+        base.typeRef = typeRef;
+      } else {
+        base.isKeyEditable = true;
+      }
+    } else if (type === 'array') {
+      const items =
+          prop.items && !Array.isArray(prop.items) && typeof prop.items !== 'boolean' ? prop.items : undefined;
+      if (items) {
+        const itemTypeStr = Array.isArray(items.type) ? items.type[0] : items.type;
+        if (items.$ref) {
+          base.typeRef = items.$ref.split('/').pop() || '';
+        } else if (itemTypeStr === 'object' && items.properties) {
+          const typeRef = `Object_${++typeCount}`;
+          const nestedParams: ProtocolMonitor.JSONEditor.Parameter[] = [];
+          for (const [key, value] of Object.entries(items.properties)) {
+            const isOpt = !(items.required || []).includes(key);
+            nestedParams.push(parseProperty(key, value, isOpt));
+          }
+          typesByName.set(typeRef, nestedParams);
+          base.typeRef = typeRef;
+        } else if (itemTypeStr) {
+          const itemType = itemTypeStr === 'integer' ? 'number' : itemTypeStr;
+          if (itemType === 'string' && items.enum) {
+            const typeRef = `Enum_${++typeCount}`;
+            enumsByName.set(typeRef, createEnumRecord(items.enum));
+            base.typeRef = typeRef;
+          } else {
+            base.typeRef = itemType as string;
+          }
+        } else {
+          base.typeRef = 'string';
+        }
+      } else {
+        base.typeRef = 'string';
+      }
+    } else if (type === 'string' && prop.enum) {
+      const typeRef = `Enum_${++typeCount}`;
+      enumsByName.set(typeRef, createEnumRecord(prop.enum));
+      base.typeRef = typeRef;
+    }
+
+    return base;
+  }
+
+  const parameters: ProtocolMonitor.JSONEditor.Parameter[] = [];
+  if ((schema.type === 'object' || !schema.type) && schema.properties) {
+    for (const [key, value] of Object.entries(schema.properties)) {
+      const isOpt = !(schema.required || []).includes(key);
+      parameters.push(parseProperty(key, value, isOpt));
+    }
+  }
+
+  const result = {parameters, typesByName, enumsByName};
+  if (typeof schema === 'object' && schema !== null) {
+    parsedSchemaCache.set(schema, result);
+  }
+  return result;
 }

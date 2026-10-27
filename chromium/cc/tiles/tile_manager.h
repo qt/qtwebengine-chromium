@@ -173,6 +173,10 @@ class CC_EXPORT TileManager : CheckerImageTrackerClient,
     raster_buffer_provider_ = raster_buffer_provider;
   }
 
+  RasterBufferProvider* raster_buffer_provider_for_testing() {
+    return raster_buffer_provider_;
+  }
+
   void SetPendingRasterQueriesForTesting(
       RasterQueryQueue* pending_raster_queries) {
     pending_raster_queries_ = pending_raster_queries;
@@ -444,7 +448,6 @@ class CC_EXPORT TileManager : CheckerImageTrackerClient,
   scoped_refptr<base::TaskRunner> task_runner_for_testing_ = nullptr;
   raw_ptr<const base::TickClock> tick_clock_for_testing_ = nullptr;
 
-  base::MetricsSubSampler metrics_sub_sampler_;
   float metrics_sampling_rate_ = .01;
 
   // The callback scheduled to poll whether the GPU side work for pending tiles

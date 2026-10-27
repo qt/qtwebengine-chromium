@@ -30,11 +30,6 @@
 # Checks to enforce
 .buffers,libc
 
--src/dawn/native/
--src/dawn/node
--src/dawn/tests
--src/utils
--src/tint/cmd/fuzz
 
 # These directories are excluded because they come from outside Dawn and Tint and
 # we don't have control over their contents.

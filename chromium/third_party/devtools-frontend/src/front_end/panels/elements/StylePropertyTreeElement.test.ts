@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
 import type {SinonStub, SinonStubbedInstance} from 'sinon';
 
 import * as Common from '../../core/common/common.js';
@@ -9,6 +10,7 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as ComputedStyle from '../../models/computed_style/computed_style.js';
+import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {createTarget} from '../../testing/EnvironmentHelpers.js';
@@ -562,6 +564,10 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
   });
 
   describe('Animation override hint', () => {
+    beforeEach(() => {
+      sinon.stub(LegacyUI.ViewManager.ViewManager.instance(), 'isViewVisible').returns(false);
+    });
+
     it('should create a hint when property is overridden by animation and verify tooltip content', () => {
       const stylePropertyTreeElement = getTreeElement('opacity', '0.5');
       sinon.stub(matchedStyles, 'isPropertyOverriddenByAnimation').returns(true);
@@ -586,6 +592,29 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
       const hintWrapper = stylePropertyTreeElement.listItemElement.querySelector('.animation-override-hint-wrapper');
       assert.isNull(hintWrapper, 'Hint wrapper should not exist');
     });
+
+    it('should not create a hint when property is overridden by animation but the animations panel is open', () => {
+      (LegacyUI.ViewManager.ViewManager.instance().isViewVisible as sinon.SinonStub).returns(true);
+      const stylePropertyTreeElement = getTreeElement('opacity', '0.5');
+      sinon.stub(matchedStyles, 'isPropertyOverriddenByAnimation').returns(true);
+
+      stylePropertyTreeElement.updateAnimationOverrideHint();
+
+      const hintWrapper = stylePropertyTreeElement.listItemElement.querySelector('.animation-override-hint-wrapper');
+      assert.isNull(hintWrapper, 'Hint wrapper should not exist');
+    });
+
+    it('should not create a hint when property is overridden by animation but the css-animations-only-when-animations-tab-open setting is disabled',
+       () => {
+         Common.Settings.Settings.instance().moduleSetting('css-animations-only-when-animations-tab-open').set(false);
+         const stylePropertyTreeElement = getTreeElement('opacity', '0.5');
+         sinon.stub(matchedStyles, 'isPropertyOverriddenByAnimation').returns(true);
+
+         stylePropertyTreeElement.updateAnimationOverrideHint();
+
+         const hintWrapper = stylePropertyTreeElement.listItemElement.querySelector('.animation-override-hint-wrapper');
+         assert.isNull(hintWrapper, 'Hint wrapper should not exist');
+       });
   });
 
   describe('custom-properties', () => {
@@ -2245,7 +2274,7 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
 
   it('reopens open tooltips on updates', async () => {
     const openTooltipStub = sinon.stub(Tooltips.Tooltip.Tooltip.prototype, 'showPopover');
-    const openTooltipPromise1 = new Promise<void>(r => openTooltipStub.callsFake(r));
+    const openTooltipPromise1 = new Promise<unknown>(r => openTooltipStub.callsFake(r));
     const stylePropertyTreeElement = getTreeElement('color', 'color-mix(in srgb, red, blue)');
     stylePropertyTreeElement.updateTitle();
     const tooltip = stylePropertyTreeElement.valueElement?.querySelector(
@@ -2257,7 +2286,7 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
     await openTooltipPromise1;
     tooltip.remove();
 
-    const openTooltipPromise2 = new Promise<void>(r => openTooltipStub.callsFake(r));
+    const openTooltipPromise2 = new Promise<unknown>(r => openTooltipStub.callsFake(r));
     stylePropertyTreeElement.updateTitle();
     const tooltip2 =
         stylePropertyTreeElement.valueElement?.querySelector(
@@ -2326,6 +2355,7 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
          const applySuggestionSpy =
              sinon.spy(Elements.StylesSidebarPane.CSSPropertyPrompt.prototype, 'applySuggestion');
          const stylePropertyTreeElement = getTreeElement('', '');
+         stylePropertyTreeElement.treeOutline = new LegacyUI.TreeOutline.TreeOutline();
          stylePropertyTreeElement.updateTitle();
          stylePropertyTreeElement.startEditingName();
 
@@ -2335,8 +2365,9 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
          stylePropertyTreeElement.renderActiveAiSuggestion({name: 'color', value: 'red'});
 
          sinon.assert.calledOnce(applySuggestionSpy);
-         assert.deepEqual(applySuggestionSpy.firstCall.args, [{text: 'color'}, true]);
-         const valueGhostElement = stylePropertyTreeElement.valueElement?.querySelector('.ghost-value-prediction');
+         assert.deepEqual(
+             applySuggestionSpy.firstCall.args, [{text: 'color', disableAcceptSuggestionOnStopCharacters: true}, true]);
+         const valueGhostElement = stylePropertyTreeElement.listItemElement.querySelector('.ghost-value-prediction');
          assert.exists(valueGhostElement);
          assert.strictEqual(valueGhostElement.textContent, 'red');
        });
@@ -2353,23 +2384,56 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
       stylePropertyTreeElement.renderActiveAiSuggestion({name: 'color', value: 'purple'});
 
       sinon.assert.calledOnce(applySuggestionSpy);
-      assert.deepEqual(applySuggestionSpy.firstCall.args, [{text: 'purple'}, true]);
+      assert.deepEqual(
+          applySuggestionSpy.firstCall.args, [{text: 'purple', disableAcceptSuggestionOnStopCharacters: true}, true]);
     });
 
     it('clearActiveAiSuggestion removes ghost text', async () => {
       const stylePropertyTreeElement = getTreeElement('', '');
+      stylePropertyTreeElement.treeOutline = new LegacyUI.TreeOutline.TreeOutline();
       stylePropertyTreeElement.updateTitle();
       stylePropertyTreeElement.startEditingName();
 
       stylePropertyTreeElement.renderActiveAiSuggestion({name: 'color', value: 'red'});
 
-      const valueGhostElement = stylePropertyTreeElement.valueElement?.querySelector('.ghost-value-prediction');
+      const valueGhostElement = stylePropertyTreeElement.listItemElement.querySelector('.ghost-value-prediction');
       assert.exists(valueGhostElement);
       assert.strictEqual(valueGhostElement.textContent, 'red');
 
       stylePropertyTreeElement.clearActiveAiSuggestion();
 
-      assert.isNull(stylePropertyTreeElement.valueElement?.querySelector('.ghost-value-prediction'));
+      assert.isNull(stylePropertyTreeElement.listItemElement.querySelector('.ghost-value-prediction'));
+    });
+
+    it('renderActiveAiSuggestion does not show ghost text when suggestion value matches existing value', async () => {
+      const stylePropertyTreeElement = getTreeElement('color', 'red');
+      stylePropertyTreeElement.treeOutline = new LegacyUI.TreeOutline.TreeOutline();
+      stylePropertyTreeElement.updateTitle();
+      stylePropertyTreeElement.startEditingName();
+
+      stylePropertyTreeElement.renderActiveAiSuggestion({name: 'background-color', value: 'red'});
+
+      const valueGhostElement = stylePropertyTreeElement.listItemElement.querySelector('.ghost-value-prediction');
+      assert.isNull(valueGhostElement);
+      assert.isFalse(stylePropertyTreeElement.listItemElement.classList.contains('not-parsed-ok'));
+      assert.isFalse(stylePropertyTreeElement.listItemElement.classList.contains('invalid-property-value'));
+    });
+
+    it('clearActiveAiSuggestion restores original validation classes correctly', async () => {
+      const stylePropertyTreeElement = getTreeElement('color', 'red');
+      stylePropertyTreeElement.treeOutline = new LegacyUI.TreeOutline.TreeOutline();
+      stylePropertyTreeElement.updateTitle();
+      stylePropertyTreeElement.startEditingName();
+
+      stylePropertyTreeElement.renderActiveAiSuggestion({name: 'background-color', value: 'blue'});
+
+      assert.isTrue(stylePropertyTreeElement.listItemElement.classList.contains('not-parsed-ok'));
+      assert.isTrue(stylePropertyTreeElement.listItemElement.classList.contains('invalid-property-value'));
+
+      stylePropertyTreeElement.clearActiveAiSuggestion();
+
+      assert.isFalse(stylePropertyTreeElement.listItemElement.classList.contains('not-parsed-ok'));
+      assert.isFalse(stylePropertyTreeElement.listItemElement.classList.contains('invalid-property-value'));
     });
 
     it('commitAiSuggestion calls applyStyleText and ends editing', async () => {
@@ -2385,6 +2449,80 @@ describeWithMockConnection('StylePropertyTreeElement', () => {
       sinon.assert.calledOnceWithExactly(applyStyleTextStub, 'color: blue;', true);
       sinon.assert.calledOnce(editingEndedSpy);
     });
+  });
+
+  it('re-enables a disabled property when edited', async () => {
+    const treeElement = getTreeElement('font-weight', 'bold');
+    treeElement.treeOutline = new LegacyUI.TreeOutline.TreeOutline();
+
+    const cssModel = treeElement.property.ownerStyle.cssModel();
+    sinon.stub(cssModel, 'cachedMatchedCascadeForNode').resolves(matchedStyles);
+
+    // We manually set disabled and text to simulate a property that was already
+    // disabled by the user or parser. This avoids triggering the protocol calls
+    // that property.setDisabled(true) would make during the setup phase.
+    treeElement.property.disabled = true;
+    treeElement.property.text = '/* font-weight: bold; */';
+
+    // Ensure the property and style have ranges and stylesheet ID so they are editable
+    const style = treeElement.property.ownerStyle;
+    style.styleSheetId = '1' as Protocol.DOM.StyleSheetId;
+    style.cssText = treeElement.property.text || '';
+    style.range = new TextUtils.TextRange.TextRange(0, 0, 0, style.cssText.length);
+    treeElement.property.range = new TextUtils.TextRange.TextRange(0, 0, 0, style.cssText.length);
+
+    // The updated stylesheet that would be sent from the backend once the user
+    // has edited the value (and it is now re-enabled as a result)
+    const updatedStylePayload: Protocol.CSS.CSSStyle = {
+      styleSheetId: '1' as Protocol.DOM.StyleSheetId,
+      cssProperties: [{
+        name: 'font-weight',
+        value: 'normal',
+        disabled: false,
+        range: {startLine: 0, startColumn: 0, endLine: 0, endColumn: 21}
+      }],
+      shorthandEntries: [],
+      range: {startLine: 0, startColumn: 0, endLine: 0, endColumn: 21},
+      cssText: 'font-weight: normal;',
+    };
+
+    // This is the main assertion: we check that the CSS sent to the backend does not include commented out CSS.
+    const setStyleTextsHandler = sinon.spy((params: Protocol.CSS.SetStyleTextsRequest) => {
+      assert.deepEqual(params.edits, [
+        {
+          styleSheetId: '1',
+          range: {startLine: 0, startColumn: 0, endLine: 0, endColumn: 24},
+          text: 'font-weight: normal;',
+        },
+      ]);
+      return {styles: [updatedStylePayload]};
+    });
+    setMockConnectionResponseHandler('CSS.setStyleTexts', setStyleTextsHandler);
+
+    // We must attach the element to the DOM because applyStyleText checks isConnected
+    renderElementIntoDOM(treeElement.listItemElement);
+
+    // Trigger the updating of the CSS property.
+    await treeElement.property.setText('font-weight: normal;', false, false);
+
+    // Ensure that the spy was called, which means our assertions about the property being enabled have been run.
+    sinon.assert.calledOnce(setStyleTextsHandler);
+
+    // Simulate the model update that normally happens via StyleSheetChanged events
+    const edit = new SDK.CSSModel.Edit('1', style.range!, 'font-weight: normal;', updatedStylePayload);
+    style.rebase(edit);
+
+    // Update the property reference in the tree element, as rebase creates new instances
+    const updatedProperty = style.propertyAt(treeElement.property.index);
+    assert.isOk(updatedProperty);
+    treeElement.property = updatedProperty;
+
+    treeElement.updateTitle();
+
+    // Assert that the property is now enabled in the model and not shown as disabled to the user
+    assert.isFalse(treeElement.property.disabled);
+    // Assert that the UI reflects the enabled state
+    assert.isFalse(treeElement.listItemElement.classList.contains('disabled'));
   });
 
   it('applies overflow-wrap: break-word to tree outline list items for long values', () => {

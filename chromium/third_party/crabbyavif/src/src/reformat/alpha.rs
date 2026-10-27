@@ -249,7 +249,7 @@ impl rgb::Image {
             if image.depth > 8 {
                 for y in 0..self.height {
                     let dst_row = self.row16_mut(y)?;
-                    let src_row = image.row16_exact(Plane::A, y)?;
+                    let src_row = image.row16(Plane::A, y)?;
                     for x in 0..width {
                         let alpha_pixel = (src_row[x]) >> (image.depth - 2);
                         let index = alpha_index_in_rgba_1010102!(x);
@@ -259,7 +259,7 @@ impl rgb::Image {
             } else {
                 for y in 0..self.height {
                     let dst_row = self.row16_mut(y)?;
-                    let src_row = image.row_exact(Plane::A, y)?;
+                    let src_row = image.row(Plane::A, y)?;
                     for x in 0..width {
                         let alpha_pixel = ((src_row[x]) >> 6) as u16;
                         let index = alpha_index_in_rgba_1010102!(x);
@@ -275,7 +275,7 @@ impl rgb::Image {
             if self.depth > 8 {
                 for y in 0..self.height {
                     let dst_row = self.row16_mut(y)?;
-                    let src_row = image.row16_exact(Plane::A, y)?;
+                    let src_row = image.row16(Plane::A, y)?;
                     for x in 0..width {
                         dst_row[(x * channel_count) + dst_alpha_offset] = src_row[x];
                     }
@@ -284,7 +284,7 @@ impl rgb::Image {
             }
             for y in 0..self.height {
                 let dst_row = self.row_mut(y)?;
-                let src_row = image.row_exact(Plane::A, y)?;
+                let src_row = image.row(Plane::A, y)?;
                 for x in 0..width {
                     dst_row[(x * channel_count) + dst_alpha_offset] = src_row[x];
                 }
@@ -297,7 +297,7 @@ impl rgb::Image {
                 // u16 to u16 depth rescaling.
                 for y in 0..self.height {
                     let dst_row = self.row16_mut(y)?;
-                    let src_row = image.row16_exact(Plane::A, y)?;
+                    let src_row = image.row16(Plane::A, y)?;
                     for x in 0..width {
                         dst_row[(x * channel_count) + dst_alpha_offset] = Self::rescale_alpha_value(
                             src_row[x],
@@ -311,7 +311,7 @@ impl rgb::Image {
             // u16 to u8 depth rescaling.
             for y in 0..self.height {
                 let dst_row = self.row_mut(y)?;
-                let src_row = image.row16_exact(Plane::A, y)?;
+                let src_row = image.row16(Plane::A, y)?;
                 for x in 0..width {
                     dst_row[(x * channel_count) + dst_alpha_offset] =
                         Self::rescale_alpha_value(src_row[x], image.max_channel_f(), max_channel)
@@ -323,7 +323,7 @@ impl rgb::Image {
         // u8 to u16 depth rescaling.
         for y in 0..self.height {
             let dst_row = self.row16_mut(y)?;
-            let src_row = image.row_exact(Plane::A, y)?;
+            let src_row = image.row(Plane::A, y)?;
             for x in 0..width {
                 dst_row[(x * channel_count) + dst_alpha_offset] = Self::rescale_alpha_value(
                     src_row[x] as u16,
@@ -346,8 +346,8 @@ impl image::Image {
                 src.row_bytes[3] = self.row_bytes[3];
                 self.allocate_planes(Category::Alpha)?;
                 for y in 0..self.height {
-                    let src_row = src.row_exact(Plane::A, y)?;
-                    let dst_row = self.row_exact_mut(Plane::A, y)?;
+                    let src_row = src.row(Plane::A, y)?;
+                    let dst_row = self.row_mut(Plane::A, y)?;
                     for x in 0..src.width as usize {
                         dst_row[x] = limited_to_full_y(8, src_row[x] as u16) as u8;
                     }
@@ -359,8 +359,8 @@ impl image::Image {
                 src.row_bytes[3] = self.row_bytes[3];
                 self.allocate_planes(Category::Alpha)?;
                 for y in 0..self.height {
-                    let src_row = src.row16_exact(Plane::A, y)?;
-                    let dst_row = self.row16_exact_mut(Plane::A, y)?;
+                    let src_row = src.row16(Plane::A, y)?;
+                    let dst_row = self.row16_mut(Plane::A, y)?;
                     for x in 0..src.width as usize {
                         dst_row[x] = limited_to_full_y(src.depth, src_row[x]);
                     }
@@ -370,7 +370,7 @@ impl image::Image {
             // The pixels are owned. Scale values in place.
             Some(Pixels::Buffer(_)) => {
                 for y in 0..self.height {
-                    let row = self.row_exact_mut(Plane::A, y)?;
+                    let row = self.row_mut(Plane::A, y)?;
                     for pixel in row {
                         *pixel = limited_to_full_y(8, *pixel as u16) as u8;
                     }
@@ -379,7 +379,7 @@ impl image::Image {
             Some(Pixels::Buffer16(_)) => {
                 let depth = self.depth;
                 for y in 0..self.height {
-                    let row = self.row16_exact_mut(Plane::A, y)?;
+                    let row = self.row16_mut(Plane::A, y)?;
                     for pixel in row {
                         *pixel = limited_to_full_y(depth, *pixel);
                     }
@@ -405,7 +405,7 @@ impl image::Image {
         if self.depth == rgb.depth {
             if self.depth > 8 {
                 for y in 0..self.height {
-                    let dst_row = self.row16_exact_mut(Plane::A, y)?;
+                    let dst_row = self.row16_mut(Plane::A, y)?;
                     let src_row = rgb.row16(y)?;
                     for x in 0..width {
                         dst_row[x] = src_row[(x * channel_count) + src_alpha_offset];
@@ -414,7 +414,7 @@ impl image::Image {
                 return Ok(());
             }
             for y in 0..self.height {
-                let dst_row = self.row_exact_mut(Plane::A, y)?;
+                let dst_row = self.row_mut(Plane::A, y)?;
                 let src_row = rgb.row(y)?;
                 for x in 0..width {
                     dst_row[x] = src_row[(x * channel_count) + src_alpha_offset];
@@ -427,7 +427,7 @@ impl image::Image {
             if rgb.depth > 8 {
                 // u16 to u16 depth rescaling.
                 for y in 0..self.height {
-                    let dst_row = self.row16_exact_mut(Plane::A, y)?;
+                    let dst_row = self.row16_mut(Plane::A, y)?;
                     let src_row = rgb.row16(y)?;
                     for x in 0..width {
                         dst_row[x] = rgb::Image::rescale_alpha_value(
@@ -441,7 +441,7 @@ impl image::Image {
             }
             // u8 to u16 depth rescaling.
             for y in 0..self.height {
-                let dst_row = self.row16_exact_mut(Plane::A, y)?;
+                let dst_row = self.row16_mut(Plane::A, y)?;
                 let src_row = rgb.row(y)?;
                 for x in 0..width {
                     dst_row[x] = rgb::Image::rescale_alpha_value(
@@ -455,7 +455,7 @@ impl image::Image {
         }
         // u16 to u8 depth rescaling.
         for y in 0..self.height {
-            let dst_row = self.row_exact_mut(Plane::A, y)?;
+            let dst_row = self.row_mut(Plane::A, y)?;
             let src_row = rgb.row16(y)?;
             for x in 0..width {
                 dst_row[x] = rgb::Image::rescale_alpha_value(
@@ -479,7 +479,7 @@ mod tests {
 
     use crate::utils::pixels::*;
 
-    use rand::Rng;
+    use rand::RngExt;
     use test_case::test_matrix;
 
     const ALPHA_RGB_FORMATS: [rgb::Format; 4] = [
@@ -625,14 +625,14 @@ mod tests {
         };
         image.allocate_planes(Category::Alpha)?;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut expected_values: Vec<u16> = Vec::new();
         let image_max_channel_f = image.max_channel_f();
         if yuv_depth == 8 {
             for y in 0..height {
-                let row = image.row_exact_mut(Plane::A, y)?;
+                let row = image.row_mut(Plane::A, y)?;
                 for pixel in row {
-                    let value = rng.gen_range(0..256) as u8;
+                    let value = rng.random_range(0..256) as u8;
                     if rgb.depth == 8 {
                         expected_values.push(value as u16);
                     } else {
@@ -647,9 +647,9 @@ mod tests {
             }
         } else {
             for y in 0..height {
-                let row = image.row16_exact_mut(Plane::A, y)?;
+                let row = image.row16_mut(Plane::A, y)?;
                 for pixel in row {
-                    let value = rng.gen_range(0..(1i32 << yuv_depth)) as u16;
+                    let value = rng.random_range(0..(1i32 << yuv_depth)) as u16;
                     if rgb.depth == yuv_depth {
                         expected_values.push(value);
                     } else {
@@ -722,22 +722,22 @@ mod tests {
         };
         image.allocate_planes(Category::Alpha)?;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut expected_values: Vec<u16> = Vec::new();
         if yuv_depth == 8 {
             for y in 0..height {
-                let row = image.row_exact_mut(Plane::A, y)?;
+                let row = image.row_mut(Plane::A, y)?;
                 for pixel in row {
-                    let value = rng.gen_range(0..256) as u8;
+                    let value = rng.random_range(0..256) as u8;
                     expected_values.push((value >> 6) as u16);
                     *pixel = value;
                 }
             }
         } else {
             for y in 0..height {
-                let row = image.row16_exact_mut(Plane::A, y)?;
+                let row = image.row16_mut(Plane::A, y)?;
                 for pixel in row {
-                    let value = rng.gen_range(0..(1i32 << yuv_depth)) as u16;
+                    let value = rng.random_range(0..(1i32 << yuv_depth)) as u16;
                     expected_values.push(value >> (yuv_depth - 2));
                     *pixel = value;
                 }
@@ -781,7 +781,7 @@ mod tests {
         };
         image.allocate_planes(Category::Alpha)?;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut expected_values: Vec<u16> = Vec::new();
         let rgb_max_channel_f = rgb.max_channel_f();
         let rgb_channel_count = rgb.channel_count() as usize;
@@ -791,7 +791,7 @@ mod tests {
             for y in 0..height {
                 let row = &mut rgb.row_mut(y)?[..rgb_pixel_width];
                 for pixels in row.chunks_exact_mut(rgb_channel_count) {
-                    let value = rng.gen_range(0..256) as u8;
+                    let value = rng.random_range(0..256) as u8;
                     if yuv_depth == 8 {
                         expected_values.push(value as u16);
                     } else {
@@ -808,7 +808,7 @@ mod tests {
             for y in 0..height {
                 let row = &mut rgb.row16_mut(y)?[..rgb_pixel_width];
                 for pixels in row.chunks_exact_mut(rgb_channel_count) {
-                    let value = rng.gen_range(0..(1i32 << yuv_depth)) as u16;
+                    let value = rng.random_range(0..(1i32 << yuv_depth)) as u16;
                     if yuv_depth == rgb_depth {
                         expected_values.push(value);
                     } else {

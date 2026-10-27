@@ -17,31 +17,33 @@
 namespace passage_embeddings {
 
 inline constexpr int64_t kEmbeddingsModelVersion = 1l;
-inline constexpr size_t kEmbeddingsModelOutputSize = 768ul;
 
 // Returns a model info builder preloaded with valid model info.
 optimization_guide::TestModelInfoBuilder GetBuilderWithValidModelInfo();
-
-// Returns valid Embeddings for the given passages.
-std::vector<Embedding> ComputeEmbeddingsForPassages(
-    const std::vector<std::string>& passages);
 
 ////////////////////////////////////////////////////////////////////////////////
 
 // An Embedder that generates Embeddings asynchronously.
 class TestEmbedder : public Embedder {
  public:
-  TestEmbedder() = default;
-  ~TestEmbedder() override = default;
+  TestEmbedder();
+  ~TestEmbedder() override;
 
   // Embedder:
-  TaskId ComputePassagesEmbeddings(
+  Job ComputePassagesEmbeddings(
       PassagePriority priority,
       std::vector<std::string> passages,
       ComputePassagesEmbeddingsCallback callback) override;
+  base::WeakPtr<Embedder> GetWeakPtr() override;
+
+ protected:
   void ReprioritizeTasks(PassagePriority priority,
                          const std::set<TaskId>& tasks) override;
   bool TryCancel(TaskId task_id) override;
+
+ private:
+  TaskId next_task_id_ = 1;
+  base::WeakPtrFactory<TestEmbedder> weak_ptr_factory_{this};
 };
 
 ////////////////////////////////////////////////////////////////////////////////

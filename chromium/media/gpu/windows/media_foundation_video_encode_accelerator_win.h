@@ -24,6 +24,7 @@
 #include "base/threading/thread.h"
 #include "base/win/shlwapi.h"
 #include "base/win/windows_types.h"
+#include "gpu/command_buffer/service/shared_image/shared_image_representation.h"
 #include "gpu/config/gpu_driver_bug_workarounds.h"
 #include "gpu/config/gpu_preferences.h"
 #include "gpu/ipc/service/command_buffer_stub.h"
@@ -33,6 +34,7 @@
 #include "media/base/video_encoder.h"
 #include "media/base/video_frame_converter.h"
 #include "media/base/win/dxgi_device_manager.h"
+#include "media/base/win/mf_helpers.h"
 #include "media/gpu/command_buffer_helper.h"
 #include "media/gpu/media_gpu_export.h"
 #include "media/gpu/windows/d3d_com_defs.h"
@@ -185,20 +187,23 @@ class MEDIA_GPU_EXPORT MediaFoundationVideoEncodeAccelerator
   // Set the encoder state to |state|.
   void SetState(State state);
 
+  void SendOutputBuffer(const BitstreamBufferMetadata& metadata,
+                        base::span<uint8_t> output_buffer_span);
+
   // Processes the input video frame for the encoder.
-  HRESULT ProcessInput(const PendingInput& input);
+  HRESULT ProcessInput(const PendingInput& input, bool& is_drop_frame);
 
   // Feed as many frames from |pending_input_queue_| to ProcessInput()
   // as possible.
   void FeedInputs();
 
   // Populates input sample buffer with contents of a video frame
-  HRESULT PopulateInputSampleBuffer(const PendingInput& input,
+  HRESULT PopulateInputSampleBuffer(PendingInput& input,
                                     scoped_refptr<VideoFrame> frame);
   HRESULT PopulateInputSampleBufferGpu(scoped_refptr<VideoFrame> frame,
-                                       const PendingInput& input);
+                                       PendingInput& input);
   HRESULT CopyInputSampleBufferFromGpu(scoped_refptr<VideoFrame> frame,
-                                       const PendingInput& input);
+                                       PendingInput& input);
 
   bool IsTemporalScalabilityCoding() const { return num_temporal_layers_ > 1; }
 
@@ -242,6 +247,7 @@ class MEDIA_GPU_EXPORT MediaFoundationVideoEncodeAccelerator
       scoped_refptr<VideoFrame> frame,
       Microsoft::WRL::ComPtr<IMFSample> sample,
       std::optional<base::win::ScopedHandle> texture_handle,
+      Microsoft::WRL::ComPtr<SharedImageReadLock> si_lock,
       std::optional<bool> has_been_copied,
       HRESULT hr);
 
@@ -303,6 +309,10 @@ class MEDIA_GPU_EXPORT MediaFoundationVideoEncodeAccelerator
 
   // Type of content being encoded.
   Config::ContentType content_type_ = Config::ContentType::kCamera;
+
+  // Frame drop threshold percentage. When > 0, the SW BRC is allowed to drop
+  // frames and has_trusted_rate_controller is set to true.
+  uint8_t drop_frame_thresh_percentage_ = 0;
 
   // Vendor of the active video encoder.
   DriverVendor vendor_ = DriverVendor::kOther;

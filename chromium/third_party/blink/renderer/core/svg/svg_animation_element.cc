@@ -48,6 +48,7 @@ SVGAnimationElement::SVGAnimationElement(const QualifiedName& tag_name,
                                          Document& document)
     : SVGSMILElement(tag_name, document),
       animation_valid_(AnimationValidity::kUnknown),
+      always_revalidate_animation_value_(false),
       registered_animation_(false),
       calc_mode_(kCalcModeLinear),
       animation_mode_(kNoAnimation) {
@@ -311,11 +312,11 @@ AnimationMode SVGAnimationElement::CalculateAnimationMode() {
   if (hasAttribute(svg_names::kValuesAttr)) {
     return kValuesAnimation;
   }
-  if (!ToValue().empty()) {
-    return FromValue().empty() ? kToAnimation : kFromToAnimation;
+  if (!ToValue().IsNull()) {
+    return FromValue().IsNull() ? kToAnimation : kFromToAnimation;
   }
-  if (!ByValue().empty()) {
-    return FromValue().empty() ? kByAnimation : kFromByAnimation;
+  if (!ByValue().IsNull()) {
+    return FromValue().IsNull() ? kByAnimation : kFromByAnimation;
   }
   return kNoAnimation;
 }
@@ -588,7 +589,7 @@ float SVGAnimationElement::CurrentValuesForPathAnimation(
 }
 
 bool SVGAnimationElement::IsValid() const {
-  if (!SVGTests::IsValid()) {
+  if (!SvgTestsIsValid()) {
     return false;
   }
   // Also check ancestors. If any ancestor SVG element fails conditional
@@ -731,6 +732,10 @@ SMILAnimationEffectParameters SVGAnimationElement::ComputeEffectParameters()
 }
 
 void SVGAnimationElement::ApplyAnimation(SMILAnimationValue& animation_value) {
+  if (always_revalidate_animation_value_) {
+    animation_valid_ = AnimationValidity::kUnknown;
+  }
+
   if (animation_valid_ == AnimationValidity::kUnknown) {
     if (UpdateAnimationMode() && UpdateAnimationValues() &&
         CheckAnimationParameters()) {

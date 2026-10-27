@@ -142,6 +142,10 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   // Print a message to stdout and abort execution.
   void Abort(AbortReason msg);
 
+  // Select v_true if cond is non-zero, otherwise select v_false.
+  void SelectWord(Register result, Register cond, Register v_true,
+                  Register v_false);
+
   void CompareWord(Condition cond, Register dst, Register lhs,
                    const Operand& rhs);
   void Branch(Label* label, bool need_link = false);
@@ -462,6 +466,15 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
     Ld_d(src2, MemOperand(sp, 1 * kSystemPointerSize));
     Ld_d(src1, MemOperand(sp, 2 * kSystemPointerSize));
     Add_d(sp, sp, 3 * kSystemPointerSize);
+  }
+
+  // Pop four registers. Pops rightmost register first (from lower address).
+  void Pop(Register src1, Register src2, Register src3, Register src4) {
+    Ld_d(src4, MemOperand(sp, 0 * kSystemPointerSize));
+    Ld_d(src3, MemOperand(sp, 1 * kSystemPointerSize));
+    Ld_d(src2, MemOperand(sp, 2 * kSystemPointerSize));
+    Ld_d(src1, MemOperand(sp, 3 * kSystemPointerSize));
+    Add_d(sp, sp, 4 * kSystemPointerSize);
   }
 
   // Pops multiple values from the stack and load them in the
@@ -872,6 +885,10 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void LoadFeedbackVector(Register dst, Register closure, Register scratch,
                           Label* fbv_undef);
 
+  void LoadFeedbackCell(Register dst, Register closure);
+  void LoadFeedbackVectorFromCell(Register dst, Register feedback_cell,
+                                  Register scratch, Label* fbv_undef);
+
   void LoadInterpreterDataBytecodeArray(Register destination,
                                         Register interpreter_data);
   void LoadInterpreterDataInterpreterTrampoline(Register destination,
@@ -1118,13 +1135,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
                                    IndirectPointerTagRange tag_range);
   // Retrieve the Code object referenced by the given code pointer handle.
   void ResolveCodePointerHandle(Register destination, Register handle);
-
-  // Load the pointer to a Code's entrypoint via a code pointer.
-  // Only available when the sandbox is enabled as it requires the code pointer
-  // table.
-  void LoadCodeEntrypointViaCodePointer(Register destination,
-                                        MemOperand field_operand,
-                                        CodeEntrypointTag tag);
 
   // Load the value of Code pointer table corresponding to
   // IsolateGroup::current()->code_pointer_table_.

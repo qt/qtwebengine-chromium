@@ -8,6 +8,7 @@
 #include <optional>
 #include <utility>
 
+#include "base/metrics/histogram_functions.h"
 #include "base/trace_event/trace_event.h"
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-forward.h"
 #include "third_party/blink/public/mojom/webid/digital_identity_request.mojom-shared.h"
@@ -269,13 +270,40 @@ void DiscoverDigitalIdentityCredentialFromExternalSource(
     scoped_abort_state = std::make_unique<ScopedAbortState>(signal, handle);
   }
 
-  if (!LocalFrame::ConsumeTransientUserActivation(
-          To<LocalDOMWindow>(resolver->GetExecutionContext())->GetFrame(),
-          UserActivationUpdateSource::kRenderer)) {
+  LocalDOMWindow* window = To<LocalDOMWindow>(resolver->GetExecutionContext());
+  LocalFrame* local_frame = window->GetFrame();
+
+  bool has_transient_user_activation =
+      LocalFrame::ConsumeTransientUserActivation(
+          local_frame, UserActivationUpdateSource::kRenderer);
+  bool is_delegated = false;
+  // True if the digital-credentials-get operation is allowed based on either
+  // transient user activation or delegated capability.
+  bool digital_credentials_get_allowed = has_transient_user_activation;
+
+  if (!digital_credentials_get_allowed &&
+      RuntimeEnabledFeatures::CapabilityDelegationDigitalCredentialsEnabled(
+          window)) {
+    is_delegated = window->ConsumeDigitalCredentialsGetToken();
+    digital_credentials_get_allowed = is_delegated;
+  }
+
+  base::UmaHistogramBoolean(
+      "Blink.DigitalCredentials.Get.HasTransientUserActivation",
+      has_transient_user_activation);
+
+  base::UmaHistogramBoolean("Blink.DigitalCredentials.Get.IsDelegated",
+                            is_delegated);
+
+  if (!digital_credentials_get_allowed) {
     resolver->Reject(MakeGarbageCollected<DOMException>(
         DOMExceptionCode::kNotAllowedError,
-        "The 'digital-credentials-get' feature requires transient "
-        "activation."));
+        RuntimeEnabledFeatures::CapabilityDelegationDigitalCredentialsEnabled(
+            window)
+            ? "The 'digital-credentials-get' feature requires transient "
+              "activation or delegated capability."
+            : "The 'digital-credentials-get' feature requires transient "
+              "activation."));
     return;
   }
 
@@ -301,8 +329,9 @@ void CreateDigitalIdentityCredentialInExternalSource(
     return;
   }
 
-    if (!resolver->GetExecutionContext()->IsFeatureEnabled(
-          network::mojom::PermissionsPolicyFeature::kDigitalCredentialsCreate)) {
+  if (!resolver->GetExecutionContext()->IsFeatureEnabled(
+          network::mojom::PermissionsPolicyFeature::
+              kDigitalCredentialsCreate)) {
     resolver->Reject(MakeGarbageCollected<DOMException>(
         DOMExceptionCode::kNotAllowedError,
         "The 'digital-credentials-create' feature is not enabled in this "
@@ -361,13 +390,40 @@ void CreateDigitalIdentityCredentialInExternalSource(
     scoped_abort_state = std::make_unique<ScopedAbortState>(signal, handle);
   }
 
-  if (!LocalFrame::ConsumeTransientUserActivation(
-          To<LocalDOMWindow>(resolver->GetExecutionContext())->GetFrame(),
-          UserActivationUpdateSource::kRenderer)) {
+  LocalDOMWindow* window = To<LocalDOMWindow>(resolver->GetExecutionContext());
+  LocalFrame* local_frame = window->GetFrame();
+
+  bool has_transient_user_activation =
+      LocalFrame::ConsumeTransientUserActivation(
+          local_frame, UserActivationUpdateSource::kRenderer);
+  bool is_delegated = false;
+  // True if the digital-credentials-create operation is allowed based on either
+  // transient user activation or delegated capability.
+  bool digital_credentials_create_allowed = has_transient_user_activation;
+
+  if (!digital_credentials_create_allowed &&
+      RuntimeEnabledFeatures::CapabilityDelegationDigitalCredentialsEnabled(
+          window)) {
+    is_delegated = window->ConsumeDigitalCredentialsCreateToken();
+    digital_credentials_create_allowed = is_delegated;
+  }
+
+  base::UmaHistogramBoolean(
+      "Blink.DigitalCredentials.Create.HasTransientUserActivation",
+      has_transient_user_activation);
+
+  base::UmaHistogramBoolean("Blink.DigitalCredentials.Create.IsDelegated",
+                            is_delegated);
+
+  if (!digital_credentials_create_allowed) {
     resolver->Reject(MakeGarbageCollected<DOMException>(
         DOMExceptionCode::kNotAllowedError,
-        "The 'digital-credentials-create' feature requires transient "
-        "activation."));
+        RuntimeEnabledFeatures::CapabilityDelegationDigitalCredentialsEnabled(
+            window)
+            ? "The 'digital-credentials-create' feature requires transient "
+              "activation or delegated capability."
+            : "The 'digital-credentials-create' feature requires transient "
+              "activation."));
     return;
   }
 

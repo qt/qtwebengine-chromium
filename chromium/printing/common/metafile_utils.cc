@@ -16,7 +16,6 @@
 #include "base/notreached.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
-#include "build/build_config.h"
 #include "pdf/pdf_accessibility_constants.h"
 #include "printing/buildflags/buildflags.h"
 #include "printing/mojom/print.mojom.h"
@@ -38,15 +37,6 @@
 #include "ui/accessibility/ax_tree.h"
 #include "ui/accessibility/ax_tree_update.h"
 #include "ui/gfx/skia_span_util.h"
-
-#if BUILDFLAG(IS_WIN)
-#include <objbase.h>
-
-#include <XpsObjectModel.h>
-
-#include "third_party/skia/include/docs/SkXPSDocument.h"
-#include "third_party/skia/include/encode/SkPngRustEncoder.h"
-#endif  // BUILDFLAG(IS_WIN)
 
 namespace {
 
@@ -446,25 +436,6 @@ sk_sp<SkDocument> MakePdfDocument(
   return SkPDF::MakeDocument(stream, metadata);
 }
 
-#if BUILDFLAG(IS_WIN)
-sk_sp<SkDocument> MakeXpsDocument(SkWStream* stream) {
-  IXpsOMObjectFactory* factory = nullptr;
-  HRESULT hr = CoCreateInstance(CLSID_XpsOMObjectFactory, nullptr,
-                                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-  if (FAILED(hr) || !factory) {
-    DLOG(ERROR) << "Unable to create XPS object factory: "
-                << logging::SystemErrorCodeToString(hr);
-    return nullptr;
-  }
-
-  SkXPS::Options opts;
-  opts.pngEncoder = [](SkWStream* dst, const SkPixmap& src) {
-    return SkPngRustEncoder::Encode(dst, src, {});
-  };
-  return SkXPS::MakeDocument(stream, factory, opts);
-}
-#endif
-
 SkSerialReturnType SerializeOopPicture(SkPicture* pic, void* ctx) {
   const auto* context = reinterpret_cast<const ContentToProxyTokenMap*>(ctx);
   uint32_t pic_id = pic->uniqueID();
@@ -571,14 +542,15 @@ SkSerialReturnType SerializeRasterImage(SkImage* img, void* ctx) {
   return data;
 }
 
-sk_sp<SkImage> DeserializeRasterImage(const void* bytes,
-                                      size_t length,
+sk_sp<SkImage> DeserializeRasterImage(sk_sp<SkData> data,
+                                      std::optional<SkAlphaType>,
                                       void* ctx) {
+  if (!data) {
+    return nullptr;
+  }
   auto* context = reinterpret_cast<ImageDeserializationContext*>(ctx);
 
-  // SAFETY: The caller must provide a valid pointer and length.
-  base::SpanReader reader{
-      UNSAFE_BUFFERS(base::span(static_cast<const uint8_t*>(bytes), length))};
+  base::SpanReader reader{gfx::SkDataToSpan(data)};
 
   uint32_t img_id;
   if (!reader.ReadU32NativeEndian(img_id)) {
@@ -628,7 +600,7 @@ SkDeserialProcs DeserializationProcs(
     TypefaceDeserializationContext* typeface_ctx,
     ImageDeserializationContext* image_ctx) {
   SkDeserialProcs procs;
-  procs.fImageProc = DeserializeRasterImage;
+  procs.fImageDataProc = DeserializeRasterImage;
   procs.fImageCtx = image_ctx;
   procs.fPictureProc = DeserializeOopPicture;
   procs.fPictureCtx = picture_ctx;

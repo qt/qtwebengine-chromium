@@ -41,6 +41,7 @@
 #  PTSCOTCH_LIBDIR           - Where to find the library files
 # The module can also look for the following environment variables if paths
 # are not given as cmake variable: PTSCOTCH_DIR, PTSCOTCH_INCDIR, PTSCOTCH_LIBDIR
+# SPDX-License-Identifier: BSD-3-Clause
 
 #=============================================================================
 # Copyright 2012-2013 Inria

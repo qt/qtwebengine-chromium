@@ -29,6 +29,7 @@
  *   Level 3 BLAS SYRK/HERK implementation.
  ********************************************************************************
 */
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef EIGEN_GENERAL_MATRIX_MATRIX_TRIANGULAR_BLAS_H
 #define EIGEN_GENERAL_MATRIX_MATRIX_TRIANGULAR_BLAS_H

@@ -26,7 +26,7 @@
 #include "absl/algorithm/container.h"
 #include "absl/log/absl_check.h"
 #include "absl/types/span.h"
-#include "ink/geometry/internal/algorithms.h"
+#include "ink/geometry/internal/lerp.h"
 #include "ink/geometry/mesh_format.h"
 #include "ink/geometry/mesh_packing_types.h"
 #include "ink/geometry/mutable_mesh.h"
@@ -89,7 +89,7 @@ std::optional<MeshAttributeCodingParams> GetCustomPackingParams(
   constexpr MeshAttributeCodingParams::ComponentCodingParams
       kOpacityCodingParams8bit = {.offset = -1, .scale = 2.f / 254};
   // LINT.ThenChange(
-  //     ../../rendering/skia/common_internal/sksl_vertex_shader_helper_functions.h:opacity_packing)
+  //     ../../rendering/skia/common_internal/sksl_vertex_shader_helper_functions.h:position_and_opacity_unpacking)
   // LINT.IfChange(hsl_packing)
   constexpr MeshAttributeCodingParams::ComponentCodingParams
       kHslCodingParams10bit = {.offset = -1, .scale = 2.f / 1022};

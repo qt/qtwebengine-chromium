@@ -26,21 +26,17 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/log_severity.h"
+#include "absl/status/status_matchers.h"
 #include "absl/strings/str_format.h"
 #include "fcp/base/base_name.h"
 
 namespace fcp {
 namespace {
 
+using ::absl_testing::IsOk;
+using ::absl_testing::IsOkAndHolds;
 using ::testing::MatchesRegex;
 using ::testing::Not;
-
-MATCHER(IsOk, "") { return arg.ok(); }
-
-MATCHER_P(IsOkAndHolds, m, "") {
-  return testing::ExplainMatchResult(IsOk(), arg, result_listener) &&
-         testing::ExplainMatchResult(m, arg.value(), result_listener);
-}
 
 class MonitoringTest : public ::testing::TestWithParam<bool> {
  public:
@@ -107,29 +103,29 @@ TEST_F(MonitoringTest, StatusBuilder) {
 
 TEST_F(MonitoringTest, FcpReturnIfError) {
   ASSERT_THAT(
-      []() -> StatusOr<int> {
-        Status fail_status = FCP_STATUS(ABORTED);
+      []() -> absl::StatusOr<int> {
+        absl::Status fail_status = FCP_STATUS(ABORTED);
         FCP_RETURN_IF_ERROR(fail_status);
         return 0;
       }(),
       Not(IsOk()));
   ASSERT_THAT(
-      []() -> StatusOr<int> {
-        FCP_RETURN_IF_ERROR(Status());
+      []() -> absl::StatusOr<int> {
+        FCP_RETURN_IF_ERROR(absl::Status());
         return 0;
       }(),
       IsOkAndHolds(0));
 
   ASSERT_THAT(
-      []() -> StatusOr<int> {
-        StatusOr<int> fail_statusor = FCP_STATUS(ABORTED);
+      []() -> absl::StatusOr<int> {
+        absl::StatusOr<int> fail_statusor = FCP_STATUS(ABORTED);
         FCP_RETURN_IF_ERROR(fail_statusor);
         return 0;
       }(),
       Not(IsOk()));
   ASSERT_THAT(
-      []() -> StatusOr<int> {
-        FCP_RETURN_IF_ERROR(StatusOr<int>(0));
+      []() -> absl::StatusOr<int> {
+        FCP_RETURN_IF_ERROR(absl::StatusOr<int>(0));
         return 0;
       }(),
       IsOkAndHolds(0));

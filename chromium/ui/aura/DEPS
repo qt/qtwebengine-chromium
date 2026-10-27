@@ -2,6 +2,7 @@ include_rules = [
   "+cc/base",
   "+cc/metrics/custom_metrics_recorder.h",
   "+cc/metrics/events_metrics_manager.h",
+  "+cc/metrics/scroll_sequence_tracker.h",
   "+cc/mojo_embedder",
   # TODO(danakj): This should not use LayerTreeFrameSink, which is part of the
   # layer compositor. It should use CompositorFrameSink instead.
@@ -27,10 +28,10 @@ include_rules = [
 ]
 
 specific_include_rules = {
-  "native_window_occlusion_tracker_win_interactive_test\.cc": [
+  "native_window_occlusion_tracker_win_interactive_test\\.cc": [
     "+mojo/core/embedder/embedder.h",
   ],
-  "window_event_dispatcher_unittest\.cc": [
+  "window_event_dispatcher_unittest\\.cc": [
     "+ui/wm/core",
   ],
 }

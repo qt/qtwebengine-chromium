@@ -25,25 +25,26 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/d3d12/PhysicalDeviceD3D12.h"
+#include "src/dawn/native/d3d12/PhysicalDeviceD3D12.h"
 
 #include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "dawn/common/Constants.h"
-#include "dawn/common/GPUInfo.h"
-#include "dawn/common/Platform.h"
-#include "dawn/common/WindowsUtils.h"
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/Instance.h"
-#include "dawn/native/d3d/D3DError.h"
-#include "dawn/native/d3d12/BackendD3D12.h"
-#include "dawn/native/d3d12/DeviceD3D12.h"
-#include "dawn/native/d3d12/PlatformFunctionsD3D12.h"
-#include "dawn/native/d3d12/UtilsD3D12.h"
 #include "dawn/platform/DawnPlatform.h"
+#include "src/dawn/common/Constants.h"
+#include "src/dawn/common/GPUInfo.h"
+#include "src/dawn/common/WindowsUtils.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/Instance.h"
+#include "src/dawn/native/d3d/D3DError.h"
+#include "src/dawn/native/d3d12/BackendD3D12.h"
+#include "src/dawn/native/d3d12/DeviceD3D12.h"
+#include "src/dawn/native/d3d12/PlatformFunctionsD3D12.h"
+#include "src/dawn/native/d3d12/UtilsD3D12.h"
+#include "src/utils/compiler.h"
+#include "src/utils/platform.h"
 
 namespace dawn::native::d3d12 {
 
@@ -120,23 +121,7 @@ MaybeError PhysicalDevice::InitializeImpl() {
     }
 
     mSubgroupMinSize = mDeviceInfo.waveLaneCountMin;
-    // Currently the WaveLaneCountMax queried from D3D12 API is not reliable and the meaning is
-    // unclear. Use 128 instead, which is the largest possible size. Reference:
-    // https://github.com/Microsoft/DirectXShaderCompiler/wiki/Wave-Intrinsics#:~:text=UINT%20WaveLaneCountMax
-    mSubgroupMaxSize = 128u;
-
-    mMinExplicitComputeSubgroupSize = mDeviceInfo.waveLaneCountMin;
-    mMaxExplicitComputeSubgroupSize = mDeviceInfo.waveLaneCountMax;
-    if (mDeviceInfo.waveLaneCountMin > 0) {
-        // D3D12 doesn't have limit on the maximum subgroups in one workgroup so we choose a value
-        // to
-        // ensure `computeInvocationsPerWorkgroup <= maxComputeWorkgroupSubgroups *
-        // computeSubgroupSize` is always satisfied.
-        mMaxComputeWorkgroupSubgroups =
-            D3D12_CS_THREAD_GROUP_MAX_THREADS_PER_GROUP / mDeviceInfo.waveLaneCountMin;
-    } else {
-        mMaxComputeWorkgroupSubgroups = D3D12_CS_THREAD_GROUP_MAX_THREADS_PER_GROUP;
-    }
+    mSubgroupMaxSize = ComputeSubgroupMaxSize();
 
     return {};
 }
@@ -213,8 +198,12 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     }
 
     // SubgroupSizeControl feature requires SM >= 6.6 for HLSL attribute `[WaveSize]`.
-    if (mDeviceInfo.highestSupportedShaderModel >= 66) {
-        EnableFeature(Feature::ChromiumExperimentalSubgroupSizeControl);
+    if (mDeviceInfo.supportsWaveOps && mDeviceInfo.highestSupportedShaderModel >= 66) {
+        EnableFeature(Feature::SubgroupSizeControl);
+    }
+
+    if (mDeviceInfo.supportsInt64Atomics) {
+        EnableFeature(Feature::AtomicVec2uMinMax);
     }
 #endif
 
@@ -436,7 +425,7 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
                 // dynamic storage buffers: 1 for the size constant, 1 for the offset constant
                 2 * limits->v1.maxDynamicStorageBuffersPerPipelineLayout +
                 // immediates: 1 slot per 4 bytes
-                limits->v1.maxImmediateSize / kImmediateConstantElementByteSize +
+                limits->v1.maxImmediateSize / kImmediateElementByteSize +
                 // builtins and unused slots
                 kShaderBuiltinSlots + kUnusedSlots ==
             kMaxRootSignatureSize);
@@ -457,7 +446,9 @@ FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
         switch (feature) {
             case wgpu::FeatureName::ShaderF16:
             case wgpu::FeatureName::Subgroups:
+            case wgpu::FeatureName::SubgroupSizeControl:
             case wgpu::FeatureName::ChromiumExperimentalSamplingResourceTable:
+            case wgpu::FeatureName::AtomicVec2uMinMax:
                 return FeatureValidationResult(
                     absl::StrFormat("Feature %s requires DXC for D3D12.", feature));
             default:
@@ -473,6 +464,13 @@ FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
             if (!(GetAppliedShaderModelUnderToggles(toggles) >= 62)) {
                 return FeatureValidationResult(absl::StrFormat(
                     "Feature %s requires shader model 6.2 or higher for D3D12.", feature));
+            }
+            break;
+        }
+        case wgpu::FeatureName::AtomicVec2uMinMax: {
+            if (!(GetAppliedShaderModelUnderToggles(toggles) >= 66)) {
+                return FeatureValidationResult(absl::StrFormat(
+                    "Feature %s requires shader model 6.6 or higher for D3D12.", feature));
             }
             break;
         }
@@ -744,6 +742,16 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     uint32_t deviceId = GetDeviceId();
     uint32_t vendorId = GetVendorId();
 
+    // Currently this workaround is only needed on Intel Gen12, Xe, Xe2 and Xe3 GPUs.
+    // See http://crbug.com/341991439 for more information.
+    if (gpu_info::IsIntelGen12LP(vendorId, deviceId) ||
+        gpu_info::IsIntelGen12HP(vendorId, deviceId) ||
+        gpu_info::IsIntelXeLPG(vendorId, deviceId) || gpu_info::IsIntelXe2LPG(vendorId, deviceId) ||
+        gpu_info::IsIntelXe2HPG(vendorId, deviceId) ||
+        gpu_info::IsIntelXe3LPG(vendorId, deviceId)) {
+        deviceToggles->Default(Toggle::D3D12DecomposeWorkgroupAccess, true);
+    }
+
     // Currently this workaround is only needed on Intel Gen9, Gen9.5 and Gen11 GPUs.
     // See http://crbug.com/1161355 for more information.
     if (gpu_info::IsIntelGen9(vendorId, deviceId) || gpu_info::IsIntelGen11(vendorId, deviceId)) {
@@ -817,10 +825,14 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
 
     // Workaround for the depth-stencil texture fails to be cleared if the clear value is specified
     // in the D3D12_RENDER_PASS_BEGINNING_ACCESS structure of BeginRenderPass on Intel ACM and ARL.
+    // This workaround is needed on the driver version < 32.0.101.8247.
     // See https://issues.chromium.org/issues/430338408.
     if (gpu_info::IsIntelGen12HP(vendorId, deviceId) ||
         gpu_info::IsIntelXeLPG(vendorId, deviceId)) {
-        deviceToggles->ForceSet(Toggle::UseD3D12RenderPass, false);
+        const gpu_info::IntelWindowsDriverVersion kFixedDriverVersion = {32, 0, 101, 8247};
+        if (gpu_info::IntelWindowsDriverVersion(GetDriverVersion()) < kFixedDriverVersion) {
+            deviceToggles->ForceSet(Toggle::UseD3D12RenderPass, false);
+        }
     }
 
     // Currently these workarounds are needed on Intel Gen9.5 and Gen11 GPUs, as well as
@@ -911,6 +923,22 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     deviceToggles->Default(
         Toggle::EnableIntegerRangeAnalysisInRobustness,
         platform->IsFeatureEnabled(platform::Features::kWebGPUEnableRangeAnalysisForRobustness));
+
+    // Enable the use of HLSL 2021 if the corresponding platform feature is enabled.
+    deviceToggles->Default(Toggle::D3D12UseHLSL2021,
+                           platform->IsFeatureEnabled(platform::Features::kWebGPUUseHLSL2021));
+}
+
+uint32_t PhysicalDevice::ComputeSubgroupMaxSize() const {
+    // On Intel GPUs the WaveLaneCountMax reported by D3D12 is reliable, so use it directly.
+    if (gpu_info::IsIntel(GetVendorId())) {
+        return mDeviceInfo.waveLaneCountMax;
+    }
+
+    // On other vendors the value is unreliable or its meaning is unclear, so fall back to 128
+    // which is the largest possible wave/subgroup size. Reference:
+    // https://github.com/Microsoft/DirectXShaderCompiler/wiki/Wave-Intrinsics#:~:text=UINT%20WaveLaneCountMax
+    return 128u;
 }
 
 MaybeError PhysicalDevice::ValidateUseOfD3D12() const {
@@ -976,8 +1004,8 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
             heapInfo[0].size = mDeviceInfo.dedicatedVideoMemory;
             heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal;
 
-            heapInfo[1].size = mDeviceInfo.sharedSystemMemory;
-            heapInfo[1].properties =
+            DAWN_UNSAFE_TODO(heapInfo[1]).size = mDeviceInfo.sharedSystemMemory;
+            DAWN_UNSAFE_TODO(heapInfo[1]).properties =
                 wgpu::HeapProperty::HostVisible | wgpu::HeapProperty::HostCoherent |
                 wgpu::HeapProperty::HostUncached | wgpu::HeapProperty::HostCached;
         }
@@ -985,15 +1013,6 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
     if (auto* d3dProperties = info.Get<AdapterPropertiesD3D>()) {
         // Report highest supported shader model version, instead of actual applied version.
         d3dProperties->shaderModel = GetDeviceInfo().highestSupportedShaderModel;
-    }
-    if (auto* explicitComputeSubgroupSizeConfigs =
-            info.Get<AdapterPropertiesExplicitComputeSubgroupSizeConfigs>()) {
-        explicitComputeSubgroupSizeConfigs->minExplicitComputeSubgroupSize =
-            GetMinExplicitComputeSubgroupSize();
-        explicitComputeSubgroupSizeConfigs->maxExplicitComputeSubgroupSize =
-            GetMaxExplicitComputeSubgroupSize();
-        explicitComputeSubgroupSizeConfigs->maxComputeWorkgroupSubgroups =
-            GetMaxComputeWorkgroupSubgroups();
     }
 }
 

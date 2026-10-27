@@ -489,14 +489,8 @@ PhysicalFragment::OofData* PhysicalFragment::OofDataFromBuilder(
         builder->oof_positioned_descendants_.size());
     for (const LogicalOofPositionedNode& descendant :
          builder->oof_positioned_descendants_) {
-      OofInlineContainer<PhysicalOffset> inline_container(
-          descendant.inline_container.container,
-          converter.ToPhysical(descendant.inline_container.relative_offset,
-                               PhysicalSize()));
-      oof_data->OofPositionedDescendants().emplace_back(
-          descendant.Node(), descendant.break_token,
-          descendant.static_position.ConvertToPhysical(converter),
-          descendant.requires_content_before_breaking, inline_container);
+      oof_data->OofPositionedDescendants().push_back(
+          LogicalOofPositionedNodeToPhysical(descendant, converter));
     }
   }
 
@@ -525,13 +519,13 @@ PhysicalFragment::OofData* PhysicalFragment::FragmentedOofDataFromBuilder(
   for (const auto& descendant :
        builder->oof_positioned_fragmentainer_descendants_) {
     OofInlineContainer<PhysicalOffset> inline_container(
-        descendant.inline_container.container,
-        converter.ToPhysical(descendant.inline_container.relative_offset,
+        descendant.InlineContainer(),
+        converter.ToPhysical(descendant.InlineContainerInfo().RelativeOffset(),
                              PhysicalSize()));
     OofInlineContainer<PhysicalOffset> fixedpos_inline_container(
-        descendant.fixedpos_inline_container.container,
+        descendant.fixedpos_inline_container.Container(),
         converter.ToPhysical(
-            descendant.fixedpos_inline_container.relative_offset,
+            descendant.fixedpos_inline_container.RelativeOffset(),
             PhysicalSize()));
 
     // The static position should remain relative to the containing block.
@@ -544,9 +538,9 @@ PhysicalFragment::OofData* PhysicalFragment::FragmentedOofDataFromBuilder(
 
     fragmented_data->oof_positioned_fragmentainer_descendants.emplace_back(
         descendant.Node(),
-        descendant.static_position.ConvertToPhysical(
+        descendant.StaticPosition().ConvertToPhysical(
             containing_block_converter),
-        descendant.requires_content_before_breaking, inline_container,
+        descendant.RequiresContentBeforeBreaking(), inline_container,
         PhysicalContainingBlock(builder, size, containing_block_size,
                                 descendant.containing_block),
         PhysicalContainingBlock(builder, size,
@@ -556,8 +550,8 @@ PhysicalFragment::OofData* PhysicalFragment::FragmentedOofDataFromBuilder(
   for (const auto& multicol : builder->multicols_with_pending_oofs_) {
     auto& value = multicol.value;
     OofInlineContainer<PhysicalOffset> fixedpos_inline_container(
-        value->fixedpos_inline_container.container,
-        converter.ToPhysical(value->fixedpos_inline_container.relative_offset,
+        value->fixedpos_inline_container.Container(),
+        converter.ToPhysical(value->fixedpos_inline_container.RelativeOffset(),
                              PhysicalSize()));
     fragmented_data->multicols_with_pending_oofs.insert(
         multicol.key,

@@ -9,6 +9,7 @@
 
 #include "include/v8-internal.h"
 #include "src/base/iterator.h"
+#include "src/base/logging.h"
 #include "src/codegen/interface-descriptors-inl.h"
 #include "src/codegen/machine-type.h"
 #include "src/codegen/tick-counter.h"
@@ -26,9 +27,9 @@
 #include "src/numbers/conversions-inl.h"
 #include "src/zone/zone-containers.h"
 
-#if V8_ENABLE_WEBASSEMBLY
-#include "src/wasm/simd-shuffle.h"
-#endif  // V8_ENABLE_WEBASSEMBLY
+#if V8_ENABLE_SIMD128
+#include "src/compiler/backend/simd-shuffle.h"
+#endif  // V8_ENABLE_SIMD128
 
 namespace v8 {
 namespace internal {
@@ -38,15 +39,6 @@ namespace compiler {
   void InstructionSelector::Visit##op(OpIndex) { UNIMPLEMENTED(); }
 
 using namespace turboshaft;  // NOLINT(build/namespaces)
-
-namespace {
-// Here we really want the raw Bits of the mask, but the `.bits()` method is
-// not constexpr, and so users of this constant need to call it.
-// TODO(turboshaft): EffectDimensions could probably be defined via
-// base::Flags<> instead, which should solve this.
-constexpr EffectDimensions kTurboshaftEffectLevelMask =
-    OpEffects().CanReadMemory().produces;
-}
 
 InstructionSelector::InstructionSelector(
     Zone* zone, size_t node_count, Linkage* linkage,
@@ -136,8 +128,9 @@ std::optional<BailoutReason> InstructionSelector::SelectInstructions() {
   // Visit each basic block in post order.
   for (const Block* block : base::Reversed(blocks)) {
     VisitBlock(block);
-    if (instruction_selection_failed())
+    if (instruction_selection_failed()) {
       return BailoutReason::kTurbofanCodeGenerationFailed;
+    }
   }
 
   // Schedule the selected instructions.
@@ -697,6 +690,7 @@ InstructionOperand OperandForDeopt(Isolate* isolate, OperandGenerator* g,
       // are potentially needed until the end of the deoptimising code.
       return g->UseAnyAtEnd(input);
   }
+  UNREACHABLE();
 }
 
 }  // namespace
@@ -733,6 +727,7 @@ class TurboshaftStateObjectDeduplicator {
       case ObjectType::kStringConcat:
         return string_ids_mapping_;
     }
+    UNREACHABLE();
   }
   uint32_t next_id_ = 0;
 
@@ -1017,6 +1012,7 @@ Instruction* InstructionSelector::EmitWithContinuation(
     continuation_inputs_.push_back(g.Label(cont->false_block()));
   } else if (cont->IsDeoptimize()) {
     int immediate_args_count = 0;
+    DCHECK_LE(input_count, DeoptFrameStateOffsetField::kMax);
     opcode |= DeoptImmedArgsCountField::encode(immediate_args_count) |
               DeoptFrameStateOffsetField::encode(static_cast<int>(input_count));
     AppendDeoptimizeArguments(&continuation_inputs_, cont->reason(),
@@ -1051,17 +1047,18 @@ Instruction* InstructionSelector::EmitWithContinuation(
               emit_inputs, emit_temps_size, emit_temps);
 }
 
+// TODO(manoskouk): Consider adding LoadTrustedPointer.
 bool InstructionSelector::IsTrappingLoad(turboshaft::OpIndex node) const {
-#if V8_ENABLE_WEBASSEMBLY
+#if V8_ENABLE_SIMD128
   if (Get(node).opcode == turboshaft::Opcode::kSimd128LoadTransform) {
     return true;
   }
-#if V8_ENABLE_WASM_SIMD256_REVEC
+#if V8_ENABLE_SIMD256
   if (Get(node).opcode == turboshaft::Opcode::kSimd256LoadTransform) {
     return true;
   }
-#endif  // V8_ENABLE_WASM_SIMD256_REVEC
-#endif  // V8_ENABLE_WEBASSEMBLY
+#endif  // V8_ENABLE_SIMD256
+#endif  // V8_ENABLE_SIMD128
 
   if (!IsLoadOrLoadImmutable(node)) return false;
 
@@ -1378,38 +1375,46 @@ bool InstructionSelector::IsSourcePositionUsed(OpIndex node) {
   if (const LoadOp* load = operation.TryCast<LoadOp>()) {
     return load->kind.with_trap_handler;
   }
-    if (const StoreOp* store = operation.TryCast<StoreOp>()) {
-      return store->kind.with_trap_handler;
-    }
-#if V8_ENABLE_WEBASSEMBLY
-    if (operation.Is<TrapIfOp>()) return true;
-    if (operation.Is<WasmTrapOp>()) return true;
-    if (const AtomicRMWOp* rmw = operation.TryCast<AtomicRMWOp>()) {
-      return rmw->memory_access_kind == MemoryAccessKind::kTrapping;
-    }
-    if (const Simd128LoadTransformOp* lt =
-            operation.TryCast<Simd128LoadTransformOp>()) {
-      return lt->load_kind.with_trap_handler;
-    }
-#if V8_ENABLE_WASM_SIMD256_REVEC
-    if (const Simd256LoadTransformOp* lt =
-            operation.TryCast<Simd256LoadTransformOp>()) {
-      return lt->load_kind.with_trap_handler;
-    }
-#endif  // V8_ENABLE_WASM_SIMD256_REVEC
-    if (const Simd128LaneMemoryOp* lm =
-            operation.TryCast<Simd128LaneMemoryOp>()) {
-      return lm->kind.with_trap_handler;
-    }
-    if (const Simd128LoadPairDeinterleaveOp* dl =
-            operation.TryCast<Simd128LoadPairDeinterleaveOp>()) {
-      return dl->load_kind.with_trap_handler;
-    }
+#if V8_ENABLE_SANDBOX
+  if (const LoadTrustedPointerOp* load =
+          operation.TryCast<LoadTrustedPointerOp>()) {
+    return load->kind.with_trap_handler;
+  }
 #endif
-    if (additional_trapping_instructions_->Contains(node.id())) {
-      return true;
-    }
-    return false;
+  if (const StoreOp* store = operation.TryCast<StoreOp>()) {
+    return store->kind.with_trap_handler;
+  }
+#if V8_ENABLE_WEBASSEMBLY
+  if (operation.Is<TrapIfOp>()) return true;
+  if (operation.Is<WasmTrapOp>()) return true;
+  if (const AtomicRMWOp* rmw = operation.TryCast<AtomicRMWOp>()) {
+    return rmw->memory_access_kind == MemoryAccessKind::kTrapping;
+  }
+#endif  // V8_ENABLE_WEBASSEMBLY
+#if V8_ENABLE_SIMD128
+  if (const Simd128LoadTransformOp* lt =
+          operation.TryCast<Simd128LoadTransformOp>()) {
+    return lt->load_kind.with_trap_handler;
+  }
+#if V8_ENABLE_SIMD256
+  if (const Simd256LoadTransformOp* lt =
+          operation.TryCast<Simd256LoadTransformOp>()) {
+    return lt->load_kind.with_trap_handler;
+  }
+#endif  // V8_ENABLE_SIMD256
+  if (const Simd128LaneMemoryOp* lm =
+          operation.TryCast<Simd128LaneMemoryOp>()) {
+    return lm->kind.with_trap_handler;
+  }
+  if (const Simd128LoadPairDeinterleaveOp* dl =
+          operation.TryCast<Simd128LoadPairDeinterleaveOp>()) {
+    return dl->load_kind.with_trap_handler;
+  }
+#endif  // V8_ENABLE_SIMD128
+  if (additional_trapping_instructions_->Contains(node.id())) {
+    return true;
+  }
+  return false;
 }
 
 bool InstructionSelector::IsCommutative(turboshaft::OpIndex node) const {
@@ -1443,8 +1448,7 @@ bool increment_effect_level_for_node(InstructionSelector* selector,
     // would prevent covering in the ISEL.
     return false;
   }
-  return (op.Effects().consumes.bits() & kTurboshaftEffectLevelMask.bits()) !=
-         0;
+  return op.Effects().can_write() || op.Effects().can_allocate;
 }
 }  // namespace
 
@@ -1481,7 +1485,7 @@ void InstructionSelector::VisitBlock(const Block* block) {
     if (!source_positions_) return true;
 
     SourcePosition source_position;
-#if V8_ENABLE_WEBASSEMBLY && V8_TARGET_ARCH_X64
+#if V8_ENABLE_SIMD128 && V8_TARGET_ARCH_X64
     if (const Simd128UnaryOp* op =
             TryCast<Opmask::kSimd128F64x2PromoteLowF32x4>(node);
         V8_UNLIKELY(op)) {
@@ -1495,7 +1499,7 @@ void InstructionSelector::VisitBlock(const Block* block) {
         node = op->input();
       }
     }
-#endif  // V8_ENABLE_WEBASSEMBLY && V8_TARGET_ARCH_X64
+#endif  // V8_ENABLE_SIMD128 && V8_TARGET_ARCH_X64
     source_position = (*source_positions_)[node];
     if (source_position.IsKnown() && IsSourcePositionUsed(node)) {
       sequence()->SetSourcePosition(instructions_.back(), source_position);
@@ -1575,6 +1579,7 @@ FlagsCondition InstructionSelector::GetComparisonFlagCondition(
     case ComparisonOp::Kind::kUnsignedLessThanOrEqual:
       return kUnsignedLessThanOrEqual;
   }
+  UNREACHABLE();
 }
 
 void InstructionSelector::MarkPairProjectionsAsWord32(OpIndex node) {
@@ -1623,11 +1628,11 @@ void InstructionSelector::ConsumeEqualZero(OpIndex* user, OpIndex* value,
   }
 }
 
-#if V8_ENABLE_WEBASSEMBLY
+#if V8_ENABLE_SIMD128
 void InstructionSelector::VisitI8x16RelaxedSwizzle(OpIndex node) {
   return VisitI8x16Swizzle(node);
 }
-#endif  // V8_ENABLE_WEBASSEMBLY
+#endif  // V8_ENABLE_SIMD128
 
 void InstructionSelector::VisitStackPointerGreaterThan(OpIndex node) {
   FlagsContinuation cont =
@@ -1752,6 +1757,31 @@ void InstructionSelector::VisitFloat64Tan(OpIndex node) {
 void InstructionSelector::VisitFloat64Tanh(OpIndex node) {
   VisitFloat64Ieee754Unop(node, kIeee754Float64Tanh);
 }
+
+#ifdef V8_ENABLE_SANDBOX
+void InstructionSelector::VisitLoadTrustedPointer(OpIndex node) {
+  const LoadTrustedPointerOp& op = this->Get(node).Cast<LoadTrustedPointerOp>();
+  OperandGenerator g(this);
+
+  MemoryAccessMode access_mode = kMemoryAccessDirect;
+  if (op.kind.with_trap_handler) {
+    DCHECK(op.kind.trap_on_null);
+    access_mode = kMemoryAccessTrappingNullDereference;
+  }
+  InstructionCode code = ArchOpcodeField::encode(kArchLoadTrustedPointer) |
+                         AccessModeField::encode(access_mode);
+
+  DCHECK(op.kind.tagged_base);
+  InstructionOperand inputs[] = {g.UseUniqueRegister(op.base()),
+                                 g.UseImmediate(op.offset - kHeapObjectTag),
+                                 g.UseUniqueRegister(op.table()),
+                                 g.UseImmediate(op.tag_range.first),
+                                 g.UseImmediate(op.tag_range.last)};
+  InstructionOperand outputs[] = {g.DefineAsRegister(node)};
+  InstructionOperand temps[] = {g.TempRegister()};
+  Emit(code, 1, outputs, arraysize(inputs), inputs, 1, temps);
+}
+#endif
 
 void InstructionSelector::MarkAsTableSwitchTarget(
     const turboshaft::Block* block) {
@@ -1962,8 +1992,8 @@ VISIT_UNSUPPORTED_OP(Word64AtomicCompareExchange)
 
 #if !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_RISCV32
 // This is only needed on 32-bit to split the 64-bit value into two operands.
-IF_WASM(VISIT_UNSUPPORTED_OP, I64x2SplatI32Pair)
-IF_WASM(VISIT_UNSUPPORTED_OP, I64x2ReplaceLaneI32Pair)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I64x2SplatI32Pair)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I64x2ReplaceLaneI32Pair)
 #endif  // !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM &&
         // !V8_TARGET_ARCH_RISCV32
 
@@ -1972,9 +2002,9 @@ IF_WASM(VISIT_UNSUPPORTED_OP, I64x2ReplaceLaneI32Pair)
 #if !V8_TARGET_ARCH_MIPS64 && !V8_TARGET_ARCH_LOONG64 && \
     !V8_TARGET_ARCH_RISCV32 && !V8_TARGET_ARCH_RISCV64
 
-IF_WASM(VISIT_UNSUPPORTED_OP, I64x2Splat)
-IF_WASM(VISIT_UNSUPPORTED_OP, I64x2ExtractLane)
-IF_WASM(VISIT_UNSUPPORTED_OP, I64x2ReplaceLane)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I64x2Splat)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I64x2ExtractLane)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I64x2ReplaceLane)
 
 #endif  // !V8_TARGET_ARCH_MIPS64 && !V8_TARGET_ARCH_LOONG64 &&
         // !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARCH_RISCV32
@@ -1983,34 +2013,34 @@ IF_WASM(VISIT_UNSUPPORTED_OP, I64x2ReplaceLane)
 
 #if !V8_TARGET_ARCH_ARM64
 
-IF_WASM(VISIT_UNSUPPORTED_OP, Simd128LoadPairDeinterleave)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, Simd128LoadPairDeinterleave)
 
-IF_WASM(VISIT_UNSUPPORTED_OP, I8x16AddReduce)
-IF_WASM(VISIT_UNSUPPORTED_OP, I16x8AddReduce)
-IF_WASM(VISIT_UNSUPPORTED_OP, I32x4AddReduce)
-IF_WASM(VISIT_UNSUPPORTED_OP, I64x2AddReduce)
-IF_WASM(VISIT_UNSUPPORTED_OP, F32x4AddReduce)
-IF_WASM(VISIT_UNSUPPORTED_OP, F64x2AddReduce)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I8x16AddReduce)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I16x8AddReduce)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I32x4AddReduce)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I64x2AddReduce)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, F32x4AddReduce)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, F64x2AddReduce)
 
-IF_WASM(VISIT_UNSUPPORTED_OP, I8x1Shuffle)
-IF_WASM(VISIT_UNSUPPORTED_OP, I8x2Shuffle)
-IF_WASM(VISIT_UNSUPPORTED_OP, I8x4Shuffle)
-IF_WASM(VISIT_UNSUPPORTED_OP, I8x8Shuffle)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I8x1Shuffle)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I8x2Shuffle)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I8x4Shuffle)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I8x8Shuffle)
 
 IF_WASM(VISIT_UNSUPPORTED_OP, MemoryCopy)
 IF_WASM(VISIT_UNSUPPORTED_OP, MemoryFill)
 
-IF_WASM(VISIT_UNSUPPORTED_OP, I32x4AddPairwise)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I32x4AddPairwise)
 
-IF_WASM(VISIT_UNSUPPORTED_OP, I8x16MoveLane)
-IF_WASM(VISIT_UNSUPPORTED_OP, I16x8MoveLane)
-IF_WASM(VISIT_UNSUPPORTED_OP, I32x4MoveLane)
-IF_WASM(VISIT_UNSUPPORTED_OP, I64x2MoveLane)
-IF_WASM(VISIT_UNSUPPORTED_OP, F32x4MoveLane)
-IF_WASM(VISIT_UNSUPPORTED_OP, F64x2MoveLane)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I8x16MoveLane)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I16x8MoveLane)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I32x4MoveLane)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, I64x2MoveLane)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, F32x4MoveLane)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, F64x2MoveLane)
 #endif  // !V8_TARGET_ARCH_ARM64
 
-IF_WASM(VISIT_UNSUPPORTED_OP, F16x8MoveLane)
+IF_SIMD128(VISIT_UNSUPPORTED_OP, F16x8MoveLane)
 
 void InstructionSelector::VisitParameter(OpIndex node) {
   const ParameterOp& parameter = Cast<ParameterOp>(node);
@@ -2079,13 +2109,16 @@ void InstructionSelector::VisitProjection(OpIndex node) {
   const Operation& value_op = this->Get(projection.input());
   if (value_op.Is<OverflowCheckedBinopOp>() ||
       value_op.Is<OverflowCheckedUnaryOp>() || value_op.Is<TryChangeOp>() ||
-      value_op.Is<Word32PairBinopOp>() || value_op.Is<Word64MulWideOp>()) {
+      value_op.Is<Word32PairBinopOp>()) {
     if (projection.index == 0u) {
       EmitIdentity(node);
     } else {
       DCHECK_EQ(1u, projection.index);
       MarkAsUsed(projection.input());
     }
+  } else if (value_op.Is<Word64AddSub128BinopOp>() ||
+             value_op.Is<Word64MulWideOp>()) {
+    MarkAsUsed(projection.input());
   } else if (value_op.Is<DidntThrowOp>()) {
     // Nothing to do here?
   } else if (value_op.Is<CallOp>()) {
@@ -2093,10 +2126,10 @@ void InstructionSelector::VisitProjection(OpIndex node) {
     UNREACHABLE();
   } else if (value_op.Is<AtomicWord32PairOp>()) {
     // Nothing to do here.
-#if V8_ENABLE_WEBASSEMBLY
+#if V8_ENABLE_SIMD128
   } else if (value_op.Is<Simd128LoadPairDeinterleaveOp>()) {
     MarkAsUsed(projection.input());
-#endif  // V8_ENABLE_WEBASSEMBLY
+#endif  // V8_ENABLE_SIMD128
   } else {
     UNIMPLEMENTED();
   }
@@ -2275,11 +2308,14 @@ void InstructionSelector::VisitCall(
         g.UseImmediate(kLazyDeoptOnThrowSentinel));
   }
   if (!effect_handlers.empty()) {
+#if V8_ENABLE_WEBASSEMBLY
     flags |= CallDescriptor::kHasEffectHandler;
     for (auto& handler : effect_handlers) {
       if (!handler.is_switch()) {
         buffer.instruction_args.push_back(g.Label(handler.block));
+        buffer.instruction_args.push_back(g.UseImmediate(handler.sig.index));
       } else {
+        buffer.instruction_args.push_back(g.UseImmediate(0));
         buffer.instruction_args.push_back(g.UseImmediate(0));
       }
 
@@ -2288,6 +2324,7 @@ void InstructionSelector::VisitCall(
     }
     buffer.instruction_args.push_back(
         g.UseImmediate(static_cast<int>(effect_handlers.size())));
+#endif
   } else {
     // This bit had a different meaning before isel, so ensure that it is
     // cleared:
@@ -2858,6 +2895,9 @@ void InstructionSelector::VisitNode(OpIndex node) {
             case multi(Rep::Float64(), Rep::Word64(), true, A::kNoOverflow):
             case multi(Rep::Float64(), Rep::Word64(), true, A::kNoAssumption):
               return VisitTruncateFloat64ToInt64(node);
+            case multi(Rep::Float64(), Rep::Word64(), false, A::kNoOverflow):
+            case multi(Rep::Float64(), Rep::Word64(), false, A::kNoAssumption):
+              return VisitChangeFloat64ToUint64(node);
             default:
               // Invalid combination.
               UNREACHABLE();
@@ -3266,6 +3306,17 @@ void InstructionSelector::VisitNode(OpIndex node) {
       }
       UNREACHABLE();
     }
+    case Opcode::kWord64AddSub128Binop: {
+      const Word64AddSub128BinopOp& wideop = op.Cast<Word64AddSub128BinopOp>();
+      MarkPairProjectionsAsWord64(node);
+      switch (wideop.kind) {
+        case Word64AddSub128BinopOp::Kind::kAdd:
+          return VisitUint64Add128(node);
+        case Word64AddSub128BinopOp::Kind::kSub:
+          return VisitUint64Sub128(node);
+      }
+      UNREACHABLE();
+    }
     case Opcode::kWord64MulWide: {
       const Word64MulWideOp& wideop = op.Cast<Word64MulWideOp>();
       MarkPairProjectionsAsWord64(node);
@@ -3470,6 +3521,11 @@ void InstructionSelector::VisitNode(OpIndex node) {
       }
       UNREACHABLE();
     }
+#ifdef V8_ENABLE_SANDBOX
+    case Opcode::kLoadTrustedPointer:
+      MarkAsTagged(node);
+      return VisitLoadTrustedPointer(node);
+#endif
     case Opcode::kStore: {
       const StoreOp& store = op.Cast<StoreOp>();
       MachineRepresentation rep =
@@ -3686,7 +3742,7 @@ void InstructionSelector::VisitNode(OpIndex node) {
     case Opcode::kComment:
       return VisitComment(node);
 
-#ifdef V8_ENABLE_WEBASSEMBLY
+#if V8_ENABLE_SIMD128
     case Opcode::kSimd128Constant: {
       const Simd128ConstantOp& constant = op.Cast<Simd128ConstantOp>();
       MarkAsSimd128(node);
@@ -3891,7 +3947,7 @@ void InstructionSelector::VisitNode(OpIndex node) {
     }
 
     // SIMD256
-#if V8_ENABLE_WASM_SIMD256_REVEC
+#if V8_ENABLE_SIMD256
     case Opcode::kSimd256Constant: {
       const Simd256ConstantOp& constant = op.Cast<Simd256ConstantOp>();
       MarkAsSimd256(node);
@@ -3979,8 +4035,10 @@ void InstructionSelector::VisitNode(OpIndex node) {
       return VisitSimdPack128To256(node);
     }
 #endif  // V8_TARGET_ARCH_X64
-#endif  // V8_ENABLE_WASM_SIMD256_REVEC
+#endif  // V8_ENABLE_SIMD256
+#endif  // V8_ENABLE_SIMD128
 
+#if V8_ENABLE_WEBASSEMBLY
     case Opcode::kLoadStackPointer:
       return VisitLoadStackPointer(node);
 
@@ -4134,12 +4192,12 @@ FrameStateDescriptor* InstructionSelector::GetFrameStateDescriptor(
   return desc;
 }
 
-#if V8_ENABLE_WEBASSEMBLY
+#if V8_ENABLE_SIMD128
 // static
 void InstructionSelector::SwapShuffleInputs(SimdShuffleView& view) {
   view.SwapInputs();
 }
-#endif  // V8_ENABLE_WEBASSEMBLY
+#endif  // V8_ENABLE_SIMD128
 
 InstructionSelector InstructionSelector::ForTurboshaft(
     Zone* zone, size_t node_count, Linkage* linkage,

@@ -9,6 +9,7 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import {Icon} from '../../ui/kit/kit.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import {html, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import {MobileThrottlingSelector} from './MobileThrottlingSelector.js';
@@ -330,45 +331,27 @@ export class ThrottlingManager extends Common.ObjectWrapper.ObjectWrapper<Thrott
     };
   }
 
-  createSaveDataOverrideSelector(className?: string): UI.Toolbar.ToolbarComboBox {
-    const reset = new Option(i18nString(UIStrings.noSaveDataOverride), undefined, true, true);
-    const enable = new Option(i18nString(UIStrings.saveDataOn));
-    const disable = new Option(i18nString(UIStrings.saveDataOff));
-    const handler = (e: Event): void => {
-      const select = e.target as HTMLSelectElement;
-      switch (select.selectedOptions.item(0)) {
-        case reset:
-          for (const emulationModel of SDK.TargetManager.TargetManager.instance().models(
-                   SDK.EmulationModel.EmulationModel)) {
-            void this.#emulationQueue.push(
-                emulationModel.setDataSaverOverride(SDK.EmulationModel.DataSaverOverride.UNSET));
-          }
-          break;
-        case enable:
-          for (const emulationModel of SDK.TargetManager.TargetManager.instance().models(
-                   SDK.EmulationModel.EmulationModel)) {
-            void this.#emulationQueue.push(
-                emulationModel.setDataSaverOverride(SDK.EmulationModel.DataSaverOverride.ENABLED));
-          }
-          break;
-        case disable:
-          for (const emulationModel of SDK.TargetManager.TargetManager.instance().models(
-                   SDK.EmulationModel.EmulationModel)) {
-            void this.#emulationQueue.push(
-                emulationModel.setDataSaverOverride(SDK.EmulationModel.DataSaverOverride.DISABLED));
-          }
-          break;
-      }
-      this.dispatchEventToListeners(ThrottlingManager.Events.SAVE_DATA_OVERRIDE_CHANGED, select.selectedIndex);
-    };
-    const select = new UI.Toolbar.ToolbarComboBox(handler, i18nString(UIStrings.saveDataSettingTooltip), className);
-    select.addOption(reset);
-    select.addOption(enable);
-    select.addOption(disable);
+  setSaveDataOverride(selectedIndex: number): void {
+    let override = SDK.EmulationModel.DataSaverOverride.UNSET;
+    if (selectedIndex === 1) {
+      override = SDK.EmulationModel.DataSaverOverride.ENABLED;
+    } else if (selectedIndex === 2) {
+      override = SDK.EmulationModel.DataSaverOverride.DISABLED;
+    }
+    for (const emulationModel of SDK.TargetManager.TargetManager.instance().models(SDK.EmulationModel.EmulationModel)) {
+      void this.#emulationQueue.push(emulationModel.setDataSaverOverride(override));
+    }
+    this.dispatchEventToListeners(ThrottlingManager.Events.SAVE_DATA_OVERRIDE_CHANGED, selectedIndex);
+  }
 
-    this.addEventListener(
-        ThrottlingManager.Events.SAVE_DATA_OVERRIDE_CHANGED, ({data}) => select.setSelectedIndex(data));
-
+  createSaveDataOverrideSelector(className?: string): HTMLSelectElement {
+    const select = document.createElement('select');
+    select.title = i18nString(UIStrings.saveDataSettingTooltip);
+    UI.ARIAUtils.setLabel(select, i18nString(UIStrings.saveDataSettingTooltip));
+    if (className) {
+      select.className = className;
+    }
+    UI.Widget.registerWidgetConfig(select, UI.Widget.widgetConfig(SaveDataOverrideSelect));
     return select;
   }
 
@@ -450,6 +433,52 @@ export class ThrottlingManager extends Common.ObjectWrapper.ObjectWrapper<Thrott
     const networkConditions = SDK.NetworkManager.MultitargetNetworkManager.instance().networkConditions();
     const knownCurrentConditions = this.#getCurrentNetworkConditions();
     return !SDK.NetworkManager.networkConditionsEqual(networkConditions, knownCurrentConditions);
+  }
+}
+
+export interface SaveDataOverrideViewInput {
+  selectedIndex: number;
+  onSelect: (index: number) => void;
+}
+
+export type SaveDataOverrideViewFunction =
+    (input: SaveDataOverrideViewInput, output: undefined, target: HTMLSelectElement) => void;
+
+export const DEFAULT_SAVE_DATA_VIEW: SaveDataOverrideViewFunction = (input, _output, target) => {
+  // clang-format off
+  render(html`
+    <option value="unset" ?selected=${input.selectedIndex === 0}>${i18nString(UIStrings.noSaveDataOverride)}</option>
+    <option value="enabled" ?selected=${input.selectedIndex === 1}>${i18nString(UIStrings.saveDataOn)}</option>
+    <option value="disabled" ?selected=${input.selectedIndex === 2}>${i18nString(UIStrings.saveDataOff)}</option>
+  `, target, {container: {listeners: {change: (e: Event) => input.onSelect((e.target as HTMLSelectElement).selectedIndex)}}});
+  // clang-format on
+};
+
+export class SaveDataOverrideSelect extends
+    Common.ObjectWrapper.eventMixin<ThrottlingManager.EventTypes, typeof UI.Widget.Widget<HTMLSelectElement>>(
+        UI.Widget.Widget) {
+  #selectedIndex = 0;
+  readonly #view: SaveDataOverrideViewFunction;
+
+  constructor(element: HTMLElement, view = DEFAULT_SAVE_DATA_VIEW) {
+    super(element);
+    this.#view = view;
+    ThrottlingManager.instance().addEventListener(ThrottlingManager.Events.SAVE_DATA_OVERRIDE_CHANGED, ({data}) => {
+      this.#selectedIndex = data;
+      this.requestUpdate();
+    });
+    this.performUpdate();
+  }
+
+  override performUpdate(): void {
+    this.#view(
+        {
+          selectedIndex: this.#selectedIndex,
+          onSelect: index => {
+            ThrottlingManager.instance().setSaveDataOverride(index);
+          },
+        },
+        undefined, this.contentElement);
   }
 }
 

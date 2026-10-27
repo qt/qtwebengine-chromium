@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as FormatterWorker from './formatter_worker.js';
 
 function formatJavaScript(text: string): string {
@@ -785,5 +787,10 @@ function formatted2() {
     assert.strictEqual(formattedCode, `num = 1 .toString();
 str = "abc".toUpperCase();
 `);
+  });
+
+  it('formats import attributes correctly', () => {
+    const formattedCode = formatJavaScript('import  data  from  \'./data.json\'  with  {  type:  \'json\'  };');
+    assert.strictEqual(formattedCode, 'import data from \'./data.json\' with {type: \'json\'};\n');
   });
 });

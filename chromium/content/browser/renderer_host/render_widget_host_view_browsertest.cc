@@ -637,8 +637,16 @@ class BFCachedRenderWidgetHostViewBrowserTest
 };
 }  // namespace
 
+// TODO(crbug.com/517285763): This test is failing on Linux Wayland.
+#if BUILDFLAG(IS_LINUX)
+#define MAYBE_BFCacheRestoredPageHasNewLocalSurfaceId \
+  DISABLED_BFCacheRestoredPageHasNewLocalSurfaceId
+#else
+#define MAYBE_BFCacheRestoredPageHasNewLocalSurfaceId \
+  BFCacheRestoredPageHasNewLocalSurfaceId
+#endif
 IN_PROC_BROWSER_TEST_F(BFCachedRenderWidgetHostViewBrowserTest,
-                       BFCacheRestoredPageHasNewLocalSurfaceId) {
+                       MAYBE_BFCacheRestoredPageHasNewLocalSurfaceId) {
   ASSERT_TRUE(embedded_test_server()->Start());
   ASSERT_TRUE(
       NavigateToURL(shell(), embedded_test_server()->GetURL("/title1.html")));
@@ -1621,6 +1629,8 @@ class RenderWidgetHostViewPresentationFeedbackBrowserTest
           .event_start_time = base::TimeTicks::Now(),
           .reason = blink::VisibleTimeEvent::TabSwitchReason{
               .destination_is_loaded = true,
+              .had_saved_frame_at_start =
+                  GetRenderWidgetHostView()->HasSavedCompositorFrame(),
           }});
     }
     if (show_reason_bfcache_restore) {

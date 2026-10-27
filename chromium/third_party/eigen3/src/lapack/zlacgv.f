@@ -72,6 +72,8 @@
 *> \ingroup complex16OTHERauxiliary
 *
 *  =====================================================================
+*> SPDX-FileCopyrightText: The Eigen Authors
+*> SPDX-License-Identifier: BSD-3-Clause
       SUBROUTINE ZLACGV( N, X, INCX )
 *
 *  -- LAPACK auxiliary routine (version 3.4.0) --

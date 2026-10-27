@@ -17,6 +17,7 @@
 #include "content/browser/preloading/preloading.h"
 #include "content/browser/preloading/preloading_data_impl.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/frame_accept_header.h"
 #include "content/public/browser/prefetch_metrics.h"
 #include "content/public/common/content_client.h"
 #include "content/public/test/mock_navigation_handle.h"
@@ -25,6 +26,7 @@
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
+#include "third_party/blink/public/common/navigation/preloading_headers.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -44,7 +46,7 @@ net::RedirectInfo SyntheticRedirect(const GURL& new_url) {
   return redirect_info;
 }
 
-class TestPrefetchContainerObserver final : public PrefetchContainer::Observer {
+class TestPrefetchContainerObserver final : public PrefetchContainerObserver {
  public:
   explicit TestPrefetchContainerObserver(PrefetchContainer& prefetch_container)
       : prefetch_container_(prefetch_container.GetWeakPtr()) {
@@ -61,12 +63,11 @@ class TestPrefetchContainerObserver final : public PrefetchContainer::Observer {
  private:
   void OnWillBeDestroyed(const PrefetchContainer& prefetch_container) override {
   }
-  void OnGotInitialEligibility(const PrefetchContainer& prefetch_container,
-                               PreloadingEligibility eligibility) override {}
+  void OnGotInitialEligibility(
+      const PrefetchContainer& prefetch_container) override {}
   void OnDeterminedHead(const PrefetchContainer& prefetch_container) override {}
   void OnPrefetchCompletedOrFailed(
-      const PrefetchContainer& prefetch_container,
-      const network::URLLoaderCompletionStatus& completion_status) override {
+      const PrefetchContainer& prefetch_container) override {
     on_complete_loop_.Quit();
   }
 
@@ -82,21 +83,20 @@ CreateStreamingURLLoaderWithoutPrefetchContainerForTests(
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     const network::ResourceRequest& prefetch_request,
     NotReachedTagForTestsOr<base::RunLoop*> on_response_received,
-    NotReachedTagForTestsOr<OnPrefetchCompleteTestFuture*> on_complete,
+    NotReachedTagForTestsOr<base::RunLoop*> on_complete,
     NotReachedTagForTestsOr<OnPrefetchReceiveRedirectTestFuture*>
         on_receive_redirect,
     NotReachedTagForTestsOr<base::RunLoop*> on_head_received,
     std::optional<PrefetchErrorOnResponseReceived> error_on_response_received,
     base::TimeDelta timeout_duration) {
   auto on_complete_callback = base::BindOnce(
-      [](NotReachedTagForTestsOr<OnPrefetchCompleteTestFuture*> on_complete,
-         bool is_success,
+      [](NotReachedTagForTestsOr<base::RunLoop*> on_complete, bool is_success,
          const network::URLLoaderCompletionStatus& completion_status) {
         if (std::holds_alternative<NotReachedTagForTests>(on_complete)) {
           NOTREACHED();
         }
-        if (auto future = std::get<0>(on_complete)) {
-          future->SetValue(completion_status);
+        if (auto run_loop = std::get<0>(on_complete)) {
+          run_loop->Quit();
         }
       },
       on_complete);
@@ -205,7 +205,9 @@ base::WeakPtr<PrefetchStreamingURLLoader> CreateStreamingURLLoaderForTests(
       /*browser_context_for_service_worker=*/nullptr,
       base::BindOnce(&PrefetchContainer::OnServiceWorkerStateDetermined,
                      prefetch_container),
-      perfetto::Flow::ProcessScoped(0));
+      perfetto::Flow::ProcessScoped(0),
+      prefetch_container ? prefetch_container->IsConstructedFromPrePrefetch()
+                         : false);
 
   if (prefetch_container) {
     prefetch_container->SetStreamingURLLoader(streaming_loader);
@@ -332,7 +334,7 @@ void MakeServableStreamingURLLoaderWithRedirectForTest(
   CHECK(weak_streaming_loader);
   weak_streaming_loader->HandleRedirect(PrefetchRedirectStatus::kFollow,
                                         redirect_info, std::move(redirect_head),
-                                        /*update_headers_params=*/{});
+                                        /*headers_update_params=*/{});
 
   // GetResponseReaderForCurrentPrefetch() now points to a new ResponseReader
   // after `SimulatePrefetchRedirectedForTest()` above.
@@ -394,7 +396,7 @@ void MakeServableStreamingURLLoadersWithNetworkTransitionRedirectForTest(
   CHECK(weak_first_streaming_loader);
   weak_first_streaming_loader->HandleRedirect(
       PrefetchRedirectStatus::kSwitchNetworkContext, redirect_info,
-      std::move(redirect_head), /*update_headers_params=*/{});
+      std::move(redirect_head), /*headers_update_params=*/{});
 
   base::RunLoop on_response_received_loop;
   TestPrefetchContainerObserver observer(*prefetch_container);
@@ -541,8 +543,7 @@ void TestPrefetchService::PrefetchUrl(
 }
 
 void TestPrefetchService::OnPrefetchCompletedOrFailed(
-    const PrefetchContainer& prefetch_container,
-    const network::URLLoaderCompletionStatus& completion_status) {
+    const PrefetchContainer& prefetch_container) {
   // Skip `active_prefetch_` check and related prefetch queue processing in
   // `PrefetchService`, because it's not set/used in `TestPrefetchService`.
 }
@@ -552,7 +553,8 @@ void TestPrefetchService::EvictPrefetch(size_t index) {
   ASSERT_TRUE(prefetches_[index]);
   base::WeakPtr<PrefetchContainer> prefetch_container = prefetches_[index];
   prefetches_.erase(prefetches_.begin() + index);
-  MayReleasePrefetch(prefetch_container);
+  MayReleasePrefetch(prefetch_container,
+                     /*prefetch_status_on_destruction=*/std::nullopt);
 }
 
 PrefetchingMetricsTestBase::PrefetchingMetricsTestBase()
@@ -782,6 +784,41 @@ network::mojom::CookieManager* PrefetchingMetricsTestBase::cookie_manager() {
       ->GetCookieManagerForBrowserProcess();
 }
 
+bool PrefetchingMetricsTestBase::SetCookie(const GURL& url,
+                                           const std::string& value) {
+  std::unique_ptr<net::CanonicalCookie> cookie(
+      net::CanonicalCookie::CreateForTesting(url, value, base::Time::Now(),
+                                             net::CookieSourceType::kOther));
+
+  EXPECT_TRUE(cookie.get());
+
+  bool result = false;
+  base::RunLoop run_loop;
+
+  net::CookieOptions options;
+  options.set_include_httponly();
+  options.set_same_site_cookie_context(
+      net::CookieOptions::SameSiteCookieContext::MakeInclusive());
+
+  cookie_manager()->SetCanonicalCookie(
+      *cookie, url, options,
+      base::BindOnce(
+          [](bool* result, base::RunLoop* run_loop,
+             net::CookieAccessResult set_cookie_access_result) {
+            *result = set_cookie_access_result.status.IsInclude();
+            run_loop->Quit();
+          },
+          &result, &run_loop));
+
+  // This will run until the cookie is set.
+  run_loop.Run();
+
+  // This will run until the cookie listener is updated.
+  task_environment()->RunUntilIdle();
+
+  return result;
+}
+
 WithPrefetchRearchParam::WithPrefetchRearchParam(PrefetchRearchParam param)
     : param_(param) {}
 WithPrefetchRearchParam::~WithPrefetchRearchParam() = default;
@@ -789,11 +826,18 @@ WithPrefetchRearchParam::~WithPrefetchRearchParam() = default;
 // static
 std::vector<PrefetchRearchParam> PrefetchRearchParam::Params() {
   return {
-      PrefetchRearchParam{},
+      PrefetchRearchParam{.force_off_the_main_thread = false},
+      PrefetchRearchParam{.force_off_the_main_thread = true},
   };
 }
 
 void WithPrefetchRearchParam::InitRearchFeatures() {
+  if (param_.force_off_the_main_thread) {
+    feature_list_force_off_the_main_thread_.InitWithFeatures(
+        {features::kPrefetchOffTheMainThread,
+         features::kPrefetchOffTheMainThreadForceForTesting},
+        {});
+  }
 }
 
 PrefetchServiceInjectedEligibilityCheckFuture::
@@ -813,6 +857,60 @@ PrefetchServiceInjectedEligibilityCheckFuture::
     ~PrefetchServiceInjectedEligibilityCheckFuture() {
   prefetch_service_->SetInjectedEligibilityCheckForTesting(
       base::NullCallback());
+}
+
+void VerifyIsolationInfo(const net::IsolationInfo& isolation_info) {
+  EXPECT_FALSE(isolation_info.IsEmpty());
+  EXPECT_FALSE(isolation_info.network_isolation_key().IsEmpty());
+  EXPECT_FALSE(isolation_info.network_isolation_key().IsTransient());
+  EXPECT_FALSE(isolation_info.site_for_cookies().IsNull());
+}
+
+void VerifyCommonRequestState(const GURL& url,
+                              const VerifyCommonRequestStateOptions& options,
+                              const network::ResourceRequest& request,
+                              BrowserContext* browser_context) {
+  EXPECT_EQ(request.url, url);
+  EXPECT_EQ(request.method, "GET");
+  EXPECT_TRUE(request.enable_load_timing);
+
+  EXPECT_EQ(request.credentials_mode,
+            network::mojom::CredentialsMode::kInclude);
+
+  EXPECT_EQ(request.load_flags, net::LOAD_PREFETCH);
+
+  EXPECT_EQ(request.headers.GetHeader(blink::kPurposeHeaderName), std::nullopt);
+
+  std::string sec_purpose_header_value;
+  if (options.sec_purpose_header_value) {
+    sec_purpose_header_value = options.sec_purpose_header_value.value();
+  } else {
+    sec_purpose_header_value =
+        options.use_prefetch_proxy
+            ? blink::kSecPurposePrefetchAnonymousClientIpHeaderValue
+            : blink::kSecPurposePrefetchHeaderValue;
+  }
+
+  EXPECT_EQ(request.headers.GetHeader(blink::kSecPurposeHeaderName),
+            std::optional<std::string>(sec_purpose_header_value));
+
+  EXPECT_EQ(request.headers.GetHeader(net::HttpRequestHeaders::kAccept),
+            std::optional<std::string>(FrameAcceptHeaderValue(
+                /*allow_sxg_responses=*/true, browser_context)));
+
+  EXPECT_EQ(request.headers.GetHeader("Upgrade-Insecure-Requests"),
+            std::optional<std::string>("1"));
+
+  ASSERT_TRUE(request.trusted_params.has_value());
+  VerifyIsolationInfo(request.trusted_params->isolation_info);
+
+  EXPECT_EQ(request.priority, options.expected_priority);
+
+  net::HttpRequestHeaders::Iterator header_it(options.additional_headers);
+  while (header_it.GetNext()) {
+    EXPECT_EQ(request.headers.GetHeader(header_it.name()),
+              std::optional<std::string>(header_it.value()));
+  }
 }
 
 }  // namespace content

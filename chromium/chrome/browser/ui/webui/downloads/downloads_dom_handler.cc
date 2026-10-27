@@ -35,14 +35,16 @@
 #include "chrome/browser/download/download_warning_desktop_hats_utils.h"
 #include "chrome/browser/download/drag_download_item.h"
 #include "chrome/browser/download/offline_item_utils.h"
+#include "chrome/browser/feature_engagement/non_iph_promo.h"
 #include "chrome/browser/feature_engagement/tracker_factory.h"
 #include "chrome/browser/lifetime/browser_shutdown.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/ui/browser_element_identifiers.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/hats/trust_safety_sentiment_service.h"
 #include "chrome/browser/ui/hats/trust_safety_sentiment_service_factory.h"
@@ -51,6 +53,7 @@
 #include "chrome/browser/ui/webui/fileicon_source.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
+#include "components/download/public/common/download_danger_type.h"
 #include "components/download/public/common/download_item.h"
 #include "components/feature_engagement/public/feature_constants.h"
 #include "components/feature_engagement/public/tracker.h"
@@ -133,11 +136,13 @@ void PromptForScanningInBubble(content::WebContents* web_contents,
   // ChromeOS does not have the download bubble and does not support local
   // password prompts for deep scans.
 #if !BUILDFLAG(IS_CHROMEOS)
-  Browser* browser = chrome::FindBrowserWithTab(web_contents);
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(web_contents);
   if (!browser) {
     return;
   }
-  browser->window()
+  browser->GetBrowserForMigrationOnly()
+      ->window()
       ->GetDownloadBubbleUIController()
       ->GetDownloadDisplayController()
       ->OpenSecuritySubpage(
@@ -239,7 +244,7 @@ DownloadsDOMHandler::~DownloadsDOMHandler() {
 void DownloadsDOMHandler::PrimaryMainFrameRenderProcessGone(
     base::TerminationStatus status) {
   // TODO(dbeam): WebUI + WebUIMessageHandler should do this automatically.
-  // http://crbug.com/610450
+  // http://crbug.com/41253133
   render_process_gone_ = true;
 }
 
@@ -562,7 +567,15 @@ void DownloadsDOMHandler::RemoveDownloads(const DownloadVector& to_remove) {
   IdSet ids;
 
   for (download::DownloadItem* download : to_remove) {
-    if (download->IsDangerous() || download->IsInsecure()) {
+    bool should_remove = download->IsDangerous() || download->IsInsecure();
+    if (!should_remove) {
+      download::DownloadDangerType danger_type = download->GetDangerType();
+      should_remove =
+          danger_type == download::DOWNLOAD_DANGER_TYPE_ASYNC_SCANNING ||
+          danger_type ==
+              download::DOWNLOAD_DANGER_TYPE_ASYNC_LOCAL_PASSWORD_SCANNING;
+    }
+    if (should_remove) {
       // Don't allow users to revive dangerous downloads; just nuke 'em.
       download->Remove();
       continue;
@@ -692,7 +705,9 @@ void DownloadsDOMHandler::ReviewDangerousRequiringGesture(
 // the feature engagement backend to record the event that the
 // promo was clicked.
 void DownloadsDOMHandler::OpenEsbSettings() {
-  Browser* browser = chrome::FindBrowserWithTab(GetWebUIWebContents());
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+          GetWebUIWebContents());
   if (!browser) {
     return;
   }
@@ -702,7 +717,7 @@ void DownloadsDOMHandler::OpenEsbSettings() {
 
   feature_engagement::Tracker* tracker =
       feature_engagement::TrackerFactory::GetForBrowserContext(
-          browser->profile());
+          browser->GetProfile());
   tracker->NotifyEvent("esb_download_promo_row_clicked");
   base::RecordAction(
       base::UserMetricsAction("SafeBrowsing.EsbDownloadRowPromo.Click"));
@@ -726,17 +741,9 @@ void DownloadsDOMHandler::IsEligibleForEsbPromo(
     std::move(callback).Run(false);
     return;
   }
-  bool should_show_esb_promo = false;
-  if (feature_engagement::Tracker* tracker =
-          feature_engagement::TrackerFactory::GetForBrowserContext(
-              browser_context);
-      tracker && tracker->ShouldTriggerHelpUI(
-                     feature_engagement::kEsbDownloadRowPromoFeature)) {
-    should_show_esb_promo = true;
-    // since the promotion row is not an IPH, it never calls dismissed, so we
-    // need to do it artificially here or we can trigger a DCHECK.
-    tracker->Dismissed(feature_engagement::kEsbDownloadRowPromoFeature);
-  }
+  const bool should_show_esb_promo =
+      feature_engagement::NonIphPromo::RequestPermissionToShow(
+          browser_context, feature_engagement::kEsbDownloadRowPromoFeature);
   std::move(callback).Run(should_show_esb_promo);
 }
 

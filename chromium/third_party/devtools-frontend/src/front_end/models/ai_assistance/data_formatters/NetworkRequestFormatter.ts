@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 import type * as SDK from '../../../core/sdk/sdk.js';
-import type * as Protocol from '../../../generated/protocol.js';
+import * as Protocol from '../../../generated/protocol.js';
 import * as Annotations from '../../annotations/annotations.js';
 import * as Logs from '../../logs/logs.js';
 import * as NetworkTimeCalculator from '../../network_time_calculator/network_time_calculator.js';
@@ -17,7 +17,7 @@ const MAX_BODY_SIZE = 10000;
 /**
  * Sanitizes the set of headers, removing values that are not on the allow-list and replacing them with '<redacted>'.
  */
-function sanitizeHeaders(headers: Array<{name: string, value: string}>): Array<{name: string, value: string}> {
+export function sanitizeHeaders(headers: Array<{name: string, value: string}>): Array<{name: string, value: string}> {
   return headers.map(header => {
     if (NetworkRequestFormatter.allowHeader(header.name)) {
       return header;
@@ -69,11 +69,16 @@ export class NetworkRequestFormatter {
   }
 
   static formatInitiatorUrl(initiatorUrl: string, allowedOrigin: string): string {
-    const initiatorOrigin = new URL(initiatorUrl).origin;
-    if (initiatorOrigin === allowedOrigin) {
-      return initiatorUrl;
+    try {
+      // Some scheme or URLs might cause errors depending on the runtime environment.
+      const initiatorOrigin = new URL(initiatorUrl).origin;
+      if (initiatorOrigin === allowedOrigin) {
+        return initiatorUrl;
+      }
+      return '<redacted cross-origin initiator URL>';
+    } catch {
+      return '<redacted cross-origin initiator URL>';
     }
-    return '<redacted cross-origin initiator URL>';
   }
 
   static formatStatus(status: {
@@ -110,7 +115,11 @@ export class NetworkRequestFormatter {
   }): string {
     const lines = [];
     if (reasons.blockedReason) {
-      lines.push(`Blocked reason: ${reasons.blockedReason}`);
+      if (reasons.blockedReason === Protocol.Network.BlockedReason.Inspector) {
+        lines.push('Blocked reason: a custom network condition in DevTools is blocking this request');
+      } else {
+        lines.push(`Blocked reason: ${reasons.blockedReason}`);
+      }
     }
     if (reasons.corsErrorStatus) {
       lines.push(`CORS error: ${reasons.corsErrorStatus.corsError} ${reasons.corsErrorStatus.failedParameter}`);

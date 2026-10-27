@@ -4,12 +4,18 @@
 
 #include "components/autofill/core/browser/payments/autofill_save_card_infobar_delegate_mobile.h"
 
+#include <memory>
+#include <string>
 #include <utility>
 
 #include "base/notreached.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
+#include "components/autofill/core/browser/payments/autofill_save_card_delegate.h"
+#include "components/autofill/core/browser/payments/autofill_save_card_ui_info.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
+#include "components/infobars/core/infobar_delegate.h"
 #include "components/infobars/core/infobar_manager.h"
 #include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
@@ -99,23 +105,8 @@ std::u16string AutofillSaveCardInfoBarDelegateMobile::GetButtonLabel(
 }
 
 bool AutofillSaveCardInfoBarDelegateMobile::Accept() {
-#if BUILDFLAG(IS_ANDROID)
-  delegate_->OnUiAccepted(
-      base::BindOnce(&AutofillSaveCardInfoBarDelegateMobile::RemoveInfobar,
-                     base::Unretained(this)));
-  return false;
-#else
   delegate_->OnUiAccepted();
   return true;
-#endif
 }
-
-#if BUILDFLAG(IS_ANDROID)
-void AutofillSaveCardInfoBarDelegateMobile::RemoveInfobar() {
-  if (infobar()) {
-    infobar()->RemoveSelf();
-  }
-}
-#endif
 
 }  // namespace autofill

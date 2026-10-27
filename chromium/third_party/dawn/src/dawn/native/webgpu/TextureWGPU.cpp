@@ -25,22 +25,22 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/webgpu/TextureWGPU.h"
+#include "src/dawn/native/webgpu/TextureWGPU.h"
 
 #include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "dawn/common/StringViewUtils.h"
-#include "dawn/native/BlockInfo.h"
-#include "dawn/native/EnumMaskIterator.h"
-#include "dawn/native/webgpu/CaptureContext.h"
-#include "dawn/native/webgpu/DeviceWGPU.h"
-#include "dawn/native/webgpu/QueueWGPU.h"
-#include "dawn/native/webgpu/SharedFenceWGPU.h"
-#include "dawn/native/webgpu/SharedTextureMemoryWGPU.h"
-#include "dawn/native/webgpu/ToWGPU.h"
+#include "src/dawn/common/StringViewUtils.h"
+#include "src/dawn/native/BlockInfo.h"
+#include "src/dawn/native/EnumMaskIterator.h"
+#include "src/dawn/native/webgpu/CaptureContext.h"
+#include "src/dawn/native/webgpu/DeviceWGPU.h"
+#include "src/dawn/native/webgpu/QueueWGPU.h"
+#include "src/dawn/native/webgpu/SharedFenceWGPU.h"
+#include "src/dawn/native/webgpu/SharedTextureMemoryWGPU.h"
+#include "src/dawn/native/webgpu/ToWGPU.h"
 
 namespace dawn::native::webgpu {
 
@@ -51,11 +51,18 @@ ResultOrError<Ref<Texture>> Texture::Create(Device* device,
 }
 
 // static
-ResultOrError<Ref<Texture>> Texture::CreateFromSharedTextureMemory(
+Ref<Texture> Texture::CreateFromSharedTextureMemory(
     const SharedTextureMemory* memory,
     const UnpackedPtr<TextureDescriptor>& descriptor) {
     Device* device = ToBackend(memory->GetDevice());
     return AcquireRef(new Texture(device, descriptor, memory));
+}
+
+// static
+Ref<Texture> Texture::CreateFromSurfaceTexture(Device* device,
+                                               const UnpackedPtr<TextureDescriptor>& descriptor,
+                                               const WGPUSurfaceTexture& surfaceTexture) {
+    return AcquireRef(new Texture(device, descriptor, surfaceTexture));
 }
 
 struct ComboTextureDescriptor {
@@ -128,6 +135,22 @@ Texture::Texture(Device* device,
         device->wgpu->sharedTextureMemoryCreateTexture(memory->GetInnerHandle(), &comboDesc.desc);
     mSharedResourceMemoryContents = memory->GetContents();
 
+    // TODO(crbug.com/500368961): Generalize wgpu::SharedTextureMemoryD3DSwapchainBeginState
+    // to all platform and use that to indicate if it's a SwapChain texture (assigning
+    // mIsSurfaceTexture) and mark frame boundary.
+
+    DAWN_ASSERT(mInnerHandle);
+}
+
+Texture::Texture(Device* device,
+                 const UnpackedPtr<TextureDescriptor>& descriptor,
+                 const WGPUSurfaceTexture& surfaceTexture)
+    : TextureBase(device, descriptor),
+      RecordableObject(schema::ObjectType::Texture),
+      ObjectWGPU(device->wgpu->textureRelease) {
+    mInnerHandle = surfaceTexture.texture;
+    mIsSurfaceTexture = true;
+
     DAWN_ASSERT(mInnerHandle);
 }
 
@@ -171,6 +194,7 @@ void Texture::SynchronizeTextureBeforeUse() {
             }
             innerDesc.fenceCount = innerFences.size();
             innerDesc.fences = innerFences.data();
+            innerDesc.signaledValueCount = signaledValues.size();
             innerDesc.signaledValues = signaledValues.data();
 
             const DawnProcTable& wgpu = ToBackend(GetDevice())->wgpu.get();
@@ -237,6 +261,7 @@ MaybeError Texture::CaptureCreationParameters(CaptureContext& captureContext) {
         .mipLevelCount = GetNumMipLevels(),
         .sampleCount = GetSampleCount(),
         .viewFormats = viewFormats,
+        .isSurfaceTexture = mIsSurfaceTexture,
     }};
     Serialize(captureContext, tex);
     return {};

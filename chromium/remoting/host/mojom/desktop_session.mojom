@@ -57,6 +57,17 @@ struct AudioPacket {
   Channels channels = Channels.kInvalid;
 };
 
+// Describes the audio sampling rate and channels configuration.
+struct AudioSampleInfo {
+  uint32 sampling_rate;
+  uint8 channels;
+};
+
+// Wraps a Mojo consumer handle to be typemapped to IpcFifoBufferReader.
+struct IpcFifoBufferReader {
+  handle<data_pipe_consumer> consumer_handle;
+};
+
 // Contains clipboard event data.
 // This struct mirrors the remoting::protocol::ClipboardEvents protobuf struct.
 struct ClipboardEvent {
@@ -191,6 +202,13 @@ struct FractionalCoordinate {
   float x;
   float y;
   int64 screen_id;
+};
+
+// Represents a microphone control message.
+// This struct mirrors the remoting::protocol::MicrophoneControl protobuf.
+struct MicrophoneControl {
+  // Enables the microphone channel if true or disables if false.
+  bool enable;
 };
 
 // The state of the URL forwarder setup.
@@ -485,6 +503,14 @@ interface DesktopSessionControl {
   // TODO: crbug.com/455622961 - Remove this once the clientRenderedHostCursor
   // experiment is fully rolled out, where this function is always called.
   SetHostCursorRenderedByClient();
+
+  // Starts the audio injector device.
+  StartAudioInjector(IpcFifoBufferReader audio_reader);
+
+  // Sets the sample rate and channels for the SPSC audio injector. If `success`
+  // is false, audio data will no longer be written to the buffer until the
+  // sample info changes again.
+  SetAudioInjectorSampleInfo(AudioSampleInfo info) => (bool success);
 };
 
 struct CreateVideoCapturerResult {
@@ -645,6 +671,9 @@ interface DesktopSessionEventHandler {
   // Notifies the network process that a new security key connection has been
   // established and passes the SecurityKeyForwarder receiver to it.
   OnSecurityKeyConnection(pending_receiver<SecurityKeyForwarder> receiver);
+
+  // Notifies the network process that the audio injector state has changed.
+  OnMicrophoneControl(MicrophoneControl control);
 };
 
 // This enum mirrors the remoting::protocol::ErrorCode enum.

@@ -66,6 +66,7 @@ struct PassthroughResources {
   PassthroughResources();
   ~PassthroughResources();
 
+  void MarkContextLost();
   // api is null if we don't have a context (e.g. lost).
   void Destroy(gl::GLApi* api, gl::ProgressReporter* progress_reporter);
 
@@ -130,10 +131,6 @@ struct PassthroughResources {
   // TODO(ericrk): Remove this once TexturePassthrough holds a reference to
   // the GLTexturePassthroughImageRepresentation itself.
   base::flat_map<GLuint, SharedImageData> texture_shared_image_map;
-
-  // Mapping of client buffer IDs that are mapped to the shared memory used to
-  // back the mapping so that it can be flushed when the buffer is unmapped
-  base::flat_map<GLuint, MappedBuffer> mapped_buffer_map;
 };
 
 // Impose an upper bound on the number ANGLE_shader_pixel_local_storage planes
@@ -413,13 +410,6 @@ class GPU_GLES2_EXPORT GLES2DecoderPassthroughImpl
                                                       GLsizei length,
                                                       GLint* params);
 
-  template <typename T>
-  error::Error PatchGetBufferResults(GLenum target,
-                                     GLenum pname,
-                                     GLsizei bufsize,
-                                     GLsizei* length,
-                                     T* params);
-
   error::Error PatchGetFramebufferPixelLocalStorageParameterivANGLE(
       GLint plane,
       GLenum pname,
@@ -490,6 +480,8 @@ class GPU_GLES2_EXPORT GLES2DecoderPassthroughImpl
 
   bool OnlyHasPendingProgramCompletionQueries();
 
+  void BuildRequestableExtensionString();
+
   PassthroughProgramCache* get_passthrough_program_cache() const;
 
   int commands_to_process_;
@@ -533,6 +525,11 @@ class GPU_GLES2_EXPORT GLES2DecoderPassthroughImpl
   // By default, all requestable extensions should be loaded at initialization
   // time. Can be disabled for testing with only specific extensions enabled.
   bool request_optional_extensions_ = true;
+
+  // Set of extension strings that are valid to request by a client. Other
+  // extension requests are ignored.
+  gfx::ExtensionSet requestable_extensions_;
+  std::string requestable_extension_string_;
 
   // Mappings from client side IDs to service side IDs for shared objects
   raw_ptr<PassthroughResources> resources_ = nullptr;

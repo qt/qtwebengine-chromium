@@ -219,6 +219,11 @@ CStretchEngine::CStretchEngine(ScanlineComposerIface* pDestBitmap,
     return;
   }
 
+  if (!IsValidDestinationDimension(dest_width_) ||
+      !IsValidDestinationDimension(dest_height_)) {
+    return;
+  }
+
   dest_scanline_.resize(maybe_size.value());
   if (dest_format == FXDIB_Format::kBgrx) {
     std::ranges::fill(dest_scanline_, 255);
@@ -228,7 +233,7 @@ CStretchEngine::CStretchEngine(ScanlineComposerIface* pDestBitmap,
   if (options.bNoSmoothing) {
     resample_options_.bNoSmoothing = true;
   } else {
-    if (UseInterpolateBilinear(options, dest_width, dest_height, src_width_,
+    if (UseInterpolateBilinear(options, dest_width_, dest_height_, src_width_,
                                src_height_)) {
       resample_options_.bInterpolateBilinear = true;
     } else {

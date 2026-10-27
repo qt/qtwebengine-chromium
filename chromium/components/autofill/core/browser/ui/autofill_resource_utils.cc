@@ -5,12 +5,12 @@
 #include "components/autofill/core/browser/ui/autofill_resource_utils.h"
 
 #include "base/containers/fixed_flat_map.h"
+#include "base/feature_list.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
-#include "components/autofill/core/browser/data_model/payments/credit_card.h"
+#include "components/autofill/core/browser/suggestions/suggestion.h"
 #include "components/autofill/core/common/autofill_payments_features.h"
 #include "components/grit/components_scaled_resources.h"
-#include "components/strings/grit/components_strings.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "components/resources/android/theme_resources.h"
@@ -56,7 +56,6 @@ constexpr auto kOldDataResources = base::MakeFixedFlatMap<Suggestion::Icon,
     {Suggestion::Icon::kHome, IDR_ANDROID_AUTOFILL_HOME},
     {Suggestion::Icon::kScanCreditCard, IDR_ANDROID_AUTOFILL_CC_SCAN_NEW},
     {Suggestion::Icon::kOfferTag, IDR_ANDROID_AUTOFILL_OFFER_TAG_GREEN},
-    {Suggestion::Icon::kPlusAddress, IDR_AUTOFILL_PLUS_ADDRESS},
     {Suggestion::Icon::kWork, IDR_ANDROID_AUTOFILL_WORK},
     {Suggestion::Icon::kAndroidMessages, IDR_ANDROID_AUTOFILL_ANDROID_MESSAGES},
     {Suggestion::Icon::kRecoveryPassword, IDR_ANDROID_PASSWORD_HISTORY},
@@ -65,6 +64,7 @@ constexpr auto kOldDataResources = base::MakeFixedFlatMap<Suggestion::Icon,
     {Suggestion::Icon::kPersonCheck, IDR_ANDROID_AUTOFILL_PERSON_CHECK},
     {Suggestion::Icon::kVehicle, IDR_ANDROID_AUTOFILL_VEHICLE},
     {Suggestion::Icon::kPassport, IDR_ANDROID_AUTOFILL_PASSPORT},
+    {Suggestion::Icon::kSpark, IDR_ANDROID_AUTOFILL_SPARK},
 #endif  // BUILDFLAG(IS_ANDROID)
 });
 
@@ -91,7 +91,6 @@ constexpr auto kDataResources = base::MakeFixedFlatMap<Suggestion::Icon, int>({
     {Suggestion::Icon::kHome, IDR_ANDROID_AUTOFILL_HOME},
     {Suggestion::Icon::kScanCreditCard, IDR_ANDROID_AUTOFILL_CC_SCAN_NEW},
     {Suggestion::Icon::kOfferTag, IDR_ANDROID_AUTOFILL_OFFER_TAG_GREEN},
-    {Suggestion::Icon::kPlusAddress, IDR_AUTOFILL_PLUS_ADDRESS},
     {Suggestion::Icon::kWork, IDR_ANDROID_AUTOFILL_WORK},
     {Suggestion::Icon::kAndroidMessages, IDR_ANDROID_AUTOFILL_ANDROID_MESSAGES},
     {Suggestion::Icon::kRecoveryPassword, IDR_ANDROID_PASSWORD_HISTORY},
@@ -100,6 +99,7 @@ constexpr auto kDataResources = base::MakeFixedFlatMap<Suggestion::Icon, int>({
     {Suggestion::Icon::kPersonCheck, IDR_ANDROID_AUTOFILL_PERSON_CHECK},
     {Suggestion::Icon::kVehicle, IDR_ANDROID_AUTOFILL_VEHICLE},
     {Suggestion::Icon::kPassport, IDR_ANDROID_AUTOFILL_PASSPORT},
+    {Suggestion::Icon::kSpark, IDR_ANDROID_AUTOFILL_SPARK},
 #endif  // BUILDFLAG(IS_ANDROID)
 });
 

@@ -26,6 +26,75 @@ chromium-metrics-reviews@google.com.
 
 <enums>
 
+<!-- LINT.IfChange(AccessCodeCastAddSinkResult) -->
+
+<enum name="AccessCodeCastAddSinkResult">
+  <int value="0" label="UNKNOWN_ERROR"/>
+  <int value="1" label="OK"/>
+  <int value="2" label="AUTH_ERROR"/>
+  <int value="3" label="HTTP_RESPONSE_CODE_ERROR"/>
+  <int value="4" label="RESPONSE_MALFORMED"/>
+  <int value="5" label="EMPTY_RESPONSE"/>
+  <int value="6" label="INVALID_ACCESS_CODE"/>
+  <int value="7" label="ACCESS_CODE_NOT_FOUND"/>
+  <int value="8" label="TOO_MANY_REQUESTS"/>
+  <int value="9" label="SERVICE_NOT_PRESENT"/>
+  <int value="10" label="SERVER_ERROR"/>
+  <int value="11" label="SINK_CREATION_ERROR"/>
+  <int value="12" label="CHANNEL_OPEN_ERROR"/>
+  <int value="13" label="PROFILE_SYNC_ERROR"/>
+  <int value="14" label="INTERNAL_MEDIA_ROUTER_ERROR"/>
+</enum>
+
+<!-- LINT.ThenChange(//components/access_code_cast/common/access_code_cast_metrics.h:AccessCodeCastAddSinkResult) -->
+
+<!-- LINT.IfChange(AccessCodeCastCastMode) -->
+
+<enum name="AccessCodeCastCastMode">
+  <int value="0" label="Presentation"/>
+  <int value="1" label="Tab mirroring"/>
+  <int value="2" label="Desktop mirroring"/>
+  <int value="3" label="Remote playback"/>
+</enum>
+
+<!-- LINT.ThenChange(//components/access_code_cast/common/access_code_cast_metrics.h:AccessCodeCastCastMode) -->
+
+<!-- LINT.IfChange(AccessCodeCastDialogCloseReason) -->
+
+<enum name="AccessCodeCastDialogCloseReason">
+  <int value="0" label="Dialog lost focus"/>
+  <int value="1" label="Cancel action"/>
+  <int value="2" label="Successfully began casting"/>
+</enum>
+
+<!-- LINT.ThenChange(//components/access_code_cast/common/access_code_cast_metrics.h:AccessCodeCastDialogCloseReason) -->
+
+<!-- LINT.IfChange(AccessCodeCastDialogOpenLocation) -->
+
+<enum name="AccessCodeCastDialogOpenLocation">
+  <int value="0" label="Browser cast menu"/>
+  <int value="1" label="ChromeOS quick settings feature pod"/>
+  <int value="2" label="ChromeOS quick settings cast menu"/>
+</enum>
+
+<!-- LINT.ThenChange(//components/access_code_cast/common/access_code_cast_metrics.h:AccessCodeCastDialogOpenLocation) -->
+
+<!-- LINT.IfChange(AccessCodeCastDiscoveryTypeAndSource) -->
+
+<enum name="AccessCodeCastDiscoveryTypeAndSource">
+  <int value="0" label="Unknown discovery type or source"/>
+  <int value="1" label="Saved device and Presentation source"/>
+  <int value="2" label="Saved device and Tab mirror source"/>
+  <int value="3" label="Saved device and Desktop mirror source"/>
+  <int value="4" label="Saved device and Remote playback source"/>
+  <int value="5" label="New device and Presentation source"/>
+  <int value="6" label="New device and Tab mirror source"/>
+  <int value="7" label="New device and Desktop mirror source"/>
+  <int value="8" label="New device and Remote playback source"/>
+</enum>
+
+<!-- LINT.ThenChange(//components/access_code_cast/common/access_code_cast_metrics.h:AccessCodeCastDiscoveryTypeAndSource) -->
+
 <enum name="ActiveGpuDisplayInfo">
   <int value="0" label="Unknown"/>
   <int value="1" label="Likely Built-in"/>
@@ -140,6 +209,13 @@ chromium-metrics-reviews@google.com.
   <int value="1" label="Connecting"/>
   <int value="2" label="Connected"/>
   <int value="3" label="Disconnecting"/>
+</enum>
+
+<enum name="AudioDeviceEnumerationOutcome">
+  <int value="0" label="Success (Empty Result)"/>
+  <int value="1" label="Success (Non-Empty Result)"/>
+  <int value="2" label="Failed (Empty Result)"/>
+  <int value="3" label="Failed (Non-Empty Result)"/>
 </enum>
 
 <enum name="AudioFocusRequestResult">
@@ -271,15 +347,6 @@ chromium-metrics-reviews@google.com.
   <int value="7" label="On stack + On page + Propagated"/>
 </enum>
 
-<enum name="AVDAFrameInformation">
-  <int value="0" label="Non Overlay Insecure"/>
-  <int value="1" label="Non Overlay L3"/>
-  <int value="2" label="Overlay L3"/>
-  <int value="3" label="Overlay L1"/>
-  <int value="4" label="Overlay Insecure Player-element Fullscreen"/>
-  <int value="5" label="Overlay Insecure Non-player-element Fullscreen"/>
-</enum>
-
 <enum name="BooleanAfterPowerOrDisplayChange">
   <int value="0" label="Not After Power or Display Change"/>
   <int value="1" label="After Power or Display Change"/>
@@ -303,11 +370,6 @@ chromium-metrics-reviews@google.com.
 <enum name="BooleanFocused">
   <int value="0" label="Unfocused"/>
   <int value="1" label="Focused"/>
-</enum>
-
-<enum name="BooleanFrameAsOverlay">
-  <int value="0" label="Frame was not allow_overlay"/>
-  <int value="1" label="Frame was allow_overlay"/>
 </enum>
 
 <enum name="BooleanHasPlayed">
@@ -493,11 +555,13 @@ chromium-metrics-reviews@google.com.
   <int value="2" label="Failure"/>
 </enum>
 
-<enum name="ConditionalFocusDecision">
-  <int value="0" label="kExplicitFocusCapturedSurface"/>
-  <int value="1" label="kExplicitNoFocusChange"/>
-  <int value="2" label="kMicrotaskClosedWindow"/>
-  <int value="3" label="kBrowserSideTimerClosedWindow"/>
+<enum name="ContentProtectionWindowStatus">
+  <int value="0" label="Success"/>
+  <int value="1" label="Window class registration failed"/>
+  <int value="2" label="No RenderWidgetHostView for outermost main frame"/>
+  <int value="3" label="No native view"/>
+  <int value="4" label="No top-level browser HWND"/>
+  <int value="5" label="CreateWindowEx failed"/>
 </enum>
 
 <enum name="CrasInputStreamOpenSuccess">
@@ -1171,6 +1235,12 @@ chromium-metrics-reviews@google.com.
   <int value="0" label="Enum placerholder. See crbug/1179826"/>
 </enum>
 
+<enum name="GetAppAudioCaptureIdMacResult">
+  <int value="0" label="kSuccess"/>
+  <int value="1" label="kFailedToFindBundleId"/>
+  <int value="2" label="kFailedToFindBrowserForPWA"/>
+</enum>
+
 <enum name="GetAppMainProcessIdWinResult">
   <int value="0" label="kSuccess"/>
   <int value="1" label="kFailedToGetWindowProcessId"/>
@@ -1445,17 +1515,6 @@ chromium-metrics-reviews@google.com.
   <int value="1" label="Interacted"/>
 </enum>
 
-<enum name="MediaControlsPlaybackSpeed">
-  <int value="0" label="0.25"/>
-  <int value="1" label="0.5"/>
-  <int value="2" label="0.75"/>
-  <int value="3" label="1"/>
-  <int value="4" label="1.25"/>
-  <int value="5" label="1.5"/>
-  <int value="6" label="1.75"/>
-  <int value="7" label="2"/>
-</enum>
-
 <enum name="MediaDrmProvisioningResult">
   <int value="0" label="Success"/>
   <int value="1" label="FailedWhileOnline"/>
@@ -1561,6 +1620,8 @@ chromium-metrics-reviews@google.com.
   <int value="5" label="Play/Pause"/>
 </enum>
 
+<!-- LINT.IfChange(MediaItemUIUpdatedViewAction) -->
+
 <enum name="MediaItemUIUpdatedViewAction">
   <int value="0" label="Play"/>
   <int value="1" label="Pause"/>
@@ -1576,6 +1637,8 @@ chromium-metrics-reviews@google.com.
   <int value="11" label="Enter picture in picture"/>
   <int value="12" label="Exit picture in picture"/>
 </enum>
+
+<!-- LINT.ThenChange(//components/global_media_controls/public/views/media_item_ui_updated_view.h:MediaItemUIUpdatedViewAction) -->
 
 <!-- LINT.IfChange(MediaLauncherActivityEnabledReason) -->
 
@@ -1605,10 +1668,11 @@ chromium-metrics-reviews@google.com.
 <enum name="MediaNotificationSource">
   <int value="0" label="Unknown"/>
   <int value="1" label="Web"/>
-  <int value="2" label="Assistant"/>
+  <int value="2" label="(Obsolete) Assistant"/>
   <int value="3" label="Arc"/>
   <int value="4" label="Local Cast session"/>
   <int value="5" label="Non-local Cast session"/>
+  <int value="6" label="Cast device picker"/>
 </enum>
 
 <enum name="MediaOutputProtectionStatus">
@@ -1809,6 +1873,7 @@ chromium-metrics-reviews@google.com.
   <int value="0" label="Media Notification"/>
   <int value="1" label="MediaSession (Android)"/>
   <int value="2" label="Headset Unplugged"/>
+  <int value="3" label="System Sleep"/>
 </enum>
 
 <enum name="MediaSessionEnterPictureInPictureType">
@@ -1829,12 +1894,6 @@ chromium-metrics-reviews@google.com.
   <int value="7" label="Generic"/>
 </enum>
 
-<enum name="MediaSourceExecutionContext">
-  <int value="0" label="Window"/>
-  <int value="1" label="Dedicated Worker"/>
-  <int value="2" label="Shared Worker"/>
-</enum>
-
 <enum name="MediaStatus">
   <int value="-30002" label="AMEDIA_IMGREADER_MAX_IMAGES_ACQUIRED"/>
   <int value="-30001" label="AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE"/>
@@ -1850,12 +1909,6 @@ chromium-metrics-reviews@google.com.
   <int value="3" label="kUserSelectedWindow"/>
   <int value="4" label="kUserSelectedOtherTab"/>
   <int value="5" label="kUserSelectedThisTab"/>
-</enum>
-
-<enum name="MediaUiGetDisplayMediaPermissionInteraction">
-  <int value="0" label="PermissionButtonNotShown"/>
-  <int value="1" label="PermissionButtonShown"/>
-  <int value="2" label="PermissionButtonClicked"/>
 </enum>
 
 <enum name="MediaUiGetDisplayMediaPreferCurrentTabFlowUserInteraction">
@@ -2228,6 +2281,11 @@ chromium-metrics-reviews@google.com.
   <int value="7" label="TooManyInstancesAndSmallResolution"/>
 </enum>
 
+<enum name="SCContentSharingPickerStopAudioEvent">
+  <int value="0" label="Stop Audio Callback Called"/>
+  <int value="1" label="Application Audio Stopped"/>
+</enum>
+
 <enum name="ScreenCaptureKitFullscreenModuleMode">
   <int value="0" label="Unsupported"/>
   <int value="1" label="PowerPoint"/>
@@ -2247,6 +2305,13 @@ chromium-metrics-reviews@google.com.
   <int value="7" label="PresentWindow_Error"/>
 </enum>
 
+<enum name="ScreenCaptureKitSCContentSharingPickerSessionEvent">
+  <int value="0" label="Picker Opened"/>
+  <int value="1" label="Window List Updated"/>
+  <int value="2" label="Primary App Removed"/>
+  <int value="3" label="Application Audio Requested"/>
+</enum>
+
 <enum name="SelectedTabDiscardStatus">
   <int value="0" label="NonDiscarded"/>
   <int value="1" label="Discarded"/>
@@ -2259,6 +2324,17 @@ chromium-metrics-reviews@google.com.
   <int value="2"
       label="Prediction changes from NotSmooth to Smooth after update"/>
   <int value="3" label="Prediction stays at Smooth after update"/>
+</enum>
+
+<enum name="SupportZeroCopyImportType">
+  <summary>
+    Corresponds to whether Zero Copy import to WebGPU is supported for
+    VideoFrames backed by Mappable SI
+  </summary>
+  <int value="0" label="EmptyBuffer"/>
+  <int value="1" label="SharedMemory"/>
+  <int value="2" label="NativePixmapSupported"/>
+  <int value="3" label="NativePixmapUnsupported"/>
 </enum>
 
 <enum name="SymphoniaDecodeStatus">
@@ -2375,6 +2451,7 @@ chromium-metrics-reviews@google.com.
   <int value="29" label="vaProtectedSessionHwUpdate() (deprecated)"/>
   <int value="30" label="kVAProtectedSessionExecute()"/>
   <int value="31" label="Other VA functions"/>
+  <int value="32" label="vaDeriveImage()"/>
 </enum>
 
 <enum name="VideoCaptureApi">

@@ -52,6 +52,7 @@ source_set("test_support") {
   configs += [
     "../:pdfium_strict_config",
     "../:pdfium_noshorten_config",
+    ":pdfium_test_config",
   ]
   visibility = [ "../*" ]
   if (is_posix) {

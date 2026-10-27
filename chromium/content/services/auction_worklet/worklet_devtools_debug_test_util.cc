@@ -76,10 +76,12 @@ void TestDevToolsAgentClient::RunCommand(Channel channel,
     message = base::as_byte_span(payload);
   }
 
-  if (channel == Channel::kMain)
-    session_->DispatchProtocolCommand(call_id, method, message);
-  else
-    io_session_->DispatchProtocolCommand(call_id, method, message);
+  if (channel == Channel::kMain) {
+    session_->DispatchProtocolCommand(call_id, method, message, std::string());
+  } else {
+    io_session_->DispatchProtocolCommand(call_id, method, message,
+                                         std::string());
+  }
 }
 
 TestDevToolsAgentClient::Event
@@ -130,13 +132,13 @@ TestDevToolsAgentClient::WaitForMethodNotification(std::string method) {
 void TestDevToolsAgentClient::DispatchProtocolResponse(
     blink::mojom::DevToolsMessagePtr message,
     int32_t call_id,
-    blink::mojom::DevToolsSessionStatePtr updates) {
+    blink::mojom::RendererOriginatingSessionStatePtr updates) {
   LogEvent(Event::Type::kResponse, call_id, std::move(message));
 }
 
 void TestDevToolsAgentClient::DispatchProtocolNotification(
     blink::mojom::DevToolsMessagePtr message,
-    blink::mojom::DevToolsSessionStatePtr updates) {
+    blink::mojom::RendererOriginatingSessionStatePtr updates) {
   LogEvent(Event::Type::kNotification, -1, std::move(message));
 }
 

@@ -4,33 +4,45 @@
 
 #include "components/autofill/core/browser/single_field_fillers/autocomplete/autocomplete_history_manager.h"
 
+#include <algorithm>
+#include <functional>
+#include <memory>
 #include <string>
-#include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
+#include "base/check.h"
 #include "base/check_deref.h"
-#include "base/containers/to_vector.h"
+#include "base/check_op.h"
 #include "base/functional/bind.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string_util.h"
-#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "base/version_info/version_info.h"
 #include "components/autofill/core/browser/data_quality/validation.h"
 #include "components/autofill/core/browser/form_structure.h"
+#include "components/autofill/core/browser/foundations/autofill_client.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
+#include "components/autofill/core/browser/single_field_fillers/single_field_fill_router.h"
 #include "components/autofill/core/browser/studies/autofill_experiments.h"
+#include "components/autofill/core/browser/suggestions/autocomplete_suggestion_generator.h"
 #include "components/autofill/core/browser/suggestions/suggestion.h"
+#include "components/autofill/core/browser/suggestions/suggestion_generator.h"
 #include "components/autofill/core/browser/suggestions/suggestion_type.h"
 #include "components/autofill/core/browser/webdata/autocomplete/autocomplete_entry.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/common/autofill_clock.h"
-#include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_prefs.h"
 #include "components/autofill/core/common/autofill_regexes.h"
 #include "components/autofill/core/common/credit_card_number_validation.h"
 #include "components/autofill/core/common/form_data.h"
+#include "components/autofill/core/common/form_field_data.h"
+#include "components/autofill/core/common/unique_ids.h"
 #include "components/prefs/pref_service.h"
-#include "components/version_info/version_info.h"
+#include "components/webdata/common/web_data_results.h"
+#include "components/webdata/common/web_data_service_base.h"
 
 namespace autofill {
 
@@ -43,7 +55,7 @@ void AutocompleteHistoryManager::OnGetSingleFieldSuggestions(
     const FormStructure* form_structure,
     const FormFieldData& trigger_field,
     const AutofillField* trigger_autofill_field,
-    const AutofillClient& client,
+    AutofillClient& client,
     SingleFieldFillRouter::OnSuggestionsReturnedCallback
         on_suggestions_returned) {
   // Cancel the pending query if there is one.
@@ -64,28 +76,9 @@ void AutocompleteHistoryManager::OnGetSingleFieldSuggestions(
       },
       std::move(on_suggestions_returned), trigger_field.global_id());
 
-  auto on_suggestion_data_returned = base::BindOnce(
-      [](base::OnceCallback<void(SuggestionGenerator::ReturnedSuggestions)>
-             callback,
-         FormData form, FormFieldData field, const AutofillClient& client,
-         base::WeakPtr<AutocompleteSuggestionGenerator>
-             autocomplete_suggestion_generator,
-         std::pair<SuggestionGenerator::SuggestionDataSource,
-                   std::vector<SuggestionGenerator::SuggestionData>>
-             suggestion_data) {
-        if (autocomplete_suggestion_generator) {
-          autocomplete_suggestion_generator->GenerateSuggestions(
-              std::move(form), std::move(field), /*form_structure=*/nullptr,
-              /*trigger_autofill_field=*/nullptr, client,
-              {std::move(suggestion_data)}, std::move(callback));
-        }
-      },
-      std::move(on_suggestions_generated), form, trigger_field,
-      std::cref(client), suggestion_generator_->GetWeakPtr());
-
-  suggestion_generator_->FetchSuggestionData(
+  suggestion_generator_->GenerateSuggestions(
       form, trigger_field, form_structure, trigger_autofill_field, client,
-      std::move(on_suggestion_data_returned));
+      std::move(on_suggestions_generated));
 }
 
 void AutocompleteHistoryManager::OnWillSubmitFormWithFields(
@@ -162,8 +155,13 @@ void AutocompleteHistoryManager::Init(
 bool AutocompleteHistoryManager::IsFieldNameMeaningfulForAutocomplete(
     const std::u16string& name) {
   static constexpr char16_t kRegex[] =
-      u"^(((field|input|mat-input)(_|-)?\\d+)|title|otp|tan|mfa_text_box)$|"
-      u"(cvc|cvn|cvv|captcha)";
+      // Full matches.
+      u"^(?:(?:field|input|mat-input)[-_]?\\d+|title|tan|mfa_text_box|pw|pin)$"
+      // Prefix and suffix matches.
+      u"|^otp|otp$"
+      // Infix matches.
+      u"|\\botp\\b"
+      u"|cvc|cvn|cvv|captcha|passw|pass2|passcode|pwd|senha|pincode";
   return !MatchesRegex<kRegex>(name);
 }
 
@@ -183,7 +181,7 @@ void AutocompleteHistoryManager::OnAutofillCleanupReturned(
 //  - neither empty nor whitespace-only value
 //  - text field
 //  - autocomplete is not disabled
-//  - value is not a credit card number
+//  - value is not a credit card number nor IBAN
 //  - field has user typed input or is focusable (this is a mild criteria but
 //    this way it is consistent for all platforms)
 //  - not a presentation field
@@ -198,7 +196,9 @@ bool AutocompleteHistoryManager::IsFieldValueSaveable(
          !field.IsPasswordInputElement() &&
          field.form_control_type() != FormControlType::kInputNumber &&
          field.should_autocomplete() &&
-         !IsValidCreditCardNumber(field.value()) && !IsSSN(field.value()) &&
+         !IsValidCreditCardNumber(field.value()) &&
+         !IsInternationalBankAccountNumber(field.value()) &&
+         !IsSSN(field.value()) &&
          (field.properties_mask() & kUserTyped || field.is_focusable()) &&
          field.role() != FormFieldData::RoleAttribute::kPresentation;
 }

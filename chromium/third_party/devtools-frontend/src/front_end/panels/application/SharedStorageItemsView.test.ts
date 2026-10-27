@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import type * as Common from '../../core/common/common.js';
 import type * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
@@ -260,6 +262,11 @@ describeWithMockConnection('SharedStorageItemsView', function() {
     const toolbar = new Resources.StorageItemsToolbar.StorageItemsToolbar();
     const viewFunction = createViewFunctionStub(View.SharedStorageItemsView, {toolbar});
     const view = await View.SharedStorageItemsView.createView(sharedStorage, viewFunction);
+
+    toolbar.element.addEventListener('Refresh', () => viewFunction.input.onRefresh());
+    toolbar.element.addEventListener('DeleteAll', () => viewFunction.input.onDeleteAll());
+    toolbar.element.addEventListener('DeleteSelected', () => viewFunction.input.onDeleteSelected());
+
     const itemsListener = new SharedStorageItemsListener(view.sharedStorageItemsDispatcher);
     await RenderCoordinator.done({waitForWork: true});
     return {view, itemsListener, viewFunction, toolbar};

@@ -2,11 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {assert} from 'chai';
+
+import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
+import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
 
 import * as Host from './host.js';
 
-describeWithEnvironment('GcaClient', () => {
+describe('GcaClient', () => {
+  setupLocaleHooks();
+  setupRuntimeHooks();
   let gcaClient: Host.GcaClient.GcaClient;
 
   beforeEach(() => {

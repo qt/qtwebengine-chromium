@@ -29,6 +29,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_process_host_observer.h"
+#include "content/public/browser/security_principal.h"
 #include "content/public/browser/service_worker_context.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -40,6 +41,7 @@
 #include "extensions/browser/extension_function_registry.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_user_activation_service.h"
 #include "extensions/browser/extension_util.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/process_manager.h"
@@ -159,8 +161,7 @@ ExtensionFunctionDispatcher::ExtensionFunctionDispatcher(
     content::BrowserContext* browser_context)
     : browser_context_(browser_context), delegate_(nullptr) {}
 
-ExtensionFunctionDispatcher::~ExtensionFunctionDispatcher() {
-}
+ExtensionFunctionDispatcher::~ExtensionFunctionDispatcher() = default;
 
 void ExtensionFunctionDispatcher::Dispatch(
     mojom::RequestParamsPtr params,
@@ -173,9 +174,11 @@ void ExtensionFunctionDispatcher::Dispatch(
               ExtensionIdForTracing(params->extension_id));
 
   ScopedRequestParamsCrashKeys request_params_crash_keys(*params);
-  SCOPED_CRASH_KEY_STRING256(
-      "extensions", "frame.GetSiteInstance()",
-      frame.GetSiteInstance()->GetSiteURL().possibly_invalid_spec());
+  SCOPED_CRASH_KEY_STRING256("extensions", "frame.GetSiteInstance()",
+                             frame.GetSiteInstance()
+                                 ->GetSecurityPrincipal()
+                                 .GetDeprecatedSiteURL()
+                                 .possibly_invalid_spec());
 
   if (auto bad_message_code = ValidateRequest(*params, &frame, process)) {
     // Kill the renderer if it's an invalid request.
@@ -278,6 +281,20 @@ void ExtensionFunctionDispatcher::DispatchWithCallbackInternal(
 
   const GURL* render_frame_host_url = nullptr;
   if (render_frame_host) {
+    // Error pages commit with the target URL and in their parents' process, but
+    // aren't actually on the page indicated by the committed URL.
+    // Bail out in this case. Error pages don't use extension APIs.
+    // If we had perfect timing and no race conditions, this could be a sign of
+    // a bad message; however, it's possible a page commits to an error page
+    // after a legitimate message is sent.
+    if (render_frame_host->IsErrorDocument()) {
+      constexpr char kCannotUseExtensionAPIsInErrorPages[] =
+          "Cannot call extension APIs from error pages.";
+      ResponseCallbackOnError(std::move(callback),
+                              ExtensionFunction::ResponseType::kFailed,
+                              kCannotUseExtensionAPIsInErrorPages);
+      return;
+    }
     render_frame_host_url = &render_frame_host->GetLastCommittedURL();
     DCHECK_EQ(render_process_id,
               render_frame_host->GetProcess()->GetDeprecatedID());
@@ -344,9 +361,8 @@ void ExtensionFunctionDispatcher::DispatchWithCallbackInternal(
     return;
   }
 
-  if (extension &&
-      ExtensionsBrowserClient::Get()->CanExtensionCrossIncognito(
-          extension, browser_context_)) {
+  if (extension && ExtensionsBrowserClient::Get()->CanExtensionCrossIncognito(
+                       extension, browser_context_)) {
     function->set_include_incognito_information(true);
   }
 
@@ -572,6 +588,12 @@ ExtensionFunctionDispatcher::CreateExtensionFunction(
   } else {
     DCHECK(render_frame_host_url);
     function->set_source_url(*render_frame_host_url);
+  }
+
+  if (params_without_args.user_gesture &&
+      !params_without_args.extension_id.empty()) {
+    ExtensionUserActivationService::Get(browser_context_)
+        ->NotifyUserActivation(params_without_args.extension_id);
   }
 
   function->set_has_callback(params_without_args.has_callback);

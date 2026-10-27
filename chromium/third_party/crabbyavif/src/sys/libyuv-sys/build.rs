@@ -18,11 +18,6 @@ use std::env;
 use std::path::Path;
 use std::path::PathBuf;
 
-fn path_buf(inputs: &[&str]) -> PathBuf {
-    let path: PathBuf = inputs.iter().collect();
-    path
-}
-
 fn main() -> Result<(), String> {
     println!("cargo:rerun-if-changed=build.rs");
     if !cfg!(feature = "libyuv") {
@@ -62,7 +57,7 @@ fn main() -> Result<(), String> {
     if Path::new(&library_file).exists() {
         println!("cargo:rustc-link-lib=static=yuv");
         println!("cargo:rustc-link-search={}", abs_object_dir.display());
-        let version_dir = PathBuf::from(&abs_library_dir).join(path_buf(&["include"]));
+        let version_dir = PathBuf::from(&abs_library_dir).join("include");
         extra_includes_str = format!("-I{}", version_dir.display());
         custom_error = None;
     } else {
@@ -136,10 +131,12 @@ fn main() -> Result<(), String> {
         "I012ToARGBMatrix",
         "I210AlphaToARGBMatrix",
         "I210AlphaToARGBMatrixFilter",
+        "I210ToAR30Matrix",
         "I210ToARGBMatrix",
         "I210ToARGBMatrixFilter",
         "I400ToARGBMatrix",
         "I410AlphaToARGBMatrix",
+        "I410ToAR30Matrix",
         "I410ToARGBMatrix",
         "I420AlphaToARGBMatrix",
         "I420AlphaToARGBMatrixFilter",

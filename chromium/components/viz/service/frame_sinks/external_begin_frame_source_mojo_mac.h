@@ -7,7 +7,6 @@
 
 #include "components/viz/service/frame_sinks/external_begin_frame_source_mac.h"
 #include "components/viz/service/viz_service_export.h"
-#include "mojo/public/cpp/bindings/direct_receiver.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
@@ -27,7 +26,7 @@ class VIZ_SERVICE_EXPORT ExternalBeginFrameSourceMojoMac
           controller_receiver,
       mojo::PendingRemote<mojom::ExternalBeginFrameControllerClient>
           controller_remote_client,
-      base::RepeatingClosure update_vsync_displays_cb);
+      base::RepeatingCallback<void(int64_t, bool)> update_vsync_displays_cb);
   ~ExternalBeginFrameSourceMojoMac() override;
 
   // mojom::ExternalBeginFrameController implementation.
@@ -35,7 +34,7 @@ class VIZ_SERVICE_EXPORT ExternalBeginFrameSourceMojoMac
   // Viz thread.
   void IssueExternalVSync(const CADisplayLinkParams& params) override;
   void SetSupportedDisplayLinkId(int64_t display_id,
-                                 bool is_supported) override;
+                                 bool is_browser_vsync_supported) override;
 
   // For headless only. This should not be called.
   void IssueExternalBeginFrame(
@@ -48,16 +47,14 @@ class VIZ_SERVICE_EXPORT ExternalBeginFrameSourceMojoMac
   void NeedsBeginFrameWithId(int64_t display_id, bool needs_begin_frames);
 
  private:
-  using Receiver = mojo::Receiver<mojom::ExternalBeginFrameController>;
-  using DirectReceiver =
-      mojo::DirectReceiver<mojom::ExternalBeginFrameController>;
-  std::variant<Receiver, DirectReceiver> receiver_;
+  mojo::Receiver<mojom::ExternalBeginFrameController> receiver_;
 
   mojo::Remote<mojom::ExternalBeginFrameControllerClient> remote_client_;
 
-  // This is a callback to FrameSinkManagerImpl::UpdateVSyncDisplays() which
-  // updates DisplayLinkMac in all RootCompositorFrameSink if needed.
-  base::RepeatingClosure update_vsync_displays_cb_;
+  // Callback to FrameSinkManagerImpl::UpdateVSyncDisplays(), used to notify
+  // all root frame sinks on the specified display to refresh their vsync
+  // sources.
+  base::RepeatingCallback<void(int64_t, bool)> update_vsync_displays_cb_;
 
   base::WeakPtrFactory<ExternalBeginFrameSourceMojoMac> weak_factory_{this};
 };

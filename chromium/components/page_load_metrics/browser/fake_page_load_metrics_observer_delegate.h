@@ -44,6 +44,7 @@ class FakePageLoadMetricsObserverDelegate
   // calling |AddBackForwardCacheRestore|.
   const BackForwardCacheRestore& GetBackForwardCacheRestore(
       size_t index) const override;
+  size_t GetNumBackForwardCacheRestores() const override;
   bool StartedInForeground() const override;
   PageVisibility GetVisibilityAtActivation() const override;
   bool IsReloadAfterDiscard() const override;
@@ -71,6 +72,7 @@ class FakePageLoadMetricsObserverDelegate
   GetSoftNavigationIntervalInteractionToNextPaintCalculator() const override;
   const std::optional<blink::SubresourceLoadMetrics>&
   GetSubresourceLoadMetrics() const override;
+  const mojom::FontLoadingMetricsPtr& GetFontLoadingMetrics() const override;
   const PageRenderData& GetMainFrameRenderData() const override;
   const ui::ScopedVisibilityTracker& GetVisibilityTracker() const override;
   const ResourceTracker& GetResourceTracker() const override;
@@ -111,6 +113,7 @@ class FakePageLoadMetricsObserverDelegate
   NormalizedCLSData normalized_cls_data_;
   InteractionToNextPaintCalculator interaction_to_next_paint_calculator_;
   std::optional<blink::SubresourceLoadMetrics> subresource_load_metrics_;
+  mojom::FontLoadingMetricsPtr font_loading_metrics_;
   PageRenderData main_frame_render_data_;
   ui::ScopedVisibilityTracker visibility_tracker_;
   ResourceTracker resource_tracker_;

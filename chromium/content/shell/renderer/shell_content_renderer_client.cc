@@ -19,7 +19,7 @@
 #include "base/types/pass_key.h"
 #include "components/cdm/renderer/external_clear_key_key_system_info.h"
 #include "components/network_hints/renderer/web_prescient_networking_impl.h"
-#include "components/surface_embed/buildflags/buildflags.h"
+#include "components/surface_embed/renderer/create_plugin.h"
 #include "components/web_cache/renderer/web_cache_impl.h"
 #include "content/common/pseudonymization_salt.h"
 #include "content/public/common/content_switches.h"
@@ -52,10 +52,6 @@
 #include "base/feature_list.h"
 #include "media/base/media_switches.h"
 #endif
-
-#if BUILDFLAG(ENABLE_SURFACE_EMBED)
-#include "components/surface_embed/renderer/create_plugin.h"
-#endif  // BUILDFLAG(ENABLE_SURFACE_EMBED)
 
 #if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)) && \
     (defined(ARCH_CPU_X86_64) || defined(ARCH_CPU_ARM64))
@@ -334,11 +330,20 @@ bool ShellContentRendererClient::OverrideCreatePlugin(
     RenderFrame* render_frame,
     const blink::WebPluginParams& params,
     blink::WebPlugin** plugin) {
-#if BUILDFLAG(ENABLE_SURFACE_EMBED)
+  // Tries to create a SurfaceEmbedWebPlugin for
+  // <embed type="application/x-chromium-surface-embed">. The renderer process
+  // will render an indication of error (a "sad webpage") in the plugin area if
+  // the browser process does not provide the SurfaceEmbedHost interface.
+  // Many embedders will choose to kill the renderer in that case, however.
+  //
+  // The interface is available in surface embed's content_browsertests /
+  // components_browsertests by overriding
+  // RegisterBrowserInterfaceBindersForFrame and is not available in the general
+  // content_shell. content_shell's default browser-side implementation triggers
+  // the fallback behavior, not a renderer crash.
   if (surface_embed::MaybeCreatePlugin(render_frame, params, plugin)) {
     return true;
   }
-#endif  // BUILDFLAG(ENABLE_SURFACE_EMBED)
 
   return false;
 }

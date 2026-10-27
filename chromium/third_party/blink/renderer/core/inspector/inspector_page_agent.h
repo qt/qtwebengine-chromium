@@ -60,6 +60,7 @@ class Document;
 class DocumentLoader;
 enum class FrameDetachType;
 class InspectedFrames;
+class InspectorInjectedScriptManager;
 class InspectorResourceContentLoader;
 class LocalFrame;
 class ClassicScript;
@@ -112,7 +113,8 @@ class CORE_EXPORT InspectorPageAgent final
                      Client*,
                      InspectorResourceContentLoader*,
                      v8_inspector::V8InspectorSession*,
-                     const String& script_to_evaluate_on_load);
+                     const String& script_to_evaluate_on_load,
+                     InspectorInjectedScriptManager* injected_script_manager);
   InspectorPageAgent(const InspectorPageAgent&) = delete;
   InspectorPageAgent& operator=(const InspectorPageAgent&) = delete;
 
@@ -121,6 +123,7 @@ class CORE_EXPORT InspectorPageAgent final
       std::optional<bool> enable_file_chooser_opened_event) override;
   protocol::Response disable() override;
   protocol::Response addScriptToEvaluateOnLoad(const String& script_source,
+                                               const String& browser_generated_identifier,
                                                String* identifier) override;
   protocol::Response removeScriptToEvaluateOnLoad(
       const String& identifier) override;
@@ -129,6 +132,7 @@ class CORE_EXPORT InspectorPageAgent final
       std::optional<String> world_name,
       std::optional<bool> include_command_line_api,
       std::optional<bool> runImmediately,
+      const String& browser_generated_identifier,
       String* identifier) override;
   protocol::Response removeScriptToEvaluateOnNewDocument(
       const String& identifier) override;
@@ -336,15 +340,12 @@ class CORE_EXPORT InspectorPageAgent final
   InspectorAgentState::Boolean screencast_enabled_;
   InspectorAgentState::Boolean lifecycle_events_enabled_;
   InspectorAgentState::Boolean bypass_csp_enabled_;
-  InspectorAgentState::StringMap scripts_to_evaluate_on_load_;
-  InspectorAgentState::StringMap worlds_to_evaluate_on_load_;
-  InspectorAgentState::BooleanMap
-      include_command_line_api_for_scripts_to_evaluate_on_load_;
   InspectorAgentState::Integer standard_font_size_;
   InspectorAgentState::Integer fixed_font_size_;
   InspectorAgentState::Bytes script_font_families_cbor_;
   String script_injection_on_load_once_;
   String pending_script_injection_on_load_;
+  Member<InspectorInjectedScriptManager> injected_script_manager_;
 };
 
 }  // namespace blink

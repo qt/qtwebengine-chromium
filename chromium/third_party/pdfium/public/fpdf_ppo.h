@@ -80,7 +80,8 @@ FPDF_ImportNPagesToOne(FPDF_DOCUMENT src_doc,
 // |src_page_index|, for use in |dest_doc|.
 //
 // Returns a handle on success, or NULL on failure. Caller owns the newly
-// created object.
+// created object. The returned handle's lifetime is tied to |dest_doc| and not
+// |src_doc|. It must be closed before |dest_doc|.
 FPDF_EXPORT FPDF_XOBJECT FPDF_CALLCONV
 FPDF_NewXObjectFromPage(FPDF_DOCUMENT dest_doc,
                         FPDF_DOCUMENT src_doc,

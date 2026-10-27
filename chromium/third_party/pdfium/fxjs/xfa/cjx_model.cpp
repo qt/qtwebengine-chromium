@@ -9,7 +9,6 @@
 #include "core/fxcrt/span.h"
 #include "fxjs/js_resources.h"
 #include "fxjs/xfa/cfxjse_engine.h"
-#include "fxjs/xfa/cfxjse_value.h"
 #include "v8/include/v8-object.h"
 #include "xfa/fxfa/parser/cxfa_delta.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
@@ -44,15 +43,15 @@ CJS_Result CJX_Model::createNode(CFXJSE_Engine* runtime,
 
   WideString name;
   if (params.size() > 1) {
-    name = runtime->ToWideString(params[1]);
+    name = runtime->ToWideStringReentrant(params[1]);
   }
 
   WideString nameSpace;
   if (params.size() == 3) {
-    nameSpace = runtime->ToWideString(params[2]);
+    nameSpace = runtime->ToWideStringReentrant(params[2]);
   }
 
-  WideString tagName = runtime->ToWideString(params[0]);
+  WideString tagName = runtime->ToWideStringReentrant(params[0]);
   XFA_Element eType = XFA_GetElementByName(tagName.AsStringView());
   CXFA_Node* pNewNode = GetXFANode()->CreateSamePacketNode(eType);
   if (!pNewNode) {
@@ -81,7 +80,7 @@ CJS_Result CJX_Model::isCompatibleNS(
 
   WideString nameSpace;
   if (params.size() >= 1) {
-    nameSpace = runtime->ToWideString(params[0]);
+    nameSpace = runtime->ToWideStringReentrant(params[0]);
   }
 
   return CJS_Result::Success(

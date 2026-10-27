@@ -16,7 +16,7 @@
 #include "cc/animation/animation_host.h"
 #include "cc/layers/tile_display_layer_impl.h"
 #include "cc/trees/layer_tree_frame_sink.h"
-#include "cc/trees/layer_tree_host_impl_client.h"
+#include "cc/trees/layer_tree_host_impl_delegate.h"
 #include "components/viz/common/resources/returned_resource.h"
 #include "components/viz/common/resources/transferable_resource.h"
 #include "components/viz/service/viz_service_export.h"
@@ -26,7 +26,6 @@
 #include "services/viz/public/mojom/compositing/layer_context.mojom.h"
 
 namespace cc {
-class LayerTreeHostImpl;
 class RenderingStatsInstrumentation;
 class TaskRunnerProvider;
 }  // namespace cc
@@ -35,12 +34,14 @@ namespace viz {
 
 struct BeginFrameArgs;
 class CompositorFrameSinkSupport;
+class VizLayerTreeHostImpl;
 
 // Implements the Viz LayerContext API backed by a LayerTreeHostImpl. This
 // provides the service backend for a client-side VizLayerContext.
-class VIZ_SERVICE_EXPORT LayerContextImpl : public cc::LayerTreeHostImplClient,
-                                            public cc::LayerTreeFrameSink,
-                                            public mojom::LayerContext {
+class VIZ_SERVICE_EXPORT LayerContextImpl
+    : public cc::LayerTreeHostImplDelegate,
+      public cc::LayerTreeFrameSink,
+      public mojom::LayerContext {
  public:
   // Constructs a new LayerContextImpl which submits frames to the local
   // `compositor_sink` with client connection details given by `context`.
@@ -71,7 +72,7 @@ class VIZ_SERVICE_EXPORT LayerContextImpl : public cc::LayerTreeHostImplClient,
   // Receive exported resources returned from the frame sink.
   void ReceiveReturnsFromParent(std::vector<ReturnedResource> resources);
 
-  cc::LayerTreeHostImpl* host_impl() const { return host_impl_.get(); }
+  VizLayerTreeHostImpl* host_impl() const { return host_impl_.get(); }
 
  private:
   // Private constructor that all other constructors/factory methods delegate
@@ -82,7 +83,7 @@ class VIZ_SERVICE_EXPORT LayerContextImpl : public cc::LayerTreeHostImplClient,
       mojo::PendingAssociatedReceiver<mojom::LayerContext> receiver_pipe,
       mojo::PendingAssociatedRemote<mojom::LayerContextClient> client_pipe);
 
-  // cc::LayerTreeHostImplClient:
+  // cc::LayerTreeHostImplDelegate:
   void DidLoseLayerTreeFrameSinkOnImplThread() override;
   void SetBeginFrameSource(BeginFrameSource* source) override;
   void DidReceiveCompositorFrameAckOnImplThread() override;
@@ -93,7 +94,8 @@ class VIZ_SERVICE_EXPORT LayerContextImpl : public cc::LayerTreeHostImplClient,
   void SetNeedsRedrawOnImplThread() override;
   void SetNeedsOneBeginImplFrameOnImplThread() override;
   void SetNeedsPrepareTilesOnImplThread() override;
-  void SetNeedsCommitOnImplThread(bool urgent) override;
+  void SetNeedsCommitOnImplThread(cc::BeginMainFrameReason,
+                                  bool urgent) override;
   void SetVideoNeedsBeginFrames(bool needs_begin_frames) override;
   void DidChangeBeginFrameSourcePaused(bool paused) override;
   void SetDeferBeginMainFrameFromImpl(bool defer_begin_main_frame) override;
@@ -183,7 +185,7 @@ class VIZ_SERVICE_EXPORT LayerContextImpl : public cc::LayerTreeHostImplClient,
   std::vector<ReturnedResource> resources_to_return_;
 
   raw_ptr<cc::LayerTreeFrameSinkClient> frame_sink_client_ = nullptr;
-  const std::unique_ptr<cc::LayerTreeHostImpl> host_impl_;
+  const std::unique_ptr<VizLayerTreeHostImpl> host_impl_;
 
   // Must be the last member to ensure this is destroyed first in the
   // destruction order and invalidates all weak pointers.

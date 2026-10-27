@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 # Format files with extensions, excluding plugins because they're partial files that don't contain valid syntax
 find . -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cu' -o -name '*.cxx' -o -name '*.h' -o -name '*.inc' -not -path '*/plugins/*' \) | xargs -n 1 -P 0 clang-format-17 -i

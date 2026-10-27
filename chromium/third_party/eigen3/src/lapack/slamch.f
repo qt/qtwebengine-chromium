@@ -65,6 +65,8 @@
 *> \ingroup auxOTHERauxiliary
 *
 *  =====================================================================
+*> SPDX-FileCopyrightText: The Eigen Authors
+*> SPDX-License-Identifier: BSD-3-Clause
       REAL             FUNCTION SLAMCH( CMACH )
 *
 *  -- LAPACK auxiliary routine (version 3.4.0) --

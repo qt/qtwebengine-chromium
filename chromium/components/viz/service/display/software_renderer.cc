@@ -545,7 +545,7 @@ void SoftwareRenderer::DrawRenderPassQuad(
 
   SkRect dest_rect = gfx::RectToSkRect(quad->rect);
   SkRect dest_visible_rect = gfx::RectToSkRect(quad->visible_rect);
-  SkRect content_rect = RectFToSkRect(quad->tex_coord_rect);
+  SkRect content_rect = RectFToSkRect(quad->tex_coord_rect());
 
   if (source_bitmap && content_rect.isEmpty()) {
     // In case someone forgets to set it, we're treating an empty
@@ -763,8 +763,10 @@ void SoftwareRenderer::CopyDrawnRenderPass(
   // Note: The CopyOutputSkBitmapResult already implies that results are
   // returned in system memory and automatically provides I420 format
   // conversion, if needed.
-  request->SendResult(std::make_unique<CopyOutputSkBitmapResult>(
-      request->result_format(), geometry.result_selection, std::move(bitmap)));
+  auto result = std::make_unique<CopyOutputSkBitmapResult>(
+      request->result_format(), geometry.result_selection, std::move(bitmap));
+  result->SetTrackedElementRects(geometry.tracked_element_rects);
+  request->SendResult(std::move(result));
 }
 
 void SoftwareRenderer::DidChangeVisibility() {

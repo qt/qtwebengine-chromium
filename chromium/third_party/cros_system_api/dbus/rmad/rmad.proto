@@ -663,6 +663,8 @@ enum RoVerificationStatus {
   RMAD_RO_VERIFICATION_FAIL = 4;
   RMAD_RO_VERIFICATION_UNSUPPORTED_NOT_TRIGGERED = 5;
   RMAD_RO_VERIFICATION_UNSUPPORTED_TRIGGERED = 6;
+  // Status codes for Ti50
+  RMAD_RO_VERIFICATION_V2_SUCCESS = 20;
 }
 
 // Defined returning owner for showing in metrics.

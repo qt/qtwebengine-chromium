@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 Vector3f boxMin(Vector3f::Zero()), boxMax(Vector3f::Ones());
 Vector3f p0 = Vector3f::Random(), p1 = Vector3f::Random().cwiseAbs();
 // let's check if p0 and p1 are inside the axis aligned box defined by the corners boxMin,boxMax:

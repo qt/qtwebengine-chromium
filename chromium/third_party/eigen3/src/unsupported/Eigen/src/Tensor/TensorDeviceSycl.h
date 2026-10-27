@@ -6,14 +6,15 @@
 // Luke Iwanski  Codeplay Software Ltd.
 // Contact: <eigen@codeplay.com>
 // Copyright (C) 2016 Benoit Steiner <benoit.steiner.goog@gmail.com>
+// SPDX-License-Identifier: MPL-2.0
 
 //
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-#if defined(EIGEN_USE_SYCL) && !defined(EIGEN_CXX11_TENSOR_TENSOR_DEVICE_SYCL_H)
-#define EIGEN_CXX11_TENSOR_TENSOR_DEVICE_SYCL_H
+#if defined(EIGEN_USE_SYCL) && !defined(EIGEN_TENSOR_TENSOR_DEVICE_SYCL_H)
+#define EIGEN_TENSOR_TENSOR_DEVICE_SYCL_H
 #include <unordered_set>
 
 // IWYU pragma: private
@@ -564,4 +565,4 @@ struct SyclDevice : public SyclDeviceBase {
 };
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_DEVICE_SYCL_H
+#endif  // EIGEN_TENSOR_TENSOR_DEVICE_SYCL_H

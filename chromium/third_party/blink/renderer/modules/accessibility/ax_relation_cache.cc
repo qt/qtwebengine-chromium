@@ -264,6 +264,12 @@ void AXRelationCache::ProcessUpdatesWithCleanLayout() {
   owner_axids_to_update_.clear();
 }
 
+void AXRelationCache::QueueOwnerToUpdate(AXObject* owner) {
+  DCHECK(owner);
+  DCHECK(!owner->IsDetached());
+  owner_axids_to_update_.insert(owner->AXObjectID());
+}
+
 bool AXRelationCache::IsDirty() const {
   return !owner_axids_to_update_.empty();
 }
@@ -298,7 +304,8 @@ bool AXRelationCache::IsAriaOwned(const AXObject* child, bool check) const {
       for (AXID id : owner_axids_to_update_) {
         msg << " " << id;
       }
-      DUMP_WILL_BE_CHECK(false) << msg.str();
+      // TODO(crbug.com/500774800): Investigate and convert to CHECK.
+      DCHECK(false) << msg.str();
     }
   }
 
@@ -815,9 +822,13 @@ void AXRelationCache::MapOwnedChildrenWithCleanLayout(
             original_parent->ParentObject());
       }
     }
-    // Now that the child is owned, it's "included in tree" state must be
-    // recomputed because owned children are always included in the tree.
     added_child->UpdateCachedAttributeValuesIfNeeded(false);
+
+    // Re-evaluate the role since its required parent context is now satisfied.
+    if (added_child->RoleValue() !=
+        added_child->DetermineRawAriaRoleWithContext()) {
+      added_child->UpdateRole();
+    }
 
     // If the added child had a change in an inherited state because of the new
     // owner, that state needs to propagate into the subtree. Remove its
@@ -923,7 +934,9 @@ void AXRelationCache::UpdateAriaOwnsWithCleanLayout(AXObject* owner,
                             html_names::kAriaOwnsAttr)) {
     // TODO (crbug.com/41469336): Also check ElementInternals here.
     UpdateAriaOwnsFromAttrAssociatedElementsWithCleanLayout(
-        owner, *element->GetAttrAssociatedElements(html_names::kAriaOwnsAttr),
+        owner,
+        *element->GetAttrAssociatedElementsResolvingReferenceTarget(
+            html_names::kAriaOwnsAttr),
         owned_children, force);
   } else {
     // Figure out the ids that actually correspond to children that exist
@@ -1359,17 +1372,6 @@ void AXRelationCache::UpdateCSSAnchorFor(Node* positioned_node) {
   object_cache_->MarkElementDirtyWithCleanLayout(anchor);
 }
 
-AXObject* AXRelationCache::GetPositionedObjectForAnchor(
-    const AXObject* anchor) {
-  CHECK(!RuntimeEnabledFeatures::NoAriaDetailsForAnchorPosEnabled());
-  HashMap<AXID, AXID>::const_iterator iter =
-      anchor_to_positioned_obj_mapping_.find(anchor->AXObjectID());
-  if (iter == anchor_to_positioned_obj_mapping_.end()) {
-    return nullptr;
-  }
-  return ObjectFromAXID(iter->value);
-}
-
 AXObject* AXRelationCache::GetAnchorForPositionedObject(
     const AXObject* positioned_obj) {
   HashMap<AXID, AXID>::const_iterator iter =
@@ -1439,8 +1441,10 @@ void AXRelationCache::RemoveOwnedRelation(AXID obj_id) {
       // underlying issue and verified that this dump does not exist in
       // telemetry, we should upgrade this to a NOTREACHED or remove the
       // `Contains(owner_id)` check above.
-      DUMP_WILL_BE_NOTREACHED() << "Inconsistent aria-owns mapping: owner "
-                                << owner_id << " not found";
+      // TODO(crbug.com/500774800): Keep this debug-only because the dump can
+      // hang production users while this issue remains uninvestigated.
+      DCHECK(false) << "Inconsistent aria-owns mapping: owner " << owner_id
+                    << " not found";
     }
     if (AXObject* owner = ObjectFromAXID(owner_id)) {
       // The child is removed, so the owner needs to make sure its maps

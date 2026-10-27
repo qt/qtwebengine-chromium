@@ -28,6 +28,7 @@
 namespace media {
 
 class AudioManagerCrasBase;
+class CrasAudioInputStreamProxy;
 
 // Provides an input stream for audio capture based on CRAS, the ChromeOS Audio
 // Server.  This object is not thread safe and all methods should be invoked in
@@ -65,6 +66,8 @@ class MEDIA_EXPORT CrasInputStream : public AgcAudioStream<AudioInputStream>,
   void StopAecdump() override;
 
  private:
+  friend class CrasAudioInputStreamProxy;
+
   // Handles requests to get samples from the provided buffer.  This will be
   // called by the audio server when it has samples ready.
   static int SamplesReady(struct libcras_stream_cb_data* data);
@@ -75,9 +78,13 @@ class MEDIA_EXPORT CrasInputStream : public AgcAudioStream<AudioInputStream>,
                          int err,
                          void* arg);
 
+  int OnSamplesReady(struct libcras_stream_cb_data* data);
+  int OnStreamError(cras_client* client, cras_stream_id_t stream_id, int err);
+
   // Reads one or more buffers of audio from the device, passes on to the
   // registered callback. Called from SamplesReady().
-  void ReadAudio(size_t frames, uint8_t* buffer, const timespec* latency_ts);
+  void ReadAudio(base::span<const int16_t> source_data,
+                 const timespec* latency_ts);
 
   // Deals with an error that occurred in the stream.  Called from
   // StreamError().
@@ -202,6 +209,8 @@ class MEDIA_EXPORT CrasInputStream : public AgcAudioStream<AudioInputStream>,
   base::TimeDelta last_dropped_samples_duration_;
 
   AmplitudePeakDetector peak_detector_;
+
+  std::unique_ptr<CrasAudioInputStreamProxy> proxy_;
 
   base::WeakPtrFactory<CrasInputStream> weak_factory_{this};
 };

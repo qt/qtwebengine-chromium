@@ -11,6 +11,7 @@
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/strings/escape.h"
 #include "base/strings/string_util.h"
 #include "base/types/expected.h"
 #include "base/values.h"
@@ -33,7 +34,7 @@ constexpr char kRequestedFields[] =
     "courseWork(id,title,state,alternateLink,creationTime,updateTime,"
     "dueDate(year,month,day),dueTime(hours,minutes,seconds,nanos),workType,"
     "materials(youtubeVideo(title),link(title),form(title),"
-    "driveFile(driveFile(title)))),"
+    "guidedLearning(title),notebook(title),driveFile(driveFile(title)))),"
     "nextPageToken";
 
 constexpr char kPageTokenParameterName[] = "pageToken";
@@ -50,7 +51,7 @@ ListCourseWorkRequest::ListCourseWorkRequest(RequestSender* sender,
                                              const std::string& page_token,
                                              Callback callback)
     : UrlFetchRequestBase(sender, ProgressCallback(), ProgressCallback()),
-      course_id_(course_id),
+      course_id_(base::EscapeAllExceptUnreserved(course_id)),
       page_token_(page_token),
       callback_(std::move(callback)) {
   CHECK(!course_id_.empty());

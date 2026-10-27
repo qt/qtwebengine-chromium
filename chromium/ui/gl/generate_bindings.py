@@ -2252,6 +2252,7 @@ EGL_EXTENSIONS_EXTRA = [
   'EGL_ANGLE_context_virtualization',
   'EGL_ANGLE_create_context_backwards_compatible',
   'EGL_ANGLE_create_context_client_arrays',
+  'EGL_ANGLE_create_context_extensions_enabled',
   'EGL_ANGLE_create_context_passthrough_shaders',
   'EGL_ANGLE_create_context_webgl_compatibility',
   'EGL_ANGLE_global_fence_sync',
@@ -2322,11 +2323,6 @@ LICENSE_AND_HEADER = """\
 // It's formatted by clang-format using chromium coding style:
 //    clang-format -i -style=chromium filename
 // DO NOT EDIT!
-
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 """
 
@@ -3044,7 +3040,7 @@ def GenerateMockBindingsSource(file, functions, set_name):
   file.write(LICENSE_AND_HEADER +
 """
 
-#include <string.h>
+#include <string_view>
 
 #include "base/notreached.h"
 #include "ui/gl/%s_mock.h"
@@ -3099,9 +3095,10 @@ namespace gl {
   file.write('GLFunctionPointerType GL_BINDING_CALL ' +
              'Mock%sInterface::GetGLProcAddress(const char* name) {\n' % (
                  set_name.upper(),))
+  file.write('  std::string_view name_view(name);\n')
   for key in sorted_function_names:
     name = uniquely_named_functions[key]['name']
-    file.write('  if (strcmp(name, "%s") == 0)\n' % name)
+    file.write('  if (name_view == "%s")\n' % name)
     file.write(
         '    return reinterpret_cast<GLFunctionPointerType>(Mock_%s);\n' %
             name)

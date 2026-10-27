@@ -525,7 +525,6 @@ bool ContextMenuController::ShowContextMenu(
     for (Node* node = result.InnerNode(); node; node = node->parentNode()) {
       if (HTMLElement* element = DynamicTo<HTMLElement>(node);
           element && element->InterestForElement()) {
-        CHECK(RuntimeEnabledFeatures::HTMLInterestForAttributeEnabled());
         data.opened_from_interest_for = true;
         data.interest_for_node_id = element->GetDomNodeId();
         break;
@@ -827,8 +826,7 @@ bool ContextMenuController::ShowContextMenu(
       // Extract suggested filename for same-origin URLS for saving file.
       const SecurityOrigin* origin =
           selected_frame->GetSecurityContext()->GetSecurityOrigin();
-      const KURL& complete_url = anchor->LegacyHrefURL(anchor->GetDocument());
-      if (origin->CanReadContent(complete_url)) {
+      if (origin->CanReadContent(anchor->Url())) {
         data.suggested_filename =
             anchor->FastGetAttribute(svg_names::kDownloadAttr).Utf8();
       }

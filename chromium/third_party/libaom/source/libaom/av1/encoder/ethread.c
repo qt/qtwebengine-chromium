@@ -920,12 +920,13 @@ void av1_init_mt_sync(AV1_COMP *cpi, int is_first_pass) {
       int rst_unit_size = cpi->sf.lpf_sf.min_lr_unit_size;
       int num_rows_lr = av1_lr_count_units(rst_unit_size, cm->height);
       int num_lr_workers = av1_get_num_mod_workers_for_alloc(p_mt_info, MOD_LR);
+      const int num_planes = av1_num_planes(cm);
       if (!lr_sync->sync_range || num_rows_lr > lr_sync->rows ||
           num_lr_workers > lr_sync->num_workers ||
-          MAX_MB_PLANE > lr_sync->num_planes) {
+          num_planes > lr_sync->num_planes) {
         av1_loop_restoration_dealloc(lr_sync);
         av1_loop_restoration_alloc(lr_sync, cm, num_lr_workers, num_rows_lr,
-                                   MAX_MB_PLANE, cm->width);
+                                   num_planes, cm->width);
       }
     }
 #endif
@@ -1117,6 +1118,8 @@ void av1_create_workers(AV1_PRIMARY *ppi, int num_workers) {
     }
     winterface->sync(worker);
 
+    // Ensure p_mt_info->num_workers is the number of threads successfuly
+    // created. Important to av1_terminate_workers().
     ++p_mt_info->num_workers;
   }
 }
@@ -2943,6 +2946,7 @@ static inline size_t get_bs_chunk_size(int tg_or_tile_size,
 
 // Initializes params required for pack bitstream tile.
 static void init_tile_pack_bs_params(AV1_COMP *const cpi, uint8_t *const dst,
+                                     size_t dst_size,
                                      struct aom_write_bit_buffer *saved_wb,
                                      PackBSParams *const pack_bs_params_arr,
                                      uint8_t obu_extn_header) {
@@ -2995,9 +2999,9 @@ static void init_tile_pack_bs_params(AV1_COMP *const cpi, uint8_t *const dst,
     }
   }
 
-  assert(cpi->available_bs_size > 0);
+  assert(dst_size > 0);
   size_t tg_buf_size[MAX_TILES] = { 0 };
-  size_t max_buf_size = cpi->available_bs_size;
+  size_t max_buf_size = dst_size;
   size_t remain_buf_size = max_buf_size;
   const int frame_size_mi = cm->mi_params.mi_rows * cm->mi_params.mi_cols;
 
@@ -3221,12 +3225,15 @@ static void accumulate_pack_bs_data(
   }
 }
 
-void av1_write_tile_obu_mt(
-    AV1_COMP *const cpi, uint8_t *const dst, uint32_t *total_size,
-    struct aom_write_bit_buffer *saved_wb, uint8_t obu_extn_header,
-    const FrameHeaderInfo *fh_info, int *const largest_tile_id,
-    unsigned int *max_tile_size, uint32_t *const obu_header_size,
-    uint8_t **tile_data_start, const int num_workers) {
+void av1_write_tile_obu_mt(AV1_COMP *const cpi, uint8_t *const dst,
+                           size_t dst_size, uint32_t *total_size,
+                           struct aom_write_bit_buffer *saved_wb,
+                           uint8_t obu_extn_header,
+                           const FrameHeaderInfo *fh_info,
+                           int *const largest_tile_id,
+                           unsigned int *max_tile_size,
+                           uint32_t *const obu_header_size,
+                           uint8_t **tile_data_start, const int num_workers) {
   MultiThreadInfo *const mt_info = &cpi->mt_info;
 
   PackBSParams pack_bs_params[MAX_TILES];
@@ -3235,7 +3242,8 @@ void av1_write_tile_obu_mt(
   for (int tile_idx = 0; tile_idx < MAX_TILES; tile_idx++)
     pack_bs_params[tile_idx].total_size = &tile_size[tile_idx];
 
-  init_tile_pack_bs_params(cpi, dst, saved_wb, pack_bs_params, obu_extn_header);
+  init_tile_pack_bs_params(cpi, dst, dst_size, saved_wb, pack_bs_params,
+                           obu_extn_header);
   prepare_pack_bs_workers(cpi, pack_bs_params, pack_bs_worker_hook,
                           num_workers);
   launch_workers(mt_info, num_workers);
@@ -3349,7 +3357,8 @@ static int cdef_filter_block_worker_hook(void *arg1, void *arg2) {
   while (cdef_get_next_job(cdef_sync, cdef_search_ctx, &cur_fbr, &cur_fbc,
                            &sb_count)) {
     av1_cdef_mse_calc_block(cdef_search_ctx, error_info, cur_fbr, cur_fbc,
-                            sb_count);
+                            sb_count,
+                            thread_data->cpi->sf.lpf_sf.adaptive_cdef_mode);
   }
   error_info->setjmp = 0;
   return 1;

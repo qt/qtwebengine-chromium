@@ -207,6 +207,30 @@ struct FrontendFeatures : FeatureSetBase
         &members,
     };
 
+    FeatureInfo limitMaxBufferBytesTo1MB = {
+        "limitMaxBufferBytesTo1MB",
+        FeatureCategory::FrontendFeatures,
+        &members,
+    };
+
+    FeatureInfo limitMaxTextureBytesTo1MB = {
+        "limitMaxTextureBytesTo1MB",
+        FeatureCategory::FrontendFeatures,
+        &members,
+    };
+
+    FeatureInfo allowExtensionDisableAfterNonPpTokens = {
+        "allowExtensionDisableAfterNonPpTokens",
+        FeatureCategory::FrontendFeatures,
+        &members,
+    };
+
+    FeatureInfo setNeedInitOnInvalidation = {
+        "setNeedInitOnInvalidation",
+        FeatureCategory::FrontendFeatures,
+        &members,
+    };
+
 };
 
 inline FrontendFeatures::FrontendFeatures()  = default;

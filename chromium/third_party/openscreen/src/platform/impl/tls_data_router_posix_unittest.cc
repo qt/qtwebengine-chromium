@@ -60,7 +60,7 @@ class TestingDataRouter : public TlsDataRouterPosix {
   using TlsDataRouterPosix::IsSocketWatched;
 
   bool AnySocketsWatched() {
-    std::unique_lock<std::mutex> lock(accept_socket_mutex_);
+    std::lock_guard<std::mutex> lock(accept_socket_mutex_);
     return !accept_stream_sockets_.empty() && !accept_socket_mappings_.empty();
   }
 };

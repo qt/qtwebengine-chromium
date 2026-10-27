@@ -46,8 +46,8 @@
 #include "content/browser/media/capture/desktop_capture_device.h"
 #endif  // !BUILDFLAG(IS_IOS)
 #if BUILDFLAG(IS_MAC)
-#include "content/browser/media/capture/capture_util_mac.h"
 #include "content/browser/media/capture/desktop_capture_device_mac.h"
+#include "content/browser/media/capture/desktop_capture_util_mac.h"
 #include "content/browser/media/capture/pip_screen_capture_coordinator_impl.h"
 #include "content/browser/media/capture/views_widget_video_capture_device_mac.h"
 #endif
@@ -326,9 +326,9 @@ void InProcessVideoCaptureDeviceLauncher::LaunchDeviceAsync(
         // For the other capturers, when a bug reports the type of capture it's
         // easy enough to determine which capturer was used, but it's a little
         // fuzzier with window capture.
-        TRACE_EVENT_INSTANT0(
+        TRACE_EVENT_INSTANT(
             TRACE_DISABLED_BY_DEFAULT("video_and_image_capture"),
-            "UsingVizFrameSinkCapturer", TRACE_EVENT_SCOPE_THREAD);
+            "UsingVizFrameSinkCapturer");
         start_capture_closure = base::BindOnce(
             &InProcessVideoCaptureDeviceLauncher::
                 DoStartVizFrameSinkWindowCaptureOnDeviceThread,
@@ -339,8 +339,8 @@ void InProcessVideoCaptureDeviceLauncher::LaunchDeviceAsync(
 #endif  // defined(USE_AURA) || BUILDFLAG(IS_MAC)
 
       // All cases other than tab capture or Aura desktop/window capture.
-      TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("video_and_image_capture"),
-                           "UsingDesktopCapturer", TRACE_EVENT_SCOPE_THREAD);
+      TRACE_EVENT_INSTANT(TRACE_DISABLED_BY_DEFAULT("video_and_image_capture"),
+                          "UsingDesktopCapturer");
       start_capture_closure = base::BindOnce(
           &InProcessVideoCaptureDeviceLauncher::
               DoStartDesktopCaptureOnDeviceThread,

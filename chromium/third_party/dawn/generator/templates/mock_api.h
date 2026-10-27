@@ -39,8 +39,8 @@
 #include <atomic>
 #include <memory>
 
-#include "dawn/common/FutureUtils.h"
 #include "absl/container/flat_hash_map.h"
+#include "src/dawn/common/FutureUtils.h"
 
 // An abstract base class representing a proc table so that API calls can be mocked. Most API calls
 // are directly represented by a delete virtual method but others need minimal state tracking to be
@@ -66,7 +66,7 @@ class ProcTableAsClass {
             virtual void {{as_MethodSuffix(type.name, Name("release"))}}({{as_cType(type.name)}} self) = 0;
             {% for method in type.methods %}
                 {% set Suffix = as_CppMethodSuffix(type.name, method.name) %}
-                {% if not has_callbackInfoStruct(method) %}
+                {% if not has_callbackInfoStruct(method.arguments) %}
                     virtual {{as_annotated_cType(method.returns)}} {{Suffix}}(
                         {{-as_cType(type.name)}} {{as_varName(type.name)}}
                         {%- for arg in method.arguments -%}
@@ -84,7 +84,7 @@ class ProcTableAsClass {
                 {% endif %}
             {% endfor %}
 
-            {% for method in type.methods if has_callbackInfoStruct(method) %}
+            {% for method in type.methods if has_callbackInfoStruct(method.arguments) %}
                 {% set Suffix = as_CppMethodSuffix(type.name, method.name) %}
                 //* The virtual function to call after saving the callback and userdata in the proc.
                 //* This function can be mocked.
@@ -116,7 +116,7 @@ class ProcTableAsClass {
         struct Object {
             ProcTableAsClass* procs = nullptr;
             {% for type in by_category["object"] %}
-                {% for method in type.methods if has_callbackInfoStruct(method) %}
+                {% for method in type.methods if has_callbackInfoStruct(method.arguments) %}
                     {% set Suffix = as_CppMethodSuffix(type.name, method.name) %}
                     {% set CallbackInfoType = (method.arguments|last).type %}
                     {% set CallbackType = find_by_name(CallbackInfoType.members, "callback").type %}
@@ -159,7 +159,7 @@ class MockProcTable : public ProcTableAsClass {
 
             MOCK_METHOD(void, {{as_MethodSuffix(type.name, Name("add ref"))}}, ({{as_cType(type.name)}} self), (override));
             MOCK_METHOD(void, {{as_MethodSuffix(type.name, Name("release"))}}, ({{as_cType(type.name)}} self), (override));
-            {% for method in type.methods if not has_callbackInfoStruct(method) %}
+            {% for method in type.methods if not has_callbackInfoStruct(method.arguments) %}
                 MOCK_METHOD({{as_annotated_cType(method.returns)}},{{" "}}
                     {{-as_MethodSuffix(type.name, method.name)}}, (
                         {{-as_cType(type.name)}} {{as_varName(type.name)}}
@@ -169,7 +169,7 @@ class MockProcTable : public ProcTableAsClass {
                     ), (override));
             {% endfor %}
 
-            {% for method in type.methods if has_callbackInfoStruct(method) %}
+            {% for method in type.methods if has_callbackInfoStruct(method.arguments) %}
                 MOCK_METHOD(void,{{" "-}}
                     On{{as_CppMethodSuffix(type.name, method.name)}}, (
                         {{-as_cType(type.name)}} {{as_varName(type.name)}}

@@ -15,17 +15,15 @@
 #include "ink/geometry/internal/algorithms.h"
 
 #include <optional>
-#include <utility>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/container/inlined_vector.h"
 #include "absl/status/status.h"
+#include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
-#include "ink/color/color.h"
-#include "ink/color/type_matchers.h"
 #include "ink/geometry/affine_transform.h"
 #include "ink/geometry/angle.h"
 #include "ink/geometry/envelope.h"
@@ -43,12 +41,14 @@ namespace ink {
 namespace geometry_internal {
 namespace {
 
+using ::absl_testing::IsOkAndHolds;
 using ::testing::ElementsAre;
 using ::testing::Eq;
 using ::testing::FloatEq;
 using ::testing::FloatNear;
 using ::testing::Optional;
 using ::testing::Pair;
+using ::testing::SizeIs;
 
 TEST(GetBarycentricCoordinatesTest, NonDegenerateTriangle) {
   Triangle triangle{.p0 = {1, 2}, .p1 = {4, 2}, .p2 = {1, 8}};
@@ -163,183 +163,6 @@ TEST(VectorFromPointToSegmentProjectionTest,
   EXPECT_THAT(
       VectorFromPointToSegmentProjection(point, segment),
       Optional(VecNear(segment.Lerp(*segment.Project(point)) - point, 0.0001)));
-}
-
-TEST(LerpFloatTest, AmountBetweenZeroAndOne) {
-  EXPECT_FLOAT_EQ(Lerp(100.0, 200.0, 0.1), 110.0);
-}
-
-TEST(LerpFloatTest, AmountGreaterThanOne) {
-  EXPECT_FLOAT_EQ(Lerp(100.0, 200.0, 1.1), 210.0);
-}
-
-TEST(LerpFloatTest, AmountLessThanZero) {
-  EXPECT_FLOAT_EQ(Lerp(100.0, 200.0, -0.1), 90.0);
-}
-
-TEST(InverseLerpFloatTest, InverseLerp) {
-  EXPECT_FLOAT_EQ(InverseLerp(100.0, 200.0, 140.0), 0.4);
-}
-
-TEST(InverseLerpFloatTest, InverseLerpOnZeroWidthInterval) {
-  EXPECT_FLOAT_EQ(InverseLerp(100.0, 100.0, 140.0), 0.f);
-}
-
-TEST(InverseLerpFloatTest, InverseLerpIsInverseOfLerp) {
-  EXPECT_FLOAT_EQ(InverseLerp(100.0, 200, Lerp(100, 200, 0.1)), 0.1);
-  EXPECT_FLOAT_EQ(InverseLerp(100.0, 200, Lerp(100, 200, 1.1)), 1.1);
-  EXPECT_FLOAT_EQ(InverseLerp(100.0, 200, Lerp(100, 200, -0.1)), -0.1);
-
-  // For a zero-width interval Lerp cannot be be inversed because the original
-  // `t` doesn't impact the result of the Lerp function.
-  EXPECT_FLOAT_EQ(InverseLerp(100.0, 100, Lerp(100, 100, 0.1)), 0.0f);
-  EXPECT_FLOAT_EQ(InverseLerp(100.0, 100, Lerp(100, 100, 1.1)), 0.0f);
-  EXPECT_FLOAT_EQ(InverseLerp(100.0, 100, Lerp(100, 100, -0.1)), 0.0f);
-}
-
-TEST(LinearMapTest, LinearMap) {
-  EXPECT_FLOAT_EQ(LinearMap(10, {0, 100}, {0, 200}), 20);
-  EXPECT_FLOAT_EQ(LinearMap(10, {0, 100}, {100, 150}), 105);
-  EXPECT_FLOAT_EQ(LinearMap(10, {0, 100}, {0, -100}), -10);
-}
-
-TEST(LinearMapTest, LinearMapOnZeroWidthInputInterval) {
-  EXPECT_FLOAT_EQ(LinearMap(0, {0, 0}, {0, 100}), 0);
-  EXPECT_FLOAT_EQ(LinearMap(150, {150, 150}, {0, 100}), 0);
-}
-
-TEST(LinearMapTest, LinearMapOnZeroWidthTargetInterval) {
-  EXPECT_FLOAT_EQ(LinearMap(0, {0, 100}, {100, 100}), 100);
-  EXPECT_FLOAT_EQ(LinearMap(50, {0, 100}, {100, 100}), 100);
-}
-
-TEST(LinearMapTest, LinearMapWithValueOutsideRange) {
-  EXPECT_FLOAT_EQ(LinearMap(-10, {0, 100}, {0, 200}), -20);
-}
-
-TEST(LinearMapTest, LinearMapLinearMapofLinearMapIsOriginalValue) {
-  EXPECT_FLOAT_EQ(
-      LinearMap(LinearMap(10, {0, 100}, {0, 200}), {0, 200}, {0, 100}), 10);
-}
-
-TEST(LerpPointTest, AmountBetweenZeroAndOne) {
-  EXPECT_THAT(Lerp(Point({100.0, 100.0}), Point({200.0, 200.0}), 0.1),
-              PointEq(Point({110.0, 110.0})));
-}
-
-TEST(LerpPointTest, AmountGreaterThanOne) {
-  EXPECT_THAT(Lerp(Point({100.0, 100.0}), Point({200.0, 200.0}), 1.1),
-              PointEq(Point({210.0, 210.0})));
-}
-
-TEST(LerpPointTest, AmountLessThanZero) {
-  EXPECT_THAT(Lerp(Point({100.0, 100.0}), Point({200.0, 200.0}), -0.1),
-              PointEq(Point({90.0, 90.0})));
-}
-
-TEST(LerpColorRgbaFloatTest, AmountBetweenZeroAndOne) {
-  EXPECT_THAT(Lerp(Color::RgbaFloat({100.0, 100.0, 100.0, 100.0}),
-                   Color::RgbaFloat({200.0, 200.0, 200.0, 200.0}), 0.1),
-              ChannelStructEqFloats({110.0, 110.0, 110.0, 110.0}));
-}
-
-TEST(LerpColorRgbaFloatTest, AmountGreaterThanOne) {
-  EXPECT_THAT(Lerp(Color::RgbaFloat({100.0, 100.0, 100.0, 100.0}),
-                   Color::RgbaFloat({200.0, 200.0, 200.0, 200.0}), 1.1),
-              ChannelStructEqFloats({210.0, 210.0, 210.0, 210.0}));
-}
-
-TEST(LerpColorRgbaFloatTest, AmountLessThanZero) {
-  EXPECT_THAT(Lerp(Color::RgbaFloat({100.0, 100.0, 100.0, 100.0}),
-                   Color::RgbaFloat({200.0, 200.0, 200.0, 200.0}), -0.1),
-              ChannelStructEqFloats({90.0, 90.0, 90.0, 90.0}));
-}
-
-TEST(LerpAngleTest, AmountBetweenZeroAndOne) {
-  EXPECT_THAT(Lerp(Angle::Radians(1), Angle::Radians(2), 0.3),
-              AngleEq(Angle::Radians(1.3)));
-}
-
-TEST(LerpAngleTest, AmountLessThanZero) {
-  EXPECT_THAT(Lerp(Angle::Radians(0.5), Angle::Radians(1.5), -2),
-              AngleEq(Angle::Radians(-1.5)));
-}
-
-TEST(LerpAngleTest, AmountGreaterThanOne) {
-  EXPECT_THAT(Lerp(Angle::Radians(-0.3), Angle::Radians(0.7), 5),
-              AngleEq(Angle::Radians(4.7)));
-}
-
-TEST(LerpAngleTest, DifferenceGreaterThanTwoPi) {
-  EXPECT_THAT(Lerp(Angle::Radians(-6), Angle::Radians(4), 0.7),
-              AngleEq(Angle::Radians(1)));
-}
-
-TEST(NormalizedAngleLerpTest, DifferenceSmallerThanPiWithBGreaterA) {
-  EXPECT_THAT(NormalizedAngleLerp(Angle::Radians(1), Angle::Radians(2), 0.3),
-              AngleEq(Angle::Radians(1.3)));
-}
-
-TEST(NormalizedAngleLerpTest, DifferenceGreaterThanPiWithBGreaterA) {
-  EXPECT_THAT(
-      NormalizedAngleLerp(Angle::Radians(0.5), Angle::Radians(5.5), 0.3),
-      AngleNear(Angle::Radians(0.116), 0.01));
-}
-
-TEST(NormalizedAngleLerpTest, DifferenceSmallerThanPiWithAGreaterB) {
-  EXPECT_THAT(
-      NormalizedAngleLerp(Angle::Radians(5.5), Angle::Radians(0.5), 0.3),
-      AngleNear(Angle::Radians(5.884), 0.01));
-}
-
-TEST(NormalizedAngleLerpTest, DifferenceGreaterThanPiWithAGreaterB) {
-  EXPECT_THAT(
-      NormalizedAngleLerp(Angle::Radians(5.5), Angle::Radians(4.5), 0.3),
-      AngleEq(Angle::Radians(5.2)));
-}
-
-TEST(LerpTest, NonZeroInputVectorsWithDifferentDirections) {
-  EXPECT_THAT(Lerp(Vec{4, 0}, Vec{0, 5}, -5), VecEq({24, -25}));
-  EXPECT_THAT(Lerp(Vec{4, 0}, Vec{0, 5}, -4), VecEq({20, -20}));
-  EXPECT_THAT(Lerp(Vec{4, 0}, Vec{0, 5}, -1), VecEq({8, -5}));
-  EXPECT_THAT(Lerp(Vec{4, 0}, Vec{0, 5}, 0), VecEq({4, 0}));
-  EXPECT_THAT(Lerp(Vec{4, 0}, Vec{0, 5}, 0.5), VecEq({2, 2.5}));
-  EXPECT_THAT(Lerp(Vec{4, 0}, Vec{0, 5}, 1), VecEq({0, 5}));
-  EXPECT_THAT(Lerp(Vec{4, 0}, Vec{0, 5}, 3), VecEq({-8, 15}));
-
-  EXPECT_THAT(Lerp(Vec{4, 0}, Vec{0, -3}, -1), VecEq({8, 3}));
-  EXPECT_THAT(Lerp(Vec{4, 0}, Vec{0, -3}, 0), VecEq({4, 0}));
-  EXPECT_THAT(Lerp(Vec{4, 0}, Vec{0, -3}, 0.5), VecEq({2, -1.5}));
-  EXPECT_THAT(Lerp(Vec{4, 0}, Vec{0, -3}, 1), VecEq({0, -3}));
-  EXPECT_THAT(Lerp(Vec{4, 0}, Vec{0, -3}, 4), VecEq({-12, -12}));
-  EXPECT_THAT(Lerp(Vec{4, 0}, Vec{0, -3}, 5), VecEq({-16, -15}));
-}
-
-TEST(LerpTest, NonZeroInputVectorsWithSameDirection) {
-  EXPECT_THAT(Lerp(Vec{1, 1}, Vec{3, 3}, -1), VecNear({-1, -1}, 0.001));
-  EXPECT_THAT(Lerp(Vec{1, 1}, Vec{3, 3}, 0), VecEq({1, 1}));
-  EXPECT_THAT(Lerp(Vec{1, 1}, Vec{3, 3}, 0.5), VecEq({2, 2}));
-  EXPECT_THAT(Lerp(Vec{1, 1}, Vec{3, 3}, 1), VecEq({3, 3}));
-  EXPECT_THAT(Lerp(Vec{1, 1}, Vec{3, 3}, 2), VecEq({5, 5}));
-}
-
-TEST(LerpTest, ZeroInputVectors) {
-  EXPECT_THAT(Lerp(Vec{0, 0}, Vec{0, 2}, -1), VecEq({0, -2}));
-  EXPECT_THAT(Lerp(Vec{0, 0}, Vec{0, 2}, 0), VecEq({0, 0}));
-  EXPECT_THAT(Lerp(Vec{0, 0}, Vec{0, 2}, 0.75), VecEq({0, 1.5}));
-  EXPECT_THAT(Lerp(Vec{0, 0}, Vec{0, 2}, 1), VecEq({0, 2}));
-  EXPECT_THAT(Lerp(Vec{0, 0}, Vec{0, 2}, 2), VecEq({0, 4}));
-
-  EXPECT_THAT(Lerp(Vec{-3, 0}, Vec{0, 0}, -1), VecEq({-6, 0}));
-  EXPECT_THAT(Lerp(Vec{-3, 0}, Vec{0, 0}, 0), VecEq({-3, 0}));
-  EXPECT_THAT(Lerp(Vec{-3, 0}, Vec{0, 0}, 0.5), VecEq({-1.5, 0}));
-  EXPECT_THAT(Lerp(Vec{-3, 0}, Vec{0, 0}, 1), VecEq({0, 0}));
-  EXPECT_THAT(Lerp(Vec{-3, 0}, Vec{0, 0}, 2), VecEq({3, 0}));
-  EXPECT_THAT(Lerp(Vec{0, 0}, Vec{0, 0}, -1), VecEq({0, 0}));
-  EXPECT_THAT(Lerp(Vec{0, 0}, Vec{0, 0}, 0), VecEq({0, 0}));
-  EXPECT_THAT(Lerp(Vec{0, 0}, Vec{0, 0}, 0.2), VecEq({0, 0}));
-  EXPECT_THAT(Lerp(Vec{0, 0}, Vec{0, 0}, 1), VecEq({0, 0}));
-  EXPECT_THAT(Lerp(Vec{0, 0}, Vec{0, 0}, 2), VecEq({0, 0}));
 }
 
 TEST(SegmentIntersectionRatioTest, NoIntersection) {
@@ -588,14 +411,12 @@ TEST(SegmentIntersectionTest, NoIntersection) {
 TEST(CalculateCollapsedSegmentTest, CollapseToPointSingleMesh) {
   absl::StatusOr<absl::InlinedVector<Mesh, 1>> star_meshes =
       MakeStarMutableMesh(6).AsMeshes();
-  ASSERT_EQ(star_meshes.status(), absl::OkStatus());
+  ASSERT_THAT(star_meshes, IsOkAndHolds(SizeIs(1)));
 
   absl::StatusOr<absl::InlinedVector<Mesh, 1>> line_meshes =
       MakeStraightLineMutableMesh(3).AsMeshes();
-  ASSERT_EQ(line_meshes.status(), absl::OkStatus());
+  ASSERT_THAT(line_meshes, IsOkAndHolds(SizeIs(1)));
 
-  ASSERT_EQ(star_meshes->size(), 1);
-  ASSERT_EQ(line_meshes->size(), 1);
   const Mesh& star_mesh = (*star_meshes)[0];
   const Mesh& line_mesh = (*line_meshes)[0];
 
@@ -615,14 +436,12 @@ TEST(CalculateCollapsedSegmentTest, CollapseToPointSingleMesh) {
 TEST(CalculateCollapsedSegmentTest, CollapseToPointMultipleMeshes) {
   absl::StatusOr<absl::InlinedVector<Mesh, 1>> star_meshes =
       MakeStarMutableMesh(6).AsMeshes();
-  ASSERT_EQ(star_meshes.status(), absl::OkStatus());
+  ASSERT_THAT(star_meshes, IsOkAndHolds(SizeIs(1)));
 
   absl::StatusOr<absl::InlinedVector<Mesh, 1>> line_meshes =
       MakeStraightLineMutableMesh(3).AsMeshes();
-  ASSERT_EQ(line_meshes.status(), absl::OkStatus());
+  ASSERT_THAT(line_meshes, IsOkAndHolds(SizeIs(1)));
 
-  ASSERT_EQ(star_meshes->size(), 1);
-  ASSERT_EQ(line_meshes->size(), 1);
   std::vector<Mesh> meshes = {(*star_meshes)[0], (*line_meshes)[0]};
   Envelope bounds = meshes[0].Bounds();
   bounds.Add(meshes[1].Bounds());
@@ -640,14 +459,12 @@ TEST(CalculateCollapsedSegmentTest, CollapseToPointMultipleMeshes) {
 TEST(CalculateCollapsedSegmentTest, CollapseToSegmentSingleMesh) {
   absl::StatusOr<absl::InlinedVector<Mesh, 1>> star_meshes =
       MakeStarMutableMesh(6).AsMeshes();
-  ASSERT_EQ(star_meshes.status(), absl::OkStatus());
+  ASSERT_THAT(star_meshes, IsOkAndHolds(SizeIs(1)));
 
   absl::StatusOr<absl::InlinedVector<Mesh, 1>> line_meshes =
       MakeStraightLineMutableMesh(3).AsMeshes();
-  ASSERT_EQ(line_meshes.status(), absl::OkStatus());
+  ASSERT_THAT(line_meshes, IsOkAndHolds(SizeIs(1)));
 
-  ASSERT_EQ(star_meshes->size(), 1);
-  ASSERT_EQ(line_meshes->size(), 1);
   const Mesh& star_mesh = (*star_meshes)[0];
   const Mesh& line_mesh = (*line_meshes)[0];
 
@@ -674,14 +491,12 @@ TEST(CalculateCollapsedSegmentTest, CollapseToSegmentSingleMesh) {
 TEST(CalculateCollapsedSegmentTest, CollapseToSegmentMultipleMeshes) {
   absl::StatusOr<absl::InlinedVector<Mesh, 1>> star_meshes =
       MakeStarMutableMesh(6).AsMeshes();
-  ASSERT_EQ(star_meshes.status(), absl::OkStatus());
+  ASSERT_THAT(star_meshes, IsOkAndHolds(SizeIs(1)));
 
   absl::StatusOr<absl::InlinedVector<Mesh, 1>> line_meshes =
       MakeStraightLineMutableMesh(3).AsMeshes();
-  ASSERT_EQ(line_meshes.status(), absl::OkStatus());
+  ASSERT_THAT(line_meshes, IsOkAndHolds(SizeIs(1)));
 
-  ASSERT_EQ(star_meshes->size(), 1);
-  ASSERT_EQ(line_meshes->size(), 1);
   std::vector<Mesh> meshes = {(*star_meshes)[0], (*line_meshes)[0]};
   Envelope bounds = meshes[0].Bounds();
   bounds.Add(meshes[1].Bounds());

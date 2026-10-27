@@ -19,6 +19,7 @@
 #include "src/maglev/maglev-compilation-unit.h"
 #include "src/maglev/maglev-graph-labeller.h"
 #include "src/objects/js-function-inl.h"
+#include "src/objects/shared-function-info.h"
 #include "src/utils/identity-map.h"
 
 namespace v8 {
@@ -67,7 +68,8 @@ static bool SpecializeToFunctionContext(
 MaglevCompilationInfo::MaglevCompilationInfo(
     Isolate* isolate, IndirectHandle<JSFunction> function,
     BytecodeOffset osr_offset, std::optional<compiler::JSHeapBroker*> js_broker,
-    std::optional<bool> specialize_to_function_context, bool is_turbolev)
+    std::optional<bool> specialize_to_function_context, bool is_turbolev,
+    std::string function_name)
     : zone_(isolate->allocator(), kMaglevZoneName),
       broker_(js_broker.has_value()
                   ? js_broker.value()
@@ -75,6 +77,9 @@ MaglevCompilationInfo::MaglevCompilationInfo(
                                                v8_flags.trace_heap_broker,
                                                CodeKind::MAGLEV)),
       toplevel_function_(function),
+      function_name_(function_name.empty()
+                         ? function->shared()->DebugNameCStr().get()
+                         : std::move(function_name)),
       osr_offset_(osr_offset),
       trace_id_(static_cast<uint16_t>(
           reinterpret_cast<uint64_t>(this) ^ function.address() ^

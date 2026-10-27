@@ -32,10 +32,6 @@ template class fxcrt::StringViewTemplate<wchar_t>;
 template class fxcrt::StringPoolTemplate<WideString>;
 template struct std::hash<WideString>;
 
-#define FORCE_ANSI 0x10000
-#define FORCE_UNICODE 0x20000
-#define FORCE_INT64 0x40000
-
 namespace {
 
 #if defined(WCHAR_T_IS_32_BIT)
@@ -56,6 +52,13 @@ size_t FuseSurrogates(pdfium::span<wchar_t> s) {
 #endif  // defined(WCHAR_T_IS_32_BIT)
 
 constexpr wchar_t kWideTrimChars[] = L"\x09\x0a\x0b\x0c\x0d\x20";
+
+enum class WSTRModifier {
+  kNone,
+  kForceAnsi,
+  kForceUnicode,
+  kForceInt64,
+};
 
 std::optional<size_t> GuessSizeForVSWPrintf(const wchar_t* pFormat,
                                             va_list argList) {
@@ -109,18 +112,18 @@ std::optional<size_t> GuessSizeForVSWPrintf(const wchar_t* pFormat,
       return std::nullopt;
     }
     uint32_t nPrecision = static_cast<uint32_t>(iPrecision);
-    int nModifier = 0;
+    WSTRModifier nModifier = WSTRModifier::kNone;
     if (view.First(3u) == L"I64") {
       view = view.Substr(3u);
-      nModifier = FORCE_INT64;
+      nModifier = WSTRModifier::kForceInt64;
     } else {
       switch (view.Front()) {
         case 'h':
-          nModifier = FORCE_ANSI;
+          nModifier = WSTRModifier::kForceAnsi;
           view = view.Substr(1u);
           break;
         case 'l':
-          nModifier = FORCE_UNICODE;
+          nModifier = WSTRModifier::kForceUnicode;
           view = view.Substr(1u);
           break;
         case 'F':
@@ -131,68 +134,32 @@ std::optional<size_t> GuessSizeForVSWPrintf(const wchar_t* pFormat,
       }
     }
     size_t nItemLen = 0;
-    switch (view.Front() | nModifier) {
+    switch (view.Front()) {
       case 'c':
       case 'C':
         nItemLen = 2;
         va_arg(argList, int);
         break;
-      case 'c' | FORCE_ANSI:
-      case 'C' | FORCE_ANSI:
-        nItemLen = 2;
-        va_arg(argList, int);
-        break;
-      case 'c' | FORCE_UNICODE:
-      case 'C' | FORCE_UNICODE:
-        nItemLen = 2;
-        va_arg(argList, int);
-        break;
-      case 's': {
-        const wchar_t* pstrNextArg = va_arg(argList, const wchar_t*);
-        if (pstrNextArg) {
-          nItemLen = wcslen(pstrNextArg);
-          if (nItemLen < 1) {
-            nItemLen = 1;
-          }
-        } else {
-          nItemLen = 6;
-        }
-      } break;
+      case 's':
       case 'S': {
-        const char* pstrNextArg = va_arg(argList, const char*);
-        if (pstrNextArg) {
-          nItemLen = strlen(pstrNextArg);
-          if (nItemLen < 1) {
-            nItemLen = 1;
-          }
+        bool wide;
+        if (nModifier == WSTRModifier::kForceUnicode) {
+          wide = true;
+        } else if (nModifier == WSTRModifier::kForceAnsi) {
+          wide = false;
         } else {
-          nItemLen = 6;
+          wide = (view.Front() == 's');
         }
-      } break;
-      case 's' | FORCE_ANSI:
-      case 'S' | FORCE_ANSI: {
-        const char* pstrNextArg = va_arg(argList, const char*);
-        if (pstrNextArg) {
-          nItemLen = strlen(pstrNextArg);
-          if (nItemLen < 1) {
-            nItemLen = 1;
-          }
+
+        if (wide) {
+          const wchar_t* pstrNextArg = va_arg(argList, const wchar_t*);
+          nItemLen = pstrNextArg ? std::max<size_t>(1, wcslen(pstrNextArg)) : 6;
         } else {
-          nItemLen = 6;
+          const char* pstrNextArg = va_arg(argList, const char*);
+          nItemLen = pstrNextArg ? std::max<size_t>(1, strlen(pstrNextArg)) : 6;
         }
-      } break;
-      case 's' | FORCE_UNICODE:
-      case 'S' | FORCE_UNICODE: {
-        const wchar_t* pstrNextArg = va_arg(argList, wchar_t*);
-        if (pstrNextArg) {
-          nItemLen = wcslen(pstrNextArg);
-          if (nItemLen < 1) {
-            nItemLen = 1;
-          }
-        } else {
-          nItemLen = 6;
-        }
-      } break;
+        break;
+      }
     }
     if (nItemLen != 0) {
       if (nPrecision != 0 && nItemLen > nPrecision) {
@@ -209,7 +176,7 @@ std::optional<size_t> GuessSizeForVSWPrintf(const wchar_t* pFormat,
         case 'x':
         case 'X':
         case 'o':
-          if (nModifier & FORCE_INT64) {
+          if (nModifier == WSTRModifier::kForceInt64) {
             va_arg(argList, int64_t);
           } else {
             va_arg(argList, int);

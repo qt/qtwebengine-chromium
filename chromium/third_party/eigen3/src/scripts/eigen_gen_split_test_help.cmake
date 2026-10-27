@@ -1,4 +1,7 @@
 #!cmake -P
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
+
 file(WRITE split_test_helper.h "")
 foreach(i RANGE 1 999)
   file(APPEND split_test_helper.h

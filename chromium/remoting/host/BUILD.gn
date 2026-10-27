@@ -4,6 +4,8 @@
 
 import("//build/config/chrome_build.gni")
 import("//build/config/linux/pkg_config.gni")
+import("//build/config/python.gni")
+import("//build/config/sanitizers/sanitizers.gni")
 import("//build/util/process_version.gni")
 import("//remoting/build/config/remoting_build.gni")
 import("//remoting/build/config/remoting_logging.gni")
@@ -45,6 +47,10 @@ group("all") {
     if (enable_me2me_host && (is_linux || is_win)) {
       deps += [ "//remoting/host/remote_open_url" ]
     }
+
+    if (enable_me2me_host && is_linux) {
+      deps += [ "//remoting/host/linux:remoting_migrate_host" ]
+    }
   }
 }
 
@@ -84,6 +90,8 @@ source_set("host_main_headers") {
     "//remoting/host/it2me:main_headers",
     "//remoting/host/linux:login_session_reporter_main_headers",
     "//remoting/host/linux:remote_session_info_main_headers",
+    "//remoting/host/linux:remoting_migrate_host_main_headers",
+    "//remoting/host/linux:remoting_migrate_host_main_impl",
     "//remoting/host/mac:agent_process_broker_main_headers",
     "//remoting/host/mac:host_service_main_headers",
     "//remoting/host/mac:remoting_native_messaging_host",
@@ -105,6 +113,7 @@ source_set("host_main_headers") {
 source_set("common_headers") {
   visibility = [ "//remoting/host/*" ]
   sources = [
+    "audio_injector.h",
     "audio_silence_detector.h",
     "audio_volume_filter.h",
     "basic_desktop_environment.h",
@@ -156,6 +165,33 @@ source_set("ipc_constants") {
     "//remoting/base",
     "//remoting/host/base",
   ]
+}
+
+source_set("elevated_native_messaging_host") {
+  sources = [
+    "elevated_native_messaging_host.cc",
+    "elevated_native_messaging_host.h",
+    "launch_native_messaging_host_process.h",
+  ]
+
+  deps = [
+    "//base",
+    "//extensions/browser/api/messaging:native_messaging",
+    "//remoting/host/base",
+    "//remoting/host/native_messaging",
+  ]
+
+  if (is_win) {
+    sources += [ "launch_native_messaging_host_process_win.cc" ]
+    deps += [
+      "//ipc",
+      "//remoting/host/win:security_descriptor",
+    ]
+  } else if (is_linux) {
+    sources += [ "launch_native_messaging_host_process_linux.cc" ]
+  } else {
+    sources += [ "launch_native_messaging_host_process_failing.cc" ]
+  }
 }
 
 source_set("chromoting_host_services_client") {
@@ -323,10 +359,25 @@ source_set("mojo_caller_security_checker") {
   }
   if (is_win) {
     deps += [ "//remoting/host/win:trust_util" ]
+    libs = [ "wtsapi32.lib" ]
   }
 }
 
 if (is_posix) {
+  source_set("pam_authorization") {
+    sources = [
+      "pam_authorization_factory_posix.cc",
+      "pam_authorization_factory_posix.h",
+    ]
+    deps = [
+      ":common_headers",
+      "//base",
+      "//remoting/base",
+      "//remoting/host/base",
+    ]
+    public_deps = [ "//remoting/protocol" ]
+  }
+
   source_set("signal_handler") {
     sources = [
       "posix/signal_handler.cc",
@@ -351,6 +402,7 @@ static_library("common") {
     "action_message_handler.h",
     "active_display_monitor.cc",
     "audio_capturer.cc",
+    "audio_injector.cc",
     "audio_silence_detector.cc",
     "audio_volume_filter.cc",
     "backoff_timer.cc",
@@ -428,6 +480,8 @@ static_library("common") {
     "ipc_action_executor.h",
     "ipc_audio_capturer.cc",
     "ipc_audio_capturer.h",
+    "ipc_audio_injector.cc",
+    "ipc_audio_injector.h",
     "ipc_desktop_environment.cc",
     "ipc_desktop_environment.h",
     "ipc_host_event_logger.cc",
@@ -616,10 +670,10 @@ static_library("common") {
     assert(use_glib)
     defines += [ "REMOTING_USE_X11" ]
     sources -= [ "active_display_monitor.cc" ]
-    libs += [ "//third_party/libei/cipd/lib64/libei.a" ]
     deps += [
       "//remoting/host/linux:platform_impls",
       "//remoting/host/linux:utils",
+      "//third_party/libei",
       "//ui/base/x",
       "//ui/events/platform/x11",
       "//ui/gfx/x",
@@ -833,6 +887,7 @@ source_set("unit_tests") {
     "it2me/it2me_host_unittest.cc",
     "it2me/it2me_native_messaging_host_unittest.cc",
     "mojo_video_capturer_list_unittest.cc",
+    "mojom/remoting_mojom_traits_unittest.cc",
     "mouse_cursor_monitor_proxy_unittest.cc",
     "mouse_shape_pump_unittest.cc",
     "native_messaging/native_messaging_reader_unittest.cc",
@@ -877,6 +932,7 @@ source_set("unit_tests") {
     "//components/named_mojo_ipc_server",
     "//components/named_mojo_ipc_server:test_support",
     "//ipc",
+    "//mojo/public/cpp/test_support:test_utils",
     "//net:test_support",
     "//remoting/base:errors",
     "//remoting/base:session_policies",
@@ -929,6 +985,10 @@ source_set("unit_tests") {
   # start_host is only supported on Linux and Windows.
   if (is_linux || is_win) {
     sources += [ "setup/host_starter_base_unittest.cc" ]
+  }
+
+  if (is_win) {
+    sources += [ "setup/daemon_controller_delegate_win_unittest.cc" ]
   }
 
   if (is_linux) {
@@ -990,6 +1050,14 @@ source_set("unit_tests") {
     data_deps = [ "//remoting/test:capability_test_stub" ]
   }
 
+  if (is_posix && !is_chromeos && !is_msan) {
+    # PAM tests fail on MSan because libpam is uninstrumented
+    # (crbug.com/504793694). They also don't work on ChromeOS as PAM is not used
+    # there for remoting.
+    sources += [ "pam_authorization_factory_posix_unittest.cc" ]
+    deps += [ ":pam_authorization" ]
+  }
+
   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
   # enable the diagnostic by removing this line.
   configs += [ "//build/config/compiler:no_exit_time_destructors" ]
@@ -1039,7 +1107,7 @@ if (enable_me2me_host) {
     }
   }
 
-  action_foreach("remoting_native_messaging_manifests") {
+  action_foreach_with_pydeps("remoting_native_messaging_manifests") {
     if (is_mac) {
       me2me_host_path = "/Library/PrivilegedHelperTools/$me2me_host_bundle_name/Contents/MacOS/$native_messaging_host_bundle_name/Contents/MacOS/native_messaging_host"
       it2me_host_path = "/Library/PrivilegedHelperTools/$me2me_host_bundle_name/Contents/MacOS/$remote_assistance_host_bundle_name/Contents/MacOS/remote_assistance_host"
@@ -1075,7 +1143,9 @@ if (enable_me2me_host) {
       ]
     }
 
-    # LINT.ThenChange(/remoting/host/it2me/it2me_native_messaging_host_allowed_origins.h:it2me_origins, /remoting/host/webauthn/remote_webauthn_extension_notifier.cc:extension_ids, /remoting/tools/register_local_nm_hosts.sh:extension_ids)
+    # LINT.ThenChange(/remoting/host/it2me/it2me_native_messaging_host_allowed_origins.h:it2me_origins,
+    # /remoting/host/webauthn/remote_webauthn_extension_notifier.cc:extension_ids,
+    # /remoting/tools/register_local_nm_hosts.sh:extension_ids)
 
     companion_extension_ids_joined = string_join(",", companion_extension_ids)
     security_key_extension_ids_joined =
@@ -1117,13 +1187,18 @@ if (enable_me2me_host) {
   }
 
   if (is_mac) {
-    action_foreach("remoting_infoplist_strings") {
+    action_foreach_with_pydeps("remoting_infoplist_strings") {
       sources = [
         "installer/mac/uninstaller/remoting_uninstaller-InfoPlist.strings.jinja2",
         "it2me/remote_assistance_host-InfoPlist.strings.jinja2",
         "remoting_me2me_host-InfoPlist.strings.jinja2",
         "setup/native_messaging_host-InfoPlist.strings.jinja2",
       ]
+
+      inputs = [ branding_path ]
+      foreach(locale, remoting_locales_with_underscores) {
+        inputs += [ "${resources_locale_dir}/${locale}/messages.json" ]
+      }
 
       script = "//remoting/tools/build/remoting_localize.py"
       args = [
@@ -1202,11 +1277,10 @@ if (enable_me2me_host) {
     }
 
     if (is_posix) {
-      sources += [
-        "pam_authorization_factory_posix.cc",
-        "pam_authorization_factory_posix.h",
-      ]
       deps += [ ":signal_handler" ]
+      if (!is_chromeos) {
+        deps += [ ":pam_authorization" ]
+      }
     }
 
     if (!is_ios) {
@@ -1266,6 +1340,9 @@ if (enable_me2me_host) {
       "//remoting/host/setup:start_host_main",
       "//remoting/host/webauthn:main",
     ]
+    if (is_linux) {
+      deps += [ "//remoting/host/linux:remoting_migrate_host_main_impl" ]
+    }
     if (is_mac) {
       deps += [
         "//remoting/host/mac:agent_process_broker_main",

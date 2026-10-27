@@ -1475,7 +1475,7 @@ WebMediaPlayer::ReadyState WebMediaPlayerImpl::GetReadyState() const {
 
 WebString WebMediaPlayerImpl::GetErrorMessage() const {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
-  return WebString::FromUTF8(media_log_->GetErrorMessage());
+  return WebString::FromUtf8(media_log_->GetErrorMessage());
 }
 
 WebTimeRanges WebMediaPlayerImpl::Buffered() const {
@@ -1563,7 +1563,8 @@ bool WebMediaPlayerImpl::DidLoadingProgress() {
 
 void WebMediaPlayerImpl::Paint(cc::PaintCanvas* canvas,
                                const gfx::Rect& rect,
-                               const cc::PaintFlags& flags) {
+                               const cc::PaintFlags& flags,
+                               bool force_pixel_readback) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
   TRACE_EVENT0("media", "WebMediaPlayerImpl:paint");
 
@@ -1577,6 +1578,7 @@ void WebMediaPlayerImpl::Paint(cc::PaintCanvas* canvas,
   paint_params.dest_rect = gfx::RectF(rect);
   paint_params.transformation =
       pipeline_metadata_.video_decoder_config.video_transformation();
+  paint_params.force_pixel_readback = force_pixel_readback;
 
   video_renderer_.Paint(video_frame, canvas, flags, paint_params,
                         raster_context_provider_.get());
@@ -1608,6 +1610,18 @@ media::PaintCanvasVideoRenderer*
 WebMediaPlayerImpl::GetPaintCanvasVideoRenderer() {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
   return &video_renderer_;
+}
+
+media::VideoFrameSharedImageCache*
+WebMediaPlayerImpl::GetRGBSharedImageCache() {
+  DCHECK(main_task_runner_->BelongsToCurrentThread());
+  return &rgb_shared_image_cache_;
+}
+
+media::VideoFrameSharedImageCache*
+WebMediaPlayerImpl::GetYUVSharedImageCache() {
+  DCHECK(main_task_runner_->BelongsToCurrentThread());
+  return &yuv_shared_image_cache_;
 }
 
 bool WebMediaPlayerImpl::WouldTaintOrigin() const {
@@ -1717,15 +1731,28 @@ void WebMediaPlayerImpl::SetTrackState(const media::MediaTrack& track,
 
 #if BUILDFLAG(ENABLE_HLS_DEMUXER)
 
+UrlData::CacheMode TranslateCacheMode(bool always_disable,
+                                      media::DataSource::CacheMode mode) {
+  if (always_disable) {
+    return UrlData::kCacheDisabled;
+  }
+  switch (mode) {
+    case media::DataSource::CacheMode::kBypassCache:
+      return UrlData::kCacheDisabled;
+    case media::DataSource::CacheMode::kHitCache:
+      return UrlData::kNormal;
+  }
+}
+
 void WebMediaPlayerImpl::GetUrlData(
     const GURL& gurl,
-    bool ignore_cache,
+    media::DataSource::CacheMode cache_mode,
+    media::DataSource::EncodingMode encoding_mode,
     base::OnceCallback<void(scoped_refptr<UrlData>)> cb) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
   auto url_data = url_index_->GetByUrl(
       KURL(gurl), static_cast<UrlData::CorsMode>(cors_mode_),
-      (is_cache_disabled_ || ignore_cache) ? UrlData::kCacheDisabled
-                                           : UrlData::kNormal);
+      TranslateCacheMode(is_cache_disabled_, cache_mode), encoding_mode);
   std::move(cb).Run(std::move(url_data));
 }
 
@@ -1778,6 +1805,8 @@ void WebMediaPlayerImpl::SetCdmInternal(WebContentDecryptionModule* cdm) {
   // OnEncryptedMediaInitData().
   cdm_config_ = web_cdm->GetCdmConfig();
   DCHECK(!cdm_config_->key_system.empty());
+
+  client_->OnCdmAttached(cdm_config_.value());
 
   media_log_->SetProperty<MediaLogProperty::kSetCdm>(cdm_config_.value());
 
@@ -3930,7 +3959,7 @@ void WebMediaPlayerImpl::SwitchToRemoteRenderer(
   ScheduleRestart();
   if (client_) {
     client_->MediaRemotingStarted(
-        WebString::FromUTF8(remote_device_friendly_name));
+        WebString::FromUtf8(remote_device_friendly_name));
   }
 }
 

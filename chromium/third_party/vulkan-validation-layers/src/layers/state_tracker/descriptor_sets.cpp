@@ -277,6 +277,8 @@ vvl::DescriptorSetLayoutDef::DescriptorSetLayoutDef(vvl::DeviceState& device_sta
                                                     const VkDescriptorSetLayoutCreateInfo* p_create_info)
     : flags_(p_create_info->flags),
       has_ycbcr_samplers_(false),
+      has_task_mask_(false),
+      has_non_mesh_pre_raster_(false),
       binding_count_(0),
       descriptor_count_(0),
       non_inline_descriptor_count_(0),
@@ -330,6 +332,15 @@ vvl::DescriptorSetLayoutDef::DescriptorSetLayoutDef(vvl::DeviceState& device_sta
                 binding_type_stats_.non_dynamic_buffer_count++;
             }
         }
+
+        if (binding_info.stageFlags & (VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT)) {
+            has_task_mask_ = true;
+        }
+        if (binding_info.stageFlags & (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
+                                       VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_GEOMETRY_BIT)) {
+            has_non_mesh_pre_raster_ = true;
+        }
+
         // Get immutable samplers info
         if (binding_info.pImmutableSamplers != nullptr) {
             // Lazy allocation to avoid allocating array for layouts that don't use immutable samplers.
@@ -781,7 +792,8 @@ void vvl::DescriptorSet::NotifyUpdate() {
 }
 
 // Loop through the write updates to do for a push descriptor set, ignoring dstSet
-void vvl::DescriptorSet::PerformPushDescriptorsUpdate(uint32_t write_count, const VkWriteDescriptorSet* write_descs) {
+void vvl::DescriptorSet::PerformPushDescriptorsUpdate(vvl::CommandBuffer& cb, uint32_t write_count,
+                                                      const VkWriteDescriptorSet* write_descs) {
     assert(IsPushDescriptor());
     for (uint32_t i = 0; i < write_count; i++) {
         PerformWriteUpdate(write_descs[i]);
@@ -791,6 +803,10 @@ void vvl::DescriptorSet::PerformPushDescriptorsUpdate(uint32_t write_count, cons
     push_descriptor_set_writes.reserve(static_cast<std::size_t>(write_count));
     for (uint32_t i = 0; i < write_count; i++) {
         push_descriptor_set_writes.push_back(vku::safe_VkWriteDescriptorSet(&write_descs[i]));
+    }
+
+    for (auto& item : sub_states_) {
+        item.second->PerformPushDescriptorsUpdate(cb, write_count, write_descs);
     }
 
     NotifyUpdate();
@@ -867,7 +883,9 @@ void vvl::DescriptorSet::PerformCopyUpdate(const VkCopyDescriptorSet& update, co
 void vvl::DescriptorSet::UpdateImageLayoutDrawStates(vvl::DeviceState* device_data, vvl::CommandBuffer& cb_state,
                                                      const BindingVariableMap& binding_req_map) {
     // Descriptor UpdateImageLayoutDrawState only call image layout validation callbacks. If it is disabled, skip the entire loop.
-    if (device_data->disabled[image_layout_validation]) return;
+    if (device_data->disabled[image_layout_validation]) {
+        return;
+    }
 
     // For the active slots, use set# to look up descriptorSet from boundDescriptorSets, and bind all of that descriptor set's
     // resources
@@ -925,8 +943,11 @@ bool vvl::DescriptorSet::ValidateBindingOnGPU(const DescriptorBinding& binding,
     } else if (IsBindless(binding.binding_flags)) {
         // If flags allow descriptor to be "bindless" (can be invalid up until submit time)
         return true;
-    } else if (variable.is_runtime_descriptor_array) {
+    } else if (variable.array_length == spirv::kRuntimeArray) {
         // We don't know where OOB is on the CPU
+        //
+        // True if the Resource variable itself is runtime descriptor array
+        // Online example to showcase various arrays we do/don't care about here https://godbolt.org/z/h9jhsKaPn
         return true;
     }
     return false;
@@ -994,7 +1015,9 @@ bool vvl::SamplerDescriptor::Invalid() const { return !sampler_state_ || sampler
 
 void vvl::ImageSamplerDescriptor::WriteUpdate(DescriptorSet& set_state, const vvl::DeviceState& dev_data,
                                               const VkWriteDescriptorSet& update, const uint32_t index, bool is_bindless) {
-    if (!update.pImageInfo) return;
+    if (!update.pImageInfo) {
+        return;
+    }
     const auto& image_info = update.pImageInfo[index];
     if (!immutable_) {
         ReplaceStatePtr(set_state, sampler_state_, dev_data.GetConstCastShared<vvl::Sampler>(image_info.sampler), is_bindless);
@@ -1048,7 +1071,9 @@ bool vvl::ImageSamplerDescriptor::Invalid() const {
 
 void vvl::ImageDescriptor::WriteUpdate(DescriptorSet& set_state, const vvl::DeviceState& dev_data,
                                        const VkWriteDescriptorSet& update, const uint32_t index, bool is_bindless) {
-    if (!update.pImageInfo) return;
+    if (!update.pImageInfo) {
+        return;
+    }
     const auto& image_info = update.pImageInfo[index];
     image_layout_ = image_info.imageLayout;
     ReplaceStatePtr(set_state, image_view_state_, dev_data.GetConstCastShared<vvl::ImageView>(image_info.imageView), is_bindless);
@@ -1153,7 +1178,7 @@ VkDeviceSize vvl::BufferDescriptor::GetEffectiveRange() const {
     if (range_ == VK_WHOLE_SIZE && buffer_state_) {
         // When range is VK_WHOLE_SIZE the effective range is calculated at vkUpdateDescriptorSets is by taking the size of buffer
         // minus the offset.
-        return buffer_state_->create_info.size - offset_;
+        return buffer_state_->GetSize() - offset_;
     } else {
         return range_;
     }
@@ -1321,7 +1346,7 @@ void vvl::MutableDescriptor::WriteUpdate(DescriptorSet& set_state, const vvl::De
                 // can be null if using nullDescriptors
                 const auto buffer_state = dev_data.GetConstCastShared<vvl::Buffer>(update.pBufferInfo->buffer);
                 if (buffer_state) {
-                    buffer_size = buffer_state->create_info.size;
+                    buffer_size = buffer_state->GetSize();
                 }
                 ReplaceStatePtr(set_state, buffer_state_, buffer_state, is_bindless);
             }
@@ -1340,7 +1365,7 @@ void vvl::MutableDescriptor::WriteUpdate(DescriptorSet& set_state, const vvl::De
                 // can be null if using nullDescriptors
                 const auto buffer_view = dev_data.GetConstCastShared<vvl::BufferView>(update.pTexelBufferView[index]);
                 if (buffer_view) {
-                    buffer_size = buffer_view->buffer_state->create_info.size;
+                    buffer_size = buffer_view->buffer_state->GetSize();
                 }
                 ReplaceStatePtr(set_state, buffer_view_state_, buffer_view, is_bindless);
             }
@@ -1500,7 +1525,7 @@ VkDeviceSize vvl::MutableDescriptor::GetEffectiveRange() const {
     if (range_ == VK_WHOLE_SIZE && buffer_state_) {
         // When range is VK_WHOLE_SIZE the effective range is calculated at vkUpdateDescriptorSets is by taking the size of buffer
         // minus the offset.
-        return buffer_state_->create_info.size - offset_;
+        return buffer_state_->GetSize() - offset_;
     } else {
         return range_;
     }

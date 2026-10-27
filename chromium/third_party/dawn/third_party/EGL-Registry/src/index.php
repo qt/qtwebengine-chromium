@@ -272,6 +272,7 @@ include_once("../../assets/static_pages/khr_page_top.php");
 <li value=106> <a href="extensions/EXT/EGL_EXT_pixel_format_float.txt">EGL_EXT_pixel_format_float</a>
 </li>
 <li value=107> <a href="extensions/EXT/EGL_EXT_gl_colorspace_bt2020_linear.txt">EGL_EXT_gl_colorspace_bt2020_linear</a>
+     <br> <a href="extensions/EXT/EGL_EXT_gl_colorspace_bt2020_linear.txt">EGL_EXT_gl_colorspace_bt2020_hlg</a>
      <br> <a href="extensions/EXT/EGL_EXT_gl_colorspace_bt2020_linear.txt">EGL_EXT_gl_colorspace_bt2020_pq</a>
 </li>
 <li value=108> <a href="extensions/EXT/EGL_EXT_gl_colorspace_scrgb_linear.txt">EGL_EXT_gl_colorspace_scrgb_linear</a>
@@ -361,21 +362,25 @@ include_once("../../assets/static_pages/khr_page_top.php");
 </li>
 <li value=147> <a href="extensions/EXT/EGL_EXT_surface_compression.txt">EGL_EXT_surface_compression</a>
 </li>
+<li value=148> <a href="extensions/EXT/EGL_EXT_explicit_device.txt">EGL_EXT_explicit_device</a>
+</li>
+<li value=149> <a href="extensions/NV/EGL_NV_stream_consumer_eglimage_use_scanout_attrib.txt">EGL_NV_stream_consumer_eglimage_use_scanout_attrib</a>
+</li>
+<li value=150> <a href="extensions/QNX/EGL_QNX_platform_screen.txt">EGL_QNX_platform_screen</a>
+</li>
+<li value=151> <a href="extensions/QNX/EGL_QNX_image_native_buffer.txt">EGL_QNX_image_native_buffer</a>
+</li>
+<li value=153> <a href="extensions/ANDROID/EGL_ANDROID_telemetry_hint.txt">EGL_ANDROID_telemetry_hint</a>
+</li>
 </ol>
 
 <h6> Providing Feedback on the Registry </h6>
 
 <p> Khronos welcomes comments and bug reports. To provide feedback on the
     EGL registry itself (such as reporting missing content, bad links,
-    etc.), file an issue in the <a
-    href="https://github.com/KhronosGroup/EGL-Registry/issues">
+    etc.), or on the EGL API, extensions, and headers, file an issue in the
+    <a href="https://github.com/KhronosGroup/EGL-Registry/issues">
     EGL-Registry </a> Github project. </p>
-
-<p> For the EGL API, extensions, and headers, file a bug on the <a
-    href="http://www.khronos.org/bugzilla/"> Khronos Bugzilla </a>. Make
-    sure to fill in the &quot;Product&quot; field in the bug entry form as
-    &quot;EGL&quot;, and pick appropriate values for the Component and other
-    fields. </p>
 
 <?php include_once("../../assets/static_pages/khr_page_bottom.php"); ?>
 </body>

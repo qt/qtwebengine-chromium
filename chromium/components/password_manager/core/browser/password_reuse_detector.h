@@ -17,6 +17,8 @@
 #include "components/password_manager/core/browser/hash_password_manager.h"
 #include "components/password_manager/core/browser/password_form.h"
 #include "components/password_manager/core/browser/password_store/password_store_change.h"
+#include "components/password_manager/core/browser/password_store/password_store_consumer.h"
+#include "components/password_manager/core/browser/password_store/stored_credential.h"
 
 namespace password_manager {
 
@@ -40,7 +42,7 @@ struct MatchingReusedCredential {
       GURL url,
       std::u16string username,
       PasswordForm::Store in_store = PasswordForm::Store::kNotSet);
-  explicit MatchingReusedCredential(const PasswordForm& form);
+  explicit MatchingReusedCredential(const StoredCredential& cred);
   MatchingReusedCredential(const MatchingReusedCredential& other);
   MatchingReusedCredential(MatchingReusedCredential&& other);
   ~MatchingReusedCredential();
@@ -73,14 +75,14 @@ class PasswordReuseDetector {
   PasswordReuseDetector& operator=(const PasswordReuseDetector&) = delete;
 
   virtual void OnGetPasswordStoreResults(
-      std::vector<std::unique_ptr<PasswordForm>> results) = 0;
+      std::vector<StoredCredential> results) = 0;
 
   virtual void OnLoginsChanged(
       const password_manager::PasswordStoreChangeList& changes) = 0;
 
   virtual void OnLoginsRetained(
       PasswordForm::Store password_store_type,
-      const std::vector<PasswordForm>& retained_passwords) = 0;
+      const std::vector<StoredCredential>& retained_credentials) = 0;
 
   // Clears all the cached passwords which are stored on the account store.
   virtual void ClearCachedAccountStorePasswords() = 0;

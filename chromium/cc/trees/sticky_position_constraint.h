@@ -19,10 +19,10 @@ struct CC_EXPORT StickyPositionConstraint {
   StickyPositionConstraint(const StickyPositionConstraint& other);
   StickyPositionConstraint& operator=(const StickyPositionConstraint& other);
 
-  bool is_anchored_left : 1 = false;
-  bool is_anchored_right : 1 = false;
-  bool is_anchored_top : 1 = false;
-  bool is_anchored_bottom : 1 = false;
+  bool is_anchored_left = false;
+  bool is_anchored_right = false;
+  bool is_anchored_top = false;
+  bool is_anchored_bottom = false;
 
   // The offset from each edge of the ancestor scroller (or the viewport) to
   // try to maintain to the sticky box as we scroll.
@@ -64,6 +64,19 @@ struct CC_EXPORT StickyPositionConstraint {
   // are generated.
   ElementId nearest_element_shifting_sticky_box;
   ElementId nearest_element_shifting_containing_block;
+
+  // Returns true if `this` and `other` are equivalent and either one can be
+  // used to get the same rendering result.
+  bool CanMerge(const StickyPositionConstraint& other) const;
+
+  // Returns the offset that should be applied to the sticky box based on the
+  // current scroll position and the constraint. Pixel snapping is not applied
+  // to the returned offset.
+  gfx::Vector2dF StickyPositionOffset(
+      gfx::PointF scroll_position,
+      gfx::Vector2dF constraint_box_expansion,
+      gfx::Vector2dF ancestor_sticky_box_offset,
+      gfx::Vector2dF ancestor_containing_block_offset) const;
 
   bool operator==(const StickyPositionConstraint&) const;
 };

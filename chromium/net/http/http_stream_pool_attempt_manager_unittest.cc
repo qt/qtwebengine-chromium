@@ -159,7 +159,7 @@ class Preconnector {
             stream_key.secure_dns_policy(),
             stream_key.disable_cert_network_fetches(),
             alternative_service_info_, AdvertisedAltSvcState::kUnknown,
-            allowed_alpns_, load_flags_, proxy_info_,
+            allowed_alpns_, load_flags_, proxy_info_, target_network_,
             NetLogWithSource::Make(
                 pool.http_network_session()->net_log(),
                 NetLogSourceType::HTTP_STREAM_JOB_CONTROLLER)),
@@ -200,6 +200,7 @@ class Preconnector {
   NextProtoSet allowed_alpns_ = NextProtoSet::All();
   ProxyInfo proxy_info_ = ProxyInfo::Direct();
   int load_flags_ = 0;
+  handles::NetworkHandle target_network_ = handles::kInvalidNetworkHandle;
 
   std::optional<int> result_;
   base::OnceClosure wait_result_closure_;
@@ -301,7 +302,7 @@ class StreamRequester : public HttpStreamRequest::Delegate {
             stream_key.secure_dns_policy(),
             stream_key.disable_cert_network_fetches(),
             alternative_service_info_, AdvertisedAltSvcState::kUnknown,
-            allowed_alpns_, load_flags_, proxy_info_,
+            allowed_alpns_, load_flags_, proxy_info_, target_network_,
             NetLogWithSource::Make(
                 pool.http_network_session()->net_log(),
                 NetLogSourceType::HTTP_STREAM_JOB_CONTROLLER)),
@@ -447,6 +448,7 @@ class StreamRequester : public HttpStreamRequest::Delegate {
   int load_flags_ = 0;
   ProxyInfo proxy_info_ = ProxyInfo::Direct();
   AlternativeServiceInfo alternative_service_info_;
+  handles::NetworkHandle target_network_ = handles::kInvalidNetworkHandle;
 
   std::unique_ptr<HttpStreamRequest> request_;
 
@@ -559,6 +561,8 @@ class HttpStreamPoolAttemptManagerTest : public TestWithTaskEnvironment {
   quic::ParsedQuicVersion quic_version() {
     return quic::ParsedQuicVersion::RFCv1();
   }
+
+  RecordingNetLogObserver& net_log_observer() { return net_log_observer_; }
 
   base::WeakPtr<SpdySession> CreateFakeSpdySession(
       const HttpStreamKey& stream_key,
@@ -1195,6 +1199,29 @@ TEST_F(HttpStreamPoolAttemptManagerTest, TcpFailAfterNeedsClientAuth) {
             HostPortPair::FromSchemeHostPort(kDestination));
   EXPECT_EQ(requester2.cert_info()->host_and_port,
             HostPortPair::FromSchemeHostPort(kDestination));
+}
+
+// Verifies the AttemptManager's base SSLConfig allows TLS renegotiation for
+// HTTP/1.1 but not HTTP/2.
+TEST_F(HttpStreamPoolAttemptManagerTest, BaseSSLConfigAllowsRenegotiation) {
+  // Keep DNS resolution pending so the AttemptManager stays alive.
+  resolver()->AddFakeRequest();
+
+  StreamRequester requester;
+  requester.set_destination(url::SchemeHostPort(GURL("https://a.test")))
+      .RequestStream(pool());
+
+  AttemptManager* attempt_manager =
+      pool()
+          .GetOrCreateGroupForTesting(requester.GetStreamKey())
+          .attempt_manager();
+  ASSERT_TRUE(attempt_manager);
+
+  SSLConfig ssl_config = attempt_manager->GetBaseSSLConfig();
+
+  EXPECT_TRUE(ssl_config.renego_allowed_default);
+  EXPECT_THAT(ssl_config.renego_allowed_for_protos,
+              testing::ElementsAre(NextProto::kProtoHTTP11));
 }
 
 TEST_F(HttpStreamPoolAttemptManagerTest, RequestCanceledBeforeAttemptSuccess) {
@@ -1965,15 +1992,15 @@ TEST_F(HttpStreamPoolAttemptManagerTest, ReachedPoolLimit) {
   pool().set_max_stream_sockets_per_group_for_testing(kMaxPerGroup);
   pool().set_max_stream_sockets_per_pool_for_testing(kMaxPerPool);
 
-  const HttpStreamKey key_a(url::SchemeHostPort("http", "a.test", 80),
-                            PRIVACY_MODE_DISABLED, SocketTag(),
-                            NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
-                            /*disable_cert_network_fetches=*/false);
+  const HttpStreamKey key_a(
+      url::SchemeHostPort("http", "a.test", 80), PRIVACY_MODE_DISABLED,
+      SocketTag(), NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
+      /*disable_cert_network_fetches=*/false, handles::kInvalidNetworkHandle);
 
-  const HttpStreamKey key_b(url::SchemeHostPort("http", "b.test", 80),
-                            PRIVACY_MODE_DISABLED, SocketTag(),
-                            NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
-                            /*disable_cert_network_fetches=*/false);
+  const HttpStreamKey key_b(
+      url::SchemeHostPort("http", "b.test", 80), PRIVACY_MODE_DISABLED,
+      SocketTag(), NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
+      /*disable_cert_network_fetches=*/false, handles::kInvalidNetworkHandle);
 
   // Create HttpStreams up to the group limit in group A.
   Group& group_a = pool().GetOrCreateGroupForTesting(key_a);
@@ -2462,15 +2489,15 @@ TEST_F(HttpStreamPoolAttemptManagerTest,
   pool().set_max_stream_sockets_per_group_for_testing(kMaxPerGroup);
   pool().set_max_stream_sockets_per_pool_for_testing(kMaxPerPool);
 
-  const HttpStreamKey key_a(url::SchemeHostPort("http", "a.test", 80),
-                            PRIVACY_MODE_DISABLED, SocketTag(),
-                            NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
-                            /*disable_cert_network_fetches=*/false);
+  const HttpStreamKey key_a(
+      url::SchemeHostPort("http", "a.test", 80), PRIVACY_MODE_DISABLED,
+      SocketTag(), NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
+      /*disable_cert_network_fetches=*/false, handles::kInvalidNetworkHandle);
 
-  const HttpStreamKey key_b(url::SchemeHostPort("http", "b.test", 80),
-                            PRIVACY_MODE_DISABLED, SocketTag(),
-                            NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
-                            /*disable_cert_network_fetches=*/false);
+  const HttpStreamKey key_b(
+      url::SchemeHostPort("http", "b.test", 80), PRIVACY_MODE_DISABLED,
+      SocketTag(), NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
+      /*disable_cert_network_fetches=*/false, handles::kInvalidNetworkHandle);
 
   // Add idle streams up to the group's limit in group A.
   Group& group_a = pool().GetOrCreateGroupForTesting(key_a);
@@ -6819,6 +6846,48 @@ TEST_F(HttpStreamPoolAttemptManagerTest, AltSvcH2OkOriginFail) {
   requester.ResetRequest();
   EXPECT_FALSE(http_server_properties()->IsAlternativeServiceBroken(
       alternative_service, NetworkAnonymizationKey()));
+}
+
+// Tests that if an alternative service destination uses a restricted port,
+// connection attempt to the alternative service is skipped and the request
+// falls back to the origin connection.
+// Regression test for crbug.com/501851312
+TEST_F(HttpStreamPoolAttemptManagerTest, AltSvcH2UnsafePort) {
+  const url::SchemeHostPort kOrigin(url::kHttpsScheme, "origin.example.org",
+                                    443);
+  const HostPortPair kAlternative("alt.example.org", 10080);
+
+  const AlternativeService alternative_service(NextProto::kProtoHTTP2,
+                                               kAlternative);
+  const base::Time expiration = base::Time::Now() + base::Days(1);
+
+  StreamRequester requester;
+  requester.set_destination(kOrigin).set_alternative_service_info(
+      AlternativeServiceInfo::CreateHttp2AlternativeServiceInfo(
+          alternative_service, expiration));
+
+  resolver()
+      ->AddFakeRequest()
+      ->add_endpoint(ServiceEndpointBuilder().add_v4("192.0.2.1").endpoint())
+      .CompleteStartSynchronously(OK);
+
+  // For the origin. The connection is refused.
+  StaticSocketDataProvider origin_data;
+  origin_data.set_connect_data(MockConnect(ASYNC, ERR_CONNECTION_REFUSED));
+  socket_factory()->AddSocketDataProvider(&origin_data);
+
+  requester.RequestStream(pool());
+  requester.WaitForResult();
+
+  // The alternative job is not started because of the unsafe port,
+  // and the origin job fails with ERR_CONNECTION_REFUSED.
+  EXPECT_THAT(requester.result(), Optional(IsError(ERR_CONNECTION_REFUSED)));
+
+  auto entries = net_log_observer().GetEntriesWithType(
+      NetLogEventType::
+          HTTP_STREAM_POOL_JOB_CONTROLLER_SKIPPED_ALTSVC_RESTRICTED_PORT);
+  ASSERT_EQ(entries.size(), 1u);
+  EXPECT_THAT(entries[0].params.FindInt("port"), Optional(10080));
 }
 
 TEST_F(HttpStreamPoolAttemptManagerTest, AltSvcFailOriginOk) {

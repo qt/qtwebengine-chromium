@@ -4,41 +4,16 @@
 
 #include "quiche/quic/moqt/moqt_messages.h"
 
-#include <array>
 #include <cstdint>
 #include <string>
 
-#include "absl/algorithm/container.h"
 #include "absl/strings/str_cat.h"
-#include "quiche/quic/core/quic_time.h"
-#include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/moqt/moqt_error.h"
 #include "quiche/quic/moqt/moqt_key_value_pair.h"
+#include "quiche/quic/moqt/moqt_types.h"
 #include "quiche/quic/platform/api/quic_bug_tracker.h"
 
 namespace moqt {
-
-void MoqtSessionParameters::ToSetupParameters(SetupParameters& out) const {
-  if (perspective == quic::Perspective::IS_CLIENT && !using_webtrans) {
-    out.path = path;
-    out.authority = authority;
-  }
-  if (max_request_id != kDefaultMaxRequestId) {
-    out.max_request_id = max_request_id;
-  }
-  if (max_auth_token_cache_size != kDefaultMaxAuthTokenCacheSize) {
-    out.max_auth_token_cache_size = max_auth_token_cache_size;
-  }
-  if (support_object_acks != kDefaultSupportObjectAcks) {
-    out.support_object_acks = support_object_acks;
-  }
-  if (!moqt_implementation.empty()) {
-    out.moqt_implementation = moqt_implementation;
-  }
-  for (const AuthToken& token : authorization_token) {
-    out.authorization_tokens.push_back(token);
-  }
-}
 
 MoqtObjectStatus IntegerToObjectStatus(uint64_t integer) {
   if (integer >=
@@ -75,11 +50,10 @@ const std::array<MoqtMessageType, 9> kAllowsAuthorization = {
     MoqtMessageType::kPublishNamespace,
     MoqtMessageType::kTrackStatus,
     MoqtMessageType::kFetch};
-const std::array<MoqtMessageType, 7> kAllowsDeliveryTimeout = {
+const std::array<MoqtMessageType, 6> kAllowsDeliveryTimeout = {
     MoqtMessageType::kTrackStatus,  MoqtMessageType::kRequestOk,
-    MoqtMessageType::kPublish,      MoqtMessageType::kPublishOk,
-    MoqtMessageType::kSubscribe,    MoqtMessageType::kSubscribeOk,
-    MoqtMessageType::kRequestUpdate};
+    MoqtMessageType::kPublish,      MoqtMessageType::kSubscribe,
+    MoqtMessageType::kSubscribeOk,  MoqtMessageType::kRequestUpdate};
 bool MessageParametersAllowedByMessage(
     const MessageParameters& parameters, MoqtMessageType message_type) {
   if (!parameters.authorization_tokens.empty() &&
@@ -134,8 +108,6 @@ std::string MoqtMessageTypeToString(const MoqtMessageType message_type) {
       return "MAX_REQUEST_ID";
     case MoqtMessageType::kPublish:
       return "PUBLISH";
-    case MoqtMessageType::kPublishOk:
-      return "PUBLISH_OK";
     case MoqtMessageType::kFetch:
       return "FETCH";
     case MoqtMessageType::kFetchCancel:

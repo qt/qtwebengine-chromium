@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_COMPLEX_NEON_H
 #define EIGEN_COMPLEX_NEON_H
@@ -460,7 +461,7 @@ EIGEN_INSTANTIATE_COMPLEX_MATH_FUNCS(Packet1cf)
 EIGEN_INSTANTIATE_COMPLEX_MATH_FUNCS(Packet2cf)
 
 //---------- double ----------
-#if EIGEN_ARCH_ARM64 && !EIGEN_APPLE_DOUBLE_NEON_BUG
+#if EIGEN_ARCH_ARM64
 
 inline uint64x2_t p2ul_CONJ_XOR() {
   static const uint64_t p2ul_conj_XOR_DATA[] = {0x0, 0x8000000000000000};

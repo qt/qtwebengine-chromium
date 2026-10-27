@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "base/build_time.h"
+#include "base/byte_size.h"
 #include "base/command_line.h"
 #include "base/cpu.h"
 #include "base/logging.h"
@@ -37,6 +38,7 @@
 #include "components/metrics/metrics_pref_names.h"
 #include "components/metrics/metrics_provider.h"
 #include "components/metrics/metrics_service_client.h"
+#include "components/metrics/version_utils.h"
 #include "components/network_time/network_time_tracker.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
@@ -429,18 +431,15 @@ void MetricsLog::RecordCoreSystemProfile(
   if (!app_os_arch.empty()) {
     hardware->set_app_cpu_architecture(app_os_arch);
   }
-  hardware->set_system_ram_mb(base::SysInfo::AmountOfPhysicalMemory().InMiB());
+  hardware->set_system_ram_mb(
+      base::SysInfo::AmountOfTotalPhysicalMemory().InMiB());
   hardware->set_hardware_class(base::SysInfo::HardwareModelName());
 #if BUILDFLAG(IS_WIN)
   hardware->set_dll_base(reinterpret_cast<uint64_t>(CURRENT_MODULE()));
 #endif
 
   metrics::SystemProfileProto::OS* os = system_profile->mutable_os();
-#if BUILDFLAG(IS_CHROMEOS)
-  os->set_name("CrOS");
-#else
-  os->set_name(base::SysInfo::OperatingSystemName());
-#endif
+  os->set_name(GetOperatingSystemName());
   os->set_version(base::SysInfo::OperatingSystemVersion());
 
 // On ChromeOS, KernelVersion refers to the Linux kernel version and
@@ -455,6 +454,8 @@ void MetricsLog::RecordCoreSystemProfile(
 
 #if BUILDFLAG(IS_ANDROID)
   os->set_build_fingerprint(base::android::android_info::android_build_fp());
+  system_profile->mutable_hardware()->set_manufacturer(
+      base::SysInfo::HardwareManufacturer());
   if (!package_name.empty() && package_name != "com.android.chrome") {
     system_profile->set_app_package_name(package_name);
   }

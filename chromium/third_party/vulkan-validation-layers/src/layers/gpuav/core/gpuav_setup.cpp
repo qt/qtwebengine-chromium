@@ -72,7 +72,7 @@ void Validator::Created(vvl::AccelerationStructureNV& obj) {
 }
 void Validator::Created(vvl::AccelerationStructureKHR& obj) {
     DescriptorHeap& desc_heap = shared_resources_cache.Get<DescriptorHeap>();
-    obj.SetSubState(container_type, std::make_unique<AccelerationStructureKHRSubState>(obj, desc_heap));
+    obj.SetSubState(container_type, std::make_unique<AccelerationStructureKHRSubState>(*this, obj, desc_heap));
 }
 void Validator::Created(vvl::Tensor& obj) {
     DescriptorHeap& desc_heap = shared_resources_cache.Get<DescriptorHeap>();
@@ -304,6 +304,20 @@ void Validator::FinishDeviceSetup(const VkDeviceCreateInfo* pCreateInfo, const L
             indices_ptr[offset] = i;
         }
     }
+
+    if (set_null_descriptors_) {
+        // Find the first possible queue to do internal transfer on
+        for (uint32_t i = 0; i < physical_device_state->queue_family_properties.size(); i++) {
+            const VkQueueFamilyProperties& props = physical_device_state->queue_family_properties[i];
+            if (props.queueFlags & VK_QUEUE_TRANSFER_BIT) {
+                internal_transfer_queue_family_index_ = i;
+                DispatchGetDeviceQueue(device, i, 0, &internal_transfer_queue_handle_);
+                if (internal_transfer_queue_handle_ != VK_NULL_HANDLE) {
+                    break;
+                }
+            }
+        }
+    }
 }
 
 vko::Buffer& Validator::GetGlobalDescriptorBuffer() {
@@ -358,22 +372,13 @@ struct BufferDeviceAddress : public Setting {
     }
 };
 
-struct RayQuery : public Setting {
-    bool IsEnabled(const GpuAVSettings& settings) { return settings.shader_instrumentation.ray_query; }
-    bool HasRequiredFeatures(const DeviceFeatures& features) { return features.rayQuery; }
-    void Disable(GpuAVSettings& settings) { settings.shader_instrumentation.ray_query = false; }
-    std::string DisableMessage() {
-        return "\tRay Query validation option was enabled, but the rayQuery feature is not supported. [Disabling "
-               "gpuav_validate_ray_query]\n";
-    }
-};
-
 struct TraceRay : public Setting {
     bool IsEnabled(const GpuAVSettings& settings) { return settings.shader_instrumentation.trace_ray; }
-    bool HasRequiredFeatures(const DeviceFeatures& features) { return features.rayTracingPipeline; }
+    bool HasRequiredFeatures(const DeviceFeatures& features) { return features.rayTracingPipeline || features.rayQuery; }
     void Disable(GpuAVSettings& settings) { settings.shader_instrumentation.trace_ray = false; }
     std::string DisableMessage() {
-        return "\tTrace Ray validation option was enabled, but the rayTracingPipeline feature is not supported. [Disabling "
+        return "\tRay Tracing validation option was enabled, but neither the rayTracingPipeline nor the rayQuery feature are "
+               "supported. [Disabling "
                "gpuav_validate_trace_ray]\n";
     }
 };
@@ -438,21 +443,33 @@ struct RayTracingBuffersConsistency : public Setting {
                "gpuav_ray_tracing_buffers_consistency]\n";
     }
 };
+
+struct DebugDescriptor : public Setting {
+    bool IsEnabled(const GpuAVSettings& settings) { return settings.debug_descriptor_enabled; }
+    bool HasRequiredFeatures(const DeviceFeatures& features) { return features.shaderInt64; }
+    void Disable(GpuAVSettings& settings) { settings.debug_descriptor_enabled = false; }
+    std::string DisableMessage() {
+        return "\tDebug Descriptor option was enabled, but the shaderInt64 feature is not supported. [Disabling "
+               "debug_descriptor]\n";
+    }
+};
+
 }  // namespace setting
 
 // At this point extensions/features may have been turned on by us in PreCallRecord.
 // Now that we have all the information, here is where we might disable GPU-AV settings that are missing requirements
 void Validator::InitSettings(const Location& loc) {
     setting::BufferDeviceAddress buffer_device_address;
-    setting::RayQuery ray_query;
     setting::TraceRay trace_ray;
     setting::MeshShading mesh_shading;
     setting::BufferCopies buffer_copies;
     setting::BufferContent buffer_content;
     setting::AccelerationStructuresBuild as_builds;
     setting::RayTracingBuffersConsistency rt_buffers_consistency;
-    std::array<setting::Setting*, 8> all_settings = {&buffer_device_address, &ray_query,      &trace_ray, &mesh_shading,
-                                                     &buffer_copies,         &buffer_content, &as_builds, &rt_buffers_consistency};
+    setting::DebugDescriptor debug_descriptor;
+    std::array<setting::Setting*, 8> all_settings = {&buffer_device_address,  &trace_ray,       &mesh_shading,
+                                                     &buffer_copies,          &buffer_content,  &as_builds,
+                                                     &rt_buffers_consistency, &debug_descriptor};
 
     std::string adjustment_warnings;
     for (auto& setting_object : all_settings) {

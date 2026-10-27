@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_BASE_H
-#define EIGEN_CXX11_TENSOR_TENSOR_BASE_H
+#ifndef EIGEN_TENSOR_TENSOR_BASE_H
+#define EIGEN_TENSOR_TENSOR_BASE_H
 
 // clang-format off
 
@@ -18,7 +19,7 @@
 namespace Eigen {
 
 /** \class TensorBase
-  * \ingroup CXX11_Tensor_Module
+  * \ingroup Tensor_Module
   *
   * \brief The tensor base class.
   *
@@ -368,7 +369,7 @@ class TensorBase<Derived, ReadOnlyAccessors>
     EIGEN_DEVICE_FUNC
     EIGEN_STRONG_INLINE const TensorCwiseUnaryOp<internal::bind2nd_op<internal::scalar_difference_op<Scalar,Scalar> >, const Derived>
     operator- (Scalar rhs) const {
-      EIGEN_STATIC_ASSERT((NumTraits<Scalar>::IsSigned || internal::is_same<Scalar, const std::complex<float> >::value), YOU_MADE_A_PROGRAMMING_MISTAKE);
+      EIGEN_STATIC_ASSERT((NumTraits<Scalar>::IsSigned || std::is_same<Scalar, const std::complex<float> >::value), YOU_MADE_A_PROGRAMMING_MISTAKE);
       return unaryExpr(internal::bind2nd_op<internal::scalar_difference_op<Scalar,Scalar> >(rhs));
     }
 
@@ -428,11 +429,11 @@ class TensorBase<Derived, ReadOnlyAccessors>
 
     template<typename NewType>
     EIGEN_DEVICE_FUNC
-    EIGEN_STRONG_INLINE const std::conditional_t<internal::is_same<NewType, CoeffReturnType>::value,
+    EIGEN_STRONG_INLINE const std::conditional_t<std::is_same<NewType, CoeffReturnType>::value,
                                                       Derived,
                                                       TensorConversionOp<NewType, const Derived> >
     cast() const {
-      return choose(Cond<internal::is_same<NewType, CoeffReturnType>::value>(), derived(), TensorConversionOp<NewType, const Derived>(derived()));
+      return choose(Cond<std::is_same<NewType, CoeffReturnType>::value>(), derived(), TensorConversionOp<NewType, const Derived>(derived()));
     }
 
     EIGEN_DEVICE_FUNC
@@ -751,26 +752,26 @@ class TensorBase<Derived, ReadOnlyAccessors>
     }
 
     template <typename Dims> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
-    const TensorReductionOp<internal::AndReducer, const Dims, const std::conditional_t<internal::is_same<bool, CoeffReturnType>::value, Derived, TensorConversionOp<bool, const Derived> > >
+    const TensorReductionOp<internal::AndReducer, const Dims, const std::conditional_t<std::is_same<bool, CoeffReturnType>::value, Derived, TensorConversionOp<bool, const Derived> > >
     all(const Dims& dims) const {
       return cast<bool>().reduce(dims, internal::AndReducer());
     }
 
     EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
-    const TensorReductionOp<internal::AndReducer, const DimensionList<Index, NumDimensions>, const std::conditional_t<internal::is_same<bool, CoeffReturnType>::value, Derived, TensorConversionOp<bool, const Derived> > >
+    const TensorReductionOp<internal::AndReducer, const DimensionList<Index, NumDimensions>, const std::conditional_t<std::is_same<bool, CoeffReturnType>::value, Derived, TensorConversionOp<bool, const Derived> > >
     all() const {
       DimensionList<Index, NumDimensions> in_dims;
       return cast<bool>().reduce(in_dims, internal::AndReducer());
     }
 
     template <typename Dims> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
-    const TensorReductionOp<internal::OrReducer, const Dims, const std::conditional_t<internal::is_same<bool, CoeffReturnType>::value, Derived, TensorConversionOp<bool, const Derived> > >
+    const TensorReductionOp<internal::OrReducer, const Dims, const std::conditional_t<std::is_same<bool, CoeffReturnType>::value, Derived, TensorConversionOp<bool, const Derived> > >
     any(const Dims& dims) const {
       return cast<bool>().reduce(dims, internal::OrReducer());
     }
 
     EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
-    const TensorReductionOp<internal::OrReducer, const DimensionList<Index, NumDimensions>, const std::conditional_t<internal::is_same<bool, CoeffReturnType>::value, Derived, TensorConversionOp<bool, const Derived> > >
+    const TensorReductionOp<internal::OrReducer, const DimensionList<Index, NumDimensions>, const std::conditional_t<std::is_same<bool, CoeffReturnType>::value, Derived, TensorConversionOp<bool, const Derived> > >
     any() const {
       DimensionList<Index, NumDimensions> in_dims;
       return cast<bool>().reduce(in_dims, internal::OrReducer());
@@ -1241,4 +1242,4 @@ class TensorBase : public TensorBase<Derived, ReadOnlyAccessors> {
 #endif // EIGEN_PARSED_BY_DOXYGEN
 } // end namespace Eigen
 
-#endif // EIGEN_CXX11_TENSOR_TENSOR_BASE_H
+#endif // EIGEN_TENSOR_TENSOR_BASE_H

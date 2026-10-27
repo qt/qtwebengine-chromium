@@ -32,12 +32,13 @@
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
+import * as SDK from '../../core/sdk/sdk.js';
+import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
-import {DOMStorage} from './DOMStorageModel.js';
 import {KeyValueStorageItemsView} from './KeyValueStorageItemsView.js';
 
 const UIStrings = {
@@ -58,18 +59,18 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('panels/application/DOMStorageItemsView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 export class DOMStorageItemsView extends KeyValueStorageItemsView {
-  private domStorage: DOMStorage;
+  private domStorage: SDK.DOMStorageModel.DOMStorage;
   private eventListeners: Common.EventTarget.EventDescriptor[];
 
-  constructor(domStorage: DOMStorage) {
-    super(i18nString(UIStrings.domStorageItems), 'dom-storage', true);
+  constructor(domStorage: SDK.DOMStorageModel.DOMStorage) {
+    super(
+        i18nString(UIStrings.domStorageItems), 'dom-storage', true, /* view=*/ undefined, /* metadataView=*/ undefined,
+        /* jslog=*/ undefined, ['storage-view', 'table']);
 
     this.domStorage = domStorage;
     if (domStorage.storageKey) {
       this.toolbar?.setStorageKey(domStorage.storageKey);
     }
-
-    this.element.classList.add('storage-view', 'table');
 
     this.showPreview(null, null);
 
@@ -91,7 +92,7 @@ export class DOMStorageItemsView extends KeyValueStorageItemsView {
     );
   }
 
-  setStorage(domStorage: DOMStorage): void {
+  setStorage(domStorage: SDK.DOMStorageModel.DOMStorage): void {
     Common.EventTarget.removeEventListeners(this.eventListeners);
     this.domStorage = domStorage;
     const storageKind = domStorage.isLocalStorage ? 'local-storage-data' : 'session-storage-data';
@@ -100,12 +101,17 @@ export class DOMStorageItemsView extends KeyValueStorageItemsView {
       this.toolbar?.setStorageKey(domStorage.storageKey);
     }
     this.eventListeners = [
-      this.domStorage.addEventListener(DOMStorage.Events.DOM_STORAGE_ITEMS_CLEARED, this.domStorageItemsCleared, this),
-      this.domStorage.addEventListener(DOMStorage.Events.DOM_STORAGE_ITEM_REMOVED, this.domStorageItemRemoved, this),
-      this.domStorage.addEventListener(DOMStorage.Events.DOM_STORAGE_ITEM_ADDED, this.domStorageItemAdded, this),
-      this.domStorage.addEventListener(DOMStorage.Events.DOM_STORAGE_ITEM_UPDATED, this.domStorageItemUpdated, this),
+      this.domStorage.addEventListener(
+          SDK.DOMStorageModel.DOMStorage.Events.DOM_STORAGE_ITEMS_CLEARED, this.domStorageItemsCleared, this),
+      this.domStorage.addEventListener(
+          SDK.DOMStorageModel.DOMStorage.Events.DOM_STORAGE_ITEM_REMOVED, this.domStorageItemRemoved, this),
+      this.domStorage.addEventListener(
+          SDK.DOMStorageModel.DOMStorage.Events.DOM_STORAGE_ITEM_ADDED, this.domStorageItemAdded, this),
+      this.domStorage.addEventListener(
+          SDK.DOMStorageModel.DOMStorage.Events.DOM_STORAGE_ITEM_UPDATED, this.domStorageItemUpdated, this),
     ];
     this.refreshItems();
+    this.selectedItemChanged(null);
   }
 
   private domStorageItemsCleared(): void {
@@ -121,8 +127,8 @@ export class DOMStorageItemsView extends KeyValueStorageItemsView {
     UI.ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.domStorageItemsCleared));
   }
 
-  private domStorageItemRemoved(event: Common.EventTarget.EventTargetEvent<DOMStorage.DOMStorageItemRemovedEvent>):
-      void {
+  private domStorageItemRemoved(
+      event: Common.EventTarget.EventTargetEvent<SDK.DOMStorageModel.DOMStorage.DOMStorageItemRemovedEvent>): void {
     if (!this.isShowing()) {
       return;
     }
@@ -135,7 +141,8 @@ export class DOMStorageItemsView extends KeyValueStorageItemsView {
     UI.ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.domStorageItemDeleted));
   }
 
-  private domStorageItemAdded(event: Common.EventTarget.EventTargetEvent<DOMStorage.DOMStorageItemAddedEvent>): void {
+  private domStorageItemAdded(
+      event: Common.EventTarget.EventTargetEvent<SDK.DOMStorageModel.DOMStorage.DOMStorageItemAddedEvent>): void {
     if (!this.isShowing()) {
       return;
     }
@@ -143,8 +150,8 @@ export class DOMStorageItemsView extends KeyValueStorageItemsView {
     this.itemAdded(event.data.key, event.data.value);
   }
 
-  private domStorageItemUpdated(event: Common.EventTarget.EventTargetEvent<DOMStorage.DOMStorageItemUpdatedEvent>):
-      void {
+  private domStorageItemUpdated(
+      event: Common.EventTarget.EventTargetEvent<SDK.DOMStorageModel.DOMStorage.DOMStorageItemUpdatedEvent>): void {
     if (!this.isShowing()) {
       return;
     }
@@ -171,6 +178,26 @@ export class DOMStorageItemsView extends KeyValueStorageItemsView {
     this.domStorage.clear();
     // explicitly clear the view because the event won't be fired when it has no items
     this.domStorageItemsCleared();
+  }
+
+  protected override selectedItemChanged(item: {key: string, value: string}|null): void {
+    const storageKey = this.domStorage.storageKey;
+    if (!storageKey) {
+      return;
+    }
+
+    const parsedKey = SDK.StorageKeyManager.parseStorageKey(storageKey);
+    const origin = parsedKey.origin;
+    const storageType = this.domStorage.isLocalStorage ? 'localStorage' : 'sessionStorage';
+
+    if (!item) {
+      const storageItem = new AiAssistanceModel.StorageItem.StorageItem({origin, storageKey});
+      UI.Context.Context.instance().setFlavor(AiAssistanceModel.StorageItem.StorageItem, storageItem);
+      return;
+    }
+
+    const storageItem = new AiAssistanceModel.StorageItem.StorageItem({origin, storageKey, storageType, key: item.key});
+    UI.Context.Context.instance().setFlavor(AiAssistanceModel.StorageItem.StorageItem, storageItem);
   }
 
   protected removeItem(key: string): void {

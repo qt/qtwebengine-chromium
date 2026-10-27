@@ -34,7 +34,6 @@
 #include "base/check_op.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_animation_trigger_behavior.h"
 #include "third_party/blink/renderer/core/style/computed_style_base_constants.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -72,7 +71,7 @@ enum PseudoId : uint8_t {
   kPseudoIdAfter,
   kPseudoIdExpandIcon,
   kPseudoIdPickerIcon,
-  kPseudoIdInterestHint,
+  kPseudoIdInterestButton,
   kPseudoIdMarker,
   kPseudoIdBackdrop,
   kPseudoIdSelection,
@@ -482,14 +481,6 @@ enum class ContentDistributionType : unsigned {
 static const float kMaximumAllowedFontSize = 10000.0f;
 // LINT.ThenChange(//content/app_shim_remote_cocoa/web_menu_runner_mac.mm:fontSize)
 
-enum class CSSBoxType : unsigned {
-  kMissing,
-  kMargin,
-  kBorder,
-  kPadding,
-  kContent
-};
-
 enum class TextEmphasisPosition : unsigned {
   kOverRight,
   kOverLeft,
@@ -567,6 +558,20 @@ enum class ViewportUnitFlag {
 enum class TimelineAxis { kBlock, kInline, kX, kY };
 enum class TimelineScroller { kNearest, kRoot, kSelf };
 
+// <shape-box> = <visual-box> | margin-box | half-border-box
+// <visual-box> = border-box | padding-box | content-box
+// https://drafts.csswg.org/css-shapes-1/#typedef-shape-box
+enum class ShapeBox : unsigned {
+  kMissing,
+  kMarginBox,
+  kBorderBox,
+  kPaddingBox,
+  kContentBox,
+};
+
+// <coord-box> = <paint-box> | view-box
+// <paint-box> = <visual-box> | fill-box | stroke-box
+// https://drafts.csswg.org/css-box-4/#typedef-coord-box
 enum class CoordBox {
   kContentBox,
   kPaddingBox,
@@ -576,15 +581,13 @@ enum class CoordBox {
   kViewBox
 };
 
-// https://drafts.fxtf.org/css-masking/#typedef-geometry-box
+// <geometry-box> = <shape-box> | fill-box | stroke-box | view-box
+// https://drafts.csswg.org/css-masking/#typedef-geometry-box
 enum class GeometryBox {
-  // <box> = border-box | padding-box | content-box
   kBorderBox,
   kPaddingBox,
   kContentBox,
-  // <shape-box> = <box> | margin-box
   kMarginBox,
-  // <geometry-box> = <shape-box> | fill-box | stroke-box | view-box
   kFillBox,
   kStrokeBox,
   kViewBox,

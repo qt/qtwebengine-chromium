@@ -4411,7 +4411,7 @@ static void delIntptr(void *p){
 }
 
 /*
-** bind_carray_intptr STMT IPARAM  INT0 INT1 INT2...
+** bind_carray_intptr STMT IPARAM INT-0 INT-1 INT-2...
 */
 static int SQLITE_TCLAPI bind_carray_intptr(
   void * clientData,
@@ -4455,6 +4455,7 @@ static int SQLITE_TCLAPI bind_carray_intptr(
 **    -malloc
 **    -transient
 **    -static
+**    -v2
 **    -int32
 **    -int64
 **    -double
@@ -4477,6 +4478,7 @@ static int SQLITE_TCLAPI test_carray_bind(
   void *aData = 0;
   int isTransient = 0;
   int isStatic = 0;
+  int isV2 = 0;
   int isMalloc = 0;               /* True to use custom xDel function */
   int idx;
   int i, j;
@@ -4509,15 +4511,21 @@ static int SQLITE_TCLAPI test_carray_bind(
     const char *z = Tcl_GetString(objv[i]);
     if( strcmp(z, "-transient")==0 ){
       isTransient = 1;
+      isStatic = isMalloc = 0;
       xDel = SQLITE_TRANSIENT;
     }else
     if( strcmp(z, "-static")==0 ){
       isStatic = 1;
+      isMalloc = isTransient = 0;
       xDel = SQLITE_STATIC;
     }else
     if( strcmp(z, "-malloc")==0 ){
       isMalloc = 1;
+      isStatic = isTransient = 0;
       xDel = testCarrayFree;
+    }else
+    if( strcmp(z, "-v2")==0 ){
+      isV2 = 1;
     }else
     if( strcmp(z, "-int32")==0 ){
       eType = 0;  /* CARRAY_INT32 */
@@ -4687,7 +4695,20 @@ static int SQLITE_TCLAPI test_carray_bind(
 
   if( rc==SQLITE_OK ){
     if( mFlagsOverride==0 ) mFlagsOverride = eType;
-    rc = sqlite3_carray_bind(pStmt, idx, aData, nData, mFlagsOverride, xDel);
+    if( isV2 ){
+      void *pDel;
+      if( xDel==testCarrayFree ){
+        u8 *p2 = (u8*)aData;
+        pDel = (void*)&p2[-16];
+        xDel = sqlite3_free;
+      }else{
+        pDel = aData;
+      }
+      rc = sqlite3_carray_bind_v2(pStmt, idx, aData, nData, mFlagsOverride,
+                                  xDel, pDel);
+    }else{
+      rc = sqlite3_carray_bind(pStmt, idx, aData, nData, mFlagsOverride, xDel);
+    }
   }
   if( isTransient ){
     if( eType==3 && aData ){
@@ -7370,6 +7391,7 @@ static int SQLITE_TCLAPI test_limit(
     { "SQLITE_LIMIT_SQL_LENGTH",          SQLITE_LIMIT_SQL_LENGTH           },
     { "SQLITE_LIMIT_COLUMN",              SQLITE_LIMIT_COLUMN               },
     { "SQLITE_LIMIT_EXPR_DEPTH",          SQLITE_LIMIT_EXPR_DEPTH           },
+    { "SQLITE_LIMIT_PARSER_DEPTH",        SQLITE_LIMIT_PARSER_DEPTH         },
     { "SQLITE_LIMIT_COMPOUND_SELECT",     SQLITE_LIMIT_COMPOUND_SELECT      },
     { "SQLITE_LIMIT_VDBE_OP",             SQLITE_LIMIT_VDBE_OP              },
     { "SQLITE_LIMIT_FUNCTION_ARG",        SQLITE_LIMIT_FUNCTION_ARG         },
@@ -7381,7 +7403,7 @@ static int SQLITE_TCLAPI test_limit(
     
     /* Out of range test cases */
     { "SQLITE_LIMIT_TOOSMALL",            -1,                               },
-    { "SQLITE_LIMIT_TOOBIG",              SQLITE_LIMIT_WORKER_THREADS+1     },
+    { "SQLITE_LIMIT_TOOBIG",              SQLITE_LIMIT_PARSER_DEPTH+1       },
   };
   int i, id = 0;
   int val;
@@ -7675,7 +7697,8 @@ static int SQLITE_TCLAPI test_wal_checkpoint_v2(
   int nCkpt = -555;
   Tcl_Obj *pRet;
 
-  const char * aMode[] = { "passive", "full", "restart", "truncate", 0 };
+  const char * aMode[] = {"noop", "passive", "full", "restart", "truncate", 0};
+  assert( SQLITE_CHECKPOINT_NOOP==-1 );
   assert( SQLITE_CHECKPOINT_PASSIVE==0 );
   assert( SQLITE_CHECKPOINT_FULL==1 );
   assert( SQLITE_CHECKPOINT_RESTART==2 );
@@ -7689,11 +7712,14 @@ static int SQLITE_TCLAPI test_wal_checkpoint_v2(
   if( objc==4 ){
     zDb = Tcl_GetString(objv[3]);
   }
-  if( getDbPointer(interp, Tcl_GetString(objv[1]), &db) || (
-      TCL_OK!=Tcl_GetIntFromObj(0, objv[2], &eMode)
-   && TCL_OK!=Tcl_GetIndexFromObj(interp, objv[2], aMode, "mode", 0, &eMode) 
-  )){
+  if( getDbPointer(interp, Tcl_GetString(objv[1]), &db) ){
     return TCL_ERROR;
+  }
+  if( TCL_OK!=Tcl_GetIntFromObj(0, objv[2], &eMode) ){
+    if( TCL_OK!=Tcl_GetIndexFromObj(interp, objv[2], aMode, "mode", 0,&eMode) ){
+      return TCL_ERROR;
+    }
+    eMode = eMode - 1;
   }
 
   rc = sqlite3_wal_checkpoint_v2(db, zDb, eMode, &nLog, &nCkpt);
@@ -8618,6 +8644,7 @@ static int SQLITE_TCLAPI test_sqlite3_db_config(
     { "ATTACH_CREATE",      SQLITE_DBCONFIG_ENABLE_ATTACH_CREATE },
     { "ATTACH_WRITE",       SQLITE_DBCONFIG_ENABLE_ATTACH_WRITE },
     { "COMMENTS",           SQLITE_DBCONFIG_ENABLE_COMMENTS },
+    { "FP_DIGITS",          SQLITE_DBCONFIG_FP_DIGITS },
   };
   int i;
   int v = 0;

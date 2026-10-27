@@ -28,18 +28,22 @@
 #ifndef SRC_DAWN_NATIVE_D3D11_COMMANDRECORDINGCONTEXT_D3D11_H_
 #define SRC_DAWN_NATIVE_D3D11_COMMANDRECORDINGCONTEXT_D3D11_H_
 
+#include <algorithm>
+#include <optional>
 #include <utility>
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/container/inlined_vector.h"
-#include "dawn/common/Constants.h"
-#include "dawn/common/MutexProtected.h"
-#include "dawn/common/NonCopyable.h"
-#include "dawn/common/Ref.h"
-#include "dawn/common/StackAllocated.h"
-#include "dawn/native/Error.h"
-#include "dawn/native/d3d/KeyedMutex.h"
-#include "dawn/native/d3d/d3d_platform.h"
+#include "src/dawn/common/Constants.h"
+#include "src/dawn/common/MutexProtected.h"
+#include "src/dawn/common/Ref.h"
+#include "src/dawn/common/StackAllocated.h"
+#include "src/dawn/native/Buffer.h"
+#include "src/dawn/native/Error.h"
+#include "src/dawn/native/d3d/KeyedMutex.h"
+#include "src/dawn/native/d3d/d3d_platform.h"
+#include "src/dawn/native/d3d11/ImmediatesLayoutD3D11.h"
+#include "src/utils/non_copyable.h"
 
 namespace dawn::native::d3d11 {
 
@@ -67,7 +71,9 @@ class CommandRecordingContextGuard : public ::dawn::detail::Guard<Ctx, Traits> {
                                  typename Traits::MutexType& mutex,
                                  Defer* defer = nullptr)
         : Base(ctx, mutex, defer) {}
-    CommandRecordingContextGuard(Ctx* ctx, typename Traits::LockType&& lock, Defer* defer = nullptr)
+    CommandRecordingContextGuard(Ctx* ctx,
+                                 typename Traits::template LockType<Ctx>&& lock,
+                                 Defer* defer = nullptr)
         : Base(ctx, std::move(lock), defer) {}
 
     CommandRecordingContextGuard(const CommandRecordingContextGuard& other) = delete;
@@ -86,6 +92,8 @@ class CommandRecordingContext {
     bool IsValid() const;
 
     static ResultOrError<Ref<BufferBase>> CreateInternalUniformBuffer(DeviceBase* device);
+    static constexpr uint32_t kMaxImmediateSizeD3D11 =
+        std::max(sizeof(RenderImmediates), sizeof(ComputeImmediates));
 
     void ReleaseKeyedMutexes();
 
@@ -108,7 +116,7 @@ class CommandRecordingContext {
 
     // The uniform buffer for built-in variables.
     Ref<GPUUsableBuffer> mUniformBuffer;
-    std::array<uint32_t, kMaxImmediateConstantsPerPipeline> mUniformBufferData{};
+    std::array<uint32_t, kMaxImmediateSizeD3D11> mUniformBufferData{};
     bool mUniformBufferDirty = true;
 
     absl::flat_hash_set<Ref<d3d::KeyedMutex>> mAcquiredKeyedMutexes;
@@ -199,6 +207,9 @@ class ScopedCommandRecordingContext : NonCopyable {
     STACK_ALLOCATED_IGNORE("TODO: avoid heap allocated class containing StackAllocated members")
     CommandRecordingContext::Guard mGuard;
     bool mLockD3D11Scope = false;
+    // The scoped use of the uniform buffer to keep it in the InUse state for the lifetime of the
+    // scoped command context. This is lazily initialized.
+    mutable std::optional<BufferBase::ScopedUseBuffer> mUniformBufferInUse;
 };
 
 // For using ID3D11DeviceContext directly. It swaps and resets ID3DDeviceContextState of

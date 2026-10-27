@@ -237,6 +237,17 @@ class WebUIURLLoaderFactory : public network::SelfDeletingURLLoaderFactory {
     return pending_remote;
   }
 
+  static mojo::PendingRemote<network::mojom::URLLoaderFactory> CreateForWorker(
+      BrowserContext* browser_context,
+      const std::string& scheme,
+      base::flat_set<std::string> allowed_hosts) {
+    mojo::PendingRemote<network::mojom::URLLoaderFactory> pending_remote;
+    new WebUIURLLoaderFactory(browser_context, FrameTreeNodeId(), scheme,
+                              std::move(allowed_hosts),
+                              pending_remote.InitWithNewPipeAndPassReceiver());
+    return pending_remote;
+  }
+
   WebUIURLLoaderFactory(const WebUIURLLoaderFactory&) = delete;
   WebUIURLLoaderFactory& operator=(const WebUIURLLoaderFactory&) = delete;
 
@@ -288,7 +299,8 @@ class WebUIURLLoaderFactory : public network::SelfDeletingURLLoaderFactory {
            allowed_hosts_.find(request.url.GetHost()) != allowed_hosts_.end()))
         << "Incorrect host: " << request.url.GetHost();
 
-    if (request.url.host() == kChromeUIBlobInternalsHost) {
+    if (request.url.scheme() == kChromeUIScheme &&
+        request.url.host() == kChromeUIBlobInternalsHost) {
       GetIOThreadTaskRunner({})->PostTask(
           FROM_HERE,
           base::BindOnce(
@@ -301,8 +313,9 @@ class WebUIURLLoaderFactory : public network::SelfDeletingURLLoaderFactory {
     // This path is entered on user-trigger navigations (e.g. from omnibox or
     // links) to chrome://network-error or chrome://dino. Actual network error
     // does not trigger this path.
-    if (request.url.host() == kChromeUINetworkErrorHost ||
-        request.url.host() == kChromeUIDinoHost) {
+    if (request.url.scheme() == kChromeUIScheme &&
+        (request.url.host() == kChromeUINetworkErrorHost ||
+         request.url.host() == kChromeUIDinoHost)) {
       // Simulate a network error.
       StartNetworkErrorsURLLoader(request, std::move(client));
       // Logs WebUI usage. These WebUIs don't create a WebUI object.
@@ -350,6 +363,15 @@ CreateWebUIURLLoaderFactory(RenderFrameHost* render_frame_host,
                             base::flat_set<std::string> allowed_hosts) {
   return WebUIURLLoaderFactory::CreateForFrame(
       FrameTreeNode::From(render_frame_host), scheme, std::move(allowed_hosts));
+}
+
+mojo::PendingRemote<network::mojom::URLLoaderFactory>
+CreateWebUIURLLoaderFactoryForWorker(
+    BrowserContext* browser_context,
+    const std::string& scheme,
+    base::flat_set<std::string> allowed_hosts) {
+  return WebUIURLLoaderFactory::CreateForWorker(browser_context, scheme,
+                                                std::move(allowed_hosts));
 }
 
 }  // namespace content

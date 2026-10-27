@@ -12,6 +12,7 @@
 #include "chrome/browser/ui/webui/settings/metrics_reporting_handler.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "components/metrics/metrics_pref_names.h"
+#include "components/metrics/metrics_reporting_choice_service.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/test/browser_task_environment.h"
@@ -29,6 +30,7 @@ class TestingMetricsReportingHandler : public MetricsReportingHandler {
 class MetricsReportingHandlerTest : public testing::Test {
  public:
   MetricsReportingHandlerTest() {
+    metrics::MetricsReportingChoiceService::ClearCachedFeatureStateForTesting();
     handler_ = std::make_unique<TestingMetricsReportingHandler>();
     handler_->set_web_ui(&test_web_ui_);
   }
@@ -48,7 +50,7 @@ class MetricsReportingHandlerTest : public testing::Test {
   }
 
   void TearDown() override {
-    // For crbug.com/637068 which only run on official bots with no try jobs.
+    // For crbug.com/41269588 which only run on official bots with no try jobs.
     base::RunLoop().RunUntilIdle();
     handler_.reset();
     base::RunLoop().RunUntilIdle();
@@ -70,7 +72,8 @@ TEST_F(MetricsReportingHandlerTest, PrefChangesNotifyPage) {
   // Toggle the pref.
   local_state()->SetBoolean(
       metrics::prefs::kMetricsReportingEnabled,
-      !local_state()->GetBoolean(metrics::prefs::kMetricsReportingEnabled));
+      !metrics::MetricsReportingChoiceService::IsBasicMetricsReportingEnabled(
+          local_state()));
   EXPECT_EQ(1u, test_web_ui()->call_data().size());
 
   test_web_ui()->ClearTrackedCalls();
@@ -79,7 +82,8 @@ TEST_F(MetricsReportingHandlerTest, PrefChangesNotifyPage) {
   // Toggle the pref again, while JavaScript is disabled.
   local_state()->SetBoolean(
       metrics::prefs::kMetricsReportingEnabled,
-      !local_state()->GetBoolean(metrics::prefs::kMetricsReportingEnabled));
+      !metrics::MetricsReportingChoiceService::IsBasicMetricsReportingEnabled(
+          local_state()));
   EXPECT_TRUE(test_web_ui()->call_data().empty());
 }
 

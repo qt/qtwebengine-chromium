@@ -1,0 +1,400 @@
+// Copyright 2026 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "base/files/file_path.h"
+#include "base/task/current_thread.h"
+#include "base/test/scoped_feature_list.h"
+#include "base/test/task_environment.h"
+#include "base/test/test_future.h"
+#include "base/trace_event/trace_event.h"
+#include "base/version.h"
+#include "components/optimization_guide/core/model_execution/manifest_broker/manifest_broker_state.h"
+#include "components/optimization_guide/core/model_execution/manifest_broker/test/fake_manifest_broker.h"
+#include "components/optimization_guide/core/model_execution/manifest_broker/test/manifest_builder.h"
+#include "components/optimization_guide/core/model_execution/manifest_broker/test/scenario_builder.h"
+#include "components/optimization_guide/core/model_execution/manifest_broker/test/test_manifest_asset_manager_component_state.h"
+#include "components/optimization_guide/core/model_execution/model_broker_client.h"
+#include "components/optimization_guide/core/model_execution/model_execution_prefs.h"
+#include "components/optimization_guide/core/model_execution/test/fake_model_assets.h"
+#include "components/optimization_guide/core/model_execution/test/fake_model_broker.h"
+#include "components/optimization_guide/core/model_execution/test/feature_config_builder.h"
+#include "components/optimization_guide/core/model_execution/test/request_builder.h"
+#include "components/optimization_guide/core/model_execution/test/response_holder.h"
+#include "components/optimization_guide/core/optimization_guide_constants.h"
+#include "components/optimization_guide/core/optimization_guide_features.h"
+#include "components/optimization_guide/proto/features/compose.pb.h"
+#include "components/optimization_guide/proto/features/example_for_testing.pb.h"
+#include "components/optimization_guide/proto/manifest.pb.h"
+#include "services/on_device_model/public/cpp/features.h"
+#include "services/on_device_model/public/cpp/test_support/fake_service.h"
+#include "testing/gtest/include/gtest/gtest.h"
+
+namespace optimization_guide {
+
+// These tests verify that ManifestBroker follows recipes correctly, e.g. the
+// right configs are served, working solutions that load models correctly are
+// constructed, etc.
+class ManifestSolutionFactoryTest : public testing::Test {
+ public:
+  ManifestSolutionFactoryTest() = default;
+
+  void TearDown() override {
+    // Service should eventually idle out after all sessions are destroyed.
+    EXPECT_TRUE(base::test::RunUntil(
+        [&]() { return !fake_.launcher().is_service_running(); }));
+  }
+
+ protected:
+  base::test::TaskEnvironment task_environment_{
+      base::test::TaskEnvironment::TimeSource::MOCK_TIME};
+  FakeManifestBroker fake_;
+};
+
+// Tests that the feature config is propagated correctly from the manifest to
+// the client.
+TEST_F(ManifestSolutionFactoryTest, PropagatesFeatureConfig) {
+  proto::Any config;
+  config.set_type_url("type.googleapis.com/test.Config");
+  config.set_value("test_value");
+
+  ScenarioBuilder(fake_.component_state())
+      .SetFeatureConfig(DeviceCategory::kGpuHighTier, "summarizer_api", config)
+      .Finish();
+  fake_.Startup();
+  base::test::TestFuture<std::optional<mojo_base::ProtoWrapper>> future;
+  fake_.client().GetConfig(mojom::OnDeviceFeature::kSummarize,
+                           future.GetCallback());
+
+  auto result = future.Take();
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(result->As<proto::Any>()->value(), "test_value");
+}
+
+// Tests that the ManifestBrokerState can handle arbitrary use cases that are
+// not part of the pre-defined `mojom::OnDeviceFeature` enum.
+TEST_F(ManifestSolutionFactoryTest, SupportsArbitraryUseCases) {
+  ScenarioBuilder(fake_.component_state())
+      .AddBaseModel("model_A")
+      .AddUnsafeSolution("custom_use_case", "model_A")
+      .Finish();
+  fake_.Startup();
+
+  base::test::TestFuture<ModelBrokerClient::CreateSessionResult> session_future;
+  fake_.client().CreateSession("custom_use_case", SessionConfigParams{},
+                               session_future.GetCallback());
+
+  auto session = session_future.Take();
+  ASSERT_TRUE(session);
+}
+
+// Trying to use a feature that's missing from the manifest should fail,
+// not wait for a download to complete.
+TEST_F(ManifestSolutionFactoryTest, SessionFailsForMissingFeature) {
+  ScenarioBuilder(fake_.component_state())
+      .AddBaseModel("model_A")
+      .AddUnsafeSolution("custom_use_case", "model_A")
+      .Finish();
+  fake_.Startup();
+
+  base::test::TestFuture<ModelBrokerClient::CreateSessionResult> session_future;
+  fake_.client().CreateSession(mojom::OnDeviceFeature::kTest,
+                               SessionConfigParams{},
+                               session_future.GetCallback());
+  EXPECT_FALSE(session_future.Take());
+}
+
+// Test that a simple feature can be executed successfully.
+TEST_F(ManifestSolutionFactoryTest, ExecuteTestFeature) {
+  ScenarioBuilder(fake_.component_state())
+      .AddBaseModel("model_A")
+      .AddUnsafeSolution("test", "model_A")
+      .Finish();
+  fake_.Startup();
+  base::test::TestFuture<ModelBrokerClient::CreateSessionResult> session_future;
+  fake_.client().CreateSession(mojom::OnDeviceFeature::kTest,
+                               SessionConfigParams{},
+                               session_future.GetCallback());
+
+  auto session = session_future.Take();
+  ASSERT_TRUE(session);
+
+  proto::ExampleForTestingRequest request;
+  request.set_string_value("hello");
+
+  ResponseHolder response;
+  session->ExecuteModel(request, response.GetStreamingCallback());
+
+  EXPECT_TRUE(response.GetFinalStatus());
+
+  std::string expected_response =
+      ("Encoder cache weight: 1016"
+       "Adapter cache weight: 1017"
+       "hello max:1024"
+       "TopK: 3, Temp: 0.800000011920929");
+  EXPECT_EQ(*response.value(), expected_response);
+}
+
+// Test that the GPU cache feature can be executed successfully.
+TEST_F(ManifestSolutionFactoryTest, ExecuteTestGpuCacheFeature) {
+  base::test::ScopedFeatureList feature_list;
+  // TODO(crbug.com/461547475): GPU cache flag is experimental for now, remove
+  // once it's no longer needed.
+  feature_list.InitWithFeaturesAndParameters(
+      {{features::kOptimizationGuideOnDeviceModel,
+        {{"on_device_model_topk", "1"}, {"on_device_model_temperature", "0"}}},
+       {on_device_model::features::kOnDeviceModelGpuCache, {}}},
+      {});
+  ScenarioBuilder(fake_.component_state())
+      .AddBaseModel(
+          "gpu_model_A",
+          BaseModelRecipeArgs(
+              proto::BaseModelRecipe::BACKEND_TYPE_GPU,
+              proto::BaseModelRecipe::PERFORMANCE_HINT_FASTEST_INFERENCE,
+              /* supported_ranks= */ {},
+              /* max_tokens= */ 100),
+          FakeBaseModelAsset::Content{.cache_weight = 1015,
+                                      .encoder_cache_weight = 1016,
+                                      .adapter_cache_weight = 1017,
+                                      .shader_cache_data = "0xcafebabe"},
+          "1.0.0.1")
+      .AddUnsafeSolution("test", "gpu_model_A")
+      .Finish();
+  fake_.Startup();
+  base::test::TestFuture<ModelBrokerClient::CreateSessionResult> session_future;
+  fake_.client().CreateSession(mojom::OnDeviceFeature::kTest,
+                               SessionConfigParams{},
+                               session_future.GetCallback());
+
+  auto session = session_future.Take();
+  ASSERT_TRUE(session);
+
+  proto::ExampleForTestingRequest request;
+  request.set_string_value("hello");
+
+  ResponseHolder response;
+  session->ExecuteModel(request, response.GetStreamingCallback());
+
+  EXPECT_TRUE(response.GetFinalStatus());
+
+  std::string expected_response =
+      ("Fastest inference"
+       "Encoder cache weight: 1016"
+       "Adapter cache weight: 1017"
+       "Shader cache data: 0xcafebabe"
+       "hello max:1024");
+  EXPECT_EQ(*response.value(), expected_response);
+}
+
+// Test that a simple feature can be executed successfully.
+TEST_F(ManifestSolutionFactoryTest, ExecuteTestFeatureWithHints) {
+  ScenarioBuilder(fake_.component_state())
+      .AddBaseModel(
+          "model_A",
+          BaseModelRecipeArgs(
+              proto::BaseModelRecipe::BACKEND_TYPE_CPU,
+              proto::BaseModelRecipe::PERFORMANCE_HINT_FASTEST_INFERENCE,
+              /* supported_ranks= */ {4, 5},
+              /* max_tokens= */ 100))
+      .AddUnsafeSolution("test", "model_A")
+      .Finish();
+  fake_.Startup();
+  base::test::TestFuture<ModelBrokerClient::CreateSessionResult> session_future;
+  fake_.client().CreateSession(mojom::OnDeviceFeature::kTest,
+                               SessionConfigParams{},
+                               session_future.GetCallback());
+
+  auto session = session_future.Take();
+  ASSERT_TRUE(session);
+
+  proto::ExampleForTestingRequest request;
+  request.set_string_value("hello");
+
+  ResponseHolder response;
+  session->ExecuteModel(request, response.GetStreamingCallback());
+
+  EXPECT_TRUE(response.GetFinalStatus());
+
+  std::string expected_response =
+      ("CPU backend"
+       "Fastest inference"
+       "Cache weight: 1015"
+       "Encoder cache weight: 1016"
+       "Adapter cache weight: 1017"
+       "hello max:1024"
+       "TopK: 3, Temp: 0.800000011920929");
+  EXPECT_EQ(*response.value(), expected_response);
+}
+
+TEST_F(ManifestSolutionFactoryTest, ExecuteTestFeatureWithAdaptation) {
+  ScenarioBuilder(fake_.component_state())
+      .AddBaseModel("model_A")
+      .AddAdaptation("model_A1", "model_A")
+      .AddUnsafeSolution("test", "model_A1")
+      .Finish();
+  fake_.Startup();
+  base::test::TestFuture<ModelBrokerClient::CreateSessionResult> session_future;
+  fake_.client().CreateSession(mojom::OnDeviceFeature::kTest,
+                               SessionConfigParams{},
+                               session_future.GetCallback());
+
+  auto session = session_future.Take();
+  ASSERT_TRUE(session);
+
+  proto::ExampleForTestingRequest request;
+  request.set_string_value("hello");
+
+  ResponseHolder response;
+  session->ExecuteModel(request, response.GetStreamingCallback());
+
+  ASSERT_TRUE(response.GetFinalStatus());
+
+  std::string expected_response =
+      ("Adaptation model: 1"
+       "Encoder cache weight: 1016"
+       "Adapter cache weight: 1017"
+       "hello max:1024"
+       "TopK: 3, Temp: 0.800000011920929");
+  EXPECT_EQ(*response.value(), expected_response);
+}
+
+TEST_F(ManifestSolutionFactoryTest, ExecuteTestFeatureWithSafety) {
+  ScenarioBuilder(fake_.component_state())
+      .AddBaseModel("model_A")
+      .AddSafetyModel("safety")
+      .AddSafeSolution(
+          "test", "model_A", "safety",
+          []() {
+            proto::SolutionConfig solution_config;
+            *solution_config.mutable_feature() = SimpleComposeConfig();
+            *solution_config.mutable_safety() = ComposeSafetyConfig();
+            return solution_config;
+          }())
+      .Finish();
+  fake_.Startup();
+  base::test::TestFuture<ModelBrokerClient::CreateSessionResult> session_future;
+  fake_.client().CreateSession(mojom::OnDeviceFeature::kTest,
+                               SessionConfigParams{},
+                               session_future.GetCallback());
+
+  auto session = session_future.Take();
+  ASSERT_TRUE(session);
+
+  ResponseHolder response;
+  session->ExecuteModel(UserInputRequest("hello"),
+                        response.GetStreamingCallback());
+
+  EXPECT_TRUE(response.GetFinalStatus());
+  EXPECT_EQ(response.error(), std::nullopt);
+
+  std::string expected_response =
+      ("Encoder cache weight: 1016"
+       "Adapter cache weight: 1017"
+       "execute:hello max:1024"
+       "TopK: 3, Temp: 0.800000011920929");
+  EXPECT_EQ(*response.value(), expected_response);
+}
+
+// Stuff should still work even if we use a bunch of models at the same time,
+// as long as the backend supports it.
+TEST_F(ManifestSolutionFactoryTest, ModelContention) {
+  auto safe_config = []() {
+    proto::SolutionConfig solution_config;
+    *solution_config.mutable_feature() = SimpleComposeConfig();
+    *solution_config.mutable_safety() = ComposeSafetyConfig();
+    return solution_config;
+  }();
+
+  ScenarioBuilder(fake_.component_state())
+      .AddBaseModel("model_A")
+      .AddBaseModel("model_B")
+      .AddAdaptation("model_A1", "model_A")
+      .AddAdaptation("model_A2", "model_A")
+      .AddSafetyModel("safety")
+      .AddSafeSolution("case_A", "model_A", "safety", safe_config)
+      .AddSafeSolution("case_A1", "model_A1", "safety", safe_config)
+      .AddSafeSolution("case_A2a", "model_A2", "safety", safe_config)
+      .AddSafeSolution("case_A2b", "model_A2", "safety", safe_config)
+      .AddSafeSolution("case_B", "model_B", "safety", safe_config)
+      .Finish();
+  fake_.Startup();
+
+  std::vector<std::string> use_case_by_session{
+      "case_A", "case_A1", "case_A2a", "case_A2b", "case_B",
+      "case_A", "case_A1", "case_A2a", "case_A2b", "case_B",
+  };
+
+  std::vector<base::test::TestFuture<ModelBrokerClient::CreateSessionResult>>
+      session_futures(use_case_by_session.size());
+  for (size_t i = 0; i < use_case_by_session.size(); i++) {
+    fake_.client().CreateSession(use_case_by_session[i], SessionConfigParams{},
+                                 session_futures[i].GetCallback());
+  }
+  std::vector<ModelBrokerClient::CreateSessionResult> sessions(
+      use_case_by_session.size());
+  for (size_t i = 0; i < use_case_by_session.size(); i++) {
+    sessions[i] = session_futures[i].Take();
+  }
+
+  std::vector<ResponseHolder> responses(use_case_by_session.size());
+  for (size_t i = 0; i < use_case_by_session.size(); i++) {
+    sessions[i]->ExecuteModel(UserInputRequest("hello"),
+                              responses[i].GetStreamingCallback());
+  }
+
+  for (size_t i = 0; i < use_case_by_session.size(); i++) {
+    EXPECT_TRUE(responses[i].GetFinalStatus());
+  }
+}
+
+TEST_F(ManifestSolutionFactoryTest, PropagatesModelCapabilities) {
+  auto solution_config = []() {
+    proto::SolutionConfig config;
+    config.add_capabilities(
+        proto::OnDeviceModelCapability::ON_DEVICE_MODEL_CAPABILITY_IMAGE_INPUT);
+    *config.mutable_feature() = SimpleComposeConfig();
+    return config;
+  }();
+  ScenarioBuilder(fake_.component_state())
+      .AddBaseModel("model_A")
+      .AddSafetyModel("safety")
+      .AddSafeSolution("case_A", "model_A", "safety", solution_config)
+      .Finish();
+  fake_.Startup();
+
+  auto& subscriber = fake_.client().GetSubscriber("case_A");
+  fake_.client().RequestAssetsFor("case_A");
+
+  base::test::TestFuture<base::WeakPtr<ModelClient>> client_future;
+  subscriber.WaitForClient(client_future.GetCallback());
+  ASSERT_TRUE(client_future.Take());
+
+  // Verify that a supported capability succeeds.
+  on_device_model::Capabilities required_caps;
+  required_caps.Put(on_device_model::CapabilityFlags::kImageInput);
+  base::test::TestFuture<std::optional<mojom::ModelUnavailableReason>,
+                         std::optional<mojom::ModelNotSupportedDetailedReason>>
+      future;
+  subscriber.CanCreateSession(required_caps, future.GetCallback());
+
+  auto [reason, detailed_reason] = future.Take();
+  // No unavailable reason because capability is supported.
+  EXPECT_FALSE(reason.has_value());
+
+  // Verify that an unsupported capability (e.g., Audio) fails.
+  on_device_model::Capabilities audio_caps;
+  audio_caps.Put(on_device_model::CapabilityFlags::kAudioInput);
+  base::test::TestFuture<std::optional<mojom::ModelUnavailableReason>,
+                         std::optional<mojom::ModelNotSupportedDetailedReason>>
+      audio_future;
+  subscriber.CanCreateSession(audio_caps, audio_future.GetCallback());
+
+  auto [audio_reason, audio_detailed_reason] = audio_future.Take();
+  EXPECT_EQ(audio_reason, mojom::ModelUnavailableReason::kNotSupported);
+}
+
+}  // namespace optimization_guide

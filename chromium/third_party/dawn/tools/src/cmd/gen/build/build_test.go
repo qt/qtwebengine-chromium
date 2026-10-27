@@ -3,16 +3,16 @@
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
 //
-// 1. Redistributions of source code must retain the above copyright notice, this
-//    list of conditions and the following disclaimer.
+//  1. Redistributions of source code must retain the above copyright notice, this
+//     list of conditions and the following disclaimer.
 //
-// 2. Redistributions in binary form must reproduce the above copyright notice,
-//    this list of conditions and the following disclaimer in the documentation
-//    and/or other materials provided with the distribution.
+//  2. Redistributions in binary form must reproduce the above copyright notice,
+//     this list of conditions and the following disclaimer in the documentation
+//     and/or other materials provided with the distribution.
 //
-// 3. Neither the name of the copyright holder nor the names of its
-//    contributors may be used to endorse or promote products derived from
-//    this software without specific prior written permission.
+//  3. Neither the name of the copyright holder nor the names of its
+//     contributors may be used to endorse or promote products derived from
+//     this software without specific prior written permission.
 //
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -30,6 +30,8 @@ package build
 import (
 	"fmt"
 	"testing"
+
+	"dawn.googlesource.com/dawn/tools/src/cmd/gen/common"
 
 	"dawn.googlesource.com/dawn/tools/src/cnf"
 	"dawn.googlesource.com/dawn/tools/src/container"
@@ -343,14 +345,14 @@ func TestLoadExternals(t *testing.T) {
 
 func TestPopulateSourceFiles(t *testing.T) {
 	tests := []struct {
-		name               string
-		skipFileCreation   bool
-		wantDirectories    []string
-		wantTargets        [][]string
-		wantFiles          [][]string
-		wantGeneratedFiles [][]string
-		wantErr            bool
-		wantErrMsg         string
+		name                         string
+		skipFileCreation             bool
+		wantDirectories              []string
+		wantTargets                  [][]string
+		wantFiles                    [][]string
+		wantGeneratedProtobufSources [][]string
+		wantErr                      bool
+		wantErrMsg                   string
 	}{
 		{ /////////////////////////////////////////////////////////////////////////
 			name:             "Non-existent root",
@@ -442,7 +444,7 @@ func TestPopulateSourceFiles(t *testing.T) {
 					"main_test.cc",
 				},
 			},
-			wantGeneratedFiles: [][]string{
+			wantGeneratedProtobufSources: [][]string{
 				{
 					"a",
 					string(targetProto),
@@ -519,7 +521,7 @@ func TestPopulateSourceFiles(t *testing.T) {
 				target := want.Targets[TargetName(targetName)]
 				target.AddSourceFile(want.AddFile(filepath))
 			}
-			for _, f := range testCase.wantGeneratedFiles {
+			for _, f := range testCase.wantGeneratedProtobufSources {
 				directoryName := f[0]
 				kind := TargetKind(f[1])
 				targetName := directoryName
@@ -528,7 +530,7 @@ func TestPopulateSourceFiles(t *testing.T) {
 				}
 				filepath := fmt.Sprintf("%s/%s", directoryName, f[2])
 				target := want.Targets[TargetName(targetName)]
-				target.AddGeneratedFile(want.AddGeneratedFile(filepath))
+				target.AddGeneratedProtobufSource(want.AddGeneratedProtobufSource(filepath))
 			}
 
 			err := populateSourceFiles(&p, wrapper)
@@ -540,6 +542,106 @@ func TestPopulateSourceFiles(t *testing.T) {
 			require.Equal(t, want, p)
 		})
 	}
+}
+
+func TestPopulateSourceFiles_TemplateDetection(t *testing.T) {
+	wrapper := oswrapper.CreateFSTestOSWrapper()
+	cfg := &common.Config{OsWrapper: wrapper}
+	p := NewProject("/root", cfg)
+
+	wrapper.MkdirAll("/root/a", 0o700)
+	wrapper.Create("/root/a/file.cc")
+	wrapper.Create("/root/a/file2.cc.tmpl")
+
+	err := populateSourceFiles(p, wrapper)
+	require.NoError(t, err)
+
+	dir := p.AddDirectory("a")
+	target := p.Target(dir, targetLib)
+	require.NotNil(t, target, "Target not created")
+
+	require.True(t, target.SourceFileSet.Contains("a/file.cc"))
+	require.True(t, target.GeneratedSourcePaths.Contains("a/file2.cc"))
+	require.True(t, p.AllTemplatePaths.Contains("a/file2.cc.tmpl"))
+	require.False(t, target.SourceFileSet.Contains("a/file2.cc.tmpl"))
+	require.True(t, target.TemplateFileSet.Contains("a/file2.cc.tmpl"))
+}
+
+func TestBuildDependencies_TemplateIncludes(t *testing.T) {
+	wrapper := oswrapper.CreateFSTestOSWrapper()
+	cfg := &common.Config{OsWrapper: wrapper}
+	p := NewProject("/root", cfg)
+
+	wrapper.MkdirAll("/root/a", 0o700)
+	wrapper.MkdirAll("/root/b", 0o700)
+
+	wrapper.Create("/root/a/file.cc")
+	wrapper.WriteFile("/root/a/file2.cc.tmpl", []byte(`#include "src/tint/b/file.h"`), 0o600)
+	wrapper.Create("/root/b/file.h")
+
+	err := populateSourceFiles(p, wrapper)
+	require.NoError(t, err)
+
+	err = scanSourceFiles(p, wrapper)
+	require.NoError(t, err)
+
+	err = buildDependencies(p, wrapper)
+	require.NoError(t, err)
+
+	dirA := p.AddDirectory("a")
+	dirB := p.AddDirectory("b")
+	targetA := p.Target(dirA, targetLib)
+	targetB := p.Target(dirB, targetLib)
+
+	require.NotNil(t, targetA, "Target A not created")
+	require.NotNil(t, targetB, "Target B not created")
+
+	found := false
+	for _, dep := range targetA.Dependencies.Internal() {
+		if dep == targetB {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "Target A should depend on Target B")
+}
+
+func TestBuildDependencies_TemplateFallback(t *testing.T) {
+	wrapper := oswrapper.CreateFSTestOSWrapper()
+	cfg := &common.Config{OsWrapper: wrapper}
+	p := NewProject("/root", cfg)
+
+	wrapper.MkdirAll("/root/a", 0o700)
+	wrapper.MkdirAll("/root/b", 0o700)
+
+	wrapper.WriteFile("/root/a/file.cc", []byte(`#include "src/tint/b/file.h"`), 0o600)
+	wrapper.Create("/root/b/file.h.tmpl")
+
+	err := populateSourceFiles(p, wrapper)
+	require.NoError(t, err)
+
+	err = scanSourceFiles(p, wrapper)
+	require.NoError(t, err)
+
+	err = buildDependencies(p, wrapper)
+	require.NoError(t, err)
+
+	dirA := p.AddDirectory("a")
+	dirB := p.AddDirectory("b")
+	targetA := p.Target(dirA, targetLib)
+	targetB := p.Target(dirB, targetLib)
+
+	require.NotNil(t, targetA, "Target A not created")
+	require.NotNil(t, targetB, "Target B not created")
+
+	found := false
+	for _, dep := range targetA.Dependencies.Internal() {
+		if dep == targetB {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "Target A should depend on Target B (via template fallback)")
 }
 
 func TestCheckInclude(t *testing.T) {

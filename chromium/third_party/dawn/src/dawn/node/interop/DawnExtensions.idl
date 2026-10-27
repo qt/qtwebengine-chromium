@@ -46,7 +46,6 @@ enum WGSLLanguageFeatureName {
     "subgroup_uniformity",
     "texture_and_sampler_let",
     "buffer_view",
-    "filtering_parameters",
     "swizzle_assignment",
     "linear_indexing",
     "texture_formats_tier1",
@@ -96,25 +95,6 @@ interface GPURenderPassEncoder {
 };
 
 // ============================================================================
-// Immediates
-// ============================================================================
-dictionary GPUPipelineLayoutDescriptor {
-    GPUSize32 immediateSize = 0;
-};
-interface GPUComputePassEncoder {
-    undefined setImmediates(GPUSize32 rangeOffset, AllowSharedBufferSource data, optional GPUSize64 dataOffset = 0, optional GPUSize64 size);
-};
-interface GPURenderBundleEncoder {
-    undefined setImmediates(GPUSize32 rangeOffset, AllowSharedBufferSource data, optional GPUSize64 dataOffset = 0, optional GPUSize64 size);
-};
-interface GPURenderPassEncoder {
-    undefined setImmediates(GPUSize32 rangeOffset, AllowSharedBufferSource data, optional GPUSize64 dataOffset = 0, optional GPUSize64 size);
-};
-interface GPUSupportedLimits {
-    readonly attribute unsigned long maxImmediateSize;
-}
-
-// ============================================================================
 // Write timestamp
 // ============================================================================
 interface GPUCommandEncoder {
@@ -128,3 +108,41 @@ dictionary GPUBindGroupLayoutEntry {
     GPUSize32 bindingArraySize = 1;
 };
 
+// ============================================================================
+// Resource table
+// ============================================================================
+enum GPUFeatureName {
+    "chromium-experimental-sampling-resource-table",
+};
+
+dictionary GPUResourceTableDescriptor : GPUObjectDescriptorBase {
+    required GPUSize32 size;
+};
+interface GPUDevice {
+    GPUResourceTable createResourceTable(GPUResourceTableDescriptor descriptor);
+};
+
+interface GPUResourceTable {
+    undefined destroy();
+
+    undefined update(GPUIndex32 slot, GPUBindingResource resource);
+    GPUIndex32 insertBinding(GPUBindingResource resource);
+    undefined removeBinding(GPUIndex32 slot);
+
+    readonly attribute GPUSize32Out size;
+};
+GPUResourceTable includes GPUObjectBase;
+
+dictionary GPUPipelineLayoutDescriptor {
+    bool usesResourceTable = false;
+};
+
+interface GPUComputePassEncoder {
+    undefined setResourceTable(GPUResourceTable? table);
+};
+interface GPURenderBundleEncoder {
+    undefined setResourceTable(GPUResourceTable? table);
+};
+interface GPURenderPassEncoder {
+    undefined setResourceTable(GPUResourceTable? table);
+};

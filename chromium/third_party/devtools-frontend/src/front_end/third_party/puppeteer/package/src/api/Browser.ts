@@ -32,6 +32,7 @@ import {
 import {asyncDisposeSymbol, disposeSymbol} from '../util/disposable.js';
 
 import type {BrowserContext} from './BrowserContext.js';
+import type {Extension} from './Extension.js';
 import type {Page} from './Page.js';
 import type {Target} from './Target.js';
 /**
@@ -678,32 +679,22 @@ export abstract class Browser extends EventEmitter<BrowserEvents> {
 
   /**
    * Whether Puppeteer is connected to this {@link Browser | browser}.
-   *
-   * @deprecated Use {@link Browser | Browser.connected}.
-   */
-  isConnected(): boolean {
-    return this.connected;
-  }
-
-  /**
-   * Whether Puppeteer is connected to this {@link Browser | browser}.
    */
   abstract get connected(): boolean;
 
   /** @internal */
   override [disposeSymbol](): void {
-    if (this.process()) {
-      return void this.close().catch(debugError);
-    }
-    return void this.disconnect().catch(debugError);
+    return void this[asyncDisposeSymbol]().catch(debugError);
   }
 
   /** @internal */
-  [asyncDisposeSymbol](): Promise<void> {
+  override async [asyncDisposeSymbol](): Promise<void> {
     if (this.process()) {
-      return this.close();
+      await this.close();
+    } else {
+      await this.disconnect();
     }
-    return this.disconnect();
+    await super[asyncDisposeSymbol]();
   }
 
   /**
@@ -727,4 +718,16 @@ export abstract class Browser extends EventEmitter<BrowserEvents> {
    * @internal
    */
   abstract isNetworkEnabled(): boolean;
+
+  /**
+   * Retrieves a map of all extensions installed in the browser, where the keys
+   * are extension IDs and the values are the corresponding {@link Extension} instances.
+   *
+   * @public
+   */
+  abstract extensions(): Promise<Map<string, Extension>>;
+  /**
+   * @internal
+   */
+  abstract isIssuesEnabled(): boolean;
 }

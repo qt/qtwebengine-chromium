@@ -20,7 +20,7 @@ const injectedScript string = "var foo=1"
 
 // Regression test for https://github.com/catapult-project/catapult/issues/3726
 func TestInjectScript(t *testing.T) {
-	transformer, err := NewScriptInjector([]byte(injectedScript))
+	transformer, err := NewScriptInjector([]byte(injectedScript), DefaultScriptInjectorConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestInjectScript(t *testing.T) {
 }
 
 func TestNoTagFound(t *testing.T) {
-	transformer, err := NewScriptInjector([]byte(injectedScript))
+	transformer, err := NewScriptInjector([]byte(injectedScript), DefaultScriptInjectorConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestNoTagFound(t *testing.T) {
 }
 
 func TestInjectScriptToGzipResponse(t *testing.T) {
-	transformer, minifyErr := NewScriptInjector([]byte(injectedScript))
+	transformer, minifyErr := NewScriptInjector([]byte(injectedScript), DefaultScriptInjectorConfig())
 	if minifyErr != nil {
 		t.Fatal(minifyErr)
 	}
@@ -116,9 +116,9 @@ func TestInjectScriptToGzipResponse(t *testing.T) {
 	}
 }
 
-func transform(t *testing.T, inputJS, contentType string) string {
+func transform(t *testing.T, input, contentType string, config ScriptInjectorConfig) string {
 	t.Helper()
-	transformer, err := NewScriptInjector([]byte(injectedScript))
+	transformer, err := NewScriptInjector([]byte(injectedScript), config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func transform(t *testing.T, inputJS, contentType string) string {
 		StatusCode: 200,
 		Header:     responseHeader,
 		Request:    &req,
-		Body:       ioutil.NopCloser(bytes.NewReader([]byte(inputJS)))}
+		Body:       ioutil.NopCloser(bytes.NewReader([]byte(input)))}
 
 	transformer.Transform(&req, &resp)
 	body, err := ioutil.ReadAll(resp.Body)
@@ -141,11 +141,8 @@ func transform(t *testing.T, inputJS, contentType string) string {
 	return string(body)
 }
 
-func TestInjectScriptToHTMLMimeType(t *testing.T) {
-	const originalHTML string = "<html><head></head></html>"
-	expectedHTML := "<html><head><script>" + injectedScript +
-		"</script></head></html>"
-
+func testHTMLInjection(t *testing.T, config ScriptInjectorConfig, input, expectedOutput string) {
+	t.Helper()
 	contentTypes := []string{
 		"text/html",
 		"TEXT/HTML",
@@ -154,19 +151,30 @@ func TestInjectScriptToHTMLMimeType(t *testing.T) {
 
 	for _, contentType := range contentTypes {
 		for _, suffix := range []string{"", "; charset=utf-8"} {
-			transformationResult := transform(t, originalHTML, contentType+suffix)
-			if transformationResult != expectedHTML {
+			result := transform(t, input, contentType+suffix, config)
+			if result != expectedOutput {
 				t.Errorf("For %s:\nExpected: %s\nActual: %s",
-					contentType+suffix, expectedHTML, transformationResult)
+					contentType+suffix, expectedOutput, result)
 			}
 		}
 	}
 }
 
-func TestInjectScriptToJSMimeType(t *testing.T) {
-	const originalJS string = "console.log('hello');"
-	const expectedJS string = injectedScript + ";\n" + originalJS
+func TestInjectScriptToHTMLMimeType(t *testing.T) {
+	const originalHTML string = "<html><head></head></html>"
+	expectedHTML := "<html><head><script>" + injectedScript + "</script></head></html>"
+	testHTMLInjection(t, ScriptInjectorConfig{HtmlInjection: true, JsInjection: false},
+		originalHTML, expectedHTML)
+}
 
+func TestJsInjectionDoesNotAffectHTML(t *testing.T) {
+	const originalHTML string = "<html><head></head></html>"
+	testHTMLInjection(t, ScriptInjectorConfig{HtmlInjection: false, JsInjection: true},
+		originalHTML, originalHTML)
+}
+
+func testJSInjection(t *testing.T, config ScriptInjectorConfig, input, expectedOutput string) {
+	t.Helper()
 	contentTypes := []string{
 		// Standard MIME types.
 		"application/javascript",
@@ -183,13 +191,26 @@ func TestInjectScriptToJSMimeType(t *testing.T) {
 
 	for _, contentType := range contentTypes {
 		for _, suffix := range []string{"", "; charset=utf-8"} {
-			transformationResult := transform(t, originalJS, contentType+suffix)
-			if transformationResult != expectedJS {
+			result := transform(t, input, contentType+suffix, config)
+			if result != expectedOutput {
 				t.Errorf("For %s:\nExpected: %s\nActual: %s",
-					contentType+suffix, expectedJS, string(transformationResult))
+					contentType+suffix, expectedOutput, result)
 			}
 		}
 	}
+}
+
+func TestInjectScriptToJSMimeType(t *testing.T) {
+	const originalJS string = "console.log('hello');"
+	const expectedJS string = injectedScript + ";\n" + originalJS
+	testJSInjection(t, ScriptInjectorConfig{HtmlInjection: false, JsInjection: true},
+		originalJS, expectedJS)
+}
+
+func TestHtmlInjectionDoesNotAffectJS(t *testing.T) {
+	const originalJS string = "console.log('hello');"
+	testJSInjection(t, ScriptInjectorConfig{HtmlInjection: true, JsInjection: false},
+		originalJS, originalJS)
 }
 
 func TestInjectScriptToNonJSMimeType(t *testing.T) {
@@ -209,7 +230,8 @@ func TestInjectScriptToNonJSMimeType(t *testing.T) {
 
 	for _, contentType := range contentTypes {
 		for _, suffix := range []string{"", "; charset=utf-8"} {
-			transformationResult := transform(t, originalJS, contentType+suffix)
+			transformationResult := transform(t, originalJS, contentType+suffix,
+				DefaultScriptInjectorConfig())
 			if transformationResult != originalJS {
 				t.Errorf("For %s:\nExpected: %s\nActual: %s",
 					contentType+suffix, originalJS, string(transformationResult))
@@ -224,13 +246,15 @@ func TestAlreadyInjected(t *testing.T) {
 	const contentType string = "application/javascript"
 
 	// The first injection is impactful.
-	result1 := transform(t, originalJS, contentType)
+	result1 := transform(t, originalJS, contentType,
+		ScriptInjectorConfig{HtmlInjection: true, JsInjection: true})
 	if result1 != expectedJS {
 		t.Errorf("Expected: %s\nActual:   %s", expectedJS, result1)
 	}
 
 	// The second injection is no-op.
-	result2 := transform(t, result1, contentType)
+	result2 := transform(t, result1, contentType,
+		ScriptInjectorConfig{HtmlInjection: true, JsInjection: true})
 	if result2 != result1 {
 		t.Errorf("Expected: %s\nActual:   %s", result1, result2)
 	}
@@ -242,7 +266,8 @@ func TestDefensiveSemicolon(t *testing.T) {
 	const expectedJS string = injectedScript + ";\n" + originalJS
 	const contentType string = "application/javascript"
 
-	result := transform(t, originalJS, contentType)
+	result := transform(t, originalJS, contentType,
+		ScriptInjectorConfig{HtmlInjection: true, JsInjection: true})
 	if result != expectedJS {
 		t.Errorf("Defensive semicolon missing or incorrect.\nExpected: %s\nActual: %s",
 			expectedJS, result)
@@ -288,7 +313,7 @@ func TestInjectScriptToResponse(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		transformer, err := NewScriptInjector([]byte(injectedScript))
+		transformer, err := NewScriptInjector([]byte(injectedScript), DefaultScriptInjectorConfig())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -318,7 +343,7 @@ func TestInjectScriptToResponse(t *testing.T) {
 }
 
 func TestInjectScriptToResponseWithCspHash(t *testing.T) {
-	transformer, err := NewScriptInjector([]byte(injectedScript))
+	transformer, err := NewScriptInjector([]byte(injectedScript), DefaultScriptInjectorConfig())
 	if err != nil {
 		t.Fatal(err)
 	}

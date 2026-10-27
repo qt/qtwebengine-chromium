@@ -7,8 +7,8 @@ import * as WorkerThreads from 'node:worker_threads';
 import type * as Api from '../api/api.js';
 
 class NodeWorkerScope implements Api.HostRuntime.WorkerScope {
-  postMessage(message: unknown): void {
-    WorkerThreads.parentPort?.postMessage(message);
+  postMessage(message: unknown, transfer?: Api.HostRuntime.WorkerTransferable[]): void {
+    WorkerThreads.parentPort?.postMessage(message, transfer as unknown as WorkerThreads.Transferable[]);
   }
 
   set onmessage(listener: (event: Api.HostRuntime.WorkerMessageEvent) => void) {
@@ -82,4 +82,14 @@ export const HOST_RUNTIME: Api.HostRuntime.HostRuntime = {
     return new NodeWorker(url);
   },
   workerScope: new NodeWorkerScope(),
+  getOnLine(): boolean {
+    return true;
+  },
+  getUserAgent(): string {
+    return 'Node.js';
+  },
+  getLocalStorage(): Storage |
+      undefined {
+        return undefined;
+      },
 };

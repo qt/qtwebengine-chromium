@@ -26,14 +26,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 DawnGenerator(
-    SCRIPT "${Dawn_SOURCE_DIR}/generator/dawn_version_generator.py"
-    PRINT_NAME "Dawn version based utilities"
-    OUTPUT_HEADERS DAWN_VERSION_AUTOGEN_HEADERS
-    EXTRA_PARAMETERS "--dawn-dir"
-         "${Dawn_SOURCE_DIR}"
-)
-
-DawnGenerator(
     SCRIPT "${Dawn_SOURCE_DIR}/generator/dawn_gpu_info_generator.py"
     PRINT_NAME "Dawn GPU info utilities"
     OUTPUT_HEADERS DAWN_GPU_INFO_AUTOGEN_HEADERS
@@ -43,7 +35,6 @@ DawnGenerator(
 )
 
 set(private_headers
-    "${DAWN_VERSION_AUTOGEN_HEADERS}"
     "${DAWN_GPU_INFO_AUTOGEN_HEADERS}"
     "Algebra.h"
     "AlignedAlloc.h"
@@ -77,12 +68,9 @@ set(private_headers
     "Math.h"
     "Mutex.h"
     "MutexProtected.h"
-    "NonCopyable.h"
-    "NonMovable.h"
     "NSRef.h"
     "Numeric.h"
     "PlacementAllocated.h"
-    "Platform.h"
     "Preprocessor.h"
     "Range.h"
     "Ref.h"
@@ -96,13 +84,13 @@ set(private_headers
     "SerialStorage.h"
     "SlabAllocator.h"
     "StackAllocated.h"
+    "Strings.h"
     "StringViewUtils.h"
     "SystemUtils.h"
     "ThreadLocal.h"
     "Time.h"
     "TypedInteger.h"
     "TypeTraits.h"
-    "UnderlyingType.h"
     "vulkan_platform.h"
     "WeakRef.h"
     "WeakRefSupport.h"
@@ -134,7 +122,6 @@ set(conditional_private_depends)
 
 if (WIN32)
     list(APPEND private_headers
-        "windows_with_undefs.h"
         "WindowsUtils.h"
     )
     list(APPEND sources
@@ -189,6 +176,7 @@ dawn_add_library(
     SOURCES
         ${sources}
     DEPENDS
+        dawn::dawn_version
         webgpu_c
         webgpu_cpp
         absl::flat_hash_set

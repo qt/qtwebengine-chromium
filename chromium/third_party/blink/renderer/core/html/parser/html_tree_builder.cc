@@ -28,6 +28,8 @@
 
 #include <memory>
 
+#include "base/feature_list.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/document_fragment.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
@@ -77,7 +79,59 @@ namespace {
 inline bool IsHTMLSpaceOrReplacementCharacter(UChar character) {
   return IsHTMLSpace<UChar>(character) || character == kReplacementCharacter;
 }
+
+enum class FeatureResetMode {
+  kUseCached,
+  kResetForTesting,
+};
+
+bool DeferTreeBuilderFlushEnabled(
+    FeatureResetMode reset_mode = FeatureResetMode::kUseCached) {
+  static bool kEnabled =
+      base::FeatureList::IsEnabled(features::kDeferTreeBuilderFlush);
+  if (reset_mode == FeatureResetMode::kResetForTesting) {
+    kEnabled = base::FeatureList::IsEnabled(features::kDeferTreeBuilderFlush);
+  }
+  return kEnabled;
+}
+
+base::TimeDelta DeferTreeBuilderFlushInitialInterval(
+    FeatureResetMode reset_mode = FeatureResetMode::kUseCached) {
+  static base::TimeDelta kInterval =
+      features::kDeferTreeBuilderFlushInitialInterval.Get();
+  if (reset_mode == FeatureResetMode::kResetForTesting) {
+    kInterval = features::kDeferTreeBuilderFlushInitialInterval.Get();
+  }
+  return kInterval;
+}
+
+base::TimeDelta DeferTreeBuilderFlushMaxInterval(
+    FeatureResetMode reset_mode = FeatureResetMode::kUseCached) {
+  static base::TimeDelta kInterval =
+      features::kDeferTreeBuilderFlushMaxInterval.Get();
+  if (reset_mode == FeatureResetMode::kResetForTesting) {
+    kInterval = features::kDeferTreeBuilderFlushMaxInterval.Get();
+  }
+  return kInterval;
+}
+
+double DeferTreeBuilderFlushMultiplier(
+    FeatureResetMode reset_mode = FeatureResetMode::kUseCached) {
+  static double kMultiplier = features::kDeferTreeBuilderFlushMultiplier.Get();
+  if (reset_mode == FeatureResetMode::kResetForTesting) {
+    kMultiplier = features::kDeferTreeBuilderFlushMultiplier.Get();
+  }
+  return kMultiplier;
+}
+
 }  // namespace
+
+void HTMLTreeBuilder::ResetCachedFeaturesForTesting() {
+  DeferTreeBuilderFlushEnabled(FeatureResetMode::kResetForTesting);
+  DeferTreeBuilderFlushInitialInterval(FeatureResetMode::kResetForTesting);
+  DeferTreeBuilderFlushMaxInterval(FeatureResetMode::kResetForTesting);
+  DeferTreeBuilderFlushMultiplier(FeatureResetMode::kResetForTesting);
+}
 
 static TextPosition UninitializedPositionValue1() {
   return TextPosition(OrdinalNumber::FromOneBasedInt(-1),
@@ -252,8 +306,7 @@ class HTMLTreeBuilder::CharacterTokenBuffer {
       return {String(), WhitespaceMode::kNotAllWhitespace};
     }
     if (length == start - end_) {  // It's all whitespace.
-      return {String(characters_.Substring(start, start - end_)),
-              whitespace_mode};
+      return {String(characters_.substr(start, start - end_)), whitespace_mode};
     }
 
     // All HTML spaces are ASCII.
@@ -314,17 +367,19 @@ HTMLTreeBuilder::HTMLTreeBuilder(HTMLDocumentParser* parser,
                                  Document& document,
                                  ParserContentPolicy parser_content_policy,
                                  const HTMLParserOptions& options,
-                                 bool include_shadow_roots)
+                                 bool include_shadow_roots,
+                                 CustomElementRegistry* registry,
+                                 StreamingSanitizer* sanitizer)
     : HTMLTreeBuilder(parser,
                       document,
                       parser_content_policy,
                       options,
                       include_shadow_roots,
-                      nullptr,
-                      nullptr,
-                      nullptr,
-                      nullptr,
-                      nullptr) {}
+                      /*fragment_target=*/nullptr,
+                      /*fragment_context_element=*/nullptr,
+                      registry,
+                      sanitizer,
+                      /*root_insertion_point=*/nullptr) {}
 HTMLTreeBuilder::HTMLTreeBuilder(HTMLDocumentParser* parser,
                                  DocumentFragment* fragment_target,
                                  Element* context_element,
@@ -351,8 +406,8 @@ HTMLTreeBuilder::HTMLTreeBuilder(HTMLDocumentParser* parser,
   // http://www.whatwg.org/specs/web-apps/current-work/multipage/the-end.html#fragment-case
   // For efficiency, we skip step 4.2 ("Let root be a new html element with no
   // attributes") and instead use the DocumentFragment as a root node.
-  tree_.OpenElements()->PushRootNode(MakeGarbageCollected<HTMLStackItem>(
-      fragment_target, HTMLStackItem::kItemForDocumentFragmentNode));
+  tree_.OpenElements()->PushRootNode(
+      HTMLStackItem::CreateForDocumentFragment(fragment_target));
 
   if (IsA<HTMLTemplateElement>(*context_element))
     template_insertion_modes_.push_back(kTemplateContentsMode);
@@ -368,8 +423,8 @@ void HTMLTreeBuilder::FragmentParsingContext::Init(
   DCHECK(fragment_target);
   DCHECK(!fragment_target->HasChildren());
   fragment_target_ = fragment_target;
-  context_element_stack_item_ = MakeGarbageCollected<HTMLStackItem>(
-      context_element, HTMLStackItem::kItemForContextElement);
+  context_element_stack_item_ =
+      HTMLStackItem::CreateForContextElement(context_element);
 }
 
 void HTMLTreeBuilder::FragmentParsingContext::Trace(Visitor* visitor) const {
@@ -807,7 +862,8 @@ void HTMLTreeBuilder::ProcessStartTagForInBody(AtomicHTMLToken* token) {
       // Per spec https://html.spec.whatwg.org/C/#parsing-main-inbody,
       // section "A start tag whose tag name is "input""
       if (tree_.OpenElements()->InScope(HTMLTag::kSelect)) {
-        bool parent_select = IsA<HTMLSelectElement>(tree_.CurrentNode());
+        HTMLSelectElement* parent_select =
+            DynamicTo<HTMLSelectElement>(tree_.CurrentNode());
         bool parent_option_optgroup =
             IsA<HTMLOptionElement>(tree_.CurrentNode()) ||
             IsA<HTMLOptGroupElement>(tree_.CurrentNode());
@@ -830,6 +886,16 @@ void HTMLTreeBuilder::ProcessStartTagForInBody(AtomicHTMLToken* token) {
         } else {
           UseCounter::Count(tree_.CurrentNode()->GetDocument(),
                             WebFeature::kInputParsedAncestorSelect);
+        }
+
+        if (parent_select && !parent_select->WasOptionInserted()) {
+          if (RuntimeEnabledFeatures::InputInSelectEnabled()) {
+            // <input> tags are allowed inside <select> if they come before any
+            // of the <option>s.
+            add_select_end_tag = false;
+          }
+          UseCounter::Count(tree_.CurrentNode()->GetDocument(),
+                            WebFeature::kInputParsedParentSelectNoOptions);
         }
 
         if (add_select_end_tag) {
@@ -1873,6 +1939,13 @@ void HTMLTreeBuilder::CallTheAdoptionAgency(AtomicHTMLToken* token) {
     tree_.OpenElements()->Remove(formatting_element);
     tree_.OpenElements()->InsertAbove(new_item, furthest_block);
   }
+}
+
+void HTMLTreeBuilder::SetInsertionMode(InsertionMode mode) {
+  if (mode == kTextMode && insertion_mode_ != kTextMode) {
+    last_text_mode_flush_time_ = std::nullopt;
+  }
+  insertion_mode_ = mode;
 }
 
 void HTMLTreeBuilder::ResetInsertionModeAppropriately() {
@@ -3116,6 +3189,40 @@ void HTMLTreeBuilder::Finished() {
 #endif
   // Warning, this may detach the parser. Do not do anything else after this.
   tree_.FinishedParsing();
+}
+
+void HTMLTreeBuilder::Flush() {
+  // In kTextMode (raw text elements like script, style, etc.), character
+  // data is still accumulating and will be flushed when the closing end tag
+  // arrives. Skipping the flush here avoids O(n^2) string copies.
+  // However, to avoid starving incremental rendering for large text blocks,
+  // we use an exponential backoff strategy.
+  if (insertion_mode_ == kTextMode && DeferTreeBuilderFlushEnabled()) {
+    base::TimeTicks now = base::TimeTicks::Now();
+
+    // The first Flush() is allowed immediately and starts the throttling.
+    if (!last_text_mode_flush_time_.has_value()) {
+      last_text_mode_flush_time_ = now;
+      current_text_mode_flush_interval_ =
+          DeferTreeBuilderFlushInitialInterval();
+      tree_.Flush();
+      return;
+    }
+
+    // Each throttled flush extends the timer for the next flush.
+    if (now - *last_text_mode_flush_time_ >=
+        current_text_mode_flush_interval_) {
+      last_text_mode_flush_time_ = now;
+      current_text_mode_flush_interval_ = std::min(
+          current_text_mode_flush_interval_ * DeferTreeBuilderFlushMultiplier(),
+          DeferTreeBuilderFlushMaxInterval());
+      tree_.Flush();
+      return;
+    }
+    return;
+  }
+
+  tree_.Flush();
 }
 
 void HTMLTreeBuilder::ParseError(AtomicHTMLToken*) {}

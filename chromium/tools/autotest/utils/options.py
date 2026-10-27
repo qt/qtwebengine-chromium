@@ -3,9 +3,12 @@
 # found in the LICENSE file.
 
 import click
+import functools
+import os
 
 from dataclasses import dataclass, fields
 
+import utils
 
 @dataclass
 class AutotestConfig:
@@ -28,7 +31,10 @@ class AutotestConfig:
   no_single_variant: bool | None
   no_build: bool | None
   suite: bool | None
+  builder: bool | None
   files: tuple[str, ...]
+  gemini: bool | None
+  device: str | None
   extras: list[str] | None = None  # To hold ctx.args
 
 
@@ -88,7 +94,18 @@ class Formatter(click.Command):
 
 def autotest_options(f):
   """Decorator to group all autotest CLI options."""
+
+  @functools.wraps(f)
+  def wrapper(*args, **kwargs):
+    if kwargs.get('gemini') and utils.IsLlm():
+      raise click.UsageError(
+          'Cannot run autotest with --gemini from within an active '
+          'Gemini CLI session to prevent nested agent invocations.')
+    return f(*args, **kwargs)
+
+  # Apply the options to the wrapper function
   options = [
+      click.option('-d', '--device', help='Target device serial'),
       click.option('--out-dir',
                    '--out_dir',
                    '--output-directory',
@@ -124,8 +141,7 @@ def autotest_options(f):
           '--path-index',
           '--path_index',
           type=int,
-          help='When the test path is ambiguous, choose the one with this index.'
-      ),
+          help='When the path is ambiguous, choose the one with this index.'),
       click.option(
           '--run-changed',
           '--run_changed',
@@ -136,8 +152,7 @@ def autotest_options(f):
           '--run-related',
           '--run_related',
           is_flag=True,
-          help=
-          'Run tests related to files modified since this branch diverged from main.'
+          help='Run tests related to files modified since diverging from main.'
       ),
       click.option('--line',
                    type=int,
@@ -182,8 +197,19 @@ def autotest_options(f):
       click.option('--suite',
                    is_flag=True,
                    help='Run entire test suites instead of individual tests.'),
+      click.option(
+          '--gemini',
+          is_flag=True,
+          help='If a test fails, interactively launch the Gemini CLI to '
+          'diagnose the failure and propose a fix.'),
+      click.option(
+          '--builder',
+          is_flag=True,
+          help='Simulate a given builder via UTR. Run with no extra '
+          'arguments to see UTR options. This option will run entire test'
+          ' suites.'),
   ]
   # Apply in reverse so the first item in the list appears first in --help
   for option in reversed(options):
-    f = option(f)
-  return f
+    wrapper = option(wrapper)
+  return wrapper

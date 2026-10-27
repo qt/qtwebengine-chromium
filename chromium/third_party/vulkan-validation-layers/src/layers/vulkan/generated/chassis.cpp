@@ -22084,6 +22084,566 @@ VKAPI_ATTR VkResult VKAPI_CALL GetMemoryAndroidHardwareBufferANDROID(VkDevice de
 }
 
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
+VKAPI_ATTR VkResult VKAPI_CALL CreateGpaSessionAMD(VkDevice device, const VkGpaSessionCreateInfoAMD* pCreateInfo,
+                                                   const VkAllocationCallbacks* pAllocator, VkGpaSessionAMD* pGpaSession) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::GetDispatchDevice(device);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkCreateGpaSessionAMD, VulkanTypedHandle(device, kVulkanObjectTypeDevice));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkCreateGpaSessionAMD");
+        for (const auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallValidateCreateGpaSessionAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateCreateGpaSessionAMD(device, pCreateInfo, pAllocator, pGpaSession, error_obj);
+            if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkCreateGpaSessionAMD);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkCreateGpaSessionAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallRecordCreateGpaSessionAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordCreateGpaSessionAMD(device, pCreateInfo, pAllocator, pGpaSession, record_obj);
+        }
+    }
+    VkResult result;
+    {
+        VVL_ZoneScopedN("Dispatch_vkCreateGpaSessionAMD");
+        result = device_dispatch->CreateGpaSessionAMD(device, pCreateInfo, pAllocator, pGpaSession);
+    }
+    record_obj.result = result;
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkCreateGpaSessionAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordCreateGpaSessionAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordCreateGpaSessionAMD(device, pCreateInfo, pAllocator, pGpaSession, record_obj);
+        }
+    }
+    return result;
+}
+
+VKAPI_ATTR void VKAPI_CALL DestroyGpaSessionAMD(VkDevice device, VkGpaSessionAMD gpaSession,
+                                                const VkAllocationCallbacks* pAllocator) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::GetDispatchDevice(device);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkDestroyGpaSessionAMD, VulkanTypedHandle(device, kVulkanObjectTypeDevice));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkDestroyGpaSessionAMD");
+        for (const auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallValidateDestroyGpaSessionAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateDestroyGpaSessionAMD(device, gpaSession, pAllocator, error_obj);
+            if (skip) return;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkDestroyGpaSessionAMD);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkDestroyGpaSessionAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallRecordDestroyGpaSessionAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordDestroyGpaSessionAMD(device, gpaSession, pAllocator, record_obj);
+        }
+    }
+    {
+        VVL_ZoneScopedN("Dispatch_vkDestroyGpaSessionAMD");
+        device_dispatch->DestroyGpaSessionAMD(device, gpaSession, pAllocator);
+    }
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkDestroyGpaSessionAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordDestroyGpaSessionAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordDestroyGpaSessionAMD(device, gpaSession, pAllocator, record_obj);
+        }
+    }
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL SetGpaDeviceClockModeAMD(VkDevice device, VkGpaDeviceClockModeInfoAMD* pInfo) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::GetDispatchDevice(device);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkSetGpaDeviceClockModeAMD, VulkanTypedHandle(device, kVulkanObjectTypeDevice));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkSetGpaDeviceClockModeAMD");
+        for (const auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallValidateSetGpaDeviceClockModeAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateSetGpaDeviceClockModeAMD(device, pInfo, error_obj);
+            if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkSetGpaDeviceClockModeAMD);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkSetGpaDeviceClockModeAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallRecordSetGpaDeviceClockModeAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordSetGpaDeviceClockModeAMD(device, pInfo, record_obj);
+        }
+    }
+    VkResult result;
+    {
+        VVL_ZoneScopedN("Dispatch_vkSetGpaDeviceClockModeAMD");
+        result = device_dispatch->SetGpaDeviceClockModeAMD(device, pInfo);
+    }
+    record_obj.result = result;
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkSetGpaDeviceClockModeAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordSetGpaDeviceClockModeAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordSetGpaDeviceClockModeAMD(device, pInfo, record_obj);
+        }
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetGpaDeviceClockInfoAMD(VkDevice device, VkGpaDeviceGetClockInfoAMD* pInfo) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::GetDispatchDevice(device);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkGetGpaDeviceClockInfoAMD, VulkanTypedHandle(device, kVulkanObjectTypeDevice));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkGetGpaDeviceClockInfoAMD");
+        for (const auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallValidateGetGpaDeviceClockInfoAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateGetGpaDeviceClockInfoAMD(device, pInfo, error_obj);
+            if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkGetGpaDeviceClockInfoAMD);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkGetGpaDeviceClockInfoAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallRecordGetGpaDeviceClockInfoAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordGetGpaDeviceClockInfoAMD(device, pInfo, record_obj);
+        }
+    }
+    VkResult result;
+    {
+        VVL_ZoneScopedN("Dispatch_vkGetGpaDeviceClockInfoAMD");
+        result = device_dispatch->GetGpaDeviceClockInfoAMD(device, pInfo);
+    }
+    record_obj.result = result;
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkGetGpaDeviceClockInfoAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordGetGpaDeviceClockInfoAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordGetGpaDeviceClockInfoAMD(device, pInfo, record_obj);
+        }
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL CmdBeginGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::GetDispatchDevice(commandBuffer);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkCmdBeginGpaSessionAMD, VulkanTypedHandle(commandBuffer, kVulkanObjectTypeCommandBuffer));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkCmdBeginGpaSessionAMD");
+        for (const auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallValidateCmdBeginGpaSessionAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateCmdBeginGpaSessionAMD(commandBuffer, gpaSession, error_obj);
+            if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkCmdBeginGpaSessionAMD);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkCmdBeginGpaSessionAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallRecordCmdBeginGpaSessionAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordCmdBeginGpaSessionAMD(commandBuffer, gpaSession, record_obj);
+        }
+    }
+    VkResult result;
+    {
+        VVL_ZoneScopedN("Dispatch_vkCmdBeginGpaSessionAMD");
+        result = device_dispatch->CmdBeginGpaSessionAMD(commandBuffer, gpaSession);
+    }
+    record_obj.result = result;
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkCmdBeginGpaSessionAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordCmdBeginGpaSessionAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordCmdBeginGpaSessionAMD(commandBuffer, gpaSession, record_obj);
+        }
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL CmdEndGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::GetDispatchDevice(commandBuffer);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkCmdEndGpaSessionAMD, VulkanTypedHandle(commandBuffer, kVulkanObjectTypeCommandBuffer));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkCmdEndGpaSessionAMD");
+        for (const auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallValidateCmdEndGpaSessionAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateCmdEndGpaSessionAMD(commandBuffer, gpaSession, error_obj);
+            if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkCmdEndGpaSessionAMD);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkCmdEndGpaSessionAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallRecordCmdEndGpaSessionAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordCmdEndGpaSessionAMD(commandBuffer, gpaSession, record_obj);
+        }
+    }
+    VkResult result;
+    {
+        VVL_ZoneScopedN("Dispatch_vkCmdEndGpaSessionAMD");
+        result = device_dispatch->CmdEndGpaSessionAMD(commandBuffer, gpaSession);
+    }
+    record_obj.result = result;
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkCmdEndGpaSessionAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordCmdEndGpaSessionAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordCmdEndGpaSessionAMD(commandBuffer, gpaSession, record_obj);
+        }
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL CmdBeginGpaSampleAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                                    const VkGpaSampleBeginInfoAMD* pGpaSampleBeginInfo, uint32_t* pSampleID) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::GetDispatchDevice(commandBuffer);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkCmdBeginGpaSampleAMD, VulkanTypedHandle(commandBuffer, kVulkanObjectTypeCommandBuffer));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkCmdBeginGpaSampleAMD");
+        for (const auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallValidateCmdBeginGpaSampleAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateCmdBeginGpaSampleAMD(commandBuffer, gpaSession, pGpaSampleBeginInfo, pSampleID, error_obj);
+            if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkCmdBeginGpaSampleAMD);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkCmdBeginGpaSampleAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallRecordCmdBeginGpaSampleAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordCmdBeginGpaSampleAMD(commandBuffer, gpaSession, pGpaSampleBeginInfo, pSampleID, record_obj);
+        }
+    }
+    VkResult result;
+    {
+        VVL_ZoneScopedN("Dispatch_vkCmdBeginGpaSampleAMD");
+        result = device_dispatch->CmdBeginGpaSampleAMD(commandBuffer, gpaSession, pGpaSampleBeginInfo, pSampleID);
+    }
+    record_obj.result = result;
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkCmdBeginGpaSampleAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordCmdBeginGpaSampleAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordCmdBeginGpaSampleAMD(commandBuffer, gpaSession, pGpaSampleBeginInfo, pSampleID, record_obj);
+        }
+    }
+    return result;
+}
+
+VKAPI_ATTR void VKAPI_CALL CmdEndGpaSampleAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession, uint32_t sampleID) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::GetDispatchDevice(commandBuffer);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkCmdEndGpaSampleAMD, VulkanTypedHandle(commandBuffer, kVulkanObjectTypeCommandBuffer));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkCmdEndGpaSampleAMD");
+        for (const auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallValidateCmdEndGpaSampleAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateCmdEndGpaSampleAMD(commandBuffer, gpaSession, sampleID, error_obj);
+            if (skip) return;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkCmdEndGpaSampleAMD);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkCmdEndGpaSampleAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallRecordCmdEndGpaSampleAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordCmdEndGpaSampleAMD(commandBuffer, gpaSession, sampleID, record_obj);
+        }
+    }
+    {
+        VVL_ZoneScopedN("Dispatch_vkCmdEndGpaSampleAMD");
+        device_dispatch->CmdEndGpaSampleAMD(commandBuffer, gpaSession, sampleID);
+    }
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkCmdEndGpaSampleAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordCmdEndGpaSampleAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordCmdEndGpaSampleAMD(commandBuffer, gpaSession, sampleID, record_obj);
+        }
+    }
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetGpaSessionStatusAMD(VkDevice device, VkGpaSessionAMD gpaSession) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::GetDispatchDevice(device);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkGetGpaSessionStatusAMD, VulkanTypedHandle(device, kVulkanObjectTypeDevice));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkGetGpaSessionStatusAMD");
+        for (const auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallValidateGetGpaSessionStatusAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateGetGpaSessionStatusAMD(device, gpaSession, error_obj);
+            if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkGetGpaSessionStatusAMD);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkGetGpaSessionStatusAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallRecordGetGpaSessionStatusAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordGetGpaSessionStatusAMD(device, gpaSession, record_obj);
+        }
+    }
+    VkResult result;
+    {
+        VVL_ZoneScopedN("Dispatch_vkGetGpaSessionStatusAMD");
+        result = device_dispatch->GetGpaSessionStatusAMD(device, gpaSession);
+    }
+    record_obj.result = result;
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkGetGpaSessionStatusAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordGetGpaSessionStatusAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordGetGpaSessionStatusAMD(device, gpaSession, record_obj);
+        }
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetGpaSessionResultsAMD(VkDevice device, VkGpaSessionAMD gpaSession, uint32_t sampleID,
+                                                       size_t* pSizeInBytes, void* pData) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::GetDispatchDevice(device);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkGetGpaSessionResultsAMD, VulkanTypedHandle(device, kVulkanObjectTypeDevice));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkGetGpaSessionResultsAMD");
+        for (const auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallValidateGetGpaSessionResultsAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateGetGpaSessionResultsAMD(device, gpaSession, sampleID, pSizeInBytes, pData, error_obj);
+            if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkGetGpaSessionResultsAMD);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkGetGpaSessionResultsAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallRecordGetGpaSessionResultsAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordGetGpaSessionResultsAMD(device, gpaSession, sampleID, pSizeInBytes, pData, record_obj);
+        }
+    }
+    VkResult result;
+    {
+        VVL_ZoneScopedN("Dispatch_vkGetGpaSessionResultsAMD");
+        result = device_dispatch->GetGpaSessionResultsAMD(device, gpaSession, sampleID, pSizeInBytes, pData);
+    }
+    record_obj.result = result;
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkGetGpaSessionResultsAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordGetGpaSessionResultsAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordGetGpaSessionResultsAMD(device, gpaSession, sampleID, pSizeInBytes, pData, record_obj);
+        }
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL ResetGpaSessionAMD(VkDevice device, VkGpaSessionAMD gpaSession) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::GetDispatchDevice(device);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkResetGpaSessionAMD, VulkanTypedHandle(device, kVulkanObjectTypeDevice));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkResetGpaSessionAMD");
+        for (const auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallValidateResetGpaSessionAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateResetGpaSessionAMD(device, gpaSession, error_obj);
+            if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkResetGpaSessionAMD);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkResetGpaSessionAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallRecordResetGpaSessionAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordResetGpaSessionAMD(device, gpaSession, record_obj);
+        }
+    }
+    VkResult result;
+    {
+        VVL_ZoneScopedN("Dispatch_vkResetGpaSessionAMD");
+        result = device_dispatch->ResetGpaSessionAMD(device, gpaSession);
+    }
+    record_obj.result = result;
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkResetGpaSessionAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordResetGpaSessionAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordResetGpaSessionAMD(device, gpaSession, record_obj);
+        }
+    }
+    return result;
+}
+
+VKAPI_ATTR void VKAPI_CALL CmdCopyGpaSessionResultsAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::GetDispatchDevice(commandBuffer);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkCmdCopyGpaSessionResultsAMD,
+                          VulkanTypedHandle(commandBuffer, kVulkanObjectTypeCommandBuffer));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkCmdCopyGpaSessionResultsAMD");
+        for (const auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallValidateCmdCopyGpaSessionResultsAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateCmdCopyGpaSessionResultsAMD(commandBuffer, gpaSession, error_obj);
+            if (skip) return;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkCmdCopyGpaSessionResultsAMD);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkCmdCopyGpaSessionResultsAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallRecordCmdCopyGpaSessionResultsAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordCmdCopyGpaSessionResultsAMD(commandBuffer, gpaSession, record_obj);
+        }
+    }
+    {
+        VVL_ZoneScopedN("Dispatch_vkCmdCopyGpaSessionResultsAMD");
+        device_dispatch->CmdCopyGpaSessionResultsAMD(commandBuffer, gpaSession);
+    }
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkCmdCopyGpaSessionResultsAMD");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordCmdCopyGpaSessionResultsAMD]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordCmdCopyGpaSessionResultsAMD(commandBuffer, gpaSession, record_obj);
+        }
+    }
+}
+
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 VKAPI_ATTR VkResult VKAPI_CALL CreateExecutionGraphPipelinesAMDX(VkDevice device, VkPipelineCache pipelineCache,
                                                                  uint32_t createInfoCount,
@@ -23269,7 +23829,7 @@ VKAPI_ATTR void VKAPI_CALL DestroyAccelerationStructureNV(VkDevice device, VkAcc
 }
 
 VKAPI_ATTR void VKAPI_CALL GetAccelerationStructureMemoryRequirementsNV(
-    VkDevice device, const VkAccelerationStructureMemoryRequirementsInfoNV* pInfo, VkMemoryRequirements2KHR* pMemoryRequirements) {
+    VkDevice device, const VkAccelerationStructureMemoryRequirementsInfoNV* pInfo, VkMemoryRequirements2* pMemoryRequirements) {
     VVL_ZoneScoped;
 
     auto device_dispatch = vvl::GetDispatchDevice(device);
@@ -27084,6 +27644,59 @@ VKAPI_ATTR void VKAPI_CALL GetPrivateDataEXT(VkDevice device, VkObjectType objec
     }
 }
 
+VKAPI_ATTR VkResult VKAPI_CALL QueueSetPerfHintQCOM(VkQueue queue, const VkPerfHintInfoQCOM* pPerfHintInfo) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::GetDispatchDevice(queue);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkQueueSetPerfHintQCOM, VulkanTypedHandle(queue, kVulkanObjectTypeQueue));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkQueueSetPerfHintQCOM");
+        for (const auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallValidateQueueSetPerfHintQCOM]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateQueueSetPerfHintQCOM(queue, pPerfHintInfo, error_obj);
+            if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkQueueSetPerfHintQCOM);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkQueueSetPerfHintQCOM");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallRecordQueueSetPerfHintQCOM]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordQueueSetPerfHintQCOM(queue, pPerfHintInfo, record_obj);
+        }
+    }
+    VkResult result;
+    {
+        VVL_ZoneScopedN("Dispatch_vkQueueSetPerfHintQCOM");
+        result = device_dispatch->QueueSetPerfHintQCOM(queue, pPerfHintInfo);
+    }
+    record_obj.result = result;
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkQueueSetPerfHintQCOM");
+
+        if (result == VK_ERROR_DEVICE_LOST) {
+            for (auto& vo : device_dispatch->object_dispatch) {
+                vo->is_device_lost = true;
+            }
+        }
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordQueueSetPerfHintQCOM]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordQueueSetPerfHintQCOM(queue, pPerfHintInfo, record_obj);
+        }
+    }
+    return result;
+}
+
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 VKAPI_ATTR VkResult VKAPI_CALL CreateCudaModuleNV(VkDevice device, const VkCudaModuleCreateInfoNV* pCreateInfo,
                                                   const VkAllocationCallbacks* pAllocator, VkCudaModuleNV* pModule) {
@@ -29001,7 +29614,7 @@ VKAPI_ATTR VkResult VKAPI_CALL GetMemoryRemoteAddressNV(VkDevice device,
     return result;
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL GetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoEXT* pPipelineInfo,
+VKAPI_ATTR VkResult VKAPI_CALL GetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoKHR* pPipelineInfo,
                                                         VkBaseOutStructure* pPipelineProperties) {
     VVL_ZoneScoped;
 
@@ -30295,6 +30908,52 @@ VKAPI_ATTR void VKAPI_CALL SetDeviceMemoryPriorityEXT(VkDevice device, VkDeviceM
             }
             auto lock = vo->WriteLock();
             vo->PostCallRecordSetDeviceMemoryPriorityEXT(device, memory, priority, record_obj);
+        }
+    }
+}
+
+VKAPI_ATTR void VKAPI_CALL CmdSetDispatchParametersARM(VkCommandBuffer commandBuffer,
+                                                       const VkDispatchParametersARM* pDispatchParameters) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::GetDispatchDevice(commandBuffer);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkCmdSetDispatchParametersARM,
+                          VulkanTypedHandle(commandBuffer, kVulkanObjectTypeCommandBuffer));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkCmdSetDispatchParametersARM");
+        for (const auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallValidateCmdSetDispatchParametersARM]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateCmdSetDispatchParametersARM(commandBuffer, pDispatchParameters, error_obj);
+            if (skip) return;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkCmdSetDispatchParametersARM);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkCmdSetDispatchParametersARM");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallRecordCmdSetDispatchParametersARM]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordCmdSetDispatchParametersARM(commandBuffer, pDispatchParameters, record_obj);
+        }
+    }
+    {
+        VVL_ZoneScopedN("Dispatch_vkCmdSetDispatchParametersARM");
+        device_dispatch->CmdSetDispatchParametersARM(commandBuffer, pDispatchParameters);
+    }
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkCmdSetDispatchParametersARM");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordCmdSetDispatchParametersARM]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordCmdSetDispatchParametersARM(commandBuffer, pDispatchParameters, record_obj);
         }
     }
 }
@@ -34249,6 +34908,57 @@ VKAPI_ATTR void VKAPI_CALL GetPhysicalDeviceQueueFamilyDataGraphProcessingEngine
     }
 }
 
+VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+    const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, VkBaseOutStructure* pProperties) {
+    VVL_ZoneScoped;
+
+    auto instance_dispatch = vvl::GetDispatchInstance(physicalDevice);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM,
+                          VulkanTypedHandle(physicalDevice, kVulkanObjectTypePhysicalDevice));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM");
+        for (const auto& vo : instance_dispatch->object_dispatch) {
+            if (!vo) {
+                continue;
+            }
+            skip |= vo->PreCallValidateGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+                physicalDevice, queueFamilyIndex, pQueueFamilyDataGraphProperties, pProperties, error_obj);
+            if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM");
+        for (auto& vo : instance_dispatch->object_dispatch) {
+            if (!vo) {
+                continue;
+            }
+            vo->PreCallRecordGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+                physicalDevice, queueFamilyIndex, pQueueFamilyDataGraphProperties, pProperties, record_obj);
+        }
+    }
+    VkResult result;
+    {
+        VVL_ZoneScopedN("Dispatch_vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM");
+        result = instance_dispatch->GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+            physicalDevice, queueFamilyIndex, pQueueFamilyDataGraphProperties, pProperties);
+    }
+    record_obj.result = result;
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM");
+        for (auto& vo : instance_dispatch->object_dispatch) {
+            if (!vo) {
+                continue;
+            }
+            vo->PostCallRecordGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+                physicalDevice, queueFamilyIndex, pQueueFamilyDataGraphProperties, pProperties, record_obj);
+        }
+    }
+    return result;
+}
+
 VKAPI_ATTR void VKAPI_CALL CmdSetAttachmentFeedbackLoopEnableEXT(VkCommandBuffer commandBuffer, VkImageAspectFlags aspectMask) {
     VVL_ZoneScoped;
 
@@ -35933,6 +36643,63 @@ VKAPI_ATTR void VKAPI_CALL CmdBeginCustomResolveEXT(VkCommandBuffer commandBuffe
     }
 }
 
+VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+    const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties,
+    const VkDataGraphOpticalFlowImageFormatInfoARM* pOpticalFlowImageFormatInfo, uint32_t* pFormatCount,
+    VkDataGraphOpticalFlowImageFormatPropertiesARM* pImageFormatProperties) {
+    VVL_ZoneScoped;
+
+    auto instance_dispatch = vvl::GetDispatchInstance(physicalDevice);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM,
+                          VulkanTypedHandle(physicalDevice, kVulkanObjectTypePhysicalDevice));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM");
+        for (const auto& vo : instance_dispatch->object_dispatch) {
+            if (!vo) {
+                continue;
+            }
+            skip |= vo->PreCallValidateGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+                physicalDevice, queueFamilyIndex, pQueueFamilyDataGraphProperties, pOpticalFlowImageFormatInfo, pFormatCount,
+                pImageFormatProperties, error_obj);
+            if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM");
+        for (auto& vo : instance_dispatch->object_dispatch) {
+            if (!vo) {
+                continue;
+            }
+            vo->PreCallRecordGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+                physicalDevice, queueFamilyIndex, pQueueFamilyDataGraphProperties, pOpticalFlowImageFormatInfo, pFormatCount,
+                pImageFormatProperties, record_obj);
+        }
+    }
+    VkResult result;
+    {
+        VVL_ZoneScopedN("Dispatch_vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM");
+        result = instance_dispatch->GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+            physicalDevice, queueFamilyIndex, pQueueFamilyDataGraphProperties, pOpticalFlowImageFormatInfo, pFormatCount,
+            pImageFormatProperties);
+    }
+    record_obj.result = result;
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM");
+        for (auto& vo : instance_dispatch->object_dispatch) {
+            if (!vo) {
+                continue;
+            }
+            vo->PostCallRecordGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+                physicalDevice, queueFamilyIndex, pQueueFamilyDataGraphProperties, pOpticalFlowImageFormatInfo, pFormatCount,
+                pImageFormatProperties, record_obj);
+        }
+    }
+    return result;
+}
+
 VKAPI_ATTR void VKAPI_CALL CmdSetComputeOccupancyPriorityNV(VkCommandBuffer commandBuffer,
                                                             const VkComputeOccupancyPriorityParametersNV* pParameters) {
     VVL_ZoneScoped;
@@ -36072,6 +36839,51 @@ VKAPI_ATTR VkBool32 VKAPI_CALL GetPhysicalDeviceUbmPresentationSupportSEC(VkPhys
 }
 
 #endif  // VK_USE_PLATFORM_UBM_SEC
+VKAPI_ATTR void VKAPI_CALL CmdSetPrimitiveRestartIndexEXT(VkCommandBuffer commandBuffer, uint32_t primitiveRestartIndex) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::GetDispatchDevice(commandBuffer);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkCmdSetPrimitiveRestartIndexEXT,
+                          VulkanTypedHandle(commandBuffer, kVulkanObjectTypeCommandBuffer));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkCmdSetPrimitiveRestartIndexEXT");
+        for (const auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallValidateCmdSetPrimitiveRestartIndexEXT]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateCmdSetPrimitiveRestartIndexEXT(commandBuffer, primitiveRestartIndex, error_obj);
+            if (skip) return;
+        }
+    }
+    RecordObject record_obj(vvl::Func::vkCmdSetPrimitiveRestartIndexEXT);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkCmdSetPrimitiveRestartIndexEXT");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallRecordCmdSetPrimitiveRestartIndexEXT]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordCmdSetPrimitiveRestartIndexEXT(commandBuffer, primitiveRestartIndex, record_obj);
+        }
+    }
+    {
+        VVL_ZoneScopedN("Dispatch_vkCmdSetPrimitiveRestartIndexEXT");
+        device_dispatch->CmdSetPrimitiveRestartIndexEXT(commandBuffer, primitiveRestartIndex);
+    }
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkCmdSetPrimitiveRestartIndexEXT");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordCmdSetPrimitiveRestartIndexEXT]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordCmdSetPrimitiveRestartIndexEXT(commandBuffer, primitiveRestartIndex, record_obj);
+        }
+    }
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL CreateAccelerationStructureKHR(VkDevice device,
                                                               const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
                                                               const VkAllocationCallbacks* pAllocator,
@@ -37804,6 +38616,18 @@ const vvl::unordered_map<std::string, function_data>& GetNameToFuncPtrMap() {
         {"vkGetAndroidHardwareBufferPropertiesANDROID", {kFuncTypeDev, (void*)GetAndroidHardwareBufferPropertiesANDROID}},
         {"vkGetMemoryAndroidHardwareBufferANDROID", {kFuncTypeDev, (void*)GetMemoryAndroidHardwareBufferANDROID}},
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
+        {"vkCreateGpaSessionAMD", {kFuncTypeDev, (void*)CreateGpaSessionAMD}},
+        {"vkDestroyGpaSessionAMD", {kFuncTypeDev, (void*)DestroyGpaSessionAMD}},
+        {"vkSetGpaDeviceClockModeAMD", {kFuncTypeDev, (void*)SetGpaDeviceClockModeAMD}},
+        {"vkGetGpaDeviceClockInfoAMD", {kFuncTypeDev, (void*)GetGpaDeviceClockInfoAMD}},
+        {"vkCmdBeginGpaSessionAMD", {kFuncTypeDev, (void*)CmdBeginGpaSessionAMD}},
+        {"vkCmdEndGpaSessionAMD", {kFuncTypeDev, (void*)CmdEndGpaSessionAMD}},
+        {"vkCmdBeginGpaSampleAMD", {kFuncTypeDev, (void*)CmdBeginGpaSampleAMD}},
+        {"vkCmdEndGpaSampleAMD", {kFuncTypeDev, (void*)CmdEndGpaSampleAMD}},
+        {"vkGetGpaSessionStatusAMD", {kFuncTypeDev, (void*)GetGpaSessionStatusAMD}},
+        {"vkGetGpaSessionResultsAMD", {kFuncTypeDev, (void*)GetGpaSessionResultsAMD}},
+        {"vkResetGpaSessionAMD", {kFuncTypeDev, (void*)ResetGpaSessionAMD}},
+        {"vkCmdCopyGpaSessionResultsAMD", {kFuncTypeDev, (void*)CmdCopyGpaSessionResultsAMD}},
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         {"vkCreateExecutionGraphPipelinesAMDX", {kFuncTypeDev, (void*)CreateExecutionGraphPipelinesAMDX}},
         {"vkGetExecutionGraphPipelineScratchSizeAMDX", {kFuncTypeDev, (void*)GetExecutionGraphPipelineScratchSizeAMDX}},
@@ -37925,6 +38749,7 @@ const vvl::unordered_map<std::string, function_data>& GetNameToFuncPtrMap() {
         {"vkDestroyPrivateDataSlotEXT", {kFuncTypeDev, (void*)DestroyPrivateDataSlotEXT}},
         {"vkSetPrivateDataEXT", {kFuncTypeDev, (void*)SetPrivateDataEXT}},
         {"vkGetPrivateDataEXT", {kFuncTypeDev, (void*)GetPrivateDataEXT}},
+        {"vkQueueSetPerfHintQCOM", {kFuncTypeDev, (void*)QueueSetPerfHintQCOM}},
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         {"vkCreateCudaModuleNV", {kFuncTypeDev, (void*)CreateCudaModuleNV}},
         {"vkGetCudaModuleCacheNV", {kFuncTypeDev, (void*)GetCudaModuleCacheNV}},
@@ -38008,6 +38833,7 @@ const vvl::unordered_map<std::string, function_data>& GetNameToFuncPtrMap() {
         {"vkCmdDrawClusterHUAWEI", {kFuncTypeDev, (void*)CmdDrawClusterHUAWEI}},
         {"vkCmdDrawClusterIndirectHUAWEI", {kFuncTypeDev, (void*)CmdDrawClusterIndirectHUAWEI}},
         {"vkSetDeviceMemoryPriorityEXT", {kFuncTypeDev, (void*)SetDeviceMemoryPriorityEXT}},
+        {"vkCmdSetDispatchParametersARM", {kFuncTypeDev, (void*)CmdSetDispatchParametersARM}},
         {"vkGetDescriptorSetLayoutHostMappingInfoVALVE", {kFuncTypeDev, (void*)GetDescriptorSetLayoutHostMappingInfoVALVE}},
         {"vkGetDescriptorSetHostMappingVALVE", {kFuncTypeDev, (void*)GetDescriptorSetHostMappingVALVE}},
         {"vkCmdCopyMemoryIndirectNV", {kFuncTypeDev, (void*)CmdCopyMemoryIndirectNV}},
@@ -38102,6 +38928,8 @@ const vvl::unordered_map<std::string, function_data>& GetNameToFuncPtrMap() {
          {kFuncTypePdev, (void*)GetPhysicalDeviceQueueFamilyDataGraphPropertiesARM}},
         {"vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM",
          {kFuncTypePdev, (void*)GetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM}},
+        {"vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM",
+         {kFuncTypePdev, (void*)GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM}},
         {"vkCmdSetAttachmentFeedbackLoopEnableEXT", {kFuncTypeDev, (void*)CmdSetAttachmentFeedbackLoopEnableEXT}},
 #ifdef VK_USE_PLATFORM_SCREEN_QNX
         {"vkGetScreenBufferPropertiesQNX", {kFuncTypeDev, (void*)GetScreenBufferPropertiesQNX}},
@@ -38147,11 +38975,14 @@ const vvl::unordered_map<std::string, function_data>& GetNameToFuncPtrMap() {
         {"vkClearShaderInstrumentationMetricsARM", {kFuncTypeDev, (void*)ClearShaderInstrumentationMetricsARM}},
         {"vkCmdEndRendering2EXT", {kFuncTypeDev, (void*)CmdEndRendering2EXT}},
         {"vkCmdBeginCustomResolveEXT", {kFuncTypeDev, (void*)CmdBeginCustomResolveEXT}},
+        {"vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM",
+         {kFuncTypePdev, (void*)GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM}},
         {"vkCmdSetComputeOccupancyPriorityNV", {kFuncTypeDev, (void*)CmdSetComputeOccupancyPriorityNV}},
 #ifdef VK_USE_PLATFORM_UBM_SEC
         {"vkCreateUbmSurfaceSEC", {kFuncTypeInst, (void*)CreateUbmSurfaceSEC}},
         {"vkGetPhysicalDeviceUbmPresentationSupportSEC", {kFuncTypePdev, (void*)GetPhysicalDeviceUbmPresentationSupportSEC}},
 #endif  // VK_USE_PLATFORM_UBM_SEC
+        {"vkCmdSetPrimitiveRestartIndexEXT", {kFuncTypeDev, (void*)CmdSetPrimitiveRestartIndexEXT}},
         {"vkCreateAccelerationStructureKHR", {kFuncTypeDev, (void*)CreateAccelerationStructureKHR}},
         {"vkDestroyAccelerationStructureKHR", {kFuncTypeDev, (void*)DestroyAccelerationStructureKHR}},
         {"vkCmdBuildAccelerationStructuresKHR", {kFuncTypeDev, (void*)CmdBuildAccelerationStructuresKHR}},

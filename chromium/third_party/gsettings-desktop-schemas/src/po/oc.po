@@ -1,0 +1,4098 @@
+# Occitan (post 1500) translation for gsettings-desktop-schemas
+# Copyright (c) 2011 Rosetta Contributors and Canonical Ltd 2011
+# This file is distributed under the same license as the gsettings-desktop-schemas package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2011.
+# Cédric Valmary (totenoc.eu) <cvalmary@yahoo.fr>, 2016.
+msgid ""
+msgstr ""
+"Project-Id-Version: gsettings-desktop-schemas\n"
+"Report-Msgid-Bugs-To: https://gitlab.gnome.org/GNOME/gsettings-desktop-"
+"schemas/issues/\n"
+"POT-Creation-Date: 2025-01-26 20:33+0000\n"
+"PO-Revision-Date: 2025-01-26 22:25+0100\n"
+"Last-Translator: Quentin PAGÈS\n"
+"Language-Team: Tot En Òc\n"
+"Language: oc\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"X-Generator: Poedit 3.5\n"
+"X-Launchpad-Export-Date: 2016-04-19 19:12+0000\n"
+"X-Project-Style: gnome\n"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:6
+msgid "On-screen keyboard"
+msgstr "Clavièr visual"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:7
+msgid "Whether the on-screen keyboard is turned on."
+msgstr "Indica se lo clavièr visual es activat."
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:11
+msgid "Screen magnifier"
+msgstr "Lópia d'ecran"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:12
+msgid "Whether the screen magnifier is turned on."
+msgstr "Indica se la lópia d'ecran es activada."
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:16
+msgid "Screen reader"
+msgstr "Lector d'ecran"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:17
+msgid "Whether the screen reader is turned on."
+msgstr "Indica se lo lector d'ecran es activat."
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:6
+msgid "Always show the Universal Access status icon"
+msgstr "Totjorn afichar l'icòna d'estat de l'accès universal"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:7
+msgid ""
+"This key overrides the automatic hiding of the Universal Access status icon "
+"when no accessibility features are enabled."
+msgstr ""
+"Aquesta clau surcarga l'amagatge automatic de l'icòna d'estat de l'accès "
+"universal quand cap de foncion d'accessibilitat es pas activada."
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:14
+msgid "Always show the text caret"
+msgstr "Totjorn afichar lo cursor de tèxte"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:15
+msgid ""
+"This key overrides the hiding of the text caret in noneditable text in "
+"applications."
+msgstr ""
+"Aquesta clau surcarga l'amagatge del cursor de tèxte dins lo tèxte non "
+"editable dins las aplicacions."
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:6
+msgid "High contrast"
+msgstr "Fòrt contraste"
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:7
+msgid "Whether to use the high contrast style."
+msgstr "Indica se cal utilizar l’estil contraste fòrt."
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:13
+msgid "Show status shapes"
+msgstr ""
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:14
+msgid ""
+"Whether to use shapes to indicate status in addition or instead of color."
+msgstr ""
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:6
+msgid "Enable accessibility keyboard shortcuts"
+msgstr "Activar los acorchis de clavièr d'accessibilitat"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:10
+msgid "Beep when a keyboard accessibility feature changes"
+msgstr ""
+"Emetre un bip quand una foncion d'accessibilitat amb lo clavièr es modificada"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:11
+msgid ""
+"Whether to beep when a keyboard accessibility feature is enabled or disabled."
+msgstr ""
+"Indica se cal emetre un bip quand una foncion d'accessibilitat al clavièr es "
+"activada o desactivada."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:15
+msgid "Disable keyboard accessibility after a timeout"
+msgstr "Desactivar l'accessibilitat amb lo clavièr aprèp una temporizacion"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:16
+msgid ""
+"Whether to disable keyboard accessibility after a timeout, useful for shared "
+"machines."
+msgstr ""
+"Indica se cal desactivar l'accessibilitat amb lo clavièr aprèp una "
+"temporizacion, es utile per las maquinas partejadas."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:20
+msgid "Duration of the disabling timeout"
+msgstr "Durada del periòde abans desactivacion"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:21
+msgid "Duration of the timeout before disabling the keyboard accessibility."
+msgstr ""
+"Durada de la temporizacion abans de desactivar l'accessibilitat amb lo "
+"clavièr."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:25
+msgid "Enable “Bounce Keys”"
+msgstr "Activar los « Rebombs de tòcas »"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:26
+msgid "Whether the “Bounce Keys” keyboard accessibility feature is turned on."
+msgstr ""
+"Indica se la foncion d’accessibilitat « Rebombs de tòcas » del clavièr es "
+"activada."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:30
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:65
+msgid "Minimum interval in milliseconds"
+msgstr "Interval minimum en millisegondas"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:31
+msgid "Ignore multiple presses of the same key within this many milliseconds."
+msgstr ""
+"Ignorer les pressions multiples de la meteissa tòca pendent aquesta durada "
+"en millisegondas."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:35
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:80
+msgid "Beep when a key is rejected"
+msgstr "Bip se la tòca es regetada"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:36
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:81
+msgid "Whether to beep when a key is rejected."
+msgstr "Indica se cal emetre un bip quand una tòca es refusada."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:40
+msgid "Enable “Mouse Keys”"
+msgstr "Activar las « Tòcas de la mirga »"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:41
+msgid "Whether the “Mouse Keys” accessibility feature is turned on."
+msgstr ""
+"Indica se la foncion d’accessibilitat « Tòcas de la mirga » es activada."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:45
+msgid "Pixels per seconds"
+msgstr "Pixèls per segondas"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:46
+msgid "How many pixels per second to move at the maximum speed."
+msgstr "Nombre de pixèls per segonda per se desplaçar a la velocitat maximala."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:50
+msgid "How long to accelerate in milliseconds"
+msgstr "Durada d'acceleracion en millisegondas"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:51
+msgid "How many milliseconds it takes to go from 0 to maximum speed."
+msgstr ""
+"Nombre de millisegondas necessàrias per passar de 0 a la velocitat maximum."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:55
+msgid "Initial delay in milliseconds"
+msgstr "Pausa iniciala en millisegondas"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:56
+msgid ""
+"How many milliseconds to wait before mouse movement keys start to operate."
+msgstr ""
+"Nombre de millisegondas d'esperar abans que las tòcas de movements de la "
+"mirga comencen d'operar."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:60
+msgid "Enable “Slow Keys”"
+msgstr "Activar las « Tòcas lentas »"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:61
+msgid "Whether the “Slow Keys” accessibility feature is turned on."
+msgstr "Indica se la foncion d’accessibilitat « Tòcas lentas » es activada."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:66
+msgid ""
+"Do not accept a key as being pressed unless held for this many milliseconds."
+msgstr ""
+"Relambi en millisegondas entre la quichada sus una tòca e son acceptacion."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:70
+msgid "Beep when a key is first pressed"
+msgstr "Emetre un bip al moment ont una tòca es quichada"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:71
+msgid "Whether to beep when a key is first pressed."
+msgstr "Indica se cal emetre un bip al moment ont una tòca es quichada."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:75
+msgid "Beep when a key is accepted"
+msgstr "Bip se la tòca es acceptada"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:76
+msgid "Whether to beep when a key is accepted."
+msgstr "Indica se cal emetre un bip quand una tòca es acceptada."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:85
+msgid "Enable sticky keys"
+msgstr "Activar las tòcas remanentas"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:86
+msgid "Whether the sticky keys accessibility feature is turned on."
+msgstr "Indica se la foncion d'accessibilitat Tòcas remanentas es activada."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:90
+msgid "Disable when two keys are pressed at the same time"
+msgstr "Desactivar se doas tòcas son quichadas simultanèament"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:91
+msgid ""
+"Whether to disable sticky keys if two keys are pressed at the same time."
+msgstr ""
+"Indica se cal desactivar las tòcas remanentas se doas tòcas son quichadas "
+"simultanèament."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:95
+msgid "Beep when a modifier is pressed."
+msgstr "Emetre un bip quand una tòca modificatritz es quichada."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:96
+msgid "Whether to beep when a modifier key is pressed."
+msgstr "Indica se cal emetre un bip quand una tòca modificatritz es quichada."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:100
+msgid "Enable “Toggle Keys”"
+msgstr "Activar las « Tòcas de verrolhatge »"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:101
+msgid "Whether the “Toggle Keys” accessibility feature is turned on."
+msgstr ""
+"Indica se la foncion d'accessibilitat « Tòcas de verrolhatge » es activada."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:8
+msgid "Mouse Tracking Mode"
+msgstr "Mòde de seguiment de la mirga"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:9
+msgid ""
+"Determines the position of the magnified mouse image within the magnified "
+"view and how it reacts to system mouse movement. The values are • none: no "
+"mouse tracking; • centered: the mouse image is displayed at the center of "
+"the zoom region (which also represents the point under the system mouse) and "
+"the magnified contents are scrolled as the system mouse moves; • "
+"proportional: the position of the magnified mouse in the zoom region is "
+"proportionally the same as the position of the system mouse on screen; • "
+"push: when the magnified mouse intersects a boundary of the zoom region, the "
+"contents are scrolled into view."
+msgstr ""
+"Determina la posicion de l'imatge agrandit de la mirga a l'interior de la "
+"region agrandida e cossí reagís al movement de la mirga sistèma. Las valors "
+"son - « none » (pas cap) : pas cap de seguiment de la mirga ; - « centered "
+"» (centrat) : l'imatge de la mirga es afichat al centre de la region "
+"d'agrandiment (qui representa tanben lo punt jos la mirga sistèma) e lo "
+"contengut agrandit desfila quand la mirga sistèma bolega ; - « proportional "
+"» (proporcional) : la posicion de la mirga agrandida dins la region "
+"agrandida es proporcionalament identica a la posicion de la mirga sistèma "
+"sus l'ecran ; - « push » (quichar) : quand la mirga agrandida atenh un bòrd "
+"de la region agrandida, lo contengut desfila dins la region."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:26
+msgid "Focus Tracking Mode"
+msgstr "Mòde de seguiment del fòcus"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:27
+msgid ""
+"Determines the position of the focused widget within magnified view. The "
+"values are: • none: no focus tracking • centered: the focused image is "
+"displayed at the center of the zoom region (which also represents the point "
+"under the system focus) and the magnified contents are scrolled as the "
+"system focus moves • proportional: the position of the magnified focus in "
+"the zoom region is proportionally the same as the position of the system "
+"focus on screen • push: when the magnified focus intersects a boundary of "
+"the zoom region, the contents are scrolled into view"
+msgstr ""
+"Determina la posicion del component qu'a lo fòcus a l'interior de la region "
+"agrandida. Las valors son : • « none » (pas cap) : pas cap de seguiment de "
+"la mirga • « centered » (centrat) : l'imatge del component qu'a lo fòcus es "
+"afichat al centre de la region d'agrandiment (que representa tanben lo punt "
+"jol focus del sistèma) e lo contengut agrandit desfila quand lo focus del "
+"sistèma bolega • « proportional » (proporcional) : la posicion del focus "
+"agrandit dins la region agrandida es proporcionalament identica a la "
+"posicion del fòcus sistèma sus l'ecran • « push » (quichar) : quand lo fòcus "
+"agrandit atenh un bòrd de la region agrandida, lo contengut desfila dins la "
+"region"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:46
+msgid "Caret Tracking Mode"
+msgstr "Mòde de seguiment del cursor"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:47
+msgid ""
+"Determines the position of the caret within magnified view. The values are: "
+"• none: no caret tracking • centered: the image of the caret is displayed at "
+"the center of the zoom region (which also represents the point under the "
+"system caret) and the magnified contents are scrolled as the system caret "
+"moves • proportional: the position of the magnified caret in the zoom region "
+"is proportionally the same as the position of the system caret on screen • "
+"push: when the magnified caret intersects a boundary of the zoom region, the "
+"contents are scrolled into view"
+msgstr ""
+"Determina la posicion del cursor a l'interior de la region agrandida. Las "
+"valors son :\n"
+"\n"
+"- « none » (pas cap) : pas cap de seguiment del cursor ;\n"
+"\n"
+"- « centered » (centrat) : l'imatge del cursor es afichada al centre de la "
+"region d'agrandiment (qui representa tanben lo punt jos lo cursor sistèma) e "
+"lo contengut agrandit desfila quand lo cursor sistèma bolega ;\n"
+"\n"
+"- « proportional » (proporcional) : la posicion del cursor agrandit dins la "
+"region agrandida es proporcionalament identica a la posicion del cursor "
+"sistèma sus l'ecran ;\n"
+"\n"
+"- « push » (quichar) : quand lo cursor agrandit atenh un bòrd de la region "
+"agrandida, lo contengut desfila dins la region"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:64
+msgid "Screen position"
+msgstr "Posicion a l'ecran"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:65
+msgid ""
+"The magnified view either fills the entire screen, or occupies the top-half, "
+"bottom-half, left-half, or right-half of the screen."
+msgstr ""
+"La vista agrandida emplena la totalitat de l'ecran, o ocupa la meitat nauta, "
+"bassa, esquèrra o dreita de l'ecran."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:73
+msgid "Magnification factor"
+msgstr "Factor d'agrandiment"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:74
+msgid ""
+"The power of the magnification. A value of 1.0 means no magnification. A "
+"value of 2.0 doubles the size."
+msgstr ""
+"La poténcia de l'agrandiment. Una valor de 1.0 significa pas cap "
+"d'agrandiment. Una valor de 2.0 double la talha."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:81
+msgid "Enable lens mode"
+msgstr "Activar lo mòde loupe"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:82
+msgid ""
+"Whether the magnified view should be centered over the location of the "
+"system mouse and move with it."
+msgstr ""
+"Indica se la region agrandida deu èsser centrada en dessús de l'emplaçament "
+"de la mirga sistèma e se desplaçar amb aquela."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:89
+msgid "Scroll magnified contents beyond the edges of the desktop"
+msgstr "Far desfilar la region agrandida de delà dels bòrds del burèu"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:92
+msgid ""
+"For centered mouse tracking, when the system pointer is at or near the edge "
+"of the screen, the magnified contents continue to scroll such that the "
+"screen edge moves into the magnified view."
+msgstr ""
+"Per lo suivi centrat de la mirga, quand lo puntador sistèma es près del bòrd "
+"o al bòrd de l'ecran, lo contengut agrandit contunhan de desfilar de sorte "
+"que lo bòrd de l'ecran se desplaça dins la region agrandida."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:102
+msgid "Show or hide crosshairs"
+msgstr "Afichar o amagar lo puntador en crotz"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:103
+msgid ""
+"Enables/disables display of crosshairs centered on the magnified mouse "
+"sprite."
+msgstr ""
+"Activa/desactiva l'afichatge del puntador en crotz centrat sul dessenh de la "
+"mirga agrandida."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:110
+msgid "Thickness of the crosshairs in pixels"
+msgstr "Espessor del puntador en crotz en pixèls"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:111
+msgid ""
+"Width in pixels of the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr ""
+"Largor exprimida en pixèls de la linha verticala e orizontala que compausan "
+"lo puntador en crotz."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:117
+msgid "Color of the crosshairs"
+msgstr "Color del puntador en crotz"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:118
+msgid ""
+"The color of the the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr ""
+"La color de la linha verticala e orizontala que compausan lo puntador en "
+"crotz."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:126
+msgid "Opacity of the crosshairs"
+msgstr "Opacitat del puntador en crotz"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:127
+msgid ""
+"Determines the transparency of the crosshairs, from fully opaque to fully "
+"transparent."
+msgstr ""
+"Determina la transparéncia del puntador en crotz, de enlistament opac a "
+"enlistament transparent."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:135
+msgid "Length of the crosshairs in pixels"
+msgstr "Longor del puntador en crotz en pixèls"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:136
+msgid ""
+"Determines the length in pixels of the vertical and horizontal lines that "
+"make up the crosshairs."
+msgstr ""
+"Determina la longor en pixèls de la linha verticala e orizontala del "
+"puntador en crotz."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:143
+msgid "Clip the crosshairs at the center"
+msgstr "Talhar lo puntador en crotz al centre"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:144
+msgid ""
+"Determines whether the crosshairs intersect the magnified mouse sprite, or "
+"are clipped such that the ends of the horizontal and vertical lines surround "
+"the mouse image."
+msgstr ""
+"Determina se lo puntador en crotz se superpausa amb lo dessenh de la mirga "
+"agrandida o es coupée de sorte que las extremitats de las linhas orizontalas "
+"e verticalas entourent l'imatge de la mirga."
+
+# Bruno : lightness, brightness ???
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:152
+msgid "Inverse lightness"
+msgstr "Luminositat invèrsa"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:153
+msgid ""
+"Determines whether the lightness values are inverted: darker colors become "
+"lighter and vice versa, and white and black are interchanged."
+msgstr ""
+"Determina se las valors de luminositat son inversadas : las colors escuras "
+"venon las mai claras e vice versa e lo blanc e negre son escambiats."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:161
+msgid "Color Saturation"
+msgstr "Saturacion de las colors"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:162
+msgid ""
+"Represents a change to the color saturation, from 0.0 (grayscale) to 1.0 "
+"(full color)."
+msgstr ""
+"Representa un cambiament de la saturacion de las colors, de 0.0 (nivèls de "
+"gris) a 1.0 (plenas colors)."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:170
+msgid "Change brightness of red"
+msgstr "Modificacion de la luminositat del roge"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:171
+msgid ""
+"Represents a change to the default brightness of the red component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Representa una modificacion de la luminositat de la componenta roja per "
+"defaut. Zèro significa pas cap de modificacion, las valors inferioras a zèro "
+"una diminucion e las valors superioras una aumentacion."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:180
+msgid "Change brightness of green"
+msgstr "Modificacion de la luminositat del verd"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:181
+msgid ""
+"Represents a change to the default brightness for the green component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Representa una modificacion de la luminositat de la componenta verda per "
+"defaut. Zèro significa pas cap de modificacion, las valors inferioras a zèro "
+"una diminucion e las valors superioras una aumentacion."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:190
+msgid "Change brightness of blue"
+msgstr "Modificacion de la luminositat del blau"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:191
+msgid ""
+"Represents a change to the default brightness for the blue component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Representa una modificacion de la luminositat de la componenta blava per "
+"defaut. Zèro significa pas cap de modificacion, las valors inferioras a zèro "
+"una diminucion e las valors superioras una aumentacion."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:200
+msgid "Change contrast of red"
+msgstr "Modificacion del contraste del roge"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:201
+msgid ""
+"Represents a change to the default contrast of the red component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Representa una modificacion del contraste de la componenta roja per defaut. "
+"Zèro significa pas cap de modificacion, las valors inferioras a zèro una "
+"diminucion e las valors superioras una aumentacion."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:210
+msgid "Change contrast of green"
+msgstr "Modificacion del contraste del verd"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:211
+msgid ""
+"Represents a change to the default contrast of the green component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Representa una modificacion del contraste de la componenta verda per defaut. "
+"Zèro significa pas cap de modificacion, las valors inferioras a zèro una "
+"diminucion e las valors superioras una aumentacion."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:220
+msgid "Change contrast of blue"
+msgstr "Modificacion del contraste del blau"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:221
+msgid ""
+"Represents a change to the default contrast of the blue component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Representa una modificacion del contraste de la componenta blava per defaut. "
+"Zèro significa pas cap de modificacion, las valors inferioras a zèro una "
+"diminucion e las valors superioras una aumentacion."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:6
+msgid "Dwell click time"
+msgstr "Relambi del clic per manteniment"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:7
+msgid "Time in seconds before a click is triggered."
+msgstr "Relambi exprimit en segondas abans qu'un clic siá desenclavat."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:11
+msgid "Movement threshold"
+msgstr "Lindal de deteccion del movement"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:12
+msgid "Distance in pixels before movement will be recognized."
+msgstr "Distància exprimida en pixèls abans que lo movement siá reconegut."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:16
+msgid "Gesture single click"
+msgstr "Movement pel clic simple"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:17
+msgid "Direction to perform a single click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Direccion per efectuar un clic simple (« left » (esquèrra), « right "
+"» (dreita), « up » (naut), « down » (bas))."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:21
+msgid "Gesture double click"
+msgstr "Movement pel clic doble"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:22
+msgid "Direction to perform a double click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Direccion per efectuar un clic doble (« left » (esquèrra), « right "
+"» (dreita), « up » (naut), « down » (bas))."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:26
+msgid "Gesture drag click"
+msgstr "Movement pel clic lisar-depausar"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:27
+msgid "Direction to perform dragging (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Direccion per lisar-depausar (« left » (esquèrra), « right » (dreita), « up "
+"» (naut), « down » (bas))."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:31
+msgid "Gesture secondary click"
+msgstr "Movement pel clic segondari"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:32
+msgid "Direction to perform a secondary click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Direccion per efectuar un clic segondari (« left » (esquèrra), « right "
+"» (dreita), « up » (naut), « down » (bas))."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:36
+msgid "Dwell click mode"
+msgstr "Mòde de clic per manteniment"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:37
+msgid ""
+"The active dwell click mode. Possible values are “window” and “gesture”."
+msgstr ""
+"Lo mòde del clic per manten actiu. Las valors possiblas son « window "
+"» (fenèstra) e « gesture » (geste)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:41
+msgid "Show click type window"
+msgstr "Afichar la fenèstra del tipe de clic"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:42
+msgid "Show click type window."
+msgstr "Afichar la fenèstra del tipe de clic."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:46
+msgid "Enable dwell clicks"
+msgstr "Activar los clics per manteniment"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:47
+msgid "Enable dwell clicks."
+msgstr "Activar los clics per manteniment."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:51
+msgid "Secondary click enabled"
+msgstr "Clic segondari activat"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:52
+msgid "Enable simulated secondary clicks"
+msgstr "Activar los clics segondaris simulats"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:56
+msgid "Secondary click time"
+msgstr "Relambi del clic segondari"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:57
+msgid "Time in seconds before a simulated secondary click is triggered."
+msgstr ""
+"Temps exprimit en segondas abans qu'un clic segondari simulat ne siá "
+"desenclavat."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:6
+msgid "Folder children"
+msgstr "Dorsièrs enfants"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:7
+msgid ""
+"List of relative settings paths at which app-folders are stored. Each folder "
+"uses the org.gnome.desktop.app-folders.folder schema."
+msgstr ""
+"Lista dels camins relatifs ont los paramètres dels dorsièrs d'aplicacion son "
+"stockés. Ces emplaçaments utilisent lo schéma org.gnome.desktop.app-folders."
+"folder."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:15
+msgid "Folder name"
+msgstr "Nom del dorsièr"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:16
+msgid "The name of the application folder."
+msgstr "Lo nom del dorsièr d'aplicacions."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:20
+msgid "Translate the name"
+msgstr "Traduire lo nom"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:21
+msgid ""
+"Whether the name key is a filename to be looked up in /usr/share/desktop-"
+"directories."
+msgstr ""
+"Indica se la clau « name » es un fichièr a cercar dins /usr/share/desktop-"
+"directories."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:26
+msgid "Applications"
+msgstr "Aplicacions"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:27
+msgid ""
+"The list of IDs of applications that are explicitly included in this folder."
+msgstr ""
+"La lista dels identificants de las aplicacions que son explicitament "
+"inclusas dins aqueste dorsièr."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:32
+msgid "Categories"
+msgstr "Categorias"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:33
+msgid ""
+"A list of categories for which apps will be placed into this folder by "
+"default, in addition to the apps that are listed in the apps key."
+msgstr ""
+"Una lista de categorias dont las aplicacions seràn per defaut plaçadas dins "
+"aqueste dorsièr, amai de las aplicacions listadas dins la clau « apps »."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:39
+msgid "Excluded applications"
+msgstr "Applications exclusas"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:40
+msgid ""
+"A list of IDs of applications that are excluded from this folder. This can "
+"be used to remove applications that would otherwise be included by category."
+msgstr ""
+"Una lista dels identificants de las aplicacions que son exclusas d'aqueste "
+"dorsièr. Pòt èsser utilizada per levar d'aplicacions que serián inclusas del "
+"fait de lor categoria."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:6
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:90
+msgid "Picture Options"
+msgstr "Opcions de l'imatge"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:7
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:91
+msgid ""
+"Determines how the image set by wallpaper_filename is rendered. Possible "
+"values are “none”, “wallpaper”, “centered”, “scaled”, “stretched”, “zoom”, "
+"“spanned”."
+msgstr ""
+"Determina lo biais que l'imatge definit per wallpaper_filename es rendut. "
+"Las valors possiblas son « none » (pas cap), « wallpaper » (mosaïca), "
+"« centered » (centrat), « scaled » (redimensionat), « stretched » (estirat), "
+"« zoom », « spanned » (espandit)."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:15
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:99
+msgid "Picture URI"
+msgstr "URI de l'imatge"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:16
+#: schemas/org.gnome.desktop.background.gschema.xml.in:24
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:100
+msgid ""
+"URI to use for the background image. Note that the backend only supports "
+"local (file://) URIs."
+msgstr ""
+"URI d'utilizar per l'imatge de rèireplan. Notatz que lo motor pren en carga "
+"unicament los URI locals (file://)."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:23
+msgid "Picture URI (dark)"
+msgstr "URI de l'imatge (escur)"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:32
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:108
+msgid "Picture Opacity"
+msgstr "Opacitat de l'imatge"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:33
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:109
+msgid "Opacity with which to draw the background picture."
+msgstr "Opacitat amb laquina dessenhar l'imatge de rèireplan."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:39
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:115
+msgid "Primary Color"
+msgstr "Color primària"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:40
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:116
+msgid "Left or Top color when drawing gradients, or the solid color."
+msgstr ""
+"Color d'esquèrra o del naut quand se dessenha de degradats, o color unida."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:46
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:122
+msgid "Secondary Color"
+msgstr "Color segondària"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:47
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:123
+msgid "Right or Bottom color when drawing gradients, not used for solid color."
+msgstr ""
+"Color de dreita o de bas quand se dessenha de degradats, pas utilizada per "
+"la color unida."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:53
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:129
+msgid "Color Shading Type"
+msgstr "Tipe de color d'ombratge"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:54
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:130
+msgid ""
+"How to shade the background color. Possible values are “horizontal”, "
+"“vertical”, and “solid”."
+msgstr ""
+"Cossí far un degradat de color de rèireplan. Las valors possiblas son « "
+"horizontal », « vertical » e « solid » (color unida)."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:61
+msgid "Have file manager handle the desktop"
+msgstr "Far en sorte que lo gestionari de fichièrs gerís lo burèu"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:62
+msgid "If set to true, then file manager will draw the icons on the desktop."
+msgstr ""
+"Se definit a true, alara lo gestionari de fichièrs dessenha las icònas sul "
+"burèu."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:10
+msgid "List of breaks that are currently enabled"
+msgstr ""
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:22
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:87
+msgid "Time between breaks"
+msgstr "Temps entre las pausas"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:23
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:88
+#, fuzzy
+#| msgid "Delay between repeats in milliseconds."
+msgid "The time between rest breaks, in seconds."
+msgstr "Relambi entre las repeticions en millisegondas."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:29
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:94
+msgid "Duration of each break"
+msgstr "Durada de cada pausa"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:30
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:95
+msgid "The duration of each rest break, in seconds."
+msgstr ""
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:36
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:101
+msgid "Amount to delay break if requested"
+msgstr ""
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:37
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:102
+msgid ""
+"The amount to delay taking the break by, if the user requests a delay, in "
+"seconds."
+msgstr ""
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:43
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:108
+msgid "Fade screen during breaks"
+msgstr "Passir l’ecran pendent las pausas"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:44
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:109
+msgid "True to fade the screen during rest breaks."
+msgstr ""
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:49
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:114
+msgid "Lock screen during breaks"
+msgstr "Verrolhar l’ecran pendent las pausas"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:50
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:115
+msgid "True to lock the screen during rest breaks."
+msgstr ""
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:55
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:120
+msgid "Play sound when a break finishes"
+msgstr ""
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:56
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:121
+msgid "True to play a sound when a break finishes."
+msgstr ""
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:61
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:79
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:126
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:144
+msgid "Notify when a break is due"
+msgstr ""
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:62
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:127
+msgid "True to emit a notification when a break is due to start."
+msgstr ""
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:67
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:132
+msgid "Notify when a break is upcoming"
+msgstr ""
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:68
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:133
+msgid "True to emit a notification a few minutes before a break is due."
+msgstr ""
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:73
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:138
+msgid "Notify when a break is overdue"
+msgstr ""
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:74
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:139
+msgid "True to emit a notification when a break is overdue."
+msgstr ""
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:80
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:145
+msgid "True to show a prominent countdown shortly before a break is due."
+msgstr ""
+
+#: schemas/org.gnome.desktop.calendar.gschema.xml.in:6
+msgid "Show the week date in the calendar"
+msgstr "Afichar lo numèro de las setmanas dins lo calendièr"
+
+#: schemas/org.gnome.desktop.calendar.gschema.xml.in:7
+msgid "If true, display the ISO week date in the calendar."
+msgstr "Se marcat, aficha lo numèro de la setmana ISO al calendièr."
+
+#: schemas/org.gnome.desktop.datetime.gschema.xml.in:6
+msgid "Automatically update timezone"
+msgstr "Met automaticament a jorn lo fus orari"
+
+#: schemas/org.gnome.desktop.datetime.gschema.xml.in:7
+msgid "Whether to automatically update the timezone using geolocation."
+msgstr ""
+"Indica se lo fus orari deu èsser mis a jorn automaticament en utilizant la "
+"geolocalizacion."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:14
+msgid "Default calendar"
+msgstr "Calendièr per defaut"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:15
+msgid ""
+"Default calendar application DEPRECATED: This key is deprecated and ignored. "
+"The preferred calendar application is the application handling the text/"
+"calendar mime type."
+msgstr ""
+"Applicacion per defaut per l'agenda\n"
+"\n"
+"DESCONSELHAT : aquesta clau es desconselhada e ignorada. L'aplicacion "
+"preferida per l'agenda es l'aplicacion prenent en carga lo tipe MIME text/"
+"calendar."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:24
+msgid "Calendar needs terminal"
+msgstr "Lo calendièr deu aver un terminal"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:25
+msgid ""
+"Whether the default calendar application needs a terminal to run. "
+"DEPRECATED: This key is deprecated and ignored. The preferred calendar "
+"application is the application handling the text/calendar mime type, whether "
+"it needs a terminal is taken from its desktop file."
+msgstr ""
+"Indica se l'aplicacion per defaut per l'agenda deu èsser executada dins un "
+"terminal. DESCONSELHAT : aquesta clau es desconselhada e ignorada. "
+"L'aplicacion preferida per l'agenda es l'aplicacion prenant en carga lo tipe "
+"MIME text/calendar. Lo fait qu'aquesta aplicacion aja besonh d'un terminal "
+"es determinat a partir de son fichièr desktop."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:37
+msgid "Default tasks"
+msgstr "Prètzfaits per defaut"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:38
+msgid "Default tasks application."
+msgstr "Aplicacion de prètzfaits per defaut."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:44
+msgid "Tasks needs terminal"
+msgstr "Los prètzfaits an besonh d'un terminal"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:45
+msgid "Whether the default tasks application needs a terminal to run."
+msgstr ""
+"Indica se l'aplicacion de prètzfaches per defaut a besonh d'un terminal per "
+"se lançar."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:53
+msgid "Terminal application"
+msgstr "Aplicacion de terminal"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:54
+msgid ""
+"Terminal program to use when starting applications that require one. "
+"DEPRECATED: This key is deprecated and ignored. The default terminal is "
+"handled in GIO."
+msgstr ""
+"Programa de terminal d'utilizar al moment de l'aviada de las aplicacions que "
+"n'an besonh. DESCONSELHAT : aquesta clau es desconselhada e ignorada. Lo "
+"terminal per defaut es pres en carga dins GIO."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:63
+msgid "Exec Arguments"
+msgstr "Arguments d'execucion"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:64
+msgid ""
+"Argument used to execute programs in the terminal defined by the “exec” key. "
+"DEPRECATED: This key is deprecated and ignored. The default terminal and how "
+"to invoke it is handled in GIO."
+msgstr ""
+"Argument utilizat per executar de programas dins lo terminal definit per la "
+"clau « exec ».\n"
+"\n"
+"DESCONSELHAT : aquesta clau es desconselhada e ignorada. Lo terminal per "
+"defaut e lo biais de l'apelar son preses en carga dins GIO."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:7
+msgid "Current input source"
+msgstr "Font d'entrada actuala"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:8
+#, fuzzy
+msgid ""
+"The zero-based index into the input sources list specifying the current one "
+"in effect. The value is automatically capped to remain in the range [0, "
+"sources_length) as long as the sources list isn’t empty. DEPRECATED: This "
+"key is deprecated and ignored."
+msgstr ""
+"L'indici, començant a zèro, dins la lista de las fonts d'entrada spécifiant "
+"celle actualament en acion. La valor es automaticament limitada per demorar "
+"dins l'interval [0, sources_length) tant que la lista de las fonts es pas "
+"voida. "
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:19
+msgid "List of input sources"
+msgstr "Lista de las fonts d'entrada"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:20
+#, fuzzy
+#| msgid ""
+#| "List of input source identifiers available. Each source is specified as a "
+#| "tuple of 2 strings. The first string is the type and can be one of 'xkb' "
+#| "or 'ibus'. For 'xkb' sources the second string is 'xkb_layout"
+#| "+xkb_variant' or just 'xkb_layout' if a XKB variant isn't needed. For "
+#| "'ibus' sources the second string is the IBus engine name. An empty list "
+#| "means that the X server's current XKB layout and variant won't be touched "
+#| "and IBus won't be used."
+msgid ""
+"List of input source identifiers available. Each source is specified as a "
+"tuple of 2 strings. The first string is the type and can be one of “xkb” or "
+"“ibus”. For “xkb” sources the second string is “xkb_layout+xkb_variant” or "
+"just “xkb_layout” if a XKB variant isn’t needed. For “ibus” sources the "
+"second string is the IBus engine name. An empty list means that the X "
+"server’s current XKB layout and variant won’t be touched and IBus won’t be "
+"used."
+msgstr ""
+"La lista dels identificants de font d'entrada disponible. Cada source es "
+"especificada coma un coble de 2 cadenas de caractèrs. La primièra es lo tipe "
+"e pòt èsser siá « xkb », siá « ibus ». Per las fonts « xkb », la segonda "
+"cadena es « xkb_layout+xkb_variant » o simplament « xkb_layout » se una "
+"variante XKB es pas nécessaire. Per las fonts « ibus », la segonda cadena es "
+"lo nom del motor IBus. Una lista voida significa que la disposicion e la "
+"varianta XKB actuala del servidor X seràn pas cambiats e IBus serà pas "
+"utilizat."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:33
+msgid "List of most recently used input sources"
+msgstr "Lista las fonts de picada mai recentament utilizadas"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:34
+msgid ""
+"List of most recently used input sources. The value is in the same format as "
+"the available sources list."
+msgstr ""
+"Lista las fonts de picada mai recentament utilizadas. La valor utiliza lo "
+"meteis format que la lista de las fonts disponiblas."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:41
+msgid "List of XKB options"
+msgstr "Lista de las opcions XKB"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:42
+msgid ""
+"List of XKB options. Each option is an XKB option string as defined by "
+"xkeyboard-config’s rules files."
+msgstr ""
+"Lista de las options XKB. Caduna de las opcions es una cadena d'opcion tal "
+"coma definida dins los fichièrs de règlas de xkeyboard-config."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:49
+msgid "XKB model to use"
+msgstr ""
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:50
+#, fuzzy
+#| msgid ""
+#| "List of XKB options. Each option is an XKB option string as defined by "
+#| "xkeyboard-config’s rules files."
+msgid ""
+"The XKB model to use. The value is the same identifier as defined by "
+"xkeyboard-config’s geometry files."
+msgstr ""
+"Lista de las options XKB. Caduna de las opcions es una cadena d'opcion tal "
+"coma definida dins los fichièrs de règlas de xkeyboard-config."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:57
+msgid "Show all installed input sources"
+msgstr "Afichar totas las fonts d'entrada installadas"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:58
+msgid ""
+"Makes all installed input sources available for choosing in System Settings."
+msgstr ""
+"Rend totas las fonts d'entrada installadas disponiblas per seleccion dins "
+"los paramètres sistèma."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:65
+msgid "Use different input sources for each window"
+msgstr "Utilizar de fonts d'entrada diferentas per cada fenèstra"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:66
+msgid ""
+"When enabled, input sources get attached to the currently focused window "
+"when activated."
+msgstr ""
+"Se activat, las fonts d'entrada son atribuidas a la fenèstra que possedís "
+"actualament lo fòcus quand son activadas."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:6
+msgid "Enable Toolkit Accessibility"
+msgstr "Activar la bóstia a aisinas per l'accessibilitat"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:7
+msgid "Whether toolkits should load accessibility related modules."
+msgstr ""
+"Indica se las bóstias a aisinas deurián cargar los moduls ligats a "
+"l'accessibilitat."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:13
+msgid "Enable Animations"
+msgstr "Activar las animacions"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:14
+msgid ""
+"Whether animations should be displayed. Note: This is a global key, it "
+"changes the behaviour of the window manager, the panel etc."
+msgstr ""
+"Indica se las animacions devon èsser afichadas. Nòta : es una clau globala, "
+"aquò càmbia lo compòrtament del gestionari de fenèstras, del tablèu de bòrd, "
+"eca."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:21
+msgid "Menus Have Tearoff"
+msgstr "Los menús son destacables"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:22
+msgid "Whether menus should have a tearoff."
+msgstr "Indica se los menús pòdon èsser destacats."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:28
+msgid "Can Change Accels"
+msgstr "Autoriza la modificacion dels acorchis de clavièr"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:29
+msgid ""
+"Whether the user can dynamically type a new accelerator when positioned over "
+"an active menuitem."
+msgstr ""
+"Indica se l'utilizaire pòt picar dinamicament un acorchi de clavièr novèl "
+"quand es posicionat sus un element de menú actiu."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:36
+msgid "Toolbar Style"
+msgstr "Estil de la barra d'aisinas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:37
+msgid ""
+"Toolbar Style. Valid values are “both”, “both-horiz”, “icons”, and “text”."
+msgstr ""
+"Estil de la barra d'aisinas. Las valors validas son « both » (tèxte jos las "
+"icònas), « both-horiz » (tèxte al costat de las icònas), « icons » (icònas "
+"solas) e « text » (tèxte sol)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:44
+msgid "Menubar Detachable"
+msgstr "Barra de menús destacabla"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:45
+msgid "Whether the user can detach menubars and move them around."
+msgstr ""
+"Indica se l'utilizaire pòt destacar las barras de menús e las desplaçar."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:51
+msgid "Toolbar Detachable"
+msgstr "Barra d'aisinas destacabla"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:52
+msgid "Whether the user can detach toolbars and move them around."
+msgstr ""
+"Indica se l'utilizaire pòt destacar las barras d'aisinas e las desplaçar."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:58
+msgid "Toolbar Icon Size"
+msgstr "Talha de las icònas de las barras d'aisinas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:59
+msgid "Size of icons in toolbars, either “small” or “large”."
+msgstr ""
+"Talha de las icònas dins las barras d'aisinas, las valors possiblas son « "
+"small » (pichon) o « large » (grand)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:65
+msgid "Cursor Blink"
+msgstr "Cursor clucatejant"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:66
+msgid "Whether the cursor should blink."
+msgstr "Indica se lo cursor deu clucatejar."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:73
+msgid "Cursor Blink Time"
+msgstr "Durada del clucatejament del cursor"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:74
+msgid "Length of the cursor blink cycle, in milliseconds."
+msgstr "Longor del cicle de clucatejament del cursor, en millisegondas."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:81
+msgid "Cursor Blink Timeout"
+msgstr "Expiracion de clucatejament del cursor"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:82
+msgid "Time after which the cursor stops blinking, in seconds."
+msgstr "Relambi a partir del qual lo cursor cesse de cluquejar, en segondas."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:88
+msgid "Icon Theme"
+msgstr "Tèma d'icònas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:89
+msgid "Icon theme to use for the panel, nautilus etc."
+msgstr "Tèma d'icònas d'utilizar pel tablèu de bòrd, nautilus, etc."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:95
+msgid "Gtk+ Theme"
+msgstr "Tèma GTK+"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:96
+msgid "Basename of the default theme used by gtk+."
+msgstr "Nom de basa del tèma per defaut utilizat per GTK+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:102
+msgid "Gtk+ Keybinding Theme"
+msgstr "Tèma dels acorchis de clavièr gtk+"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:103
+msgid "Basename of the default keybinding theme used by gtk+."
+msgstr ""
+"Nom de basa del tèma dels acorchis clavièr per defaut utilizat per gtk+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:109
+msgid "Default font"
+msgstr "Polissa per defaut"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:110
+msgid "Name of the default font used by gtk+."
+msgstr "Nom de la polissa per defaut utilizada per GTK+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:116
+msgid "Directories with avatar faces"
+msgstr "Repertòris amb las caras dels avartars"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:117
+msgid ""
+"Directories to override the default avatar faces installed by gnome-control-"
+"center."
+msgstr ""
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:124
+msgid "Text scaling factor"
+msgstr "Factor d'escala del tèxte"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:125
+msgid ""
+"Factor used to enlarge or reduce text display, without changing font size."
+msgstr ""
+"Factor utilizat per agrandir o reduire l'afichatge del tèxte, sens cambiar "
+"la talha de la polissa."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:131
+msgid "Window scaling factor"
+msgstr "Factor d'escala de la fenèstra"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:132
+msgid ""
+"Integer factor used to scale windows by. For use on high-dpi screens. 0 "
+"means pick automatically based on monitor."
+msgstr ""
+"Factor nombre entier utilizat per metre a l'escala las fenèstras. Utilizat "
+"pels ecrans de nauta densitat. 0 significa que la causida es faita "
+"automaticament en foncion de l'ecran."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:139
+msgid "GTK IM Preedit Style"
+msgstr "Estil de preedicion de GTK IM"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:140
+msgid "Name of the GTK+ input method Preedit Style used by gtk+."
+msgstr ""
+"Nom de l'estil de preedicion del metòde de picada GTK+ utilizat per GTK+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:146
+msgid "GTK IM Status Style"
+msgstr "Estil d'estat de GTK IM"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:147
+msgid "Name of the GTK+ input method Status Style used by gtk+."
+msgstr "Nom de l'estil d'estat del metòde de picada GTK+ utilizat per GTK+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:153
+msgid "GTK IM Module"
+msgstr "Modul GTK IM"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:154
+msgid "Name of the input method module used by GTK+."
+msgstr "Nom del modul de metòde de picada utilizat per GTK+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:160
+msgid "Document font"
+msgstr "Polissa del document"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:161
+msgid "Name of the default font used for reading documents."
+msgstr "Nom de la polissa per defaut utilizada per legir los documents."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:167
+msgid "Monospace font"
+msgstr "Polissa pas proporcionala"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:168
+msgid ""
+"Name of a monospaced (fixed-width) font for use in locations like terminals."
+msgstr ""
+"Nom d'una polissa pas proporcionala (largor fixa) d'utilizar a d'endreits "
+"tal coma de terminals."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:175
+msgid "Menubar accelerator"
+msgstr "Acorchi de la barra de menús"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:176
+msgid "Keyboard shortcut to open the menu bars."
+msgstr "Acorchi de clavièr per dobrir las barras de menús."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:182
+msgid "Cursor theme"
+msgstr "Tèma del cursor"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:183
+msgid ""
+"Cursor theme name. Used only by Xservers that support the Xcursor extension."
+msgstr ""
+"Nom del tèma del cursor. Utilizat unicament per les Xservers que prenon en "
+"carga l'extension Xcursor."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:187
+msgid "Cursor size"
+msgstr "Talha del cursor"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:188
+msgid "Size of the cursor used as cursor theme."
+msgstr "Talha del cursor utilizat coma tèma de cursor."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:192
+msgid "Timeout before click repeat"
+msgstr "Relambi abans la repeticion d'un clic"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:193
+msgid ""
+"Timeout in milliseconds before a click starts repeating (on spinner buttons "
+"for example)."
+msgstr ""
+"Relambi en millisegondas abans qu'un clic comença a se repetir (sur les "
+"botons animés per exemple)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:197
+msgid "Timeout between click repeats"
+msgstr "Relambi entre las repeticions del clic"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:198
+msgid ""
+"Timeout in milliseconds between repeated clicks when a button is left "
+"pressed."
+msgstr ""
+"Relambi d'espèra en millisegondas entre los clics repichons quand un boton "
+"es clicat amb lo boton esquèrra."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:202
+msgid "Palette used in the color selector"
+msgstr "Paleta utilizada dins lo selector de color"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:203
+msgid ""
+"Palette used in the color selector as defined by the “gtk-color-palette” "
+"setting"
+msgstr ""
+"Paleta utilizada dins lo selector de color, tala coma definida pel paramètre "
+"« gtk-color-palette »"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:207
+msgid "List of symbolic names and color equivalents"
+msgstr "Lista dels noms simbolics e dels equivalents de color"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:208
+msgid ""
+"A “\\n” separated list of “name:color” as defined by the “gtk-color-scheme” "
+"setting"
+msgstr ""
+"Una lista separada per « \\n » de « name:color » (nom:color) coma definida "
+"pel paramètre « gtk-color-scheme »"
+
+#. TRANSLATORS: select your locale's default clock format, this should be '12h' or '24h' (with the quotes!)
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:212
+msgid "'24h'"
+msgstr "'24h'"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:213
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:214
+msgid "Whether the clock displays in 24h or 12h format"
+msgstr "Indica se lo relòtge aficha l'ora al format 24 h o 12 h"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:220
+msgid "Whether the clock shows seconds"
+msgstr "Indica se lo relòtge aficha las segondas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:221
+msgid "If true, display seconds in the clock."
+msgstr "Se marcat, aficha las segondas dins lo relòtge."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:227
+msgid "Show date in clock"
+msgstr "Afichar la data dins lo relòtge"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:228
+msgid "If true, display date in the clock, in addition to time."
+msgstr "Se true, la data s'aficha dins lo relòtge, al costat de l'ora."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:234
+msgid "Show weekday in clock"
+msgstr "Afichar la data dins lo relòtge"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:235
+msgid "If true, display weekday in the clock, in addition to time."
+msgstr "Se true, la data s'aficha dins lo relòtge, al costat de l'ora."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:241
+msgid "Enable hot corners"
+msgstr "Activar los cantons"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:242
+msgid ""
+"If true, the activities overview can be accessed by moving the mouse to the "
+"top-left corner."
+msgstr ""
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:249
+msgid "Show battery percentage"
+msgstr "Afichar lo percentatge de batariá"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:250
+msgid ""
+"If true, display battery percentage in the status menu, in addition to the "
+"icon."
+msgstr ""
+"Se marcat, aficha lo percentatge de carga de la batariá dins lo menú "
+"d'estat, en mai de l'icòna."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:256
+msgid "Enable the primary paste selection"
+msgstr "Activar lo pegatge principal"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:257
+msgid ""
+"If true, gtk+ uses the primary paste selection, usually triggered by a "
+"middle mouse button click."
+msgstr ""
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:263
+msgid "Allow overlay scrolling"
+msgstr "Autorizar lo cambiament d'utilizaire"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:264
+msgid ""
+"Whether scrollbars should be overlayed as indicators. Depending on input "
+"devices in use, permanent scrollbars may still be displayed."
+msgstr ""
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:272
+msgid "Highlights the current location of the pointer."
+msgstr "Met en evidéncia l'emplaçament actual del puntador."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:273
+msgid ""
+"If true, pressing a key will highlight the current pointer location on "
+"screen."
+msgstr ""
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:279
+msgid "Antialiasing"
+msgstr "Anticrenelatge"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:280
+msgid ""
+"The type of antialiasing to use when rendering fonts. Possible values are: "
+"“none” for no antialiasing, “grayscale” for standard grayscale antialiasing, "
+"and “rgba” for subpixel antialiasing (LCD screens only)."
+msgstr ""
+"Lo tipe d'anticrenelatge utilizat pel rendut de las polissas. Las valors "
+"possiblas son : « none » per cap d'anticrenelatge, « grayscale » per "
+"l'anticrenelatge classic per nivèls de gris e « rgba » per l'anticrenelatge "
+"per sospixèls (ecrans LCD unicament)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:286
+msgid "Hinting"
+msgstr "Optimizacion"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:287
+msgid ""
+"The type of hinting to use when rendering fonts. Possible values are: “none” "
+"for no hinting and “slight” for fitting only to the Y-axis like Microsoft’s "
+"ClearType, DirectWrite and Adobe’s proprietary font rendering engine. "
+"Ignores native hinting within the font, generates hints algorithmically. "
+"Used on Ubuntu by default. Recommended. The meaning of “medium” and “full” "
+"depends on the font format (.ttf, .otf, .pfa/.pfb) and the installed version "
+"of FreeType. They usually try to fit glyphs to both the X and the Y axis "
+"(except for .otf: Y-only). This can lead to distortion and/or inconsistent "
+"rendering depending on the quality of the font, the font format and the "
+"state of FreeType’s font engines."
+msgstr ""
+"Tipe d'optimizacion utilizat pel rendut de las polissas. Las valors "
+"possiblas son : « none » per cap d'optimizacion, « slight » per adaptar "
+"unicament segon l'axe Y coma o fan los motors proprietaris de rendut de "
+"polissas ClearTipe de Microsoft, DirectWrite e los d'Adobe. Ignòra "
+"l'optimizacion nativa dins la polissa, genèra l'optimizacion de faiçon "
+"algoritmica. Utilizat per defaut en çò d'Ubuntu. Recomandat. La "
+"significacion de las valors « medium » e « full » depend del format de "
+"polissa (.ttf, .otf, .pfa/.pfb) e de la version installada de FreeType. "
+"Ensajan generalament d'adaptar los caractèrs en foncion dels axes X e Y "
+"(levat per .otf : axe Y solament). Aquò pòt causar de distorsions o un "
+"rendut incoerent en foncion de la qualitat de la polissa, de son format e de "
+"l'estat dels motors de police FreeType."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:293
+msgid "RGBA order"
+msgstr "Òrdre RVBA"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:294
+msgid ""
+"The order of subpixel elements on an LCD screen; only used when antialiasing "
+"is set to “rgba”. Possible values are: “rgb” for red on left (most common), "
+"“bgr” for blue on left, “vrgb” for red on top, “vbgr” for red on bottom."
+msgstr ""
+"L'òrdre dels elements sospixèls sus un ecran LCD ; unicament utilizat se "
+"l'anticrenelatge es definit a « rgba ». Las valors possiblas son « rgb » pel "
+"roge a esquèrra (lo mai corrent), « bgr » pel blau a esquèrra, « vrgb » pel "
+"roge amont, « vbgr » pel roge aval."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:300
+msgid "Color scheme"
+msgstr "Jòc de colors"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:301
+msgid ""
+"The preferred color scheme for the user interface. Valid values are "
+"“default”, “prefer-dark”, “prefer-light”."
+msgstr ""
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:307
+msgid "Font rendering"
+msgstr ""
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:308
+msgid ""
+"Preference to indicate whether font rendering should follow the low-level "
+"`font-hinting` and `font-antialiasing` and `font-rgba-order` settings, or "
+"take environmental factors such as screen resolution and scaling into "
+"account. Possible values are: \"manual\" for respecting the low-level "
+"settings, or \"automatic\" for letting the toolkit make its own decisions."
+msgstr ""
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:316
+msgid "Accent color"
+msgstr "Color afortida"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:317
+msgid ""
+"The preferred accent color for the user interface. Valid values are \"blue"
+"\", \"teal\", \"green\", \"yellow\", \"orange\", \"red\", \"pink\", \"purple"
+"\", \"slate\"."
+msgstr ""
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:6
+msgid "Disable command line"
+msgstr "Desactivar la linha de comandas"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:7
+msgid ""
+"Prevent the user from accessing the terminal or specifying a command line to "
+"be executed. For example, this would disable access to the panel’s “Run "
+"Application” dialog."
+msgstr ""
+"Interditz a l'utilizaire d'accedir a un terminal o d'especificar una linha "
+"de comanda d'executar. Per exemple, aquò desactiva l'accès a la bóstia de "
+"dialòg « Aviar una aplicacion » del tablèu de bòrd."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:15
+msgid "Disable saving files to disk"
+msgstr "Desactivar l'enregistrament dels fichièrs sul disc"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:16
+msgid ""
+"Prevent the user from saving files to disk. For example, this would disable "
+"access to all applications’ “Save as” dialogs."
+msgstr ""
+"Interditz a l'utilizaire d'enregistrar de fichièrs sul disc. Per exemple, "
+"aquò desactiva l'accès a las bóstias de dialòg « Enregistrar jos » de totas "
+"las aplicacions."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:23
+msgid "Disable printing"
+msgstr "Desactivar l'impression"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:24
+msgid ""
+"Prevent the user from printing. For example, this would disable access to "
+"all applications’ “Print” dialogs."
+msgstr ""
+"Interditz a l'utilizaire d'imprimir. Per exemple, aquò desactiva l'accès a "
+"las bóstias de dialòg « Imprimir » de totas las aplicacions."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:31
+msgid "Disable print setup"
+msgstr "Desactivar la configuracion de l'impression"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:32
+msgid ""
+"Prevent the user from modifying print settings. For example, this would "
+"disable access to all applications’ “Print Setup” dialogs."
+msgstr ""
+"Interditz a l'utilizaire de modificar los reglatges de l'impression. Per "
+"exemple, aquò desactiva l'accès a las bóstias de dialòg « Configuracion de "
+"l'impression » de totas las aplicacions."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:39
+msgid "Disable user switching"
+msgstr "Desactivar lo cambiament d'utilizaire"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:40
+msgid ""
+"Prevent the user from switching to another account while his session is "
+"active."
+msgstr ""
+"Empacha l'utilizaire de cambiar de compte alara que sa session es activa."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:47
+msgid "Disable lock screen"
+msgstr "Desactivar lo verrolhatge d'ecran"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:48
+msgid "Prevent the user to lock his screen."
+msgstr "Empacha l'utilizaire de verrolhar son ecran."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:54
+msgid "Disable URL and MIME type handlers"
+msgstr "Desactivar los gestionaris d'URL e de tipe MIME"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:55
+msgid "Prevent running any URL or MIME type handler applications."
+msgstr "Empachar l'aviada d'aplicacions que gerisson las URL e los tipes MIME."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:61
+msgid "Disable log out"
+msgstr "Desactivar la desconnexion"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:62
+msgid "Prevent the user from logging out."
+msgstr "Empacha l'utilizaire de se desconnectar."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:68
+msgid "Disable user administration"
+msgstr "Desactivar l'administracion dels utilizaires"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:69
+msgid ""
+"Stop the user from modifying user accounts. By default, we allow adding and "
+"removing users, as well as changing other users settings."
+msgstr ""
+"Empachar l'utilizaire de modificar los comptes utilizaires. Per defaut, es "
+"permés d'apondre e de suprimir utilizaires e tanben de modificar los "
+"paramètres dels autres utilizaires."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:76
+msgid "Mount removable storage devices as read-only"
+msgstr "Montar los periferics d'emmagazinatge amovible en mòde lectura-sòla"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:77
+msgid ""
+"Prevent users from writing or modifying files on removable storage devices "
+"(i.e. flash disks, mobile phones, cameras)."
+msgstr ""
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:84
+msgid "Disable password showing"
+msgstr "Desactivar l’afichatge del senhal"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:85
+msgid "Disable the \"Show Password\" menu item in password entries."
+msgstr ""
+"Desactivar l’element de menú « Afichar lo senhal » de las entradas de senhal."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:6
+msgid "Whether to automatically mount media"
+msgstr "Indica se cal montar automaticament los supòrts"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:7
+msgid ""
+"If set to true, then Nautilus will automatically mount media such as user-"
+"visible hard disks and removable media on start-up and media insertion."
+msgstr ""
+"S'es definit a true, Nautilus montarà automaticament los supòrts coma los "
+"discs durs visibles per l'utilizaire e los periferics amovibles a l'aviada e "
+"a l'insercion dels supòrts."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:11
+msgid "Whether to automatically open a folder for automounted media"
+msgstr ""
+"Indica se cal dobrir automaticament un dorsièr quand de supòrts son montats "
+"automaticament"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:12
+msgid ""
+"If set to true, then Nautilus will automatically open a folder when media is "
+"automounted. This only applies to media where no known x-content/* type was "
+"detected; for media where a known x-content type is detected, the user "
+"configurable action will be taken instead."
+msgstr ""
+"Se true, Nautilus dobrís automaticament un dorsièr quand un supòrt es montat "
+"automaticament. Aquò s'aplica unicament als supòrts ont un contengut de tipe "
+"x-content/* desconegut es detectat ; pels supòrts ont un contengut de tipe x-"
+"content conegut es detectat, l'accion personalizada de l'utilizaire es "
+"utilizada a la plaça."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:16
+msgid "Never prompt or autorun/autostart programs when media are inserted"
+msgstr ""
+"Demandar pas jamai o aviar pas automaticament los programas quand un supòrt "
+"es inserit"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:17
+msgid ""
+"If set to true, then Nautilus will never prompt nor autorun/autostart "
+"programs when a medium is inserted."
+msgstr ""
+"S'es definit a true, Nautilus demanda pas jamai, ni lança automaticament los "
+"programas quand s'inserís un supòrt."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:21
+msgid ""
+"List of x-content/* types where the preferred application will be launched"
+msgstr ""
+"Lista dels tipes x-content/* pels quals l'aplicacion preferida es aviada"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:22
+msgid ""
+"List of x-content/* types for which the user have chosen to start an "
+"application in the preference capplet. The preferred application for the "
+"given type will be started on insertion on media matching these types."
+msgstr ""
+"Lista dels tipes x-content/* pels quals l'utilizaire a causit d'aviar una "
+"aplicacion dins lo capplet de preferéncia. L'aplicacion preferida pel tipe "
+"donat serà aviada a l'insercion d'un supòrt correspondent a aqueles tipes."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:26
+msgid "List of x-content/* types set to “Do Nothing”"
+msgstr "Lista dels tipes x-content/* pels quals cal far pas res"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:27
+msgid ""
+"List of x-content/* types for which the user have chosen “Do Nothing” in the "
+"preference capplet. No prompt will be shown nor will any matching "
+"application be started on insertion of media matching these types."
+msgstr ""
+"Lista dels tipes x-content/* pels quals l'utilizaire a causit « Far pas "
+"res » dins lo capplet de preferéncia. Cap de fenèstra  serà pas afichada, ni "
+"cap d'accion pas aviada a l'insercion d'un supòrt correspondent a aqueles "
+"tipes."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:31
+msgid "List of x-content/* types set to “Open Folder”"
+msgstr "Lista dels tipes  x-content/* que cal dobrir un repertòri"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:32
+msgid ""
+"List of x-content/* types for which the user have chosen “Open Folder” in "
+"the preferences capplet. A folder window will be opened on insertion of "
+"media matching these types."
+msgstr ""
+"Lista dels tipes x-content/* pels quals l'utilizaire a causit « Dobrir lo "
+"dorsièr » dins lo capplet de preferéncia. Un dorsièr serà dobèrt a "
+"l'insercion d'un supòrt correspondent a aqueles tipes."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:6
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:55
+msgid "Show notification banners"
+msgstr "Afichar las anóncias de notificacions"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:7
+msgid "Whether notification banners are visible for application notifications."
+msgstr ""
+"Indica se las anóncias de notificacion son visiblas per las notificacions de "
+"las applications."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:14
+msgid "Show notifications in the lock screen"
+msgstr "Afichar las notificacions dins l'ecran verrolhat"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:15
+msgid "Whether notifications are shown in the lock screen or not."
+msgstr "Indica se las notificacions son afichadas quand l'ecran es verrolhat."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:31
+msgid "Application ID"
+msgstr "Identificador de l'aplicacion"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:32
+msgid "The application that this policy is for."
+msgstr "L'aplicacion a laquelle s'aplica aquesta règla."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:39
+msgid "Enable notifications"
+msgstr "Activar las notificacions"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:40
+msgid "Whether notifications are globally enabled for this application."
+msgstr ""
+"Indica se las notificacions son globalament activadas per aquesta "
+"application."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:47
+msgid "Enable sound alerts"
+msgstr "Activar las alèrtas sonòras"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:48
+msgid "Whether notifications should be accompanied by sound alerts."
+msgstr ""
+"Indica se las notificacions devon èsser acompanhadas d'alèrtas sonòras."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:56
+msgid ""
+"Whether notification banners for this application are shown or not. Does not "
+"affect clicking on message tray buttons."
+msgstr ""
+"Indica se las anóncias de notificacions d'aquesta aplicacion son afichadas o "
+"pas. Afècta pas los clics suls botons del tirador dels messatges."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:64
+msgid "Force automatic expanding of banners"
+msgstr "Impausar una extension automatica d'anóncias"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:65
+msgid ""
+"Whether notifications from this application are expanded automatically when "
+"in banner mode."
+msgstr ""
+"Indica se las notificacions d'aquesta aplicacion son espandidas "
+"automaticament en mòde anóncia."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:72
+msgid "Show in the lock screen"
+msgstr "Afichar dins l'ecran verrolhat"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:73
+msgid ""
+"Whether notifications from this application are shown when the screen is "
+"locked."
+msgstr ""
+"Indica se las notificacions d'aquesta aplicacion son afichadas quand l'ecran "
+"es verrolhat."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:80
+msgid "Show details in the lock screen"
+msgstr "Afichar los detalhs dins l'ecran verrolhat"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:81
+msgid ""
+"Whether the summary and body of notifications from this application will be "
+"visible in the locked screen."
+msgstr ""
+"Indica se lo resumit e lo contengut de las notificacions d'aquesta "
+"aplicacion son visibles quand l'ecran es verrolhat."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:15
+msgid "Whether edge scrolling is enabled"
+msgstr "Indica se lo desfilament lateral es activat"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:16
+#, fuzzy
+#| msgid ""
+#| "When disabled, touchpads that only support edge scrolling (and not 2-"
+#| "finger scrolling) will have that feature disabled."
+msgid ""
+"When enabled, touchpads that support edge scrolling will have that feature "
+"enabled."
+msgstr ""
+"Se desactivat, los pavats tactils que permeton que lo desfilament lateral (e "
+"non pas lo desfilament amb dos dets) desactivan aquesta foncionalitat."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:20
+msgid "Whether two-finger scrolling is enabled"
+msgstr "Indica se lo desfilament a dos det es activat"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:21
+#, fuzzy
+#| msgid ""
+#| "When disabled, touchpads that only support edge scrolling (and not 2-"
+#| "finger scrolling) will have that feature disabled."
+msgid ""
+"When enabled, touchpads that support two-finger scrolling will have that "
+"feature enabled."
+msgstr ""
+"Se desactivat, los pavats tactils que permeton que lo desfilament lateral (e "
+"non pas lo desfilament amb dos dets) desactivan aquesta foncionalitat."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:25
+msgid "Whether to disable the touchpad while typing"
+msgstr "Desactivar o pas lo pavat tactil pendent la picada"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:26
+msgid "When enabled, touchpads will be disabled while typing on the keyboard."
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:30
+msgid "Enable mouse clicks with touchpad"
+msgstr "Activar los clics de mirga amb lo pavat tactil"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:31
+msgid ""
+"Set this to TRUE to be able to send mouse clicks by tapping on the touchpad."
+msgstr ""
+"Activatz aquesta clau per poder efectuar de clics de mirgas en picant sul "
+"pavat tactil."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:35
+msgid "Tap Button Map"
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:36
+msgid ""
+"Defines the mapping between the number of fingers and touchpad buttons. The "
+"default is to have a 1, 2 and 3 finger tap to map to the left, right and "
+"middle button (\"lrm\"), respectively."
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:40
+msgid "Enable tap-and-drag with touchpad"
+msgstr "Activar los clics de mirga amb lo pavat tactil"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:41
+msgid ""
+"Set this to TRUE to be able to start a drag by tapping and immediately "
+"moving the finger that’s now pressed on the touchpad."
+msgstr ""
+"Activatz aquesta clau per poder efectuar de clics de mirgas en picant sul "
+"pavat tactil."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:45
+msgid "Enable tap-and-drag-lock with touchpad"
+msgstr "Activar los clics de mirga amb lo pavat tactil"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:46
+msgid ""
+"Set this to TRUE to lock the dragging process within a short timeout when "
+"the finger is lifted on the touchpad and the tap-and-drag setting is enabled."
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:50
+msgid "Touchpad enabled"
+msgstr "Pavat tactil activat"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:51
+msgid "Defines the situations in which the touchpad is enabled."
+msgstr "Definís las situacions ont lo pavat numeric es activat."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:55
+msgid "Touchpad button orientation"
+msgstr "Orientacion dels botons del pavat tactil"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:56
+msgid ""
+"Swap left and right mouse buttons for left-handed mice with “left”, “right” "
+"for right-handed, “mouse” to follow the mouse setting."
+msgstr ""
+"Inversar los botons dreit e esquèrra d'una mirga per esquerrièr amb « left "
+"» (esquèrra), « right » (dreit) per una mirga per dreitièrs, « mouse "
+"» (mirga) per seguir lo parametratge de la mirga."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:60
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:131
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:261
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:279
+msgid "Acceleration profile"
+msgstr "Perfil d’acceleracion"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:61
+msgid ""
+"Acceleration profile used for connected touchpads. The acceleration profile "
+"can be set to either default (“default”) which uses the default acceleration "
+"profile for each device, flat (“flat”), which accelerates by a device "
+"specific constant factor derived from the configured pointer speed, or "
+"adaptive (“adaptive”) which adapts the acceleration depending on the mouse "
+"movement. If a touchpad doesn’t support the configured profile, “default” "
+"will be used."
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:65
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:120
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:273
+msgid "Pointer speed"
+msgstr "Velocitat del puntador"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:66
+msgid ""
+"Pointer speed for the touchpad. Accepted values are in the [-1..1] range "
+"(from “unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Velocitat del clic doble del puntador pel pavat numeric. Las valors "
+"acceptadas son dins l'interval [-1..1] (de « unaccelerated » (sens "
+"acceleracion) a « fast ») (rapid). 0 es la valor per defaut del sistèma."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:71
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:126
+msgid "Natural scrolling"
+msgstr "Desfilament natural (natural scrolling)"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:72
+msgid "Set this to TRUE to enable natural (reverse) scrolling for touchpads."
+msgstr ""
+"Metètz aquesta valor a TRUE (VERAI) per activar lo desfilament natural del "
+"pavat tactil."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:76
+msgid "Click method"
+msgstr "Metòde de clic"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:77
+msgid ""
+"How to generate software-emulated buttons, either disabled (“none”), through "
+"specific areas (“areas”), number of fingers (“fingers”) or left as hardware "
+"default (“default”)."
+msgstr ""
+"Cossí generar los botons emulats per logicial, siá desactivat (« none »), "
+"segon de zònas especificas (« areas »), segon lo nombre de dets (« fingers "
+"») o daissat en foncion de la valor per defaut del material (« default »)."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:81
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:136
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:266
+msgid "Emulate middle click"
+msgstr "Activar los clics per manteniment"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:82
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:137
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:267
+msgid ""
+"Set this to TRUE to enable middle click during simultaneous left and right "
+"click."
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:88
+msgid "Keyboard repeat"
+msgstr "Repeticion del clavièr"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:89
+msgid "Set this to TRUE to enable keyboard repeat."
+msgstr ""
+"Metètz aquesta valor a TRUE (VERAI) per activar la repeticion de las tòcas "
+"del clavièr."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:93
+msgid "Key Repeat Interval"
+msgstr "Interval de repeticion de las tòcas"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:94
+msgid "Delay between repeats in milliseconds."
+msgstr "Relambi entre las repeticions en millisegondas."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:98
+msgid "Initial Key Repeat Delay"
+msgstr "Relambi de repeticion de las tòcas inicial"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:99
+msgid "Initial key repeat delay in milliseconds."
+msgstr ""
+"Relambi inicial, abans lo començament de la repeticion, en millisegondas."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:103
+msgid "Remember NumLock state"
+msgstr "Se remembrar de l'estat del verrolh numeric"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:104
+msgid ""
+"When set to true, GNOME will remember the state of the NumLock LED between "
+"sessions."
+msgstr ""
+"Se sefinit a true, GNOME se remembrarà de l'estat de la DEL verrolh numeric "
+"d'una session a l'autra."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:108
+msgid "NumLock state"
+msgstr "Se remembrar de l'estat del verrolh numeric"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:109
+msgid "The remembered state of the NumLock LED."
+msgstr "Se remembrar de l'estat del verrolh numeric DEL."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:115
+msgid "Mouse button orientation"
+msgstr "Orientacion del boton de la mirga"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:116
+msgid "Swap left and right mouse buttons for left-handed mice."
+msgstr "Invèrsa los botons dreita e esquèrra de la mirga pels esquerrièrs."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:121
+msgid ""
+"Pointer speed for mice. Accepted values are in the [-1..1] range (from "
+"“unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Velocitat del clic doble del puntador de la mirga. Las valors acceptadas son "
+"dins l'interval [-1..1] (de « unaccelerated » (lent) a « fast ») (rapid). 0 "
+"es la valor per defaut del sistèma."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:127
+msgid "Set this to TRUE to enable natural (reverse) scrolling for mice."
+msgstr ""
+"Metètz aquesta valor a TRUE (VERAI) per activar lo desfilament natural "
+"(inverse) de la mirga."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:132
+msgid ""
+"Acceleration profile used for connected mice. The acceleration profile can "
+"be set to either default (“default”) which uses the default acceleration "
+"profile for each device, flat (“flat”), which accelerates by a device "
+"specific constant factor derived from the configured pointer speed, or "
+"adaptive (“adaptive”) which adapts the acceleration depending on the mouse "
+"movement. If a mouse doesn’t support the configured profile, “default” will "
+"be used."
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:141
+msgid "Double click time"
+msgstr "Interval de clic doble"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:142
+msgid "Length of a double click in milliseconds."
+msgstr "Longor del cicle de clucatejament del cursor, en millisegondas."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:146
+msgid "Drag threshold"
+msgstr "Sulhet de lisament"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:147
+msgid "Distance before a drag is started."
+msgstr "Distància abans qu'un lisar siá iniciat."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:153
+msgid "Drawing tablet mapping"
+msgstr "Ligason de la tauleta grafica"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:154
+#, fuzzy
+#| msgid ""
+#| "EDID information of the monitor the tablet is mapped to. Must be in the "
+#| "format [vendor, product, serial]. [\"\",\"\",\"\"] disables mapping."
+msgid ""
+"EDID information of the output the tablet is mapped to. Must be in the "
+"format [vendor, product, serial]. [\"\",\"\",\"\"] relies on automatic "
+"mapping."
+msgstr ""
+"Informations EDID del monitor al qual es connectada la tauleta grafica. "
+"Devon respectar lo format [vendor (nom del provesidor), product (nom del "
+"produit), serial (seria)]. [\"\",\"\",\"\"] desactiva aquesta mesa en "
+"correspondéncia."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:158
+msgid "Tablet mapping"
+msgstr "Ligason de la tauleta grafica"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:159
+msgid "How input affects the pointer on the screen"
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:163
+msgid "Tablet area"
+msgstr "Airal tauleta"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:164
+msgid ""
+"Dead area padding around the active area, in percentages. Respectively "
+"applied to left,right,top and bottom sides."
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:168
+msgid "Tablet aspect ratio"
+msgstr "Proporcions de la tauleta"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:169
+msgid ""
+"Enable this to restrict the tablet area to match the aspect ratio of the "
+"output."
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:173
+msgid "Tablet left-handed mode"
+msgstr "Activar lo mòde esquerrièr"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:174
+msgid ""
+"Enable this to allow physically rotating the tablet for left-handed setups"
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:180
+msgid "Stylus pressure curve"
+msgstr "Corba de pression de l'estilet"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:181
+msgid ""
+"Set this to x1, y1 and x2, y2 of the pressure curve applied to the stylus."
+msgstr ""
+"Definissètz aicí las coordenadas x1, y1 e x2, y2 segon la corba de pression "
+"aplicada a l'estilet."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:185
+#, fuzzy
+#| msgid "Stylus pressure curve"
+msgid "Stylus pressure range"
+msgstr "Corba de pression de l'estilet"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:186
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:196
+msgid ""
+"Set this to the percentage of the physical pressure range that should map to "
+"the logical range."
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:190
+msgid "Eraser pressure curve"
+msgstr "Corba de pression de la goma"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:191
+msgid ""
+"Set this to x1, y1 and x2, y2 of the pressure curve applied to the eraser."
+msgstr ""
+"Definissètz aicí las coordenadas x1, y1 e x2, y2 segon la corba de pression "
+"aplicada a la goma."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:195
+#, fuzzy
+#| msgid "Eraser pressure curve"
+msgid "Eraser pressure range"
+msgstr "Corba de pression de la goma"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:200
+msgid "Button action"
+msgstr "Accion del boton"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:201
+msgid "Stylus button action, this button is located along the pen handle."
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:205
+msgid "Secondary button action"
+msgstr "Clic-doble boton segondari"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:206
+msgid ""
+"Secondary stylus button action, this button is located along the pen handle "
+"on some styli like the Grip Pen. Other styli like the Airbrush Pen or the "
+"Inking Pen only have one button, this setting is ineffective on those."
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:210
+msgid "Tertiary button action"
+msgstr "Accion del tresen boton"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:211
+msgid ""
+"Tertiary stylus button action, this button is located along the pen handle "
+"on some styli like the 3D Pen. Other styli like the Grip Pen only have two "
+"buttons, this setting is ineffective on those."
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:215
+#, fuzzy
+#| msgid "Key combination for the custom action"
+msgid "Key combination for the primary button"
+msgstr "Combinason de tòcas per l'accion personalizada"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:216
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:221
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:226
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:238
+msgid ""
+"The keyboard shortcut generated when the button is pressed for custom "
+"actions."
+msgstr ""
+"L'acorchi de clavièr generat quand lo boton es quichat per d'accions "
+"personalizadas."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:220
+#, fuzzy
+#| msgid "Key combination for the custom action"
+msgid "Key combination for the secondary button"
+msgstr "Combinason de tòcas per l'accion personalizada"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:225
+#, fuzzy
+#| msgid "Key combination for the custom action"
+msgid "Key combination for the tertiary button"
+msgstr "Combinason de tòcas per l'accion personalizada"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:232
+msgid "Pad button action type"
+msgstr "Tipe d’accion del boton del clavièr"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:233
+msgid "The type of action triggered by the button being pressed."
+msgstr "Lo tipe d'accion desenclavat quand lo boton es quichat."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:237
+msgid "Key combination for the custom action"
+msgstr "Combinason de tòcas per l'accion personalizada"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:244
+msgid "Touchscreen output mapping"
+msgstr "Ligason d’entrada de l’ecran tactil"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:245
+#, fuzzy
+#| msgid ""
+#| "EDID information of the monitor the touchscreen is mapped to. Must be in "
+#| "the format [vendor, product, serial]. [\"\",\"\",\"\"] disables mapping."
+msgid ""
+"EDID information of the output the touchscreen is mapped to. Must be in the "
+"format [vendor, product, serial]. [\"\",\"\",\"\"] relies on automatic "
+"mapping."
+msgstr ""
+"Informacions EDID del monitor al qual es religat l'ecran tactil. Devon "
+"respectar lo format [vendor (nom del provesidor), product (nom del produit), "
+"serial (seria)]. [\"\",\"\",\"\"] desactiva aquesta mesa en correspondéncia."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:252
+msgid "Mouse wheel emulation button. 0 to disable the feature."
+msgstr ""
+"Boton d'emulacion de la rodeta de la mirga. 0 per desactivar aquesta "
+"foncionalitat."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:256
+#, fuzzy
+#| msgid "Mouse wheel emulation button. 0 to disable the feature."
+msgid "Mouse wheel emulation button lock"
+msgstr ""
+"Boton d'emulacion de la rodeta de la mirga. 0 per desactivar aquesta "
+"foncionalitat."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:257
+msgid ""
+"Set this to TRUE to enable button locking for the wheel emulation button. If "
+"enabled, the first click of the button enables scrolling, the second click "
+"disables scrolling again."
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:262
+msgid ""
+"Acceleration profile used for the trackball. The acceleration profile can be "
+"set to either default (“default”) which uses the default acceleration "
+"profile, flat (“flat”), which accelerates by a device specific constant "
+"factor derived from the configured speed, or adaptive (“adaptive”) which "
+"adapts the acceleration depending on the movement. If the trackball doesn’t "
+"support the configured profile, “default” will be used."
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:274
+#, fuzzy
+#| msgid ""
+#| "Pointer speed for mice. Accepted values are in the [-1..1] range (from "
+#| "“unaccelerated” to “fast”). A value of 0 is the system default."
+msgid ""
+"Pointer speed for pointing sticks. Accepted values are in the [-1..1] range "
+"(from “unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Velocitat del clic doble del puntador de la mirga. Las valors acceptadas son "
+"dins l'interval [-1..1] (de « unaccelerated » (lent) a « fast ») (rapid). 0 "
+"es la valor per defaut del sistèma."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:280
+msgid ""
+"Acceleration profile used for the pointing stick. The acceleration profile "
+"can be set to either default (“default”) which uses the default acceleration "
+"profile, flat (“flat”), which accelerates by a device specific constant "
+"factor derived from the configured speed, or adaptive (“adaptive”) which "
+"adapts the acceleration depending on the movement. If the pointing stick "
+"doesn’t support the configured profile, “default” will be used."
+msgstr ""
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:284
+msgid "Scrolling method"
+msgstr "Metòde de defilament"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:285
+msgid ""
+"Scrolling method used for pointing sticks. The scrolling method can be set "
+"to either default (“default”) which uses the default method, none (“none”), "
+"which disables scrolling, or middle-button (“on-button-down”) which enables "
+"scrolling whilst the middle button is held down."
+msgstr ""
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:6
+msgid "Controls visibility of personal information"
+msgstr "Contraròtla la visibilitat de las informacions personalas"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:7
+msgid ""
+"If set to true, the system will make an effort to not divulge the user’s "
+"identity on screen or on the network."
+msgstr ""
+"Se definida a true (verai), lo sistèma va ensajar de divulgar pas "
+"l'identitat de l'utilizaire a l'ecran o sus la ret."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:12
+msgid "Show full name in the user menu"
+msgstr "Afichar lo nom complèt dins lo menú utilizaire"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:13
+msgid "Whether the users full name is shown in the user menu or not."
+msgstr ""
+"Indica se lo nom complèt dels utilizaires es afichat dins lo menú utilizaire "
+"o pas."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:17
+msgid "Whether to remove old files from the trash automatically"
+msgstr ""
+"Indica se cal suprimir los ancians fichièrs de l'escobilhièr automaticament"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:18
+msgid ""
+"If TRUE, automatically remove files from the trash when they are older than "
+"“old-files-age” days."
+msgstr ""
+"Se TRUE (verai), suprimís automaticament los fichièrs de l'escobilhièr quand "
+"i son dempuèi mai de « old-files-age » jorns."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:23
+msgid "Whether to remove old temporary files automatically"
+msgstr "Indica se cal suprimir los ancians fichièrs temporaris automaticament"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:24
+msgid ""
+"If TRUE, automatically remove temporary files when they are older than “old-"
+"files-age” days."
+msgstr ""
+"Se TRUE (verai), suprimís automaticament los fichièrs temporaris qu'an mai "
+"de « old-files-age » jorns."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:29
+msgid "Number of days to keep trash and temporary files"
+msgstr "Quant de jorns servar los fichièrs temporaris e los dins l'escobilhièr"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:30
+msgid "Consider trash and temporary files old after this many days."
+msgstr ""
+"Considèra coma ancian los fichièrs temporaris e los dins l'escobilhièr aprèp "
+"aqueste nombre de jorns."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:35
+msgid "Whether to remember recently used files"
+msgstr "Indica se cal se remembrar dels fichièrs recentament utilizats"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:36
+msgid "If FALSE, applications will not remember recently used files."
+msgstr ""
+"Se FALSE (fals), las aplicacions se remembran pas dels fichièrs recentament "
+"utilizats."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:41
+msgid "Number of days to remember recently used files for"
+msgstr "Quant de jorns se remembrar dels fichièrs recentament utilizats"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:42
+msgid ""
+"Recently used files will be remembered for this many days. If set to 0, "
+"recent files will not be remembered; if set to -1, they will be retained "
+"indefinitely."
+msgstr ""
+"Los fichièrs recentament utilizats son gardats en memòria pendent aqueste "
+"nombre de jorns. Se definida a 0, los fichièrs recents son pas gardats en "
+"memòria ; se definida a -1, son conservats infinidament."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:48
+msgid "Whether to remember application usage"
+msgstr "Indica se cal se remembrar de l'utilizacion de las aplicacions"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:49
+msgid "If FALSE, application usage will not be monitored and recorded."
+msgstr ""
+"Se FALSE (fals), l'utilizacion de las aplicacions es pas ni susvelhada, ni "
+"enregistrada."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:54
+msgid "Send statistics when applications are removed or installed"
+msgstr "Mandar d'estatisticas quand d'aplicacions son suprimidas o installadas"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:55
+msgid ""
+"If FALSE, no anonymous installation or removal information will be sent to "
+"the vendor."
+msgstr ""
+"Se FALSE (fals), cap d'informacion sus l'installacion o la supression seràn "
+"pas mandadas al provesidor."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:59
+msgid "Send reports of technical problems to the vendor"
+msgstr "Mandar al provesidor de rapòrts sus de problèmas tecnics"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:60
+msgid "If TRUE, anonymized reports will be sent automatically to the vendor."
+msgstr ""
+"Se TRUE (VERAI), de rapòrts anonims seràn automaticament mandats al "
+"provesidor."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:64
+msgid "Don’t allow applications to access the microphone"
+msgstr "Permetre pas a las aplicacions d'accedir al microfòn"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:65
+msgid "If TRUE, applications should not use the microphone."
+msgstr "Se definit a TRUE, las aplicacion devon pas utilizar lo microfòn."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:69
+msgid "Don’t allow applications to access the camera"
+msgstr "Permetre pas a las aplicacions d'accedir a la camèra"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:70
+msgid "If TRUE, applications should not use the camera."
+msgstr ""
+"Se FALSE (fals), l'utilizacion de las aplicacions es pas ni susvelhada, ni "
+"enregistrada."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:74
+msgid "Don’t allow applications to output sound"
+msgstr "Permetre pas a las aplicacions d'emetre de son"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:75
+msgid "If TRUE, applications should not make sound."
+msgstr "Se definit a TRUE, las aplicacion devon pas emetre de sons."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:79
+msgid "Whether to protect USB devices"
+msgstr "Indica se cal protegir los periferics USB"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:80
+msgid ""
+"If the USBGuard service is present and this setting is enabled, USB devices "
+"will be protected as configured in the usb-protection-level setting."
+msgstr ""
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:87
+msgid "When USB devices should be rejected"
+msgstr "Quand los periferics USB devon èsser regetats"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:88
+msgid ""
+"If set to “lockscreen”, only when the lock screen is present new USB devices "
+"will be rejected; if set to “always”, all new USB devices will always be "
+"rejected."
+msgstr ""
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:95
+msgid "Whether the privacy screen is enabled"
+msgstr "Indica se l’ecran de confidencialitat es activat"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:96
+msgid ""
+"If the underlying hardware has privacy screen support and this setting is "
+"enabled, the panels supporting this technology will be obscured from lateral "
+"view."
+msgstr ""
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:6
+msgid "Activate when idle"
+msgstr "Activar quand inactiu"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:7
+msgid ""
+"Set this to TRUE to activate the screensaver when the session is idle. "
+"DEPRECATED: This key is deprecated and ignored. Set org.gnome.desktop."
+"session idle-delay to 0 if you do not want to activate the screensaver."
+msgstr ""
+"Definir a TRUE (verai) per activar l'estalviador d'ecran quand la session es "
+"inactiva. DESCONSELHAT : aquesta clau es desconselhada e ignorada. Definir "
+"org.gnome.desktop.session.idle-delay a 0 se volètz pas activar l'estalviador "
+"d'ecran."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:16
+msgid "Lock on activation"
+msgstr "Verrolhar a l'activacion"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:17
+msgid "Set this to TRUE to lock the screen when the screensaver goes active."
+msgstr ""
+"Definir a TRUE per verrolhar l'ecran al moment de l'activacion de "
+"l'estalviador d'ecran."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:21
+msgid "Time before locking"
+msgstr "Relambi abans verrolhatge"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:22
+msgid ""
+"The number of seconds after screensaver activation before locking the screen."
+msgstr ""
+"Lo nombre de segondas entre l'activacion de l'estalviador d'ecran e lo "
+"verrolhatge de l'ecran."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:26
+msgid "Show full name in the lock screen"
+msgstr "Afichar lo nom complèt dins l'ecran verrolhat"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:27
+msgid ""
+"Whether the user’s full name is shown in the lock screen or not. This only "
+"affects the screen shield, the name is always shown in the unlock dialog."
+msgstr ""
+"Indica se lo nom complèt es afichat quand l'ecran es verrolhat. Aquò afècta "
+"pas que l'ecran de verrolhatge, lo nom es totjorn afichat dins la bóstia de "
+"dialòg de desverrolhatge."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:31
+msgid "Allow embedding a keyboard into the window"
+msgstr "Autorizar l'incorporacion d'un clavièr dins la fenèstra"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:32
+msgid ""
+"Set this to TRUE to allow embedding a keyboard into the window when trying "
+"to unlock. The “keyboard_command” key must be set with the appropriate "
+"command. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Definissètz aquesta clau a TRUE per permetre l'integracion d'un clavièr dins "
+"la fenèstra al moment del desverrolhatge. La clau « keyboard_command » deu "
+"èsser definida amb la comanda apropriada. DESCONSELHAT : aquesta clau es "
+"desconselhada e ignorada."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:40
+msgid "Embedded keyboard command"
+msgstr "Comanda de clavièr incorporat"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:41
+msgid ""
+"The command that will be run, if the “embedded_keyboard_enabled” key is set "
+"to TRUE, to embed a keyboard widget into the window. This command should "
+"implement an XEMBED plug interface and output a window XID on the standard "
+"output. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"La comanda que serà executada, se la clau « embedded_keyboard_enabled » es "
+"definida a TRUE, per incorporar un clavièr dins la fenèstra. Aquesta comanda "
+"deu implementar una interfàcia d'empeuton XEMBED e afichar una fenèstra XID "
+"sus l'afichatge estandard. DESCONSELHAT : aquesta clau es desconselhada e "
+"ignorada."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:49
+msgid "Allow logout"
+msgstr "Autorizar la desconnexion"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:50
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to allow logging "
+"out after a delay. The delay is specified in the “logout_delay” key. "
+"DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Definissètz aquesta clau a TRUE per ofrir una opcion dins lo dialòg de "
+"desverrolhatge per permetre la desconnexion aprèp un relambi. Lo relambi es "
+"especificat per la clau « logout_delay ».\n"
+"\n"
+"DESCONSELHAT : aquesta clau es desconselhada e ignorada."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:58
+msgid "Time before logout option"
+msgstr "Relambi abans opcion de desconnexion"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:59
+msgid ""
+"The number of seconds after the screensaver activation before a logout "
+"option will appear in the unlock dialog. This key has effect only if the "
+"“logout_enable” key is set to TRUE. DEPRECATED: This key is deprecated and "
+"ignored"
+msgstr ""
+"Lo nombre de segondas aprèp l'activacion de l'estalviador d'ecran abans "
+"qu'una opcion de desconnexion aparesca dins lo dialòg de desverrolhatge. "
+"Aquesta clau a pas d'efièit que se la clau « logout_enable » es definida a "
+"TRUE. DESCONSELHAT : aquesta clau es desconselhada e ignorada"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:67
+msgid "Logout command"
+msgstr "Comanda de desconnexion"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:68
+#, fuzzy
+#| msgid ""
+#| "The command to invoke when the logout button is clicked. This command "
+#| "should simply log the user out without any interaction. This key has "
+#| "effect only if the \"logout_enable\" key is set to TRUE.\n"
+#| "\n"
+#| "DEPRECATED: This key is deprecated and ignored."
+msgid ""
+"The command to invoke when the logout button is clicked. This command should "
+"simply log the user out without any interaction. This key has effect only if "
+"the “logout_enable” key is set to TRUE. DEPRECATED: This key is deprecated "
+"and ignored."
+msgstr ""
+"La comanda a invoquer quand lo boton de desconnexion es clicat. Aquesta "
+"comanda deu tot simplament desconnectar l'utilizaire sens interaccion. "
+"Aquesta clau a pas d'efièit que se la clau « logout_enable » es definida a "
+"TRUE.\n"
+"\n"
+"DESCONSELHAT : aquesta clau es desconselhada e ignorada."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:76
+msgid "Allow user switching"
+msgstr "Autorizar lo cambiament d'utilizaire"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:77
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to switch to a "
+"different user account."
+msgstr ""
+"Definir a TRUE per ofrir una opcion dins la bóstia de dialòg de "
+"desverrolhatge per bascular cap a un compte d'utilizaire diferent."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:81
+msgid "Allow the session status message to be displayed"
+msgstr "Autorizar l'afichatge del messatge d'estat de la session"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:82
+msgid ""
+"Allow the session status message to be displayed when the screen is locked. "
+"DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Permetre al messatge d'estatut de session d'èsser afichat quand l'ecran es "
+"verrolhat. DESCONSELHAT : aquesta clau es desconselhada e ignorada."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:7
+msgid "Disable all external search providers"
+msgstr "Desactivar totas las aisinas de recèrca externes"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:8
+msgid ""
+"Set to true to disable all external search provider programs, whether or not "
+"they are independently disabled or enabled. External search providers are "
+"installed by applications in $XDG_DATA_DIR/gnome-shell/search-providers."
+msgstr ""
+"Definir a true (verai) per desactivar totas las aisinas de recèrca extèrnas, "
+"que sián desactivats o activats independentament o pas. Las aisinas de "
+"recèrca extèrnas son installadas per las aplicacions dins $XDG_DATA_DIR/"
+"gnome-shell/search-providers."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:18
+msgid ""
+"List of desktop file IDs for which the associated default-enabled search "
+"provider should be disabled"
+msgstr ""
+"Lista dels identificadors de fichièr desktop pels quals las aisinas de "
+"recèrca associats e activats per defaut devon èsser desactivats"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:22
+msgid ""
+"Results for applications contained in this list will not be displayed when "
+"searching."
+msgstr ""
+"Los resultats per las aplicacions contengudas dins aquesta lista son pas "
+"afichats al moment d'una recèrca."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:30
+msgid ""
+"List of desktop file IDs for which the associated default-disabled search "
+"provider should be enabled"
+msgstr ""
+"Lista dels identificadors de fichièr desktop pels quals las aisinas de "
+"recèrca associats e desactivats per defaut devon èsser activats"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:34
+msgid ""
+"Results for applications contained in this list will be displayed when "
+"searching."
+msgstr ""
+"Los resultats per las aplicacions contengudas dins aquesta lista son "
+"afichats al moment d'una recèrca."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:42
+msgid "List of desktop file IDs for search providers sort order"
+msgstr ""
+"Lista dels identificadors de fichièr desktop pels quals los resultats de "
+"recèrca son ordenats"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:43
+msgid ""
+"Results for applications contained in this list will be displayed in the "
+"specified order. Results for applications not specified in this list will be "
+"displayed last, sorted alphabetically."
+msgstr ""
+"Los resultats per las aplicacions contengudas dins aquesta lista son "
+"afichats dins l'òrdre indicat. Los resultats per las autras aplicacions son "
+"afichats en darrièr, triats per òrdre alfabetic."
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:6
+msgid "Time before session is considered idle"
+msgstr "Durada abans que se considèra la session coma inactiva"
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:7
+msgid ""
+"The number of seconds of inactivity before the session is considered idle."
+msgstr ""
+"Lo nombre de segondas d'inactivitat abans que la session siá considerada "
+"coma inactiva."
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:11
+msgid "Session type"
+msgstr "Tipe de session"
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:12
+msgid "The name of the session to use. Known value is “gnome”."
+msgstr "Nom de session d'utilizar. Las valors reconegudas son « gnome »."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:6
+msgid "Sounds for events"
+msgstr "Efèits sonòrs pels eveniments"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:7
+msgid "Whether to play sounds on user events."
+msgstr "Indica se cal jogar de sons suls eveniments utilizaire."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:11
+msgid "Sound theme name"
+msgstr "Nom del tèma sonòr"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:12
+msgid "The XDG sound theme to use for event sounds."
+msgstr "Tèma sonòr XDG d'utilizar pels sons dels eveniments."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:16
+msgid "Input feedback sounds"
+msgstr "Retorn sonòr al moment de la picada"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:17
+msgid "Whether to play sounds on input events."
+msgstr "Indica se cal jogar de sons suls eveniments d'entrada."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:21
+msgid "Allow volume above 100%"
+msgstr "Permetre lo volum al dessús de 100%"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:22
+msgid "Whether volume can be set above 100%, using software amplification."
+msgstr ""
+
+#: schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in:6
+msgid ""
+"Maximum age for thumbnails in the cache, in days. Set to -1 to disable "
+"cleaning."
+msgstr ""
+"Edat maximum en jorns per las vinhetas dins lo cache. Definissètz a -1 per "
+"desactivar lo netejatge."
+
+#: schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in:10
+msgid ""
+"Maximum size of the thumbnail cache, in megabytes. Set to -1 to disable "
+"cleaning."
+msgstr ""
+"Talha maximum del cache en megaoctets. Definissètz a -1 per desactivar lo "
+"netejatge."
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:6
+msgid "Disable all external thumbnailers"
+msgstr "Desactivar totes los programas de vinhetatge extèrnes"
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:7
+msgid ""
+"Set to true to disable all external thumbnailer programs, independent on "
+"whether they are independently disabled/enabled."
+msgstr ""
+"Definir a true per desactivar totes los programas de vinhetatge extèrnes, "
+"que sián indepentament activats o desactivats."
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:15
+msgid ""
+"List of mime-types for which external thumbnailer programs will be disabled"
+msgstr ""
+"Lista de tipes MIME pels quals los programas extèrnes de thumbnailer son "
+"desactivats"
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:19
+msgid ""
+"Thumbnails will not be created for files whose mime-type is contained in the "
+"list."
+msgstr ""
+"Las vinhetas son pas creadas per los fichièrs dont lo tipe MIME es contengut "
+"dins la lista."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:8
+msgid "Switch to workspace 1"
+msgstr "Anar a l'espaci de trabalh 1"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:12
+msgid "Switch to workspace 2"
+msgstr "Anar a l'espaci de trabalh 2"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:16
+msgid "Switch to workspace 3"
+msgstr "Anar a l'espaci de trabalh 3"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:20
+msgid "Switch to workspace 4"
+msgstr "Anar a l'espaci de trabalh 4"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:24
+msgid "Switch to workspace 5"
+msgstr "Anar a l'espaci de trabalh 5"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:28
+msgid "Switch to workspace 6"
+msgstr "Anar a l'espaci de trabalh 6"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:32
+msgid "Switch to workspace 7"
+msgstr "Anar a l'espaci de trabalh 7"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:36
+msgid "Switch to workspace 8"
+msgstr "Anar a l'espaci de trabalh 8"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:40
+msgid "Switch to workspace 9"
+msgstr "Anar a l'espaci de trabalh 9"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:44
+msgid "Switch to workspace 10"
+msgstr "Anar a l'espaci de trabalh 10"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:48
+msgid "Switch to workspace 11"
+msgstr "Anar a l'espaci de trabalh 11"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:52
+msgid "Switch to workspace 12"
+msgstr "Anar a l'espaci de trabalh 12"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:56
+msgid "Switch to workspace left"
+msgstr "Bascular cap a l'espaci de trabalh d'esquèrra"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:60
+msgid "Switch to workspace right"
+msgstr "Bascular cap a l'espaci de trabalh de dreita"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:64
+msgid "Switch to workspace above"
+msgstr "Bascular cap a l'espaci de trabalh del dessús"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:68
+msgid "Switch to workspace below"
+msgstr "Bascular cap a l'espaci de trabalh del dejós"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:72
+msgid "Switch to last workspace"
+msgstr "Basculer cap al darrièr espaci de trabalh"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:76
+msgid "Switch windows of an application"
+msgstr "Bascular entre las fenèstras d'una aplicacion"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:80
+msgid "Reverse switch windows of an application"
+msgstr "Bascular entre las fenèstras d'una aplicacion, a l'envèrse"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:84
+msgid "Switch applications"
+msgstr "Bascular entre las aplicacions"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:88
+msgid "Reverse switch applications"
+msgstr "Bascular entre las aplicacions, a l'envèrse"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:92
+msgid "Switch windows"
+msgstr "Bascular entre las fenèstras"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:96
+msgid "Reverse switch windows"
+msgstr "Bascular entre las fenèstras, a l'envèrse"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:100
+msgid "Switch system controls"
+msgstr "Bascular entre los contraròtles de sistèma"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:104
+msgid "Reverse switch system controls"
+msgstr "Bascular entre los contraròtles de sistèma, a l'envèrse"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:108
+msgid "Switch windows of an app directly"
+msgstr "Bascular entre las fenèstras d'una aplicacion dirèctament"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:112
+msgid "Reverse switch windows of an app directly"
+msgstr "Bascular entre las fenèstras d'una aplicacion, a l'envèrse dirèctament"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:116
+msgid "Switch windows directly"
+msgstr "Bascular entre las fenèstras dirèctament"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:120
+msgid "Reverse switch windows directly"
+msgstr "Bascular entre las fenèstras dirèctament, a l'envèrse"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:124
+msgid "Switch system controls directly"
+msgstr "Cambiar los contraròtles sistèma dirèctament"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:128
+msgid "Reverse switch system controls directly"
+msgstr "Tornar als contraròtles sistèma precedents dirèctament"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:132
+msgid "Hide all normal windows"
+msgstr "Amagar totas las fenèstras normalas"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:136
+msgid "DEPRECATED: This key is deprecated and ignored."
+msgstr "OBSOLÈT : aquesta clau es obsolèta e ignorada."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:140
+msgid "Show the run command prompt"
+msgstr "Afichar la fenèstra per aviar una comanda"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:144
+msgid "Don’t use"
+msgstr "Utilizar pas"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:148
+msgid "Activate the window menu"
+msgstr "Activar lo menú de la fenèstra"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:152
+msgid "Toggle fullscreen mode"
+msgstr "Activar o desactivar lo mòde ecran complèt"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:156
+msgid "Toggle maximization state"
+msgstr "Activar o desactivar l'estat maximizat"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:160
+msgid "Toggle window always appearing on top"
+msgstr "Bascular la fenèstra en mòde totjorn en dessús"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:164
+msgid "Maximize window"
+msgstr "Maximizar la fenèstra"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:168
+msgid "Restore window"
+msgstr "Restablir la fenèstra"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:172
+msgid "Minimize window"
+msgstr "Reduire la fenèstra"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:176
+msgid "Close window"
+msgstr "Tampar la fenèstra"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:180
+msgid "Move window"
+msgstr "Desplaçar la fenèstra"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:184
+msgid "Resize window"
+msgstr "Redimensionar la fenèstra"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:188
+msgid "Toggle window on all workspaces or one"
+msgstr "Plaçar la fenèstra sus totes los espacis de trabalh, o sus un sol"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:192
+msgid "Move window to workspace 1"
+msgstr "Desplaçar la fenèstra cap a l'espaci de trabalh 1"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:196
+msgid "Move window to workspace 2"
+msgstr "Desplaçar la fenèstra cap a l'espaci de trabalh 2"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:200
+msgid "Move window to workspace 3"
+msgstr "Desplaçar la fenèstra cap a l'espaci de trabalh 3"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:204
+msgid "Move window to workspace 4"
+msgstr "Desplaçar la fenèstra cap a l'espaci de trabalh 4"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:208
+msgid "Move window to workspace 5"
+msgstr "Desplaçar la fenèstra cap a l'espaci de trabalh 5"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:212
+msgid "Move window to workspace 6"
+msgstr "Desplaçar la fenèstra cap a l'espaci de trabalh 6"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:216
+msgid "Move window to workspace 7"
+msgstr "Desplaçar la fenèstra cap a l'espaci de trabalh 7"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:220
+msgid "Move window to workspace 8"
+msgstr "Desplaçar la fenèstra cap a l'espaci de trabalh 8"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:224
+msgid "Move window to workspace 9"
+msgstr "Desplaçar la fenèstra cap a l'espaci de trabalh 9"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:228
+msgid "Move window to workspace 10"
+msgstr "Desplaçar la fenèstra cap a l'espaci de trabalh 10"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:232
+msgid "Move window to workspace 11"
+msgstr "Desplaçar la fenèstra cap a l'espaci de trabalh 11"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:236
+msgid "Move window to workspace 12"
+msgstr "Desplaçar la fenèstra cap a l'espaci de trabalh 12"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:240
+msgid "Move window to last workspace"
+msgstr "Desplaçar la fenèstra cap al darrièr espaci de trabalh"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:244
+msgid "Move window one workspace to the left"
+msgstr "Desplacar la fenèstra cap a l'espaci de trabalh d'esquèrra"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:248
+msgid "Move window one workspace to the right"
+msgstr "Desplacar la fenèstra cap a l'espaci de trabalh de dreita"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:252
+msgid "Move window one workspace up"
+msgstr "Desplacar la fenèstra cap a l'espaci de trabalh d'amont"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:256
+msgid "Move window one workspace down"
+msgstr "Desplacar la fenèstra cap a l'espaci de trabalh d'aval"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:260
+msgid "Move window to the next monitor on the left"
+msgstr "Desplaçar la fenèstra cap a l'ecran que ven a esquèrra"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:264
+msgid "Move window to the next monitor on the right"
+msgstr "Desplaçar la fenèstra cap a l'ecran que ven a dreita"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:268
+msgid "Move window to the next monitor above"
+msgstr "Desplaçar la fenèstra cap a l'ecran que ven en haut"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:272
+msgid "Move window to the next monitor below"
+msgstr "Desplaçar la fenèstra cap a l'ecran que ven en bas"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:276
+msgid "Raise window if covered, otherwise lower it"
+msgstr ""
+"Metre la fenèstra al primièr plan s'es pas amagada, siquenon al rèireplan"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:280
+msgid "Raise window above other windows"
+msgstr "Metre la fenèstra al primièr plan"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:284
+msgid "Lower window below other windows"
+msgstr "Metre la fenèstra jos las autras fenèstras"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:288
+msgid "Maximize window vertically"
+msgstr "Maximizar la fenèstra verticalament"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:292
+msgid "Maximize window horizontally"
+msgstr "Maximizar la fenèstra orizontalament"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:296
+msgid "Move window to top left corner"
+msgstr "Desplaçar la fenèstra cap al canton superior d'esquèrra"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:300
+msgid "Move window to top right corner"
+msgstr "Desplaçar la fenèstra cap al canton superior de dreita"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:304
+msgid "Move window to bottom left corner"
+msgstr "Desplaçar la fenèstra cap al canton inferior d'esquèrra"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:308
+msgid "Move window to bottom right corner"
+msgstr "Desplaçar la fenèstra cap al canton inferior de dreita"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:312
+msgid "Move window to top edge of screen"
+msgstr "Desplaçar la fenèstra cap al bòrd superior de l'ecran"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:316
+msgid "Move window to bottom edge of screen"
+msgstr "Desplaçar la fenèstra cap al bòrd inferior de l'ecran"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:320
+msgid "Move window to right side of screen"
+msgstr "Desplaçar la fenèstra cap al bòrd de dreita de l'ecran"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:324
+msgid "Move window to left side of screen"
+msgstr "Desplaçar la fenèstra cap al bòrd d'esquèrra de l'ecran"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:328
+msgid "Move window to center of screen"
+msgstr "Desplaçar la fenèstra al centre de l'ecran"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:332
+msgid "Switch input source"
+msgstr "Percórrer las fonts d'entrada"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:333
+msgid "Binding to select the next input source"
+msgstr "Acorchi per seleccionar la font d'entrada seguenta"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:337
+msgid "Switch input source backward"
+msgstr "Percórrer las fonts d'entrada a l'envers"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:338
+msgid "Binding to select the previous input source"
+msgstr "Acorchi per seleccionar la font d'entrada precedenta"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:342
+msgid "Toggle window to be always on top"
+msgstr ""
+"Activar o desactivar l'estat ont la fenèstra apareis totjorn al primièr plan"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:343
+msgid "Set or unset window to appear always on top"
+msgstr ""
+"Activar o desactivar l'estat ont la fenèstra apareis totjorn al primièr plan"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:8
+msgid "Modifier to use for modified window click actions"
+msgstr "Tòca d'utilizar per modificar las accions del clic"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:9
+#, fuzzy
+#| msgid ""
+#| "Clicking a window while holding down this modifier key will move the "
+#| "window (left click), resize the window (middle click), or show the window "
+#| "menu (right click). The middle and right click operations may be swapped "
+#| "using the \"resize-with-right-button\" key. Modifier is expressed as <!"
+#| "[CDATA[\"<Alt>\"]]> or <![CDATA[\"<Super>\"]]> for example."
+msgid ""
+"Clicking a window while holding down this modifier key will move the window "
+"(left click), resize the window (middle click), or show the window menu "
+"(right click). The middle and right click operations may be swapped using "
+"the “resize-with-right-button” key. Modifier is expressed as “<Alt>” or "
+"“<Super>” for example."
+msgstr ""
+"Clicar sus una fenèstra en quichant aquesta tòca modificatritz desplaça la "
+"fenèstra (clic esquèrra), redimensiona la fenèstra (clic mitan) o aficha lo "
+"menú de la fenèstra (clic dreit). Las operacions clic mitan e dreit pòdon "
+"être escambiadas en utilizant la clau « resize-with-right-button ». Lo "
+"modificador s'exprimís per exemple jos la forma <![CDATA[\"<Alt>\"]]> o <!"
+"[CDATA[\"<Super>\"]]>."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:19
+msgid "Whether to resize with the right button"
+msgstr "Indica se lo boton dreit pòt servir a redimensionar"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:20
+msgid ""
+"Set this to true to resize with the right button and show a menu with the "
+"middle button while holding down the key given in “mouse-button-modifier”; "
+"set it to false to make it work the opposite way around."
+msgstr ""
+"Definissètz aquesta clau a true per redimensionar amb lo boton dreit e "
+"afichar un menú amb lo boton mitan en quichant la tòca indicada per la clau "
+"« mouse-button-modifier » ; definissètz-la a fals dins lo cas contrari."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:29
+msgid "Arrangement of buttons on the titlebar"
+msgstr "Agençament dels botons sus la barra de títol"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:30
+msgid ""
+"Arrangement of buttons on the titlebar. The value should be a string, such "
+"as “menu:minimize,maximize,spacer,close”; the colon separates the left "
+"corner of the window from the right corner, and the button names are comma-"
+"separated. Duplicate buttons are not allowed. Unknown button names are "
+"silently ignored so that buttons can be added in future metacity versions "
+"without breaking older versions. A special spacer tag can be used to insert "
+"some space between two adjacent buttons."
+msgstr ""
+"Agençament dels botons sus la barra de títol. La valor deu èsser una cadena, "
+"per exemple « menu:minimize,maximize,spacer,close » ; los dos punts separan "
+"lo canton esquèrre de la fenèstra del canton dreit, e los noms dels botons "
+"an d'èsser separats per de virgulas. Los botons duplicats son pas "
+"autorizats. Los noms de boton desconeguts son silenciosament ignorats, e mai "
+"de botons poiràn èsser aponduts dins de versions futuras de metacity sens "
+"copar las versions ancianas. Una balisa especiala « spacer » permet "
+"d'inserir un pauc d'espaci entre dos botons adjacents."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:43
+msgid "Window focus mode"
+msgstr "Mòde de fòcus de las fenèstras"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:44
+msgid ""
+"The window focus mode indicates how windows are activated. It has three "
+"possible values; “click” means windows must be clicked in order to focus "
+"them, “sloppy” means windows are focused when the mouse enters the window, "
+"and “mouse” means windows are focused when the mouse enters the window and "
+"unfocused when the mouse leaves the window."
+msgstr ""
+"Lo mòde de fòcus de la fenèstra indica lo biais que las fenèstras son "
+"activadas. Presenta tres valors possiblas ; « click » significa que vos cal "
+"clicar sus las fenèstras per las activar, « sloppy » (« rajat ») significa "
+"que las fenèstras son activadas quand la mirga s'i plaça e "
+"« mouse » (« mirga »), significa que las fenèstras son activadas quand la "
+"mirga s'i plaça e desactivadas quand las quita."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:55
+msgid "Control how new windows get focus"
+msgstr "Contraròtla lo biais que las fenèstras novèlas venon activas"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:56
+#, fuzzy
+#| msgid ""
+#| "This option provides additional control over how newly created windows "
+#| "get focus. It has two possible values; “smart” applies the user’s normal "
+#| "focus mode, and “strict” results in windows started from a terminal not "
+#| "being given focus."
+msgid ""
+"This option provides additional control over how newly created windows get "
+"focus. It has two possible values; “smart” applies the user’s normal focus "
+"mode, and “strict” results in new windows not being given focus "
+"automatically."
+msgstr ""
+"Aquesta opcion provesís un contraròtle suplementari sul biais que las "
+"fenèstras novèlas venon activas. A doas valors possiblas: « smart » que "
+"correspond al mòde d'activacion utilizaire normal e « strict » qu'activa pas "
+"las fenèstra aviadas dempuèi un terminal."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:65
+msgid "Whether windows should be raised when their client area is clicked"
+msgstr ""
+"Indica se las fenèstras devon èsser remontadas quand un clic sus lor zòna "
+"client susven"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:68
+msgid ""
+"The default, true, indicates that a window will be raised whenever its "
+"client area or its frame is clicked. Setting this to false means that a "
+"window will not be raised if it is clicked on the client area. To raise it, "
+"one can click anywhere in the window’s frame, or Super-click on any part of "
+"the window. This mode is useful if one uses many overlapping windows."
+msgstr ""
+"La valor per defaut, true (verai), indica qu'una fenèstra es remontada cada "
+"còp qu'un clic sus sa zòna client o son cadre survient.\n"
+"La metre a false (fals) significa qu'una fenèstra serà pas remontada al "
+"moment d'un clic sus sa zòna client. Per la remonter, on deu clicar "
+"n'impòrta ont sus lo quadre de la fenèstra, o efectuar un Logo-clic "
+"n'impòrta ont sus la fenèstra. Ce mode es utile quand on deu gerir mantunas "
+"fenèstras que se recobrisson."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:82
+msgid "Action on title bar double-click"
+msgstr "Accion del clic doble sus la barra de títol"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:83
+#, fuzzy
+#| msgid ""
+#| "This option determines the effects of double-clicking on the title bar. "
+#| "Current valid options are “toggle-shade”, which will shade/unshade the "
+#| "window, “toggle-maximize” which will maximize/unmaximize the window, "
+#| "“toggle-maximize-horizontally” and “toggle-maximize-vertically” which "
+#| "will maximize/unmaximize the window in that direction only, “minimize” "
+#| "which will minimize the window, “shade” which will roll the window up, "
+#| "“menu” which will display the window menu, “lower” which will put the "
+#| "window behind all the others, and “none” which will not do anything."
+msgid ""
+"This option determines the effects of double-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Aquesta operacion determina los efièits d'un clic doble sus la barra de "
+"títol.\n"
+"\n"
+"Las opcions valides actualament son « toggle-shade » (bascula enrotlament), "
+"que enrotla/desenrotla la fenèstra, « toggle-maximize » (bascula "
+"maximizacion) que maximiza/demaximiza la fenèstra, « toggle-maximize-"
+"horizontally » (bascula maximizacion orizontala) e « toggle-maximize-"
+"vertically » (bascula maximizacion verticala) que maximiza/demaximiza la "
+"fenèstra dins aquesta direccion seulement, « minimize » (minimizacion) que "
+"minimise la fenèstra, « shade » (enrotlament) que enrotla la fenèstra vers "
+"lo haut, « menu » qu'aficha lo menú de la fenèstra, « lower » (arrière-plan) "
+"qui met aquesta fenèstra darrièra totas las autras e « none » (pas cap) que "
+"fa pas res."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:105
+msgid "Action on title bar middle-click"
+msgstr "Accion d'un clic del mitan sus la barra de títol"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:106
+#, fuzzy
+#| msgid ""
+#| "This option determines the effects of middle-clicking on the title bar. "
+#| "Current valid options are “toggle-shade”, which will shade/unshade the "
+#| "window, “toggle-maximize” which will maximize/unmaximize the window, "
+#| "“toggle-maximize-horizontally” and “toggle-maximize-vertically” which "
+#| "will maximize/unmaximize the window in that direction only, “minimize” "
+#| "which will minimize the window, “shade” which will roll the window up, "
+#| "“menu” which will display the window menu, “lower” which will put the "
+#| "window behind all the others, and “none” which will not do anything."
+msgid ""
+"This option determines the effects of middle-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Aquesta operacion determina los efièits d'un clic mitan sus la barra de "
+"títol.\n"
+"\n"
+"Las opcions validas actualament son « toggle-shade » (bascula enrotlament), "
+"que enrotla/desenrotla la fenèstra, « toggle-maximize » (bascula "
+"maximizacion) que maximiza/demaximiza la fenèstra, « toggle-maximize-"
+"horizontally » (bascula maximizacion orizontala) e « toggle-maximize-"
+"vertically » (bascula maximizacion verticala) que maximiza/demaximiza la "
+"fenèstra dins aquesta direccion solament, « minimize » (minimizacion) que "
+"minimiza la fenèstra, « shade » (enrotlament) qu'enrotla la fenèstra cap "
+"amont, « menú » que aficha lo menú de la fenèstra, « lower » (rèireplan) que "
+"met aquesta fenèstra darrièr totas las autras e « none » (pas cap) que fa "
+"pas res."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:129
+msgid "Action on title bar right-click"
+msgstr "Accion d'un clic dreit sus la barra de títol"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:130
+#, fuzzy
+#| msgid ""
+#| "This option determines the effects of right-clicking on the title bar. "
+#| "Current valid options are “toggle-shade”, which will shade/unshade the "
+#| "window, “toggle-maximize” which will maximize/unmaximize the window, "
+#| "“toggle-maximize-horizontally” and “toggle-maximize-vertically” which "
+#| "will maximize/unmaximize the window in that direction only, “minimize” "
+#| "which will minimize the window, “shade” which will roll the window up, "
+#| "“menu” which will display the window menu, “lower” which will put the "
+#| "window behind all the others, and “none” which will not do anything."
+msgid ""
+"This option determines the effects of right-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Aquesta operacion determina los efièits d'un clic dreit sus la barra de "
+"títol.\n"
+"\n"
+"Las opcions validas actualament son « toggle-shade » (bascula enrotlament), "
+"que enrotla/desenrotla la fenèstra, « toggle-maximize » (bascula "
+"maximizacion) que maximiza/demaximiza la fenèstra, « toggle-maximize-"
+"horizontally » (bascula maximizacion orizontala) e « toggle-maximize-"
+"vertically » (bascula maximizacion verticala) que maximiza/demaximiza la "
+"fenèstra dins aquesta direccion solament, « minimize » (minimizacion) que "
+"minimiza la fenèstra, « shade » (enrotlament) qu'enrotla la fenèstra cap "
+"amont, « menú » que aficha lo menú de la fenèstra, « lower » (rèireplan) que "
+"met aquesta fenèstra darrièr totas las autras e « none » (pas cap) que fa "
+"pas res."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:152
+msgid "Automatically raises the focused window"
+msgstr "Plaça automaticament la fenèstra activa al primièr plan"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:153
+msgid ""
+"If set to true, and the focus mode is either “sloppy” or “mouse” then the "
+"focused window will be automatically raised after a delay specified by the "
+"auto-raise-delay key. This is not related to clicking on a window to raise "
+"it, nor to entering a window during drag-and-drop."
+msgstr ""
+"Se definit a true e que la clau focus-mode es definida a « sloppy » o « "
+"mouse » alara la fenèstra activada es automaticament mesa al primièr plan "
+"après un relambi especificat per la clau « auto-raise-delay ». Aquò es pas "
+"religat al clic sus una fenèstra per la metre al primièr plan ni a l'entrada "
+"d'una fenèstra al moment d'un lisar/depausar."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:163
+msgid "Delay in milliseconds for the auto raise option"
+msgstr ""
+"Relambi en millisegondas per l'opcion de mesa automatica al primièr plan"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:164
+msgid ""
+"The time delay before raising a window if auto-raise is set to true. The "
+"delay is given in thousandths of a second."
+msgstr ""
+"Lo relambi avant la mesa al primièr plan d'una fenèstra se la clau « auto-"
+"raise » es definida a true. Lo relambi es provesit en milens de segonda."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:171
+msgid "Current theme"
+msgstr "Tèma actual"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:172
+msgid ""
+"The theme determines the appearance of window borders, titlebar, and so "
+"forth. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Lo tèma determina l'aparéncia de las bordaduras de fenèstra, de la barra de "
+"títol, etc. DESCONSELHAT : aquesta clau es desconselhada e ignorada."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:181
+msgid "Use standard system font in window titles"
+msgstr ""
+"Utilizar la polissa estandarda del sistèma dins los títols de las fenèstras"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:182
+msgid ""
+"If true, ignore the titlebar-font option, and use the standard application "
+"font for window titles."
+msgstr ""
+"Se true, ignorar l'opcion « titlebar-font » e utilizar la polissa estandarda "
+"de l'aplicacion pels títols de fenèstra."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:189
+msgid "Window title font"
+msgstr "Polissa de títol de las fenèstras"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:190
+msgid ""
+"A font description string describing a font for window titlebars. The size "
+"from the description will only be used if the titlebar-font-size option is "
+"set to 0. Also, this option is disabled if the titlebar-uses-desktop-font "
+"option is set to true."
+msgstr ""
+"Una cadena de caractèrs de description de polissa décrivant una polissa "
+"d'utilizar per las barras de títol de las fenèstras. La talha de la "
+"descripcion serà pas utilizada que se l'opcion « titlebar-font-size » es "
+"definida a 0. De plus, l'opcion es desactivada se l'opcion « titlebar-uses-"
+"desktop-font » es definida a true."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:200
+msgid "Number of workspaces"
+msgstr "Nombre d'espacis de trabalh"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:201
+msgid ""
+"Number of workspaces. Must be more than zero, and has a fixed maximum to "
+"prevent making the desktop unusable by accidentally asking for too many "
+"workspaces."
+msgstr ""
+"Nombre d'espacis de trabalh. Deu èsser superior a zèro e presenta un limit "
+"maximal fixar per evitar de rendre vòstre burèu inutilizable en demandant "
+"tròp d'espacis de trabalh."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:209
+msgid "System Bell is Audible"
+msgstr "Podètz ausir lo bip sistèma"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:210
+msgid ""
+"Determines whether applications or the system can generate audible “beeps”; "
+"may be used in conjunction with “visual bell” to allow silent “beeps”."
+msgstr ""
+"Determina se las aplicacions o lo sistèma pòdon generir de bips ausibles ; "
+"pòt èsser utilizat en conjoncion amb « sonariá visuala » per permetre de "
+"bips silencioses."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:218
+msgid "Enable Visual Bell"
+msgstr "Activar la sonariá visuala"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:219
+msgid ""
+"Turns on a visual indication when an application or the system issues a "
+"“bell” or “beep”; useful for the hard-of-hearing and for use in noisy "
+"environments."
+msgstr ""
+"Activa una indicacion visuala quand una aplicacion o lo sistèma emet un "
+"bip ; util pels malentendents e per una utilizacion dins d'environaments "
+"brusents."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:228
+msgid "Visual Bell Type"
+msgstr "Tipe de sonariá visuala"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:229
+msgid ""
+"Tells the WM how to implement the visual indication that the system bell or "
+"another application “bell” indicator has been rung. Currently there are two "
+"valid values, “fullscreen-flash”, which causes a fullscreen white-black "
+"flash, and “frame-flash” which causes the titlebar of the application which "
+"sent the bell signal to flash. If the application which sent the bell is "
+"unknown (as is usually the case for the default “system beep”), the "
+"currently focused window’s titlebar is flashed."
+msgstr ""
+"Indica au gestionnaire de fenèstras comment implementar l'indication visuala "
+"que l'eveniment sonòr del sistèma o un autre indicador « sonore » "
+"d'aplicacion es estat emés. Actualament, i a doas valors validas, « "
+"fullscreen-flash » (flash ecran complèt), que provòca un cluquejament negre "
+"e blanc ecran complèt e « frame-flash » (flash fenèstra) que provòca un "
+"cluquejament de la barra de títol de l'aplicacion emissora.\\ Se "
+"l'aplicacion qu'a emés l'eveniment sonòr es desconegut (coma es sovent lo "
+"cas per l'eveniment sonòr sistèma per defaut), la barra títol de "
+"l'aplicacion que possedís lo fòcus cluqueja."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:250
+msgid "Disable misfeatures that are required by old or broken applications"
+msgstr ""
+"Desactiva los ajustaments requerits per las aplicaicons ancianas o mal "
+"concebudas"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:253
+msgid ""
+"Some applications disregard specifications in ways that result in window "
+"manager misfeatures. This option puts the WM in a rigorously correct mode, "
+"which gives a more consistent user interface, provided one does not need to "
+"run any misbehaving applications."
+msgstr ""
+"Certanas aplicacions ignoran las especificacions qu'aquò provòca des "
+"disfoncionaments del gestionari de fenèstras. Aquesta opcion place lo "
+"gestionari dins un mòde rigorosament exacte que provesís una interfàcia "
+"utilizaire mai consistenta tant que l'utilizaire n'a pas besonh d'executar "
+"des aplicacions que se compòrtan mal."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:263
+msgid "The names of the workspaces"
+msgstr "Los noms dels espacis de trabalh"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:264
+msgid ""
+"Defines the names that should be assigned to workspaces. If the list is too "
+"long for the current number of workspaces, names in excess will be ignored. "
+"If the list is too short, or includes empty names, missing values will be "
+"replaced with the default (“Workspace N”)."
+msgstr ""
+"Definit los noms que deurián èsser atribuits aux espacis de trabalh. Se la "
+"lista es tròp longa pel nombre actuel d'espacis de trabalh, los noms en "
+"excès son ignorats. Se la lista es tròp corta o compòrta de noms voids, la "
+"valors absentas son remplaçadas per la valor « Espaci de trabalh N » per "
+"defaut."
+
+#: schemas/org.gnome.system.locale.gschema.xml.in:6
+msgid "The locale to use for dates / numbers formats"
+msgstr "La locale d'utilizar pel format de las datas e dels nombres"
+
+#: schemas/org.gnome.system.locale.gschema.xml.in:7
+msgid ""
+"Specify the locale to be used for displaying dates, times and numbers "
+"formats."
+msgstr ""
+"Especifica la locale d'utilizar per l'afichatge de las datas, de las oras e "
+"dels nombres."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:7
+msgid "Geolocation services are enabled."
+msgstr "Los servicis de geolocalizacion son activats."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:8
+msgid "If true, applications are allowed to access location information."
+msgstr ""
+"Se true, las aplicacions son autorizadas a accedir a las informacions "
+"d'emplaçament geografic."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:14
+msgid "The maximum accuracy level of location."
+msgstr "Lo nivèl maximal de precision geografica."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:15
+msgid ""
+"Configures the maximum level of location accuracy applications are allowed "
+"to see. Valid options are “country”, “city”, “neighborhood”, “street”, and "
+"“exact” (typically requires GPS receiver). Please keep in mind that this "
+"only controls what GeoClue will allow applications to see and they can find "
+"user’s location on their own using network resources (albeit with street-"
+"level accuracy at best)."
+msgstr ""
+"Configure lo nivèl maximal de precision de l'emplaçament geografic que las "
+"aplicacions son autorizadas a veire. Las opcions valablas son « country "
+"» (pays), « city » (vila), « neighborhood » (vesinatge), « street » (rue) e "
+"« exact » (que requerís tipicament un receptor GPS). Siatz conscient qu'aquò "
+"contraròtla pas que çò que GeoClue permet a las aplicacions de veire e "
+"qu'aquelas pòdon trobar elles-mêmes l'emplaçament de l'utilizaire a partir "
+"de las ressorsas ret (al mehor al nivèl de precision de la carrièra)."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:10
+msgid "Proxy configuration mode"
+msgstr "Mòde de configuracion del servidor mandatari"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:11
+msgid ""
+"Select the proxy configuration mode. Supported values are “none”, “manual”, "
+"“auto”. If this is “none”, then proxies are not used. If it is “auto”, the "
+"autoconfiguration URL described by the “autoconfig-url” key is used. If it "
+"is “manual”, then the proxies described by “/system/proxy/http”, “/system/"
+"proxy/https”, “/system/proxy/ftp” and “/system/proxy/socks” will be used. "
+"Each of the 4 proxy types is enabled if its “host” key is non-empty and its "
+"“port” key is non-0. If an http proxy is configured, but an https proxy is "
+"not, then the http proxy is also used for https. If a SOCKS proxy is "
+"configured, it is used for all protocols, except that the http, https, and "
+"ftp proxy settings override it for those protocols only."
+msgstr ""
+"Seleccionar lo mòde de configuracion del servidor mandatari. Las valors "
+"presas en carga son « none » (pas cap), « manual » (manuala), « auto "
+"» (automatica).\n"
+"\n"
+"Se es sus « none », los servidors mandataris son pas utilizats. S'es sus « "
+"auto », l'URL d'autoconfiguration descricha per la clau « autoconfig-url » "
+"es utilizada.\n"
+"\n"
+"S'es sus « manual », los servidors mandataris descriches per las claus « /"
+"system/proxy/http », « /system/proxy/https », « /system/proxy/ftp » e « /"
+"system/proxy/socks » son utilizats. Cadun dels 4 tipes de servidor mandatari "
+"es activat se la clau « host » es non-vide e la clau « port » es pas nula.\n"
+"\n"
+" Se un servidor mandatari http es configurat mas qu'un servidor mandatari "
+"https ne l'est pas, lo servidor mandatari http serà tanben utilizat per "
+"https. Se un servidor mandatari SOCKS es configurat, serà utilizat per totes "
+"los protocòls levat que los paramètres de servidor mandatari http, https e "
+"ftp prenon lo dessús per aquestes protocòls solament."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:36
+msgid "Automatic proxy configuration URL"
+msgstr "URL de configuracion automatica del servidor mandatari"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:37
+msgid ""
+"URL that provides proxy configuration values. When mode is “auto”, this URL "
+"is used to look up proxy information for all protocols."
+msgstr ""
+"URL que provesís las valors de configuration de servidor mandatari. Quand lo "
+"mòde es « auto », aqueste URL es utilizat per recercar las informacions de "
+"servidor mandatari per totes los protocòls."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:45
+msgid "Non-proxy hosts"
+msgstr "Òstes que necessitan pas de servidor mandatari"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:46
+msgid ""
+"This key contains a list of hosts which are connected to directly, rather "
+"than via the proxy (if it is active). The values can be hostnames, domains "
+"(using an initial wildcard like *.foo.com), IP host addresses (both IPv4 and "
+"IPv6) and network addresses with a netmask (something like 192.168.0.0/24)."
+msgstr ""
+"Aquesta clau conten una lista d'òstes que pòdon èsser contactats "
+"dirèctament, puslèu que per un servidor mandatari (s'es actiu). Las valors "
+"pòdon èsser de noms d'òstes, de domenis (en utilizant un caractèr joker coma "
+"*.toto.fr), d'adreças IP d'òste (IPv4 e IPv6) e d'adreças de ret amb una "
+"masqueta (coma 192.168.0.0/24)."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:56
+msgid "Use HTTP proxy for all protocols"
+msgstr "Utilizar lo proxy HTTP per totes los protocòls"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:57
+msgid "Whether to use the HTTP proxy for all protocols or not."
+msgstr "Indica se cal utilizar lo proxy HTTP per totes los protocòls o non."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:65
+msgid "Unused; ignore"
+msgstr "Inutilizada ; d'ignorar"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:66
+msgid ""
+"This key is not used; HTTP proxying is enabled when the host key is non-"
+"empty and the port is non-0."
+msgstr ""
+"Aquesta clau es pas utilizada ; l'usage del servidor mandatari HTTP es "
+"activada quand la clau de l'òste es non voida e lo pòrt es non nul."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:73
+msgid "HTTP proxy host name"
+msgstr "Nom d'òste del servidor mandatari HTTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:74
+msgid "The machine name to proxy HTTP through."
+msgstr "Lo nom de la maquina que servís de servidor mandatari HTTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:81
+msgid "HTTP proxy port"
+msgstr "Pòrt del servidor mandatari HTTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:82
+msgid ""
+"The port on the machine defined by “/system/proxy/http/host” that you proxy "
+"through."
+msgstr ""
+"Lo pòrt sus la maquina definida per « /system/proxy/http/host » d'utilizar "
+"pel servici mandatari."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:89
+msgid "Authenticate proxy server connections"
+msgstr "Autentificar las connexions al servidor mandatari"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:90
+msgid ""
+"If true, then connections to the proxy server require authentication. The "
+"username/password combo is defined by “/system/proxy/http/authentication-"
+"user” and “/system/proxy/http/authentication-password”. This applies only to "
+"the http proxy; when using a separate https proxy, there is currently no way "
+"to specify that it should use authentication."
+msgstr ""
+"Se definit a true, las connexions al servidor mandatari necessitan una "
+"autentificacion. La combinason nom d'utilizaire/senhal es definida per las "
+"claus « /system/proxy/http/authentification-user » e « /system/proxy/http/"
+"authentication-password ». Aquò s'aplica pas qu'al servidor mandatari http ; "
+"al moment de l'utilizacion d'un servidor mandatari https separat, i a pas "
+"actualament cap de biais d'especificar que deu utilizar l'autentificacion."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:103
+msgid "HTTP proxy username"
+msgstr "Nom d'utilizaire del servidor mandatari HTTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:104
+msgid "User name to pass as authentication when doing HTTP proxying."
+msgstr ""
+"Nom d'utilizaire de provesir coma autentificacion al moment de l'utilizacion "
+"del servidor mandatari HTTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:110
+msgid "HTTP proxy password"
+msgstr "Senhal del servidor mandatari HTTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:111
+msgid "Password to pass as authentication when doing HTTP proxying."
+msgstr ""
+"Senhal de provesir coma autentificacion al moment de l'utilizacion del "
+"servidor mandatari HTTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:119
+msgid "Secure HTTP proxy host name"
+msgstr "Nom d'òste del servidor mandatari HTTP securizat"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:120
+msgid "The machine name to proxy secure HTTP through."
+msgstr "Lo nom de la maquina que servís de servidor mandatari HTTP securizat."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:127
+msgid "Secure HTTP proxy port"
+msgstr "Pòrt del servidor mandatari HTTP securizat"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:128
+msgid ""
+"The port on the machine defined by “/system/proxy/https/host” that you proxy "
+"through."
+msgstr ""
+"Lo pòrt sus la maquina definida per « /system/proxy/https/host » d'utilizar "
+"pel servidor mandatari."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:137
+msgid "FTP proxy host name"
+msgstr "Nom d'òste del servidor mandatari FTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:138
+msgid "The machine name to proxy FTP through."
+msgstr "Lo nom de la maquina que servís de servidor mandatari FTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:145
+msgid "FTP proxy port"
+msgstr "Pòrt del servidor mandatari FTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:146
+msgid ""
+"The port on the machine defined by “/system/proxy/ftp/host” that you proxy "
+"through."
+msgstr ""
+"Lo pòrt sus la maquina definida per « /system/proxy/ftp/host » d'utilizar "
+"pel servidor mandatari."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:155
+msgid "SOCKS proxy host name"
+msgstr "Nom d'òste del servidor mandatari SOCKS"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:156
+msgid "The machine name to use as a SOCKS proxy."
+msgstr "Lo nom de la maquina d'utilizar coma servidor mandatari SOCKS."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:163
+msgid "SOCKS proxy port"
+msgstr "Pòrt del servidor mandatari SOCKS"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:164
+msgid ""
+"The port on the machine defined by “/system/proxy/socks/host” that you proxy "
+"through."
+msgstr ""
+"Lo pòrt sus la maquina definida per \"/system/proxy/socks/host\" a utilizar "
+"pel servidor mandatari."
+
+#~ msgid "Toggle shaded state"
+#~ msgstr "Activar o desactivar l'estat enrotlat"
+
+#~ msgid "This key is not used, and should not be read or modified."
+#~ msgstr ""
+#~ "Aquesta clau es pas utilizada e ne deu pas èsser legida o modificada."
+
+#~ msgid "Show the activities overview"
+#~ msgstr "Afichar l'apercebut de las activitats"
+
+#~ msgid "Beep when a modificar is pressed."
+#~ msgstr "Bip quand un modificator es quichat."
+
+#~ msgid "Whether to beep when a modificar key is pressed."
+#~ msgstr ""
+#~ "Indica se cal emetre un bip quand una tòca modificatritz es quichada."
+
+#~ msgid ""
+#~ "The command that will be run, if the \"embedded_keyboard_enabled\" key is "
+#~ "set to TRUE, to embed a keyboard widget into the window. This command "
+#~ "should implament an XEMBED plug interface and output a window XID on the "
+#~ "standard output.\n"
+#~ "\n"
+#~ "DEPRECATED: This key is deprecated and ignored."
+#~ msgstr ""
+#~ "La comanda que serà executada, se la clau « embedded_keyboard_enabled » "
+#~ "es definida a VERAI, per incorporar un clavièr dins la fenèstra. Aquesta "
+#~ "comanda deu implementar una interfàcia d'empeuton XEMBED e afichar una "
+#~ "fenèstra XID sus l'afichatge estandard.\n"
+#~ "\n"
+#~ "DESCONSELHAT : aquesta clau es desconselhada e ignorada."
+
+#~ msgid "Action on title bar clic doblek"
+#~ msgstr "Accion quand doble-clicatz sus la barra de títol"
+
+#~ msgid ""
+#~ "This option determines the effects of double-clicking on the title bar.\n"
+#~ msgstr ""
+#~ "Aquesta operacion determina los efièits d'un clic doble sus la barra de "
+#~ "títol.\n"
+#~ "\n"
+#~ "Las opcions validas actualament son « toggle-shade » (bascula "
+#~ "enrotlament), que enrotla/desenrotla la fenèstra, « toggle-maximize "
+#~ "» (bascula maximizacion) que maximiza/demaximiza la fenèstra, « toggle-"
+#~ "maximize-horizontally » (bascula maximizacion orizontala) e « toggle-"
+#~ "maximize-vertically » (bascula maximizacion verticala) que maximiza/"
+#~ "demaximiza la fenèstra dins aquesta direccion solament, « minimize "
+#~ "» (minimizacion) que minimiza la fenèstra, « shade » (enrotlament) "
+#~ "qu'enrotla la fenèstra cap amont, « menú » que aficha lo menú de la "
+#~ "fenèstra, « lower » (rèireplan) que met aquesta fenèstra darrièr totas "
+#~ "las autras e « none » (pas cap) que fa pas res."
+
+#~ msgid ""
+#~ "Tells the WM how to implament the visual indication that the system bell "
+#~ "or another application 'bell' indicator has been rung.\n"
+#~ "\n"
+#~ "Currently there are two valid values, \"fullscreen-flash\", which causes "
+#~ "a fullscreen white-black flash, and \"frame-flash\" which causes the "
+#~ "titlebar of the application which sent the bell signal to flash.\n"
+#~ "\n"
+#~ "If the application which sent the bell is unknown (as is usually the case "
+#~ "for the default \"system beep\"), the currently focused window's titlebar "
+#~ "is flashed."
+#~ msgstr ""
+#~ "Indica al gestionari de fenèstras comment implementar l'indication "
+#~ "visuala que l'eveniment sonòr del sistèma o un autre indicador « sonore » "
+#~ "d'aplicacion es estat emés. Actualament, i a doas valors validas, « "
+#~ "fullscreen-flash » (flash ecran complet), que provòca un cluquetejament "
+#~ "blanc e negre ecran complet e « frame-flash » (flash fenèstra) que "
+#~ "provòca un cluquetejament de la barra de títol de l'aplicacion emissora.\n"
+#~ "\n"
+#~ "Se l'aplicacion qu'a emés l'eveniment sonòr es desconeguda (coma c'est "
+#~ "souvent lo cas per l'eveniment sonòr sistèma per defaut), la barra títol "
+#~ "de l'aplicacion que possedís lo focus cluqueja."
+
+#~ msgid "Draw Desktop Background"
+#~ msgstr "Dessenhar lo rèireplan del burèu"
+
+#~ msgid "Menus Have Icons"
+#~ msgstr "Los menús an d'icònas"
+
+#~ msgid "Whether menus may display an icon next to a menu entry."
+#~ msgstr ""
+#~ "Indica se los menús pòdon afichar una icòna al costat del tèxte del menú."
+
+#~ msgid "Whether buttons may display an icon in addition to the button text."
+#~ msgstr ""
+#~ "Indica se los botons pòdon afichar una icòna al costat del tèxte del "
+#~ "boton."
+
+#~ msgid "Show the 'Input Methods' menu"
+#~ msgstr "Afichar lo menú « Metòdes de picada »"
+
+#~ msgid ""
+#~ "Whether the context menus of entries and text views should offer to "
+#~ "change the input method."
+#~ msgstr ""
+#~ "Indica se los menús contextuals de las zònas de picada e de las vistas de "
+#~ "tèxte devon ofrir la possibilitat de modificar lo metòde de picada."
+
+#~ msgid "Show the 'Unicode Control Character' menu"
+#~ msgstr "Afichar lo menú « Caractèr de contraròtle Unicode »"
+
+#~ msgid ""
+#~ "Whether the context menus of entries and text views should offer to "
+#~ "insert control characters."
+#~ msgstr ""
+#~ "Indica se los menús contextuals de las zònas de picada e de las vistas de "
+#~ "tèxte devon ofrir la possibilitat d'inserir de caractèrs de contraròtle."
+
+#~ msgid "Select the touchpad scroll method"
+#~ msgstr "Metòde de desfilament del pavat tactil"
+
+#~ msgid ""
+#~ "Select the touchpad scroll method. Supported values are: \"disabled\", "
+#~ "\"edge-scrolling\", \"two-finger-scrolling\"."
+#~ msgstr ""
+#~ "Selecciona lo metòde de desfilament amb lo pavat tactil. Las valors "
+#~ "admesas sont : « disabled » (desactivat), « edge-scrolling » (desfilament "
+#~ "suls bòrds), « two-finger-scrolling » (desfilament amb dos dets)."
+
+#~ msgid "Whether raising should be a side-effect of other user interactions"
+#~ msgstr ""
+#~ "Indica se la mesa al primièr plan deu èsser un efèit de bòrd d'autras "
+#~ "interaccions amb l'utilizaire"
+
+#~ msgid ""
+#~ "(Not implamented) Navigacion works in terms of applications not windows"
+#~ msgstr ""
+#~ "(pas implamentat) La navigacion fonciona en tèrmes d'aplicacions e non "
+#~ "pas de fenèstras"
+
+#~ msgid ""
+#~ "Set this to true to resize with the right button and show a menu with the "
+#~ "middle button while holding down the key given in \"mouse-button-modificar"
+#~ "\"; set it to false to make it work the opposite way around."
+#~ msgstr ""
+#~ "Definissètz aquesta clau a verai per redimensionar amb lo boton dreit e "
+#~ "afichar un menú amb lo boton mitan en quichant la tòca indicada per la "
+#~ "clau « mouse-button-modificar » ; definissètz-la a fals dins lo cas "
+#~ "contrari."

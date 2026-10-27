@@ -11,6 +11,7 @@
 #include "base/functional/callback.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "base/trace_event/trace_event.h"
 #include "components/page_load_metrics/common/page_load_metrics.mojom.h"
 #include "components/page_load_metrics/common/page_load_metrics_util.h"
 #include "components/page_load_metrics/common/page_load_timing.h"
@@ -221,9 +222,9 @@ void PageTimingMetricsSender::DidLoadResourceFromMemoryCache(
       ->DidLoadFromMemoryCache(response_url, encoded_body_length, mime_type);
 }
 
-void PageTimingMetricsSender::OnMainFrameIntersectionChanged(
-    const gfx::Rect& main_frame_intersection_rect) {
-  metadata_->main_frame_intersection_rect = main_frame_intersection_rect;
+void PageTimingMetricsSender::OnMainFrameRectangleChanged(
+    const gfx::Rect& main_frame_rect) {
+  metadata_->main_frame_rect = main_frame_rect;
   EnsureSendTimer();
 }
 
@@ -252,14 +253,24 @@ void PageTimingMetricsSender::UpdateResourceMetadata(
 
 void PageTimingMetricsSender::UpdateCustomUserTimings(
     mojom::CustomUserTimingMarkPtr custom_timing) {
+  TRACE_EVENT("loading", "PageTimingMetricsSender::UpdateCustomUserTimings",
+              "mark_name", custom_timing->mark_name, "custom_timings_count",
+              custom_user_timings_.size());
   custom_user_timings_.push_back(std::move(custom_timing));
   EnsureSendTimer();
 }
 
 void PageTimingMetricsSender::Update(
     mojom::PageLoadTimingPtr timing,
-    const PageTimingMetadataRecorder::MonotonicTiming& monotonic_timing) {
-  if (last_timing_->Equals(*timing)) {
+    const PageTimingMetadataRecorder::MonotonicTiming& monotonic_timing,
+    mojom::FontLoadingMetricsPtr font_loading_metrics) {
+  bool timing_changed = !last_timing_->Equals(*timing);
+  bool font_metrics_changed =
+      font_loading_metrics &&
+      (!last_font_loading_metrics_ ||
+       !last_font_loading_metrics_->Equals(*font_loading_metrics));
+
+  if (!timing_changed && !font_metrics_changed) {
     return;
   }
 
@@ -275,11 +286,18 @@ void PageTimingMetricsSender::Update(
   // are reached (currently parse start, DCL, and FCP) so that the browser can
   // receive the accurate number of events. This accuracy is important to
   // measure the abandoned navigation.
-  const bool send_urgently = IsFirstFCP(last_timing_, timing) ||
-                             IsFirstParseStart(last_timing_, timing) ||
-                             IsFirstDCL(last_timing_, timing);
+  const bool send_urgently =
+      timing_changed && (IsFirstFCP(last_timing_, timing) ||
+                         IsFirstParseStart(last_timing_, timing) ||
+                         IsFirstDCL(last_timing_, timing));
 
-  last_timing_ = std::move(timing);
+  if (timing_changed) {
+    last_timing_ = std::move(timing);
+  }
+  if (font_metrics_changed) {
+    last_font_loading_metrics_ = std::move(font_loading_metrics);
+  }
+
   metadata_recorder_.UpdateMetadata(monotonic_timing);
   EnsureSendTimer(send_urgently);
 }
@@ -292,6 +310,9 @@ void PageTimingMetricsSender::DidObserveSoftLargestContentfulPaint(
 
 void PageTimingMetricsSender::SendCustomUserTimingMark(
     mojom::CustomUserTimingMarkPtr custom_timing) {
+  TRACE_EVENT("loading", "PageTimingMetricsSender::SendCustomUserTimingMark",
+              "mark_name", custom_timing->mark_name, "custom_timings_count",
+              custom_user_timings_.size());
   // `custom_timing` is sent to the browser to clarify when the abandoned
   // navigation happens. When the navigation is abandoned, the renderer may be
   // busy, so it's important to start IPC and report UMA immediately.
@@ -347,16 +368,19 @@ void PageTimingMetricsSender::SendNow() {
     }
   }
 
-  sender_->SendTiming(last_timing_, metadata_, std::move(new_features_),
-                      std::move(resources), render_data_, last_cpu_timing_,
-                      std::move(event_timings_), subresource_load_metrics_,
-                      std::move(soft_navigation_metrics_),
-                      std::move(soft_largest_contentful_paint_),
-                      std::move(custom_user_timings_));
+  TRACE_EVENT("loading", "PageTimingMetricsSender::SendNow",
+              "custom_user_timings_count", custom_user_timings_.size());
+
+  sender_->SendTiming(
+      last_timing_, metadata_, std::move(new_features_), std::move(resources),
+      render_data_, last_cpu_timing_, std::move(event_timings_),
+      subresource_load_metrics_, std::move(soft_navigation_metrics_),
+      std::move(soft_largest_contentful_paint_),
+      std::move(custom_user_timings_), last_font_loading_metrics_);
 
   event_timings_.clear();
   new_features_.clear();
-  metadata_->main_frame_intersection_rect.reset();
+  metadata_->main_frame_rect.reset();
   metadata_->main_frame_viewport_rect.reset();
   metadata_->main_frame_ad_rects.clear();
   last_cpu_timing_->task_time = base::TimeDelta();

@@ -26,38 +26,6 @@ class CPWL_ScrollBar;
 class IPVT_FontMap;
 struct PWL_SCROLL_INFO;
 
-// window styles
-#define PWS_BORDER 0x40000000L
-#define PWS_BACKGROUND 0x20000000L
-#define PWS_VSCROLL 0x08000000L
-#define PWS_VISIBLE 0x04000000L
-#define PWS_READONLY 0x01000000L
-#define PWS_AUTOFONTSIZE 0x00800000L
-#define PWS_AUTOTRANSPARENT 0x00400000L
-#define PWS_NOREFRESHCLIP 0x00200000L
-
-// edit and label styles
-#define PES_MULTILINE 0x0001L
-#define PES_PASSWORD 0x0002L
-#define PES_LEFT 0x0004L
-#define PES_RIGHT 0x0008L
-#define PES_MIDDLE 0x0010L
-#define PES_TOP 0x0020L
-#define PES_CENTER 0x0080L
-#define PES_CHARARRAY 0x0100L
-#define PES_AUTOSCROLL 0x0200L
-#define PES_AUTORETURN 0x0400L
-#define PES_UNDO 0x0800L
-#define PES_RICH 0x1000L
-#define PES_TEXTOVERFLOW 0x4000L
-
-// listbox styles
-#define PLBS_MULTIPLESEL 0x0001L
-#define PLBS_HOVERSEL 0x0008L
-
-// combobox styles
-#define PCBS_ALLOWCUSTOMTEXT 0x0001L
-
 struct CPWL_Dash {
   int32_t nDash;
   int32_t nGap;
@@ -66,6 +34,37 @@ struct CPWL_Dash {
 
 class CPWL_Wnd : public Observable {
  public:
+  enum class Styles : uint32_t {
+    // window styles
+    kWindowBorder = 0x40000000L,
+    kWindowBackground = 0x20000000L,
+    kWindowVScroll = 0x08000000L,
+    kWindowVisible = 0x04000000L,
+    kWindowReadOnly = 0x01000000L,
+    kWindowAutoFontSize = 0x00800000L,
+    kWindowAutoTransparent = 0x00400000L,
+    kWindowNoRefreshClip = 0x00200000L,
+    // edit and label styles
+    kEditMultiline = 0x0001L,
+    kEditPassword = 0x0002L,
+    kEditLeft = 0x0004L,
+    kEditRight = 0x0008L,
+    kEditMiddle = 0x0010L,
+    kEditTop = 0x0020L,
+    kEditCenter = 0x0080L,
+    kEditCharArray = 0x0100L,
+    kEditAutoScroll = 0x0200L,
+    kEditAutoReturn = 0x0400L,
+    kEditUndo = 0x0800L,
+    kEditRich = 0x1000L,
+    kEditTextOverflow = 0x4000L,
+    // listbox styles
+    kListboxMultipleSel = 0x0001L,
+    kListboxHoverSel = 0x0008L,
+    // combobox styles
+    kComboboxAllowCustomText = 0x0001L,
+  };
+
   static const CFX_Color kDefaultBlackColor;
   static const CFX_Color kDefaultWhiteColor;
 
@@ -99,7 +98,7 @@ class CPWL_Wnd : public Observable {
     ObservedPtr<ProviderIface> pProvider;
 
     // Optional:
-    uint32_t dwFlags = 0;
+    Mask<Styles> dwFlags;
     CFX_Color sBackgroundColor;
     BorderStyle nBorderStyle = BorderStyle::kSolid;
     int32_t dwBorderWidth = 1;
@@ -192,8 +191,8 @@ class CPWL_Wnd : public Observable {
   CFX_FloatRect GetWindowRect() const;
 
   bool IsVisible() const { return visible_; }
-  bool HasFlag(uint32_t dwFlags) const;
-  void RemoveFlag(uint32_t dwFlags);
+  bool HasFlag(Styles flag) const;
+  void RemoveFlag(Styles flag);
   void SetClipRect(const CFX_FloatRect& rect);
 
   IPWL_FillerNotify::PerWindowData* GetAttachedData() const {

@@ -5,11 +5,16 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_FILLING_FORM_AUTOFILL_HISTORY_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_FILLING_FORM_AUTOFILL_HISTORY_H_
 
+#include <stddef.h>
+
 #include <list>
 #include <map>
 #include <optional>
 #include <string>
+#include <vector>
 
+#include "base/containers/span.h"
+#include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/filling/filling_product.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "components/autofill/core/common/unique_ids.h"
@@ -103,12 +108,12 @@ class FormAutofillHistory {
       FillingProduct filling_product,
       bool is_refill);
 
-  // Erases the field history information corresponding to `field_id` in
-  // `fill_operation`. If the form filling entry becomes empty afterwards, the
-  // function also removes it from `history_`.
-  void EraseFieldFillingEntry(
-      std::list<FormFillingEntry>::iterator fill_operation,
-      FieldGlobalId field_id);
+  // Erases the field history information corresponding to all `field_ids` from
+  // `filling_entry`. If `filling_entry` becomes empty afterwards, the function
+  // also removes it from `history_`.
+  void EraseFieldFillingEntries(
+      std::list<FormFillingEntry>::iterator filling_entry,
+      base::span<const FieldGlobalId> field_ids);
 
   // Returns the first entry in `history_` (corresponding to the last
   // chronological entry) that has information about the field represented by

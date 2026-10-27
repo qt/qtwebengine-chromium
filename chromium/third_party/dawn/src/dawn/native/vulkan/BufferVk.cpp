@@ -25,7 +25,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/vulkan/BufferVk.h"
+#include "src/dawn/native/vulkan/BufferVk.h"
 
 #include <algorithm>
 #include <cstring>
@@ -34,20 +34,21 @@
 #include <utility>
 #include <vector>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/GPUInfo.h"
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/CommandBuffer.h"
-#include "dawn/native/PhysicalDevice.h"
-#include "dawn/native/Queue.h"
-#include "dawn/native/vulkan/DeviceVk.h"
-#include "dawn/native/vulkan/FencedDeleter.h"
-#include "dawn/native/vulkan/QueueVk.h"
-#include "dawn/native/vulkan/ResourceHeapVk.h"
-#include "dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
-#include "dawn/native/vulkan/UtilsVulkan.h"
-#include "dawn/native/vulkan/VulkanError.h"
 #include "partition_alloc/pointers/raw_ptr.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/GPUInfo.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/CommandBuffer.h"
+#include "src/dawn/native/PhysicalDevice.h"
+#include "src/dawn/native/Queue.h"
+#include "src/dawn/native/vulkan/DeviceVk.h"
+#include "src/dawn/native/vulkan/FencedDeleter.h"
+#include "src/dawn/native/vulkan/QueueVk.h"
+#include "src/dawn/native/vulkan/ResourceHeapVk.h"
+#include "src/dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
+#include "src/dawn/native/vulkan/UtilsVulkan.h"
+#include "src/dawn/native/vulkan/VulkanError.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native::vulkan {
 
@@ -195,7 +196,7 @@ VkMappedMemoryRange GetMappedMemoryRange(const ResourceMemoryAllocation& allocat
                                          size_t offset,
                                          size_t size,
                                          size_t nonCoherentAtomSize) {
-    DAWN_ASSERT(IsAligned(allocation.GetOffset(), nonCoherentAtomSize));
+    DAWN_CHECK(IsAligned(allocation.GetOffset(), nonCoherentAtomSize));
 
     // `offset` must always be a multiple of nonCoherentAtomSize. `size` must either be a multiple
     // of nonCoherentAtomSize or offset+size must be equal to the size of the allocation.
@@ -272,7 +273,7 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
     // VkmemoryRequirements. See https://gitlab.khronos.org/vulkan/vulkan/issues/1904
     // Any size with one of two top bits of VkDeviceSize set is a HUGE allocation and we can
     // safely return an OOM error.
-    if (mAllocatedSize & (uint64_t(3) << uint64_t(62))) {
+    if (mAllocatedSize.value() & (uint64_t(3) << uint64_t(62))) {
         return DAWN_OUT_OF_MEMORY_ERROR("Buffer size is HUGE and could cause overflows");
     }
 
@@ -280,7 +281,7 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
     createInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     createInfo.pNext = nullptr;
     createInfo.flags = 0;
-    createInfo.size = mAllocatedSize;
+    createInfo.size = mAllocatedSize.value();
     // Add CopyDst for non-mappable buffer initialization with mappedAtCreation
     // and robust resource initialization.
     createInfo.usage = VulkanBufferUsage(GetInternalUsage() | wgpu::BufferUsage::CopyDst);
@@ -326,7 +327,7 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
             // interferes with using the UploadData() fast path.
             if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
                 DAWN_TRY(MapMemoryAndPerformOperation(
-                    0, mAllocatedSize,
+                    0, mAllocatedSize.value(),
                     [](std::span<uint8_t> mapped) { std::ranges::fill(mapped, 0x01); }));
             }
             if (device->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse) &&
@@ -334,7 +335,7 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
                 DAWN_TRY(
                     MapMemoryAndPerformOperation(paddingClearOffset, paddingClearSize,
                                                  [&paddingClearSize](std::span<uint8_t> mapped) {
-                                                     DAWN_ASSERT(mapped.size() == paddingClearSize);
+                                                     DAWN_CHECK(mapped.size() == paddingClearSize);
                                                      std::ranges::fill(mapped, 0x0);
                                                  }));
             }
@@ -373,7 +374,7 @@ MaybeError Buffer::InitializeHostMapped(const BufferHostMappedPointer* hostMappe
     createInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     createInfo.pNext = &externalMemoryCreateInfo;
     createInfo.flags = 0;
-    createInfo.size = mAllocatedSize;
+    createInfo.size = mAllocatedSize.value();
     createInfo.usage = VulkanBufferUsage(GetInternalUsage());
     createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     createInfo.queueFamilyIndexCount = 0;
@@ -419,7 +420,7 @@ MaybeError Buffer::InitializeHostMapped(const BufferHostMappedPointer* hostMappe
     VkMemoryAllocateInfo allocateInfo;
     allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocateInfo.pNext = nullptr;
-    allocateInfo.allocationSize = mAllocatedSize;
+    allocateInfo.allocationSize = mAllocatedSize.value();
     allocateInfo.memoryTypeIndex = memoryTypeIndex;
 
     VkImportMemoryHostPointerInfoEXT importMemoryHostPointerInfo;
@@ -576,7 +577,7 @@ MaybeError Buffer::FinalizeMapImpl(BufferState newState) {
     // The real mapped pointer is never returned for zero sized buffers. MappedAtCreation buffers
     // are initialized in BufferBase already.
     if (NeedsInitialization() && GetSize() > 0 && newState == BufferState::Mapped) {
-        std::memset(GetMappedPointerImpl(), 0, GetAllocatedSize());
+        DAWN_UNSAFE_TODO(std::memset(GetMappedPointerImpl(), 0, GetAllocatedSize()));
         GetDevice()->IncrementLazyClearCountForTesting();
         SetInitialized(true);
 
@@ -659,7 +660,7 @@ MaybeError Buffer::UploadData(uint64_t bufferOffset, const void* data, size_t si
 
     // If the buffer needs initialization request the full buffer is mapped.
     bool needsZeroInitialization = NeedsInitialization() && size < GetSize();
-    uint64_t mapSize = needsZeroInitialization ? mAllocatedSize : size;
+    uint64_t mapSize = needsZeroInitialization ? mAllocatedSize.value() : size;
     uint64_t mapOffset = needsZeroInitialization ? 0 : bufferOffset;
 
     return MapMemoryAndPerformOperation(mapOffset, mapSize, [&](std::span<uint8_t> mapped) {
@@ -675,7 +676,7 @@ MaybeError Buffer::UploadData(uint64_t bufferOffset, const void* data, size_t si
         SetInitialized(true);
 
         DAWN_ASSERT(mapped.size() >= dstOffset + size);
-        memcpy(mapped.data() + dstOffset, data, size);
+        DAWN_UNSAFE_TODO(memcpy(mapped.data() + dstOffset, data, size));
     });
 }
 
@@ -700,7 +701,7 @@ MaybeError Buffer::MapMemoryAndPerformOperation(uint64_t requestedOffset,
         // TODO(crbug.com/dawn/774): Persistently map frequently updated buffers instead of
         // mapping/unmapping each time.
         VkDeviceSize offset = mMemoryAllocation.GetOffset();
-        VkDeviceSize mapSize = mAllocatedSize;
+        VkDeviceSize mapSize = mAllocatedSize.value();
         if (mHostCoherent) {
             // We can map only the part of the buffer we need to upload the data.
             // We avoid this for non-coherent memory as the mapping needs to be aligned to
@@ -721,7 +722,7 @@ MaybeError Buffer::MapMemoryAndPerformOperation(uint64_t requestedOffset,
     mappedMemoryRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
     mappedMemoryRange.memory = deviceMemory;
     mappedMemoryRange.offset = mMemoryAllocation.GetOffset();
-    mappedMemoryRange.size = mAllocatedSize;
+    mappedMemoryRange.size = mAllocatedSize.value();
     if (!mHostCoherent) {
         // For non-coherent memory we need to explicitly invalidate the memory range to make
         // available GPU writes visible.
@@ -729,7 +730,7 @@ MaybeError Buffer::MapMemoryAndPerformOperation(uint64_t requestedOffset,
     }
 
     // Pass a span that is exactly the offset/size requested even if a larger range was mapped.
-    op(std::span(memory + realOffset, requestedSize));
+    op(std::span(DAWN_UNSAFE_TODO(memory + realOffset), requestedSize));
 
     if (!mHostCoherent) {
         // For non-coherent memory we need to explicitly flush the memory range to make the host

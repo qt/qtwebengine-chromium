@@ -25,23 +25,24 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/webgpu/BindGroupWGPU.h"
+#include "src/dawn/native/webgpu/BindGroupWGPU.h"
 
 #include <vector>
 
 #include "absl/container/inlined_vector.h"
-#include "dawn/common/MatchVariant.h"
-#include "dawn/common/StringViewUtils.h"
-#include "dawn/native/webgpu/BindGroupLayoutWGPU.h"
-#include "dawn/native/webgpu/BufferWGPU.h"
-#include "dawn/native/webgpu/CaptureContext.h"
-#include "dawn/native/webgpu/ComputePipelineWGPU.h"
-#include "dawn/native/webgpu/DeviceWGPU.h"
-#include "dawn/native/webgpu/ExternalTextureWGPU.h"
-#include "dawn/native/webgpu/RenderPipelineWGPU.h"
-#include "dawn/native/webgpu/SamplerWGPU.h"
-#include "dawn/native/webgpu/TextureWGPU.h"
-#include "dawn/native/webgpu/ToWGPU.h"
+#include "src/dawn/common/MatchVariant.h"
+#include "src/dawn/common/StringViewUtils.h"
+#include "src/dawn/native/webgpu/BindGroupLayoutWGPU.h"
+#include "src/dawn/native/webgpu/BufferWGPU.h"
+#include "src/dawn/native/webgpu/CaptureContext.h"
+#include "src/dawn/native/webgpu/ComputePipelineWGPU.h"
+#include "src/dawn/native/webgpu/DeviceWGPU.h"
+#include "src/dawn/native/webgpu/ExternalTextureWGPU.h"
+#include "src/dawn/native/webgpu/RenderPipelineWGPU.h"
+#include "src/dawn/native/webgpu/SamplerWGPU.h"
+#include "src/dawn/native/webgpu/TextureWGPU.h"
+#include "src/dawn/native/webgpu/ToWGPU.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native::webgpu {
 
@@ -86,7 +87,7 @@ class ComboBindGroupDescriptor {
         mDesc.layout = ToBackend(desc->layout->GetInternalBindGroupLayout())->GetInnerHandle();
         mDesc.entryCount = desc->entryCount;
         for (uint32_t i = 0; i < desc->entryCount; ++i) {
-            UnpackedPtr<BindGroupEntry> entry = Unpack(&desc->entries[i]);
+            UnpackedPtr<BindGroupEntry> entry = Unpack(&DAWN_UNSAFE_TODO(desc->entries[i]));
             mEntries.push_back(ToWGPU(*entry));
 
             if (auto* externalTextureEntry = entry.Get<ExternalTextureBindingEntry>()) {
@@ -228,7 +229,7 @@ MaybeError BindGroup::CaptureCreationParameters(CaptureContext& captureContext) 
                 schema::BindGroupEntryTypeBufferBinding data{{
                     .binding = binding,
                     .data{{
-                        .bufferId = captureContext.GetId(entry.buffer.get()),
+                        .bufferId = captureContext.GetId(entry.buffer),
                         .offset = entry.offset,
                         .size = entry.size,
                     }},
@@ -284,7 +285,7 @@ MaybeError BindGroup::CaptureCreationParameters(CaptureContext& captureContext) 
                 }};
                 Serialize(captureContext, data);
             },
-            [&](const auto& info) { DAWN_CHECK(false); });
+            [&](const auto& info) { DAWN_UNREACHABLE(); });
     }
 
     return {};

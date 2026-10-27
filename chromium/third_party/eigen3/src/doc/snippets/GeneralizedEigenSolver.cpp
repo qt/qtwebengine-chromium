@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 GeneralizedEigenSolver<MatrixXf> ges;
 MatrixXf A = MatrixXf::Random(4, 4);
 MatrixXf B = MatrixXf::Random(4, 4);

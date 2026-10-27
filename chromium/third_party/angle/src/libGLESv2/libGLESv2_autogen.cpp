@@ -3141,7 +3141,6 @@ void GL_APIENTRY glRequestExtensionANGLE(const GLchar *name)
     return GL_RequestExtensionANGLE(name);
 }
 
-
 // GL_ANGLE_rgbx_internal_format
 
 // GL_ANGLE_robust_client_memory
@@ -3856,7 +3855,6 @@ void GL_APIENTRY glEGLImageTargetTexStorageEXT(GLenum target,
     return GL_EGLImageTargetTexStorageEXT(target, image, attrib_list);
 }
 
-
 // GL_EXT_EGL_image_storage_compression
 
 // GL_EXT_YUV_target
@@ -4206,7 +4204,6 @@ void GL_APIENTRY glBufferStorageExternalEXT(GLenum target,
 {
     return GL_BufferStorageExternalEXT(target, offset, size, clientBuffer, flags);
 }
-
 
 // GL_EXT_float_blend
 
@@ -4964,6 +4961,8 @@ void GL_APIENTRY glTexBufferRangeEXT(GLenum target,
 // GL_EXT_texture_format_BGRA8888
 
 // GL_EXT_texture_format_sRGB_override
+
+// GL_EXT_texture_lod_bias
 
 // GL_EXT_texture_mirror_clamp_to_edge
 
@@ -5964,6 +5963,8 @@ void GL_APIENTRY glTextureFoveationParametersQCOM(GLuint texture,
     return GL_TextureFoveationParametersQCOM(texture, layer, focalPoint, focalX, focalY, gainX,
                                              gainY, foveaArea);
 }
+
+// GL_QCOM_texture_lod_bias
 
 // GL_QCOM_tiled_rendering
 void GL_APIENTRY glEndTilingQCOM(GLbitfield preserveMask)

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
+
 """Helper script to download source archives and upload them to the Eigen GitLab generic package registry."""
 
 import os

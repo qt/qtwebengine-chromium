@@ -17,18 +17,6 @@
 
 namespace openscreen::cast {
 
-namespace {
-// The av_err2str macro uses a compound literal, which is a C99-only feature.
-// So instead, we roll our own here.
-// TODO(issuetracker.google.com/224642520): dedup with standalone
-// sender.
-std::string AvErrorToString(int error_num) {
-  std::string out(AV_ERROR_MAX_STRING_SIZE, '\0');
-  av_make_error_string(data(out), out.length(), error_num);
-  return out;
-}
-}  // namespace
-
 Decoder::Buffer::Buffer() {
   Resize(0);
 }
@@ -224,10 +212,7 @@ void Decoder::OnError(const char* what, int av_errnum, FrameId frame_id) {
     error << "frame: " << frame_id << "; ";
   }
 
-  char human_readable_error[AV_ERROR_MAX_STRING_SIZE]{0};
-  av_make_error_string(human_readable_error, AV_ERROR_MAX_STRING_SIZE,
-                       av_errnum);
-  error << "what: " << what << "; error: " << human_readable_error;
+  error << "what: " << what << "; error: " << AvErrorToString(av_errnum);
 
   // Dispatch to either the fatal error handler, or the one for decode errors,
   // as appropriate.

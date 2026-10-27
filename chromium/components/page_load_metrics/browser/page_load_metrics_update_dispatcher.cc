@@ -433,6 +433,7 @@ void PageLoadMetricsUpdateDispatcher::UpdateMetrics(
     std::vector<mojom::SoftNavigationMetricsPtr> soft_navigation_metrics,
     std::vector<mojom::LargestContentfulPaintTimingPtr>
         soft_largest_contentful_paint,
+    mojom::FontLoadingMetricsPtr font_loading_metrics,
     internal::PageLoadTrackerPageType page_type) {
   if (embedder_interface_->IsExtensionUrl(
           render_frame_host->GetLastCommittedURL())) {
@@ -456,6 +457,9 @@ void PageLoadMetricsUpdateDispatcher::UpdateMetrics(
     UpdateMainFrameRenderData(*render_data);
     if (subresource_load_metrics) {
       UpdateMainFrameSubresourceLoadMetrics(*subresource_load_metrics);
+    }
+    if (font_loading_metrics) {
+      UpdateMainFrameFontLoadingMetrics(*font_loading_metrics);
     }
     UpdateSoftNavigationMetrics(std::move(soft_navigation_metrics),
                                 event_timings, render_data->new_layout_shifts,
@@ -582,23 +586,20 @@ void PageLoadMetricsUpdateDispatcher::UpdateFrameCpuTiming(
 void PageLoadMetricsUpdateDispatcher::UpdateSubFrameMetadata(
     content::RenderFrameHost* render_frame_host,
     mojom::FrameMetadataPtr subframe_metadata) {
-  if (subframe_metadata->main_frame_viewport_rect) {
-    mojo::ReportBadMessage(
-        "Unexpected main_frame_viewport_rect set for a subframe.");
-    return;
-  }
-
   // Merge the subframe loading behavior flags with any we've already observed,
   // possibly from other subframes.
   subframe_metadata_->behavior_flags |= subframe_metadata->behavior_flags;
   client_->OnSubframeMetadataChanged(render_frame_host, *subframe_metadata);
-
-  MaybeUpdateMainFrameIntersectionRect(render_frame_host, subframe_metadata);
 }
 
 void PageLoadMetricsUpdateDispatcher::UpdateMainFrameSubresourceLoadMetrics(
     const blink::SubresourceLoadMetrics& subresource_load_metrics) {
   subresource_load_metrics_ = subresource_load_metrics;
+}
+
+void PageLoadMetricsUpdateDispatcher::UpdateMainFrameFontLoadingMetrics(
+    const mojom::FontLoadingMetrics& font_loading_metrics) {
+  font_loading_metrics_ = font_loading_metrics.Clone();
 }
 
 void PageLoadMetricsUpdateDispatcher::UpdateSoftNavigationMetrics(
@@ -632,39 +633,17 @@ void PageLoadMetricsUpdateDispatcher::UpdateSoftNavigationMetrics(
   }
 }
 
-void PageLoadMetricsUpdateDispatcher::MaybeUpdateMainFrameIntersectionRect(
-    content::RenderFrameHost* render_frame_host,
+void PageLoadMetricsUpdateDispatcher::MaybeUpdateMainFrameRect(
     const mojom::FrameMetadataPtr& frame_metadata) {
-  // Handle intersection updates if included in the metadata.
-  if (!frame_metadata->main_frame_intersection_rect)
-    return;
-
-  // Do not notify intersections for untracked loads,
-  // subframe_navigation_start_offset_ excludes untracked loads.
-  // TODO(crbug.com/40679417): Document definition of untracked loads in page
-  // load metrics.
-  const content::FrameTreeNodeId frame_tree_node_id =
-      render_frame_host->GetFrameTreeNodeId();
-  bool is_main_frame = client_->IsPageMainFrame(render_frame_host);
-  if (!is_main_frame &&
-      subframe_navigation_start_offset_.find(frame_tree_node_id) ==
-          subframe_navigation_start_offset_.end()) {
+  // Handle main frame rect updates if included in the metadata.
+  if (!frame_metadata->main_frame_rect) {
     return;
   }
 
-  auto existing_intersection_it =
-      main_frame_intersection_rects_.find(frame_tree_node_id);
-
-  // Check if we already have a frame intersection rect for the frame, dispatch
-  // updates for the first frame intersection rect or if the intersection has
-  // changed.
-  if (existing_intersection_it == main_frame_intersection_rects_.end() ||
-      existing_intersection_it->second !=
-          *frame_metadata->main_frame_intersection_rect) {
-    main_frame_intersection_rects_[frame_tree_node_id] =
-        *frame_metadata->main_frame_intersection_rect;
-    client_->OnMainFrameIntersectionRectChanged(
-        render_frame_host, *frame_metadata->main_frame_intersection_rect);
+  if (!main_frame_rect_ ||
+      *frame_metadata->main_frame_rect != *main_frame_rect_) {
+    main_frame_rect_ = *frame_metadata->main_frame_rect;
+    client_->OnMainFrameRectChanged(*main_frame_rect_);
   }
 }
 
@@ -753,8 +732,7 @@ void PageLoadMetricsUpdateDispatcher::UpdateMainFrameMetadata(
   client_->OnMainFrameMetadataChanged();
 
   if (!main_frame_metadata_.is_null()) {
-    MaybeUpdateMainFrameIntersectionRect(render_frame_host,
-                                         main_frame_metadata_);
+    MaybeUpdateMainFrameRect(main_frame_metadata_);
     MaybeUpdateMainFrameViewportRect(main_frame_metadata_);
 
     client_->OnMainFrameAdRectsChanged(

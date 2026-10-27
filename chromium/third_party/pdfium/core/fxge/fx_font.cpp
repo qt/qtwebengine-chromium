@@ -12,6 +12,7 @@
 #include "core/fxcrt/bytestring.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
+#include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/widestring.h"
 #include "core/fxge/cfx_glyphbitmap.h"
@@ -189,4 +190,12 @@ void MaybeRemoveSubsettedFontPrefix(ByteString& font_name) {
       IsStrUpper(font_name.First(kSubsettedFontPrefixLength))) {
     font_name = font_name.Substr(kSubsettedFontPrefixLength + 1);
   }
+}
+
+bool IsOpenTypeCFF(pdfium::span<const uint8_t> data) {
+  if (data.size() < 4) {
+    return false;
+  }
+  uint32_t tag = fxcrt::GetUInt32MSBFirst(data.first<4>());
+  return tag == FXBSTR_ID('O', 'T', 'T', 'O');
 }

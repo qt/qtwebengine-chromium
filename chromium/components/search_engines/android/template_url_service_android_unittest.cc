@@ -12,6 +12,9 @@
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
+#include "base/test/scoped_feature_list.h"
+#include "components/omnibox/common/omnibox_feature_configs.h"
+#include "components/omnibox/common/omnibox_features.h"
 #include "components/regional_capabilities/regional_capabilities_switches.h"
 #include "components/search_engines/search_engine_choice/search_engine_choice_utils.h"
 #include "components/search_engines/search_engines_pref_names.h"
@@ -420,4 +423,112 @@ TEST_F(TemplateUrlServiceAndroidUnitTest, GetDisplayUrl) {
           env(), reinterpret_cast<intptr_t>(t_url));
 
   EXPECT_EQ(display_url, u"http://chromium.org/search?q=%s");
+}
+
+TEST_F(TemplateUrlServiceAndroidUnitTest, GetTemplateUrlsByCategory_Sorting) {
+  using Category = TemplateUrlServiceAndroid::TemplateUrlCategory;
+
+  // Create engines in a non-sorted order.
+  // a: Non-managed
+  TemplateURLData data_a;
+  data_a.SetShortName(u"a");
+  data_a.SetKeyword(u"a");
+  data_a.SetURL("http://a.com/q={searchTerms}");
+  data_a.is_active = TemplateURLData::ActiveStatus::kTrue;
+  data_a.safe_for_autoreplace = false;
+  TemplateURL* t_a =
+      template_url_service().Add(std::make_unique<TemplateURL>(data_a));
+
+  // b: Managed
+  TemplateURLData data_b;
+  data_b.SetShortName(u"b");
+  data_b.SetKeyword(u"b");
+  data_b.SetURL("http://b.com/q={searchTerms}");
+  data_b.is_active = TemplateURLData::ActiveStatus::kTrue;
+  data_b.safe_for_autoreplace = false;
+  data_b.policy_origin = TemplateURLData::PolicyOrigin::kSiteSearch;
+  TemplateURL* t_b =
+      template_url_service().Add(std::make_unique<TemplateURL>(data_b));
+
+  // c: Non-managed
+  TemplateURLData data_c;
+  data_c.SetShortName(u"c");
+  data_c.SetKeyword(u"c");
+  data_c.SetURL("http://c.com/q={searchTerms}");
+  data_c.is_active = TemplateURLData::ActiveStatus::kTrue;
+  data_c.safe_for_autoreplace = false;
+  TemplateURL* t_c =
+      template_url_service().Add(std::make_unique<TemplateURL>(data_c));
+
+  // d: Managed
+  TemplateURLData data_d;
+  data_d.SetShortName(u"d");
+  data_d.SetKeyword(u"d");
+  data_d.SetURL("http://d.com/q={searchTerms}");
+  data_d.is_active = TemplateURLData::ActiveStatus::kTrue;
+  data_d.safe_for_autoreplace = false;
+  data_d.policy_origin = TemplateURLData::PolicyOrigin::kSiteSearch;
+  TemplateURL* t_d =
+      template_url_service().Add(std::make_unique<TemplateURL>(data_d));
+
+  auto result = template_url_service_android().GetTemplateUrlsByCategory(
+      env(), Category::kActiveSiteSearch);
+
+  // Result contains other engines from setup so filter them out.
+  std::vector<const TemplateURL*> filtered_result;
+  for (const auto* turl : result) {
+    if (turl == t_a || turl == t_b || turl == t_c || turl == t_d) {
+      filtered_result.push_back(turl);
+    }
+  }
+
+  ASSERT_EQ(filtered_result.size(), 4u);
+  EXPECT_EQ(filtered_result[0], t_b);
+  EXPECT_EQ(filtered_result[1], t_d);
+  EXPECT_EQ(filtered_result[2], t_a);
+  EXPECT_EQ(filtered_result[3], t_c);
+}
+
+TEST_F(TemplateUrlServiceAndroidUnitTest, GetDisabledStarterPackIds) {
+  // Enable features
+  {
+    omnibox_feature_configs::ScopedConfigForTesting<
+        omnibox_feature_configs::ContextualSearch>
+        scoped_config;
+    scoped_config.Get().starter_pack_page = true;
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndEnableFeature(omnibox::kStarterPackExpansion);
+
+    auto disabled_ids =
+        template_url_service_android().GetDisabledStarterPackIds();
+    EXPECT_FALSE(
+        disabled_ids.Has(template_url_starter_pack_data::StarterPackId::kPage));
+    EXPECT_FALSE(disabled_ids.Has(
+        template_url_starter_pack_data::StarterPackId::kGemini));
+
+    // @bookmarks is disabled by default.
+    EXPECT_TRUE(disabled_ids.Has(
+        template_url_starter_pack_data::StarterPackId::kBookmarks));
+  }
+
+  // Disable features
+  {
+    omnibox_feature_configs::ScopedConfigForTesting<
+        omnibox_feature_configs::ContextualSearch>
+        scoped_config;
+    scoped_config.Get().starter_pack_page = false;
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndDisableFeature(omnibox::kStarterPackExpansion);
+
+    auto disabled_ids =
+        template_url_service_android().GetDisabledStarterPackIds();
+    EXPECT_TRUE(
+        disabled_ids.Has(template_url_starter_pack_data::StarterPackId::kPage));
+    EXPECT_TRUE(disabled_ids.Has(
+        template_url_starter_pack_data::StarterPackId::kGemini));
+
+    // @bookmarks is disabled by default.
+    EXPECT_TRUE(disabled_ids.Has(
+        template_url_starter_pack_data::StarterPackId::kBookmarks));
+  }
 }

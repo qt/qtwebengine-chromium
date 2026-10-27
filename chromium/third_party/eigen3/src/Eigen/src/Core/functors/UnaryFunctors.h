@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_UNARY_FUNCTORS_H
 #define EIGEN_UNARY_FUNCTORS_H
@@ -200,7 +201,7 @@ struct scalar_cast_op {
 
 template <typename Scalar, typename NewType>
 struct functor_traits<scalar_cast_op<Scalar, NewType>> {
-  enum { Cost = is_same<Scalar, NewType>::value ? 0 : NumTraits<NewType>::AddCost, PacketAccess = false };
+  enum { Cost = std::is_same<Scalar, NewType>::value ? 0 : NumTraits<NewType>::AddCost, PacketAccess = false };
 };
 
 /** \internal
@@ -216,7 +217,7 @@ template <typename SrcType, typename DstType>
 struct functor_traits<core_cast_op<SrcType, DstType>> {
   using CastingTraits = type_casting_traits<SrcType, DstType>;
   enum {
-    Cost = is_same<SrcType, DstType>::value ? 0 : NumTraits<DstType>::AddCost,
+    Cost = std::is_same<SrcType, DstType>::value ? 0 : NumTraits<DstType>::AddCost,
     PacketAccess = CastingTraits::VectorizedCast && (CastingTraits::SrcCoeffRatio <= 8)
   };
 };
@@ -705,7 +706,7 @@ template <typename Scalar>
 struct functor_traits<scalar_tanh_op<Scalar>> {
   enum {
     PacketAccess = packet_traits<Scalar>::HasTanh,
-    Cost = ((EIGEN_FAST_MATH && is_same<Scalar, float>::value)
+    Cost = ((EIGEN_FAST_MATH && std::is_same<Scalar, float>::value)
 // The following numbers are based on the AVX implementation,
 #ifdef EIGEN_VECTORIZE_FMA
                 // Haswell can issue 2 add/mul/madd per cycle.
@@ -1156,7 +1157,7 @@ template <typename Scalar>
 struct scalar_bitwise_not_op {
   EIGEN_STATIC_ASSERT(!NumTraits<Scalar>::RequireInitialization,
                       BITWISE OPERATIONS MAY ONLY BE PERFORMED ON PLAIN DATA TYPES)
-  EIGEN_STATIC_ASSERT((!internal::is_same<Scalar, bool>::value), DONT USE BITWISE OPS ON BOOLEAN TYPES)
+  EIGEN_STATIC_ASSERT((!std::is_same<Scalar, bool>::value), DONT USE BITWISE OPS ON BOOLEAN TYPES)
   using result_type = Scalar;
   EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE Scalar operator()(const Scalar& a) const {
     return bitwise_unary_impl<Scalar>::run_not(a);
@@ -1320,10 +1321,10 @@ struct functor_traits<scalar_logistic_op<T>> {
     // The cost estimate for float here here is for the common(?) case where
     // all arguments are greater than -9.
     Cost = scalar_div_cost<T, packet_traits<T>::HasDiv>::value +
-           (internal::is_same<T, float>::value ? NumTraits<T>::AddCost * 15 + NumTraits<T>::MulCost * 11
-                                               : NumTraits<T>::AddCost * 2 + functor_traits<scalar_exp_op<T>>::Cost),
+           (std::is_same<T, float>::value ? NumTraits<T>::AddCost * 15 + NumTraits<T>::MulCost * 11
+                                          : NumTraits<T>::AddCost * 2 + functor_traits<scalar_exp_op<T>>::Cost),
     PacketAccess = !NumTraits<T>::IsComplex && packet_traits<T>::HasAdd && packet_traits<T>::HasDiv &&
-                   (internal::is_same<T, float>::value
+                   (std::is_same<T, float>::value
                         ? packet_traits<T>::HasMul && packet_traits<T>::HasMax && packet_traits<T>::HasMin
                         : packet_traits<T>::HasNegate && packet_traits<T>::HasExp)
   };
@@ -1426,4 +1427,4 @@ struct functor_traits<scalar_unary_pow_op<Scalar, ExponentScalar>> {
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_FUNCTORS_H
+#endif  // EIGEN_UNARY_FUNCTORS_H

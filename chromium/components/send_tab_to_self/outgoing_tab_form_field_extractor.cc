@@ -13,9 +13,11 @@
 #include "base/notreached.h"
 #include "base/strings/utf_ostream_operators.h"
 #include "components/autofill/core/browser/autofill_field.h"
+#include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/foundations/autofill_manager.h"
 #include "components/autofill/core/common/form_field_data.h"
+#include "components/send_tab_to_self/proto_conversions.h"
 #include "url/origin.h"
 
 namespace send_tab_to_self {
@@ -69,6 +71,7 @@ bool IsSensitiveFieldType(autofill::FormControlType type) {
   // Explicitly exclude password fields.
   switch (type) {
     case autofill::FormControlType::kInputPassword:
+    case autofill::FormControlType::kInputHiddenEmailVerification:
       return true;
     case autofill::FormControlType::kContentEditable:
     case autofill::FormControlType::kInputCheckbox:
@@ -129,6 +132,16 @@ PageContext::FormFieldInfo ExtractOutgoingTabFormFieldsInternal(
         field_data.form_control_type = std::string(
             autofill::FormControlTypeToString(field->form_control_type()));
         field_data.value = field->value();
+        field_data.autofill_signature.form_signature = form.form_signature();
+        field_data.autofill_signature.field_signature =
+            field->GetFieldSignature();
+        for (autofill::FieldType type : field->Type().GetTypes()) {
+          std::optional<sync_pb::FormField_AutofillFieldType> proto_type =
+              AutofillFieldTypeToProto(type);
+          if (proto_type) {
+            field_data.autofill_types.insert(*proto_type);
+          }
+        }
         form_field_info.fields.push_back(std::move(field_data));
       }
     }

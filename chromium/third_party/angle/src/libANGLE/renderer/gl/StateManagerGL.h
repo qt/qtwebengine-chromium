@@ -365,6 +365,8 @@ class StateManagerGL final : angle::NonCopyable
     void updateDispatchIndirectBufferBinding(const gl::Context *context);
     void updateDrawIndirectBufferBinding(const gl::Context *context);
 
+    void setBufferBindingDirty(gl::BufferBinding binding);
+
     template <typename T>
     void get(GLenum name, T *value);
 
@@ -373,6 +375,7 @@ class StateManagerGL final : angle::NonCopyable
 
     void syncSamplersState(const gl::Context *context);
     void syncTransformFeedbackState(const gl::Context *context);
+    void syncProgramState(const gl::Context *context);
 
     void updateEmulatedClipDistanceState(const gl::ProgramExecutable *executable,
                                          const gl::ClipDistanceEnableBits enables) const;

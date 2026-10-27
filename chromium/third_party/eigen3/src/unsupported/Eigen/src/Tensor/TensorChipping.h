@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_CHIPPING_H
-#define EIGEN_CXX11_TENSOR_TENSOR_CHIPPING_H
+#ifndef EIGEN_TENSOR_TENSOR_CHIPPING_H
+#define EIGEN_TENSOR_TENSOR_CHIPPING_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -59,7 +60,7 @@ struct DimensionId<Dynamic> {
 }  // end namespace internal
 
 /** A chip is a thin slice, corresponding to a column or a row in a 2-d tensor.
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  */
 template <DenseIndex DimId, typename XprType>
 class TensorChippingOp : public TensorBase<TensorChippingOp<DimId, XprType> > {
@@ -155,12 +156,13 @@ struct TensorEvaluator<const TensorChippingOp<DimId, ArgType>, Device> {
 
     m_stride = 1;
     m_inputStride = 1;
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       for (int i = 0; i < m_dim.actualDim(); ++i) {
         m_stride *= input_dims[i];
         m_inputStride *= input_dims[i];
       }
-    } else {
+    }
+    else {
       for (int i = NumInputDims - 1; i > m_dim.actualDim(); --i) {
         m_stride *= input_dims[i];
         m_inputStride *= input_dims[i];
@@ -181,10 +183,11 @@ struct TensorEvaluator<const TensorChippingOp<DimId, ArgType>, Device> {
       before_chipped_dim_product *= input_dims[i];
     }
 
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_isEffectivelyInnerChipping = before_chipped_dim_product == 1;
       m_isEffectivelyOuterChipping = after_chipped_dim_product == 1;
-    } else {
+    }
+    else {
       m_isEffectivelyInnerChipping = after_chipped_dim_product == 1;
       m_isEffectivelyOuterChipping = before_chipped_dim_product == 1;
     }
@@ -466,4 +469,4 @@ struct TensorEvaluator<TensorChippingOp<DimId, ArgType>, Device>
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_CHIPPING_H
+#endif  // EIGEN_TENSOR_TENSOR_CHIPPING_H

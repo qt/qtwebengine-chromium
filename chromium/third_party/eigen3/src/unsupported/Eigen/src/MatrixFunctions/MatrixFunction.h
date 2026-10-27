@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_MATRIX_FUNCTION_H
 #define EIGEN_MATRIX_FUNCTION_H
@@ -490,7 +491,7 @@ class MatrixFunctionReturnValue : public ReturnByValue<MatrixFunctionReturnValue
   Index cols() const { return m_A.cols(); }
 
  private:
-  const DerivedNested m_A;
+  DerivedNested m_A;
   StemFunction* m_f;
 };
 

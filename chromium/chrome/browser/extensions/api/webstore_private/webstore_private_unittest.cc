@@ -17,13 +17,14 @@
 #include "base/version_info/version_info.h"
 #include "chrome/browser/extensions/api/webstore_private/webstore_private_api.h"
 #include "chrome/browser/extensions/extension_install_prompt_show_params.h"
+#include "chrome/browser/extensions/extension_management.h"
+#include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/supervised_user/supervised_user_test_util.h"
-#include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "components/enterprise/browser/reporting/common_pref_names.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/supervised_user/core/common/features.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
@@ -40,13 +41,14 @@
 #include "extensions/browser/install_approval.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/buildflags/buildflags.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/extension_features.h"
 #include "services/data_decoder/public/cpp/test_support/in_process_data_decoder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
-#include "chrome/browser/extensions/mv2_experiment_stage.h"
+#include "extensions/browser/mv2_experiment_stage.h"
 #endif
 
 #if !BUILDFLAG(IS_ANDROID)
@@ -119,8 +121,8 @@ struct ExtensionRequestData {
 void VerifyPendingList(const std::map<ExtensionId, ExtensionRequestData>&
                            expected_pending_requests,
                        Profile* profile) {
-  const base::DictValue& actual_pending_requests =
-      profile->GetPrefs()->GetDict(prefs::kCloudExtensionRequestIds);
+  const base::DictValue& actual_pending_requests = profile->GetPrefs()->GetDict(
+      enterprise_reporting::kCloudExtensionRequestIds);
   ASSERT_EQ(expected_pending_requests.size(), actual_pending_requests.size());
   for (const auto& expected_request : expected_pending_requests) {
     const base::DictValue* actual_pending_request =
@@ -187,7 +189,25 @@ class WebstorePrivateApiTestBase : public testing::Test {
         TestingProfile::kDefaultProfileUserName, /*prefs=*/nullptr,
         /*user_name=*/std::u16string(),
         /*avatar_id=*/0, /*testing_factories=*/{});
+    CreateExtensionServiceAndSetFactories(profile());
     extension_ = ExtensionBuilder("Test").Build();
+  }
+
+  void CreateExtensionServiceAndSetFactories(Profile* profile) {
+    TestExtensionSystem* extension_system =
+        static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile));
+    extension_system->CreateExtensionService(
+        base::CommandLine::ForCurrentProcess(),
+        base::FilePath() /* install_directory */,
+        false /* autoupdate_enabled */);
+
+    ManagementAPI::GetFactoryInstance()->SetTestingFactory(
+        profile, base::BindRepeating(&BuildManagementApi));
+    EventRouterFactory::GetInstance()->SetTestingFactory(
+        profile, base::BindRepeating(&BuildEventRouter));
+
+    // Create instance of ManagementAPI.
+    CHECK(ManagementAPI::GetFactoryInstance()->Get(profile));
   }
 
   void TearDown() override {
@@ -374,17 +394,9 @@ class WebstorePrivateBeginInstallWithManifest3Test
  public:
   WebstorePrivateBeginInstallWithManifest3Test() = default;
 
-  void SetUp() override {
-    WebstorePrivateApiTestBase::SetUp();
-    ManagementAPI::GetFactoryInstance()->SetTestingFactory(
-        profile(), base::BindRepeating(&BuildManagementApi));
-    EventRouterFactory::GetInstance()->SetTestingFactory(
-        profile(), base::BindRepeating(&BuildEventRouter));
-  }
-
   void EnableExtensionRequest(bool enable) {
     profile()->GetTestingPrefService()->SetManagedPref(
-        prefs::kCloudExtensionRequestEnabled,
+        enterprise_reporting::kCloudExtensionRequestEnabled,
         std::make_unique<base::Value>(enable));
   }
 
@@ -581,6 +593,36 @@ TEST_F(WebstorePrivateBeginInstallWithManifest3Test,
                     profile());
 }
 
+TEST_F(WebstorePrivateBeginInstallWithManifest3Test,
+       InvalidManifestVersionZero) {
+  std::unique_ptr<content::WebContents> web_contents =
+      content::WebContentsTester::CreateTestWebContents(profile(), nullptr);
+  auto function =
+      base::MakeRefCounted<WebstorePrivateBeginInstallWithManifest3Function>();
+  function->SetRenderFrameHost(web_contents->GetPrimaryMainFrame());
+
+  const char kInvalidManifest[] = R"({
+    \"name\" : \"Extension\",
+    \"manifest_version\": 0,
+    \"version\": \"0.1\"
+  })";
+
+  ScopedTestDialogAutoConfirm auto_confirm(ScopedTestDialogAutoConfirm::ACCEPT);
+
+  api_test_utils::RunFunction(
+      function.get(), GenerateArgs(kExtensionId, kInvalidManifest), profile());
+
+  EXPECT_EQ(ExtensionFunction::ResponseType::kFailed,
+            *function->response_type());
+  std::string error = function->GetError();
+  EXPECT_TRUE(base::StartsWith(error, "Invalid manifest"));
+  // Validate that the error includes more details than just a generic
+  // "Invalid manifest" error. This matching will need to be updated if
+  // the error is changed.
+  EXPECT_TRUE(error.find("Invalid value for 'manifest_version'") !=
+              std::string::npos);
+}
+
 TEST_F(WebstorePrivateBeginInstallWithManifest3Test, BlockedByPolicy) {
   SetExtensionSettings(kBlockAllExtensionSettings);
 
@@ -677,6 +719,7 @@ TEST_F(WebstorePrivateBeginInstallWithManifest3Test,
   TestingProfile* const test_profile =
       profile_manager()->CreateTestingProfile(profile_name);
   ASSERT_TRUE(test_profile);
+  CreateExtensionServiceAndSetFactories(test_profile);
   // There should be no pending approvals.
   EXPECT_EQ(WebstorePrivateApi::GetPendingApprovalsCountForTesting(), 0);
   {
@@ -843,23 +886,13 @@ WebstorePrivateManifestV2DeprecationUnitTest::
   std::vector<base::test::FeatureRef> enabled_features;
   std::vector<base::test::FeatureRef> disabled_features;
   switch (GetParam()) {
-    case MV2ExperimentStage::kWarning:
-      disabled_features.push_back(
-          extensions_features::kExtensionManifestV2Disabled);
-      disabled_features.push_back(
-          extensions_features::kExtensionManifestV2Unsupported);
-      break;
     case MV2ExperimentStage::kDisableWithReEnable:
-      enabled_features.push_back(
-          extensions_features::kExtensionManifestV2Disabled);
       disabled_features.push_back(
           extensions_features::kExtensionManifestV2Unsupported);
       break;
     case MV2ExperimentStage::kUnsupported:
       enabled_features.push_back(
           extensions_features::kExtensionManifestV2Unsupported);
-      disabled_features.push_back(
-          extensions_features::kExtensionManifestV2Disabled);
       break;
   }
 
@@ -869,13 +902,10 @@ WebstorePrivateManifestV2DeprecationUnitTest::
 INSTANTIATE_TEST_SUITE_P(
     ,
     WebstorePrivateManifestV2DeprecationUnitTest,
-    testing::Values(MV2ExperimentStage::kWarning,
-                    MV2ExperimentStage::kDisableWithReEnable,
+    testing::Values(MV2ExperimentStage::kDisableWithReEnable,
                     MV2ExperimentStage::kUnsupported),
     [](const testing::TestParamInfo<MV2ExperimentStage>& info) {
       switch (info.param) {
-        case MV2ExperimentStage::kWarning:
-          return "WarningExperiment";
         case MV2ExperimentStage::kDisableWithReEnable:
           return "DisableExperiment";
         case MV2ExperimentStage::kUnsupported:
@@ -895,9 +925,6 @@ TEST_P(WebstorePrivateManifestV2DeprecationUnitTest,
 
   std::string expected;
   switch (GetParam()) {
-    case MV2ExperimentStage::kWarning:
-      expected = "warning";
-      break;
     case MV2ExperimentStage::kDisableWithReEnable:
       expected = "soft_disable";
       break;

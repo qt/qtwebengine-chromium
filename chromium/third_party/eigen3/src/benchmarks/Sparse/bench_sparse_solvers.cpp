@@ -1,5 +1,7 @@
 // Benchmarks for sparse decomposition solvers.
 // Tests SimplicialLLT, SimplicialLDLT, SparseQR, SparseLU, CG, BiCGSTAB.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Sparse>

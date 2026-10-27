@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
 import(
     "//chrome/browser/resources/chromeos/accessibility/tools/generate_message_formatting_data.gni")
 import(
@@ -56,12 +55,14 @@ ts_modules = [
   "background/braille/braille_input_handler.ts",
   "background/braille/braille_interface.ts",
   "background/braille/braille_key_event_rewriter.ts",
+  "background/braille/braille_translator.ts",
   "background/braille/braille_translator_manager.ts",
   "background/braille/cursor_dots.ts",
   "background/braille/expanding_braille_translator.ts",
   "background/braille/liblouis.ts",
   "background/braille/pan_strategy.ts",
   "background/braille/spans.ts",
+  "background/braille/tenji_translator.ts",
   "background/captions_handler.ts",
   "background/chromevox.ts",
   "background/chromevox_range.ts",
@@ -129,6 +130,7 @@ ts_modules = [
   "common/braille/braille_key_types.ts",
   "common/braille/braille_table.ts",
   "common/braille/nav_braille.ts",
+  "services/tenji/sandboxed_tenji_wrapper.ts",
   "common/bridge_constants.ts",
   "common/command.ts",
   "common/command_store.ts",
@@ -163,6 +165,7 @@ ts_modules = [
   "offscreen/earcon_engine.ts",
   "offscreen/offscreen.ts",
   "offscreen/liblouis_worker.ts",
+  "offscreen/tenji_worker.ts",
   "panel/i_search_ui.ts",
   "panel/menu_manager.ts",
   "panel/menu_manager_with_test_endpoints.ts",
@@ -186,6 +189,13 @@ js_modules = [
   "background/phonetic_data.js",
 ]
 
+copied_ts_modules = [ "ash/common/braille_table.ts" ]
+
+copy("stage_ash_braille_table") {
+  sources = [ "//ash/webui/common/resources/accessibility/braille_table.ts" ]
+  outputs = [ "$ts_build_staging_dir/ash/common/braille_table.ts" ]
+}
+
 # Root dir must be the parent directory so it can reach common/.
 ts_library("build_ts") {
   root_dir = "$ts_build_staging_dir"
@@ -195,6 +205,7 @@ ts_library("build_ts") {
 
   extra_deps = [
     #copied files
+    ":stage_ash_braille_table",
     ":stage_ts_build",
     ":stage_ts_build_sre",
   ]
@@ -232,9 +243,14 @@ ts_library("build_ts") {
     "/chromevox/mv3/third_party/sre/sre_browser.js|" +
         rebase_path("$ts_build_staging_dir/third_party/sre/sre_browser.js",
                     target_gen_dir),
+
+    # Point to the copied version of ash's braille_table.ts.
+    "/chromevox/mv3/ash/common/braille_table.js|" +
+        rebase_path("$ts_build_staging_dir/ash/common/braille_table.ts",
+                    target_gen_dir),
   ]
 
-  in_files = ts_modules + js_modules
+  in_files = ts_modules + js_modules + copied_ts_modules
 
   tsconfig_base = "../../tsconfig.base.json"
 }
@@ -285,6 +301,7 @@ run_jsbundler("copied_files") {
     "offscreen/offscreen.html",
     "panel/panel.css",
     "panel/panel.html",
+    "services/tenji/sandboxed_tenji_wrapper.html",
     "tutorial/practice_areas/jump_commands.html",
     "tutorial/practice_areas/selects.html",
   ]
@@ -444,10 +461,12 @@ js2gtest("chromevox_extension_js_tests") {
   sources += [
     "background/braille/expanding_braille_translator_test.js",
     "background/braille/pan_strategy_test.js",
+    "background/braille/tenji_translator_test.js",
     "background/editing/editable_text_test.js",
     "background/phonetic_data_test.js",
     "common/key_sequence_test.js",
     "common/spannable_test.js",
+    "services/tenji/sandboxed_tenji_wrapper_test.js",
     "testing/mock_feedback_test.js",
   ]
 

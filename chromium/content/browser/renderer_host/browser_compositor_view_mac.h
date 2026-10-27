@@ -39,7 +39,7 @@ class BrowserCompositorMacClient {
   virtual std::vector<viz::SurfaceId> CollectSurfaceIdsForEviction() = 0;
   virtual display::ScreenInfo GetCurrentScreenInfo() const = 0;
   virtual void SetCurrentDeviceScaleFactor(float device_scale_factor) = 0;
-  virtual bool ShouldWaitRemoteCompositorFrameOnResize() const = 0;
+  virtual bool ShouldUseDefaultDeadlineOnResize() const = 0;
 };
 
 // This class owns a DelegatedFrameHost, and will dynamically attach and
@@ -77,7 +77,9 @@ class CONTENT_EXPORT BrowserCompositorMac : public DelegatedFrameHostClient,
   // Update the renderer's SurfaceId to reflect the current dimensions of the
   // NSView. This will allocate a new SurfaceId, so should only be called
   // when necessary.
-  void UpdateSurfaceFromNSView(const gfx::Size& new_size_dip);
+  void UpdateSurfaceFromNSView(
+      const gfx::Size& new_size_dip,
+      bool refresh_rate_changed_on_same_display = false);
 
   // Update the renderer's SurfaceId to reflect |new_size_in_pixels| in
   // anticipation of the NSView resizing during auto-resize.

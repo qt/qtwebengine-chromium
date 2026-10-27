@@ -76,7 +76,9 @@ class UI_ANDROID_EXPORT EventForwarder {
                    const base::android::JavaRef<jobjectArray>& j_filenames,
                    const base::android::JavaRef<jstring>& j_text,
                    const base::android::JavaRef<jstring>& j_html,
-                   const base::android::JavaRef<jstring>& j_url);
+                   const base::android::JavaRef<jstring>& j_url,
+                   const base::android::JavaRef<jstring>& j_customData,
+                   const base::android::JavaRef<jstring>& j_effectAllowed);
 
   bool OnGestureEvent(JNIEnv* env, int32_t type, int64_t time_ms, float scale);
 
@@ -88,6 +90,7 @@ class UI_ANDROID_EXPORT EventForwarder {
   void OnMouseWheelEvent(JNIEnv* env,
                          const base::android::JavaRef<jobject>& motion_event,
                          int64_t time_ns,
+                         int32_t action,
                          float x,
                          float y,
                          float raw_x,
@@ -123,6 +126,8 @@ class UI_ANDROID_EXPORT EventForwarder {
   void RemoveObserver(Observer* observer);
 
   gfx::PointF GetCurrentTouchSequenceOffset();
+
+  base::ObserverList<Observer>& GetObserversForTesting() { return observers_; }
 
  private:
   friend class ViewAndroid;

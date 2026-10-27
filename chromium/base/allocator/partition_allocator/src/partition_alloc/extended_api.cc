@@ -5,9 +5,9 @@
 #include "partition_alloc/extended_api.h"
 
 #include "partition_alloc/buildflags.h"
+#include "partition_alloc/internal/thread_cache_internal.h"
 #include "partition_alloc/partition_alloc_config.h"
 #include "partition_alloc/shim/allocator_shim_default_dispatch_to_partition_alloc.h"
-#include "partition_alloc/thread_cache.h"
 
 namespace partition_alloc::internal {
 
@@ -50,25 +50,25 @@ void EnablePartitionAllocThreadCacheForRootIfDisabled(
 void DisablePartitionAllocThreadCacheForProcess() {
   PA_CHECK(allocator_shim::internal::PartitionAllocMalloc::
                AllocatorConfigurationFinalized());
-  for (size_t alloc_token = 0; alloc_token <= kMaxAllocToken.value();
+  for (size_t alloc_token = 0; alloc_token < allocator_shim::kNumPartitions;
        alloc_token++) {
     DisableThreadCacheForRootIfEnabled(
         allocator_shim::internal::PartitionAllocMalloc::Allocator(
-            AllocToken(alloc_token)));
+            allocator_shim::AllocToken(alloc_token)));
     DisableThreadCacheForRootIfEnabled(
         allocator_shim::internal::PartitionAllocMalloc::OriginalAllocator(
-            AllocToken(alloc_token)));
+            allocator_shim::AllocToken(alloc_token)));
   }
 }
 
 void EnablePartitionAllocThreadCacheForProcess() {
   PA_CHECK(allocator_shim::internal::PartitionAllocMalloc::
                AllocatorConfigurationFinalized());
-  for (size_t alloc_token = 0; alloc_token <= kMaxAllocToken.value();
+  for (size_t alloc_token = 0; alloc_token < allocator_shim::kNumPartitions;
        alloc_token++) {
     EnablePartitionAllocThreadCacheForRootIfDisabled(
         allocator_shim::internal::PartitionAllocMalloc::Allocator(
-            AllocToken(alloc_token)),
+            allocator_shim::AllocToken(alloc_token)),
         alloc_token);
   }
 }

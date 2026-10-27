@@ -53,8 +53,12 @@ mojom("interfaces") {
   public_deps = [ "//mojo/public/mojom/base" ]
 }
 
+# TODO(crbug.com/514743962): This target should be broken up and have its
+# code moved into appropriate subcomponents.
 component("features") {
   sources = [
+    # All of these feature_registry targets are related to
+    # remote model execution / MQLS.
     "feature_registry/enterprise_policy_registry.cc",
     "feature_registry/enterprise_policy_registry.h",
     "feature_registry/feature_registration.cc",
@@ -63,11 +67,18 @@ component("features") {
     "feature_registry/mqls_feature_registry.h",
     "feature_registry/settings_ui_registry.cc",
     "feature_registry/settings_ui_registry.h",
+
+    # TODO(crbug.com/514743962): This belongs with remote model execution.
     "model_execution/feature_keys.h",
+
+    # TODO(crbug.com/514743962): This is mostly on-device model things,
+    # with a couple stray remote model execution things.
     "model_execution/model_execution_prefs.cc",
     "model_execution/model_execution_prefs.h",
     "model_execution/on_device_features.cc",
     "model_execution/on_device_features.h",
+
+    # TODO(crbug.com/514743962): These should all be broken up and removed.
     "optimization_guide_constants.cc",
     "optimization_guide_constants.h",
     "optimization_guide_enums.h",
@@ -316,10 +327,14 @@ source_set("ondevice") {
       "model_execution/on_device_model_feature_adapter.h",
       "model_execution/on_device_model_metadata.cc",
       "model_execution/on_device_model_metadata.h",
+      "model_execution/on_device_model_names.cc",
+      "model_execution/on_device_model_names.h",
       "model_execution/on_device_model_service_controller.cc",
       "model_execution/on_device_model_service_controller.h",
       "model_execution/on_device_model_validator.cc",
       "model_execution/on_device_model_validator.h",
+      "model_execution/on_device_telemetry_logger.cc",
+      "model_execution/on_device_telemetry_logger.h",
       "model_execution/performance_class.cc",
       "model_execution/performance_class.h",
       "model_execution/repetition_checker.cc",
@@ -370,6 +385,7 @@ source_set("ondevice") {
         "model_execution/android/model_broker_android.h",
       ]
       deps += [
+        "//build:branding_buildflags",
         "//services/on_device_model:on_device_model_service",
         "//services/on_device_model/android",
         "//services/on_device_model/android:mojom",
@@ -391,11 +407,17 @@ if (build_with_model_execution) {
       "model_execution/manifest_broker/manifest_monitor.h",
       "model_execution/manifest_broker/manifest_solution_factory.cc",
       "model_execution/manifest_broker/manifest_solution_factory.h",
+      "model_execution/manifest_broker/manifest_validation.cc",
+      "model_execution/manifest_broker/manifest_validation.h",
+      "model_execution/manifest_broker/override_manifest_asset_manager_delegate.cc",
+      "model_execution/manifest_broker/override_manifest_asset_manager_delegate.h",
     ]
     deps = [
       ":features",
       ":ondevice",
       "//base",
+      "//components/component_updater",
+      "//components/crx_file",
       "//components/optimization_guide/core:features",
       "//components/optimization_guide/proto:optimization_guide_proto",
       "//components/optimization_guide/public/mojom",
@@ -422,6 +444,10 @@ if (build_with_model_execution) {
   static_library("manifest_broker_test_support") {
     testonly = true
     sources = [
+      "model_execution/manifest_broker/test/fake_manifest_broker.cc",
+      "model_execution/manifest_broker/test/fake_manifest_broker.h",
+      "model_execution/manifest_broker/test/scenario_builder.cc",
+      "model_execution/manifest_broker/test/scenario_builder.h",
       "model_execution/manifest_broker/test/test_manifest_asset_manager_component_state.cc",
       "model_execution/manifest_broker/test/test_manifest_asset_manager_component_state.h",
     ]
@@ -429,8 +455,12 @@ if (build_with_model_execution) {
       ":manifest_broker",
       ":manifest_broker_dev_support",
       ":model_execution_test_support",
+      ":ondevice",
       "//base",
       "//base/test:test_support",
+      "//components/optimization_guide/proto:optimization_guide_proto",
+      "//components/optimization_guide/public/mojom",
+      "//services/on_device_model/public/cpp/test_support",
       "//testing/gmock",
     ]
   }
@@ -641,6 +671,16 @@ static_library("model_execution_test_support") {
       "//services/on_device_model/public/cpp:types",
       "//services/on_device_model/public/cpp/test_support",
     ]
+    if (is_android) {
+      sources += [
+        "model_execution/test/fake_model_broker_android.cc",
+        "model_execution/test/fake_model_broker_android.h",
+      ]
+      deps += [
+        "//services/on_device_model/android",
+        "//services/on_device_model/android:test_support",
+      ]
+    }
   }
 }
 
@@ -800,7 +840,12 @@ source_set("model_execution_unit_tests") {
       "model_execution/fieldwise_response_parser_unittest.cc",
       "model_execution/json_response_parser_unittest.cc",
       "model_execution/manifest_broker/manifest_asset_manager_unittest.cc",
+      "model_execution/manifest_broker/manifest_broker_service_crash_unittest.cc",
+      "model_execution/manifest_broker/manifest_broker_state_unittest.cc",
+      "model_execution/manifest_broker/manifest_solution_factory_unittest.cc",
       "model_execution/manifest_broker/manifest_unittest.cc",
+      "model_execution/manifest_broker/manifest_validation_unittest.cc",
+      "model_execution/manifest_broker/override_manifest_asset_manager_delegate_unittest.cc",
       "model_execution/model_broker_client_unittest.cc",
       "model_execution/model_execution_features_controller_unittest.cc",
       "model_execution/model_execution_features_unittest.cc",
@@ -832,6 +877,7 @@ source_set("model_execution_unit_tests") {
       ":manifest_broker_test_support",
       ":prediction",
       "//components/component_updater",
+      "//components/crx_file",
       "//components/optimization_guide/public/mojom",
       "//components/signin/public/identity_manager:test_support",
       "//components/sync_preferences:test_support",

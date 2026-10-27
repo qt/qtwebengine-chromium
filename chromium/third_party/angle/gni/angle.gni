@@ -15,11 +15,16 @@ if (!defined(checkout_angle_dawn_deps)) {
   checkout_angle_dawn_deps = true
 }
 
+if (!defined(checkout_angle_partition_alloc)) {
+  checkout_angle_partition_alloc = false
+}
+
 declare_args() {
   # Extract native libs in ANGLE apk. Useful for flamegraph generation.
   angle_extract_native_libs = false
 
-  # Display mode for ANGLE vulkan display, could be 'simple' or 'headless', default is 'simple'.
+  # Display mode for ANGLE vulkan display, could be 'simple' or 'headless',
+  # default is 'simple'.
   angle_vulkan_display_mode = "simple"
 
   # Defaults to capture building to $root_out_dir/angle_libs/with_capture.
@@ -37,8 +42,9 @@ declare_args() {
   # Don't build dEQP by default.
   build_angle_deqp_tests = false
 
-  # Build the ANGLE end2end tests as a shared library. This shared library can (for example) be
-  # loaded by an Android APK to execute the end2end tests outside of the normal GTest framework.
+  # Build the ANGLE end2end tests as a shared library. This shared library can
+  # (for example) be loaded by an Android APK to execute the end2end tests
+  # outside of the normal GTest framework.
   build_angle_end2end_tests_library = false
 
   # List of traces for benchmark mode
@@ -57,7 +63,8 @@ declare_args() {
   angle_standalone_benchmark =
       is_android && angle_standalone_benchmark_traces != []
 
-  # Only bundle traces in the APK if we're building a subset or if standalone benchmark is selected
+  # Only bundle traces in the APK if we're building a subset or if standalone
+  # benchmark is selected
   restricted_traces_outside_of_apk =
       is_android && angle_restricted_traces == [] &&
       angle_standalone_benchmark_traces == []
@@ -128,6 +135,11 @@ if (!defined(checkout_angle_restricted_traces)) {
 # Subdirectory to place data files (e.g. layer JSON files).
 angle_data_dir = "angledata"
 
+if (angle_use_wayland) {
+  wayland_protocols_gn_dir = "//third_party/wayland-protocols"
+  wayland_protocols_dir = "$wayland_protocols_gn_dir/src"
+}
+
 declare_args() {
   angle_assert_always_on = dcheck_always_on
 
@@ -144,7 +156,8 @@ declare_args() {
     assert(false, "Unknown current CPU: $current_cpu")
   }
 
-  # Indicate if the rapidJSON library is available to build with in third_party/.
+  # Indicate if the rapidJSON library is available to build with in
+  # third_party/.
   angle_has_rapidjson = angle_has_build
 
   angle_is_winappsdk = false
@@ -188,6 +201,11 @@ declare_args() {
 }
 
 declare_args() {
+  # True if ANGLE is linked statically in Chromium.
+  if (!defined(angle_use_static_angle)) {
+    angle_use_static_angle = false
+  }
+
   # By default, ANGLE is using a thread pool for parallel compilation.
   # Activating the delegate worker results in posting the tasks using the
   # embedder API. In Chromium code base, it results in sending tasks to the
@@ -224,8 +242,8 @@ declare_args() {
   # Enables the OpenCL pass-through back end
   angle_enable_cl_passthrough = angle_enable_cl
 
-  # Disable WGPU backend.
-  # Currently disabled on Android, Fuschia, WinUWP, and Win MSVC. X11 required on Linux.
+  # Disable WGPU backend. Currently disabled on Android, Fuchsia, WinUWP, and
+  # Win MSVC. X11 required on Linux.
   # anglebug.com/42266968
   angle_enable_wgpu =
       !is_official_build && !(is_android || is_fuchsia || angle_is_winuwp) &&
@@ -247,8 +265,9 @@ declare_args() {
   angle_test_enable_system_egl = false
 }
 
-# OpenCL is not supported on Windows UWP, because the CL headers include DX9, which is not
-# supported by UWP. A workaround might be possible if CL support on UWP is required.
+# OpenCL is not supported on Windows UWP, because the CL headers include DX9,
+# which is not supported by UWP. A workaround might be possible if CL support on
+# UWP is required.
 assert(!angle_is_winuwp || !angle_enable_cl,
        "OpenCL is not supported on Windows UWP")
 
@@ -303,16 +322,14 @@ declare_args() {
       angle_enable_vulkan && angle_debug_layers_enabled && angle_standalone &&
       !is_apple && (is_linux || is_android)
 
-  # ISpriteVisual windows cannot be validated and can lead to crashes if an invalid window is
-  # provided to ANGLE. Disable them for non-standalone ANGLE builds. crbug.com/1176118
+  # ISpriteVisual windows cannot be validated and can lead to crashes if an
+  # invalid window is provided to ANGLE. Disable them for non-standalone ANGLE
+  # builds. crbug.com/1176118
   angle_enable_d3d11_compositor_native_window =
       angle_enable_d3d11 && angle_standalone
 
   # Disable performance counter output by default
   angle_enable_perf_counter_output = false
-
-  # Directory where to find wayland source files
-  angle_wayland_dir = "$angle_root/third_party/wayland"
 
   angle_vulkan_headers_dir = "$angle_root/third_party/vulkan-headers/src"
   angle_vulkan_loader_dir = "$angle_root/third_party/vulkan-loader/src"
@@ -324,13 +341,14 @@ declare_args() {
 
   angle_build_vulkan_system_info = angle_has_build && !angle_is_winuwp
 
-  # Enable overlay by default when debug layers are enabled.  This is currently only implemented on
-  # Vulkan.
+  # Enable overlay by default when debug layers are enabled. This is currently
+  # only implemented on Vulkan.
   angle_enable_overlay = angle_enable_vulkan && angle_debug_layers_enabled
 
   angle_build_mesa = false
 
-  # Android platform's addTraceEvent ignores the timestamp and time() is a relatively heavy call.
+  # Android platform's addTraceEvent ignores the timestamp and time() is a
+  # relatively heavy call.
   angle_trace_events_ignore_timestamp = is_android && angle_standalone
 }
 
@@ -339,7 +357,8 @@ declare_args() {
 
   angle_has_histograms = angle_has_build
 
-  # True if we want to build the ANGLE test suites. On by default in most configs.
+  # True if we want to build the ANGLE test suites. On by default in most
+  # configs.
   angle_build_tests = angle_has_build
 }
 
@@ -499,8 +518,9 @@ template("angle_shared_library") {
     if (is_ios) {
       info_plist = "$angle_root/util/ios/Info.plist"
 
-      # shared libraries are hidden inside ios_framework_bundle, but we include headers from them
-      # Specifically, libGLESv1_CM includes headers from libGLESv2
+      # shared libraries are hidden inside ios_framework_bundle, but we include
+      # headers from them Specifically, libGLESv1_CM includes headers from
+      # libGLESv2
       check_includes = false
     }
   }
@@ -595,7 +615,8 @@ if (angle_standalone || build_with_chromium ||
       }
 
       if (is_ios) {
-        # shared libraries are hidden inside ios_framework_bundle, but we include headers from them
+        # shared libraries are hidden inside ios_framework_bundle, but we
+        # include headers from them
         check_includes = false
       }
 
@@ -640,8 +661,9 @@ if (angle_standalone || build_with_chromium ||
 
       if (is_mac) {
         if (angle_enable_metal) {
-          # On macOS, compiling Metal shader sometimes takes very long time due to internal caching
-          # mechanism. This hooking library is a way to bypass this caching mechanism.
+          # On macOS, compiling Metal shader sometimes takes very long time due
+          # to internal caching mechanism. This hooking library is a way to
+          # bypass this caching mechanism.
           data_deps += [ "$angle_root/src/libANGLE/renderer/metal/file_hooking:metal_shader_cache_file_hooking" ]
         }
         if (angle_enable_cgl) {
@@ -675,7 +697,8 @@ if (angle_standalone || build_with_chromium ||
         ]
       }
       if (is_ios) {
-        # We use a special main function on iOS to initialize UIKit before the normal main runs.
+        # We use a special main function on iOS to initialize UIKit before the
+        # normal main runs.
         ldflags = [
           "-e",
           "_ios_main",

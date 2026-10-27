@@ -1,4 +1,35 @@
 # Base configuration for linux builds and tests.
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
+
+# Shared rule sets, referenced from concrete jobs via
+#   rules: !reference [.rules:<name>, rules]
+# Centralizing them keeps the "what triggers this job?" decision in one place.
+.rules:libeigen:all-tests:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_NAMESPACE == "libeigen"
+    - if: $CI_PIPELINE_SOURCE == "web" && $CI_PROJECT_NAMESPACE == "libeigen"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_MERGE_REQUEST_LABELS =~ "/all-tests/"
+
+.rules:libeigen:gpu:
+  # Spelled out (rather than referencing .rules:libeigen:all-tests) to avoid
+  # a nested !reference, which GitLab CI has had inconsistent support for.
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_NAMESPACE == "libeigen"
+    - if: $CI_PIPELINE_SOURCE == "web" && $CI_PROJECT_NAMESPACE == "libeigen"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_MERGE_REQUEST_LABELS =~ "/all-tests/"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_MERGE_REQUEST_LABELS =~ "/gpu-tests/"
+
+.rules:libeigen:scheduled-or-web:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_NAMESPACE == "libeigen"
+    - if: $CI_PIPELINE_SOURCE == "web" && $CI_PROJECT_NAMESPACE == "libeigen"
+
+.rules:libeigen:scheduled-or-web:default-branch:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "web" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
 .common:linux:cross:
   image: ubuntu:24.04
   variables:
@@ -23,8 +54,12 @@
       - ${EIGEN_CI_BUILDDIR}/
     exclude:
       - ${EIGEN_CI_BUILDDIR}/**/*.o
+      - ${EIGEN_CI_BUILDDIR}/**/*.a
       - ${EIGEN_CI_BUILDDIR}/**/.ninja_log
       - ${EIGEN_CI_BUILDDIR}/**/.ninja_deps
+      - ${EIGEN_CI_BUILDDIR}/**/CMakeFiles/*.dir/**
+      - ${EIGEN_CI_BUILDDIR}/.cmake/**
+      - ${EIGEN_CI_BUILDDIR}/**/Testing/Temporary/**
     expire_in: 2 days
 
 # Base configuration for Windows builds and tests.
@@ -43,6 +78,10 @@
       - ${EIGEN_CI_BUILDDIR}/
     exclude:
       - ${EIGEN_CI_BUILDDIR}/**/*.obj
+      - ${EIGEN_CI_BUILDDIR}/**/*.lib
       - ${EIGEN_CI_BUILDDIR}/**/.ninja_log
       - ${EIGEN_CI_BUILDDIR}/**/.ninja_deps
+      - ${EIGEN_CI_BUILDDIR}/**/CMakeFiles/*.dir/**
+      - ${EIGEN_CI_BUILDDIR}/.cmake/**
+      - ${EIGEN_CI_BUILDDIR}/**/Testing/Temporary/**
     expire_in: 2 days

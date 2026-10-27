@@ -52,6 +52,7 @@ limitations under the License.
 #include "xla/pjrt/pjrt_stream_executor_client.h"
 #include "xla/pjrt/plugin/xla_gpu/xla_gpu_client_options.h"
 #include "xla/pjrt/raw_buffer.h"
+#include "xla/pjrt/se_raw_buffer.h"
 #include "xla/runtime/device_id.h"
 #include "xla/service/computation_placer.h"
 #include "xla/service/gpu/gpu_executable_run_options.h"
@@ -90,6 +91,8 @@ class StreamExecutorGpuDevice : public PjRtStreamExecutorDevice {
   absl::Span<int const> coords() const;
 
   absl::StatusOr<PjRtMemorySpace*> default_memory_space() const override;
+
+  absl::Status ClearMemoryStats() override;
 
  private:
   std::string device_vendor_;
@@ -134,6 +137,7 @@ class StreamExecutorGpuClient : public xla::PjRtStreamExecutorClient {
   absl::string_view platform_version() const override;
 
   std::optional<PjRtPluginAttributes> plugin_attributes() const override;
+  bool use_stream_based_compaction() const override { return true; }
 
   void UpdateGlobalProcessInfo(
       absl::Span<xla::coordination::TaskInfo> infos) override;
@@ -161,9 +165,8 @@ class StreamExecutorGpuClient : public xla::PjRtStreamExecutorClient {
   // ScheduleRemoteSend and MakeCrossHostReceiveBuffers are methods implemented
   // to support the legacy cross-host transfers API.
   void ScheduleRemoteSend(
-      PjRtMemorySpace* memory_space,
-      tsl::RCReference<CommonPjRtRawBuffer> raw_buffer,
-      std::vector<tsl::RCReference<tsl::AsyncValue>> definition_events,
+      PjRtMemorySpace* memory_space, PjRtRawBufferRef raw_buffer,
+      std::vector<PjRtDeviceEventRef> definition_events,
       tsl::RCReference<PjRtDeviceEventPromise> usage_event_promise,
       Future<std::string> serialized_descriptor,
       PjRtBuffer::RemoteSendCallback on_done) override;
@@ -179,6 +182,10 @@ class StreamExecutorGpuClient : public xla::PjRtStreamExecutorClient {
   absl::StatusOr<Layout> GetDefaultLayout(
       PrimitiveType element_type, absl::Span<const int64_t> dims) override;
 
+  absl::StatusOr<xla::Shape> GetCopyDestinationShape(
+      const xla::Shape& shape, PjRtMemorySpace* src_memory_space,
+      PjRtMemorySpace* dst_memory_space) override;
+
   absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> LoadSerialized(
       absl::string_view serialized, std::optional<CompileOptions> options,
       const LoadOptions& load_options);
@@ -191,8 +198,8 @@ class StreamExecutorGpuClient : public xla::PjRtStreamExecutorClient {
 
   absl::StatusOr<PjRtStreamExecutorExecutionOutput> RunAsync(
       LocalExecutable& exec, PjRtDevice* device,
-      absl::Span<const tsl::RCReference<CommonPjRtRawBuffer>> flat_arguments,
-      absl::Span<const tsl::RCReference<CommonPjRtRawBuffer>> results,
+      absl::Span<const PjRtRawBufferRef> flat_arguments,
+      absl::Span<const PjRtRawBufferRef> results,
       ExecutableRunOptions run_options_inp, bool parameter_is_tupled_arguments,
       absl::Span<const Shape> executable_parameter_shapes) override;
 
@@ -219,15 +226,25 @@ class StreamExecutorGpuClient : public xla::PjRtStreamExecutorClient {
   // Helpers for cross host transfers.
   absl::Duration cross_host_transfer_timeout_ = absl::Minutes(3);
 
-  void ScheduleSendsOnLocalDevice(
-      PjRtDevice* device, std::vector<PjRtBuffer*> buffers,
-      std::vector<GlobalDeviceId> dst_global_device_ids,
-      std::vector<CrossHostTransferKey> transfer_keys,
-      std::vector<std::shared_ptr<Promise<>>> promises);
+  struct CrossHostTransferSpec {
+    GlobalDeviceId src_global_device_id;
+    GlobalDeviceId dst_global_device_id;
+    tsl::RCReference<PjRtRawBuffer> raw_buffer;
+  };
+
+  absl::StatusOr<std::vector<PjRtDeviceEventRef>> CrossHostTransferBuffers(
+      std::vector<tsl::RCReference<tsl::AsyncValue>> transfer_dependency_avs,
+      std::vector<CrossHostTransferSpec> transfer_specs);
+
+  void ScheduleTransfersOnLocalDevice(
+      LocalDeviceState* local_device_state, GlobalDeviceId device_id,
+      tsl::AsyncValueRef<BufferSequencingEvent> transfer_event,
+      std::vector<tsl::RCReference<tsl::AsyncValue>> transfer_dependency_avs,
+      std::vector<CrossHostTransferSpec> transfer_specs);
 
   struct PrepareReceiveBufferResult {
     std::unique_ptr<PjRtBuffer> buffer;
-    tsl::RCReference<CommonPjRtRawBuffer> raw_buffer;
+    PjRtRawBufferRef raw_buffer;
     LocalDeviceState* local_device;
     se::Stream* stream;
     BufferSequencingEventRef definition_event;

@@ -80,14 +80,8 @@ Geoposition* CreateGeoposition(
           ? std::make_optional(position.heading)
           : std::nullopt,
       position.speed >= 0. ? std::optional(position.speed) : std::nullopt);
-  AccuracyMode accuracy_mode = AccuracyMode::kPrecise;
-  if (RuntimeEnabledFeatures::ApproximateGeolocationWebVisibleAPIEnabled()) {
-    accuracy_mode = position.is_precise ? AccuracyMode::kPrecise
-                                        : AccuracyMode::kApproximate;
-  }
   return MakeGarbageCollected<Geoposition>(
-      coordinates, ConvertTimeToEpochTimeStamp(position.timestamp),
-      V8AccuracyMode(accuracy_mode));
+      coordinates, ConvertTimeToEpochTimeStamp(position.timestamp));
 }
 
 GeolocationPositionError* CreatePositionError(
@@ -254,6 +248,12 @@ void Geolocation::getCurrentPositionForBindings(
                       WebFeature::kGeolocationGetCurrentPositionHighAccuracy);
   }
 
+  if (RuntimeEnabledFeatures::ApproximateGeolocationWebVisibleAPIEnabled() &&
+      options->accuracyMode().AsEnum() == V8AccuracyMode::Enum::kApproximate) {
+    UseCounter::Count(GetExecutionContext(),
+                      WebFeature::kGeolocationAccuracyModeApproximate);
+  }
+
   if (!GetFrame())
     return;
 
@@ -297,6 +297,12 @@ int Geolocation::watchPositionForBindings(
   if (options->enableHighAccuracy()) {
     UseCounter::Count(GetExecutionContext(),
                       WebFeature::kGeolocationWatchPositionHighAccuracy);
+  }
+
+  if (RuntimeEnabledFeatures::ApproximateGeolocationWebVisibleAPIEnabled() &&
+      options->accuracyMode().AsEnum() == V8AccuracyMode::Enum::kApproximate) {
+    UseCounter::Count(GetExecutionContext(),
+                      WebFeature::kGeolocationAccuracyModeApproximate);
   }
 
   if (!GetFrame())

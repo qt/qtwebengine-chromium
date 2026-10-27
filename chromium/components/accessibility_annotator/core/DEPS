@@ -3,10 +3,10 @@ include_rules = [
   "+components/history/core",
   "+components/keyed_service/core",
   "+components/optimization_guide/proto",
+  "+components/prefs",
   "+components/signin/public/identity_manager",
-  "+components/sync/base",
-  "+components/sync/model",
+  "+components/subscription_eligibility",
+  "+components/sync_preferences",
   "+components/sync/protocol",
-  "+components/sync/test",
   "+sql",
 ]

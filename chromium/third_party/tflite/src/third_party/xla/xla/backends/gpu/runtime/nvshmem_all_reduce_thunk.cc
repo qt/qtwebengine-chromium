@@ -92,8 +92,9 @@ CollectiveOpGroupMode GetGroupModeInst(HloInstType* inst) {
 
 NvshmemAllReduceReduceScatterThunkBase::NvshmemAllReduceReduceScatterThunkBase(
     Thunk::Kind kind, ThunkInfo thunk_info, AllReduceConfig config,
-    std::vector<CollectiveThunk::Buffer> buffers, bool is_p2p)
-    : NvshmemCollectiveThunk(kind, thunk_info, is_p2p),
+    std::vector<CollectiveThunk::Buffer> buffers,
+    CommunicationId communication_id)
+    : NvshmemCollectiveThunk(kind, thunk_info, communication_id),
       config_(std::move(config)),
       buffers_(std::move(buffers)) {
   CHECK_EQ(config_.config.operand_element_type.size(), buffers_.size());
@@ -104,16 +105,14 @@ NvshmemAllReduceThunk::NvshmemAllReduceThunk(
     std::vector<CollectiveThunk::Buffer> buffers, bool p2p_memcpy_enabled)
     : NvshmemAllReduceReduceScatterThunkBase(
           Thunk::kNvshmemAllReduce, thunk_info, GetAllReduceConfigInst(inst),
-          std::move(buffers),
-          /*is_p2p=*/false) {}
+          std::move(buffers)) {}
 
 NvshmemAllReduceThunk::NvshmemAllReduceThunk(
     ThunkInfo thunk_info, AllReduceConfig config,
     std::vector<CollectiveThunk::Buffer> buffers)
     : NvshmemAllReduceReduceScatterThunkBase(
           Thunk::kNvshmemAllReduce, std::move(thunk_info), std::move(config),
-          std::move(buffers),
-          /*is_p2p=*/false) {}
+          std::move(buffers)) {}
 
 absl::Status NvshmemAllReduceThunk::CheckImplementable(
     const HloAllReduceInstruction* inst, int64_t replica_count,
@@ -132,8 +131,8 @@ absl::StatusOr<ThunkProto> NvshmemAllReduceThunk::ToProto() const {
   ThunkProto proto;
   *proto.mutable_thunk_info() = thunk_info().ToProto();
 
-  NvshmemAllReduceStartThunkProto* thunk_proto =
-      proto.mutable_nvshmem_all_reduce_start_thunk();
+  NvshmemAllReduceThunkProto* thunk_proto =
+      proto.mutable_nvshmem_all_reduce_thunk();
 
   for (const CollectiveThunk::Buffer& buffer : buffers_) {
     TF_ASSIGN_OR_RETURN(*thunk_proto->add_buffers(), buffer.ToProto());
@@ -147,7 +146,7 @@ absl::StatusOr<ThunkProto> NvshmemAllReduceThunk::ToProto() const {
 
 absl::StatusOr<std::unique_ptr<NvshmemAllReduceThunk>>
 NvshmemAllReduceThunk::FromProto(
-    ThunkInfo thunk_info, const NvshmemAllReduceStartThunkProto& thunk_proto,
+    ThunkInfo thunk_info, const NvshmemAllReduceThunkProto& thunk_proto,
     absl::Span<const BufferAllocation> buffer_allocations) {
   std::vector<CollectiveThunk::Buffer> buffers;
   buffers.reserve(thunk_proto.buffers_size());

@@ -17,9 +17,10 @@
 #include "core/fxcrt/raw_span.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/span.h"
+#include "core/fxcrt/to_underlying.h"
 #include "core/fxge/cfx_fontmapper.h"
 
-class CFX_StockFontArray;
+class CPDF_StockFontArray;
 class CPDF_Font;
 
 class CPDF_FontGlobals {
@@ -40,16 +41,16 @@ class CPDF_FontGlobals {
            RetainPtr<CPDF_Font> font);
 
   void SetEmbeddedCharset(CIDSet idx, pdfium::span<const fxcmap::CMap> map) {
-    embedded_charsets_[idx] = map;
+    embedded_charsets_[fxcrt::to_underlying(idx)] = map;
   }
   pdfium::span<const fxcmap::CMap> GetEmbeddedCharset(CIDSet idx) const {
-    return embedded_charsets_[idx];
+    return embedded_charsets_[fxcrt::to_underlying(idx)];
   }
   void SetEmbeddedToUnicode(CIDSet idx, pdfium::span<const uint16_t> map) {
-    embedded_to_unicodes_[idx] = map;
+    embedded_to_unicodes_[fxcrt::to_underlying(idx)] = map;
   }
   pdfium::span<const uint16_t> GetEmbeddedToUnicode(CIDSet idx) {
-    return embedded_to_unicodes_[idx];
+    return embedded_to_unicodes_[fxcrt::to_underlying(idx)];
   }
 
   RetainPtr<const CPDF_CMap> GetPredefinedCMap(const ByteString& name);
@@ -65,14 +66,17 @@ class CPDF_FontGlobals {
   void LoadEmbeddedKorea1CMaps();
 
   std::map<ByteString, RetainPtr<const CPDF_CMap>> cmaps_;
-  std::array<std::unique_ptr<CPDF_CID2UnicodeMap>, CIDSET_NUM_SETS>
+  std::array<std::unique_ptr<CPDF_CID2UnicodeMap>,
+             fxcrt::to_underlying(CIDSet::kNumSets)>
       cid2unicode_maps_;
-  std::array<pdfium::raw_span<const fxcmap::CMap>, CIDSET_NUM_SETS>
+  std::array<pdfium::raw_span<const fxcmap::CMap>,
+             fxcrt::to_underlying(CIDSet::kNumSets)>
       embedded_charsets_;
-  std::array<pdfium::raw_span<const uint16_t>, CIDSET_NUM_SETS>
+  std::array<pdfium::raw_span<const uint16_t>,
+             fxcrt::to_underlying(CIDSet::kNumSets)>
       embedded_to_unicodes_;
   std::map<UnownedPtr<CPDF_Document>,
-           std::unique_ptr<CFX_StockFontArray>,
+           std::unique_ptr<CPDF_StockFontArray>,
            std::less<>>
       stock_map_;
 };

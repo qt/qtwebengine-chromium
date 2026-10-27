@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_DENSEBASE_H
 #define EIGEN_DENSEBASE_H
@@ -105,7 +106,7 @@ class DenseBase
      * it is set to the \a Dynamic constant.
      * \sa MatrixBase::rows(), MatrixBase::cols(), RowsAtCompileTime, SizeAtCompileTime */
 
-    SizeAtCompileTime = (internal::size_of_xpr_at_compile_time<Derived>::ret),
+    SizeAtCompileTime = (internal::size_of_xpr_at_compile_time<Derived>::value),
     /**< This is equal to the number of coefficients, i.e. the number of
      * rows times the number of columns, or to \a Dynamic if this is not
      * known at compile-time. \sa RowsAtCompileTime, ColsAtCompileTime */
@@ -169,8 +170,8 @@ class DenseBase
                              : int(IsRowMajor)          ? int(ColsAtCompileTime)
                                                         : int(RowsAtCompileTime),
 
-    InnerStrideAtCompileTime = internal::inner_stride_at_compile_time<Derived>::ret,
-    OuterStrideAtCompileTime = internal::outer_stride_at_compile_time<Derived>::ret
+    InnerStrideAtCompileTime = internal::inner_stride_at_compile_time<Derived>::value,
+    OuterStrideAtCompileTime = internal::outer_stride_at_compile_time<Derived>::value
   };
 
   typedef typename internal::find_best_packet<Scalar, SizeAtCompileTime>::type PacketScalar;
@@ -199,8 +200,8 @@ class DenseBase
    * the return type of eval() is a const reference to a matrix, not a matrix! It is however guaranteed
    * that the return type of eval() is either PlainObject or const PlainObject&.
    */
-  typedef std::conditional_t<internal::is_same<typename internal::traits<Derived>::XprKind, MatrixXpr>::value,
-                             PlainMatrix, PlainArray>
+  typedef std::conditional_t<std::is_same<typename internal::traits<Derived>::XprKind, MatrixXpr>::value, PlainMatrix,
+                             PlainArray>
       PlainObject;
 
   /** \returns the outer size.
@@ -424,47 +425,20 @@ class DenseBase
 
   EIGEN_DEVICE_FUNC Scalar prod() const;
 
-  template <int NaNPropagation>
+  // The default PropagateFast gives undefined behavior on NaN inputs but the fastest code.
+  template <int NaNPropagation = PropagateFast>
   EIGEN_DEVICE_FUNC typename internal::traits<Derived>::Scalar minCoeff() const;
-  template <int NaNPropagation>
+  template <int NaNPropagation = PropagateFast>
   EIGEN_DEVICE_FUNC typename internal::traits<Derived>::Scalar maxCoeff() const;
 
-  // By default, the fastest version with undefined NaN propagation semantics is
-  // used.
-  // TODO(rmlarsen): Replace with default template argument (C++14 is now the minimum standard).
-  EIGEN_DEVICE_FUNC inline typename internal::traits<Derived>::Scalar minCoeff() const {
-    return minCoeff<PropagateFast>();
-  }
-  EIGEN_DEVICE_FUNC inline typename internal::traits<Derived>::Scalar maxCoeff() const {
-    return maxCoeff<PropagateFast>();
-  }
-
-  template <int NaNPropagation, typename IndexType>
+  template <int NaNPropagation = PropagateFast, typename IndexType>
   EIGEN_DEVICE_FUNC typename internal::traits<Derived>::Scalar minCoeff(IndexType* row, IndexType* col) const;
-  template <int NaNPropagation, typename IndexType>
+  template <int NaNPropagation = PropagateFast, typename IndexType>
   EIGEN_DEVICE_FUNC typename internal::traits<Derived>::Scalar maxCoeff(IndexType* row, IndexType* col) const;
-  template <int NaNPropagation, typename IndexType>
+  template <int NaNPropagation = PropagateFast, typename IndexType>
   EIGEN_DEVICE_FUNC typename internal::traits<Derived>::Scalar minCoeff(IndexType* index) const;
-  template <int NaNPropagation, typename IndexType>
+  template <int NaNPropagation = PropagateFast, typename IndexType>
   EIGEN_DEVICE_FUNC typename internal::traits<Derived>::Scalar maxCoeff(IndexType* index) const;
-
-  // TODO(rmlarsen): Replace these methods with a default template argument (C++14 is now the minimum standard).
-  template <typename IndexType>
-  EIGEN_DEVICE_FUNC inline typename internal::traits<Derived>::Scalar minCoeff(IndexType* row, IndexType* col) const {
-    return minCoeff<PropagateFast>(row, col);
-  }
-  template <typename IndexType>
-  EIGEN_DEVICE_FUNC inline typename internal::traits<Derived>::Scalar maxCoeff(IndexType* row, IndexType* col) const {
-    return maxCoeff<PropagateFast>(row, col);
-  }
-  template <typename IndexType>
-  EIGEN_DEVICE_FUNC inline typename internal::traits<Derived>::Scalar minCoeff(IndexType* index) const {
-    return minCoeff<PropagateFast>(index);
-  }
-  template <typename IndexType>
-  EIGEN_DEVICE_FUNC inline typename internal::traits<Derived>::Scalar maxCoeff(IndexType* index) const {
-    return maxCoeff<PropagateFast>(index);
-  }
 
   template <typename BinaryOp>
   EIGEN_DEVICE_FUNC Scalar redux(const BinaryOp& func) const;
@@ -628,7 +602,7 @@ class DenseBase
   // disable the use of evalTo for dense objects with a nice compilation error
   template <typename Dest>
   EIGEN_DEVICE_FUNC inline void evalTo(Dest&) const {
-    EIGEN_STATIC_ASSERT((internal::is_same<Dest, void>::value),
+    EIGEN_STATIC_ASSERT((std::is_same<Dest, void>::value),
                         THE_EVAL_EVALTO_FUNCTION_SHOULD_NEVER_BE_CALLED_FOR_DENSE_OBJECTS);
   }
 

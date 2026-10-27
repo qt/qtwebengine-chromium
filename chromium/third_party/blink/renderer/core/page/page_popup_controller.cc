@@ -117,6 +117,10 @@ void PagePopupController::ClearPagePopupClient() {
 }
 
 void PagePopupController::setWindowRect(int x, int y, int width, int height) {
+  if (!popup_client_) {
+    return;
+  }
+
   popup_.SetWindowRect(gfx::Rect(x, y, width, height));
 
   popup_origin_ = gfx::Point(x, y);
@@ -127,6 +131,7 @@ void PagePopupController::setWindowRect(int x, int y, int width, int height) {
 void PagePopupController::Trace(Visitor* visitor) const {
   ScriptWrappable::Trace(visitor);
   Supplement<Page>::Trace(visitor);
+  visitor->Trace(popup_client_);
 }
 
 void PagePopupController::setMenuListOptionsBoundsInAXTree(

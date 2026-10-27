@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/chromeos/args.gni")
 
 assert(is_chromeos)
 
@@ -41,6 +41,7 @@ static_library("growth") {
     "//chrome/browser/ash/ownership",
     "//chrome/browser/ash/system_web_apps",
     "//chrome/browser/feature_engagement",
+    "//chrome/browser/metrics",
     "//chrome/browser/signin",
     "//chrome/browser/ui/web_applications",
     "//chromeos/ash/components/browser_context_helper",
@@ -97,6 +98,7 @@ source_set("unit_tests") {
     "//ash/constants",
     "//base",
     "//chrome/browser:browser_process",
+    "//chrome/browser:browser_process_platform_part",
     "//chrome/browser/ash/login/users:test_support",
     "//chrome/browser/ash/ownership",
     "//chrome/browser/prefs",

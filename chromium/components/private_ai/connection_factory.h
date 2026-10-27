@@ -9,6 +9,8 @@
 
 #include "base/functional/callback.h"
 #include "components/private_ai/connection.h"
+#include "components/private_ai/proto/private_ai.pb.h"
+#include "components/private_ai/status_code.h"
 
 namespace private_ai {
 
@@ -22,7 +24,8 @@ class ConnectionFactory {
   // `on_disconnect` is invoked when the connection is disconnected. Sending
   // requests to disconnected connection will result in an error.
   virtual std::unique_ptr<Connection> Create(
-      base::RepeatingCallback<void(ErrorCode)> on_disconnect) = 0;
+      proto::FeatureName feature_name,
+      base::RepeatingCallback<void(StatusCode)> on_disconnect) = 0;
 };
 
 }  // namespace private_ai

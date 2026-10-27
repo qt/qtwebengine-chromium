@@ -25,19 +25,15 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/439062058): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #ifndef SRC_DAWN_COMMON_ITYP_SPAN_H_
 #define SRC_DAWN_COMMON_ITYP_SPAN_H_
 
+#include <cstddef>
 #include <limits>
 #include <span>
 
-#include "dawn/common/TypedInteger.h"
-#include "dawn/common/UnderlyingType.h"
+#include "src/dawn/common/Numeric.h"
+#include "src/utils/underlying_type.h"
 
 namespace dawn::ityp {
 
@@ -48,24 +44,20 @@ class span : private ::std::span<Value> {
     using I = UnderlyingType<Index>;
     using Base = ::std::span<Value>;
 
+    static_assert(HasUnsignedUnderlyingType<Index>, "Index type must be unsigned");
+
   public:
     constexpr span() = default;
-    constexpr span(Value* data, Index size) : Base{data, static_cast<I>(size)} {}
+    constexpr span(Value* data, Index size) : Base{data, checked_cast<size_t>(size)} {}
 
-    constexpr Value& operator[](Index i) const { return Base::operator[](static_cast<I>(i)); }
-
-    constexpr Index size() const {
-        DAWN_ASSERT(std::numeric_limits<I>::max() >= Base::size());
-        return Index(static_cast<I>(Base::size()));
-    }
+    using Base::begin, Base::end;
+    using Base::front, Base::back;
 
     using Base::data;
 
-    using Base::begin;
-    using Base::end;
+    constexpr Value& operator[](Index i) const { return Base::operator[](checked_cast<size_t>(i)); }
 
-    using Base::back;
-    using Base::front;
+    constexpr Index size() const { return Index(static_cast<I>(Base::size())); }
 };
 
 // ityp::SpanFromUntyped<Index>(myValues, myValueCount) creates a span<Index, Value> from a C-style
@@ -73,7 +65,7 @@ class span : private ::std::span<Value> {
 // use ityp and code that does.
 template <typename Index, typename Value>
 span<Index, Value> SpanFromUntyped(Value* data, size_t size) {
-    return {data, Index{static_cast<UnderlyingType<Index>>(size)}};
+    return {data, checked_cast<Index>(size)};
 }
 
 }  // namespace dawn::ityp

@@ -208,6 +208,11 @@ LayoutEmbeddedContent* HTMLFrameOwnerElement::GetLayoutEmbeddedContent() const {
 
 Node::InsertionNotificationRequest HTMLFrameOwnerElement::InsertedInto(
     ContainerNode& insertion_point) {
+  // Except for when state-preserving atomic moves are enabled, we should never
+  // have a content frame at the point where we got inserted into a tree.
+  SECURITY_CHECK(!ContentFrame() ||
+                 GetDocument().StatePreservingAtomicMoveInProgress());
+
   InsertionNotificationRequest result =
       HTMLElement::InsertedInto(insertion_point);
 
@@ -428,6 +433,16 @@ void HTMLFrameOwnerElement::DisposePluginSoon(WebPluginContainerImpl* plugin) {
     PluginDisposeSuspendScope::suspend_count_ |= 1;
   } else
     plugin->Dispose();
+}
+
+void HTMLFrameOwnerElement::NaturalSizingInfoChanged() {
+  if (auto* frame_view = DynamicTo<FrameView>(OwnedEmbeddedContentView())) {
+    last_natural_sizing_info_ = frame_view->GetNaturalDimensions();
+  }
+}
+
+void HTMLFrameOwnerElement::ClearLastNaturalSizingInfo() {
+  last_natural_sizing_info_.reset();
 }
 
 void HTMLFrameOwnerElement::UpdateContainerPolicy() {
@@ -731,7 +746,7 @@ bool HTMLFrameOwnerElement::LoadOrRedirectSubframe(
 
     if (RuntimeEnabledFeatures::ResourceTimingInitiatorEnabled()) {
       v8::Isolate* isolate =
-          ResourceInitiatorHelper::GetIsolateIfRunningScriptOnMainThread();
+          ResourceInitiatorHelper::GetIsolateIfRunningScript();
       fallback_timing_info_->initiator_url =
           isolate ? ResourceInitiatorHelper::GetScriptInitiatorUrl(*isolate)
                   : GetDocument().Url();

@@ -1165,14 +1165,27 @@ void MetricsWebContentsObserver::OnTimingUpdated(
     std::vector<mojom::SoftNavigationMetricsPtr> soft_navigation_metrics,
     std::vector<mojom::LargestContentfulPaintTimingPtr>
         soft_largest_contentful_paint,
-    std::vector<mojom::CustomUserTimingMarkPtr> user_timings) {
+    std::vector<mojom::CustomUserTimingMarkPtr> user_timings,
+    mojom::FontLoadingMetricsPtr font_loading_metrics) {
+  if (metadata &&
+      (metadata->main_frame_rect || metadata->main_frame_viewport_rect ||
+       !metadata->main_frame_ad_rects.empty()) &&
+      render_frame_host &&
+      render_frame_host->GetOutermostMainFrame() != render_frame_host) {
+    mojo::ReportBadMessage(
+        "Unexpected outermost main frame metadata from a non-outermost main "
+        "frame.");
+    return;
+  }
+
   if (PageLoadTracker* tracker = GetPageLoadTrackerIfValid(render_frame_host)) {
     tracker->UpdateMetrics(
         render_frame_host, std::move(timing), std::move(metadata),
         std::move(new_features), resources, std::move(render_data),
         std::move(cpu_timing), std::move(event_timings),
         subresource_load_metrics, std::move(soft_navigation_metrics),
-        std::move(soft_largest_contentful_paint));
+        std::move(soft_largest_contentful_paint),
+        std::move(font_loading_metrics));
     tracker->AddCustomUserTimings(std::move(user_timings));
   }
 }
@@ -1183,6 +1196,9 @@ void MetricsWebContentsObserver::OnCustomUserTimingUpdated(
   // Buffer timing data before seinding to the tracker as the tracker may not
   // exist in some cases, in that case the buffered timings are sent next time.
   page_load_custom_timings_.push_back(std::move(custom_timing));
+  TRACE_EVENT("loading",
+              "MetricsWebContentsObserver::OnCustomUserTimingUpdated",
+              "buffered_timings_count", page_load_custom_timings_.size());
   if (PageLoadTracker* tracker = GetPageLoadTrackerIfValid(rfh)) {
     tracker->AddCustomUserTimings(std::move(page_load_custom_timings_));
   }
@@ -1218,7 +1234,10 @@ void MetricsWebContentsObserver::UpdateTiming(
     std::vector<mojom::SoftNavigationMetricsPtr> soft_navigation_metrics,
     std::vector<mojom::LargestContentfulPaintTimingPtr>
         soft_largest_contentful_paint,
-    std::vector<mojom::CustomUserTimingMarkPtr> user_timings) {
+    std::vector<mojom::CustomUserTimingMarkPtr> user_timings,
+    mojom::FontLoadingMetricsPtr font_loading_metrics) {
+  TRACE_EVENT("loading", "MetricsWebContentsObserver::UpdateTiming",
+              "custom_timings_count", user_timings.size());
   content::RenderFrameHost* render_frame_host =
       page_load_metrics_receivers_.GetCurrentTargetFrame();
   OnTimingUpdated(render_frame_host, std::move(timing), std::move(metadata),
@@ -1226,11 +1245,13 @@ void MetricsWebContentsObserver::UpdateTiming(
                   std::move(cpu_timing), std::move(event_timings),
                   subresource_load_metrics, std::move(soft_navigation_metrics),
                   std::move(soft_largest_contentful_paint),
-                  std::move(user_timings));
+                  std::move(user_timings), std::move(font_loading_metrics));
 }
 
 void MetricsWebContentsObserver::AddCustomUserTiming(
     mojom::CustomUserTimingMarkPtr custom_timing) {
+  TRACE_EVENT("loading", "MetricsWebContentsObserver::AddCustomUserTiming",
+              "mark_name", custom_timing->mark_name);
   content::RenderFrameHost* render_frame_host =
       page_load_metrics_receivers_.GetCurrentTargetFrame();
   OnCustomUserTimingUpdated(render_frame_host, std::move(custom_timing));
@@ -1366,6 +1387,17 @@ void MetricsWebContentsObserver::OnAdAuctionComplete(
 
 base::TimeTicks MetricsWebContentsObserver::GetCreated() {
   return created_;
+}
+
+base::WeakPtr<PageLoadMetricsObserverInterface>
+MetricsWebContentsObserver::GetMetricsObserver(
+    content::RenderFrameHost* render_frame_host,
+    const char* name) {
+  PageLoadTracker* tracker = GetPageLoadTrackerIfValid(render_frame_host);
+  if (tracker) {
+    return tracker->FindObserver(name);
+  }
+  return nullptr;
 }
 
 // This contains some bugs. RenderFrameHost::IsActive is not relevant to

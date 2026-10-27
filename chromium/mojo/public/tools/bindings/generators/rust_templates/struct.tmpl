@@ -2,14 +2,17 @@
 
 {%- set pub = "pub " if is_pub else "" -%}
 
-{# FOR_RELEASE: Figure out which of these derives are actually necessary
-   (both for structs and for enums/unions) -#}
+{# Debug and PartialEq are included for convenience, testing, and debugging. -#}
 #[derive(Debug, PartialEq, MojomParse)]
 {%- if struct|should_derive_clone %}
 #[derive(Clone)]
 {%- endif %}
 {{pub}}struct {{name}} {
 {%- for field in struct.fields %}
+  {%- set parse_as = field.kind|get_parse_as_type %}
+  {%- if parse_as %}
+  #[mojom(parse_as = "{{parse_as}}")]
+  {%- endif %}
   {{pub}}{{field.name}}: {{field.kind|to_rust_type}},
 {%- endfor %}
 }

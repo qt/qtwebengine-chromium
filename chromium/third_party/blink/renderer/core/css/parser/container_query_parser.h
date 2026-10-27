@@ -14,6 +14,8 @@ namespace blink {
 
 class CSSParserContext;
 class ConditionalExpNode;
+class ContainerQuery;
+class ContainerQuerySet;
 
 class CORE_EXPORT ContainerQueryParser : public ConditionalParser {
   STACK_ALLOCATED();
@@ -22,8 +24,16 @@ class CORE_EXPORT ContainerQueryParser : public ConditionalParser {
   explicit ContainerQueryParser(const CSSParserContext&);
 
   // https://drafts.csswg.org/css-contain-3/#typedef-container-condition
-  const ConditionalExpNode* ParseCondition(String);
+  const ConditionalExpNode* ParseCondition(const String&);
   const ConditionalExpNode* ParseCondition(CSSParserTokenStream&);
+
+  // Parse a comma separated list of container queries
+  static const ContainerQuerySet* ParseContainerQuerySet(
+      const String&,
+      const CSSParserContext&);
+  static const ContainerQuerySet* ParseContainerQuerySet(
+      CSSParserTokenStream&,
+      const CSSParserContext&);
 
   class StyleFeatureSet : public MediaQueryParser::FeatureSet {
     STACK_ALLOCATED();
@@ -65,6 +75,7 @@ class CORE_EXPORT ContainerQueryParser : public ConditionalParser {
                                                 const FeatureSet&);
   const ConditionalExpNode* ConsumeFeature(CSSParserTokenStream&,
                                            const FeatureSet&);
+  const ContainerQuery* ConsumeContainerQuery(CSSParserTokenStream&);
 
   const CSSParserContext& context_;
 };

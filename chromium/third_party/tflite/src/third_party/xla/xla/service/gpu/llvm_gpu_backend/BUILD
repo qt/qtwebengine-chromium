@@ -126,10 +126,10 @@ py_binary(
 
 genrule(
     name = "generate_amdgpu_device_lib_data",
-    srcs = [
+    srcs = if_oss([
         "@rocm_device_libs//:ockl",
         "@rocm_device_libs//:ocml",
-    ],
+    ]),
     outs = ["amdgpu_device_lib_data.h"],
     cmd = "$(location {}) --llvm_link_bin $(location {}) $(SRCS) -o $@ --cpp_identifier=kAMDGPUDeviceLibData".format(
         ":generate_amdgpu_device_lib_data_tool",
@@ -405,18 +405,23 @@ cc_library(
     deps = [
         ":llvm_gpu_backend",
         "//xla:xla_proto_cc",
+        "//xla/service/gpu:gpu_constants",
         "//xla/service/llvm_ir:llvm_command_line_options",
         "//xla/stream_executor:device_description",
+        "//xla/tsl/platform:errors",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/status:statusor",
-        "@llvm-project//llvm:SPIRVCodeGen",
+        "@llvm-project//llvm:Analysis",
+        "@llvm-project//llvm:CodeGen",
         "@llvm-project//llvm:Scalar",
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:Target",
         "@llvm-project//llvm:TransformUtils",
         "@llvm-project//llvm:ir_headers",
         "@tsl//tsl/platform:errors",
-    ],
+    ] + if_oss([
+        "@llvm-project//llvm:SPIRVCodeGen",
+    ]),
 )
 
 xla_cc_test(

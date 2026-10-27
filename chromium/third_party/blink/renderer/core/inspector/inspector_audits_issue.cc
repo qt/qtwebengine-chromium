@@ -163,6 +163,9 @@ AuditsIssue::GenericIssueErrorTypeToProtocol(
     case mojom::blink::GenericIssueErrorType::kNavigationEntryMarkedSkippable:
       return protocol::Audits::GenericIssueErrorTypeEnum::
           NavigationEntryMarkedSkippable;
+    case mojom::blink::GenericIssueErrorType::kBackUINavigationWouldSkipAd:
+      return protocol::Audits::GenericIssueErrorTypeEnum::
+          BackUINavigationWouldSkipAd;
     case mojom::blink::GenericIssueErrorType::
         kAutofillAndManualTextPolicyControlledFeaturesInfo:
       return protocol::Audits::GenericIssueErrorTypeEnum::
@@ -179,6 +182,21 @@ AuditsIssue::GenericIssueErrorTypeToProtocol(
         kFormModelContextParameterMissingTitleAndDescription:
       return protocol::Audits::GenericIssueErrorTypeEnum::
           FormModelContextParameterMissingTitleAndDescription;
+    case mojom::blink::GenericIssueErrorType::kFormModelContextMissingToolName:
+      return protocol::Audits::GenericIssueErrorTypeEnum::
+          FormModelContextMissingToolName;
+    case mojom::blink::GenericIssueErrorType::
+        kFormModelContextMissingToolDescription:
+      return protocol::Audits::GenericIssueErrorTypeEnum::
+          FormModelContextMissingToolDescription;
+    case mojom::blink::GenericIssueErrorType::
+        kFormModelContextRequiredParameterMissingName:
+      return protocol::Audits::GenericIssueErrorTypeEnum::
+          FormModelContextRequiredParameterMissingName;
+    case mojom::blink::GenericIssueErrorType::
+        kFormModelContextParameterMissingName:
+      return protocol::Audits::GenericIssueErrorTypeEnum::
+          FormModelContextParameterMissingName;
   }
 }
 
@@ -642,7 +660,7 @@ void AuditsIssue::ReportMixedContentIssue(
     const String& devtools_id) {
   auto affected_frame =
       protocol::Audits::AffectedFrame::create()
-          .setFrameId(frame->GetDevToolsFrameToken().ToString().c_str())
+          .setFrameId(String(frame->GetDevToolsFrameToken().ToString()))
           .build();
 
   auto mixedContentDetails =
@@ -1101,7 +1119,7 @@ AuditsIssue AuditsIssue::CreateContentSecurityPolicyIssue(
     std::unique_ptr<protocol::Audits::AffectedFrame> affected_frame =
         protocol::Audits::AffectedFrame::create()
             .setFrameId(
-                frame_ancestor->GetDevToolsFrameToken().ToString().c_str())
+                String(frame_ancestor->GetDevToolsFrameToken().ToString()))
             .build();
     cspDetails->setFrameAncestor(std::move(affected_frame));
   }

@@ -31,9 +31,10 @@
 #include <deque>
 #include <memory>
 
-#include "dawn/common/SerialQueue.h"
-#include "dawn/native/ResourceHeapAllocator.h"
 #include "partition_alloc/pointers/raw_ptr.h"
+#include "src/dawn/common/SerialQueue.h"
+#include "src/dawn/native/IntegerTypes.h"
+#include "src/dawn/native/ResourceHeapAllocator.h"
 
 namespace dawn::native {
 
@@ -60,6 +61,24 @@ class PooledResourceMemoryAllocator : public ResourceHeapAllocator {
     raw_ptr<ResourceHeapAllocator> mHeapAllocator = nullptr;
 
     std::deque<std::unique_ptr<ResourceHeapBase>> mPool;
+};
+
+// Wrapper for tracking the allocation sizes to be decremented up to a completed ExecutionSerial
+// and reporting total allocation/used sizes.
+class AllocationSizeTracker {
+  public:
+    // Increment the total size for tracking.
+    void Increment(uint64_t incrementSize);
+    // Track the size to be decremented on Tick.
+    void Decrement(ExecutionSerial currentSerial, uint64_t decrementSize);
+    // Update the total size after completed serials.
+    void Tick(ExecutionSerial completedSerial);
+
+    uint64_t GetSize() const { return mTotalSize; }
+
+  private:
+    SerialQueue<ExecutionSerial, uint64_t> mMemoryToDecrement;
+    uint64_t mTotalSize = 0;
 };
 
 }  // namespace dawn::native

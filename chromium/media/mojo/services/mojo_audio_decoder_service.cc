@@ -95,8 +95,9 @@ void MojoAudioDecoderService::Initialize(
       cdm_context_ref_ =
           mojo_cdm_service_context_->GetCdmContextRef(cdm_id.value());
     } else if (cdm_id != cdm_id_) {
-      // TODO(xhwang): Replace with mojo::ReportBadMessage().
-      NOTREACHED() << "The caller should not switch CDM";
+      CHECK(mojo::IsInMessageDispatch());
+      mojo::ReportBadMessage("The caller should not switch CDM");
+      return;
     }
   }
 
@@ -212,6 +213,13 @@ void MojoAudioDecoderService::OnReadDone(
       !std::holds_alternative<AudioDecoderConfig>(*buffer->next_config())) {
     std::move(bad_message_callback)
         .Run("Invalid DecoderBuffer::next_config() for audio.");
+    return;
+  }
+
+  if (!buffer->end_of_stream() && buffer->side_data() &&
+      buffer->side_data()->secure_handle) {
+    std::move(bad_message_callback)
+        .Run("Renderer sent non-zero DecoderBufferSideData.secure_handle.");
     return;
   }
 

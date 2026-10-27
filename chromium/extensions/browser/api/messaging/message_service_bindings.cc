@@ -17,6 +17,7 @@
 #include "extensions/browser/api/messaging/message_service.h"
 #include "extensions/browser/bad_message.h"
 #include "extensions/browser/extension_util.h"
+#include "extensions/browser/process_map.h"
 #include "extensions/browser/script_injection_tracker.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
@@ -230,15 +231,6 @@ bool IsValidSourceContext(RenderProcessHost& process,
 bool IsValidSourceUrl(content::RenderProcessHost& process,
                       const GURL& source_url,
                       const PortContext& source_context) {
-  // Some scenarios may end up with an empty `source_url` (e.g. this may have
-  // been triggered by the ExtensionApiTabTest.TabConnect test).
-  //
-  // TODO(crbug.com/40240882): Remove this workaround once the bug is
-  // fixed.
-  if (source_url.is_empty()) {
-    return true;
-  }
-
   // Extract the `base_origin`.
   //
   // We don't use `ChildProcessSecurityPolicy::CanCommitURL` because: 1) it
@@ -259,19 +251,6 @@ bool IsValidSourceUrl(content::RenderProcessHost& process,
       // is okay, because sending of the IPC was inherently racing with the
       // deletion of the frame.
       return false;
-    }
-
-    if (frame->GetLastCommittedURL() == source_url) {
-      // If the trustworthy, browser-side URL matches `source_url` from the IPC
-      // payload, then report that the IPC is valid.  If the URLs don't match
-      // then we can't assume that the IPC is malformed and `return false`,
-      // because the renderer-side and browser-side URLs may differ in some
-      // scenarios (e.g. see https://crbug.com/1197308 or `document.write`).  In
-      // such scenarios we want to fall back to `base_origin`-based /
-      // `source_url_origin``-based checks, but these checks are not 100%
-      // correct (see https://crbug.com/1449796), so `GetLastCommittedURL` is
-      // consulted first.
-      return true;
     }
 
     base_origin = frame->GetLastCommittedOrigin();
@@ -297,6 +276,30 @@ bool IsValidSourceUrl(content::RenderProcessHost& process,
     return false;
   }
 
+  url::SchemeHostPort precursor_origin =
+      base_origin.GetTupleOrPrecursorTupleIfOpaque();
+  if (precursor_origin.scheme() == kExtensionScheme &&
+      !ProcessMap::Get(process.GetBrowserContext())
+           ->Contains(precursor_origin.host(), process.GetID())) {
+    // The process isn't in the extension process map. This is legitimately
+    // possible for extension frames that are marked as sandboxed in their
+    // manifests. However, these frames do *not* have access to extension APIs,
+    // including messaging. As such, we consider this an invalid messaging
+    // attempt and kill the renderer.
+    bad_message::ReceivedBadMessage(
+        &process, bad_message::EMF_INVALID_MESSAGE_FROM_SANDBOXED_PROCESS);
+    return false;
+  }
+
+  // Some scenarios may end up with an empty `source_url` (e.g. this may have
+  // been triggered by the ExtensionApiTabTest.TabConnect test).
+  //
+  // TODO(crbug.com/40240882): Remove this workaround once the bug is
+  // fixed.
+  if (source_url.is_empty()) {
+    return true;
+  }
+
   // Verify `source_url` via ChildProcessSecurityPolicy::HostsOrigin.
   //
   // TODO(crbug.com/40915015): Stop partially/not-100%-correctly
@@ -304,7 +307,21 @@ bool IsValidSourceUrl(content::RenderProcessHost& process,
   // The code below correctly handles URLs like `about:blank`, but may diverge
   // from //content checks in some cases (e.g. WebUI checks are not replicated
   // here;  MHTML divergence is avoided via GetLastCommittedURL() check above).
+  //
+  // Potentially scary: url::Origin::Resolve() will return the origin of
+  // `source_url` (and completely ignore `base_origin`) if `source_url` is a
+  // URL with a normal scheme (e.g., http[s] or chrome-extension). Thus, the
+  // `source_url_origin` is essentially renderer-controlled at this point. This
+  // is okay because:
+  // 1) We use this to check if the process can host the origin below, so if the
+  //    renderer indicated it was an origin it's not allowed to host, we'll kill
+  //    the process.
+  // 2) The only scenario in which the renderer is allowed to host an origin
+  //    but we *wouldn't* allow a message to be sent from a context like this
+  //    for extension pages sandboxed through the manifest, and those are
+  //    checked above.
   url::Origin source_url_origin = url::Origin::Resolve(source_url, base_origin);
+
   if (IsPortContextSandboxed(process, source_context)) {
     // If `source_url` came from a sandboxed extension, convert the origin to
     // an opaque origin, since HostsOrigin() enforces that sandboxed processes

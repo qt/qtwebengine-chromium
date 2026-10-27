@@ -14,6 +14,7 @@
 #include "src/execution/isolate-inl.h"
 #include "src/execution/messages.h"
 #include "src/heap/factory.h"
+#include "src/ic/handler-configuration.h"
 #include "src/logging/runtime-call-stats-scope.h"
 #include "src/objects/api-callbacks.h"
 #include "src/objects/contexts.h"
@@ -76,19 +77,17 @@ bool Accessors::IsJSObjectFieldAccessor(Isolate* isolate, DirectHandle<Map> map,
 
   switch (map->instance_type()) {
     case JS_ARRAY_TYPE:
-      if (fake_descriptor_index)
-        *fake_descriptor_index = InternalIndex(kMaxNumberOfDescriptors + 1);
-      return CheckForName(isolate, name, isolate->factory()->length_string(),
-                          JSArray::kLengthOffset, FieldIndex::kTagged, index);
-    default:
-      if (fake_descriptor_index)
-        *fake_descriptor_index = InternalIndex(kMaxNumberOfDescriptors + 2);
-      if (map->instance_type() < FIRST_NONSTRING_TYPE) {
-        return CheckForName(isolate, name, isolate->factory()->length_string(),
-                            offsetof(String, length_), FieldIndex::kWord32,
-                            index);
+      if (fake_descriptor_index) {
+        *fake_descriptor_index =
+            InternalIndex(LoadHandler::kArrayLengthFieldDescriptorIndex);
       }
-
+      return CheckForName(isolate, name, isolate->factory()->length_string(),
+                          offsetof(JSArray, length_), FieldIndex::kTagged,
+                          index);
+    default:
+      DCHECK_IMPLIES(
+          InstanceTypeChecker::IsString(map->instance_type()),
+          !Name::Equals(isolate, name, isolate->factory()->length_string()));
       return false;
   }
 }
@@ -465,7 +464,7 @@ Handle<JSObject> GetFrameArguments(Isolate* isolate,
   DCHECK_EQ(array->ulength().value(), length);
   for (uint32_t i = 0; i < length; i++) {
     Tagged<Object> value = frame->GetParameter(i);
-    if (IsTheHole(value, isolate)) {
+    if (IsTheHole(value)) {
       // Generators currently use holes as dummy arguments when resuming.  We
       // must not leak those.
       DCHECK(IsResumableFunction(function->shared()->kind()));
@@ -554,7 +553,8 @@ DirectHandle<AccessorInfo> Accessors::MakeFunctionArgumentsInfo(
 
 static inline bool AllowAccessToFunction(Tagged<Context> current_context,
                                          Tagged<JSFunction> function) {
-  return current_context->HasSameSecurityTokenAs(function->context());
+  return current_context->native_context()->HasSameSecurityTokenAs(
+      function->context()->native_context());
 }
 
 class FrameFunctionIterator {
@@ -930,7 +930,7 @@ void Accessors::ErrorStackSetter(
   if (IsJSObject(*maybe_error_object)) {
     v8::Local<v8::Value> value = info[0];
     ErrorUtils::SetFormattedStack(isolate, Cast<JSObject>(maybe_error_object),
-                                  Utils::OpenDirectHandle(*value));
+                                  Cast<JSAny>(Utils::OpenDirectHandle(*value)));
   }
 }
 

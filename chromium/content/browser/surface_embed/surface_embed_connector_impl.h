@@ -6,18 +6,21 @@
 #define CONTENT_BROWSER_SURFACE_EMBED_SURFACE_EMBED_CONNECTOR_IMPL_H_
 
 #include <memory>
+#include <optional>
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "components/viz/common/surfaces/surface_info.h"
 #include "content/browser/renderer_host/frame_connector.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/surface_embed_connector.h"
 #include "third_party/blink/public/common/frame/frame_visual_properties.h"
 #include "third_party/blink/public/mojom/frame/intrinsic_sizing_info.mojom-forward.h"
 #include "third_party/blink/public/mojom/frame/lifecycle.mojom.h"
 #include "third_party/blink/public/mojom/frame/viewport_intersection_state.mojom.h"
 #include "ui/base/cursor/cursor.h"
+#include "ui/compositor/compositor.h"
 #include "ui/display/screen_infos.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
@@ -30,8 +33,9 @@ class RenderWidgetHostInputEventRouter;
 
 namespace content {
 
-class DummySurfaceProvider;
-
+class FrameTree;
+class RenderFrameHost;
+class RenderFrameHostImpl;
 class RenderViewHostDelegateView;
 class RenderWidgetHostViewChildFrame;
 class TextInputManager;
@@ -43,6 +47,8 @@ class CONTENT_EXPORT SurfaceEmbedConnectorImpl
       public FrameConnector {
  public:
   ~SurfaceEmbedConnectorImpl() override;
+
+  static bool ContainsOrIsFocusedWebContents(WebContentsImpl* web_contents);
 
   WebContentsView* GetParentWebContentsView() const;
   RenderViewHostDelegateView* GetParentRenderViewHostDelegateView() const;
@@ -62,8 +68,12 @@ class CONTENT_EXPORT SurfaceEmbedConnectorImpl
   void OnSynchronizeVisualProperties(
       const blink::FrameVisualProperties& visual_properties) override;
   const viz::FrameSinkId& GetFrameSinkId() const override;
+  double GetCssZoomFactorForTesting() override;
+  const gfx::Size& GetLocalFrameSizeInPixelsForTesting() override;
 
   // FrameConnector:
+  void SetKeepSurfaceAlive(bool keep_alive) override;
+  bool IsKeepingAlive() const override;
   void SetView(RenderWidgetHostViewChildFrame* view,
                bool allow_paint_holding) override;
   RenderWidgetHostViewBase* GetParentRenderWidgetHostView() override;
@@ -116,7 +126,21 @@ class CONTENT_EXPORT SurfaceEmbedConnectorImpl
   input::RenderWidgetHostViewInput* GetParentViewInput() override;
   input::RenderWidgetHostViewInput* GetRootViewInput() override;
 
+  void OnRenderFrameCreated();
+
+  // Updates the `view_` member to track the current RenderWidgetHostView
+  // associated with the child WebContents.
+  void UpdateViewForCurrentRenderFrameHost();
+
+  // Returns nullptr if the focus is outside of this connector's child
+  // WebContents.
+  FrameTree* GetFocusFrameTreeIfContainsFocus();
+  void SetFocusedFrameTree(FrameTree* frame_tree_to_focus);
+  void ClearFocusOnInnerWebContents();
+
  private:
+  class WCObserver;
+
   friend class SurfaceEmbedConnector;
   friend class SurfaceEmbedConnectorImplBrowserTest;
   friend class SurfaceEmbedConnectorWebContentsBrowserTest;
@@ -125,20 +149,25 @@ class CONTENT_EXPORT SurfaceEmbedConnectorImpl
   // outlive this. Assumes that `child_web_contents` is non-null.
   SurfaceEmbedConnectorImpl(WebContents* child_web_contents,
                             WebContents* parent_web_contents,
+                            RenderFrameHost* embedder_rfh,
                             SurfaceEmbedConnector::Delegate* delegate);
+
+  static WebContentsImpl* GetParentWebContents(WebContentsImpl* web_contents);
+  static WebContentsImpl* GetRootWebContents(WebContentsImpl* web_contents);
 
   WebContentsImpl* parent_web_contents() const;
   WebContentsImpl* child_web_contents() const {
     return child_web_contents_.get();
   }
 
-  // Updates the `view_` member to track the current RenderWidgetHostView
-  // associated with the child WebContents.
-  void UpdateViewForCurrentRenderFrameHost();
-
   // Resets the rect and the viz::LocalSurfaceId of the connector to ensure the
   // unguessable surface ID is not reused after a navigation.
   void ResetRectInParentView();
+
+  RenderFrameHostImpl* current_child_frame_host() const;
+
+  // Observes the child web contents to send notifications to the connector.
+  std::unique_ptr<WCObserver> wc_observer_;
 
   raw_ptr<SurfaceEmbedConnector::Delegate> delegate_ = nullptr;
 
@@ -146,7 +175,8 @@ class CONTENT_EXPORT SurfaceEmbedConnectorImpl
   base::WeakPtr<WebContents> parent_web_contents_;
   raw_ptr<RenderWidgetHostViewChildFrame> view_ = nullptr;
 
-  std::unique_ptr<DummySurfaceProvider> dummy_surface_provider_;
+  // The last received FrameSinkId from the guest WebContents's view.
+  viz::FrameSinkId frame_sink_id_;
 
   // The last received LocalSurfaceId from the SurfaceEmbed.
   viz::LocalSurfaceId local_surface_id_;
@@ -166,6 +196,21 @@ class CONTENT_EXPORT SurfaceEmbedConnectorImpl
 
   gfx::Size last_received_local_frame_size_;
   double last_received_css_zoom_factor_ = 1;
+  double last_received_zoom_level_ = 0.0;
+  bool has_size_ = false;
+
+  // TODO(crbug.com/493315755): Update the properties as appropriate. (Currently
+  // they are not updated after initialization.)
+  bool is_inert_ = false;
+  cc::TouchAction inherited_effective_touch_action_ = cc::TouchAction::kAuto;
+  bool is_throttled_ = false;
+  bool subtree_throttled_ = false;
+  bool display_locked_ = false;
+
+  void MaybeRefreshKeepSurfaceAlive();
+
+  ui::Compositor::ScopedKeepSurfaceAliveCallback keep_surface_alive_;
+  bool should_keep_alive_ = false;
 };
 
 }  // namespace content

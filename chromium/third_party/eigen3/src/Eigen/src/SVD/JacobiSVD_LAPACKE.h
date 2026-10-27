@@ -29,6 +29,7 @@
  *    Singular Value Decomposition - SVD.
  ********************************************************************************
 */
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef EIGEN_JACOBISVD_LAPACKE_H
 #define EIGEN_JACOBISVD_LAPACKE_H

@@ -281,7 +281,9 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_khr_depth_clamp_zero_one{kNotSupported};
     ExtEnabled vk_khr_robustness2{kNotSupported};
     ExtEnabled vk_khr_present_mode_fifo_latest_ready{kNotSupported};
+    ExtEnabled vk_khr_opacity_micromap{kNotSupported};
     ExtEnabled vk_khr_maintenance10{kNotSupported};
+    ExtEnabled vk_khr_maintenance11{kNotSupported};
     ExtEnabled vk_nv_glsl_shader{kNotSupported};
     ExtEnabled vk_ext_depth_range_unrestricted{kNotSupported};
     ExtEnabled vk_img_filter_cubic{kNotSupported};
@@ -330,6 +332,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_android_external_memory_android_hardware_buffer{kNotSupported};
     ExtEnabled vk_ext_sampler_filter_minmax{kNotSupported};
     ExtEnabled vk_amd_gpu_shader_int16{kNotSupported};
+    ExtEnabled vk_amd_gpa_interface{kNotSupported};
     ExtEnabled vk_amdx_shader_enqueue{kNotSupported};
     ExtEnabled vk_ext_descriptor_heap{kNotSupported};
     ExtEnabled vk_amd_mixed_attachment_samples{kNotSupported};
@@ -353,6 +356,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_ext_filter_cubic{kNotSupported};
     ExtEnabled vk_qcom_render_pass_shader_resolve{kNotSupported};
     ExtEnabled vk_qcom_cooperative_matrix_conversion{kNotSupported};
+    ExtEnabled vk_qcom_elapsed_timer_query{kNotSupported};
     ExtEnabled vk_ext_global_priority{kNotSupported};
     ExtEnabled vk_ext_external_memory_host{kNotSupported};
     ExtEnabled vk_amd_buffer_marker{kNotSupported};
@@ -420,6 +424,10 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_ext_pipeline_creation_cache_control{kNotSupported};
     ExtEnabled vk_nv_device_diagnostics_config{kNotSupported};
     ExtEnabled vk_qcom_render_pass_store_ops{kNotSupported};
+    ExtEnabled vk_qcom_queue_perf_hint{kNotSupported};
+    ExtEnabled vk_qcom_image_processing3{kNotSupported};
+    ExtEnabled vk_qcom_shader_multiple_wait_queues{kNotSupported};
+    ExtEnabled vk_ext_shader_split_barrier{kNotSupported};
     ExtEnabled vk_nv_cuda_kernel_launch{kNotSupported};
     ExtEnabled vk_qcom_tile_shading{kNotSupported};
     ExtEnabled vk_nv_low_latency{kNotSupported};
@@ -514,6 +522,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_ext_dynamic_rendering_unused_attachments{kNotSupported};
     ExtEnabled vk_nv_low_latency2{kNotSupported};
     ExtEnabled vk_arm_data_graph{kNotSupported};
+    ExtEnabled vk_arm_data_graph_instruction_set_tosa{kNotSupported};
     ExtEnabled vk_qcom_multiview_per_view_render_areas{kNotSupported};
     ExtEnabled vk_nv_per_stage_descriptor_set{kNotSupported};
     ExtEnabled vk_qcom_image_processing2{kNotSupported};
@@ -555,12 +564,17 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_ext_shader_64bit_indexing{kNotSupported};
     ExtEnabled vk_ext_custom_resolve{kNotSupported};
     ExtEnabled vk_qcom_data_graph_model{kNotSupported};
+    ExtEnabled vk_arm_data_graph_optical_flow{kNotSupported};
     ExtEnabled vk_ext_shader_long_vector{kNotSupported};
     ExtEnabled vk_sec_pipeline_cache_incremental_mode{kNotSupported};
     ExtEnabled vk_ext_shader_uniform_buffer_unsized_array{kNotSupported};
     ExtEnabled vk_nv_compute_occupancy_priority{kNotSupported};
     ExtEnabled vk_ext_shader_subgroup_partitioned{kNotSupported};
     ExtEnabled vk_valve_shader_mixed_float_dot_product{kNotSupported};
+    ExtEnabled vk_sec_throttle_hint{kNotSupported};
+    ExtEnabled vk_arm_data_graph_neural_accelerator_statistics{kNotSupported};
+    ExtEnabled vk_ext_primitive_restart_index{kNotSupported};
+    ExtEnabled vk_nv_cooperative_matrix_decode_vector{kNotSupported};
     ExtEnabled vk_khr_acceleration_structure{kNotSupported};
     ExtEnabled vk_khr_ray_tracing_pipeline{kNotSupported};
     ExtEnabled vk_khr_ray_query{kNotSupported};
@@ -769,7 +783,9 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_KHR_depth_clamp_zero_one:
         case vvl::Extension::_VK_KHR_robustness2:
         case vvl::Extension::_VK_KHR_present_mode_fifo_latest_ready:
+        case vvl::Extension::_VK_KHR_opacity_micromap:
         case vvl::Extension::_VK_KHR_maintenance10:
+        case vvl::Extension::_VK_KHR_maintenance11:
         case vvl::Extension::_VK_NV_glsl_shader:
         case vvl::Extension::_VK_EXT_depth_range_unrestricted:
         case vvl::Extension::_VK_IMG_filter_cubic:
@@ -818,6 +834,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_ANDROID_external_memory_android_hardware_buffer:
         case vvl::Extension::_VK_EXT_sampler_filter_minmax:
         case vvl::Extension::_VK_AMD_gpu_shader_int16:
+        case vvl::Extension::_VK_AMD_gpa_interface:
         case vvl::Extension::_VK_AMDX_shader_enqueue:
         case vvl::Extension::_VK_EXT_descriptor_heap:
         case vvl::Extension::_VK_AMD_mixed_attachment_samples:
@@ -841,6 +858,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_EXT_filter_cubic:
         case vvl::Extension::_VK_QCOM_render_pass_shader_resolve:
         case vvl::Extension::_VK_QCOM_cooperative_matrix_conversion:
+        case vvl::Extension::_VK_QCOM_elapsed_timer_query:
         case vvl::Extension::_VK_EXT_global_priority:
         case vvl::Extension::_VK_EXT_external_memory_host:
         case vvl::Extension::_VK_AMD_buffer_marker:
@@ -908,6 +926,10 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_EXT_pipeline_creation_cache_control:
         case vvl::Extension::_VK_NV_device_diagnostics_config:
         case vvl::Extension::_VK_QCOM_render_pass_store_ops:
+        case vvl::Extension::_VK_QCOM_queue_perf_hint:
+        case vvl::Extension::_VK_QCOM_image_processing3:
+        case vvl::Extension::_VK_QCOM_shader_multiple_wait_queues:
+        case vvl::Extension::_VK_EXT_shader_split_barrier:
         case vvl::Extension::_VK_NV_cuda_kernel_launch:
         case vvl::Extension::_VK_QCOM_tile_shading:
         case vvl::Extension::_VK_NV_low_latency:
@@ -1002,6 +1024,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_EXT_dynamic_rendering_unused_attachments:
         case vvl::Extension::_VK_NV_low_latency2:
         case vvl::Extension::_VK_ARM_data_graph:
+        case vvl::Extension::_VK_ARM_data_graph_instruction_set_tosa:
         case vvl::Extension::_VK_QCOM_multiview_per_view_render_areas:
         case vvl::Extension::_VK_NV_per_stage_descriptor_set:
         case vvl::Extension::_VK_QCOM_image_processing2:
@@ -1043,12 +1066,17 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_EXT_shader_64bit_indexing:
         case vvl::Extension::_VK_EXT_custom_resolve:
         case vvl::Extension::_VK_QCOM_data_graph_model:
+        case vvl::Extension::_VK_ARM_data_graph_optical_flow:
         case vvl::Extension::_VK_EXT_shader_long_vector:
         case vvl::Extension::_VK_SEC_pipeline_cache_incremental_mode:
         case vvl::Extension::_VK_EXT_shader_uniform_buffer_unsized_array:
         case vvl::Extension::_VK_NV_compute_occupancy_priority:
         case vvl::Extension::_VK_EXT_shader_subgroup_partitioned:
         case vvl::Extension::_VK_VALVE_shader_mixed_float_dot_product:
+        case vvl::Extension::_VK_SEC_throttle_hint:
+        case vvl::Extension::_VK_ARM_data_graph_neural_accelerator_statistics:
+        case vvl::Extension::_VK_EXT_primitive_restart_index:
+        case vvl::Extension::_VK_NV_cooperative_matrix_decode_vector:
         case vvl::Extension::_VK_KHR_acceleration_structure:
         case vvl::Extension::_VK_KHR_ray_tracing_pipeline:
         case vvl::Extension::_VK_KHR_ray_query:

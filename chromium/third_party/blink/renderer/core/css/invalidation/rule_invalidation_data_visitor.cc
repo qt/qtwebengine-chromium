@@ -95,12 +95,11 @@ bool SupportsInvalidation(CSSSelector::PseudoType type) {
     case CSSSelector::kPseudoCheckMark:
     case CSSSelector::kPseudoBefore:
     case CSSSelector::kPseudoAfter:
-    case CSSSelector::kPseudoInterestHint:
+    case CSSSelector::kPseudoInterestButton:
     case CSSSelector::kPseudoExpandIcon:
     case CSSSelector::kPseudoPickerIcon:
     case CSSSelector::kPseudoMarker:
     case CSSSelector::kPseudoModal:
-    case CSSSelector::kPseudoSelectorFragmentAnchor:
     case CSSSelector::kPseudoBackdrop:
     case CSSSelector::kPseudoLang:
     case CSSSelector::kPseudoDir:
@@ -138,10 +137,8 @@ bool SupportsInvalidation(CSSSelector::PseudoType type) {
     case CSSSelector::kPseudoFullScreen:
     case CSSSelector::kPseudoFullScreenAncestor:
     case CSSSelector::kPseudoFullscreen:
-    case CSSSelector::kPseudoPaused:
     case CSSSelector::kPseudoPermissionGranted:
     case CSSSelector::kPseudoPictureInPicture:
-    case CSSSelector::kPseudoPlaying:
     case CSSSelector::kPseudoInRange:
     case CSSSelector::kPseudoOutOfRange:
     case CSSSelector::kPseudoWebKitCustomElement:
@@ -159,6 +156,7 @@ bool SupportsInvalidation(CSSSelector::PseudoType type) {
     case CSSSelector::kPseudoHostHasNonAutoAppearance:
     case CSSSelector::kPseudoOpen:
     case CSSSelector::kPseudoOverscrollTarget:
+    case CSSSelector::kPseudoOverscrollOpen:
     case CSSSelector::kPseudoDialogInTopLayer:
     case CSSSelector::kPseudoPicker:
     case CSSSelector::kPseudoPopoverInTopLayer:
@@ -167,6 +165,7 @@ bool SupportsInvalidation(CSSSelector::PseudoType type) {
     case CSSSelector::kPseudoMenulistPopoverWithMenulistAnchor:
     case CSSSelector::kPseudoSelectHasSlottedButton:
     case CSSSelector::kPseudoSlotted:
+    case CSSSelector::kPseudoUnboundedElementInactive:
     case CSSSelector::kPseudoVideoPersistent:
     case CSSSelector::kPseudoVideoPersistentAncestor:
     case CSSSelector::kPseudoXrOverlay:
@@ -192,6 +191,14 @@ bool SupportsInvalidation(CSSSelector::PseudoType type) {
     case CSSSelector::kPseudoInterestTarget:
     case CSSSelector::kPseudoHasSlotted:
     case CSSSelector::kPseudoLinkTo:
+    case CSSSelector::kPseudoActiveNavigation:
+    case CSSSelector::kPseudoPlaying:
+    case CSSSelector::kPseudoPaused:
+    case CSSSelector::kPseudoSeeking:
+    case CSSSelector::kPseudoBuffering:
+    case CSSSelector::kPseudoStalled:
+    case CSSSelector::kPseudoMuted:
+    case CSSSelector::kPseudoVolumeLocked:
     case CSSSelector::kPseudoToolFormActive:
     case CSSSelector::kPseudoToolSubmitActive:
       return true;

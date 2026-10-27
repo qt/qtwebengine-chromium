@@ -8,6 +8,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_CWISE_TERNARY_OP_H
 #define EIGEN_CWISE_TERNARY_OP_H
@@ -94,11 +95,11 @@ class CwiseTernaryOp : public CwiseTernaryOpImpl<TernaryOp, Arg1Type, Arg2Type, 
   EIGEN_STATIC_ASSERT_SAME_MATRIX_SIZE(Arg1, Arg3)
 
   // The index types should match
-  EIGEN_STATIC_ASSERT((internal::is_same<typename internal::traits<Arg1Type>::StorageKind,
-                                         typename internal::traits<Arg2Type>::StorageKind>::value),
+  EIGEN_STATIC_ASSERT((std::is_same<typename internal::traits<Arg1Type>::StorageKind,
+                                    typename internal::traits<Arg2Type>::StorageKind>::value),
                       STORAGE_KIND_MUST_MATCH)
-  EIGEN_STATIC_ASSERT((internal::is_same<typename internal::traits<Arg1Type>::StorageKind,
-                                         typename internal::traits<Arg3Type>::StorageKind>::value),
+  EIGEN_STATIC_ASSERT((std::is_same<typename internal::traits<Arg1Type>::StorageKind,
+                                    typename internal::traits<Arg3Type>::StorageKind>::value),
                       STORAGE_KIND_MUST_MATCH)
 
   typedef typename CwiseTernaryOpImpl<TernaryOp, Arg1Type, Arg2Type, Arg3Type,
@@ -121,26 +122,32 @@ class CwiseTernaryOp : public CwiseTernaryOpImpl<TernaryOp, Arg1Type, Arg2Type, 
   EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE Index rows() const {
     // return the fixed size type if available to enable compile time
     // optimizations
-    if (internal::traits<internal::remove_all_t<Arg1Nested>>::RowsAtCompileTime == Dynamic &&
-        internal::traits<internal::remove_all_t<Arg2Nested>>::RowsAtCompileTime == Dynamic)
+    EIGEN_IF_CONSTEXPR(internal::traits<internal::remove_all_t<Arg1Nested>>::RowsAtCompileTime == Dynamic &&
+                       internal::traits<internal::remove_all_t<Arg2Nested>>::RowsAtCompileTime == Dynamic) {
       return m_arg3.rows();
-    else if (internal::traits<internal::remove_all_t<Arg1Nested>>::RowsAtCompileTime == Dynamic &&
-             internal::traits<internal::remove_all_t<Arg3Nested>>::RowsAtCompileTime == Dynamic)
+    }
+    else EIGEN_IF_CONSTEXPR(internal::traits<internal::remove_all_t<Arg1Nested>>::RowsAtCompileTime == Dynamic &&
+                            internal::traits<internal::remove_all_t<Arg3Nested>>::RowsAtCompileTime == Dynamic) {
       return m_arg2.rows();
-    else
+    }
+    else {
       return m_arg1.rows();
+    }
   }
   EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE Index cols() const {
     // return the fixed size type if available to enable compile time
     // optimizations
-    if (internal::traits<internal::remove_all_t<Arg1Nested>>::ColsAtCompileTime == Dynamic &&
-        internal::traits<internal::remove_all_t<Arg2Nested>>::ColsAtCompileTime == Dynamic)
+    EIGEN_IF_CONSTEXPR(internal::traits<internal::remove_all_t<Arg1Nested>>::ColsAtCompileTime == Dynamic &&
+                       internal::traits<internal::remove_all_t<Arg2Nested>>::ColsAtCompileTime == Dynamic) {
       return m_arg3.cols();
-    else if (internal::traits<internal::remove_all_t<Arg1Nested>>::ColsAtCompileTime == Dynamic &&
-             internal::traits<internal::remove_all_t<Arg3Nested>>::ColsAtCompileTime == Dynamic)
+    }
+    else EIGEN_IF_CONSTEXPR(internal::traits<internal::remove_all_t<Arg1Nested>>::ColsAtCompileTime == Dynamic &&
+                            internal::traits<internal::remove_all_t<Arg3Nested>>::ColsAtCompileTime == Dynamic) {
       return m_arg2.cols();
-    else
+    }
+    else {
       return m_arg1.cols();
+    }
   }
 
   /** \returns the first argument nested expression */

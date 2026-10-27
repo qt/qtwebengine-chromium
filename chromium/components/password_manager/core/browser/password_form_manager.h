@@ -32,8 +32,10 @@
 #include "components/password_manager/core/browser/password_form_manager_for_ui.h"
 #include "components/password_manager/core/browser/password_form_metrics_recorder.h"
 #include "components/password_manager/core/browser/password_form_prediction_waiter.h"
+#include "components/password_manager/core/browser/password_manager_driver.h"
 #include "components/password_manager/core/browser/password_manager_metrics_recorder.h"
 #include "components/password_manager/core/browser/password_save_manager.h"
+#include "components/password_manager/core/browser/password_store/stored_credential.h"
 #include "components/password_manager/core/browser/possible_username_data.h"
 #include "components/password_manager/core/browser/votes_uploader.h"
 #include "url/gurl.h"
@@ -144,6 +146,13 @@ class PasswordFormManager : public PasswordFormManagerForUI,
 
   bool IsSavingAllowed() const { return is_saving_allowed_; }
 
+  bool IsNonPasswordLoginDetected() const {
+    return is_non_password_login_detected_;
+  }
+  void SetNonPasswordLoginDetected(bool detected) {
+    is_non_password_login_detected_ = detected;
+  }
+
   // Returns true if |*this| manages http authentication.
   bool IsHttpAuth() const;
 
@@ -158,8 +167,8 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   // |observed_form()|, initiates filling and stores predictions in
   // |predictions_|.
   void ProcessServerPredictions(
-      const std::map<std::pair<autofill::FormSignature, int>, FormPredictions>&
-          predictions);
+      const std::map<std::pair<autofill::FormSignature, DriverId>,
+                     FormPredictions>& predictions);
 
   // Stores model predictions in the `parser_`.
   void ProcessModelPredictions(
@@ -175,8 +184,8 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   // for server predictions.
   void UpdateFormManagerWithFormChanges(
       const autofill::FormData& observed_form_data,
-      const std::map<std::pair<autofill::FormSignature, int>, FormPredictions>&
-          predictions);
+      const std::map<std::pair<autofill::FormSignature, DriverId>,
+                     FormPredictions>& predictions);
 
   void UpdateSubmissionIndicatorEvent(
       autofill::mojom::SubmissionIndicatorEvent event);
@@ -190,17 +199,17 @@ class PasswordFormManager : public PasswordFormManagerForUI,
 
   // Check if the field identified by |driver_id| and |field_id| is present in
   // the |observed_form()|.
-  bool ObservedFormHasField(int driver_id,
+  bool ObservedFormHasField(DriverId driver_id,
                             autofill::FieldRendererId field_id) const;
   // PasswordFormManagerForUI:
   const GURL& GetURL() const override;
-  base::span<const PasswordForm> GetBestMatches() const override;
-  base::span<const PasswordForm> GetFederatedMatches() const override;
+  base::span<const StoredCredential> GetBestMatches() const override;
+  base::span<const StoredCredential> GetFederatedMatches() const override;
   const PasswordForm& GetPendingCredentials() const override;
   metrics_util::CredentialSourceType GetCredentialSource() const override;
   PasswordFormMetricsRecorder* GetMetricsRecorder() override;
   base::span<const InteractionsStats> GetInteractionsStats() const override;
-  base::span<const PasswordForm> GetInsecureCredentials() const override;
+  base::span<const StoredCredential> GetInsecureCredentials() const override;
   bool IsBlocklisted() const override;
   bool IsFetchCompleted() const override;
   bool IsMovableToAccountStore() const override;
@@ -415,8 +424,8 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   // Updates the server predictions stored in `parser_` with predictions
   // relevant for `observed_form_or_digest_`.
   void UpdateServerPredictionsForObservedForm(
-      const std::map<std::pair<autofill::FormSignature, int>, FormPredictions>&
-          predictions);
+      const std::map<std::pair<autofill::FormSignature, DriverId>,
+                     FormPredictions>& predictions);
 
   // Creates a timer to wait for server side predictions. On timeout (or on
   // receiving server side predictions), `Fill()` is triggered.
@@ -461,7 +470,7 @@ class PasswordFormManager : public PasswordFormManagerForUI,
 
   // The id of |driver_|. Cached since |driver_| might become null when the
   // frame frame is deleted.
-  int driver_id_ = 0;
+  DriverId driver_id_;
 
   // The observed form or digest. These are mutually exclusive, hence the usage
   // of a variant.
@@ -521,6 +530,9 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   // The decision is captured at the provisional save time while it can be
   // already different for the landing page.
   bool is_saving_allowed_ = true;
+
+  // Stores if a non-password login was detected.
+  bool is_non_password_login_detected_ = false;
 
   // Stores if Save() was called when FormFetcher was in WAITING state.
   // In that case we should schedule a Save() call, when FormFecher is ready.

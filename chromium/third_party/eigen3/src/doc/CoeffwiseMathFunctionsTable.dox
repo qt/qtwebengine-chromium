@@ -23,7 +23,6 @@ using std::foo;
 foo(a[i]);
 \endcode
 means that the STL's function \c std::foo will be potentially called if it is compatible with the underlying scalar type. If not, then the user must ensure that an overload of the function foo is available for the given scalar type (usually defined in the same namespace as the given scalar type).
-This also means that, unless specified, if the function \c std::foo is available only in some recent c++ versions (e.g., c++11), then the respective %Eigen's function/method will be usable on standard types only if the compiler support the required c++ version.
 
 <table class="manual-hl">
 <tr>
@@ -124,7 +123,7 @@ This also means that, unless specified, if the function \c std::foo is available
   </td>
   <td>natural (base \f$ e \f$) logarithm of 1 plus \n the given number (\f$ \ln({1+a_i}) \f$)</td>
   <td>built-in generic implementation based on \c log,\n
-  plus \c using <a href="http://en.cppreference.com/w/cpp/numeric/math/log1p">\c std::log1p </a>; \cpp11</td>
+  plus \c using <a href="http://en.cppreference.com/w/cpp/numeric/math/log1p">\c std::log1p </a></td>
   <td></td>
 </tr>
 <tr>
@@ -418,7 +417,7 @@ This also means that, unless specified, if the function \c std::foo is available
   </td>
   <td>nearest integer, \n rounding away from zero in halfway cases</td>
   <td>built-in generic implementation \n based on \c floor and \c ceil,\n
-  plus \c using <a href="http://en.cppreference.com/w/cpp/numeric/math/round">\c std::round </a>; \cpp11</td>
+  plus \c using <a href="http://en.cppreference.com/w/cpp/numeric/math/round">\c std::round </a></td>
   <td>SSE4,AVX,ZVector (f,d)</td>
 </tr>
 <tr>
@@ -428,7 +427,7 @@ This also means that, unless specified, if the function \c std::foo is available
   \link Eigen::rint rint\endlink(a);
   </td>
   <td>nearest integer, \n rounding to nearest even in halfway cases</td>
-  <td>built-in generic implementation using <a href="http://en.cppreference.com/w/cpp/numeric/math/rint">\c std::rint </a>; \cpp11
+  <td>built-in generic implementation using <a href="http://en.cppreference.com/w/cpp/numeric/math/rint">\c std::rint </a>
   or <a href="http://en.cppreference.com/w/c/numeric/math/rint">\c rintf </a>; </td>
   <td>SSE4,AVX (f,d)</td>
 </tr>
@@ -446,7 +445,7 @@ This also means that, unless specified, if the function \c std::foo is available
   </td>
   <td>checks if the given number has finite value</td>
   <td>built-in generic implementation,\n
-  plus \c using <a href="http://en.cppreference.com/w/cpp/numeric/math/isfinite">\c std::isfinite </a>; \cpp11</td>
+  plus \c using <a href="http://en.cppreference.com/w/cpp/numeric/math/isfinite">\c std::isfinite </a></td>
   <td></td>
 </tr>
 <tr>
@@ -457,7 +456,7 @@ This also means that, unless specified, if the function \c std::foo is available
   </td>
   <td>checks if the given number is infinite</td>
   <td>built-in generic implementation,\n
-  plus \c using <a href="http://en.cppreference.com/w/cpp/numeric/math/isinf">\c std::isinf </a>; \cpp11</td>
+  plus \c using <a href="http://en.cppreference.com/w/cpp/numeric/math/isinf">\c std::isinf </a></td>
   <td></td>
 </tr>
 <tr>
@@ -468,7 +467,7 @@ This also means that, unless specified, if the function \c std::foo is available
   </td>
   <td>checks if the given number is not a number</td>
   <td>built-in generic implementation,\n
-  plus \c using <a href="http://en.cppreference.com/w/cpp/numeric/math/isnan">\c std::isnan </a>; \cpp11</td>
+  plus \c using <a href="http://en.cppreference.com/w/cpp/numeric/math/isnan">\c std::isnan </a></td>
   <td></td>
 </tr>
 <tr>
@@ -563,7 +562,7 @@ This also means that, unless specified, if the function \c std::foo is available
   </td>
   <td>error function</td>
   <td class="code">
-  using <a href="http://en.cppreference.com/w/cpp/numeric/math/erf">std::erf</a>; \cpp11 \n
+  using <a href="http://en.cppreference.com/w/cpp/numeric/math/erf">std::erf</a> \n
   erf(a[i]);
   </td>
   <td></td>
@@ -576,7 +575,7 @@ This also means that, unless specified, if the function \c std::foo is available
   </td>
   <td>complementary error function</td>
   <td class="code">
-  using <a href="http://en.cppreference.com/w/cpp/numeric/math/erfc">std::erfc</a>; \cpp11 \n
+  using <a href="http://en.cppreference.com/w/cpp/numeric/math/erfc">std::erfc</a> \n
   erfc(a[i]);
   </td>
   <td></td>
@@ -589,7 +588,7 @@ This also means that, unless specified, if the function \c std::foo is available
   </td>
   <td>natural logarithm of the gamma function</td>
   <td class="code">
-  using <a href="http://en.cppreference.com/w/cpp/numeric/math/lgamma">std::lgamma</a>; \cpp11 \n
+  using <a href="http://en.cppreference.com/w/cpp/numeric/math/lgamma">std::lgamma</a> \n
   lgamma(a[i]);
   </td>
   <td></td>
@@ -614,7 +613,7 @@ This also means that, unless specified, if the function \c std::foo is available
   <td><a href="https://en.wikipedia.org/wiki/Incomplete_gamma_function">lower incomplete gamma integral</a>
   \n \f$ \gamma(a_i,x_i)= \frac{1}{|a_i|} \int_{0}^{x_i}e^{\text{-}t} t^{a_i-1} \mathrm{d} t \f$</td>
   <td>
-  built-in for float and double,\n but requires \cpp11
+  built-in for float and double,\n built-in generic fallback
   </td>
   <td></td>
 </tr>
@@ -626,7 +625,7 @@ This also means that, unless specified, if the function \c std::foo is available
   <td><a href="https://en.wikipedia.org/wiki/Incomplete_gamma_function">upper incomplete gamma integral</a>
   \n \f$ \Gamma(a_i,x_i) = \frac{1}{|a_i|} \int_{x_i}^{\infty}e^{\text{-}t} t^{a_i-1} \mathrm{d} t \f$</td>
   <td>
-  built-in for float and double,\n but requires \cpp11
+  built-in for float and double,\n built-in generic fallback
   </td>
   <td></td>
 </tr>
@@ -654,7 +653,7 @@ This also means that, unless specified, if the function \c std::foo is available
   </td>
   <td><a href="https://en.wikipedia.org/wiki/Beta_function#Incomplete_beta_function">regularized incomplete beta function</a></td>
   <td>
-  built-in for float and double,\n but requires \cpp11
+  built-in for float and double,\n built-in generic fallback
   </td>
   <td></td>
 </tr>

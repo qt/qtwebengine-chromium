@@ -13,12 +13,14 @@
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
+#include "build/build_config.h"
 #include "components/affiliations/core/browser/fake_affiliation_service.h"
 #include "components/password_manager/core/browser/affiliation/mock_affiliated_match_helper.h"
 #include "components/password_manager/core/browser/features/password_features.h"
 #include "components/password_manager/core/browser/features/password_manager_features_util.h"
 #include "components/password_manager/core/browser/password_form.h"
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
+#include "components/password_manager/core/browser/password_store/password_form_converters.h"
 #include "components/password_manager/core/browser/password_store/test_password_store.h"
 #include "components/password_manager/core/browser/sharing/incoming_password_sharing_invitation_sync_bridge.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
@@ -42,8 +44,8 @@ using testing::Field;
 using testing::IsEmpty;
 using testing::ValuesIn;
 
-constexpr std::string_view kUrl = "https://www.test.com";
-constexpr std::string_view kPslMatchUrl = "https://m.test.com";
+constexpr std::string_view kUrl = "https://www.test.com/";
+constexpr std::string_view kPslMatchUrl = "https://m.test.com/";
 constexpr std::string_view kGroupedMatchUrl = "https://grouped.match.com/";
 constexpr std::u16string_view kUsername = u"username";
 constexpr std::u16string_view kPassword = u"password";
@@ -105,10 +107,11 @@ PasswordFormToIncomingSharingInvitation(const PasswordForm& form) {
 }
 
 scoped_refptr<TestPasswordStore> CreateStoreAndInit(
-    std::unique_ptr<AffiliatedMatchHelper> affiliated_match_helper) {
+    AffiliatedMatchHelper* affiliated_match_helper) {
   scoped_refptr<TestPasswordStore> store =
       base::MakeRefCounted<TestPasswordStore>();
-  store->Init(std::move(affiliated_match_helper));
+  store->SetAffiliatedMatchHelper(affiliated_match_helper);
+  store->Init();
   return store;
 }
 
@@ -122,8 +125,6 @@ class PasswordReceiverServiceImplTest : public testing::Test {
   }
 
   ~PasswordReceiverServiceImplTest() override {
-    affiliated_match_helper_profile_store_ = nullptr;
-    affiliated_match_helper_account_store_ = nullptr;
     account_password_store_->ShutdownOnUIThread();
     profile_password_store_->ShutdownOnUIThread();
   }
@@ -132,7 +133,7 @@ class PasswordReceiverServiceImplTest : public testing::Test {
 
   void AddLoginAndWait(const PasswordForm& form,
                        TestPasswordStore& password_store) {
-    password_store.AddLogin(form);
+    password_store.AddLogin(password_manager::FromPasswordForm(form));
     RunUntilIdle();
   }
 
@@ -199,20 +200,34 @@ class PasswordReceiverServiceImplTest : public testing::Test {
 
   syncer::TestSyncService& sync_service() { return sync_service_; }
 
+  void SetupAffiliatedAndGroupedRealms(
+      const PasswordFormDigest& form,
+      const std::vector<std::string>& affiliated_realms,
+      const std::vector<std::string>& grouped_realms = {}) {
+#if BUILDFLAG(IS_ANDROID)
+    expected_password_store_for_syncing().SetAffiliatedAndGroupedRealms(
+        form.signon_realm, affiliated_realms, grouped_realms);
+#else
+    expected_affiliated_match_helper_for_syncing()
+        .ExpectCallToGetAffiliatedAndGrouped(
+            form, affiliated_realms, grouped_realms, /*repeatedly=*/true);
+#endif
+  }
+
  private:
   base::test::SingleThreadTaskEnvironment task_environment_{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   affiliations::FakeAffiliationService affiliation_service_;
-  raw_ptr<MockAffiliatedMatchHelper> affiliated_match_helper_profile_store_ =
-      new MockAffiliatedMatchHelper(&affiliation_service_);
+  std::unique_ptr<MockAffiliatedMatchHelper>
+      affiliated_match_helper_profile_store_ =
+          std::make_unique<MockAffiliatedMatchHelper>(&affiliation_service_);
   const scoped_refptr<TestPasswordStore> profile_password_store_ =
-      CreateStoreAndInit(
-          base::WrapUnique(affiliated_match_helper_profile_store_.get()));
-  raw_ptr<MockAffiliatedMatchHelper> affiliated_match_helper_account_store_ =
-      new MockAffiliatedMatchHelper(&affiliation_service_);
+      CreateStoreAndInit(affiliated_match_helper_profile_store_.get());
+  std::unique_ptr<MockAffiliatedMatchHelper>
+      affiliated_match_helper_account_store_ =
+          std::make_unique<MockAffiliatedMatchHelper>(&affiliation_service_);
   const scoped_refptr<TestPasswordStore> account_password_store_ =
-      CreateStoreAndInit(
-          base::WrapUnique(affiliated_match_helper_account_store_.get()));
+      CreateStoreAndInit(affiliated_match_helper_account_store_.get());
   std::unique_ptr<PasswordReceiverServiceImpl> password_receiver_service_ =
       std::make_unique<PasswordReceiverServiceImpl>(
           /*sync_bridge=*/nullptr,
@@ -231,11 +246,11 @@ TEST_F(PasswordReceiverServiceImplTest,
 
   RunUntilIdle();
 
-  ASSERT_TRUE(expected_password_store_for_syncing().stored_passwords().contains(
-      GetInvitationOrigin(invitation)));
+  ASSERT_TRUE(GetAllLoginsSync(&expected_password_store_for_syncing())
+                  .contains(GetInvitationOrigin(invitation)));
   EXPECT_THAT(
-      expected_password_store_for_syncing().stored_passwords().at(
-          GetInvitationOrigin(invitation)),
+      GetAllLoginsSync(&expected_password_store_for_syncing())
+          .at(GetInvitationOrigin(invitation)),
       ElementsAre(AllOf(
           Field(&PasswordForm::signon_realm, kUrl),
           Field(&PasswordForm::username_value, kUsername),
@@ -245,10 +260,11 @@ TEST_F(PasswordReceiverServiceImplTest,
           Field(&PasswordForm::sender_name, kSenderName),
           Field(&PasswordForm::sender_profile_image_url,
                 GURL(kSenderProfileImagerUrl)),
+          Field(&PasswordForm::skip_zero_click, true),
           Field(&PasswordForm::sharing_notification_displayed, false))));
 
   EXPECT_TRUE(
-      unexpected_password_store_for_syncing().stored_passwords().empty());
+      GetAllLoginsSync(&unexpected_password_store_for_syncing()).empty());
 
   histogram_tester.ExpectUniqueSample(
       "PasswordManager.ProcessIncomingPasswordSharingInvitationResult",
@@ -276,10 +292,10 @@ TEST_F(PasswordReceiverServiceImplTest,
 
   // The store should contain the `existing_password` and the
   // incoming invitation is ignored.
-  ASSERT_TRUE(expected_password_store_for_syncing().stored_passwords().contains(
-      GetInvitationOrigin(invitation)));
-  EXPECT_THAT(expected_password_store_for_syncing().stored_passwords().at(
-                  GetInvitationOrigin(invitation)),
+  ASSERT_TRUE(GetAllLoginsSync(&expected_password_store_for_syncing())
+                  .contains(GetInvitationOrigin(invitation)));
+  EXPECT_THAT(GetAllLoginsSync(&expected_password_store_for_syncing())
+                  .at(GetInvitationOrigin(invitation)),
               ElementsAre(existing_password));
 
   histogram_tester.ExpectUniqueSample(
@@ -307,10 +323,10 @@ TEST_F(PasswordReceiverServiceImplTest,
 
   RunUntilIdle();
 
-  ASSERT_TRUE(expected_password_store_for_syncing().stored_passwords().contains(
-      GetInvitationOrigin(invitation)));
-  EXPECT_THAT(expected_password_store_for_syncing().stored_passwords().at(
-                  GetInvitationOrigin(invitation)),
+  ASSERT_TRUE(GetAllLoginsSync(&expected_password_store_for_syncing())
+                  .contains(GetInvitationOrigin(invitation)));
+  EXPECT_THAT(GetAllLoginsSync(&expected_password_store_for_syncing())
+                  .at(GetInvitationOrigin(invitation)),
               ElementsAre(conflicting_password));
 
   histogram_tester.ExpectUniqueSample(
@@ -322,8 +338,8 @@ TEST_F(PasswordReceiverServiceImplTest,
 
 TEST_F(PasswordReceiverServiceImplTest,
        ShouldAcceptInvitationForNonSyncingUserWithAccountStorageEnabled) {
-  ASSERT_TRUE(profile_password_store().stored_passwords().empty());
-  ASSERT_TRUE(account_password_store().stored_passwords().empty());
+  ASSERT_TRUE(GetAllLoginsSync(&profile_password_store()).empty());
+  ASSERT_TRUE(GetAllLoginsSync(&account_password_store()).empty());
 
   // Set up an account store user (a non-syncing one, but that doesn't really
   // matter).
@@ -335,15 +351,15 @@ TEST_F(PasswordReceiverServiceImplTest,
 
   RunUntilIdle();
 
-  EXPECT_TRUE(profile_password_store().stored_passwords().empty());
-  EXPECT_EQ(1U, account_password_store().stored_passwords().size());
+  EXPECT_TRUE(GetAllLoginsSync(&profile_password_store()).empty());
+  EXPECT_EQ(1U, GetAllLoginsSync(&account_password_store()).size());
 }
 
 TEST_F(PasswordReceiverServiceImplTest,
        ShouldNotAcceptInvitationForNonSyncingUserWithAccountStorageDisabled) {
   base::HistogramTester histogram_tester;
-  ASSERT_TRUE(profile_password_store().stored_passwords().empty());
-  ASSERT_TRUE(account_password_store().stored_passwords().empty());
+  ASSERT_TRUE(GetAllLoginsSync(&profile_password_store()).empty());
+  ASSERT_TRUE(GetAllLoginsSync(&account_password_store()).empty());
 
   // Setup a signed-in user that disabled account storage:
   sync_service().SetSignedIn(signin::ConsentLevel::kSignin);
@@ -356,8 +372,8 @@ TEST_F(PasswordReceiverServiceImplTest,
 
   RunUntilIdle();
 
-  EXPECT_TRUE(profile_password_store().stored_passwords().empty());
-  EXPECT_TRUE(account_password_store().stored_passwords().empty());
+  EXPECT_TRUE(GetAllLoginsSync(&profile_password_store()).empty());
+  EXPECT_TRUE(GetAllLoginsSync(&account_password_store()).empty());
 
   histogram_tester.ExpectUniqueSample(
       "PasswordManager.ProcessIncomingPasswordSharingInvitationResult",
@@ -526,11 +542,11 @@ TEST_F(PasswordReceiverServiceImplTest,
   RunUntilIdle();
 
   // The password value should remain kPassword.
-  ASSERT_TRUE(expected_password_store_for_syncing().stored_passwords().contains(
-      GetInvitationOrigin(invitation)));
+  ASSERT_TRUE(GetAllLoginsSync(&expected_password_store_for_syncing())
+                  .contains(GetInvitationOrigin(invitation)));
   EXPECT_THAT(
-      expected_password_store_for_syncing().stored_passwords().at(
-          GetInvitationOrigin(invitation)),
+      GetAllLoginsSync(&expected_password_store_for_syncing())
+          .at(GetInvitationOrigin(invitation)),
       ElementsAre(AllOf(Field(&PasswordForm::username_value, kUsername),
                         Field(&PasswordForm::password_value, kPassword),
                         Field(&PasswordForm::type,
@@ -563,11 +579,11 @@ TEST_F(PasswordReceiverServiceImplTest,
   RunUntilIdle();
 
   // The password value should have been updated to kNewPassword.
-  ASSERT_TRUE(expected_password_store_for_syncing().stored_passwords().contains(
-      GetInvitationOrigin(invitation)));
+  ASSERT_TRUE(GetAllLoginsSync(&expected_password_store_for_syncing())
+                  .contains(GetInvitationOrigin(invitation)));
   EXPECT_THAT(
-      expected_password_store_for_syncing().stored_passwords().at(
-          GetInvitationOrigin(invitation)),
+      GetAllLoginsSync(&expected_password_store_for_syncing())
+          .at(GetInvitationOrigin(invitation)),
       ElementsAre(AllOf(Field(&PasswordForm::username_value, kUsername),
                         Field(&PasswordForm::password_value, kNewPassword),
                         Field(&PasswordForm::type,
@@ -592,22 +608,22 @@ TEST_F(PasswordReceiverServiceImplTest, ShouldAddAllCredentialsInInvitation) {
 
   // Both origins in the invitation using the modern format should have been
   // added to the store. The one in the legacy format should be ignored.
-  EXPECT_EQ(expected_password_store_for_syncing().stored_passwords().size(),
+  EXPECT_EQ(GetAllLoginsSync(&expected_password_store_for_syncing()).size(),
             2U);
 
-  ASSERT_TRUE(expected_password_store_for_syncing().stored_passwords().contains(
-      std::string(kUrl)));
+  ASSERT_TRUE(GetAllLoginsSync(&expected_password_store_for_syncing())
+                  .contains(std::string(kUrl)));
   EXPECT_THAT(
-      expected_password_store_for_syncing().stored_passwords().at(
-          std::string(kUrl)),
+      GetAllLoginsSync(&expected_password_store_for_syncing())
+          .at(std::string(kUrl)),
       ElementsAre(AllOf(Field(&PasswordForm::signon_realm, std::string(kUrl)),
                         Field(&PasswordForm::username_value, kUsername),
                         Field(&PasswordForm::password_value, kPassword))));
 
-  ASSERT_TRUE(expected_password_store_for_syncing().stored_passwords().contains(
-      kPslMatchUrl));
-  EXPECT_THAT(expected_password_store_for_syncing().stored_passwords().at(
-                  std::string(kPslMatchUrl)),
+  ASSERT_TRUE(GetAllLoginsSync(&expected_password_store_for_syncing())
+                  .contains(kPslMatchUrl));
+  EXPECT_THAT(GetAllLoginsSync(&expected_password_store_for_syncing())
+                  .at(std::string(kPslMatchUrl)),
               ElementsAre(AllOf(
                   Field(&PasswordForm::signon_realm, std::string(kPslMatchUrl)),
                   Field(&PasswordForm::username_value, kUsername),
@@ -629,7 +645,7 @@ TEST_F(PasswordReceiverServiceImplTest, ShouldIgnoreInvalidPasswordForm) {
       PasswordFormToIncomingSharingInvitation(existing_password));
   RunUntilIdle();
 
-  EXPECT_THAT(expected_password_store_for_syncing().stored_passwords(),
+  EXPECT_THAT(GetAllLoginsSync(&expected_password_store_for_syncing()),
               IsEmpty());
   histogram_tester.ExpectUniqueSample(
       "PasswordManager.ProcessIncomingPasswordSharingInvitationResult",
@@ -649,9 +665,8 @@ TEST_F(PasswordReceiverServiceImplTest, ShouldIgnoreGroupedCredentials) {
 
   PasswordForm shared_form = CreatePasswordForm();
   PasswordFormDigest digest = PasswordFormDigest(shared_form);
-  expected_affiliated_match_helper_for_syncing()
-      .ExpectCallToGetAffiliatedAndGrouped(digest, {std::string(kUrl)},
-                                           {std::string(kGroupedMatchUrl)});
+  SetupAffiliatedAndGroupedRealms(digest, {std::string(kUrl)},
+                                  {std::string(kGroupedMatchUrl)});
   // Simulate an incoming invitation for the same stored passwords.
   sync_pb::IncomingPasswordSharingInvitationSpecifics invitation =
       PasswordFormToIncomingSharingInvitation(shared_form);
@@ -661,13 +676,36 @@ TEST_F(PasswordReceiverServiceImplTest, ShouldIgnoreGroupedCredentials) {
 
   // The store should contain the `existing_password` and the
   // incoming invitation is ignored.
-  ASSERT_TRUE(expected_password_store_for_syncing().stored_passwords().contains(
-      GetInvitationOrigin(invitation)));
+  ASSERT_TRUE(GetAllLoginsSync(&expected_password_store_for_syncing())
+                  .contains(GetInvitationOrigin(invitation)));
 
   histogram_tester.ExpectUniqueSample(
       "PasswordManager.ProcessIncomingPasswordSharingInvitationResult",
       metrics_util::ProcessIncomingPasswordSharingInvitationResult::
           kInvitationAutoApproved,
+      1);
+}
+
+TEST_F(PasswordReceiverServiceImplTest,
+       ShouldIgnoreInvitationWithMismatchedOriginAndSignonRealm) {
+  base::HistogramTester histogram_tester;
+  sync_pb::IncomingPasswordSharingInvitationSpecifics invitation =
+      CreateIncomingSharingInvitation();
+
+  invitation.mutable_client_only_unencrypted_data()
+      ->mutable_password_group_data()
+      ->mutable_element_data(0)
+      ->set_signon_realm("https://malicious.com/");
+
+  password_receiver_service()->ProcessIncomingSharingInvitation(invitation);
+
+  EXPECT_THAT(GetAllLoginsSync(&expected_password_store_for_syncing()),
+              IsEmpty());
+
+  histogram_tester.ExpectUniqueSample(
+      "PasswordManager.ProcessIncomingPasswordSharingInvitationResult",
+      metrics_util::ProcessIncomingPasswordSharingInvitationResult::
+          kInvalidInvitation,
       1);
 }
 

@@ -12,6 +12,7 @@
 #include "base/memory/raw_span.h"
 #include "components/lens/lens_overlay_mime_type.h"
 #include "components/sessions/core/session_id.h"
+#include "third_party/lens_server_proto/lens_overlay_contextual_inputs.pb.h"
 #include "third_party/lens_server_proto/modality_chip_props.pb.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "url/gurl.h"
@@ -44,8 +45,16 @@ struct ContextualInputData {
   std::optional<lens::MimeType> primary_content_type;
   // The mime type string of this content, if the file was uploaded manually.
   std::optional<std::string> mime_type_string;
-  // If the context is a webpage pr pdf, this is the URL associated with it.
+  // If the context is a webpage or pdf document, this is the canonicalized URL.
+  // Note: For unresolved URL uploads (where the raw URL is parsed from a
+  // composebox query), this field must be left empty, and `parsed_url` must be
+  // set instead to preserve exact raw formatting.
   std::optional<GURL> page_url;
+  // The raw parsed URL string of an unresolved URL upload (e.g., extracted from
+  // a query box query). Keeping this as a raw string avoids GURL
+  // canonicalization which adds trailing slashes to host-only URLs.
+  // Note: `page_url` and `parsed_url` are mutually exclusive.
+  std::optional<std::string> parsed_url;
   // If the context is a webpage or pdf, this is the title of it.
   std::optional<std::string> page_title;
   // If the context is a file, this is the file name.
@@ -87,6 +96,8 @@ struct ContextualInputData {
   // Whether or not the tab was added exclusively by the smart tab selection
   // mechanism.
   bool was_smart_tab_selection = false;
+  // The upload type associated with the contextual input.
+  std::optional<lens::LensOverlayContextualInputUploadType> upload_type;
 };
 
 }  // namespace lens

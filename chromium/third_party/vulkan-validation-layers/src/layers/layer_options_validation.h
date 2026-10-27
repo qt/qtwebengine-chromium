@@ -52,7 +52,10 @@ static void ValidateLayerSettingsProvided(const VkLayerSettingsCreateInfoEXT &la
         else if (strcmp(VK_LAYER_DUPLICATE_MESSAGE_LIMIT, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_UINT32_EXT; }
         else if (strcmp(VK_LAYER_ENABLE_MESSAGE_LIMIT, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
         else if (strcmp(VK_LAYER_FINE_GRAINED_LOCKING, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
+        else if (strcmp(VK_LAYER_GPU_DUMP_COPY_MEMORY_INDIRECT, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
         else if (strcmp(VK_LAYER_GPU_DUMP_DESCRIPTORS, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
+        else if (strcmp(VK_LAYER_GPU_DUMP_DEVICE_COPY, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
+        else if (strcmp(VK_LAYER_GPU_DUMP_DEVICE_GENERATED_COMMANDS, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
         else if (strcmp(VK_LAYER_GPU_DUMP_TO_STDOUT, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
         else if (strcmp(VK_LAYER_GPUAV_ACCELERATION_STRUCTURES_BUILDS, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
         else if (strcmp(VK_LAYER_GPUAV_BUFFER_ADDRESS_OOB, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
@@ -76,7 +79,6 @@ static void ValidateLayerSettingsProvided(const VkLayerSettingsCreateInfoEXT &la
         else if (strcmp(VK_LAYER_GPUAV_SHADER_SANITIZER, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
         else if (strcmp(VK_LAYER_GPUAV_SHADERS_TO_INSTRUMENT, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_STRING_EXT; }
         else if (strcmp(VK_LAYER_GPUAV_SHARED_MEMORY_DATA_RACE, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
-        else if (strcmp(VK_LAYER_GPUAV_VALIDATE_RAY_QUERY, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
         else if (strcmp(VK_LAYER_GPUAV_VALIDATE_TRACE_RAY, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
         else if (strcmp(VK_LAYER_GPUAV_VERTEX_ATTRIBUTE_FETCH_OOB, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }
         else if (strcmp(VK_LAYER_LEGACY_DETECTION, name) == 0) { required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT; }

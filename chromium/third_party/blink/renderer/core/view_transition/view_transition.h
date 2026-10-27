@@ -66,8 +66,10 @@ class CORE_EXPORT ViewTransition : public GarbageCollected<ViewTransition>,
       Delegate*,
       ViewTransition* previously_active);
 
-  // Creates a skipped transition that still runs the specified callbacks.
-  static ViewTransition* CreateSkipped(Element*, V8ViewTransitionCallback*);
+  static ViewTransition* CreateSkipped(
+      Element*,
+      V8ViewTransitionCallback*,
+      const std::optional<Vector<String>>& types = std::nullopt);
 
   // Creates a ViewTransition to cache the state of a Document before a
   // navigation. The cached state is provided to the caller using the
@@ -101,8 +103,10 @@ class CORE_EXPORT ViewTransition : public GarbageCollected<ViewTransition>,
                  const std::optional<Vector<String>>& types,
                  Delegate*,
                  ViewTransition* previously_active);
-  // Skipped transition constructor.
-  ViewTransition(PassKey, Element*, V8ViewTransitionCallback*);
+  ViewTransition(PassKey,
+                 Element*,
+                 V8ViewTransitionCallback*,
+                 const std::optional<Vector<String>>& types);
   // Navigation-initiated for-snapshot constructor.
   ViewTransition(PassKey,
                  Document*,
@@ -463,6 +467,7 @@ class CORE_EXPORT ViewTransition : public GarbageCollected<ViewTransition>,
     ~ScopedPauseRendering();
 
     bool ShouldThrottleRendering() const;
+    void SetDelayUntilVisibilityChange();
 
    private:
     std::unique_ptr<cc::ScopedPauseRendering> cc_paused_;
@@ -492,13 +497,30 @@ class CORE_EXPORT ViewTransition : public GarbageCollected<ViewTransition>,
   bool in_main_lifecycle_update_ = false;
   bool dom_callback_succeeded_ = false;
   bool first_animating_frame_ = true;
-  bool context_destroyed_ = false;
   bool pending_skip_view_transitions_ = false;
 
   int wait_until_pending_promise_count_ = 0;
 
   // Time at which we processed the initial state, used for metrics.
   base::TimeTicks initial_state_processing_time_;
+
+  // The following timing variables are only set and used for script-based
+  // transitions (CreationType::kScript).
+
+  // Time at which we started capture tag discovery, used for metrics.
+  base::TimeTicks capture_tag_discovery_start_time_;
+
+  // Time at which we started capturing, used for metrics.
+  base::TimeTicks capture_request_start_time_;
+
+  // Time at which we started running the DOM callback, used for metrics.
+  base::TimeTicks dom_callback_start_time_;
+
+  // Time at which the DOM callback finished, used for metrics.
+  base::TimeTicks dom_callback_finished_time_;
+
+  // Time at which we sent the animate request, used for metrics.
+  base::TimeTicks animate_request_time_;
 
   static int next_id_;
 };

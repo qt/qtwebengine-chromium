@@ -14,6 +14,7 @@
 #include "openssl/pem.h"
 #include "platform/test/paths.h"
 #include "util/crypto/pem_helpers.h"
+#include "util/no_destructor.h"
 
 namespace openscreen::cast {
 namespace {
@@ -144,9 +145,9 @@ DateTime MarchFirst2037() {
 }
 
 const std::string& GetSpecificTestDataPath() {
-  static std::string data_path =
-      GetTestDataPath() + "/cast/common/certificate/";
-  return data_path;
+  static const NoDestructor<std::string> data_path(GetTestDataPath() +
+                                                   "/cast/common/certificate/");
+  return *data_path;
 }
 
 // Tests verifying a valid certificate chain of length 2:

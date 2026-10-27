@@ -70,9 +70,14 @@ class ExternalVkImageBackingFactoryDawnTest
 
     dawnProcSetProcs(&dawn::native::GetProcs());
 
-    // Find a Dawn Vulkan adapter
+    // Find a Dawn Vulkan adapter. We favor high-performance GPUs to match
+    // VulkanDeviceQueue's preference for discrete GPUs. Without this setting,
+    // Dawn might return adapters in an arbitrary order, which may not match the
+    // physical device used by VulkanDeviceQueue, leading to memory import
+    // failures.
     wgpu::RequestAdapterOptions adapter_options;
     adapter_options.backendType = wgpu::BackendType::Vulkan;
+    adapter_options.powerPreference = wgpu::PowerPreference::HighPerformance;
     std::vector<dawn::native::Adapter> adapters =
         dawn_instance_.EnumerateAdapters(&adapter_options);
     ASSERT_GT(adapters.size(), 0u);
@@ -116,9 +121,10 @@ TEST_F(ExternalVkImageBackingFactoryDawnTest, DawnWrite_SkiaVulkanRead) {
       SHARED_IMAGE_USAGE_DISPLAY_READ | SHARED_IMAGE_USAGE_WEBGPU_WRITE;
   const gpu::SurfaceHandle surface_handle = gpu::kNullSurfaceHandle;
   auto backing = backing_factory_->CreateSharedImage(
-      mailbox, format, surface_handle, size, color_space,
-      kTopLeft_GrSurfaceOrigin, kPremul_SkAlphaType, usage, "TestLabel",
-      /*is_thread_safe=*/false);
+      mailbox,
+      {format, size, color_space, kTopLeft_GrSurfaceOrigin, kPremul_SkAlphaType,
+       usage, "TestLabel"},
+      surface_handle, /*is_thread_safe=*/false);
   ASSERT_NE(backing, nullptr);
 
   std::unique_ptr<SharedImageRepresentationFactoryRef> factory_ref =
@@ -229,9 +235,10 @@ TEST_F(ExternalVkImageBackingFactoryDawnTest, SkiaVulkanWrite_DawnRead) {
       SHARED_IMAGE_USAGE_RASTER_WRITE | SHARED_IMAGE_USAGE_WEBGPU_READ;
   const gpu::SurfaceHandle surface_handle = gpu::kNullSurfaceHandle;
   auto backing = backing_factory_->CreateSharedImage(
-      mailbox, format, surface_handle, size, color_space,
-      kTopLeft_GrSurfaceOrigin, kPremul_SkAlphaType, usage, "TestLabel",
-      /*is_thread_safe=*/false);
+      mailbox,
+      {format, size, color_space, kTopLeft_GrSurfaceOrigin, kPremul_SkAlphaType,
+       usage, "TestLabel"},
+      surface_handle, /*is_thread_safe=*/false);
   ASSERT_NE(backing, nullptr);
 
   std::unique_ptr<SharedImageRepresentationFactoryRef> factory_ref =
@@ -382,8 +389,10 @@ TEST_P(ExternalVkImageBackingFactoryWithFormatTest, Basic) {
 
   // Verify backing can be created.
   auto backing = backing_factory_->CreateSharedImage(
-      mailbox, format, gpu::kNullSurfaceHandle, size, color_space,
-      surface_origin, alpha_type, usage, "TestLabel", /*is_thread_safe=*/false);
+      mailbox,
+      {format, size, color_space, surface_origin, alpha_type, usage,
+       "TestLabel"},
+      gpu::kNullSurfaceHandle, /*is_thread_safe=*/false);
   ASSERT_TRUE(backing);
 
   std::unique_ptr<SharedImageRepresentationFactoryRef> shared_image =
@@ -510,8 +519,10 @@ TEST_P(ExternalVkImageBackingFactoryWithFormatTest, Upload) {
 
   // Verify backing can be created.
   auto backing = backing_factory_->CreateSharedImage(
-      mailbox, format, gpu::kNullSurfaceHandle, size, color_space,
-      surface_origin, alpha_type, usage, "TestLabel", /*is_thread_safe=*/false);
+      mailbox,
+      {format, size, color_space, surface_origin, alpha_type, usage,
+       "TestLabel"},
+      gpu::kNullSurfaceHandle, /*is_thread_safe=*/false);
   ASSERT_TRUE(backing);
 
   std::vector<SkBitmap> bitmaps = AllocateRedBitmaps(format, size);
@@ -545,8 +556,10 @@ TEST_P(ExternalVkImageBackingFactoryWithFormatTest, ReadbackToMemory) {
   ASSERT_TRUE(supported);
 
   auto backing = backing_factory_->CreateSharedImage(
-      mailbox, format, surface_handle, size, color_space, surface_origin,
-      alpha_type, usage, "TestLabel", /*is_thread_safe=*/false);
+      mailbox,
+      {format, size, color_space, surface_origin, alpha_type, usage,
+       "TestLabel"},
+      surface_handle, /*is_thread_safe=*/false);
   ASSERT_TRUE(backing);
 
   std::vector<SkBitmap> src_bitmaps =

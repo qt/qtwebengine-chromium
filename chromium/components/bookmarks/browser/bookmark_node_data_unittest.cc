@@ -29,6 +29,56 @@ using base::ASCIIToUTF16;
 
 namespace bookmarks {
 
+#if !BUILDFLAG(IS_APPLE)
+// Builds a legacy-format Pickle with `depth` levels of nested folders.
+namespace {
+
+base::Pickle BuildDeeplyNestedLegacyPickle(size_t depth) {
+  base::Pickle pickle;
+  base::FilePath(FILE_PATH_LITERAL("Default")).WriteToPickle(&pickle);
+  pickle.WriteUInt32(1);
+
+  for (size_t i = 0; i < depth; ++i) {
+    pickle.WriteBool(false);
+    pickle.WriteString(std::string());
+    pickle.WriteString16(u"Folder");
+    pickle.WriteInt64(static_cast<int64_t>(i + 1));
+    pickle.WriteUInt32(0);
+    pickle.WriteUInt32(i < depth - 1 ? 1 : 0);
+  }
+  return pickle;
+}
+
+// Builds a new-format Pickle with `depth` levels of nested folders.
+// Each child element is wrapped via WriteData (length-prefixed blob).
+base::Pickle BuildNestedElementPickle(size_t depth, size_t current) {
+  base::Pickle pickle;
+  pickle.WriteBool(false);
+  pickle.WriteString(std::string());
+  pickle.WriteString16(u"Folder");
+  pickle.WriteInt64(static_cast<int64_t>(current + 1));
+  pickle.WriteUInt32(0);
+  if (current < depth - 1) {
+    pickle.WriteUInt32(1);
+    pickle.WriteData(BuildNestedElementPickle(depth, current + 1));
+  } else {
+    pickle.WriteUInt32(0);
+  }
+  return pickle;
+}
+
+base::Pickle BuildDeeplyNestedNewFormatPickle(size_t depth) {
+  base::Pickle pickle;
+  base::FilePath(FILE_PATH_LITERAL("Default")).WriteToPickle(&pickle);
+  pickle.WriteUInt32(0);  // Sentinel for new format.
+  pickle.WriteUInt32(1);
+  pickle.WriteData(BuildNestedElementPickle(depth, 0));
+  return pickle;
+}
+
+}  // namespace
+#endif
+
 class BookmarkNodeDataTest : public testing::Test {
  public:
   BookmarkNodeDataTest()
@@ -91,13 +141,7 @@ TEST_F(BookmarkNodeDataTest, BogusRead) {
 
 // Writes a URL to the clipboard and make sure BookmarkNodeData can correctly
 // read it.
-// Test is flaky on Mac: crbug.com/1236362
-#if BUILDFLAG(IS_MAC)
-#define MAYBE_JustURL DISABLED_JustURL
-#else
-#define MAYBE_JustURL JustURL
-#endif
-TEST_F(BookmarkNodeDataTest, MAYBE_JustURL) {
+TEST_F(BookmarkNodeDataTest, JustURL) {
   const GURL url("http://google.com");
   const std::u16string title(u"google.com");
 
@@ -116,13 +160,7 @@ TEST_F(BookmarkNodeDataTest, MAYBE_JustURL) {
   EXPECT_EQ(0u, drag_data.elements[0].children.size());
 }
 
-// Test is flaky on Mac: crbug.com/1236362
-#if BUILDFLAG(IS_MAC)
-#define MAYBE_URL DISABLED_URL
-#else
-#define MAYBE_URL URL
-#endif
-TEST_F(BookmarkNodeDataTest, MAYBE_URL) {
+TEST_F(BookmarkNodeDataTest, URL) {
   // Write a single node representing a URL to the clipboard.
   const BookmarkNode* root = model()->bookmark_bar_node();
   GURL url(GURL("http://foo.com"));
@@ -168,13 +206,7 @@ TEST_F(BookmarkNodeDataTest, MAYBE_URL) {
 }
 
 // Tests writing a folder to the clipboard.
-// Test is flaky on Mac: crbug.com/1236362
-#if BUILDFLAG(IS_MAC)
-#define MAYBE_Folder DISABLED_Folder
-#else
-#define MAYBE_Folder Folder
-#endif
-TEST_F(BookmarkNodeDataTest, MAYBE_Folder) {
+TEST_F(BookmarkNodeDataTest, Folder) {
   const BookmarkNode* root = model()->bookmark_bar_node();
   const BookmarkNode* g1 = model()->AddFolder(root, 0, u"g1");
   model()->AddFolder(g1, 0, u"g11");
@@ -215,13 +247,7 @@ TEST_F(BookmarkNodeDataTest, MAYBE_Folder) {
 }
 
 // Tests reading/writing a folder with children.
-// Test is flaky on Mac: crbug.com/1236362
-#if BUILDFLAG(IS_MAC)
-#define MAYBE_FolderWithChild DISABLED_FolderWithChild
-#else
-#define MAYBE_FolderWithChild FolderWithChild
-#endif
-TEST_F(BookmarkNodeDataTest, MAYBE_FolderWithChild) {
+TEST_F(BookmarkNodeDataTest, FolderWithChild) {
   const BookmarkNode* root = model()->bookmark_bar_node();
   const BookmarkNode* folder = model()->AddFolder(root, 0, u"g1");
 
@@ -258,13 +284,7 @@ TEST_F(BookmarkNodeDataTest, MAYBE_FolderWithChild) {
 }
 
 // Tests reading/writing of multiple nodes.
-// Test is flaky on Mac: crbug.com/1236362
-#if BUILDFLAG(IS_MAC)
-#define MAYBE_MultipleNodes DISABLED_MultipleNodes
-#else
-#define MAYBE_MultipleNodes MultipleNodes
-#endif
-TEST_F(BookmarkNodeDataTest, MAYBE_MultipleNodes) {
+TEST_F(BookmarkNodeDataTest, MultipleNodes) {
   const BookmarkNode* root = model()->bookmark_bar_node();
   const BookmarkNode* folder = model()->AddFolder(root, 0, u"g1");
 
@@ -450,13 +470,7 @@ TEST_F(BookmarkNodeDataTest, MAYBE_WriteToClipboardFolderAndURL) {
 }
 
 // Tests reading/writing of meta info.
-// Test is flaky on Mac: crbug.com/1236362
-#if BUILDFLAG(IS_MAC)
-#define MAYBE_MetaInfo DISABLED_MetaInfo
-#else
-#define MAYBE_MetaInfo MetaInfo
-#endif
-TEST_F(BookmarkNodeDataTest, MAYBE_MetaInfo) {
+TEST_F(BookmarkNodeDataTest, MetaInfo) {
   // Create a node containing meta info.
   const BookmarkNode* node = model()->AddURL(
       model()->other_node(), 0, u"foo bar", GURL("http://www.google.com"));
@@ -684,6 +698,88 @@ TEST_F(BookmarkNodeDataTest, ReadFromPickleNewFormat) {
   EXPECT_EQ(2u, meta_info_map->size());
   EXPECT_EQ("somevalue", meta_info_map->at("somekey"));
   EXPECT_EQ("someothervalue", meta_info_map->at("someotherkey"));
+}
+#endif
+
+#if !BUILDFLAG(IS_APPLE)
+TEST_F(BookmarkNodeDataTest, ReadFromPickle_Legacy_DeeplyNested_Rejected) {
+  constexpr size_t kDepth = 600;
+  base::Pickle pickle = BuildDeeplyNestedLegacyPickle(kDepth);
+
+  BookmarkNodeData bookmark_node_data;
+  EXPECT_FALSE(bookmark_node_data.ReadFromPickle(base::PickleIterator(pickle)));
+}
+
+TEST_F(BookmarkNodeDataTest, ReadFromPickle_Legacy_ModerateNesting_Accepted) {
+  constexpr size_t kDepth = 50;
+  base::Pickle pickle = BuildDeeplyNestedLegacyPickle(kDepth);
+
+  BookmarkNodeData bookmark_node_data;
+  EXPECT_TRUE(bookmark_node_data.ReadFromPickle(base::PickleIterator(pickle)));
+
+  // Verify the structure: single element with nested children.
+  ASSERT_EQ(1u, bookmark_node_data.elements.size());
+  const BookmarkNodeData::Element* node = &bookmark_node_data.elements[0];
+  size_t actual_depth = 0;
+  while (!node->children.empty()) {
+    ASSERT_EQ(1u, node->children.size());
+    node = &node->children[0];
+    actual_depth++;
+  }
+  EXPECT_EQ(kDepth - 1, actual_depth);
+}
+
+TEST_F(BookmarkNodeDataTest, ReadFromPickle_Legacy_ExactlyAtLimit_Accepted) {
+  // 500 folders: deepest is at depth 499 (< kMaxBookmarkNestingDepth).
+  constexpr size_t kDepth = 500;
+  base::Pickle pickle = BuildDeeplyNestedLegacyPickle(kDepth);
+
+  BookmarkNodeData bookmark_node_data;
+  EXPECT_TRUE(bookmark_node_data.ReadFromPickle(base::PickleIterator(pickle)));
+}
+
+TEST_F(BookmarkNodeDataTest, ReadFromPickle_Legacy_OneOverLimit_Rejected) {
+  // 501 folders: deepest is at depth 500 (== kMaxBookmarkNestingDepth).
+  constexpr size_t kDepth = 501;
+  base::Pickle pickle = BuildDeeplyNestedLegacyPickle(kDepth);
+
+  BookmarkNodeData bookmark_node_data;
+  EXPECT_FALSE(bookmark_node_data.ReadFromPickle(base::PickleIterator(pickle)));
+}
+
+TEST_F(BookmarkNodeDataTest, ReadFromPickle_NewFormat_DeeplyNested_Rejected) {
+  constexpr size_t kDepth = 600;
+  base::Pickle pickle = BuildDeeplyNestedNewFormatPickle(kDepth);
+
+  BookmarkNodeData bookmark_node_data;
+  EXPECT_FALSE(bookmark_node_data.ReadFromPickle(base::PickleIterator(pickle)));
+}
+
+TEST_F(BookmarkNodeDataTest,
+       ReadFromPickle_NewFormat_ModerateNesting_Accepted) {
+  constexpr size_t kDepth = 50;
+  base::Pickle pickle = BuildDeeplyNestedNewFormatPickle(kDepth);
+
+  BookmarkNodeData bookmark_node_data;
+  EXPECT_TRUE(bookmark_node_data.ReadFromPickle(base::PickleIterator(pickle)));
+
+  ASSERT_EQ(1u, bookmark_node_data.elements.size());
+  const BookmarkNodeData::Element* node = &bookmark_node_data.elements[0];
+  size_t actual_depth = 0;
+  while (!node->children.empty()) {
+    ASSERT_EQ(1u, node->children.size());
+    node = &node->children[0];
+    actual_depth++;
+  }
+  EXPECT_EQ(kDepth - 1, actual_depth);
+}
+
+TEST_F(BookmarkNodeDataTest, ReadFromPickle_NewFormat_OneOverLimit_Rejected) {
+  constexpr size_t kDepth = 501;
+  base::Pickle pickle = BuildDeeplyNestedNewFormatPickle(kDepth);
+
+  BookmarkNodeData bookmark_node_data;
+  EXPECT_FALSE(bookmark_node_data.ReadFromPickle(base::PickleIterator(pickle)));
 }
 #endif
 

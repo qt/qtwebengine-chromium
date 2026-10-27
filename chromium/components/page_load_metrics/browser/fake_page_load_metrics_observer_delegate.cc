@@ -72,6 +72,11 @@ FakePageLoadMetricsObserverDelegate::GetBackForwardCacheRestore(
   return back_forward_cache_restores_[index];
 }
 
+size_t FakePageLoadMetricsObserverDelegate::GetNumBackForwardCacheRestores()
+    const {
+  return back_forward_cache_restores_.size();
+}
+
 bool FakePageLoadMetricsObserverDelegate::StartedInForeground() const {
   return started_in_foreground_;
 }
@@ -166,6 +171,11 @@ const InteractionToNextPaintCalculator& FakePageLoadMetricsObserverDelegate::
 const std::optional<blink::SubresourceLoadMetrics>&
 FakePageLoadMetricsObserverDelegate::GetSubresourceLoadMetrics() const {
   return subresource_load_metrics_;
+}
+
+const mojom::FontLoadingMetricsPtr&
+FakePageLoadMetricsObserverDelegate::GetFontLoadingMetrics() const {
+  return font_loading_metrics_;
 }
 
 const PageRenderData&

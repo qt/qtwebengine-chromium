@@ -4,8 +4,8 @@
 
 #include "third_party/blink/renderer/core/frame/webdx_feature_tracing.h"
 
-#include "base/test/trace_event_analyzer.h"
-#include "base/test/trace_test_utils.h"
+#include "base/test/tracing/trace_event_analyzer.h"
+#include "base/test/tracing/trace_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/mojom/use_counter/metrics/webdx_feature.mojom-blink.h"
 #include "third_party/blink/public/mojom/use_counter/use_counter_feature.mojom-blink.h"
@@ -108,6 +108,63 @@ TEST(WebDXFeatureTracingTest, MaybeEmitWebDXFeatureTraceEvent_V8Context) {
             events[0]->GetKnownArgAsString("url"));
   EXPECT_EQ(0, events[0]->GetKnownArgAsInt("lineNumber"));
   EXPECT_EQ(0, events[0]->GetKnownArgAsInt("columnNumber"));
+}
+
+TEST(WebDXFeatureTracingTest,
+     MaybeEmitWebDXFeatureTraceEvent_DocumentUrlFallback) {
+  test::TaskEnvironment task_environment;
+  base::test::TracingEnvironment tracing_environment;
+  auto dummy_page_holder = std::make_unique<DummyPageHolder>();
+
+  // Set a document URL to verify fallback outside V8 context
+  KURL doc_url("https://example.com/plain-page.html");
+  dummy_page_holder->GetFrame().GetDocument()->SetURL(doc_url);
+
+  trace_analyzer::Start("blink.webdx_feature_usage");
+
+  UseCounterFeature feature(
+      mojom::blink::UseCounterFeatureType::kWebDXFeature,
+      static_cast<uint32_t>(mojom::blink::WebDXFeature::kViewTransitions));
+
+  // Calling outside of V8 context
+  MaybeEmitWebDXFeatureTraceEvent(feature, &dummy_page_holder->GetFrame());
+
+  auto analyzer = trace_analyzer::Stop();
+
+  TraceEventVector events;
+  analyzer->FindEvents(Query::EventName() == Query::String("WebDXFeatureUsage"),
+                       &events);
+
+  EXPECT_EQ(1u, events.size());
+  EXPECT_EQ("view-transitions", events[0]->GetKnownArgAsString("feature"));
+  EXPECT_EQ("https://example.com/plain-page.html",
+            events[0]->GetKnownArgAsString("url"));
+  EXPECT_EQ(-1, events[0]->GetKnownArgAsInt("lineNumber"));
+  EXPECT_EQ(-1, events[0]->GetKnownArgAsInt("columnNumber"));
+}
+
+TEST(WebDXFeatureTracingTest, MaybeEmitWebDXFeatureTraceEvent_NullFrame) {
+  test::TaskEnvironment task_environment;
+  base::test::TracingEnvironment tracing_environment;
+
+  trace_analyzer::Start("blink.webdx_feature_usage");
+
+  UseCounterFeature feature(
+      mojom::blink::UseCounterFeatureType::kWebDXFeature,
+      static_cast<uint32_t>(mojom::blink::WebDXFeature::kViewTransitions));
+
+  // Should not crash when frame is null
+  MaybeEmitWebDXFeatureTraceEvent(feature, nullptr);
+
+  auto analyzer = trace_analyzer::Stop();
+
+  TraceEventVector events;
+  analyzer->FindEvents(Query::EventName() == Query::String("WebDXFeatureUsage"),
+                       &events);
+
+  EXPECT_EQ(1u, events.size());
+  EXPECT_EQ("view-transitions", events[0]->GetKnownArgAsString("feature"));
+  EXPECT_EQ("", events[0]->GetKnownArgAsString("url"));
 }
 
 }  // namespace blink

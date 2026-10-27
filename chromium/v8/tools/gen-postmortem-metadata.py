@@ -384,7 +384,7 @@ consts_misc = [
     },
     {
         'name': 'class_Map__instance_descriptors_offset',
-        'value': 'Map::kInstanceDescriptorsOffset'
+        'value': 'offsetof(Map, instance_descriptors_)'
     },
     {
         'name': 'off_fp_context_or_frame_type',
@@ -545,7 +545,7 @@ extras_accessors = [
     'SlicedString, offset, SMI, offsetof(SlicedString, offset_)',
     'ThinString, actual, String, offsetof(ThinString, actual_)',
     'Symbol, name, Object, offsetof(Symbol, description_)',
-    'FixedArrayBase, length, SMI, kLengthOffset',
+    'FixedArrayBase, length, uint32_t, kLengthOffset',
 ]
 
 #

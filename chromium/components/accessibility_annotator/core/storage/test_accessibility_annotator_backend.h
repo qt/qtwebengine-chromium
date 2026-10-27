@@ -10,48 +10,76 @@
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "components/accessibility_annotator/core/storage/accessibility_annotator_backend.h"
-#include "components/sync/protocol/accessibility_annotation_specifics.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace accessibility_annotator {
+
+class MockAccessibilityAnnotatorBackendObserver
+    : public AccessibilityAnnotatorBackend::Observer {
+ public:
+  MockAccessibilityAnnotatorBackendObserver();
+  ~MockAccessibilityAnnotatorBackendObserver() override;
+
+  MOCK_METHOD(void,
+              OnContentAnnotationsAdded,
+              (history::VisitID, const ContentAnnotationsData&),
+              (override));
+  MOCK_METHOD(void,
+              OnContentAnnotationsDeleted,
+              (base::span<const history::VisitID>),
+              (override));
+  MOCK_METHOD(void, OnContentAnnotationsCleared, (), (override));
+};
 
 class TestAccessibilityAnnotatorBackend : public AccessibilityAnnotatorBackend {
  public:
   TestAccessibilityAnnotatorBackend();
   ~TestAccessibilityAnnotatorBackend() override;
 
-  MOCK_METHOD(void, Init, (), (override));
-  MOCK_METHOD(base::WeakPtr<syncer::DataTypeControllerDelegate>,
-              GetAccessibilityAnnotationControllerDelegate,
-              (),
-              (override));
+  MOCK_METHOD(void, AddObserver, (Observer*), (override));
+  MOCK_METHOD(void, RemoveObserver, (Observer*), (override));
   MOCK_METHOD(base::optional_ref<const ContentAnnotationsData>,
               GetContentAnnotationsCacheData,
-              (const GURL&),
+              (history::VisitID),
               (const, override));
   MOCK_METHOD(void,
               SetContentAnnotationsCacheData,
-              (const GURL&, ContentAnnotationsData),
+              (history::VisitID, ContentAnnotationsData),
               (override));
   MOCK_METHOD(void,
               RemoveContentAnnotationsCacheData,
-              (base::span<const GURL>),
+              (base::span<const history::VisitID>),
               (override));
   MOCK_METHOD(void, ClearContentAnnotationsCache, (), (override));
-  MOCK_METHOD(base::Value, GetDebugUICacheData, (), (const, override));
   MOCK_METHOD(void,
-              GetSyncAnnotationsByTypes,
-              (EntityTypeEnumSet,
-               base::OnceCallback<void(
-                   std::vector<sync_pb::AccessibilityAnnotationSpecifics>)>),
+              GetAnnotationsForDebugUI,
+              (base::OnceCallback<void(base::Value)>),
               (override));
-  MOCK_METHOD(AccessibilityAnnotationSyncBridge*,
-              accessibility_annotation_sync_bridge,
-              (),
+  MOCK_METHOD(void,
+              AddContentAnnotation,
+              (history::VisitID,
+               ContentAnnotationsData,
+               base::OnceCallback<void(bool)>),
               (override));
-
-  void SetSyncAnnotations(
-      std::vector<sync_pb::AccessibilityAnnotationSpecifics> annotations);
+  MOCK_METHOD(void,
+              GetContentAnnotation,
+              (history::VisitID,
+               base::OnceCallback<void(std::optional<ContentAnnotationsData>)>),
+              (override));
+  MOCK_METHOD(
+      void,
+      GetAllContentAnnotations,
+      (base::OnceCallback<void(
+           std::vector<std::pair<history::VisitID, ContentAnnotationsData>>)>),
+      (override));
+  MOCK_METHOD(void,
+              DeleteContentAnnotations,
+              (std::vector<history::VisitID>, base::OnceCallback<void(bool)>),
+              (override));
+  MOCK_METHOD(void,
+              ClearAllContentAnnotations,
+              (base::OnceCallback<void(bool)>),
+              (override));
 };
 
 }  // namespace accessibility_annotator

@@ -55,6 +55,26 @@ void AllowNavigationToProceed(
   std::move(result_callback).Run(false);
 }
 
+// This wrapper is necessary because `InterceptNavigationThrottle` can outlive
+// `InterceptNavigationDelegate` (e.g., during prerender cancellation).
+// If we bound `ShouldIgnoreNavigation` directly to a `WeakPtr`,
+// `base::RepeatingCallback` would silently drop the call when the `WeakPtr`
+// is invalidated. This would destroy `result_callback` without running it,
+// stalling the navigation in `DEFER`. The wrapper detects the dead `WeakPtr`
+// and safely invokes `result_callback(false)` to allow continuation.
+void ShouldIgnoreNavigationWrapper(
+    base::WeakPtr<InterceptNavigationDelegate> delegate,
+    content::NavigationHandle* navigation_handle,
+    bool should_run_async,
+    InterceptNavigationThrottle::ResultCallback result_callback) {
+  if (!delegate) {
+    std::move(result_callback).Run(false);
+    return;
+  }
+  delegate->ShouldIgnoreNavigation(navigation_handle, should_run_async,
+                                   std::move(result_callback));
+}
+
 class RedirectURLLoader : public network::mojom::URLLoader {
  public:
   RedirectURLLoader(const network::ResourceRequest& resource_request,
@@ -104,9 +124,7 @@ class RedirectURLLoader : public network::mojom::URLLoader {
  private:
   // network::mojom::URLLoader overrides:
   void FollowRedirect(
-      const std::vector<std::string>& removed_headers,
-      const net::HttpRequestHeaders& modified_headers,
-      const net::HttpRequestHeaders& modified_cors_exempt_headers,
+      network::HttpRequestHeadersUpdateParams headers_update_params,
       const std::optional<GURL>& new_url) override {
     NOTREACHED();
   }
@@ -167,14 +185,14 @@ void InterceptNavigationDelegate::MaybeCreateAndAdd(
         registry, base::BindRepeating(&AllowNavigationToProceed), mode,
         base::DoNothing()));
   } else {
-  registry.AddThrottle(std::make_unique<InterceptNavigationThrottle>(
-      registry,
-      base::BindRepeating(&InterceptNavigationDelegate::ShouldIgnoreNavigation,
-                          base::Unretained(intercept_navigation_delegate)),
-      mode,
-      base::BindRepeating(
-          &InterceptNavigationDelegate::RequestFinishPendingShouldIgnoreCheck,
-          base::Unretained(intercept_navigation_delegate))));
+    registry.AddThrottle(std::make_unique<InterceptNavigationThrottle>(
+        registry,
+        base::BindRepeating(&ShouldIgnoreNavigationWrapper,
+                            intercept_navigation_delegate->GetWeakPtr()),
+        mode,
+        base::BindRepeating(
+            &InterceptNavigationDelegate::RequestFinishPendingShouldIgnoreCheck,
+            intercept_navigation_delegate->GetWeakPtr())));
   }
 }
 
@@ -227,7 +245,11 @@ void InterceptNavigationDelegate::ShouldIgnoreNavigation(
   bool hidden_cross_frame = false;
   // Only main frame navigations use this path, so we only need to check if the
   // navigation is cross-frame to the main frame.
-  if (navigation_handle->GetInitiatorFrameToken() &&
+  // Also, if this is the first non-empty document, allow the navigation as we
+  // only care about preventing spoofing of a site performing a navigation it
+  // didn't initiate.
+  if (!navigation_handle->IsNavigatingFromInitialEmptyDocument() &&
+      navigation_handle->GetInitiatorFrameToken() &&
       navigation_handle->GetInitiatorFrameToken() !=
           navigation_handle->GetWebContents()
               ->GetPrimaryMainFrame()

@@ -39,8 +39,7 @@ CFX_XMLNode* CFX_XMLElement::Clone(CFX_XMLDocument* doc) {
 
 WideString CFX_XMLElement::GetLocalTagName() const {
   auto pos = name_.Find(L':');
-  return pos.has_value() ? name_.Last(name_.GetLength() - pos.value() - 1)
-                         : name_;
+  return pos.has_value() ? name_.Substr(pos.value() + 1) : name_;
 }
 
 WideString CFX_XMLElement::GetNamespacePrefix() const {

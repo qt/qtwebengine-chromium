@@ -6,7 +6,7 @@ import * as Common from '../../../core/common/common.js';
 import * as Host from '../../../core/host/host.js';
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Root from '../../../core/root/root.js';
-import type * as AiCodeCompletion from '../../../models/ai_code_completion/ai_code_completion.js';
+import * as AiCodeCompletion from '../../../models/ai_code_completion/ai_code_completion.js';
 import * as AiCodeGeneration from '../../../models/ai_code_generation/ai_code_generation.js';
 import * as PanelCommon from '../../../panels/common/common.js';
 import * as CodeMirror from '../../../third_party/codemirror.next/codemirror.next.js';
@@ -51,7 +51,6 @@ export interface AiCodeGenerationConfig {
 }
 
 export class AiCodeGenerationProvider {
-  #devtoolsLocale: string;
   // 'ai-code-completion-enabled' setting controls both AI code completion and AI code generation.
   // Since this provider deals with code generation, the field has been named `#aiCodeGenerationEnabledSetting`.
   #aiCodeGenerationEnabledSetting =
@@ -72,9 +71,8 @@ export class AiCodeGenerationProvider {
   #controller = new AbortController();
 
   private constructor(aiCodeGenerationConfig: AiCodeGenerationConfig) {
-    this.#devtoolsLocale = i18n.DevToolsLocale.DevToolsLocale.instance().locale;
-    if (!AiCodeGeneration.AiCodeGeneration.AiCodeGeneration.isAiCodeGenerationEnabled(this.#devtoolsLocale)) {
-      throw new Error('AI code generation feature is not enabled.');
+    if (!AiCodeGeneration.AiCodeGeneration.AiCodeGeneration.isAiCodeGenerationAvailable()) {
+      throw new Error('AI code generation feature is not available.');
     }
     this.#generationTeaser = new PanelCommon.AiCodeGenerationTeaser.AiCodeGenerationTeaser();
     this.#generationTeaser.disclaimerTooltipId =
@@ -119,7 +117,10 @@ export class AiCodeGenerationProvider {
     if (this.#aiCodeGeneration) {
       return;
     }
-    this.#aiCodeGeneration = new AiCodeGeneration.AiCodeGeneration.AiCodeGeneration({aidaClient: this.#aidaClient});
+    this.#aiCodeGeneration = new AiCodeGeneration.AiCodeGeneration.AiCodeGeneration({
+      aidaClient: this.#aidaClient,
+      serverSideLoggingEnabled: !Root.Runtime.hostConfig.aidaAvailability?.disallowLogging,
+    });
     this.#editor?.dispatch({
       effects:
           [this.#generationTeaserCompartment.reconfigure([aiCodeGenerationTeaserExtension(this.#generationTeaser)])],
@@ -139,8 +140,11 @@ export class AiCodeGenerationProvider {
   async #updateAiCodeGenerationState(): Promise<void> {
     const aidaAvailability = await Host.AidaClient.AidaClient.checkAccessPreconditions();
     const isAvailable = aidaAvailability === Host.AidaClient.AidaAccessPreconditions.AVAILABLE;
-    const isEnabled = this.#aiCodeGenerationEnabledSetting.get();
-    if (isAvailable && isEnabled) {
+    const devtoolsLocale = i18n.DevToolsLocale.DevToolsLocale.instance().locale;
+    const aiCodeGenerationEnabled =
+        AiCodeGeneration.AiCodeGeneration.AiCodeGeneration.isAiCodeGenerationEnabled(devtoolsLocale);
+    const isSettingEnabled = this.#aiCodeGenerationEnabledSetting.get();
+    if (isAvailable && aiCodeGenerationEnabled && isSettingEnabled) {
       if (!this.#aiCodeGenerationSettingEnabled) {
         // If the user enabled setting when code generation feature is already available,
         // we do not need to show the upgrade dialog.
@@ -150,7 +154,7 @@ export class AiCodeGenerationProvider {
     } else {
       this.#cleanupAiCodeGeneration();
     }
-    this.#aiCodeGenerationSettingEnabled = isEnabled;
+    this.#aiCodeGenerationSettingEnabled = isSettingEnabled;
   }
 
   #editorKeymap(): readonly CodeMirror.KeyBinding[] {
@@ -216,6 +220,13 @@ export class AiCodeGenerationProvider {
     }
 
     void VisualLogging.logKeyDown(event.currentTarget, event, 'ai-code-generation.triggered');
+    if (this.#aiCodeGenerationConfig?.panel === AiCodeCompletion.AiCodeCompletion.ContextFlavor.CONSOLE) {
+      Host.userMetrics.actionTaken(Host.UserMetrics.Action.AiCodeGenerationRequestTriggeredFromConsole);
+      void VisualLogging.logKeyDown(event.currentTarget, event, 'ai-code-generation.triggered-from-console');
+    } else if (this.#aiCodeGenerationConfig?.panel === AiCodeCompletion.AiCodeCompletion.ContextFlavor.SOURCES) {
+      Host.userMetrics.actionTaken(Host.UserMetrics.Action.AiCodeGenerationRequestTriggeredFromSources);
+      void VisualLogging.logKeyDown(event.currentTarget, event, 'ai-code-generation.triggered-from-sources');
+    }
     void this.#triggerAiCodeGeneration({signal: this.#controller.signal});
   }
 

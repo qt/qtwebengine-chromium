@@ -80,6 +80,8 @@
 *> \ingroup single_blas_testing
 *
 *  =====================================================================
+*> SPDX-FileCopyrightText: The Eigen Authors
+*> SPDX-License-Identifier: BSD-3-Clause
       PROGRAM SBLAT3
 *
 *  -- Reference BLAS test routine (version 3.4.1) --

@@ -265,6 +265,16 @@ const UIStrings = {
    * @example {5} PH1
    */
   filteredMessagesInConsole: '{PH1} messages in console',
+  /**
+   * @description Tooltip for the collapse all button in the Console panel toolbar.
+   * Clicking this button will collapse all groups and stack traces.
+   */
+  collapseAll: 'Collapse all',
+  /**
+   * @description Tooltip for the expand all button in the Console panel toolbar.
+   * Clicking this button will expand all groups and stack traces.
+   */
+  expandAll: 'Expand all',
 
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/console/ConsoleView.ts', UIStrings);
@@ -337,9 +347,11 @@ export class ConsoleView extends UI.Widget.VBox implements
   private issueResolver = new IssuesManager.IssueResolver.IssueResolver();
   #isDetached = false;
   #onIssuesCountUpdateBound = this.#onIssuesCountUpdate.bind(this);
+  #collapseAllButton: UI.Toolbar.ToolbarButton;
+  #allCollapsed = false;
   aiCodeCompletionConfig?: TextEditor.AiCodeCompletionProvider.AiCodeCompletionConfig;
   private aiCodeCompletionSummaryToolbarContainer?: HTMLElement;
-  private aiCodeCompletionSummaryToolbar?: AiCodeCompletionSummaryToolbar;
+  private aiCodeCompletionSummaryToolbar?: AiCodeCompletionSummaryToolbar.AiCodeCompletionSummaryToolbar;
 
   constructor(viewportThrottlerTimeout: number) {
     super();
@@ -428,6 +440,10 @@ export class ConsoleView extends UI.Widget.VBox implements
         i18nString(UIStrings.showConsoleSidebar), i18nString(UIStrings.hideConsoleSidebar),
         i18nString(UIStrings.consoleSidebarShown), i18nString(UIStrings.consoleSidebarHidden), 'console-sidebar'));
     toolbar.appendToolbarItem(UI.Toolbar.Toolbar.createActionButton('console.clear'));
+    this.#collapseAllButton =
+        new UI.Toolbar.ToolbarButton(i18nString(UIStrings.collapseAll), 'compress', undefined, 'console.collapse-all');
+    this.#collapseAllButton.addEventListener(UI.Toolbar.ToolbarButton.Events.CLICK, this.#toggleCollapseAll, this);
+    toolbar.appendToolbarItem(this.#collapseAllButton);
     toolbar.appendSeparator();
     toolbar.appendToolbarItem(this.consoleContextSelector.toolbarItem());
     toolbar.appendSeparator();
@@ -555,9 +571,8 @@ export class ConsoleView extends UI.Widget.VBox implements
     this.consoleMessages = [];
     this.consoleGroupStarts = [];
 
-    const devtoolsLocale = i18n.DevToolsLocale.DevToolsLocale.instance();
-    this.aiCodeCompletionConfig =
-        AiCodeCompletion.AiCodeCompletion.AiCodeCompletion.isAiCodeCompletionEnabled(devtoolsLocale.locale) ? {
+    this.aiCodeCompletionConfig = AiCodeCompletion.AiCodeCompletion.AiCodeCompletion.isAiCodeCompletionAvailable() ?
+        {
           completionContext: {
             getPrefix: this.getConsoleMessageHistory.bind(this),
             additionalFiles: [{
@@ -581,7 +596,7 @@ export class ConsoleView extends UI.Widget.VBox implements
           onResponseReceived: this.#onAiCodeCompletionResponseReceived.bind(this),
           panel: AiCodeCompletion.AiCodeCompletion.ContextFlavor.CONSOLE,
         } :
-                                                                                                              undefined;
+        undefined;
 
     this.prompt = new ConsolePrompt(this.aiCodeCompletionConfig);
     this.prompt.show(this.promptElement);
@@ -652,7 +667,7 @@ export class ConsoleView extends UI.Widget.VBox implements
     if (this.aiCodeCompletionSummaryToolbar) {
       return;
     }
-    this.aiCodeCompletionSummaryToolbar = new AiCodeCompletionSummaryToolbar({
+    this.aiCodeCompletionSummaryToolbar = new AiCodeCompletionSummaryToolbar.AiCodeCompletionSummaryToolbar({
       citationsTooltipId: CITATIONS_TOOLTIP_ID,
       disclaimerTooltipId: DISCLAIMER_TOOLTIP_ID,
       spinnerTooltipId: SPINNER_TOOLTIP_ID,
@@ -682,6 +697,62 @@ export class ConsoleView extends UI.Widget.VBox implements
   clearConsole(): void {
     SDK.ConsoleModel.ConsoleModel.requestClearMessages();
     this.prompt.clearAiCodeCompletionCache();
+  }
+
+  collapseAll(): void {
+    for (const message of this.consoleMessages) {
+      if (message instanceof ConsoleGroupViewMessage) {
+        message.setCollapsedSilent(true);
+      }
+      message.setTraceExpanded(false);
+    }
+    this.updateMessageList();
+  }
+
+  expandAll(): void {
+    for (const message of this.consoleMessages) {
+      if (message instanceof ConsoleGroupViewMessage) {
+        message.setCollapsedSilent(false);
+      }
+      message.setTraceExpanded(true);
+    }
+    this.updateMessageList();
+  }
+
+  #toggleCollapseAll(): void {
+    if (this.#allCollapsed) {
+      this.expandAll();
+    } else {
+      this.collapseAll();
+    }
+    this.#allCollapsed = !this.#allCollapsed;
+    this.#updateCollapseAllButton();
+  }
+
+  #updateCollapseAllButton(): void {
+    let hasExpandedMessages = false;
+    let hasCollapsedMessages = false;
+    for (const message of this.visibleViewMessages) {
+      if (message instanceof ConsoleGroupViewMessage) {
+        hasExpandedMessages = hasExpandedMessages || !message.collapsed();
+        hasCollapsedMessages = hasCollapsedMessages || message.collapsed();
+      }
+      if (message.isExpandableTrace()) {
+        hasExpandedMessages = hasExpandedMessages || message.isTraceExpanded();
+        hasCollapsedMessages = hasCollapsedMessages || !message.isTraceExpanded();
+      }
+      if (hasExpandedMessages && hasCollapsedMessages) {
+        break;
+      }
+    }
+    this.#allCollapsed = !hasExpandedMessages && hasCollapsedMessages;
+    if (this.#allCollapsed) {
+      this.#collapseAllButton.setGlyph('expand');
+      this.#collapseAllButton.setTitle(i18nString(UIStrings.expandAll));
+    } else {
+      this.#collapseAllButton.setGlyph('compress');
+      this.#collapseAllButton.setTitle(i18nString(UIStrings.collapseAll));
+    }
   }
 
   #onIssuesCountUpdate(): void {
@@ -1121,11 +1192,13 @@ export class ConsoleView extends UI.Widget.VBox implements
       }
       const parentGroup = currentGroup.consoleGroup();
       if (parentGroup) {
+        // If the parent group has its messages hidden, don't show this group.
+        if (parentGroup.messagesHidden()) {
+          return;
+        }
         showGroup(parentGroup, visibleViewMessages);
       }
-      if (!parentGroup?.messagesHidden()) {
-        visibleViewMessages.push(currentGroup);
-      }
+      visibleViewMessages.push(currentGroup);
     }
   }
 
@@ -1369,18 +1442,23 @@ export class ConsoleView extends UI.Widget.VBox implements
       for (const consoleMessage of this.consoleMessages) {
         consoleMessage.setInSimilarGroup(false);
         if (consoleMessage.consoleMessage().isGroupable()) {
-          // Since grouping similar messages is disabled, we need clear the
-          // reference to the artificial console group start.
-          consoleMessage.clearConsoleGroup();
+          // Since grouping similar messages is disabled, we need to clear the
+          // reference to the artificial console group start, but preserve
+          // references to real console groups (console.group()/console.groupCollapsed()).
+          const group = consoleMessage.consoleGroup();
+          if (group && !this.consoleGroupStarts.includes(group)) {
+            consoleMessage.clearConsoleGroup();
+          }
         }
         this.appendMessageToEnd(
             consoleMessage,
-            true /* crbug.com/1082963: prevent collaps`e of same messages when "Group similar" is false */);
+            true /* crbug.com/1082963: prevent collapse of same messages when "Group similar" is false */);
       }
     }
     this.updateFilterStatus();
     this.#searchableView.updateSearchMatchesCount(this.regexMatchRanges.length);
     this.highlightMatch(this.currentMatchRangeIndex, false);  // Re-highlight current match without scrolling.
+    this.#updateCollapseAllButton();
     this.viewport.invalidate();
     this.messagesCountElement.setAttribute(
         'aria-label', i18nString(UIStrings.filteredMessagesInConsole, {PH1: this.visibleViewMessages.length}));
@@ -1959,15 +2037,22 @@ export class ConsoleViewFilter {
 export class ActionDelegate implements UI.ActionRegistration.ActionDelegate {
   handleAction(_context: UI.Context.Context, actionId: string): boolean {
     switch (actionId) {
-      case 'console.toggle':
-        if (ConsoleView.instance().hasFocus() && UI.InspectorView.InspectorView.instance().drawerVisible()) {
-          UI.InspectorView.InspectorView.instance().closeDrawer();
+      case 'console.toggle': {
+        const inspectorView = UI.InspectorView.InspectorView.instance();
+        const consoleView = ConsoleView.instance();
+        if (inspectorView.drawerVisible() && !inspectorView.isDrawerMinimized() && consoleView.isShowing() &&
+            consoleView.hasFocus()) {
+          inspectorView.minimizeDrawer();
           return true;
+        }
+        if (inspectorView.drawerVisible() && inspectorView.isDrawerMinimized()) {
+          inspectorView.setDrawerMinimized(false);
         }
         Host.InspectorFrontendHost.InspectorFrontendHostInstance.bringToFront();
         Common.Console.Console.instance().show();
-        ConsoleView.instance().focusPrompt();
+        consoleView.focusPrompt();
         return true;
+      }
       case 'console.clear':
         ConsoleView.instance().clearConsole();
         return true;

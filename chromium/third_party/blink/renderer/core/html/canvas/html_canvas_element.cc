@@ -47,6 +47,7 @@
 #include "base/trace_event/typed_macros.h"
 #include "build/build_config.h"
 #include "cc/layers/texture_layer.h"
+#include "cc/trees/layer_tree_host.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "third_party/blink/public/common/features.h"
@@ -112,6 +113,7 @@
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_dispatcher.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/compositing/paint_artifact_compositor.h"
+#include "third_party/blink/renderer/platform/graphics/exported_canvas_resource.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/canvas_utils.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_context_rate_limiter.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
@@ -224,48 +226,17 @@ class DisabledAccelerationCounterSupplement final
 const char DisabledAccelerationCounterSupplement::kSupplementName[] =
     "DisabledAccelerationCounterSupplement";
 
-// Tracks whether `transferToGPUTexture()` has been invoked on any canvas
-// element created within the associated Document.
-class TransferToGPUTextureInvokedSupplement final
-    : public GarbageCollected<TransferToGPUTextureInvokedSupplement>,
-      public Supplement<Document> {
- public:
-  static constexpr char kSupplementName[] =
-      "TransferToGPUTextureInvokedSupplement";
-
-  static TransferToGPUTextureInvokedSupplement& From(Document& d) {
-    TransferToGPUTextureInvokedSupplement* supplement =
-        Supplement<Document>::From<TransferToGPUTextureInvokedSupplement>(d);
-    if (!supplement) {
-      supplement =
-          MakeGarbageCollected<TransferToGPUTextureInvokedSupplement>(d);
-      ProvideTo(d, supplement);
-    }
-    return *supplement;
-  }
-
-  explicit TransferToGPUTextureInvokedSupplement(Document& d)
-      : Supplement<Document>(d) {}
-
-  void SetTransferToGPUTextureWasInvoked() {
-    transfer_to_gpu_texture_was_invoked_ = true;
-  }
-
-  bool TransferToGPUTextureWasInvoked() {
-    return transfer_to_gpu_texture_was_invoked_;
-  }
-
- private:
-  bool transfer_to_gpu_texture_was_invoked_ = false;
-};
-
-// Adapter for wrapping a CanvasResourceReleaseCallback into a
-// viz::ReleaseCallback
-void ReleaseCanvasResource(CanvasResource::ReleaseCallback callback,
-                           scoped_refptr<CanvasResource> canvas_resource,
+// viz::ReleaseCallback for CanvasResource
+void ReleaseCanvasResource(scoped_refptr<CanvasResource> canvas_resource,
                            const gpu::SyncToken& sync_token,
                            bool is_lost) {
-  std::move(callback).Run(std::move(canvas_resource), sync_token, is_lost);
+  CHECK(canvas_resource);
+  canvas_resource->WaitSyncToken(sync_token);
+  if (is_lost) {
+    canvas_resource->NotifyResourceLost();
+  }
+
+  CanvasResource::DropRefOnOwningThread(std::move(canvas_resource));
 }
 
 void UmaHistogramCompressionRatio(
@@ -330,7 +301,6 @@ HTMLCanvasElement::HTMLCanvasElement(Document& document)
   // Create supplements now, as they may be needed at a
   // time when garbage collected objects can not be created.
   DisabledAccelerationCounterSupplement::From(GetDocument());
-  TransferToGPUTextureInvokedSupplement::From(GetDocument());
   GetDocument().IncrementNumberOfCanvases();
   auto* execution_context = GetExecutionContext();
   if (execution_context) {
@@ -374,15 +344,13 @@ bool HTMLCanvasElement::PrepareTransferableResource(
     return false;
   }
 
-  CanvasResource::ReleaseCallback release_callback;
-  if (!frame->PrepareTransferableResource(out_resource, &release_callback,
+  if (!frame->PrepareTransferableResource(out_resource,
                                           /*needs_verified_synctoken=*/false) ||
       *out_resource == cc_layer_->current_transferable_resource()) {
     // If the resource did not change, the release will be handled correctly
-    // when the callback from the previous frame is dispatched. But run the
-    // |release_callback| to release the ref acquired above.
-    std::move(release_callback)
-        .Run(std::move(frame), gpu::SyncToken(), false /* is_lost */);
+    // when the callback from the previous frame is dispatched. But we need to
+    // drop ref to the current resource.
+    CanvasResource::DropRefOnOwningThread(std::move(frame));
     return false;
   }
   // TODO(https://crbug.com/1475955): HDR metadata should be propagated to
@@ -391,8 +359,8 @@ bool HTMLCanvasElement::PrepareTransferableResource(
   // here.
   out_resource->hdr_metadata = hdr_metadata_;
   // Note: frame is kept alive via a reference kept in out_release_callback.
-  *out_release_callback = blink::BindOnce(
-      ReleaseCanvasResource, std::move(release_callback), std::move(frame));
+  *out_release_callback =
+      blink::BindOnce(ReleaseCanvasResource, std::move(frame));
 
   return true;
 }
@@ -663,7 +631,7 @@ CanvasRenderingContext* HTMLCanvasElement::GetCanvasRenderingContextInternal(
   if (!IsRenderingContext2D())
     SetNeedsCompositingUpdate();
 
-  is_opaque_ = SkAlphaTypeIsOpaque(GetRenderingContextAlphaType());
+  is_opaque_ = IsOpaque();
   if (cc_layer_) {
     cc_layer_->SetContentsOpaque(is_opaque_);
     cc_layer_->SetBlendBackgroundColor(!is_opaque_);
@@ -690,7 +658,11 @@ void HTMLCanvasElement::configureHighDynamicRange(
   }
 }
 
-bool HTMLCanvasElement::ShouldBeDirectComposited() const {
+bool HTMLCanvasElement::ShouldSkipPaintInvalidation() const {
+  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled(GetExecutionContext()) &&
+      IsInCanvasSubtree()) {
+    return false;
+  }
   return (context_ && context_->IsComposited()) || (!!surface_layer_bridge_);
 }
 
@@ -728,8 +700,8 @@ void HTMLCanvasElement::SetContextCreationWasBlocked() {
   SetNeedsCompositingUpdate();
 }
 
-void HTMLCanvasElement::DidDraw(const SkIRect& rect) {
-  if (rect.isEmpty()) {
+void HTMLCanvasElement::DidDraw(const gfx::Rect& rect) {
+  if (rect.IsEmpty()) {
     return;
   }
 
@@ -748,7 +720,7 @@ void HTMLCanvasElement::DidDraw(const SkIRect& rect) {
   }
 
   canvas_is_clear_ = false;
-  dirty_rect_.Union(gfx::Rect(gfx::SkIRectToRect(rect)));
+  dirty_rect_.Union(rect);
 }
 
 void HTMLCanvasElement::InitializeLayerWithCSSProperties(cc::Layer* layer) {
@@ -773,10 +745,7 @@ void HTMLCanvasElement::PostFinalizeFrame(FlushReason reason) {
             context_->PaintRenderingResultsToResource(kBackBuffer, reason)) {
       const gfx::Rect src_rect(Size());
       dirty_rect_.Intersect(src_rect);
-      const gfx::Rect int_dirty = dirty_rect_;
-      const SkIRect damage_rect = SkIRect::MakeXYWH(
-          int_dirty.x(), int_dirty.y(), int_dirty.width(), int_dirty.height());
-      frame_dispatcher_->DispatchFrame(std::move(canvas_resource), damage_rect,
+      frame_dispatcher_->DispatchFrame(std::move(canvas_resource), dirty_rect_,
                                        IsOpaque());
       dirty_rect_ = gfx::Rect();
     }
@@ -933,7 +902,17 @@ void HTMLCanvasElement::OnWidthOrHeightAssigned() {
 }
 
 void HTMLCanvasElement::ResetLayer() {
-  if (cc_layer_) {
+  if (!cc_layer_) {
+    return;
+  }
+
+  bool in_will_commit = false;
+  if (auto* host = cc_layer_->layer_tree_host()) {
+    in_will_commit = host->in_will_commit();
+  }
+
+  // In commit, we cannot modify cc::Layers, see: crbug.com/510426944.
+  if (!in_will_commit) {
     // Orphaning the layer is required to trigger the recreation of a new
     // layer in the case where destruction is caused by a canvas resize. Test:
     // virtual/gpu/fast/canvas/canvas-resize-after-paint-without-layout.html
@@ -947,18 +926,9 @@ DOMMatrix* HTMLCanvasElement::getElementTransform(
     const V8UnionElementOrElementImage* element_or_image,
     DOMMatrix* draw_transform,
     ExceptionState& exception_state) {
-  if (element_or_image->IsElement()) {
-    if (!VerifyDrawElementImageEligibility(element_or_image->GetAsElement(),
-                                           "getElementTransform",
-                                           exception_state)) {
-      return nullptr;
-    }
-  } else if (element_or_image->IsElementImage()) {
-    if (!element_or_image->GetAsElementImage()->PaintRecord()) {
-      exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
-                                        "The ElementImage has been closed.");
-      return nullptr;
-    }
+  if (!VerifyDrawElementImageEligibility(
+          element_or_image, "getElementTransform", exception_state)) {
+    return nullptr;
   }
 
   const auto* paint_state = GetCanvasChildPaintState(element_or_image);
@@ -968,18 +938,25 @@ DOMMatrix* HTMLCanvasElement::getElementTransform(
     return nullptr;
   }
 
-  return MakeGarbageCollected<DOMMatrix>(
-      GetElementTransform(*paint_state, Size(), draw_transform->Matrix()));
+  gfx::Transform transform =
+      GetElementTransform(*paint_state, Size(), draw_transform->Matrix());
+  return MakeGarbageCollected<DOMMatrix>(transform, transform.Is2dTransform());
 }
 
 bool HTMLCanvasElement::VerifyDrawElementImageEligibility(
     Element* element,
     const String& func_name,
     ExceptionState& exception_state) const {
+  if (IsInCanvasSubtree()) {
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
+                                      "Nested canvases are not supported.");
+    return false;
+  }
   if (element->parentElement() != this) {
-    exception_state.ThrowTypeError(
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
         "Only immediate children of the <canvas> element can be passed to " +
-        func_name + ".");
+            func_name + ".");
     return false;
   }
   if (!layoutSubtree()) {
@@ -987,6 +964,33 @@ bool HTMLCanvasElement::VerifyDrawElementImageEligibility(
         DOMExceptionCode::kInvalidStateError,
         func_name +
             " requires the canvas to have the layoutsubtree attribute.");
+    return false;
+  }
+  return true;
+}
+
+bool HTMLCanvasElement::VerifyDrawElementImageEligibility(
+    const V8UnionElementOrElementImage* element_or_image,
+    const String& func_name,
+    ExceptionState& exception_state) const {
+  if (element_or_image->IsElement()) {
+    return VerifyDrawElementImageEligibility(element_or_image->GetAsElement(),
+                                             func_name, exception_state);
+  }
+
+  const auto& record = element_or_image->GetAsElementImage()->PaintRecord();
+  if (!record) {
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      "The ElementImage has been closed.");
+    return false;
+  }
+
+  if (record->paint_state.canvas_node_id == kInvalidDOMNodeId ||
+      record->paint_state.canvas_node_id !=
+          const_cast<HTMLCanvasElement*>(this)->GetDomNodeId()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "The source was captured from a different canvas.");
     return false;
   }
   return true;
@@ -1050,8 +1054,7 @@ void HTMLCanvasElement::NotifyListenersCanvasChanged() {
             IsGpuMemoryBufferReadbackFromTextureEnabled());
   }
 
-  const bool context_color_is_opaque =
-      context_ && SkAlphaTypeIsOpaque(context_->GetAlphaType());
+  const bool context_color_is_opaque = IsOpaque();
 
   for (CanvasDrawListener* listener : listeners_) {
     if (!listener->NeedsNewFrame())
@@ -1203,7 +1206,7 @@ void HTMLCanvasElement::PaintInternal(GraphicsContext& context,
     // `FlushRecording` might be a no-op if a flush already happened before.
     // Fortunately, the last flush recording was kept by the context.
     const std::optional<cc::PaintRecord>& last_recording =
-        RenderingContext()->GetLastRecordingForCanvas2D();
+        RenderingContext()->GetLastRecording();
     if (last_recording.has_value() &&
         filter_quality_ != cc::PaintFlags::FilterQuality::kNone) {
       context.Canvas()->save();
@@ -1947,16 +1950,14 @@ ScriptPromise<ImageBitmap> HTMLCanvasElement::CreateImageBitmap(
 }
 
 void HTMLCanvasElement::SetOffscreenCanvasResource(
-    scoped_refptr<CanvasResource>&& image,
-    viz::ResourceId resource_id) {
-  OffscreenCanvasPlaceholder::SetOffscreenCanvasResource(std::move(image),
-                                                         resource_id);
+    scoped_refptr<ExportedCanvasResource>&& image) {
+  OffscreenCanvasPlaceholder::SetOffscreenCanvasResource(std::move(image));
   SetSize(OffscreenCanvasFrame()->Size());
   NotifyListenersCanvasChanged();
 }
 
 bool HTMLCanvasElement::IsOpaque() const {
-  return context_ && !context_->CreationAttributes().alpha;
+  return RenderingContext() && RenderingContext()->IsOpaque();
 }
 
 bool HTMLCanvasElement::CreateLayer() {
@@ -2065,14 +2066,5 @@ RespectImageOrientationEnum HTMLCanvasElement::RespectImageOrientation() const {
   return LayoutObject::GetImageOrientation(GetLayoutObject());
 }
 
-void HTMLCanvasElement::SetTransferToGPUTextureWasInvoked() {
-  TransferToGPUTextureInvokedSupplement::From(GetDocument())
-      .SetTransferToGPUTextureWasInvoked();
-}
-
-bool HTMLCanvasElement::TransferToGPUTextureWasInvoked() {
-  return TransferToGPUTextureInvokedSupplement::From(GetDocument())
-      .TransferToGPUTextureWasInvoked();
-}
 
 }  // namespace blink

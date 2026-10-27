@@ -5,20 +5,25 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_PAYMENTS_PAYMENTS_AUTOFILL_CLIENT_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_PAYMENTS_PAYMENTS_AUTOFILL_CLIENT_H_
 
+#include <stdint.h>
+
+#include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "base/containers/span.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_forward.h"
+#include "base/memory/weak_ptr.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
 #include "components/autofill/core/browser/payments/legal_message_line.h"
 #include "components/autofill/core/browser/payments/risk_data_loader.h"
 #include "components/autofill/core/browser/suggestions/suggestion.h"
-#include "components/signin/public/identity_manager/account_info.h"
+#include "url/origin.h"
 
 #if !BUILDFLAG(IS_IOS)
 namespace webauthn {
@@ -63,6 +68,12 @@ class TouchToFillDelegate;
 struct VirtualCardEnrollmentFields;
 class VirtualCardEnrollmentManager;
 enum class WebauthnDialogCallbackType;
+
+namespace autofill_metrics {
+enum class SaveCardPromptOffer;
+}
+
+using SaveCardPromptOffer = autofill_metrics::SaveCardPromptOffer;
 
 namespace payments {
 
@@ -211,6 +222,12 @@ class PaymentsAutofillClient : public RiskDataLoader {
       return *this;
     }
 
+    SaveCreditCardOptions& with_save_card_prompt_offer_decision(
+        SaveCardPromptOffer decision) {
+      save_card_prompt_offer_decision = decision;
+      return *this;
+    }
+
     bool should_request_name_from_user = false;
     bool should_request_expiration_date_from_user = false;
     bool show_prompt = false;
@@ -220,6 +237,7 @@ class PaymentsAutofillClient : public RiskDataLoader {
     std::optional<int> num_strikes;
     CardSaveType card_save_type = CardSaveType::kCardSaveOnly;
     SourceFeature source_feature = SourceFeature::kOfferSaveAfterFormSubmit;
+    std::optional<SaveCardPromptOffer> save_card_prompt_offer_decision;
   };
 
   enum class SaveCardOfferUserDecision {
@@ -449,8 +467,11 @@ class PaymentsAutofillClient : public RiskDataLoader {
 
   // Called when the card has been fetched successfully. Uses the necessary
   // information in `options` to show the FilledCardInformationBubble.
+  // `origin` is the origin of the frame on which fetching was originally
+  // triggered.
   virtual void OnCardDataAvailable(
-      const FilledCardInformationBubbleOptions& options) = 0;
+      const FilledCardInformationBubbleOptions& options,
+      const url::Origin& origin) = 0;
 
   // Runs `callback` once the user makes a decision with respect to the
   // offer-to-save prompt. On desktop, shows the offer-to-save bubble if
@@ -579,11 +600,6 @@ class PaymentsAutofillClient : public RiskDataLoader {
   // Returns true if Mandatory Reauth is supported on this platform and enabled
   // by the user, if applicable.
   virtual bool IsMandatoryReauthEnabled() = 0;
-
-#if BUILDFLAG(IS_IOS)
-  // Returns true if the feature to use custom card icons is enabled.
-  virtual bool IsUsingCustomCardIconEnabled() const = 0;
-#endif
 
   // Prompt the user to enable mandatory reauthentication for payment method
   // autofill. When enabled, the user will be asked to authenticate using
@@ -804,6 +820,14 @@ class PaymentsAutofillClient : public RiskDataLoader {
   // nullptr on unsupported platforms. Handles the Autofill flow where the
   // Omnibox is the trigger point.
   virtual OmniboxAutofillDelegate* GetOmniboxAutofillDelegate() = 0;
+
+  // Shows the "Autofill payments" omnibox chip that appears for relevant
+  // payment checkout forms.
+  virtual void ShowOmniboxAutofillChip() = 0;
+
+  // Hides the "Autofill payments" omnibox chip that appears for relevant
+  // payment checkout forms.
+  virtual void HideOmniboxAutofillChip() = 0;
 #endif
 };
 

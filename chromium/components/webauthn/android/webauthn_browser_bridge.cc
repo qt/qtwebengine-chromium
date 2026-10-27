@@ -78,7 +78,7 @@ void ConvertJavaCredentialArrayToMetadataVector(
   DCHECK_GE(jlength, 0) << "Invalid array length: " << jlength;
   size_t length = static_cast<size_t>(std::max(0, jlength));
   for (size_t i = 0; i < length; ++i) {
-    auto j_credential = ScopedJavaLocalRef<jobject>::Adopt(
+    auto j_credential = jni_zero::AdoptRef(
         env, static_cast<jobject>(env->GetObjectArrayElement(array.obj(), i)));
     out->emplace_back(
         ConvertJavaCredentialDetailsToMetadata(env, j_credential));
@@ -282,6 +282,21 @@ void WebauthnBrowserBridge::CleanupCredManRequest(
 
 void WebauthnBrowserBridge::Destroy(JNIEnv* env) {
   delete this;
+}
+
+static bool JNI_WebauthnBrowserBridge_ShouldDisallowCredentialRequest(
+    JNIEnv* env,
+    const base::android::JavaRef<jobject>& jframe_host) {
+  content::RenderFrameHost* render_frame_host =
+      content::RenderFrameHost::FromJavaRenderFrameHost(jframe_host);
+  if (!render_frame_host) {
+    return false;
+  }
+  auto* client = WebAuthnClientAndroid::GetClient();
+  if (!client) {
+    return false;
+  }
+  return client->ShouldDisallowCredentialRequest(render_frame_host);
 }
 
 }  // namespace webauthn

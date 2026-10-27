@@ -25,22 +25,23 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/webgpu/QueueWGPU.h"
+#include "src/dawn/native/webgpu/QueueWGPU.h"
 
 #include <limits>
 #include <vector>
 
-#include "dawn/native/EventManager.h"
-#include "dawn/native/Instance.h"
-#include "dawn/native/Queue.h"
-#include "dawn/native/webgpu/BufferWGPU.h"
-#include "dawn/native/webgpu/CaptureContext.h"
-#include "dawn/native/webgpu/CommandBufferWGPU.h"
-#include "dawn/native/webgpu/DeviceWGPU.h"
-#include "dawn/native/webgpu/SharedFenceWGPU.h"
-#include "dawn/native/webgpu/TextureWGPU.h"
-#include "dawn/native/webgpu/ToWGPU.h"
-#include "dawn/native/webgpu/WebGPUError.h"
+#include "src/dawn/native/EventManager.h"
+#include "src/dawn/native/Instance.h"
+#include "src/dawn/native/Queue.h"
+#include "src/dawn/native/webgpu/BufferWGPU.h"
+#include "src/dawn/native/webgpu/CaptureContext.h"
+#include "src/dawn/native/webgpu/CommandBufferWGPU.h"
+#include "src/dawn/native/webgpu/DeviceWGPU.h"
+#include "src/dawn/native/webgpu/SharedFenceWGPU.h"
+#include "src/dawn/native/webgpu/TextureWGPU.h"
+#include "src/dawn/native/webgpu/ToWGPU.h"
+#include "src/dawn/native/webgpu/WebGPUError.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native::webgpu {
 
@@ -75,7 +76,8 @@ MaybeError Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* co
 
         for (uint32_t i = 0; i < commandCount; ++i) {
             schema::ObjectId id;
-            DAWN_TRY_ASSIGN(id, mCaptureContext->AddResourceAndGetId(ToBackend(commands[i])));
+            DAWN_UNSAFE_TODO(
+                DAWN_TRY_ASSIGN(id, mCaptureContext->AddResourceAndGetId(ToBackend(commands[i]))));
             commandBufferIds.emplace_back(id);
         }
 
@@ -89,7 +91,7 @@ MaybeError Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* co
 
     std::vector<WGPUCommandBuffer> innerCommandBuffers(commandCount);
     for (uint32_t i = 0; i < commandCount; ++i) {
-        DAWN_TRY_ASSIGN(innerCommandBuffers[i], ToBackend(commands[i])->Encode());
+        DAWN_UNSAFE_TODO(DAWN_TRY_ASSIGN(innerCommandBuffers[i], ToBackend(commands[i])->Encode()));
     }
 
     auto& wgpu = ToBackend(GetDevice())->wgpu.get();

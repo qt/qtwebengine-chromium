@@ -36,8 +36,10 @@
 #include <openssl/crypto.h>
 #include <openssl/curve25519.h>
 #include <openssl/err.h>
+#include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/hpke.h>
+#include <openssl/nid.h>
 #include <openssl/pem.h>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
@@ -664,9 +666,10 @@ TEST(SSLTest, CurveRules) {
     ASSERT_TRUE(ctx);
 
     ASSERT_TRUE(SSL_CTX_set1_groups_list(ctx.get(), t.rule));
-    ASSERT_EQ(t.expected.size(), ctx->supported_group_list.size());
+    ASSERT_EQ(t.expected.size(),
+              FromOpaque(ctx.get())->supported_group_list.size());
     for (size_t i = 0; i < t.expected.size(); i++) {
-      EXPECT_EQ(t.expected[i], ctx->supported_group_list[i]);
+      EXPECT_EQ(t.expected[i], FromOpaque(ctx.get())->supported_group_list[i]);
     }
   }
 
@@ -689,13 +692,15 @@ TEST(SSLTest, DefaultCurves) {
     bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
     ASSERT_TRUE(ctx);
     // The new context is populated with the default group list.
-    EXPECT_THAT(ctx->supported_group_list, ElementsAreArray(kDefaults));
+    EXPECT_THAT(FromOpaque(ctx.get())->supported_group_list,
+                ElementsAreArray(kDefaults));
 
     // Set some other list to check that it is set away from the default.
     const uint16_t kArbitraryGroupIds[] = {SSL_GROUP_X25519};
     ASSERT_TRUE(SSL_CTX_set1_group_ids(ctx.get(), kArbitraryGroupIds,
                                        std::size(kArbitraryGroupIds)));
-    EXPECT_THAT(ctx->supported_group_list, Not(ElementsAreArray(kDefaults)));
+    EXPECT_THAT(FromOpaque(ctx.get())->supported_group_list,
+                Not(ElementsAreArray(kDefaults)));
 
     bssl::UniquePtr<SSL> ssl(SSL_new(ctx.get()));
     ASSERT_TRUE(ssl);
@@ -706,7 +711,8 @@ TEST(SSLTest, DefaultCurves) {
     ASSERT_TRUE(SSL_set1_group_ids(ssl.get(), nullptr, 0));
     EXPECT_THAT(ssl->config->supported_group_list, ElementsAreArray(kDefaults));
     ASSERT_TRUE(SSL_CTX_set1_group_ids(ctx.get(), nullptr, 0));
-    EXPECT_THAT(ctx->supported_group_list, ElementsAreArray(kDefaults));
+    EXPECT_THAT(FromOpaque(ctx.get())->supported_group_list,
+                ElementsAreArray(kDefaults));
   }
 
   // Test the NID APIs.
@@ -714,13 +720,15 @@ TEST(SSLTest, DefaultCurves) {
     bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
     ASSERT_TRUE(ctx);
     // The new context is populated with the default group list.
-    EXPECT_THAT(ctx->supported_group_list, ElementsAreArray(kDefaults));
+    EXPECT_THAT(FromOpaque(ctx.get())->supported_group_list,
+                ElementsAreArray(kDefaults));
 
     // Set some other list to check that it is set away from the default.
     const int kArbitraryNids[] = {NID_X9_62_prime256v1};
     ASSERT_TRUE(SSL_CTX_set1_groups(ctx.get(), kArbitraryNids,
                                     std::size(kArbitraryNids)));
-    EXPECT_THAT(ctx->supported_group_list, Not(ElementsAreArray(kDefaults)));
+    EXPECT_THAT(FromOpaque(ctx.get())->supported_group_list,
+                Not(ElementsAreArray(kDefaults)));
 
     bssl::UniquePtr<SSL> ssl(SSL_new(ctx.get()));
     ASSERT_TRUE(ssl);
@@ -731,7 +739,8 @@ TEST(SSLTest, DefaultCurves) {
     ASSERT_TRUE(SSL_set1_groups(ssl.get(), nullptr, 0));
     EXPECT_THAT(ssl->config->supported_group_list, ElementsAreArray(kDefaults));
     ASSERT_TRUE(SSL_CTX_set1_groups(ctx.get(), nullptr, 0));
-    EXPECT_THAT(ctx->supported_group_list, ElementsAreArray(kDefaults));
+    EXPECT_THAT(FromOpaque(ctx.get())->supported_group_list,
+                ElementsAreArray(kDefaults));
   }
 }
 
@@ -1187,6 +1196,106 @@ static const char kBadSessionTrailingData[] =
     "q+Topyzvx9USFgRvyuoxn0Hgb+R0A3j6SLRuyOdAi4gv7Y5oliynrSIEIAYGBgYG"
     "BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGrgMEAQevAwQBBLADBAEFAAAA";
 
+// kBadSessionPeerCertTypeDefault is a copy of `kBoringSSLSession` containing a
+// `peerCertType` field whose value equals the default (and thus should not have
+// been serialized) but is otherwise consistent with contents of the struct.
+static const char kBadSessionPeerCertTypeDefault[] =
+    "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"
+    "lQI5kQsO/jgu0R0FmvZNPm8PBx2vLB6PYDni+jZTEznUXiYr2z2oFL0y6xgDKFIE"
+    "ceWrMz3hOLsHNoRinHnqFjD0X8Ar6HFr5PkCAwEAAaOB8DCB7TAfBgNVHSMEGDAW"
+    "gBRI5mj5K9KylddH2CMgEE8zmJCf1DAdBgNVHQ4EFgQUwHqYaI2J+6sFZAwRfap9"
+    "ZbjKzE4wDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwOgYDVR0fBDMw"
+    "MTAvoC2gK4YpaHR0cDovL2NybC5nZW90cnVzdC5jb20vY3Jscy9zZWN1cmVjYS5j"
+    "cmwwTgYDVR0gBEcwRTBDBgRVHSAAMDswOQYIKwYBBQUHAgEWLWh0dHBzOi8vd3d3"
+    "Lmdlb3RydXN0LmNvbS9yZXNvdXJjZXMvcmVwb3NpdG9yeTANBgkqhkiG9w0BAQUF"
+    "AAOBgQB24RJuTksWEoYwBrKBCM/wCMfHcX5m7sLt1Dsf//DwyE7WQziwuTB9GNBV"
+    "g6JqyzYRnOhIZqNtf7gT1Ef+i1pcc/yu2RsyGTirlzQUqpbS66McFAhJtrvlke+D"
+    "NusdVm/K2rxzY5Dkf3s+Iss9B+1fOHSc4wNQTqGvmO5h8oQ/Er8gAwIBAA==";
+
 static bool DecodeBase64(std::vector<uint8_t> *out, const char *in) {
   size_t len;
   if (!EVP_DecodedLength(&len, strlen(in))) {
@@ -1299,6 +1408,7 @@ TEST(SSLTest, SessionEncoding) {
            kBadSessionExtraField,
            kBadSessionVersion,
            kBadSessionTrailingData,
+           kBadSessionPeerCertTypeDefault,
        }) {
     SCOPED_TRACE(std::string(input_b64));
     std::vector<uint8_t> input;
@@ -2720,64 +2830,6 @@ TEST(SSLTest, ECHPadding) {
   }
 }
 
-TEST(SSLTest, ECHPublicName) {
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("")));
-  EXPECT_TRUE(ssl_is_valid_ech_public_name(StringAsBytes("example.com")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes(".example.com")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("example.com.")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("example..com")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("www.-example.com")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("www.example-.com")));
-  EXPECT_FALSE(
-      ssl_is_valid_ech_public_name(StringAsBytes("no_underscores.example")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(
-      StringAsBytes("invalid_chars.\x01.example")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(
-      StringAsBytes("invalid_chars.\xff.example")));
-  static const uint8_t kWithNUL[] = {'t', 'e', 's', 't', 0};
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(kWithNUL));
-
-  // Test an LDH label with every character and the maximum length.
-  EXPECT_TRUE(ssl_is_valid_ech_public_name(StringAsBytes(
-      "abcdefhijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes(
-      "abcdefhijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ-01234567899")));
-
-  // Inputs with trailing numeric components are rejected.
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("127.0.0.1")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("example.1")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("example.01")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("example.0x01")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("example.0X01")));
-  // Leading zeros and values that overflow |uint32_t| are still rejected.
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(
-      StringAsBytes("example.123456789000000000000000")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(
-      StringAsBytes("example.012345678900000000000000")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(
-      StringAsBytes("example.0x123456789abcdefABCDEF0")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(
-      StringAsBytes("example.0x0123456789abcdefABCDEF")));
-  // Adding a non-digit or non-hex character makes it a valid DNS name again.
-  // Single-component numbers are rejected.
-  EXPECT_TRUE(
-      ssl_is_valid_ech_public_name(StringAsBytes("example.1234567890a")));
-  EXPECT_TRUE(
-      ssl_is_valid_ech_public_name(StringAsBytes("example.01234567890a")));
-  EXPECT_TRUE(ssl_is_valid_ech_public_name(
-      StringAsBytes("example.0x123456789abcdefg")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("1")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("01")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("0x01")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("0X01")));
-  // Numbers with trailing dots are rejected. (They are already rejected by the
-  // LDH label rules, but the WHATWG URL parser additionally rejects them.)
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("1.")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("01.")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("0x01.")));
-  EXPECT_FALSE(ssl_is_valid_ech_public_name(StringAsBytes("0X01.")));
-}
-
 // When using the built-in verifier, test that |SSL_get0_ech_name_override| is
 // applied automatically.
 TEST(SSLTest, ECHBuiltinVerifier) {
@@ -3074,15 +3126,16 @@ static void AppendSession(SSL_SESSION *session, void *arg) {
 // order.
 static bool CacheEquals(SSL_CTX *ctx,
                         const std::vector<SSL_SESSION *> &expected) {
+  auto *ctx_impl = FromOpaque(ctx);
   // Check the linked list.
-  SSL_SESSION *ptr = ctx->session_cache_head;
+  SSL_SESSION *ptr = ctx_impl->session_cache_head;
   for (SSL_SESSION *session : expected) {
     if (ptr != session) {
       return false;
     }
     // TODO(davidben): This is an absurd way to denote the end of the list.
     if (ptr->next ==
-        reinterpret_cast<SSL_SESSION *>(&ctx->session_cache_tail)) {
+        reinterpret_cast<SSL_SESSION *>(&ctx_impl->session_cache_tail)) {
       ptr = nullptr;
     } else {
       ptr = ptr->next;
@@ -3094,7 +3147,7 @@ static bool CacheEquals(SSL_CTX *ctx,
 
   // Check the hash table.
   std::vector<SSL_SESSION *> actual, expected_copy;
-  lh_SSL_SESSION_doall_arg(ctx->sessions, AppendSession, &actual);
+  lh_SSL_SESSION_doall_arg(ctx_impl->sessions, AppendSession, &actual);
   expected_copy = expected;
 
   std::sort(actual.begin(), actual.end());
@@ -5459,6 +5512,57 @@ TEST(SSLTest, OverrideKeyMethodWithKey) {
   ASSERT_TRUE(ConnectClientAndServer(&client, &server, ctx.get(), ctx.get()));
 }
 
+TEST(SSLTest, NullDecryptPrivateKeyMethod) {
+  bssl::UniquePtr<EVP_PKEY> key = GetTestKey();
+  ASSERT_TRUE(key);
+  bssl::UniquePtr<X509> leaf = GetTestCertificate();
+  ASSERT_TRUE(leaf);
+
+  bssl::UniquePtr<SSL_CTX> client_ctx(SSL_CTX_new(TLS_method()));
+  ASSERT_TRUE(client_ctx);
+  bssl::UniquePtr<SSL_CTX> server_ctx(SSL_CTX_new(TLS_method()));
+  ASSERT_TRUE(server_ctx);
+
+  ASSERT_TRUE(SSL_CTX_use_certificate(server_ctx.get(), leaf.get()));
+
+  // Configure an SSL_PRIVATE_KEY_METHOD on the server with sign and complete,
+  // but NULL decrypt.
+  static const SSL_PRIVATE_KEY_METHOD kNullDecryptMethod = {
+      [](SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out,
+         uint16_t signature_algorithm, const uint8_t *in,
+         size_t in_len) { return ssl_private_key_failure; },
+      nullptr,  // decrypt
+      [](SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out) {
+        return ssl_private_key_failure;
+      },
+  };
+
+  SSL_CTX_set_private_key_method(server_ctx.get(), &kNullDecryptMethod);
+
+  // Negotiate RSA key exchange (SSL_kRSA). We do this by restricting both
+  // client and server to TLS 1.2 and configuring an RSA key exchange cipher
+  // suite.
+  ASSERT_TRUE(SSL_CTX_set_max_proto_version(client_ctx.get(), TLS1_2_VERSION));
+  ASSERT_TRUE(SSL_CTX_set_max_proto_version(server_ctx.get(), TLS1_2_VERSION));
+
+  ASSERT_TRUE(SSL_CTX_set_cipher_list(client_ctx.get(), "AES128-GCM-SHA256"));
+  ASSERT_TRUE(SSL_CTX_set_cipher_list(server_ctx.get(), "AES128-GCM-SHA256"));
+
+  // Use a custom verify on client to accept the self-signed test cert.
+  SSL_CTX_set_custom_verify(client_ctx.get(), SSL_VERIFY_PEER,
+                            AcceptAnyCertificate);
+
+  bssl::UniquePtr<SSL> client, server;
+  // Since the decrypt hook is NULL, the server's decryption during the RSA key
+  // exchange should fail cleanly.
+  EXPECT_FALSE(ConnectClientAndServer(&client, &server, client_ctx.get(),
+                                      server_ctx.get()));
+  uint32_t err = ERR_get_error();
+  EXPECT_TRUE(ErrorEquals(err, ERR_LIB_SSL, ERR_R_INTERNAL_ERROR));
+  EXPECT_EQ(0u, ERR_get_error());
+}
+
+
 // Configuring a chain and then overwriting it with a different chain should
 // clear the old one.
 TEST(SSLTest, OverrideChain) {
@@ -5563,6 +5667,7 @@ TEST(SSLTest, CredentialChains) {
   // Configure one chain (including the leaf), then replace it with another.
   ASSERT_TRUE(SSL_CREDENTIAL_set1_cert_chain(cred.get(), wrong_chain.data(),
                                              wrong_chain.size()));
+#if !defined(BORINGSSL_SHARED_LIBRARY)
   CBS ca_subject_cbs, ca_cbs;
   CRYPTO_BUFFER_init_CBS(ca.get(), &ca_cbs);
   ASSERT_TRUE(ssl_cert_extract_issuer(&ca_cbs, &ca_subject_cbs));
@@ -5572,9 +5677,9 @@ TEST(SSLTest, CredentialChains) {
                   CRYPTO_BUFFER_len(ca_subject.get())),
             Bytes(CRYPTO_BUFFER_data(subject_buf.get()),
                   CRYPTO_BUFFER_len(subject_buf.get())));
-#if !defined(BORINGSSL_SHARED_LIBRARY)
   ASSERT_FALSE(
-      cred->ChainContainsIssuer(Span(CRYPTO_BUFFER_data(subject_buf.get()),
+      FromOpaque(cred.get())
+          ->ChainContainsIssuer(Span(CRYPTO_BUFFER_data(subject_buf.get()),
                                      CRYPTO_BUFFER_len(subject_buf.get()))));
 #endif
 
@@ -5583,7 +5688,8 @@ TEST(SSLTest, CredentialChains) {
 
 #if !defined(BORINGSSL_SHARED_LIBRARY)
   ASSERT_TRUE(
-      cred->ChainContainsIssuer(Span(CRYPTO_BUFFER_data(subject_buf.get()),
+      FromOpaque(cred.get())
+          ->ChainContainsIssuer(Span(CRYPTO_BUFFER_data(subject_buf.get()),
                                      CRYPTO_BUFFER_len(subject_buf.get()))));
 #endif
 
@@ -5672,6 +5778,45 @@ TEST(SSLTest, CredentialChains) {
                                      server_ctx.get()));
   EXPECT_TRUE(BuffersEqual(SSL_get0_peer_certificates(client5.get()),
                            {leaf.get(), ca.get()}));
+}
+
+TEST(SSLTest, RawPublicKeyCredential) {
+  bssl::UniquePtr<EVP_PKEY> test_key = GetTestKey();
+  ASSERT_TRUE(test_key);
+  ASSERT_TRUE(EVP_PKEY_has_public(test_key.get()));
+  ASSERT_TRUE(EVP_PKEY_has_private(test_key.get()));
+
+  bssl::UniquePtr<SSL_CREDENTIAL> cred(
+      SSL_CREDENTIAL_new_raw_public_key(test_key.get()));
+  ASSERT_TRUE(cred);
+  EXPECT_TRUE(SSL_CREDENTIAL_is_complete(cred.get()));
+
+  // Make another key containing the public key only.
+  UniquePtr<EVP_PKEY> public_key(EVP_PKEY_copy_public(test_key.get()));
+  ASSERT_TRUE(public_key);
+  ASSERT_TRUE(EVP_PKEY_has_public(public_key.get()));
+  ASSERT_FALSE(EVP_PKEY_has_private(public_key.get()));
+
+  static const SSL_PRIVATE_KEY_METHOD kCustomMethod = {
+      [](SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out,
+         uint16_t signature_algorithm, const uint8_t *in,
+         size_t in_len) { return ssl_private_key_success; },
+      [](SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out,
+         const uint8_t *in, size_t in_len) { return ssl_private_key_success; },
+      [](SSL *ssl, uint8_t *out, size_t *out_len, size_t max_oun) {
+        return ssl_private_key_success;
+      },
+  };
+
+  cred.reset(SSL_CREDENTIAL_new_raw_public_key_custom(public_key.get(),
+                                                      &kCustomMethod));
+  ASSERT_TRUE(cred);
+  EXPECT_TRUE(SSL_CREDENTIAL_is_complete(cred.get()));
+
+  // This creation fails due to lack of a private key.
+  cred.reset(SSL_CREDENTIAL_new_raw_public_key(public_key.get()));
+  ASSERT_FALSE(cred);
+  EXPECT_TRUE(ErrorEquals(ERR_get_error(), ERR_LIB_SSL, SSL_R_MISSING_KEY));
 }
 
 TEST(SSLTest, CredentialCertProperties) {
@@ -6804,6 +6949,7 @@ TEST(SSLTest, SigAlgs) {
       {{1, 2, 3}, false, {}},
       {{NID_sha256, EVP_PKEY_ED25519}, false, {}},
       {{NID_sha256, EVP_PKEY_RSA, NID_sha256, EVP_PKEY_RSA}, false, {}},
+      {{NID_sha256, EVP_PKEY_ML_DSA_44}, false, {}},
 
       {{NID_sha256, EVP_PKEY_RSA}, true, {SSL_SIGN_RSA_PKCS1_SHA256}},
       {{NID_sha512, EVP_PKEY_RSA}, true, {SSL_SIGN_RSA_PKCS1_SHA512}},
@@ -6812,6 +6958,9 @@ TEST(SSLTest, SigAlgs) {
       {{NID_undef, EVP_PKEY_ED25519, NID_sha384, EVP_PKEY_EC},
        true,
        {SSL_SIGN_ED25519, SSL_SIGN_ECDSA_SECP384R1_SHA384}},
+      {{NID_undef, EVP_PKEY_ML_DSA_44}, true, {SSL_SIGN_ML_DSA_44}},
+      {{NID_undef, EVP_PKEY_ML_DSA_65}, true, {SSL_SIGN_ML_DSA_65}},
+      {{NID_undef, EVP_PKEY_ML_DSA_87}, true, {SSL_SIGN_ML_DSA_87}},
   };
 
   UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
@@ -6833,7 +6982,8 @@ TEST(SSLTest, SigAlgs) {
       continue;
     }
 
-    ExpectSigAlgsEqual(test.expected, ctx->cert->legacy_credential->sigalgs);
+    ExpectSigAlgsEqual(test.expected,
+                       FromOpaque(ctx.get())->cert->legacy_credential->sigalgs);
   }
 }
 
@@ -6868,6 +7018,9 @@ TEST(SSLTest, SigAlgsList) {
        {SSL_SIGN_ECDSA_SECP256R1_SHA256, SSL_SIGN_RSA_PSS_RSAE_SHA256}},
       {"RSA-PSS+SHA256", true, {SSL_SIGN_RSA_PSS_RSAE_SHA256}},
       {"PSS+SHA256", true, {SSL_SIGN_RSA_PSS_RSAE_SHA256}},
+      {"mldsa44:mldsa65:mldsa87",
+       true,
+       {SSL_SIGN_ML_DSA_44, SSL_SIGN_ML_DSA_65, SSL_SIGN_ML_DSA_87}},
   };
 
   UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
@@ -6891,7 +7044,8 @@ TEST(SSLTest, SigAlgsList) {
       continue;
     }
 
-    ExpectSigAlgsEqual(test.expected, ctx->cert->legacy_credential->sigalgs);
+    ExpectSigAlgsEqual(test.expected,
+                       FromOpaque(ctx.get())->cert->legacy_credential->sigalgs);
   }
 }
 
@@ -9397,6 +9551,42 @@ TEST(SSLTest, AcceptedPeerCertTypesConfig) {
   }
 }
 
+TEST(SSLTest, AvailableClientCertTypesConfig) {
+  bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
+  ASSERT_TRUE(ctx);
+
+  // Valid configurations.
+  for (const auto &list : std::vector<std::vector<uint8_t>>({
+           // Listing only the default type is considered valid here; we just
+           // won't send a ClientHello extension for this list.
+           {TLSEXT_cert_type_x509},
+           {TLSEXT_cert_type_rpk},
+           {TLSEXT_cert_type_x509, TLSEXT_cert_type_rpk},
+           {TLSEXT_cert_type_rpk, TLSEXT_cert_type_x509},
+       })) {
+    EXPECT_EQ(1, SSL_CTX_set1_available_client_cert_types(
+                     ctx.get(), list.data(), list.size()));
+  }
+
+  // Invalid configurations.
+  for (const auto &list : std::vector<std::vector<uint8_t>>({
+           // Empty list is invalid. To omit the extension, the client should
+           // set a list containing only the default, X.509.
+           {},
+           // Bogus value,
+           {0xff},
+           // Contains duplicate.
+           {TLSEXT_cert_type_x509, TLSEXT_cert_type_x509},
+           // Too long.
+           {TLSEXT_cert_type_x509, TLSEXT_cert_type_rpk, 0x03},
+       })) {
+    EXPECT_EQ(0, SSL_CTX_set1_available_client_cert_types(
+                     ctx.get(), list.data(), list.size()));
+    EXPECT_TRUE(ErrorEquals(ERR_get_error(), ERR_LIB_SSL,
+                            SSL_R_INVALID_CERT_TYPES_LIST));
+  }
+}
+
 // This is a basic unit-test class to verify completing handshake successfully,
 // sending the correct codepoint extension and having correct application
 // setting on different combination of ALPS codepoint settings. More integration
@@ -11052,7 +11242,9 @@ TEST(SSLTest, SetGetCompliancePolicy) {
 
   for (const auto policy : {ssl_compliance_policy_fips_202205,      //
                             ssl_compliance_policy_wpa3_192_202304,  //
-                            ssl_compliance_policy_cnsa_202407}) {
+                            ssl_compliance_policy_cnsa_202407,      //
+                            ssl_compliance_policy_cnsa1_202603,     //
+                            ssl_compliance_policy_cnsa2_202603}) {
     SSL_CTX_set_compliance_policy(ctx.get(), policy);
     EXPECT_EQ(SSL_CTX_get_compliance_policy(ctx.get()), policy);
     SSL_set_compliance_policy(ssl.get(), policy);
@@ -11515,5 +11707,59 @@ TEST_F(SSLPAKETest, ServerThreads) {
 }
 #endif  // OPENSSL_THREADS
 
+static uint16_t g_client_sigalg_used = 0;
+static uint16_t g_server_sigalg_used = 0;
+
+static void SignatureAlgorithmUsedInfoCallback(const SSL *ssl, int type,
+                                               int value) {
+  if (type == SSL_CB_HANDSHAKE_DONE) {
+    if (SSL_is_server(ssl)) {
+      g_server_sigalg_used = SSL_get_signature_algorithm_used(ssl);
+    } else {
+      g_client_sigalg_used = SSL_get_signature_algorithm_used(ssl);
+    }
+  }
+}
+
+TEST(SSLTest, SignatureAlgorithmUsed) {
+  g_client_sigalg_used = 0;
+  g_server_sigalg_used = 0;
+
+  bssl::UniquePtr<SSL_CTX> client_ctx(SSL_CTX_new(TLS_method()));
+  bssl::UniquePtr<SSL_CTX> server_ctx(
+      CreateContextWithTestCertificate(TLS_method()));
+  ASSERT_TRUE(client_ctx);
+  ASSERT_TRUE(server_ctx);
+
+  // By setting a single signature algorithm, we force the handshake to use
+  // that algorithm, and we can check that it is reported as the signature
+  // algorithm used.
+  const uint16_t kPref = SSL_SIGN_RSA_PSS_RSAE_SHA384;
+  static const uint16_t kPrefs[] = {kPref};
+  ASSERT_TRUE(SSL_CTX_set_signing_algorithm_prefs(
+      server_ctx.get(), kPrefs, std::size(kPrefs)));
+  ASSERT_TRUE(SSL_CTX_set_signing_algorithm_prefs(
+      client_ctx.get(), kPrefs, std::size(kPrefs)));
+
+  SSL_CTX_set_info_callback(client_ctx.get(),
+                            SignatureAlgorithmUsedInfoCallback);
+  SSL_CTX_set_info_callback(server_ctx.get(),
+                            SignatureAlgorithmUsedInfoCallback);
+
+  bssl::UniquePtr<SSL> client, server;
+  ASSERT_TRUE(ConnectClientAndServer(&client, &server, client_ctx.get(),
+                                     server_ctx.get()));
+
+  EXPECT_EQ(g_server_sigalg_used, kPref);
+  // There is no client signature algorithm.
+  EXPECT_EQ(g_client_sigalg_used, 0u);
+
+  // After the handshake completes, the handshake object is reset, so the API
+  // returns 0.
+  EXPECT_EQ(SSL_get_signature_algorithm_used(client.get()), 0u);
+  EXPECT_EQ(SSL_get_signature_algorithm_used(server.get()), 0u);
+}
+
 }  // namespace
 BSSL_NAMESPACE_END
+

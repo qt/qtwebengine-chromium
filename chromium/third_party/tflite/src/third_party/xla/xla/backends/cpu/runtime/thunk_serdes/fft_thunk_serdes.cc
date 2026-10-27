@@ -19,6 +19,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/base/casts.h"
 #include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -38,7 +39,7 @@ namespace xla::cpu {
 namespace {
 
 absl::Status FftThunkToProto(const Thunk& thunk, ThunkProto& proto) {
-  const auto& fft_thunk = tsl::down_cast<const FftThunk&>(thunk);
+  const auto& fft_thunk = absl::down_cast<const FftThunk&>(thunk);
   FftThunkProto* fft_thunk_proto = proto.mutable_fft_thunk();
 
   fft_thunk_proto->set_is_multi_thread_eigen(fft_thunk.is_multi_thread_eigen());

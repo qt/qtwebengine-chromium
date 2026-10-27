@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 MatrixXcd X = MatrixXcd::Random(4, 4);
 MatrixXcd A = X + X.adjoint();
 cout << "Here is a random self-adjoint 4x4 matrix:" << endl << A << endl << endl;

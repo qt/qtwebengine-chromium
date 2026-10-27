@@ -969,6 +969,16 @@ impl Decoder for MediaCodec {
         }
         AvifError::unknown_error("all the codecs failed to extract an image")
     }
+
+    fn get_last_image(
+        &mut self,
+        _payloads: &[Vec<u8>],
+        _spatial_id: u8,
+        _image: &mut Image,
+        _category: Category,
+    ) -> AvifResult<()> {
+        AvifError::not_implemented()
+    }
 }
 
 impl MediaCodec {

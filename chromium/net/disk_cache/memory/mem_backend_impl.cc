@@ -11,9 +11,11 @@
 #include <utility>
 
 #include "base/byte_size.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/memory_coordinator/memory_consumer.h"
+#include "base/memory_coordinator/memory_coordinator_features.h"
 #include "base/memory_coordinator/utils.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/system/sys_info.h"
@@ -352,12 +354,13 @@ int32_t MemBackendImpl::CalculateTargetMemoryLimit() const {
         std::lerp(min, max, memory_limit_ratio() / 0.5));
   }
 
-  int64_t target_size =
-      (static_cast<int64_t>(max_size_) * memory_limit()) / 100;
-  return base::checked_cast<int32_t>(target_size);
+  return base::ScaleByMemoryLimit(max_size_, memory_limit());
 }
 
 void MemBackendImpl::OnUpdateMemoryLimit() {
+  if (!base::FeatureList::IsEnabled(base::kStatefulMemoryPressure)) {
+    return;
+  }
   // IMPORTANT: Ensure no memory is released during this call.
   // By using std::max, we ensure the new limit is at least the current size,
   // preventing growth without triggering immediate eviction.
@@ -365,9 +368,18 @@ void MemBackendImpl::OnUpdateMemoryLimit() {
 }
 
 void MemBackendImpl::OnReleaseMemory() {
-  // Now we actually evict entries to reach the target size.
-  current_max_size_ = CalculateTargetMemoryLimit();
-  EvictTill(current_max_size_);
+  if (base::FeatureList::IsEnabled(base::kStatefulMemoryPressure)) {
+    // Now we actually evict entries to reach the target size.
+    current_max_size_ = CalculateTargetMemoryLimit();
+    EvictTill(current_max_size_);
+  } else {
+    // Stateless behavior, evict to specific limits.
+    if (memory_limit() <= base::kCriticalMemoryPressureThreshold) {
+      EvictTill(max_size_ / 10);
+    } else if (memory_limit() <= base::kModerateMemoryPressureThreshold) {
+      EvictTill(max_size_ / 2);
+    }
+  }
 }
 
 }  // namespace disk_cache

@@ -17,8 +17,8 @@
 #include "components/gwp_asan/client/extreme_lightweight_detector_quarantine.h"
 #include "components/gwp_asan/client/sampling_state.h"
 #include "components/gwp_asan/common/extreme_lightweight_detector_util.h"
+#include "partition_alloc/internal/partition_root_internal.h"  // nogncheck
 #include "partition_alloc/partition_address_space.h"
-#include "partition_alloc/partition_root.h"
 #include "partition_alloc/shim/allocator_shim.h"
 #include "partition_alloc/shim/allocator_shim_default_dispatch_to_partition_alloc.h"
 
@@ -145,7 +145,7 @@ bool TryInitSlow() {
 //
 // CAUTION: No deallocation is allowed in this function because it causes
 // a reentrancy issue.
-inline bool Quarantine(void* object) {
+inline bool Quarantine(void* object, size_t object_size, size_t alignment) {
   if (!TryInit()) [[unlikely]] {
     return false;
   }
@@ -193,7 +193,8 @@ inline bool Quarantine(void* object) {
   }
 
   size_t usable_size = root->GetSlotUsableSize(slot_span);
-  ExtremeLightweightDetectorUtil::Zap(object, usable_size);
+  ExtremeLightweightDetectorUtil::Zap(object, object_size, usable_size,
+                                      alignment);
 
   if (usable_size <= init_options.object_size_threshold_in_bytes) [[likely]] {
     lightweight_quarantine_branch_for_small_objects->Quarantine(
@@ -208,7 +209,7 @@ inline bool Quarantine(void* object) {
 
 void FreeFn(void* address, void* context) {
   if (sampling_state.Sample()) [[unlikely]] {
-    if (Quarantine(address)) [[likely]] {
+    if (Quarantine(address, /*object_size=*/0, /*alignment=*/0)) [[likely]] {
       return;
     }
   }
@@ -217,7 +218,7 @@ void FreeFn(void* address, void* context) {
 
 void FreeWithSizeFn(void* address, size_t size, void* context) {
   if (sampling_state.Sample()) [[unlikely]] {
-    if (Quarantine(address)) [[likely]] {
+    if (Quarantine(address, size, /*alignment=*/0)) [[likely]] {
       return;
     }
   }
@@ -227,7 +228,7 @@ void FreeWithSizeFn(void* address, size_t size, void* context) {
 
 void FreeWithAlignmentFn(void* address, size_t alignment, void* context) {
   if (sampling_state.Sample()) [[unlikely]] {
-    if (Quarantine(address)) [[likely]] {
+    if (Quarantine(address, /*object_size=*/0, alignment)) [[likely]] {
       return;
     }
   }
@@ -240,7 +241,7 @@ void FreeWithSizeAndAlignmentFn(void* address,
                                 size_t alignment,
                                 void* context) {
   if (sampling_state.Sample()) [[unlikely]] {
-    if (Quarantine(address)) [[likely]] {
+    if (Quarantine(address, size, alignment)) [[likely]] {
       return;
     }
   }

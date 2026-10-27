@@ -324,13 +324,13 @@ TEST_F(ModelExecutionFetcherImplTest, TestMultipleParallelRequests) {
                BuildTestMessage("foo request"));
   identity_test_env()->WaitForAccessTokenRequestIfNecessaryAndRespondWithToken(
       "access_token", base::Time::Max());
-  ExecuteModel(ModelBasedCapabilityKey::kTabOrganization,
+  ExecuteModel(ModelBasedCapabilityKey::kCompose,
                BuildTestMessage("foo request"));
 
   // The second request should fail immediately.
   histogram_tester_.ExpectUniqueSample(
       "OptimizationGuide.ModelExecutionFetcher.RequestStatus."
-      "TabOrganization",
+      "Compose",
       FetcherRequestStatus::kFetcherBusy, 1);
   EXPECT_EQ(ModelExecutionError::kGenericFailure,
             last_execute_response_->error().error());
@@ -393,7 +393,7 @@ TEST_F(ModelExecutionFetcherImplTest, TestAccessTokenFailureWithLogin) {
   ExecuteModel(ModelBasedCapabilityKey::kWallpaperSearch,
                BuildTestMessage("foo request"));
   identity_test_env()->WaitForAccessTokenRequestIfNecessaryAndRespondWithError(
-      GoogleServiceAuthError(GoogleServiceAuthError::CONNECTION_FAILED));
+      GoogleServiceAuthError::FromConnectionError(net::ERR_FAILED));
 
   EXPECT_EQ(0, test_url_loader_factory_.NumPending());
   histogram_tester_.ExpectUniqueSample(

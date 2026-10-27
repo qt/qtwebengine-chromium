@@ -16,18 +16,23 @@
 #include "chrome/browser/glic/public/glic_keyed_service.h"
 #include "chrome/browser/glic/public/glic_keyed_service_factory.h"
 #include "chrome/browser/pdf/pdf_pref_names.h"
-#include "chrome/browser/pdf/pdf_viewer_stream_manager.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/user_education/browser_user_education_interface.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/extensions/api/pdf_viewer_private.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/generated_resources.h"
+#include "components/feature_engagement/public/feature_constants.h"
 #include "components/pdf/common/constants.h"
 #include "components/prefs/pref_service.h"
 #include "components/tabs/public/tab_interface.h"
 #include "extensions/browser/guest_view/mime_handler_view/mime_handler_view_guest.h"
+#include "extensions/browser/mime_handler/mime_handler_stream_manager.h"
 #include "extensions/browser/mime_handler/stream_container.h"
 #include "pdf/buildflags.h"
+#include "pdf/pdf_features.h"
 #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "url/url_constants.h"
 
 #if BUILDFLAG(ENABLE_PDF_SAVE_TO_DRIVE)
@@ -57,8 +62,6 @@ namespace SetPdfPluginAttributes =
 
 namespace SetPdfDocumentTitle = api::pdf_viewer_private::SetPdfDocumentTitle;
 
-constexpr char kSummarizePrompt[] = "Summarize this document";
-
 // Check if the current URL is allowed based on a list of allowlisted domains.
 bool IsUrlAllowedToEmbedLocalFiles(const GURL& current_url,
                                    const base::ListValue& allowlisted_domains) {
@@ -87,13 +90,14 @@ base::WeakPtr<StreamContainer> GetStreamContainer(
     return nullptr;
   }
 
-  auto* pdf_viewer_stream_manager =
-      pdf::PdfViewerStreamManager::FromRenderFrameHost(embedder_host);
-  if (!pdf_viewer_stream_manager) {
+  auto* mime_handler_stream_manager =
+      mime_handler::MimeHandlerStreamManager::FromRenderFrameHost(
+          embedder_host);
+  if (!mime_handler_stream_manager) {
     return nullptr;
   }
 
-  return pdf_viewer_stream_manager->GetStreamContainer(embedder_host);
+  return mime_handler_stream_manager->GetStreamContainer(embedder_host);
 }
 
 #if BUILDFLAG(ENABLE_PDF_SAVE_TO_DRIVE)
@@ -315,6 +319,19 @@ ExtensionFunction::ResponseAction PdfViewerPrivateGlicSummarizeFunction::Run() {
     return RespondNow(Error("No web contents."));
   }
 
+  // When the PDF viewer is hosted in a MimeHandlerViewGuest (legacy GuestView,
+  // e.g. on ChromeOS where kPdfOopif is disabled), the sender WebContents is
+  // the inner guest contents which has no TabInterface attached. Walk up to
+  // the embedder WebContents so the tab lookup succeeds.
+  if (!chrome_pdf::features::IsOopifPdfEnabled()) {
+    if (auto* guest = MimeHandlerViewGuest::FromWebContents(contents)) {
+      contents = guest->embedder_web_contents();
+      if (!contents) {
+        return RespondNow(Error("No web contents."));
+      }
+    }
+  }
+
   tabs::TabInterface* tab_interface =
       tabs::TabInterface::MaybeGetFromContents(contents);
   if (!tab_interface) {
@@ -335,25 +352,34 @@ ExtensionFunction::ResponseAction PdfViewerPrivateGlicSummarizeFunction::Run() {
   bool has_consented = glic::GlicEnabling::HasConsentedForProfile(
       Profile::FromBrowserContext(contents->GetBrowserContext()));
 
-  glic::GlicInvokeOptions options{
-      glic::mojom::InvocationSource::kPdfSummarizeButton};
-  options.prompts.push_back(kSummarizePrompt);
-  options.conversation = glic::NewConversation();
+  glic::GlicInvokeOptions options(
+      glic::Target(tab_interface, glic::NewConversation()),
+      glic::mojom::InvocationSource::kPdfSummarizeButton);
+  options.prompts.push_back(
+      l10n_util::GetStringUTF8(IDS_PDF_GLIC_SUMMARIZE_PROMPT));
 
   if (has_consented) {
     glic_service->InvokeWithAutoSubmit(
-        glic::InvokeWithAutoSubmitPasskeyProvider::GetPassKey(), tab_interface,
+        glic::InvokeWithAutoSubmitPasskeyProvider::GetPassKey(),
         std::move(options));
   } else {
     if (arm == 3) {
       options.fre_override = glic::mojom::FreOverride::kTrustFirstInline;
       glic_service->InvokeWithAutoSubmit(
           glic::InvokeWithAutoSubmitPasskeyProvider::GetPassKey(),
-          tab_interface, std::move(options));
+          std::move(options));
     } else {
       options.fre_override = glic::mojom::FreOverride::kTrustFirstText;
-      glic_service->Invoke(tab_interface, std::move(options));
+      glic_service->Invoke(std::move(options));
     }
+  }
+
+  if (auto* user_education =
+          BrowserUserEducationInterface::MaybeGetForWebContentsInTab(
+              contents)) {
+    user_education->NotifyFeaturePromoFeatureUsed(
+        feature_engagement::kIPHPdfGlicSummarizeFeature,
+        FeaturePromoFeatureUsedAction::kClosePromoIfPresent);
   }
 
   success = true;

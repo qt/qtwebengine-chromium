@@ -155,7 +155,8 @@ void CompositorThreadEventQueue::Queue(
     // e.g. |ScrollUpdate|, |ScrollEnd|, and another scroll sequence.
     TRACE_EVENT_BEGIN(
         "input", "CompositorThreadEventQueue::Queue",
-        perfetto::Track::FromPointer(new_event->first_original_event()));
+        perfetto::NamedTrack::FromPointer("CompositorThreadEventQueue::Queue",
+                                          new_event->first_original_event()));
   }
   queue_.push_back(std::move(new_event));
 }
@@ -174,7 +175,9 @@ std::unique_ptr<EventWithCallback> CompositorThreadEventQueue::Pop() {
 
   if (result->first_original_event()) {
     TRACE_EVENT_END(
-        "input", perfetto::Track::FromPointer(result->first_original_event()),
+        "input",
+        perfetto::NamedTrack::FromPointer("CompositorThreadEventQueue::Queue",
+                                          result->first_original_event()),
         "result", "dispatched", "type", result->event().GetType(),
         "coalesced_count", result->coalesced_count());
   }
@@ -184,9 +187,9 @@ std::unique_ptr<EventWithCallback> CompositorThreadEventQueue::Pop() {
 void CompositorThreadEventQueue::DidFinishDispatch() {
   backlog_count_ = queue_.size();
   if (backlog_count_) {
-    TRACE_EVENT_INSTANT1(
-        "input", "CompositorThreadEventQueue::DidFinishDispatch",
-        TRACE_EVENT_SCOPE_THREAD, "backlog_count", backlog_count_);
+    TRACE_EVENT_INSTANT("input",
+                        "CompositorThreadEventQueue::DidFinishDispatch",
+                        "backlog_count", backlog_count_);
   }
 }
 
@@ -261,7 +264,8 @@ void CompositorThreadEventQueue::CoalesceEvents(base::TimeTicks sample_time) {
     if (new_event->first_original_event()) {
       TRACE_EVENT_END(
           "input",
-          perfetto::Track::FromPointer(new_event->first_original_event()),
+          perfetto::NamedTrack::FromPointer("CompositorThreadEventQueue::Queue",
+                                            new_event->first_original_event()),
           "result", "coalesced", "type", new_event->event().GetType());
     }
 
@@ -325,6 +329,10 @@ base::TimeTicks CompositorThreadEventQueue::PeekTimestamp() const {
 
 const WebInputEvent* CompositorThreadEventQueue::FirstOriginalEvent() const {
   return empty() ? nullptr : queue_.front()->first_original_event();
+}
+
+const cc::EventMetrics* CompositorThreadEventQueue::FirstMetrics() const {
+  return empty() ? nullptr : queue_.front()->metrics();
 }
 
 }  // namespace blink

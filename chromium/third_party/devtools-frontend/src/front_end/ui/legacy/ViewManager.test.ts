@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Common from '../../core/common/common.js';
 import type {EventTargetEvent} from '../../core/common/EventTarget.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
-import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {describeWithEnvironment, updateHostConfig} from '../../testing/EnvironmentHelpers.js';
 
 import * as UI from './legacy.js';
 
@@ -29,7 +31,7 @@ describeWithEnvironment('ViewManager', () => {
     createLocation(panelName: string, initialVisibility: boolean, defaultTab: string|undefined) {
       const location = viewManager.createTabbedLocation(() => {
         this.locations.get(panelName)!.isShown = initialVisibility;
-      }, panelName, false, true, defaultTab);
+      }, panelName, false, true, {defaultTab});
       this.locations.set(panelName, {location, isShown: initialVisibility});
       sinon.stub(location.tabbedPane(), 'isShowing').callsFake(() => this.locations.get(panelName)?.isShown ?? false);
     }
@@ -180,6 +182,23 @@ describeWithEnvironment('ViewManager', () => {
   });
 
   describe('createTabbedLocation', () => {
+    it('respects custom location visibility predicate', async () => {
+      let locationIsVisible = false;
+      const tabbedLocation = viewManager.createTabbedLocation(
+          () => {}, 'visibility-test-location', false, true, {isLocationVisible: () => locationIsVisible});
+
+      const view = new UI.View.SimpleView({
+        title: i18n.i18n.lockedString('Visibility test view'),
+        viewId: 'visibility-test-view',
+      });
+
+      await tabbedLocation.showView(view);
+      assert.isFalse(tabbedLocation.isViewVisible(view), 'view should not be visible when location predicate is false');
+
+      locationIsVisible = true;
+      assert.isTrue(tabbedLocation.isViewVisible(view), 'view should be visible when location predicate is true');
+    });
+
     it('remembers closeable views in the `closeable-tabs` setting', async () => {
       const tabbedLocation = viewManager.createTabbedLocation(() => {}, '');
 
@@ -230,8 +249,81 @@ describeWithEnvironment('ViewManager', () => {
       assert.notProperty(
           Common.Settings.Settings.instance().settingForTest('closeable-tabs').get(),
           'transient-view',
-          'Transient views must never be included in `closeable-tabs`',
+          'Transient views must never be included in `closeable-tabs` while they are shown',
       );
+    });
+
+    it('allows retrieving the materialized widget for a tabbed view', async () => {
+      const viewId = 'view-2';
+      const tabbedLocation = viewManager.createTabbedLocation(() => {}, '');
+      const view = viewManager.view(viewId);
+      await tabbedLocation.showView(view);
+
+      const widget = viewManager.materializedWidget(viewId);
+      assert.isNotNull(widget, 'materializedWidget should return the widget for a tabbed view');
+    });
+
+    it('installs the plus button BEFORE appending tabs so the very first overflow detection reserves its width', () => {
+      // Regression test for the ordering invariant in TabbedLocation's
+      // constructor. A TabbedPane subclass spies on the first call to
+      // `appendTab` and records whether the plus button is already
+      // mounted at that point. If `installPlusButton` ran AFTER
+      // `appendApplicableItems`, the first appendTab would happen
+      // before the slotted button existed, and the first overflow
+      // detection pass would not reserve its width — causing the
+      // last visible tab to briefly snap into the overflow menu
+      // before a second layout pass corrected it.
+      class CapturingTabbedPane extends UI.TabbedPane.TabbedPane {
+        plusButtonPresentAtFirstAppendTab: boolean|undefined;
+        override appendTab(...args: Parameters<UI.TabbedPane.TabbedPane['appendTab']>): void {
+          if (this.plusButtonPresentAtFirstAppendTab === undefined) {
+            this.plusButtonPresentAtFirstAppendTab =
+                this.element.querySelector('devtools-menu-button[slot="trailing-button"]') !== null;
+          }
+          return super.appendTab(...args);
+        }
+      }
+      const tabbedPane = new CapturingTabbedPane();
+
+      // Enable the `devToolsPlusButton` base::Feature for this test; the
+      // host config is reset between tests by `describeWithEnvironment`.
+      updateHostConfig({devToolsPlusButton: {enabled: true}});
+      viewManager.createTabbedLocation(
+          () => {}, UI.ViewManager.ViewLocationValues.PANEL, false, true,
+          {tabbedPaneFactory: () => tabbedPane, plusButton: {}});
+
+      assert.isTrue(
+          tabbedPane.plusButtonPresentAtFirstAppendTab,
+          'installPlusButton must run before appendApplicableItems mounts any tabs');
+    });
+  });
+
+  describe('createStackLocation', () => {
+    it('allows retrieving the materialized widget for a stacked view', async () => {
+      const viewId = 'view-3';
+      const stackLocation = viewManager.createStackLocation();
+      const view = viewManager.view(viewId);
+      await stackLocation.showView(view);
+
+      const widget = viewManager.materializedWidget(viewId);
+      assert.isNotNull(widget, 'materializedWidget should return the widget for a stacked view');
+    });
+
+    it('correctly manages view registration in ViewManager.views', async () => {
+      const viewId = 'dynamic-view';
+      const view = new UI.View.SimpleView({
+        title: i18n.i18n.lockedString('Dynamic View'),
+        viewId,
+      });
+      const stackLocation = viewManager.createStackLocation();
+
+      assert.isFalse(viewManager.views.has(viewId), 'view should not be registered before showView');
+
+      await stackLocation.showView(view);
+      assert.isTrue(viewManager.views.has(viewId), 'view should be registered in ViewManager.views after showView');
+
+      stackLocation.removeView(view);
+      assert.isFalse(viewManager.views.has(viewId), 'view should be removed from ViewManager.views after removeView');
     });
   });
 });

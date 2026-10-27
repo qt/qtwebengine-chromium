@@ -1,0 +1,2139 @@
+# Oriya translation for gsettings-desktop-schemas.
+# Copyright (C) 2012 gsettings-desktop-schemas's COPYRIGHT HOLDER
+# This file is distributed under the same license as the gsettings-desktop-schemas package.
+#
+# Manoj Kumar Giri <mgiri@redhat.com>, 2012.
+msgid ""
+msgstr ""
+"Project-Id-Version: gsettings-desktop-schemas master\n"
+"Report-Msgid-Bugs-To: http://bugzilla.gnome.org/enter_bug.cgi?"
+"product=gsettings-desktop-schemas&keywords=I18N+L10N&component=general\n"
+"POT-Creation-Date: 2012-08-07 11:56+0000\n"
+"PO-Revision-Date: 2012-08-16 15:18+0530\n"
+"Last-Translator: Manoj Kumar Giri <mgiri@redhat.com>\n"
+"Language-Team: Oriya <or@li.org>\n"
+"Language: or\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=n != 1;\n"
+"X-Generator: Lokalize 1.4\n"
+
+#: ../schemas/org.gnome.desktop.a11y.applications.gschema.xml.in.in.h:1
+msgid "On-screen keyboard"
+msgstr "ଅନସ୍କ୍ରିନ କି ବୋର୍ଡ"
+
+#: ../schemas/org.gnome.desktop.a11y.applications.gschema.xml.in.in.h:2
+msgid "Whether the on-screen keyboard is turned on."
+msgstr "ଅନସ୍କ୍ରିନ କିବୋର୍ଡଟି ଅନ ଅଛି କି।"
+
+#: ../schemas/org.gnome.desktop.a11y.applications.gschema.xml.in.in.h:3
+msgid "Screen magnifier"
+msgstr "ପରଦା ଆକାର ବର୍ଦ୍ଧନକର୍ତ୍ତା"
+
+#: ../schemas/org.gnome.desktop.a11y.applications.gschema.xml.in.in.h:4
+msgid "Whether the screen magnifier is turned on."
+msgstr "ପରଦା ଆକାର ବର୍ଦ୍ଧକକୁ ଅନ କରାଯାଇଛି କି।"
+
+#: ../schemas/org.gnome.desktop.a11y.applications.gschema.xml.in.in.h:5
+msgid "Screen reader"
+msgstr "ପରଦା ପାଠକ"
+
+#: ../schemas/org.gnome.desktop.a11y.applications.gschema.xml.in.in.h:6
+msgid "Whether the screen reader is turned on."
+msgstr "ପରଦା ପାଠକକୁ ଅନ କରାଯାଇଛି କି ନାହିଁ।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:1
+msgid "Enable accessibility keyboard shortcuts"
+msgstr "ଅଭିଗମ୍ଯ କି ବୋର୍ଡ ସଂକ୍ଷିପ୍ତ ପଥକୁ ସକ୍ରିୟ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:2
+msgid "Beep when a keyboard accessibility feature changes"
+msgstr "କିବୋର୍ଡ ଅଭିଗମ୍ଯତା ବିଶେଷତାରେ ପରିବର୍ତ୍ତନ ହେଲେ ଶବ୍ଦ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:3
+msgid ""
+"Whether to beep when a keyboard accessibility feature is enabled or disabled."
+msgstr ""
+"କିବୋର୍ଡ ଅଭିଗମ୍ଯତା ବିଶେଷତାକୁ ସକ୍ରିୟ କିମ୍ବା ନିଷ୍କ୍ରିୟ କଲେ ଶବ୍ଦ କରିବା ଉଚିତ କି "
+"ନୁହଁ।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:4
+msgid "Disable keyboard accessibility after a timeout"
+msgstr "ସମୟ ସମାପ୍ତି ପରେ କିବୋର୍ଡ ଅଭିଗମ୍ୟତାକୁ ନିଷ୍କ୍ରିୟ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:5
+msgid ""
+"Whether to disable keyboard accessibility after a timeout, useful for shared "
+"machines."
+msgstr ""
+"ସମୟ ସମାପ୍ତି ହେବା ପରେ କିବୋର୍ଡ ଅଭିଗମ୍ୟତାକୁ ନିଷ୍କ୍ରିୟ କରିବା ଉଚିତ କି ନୁହଁ, ସହଭାଗୀ "
+"ଯନ୍ତ୍ରଗୁଡ଼ିକ ପାଇଁ ଉପଯୋଗୀ।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:6
+msgid "Duration of the disabling timeout"
+msgstr "ସମୟ ସମାପ୍ତିକୁ ନିଷ୍କ୍ରିୟ କରିବା ଅବଧି"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:7
+msgid "Duration of the timeout before disabling the keyboard accessibility."
+msgstr "କିବୋର୍ଡ ଅଭିଗମ୍ୟତାକୁ ନିଷ୍କ୍ରିୟ କରିବା ପୂର୍ବରୁ ସମୟ ସମାପ୍ତି ଅବଧି।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:8
+msgid "Enable the bounce keys"
+msgstr "ଡେଉଁଥିବା କିଗୁଡ଼ିକୁ ସକ୍ରିୟ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:9
+msgid "Whether the bounce keys keyboard accessibility feature is turned on."
+msgstr "କି ଗୁଡ଼ିକର କିବୋର୍ଡ ଅଭିଗମ୍ୟତାକୁ ଡେଇଁବା ବିଶେଷତା ଅନ ହୋଇଛି କି ନାହିଁ।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:10
+msgid "Minimum interval in milliseconds"
+msgstr "ସର୍ବନିମ୍ନ  ଅନ୍ତରାଳ ସେକଣ୍ଡରେ"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:11
+msgid "Ignore multiple presses of the same key within this many milliseconds."
+msgstr ""
+"ଏକ କି ର ଏକାଧିକ ପ୍ରକ୍ରିୟାକୁ ପ୍ରଦତ୍ତ ମିଲି ସେକଣ୍ଡ ସମୟ ଅବଧି ମଧ୍ଯରେ ଅଗ୍ରାହ୍ୟ "
+"କରନ୍ତୁ।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:12
+msgid "Beep when a key is rejected"
+msgstr "କି କୁ ବାରଣ କଲେ ଶବ୍ଦ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:13
+msgid "Whether to beep when a key is rejected."
+msgstr "କି କୁ ବାରଣ କଲେ ଶବ୍ଦ କରିବା ଉଚିତ କି।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:14
+msgid "Enable mouse keys"
+msgstr "ମାଉସ କିଗୁଡ଼ିକୁ ସକ୍ରିୟ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:15
+msgid "Whether the mouse keys accessibility feature is turned on."
+msgstr "ମାଉସ କି ଅଭିଗମ୍ୟତା ବିଶେଷତାକୁ ଅନ କରାଯାଇଛି କି ନାହିଁ।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:16
+msgid "Pixels per seconds"
+msgstr "ସେକଣ୍ଡ ପ୍ରତି ପିକସେଲ"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:17
+msgid "How many pixels per second to move at the maximum speed."
+msgstr "ସର୍ବାଧିକ ବେଗରେ ପ୍ରତି ସେକଣ୍ଡରେ କେତେ ପିକସେଲ ପଠାଯିବା ଉଚିତ।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:18
+msgid "How long to accelerate in milliseconds"
+msgstr "ତ୍ୱରିତ କରିବା ପାଇଁ କେତେ ସମୟ ଲାଗେ ମିଲି ସେକେଣ୍ଡରେ"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:19
+msgid "How many milliseconds it takes to go from 0 to maximum speed."
+msgstr "0 ରୁ ସର୍ବାଧିକ ବେଗ ପର୍ଯ୍ୟନ୍ତ ଯିବା ପାଇଁ କେତେ ସମୟ ଲାଗେ ମିଲି ସେକେଣ୍ଡରେ।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:20
+msgid "Initial delay in milliseconds"
+msgstr "ପ୍ରାରମ୍ଭିକ ବିଳମ୍ବ ମିଲି ସେକେଣ୍ଡରେ"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:21
+msgid ""
+"How many milliseconds to wait before mouse movement keys start to operate."
+msgstr "ମାଉସ ଗତି କି ଚାଲୁ ହେବା ପୂର୍ବରୁ କେତେ ମିଲି ସେକଣ୍ଡ ଅପେକ୍ଷା କରିବା ଉଚିତ।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:22
+msgid "Enable slow keys"
+msgstr "ମନ୍ଥର କିଗୁଡ଼ିକୁ ସକ୍ରିୟ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:23
+msgid "Whether the slow keys accessibility feature is turned on."
+msgstr "ମନ୍ଥର କି ଅଭିଗମ୍ୟ ବିଶେଷତାକୁ ଅନ କରାଯାଇଛି କି ନାହିଁ।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:24
+msgid ""
+"Do not accept a key as being pressed unless held for this many milliseconds."
+msgstr ""
+"ଉଲ୍ଲିଖିତ ମିଲି ସେକଣ୍ଡ ପର୍ଯ୍ୟନ୍ତ ଦବା ନହେଲେ କୌଣସି କି କୁ ଗ୍ରହଣ କରନ୍ତୁ ନାହିଁ।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:25
+msgid "Beep when a key is first pressed"
+msgstr "ଏକ କି କୁ ପ୍ରଥମ ଥର ଦବାଇଲେ ଶବ୍ଦ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:26
+msgid "Whether to beep when a key is first pressed."
+msgstr "କି କୁ ପ୍ରଥମ ଥର ଦବା ହେଲେ ଶବ୍ଦ କରିବା ଉଚିତ କି।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:27
+msgid "Beep when a key is accepted"
+msgstr "କି ଗ୍ରହଣ ହୋଇସାରିବା ପରେ ଶବ୍ଦ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:28
+msgid "Whether to beep when a key is accepted."
+msgstr "କି ଗ୍ରହଣ ହୋଇସାରିବା ପରେ ଶବ୍ଦ କରିବା ଉଚିତ କି।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:29
+msgid "Enable sticky keys"
+msgstr "ସାମୟିକ କିଗୁଡ଼ିକୁ ସକ୍ରିୟ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:30
+msgid "Whether the sticky keys accessibility feature is turned on."
+msgstr "ସାମୟିକ କିର ଅଭିଗମ୍ୟତା ବିଶେଷତାକୁ ଅନ କରାଯାଇଛି କି ନାହିଁ।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:31
+msgid "Disable when two keys are pressed at the same time"
+msgstr "ଦୁଇଟି କି ଏକ ସମୟରେ ବଦାହେଲେ ନିଷ୍କ୍ରିୟ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:32
+msgid ""
+"Whether to disable sticky keys if two keys are pressed at the same time."
+msgstr "ଦୁଇଟି କି ଏକ ସମୟରେ ବଦାହେଲେ ନିଷ୍କ୍ରିୟ କରିବା ଉଚିତ କି ନୁହଁ।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:33
+msgid "Beep when a modifier is pressed."
+msgstr "ପରିବର୍ତ୍ତନକାରୀକୁ ଦବାଗଲେ ଶବ୍ଦ କରନ୍ତୁ।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:34
+msgid "Whether to beep when a modifier key is pressed."
+msgstr "ପରିବର୍ତ୍ତନକାରୀକୁ ଦବାଗଲେ ଶବ୍ଦ କରିବା ଉଚିତ କି ନୁହଁ।"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:35
+msgid "Enable toggle keys"
+msgstr "ଆଗପଛ ହେଉଥିବା କିଗୁଡ଼ିକୁ ସକ୍ରିୟ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in.in.h:36
+msgid "Whether the toggle keys accessibility feature is turned on."
+msgstr "ଆଗପଛ କରିବା କିର ଅଭିଗମ୍ୟତା ବିଶେଷତାକୁ ଅନ ହୋଇଛି କି ନାହିଁ।"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:1
+msgid "Mouse Tracking Mode"
+msgstr "ମାଉସ ଅନୁସରଣ ଧାରା"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:2
+msgid ""
+"Determines the position of the magnified mouse image within the magnified "
+"view and how it reacts to system mouse movement. The values are - none: no "
+"mouse tracking; - centered: the mouse image is displayed at the center of "
+"the zoom region (which also represents the point under the system mouse) and "
+"the magnified contents are scrolled as the system mouse moves; - "
+"proportional: the position of the magnified mouse in the zoom region is "
+"proportionally the same as the position of the system mouse on screen; - "
+"push: when the magnified mouse intersects a boundary of the zoom region, the "
+"contents are scrolled into view."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:3
+msgid "Screen position"
+msgstr "ପରଦା ଅବସ୍ଥାନ"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:4
+msgid ""
+"The magnified view either fills the entire screen, or occupies the top-half, "
+"bottom-half, left-half, or right-half of the screen."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:5
+msgid "Magnification factor"
+msgstr "ଆବର୍ଦ୍ଧନ ଉତ୍ପାଦକ"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:6
+msgid ""
+"The power of the magnification. A value of 1.0 means no magnification. A "
+"value of 2.0 doubles the size."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:7
+msgid "Enable lens mode"
+msgstr "ଲେନସ ଧାରାକୁ ସକ୍ରିୟ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:8
+msgid ""
+"Whether the magnified view should be centered over the location of the "
+"system mouse and move with it."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:9
+msgid "Scroll magnified contents beyond the edges of the desktop"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:10
+msgid ""
+"For centered mouse tracking, when the system pointer is at or near the edge "
+"of the screen, the magnified contents continue to scroll such that the "
+"screen edge moves into the magnified view."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:11
+msgid "Show or hide crosshairs"
+msgstr "crosshairsକୁ ଦର୍ଶାନ୍ତୁ କିମ୍ବା ଲୁଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:12
+msgid ""
+"Enables/disables display of crosshairs centered on the magnified mouse "
+"sprite."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:13
+msgid "Thickness of the crosshairs in pixels"
+msgstr "କ୍ରସ ହେୟରର ମୋଟାଇ ପିକସେଲରେ"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:14
+msgid ""
+"Width in pixels of the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:15
+msgid "Color of the crosshairs"
+msgstr "crosshairs ର ରଙ୍ଗ"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:16
+msgid ""
+"The color of the the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:17
+msgid "Opacity of the crosshairs"
+msgstr "crosshairsର ସ୍ବଚ୍ଛତା"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:18
+msgid ""
+"Determines the transparency of the crosshairs, from fully opaque to fully "
+"transparent."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:19
+msgid "Length of the crosshairs in pixels"
+msgstr "କ୍ରସ ହେୟରର ଲମ୍ବ ପିକସେଲରେ"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:20
+msgid ""
+"Determines the length in pixels of the vertical and horizontal lines that "
+"make up the crosshairs."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:21
+msgid "Clip the crosshairs at the center"
+msgstr "crosshairs କୁ ମଝିରେ ଲଗାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:22
+msgid ""
+"Determines whether the crosshairs intersect the magnified mouse sprite, or "
+"are clipped such that the ends of the horizontal and vertical lines surround "
+"the mouse image."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:23
+msgid "Inverse lightness"
+msgstr "ପ୍ରତିକୂଳ ଆଲୋକ"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:24
+msgid ""
+"Determines whether the lightness values are inverted: darker colors become "
+"lighter and vice versa, and white and black are interchanged."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:25
+msgid "Color Saturation"
+msgstr "ରଙ୍ଗ ପରିପୃକ୍ତତା"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:26
+msgid ""
+"Represents a change to the color saturation, from 0.0 (grayscale) to 1.0 "
+"(full color)."
+msgstr ""
+"ରଙ୍ଗ ପରିପୃକ୍ତତାରେ ପରିବର୍ତ୍ତନକୁ ଉପସ୍ଥାପନ କରିଥାଏ, 0.0 (grayscale) ରୁ 1.0 "
+"(full color) କୁ।"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:27
+msgid "Change brightness of red"
+msgstr "ଲାଲି ରଙ୍ଗର ଉଜ୍ଜ୍ୱଳତାକୁ ପରିବର୍ତ୍ତନ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:28
+msgid ""
+"Represents a change to the default brightness of the red component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"ପୂର୍ବନିର୍ଦ୍ଧାରିତ ଲାଲି ଉପାଦାନର ଉଜ୍ଜ୍ୱଳତାରେ ପରିବର୍ତ୍ତନକୁ ଉପସ୍ଥାପନ କରିଥାଏ। ଶୂନ "
+"ଅର୍ଥ କୌଣସି ପରିବର୍ତ୍ତନ ନାହିଁ, "
+"ଶୂନରୁ କମ ମୂଲ୍ୟ ଅର୍ଥ ହ୍ରାସ, ଏବଂ ଶୂନରୁ ଅଧିକ ଅର୍ଥ ବୃଦ୍ଧି।"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:29
+msgid "Change brightness of green"
+msgstr "ସବୁଜ ରଙ୍ଗର ଉଜ୍ଜ୍ବଳତା ପରିବର୍ତ୍ତନ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:30
+msgid ""
+"Represents a change to the default brightness for the green component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"ପୂର୍ବନିର୍ଦ୍ଧାରିତ ସବୁଜ ଉପାଦାନର ଉଜ୍ଜ୍ୱଳତାରେ ପରିବର୍ତ୍ତନକୁ ଉପସ୍ଥାପନ କରିଥାଏ। ଶୂନ "
+"ଅର୍ଥ କୌଣସି ପରିବର୍ତ୍ତନ ନାହିଁ, "
+"ଶୂନରୁ କମ ମୂଲ୍ୟ ଅର୍ଥ ହ୍ରାସ, ଏବଂ ଶୂନରୁ ଅଧିକ ଅର୍ଥ ବୃଦ୍ଧି।"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:31
+msgid "Change brightness of blue"
+msgstr "ନୀଳ ରଙ୍ଗର ଉଜ୍ଜ୍ବଳତା ପରିବର୍ତ୍ତନ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:32
+msgid ""
+"Represents a change to the default brightness for the blue component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"ପୂର୍ବନିର୍ଦ୍ଧାରିତ ନୀଳ ଉପାଦାନର ଉଜ୍ଜ୍ୱଳତାରେ ପରିବର୍ତ୍ତନକୁ ଉପସ୍ଥାପନ କରିଥାଏ। ଶୂନ "
+"ଅର୍ଥ କୌଣସି ପରିବର୍ତ୍ତନ ନାହିଁ, "
+"ଶୂନରୁ କମ ମୂଲ୍ୟ ଅର୍ଥ ହ୍ରାସ, ଏବଂ ଶୂନରୁ ଅଧିକ ଅର୍ଥ ବୃଦ୍ଧି।"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:33
+msgid "Change contrast of red"
+msgstr "ଲାଲି ରଙ୍ଗର ସ୍ପଷ୍ଟତାକୁ ପରିବର୍ତ୍ତନ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:34
+msgid ""
+"Represents a change to the default contrast of the red component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"ପୂର୍ବନିର୍ଦ୍ଧାରିତ ଲାଲି ଉପାଦାନର ବିଭେଦନରେ ପରିବର୍ତ୍ତନକୁ ଉପସ୍ଥାପନ କରିଥାଏ। ଶୂନ ଅର୍ଥ "
+"କୌଣସି ପରିବର୍ତ୍ତନ ନାହିଁ, "
+"ଶୂନରୁ କମ ମୂଲ୍ୟ ଅର୍ଥ ହ୍ରାସ, ଏବଂ ଶୂନରୁ ଅଧିକ ଅର୍ଥ ବୃଦ୍ଧି।"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:35
+msgid "Change contrast of green"
+msgstr "ସବୁଜ ରଙ୍ଗର ସ୍ପଷ୍ଟତାକୁ ପରିବର୍ତ୍ତନ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:36
+msgid ""
+"Represents a change to the default contrast of the green component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"ପୂର୍ବନିର୍ଦ୍ଧାରିତ ସବୁଜ ଉପାଦାନର ବିଭେଦନରେ ପରିବର୍ତ୍ତନକୁ ଉପସ୍ଥାପନ କରିଥାଏ। ଶୂନ ଅର୍ଥ "
+"କୌଣସି ପରିବର୍ତ୍ତନ ନାହିଁ, "
+"ଶୂନରୁ କମ ମୂଲ୍ୟ ଅର୍ଥ ହ୍ରାସ, ଏବଂ ଶୂନରୁ ଅଧିକ ଅର୍ଥ ବୃଦ୍ଧି।"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:37
+msgid "Change contrast of blue"
+msgstr "ନୀଳ ରଙ୍ଗର ସ୍ପଷ୍ଟତାକୁ ପରିବର୍ତ୍ତନ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in.in.h:38
+msgid ""
+"Represents a change to the default contrast of the blue component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"ପୂର୍ବନିର୍ଦ୍ଧାରିତ ନୀଳ ଉପାଦାନର ବିଭେଦନରେ ପରିବର୍ତ୍ତନକୁ ଉପସ୍ଥାପନ କରିଥାଏ। ଶୂନ ଅର୍ଥ "
+"କୌଣସି ପରିବର୍ତ୍ତନ ନାହିଁ, "
+"ଶୂନରୁ କମ ମୂଲ୍ୟ ଅର୍ଥ ହ୍ରାସ, ଏବଂ ଶୂନରୁ ଅଧିକ ଅର୍ଥ ବୃଦ୍ଧି।"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:1
+msgid "Dwell click time"
+msgstr "ଡ୍ୱେଲ କ୍ଲିକ ସମୟ"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:2
+msgid "Time in seconds before a click is triggered."
+msgstr "କ୍ଲିକ ପୂର୍ବରୁ ଅପେକ୍ଷା କରିବାକୁ ଥିବା ସମୟ।"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:3
+msgid "Movement threshold"
+msgstr "ଗତି ପ୍ରଭାବସୀମା"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:4
+msgid "Distance in pixels before movement will be recognized."
+msgstr "ଗତି ପୂର୍ବରୁ ପିକସେଲର ଦୂରତାକୁ ଚିହ୍ନି ହେବ।"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:5
+msgid "Gesture single click"
+msgstr "ଗୋଟିଏ ଥର କ୍ଲିକକୁ ଦେଖନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:6
+msgid "Direction to perform a single click ('left', 'right', 'up', 'down)."
+msgstr "ଥରେ କ୍ଲିକ କରିବାର ବିଧି ('ବାମ', 'ଡାହାଣ', 'ଉପର', 'ତଳ)।"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:7
+msgid "Gesture double click"
+msgstr "ଦୁଇଥର କ୍ଲିକକୁ ଦେଖନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:8
+msgid "Direction to perform a double click ('left', 'right', 'up', 'down)."
+msgstr "ଦୁଇ ଥର କ୍ଲିକ କରିବାର ବିଧି ('ବାମ', 'ଡାହାଣ', 'ଉପର', 'ତଳ)।"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:9
+msgid "Gesture drag click"
+msgstr "ଟଣା କ୍ଲିକ ସଂକେତ"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:10
+msgid "Direction to perform dragging ('left', 'right', 'up', 'down)."
+msgstr "ଟାଣିବାର ବିଧି ('ବାମ', 'ଡାହାଣ', 'ଉପର', 'ତଳ)।"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:11
+msgid "Gesture secondary click"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:12
+msgid "Direction to perform a secondary click ('left', 'right', 'up', 'down)."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:13
+msgid "Dwell click mode"
+msgstr "ଡ୍ୱେଲ କ୍ଲିକ ଧାରା"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:14
+msgid ""
+"The active dwell click mode. Possible values are 'window' and 'gesture'."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:15
+msgid "Show click type window"
+msgstr "କ୍ଲିକ ପ୍ରକାର ୱିଣ୍ଡୋ ଦର୍ଶାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:16
+msgid "Show click type window."
+msgstr "କ୍ଲିକ ପ୍ରକାର ୱିଣ୍ଡୋ ଦର୍ଶାନ୍ତୁ।"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:17
+msgid "Enable dwell clicks"
+msgstr "ଡ୍ୱେଲ କ୍ଲିକ କୁ ସକ୍ରିୟ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:18
+msgid "Enable dwell clicks."
+msgstr "ଡ୍ୱେଲ କ୍ଲିକ କୁ ସକ୍ରିୟ କରନ୍ତୁ।"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:19
+msgid "Secondary click enabled"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:20
+msgid "Enable simulated secondary clicks"
+msgstr "ନକଲି ଦ୍ୱିତୀୟକ କ୍ଲିକ କୁ ସକ୍ରିୟ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:21
+msgid "Secondary click time"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in.in.h:22
+msgid "Time in seconds before a simulated secondary click is triggered."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.background.gschema.xml.in.in.h:1
+msgid "Draw Desktop Background"
+msgstr "ଡେସ୍କଟପ ପୃଷ୍ଠଭୂମି ଅଙ୍କନ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.background.gschema.xml.in.in.h:2
+msgid "Have GNOME draw the desktop background."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.background.gschema.xml.in.in.h:3
+msgid "Picture Options"
+msgstr "ଛବି ବିକଳ୍ପଗୁଡିକ"
+
+#: ../schemas/org.gnome.desktop.background.gschema.xml.in.in.h:4
+msgid ""
+"Determines how the image set by wallpaper_filename is rendered. Possible "
+"values are \"none\", \"wallpaper\", \"centered\", \"scaled\", \"stretched\", "
+"\"zoom\", \"spanned\"."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.background.gschema.xml.in.in.h:5
+msgid "Picture URI"
+msgstr "ଚିତ୍ର URI"
+
+#: ../schemas/org.gnome.desktop.background.gschema.xml.in.in.h:6
+msgid ""
+"URI to use for the background image. Not that the backend only supports "
+"local (file://) URIs."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.background.gschema.xml.in.in.h:7
+msgid "Picture Opacity"
+msgstr "ଚିତ୍ର ସ୍ୱଚ୍ଛତା"
+
+#: ../schemas/org.gnome.desktop.background.gschema.xml.in.in.h:8
+msgid "Opacity with which to draw the background picture."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.background.gschema.xml.in.in.h:9
+msgid "Primary Color"
+msgstr "ପ୍ରାଥମିକ ରଙ୍ଗ"
+
+#: ../schemas/org.gnome.desktop.background.gschema.xml.in.in.h:10
+msgid "Left or Top color when drawing gradients, or the solid color."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.background.gschema.xml.in.in.h:11
+msgid "Secondary Color"
+msgstr "ଦ୍ବିତୀୟକ ରଙ୍ଗ"
+
+#: ../schemas/org.gnome.desktop.background.gschema.xml.in.in.h:12
+msgid "Right or Bottom color when drawing gradients, not used for solid color."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.background.gschema.xml.in.in.h:13
+msgid "Color Shading Type"
+msgstr "ରଙ୍ଗ ସହଭାଗ ପ୍ରକାର"
+
+#: ../schemas/org.gnome.desktop.background.gschema.xml.in.in.h:14
+msgid ""
+"How to shade the background color. Possible values are \"horizontal\", "
+"\"vertical\", and \"solid\"."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.background.gschema.xml.in.in.h:15
+msgid "Have file manager handle the desktop"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.background.gschema.xml.in.in.h:16
+msgid "If set to true, then file manager will draw the icons on the desktop."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.default-applications.gschema.xml.in.in.h:1
+msgid "Default calendar"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.default-applications.gschema.xml.in.in.h:2
+msgid "Default calendar application"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.default-applications.gschema.xml.in.in.h:3
+msgid "Calendar needs terminal"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.default-applications.gschema.xml.in.in.h:4
+msgid "Whether the default calendar application needs a terminal to run."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.default-applications.gschema.xml.in.in.h:5
+msgid "Default tasks"
+msgstr "ପୂର୍ବ ନିର୍ଦ୍ଧାରିତ କାର୍ଯ୍ୟଗୁଡ଼ିକ"
+
+#: ../schemas/org.gnome.desktop.default-applications.gschema.xml.in.in.h:6
+msgid "Default tasks application."
+msgstr "ପୂର୍ବ ନିର୍ଦ୍ଧାରିତ କାର୍ଯ୍ୟ ପ୍ରୟୋଗ।"
+
+#: ../schemas/org.gnome.desktop.default-applications.gschema.xml.in.in.h:7
+msgid "Tasks needs terminal"
+msgstr "କାର୍ଯ୍ୟଗୁଡ଼ିକ ଟର୍ମିନାଲ ଆବଶ୍ୟକ କରିଥାଏ"
+
+#: ../schemas/org.gnome.desktop.default-applications.gschema.xml.in.in.h:8
+msgid "Whether the default tasks application needs a terminal to run."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.default-applications.gschema.xml.in.in.h:9
+msgid "Terminal application"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.default-applications.gschema.xml.in.in.h:10
+msgid "Terminal program to use when starting applications that require one."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.default-applications.gschema.xml.in.in.h:11
+msgid "Exec Arguments"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.default-applications.gschema.xml.in.in.h:12
+msgid ""
+"Argument used to execute programs in the terminal defined by the 'exec' key."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.input-sources.gschema.xml.in.in.h:1
+msgid "Current input source"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.input-sources.gschema.xml.in.in.h:2
+msgid ""
+"The zero-based index into the input sources list specifying the current one "
+"in effect. The value is automatically capped to remain in the range [0, "
+"sources_length)."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.input-sources.gschema.xml.in.in.h:3
+msgid "List of input sources"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.input-sources.gschema.xml.in.in.h:4
+msgid ""
+"List of input source identifiers available. Each source is specified as a "
+"tuple of 2 strings. The first string is the type and can be one of 'xkb' or "
+"'ibus'. For 'xkb' sources the second string is 'xkb_layout+xkb_variant' or "
+"just 'xkb_layout' if a XKB variant isn't needed. For 'ibus' sources the "
+"second string is the IBus engine name."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:1
+msgid "Enable Toolkit Accessibility"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:2
+msgid "Whether toolkits should load accessibility related modules."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:3
+msgid "Enable Animations"
+msgstr "ଜୀବନାୟନ ସକ୍ରିୟ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:4
+msgid ""
+"Whether animations should be displayed. Note: This is a global key, it "
+"changes the behaviour of the window manager, the panel etc."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:5
+msgid "Menus Have Tearoff"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:6
+msgid "Whether menus should have a tearoff."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:7
+msgid "Can Change Accels"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:8
+msgid ""
+"Whether the user can dynamically type a new accelerator when positioned over "
+"an active menuitem."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:9
+msgid "Toolbar Style"
+msgstr "ସାଧନ ପଟି ଶୈଳୀ"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:10
+msgid ""
+"Toolbar Style. Valid values are \"both\", \"both-horiz\", \"icons\", and "
+"\"text\"."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:11
+msgid "Menus Have Icons"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:12
+msgid "Whether menus may display an icon next to a menu entry."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:13
+msgid "Buttons Have Icons"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:14
+msgid "Whether buttons may display an icon in addition to the button text."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:15
+msgid "Menubar Detachable"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:16
+msgid "Whether the user can detach menubars and move them around."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:17
+msgid "Toolbar Detachable"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:18
+msgid "Whether the user can detach toolbars and move them around."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:19
+msgid "Toolbar Icon Size"
+msgstr "ସାଧନ ପଟି ଟିତ୍ରସଂଙ୍କେତର ଆକାର"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:20
+msgid "Size of icons in toolbars, either \"small\" or \"large\"."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:21
+msgid "Cursor Blink"
+msgstr "ଦର୍ଶିକା ମିଟିମିଟିକରଣ"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:22
+msgid "Whether the cursor should blink."
+msgstr "ଦର୍ଶିକା ମିଟିମିଟି କରିବା ଉଚିତ କି।"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:23
+msgid "Cursor Blink Time"
+msgstr "ଦର୍ଶିକା ମିଟିମିଟିକରଣ ସମୟ"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:24
+msgid "Length of the cursor blink cycle, in milliseconds."
+msgstr "ଦର୍ଶିକା ମିଟିମିଟିକରଣ ଆବୃତ୍ତି ସମୟ, ମିଲିସେକେଣ୍ଡରେ।"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:25
+msgid "Cursor Blink Timeout"
+msgstr "ଦର୍ଶିକା ମିଟିମିଟିକରଣ ସମୟ ସମାପ୍ତି"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:26
+msgid "Time after which the cursor stops blinking, in seconds."
+msgstr "ସୂଚକ ଦପଦପ ବନ୍ଦହେବା ପାଇଁ ଲାଗୁଥିବା ସମୟ, ସେକଣ୍ଡରେ।"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:27
+msgid "Icon Theme"
+msgstr "ଚିତ୍ରସଂକେତ ପ୍ରସଙ୍ଗ"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:28
+msgid "Icon theme to use for the panel, nautilus etc."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:29
+msgid "Gtk+ Theme"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:30
+msgid "Basename of the default theme used by gtk+."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:31
+msgid "Gtk+ Keybinding Theme"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:32
+msgid "Basename of the default keybinding theme used by gtk+."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:33
+msgid "Default font"
+msgstr "ପୂର୍ବନିର୍ଦ୍ଧାରିତ ଅକ୍ଷରରୂପ"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:34
+msgid "Name of the default font used by gtk+."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:35
+msgid "Text scaling factor"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:36
+msgid ""
+"Factor used to enlarge or reduce text display, without changing font size."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:37
+msgid "GTK IM Preedit Style"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:38
+msgid "Name of the GTK+ input method Preedit Style used by gtk+."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:39
+msgid "GTK IM Status Style"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:40
+msgid "Name of the GTK+ input method Status Style used by gtk+."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:41
+msgid "GTK IM Module"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:42
+msgid "Name of the input method module used by GTK+."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:43
+msgid "Document font"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:44
+msgid "Name of the default font used for reading documents."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:45
+msgid "Monospace font"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:46
+msgid ""
+"Name of a monospaced (fixed-width) font for use in locations like terminals."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:47
+msgid "Menubar accelerator"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:48
+msgid "Keyboard shortcut to open the menu bars."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:49
+msgid "Show the 'Input Methods' menu"
+msgstr "'ନିବେଶ ପ୍ରକ୍ରିୟା' ମେନୁ ପ୍ରଦର୍ଶିତ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:50
+msgid ""
+"Whether the context menus of entries and text views should offer to change "
+"the input method."
+msgstr ""
+"ଭରଣ ଓ ପାଠ୍ଯ ଦୃଶ୍ଯର ପ୍ରସଙ୍ଗ ମେନୁଗୁଡ଼ିକ ନିବେଶ ଧାରା ବଦଳାଇବାର ସମ୍ଭାବନା ଦେବା  ଉଚିତ "
+"କି।"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:51
+msgid "Show the 'Unicode Control Character' menu"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:52
+msgid ""
+"Whether the context menus of entries and text views should offer to insert "
+"control characters."
+msgstr ""
+"ଭରଣ ଓ ପାଠ୍ଯ ଦୃଶ୍ଯର ପ୍ରସଙ୍ଗ ମେନୁଗୁଡ଼ିକ ନିୟନ୍ତ୍ରଣ ଅକ୍ଷର ଯୋଡ଼ିବାର ସମ୍ଭାବନା ଦେବା  "
+"ଉଚିତ କି।"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:53
+msgid "Cursor theme"
+msgstr "ସୂଚକ ପ୍ରସଙ୍ଗ"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:54
+msgid ""
+"Cursor theme name. Used only by Xservers that support the Xcursor extension."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:55
+msgid "Cursor size"
+msgstr "ସୂଚକ ଆକାର"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:56
+msgid "Size of the cursor used as cursor theme."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:57
+msgid "Timeout before click repeat"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:58
+msgid ""
+"Timeout in milliseconds before a click starts repeating (on spinner buttons "
+"for example)."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:59
+msgid "Timeout between click repeats"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:60
+msgid ""
+"Timeout in milliseconds between repeated clicks when a button is left "
+"pressed."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:61
+msgid "Palette used in the color selector"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:62
+msgid ""
+"Palette used in the color selector as defined by the 'gtk-color-palette' "
+"setting"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:63
+msgid "List of symbolic names and color equivalents"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:64
+msgid ""
+"A '\\n' separated list of \"name:color\" as defined by the 'gtk-color-"
+"scheme' setting"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:65
+msgid "Whether the clock displays in 24h or 12h format"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:66
+msgid "Whether the clock shows seconds"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:67
+msgid "If true, display seconds in the clock."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:68
+msgid "Show date in clock"
+msgstr "ଘଣ୍ଟାରେ ତାରିଖ ଦେଖାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:69
+msgid "If true, display date in the clock, in addition to time."
+msgstr "ସତ ଥିଲେ, ଘଣ୍ଟାରେ ସମୟ ସହିତ ତାରିଖ ଦେଖାନ୍ତୁ।"
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:70
+msgid "Only show mnemonics on when the Alt key is pressed"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.interface.gschema.xml.in.in.h:71
+msgid ""
+"Whether mnemonics should be automatically shown and hidden when the user "
+"presses the Alt key."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.lockdown.gschema.xml.in.in.h:1
+msgid "Disable command line"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.lockdown.gschema.xml.in.in.h:2
+msgid ""
+"Prevent the user from accessing the terminal or specifying a command line to "
+"be executed. For example, this would disable access to the panel's \"Run "
+"Application\" dialog."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.lockdown.gschema.xml.in.in.h:3
+msgid "Disable saving files to disk"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.lockdown.gschema.xml.in.in.h:4
+msgid ""
+"Prevent the user from saving files to disk. For example, this would disable "
+"access to all applications' \"Save as\" dialogs."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.lockdown.gschema.xml.in.in.h:5
+msgid "Disable printing"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.lockdown.gschema.xml.in.in.h:6
+msgid ""
+"Prevent the user from printing. For example, this would disable access to "
+"all applications' \"Print\" dialogs."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.lockdown.gschema.xml.in.in.h:7
+msgid "Disable print setup"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.lockdown.gschema.xml.in.in.h:8
+msgid ""
+"Prevent the user from modifying print settings. For example, this would "
+"disable access to all applications' \"Print Setup\" dialogs."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.lockdown.gschema.xml.in.in.h:9
+msgid "Disable user switching"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.lockdown.gschema.xml.in.in.h:10
+msgid ""
+"Prevent the user from switching to another account while his session is "
+"active."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.lockdown.gschema.xml.in.in.h:11
+msgid "Disable lock screen"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.lockdown.gschema.xml.in.in.h:12
+msgid "Prevent the user to lock his screen."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.lockdown.gschema.xml.in.in.h:13
+msgid "Disable URL and MIME type handlers"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.lockdown.gschema.xml.in.in.h:14
+msgid "Prevent running any URL or MIME type handler applications."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.lockdown.gschema.xml.in.in.h:15
+msgid "Disable log out"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.lockdown.gschema.xml.in.in.h:16
+msgid "Prevent the user from logging out."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.media-handling.gschema.xml.in.in.h:1
+msgid "Whether to automatically mount media"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.media-handling.gschema.xml.in.in.h:2
+msgid ""
+"If set to true, then Nautilus will automatically mount media such as user-"
+"visible hard disks and removable media on start-up and media insertion."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.media-handling.gschema.xml.in.in.h:3
+msgid "Whether to automatically open a folder for automounted media"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.media-handling.gschema.xml.in.in.h:4
+msgid ""
+"If set to true, then Nautilus will automatically open a folder when media is "
+"automounted. This only applies to media where no known x-content/* type was "
+"detected; for media where a known x-content type is detected, the user "
+"configurable action will be taken instead."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.media-handling.gschema.xml.in.in.h:5
+msgid "Never prompt or autorun/autostart programs when media are inserted"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.media-handling.gschema.xml.in.in.h:6
+msgid ""
+"If set to true, then Nautilus will never prompt nor autorun/autostart "
+"programs when a medium is inserted."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.media-handling.gschema.xml.in.in.h:7
+msgid ""
+"List of x-content/* types where the preferred application will be launched"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.media-handling.gschema.xml.in.in.h:8
+msgid ""
+"List of x-content/* types for which the user have chosen to start an "
+"application in the preference capplet. The preferred application for the "
+"given type will be started on insertion on media matching these types."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.media-handling.gschema.xml.in.in.h:9
+msgid "List of x-content/* types set to \"Do Nothing\""
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.media-handling.gschema.xml.in.in.h:10
+msgid ""
+"List of x-content/* types for which the user have chosen \"Do Nothing\" in "
+"the preference capplet. No prompt will be shown nor will any matching "
+"application be started on insertion of media matching these types."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.media-handling.gschema.xml.in.in.h:11
+msgid "List of x-content/* types set to \"Open Folder\""
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.media-handling.gschema.xml.in.in.h:12
+msgid ""
+"List of x-content/* types for which the user have chosen \"Open Folder\" in "
+"the preferences capplet. A folder window will be opened on insertion of "
+"media matching these types."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:1
+msgid "Activate when idle"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:2
+msgid "Set this to TRUE to activate the screensaver when the session is idle."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:3
+msgid "Lock on activation"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:4
+msgid "Set this to TRUE to lock the screen when the screensaver goes active."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:5
+msgid "Time before locking"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:6
+msgid ""
+"The number of seconds after screensaver activation before locking the screen."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:7
+msgid "Show notifications in the lock screen"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:8
+msgid ""
+"Whether notifications are shown in the lock screen or not. This only affects "
+"the standard experience."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:9
+msgid "Allow embedding a keyboard into the window"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:10
+msgid ""
+"Set this to TRUE to allow embedding a keyboard into the window when trying "
+"to unlock. The \"keyboard_command\" key must be set with the appropriate "
+"command."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:11
+msgid "Embedded keyboard command"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:12
+msgid ""
+"The command that will be run, if the \"embedded_keyboard_enabled\" key is "
+"set to TRUE, to embed a keyboard widget into the window. This command should "
+"implement an XEMBED plug interface and output a window XID on the standard "
+"output."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:13
+msgid "Allow logout"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:14
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to allow logging "
+"out after a delay. The delay is specified in the \"logout_delay\" key."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:15
+msgid "Time before logout option"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:16
+msgid ""
+"The number of seconds after the screensaver activation before a logout "
+"option will appear in the unlock dialog. This key has effect only if the "
+"\"logout_enable\" key is set to TRUE."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:17
+msgid "Logout command"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:18
+msgid ""
+"The command to invoke when the logout button is clicked. This command should "
+"simply log the user out without any interaction. This key has effect only if "
+"the \"logout_enable\" key is set to TRUE."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:19
+msgid "Allow user switching"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:20
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to switch to a "
+"different user account."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:21
+msgid "Allow the session status message to be displayed"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.screensaver.gschema.xml.in.in.h:22
+msgid ""
+"Allow the session status message to be displayed when the screen is locked."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.session.gschema.xml.in.in.h:1
+msgid "Time before session is considered idle"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.session.gschema.xml.in.in.h:2
+msgid ""
+"The number of seconds of inactivity before the session is considered idle."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.sound.gschema.xml.in.in.h:1
+msgid "Sounds for events"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.sound.gschema.xml.in.in.h:2
+msgid "Whether to play sounds on user events."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.sound.gschema.xml.in.in.h:3
+msgid "Sound theme name"
+msgstr "ଧ୍ୱନୀ ପ୍ରସଙ୍ଗ ନାମ"
+
+#: ../schemas/org.gnome.desktop.sound.gschema.xml.in.in.h:4
+msgid "The XDG sound theme to use for event sounds."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.sound.gschema.xml.in.in.h:5
+msgid "Input feedback sounds"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.sound.gschema.xml.in.in.h:6
+msgid "Whether to play sounds on input events."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in.in.h:1
+msgid ""
+"Maximum age for thumbnails in the cache, in days. Set to -1 to disable "
+"cleaning."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in.in.h:2
+msgid ""
+"Maximum size of the thumbnail cache, in megabytes. Set to -1 to disable "
+"cleaning."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.thumbnailers.gschema.xml.in.in.h:1
+msgid "Disable all external thumbnailers"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.thumbnailers.gschema.xml.in.in.h:2
+msgid ""
+"Set to true to disable all external thumbnailer programs, independent on "
+"whether they are independently disabled/enabled."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.thumbnailers.gschema.xml.in.in.h:3
+msgid ""
+"List of mime-types for which external thumbnailer programs will be disabled"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.thumbnailers.gschema.xml.in.in.h:4
+msgid ""
+"Thumbnails will not be created for files whose mime-type is contained in the "
+"list."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:1
+msgid "Switch to workspace 1"
+msgstr "କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୧କୁ ଯାଆନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:2
+msgid "Switch to workspace 2"
+msgstr "କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୨କୁ ଯାଆନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:3
+msgid "Switch to workspace 3"
+msgstr "କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୩କୁ ଯାଆନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:4
+msgid "Switch to workspace 4"
+msgstr "କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୪କୁ ଯାଆନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:5
+msgid "Switch to workspace 5"
+msgstr "କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୫କୁ ଯାଆନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:6
+msgid "Switch to workspace 6"
+msgstr "କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୬କୁ ଯାଆନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:7
+msgid "Switch to workspace 7"
+msgstr "କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୭କୁ ଯାଆନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:8
+msgid "Switch to workspace 8"
+msgstr "କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୮କୁ ଯାଆନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:9
+msgid "Switch to workspace 9"
+msgstr "କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୯କୁ ଯାଆନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:10
+msgid "Switch to workspace 10"
+msgstr "କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୧୦କୁ ଯାଆନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:11
+msgid "Switch to workspace 11"
+msgstr "କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୧୧କୁ ଯାଆନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:12
+msgid "Switch to workspace 12"
+msgstr "କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୧୨କୁ ଯାଆନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:13
+msgid "Switch to workspace left"
+msgstr "ବାମ ପାଖ କାର୍ଯ୍ଯକ୍ଷେତ୍ରକୁ ଯାଆନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:14
+msgid "Switch to workspace right"
+msgstr "ଡାହାଣ ପାଖ କାର୍ଯ୍ଯକ୍ଷେତ୍ରକୁ ଯାଆନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:15
+msgid "Switch to workspace above"
+msgstr "ଉପରେ ସ୍ଥିତ କାର୍ଯ୍ଯକ୍ଷେତ୍ରକୁ ଯାଆନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:16
+msgid "Switch to workspace below"
+msgstr "ତଳେ ସ୍ଥିତ କାର୍ଯ୍ଯକ୍ଷେତ୍ରକୁ ଯାଆନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:17
+msgid "Switch windows of an application"
+msgstr "ଗୋଟିଏ ପ୍ରୟୋଗର ୱିଣ୍ଡୋଗୁଡ଼ିକ ମଧ୍ଯରେ ଚାଲନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:18
+msgid "Reverse switch windows of an application"
+msgstr "ଗୋଟିଏ ପ୍ରୟୋଗର ୱିଣ୍ଡୋଗୁଡ଼ିକ ମଧ୍ଯରେ ଚାଲନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:19
+msgid "Switch applications"
+msgstr "ପ୍ରୟୋଗଗୁଡ଼ିକୁ ବଦଳାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:20
+msgid "Reverse switch applications"
+msgstr "ପ୍ରୟୋଗଗୁଡ଼ିକୁ ଓଲଟା ଭାବରେ ବଦଳାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:21
+msgid "Switch system controls"
+msgstr "ତନ୍ତ୍ର ନିୟନ୍ତ୍ରଣଗୁଡିକୁ ବଦଳାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:22
+msgid "Reverse switch system controls"
+msgstr "ତନ୍ତ୍ର ନିୟନ୍ତ୍ରଣଗୁଡିକୁ ଓଲଟା ଭାବରେ ବଦଳାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:23
+msgid "Switch windows of an app directly"
+msgstr "ଗୋଟିଏ ପ୍ରୟୋଗର ୱିଣ୍ଡୋଗୁଡ଼ିକୁ ଓଲଟା ଭାବରେ ବଦଳାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:24
+msgid "Reverse switch windows of an app directly"
+msgstr "ଗୋଟିଏ ପ୍ରୟୋଗର ୱିଣ୍ଡୋଗୁଡ଼ିକୁ ଓଲଟା ଦିଗରେ ସିଧାସଳଖ ଭାବରେ ବଦଳାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:25
+msgid "Switch windows directly"
+msgstr "ୱିଣ୍ଡୋଗୁଡ଼ିକୁ ସିଧାସଳଖ ଭାବରେ ବଦଳାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:26
+msgid "Reverse switch windows directly"
+msgstr "ୱିଣ୍ଡୋଗୁଡ଼ିକୁ ଓଲଟା ଦିଗରେ ସିଧାସଳଖ ଭାବରେ ବଦଳାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:27
+msgid "Switch system controls directly"
+msgstr "ତନ୍ତ୍ର ନିୟନ୍ତ୍ରଣଗୁଡିକୁ ସିଧାସଳଖ ଭାବରେ ବଦଳାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:28
+msgid "Reverse switch system controls directly"
+msgstr "ତନ୍ତ୍ର ନିୟନ୍ତ୍ରଣଗୁଡିକୁ ସିଧାସଳଖ ଭାବରେ ଓଲଟା ଦିଗରେ ବଦଳାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:29
+msgid "Hide all normal windows"
+msgstr "ସମସ୍ତ ସାଧାରଣ ୱିଣ୍ଡୋଗୁଡ଼ିକୁ ଲୁଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:30
+msgid "Show the activities overview"
+msgstr "କାର୍ଯ୍ୟକଳାପଗୁଡ଼ିକର ସମୀକ୍ଷାକୁ ଦର୍ଶାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:31
+msgid "Show the run command prompt"
+msgstr "ନିର୍ଦ୍ଦେଶ ପ୍ରମ୍ପଟକୁ ଚଲାନ୍ତୁକୁ ଦେଖାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:32
+msgid "Don&apos;t use"
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:33
+msgid "Activate the window menu"
+msgstr "ୱିଣ୍ଡୋ ତାଲିକାକୁ ସକ୍ରିୟ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:34
+msgid "Toggle fullscreen mode"
+msgstr "ପୂର୍ଣ୍ମପରଦା ଧାରା ଅଦଳବଦଳ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:35
+msgid "Toggle maximization state"
+msgstr "ବୃହତ୍ତମ ଅବସ୍ଥା ଅଦଳବଦଳ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:36
+msgid "Toggle window always appearing on top"
+msgstr "ହଲୁଥିବା ୱିଣ୍ଡୋ ସର୍ବଦା ଉପରେ ଦେଖାଯାଏ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:37
+msgid "Maximize window"
+msgstr "ୱିଣ୍ଡୋକୁ ଯଥାସମ୍ଭବ ବଢ଼ାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:38
+msgid "Restore window"
+msgstr "ୱିଣ୍ଡୋକୁ ପୁନଃସ୍ଥାପନ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:39
+msgid "Toggle shaded state"
+msgstr "ଘୋଡାହୋଇଥିବା ଅବସ୍ଥା ଅଦଳବଦଳ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:40
+msgid "Minimize window"
+msgstr "ୱିଣ୍ଡୋକୁ ଯଥାସମ୍ଭବ ଛୋଟ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:41
+msgid "Close window"
+msgstr "ୱିଣ୍ଡୋ ବନ୍ଦ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:42
+msgid "Move window"
+msgstr "ୱିଣ୍ଡୋକୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:43
+msgid "Resize window"
+msgstr "ୱିଣ୍ଡୋର ଆକାର ବଦଳାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:44
+msgid "Toggle window on all workspaces or one"
+msgstr "ହଲୁଥିବା ୱିଣ୍ଡୋ ସବୁ କାର୍ଯ୍ଯକ୍ଷେତ୍ରରେ ଅଛି ଅଥବା କେବଳ ଗୋଟିକରେ ଅଛି"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:45
+msgid "Move window to workspace 1"
+msgstr "ୱିଣ୍ଡୋକୁ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୧କୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:46
+msgid "Move window to workspace 2"
+msgstr "ୱିଣ୍ଡୋକୁ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୨କୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:47
+msgid "Move window to workspace 3"
+msgstr "ୱିଣ୍ଡୋକୁ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୩କୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:48
+msgid "Move window to workspace 4"
+msgstr "ୱିଣ୍ଡୋକୁ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୪କୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:49
+msgid "Move window to workspace 5"
+msgstr "ୱିଣ୍ଡୋକୁ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୫କୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:50
+msgid "Move window to workspace 6"
+msgstr "ୱିଣ୍ଡୋକୁ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୬କୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:51
+msgid "Move window to workspace 7"
+msgstr "ୱିଣ୍ଡୋକୁ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୭କୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:52
+msgid "Move window to workspace 8"
+msgstr "ୱିଣ୍ଡୋକୁ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୮କୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:53
+msgid "Move window to workspace 9"
+msgstr "ୱିଣ୍ଡୋକୁ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୯କୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:54
+msgid "Move window to workspace 10"
+msgstr "ୱିଣ୍ଡୋକୁ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୧୦କୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:55
+msgid "Move window to workspace 11"
+msgstr "ୱିଣ୍ଡୋକୁ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୧୧କୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:56
+msgid "Move window to workspace 12"
+msgstr "ୱିଣ୍ଡୋକୁ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ୧୨କୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:57
+msgid "Move window one workspace to the left"
+msgstr "ୱିଣ୍ଡୋକୁ ଗୋଟିଏ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ବାମକୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:58
+msgid "Move window one workspace to the right"
+msgstr "ୱିଣ୍ଡୋକୁ ଗୋଟିଏ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ଡାହାଣକୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:59
+msgid "Move window one workspace up"
+msgstr "ୱିଣ୍ଡୋକୁ ଗୋଟିଏ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ଉପରକୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:60
+msgid "Move window one workspace down"
+msgstr "ୱିଣ୍ଡୋକୁ ଗୋଟିଏ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ତଳକୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:61
+msgid "Raise window if covered, otherwise lower it"
+msgstr "ୱିଣ୍ଡୋ ଲୁଚାହୋଇଥିଲେ ତାହାକୁ ସାମନାକୁ ଆଣନ୍ତୁ, ନଚେତ ତାହାକୁ ତଳକୁ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:62
+msgid "Raise window above other windows"
+msgstr "ୱିଣ୍ଡୋକୁ ଅଲଗା ୱିଣ୍ଡୋଗୁଡ଼ିକର ସାମନାକୁ ଆଣନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:63
+msgid "Lower window below other windows"
+msgstr "ୱିଣ୍ଡୋକୁ ଅଲଗା ୱିଣ୍ଡୋ ପଛକୁ ନିଅନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:64
+msgid "Maximize window vertically"
+msgstr "ୱିଣ୍ଡୋକୁ ଭୂଲମ୍ବ ଭାବରେ ଯଥାସମ୍ଭବ ବଢ଼ାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:65
+msgid "Maximize window horizontally"
+msgstr "ୱିଣ୍ଡୋକୁ ଭୂସମାନ୍ତର ଭାବରେ ଯଥାସମ୍ଭବ ବଢ଼ାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:66
+msgid "Move window to top left corner"
+msgstr "ୱିଣ୍ଡୋକୁ ଉପରପଟ ବାମ କୋଣକୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:67
+msgid "Move window to top right corner"
+msgstr "ୱିଣ୍ଡୋକୁ ଉପରପଟ ଡାହାଣ କୋଣକୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:68
+msgid "Move window to bottom left corner"
+msgstr "ୱିଣ୍ଡୋକୁ ବାମପଟ ତଳ କୋଣକୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:69
+msgid "Move window to bottom right corner"
+msgstr "ୱିଣ୍ଡୋକୁ ଡାହାଣ ପଟ ତଳ କୋଣକୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:70
+msgid "Move window to top edge of screen"
+msgstr "ୱିଣ୍ଡୋକୁ ପରଦାର ଉପର ପାଖକୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:71
+msgid "Move window to bottom edge of screen"
+msgstr "ୱିଣ୍ଡୋକୁ ପରଦାର ତଳ ପାଖକୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:72
+msgid "Move window to right side of screen"
+msgstr "ୱିଣ୍ଡୋକୁ ପରଦାର ଡାହାଣ ପାର୍ଶ୍ୱକୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:73
+msgid "Move window to left side of screen"
+msgstr "ୱିଣ୍ଡୋକୁ ପରଦାର ବାମ ପାଖକୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in.in.h:74
+msgid "Move window to center of screen"
+msgstr "ୱିଣ୍ଡୋକୁ ପରଦାର କେନ୍ଦ୍ରକୁ ଘୁଞ୍ଚାନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:1
+msgid "Modifier to use for modified window click actions"
+msgstr "ରୂପାନ୍ତରିତ ୱିଣ୍ଡୋର ମାଉସ୍ ଚାପ କାର୍ଯ୍ଯଗୁଡ଼ିକ ପାଇଁ ରୂପାନ୍ତରକ"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:2
+msgid ""
+"Clicking a window while holding down this modifier key will move the window "
+"(left click), resize the window (middle click), or show the window menu "
+"(right click). The middle and right click operations may be swapped using "
+"the \"resize-with-right-button\" key. Modifier is expressed as <![CDATA"
+"[\"<Alt>\"]]> or <![CDATA[\"<Super>\"]]> for example."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:3
+msgid "Whether to resize with the right button"
+msgstr "ଡ଼ାହାଣ ବଟନ ଦ୍ୱାରା ଆକାର ପରିବର୍ତ୍ତନ କରାଯିବ କି"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:4
+msgid ""
+"Set this to true to resize with the right button and show a menu with the "
+"middle button while holding down the key given in \"mouse-button-modifier\"; "
+"set it to false to make it work the opposite way around."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:5
+msgid "Arrangement of buttons on the titlebar"
+msgstr "ଶୀର୍ଷକ ପଟିରେ ଚାବିର ସଜ୍ଜା"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:6
+msgid ""
+"Arrangement of buttons on the titlebar. The value should be a string, such "
+"as \"menu:minimize,maximize,spacer,close\"; the colon separates the left "
+"corner of the window from the right corner, and the button names are comma-"
+"separated. Duplicate buttons are not allowed. Unknown button names are "
+"silently ignored so that buttons can be added in future metacity versions "
+"without breaking older versions. A special spacer tag can be used to insert "
+"some space between two adjacent buttons."
+msgstr ""
+"ଶୀର୍ଷକ ପଟିରେ ଚାବିଗୁଡ଼ିକର ସଜ୍ଜିକରଣ। ଏହି ମୂଲ୍ଯ ଗୌଟିଏ ବାକ୍ଯକଣ୍ଡ ହେବା ଉଚିତ, "
+"ଉଦାହରଣ ସ୍ବରୂପ, "
+"\"ତାଲିକା:କ୍ଷୁଦ୍ରତମ କରନ୍ତୁ,ବୃହତ୍ତମ କରନ୍ତୁ,ବନ୍ଦ କରନ୍ତୁ\"; ବିରାମ ଚିହ୍ନଟି ୱିଣ୍ଡୋର "
+"ବାମ ଓ ଡାହାଣ କଣକୁ "
+"ବିଭାଜନ କରେ, ଏବଂ ଚାବି ନାମଗୁଡ଼ିକ କମା ଦ୍ବାରା ବିଭାଜିତ। ଦ୍ବିଗୁଣିତ ଚାବି ନିଷେଧ। ଅଜଣା "
+"ଚାବି ନାମଗୁଡ଼ିକ "
+"ଚୁପଚାପ ଅଗ୍ରାହ୍ଯ କରାଯିବ, ଯାହା ଫଳରେ metacity ଆଗାମୀ ସଂସ୍କରଣଗୁଡ଼ିକୁ ପ୍ରଭାବିତ ନ "
+"କରି, ନୂଆ "
+"ସଂସ୍କରଣଗୁଡ଼ିକରେ ଚାବି ଯୋଡ଼ି ହୋଇପାରିବ।"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:7
+msgid "Window focus mode"
+msgstr "ୱିଣ୍ଡୋ କେନ୍ଦ୍ରୀଭୂତ ଧାରା"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:8
+msgid ""
+"The window focus mode indicates how windows are activated. It has three "
+"possible values; \"click\" means windows must be clicked in order to focus "
+"them, \"sloppy\" means windows are focused when the mouse enters the window, "
+"and \"mouse\" means windows are focused when the mouse enters the window and "
+"unfocused when the mouse leaves the window."
+msgstr ""
+"ୱିଣ୍ଡୋ କେନ୍ଦ୍ରୀଭୂତ ଧାରା ନିର୍ଦ୍ଧିଷ୍ଟ କରେ ୱିଣ୍ଡୋଗୁଡ଼ିକ କିପରି ସକ୍ରିୟ କରାଯିବ. "
+"ଏହାର ତିନୋଟି ମୂଲ୍ଯ ସମ୍ଭବ; "
+"\"ଚାପ\" ମାନେ ୱିଣ୍ଡୋଗୁଡ଼ିକ କେନ୍ଦ୍ରିତ କରିବା ପାଇଁ ତାଙ୍କ ଦେହରେ ମାଉସ୍ ଦବାଇବାକୁ "
+"ପଡ଼ିବ, \"ଅଯତ୍ନକୃତ\" "
+"ମାନେ ମାଉସ୍ ୱିଣ୍ଡୋରେ ପ୍ରବେଶ କଲେ ୱିଣ୍ଡୋଟି କେନ୍ଦ୍ରିତ ହେବ, ଓ \"ମାଉସ\" ମାନେ ମାଉସ୍ "
+"ୱିଣ୍ଡୋରେ "
+"ପ୍ରବେଶ କଲେ ୱିଣ୍ଡୋଟି କେନ୍ଦ୍ରିତ ହେବ ଏବଂ ୱିଣ୍ଡୋରୁ ବାହାରିଲେ ୱିଣ୍ଡୋଟି ଅକେନ୍ଦ୍ରିତ "
+"ହେବ."
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:9
+msgid "Control how new windows get focus"
+msgstr "ନୂତନ ୱିଣ୍ଡୋଗୁଡ଼ିକ କିପରି ଲକ୍ଷ୍ୟ ସାଧନ କରିଥାନ୍ତି ତାହାକୁ ନିୟନ୍ତ୍ରଣ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:10
+msgid ""
+"This option provides additional control over how newly created windows get "
+"focus. It has two possible values; \"smart\" applies the user's normal focus "
+"mode, and \"strict\" results in windows started from a terminal not being "
+"given focus."
+msgstr ""
+"ଏହି ବିକଳ୍ପଟି ନୂତନ ଭାବରେ ନିର୍ମିତ ୱିଣ୍ଡୋଗୁଡ଼ିକରେ କେନ୍ଦ୍ରିଭୁତ କରିବା ପାଇଁ "
+"ଅତିରିକ୍ତ ନିୟନ୍ତ୍ରଣ ପ୍ରଦାନ କରିଥାଏ। "
+"ଏହାର ଦୁଇଟି ସମ୍ଭାବ୍ୟ ମୂଲ୍ୟ ଅଛି; \"smart\" ଚାଳକର ସାଧାରଣ ଲକ୍ଷ୍ୟ ଅବସ୍ଥାକୁ ପ୍ରୟୋଗ "
+"କରିଥାଏ, ଏବଂ "
+"\"strict\" ଦ୍ୱାରା ଫଳସ୍ୱରୂପ ୱିଣ୍ଡୋଗୁଡ଼ିକୁ ଟର୍ମିନାଲରେ ଲକ୍ଷ୍ୟ କରାଯାଏନାହିଁ।"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:11
+msgid "Whether raising should be a side-effect of other user interactions"
+msgstr ""
+"ସାମନାକୁ ଆଣିବା ଅନ୍ଯ ବ୍ଯବହାରକାରୀ ପାରସ୍ପରିକ କ୍ରିୟାର ଅବାଂଛିତ ପ୍ରତିକ୍ରିୟା ହେବା "
+"ଉଚିତ କି"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:12
+msgid ""
+"Setting this option to false can lead to buggy behavior, so users are "
+"strongly discouraged from changing it from the default of true. Many actions "
+"(e.g. clicking in the client area, moving or resizing the window) normally "
+"raise the window as a side-effect. Setting this option to false, which is "
+"strongly discouraged, will decouple raising from other user actions, and "
+"ignore raise requests generated by applications. See http://bugzilla.gnome."
+"org/show_bug.cgi?id=445447#c6. Even when this option is false, windows can "
+"still be raised by an alt-left-click anywhere on the window, a normal click "
+"on the window decorations, or by special messages from pagers, such as "
+"activation requests from tasklist applets. This option is currently disabled "
+"in click-to-focus mode. Note that the list of ways to raise windows when "
+"raise-on-click is false does not include programmatic requests from "
+"applications to raise windows; such requests will be ignored regardless of "
+"the reason for the request. If you are an application developer and have a "
+"user complaining that your application does not work with this setting "
+"disabled, tell them it is -their- fault for breaking their window manager "
+"and that they need to change this option back to true or live with the \"bug"
+"\" they requested."
+msgstr ""
+"ଏହି ବିକଳ୍ପକୁ false ସେଟ କରିବା ଫଳରେ ଏହା ତ୍ରୁଟିଯୁକ୍ତ ଆଚରଣ କରିଥାଏ, ତେଣୁ ଚାଳକମାନେ "
+"ଏହାକୁ "
+"ପୂର୍ବନିର୍ଦ୍ଧାରିତ ମୂଲ୍ୟ true ରୁ ପରିବର୍ତ୍ତନ କରିବା ପାଇଁ ବିରୋଧ କରିଥାନ୍ତି। ଅନେକ "
+"କାର୍ଯ୍ୟ(ଯେପରିକି, କ୍ଲାଏଣ୍ଟ "
+"କ୍ଷେତ୍ରରେ କ୍ଲିକ କରିବା, ୱିଣ୍ଡୋକୁ ଗତିକରାଇବା ଅଥବା ଆକାର ବଦଳାଇବା) ସାଧାରଣତଃ ପାର୍ଶ୍ୱ "
+"ପ୍ରଭାବକୁ "
+"ବୃଦ୍ଧି କରିଥାଏ। ଏହି ବିକଳ୍ପକୁ false ସେଟ କରିବା ଫଳରେ, ଯାହାକୁକି ଅତିରିକ୍ତ ବିରୋଧ "
+"କରାଯାଇଥାଏ, ତାହା "
+"ଅନ୍ୟ ଚାଳକ କାର୍ଯ୍ୟ ଅପେକ୍ଷା ବୃଦ୍ଧି ହୋଇଥାଏ, ଏବଂ ପ୍ରୟୋଗ ଅନୁରୋଧ ଦ୍ୱାରା ସୃଷ୍ଟି "
+"ବୃଦ୍ଧିକୁ ଅଗ୍ରାହ୍ୟ "
+"କରିଥାଏ। http://bugzilla.gnome.org/show_bug.cgi?id=445447#c6 କୁ ଦେଖନ୍ତୁ। ଯଦିଚ "
+"ଯେତେବେଳେ ଏହି ବିକଳ୍ପଟି false ହୋଇଥାଏ, ୱିଣ୍ଡୋଗୁଡ଼ିକ ମଧ୍ଯ alt-left-click ଦ୍ୱାରା "
+"ଯେକୌଣସି "
+"ଉପାୟରେ ବୃଦ୍ଧି କରିଥାଏ, ୱିଣ୍ଡୋ ସଜ୍ଜିକରଣରେ ଗୋଟିଏ ସାଧାରଣ କ୍ଲିକ, ଅଥବା ପେଜରରୁଗୋଟିଏ "
+"ବିଶେଷ ସନ୍ଦେଶ "
+"ଦ୍ୱାରା, ଯେପରିକି କାର୍ଯ୍ୟତାଲିକା ଆପଲେଟରୁ ସକ୍ରିୟଣ ଅନୁରୋଧ। ଏହି ବିକଳ୍ପକୁ "
+"click-to-focus ଧାରାରେ "
+"ବର୍ତ୍ତମାନ ନିଷ୍କ୍ରିୟ କରାହୋଇଛି। ମନେରଖନ୍ତୁ ଯେ ୱିଣ୍ଡୋଗୁଡ଼ିକୁ ବୃଦ୍ଧିକରିବା ପାଇଁ "
+"ପଥଗୁଡ଼ିକର ତାଲିକା ଯେତେବେଳେ "
+"raise-on-click false ହୋଇଥାଏ ସେତେବେଳେ ଏହା ପ୍ରଗ୍ରାମ ହୋଇଥିବା ଅନୁରୋଧକୁ "
+"ଅନ୍ତର୍ଭୁକ୍ତ "
+"କରିନଥାଏ; ସେହିପରି ଅନୁରୋଧଗୁଡ଼ିକୁ କାରଣ ଯାହା ହୋଇଥିଲେ ମଧ୍ଯ ଅଗ୍ରାହ୍ୟ କରାଯାଇଥାଏ। ଯଦି "
+"ଆପଣ ଜଣେ "
+"ପ୍ରୟୋଗ ବିକାଶକାରୀ ଏବଂ ଜଣେ ଚାଳକ ଅଭିଯୋଗ କରିଛି ଯେ ଏହି ସଂରଚନାକୁ ନିଷ୍କ୍ରିୟ କରିବା "
+"ଫଳରେ ସେହି "
+"ପ୍ରୟୋଗଟି କାର୍ଯ୍ୟ କରିନଥାଏ, ତେବେ ସେମାନଙ୍କୁ କୁହନ୍ତୁ ଯେ ୱିଣ୍ଡୋ ପରିଚାଳକକୁ ଭାଙ୍ଗିବା "
+"ସେମାନଙ୍କର ତ୍ରୁଟି "
+"ଏବଂ ସେମାନଙ୍କୁ ଏହି ବିକଳ୍ପକୁ ପୁଣି ପଛକୁ କରି true ଭାବରେ ପରିବର୍ତ୍ତନ କରିବା ଉଚିତ "
+"ଅଥବା ଅନୁରୋଧ କରିଥିବା "
+"ସେହି \"bug\" ସହିତ ରୁହନ୍ତୁ।"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:13
+msgid "Action on title bar double-click"
+msgstr "ଶୀର୍ଷକ ପଟିରେ ମାଉସ୍ କୁ ଯୁଗ୍ନ ଭାବରେ ଦବାଇଲେ କି କାମ ଚାଳନ ହେବ"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:14
+msgid ""
+"This option determines the effects of double-clicking on the title bar. "
+"Current valid options are 'toggle-shade', which will shade/unshade the "
+"window, 'toggle-maximize' which will maximize/unmaximize the window, 'toggle-"
+"maximize-horizontally' and 'toggle-maximize-vertically' which will maximize/"
+"unmaximize the window in that direction only, 'minimize' which will minimize "
+"the window, 'shade' which will roll the window up, 'menu' which will display "
+"the window menu, 'lower' which will put the window behind all the others, "
+"and 'none' which will not do anything."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:15
+msgid "Action on title bar middle-click"
+msgstr "ଶୀର୍ଷକ ପଟିରେ ମାଉସକୁ ମଝି-କ୍ଲିକ କରିବା ଦ୍ୱାରା ହେଉଥିବା କାର୍ଯ୍ୟ"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:16
+msgid ""
+"This option determines the effects of middle-clicking on the title bar. "
+"Current valid options are 'toggle-shade', which will shade/unshade the "
+"window, 'toggle-maximize' which will maximize/unmaximize the window, 'toggle-"
+"maximize-horizontally' and 'toggle-maximize-vertically' which will maximize/"
+"unmaximize the window in that direction only, 'minimize' which will minimize "
+"the window, 'shade' which will roll the window up, 'menu' which will display "
+"the window menu, 'lower' which will put the window behind all the others, "
+"and 'none' which will not do anything."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:17
+msgid "Action on title bar right-click"
+msgstr "ଶୀର୍ଷକ ପଟିରେ ମାଉସକୁ ଡାହାଣ-କ୍ଲିକ କରିବା ଦ୍ୱାରା ହେଉଥିବା କାର୍ଯ୍ୟ"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:18
+msgid ""
+"This option determines the effects of right-clicking on the title bar. "
+"Current valid options are 'toggle-shade', which will shade/unshade the "
+"window, 'toggle-maximize' which will maximize/unmaximize the window, 'toggle-"
+"maximize-horizontally' and 'toggle-maximize-vertically' which will maximize/"
+"unmaximize the window in that direction only, 'minimize' which will minimize "
+"the window, 'shade' which will roll the window up, 'menu' which will display "
+"the window menu, 'lower' which will put the window behind all the others, "
+"and 'none' which will not do anything."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:19
+msgid "Automatically raises the focused window"
+msgstr "କେନ୍ଦ୍ରିତ ୱିଣ୍ଡୋକୁ ଆପେଆପେ ସାମନାକୁ ଆଣେ"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:20
+msgid ""
+"If set to true, and the focus mode is either \"sloppy\" or \"mouse\" then "
+"the focused window will be automatically raised after a delay specified by "
+"the auto-raise-delay key. This is not related to clicking on a window to "
+"raise it, nor to entering a window during drag-and-drop."
+msgstr ""
+"ଏହା true ହେଲେ, ଓ କେନ୍ଦ୍ରୀଭୂତ ଧାରା \"ଅଯତ୍ନକୃତ\" ବା \"ମାଉସ\" ଥିଲେ, କେନ୍ଦ୍ରିତ "
+"ୱିଣ୍ଡୋକୁ କିଛି "
+"ସମୟ ପରେ ଆପେଆପେ auto-raise-delay କି କୁ ବ୍ୟବହାର କରି ସାମନାକୁ ଅଣାଯିବ। ଏହା "
+"ବୃଦ୍ଧିକରା ପାଇଁ "
+"ୱିଣ୍ଡୋ ଉପରେ କ୍ଲିକ କରିବା ସହିତ ସମ୍ପୃକ୍ତ ନୁହଁ, ଅଥବା ଟାଣିବା-ଏବଂ ପକାଇବା ସମୟରେ "
+"ୱିଣ୍ଡୋରେ ପ୍ରବେଶ କରି।"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:21
+msgid "Delay in milliseconds for the auto raise option"
+msgstr "ସ୍ବଂୟ ସାମନାକୁ ଆଣିବା ପାଇଁ ମିଲିସେକଣ୍ଡରେ ବିଳମ୍ବ"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:22
+msgid ""
+"The time delay before raising a window if auto-raise is set to true. The "
+"delay is given in thousandths of a second."
+msgstr ""
+"ଯଦି ସ୍ବଂୟ-ସାମନାକୁ ଆଣିବା ସତ ହୋଇଥାଏ, ୱିଣ୍ଡୋକୁ ସାମନାକୁ ଆଣିବା ପୂର୍ବରୁ ମଧ୍ଯବର୍ତ୍ତୀ "
+"ସମୟ। ବିଳମ୍ବଟି "
+"ମିଲିସେକଣ୍ଡରେ ନିର୍ଦ୍ଧିଷ୍ଟ ହୋଇଥାଏ।"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:23
+msgid "Current theme"
+msgstr "ସାମ୍ପ୍ରତିକ ପ୍ରସଙ୍ଗ"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:24
+msgid ""
+"The theme determines the appearance of window borders, titlebar, and so "
+"forth."
+msgstr "ପ୍ରସଙ୍ଗଟି ୱିଣ୍ଡୋ ଧାର, ଶୀର୍ଷକପଟି, ଇତ୍ଯାଦିର ଚେହେରା ସ୍ଥିର କରେ।"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:25
+msgid "Use standard system font in window titles"
+msgstr "ୱିଣ୍ଡୋ ଶୀର୍ଷକରେ ତନ୍ତ୍ରର ସାଧାରଣ ଅକ୍ଷରରୂପ ବ୍ଯବହାର କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:26
+msgid ""
+"If true, ignore the titlebar-font option, and use the standard application "
+"font for window titles."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:27
+msgid "Window title font"
+msgstr "ୱିଣ୍ଡୋ ଶୀର୍ଷକ ଅକ୍ଷରରୂପ"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:28
+msgid ""
+"A font description string describing a font for window titlebars. The size "
+"from the description will only be used if the titlebar-font-size option is "
+"set to 0. Also, this option is disabled if the titlebar-uses-desktop-font "
+"option is set to true."
+msgstr ""
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:29
+msgid "Number of workspaces"
+msgstr "କାର୍ଯ୍ଯକ୍ଷେତ୍ରର ସଂଖ୍ଯା"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:30
+msgid ""
+"Number of workspaces. Must be more than zero, and has a fixed maximum to "
+"prevent making the desktop unusable by accidentally asking for too many "
+"workspaces."
+msgstr ""
+"କାର୍ଯ୍ଯକ୍ଷେତ୍ରର ସଂଖ୍ଯା। ଏହା ଶୂନ୍ଯଠାରୁ ଅଧିକ ହେବା ବାଧ୍ଯ, ଓ ଏହାର ଗୋଟିଏ ସ୍ଥିର "
+"ସର୍ବାଧିକ ମୂଲ୍ଯ ଅଛି "
+"ଭୁଲ ବଶତଃ ଅତ୍ୟଧିକ କାର୍ଯ୍ଯକ୍ଷେତ୍ର ନିର୍ଦ୍ଦଷ୍ଟ କରି ନିଜ ଡେସ୍କଟପକୁ ନଷ୍ଟ କରିବାରୁ "
+"ରୋକିବା ପାଇଁ।"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:31
+msgid "System Bell is Audible"
+msgstr "ତନ୍ତ୍ର ଘଣ୍ଟିଟି ଶ୍ରାବ୍ଯ"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:32
+msgid ""
+"Determines whether applications or the system can generate audible 'beeps'; "
+"may be used in conjunction with 'visual bell' to allow silent 'beeps'."
+msgstr ""
+"ନିର୍ଦ୍ଧାରିତ କରେ ପ୍ରୟୋଗ ବା ତନ୍ତ୍ର ଶ୍ରାବ୍ଯ 'ବିପ' ସୃଷ୍ଟି କରିପାରିବ କି; ଏହା ସହିତ "
+"'ଚାକ୍ଷୁଷ ଘଣ୍ଟି' ଚୟନକୁ "
+"ଯୋଡ଼ି ନିଃଶବ୍ଦ 'ବିପ' ହ୍ଯବହାର କରା ଯାଇରାରିବ."
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:33
+msgid "Enable Visual Bell"
+msgstr "ଚାକ୍ଷୁଷ ଘଣ୍ଟିକୁ ସମର୍ଥ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:34
+msgid ""
+"Turns on a visual indication when an application or the system issues a "
+"'bell' or 'beep'; useful for the hard-of-hearing and for use in noisy "
+"environments."
+msgstr ""
+"ଗୋଟିଏ ପ୍ରୟୋଗ ବା ତନ୍ତ୍ର 'ଘଣ୍ଟି' ବା 'ବିପ' କଲେ, ଏକ ଚାକ୍ଷୁଷ ସୂଚକ ବ୍ଯବହାର କରେ; ଏହା "
+"କାଲ ଲୋକଙ୍କ "
+"ପାଇଁ ବା କୋଲାହଳପୂର୍ଣ୍ଣ ପରିବେଶରେ ବା 'ଶ୍ରାବ୍ଯ ଘଣ୍ଟି' ଚାଲୁ ନ ଥିଲେ ଉପକାରୀ ହୋଇଥାଏ।"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:35
+msgid "Visual Bell Type"
+msgstr "ଚାକ୍ଷୁଷ ଘଣ୍ଟି ପ୍ରକାର"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:36
+msgid ""
+"Tells the WM how to implement the visual indication that the system bell or "
+"another application 'bell' indicator has been rung. Currently there are two "
+"valid values, \"fullscreen-flash\", which causes a fullscreen white-black "
+"flash, and \"frame-flash\" which causes the titlebar of the application "
+"which sent the bell signal to flash. If the application which sent the bell "
+"is unknown (as is usually the case for the default \"system beep\"), the "
+"currently focused window's titlebar is flashed."
+msgstr ""
+"ମେଟାସିଟି ପାଇଁ ନିର୍ଦ୍ଦିଷ୍ଟ କରେ ତନ୍ତ୍ରର ଘଣ୍ଟି ବା ଅନ୍ଯ ପ୍ରୟୋଗର ଘଣ୍ଟି ବାଜିବା "
+"କିପରି ଚାକ୍ଷୁଷ ଭାବରେ ସୂଚିତ "
+"କରାଯିବ। ବର୍ତ୍ରମାନ ଦୁଇଟି ବୈଧ ମୂଲ୍ଯ ଅଛି, \"ପୂର୍ଣ୍ଣପରଦା\" ଯେଉଁଟାକି ପୂର୍ଣ୍ଣ "
+"ପରଦାଟିକୁ ଧଳାରୁ କଳା ଝଲସି "
+"ଦିଏ, ଓ \"ବନ୍ଧେଇ-ଝଲସା\" ଯେଉଁଟାକି ଘଣ୍ଟି ସଙ୍କେତ ପଠାଇ ଥିବା ପ୍ରୟୋଗର ଶୀର୍ଷକ ପଟିକୁ "
+"ଝଲସି ଦିଏ। ଘଣ୍ଟି "
+"ପଠାଇ ଥିବା ପ୍ରୟୋଗ ଅଜଣା ଥିଲେ (ଯେଉଁଟାକି ପୂର୍ବନିର୍ଦ୍ଧାରିତ \"ତନ୍ତ୍ର ବିପ୍\" ପାଇଁ "
+"ସାଧାରଣରେ ଘଟଣା), "
+"ସାମ୍ପ୍ରତିକ କେନ୍ଦ୍ରିତ ୱିଣ୍ଡୋର ଶୀର୍ଷକ ପଟିକୁ ଝଲସି ଦିଆଯାଏ।"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:37
+msgid "(Not implemented) Navigation works in terms of applications not windows"
+msgstr ""
+"(କାର୍ଯ୍ଯକାରୀ ନୁହେଁ) ପଥପ୍ରଦର୍ଶନ ପ୍ରୟୋଗ ହିସାବରେ କାମ କରେ, ୱିଣ୍ଡୋ ହିସାବରେ ନୁହେଁ"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:38
+msgid ""
+"If true, then the WM works in terms of applications rather than windows. The "
+"concept is a bit abstract, but in general an application-based setup is more "
+"like the Mac and less like Windows. When you focus a window in application-"
+"based mode, all the windows in the application will be raised. Also, in "
+"application-based mode, focus clicks are not passed through to windows in "
+"other applications. Application-based mode is, however, largely "
+"unimplemented at the moment."
+msgstr ""
+"ଯଦି ଏହା true, ତେବେ WM ୱିଣ୍ଡୋ ବଦଳରେ ପ୍ରୟୋଗ ଭାବରେ କାମ କରେ। ଏହି ଧାରଣାଟି ଟିକେ "
+"ଅମୂର୍ତ୍ତ, କିନ୍ତୁ ସାଧାରଣରେ ପ୍ରୟୋଗ-ଆଧାରିତ ବ୍ଯବସ୍ଥାଟି ଅଧିକ ମାକ୍ ଭଳି ଓ କମ "
+"ମାଇକ୍ରୋସଫ୍ଟ ୱିଣ୍ଡୋଜ ଭଳି। "
+"ପ୍ରୟୋଗ-ଆଧାରିତ ବ୍ଯବସ୍ଥାରେ ଆପଣ ଗୋଟିଏ ୱିଣ୍ଡୋକୁ କେନ୍ଦ୍ରିତ କଲେ, ପ୍ରୟୋଗର ସବୁ "
+"ୱିଣ୍ଡୋଗୁଡ଼ିକ ସାମନାକୁ "
+"ଅଣାଯିବ। ପ୍ରୟୋଗ-ଆଧାରିତ ବ୍ଯବସ୍ଥାରେ ମଧ୍ଯ କେନ୍ଦ୍ରୀଭୂତ ମାଉସ୍ ଚାପ ଅଲଗା ପ୍ରୟୋଗର "
+"ୱିଣ୍ଡୋଗୁଡ଼ିକ ବଢ଼ାଇ "
+"ଦିଆଯାଏ ନାହିଁ। ଏହି ବିନ୍ଯାସର ଅସ୍ତିତ୍ବ କିଛିଟି ସନ୍ଦେହଜନକ। କିନ୍ତୁ,  ପ୍ରୟୋଗ-ଆଧାରିତ "
+"ଓ ୱିଣ୍ଡୋ-ଆଧାରିତ "
+"ଧାରାର ସବୁ ବିସ୍ତୃତ ବିବରଣୀ ପାଇଁ ଅଲଗା ବିନ୍ଯାସ ରଖିବା ଅପେକ୍ଷା, ଏହା ଅଧିକ ଭଲ। ଏହି "
+"ସମୟରେ, ପ୍ରୟୋଗ-"
+"ଆଧାରିତ ଧାରା ମୁଖ୍ଯତଃ ଅକାର୍ଯ୍ଯକାରୀ ରହିଛି।"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:39
+msgid "Disable misfeatures that are required by old or broken applications"
+msgstr "ପୁରୁଣା ବା ଅବୈଧ ପ୍ରୟୋଗ ପାଇଁ ଆବଶ୍ଯକ ଦୁର୍ଗୁଣଗୁଡ଼ିକୁ ଅସମର୍ଥ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:40
+msgid ""
+"Some applications disregard specifications in ways that result in window "
+"manager misfeatures. This option puts the WM in a rigorously correct mode, "
+"which gives a more consistent user interface, provided one does not need to "
+"run any misbehaving applications."
+msgstr ""
+"କିଛି ପ୍ରୟୋଗଗୁଡ଼ିକ ନିର୍ଦ୍ଦେଶଗୁଡ଼ିକୁ ଅନାଦର କରିଥାଏ, ଫଳସ୍ୱରୂପ ୱିଣ୍ଡୋ ପରିଚାଳକ ଭୁଲ "
+"ପ୍ରଦର୍ଶନ କରିଥାଏ। ଏହି "
+"ବିକଳ୍ପWMକୁ ସଠିକ ଅବସ୍ଥାରେ ରଖିଥାଏ, ଯାହାକି ଅଧିକ ସ୍ଥାୟୀ ଚାଳକ ଅନ୍ତରାପୃଷ୍ଠ ପ୍ରଦାନ "
+"କରିଥାଏ, "
+"ଏହା ବ୍ୟତୀତ ଜଣେ ଖରାପ ଆଚରଣ କରୁଥିବା ପ୍ରୟୋଗଗୁଡ଼ିକୁ ଚଲାଇନଥାଏ।"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:41
+msgid "The names of the workspaces"
+msgstr "କାର୍ଯ୍ଯକ୍ଷେତ୍ରର ନାମ"
+
+#: ../schemas/org.gnome.desktop.wm.preferences.gschema.xml.in.in.h:42
+msgid ""
+"Defines the names that should be assigned to workspaces. If the list is too "
+"long for the current number of workspaces, names in excess will be ignored. "
+"If the list is too short, or includes empty names, missing values will be "
+"replaced with the default (\"Workspace N\")."
+msgstr ""
+
+#: ../schemas/org.gnome.system.locale.gschema.xml.in.in.h:1
+msgid "The locale to use for dates / numbers formats"
+msgstr ""
+
+#: ../schemas/org.gnome.system.locale.gschema.xml.in.in.h:2
+msgid ""
+"Specify the locale to be used for displaying dates, times and numbers "
+"formats."
+msgstr ""
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:1
+msgid "Proxy configuration mode"
+msgstr "ପ୍ରକ୍ସି ବିନ୍ଯାସ ଅବସ୍ଥା"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:2
+msgid ""
+"Select the proxy configuration mode. Supported values are \"none\", \"manual"
+"\", \"auto\". If this is \"none\", then proxies are not used. If it is \"auto"
+"\", the autoconfiguration URL described by the \"autoconfig-url\" key is "
+"used. If it is \"manual\", then the proxies described by \"/system/proxy/http"
+"\", \"/system/proxy/https\", \"/system/proxy/ftp\" and \"/system/proxy/socks"
+"\" will be used. Each of the 4 proxy types is enabled if its \"host\" key is "
+"non-empty and its \"port\" key is non-0. If an http proxy is configured, but "
+"an https proxy is not, then the http proxy is also used for https. If a "
+"SOCKS proxy is configured, it is used for all protocols, except that the "
+"http, https, and ftp proxy settings override it for those protocols only."
+msgstr ""
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:3
+msgid "Automatic proxy configuration URL"
+msgstr "ସ୍ୱୟଂଚାଳିତ ପ୍ରକ୍ସି ବିନ୍ୟାସ URL"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:4
+msgid ""
+"URL that provides proxy configuration values. When mode is \"auto\", this "
+"URL is used to look up proxy information for all protocols."
+msgstr ""
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:5
+msgid "Non-proxy hosts"
+msgstr "ଅଣଛାୟା ଆଧାର"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:6
+msgid ""
+"This key contains a list of hosts which are connected to directly, rather "
+"than via the proxy (if it is active). The values can be hostnames, domains "
+"(using an initial wildcard like *.foo.com), IP host addresses (both IPv4 and "
+"IPv6) and network addresses with a netmask (something like 192.168.0.0/24)."
+msgstr ""
+"ଛାୟା ବଦଳରେ ସିଧାସଳଖ ଭାବରେ ସଂଯୁକ୍ତ ଆଧାରଗୁଡ଼ିକର ତାଲିକା ଏହି ଚାବିରେ ରଖାଯାଇଛି. "
+"ସମ୍ଭବତଃ ମୂଲ୍ଯଗୁଡି଼କ "
+"ହେଲା ଆଧାର ନାମ, ପରିସର (*.foo.com ଭଳି ପ୍ରାରମ୍ଭିକ ୱାଇଲ୍ଡ କାର୍ଡ ବ୍ଯବହାର କରି), "
+"ଆଇ.ପି. ଆଧାର "
+"ଠିକିଣା (ଆଇ.ପି.ଭି.୪ ଓ ଆଇ.ପି.ଭି.୬) ଓ ଜାଲକ ମୁଖା ସହିତ ଜାଲକ ଠିକଣା (୧୯୨.୧୬୮.୦.୦/୨୪ "
+"ଭଳି କିଛି)."
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:7
+msgid "Unused; ignore"
+msgstr "ଅବ୍ୟବହୃତ; ଅଗ୍ରାହ୍ୟ"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:8
+msgid "This key is not used, and should not be read or modified."
+msgstr ""
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:9
+msgid ""
+"This key is not used; HTTP proxying is enabled when the host key is non-"
+"empty and the port is non-0."
+msgstr ""
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:10
+msgid "HTTP proxy host name"
+msgstr "HTTP ପ୍ରକ୍ସି ଆଧାର ନାମ"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:11
+msgid "The machine name to proxy HTTP through."
+msgstr "ଏଚ୍.ଟି.ଟି.ପି. ଛାୟା ପାଇଁ ଯନ୍ତ୍ରର ନାମ."
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:12
+msgid "HTTP proxy port"
+msgstr "HTTP ପ୍ରକ୍ସି ସଂଯୋଗିକୀ"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:13
+msgid ""
+"The port on the machine defined by \"/system/proxy/http/host\" that you "
+"proxy through."
+msgstr ""
+"\"/system/proxy/http/host\"  ଦ୍ୱାରା ବ୍ୟାଖ୍ୟା କରାଯାଇଥିବା "
+"ସଂଯୋଗିକୀ ଯାହା ମାଧ୍ଯମରେ ଆପଣ ପ୍ରକ୍ସି କରିଥାନ୍ତି।"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:14
+msgid "Authenticate proxy server connections"
+msgstr "ଛାୟା ସେବକ ସଂଯୋଗଗୁଡିକ ବୈଧ କରନ୍ତୁ"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:15
+msgid ""
+"If true, then connections to the proxy server require authentication. The "
+"username/password combo is defined by \"/system/proxy/http/authentication-"
+"user\" and \"/system/proxy/http/authentication-password\". This applies only "
+"to the http proxy; when using a separate https proxy, there is currently no "
+"way to specify that it should use authentication."
+msgstr ""
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:16
+msgid "HTTP proxy username"
+msgstr "HTTP ପ୍ରକ୍ସି ଚାଳକନାମ"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:17
+msgid "User name to pass as authentication when doing HTTP proxying."
+msgstr "HTTP ପ୍ରକ୍ସି ବେଳେ ବୈଧିକରଣ ପାଇଁ ପ୍ରବେଶ ସଂକେତ "
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:18
+msgid "HTTP proxy password"
+msgstr "HTTP ପ୍ରକ୍ସି ପ୍ରବେଶ ସଂକେତ"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:19
+msgid "Password to pass as authentication when doing HTTP proxying."
+msgstr "HTTP ପ୍ରକ୍ସି ବେଳେ ବୈଧିକରଣ ପାଇଁ ପ୍ରବେଶ ସଂକେତ "
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:20
+msgid "Secure HTTP proxy host name"
+msgstr "ସୁରକ୍ଷିତ HTTP ପ୍ରକ୍ସି ଆଧାର ନାମ"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:21
+msgid "The machine name to proxy secure HTTP through."
+msgstr "ସୁରକ୍ଷିତ HTTP ପ୍ରକ୍ସି ପାଇଁ ଯନ୍ତ୍ରର ନାମ।"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:22
+msgid "Secure HTTP proxy port"
+msgstr "ସୁରକ୍ଷିତ HTTP ପ୍ରକ୍ସି ସଂଯୋଗିକୀ"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:23
+msgid ""
+"The port on the machine defined by \"/system/proxy/https/host\" that you "
+"proxy through."
+msgstr ""
+"\"/system/proxy/https/host\" ଦ୍ୱାରା ବ୍ୟାଖ୍ୟା କରାଯାଇଥିବା "
+"ସଂଯୋଗିକୀ ଯାହା ମାଧ୍ଯମରେ ଆପଣ ପ୍ରକ୍ସି କରିଥାନ୍ତି।"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:24
+msgid "FTP proxy host name"
+msgstr "FTP ପ୍ରକ୍ସି ଆଧାର ନାମ"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:25
+msgid "The machine name to proxy FTP through."
+msgstr "FTP ପ୍ରକ୍ସି ପାଇଁ ଯନ୍ତ୍ରର ନାମ।"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:26
+msgid "FTP proxy port"
+msgstr "FTP ପ୍ରକ୍ସି ସଂଯୋଗିକୀ"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:27
+msgid ""
+"The port on the machine defined by \"/system/proxy/ftp/host\" that you proxy "
+"through."
+msgstr ""
+" \"/system/proxy/ftp/host\" ଦ୍ୱାରା ବ୍ୟାଖ୍ୟା କରାଯାଇଥିବା "
+"ସଂଯୋଗିକୀ ଯାହା ମାଧ୍ଯମରେ ଆପଣ ପ୍ରକ୍ସି କରିଥାନ୍ତି।"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:28
+msgid "SOCKS proxy host name"
+msgstr "SOCKS ପ୍ରକ୍ସି ଆଧାର ନାମ"
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:29
+msgid "The machine name to use as a SOCKS proxy."
+msgstr ""
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:30
+msgid "SOCKS proxy port"
+msgstr ""
+
+#: ../schemas/org.gnome.system.proxy.gschema.xml.in.in.h:31
+msgid ""
+"The port on the machine defined by \"/system/proxy/socks/host\" that you "
+"proxy through."
+msgstr ""
+
+

@@ -122,7 +122,6 @@ class AutofillAiSuggestionGeneratorTest : public testing::Test {
             webdata_helper_.autofill_webdata_service(),
             /*history_service=*/nullptr,
             /*strike_database=*/nullptr,
-            /*accessibility_annotator_service=*/nullptr,
             /*variation_country_code=*/GeoIpCountryCode("US")));
     autofill_client_.SetUpPrefsAndIdentityForAutofillAi();
     generator_ = std::make_unique<AutofillAiSuggestionGenerator>();
@@ -243,43 +242,21 @@ TEST_F(AutofillAiSuggestionGeneratorTest, GeneratesAutofillAiSuggestions) {
   SetEntities({GetPassportEntityInstanceWithRandomGuid()});
   SetForm({PASSPORT_NUMBER});
 
-  base::MockCallback<base::OnceCallback<void(
-      std::pair<SuggestionGenerator::SuggestionDataSource,
-                std::vector<SuggestionGenerator::SuggestionData>>)>>
-      suggestion_data_callback;
   base::MockCallback<
       base::OnceCallback<void(SuggestionGenerator::ReturnedSuggestions)>>
       suggestions_generated_callback;
 
-  std::pair<SuggestionGenerator::SuggestionDataSource,
-            std::vector<SuggestionGenerator::SuggestionData>>
-      saved_on_suggestion_data_returned_argument;
   SuggestionGenerator::ReturnedSuggestions
       saved_on_suggestions_generated_argument;
 
-  EXPECT_CALL(
-      suggestion_data_callback,
-      Run(testing::Pair(SuggestionGenerator::SuggestionDataSource::kAutofillAi,
-                        testing::SizeIs(1))))
-      .WillOnce(
-          testing::SaveArg<0>(&saved_on_suggestion_data_returned_argument));
-  generator().FetchSuggestionData(form(), field_data(), &form_structure(),
-                                  &field(), client(),
-                                  suggestion_data_callback.Get());
-  EXPECT_TRUE(
-      base::test::RunUntil([&saved_on_suggestion_data_returned_argument]() {
-        return !saved_on_suggestion_data_returned_argument.second.empty();
-      }));
-
   EXPECT_CALL(suggestions_generated_callback,
               Run(testing::Pair(
-                  FillingProduct::kAutofillAi,
+                  SuggestionGenerator::SuggestionDataSource::kAutofillAi,
                   ElementsAre(HasType(kFillAutofillAi), HasType(kSeparator),
                               HasType(kManageAutofillAi)))))
       .WillOnce(testing::SaveArg<0>(&saved_on_suggestions_generated_argument));
   generator().GenerateSuggestions(form(), field_data(), &form_structure(),
                                   &field(), client(),
-                                  {saved_on_suggestion_data_returned_argument},
                                   suggestions_generated_callback.Get());
   EXPECT_TRUE(
       base::test::RunUntil([&saved_on_suggestions_generated_argument]() {
@@ -293,27 +270,24 @@ TEST_F(AutofillAiSuggestionGeneratorTest,
   // Driving licence does not fit into passport number field.
   SetEntities({test::GetDriversLicenseEntityInstanceWithRandomGuid()});
 
-  base::MockCallback<base::OnceCallback<void(
-      std::pair<SuggestionGenerator::SuggestionDataSource,
-                std::vector<SuggestionGenerator::SuggestionData>>)>>
-      suggestion_data_callback;
+  base::MockCallback<
+      base::OnceCallback<void(SuggestionGenerator::ReturnedSuggestions)>>
+      suggestions_generated_callback;
 
-  std::pair<SuggestionGenerator::SuggestionDataSource,
-            std::vector<SuggestionGenerator::SuggestionData>>
-      saved_on_suggestion_data_returned_argument;
+  SuggestionGenerator::ReturnedSuggestions
+      saved_on_suggestions_generated_argument;
 
   EXPECT_CALL(
-      suggestion_data_callback,
+      suggestions_generated_callback,
       Run(testing::Pair(SuggestionGenerator::SuggestionDataSource::kAutofillAi,
                         IsEmpty())))
-      .WillOnce(
-          testing::SaveArg<0>(&saved_on_suggestion_data_returned_argument));
-  generator().FetchSuggestionData(form(), field_data(), &form_structure(),
+      .WillOnce(testing::SaveArg<0>(&saved_on_suggestions_generated_argument));
+  generator().GenerateSuggestions(form(), field_data(), &form_structure(),
                                   &field(), client(),
-                                  suggestion_data_callback.Get());
+                                  suggestions_generated_callback.Get());
   EXPECT_TRUE(
-      base::test::RunUntil([&saved_on_suggestion_data_returned_argument]() {
-        return saved_on_suggestion_data_returned_argument.first ==
+      base::test::RunUntil([&saved_on_suggestions_generated_argument]() {
+        return saved_on_suggestions_generated_argument.first ==
                SuggestionGenerator::SuggestionDataSource::kAutofillAi;
       }));
 }
@@ -321,46 +295,25 @@ TEST_F(AutofillAiSuggestionGeneratorTest,
 TEST_F(AutofillAiSuggestionGeneratorTest, NoSuggestionsIfNoEntities) {
   SetForm({PASSPORT_NUMBER});
 
-  base::MockCallback<base::OnceCallback<void(
-      std::pair<SuggestionGenerator::SuggestionDataSource,
-                std::vector<SuggestionGenerator::SuggestionData>>)>>
-      suggestion_data_callback;
   base::MockCallback<
       base::OnceCallback<void(SuggestionGenerator::ReturnedSuggestions)>>
       suggestions_generated_callback;
 
-  std::pair<SuggestionGenerator::SuggestionDataSource,
-            std::vector<SuggestionGenerator::SuggestionData>>
-      saved_on_suggestion_data_returned_argument;
   SuggestionGenerator::ReturnedSuggestions
       saved_on_suggestions_generated_argument;
 
   EXPECT_CALL(
-      suggestion_data_callback,
+      suggestions_generated_callback,
       Run(testing::Pair(SuggestionGenerator::SuggestionDataSource::kAutofillAi,
                         IsEmpty())))
-      .WillOnce(
-          testing::SaveArg<0>(&saved_on_suggestion_data_returned_argument));
-  generator().FetchSuggestionData(form(), field_data(), &form_structure(),
-                                  &field(), client(),
-                                  suggestion_data_callback.Get());
-  EXPECT_TRUE(
-      base::test::RunUntil([&saved_on_suggestion_data_returned_argument]() {
-        return saved_on_suggestion_data_returned_argument.first ==
-               SuggestionGenerator::SuggestionDataSource::kAutofillAi;
-      }));
-
-  EXPECT_CALL(suggestions_generated_callback,
-              Run(testing::Pair(FillingProduct::kAutofillAi, IsEmpty())))
       .WillOnce(testing::SaveArg<0>(&saved_on_suggestions_generated_argument));
   generator().GenerateSuggestions(form(), field_data(), &form_structure(),
                                   &field(), client(),
-                                  {saved_on_suggestion_data_returned_argument},
                                   suggestions_generated_callback.Get());
   EXPECT_TRUE(
       base::test::RunUntil([&saved_on_suggestions_generated_argument]() {
         return saved_on_suggestions_generated_argument.first ==
-               FillingProduct::kAutofillAi;
+               SuggestionGenerator::SuggestionDataSource::kAutofillAi;
       }));
 }
 
@@ -481,6 +434,18 @@ TEST_F(AutofillAiSuggestionGeneratorTest,
   EXPECT_THAT(suggestions[0], HasIcon(Suggestion::Icon::kNoIcon));
 }
 #endif
+
+TEST_F(AutofillAiSuggestionGeneratorTest,
+       GetFillingSuggestion_PersonalContextEntity_UseSparkIcon) {
+  SetEntities({GetFlightReservationEntityInstanceWithRandomGuid(
+      {.record_type = EntityInstance::RecordType::kPersonalContext})});
+  SetForm({FLIGHT_RESERVATION_FLIGHT_NUMBER, FLIGHT_RESERVATION_TICKET_NUMBER,
+           FLIGHT_RESERVATION_CONFIRMATION_CODE});
+
+  std::vector<Suggestion> suggestions =
+      CreateAutofillAiFillingSuggestions(field(0));
+  EXPECT_THAT(suggestions[0], HasIcon(Suggestion::Icon::kSpark));
+}
 
 TEST_F(AutofillAiSuggestionGeneratorTest, GetFillingSuggestion_PrefixMatching) {
   EntityInstance passport_prefix_matches =
@@ -623,6 +588,86 @@ TEST_F(AutofillAiSuggestionGeneratorTest,
   EXPECT_EQ(payload->guid, passport4.guid());
   EXPECT_THAT(suggestions,
               SuggestionsAre(HasMainText(GetPassportName(passport4))));
+}
+
+// Test that if a Local entity and a PersonalContext entity have the
+// same data, the Local entity is preferred.
+TEST_F(AutofillAiSuggestionGeneratorTest,
+       GetFillingSuggestion_DedupeSuggestions_FavorLocalOverPersonalContext) {
+  EntityInstance passport_local = GetPassportEntityInstanceWithRandomGuid(
+      {.name = u"Jon Doe",
+       .number = u"12345",
+       .record_type = EntityInstance::RecordType::kLocal});
+  EntityInstance passport_pc =
+      MaskEntityInstance(GetPassportEntityInstanceWithRandomGuid(
+          {.name = u"Jon Doe",
+           .number = u"12345",
+           .record_type = EntityInstance::RecordType::kPersonalContext}));
+  SetEntities({passport_local, passport_pc});
+  SetForm({NAME_FULL, PASSPORT_NUMBER});
+
+  // Sets `passport_pc` to have been used so that it is ranked higher by
+  // frecency.
+  edm().RecordEntityUsed(passport_pc.guid(), base::Time::Now());
+  webdata_helper().WaitUntilIdle();
+
+  std::vector<Suggestion> suggestions =
+      CreateAutofillAiFillingSuggestions(field(0));
+
+  // There should be only one suggestion (excluding separator and footer),
+  // and it should be the Local one.
+  ASSERT_EQ(suggestions.size(), 3u);
+  const Suggestion::AutofillAiPayload* payload =
+      std::get_if<Suggestion::AutofillAiPayload>(&suggestions[0].payload);
+  ASSERT_TRUE(payload);
+  EXPECT_EQ(payload->guid, passport_local.guid());
+  EXPECT_THAT(suggestions,
+              SuggestionsAre(HasMainText(GetPassportName(passport_local))));
+}
+
+// Test that if a ServerWallet, Local, and PersonalContext entity have
+// the same data, they are prioritized correctly:
+// ServerWallet > Local > PersonalContext.
+TEST_F(
+    AutofillAiSuggestionGeneratorTest,
+    GetFillingSuggestion_DedupeSuggestions_FavorServerOverLocalAndPersonalContext) {
+  EntityInstance passport_server =
+      MaskEntityInstance(GetPassportEntityInstanceWithRandomGuid(
+          {.name = u"Jon Doe",
+           .number = u"12345",
+           .record_type = EntityInstance::RecordType::kServerWallet}));
+  EntityInstance passport_local = GetPassportEntityInstanceWithRandomGuid(
+      {.name = u"Jon Doe",
+       .number = u"12345",
+       .record_type = EntityInstance::RecordType::kLocal});
+  EntityInstance passport_pc =
+      MaskEntityInstance(GetPassportEntityInstanceWithRandomGuid(
+          {.name = u"Jon Doe",
+           .number = u"12345",
+           .record_type = EntityInstance::RecordType::kPersonalContext}));
+
+  SetEntities({passport_server, passport_local, passport_pc});
+  SetForm({NAME_FULL, PASSPORT_NUMBER});
+
+  // Set frecency: PersonalContext > Local > ServerWallet
+  base::Time now = base::Time::Now();
+  edm().RecordEntityUsed(passport_pc.guid(), now);
+  edm().RecordEntityUsed(passport_local.guid(), now - base::Minutes(1));
+  edm().RecordEntityUsed(passport_server.guid(), now - base::Minutes(2));
+  webdata_helper().WaitUntilIdle();
+
+  std::vector<Suggestion> suggestions =
+      CreateAutofillAiFillingSuggestions(field(0));
+
+  // There should be only one suggestion (excluding separator and footer),
+  // and it should be the ServerWallet one because it has the highest priority.
+  ASSERT_EQ(suggestions.size(), 3u);
+  const Suggestion::AutofillAiPayload* payload =
+      std::get_if<Suggestion::AutofillAiPayload>(&suggestions[0].payload);
+  ASSERT_TRUE(payload);
+  EXPECT_EQ(payload->guid, passport_server.guid());
+  EXPECT_THAT(suggestions,
+              SuggestionsAre(HasMainText(GetPassportName(passport_server))));
 }
 
 // Test that if a server entity is a subset of a local one, we do not favor it.

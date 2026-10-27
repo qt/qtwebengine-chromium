@@ -34,6 +34,7 @@ import type {Accessibility} from '../cdp/Accessibility.js';
 import type {Coverage} from '../cdp/Coverage.js';
 import type {NetworkConditions} from '../cdp/NetworkManager.js';
 import type {Tracing} from '../cdp/Tracing.js';
+import type {WebMCP} from '../cdp/WebMCP.js';
 import type {ConsoleMessage} from '../common/ConsoleMessage.js';
 import type {
   Cookie,
@@ -92,12 +93,14 @@ import type {
   ClickOptions,
   ElementHandle,
 } from './ElementHandle.js';
+import type {Extension} from './Extension.js';
 import type {
   Frame,
   FrameAddScriptTagOptions,
   FrameAddStyleTagOptions,
   FrameWaitForFunctionOptions,
   GoToOptions,
+  SetContentWaitForOptions,
   WaitForOptions,
 } from './Frame.js';
 import type {
@@ -106,6 +109,7 @@ import type {
   Mouse,
   Touchscreen,
 } from './Input.js';
+import type {Issue} from './Issue.js';
 import type {JSHandle} from './JSHandle.js';
 import {
   FunctionLocator,
@@ -113,6 +117,7 @@ import {
   NodeLocator,
   type AwaitedLocator,
 } from './locators/locators.js';
+import type {Realm} from './Realm.js';
 import type {Target} from './Target.js';
 import type {WebWorker} from './WebWorker.js';
 
@@ -476,6 +481,11 @@ export const enum PageEvent {
    */
   DOMContentLoaded = 'domcontentloaded',
   /**
+   * Emitted when a DevTools issue is reported.
+   * @experimental
+   */
+  Issue = 'issue',
+  /**
    * Emitted when the page crashes. Will contain an `Error`.
    */
   Error = 'error',
@@ -597,6 +607,7 @@ export interface PageEvents extends Record<EventType, unknown> {
   [PageEvent.Console]: ConsoleMessage;
   [PageEvent.Dialog]: Dialog;
   [PageEvent.DOMContentLoaded]: undefined;
+  [PageEvent.Issue]: Issue;
   [PageEvent.Error]: Error;
   [PageEvent.FrameAttached]: Frame;
   [PageEvent.FrameDetached]: Frame;
@@ -942,6 +953,15 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * {@inheritDoc Tracing}
    */
   abstract get tracing(): Tracing;
+
+  /**
+   * Experimental API for {@link https://github.com/webmachinelearning/webmcp
+   * | WebMCP}. Requires Chrome 149+ with the
+   * `--enable-features=WebMCPTesting,DevToolsWebMCPSupport` flags enabled.
+   *
+   * @experimental
+   */
+  abstract get webmcp(): WebMCP;
 
   /**
    * {@inheritDoc Accessibility}
@@ -1762,7 +1782,10 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * @param html - HTML markup to assign to the page.
    * @param options - Parameters that has some properties.
    */
-  async setContent(html: string, options?: WaitForOptions): Promise<void> {
+  async setContent(
+    html: string,
+    options?: SetContentWaitForOptions,
+  ): Promise<void> {
     await this.mainFrame().setContent(html, options);
   }
 
@@ -3205,17 +3228,18 @@ export abstract class Page extends EventEmitter<PageEvents> {
 
   /** @internal */
   override [disposeSymbol](): void {
-    return void this.close().catch(debugError);
+    return void this[asyncDisposeSymbol]().catch(debugError);
   }
 
   /** @internal */
-  [asyncDisposeSymbol](): Promise<void> {
-    return this.close();
+  override async [asyncDisposeSymbol](): Promise<void> {
+    await this.close();
+    await super[asyncDisposeSymbol]();
   }
 
   /**
-   * Opens DevTools for the current Page and returns the DevTools Page. This
-   * method is only available in Chrome.
+   * Opens DevTools for the this page if not already open and returns the DevTools page.
+   * This method is only available in Chrome.
    */
   abstract openDevTools(): Promise<Page>;
 
@@ -3231,6 +3255,25 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * {@inheritDoc BluetoothEmulation}
    */
   abstract get bluetooth(): BluetoothEmulation;
+
+  /**
+   * Triggers the default action of the specified extension for this page.
+   * This simulates clicking the extension's icon in the browser's toolbar.
+   *
+   * @param extension - The {@link Extension} whose action to trigger.
+   * @public
+   */
+  abstract triggerExtensionAction(extension: Extension): Promise<void>;
+
+  /**
+   * Retrieves the list of extension execution realms in the main frame of the page.
+   * These realms correspond to extension content scripts running on the page.
+   *
+   * Shortcut for {@link Frame.extensionRealms | mainFrame().extensionRealms()}.
+   *
+   * @public
+   */
+  abstract extensionRealms(): Realm[];
 }
 
 /**

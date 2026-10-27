@@ -23,7 +23,7 @@ namespace ynn {
 
 size_t sme_vl(float) {
   if (is_arch_supported(arch_flag::sme) || is_arch_supported(arch_flag::sme2)) {
-    return svcnt(float{});
+    return svcnts(float{});
   } else {
     return 0;
   }
@@ -31,7 +31,7 @@ size_t sme_vl(float) {
 
 size_t sme_vl(int32_t) {
   if (is_arch_supported(arch_flag::sme) || is_arch_supported(arch_flag::sme2)) {
-    return svcnt(int32_t{});
+    return svcnts(int32_t{});
   } else {
     return 0;
   }
@@ -50,7 +50,7 @@ __arm_new("za") __arm_locally_streaming void sme_dot(
   assert(K3 > 0);
   assert(K2 > 0);
   assert(K1 > 0);
-  const size_t svl = svcnt(TC{});
+  const size_t svl = svcnts(TC{});
   assert(M <= svl);
 
   // This is how many elements of the k dimension are multiplied and accumulated
@@ -115,7 +115,7 @@ __arm_new("za") __arm_locally_streaming void sme_dot(
 
           k1 -= dot_factor;
           B_k1 = offset_bytes(B_k1, B_stride_k1 * dot_factor);
-          A_k1 = offset_bytes(A_k1, A_stride_m);
+          A_k1 = offset_bytes(A_k1, A_stride_m * dot_factor);
         }
         k2 -= 1;
         B_k2 = offset_bytes(B_k2, B_stride_k2);
@@ -208,7 +208,7 @@ __arm_new("za") __arm_locally_streaming void sme_dot(
 
           k1 -= dot_factor;
           B_k1 = offset_bytes(B_k1, B_stride_k1 * dot_factor);
-          A_k1 = offset_bytes(A_k1, A_stride_m);
+          A_k1 = offset_bytes(A_k1, A_stride_m * dot_factor);
         }
         k2 -= 1;
         B_k2 = offset_bytes(B_k2, B_stride_k2);

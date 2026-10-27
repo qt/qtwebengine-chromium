@@ -1082,7 +1082,7 @@ WebMediaPlayer::ReadyState WebMediaPlayerMS::GetReadyState() const {
 }
 
 WebString WebMediaPlayerMS::GetErrorMessage() const {
-  return WebString::FromUTF8(media_log_->GetErrorMessage());
+  return WebString::FromUtf8(media_log_->GetErrorMessage());
 }
 
 WebTimeRanges WebMediaPlayerMS::Buffered() const {
@@ -1107,22 +1107,25 @@ bool WebMediaPlayerMS::DidLoadingProgress() {
 
 void WebMediaPlayerMS::Paint(cc::PaintCanvas* canvas,
                              const gfx::Rect& rect,
-                             const cc::PaintFlags& flags) {
+                             const cc::PaintFlags& flags,
+                             bool force_pixel_readback) {
   DVLOG(3) << __func__;
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
-  const scoped_refptr<media::VideoFrame> frame = compositor_->GetCurrentFrame();
+  scoped_refptr<media::VideoFrame> frame = compositor_->GetCurrentFrame();
 
   scoped_refptr<viz::RasterContextProvider> provider;
   if (frame && frame->HasSharedImage()) {
     provider = Platform::Current()->SharedMainThreadContextProvider();
     // GPU Process crashed.
-    if (!provider)
+    if (!provider) {
       return;
+    }
   }
   media::PaintCanvasVideoRenderer::PaintParams paint_params;
   paint_params.dest_rect = gfx::RectF(rect);
   paint_params.transformation = GetFrameTransformation(frame);
+  paint_params.force_pixel_readback = force_pixel_readback;
   video_renderer_.Paint(frame, canvas, flags, paint_params, provider.get());
 }
 
@@ -1400,9 +1403,29 @@ WebMediaPlayerMS::GetPaintCanvasVideoRenderer() {
   return &video_renderer_;
 }
 
+media::VideoFrameSharedImageCache* WebMediaPlayerMS::GetRGBSharedImageCache() {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  if (!rgb_shared_image_cache_) {
+    rgb_shared_image_cache_ =
+        std::make_unique<media::VideoFrameSharedImageCache>();
+  }
+  return rgb_shared_image_cache_.get();
+}
+
+media::VideoFrameSharedImageCache* WebMediaPlayerMS::GetYUVSharedImageCache() {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  if (!yuv_shared_image_cache_) {
+    yuv_shared_image_cache_ =
+        std::make_unique<media::VideoFrameSharedImageCache>();
+  }
+  return yuv_shared_image_cache_.get();
+}
+
 void WebMediaPlayerMS::ResetCanvasCache() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   video_renderer_.ResetCache();
+  rgb_shared_image_cache_.reset();
+  yuv_shared_image_cache_.reset();
 }
 
 void WebMediaPlayerMS::TriggerResize() {

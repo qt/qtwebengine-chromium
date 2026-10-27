@@ -100,18 +100,17 @@ EGLint ClientWaitSync(Thread *thread,
     Sync *syncObject            = display->getSync(syncID);
     ANGLE_EGL_TRY_RETURN(
         thread, syncObject->clientWait(display, currentContext, flags, timeout, &syncStatus),
-        "eglClientWaitSync", GetSyncIfValid(display, syncID), EGL_FALSE);
+        "eglClientWaitSync", syncObject, EGL_FALSE);
 
     // When performing CPU wait through UnlockedTailCall we need to handle any error conditions
     if (egl::Display::GetCurrentThreadUnlockedTailCall()->any())
     {
-        auto handleErrorStatus = [thread, display, syncID](void *result) {
+        auto handleErrorStatus = [thread, syncObject](void *result) {
             EGLint *eglResult = static_cast<EGLint *>(result);
             ASSERT(eglResult);
             if (*eglResult == EGL_FALSE)
             {
-                thread->setError(egl::Error(EGL_BAD_ALLOC), "eglClientWaitSync",
-                                 GetSyncIfValid(display, syncID));
+                thread->setError(egl::Error(EGL_BAD_ALLOC), "eglClientWaitSync", syncObject);
             }
             else
             {
@@ -599,9 +598,7 @@ const char *QueryString(Thread *thread, Display *display, EGLint name)
             break;
         case EGL_VERSION:
         {
-            static const char *sVersionString =
-                MakeStaticString(std::string("1.5 (ANGLE ") + angle::GetANGLEVersionString() + ")");
-            result = sVersionString;
+            result = angle::GetANGLEEGLVersionString();
             break;
         }
         default:

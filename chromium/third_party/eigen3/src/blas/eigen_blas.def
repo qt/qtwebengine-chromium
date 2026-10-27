@@ -63,6 +63,8 @@ EXPORTS
     scasum_
     dasum_
     dzasum_
+    dcabs1_
+    scabs1_
     ; ismax_
     ; idmax_
     ; icmax_

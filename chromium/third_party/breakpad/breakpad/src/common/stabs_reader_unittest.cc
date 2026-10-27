@@ -37,6 +37,9 @@
 #include <assert.h>
 #include <errno.h>
 #include <stab.h>
+#ifdef __APPLE__
+#include <mach-o/nlist.h>
+#endif
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>

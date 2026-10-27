@@ -4,6 +4,7 @@
 
 #include "cast/streaming/public/session_messenger.h"
 
+#include <algorithm>
 #include <chrono>
 #include <string>
 
@@ -187,7 +188,7 @@ void SenderSessionMessenger::OnMessage(const std::string& source_id,
   }
 
   ErrorOr<Json::Value> message_body = json::Parse(message);
-  if (!message_body) {
+  if (!message_body || !message_body.value().isObject()) {
     ReportError(message_body.error());
     OSP_DLOG_WARN << "Received an invalid message: " << message;
     return;
@@ -290,11 +291,55 @@ Error ReceiverSessionMessenger::SendMessage(const std::string& source_id,
                                        message_json.value());
 }
 
+void ReceiverSessionMessenger::SetCustomMessageHandler(
+    std::string_view message_namespace,
+    CustomMessageCallback cb) {
+  auto it = std::find_if(custom_message_handlers_.begin(),
+                         custom_message_handlers_.end(),
+                         [&message_namespace](const auto& pair) {
+                           return pair.first == message_namespace;
+                         });
+
+  if (!cb) {
+    if (it != custom_message_handlers_.end()) {
+      custom_message_handlers_.erase(it);
+    }
+    return;
+  }
+
+  if (it != custom_message_handlers_.end()) {
+    OSP_LOG_ERROR << "Handler already exists for namespace: "
+                  << message_namespace;
+    return;
+  } else {
+    custom_message_handlers_.emplace_back(std::string(message_namespace),
+                                          std::move(cb));
+  }
+}
+
+Error ReceiverSessionMessenger::SendMessage(std::string_view destination_id,
+                                            std::string_view message_namespace,
+                                            std::string_view message) {
+  message_port().PostMessage(std::string(destination_id),
+                             std::string(message_namespace),
+                             std::string(message));
+  return Error::None();
+}
+
 void ReceiverSessionMessenger::OnMessage(const std::string& source_id,
                                          const std::string& message_namespace,
                                          const std::string& message) {
   if (message_namespace != kCastWebrtcNamespace &&
       message_namespace != kCastRemotingNamespace) {
+    auto it = std::find_if(custom_message_handlers_.begin(),
+                           custom_message_handlers_.end(),
+                           [&message_namespace](const auto& pair) {
+                             return pair.first == message_namespace;
+                           });
+    if (it != custom_message_handlers_.end()) {
+      it->second(source_id, message_namespace, message);
+      return;
+    }
     OSP_DLOG_WARN << "Received message from unknown namespace: "
                   << message_namespace;
     return;
@@ -303,7 +348,7 @@ void ReceiverSessionMessenger::OnMessage(const std::string& source_id,
   // If the message is bad JSON, the sender is in a funky state so we
   // report an error.
   ErrorOr<Json::Value> message_body = json::Parse(message);
-  if (message_body.is_error()) {
+  if (message_body.is_error() || !message_body.value().isObject()) {
     ReportError(message_body.error());
     return;
   }

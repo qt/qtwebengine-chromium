@@ -15,18 +15,17 @@
 #ifndef INK_STROKES_BRUSH_BRUSH_FAMILY_H_
 #define INK_STROKES_BRUSH_BRUSH_FAMILY_H_
 
-#include <cstdint>
 #include <string>
 #include <variant>
 #include <vector>
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "ink/brush/brush_coat.h"
 #include "ink/brush/brush_paint.h"
 #include "ink/brush/brush_tip.h"
+#include "ink/brush/version.h"
 #include "ink/types/duration.h"
 
 namespace ink {
@@ -38,20 +37,17 @@ class BrushFamily {
  public:
   // LINT.IfChange(input_model_types)
 
-  // Spring-based input modeler. Stored in the `InputModel` variant below to
-  // allow future input models to be added without changing the shape of
-  // existing strokes.
-  struct SpringModel {};
-
-  // A naive model that passes through raw inputs mostly unchanged.  This is an
-  // experimental configuration which may be adjusted or removed later.
-  struct ExperimentalNaiveModel {};
+  // A naive input model that passes raw inputs through unchanged, performing
+  // only base-minimal modeling to derive velocity and acceleration values for
+  // the modeled inputs. This can be useful as a point of comparison for other
+  // input models, or for callers who wish to do their own input modeling prior
+  // to passing inputs into Ink.
+  struct PassthroughModel {};
 
   // Averages nearby inputs together within a sliding time window. To be valid,
   // the window size must be finite and strictly positive, and the upsampling
   // period must be strictly positive (but may be infinte, to completely disable
-  // upsampling). This is an experimental configuration which may be adjusted or
-  // removed later.
+  // upsampling).
   struct SlidingWindowModel {
     // The duration over which to average together nearby raw inputs. Typically
     // this should be somewhere in the 1 ms to 100 ms range.
@@ -68,10 +64,29 @@ class BrushFamily {
   // inputs. Raw hardware inputs tend to be noisy, and must be smoothed before
   // being passed into a brush's behaviors and extruded into a mesh in order to
   // get a good-looking stroke.
-  using InputModel =
-      std::variant<SpringModel, ExperimentalNaiveModel, SlidingWindowModel>;
+  using InputModel = std::variant<PassthroughModel, SlidingWindowModel>;
 
   // LINT.ThenChange(../strokes/internal/stroke_input_modeler_test.cc:input_model_types)
+
+  // Metadata for a `BrushFamily` that can be used by client apps or developers,
+  // but is not used internally by Ink.
+  //
+  // All metadata strings should be UTF-8.
+  struct Metadata {
+    // An optional ID string for this brush family, specified by (and meaningful
+    // to) the client that originally created it. For example, this could be a
+    // URI, or UUID, or a simple word. No particular structure or meaning should
+    // be ascribed to this string by clients for brushes not created by that
+    // client.
+    std::string client_brush_family_id;
+    // A multi-line, human-readable string with a description of the brush and
+    // how it works, with the intended audience being designers/developers who
+    // are editing the brush definition. This string is not generally intended
+    // to be displayed to end users.
+    std::string developer_comment;
+
+    bool operator==(const Metadata&) const = default;
+  };
 
   // Returns the default `InputModel` that will be used by
   // `BrushFamily::Create()` when none is specified.
@@ -98,34 +113,25 @@ class BrushFamily {
   //    - size components must be finite and greater than 0.
   //    - offset components must be in interval [0, 1].
   //    - rotation component must be finite.
-  //    - size_jitter components must be smaller than or equal to their size
-  //      counterparts.
-  //    - offset_jitter must be in interval [0, 1].
-  //    - rotation jitter must be a finite.
   //    - opacity must be in interval [0, 1].
   //    - animation_frames must be greater than 0.
-  //    - For each TextureKeyframe the following must hold:
-  //      ~ progress has to be in interval [0, 1].
-  //      ~ size components, if present, must be finite and greater than 0.
-  //      ~ offset components, if present, must be in interval [0, 1].
-  //      ~ rotation, if present, must finite.
-  //      ~ opacity, if present, must be in interval [0, 1].
   //  * All texture layers must have the same animation_frames value.
-  //  * For now, all texture layers must use the same `TextureMapping` value.
+  //  * For now, all texture layers must use the same `TextureLayer` variant.
   //    TODO: b/375203215 - Relax this requirement once we are able to mix
-  //    rendering tiling and winding textures in a single `BrushPaint`.
+  //    rendering tiling and stamping textures in a single `BrushPaint`.
   //  * Every enum property must be equal to one of the named enumerators for
   //    that property's type.
   static absl::StatusOr<BrushFamily> Create(
       const BrushTip& tip, const BrushPaint& paint,
-      absl::string_view client_brush_family_id = "",
-      const InputModel& input_model = DefaultInputModel());
+      const InputModel& input_model = DefaultInputModel(),
+      const Metadata& metadata = Metadata{});
   static absl::StatusOr<BrushFamily> Create(
       absl::Span<const BrushCoat> coats,
-      absl::string_view client_brush_family_id = "",
-      const InputModel& input_model = DefaultInputModel());
+      const InputModel& input_model = DefaultInputModel(),
+      const Metadata& metadata = Metadata{});
 
-  // Constructs a brush-family with default tip and paint and empty ID.
+  // Constructs a brush-family with default tip and paint, default input model,
+  // and empty metadata.
   BrushFamily() = default;
 
   BrushFamily(const BrushFamily&) = default;
@@ -136,29 +142,37 @@ class BrushFamily {
   absl::Span<const BrushCoat> GetCoats() const;
   const InputModel& GetInputModel() const;
 
-  // Returns the ID for this brush family specified by the client that
-  // originally created it, or an empty string if no ID was specified. This is
-  // considered when comparing `BrushFaily` objects for equality, but it is
-  // not assumed that two `BrushFamily` objects with the same IDs are
-  // equivalent, and the ID is not otherwise used internally by Ink.
-  const std::string& GetClientBrushFamilyId() const;
+  // Returns the metadata fields for this brush family. This metadata is
+  // considered when comparing `BrushFamily` objects for equality, but is not
+  // otherwise used internally by Ink.
+  const Metadata& GetMetadata() const;
+
+  // Returns true if this brush family has fallback data that was preserved
+  // during decoding.
+  bool HasFallbacks() const;
+
+  // Calculates the minimum version of the Ink library that is required to use
+  // this brush family.
+  Version CalculateMinimumRequiredVersion() const;
 
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const BrushFamily& family) {
     sink.Append(family.ToFormattedString());
   }
 
+  friend class BrushFamilyInternalAccessor;
+
  private:
-  BrushFamily(absl::Span<const BrushCoat> coats,
-              absl::string_view client_brush_family_id,
-              const InputModel& input_model);
+  BrushFamily(absl::Span<const BrushCoat> coats, const InputModel& input_model,
+              const Metadata& metadata);
 
   // Implementation helper for AbslStringify.
   std::string ToFormattedString() const;
 
   std::vector<BrushCoat> coats_ = {BrushCoat{.tip = BrushTip{}}};
-  std::string client_brush_family_id_;
-  InputModel input_model_;
+  InputModel input_model_ = DefaultInputModel();
+  Metadata metadata_;
+  std::string opaque_decoded_proto_bytes_with_fallbacks_;
 };
 
 namespace brush_internal {
@@ -181,12 +195,12 @@ inline absl::Span<const BrushCoat> BrushFamily::GetCoats() const {
   return coats_;
 }
 
-inline const std::string& BrushFamily::GetClientBrushFamilyId() const {
-  return client_brush_family_id_;
-}
-
 inline const BrushFamily::InputModel& BrushFamily::GetInputModel() const {
   return input_model_;
+}
+
+inline const BrushFamily::Metadata& BrushFamily::GetMetadata() const {
+  return metadata_;
 }
 
 }  // namespace ink

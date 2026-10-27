@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 if (GOOGLEHASH_INCLUDES AND GOOGLEHASH_LIBRARIES)
   set(GOOGLEHASH_FIND_QUIETLY TRUE)

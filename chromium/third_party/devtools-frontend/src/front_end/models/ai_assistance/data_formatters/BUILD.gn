@@ -10,21 +10,17 @@ ts_library("unittests") {
 
   sources = [
     "FileFormatter.test.ts",
-    "NetworkRequestFormatter.test.ts",
     "UnitFormatters.test.ts",
   ]
 
   deps = [
     "../:bundle",
     "../../../core/common:bundle",
-    "../../../core/host:bundle",
     "../../../core/platform:bundle",
     "../../../core/sdk:bundle",
-    "../../../generated:protocol",
     "../../../testing",
     "../../bindings:bundle",
-    "../../text_utils:bundle",
-    "../../trace:bundle",
+    "../../workspace:bundle",
   ]
 }
 
@@ -33,13 +29,21 @@ devtools_foundation_module("foundation_unittests") {
 
   sources = [
     "LighthouseFormatter.test.ts",
+    "NetworkRequestFormatter.test.ts",
     "PerformanceInsightFormatter.test.ts",
     "PerformanceTraceFormatter.test.ts",
   ]
 
   deps = [
     "..:bundle",
+    "../../../core/platform:bundle",
+    "../../../core/sdk:bundle",
+    "../../../generated",
     "../../../testing",
+    "../../crux-manager:bundle",
+    "../../lighthouse:bundle",
+    "../../text_utils:bundle",
     "../../trace:bundle",
+    "../../workspace:bundle",
   ]
 }

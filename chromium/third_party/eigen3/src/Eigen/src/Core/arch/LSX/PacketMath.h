@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_PACKET_MATH_LSX_H
 #define EIGEN_PACKET_MATH_LSX_H
@@ -45,49 +46,27 @@ typedef eigen_packet_wrapper<__m128i, 6> Packet4ui;
 typedef eigen_packet_wrapper<__m128i, 7> Packet2ul;
 
 template <>
-struct is_arithmetic<__m128> {
-  enum { value = true };
-};
+struct is_arithmetic<__m128> : std::true_type {};
 template <>
-struct is_arithmetic<__m128i> {
-  enum { value = true };
-};
+struct is_arithmetic<__m128i> : std::true_type {};
 template <>
-struct is_arithmetic<__m128d> {
-  enum { value = true };
-};
+struct is_arithmetic<__m128d> : std::true_type {};
 template <>
-struct is_arithmetic<Packet16c> {
-  enum { value = true };
-};
+struct is_arithmetic<Packet16c> : std::true_type {};
 template <>
-struct is_arithmetic<Packet8s> {
-  enum { value = true };
-};
+struct is_arithmetic<Packet8s> : std::true_type {};
 template <>
-struct is_arithmetic<Packet4i> {
-  enum { value = true };
-};
+struct is_arithmetic<Packet4i> : std::true_type {};
 template <>
-struct is_arithmetic<Packet2l> {
-  enum { value = true };
-};
+struct is_arithmetic<Packet2l> : std::true_type {};
 template <>
-struct is_arithmetic<Packet16uc> {
-  enum { value = false };
-};
+struct is_arithmetic<Packet16uc> : std::false_type {};
 template <>
-struct is_arithmetic<Packet8us> {
-  enum { value = false };
-};
+struct is_arithmetic<Packet8us> : std::false_type {};
 template <>
-struct is_arithmetic<Packet4ui> {
-  enum { value = false };
-};
+struct is_arithmetic<Packet4ui> : std::false_type {};
 template <>
-struct is_arithmetic<Packet2ul> {
-  enum { value = false };
-};
+struct is_arithmetic<Packet2ul> : std::false_type {};
 
 EIGEN_ALWAYS_INLINE Packet4f make_packet4f(float a, float b, float c, float d) {
   float from[4] = {a, b, c, d};

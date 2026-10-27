@@ -172,6 +172,7 @@ source_set("base") {
       "//chrome/installer/util:work_item",
       "//third_party/boringssl",
     ]
+    libs = [ "wtsapi32.lib" ]
     if (icu_use_data_file) {
       defines = [ "ENTERPRISE_COMPANION_USE_ICU_DATA_FILE" ]
       deps += [ ":icu_file_checksum_header" ]
@@ -373,6 +374,7 @@ static_library("installer_paths") {
   visibility = [
     ":*",
     "//chrome/browser/ui:*",
+    "//chrome/browser/ui/webui/updater:*",
     "//chrome/updater:*",
   ]
 
@@ -398,6 +400,7 @@ static_library("constants_prod") {
   visibility = [
     ":*",
     "//chrome/browser/ui:*",
+    "//chrome/browser/ui/webui/updater:*",
     "//chrome/enterprise_companion/mac:*",
     "//chrome/test:*",
     "//chrome/updater:*",

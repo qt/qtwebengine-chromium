@@ -40,22 +40,28 @@ export function getReleaseNote(): ReleaseNote {
 }
 
 let releaseNote: ReleaseNote = {
-  version: 148,
-  header: 'What\'s new in DevTools 148',
+  version: 150,
+  header: 'What’s new in DevTools 150',
   markdownLinks: [
     {
-      key: 'extension-debugging',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-148/#extension-debugging',
+      key: 'devtools-for-agents',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-150/#devtools-for-agents',
     },
     {
-      key: 'sort-network-requests',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-148/#sort-network-requests',
+      key: 'ai-assistance',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-150/#ai-assistance',
     },
     {
-      key: 'accessibility-tree',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-148/#accessibility-tree',
+      key: 'css-container-function',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-150/#css-container-function',
     }
   ],
-  videoLinks: [],
-  link: 'https://developer.chrome.com/blog/new-in-devtools-148/',
+  videoLinks: [
+    {
+      description: 'See all highlights from Chrome 148-150',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-150' as Platform.DevToolsPath.UrlString,
+      type: VideoType.WHATS_NEW,
+    },
+  ],
+  link: 'https://developer.chrome.com/blog/new-in-devtools-150/',
 };

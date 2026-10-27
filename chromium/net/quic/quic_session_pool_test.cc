@@ -26,6 +26,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/bind.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_tick_clock.h"
@@ -123,6 +124,10 @@
 #include "url/scheme_host_port.h"
 #include "url/url_constants.h"
 
+#if BUILDFLAG(IS_ANDROID)
+#include "base/android/pre_freeze_background_memory_trimmer.h"
+#endif
+
 using std::string;
 
 namespace net::test {
@@ -160,7 +165,8 @@ QuicSessionPool::QuicCryptoClientConfigKey CreateTestQuicCryptoClientConfigKey(
       PrivacyMode::PRIVACY_MODE_DISABLED, ProxyChain::Direct(),
       SessionUsage::kDestination, SocketTag(), network_anonymization_key,
       SecureDnsPolicy::kAllow, /*require_dns_https_alpn=*/false,
-      /*disable_cert_verification_network_fetches=*/false));
+      /*disable_cert_verification_network_fetches=*/false,
+      handles::kInvalidNetworkHandle));
 }
 
 std::vector<TestParams> GetTestParams() {
@@ -190,7 +196,8 @@ class SessionAttemptHelper : public QuicSessionAttempt::Delegate {
         PrivacyMode::PRIVACY_MODE_DISABLED, ProxyChain::Direct(),
         SessionUsage::kDestination, SocketTag(), NetworkAnonymizationKey(),
         SecureDnsPolicy::kAllow, /*require_dns_https_alpn=*/false,
-        /*disable_cert_verification_network_fetches=*/false);
+        /*disable_cert_verification_network_fetches=*/false,
+        handles::kInvalidNetworkHandle);
     quic_session_alias_key_ = QuicSessionAliasKey(destination, session_key);
     attempt_ = pool_->CreateSessionAttempt(
         this, quic_session_alias_key_.session_key(), quic_endpoint,
@@ -1412,13 +1419,77 @@ TEST_P(QuicSessionPoolTest, ServerNetworkStatsWithNetworkAnonymizationKey) {
   }
 }
 
+TEST_P(QuicSessionPoolTest, MemoryPressureGlobalExclusion) {
+  base::MemoryPressureListenerRegistry memory_pressure_listener_registry;
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatures(
+      {features::kPartitionConnectionsByNetworkIsolationKey,
+       features::kIgnoreQuicCryptoConfigMemoryPressure},
+      {});
+  Initialize();
+
+  quic::QuicServerId doh_server_id("doh.example.com", 443);
+  quic::QuicServerId general_server_id("www.example.com", 443);
+
+  // 1. Create a config with DoH partition.
+  NetworkAnonymizationKey doh_nak =
+      NetworkAnonymizationKey::CreateEmptyWithPartition(
+          NetworkIsolationPartition::kDnsOverHttps);
+  QuicSessionPool::QuicCryptoClientConfigKey doh_key =
+      CreateTestQuicCryptoClientConfigKey(doh_nak);
+  std::unique_ptr<QuicCryptoClientConfigHandle> doh_handle =
+      QuicSessionPoolPeer::GetCryptoConfig(pool_.get(), doh_key);
+
+  // 2. Create a config with General partition.
+  NetworkAnonymizationKey general_nak =
+      NetworkAnonymizationKey::CreateEmptyWithPartition(
+          NetworkIsolationPartition::kGeneral);
+  QuicSessionPool::QuicCryptoClientConfigKey general_key =
+      CreateTestQuicCryptoClientConfigKey(general_nak);
+  std::unique_ptr<QuicCryptoClientConfigHandle> general_handle =
+      QuicSessionPoolPeer::GetCryptoConfig(pool_.get(), general_key);
+
+  // Populate session cache.
+  bssl::UniquePtr<SSL_SESSION> doh_session(
+      SSL_SESSION_new(doh_handle->GetConfig()->ssl_ctx()));
+  ASSERT_TRUE(doh_session);
+
+  bssl::UniquePtr<SSL_SESSION> general_session(
+      SSL_SESSION_new(general_handle->GetConfig()->ssl_ctx()));
+  ASSERT_TRUE(general_session);
+
+  quic::TransportParameters params;
+  doh_handle->GetConfig()->session_cache()->Insert(
+      doh_server_id, std::move(doh_session), params, nullptr);
+  general_handle->GetConfig()->session_cache()->Insert(
+      general_server_id, std::move(general_session), params, nullptr);
+
+  EXPECT_FALSE(QuicSessionPoolPeer::CryptoConfigSessionCacheIsEmpty(pool_.get(),
+                                                                    doh_key));
+  EXPECT_FALSE(QuicSessionPoolPeer::CryptoConfigSessionCacheIsEmpty(
+      pool_.get(), general_key));
+
+  // 3. Trigger memory pressure.
+  base::test::TestFuture<void> memory_pressure_future;
+  base::MemoryPressureListener::SimulatePressureNotificationAsync(
+      base::MemoryPressureLevel::MEMORY_PRESSURE_LEVEL_CRITICAL,
+      memory_pressure_future.GetCallback());
+  ASSERT_TRUE(memory_pressure_future.Wait());
+
+  // 4. Verify that neither DoH nor General was cleared.
+  EXPECT_FALSE(QuicSessionPoolPeer::CryptoConfigSessionCacheIsEmpty(pool_.get(),
+                                                                    doh_key));
+  EXPECT_FALSE(QuicSessionPoolPeer::CryptoConfigSessionCacheIsEmpty(
+      pool_.get(), general_key));
+}
+
 TEST_P(QuicSessionPoolTest, MemoryPressureDohExclusion) {
   base::MemoryPressureListenerRegistry memory_pressure_listener_registry;
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitWithFeatures(
       {features::kPartitionConnectionsByNetworkIsolationKey,
        features::kIgnoreQuicCryptoConfigMemoryPressureForDoh},
-      {});
+      {features::kIgnoreQuicCryptoConfigMemoryPressure});
   Initialize();
 
   quic::QuicServerId doh_server_id("doh.example.com", 443);
@@ -1481,7 +1552,8 @@ TEST_P(QuicSessionPoolTest, MemoryPressureWithFeatureDisabled) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitWithFeatures(
       {features::kPartitionConnectionsByNetworkIsolationKey},
-      {features::kIgnoreQuicCryptoConfigMemoryPressureForDoh});
+      {features::kIgnoreQuicCryptoConfigMemoryPressureForDoh,
+       features::kIgnoreQuicCryptoConfigMemoryPressure});
   Initialize();
 
   quic::QuicServerId server_id("doh.example.com", 443);
@@ -2043,12 +2115,12 @@ TEST_P(QuicSessionPoolTest, HttpsPoolingWithMatchingPins) {
   transport_security_state_.EnableStaticPinsForTesting();
   ScopedTransportSecurityStateSource scoped_security_state_source;
 
-  HashValue primary_pin(HASH_VALUE_SHA256);
-  EXPECT_TRUE(primary_pin.FromString(
-      "sha256/Nn8jk5By4Vkq6BeOVZ7R7AC6XUUBZsWmUbJR1f1Y5FY="));
+  std::optional<HashValue> primary_pin = HashValue::FromString(
+      "sha256/Nn8jk5By4Vkq6BeOVZ7R7AC6XUUBZsWmUbJR1f1Y5FY=");
+  ASSERT_TRUE(primary_pin.has_value());
   ProofVerifyDetailsChromium verify_details = DefaultProofVerifyDetails();
   verify_details.cert_verify_result.public_key_hashes.push_back(
-      primary_pin.sha256hashvalue());
+      primary_pin->sha256hashvalue());
   crypto_client_stream_factory_.AddProofVerifyDetails(&verify_details);
 
   host_resolver_->set_synchronous_mode(true);
@@ -2103,12 +2175,12 @@ TEST_P(QuicSessionPoolTest, NoHttpsPoolingWithDifferentPins) {
       test::GetTestHashValue(bad_pin));
   crypto_client_stream_factory_.AddProofVerifyDetails(&verify_details1);
 
-  HashValue primary_pin(HASH_VALUE_SHA256);
-  EXPECT_TRUE(primary_pin.FromString(
-      "sha256/Nn8jk5By4Vkq6BeOVZ7R7AC6XUUBZsWmUbJR1f1Y5FY="));
+  std::optional<HashValue> primary_pin = HashValue::FromString(
+      "sha256/Nn8jk5By4Vkq6BeOVZ7R7AC6XUUBZsWmUbJR1f1Y5FY=");
+  EXPECT_TRUE(primary_pin.has_value());
   ProofVerifyDetailsChromium verify_details2 = DefaultProofVerifyDetails();
   verify_details2.cert_verify_result.public_key_hashes.push_back(
-      primary_pin.sha256hashvalue());
+      primary_pin->sha256hashvalue());
   crypto_client_stream_factory_.AddProofVerifyDetails(&verify_details2);
 
   host_resolver_->set_synchronous_mode(true);
@@ -2808,6 +2880,150 @@ TEST_P(QuicSessionPoolTest, CloseSessionsOnIPAddressChanged) {
   socket_data2.ExpectAllReadDataConsumed();
   socket_data2.ExpectAllWriteDataConsumed();
 }
+
+#if BUILDFLAG(IS_ANDROID)
+class ScopedSupportsModernTrim {
+ public:
+  explicit ScopedSupportsModernTrim(bool supports)
+      : original_supports_(base::android::PreFreezeBackgroundMemoryTrimmer::
+                               SupportsModernTrim()) {
+    base::android::PreFreezeBackgroundMemoryTrimmer::
+        SetSupportsModernTrimForTesting(supports);
+  }
+  ~ScopedSupportsModernTrim() {
+    base::android::PreFreezeBackgroundMemoryTrimmer::
+        SetSupportsModernTrimForTesting(original_supports_);
+  }
+
+ private:
+  const bool original_supports_;
+};
+
+TEST_P(QuicSessionPoolTest, CloseSessionsOnPreFreeze) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      features::kCloseQuicSessionsOnPreFreeze);
+  ScopedSupportsModernTrim scoped_supports(true);
+
+  Initialize();
+  base::HistogramTester histograms;
+
+  ProofVerifyDetailsChromium verify_details = DefaultProofVerifyDetails();
+  crypto_client_stream_factory_.AddProofVerifyDetails(&verify_details);
+
+  MockQuicData socket_data(version_);
+  socket_data.AddReadPauseForever();
+  int packet_num = 1;
+  socket_data.AddWrite(SYNCHRONOUS,
+                       ConstructInitialSettingsPacket(packet_num++));
+  socket_data.AddWrite(
+      SYNCHRONOUS,
+      client_maker_.Packet(packet_num)
+          .AddConnectionCloseFrame(quic::QUIC_PEER_GOING_AWAY, "net error")
+          .Build());
+  socket_data.AddSocketDataToFactory(socket_factory_.get());
+
+  RequestBuilder builder(this);
+  EXPECT_EQ(ERR_IO_PENDING, builder.CallRequest());
+  histograms.ExpectUniqueSample("Net.QuicSession.RequestBlockedByPreFreeze",
+                                false, 1);
+  EXPECT_THAT(callback_.WaitForResult(), IsOk());
+  std::unique_ptr<HttpStream> stream = CreateStream(&builder.request);
+  HttpRequestInfo request_info;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
+  stream->RegisterRequest(&request_info);
+  EXPECT_EQ(OK, stream->InitializeStream(false, DEFAULT_PRIORITY, net_log_,
+                                         CompletionOnceCallback()));
+
+  // Check an active session exists for the destination.
+  EXPECT_TRUE(HasActiveSession(kDefaultDestination));
+  QuicChromiumClientSession* session = GetActiveSession(kDefaultDestination);
+  EXPECT_TRUE(QuicSessionPoolPeer::IsLiveSession(pool_.get(), session));
+
+  // Trigger pre-freeze.
+  base::android::PreFreezeBackgroundMemoryTrimmer::OnPreFreezeForTesting();
+
+  // Wait for the session to be closed.
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    return !HasActiveSession(kDefaultDestination) &&
+           !QuicSessionPoolPeer::IsLiveSession(pool_.get(), session);
+  }));
+
+  base::android::PreFreezeBackgroundMemoryTrimmer::SetForcePreFrozenForTesting(
+      true);
+
+  // Verify that new requests are blocked immediately.
+  RequestBuilder builder2(this);
+  EXPECT_EQ(ERR_ABORTED, builder2.CallRequest());
+  histograms.ExpectBucketCount("Net.QuicSession.RequestBlockedByPreFreeze",
+                               true, 1);
+  histograms.ExpectTotalCount("Net.QuicSession.RequestBlockedByPreFreeze", 2);
+
+  base::android::PreFreezeBackgroundMemoryTrimmer::SetForcePreFrozenForTesting(
+      false);
+
+  socket_data.ExpectAllReadDataConsumed();
+  socket_data.ExpectAllWriteDataConsumed();
+}
+
+TEST_P(QuicSessionPoolTest, CloseSessionsOnPreFreezeDisabled) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndDisableFeature(
+      features::kCloseQuicSessionsOnPreFreeze);
+  ScopedSupportsModernTrim scoped_supports(true);
+
+  Initialize();
+  ProofVerifyDetailsChromium verify_details = DefaultProofVerifyDetails();
+  crypto_client_stream_factory_.AddProofVerifyDetails(&verify_details);
+
+  MockQuicData socket_data(version_);
+  socket_data.AddReadPauseForever();
+  int packet_num = 1;
+  socket_data.AddWrite(SYNCHRONOUS,
+                       ConstructInitialSettingsPacket(packet_num++));
+  // Expect ConnectionClose on shutdown
+  socket_data.AddWrite(
+      SYNCHRONOUS,
+      client_maker_.Packet(packet_num)
+          .AddConnectionCloseFrame(quic::QUIC_CONNECTION_CANCELLED, "net error")
+          .Build());
+  socket_data.AddSocketDataToFactory(socket_factory_.get());
+
+  RequestBuilder builder(this);
+  EXPECT_EQ(ERR_IO_PENDING, builder.CallRequest());
+  EXPECT_THAT(callback_.WaitForResult(), IsOk());
+  std::unique_ptr<HttpStream> stream = CreateStream(&builder.request);
+  HttpRequestInfo request_info;
+  request_info.traffic_annotation =
+      MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS);
+  stream->RegisterRequest(&request_info);
+  EXPECT_EQ(OK, stream->InitializeStream(false, DEFAULT_PRIORITY, net_log_,
+                                         CompletionOnceCallback()));
+
+  // Check an active session exists for the destination.
+  EXPECT_TRUE(HasActiveSession(kDefaultDestination));
+  QuicChromiumClientSession* session = GetActiveSession(kDefaultDestination);
+  EXPECT_TRUE(QuicSessionPoolPeer::IsLiveSession(pool_.get(), session));
+
+  // Trigger pre-freeze.
+  base::android::PreFreezeBackgroundMemoryTrimmer::OnPreFreezeForTesting();
+
+  // Check that the session is NOT closed.
+  EXPECT_TRUE(HasActiveSession(kDefaultDestination));
+  EXPECT_TRUE(QuicSessionPoolPeer::IsLiveSession(pool_.get(), session));
+
+  // Verify that new requests are NOT blocked and reuse the session.
+  RequestBuilder builder2(this);
+  EXPECT_EQ(OK, builder2.CallRequest());
+
+  // Destroy pool first to close session cleanly (writing ConnectionClose)
+  pool_.reset();
+
+  socket_data.ExpectAllReadDataConsumed();
+  socket_data.ExpectAllWriteDataConsumed();
+}
+#endif
 
 // Test that if goaway_session_on_ip_change is set, old sessions will be marked
 // as going away on IP address change instead of being closed. New requests will
@@ -15489,7 +15705,8 @@ TEST_P(QuicSessionPoolTest, CanUseExistingSessionForWebSocket_NoSessionExists) {
       ProxyChain::Direct(), SessionUsage::kDestination, SocketTag(),
       NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
       /*require_dns_https_alpn=*/false,
-      /*disable_cert_verification_network_fetches=*/false);
+      /*disable_cert_verification_network_fetches=*/false,
+      handles::kInvalidNetworkHandle);
   EXPECT_FALSE(pool_->CanUseExistingSessionForWebSocket(session_key,
                                                         kDefaultDestination));
 }
@@ -15525,7 +15742,8 @@ TEST_P(QuicSessionPoolTest,
       ProxyChain::Direct(), SessionUsage::kDestination, SocketTag(),
       NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
       /*require_dns_https_alpn=*/false,
-      /*disable_cert_verification_network_fetches=*/false);
+      /*disable_cert_verification_network_fetches=*/false,
+      handles::kInvalidNetworkHandle);
   EXPECT_TRUE(pool_->CanUseExistingSession(session_key, kDefaultDestination));
   EXPECT_FALSE(pool_->CanUseExistingSessionForWebSocket(session_key,
                                                         kDefaultDestination));
@@ -15592,7 +15810,8 @@ TEST_P(QuicSessionPoolTest,
       ProxyChain::Direct(), SessionUsage::kDestination, SocketTag(),
       NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
       /*require_dns_https_alpn=*/false,
-      /*disable_cert_verification_network_fetches=*/false);
+      /*disable_cert_verification_network_fetches=*/false,
+      handles::kInvalidNetworkHandle);
   EXPECT_TRUE(pool_->CanUseExistingSession(session_key, kDefaultDestination));
   EXPECT_TRUE(pool_->CanUseExistingSessionForWebSocket(session_key,
                                                        kDefaultDestination));

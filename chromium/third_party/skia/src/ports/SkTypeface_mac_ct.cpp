@@ -376,16 +376,17 @@ SkFontStyle SkCTFontDescriptorGetSkFontStyle(CTFontDescriptorRef desc, bool from
 // Web fonts added to the CTFont registry do not return their character set.
 // Iterate through the font in this case. The existing caller caches the result,
 // so the performance impact isn't too bad.
-static void populate_glyph_to_unicode_slow(CTFontRef ctFont, CFIndex glyphCount,
+static void populate_glyph_to_unicode_slow(CTFontRef ctFont, const CFIndex glyphCount,
                                            SkUnichar* out) {
     sk_bzero(out, glyphCount * sizeof(SkUnichar));
+    CFIndex glyphsRemaining = glyphCount;
     UniChar unichar = 0;
-    while (glyphCount > 0) {
+    while (glyphsRemaining > 0) {
         CGGlyph glyph;
         if (CTFontGetGlyphsForCharacters(ctFont, &unichar, &glyph, 1)) {
-            if (out[glyph] == 0) {
+            if (glyph < glyphCount && out[glyph] == 0) {
                 out[glyph] = unichar;
-                --glyphCount;
+                --glyphsRemaining;
             }
         }
         if (++unichar == 0) {
@@ -604,9 +605,9 @@ static SK_SFNT_ULONG get_font_type_tag(CTFontRef ctFont) {
 std::unique_ptr<SkStreamAsset> SkTypeface_Mac::onOpenStream(int* ttcIndex) const {
     *ttcIndex = 0;
 
-    fInitStream([this]{
+    SkAutoSharedMutexExclusive sm(fStreamMutex);
     if (fStream) {
-        return;
+        return fStream->duplicate();
     }
 
     SK_SFNT_ULONG fontType = get_font_type_tag(fFontRef.get());
@@ -704,12 +705,12 @@ std::unique_ptr<SkStreamAsset> SkTypeface_Mac::onOpenStream(int* ttcIndex) const
         ++entry;
     }
     fStream = std::make_unique<SkMemoryStream>(std::move(streamData));
-    });
     return fStream->duplicate();
 }
 
 std::unique_ptr<SkStreamAsset> SkTypeface_Mac::onOpenExistingStream(int* ttcIndex) const {
     *ttcIndex = 0;
+    SkAutoSharedMutexShared sm(fStreamMutex);
     return fStream ? fStream->duplicate() : nullptr;
 }
 
@@ -1220,7 +1221,7 @@ sk_sp<SkTypeface> SkTypeface_Mac::onMakeClone(const SkFontArguments& args) const
     if (!ctVariant) {
         return nullptr;
     }
-
+    SkAutoSharedMutexShared sm(fStreamMutex);
     return SkTypeface_Mac::Make(std::move(ctVariant), ctVariation.opsz,
                                 fStream ? fStream->duplicate() : nullptr);
 }

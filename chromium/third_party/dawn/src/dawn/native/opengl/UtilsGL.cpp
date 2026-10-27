@@ -25,14 +25,14 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/opengl/UtilsGL.h"
+#include "src/dawn/native/opengl/UtilsGL.h"
 
 #include <string>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/Log.h"
-#include "dawn/native/EnumMaskIterator.h"
-#include "dawn/native/opengl/OpenGLFunctions.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/Log.h"
+#include "src/dawn/native/EnumMaskIterator.h"
+#include "src/dawn/native/opengl/OpenGLFunctions.h"
 
 namespace dawn::native::opengl {
 
@@ -140,6 +140,10 @@ MaybeError CopyImageSubData(const OpenGLFunctions& gl,
             if (srcTarget == GL_TEXTURE_2D) {
                 DAWN_GL_TRY(gl, FramebufferTexture2D(GL_READ_FRAMEBUFFER, glAttachment, srcTarget,
                                                      srcHandle, srcLevel));
+            } else if (srcTarget == GL_TEXTURE_CUBE_MAP) {
+                GLenum target = GL_TEXTURE_CUBE_MAP_POSITIVE_X + src.z + layer;
+                DAWN_GL_TRY(gl, FramebufferTexture2D(GL_READ_FRAMEBUFFER, glAttachment, target,
+                                                     srcHandle, srcLevel));
             } else {
                 DAWN_GL_TRY(gl, FramebufferTextureLayer(GL_READ_FRAMEBUFFER, glAttachment,
                                                         srcHandle, srcLevel, src.z + layer));
@@ -148,7 +152,7 @@ MaybeError CopyImageSubData(const OpenGLFunctions& gl,
                 DAWN_GL_TRY(gl, FramebufferTexture2D(GL_DRAW_FRAMEBUFFER, glAttachment, dstTarget,
                                                      dstHandle, dstLevel));
             } else if (dstTarget == GL_TEXTURE_CUBE_MAP) {
-                GLenum target = GL_TEXTURE_CUBE_MAP_POSITIVE_X + layer;
+                GLenum target = GL_TEXTURE_CUBE_MAP_POSITIVE_X + dst.z + layer;
                 DAWN_GL_TRY(gl, FramebufferTexture2D(GL_DRAW_FRAMEBUFFER, glAttachment, target,
                                                      dstHandle, dstLevel));
             } else {

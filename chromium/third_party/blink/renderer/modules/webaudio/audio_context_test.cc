@@ -4,6 +4,10 @@
 
 #include "third_party/blink/renderer/modules/webaudio/audio_context.h"
 #include "third_party/blink/public/web/web_heap.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_worklet_options.h"
+#include "third_party/blink/renderer/modules/webaudio/audio_worklet.h"
+#include "third_party/blink/renderer/modules/webaudio/audio_worklet_messaging_proxy.h"
+#include "third_party/blink/renderer/core/workers/worker_thread.h"
 #include "third_party/blink/renderer/modules/webaudio/delay_node.h"
 
 #include <array>
@@ -1391,6 +1395,65 @@ TEST_F(AudioContextStatsTest, PlaybackStatsVisibilityRestriction) {
                                        /*expect_change=*/true);
 }
 
+TEST_F(AudioContextStatsTest, PlaybackStatsVisibilityDataDiscard) {
+  blink::WebRuntimeFeatures::EnableFeatureFromString(
+      "AudioContextPlaybackStats", true);
+  AudioContextOptions* options = AudioContextOptions::Create();
+  AudioContext* audio_context = AudioContext::Create(
+      GetFrame().DomWindow(), options, ASSERT_NO_EXCEPTION);
+  audio_context->set_clock_for_testing(this);
+  FlushPermissionService(audio_context);
+
+  ScriptState* script_state = ToScriptStateForMainWorld(&GetFrame());
+  ContextRenderer* renderer =
+      MakeGarbageCollected<ContextRenderer>(audio_context);
+  renderer->Init();
+
+  // 1. Page is visible by default. Render some baseline audio.
+  RenderAndCheckIfPlaybackStatsChanged(
+      base::Seconds(1), renderer, script_state, /*expect_change=*/true);
+
+  AudioPlaybackStats* playback_stats = audio_context->playbackStats();
+  int glitches_before = playback_stats->underrunEvents(script_state);
+  double duration_before = playback_stats->totalDuration(script_state);
+
+  // 2. Hide the page.
+  GetPage().SetVisibilityState(mojom::blink::PageVisibilityState::kHidden,
+                               /*is_initial_state=*/false);
+
+  // 3. Render audio with glitches while hidden.
+  fake_time_now_ += base::Seconds(1);
+  renderer->Render(
+      1000, base::Milliseconds(50),
+      media::AudioGlitchInfo{.duration = base::Milliseconds(10), .count = 1});
+  ToEventLoop(script_state).PerformMicrotaskCheckpoint();
+
+  // 4. Make the page visible again.
+  GetPage().SetVisibilityState(mojom::blink::PageVisibilityState::kVisible,
+                               /*is_initial_state=*/false);
+
+  // 5. Render one quantum without glitches to trigger stats update.
+  fake_time_now_ += base::Seconds(1);
+  renderer->Render(1000, base::Milliseconds(50), media::AudioGlitchInfo{});
+  ToEventLoop(script_state).PerformMicrotaskCheckpoint();
+
+  // 6. Verify that stats did NOT increase by the glitches or the duration from
+  // the hidden period.
+  int glitches_after = playback_stats->underrunEvents(script_state);
+  EXPECT_EQ(glitches_before, glitches_after);
+  double duration_after =
+      duration_before + media::AudioTimestampHelper::FramesToTime(
+                            1000, audio_context->sampleRate())
+                            .InSecondsF();
+  // We use EXPECT_NEAR with a 10 microseconds tolerance to allow for
+  // sub-microsecond rounding errors from integer time conversion in
+  // AudioTimestampHelper::FramesToTime. The tolerance is smaller than 1 audio
+  // frame (~20.8 microseconds at 48kHz), ensuring any actually processed frame
+  // would still trigger a failure.
+  EXPECT_NEAR(playback_stats->totalDuration(script_state),
+              duration_after, 0.00001);
+}
+
 TEST_F(AudioContextStatsTest, PlaybackStatsMicrophoneRestrictionStartsDenied) {
   blink::WebRuntimeFeatures::EnableFeatureFromString(
       "AudioContextPlaybackStats", true);
@@ -1451,6 +1514,53 @@ TEST_F(AudioContextStatsTest, PlaybackStatsMicrophoneRestrictionStartsGranted) {
   // Since we have microphone permission, the stats will be updated.
   RenderAndCheckIfPlaybackStatsChanged(base::Seconds(1), renderer, script_state,
                                        /*expect_change=*/true);
+}
+
+// Test that HasPendingActivity returns false after closeContext() is called,
+// even if the permission receiver is bound (which previously caused a leak).
+TEST_F(AudioContextStatsTest, HasPendingActivityAfterClose) {
+  AudioContextOptions* options = AudioContextOptions::Create();
+  AudioContext* audio_context = AudioContext::Create(
+      GetFrame().DomWindow(), options, ASSERT_NO_EXCEPTION);
+
+  // Flush the permission service to ensure the receiver becomes bound.
+  FlushPermissionService(audio_context);
+  EXPECT_TRUE(audio_context->HasPendingActivity());
+
+  ScriptState* script_state = ToScriptStateForMainWorld(&GetFrame());
+  ScriptState::Scope scope(script_state);
+  DummyExceptionStateForTesting exception_state;
+  audio_context->closeContext(script_state, exception_state);
+
+  EXPECT_FALSE(audio_context->HasPendingActivity());
+}
+
+// Test that AudioWorklet and its messaging proxy are signaled to terminate
+// when the AudioContext is closed.
+TEST_F(AudioContextTest, AudioWorkletTerminatedOnClose) {
+  AudioContextOptions* options = AudioContextOptions::Create();
+  AudioContext* audio_context = AudioContext::Create(
+      GetFrame().DomWindow(), options, ASSERT_NO_EXCEPTION);
+
+  ScriptState* script_state = ToScriptStateForMainWorld(&GetFrame());
+  ScriptState::Scope scope(script_state);
+
+  // Trigger proxy creation directly via friend access.
+  auto* audio_worklet = audio_context->audioWorklet();
+  audio_worklet->proxies_.push_back(audio_worklet->CreateGlobalScope());
+
+  auto* proxy = audio_worklet->GetMessagingProxy();
+  ASSERT_TRUE(proxy);
+  // Ensure the proxy is not requested to terminate initially.
+  EXPECT_FALSE(proxy->AskedToTerminate());
+
+  DummyExceptionStateForTesting exception_state;
+  audio_context->closeContext(script_state, exception_state);
+
+  EXPECT_TRUE(proxy->AskedToTerminate());
+
+  // Wait for worker thread to shut down to avoid race on g_platform.
+  proxy->GetBackingWorkerThread()->WaitForShutdownForTesting();
 }
 
 TEST_F(AudioContextTest, ChannelCountRunning) {

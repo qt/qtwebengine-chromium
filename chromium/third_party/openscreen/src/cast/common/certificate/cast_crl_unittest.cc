@@ -11,6 +11,7 @@
 #include "cast/common/public/trust_store.h"
 #include "gtest/gtest.h"
 #include "platform/test/paths.h"
+#include "util/no_destructor.h"
 #include "util/osp_logging.h"
 #include "util/read_file.h"
 
@@ -86,8 +87,9 @@ bool TestVerifyRevocation(Error::Code expected_result,
 }
 
 const std::string& GetSpecificTestDataPath() {
-  static std::string data_path = GetTestDataPath() + "cast/common/certificate/";
-  return data_path;
+  static const NoDestructor<std::string> data_path(GetTestDataPath() +
+                                                   "cast/common/certificate/");
+  return *data_path;
 }
 
 bool RunTest(const proto::DeviceCertTest& test_case) {

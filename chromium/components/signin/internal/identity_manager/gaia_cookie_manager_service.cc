@@ -33,6 +33,7 @@
 #include "components/signin/public/base/signin_buildflags.h"
 #include "components/signin/public/base/signin_metrics.h"
 #include "components/signin/public/base/signin_pref_names.h"
+#include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/identity_manager/accounts_in_cookie_jar_info.h"
 #include "components/signin/public/identity_manager/set_accounts_in_cookie_result.h"
 #include "google_apis/credentials_mode.h"
@@ -516,6 +517,11 @@ signin::AccountsInCookieJarInfo GaiaCookieManagerService::ListAccounts() {
   return CreateAccountsInCookieJarInfo();
 }
 
+signin::AccountsInCookieJarInfo
+GaiaCookieManagerService::GetCachedListAccounts() {
+  return CreateAccountsInCookieJarInfo();
+}
+
 void GaiaCookieManagerService::TriggerListAccounts() {
   // Callers suspect that a check to Gaia needs to be done, don't rely on the
   // in progress request, conditions might have changed while the request is
@@ -557,7 +563,7 @@ void GaiaCookieManagerService::LogOutAllAccounts(
   if (std::ranges::contains(requests_, GaiaCookieRequestType::LOG_OUT,
                             &GaiaCookieRequest::request_type)) {
     std::move(completion_callback)
-        .Run(GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED));
+        .Run(GoogleServiceAuthError::CreateRequestCanceled());
     return;
   }
 
@@ -598,6 +604,9 @@ void GaiaCookieManagerService::CancelAll() {
   oauth_multilogin_helper_.reset();
   requests_.clear();
   fetcher_timer_.Stop();
+
+  // Invalidate weak pointers to cancel any outstanding callbacks.
+  weak_ptr_factory_.InvalidateWeakPtrs();
 }
 
 scoped_refptr<network::SharedURLLoaderFactory>
@@ -790,6 +799,10 @@ GaiaCookieManagerService::GetCookieManagerForPartition() {
   return signin_client_->GetCookieManager();
 }
 
+signin::PartitionSuffix GaiaCookieManagerService::GetPartitionSuffix() const {
+  return signin::PartitionSuffix::kDefault;
+}
+
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
 std::unique_ptr<signin::BoundSessionOAuthMultiLoginDelegate>
 GaiaCookieManagerService::
@@ -799,6 +812,10 @@ GaiaCookieManagerService::
 
 network::mojom::DeviceBoundSessionManager*
 GaiaCookieManagerService::GetDeviceBoundSessionManagerForPartition() {
+  if (!base::FeatureList::IsEnabled(
+          switches::kEnableOAuthMultiloginStandardCookiesBinding)) {
+    return nullptr;
+  }
   return signin_client_->GetDeviceBoundSessionManager();
 }
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)

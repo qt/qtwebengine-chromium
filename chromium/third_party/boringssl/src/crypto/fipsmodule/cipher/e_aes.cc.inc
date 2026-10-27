@@ -267,16 +267,32 @@ static int aes_gcm_ctrl(EVP_CIPHER_CTX *c, int type, int arg, void *ptr) {
       if (arg <= 0) {
         return 0;
       }
+      if (arg == gctx->ivlen) {
+        // Some applications set the IV and then do a no-op length change,
+        // expecting the IV to remain set.
+        return 1;
+      }
 
-      // Allocate memory for IV if needed
-      if (arg > EVP_MAX_IV_LENGTH && arg > gctx->ivlen) {
+      // Clear any existing IV or partial IV that may have previously been set.
+      gctx->iv_set = 0;
+      gctx->iv_gen = 0;
+
+      if (arg <= EVP_MAX_IV_LENGTH) {
+        // IVs less than EVP_MAX_IV_LENGTH are stored in the built-in buffer.
+        if (gctx->iv != c->iv) {
+          OPENSSL_free(gctx->iv);
+          gctx->iv = c->iv;
+        }
+      } else if (arg > gctx->ivlen) {
+        // The existing buffer isn't large enough.
+        uint8_t *new_iv = static_cast<uint8_t *>(OPENSSL_malloc(arg));
+        if (new_iv == nullptr) {
+          return 0;
+        }
         if (gctx->iv != c->iv) {
           OPENSSL_free(gctx->iv);
         }
-        gctx->iv = reinterpret_cast<uint8_t *>(OPENSSL_malloc(arg));
-        if (!gctx->iv) {
-          return 0;
-        }
+        gctx->iv = new_iv;
       }
       gctx->ivlen = arg;
       return 1;
@@ -325,7 +341,7 @@ static int aes_gcm_ctrl(EVP_CIPHER_CTX *c, int type, int arg, void *ptr) {
       return 1;
 
     case EVP_CTRL_GCM_IV_GEN: {
-      if (gctx->iv_gen == 0 || gctx->key_set == 0) {
+      if (gctx->iv_gen == 0 || gctx->key_set == 0 || gctx->ivlen < 8) {
         return 0;
       }
       CRYPTO_gcm128_init_ctx(&gctx->key, &gctx->gcm, gctx->iv, gctx->ivlen);
@@ -333,8 +349,6 @@ static int aes_gcm_ctrl(EVP_CIPHER_CTX *c, int type, int arg, void *ptr) {
         arg = gctx->ivlen;
       }
       OPENSSL_memcpy(ptr, gctx->iv + gctx->ivlen - arg, arg);
-      // Invocation field will be at least 8 bytes in size, so no need to check
-      // wrap around or increment more than last 8 bytes.
       uint8_t *ctr = gctx->iv + gctx->ivlen - 8;
       CRYPTO_store_u64_be(ctr, CRYPTO_load_u64_be(ctr) + 1);
       gctx->iv_set = 1;

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 Matrix<float, 2, 3> m = Matrix<float, 2, 3>::Random();
 Matrix2f y = Matrix2f::Random();
 cout << "Here is the matrix m:" << endl << m << endl;

@@ -12,24 +12,30 @@
 #include "base/functional/bind.h"
 #include "base/i18n/rtl.h"
 #include "base/metrics/field_trial.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/user_metrics.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "build/branding_buildflags.h"
+#include "chrome/browser/autocomplete/aim_eligibility_service_factory.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/regional_capabilities/regional_capabilities_service_factory.h"
+#include "chrome/browser/safe_browsing/extension_telemetry/search_hijacking_detector.h"
 #include "chrome/browser/search_engine_choice/search_engine_choice_service_factory.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/browser/ui/search_engines/keyword_editor_controller.h"
 #include "chrome/browser/ui/search_engines/template_url_table_model.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/omnibox/browser/omnibox_field_trial.h"
 #include "components/omnibox/common/omnibox_features.h"
+#include "components/prefs/pref_service.h"
 #include "components/regional_capabilities/regional_capabilities_service.h"
 #include "components/search_engines/search_engine_choice/search_engine_choice_service.h"
 #include "components/search_engines/search_engine_choice/search_engine_choice_utils.h"
@@ -163,7 +169,7 @@ void SearchEnginesHandler::OnJavascriptAllowed() {
       TemplateURLServiceFactory::GetForProfile(profile_);
   CHECK(template_url_service);
   scoped_url_service_observation_.Observe(template_url_service);
-  list_controller_.UpdateIdToTemplateURLMapping();
+  list_controller_.Refresh();
 }
 
 void SearchEnginesHandler::OnJavascriptDisallowed() {
@@ -179,9 +185,15 @@ base::DictValue SearchEnginesHandler::GetCategorizedTemplateUrls() {
       TemplateURLServiceFactory::GetForProfile(profile);
   CHECK(template_url_service);
 
+  bool ai_mode_enabled = OmniboxFieldTrial::IsAimStarterPackEnabled(
+      AimEligibilityServiceFactory::GetForProfile(profile));
+  bool gemini_enabled =
+      base::FeatureList::IsEnabled(omnibox::kStarterPackExpansion) &&
+      profile->GetPrefs()->GetInteger(prefs::kGeminiSettings) == 0;
+
   TemplateURLService::CategorizedTemplateUrls data =
       template_url_service->GetCategorizedTemplateURLs(
-          internal::GetDisabledStarterPackIds(profile));
+          internal::GetDisabledStarterPackIds(ai_mode_enabled, gemini_enabled));
 
   auto transform_urls =
       [&](const TemplateURL::TemplateURLVector& template_urls) {
@@ -204,6 +216,8 @@ base::DictValue SearchEnginesHandler::GetCategorizedTemplateUrls() {
 }
 
 base::DictValue SearchEnginesHandler::GetSearchEnginesList() {
+  CHECK(!base::FeatureList::IsEnabled(switches::kSearchSettingsUpdate));
+
   // Build the first list (default search engines).
   base::ListValue defaults;
   size_t last_default_engine_index =
@@ -232,7 +246,7 @@ base::DictValue SearchEnginesHandler::GetSearchEnginesList() {
   size_t last_other_engine_index =
       list_controller_.table_model()->last_other_engine_index();
 
-  // Sanity check for https://crbug.com/781703.
+  // Sanity check for https://crbug.com/40548229.
   CHECK_LE(last_active_engine_index, last_other_engine_index);
 
   for (size_t i = last_active_engine_index; i < last_other_engine_index; ++i) {
@@ -242,9 +256,9 @@ base::DictValue SearchEnginesHandler::GetSearchEnginesList() {
 
   // Build the third list (omnibox extensions).
   base::ListValue extensions;
-  size_t engine_count = list_controller_.table_model()->RowCount();
+  size_t engine_count = list_controller_.table_model()->engine_count();
 
-  // Sanity check for https://crbug.com/781703.
+  // Sanity check for https://crbug.com/40548229.
   CHECK_LE(last_other_engine_index, engine_count);
 
   for (size_t i = last_other_engine_index; i < engine_count; ++i) {
@@ -263,7 +277,7 @@ base::DictValue SearchEnginesHandler::GetSearchEnginesList() {
 void SearchEnginesHandler::OnTemplateURLServiceChanged() {
   AllowJavascript();
 
-  list_controller_.UpdateIdToTemplateURLMapping();
+  list_controller_.Refresh();
 
   FireWebUIListener(
       "search-engines-changed",
@@ -363,11 +377,42 @@ base::DictValue SearchEnginesHandler::CreateDictionaryForEngine(
   return dict;
 }
 
+void SearchEnginesHandler::RecordSearchHijackingHeuristicMetric() {
+  if (has_recorded_hijacking_metric_) {
+    return;
+  }
+
+  // Look for matches in the last 7 days, per the histograms.xml description.
+  auto status =
+      safe_browsing::SearchHijackingDetector::GetRecentHeuristicResult(
+          profile_->GetPrefs(), base::Days(7));
+
+  bool available =
+      (status !=
+       safe_browsing::SearchHijackingDetector::HeuristicResult::kUnknown);
+
+  base::UmaHistogramBoolean(
+      "Settings.SearchEngines.SearchHijackingDetector.HeuristicAvailable",
+      available);
+
+  if (available) {
+    base::UmaHistogramBoolean(
+        "Settings.SearchEngines.SearchHijackingDetector.HeuristicMatch",
+        status ==
+            safe_browsing::SearchHijackingDetector::HeuristicResult::kMatch);
+  }
+
+  has_recorded_hijacking_metric_ = true;
+}
+
 void SearchEnginesHandler::HandleGetCategorizedTemplateUrls(
     const base::ListValue& args) {
   CHECK_EQ(1U, args.size());
   const base::Value& callback_id = args[0];
   AllowJavascript();
+
+  RecordSearchHijackingHeuristicMetric();
+
   ResolveJavascriptCallback(callback_id, GetCategorizedTemplateUrls());
 }
 
@@ -376,6 +421,9 @@ void SearchEnginesHandler::HandleGetSearchEnginesList(
   CHECK_EQ(1U, args.size());
   const base::Value& callback_id = args[0];
   AllowJavascript();
+
+  RecordSearchHijackingHeuristicMetric();
+
   ResolveJavascriptCallback(callback_id, GetSearchEnginesList());
 }
 

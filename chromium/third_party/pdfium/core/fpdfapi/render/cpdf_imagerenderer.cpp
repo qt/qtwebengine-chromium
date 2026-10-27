@@ -123,7 +123,7 @@ bool CPDF_ImageRenderer::StartRenderDIBBase() {
       return false;
     }
 
-    pClone->ConvertColorScale(0xffffff, 0);
+    pClone->ConvertColorScale(/*is_white_on_black=*/true);
     dibbase_ = pClone;
   }
   resample_options_ = FXDIB_ResampleOptions();

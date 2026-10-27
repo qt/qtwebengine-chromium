@@ -335,7 +335,6 @@ bool V4L2JpegEncodeAccelerator::EncodedInstanceDmaBuf::SetOutputBufferFormat(
   format.fmt.pix_mp.height = coded_size.height();
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_S_FMT, &format);
   DCHECK_EQ(format.fmt.pix_mp.pixelformat, output_buffer_pixelformat_);
-  output_buffer_sizeimage_ = format.fmt.pix_mp.plane_fmt[0].sizeimage;
 
   return true;
 }
@@ -532,6 +531,7 @@ bool V4L2JpegEncodeAccelerator::EncodedInstanceDmaBuf::EnqueueOutputRecord() {
 size_t V4L2JpegEncodeAccelerator::EncodedInstanceDmaBuf::FinalizeJpegImage(
     scoped_refptr<VideoFrame> output_frame,
     size_t buffer_size,
+    size_t max_buffer_capacity,
     base::WritableSharedMemoryMapping exif_mapping) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(parent_->encoder_sequence_);
   size_t idx = 0;
@@ -598,7 +598,7 @@ size_t V4L2JpegEncodeAccelerator::EncodedInstanceDmaBuf::FinalizeJpegImage(
       }
     }
     buffer_size -= src_data_offset;
-    if (buffer_size + data_offset > output_buffer_sizeimage_) {
+    if (buffer_size + data_offset > max_buffer_capacity) {
       LOG(WARNING) << "JPEG buffer is too small for the EXIF metadata";
       return 0;
     }
@@ -693,9 +693,18 @@ void V4L2JpegEncodeAccelerator::EncodedInstanceDmaBuf::Dequeue() {
       return;
     }
 
-    size_t jpeg_size =
-        FinalizeJpegImage(job_record->output_frame, planes[0].bytesused,
-                          std::move(job_record->exif_mapping));
+    const size_t buffer_size = planes[0].bytesused;
+    // SECURITY: planes[0].length is the kernel-reported *dmabuf* size, but
+    // FinalizeJpegImage() only mmap()s output_frame->layout().planes()[0].size
+    // bytes (the caller-supplied plane.size). Bounds-check against the smaller
+    // of the two so we never write past the mapped region.
+    const size_t mapped_size =
+        job_record->output_frame->layout().planes()[0].size;
+    const size_t max_buffer_capacity =
+        std::min(static_cast<size_t>(planes[0].length), mapped_size);
+    const size_t jpeg_size = FinalizeJpegImage(
+        job_record->output_frame, buffer_size, max_buffer_capacity,
+        std::move(job_record->exif_mapping));
 
     if (!jpeg_size) {
       NotifyError(job_record->task_id, PLATFORM_FAILURE);

@@ -62,7 +62,7 @@ std::unique_ptr<CFX_CSSSelector> CFX_CSSSelector::FromString(
     if (head) {
       head->set_is_descendant();
     }
-    size_t len = is_star ? 1 : GetCSSNameLen(str.Last(str.GetLength() - i));
+    size_t len = is_star ? 1 : GetCSSNameLen(str.Substr(i));
     auto new_head =
         std::make_unique<CFX_CSSSelector>(str.Substr(i, len), std::move(head));
     head = std::move(new_head);

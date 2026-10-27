@@ -46,49 +46,68 @@ class WebNNObjectBase : public MojoInterface {
 
   const WebNNTokenType& handle() const { return handle_; }
 
+  // Sequence task runner used for Mojo dispatch (scheduler runner when
+  // present). Note: treat this as a posting/binding target; under
+  // gpu::Scheduler, runner identity checks may not match execution context
+  // exactly. Sequence correctness is enforced via `sequence_checker_`.
+  const scoped_refptr<base::SequencedTaskRunner>& mojo_task_runner() const {
+    return task_runner_;
+  }
+
   // Closes the pipe to the renderer process and cancels pending callbacks
   // responses.
   void ResetMojoReceiver() {
-    DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
-    mojo_receiver_.reset();
+    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+    GetMojoReceiver().reset();
+  }
+
+  // Similar to the method above, but also specifies a disconnect reason.
+  void ResetMojoReceiver(std::string_view description) {
+    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+    GetMojoReceiver().ResetWithReason(/*custom_reason_code=*/0, description);
   }
 
  protected:
   // Constructs the receiver and binds it to the Mojo pipe.
   template <typename MojoPendingReceiverType>
-  WebNNObjectBase(
-      MojoPendingReceiverType pending_receiver,
-      scoped_refptr<base::SequencedTaskRunner> scheduler_task_runner)
-      : mojo_receiver_(this,
-                       std::move(pending_receiver),
-                       std::move(scheduler_task_runner)) {
+  WebNNObjectBase(MojoPendingReceiverType pending_receiver,
+                  scoped_refptr<base::SequencedTaskRunner> task_runner)
+      : task_runner_(std::move(task_runner)),
+        mojo_receiver_(this, std::move(pending_receiver), task_runner_) {
     mojo_receiver_.set_disconnect_handler(base::BindOnce(
         &WebNNObjectType::OnDisconnect, weak_factory_.GetWeakPtr()));
   }
 
   ~WebNNObjectBase() override {
-    DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
+    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+    // The receiver must be explicitly reset via ResetMojoReceiver() on
+    // `task_runner_` before destruction. Implicitly destroying a bound
+    // receiver may DCHECK in Mojo if destruction occurs on a different runner.
+    DCHECK(!mojo_receiver_.is_bound())
+        << "Receiver must be reset before destruction.";
   }
 
   // Returns the AssociatedReceiver bound to this implementation.
-  // Only legal to call from within the stack frame of a message dispatch.
   MojoReceiverType& GetMojoReceiver() {
-    DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
+    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
     return mojo_receiver_;
   }
 
  protected:
   // This SequenceChecker is bound to the sequence where WebNNObjectBase is
-  // constructed. All messages dispatches and access to the GPU scheduler must
-  // occur on this sequence.
-  SEQUENCE_CHECKER(gpu_sequence_checker_);
+  // constructed. All message dispatches must occur on this sequence.
+  SEQUENCE_CHECKER(sequence_checker_);
 
   const WebNNTokenType handle_;
 
-  MojoReceiverType mojo_receiver_ GUARDED_BY_CONTEXT(gpu_sequence_checker_);
+  // The task runner on which the Mojo receiver is bound and must be used to
+  // reset.
+  const scoped_refptr<base::SequencedTaskRunner> task_runner_;
+
+  MojoReceiverType mojo_receiver_ GUARDED_BY_CONTEXT(sequence_checker_);
 
   base::WeakPtrFactory<WebNNObjectType> weak_factory_
-      GUARDED_BY_CONTEXT(gpu_sequence_checker_){this};
+      GUARDED_BY_CONTEXT(sequence_checker_){this};
 };
 
 template <typename MojoInterface,
@@ -131,17 +150,18 @@ class WebNNObjectImpl
   }
 
  protected:
-  // The scheduler_task_runner posts scheduled work (including disconnects) to
-  // the GPU sequence. The owning_task_runner is the underlying single-thread
-  // runner for the GPU sequence, used for object deletions.
+  // `task_runner` is the sequence where Mojo messages (including disconnects)
+  // are dispatched for this object. When a GPU sequence exists, this is the
+  // scheduler task runner; otherwise, it is the `owning_task_runner`.
+  // `owning_task_runner` is the single-thread runner used for the object's
+  // construction and for RefCountedDeleteOnSequence destruction.
   template <typename MojoPendingReceiverType>
-  WebNNObjectImpl(
-      MojoPendingReceiverType pending_receiver,
-      scoped_refptr<base::SequencedTaskRunner> scheduler_task_runner,
-      scoped_refptr<base::SequencedTaskRunner> owning_task_runner)
+  WebNNObjectImpl(MojoPendingReceiverType pending_receiver,
+                  scoped_refptr<base::SequencedTaskRunner> task_runner,
+                  scoped_refptr<base::SequencedTaskRunner> owning_task_runner)
       : WebNNObjectBase<MojoInterface, WebNNTokenType, MojoReceiverType>(
             std::move(pending_receiver),
-            std::move(scheduler_task_runner)),
+            std::move(task_runner)),
         base::RefCountedDeleteOnSequence<WebNNObjectType>(
             std::move(owning_task_runner)) {}
 

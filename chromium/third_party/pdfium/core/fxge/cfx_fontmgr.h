@@ -89,6 +89,10 @@ class CFX_FontMgr {
   CFX_FontMapper* GetBuiltinMapper() const { return builtin_mapper_.get(); }
 
   FXFT_LibraryRec* GetFTLibrary() const { return ft_library_.get(); }
+
+#if defined(PDF_USE_SKIA)
+  FontBackend GetFontBackend() const { return font_backend_; }
+#endif
   bool FTLibrarySupportsHinting() const { return ft_library_supports_hinting_; }
 
 #if defined(PDF_USE_SKIA)

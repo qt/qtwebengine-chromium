@@ -316,7 +316,7 @@ Triggers a `chromium_experimental.subgroup_matrix_uniformity` diagnostic if
 uniformity analysis cannot prove p, offset, or stride are subgroup uniform
 values.
 
-stride counts elements of the component type of T.
+offset and stride count elements of the component type of T.
 Behavior is undefined if stride is less than:
 
 * The number of rows of T if col_major is true
@@ -347,7 +347,7 @@ Triggers a `chromium_experimental.subgroup_matrix_uniformity` diagnostic if
 uniformity analysis cannot prove p, offset, value, or stride are subgroup
 uniform values.
 
-stride counts elements of the component type of T.
+offset and stride count elements of the component type of T.
 Behavior is undefined if stride is less than:
 
 * The number of rows of T if col_major is true

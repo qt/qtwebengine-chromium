@@ -252,7 +252,13 @@ class OnDeviceModelServiceControllerTest : public testing::Test {
   OptimizationGuideLogger logger_;
 };
 
-TEST_F(OnDeviceModelServiceControllerTest, ScoreBeforeContext) {
+// Some the tests in this file are really testing SessionImpl behaviors.
+// Use a different test class to distinguish them.
+// We don't need to duplicate these for different OnDeviceCapability
+// implementations.
+class SessionImplTest : public OnDeviceModelServiceControllerTest {};
+
+TEST_F(SessionImplTest, ScoreBeforeContext) {
   Initialize(standard_assets_);
 
   auto session = CreateSession(SessionConfigParams{});
@@ -262,7 +268,7 @@ TEST_F(OnDeviceModelServiceControllerTest, ScoreBeforeContext) {
   EXPECT_NE(score_future.Get(), std::nullopt);
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, ScorePresentAfterContext) {
+TEST_F(SessionImplTest, ScorePresentAfterContext) {
   Initialize(standard_assets_);
 
   auto session = CreateSession(SessionConfigParams{});
@@ -275,7 +281,7 @@ TEST_F(OnDeviceModelServiceControllerTest, ScorePresentAfterContext) {
   EXPECT_EQ(score_future.Get(), 0.5);
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, ScoreAfterExecute) {
+TEST_F(SessionImplTest, ScoreAfterExecute) {
   Initialize(standard_assets_);
 
   auto session = CreateSession(SessionConfigParams{});
@@ -335,6 +341,23 @@ TEST_F(OnDeviceModelServiceControllerTest, BaseModelExecutionSuccess) {
       "OptimizationGuide.ModelExecution.OnDeviceModelEligibilityReason.Compose",
       OnDeviceModelEligibilityReason::kSuccess, 1);
 
+  histogram_tester.ExpectTotalCount(
+      "OptimizationGuide.ModelExecution."
+      "OnDeviceFirstResponseTime.Compose",
+      1);
+  histogram_tester.ExpectTotalCount(
+      "OptimizationGuide.ModelExecution."
+      "OnDeviceResponseCompleteTime.Compose",
+      1);
+  histogram_tester.ExpectTotalCount(
+      "OptimizationGuide.ModelExecution."
+      "OnDeviceResponseCompleteTokens.Compose",
+      1);
+  histogram_tester.ExpectTotalCount(
+      "OptimizationGuide.ModelExecution."
+      "OnDeviceResponseTokensTimeToNextToken.Compose",
+      1);
+
   // If we destroy all sessions and wait long enough, everything should idle out
   // and the service should get terminated.
   session.reset();
@@ -344,7 +367,7 @@ TEST_F(OnDeviceModelServiceControllerTest, BaseModelExecutionSuccess) {
   EXPECT_FALSE(broker_.launcher().is_service_running());
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, TokenLimits) {
+TEST_F(SessionImplTest, TokenLimits) {
   auto config = SimpleComposeConfig();
   config.mutable_input_config()->set_min_context_tokens(5);
   config.mutable_input_config()->set_max_context_tokens(5);
@@ -366,7 +389,7 @@ TEST_F(OnDeviceModelServiceControllerTest, TokenLimits) {
   EXPECT_EQ(limits.max_output_tokens, 1u);
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, TokenLimitsCapped) {
+TEST_F(SessionImplTest, TokenLimitsCapped) {
   auto config = SimpleComposeConfig();
   config.mutable_input_config()->set_min_context_tokens(100000);
   config.mutable_input_config()->set_max_context_tokens(100000);
@@ -389,8 +412,9 @@ TEST_F(OnDeviceModelServiceControllerTest, TokenLimitsCapped) {
 }
 
 TEST_F(OnDeviceModelServiceControllerTest, CacheWeightExecutionSuccess) {
-  // TODO(crbug.com/400998489): Cache files are experimental for now. Stop
-  // setting this feature flag once that's no longer the case.
+  // TODO(crbug.com/461547475): Determine whether weight caches should be used
+  // for GPU or just CPU only. Stop setting this feature flag once that's no
+  // longer the case.
   base::test::ScopedFeatureList feature_list;
   feature_list.InitWithFeaturesAndParameters(
       {{features::kOptimizationGuideOnDeviceModel,
@@ -427,6 +451,52 @@ TEST_F(OnDeviceModelServiceControllerTest, CacheWeightExecutionSuccess) {
   EXPECT_FALSE(broker_.launcher().is_service_running());
 }
 
+TEST_F(OnDeviceModelServiceControllerTest,
+       ShaderCacheExecutionSuccessWithFastestInferenceGpuModel) {
+  base::test::ScopedFeatureList feature_list;
+  // TODO(crbug.com/461547475): GPU cache flag is experimental for now, remove
+  // once it's no longer needed.
+  feature_list.InitWithFeaturesAndParameters(
+      {{features::kOptimizationGuideOnDeviceModel,
+        {{"on_device_model_topk", "1"}, {"on_device_model_temperature", "0"}}},
+       {on_device_model::features::kOnDeviceModelGpuCache, {}}},
+      {});
+
+  broker_.InstallBaseModel(std::make_unique<FakeBaseModelAsset>(
+      std::vector<proto::OnDeviceModelPerformanceHint>{
+          proto::ON_DEVICE_MODEL_PERFORMANCE_HINT_FASTEST_INFERENCE},
+      FakeBaseModelAsset::Content{
+          .cache_weight = 1015,
+          .encoder_cache_weight = 1016,
+          .adapter_cache_weight = 1017,
+          .shader_cache_data = "0xcafebabe",
+      }));
+  Initialize(InitializeParams{
+      .base_model_content = std::nullopt,
+      .safety = &standard_assets_.safety,
+      .language = &standard_assets_.language,
+      .adaptations = {&standard_assets_.compose},
+  });
+  auto session = CreateSession(SessionConfigParams{});
+  ASSERT_TRUE(session);
+  session->ExecuteModel(PageUrlRequest("foo"),
+                        response_.GetStreamingCallback());
+  ASSERT_TRUE(response_.GetFinalStatus());
+  EXPECT_EQ(*response_.value(),
+            "Fastest inference"
+            "Encoder cache weight: 1016"
+            "Adapter cache weight: 1017"
+            "Shader cache data: 0xcafebabe"
+            "execute:foo max:1024");
+  // Destroy the session and run until the service is no longer running.
+  session.reset();
+  task_environment_.FastForwardBy(features::GetOnDeviceModelIdleTimeout() +
+                                  base::Seconds(1));
+  EXPECT_TRUE(broker_.launcher().did_launch_service());
+  EXPECT_TRUE(base::test::RunUntil(
+      [&]() { return !broker_.launcher().is_service_running(); }));
+}
+
 TEST_F(OnDeviceModelServiceControllerTest, AdaptationModelExecutionSuccess) {
   FakeAdaptationAsset compose_asset({
       .config = SimpleComposeConfig(),
@@ -454,7 +524,7 @@ TEST_F(OnDeviceModelServiceControllerTest, AdaptationModelExecutionSuccess) {
   EXPECT_FALSE(broker_.launcher().is_service_running());
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, ExecutionDisconnectUnknown) {
+TEST_F(SessionImplTest, ExecutionDisconnectUnknown) {
   Initialize(standard_assets_);
   auto session = CreateSession(SessionConfigParams{});
   broker_.settings().set_execute_error(
@@ -465,8 +535,7 @@ TEST_F(OnDeviceModelServiceControllerTest, ExecutionDisconnectUnknown) {
   EXPECT_EQ(response_.error(), OnDeviceError::kCancelled);
 }
 
-TEST_F(OnDeviceModelServiceControllerTest,
-       ExecutionDisconnectInvalidConstraint) {
+TEST_F(SessionImplTest, ExecutionDisconnectInvalidConstraint) {
   Initialize(standard_assets_);
   auto session = CreateSession(SessionConfigParams{});
   broker_.settings().set_execute_error(
@@ -867,7 +936,9 @@ TEST_F(OnDeviceModelServiceControllerTest, SessionRequiresSafetyModel) {
     base::HistogramTester histogram_tester;
 
     broker_.model_provider().RemoveModel(
-        proto::OPTIMIZATION_TARGET_TEXT_SAFETY);
+        features::ShouldUseGeneralizedSafetyModel()
+            ? proto::OPTIMIZATION_TARGET_GENERALIZED_SAFETY
+            : proto::OPTIMIZATION_TARGET_TEXT_SAFETY);
     EXPECT_TRUE(CreateSession(SessionConfigParams{}));
 
     histogram_tester.ExpectUniqueSample(
@@ -877,7 +948,7 @@ TEST_F(OnDeviceModelServiceControllerTest, SessionRequiresSafetyModel) {
   }
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, SucceedsWithPassingSafetyChecks) {
+TEST_F(SessionImplTest, SucceedsWithPassingSafetyChecks) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kTextSafetyClassifier,
@@ -924,8 +995,7 @@ TEST_F(OnDeviceModelServiceControllerTest, SucceedsWithPassingSafetyChecks) {
                                    "raw_output_check: safe_output")));
 }
 
-TEST_F(OnDeviceModelServiceControllerTest,
-       FailsWithFailingRequestSafetyChecks) {
+TEST_F(SessionImplTest, FailsWithFailingRequestSafetyChecks) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kTextSafetyClassifier,
@@ -974,8 +1044,7 @@ TEST_F(OnDeviceModelServiceControllerTest,
                           ));
 }
 
-TEST_F(OnDeviceModelServiceControllerTest,
-       FailsWithInvalidRequestSafetyChecks) {
+TEST_F(SessionImplTest, FailsWithInvalidRequestSafetyChecks) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kTextSafetyClassifier,
@@ -1013,8 +1082,7 @@ TEST_F(OnDeviceModelServiceControllerTest,
   ASSERT_FALSE(response_.GetFinalStatus());
 }
 
-TEST_F(OnDeviceModelServiceControllerTest,
-       FailsWithFailingRawOutputSafetyChecks) {
+TEST_F(SessionImplTest, FailsWithFailingRawOutputSafetyChecks) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kTextSafetyClassifier,
@@ -1063,7 +1131,7 @@ TEST_F(OnDeviceModelServiceControllerTest,
                                    "raw_output_check: unsafe_output")));
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, FailsWithInvalidRawOutputChecks) {
+TEST_F(SessionImplTest, FailsWithInvalidRawOutputChecks) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kTextSafetyClassifier,
@@ -1102,8 +1170,7 @@ TEST_F(OnDeviceModelServiceControllerTest, FailsWithInvalidRawOutputChecks) {
   ASSERT_FALSE(response_.GetFinalStatus());
 }
 
-TEST_F(OnDeviceModelServiceControllerTest,
-       SucceedsWithPassingResponseSafetyCheck) {
+TEST_F(SessionImplTest, SucceedsWithPassingResponseSafetyCheck) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kTextSafetyClassifier,
@@ -1149,8 +1216,7 @@ TEST_F(OnDeviceModelServiceControllerTest,
                                    "response_check: url_very_safe_output")));
 }
 
-TEST_F(OnDeviceModelServiceControllerTest,
-       FailsWithFailingResponseSafetyCheck) {
+TEST_F(SessionImplTest, FailsWithFailingResponseSafetyCheck) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kTextSafetyClassifier,
@@ -1197,8 +1263,7 @@ TEST_F(OnDeviceModelServiceControllerTest,
                                    "response_check: url_unsafe_output")));
 }
 
-TEST_F(OnDeviceModelServiceControllerTest,
-       FailsWithInvalidResponseSafetyCheck) {
+TEST_F(SessionImplTest, FailsWithInvalidResponseSafetyCheck) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kTextSafetyClassifier,
@@ -1238,7 +1303,7 @@ TEST_F(OnDeviceModelServiceControllerTest,
   ASSERT_FALSE(response_.GetFinalStatus());
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, NoRetractUnsafeContent) {
+TEST_F(SessionImplTest, NoRetractUnsafeContent) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kTextSafetyClassifier,
@@ -1290,7 +1355,7 @@ TEST_F(OnDeviceModelServiceControllerTest, NoRetractUnsafeContent) {
                    "raw_output_check: unsafe_output")));
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, ReturnsErrorOnServiceDisconnect) {
+TEST_F(SessionImplTest, ReturnsErrorOnServiceDisconnect) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kOptimizationGuideOnDeviceModel,
@@ -1315,7 +1380,7 @@ TEST_F(OnDeviceModelServiceControllerTest, ReturnsErrorOnServiceDisconnect) {
   EXPECT_EQ(*response_.error(), OnDeviceError::kCancelled);
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, CancelsExecuteOnAddContext) {
+TEST_F(SessionImplTest, CancelsExecuteOnAddContext) {
   Initialize(standard_assets_);
   auto session = CreateSession(SessionConfigParams{});
   ASSERT_TRUE(session);
@@ -1334,7 +1399,7 @@ TEST_F(OnDeviceModelServiceControllerTest, CancelsExecuteOnAddContext) {
   EXPECT_EQ(*response_.error(), OnDeviceError::kCancelled);
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, CancelsExecuteOnExecute) {
+TEST_F(SessionImplTest, CancelsExecuteOnExecute) {
   Initialize(standard_assets_);
   auto session = CreateSession(SessionConfigParams{});
   ASSERT_TRUE(session);
@@ -1531,7 +1596,7 @@ TEST_F(OnDeviceModelServiceControllerTest,
   EXPECT_TRUE(CreateSession(SessionConfigParams{}));
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, AddContextDisconnectExecute) {
+TEST_F(SessionImplTest, AddContextDisconnectExecute) {
   Initialize(standard_assets_);
   auto session = CreateSession(SessionConfigParams{});
   ASSERT_TRUE(session);
@@ -1556,7 +1621,7 @@ TEST_F(OnDeviceModelServiceControllerTest, AddContextDisconnectExecute) {
   EXPECT_EQ(*response_.value(), expected_response);
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, AddContextExecuteDisconnect) {
+TEST_F(SessionImplTest, AddContextExecuteDisconnect) {
   Initialize(standard_assets_);
   auto session = CreateSession(SessionConfigParams{});
   ASSERT_TRUE(session);
@@ -1571,7 +1636,7 @@ TEST_F(OnDeviceModelServiceControllerTest, AddContextExecuteDisconnect) {
   ASSERT_FALSE(response_.value());
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, AddContextMultipleSessions) {
+TEST_F(SessionImplTest, AddContextMultipleSessions) {
   Initialize(standard_assets_);
   auto session1 = CreateSession(SessionConfigParams{});
   EXPECT_TRUE(session1);
@@ -1600,7 +1665,7 @@ TEST_F(OnDeviceModelServiceControllerTest, AddContextMultipleSessions) {
   EXPECT_EQ(*response2.value(), expected_response2);
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, FailsOnGpuBlockedService) {
+TEST_F(SessionImplTest, FailsOnGpuBlockedService) {
   Initialize(standard_assets_);
   broker_.service_settings().service_disconnect_reason =
       on_device_model::ServiceDisconnectReason::kGpuBlocked;
@@ -1624,7 +1689,7 @@ TEST_F(OnDeviceModelServiceControllerTest, FailsOnGpuBlockedService) {
   EXPECT_FALSE(broker_.launcher().did_launch_service());
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, AddContextInvalidConfig) {
+TEST_F(SessionImplTest, AddContextInvalidConfig) {
   FakeAdaptationAsset bad_compose_asset({.config = [] {
     proto::OnDeviceModelExecutionFeatureConfig config;
     config.set_can_skip_text_safety(true);
@@ -1657,7 +1722,7 @@ TEST_F(OnDeviceModelServiceControllerTest, AddContextInvalidConfig) {
   ASSERT_FALSE(response_.GetFinalStatus());
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, ExecuteInvalidConfig) {
+TEST_F(SessionImplTest, ExecuteInvalidConfig) {
   FakeAdaptationAsset bad_compose_asset({.config = [] {
     proto::OnDeviceModelExecutionFeatureConfig config;
     config.set_can_skip_text_safety(true);
@@ -1679,8 +1744,7 @@ TEST_F(OnDeviceModelServiceControllerTest, ExecuteInvalidConfig) {
   ASSERT_FALSE(response_.GetFinalStatus());
 }
 
-TEST_F(OnDeviceModelServiceControllerTest,
-       FailOnDisconnectWhileWaitingForExecute) {
+TEST_F(SessionImplTest, FailOnDisconnectWhileWaitingForExecute) {
   Initialize(standard_assets_);
   auto session = CreateSession(SessionConfigParams{});
   ASSERT_TRUE(session);
@@ -1696,8 +1760,7 @@ TEST_F(OnDeviceModelServiceControllerTest,
   ASSERT_FALSE(response_.GetFinalStatus());
 }
 
-TEST_F(OnDeviceModelServiceControllerTest,
-       DestroySessionWhileWaitingForResponse) {
+TEST_F(SessionImplTest, DestroySessionWhileWaitingForResponse) {
   Initialize(standard_assets_);
   auto session = CreateSession(SessionConfigParams{});
   ASSERT_TRUE(session);
@@ -1764,7 +1827,7 @@ TEST_F(OnDeviceModelServiceControllerTest,
       [&]() { return !broker_.launcher().is_service_running(); }));
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, DetectsRepeats) {
+TEST_F(SessionImplTest, DetectsRepeats) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kOptimizationGuideOnDeviceModel,
@@ -1812,7 +1875,7 @@ TEST_F(OnDeviceModelServiceControllerTest, DetectsRepeats) {
       true, 1);
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, DetectsRepeatsAndCancelsResponse) {
+TEST_F(SessionImplTest, DetectsRepeatsAndCancelsResponse) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kOptimizationGuideOnDeviceModel,
@@ -1857,7 +1920,66 @@ TEST_F(OnDeviceModelServiceControllerTest, DetectsRepeatsAndCancelsResponse) {
       ExecuteModelResult::kResponseHadRepeats, 1);
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, DetectsRepeatsAcrossResponses) {
+TEST_F(SessionImplTest, ExcusedFeaturesIgnoreRepeats) {
+  // Mark kProofreaderApi as used so the model is eligible.
+  model_execution::prefs::RecordFeatureUsage(
+      &broker_.local_state(), mojom::OnDeviceFeature::kProofreaderApi);
+
+  base::HistogramTester histogram_tester;
+  FakeAdaptationAsset proofreader_asset({.config = [] {
+    auto cfg = UnsafeComposeConfig();
+    cfg.set_feature(proto::MODEL_EXECUTION_FEATURE_PROOFREADER_API);
+    return cfg;
+  }()});
+  Initialize({
+      .base_model_content = standard_assets_.base_model_content,
+      .adaptations = {&proofreader_asset},
+  });
+
+  const std::vector<std::string> expected_responses = {
+      "some text",
+      " some more repeating text",
+      " some more repeating text",
+      " more stuff",
+  };
+  broker_.service_settings().set_execute_result(expected_responses);
+
+  auto session = CreateSession(mojom::OnDeviceFeature::kProofreaderApi,
+                               SessionConfigParams{});
+  ASSERT_TRUE(session);
+  session->ExecuteModel(UserInputRequest("foo"),
+                        response_.GetStreamingCallback());
+  EXPECT_TRUE(response_.GetFinalStatus());
+
+  EXPECT_TRUE(response_.value());
+  EXPECT_FALSE(response_.error());
+
+  EXPECT_EQ(*response_.value(), ConcatResponses(expected_responses));
+  EXPECT_THAT(response_.partials(), ElementsAreArray(expected_responses));
+
+  ASSERT_TRUE(response_.model_execution_info());
+  EXPECT_GT(response_.model_execution_info()
+                ->on_device_model_execution_info()
+                .execution_infos_size(),
+            0);
+  EXPECT_FALSE(response_.model_execution_info()
+                   ->on_device_model_execution_info()
+                   .execution_infos(0)
+                   .response()
+                   .on_device_model_service_response()
+                   .has_repeats());
+
+  histogram_tester.ExpectUniqueSample(
+      "OptimizationGuide.ModelExecution.OnDeviceExecuteModelResult."
+      "ProofreaderApi",
+      ExecuteModelResult::kUsedOnDevice, 1);
+  histogram_tester.ExpectUniqueSample(
+      "OptimizationGuide.ModelExecution.OnDeviceResponseHasRepeats."
+      "ProofreaderApi",
+      false, 1);
+}
+
+TEST_F(SessionImplTest, DetectsRepeatsAcrossResponses) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kOptimizationGuideOnDeviceModel,
@@ -1910,7 +2032,7 @@ TEST_F(OnDeviceModelServiceControllerTest, DetectsRepeatsAcrossResponses) {
       true, 1);
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, IgnoresNonRepeatingText) {
+TEST_F(SessionImplTest, IgnoresNonRepeatingText) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kOptimizationGuideOnDeviceModel,
@@ -1959,8 +2081,7 @@ TEST_F(OnDeviceModelServiceControllerTest, IgnoresNonRepeatingText) {
       false, 1);
 }
 
-TEST_F(OnDeviceModelServiceControllerTest,
-       WithholdsTrailingNewlinesAcrossResponses) {
+TEST_F(SessionImplTest, WithholdsTrailingNewlinesAcrossResponses) {
   FakeAdaptationAsset compose_asset({.config = UnsafeComposeConfig()});
   Initialize({
       .base_model_content = standard_assets_.base_model_content,
@@ -1995,8 +2116,7 @@ TEST_F(OnDeviceModelServiceControllerTest,
   EXPECT_THAT(response_.partials(), ElementsAreArray(partial_responses));
 }
 
-TEST_F(OnDeviceModelServiceControllerTest,
-       WithholdsTrailingNewlinesNoTrailingNewlines) {
+TEST_F(SessionImplTest, WithholdsTrailingNewlinesNoTrailingNewlines) {
   FakeAdaptationAsset compose_asset({.config = UnsafeComposeConfig()});
   Initialize({
       .base_model_content = standard_assets_.base_model_content,
@@ -2026,7 +2146,7 @@ TEST_F(OnDeviceModelServiceControllerTest,
   EXPECT_THAT(response_.partials(), ElementsAreArray(partial_responses));
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, NoWithholdsTrailingNewlines) {
+TEST_F(SessionImplTest, NoWithholdsTrailingNewlines) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kOptimizationGuideOnDeviceModel,
@@ -2072,7 +2192,7 @@ TEST_F(OnDeviceModelServiceControllerTest, NoWithholdsTrailingNewlines) {
   EXPECT_THAT(response_.partials(), ElementsAreArray(partial_responses));
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, UsesSessionTopKAndTemperature) {
+TEST_F(SessionImplTest, UsesSessionTopKAndTemperature) {
   // Session sampling params should have precedence over feature ones.
   auto config = SimpleComposeConfig();
   config.mutable_sampling_params()->set_top_k(4);
@@ -2112,7 +2232,7 @@ TEST_F(OnDeviceModelServiceControllerTest, UsesSessionTopKAndTemperature) {
 }
 
 // Validate that a missing partial output config suppresses partial output.
-TEST_F(OnDeviceModelServiceControllerTest, TsInterval0) {
+TEST_F(SessionImplTest, TsInterval0) {
   FakeSafetyModelAsset safety_asset([]() {
     auto safety_config = ComposeSafetyConfig();
     safety_config.mutable_safety_category_thresholds()->Add(ForbidUnsafe());
@@ -2138,7 +2258,7 @@ TEST_F(OnDeviceModelServiceControllerTest, TsInterval0) {
 }
 
 // Validate that token interval 1 evaluates all partial output.
-TEST_F(OnDeviceModelServiceControllerTest, TsInterval1) {
+TEST_F(SessionImplTest, TsInterval1) {
   FakeSafetyModelAsset safety_asset([]() {
     auto safety_config = ComposeSafetyConfig();
     safety_config.mutable_safety_category_thresholds()->Add(ForbidUnsafe());
@@ -2165,7 +2285,7 @@ TEST_F(OnDeviceModelServiceControllerTest, TsInterval1) {
 }
 
 // Validate that token interval 3 only evaluates every third and final chunk.
-TEST_F(OnDeviceModelServiceControllerTest, TsInterval3) {
+TEST_F(SessionImplTest, TsInterval3) {
   FakeSafetyModelAsset safety_asset([]() {
     auto safety_config = ComposeSafetyConfig();
     safety_config.mutable_safety_category_thresholds()->Add(ForbidUnsafe());
@@ -2196,7 +2316,7 @@ TEST_F(OnDeviceModelServiceControllerTest, TsInterval3) {
 }
 
 // Validate that PartialOutputChecks::minimum_tokens is respected.
-TEST_F(OnDeviceModelServiceControllerTest, MinimumSafetyTokens) {
+TEST_F(SessionImplTest, MinimumSafetyTokens) {
   FakeSafetyModelAsset safety_asset([]() {
     auto safety_config = ComposeSafetyConfig();
     safety_config.mutable_safety_category_thresholds()->Add(ForbidUnsafe());
@@ -2229,7 +2349,7 @@ TEST_F(OnDeviceModelServiceControllerTest, MinimumSafetyTokens) {
   EXPECT_THAT(response_.partials(), ElementsAreArray(expected_responses));
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, WaitUntilCompleteToCancel) {
+TEST_F(SessionImplTest, WaitUntilCompleteToCancel) {
   FakeSafetyModelAsset safety_asset([]() {
     auto safety_config = ComposeSafetyConfig();
     safety_config.set_only_cancel_unsafe_response_on_complete(true);
@@ -2307,7 +2427,7 @@ TEST_F(OnDeviceModelServiceControllerTest, TestAvailabilityObserver) {
 }
 
 class OnDeviceModelServiceControllerTsIntervalTest
-    : public OnDeviceModelServiceControllerTest,
+    : public SessionImplTest,
       public ::testing::WithParamInterface<int> {};
 
 TEST_P(OnDeviceModelServiceControllerTsIntervalTest,
@@ -2896,7 +3016,7 @@ TEST_F(OnDeviceModelServiceControllerTest, UsesCpuModel) {
   EXPECT_EQ(*response_.value(), "CPU backendexecute:foo max:1024");
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, ImageExecutionSuccess) {
+TEST_F(SessionImplTest, ImageExecutionSuccess) {
   using RequestProto = ::optimization_guide::proto::ExampleForTestingRequest;
   using NestedProto = ::optimization_guide::proto::ExampleForTestingMessage;
   proto::OnDeviceModelExecutionFeatureConfig config;
@@ -2975,7 +3095,7 @@ proto::SubstitutedString EmptySubstitution() {
   return result;
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, KeepInputOnExtension) {
+TEST_F(SessionImplTest, KeepInputOnExtension) {
   using Request = proto::ExampleForTestingRequest;
   auto kRepeatedTag = Request::kRepeatedFieldFieldNumber;
   using Msg = proto::ExampleForTestingMessage;
@@ -3078,7 +3198,7 @@ TEST_F(OnDeviceModelServiceControllerTest, KeepInputOnExtension) {
             "v3 max:8174");
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, OmitEmptyInputs) {
+TEST_F(SessionImplTest, OmitEmptyInputs) {
   // Avoid calling Append with empty inputs.
   FakeAdaptationAsset compose_asset({
       .config =
@@ -3113,7 +3233,7 @@ TEST_F(OnDeviceModelServiceControllerTest, OmitEmptyInputs) {
   EXPECT_EQ(*response_.value(), "");
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, CloneUsesSessionTopKAndTemperature) {
+TEST_F(SessionImplTest, CloneUsesSessionTopKAndTemperature) {
   auto config = SimpleComposeConfig();
   config.mutable_sampling_params()->set_top_k(4);
   config.mutable_sampling_params()->set_temperature(1.5);
@@ -3152,8 +3272,7 @@ TEST_F(OnDeviceModelServiceControllerTest, CloneUsesSessionTopKAndTemperature) {
   EXPECT_THAT(response_.partials(), ElementsAreArray(partial_responses));
 }
 
-TEST_F(OnDeviceModelServiceControllerTest,
-       CloneFailsWithFailingRequestSafetyChecks) {
+TEST_F(SessionImplTest, CloneFailsWithFailingRequestSafetyChecks) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kTextSafetyClassifier,
@@ -3204,7 +3323,7 @@ TEST_F(OnDeviceModelServiceControllerTest,
                           ));
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, ScoreAfterClone) {
+TEST_F(SessionImplTest, ScoreAfterClone) {
   Initialize(standard_assets_);
 
   base::HistogramTester histogram_tester;
@@ -3219,7 +3338,7 @@ TEST_F(OnDeviceModelServiceControllerTest, ScoreAfterClone) {
   EXPECT_EQ(score_future.Get(), 0.5);
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, AddContextAndClone) {
+TEST_F(SessionImplTest, AddContextAndClone) {
   Initialize(standard_assets_);
   auto session = CreateSession(SessionConfigParams{});
   ASSERT_TRUE(session);
@@ -3250,7 +3369,7 @@ TEST_F(OnDeviceModelServiceControllerTest, AddContextAndClone) {
   }
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, CloneBeforeAddContext) {
+TEST_F(SessionImplTest, CloneBeforeAddContext) {
   Initialize(standard_assets_);
   auto session = CreateSession(SessionConfigParams{});
   ASSERT_TRUE(session);
@@ -3280,7 +3399,7 @@ TEST_F(OnDeviceModelServiceControllerTest, CloneBeforeAddContext) {
   }
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, CancelAddContextAndClone) {
+TEST_F(SessionImplTest, CancelAddContextAndClone) {
   Initialize(standard_assets_);
   auto session = CreateSession(SessionConfigParams{});
   ASSERT_TRUE(session);
@@ -3296,7 +3415,7 @@ TEST_F(OnDeviceModelServiceControllerTest, CancelAddContextAndClone) {
   EXPECT_EQ(*response.value(), "execute:foobar max:1024");
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, CloneAddContextDisconnectExecute) {
+TEST_F(SessionImplTest, CloneAddContextDisconnectExecute) {
   Initialize(standard_assets_);
   auto session = CreateSession(SessionConfigParams{});
   ASSERT_TRUE(session);
@@ -3422,7 +3541,7 @@ TEST_F(OnDeviceModelServiceControllerTest,
   EXPECT_EQ(session_future.Take(), nullptr);
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, Priority) {
+TEST_F(SessionImplTest, Priority) {
   Initialize(standard_assets_);
 
   auto session = CreateSession(SessionConfigParams{});
@@ -3440,7 +3559,7 @@ TEST_F(OnDeviceModelServiceControllerTest, Priority) {
   EXPECT_EQ(GetResponse(*session, "foo"), "execute:foo max:1024");
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, PriorityClone) {
+TEST_F(SessionImplTest, PriorityClone) {
   Initialize(standard_assets_);
 
   auto session = CreateSession(SessionConfigParams{});
@@ -3459,7 +3578,7 @@ TEST_F(OnDeviceModelServiceControllerTest, PriorityClone) {
             "Priority: backgroundexecute:foo max:1024");
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, SetInputCallback) {
+TEST_F(SessionImplTest, SetInputCallback) {
   Initialize(standard_assets_);
 
   auto session = CreateSession(SessionConfigParams{});
@@ -3478,7 +3597,7 @@ TEST_F(OnDeviceModelServiceControllerTest, SetInputCallback) {
             "max:1024");
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, SetInputCallbackCancelled) {
+TEST_F(SessionImplTest, SetInputCallbackCancelled) {
   Initialize(standard_assets_);
 
   auto session = CreateSession(SessionConfigParams{});
@@ -3502,7 +3621,7 @@ TEST_F(OnDeviceModelServiceControllerTest, SetInputCallbackCancelled) {
             "max:1024");
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, SetInputCallbackError) {
+TEST_F(SessionImplTest, SetInputCallbackError) {
   Initialize(standard_assets_);
 
   auto session = CreateSession(SessionConfigParams{});
@@ -3514,7 +3633,7 @@ TEST_F(OnDeviceModelServiceControllerTest, SetInputCallbackError) {
   EXPECT_EQ(future.Get().error(), OnDeviceError::kInvalidRequest);
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, TokenCounts) {
+TEST_F(SessionImplTest, TokenCounts) {
   Initialize(standard_assets_);
 
   auto session = CreateSession(SessionConfigParams{});
@@ -3528,7 +3647,7 @@ TEST_F(OnDeviceModelServiceControllerTest, TokenCounts) {
   EXPECT_EQ(response_.output_token_count(), strlen("execute:foo max:1024"));
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, ResponseConstraintOnExecute) {
+TEST_F(SessionImplTest, ResponseConstraintOnExecute) {
   Initialize(standard_assets_);
   auto session = CreateSession(SessionConfigParams{});
   ASSERT_TRUE(session);
@@ -3538,11 +3657,12 @@ TEST_F(OnDeviceModelServiceControllerTest, ResponseConstraintOnExecute) {
       response_.GetStreamingCallback());
   ASSERT_TRUE(response_.GetFinalStatus());
   EXPECT_EQ(response_.value(),
+            "Hint: constrained_decoding "
             "Constraint: regex [A-Z]*"
             "execute:input max:1024");
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, ResponseConstraintConfigJson) {
+TEST_F(SessionImplTest, ResponseConstraintConfigJson) {
   FakeAdaptationAsset test_asset({
       .config =
           []() {
@@ -3568,11 +3688,12 @@ TEST_F(OnDeviceModelServiceControllerTest, ResponseConstraintConfigJson) {
                         response_.GetStreamingCallback());
   ASSERT_TRUE(response_.GetFinalStatus());
   EXPECT_EQ(response_.value(),
+            "Hint: constrained_decoding "
             "Constraint: json { type: \"object\"}"
             "execute:input max:1024");
 }
 
-TEST_F(OnDeviceModelServiceControllerTest, ResponseConstraintConfigRegex) {
+TEST_F(SessionImplTest, ResponseConstraintConfigRegex) {
   FakeAdaptationAsset test_asset({
       .config =
           []() {
@@ -3598,6 +3719,7 @@ TEST_F(OnDeviceModelServiceControllerTest, ResponseConstraintConfigRegex) {
                         response_.GetStreamingCallback());
   ASSERT_TRUE(response_.GetFinalStatus());
   EXPECT_EQ(response_.value(),
+            "Hint: constrained_decoding "
             "Constraint: regex [A-Z]*"
             "execute:input max:1024");
 }

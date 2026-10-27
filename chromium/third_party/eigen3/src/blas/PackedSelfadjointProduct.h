@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SELFADJOINT_PACKED_PRODUCT_H
 #define EIGEN_SELFADJOINT_PACKED_PRODUCT_H
@@ -24,7 +25,7 @@ struct selfadjoint_packed_rank1_update<Scalar, Index, ColMajor, UpLo, ConjLhs, C
   typedef typename NumTraits<Scalar>::Real RealScalar;
   static void run(Index size, Scalar* mat, const Scalar* vec, RealScalar alpha) {
     typedef Map<const Matrix<Scalar, Dynamic, 1> > OtherMap;
-    typedef typename conj_expr_if<ConjLhs, OtherMap>::type ConjRhsType;
+    typedef conj_expr_if<ConjLhs, OtherMap> ConjRhsType;
     conj_if<ConjRhs> cj;
 
     for (Index i = 0; i < size; ++i) {

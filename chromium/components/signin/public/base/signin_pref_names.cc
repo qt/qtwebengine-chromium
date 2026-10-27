@@ -4,6 +4,8 @@
 
 #include "components/signin/public/base/signin_pref_names.h"
 
+#include "build/build_config.h"
+
 namespace prefs {
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -16,6 +18,13 @@ const char kAccountIdMigrationState[] = "account_id_migration_state";
 // Name of the preference property that persists the account information
 // tracked by this signin.
 const char kAccountInfo[] = "account_info";
+
+// Dictionary pref that contains the cached account preview data.
+const char kAccountPreviewDataDict[] = "signin.account_preview_data_dict";
+
+// Time pref that tracks the last time account preview data was refreshed.
+const char kAccountPreviewDataLastUpdatePref[] =
+    "signin.account_preview_data_last_update";
 
 // A hash of the GAIA accounts present in the content area. Order does not
 // affect the hash, but signed in/out status will. Stored as the Base64 string.
@@ -39,6 +48,7 @@ const char kGoogleServicesAccountId[] = "google.services.account_id";
 const char kGoogleServicesConsentedToSync[] =
     "google.services.consented_to_sync";
 
+#if !BUILDFLAG(IS_IOS)
 // Similar to `kGoogleServicesLastSyncingUsername` that is not cleared on
 // signout. Note this is always a Gaia ID, as opposed to
 // `kGoogleServicesAccountId` which may be an email.
@@ -51,6 +61,7 @@ const char kGoogleServicesLastSyncingGaiaId[] = "google.services.last_gaia_id";
 // last account should use `kGoogleServicesLastSyncingGaiaId` instead.
 const char kGoogleServicesLastSyncingUsername[] =
     "google.services.last_username";
+#endif  // !BUILDFLAG(IS_IOS)
 
 // Similar to kGoogleServicesLastSyncingUsername above but written for all
 // signed-in users, no matter whether they were syncing or not.

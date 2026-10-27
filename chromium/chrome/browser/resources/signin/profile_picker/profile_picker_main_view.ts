@@ -42,7 +42,6 @@ export interface ProfilePickerMainViewElement {
     askOnStartup: CrCheckboxElement|CrToggleElement,
     pickerLogo: HTMLElement,
     browseAsGuestButton: HTMLElement,
-    openAllProfilesButton: HTMLElement,
     profilesContainer: HTMLElement,
     profilesWrapper: HTMLElement,
     signinErrorDialog: SigninErrorDialogElement,
@@ -78,11 +77,8 @@ export class ProfilePickerMainViewElement extends
       guestModeEnabled_: {type: Boolean},
       profileCreationAllowed_: {type: Boolean},
       pickerButtonsDisabled_: {type: Boolean},
-      shouldShowOpenAllProfilesButton_: {type: Boolean},
       // Exposed to CSS as 'is-glic_'.
       isGlic_: {type: Boolean, reflect: true},
-      // Exposed to CSS as 'is-open-all-profiles-button-experiment-enabled_'.
-      isOpenAllProfilesButtonExperimentEnabled_: {type: Boolean, reflect: true},
       // Exposed to CSS as 'is-refreshed-ui_'.
       isRefreshedUI_: {type: Boolean, reflect: true},
     };
@@ -110,17 +106,7 @@ export class ProfilePickerMainViewElement extends
 
   protected accessor pickerButtonsDisabled_: boolean = false;
 
-  protected accessor isOpenAllProfilesButtonExperimentEnabled_: boolean =
-      loadTimeData.getBoolean('isOpenAllProfilesButtonExperimentEnabled');
-  private maxProfilesCountToShowOpenAllProfilesButton_: number =
-      loadTimeData.getInteger('maxProfilesCountToShowOpenAllProfilesButton');
-  protected accessor shouldShowOpenAllProfilesButton_: boolean = false;
-
   protected accessor isRefreshedUI_: boolean = isUseRefreshedUI();
-  private showProfilePickerToAllUsersExperiment_: boolean =
-      loadTimeData.getBoolean('showProfilePickerToAllUsersExperiment');
-  private isProfilePickerTextVariationsEnabled_: boolean =
-      loadTimeData.getBoolean('isProfilePickerTextVariationsEnabled');
 
   private eventTracker_: EventTracker = new EventTracker();
 
@@ -176,12 +162,6 @@ export class ProfilePickerMainViewElement extends
       // The strings containing the link may appear dynamically, so we need to
       // update their `click` events accordingly.
       this.updateLearnMoreLinkEvents_();
-      this.computeShouldShowOpenAllProfilesButton_();
-    }
-
-    if (changedPrivateProperties.has('shouldShowOpenAllProfilesButton_') &&
-        this.shouldShowOpenAllProfilesButton_) {
-      this.manageProfilesBrowserProxy_.recordOpenAllProfilesButtonShown();
     }
   }
 
@@ -288,22 +268,6 @@ export class ProfilePickerMainViewElement extends
     this.manageProfilesBrowserProxy_.launchGuestProfile();
   }
 
-  protected onOpenAllProfilesClick_() {
-    this.disableAllPickerButtons_();
-    chrome.metricsPrivate.recordUserAction(
-        'ProfilePicker_OpenAllProfilesClicked');
-    this.manageProfilesBrowserProxy_.launchAllProfiles(
-        this.profilesList_.map(profile => profile.profilePath));
-  }
-
-  private computeShouldShowOpenAllProfilesButton_() {
-    this.shouldShowOpenAllProfilesButton_ =
-        this.isOpenAllProfilesButtonExperimentEnabled_ &&
-        1 < this.profilesList_.length &&
-        this.profilesList_.length <=
-            this.maxProfilesCountToShowOpenAllProfilesButton_;
-  }
-
   private maybeUpdateGuestMode_(enableGuestMode: boolean) {
     if (enableGuestMode === this.guestModeEnabled_) {
       return;
@@ -322,15 +286,10 @@ export class ProfilePickerMainViewElement extends
     assert(index !== -1);
     this.profilesList_.splice(index, 1);
     this.requestUpdate();
-    this.computeShouldShowOpenAllProfilesButton_();
   }
 
   private computeHideAskOnStartup_(): boolean {
-    const shouldShowBasedOnProfilesCount = this.profilesList_.length >= 2 ||
-        (this.profilesList_.length >= 1 &&
-         this.showProfilePickerToAllUsersExperiment_);
-
-    return !isAskOnStartupAllowed() || !shouldShowBasedOnProfilesCount;
+    return !isAskOnStartupAllowed() || this.profilesList_.length < 2;
   }
 
   protected onToggleDrag_(e: CustomEvent<{toggle: boolean}>) {
@@ -367,30 +326,23 @@ export class ProfilePickerMainViewElement extends
   }
 
   protected getTitle_(): TrustedHTML {
-    if (this.isProfileListLoadedAndEmptyAndGlic_()) {
-      // Special styling through 'class' attribute in some version of the title.
-      return this.i18nAdvanced('glicTitleNoProfile', {attrs: ['class']});
+    return this.i18nAdvanced(
+        this.isProfileListLoadedAndEmptyAndGlic_() ? 'glicTitleNoProfile' :
+                                                     'mainViewTitle',
+        // Special styling through 'class' attribute in some version of the
+        // title.
+        {attrs: ['class']});
     }
-    const titleStringResouce = this.isProfilePickerTextVariationsEnabled_ &&
-            this.profilesList_.length === 1 ?
-        'mainViewSingleProfileTitle' :
-        'mainViewTitle';
-    return this.i18nAdvanced(titleStringResouce, {attrs: ['class']});
-  }
 
   protected getSubtitle_(): TrustedHTML {
-    if (this.isProfileListLoadedAndEmptyAndGlic_()) {
-      // Special tagging through 'class' attribute in some version of the
-      // subtitle.
-      return this.i18nAdvanced(
-          'mainViewSubtitleGlicNoProfile', {attrs: ['class']});
+    return this.i18nAdvanced(
+        this.isProfileListLoadedAndEmptyAndGlic_() ?
+            'mainViewSubtitleGlicNoProfile' :
+            'mainViewSubtitle',
+        // Special styling through 'class' attribute in some version of the
+        // subtitle.
+        {attrs: ['class']});
     }
-    const subtitleStringResource = this.isProfilePickerTextVariationsEnabled_ &&
-            this.profilesList_.length === 1 ?
-        'mainViewSingleProfileSubtitle' :
-        'mainViewSubtitle';
-    return this.i18nAdvanced(subtitleStringResource, {attrs: ['class']});
-  }
 
   protected shouldHideProfilesWrapper_(): boolean {
     if (!this.profilesListLoaded_) {

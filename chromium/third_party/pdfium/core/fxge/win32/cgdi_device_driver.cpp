@@ -375,7 +375,6 @@ CGdiDeviceDriver::CGdiDeviceDriver(HDC hDC, DeviceType device_type)
     height_ = ::GetDeviceCaps(dc_handle_, VERTRES);
   }
   render_cap_get_bits_ = device_type_ == DeviceType::kDisplay;
-  render_cap_alpha_path_ = false;
 }
 
 CGdiDeviceDriver::~CGdiDeviceDriver() = default;
@@ -386,10 +385,6 @@ DeviceType CGdiDeviceDriver::GetDeviceType() const {
 
 bool CGdiDeviceDriver::RenderCapGetBits() const {
   return render_cap_get_bits_;
-}
-
-bool CGdiDeviceDriver::RenderCapAlphaPath() const {
-  return render_cap_alpha_path_;
 }
 
 bool CGdiDeviceDriver::RenderCapAlphaImage() const {

@@ -820,6 +820,26 @@ static VKAPI_ATTR VkResult VKAPI_CALL StubGetMemoryAndroidHardwareBufferANDROID(
     return VK_SUCCESS;
 }
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
+static VKAPI_ATTR VkResult VKAPI_CALL StubCreateGpaSessionAMD(VkDevice, const VkGpaSessionCreateInfoAMD*,
+                                                              const VkAllocationCallbacks*, VkGpaSessionAMD*) {
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR void VKAPI_CALL StubDestroyGpaSessionAMD(VkDevice, VkGpaSessionAMD, const VkAllocationCallbacks*) {}
+static VKAPI_ATTR VkResult VKAPI_CALL StubSetGpaDeviceClockModeAMD(VkDevice, VkGpaDeviceClockModeInfoAMD*) { return VK_SUCCESS; }
+static VKAPI_ATTR VkResult VKAPI_CALL StubGetGpaDeviceClockInfoAMD(VkDevice, VkGpaDeviceGetClockInfoAMD*) { return VK_SUCCESS; }
+static VKAPI_ATTR VkResult VKAPI_CALL StubCmdBeginGpaSessionAMD(VkCommandBuffer, VkGpaSessionAMD) { return VK_SUCCESS; }
+static VKAPI_ATTR VkResult VKAPI_CALL StubCmdEndGpaSessionAMD(VkCommandBuffer, VkGpaSessionAMD) { return VK_SUCCESS; }
+static VKAPI_ATTR VkResult VKAPI_CALL StubCmdBeginGpaSampleAMD(VkCommandBuffer, VkGpaSessionAMD, const VkGpaSampleBeginInfoAMD*,
+                                                               uint32_t*) {
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR void VKAPI_CALL StubCmdEndGpaSampleAMD(VkCommandBuffer, VkGpaSessionAMD, uint32_t) {}
+static VKAPI_ATTR VkResult VKAPI_CALL StubGetGpaSessionStatusAMD(VkDevice, VkGpaSessionAMD) { return VK_SUCCESS; }
+static VKAPI_ATTR VkResult VKAPI_CALL StubGetGpaSessionResultsAMD(VkDevice, VkGpaSessionAMD, uint32_t, size_t*, void*) {
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR VkResult VKAPI_CALL StubResetGpaSessionAMD(VkDevice, VkGpaSessionAMD) { return VK_SUCCESS; }
+static VKAPI_ATTR void VKAPI_CALL StubCmdCopyGpaSessionResultsAMD(VkCommandBuffer, VkGpaSessionAMD) {}
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 static VKAPI_ATTR VkResult VKAPI_CALL StubCreateExecutionGraphPipelinesAMDX(VkDevice, VkPipelineCache, uint32_t,
                                                                             const VkExecutionGraphPipelineCreateInfoAMDX*,
@@ -899,7 +919,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL StubCreateAccelerationStructureNV(VkDevice
 static VKAPI_ATTR void VKAPI_CALL StubDestroyAccelerationStructureNV(VkDevice, VkAccelerationStructureNV,
                                                                      const VkAllocationCallbacks*) {}
 static VKAPI_ATTR void VKAPI_CALL StubGetAccelerationStructureMemoryRequirementsNV(
-    VkDevice, const VkAccelerationStructureMemoryRequirementsInfoNV*, VkMemoryRequirements2KHR*) {}
+    VkDevice, const VkAccelerationStructureMemoryRequirementsInfoNV*, VkMemoryRequirements2*) {}
 static VKAPI_ATTR VkResult VKAPI_CALL StubBindAccelerationStructureMemoryNV(VkDevice, uint32_t,
                                                                             const VkBindAccelerationStructureMemoryInfoNV*) {
     return VK_SUCCESS;
@@ -1099,6 +1119,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL StubSetPrivateDataEXT(VkDevice, VkObjectTy
     return VK_SUCCESS;
 }
 static VKAPI_ATTR void VKAPI_CALL StubGetPrivateDataEXT(VkDevice, VkObjectType, uint64_t, VkPrivateDataSlot, uint64_t*) {}
+static VKAPI_ATTR VkResult VKAPI_CALL StubQueueSetPerfHintQCOM(VkQueue, const VkPerfHintInfoQCOM*) { return VK_SUCCESS; }
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 static VKAPI_ATTR VkResult VKAPI_CALL StubCreateCudaModuleNV(VkDevice, const VkCudaModuleCreateInfoNV*,
                                                              const VkAllocationCallbacks*, VkCudaModuleNV*) {
@@ -1219,7 +1240,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL StubGetMemoryRemoteAddressNV(VkDevice, con
                                                                    VkRemoteAddressNV*) {
     return VK_SUCCESS;
 }
-static VKAPI_ATTR VkResult VKAPI_CALL StubGetPipelinePropertiesEXT(VkDevice, const VkPipelineInfoEXT*, VkBaseOutStructure*) {
+static VKAPI_ATTR VkResult VKAPI_CALL StubGetPipelinePropertiesEXT(VkDevice, const VkPipelineInfoKHR*, VkBaseOutStructure*) {
     return VK_SUCCESS;
 }
 static VKAPI_ATTR void VKAPI_CALL StubCmdSetPatchControlPointsEXT(VkCommandBuffer, uint32_t) {}
@@ -1279,6 +1300,7 @@ static VKAPI_ATTR void VKAPI_CALL StubGetMicromapBuildSizesEXT(VkDevice, VkAccel
 static VKAPI_ATTR void VKAPI_CALL StubCmdDrawClusterHUAWEI(VkCommandBuffer, uint32_t, uint32_t, uint32_t) {}
 static VKAPI_ATTR void VKAPI_CALL StubCmdDrawClusterIndirectHUAWEI(VkCommandBuffer, VkBuffer, VkDeviceSize) {}
 static VKAPI_ATTR void VKAPI_CALL StubSetDeviceMemoryPriorityEXT(VkDevice, VkDeviceMemory, float) {}
+static VKAPI_ATTR void VKAPI_CALL StubCmdSetDispatchParametersARM(VkCommandBuffer, const VkDispatchParametersARM*) {}
 static VKAPI_ATTR void VKAPI_CALL StubGetDescriptorSetLayoutHostMappingInfoVALVE(VkDevice,
                                                                                  const VkDescriptorSetBindingReferenceVALVE*,
                                                                                  VkDescriptorSetLayoutHostMappingInfoVALVE*) {}
@@ -1468,6 +1490,10 @@ static VKAPI_ATTR VkResult VKAPI_CALL StubGetPhysicalDeviceQueueFamilyDataGraphP
 static VKAPI_ATTR void VKAPI_CALL StubGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM(
     VkPhysicalDevice, const VkPhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM*,
     VkQueueFamilyDataGraphProcessingEnginePropertiesARM*) {}
+static VKAPI_ATTR VkResult VKAPI_CALL StubGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+    VkPhysicalDevice, uint32_t, const VkQueueFamilyDataGraphPropertiesARM*, VkBaseOutStructure*) {
+    return VK_SUCCESS;
+}
 static VKAPI_ATTR void VKAPI_CALL StubCmdSetAttachmentFeedbackLoopEnableEXT(VkCommandBuffer, VkImageAspectFlags) {}
 #ifdef VK_USE_PLATFORM_SCREEN_QNX
 static VKAPI_ATTR VkResult VKAPI_CALL StubGetScreenBufferPropertiesQNX(VkDevice, const struct _screen_buffer*,
@@ -1563,6 +1589,11 @@ static VKAPI_ATTR VkResult VKAPI_CALL StubGetShaderInstrumentationValuesARM(VkDe
 static VKAPI_ATTR void VKAPI_CALL StubClearShaderInstrumentationMetricsARM(VkDevice, VkShaderInstrumentationARM) {}
 static VKAPI_ATTR void VKAPI_CALL StubCmdEndRendering2EXT(VkCommandBuffer, const VkRenderingEndInfoKHR*) {}
 static VKAPI_ATTR void VKAPI_CALL StubCmdBeginCustomResolveEXT(VkCommandBuffer, const VkBeginCustomResolveInfoEXT*) {}
+static VKAPI_ATTR VkResult VKAPI_CALL StubGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+    VkPhysicalDevice, uint32_t, const VkQueueFamilyDataGraphPropertiesARM*, const VkDataGraphOpticalFlowImageFormatInfoARM*,
+    uint32_t*, VkDataGraphOpticalFlowImageFormatPropertiesARM*) {
+    return VK_SUCCESS;
+}
 static VKAPI_ATTR void VKAPI_CALL StubCmdSetComputeOccupancyPriorityNV(VkCommandBuffer,
                                                                        const VkComputeOccupancyPriorityParametersNV*) {}
 #ifdef VK_USE_PLATFORM_UBM_SEC
@@ -1575,6 +1606,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL StubGetPhysicalDeviceUbmPresentationSuppor
     return VK_FALSE;
 }
 #endif  // VK_USE_PLATFORM_UBM_SEC
+static VKAPI_ATTR void VKAPI_CALL StubCmdSetPrimitiveRestartIndexEXT(VkCommandBuffer, uint32_t) {}
 static VKAPI_ATTR VkResult VKAPI_CALL StubCreateAccelerationStructureKHR(VkDevice, const VkAccelerationStructureCreateInfoKHR*,
                                                                          const VkAllocationCallbacks*,
                                                                          VkAccelerationStructureKHR*) {
@@ -1940,6 +1972,18 @@ const auto& GetApiExtensionMap() {
         {"vkCmdInsertDebugUtilsLabelEXT", {vvl::Extension::_VK_EXT_debug_utils}},
         {"vkGetAndroidHardwareBufferPropertiesANDROID", {vvl::Extension::_VK_ANDROID_external_memory_android_hardware_buffer}},
         {"vkGetMemoryAndroidHardwareBufferANDROID", {vvl::Extension::_VK_ANDROID_external_memory_android_hardware_buffer}},
+        {"vkCreateGpaSessionAMD", {vvl::Extension::_VK_AMD_gpa_interface}},
+        {"vkDestroyGpaSessionAMD", {vvl::Extension::_VK_AMD_gpa_interface}},
+        {"vkSetGpaDeviceClockModeAMD", {vvl::Extension::_VK_AMD_gpa_interface}},
+        {"vkGetGpaDeviceClockInfoAMD", {vvl::Extension::_VK_AMD_gpa_interface}},
+        {"vkCmdBeginGpaSessionAMD", {vvl::Extension::_VK_AMD_gpa_interface}},
+        {"vkCmdEndGpaSessionAMD", {vvl::Extension::_VK_AMD_gpa_interface}},
+        {"vkCmdBeginGpaSampleAMD", {vvl::Extension::_VK_AMD_gpa_interface}},
+        {"vkCmdEndGpaSampleAMD", {vvl::Extension::_VK_AMD_gpa_interface}},
+        {"vkGetGpaSessionStatusAMD", {vvl::Extension::_VK_AMD_gpa_interface}},
+        {"vkGetGpaSessionResultsAMD", {vvl::Extension::_VK_AMD_gpa_interface}},
+        {"vkResetGpaSessionAMD", {vvl::Extension::_VK_AMD_gpa_interface}},
+        {"vkCmdCopyGpaSessionResultsAMD", {vvl::Extension::_VK_AMD_gpa_interface}},
         {"vkCreateExecutionGraphPipelinesAMDX", {vvl::Extension::_VK_AMDX_shader_enqueue}},
         {"vkGetExecutionGraphPipelineScratchSizeAMDX", {vvl::Extension::_VK_AMDX_shader_enqueue}},
         {"vkGetExecutionGraphPipelineNodeIndexAMDX", {vvl::Extension::_VK_AMDX_shader_enqueue}},
@@ -2041,6 +2085,7 @@ const auto& GetApiExtensionMap() {
         {"vkDestroyPrivateDataSlotEXT", {vvl::Extension::_VK_EXT_private_data}},
         {"vkSetPrivateDataEXT", {vvl::Extension::_VK_EXT_private_data}},
         {"vkGetPrivateDataEXT", {vvl::Extension::_VK_EXT_private_data}},
+        {"vkQueueSetPerfHintQCOM", {vvl::Extension::_VK_QCOM_queue_perf_hint}},
         {"vkCreateCudaModuleNV", {vvl::Extension::_VK_NV_cuda_kernel_launch}},
         {"vkGetCudaModuleCacheNV", {vvl::Extension::_VK_NV_cuda_kernel_launch}},
         {"vkCreateCudaFunctionNV", {vvl::Extension::_VK_NV_cuda_kernel_launch}},
@@ -2106,6 +2151,7 @@ const auto& GetApiExtensionMap() {
         {"vkCmdDrawClusterHUAWEI", {vvl::Extension::_VK_HUAWEI_cluster_culling_shader}},
         {"vkCmdDrawClusterIndirectHUAWEI", {vvl::Extension::_VK_HUAWEI_cluster_culling_shader}},
         {"vkSetDeviceMemoryPriorityEXT", {vvl::Extension::_VK_EXT_pageable_device_local_memory}},
+        {"vkCmdSetDispatchParametersARM", {vvl::Extension::_VK_ARM_scheduling_controls}},
         {"vkGetDescriptorSetLayoutHostMappingInfoVALVE", {vvl::Extension::_VK_VALVE_descriptor_set_host_mapping}},
         {"vkGetDescriptorSetHostMappingVALVE", {vvl::Extension::_VK_VALVE_descriptor_set_host_mapping}},
         {"vkCmdCopyMemoryIndirectNV", {vvl::Extension::_VK_NV_copy_memory_indirect}},
@@ -2239,6 +2285,7 @@ const auto& GetApiExtensionMap() {
         {"vkCmdEndRendering2EXT", {vvl::Extension::_VK_EXT_fragment_density_map_offset}},
         {"vkCmdBeginCustomResolveEXT", {vvl::Extension::_VK_EXT_custom_resolve}},
         {"vkCmdSetComputeOccupancyPriorityNV", {vvl::Extension::_VK_NV_compute_occupancy_priority}},
+        {"vkCmdSetPrimitiveRestartIndexEXT", {vvl::Extension::_VK_EXT_primitive_restart_index}},
         {"vkCreateAccelerationStructureKHR", {vvl::Extension::_VK_KHR_acceleration_structure}},
         {"vkDestroyAccelerationStructureKHR", {vvl::Extension::_VK_KHR_acceleration_structure}},
         {"vkCmdBuildAccelerationStructuresKHR", {vvl::Extension::_VK_KHR_acceleration_structure}},
@@ -3637,6 +3684,54 @@ void layer_init_device_dispatch_table(VkDevice device, VkLayerDispatchTable* tab
             (PFN_vkGetMemoryAndroidHardwareBufferANDROID)StubGetMemoryAndroidHardwareBufferANDROID;
     }
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
+    table->CreateGpaSessionAMD = (PFN_vkCreateGpaSessionAMD)gpa(device, "vkCreateGpaSessionAMD");
+    if (table->CreateGpaSessionAMD == nullptr) {
+        table->CreateGpaSessionAMD = (PFN_vkCreateGpaSessionAMD)StubCreateGpaSessionAMD;
+    }
+    table->DestroyGpaSessionAMD = (PFN_vkDestroyGpaSessionAMD)gpa(device, "vkDestroyGpaSessionAMD");
+    if (table->DestroyGpaSessionAMD == nullptr) {
+        table->DestroyGpaSessionAMD = (PFN_vkDestroyGpaSessionAMD)StubDestroyGpaSessionAMD;
+    }
+    table->SetGpaDeviceClockModeAMD = (PFN_vkSetGpaDeviceClockModeAMD)gpa(device, "vkSetGpaDeviceClockModeAMD");
+    if (table->SetGpaDeviceClockModeAMD == nullptr) {
+        table->SetGpaDeviceClockModeAMD = (PFN_vkSetGpaDeviceClockModeAMD)StubSetGpaDeviceClockModeAMD;
+    }
+    table->GetGpaDeviceClockInfoAMD = (PFN_vkGetGpaDeviceClockInfoAMD)gpa(device, "vkGetGpaDeviceClockInfoAMD");
+    if (table->GetGpaDeviceClockInfoAMD == nullptr) {
+        table->GetGpaDeviceClockInfoAMD = (PFN_vkGetGpaDeviceClockInfoAMD)StubGetGpaDeviceClockInfoAMD;
+    }
+    table->CmdBeginGpaSessionAMD = (PFN_vkCmdBeginGpaSessionAMD)gpa(device, "vkCmdBeginGpaSessionAMD");
+    if (table->CmdBeginGpaSessionAMD == nullptr) {
+        table->CmdBeginGpaSessionAMD = (PFN_vkCmdBeginGpaSessionAMD)StubCmdBeginGpaSessionAMD;
+    }
+    table->CmdEndGpaSessionAMD = (PFN_vkCmdEndGpaSessionAMD)gpa(device, "vkCmdEndGpaSessionAMD");
+    if (table->CmdEndGpaSessionAMD == nullptr) {
+        table->CmdEndGpaSessionAMD = (PFN_vkCmdEndGpaSessionAMD)StubCmdEndGpaSessionAMD;
+    }
+    table->CmdBeginGpaSampleAMD = (PFN_vkCmdBeginGpaSampleAMD)gpa(device, "vkCmdBeginGpaSampleAMD");
+    if (table->CmdBeginGpaSampleAMD == nullptr) {
+        table->CmdBeginGpaSampleAMD = (PFN_vkCmdBeginGpaSampleAMD)StubCmdBeginGpaSampleAMD;
+    }
+    table->CmdEndGpaSampleAMD = (PFN_vkCmdEndGpaSampleAMD)gpa(device, "vkCmdEndGpaSampleAMD");
+    if (table->CmdEndGpaSampleAMD == nullptr) {
+        table->CmdEndGpaSampleAMD = (PFN_vkCmdEndGpaSampleAMD)StubCmdEndGpaSampleAMD;
+    }
+    table->GetGpaSessionStatusAMD = (PFN_vkGetGpaSessionStatusAMD)gpa(device, "vkGetGpaSessionStatusAMD");
+    if (table->GetGpaSessionStatusAMD == nullptr) {
+        table->GetGpaSessionStatusAMD = (PFN_vkGetGpaSessionStatusAMD)StubGetGpaSessionStatusAMD;
+    }
+    table->GetGpaSessionResultsAMD = (PFN_vkGetGpaSessionResultsAMD)gpa(device, "vkGetGpaSessionResultsAMD");
+    if (table->GetGpaSessionResultsAMD == nullptr) {
+        table->GetGpaSessionResultsAMD = (PFN_vkGetGpaSessionResultsAMD)StubGetGpaSessionResultsAMD;
+    }
+    table->ResetGpaSessionAMD = (PFN_vkResetGpaSessionAMD)gpa(device, "vkResetGpaSessionAMD");
+    if (table->ResetGpaSessionAMD == nullptr) {
+        table->ResetGpaSessionAMD = (PFN_vkResetGpaSessionAMD)StubResetGpaSessionAMD;
+    }
+    table->CmdCopyGpaSessionResultsAMD = (PFN_vkCmdCopyGpaSessionResultsAMD)gpa(device, "vkCmdCopyGpaSessionResultsAMD");
+    if (table->CmdCopyGpaSessionResultsAMD == nullptr) {
+        table->CmdCopyGpaSessionResultsAMD = (PFN_vkCmdCopyGpaSessionResultsAMD)StubCmdCopyGpaSessionResultsAMD;
+    }
 #ifdef VK_ENABLE_BETA_EXTENSIONS
     table->CreateExecutionGraphPipelinesAMDX =
         (PFN_vkCreateExecutionGraphPipelinesAMDX)gpa(device, "vkCreateExecutionGraphPipelinesAMDX");
@@ -4083,6 +4178,10 @@ void layer_init_device_dispatch_table(VkDevice device, VkLayerDispatchTable* tab
     if (table->GetPrivateDataEXT == nullptr) {
         table->GetPrivateDataEXT = (PFN_vkGetPrivateDataEXT)StubGetPrivateDataEXT;
     }
+    table->QueueSetPerfHintQCOM = (PFN_vkQueueSetPerfHintQCOM)gpa(device, "vkQueueSetPerfHintQCOM");
+    if (table->QueueSetPerfHintQCOM == nullptr) {
+        table->QueueSetPerfHintQCOM = (PFN_vkQueueSetPerfHintQCOM)StubQueueSetPerfHintQCOM;
+    }
 #ifdef VK_ENABLE_BETA_EXTENSIONS
     table->CreateCudaModuleNV = (PFN_vkCreateCudaModuleNV)gpa(device, "vkCreateCudaModuleNV");
     if (table->CreateCudaModuleNV == nullptr) {
@@ -4374,6 +4473,10 @@ void layer_init_device_dispatch_table(VkDevice device, VkLayerDispatchTable* tab
     table->SetDeviceMemoryPriorityEXT = (PFN_vkSetDeviceMemoryPriorityEXT)gpa(device, "vkSetDeviceMemoryPriorityEXT");
     if (table->SetDeviceMemoryPriorityEXT == nullptr) {
         table->SetDeviceMemoryPriorityEXT = (PFN_vkSetDeviceMemoryPriorityEXT)StubSetDeviceMemoryPriorityEXT;
+    }
+    table->CmdSetDispatchParametersARM = (PFN_vkCmdSetDispatchParametersARM)gpa(device, "vkCmdSetDispatchParametersARM");
+    if (table->CmdSetDispatchParametersARM == nullptr) {
+        table->CmdSetDispatchParametersARM = (PFN_vkCmdSetDispatchParametersARM)StubCmdSetDispatchParametersARM;
     }
     table->GetDescriptorSetLayoutHostMappingInfoVALVE =
         (PFN_vkGetDescriptorSetLayoutHostMappingInfoVALVE)gpa(device, "vkGetDescriptorSetLayoutHostMappingInfoVALVE");
@@ -4913,6 +5016,10 @@ void layer_init_device_dispatch_table(VkDevice device, VkLayerDispatchTable* tab
         (PFN_vkCmdSetComputeOccupancyPriorityNV)gpa(device, "vkCmdSetComputeOccupancyPriorityNV");
     if (table->CmdSetComputeOccupancyPriorityNV == nullptr) {
         table->CmdSetComputeOccupancyPriorityNV = (PFN_vkCmdSetComputeOccupancyPriorityNV)StubCmdSetComputeOccupancyPriorityNV;
+    }
+    table->CmdSetPrimitiveRestartIndexEXT = (PFN_vkCmdSetPrimitiveRestartIndexEXT)gpa(device, "vkCmdSetPrimitiveRestartIndexEXT");
+    if (table->CmdSetPrimitiveRestartIndexEXT == nullptr) {
+        table->CmdSetPrimitiveRestartIndexEXT = (PFN_vkCmdSetPrimitiveRestartIndexEXT)StubCmdSetPrimitiveRestartIndexEXT;
     }
     table->CreateAccelerationStructureKHR = (PFN_vkCreateAccelerationStructureKHR)gpa(device, "vkCreateAccelerationStructureKHR");
     if (table->CreateAccelerationStructureKHR == nullptr) {
@@ -5611,6 +5718,14 @@ void layer_init_instance_dispatch_table(VkInstance instance, VkLayerInstanceDisp
             (PFN_vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM)
                 StubGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM;
     }
+    table->GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM =
+        (PFN_vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM)gpa(
+            instance, "vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM");
+    if (table->GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM == nullptr) {
+        table->GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM =
+            (PFN_vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM)
+                StubGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM;
+    }
 #ifdef VK_USE_PLATFORM_OHOS
     table->CreateSurfaceOHOS = (PFN_vkCreateSurfaceOHOS)gpa(instance, "vkCreateSurfaceOHOS");
     if (table->CreateSurfaceOHOS == nullptr) {
@@ -5640,6 +5755,14 @@ void layer_init_instance_dispatch_table(VkInstance instance, VkLayerInstanceDisp
         table->EnumeratePhysicalDeviceShaderInstrumentationMetricsARM =
             (PFN_vkEnumeratePhysicalDeviceShaderInstrumentationMetricsARM)
                 StubEnumeratePhysicalDeviceShaderInstrumentationMetricsARM;
+    }
+    table->GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM =
+        (PFN_vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM)gpa(
+            instance, "vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM");
+    if (table->GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM == nullptr) {
+        table->GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM =
+            (PFN_vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM)
+                StubGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM;
     }
 #ifdef VK_USE_PLATFORM_UBM_SEC
     table->CreateUbmSurfaceSEC = (PFN_vkCreateUbmSurfaceSEC)gpa(instance, "vkCreateUbmSurfaceSEC");

@@ -20,8 +20,8 @@ macro_rules! check_tls_error {
         unsafe {
             // Safety: we have exclusive access to the connection state.
             match ::bssl_sys::SSL_get_error($tls, $e) {
-                0 => {}
-                rc => return Err($crate::errors::Error::extract_tls_err(rc)),
+                0 => None,
+                rc => Some($crate::errors::Error::extract_tls_err(rc)?),
             }
         }
     };
@@ -77,6 +77,35 @@ macro_rules! crypto_buffer_wrapper {
             }
         }
 
+        impl ::core::ops::Deref for $name {
+            type Target = [u8];
+            fn deref(&self) -> &Self::Target {
+                let (data, len) = unsafe {
+                    // Safety: `self` witnesses the validity of the underlying handle.
+                    (
+                        ::bssl_sys::CRYPTO_BUFFER_data(self.ptr()),
+                        ::bssl_sys::CRYPTO_BUFFER_len(self.ptr()),
+                    )
+                };
+                if data.is_null() || len == 0 || len > isize::MAX as usize {
+                    &[]
+                } else {
+                    unsafe {
+                        // Safety:
+                        // - `data` is 1-size and 1-align and `len` is valid by BoringSSL invariant.
+                        // - `len` is sanitised to be within bound.
+                        ::core::slice::from_raw_parts(data, len)
+                    }
+                }
+            }
+        }
+
+        impl ::core::convert::AsRef<[u8]> for $name {
+            fn as_ref(&self) -> &[u8] {
+                &self
+            }
+        }
+
         impl $name {
             /// **NOTE: we do not sanitise or validate the input bytes.**
             #[inline(always)]
@@ -102,4 +131,24 @@ macro_rules! crypto_buffer_wrapper {
             }
         }
     };
+}
+
+// Safety: `$obj` must outlive the returned slice.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! call_slice_getter {
+    ($fn:path, $obj:expr) => {{
+        let mut data = ::core::ptr::null();
+        let mut len = 0;
+        #[allow(unused_unsafe)]
+        unsafe {
+            // Safety: `obj`, `data` and `len` are all valid.
+            $fn($obj, &raw mut data, &raw mut len);
+        }
+        #[allow(unused_unsafe)]
+        unsafe {
+            // Safety: data and len are returned by BoringSSL and are valid.
+            $crate::ffi::sanitize_slice(data, len)
+        }
+    }};
 }

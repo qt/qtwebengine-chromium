@@ -5,6 +5,7 @@
 #include <array>
 
 #include "base/command_line.h"
+#include "base/containers/span.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -183,7 +184,7 @@ IN_PROC_BROWSER_TEST_F(DesktopCaptureApiTest, MAYBE_ChooseDesktopMedia) {
        .picker_result = DesktopMediaID(DesktopMediaID::TYPE_SCREEN,
                                        webrtc::kFullDesktopScreenId)},
   };
-  picker_factory_.SetTestFlags(test_flags, std::size(test_flags));
+  picker_factory_.SetTestFlags(test_flags);
   ASSERT_TRUE(RunExtensionTest("desktop_capture")) << message_;
 }
 
@@ -229,7 +230,7 @@ IN_PROC_BROWSER_TEST_F(DesktopCaptureApiTest, MAYBE_Delegation) {
            DesktopMediaID(DesktopMediaID::TYPE_SCREEN, DesktopMediaID::kNullId),
        .cancelled = true},
   };
-  picker_factory_.SetTestFlags(test_flags, std::size(test_flags));
+  picker_factory_.SetTestFlags(test_flags);
 
   content::WebContents* web_contents = GetActiveWebContents();
 
@@ -251,7 +252,7 @@ IN_PROC_BROWSER_TEST_F(DesktopCaptureApiTest, MAYBE_Delegation) {
 
 // Not specifying a tab defaults to the extension's background page.
 // Service worker-based extensions don't have one, so they must specify
-// a tab. This is a regression test for crbug.com/1271590.
+// a tab. This is a regression test for crbug.com/40205786.
 IN_PROC_BROWSER_TEST_F(DesktopCaptureApiTest, ServiceWorkerMustSpecifyTab) {
   static constexpr char kManifest[] =
       R"({
@@ -336,7 +337,7 @@ void DesktopCaptureApiMediaPickerOptionsBaseTest::FromServiceWorker(
   FakeDesktopMediaPickerFactory::TestFlags test_flags[] = {
       {.expect_tabs = true, .picker_result = MakeFakeWebContentsMediaId(true)},
   };
-  picker_factory_.SetTestFlags(test_flags, std::size(test_flags));
+  picker_factory_.SetTestFlags(test_flags);
 
   ASSERT_TRUE(RunExtensionTest(test_dir.UnpackedPath(), {}, {})) << message_;
 }

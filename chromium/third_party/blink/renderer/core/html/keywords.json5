@@ -98,8 +98,6 @@
     "toggle-muted",
     // command for menu elements
     "toggle-menu",
-    "hide-menu",
-    "show-menu",
     // command for scroll
     {name: "page-up", Symbol: "kPage_Up"},
     {name: "page-down", Symbol: "kPage_Down"},
@@ -116,6 +114,13 @@
     // https://github.com/scott-little/lazyload#ways-the-loading-attribute-can-be-used
     "lazy",
     "eager",
+    "auto",
+
+    // overscrollcontainer attribute
+    "auto",
+    "overlay",
+
+    // overscrollarea attribute
     "auto",
 
     // popover attribute
@@ -274,5 +279,10 @@
     // https://wicg.github.io/PEPC/permission-elements.html#element-attrdef-permission-type
     "camera",
     "microphone",
+
+    // Values of cachehint attribute for <script> element (under proposal).
+    // https://github.com/explainers-by-googlers/inline-script-cache-hint
+    "never",
+    "default",
   ],
 }

@@ -271,11 +271,21 @@ class InProgressStroke {
 
   absl::Status ValidateNewElapsedTime(Duration32 current_elapsed_time) const;
 
+  // Whether `UpdateShape` might be needed due to a prior call to
+  // `EnqueueInputs`.
+  bool HasQueuedInputs() const;
+
   std::optional<Brush> brush_;
   // Real and predicted inputs that have been queued by calls to
   // `EnqueueInputs()` since the last call to `UpdateShape()`.
   StrokeInputBatch queued_real_inputs_;
   StrokeInputBatch queued_predicted_inputs_;
+  // True if `EnqueueInputs()` has been called since the last call to
+  // `UpdateShape()`. Used to distinguish between the cases where
+  // `UpdateShape()` is called with no new inputs (e.g. to advance animations)
+  // vs. explicitly calling `EnqueueInputs()` with empty inputs to clear
+  // previously predicted inputs.
+  bool queued_inputs_since_last_update_shape_ = false;
   // Inputs (combined real and predicted) that have already been processed by a
   // call to `UpdateShape()`, and are reflected in the current
   // `StrokeShapeBuilder` geometry.

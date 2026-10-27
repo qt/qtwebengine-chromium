@@ -72,11 +72,13 @@ static_library("browser") {
   } else if (is_win || is_mac || is_linux) {
     public += [
       "agent_signals_collector.h",
+      "certificate_signals_collector.h",
       "crowdstrike_client.h",
       "desktop/desktop_os_signals_collector.h",
     ]
     sources += [
       "agent_signals_collector.cc",
+      "certificate_signals_collector.cc",
       "crowdstrike_client.cc",
       "desktop/desktop_os_signals_collector.cc",
     ]
@@ -121,12 +123,15 @@ static_library("test_support") {
     "mock_user_delegate.h",
     "mock_user_permission_service.cc",
     "mock_user_permission_service.h",
+    "os_signals_collector_test_base.cc",
+    "os_signals_collector_test_base.h",
   ]
 
   deps = [
     ":browser",
     "//base",
     "//components/device_signals/core/common/mojom",
+    "//components/policy/core/common:test_support",
     "//components/signin/public/identity_manager",
     "//services/network/public/cpp",
     "//testing/gmock",

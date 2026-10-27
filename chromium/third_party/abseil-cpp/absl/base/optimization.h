@@ -31,6 +31,7 @@
 #define ABSL_BASE_OPTIMIZATION_H_
 
 #include <assert.h>
+#include <stdlib.h>
 
 #ifdef __cplusplus
 // Included for std::unreachable()
@@ -217,7 +218,7 @@
 #elif defined(_MSC_VER)
 #define ABSL_INTERNAL_UNREACHABLE_IMPL() __assume(false)
 #else
-#define ABSL_INTERNAL_UNREACHABLE_IMPL()
+#define ABSL_INTERNAL_UNREACHABLE_IMPL() ((void)0)
 #endif
 
 // `ABSL_UNREACHABLE()` is an unreachable statement.  A program which reaches

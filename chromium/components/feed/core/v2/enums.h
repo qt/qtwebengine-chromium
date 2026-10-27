@@ -15,16 +15,15 @@ enum class NetworkRequestType : int {
   kFeedQuery = 0,
   kUploadActions = 1,
   kNextPage = 2,
-  kListWebFeeds = 3,
-  kUnfollowWebFeed = 4,
-  kFollowWebFeed = 5,
-  kListRecommendedWebFeeds = 6,
-  kWebFeedListContents = 7,
+  // Deprecated, as web feed is removed
+  // kListWebFeeds = 3,
+  // kUnfollowWebFeed = 4,
+  // kFollowWebFeed = 5,
+  // kListRecommendedWebFeeds = 6,
+  // kWebFeedListContents = 7,
   kQueryInteractiveFeed = 8,
   kQueryBackgroundFeed = 9,
   kQueryNextPage = 10,
-  kSingleWebFeedListContents = 11,
-  kQueryWebFeed = 12,
 };
 std::ostream& operator<<(std::ostream& out, NetworkRequestType value);
 

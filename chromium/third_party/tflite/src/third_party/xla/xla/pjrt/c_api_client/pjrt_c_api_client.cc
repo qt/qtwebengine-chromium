@@ -63,6 +63,7 @@ limitations under the License.
 #include "xla/pjrt/c/pjrt_c_api_phase_compile_extension.h"
 #include "xla/pjrt/c/pjrt_c_api_profiler_extension.h"
 #include "xla/pjrt/c/pjrt_c_api_shardings_extension.h"
+#include "xla/pjrt/c/pjrt_c_api_status_utils.h"
 #include "xla/pjrt/c/pjrt_c_api_stream_extension.h"
 #include "xla/pjrt/c/pjrt_c_api_tpu_topology_extension.h"
 #include "xla/pjrt/c_api_client/pjrt_c_api_multi_slice_config.h"
@@ -72,6 +73,9 @@ limitations under the License.
 #include "xla/pjrt/extensions/executable_metadata/executable_metadata_extension.h"
 #include "xla/pjrt/extensions/host_allocator/host_allocator_extension.h"
 #include "xla/pjrt/extensions/host_allocator/host_allocator_interface_impl.h"
+#include "xla/pjrt/extensions/host_memory_allocator/host_memory_allocator_extension.h"
+#include "xla/pjrt/extensions/host_memory_allocator/host_memory_allocator_interface_impl.h"
+#include "xla/pjrt/host_memory_allocator.h"
 #include "xla/pjrt/maybe_owning_mlir_module.h"
 #include "xla/pjrt/mlir_to_hlo.h"
 #include "xla/pjrt/pjrt_abi_version.h"
@@ -112,6 +116,7 @@ limitations under the License.
 namespace xla {
 
 constexpr int kMaxDims = 4;
+const char PjRtCApiClient::kPjRtCApiMemorySpaceKey = 0;
 
 // Helper macros
 
@@ -159,6 +164,17 @@ InitHostAllocator(const PJRT_Api* c_api, PJRT_Client* c_client) {
   return std::make_unique<HostAllocatorInterfaceImpl>(c_client, extension);
 }
 
+static std::unique_ptr<HostMemoryAllocator> InitHostMemoryAllocator(
+    const PJRT_Api* c_api, PJRT_Client* c_client) {
+  PJRT_HostMemoryAllocator_Extension* extension =
+      pjrt::FindExtension<PJRT_HostMemoryAllocator_Extension>(
+          c_api, PJRT_Extension_Type::PJRT_Extension_Type_HostMemoryAllocator);
+  if (extension == nullptr) {
+    return nullptr;
+  }
+  return pjrt::CreateHostMemoryAllocatorWrapper(c_client, extension, c_api);
+}
+
 PjRtCApiClient::PjRtCApiClient(
     const PJRT_Api* c_api, PJRT_Client* c_client,
     std::unique_ptr<pjrt::PJRT_KeyValueCallbackData> kv_callback_data)
@@ -169,6 +185,7 @@ PjRtCApiClient::PjRtCApiClient(
       topo_desc_(InitClientTopoDesc(c_api, c_client)),
       extensions_(InitExtensions(c_api)),
       host_allocator_(InitHostAllocator(c_api, c_client)),
+      host_memory_allocator_(InitHostMemoryAllocator(c_api, c_client)),
       // Example platform version string:
       //   PJRT C API
       //   TFRT TPU v2
@@ -243,6 +260,16 @@ void PjRtCApiClient::InitDevicesAndMemorySpaces() {
               std::make_unique<PjRtCApiMemorySpace>(memory, this));
       addressable_memory_spaces_.push_back(cpp_memory.get());
       c_to_cpp_memory_map_[memory] = cpp_memory.get();
+
+      if (SupportsMemoryUserData() && memory->vtable &&
+          memory->vtable->set_user_data) {
+        memory->vtable->set_user_data(memory,
+                                      &PjRtCApiClient::kPjRtCApiMemorySpaceKey,
+                                      cpp_memory.get(), [](void*) {});
+        memory->vtable->set_user_data(
+            memory, reinterpret_cast<void*>(&PjRtMemorySpace::FromC),
+            cpp_memory.get(), [](void*) {});
+      }
     }
   } else if (pjrt::GetErrorCode(client_error.get(), c_api_) !=
              PJRT_Error_Code_UNIMPLEMENTED) {
@@ -998,6 +1025,10 @@ absl::StatusOr<PjRtClient::HostAllocator*> PjRtCApiClient::GetHostAllocator()
   return host_allocator_->get();
 }
 
+HostMemoryAllocator* PjRtCApiClient::GetHostMemoryAllocator() const {
+  return host_memory_allocator_.get();
+}
+
 absl::StatusOr<std::uintptr_t> PjRtCApiClient::UnsafeBufferPointer(
     PjRtBuffer* buffer) {
   // Validate that the buffer's client matches the function call's client, since
@@ -1535,8 +1566,10 @@ class PjRtCApiAsyncHostToDeviceTransferManager
     args.buffer_index = buffer_index;
 
     const xla::Shape& shape = literal.shape();
-    args.shape_dims = shape.dimensions().data();
-    args.shape_num_dims = shape.dimensions().size();
+    if (shape.IsArray()) {
+      args.shape_dims = shape.dimensions().data();
+      args.shape_num_dims = shape.dimensions().size();
+    }
     args.shape_element_type =
         pjrt::ConvertToPjRtBufferType(shape.element_type());
 
@@ -1549,7 +1582,11 @@ class PjRtCApiAsyncHostToDeviceTransferManager
       args.shape_layout = nullptr;
     }
 
-    args.data = literal.untyped_data();
+    if (shape.IsArray()) {
+      args.data = literal.untyped_data();
+    } else {
+      args.data = nullptr;
+    }
     const PJRT_Api* api = c_client_->pjrt_c_api();
     RETURN_STATUS_IF_PJRT_ERROR(
         api->PJRT_AsyncHostToDeviceTransferManager_TransferLiteral(&args), api);
@@ -2896,7 +2933,7 @@ PJRT_SendCallbackInfo CppSendCallbackToC(
       [&send_callback = cpp_send_callback.callback](
           PJRT_Chunk* chunk, PJRT_CallbackError* callback_error,
           size_t total_size_in_bytes, bool done) -> PJRT_Error* {
-    // PJRT C API doesn't support
+    // PJRT C API doesn't fully support
     // use_major_to_minor_data_layout_for_callbacks = false
     xla::Shape dummy_shape;
     absl::Status status = send_callback(xla::PjRtTransferMetadata{dummy_shape},
@@ -3006,7 +3043,7 @@ PJRT_RecvCallbackInfo CppRecvCallbackToC(
     PjRtCApiLoadedExecutable::RecvCallbackFunction* recv_callback_function) {
   *recv_callback_function = [&recv_callback = cpp_recv_callback.callback,
                              c_api](PJRT_CopyToDeviceStream* stream) {
-    // PJRT C API doesn't support
+    // PJRT C API doesn't fully support
     // use_major_to_minor_data_layout_for_callbacks = false
     xla::Shape dummy_shape;
     recv_callback(xla::PjRtTransferMetadata{dummy_shape},
@@ -3115,19 +3152,14 @@ PjRtCApiLoadedExecutable::GetCommonExecuteArgs(
     std::vector<int64_t>& incarnation_ids_storage) const {
   bool using_host_callbacks =
       !options.send_callbacks.empty() || !options.recv_callbacks.empty();
-  if (using_host_callbacks &&
-      !options.use_major_to_minor_data_layout_for_callbacks) {
-    return Unimplemented(
-        "PJRT C API doesn't support "
-        "ExecuteOptions::use_major_to_minor_data_layout_for_callbacks = false");
-  }
-
   PJRT_LoadedExecutable_Execute_Args args;
   args.struct_size = PJRT_LoadedExecutable_Execute_Args_STRUCT_SIZE;
   args.executable = c_loaded_executable();
   args.options = &c_options;
   args.options->struct_size = PJRT_ExecuteOptions_STRUCT_SIZE;
   args.options->launch_id = options.launch_id;
+  args.options->use_major_to_minor_data_layout_for_callbacks =
+      options.use_major_to_minor_data_layout_for_callbacks;
   args.options->multi_slice_config = nullptr;
   if (options.multi_slice_config != nullptr) {
     args.options->multi_slice_config =
@@ -3513,10 +3545,15 @@ std::shared_ptr<const PjRtLayout> PjRtCApiBuffer::layout() const {
 
 const Shape& PjRtCApiBuffer::on_device_shape() const {
   if (!on_device_shape_.has_value()) {
-    Shape shape(element_type(), dimensions(), is_dynamic_dimension());
-    *shape.mutable_layout() = layout()->xla_layout();
-    absl::MutexLock lock(mu_);
-    on_device_shape_ = shape;
+    if (element_type() == TOKEN) {
+      absl::MutexLock lock(mu_);
+      on_device_shape_ = ShapeUtil::MakeTokenShape();
+    } else {
+      Shape shape(element_type(), dimensions(), is_dynamic_dimension());
+      *shape.mutable_layout() = layout()->xla_layout();
+      absl::MutexLock lock(mu_);
+      on_device_shape_ = shape;
+    }
   }
   return *on_device_shape_;
 }
@@ -3974,6 +4011,15 @@ void PjRtCApiBuffer::CopyToRemoteDevice(
       pjrt::CppCrossHostRemoteSendCallbackToC(pjrt_c_api(), std::move(on_done));
   args.on_done = on_done_info;
 
+#if PJRT_API_CROSS_HOST_TRANSFERS_EXTENSION_VERSION >= 6
+  // Destructor callback for freeing descriptor data
+  args.descriptor_destructor = [](char** descriptor_data,
+                                  size_t* descriptor_size) {
+    delete descriptor_data;
+    delete descriptor_size;
+  };
+#endif
+
 #if PJRT_API_CROSS_HOST_TRANSFERS_EXTENSION_VERSION < 5
   absl::StatusOr<std::string> descriptor = serialized_descriptor.Await();
   CHECK_OK(descriptor) << "Failed to copy buffer to remote device: "
@@ -4234,6 +4280,86 @@ absl::StatusOr<Layout> PjRtCApiTopologyDescription::GetDefaultLayout(
                       PjRtLayout::Deserialize(serialized_layout));
 
   return pjrt_layout->xla_layout();
+}
+
+absl::StatusOr<xla::Shape>
+PjRtCApiTopologyDescription::MakeCanonicalShapeForMemorySpace(
+    int memory_space_kind_id, xla::Shape shape,
+    const xla::Layout* layout) const {
+  if (c_api_->pjrt_api_version.minor_version < 109 ||
+      c_api_->PJRT_TopologyDescription_MakeCanonicalShapeForMemorySpace ==
+          nullptr) {
+    return absl::UnimplementedError(
+        "PJRT_TopologyDescription_MakeCanonicalShapeForMemorySpace is not "
+        "supported by this PJRT C API implementation.");
+  }
+
+  PJRT_TopologyDescription_MakeCanonicalShapeForMemorySpace_Args args;
+  args.struct_size =
+      PJRT_TopologyDescription_MakeCanonicalShapeForMemorySpace_Args_STRUCT_SIZE;  // NOLINT (whitespace/line_length)
+  args.extension_start = nullptr;
+  args.topology = c_topology_;
+  args.memory_space_kind_id = memory_space_kind_id;
+  args.dims = shape.dimensions().data();
+  args.num_dims = shape.dimensions().size();
+  args.element_type = pjrt::ConvertToPjRtBufferType(shape.element_type());
+
+  pjrt::BufferMemoryLayoutData layout_data;
+  if (layout != nullptr) {
+    TF_ASSIGN_OR_RETURN(layout_data,
+                        pjrt::ConvertToBufferMemoryLayoutData(*layout));
+    args.layout = &layout_data.c_layout;
+  } else {
+    args.layout = nullptr;
+  }
+
+  RETURN_STATUS_IF_PJRT_ERROR(
+      c_api_->PJRT_TopologyDescription_MakeCanonicalShapeForMemorySpace(&args),
+      c_api_);
+
+  absl::Cleanup cleanup = [&args] {
+    if (args.serialized_shape_deleter) {
+      args.serialized_shape_deleter(args.serialized_shape);
+    }
+  };
+
+  xla::ShapeProto shape_proto;
+  if (!shape_proto.ParseFromString(absl::string_view(
+          args.serialized_shape, args.serialized_shape_size))) {
+    return absl::InternalError("Failed to parse ShapeProto from C API.");
+  }
+
+  return xla::Shape::FromProto(shape_proto);
+}
+
+absl::Span<const int> PjRtCApiTopologyDescription::GetMemorySpaceKindIds()
+    const {
+  if (c_api_->pjrt_api_version.minor_version < 110 ||
+      c_api_->PJRT_TopologyDescription_GetMemorySpaceKindIds == nullptr) {
+    static const int kDefaultMemorySpaceKindIds[] = {-1};
+    return absl::MakeConstSpan(kDefaultMemorySpaceKindIds);
+  }
+
+  PJRT_TopologyDescription_GetMemorySpaceKindIds_Args args;
+  args.struct_size =
+      PJRT_TopologyDescription_GetMemorySpaceKindIds_Args_STRUCT_SIZE;
+  args.extension_start = nullptr;
+  args.topology = c_topology_;
+  args.memory_space_kind_ids = nullptr;
+  args.num_memory_space_kind_ids = 0;
+
+  std::unique_ptr<PJRT_Error, ::pjrt::PJRT_ErrorDeleter> error{
+      c_api_->PJRT_TopologyDescription_GetMemorySpaceKindIds(&args),
+      ::pjrt::MakeErrorDeleter(c_api_)};
+  if (error != nullptr) {
+    LOG(ERROR) << "PJRT_TopologyDescription_GetMemorySpaceKindIds failed: "
+               << ::pjrt::PjrtErrorToStatus(error.get(), c_api_).ToString();
+    static const int kDefaultMemorySpaceKindIds[] = {-1};
+    return absl::MakeConstSpan(kDefaultMemorySpaceKindIds);
+  }
+
+  return absl::MakeConstSpan(args.memory_space_kind_ids,
+                             args.num_memory_space_kind_ids);
 }
 
 void PjRtCApiTopologyDescription::InitAttributes() {

@@ -27,6 +27,14 @@ This repository's `release/c` directory is manually updated by the
 `script/sync.sh` shell script, which also logs to [`sync.txt`](./sync.txt).
 
 
+## License
+
+This software is distributed under the terms of both the MIT license and the
+Apache License (Version 2.0).
+
+See LICENSE for details.
+
+
 ## Disclaimer
 
 This is not an official Google product, it is just code that happens to be
@@ -35,4 +43,4 @@ owned by Google.
 
 ---
 
-Updated on March 2021.
+Updated on October 2023.

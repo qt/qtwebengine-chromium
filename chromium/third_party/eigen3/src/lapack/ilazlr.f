@@ -76,6 +76,8 @@
 *> \ingroup complex16OTHERauxiliary
 *
 *  =====================================================================
+*> SPDX-FileCopyrightText: The Eigen Authors
+*> SPDX-License-Identifier: BSD-3-Clause
       INTEGER FUNCTION ILAZLR( M, N, A, LDA )
 *
 *  -- LAPACK auxiliary routine (version 3.4.1) --

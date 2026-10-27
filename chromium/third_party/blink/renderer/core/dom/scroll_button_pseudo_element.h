@@ -13,6 +13,10 @@ namespace blink {
 class ScrollButtonPseudoElement : public PseudoElement,
                                   public PostLayoutSnapshotClient {
  public:
+  static PseudoId PseudoIdFromScrollButtonArgument(
+      const AtomicString& argument,
+      const ComputedStyle& originating_element_style);
+
   ScrollButtonPseudoElement(Element* originating_element, PseudoId pseudo_id);
 
   bool IsScrollButtonPseudoElement() const final { return true; }
@@ -24,6 +28,9 @@ class ScrollButtonPseudoElement : public PseudoElement,
 
   bool IsEnabled() const { return enabled_; }
   bool IsDisabledFormControl() const final { return !IsEnabled(); }
+  bool MatchesDisabledPseudoClass() const final { return !IsEnabled(); }
+  bool MatchesEnabledPseudoClass() const final { return IsEnabled(); }
+
   FocusableState SupportsFocus(UpdateBehavior update_behavior) const final;
 
   // PostLayoutSnapshotClient:

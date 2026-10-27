@@ -7,6 +7,8 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_COMPLEX_LSX_H
 #define EIGEN_COMPLEX_LSX_H
@@ -354,7 +356,6 @@ EIGEN_STRONG_INLINE Packet1cd pandnot<Packet1cd>(const Packet1cd& a, const Packe
   return res;
 }
 
-// FIXME: force unaligned load, this is a temporary fix
 template <>
 EIGEN_STRONG_INLINE Packet1cd pload<Packet1cd>(const std::complex<double>* from) {
   EIGEN_DEBUG_ALIGNED_LOAD return Packet1cd(pload<Packet2d>((const double*)from));
@@ -374,7 +375,6 @@ EIGEN_STRONG_INLINE Packet1cd ploaddup<Packet1cd>(const std::complex<double>* fr
   return pset1<Packet1cd>(*from);
 }
 
-// FIXME: force unaligned store, this is a temporary fix
 template <>
 EIGEN_STRONG_INLINE void pstore<std::complex<double> >(std::complex<double>* to, const Packet1cd& from) {
   EIGEN_DEBUG_ALIGNED_STORE pstore((double*)to, Packet2d(from.v));

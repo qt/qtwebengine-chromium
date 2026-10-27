@@ -22,12 +22,13 @@
 #include <vulkan/vulkan_core.h>
 #include "core_validation.h"
 #include "cc_sync_vuid_maps.h"
+#include "containers/container_utils.h"
 #include "error_message/error_strings.h"
 #include "generated/error_location_helper.h"
 #include "state_tracker/buffer_state.h"
 #include "state_tracker/descriptor_sets.h"
 #include "state_tracker/image_state.h"
-#include "state_tracker/event_map.h"
+#include "state_tracker/event_state.h"
 #include "state_tracker/pipeline_state.h"
 #include "state_tracker/query_state.h"
 #include "state_tracker/render_pass_state.h"
@@ -41,7 +42,7 @@ void CoreChecks::Created(vvl::CommandBuffer& cb) {
 }
 
 void CoreChecks::Created(vvl::Queue& queue) {
-    queue.SetSubState(container_type, std::make_unique<core::QueueSubState>(*this, queue));
+    queue.SetSubState(container_type, std::make_unique<core::QueueSubState>(queue, submit_time_tracker));
 }
 
 namespace core {
@@ -237,6 +238,25 @@ void CommandBufferSubState::RecordSetScissorWithCount(uint32_t scissor_count) {
     scissor.trashed_mask &= ~bits;
     scissor.trashed_count = false;
 }
+
+void CommandBufferSubState::RecordBindIndexbuffer() { custom_primitive_restart_index = 0; }
+
+void CommandBufferSubState::RecordSetPrimitiveRestartIndex(uint32_t primitive_restart_index) {
+    custom_primitive_restart_index = primitive_restart_index;
+}
+
+void CommandBufferSubState::RecordPushData(const VkPushDataInfoEXT& push_data_info) {
+    if (push_data_info.data.size > 0) {
+        const size_t begin = push_data_info.offset;
+        const size_t end = push_data_info.offset + push_data_info.data.size;
+        if (push_data_mask.size() < end) {
+            push_data_mask.resize(end);
+        }
+        memset(push_data_mask.data() + begin, 1, end - begin);
+    }
+}
+
+void CommandBufferSubState::ClearPushData() { push_data_mask.clear(); }
 
 void CommandBufferSubState::RecordNextSubpass(const VkSubpassBeginInfo&, const VkSubpassEndInfo*, const Location&) {
     ASSERT_AND_RETURN(base.active_render_pass);
@@ -566,52 +586,79 @@ void CommandBufferSubState::RecordClearAttachments(uint32_t attachment_count, co
     }
 }
 
-void CommandBufferSubState::RecordSetEvent(VkEvent event, VkPipelineStageFlags2 stage_mask,
-                                           const VkDependencyInfo* dependency_info) {
-    vku::safe_VkDependencyInfo safe_dependency_info = {};
-    if (dependency_info) {
-        safe_dependency_info.initialize(dependency_info);
+void CommandBufferSubState::RecordSetEvent(VkEvent event, VkPipelineStageFlags stage_mask) {
+    if (EventSignalingState* state = vvl::Find(event_signaling_states, event)) {
+        if (!state->signaled) {
+            state->signaled = true;
+            state->signal_src_stage_mask = stage_mask;
+            // Keep was_reset unchanged
+        }
     } else {
-        // Set sType to invalid, so following code can check sType to see if the struct is valid
-        safe_dependency_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+        EventSignalingState new_state;
+        new_state.signaled = true;
+        new_state.signal_src_stage_mask = stage_mask;
+        event_signaling_states.insert(std::make_pair(event, std::move(new_state)));
     }
-    event_updates.emplace_back([event, stage_mask, safe_dependency_info](vvl::CommandBuffer&, bool do_validate,
-                                                                         EventMap& local_event_signal_info, VkQueue,
-                                                                         const Location& loc) {
-        local_event_signal_info[event] = EventInfo{stage_mask, true, safe_dependency_info};
-        return false;  // skip
-    });
+}
+
+void CommandBufferSubState::RecordSetEvent2(VkEvent event, const VkDependencyInfo& dependency_info) {
+    if (EventSignalingState* state = vvl::Find(event_signaling_states, event)) {
+        if (!state->signaled) {
+            state->signaled = true;
+            state->signal_dependency_info.emplace(&dependency_info);
+            // Keep was_reset unchanged
+        }
+    } else {
+        EventSignalingState new_state;
+        new_state.signaled = true;
+        new_state.signal_dependency_info.emplace(&dependency_info);
+        event_signaling_states.insert(std::make_pair(event, std::move(new_state)));
+    }
 }
 
 void CommandBufferSubState::RecordResetEvent(VkEvent event, VkPipelineStageFlags2) {
-    event_updates.emplace_back(
-        [event](vvl::CommandBuffer&, bool do_validate, EventMap& local_event_signal_info, VkQueue, const Location& loc) {
-            local_event_signal_info[event] = EventInfo{VK_PIPELINE_STAGE_2_NONE, false};
-            return false;  // skip
-        });
+    EventSignalingState& signaling_state = event_signaling_states[event];
+    signaling_state = {};
+    signaling_state.was_reset = true;
 }
 
-void CommandBufferSubState::RecordWaitEvents(uint32_t eventCount, const VkEvent* pEvents, VkPipelineStageFlags2 src_stage_mask,
-                                             const VkDependencyInfo* dependency_info, const Location& loc) {
-    // vvl::CommandBuffer will add to the events vector. TODO this is now incorrect
-    auto first_event_index = base.events.size();
-    auto event_added_count = eventCount;
-
-    vku::safe_VkDependencyInfo safe_dependency_info = {};
-    if (dependency_info) {
-        safe_dependency_info.initialize(dependency_info);
-    } else {
-        // Set sType to invalid, so following code can check sType to see if the struct is valid
-        safe_dependency_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+void CommandBufferSubState::RecordWaitEvents(vvl::span<const VkEvent> events, VkPipelineStageFlags src_stage_mask,
+                                             const Location& loc) {
+    bool submit_validation = false;
+    EventSignalingStateMap signaling_states;
+    for (VkEvent event : events) {
+        const EventSignalingState* signaling_state = vvl::Find(event_signaling_states, event);
+        if (signaling_state) {
+            signaling_states.emplace(event, *signaling_state);
+        }
+        // NOTE: the same logic is used by the validation phase
+        const bool already_validated = signaling_state && signaling_state->HasKnownEffect();
+        if (!already_validated) {
+            submit_validation = true;
+        }
     }
+    if (submit_validation) {
+        WaitEventSubmitInfo submit_info;
+        submit_info.wait_events.assign(events.begin(), events.end());
+        submit_info.wait_src_stage_mask = src_stage_mask;
+        submit_info.signaling_states = std::move(signaling_states);
+        wait_event_submit_infos.emplace_back(std::move(submit_info));
+    }
+}
 
-    event_updates.emplace_back(
-        [event_added_count, first_event_index, src_stage_mask, safe_dependency_info](
-            vvl::CommandBuffer& cb_state, bool do_validate, EventMap& local_event_signal_info, VkQueue queue, const Location& loc) {
-            if (!do_validate) return false;
-            return CoreChecks::ValidateWaitEventsAtSubmit(cb_state, event_added_count, first_event_index, src_stage_mask,
-                                                          safe_dependency_info, local_event_signal_info, queue, loc);
-        });
+void CommandBufferSubState::RecordWaitEvent2(VkEvent event, const VkDependencyInfo& dependency_info, const Location& loc) {
+    const EventSignalingState* signaling_state = vvl::Find(event_signaling_states, event);
+    const bool already_validated = signaling_state && signaling_state->was_reset;
+    const bool submit_validation = !already_validated;
+    if (submit_validation) {
+        WaitEvent2SubmitInfo submit_info;
+        submit_info.wait_event = event;
+        submit_info.wait_dependency_info = &dependency_info;
+        if (signaling_state) {
+            submit_info.signaling_state = *signaling_state;
+        }
+        wait_event2_submit_infos.emplace_back(std::move(submit_info));
+    }
 }
 
 void CommandBufferSubState::RecordBarriers(uint32_t buffer_barrier_count, const VkBufferMemoryBarrier* buffer_barriers,
@@ -630,11 +677,8 @@ void CommandBufferSubState::RecordBarriers(uint32_t buffer_barrier_count, const 
         Location barrier_loc(loc.function, vvl::Struct::VkImageMemoryBarrier, vvl::Field::pImageMemoryBarriers, i);
         const ImageBarrier img_barrier(image_barriers[i], src_stage_mask, dst_stage_mask);
         validator.RecordBarrierValidationInfo(barrier_loc, base, img_barrier, *image_state, qfo_transfer_image_barriers);
-        validator.EnqueueValidateImageBarrierAttachment(barrier_loc, *this, img_barrier);
-        validator.EnqueueValidateDynamicRenderingImageBarrierLayouts(barrier_loc, base, img_barrier);
-
-        // Update layouts at the end. Submit time enqueuing logic above needs pre-update layout map.
         validator.RecordTransitionImageLayout(base, img_barrier, *image_state);
+        validator.EnqueueValidateImageBarrierAttachment(barrier_loc, *this, img_barrier);
     }
 }
 
@@ -651,11 +695,8 @@ void CommandBufferSubState::RecordBarriers2(const VkDependencyInfo& dep_info, co
         Location barrier_loc(loc.function, vvl::Struct::VkImageMemoryBarrier2, vvl::Field::pImageMemoryBarriers, i);
         const ImageBarrier img_barrier(dep_info.pImageMemoryBarriers[i]);
         validator.RecordBarrierValidationInfo(barrier_loc, base, img_barrier, *image_state, qfo_transfer_image_barriers);
-        validator.EnqueueValidateImageBarrierAttachment(barrier_loc, *this, img_barrier);
-        validator.EnqueueValidateDynamicRenderingImageBarrierLayouts(barrier_loc, base, img_barrier);
-
-        // Update layouts at the end. Submit time enqueuing logic above needs pre-update layout map.
         validator.RecordTransitionImageLayout(base, img_barrier, *image_state);
+        validator.EnqueueValidateImageBarrierAttachment(barrier_loc, *this, img_barrier);
     }
     if (const auto tensor_barrier_dep_info = vku::FindStructInPNextChain<VkTensorDependencyInfoARM>(dep_info.pNext)) {
         const Location tensor_dep_info_loc(loc.function, vvl::Struct::VkTensorDependencyInfoARM, vvl::Field::pNext);
@@ -923,7 +964,9 @@ void CommandBufferSubState::EnqueueVerifyVideoSessionInitialized(vvl::VideoSessi
 
 void CommandBufferSubState::EnqueueVerifyVideoInlineQueryUnavailable(const VkVideoInlineQueryInfoKHR& query_info,
                                                                      vvl::Func command) {
-    if (validator.disabled[query_validation]) return;
+    if (validator.disabled[query_validation]) {
+        return;
+    }
     query_updates.emplace_back([this, query_info, command](vvl::CommandBuffer& cb_state_arg, bool do_validate, VkQueryPool&,
                                                            uint32_t perf_query_pass, QueryMap* local_query_to_state_map) {
         if (!do_validate) return false;
@@ -1073,10 +1116,15 @@ void CommandBufferSubState::ResetCBState() {
     custom_resolve.depth_format = VK_FORMAT_UNDEFINED;
     custom_resolve.stencil_format = VK_FORMAT_UNDEFINED;
 
+    custom_primitive_restart_index = 0;
+
+    push_data_mask.clear();
+    event_signaling_states.clear();
+
     // Submit time validation
     queue_submit_functions.clear();
-    submit_validate_dynamic_rendering_barrier_subresources.clear();
-    event_updates.clear();
+    wait_event_submit_infos.clear();
+    wait_event2_submit_infos.clear();
     cmd_execute_commands_functions.clear();
     query_updates.clear();
 
@@ -1095,15 +1143,54 @@ void CommandBufferSubState::ResetCBState() {
     scissor.used_dynamic_count = false;
 }
 
+static std::optional<WaitEventSubmitInfo> BuildSubmitTimeWaitInfo(const WaitEventSubmitInfo& secondary_wait,
+                                                                  const EventSignalingStateMap& primary_states) {
+    EventSignalingStateMap wait_signaling_states;
+    bool all_signaling_states_known = true;
+    for (VkEvent event : secondary_wait.wait_events) {
+        const EventSignalingState* primary_state = vvl::Find(primary_states, event);
+        const EventSignalingState* secondary_state = vvl::Find(secondary_wait.signaling_states, event);
+
+        const bool primary_state_known = primary_state && primary_state->HasKnownEffect();
+        const bool secondary_state_known = secondary_state && secondary_state->HasKnownEffect(primary_state);
+        if (secondary_state_known || (!primary_state && secondary_state)) {
+            wait_signaling_states[event] = *secondary_state;
+        } else if (primary_state) {
+            wait_signaling_states[event] = *primary_state;
+        }
+
+        const bool state_known = primary_state_known || secondary_state_known;
+        if (!state_known) {
+            all_signaling_states_known = false;
+        }
+    }
+    if (all_signaling_states_known) {
+        // Record-time validation already had enough information, no need to schedule submit-time validation
+        return {};
+    }
+    WaitEventSubmitInfo wait = secondary_wait;
+    wait.signaling_states = std::move(wait_signaling_states);
+    return wait;
+}
+
 void CommandBufferSubState::RecordExecuteCommand(vvl::CommandBuffer& secondary_command_buffer, uint32_t, const Location&) {
     auto& secondary_sub_state = SubState(secondary_command_buffer);
     if (secondary_command_buffer.IsSecondary()) {
         nesting_level = std::max(nesting_level, secondary_sub_state.nesting_level + 1);
     }
 
-    for (auto& function : secondary_sub_state.event_updates) {
-        event_updates.push_back(function);
+    for (const WaitEventSubmitInfo& secondary_wait : secondary_sub_state.wait_event_submit_infos) {
+        if (auto wait = BuildSubmitTimeWaitInfo(secondary_wait, event_signaling_states)) {
+            wait_event_submit_infos.emplace_back(std::move(*wait));
+        }
     }
+    for (const WaitEvent2SubmitInfo& secondary_wait : secondary_sub_state.wait_event2_submit_infos) {
+        const bool found_signaling_state = vvl::Contains(event_signaling_states, secondary_wait.wait_event);
+        if (!found_signaling_state) {
+            wait_event2_submit_infos.emplace_back(secondary_wait);
+        }
+    }
+    UpdateEventSignalingStates(event_signaling_states, secondary_sub_state.event_signaling_states);
 
     for (auto& function : secondary_sub_state.queue_submit_functions) {
         queue_submit_functions.push_back(function);
@@ -1139,20 +1226,23 @@ void CommandBufferSubState::Submit(vvl::Queue& queue_state, uint32_t perf_submit
         func(queue_state, base);
     }
 
-    // Update vvl::Event with src_stage from the last recorded SetEvent.
-    // Ultimately, it tracks the last SetEvent for the entire submission.
-    {
-        EventMap local_event_signal_info;
-        for (const auto& function : event_updates) {
-            function(base, /*do_validate*/ false, local_event_signal_info,
-                     VK_NULL_HANDLE /* when do_validate is false then wait handler is inactive */, loc);
-        }
-        for (const auto& [event, info] : local_event_signal_info) {
-            auto event_state = base.dev_data.Get<vvl::Event>(event);
-            event_state->signaled = info.signal;
-            event_state->dependency_info = info.dependency_info;
-            event_state->signal_src_stage_mask = info.src_stage_mask;
-            event_state->signaling_queue = queue_state.VkHandle();
+    // Update global vvl:Event state with signaling state at the end of the command buffer
+    for (const auto& [event, signaling_state] : event_signaling_states) {
+        if (auto event_state = base.dev_data.Get<vvl::Event>(event)) {
+            if (signaling_state.signaled) {
+                const bool can_signal = !event_state->signaled || signaling_state.was_reset;
+                if (can_signal) {
+                    event_state->signaled = true;
+                    event_state->signal_src_stage_mask = signaling_state.signal_src_stage_mask;
+                    event_state->signal_dependency_info = signaling_state.signal_dependency_info;
+                    event_state->signaling_queue = queue_state.VkHandle();
+                }
+            } else {
+                event_state->signaled = false;
+                event_state->signal_src_stage_mask = VK_PIPELINE_STAGE_NONE;
+                event_state->signal_dependency_info.reset();
+                event_state->signaling_queue = VK_NULL_HANDLE;
+            }
         }
     }
 
@@ -1172,57 +1262,13 @@ void CommandBufferSubState::Submit(vvl::Queue& queue_state, uint32_t perf_submit
     }
 }
 
-void CommandBufferSubState::SubmitTimeValidate() {
-    for (const auto& [image, subresources] : submit_validate_dynamic_rendering_barrier_subresources) {
-        const auto image_state = validator.Get<vvl::Image>(image);
-        if (!image_state) {
-            continue;
-        }
-        const auto global_layout_map = image_state->layout_map.get();
-        ASSERT_AND_CONTINUE(global_layout_map);
-        auto global_layout_map_guard = image_state->LayoutMapReadLock();
-
-        for (const std::pair<VkImageSubresourceRange, vvl::LocationCapture>& entry : subresources) {
-            const VkImageSubresourceRange& subresource = entry.first;
-            const Location& barrier_loc = entry.second.Get();
-            subresource_adapter::RangeGenerator range_gen(image_state->subresource_encoder, subresource);
-            ForEachMatchingLayoutMapRange(
-                *global_layout_map, std::move(range_gen),
-                [this, &barrier_loc, &image_state](const ImageLayoutMap::key_type& range, const VkImageLayout& layout) {
-                    if (layout != VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ && layout != VK_IMAGE_LAYOUT_GENERAL) {
-                        const auto& vuid =
-                            GetDynamicRenderingBarrierVUID(barrier_loc, vvl::DynamicRenderingBarrierError::kImageLayout);
-                        const LogObjectList objlist(base.Handle(), image_state->Handle());
-                        const Location& image_loc = barrier_loc.dot(vvl::Field::image);
-                        const VkImageSubresource subresource =
-                            static_cast<VkImageSubresource>(image_state->subresource_encoder.Decode(range.begin));
-                        return validator.LogError(vuid, objlist, image_loc, "(%s, %s) has layout %s.",
-                                                  validator.FormatHandle(image_state->Handle()).c_str(),
-                                                  string_VkImageSubresource(subresource).c_str(), string_VkImageLayout(layout));
-                    }
-                    return false;
-                });
-        }
-    }
-}
-
-QueueSubState::QueueSubState(CoreChecks& core_checks, vvl::Queue& q)
-    : vvl::QueueSubState(q), queue_submission_validator_(core_checks) {}
-
 void QueueSubState::PreSubmit(std::vector<vvl::QueueSubmission>& submissions) {
     for (const auto& submission : submissions) {
-        for (auto& cb : submission.cb_submissions) {
-            auto guard = cb.cb->ReadLock();
-            CommandBufferSubState& cb_substate = SubState(*cb.cb);
-            cb_substate.SubmitTimeValidate();
-        }
+        submit_time_tracker->ProcessQueueSubmission(VkHandle(), submission);
     }
 }
 
 void QueueSubState::Retire(vvl::QueueSubmission& submission) {
-    queue_submission_validator_.Validate(submission);
-    queue_submission_validator_.Update(submission);
-
     auto is_query_updated_after = [this](const QueryObject& query_object) {
         auto guard = base.Lock();
         bool first_queue_submission = true;

@@ -8,7 +8,7 @@
 
 #include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/span.h"
-#include "fxjs/cfx_v8.h"
+#include "fxjs/cfx_isolate_wrapper.h"
 #include "fxjs/fxv8.h"
 #include "fxjs/js_resources.h"
 #include "v8/include/v8-primitive.h"
@@ -59,7 +59,7 @@ CJS_Result CJX_Field::execEvent(CFXJSE_Engine* runtime,
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  WideString eventString = runtime->ToWideString(params[0]);
+  WideString eventString = runtime->ToWideStringReentrant(params[0]);
   XFA_EventError iRet =
       execSingleEventByName(eventString.AsStringView(), XFA_Element::Field);
   if (!eventString.EqualsASCII("validate")) {
@@ -96,7 +96,8 @@ CJS_Result CJX_Field::deleteItem(CFXJSE_Engine* runtime,
     return CJS_Result::Success();
   }
 
-  bool bValue = node->DeleteItem(runtime->ToInt32(params[0]), true, true);
+  bool bValue =
+      node->DeleteItem(runtime->ToInt32Reentrant(params[0]), true, true);
   return CJS_Result::Success(runtime->NewBoolean(bValue));
 }
 
@@ -106,7 +107,7 @@ CJS_Result CJX_Field::getSaveItem(CFXJSE_Engine* runtime,
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  int32_t index = runtime->ToInt32(params[0]);
+  int32_t index = runtime->ToInt32Reentrant(params[0]);
   if (index < 0) {
     return CJS_Result::Success(runtime->NewNull());
   }
@@ -136,7 +137,7 @@ CJS_Result CJX_Field::boundItem(CFXJSE_Engine* runtime,
     return CJS_Result::Success();
   }
 
-  WideString value = runtime->ToWideString(params[0]);
+  WideString value = runtime->ToWideStringReentrant(params[0]);
   WideString boundValue = node->GetItemValue(value.AsStringView());
   return CJS_Result::Success(
       runtime->NewString(boundValue.ToUTF8().AsStringView()));
@@ -153,7 +154,7 @@ CJS_Result CJX_Field::getItemState(CFXJSE_Engine* runtime,
     return CJS_Result::Success();
   }
 
-  int32_t state = node->GetItemState(runtime->ToInt32(params[0]));
+  int32_t state = node->GetItemState(runtime->ToInt32Reentrant(params[0]));
   return CJS_Result::Success(runtime->NewBoolean(state != 0));
 }
 
@@ -178,7 +179,7 @@ CJS_Result CJX_Field::getDisplayItem(
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  int32_t index = runtime->ToInt32(params[0]);
+  int32_t index = runtime->ToInt32Reentrant(params[0]);
   if (index < 0) {
     return CJS_Result::Success(runtime->NewNull());
   }
@@ -208,8 +209,8 @@ CJS_Result CJX_Field::setItemState(CFXJSE_Engine* runtime,
     return CJS_Result::Success();
   }
 
-  int32_t index = runtime->ToInt32(params[0]);
-  if (runtime->ToInt32(params[1]) != 0) {
+  int32_t index = runtime->ToInt32Reentrant(params[0]);
+  if (runtime->ToInt32Reentrant(params[1]) != 0) {
     node->SetItemState(index, true, true, true);
     return CJS_Result::Success();
   }
@@ -233,12 +234,12 @@ CJS_Result CJX_Field::addItem(CFXJSE_Engine* runtime,
 
   WideString label;
   if (params.size() >= 1) {
-    label = runtime->ToWideString(params[0]);
+    label = runtime->ToWideStringReentrant(params[0]);
   }
 
   WideString value;
   if (params.size() >= 2) {
-    value = runtime->ToWideString(params[1]);
+    value = runtime->ToWideStringReentrant(params[1]);
   }
 
   node->InsertItem(label, value, true);

@@ -58,24 +58,41 @@ bool CanUseWindowingControls(LocalDOMWindow* window,
         "API is only supported in primary top-level browsing contexts.");
     return false;
   }
+  if (!window->document()->IsInWebAppScope()) {
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      "API is only supported in web apps.");
+    return false;
+  }
   return true;
 }
 
 bool IsMaximized(LocalDOMWindow* window) {
-  return window->GetFrame()->GetWidgetForLocalRoot()->WindowShowState() ==
-         WindowShowState::kMaximized;
+  if (auto* frame = window->GetFrame()) {
+    if (auto* widget = frame->GetWidgetForLocalRoot()) {
+      return widget->WindowShowState() == WindowShowState::kMaximized;
+    }
+  }
+  return false;
 }
 
 bool IsMinimized(LocalDOMWindow* window) {
-  return window->GetFrame()->GetWidgetForLocalRoot()->WindowShowState() ==
-         WindowShowState::kMinimized;
+  if (auto* frame = window->GetFrame()) {
+    if (auto* widget = frame->GetWidgetForLocalRoot()) {
+      return widget->WindowShowState() == WindowShowState::kMinimized;
+    }
+  }
+  return false;
 }
 
 bool IsNormal(LocalDOMWindow* window) {
-  WindowShowState show_state =
-      window->GetFrame()->GetWidgetForLocalRoot()->WindowShowState();
-  return show_state == WindowShowState::kDefault ||
-         show_state == WindowShowState::kNormal;
+  if (auto* frame = window->GetFrame()) {
+    if (auto* widget = frame->GetWidgetForLocalRoot()) {
+      WindowShowState show_state = widget->WindowShowState();
+      return show_state == WindowShowState::kDefault ||
+             show_state == WindowShowState::kNormal;
+    }
+  }
+  return false;
 }
 
 ScriptPromise<IDLUndefined> MaybePromptWindowManagementPermission(
@@ -139,7 +156,7 @@ base::OnceCallback<void(bool)> GetSetResizableCallback(
     ScriptPromiseResolver<IDLUndefined>* resolver) {
   return GetWindowEventCallback(
       resolver, resizable ? "Could not set the window to be resizable."
-                          : "Coult not set the window to be non-resizable.");
+                          : "Could not set the window to be non-resizable.");
 }
 
 void OnMaximizePermissionRequestComplete(

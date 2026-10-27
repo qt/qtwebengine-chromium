@@ -1149,7 +1149,9 @@ const LanguageAndQualifiedName LanguageAndQualifiedNameCases[] = {
   { google_breakpad::DW_LANG_C_plus_plus,    "class_A::function_B" },
   { google_breakpad::DW_LANG_Java,           "class_A.function_B" },
   { google_breakpad::DW_LANG_Cobol74,        "class_A::function_B" },
-  { google_breakpad::DW_LANG_Mips_Assembler, nullptr }
+  { google_breakpad::DW_LANG_Mips_Assembler, nullptr },
+  { google_breakpad::DW_LANG_ObjC,           "function_B" },
+  { google_breakpad::DW_LANG_ObjC_plus_plus, "class_A::function_B" }
 };
 
 class QualifiedForLanguage
@@ -1205,6 +1207,41 @@ TEST_P(QualifiedForLanguage, MemberFunctionSignedLanguage) {
     TestFunctionCount(0);
   }
 }
+
+TEST_F(SimpleCU, ObjectiveCMethod_ObjCPlusPlus) {
+  PushLine(10, 1, "line-file", 212966758);
+  SetLanguage(google_breakpad::DW_LANG_ObjC_plus_plus);
+
+  StartCU();
+  DIEHandler* class_handler
+      = StartNamedDIE(&root_handler_, google_breakpad::DW_TAG_class_type,
+                      "class_A");
+  DefineFunction(class_handler, "-[class_A function_B]", 10, 1, nullptr);
+  class_handler->Finish();
+  delete class_handler;
+  root_handler_.Finish();
+
+  TestFunctionCount(1);
+  TestFunction(0, "-[class_A function_B]", 10, 1);
+}
+
+TEST_F(SimpleCU, ObjectiveCMethod_ObjC) {
+  PushLine(10, 1, "line-file", 212966758);
+  SetLanguage(google_breakpad::DW_LANG_ObjC);
+
+  StartCU();
+  DIEHandler* class_handler
+      = StartNamedDIE(&root_handler_, google_breakpad::DW_TAG_class_type,
+                      "class_A");
+  DefineFunction(class_handler, "-[class_A function_B]", 10, 1, nullptr);
+  class_handler->Finish();
+  delete class_handler;
+  root_handler_.Finish();
+
+  TestFunctionCount(1);
+  TestFunction(0, "-[class_A function_B]", 10, 1);
+}
+
 
 class Specifications: public CUFixtureBase, public Test { };
 

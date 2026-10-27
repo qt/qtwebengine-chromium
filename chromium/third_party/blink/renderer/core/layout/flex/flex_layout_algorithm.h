@@ -160,7 +160,7 @@ class CORE_EXPORT FlexLayoutAlgorithm
       bool is_row_item,
       FlexColumnBreakInfo* flex_column_break_info) {
     return ::blink::BreakBeforeChildIfNeeded(
-        GetConstraintSpace(), child, layout_result, fragmentainer_block_offset,
+        child, layout_result, fragmentainer_block_offset,
         FragmentainerCapacityForChildren(), has_container_separation,
         &container_builder_, is_row_item, flex_column_break_info);
   }
@@ -242,7 +242,7 @@ class CORE_EXPORT FlexLayoutAlgorithm
   // within a row flex container.
   bool has_processed_first_line_ = false;
 
-  std::unique_ptr<DevtoolsFlexInfo> layout_info_for_devtools_;
+  DevtoolsFlexInfo* layout_info_for_devtools_ = nullptr;
 
   // The block size of the entire flex container (ignoring any fragmentation).
   LayoutUnit total_block_size_;

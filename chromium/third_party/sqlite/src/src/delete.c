@@ -86,7 +86,7 @@ static int vtabIsReadOnly(Parse *pParse, Table *pTab){
   **   *  Only allow DELETE, INSERT, or UPDATE of non-SQLITE_VTAB_INNOCUOUS
   **      virtual tables if PRAGMA trusted_schema=ON.
   */
-  if( pParse->pToplevel!=0
+  if( (pParse->pToplevel!=0 || (pParse->prepFlags & SQLITE_PREPARE_FROM_DDL))
    && pTab->u.vtab.p->eVtabRisk >
            ((pParse->db->flags & SQLITE_TrustedSchema)!=0)
   ){
@@ -923,8 +923,9 @@ void sqlite3GenerateRowIndexDelete(
     r1 = sqlite3GenerateIndexKey(pParse, pIdx, iDataCur, 0, 1,
         &iPartIdxLabel, pPrior, r1);
     sqlite3VdbeAddOp3(v, OP_IdxDelete, iIdxCur+i, r1,
-        pIdx->uniqNotNull ? pIdx->nKeyCol : pIdx->nColumn);
-    sqlite3VdbeChangeP5(v, 1);  /* Cause IdxDelete to error if no entry found */
+        pIdx->uniqNotNull ? pIdx->nKeyCol : pIdx->nColumn
+    );
+    sqlite3VdbeChangeP4(v, -1, (const char*)pIdx, P4_INDEX);
     sqlite3ResolvePartIdxLabel(pParse, iPartIdxLabel);
     pPrior = pIdx;
   }

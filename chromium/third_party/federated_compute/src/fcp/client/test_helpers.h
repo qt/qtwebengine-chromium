@@ -64,9 +64,6 @@
 #include "fcp/protos/plan.pb.h"
 #include "fcp/protos/population_eligibility_spec.pb.h"
 #include "fcp/secagg/shared/secagg_messages.pb.h"
-#include "google/protobuf/repeated_ptr_field.h"
-#include "tensorflow/core/example/example.pb.h"
-#include "tensorflow/core/example/feature.pb.h"
 
 namespace fcp {
 namespace client {
@@ -593,7 +590,6 @@ class MockOpStatsLogger : public ::fcp::client::opstats::OpStatsLogger {
               (override));
   MOCK_METHOD(::fcp::client::opstats::OpStatsDb*, GetOpStatsDb, (), (override));
   MOCK_METHOD(absl::Status, CommitToStorage, (), (override));
-  MOCK_METHOD(std::string, GetCurrentTaskName, (), (override));
   MOCK_METHOD(void, StartLoggingForPhase,
               (::fcp::client::opstats::OperationalStats::PhaseStats::Phase),
               (override));
@@ -664,9 +660,9 @@ struct ComputationArtifacts {
   // The path to the file containing the initial checkpoint data (not set for
   // local compute task artifacts).
   std::string checkpoint_filepath;
-  // The initial checkpoint data, as a string (not set for local compute task
+  // The initial checkpoint data, as a Cord (not set for local compute task
   // artifacts).
-  std::string checkpoint;
+  absl::Cord checkpoint;
   // The Federated Select slice data (not set for local compute task artifacts).
   google::internal::federated::plan::SlicesTestDataset federated_select_slices;
   // A fake PopulationEligibilitySpec matching the policies in the
@@ -720,24 +716,12 @@ class MockFlags : public Flags {
   MOCK_METHOD(int32_t, http_retry_max_attempts, (), (const, override));
   MOCK_METHOD(bool, enable_event_time_data_upload, (), (const, override));
   MOCK_METHOD(bool, enable_blob_header_in_http_headers, (), (const, override));
-  MOCK_METHOD(bool, move_device_attestation_to_start_task_assignment, (),
-              (const, override));
   MOCK_METHOD(bool, enable_privacy_id_generation, (), (const, override));
   MOCK_METHOD(bool, enable_attestation_transparency_verifier, (),
               (const, override));
   MOCK_METHOD(bool, drop_out_based_data_availability, (), (const, override));
   MOCK_METHOD(bool, enable_private_logger, (), (const, override));
 };
-
-// Helper methods for extracting opstats fields from TF examples.
-std::string ExtractSingleString(const tensorflow::Example& example,
-                                const char key[]);
-google::protobuf::RepeatedPtrField<std::string> ExtractRepeatedString(
-    const tensorflow::Example& example, const char key[]);
-int64_t ExtractSingleInt64(const tensorflow::Example& example,
-                           const char key[]);
-google::protobuf::RepeatedField<int64_t> ExtractRepeatedInt64(
-    const tensorflow::Example& example, const char key[]);
 
 class MockOpStatsDb : public ::fcp::client::opstats::OpStatsDb {
  public:

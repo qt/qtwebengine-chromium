@@ -6,8 +6,9 @@
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_DATA_MODEL_AUTOFILL_AI_FROM_ACCESSIBILITY_ANNOTATOR_H_
 
 #include <optional>
+#include <string>
 
-#include "components/accessibility_annotator/core/annotation_reducer/query_intent_type.h"
+#include "components/accessibility_annotator/core/annotation_reducer/entry_type.h"
 #include "components/accessibility_annotator/core/data_models/entity.h"
 #include "components/accessibility_annotator/core/data_models/entity_types.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
@@ -35,12 +36,10 @@ std::optional<EntityInstance> FromAccessibilityAnnotator(
     const accessibility_annotator::Entity& entity);
 
 // Translates Autofill attribute names to entry types.
-accessibility_annotator::QueryIntentType AttributeTypeToQueryIntentType(
-    AttributeType type);
+accessibility_annotator::EntryType AttributeTypeToEntryType(AttributeType type);
 
 // Returns the localized name of the entry type.
-std::u16string GetEntryTypeNameForI18n(
-    accessibility_annotator::QueryIntentType type);
+std::u16string GetEntryTypeNameForI18n(accessibility_annotator::EntryType type);
 
 }  // namespace autofill
 

@@ -30,7 +30,7 @@ devtools_module("inspector_main") {
     "../../core/platform:bundle",
     "../../core/root:bundle",
     "../../core/sdk:bundle",
-    "../../generated:protocol",
+    "../../generated",
     "../../models/bindings:bundle",
     "../../panels/mobile_throttling:bundle",
     "../../ui/legacy:bundle",
@@ -88,10 +88,10 @@ ts_library("unittests") {
 
   deps = [
     ":bundle",
-    "../../core/common:bundle",
     "../../core/protocol_client:bundle",
+    "../../core/root:bundle",
     "../../core/sdk:bundle",
-    "../../generated:protocol",
+    "../../generated",
     "../../testing",
     "../../ui/legacy:bundle",
   ]

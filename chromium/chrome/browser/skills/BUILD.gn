@@ -24,6 +24,7 @@ source_set("skills") {
   deps = [
     "//chrome/browser/optimization_guide",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/signin",
     "//chrome/browser/sync:factories",
     "//chrome/common:channel_info",
     "//components/keyed_service/core",
@@ -146,9 +147,11 @@ source_set("interactive_ui_tests") {
   sources = []
   if (!is_android) {
     sources += [
-      "skills_interactive_uitest.cc",
+      "skills_creation_interactive_uitest.cc",
       "skills_interactive_uitest_base.cc",
       "skills_interactive_uitest_base.h",
+      "skills_invocation_interactive_uitest.cc",
+      "skills_update_interactive_uitest.cc",
     ]
   }
   deps = [

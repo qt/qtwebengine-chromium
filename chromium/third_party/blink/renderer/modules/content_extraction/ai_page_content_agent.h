@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_CONTENT_EXTRACTION_AI_PAGE_CONTENT_AGENT_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_CONTENT_EXTRACTION_AI_PAGE_CONTENT_AGENT_H_
 
+#include "base/containers/enum_set.h"
 #include "base/functional/callback.h"
 #include "base/memory/stack_allocated.h"
 #include "base/types/pass_key.h"
@@ -26,6 +27,7 @@
 namespace blink {
 class Document;
 class LayoutIFrame;
+class LayoutBox;
 class LayoutObject;
 class LocalFrame;
 class Node;
@@ -97,6 +99,11 @@ class MODULES_EXPORT AIPageContentAgent final
     mojom::blink::AIPageContentPtr Build(LocalFrame& frame);
 
    private:
+    using NodeIdAttributeTypeAllowlist =
+        base::EnumSet<mojom::blink::AIPageContentAttributeType,
+                      mojom::blink::AIPageContentAttributeType::kRoot,
+                      mojom::blink::AIPageContentAttributeType::kMaxValue>;
+
     class RecursionData {
       STACK_ALLOCATED();
 
@@ -104,6 +111,13 @@ class MODULES_EXPORT AIPageContentAgent final
       RecursionData(const ComputedStyle& document_style);
 
       bool is_aria_disabled = false;
+      bool is_in_fixed_pos_subtree = false;
+      // The nearest overflow container clips descendants. It may or may not be
+      // user-scrollable, because `overflow:hidden` also creates a container.
+      const LayoutBox* nearest_overflow_container = nullptr;
+      // Once an overflow container cannot be reached, its descendants cannot
+      // be reached through that container either.
+      bool is_inside_unreachable_overflow_container = false;
       const ComputedStyle& document_style;
       int stack_depth = 0;
       DOMNodeId accessibility_focused_node_id = kInvalidDOMNodeId;
@@ -182,7 +196,7 @@ class MODULES_EXPORT AIPageContentAgent final
     // id emission.
     bool IsNodeIdAttributeTypeAllowlisted(
         mojom::blink::AIPageContentAttributeType attribute_type) const;
-    bool IsGenericContainer(
+    bool ShouldSkipSingleNode(
         const LayoutObject& object,
         const mojom::blink::AIPageContentAttributes& attributes) const;
 
@@ -222,6 +236,10 @@ class MODULES_EXPORT AIPageContentAgent final
 
     // List of nodes marked as isAccessibleForFree=false.
     PaidContent paid_content_;
+
+    // Built once per extraction so node-id policy checks do not rescan the
+    // allowlisted attribute types for every content node in the tree.
+    NodeIdAttributeTypeAllowlist allowlisted_attribute_types_;
   };
 
   void Bind(mojo::PendingReceiver<mojom::blink::AIPageContentAgent> receiver);

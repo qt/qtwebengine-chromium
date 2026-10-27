@@ -6,10 +6,23 @@
 # This Source Code Form is subject to the terms of the Mozilla
 # Public License v. 2.0. If a copy of the MPL was not distributed
 # with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
 
 default:
-# automatically cancels a job when a new pipeline for the same branch is triggered
   interruptible: true
+
+# For MR pipelines, auto-cancel running jobs when new commits are pushed.
+# For scheduled (nightly) pipelines, never auto-cancel so all jobs run to
+# completion and all failures are visible for debugging.
+workflow:
+  auto_cancel:
+    on_new_commit: interruptible
+    on_job_failure: none
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      auto_cancel:
+        on_new_commit: none
+    - when: always
 
 stages:
   - checkformat
@@ -19,6 +32,15 @@ stages:
   - deploy
 
 variables:
+  # Pre-baked CI images hosted in the GitLab container registry.
+  # Override in project/fork settings if you host the images elsewhere.
+  # See ci/docker/ for the corresponding Dockerfiles.
+  # Slim images used for MR smoke tests (gcc-10 + clang-14).
+  # Builds are cross-compiled on arm64; tests run on their native runner.
+  EIGEN_CI_IMAGE_LINUX_AMD64_SMOKETEST_BUILD: "registry.gitlab.com/libeigen/eigen/ubuntu-24.04-amd64-smoketest-build:latest"
+  EIGEN_CI_IMAGE_LINUX_AMD64_SMOKETEST_RUN: "registry.gitlab.com/libeigen/eigen/ubuntu-24.04-amd64-smoketest-run:latest"
+  EIGEN_CI_IMAGE_LINUX_ARM64_SMOKETEST_BUILD: "registry.gitlab.com/libeigen/eigen/ubuntu-24.04-arm64-smoketest-build:latest"
+  EIGEN_CI_IMAGE_LINUX_ARM64_SMOKETEST_RUN: "registry.gitlab.com/libeigen/eigen/ubuntu-24.04-arm64-smoketest-run:latest"
   # CMake build directory.
   EIGEN_CI_BUILDDIR: .build
   # Specify the CMake build target.
@@ -26,12 +48,14 @@ variables:
   # If a test regex is specified, that will be selected.
   # Otherwise, we will try a label if specified.
   EIGEN_CI_CTEST_REGEX: ""
+  # Valid CTest labels: Official, Unsupported, gpu, smoketest.
   EIGEN_CI_CTEST_LABEL: ""
   EIGEN_CI_CTEST_ARGS: ""
 
 include:
   - "/ci/checkformat.gitlab-ci.yml"
   - "/ci/common.gitlab-ci.yml"
+  - "/ci/images.gitlab-ci.yml"
   - "/ci/build.linux.gitlab-ci.yml"
   - "/ci/build.windows.gitlab-ci.yml"
   - "/ci/test.linux.gitlab-ci.yml"

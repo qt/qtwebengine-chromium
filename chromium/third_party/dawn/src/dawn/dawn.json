@@ -35,6 +35,7 @@
         "c_prefix": "WGPU",
         "namespace": "wgpu",
         "proc_table_prefix": "Dawn",
+        "impl_dir": "src",
         "native_namespace": "dawn native",
         "copyright_year": "2019"
     },
@@ -1119,7 +1120,6 @@
             },
             {
                 "name": "set immediates",
-                "tags": ["dawn"],
                 "args": [
                     {"name": "offset", "type": "uint32_t"},
                     {"name": "data", "type": "void", "annotation": "const*", "length": "size"},
@@ -1883,9 +1883,9 @@
         "tags": ["dawn", "art"],
         "members": [
             {"name": "primaries", "type": "color space primaries dawn"},
-            {"name": "transfer", "type": "color space transfer dawn"},
-            {"name": "y cb cr range", "type": "color space y cb cr range dawn"},
-            {"name": "y cb cr matrix", "type": "color space y cb cr matrix dawn"}
+            {"name": "transfer", "type": "color space transfer dawn", "default": "identity"},
+            {"name": "y cb cr range", "type": "color space y cb cr range dawn", "default": "identity"},
+            {"name": "y cb cr matrix", "type": "color space y cb cr matrix dawn", "default": "identity"}
         ]
     },
     "status": {
@@ -2053,7 +2053,8 @@
             {"name": "initialized", "type": "bool"},
             {"name": "fence count", "type": "size_t", "default": "0"},
             {"name": "fences", "type": "shared fence", "annotation": "const*", "length": "fence count"},
-            {"name": "signaled values", "type": "uint64_t", "annotation": "const*", "length": "fence count"}
+            {"name": "signaled value count", "type": "size_t", "default": 0},
+            {"name": "signaled values", "type": "uint64_t", "annotation": "const*", "length": "signaled value count"}
         ]
     },
     "shared buffer memory end access state": {
@@ -2064,7 +2065,8 @@
             {"name": "initialized", "type": "bool"},
             {"name": "fence count", "type": "size_t", "default": "0"},
             {"name": "fences", "type": "shared fence", "annotation": "const*", "length": "fence count"},
-            {"name": "signaled values", "type": "uint64_t", "annotation": "const*", "length": "fence count"}
+            {"name": "signaled value count", "type": "size_t", "default": 0},
+            {"name": "signaled values", "type": "uint64_t", "annotation": "const*", "length": "signaled value count"}
         ]
     },
     "shared texture memory vk dedicated allocation descriptor": {
@@ -2171,7 +2173,8 @@
             {"name": "initialized", "type": "bool"},
             {"name": "fence count", "type": "size_t"},
             {"name": "fences", "type": "shared fence", "annotation": "const*", "length": "fence count"},
-            {"name": "signaled values", "type": "uint64_t", "annotation": "const*", "length": "fence count"}
+            {"name": "signaled value count", "type": "size_t", "default": 0},
+            {"name": "signaled values", "type": "uint64_t", "annotation": "const*", "length": "signaled value count"}
         ]
     },
     "shared texture memory end access state": {
@@ -2182,7 +2185,8 @@
             {"name": "initialized", "type": "bool"},
             {"name": "fence count", "type": "size_t"},
             {"name": "fences", "type": "shared fence", "annotation": "const*", "length": "fence count"},
-            {"name": "signaled values", "type": "uint64_t", "annotation": "const*", "length": "fence count"}
+            {"name": "signaled value count", "type": "size_t", "default": 0},
+            {"name": "signaled values", "type": "uint64_t", "annotation": "const*", "length": "signaled value count"}
         ]
     },
     "shared texture memory metal end access state": {
@@ -2503,14 +2507,13 @@
             {"value": 56, "name": "shared buffer memory D3D12 shared memory file mapping handle", "tags": ["dawn"]},
             {"value": 57, "name": "shared texture memory D3D12 resource", "tags": ["dawn", "native"]},
             {"value": 58, "name": "chromium experimental sampling resource table", "tags": ["dawn"]},
-            {"value": 59, "name": "chromium experimental subgroup size control", "tags": ["dawn"]},
+            {"value": 59, "name": "subgroup size control", "tags": ["dawn"]},
             {"value": 60, "name": "atomic vec2u min max", "tags": ["dawn"]},
             {"value": 61, "name": "unorm16 formats for external texture", "tags": ["dawn"]},
             {"value": 62, "name": "opaque y cb cr android for external texture", "tags": ["dawn"]},
             {"value": 63, "name": "unorm16 filterable", "tags": ["dawn"]},
             {"value": 64, "name": "render pass render area", "tags": ["dawn"]},
-            {"value": 65, "name": "dawn native spontaneous queue events", "tags": ["dawn", "native"]},
-            {"value": 66, "name": "adapter properties drm", "tags": ["dawn", "native"]}
+            {"value": 65, "name": "adapter properties drm", "tags": ["dawn", "native"]}
         ]
     },
     "filter mode": {
@@ -3169,7 +3172,6 @@
             },
             {
                 "name": "set immediates",
-                "tags": ["dawn"],
                 "args": [
                     {"name": "offset", "type": "uint32_t"},
                     {"name": "data", "type": "void", "annotation": "const*", "length": "size"},
@@ -3493,7 +3495,6 @@
             },
             {
                 "name": "set immediates",
-                "tags": ["dawn"],
                 "args": [
                     {"name": "offset", "type": "uint32_t"},
                     {"name": "data", "type": "void", "annotation": "const*", "length": "size"},
@@ -3673,6 +3674,13 @@
         "category": "object",
         "tags": ["dawn"],
         "methods": [
+            {
+                "name": "set label",
+                "no autolock": true,
+                "args": [
+                    {"name": "label", "type": "string view"}
+                ]
+            },
             {
                 "name": "get size",
                 "no autolock": true,
@@ -4120,8 +4128,7 @@
             {"value": 78, "name": "shared texture memory D3D12 resource descriptor", "tags": ["dawn", "native"]},
             {"value": 79, "name": "request adapter options angle virtualization group", "tags": ["dawn", "native"]},
             {"value": 80, "name": "pipeline layout resource table", "tags": ["dawn"]},
-            {"value": 81, "name": "adapter properties explicit compute subgroup size configs", "tags": ["dawn"]},
-            {"value": 82, "name": "adapter properties drm", "tags": ["dawn", "native"]}
+            {"value": 81, "name": "adapter properties drm", "tags": ["dawn", "native"]}
         ]
     },
     "texture": {
@@ -4589,6 +4596,7 @@
             {"value": 7, "name": "texture and sampler let", "jsrepr": "'texture_and_sampler_let'"},
             {"value": 8, "name": "subgroup uniformity", "jsrepr": "'subgroup_uniformity'"},
             {"value": 9, "name": "texture formats tier1", "jsrepr": "'texture_formats_tier1'"},
+            {"value": 10, "name": "linear indexing", "jsrepr": "'linear_indexing'"},
 
             {"value": 0, "name": "chromium testing unimplemented", "jsrepr": "'chromium_testing_unimplemented'", "tags": ["dawn"]},
             {"value": 1, "name": "chromium testing unsafe experimental", "jsrepr": "'chromium_testing_unsafe_experimental'", "tags": ["dawn"]},
@@ -4601,9 +4609,7 @@
             {"value": 8, "name": "fragment depth", "jsrepr": "'fragment_depth'", "tags": ["dawn"]},
             {"value": 9, "name": "immediate address space", "jsrepr": "'immediate_address_space'", "tags": ["dawn"]},
             {"value": 11, "name": "buffer view", "jsrepr": "'buffer_view'", "tags": ["dawn"]},
-            {"value": 12, "name": "filtering parameters", "jsrepr": "'filtering_parameters'", "tags": ["dawn"]},
-            {"value": 13, "name": "swizzle assignment", "jsrepr": "'swizzle_assignment'", "tags": ["dawn"]},
-            {"value": 14, "name": "linear indexing", "jsrepr": "'linear_indexing'", "tags": ["dawn"]}
+            {"value": 12, "name": "swizzle assignment", "jsrepr": "'swizzle_assignment'", "tags": ["dawn"]}
         ]
     },
     "whole size" : {
@@ -4859,17 +4865,6 @@
         "members": [
             {"name": "config count", "type": "size_t"},
             {"name": "configs", "type": "subgroup matrix config", "annotation": "const*", "length": "config count"}
-        ]
-    },
-    "adapter properties explicit compute subgroup size configs": {
-        "category": "structure",
-        "chained": "out",
-        "chain roots": ["adapter info"],
-        "tags": ["dawn"],
-        "members": [
-            {"name": "min explicit compute subgroup size", "type": "uint32_t"},
-            {"name": "max explicit compute subgroup size", "type": "uint32_t"},
-            {"name": "max compute workgroup subgroups", "type": "uint32_t"}
         ]
     }
 }

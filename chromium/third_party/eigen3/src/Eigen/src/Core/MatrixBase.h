@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_MATRIXBASE_H
 #define EIGEN_MATRIXBASE_H
@@ -374,7 +375,11 @@ class MatrixBase : public DenseBase<Derived> {
   template <typename PermutationIndex = DefaultPermutationIndex>
   inline FullPivHouseholderQR<PlainObject, PermutationIndex> fullPivHouseholderQr() const;
   template <typename PermutationIndex = DefaultPermutationIndex>
+  inline RandColPivHouseholderQR<PlainObject, PermutationIndex> randColPivHouseholderQr() const;
+  template <typename PermutationIndex = DefaultPermutationIndex>
   inline CompleteOrthogonalDecomposition<PlainObject, PermutationIndex> completeOrthogonalDecomposition() const;
+  template <typename PermutationIndex = DefaultPermutationIndex>
+  inline RandCompleteOrthogonalDecomposition<PlainObject, PermutationIndex> randCompleteOrthogonalDecomposition() const;
 
   /////////// Eigenvalues module ///////////
 

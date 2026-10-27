@@ -21,12 +21,9 @@
 #include "chrome/browser/extensions/api/developer_private/inspectable_views_finder.h"
 #include "chrome/browser/extensions/commands/command_service.h"
 #include "chrome/browser/extensions/error_console/error_console.h"
-#include "chrome/browser/extensions/extension_allowlist.h"
 #include "chrome/browser/extensions/extension_safety_check_utils.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
-#include "chrome/browser/extensions/manifest_v2_experiment_manager.h"
-#include "chrome/browser/extensions/mv2_experiment_stage.h"
 #include "chrome/browser/extensions/shared_module_service_factory.h"
 #include "chrome/browser/extensions/sync/account_extension_tracker.h"
 #include "chrome/browser/profiles/profile.h"
@@ -37,9 +34,11 @@
 #include "chrome/grit/branded_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/signin/public/base/signin_switches.h"
+#include "components/sync/base/features.h"
 #include "content/public/browser/render_frame_host.h"
 #include "extensions/browser/blocklist_extension_prefs.h"
 #include "extensions/browser/blocklist_state.h"
+#include "extensions/browser/extension_allowlist.h"
 #include "extensions/browser/extension_error.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
@@ -47,6 +46,7 @@
 #include "extensions/browser/extension_util.h"
 #include "extensions/browser/icon_util.h"
 #include "extensions/browser/image_loader.h"
+#include "extensions/browser/manifest_v2_experiment_manager.h"
 #include "extensions/browser/path_util.h"
 #include "extensions/browser/permissions/site_permissions_helper.h"
 #include "extensions/browser/shared_module_service.h"
@@ -62,9 +62,9 @@
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
+#include "extensions/common/manifest_handlers/manifest_url_handlers.h"
 #include "extensions/common/manifest_handlers/offline_enabled_info.h"
 #include "extensions/common/manifest_handlers/options_page_info.h"
-#include "extensions/common/manifest_url_handlers.h"
 #include "extensions/common/permissions/permission_message_provider.h"
 #include "extensions/common/permissions/permission_message_util.h"
 #include "extensions/common/permissions/permissions_data.h"
@@ -94,25 +94,25 @@ namespace {
 developer::ExtensionType GetExtensionType(Manifest::Type manifest_type) {
   developer::ExtensionType type = developer::ExtensionType::kExtension;
   switch (manifest_type) {
-    case Manifest::TYPE_EXTENSION:
+    case Manifest::Type::kExtension:
       type = developer::ExtensionType::kExtension;
       break;
-    case Manifest::TYPE_THEME:
+    case Manifest::Type::kTheme:
       type = developer::ExtensionType::kTheme;
       break;
-    case Manifest::TYPE_HOSTED_APP:
+    case Manifest::Type::kHostedApp:
       type = developer::ExtensionType::kHostedApp;
       break;
-    case Manifest::TYPE_LEGACY_PACKAGED_APP:
+    case Manifest::Type::kLegacyPackagedApp:
       type = developer::ExtensionType::kLegacyPackagedApp;
       break;
-    case Manifest::TYPE_PLATFORM_APP:
+    case Manifest::Type::kPlatformApp:
       type = developer::ExtensionType::kPlatformApp;
       break;
-    case Manifest::TYPE_SHARED_MODULE:
+    case Manifest::Type::kSharedModule:
       type = developer::ExtensionType::kSharedModule;
       break;
-    case Manifest::TYPE_CHROMEOS_SYSTEM_EXTENSION:
+    case Manifest::Type::kChromeOSSystemExtension:
       type = developer::ExtensionType::kExtension;
       break;
     default:
@@ -279,6 +279,18 @@ std::vector<developer::SiteControl> GetSpecificSiteControls(
   return controls;
 }
 
+// Returns `permissions` if non-null, or an empty PermissionSet otherwise.
+// GetGrantedPermissions() and GetRuntimeGrantedPermissions() can return nullptr
+// if no extension prefs exist for an extension (e.g., during
+// installation/uninstallation race conditions or corrupted profile data).
+std::unique_ptr<const PermissionSet> GetPermissionsOrEmpty(
+    std::unique_ptr<const PermissionSet> permissions) {
+  if (!permissions) {
+    return std::make_unique<PermissionSet>();
+  }
+  return permissions;
+}
+
 // Creates and returns a RuntimeHostPermissions object with the
 // given extension's host permissions.
 developer::RuntimeHostPermissions CreateRuntimeHostPermissionsInfo(
@@ -296,12 +308,12 @@ developer::RuntimeHostPermissions CreateRuntimeHostPermissionsInfo(
   // hosts.
   if (!PermissionsManager::Get(browser_context)
            ->HasWithheldHostPermissions(extension)) {
-    granted_permissions =
-        extension_prefs->GetGrantedPermissions(extension.id());
+    granted_permissions = GetPermissionsOrEmpty(
+        extension_prefs->GetGrantedPermissions(extension.id()));
     runtime_host_permissions.host_access = developer::HostAccess::kOnAllSites;
   } else {
-    granted_permissions =
-        extension_prefs->GetRuntimeGrantedPermissions(extension.id());
+    granted_permissions = GetPermissionsOrEmpty(
+        extension_prefs->GetRuntimeGrantedPermissions(extension.id()));
     if (granted_permissions->effective_hosts().is_empty()) {
       runtime_host_permissions.host_access = developer::HostAccess::kOnClick;
     } else if (granted_permissions->ShouldWarnAllHosts(false)) {
@@ -350,15 +362,8 @@ void AddPermissionsInfo(content::BrowserContext* browser_context,
   // the extension if ever requested.
   ExtensionPrefs* extension_prefs = ExtensionPrefs::Get(browser_context);
   std::unique_ptr<const PermissionSet> granted_permissions =
-      extension_prefs->GetGrantedPermissions(extension.id());
-
-  // GetGrantedPermissions() can return nullptr if no extension prefs exist
-  // for this extension (e.g., during installation/uninstallation race
-  // conditions or corrupted profile data). Use an empty PermissionSet in
-  // this case to avoid null pointer dereference.
-  if (!granted_permissions) {
-    granted_permissions = std::make_unique<PermissionSet>();
-  }
+      GetPermissionsOrEmpty(
+          extension_prefs->GetGrantedPermissions(extension.id()));
 
   const PermissionMessageProvider* message_provider =
       PermissionMessageProvider::Get();
@@ -866,21 +871,20 @@ void ExtensionInfoGenerator::FillExtensionInfo(const Extension& extension,
   CHECK(mv2_experiment_manager);
   info.is_affected_by_mv2_deprecation =
       mv2_experiment_manager->IsExtensionAffected(extension);
-  info.did_acknowledge_mv2_deprecation_notice =
-      mv2_experiment_manager->DidUserAcknowledgeNotice(extension.id());
   if (info.web_store_url.length() > 0) {
     info.recommendations_url =
         extension_urls::GetNewWebstoreItemRecommendationsUrl(extension.id())
             .spec();
   }
 
-  // Whether the extension can be uploaded as an account extension.
-  // `CanUploadAsAccountExtension` should already check for the feature flag
-  // somewhere but add another guard for it here just in case.
   info.can_upload_as_account_extension =
-      switches::IsExtensionsExplicitBrowserSigninEnabled() &&
       AccountExtensionTracker::Get(profile)->CanUploadAsAccountExtension(
-          extension);
+          extension)
+#if BUILDFLAG(IS_CHROMEOS)
+      &&
+      base::FeatureList::IsEnabled(syncer::kReplaceSyncPromosWithSignInPromos)
+#endif
+      ;
 
   // The icon. This section must come last as it moves `info`.
   ExtensionResource icon = IconsInfo::GetIconResource(

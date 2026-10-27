@@ -14,7 +14,7 @@
 #include "core/fxcrt/span.h"
 #include "core/fxge/agg/cfx_agg_cliprgn.h"
 #include "core/fxge/agg/cfx_agg_devicedriver.h"
-#include "core/fxge/apple/fx_apple_platform.h"
+#include "core/fxge/apple/capple_platform.h"
 #include "core/fxge/cfx_font.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_glyphbitmap.h"

@@ -6,12 +6,10 @@ package org.chromium.components.thinwebview;
 
 import android.view.View;
 
+import androidx.annotation.Px;
+
 import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
-import org.chromium.components.embedder_support.contextmenu.ContextMenuPopulatorFactory;
-import org.chromium.components.embedder_support.delegate.WebContentsDelegateAndroid;
 import org.chromium.content_public.browser.WebContents;
-import org.chromium.content_public.browser.selection.SelectionDropdownMenuDelegate;
 
 /**
  * An android view backed by a {@link Surface} that is able to display a cc::Layer. Either, a {@link
@@ -20,9 +18,7 @@ import org.chromium.content_public.browser.selection.SelectionDropdownMenuDelega
  */
 @NullMarked
 public interface ThinWebView {
-    /**
-     * @return The android {@link View} representing this widget.
-     */
+    /** Returns the android {@link View} representing this widget. */
     View getView();
 
     /**
@@ -31,39 +27,36 @@ public interface ThinWebView {
      *
      * @param webContents A {@link WebContents} for providing the contents to be rendered.
      * @param contentView A {@link ContentView} that can handle user inputs.
-     * @param delegate A {@link WebContentsDelegateAndroid} responding to requests on WebContents.
-     *     This is recommended for the WebContents created explicitly for ThisWebView, in case it
-     *     needs one.
+     * @param attachParams A {@link ThinWebViewAttachParams} for additional parameters.
      */
     void attachWebContents(
-            WebContents webContents,
-            @Nullable View contentView,
-            @Nullable WebContentsDelegateAndroid delegate);
-
-    /**
-     * Method to be called to display the contents of a {@link WebContents} on the surface. The user
-     * interactability is provided through the {@code contentView}.
-     *
-     * @param webContents A {@link WebContents} for providing the contents to be rendered.
-     * @param contentView A {@link ContentView} that can handle user inputs.
-     * @param delegate A {@link WebContentsDelegateAndroid} responding to requests on WebContents.
-     *     This is recommended for the WebContents created explicitly for ThisWebView, in case it
-     *     needs one.
-     * @param contextMenuPopulatorFactory A {@link ContextMenuPopulatorFactory} required to display
-     *     the long press context menu.
-     */
-    void attachWebContents(
-            WebContents webContents,
-            @Nullable View contentView,
-            @Nullable WebContentsDelegateAndroid delegate,
-            @Nullable ContextMenuPopulatorFactory contextMenuPopulatorFactory,
-            @Nullable SelectionDropdownMenuDelegate selectionDropdownMenuDelegate);
+            WebContents webContents, View contentView, ThinWebViewAttachParams attachParams);
 
     /**
      * Sets opacity for the view. {@link ThinWebViewConstraints#supportsOpacity} must be true for
      * using this method.
      */
     void setAlpha(float alpha);
+
+    /**
+     * Registers a callback that is run when the next frame successfully makes it to the screen.
+     *
+     * <p>This may be useful for operations that should be synchronized to renders that occur after
+     * a layout change.
+     *
+     * @param runnable The runnable to be run.
+     */
+    void runOnNextFrame(Runnable runnable);
+
+    /**
+     * Resizes the web contents to the specified width and height. This should normally be called
+     * internally when the ThinWebView is resized, but can be used to force resizes if the normal
+     * size propagation is disabled by {@link ThinWebViewConstraints#ignoreSizeChanges}.
+     *
+     * @param width The new width in device pixels.
+     * @param height The new height in device pixels.
+     */
+    void resizeWebContents(@Px int width, @Px int height);
 
     /** Should be called for cleanup when the CompositorView instance is no longer used. */
     void destroy();

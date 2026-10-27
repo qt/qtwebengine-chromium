@@ -44,7 +44,16 @@ class TlsConnectionPosix : public TlsConnection {
   // automatically by TlsConnectionFactoryPosix after the handshake completes.
   void RegisterConnectionWithDataRouter(PlatformClientPosix* platform_client);
 
-  bool HasPendingWrite() const { return !buffer_.GetReadableRegion().empty(); }
+  // Returns true if there is data in the buffer that needs to be written,
+  // AND the write path is not currently blocked by a pending read (e.g.
+  // during TLS renegotiation, returning SSL_ERROR_WANT_READ).
+  // Returning false here prevents the SocketHandleWaiter from polling for
+  // writability, which would otherwise cause a busy-loop since the TCP
+  // socket remains writable but BoringSSL cannot make progress until a read
+  // occurs.
+  bool HasPendingWrite() const {
+    return !buffer_.GetReadableRegion().empty() && !is_write_blocked_by_read_;
+  }
 
   const SocketHandle& socket_handle() const { return socket_->socket_handle(); }
 
@@ -70,6 +79,8 @@ class TlsConnectionPosix : public TlsConnection {
   bssl::UniquePtr<SSL> ssl_;
 
   TlsWriteBuffer buffer_;
+
+  bool is_write_blocked_by_read_ = false;
 
   WeakPtrFactory<TlsConnectionPosix> weak_factory_{this};
 };

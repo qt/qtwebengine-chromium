@@ -59,6 +59,7 @@ source_set("impl") {
     ":whats_new",
     "//base",
     "//chrome/browser:browser_features",
+    "//chrome/browser/net",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui:ui_features",
     "//chrome/common",
@@ -82,9 +83,9 @@ source_set("impl") {
     deps += [
       "//chrome/browser:global_features",
       "//chrome/browser/resources/whats_new:resources",
-      "//chrome/browser/ui:browser_list",
       "//chrome/browser/ui/hats",
       "//chrome/browser/ui/tabs:features",
+      "//chrome/browser/ui/webui/browser_command",
       "//chrome/common:version_header",
       "//components/bookmarks/common",
       "//components/history_embeddings/content",

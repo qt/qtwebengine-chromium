@@ -29,6 +29,7 @@
  *   Self adjoint matrix * matrix product functionality based on ?SYMM/?HEMM.
  ********************************************************************************
 */
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef EIGEN_SELFADJOINT_MATRIX_MATRIX_BLAS_H
 #define EIGEN_SELFADJOINT_MATRIX_MATRIX_BLAS_H

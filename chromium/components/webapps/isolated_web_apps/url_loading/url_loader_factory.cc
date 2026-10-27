@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include "base/byte_size.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -30,6 +31,7 @@
 #include "components/web_package/signed_web_bundles/signed_web_bundle_id.h"
 #include "components/web_package/web_bundle_utils.h"
 #include "components/webapps/isolated_web_apps/client.h"
+#include "components/webapps/isolated_web_apps/public/header_utils.h"
 #include "components/webapps/isolated_web_apps/reading/response_reader.h"
 #include "components/webapps/isolated_web_apps/reading/response_reader_registry.h"
 #include "components/webapps/isolated_web_apps/reading/response_reader_registry_factory.h"
@@ -75,41 +77,11 @@ namespace web_app {
 
 namespace {
 
-constexpr char kIsolatedAppCspTemplate[] =
-    "base-uri 'none';"
-    "default-src 'self';"
-    "object-src 'none';"
-    "frame-src 'self' https: blob: data:;"
-    "connect-src 'self' https: wss: blob: data:%s;"
-    "script-src 'self' 'wasm-unsafe-eval';"
-    "img-src 'self' https: blob: data:;"
-    "media-src 'self' https: blob: data:;"
-    "font-src 'self' blob: data:;"
-    "style-src 'self' 'unsafe-inline';"
-    "require-trusted-types-for 'script';"
-    "frame-ancestors 'self';";
-
 bool IsSupportedHttpMethod(const std::string& method) {
   return method == net::HttpRequestHeaders::kGetMethod ||
          method == net::HttpRequestHeaders::kHeadMethod;
 }
 
-const std::string& GetDefaultCsp() {
-  static const base::NoDestructor<std::string> default_csp(
-      [] { return base::StringPrintf(kIsolatedAppCspTemplate, ""); }());
-  return *default_csp;
-}
-
-std::optional<std::string> ComputeCspOverride(const IwaSourceWithMode& source) {
-  auto* proxy_source = std::get_if<IwaSourceProxy>(&source.variant());
-  if (proxy_source && proxy_source->proxy_url().scheme() == "http") {
-    url::Origin origin = proxy_source->proxy_url();
-    std::string proxy_ws_url =
-        base::StringPrintf(" ws://%s:%i", origin.host().c_str(), origin.port());
-    return base::StringPrintf(kIsolatedAppCspTemplate, proxy_ws_url.c_str());
-  }
-  return std::nullopt;
-}
 
 class ForwardingURLLoaderClient : public network::mojom::URLLoaderClient {
  public:
@@ -233,10 +205,11 @@ class HeaderInjectionURLLoaderClient : public ForwardingURLLoaderClient {
       mojo::ScopedDataPipeConsumerHandle body,
       std::optional<mojo_base::BigBuffer> cached_metadata) override {
     scoped_refptr<net::HttpResponseHeaders> headers = response_head->headers;
-    size_t original_size = headers->raw_headers().size();
+    const base::ByteSize original_size(headers->raw_headers().size());
 
-    std::string csp_header =
-        csp_override_.has_value() ? csp_override_.value() : GetDefaultCsp();
+    std::string csp_header = csp_override_.has_value()
+                                 ? csp_override_.value()
+                                 : iwa::GetDefaultContentSecurityPolicy();
 
     // Apps could specify a more restrictive CSP than what we enforce, which
     // we don't want to overwrite. We add our CSP here so that existing CSPs
@@ -246,7 +219,8 @@ class HeaderInjectionURLLoaderClient : public ForwardingURLLoaderClient {
     headers->SetHeader("Cross-Origin-Embedder-Policy", "require-corp");
     headers->SetHeader("Cross-Origin-Resource-Policy", "same-origin");
 
-    header_size_delta_ = headers->raw_headers().size() - original_size;
+    header_size_delta_ = base::ByteSize(headers->raw_headers().size());
+    header_size_delta_ -= original_size;
 
     // The Network Service will have already parsed the headers for
     // proxy-based IWAs, and navigation code will try to reuse the already
@@ -261,12 +235,14 @@ class HeaderInjectionURLLoaderClient : public ForwardingURLLoaderClient {
 
   void OnComplete(const network::URLLoaderCompletionStatus& status) override {
     network::URLLoaderCompletionStatus adjusted_status = status;
-    adjusted_status.encoded_data_length += header_size_delta_;
+    adjusted_status.encoded_data_length += header_size_delta_.InBytes();
     url_loader_client()->OnComplete(adjusted_status);
   }
 
   std::optional<std::string> csp_override_ = std::nullopt;
-  int header_size_delta_ = 0;
+
+  // The length of added headers.
+  base::ByteSize header_size_delta_;
 
   base::WeakPtrFactory<HeaderInjectionURLLoaderClient> weak_factory_{this};
 };
@@ -305,13 +281,15 @@ class IsolatedWebAppURLLoaderFactoryImpl
       content::BrowserContext* browser_context,
       std::optional<url::Origin> app_origin,
       std::optional<content::FrameTreeNodeId> frame_tree_node_id,
+      bool enforce_same_origin,
       mojo::PendingReceiver<network::mojom::URLLoaderFactory> factory_receiver)
       : network::SelfDeletingURLLoaderFactory(std::move(factory_receiver)),
         browser_context_(content::AreIsolatedWebAppsEnabled(browser_context)
                              ? browser_context
                              : nullptr),
         app_origin_(std::move(app_origin)),
-        frame_tree_node_id_(frame_tree_node_id) {
+        frame_tree_node_id_(frame_tree_node_id),
+        enforce_same_origin_(enforce_same_origin) {
     CHECK(!app_origin_.has_value() ||
           app_origin_->scheme() == webapps::kIsolatedAppScheme);
     // TODO(crbug.com/432676258): Do not create the factory for inelibigle
@@ -455,7 +433,9 @@ class IsolatedWebAppURLLoaderFactoryImpl
             },
             [&](const IwaSourceWithMode& source) {
               if (weak_header_injection_client) {
-                if (auto csp_override = ComputeCspOverride(source)) {
+                if (auto csp_override =
+                        iwa::GetContentSecurityPolicyWithWebSocketOverride(
+                            source)) {
                   weak_header_injection_client->set_csp_override(*csp_override);
                 }
               }
@@ -493,9 +473,14 @@ class IsolatedWebAppURLLoaderFactoryImpl
   }
 
   bool CanRequestUrl(const GURL& url) const {
-    // If no origin was specified we should allow the request. This will be the
-    // case for navigations and worker script/update loads.
-    if (!app_origin_) {
+    // If no origin was specified, we allow the request (typical for
+    // navigations).
+    //
+    // If `enforce_same_origin_` is false, we allow cross-origin requests
+    // because this factory is being used for subresources or other contexts
+    // where CORS/CSP should handle security instead of strict same-origin
+    // enforcement at the factory level.
+    if (!app_origin_ || !enforce_same_origin_) {
       return true;
     }
     return app_origin_->IsSameOriginWith(url);
@@ -508,13 +493,15 @@ class IsolatedWebAppURLLoaderFactoryImpl
 
   const std::optional<url::Origin> app_origin_;
   const std::optional<content::FrameTreeNodeId> frame_tree_node_id_;
+  const bool enforce_same_origin_;
   base::WeakPtrFactory<IsolatedWebAppURLLoaderFactoryImpl> weak_factory_{this};
 };
 
 mojo::PendingRemote<network::mojom::URLLoaderFactory> CreateInternal(
     content::BrowserContext* browser_context,
     std::optional<url::Origin> app_origin,
-    std::optional<content::FrameTreeNodeId> frame_tree_node_id) {
+    std::optional<content::FrameTreeNodeId> frame_tree_node_id,
+    bool enforce_same_origin) {
   DCHECK(browser_context);
   DCHECK(!browser_context->ShutdownStarted());
 
@@ -525,7 +512,7 @@ mojo::PendingRemote<network::mojom::URLLoaderFactory> CreateInternal(
   // network::SelfDeletingURLLoaderFactory::OnDisconnect method.
   new IsolatedWebAppURLLoaderFactoryImpl(
       browser_context, std::move(app_origin), frame_tree_node_id,
-      pending_remote.InitWithNewPipeAndPassReceiver());
+      enforce_same_origin, pending_remote.InitWithNewPipeAndPassReceiver());
 
   return pending_remote;
 }
@@ -537,17 +524,20 @@ mojo::PendingRemote<network::mojom::URLLoaderFactory>
 IsolatedWebAppURLLoaderFactory::CreateForFrame(
     content::BrowserContext* browser_context,
     std::optional<url::Origin> app_origin,
-    content::FrameTreeNodeId frame_tree_node_id) {
+    content::FrameTreeNodeId frame_tree_node_id,
+    bool enforce_same_origin) {
   return CreateInternal(browser_context, std::move(app_origin),
-                        frame_tree_node_id);
+                        frame_tree_node_id, enforce_same_origin);
 }
 
 // static
 mojo::PendingRemote<network::mojom::URLLoaderFactory>
 IsolatedWebAppURLLoaderFactory::Create(content::BrowserContext* browser_context,
-                                       std::optional<url::Origin> app_origin) {
+                                       std::optional<url::Origin> app_origin,
+                                       bool enforce_same_origin) {
   return CreateInternal(browser_context, std::move(app_origin),
-                        /*frame_tree_node_id=*/std::nullopt);
+                        /*frame_tree_node_id=*/std::nullopt,
+                        enforce_same_origin);
 }
 
 // static

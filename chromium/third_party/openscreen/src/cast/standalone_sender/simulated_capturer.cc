@@ -12,7 +12,7 @@
 #include <sstream>
 #include <thread>
 
-#include "cast/standalone_sender/ffmpeg_glue.h"
+#include "cast/standalone_common/ffmpeg_glue.h"
 #include "cast/streaming/public/environment.h"
 #include "util/osp_logging.h"
 

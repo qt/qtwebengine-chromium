@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_DIAGONAL_H
 #define EIGEN_DIAGONAL_H
@@ -57,7 +58,7 @@ struct traits<Diagonal<MatrixType, DiagIndex> > : traits<MatrixType> {
     MaskLvalueBit = is_lvalue<MatrixType>::value ? LvalueBit : 0,
     Flags = (unsigned int)MatrixTypeNested_::Flags & (RowMajorBit | MaskLvalueBit | DirectAccessBit) &
             ~RowMajorBit,  // FIXME DirectAccessBit should not be handled by expressions
-    MatrixTypeOuterStride = outer_stride_at_compile_time<MatrixType>::ret,
+    MatrixTypeOuterStride = outer_stride_at_compile_time<MatrixType>::value,
     InnerStrideAtCompileTime = MatrixTypeOuterStride == Dynamic ? Dynamic : MatrixTypeOuterStride + 1,
     OuterStrideAtCompileTime = 0
   };

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import type {Chrome} from '../../../extension-api/ExtensionAPI.js';
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
@@ -48,6 +50,21 @@ describeWithDevtoolsExtension('Extensions', {}, context => {
     const addExtensionStub = sinon.stub(PanelCommon.ExtensionServer.ExtensionServer.instance(), 'addExtension');
     createTarget().setInspectedURL(urlString`chrome://version`);
     sinon.assert.notCalled(addExtensionStub);
+  });
+
+  it('applies network.addRequestHeaders when no host policy is configured', async () => {
+    const target = createTarget({type: SDK.Target.Type.FRAME});
+    target.setInspectedURL(urlString`http://example.com`);
+    assert.exists(context.chrome.devtools);
+
+    const headersCall = spyCall(SDK.NetworkManager.MultitargetNetworkManager.instance(), 'setExtraHTTPHeaders');
+
+    const networkApi =
+        context.chrome.devtools?.network as unknown as {addRequestHeaders(headers: Record<string, string>): void};
+    networkApi.addRequestHeaders({'X-Test': 'v'});
+
+    const {args} = await headersCall;
+    assert.deepEqual(args[0], {'X-Test': 'v'});
   });
 
   it('defers loading extensions until after navigation from a privileged to a non-privileged host', async () => {
@@ -430,6 +447,50 @@ describeWithDevtoolsExtension('Extensions', {}, context => {
     await onHiddenCalled;
 
     await context.chrome.devtools?.recorder.unregisterRecorderExtensionPlugin(extensionPlugin);
+  });
+
+  it('cannot show a Recorder view registered by another extension', async () => {
+    const view = await context.chrome.devtools?.recorder.createView('Test', 'test.html');
+    assert.isNotNull(view);
+    const viewId = (view as unknown as {_id: string})._id;
+
+    const server = PanelCommon.ExtensionServer.ExtensionServer.instance();
+    const attackerOrigin = Platform.DevToolsPath.urlString`chrome-extension://attacker`;
+    const attackerDescriptor = {
+      startPage: `${attackerOrigin}/blank.html`,
+      name: 'AttackerExtension',
+      exposeExperimentalAPIs: true,
+      allowFileAccess: false,
+    };
+    server.addExtension(attackerDescriptor);
+
+    const channel = new MessageChannel();
+    (server as unknown as {
+      registerExtension: (origin: Platform.DevToolsPath.UrlString, port: MessagePort) => void,
+    }).registerExtension(attackerOrigin, channel.port1);
+
+    const responsePromise = new Promise<{
+      command: string,
+      connectId: number,
+      result: PanelCommon.ExtensionServer.Record,
+    }>(resolve => {
+      channel.port2.onmessage = (event: MessageEvent<{
+        command: string,
+        connectId: number,
+        result: PanelCommon.ExtensionServer.Record,
+      }>) => resolve(event.data);
+    });
+    channel.port2.postMessage({
+      command: 'showRecorderView',
+      id: viewId,
+      requestId: 123,
+    });
+
+    const response = await responsePromise;
+    assert.isTrue(response.result.isError);
+    assert.strictEqual(response.result.code, 'E_FAILED');
+    assert.strictEqual(response.result.description, 'Operation failed: %s');
+    assert.deepEqual(response.result.details, ['Permission denied']);
   });
 
   it('reload only the main toplevel frame', async () => {
@@ -823,6 +884,23 @@ describeWithDevtoolsExtension('Runtime hosts policy', {hostsPolicy}, context => 
 
     assert.deepEqual(project.uiSourceCodeForURL(allowedUrl)?.content(), 'modified');
     assert.deepEqual(project.uiSourceCodeForURL(blockedUrl)?.content(), 'content');
+  });
+
+  it('blocks network.addRequestHeaders when runtime_blocked_hosts is set', async () => {
+    const target = createTarget({type: SDK.Target.Type.FRAME});
+    target.setInspectedURL(allowedUrl);
+    assert.exists(context.chrome.devtools);
+
+    const setHeadersSpy = sinon.spy(SDK.NetworkManager.MultitargetNetworkManager.instance(), 'setExtraHTTPHeaders');
+
+    const networkApi =
+        context.chrome.devtools?.network as unknown as {addRequestHeaders(headers: Record<string, string>): void};
+    networkApi.addRequestHeaders({'X-Test': '1'});
+    // Round-trip a callback command on the same MessagePort to ensure the
+    // addRequestHeaders message has been processed before we assert.
+    await new Promise<object>(cb => context.chrome.devtools?.network.getHAR(cb));
+
+    sinon.assert.notCalled(setHeadersSpy);
   });
 });
 

@@ -33,23 +33,23 @@
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
-#include "dawn/common/LRUCache.h"
-#include "dawn/common/RefCountedWithExternalCount.h"
-#include "dawn/common/WeakRef.h"
-#include "dawn/common/ityp_array.h"
-#include "dawn/common/ityp_bitset.h"
-#include "dawn/native/BlockInfo.h"
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/DeviceGuard.h"
-#include "dawn/native/Error.h"
-#include "dawn/native/Format.h"
-#include "dawn/native/Forward.h"
-#include "dawn/native/IntegerTypes.h"
-#include "dawn/native/ObjectBase.h"
-#include "dawn/native/SharedTextureMemory.h"
-#include "dawn/native/Subresource.h"
-#include "dawn/native/dawn_platform.h"
 #include "partition_alloc/pointers/raw_ref.h"
+#include "src/dawn/common/LRUCache.h"
+#include "src/dawn/common/RefCountedWithExternalCount.h"
+#include "src/dawn/common/WeakRef.h"
+#include "src/dawn/common/ityp_array.h"
+#include "src/dawn/common/ityp_bitset.h"
+#include "src/dawn/native/BlockInfo.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/DeviceGuard.h"
+#include "src/dawn/native/Error.h"
+#include "src/dawn/native/Format.h"
+#include "src/dawn/native/Forward.h"
+#include "src/dawn/native/IntegerTypes.h"
+#include "src/dawn/native/ObjectBase.h"
+#include "src/dawn/native/SharedTextureMemory.h"
+#include "src/dawn/native/Subresource.h"
+#include "src/dawn/native/dawn_platform.h"
 
 namespace dawn::native {
 
@@ -121,14 +121,14 @@ struct TextureViewQuery {
     bool operator==(const TextureViewQuery& b) const = default;
 
     // TextureViewDescriptor fields (label ignored)
-    wgpu::TextureFormat format;
-    wgpu::TextureViewDimension dimension;
-    uint32_t baseMipLevel;
-    uint32_t mipLevelCount;
-    uint32_t baseArrayLayer;
-    uint32_t arrayLayerCount;
-    wgpu::TextureAspect aspect;
-    wgpu::TextureUsage usage;
+    wgpu::TextureFormat format = wgpu::TextureFormat::Undefined;
+    wgpu::TextureViewDimension dimension = wgpu::TextureViewDimension::Undefined;
+    uint32_t baseMipLevel = 0;
+    uint32_t mipLevelCount = 0;
+    uint32_t baseArrayLayer = 0;
+    uint32_t arrayLayerCount = 0;
+    wgpu::TextureAspect aspect = wgpu::TextureAspect::All;
+    wgpu::TextureUsage usage = wgpu::TextureUsage::None;
 
     // Update with fields from relevant chained structs as they are added.
     wgpu::ComponentSwizzle swizzleRed = wgpu::ComponentSwizzle::R;
@@ -275,9 +275,9 @@ class TextureBase : public RefCountedWithExternalCount<SharedResource> {
         TextureState();
 
         // Indicates whether the texture may access by the GPU in a queue submit.
-        bool hasAccess : 1;
+        bool hasAccess : 1 = true;
         // Indicates whether the texture has been destroyed.
-        bool destroyed : 1;
+        bool destroyed : 1 = false;
     };
 
     TextureBase(DeviceBase* device, const TextureDescriptor* descriptor, ObjectBase::ErrorTag tag);
@@ -296,20 +296,20 @@ class TextureBase : public RefCountedWithExternalCount<SharedResource> {
     // thread-safe.
     virtual std::optional<DeviceGuard> UseDeviceGuardForDestroy();
 
-    wgpu::TextureDimension mDimension;
+    wgpu::TextureDimension mDimension = wgpu::TextureDimension::Undefined;
     // Only used for compatibility mode
     wgpu::TextureViewDimension mCompatibilityTextureBindingViewDimension =
         wgpu::TextureViewDimension::Undefined;
     const raw_ref<const Format> mFormat;
     FormatSet mViewFormats;
     Extent3D mBaseSize;
-    uint32_t mMipLevelCount;
-    uint32_t mSampleCount;
+    uint32_t mMipLevelCount = 0;
+    uint32_t mSampleCount = 0;
     wgpu::TextureUsage mUsage = wgpu::TextureUsage::None;
     wgpu::TextureUsage mInternalUsage = wgpu::TextureUsage::None;
     wgpu::TextureUsage mPinnedUsage = wgpu::TextureUsage::None;  // None if not pinned.
     TextureState mState;
-    wgpu::TextureFormat mFormatEnumForReflection;
+    wgpu::TextureFormat mFormatEnumForReflection = wgpu::TextureFormat::Undefined;
 
     Ref<TextureViewBase> mDefaultView;
     // Textures track texture views created from them so that they can be destroyed when the texture
@@ -408,7 +408,7 @@ class TextureViewBase : public ApiObjectBase {
     Ref<TextureBase> mTexture;
 
     const raw_ref<const Format> mFormat;
-    wgpu::TextureViewDimension mDimension;
+    wgpu::TextureViewDimension mDimension = wgpu::TextureViewDimension::Undefined;
     SubresourceRange mRange;
     const wgpu::TextureUsage mUsage = wgpu::TextureUsage::None;
     const wgpu::TextureUsage mInternalUsage = wgpu::TextureUsage::None;

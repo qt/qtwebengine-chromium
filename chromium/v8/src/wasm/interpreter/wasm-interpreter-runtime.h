@@ -172,13 +172,23 @@ class WasmInterpreterRuntime {
 
   // GC helpers.
   DirectHandle<Map> RttCanon(uint32_t type_index) const;
-  std::pair<DirectHandle<WasmStruct>, const StructType*> StructNewUninitialized(
-      uint32_t index) const;
+  struct StructNewResult {
+    DirectHandle<WasmStruct> struct_object;
+    const StructType* type;
+    // See the matching comment on ArrayNewResult::needs_write_barrier.
+    bool needs_write_barrier;
+  };
+  StructNewResult StructNewUninitialized(uint32_t index) const;
 
   struct ArrayNewResult {
     DirectHandle<WasmArray> array;
     const ArrayType* type;
     bool is_shared;
+    // True when the array was allocated in a space that requires a
+    // generational/shared write barrier for ref-typed element stores
+    // (i.e. any old-space allocation). For young-space allocations the
+    // barrier can be skipped during initialization.
+    bool needs_write_barrier;
   };
   ArrayNewResult ArrayNewUninitialized(uint32_t length,
                                        uint32_t array_index) const;
@@ -484,7 +494,15 @@ class WasmInterpreterRuntime {
 
 class V8_EXPORT_PRIVATE InterpreterHandle {
  public:
-  static constexpr ExternalPointerTag kManagedTag = kGenericManagedTag;
+  // Use a dedicated external-pointer tag so the in-sandbox Managed<> Foreign
+  // referencing this object can only be confused with another
+  // Managed<InterpreterHandle> (which is allowed -- "substitution-safe"), not
+  // with arbitrary kGenericManagedTag-tagged Managed objects. An attacker with
+  // in-sandbox writes must not be able to swap this Foreign's external pointer
+  // with one pointing at an unrelated C++ object, because InterpreterHandle
+  // owns out-of-sandbox resources (interpreter stack, bytecode storage, cached
+  // memory base pointers).
+  static constexpr ExternalPointerTag kManagedTag = kWasmInterpreterHandleTag;
 
   InterpreterHandle(Isolate* isolate, DirectHandle<Tuple2> interpreter_object);
 

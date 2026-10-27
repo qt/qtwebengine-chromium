@@ -174,6 +174,24 @@ bool IsChromeClient(const DeviceInfoSpecifics& specifics) {
   return specifics.has_chrome_version_info() || specifics.has_chrome_version();
 }
 
+DeviceInfo::GlicExperimentalTriggeringState
+SpecificsToGlicExperimentalTriggeringState(
+    const DeviceInfoSpecifics& specifics) {
+  if (specifics.feature_fields().has_glic_experimental_triggering_state()) {
+    return ToDeviceInfoGlicExperimentalTriggeringState(
+        specifics.feature_fields().glic_experimental_triggering_state());
+  }
+  return DeviceInfo::GlicExperimentalTriggeringState::kUnavailable;
+}
+
+std::optional<int> SpecificsToGlicExperimentalTriggeringVersion(
+    const DeviceInfoSpecifics& specifics) {
+  if (specifics.feature_fields().has_glic_experimental_triggering_version()) {
+    return specifics.feature_fields().glic_experimental_triggering_version();
+  }
+  return std::nullopt;
+}
+
 // Converts DeviceInfoSpecifics into DeviceInfo.
 DeviceInfo SpecificsToModel(const DeviceInfoSpecifics& specifics) {
   const DeviceInfo::FormFactor device_form_factor =
@@ -204,7 +222,9 @@ DeviceInfo SpecificsToModel(const DeviceInfoSpecifics& specifics) {
           specifics.invalidation_fields().interested_data_type_ids()),
       SpecificsToAutoSignOutLastSigninTimestamp(specifics),
       specifics.feature_fields().desktop_to_ios_promo_receiving_enabled(),
-      SpecificsToDesktopToIOSPromoReceivingTypes(specifics));
+      SpecificsToDesktopToIOSPromoReceivingTypes(specifics),
+      SpecificsToGlicExperimentalTriggeringState(specifics),
+      SpecificsToGlicExperimentalTriggeringVersion(specifics));
 }
 
 // Allocate a EntityData and copies |specifics| into it.
@@ -288,6 +308,18 @@ std::unique_ptr<DeviceInfoSpecifics> MakeLocalDeviceSpecifics(
                 .ToDeltaSinceWindowsEpoch()
                 .InMicroseconds());
   }
+  feature_fields->set_glic_experimental_triggering_state(
+      ToGlicExperimentalTriggeringStateProto(
+          info.glic_experimental_triggering_state()));
+  if (info.glic_experimental_triggering_version().has_value()) {
+    feature_fields->set_glic_experimental_triggering_version(
+        *info.glic_experimental_triggering_version());
+  } else {
+    // Clear the field if the local device does not have a version, ensuring
+    // the local device's state (unavailable) is authoritatively reflected in
+    // the synced proto.
+    feature_fields->clear_glic_experimental_triggering_version();
+  }
   const std::optional<DeviceInfo::SharingInfo>& sharing_info =
       info.sharing_info();
   if (sharing_info) {
@@ -367,7 +399,11 @@ bool StoredDeviceInfoStillAccurate(const DeviceInfo* stored,
              stored->fcm_registration_token() &&
          current->interested_data_types() == stored->interested_data_types() &&
          current->auto_sign_out_last_signin_timestamp() ==
-             stored->auto_sign_out_last_signin_timestamp();
+             stored->auto_sign_out_last_signin_timestamp() &&
+         current->glic_experimental_triggering_state() ==
+             stored->glic_experimental_triggering_state() &&
+         current->glic_experimental_triggering_version() ==
+             stored->glic_experimental_triggering_version();
 }
 
 int CalculateMaxConcurrentEvents(const std::multimap<base::Time, int>& events) {
@@ -463,10 +499,6 @@ void DeviceInfoSyncBridge::OnSyncStarting(
   ReconcileLocalAndStored();
 }
 
-std::unique_ptr<MetadataChangeList>
-DeviceInfoSyncBridge::CreateMetadataChangeList() {
-  return WriteBatch::CreateMetadataChangeList();
-}
 
 std::optional<ModelError> DeviceInfoSyncBridge::MergeFullSyncData(
     std::unique_ptr<MetadataChangeList> metadata_change_list,
@@ -618,7 +650,8 @@ void DeviceInfoSyncBridge::ApplyDisableSyncChanges(
 
   // Remove all local data, if sync is being disabled, the user has expressed
   // their desire to not have knowledge about other devices.
-  store_->DeleteAllDataAndMetadata(base::DoNothing());
+  store_->DeleteAllDataAndMetadata(std::move(delete_metadata_change_list),
+                                   base::DoNothing());
   if (!all_data_.empty()) {
     all_data_.clear();
     NotifyObservers();
@@ -896,7 +929,8 @@ void DeviceInfoSyncBridge::OnReadAllMetadata(
       all_data_.count(local_cache_guid_in_metadata) == 0) {
     // Data or metadata is off. Just throw everything away and start clean.
     all_data_.clear();
-    store_->DeleteAllDataAndMetadata(base::DoNothing());
+    store_->DeleteAllDataAndMetadata(/*metadata_change_list=*/nullptr,
+                                     base::DoNothing());
     change_processor()->ModelReadyToSync(std::make_unique<MetadataBatch>());
     return;
   }

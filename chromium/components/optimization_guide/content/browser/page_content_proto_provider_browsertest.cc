@@ -17,6 +17,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
 #include "base/test/test_timeouts.h"
@@ -29,9 +30,11 @@
 #include "components/ukm/test_ukm_recorder.h"
 #include "content/public/browser/media_session.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/test/back_forward_cache_util.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
@@ -107,6 +110,48 @@ const optimization_guide::proto::ContentNode* FindFirstInteractiveNode(
     const auto* current = stack.back();
     stack.pop_back();
     if (current->content_attributes().has_interaction_info()) {
+      return current;
+    }
+    for (const auto& child : current->children_nodes()) {
+      stack.push_back(&child);
+    }
+  }
+  return nullptr;
+}
+
+bool SubtreeContainsTextSubstring(
+    const optimization_guide::proto::ContentNode& node,
+    const std::string& substring) {
+  // Match against serialized text nodes so callers can find the owning APC
+  // node without depending on the exact child layout.
+  if (node.content_attributes().has_text_data() &&
+      node.content_attributes().text_data().text_content().find(substring) !=
+          std::string::npos) {
+    return true;
+  }
+
+  for (const auto& child : node.children_nodes()) {
+    if (SubtreeContainsTextSubstring(child, substring)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const optimization_guide::proto::ContentNode*
+FindFirstNodeWithAttributeTypeAndTextSubstring(
+    const optimization_guide::proto::ContentNode& root,
+    optimization_guide::proto::ContentAttributeType attribute_type,
+    const std::string& substring) {
+  std::vector<const optimization_guide::proto::ContentNode*> stack;
+  stack.push_back(&root);
+  while (!stack.empty()) {
+    const auto* current = stack.back();
+    stack.pop_back();
+    // Match the APC node by role first, then use descendant text to identify
+    // the specific control under test.
+    if (current->content_attributes().attribute_type() == attribute_type &&
+        SubtreeContainsTextSubstring(*current, substring)) {
       return current;
     }
     for (const auto& child : current->children_nodes()) {
@@ -290,6 +335,7 @@ class PageContentProtoProviderBrowserTest : public content::ContentBrowserTest {
     page_content_ = std::move(page_content);
     std::move(quit_closure).Run();
   }
+  bool has_page_content() const { return page_content_->has_value(); }
 
   const proto::AnnotatedPageContent& page_content() {
     return page_content_->value().proto;
@@ -375,8 +421,7 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest, BasicActionable) {
            GetActionableAIPageContentOptions());
 
   EXPECT_EQ(page_content().version(),
-            optimization_guide::proto::
-                ANNOTATED_PAGE_CONTENT_VERSION_ONLY_ACTIONABLE_ELEMENTS_1_0);
+            optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
   EXPECT_EQ(page_content().mode(),
             optimization_guide::proto::
                 ANNOTATED_PAGE_CONTENT_MODE_ACTIONABLE_ELEMENTS);
@@ -561,8 +606,7 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTestActionableElements,
                        AIPageContent) {
   LoadPage(https_server()->GetURL("/actionable_elements.html"));
   EXPECT_EQ(page_content().version(),
-            optimization_guide::proto::
-                ANNOTATED_PAGE_CONTENT_VERSION_ONLY_ACTIONABLE_ELEMENTS_1_0);
+            optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
   EXPECT_EQ(page_content().root_node().children_nodes().size(), 1);
   const auto& child = page_content().root_node().children_nodes().at(0);
   EXPECT_TRUE(child.content_attributes().has_interaction_info());
@@ -573,8 +617,7 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest, ForLabel) {
   LoadPage(https_server()->GetURL("/for_label.html"),
            GetActionableAIPageContentOptions());
   EXPECT_EQ(page_content().version(),
-            optimization_guide::proto::
-                ANNOTATED_PAGE_CONTENT_VERSION_ONLY_ACTIONABLE_ELEMENTS_1_0);
+            optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
 
   EXPECT_EQ(ActionableContentRootNode().children_nodes().size(), 2);
 
@@ -596,12 +639,49 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest, ForLabel) {
 }
 
 IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
+                       GeometryIncludesCssPosition) {
+  ASSERT_TRUE(content::NavigateToURL(web_contents(),
+                                     https_server()->GetURL("/simple.html")));
+  ASSERT_TRUE(content::ExecJs(
+      web_contents()->GetPrimaryMainFrame(),
+      "document.body.innerHTML = "
+      "'<button id=\"fixed\" "
+      "style=\"position: fixed; top: 0; left: 0\">Action</button>';"));
+
+  // Actionable mode populates geometry for interactive elements.
+  LoadData(GetActionableAIPageContentOptions());
+
+  const auto* button = FindFirstNodeWithAttributeType(
+      page_content().root_node(), proto::CONTENT_ATTRIBUTE_FORM_CONTROL);
+  ASSERT_TRUE(button);
+  ASSERT_TRUE(button->content_attributes().has_geometry());
+  // The browser-visible proto should preserve the renderer's computed value.
+  EXPECT_EQ(button->content_attributes().geometry().css_position(),
+            proto::CSS_POSITION_FIXED);
+}
+
+IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
+                       FrameDefaultLineHeight) {
+  ASSERT_TRUE(content::NavigateToURL(web_contents(),
+                                     https_server()->GetURL("/simple.html")));
+  ASSERT_TRUE(content::ExecJs(web_contents()->GetPrimaryMainFrame(),
+                              "document.documentElement.style.cssText = "
+                              "'font-size: 10px; line-height: 26px';"));
+
+  // Load through the browser provider so the test covers renderer extraction,
+  // Mojo transport, and Mojo-to-proto conversion together.
+  LoadData();
+
+  // This exact CSS value should survive the full frame-data provider path.
+  EXPECT_EQ(page_content().main_frame_data().default_line_height_px(), 26);
+}
+
+IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
                        ClickabilityReason) {
   LoadPage(https_server()->GetURL("/clickability_reason.html"),
            GetActionableAIPageContentOptions());
   EXPECT_EQ(page_content().version(),
-            optimization_guide::proto::
-                ANNOTATED_PAGE_CONTENT_VERSION_ONLY_ACTIONABLE_ELEMENTS_1_0);
+            optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
 
   const auto& button_node = ActionableContentRootNode().children_nodes()[0];
   ASSERT_TRUE(button_node.content_attributes().has_interaction_info());
@@ -697,8 +777,7 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
   LoadPage(https_server()->GetURL("/label_not_actionable.html"),
            GetActionableAIPageContentOptions());
   EXPECT_EQ(page_content().version(),
-            optimization_guide::proto::
-                ANNOTATED_PAGE_CONTENT_VERSION_ONLY_ACTIONABLE_ELEMENTS_1_0);
+            optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
 
   EXPECT_EQ(ActionableContentRootNode().children_nodes().size(), 2);
 
@@ -719,8 +798,7 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest, AriaRole) {
   LoadPage(https_server()->GetURL("/aria_role.html"),
            GetActionableAIPageContentOptions());
   EXPECT_EQ(page_content().version(),
-            optimization_guide::proto::
-                ANNOTATED_PAGE_CONTENT_VERSION_ONLY_ACTIONABLE_ELEMENTS_1_0);
+            optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
 
   EXPECT_EQ(ActionableContentRootNode().children_nodes().size(), 1);
   const auto& button = ActionableContentRootNode().children_nodes()[0];
@@ -743,6 +821,65 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest, ZOrder) {
                 .interaction_info()
                 .document_scoped_z_order(),
             1);
+}
+
+IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
+                       AnchoredOffscreenFixedPopupLosesInteractionInfo) {
+  // The page models a fixed bottom popup that stays rendered below the
+  // viewport until another control changes state.
+  LoadPage(https_server()->GetURL("/anchored_offscreen_fixed_popup.html"),
+           nullptr);
+
+  LoadData(GetActionableAIPageContentOptions());
+
+  const auto& root = ActionableContentRootNode();
+  const auto* trigger = FindFirstNodeWithAttributeTypeAndTextSubstring(
+      root, optimization_guide::proto::CONTENT_ATTRIBUTE_FORM_CONTROL,
+      "Choose size");
+  ASSERT_TRUE(trigger);
+  ASSERT_TRUE(trigger->content_attributes().has_interaction_info());
+
+  const auto* size_option = FindFirstNodeWithAttributeTypeAndTextSubstring(
+      root, optimization_guide::proto::CONTENT_ATTRIBUTE_FORM_CONTROL,
+      "Size 6.5");
+  ASSERT_TRUE(size_option);
+
+  // The hidden option still exists in the DOM, but APC should stop presenting
+  // it as directly actionable because scrolling cannot bring it on screen.
+  const auto& option_geometry = size_option->content_attributes().geometry();
+  // The popup can start exactly at the bottom edge of the viewport and still
+  // be offscreen because there is no overlap with the viewport rect.
+  EXPECT_GE(option_geometry.outer_bounding_box().y(),
+            page_content().viewport_geometry().height());
+  EXPECT_FALSE(size_option->content_attributes().has_interaction_info());
+}
+
+IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
+                       AnchoredOffscreenAbsolutePopupLosesInteractionInfo) {
+  // The page models an absolute popup parked at left: -9999px where it cannot
+  // be reached by scrolling.
+  LoadPage(https_server()->GetURL("/anchored_offscreen_absolute_popup.html"),
+           nullptr);
+
+  LoadData(GetActionableAIPageContentOptions());
+
+  const auto& root = ActionableContentRootNode();
+  const auto* trigger = FindFirstNodeWithAttributeTypeAndTextSubstring(
+      root, optimization_guide::proto::CONTENT_ATTRIBUTE_FORM_CONTROL,
+      "Choose size");
+  ASSERT_TRUE(trigger);
+  ASSERT_TRUE(trigger->content_attributes().has_interaction_info());
+
+  const auto* size_option = FindFirstNodeWithAttributeTypeAndTextSubstring(
+      root, optimization_guide::proto::CONTENT_ATTRIBUTE_FORM_CONTROL,
+      "Size 6.5");
+  ASSERT_TRUE(size_option);
+
+  // The hidden option still exists in the DOM, but APC should stop presenting
+  // it as directly actionable because scrolling cannot bring it on screen.
+  const auto& option_geometry = size_option->content_attributes().geometry();
+  EXPECT_LT(option_geometry.outer_bounding_box().x(), 0);
+  EXPECT_FALSE(size_option->content_attributes().has_interaction_info());
 }
 
 IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
@@ -779,9 +916,8 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
 
   ASSERT_TRUE(image_node.content_attributes().has_image_data());
   const auto& image_data = image_node.content_attributes().image_data();
-  // TODO(crbug.com/382558422): Propagate image source URLs, this should be
-  // a.com.
-  EXPECT_TRUE(image_data.security_origin().value().empty());
+  EXPECT_TRUE(image_data.security_origin().opaque());
+  EXPECT_FALSE(image_data.security_origin().value().empty());
 }
 
 IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest, SVG) {
@@ -815,8 +951,13 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest, Video) {
   ASSERT_TRUE(video_node.content_attributes().has_video_data());
   EXPECT_EQ(video_node.content_attributes().attribute_type(),
             optimization_guide::proto::CONTENT_ATTRIBUTE_VIDEO);
+
+  GURL video_url = https_server()->GetURL("/video.mp4");
   EXPECT_EQ(video_node.content_attributes().video_data().url(),
-            https_server()->GetURL("/video.mp4").spec());
+            video_url.spec());
+  AssertValidOrigin(
+      video_node.content_attributes().video_data().security_origin(),
+      url::Origin::Create(video_url));
 }
 
 namespace {
@@ -835,10 +976,11 @@ std::string GetFilePathWithHostAndPortReplacement(
 
 IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
                        AIPageContentCrossOriginImage) {
+  GURL cross_origin_url = https_server()->GetURL("b.com", "/");
   // Add a "replace_text=" query param that the test server will use to replace
   // the string "REPLACE_WITH_HOST_AND_PORT" in the destination page.
   net::HostPortPair host_port_pair =
-      net::HostPortPair::FromURL(https_server()->GetURL("b.com", "/"));
+      net::HostPortPair::FromURL(cross_origin_url);
   std::string replacement_path = GetFilePathWithHostAndPortReplacement(
       "/cross_origin_image.html", host_port_pair);
 
@@ -849,9 +991,68 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
 
   ASSERT_TRUE(image_node.content_attributes().has_image_data());
   const auto& image_data = image_node.content_attributes().image_data();
-  // TODO(crbug.com/382558422): Propagate image source URLs, this should be
-  // b.com.
-  EXPECT_TRUE(image_data.security_origin().value().empty());
+  AssertValidOrigin(image_data.security_origin(),
+                    url::Origin::Create(cross_origin_url));
+}
+
+IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
+                       AIPageContentImageWithAboutBlank) {
+  ASSERT_TRUE(content::NavigateToURL(
+      web_contents(),
+      https_server()->GetURL("a.com", "/cross_origin_image.html")));
+
+  ASSERT_TRUE(content::ExecJs(web_contents(),
+                              "const img = document.getElementById('image');"
+                              "img.src = 'about:blank';"));
+
+  {
+    base::test::TestFuture<bool> future;
+    web_contents()
+        ->GetPrimaryMainFrame()
+        ->GetRenderWidgetHost()
+        ->InsertVisualStateCallback(future.GetCallback());
+    ASSERT_TRUE(future.Wait()) << "Timeout waiting for syncing with renderer";
+  }
+
+  LoadData();
+
+  ASSERT_EQ(page_content().root_node().children_nodes().size(), 1);
+  const auto& image_node = page_content().root_node().children_nodes().at(0);
+
+  ASSERT_TRUE(image_node.content_attributes().has_image_data());
+  const auto& image_data = image_node.content_attributes().image_data();
+  AssertValidOrigin(image_data.security_origin(),
+                    url::Origin::Create(https_server()->GetURL("a.com", "/")));
+}
+
+IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
+                       AIPageContentVideoWithAboutBlank) {
+  ASSERT_TRUE(content::NavigateToURL(
+      web_contents(), https_server()->GetURL("a.com", "/video.html")));
+
+  ASSERT_TRUE(content::ExecJs(web_contents(),
+                              "const video = document.querySelector('video');"
+                              "video.src = 'about:blank';"));
+
+  {
+    base::test::TestFuture<bool> future;
+    web_contents()
+        ->GetPrimaryMainFrame()
+        ->GetRenderWidgetHost()
+        ->InsertVisualStateCallback(future.GetCallback());
+    ASSERT_TRUE(future.Wait()) << "Timeout waiting for syncing with renderer";
+  }
+
+  LoadData();
+
+  ASSERT_EQ(page_content().root_node().children_nodes().size(), 1);
+  const auto& video_node = page_content().root_node().children_nodes().at(0);
+
+  ASSERT_TRUE(video_node.content_attributes().has_video_data());
+  const auto& video_data = video_node.content_attributes().video_data();
+  EXPECT_EQ(video_data.url(), "about:blank");
+  AssertValidOrigin(video_data.security_origin(),
+                    url::Origin::Create(https_server()->GetURL("a.com", "/")));
 }
 
 IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
@@ -2084,6 +2285,7 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
             https_server()->GetURL("/relative/next").spec());
 }
 
+
 IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
                        FragmentVisibleBoundingBoxes) {
   LoadPage(https_server()->GetURL("/fragment_boxes.html"),
@@ -2104,8 +2306,7 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
   // <body>
 
   EXPECT_EQ(page_content().version(),
-            optimization_guide::proto::
-                ANNOTATED_PAGE_CONTENT_VERSION_ONLY_ACTIONABLE_ELEMENTS_1_0);
+            optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
 
   EXPECT_EQ(ActionableContentRootNode().children_nodes().size(), 1);
   const auto& section = ActionableContentRootNode().children_nodes()[0];
@@ -2265,8 +2466,7 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest, DisabledButton) {
   LoadPage(https_server()->GetURL("/disabled_button.html"),
            GetActionableAIPageContentOptions());
   EXPECT_EQ(page_content().version(),
-            optimization_guide::proto::
-                ANNOTATED_PAGE_CONTENT_VERSION_ONLY_ACTIONABLE_ELEMENTS_1_0);
+            optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
 
   EXPECT_EQ(ActionableContentRootNode().children_nodes().size(), 1);
   const auto& button = ActionableContentRootNode().children_nodes()[0];
@@ -2285,8 +2485,7 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
   LoadPage(https_server()->GetURL("/aria_disabled_button.html"),
            GetActionableAIPageContentOptions());
   EXPECT_EQ(page_content().version(),
-            optimization_guide::proto::
-                ANNOTATED_PAGE_CONTENT_VERSION_ONLY_ACTIONABLE_ELEMENTS_1_0);
+            optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
 
   EXPECT_EQ(ActionableContentRootNode().children_nodes().size(), 1);
   const auto& button = ActionableContentRootNode().children_nodes()[0];
@@ -2305,8 +2504,7 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
   LoadPage(https_server()->GetURL("/cursor_not_allowed_button.html"),
            GetActionableAIPageContentOptions());
   EXPECT_EQ(page_content().version(),
-            optimization_guide::proto::
-                ANNOTATED_PAGE_CONTENT_VERSION_ONLY_ACTIONABLE_ELEMENTS_1_0);
+            optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
 
   EXPECT_EQ(ActionableContentRootNode().children_nodes().size(), 1);
   const auto& button = ActionableContentRootNode().children_nodes()[0];
@@ -2861,6 +3059,9 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
 
   const auto& iframe_data = iframe.content_attributes().iframe_data();
   EXPECT_TRUE(iframe_data.has_frame_data());
+  // The renderer still sends minimal frame data when display lock blocks the
+  // iframe subtree, and browser conversion requires a positive line height.
+  EXPECT_GT(iframe_data.frame_data().default_line_height_px(), 0);
 
   // Children should be empty due to display lock blocking traversal.
   EXPECT_EQ(iframe.children_nodes().size(), 0);
@@ -2912,6 +3113,233 @@ IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
                    gfx::Rect(100, 100, 200, 300));
   AssertRectsEqual(geometry.outer_bounding_box(),
                    gfx::Rect(100, 100, 200, 300));
+}
+
+class PageContentProtoProviderBrowserTestNoTimeouts
+    : public PageContentProtoProviderBrowserTest {
+ public:
+  PageContentProtoProviderBrowserTestNoTimeouts() {
+    // Disable timeouts so these tests only pass when APC handles the lost
+    // renderer response. A timeout would mask the fallback path under test.
+    feature_list_.InitWithFeatures(
+        /* enabled_features= */ {},
+        /* disabled_features= */ {
+            features::kGetAIPageContentMainFrameTimeoutEnabled,
+            features::kGetAIPageContentSubframeTimeoutEnabled});
+  }
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    PageContentProtoProviderBrowserTest::SetUpCommandLine(command_line);
+    content::IsolateAllSitesForTesting(command_line);
+  }
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+};
+
+IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTestNoTimeouts,
+                       MainFrameMojoDisconnect) {
+  LoadPage(https_server()->GetURL("/simple.html"), /*options=*/nullptr);
+
+  // Hold the main-frame APC response so the request is still pending when the
+  // pipe closes.
+  NoResponseAIPageContentAgent no_response_agent(
+      web_contents()->GetPrimaryMainFrame());
+
+  base::RunLoop loading_run_loop;
+  LoadData(GetActionableAIPageContentOptions(), loading_run_loop.QuitClosure());
+
+  // Drop the response after the browser has installed its default callback.
+  no_response_agent.WaitForRequest();
+  no_response_agent.Disconnect();
+
+  // Closing the pipe runs the wrapped Mojo callback with nullptr, then the
+  // browser-side GetAIPageContent callback reports main-frame failure.
+  loading_run_loop.Run();
+
+  // A missing main-frame APC response makes the whole extraction fail.
+  EXPECT_FALSE(has_page_content());
+}
+
+IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTestNoTimeouts,
+                       MainFrameRendererCrashWithPendingRequest) {
+  LoadPage(https_server()->GetURL("/simple.html"), /*options=*/nullptr);
+
+  content::RenderFrameHost* main_frame = web_contents()->GetPrimaryMainFrame();
+  content::RenderProcessHost* child_process = main_frame->GetProcess();
+
+  // The title is the browser-side signal that the renderer's spin task started.
+  content::TitleWatcher title_watcher(web_contents(), u"BLOCKED");
+  content::ExecuteScriptAsync(main_frame, R"JS(
+    setTimeout(() => {
+      document.title = 'BLOCKED';
+
+      // Keep the renderer from reading the APC Mojo request. This makes the
+      // browser observe renderer shutdown, not a real APC response.
+      while (true) {}
+    }, 0);
+  )JS");
+  EXPECT_EQ(u"BLOCKED", title_watcher.WaitAndGetTitle());
+
+  base::RunLoop loading_run_loop;
+  LoadData(GetActionableAIPageContentOptions(), loading_run_loop.QuitClosure());
+
+  // The request has been posted to the renderer. Forcing the blocked process to
+  // exit should close the Mojo pipe and invoke APC's default failure callback.
+  content::RenderProcessHostWatcher crash_observer(
+      child_process, content::RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
+  ASSERT_TRUE(child_process->Shutdown(0));
+  crash_observer.Wait();
+
+  // Renderer exit closes the pipe. The wrapped Mojo callback runs with nullptr,
+  // then the browser-side GetAIPageContent callback reports main-frame failure.
+  loading_run_loop.Run();
+
+  // A crashed main renderer makes the whole extraction fail.
+  EXPECT_FALSE(has_page_content());
+}
+
+IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTestNoTimeouts,
+                       SubframeMojoDisconnect) {
+  LoadPage(https_server()->GetURL("/iframe_cross_site.html"),
+           /*options=*/nullptr);
+
+  // Hold the second child frame so the first child can still return content.
+  content::RenderFrameHost* child_frame_2 =
+      ChildFrameAt(web_contents()->GetPrimaryMainFrame(), 1);
+  ASSERT_TRUE(child_frame_2);
+  NoResponseAIPageContentAgent no_response_agent(child_frame_2);
+
+  base::RunLoop loading_run_loop;
+  LoadData(GetActionableAIPageContentOptions(), loading_run_loop.QuitClosure());
+
+  // Drop only the second child response, matching an OOPIF pipe disconnect.
+  no_response_agent.WaitForRequest();
+  no_response_agent.Disconnect();
+  loading_run_loop.Run();
+
+  // The main frame still returns content; only the lost child frame is
+  // represented with default iframe data.
+  EXPECT_TRUE(has_page_content());
+
+  const auto& root_node = ActionableContentRootNode();
+  EXPECT_EQ(root_node.children_nodes().size(), 2);
+
+  const auto& b_frame = root_node.children_nodes()[0];
+  EXPECT_EQ(b_frame.content_attributes().attribute_type(),
+            optimization_guide::proto::CONTENT_ATTRIBUTE_IFRAME);
+  const auto& b_frame_data = b_frame.content_attributes().iframe_data();
+  AssertValidOrigin(b_frame_data.frame_data().security_origin(),
+                    ChildFrameAt(web_contents()->GetPrimaryMainFrame(), 0)
+                        ->GetLastCommittedOrigin());
+  EXPECT_FALSE(b_frame.content_attributes().is_ad_related());
+
+  const auto& c_frame = root_node.children_nodes()[1];
+  EXPECT_EQ(c_frame.content_attributes().attribute_type(),
+            optimization_guide::proto::CONTENT_ATTRIBUTE_IFRAME);
+
+  // We didn't wait for the frame to respond, so the iframe data is defaulted.
+  const auto& c_frame_data = c_frame.content_attributes().iframe_data();
+  EXPECT_FALSE(c_frame_data.frame_data().has_security_origin());
+  EXPECT_EQ(c_frame.children_nodes_size(), 0);
+  EXPECT_FALSE(c_frame.content_attributes().is_ad_related());
+}
+
+IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest,
+                       DuplicationMetrics) {
+  base::HistogramTester tester;
+
+  LoadPage(https_server()->GetURL("a.com", "/simple.html"), nullptr);
+
+  constexpr char kConcurrencyMetric[] =
+      "OptimizationGuide.AIPageContent.ExtractionConcurrency";
+  constexpr char kActiveCountMetric[] =
+      "OptimizationGuide.AIPageContent.ActiveRequestCount";
+  constexpr char kTimeSinceLastMetric[] =
+      "OptimizationGuide.AIPageContent.TimeSinceLastExtraction";
+
+  // 1. Verify kNoActiveExtraction and 0 active count on first request
+  {
+    base::test::TestFuture<AIPageContentResultOrError> future;
+    GetAIPageContent(web_contents(), GetAIPageContentOptions(),
+                     future.GetCallback());
+    EXPECT_TRUE(future.Wait());
+    tester.ExpectUniqueSample(kConcurrencyMetric, 0,
+                              1);  // kNoActiveExtraction = 0
+    tester.ExpectUniqueSample(kActiveCountMetric, 0, 1);
+  }
+
+  // 2. Verify TimeSinceLastExtraction on subsequent request
+  {
+    base::test::TestFuture<AIPageContentResultOrError> future;
+    GetAIPageContent(web_contents(), GetAIPageContentOptions(),
+                     future.GetCallback());
+    EXPECT_TRUE(future.Wait());
+    tester.ExpectTotalCount(kTimeSinceLastMetric, 1);
+  }
+
+  // 3. Verify concurrency detection on simultaneous requests
+  {
+    base::test::TestFuture<AIPageContentResultOrError> future1;
+    base::test::TestFuture<AIPageContentResultOrError> future2;
+    GetAIPageContent(web_contents(), GetAIPageContentOptions(),
+                     future1.GetCallback());
+    GetAIPageContent(web_contents(), GetAIPageContentOptions(),
+                     future2.GetCallback());
+    EXPECT_TRUE(future1.Wait());
+    EXPECT_TRUE(future2.Wait());
+
+    // Expect overall 4 extractions:
+    // - 1st: kNoActiveExtraction (Active count = 0)
+    // - 2nd: kNoActiveExtraction (Active count = 0)
+    // - 3rd (from parallel): kNoActiveExtraction (Active count = 0)
+    // - 4th (from parallel): kActiveExtractionWithMatchingOptions (Active count
+    // = 1)
+    tester.ExpectBucketCount(kConcurrencyMetric, 0,
+                             3);  // kNoActiveExtraction = 0
+    tester.ExpectBucketCount(kConcurrencyMetric, 1,
+                             1);  // kActiveExtractionWithMatchingOptions = 1
+    tester.ExpectBucketCount(kActiveCountMetric, 0, 3);
+    tester.ExpectBucketCount(kActiveCountMetric, 1, 1);
+  }
+}
+
+IN_PROC_BROWSER_TEST_F(PageContentProtoProviderBrowserTest, NavigationMetrics) {
+  base::HistogramTester tester;
+  // Disable BackForwardCache so that the Page object is destroyed when
+  // navigating away, which immediately flushes destructor-based metrics
+  // like `ExtractionsPerPage`.
+  content::DisableBackForwardCacheForTesting(
+      web_contents(), content::BackForwardCache::TEST_REQUIRES_NO_CACHING);
+
+  constexpr char kBetweenNavsMetric[] =
+      "OptimizationGuide.AIPageContent.ExtractionsBetweenNavigations";
+  constexpr char kPerPageMetric[] =
+      "OptimizationGuide.AIPageContent.ExtractionsPerPage";
+
+  // LoadPage automatically triggers 1 extraction.
+  LoadPage(https_server()->GetURL("a.com", "/simple.html"));
+
+  // Same-document navigation flushes the first segment (1 extraction).
+  GURL same_doc_url = https_server()->GetURL("a.com", "/simple.html#hash");
+  content::NavigateToURLBlockUntilNavigationsComplete(web_contents(),
+                                                      same_doc_url, 1);
+  tester.ExpectUniqueSample(kBetweenNavsMetric, 1, 1);
+
+  // Run 2 more extractions in this new same-doc segment.
+  LoadData();
+  LoadData();
+
+  // Cross-document navigation destroys the Page, flushing:
+  // 1. The remaining segment metric (2 extractions).
+  // 2. The total cumulative page extractions (3 extractions).
+  LoadPage(https_server()->GetURL("a.com", "/relative_path.html"), nullptr);
+
+  tester.ExpectBucketCount(kBetweenNavsMetric, 1, 1);
+  tester.ExpectBucketCount(kBetweenNavsMetric, 2, 1);
+  tester.ExpectTotalCount(kBetweenNavsMetric, 2);
+
+  tester.ExpectUniqueSample(kPerPageMetric, 3, 1);
 }
 
 // Popups may be rendered as native OS-level widgets on Android and Apple OSs.

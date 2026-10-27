@@ -21,9 +21,11 @@
 #include "base/debug/dump_without_crashing.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "components/viz/common/gpu/vulkan_context_provider.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
@@ -49,6 +51,8 @@
 #include "gpu/config/gpu_finch_features.h"
 #include "gpu/vulkan/vulkan_function_pointers.h"
 #include "gpu/vulkan/vulkan_image.h"
+#include "gpu/vulkan/vulkan_ycbcr_info.h"
+#include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
 #include "third_party/libyuv/include/libyuv/planar_functions.h"
 #include "third_party/skia/include/gpu/ganesh/vk/GrVkBackendSurface.h"
 #include "third_party/skia/include/private/chromium/GrPromiseImageTexture.h"
@@ -66,7 +70,7 @@
 namespace gpu {
 namespace {
 
-class OverlayImage final : public base::RefCounted<OverlayImage> {
+class OverlayImage final : public base::RefCountedThreadSafe<OverlayImage> {
  public:
   explicit OverlayImage(AHardwareBuffer* buffer)
       : handle_(base::android::ScopedHardwareBufferHandle::Create(buffer)) {}
@@ -85,7 +89,7 @@ class OverlayImage final : public base::RefCounted<OverlayImage> {
   }
 
  private:
-  friend class base::RefCounted<OverlayImage>;
+  friend class base::RefCountedThreadSafe<OverlayImage>;
 
   class ScopedHardwareBufferFenceSyncImpl
       : public base::android::ScopedHardwareBufferFenceSync {
@@ -302,13 +306,7 @@ constexpr SharedImageUsageSet kSupportedUsage =
 class AHardwareBufferImageBacking : public AndroidImageBacking {
  public:
   AHardwareBufferImageBacking(const Mailbox& mailbox,
-                              viz::SharedImageFormat format,
-                              const gfx::Size& size,
-                              const gfx::ColorSpace& color_space,
-                              GrSurfaceOrigin surface_origin,
-                              SkAlphaType alpha_type,
-                              gpu::SharedImageUsageSet usage,
-                              std::string debug_label,
+                              const SharedImageInfo& si_info,
                               base::android::ScopedHardwareBufferHandle handle,
                               size_t estimated_size,
                               bool is_thread_safe,
@@ -334,6 +332,43 @@ class AHardwareBufferImageBacking : public AndroidImageBacking {
   base::android::ScopedHardwareBufferHandle GetAhbHandle() const;
   OverlayImage* BeginOverlayAccess(gfx::GpuFenceHandle&);
   void EndOverlayAccess();
+
+  std::optional<VulkanYCbCrInfo> GetVkCbCrInfo(
+      SharedContextState* context_state) override {
+    if (!context_state || !format().PrefersExternalSampler()) {
+      return std::nullopt;
+    }
+
+    std::optional<VulkanYCbCrInfo> ycbcr_info;
+    AHardwareBuffer* ahb = GetAHardwareBuffer();
+    if (!ahb) {
+      return std::nullopt;
+    }
+#if BUILDFLAG(SKIA_USE_DAWN)
+    auto* dawn_context = context_state->dawn_context_provider();
+    if (dawn_context) {
+      wgpu::AHardwareBufferProperties ahb_properties;
+      if (dawn_context->GetDevice().GetAHardwareBufferProperties(
+              ahb, &ahb_properties)) {
+        const auto& dawn_ycbcr_info = ahb_properties.yCbCrInfo;
+        if (dawn_ycbcr_info.externalFormat) {
+          uint32_t format_features = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+          if (dawn_ycbcr_info.vkChromaFilter == wgpu::FilterMode::Linear) {
+            format_features |=
+                VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT;
+          }
+          ycbcr_info = VulkanYCbCrInfo(
+              VK_FORMAT_UNDEFINED, dawn_ycbcr_info.externalFormat,
+              dawn_ycbcr_info.vkYCbCrModel, dawn_ycbcr_info.vkYCbCrRange,
+              dawn_ycbcr_info.vkXChromaOffset, dawn_ycbcr_info.vkYChromaOffset,
+              format_features);
+        }
+      }
+    }
+#endif
+
+    return ycbcr_info;
+  }
 
  protected:
   std::unique_ptr<GLTextureImageRepresentation> ProduceGLTexture(
@@ -479,13 +514,7 @@ class VideoImageAHBRepresentation : public VideoImageRepresentation {
 
 AHardwareBufferImageBacking::AHardwareBufferImageBacking(
     const Mailbox& mailbox,
-    viz::SharedImageFormat format,
-    const gfx::Size& size,
-    const gfx::ColorSpace& color_space,
-    GrSurfaceOrigin surface_origin,
-    SkAlphaType alpha_type,
-    gpu::SharedImageUsageSet usage,
-    std::string debug_label,
+    const SharedImageInfo& si_info,
     base::android::ScopedHardwareBufferHandle handle,
     size_t estimated_size,
     bool is_thread_safe,
@@ -493,23 +522,23 @@ AHardwareBufferImageBacking::AHardwareBufferImageBacking(
     bool use_passthrough,
     const GLFormatCaps& gl_format_caps)
     : AndroidImageBacking(mailbox,
-                          format,
-                          size,
-                          color_space,
-                          surface_origin,
-                          alpha_type,
-                          usage,
-                          std::move(debug_label),
+                          si_info,
                           estimated_size,
                           is_thread_safe,
                           std::move(initial_upload_fd)),
       hardware_buffer_handle_(std::move(handle)),
       use_passthrough_(use_passthrough),
       gl_format_caps_(gl_format_caps) {
+  TRACE_EVENT("gpu", __PRETTY_FUNCTION__, "mailbox", mailbox.ToDebugString(),
+              "width", si_info.size.width(), "height", si_info.size.height(),
+              "estimated_size", estimated_size);
   DCHECK(hardware_buffer_handle_.is_valid());
 }
 
 AHardwareBufferImageBacking::~AHardwareBufferImageBacking() {
+  TRACE_EVENT("gpu", __PRETTY_FUNCTION__, "mailbox", mailbox().ToDebugString(),
+              "width", size().width(), "height", size().height(),
+              "estimated_size", GetEstimatedSize());
   // Locking here in destructor since we are accessing member variable
   // |have_context_| via have_context().
   AutoLock auto_lock(this);
@@ -751,6 +780,9 @@ AHardwareBufferImageBacking::ProduceDawn(
 #endif
 
   wgpu::TextureFormat webgpu_format = ToDawnFormat(format());
+  if (format().PrefersExternalSampler()) {
+    webgpu_format = wgpu::TextureFormat::OpaqueYCbCrAndroid;
+  }
   if (webgpu_format == wgpu::TextureFormat::Undefined) {
     LOG(ERROR) << "Unable to fine a suitable WebGPU format.";
     return nullptr;
@@ -879,15 +911,13 @@ bool AHardwareBufferImageBackingFactory::ValidateUsage(
 std::unique_ptr<SharedImageBacking>
 AHardwareBufferImageBackingFactory::MakeBacking(
     const Mailbox& mailbox,
-    viz::SharedImageFormat format,
-    const gfx::Size& size,
-    const gfx::ColorSpace& color_space,
-    GrSurfaceOrigin surface_origin,
-    SkAlphaType alpha_type,
-    SharedImageUsageSet usage,
-    std::string debug_label,
+    const SharedImageInfo& si_info,
     bool is_thread_safe,
     base::span<const uint8_t> pixel_data) {
+  const auto format = si_info.format;
+  const auto size = si_info.size;
+  const auto usage = si_info.usage;
+
   DCHECK(!format.IsCompressed());
 
   if (!ValidateUsage(usage, size, format)) {
@@ -991,8 +1021,7 @@ AHardwareBufferImageBackingFactory::MakeBacking(
   }
 
   auto backing = std::make_unique<AHardwareBufferImageBacking>(
-      mailbox, format, size, color_space, surface_origin, alpha_type, usage,
-      std::move(debug_label), std::move(handle), estimated_size.value(),
+      mailbox, si_info, std::move(handle), estimated_size.value(),
       is_thread_safe, std::move(initial_upload_fd), use_passthrough_,
       gl_format_caps_);
 
@@ -1006,35 +1035,19 @@ AHardwareBufferImageBackingFactory::MakeBacking(
 std::unique_ptr<SharedImageBacking>
 AHardwareBufferImageBackingFactory::CreateSharedImage(
     const Mailbox& mailbox,
-    viz::SharedImageFormat format,
+    const SharedImageInfo& si_info,
     SurfaceHandle surface_handle,
-    const gfx::Size& size,
-    const gfx::ColorSpace& color_space,
-    GrSurfaceOrigin surface_origin,
-    SkAlphaType alpha_type,
-    SharedImageUsageSet usage,
-    std::string debug_label,
     bool is_thread_safe) {
-  return MakeBacking(mailbox, format, size, color_space, surface_origin,
-                     alpha_type, usage, std::move(debug_label), is_thread_safe,
-                     base::span<uint8_t>());
+  return MakeBacking(mailbox, si_info, is_thread_safe, base::span<uint8_t>());
 }
 
 std::unique_ptr<SharedImageBacking>
 AHardwareBufferImageBackingFactory::CreateSharedImage(
     const Mailbox& mailbox,
-    viz::SharedImageFormat format,
-    const gfx::Size& size,
-    const gfx::ColorSpace& color_space,
-    GrSurfaceOrigin surface_origin,
-    SkAlphaType alpha_type,
-    SharedImageUsageSet usage,
-    std::string debug_label,
+    const SharedImageInfo& si_info,
     bool is_thread_safe,
     base::span<const uint8_t> pixel_data) {
-  return MakeBacking(mailbox, format, size, color_space, surface_origin,
-                     alpha_type, usage, std::move(debug_label), is_thread_safe,
-                     pixel_data);
+  return MakeBacking(mailbox, si_info, is_thread_safe, pixel_data);
 }
 
 bool AHardwareBufferImageBackingFactory::CanImportGpuMemoryBuffer(
@@ -1083,20 +1096,16 @@ bool AHardwareBufferImageBackingFactory::IsSupported(
   return true;
 }
 
-
-
 std::unique_ptr<SharedImageBacking>
 AHardwareBufferImageBackingFactory::CreateSharedImage(
     const Mailbox& mailbox,
-    viz::SharedImageFormat format,
-    const gfx::Size& size,
-    const gfx::ColorSpace& color_space,
-    GrSurfaceOrigin surface_origin,
-    SkAlphaType alpha_type,
-    SharedImageUsageSet usage,
-    std::string debug_label,
+    const SharedImageInfo& si_info,
     bool is_thread_safe,
     gfx::GpuMemoryBufferHandle handle) {
+  const auto format = si_info.format;
+  const auto size = si_info.size;
+  const auto usage = si_info.usage;
+
   CHECK_EQ(handle.type, gfx::ANDROID_HARDWARE_BUFFER);
   if (!ValidateUsage(usage, size, format) &&
       !IsSupportedForMappableBuffer(usage, format, handle.type)) {
@@ -1110,8 +1119,7 @@ AHardwareBufferImageBackingFactory::CreateSharedImage(
   }
 
   auto backing = std::make_unique<AHardwareBufferImageBacking>(
-      mailbox, format, size, color_space, surface_origin, alpha_type, usage,
-      std::move(debug_label), std::move(handle.android_hardware_buffer),
+      mailbox, si_info, std::move(handle.android_hardware_buffer),
       estimated_size.value(), is_thread_safe, base::ScopedFD(),
       use_passthrough_, gl_format_caps_);
 
@@ -1178,27 +1186,48 @@ bool AHardwareBufferImageBackingFactory::CopyNativeBufferToSharedMemoryAsync(
     return false;
   }
 
-  void* src_data = nullptr;
+  AHardwareBuffer_Planes planes;
   int fence = -1;
-  int ret = AHardwareBuffer_lock(hardware_buffer,
-                                 AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, fence,
-                                 nullptr, &src_data);
+  int ret = AHardwareBuffer_lockPlanes(hardware_buffer,
+                                       AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN,
+                                       fence, nullptr, &planes);
   if (ret != 0) {
     return false;
   }
 
-  const uint8_t* src_y = static_cast<uint8_t*>(src_data);
-  const int src_y_stride = desc.stride;
-  const int src_uv_stride = desc.stride;
+  absl::Cleanup uncloker = [&]() {
+    AHardwareBuffer_unlock(hardware_buffer, nullptr);
+  };
+
+  // We support only NV12, which correspond to AHardwareBuffer_Planes:
+  // * planeCount == 3 (note, that while format is interleaved, AHB format is
+  //   3-planar)
+  // * plane 0 -- pixelStride = 1; Each pixel in plane 1 is 1 byte (Y).
+  // * plane 1 and 2 -- pixelStride = 2; Because it's interleaved U and V.
+  // * plane 1 and 2 strides are the same. Because it's the same memory plane
+  // * plane[2].data starts at plane[1] shifted one byte;
+
+  if (planes.planeCount != 3 || planes.planes[0].pixelStride != 1 ||
+      planes.planes[1].pixelStride != 2 || planes.planes[2].pixelStride != 2 ||
+      planes.planes[1].rowStride != planes.planes[2].rowStride) {
+    return false;
+  }
+
+  if (static_cast<uint8_t*>(planes.planes[2].data) -
+          static_cast<uint8_t*>(planes.planes[1].data) !=
+      1) {
+    return false;
+  }
+
   const int dst_stride = desc.width;
 
   int result = libyuv::NV12Copy(
-      src_y, src_y_stride, UNSAFE_TODO(src_y + src_y_stride * desc.height),
-      src_uv_stride, dst_buffer.data(), dst_stride,
+      static_cast<uint8_t*>(planes.planes[0].data), planes.planes[0].rowStride,
+      static_cast<uint8_t*>(planes.planes[1].data), planes.planes[1].rowStride,
+      dst_buffer.data(), dst_stride,
       dst_buffer.subspan(desc.height * dst_stride).data(), dst_stride,
       desc.width, desc.height);
 
-  AHardwareBuffer_unlock(hardware_buffer, &fence);
   return result == 0;
 }
 

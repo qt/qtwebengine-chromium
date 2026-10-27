@@ -25,22 +25,23 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/RenderEncoderBase.h"
+#include "src/dawn/native/RenderEncoderBase.h"
 
 #include <math.h>
 
 #include <cstring>
 #include <utility>
 
-#include "dawn/common/Constants.h"
-#include "dawn/native/BindGroup.h"
-#include "dawn/native/Buffer.h"
-#include "dawn/native/CommandEncoder.h"
-#include "dawn/native/CommandValidation.h"
-#include "dawn/native/Commands.h"
-#include "dawn/native/Device.h"
-#include "dawn/native/RenderPipeline.h"
 #include "dawn/native/ValidationUtils_autogen.h"
+#include "src/dawn/common/Constants.h"
+#include "src/dawn/native/BindGroup.h"
+#include "src/dawn/native/Buffer.h"
+#include "src/dawn/native/CommandEncoder.h"
+#include "src/dawn/native/CommandValidation.h"
+#include "src/dawn/native/Commands.h"
+#include "src/dawn/native/Device.h"
+#include "src/dawn/native/RenderPipeline.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native {
 
@@ -75,23 +76,23 @@ void RenderEncoderBase::DestroyImpl(DestroyReason reason) {
 }
 
 const AttachmentState* RenderEncoderBase::GetAttachmentState() const {
-    DAWN_ASSERT(!IsError());
-    DAWN_ASSERT(mAttachmentState != nullptr);
+    DAWN_CHECK(!IsError());
+    DAWN_CHECK(mAttachmentState != nullptr);
     return mAttachmentState.Get();
 }
 
 bool RenderEncoderBase::IsDepthReadOnly() const {
-    DAWN_ASSERT(!IsError());
+    DAWN_CHECK(!IsError());
     return mDepthReadOnly;
 }
 
 bool RenderEncoderBase::IsStencilReadOnly() const {
-    DAWN_ASSERT(!IsError());
+    DAWN_CHECK(!IsError());
     return mStencilReadOnly;
 }
 
 uint64_t RenderEncoderBase::GetDrawCount() const {
-    DAWN_ASSERT(!IsError());
+    DAWN_CHECK(!IsError());
     return mDrawCount;
 }
 
@@ -562,6 +563,10 @@ void RenderEncoderBase::APISetPipeline(RenderPipelineBase* pipeline) {
 
             mCommandBufferState.SetRenderPipeline(pipeline);
 
+            if (pipeline->UsesFramebufferFetch()) {
+                mUsageTracker.MarkFramebufferFetchUsed();
+            }
+
             SetRenderPipelineCmd* cmd =
                 allocator->Allocate<SetRenderPipelineCmd>(Command::SetRenderPipeline);
             cmd->pipeline = pipeline;
@@ -624,7 +629,7 @@ void RenderEncoderBase::APISetIndexBuffer(BufferBase* buffer,
                 }
             } else {
                 if (size == wgpu::kWholeSize) {
-                    DAWN_ASSERT(buffer->GetSize() >= offset);
+                    DAWN_CHECK(buffer->GetSize() >= offset);
                     size = buffer->GetSize() - offset;
                 }
             }
@@ -687,7 +692,7 @@ void RenderEncoderBase::APISetVertexBuffer(uint32_t slot,
                 }
             } else {
                 if (size == wgpu::kWholeSize && buffer != nullptr) {
-                    DAWN_ASSERT(buffer->GetSize() >= offset);
+                    DAWN_CHECK(buffer->GetSize() >= offset);
                     size = buffer->GetSize() - offset;
                 }
             }
@@ -759,7 +764,7 @@ void RenderEncoderBase::APISetImmediates(uint32_t offset, const void* data, size
             cmd->offset = offset;
             cmd->size = uint32_t(size);
             uint8_t* immediateDatas = allocator->AllocateData<uint8_t>(cmd->size);
-            memcpy(immediateDatas, data, size);
+            DAWN_UNSAFE_TODO(memcpy(immediateDatas, data, size));
 
             mCommandBufferState.SetImmediateData(offset, uint32_t(size));
 

@@ -16,6 +16,7 @@
 #include "base/time/time.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "net/base/io_buffer.h"
+#include "net/base/network_handle.h"
 #include "net/http/http_response_headers.h"
 #include "net/log/net_log_with_source.h"
 #include "net/third_party/quiche/src/quiche/quic/core/quic_session.h"
@@ -36,10 +37,28 @@ namespace {
 net::WebTransportParameters CreateParameters(
     const std::vector<mojom::WebTransportCertificateFingerprintPtr>&
         fingerprints,
-    std::vector<std::string> application_protocols) {
+    std::vector<std::string> application_protocols,
+    mojom::WebTransportCongestionControl congestion_control) {
   net::WebTransportParameters params;
   params.enable_web_transport_http3 = true;
   params.application_protocols = std::move(application_protocols);
+
+  switch (congestion_control) {
+    case mojom::WebTransportCongestionControl::kDefault:
+      params.congestion_control_hint =
+          net::WebTransportParameters::CongestionControlHint::kDefault;
+      break;
+    case mojom::WebTransportCongestionControl::kThroughput:
+      params.congestion_control_hint =
+          net::WebTransportParameters::CongestionControlHint::kThroughput;
+      break;
+    case mojom::WebTransportCongestionControl::kLowLatency:
+      params.congestion_control_hint =
+          net::WebTransportParameters::CongestionControlHint::kLowLatency;
+      break;
+    default:
+      NOTREACHED();
+  }
 
   for (const auto& fingerprint : fingerprints) {
     params.server_certificate_fingerprints.push_back(
@@ -411,6 +430,7 @@ WebTransport::WebTransport(
     const std::vector<mojom::WebTransportCertificateFingerprintPtr>&
         fingerprints,
     const std::vector<std::string>& application_protocols,
+    mojom::WebTransportCongestionControl congestion_control,
     NetworkContext* context,
     mojo::PendingRemote<mojom::WebTransportHandshakeClient> handshake_client,
     mojo::PendingRemote<mojom::URLLoaderNetworkServiceObserver>
@@ -421,8 +441,13 @@ WebTransport::WebTransport(
           origin,
           this,
           key,
+          // TODO(crbug.com/495684670): Consider exposing this at the network
+          // service layer once a need arises.
+          net::handles::kInvalidNetworkHandle,
           context->url_request_context(),
-          CreateParameters(fingerprints, std::move(application_protocols)))),
+          CreateParameters(fingerprints,
+                           std::move(application_protocols),
+                           congestion_control))),
       url_(url),
       origin_(origin),
       context_(context),
@@ -580,10 +605,6 @@ void WebTransport::Close(mojom::WebTransportCloseInfoPtr close_info) {
   }
 
   transport_->Close(close_info_to_pass);
-}
-
-void WebTransport::CloseIfNonceMatches(base::UnguessableToken nonce) {
-  transport_->CloseIfNonceMatches(nonce);
 }
 
 void WebTransport::OnLocalNetworkAccessCheck(

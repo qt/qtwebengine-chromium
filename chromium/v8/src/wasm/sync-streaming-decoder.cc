@@ -78,7 +78,7 @@ class V8_EXPORT_PRIVATE SyncStreamingDecoder final : public StreamingDecoder {
 
         // Public API:
         MemorySpan<const uint8_t> GetWireBytes() const override {
-          return {wire_bytes.data(), wire_bytes.size()};
+          return wire_bytes;
         }
 
         bool SetCachedCompiledModuleBytes(
@@ -112,6 +112,7 @@ class V8_EXPORT_PRIVATE SyncStreamingDecoder final : public StreamingDecoder {
                                      std::move(compile_imports_), &thrower,
                                      std::move(bytes_copy));
     if (thrower.error()) {
+      HandleScope scope(isolate_);
       resolver_->OnCompilationFailed(thrower.Reify());
       return;
     }

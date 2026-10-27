@@ -34,6 +34,7 @@
 #include "src/tint/lang/wgsl/ast/stage_attribute.h"
 #include "src/tint/lang/wgsl/resolver/resolver.h"
 #include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
+#include "src/tint/utils/internal_limits.h"
 
 namespace tint::resolver {
 namespace {
@@ -314,7 +315,7 @@ TEST_F(ResolverTypeValidationTest, ArraySize_IVecConst) {
 }
 
 TEST_F(ResolverTypeValidationTest, ArraySize_FloatOverride) {
-    ExpectError(
+    EXPECT_ERROR(
         R"(
 override size = 10.0;
 var<private> a : array<f32, size>;
@@ -961,49 +962,6 @@ INSTANTIATE_TEST_SUITE_P(ResolverTypeValidationTest,
                              core::type::TextureDimension::kCube,
                              core::type::TextureDimension::kCubeArray));
 
-using SampledTextureFilterabilityTest = ResolverTestWithParam<core::TextureFilterable>;
-TEST_P(SampledTextureFilterabilityTest, All) {
-    auto& params = GetParam();
-    GlobalVar(Source{{12, 34}}, "a",
-              ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32(), params), Group(0_a),
-              Binding(0_a));
-
-    EXPECT_TRUE(r()->Resolve()) << r()->error();
-}
-INSTANTIATE_TEST_SUITE_P(ResolverTypeValidationTest,
-                         SampledTextureFilterabilityTest,
-                         testing::Values(  //
-                             core::TextureFilterable::kFilterable,
-                             core::TextureFilterable::kUnfilterable));
-
-TEST_F(ResolverTypeValidationTest, SampledTextureNonFloatFilterability) {
-    GlobalVar(Source{{12, 34}}, "a",
-              ty.sampled_texture(core::type::TextureDimension::k2d, ty.i32(),
-                                 core::TextureFilterable::kFilterable),
-              Group(0_a), Binding(0_a));
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              R"(error: texture filterability only applies to float textures, got 'i32')");
-}
-
-TEST_F(ResolverTypeValidationTest, SampledTextureInvalidFilterability) {
-    GlobalVar(Source{{12, 34}}, "a", ty.AsType("texture_1d", "f32", "other"), Group(0_a),
-              Binding(0_a));
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(error: unresolved texture filterable 'other'
-note: Possible values: 'filterable', 'unfilterable')");
-}
-
-TEST_F(ResolverTypeValidationTest, SampledTextureInvalidFilterabilityOrder) {
-    GlobalVar(Source{{12, 34}}, "a", ty.AsType("texture_1d", "filterable", "f32"), Group(0_a),
-              Binding(0_a));
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(error: cannot use texture filterable 'filterable' as type)");
-}
-
 using MultisampledTextureDimensionTest = ResolverTestWithParam<core::type::TextureDimension>;
 TEST_P(MultisampledTextureDimensionTest, All) {
     auto& params = GetParam();
@@ -1308,31 +1266,6 @@ TEST_F(StorageTextureAccessTest, RWAccess_FeatureDisallowed) {
 }
 
 }  // namespace StorageTextureTests
-
-namespace SamplerTests {
-
-using SamplerFilteringTest = ResolverTestWithParam<core::SamplerFiltering>;
-TEST_P(SamplerFilteringTest, All) {
-    auto& params = GetParam();
-    GlobalVar(Source{{12, 34}}, "a", ty.sampler(params), Group(0_a), Binding(0_a));
-
-    EXPECT_TRUE(r()->Resolve()) << r()->error();
-}
-INSTANTIATE_TEST_SUITE_P(ResolverTypeValidationTest,
-                         SamplerFilteringTest,
-                         testing::Values(  //
-                             core::SamplerFiltering::kFiltering,
-                             core::SamplerFiltering::kNonFiltering));
-
-TEST_F(ResolverTypeValidationTest, SamplerInvalidFilterability) {
-    GlobalVar(Source{{12, 34}}, "a", ty.AsType("sampler", "other"), Group(0_a), Binding(0_a));
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(error: unresolved sampler filtering 'other'
-note: Possible values: 'filtering', 'non_filtering')");
-}
-
-}  // namespace SamplerTests
 
 namespace MatrixTests {
 struct Params {

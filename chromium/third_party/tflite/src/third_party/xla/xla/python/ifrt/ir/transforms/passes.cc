@@ -70,13 +70,11 @@ IfrtToDotPassOptions GetIfrtToDotPassOptions(
 
 void createIfrtToOutlinedAtomProgramsPipeline(mlir::OpPassManager& pm) {
   // Passes that verify the correctness of the module.
-  pm.addPass(createSpmdExpandableInterfaceVerificationPass(
-      {{mlir::mhlo::MhloDialect::getDialectNamespace().str(),
-        mlir::stablehlo::StablehloDialect::getDialectNamespace().str(),
-        mlir::sdy::SdyDialect::getDialectNamespace().str()}}));
   pm.addNestedPass<mlir::func::FuncOp>(createIfrtVerifyDonationPass());
 
   pm.addPass(createIfrtOutlineAtomProgramToModulePass());
+  // DCE the sdy.mesh ops at the program-level.
+  pm.addPass(mlir::createSymbolDCEPass());
 
   pm.addNestedPass<mlir::func::FuncOp>(createIfrtVerifyShardingSpecifiedPass());
   // We can split ifrt.Reshard to ifrt.CopyArrays because all the shardings

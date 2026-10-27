@@ -637,7 +637,8 @@ bool Device::manual_PreCallValidateCmdCopyMemoryKHR(VkCommandBuffer commandBuffe
             vvl::range<VkDeviceAddress> next_dst_range = {other_region.dstRange.address,
                                                           other_region.dstRange.address + other_region.dstRange.size};
 
-            if (j > 1 && region_src_range.intersects(next_src_range)) {
+            // j > i so that the current src range is not compared to itself
+            if (j > i && region_src_range.intersects(next_src_range)) {
                 skip |= LogError("VUID-VkCopyDeviceMemoryInfoKHR-srcRange-13015", commandBuffer, region_loc.dot(Field::srcRange),
                                  "%s overlaps with pRegions[%" PRIu32 "].srcRange %s", string_range_hex(region_src_range).c_str(),
                                  j, string_range_hex(next_src_range).c_str());
@@ -682,8 +683,6 @@ bool Device::manual_PreCallValidateCmdBindVertexBuffers3KHR(VkCommandBuffer comm
     bool skip = false;
 
     const auto& error_obj = context.error_obj;
-    skip |= context.ValidateDeviceAddressFlags(error_obj.location.dot(Field::pBindingInfos).dot(Field::addressFlags),
-                                               pBindingInfos->addressFlags);
 
     if (firstBinding >= phys_dev_props.limits.maxVertexInputBindings) {
         skip |= LogError("VUID-vkCmdBindVertexBuffers3KHR-firstBinding-13070", commandBuffer,
@@ -700,6 +699,8 @@ bool Device::manual_PreCallValidateCmdBindVertexBuffers3KHR(VkCommandBuffer comm
         const Location binding_info_loc = error_obj.location.dot(Field::pBindingInfos, i);
         const VkBindVertexBuffer3InfoKHR& info = pBindingInfos[i];
         const VkStridedDeviceAddressRangeKHR& address_range = info.addressRange;
+
+        skip |= context.ValidateDeviceAddressFlags(binding_info_loc.dot(Field::addressFlags), info.addressFlags);
 
         if (address_range.size == 0) {
             if (!enabled_features.nullDescriptor) {
@@ -761,7 +762,7 @@ bool Device::manual_PreCallValidateCmdBindTransformFeedbackBuffers2EXT(VkCommand
         skip |= context.ValidateDeviceAddressFlags(info_loc.dot(Field::addressFlags), binding_info.addressFlags);
 
         const VkDeviceSize range_size = binding_info.addressRange.size;
-        if (range_size > 0 && range_size < 4) {
+        if (!IsIntegerMultipleOf(range_size, 4)) {
             skip |= LogError("VUID-vkCmdBindTransformFeedbackBuffers2EXT-addressRange-13090", commandBuffer,
                              info_loc.dot(Field::addressRange).dot(Field::size), "is %" PRIu64 ".", range_size);
         }
@@ -834,15 +835,15 @@ bool Device::manual_PreCallValidateCmdDrawIndirectByteCount2EXT(VkCommandBuffer 
         skip |= LogError("VUID-vkCmdDrawIndirectByteCount2EXT-transformFeedbackDraw-02288", commandBuffer, error_obj.location,
                          "VkPhysicalDeviceTransformFeedbackPropertiesEXT::transformFeedbackDraw is not supported");
     }
-    if (vertexStride > phys_dev_ext_props.transform_feedback_props.maxTransformFeedbackBufferDataStride) {
+    if (vertexStride == 0 || vertexStride > phys_dev_ext_props.transform_feedback_props.maxTransformFeedbackBufferDataStride) {
         skip |= LogError("VUID-vkCmdDrawIndirectByteCount2EXT-vertexStride-02289", commandBuffer,
                          error_obj.location.dot(Field::vertexStride),
-                         "(%" PRIu32 ") is larger than maxTransformFeedbackBufferDataStride (%" PRIu32 ").", vertexStride,
-                         phys_dev_ext_props.transform_feedback_props.maxTransformFeedbackBufferDataStride);
+                         "(%" PRIu32 ") must not be 0 or larger than maxTransformFeedbackBufferDataStride (%" PRIu32 ").",
+                         vertexStride, phys_dev_ext_props.transform_feedback_props.maxTransformFeedbackBufferDataStride);
     }
     if (!IsPointerAligned(pCounterInfo->addressRange.address, 4)) {
         skip |= LogError("VUID-vkCmdDrawIndirectByteCount2EXT-pInfo-13062", commandBuffer,
-                         error_obj.location.dot(Field::pConditionalRenderingBegin).dot(Field::addressRange).dot(Field::address),
+                         error_obj.location.dot(Field::pCounterInfo).dot(Field::addressRange).dot(Field::address),
                          "(0x%" PRIx64 ") must be aligned to 4 bytes.", pCounterInfo->addressRange.address);
     }
     if (!IsIntegerMultipleOf(counterOffset, 4)) {
@@ -1245,6 +1246,16 @@ bool Device::manual_PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuf
     return skip;
 }
 
+bool Device::manual_PreCallValidateCmdSetPrimitiveRestartIndexEXT(VkCommandBuffer commandBuffer, uint32_t primitiveRestartIndex,
+                                                                  const Context& context) const {
+    bool skip = false;
+    if (!enabled_features.primitiveRestartIndex) {
+        skip |= LogError("VUID-vkCmdSetPrimitiveRestartIndexEXT-primitiveRestartIndex-12395", commandBuffer,
+                         context.error_obj.location, "primitiveRestartIndex feature was not enabled.");
+    }
+    return skip;
+}
+
 static size_t ComponentTypeBytesPerElement(VkComponentTypeKHR component_type) {
     switch (component_type) {
         case VK_COMPONENT_TYPE_SINT8_KHR:
@@ -1481,6 +1492,21 @@ bool Device::manual_PreCallValidateCmdConvertCooperativeVectorMatrixNV(VkCommand
         } else {
             ++dst_ranges_it;
         }
+    }
+
+    return skip;
+}
+
+bool Device::manual_PreCallValidateCmdBeginPerTileExecutionQCOM(VkCommandBuffer commandBuffer,
+                                                                const VkPerTileBeginInfoQCOM *pPerTileBeginInfo,
+                                                                const Context &context) const {
+    bool skip = false;
+
+    if (!enabled_features.tileShadingPerTileDispatch && !enabled_features.tileShadingPerTileDraw) {
+        skip |= LogError("VUID-vkCmdBeginPerTileExecutionQCOM-None-10665",
+                         commandBuffer, context.error_obj.location,
+                         "VkPhysicalDeviceTileShadingFeaturesQCOM::tileShadingPerTileDispatch and "
+                         "VkPhysicalDeviceTileShadingFeaturesQCOM::tileShadingPerTileDraw features are not enabled.");
     }
 
     return skip;

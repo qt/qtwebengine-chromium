@@ -29,7 +29,7 @@ _EXCLUDED_PATHS = [
     r'^front_end[\\/]core[\\/]common[\\/]Object\.ts$',  # Apple copyright
     r'^front_end[\\/]core[\\/]common[\\/]ResourceType\.ts$',  # Apple copyright
     # Apple copyright
-    r'^front_end[\\/]core[\\/]dom_extension[\\/]DOMExtension\.ts$',
+    r'^front_end[\\/]ui[\\/]dom_extension[\\/]DOMExtension\.ts$',
     r'^front_end[\\/]core[\\/]platform[\\/]UIString\.ts$',  # Apple copyright
     r'^front_end[\\/]core[\\/]sdk[\\/]Resource\.ts$',  # Apple copyright
     r'^front_end[\\/]core[\\/]sdk[\\/]Script\.ts$',  # Apple copyright
@@ -478,6 +478,48 @@ def CheckKnownContextValues(input_api, output_api):
 words are separated with either a dash (`-`) or a dot (`.`), and all characters
 must be lower-case alphanumeric.
 """),
+            locations=[
+                output_api.PresubmitResultLocation(file_path=local_path)
+            ],
+        )
+    ]
+
+
+def CheckVisualLoggingNoContextValueRemoval(input_api, output_api):
+    """Ensure no values are removed from `KnownContextValues.ts`.
+
+    Visual logging context values must never be removed as it breaks log analysis
+    for historical data.
+    """
+    local_path = input_api.os_path.join('front_end', 'ui', 'visual_logging',
+                                        'KnownContextValues.ts')
+    removed_values = []
+
+    for f in filter(
+            lambda x: (x.LocalPath() == local_path and x.Action() == 'M'),
+            input_api.AffectedFiles()):
+        diff = f.GenerateScmDiff()
+        for line in diff.splitlines():
+            if line.startswith('-'):
+                # Line without the leading '-'
+                line_content = line[1:]
+                # Match values: optional whitespace, quote, value, quote, optional comma
+                match = input_api.re.search(r"^\s*['\"]([^'\"]+)['\"],?",
+                                            line_content)
+                if match:
+                    removed_values.append(match.group(1))
+
+    if not removed_values:
+        return []
+
+    return [
+        output_api.PresubmitError(
+            message=
+            f"Removed visual logging context(s): {', '.join(removed_values)}",
+            long_text=
+            ("Removing visual logging context values breaks log analysis for historical data.\n"
+             "Do NOT remove values. New values should be added to the end of the list.\n"
+             "See crbug.com/504758084 for details.\n"),
             locations=[
                 output_api.PresubmitResultLocation(file_path=local_path)
             ],

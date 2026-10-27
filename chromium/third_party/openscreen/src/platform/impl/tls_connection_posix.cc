@@ -48,14 +48,13 @@ TlsConnectionPosix::~TlsConnectionPosix() {
   if (platform_client_) {
     platform_client_->tls_data_router()->DeregisterConnection(this);
   }
-  // TODO(issuetracker.google.com/169966671): This is only tested by CastSocket
-  // E2E tests at the moment.
   if (ssl_) {
     SSL_shutdown(ssl_.get());
   }
 }
 
 void TlsConnectionPosix::TryReceiveMessage() {
+  is_write_blocked_by_read_ = false;
   OSP_CHECK(ssl_);
   constexpr int kMaxApplicationDataBytes = 65536;
   std::vector<uint8_t> block(kMaxApplicationDataBytes);
@@ -121,9 +120,17 @@ void TlsConnectionPosix::SendAvailableBytes() {
   const int result =
       SSL_write(ssl_.get(), sendable_bytes.data(), sendable_bytes.size());
   if (result <= 0) {
-    Error result_error = GetSSLError(ssl_.get(), result);
-    if (!result_error.ok() && (result_error.code() != Error::Code::kAgain)) {
-      DispatchError(std::move(result_error));
+    const int error_code = SSL_get_error(ssl_.get(), result);
+    // "WANT_READ" is a special case of an "Again" type error, that we want to
+    // track separately here since it indicates that the write path is currently
+    // blocked for this connection.
+    if (error_code == SSL_ERROR_WANT_READ) {
+      is_write_blocked_by_read_ = true;
+    } else {
+      Error result_error = SSLErrorCodeToError(error_code);
+      if (!result_error.ok() && (result_error.code() != Error::Code::kAgain)) {
+        DispatchError(std::move(result_error));
+      }
     }
   } else {
     buffer_.Consume(static_cast<size_t>(result));

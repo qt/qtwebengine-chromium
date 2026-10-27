@@ -734,7 +734,7 @@ ByteString GenerateIconAppStream(CPDF_IconFit& fit,
   }
 
   CPWL_Wnd::CreateParams cp(nullptr, nullptr, nullptr);
-  cp.dwFlags = PWS_VISIBLE;
+  cp.dwFlags = CPWL_Wnd::Styles::kWindowVisible;
   auto pWnd = std::make_unique<CPWL_Wnd>(cp, nullptr);
   pWnd->Realize();
   if (!pWnd->Move(rcIcon, false, false)) {
@@ -1134,12 +1134,8 @@ void SetDefaultIconName(CPDF_Stream* pIcon, const char* name) {
 }
 
 std::optional<CheckStyle> CheckStyleFromCaption(const WideString& caption) {
-  if (caption.IsEmpty()) {
-    return std::nullopt;
-  }
-
   // Character values are ZapfDingbats encodings of named glyphs.
-  switch (caption[0]) {
+  switch (caption.Front()) {  // Front() safe when empty.
     case L'4':
       return CheckStyle::kCheck;
     case L'8':

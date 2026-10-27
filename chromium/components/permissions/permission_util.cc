@@ -20,8 +20,10 @@
 #include "components/content_settings/core/common/features.h"
 #include "components/permissions/features.h"
 #include "components/permissions/permission_request.h"
+#include "components/permissions/permission_request_data.h"
 #include "components/permissions/permission_uma_util.h"
 #include "components/permissions/permissions_client.h"
+#include "components/permissions/request_type.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/permission_result.h"
 #include "content/public/browser/render_frame_host.h"
@@ -78,7 +80,10 @@ constexpr const char* kIsFileURLHistogram =
     "Permissions.GetLastCommittedOriginAsURL.IsFileURL";
 #endif
 
-RequestTypeForUma GetUmaValueForRequests(const RequestType first_request) {
+}  // namespace
+
+RequestTypeForUma PermissionUtil::GetUmaValueForMultipleRequests(
+    const RequestType first_request) {
   if (
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
       first_request == RequestType::kCameraPanTiltZoom ||
@@ -96,8 +101,6 @@ RequestTypeForUma GetUmaValueForRequests(const RequestType first_request) {
   return RequestTypeForUma::UNKNOWN;
 }
 
-}  // namespace
-
 // The returned strings must match any Field Trial configs for the Permissions
 // kill switch e.g. Permissions.Action.Geolocation etc..
 std::string PermissionUtil::GetPermissionString(
@@ -109,28 +112,15 @@ std::string PermissionUtil::GetPermissionString(
   return blink::GetPermissionString(permission);
 }
 
-RequestTypeForUma PermissionUtil::GetUmaValueForRequests(
-    const std::vector<std::unique_ptr<PermissionRequest>>& requests) {
-  CHECK(!requests.empty());
-  const RequestType request_type = requests[0]->request_type();
-  if (requests.size() == 1) {
-    return GetUmaValueForRequestType(request_type);
-  }
-  return permissions::GetUmaValueForRequests(request_type);
-}
-
-RequestTypeForUma PermissionUtil::GetUmaValueForRequests(
-    const std::vector<base::WeakPtr<PermissionRequest>>& requests) {
-  CHECK(!requests.empty());
-  const RequestType request_type = requests[0]->request_type();
-  if (requests.size() == 1) {
-    return GetUmaValueForRequestType(request_type);
-  }
-  return permissions::GetUmaValueForRequests(request_type);
+RequestTypeForUma PermissionUtil::GetUmaValueForRequest(
+    const PermissionRequest& request) {
+  return GetUmaValueForRequestType(request.request_type(),
+                                   request.GetGeolocationPromptType());
 }
 
 RequestTypeForUma PermissionUtil::GetUmaValueForRequestType(
-    RequestType request_type) {
+    RequestType request_type,
+    std::optional<GeolocationPromptType> geolocation_prompt_type) {
   switch (request_type) {
     case RequestType::kArSession:
       return RequestTypeForUma::PERMISSION_AR;
@@ -149,14 +139,23 @@ RequestTypeForUma PermissionUtil::GetUmaValueForRequestType(
     case RequestType::kLocalFonts:
       return RequestTypeForUma::PERMISSION_LOCAL_FONTS;
 #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-    case RequestType::kLocalNetworkAccess:
-      return RequestTypeForUma::PERMISSION_LOCAL_NETWORK_ACCESS;
     case RequestType::kLocalNetwork:
       return RequestTypeForUma::PERMISSION_LOCAL_NETWORK;
     case RequestType::kLoopbackNetwork:
       return RequestTypeForUma::PERMISSION_LOOPBACK_NETWORK;
     case RequestType::kGeolocation:
-      return RequestTypeForUma::PERMISSION_GEOLOCATION;
+      if (!geolocation_prompt_type.has_value()) {
+        return RequestTypeForUma::PERMISSION_GEOLOCATION;
+      }
+      switch (geolocation_prompt_type.value()) {
+        case GeolocationPromptType::kApproximateOnly:
+          return RequestTypeForUma::PERMISSION_GEOLOCATION_APPROXIMATE;
+        case GeolocationPromptType::kApproximateOrPrecise:
+          return RequestTypeForUma::
+              PERMISSION_GEOLOCATION_APPROXIMATE_OR_PRECISE;
+        case GeolocationPromptType::kUpgradeToPrecise:
+          return RequestTypeForUma::PERMISSION_GEOLOCATION_UPGRADE;
+      }
     case RequestType::kHandTracking:
       return RequestTypeForUma::PERMISSION_HAND_TRACKING;
     case RequestType::kIdleDetection:
@@ -388,7 +387,19 @@ bool PermissionUtil::IsLowPriorityPermissionRequest(
   return request->request_type() == RequestType::kNotifications ||
          request->request_type() == RequestType::kGeolocation;
 }
-
+bool PermissionUtil::ShouldCurrentRequestUsePermissionElementSecondaryUI(
+    PermissionPrompt::Delegate* delegate,
+    content::WebContents* web_contents) {
+  if (permissions::PermissionsClient::
+          AllowEmbeddedPermissionPromptForAllowlistedSurfaces() &&
+      permissions::PermissionsClient::Get()
+          ->IsPrivilegedInternalWebUIOrNewTabPage(
+              web_contents, delegate->GetRequestingOrigin(),
+              /*already_overrode_requester=*/true)) {
+    return true;
+  }
+  return ShouldCurrentRequestUsePermissionElementSecondaryUI(delegate);
+}
 bool PermissionUtil::ShouldCurrentRequestUsePermissionElementSecondaryUI(
     PermissionPrompt::Delegate* delegate) {
   if (!base::FeatureList::IsEnabled(blink::features::kGeolocationElement) &&
@@ -440,7 +451,7 @@ bool PermissionUtil::DoesStoreTemporaryGrantsInHcsm(ContentSettingsType type) {
 // content/browser/permissions/permission_util.cc.
 GURL PermissionUtil::GetLastCommittedOriginAsURL(
     content::RenderFrameHost* render_frame_host) {
-  DCHECK(render_frame_host);
+  CHECK(render_frame_host);
 
   content::WebContents* web_contents =
       content::WebContents::FromRenderFrameHost(render_frame_host);
@@ -459,12 +470,13 @@ GURL PermissionUtil::GetLastCommittedOriginAsURL(
   }
 #endif
 
-  if (render_frame_host->GetLastCommittedOrigin().GetURL().is_empty()) {
+  GURL origin = render_frame_host->GetLastCommittedOrigin().GetURL();
+  if (origin.is_empty() && render_frame_host->IsInPrimaryMainFrame()) {
     if (!web_contents->GetVisibleURL().is_empty()) {
-      return web_contents->GetVisibleURL();
+      origin = web_contents->GetVisibleURL();
     }
   }
-  return render_frame_host->GetLastCommittedOrigin().GetURL();
+  return origin;
 }
 
 ContentSettingsType PermissionUtil::PermissionTypeToContentSettingsTypeSafe(
@@ -693,7 +705,22 @@ bool PermissionUtil::HasUserGesture(PermissionPrompt::Delegate* delegate) {
 
 bool PermissionUtil::CanPermissionRequestIgnoreStatus(
     const std::unique_ptr<PermissionRequestData>& request,
-    content::PermissionStatusSource source) {
+    content::PermissionStatusSource source,
+    blink::mojom::PermissionStatus status,
+    content::WebContents* web_contents) {
+  // Support requests from side panels/omnibox popup/NTP to be shown still, even
+  // if the permission status is denied. These requests will use the embedded
+  // permission prompt.
+  if (permissions::PermissionsClient::
+          AllowEmbeddedPermissionPromptForAllowlistedSurfaces() &&
+      permissions::PermissionsClient::Get()
+          ->IsPrivilegedInternalWebUIOrNewTabPage(
+              web_contents, request->requesting_origin,
+              /*already_overrode_requester=*/true) &&
+      status != blink::mojom::PermissionStatus::GRANTED) {
+    return true;
+  }
+
   if (!request->IsEmbeddedPermissionElementInitiated()) {
     return false;
   }

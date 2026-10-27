@@ -139,6 +139,9 @@ class ContextualSearchContextController {
     // The callback to run when the interaction response is received.
     base::OnceCallback<void(lens::LensOverlayInteractionResponse)>
         interaction_response_callback;
+
+    // Whether the query originated from voice search.
+    bool is_voice_search = false;
   };
 
   // Struct containing information needed to create a ClientToAimMessage.
@@ -177,6 +180,10 @@ class ContextualSearchContextController {
     // Metadata for context that is turn-specific. There is at most one entry
     // per context id.
     std::vector<lens::ContextTurnMetadata> context_turn_metadata;
+
+    // The token corresponding to the Lens Overlay instance, if one was active
+    // during the query submission.
+    std::optional<base::UnguessableToken> overlay_token;
   };
 
   virtual ~ContextualSearchContextController() = default;

@@ -62,14 +62,10 @@ Checks: "-*,\
           -cert-oop11-cpp,\
           -cert-oop54-cpp,\
           -cert-str34-c,\
-          -cert-str34-c,\
-          -cert-str34-c,\
-          -cert-str34-c,\
           -clang-analyzer-*,\
           concurrency-*,\
           -concurrency-mt-unsafe,\
           cppcoreguidelines-*,\
-          -concurrency-mt-unsafe,\
           -cppcoreguidelines-avoid-c-arrays,\
           -cppcoreguidelines-avoid-const-or-ref-data-members,\
           -cppcoreguidelines-avoid-do-while,\
@@ -93,7 +89,6 @@ Checks: "-*,\
           -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,\
           -cppcoreguidelines-pro-type-const-cast,\
           -cppcoreguidelines-pro-type-cstyle-cast,\
-          -cppcoreguidelines-pro-type-member-init,\
           -cppcoreguidelines-pro-type-reinterpret-cast,\
           -cppcoreguidelines-pro-type-static-cast-downcast,\
           -cppcoreguidelines-pro-type-union-access,\
@@ -117,7 +112,6 @@ Checks: "-*,\
           -google-readability-todo,\
           -google-runtime-float,\
           -google-runtime-int,\
-          -google-upgrade-googletest-case,\
           misc-*,\
           -misc-confusable-identifiers,\
           -misc-const-correctness,\
@@ -130,7 +124,6 @@ Checks: "-*,\
           -misc-uniqueptr-reset-release,\
           -misc-unconventional-assign-operator,\
           -misc-unused-parameters,\
-          -misc-unused-using-decls,\
           -misc-use-anonymous-namespace,\
           -misc-use-internal-linkage,\
           modernize-*,\
@@ -149,7 +142,6 @@ Checks: "-*,\
           -modernize-unary-static-assert,\
           -modernize-use-auto,\
           -modernize-use-bool-literals,\
-          -modernize-use-constraints,\
           -modernize-use-default-member-init,\
           -modernize-use-designated-initializers,\
           -modernize-use-emplace,\
@@ -158,7 +150,6 @@ Checks: "-*,\
           -modernize-use-integer-sign-comparison,\
           -modernize-use-nodiscard,\
           -modernize-use-nullptr,\
-          -modernize-use-override,\
           -modernize-use-ranges,\
           -modernize-use-starts-ends-with,\
           -modernize-use-std-numbers,\
@@ -212,6 +203,7 @@ Checks: "-*,\
           -readability-redundant-inline-specifier,\
           -readability-redundant-member-init,\
           -readability-redundant-preprocessor,\
+          -readability-redundant-parentheses,\
           -readability-redundant-smartptr-get,\
           -readability-redundant-string-cstr,\
           -readability-redundant-string-init,\
@@ -220,6 +212,7 @@ Checks: "-*,\
           -readability-static-accessed-through-instance,\
           -readability-static-definition-in-anonymous-namespace,\
           -readability-suspicious-call-argument,\
+          -readability-trailing-comma,\
           -readability-uppercase-literal-suffix,\
           -readability-use-anyofallof,\
           -readability-use-std-min-max,\

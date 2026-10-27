@@ -165,11 +165,6 @@ class Impl {
         core::ir::Value* index = nullptr;
     };
 
-    struct CollapsedSwizzle {
-        const sem::ValueExpression* vector = nullptr;
-        tint::Vector<uint32_t, 4> indices;
-    };
-
     using ValueOrVecElAccess = std::variant<core::ir::Value*, VectorRefElementAccess>;
 
     /// The current block for expressions.
@@ -180,6 +175,9 @@ class Impl {
 
     /// The current stack of scopes being processed.
     ScopeStack<Symbol, core::ir::Value*> scopes_;
+
+    /// The number of entry points that have been emitted.
+    uint32_t entry_point_count = 0;
 
     /// The diagnostic that have been raised.
     diag::List diagnostics_;
@@ -268,6 +266,11 @@ class Impl {
                 TINT_ICE_ON_NO_MATCH);
         }
 
+        // Set properties that are used by the generated module.
+        if (entry_point_count > 1) {
+            mod.properties.Add(core::ir::Property::kAllowMultipleEntryPoints);
+        }
+
         if (diagnostics_.ContainsErrors()) {
             return diag::Failure{std::move(diagnostics_)};
         }
@@ -287,6 +290,7 @@ class Impl {
         scopes_.Set(ast_func->name->symbol, ir_func);
 
         if (ast_func->IsEntryPoint()) {
+            entry_point_count++;
             switch (ast_func->PipelineStage()) {
                 case ast::PipelineStage::kVertex:
                     ir_func->SetStage(core::ir::Function::PipelineStage::kVertex);
@@ -347,7 +351,7 @@ class Impl {
         Vector<core::ir::FunctionParam*, 1> params;
         for (auto* p : ast_func->params) {
             const auto* param_sem = program_.Sem().Get(p)->As<sem::Parameter>();
-            auto* ty = RemapOverrideSizedArrayIfNeeded(param_sem->Type());
+            auto* ty = RemapOverrideSizedTypeIfNeeded(param_sem->Type());
             auto* param = builder_.FunctionParam(p->name->symbol.NameView(), ty);
 
             for (auto* attr : p->attributes) {
@@ -452,7 +456,7 @@ class Impl {
         auto b = builder_.Append(current_block_);
         const auto* sem_swizzle = program_.Sem().Get<sem::Swizzle>(stmt->lhs);
         if (sem_swizzle) {
-            CollapsedSwizzle swizzle = CollapseSwizzle(sem_swizzle);
+            sem::CollapsedSwizzle swizzle = sem::CollapseLhsSwizzle(sem_swizzle);
             // Evaluate pointer to swizzled vector.
             auto lhs_vec_ptr = EmitValueExpression(swizzle.vector->Declaration());
             auto* rhs_val = EmitValueExpression(stmt->rhs);
@@ -497,7 +501,7 @@ class Impl {
         if (sem_swizzle && sem_swizzle->Type()->Is<core::type::SwizzleView>()) {
             auto b = builder_.Append(current_block_);
 
-            CollapsedSwizzle swizzle = CollapseSwizzle(sem_swizzle);
+            sem::CollapsedSwizzle swizzle = sem::CollapseLhsSwizzle(sem_swizzle);
             auto* lhs_vec_ptr = EmitValueExpression(swizzle.vector->Declaration());
             auto* lhs_ty = sem_swizzle->Type()->As<core::type::SwizzleView>()->StoreType();
 
@@ -561,30 +565,6 @@ class Impl {
         } else if (auto ref = std::get_if<VectorRefElementAccess>(&lhs)) {
             b.StoreVectorElement(ref->vector, ref->index, rhs);
         }
-    }
-
-    // Collapse a possibly nested chain of swizzles into a single set of swizzle indices on the base
-    // vector. Note that target components cannot be repeated in lhs swizzles used for assignment,
-    // so each consecutive swizzle on a vector will produce a smaller or equal sized vector (i.e.
-    // v.xyzw.xy.yx.x).
-    CollapsedSwizzle CollapseSwizzle(const sem::Swizzle* swizzle) {
-        // Initialize with the outermost swizzle object and indices.
-        CollapsedSwizzle res{
-            .vector = swizzle->Object(),
-            .indices = swizzle->Indices(),
-        };
-        // If the inner object is also a swizzle, collapse it down.
-        while (auto* inner_swizzle = res.vector->As<sem::Swizzle>()) {
-            tint::Vector<uint32_t, 4> combined;
-            // For each index in the outer swizzle, get the corresponding index into the inner
-            // swizzle.
-            for (uint32_t i : res.indices) {
-                combined.Push(inner_swizzle->Indices()[i]);
-            }
-            res.indices = std::move(combined);
-            res.vector = inner_swizzle->Object();
-        }
-        return res;
     }
 
     core::ir::Value* ConstructSwizzleAssignmentRhs(core::ir::Value* lhs,
@@ -1384,8 +1364,7 @@ class Impl {
             var,
             [&](const ast::Var* v) {
                 auto* ref = sem->Type()->As<core::type::Reference>();
-                const core::type::Type* store_ty =
-                    RemapOverrideSizedArrayIfNeeded(ref->StoreType());
+                const core::type::Type* store_ty = RemapOverrideSizedTypeIfNeeded(ref->StoreType());
                 auto* ty = builder_.ir.Types().Get<core::type::Pointer>(ref->AddressSpace(),
                                                                         store_ty, ref->Access());
 
@@ -1460,6 +1439,8 @@ class Impl {
                 // Record the original name and source of the var
                 builder_.ir.SetName(override, o->name->symbol.Name());
                 builder_.ir.SetSource(override, o->source);
+
+                mod.properties.Add(core::ir::Property::kAllowOverrides);
             },
             [&](const ast::Const*) {
                 // Skip. This should be handled by const-eval already, so the const will be a
@@ -1510,18 +1491,24 @@ class Impl {
         TINT_UNREACHABLE();
     }
 
-    const core::type::Type* RemapOverrideSizedArrayIfNeeded(const core::type::Type* ty) {
-        // Check that we have an override-sized array, or a pointer to one.
+    const core::type::Type* RemapOverrideSizedTypeIfNeeded(const core::type::Type* ty) {
+        // Check that we have an override-sized array, buffer, or a pointer to one.
         const auto* ary = ty->UnwrapPtr()->As<core::type::Array>();
-        if (!ary ||
-            !ary->Count()
-                 ->IsAnyOf<sem::NamedOverrideArrayCount, sem::UnnamedOverrideArrayCount>()) {
+        const auto* buf = ty->UnwrapPtr()->As<core::type::Buffer>();
+        const core::type::ArrayCount* orig_count = nullptr;
+        if (ary) {
+            orig_count = ary->Count();
+        } else if (buf) {
+            orig_count = buf->Count();
+        }
+        if (!orig_count ||
+            !orig_count->IsAnyOf<sem::NamedOverrideArrayCount, sem::UnnamedOverrideArrayCount>()) {
             return ty->Clone(clone_ctx_.type_ctx);
         }
 
-        // If the array has an override count, we need to remap it to a value array count.
+        // If the type has an override count, we need to remap it to a value array count.
         core::ir::Value* count = tint::Switch(
-            ary->Count(),  //
+            orig_count,  //
             [&](const sem::UnnamedOverrideArrayCount* u) {
                 return EmitValueExpression(u->expr->Declaration());
             },
@@ -1530,11 +1517,17 @@ class Impl {
             },
             TINT_ICE_ON_NO_MATCH);
 
+        const core::type::Type* remapped_ty = nullptr;
         auto* ary_count = builder_.ir.Types().Get<core::ir::type::ValueArrayCount>(count);
-        const core::type::Type* remapped_ty = builder_.ir.Types().Get<core::type::Array>(
-            ary->ElemType()->Clone(clone_ctx_.type_ctx), ary_count, ary->Size());
+        if (ary) {
+            remapped_ty = builder_.ir.Types().Get<core::type::Array>(
+                ary->ElemType()->Clone(clone_ctx_.type_ctx), ary_count, ary->Size());
+        } else {
+            TINT_ASSERT(buf);
+            remapped_ty = builder_.ir.Types().Get<core::type::Buffer>(ary_count);
+        }
 
-        // If the original type was a pointer, wrap the remapped array in a pointer too.
+        // If the original type was a pointer, wrap the remapped type in a pointer too.
         if (auto* ptr = ty->As<core::type::Pointer>()) {
             remapped_ty = builder_.ir.Types().ptr(ptr->AddressSpace(), remapped_ty, ptr->Access());
         }

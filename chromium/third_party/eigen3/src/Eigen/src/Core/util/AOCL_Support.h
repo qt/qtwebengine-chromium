@@ -63,7 +63,7 @@
  * System requirements:
  * - AMD x86_64 processor (optimal performance)
  * - Linux, Windows, or compatible POSIX system
- * - C++11 or later standard
+ * - C++14 or later standard
  * - CMake 3.5+ for build system integration
  *
  * Developer:
@@ -72,6 +72,7 @@
  * Email: shbhaska@amd.com
  * Organization: Advanced Micro Devices, Inc.
  */
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_AOCL_SUPPORT_H
 #define EIGEN_AOCL_SUPPORT_H
@@ -82,20 +83,20 @@
 
 // Define AOCL component flags based on main flags
 #ifdef EIGEN_USE_AOCL_ALL
-#define EIGEN_USE_AOCL_VML  // Enable AOCL Vector Math Library
-#define EIGEN_USE_AOCL_BLAS // Enable AOCL BLAS (BLIS)
+#define EIGEN_USE_AOCL_VML   // Enable AOCL Vector Math Library
+#define EIGEN_USE_AOCL_BLAS  // Enable AOCL BLAS (BLIS)
 
 // Enable Eigen BLAS backend only if BLIS provides compatible interface
 #if defined(EIGEN_AOCL_BLIS_COMPATIBLE)
-#define EIGEN_USE_BLAS // Enable Eigen BLAS backend
+#define EIGEN_USE_BLAS  // Enable Eigen BLAS backend
 #endif
 
-#define EIGEN_USE_LAPACKE // Enable LAPACK backend (FLAME)
+#define EIGEN_USE_LAPACKE  // Enable LAPACK backend (FLAME)
 #endif
 
 #ifdef EIGEN_USE_AOCL_MT
-#define EIGEN_USE_AOCL_VML  // Enable AOCL Vector Math Library
-#define EIGEN_USE_AOCL_BLAS // Enable AOCL BLAS (BLIS)
+#define EIGEN_USE_AOCL_VML   // Enable AOCL Vector Math Library
+#define EIGEN_USE_AOCL_BLAS  // Enable AOCL BLAS (BLIS)
 
 // For multithreaded: disable EIGEN_USE_BLAS to avoid signature conflicts
 // Use direct BLIS calls instead through EIGEN_USE_AOCL_BLAS
@@ -103,8 +104,8 @@
 // interface
 
 // Note: LAPACKE disabled in MT mode to avoid header conflicts
-#define EIGEN_USE_LAPACKE // Commented out - causes conflicts with BLIS LAPACKE
-#define EIGEN_AOCL_USE_BLIS_MT 1 // Enable multithreaded BLIS
+#define EIGEN_USE_LAPACKE         // Commented out - causes conflicts with BLIS LAPACKE
+#define EIGEN_AOCL_USE_BLIS_MT 1  // Enable multithreaded BLIS
 #endif
 
 // Handle standalone EIGEN_USE_AOCL_VML flag
@@ -119,16 +120,15 @@
 
 // Configuration constants - define these for any AOCL usage
 #ifndef EIGEN_AOCL_VML_THRESHOLD
-#define EIGEN_AOCL_VML_THRESHOLD 128 // Threshold for VML dispatch
+#define EIGEN_AOCL_VML_THRESHOLD 128  // Threshold for VML dispatch
 #endif
 
 #ifndef AOCL_SIMD_WIDTH
-#define AOCL_SIMD_WIDTH 8 // AVX-512: 512 bits / 64 bits per double
+#define AOCL_SIMD_WIDTH 8  // AVX-512: 512 bits / 64 bits per double
 #endif
 
 // Include AOCL Math Library headers for VML
-#if defined(EIGEN_USE_AOCL_VML) || defined(EIGEN_USE_AOCL_ALL) ||              \
-    defined(EIGEN_USE_AOCL_MT)
+#if defined(EIGEN_USE_AOCL_VML) || defined(EIGEN_USE_AOCL_ALL) || defined(EIGEN_USE_AOCL_MT)
 #if defined(__has_include)
 #if __has_include("amdlibm.h")
 #include "amdlibm.h"
@@ -167,9 +167,9 @@ namespace Eigen {
 // AOCL-specific type definitions
 typedef std::complex<double> dcomplex;
 typedef std::complex<float> scomplex;
-typedef int BlasIndex; // Standard BLAS index type
-} // namespace Eigen
+typedef int BlasIndex;  // Standard BLAS index type
+}  // namespace Eigen
 
-#endif // EIGEN_USE_AOCL_ALL || EIGEN_USE_AOCL_MT
+#endif  // EIGEN_USE_AOCL_ALL || EIGEN_USE_AOCL_MT
 
-#endif // EIGEN_AOCL_SUPPORT_H
+#endif  // EIGEN_AOCL_SUPPORT_H

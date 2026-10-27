@@ -31,11 +31,13 @@
 {% set namespace_name = Name(metadata.native_namespace) %}
 {% set native_namespace = namespace_name.namespace_case() %}
 {% set native_dir = impl_dir + namespace_name.Dirs() %}
-#include "{{native_dir}}/{{prefix}}_platform.h"
-#include "{{native_dir}}/{{Prefix}}Native.h"
-
+{% set include_dir = namespace_name.Dirs() %}
 #include <algorithm>
 #include <vector>
+
+#include "{{native_dir}}/{{prefix}}_platform.h"
+#include "{{include_dir}}/{{Prefix}}Native.h"
+#include "dawn/dawn_version.h"
 
 {% for type in by_category["object"] %}
     {% if type.name.canonical_case() not in ["texture view"] %}
@@ -205,6 +207,7 @@ namespace {{native_namespace}} {
 
     constexpr {{Prefix}}ProcTable MakeProcTable() {
         {{Prefix}}ProcTable procs = {};
+        std::ranges::copy(dawn::kDawnVersion, procs.version);
         {% for function in by_category["function"] %}
             procs.{{as_varName(function.name)}} = Native{{as_cppType(function.name)}};
         {% endfor %}

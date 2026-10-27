@@ -4,6 +4,7 @@
 
 #include "content/browser/renderer_host/navigator.h"
 
+#include <tuple>
 #include <utility>
 
 #include "base/check_op.h"
@@ -38,6 +39,7 @@
 #include "content/common/navigation_params_utils.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/disallow_activation_reason.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_controller.h"
@@ -627,14 +629,17 @@ void Navigator::DidNavigate(
   // activation, and does not need to match the same-site checks used in the
   // process model. See: crbug.com/736415, and crbug.com/40228985 for the
   // specific regression that resulted in this requirement.
+  //
+  // Since we're only clearing or providing a new activation, we don't care if
+  // `UpdateUserActivationState` succeeds or not.
   if (!was_within_same_document) {
     if (!navigation_request->commit_params()
              .should_have_sticky_user_activation) {
-      frame_tree_node->UpdateUserActivationState(
+      std::ignore = frame_tree_node->UpdateUserActivationState(
           blink::mojom::UserActivationUpdateType::kClearActivation,
           blink::mojom::UserActivationNotificationType::kNone);
     } else {
-      frame_tree_node->UpdateUserActivationState(
+      std::ignore = frame_tree_node->UpdateUserActivationState(
           blink::mojom::UserActivationUpdateType::kNotifyActivationStickyOnly,
           blink::mojom::UserActivationNotificationType::kNone);
     }
@@ -998,7 +1003,7 @@ void Navigator::Navigate(std::unique_ptr<NavigationRequest> request,
       DVLOG(0) << "Ignoring duplicate navigation to "
                << request->common_params().url
                << " due to the short interval since the previous one.";
-
+      ongoing_navigation_request->DidIgnoreDuplicateNavigation();
       return;
     } else {
       ongoing_navigation_request->set_navigation_discard_reason(
@@ -1085,7 +1090,8 @@ void Navigator::RequestOpenURL(
     const std::string& href_translate,
     scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory,
     const std::optional<blink::Impression>& impression,
-    bool has_rel_opener) {
+    bool has_rel_opener,
+    bool started_by_ad) {
   // Note: This can be called for subframes (even when OOPIFs are not possible)
   // if the disposition calls for a different window.
 
@@ -1135,6 +1141,7 @@ void Navigator::RequestOpenURL(
   params.initiator_base_url = initiator_base_url;
   params.initiator_frame_token = base::OptionalFromPtr(initiator_frame_token);
   params.initiator_process_id = initiator_process_id;
+  params.started_by_ad = started_by_ad;
 
   // RequestOpenURL is used only for local frames, so we can get here only if
   // the navigation is initiated by a frame in the same SiteInstance as this
@@ -1193,7 +1200,6 @@ void Navigator::NavigateFromFrameProxy(
     bool force_new_browsing_instance,
     bool is_container_initiated,
     bool has_rel_opener,
-    net::StorageAccessApiStatus storage_access_api_status,
     std::optional<std::u16string> embedder_shared_storage_context) {
   // |method != "POST"| should imply absence of |post_body|.
   if (method != "POST" && post_body) {
@@ -1229,8 +1235,16 @@ void Navigator::NavigateFromFrameProxy(
     return;
   }
 
-  if (!will_navigate_from_frame_proxy_callback_for_testing_.is_null()) {
-    will_navigate_from_frame_proxy_callback_for_testing_.Run();
+  // Only active and prerendered documents are allowed to start navigation in
+  // their frame.
+  if (render_frame_host->lifecycle_state() !=
+      RenderFrameHostImpl::LifecycleStateImpl::kPrerendering) {
+    // If this is reached in case the RenderFrameHost is in BackForwardCache
+    // evict the document from BackForwardCache.
+    if (render_frame_host->IsInactiveAndDisallowActivation(
+            DisallowActivationReasonId::kBeginNavigation)) {
+      return;
+    }
   }
 
   controller_.NavigateFromFrameProxy(
@@ -1243,13 +1257,7 @@ void Navigator::NavigateFromFrameProxy(
       has_user_gesture, started_by_ad, actual_navigation_start_time,
       navigation_start_time, is_embedder_initiated_fenced_frame_navigation,
       is_unfenced_top_navigation, force_new_browsing_instance,
-      is_container_initiated, has_rel_opener, storage_access_api_status,
-      embedder_shared_storage_context);
-}
-
-void Navigator::SetWillNavigateFromFrameProxyCallbackForTesting(
-    const base::RepeatingClosure& callback) {
-  will_navigate_from_frame_proxy_callback_for_testing_ = callback;
+      is_container_initiated, has_rel_opener, embedder_shared_storage_context);
 }
 
 void Navigator::BeforeUnloadCompleted(FrameTreeNode* frame_tree_node,
@@ -1314,6 +1322,9 @@ void Navigator::OnBeginNavigation(
     int initiator_process_id,
     mojo::PendingReceiver<mojom::NavigationRendererCancellationListener>
         renderer_cancellation_listener,
+    mojo::PendingReceiver<
+        mojom::NavigationRendererIgnoreDuplicateNavigationListener>
+        renderer_ignore_duplicate_navigation_listener,
     mojo::PendingReceiver<blink::mojom::NavigationResumeDeferredCommitListener>
         deferred_commit_resume_listener) {
   TRACE_EVENT0("navigation", "Navigator::OnBeginNavigation");
@@ -1377,6 +1388,7 @@ void Navigator::OnBeginNavigation(
           std::move(blob_url_loader_factory), std::move(navigation_client),
           std::move(prefetched_signed_exchange_cache),
           std::move(renderer_cancellation_listener),
+          std::move(renderer_ignore_duplicate_navigation_listener),
           std::move(deferred_commit_resume_listener)));
   NavigationRequest* navigation_request = frame_tree_node->navigation_request();
 
@@ -1505,23 +1517,23 @@ void Navigator::LogRendererInitiatedBeforeUnloadTime(
 
   if (!base::TimeTicks::IsConsistentAcrossProcesses()) {
     // These timestamps come directly from the renderer so they might need to be
-    // converted to local time stamps.
-    blink::InterProcessTimeTicksConverter converter(
-        blink::LocalTimeTicks::FromTimeTicks(base::TimeTicks()),
-        blink::LocalTimeTicks::FromTimeTicks(base::TimeTicks::Now()),
-        blink::RemoteTimeTicks::FromTimeTicks(
-            renderer_before_unload_start_time),
-        blink::RemoteTimeTicks::FromTimeTicks(renderer_before_unload_end_time));
-    blink::LocalTimeTicks converted_renderer_before_unload_start =
-        converter.ToLocalTimeTicks(blink::RemoteTimeTicks::FromTimeTicks(
-            renderer_before_unload_start_time));
-    blink::LocalTimeTicks converted_renderer_before_unload_end =
-        converter.ToLocalTimeTicks(blink::RemoteTimeTicks::FromTimeTicks(
-            renderer_before_unload_end_time));
+    // converted to local time stamps. However, since this is
+    // renderer-initiated, we don't have a browser-side `local_lower_bound`
+    // anchor for the start of the event.
+    //
+    // `InterProcessTimeTicksConverter` is not applicable here because it
+    // requires a two-point anchor (both start and end points on both local and
+    // remote processes) to decouple clock skew from communication latency.
+    // Without a start anchor (`local_lower_bound`), we cannot calculate the
+    // round-trip time or the scaling factor.
+    //
+    // We instead assume the event finished just before it was received and use
+    // the renderer's duration to establish the local timestamps.
+    base::TimeTicks now = base::TimeTicks::Now();
     metrics_data_->renderer_before_unload_start_ =
-        converted_renderer_before_unload_start.ToTimeTicks();
-    metrics_data_->renderer_before_unload_end_ =
-        converted_renderer_before_unload_end.ToTimeTicks();
+        now -
+        (renderer_before_unload_end_time - renderer_before_unload_start_time);
+    metrics_data_->renderer_before_unload_end_ = now;
   } else {
     metrics_data_->renderer_before_unload_start_ =
         renderer_before_unload_start_time;
@@ -1706,9 +1718,18 @@ Navigator::GetNavigationEntryForRendererInitiatedNavigation(
   entry->set_reload_type(NavigationRequest::NavigationTypeToReloadType(
       common_params.navigation_type));
   entry->SetIsOverridingUserAgent(override_user_agent);
-
   controller_.SetPendingEntry(std::move(entry));
-  delegate_->NotifyChangedNavigationState(content::INVALIDATE_TYPE_URL);
+
+  // If the embedder's OverrideNavigationParams flipped this entry's
+  // is_renderer_initiated bit to false (e.g., for an NTP navigation that
+  // gets overridden to look browser-initiated), the INVALIDATE_TYPE_URL
+  // notification in SetPendingEntry was skipped because it is gated on
+  // is_renderer_initiated(). Fire it here so the omnibox can reflect the
+  // destination URL during the pending navigation, rather than displaying
+  // stale text until commit.
+  if (!controller_.GetPendingEntry()->is_renderer_initiated()) {
+    delegate_->NotifyChangedNavigationState(INVALIDATE_TYPE_URL);
+  }
 
   return controller_.GetPendingEntry();
 }

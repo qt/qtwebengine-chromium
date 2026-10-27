@@ -124,8 +124,7 @@ void CPDFSDK_FormFillEnvironment::OutputSelectedRect(
 }
 
 bool CPDFSDK_FormFillEnvironment::IsSelectionImplemented() const {
-  FPDF_FORMFILLINFO* pInfo = GetFormFillInfo();
-  return pInfo && pInfo->FFI_OutputSelectedRect;
+  return info_ && info_->FFI_OutputSelectedRect;
 }
 
 #ifdef PDF_ENABLE_V8

@@ -81,6 +81,7 @@ libtint_source_set("resolver") {
     "${tint_src_dir}/utils/macros",
     "${tint_src_dir}/utils/math",
     "${tint_src_dir}/utils/memory",
+    "${tint_src_dir}/utils/reflection",
     "${tint_src_dir}/utils/rtti",
     "${tint_src_dir}/utils/symbol",
     "${tint_src_dir}/utils/text",
@@ -131,7 +132,6 @@ if (tint_build_unittests) {
         "evaluation_stage_test.cc",
         "expression_kind_test.cc",
         "f16_extension_test.cc",
-        "filtering_parameters_extension_test.cc",
         "framebuffer_fetch_extension_test.cc",
         "function_validation_test.cc",
         "host_shareable_validation_test.cc",
@@ -163,6 +163,7 @@ if (tint_build_unittests) {
         "texel_buffer_test.cc",
         "texture_and_sampler_let_extension_test.cc",
         "type_validation_test.cc",
+        "uniformity_test.cc",
         "unresolved_identifier_test.cc",
         "validation_test.cc",
         "validator_is_storeable_test.cc",
@@ -185,6 +186,7 @@ if (tint_build_unittests) {
         "${tint_src_dir}/lang/wgsl/ast:unittests",
         "${tint_src_dir}/lang/wgsl/intrinsic",
         "${tint_src_dir}/lang/wgsl/program",
+        "${tint_src_dir}/lang/wgsl/reader",
         "${tint_src_dir}/lang/wgsl/resolver",
         "${tint_src_dir}/lang/wgsl/sem",
         "${tint_src_dir}/lang/wgsl/sem:unittests",
@@ -195,15 +197,11 @@ if (tint_build_unittests) {
         "${tint_src_dir}/utils/macros",
         "${tint_src_dir}/utils/math",
         "${tint_src_dir}/utils/memory",
+        "${tint_src_dir}/utils/reflection",
         "${tint_src_dir}/utils/rtti",
         "${tint_src_dir}/utils/symbol",
         "${tint_src_dir}/utils/text",
       ]
-
-      if (tint_build_wgsl_reader) {
-        sources += [ "uniformity_test.cc" ]
-        deps += [ "${tint_src_dir}/lang/wgsl/reader" ]
-      }
     }
   }
 }

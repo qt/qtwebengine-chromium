@@ -42,10 +42,10 @@ To get an overview of the true relative speed of the different decompositions, c
     <tr class="alt">
         <td>FullPivLU</td>
         <td>-</td>
-        <td>Slow</td>
+        <td>Slow (no blocking)</td>
         <td>Proven</td>
         <td>Yes</td>
-        <td>-</td>
+        <td>Rank, kernel, image</td>
         <td>Yes</td>
         <td>Excellent</td>
         <td>-</td>
@@ -78,7 +78,7 @@ To get an overview of the true relative speed of the different decompositions, c
     <tr>
         <td>FullPivHouseholderQR</td>
         <td>-</td>
-        <td>Slow</td>
+        <td>Slow (no blocking)</td>
         <td>Proven</td>
         <td>Yes</td>
         <td>Orthogonalization</td>
@@ -120,7 +120,7 @@ To get an overview of the true relative speed of the different decompositions, c
         <td>-</td>
         <td>Yes</td>
         <td>Excellent</td>
-        <td><em>Soon: blocking</em></td>
+        <td>-</td>
     </tr>
 
     <tr><th class="inter" colspan="9">\n Singular values and eigenvalues decompositions</th></tr>
@@ -232,7 +232,7 @@ To get an overview of the true relative speed of the different decompositions, c
         <td>-</td>
         <td>-</td>
         <td>Good</td>
-        <td><em>Soon: blocking</em></td>
+        <td>-</td>
     </tr>
 
     <tr>
@@ -244,7 +244,7 @@ To get an overview of the true relative speed of the different decompositions, c
         <td>-</td>
         <td>-</td>
         <td>Good</td>
-        <td><em>Soon: blocking</em></td>
+        <td>-</td>
     </tr>
 
 </table>
@@ -253,8 +253,31 @@ To get an overview of the true relative speed of the different decompositions, c
 <ul>
 <li><a name="note1">\b 1: </a>There exist two variants of the LDLT algorithm. Eigen's one produces a pure diagonal D matrix, and therefore it cannot handle indefinite matrices, unlike Lapack's one which produces a block diagonal D matrix.</li>
 <li><a name="note2">\b 2: </a>Eigenvalues, SVD and Schur decompositions rely on iterative algorithms. Their convergence speed depends on how well the eigenvalues are separated.</li>
-<li><a name="note3">\b 3: </a>Our JacobiSVD is two-sided, making for proven and optimal precision for square matrices. For non-square matrices, we have to use a QR preconditioner first. The default choice, ColPivHouseholderQR, is already very reliable, but if you want it to be proven, use FullPivHouseholderQR instead.
+<li><a name="note3">\b 3: </a>Our JacobiSVD is two-sided, making for proven and optimal precision for square matrices. For non-square matrices, we have to use a QR preconditioner first. The default choice, ColPivHouseholderQR, is already very reliable, but if you want it to be proven, use FullPivHouseholderQR instead.</li>
 </ul>
+
+\section TopicLinAlgPracticalGuidance Practical guidance
+
+The following recommendations apply to the most common use cases:
+
+\li <b>Symmetric positive definite systems:</b> Use \b LLT. It is the fastest solver and has excellent
+    numerical properties for this class of problems. For semidefinite or nearly singular symmetric systems,
+    use \b LDLT.
+\li <b>General invertible systems:</b> Use \b PartialPivLU. It uses cache-friendly blocking and implicit
+    multi-threading, making it the fastest general-purpose solver. Partial pivoting is sufficient for
+    virtually all practical problems.
+\li <b>Least squares (over- or under-determined systems):</b> Use \b CompleteOrthogonalDecomposition as
+    the default. Like the SVD, it robustly computes the minimum-norm solution for rank-deficient and
+    under-determined problems, but at QR-like speed. Use \b BDCSVD when you also need singular values
+    or vectors, not just the least squares solution.
+\li <b>Full-rank least squares (overdetermined systems):</b> When the matrix is known to be full rank,
+    \b HouseholderQR is the fastest option. For very tall and skinny well-conditioned matrices,
+    solving via the normal equations with \b LLT can be faster still.
+\li <b>FullPivLU and FullPivHouseholderQR</b> use complete pivoting, which prevents the use of
+    cache-friendly blocking algorithms and makes them significantly slower than their partial/column
+    pivoting counterparts. In practice, complete pivoting rarely provides meaningful accuracy benefits.
+    These decompositions are primarily useful for debugging, pedagogy, or the very rare case
+    where column pivoting is insufficient.
 
 \section TopicLinAlgTerminology Terminology
 

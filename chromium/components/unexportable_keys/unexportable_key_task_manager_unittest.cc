@@ -17,13 +17,13 @@
 #include "base/types/expected.h"
 #include "components/unexportable_keys/background_task_origin.h"
 #include "components/unexportable_keys/background_task_priority.h"
-#include "components/unexportable_keys/mock_unexportable_key.h"
-#include "components/unexportable_keys/mock_unexportable_key_provider.h"
-#include "components/unexportable_keys/ref_counted_unexportable_signing_key.h"
-#include "components/unexportable_keys/scoped_mock_unexportable_key_provider.h"
+#include "components/unexportable_keys/ref_counted_unexportable_key.h"
 #include "components/unexportable_keys/service_error.h"
 #include "components/unexportable_keys/unexportable_key_id.h"
+#include "crypto/mock_unexportable_key.h"
+#include "crypto/mock_unexportable_key_provider.h"
 #include "crypto/scoped_fake_unexportable_key_provider.h"
+#include "crypto/scoped_mock_unexportable_key_provider.h"
 #include "crypto/signature_verifier.h"
 #include "crypto/unexportable_key.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -60,11 +60,11 @@ constexpr std::string_view kDeleteAllKeysTaskType = "DeleteAllKeys";
 
 scoped_refptr<RefCountedUnexportableSigningKey> MakeRefCountedKey(
     base::span<const uint8_t> wrapped_key) {
-  auto mock_key = std::make_unique<MockUnexportableKey>();
+  auto mock_key = std::make_unique<crypto::MockUnexportableSigningKey>();
   ON_CALL(*mock_key, GetWrappedKey)
       .WillByDefault(Return(base::ToVector(wrapped_key)));
   return base::MakeRefCounted<RefCountedUnexportableSigningKey>(
-      std::move(mock_key), UnexportableKeyId());
+      std::move(mock_key), UnexportableSigningKeyId());
 }
 
 }  // namespace
@@ -86,10 +86,11 @@ class UnexportableKeyTaskManagerTest
 
   UnexportableKeyTaskManager& task_manager() { return task_manager_; }
 
-  ScopedMockUnexportableKeyProvider& SwitchToMockKeyProvider() {
+  crypto::ScopedMockUnexportableKeyProvider& SwitchToMockKeyProvider() {
     // Using `emplace()` to destroy the existing scoped object before
     // constructing a new one.
-    return scoped_key_provider_.emplace<ScopedMockUnexportableKeyProvider>();
+    return scoped_key_provider_
+        .emplace<crypto::ScopedMockUnexportableKeyProvider>();
   }
 
   void DisableKeyProvider() {
@@ -125,7 +126,7 @@ class UnexportableKeyTaskManagerTest
   // Provides a fake key provider by default.
   std::variant<crypto::ScopedFakeUnexportableKeyProvider,
                crypto::ScopedNullUnexportableKeyProvider,
-               ScopedMockUnexportableKeyProvider>
+               crypto::ScopedMockUnexportableKeyProvider>
       scoped_key_provider_;
   UnexportableKeyTaskManager task_manager_;
 };
@@ -374,7 +375,7 @@ TEST_P(UnexportableKeyTaskManagerTest, RetrySignAsyncWithSuccess) {
   RunBackgroundTasks();
   ASSERT_OK_AND_ASSIGN(auto key, generate_key_future.Get());
 
-  auto mocked_key = std::make_unique<MockUnexportableKey>();
+  auto mocked_key = std::make_unique<crypto::MockUnexportableSigningKey>();
   ON_CALL(*mocked_key, Algorithm())
       .WillByDefault(
           Invoke(&key->key(), &crypto::UnexportableSigningKey::Algorithm));
@@ -390,7 +391,7 @@ TEST_P(UnexportableKeyTaskManagerTest, RetrySignAsyncWithSuccess) {
       .WillOnce(
           Invoke(&key->key(), &crypto::UnexportableSigningKey::SignSlowly));
   auto ref_counted_key = base::MakeRefCounted<RefCountedUnexportableSigningKey>(
-      std::move(mocked_key), UnexportableKeyId());
+      std::move(mocked_key), UnexportableSigningKeyId());
 
   base::HistogramTester histogram_tester;
   base::test::TestFuture<ServiceErrorOr<std::vector<uint8_t>>> sign_future;
@@ -407,13 +408,13 @@ TEST_P(UnexportableKeyTaskManagerTest, RetrySignAsyncWithSuccess) {
 }
 
 TEST_P(UnexportableKeyTaskManagerTest, RetrySignAsyncWithFailure) {
-  auto key = std::make_unique<MockUnexportableKey>();
+  auto key = std::make_unique<crypto::MockUnexportableSigningKey>();
   std::vector<uint8_t> data = {0, 1, 1, 2, 3, 5, 8};
   EXPECT_CALL(*key, SignSlowly(ElementsAreArray(data)))
       .Times(4)
       .WillRepeatedly(Return(std::nullopt));
   auto ref_counted_key = base::MakeRefCounted<RefCountedUnexportableSigningKey>(
-      std::move(key), UnexportableKeyId());
+      std::move(key), UnexportableSigningKeyId());
 
   base::HistogramTester histogram_tester;
   base::test::TestFuture<ServiceErrorOr<std::vector<uint8_t>>> sign_future;
@@ -441,7 +442,7 @@ TEST_P(UnexportableKeyTaskManagerTest,
   RunBackgroundTasks();
   ASSERT_OK_AND_ASSIGN(auto key, generate_key_future.Get());
 
-  auto mocked_key = std::make_unique<MockUnexportableKey>();
+  auto mocked_key = std::make_unique<crypto::MockUnexportableSigningKey>();
   ON_CALL(*mocked_key, Algorithm())
       .WillByDefault(
           Invoke(&key->key(), &crypto::UnexportableSigningKey::Algorithm));
@@ -459,7 +460,7 @@ TEST_P(UnexportableKeyTaskManagerTest,
   base::HistogramTester histogram_tester;
 
   auto ref_counted_key = base::MakeRefCounted<RefCountedUnexportableSigningKey>(
-      std::move(mocked_key), UnexportableKeyId());
+      std::move(mocked_key), UnexportableSigningKeyId());
   base::test::TestFuture<ServiceErrorOr<std::vector<uint8_t>>> sign_future;
   task_manager().SignSlowlyAsync(GetParam().origin, ref_counted_key, data,
                                  BackgroundTaskPriority::kBestEffort,
@@ -476,7 +477,7 @@ TEST_P(UnexportableKeyTaskManagerTest,
 
 TEST_P(UnexportableKeyTaskManagerTest,
        RetrySignAsyncIfSignatureVerificationFailsWithFailure) {
-  auto mocked_key = std::make_unique<MockUnexportableKey>();
+  auto mocked_key = std::make_unique<crypto::MockUnexportableSigningKey>();
   ON_CALL(*mocked_key, Algorithm())
       .WillByDefault(Return(crypto::SignatureVerifier::ECDSA_SHA256));
   ON_CALL(*mocked_key, GetSubjectPublicKeyInfo())
@@ -489,7 +490,7 @@ TEST_P(UnexportableKeyTaskManagerTest,
   base::HistogramTester histogram_tester;
 
   auto ref_counted_key = base::MakeRefCounted<RefCountedUnexportableSigningKey>(
-      std::move(mocked_key), UnexportableKeyId());
+      std::move(mocked_key), UnexportableSigningKeyId());
   base::test::TestFuture<ServiceErrorOr<std::vector<uint8_t>>> sign_future;
   task_manager().SignSlowlyAsync(GetParam().origin, ref_counted_key, data,
                                  BackgroundTaskPriority::kBestEffort,
@@ -505,12 +506,14 @@ TEST_P(UnexportableKeyTaskManagerTest,
 }
 
 TEST_P(UnexportableKeyTaskManagerTest, DeleteKeysAsync) {
-  ScopedMockUnexportableKeyProvider& scoped_provider =
+  crypto::ScopedMockUnexportableKeyProvider& scoped_provider =
       SwitchToMockKeyProvider();
 
   // First, generate two new signing keys.
-  scoped_provider.AddNextGeneratedKey(std::make_unique<MockUnexportableKey>());
-  scoped_provider.AddNextGeneratedKey(std::make_unique<MockUnexportableKey>());
+  scoped_provider.AddNextGeneratedSigningKey(
+      std::make_unique<crypto::MockUnexportableSigningKey>());
+  scoped_provider.AddNextGeneratedSigningKey(
+      std::make_unique<crypto::MockUnexportableSigningKey>());
 
   base::test::TestFuture<
       ServiceErrorOr<scoped_refptr<RefCountedUnexportableSigningKey>>>
@@ -537,10 +540,10 @@ TEST_P(UnexportableKeyTaskManagerTest, DeleteKeysAsync) {
   base::HistogramTester histogram_tester;
   base::test::TestFuture<ServiceErrorOr<size_t>> delete_keys_future;
   EXPECT_CALL(scoped_provider.mock(),
-              DeleteSigningKeysSlowly(ElementsAre(&key1->key(), &key2->key())))
+              DeleteKeysSlowly(ElementsAre(&key1->key(), &key2->key())))
       .WillOnce(Return(2));
 
-  task_manager().DeleteSigningKeysSlowlyAsync(
+  task_manager().DeleteKeysSlowlyAsync(
       GetParam().origin, crypto::UnexportableKeyProvider::Config(),
       {key1, key2}, BackgroundTaskPriority::kBestEffort,
       delete_keys_future.GetCallback());
@@ -558,12 +561,14 @@ TEST_P(UnexportableKeyTaskManagerTest, DeleteKeysAsync) {
 }
 
 TEST_P(UnexportableKeyTaskManagerTest, DeleteKeysAsyncPartialSuccess) {
-  ScopedMockUnexportableKeyProvider& scoped_provider =
+  crypto::ScopedMockUnexportableKeyProvider& scoped_provider =
       SwitchToMockKeyProvider();
 
   // First, generate two new signing keys.
-  scoped_provider.AddNextGeneratedKey(std::make_unique<MockUnexportableKey>());
-  scoped_provider.AddNextGeneratedKey(std::make_unique<MockUnexportableKey>());
+  scoped_provider.AddNextGeneratedSigningKey(
+      std::make_unique<crypto::MockUnexportableSigningKey>());
+  scoped_provider.AddNextGeneratedSigningKey(
+      std::make_unique<crypto::MockUnexportableSigningKey>());
 
   base::test::TestFuture<
       ServiceErrorOr<scoped_refptr<RefCountedUnexportableSigningKey>>>
@@ -591,10 +596,10 @@ TEST_P(UnexportableKeyTaskManagerTest, DeleteKeysAsyncPartialSuccess) {
   base::test::TestFuture<ServiceErrorOr<size_t>> delete_keys_future;
   // Simulate a partial success.
   EXPECT_CALL(scoped_provider.mock(),
-              DeleteSigningKeysSlowly(ElementsAre(&key1->key(), &key2->key())))
+              DeleteKeysSlowly(ElementsAre(&key1->key(), &key2->key())))
       .WillOnce(Return(1));
 
-  task_manager().DeleteSigningKeysSlowlyAsync(
+  task_manager().DeleteKeysSlowlyAsync(
       GetParam().origin, crypto::UnexportableKeyProvider::Config(),
       {key1, key2}, BackgroundTaskPriority::kBestEffort,
       delete_keys_future.GetCallback());
@@ -615,7 +620,7 @@ TEST_P(UnexportableKeyTaskManagerTest, DeleteKeysAsyncFailureNoKeyProvider) {
   base::test::TestFuture<ServiceErrorOr<size_t>> delete_keys_future;
 
   DisableKeyProvider();
-  task_manager().DeleteSigningKeysSlowlyAsync(
+  task_manager().DeleteKeysSlowlyAsync(
       GetParam().origin, crypto::UnexportableKeyProvider::Config(),
       {MakeRefCountedKey({1, 2, 3})}, BackgroundTaskPriority::kBestEffort,
       delete_keys_future.GetCallback());
@@ -638,7 +643,7 @@ TEST_P(UnexportableKeyTaskManagerTest,
   base::HistogramTester histogram_tester;
   base::test::TestFuture<ServiceErrorOr<size_t>> delete_keys_future;
 
-  task_manager().DeleteSigningKeysSlowlyAsync(
+  task_manager().DeleteKeysSlowlyAsync(
       GetParam().origin, crypto::UnexportableKeyProvider::Config(),
       {MakeRefCountedKey({1, 2, 3})}, BackgroundTaskPriority::kBestEffort,
       delete_keys_future.GetCallback());
@@ -657,10 +662,10 @@ TEST_P(UnexportableKeyTaskManagerTest, DeleteAllKeysAsync) {
   base::HistogramTester histogram_tester;
   base::test::TestFuture<ServiceErrorOr<size_t>> delete_all_future;
 
-  EXPECT_CALL(SwitchToMockKeyProvider().mock(), DeleteAllSigningKeysSlowly())
+  EXPECT_CALL(SwitchToMockKeyProvider().mock(), DeleteAllKeysSlowly())
       .WillOnce(Return(1u));
 
-  task_manager().DeleteAllSigningKeysSlowlyAsync(
+  task_manager().DeleteAllKeysSlowlyAsync(
       GetParam().origin, crypto::UnexportableKeyProvider::Config(),
       BackgroundTaskPriority::kBestEffort, delete_all_future.GetCallback());
   EXPECT_FALSE(delete_all_future.IsReady());
@@ -681,10 +686,10 @@ TEST_P(UnexportableKeyTaskManagerTest,
   base::HistogramTester histogram_tester;
   base::test::TestFuture<ServiceErrorOr<size_t>> delete_all_future;
 
-  EXPECT_CALL(SwitchToMockKeyProvider().mock(), DeleteAllSigningKeysSlowly())
+  EXPECT_CALL(SwitchToMockKeyProvider().mock(), DeleteAllKeysSlowly())
       .WillOnce(Return(std::nullopt));
 
-  task_manager().DeleteAllSigningKeysSlowlyAsync(
+  task_manager().DeleteAllKeysSlowlyAsync(
       GetParam().origin, crypto::UnexportableKeyProvider::Config(),
       BackgroundTaskPriority::kBestEffort, delete_all_future.GetCallback());
   EXPECT_FALSE(delete_all_future.IsReady());
@@ -705,7 +710,7 @@ TEST_P(UnexportableKeyTaskManagerTest, DeleteAllKeysAsyncFailureNoKeyProvider) {
   base::test::TestFuture<ServiceErrorOr<size_t>> delete_all_future;
 
   DisableKeyProvider();
-  task_manager().DeleteAllSigningKeysSlowlyAsync(
+  task_manager().DeleteAllKeysSlowlyAsync(
       GetParam().origin, crypto::UnexportableKeyProvider::Config(),
       BackgroundTaskPriority::kBestEffort, delete_all_future.GetCallback());
   RunBackgroundTasks();
@@ -728,7 +733,7 @@ TEST_P(UnexportableKeyTaskManagerTest,
   base::HistogramTester histogram_tester;
   base::test::TestFuture<ServiceErrorOr<size_t>> delete_all_future;
 
-  task_manager().DeleteAllSigningKeysSlowlyAsync(
+  task_manager().DeleteAllKeysSlowlyAsync(
       GetParam().origin, crypto::UnexportableKeyProvider::Config(),
       BackgroundTaskPriority::kBestEffort, delete_all_future.GetCallback());
   RunBackgroundTasks();
@@ -744,17 +749,17 @@ TEST_P(UnexportableKeyTaskManagerTest,
 }
 
 TEST_P(UnexportableKeyTaskManagerTest,
-       GetAllSigningKeysForGarbageCollectionAsyncNoKeys) {
+       GetAllKeysForGarbageCollectionAsyncNoKeys) {
   base::HistogramTester histogram_tester;
-  base::test::TestFuture<ServiceErrorOr<
-      std::vector<scoped_refptr<RefCountedUnexportableSigningKey>>>>
+  base::test::TestFuture<
+      ServiceErrorOr<std::vector<scoped_refptr<RefCountedUnexportableKey>>>>
       future;
 
-  EXPECT_CALL(SwitchToMockKeyProvider().mock(), GetAllSigningKeysSlowly())
+  EXPECT_CALL(SwitchToMockKeyProvider().mock(), GetAllKeysSlowly())
       .WillOnce(Return(
           std::vector<std::unique_ptr<crypto::UnexportableSigningKey>>()));
 
-  task_manager().GetAllSigningKeysForGarbageCollectionSlowlyAsync(
+  task_manager().GetAllKeysForGarbageCollectionSlowlyAsync(
       GetParam().origin, crypto::UnexportableKeyProvider::Config(),
       BackgroundTaskPriority::kBestEffort, future.GetCallback());
   RunBackgroundTasks();
@@ -770,19 +775,19 @@ TEST_P(UnexportableKeyTaskManagerTest,
 }
 
 TEST_P(UnexportableKeyTaskManagerTest,
-       GetAllSigningKeysForGarbageCollectionAsyncOneKey) {
+       GetAllKeysForGarbageCollectionAsyncOneKey) {
   base::HistogramTester histogram_tester;
-  base::test::TestFuture<ServiceErrorOr<
-      std::vector<scoped_refptr<RefCountedUnexportableSigningKey>>>>
+  base::test::TestFuture<
+      ServiceErrorOr<std::vector<scoped_refptr<RefCountedUnexportableKey>>>>
       future;
 
-  EXPECT_CALL(SwitchToMockKeyProvider().mock(), GetAllSigningKeysSlowly())
+  EXPECT_CALL(SwitchToMockKeyProvider().mock(), GetAllKeysSlowly())
       .WillOnce(Return(
           base::ToVector<std::unique_ptr<crypto::UnexportableSigningKey>>({
-              std::make_unique<MockUnexportableKey>(),
+              std::make_unique<crypto::MockUnexportableSigningKey>(),
           })));
 
-  task_manager().GetAllSigningKeysForGarbageCollectionSlowlyAsync(
+  task_manager().GetAllKeysForGarbageCollectionSlowlyAsync(
       GetParam().origin, crypto::UnexportableKeyProvider::Config(),
       BackgroundTaskPriority::kBestEffort, future.GetCallback());
   RunBackgroundTasks();
@@ -792,16 +797,16 @@ TEST_P(UnexportableKeyTaskManagerTest,
 }
 
 TEST_P(UnexportableKeyTaskManagerTest,
-       GetAllSigningKeysForGarbageCollectionAsyncProviderFails) {
+       GetAllKeysForGarbageCollectionAsyncProviderFails) {
   base::HistogramTester histogram_tester;
-  base::test::TestFuture<ServiceErrorOr<
-      std::vector<scoped_refptr<RefCountedUnexportableSigningKey>>>>
+  base::test::TestFuture<
+      ServiceErrorOr<std::vector<scoped_refptr<RefCountedUnexportableKey>>>>
       future;
 
-  EXPECT_CALL(SwitchToMockKeyProvider().mock(), GetAllSigningKeysSlowly())
+  EXPECT_CALL(SwitchToMockKeyProvider().mock(), GetAllKeysSlowly())
       .WillOnce(Return(std::nullopt));
 
-  task_manager().GetAllSigningKeysForGarbageCollectionSlowlyAsync(
+  task_manager().GetAllKeysForGarbageCollectionSlowlyAsync(
       GetParam().origin, crypto::UnexportableKeyProvider::Config(),
       BackgroundTaskPriority::kBestEffort, future.GetCallback());
   RunBackgroundTasks();
@@ -815,15 +820,15 @@ TEST_P(UnexportableKeyTaskManagerTest,
 }
 
 TEST_P(UnexportableKeyTaskManagerTest,
-       GetAllSigningKeysForGarbageCollectionAsyncNoProvider) {
+       GetAllKeysForGarbageCollectionAsyncNoProvider) {
   base::HistogramTester histogram_tester;
-  base::test::TestFuture<ServiceErrorOr<
-      std::vector<scoped_refptr<RefCountedUnexportableSigningKey>>>>
+  base::test::TestFuture<
+      ServiceErrorOr<std::vector<scoped_refptr<RefCountedUnexportableKey>>>>
       future;
 
   DisableKeyProvider();
 
-  task_manager().GetAllSigningKeysForGarbageCollectionSlowlyAsync(
+  task_manager().GetAllKeysForGarbageCollectionSlowlyAsync(
       GetParam().origin, crypto::UnexportableKeyProvider::Config(),
       BackgroundTaskPriority::kBestEffort, future.GetCallback());
   RunBackgroundTasks();
@@ -837,17 +842,17 @@ TEST_P(UnexportableKeyTaskManagerTest,
 }
 
 TEST_P(UnexportableKeyTaskManagerTest,
-       GetAllSigningKeysForGarbageCollectionAsyncOperationNotSupported) {
+       GetAllKeysForGarbageCollectionAsyncOperationNotSupported) {
   ASSERT_EQ(UnexportableKeyTaskManager::GetUnexportableKeyProvider({})
                 ->AsStatefulUnexportableKeyProvider(),
             nullptr);
 
   base::HistogramTester histogram_tester;
-  base::test::TestFuture<ServiceErrorOr<
-      std::vector<scoped_refptr<RefCountedUnexportableSigningKey>>>>
+  base::test::TestFuture<
+      ServiceErrorOr<std::vector<scoped_refptr<RefCountedUnexportableKey>>>>
       future;
 
-  task_manager().GetAllSigningKeysForGarbageCollectionSlowlyAsync(
+  task_manager().GetAllKeysForGarbageCollectionSlowlyAsync(
       GetParam().origin, crypto::UnexportableKeyProvider::Config(),
       BackgroundTaskPriority::kBestEffort, future.GetCallback());
   RunBackgroundTasks();

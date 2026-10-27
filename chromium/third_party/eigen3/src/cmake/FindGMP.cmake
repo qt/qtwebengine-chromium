@@ -1,5 +1,7 @@
 # Try to find the GNU Multiple Precision Arithmetic Library (GMP)
 # See http://gmplib.org/
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 if (GMP_INCLUDES AND GMP_LIBRARIES)
   set(GMP_FIND_QUIETLY TRUE)

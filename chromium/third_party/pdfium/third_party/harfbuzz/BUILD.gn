@@ -25,7 +25,10 @@ if (use_system_harfbuzz) {
   }
 } else {
   config("harfbuzz_config") {
-    include_dirs = [ "src/src" ]
+    include_dirs = [
+      "src/src",
+      ".",
+    ]
   }
 
   config("harfbuzz_warnings") {
@@ -404,6 +407,11 @@ if (use_system_harfbuzz) {
 
       # We're not using HarfBuzz' drawing functions or debug tools in this build.
       "HB_NO_DRAW",
+
+      # Workaround: We want HB_NO_DRAW but we still need CFF support for subsetting.
+      # TODO(crbug.com/507839557): Need to remove config override workaround after
+      # https://github.com/harfbuzz/harfbuzz/issues/5955 is resolved.
+      "HB_CONFIG_OVERRIDE_LAST_H=\"pdfium-config-override.h\"",
 
       # Don't ship experimental extensions.
       "HB_NO_BORING_EXPANSION",

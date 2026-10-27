@@ -1207,16 +1207,6 @@ class Recycler final : angle::NonCopyable
     StorageT mObjectFreeList;
 };
 
-ANGLE_ENABLE_STRUCT_PADDING_WARNINGS
-struct SpecializationConstants final
-{
-    VkBool32 surfaceRotation;
-    uint32_t dither;
-};
-ANGLE_DISABLE_STRUCT_PADDING_WARNINGS
-
-template <typename T>
-using SpecializationConstantMap = angle::PackedEnumMap<sh::vk::SpecializationConstantId, T>;
 
 using ShaderModulePtr = SharedPtr<ShaderModule>;
 using ShaderModuleMap = gl::ShaderMap<ShaderModulePtr>;
@@ -1230,6 +1220,8 @@ void MakeDebugUtilsLabel(GLenum source, const char *marker, VkDebugUtilsLabelEXT
 
 constexpr size_t kUnpackedDepthIndex   = gl::IMPLEMENTATION_MAX_DRAW_BUFFERS;
 constexpr size_t kUnpackedStencilIndex = gl::IMPLEMENTATION_MAX_DRAW_BUFFERS + 1;
+constexpr gl::AttachmentsMask kDepthStencilAttachmentsMask({kUnpackedDepthIndex,
+                                                            kUnpackedStencilIndex});
 constexpr uint32_t kUnpackedColorBuffersMask =
     angle::BitMask<uint32_t>(gl::IMPLEMENTATION_MAX_DRAW_BUFFERS);
 
@@ -1765,6 +1757,7 @@ enum class QueueSubmitReason
     // Others
     DeferredFlush,
     DrawOverlay,
+    TileMemoryFallback,
 
     InvalidEnum,
     EnumCount = InvalidEnum,

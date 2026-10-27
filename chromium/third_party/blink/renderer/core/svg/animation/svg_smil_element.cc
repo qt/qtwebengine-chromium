@@ -47,6 +47,8 @@
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
+#include "third_party/blink/renderer/platform/wtf/text/code_point_iterator.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_to_number.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
@@ -291,7 +293,6 @@ void SVGSMILElement::Condition::DisconnectEventBase(
 
 SVGSMILElement::SVGSMILElement(const QualifiedName& tag_name, Document& doc)
     : SVGElement(tag_name, doc),
-      SVGTests(this),
       target_element_(nullptr),
       conditions_connected_(false),
       has_end_event_conditions_(false),
@@ -443,31 +444,120 @@ SMILTime SVGSMILElement::ParseClockValue(const StringView& data) {
   if (parse == indefinite_value)
     return SMILTime::Indefinite();
 
-  double result = 0;
-  wtf_size_t double_point_one = parse.find(':');
-  wtf_size_t double_point_two = parse.find(':', double_point_one + 1);
-  if (double_point_one == 2 && double_point_two == 5 && parse.length() >= 8) {
-    auto parsed_hour = StringToUintStrict(parse.substr(0, 2));
-    auto parsed_min = StringToUintStrict(parse.substr(3, 2));
-    auto parsed_sec = StringToDouble(parse.substr(6));
-    if (!parsed_hour || !parsed_min || !parsed_sec) {
-      return SMILTime::Unresolved();
-    }
-    result += *parsed_hour * 60 * 60 + *parsed_min * 60 + *parsed_sec;
-  } else if (double_point_one == 2 && double_point_two == kNotFound &&
-             parse.length() >= 5) {
-    auto parsed_min = StringToUintStrict(parse.substr(0, 2));
-    auto parsed_sec = StringToDouble(parse.substr(3));
-    if (!parsed_min || !parsed_sec) {
-      return SMILTime::Unresolved();
-    }
-    result += *parsed_min * 60 + *parsed_sec;
-  } else {
+  wtf_size_t colon_one = parse.find(':');
+  if (colon_one == StringView::npos) {
     return ParseOffsetValue(parse);
   }
+  const bool validation_fix_enabled =
+      RuntimeEnabledFeatures::SvgSmilClockValueValidationEnabled();
+  // The first field can be any length, but if it's a minutes value it has to
+  // be 2 digits. We're not abiding by that.
+  if (!validation_fix_enabled && colon_one != 2) {
+    return SMILTime::Unresolved();
+  }
+  // Assume the format is mm:ss.ff...
+  StringView hour_part;
+  StringView minute_part = parse.substr(0, colon_one);
+  StringView seconds_part = parse.substr(colon_one + 1);
 
-  return SMILTime::FromSecondsD(result);
+  // If there's one more colon the format is hh:mm:ss.ff...
+  wtf_size_t colon_two = seconds_part.find(':');
+  if (colon_two == 2) {
+    hour_part = minute_part;
+    minute_part = seconds_part.substr(0, 2);
+    seconds_part = seconds_part.substr(3);
+  } else if (colon_two != StringView::npos) {
+    return SMILTime::Unresolved();
+  }
+
+  if (!validation_fix_enabled) {
+    // The seconds+fractions field needs to be at least two digits. This only
+    // checks characters.
+    if (seconds_part.length() < 2) {
+      return SMILTime::Unresolved();
+    }
+  } else {
+    // The minutes field needs to be two digits.
+    if (minute_part.length() != 2) {
+      return SMILTime::Unresolved();
+    }
+    // Check if the seconds+fractions field contains a '.', and that it is at
+    // index 2 in that case.
+    auto dot_index = seconds_part.find('.');
+    if (dot_index == 2) {
+      // Fraction field need to be at least one digit.
+      if (seconds_part.length() < 4) {
+        return SMILTime::Unresolved();
+      }
+    } else if (dot_index == StringView::npos) {
+      // The seconds field needs to be two digits.
+      if (seconds_part.length() != 2) {
+        return SMILTime::Unresolved();
+      }
+    } else {
+      return SMILTime::Unresolved();
+    }
+  }
+
+  auto parsed_seconds = StringToDouble(seconds_part);
+  if (!parsed_seconds || (validation_fix_enabled && *parsed_seconds >= 60)) {
+    return SMILTime::Unresolved();
+  }
+  base::TimeDelta result = base::Seconds(*parsed_seconds);
+  auto parsed_minutes = StringToUintStrict(minute_part);
+  if (!parsed_minutes || (validation_fix_enabled && *parsed_minutes >= 60)) {
+    return SMILTime::Unresolved();
+  }
+  result += base::Minutes(*parsed_minutes);
+  if (!hour_part.IsNull()) {
+    auto parsed_hours = StringToUintStrict(hour_part);
+    if (!parsed_hours) {
+      return SMILTime::Unresolved();
+    }
+    result += base::Hours(*parsed_hours);
+  }
+  return SMILTime::FromTimeDelta(result);
 }
+
+namespace {
+
+wtf_size_t FindUnescapedDot(StringView string) {
+  wtf_size_t index = 0;
+  bool escaped = false;
+  for (UChar c : string) {
+    if (escaped) {
+      escaped = false;
+    } else if (c == '\\') {
+      escaped = true;
+    } else if (c == '.') {
+      return index;
+    }
+    index++;
+  }
+  return kNotFound;
+}
+
+AtomicString UnescapeSMILIdentifier(StringView string) {
+  if (!string.contains('\\')) {
+    return string.ToAtomicString();
+  }
+
+  StringBuilder builder;
+  bool escaped = false;
+  for (UChar c : string) {
+    if (escaped) {
+      builder.Append(c);
+      escaped = false;
+    } else if (c == '\\') {
+      escaped = true;
+    } else {
+      builder.Append(c);
+    }
+  }
+  return builder.ToAtomicString();
+}
+
+}  // namespace
 
 bool SVGSMILElement::ParseCondition(const StringView& value,
                                     BeginOrEnd begin_or_end) {
@@ -494,18 +584,23 @@ bool SVGSMILElement::ParseCondition(const StringView& value,
   }
   if (condition_string.empty())
     return false;
-  pos = condition_string.find('.');
+  wtf_size_t dot_index = FindUnescapedDot(condition_string);
 
   StringView base_id;
   StringView name_string;
-  if (pos == kNotFound) {
+  if (dot_index == kNotFound) {
     name_string = condition_string;
   } else {
-    base_id = condition_string.substr(0, pos);
-    name_string = condition_string.substr(pos + 1);
+    base_id = condition_string.substr(0, dot_index);
+    name_string = condition_string.substr(dot_index + 1);
   }
   if (name_string.empty())
     return false;
+
+  AtomicString resolved_base_id;
+  if (dot_index != kNotFound) {
+    resolved_base_id = UnescapeSMILIdentifier(base_id);
+  }
 
   Condition::Type type;
   int repeat = -1;
@@ -519,8 +614,9 @@ bool SVGSMILElement::ParseCondition(const StringView& value,
     name_string = "repeat";
     type = Condition::kSyncBase;
   } else if (name_string == "begin" || name_string == "end") {
-    if (base_id.empty())
+    if (resolved_base_id.empty()) {
       return false;
+    }
     UseCounter::Count(&GetDocument(),
                       WebFeature::kSVGSMILBeginOrEndSyncbaseValue);
     type = Condition::kSyncBase;
@@ -533,8 +629,8 @@ bool SVGSMILElement::ParseCondition(const StringView& value,
   }
 
   conditions_.push_back(MakeGarbageCollected<Condition>(
-      type, begin_or_end, base_id.ToAtomicString(),
-      name_string.ToAtomicString(), offset, repeat));
+      type, begin_or_end, resolved_base_id, name_string.ToAtomicString(),
+      offset, repeat));
 
   if (begin_or_end == kEnd) {
     has_end_attribute_specified_ = true;
@@ -670,11 +766,25 @@ void SVGSMILElement::CollectStyleForPresentationAttribute(
 
 SVGAnimatedPropertyBase* SVGSMILElement::PropertyFromAttribute(
     const QualifiedName& attribute_name) const {
-  if (SVGAnimatedPropertyBase* property =
-          SVGTests::PropertyFromAttribute(attribute_name)) {
-    return property;
+  if (SVGTests::IsKnownAttribute(attribute_name)) {
+    return EnsureSvgTests().PropertyFromAttribute(this, attribute_name);
   }
   return SVGElement::PropertyFromAttribute(attribute_name);
+}
+
+SVGStringListTearOff* SVGSMILElement::requiredExtensions() {
+  return EnsureSvgTests().requiredExtensions(this);
+}
+
+SVGStringListTearOff* SVGSMILElement::systemLanguage() {
+  return EnsureSvgTests().systemLanguage(this);
+}
+
+SVGTests& SVGSMILElement::EnsureSvgTests() const {
+  if (!tests_) {
+    tests_ = MakeGarbageCollected<SVGTests>();
+  }
+  return *tests_;
 }
 
 void SVGSMILElement::ConnectConditions() {
@@ -1495,8 +1605,8 @@ void SVGSMILElement::Trace(Visitor* visitor) const {
   visitor->Trace(time_container_);
   visitor->Trace(conditions_);
   visitor->Trace(sync_base_dependents_);
+  visitor->Trace(tests_);
   SVGElement::Trace(visitor);
-  SVGTests::Trace(visitor);
 }
 
 }  // namespace blink

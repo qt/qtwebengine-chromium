@@ -27,11 +27,6 @@
 
 // GEN_BUILD:CONDITION(tint_build_is_win)
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/439062058): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include <fcntl.h>
 #include <io.h>
 #include <stdio.h>
@@ -39,6 +34,7 @@
 #include <cstdio>
 
 #include "src/tint/utils/file/tmpfile.h"
+#include "src/utils/compiler.h"
 
 namespace tint {
 
@@ -81,7 +77,7 @@ bool TmpFile::Append(const void* data, size_t size) const {
     if (fopen_s(&file, path_.c_str(), "ab") != 0) {
         return false;
     }
-    fwrite(data, size, 1, file);
+    DAWN_UNSAFE_TODO(fwrite(data, size, 1, file));
     fclose(file);
     return true;
 }

@@ -20,10 +20,12 @@ arch_to_target = {
     "x86_avx512f": X86(["AVX512F"]),
     "x86_avx512bw": X86(["AVX512BW"]),
     "x86_avx512bf16": X86(["AVX512BF16"]),
+    "arm64_neon": ARM(["NEON"]),
     "arm_neon": ARM(["NEON"]),
     "arm_neonfp16": ARM(["NEONFP16"]),
+    "arm_neonbf16": ARM(["NEONBF16"]),
     "arm_neon_fma": ARM(["NEON", "FMA"]),
-    "wasm_simd128": WASM(["WASM_SIMD128"]),
+    "wasm_simd128": WASM(["SIMD128"]),
 }
 
 

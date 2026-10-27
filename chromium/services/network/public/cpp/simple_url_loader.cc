@@ -23,6 +23,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/no_destructor.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/sequence_checker.h"
 #include "base/strings/string_view_util.h"
@@ -46,6 +47,7 @@
 #include "net/http/http_response_headers.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/data_element.h"
+#include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/record_ontransfersizeupdate_utils.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader_stream_consumer.h"
@@ -64,6 +66,14 @@ BASE_FEATURE(kSimpleURLLoaderUseReadAndDiscardBodyOption,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 namespace {
+
+// Returns the thread-safe global callbacks used by the embedder
+// to register and revoke access to uploaded files.
+SimpleURLLoader::FileUploadEventCallbacks& GetFileUploadEventCallbacks() {
+  static base::NoDestructor<SimpleURLLoader::FileUploadEventCallbacks>
+      callbacks;
+  return *callbacks;
+}
 
 constexpr int64_t kReceivedBodySizeUnknown = -1;
 
@@ -453,6 +463,12 @@ class SimpleURLLoaderImpl : public SimpleURLLoader,
   // How long |timeout_timer_| should wait before timing out a request. A value
   // of zero means do not set a timeout.
   base::TimeDelta timeout_duration_ = base::TimeDelta();
+
+  // A unique token generated for this loader to register file uploads in the
+  // browser process. If this loader uploads a file from the browser process,
+  // this token is mapped to the file path using the registered callback and
+  // passed to the Network Service to grant read access.
+  base::UnguessableToken owner_token_;
 
   SEQUENCE_CHECKER(sequence_checker_);
 
@@ -1302,7 +1318,12 @@ SimpleURLLoaderImpl::SimpleURLLoaderImpl(
   CHECK(url_loader_client_endpoints_->url_loader.is_valid());
 }
 
-SimpleURLLoaderImpl::~SimpleURLLoaderImpl() {}
+SimpleURLLoaderImpl::~SimpleURLLoaderImpl() {
+  if (!owner_token_.is_empty() &&
+      GetFileUploadEventCallbacks().revoke_callback) {
+    GetFileUploadEventCallbacks().revoke_callback.Run(owner_token_);
+  }
+}
 
 void SimpleURLLoaderImpl::DownloadToString(
     mojom::URLLoaderFactory* url_loader_factory,
@@ -1533,6 +1554,14 @@ void SimpleURLLoaderImpl::AttachFileForUploadInternal(
   // handle instead of the file path.
   resource_request_->request_body->AppendFileRange(upload_file_path, offset,
                                                    length, base::Time());
+
+  if (GetFileUploadEventCallbacks().register_callback) {
+    if (owner_token_.is_empty()) {
+      owner_token_ = base::UnguessableToken::Create();
+    }
+    GetFileUploadEventCallbacks().register_callback.Run(owner_token_,
+                                                        upload_file_path);
+  }
 
   if (upload_content_type) {
     resource_request_->headers.SetHeader(net::HttpRequestHeaders::kContentType,
@@ -1914,22 +1943,22 @@ void SimpleURLLoaderImpl::OnReceiveRedirect(
     return;
   }
 
+  network::HttpRequestHeadersUpdateParams headers_update_params;
   std::vector<std::string> removed_headers;
   if (on_redirect_callback_) {
     base::WeakPtr<SimpleURLLoaderImpl> weak_this =
         weak_ptr_factory_.GetWeakPtr();
     GURL url_before_redirect = final_url_;
     on_redirect_callback_.Run(url_before_redirect, redirect_info,
-                              *response_head, &removed_headers);
+                              *response_head,
+                              &headers_update_params.removed_headers);
     // If deleted by the callback, bail now.
     if (!weak_this)
       return;
   }
 
   final_url_ = redirect_info.new_url;
-  url_loader_->FollowRedirect(removed_headers, {} /* modified_headers */,
-                              {} /* modified_cors_exempt_headers */,
-                              {} /* new_url */);
+  url_loader_->FollowRedirect(std::move(headers_update_params), std::nullopt);
 }
 
 void SimpleURLLoaderImpl::OnTransferSizeUpdated(int32_t transfer_size_diff) {
@@ -2022,24 +2051,24 @@ void SimpleURLLoaderImpl::MaybeComplete() {
     return;
   }
 
+  const std::optional<int64_t> decoded_body_length =
+      request_state_->completion_status
+          ? std::make_optional<int64_t>(
+                request_state_->completion_status->decoded_body_length)
+          : std::nullopt;
+
   // If the URLLoader didn't supply a data pipe because we set the
   // ReadAndDiscardBody option, then we don't yet have a value for
   // `received_body_size`, so just set it to the size reported by URLLoader.
   if (request_state_->received_body_size == kReceivedBodySizeUnknown) {
-    request_state_->received_body_size =
-        request_state_->completion_status
-            ? request_state_->completion_status->decoded_body_length
-            : 0;
+    request_state_->received_body_size = decoded_body_length.value_or(0);
   }
 
   // When OnCompleted sees a success result, still need to report an error if
   // the size isn't what was expected.
-  if (request_state_->net_error == net::OK &&
-      request_state_->completion_status &&
-      request_state_->completion_status->decoded_body_length !=
-          request_state_->received_body_size) {
-    if (request_state_->completion_status->decoded_body_length >
-        request_state_->received_body_size) {
+  if (request_state_->net_error == net::OK && decoded_body_length.has_value() &&
+      decoded_body_length.value() != request_state_->received_body_size) {
+    if (decoded_body_length.value() > request_state_->received_body_size) {
       // The body pipe was closed before it received the entire body.
       request_state_->net_error = net::ERR_FAILED;
       request_state_->completion_status = std::nullopt;
@@ -2081,8 +2110,14 @@ void SimpleURLLoader::SetTimeoutTickClockForTest(
   timeout_tick_clock_ = timeout_tick_clock;
 }
 
-SimpleURLLoader::~SimpleURLLoader() {}
+// static
+void SimpleURLLoader::SetFileUploadEventCallbacks(
+    const FileUploadEventCallbacks& callbacks) {
+  GetFileUploadEventCallbacks() = callbacks;
+}
 
-SimpleURLLoader::SimpleURLLoader() {}
+SimpleURLLoader::~SimpleURLLoader() = default;
+
+SimpleURLLoader::SimpleURLLoader() = default;
 
 }  // namespace network

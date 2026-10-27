@@ -41,8 +41,9 @@ CJS_Result CJX_ExclGroup::execEvent(CFXJSE_Engine* runtime,
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  execSingleEventByName(runtime->ToWideString(params[0]).AsStringView(),
-                        XFA_Element::ExclGroup);
+  execSingleEventByName(
+      runtime->ToWideStringReentrant(params[0]).AsStringView(),
+      XFA_Element::ExclGroup);
   return CJS_Result::Success();
 }
 
@@ -111,7 +112,7 @@ CJS_Result CJX_ExclGroup::selectedMember(
     pReturnNode = node->GetSelectedMember();
   } else {
     pReturnNode = node->SetSelectedMember(
-        runtime->ToWideString(params[0]).AsStringView());
+        runtime->ToWideStringReentrant(params[0]).AsStringView());
   }
   if (!pReturnNode) {
     return CJS_Result::Success(runtime->NewNull());

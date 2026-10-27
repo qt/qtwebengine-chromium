@@ -135,20 +135,17 @@ void SurfaceEmbedHost::AttachConnector(
   // SurfaceEmbed as it initiated the detachment.
   DetachConnector();
 
-  child_contents_ = web_contents_to_attach->GetWeakPtr();
-  content::WebContents* parent_web_contents =
-      content::WebContents::FromRenderFrameHost(
-          &collection_->render_frame_host());
-  content::SurfaceEmbedConnector::Attach(web_contents_to_attach,
-                                         parent_web_contents, this);
-
   if (web_contents_to_attach->IsCrashed()) {
     // The child process may have crashed before the renderer for the parent
-    // got the chance to attach it.
-    // TODO(surface-embed): Notify the plugin.
-    // surface_embed_->ChildProcessGone();
+    // got the chance to attach it. We want to handle this early since attaching
+    // the connector will make WebContents think the process is alive.
+    surface_embed_->ChildProcessGone();
     return;
   }
+
+  child_contents_ = web_contents_to_attach->GetWeakPtr();
+  content::SurfaceEmbedConnector::Attach(
+      web_contents_to_attach, &collection_->render_frame_host(), this);
 
   auto* connector = GetConnector();
   CHECK(connector->GetFrameSinkId().is_valid());
@@ -169,10 +166,11 @@ void SurfaceEmbedHost::SynchronizeVisualProperties(
     const blink::FrameVisualProperties& visual_properties,
     bool is_visible) {
   CHECK(surface_embed_.is_bound());
-  if (!is_visible) {
-    return;
-  }
-  if (auto* connector = GetConnector()) {
+
+  if (content::SurfaceEmbedConnector* connector = GetConnector()) {
+    connector->OnVisibilityChanged(
+        is_visible ? blink::mojom::FrameVisibility::kRenderedInViewport
+                   : blink::mojom::FrameVisibility::kNotRendered);
     connector->OnSynchronizeVisualProperties(visual_properties);
   }
 }
@@ -190,6 +188,12 @@ void SurfaceEmbedHost::UpdateLocalSurfaceIdFromChild(
   }
 }
 
+void SurfaceEmbedHost::ChildProcessGone() {
+  if (surface_embed_) {
+    surface_embed_->ChildProcessGone();
+  }
+}
+
 void SurfaceEmbedHost::DetachedByHost() {
   // We're being forcibly detached (child being re-attached elsewhere).
   CHECK(child_contents_);
@@ -198,6 +202,12 @@ void SurfaceEmbedHost::DetachedByHost() {
   // host initiated the detachment.
 
   DetachConnector();
+}
+
+void SurfaceEmbedHost::RequestFocus() {
+  if (surface_embed_) {
+    surface_embed_->RequestFocus();
+  }
 }
 
 bool SurfaceEmbedHost::IsAttachedForTesting() const {

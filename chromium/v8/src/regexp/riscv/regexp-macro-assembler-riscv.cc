@@ -516,7 +516,7 @@ void RegExpMacroAssemblerRISCV::SkipUntilBitInTable(
     // Fallback to scalar version if there are less than kCharsPerVector chars
     // left in the subject.
     // We subtract 1 because CheckPosition assumes we are reading 1 character
-    // plus cp_offset. So the -1 is the the character that is assumed to be
+    // plus cp_offset. So the -1 is the character that is assumed to be
     // read by default.
     CheckPosition(cp_offset + kCharsPerVector - 1, &scalar);
 
@@ -632,7 +632,7 @@ bool RegExpMacroAssemblerRISCV::SkipUntilBitInTableUseSimd(int advance_by) {
   // in each iteration. For higher values the scalar version performs better.
   // We only implemented SIMD instead of the scalar version for latin1 strings.
   return v8_flags.regexp_simd && advance_by * char_size() == 1 &&
-         CpuFeatures::IsSupported(RISCV_SIMD);
+         CpuFeatures::IsSupported(RVV);
 }
 
 void RegExpMacroAssemblerRISCV::CheckSpecialClassRanges(
@@ -876,10 +876,12 @@ DirectHandle<HeapObject> RegExpMacroAssemblerRISCV::GetCode(
     __ jmp(&return_a0);
 
     __ bind(&stack_limit_hit);
+    StoreRegExpStackPointerToMemory(backtrack_stackpointer(), a1);
     CallCheckStackGuardState(a0, extra_space_for_variables);
     // If returned value is non-zero, we exit with the returned value as
     // result.
     __ Branch(&return_a0, ne, a0, Operand(zero_reg));
+    LoadRegExpStackPointerFromMemory(backtrack_stackpointer());
 
     __ bind(&stack_ok);
   }

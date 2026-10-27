@@ -120,6 +120,8 @@ struct State {
                         case BuiltinFn::kInterlockedAdd:
                         case BuiltinFn::kInterlockedMax:
                         case BuiltinFn::kInterlockedMin:
+                        case BuiltinFn::kInterlockedMax64:
+                        case BuiltinFn::kInterlockedMin64:
                         case BuiltinFn::kInterlockedAnd:
                         case BuiltinFn::kInterlockedOr:
                         case BuiltinFn::kInterlockedXor:
@@ -160,6 +162,10 @@ struct State {
                         case BuiltinFn::kF32Tof16:
                         case BuiltinFn::kF16Tof32:
                         case BuiltinFn::kMul:
+                        case BuiltinFn::kMultiply:
+                        case BuiltinFn::kMultiplyAccumulate:
+                        case BuiltinFn::kGet:
+                        case BuiltinFn::kSet:
                         case BuiltinFn::kPackU8:
                         case BuiltinFn::kPackS8:
                         case BuiltinFn::kPackClampS8:
@@ -173,6 +179,7 @@ struct State {
                         case BuiltinFn::kWaveReadLaneAt:
                         case BuiltinFn::kModf:
                         case BuiltinFn::kFrexp:
+                        case BuiltinFn::kSelect:
                         case BuiltinFn::kGatherCmp:
                         case BuiltinFn::kGather:
                         case BuiltinFn::kGatherAlpha:
@@ -186,6 +193,7 @@ struct State {
                         case BuiltinFn::kSampleCmpLevelZero:
                         case BuiltinFn::kSampleGrad:
                         case BuiltinFn::kSampleLevel:
+                        case BuiltinFn::kSplat:
                         case BuiltinFn::kNone:
                             break;
                     }

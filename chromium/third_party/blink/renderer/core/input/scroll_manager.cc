@@ -14,6 +14,7 @@
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
 #include "third_party/blink/renderer/core/input/keyboard_event_manager.h"
+#include "third_party/blink/renderer/core/layout/geometry/axis.h"
 #include "third_party/blink/renderer/core/layout/layout_block.h"
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
@@ -76,15 +77,23 @@ bool ScrollManager::CanPropagate(const LayoutBox* layout_box,
   switch (direction) {
     case ScrollPropagationDirection::kBoth:
       return ((layout_box->StyleRef().OverscrollBehaviorX() ==
-               EOverscrollBehavior::kAuto) &&
+                   EOverscrollBehavior::kAuto ||
+               layout_box->StyleRef().OverscrollBehaviorX() ==
+                   EOverscrollBehavior::kChain) &&
               (layout_box->StyleRef().OverscrollBehaviorY() ==
-               EOverscrollBehavior::kAuto));
+                   EOverscrollBehavior::kAuto ||
+               layout_box->StyleRef().OverscrollBehaviorY() ==
+                   EOverscrollBehavior::kChain));
     case ScrollPropagationDirection::kVertical:
       return layout_box->StyleRef().OverscrollBehaviorY() ==
-             EOverscrollBehavior::kAuto;
+                 EOverscrollBehavior::kAuto ||
+             layout_box->StyleRef().OverscrollBehaviorY() ==
+                 EOverscrollBehavior::kChain;
     case ScrollPropagationDirection::kHorizontal:
       return layout_box->StyleRef().OverscrollBehaviorX() ==
-             EOverscrollBehavior::kAuto;
+                 EOverscrollBehavior::kAuto ||
+             layout_box->StyleRef().OverscrollBehaviorX() ==
+                 EOverscrollBehavior::kChain;
     case ScrollPropagationDirection::kNone:
       return true;
     default:
@@ -121,7 +130,8 @@ ScrollManager::ScrollChainResult ScrollManager::RecomputeScrollChain(
           EOverscrollBehavior behavior =
               is_vertical ? cur_box->StyleRef().OverscrollBehaviorY()
                           : cur_box->StyleRef().OverscrollBehaviorX();
-          if (behavior != EOverscrollBehavior::kAuto) {
+          if (behavior != EOverscrollBehavior::kAuto &&
+              behavior != EOverscrollBehavior::kChain) {
             result.can_bubble = false;
             break;
           }
@@ -141,8 +151,11 @@ ScrollManager::ScrollChainResult ScrollManager::RecomputeScrollChain(
 
 bool ScrollManager::CanScroll(const Node& current_node) {
   LayoutBox* scrolling_box = current_node.GetLayoutBox();
-  if (auto* element = DynamicTo<Element>(current_node))
-    scrolling_box = element->GetLayoutBoxForScrolling();
+  if (auto* element = DynamicTo<Element>(current_node)) {
+    auto* box = element->GetLayoutBoxForScrolling();
+    scrolling_box =
+        box && box->GetScrollableArea()->ScrollableAxes() ? box : nullptr;
+  }
   if (!scrolling_box)
     return false;
 

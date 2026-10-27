@@ -114,16 +114,18 @@ _CONFIG = [
             'base::KiB',
             'base::KiBS',
             'base::KiBU',
+            'base::kCriticalMemoryPressureThreshold',
             'base::kInvalidThreadId',
+            'base::kStatefulMemoryPressure',
             'base::Location',
             'base::MakeRefCounted',
             'base::MatcherStringPattern',
             'base::MatchPattern',
             'base::MaxThreadType',
+            'base::MemoryConsumer',
             'base::MemoryPressureListener',
             'base::MemoryPressureListenerTag',
             'base::MessagePump',
-            'base::MetricsSubSampler',
             'base::MiB',
             'base::MiBS',
             'base::MiBU',
@@ -157,6 +159,7 @@ _CONFIG = [
             'base::ScopedClosureRunner',
             'base::ScopedFD',
             'base::Seconds',
+            'base::ShouldRecordSubsampledMetric',
             'base::sequence_manager::TaskTimeObserver',
             'base::sequence_manager::SequenceManager',
             'base::SequencedTaskRunner',
@@ -166,6 +169,7 @@ _CONFIG = [
             'base::Span(OrSize|Reader|Writer)',
             'base::subtle::reinterpret_span',
             'base::StringPiece',
+            'base::StringPrintf',
             'base::StrongAlias',
             'base::SubstringSetMatcher',
             'base::SysInfo',
@@ -378,6 +382,13 @@ _CONFIG = [
             'base::WritableSharedMemoryMapping',
             'base::subtle::SharedAtomic',
 
+            # Helpers for response headers and associated support code that
+            # are OK to use anywhere; raw headers contain internal NUL
+            # delimiters, so it's easier/safer to work with a helper built for
+            # that convention.
+            'net::HttpVersion',
+            'net::HttpResponseHeaders',
+
             # tracing
             'perfetto::.+',
         ]
@@ -496,6 +507,15 @@ _CONFIG = [
     },
     {
         'paths': [
+            'third_party/blink/common/webrtc/',
+            'third_party/blink/public/common/webrtc/',
+        ],
+        'allowed': [
+            'base::flat_map',
+        ],
+    },
+    {
+        'paths': [
             'third_party/blink/common/safe_url_pattern.cc',
             'third_party/blink/common/safe_url_pattern_mojom_traits.cc',
             'third_party/blink/common/service_worker/service_worker_router_rule_mojom_traits_unittest.cc',
@@ -560,6 +580,7 @@ _CONFIG = [
 
             # cc painting and raster types.
             'cc::AuxImage',
+            'cc::BeginMainFrameReason',
             'cc::CategorizedWorkerPool',
             'cc::ColorFilter',
             'cc::DrawImage',
@@ -743,7 +764,6 @@ _CONFIG = [
             "gfx::TransformOperations",
 
             # UMA Enums
-            'cc::PaintHoldingCommitTrigger',
             'cc::PaintHoldingReason',
 
             # Scrolling
@@ -810,6 +830,7 @@ _CONFIG = [
             'event_util::.+',
             'file_error::.+',
             'file_system_access_error::.+',
+            'focusgroup::.+',
             'geometry_util::.+',
             'inspector_\\w+_event::.+',
             'inspector_async_task::.+',
@@ -1520,6 +1541,15 @@ _CONFIG = [
     },
     {
         'paths': [
+            'third_party/blink/public/common/loader/',
+            'third_party/blink/common/loader/',
+        ],
+        'allowed': [
+            'network::HttpRequestHeadersUpdateParams',
+        ],
+    },
+    {
+        'paths': [
             'third_party/blink/public/platform/platform.h',
         ],
         'allowed': [
@@ -1826,6 +1856,7 @@ _CONFIG = [
             'media::PaintCanvasVideoRenderer',
             'media::PIXEL_FORMAT_Y16',
             'media::VideoFrame',
+            'media::VideoFrameSharedImageCache',
             'viz::RasterContextProvider',
             'viz::ReleaseCallback',
             'viz::SinglePlaneFormat',
@@ -2147,6 +2178,14 @@ _CONFIG = [
     },
     {
         'paths': [
+            'third_party/blink/renderer/modules/background_fetch/background_fetch_manager.cc',
+        ],
+        'allowed': [
+            'base::CommandLine',
+        ],
+    },
+    {
+        'paths': [
             'third_party/blink/renderer/modules/webgpu/',
         ],
         'allowed': [
@@ -2253,6 +2292,12 @@ _CONFIG = [
             'learning::mojom::LearningTaskControllerInterfaceBase',
             'media::mojom::MediaMetricsProviderInterfaceBase',
         ],
+    },
+    {
+        'paths': [
+            'third_party/blink/renderer/platform/webrtc/rtc_logging_mojom_traits.h'
+        ],
+        'allowed': ['blink::mojom::RTCMetadataDataView'],
     },
     {
         'paths': [
@@ -2539,6 +2584,26 @@ _CONFIG = [
         ],
     },
     {
+        'paths': [
+            'third_party/blink/renderer/core/frame/local_frame.h',
+        ],
+        'allowed': [
+            'base::OnceClosureList',
+        ],
+    },
+    {
+        'paths': [
+            'third_party/blink/public/web/web_local_frame.h',
+            'third_party/blink/renderer/core/frame/local_frame.cc',
+            'third_party/blink/renderer/core/frame/local_frame.h',
+            'third_party/blink/renderer/core/frame/web_local_frame_impl.cc',
+            'third_party/blink/renderer/core/frame/web_local_frame_impl.h',
+        ],
+        'allowed': [
+            'base::CallbackListSubscription',
+        ],
+    },
+    {
         'paths': ['third_party/blink/renderer/core/frame/local_frame_view.cc'],
         'allowed': [
             'base::LapTimer',
@@ -2697,7 +2762,6 @@ _CONFIG = [
         ],
         'allowed': [
             'net::ERR_.+',
-            'net::HttpResponseHeaders',
             'net::OK',
             'net::RedirectInfo',
         ],
@@ -3078,6 +3142,17 @@ _CONFIG = [
             'third_party/blink/public/platform/web_surface_layer_bridge.h',
         ],
         'allowed': ['viz::FrameSinkId'],
+    },
+    {
+        'paths': [
+            'third_party/blink/public/web/web_widget.h',
+        ],
+        'allowed': [
+            'cc::LayerTreeSettings',
+            'display::ScreenInfos',
+            'viz::mojom::CompositorFrameSink.*',
+            'viz::mojom::CompositorFrameSinkClient.*',
+        ],
     },
 ]
 

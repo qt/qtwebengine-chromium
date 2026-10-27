@@ -11,14 +11,13 @@
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
 #include "content/browser/tracing/background_tracing_manager_impl.h"
-#include "content/browser/tracing/trace_upload_list.h"
 #include "content/browser/tracing/traces_internals/traces_internals.mojom.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/background_tracing_manager.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "services/tracing/public/cpp/background_tracing/trace_upload_list.h"
 
 namespace content {
 // Handles communication between the browser and chrome://traces.
@@ -77,15 +76,16 @@ class CONTENT_EXPORT TracesInternalsHandler
   TracesInternalsHandler(
       mojo::PendingReceiver<traces_internals::mojom::PageHandler> receiver,
       mojo::PendingRemote<traces_internals::mojom::Page> page,
-      TraceUploadList& trace_upload_list,
+      tracing::TraceUploadList& trace_upload_list,
       BackgroundTracingManagerImpl& background_tracing_manager,
       TracingDelegate* tracing_delegate);
 
   virtual std::unique_ptr<perfetto::TracingSession> CreateTracingSession();
 
  private:
-  void OnGetAllReportsTaskComplete(GetAllTraceReportsCallback callback,
-                                   std::vector<ClientTraceReport> results);
+  void OnGetAllReportsTaskComplete(
+      GetAllTraceReportsCallback callback,
+      std::vector<tracing::ClientTraceReport> results);
   bool SetScenariosConfig(
       const perfetto::protos::gen::ChromeFieldTracingConfig& config);
   void MaybeSetupPresetTracingFromFieldTrial();
@@ -102,7 +102,7 @@ class CONTENT_EXPORT TracesInternalsHandler
   mojo::Remote<traces_internals::mojom::Page> page_;
 
   // Used to perform actions with on a single trace_report_database instance.
-  const raw_ref<TraceUploadList> trace_upload_list_;
+  const raw_ref<tracing::TraceUploadList> trace_upload_list_;
   const raw_ref<BackgroundTracingManagerImpl> background_tracing_manager_;
   const raw_ptr<TracingDelegate> tracing_delegate_;
 

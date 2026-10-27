@@ -19,6 +19,11 @@ class FX_Random {
  public:
   static constexpr size_t kStateSize = 848;
 
+  // Using a temporary MT generator, fills `buffer` with random 32-bit unsigned
+  // integers.
+  static void Fill(pdfium::span<uint32_t> buffer);
+
+ private:
   explicit FX_Random(uint32_t seed);
 
   FX_Random(const FX_Random&) = delete;
@@ -26,14 +31,9 @@ class FX_Random {
 
   ~FX_Random();
 
-  // Using a temporary MT generator, fills `buffer` with random 32-bit unsigned
-  // integers.
-  static void Fill(pdfium::span<uint32_t> buffer);
-
   // Returns a single random 32-bit unsigned integer.
   uint32_t Generate();
 
- private:
   uint32_t next_index_;
   std::array<uint32_t, kStateSize> state_;
 };

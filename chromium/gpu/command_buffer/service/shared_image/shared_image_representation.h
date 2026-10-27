@@ -117,19 +117,14 @@ class GPU_GLES2_EXPORT SharedImageRepresentation {
   const std::string& debug_label() const { return backing_->debug_label(); }
   const char* backing_name() const { return backing_->GetName(); }
   MemoryTypeTracker* tracker() { return tracker_; }
-  bool IsCleared() const { return backing_->IsCleared(); }
-  void SetCleared() { backing_->SetCleared(); }
-  gfx::Rect ClearedRect() const { return backing_->ClearedRect(); }
-  void SetClearedRect(const gfx::Rect& cleared_rect) {
-    backing_->SetClearedRect(cleared_rect);
-  }
+  bool IsCleared() const;
+  void SetCleared();
+  virtual gfx::Rect ClearedRect() const;
+  virtual void SetClearedRect(const gfx::Rect& cleared_rect);
 
   // Indicates that the underlying graphics context has been lost, and the
   // backing should be treated as destroyed.
-  void OnContextLost() {
-    has_context_ = false;
-    backing_->OnContextLost();
-  }
+  virtual void OnContextLost();
 
   // Returns the number of image planes expected based on the backing format.
   size_t NumPlanesExpected() const;
@@ -239,7 +234,7 @@ class GPU_GLES2_EXPORT GLTextureImageRepresentationBase
       AllowUnclearedAccess allow_uncleared);
 
   // Gets the texture associated with the `plane_index` for SharedImageFormat.
-  virtual gpu::TextureBase* GetTextureBase(int plane_index) = 0;
+  virtual gpu::TextureBase* GetTextureBase(size_t plane_index) = 0;
   // Calls GetTextureBase with `plane_index` = 0 for single planar formats eg.
   // RGB.
   gpu::TextureBase* GetTextureBase();
@@ -273,11 +268,11 @@ class GPU_GLES2_EXPORT GLTextureImageRepresentation
       : GLTextureImageRepresentationBase(manager, backing, tracker) {}
 
   // Gets the texture associated with the `plane_index` for SharedImageFormat.
-  virtual gles2::Texture* GetTexture(int plane_index) = 0;
+  virtual gles2::Texture* GetTexture(size_t plane_index) = 0;
   // Calls GetTexture with `plane_index` = 0 for single planar formats eg. RGB.
   gles2::Texture* GetTexture();
 
-  gpu::TextureBase* GetTextureBase(int plane_index) override;
+  gpu::TextureBase* GetTextureBase(size_t plane_index) override;
 
  protected:
   friend class WrappedGLTextureCompoundImageRepresentation;
@@ -300,12 +295,12 @@ class GPU_GLES2_EXPORT GLTexturePassthroughImageRepresentation
   // Gets the passthrough texture associated with the `plane_index` for
   // SharedImageFormat.
   virtual const scoped_refptr<gles2::TexturePassthrough>& GetTexturePassthrough(
-      int plane_index) = 0;
+      size_t plane_index) = 0;
   // Calls GetTexturePassthrough with `plane_index` = 0 for single planar
   // formats eg. RGB.
   const scoped_refptr<gles2::TexturePassthrough>& GetTexturePassthrough();
 
-  gpu::TextureBase* GetTextureBase(int plane_index) override;
+  gpu::TextureBase* GetTextureBase(size_t plane_index) override;
 
   // Returns true if access must be suspended in between GL decoder tasks due to
   // DXGI keyed mutex. Only implemented for D3D GL representation.
@@ -349,20 +344,20 @@ class GPU_GLES2_EXPORT SkiaImageRepresentation
       CHECK(representation()->format().is_single_plane());
       return surface(0);
     }
-    SkSurface* surface(int plane_index) const {
+    SkSurface* surface(size_t plane_index) const {
       return surfaces_[plane_index].get();
     }
 
-    GrPromiseImageTexture* promise_image_texture(int plane_index) const {
+    GrPromiseImageTexture* promise_image_texture(size_t plane_index) const {
       return promise_image_textures_[plane_index].get();
     }
 
-    skgpu::graphite::BackendTexture graphite_texture(int plane_index) const {
+    skgpu::graphite::BackendTexture graphite_texture(size_t plane_index) const {
       return graphite_texture_holder(plane_index)->texture();
     }
 
     const scoped_refptr<GraphiteTextureHolder>& graphite_texture_holder(
-        int plane_index) const {
+        size_t plane_index) const {
       return graphite_texture_holders_[plane_index];
     }
 
@@ -405,7 +400,7 @@ class GPU_GLES2_EXPORT SkiaImageRepresentation
       CHECK_EQ(representation()->NumPlanesExpected(), 1u);
       return promise_image_texture(0);
     }
-    GrPromiseImageTexture* promise_image_texture(int plane_index) const {
+    GrPromiseImageTexture* promise_image_texture(size_t plane_index) const {
       return promise_image_textures_[plane_index].get();
     }
 
@@ -413,12 +408,12 @@ class GPU_GLES2_EXPORT SkiaImageRepresentation
       CHECK_EQ(representation()->NumPlanesExpected(), 1u);
       return graphite_texture(0);
     }
-    skgpu::graphite::BackendTexture graphite_texture(int plane_index) const {
+    skgpu::graphite::BackendTexture graphite_texture(size_t plane_index) const {
       return graphite_texture_holder(plane_index)->texture();
     }
 
     const scoped_refptr<GraphiteTextureHolder>& graphite_texture_holder(
-        int plane_index) const {
+        size_t plane_index) const {
       return graphite_texture_holders_[plane_index];
     }
 
@@ -435,7 +430,7 @@ class GPU_GLES2_EXPORT SkiaImageRepresentation
     // Creates an SkImage for the given `plane_index` for
     // multiplanar formats.
     virtual sk_sp<SkImage> CreateSkImageForPlane(
-        int plane_index,
+        size_t plane_index,
         SharedContextState* context_state,
         SkImages::TextureReleaseProc texture_release_proc = nullptr,
         SkImages::ReleaseContext release_context = nullptr) = 0;
@@ -564,7 +559,7 @@ class GPU_GLES2_EXPORT SkiaGaneshImageRepresentation
     // Creates an SkImage for the given `plane_index` from GrBackendTexture for
     // multiplanar formats.
     sk_sp<SkImage> CreateSkImageForPlane(
-        int plane_index,
+        size_t plane_index,
         SharedContextState* context_state,
         SkImages::TextureReleaseProc texture_release_proc = nullptr,
         SkImages::ReleaseContext release_context = nullptr) override;
@@ -713,7 +708,7 @@ class GPU_GLES2_EXPORT SkiaGraphiteImageRepresentation
     // Creates an SkImage for the given `plane_index` from BackendTexture for
     // multiplanar formats.
     sk_sp<SkImage> CreateSkImageForPlane(
-        int plane_index,
+        size_t plane_index,
         SharedContextState* context_state,
         SkImages::TextureReleaseProc texture_release_proc = nullptr,
         SkImages::ReleaseContext release_context = nullptr) override;

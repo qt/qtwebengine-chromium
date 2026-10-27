@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #ifdef EIGEN_PARSED_BY_DOXYGEN
 

@@ -2,9 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import type * as AiAssistanceModel from '../../../models/ai_assistance/ai_assistance.js';
 import {querySelectorErrorOnMissing, renderElementIntoDOM} from '../../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
+import {makeFakeParsedTrace} from '../../../testing/TraceHelpers.js';
+import type {Icon} from '../../../ui/kit/kit.js';
+import * as Lit from '../../../ui/lit/lit.js';
 import * as AiAssistance from '../ai_assistance.js';
 
 describeWithEnvironment('WalkthroughView', () => {
@@ -15,12 +20,14 @@ describeWithEnvironment('WalkthroughView', () => {
     message: AiAssistance.ChatMessage.ModelChatMessage|null,
     isInlined: boolean,
     isExpanded: boolean,
+    prompt?: string,
   }): Promise<AiAssistance.WalkthroughView.WalkthroughView> {
     const view = new WalkthroughView();
     view.isLoading = state.isLoading;
     view.message = state.message;
     view.isInlined = state.isInlined;
     view.isExpanded = state.isExpanded;
+    view.prompt = state.prompt ?? '';
     view.markdownRenderer = new AiAssistance.MarkdownRendererWithCodeBlock();
 
     renderElementIntoDOM(view);
@@ -45,6 +52,7 @@ describeWithEnvironment('WalkthroughView', () => {
   it('renders empty state when there is a message but it has no steps', async () => {
     const emptyMessage: AiAssistance.ChatMessage.ModelChatMessage = {
       entity: AiAssistance.ChatMessage.ChatMessageEntity.MODEL,
+      id: '1',
       parts: [],
     };
     const view = await makeWalkthrough({
@@ -62,6 +70,7 @@ describeWithEnvironment('WalkthroughView', () => {
   it('can render a step correctly when expanded', async () => {
     const message: AiAssistance.ChatMessage.ModelChatMessage = {
       entity: AiAssistance.ChatMessage.ChatMessageEntity.MODEL,
+      id: '1',
       parts: [{
         type: 'step',
         step: {
@@ -81,11 +90,13 @@ describeWithEnvironment('WalkthroughView', () => {
     assert.lengthOf(stepsWrapper.children, 1);
     const stepTitle = querySelectorErrorOnMissing(stepsWrapper, '.title');
     assert.strictEqual(stepTitle.innerText, 'Test step 1');
+    assert.strictEqual(stepTitle.getAttribute('aria-label'), 'Test step 1');
   });
 
   it('does not render steps that require approval', async () => {
     const message: AiAssistance.ChatMessage.ModelChatMessage = {
       entity: AiAssistance.ChatMessage.ChatMessageEntity.MODEL,
+      id: '1',
       parts: [
         {
           type: 'step',
@@ -123,6 +134,7 @@ describeWithEnvironment('WalkthroughView', () => {
   it('uses the title of the last step (even if it requires approval) for the walkthrough header', async () => {
     const message: AiAssistance.ChatMessage.ModelChatMessage = {
       entity: AiAssistance.ChatMessage.ChatMessageEntity.MODEL,
+      id: '1',
       parts: [
         {
           type: 'step',
@@ -159,6 +171,7 @@ describeWithEnvironment('WalkthroughView', () => {
   it('renders the details/summary in inline mode', async () => {
     const message: AiAssistance.ChatMessage.ModelChatMessage = {
       entity: AiAssistance.ChatMessage.ChatMessageEntity.MODEL,
+      id: '1',
       parts: [{
         type: 'step',
         step: {
@@ -182,9 +195,38 @@ describeWithEnvironment('WalkthroughView', () => {
     assert.isFalse(inlineWalkthrough.hasAttribute('open'));
   });
 
+  it('renders spinner with aria-label when loading', async () => {
+    const message: AiAssistance.ChatMessage.ModelChatMessage = {
+      entity: AiAssistance.ChatMessage.ChatMessageEntity.MODEL,
+      id: '1',
+      parts: [{
+        type: 'step',
+        step: {
+          isLoading: true,
+          title: 'Test step 1',
+        }
+      }],
+    };
+    const view = await makeWalkthrough({
+      isLoading: true,
+      message,
+      isInlined: true,
+      isExpanded: true,
+    });
+
+    const headerSpinner = view.contentElement.querySelector('.inline-icon devtools-spinner');
+    assert.isNotNull(headerSpinner);
+    assert.strictEqual(headerSpinner?.getAttribute('aria-label'), 'In progress');
+
+    const stepSpinner = view.contentElement.querySelector('.summary devtools-spinner');
+    assert.isNotNull(stepSpinner);
+    assert.strictEqual(stepSpinner?.getAttribute('aria-label'), 'In progress');
+  });
+
   it('renders the titlebar in sidebar mode', async () => {
     const message: AiAssistance.ChatMessage.ModelChatMessage = {
       entity: AiAssistance.ChatMessage.ChatMessageEntity.MODEL,
+      id: '1',
       parts: [{
         type: 'step',
         step: {
@@ -207,6 +249,7 @@ describeWithEnvironment('WalkthroughView', () => {
   it('calls scrollIntoView on the last step when it is loading', async () => {
     const message: AiAssistance.ChatMessage.ModelChatMessage = {
       entity: AiAssistance.ChatMessage.ChatMessageEntity.MODEL,
+      id: '1',
       parts: [
         {
           type: 'step',
@@ -216,6 +259,10 @@ describeWithEnvironment('WalkthroughView', () => {
             widgets: [
               {
                 name: 'CORE_VITALS',
+                data: {
+                  insightSetKey: 'test-key',
+                  parsedTrace: makeFakeParsedTrace(),
+                },
               } as unknown as AiAssistanceModel.AiAgent.AiWidget,
             ]
           }
@@ -252,6 +299,7 @@ describeWithEnvironment('WalkthroughView', () => {
   it('does not call scrollIntoView on the last step when it is not loading', async () => {
     const message: AiAssistance.ChatMessage.ModelChatMessage = {
       entity: AiAssistance.ChatMessage.ChatMessageEntity.MODEL,
+      id: '1',
       parts: [
         {type: 'step', step: {isLoading: false, title: 'Step 1', widgets: []}},
       ],
@@ -334,6 +382,53 @@ describeWithEnvironment('WalkthroughView', () => {
             isInlined: true,
           }),
           'Agent walkthrough');
+    });
+  });
+
+  describe('renderStep status icons', () => {
+    function testStepBadge(step: AiAssistance.ChatMessage.Step, expectedLabel: string, expectedIcon: string) {
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      Lit.render(
+          AiAssistance.ChatMessage.renderStep({
+            step,
+            isLoading: false,
+            markdownRenderer: new AiAssistance.MarkdownRendererWithCodeBlock(),
+            isLast: true,
+          }),
+          container);
+
+      const indicator = container.querySelector('.indicator');
+      assert.isNotNull(indicator);
+      assert.strictEqual(indicator?.getAttribute('aria-label'), expectedLabel);
+      assert.strictEqual((indicator as Icon).name, expectedIcon);
+    }
+
+    it('renders pause icon with Paused label', () => {
+      testStepBadge(
+          {
+            isLoading: false,
+            requestApproval: {description: 'Confirm', onAnswer: () => {}},
+          },
+          'Paused', 'pause-circle');
+    });
+
+    it('renders cross icon with Aborted label when canceled', () => {
+      testStepBadge(
+          {
+            isLoading: false,
+            canceled: true,
+          },
+          'Aborted', 'cross');
+    });
+
+    it('renders checkmark icon with Completed label', () => {
+      testStepBadge(
+          {
+            isLoading: false,
+          },
+          'Completed', 'checkmark');
     });
   });
 });

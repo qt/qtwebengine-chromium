@@ -1329,14 +1329,11 @@ void QuicSession::OnFinalByteOffsetReceived(
 
   QUIC_DVLOG(1) << ENDPOINT << "Received final byte offset "
                 << final_byte_offset << " for stream " << stream_id;
-  if (GetQuicReloadableFlag(quic_close_connection_on_underflow)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_close_connection_on_underflow);
-    if (final_byte_offset < it->second) {
-      connection_->CloseConnection(
-          QUIC_FLOW_CONTROL_FINAL_SIZE_CHANGED, "Invalid final byte offset",
-          ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
-      return;
-    }
+  if (final_byte_offset < it->second) {
+    connection_->CloseConnection(
+        QUIC_FLOW_CONTROL_FINAL_SIZE_CHANGED, "Invalid final byte offset",
+        ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
+    return;
   }
   QuicByteCount offset_diff = final_byte_offset - it->second;
   if (flow_controller_.UpdateHighestReceivedOffset(
@@ -2338,7 +2335,7 @@ PendingStream* QuicSession::GetOrCreatePendingStream(QuicStreamId stream_id) {
     return nullptr;
   }
 
-  auto pending = std::make_unique<PendingStream>(stream_id, this);
+  auto pending = std::make_unique<PendingStream>(stream_id, *this);
   PendingStream* unowned_pending = pending.get();
   pending_stream_map_[stream_id] = std::move(pending);
   return unowned_pending;
@@ -3082,10 +3079,10 @@ QuicStream* QuicSession::ProcessPendingStream(PendingStream* pending) {
       stream_id, perspective(), /*peer_initiated=*/true, version());
   switch (stream_type) {
     case BIDIRECTIONAL: {
-      return ProcessBidirectionalPendingStream(pending);
+      return ProcessBidirectionalPendingStream(*pending);
     }
     case READ_UNIDIRECTIONAL: {
-      return ProcessReadUnidirectionalPendingStream(pending);
+      return ProcessReadUnidirectionalPendingStream(*pending);
     }
     case WRITE_UNIDIRECTIONAL:
       ABSL_FALLTHROUGH_INTENDED;

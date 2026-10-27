@@ -880,8 +880,12 @@ declare namespace ProtocolProxyApi {
 
     /**
      * Modifies the expression of a container query.
+     * Deprecated. Use setContainerQueryConditionText instead.
+     * @deprecated
      */
     invoke_setContainerQueryText(params: Protocol.CSS.SetContainerQueryTextRequest): Promise<Protocol.CSS.SetContainerQueryTextResponse>;
+
+    invoke_setContainerQueryConditionText(params: Protocol.CSS.SetContainerQueryConditionTextRequest): Promise<Protocol.CSS.SetContainerQueryConditionTextResponse>;
 
     /**
      * Modifies the expression of a supports at-rule.
@@ -1758,19 +1762,11 @@ declare namespace ProtocolProxyApi {
     invoke_setPressureSourceOverrideEnabled(params: Protocol.Emulation.SetPressureSourceOverrideEnabledRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
-     * TODO: OBSOLETE: To remove when setPressureDataOverride is merged.
      * Provides a given pressure state that will be processed and eventually be
      * delivered to PressureObserver users. |source| must have been previously
      * overridden by setPressureSourceOverrideEnabled.
      */
     invoke_setPressureStateOverride(params: Protocol.Emulation.SetPressureStateOverrideRequest): Promise<Protocol.ProtocolResponseWithError>;
-
-    /**
-     * Provides a given pressure data set that will be processed and eventually be
-     * delivered to PressureObserver users. |source| must have been previously
-     * overridden by setPressureSourceOverrideEnabled.
-     */
-    invoke_setPressureDataOverride(params: Protocol.Emulation.SetPressureDataOverrideRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
      * Overrides the Idle state.
@@ -1921,31 +1917,23 @@ declare namespace ProtocolProxyApi {
   export interface ExtensionsApi {
     /**
      * Runs an extension default action.
-     * Available if the client is connected using the --remote-debugging-pipe
-     * flag and the --enable-unsafe-extension-debugging flag is set.
      */
     invoke_triggerAction(params: Protocol.Extensions.TriggerActionRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
      * Installs an unpacked extension from the filesystem similar to
      * --load-extension CLI flags. Returns extension ID once the extension
-     * has been installed. Available if the client is connected using the
-     * --remote-debugging-pipe flag and the --enable-unsafe-extension-debugging
-     * flag is set.
+     * has been installed.
      */
     invoke_loadUnpacked(params: Protocol.Extensions.LoadUnpackedRequest): Promise<Protocol.Extensions.LoadUnpackedResponse>;
 
     /**
      * Gets a list of all unpacked extensions.
-     * Available if the client is connected using the --remote-debugging-pipe flag
-     * and the --enable-unsafe-extension-debugging flag is set.
      */
     invoke_getExtensions(): Promise<Protocol.Extensions.GetExtensionsResponse>;
 
     /**
      * Uninstalls an unpacked extension (others not supported) from the profile.
-     * Available if the client is connected using the --remote-debugging-pipe flag
-     * and the --enable-unsafe-extension-debugging.
      */
     invoke_uninstall(params: Protocol.Extensions.UninstallRequest): Promise<Protocol.ProtocolResponseWithError>;
 
@@ -2730,6 +2718,11 @@ declare namespace ProtocolProxyApi {
      * Sets up tracking device bound sessions and fetching of initial set of sessions.
      */
     invoke_enableDeviceBoundSessions(params: Protocol.Network.EnableDeviceBoundSessionsRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Deletes a device bound session.
+     */
+    invoke_deleteDeviceBoundSession(params: Protocol.Network.DeleteDeviceBoundSessionRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
      * Fetches the schemeful site for a specific origin.
@@ -4339,13 +4332,6 @@ declare namespace ProtocolProxyApi {
      */
     invoke_getRelatedWebsiteSets(): Promise<Protocol.Storage.GetRelatedWebsiteSetsResponse>;
 
-    /**
-     * Returns the list of URLs from a page and its embedded resources that match
-     * existing grace period URL pattern rules.
-     * https://developers.google.com/privacy-sandbox/cookies/temporary-exceptions/grace-period
-     */
-    invoke_getAffectedUrlsForThirdPartyCookieMetadata(params: Protocol.Storage.GetAffectedUrlsForThirdPartyCookieMetadataRequest): Promise<Protocol.Storage.GetAffectedUrlsForThirdPartyCookieMetadataResponse>;
-
     invoke_setProtectedAudienceKAnonymity(params: Protocol.Storage.SetProtectedAudienceKAnonymityRequest): Promise<Protocol.ProtocolResponseWithError>;
 
   }
@@ -4854,6 +4840,16 @@ declare namespace ProtocolProxyApi {
      * Disables the WebMCP domain.
      */
     invoke_disable(): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Invokes a registered tool.
+     */
+    invoke_invokeTool(params: Protocol.WebMCP.InvokeToolRequest): Promise<Protocol.WebMCP.InvokeToolResponse>;
+
+    /**
+     * Cancels a pending tool invocation.
+     */
+    invoke_cancelInvocation(params: Protocol.WebMCP.CancelInvocationRequest): Promise<Protocol.ProtocolResponseWithError>;
 
   }
   export interface WebMCPDispatcher {

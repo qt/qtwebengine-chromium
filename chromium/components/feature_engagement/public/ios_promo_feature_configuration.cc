@@ -510,6 +510,18 @@ std::optional<FeatureConfig> GetCustomConfig(const base::Feature* feature) {
     // rules.
     config.groups.push_back(kiOSDefaultBrowserPromosGroup.name);
     return config;
+  } else if (kIPHiOSNewIAPromoFeature.name == feature->name) {
+    // Promo should show only once.
+    FeatureConfig config;
+    config.valid = true;
+    config.availability = Comparator(ANY, 0);
+    config.session_rate = Comparator(EQUAL, 0);
+    config.used =
+        EventConfig("new_ia_promo_used", Comparator(ANY, 0), 365, 365);
+    config.trigger = EventConfig("new_ia_promo_trigger", Comparator(EQUAL, 0),
+                                 feature_engagement::kMaxStoragePeriod,
+                                 feature_engagement::kMaxStoragePeriod);
+    return config;
   } else if (kIPHiOSDefaultBrowserOffCyclePromoFeature.name == feature->name) {
     // A config for a feature to handle the off-cycle generic default browser
     // promo.
@@ -589,13 +601,35 @@ std::optional<FeatureConfig> GetCustomConfig(const base::Feature* feature) {
 
     config.event_configs.insert(
         EventConfig(feature_engagement::events::kChromeActiveSessionDay,
-                    Comparator(ANY, 0), 7, kMaxStoragePeriod));
+                    Comparator(ANY, 0), 8, kMaxStoragePeriod));
     config.event_configs.insert(
         EventConfig(feature_engagement::events::kChromeActiveSessionDay,
-                    Comparator(ANY, 0), 14, kMaxStoragePeriod));
+                    Comparator(ANY, 0), 15, kMaxStoragePeriod));
     config.event_configs.insert(
         EventConfig(feature_engagement::events::kChromeActiveSessionDay,
-                    Comparator(ANY, 0), 28, kMaxStoragePeriod));
+                    Comparator(ANY, 0), 29, kMaxStoragePeriod));
+    return config;
+  } else if (kIPHiOSBackendPromoFeature.name == feature->name) {
+    FeatureConfig config;
+    config.valid = true;
+    config.availability = Comparator(ANY, 0);
+    config.session_rate = Comparator(ANY, 0);
+    config.storage_type = StorageType::PROFILE;
+
+    // Backend promos are configured and capped from the backend. Here we only
+    // want to control the cooldowns between backend promos and other promos
+    // that are part of the kiOSFullscreenPromosGroup group.
+    // Being part of kiOSFullscreenPromosGroup will allow this promo only if
+    // there was no other promo from this group in last 2 days and less than 3
+    // in the last 7 days.
+    config.groups.push_back(kiOSFullscreenPromosGroup.name);
+    config.used = EventConfig("ios_backend_promo_used", Comparator(ANY, 0),
+                              feature_engagement::kMaxStoragePeriod,
+                              feature_engagement::kMaxStoragePeriod);
+    config.trigger =
+        EventConfig("ios_backend_promo_trigger", Comparator(ANY, 0),
+                    feature_engagement::kMaxStoragePeriod,
+                    feature_engagement::kMaxStoragePeriod);
     return config;
   } else {
     return std::nullopt;

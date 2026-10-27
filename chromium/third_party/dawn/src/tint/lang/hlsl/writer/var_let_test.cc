@@ -806,5 +806,106 @@ void main() {
 )");
 }
 
+TEST_F(HlslWriterTest, Var_SubgroupMatrix_ZeroInit) {
+    auto* func = b.ComputeFunction("main");
+    b.Append(func->Block(), [&] {
+        b.Var("a", function, ty.subgroup_matrix_result(ty.f32(), 16, 8));
+        b.Return(func);
+    });
+
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
+    EXPECT_EQ(output_.hlsl, R"(#include <dx/linalg.h>
+using namespace dx::linalg;
+using Matrix_result_f32_8x16 = Matrix<ComponentType::F32, 8, 16, MatrixUse::Accumulator, MatrixScope::Wave>;
+
+[numthreads(1, 1, 1)]
+void main() {
+  Matrix_result_f32_8x16 a = Matrix_result_f32_8x16::Splat(0.0f);
+}
+
+)");
+}
+
+TEST_F(HlslWriterTest, Var_SubgroupMatrix_Array_ZeroInit) {
+    auto* func = b.ComputeFunction("main");
+    b.Append(func->Block(), [&] {
+        b.Var("a", function, ty.array(ty.subgroup_matrix_result(ty.f32(), 16, 8), 4u));
+        b.Return(func);
+    });
+
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
+    EXPECT_EQ(output_.hlsl, R"(#include <dx/linalg.h>
+using namespace dx::linalg;
+using Matrix_result_f32_8x16 = Matrix<ComponentType::F32, 8, 16, MatrixUse::Accumulator, MatrixScope::Wave>;
+
+[numthreads(1, 1, 1)]
+void main() {
+  Matrix_result_f32_8x16 a[4] = {Matrix_result_f32_8x16::Splat(0.0f), Matrix_result_f32_8x16::Splat(0.0f), Matrix_result_f32_8x16::Splat(0.0f), Matrix_result_f32_8x16::Splat(0.0f)};
+}
+
+)");
+}
+
+TEST_F(HlslWriterTest, Var_SubgroupMatrix_Struct_ZeroInit) {
+    auto* str = ty.Struct(mod.symbols.New("S"),
+                          {
+                              {mod.symbols.New("m"), ty.subgroup_matrix_result(ty.f32(), 16, 8)},
+                          });
+
+    auto* func = b.ComputeFunction("main");
+    b.Append(func->Block(), [&] {
+        b.Var("a", function, str);
+        b.Return(func);
+    });
+
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
+    EXPECT_EQ(output_.hlsl, R"(#include <dx/linalg.h>
+using namespace dx::linalg;
+using Matrix_result_f32_8x16 = Matrix<ComponentType::F32, 8, 16, MatrixUse::Accumulator, MatrixScope::Wave>;
+struct S {
+  Matrix_result_f32_8x16 m;
+};
+
+
+[numthreads(1, 1, 1)]
+void main() {
+  S a = {Matrix_result_f32_8x16::Splat(0.0f)};
+}
+
+)");
+}
+
+// Test deduplication of the linalg header and type aliases.
+TEST_F(HlslWriterTest, Var_SubgroupMatrix_Multiple) {
+    auto* func = b.ComputeFunction("main");
+    b.Append(func->Block(), [&] {
+        b.Var("l1", function, ty.subgroup_matrix_left(ty.f32(), 16, 8));
+        b.Var("l2", function, ty.subgroup_matrix_left(ty.f32(), 16, 8));
+        b.Var("r1", function, ty.subgroup_matrix_right(ty.f32(), 16, 8));
+        b.Var("r2", function, ty.subgroup_matrix_right(ty.f32(), 16, 8));
+        b.Return(func);
+    });
+
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
+    EXPECT_EQ(output_.hlsl, R"(#include <dx/linalg.h>
+using namespace dx::linalg;
+using Matrix_left_f32_8x16 = Matrix<ComponentType::F32, 8, 16, MatrixUse::A, MatrixScope::Wave>;
+using Matrix_right_f32_8x16 = Matrix<ComponentType::F32, 8, 16, MatrixUse::B, MatrixScope::Wave>;
+
+[numthreads(1, 1, 1)]
+void main() {
+  Matrix_left_f32_8x16 l1 = Matrix_left_f32_8x16::Splat(0.0f);
+  Matrix_left_f32_8x16 l2 = Matrix_left_f32_8x16::Splat(0.0f);
+  Matrix_right_f32_8x16 r1 = Matrix_right_f32_8x16::Splat(0.0f);
+  Matrix_right_f32_8x16 r2 = Matrix_right_f32_8x16::Splat(0.0f);
+}
+
+)");
+}
+
 }  // namespace
 }  // namespace tint::hlsl::writer

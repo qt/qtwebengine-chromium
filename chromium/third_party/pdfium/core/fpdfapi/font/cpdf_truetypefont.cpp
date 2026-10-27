@@ -113,8 +113,9 @@ void CPDF_TrueTypeFont::LoadGlyphMap() {
 
       WideString wsUnicode = UnicodeFromCharCode(charcode);
       if (!wsUnicode.IsEmpty()) {
-        glyph_index_[charcode] = face->GetCharIndex(wsUnicode[0]);
-        encoding_.SetUnicode(charcode, wsUnicode[0]);
+        wchar_t front_char = wsUnicode.Front();
+        glyph_index_[charcode] = face->GetCharIndex(front_char);
+        encoding_.SetUnicode(charcode, front_char);
       }
     }
     return;

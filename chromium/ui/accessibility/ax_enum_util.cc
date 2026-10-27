@@ -36,14 +36,16 @@ const char* ToString(ax::mojom::Event event) {
       return "documentTitleChanged";
     case ax::mojom::Event::kEndOfTest:
       return "endOfTest";
+    case ax::mojom::Event::kEnabledChanged:
+      return "enabledChanged";
     case ax::mojom::Event::kExpandedChanged:
       return "expandedChanged";
     case ax::mojom::Event::kFocus:
       return "focus";
     case ax::mojom::Event::kFocusAfterMenuClose:
       return "focusAfterMenuClose";
-    case ax::mojom::Event::kFocusContext:
-      return "focusContext";
+    case ax::mojom::Event::kFocusContextDeprecated:
+      return "focusContextDeprecated";
     case ax::mojom::Event::kHide:
       return "hide";
     case ax::mojom::Event::kHitTestResult:
@@ -1125,6 +1127,8 @@ const char* ToString(ax::mojom::Action action) {
       return "increment";
     case ax::mojom::Action::kLoadInlineTextBoxes:
       return "loadInlineTextBoxes";
+    case ax::mojom::Action::kReplaceRanges:
+      return "replaceRanges";
     case ax::mojom::Action::kReplaceSelectedText:
       return "replaceSelectedText";
     case ax::mojom::Action::kResumeMedia:
@@ -1188,18 +1192,6 @@ const char* ToString(ax::mojom::Action action) {
   return "";
 }
 
-const char* ToString(ax::mojom::ActionFlags action_flags) {
-  switch (action_flags) {
-    case ax::mojom::ActionFlags::kNone:
-      return "none";
-    case ax::mojom::ActionFlags::kRequestImages:
-      return "requestImages";
-    case ax::mojom::ActionFlags::kRequestInlineTextBoxes:
-      return "requestInlineTextBoxes";
-  }
-
-  return "";
-}
 
 const char* ToString(ax::mojom::ScrollAlignment scroll_alignment) {
   switch (scroll_alignment) {
@@ -1958,6 +1950,8 @@ const char* ToString(ax::mojom::StringListAttribute string_list_attribute) {
       return "ariaNotificationTypes";
     case ax::mojom::StringListAttribute::kCustomActionDescriptions:
       return "customActionDescriptions";
+    case ax::mojom::StringListAttribute::kTextOperationReplacementStrings:
+      return "textOperationReplacementStrings";
   }
 
   return "";
@@ -2037,6 +2031,8 @@ const char* ToString(ax::mojom::Command command) {
       return "none";
     case ax::mojom::Command::kClearSelection:
       return "clearSelection";
+    case ax::mojom::Command::kSpinButtonDecrement:
+      return "spinButtonDecrement";
     case ax::mojom::Command::kDelete:
       return "delete";
     case ax::mojom::Command::kDictate:
@@ -2047,6 +2043,8 @@ const char* ToString(ax::mojom::Command command) {
       return "format";
     case ax::mojom::Command::kHistory:
       return "history";
+    case ax::mojom::Command::kSpinButtonIncrement:
+      return "spinButtonIncrement";
     case ax::mojom::Command::kInsert:
       return "insert";
     case ax::mojom::Command::kMarker:

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 import * as Host from '../../core/host/host.js';
-import * as i18n from '../../core/i18n/i18n.js';
 import * as AiCodeCompletion from '../../models/ai_code_completion/ai_code_completion.js';
 import * as AiCodeGeneration from '../../models/ai_code_generation/ai_code_generation.js';
 import type * as Workspace from '../../models/workspace/workspace.js';
@@ -24,7 +23,7 @@ export class AiCodeCompletionPlugin extends Plugin {
   #aiCodeCompletionDisclaimer?: PanelCommon.AiCodeCompletionDisclaimer;
   #aiCodeCompletionDisclaimerContainer = document.createElement('div');
   #aiCodeCompletionDisclaimerToolbarItem = new UI.Toolbar.ToolbarItem(this.#aiCodeCompletionDisclaimerContainer);
-  #aiCodeCompletionCitationsToolbar?: PanelCommon.AiCodeCompletionSummaryToolbar;
+  #aiCodeCompletionCitationsToolbar?: PanelCommon.AiCodeCompletionSummaryToolbar.AiCodeCompletionSummaryToolbar;
   #aiCodeCompletionCitationsToolbarContainer = document.createElement('div');
   #aiCodeCompletionCitationsToolbarAttached = false;
   aiCodeCompletionConfig: TextEditor.AiCodeCompletionProvider.AiCodeCompletionConfig;
@@ -32,9 +31,8 @@ export class AiCodeCompletionPlugin extends Plugin {
 
   constructor(uiSourceCode: Workspace.UISourceCode.UISourceCode) {
     super(uiSourceCode);
-    const devtoolsLocale = i18n.DevToolsLocale.DevToolsLocale.instance();
-    if (!AiCodeCompletion.AiCodeCompletion.AiCodeCompletion.isAiCodeCompletionEnabled(devtoolsLocale.locale)) {
-      throw new Error('AI code completion feature is not enabled.');
+    if (!AiCodeCompletion.AiCodeCompletion.AiCodeCompletion.isAiCodeCompletionAvailable()) {
+      throw new Error('AI code completion feature is not available.');
     }
 
     this.aiCodeCompletionConfig = {
@@ -115,11 +113,12 @@ export class AiCodeCompletionPlugin extends Plugin {
     if (this.#aiCodeCompletionCitationsToolbar) {
       return;
     }
-    this.#aiCodeCompletionCitationsToolbar = new PanelCommon.AiCodeCompletionSummaryToolbar({
-      citationsTooltipId: CITATIONS_TOOLTIP_ID,
-      hasTopBorder: true,
-      panel: AiCodeCompletion.AiCodeCompletion.ContextFlavor.SOURCES
-    });
+    this.#aiCodeCompletionCitationsToolbar =
+        new PanelCommon.AiCodeCompletionSummaryToolbar.AiCodeCompletionSummaryToolbar({
+          citationsTooltipId: CITATIONS_TOOLTIP_ID,
+          hasTopBorder: true,
+          panel: AiCodeCompletion.AiCodeCompletion.ContextFlavor.SOURCES
+        });
     this.#aiCodeCompletionCitationsToolbar.show(this.#aiCodeCompletionCitationsToolbarContainer, undefined, true);
   }
 

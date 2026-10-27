@@ -173,6 +173,10 @@ bool TryParseResolutions(const Json::Value& value,
 }  // namespace
 
 ErrorOr<Stream> Stream::TryParse(const Json::Value& value, Stream::Type type) {
+  if (!value.isObject()) {
+    return Error(Error::Code::kJsonParseError, "Stream is not a JSON object");
+  }
+
   Stream out;
   out.type = type;
 
@@ -266,6 +270,11 @@ bool Stream::IsValid() const {
 }
 
 ErrorOr<AudioStream> AudioStream::TryParse(const Json::Value& value) {
+  if (!value.isObject()) {
+    return Error(Error::Code::kJsonParseError,
+                 "Audio stream is not a JSON object");
+  }
+
   auto stream_or_error = Stream::TryParse(value, Stream::Type::kAudioSource);
   if (stream_or_error.is_error()) {
     return stream_or_error.error();
@@ -308,6 +317,11 @@ bool AudioStream::IsValid() const {
 }
 
 ErrorOr<VideoStream> VideoStream::TryParse(const Json::Value& value) {
+  if (!value.isObject()) {
+    return Error(Error::Code::kJsonParseError,
+                 "Video stream is not a JSON object");
+  }
+
   auto stream_or_error = Stream::TryParse(value, Stream::Type::kVideoSource);
   if (stream_or_error.is_error()) {
     return stream_or_error.error();

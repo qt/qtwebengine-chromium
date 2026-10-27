@@ -162,12 +162,13 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
     // Track which index we have bound our Descriptor Buffer in CmdBindDescriptorBuffersEXT
     uint32_t resource_descriptor_buffer_index_;
 
+    Validator& gpuav_;
+
   private:
     void AllocateResources(const Location &loc);
     void ResetCBState(bool should_destroy);
     bool NeedsPostProcess();
 
-    Validator &gpuav_;
     VkDescriptorSetLayout instrumentation_desc_set_layout_ = VK_NULL_HANDLE;
     std::vector<CommandErrorLogger> command_error_loggers_;
 };
@@ -184,7 +185,7 @@ class DescriptorSetBindings {
         // Those spots are updated at command buffer submission time.
         vko::BufferRange desc_set_binding_to_post_process_buffers_lut{};
 
-        vko::BufferRange descritpor_state_ssbo{};  // type BoundDescriptorSetsStateSSBO
+        vko::BufferRange bound_desc_sets_ssbo{};  // type BoundDescriptorSetsSSBO
 
         // The index into this vector will start from vkCmdBindDescriptorSets::firstSet
         // The vector size is vkCmdBindDescriptorSets::descriptorSetCount
@@ -316,7 +317,7 @@ static inline const AccelerationStructureNVSubState &SubState(const vvl::Acceler
 }
 class AccelerationStructureKHRSubState : public vvl::AccelerationStructureKHRSubState {
   public:
-    AccelerationStructureKHRSubState(vvl::AccelerationStructureKHR &obj, DescriptorHeap &heap);
+    AccelerationStructureKHRSubState(Validator& validator, vvl::AccelerationStructureKHR& obj, DescriptorHeap& heap);
     void Destroy() override;
     void NotifyInvalidate(const vvl::StateObject::NodeList &invalid_nodes, bool unlink) override;
 
@@ -329,6 +330,10 @@ class AccelerationStructureKHRSubState : public vvl::AccelerationStructureKHRSub
         VkDeviceSize stride{};
     };
     std::vector<GeometryBufferRange> geometry_buffer_copies{};
+    vko::BufferRange gpu_state;
+
+  private:
+    Validator& validator;
 };
 static inline AccelerationStructureKHRSubState &SubState(vvl::AccelerationStructureKHR &obj) {
     return *static_cast<AccelerationStructureKHRSubState *>(obj.SubState(LayerObjectTypeGpuAssisted));

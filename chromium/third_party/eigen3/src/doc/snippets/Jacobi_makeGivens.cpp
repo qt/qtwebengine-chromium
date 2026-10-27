@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 Vector2f v = Vector2f::Random();
 JacobiRotation<float> G;
 G.makeGivens(v.x(), v.y());

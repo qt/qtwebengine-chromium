@@ -121,6 +121,18 @@ export class MenuItem extends LitElement implements MenuItemType {
       white-space: nowrap;
     }
 
+    #headline-container {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding-block: 4px;
+    }
+
+    #supporting-text {
+      font: var(--cros-annotation-1-font);
+      color: var(--cros-sys-secondary);
+    }
+
     :host-context([dir=rtl]) ::slotted(:is(
       [slot="start"],
       [slot="end"]
@@ -143,6 +155,7 @@ export class MenuItem extends LitElement implements MenuItemType {
     ariaHasPopup: {type: String, reflect: true, attribute: 'aria-haspopup'},
     ariaLabel: {type: String, reflect: true, attribute: 'aria-label'},
     headline: {type: String},
+    supportingText: {type: String},
     itemStart: {type: String},
     itemEnd: {type: String},
     tabIndex: {type: Number, reflect: true},
@@ -169,6 +182,13 @@ export class MenuItem extends LitElement implements MenuItemType {
    * @export
    */
   declare headline: string;
+
+  /**
+   * Supporting text is the secondary text of the list item.
+   * @export
+   */
+  declare supportingText: string;
+
   /**
    * Item to be placed in the start slot if any. 'icon' exposes the start slot.
    * @export
@@ -477,6 +497,12 @@ export class MenuItem extends LitElement implements MenuItemType {
         <slot name="start" slot="start" aria-hidden="true"></slot>
       `;
     }
+    const headlineContent = this.supportingText ?
+        html`<div slot="headline" id="headline-container">
+          <div id="headline">${this.headline}</div>
+          <div id="supporting-text">${this.supportingText}</div>
+        </div>` :
+        html`<div slot="headline" id="headline">${this.headline}</div>`;
     return html`
       <md-menu-item
           aria-haspopup=${(this.ariaHasPopup || 'false') as AriaHasPopupValue}
@@ -488,7 +514,7 @@ export class MenuItem extends LitElement implements MenuItemType {
            ?selected=${!!this.missedPropertySets.selected}
            typeahead-text=${ifDefined(this.missedPropertySets.typeaheadText)}
           .type=${this.type}>
-        <div slot="headline" id="headline">${this.headline}</div>
+        ${headlineContent}
         ${startSlot}
         ${endSlot}
       </md-menu-item>

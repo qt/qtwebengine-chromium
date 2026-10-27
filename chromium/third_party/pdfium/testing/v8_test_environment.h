@@ -11,7 +11,7 @@
 
 #include <memory>
 
-#include "fxjs/cfx_v8.h"
+#include "fxjs/cfx_isolate_wrapper.h"
 #include "fxjs/cfx_v8_array_buffer_allocator.h"
 #include "testing/gtest/include/gtest/gtest.h"
 

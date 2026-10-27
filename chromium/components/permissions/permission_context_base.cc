@@ -22,6 +22,7 @@
 #include "base/not_fatal_until.h"
 #include "base/observer_list.h"
 #include "base/strings/strcat.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -50,6 +51,7 @@
 #include "components/permissions/permissions_client.h"
 #include "components/permissions/request_type.h"
 #include "components/permissions/resolvers/content_setting_permission_resolver.h"
+#include "components/permissions/resolvers/geolocation_permission_resolver.h"
 #include "components/permissions/resolvers/permission_prompt_options.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/global_routing_id.h"
@@ -144,6 +146,7 @@ void PermissionContextBase::RequestPermission(
              << " is not supported in popups)";
     NotifyPermissionSet(*request_data, std::move(callback),
                         /*persist=*/false,
+                        /*permission_result=*/nullptr,
                         permissions::PermissionPromptDecision{
                             .overall_decision = PermissionDecision::kDeny,
                             .prompt_options = std::monostate(),
@@ -157,8 +160,8 @@ void PermissionContextBase::RequestPermission(
   content::PermissionResult result = GetPermissionStatus(*request_data, rfh);
 
   bool status_ignorable = PermissionUtil::CanPermissionRequestIgnoreStatus(
-      request_data, result.source);
-
+      request_data, result.source, result.status,
+      content::WebContents::FromRenderFrameHost(rfh));
   if (!status_ignorable && (result.status == PermissionStatus::GRANTED ||
                             result.status == PermissionStatus::DENIED)) {
     static constexpr char kResetInstructions[] =
@@ -248,46 +251,26 @@ void PermissionContextBase::RequestPermission(
         result.source == content::PermissionStatusSource::HEURISTIC_GRANT
             ? PermissionDecision::kAllowThisTime
             : PermissionDecision::kAllow;
-    PromptOptions prompt_options = std::monostate();
-    if (content_settings_type_ ==
-            ContentSettingsType::GEOLOCATION_WITH_OPTIONS &&
-        result.status == blink::mojom::PermissionStatus::GRANTED &&
-        result.retrieved_permission_setting) {
-      if (GeolocationSetting* geolocation_setting =
-              std::get_if<GeolocationSetting>(
-                  &result.retrieved_permission_setting.value())) {
-        // TODO(crbug.com/417894145): Show an upgrade prompt if approximate was
-        // previously granted and the site requests precise location (only for
-        // <geolocation> element).
-        prompt_options = GeolocationPromptOptions{
-            .selected_accuracy =
-                geolocation_setting->precise == PermissionOption::kAllowed
-                    ? GeolocationAccuracy::kPrecise
-                    : GeolocationAccuracy::kApproximate};
-      }
-    }
     NotifyPermissionSet(
-        *request_data, std::move(callback), persist,
+        *request_data, std::move(callback), persist, &result,
         permissions::PermissionPromptDecision{
             .overall_decision =
                 result.status == blink::mojom::PermissionStatus::GRANTED
                     ? allow_decision
                     : PermissionDecision::kDeny,
-            .prompt_options = prompt_options,
             .is_final = true});
     return;
   }
   // Status is either {ASK} or it's {GRANT/DENY and ignorable}.
   if (content_settings_type_ == ContentSettingsType::GEOLOCATION_WITH_OPTIONS) {
-    if (request_data->requested_geolocation_accuracy.has_value() &&
-        *request_data->requested_geolocation_accuracy ==
-            GeolocationAccuracy::kApproximate) {
-      request_data->WithGeolocationPromptType(
-          GeolocationPromptType::kApproximateOnly);
-    } else {
-      request_data->WithGeolocationPromptType(
-          GeolocationPromptType::kApproximateOrPrecise);
-    }
+    std::unique_ptr<PermissionResolver> resolver =
+        CreatePermissionResolver(request_data->permission_descriptor);
+    CHECK(result.retrieved_permission_setting.has_value());
+    request_data->WithGeolocationPromptType(
+        static_cast<GeolocationPermissionResolver*>(resolver.get())
+            ->GetGeolocationPromptType(
+                request_data->IsEmbeddedPermissionElementInitiated(),
+                result.retrieved_permission_setting.value()));
   }
   PermissionUmaUtil::RecordPermissionRequestedFromFrame(content_settings_type_,
                                                         rfh);
@@ -352,9 +335,15 @@ content::PermissionResult PermissionContextBase::GetPermissionStatus(
                                           content_settings_type_)) {
     return content::PermissionResult(
         PermissionStatus::GRANTED,
-        content::PermissionStatusSource::HEURISTIC_GRANT);
+        content::PermissionStatusSource::HEURISTIC_GRANT,
+        content_settings::PermissionSettingsRegistry::GetInstance()
+            ->Get(content_settings_type_)
+            ->delegate()
+            .ToPermissionSetting(CONTENT_SETTING_ALLOW));
   }
-  return GetPermissionStatus(*request_data.resolver, render_frame_host,
+  std::unique_ptr<PermissionResolver> resolver =
+      CreatePermissionResolver(request_data.permission_descriptor);
+  return GetPermissionStatus(*resolver, render_frame_host,
                              request_data.requesting_origin,
                              request_data.embedding_origin);
 }
@@ -539,13 +528,33 @@ PermissionContextBase::UpdatePermissionStatusWithDeviceStatus(
     content::PermissionResult result,
     const GURL& requesting_origin,
     const GURL& embedding_origin) {
-  MaybeUpdateCachedHasDevicePermission(web_contents);
-
-  // If the site content setting is ASK/BLOCKED the device-level permission
-  // won't affect it.
+  // If the site content setting is ASK or DENIED, device-level permission has
+  // no effect on the current result. However, we still need to refresh the
+  // cached device permission state because a change (e.g. user toggling the
+  // OS-level permission) must invalidate cached state for *all* origins via
+  // the wildcard observer notification in MaybeUpdateCachedHasDevicePermission.
+  //
+  // Since this code is reached from navigation hot paths (e.g. on macOS, where
+  // the OS permission query can be expensive), post the refresh asynchronously
+  // in the non-GRANTED case so the hot path is not blocked, while still
+  // preserving the cross-origin observer-notification correctness.
   if (result.status != blink::mojom::PermissionStatus::GRANTED) {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(
+                       [](base::WeakPtr<PermissionContextBase> self,
+                          base::WeakPtr<content::WebContents> wc) {
+                         if (!self) {
+                           return;
+                         }
+                         self->MaybeUpdateCachedHasDevicePermission(wc.get());
+                       },
+                       weak_factory_.GetWeakPtr(),
+                       web_contents ? web_contents->GetWeakPtr()
+                                    : base::WeakPtr<content::WebContents>()));
     return result;
   }
+
+  MaybeUpdateCachedHasDevicePermission(web_contents);
 
   // If the device-level permission is granted, it has no effect on the result.
   if (last_has_device_permission_result_.has_value() &&
@@ -693,7 +702,7 @@ void PermissionContextBase::PermissionDecided(
   NotifyPermissionSet(request_data,
                       request->second.second ? std::move(request->second.second)
                                              : base::DoNothing(),
-                      persist, decision);
+                      persist, /*permission_result=*/nullptr, decision);
 }
 
 content::BrowserContext* PermissionContextBase::browser_context() const {
@@ -771,36 +780,50 @@ void PermissionContextBase::MaybeUpdateCachedHasDevicePermission(
   }
 }
 
-void PermissionContextBase::NotifyPermissionSet(
+content::PermissionResult PermissionContextBase::ComputeNewPermissionResult(
     const PermissionRequestData& request_data,
-    BrowserPermissionCallback callback,
-    bool persist,
     const permissions::PermissionPromptDecision& decision) {
-  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   // Note that rfh may be null, see crbug.com/426909787.
   auto* rfh = content::RenderFrameHost::FromID(
       request_data.id.global_render_frame_host_id());
 
-  // Need to reretrieve the persisted value, since the underlying permission
-  // status may have changed in the meantime
   PermissionSetting previous_value = GetPermissionStatusInternal(
       rfh, request_data.requesting_origin, request_data.embedding_origin);
-  PermissionSetting new_value =
-      request_data.resolver->ComputePermissionDecisionResult(previous_value,
-                                                             decision);
+  std::unique_ptr<PermissionResolver> resolver =
+      CreatePermissionResolver(request_data.permission_descriptor);
+  PermissionSetting new_value = resolver->ComputePermissionDecisionResult(
+      previous_value, decision, request_data.geolocation_prompt_type);
+  return content::PermissionResult(
+      resolver->DeterminePermissionStatus(new_value),
+      content::PermissionStatusSource::UNSPECIFIED, new_value);
+}
+
+void PermissionContextBase::NotifyPermissionSet(
+    const PermissionRequestData& request_data,
+    BrowserPermissionCallback callback,
+    bool persist,
+    const content::PermissionResult* permission_result,
+    const permissions::PermissionPromptDecision& decision) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  content::PermissionResult new_permission_result =
+      permission_result ? *permission_result
+                        : ComputeNewPermissionResult(request_data, decision);
 
   if (persist) {
-    // Clone new value, because we need it again for the callback.
-    UpdateSetting(
-        request_data, new_value,
-        decision.overall_decision == PermissionDecision::kAllowThisTime);
+    CHECK(new_permission_result.retrieved_permission_setting.has_value());
+    UpdateSetting(request_data,
+                  new_permission_result.retrieved_permission_setting.value(),
+                  /*is_one_time=*/decision.overall_decision ==
+                      PermissionDecision::kAllowThisTime);
   }
 
+  // Note that rfh may be null, see crbug.com/426909787.
+  auto* rfh = content::RenderFrameHost::FromID(
+      request_data.id.global_render_frame_host_id());
+
   if (decision.is_final) {
-    UpdateTabContext(
-        request_data,
-        decision.overall_decision == PermissionDecision::kAllow ||
-            decision.overall_decision == PermissionDecision::kAllowThisTime);
+    UpdateTabContext(request_data, new_permission_result.status ==
+                                       blink::mojom::PermissionStatus::GRANTED);
     if (rfh && decision.overall_decision == PermissionDecision::kAllow) {
       PermissionUmaUtil::RecordPermissionsUsageSourceAndPolicyConfiguration(
           content_settings_type_, rfh);
@@ -816,12 +839,9 @@ void PermissionContextBase::NotifyPermissionSet(
     request->second.first->set_request_finished_callback(base::BindOnce(
         &PermissionContextBase::CleanUpRequestEmbeddedPermissionElement,
         weak_factory_.GetWeakPtr(), web_contents, request_data.id,
-        std::move(callback), decision.overall_decision, new_value));
+        std::move(callback), decision.overall_decision, new_permission_result));
   } else {
-    std::move(callback).Run(content::PermissionResult(
-        PermissionUtil::PermissionDecisionToPermissionStatus(
-            decision.overall_decision),
-        content::PermissionStatusSource::UNSPECIFIED, new_value));
+    std::move(callback).Run(new_permission_result);
   }
 }
 
@@ -836,27 +856,30 @@ void PermissionContextBase::CleanUpRequestEmbeddedPermissionElement(
     const PermissionRequestID& id,
     BrowserPermissionCallback callback,
     PermissionDecision decision,
-    PermissionSetting new_value) {
+    const content::PermissionResult& permission_result) {
   // A request from an embedded permission element requires a notification
   // `OnPermissionChanged` when changing the device status, which is currently
   // unavailable. We compare the device status with the cached status and notify
   // `OnPermissionChanged` here. We should remove this line once the device
   // status change observer is implemented.
   MaybeUpdateCachedHasDevicePermission(web_contents);
-  std::move(callback).Run(content::PermissionResult(
-      PermissionUtil::PermissionDecisionToPermissionStatus(decision),
-      content::PermissionStatusSource::UNSPECIFIED, new_value));
+  std::move(callback).Run(permission_result);
   CleanUpRequest(web_contents, id);
 }
 
 void PermissionContextBase::UpdateSetting(
     const PermissionRequestData& request_data,
-    PermissionSetting setting,
+    const PermissionSetting& setting,
     bool is_one_time) {
-  DCHECK_EQ(request_data.requesting_origin,
-            request_data.requesting_origin.DeprecatedGetOriginAsURL());
-  DCHECK_EQ(request_data.embedding_origin,
-            request_data.embedding_origin.DeprecatedGetOriginAsURL());
+  auto* info = content_settings::PermissionSettingsRegistry::GetInstance()->Get(
+      content_settings_type_);
+  CHECK(info);
+  CHECK(!info->delegate().IsUndecided(setting));
+
+  CHECK_EQ(request_data.requesting_origin,
+           request_data.requesting_origin.DeprecatedGetOriginAsURL());
+  CHECK_EQ(request_data.embedding_origin,
+           request_data.embedding_origin.DeprecatedGetOriginAsURL());
 
   content_settings::ContentSettingConstraints constraints;
   constraints.set_session_model(
@@ -865,11 +888,9 @@ void PermissionContextBase::UpdateSetting(
 
   // The unused permissions module in Safety check will revoke unused site
   // permissions after a finite amount of time if the permission can be revoked.
-  auto* info = content_settings::PermissionSettingsRegistry::GetInstance()->Get(
-      content_settings_type_);
-  if (info && content_settings::CanBeAutoRevokedAsUnusedPermission(
-                  content_settings_type(), info->delegate().ToValue(setting),
-                  is_one_time)) {
+  if (content_settings::CanBeAutoRevokedAsUnusedPermission(
+          content_settings_type(), info->delegate().ToValue(setting),
+          is_one_time)) {
     constraints.set_track_last_visit_for_autoexpiration(true);
   }
 

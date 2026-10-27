@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_CHOLMODSUPPORT_H
 #define EIGEN_CHOLMODSUPPORT_H
@@ -82,11 +83,11 @@ cholmod_sparse viewAsCholmod(Ref<SparseMatrix<Scalar_, Options_, StorageIndex_> 
   res.dtype = 0;
   res.stype = -1;
 
-  if (internal::is_same<StorageIndex_, int>::value) {
-    res.itype = CHOLMOD_INT;
-  } else if (internal::is_same<StorageIndex_, SuiteSparse_long>::value) {
+  EIGEN_IF_CONSTEXPR((std::is_same<StorageIndex_, int>::value)) { res.itype = CHOLMOD_INT; }
+  else EIGEN_IF_CONSTEXPR((std::is_same<StorageIndex_, SuiteSparse_long>::value)) {
     res.itype = CHOLMOD_LONG;
-  } else {
+  }
+  else {
     eigen_assert(false && "Index type not supported yet");
   }
 
@@ -259,14 +260,14 @@ class CholmodBase : public SparseSolverBase<Derived> {
 
  public:
   CholmodBase() : m_cholmodFactor(0), m_info(Success), m_factorizationIsOk(false), m_analysisIsOk(false) {
-    EIGEN_STATIC_ASSERT((internal::is_same<double, RealScalar>::value), CHOLMOD_SUPPORTS_DOUBLE_PRECISION_ONLY);
+    EIGEN_STATIC_ASSERT((std::is_same<double, RealScalar>::value), CHOLMOD_SUPPORTS_DOUBLE_PRECISION_ONLY);
     m_shiftOffset[0] = m_shiftOffset[1] = 0.0;
     internal::cm_start<StorageIndex>(m_cholmod);
   }
 
   explicit CholmodBase(const MatrixType& matrix)
       : m_cholmodFactor(0), m_info(Success), m_factorizationIsOk(false), m_analysisIsOk(false) {
-    EIGEN_STATIC_ASSERT((internal::is_same<double, RealScalar>::value), CHOLMOD_SUPPORTS_DOUBLE_PRECISION_ONLY);
+    EIGEN_STATIC_ASSERT((std::is_same<double, RealScalar>::value), CHOLMOD_SUPPORTS_DOUBLE_PRECISION_ONLY);
     m_shiftOffset[0] = m_shiftOffset[1] = 0.0;
     internal::cm_start<StorageIndex>(m_cholmod);
     compute(matrix);

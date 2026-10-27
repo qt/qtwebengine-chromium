@@ -19,8 +19,6 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_registry_observer.h"
 
-// TODO(michaelpg): Port these tests to app_shell: crbug.com/40425056.
-
 namespace content {
 class BrowserContext;
 }
@@ -644,7 +642,7 @@ IN_PROC_BROWSER_TEST_F(FileSystemApiTest,
 }
 
 #if BUILDFLAG(IS_MAC) && defined(ADDRESS_SANITIZER)
-// TODO(http://crbug.com/1230100): Timing-out on Mac ASan.
+// TODO(http://crbug.com/40778804): Timing-out on Mac ASan.
 #define MAYBE_FileSystemApiSaveMultipleFilesTest \
   DISABLED_FileSystemApiSaveMultipleFilesTest
 #else

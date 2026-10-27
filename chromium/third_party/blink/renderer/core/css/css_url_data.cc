@@ -20,25 +20,80 @@
 
 #include "third_party/blink/renderer/core/css/css_url_data.h"
 
+#include "services/network/public/mojom/referrer_policy.mojom-blink.h"
 #include "third_party/blink/renderer/core/css/css_markup.h"
+#include "third_party/blink/renderer/core/css_value_keywords.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_encoding.h"
 
 namespace blink {
+
+void CSSUrlRequestModifiers::AppendCssText(StringBuilder& result) const {
+  if (cross_origin != kCrossOriginAttributeNotSet) {
+    result.Append(" cross-origin(");
+    result.Append(cross_origin == kCrossOriginAttributeAnonymous
+                      ? "anonymous"
+                      : "use-credentials");
+    result.Append(')');
+  }
+  if (!integrity.IsNull()) {
+    result.Append(" integrity(");
+    SerializeString(integrity, result);
+    result.Append(')');
+  }
+  if (referrer_policy) {
+    CSSValueID value_id;
+    switch (*referrer_policy) {
+      case network::mojom::blink::ReferrerPolicy::kNever:
+        value_id = CSSValueID::kNoReferrer;
+        break;
+      case network::mojom::blink::ReferrerPolicy::kNoReferrerWhenDowngrade:
+        value_id = CSSValueID::kNoReferrerWhenDowngrade;
+        break;
+      case network::mojom::blink::ReferrerPolicy::kSameOrigin:
+        value_id = CSSValueID::kSameOrigin;
+        break;
+      case network::mojom::blink::ReferrerPolicy::kOrigin:
+        value_id = CSSValueID::kOrigin;
+        break;
+      case network::mojom::blink::ReferrerPolicy::kStrictOrigin:
+        value_id = CSSValueID::kStrictOrigin;
+        break;
+      case network::mojom::blink::ReferrerPolicy::kOriginWhenCrossOrigin:
+        value_id = CSSValueID::kOriginWhenCrossOrigin;
+        break;
+      case network::mojom::blink::ReferrerPolicy::kStrictOriginWhenCrossOrigin:
+        value_id = CSSValueID::kStrictOriginWhenCrossOrigin;
+        break;
+      case network::mojom::blink::ReferrerPolicy::kAlways:
+        value_id = CSSValueID::kUnsafeUrl;
+        break;
+      case network::mojom::blink::ReferrerPolicy::kDefault:
+        NOTREACHED();
+    }
+    result.Append(" referrer-policy(");
+    result.Append(GetCSSValueNameAs<StringView>(value_id));
+    result.Append(')');
+  }
+}
 
 CSSUrlData::CSSUrlData(const AtomicString& unresolved_url,
                        const KURL& resolved_url,
                        const Referrer& referrer,
                        bool is_from_origin_clean_style_sheet,
-                       bool is_ad_related)
+                       bool is_ad_related,
+                       const CSSUrlRequestModifiers& modifiers)
     : relative_url_(unresolved_url),
       absolute_url_(resolved_url.GetString()),
       referrer_(referrer),
       is_local_(unresolved_url.starts_with('#')),
       is_from_origin_clean_style_sheet_(is_from_origin_clean_style_sheet),
       is_ad_related_(is_ad_related),
-      potentially_dangling_markup_(resolved_url.PotentiallyDanglingMarkup()) {}
+      potentially_dangling_markup_(resolved_url.PotentiallyDanglingMarkup()),
+      modifiers_(modifiers) {}
 
 CSSUrlData::CSSUrlData(base::PassKey<CSSUrlData>,
                        const AtomicString& unresolved_url,
@@ -47,23 +102,26 @@ CSSUrlData::CSSUrlData(base::PassKey<CSSUrlData>,
                        bool is_from_origin_clean_style_sheet,
                        bool is_ad_related,
                        bool is_local,
-                       bool potentially_dangling_markup)
+                       bool potentially_dangling_markup,
+                       const CSSUrlRequestModifiers& modifiers)
     : relative_url_(unresolved_url),
       absolute_url_(resolved_url),
       referrer_(referrer),
       is_local_(is_local),
       is_from_origin_clean_style_sheet_(is_from_origin_clean_style_sheet),
       is_ad_related_(is_ad_related),
-      potentially_dangling_markup_(potentially_dangling_markup) {}
+      potentially_dangling_markup_(potentially_dangling_markup),
+      modifiers_(modifiers) {}
 
 CSSUrlData::CSSUrlData(const AtomicString& resolved_url)
     : CSSUrlData(resolved_url,
                  KURL(resolved_url),
                  Referrer(),
                  /*is_from_origin_clean_style_sheet=*/true,
-                 /*is_ad_related=*/false) {}
+                 /*is_ad_related=*/false,
+                 /*modifiers=*/CSSUrlRequestModifiers()) {}
 
-KURL CSSUrlData::ResolveUrl(const Document& document) const {
+KURL CSSUrlData::ResolveUrl(const ExecutionContext& context) const {
   if (!potentially_dangling_markup_) {
     return KURL(absolute_url_);
   }
@@ -77,12 +135,19 @@ KURL CSSUrlData::ResolveUrl(const Document& document) const {
   // changed if the base url for the document changed since last time the url
   // was resolved. This change in base url resolving is different from the
   // typical behavior for base url changes. CSS urls are typically not re-
-  // resolved. This is mentioned in the "What “browser eccentricities”?" note
+  // resolved. This is mentioned in the "What "browser eccentricities"?" note
   // in https://www.w3.org/TR/css-values-3/#local-urls
   //
   // Having the more spec-compliant behavior for the dangling markup edge case
   // should be fine.
-  return document.CompleteURL(relative_url_);
+  KURL url = context.CompleteURL(relative_url_);
+  // Manually propagate the dangling markup flag when resolving from a string
+  // that has already been canonicalized (and thus lost its newlines).
+  // This ensures that URLs that were originally flagged as dangling markup
+  // (e.g. because they contained raw newlines) remain blocked even after
+  // round-tripping through CSS Typed OM or other internal conversions.
+  url.SetPotentiallyDanglingMarkup();
+  return url;
 }
 
 bool CSSUrlData::ReResolveUrl(const Document& document) const {
@@ -105,7 +170,7 @@ const CSSUrlData* CSSUrlData::MakeComputed() const {
   return MakeGarbageCollected<CSSUrlData>(
       base::PassKey<CSSUrlData>(), absolute_url_, absolute_url_, Referrer(),
       is_from_origin_clean_style_sheet_, is_ad_related_, is_local_,
-      potentially_dangling_markup_);
+      potentially_dangling_markup_, modifiers_);
 }
 
 const CSSUrlData* CSSUrlData::MakeResolved(const KURL& base_url,
@@ -119,11 +184,22 @@ const CSSUrlData* CSSUrlData::MakeResolved(const KURL& base_url,
   if (is_local_) {
     return MakeGarbageCollected<CSSUrlData>(
         relative_url_, resolved_url, Referrer(),
-        is_from_origin_clean_style_sheet_, is_ad_related_);
+        is_from_origin_clean_style_sheet_, is_ad_related_, modifiers_);
   }
+  // If the original (or freshly resolved) URL was flagged as potentially
+  // dangling markup, keep the *raw* relative spelling so that CssText() –
+  // which feeds var()/@function substitution – round-trips a string that
+  // re-derives PotentiallyDanglingMarkup() on the consuming side. Using the
+  // canonicalized serialization here would launder away the newline/'<'
+  // characters and let the substituted value bypass the subresource block in
+  // BaseFetchContext::CanRequestInternal().
+  const bool dangling =
+      potentially_dangling_markup_ || resolved_url.PotentiallyDanglingMarkup();
+  AtomicString resolved_string(resolved_url.GetString());
   return MakeGarbageCollected<CSSUrlData>(
-      AtomicString(resolved_url.GetString()), resolved_url, Referrer(),
-      is_from_origin_clean_style_sheet_, is_ad_related_);
+      base::PassKey<CSSUrlData>(), dangling ? relative_url_ : resolved_string,
+      resolved_string, Referrer(), is_from_origin_clean_style_sheet_,
+      is_ad_related_, is_local_, dangling, modifiers_);
 }
 
 const CSSUrlData* CSSUrlData::MakeResolvedIfDanglingMarkup(
@@ -131,15 +207,19 @@ const CSSUrlData* CSSUrlData::MakeResolvedIfDanglingMarkup(
   if (!potentially_dangling_markup_) {
     return this;
   }
+  DCHECK(document.GetExecutionContext());
   return MakeGarbageCollected<CSSUrlData>(
-      relative_url_, ResolveUrl(document), referrer_,
-      is_from_origin_clean_style_sheet_, is_ad_related_);
+      relative_url_, ResolveUrl(*document.GetExecutionContext()), referrer_,
+      is_from_origin_clean_style_sheet_, is_ad_related_, modifiers_);
 }
 
 const CSSUrlData* CSSUrlData::MakeWithoutReferrer() const {
+  // Preserve the dangling markup and local flags which might otherwise be lost
+  // when re-parsing the absolute URL.
   return MakeGarbageCollected<CSSUrlData>(
-      relative_url_, KURL(absolute_url_), Referrer(),
-      is_from_origin_clean_style_sheet_, is_ad_related_);
+      base::PassKey<CSSUrlData>(), relative_url_, absolute_url_, Referrer(),
+      is_from_origin_clean_style_sheet_, is_ad_related_, is_local_,
+      potentially_dangling_markup_, modifiers_);
 }
 
 bool CSSUrlData::IsLocal(const Document& document) const {
@@ -148,7 +228,7 @@ bool CSSUrlData::IsLocal(const Document& document) const {
 }
 
 String CSSUrlData::CssText() const {
-  return SerializeURI(relative_url_);
+  return SerializeURI(relative_url_, modifiers_);
 }
 
 bool CSSUrlData::operator==(const CSSUrlData& other) const {
@@ -158,6 +238,9 @@ bool CSSUrlData::operator==(const CSSUrlData& other) const {
   }
   if (is_local_) {
     return relative_url_ == other.relative_url_;
+  }
+  if (modifiers_ != other.modifiers_) {
+    return false;
   }
   if (absolute_url_.empty() && other.absolute_url_.empty()) {
     return relative_url_ == other.relative_url_;

@@ -9,7 +9,6 @@
 #include <utility>
 
 #include "build/build_config.h"
-#include "core/fpdfapi/page/cpdf_transferfunc.h"
 #include "core/fxcrt/check.h"
 #include "core/fxcrt/zip.h"
 #include "core/fxge/calculate_pitch.h"

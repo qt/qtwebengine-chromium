@@ -19,7 +19,7 @@ use crate::r#impl::main_impl;
 #[test]
 fn crabbyavif_test() -> AvifResult<()> {
     assert_eq!(
-        main_impl(vec!["crabbyavif"].iter()),
+        main_impl(["crabbyavif"].iter()),
         Err(AvifError::UnknownError("input_file is required".into()))
     );
     Ok(())

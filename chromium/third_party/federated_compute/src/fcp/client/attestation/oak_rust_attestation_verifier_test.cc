@@ -5,6 +5,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
+#include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/cord.h"
 #include "absl/strings/escaping.h"
@@ -94,7 +95,8 @@ TEST(OakRustAttestationTest, DefaultValuesDoNotVerifySuccessfully) {
   auto result =
       verifier.Verify(absl::Cord(""), confidentialcompute::SignedEndorsements(),
                       encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(result.status().message(),
               HasSubstr("Attestation verification failed"));
 }
@@ -125,7 +127,7 @@ TEST(OakRustAttestationTest,
   auto result = verifier.Verify(absl::Cord(access_policy_bytes),
                                 confidentialcompute::SignedEndorsements(),
                                 encryption_config);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(result->public_key,
               VariantWith<absl::string_view>(encryption_config.public_key()));
   EXPECT_THAT(result->key_id, Not(IsEmpty()));
@@ -158,7 +160,8 @@ TEST(OakRustAttestationTest, KnownValidEncryptionConfigAndMismatchingPolicy) {
   auto result = verifier.Verify(absl::Cord(disallowed_access_policy_bytes),
                                 confidentialcompute::SignedEndorsements(),
                                 encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(result.status().message(),
               HasSubstr("Data access policy not in allowlist"));
 }
@@ -188,7 +191,8 @@ TEST(OakRustAttestationTest,
   auto result = verifier.Verify(absl::Cord(access_policy_bytes),
                                 confidentialcompute::SignedEndorsements(),
                                 encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(result.status().message(),
               HasSubstr("Data access policy not in allowlist"));
 }
@@ -210,7 +214,8 @@ TEST(OakRustAttestationTest,
   auto result =
       verifier.Verify(absl::Cord(""), confidentialcompute::SignedEndorsements(),
                       encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(result.status().message(),
               HasSubstr("Data access policy not in allowlist"));
 }
@@ -254,7 +259,8 @@ TEST(OakRustAttestationTest, KnownEncryptionConfigAndMismatchingRvs) {
   auto result = verifier.Verify(absl::Cord(access_policy_bytes),
                                 confidentialcompute::SignedEndorsements(),
                                 encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(result.status().message(),
               HasSubstr("Attestation verification failed"));
 }
@@ -285,7 +291,8 @@ TEST(OakRustAttestationTest, KnownEncryptionConfigAndEmptyReferencevalues) {
   auto result = verifier.Verify(absl::Cord(access_policy_bytes),
                                 confidentialcompute::SignedEndorsements(),
                                 encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(result.status().message(),
               HasSubstr("Attestation verification failed"));
 }
@@ -319,7 +326,7 @@ TEST(OakRustAttestationTest,
   auto result = verifier.Verify(absl::Cord(access_policy_bytes),
                                 confidentialcompute::SignedEndorsements(),
                                 encryption_config);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
 }
 
 // Ensures that reference values from the AccessPolicyEndorsementOptions that
@@ -360,7 +367,8 @@ TEST(OakRustAttestationTest,
   auto result = verifier.Verify(absl::Cord(access_policy_bytes),
                                 confidentialcompute::SignedEndorsements(),
                                 encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(result.status().message(),
               HasSubstr("Attestation verification failed"));
 }
@@ -392,7 +400,8 @@ TEST(OakRustAttestationTest,
   // Ensure that the verification *does not* succeed.
   auto result = verifier.Verify(absl::Cord(access_policy_bytes),
                                 signed_endorsements, encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(result.status().message(),
               HasSubstr("Only a single EndorsementReferenceValue is supported, "
                         "but 0 were provided."));
@@ -423,7 +432,8 @@ TEST(OakRustAttestationTest, MultipleSignedEndorsementsFails) {
   // Ensure that the verification *does not* succeed.
   auto result = verifier.Verify(absl::Cord(access_policy_bytes),
                                 signed_endorsements, encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(result.status().message(),
               HasSubstr("Only a single SignedEndorsement is supported, but 2 "
                         "were provided."));
@@ -456,7 +466,8 @@ TEST(OakRustAttestationTest,
   // Ensure that the verification *does not* succeed.
   auto result = verifier.Verify(absl::Cord(access_policy_bytes),
                                 signed_endorsements, encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(result.status().message(),
               HasSubstr("Only a single EndorsementReferenceValue is supported, "
                         "but 2 were provided."));
@@ -491,7 +502,8 @@ TEST(OakRustAttestationTest, HasSignedEndorsementButNoEndorsementInside) {
   // Ensure that the verification *does not* succeed.
   auto result = verifier.Verify(absl::Cord(access_policy_bytes),
                                 signed_endorsements, encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(result.status().message(),
               HasSubstr("SignedEndorsement does not contain an endorsement."));
 }
@@ -504,7 +516,7 @@ TEST(OakRustAttestationTest,
       GetKnownValidEncryptionConfig();
   absl::StatusOr<OkpCwt> parsed_key =
       OkpCwt::Decode(encryption_config.public_key());
-  ASSERT_OK(parsed_key);
+  ABSL_ASSERT_OK(parsed_key);
   parsed_key->access_policy_sha256 = "mismatching_access_policy_hash";
   encryption_config.set_public_key(parsed_key->Encode().value());
 
@@ -525,7 +537,8 @@ TEST(OakRustAttestationTest,
   auto result = verifier.Verify(absl::Cord(access_policy_bytes),
                                 confidentialcompute::SignedEndorsements(),
                                 encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(
       result.status().message(),
       HasSubstr(
@@ -551,7 +564,7 @@ TEST(OakRustAttestationTest,
   // Add an access_policy_sha256 claim that matches the access policy.
   absl::StatusOr<OkpCwt> parsed_key =
       OkpCwt::Decode(encryption_config.public_key());
-  ASSERT_OK(parsed_key);
+  ABSL_ASSERT_OK(parsed_key);
   parsed_key->access_policy_sha256 = ComputeSHA256(access_policy_bytes);
   encryption_config.set_public_key(parsed_key->Encode().value());
 
@@ -568,7 +581,8 @@ TEST(OakRustAttestationTest,
   // public key, the signature verification will fail.
   // TODO: b/418269101 - Ensure this test succeeds once we have test data that
   // includes an access_policy_sha256 claim.
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(result.status().message(),
               HasSubstr("Signature verification failed"));
 }
@@ -609,7 +623,7 @@ TEST(OakRustAttestationTest,
   auto result = verifier.Verify(absl::Cord(access_policy_bytes),
                                 confidentialcompute::SignedEndorsements(),
                                 encryption_config);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
 
   // Ensure that the verification record logger was called and provided the
   // relevant information.
@@ -634,7 +648,7 @@ TEST(OakRustAttestationTest,
               absl::Now(), verification_record.attestation_evidence(),
               verification_record.attestation_endorsements(),
               GetSkipAllReferenceValues());
-  ASSERT_OK(raw_attestation_results);
+  ABSL_ASSERT_OK(raw_attestation_results);
   ASSERT_EQ(raw_attestation_results->status(),
             oak::attestation::v1::AttestationResults::STATUS_SUCCESS)
       << raw_attestation_results->reason();
@@ -756,7 +770,7 @@ TEST(OakRustAttestationTest,
           absl::Now(), verification_record.attestation_evidence(),
           verification_record.attestation_endorsements(),
           reference_values_from_extracted_evidence);
-  ASSERT_OK(raw_attestation_results);
+  ABSL_ASSERT_OK(raw_attestation_results);
   EXPECT_EQ(raw_attestation_results->status(),
             oak::attestation::v1::AttestationResults::STATUS_SUCCESS)
       << raw_attestation_results->reason();

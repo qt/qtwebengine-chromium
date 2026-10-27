@@ -689,14 +689,13 @@ ScriptPromise<IDLSequence<MediaStream>> MediaDevices::getAllScreensMedia(
   auto tracer = std::make_unique<ScopedMediaStreamTracer>(
       "MediaDevices.GetAllScreensMedia");
 
-  // This timeout of base::Seconds(6) is an initial value and based on the data
-  // in Media.MediaDevices.GetAllScreensMedia.Latency, it should be iterated
-  // upon.
-  // Records the `Media.MediaDevices.GetAllScreensMedia.Result2` histogram.
+  // This timeout of base::Seconds(6) is an initial value.
+  // Records the `Media.MediaDevices.GetAllScreensMedia.Result3` histogram.
   auto* resolver = MakeGarbageCollected<ScriptPromiseResolverWithTracker<
       UserMediaRequestResult, IDLSequence<MediaStream>>>(
       script_state, "Media.MediaDevices.GetAllScreensMedia", base::Seconds(6));
   resolver->SetResultSuffix("Result3");
+  resolver->SuppressLatencyRecording();
   auto promise = resolver->Promise();
 
   ExecutionContext* const context = GetExecutionContext();
@@ -986,11 +985,17 @@ ScriptPromise<IDLUndefined> MediaDevices::setPreferredSinkId(
     return ScriptPromise<IDLUndefined>();
   }
 
+  LocalFrame* frame = LocalDOMWindow::From(script_state)->GetFrame();
+  if (!frame || !frame->IsOutermostMainFrame()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "Can only be called from the top-level document.");
+    return ScriptPromise<IDLUndefined>();
+  }
+
   auto* resolver =
       MakeGarbageCollected<ScriptPromiseResolver<IDLUndefined>>(script_state);
   auto promise = resolver->Promise();
-
-  LocalFrame* frame = LocalDOMWindow::From(script_state)->GetFrame();
   GetDispatcherHost(frame).SetPreferredSinkId(
       sink_id,
       BindOnce(&MediaDevices::SetPreferredSinkIdResultReceived,

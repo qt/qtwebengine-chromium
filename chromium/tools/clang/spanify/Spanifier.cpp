@@ -18,6 +18,7 @@
 #include "RawPtrHelpers.h"
 #include "SeparateRepositoryPaths.h"
 #include "SpanifyManualPathsToIgnore.h"
+#include "angle_project.h"
 #include "chrome_project.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
@@ -26,12 +27,14 @@
 #include "clang/Rewrite/Core/Rewriter.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Refactoring.h"
+#include "dawn_project.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/TargetSelect.h"
 #include "partition_alloc_project.h"
 #include "project.h"
 #include "skia_project.h"
+#include "webrtc_project.h"
 
 namespace {
 
@@ -43,6 +46,7 @@ enum class ProjectName {
   kDawn,
   kSkia,
   kAngle,
+  kWebrtc,
 };
 
 ProjectName g_project;
@@ -52,6 +56,9 @@ const Project* GetProject() {
   static constexpr ChromeProject kChromeProject;
   static constexpr PartitionAllocProject kPartitionAllocProject;
   static constexpr SkiaProject kSkiaProject;
+  static constexpr DawnProject kDawnProject;
+  static constexpr WebrtcProject kWebrtcProject;
+  static constexpr AngleProject kAngleProject;
   switch (g_project) {
     case ProjectName::kChrome:
       return &kChromeProject;
@@ -59,6 +66,12 @@ const Project* GetProject() {
       return &kPartitionAllocProject;
     case ProjectName::kSkia:
       return &kSkiaProject;
+    case ProjectName::kDawn:
+      return &kDawnProject;
+    case ProjectName::kWebrtc:
+      return &kWebrtcProject;
+    case ProjectName::kAngle:
+      return &kAngleProject;
     default:
       llvm_unreachable("Unhandled project type in GetProject()");
   }
@@ -99,9 +112,9 @@ void DumpMatchResult(const MatchFinder::MatchResult& result) {
   }
 }
 
-const char kArrayIncludePath[] = "array";
+const char kArrayIncludePath[] = "<array>";
 
-const char kStringViewIncludePath[] = "string_view";
+const char kStringViewIncludePath[] = "<string_view>";
 
 // Precedence values for EmitReplacement.
 //
@@ -567,8 +580,12 @@ std::string GetReplacementDirective(const clang::SourceRange& replacement_range,
 std::string GetIncludeDirective(
     const clang::SourceRange replacement_range,
     const clang::SourceManager& source_manager,
-    std::string_view include_path = GetProject()->GetSpanIncludePath(),
-    bool is_system_include_path = false) {
+    std::string_view include_path = GetProject()->GetSpanIncludePath()) {
+  bool is_system_include_path = false;
+  if (include_path.starts_with('<') && include_path.ends_with('>')) {
+    is_system_include_path = true;
+    include_path = include_path.substr(1, include_path.size() - 2);
+  }
   return llvm::formatv(
       "{0}:::{1}:::-1:::-1:::{2}",
       is_system_include_path ? "include-system-header" : "include-user-header",
@@ -972,7 +989,8 @@ std::string getNodeFromDecl(const clang::DeclaratorDecl* decl,
 
   std::string replacement_text =
       qualifiers.str() +
-      llvm::formatv("{0}<{1}>", GetProject()->GetSpanRelativePath(result), type)
+      llvm::formatv("{0}<{1}> ", GetProject()->GetSpanRelativePath(result),
+                    type)
           .str();
 
   // Since the `type` might be clang deduced type, this node is keyed by the
@@ -1091,8 +1109,7 @@ SubspanExprReplacement GetSubspanExprReplacement(
   EmitReplacement(
       key, GetIncludeDirective(range, source_manager,
                                GetProject()->GetSafeConversionsIncludePath()));
-  EmitReplacement(key, GetIncludeDirective(range, source_manager, "cstdint",
-                                           /*is_system_include_path=*/true));
+  EmitReplacement(key, GetIncludeDirective(range, source_manager, "<cstdint>"));
   return CheckedCastReplacement{
       .opener = {.range = range.getBegin(),
                  .text = "base::checked_cast<size_t>("},
@@ -2047,33 +2064,33 @@ std::string GenerateClassName(std::string var_name) {
   return var_name;
 }
 
+struct ArrayElementDefinition {
+  std::string new_class_name_string;
+  const clang::RecordDecl* record_decl = nullptr;
+};
+
 // Checks if the given array definition involves an unnamed struct type
 // or is declared inline within a struct/class definition.
 //
-// These cases currently pose challenges for the C array to std::array
-// conversion and are therefore skipped by the tool.
+// These cases are handled by splitting the rewrite into two parts:
+// 1. A rewrite for the struct definition (adding a name if unnamed).
+// 2. A rewrite for the variable declaration (using the struct name).
 //
-// Examples of problematic definitions:
+// Examples of handled definitions:
 //   - Unnamed struct:
 //     `struct { int x, y; } point_array[10];`
 //   - Inline definition:
 //     `struct Point { int x, y; } inline_points[5];`
 //
-// Returns the pair of a suggested type name (if unnamed struct, empty string
-// otherwise) and the inline definition with a semi-colon ';' added to split it
-// away from the declaration (empty string otherwise).
-// I.E.:
-//   - {"", ""} -> If this is not one of the problematic definitions above.
-//   - {"", "struct Point { int x, y; };"} -> for the inline definition case.
-//   - {"PointArray", "struct PointArray { ... };"} -> for the unnamed struct
-//     case.
-std::pair<std::string, std::string> maybeGetUnnamedAndDefinition(
+// Returns the suggested type name (if unnamed struct, empty string
+// otherwise) and the record declaration if it is an inline definition.
+ArrayElementDefinition maybeGetUnnamedAndDefinition(
     const clang::QualType element_type,
     const clang::DeclaratorDecl* array_decl,
     const std::string& array_variable_as_string,
     const clang::ASTContext& ast_context) {
   std::string new_class_name_string;
-  std::string class_definition;
+  const clang::RecordDecl* record_decl_with_definition = nullptr;
   // Structs/classes can be defined alongside an option list of variable
   // declarations.
   //
@@ -2089,61 +2106,15 @@ std::pair<std::string, std::string> maybeGetUnnamedAndDefinition(
         record_decl->getBraceRange());
     bool is_unnamed = record_decl->getDeclName().isEmpty();
 
-    // If the struct/class has an empty name (=unnamed) and has its
-    // definition, we will temporariliy assign a new name to the `RecordDecl`
-    // and invoke `getAsString()` to obtain the definition with the new name.
-    clang::DeclarationName original_name = record_decl->getDeclName();
-    clang::DeclarationName temporal_class_name;
     if (is_unnamed) {
       new_class_name_string = GenerateClassName(array_variable_as_string);
-      clang::StringRef new_class_name(new_class_name_string);
-      clang::IdentifierInfo& new_class_name_identifier =
-          ast_context.Idents.get(new_class_name);
-      temporal_class_name = ast_context.DeclarationNames.getIdentifier(
-          &new_class_name_identifier);
-      record_decl->setDeclName(temporal_class_name);
     }
 
     if (has_definition) {
-      // Use `SourceManager` to capture the `{ ... }` part of the struct
-      // definition.
-      const clang::SourceManager& source_manager =
-          ast_context.getSourceManager();
-      llvm::StringRef struct_body_with_braces = clang::Lexer::getSourceText(
-          clang::CharSourceRange::getTokenRange(record_decl->getBraceRange()),
-          source_manager, ast_context.getLangOpts());
-
-      // Create new class definition.
-      if (is_unnamed) {
-        std::string type_keyword;
-        if (record_decl->isClass()) {
-          type_keyword = "class";
-        } else if (record_decl->isUnion()) {
-          type_keyword = "union";
-        } else if (record_decl->isEnum()) {
-          type_keyword = "enum";
-        } else {
-          assert(record_decl->isStruct());
-          type_keyword = "struct";
-        }
-
-        class_definition = type_keyword + " " + new_class_name_string + " " +
-                           struct_body_with_braces.str() + ";\n";
-      } else {
-        // Because of class/struct definition, drop any qualifiers from
-        // `element_type`. E.g. `const struct { int val; }` must be
-        // `struct { int val; }`.
-        clang::QualType unqualified_type = element_type.getUnqualifiedType();
-        std::string unqualified_type_str = unqualified_type.getAsString();
-        class_definition =
-            unqualified_type_str + " " + struct_body_with_braces.str() + ";\n";
-      }
-    }
-    if (is_unnamed) {
-      record_decl->setDeclName(original_name);
+      record_decl_with_definition = record_decl;
     }
   }
-  return std::make_pair(new_class_name_string, class_definition);
+  return {new_class_name_string, record_decl_with_definition};
 }
 
 // Gets the array size as written in the source code if it's explicitly
@@ -2540,8 +2511,9 @@ std::string getNodeFromArrayDecl(const clang::TypeLoc* type_loc,
   //   - Multi-dimensional array of unnamed struct/class
   //   - Multi-dimensional array with redundant struct/class keyword
   std::string element_type_as_string;
-  const auto& [unnamed_class, class_definition] = maybeGetUnnamedAndDefinition(
-      new_element_type, array_decl, array_variable_as_string, ast_context);
+  const auto& [unnamed_class, record_decl_with_definition] =
+      maybeGetUnnamedAndDefinition(new_element_type, array_decl,
+                                   array_variable_as_string, ast_context);
   if (!unnamed_class.empty()) {
     element_type_as_string = unnamed_class;
   } else if (original_element_type->isElaboratedTypeSpecifier()) {
@@ -2641,15 +2613,45 @@ std::string getNodeFromArrayDecl(const clang::TypeLoc* type_loc,
         llvm::formatv("std::array<{0}, {1}> {2}", element_type_as_string,
                       array_size_as_string, array_variable_as_string);
   }
-  replacement_text =
-      class_definition + qualifier_string.str() + replacement_text;
+  if (record_decl_with_definition) {
+    // We have a class definition: `struct { ... } var[]`.
+    // We need to split the replacement to avoid overlapping with members
+    // rewrites.
+    //
+    // struct <OptionalName> { ... } var[N];
+    // ^~~~~~~~~~~~~~~~~~~~^         ^~~~~~~^
+    //        Part 1                  Part 2
+    // Tests are in: tests/skia/struct-overlap-original.cc
 
-  EmitReplacement(key,
-                  GetReplacementDirective(replacement_range, replacement_text,
-                                          source_manager));
-  EmitReplacement(
-      key, GetIncludeDirective(replacement_range, source_manager, include_path,
-                               /*is_system_include_header=*/true));
+    // Part 1: before the braces.
+    // This effectively removes qualifiers from the beginning and inserts the
+    // name if it was unnamed.
+    clang::SourceRange part1_range(
+        array_decl->getBeginLoc(),
+        record_decl_with_definition->getBraceRange().getBegin());
+    std::string type_keyword = record_decl_with_definition->getKindName().str();
+    EmitReplacement(
+        key, GetReplacementDirective(
+                 part1_range, type_keyword + " " + element_type_as_string + " ",
+                 source_manager));
+
+    // Part 2: after the braces.
+    clang::SourceLocation after_braces =
+        record_decl_with_definition->getBraceRange().getEnd().getLocWithOffset(
+            1);
+    clang::SourceRange part2_range(after_braces, replacement_range.getEnd());
+    EmitReplacement(
+        key, GetReplacementDirective(
+                 part2_range, "; " + qualifier_string.str() + replacement_text,
+                 source_manager));
+  } else {
+    replacement_text = qualifier_string.str() + replacement_text;
+    EmitReplacement(key,
+                    GetReplacementDirective(replacement_range, replacement_text,
+                                            source_manager));
+  }
+  EmitReplacement(key, GetIncludeDirective(replacement_range, source_manager,
+                                           include_path));
 
   // All the other replacements are tied to the proxy_node.
   return proxy_node;
@@ -2876,8 +2878,7 @@ void RewriteFunctionParamAndReturnType(const MatchFinder::MatchResult& result) {
   if (const clang::Decl* previous_decl = fct_decl->getPreviousDecl()) {
     const std::string& previous_key =
         NodeKey(previous_decl, source_manager, parm_or_return_id);
-    if (raw_ptr_plugin::isNodeInThirdPartyLocation(*previous_decl,
-                                                   source_manager)) {
+    if (GetProject()->IsExcludedFromProject(*previous_decl)) {
       // A declaration in third party codebase is found, so we do not want to
       // rewrite the parameter/return type in a third party function. This one-
       // way edge prevents making a flow from a source to a sink, hence the
@@ -2906,8 +2907,7 @@ void RewriteFunctionParamAndReturnType(const MatchFinder::MatchResult& result) {
     for (auto* overridden_method_decl : method_decl->overridden_methods()) {
       const std::string& overridden_method_key =
           NodeKey(overridden_method_decl, source_manager, parm_or_return_id);
-      if (raw_ptr_plugin::isNodeInThirdPartyLocation(*overridden_method_decl,
-                                                     source_manager)) {
+      if (GetProject()->IsExcludedFromProject(*overridden_method_decl)) {
         // A declaration in third party codebase is found, so we do not want to
         // rewrite the parameter/return type in a third party function. This
         // one-way edge prevents making a flow from a source to a sink, hence
@@ -3117,13 +3117,8 @@ AST_MATCHER_P(clang::Expr,
   return InnerMatcher.matches(Node, Finder, Builder);
 }
 
-AST_MATCHER_P(clang::Decl,
-              isExcludedFromProject,
-              const raw_ptr_plugin::FilterFile*,
-              excluded_paths) {
-  using namespace clang::ast_matchers;
-  return GetProject()->IsExcludedFromProject(Node, Finder, Builder,
-                                             excluded_paths);
+AST_MATCHER(clang::Decl, isExcludedFromProject) {
+  return GetProject()->IsExcludedFromProject(Node);
 }
 
 class Spanifier {
@@ -3133,13 +3128,12 @@ class Spanifier {
     auto frontier_exclusions = anyOf(
         // 1. Common exclusions that aren't project specific:
         isExpansionInSystemHeader(), isInExcludedMacroLocation(),
-        raw_ptr_plugin::isInThirdPartyLocation(),
         raw_ptr_plugin::isInGeneratedLocation(),
         raw_ptr_plugin::ImplicitFieldDeclaration(),
         raw_ptr_plugin::isInExternCContext(),
 
         // 2. Project-Specific Exclusions
-        isExcludedFromProject(&paths_to_exclude_));
+        isExcludedFromProject());
 
     // Standard exclusions include `raw_ptr` and `span`.
     auto exclusions = anyOf(
@@ -3858,7 +3852,6 @@ class Spanifier {
     match_callbacks_.push_back(std::move(match_callback));
   }
 
-  raw_ptr_plugin::FilterFile paths_to_exclude_ = GetProject()->PathsToExclude();
   MatchFinder& match_finder_;
   std::vector<std::unique_ptr<MatchCallback>> match_callbacks_;
 };
@@ -3880,7 +3873,8 @@ static llvm::cl::opt<ProjectName> g_project_opt(
                    "The PartitionAlloc project."),
         clEnumValN(ProjectName::kDawn, "dawn", "The Dawn project."),
         clEnumValN(ProjectName::kSkia, "skia", "The Skia project."),
-        clEnumValN(ProjectName::kAngle, "angle", "The Angle project.")),
+        clEnumValN(ProjectName::kAngle, "angle", "The Angle project."),
+        clEnumValN(ProjectName::kWebrtc, "webrtc", "The WebRTC project.")),
     llvm::cl::init(ProjectName::kChrome),
     llvm::cl::cat(g_spanifier_category));
 

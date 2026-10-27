@@ -385,7 +385,10 @@ SenderStats::StatisticsList StatisticsAnalyzer::ConstructStatisticsList(
     StatisticsEvent::MediaType media_type) {
   SenderStats::StatisticsList stats_list;
 
-  // TODO(b/298205111): Support kNumFramesDroppedByEncoder stat.
+  PopulateFrameCountStat(StatisticsEvent::Type::kFrameDroppedByEncoder,
+                         StatisticType::kNumFramesDroppedByEncoder, media_type,
+                         stats_list);
+
   PopulateFrameCountStat(StatisticsEvent::Type::kFrameCaptureEnd,
                          StatisticType::kNumFramesCaptured, media_type,
                          stats_list);

@@ -123,10 +123,11 @@ CONTENT_EXPORT extern const char kEnableUserMediaScreenCapturing[];
 CONTENT_EXPORT extern const char kEnableViewport[];
 CONTENT_EXPORT extern const char kEnableVtune[];
 CONTENT_EXPORT extern const char kEnableWebGLDeveloperExtensions[];
-CONTENT_EXPORT extern const char kEnableWebGLDraftExtensions[];
 CONTENT_EXPORT extern const char kEnableWebVR[];
 CONTENT_EXPORT extern const char kFileUrlPathAlias[];
 CONTENT_EXPORT extern const char kForceDisplayList2dCanvas[];
+CONTENT_EXPORT extern const char
+    kForceNavigationTimelineUkmRecordingForTesting[];
 CONTENT_EXPORT extern const char kForcePresentationReceiverForTesting[];
 CONTENT_EXPORT extern const char kForceWebRtcIPHandlingPolicy[];
 extern const char kGpuLauncher[];
@@ -179,6 +180,7 @@ CONTENT_EXPORT extern const char kRendererProcess[];
 CONTENT_EXPORT extern const char kRendererProcessLaunchTimeTicks[];
 CONTENT_EXPORT extern const char kRendererProcessLimit[];
 CONTENT_EXPORT extern const char kRendererStartupDialog[];
+CONTENT_EXPORT extern const char kGpuChannelRequestStartTimeTicks[];
 CONTENT_EXPORT extern const char kRunManualTestsFlag[];
 extern const char kSandboxIPCProcess[];
 #if !BUILDFLAG(IS_ANDROID)

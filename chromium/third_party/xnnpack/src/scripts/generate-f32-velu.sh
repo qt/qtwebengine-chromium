@@ -19,7 +19,7 @@ tools/xngen src/f32-velu/scalar-rr2-p6.c.in -D BATCH_TILE=4 -D WASM=0 -o src/f32
 tools/xngen src/f32-velu/scalar-rr2-p6.c.in -D BATCH_TILE=5 -D WASM=0 -o src/f32-velu/gen/f32-velu-scalar-rr2-p6-u5.c &
 tools/xngen src/f32-velu/scalar-rr2-p6.c.in -D BATCH_TILE=6 -D WASM=0 -o src/f32-velu/gen/f32-velu-scalar-rr2-p6-u6.c &
 
-################################## WAsm SIMD ##################################
+################################## Wasm SIMD ##################################
 tools/xngen src/f32-velu/wasmsimd-rr2-lut16-p3.c.in -D BATCH_TILE=4  -D ARCH=ARM     -D FMA=0 -o src/f32-velu/gen/f32-velu-wasmsimd-arm-rr2-lut16-p3-u4.c &
 tools/xngen src/f32-velu/wasmsimd-rr2-lut16-p3.c.in -D BATCH_TILE=8  -D ARCH=ARM     -D FMA=0 -o src/f32-velu/gen/f32-velu-wasmsimd-arm-rr2-lut16-p3-u8.c &
 tools/xngen src/f32-velu/wasmsimd-rr2-lut16-p3.c.in -D BATCH_TILE=12 -D ARCH=ARM     -D FMA=0 -o src/f32-velu/gen/f32-velu-wasmsimd-arm-rr2-lut16-p3-u12.c &
@@ -148,5 +148,11 @@ tools/xngen src/f32-velu/avx512f-rr1-p6.c.in -D BATCH_TILE=16  -o src/f32-velu/g
 tools/xngen src/f32-velu/avx512f-rr1-p6.c.in -D BATCH_TILE=32  -o src/f32-velu/gen/f32-velu-avx512f-rr1-p6-u32.c &
 tools/xngen src/f32-velu/avx512f-rr1-p6.c.in -D BATCH_TILE=48  -o src/f32-velu/gen/f32-velu-avx512f-rr1-p6-u48.c &
 tools/xngen src/f32-velu/avx512f-rr1-p6.c.in -D BATCH_TILE=64  -o src/f32-velu/gen/f32-velu-avx512f-rr1-p6-u64.c &
+
+################################## RISC-V RVV #################################
+tools/xngen src/f32-velu/rvv-rr2-p6.c.in -D LMUL=1 -o src/f32-velu/gen/f32-velu-rvv-rr2-p6-u1v.c &
+tools/xngen src/f32-velu/rvv-rr2-p6.c.in -D LMUL=2 -o src/f32-velu/gen/f32-velu-rvv-rr2-p6-u2v.c &
+tools/xngen src/f32-velu/rvv-rr2-p6.c.in -D LMUL=4 -o src/f32-velu/gen/f32-velu-rvv-rr2-p6-u4v.c &
+tools/xngen src/f32-velu/rvv-rr2-p6.c.in -D LMUL=8 -o src/f32-velu/gen/f32-velu-rvv-rr2-p6-u8v.c &
 
 wait

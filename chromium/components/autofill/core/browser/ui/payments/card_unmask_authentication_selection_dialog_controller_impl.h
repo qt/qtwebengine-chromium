@@ -10,6 +10,8 @@
 
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
+#include "build/buildflag.h"
 #include "components/autofill/core/browser/payments/card_unmask_challenge_option.h"
 #include "components/autofill/core/browser/ui/payments/card_unmask_authentication_selection_dialog_controller.h"
 

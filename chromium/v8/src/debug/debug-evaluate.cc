@@ -148,8 +148,8 @@ MaybeDirectHandle<Object> DebugEvaluate::WithTopmostArguments(
 
   // Materialize receiver.
   DirectHandle<Object> this_value(it.frame()->receiver(), isolate);
-  DCHECK_EQ(it.frame()->IsConstructor(), IsTheHole(*this_value, isolate));
-  if (!IsTheHole(*this_value, isolate)) {
+  DCHECK_EQ(it.frame()->IsConstructor(), IsTheHole(*this_value));
+  if (!IsTheHole(*this_value)) {
     DirectHandle<String> this_str = factory->this_string();
     JSObject::SetOwnPropertyIgnoreAttributes(materialized, this_str, this_value,
                                              NONE)
@@ -1412,8 +1412,8 @@ static bool TransitivelyCalledBuiltinHasNoSideEffect(Builtin caller,
     case Builtin::kArrayReduceLoopContinuation:
     case Builtin::kArrayReduceRightLoopContinuation:
     case Builtin::kArraySomeLoopContinuation:
-    case Builtin::kArrayTimSort:
-    case Builtin::kArrayTimSortIntoCopy:
+    case Builtin::kArrayPowerSort:
+    case Builtin::kArrayPowerSortIntoCopy:
     case Builtin::kCall_ReceiverIsAny:
     case Builtin::kCall_ReceiverIsNotNullOrUndefined:
     case Builtin::kCall_ReceiverIsNullOrUndefined:

@@ -2,12 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import type * as Protocol from '../../generated/protocol.js';
-import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
+import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
+import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
 
 import * as SDK from './sdk.js';
 
-describeWithEnvironment('CSSProperty', () => {
+describe('CSSProperty', () => {
+  setupLocaleHooks();
+  setupSettingsHooks();
+  setupRuntimeHooks();
+
   describe('formatStyle', () => {
     const formatStyle = (styleText: string, indentation = ' ', endIndentation = '') =>
         SDK.CSSProperty.CSSProperty.formatStyle(styleText, indentation, endIndentation);

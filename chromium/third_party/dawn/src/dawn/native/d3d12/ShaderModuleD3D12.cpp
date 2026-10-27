@@ -25,29 +25,29 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/d3d12/ShaderModuleD3D12.h"
+#include "src/dawn/native/d3d12/ShaderModuleD3D12.h"
 
 #include <string>
 #include <unordered_map>
 #include <utility>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/MatchVariant.h"
-#include "dawn/native/Pipeline.h"
-#include "dawn/native/ResourceTableDefaultResources.h"
-#include "dawn/native/TintUtils.h"
-#include "dawn/native/d3d/D3DCompilationRequest.h"
-#include "dawn/native/d3d/D3DError.h"
-#include "dawn/native/d3d12/BackendD3D12.h"
-#include "dawn/native/d3d12/BindGroupLayoutD3D12.h"
-#include "dawn/native/d3d12/DeviceD3D12.h"
-#include "dawn/native/d3d12/PhysicalDeviceD3D12.h"
-#include "dawn/native/d3d12/PipelineLayoutD3D12.h"
-#include "dawn/native/d3d12/PlatformFunctionsD3D12.h"
-#include "dawn/native/d3d12/UtilsD3D12.h"
 #include "dawn/platform/DawnPlatform.h"
-#include "dawn/platform/metrics/HistogramMacros.h"
-#include "dawn/platform/tracing/TraceEvent.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/MatchVariant.h"
+#include "src/dawn/native/Pipeline.h"
+#include "src/dawn/native/ResourceTableDefaultResources.h"
+#include "src/dawn/native/TintUtils.h"
+#include "src/dawn/native/d3d/D3DCompilationRequest.h"
+#include "src/dawn/native/d3d/D3DError.h"
+#include "src/dawn/native/d3d12/BackendD3D12.h"
+#include "src/dawn/native/d3d12/BindGroupLayoutD3D12.h"
+#include "src/dawn/native/d3d12/DeviceD3D12.h"
+#include "src/dawn/native/d3d12/PhysicalDeviceD3D12.h"
+#include "src/dawn/native/d3d12/PipelineLayoutD3D12.h"
+#include "src/dawn/native/d3d12/PlatformFunctionsD3D12.h"
+#include "src/dawn/native/d3d12/UtilsD3D12.h"
+#include "src/dawn/platform/metrics/HistogramMacros.h"
+#include "src/dawn/platform/tracing/TraceEvent.h"
 #include "tint/tint.h"
 
 namespace dawn::native::d3d12 {
@@ -68,7 +68,7 @@ void DumpDXCCompiledShader(Device* device,
     dumpedMsg << "/* Dumped disassembled DXIL */\n";
     DxcBuffer dxcBuffer;
     dxcBuffer.Encoding = DXC_CP_UTF8;
-    dxcBuffer.Ptr = shaderBlob.Data();
+    dxcBuffer.Ptr = shaderBlob.DataPtr();
     dxcBuffer.Size = shaderBlob.Size();
 
     ComPtr<IDxcResult> dxcResult;
@@ -116,6 +116,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     SingleShaderStage stage,
     const PipelineLayout* layout,
     uint32_t compileFlags,
+    bool applySampleMaskPolyfill,
     const std::optional<dawn::native::d3d::InterStageShaderVariablesMask>&
         usedInterstageVariables) {
     Device* device = ToBackend(GetDevice());
@@ -167,10 +168,21 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     arrayOffsetFromUniform.ubo_binding = {layout->GetDynamicStorageBufferOffsetsRegisterSpace(),
                                           layout->GetDynamicStorageBufferOffsetsShaderRegister()};
 
+    auto ToHLSLBindPoint = [&](BindGroupIndex group, BindingIndex index) -> tint::BindingPoint {
+        const BindGroupLayout* bgl = ToBackend(layout->GetBindGroupLayout(group));
+        return tint::BindingPoint{
+            .group = uint32_t(group),
+            .binding = bgl->GetShaderRegister(index),
+        };
+    };
+
     std::optional<tint::ResourceTableConfig> resourceTableConfig = std::nullopt;
     if (layout->UsesResourceTable()) {
         auto bindingTypeOrder = ResourceTableDefaultResources::GetOrder();
         uint32_t baseGroup = layout->GetBaseResourceTableRegisterSpace();
+
+        auto binding_to_resource_type = GenerateBindingToResourceType(layout, ToHLSLBindPoint);
+
         resourceTableConfig = tint::ResourceTableConfig{
             // For HLSL, Tint emits multiple unbounded arrays per type, each in its own group
             // (stage)
@@ -180,16 +192,10 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
             .resource_table_binding = tint::BindingPoint(baseGroup + 1, 0),
             .storage_buffer_binding = tint::BindingPoint(baseGroup, 0),
             .default_binding_type_order = {bindingTypeOrder.begin(), bindingTypeOrder.end()},
+            .get_sampler_index_from_metadata = true,
+            .binding_to_resource_type = binding_to_resource_type,
         };
     }
-
-    auto ToHLSLBindPoint = [&](BindGroupIndex group, BindingIndex index) {
-        const BindGroupLayout* bgl = ToBackend(layout->GetBindGroupLayout(group));
-        return tint::BindingPoint{
-            .group = uint32_t(group),
-            .binding = bgl->GetShaderRegister(index),
-        };
-    };
     tint::Bindings bindings = GenerateBindingRemapping(layout, stage, ToHLSLBindPoint);
 
     std::vector<tint::BindingPoint> ignored_by_robustness;
@@ -228,6 +234,12 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         // }
         for (BindingIndex index : bgl->GetBufferIndices()) {
             const auto& bindingInfo = bgl->GetBindingInfo(index);
+
+            // Skip bindings not present for this stage.
+            if (!(bindingInfo.visibility & StageBit(stage))) {
+                continue;
+            }
+
             const auto& bufferInfo = std::get<BufferBindingInfo>(bindingInfo.bindingLayout);
             if ((bufferInfo.type == wgpu::BufferBindingType::Storage ||
                  bufferInfo.type == wgpu::BufferBindingType::ReadOnlyStorage) &&
@@ -271,6 +283,8 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     req.hlsl.tintOptions.disable_robustness = !device->IsRobustnessEnabled();
     req.hlsl.tintOptions.disable_workgroup_init =
         device->IsToggleEnabled(Toggle::DisableWorkgroupInit);
+    req.hlsl.tintOptions.workarounds.d3d12_decompose_workgroup_access =
+        device->IsToggleEnabled(Toggle::D3D12DecomposeWorkgroupAccess);
     req.hlsl.tintOptions.disable_polyfill_integer_div_mod =
         device->IsToggleEnabled(Toggle::DisablePolyfillsOnIntegerDivisonAndModulo);
     req.hlsl.tintOptions.disable_integer_range_analysis =
@@ -282,7 +296,11 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
 
     req.hlsl.tintOptions.compiler = req.bytecode.compiler == d3d::Compiler::FXC
                                         ? tint::hlsl::writer::Options::Compiler::kFXC
-                                        : tint::hlsl::writer::Options::Compiler::kDXC;
+                                        : tint::hlsl::writer::Options::Compiler::kDXC_2018;
+    if (req.bytecode.compiler == d3d::Compiler::DXC &&
+        device->IsToggleEnabled(Toggle::D3D12UseHLSL2021)) {
+        req.hlsl.tintOptions.compiler = tint::hlsl::writer::Options::Compiler::kDXC_2021;
+    }
 
     if (entryPoint.usesNumWorkgroups) {
         DAWN_ASSERT(stage == SingleShaderStage::Compute);
@@ -330,19 +348,19 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         device->IsToggleEnabled(Toggle::PolyFillPacked4x8DotProduct);
     req.hlsl.tintOptions.extensions.polyfill_pack_unpack_4x8 =
         device->IsToggleEnabled(Toggle::D3D12PolyFillPackUnpack4x8);
+    req.hlsl.tintOptions.polyfill_sample_mask = applySampleMaskPolyfill;
 
     req.hlsl.limits = LimitsForCompilationRequest::Create(device->GetLimits().v1);
     req.hlsl.adapterSupportedLimits = UnsafeUnserializedValue(
         LimitsForCompilationRequest::Create(device->GetAdapter()->GetLimits().v1));
     req.hlsl.maxSubgroupSize = device->GetAdapter()->GetPhysicalDevice()->GetSubgroupMaxSize();
+    req.hlsl.minSubgroupSize = device->GetAdapter()->GetPhysicalDevice()->GetSubgroupMinSize();
 
-    if (device->HasFeature(Feature::ChromiumExperimentalSubgroupSizeControl)) {
-        req.hlsl.minExplicitComputeSubgroupSize =
-            device->GetAdapter()->GetPhysicalDevice()->GetMinExplicitComputeSubgroupSize();
-        req.hlsl.maxExplicitComputeSubgroupSize =
-            device->GetAdapter()->GetPhysicalDevice()->GetMaxExplicitComputeSubgroupSize();
-        req.hlsl.maxComputeWorkgroupSubgroups =
-            device->GetAdapter()->GetPhysicalDevice()->GetMaxComputeWorkgroupSubgroups();
+    if (device->HasFeature(Feature::SubgroupSizeControl)) {
+        const D3D12DeviceInfo& deviceInfo =
+            ToBackend(device->GetAdapter()->GetPhysicalDevice())->GetDeviceInfo();
+        req.hlsl.waveLaneCountMin = deviceInfo.waveLaneCountMin;
+        req.hlsl.waveLaneCountMax = deviceInfo.waveLaneCountMax;
     }
 
     CacheResult<d3d::CompiledShader> compiledShader;

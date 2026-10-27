@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Platform from '../../core/platform/platform.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as Trace from '../../models/trace/trace.js';
@@ -85,6 +87,19 @@ describeWithEnvironment('TimelineLoader', () => {
     // Ensure that we loaded something that looks about right!
     assert.lengthOf(collectedEvents, 8252);
     assert.notStrictEqual(metadata?.dataOrigin, Trace.Types.File.DataOrigin.CPU_PROFILE);
+  });
+
+  it('can load a JSON file with no metadata', async () => {
+    const trace: Timeline.TimelineLoader.ParsedJSONFile = {
+      traceEvents: [],
+      // No metadata field at all.
+    };
+    const loader = Timeline.TimelineLoader.TimelineLoader.loadFromParsedJsonFile(trace, client);
+    await loader.traceFinalizedForTest();
+    sinon.assert.calledOnce(loadingCompleteSpy);
+    const [, , metadata] =
+        loadingCompleteSpy.args[0] as Parameters<Timeline.TimelineController.Client['loadingComplete']>;
+    assert.deepEqual(metadata, {});
   });
 
   it('can load a saved CPUProfile file', async () => {

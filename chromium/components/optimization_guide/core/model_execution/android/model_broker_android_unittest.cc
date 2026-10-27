@@ -9,22 +9,24 @@
 #include "base/task/current_thread.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
-#include "components/optimization_guide/core/delivery/model_provider_registry.h"
 #include "components/optimization_guide/core/model_execution/model_execution_prefs.h"
 #include "components/optimization_guide/core/model_execution/on_device_features.h"
+#include "components/optimization_guide/core/model_execution/on_device_model_download_progress_manager.h"
 #include "components/optimization_guide/core/model_execution/test/fake_model_assets.h"
-#include "components/optimization_guide/core/model_execution/test/fake_model_broker.h"
+#include "components/optimization_guide/core/model_execution/test/fake_model_broker_android.h"
 #include "components/optimization_guide/core/model_execution/test/feature_config_builder.h"
+#include "components/optimization_guide/core/model_execution/test/mock_download_progress_observer.h"
 #include "components/optimization_guide/core/model_execution/test/request_builder.h"
 #include "components/optimization_guide/core/model_execution/test/response_holder.h"
 #include "components/optimization_guide/proto/model_execution.pb.h"
 #include "components/optimization_guide/public/mojom/model_broker.mojom-shared.h"
-#include "services/on_device_model/android/on_device_model_bridge_native_unittest_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace optimization_guide {
 
 namespace {
+
+using ModelStatus = on_device_model::ModelDownloaderAndroid::ModelStatus;
 
 proto::OnDeviceBaseModelMetadata MatchingMetadata(
     const OnDeviceBaseModelSpec& spec) {
@@ -40,22 +42,6 @@ proto::OnDeviceModelExecutionFeatureConfig UnsafeFeatureConfig(
   cfg.set_can_skip_text_safety(true);
   return cfg;
 }
-
-class ModelBrokerAndroidFeatureList {
- public:
-  ModelBrokerAndroidFeatureList() {
-    feature_list_.InitWithFeaturesAndParameters(
-        {
-            {features::kOptimizationGuideModelExecution, {}},
-            {features::kOptimizationGuideOnDeviceModel, {}},
-        },
-        {features::kRequirePersistentModeForScamDetection});
-  }
-  ~ModelBrokerAndroidFeatureList() = default;
-
- private:
-  base::test::ScopedFeatureList feature_list_;
-};
 
 class ModelBrokerAndroidFeatureDisabledList {
  public:
@@ -79,6 +65,9 @@ class RequirePersistentModeForScamDetectionEnabledFeatureList {
         {
             {features::kOptimizationGuideModelExecution, {}},
             {features::kOptimizationGuideOnDeviceModel, {}},
+            {features::kAICorePrompt, {}},
+            {features::kAICoreScamDetection, {}},
+            {features::kAICoreTest, {}},
             {features::kRequirePersistentModeForScamDetection, {}},
         },
         {});
@@ -91,60 +80,40 @@ class RequirePersistentModeForScamDetectionEnabledFeatureList {
 
 class ModelBrokerAndroidTest : public testing::Test {
  public:
-  ModelBrokerAndroidTest() { java_helper_.SetMockAiCoreFactory(); }
+  ModelBrokerAndroidTest() = default;
   ~ModelBrokerAndroidTest() override = default;
 
-  ModelBrokerAndroid& EnsureBroker() {
-    if (!broker_) {
-      broker_.emplace(local_state_.local_state(), provider_);
-    }
-    return *broker_;
-  }
-
-  mojo::PendingRemote<mojom::ModelBroker> BindAndPassRemote() {
-    mojo::PendingRemote<mojom::ModelBroker> remote;
-    EnsureBroker().BindModelBroker(remote.InitWithNewPipeAndPassReceiver());
-    return remote;
-  }
-
   void InstallTestFeatureConfig() {
-    provider_.UpdateModelImmediatelyForTesting(
-        proto::OptimizationTarget::OPTIMIZATION_TARGET_MODEL_VALIDATION,
-        std::make_unique<ModelInfo>(test_asset_.model_info()));
+    fake_broker_.UpdateModelAdaptation(test_asset_);
   }
 
   void InstallScamDetectionFeatureConfig() {
-    provider_.UpdateModelImmediatelyForTesting(
-        proto::OptimizationTarget::OPTIMIZATION_TARGET_MODEL_VALIDATION,
-        std::make_unique<ModelInfo>(scam_detection_asset_.model_info()));
+    fake_broker_.UpdateModelAdaptation(scam_detection_asset_);
   }
 
   std::unique_ptr<OnDeviceSession> DownloadModelAndCreateSession(
       ModelBrokerClient& client,
       mojom::OnDeviceFeature feature) {
-    // Requesting the feature we've provided assets for should succeed.
     base::test::TestFuture<ModelBrokerClient::CreateSessionResult> future;
     client.CreateSession(feature, SessionConfigParams{}, future.GetCallback());
     base::test::RunUntil([&]() {
       return client.GetSubscriber(feature).unavailable_reason() ==
              mojom::ModelUnavailableReason::kPendingAssets;
     });
-    java_helper_.TriggerDownloaderOnAvailable(spec_.model_name,
-                                              spec_.model_version);
+    fake_broker_.java_helper().TriggerDownloaderOnAvailable(
+        spec_.model_name, spec_.model_version);
     return future.Take();
   }
 
  protected:
-  ModelBrokerAndroidFeatureList feature_list_;
   base::test::TaskEnvironment task_environment_{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
-  ModelBrokerPrefService local_state_;
-  OptimizationGuideLogger logger_;
-  ModelProviderRegistry provider_{&logger_};
-  std::optional<ModelBrokerAndroid> broker_;
   OnDeviceBaseModelSpec spec_{
       "Test", "0.0.1", proto::ON_DEVICE_MODEL_PERFORMANCE_HINT_UNSPECIFIED};
-  on_device_model::OnDeviceModelBridgeNativeUnitTestHelper java_helper_;
+  FakeModelBrokerAndroid fake_broker_{{
+      .metadata = MatchingMetadata(spec_),
+      .preinstall_base_model = false,
+  }};
   FakeAdaptationAsset test_asset_{{
       .config = UnsafeFeatureConfig(mojom::OnDeviceFeature::kTest),
       .metadata = MatchingMetadata(spec_),
@@ -157,7 +126,7 @@ class ModelBrokerAndroidTest : public testing::Test {
 
 TEST_F(ModelBrokerAndroidTest, RequirePersistentModeForTest) {
   InstallTestFeatureConfig();
-  ModelBrokerClient client(BindAndPassRemote(), nullptr);
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
 
   base::test::TestFuture<ModelBrokerClient::CreateSessionResult> future;
   client.CreateSession(mojom::OnDeviceFeature::kTest, SessionConfigParams{},
@@ -168,14 +137,14 @@ TEST_F(ModelBrokerAndroidTest, RequirePersistentModeForTest) {
            mojom::ModelUnavailableReason::kPendingAssets;
   });
 
-  java_helper_.VerifyDownloaderParams(
+  fake_broker_.java_helper().VerifyDownloaderParams(
       proto::ModelExecutionFeature::MODEL_EXECUTION_FEATURE_TEST,
       /*require_persistent_mode=*/true);
 }
 
 TEST_F(ModelBrokerAndroidTest, DoesNotRequirePersistentModeForScamDetection) {
   InstallScamDetectionFeatureConfig();
-  ModelBrokerClient client(BindAndPassRemote(), nullptr);
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
 
   base::test::TestFuture<ModelBrokerClient::CreateSessionResult> future;
   client.CreateSession(mojom::OnDeviceFeature::kScamDetection,
@@ -186,7 +155,7 @@ TEST_F(ModelBrokerAndroidTest, DoesNotRequirePersistentModeForScamDetection) {
            mojom::ModelUnavailableReason::kPendingAssets;
   });
 
-  java_helper_.VerifyDownloaderParams(
+  fake_broker_.java_helper().VerifyDownloaderParams(
       proto::ModelExecutionFeature::MODEL_EXECUTION_FEATURE_SCAM_DETECTION,
       /*require_persistent_mode=*/false);
 }
@@ -194,7 +163,7 @@ TEST_F(ModelBrokerAndroidTest, DoesNotRequirePersistentModeForScamDetection) {
 // Verify that when requesting a session while assets are still pending, the
 // client will wait for the assets before resolving the callback.
 TEST_F(ModelBrokerAndroidTest, PendingClient) {
-  ModelBrokerClient client(BindAndPassRemote(), nullptr);
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
   // Requesting test feature, but assets not available.
   base::test::TestFuture<ModelBrokerClient::CreateSessionResult> future;
   client.CreateSession(mojom::OnDeviceFeature::kTest, SessionConfigParams{},
@@ -211,7 +180,7 @@ TEST_F(ModelBrokerAndroidTest, PendingClient) {
 // Verify that CreateSession and ExecuteModel works when the download succeeds.
 TEST_F(ModelBrokerAndroidTest, ExecuteModel) {
   InstallTestFeatureConfig();
-  ModelBrokerClient client(BindAndPassRemote(), nullptr);
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
 
   auto session =
       DownloadModelAndCreateSession(client, mojom::OnDeviceFeature::kTest);
@@ -250,7 +219,7 @@ TEST_F(ModelBrokerAndroidTest, ExecuteModel) {
 // Verify that ExecuteModel succeeds after the model is disconnected.
 TEST_F(ModelBrokerAndroidTest, ExecuteModelAfterModelDisconnected) {
   InstallTestFeatureConfig();
-  ModelBrokerClient client(BindAndPassRemote(), nullptr);
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
 
   auto session =
       DownloadModelAndCreateSession(client, mojom::OnDeviceFeature::kTest);
@@ -277,7 +246,7 @@ TEST_F(ModelBrokerAndroidTest, ExecuteModelAfterModelDisconnected) {
 // Verify that when download fails, the client is notified.
 TEST_F(ModelBrokerAndroidTest, DownloadFailure) {
   InstallTestFeatureConfig();
-  ModelBrokerClient client(BindAndPassRemote(), nullptr);
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
 
   // Requesting the feature we've provided assets for should fail.
   base::test::TestFuture<ModelBrokerClient::CreateSessionResult> future;
@@ -288,7 +257,7 @@ TEST_F(ModelBrokerAndroidTest, DownloadFailure) {
                .unavailable_reason() ==
            mojom::ModelUnavailableReason::kPendingAssets;
   });
-  java_helper_.TriggerDownloaderOnUnavailable(
+  fake_broker_.java_helper().TriggerDownloaderOnUnavailable(
       on_device_model::ModelDownloaderAndroid::DownloadFailureReason::
           kUnknownError);
   base::test::RunUntil([&]() {
@@ -301,14 +270,14 @@ TEST_F(ModelBrokerAndroidTest, DownloadFailure) {
 
 // Verify that model is disabled when the enterprise policy is set to disallow.
 TEST_F(ModelBrokerAndroidTest, EnterprisePolicyDisallowsModel) {
-  local_state_.local_state().SetInteger(
+  fake_broker_.local_state().SetInteger(
       model_execution::prefs::localstate::
           kGenAILocalFoundationalModelEnterprisePolicySettings,
       static_cast<int>(model_execution::prefs::
                            GenAILocalFoundationalModelEnterprisePolicySettings::
                                kDisallowed));
   InstallTestFeatureConfig();
-  ModelBrokerClient client(BindAndPassRemote(), nullptr);
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
 
   base::test::TestFuture<ModelBrokerClient::CreateSessionResult> future;
   client.CreateSession(mojom::OnDeviceFeature::kTest, SessionConfigParams{},
@@ -325,16 +294,191 @@ TEST_F(ModelBrokerAndroidTest, EnterprisePolicyDisallowsModel) {
 // been used.
 TEST_F(ModelBrokerAndroidTest, DownloadSuccessForAlreadyUsedFeature) {
   InstallTestFeatureConfig();
-  model_execution::prefs::RecordFeatureUsage(&local_state_.local_state(),
+  model_execution::prefs::RecordFeatureUsage(&fake_broker_.local_state(),
                                              mojom::OnDeviceFeature::kTest);
   task_environment_.FastForwardBy(
       features::GetOnDeviceEligibleModelFeatureRecentUsePeriod() -
       base::Days(1));
 
-  ModelBrokerClient client(BindAndPassRemote(), nullptr);
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
   auto session =
       DownloadModelAndCreateSession(client, mojom::OnDeviceFeature::kTest);
   ASSERT_TRUE(session);
+}
+
+// Verify that download progress updates are forwarded to observers, and that a
+// late-joining observer receives an initial zero-progress event.
+TEST_F(ModelBrokerAndroidTest, DownloadProgressObserver) {
+  InstallTestFeatureConfig();
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
+
+  // Add the first observer and request a session to trigger the download.
+  MockDownloadProgressObserver observer1;
+  client.AddModelDownloadProgressObserver(
+      ToUseCaseName(mojom::OnDeviceFeature::kTest),
+      observer1.BindNewPipeAndPassRemote());
+
+  base::test::TestFuture<ModelBrokerClient::CreateSessionResult> future;
+  client.CreateSession(mojom::OnDeviceFeature::kTest, SessionConfigParams{},
+                       future.GetCallback());
+  base::test::RunUntil([&]() {
+    return client.GetSubscriber(mojom::OnDeviceFeature::kTest)
+               .unavailable_reason() ==
+           mojom::ModelUnavailableReason::kPendingAssets;
+  });
+
+  // Trigger download progress — observer1 should receive the normalized update.
+  fake_broker_.java_helper().TriggerDownloaderOnDownloadProgress(500, 1000);
+  observer1.ExpectReceivedNormalizedUpdate(500, 1000);
+
+  // Add a second observer after download progress has started — it should
+  // receive the initial (0, max) event.
+  MockDownloadProgressObserver observer2;
+  client.AddModelDownloadProgressObserver(
+      ToUseCaseName(mojom::OnDeviceFeature::kTest),
+      observer2.BindNewPipeAndPassRemote());
+  observer2.ExpectReceivedUpdate(0, kNormalizedDownloadProgressMax);
+}
+
+// Verify that an observer added after the model download has completed receives
+// 0% and 100% progress updates, matching desktop behavior.
+TEST_F(ModelBrokerAndroidTest, DownloadProgressObserverAfterDownloadComplete) {
+  InstallTestFeatureConfig();
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
+
+  auto session =
+      DownloadModelAndCreateSession(client, mojom::OnDeviceFeature::kTest);
+  ASSERT_TRUE(session);
+
+  MockDownloadProgressObserver observer;
+  client.AddModelDownloadProgressObserver(
+      ToUseCaseName(mojom::OnDeviceFeature::kTest),
+      observer.BindNewPipeAndPassRemote());
+  observer.ExpectReceivedUpdate(0, kNormalizedDownloadProgressMax);
+  observer.ExpectReceivedUpdate(kNormalizedDownloadProgressMax,
+                                kNormalizedDownloadProgressMax);
+}
+
+// Test fixture for verifying model status check behavior with specific
+// statuses set per test.
+class ModelBrokerAndroidStatusCheckTest : public ModelBrokerAndroidTest {
+ public:
+  ModelBrokerAndroidStatusCheckTest() = default;
+  ~ModelBrokerAndroidStatusCheckTest() override = default;
+};
+
+// Verify that when model status is unavailable, the subscriber gets
+// kNotSupported and the session future resolves to nullptr.
+TEST_F(ModelBrokerAndroidStatusCheckTest, ModelStatusUnavailable) {
+  fake_broker_.java_helper().settings().SetDefaultStatusCheckResult(
+      ModelStatus::kUnavailable);
+  InstallTestFeatureConfig();
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
+
+  base::test::TestFuture<ModelBrokerClient::CreateSessionResult> future;
+  client.CreateSession(mojom::OnDeviceFeature::kTest, SessionConfigParams{},
+                       future.GetCallback());
+  base::test::RunUntil([&]() {
+    return client.GetSubscriber(mojom::OnDeviceFeature::kTest)
+               .unavailable_reason() ==
+           mojom::ModelUnavailableReason::kNotSupported;
+  });
+  EXPECT_EQ(future.Get(), nullptr);
+}
+
+// Verify that when model status is downloading, the subscriber gets
+// kPendingAssets.
+TEST_F(ModelBrokerAndroidStatusCheckTest, ModelStatusDownloading) {
+  fake_broker_.java_helper().settings().SetDefaultStatusCheckResult(
+      ModelStatus::kDownloading);
+  InstallTestFeatureConfig();
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
+
+  base::test::TestFuture<ModelBrokerClient::CreateSessionResult> future;
+  client.CreateSession(mojom::OnDeviceFeature::kTest, SessionConfigParams{},
+                       future.GetCallback());
+  base::test::RunUntil([&]() {
+    return client.GetSubscriber(mojom::OnDeviceFeature::kTest)
+               .unavailable_reason() ==
+           mojom::ModelUnavailableReason::kPendingAssets;
+  });
+  EXPECT_FALSE(future.IsReady());
+}
+
+// Verify that when model status is downloadable, the subscriber gets
+// kPendingUsage.
+TEST_F(ModelBrokerAndroidStatusCheckTest, ModelStatusDownloadable) {
+  fake_broker_.java_helper().settings().SetDefaultStatusCheckResult(
+      ModelStatus::kDownloadable);
+  InstallTestFeatureConfig();
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
+
+  base::test::TestFuture<ModelBrokerClient::CreateSessionResult> future;
+  client.CreateSession(mojom::OnDeviceFeature::kTest, SessionConfigParams{},
+                       future.GetCallback());
+  base::test::RunUntil([&]() {
+    return client.GetSubscriber(mojom::OnDeviceFeature::kTest)
+               .unavailable_reason() ==
+           mojom::ModelUnavailableReason::kPendingUsage;
+  });
+  EXPECT_FALSE(future.IsReady());
+}
+
+// Verify that when model status is kApiNotAvailable (e.g., Chrome-branded
+// builds without MLKit), the flow continues as if the check passed. The
+// subscriber should reach kPendingAssets since the model adaptation may still
+// need to be downloaded.
+TEST_F(ModelBrokerAndroidStatusCheckTest, ModelStatusApiNotAvailable) {
+  fake_broker_.java_helper().settings().SetDefaultStatusCheckResult(
+      ModelStatus::kApiNotAvailable);
+  InstallTestFeatureConfig();
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
+
+  base::test::TestFuture<ModelBrokerClient::CreateSessionResult> future;
+  client.CreateSession(mojom::OnDeviceFeature::kTest, SessionConfigParams{},
+                       future.GetCallback());
+  base::test::RunUntil([&]() {
+    return client.GetSubscriber(mojom::OnDeviceFeature::kTest)
+               .unavailable_reason() ==
+           mojom::ModelUnavailableReason::kPendingAssets;
+  });
+  EXPECT_FALSE(future.IsReady());
+}
+
+// Verify that the init callback is not fired until all AICore features' status
+// checks complete (BarrierClosure).
+TEST_F(ModelBrokerAndroidStatusCheckTest, BarrierWaitsForAllStatusChecks) {
+  // Clear auto-respond so status checks wait for explicit triggering.
+  fake_broker_.java_helper().settings().SetDefaultStatusCheckResult(
+      std::nullopt);
+  InstallTestFeatureConfig();
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
+
+  base::test::TestFuture<ModelBrokerClient::CreateSessionResult> future;
+  client.CreateSession(mojom::OnDeviceFeature::kTest, SessionConfigParams{},
+                       future.GetCallback());
+
+  // CheckModelStatus creates one status checker per unique AICore
+  // feature. With kAICorePrompt and kScamDetection enabled plus kAICoreTest
+  // enabled in the test feature list, the unique AICore features are: PROMPT
+  // (covers kPromptApi, kSummarize), SCAM_DETECTION (kScamDetection), and TEST.
+  base::test::RunUntil([&]() {
+    return fake_broker_.java_helper().GetStatusCheckerCount() == 3;
+  });
+
+  // Complete status checks for all AICore features. The barrier fires,
+  // solutions are updated, and the subscriber for kTest feature is added.
+  fake_broker_.java_helper().TriggerAllDownloadersOnStatusCheckResult(
+      ModelStatus::kAvailable);
+
+  // All status checkers should have been destroyed after completion.
+  EXPECT_EQ(fake_broker_.java_helper().GetStatusCheckerCount(), 0);
+  base::test::RunUntil([&]() {
+    return client.GetSubscriber(mojom::OnDeviceFeature::kTest)
+               .unavailable_reason() ==
+           mojom::ModelUnavailableReason::kPendingAssets;
+  });
+  EXPECT_FALSE(future.IsReady());
 }
 
 class ModelBrokerAndroidRequirePersistentModeEnabledTest
@@ -350,7 +494,7 @@ class ModelBrokerAndroidRequirePersistentModeEnabledTest
 TEST_F(ModelBrokerAndroidRequirePersistentModeEnabledTest,
        RequirePersistentModeForScamDetection) {
   InstallScamDetectionFeatureConfig();
-  ModelBrokerClient client(BindAndPassRemote(), nullptr);
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
 
   base::test::TestFuture<ModelBrokerClient::CreateSessionResult> future;
   client.CreateSession(mojom::OnDeviceFeature::kScamDetection,
@@ -361,7 +505,7 @@ TEST_F(ModelBrokerAndroidRequirePersistentModeEnabledTest,
            mojom::ModelUnavailableReason::kPendingAssets;
   });
 
-  java_helper_.VerifyDownloaderParams(
+  fake_broker_.java_helper().VerifyDownloaderParams(
       proto::ModelExecutionFeature::MODEL_EXECUTION_FEATURE_SCAM_DETECTION,
       /*require_persistent_mode=*/true);
 }
@@ -377,7 +521,7 @@ class ModelBrokerAndroidFeatureDisabledTest : public ModelBrokerAndroidTest {
 
 TEST_F(ModelBrokerAndroidFeatureDisabledTest, FeatureDisabled) {
   InstallTestFeatureConfig();
-  ModelBrokerClient client(BindAndPassRemote(), nullptr);
+  ModelBrokerClient client(fake_broker_.BindAndPassRemote(), nullptr);
 
   base::test::TestFuture<ModelBrokerClient::CreateSessionResult> future;
   client.CreateSession(mojom::OnDeviceFeature::kTest, SessionConfigParams{},

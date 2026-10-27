@@ -103,8 +103,10 @@ class PageEmbeddingsService : public KeyedService,
   // `page_content_passages_to_generate` most useful passages.
   using EmbeddingCandidatesGenerator = base::RepeatingCallback<
       std::vector<std::pair<std::string, EmbeddingPassageType>>(
-          const optimization_guide::proto::AnnotatedPageContent&,
-          int page_content_passages_to_generate)>;
+          const PageContent&,
+          size_t page_content_passages_to_generate,
+          const std::string& title,
+          const std::string& url)>;
 
   PageEmbeddingsService(
       EmbeddingCandidatesGenerator candidates_generator,
@@ -136,10 +138,8 @@ class PageEmbeddingsService : public KeyedService,
   passage_embeddings::EmbedderMetadataProvider* GetEmbedderMetadataProvider();
 
   // PageContentExtractionService:
-  void OnPageContentExtracted(
-      content::Page& page,
-      scoped_refptr<const RefCountedAnnotatedPageContent> page_content)
-      override;
+  void OnPageContentExtracted(content::Page& page,
+                              PageContent page_content) override;
 
  private:
   class WebContentsEventsObserver;

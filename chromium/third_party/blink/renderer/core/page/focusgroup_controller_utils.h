@@ -40,16 +40,18 @@ enum class FocusgroupItemPosition { kFirst, kLast };
 //   scope and behavior for its focusgroup items.
 //
 // - Focusgroup Scope: The DOM subtree under a focusgroup owner, containing
-//   all potential focusgroup items. The scope ends at nested focusgroup owners
-//   or opted-out subtrees (focusgroup="none").
+//   all potential focusgroup items. The scope ends at nested focusgroup owners,
+//   opted-out subtrees (focusgroup="none"), or top-layer element subtrees
+//   (popovers, modal dialogs, fullscreen elements).
 //
 // - Focusgroup Item: A focusable element within a focusgroup scope that is not
-//   inside a nested focusgroup or opted-out subtree. These are the elements
-//   that participate in focusgroup arrow key navigation.
+//   inside a nested focusgroup, opted-out subtree, or top-layer subtree.
+//   These are the elements that participate in focusgroup arrow key navigation.
 //
 // - Focusgroup Segment: A contiguous sequence of focusgroup items within a
 //   focusgroup scope, bounded by barriers. Barriers include items in nested
-//   focusgroups and opted-out subtrees (focusgroup="none").
+//   focusgroups, opted-out subtrees (focusgroup="none"), and top-layer
+//   subtrees.
 //   Segments determine guaranteed tab stops during sequential navigation.
 //   Tab escape from arrow key handlers is handled via the entry override
 //   in IsNonEntryFocusgroupItem and does not affect segment boundaries.
@@ -134,6 +136,11 @@ class CORE_EXPORT FocusgroupControllerUtils {
   // focusable content act as barriers in the tab order).
   static bool ContainsKeyboardFocusableContent(const Element& element);
 
+  // Returns true if |element| or any of its flat-tree descendants is the
+  // document's focused element. Used to detect segment barriers when a
+  // focused element is nested inside an opted-out subtree wrapper.
+  static bool ContainsFocusedElement(const Element& element);
+
   // Returns the first/last item in the segment containing |item|, or nullptr
   // if |item| is not a focusgroup item. See class comment for segment
   // definition.
@@ -194,9 +201,6 @@ class CORE_EXPORT FocusgroupControllerUtils {
 
   // Returns true if the element has focusgroup="none".
   static bool HasExplicitOptOut(const Element* element);
-  // Returns true if element or any ancestor (up to focusgroup root) has
-  // focusgroup="none".
-  static bool IsInExplicitlyOptedOutSubtree(const Element* element);
 
   // Returns true if |element| is itself a native directional key handler or is
   // within a subtree rooted at one for its nearest ancestor focusgroup owner.
@@ -226,20 +230,42 @@ class CORE_EXPORT FocusgroupControllerUtils {
   static const Element* GetDirectionalKeyHandlerRootForFocusedElement(
       const Document& document);
 
-  // Returns true if |element| itself is an excluded subtree root, i.e., it
-  // has focusgroup="none" (explicit opt-out). These are subtrees excluded from
-  // the focusgroup scope but are not nested focusgroups (which are checked
-  // separately during traversal).
+  // Returns true if |element| itself is an excluded subtree root: it has
+  // focusgroup="none" (explicit opt-out) or is a top-layer element without
+  // its own focusgroup. Top-layer elements with their own focusgroup are NOT
+  // treated as excluded subtree roots, since their descendants participate in
+  // the inner focusgroup. Explicit IsInTopLayer() checks at traversal call
+  // sites handle those elements separately.
   static bool IsExcludedSubtreeRoot(const Element* element);
 
   // Returns the nearest excluded subtree root ancestor (or self), stopping at
   // focusgroup boundaries. Returns nullptr if not in an excluded subtree.
   static const Element* FindExcludedSubtreeRoot(const Element* element);
 
+  // Returns true if |element| is excluded from any ancestor focusgroup. This
+  // collapses the three exclusion conditions into a single question for
+  // callers that only care whether the element can participate as an item in
+  // some ancestor focusgroup:
+  //   * |element| itself is in the top layer (popover, modal dialog,
+  //     fullscreen): excluded regardless of whether it defines its own
+  //     focusgroup;
+  //   * |element| has focusgroup="none" (explicit opt-out);
+  //   * |element| is inside an excluded subtree (an ancestor up to the
+  //     nearest focusgroup boundary is opted out or is a top-layer element
+  //     without its own focusgroup).
+  static bool IsExcludedFromAncestorFocusgroup(const Element* element);
+
   // Returns true if the element has the focusgroupstart attribute.
   // This boolean attribute marks an element as the preferred entry point when
   // entering a focusgroup segment via sequential focus navigation.
   static bool IsFocusgroupStart(const Element& element);
+
+  // Returns true when |element| is a focusgroup item that is not the entry
+  // element for its segment. The caller must verify the element is a focus
+  // scope owner (shadow host, slot, popover invoker, reading-flow owner,
+  // etc.). Used by sequential focus navigation so that scope owners which
+  // are non-entry focusgroup items are skipped instead of receiving focus.
+  static bool IsNonEntryFocusgroupScopeOwner(const Element& element);
 
   static GridFocusgroupStructureInfo*
   CreateGridFocusgroupStructureInfoForGridRoot(const Element* root);

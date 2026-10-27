@@ -23,7 +23,6 @@
 #include "chrome/browser/ui/webui/ash/settings/search/search_tag_registry.h"
 #include "chrome/browser/ui/webui/extension_control_handler.h"
 #include "chrome/common/chrome_features.h"
-#include "chrome/grit/branded_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "chromeos/ash/components/dbus/hermes/hermes_manager_client.h"
 #include "chromeos/strings/grit/chromeos_strings.h"
@@ -1618,7 +1617,7 @@ void InternetSection::OnNetworkList(
   }
 
   // Edge case where Ethernet device is present but no network is connected,
-  // i.e. on Chromeboxes. http://crbug.com/1096768
+  // i.e. on Chromeboxes. http://crbug.com/40136347
   if (does_ethernet_device_exist_ && !connected_ethernet_guid_.has_value()) {
     updater.AddSearchTags(GetEthernetNotConnectedSearchConcepts());
   }

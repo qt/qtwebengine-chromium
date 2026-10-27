@@ -8,11 +8,14 @@
 #include <stddef.h>
 
 #include <memory>
+#include <optional>
 #include <string_view>
 
 #include "base/compiler_specific.h"
 #include "base/environment.h"
+#include "base/files/file_path.h"
 #include "base/functional/callback.h"
+#include "base/notreached.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/string_util.h"
@@ -668,6 +671,32 @@ GtkWidget* GetDummyWindow() {
   return window;
 }
 
+gfx::Size GetMinimumContentSize(GtkCssContext context) {
+  int min_width = 0;
+  int min_height = 0;
+  if (GtkCheckVersion(4)) {
+    // In GTK4, CSS properties like "min-width" and "min-height" are not
+    // queryable through gtk_style_context_get.  Use gtk_widget_measure to get
+    // the margin box, then subtract margin, border, and padding to recover the
+    // content area minimum size.
+    gtk_widget_measure(context.widget(), GTK_ORIENTATION_HORIZONTAL, -1,
+                       &min_width, nullptr, nullptr, nullptr);
+    gtk_widget_measure(context.widget(), GTK_ORIENTATION_VERTICAL, -1,
+                       &min_height, nullptr, nullptr, nullptr);
+    auto margin = GtkStyleContextGetMargin(context);
+    auto border = GtkStyleContextGetBorder(context);
+    auto padding = GtkStyleContextGetPadding(context);
+    min_width -= margin.width() + border.width() + padding.width();
+    min_height -= margin.height() + border.height() + padding.height();
+    min_width = std::max(0, min_width);
+    min_height = std::max(0, min_height);
+  } else {
+    GtkStyleContextGet(context, "min-width", &min_width, "min-height",
+                       &min_height, nullptr);
+  }
+  return {min_width, min_height};
+}
+
 gfx::Size GetSeparatorSize(bool horizontal) {
   auto widget = TakeGObject(gtk_separator_new(
       horizontal ? GTK_ORIENTATION_HORIZONTAL : GTK_ORIENTATION_VERTICAL));
@@ -729,6 +758,95 @@ double GetOpacityFromContext(GtkStyleContext* context) {
     gsk_render_node_unref(node);
   }
   return opacity;
+}
+
+bool IsValidThemeName(ThemeProperty property, const char* theme) {
+  const bool is_key_theme = property == ThemeProperty::kKeyThemeName;
+  if (!theme) {
+    return is_key_theme;
+  }
+  std::string_view theme_str(theme);
+  if (theme_str.empty()) {
+    return is_key_theme;
+  }
+  base::FilePath theme_path(theme_str);
+  return theme_str != "." && !theme_path.IsAbsolute() &&
+         !theme_path.ReferencesParent() && theme_path.BaseName() == theme_path;
+}
+
+const char* GetThemeFallback(ThemeProperty property) {
+  switch (property) {
+    case ThemeProperty::kIconThemeName:
+      return "hicolor";
+    case ThemeProperty::kThemeName:
+      return "Adwaita";
+    case ThemeProperty::kKeyThemeName:
+      return nullptr;
+  }
+  NOTREACHED();
+}
+
+namespace {
+
+void (*g_orig_set_property)(GObject* object,
+                            guint property_id,
+                            const GValue* value,
+                            GParamSpec* pspec) = nullptr;
+
+DISABLE_CFI_ICALL
+void GtkSettingsSetProperty(GObject* object,
+                            guint property_id,
+                            const GValue* value,
+                            GParamSpec* pspec) {
+  if (pspec && pspec->name) {
+    std::string_view prop_name(pspec->name);
+    std::optional<ThemeProperty> property;
+    if (prop_name == "gtk-theme-name") {
+      property = ThemeProperty::kThemeName;
+    } else if (prop_name == "gtk-icon-theme-name") {
+      property = ThemeProperty::kIconThemeName;
+    } else if (prop_name == "gtk-key-theme-name") {
+      property = ThemeProperty::kKeyThemeName;
+    }
+    if (property) {
+      const gchar* name = g_value_get_string(value);
+      if (!IsValidThemeName(*property, name)) {
+        GValue sanitized_value = G_VALUE_INIT;
+        g_value_init(&sanitized_value, G_TYPE_STRING);
+        g_value_set_string(&sanitized_value, GetThemeFallback(*property));
+        g_orig_set_property(object, property_id, &sanitized_value, pspec);
+        g_value_unset(&sanitized_value);
+        return;
+      }
+    }
+  }
+  g_orig_set_property(object, property_id, value, pspec);
+}
+
+}  // namespace
+
+void InstallGtkSettingsInterceptor() {
+  if (!g_orig_set_property) {
+    GObjectClass* gobject_class =
+        G_OBJECT_CLASS(g_type_class_ref(GTK_TYPE_SETTINGS));
+    g_orig_set_property = gobject_class->set_property;
+    gobject_class->set_property = GtkSettingsSetProperty;
+    g_type_class_unref(gobject_class);
+  }
+}
+
+void UninstallGtkSettingsInterceptor() {
+  if (g_orig_set_property) {
+    GObjectClass* gobject_class =
+        G_OBJECT_CLASS(g_type_class_ref(GTK_TYPE_SETTINGS));
+    gobject_class->set_property = g_orig_set_property;
+    g_orig_set_property = nullptr;
+    g_type_class_unref(gobject_class);
+  }
+}
+
+GtkSettings* GetDefaultGtkSettings() {
+  return gtk_settings_get_default();
 }
 
 }  // namespace gtk

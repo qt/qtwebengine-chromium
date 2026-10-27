@@ -9,12 +9,13 @@
 #include <string>
 
 #include "build/build_config.h"
-#include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/payments/autofill_save_card_delegate.h"
 #include "components/autofill/core/browser/payments/autofill_save_card_ui_info.h"
 #include "components/autofill/core/browser/payments/legal_message_line.h"
 #include "components/infobars/core/confirm_infobar_delegate.h"
+#include "components/infobars/core/infobar_delegate.h"
 #include "ui/gfx/image/image.h"
+#include "url/gurl.h"
 
 namespace autofill {
 
@@ -99,10 +100,6 @@ class AutofillSaveCardInfoBarDelegateMobile : public ConfirmInfoBarDelegate {
   AutofillSaveCardDelegate* delegate() { return delegate_.get(); }
 
  private:
-#if BUILDFLAG(IS_ANDROID)
-  void RemoveInfobar();
-#endif
-
   // Strings and assets provided to the info bar UI.
   AutofillSaveCardUiInfo ui_info_;
   // UI actions (accept, cancel, dismiss etc.) are forwarded to this object that

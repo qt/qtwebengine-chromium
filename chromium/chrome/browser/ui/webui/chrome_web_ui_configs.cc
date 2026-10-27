@@ -23,6 +23,7 @@
 #include "chrome/browser/ui/webui/components/components_ui.h"
 #include "chrome/browser/ui/webui/connectors_internals/connectors_internals_ui.h"
 #include "chrome/browser/ui/webui/constrained_web_dialog_ui.h"
+#include "chrome/browser/ui/webui/context_hub/context_hub_ui.h"
 #include "chrome/browser/ui/webui/crashes/crashes_ui.h"
 #include "chrome/browser/ui/webui/data_sharing_internals/data_sharing_internals_ui.h"
 #include "chrome/browser/ui/webui/device_log/device_log_ui.h"
@@ -44,6 +45,7 @@
 #include "chrome/browser/ui/webui/net_internals/net_internals_ui.h"
 #include "chrome/browser/ui/webui/ntp_tiles_internals_ui.h"
 #include "chrome/browser/ui/webui/omnibox/omnibox_ui.h"
+#include "chrome/browser/ui/webui/personal_context_internals/personal_context_internals_ui.h"
 #include "chrome/browser/ui/webui/policy/policy_ui.h"
 #include "chrome/browser/ui/webui/predictors/predictors_ui.h"
 #include "chrome/browser/ui/webui/privacy_sandbox/privacy_sandbox_internals_ui.h"
@@ -51,6 +53,7 @@
 #include "chrome/browser/ui/webui/saved_tab_groups_unsupported/saved_tab_groups_unsupported_ui.h"
 #include "chrome/browser/ui/webui/segmentation_internals/segmentation_internals_ui.h"
 #include "chrome/browser/ui/webui/signin_internals_ui.h"
+#include "chrome/browser/ui/webui/subresource_filter/subresource_filter_internals_ui.h"
 #include "chrome/browser/ui/webui/sync_internals/sync_internals_ui.h"
 #include "chrome/browser/ui/webui/translate_internals/translate_internals_ui.h"
 #include "chrome/browser/ui/webui/usb_internals/usb_internals_ui.h"
@@ -63,19 +66,21 @@
 #include "content/public/browser/webui_config_map.h"
 #include "extensions/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
+#include "ui/webui/buildflags.h"
+
+#if BUILDFLAG(ENABLE_WEBUI_NTP)
+#include "chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.h"
+#endif  // BUILDFLAG(ENABLE_WEBUI_NTP)
 
 #if BUILDFLAG(ENABLE_WEBUI_CERTIFICATE_VIEWER)
 #include "chrome/browser/ui/webui/certificate_viewer/certificate_viewer_ui.h"
-#endif
-
-#if BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
-#include "chrome/browser/ui/webui/tab_strip/tab_strip_ui.h"
 #endif
 
 #if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/actor/ui/actor_overlay_ui.h"
 #include "chrome/browser/ui/tabs/tab_group_home/tab_group_home_ui.h"
 #include "chrome/browser/ui/webui/content_annotator_internals/content_annotator_internals_ui.h"
+#include "chrome/browser/ui/webui/personal_context/personal_context_notice_ui.h"
 #include "chrome/browser/ui/webui/webui_toolbar/webui_toolbar_ui.h"
 #include "chrome/browser/ui/webui_browser/webui_browser_ui.h"
 #if !BUILDFLAG(IS_CHROMEOS)
@@ -84,6 +89,7 @@
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
 #include "chrome/browser/ui/webui/media_router/cast_feedback_ui.h"
 #endif
+#include "chrome/browser/glic/experimental_opt_in/glic_experimental_opt_in_ui.h"
 #include "chrome/browser/ui/webui/access_code_cast/access_code_cast_ui.h"
 #include "chrome/browser/ui/webui/app_service_internals/app_service_internals_ui.h"
 #include "chrome/browser/ui/webui/autofill_ml_internals/autofill_ml_internals_ui.h"
@@ -91,6 +97,7 @@
 #include "chrome/browser/ui/webui/color_pipeline_internals/color_pipeline_internals_ui.h"
 #include "chrome/browser/ui/webui/commerce/shopping_insights_side_panel_ui.h"
 #include "chrome/browser/ui/webui/downloads/downloads_ui.h"
+#include "chrome/browser/ui/webui/drive_picker_host/drive_picker_host_ui.h"
 #include "chrome/browser/ui/webui/feedback/feedback_ui.h"
 #include "chrome/browser/ui/webui/history/history_ui.h"
 #include "chrome/browser/ui/webui/infobar_internals/infobar_internals_ui.h"
@@ -99,11 +106,14 @@
 #include "chrome/browser/ui/webui/internals/internals_ui.h"
 #include "chrome/browser/ui/webui/tab_strip_internals/tab_strip_internals_ui.h"
 #endif  // BUILDFLAG(ENABLE_SESSION_SERVICE)
+#include "chrome/browser/ui/webui/indigo_internals/indigo_internals_ui.h"
 #include "chrome/browser/ui/webui/media_router/media_router_internals_ui.h"
+#include "chrome/browser/ui/webui/multistep_filter_internals/multistep_filter_internals_ui.h"
+#if BUILDFLAG(ENABLE_WEBUI_NTP)
 #include "chrome/browser/ui/webui/new_tab_footer/new_tab_footer_ui.h"
-#include "chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.h"
 #include "chrome/browser/ui/webui/new_tab_page_third_party/new_tab_page_third_party_ui.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
+#endif  // BUILDFLAG(ENABLE_WEBUI_NTP)
 #include "chrome/browser/ui/webui/omnibox_popup/omnibox_popup_ui.h"
 #include "chrome/browser/ui/webui/on_device_internals/on_device_internals_ui.h"
 #include "chrome/browser/ui/webui/password_manager/password_manager_ui.h"
@@ -157,6 +167,7 @@
 
 #if BUILDFLAG(IS_WIN)
 #include "chrome/browser/ui/webui/conflicts/conflicts_ui.h"
+#include "chrome/browser/ui/webui/default_browser/visual_guided_setter_ui.h"
 #endif  // BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
@@ -180,8 +191,11 @@
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
         // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_DESKTOP_ANDROID)
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS)
 #include "chrome/browser/ui/webui/signin/batch_upload_ui.h"
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#include "chrome/browser/ui/webui/feature_showcase/feature_showcase_ui.h"
 #include "chrome/browser/ui/webui/signin/dice_web_signin_intercept_ui.h"
 #include "chrome/browser/ui/webui/signin/signout_confirmation/signout_confirmation_ui.h"
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
@@ -207,10 +221,6 @@
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 #include "chrome/browser/ui/webui/on_device_translation_internals/on_device_translation_internals_ui.h"
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
-
-#if !BUILDFLAG(IS_ANDROID)
-#include "chrome/browser/glic/fre/glic_fre_ui.h"
-#endif
 
 #if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
 #include "chrome/browser/ui/webui/safe_browsing/chrome_safe_browsing_ui.h"
@@ -250,6 +260,7 @@ void RegisterChromeWebUIConfigs() {
   map.AddWebUIConfig(std::make_unique<commerce::CommerceInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<ActorInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<ComponentsUIConfig>());
+  map.AddWebUIConfig(std::make_unique<ContextHubUIConfig>());
   map.AddWebUIConfig(std::make_unique<ContextualTasksUIConfig>());
   map.AddWebUIConfig(
       std::make_unique<security_interstitials::ConnectionHelpUIConfig>());
@@ -279,6 +290,7 @@ void RegisterChromeWebUIConfigs() {
   map.AddWebUIConfig(std::make_unique<OmniboxUIConfig>());
   map.AddWebUIConfig(std::make_unique<OptimizationGuideInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<PasswordManagerInternalsUIConfig>());
+  map.AddWebUIConfig(std::make_unique<PersonalContextInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<PolicyUIConfig>());
   map.AddWebUIConfig(std::make_unique<PredictorsUIConfig>());
   map.AddWebUIConfig(
@@ -287,6 +299,8 @@ void RegisterChromeWebUIConfigs() {
   map.AddWebUIConfig(std::make_unique<SavedTabGroupsUnsupportedUIConfig>());
   map.AddWebUIConfig(std::make_unique<SegmentationInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<SignInInternalsUIConfig>());
+  map.AddWebUIConfig(std::make_unique<
+                     subresource_filter::SubresourceFilterInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<SiteEngagementUIConfig>());
   map.AddWebUIConfig(std::make_unique<SyncInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<TranslateInternalsUIConfig>());
@@ -298,13 +312,12 @@ void RegisterChromeWebUIConfigs() {
       std::make_unique<
           privacy_sandbox_internals::PrivacySandboxInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<RegionalCapabilitiesInternalsUIConfig>());
+#if BUILDFLAG(ENABLE_WEBUI_NTP)
+  map.AddWebUIConfig(std::make_unique<NewTabPageUIConfig>());
+#endif  // BUILDFLAG(ENABLE_WEBUI_NTP)
 
 #if BUILDFLAG(ENABLE_WEBUI_CERTIFICATE_VIEWER)
   map.AddWebUIConfig(std::make_unique<CertificateViewerUIConfig>());
-#endif
-
-#if BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
-  map.AddWebUIConfig(std::make_unique<TabStripUIConfig>());
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
@@ -312,7 +325,6 @@ void RegisterChromeWebUIConfigs() {
   map.AddWebUIConfig(std::make_unique<NotificationsInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<WebApksUIConfig>());
 #else  // BUILDFLAG(IS_ANDROID)
-  map.AddWebUIConfig(std::make_unique<glic::GlicFreUIConfig>());
 #if !BUILDFLAG(IS_CHROMEOS)
   map.AddWebUIConfig(std::make_unique<AppHomeUIConfig>());
 #endif  // !BUILDFLAG(IS_CHROMEOS)
@@ -322,16 +334,18 @@ void RegisterChromeWebUIConfigs() {
   map.AddWebUIConfig(
       std::make_unique<
           content_annotator_internals::ContentAnnotatorInternalsUIConfig>());
+  map.AddWebUIConfig(std::make_unique<media_router::AccessCodeCastUIConfig>());
   map.AddWebUIConfig(std::make_unique<actor::ui::ActorOverlayUIConfig>());
   map.AddWebUIConfig(std::make_unique<AppServiceInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<AutofillMlInternalsUIConfig>());
-  map.AddWebUIConfig(std::make_unique<media_router::AccessCodeCastUIConfig>());
   map.AddWebUIConfig(std::make_unique<BookmarksSidePanelUIConfig>());
   map.AddWebUIConfig(std::make_unique<BookmarksUIConfig>());
   map.AddWebUIConfig(std::make_unique<ColorPipelineInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<CommentsSidePanelUIConfig>());
   map.AddWebUIConfig(std::make_unique<CustomizeChromeUIConfig>());
   map.AddWebUIConfig(std::make_unique<DownloadsUIConfig>());
+  map.AddWebUIConfig(std::make_unique<DrivePickerHostUIConfig>());
+  map.AddWebUIConfig(std::make_unique<glic::GlicExperimentalOptInUIConfig>());
   map.AddWebUIConfig(std::make_unique<FeedbackUIConfig>());
   map.AddWebUIConfig(std::make_unique<HistoryUIConfig>());
   map.AddWebUIConfig(std::make_unique<HistorySidePanelUIConfig>());
@@ -344,14 +358,21 @@ void RegisterChromeWebUIConfigs() {
 #endif  // BUILDFLAG(ENABLE_SESSION_SERVICE)
   map.AddWebUIConfig(
       std::make_unique<media_router::MediaRouterInternalsUIConfig>());
+  map.AddWebUIConfig(
+      std::make_unique<
+          multistep_filter_internals::MultistepFilterInternalsUIConfig>());
+#if BUILDFLAG(ENABLE_WEBUI_NTP)
   map.AddWebUIConfig(std::make_unique<NewTabFooterUIConfig>());
-  map.AddWebUIConfig(std::make_unique<NewTabPageUIConfig>());
   map.AddWebUIConfig(std::make_unique<NewTabPageThirdPartyUIConfig>());
+#endif  // BUILDFLAG(ENABLE_WEBUI_NTP)
   map.AddWebUIConfig(std::make_unique<NewTabUIConfig>());
   map.AddWebUIConfig(std::make_unique<OmniboxPopupUIConfig>());
   map.AddWebUIConfig(
       std::make_unique<on_device_internals::OnDeviceInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<PasswordManagerUIConfig>());
+  map.AddWebUIConfig(
+      std::make_unique<
+          personal_context::notice::PersonalContextNoticeUIConfig>());
   map.AddWebUIConfig(
       std::make_unique<private_ai::PrivateAiInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<ProfileInternalsUIConfig>());
@@ -370,6 +391,7 @@ void RegisterChromeWebUIConfigs() {
   map.AddWebUIConfig(std::make_unique<UserEducationInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<WebAppInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<WebNNInternalsUIConfig>());
+  map.AddWebUIConfig(std::make_unique<IndigoInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<WebUIBrowserUIConfig>());
   map.AddWebUIConfig(std::make_unique<WebuiGalleryUIConfig>());
   map.AddWebUIConfig(std::make_unique<WebUIJsErrorUIConfig>());
@@ -404,6 +426,7 @@ void RegisterChromeWebUIConfigs() {
 
 #if BUILDFLAG(IS_WIN)
   map.AddWebUIConfig(std::make_unique<ConflictsUIConfig>());
+  map.AddWebUIConfig(std::make_unique<VisualGuidedSetterUIConfig>());
 #endif  // BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
@@ -431,9 +454,13 @@ void RegisterChromeWebUIConfigs() {
   map.AddWebUIConfig(std::make_unique<UpdaterUIConfig>());
 #endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS)
   map.AddWebUIConfig(std::make_unique<BatchUploadUIConfig>());
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS)
+
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
   map.AddWebUIConfig(std::make_unique<DiceWebSigninInterceptUIConfig>());
+  map.AddWebUIConfig(std::make_unique<FeatureShowcaseUIConfig>());
   map.AddWebUIConfig(std::make_unique<SignoutConfirmationUIConfig>());
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 

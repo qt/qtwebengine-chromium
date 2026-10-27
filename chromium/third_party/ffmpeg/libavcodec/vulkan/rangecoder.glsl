@@ -23,6 +23,9 @@
 #ifndef VULKAN_RANGECODER_H
 #define VULKAN_RANGECODER_H
 
+#ifndef NB_CONTEXTS
+#define NB_CONTEXTS 1
+#endif
 #define CONTEXT_SIZE 32
 #define MAX_OVERREAD 2
 
@@ -47,7 +50,7 @@ struct RangeCoder {
 };
 
 shared RangeCoder rc;
-shared uint8_t rc_state[CONTEXT_SIZE];
+shared uint8_t rc_state[NB_CONTEXTS*CONTEXT_SIZE];
 shared bool rc_data[CONTEXT_SIZE];
 
 void rac_init(uint bs_start, uint bs_len)
@@ -186,7 +189,8 @@ uint rac_terminate(void)
 void rac_init_dec(uint bs_start, uint bs_len)
 {
     /* Skip priming bytes */
-    rac_init(bs_start + 2, bs_len - 2);
+    rac_init(bs_start, bs_len - 2);
+    rc.bs_off += 2;
 
     u8vec2 prime = u8vec2buf(slice_data + bs_start).v;
     /* Switch endianness of the priming bytes */

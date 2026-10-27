@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import type * as Common from '../../core/common/common.js';
 import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -318,6 +320,32 @@ describeWithEnvironment('PropertiesWidget DEFAULT_VIEW', () => {
         },
         {}, container);
     await assertScreenshot('elements/properties_widget_no_filter.png');
+  });
+
+  it('renders a selected element', async () => {
+    const {container, objectTree} = await setUpView();
+
+    Elements.PropertiesWidget.DEFAULT_VIEW(
+        {
+          onFilterChanged: () => {},
+          objectTree,
+          allChildrenFiltered: false,
+          onRegexToggled: function(): void {
+            throw new Error('Function not implemented.');
+          },
+          isRegex: false
+        },
+        {}, container);
+    await UI.Widget.Widget.allUpdatesComplete;
+
+    const tree = container.querySelector('devtools-tree') as UI.TreeOutline.TreeViewElement;
+    assert.exists(tree);
+    const treeOutline = tree.getInternalTreeOutlineForTest();
+    const child = treeOutline.rootElement().childAt(0);
+    assert.exists(child);
+    child.select();
+
+    await assertScreenshot('elements/properties_widget_selected_element.png');
   });
 
   it('renders the view with a partial filter match', async () => {

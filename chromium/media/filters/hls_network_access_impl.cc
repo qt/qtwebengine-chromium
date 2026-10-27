@@ -30,14 +30,16 @@ void HlsNetworkAccessImpl::ReadSegmentQueueInternal(
                 base::BindPostTaskToCurrentDefault(std::move(cb)));
 }
 
-void HlsNetworkAccessImpl::ReadAllInternal(const GURL& uri,
-                                           HlsDataSourceProvider::ReadCb cb,
-                                           bool bypass_cache) {
+void HlsNetworkAccessImpl::ReadAllInternal(
+    const GURL& uri,
+    HlsDataSourceProvider::ReadCb cb,
+    DataSource::CacheMode cache_mode,
+    DataSource::EncodingMode encoding_mode) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(media_sequence_checker_);
   // Callers of `ReadAllInternal` should enforce this.
   CHECK(data_source_provider_);
   HlsDataSourceProvider::SegmentQueue queue;
-  queue.emplace(uri, std::nullopt, bypass_cache);
+  queue.emplace(uri, std::nullopt, cache_mode, encoding_mode);
   ReadSegmentQueueInternal(
       std::move(queue),
       base::BindOnce(&HlsNetworkAccessImpl::ReadUntilExhausted,
@@ -54,12 +56,10 @@ void HlsNetworkAccessImpl::OnKeyFetch(
     return;
   }
 
+  bool safe_key = enc_data->GetKeyLocation() ==
+                  hls::MediaSegment::EncryptionData::KeyLocation::kSafeOrigin;
   auto stream = std::move(result).value();
-  if (stream->would_taint_origin() &&
-      enc_data->GetKeyLocation() ==
-          hls::MediaSegment::EncryptionData::KeyLocation::kUnsafeOrigin) {
-    // Do not accept keys which would taint the origin, unless it is on the same
-    // origin as the manifest which includes the key.
+  if (stream->would_taint_origin() && (stream->DidRedirect() || !safe_key)) {
     std::move(cb).Run({HlsDataSourceProvider::ReadStatus::Codes::kError,
                        "insecure key request"});
     return;
@@ -81,7 +81,8 @@ void HlsNetworkAccessImpl::ReadManifest(const GURL& uri,
     std::move(cb).Run(HlsDataSourceProvider::ReadStatus::Codes::kStopped);
     return;
   }
-  ReadAllInternal(uri, std::move(cb), /*bypass_cache=*/true);
+  ReadAllInternal(uri, std::move(cb), DataSource::CacheMode::kBypassCache,
+                  DataSource::EncodingMode::kAllowGzip);
 }
 
 void HlsNetworkAccessImpl::ReadKey(
@@ -113,10 +114,12 @@ void HlsNetworkAccessImpl::ReadMediaSegment(const hls::MediaSegment& segment,
   HlsDataSourceProvider::SegmentQueue queue;
   if (include_init) {
     if (auto init = segment.GetInitializationSegment()) {
-      queue.emplace(init->GetUri(), init->GetByteRange(), false);
+      queue.emplace(init->GetUri(), init->GetByteRange(),
+                    DataSource::CacheMode::kHitCache);
     }
   }
-  queue.emplace(segment.GetUri(), segment.GetByteRange(), false);
+  queue.emplace(segment.GetUri(), segment.GetByteRange(),
+                DataSource::CacheMode::kHitCache);
 
   if (auto enc_data = segment.GetEncryptionData()) {
     if (enc_data->NeedsKeyFetch()) {

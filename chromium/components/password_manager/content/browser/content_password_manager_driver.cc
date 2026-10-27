@@ -6,7 +6,9 @@
 
 #include <utility>
 
+#include "base/feature_list.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/task/sequenced_task_runner.h"
 #include "components/autofill/content/browser/content_autofill_client.h"
 #include "components/autofill/content/browser/content_autofill_driver.h"
 #include "components/autofill/core/browser/logging/log_manager.h"
@@ -20,6 +22,7 @@
 #include "components/password_manager/content/browser/content_password_manager_driver_factory.h"
 #include "components/password_manager/content/browser/form_meta_data.h"
 #include "components/password_manager/core/browser/browser_save_password_progress_logger.h"
+#include "components/password_manager/core/browser/features/password_features.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "components/password_manager/core/browser/password_manager_client.h"
 #include "components/password_manager/core/browser/password_manager_metrics_recorder.h"
@@ -31,6 +34,7 @@
 #include "content/public/browser/context_menu_params.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/site_instance.h"
@@ -60,12 +64,16 @@ bool HasValidURL(content::RenderFrameHost* render_frame_host) {
   if (!url.is_valid())
     return false;
 
-  return password_manager::bad_message::CheckForIllegalURL(
+  return password_manager::bad_message::CheckChildProcessSecurityPolicyForURL(
       render_frame_host, url,
       password_manager::BadMessageReason::CPMD_BAD_ORIGIN_FORM_SUBMITTED);
 }
 
 bool IsRenderFrameHostSupported(content::RenderFrameHost* rfh) {
+  if (rfh->GetProcess()->IsPdf()) {
+    return false;
+  }
+
   // Explanation of current PasswordManagerDriver limitations:
   // * Currently, PasswordManagerDriver binding has RenderFrameHost lifetime,
   //   not document lifetime. This can lead to premature binding in rare race
@@ -112,8 +120,8 @@ ContentPasswordManagerDriver::ContentPasswordManagerDriver(
           autofill::ContentAutofillClient::FromWebContents(
               content::WebContents::FromRenderFrameHost(render_frame_host)),
           client) {
-  static unsigned next_free_id = 0;
-  id_ = next_free_id++;
+  static DriverId::Generator id_generator;
+  id_ = id_generator.GenerateNextId();
 
   render_frame_host_->GetRemoteAssociatedInterfaces()->GetInterface(
       &password_autofill_agent_);
@@ -164,7 +172,7 @@ void ContentPasswordManagerDriver::DidNavigate() {
   }
 }
 
-int ContentPasswordManagerDriver::GetId() const {
+DriverId ContentPasswordManagerDriver::GetId() const {
   return id_;
 }
 
@@ -186,7 +194,20 @@ gfx::RectF ContentPasswordManagerDriver::TransformToRootCoordinates(
 
 void ContentPasswordManagerDriver::PropagateFillDataOnParsingCompletion(
     const autofill::PasswordFormFillData& form_data) {
-  password_autofill_manager_.OnAddPasswordFillData(form_data);
+  if (base::FeatureList::IsEnabled(
+          features::kCallOnAddPasswordFillDataAsynchronously)) {
+    // This asynchronous call is to avoid reentrant AutofillManager::Observer
+    // calls. See crbug.com/500883329 for details.
+    // While PasswordAutofillAgent::ApplyFillDataOnParsingCompletion() may call
+    // back into the browser process, those Mojo events are processed after this
+    // posted task.
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&PasswordAutofillManager::OnAddPasswordFillData,
+                       password_autofill_manager_.GetWeakPtr(), form_data));
+  } else {
+    password_autofill_manager_.OnAddPasswordFillData(form_data);
+  }
   if (const auto& agent = GetPasswordAutofillAgent()) {
     agent->ApplyFillDataOnParsingCompletion(
         autofill::MaybeClearPasswordValues(form_data));
@@ -369,6 +390,11 @@ ContentPasswordManagerDriver::GetPasswordAutofillManager() {
   return &password_autofill_manager_;
 }
 
+autofill::PasswordManagerDelegate*
+ContentPasswordManagerDriver::GetPasswordManagerDelegate() {
+  return &password_autofill_manager_;
+}
+
 void ContentPasswordManagerDriver::SendLoggingAvailability() {
   if (const auto& agent = GetPasswordAutofillAgent()) {
     autofill::LogManager* log_manager = client_->GetCurrentLogManager();
@@ -404,6 +430,20 @@ const GURL& ContentPasswordManagerDriver::GetLastCommittedURL() const {
 const url::Origin& ContentPasswordManagerDriver::GetLastCommittedOrigin()
     const {
   return render_frame_host_->GetLastCommittedOrigin();
+}
+
+bool ContentPasswordManagerDriver::HasCrossOriginAncestor() const {
+  content::RenderFrameHost* parent =
+      render_frame_host_->GetParentOrOuterDocument();
+  const url::Origin& target_origin =
+      render_frame_host_->GetLastCommittedOrigin();
+  while (parent) {
+    if (!parent->GetLastCommittedOrigin().IsSameOriginWith(target_origin)) {
+      return true;
+    }
+    parent = parent->GetParentOrOuterDocument();
+  }
+  return false;
 }
 
 void ContentPasswordManagerDriver::CheckViewAreaVisible(
@@ -613,26 +653,6 @@ void ContentPasswordManagerDriver::UserModifiedNonPasswordField(
   // A user has modified an input field, it wouldn't be a submission "after
   // Touch To Fill".
   client_->ResetSubmissionTrackingAfterTouchToFill();
-}
-
-void ContentPasswordManagerDriver::ShowPasswordSuggestions(
-    const autofill::PasswordSuggestionRequest& request) {
-  if (!password_manager::bad_message::CheckFrameNotPrerendering(
-          render_frame_host_))
-    return;
-
-  if ((request.username_field_index > request.form_data.fields().size()) ||
-      (request.password_field_index > request.form_data.fields().size())) {
-    mojo::ReportBadMessage(
-        "username_field_index or password_field_index cannot be greater than "
-        "form.fields.size()!");
-  }
-
-#if !BUILDFLAG(IS_ANDROID)
-  GetPasswordAutofillManager()->ShowSuggestions(request.field);
-#else
-  GetPasswordAutofillManager()->ShowKeyboardReplacingSurface(request);
-#endif  // !BUILDFLAG(IS_ANDROID)
 }
 
 void ContentPasswordManagerDriver::CheckSafeBrowsingReputation(

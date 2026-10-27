@@ -205,15 +205,6 @@ bool Instruction::IsAccessChain() const {
            opcode == spv::OpInBoundsPtrAccessChain;
 }
 
-spv::Dim Instruction::FindImageDim() const { return (Opcode() == spv::OpTypeImage) ? (spv::Dim(Word(3))) : spv::DimMax; }
-
-bool Instruction::IsImageArray() const { return (Opcode() == spv::OpTypeImage) && (Word(5) != 0); }
-
-bool Instruction::IsImageMultisampled() const {
-    // spirv-val makes sure that the MS operand is only non-zero when possible to be Multisampled
-    return (Opcode() == spv::OpTypeImage) && (Word(6) != 0);
-}
-
 bool Instruction::IsTensor() const { return (Opcode() == spv::OpTypeTensorARM); }
 
 // Returns "any" constant
@@ -373,6 +364,7 @@ void Instruction::ReplaceLinkedId(vvl::unordered_map<uint32_t, uint32_t>& id_swa
         case spv::OpArrayLength:
         case spv::OpBitcast:
         case spv::OpUConvert:
+        case spv::OpAny:
         case spv::OpLogicalNot:
         case spv::OpIsNan:
         case spv::OpIsInf:

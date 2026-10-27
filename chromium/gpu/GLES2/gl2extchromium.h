@@ -52,6 +52,17 @@ typedef GLboolean (GL_APIENTRY PFNGLUNMAPBUFFERCHROMIUM) (GLuint target);
 #endif
 #endif  /* GL_CHROMIUM_pixel_transfer_buffer_object */
 
+#ifdef GL_GLEXT_PROTOTYPES
+GL_APICALL void GL_APIENTRY glGetBufferSubDataCHROMIUM(GLenum target,
+                                                       GLintptr offset,
+                                                       GLsizeiptr size,
+                                                       void* data);
+#endif
+typedef void(GL_APIENTRY PFNGLGETBUFFERSUBDATACHROMIUM)(GLenum target,
+                                                        GLintptr offset,
+                                                        GLsizeiptr size,
+                                                        void* data);
+
 /* GL_CHROMIUM_deschedule */
 #ifndef GL_CHROMIUM_deschedule
 #define GL_CHROMIUM_deschedule 1
@@ -611,16 +622,6 @@ typedef void (GL_APIENTRYP PFNGLLOSECONTEXTCHROMIUMPROC) (
 #define GL_TEXTURE_RECTANGLE_ARB 0x84F5
 #endif
 #endif  /* GL_ARB_texture_rectangle */
-
-/* GL_CHROMIUM_enable_feature */
-#ifndef GL_CHROMIUM_enable_feature
-#define GL_CHROMIUM_enable_feature 1
-#ifdef GL_GLEXT_PROTOTYPES
-GL_APICALL GLboolean GL_APIENTRY glEnableFeatureCHROMIUM(const char* feature);
-#endif
-typedef GLboolean (GL_APIENTRYP PFNGLENABLEFEATURECHROMIUMPROC) (
-    const char* feature);
-#endif  /* GL_CHROMIUM_enable_feature */
 
 /* GL_ARB_robustness */
 #ifndef GL_ARB_robustness

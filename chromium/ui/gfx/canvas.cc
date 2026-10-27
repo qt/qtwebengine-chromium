@@ -124,12 +124,14 @@ float Canvas::GetStringWidthF(std::u16string_view text,
       font_list.GetPrimaryFont().platform_font());
 
   // Cache only if there is one single Font, and that Font is already
-  // initialized (has a not-null PlatformFont). Otherwise SizeStringFloat()
-  // might return a different value on subsequent calls.
+  // initialized (has a non-null PlatformFont and a non-zero
+  // typeface_unique_id). Otherwise, unstable font state during initialization
+  // could lead to incorrect cache matches or misses.
   const bool use_cache =
       base::FeatureList::IsEnabled(features::kStringWidthCache) &&
       text.length() <= kMaxStringWidthCacheStringLength &&
-      font_list.GetFonts().size() == 1 && platform_font_ref;
+      font_list.GetFonts().size() == 1 && platform_font_ref &&
+      platform_font_ref->typeface_unique_id() != 0u;
 
   if (use_cache) {
     const StringWidthCacheKey key(std::u16string(text), platform_font_ref);
@@ -581,9 +583,9 @@ void Canvas::DrawImageIntHelper(const ImageSkiaRep& image_rep,
   // In non pixel-canvas mode, the scaling and rounding is performed in cc side.
   // In pixel canvas mode, we need to translate so that the position is pixel
   // aligned at the target space, because drawing at subpixel position can
-  // result in pixelated image. Use `std::round` to be consistent with pxiel
+  // result in pixelated image. Use `std::round` to be consistent with pixel
   // canvas' rounding logic.
-  // TOOD(crbug.com/41344902): Using image_scale_ isn't 100% accurate. It should
+  // TODO(crbug.com/41344902): Using image_scale_ isn't 100% accurate. It should
   // use the scale applied to the canvas instead (which isn't available now).
   if (features::IsPixelCanvasRecordingEnabled()) {
     shader_scale.postTranslate(

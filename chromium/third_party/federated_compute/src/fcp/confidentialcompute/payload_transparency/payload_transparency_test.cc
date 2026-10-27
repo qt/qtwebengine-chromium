@@ -23,8 +23,9 @@
 #include "google/protobuf/timestamp.pb.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/log/check.h"
+#include "absl/log/absl_check.h"
 #include "absl/status/status.h"
+#include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
@@ -42,11 +43,14 @@
 namespace fcp::confidential_compute::payload_transparency {
 namespace {
 
+using ::absl_testing::IsOkAndHolds;
+using ::absl_testing::StatusIs;
 using ::fcp::confidentialcompute::AccessPolicyEndorsementOptions;
 using ::fcp::confidentialcompute::Key;
 using ::fcp::confidentialcompute::SignedPayload;
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
+using ::testing::Pair;
 
 // Returns a new EcdsaP256R1Signer and its corresponding verifying Key.
 std::tuple<EcdsaP256R1Signer, Key> CreateSignerAndVerifyingKey() {
@@ -91,7 +95,7 @@ SignedPayload::Signature& AddRekorLogEntry(
       [&to_sign](absl::string_view part) { absl::StrAppend(&to_sign, part); });
   absl::StatusOr<std::string> asn1_signature =
       ConvertP1363SignatureToAsn1(signer.Sign(to_sign));
-  CHECK_OK(asn1_signature);
+  ABSL_CHECK_OK(asn1_signature);
 
   auto* rekor = signature->mutable_log_entry()->mutable_rekor();
   rekor->set_body(absl::Substitute(
@@ -120,7 +124,8 @@ TEST(VerifySignedPayloadTest, NoSignatures) {
 
   absl::StatusOr<VerifySignedPayloadResult> result =
       VerifySignedPayload(signed_payload, {}, {}, absl::Now());
-  EXPECT_THAT(result, IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(),
               HasSubstr("signature verification failed: []"));
 }
@@ -137,7 +142,7 @@ TEST(VerifySignedPayloadTest, SingleSignature) {
 
   absl::StatusOr<VerifySignedPayloadResult> result =
       VerifySignedPayload(signed_payload, {&verifying_key}, {}, absl::Now());
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(result->headers, ElementsAre(EqualsProto(headers)));
 }
 
@@ -164,7 +169,7 @@ TEST(VerifySignedPayloadTest, MultipleSignatures) {
   // succeed, hence verification should succeed overall.
   absl::StatusOr<VerifySignedPayloadResult> result =
       VerifySignedPayload(signed_payload, {&verifying_key2}, {}, absl::Now());
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(result->headers, ElementsAre(EqualsProto(headers2)));
 }
 
@@ -189,7 +194,7 @@ TEST(VerifySignedPayloadTest, SignatureChain) {
 
   absl::StatusOr<VerifySignedPayloadResult> result =
       VerifySignedPayload(signed_payload, {&verifying_key2}, {}, absl::Now());
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(result->headers,
               ElementsAre(EqualsProto(headers2), EqualsProto(headers1)));
 }
@@ -208,7 +213,8 @@ TEST(VerifySignedPayloadTest, NoMatchingVerifyingKeys) {
   auto [signer2, verifying_key2] = CreateSignerAndVerifyingKey();
   absl::StatusOr<VerifySignedPayloadResult> result =
       VerifySignedPayload(signed_payload, {&verifying_key2}, {}, absl::Now());
-  EXPECT_THAT(result, IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(),
               HasSubstr("signature verification failed"));
 }
@@ -228,7 +234,8 @@ TEST(VerifySignedPayloadTest, InvalidHeaders) {
 
   absl::StatusOr<VerifySignedPayloadResult> result =
       VerifySignedPayload(signed_payload, {&verifying_key}, {}, absl::Now());
-  EXPECT_THAT(result, IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(),
               HasSubstr("failed to parse signature headers"));
 }
@@ -254,7 +261,8 @@ TEST(VerifySignedPayloadTest, InvalidVerifyingKey) {
 
   absl::StatusOr<VerifySignedPayloadResult> result =
       VerifySignedPayload(signed_payload, {&verifying_key2}, {}, absl::Now());
-  EXPECT_THAT(result, IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(),
               HasSubstr("failed to parse verifying key"));
 }
@@ -274,7 +282,8 @@ TEST(VerifySignedPayloadTest, UnsupportedSignatureOneof) {
 
   absl::StatusOr<VerifySignedPayloadResult> result =
       VerifySignedPayload(signed_payload, {&verifying_key}, {}, absl::Now());
-  EXPECT_THAT(result, IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(),
               HasSubstr("unsupported Signature.signature"));
 }
@@ -291,7 +300,8 @@ TEST(VerifySignedPayloadTest, UnsupportedSignatureVerifier) {
 
   absl::StatusOr<VerifySignedPayloadResult> result =
       VerifySignedPayload(signed_payload, {&verifying_key}, {}, absl::Now());
-  EXPECT_THAT(result, IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(),
               HasSubstr("unsupported Signature.verifier"));
 }
@@ -314,7 +324,8 @@ TEST(VerifySignedPayloadTest, SignatureWithTimeBounds) {
   AddSignature(signed_payload, headers, signer)
       .set_verifying_key_id(verifying_key.key_id());
 
-  ASSERT_OK(VerifySignedPayload(signed_payload, {&verifying_key}, {}, now));
+  ABSL_ASSERT_OK(
+      VerifySignedPayload(signed_payload, {&verifying_key}, {}, now));
 }
 
 TEST(VerifySignedPayloadTest, SignatureNotYetValid) {
@@ -333,7 +344,8 @@ TEST(VerifySignedPayloadTest, SignatureNotYetValid) {
 
   absl::StatusOr<VerifySignedPayloadResult> result =
       VerifySignedPayload(signed_payload, {&verifying_key}, {}, now);
-  EXPECT_THAT(result, IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(),
               HasSubstr("not_before is in the future"));
 
@@ -344,7 +356,8 @@ TEST(VerifySignedPayloadTest, SignatureNotYetValid) {
   AddSignature(signed_payload, headers, signer)
       .set_verifying_key_id(verifying_key.key_id());
   result = VerifySignedPayload(signed_payload, {&verifying_key}, {}, now);
-  EXPECT_THAT(result, IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(),
               HasSubstr("issued_at is in the future"));
 }
@@ -365,7 +378,8 @@ TEST(VerifySignedPayloadTest, SignatureExpired) {
 
   absl::StatusOr<VerifySignedPayloadResult> result =
       VerifySignedPayload(signed_payload, {&verifying_key}, {}, now);
-  EXPECT_THAT(result, IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(), HasSubstr("not_after is in the past"));
 }
 
@@ -387,7 +401,8 @@ TEST(VerifySignedPayloadTest, MissingTransparencyLogEntry) {
 
   absl::StatusOr<VerifySignedPayloadResult> result = VerifySignedPayload(
       signed_payload, {&verifying_key}, transparency_log_options, absl::Now());
-  EXPECT_THAT(result, IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(),
               HasSubstr("Signature does not have a transparency log entry"));
 }
@@ -418,7 +433,7 @@ TEST(VerifySignedPayloadTest, ValidRekorLogEntry) {
     absl::StatusOr<VerifySignedPayloadResult> result =
         VerifySignedPayload(signed_payload, {&verifying_key},
                             transparency_log_options, absl::Now());
-    ASSERT_OK(result);
+    ABSL_ASSERT_OK(result);
     EXPECT_THAT(result->headers, ElementsAre(EqualsProto(headers)));
   }
 }
@@ -450,7 +465,7 @@ TEST(VerifySignedPayloadTest, NonLeafRekorLogEntry) {
   *transparency_log_options.add_rekor_verifying_keys() = rekor_verifying_key;
   absl::StatusOr<VerifySignedPayloadResult> result = VerifySignedPayload(
       signed_payload, {&verifying_key2}, transparency_log_options, absl::Now());
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(result->headers,
               ElementsAre(EqualsProto(headers2), EqualsProto(headers1)));
 
@@ -460,7 +475,8 @@ TEST(VerifySignedPayloadTest, NonLeafRekorLogEntry) {
   transparency_log_options.set_require_transparency_log_entry(true);
   result = VerifySignedPayload(signed_payload, {&verifying_key2},
                                transparency_log_options, absl::Now());
-  EXPECT_THAT(result, IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(),
               HasSubstr("Signature does not have a transparency log entry"));
 }
@@ -489,7 +505,7 @@ TEST(VerifySignedPayloadTest, InvalidRekorLogEntry) {
   *transparency_log_options.add_rekor_verifying_keys() = rekor_verifying_key;
   EXPECT_THAT(VerifySignedPayload(signed_payload, {&verifying_key},
                                   transparency_log_options, absl::Now()),
-              IsCode(absl::StatusCode::kInvalidArgument));
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(PayloadTransparencyTest, GetSignedPayloadSigStructureEmitter) {
@@ -497,6 +513,38 @@ TEST(PayloadTransparencyTest, GetSignedPayloadSigStructureEmitter) {
   GetSignedPayloadSigStructureEmitter("hdrs", "payload")(
       [&to_sign](absl::string_view part) { absl::StrAppend(&to_sign, part); });
   EXPECT_EQ(to_sign, "\15SignedPayload\4hdrs\7payload");
+}
+
+TEST(PayloadTransparencyTest, ParseSignedPayloadSigStructure) {
+  EXPECT_THAT(ParseSignedPayloadSigStructure("\15SignedPayload\4hdrs\7payload"),
+              IsOkAndHolds(Pair("hdrs", "payload")));
+}
+
+TEST(PayloadTransparencyTest, ParseInvalidSignedPayloadSigStructure) {
+  EXPECT_THAT(ParseSignedPayloadSigStructure(""),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("unexpected number of components")));
+  EXPECT_THAT(ParseSignedPayloadSigStructure("\1x"),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("unexpected number of components")));
+  EXPECT_THAT(ParseSignedPayloadSigStructure("\1x\1x"),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("unexpected number of components")));
+  EXPECT_THAT(ParseSignedPayloadSigStructure("\1x\1x\1x\1x"),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("unexpected number of components")));
+
+  EXPECT_THAT(ParseSignedPayloadSigStructure("\x80"),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("failed to read component length")));
+
+  EXPECT_THAT(ParseSignedPayloadSigStructure("\2x"),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("component truncated")));
+
+  EXPECT_THAT(ParseSignedPayloadSigStructure("\14OtherContext\4hdrs\7payload"),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("invalid context string")));
 }
 
 }  // namespace

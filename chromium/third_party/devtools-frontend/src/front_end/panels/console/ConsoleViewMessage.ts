@@ -43,8 +43,6 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
 import * as Bindings from '../../models/bindings/bindings.js';
-import * as Breakpoints from '../../models/breakpoints/breakpoints.js';
-import * as Greendev from '../../models/greendev/greendev.js';
 import type * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as Logs from '../../models/logs/logs.js';
 import * as StackTrace from '../../models/stack_trace/stack_trace.js';
@@ -63,7 +61,6 @@ import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import {type LitTemplate, nothing, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
-import * as AiAssistancePanel from '../ai_assistance/ai_assistance.js';
 
 import {format, updateStyle} from './ConsoleFormat.js';
 import {ConsoleInsightTeaser} from './ConsoleInsightTeaser.js';
@@ -238,24 +235,6 @@ export const getMessageForElement = (element: Element): ConsoleViewMessage|undef
   return elementToMessage.get(element);
 };
 
-/**
- * Combines the error description (essentially the `Error#stack` property value)
- * with the `issueSummary`.
- *
- * @param description the `description` property of the `Error` remote object.
- * @param issueSummary the optional `issueSummary` of the `exceptionMetaData`.
- * @returns the enriched description.
- * @see https://goo.gle/devtools-reduce-network-noise-design
- */
-export const concatErrorDescriptionAndIssueSummary = (description: string, issueSummary: string): string => {
-  // Insert the issue summary right after the error message.
-  const pos = description.indexOf('\n');
-  const prefix = pos === -1 ? description : description.substring(0, pos);
-  const suffix = pos === -1 ? '' : description.substring(pos);
-  description = `${prefix}. ${issueSummary}${suffix}`;
-  return description;
-};
-
 // This value reflects the 18px min-height of .console-message.
 // Keep in sync with consoleView.css.
 const defaultConsoleRowHeight = 18;
@@ -317,6 +296,7 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
   protected messageIcon: Icon|null;
   private traceExpanded: boolean;
   private expandTrace: ((arg0: boolean) => void)|null;
+  private hasStackTrace: boolean;
   protected anchorElement: HTMLElement|null;
   protected contentElementInternal: HTMLElement|null;
   private nestingLevelMarkers: HTMLElement[]|null;
@@ -358,6 +338,7 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     this.messageIcon = null;
     this.traceExpanded = false;
     this.expandTrace = null;
+    this.hasStackTrace = false;
     this.anchorElement = null;
     this.contentElementInternal = null;
     this.nestingLevelMarkers = null;
@@ -531,16 +512,17 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
       }
     } else {
       const messageText = this.message.messageText;
-      const fragment = this.linkifyWithCustomLinkifier(messageText, (text, url, lineNumber, columnNumber) => {
-        const linkElement = url === request.url() ?
-            Components.Linkifier.Linkifier.linkifyRevealable(
-                (request), url, request.url(), undefined, undefined, 'network-request') :
-            Components.Linkifier.Linkifier.linkifyURL(
-                url, ({text, lineNumber, columnNumber} as Components.Linkifier.LinkifyURLOptions));
-        linkElement.tabIndex = -1;
-        this.selectableChildren.push({element: linkElement, forceSelect: () => linkElement.focus()});
-        return linkElement;
-      });
+      const fragment =
+          ConsoleViewMessage.linkifyWithCustomLinkifier(messageText, (text, url, lineNumber, columnNumber) => {
+            const linkElement = url === request.url() ?
+                Components.Linkifier.Linkifier.linkifyRevealable(
+                    (request), url, request.url(), undefined, undefined, 'network-request') :
+                Components.Linkifier.Linkifier.linkifyURL(
+                    url, ({text, lineNumber, columnNumber} as Components.Linkifier.LinkifyURLOptions));
+            linkElement.tabIndex = -1;
+            this.selectableChildren.push({element: linkElement, forceSelect: () => linkElement.focus()});
+            return linkElement;
+          });
       appendOrShow(messageElement, fragment);
     }
     return messageElement;
@@ -670,6 +652,8 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
         Common.Settings.Settings.instance().moduleSetting('console-trace-expand').get()) {
       this.expandTrace(true);
     }
+
+    this.hasStackTrace = true;
 
     // @ts-expect-error
     toggleElement._expandStackTraceForTest = this.expandTrace.bind(this, true);
@@ -1218,6 +1202,20 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     return this.consoleGroupInternal;
   }
 
+  isTraceExpanded(): boolean {
+    return this.traceExpanded;
+  }
+
+  isExpandableTrace(): boolean {
+    return this.hasStackTrace;
+  }
+
+  setTraceExpanded(expanded: boolean): void {
+    if (this.expandTrace && this.traceExpanded !== expanded) {
+      this.expandTrace(expanded);
+    }
+  }
+
   setInSimilarGroup(inSimilarGroup: boolean, isLast?: boolean): void {
     this.inSimilarGroup = inSimilarGroup;
     this.lastInSimilarGroup = inSimilarGroup && Boolean(isLast);
@@ -1508,11 +1506,6 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
       this.consoleRowWrapper.append(this.#createHoverButton());
     }
 
-    const breakpointAgentEnabled = Greendev.Prototypes.instance().isEnabled('breakpointDebuggerAgent');
-    if (breakpointAgentEnabled && this.message.level === Protocol.Log.LogEntryLevel.Error) {
-      this.consoleRowWrapper.append(this.#createBreakpointButton());
-    }
-
     if (this.repeatCountInternal > 1) {
       this.showRepeatCountElement();
     }
@@ -1592,7 +1585,10 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     const label = document.createElement('div');
     label.classList.add('button-label');
     const text = document.createElement('div');
-    text.innerText = this.getExplainLabel();
+    // We use a data attribute and a CSS pseudo-element for the button label
+    // to prevent the text from being picked up by the console's custom
+    // copy-to-clipboard traversal, which only collects actual text nodes.
+    text.setAttribute('data-text', this.getExplainLabel());
     label.append(text);
     button.append(label);
     button.classList.add('hover-button');
@@ -1600,85 +1596,6 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     button.tabIndex = 0;
     button.setAttribute('jslog', `${VisualLogging.action(EXPLAIN_HOVER_ACTION_ID).track({click: true})}`);
     hoverButtonObserver.observe(button);
-    return button;
-  }
-
-  #createBreakpointButton(): HTMLButtonElement {
-    const button = document.createElement('button');
-
-    const icon = new Icon();
-    icon.name = 'bug';
-    icon.style.color = 'var(--devtools-icon-color)';
-    icon.classList.add('medium');
-    button.append(icon);
-
-    const label = document.createElement('div');
-    label.classList.add('button-label');
-    const text = document.createElement('div');
-    text.innerText = 'Debug with breakpoint AI';
-    label.append(text);
-    button.append(label);
-    button.classList.add('hover-button');
-    // Offset the button to the left of the existing one (24px width + 6px right + gap)
-    if (this.shouldShowInsights()) {
-      button.style.right = '36px';
-    }
-    button.ariaLabel = 'Debug with breakpoint AI';
-    button.tabIndex = 0;
-
-    button.onclick = async (event: Event) => {
-      event.stopPropagation();
-      const runtimeModel = this.message.runtimeModel();
-      if (!runtimeModel) {
-        return;
-      }
-      const debuggerModel = runtimeModel.debuggerModel();
-      const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance();
-      let uiLocation: Workspace.UISourceCode.UILocation|null = null;
-
-      // 1. Try stack trace latest called line
-      if (this.message.stackTrace?.callFrames.length) {
-        const callFrame = this.message.stackTrace.callFrames[0];
-        if (callFrame.scriptId) {
-          const script = debuggerModel.scriptForId(callFrame.scriptId);
-          if (script) {
-            const rawLocation = new SDK.DebuggerModel.Location(
-                debuggerModel, callFrame.scriptId, callFrame.lineNumber, callFrame.columnNumber);
-            uiLocation = await debuggerWorkspaceBinding.rawLocationToUILocation(rawLocation);
-          }
-        }
-      }
-
-      // 2. Try scriptId on message
-      if (!uiLocation && this.message.scriptId) {
-        const script = debuggerModel.scriptForId(this.message.scriptId);
-        if (script) {
-          const rawLocation = new SDK.DebuggerModel.Location(
-              debuggerModel, this.message.scriptId, this.message.line, this.message.column);
-          uiLocation = await debuggerWorkspaceBinding.rawLocationToUILocation(rawLocation);
-        }
-      }
-
-      // 3. Try URL
-      if (!uiLocation && this.message.url) {
-        const uiSourceCode = Workspace.Workspace.WorkspaceImpl.instance().uiSourceCodeForURL(this.message.url);
-        if (uiSourceCode) {
-          uiLocation = uiSourceCode.uiLocation(this.message.line, this.message.column);
-        }
-      }
-
-      if (uiLocation) {
-        await Common.Revealer.reveal(uiLocation);
-        const breakpointManager = Breakpoints.BreakpointManager.BreakpointManager.instance();
-        await breakpointManager.setBreakpoint(
-            uiLocation.uiSourceCode, uiLocation.lineNumber, uiLocation.columnNumber,
-            Breakpoints.BreakpointManager.EMPTY_BREAKPOINT_CONDITION, /* enabled */ true,
-            /* isLogpoint */ false, Breakpoints.BreakpointManager.BreakpointOrigin.OTHER);
-        const aiPanel = await AiAssistancePanel.AiAssistancePanel.instance();
-        void aiPanel.handleBreakpointConversation(uiLocation, this.text);
-      }
-    };
-
     return button;
   }
 
@@ -1942,7 +1859,7 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
 
     const issueSummary = exceptionDetails?.exceptionMetaData?.issueSummary;
     if (typeof issueSummary === 'string') {
-      string = concatErrorDescriptionAndIssueSummary(string, issueSummary);
+      string = StackTrace.ErrorStackParser.concatErrorDescriptionAndIssueSummary(string, issueSummary);
     }
 
     const linkInfos = StackTrace.ErrorStackParser.parseSourcePositionsFromErrorStack(runtimeModel, string);
@@ -2023,7 +1940,7 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     return formattedResult;
   }
 
-  private linkifyWithCustomLinkifier(
+  static linkifyWithCustomLinkifier(
       string: string,
       linkifier: (arg0: string, arg1: Platform.DevToolsPath.UrlString, arg2?: number, arg3?: number) => Node):
       DocumentFragment|UI.Widget.Widget {
@@ -2071,7 +1988,7 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
   }
 
   private linkifyStringAsFragment(string: string): DocumentFragment|UI.Widget.Widget {
-    return this.linkifyWithCustomLinkifier(string, (text, url, lineNumber, columnNumber) => {
+    return ConsoleViewMessage.linkifyWithCustomLinkifier(string, (text, url, lineNumber, columnNumber) => {
       const options = {text, lineNumber, columnNumber};
       const linkElement =
           Components.Linkifier.Linkifier.linkifyURL(url, (options as Components.Linkifier.LinkifyURLOptions));
@@ -2173,11 +2090,15 @@ export class ConsoleGroupViewMessage extends ConsoleViewMessage {
   }
 
   setCollapsed(collapsed: boolean): void {
+    this.setCollapsedSilent(collapsed);
+    this.onToggle.call(null);
+  }
+
+  setCollapsedSilent(collapsed: boolean): void {
     this.collapsedInternal = collapsed;
     if (this.expandGroupIcon) {
       this.expandGroupIcon.name = this.collapsedInternal ? 'triangle-right' : 'triangle-down';
     }
-    this.onToggle.call(null);
   }
 
   collapsed(): boolean {

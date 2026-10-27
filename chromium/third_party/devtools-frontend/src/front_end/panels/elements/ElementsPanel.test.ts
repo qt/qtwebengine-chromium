@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Common from '../../core/common/common.js';
-import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as ComputedStyle from '../../models/computed_style/computed_style.js';
@@ -26,7 +27,6 @@ describeWithMockConnection('ElementsPanel', () => {
   beforeEach(() => {
     stubNoopSettings();
     target = createTarget();
-    Root.Runtime.experiments.register(Root.ExperimentNames.ExperimentName.APCA, '');
     setMockConnectionResponseHandler('DOM.requestChildNodes', () => ({}));
     setMockConnectionResponseHandler('DOM.getDocument', () => ({
                                                           root: {
@@ -89,6 +89,7 @@ describeWithMockConnection('ElementsPanel', () => {
   it('creates tree outlines for in scope models', createsTreeOutlines(true));
   it('does not create tree outlines for out of scope models', createsTreeOutlines(false));
 
+  // Causes unit test execution to abort
   it('expands the tree even when target added later', async () => {
     SDK.TargetManager.TargetManager.instance().setScopeTarget(null);
     const model = target.model(SDK.DOMModel.DOMModel);
@@ -110,6 +111,7 @@ describeWithMockConnection('ElementsPanel', () => {
     panel.detach();
   });
 
+  // Causes unit test execution to abort
   it('restores the focused node after reload when it becomes available later', async () => {
     const clock = sinon.useFakeTimers();
     try {
@@ -235,6 +237,7 @@ describeWithMockConnection('ElementsPanel', () => {
     sinon.assert.notCalled(outOfScopeSearch);
   });
 
+  // Causes unit test execution to abort
   it('deleting a node unhides it if it was hidden', async () => {
     SDK.TargetManager.TargetManager.instance().setScopeTarget(null);
     const model = target.model(SDK.DOMModel.DOMModel);
@@ -271,6 +274,7 @@ describeWithMockConnection('ElementsPanel', () => {
     panel.detach();
   });
 
+  // Causes unit test execution to abort
   it('duplicating a hidden node results in a hidden copy', async () => {
     SDK.TargetManager.TargetManager.instance().setScopeTarget(null);
     const model = target.model(SDK.DOMModel.DOMModel);

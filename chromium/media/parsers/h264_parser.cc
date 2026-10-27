@@ -1052,7 +1052,13 @@ H264Parser::Result H264Parser::ParseSPS(int* sps_id) {
   READ_BOOL_OR_RETURN(&sps->gaps_in_frame_num_value_allowed_flag);
 
   READ_UE_OR_RETURN(&sps->pic_width_in_mbs_minus1);
+  // H.264 Level 6.2 restricts max frame width to 8704 samples (544
+  // macroblocks).
+  IN_RANGE_OR_RETURN(sps->pic_width_in_mbs_minus1, 0, 543);
   READ_UE_OR_RETURN(&sps->pic_height_in_map_units_minus1);
+  // H.264 Level 6.2 restricts max frame height to 8704 samples (544
+  // macroblocks).
+  IN_RANGE_OR_RETURN(sps->pic_height_in_map_units_minus1, 0, 543);
 
   READ_BOOL_OR_RETURN(&sps->frame_mbs_only_flag);
   if (!sps->frame_mbs_only_flag)
@@ -1078,6 +1084,18 @@ H264Parser::Result H264Parser::ParseSPS(int* sps_id) {
 
   // If an SPS with the same id already exists, replace it.
   *sps_id = sps->seq_parameter_set_id;
+
+  if (validate_extended_bitstream_) {
+    auto it = active_SPSes_.find(*sps_id);
+    if (it == active_SPSes_.end() || *(it->second) != *sps) {
+      // Invalidate dependent PPSes since their validations against the old SPS
+      // are no longer guaranteed to hold under the new SPS.
+      std::erase_if(active_PPSes_, [id = *sps_id](const auto& pair) {
+        return pair.second->seq_parameter_set_id == id;
+      });
+    }
+  }
+
   active_SPSes_[*sps_id] = std::move(sps);
 
   return kOk;
@@ -1414,9 +1432,29 @@ H264Parser::Result H264Parser::ParseSliceHeader(const H264NALU& nalu,
   if (!sps->frame_mbs_only_flag) {
     READ_BOOL_OR_RETURN(&shdr->field_pic_flag);
     if (shdr->field_pic_flag) {
+      // Note that per-spec, the field_pic_flag should be used as a denominator
+      // when calculating frame_height while checking pic_size_in_mbs below.
+      // If interlaced streams ever become supported, additional arithmetic will
+      // need to be added to the calculation of `frame_height_in_mbs`.
       DVLOG(1) << "Interlaced streams not supported";
       return kUnsupportedStream;
     }
+  }
+
+  // H.264 spec 7.4.3: first_mb_in_slice shall be in [0, PicSizeInMbs - 1].
+  // Without this check the value flows unvalidated into
+  // VASliceParameterBufferH264.first_mb_in_slice and is used by the VA-API
+  // driver as a write offset into the decode surface.
+  {
+    base::CheckedNumeric<int> height = sps->pic_height_in_map_units_minus1;
+    height += 1;
+    height *= (2 - sps->frame_mbs_only_flag);
+    base::CheckedNumeric<int> pic_size = sps->pic_width_in_mbs_minus1;
+    pic_size += 1;
+    pic_size *= height;
+    TRUE_OR_RETURN(pic_size.IsValid());
+    const int pic_size_in_mbs = pic_size.ValueOrDie();
+    IN_RANGE_OR_RETURN(shdr->first_mb_in_slice, 0, pic_size_in_mbs - 1);
   }
 
   if (shdr->idr_pic_flag) {

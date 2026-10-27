@@ -107,6 +107,12 @@ cmake_dependent_option(ENABLE_EMSCRIPTEN_ENVIRONMENT_NODE
     OFF)
 
 option(ENABLE_HLSL "Enables HLSL input support" ON)
+if(ENABLE_HLSL)
+    message(DEPRECATION
+        "ENABLE_HLSL is deprecated. The HLSL front-end will be removed in "
+        "a future major release of glslang. "
+        "See https://github.com/KhronosGroup/glslang/issues/4210 for details.")
+endif()
 option(ENABLE_RTTI "Enables RTTI")
 option(ENABLE_EXCEPTIONS "Enables Exceptions")
 cmake_dependent_option(ENABLE_OPT "Enables spirv-opt capability if present" ON "ENABLE_SPIRV" OFF)
@@ -364,8 +370,13 @@ if(GLSLANG_TESTS)
     if(WIN32 AND BUILD_SHARED_LIBS AND CMAKE_VERSION VERSION_LESS "3.27")
         message(WARNING "The Windows shared library test configuration requires CMake 3.27 or greater")
     else()
+	if (ENABLE_HLSL)
+	  set(HLSL_ARG 1)
+	else()
+	  set(HLSL_ARG 0)
+	endif()
         add_test(NAME glslang-testsuite
-            COMMAND bash ${IGNORE_CR_FLAG} runtests ${RESULTS_PATH} ${VALIDATOR_PATH}
+	    COMMAND bash ${IGNORE_CR_FLAG} runtests ${RESULTS_PATH} ${VALIDATOR_PATH} ${HLSL_ARG}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/Test/)
 
         # Prepend paths to shared libraries.

@@ -4,12 +4,23 @@
 
 #include "components/autofill/core/browser/metrics/payments/credit_card_save_metrics.h"
 
+#include <string>
+#include <string_view>
+
+#include "base/check.h"
+#include "base/check_op.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
+#include "base/metrics/user_metrics_action.h"
 #include "base/strings/strcat.h"
+#include "base/time/time.h"
+#include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/payments/payments_autofill_client.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
+#include "services/metrics/public/cpp/ukm_recorder.h"
+#include "services/metrics/public/cpp/ukm_source_id.h"
+#include "url/gurl.h"
 
 namespace autofill::autofill_metrics {
 
@@ -47,8 +58,11 @@ void LogCardUploadEnabledMetric(
   base::UmaHistogramEnumeration(child_metric, metric_value);
 }
 
-void LogCreditCardSaveNotOfferedDueToMaxStrikesMetric(
+void LogCreditCardSaveNotOfferedDueToStrikeDatabaseMetric(
     AutofillMetrics::SaveTypeMetric metric) {
+  // Unfortunate outdated naming: As of April 2026, this histogram implies card
+  // save was not offered due to the strike database decision, not *necessarily*
+  // because of max strikes.
   UMA_HISTOGRAM_ENUMERATION(
       "Autofill.StrikeDatabase.CreditCardSaveNotOfferedDueToMaxStrikes",
       metric);
@@ -57,10 +71,6 @@ void LogCreditCardSaveNotOfferedDueToMaxStrikesMetric(
 void LogCreditCardUploadLegalMessageLinkClicked() {
   base::RecordAction(base::UserMetricsAction(
       "Autofill_CreditCardUpload_LegalMessageLinkClicked"));
-}
-
-void LogSaveCardCardholderNamePrefilled(bool prefilled) {
-  UMA_HISTOGRAM_BOOLEAN("Autofill.SaveCardCardholderNamePrefilled", prefilled);
 }
 
 void LogSaveCardCardholderNameWasEdited(bool edited) {

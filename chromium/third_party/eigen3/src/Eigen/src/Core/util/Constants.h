@@ -8,6 +8,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_CONSTANTS_H
 #define EIGEN_CONSTANTS_H
@@ -76,7 +77,7 @@ constexpr unsigned int EvalBeforeNestingBit = 0x2;
 /** \ingroup flags
  * \deprecated
  * means the expression should be evaluated before any assignment */
-EIGEN_DEPRECATED constexpr unsigned int EvalBeforeAssigningBit = 0x4;  // FIXME deprecated
+EIGEN_DEPRECATED constexpr unsigned int EvalBeforeAssigningBit = 0x4;
 
 /** \ingroup flags
  *
@@ -356,7 +357,11 @@ enum NaNPropagationOptions {
  * and we do not know how to get rid of them (bug 450).
  */
 
-enum NoChange_t { NoChange };
+// NoChange is set to -1 (rather than 0) so that calls like resize(NoChange, n)
+// that land in a generic resize(Index, Index) overload — missing the NoChange_t
+// overload — trip the rows/cols >= 0 assertion instead of silently producing a
+// 0-sized dimension. See issue #656.
+enum NoChange_t { NoChange = -1 };
 enum Sequential_t { Sequential };
 enum Default_t { Default };
 
@@ -428,6 +433,15 @@ enum QRPreconditioners {
   /** Used to disable the QR Preconditioner in BDCSVD. */
   DisableQRDecomposition = NoQRPreconditioner
 };
+
+// JacobiSVD and BDCSVD combine QR preconditioner flags with decomposition flags in a single template bitmask.
+constexpr int operator|(QRPreconditioners qr_preconditioner, DecompositionOptions decomposition_option) {
+  return static_cast<int>(qr_preconditioner) | static_cast<int>(decomposition_option);
+}
+
+constexpr int operator|(DecompositionOptions decomposition_option, QRPreconditioners qr_preconditioner) {
+  return static_cast<int>(decomposition_option) | static_cast<int>(qr_preconditioner);
+}
 
 #ifdef Success
 #error The preprocessor symbol 'Success' is defined, possibly by the X11 header file X.h

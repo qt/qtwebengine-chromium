@@ -22,7 +22,9 @@ namespace net {
 std::unique_ptr<MacSystemProxyResolutionService>
 MacSystemProxyResolutionService::Create(
     std::unique_ptr<MacSystemProxyResolver> mac_system_proxy_resolver) {
-  CHECK(mac_system_proxy_resolver);
+  if (!mac_system_proxy_resolver) {
+    return nullptr;
+  }
 
   return base::WrapUnique(new MacSystemProxyResolutionService(
       std::move(mac_system_proxy_resolver)));
@@ -59,6 +61,7 @@ int MacSystemProxyResolutionService::ResolveProxy(
     const GURL& url,
     const std::string& method,
     const NetworkAnonymizationKey& network_anonymization_key,
+    handles::NetworkHandle target_network,
     ProxyInfo* results,
     CompletionOnceCallback callback,
     std::unique_ptr<ProxyResolutionRequest>* request,

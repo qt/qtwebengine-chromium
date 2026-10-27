@@ -72,13 +72,6 @@ QuicSpdyStream* WebTransportOnlyServerSession::CreateIncomingStream(
   return stream;
 }
 
-QuicSpdyStream* WebTransportOnlyServerSession::CreateIncomingStream(
-    PendingStream* pending) {
-  QuicSpdyStream* stream = new Stream(pending, this);
-  ActivateStream(absl::WrapUnique(stream));
-  return stream;
-}
-
 QuicSpdyStream*
 WebTransportOnlyServerSession::CreateOutgoingBidirectionalStream() {
   if (!ShouldCreateOutgoingBidirectionalStream()) {
@@ -92,8 +85,10 @@ WebTransportOnlyServerSession::CreateOutgoingBidirectionalStream() {
 }
 
 QuicStream* WebTransportOnlyServerSession::ProcessBidirectionalPendingStream(
-    PendingStream* pending) {
-  return CreateIncomingStream(pending);
+    PendingStream& pending) {
+  QuicSpdyStream* stream = new Stream(pending, this);
+  ActivateStream(absl::WrapUnique(stream));
+  return stream;
 }
 
 bool WebTransportOnlyServerSession::OnSettingsFrame(

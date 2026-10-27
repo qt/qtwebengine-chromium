@@ -51,6 +51,8 @@
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/keywords.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
+#include "third_party/blink/renderer/core/page/chrome_client.h"
+#include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
@@ -139,10 +141,15 @@ void HTMLFormControlElement::DetachLayoutTree(bool performing_reattach) {
 
 void HTMLFormControlElement::AttributeChanged(
     const AttributeModificationParams& params) {
+  if (RuntimeEnabledFeatures::WebMCPEnabled(GetExecutionContext())) {
+    if (HTMLFormElement* form = Form()) {
+      form->ScheduleWebMCPSchemaUpdateIfActive();
+    }
+  }
   HTMLElement::AttributeChanged(params);
   if (params.name == html_names::kDisabledAttr &&
       params.old_value.IsNull() != params.new_value.IsNull()) {
-    DisabledAttributeChanged();
+    DisabledAttributeChanged(DisabledChangedReason::kAttributeChanged);
     if (params.reason == AttributeModificationReason::kDirectly &&
         IsDisabledFormControl() && AdjustedFocusedElementInTreeScope() == this)
       blur();
@@ -174,12 +181,13 @@ void HTMLFormControlElement::ParseAttribute(
   }
 }
 
-void HTMLFormControlElement::DisabledAttributeChanged() {
+void HTMLFormControlElement::DisabledAttributeChanged(
+    DisabledChangedReason reason) {
   // Don't blur in this function because this is called for descendants of
   // <fieldset> while tree traversal.
   EventDispatchForbiddenScope event_forbidden;
 
-  ListedElement::DisabledAttributeChanged();
+  ListedElement::DisabledAttributeChanged(reason);
   InvalidateIfHasEffectiveAppearance();
 
   // TODO(dmazzoni): http://crbug.com/699438.
@@ -219,6 +227,13 @@ void HTMLFormControlElement::SetAutofillState(WebAutofillState autofill_state) {
   PseudoStateChanged(CSSSelector::kPseudoWebKitAutofill);
   PseudoStateChanged(CSSSelector::kPseudoAutofillSelected);
   PseudoStateChanged(CSSSelector::kPseudoAutofillPreviewed);
+}
+
+bool HTMLFormControlElement::IsAutofillable() const {
+  if (Page* page = GetDocument().GetPage()) {
+    return page->GetChromeClient().IsAutofillableElement(*this);
+  }
+  return false;
 }
 
 bool HTMLFormControlElement::MatchesToolSubmitActivePseudoClass() const {
@@ -406,9 +421,9 @@ HTMLFormControlElement::popoverTargetElement() {
   PopoverTriggerAction action = PopoverTriggerAction::kToggle;
   auto action_value =
       getAttribute(html_names::kPopovertargetactionAttr).ToAsciiLower();
-  if (action_value == "show") {
+  if (action_value == keywords::kShow) {
     action = PopoverTriggerAction::kShow;
-  } else if (action_value == "hide") {
+  } else if (action_value == keywords::kHide) {
     action = PopoverTriggerAction::kHide;
   }
   return PopoverTargetElement{.popover = target_popover, .action = action};

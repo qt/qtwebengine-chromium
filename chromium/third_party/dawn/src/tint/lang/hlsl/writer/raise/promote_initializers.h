@@ -40,6 +40,7 @@ namespace tint::hlsl::writer::raise {
 
 /// The capabilities that the transform can support.
 const core::ir::Capabilities kPromoteInitializersCapabilities{
+    core::ir::Capability::kAllow8BitIntegers,
     core::ir::Capability::kAllow16BitIntegers,
     core::ir::Capability::kAllowVectorElementPointer,
     core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,

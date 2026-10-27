@@ -33,6 +33,7 @@
 #include <variant>
 
 #include "base/feature_list.h"
+#include "base/memory_coordinator/utils.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/default_clock.h"
 #include "build/build_config.h"
@@ -59,7 +60,6 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader.h"
 #include "third_party/blink/renderer/platform/loader/fetch/url_loader/background_response_processor.h"
 #include "third_party/blink/renderer/platform/network/http_parsers.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
@@ -70,6 +70,33 @@
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
+
+String GetAsAttributeFromResourceType(ResourceType type) {
+  switch (type) {
+    case ResourceType::kImage:
+      return "image";
+    case ResourceType::kScript:
+      return "script";
+    case ResourceType::kCSSStyleSheet:
+      return "style";
+    case ResourceType::kTextTrack:
+      return "track";
+    case ResourceType::kFont:
+      return "font";
+    case ResourceType::kRaw:
+    case ResourceType::kMock:
+      return "fetch";
+    case ResourceType::kAudio:
+    case ResourceType::kVideo:
+    case ResourceType::kManifest:
+    case ResourceType::kSpeculationRules:
+    case ResourceType::kDictionary:
+    case ResourceType::kSVGDocument:
+    case ResourceType::kXSLStyleSheet:
+    case ResourceType::kLinkPrefetch:
+      NOTREACHED();
+  }
+}
 
 namespace {
 
@@ -154,10 +181,12 @@ Resource::Resource(const ResourceRequestHead& request,
       response_timestamp_(Now()),
       resource_request_(request),
       overhead_size_(CalculateOverheadSize()),
-      memory_pressure_listener_registration_(
-          FROM_HERE,
-          base::MemoryPressureListenerTag::kResource,
-          this) {
+      memory_consumer_registration_(
+          "Resource",
+          /*traits=*/std::nullopt,  // TODO(crbug.com/489671163): Fill traits.
+          this,
+          MemoryConsumerRegistration::CheckUnregister::kDisabled,
+          MemoryConsumerRegistration::CheckRegistryExists::kDisabled) {
   InstanceCounters::IncrementCounter(InstanceCounters::kResourceCounter);
 }
 
@@ -175,7 +204,7 @@ void Resource::Trace(Visitor* visitor) const {
 }
 
 void Resource::Dispose() {
-  memory_pressure_listener_registration_.Dispose();
+  memory_consumer_registration_.Dispose();
 }
 
 void Resource::SetLoader(ResourceLoader* loader) {
@@ -221,12 +250,12 @@ void Resource::CheckResourceIntegrity() {
   if ((type_ == ResourceType::kScript) && loader_) {
     csp_hash_reports_needed = loader_->Fetcher()->Context().CSPHashesToReport();
   }
-  if (IntegrityMetadata().empty()) {
+  if (GetIntegrityMetadata().empty()) {
     // No integrity attributes to check? Then we're passing.
     integrity_disposition_ = ResourceIntegrityDisposition::kPassed;
   } else {
     if (SubresourceIntegrity::CheckSubresourceIntegrity(
-            IntegrityMetadata(), Data(), Url(), *this, feature_context,
+            GetIntegrityMetadata(), Data(), Url(), *this, feature_context,
             integrity_report_, &integrity_hashes)) {
       integrity_disposition_ = ResourceIntegrityDisposition::kPassed;
     } else {
@@ -434,10 +463,11 @@ bool Resource::ForceIntegrityChecks() const {
 
 bool Resource::MustRefetchDueToIntegrityMetadata(
     const FetchParameters& params) const {
-  if (params.IntegrityMetadata().empty())
+  if (params.GetIntegrityMetadata().empty()) {
     return false;
+  }
 
-  return IntegrityMetadata() != params.IntegrityMetadata();
+  return GetIntegrityMetadata() != params.GetIntegrityMetadata();
 }
 
 const scoped_refptr<const SecurityOrigin>& Resource::GetOrigin() const {
@@ -900,14 +930,15 @@ void Resource::Prune() {
   DestroyDecodedDataIfPossible();
 }
 
-void Resource::OnMemoryPressure(
-    base::MemoryPressureLevel memory_pressure_level) {
-  if (memory_pressure_level == base::MEMORY_PRESSURE_LEVEL_CRITICAL &&
+void Resource::OnReleaseMemory() {
+  if (memory_limit() <= base::kCriticalMemoryPressureThreshold &&
       base::FeatureList::IsEnabled(
           features::kReleaseResourceDecodedDataOnMemoryPressure)) {
     Prune();
   }
 }
+
+void Resource::OnUpdateMemoryLimit() {}
 
 void Resource::OnMemoryDump(WebMemoryDumpLevelOfDetail level_of_detail,
                             WebProcessMemoryDump* memory_dump) const {
@@ -1292,7 +1323,16 @@ void Resource::SetIsAdResource(AdProvenance ad_provenance) {
 }
 
 void Resource::UpdateMemoryCacheLastAccessedTime() {
-  memory_cache_last_accessed_ = base::TimeTicks::Now();
+  base::TimeTicks now = base::TimeTicks::Now();
+  double decay_rate = features::kMemoryCacheDecayRate.Get();
+  if (memory_cache_last_accessed_.is_null()) {
+    decayed_hit_score_ = 1.0;
+  } else {
+    double elapsed_seconds = (now - memory_cache_last_accessed_).InSecondsF();
+    double decay = std::exp(-decay_rate * elapsed_seconds);
+    decayed_hit_score_ = decayed_hit_score_ * decay + 1.0;
+  }
+  memory_cache_last_accessed_ = now;
   IncrementMemoryCacheHitCount();
 }
 

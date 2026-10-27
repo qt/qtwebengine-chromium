@@ -23,8 +23,8 @@ TEST(fxge, CMYKRounding) {
   // Iterate through floats by incrementing the representation, as discussed in
   // https://randomascii.wordpress.com/2012/01/23/stupid-float-tricks-2/
   for (Float_t f = kStartValue; f.f < kEndValue; f.i++) {
-    rgb = AdobeCMYK_to_sRGB(f.f, f.f, f.f, f.f);
+    rgb = AdobeCmykToStandardRgbF(f.f, f.f, f.f, f.f);
   }
   // Check various other 'special' numbers.
-  rgb = AdobeCMYK_to_sRGB(0.0f, 0.25f, 0.5f, 1.0f);
+  rgb = AdobeCmykToStandardRgbF(0.0f, 0.25f, 0.5f, 1.0f);
 }

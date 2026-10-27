@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -45,5 +47,25 @@ describe('HARWriter', () => {
     assert.strictEqual(resultEntries[0].startedDateTime, req1Time.toJSON(), 'earlier request should come first');
     assert.strictEqual(resultEntries[1].startedDateTime, req2Time.toJSON(), 'earlier request should come first');
     assert.strictEqual(resultEntries[2].startedDateTime, req3Time.toJSON(), 'earlier request should come first');
+  });
+
+  it('exports multiple EventSource messages for an unfinished request', async () => {
+    const request = simulateRequestWithStartTime(Date.now() / 1000);
+    request.finished = false;
+    request.mimeType = 'text/event-stream';
+    request.addEventSourceMessage(
+        1773352390.598671, 'session', '',
+        '{"sid":"11111111-2222-3333-4444-555555555555","tenant":"66666666-7777-8888-9999-000000000000"}');
+    request.addEventSourceMessage(1773352391.102345, 'message', '2', '{"role":"assistant","content":"hello"}');
+
+    const progress = new Common.Progress.Progress();
+    const compositeProgress = new Common.Progress.CompositeProgress(progress);
+    const result = await HAR.Writer.Writer.harStringForRequests([request], {sanitize: false}, compositeProgress);
+    const resultEntries = JSON.parse(result).log.entries;
+
+    assert.lengthOf(resultEntries, 1);
+    assert.lengthOf(resultEntries[0]._eventSourceMessages, 2);
+    assert.strictEqual(resultEntries[0]._eventSourceMessages[0].eventName, 'session');
+    assert.strictEqual(resultEntries[0]._eventSourceMessages[1].eventId, '2');
   });
 });

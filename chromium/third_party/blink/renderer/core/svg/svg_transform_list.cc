@@ -35,7 +35,6 @@
 #include "third_party/blink/renderer/core/svg/svg_parser_utilities.h"
 #include "third_party/blink/renderer/core/svg/svg_transform_distance.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_visitor.h"
 #include "third_party/blink/renderer/platform/wtf/text/parsing_utilities.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -439,14 +438,14 @@ SVGParsingError SVGTransformList::SetValueAsString(const String& value) {
   return parse_error;
 }
 
-void SVGTransformList::Add(const SVGPropertyBase* other,
+bool SVGTransformList::Add(const SVGPropertyBase* other,
                            const SVGElement* context_element) {
   if (IsEmpty())
-    return;
+    return true;
 
   auto* other_list = To<SVGTransformList>(other);
   if (length() != other_list->length())
-    return;
+    return true;
 
   DCHECK_EQ(length(), 1u);
   const SVGTransform* from_transform = at(0);
@@ -455,6 +454,7 @@ void SVGTransformList::Add(const SVGPropertyBase* other,
   DCHECK_EQ(from_transform->TransformType(), to_transform->TransformType());
   Clear();
   Append(SVGTransformDistance::AddSVGTransforms(from_transform, to_transform));
+  return true;
 }
 
 void SVGTransformList::CalculateAnimatedValue(

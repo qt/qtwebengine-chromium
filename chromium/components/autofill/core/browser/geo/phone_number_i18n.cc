@@ -4,7 +4,9 @@
 
 #include "components/autofill/core/browser/geo/phone_number_i18n.h"
 
+#include <algorithm>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -15,6 +17,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
 #include "components/autofill/core/browser/data_quality/autofill_data_util.h"
+#include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/geo/autofill_country.h"
 #include "third_party/libphonenumber/phonenumber_api.h"
 
@@ -31,7 +34,8 @@ std::string FormatPhoneNumber(std::string_view phone_number,
                               PhoneNumberUtil::PhoneNumberFormat format) {
   ::i18n::phonenumbers::PhoneNumber parsed_number;
   PhoneNumberUtil* phone_number_util = PhoneNumberUtil::GetInstance();
-  if (phone_number_util->Parse(phone_number, country_code, &parsed_number) !=
+  if (phone_number_util->Parse(std::string(phone_number), country_code,
+                               &parsed_number) !=
       PhoneNumberUtil::NO_PARSING_ERROR) {
     return std::string(phone_number);
   }
@@ -99,8 +103,8 @@ bool IsValidPhoneNumber(std::string_view phone_number,
                         const std::string& country_code) {
   ::i18n::phonenumbers::PhoneNumber parsed_number;
   PhoneNumberUtil* phone_util = PhoneNumberUtil::GetInstance();
-  auto result = phone_util->ParseAndKeepRawInput(phone_number, country_code,
-                                                 &parsed_number);
+  auto result = phone_util->ParseAndKeepRawInput(std::string(phone_number),
+                                                 country_code, &parsed_number);
 
   return result == ::i18n::phonenumbers::PhoneNumberUtil::NO_PARSING_ERROR &&
          phone_util->IsValidNumber(parsed_number);
@@ -121,8 +125,8 @@ bool IsPossiblePhoneNumber(std::string_view phone_number,
                            const std::string& country_code) {
   ::i18n::phonenumbers::PhoneNumber parsed_number;
   PhoneNumberUtil* phone_util = PhoneNumberUtil::GetInstance();
-  auto result = phone_util->ParseAndKeepRawInput(phone_number, country_code,
-                                                 &parsed_number);
+  auto result = phone_util->ParseAndKeepRawInput(std::string(phone_number),
+                                                 country_code, &parsed_number);
 
   return result == ::i18n::phonenumbers::PhoneNumberUtil::NO_PARSING_ERROR &&
          phone_util->IsPossibleNumber(parsed_number);

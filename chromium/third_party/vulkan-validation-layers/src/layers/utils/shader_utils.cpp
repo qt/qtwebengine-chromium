@@ -54,14 +54,22 @@ void ValidationCache::GetUUID(uint8_t* uuid) {
 void ValidationCache::Load(VkValidationCacheCreateInfoEXT const* pCreateInfo) {
     const auto headerSize = 2 * sizeof(uint32_t) + VK_UUID_SIZE;
     auto size = headerSize;
-    if (!pCreateInfo->pInitialData || pCreateInfo->initialDataSize < size) return;
+    if (!pCreateInfo->pInitialData || pCreateInfo->initialDataSize < size) {
+        return;
+    }
 
     uint32_t const* data = (uint32_t const*)pCreateInfo->pInitialData;
-    if (data[0] != size) return;
-    if (data[1] != VK_VALIDATION_CACHE_HEADER_VERSION_ONE_EXT) return;
+    if (data[0] != size) {
+        return;
+    }
+    if (data[1] != VK_VALIDATION_CACHE_HEADER_VERSION_ONE_EXT) {
+        return;
+    }
     uint8_t expected_uuid[VK_UUID_SIZE];
     GetUUID(expected_uuid);
-    if (memcmp(&data[2], expected_uuid, VK_UUID_SIZE) != 0) return;  // different version
+    if (memcmp(&data[2], expected_uuid, VK_UUID_SIZE) != 0) {
+        return;
+    }  // different version
 
     data = (uint32_t const*)(reinterpret_cast<uint8_t const*>(data) + headerSize);
 
@@ -161,6 +169,15 @@ void DumpSpirvToFile(const std::string& file_path, const uint32_t* spirv, size_t
     debug_file.write(reinterpret_cast<const char*>(spirv), spirv_dwords_count * sizeof(uint32_t));
 }
 
+bool IsResourceVaribleInMapping(const VkDescriptorSetAndBindingMappingEXT& mapping,
+                                const spirv::ResourceInterfaceVariable& resource_variable) {
+    const uint32_t descriptor_set = resource_variable.decorations.set;
+    const uint32_t descriptor_binding = resource_variable.decorations.binding;
+    const uint32_t last_binding = mapping.firstBinding + mapping.bindingCount;
+    return (mapping.descriptorSet == descriptor_set && descriptor_binding >= mapping.firstBinding &&
+            descriptor_binding < last_binding && ResourceTypeMatchesBinding(mapping.resourceMask, resource_variable));
+}
+
 bool ResourceTypeMatchesBinding(VkSpirvResourceTypeFlagsEXT resource_type,
                                 const spirv::ResourceInterfaceVariable& resource_variable) {
     if (resource_type == VK_SPIRV_RESOURCE_TYPE_ALL_EXT) {
@@ -171,31 +188,39 @@ bool ResourceTypeMatchesBinding(VkSpirvResourceTypeFlagsEXT resource_type,
     if ((resource_type & VK_SPIRV_RESOURCE_TYPE_SAMPLER_BIT_EXT) != 0 && opcode == spv::OpTypeSampler) {
         return true;
     }
-    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_SAMPLED_IMAGE_BIT_EXT) != 0 && opcode == spv::OpTypeImage &&
-        resource_variable.base_type.Word(7) == 1) {
-        return true;
+    if (opcode == spv::OpTypeImage) {
+        if ((resource_type & VK_SPIRV_RESOURCE_TYPE_SAMPLED_IMAGE_BIT_EXT) != 0 && resource_variable.base_type.Word(7) == 1) {
+            return true;
+        }
+        // NonWritable must be on the OpVariable, not the OpTypeStruct
+        // https://gitlab.khronos.org/vulkan/vulkan/-/issues/4789
+        const bool nonwritable = resource_variable.decorations.Has(spirv::DecorationSet::nonwritable_bit);
+        if ((resource_type & VK_SPIRV_RESOURCE_TYPE_READ_ONLY_IMAGE_BIT_EXT) != 0 && resource_variable.base_type.Word(7) == 2 &&
+            nonwritable) {
+            return true;
+        }
+        if ((resource_type & VK_SPIRV_RESOURCE_TYPE_READ_WRITE_IMAGE_BIT_EXT) != 0 && resource_variable.base_type.Word(7) == 2 &&
+            !nonwritable) {
+            return true;
+        }
     }
-    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_READ_ONLY_IMAGE_BIT_EXT) != 0 && opcode == spv::OpTypeImage &&
-        resource_variable.base_type.Word(7) == 2 && resource_variable.decorations.Has(spirv::DecorationSet::nonwritable_bit)) {
-        return true;
-    }
-    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_READ_WRITE_IMAGE_BIT_EXT) != 0 && opcode == spv::OpTypeImage &&
-        resource_variable.base_type.Word(7) == 2 && !resource_variable.decorations.Has(spirv::DecorationSet::nonwritable_bit)) {
-        return true;
-    }
-    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_COMBINED_SAMPLED_IMAGE_BIT_EXT) != 0 && resource_variable.is_type_sampled_image) {
+    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_COMBINED_SAMPLED_IMAGE_BIT_EXT) != 0 &&
+        resource_variable.is_combined_image_sampler) {
         return true;
     }
     if ((resource_type & VK_SPIRV_RESOURCE_TYPE_UNIFORM_BUFFER_BIT_EXT) != 0 && resource_variable.is_uniform_buffer) {
         return true;
     }
-    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_READ_ONLY_STORAGE_BUFFER_BIT_EXT) != 0 && resource_variable.is_storage_buffer &&
-        resource_variable.decorations.Has(spirv::DecorationSet::nonwritable_bit)) {
-        return true;
-    }
-    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_READ_WRITE_STORAGE_BUFFER_BIT_EXT) != 0 && resource_variable.is_storage_buffer &&
-        !resource_variable.decorations.Has(spirv::DecorationSet::nonwritable_bit)) {
-        return true;
+    if (resource_variable.is_storage_buffer) {
+        // NonWritable must be on the OpVariable, not the OpTypeStruct
+        // https://gitlab.khronos.org/vulkan/vulkan/-/issues/4789
+        const bool nonwritable = resource_variable.decorations.Has(spirv::DecorationSet::nonwritable_bit);
+        if ((resource_type & VK_SPIRV_RESOURCE_TYPE_READ_ONLY_STORAGE_BUFFER_BIT_EXT) != 0 && nonwritable) {
+            return true;
+        }
+        if ((resource_type & VK_SPIRV_RESOURCE_TYPE_READ_WRITE_STORAGE_BUFFER_BIT_EXT) != 0 && !nonwritable) {
+            return true;
+        }
     }
     if ((resource_type & VK_SPIRV_RESOURCE_TYPE_ACCELERATION_STRUCTURE_BIT_EXT) != 0 &&
         opcode == spv::OpTypeAccelerationStructureKHR) {
@@ -229,7 +254,13 @@ std::string DescribeResourceTypeMismatch(VkSpirvResourceTypeFlagsEXT resource_ty
         } else if (resource_variable.base_type.Word(7) != 2) {
             return "OpTypeImage Sampled is " + std::to_string(resource_variable.base_type.Word(7)) + ", not 2";
         } else if (!resource_variable.decorations.Has(spirv::DecorationSet::nonwritable_bit)) {
-            return "is not decorated with NonWritable";
+            if (resource_variable.HasInMember(spirv::DecorationSet::nonwritable_bit)) {
+                return "is not decorated with NonWritable on the OpVariable, but is in the OpTypeStruct. This likely is hitting a "
+                       "known DXC code generation bug (DirectXShaderCompiler/issues/8492). Simple work around is to just use "
+                       "VK_SPIRV_RESOURCE_TYPE_ALL_EXT here as that will give the desired behavior.";
+            } else {
+                return "is not decorated with NonWritable";
+            }
         }
     }
     if ((resource_type & VK_SPIRV_RESOURCE_TYPE_READ_WRITE_IMAGE_BIT_EXT) != 0) {
@@ -241,7 +272,8 @@ std::string DescribeResourceTypeMismatch(VkSpirvResourceTypeFlagsEXT resource_ty
             return "is decorated with NonWritable";
         }
     }
-    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_COMBINED_SAMPLED_IMAGE_BIT_EXT) != 0 && !resource_variable.is_type_sampled_image) {
+    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_COMBINED_SAMPLED_IMAGE_BIT_EXT) != 0 &&
+        !resource_variable.is_combined_image_sampler) {
         return "is not OpTypeSampledImage";
     }
     if ((resource_type & VK_SPIRV_RESOURCE_TYPE_UNIFORM_BUFFER_BIT_EXT) != 0 && !resource_variable.is_uniform_buffer) {
@@ -255,7 +287,13 @@ std::string DescribeResourceTypeMismatch(VkSpirvResourceTypeFlagsEXT resource_ty
     }
     if ((resource_type & VK_SPIRV_RESOURCE_TYPE_READ_ONLY_STORAGE_BUFFER_BIT_EXT) != 0) {
         if (!resource_variable.decorations.Has(spirv::DecorationSet::nonwritable_bit)) {
-            return "is not decorated with NonWritable";
+            if (resource_variable.HasInMember(spirv::DecorationSet::nonwritable_bit)) {
+                return "is not decorated with NonWritable on the OpVariable, but is in the OpTypeStruct. This likely is hitting a "
+                       "known DXC code generation bug (DirectXShaderCompiler/issues/8492). Simple work around is to just use "
+                       "VK_SPIRV_RESOURCE_TYPE_ALL_EXT here as that will give the desired behavior.";
+            } else {
+                return "is not decorated with NonWritable";
+            }
         } else if (!resource_variable.type_struct_info) {
             return "is not a OpTypeStruct";
         } else if (!resource_variable.is_storage_buffer) {

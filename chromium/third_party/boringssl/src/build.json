@@ -62,7 +62,6 @@
             "crypto/fipsmodule/ec/ec_montgomery.cc.inc",
             "crypto/fipsmodule/ec/felem.cc.inc",
             "crypto/fipsmodule/ec/oct.cc.inc",
-            "crypto/fipsmodule/ec/p224-64.cc.inc",
             "crypto/fipsmodule/ec/p256-nistz.cc.inc",
             "crypto/fipsmodule/ec/p256.cc.inc",
             "crypto/fipsmodule/ec/scalar.cc.inc",
@@ -81,6 +80,7 @@
             "crypto/fipsmodule/mldsa/mldsa.cc.inc",
             "crypto/fipsmodule/mlkem/fips_known_values.inc",
             "crypto/fipsmodule/mlkem/mlkem.cc.inc",
+            "crypto/fipsmodule/rand/android_entropy_client.cc.inc",
             "crypto/fipsmodule/rand/ctrdrbg.cc.inc",
             "crypto/fipsmodule/rand/rand.cc.inc",
             "crypto/fipsmodule/rsa/padding.cc.inc",
@@ -269,6 +269,7 @@
             "crypto/evp/p_mlkem.cc",
             "crypto/evp/p_rsa.cc",
             "crypto/evp/p_x25519.cc",
+            "crypto/evp/p_xwing.cc",
             "crypto/evp/pbkdf.cc",
             "crypto/evp/print.cc",
             "crypto/evp/scrypt.cc",
@@ -309,7 +310,6 @@
             "crypto/rand/forkunsafe.cc",
             "crypto/rand/getentropy.cc",
             "crypto/rand/ios.cc",
-            "crypto/rand/passive.cc",
             "crypto/rand/rand.cc",
             "crypto/rand/trusty.cc",
             "crypto/rand/urandom.cc",
@@ -405,6 +405,7 @@
             "crypto/x509/x_x509a.cc",
             "crypto/xwing/xwing.cc"
         ],
+        "prefix_symbols": true,
         "hdrs": [
             "include/openssl/aead.h",
             "include/openssl/aes.h",
@@ -734,6 +735,7 @@
             "ssl/tls_method.cc",
             "ssl/tls_record.cc"
         ],
+        "prefix_symbols": true,
         "hdrs": [
             "include/openssl/dtls1.h",
             "include/openssl/srtp.h",
@@ -894,8 +896,7 @@
             "crypto/x509/x509_test.cc",
             "crypto/x509/x509_time_test.cc",
             "crypto/xwing/xwing_test.cc",
-            "third_party/fiat/bedrock_platform_test.cc",
-            "third_party/fiat/bedrock_polyfill_platform.c.inc"
+            "third_party/fiat/bedrock_platform_test.cc"
         ],
         "data": [
             "crypto/blake2/blake2b256_tests.txt",
@@ -918,7 +919,7 @@
             "crypto/fipsmodule/rand/ctrdrbg_vectors.txt",
             "crypto/fipsmodule/rand/ctrdrbg_df_vectors.txt",
             "crypto/hmac/hmac_tests.txt",
-            "crypto/hpke/hpke_test_vectors.txt",
+            "crypto/hpke/*.txt",
             "crypto/kyber/kyber_tests.txt",
             "crypto/mldsa/mldsa_nist_keygen_44_tests.txt",
             "crypto/mldsa/mldsa_nist_keygen_65_tests.txt",
@@ -953,6 +954,9 @@
             "crypto/x509/test/*.pem",
             "crypto/x509/test/*.pk8",
             "third_party/wycheproof_testvectors/*.txt"
+        ],
+        "internal_hdrs": [
+            "third_party/fiat/bedrock_polyfill_platform.c.inc"
         ]
     },
     "urandom_test": {

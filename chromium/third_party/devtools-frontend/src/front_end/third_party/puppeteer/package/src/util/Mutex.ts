@@ -9,19 +9,24 @@ import {disposeSymbol} from './disposable.js';
 /**
  * @internal
  */
+class MutexGuard {
+  #mutex: Mutex;
+  #onRelease?: () => void;
+  constructor(mutex: Mutex, onRelease?: () => void) {
+    this.#mutex = mutex;
+    this.#onRelease = onRelease;
+  }
+  [disposeSymbol](): void {
+    this.#onRelease?.();
+    return this.#mutex.release();
+  }
+}
+
+/**
+ * @internal
+ */
 export class Mutex {
-  static Guard = class Guard {
-    #mutex: Mutex;
-    #onRelease?: () => void;
-    constructor(mutex: Mutex, onRelease?: () => void) {
-      this.#mutex = mutex;
-      this.#onRelease = onRelease;
-    }
-    [disposeSymbol](): void {
-      this.#onRelease?.();
-      return this.#mutex.release();
-    }
-  };
+  static Guard = MutexGuard;
 
   #locked = false;
   #acquirers: Array<() => void> = [];
@@ -32,7 +37,7 @@ export class Mutex {
   ): Promise<InstanceType<typeof Mutex.Guard>> {
     if (!this.#locked) {
       this.#locked = true;
-      return new Mutex.Guard(this);
+      return new Mutex.Guard(this, onRelease);
     }
     const deferred = Deferred.create<void>();
     this.#acquirers.push(deferred.resolve.bind(deferred));

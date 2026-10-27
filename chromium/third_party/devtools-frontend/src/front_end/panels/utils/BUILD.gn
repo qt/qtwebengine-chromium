@@ -42,9 +42,9 @@ devtools_ui_module("unittests") {
     "../../core/common:bundle",
     "../../core/platform:bundle",
     "../../core/sdk:bundle",
-    "../../generated:protocol",
-    "../../models/text_utils:bundle",
+    "../../generated",
     "../../testing",
     "../../third_party/diff:bundle",
+    "../../ui/lit:bundle",
   ]
 }

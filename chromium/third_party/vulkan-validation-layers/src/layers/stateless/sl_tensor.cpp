@@ -90,7 +90,7 @@ bool Device::ValidateTensorDescriptionARM(const VkTensorDescriptionARM& descript
                 }
                 i--;
             }
-            // if other errors above occured, i might be zero, but another error will be reported already
+            // if other errors above occurred, i might be zero, but another error will be reported already
             if (!is_packed && i > 0) {
                 skip |= LogError("VUID-VkTensorDescriptionARM-None-09740", device, description_loc,
                                  "does not define a packed tensor: pStrides[%" PRIi64 "] (%" PRIi64 ") != pStrides[%" PRIi64
@@ -170,9 +170,15 @@ bool Device::manual_PreCallValidateCreateTensorARM(VkDevice device, const VkTens
     skip |= ValidateTensorDescriptionARM(description, create_info_loc.dot(Field::pDescription));
 
     if (pCreateInfo->sharingMode == VK_SHARING_MODE_CONCURRENT) {
-        if (pCreateInfo->queueFamilyIndexCount <= 1) {
+        if (enabled_features.maintenance11) {
+            if (pCreateInfo->queueFamilyIndexCount == 0) {
+                skip |= LogError("VUID-VkTensorCreateInfoARM-maintenance11-13358", device, create_info_loc.dot(Field::sharingMode),
+                                 "is VK_SHARING_MODE_CONCURRENT, but queueFamilyIndexCount is 0 (needs to be at least 1).");
+            }
+        } else if (pCreateInfo->queueFamilyIndexCount <= 1) {
             skip |= LogError("VUID-VkTensorCreateInfoARM-sharingMode-09723", device, create_info_loc.dot(Field::sharingMode),
-                             "is VK_SHARING_MODE_CONCURRENT, but queueFamilyIndexCount is %" PRIu32 ".",
+                             "is VK_SHARING_MODE_CONCURRENT, but queueFamilyIndexCount is %" PRIu32
+                             " (needs to be at least 2)\nqueueFamilyIndexCount can be 1 if the maintenance11 feature is enabled.",
                              pCreateInfo->queueFamilyIndexCount);
         }
 

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Common from '../core/common/common.js';
 import * as Host from '../core/host/host.js';
 import * as Platform from '../core/platform/platform.js';
@@ -305,6 +307,22 @@ export function cleanup() {
     widget.detach();
   }
   patchWidgets = [];
+}
+
+/**
+ * Removes the 'id' field from a message.
+ * Note: the return type is a distributive conditional type. This is required
+ * to ensure that Omit is applied to each member of the message union
+ * individually. Without this, Omit<Message, 'id'> would only preserve
+ * properties common to all members of the union, losing fields like 'text'
+ * (from UserChatMessage) or 'parts' (from ModelChatMessage).
+ */
+export function stripId<T extends {id: string}>(message: T): T extends AiAssistancePanel.ChatMessage.Message ?
+    Omit<T, 'id'>:
+    never {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const {id, ...rest} = message;
+  return rest as (T extends AiAssistancePanel.ChatMessage.Message ? Omit<T, 'id'>: never);
 }
 
 export function openHistoryContextMenu(

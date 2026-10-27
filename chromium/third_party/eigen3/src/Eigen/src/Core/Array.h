@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_ARRAY_H
 #define EIGEN_ARRAY_H
@@ -144,8 +145,8 @@ class Array : public PlainObjectBase<Array<Scalar_, Rows_, Cols_, Options_, MaxR
    * constructor must match the fixed number of rows (resp. columns) of \c *this.
    *
    *
-   * Example: \include Array_variadic_ctor_cxx11.cpp
-   * Output: \verbinclude Array_variadic_ctor_cxx11.out
+   * Example: \include Array_variadic_ctor.cpp
+   * Output: \verbinclude Array_variadic_ctor.out
    *
    * \sa Array(const std::initializer_list<std::initializer_list<Scalar>>&)
    * \sa Array(const Scalar&), Array(const Scalar&,const Scalar&)
@@ -156,12 +157,11 @@ class Array : public PlainObjectBase<Array<Scalar_, Rows_, Cols_, Options_, MaxR
       : Base(a0, a1, a2, a3, args...) {}
 
   /** \brief Constructs an array and initializes it from the coefficients given as initializer-lists grouped by row.
-   * \cpp11
    *
    * In the general case, the constructor takes a list of rows, each row being represented as a list of coefficients:
    *
-   * Example: \include Array_initializer_list_23_cxx11.cpp
-   * Output: \verbinclude Array_initializer_list_23_cxx11.out
+   * Example: \include Array_initializer_list_23.cpp
+   * Output: \verbinclude Array_initializer_list_23.out
    *
    * Each of the inner initializer lists must contain the exact same number of elements, otherwise an assertion is
    * triggered.
@@ -170,8 +170,8 @@ class Array : public PlainObjectBase<Array<Scalar_, Rows_, Cols_, Options_, MaxR
    * Therefore <code> Array<int,Dynamic,1>{{1,2,3,4,5}}</code> is legal and the more verbose syntax
    * <code>Array<int,Dynamic,1>{{1},{2},{3},{4},{5}}</code> can be avoided:
    *
-   * Example: \include Array_initializer_list_vector_cxx11.cpp
-   * Output: \verbinclude Array_initializer_list_vector_cxx11.out
+   * Example: \include Array_initializer_list_vector.cpp
+   * Output: \verbinclude Array_initializer_list_vector.out
    *
    * In the case of fixed-sized arrays, the initializer list sizes must exactly match the array sizes,
    * and implicit transposition is allowed for compile-time 1D arrays only.
@@ -247,8 +247,7 @@ class Array : public PlainObjectBase<Array<Scalar_, Rows_, Cols_, Options_, MaxR
   template <typename OtherDerived>
   EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE Array(
       const EigenBase<OtherDerived>& other,
-      std::enable_if_t<internal::is_convertible<typename OtherDerived::Scalar, Scalar>::value, PrivateType> =
-          PrivateType())
+      std::enable_if_t<std::is_convertible<typename OtherDerived::Scalar, Scalar>::value, PrivateType> = PrivateType())
       : Base(other.derived()) {}
 
   EIGEN_DEVICE_FUNC constexpr Index innerStride() const noexcept { return 1; }
@@ -280,7 +279,7 @@ class Array : public PlainObjectBase<Array<Scalar_, Rows_, Cols_, Options_, MaxR
  * There are also \c ArraySizeType which are self-explanatory. For example, \c Array4cf is
  * a fixed-size 1D array of 4 complex floats.
  *
- * With \cpp11, template alias are also defined for common sizes.
+ * Template alias are also defined for common sizes.
  * They follow the same pattern as above except that the scalar type suffix is replaced by a
  * template parameter, i.e.:
  *   - `ArrayRowsCols<Type>` where `Rows` and `Cols` can be \c 2,\c 3,\c 4, or \c X for fixed or dynamic size.
@@ -322,21 +321,17 @@ EIGEN_MAKE_ARRAY_TYPEDEFS_ALL_SIZES(std::complex<double>, cd)
 
 #define EIGEN_MAKE_ARRAY_TYPEDEFS(Size, SizeSuffix)              \
   /** \ingroup arraytypedefs */                                  \
-  /** \brief \cpp11 */                                           \
   template <typename Type>                                       \
   using Array##SizeSuffix##SizeSuffix = Array<Type, Size, Size>; \
   /** \ingroup arraytypedefs */                                  \
-  /** \brief \cpp11 */                                           \
   template <typename Type>                                       \
   using Array##SizeSuffix = Array<Type, Size, 1>;
 
 #define EIGEN_MAKE_ARRAY_FIXED_TYPEDEFS(Size)        \
   /** \ingroup arraytypedefs */                      \
-  /** \brief \cpp11 */                               \
   template <typename Type>                           \
   using Array##Size##X = Array<Type, Size, Dynamic>; \
   /** \ingroup arraytypedefs */                      \
-  /** \brief \cpp11 */                               \
   template <typename Type>                           \
   using Array##X##Size = Array<Type, Dynamic, Size>;
 

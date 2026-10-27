@@ -26,6 +26,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
+#include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
 #include "absl/time/time.h"
 #include "fcp/base/compression.h"
@@ -158,7 +159,7 @@ TEST_F(HttpFederatedSelectManagerTest,
 
   EXPECT_FALSE(iterator_factory->CanHandle(selector));
   EXPECT_THAT(iterator_factory->CreateExampleIterator(selector),
-              IsCode(INVALID_ARGUMENT));
+              absl_testing::StatusIs(INVALID_ARGUMENT));
 }
 
 TEST_F(HttpFederatedSelectManagerTest, IteratorFactoryShouldNotCollectStats) {
@@ -189,7 +190,7 @@ TEST_F(HttpFederatedSelectManagerTest,
       iterator_factory->CreateExampleIterator(selector);
 
   // The iterator creation should have failed, since the URI template was empty.
-  EXPECT_THAT(iterator, IsCode(INVALID_ARGUMENT));
+  EXPECT_THAT(iterator, absl_testing::StatusIs(INVALID_ARGUMENT));
   EXPECT_THAT(iterator.status().message(), HasSubstr("disabled"));
   // Even though creating an iterator should fail since the feature is disabled,
   // the iterator factory should still handle all internal:/federated_select
@@ -250,21 +251,21 @@ TEST_F(HttpFederatedSelectManagerTest,
           /*keys=*/{2, 1}));
 
   // The iterator creation should have succeeded.
-  ASSERT_OK(iterator1);
+  ABSL_ASSERT_OK(iterator1);
 
   // Reading the data for each of the slices should now succeed.
   absl::StatusOr<std::string> first_slice = (*iterator1)->Next();
-  ASSERT_OK(first_slice);
+  ABSL_ASSERT_OK(first_slice);
   ASSERT_TRUE(FileExists(*first_slice));
   EXPECT_THAT(ReadFile(*first_slice), expected_key2_data);
 
   absl::StatusOr<std::string> second_slice = (*iterator1)->Next();
-  ASSERT_OK(second_slice);
+  ABSL_ASSERT_OK(second_slice);
   ASSERT_TRUE(FileExists(*second_slice));
   EXPECT_THAT(ReadFile(*second_slice), expected_key1_data);
 
   // We should now have reached the end of the first iterator.
-  EXPECT_THAT((*iterator1)->Next(), IsCode(OUT_OF_RANGE));
+  EXPECT_THAT((*iterator1)->Next(), absl_testing::StatusIs(OUT_OF_RANGE));
 
   // Closing the iterator should not fail/crash.
   (*iterator1)->Close();
@@ -293,11 +294,11 @@ TEST_F(HttpFederatedSelectManagerTest,
           CreateExampleSelector(/*served_at_id=*/"id/Y", /*keys=*/{99}));
 
   // The iterator creation should have succeeded.
-  ASSERT_OK(iterator2);
+  ABSL_ASSERT_OK(iterator2);
 
   // Reading the data for the slices should now succeed.
   absl::StatusOr<std::string> third_slice = (*iterator2)->Next();
-  ASSERT_OK(third_slice);
+  ABSL_ASSERT_OK(third_slice);
   ASSERT_TRUE(FileExists(*third_slice));
   EXPECT_THAT(ReadFile(*third_slice), expected_key99_data);
 
@@ -337,12 +338,12 @@ TEST_F(HttpFederatedSelectManagerTest, SuccessfullyFetchCompressedSlice) {
           /*served_at_id=*/"id-X", /*keys=*/{1}));
 
   // The iterator creation should have succeeded.
-  ASSERT_OK(iterator);
+  ABSL_ASSERT_OK(iterator);
 
   // Reading the data for the slice should now succeed and return the expected
   // (uncompressed) data.
   absl::StatusOr<std::string> slice = (*iterator)->Next();
-  ASSERT_OK(slice);
+  ABSL_ASSERT_OK(slice);
   ASSERT_TRUE(FileExists(*slice));
   EXPECT_THAT(ReadFile(*slice), expected_key1_data);
 }
@@ -375,16 +376,16 @@ TEST_F(HttpFederatedSelectManagerTest,
           /*served_at_id=*/"id-X", /*keys=*/{1}));
 
   // The iterator creation should have succeeded.
-  ASSERT_OK(iterator);
+  ABSL_ASSERT_OK(iterator);
 
   // Reading the data should now succeed.
   absl::StatusOr<std::string> slice = (*iterator)->Next();
-  ASSERT_OK(slice);
+  ABSL_ASSERT_OK(slice);
   ASSERT_TRUE(FileExists(*slice));
   EXPECT_THAT(ReadFile(*slice), expected_key1_data);
 
   // We should now have reached the end of the first iterator.
-  EXPECT_THAT((*iterator)->Next(), IsCode(OUT_OF_RANGE));
+  EXPECT_THAT((*iterator)->Next(), absl_testing::StatusIs(OUT_OF_RANGE));
 
   // Closing the iterator should not fail/crash.
   (*iterator)->Close();
@@ -435,7 +436,7 @@ TEST_F(HttpFederatedSelectManagerTest, ErrorDuringFetch) {
   // The error code should be UNAVAILABLE and the error message should include
   // the original NOT_FOUND error code that HTTP's 404 maps to, as well as the
   // URI template to aid debugging.
-  EXPECT_THAT(iterator, IsCode(UNAVAILABLE));
+  EXPECT_THAT(iterator, absl_testing::StatusIs(UNAVAILABLE));
   EXPECT_THAT(iterator.status().message(), HasSubstr("fetch request failed"));
   EXPECT_THAT(iterator.status().message(), HasSubstr(uri_template));
   EXPECT_THAT(iterator.status().message(), HasSubstr("NOT_FOUND"));

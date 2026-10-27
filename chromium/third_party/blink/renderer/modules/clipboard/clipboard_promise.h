@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_CLIPBOARD_CLIPBOARD_PROMISE_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_CLIPBOARD_CLIPBOARD_PROMISE_H_
 
+#include <cstdint>
 #include <utility>
 
 #include "base/sequence_checker.h"
@@ -122,7 +123,7 @@ class MODULES_EXPORT ClipboardPromise final
   class ClipboardItemDataPromiseFulfill;
   class ClipboardItemDataPromiseReject;
   void HandlePromiseWrite(
-      GCedHeapVector<Member<V8UnionBlobOrString>>* clipboard_item_list);
+      HeapVector<Member<V8UnionBlobOrString>> clipboard_item_list);
   void WriteClipboardItemData(
       GCedHeapVector<Member<V8UnionBlobOrString>>* clipboard_item_list);
 
@@ -165,6 +166,10 @@ class MODULES_EXPORT ClipboardPromise final
 
   // Resolves the read promise.
   void ResolveRead();
+
+  // Callback for the asynchronous SystemClipboard::ReadPlainText used by
+  // navigator.clipboard.readText(). Resolves `script_promise_resolver_`.
+  void OnReadPlainText(const String& text);
 
   // Returns the `PermissionService` associated with the promise, or nullptr if
   // the remote connection fails.
@@ -212,6 +217,14 @@ class MODULES_EXPORT ClipboardPromise final
   // read operation
   std::optional<HashSet<String>> read_clipboard_item_types_;
   HeapVector<String> item_mime_types_;
+  // Cumulative size of blobs read in eager mode for telemetry.
+  // Uses uint64_t to match Blob::size() return type and avoid truncation on
+  // 32-bit platforms.
+  uint64_t total_eager_read_blob_size_ = 0;
+  // Sequence number snapshotted before format enumeration so the lazy-read
+  // path can detect a clipboard change during the async IPC.
+  // See crbug.com/498411773.
+  std::optional<absl::uint128> sequence_number_at_read_start_;
   SEQUENCE_CHECKER(sequence_checker_);
 };
 

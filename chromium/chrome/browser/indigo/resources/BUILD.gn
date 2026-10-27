@@ -1,0 +1,43 @@
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/config/chrome_build.gni")
+import("//tools/grit/grit_rule.gni")
+
+assert(!is_android)
+
+declare_args() {
+  # Set to true to use internal branded strings for Indigo.
+  use_indigo_internal_strings = false
+}
+
+grit_strings("indigo_strings") {
+  if (is_internal_chrome_branded && use_indigo_internal_strings) {
+    source = "internal/indigo_strings.grd"
+  } else {
+    source = "indigo_strings.grd"
+  }
+  outputs = [ "grit/indigo_strings.h" ]
+}
+
+grit("grit") {
+  if (is_chrome_branded) {
+    source = "internal/browser_resources.grd"
+  } else {
+    source = "browser_resources.grd"
+  }
+
+  use_brotli = true
+  outputs = [
+    "indigo_browser_resources.pak",
+    "grit/indigo_browser_resources.h",
+    "grit/indigo_browser_resources_map.cc",
+    "grit/indigo_browser_resources_map.h",
+  ]
+}
+
+source_set("browser_resources") {
+  public_deps = [ ":grit" ]
+  deps = [ "//base" ]
+}

@@ -264,6 +264,26 @@ TEST_F(MuxerTest, AddTracks) {
   EXPECT_TRUE(CompareFiles(GetTestFilePath("tracks.webm"), filename_));
 }
 
+TEST_F(MuxerTest, AddTracksWithBlockAdditionMapping) {
+  EXPECT_TRUE(SegmentInit(false, false, false));
+
+  AddVideoTrack();
+  VideoTrack* const video =
+      dynamic_cast<VideoTrack*>(segment_.GetTrackByNumber(kVideoTrackNumber));
+  ASSERT_TRUE(video != NULL);
+  EXPECT_TRUE(video->AddBlockAdditionMapping(4, "itut35", 4, NULL, 0));
+
+  AddDummyFrameAndFinalize(kVideoTrackNumber);
+  CloseWriter();
+
+  EXPECT_TRUE(CompareFiles(
+      GetTestFilePath("tracks_with_block_addition_mapping.webm"), filename_));
+
+  // Ensure that the created file is valid.
+  MkvParser parser;
+  EXPECT_TRUE(ParseMkvFileReleaseParser(filename_, &parser));
+}
+
 TEST_F(MuxerTest, AddChapters) {
   EXPECT_TRUE(SegmentInit(false, false, false));
   AddVideoTrack();

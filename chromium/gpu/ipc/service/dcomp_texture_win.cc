@@ -66,14 +66,14 @@ class DCOMPTextureBacking : public ClearTrackingSharedImageBacking {
                       const gfx::Size& size)
       : ClearTrackingSharedImageBacking(
             mailbox,
-            viz::SinglePlaneFormat::kBGRA_8888,
-            size,
-            gfx::ColorSpace(gfx::ColorSpace::PrimaryID::BT709,
-                            gfx::ColorSpace::TransferID::BT709),
-            kTopLeft_GrSurfaceOrigin,
-            kPremul_SkAlphaType,
-            gpu::SHARED_IMAGE_USAGE_SCANOUT,
-            {},
+            SharedImageInfo(viz::SinglePlaneFormat::kBGRA_8888,
+                            size,
+                            gfx::ColorSpace(gfx::ColorSpace::PrimaryID::BT709,
+                                            gfx::ColorSpace::TransferID::BT709),
+                            kTopLeft_GrSurfaceOrigin,
+                            kPremul_SkAlphaType,
+                            gpu::SHARED_IMAGE_USAGE_SCANOUT,
+                            {}),
             /*estimated_size=*/0,
             /*is_thread_safe=*/false),
         dcomp_surface_proxy_(std::move(dcomp_surface_proxy)) {
@@ -206,8 +206,9 @@ void DCOMPTexture::SetTextureSize(const gfx::Size& size) {
       shared_image_mailbox_created_ = true;
       gpu::Mailbox mailbox = CreateSharedImage();
       client_->OnSharedImageMailboxBound(mailbox);
-    } else
+    } else {
       DLOG(ERROR) << "Unable to call client_->OnSharedImageMailboxBound";
+    }
   }
 }
 
@@ -232,7 +233,7 @@ void DCOMPTexture::SetDCOMPSurfaceHandle(
     return;
   }
 
-  surface_handle_.Set(surface_handle.Take());
+  surface_handle_.Set(surface_handle.release());
   std::move(callback).Run(true);
 }
 

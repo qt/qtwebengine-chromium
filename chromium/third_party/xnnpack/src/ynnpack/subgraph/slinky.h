@@ -13,13 +13,13 @@
 
 #include <cassert>
 #include <cstddef>
-#include <cstdint>
 #include <limits>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "ynnpack/base/base.h"
+#include "ynnpack/base/span.h"
 #include "slinky/builder/pipeline.h"
 #include "slinky/runtime/buffer.h"
 #include "slinky/runtime/expr.h"
@@ -29,15 +29,33 @@
 
 namespace ynn {
 
+static constexpr char reduction_dim_prefix[] = "k";
+static constexpr char pure_dim_prefix[] = "d";
+
 class slinky_globals {
  public:
   // Make a global variable for the given expression. Deduplicates identical
   // expressions to the same variable.
   slinky::expr get(slinky::expr value, const char* prefix);
 
+  // Unconditionally create a new global variable for the given expression.
+  slinky::expr make_split_var(slinky::expr value, const char* prefix);
+
+  // Update the value of an existing global variable.
+  bool update_let(slinky::var sym, slinky::expr new_value);
+
+  // Make a single dimension with index `d`.
+  slinky::var make_dim(int d, const char* prefix = pure_dim_prefix);
+  slinky::var make_reduction_dim(int d);
+
+  bool is_reduction_dim(slinky::var dim);
+  bool is_pure_dim(slinky::var dim);
+
   // Make an array of dimensions that is begin, 1, ... end - 1.
-  std::vector<slinky::var> make_dims(int begin, int end);
-  std::vector<slinky::var> make_dims(int rank);
+  std::vector<slinky::var> make_dims(int begin, int end,
+                                     const char* prefix = pure_dim_prefix);
+  std::vector<slinky::var> make_dims(int rank,
+                                     const char* prefix = pure_dim_prefix);
 
   slinky::buffer_expr_ptr make_buffer_expr(const std::string& name, int rank,
                                            slinky::expr elem_size);
@@ -93,13 +111,18 @@ slinky::box_expr make_broadcast_bounds(
     std::vector<slinky::var> dims, const std::vector<slinky::expr>& src_extents,
     const std::vector<slinky::expr>& dst_extents, bool no_broadcast = false);
 
+std::vector<slinky::expr> make_split_factors(
+    ynn::slinky_globals& globals, ynn::span<const slinky::expr> extents,
+    const slinky::expr& element_cost,
+    ynn::span<const slinky::expr> given_splits = {},
+    ynn::span<const int> loop_order = {});
+
 // A loop split for a given function.
 struct scheduling_split {
   slinky::var var;
   slinky::expr step;
   slinky::expr workers = slinky::loop::parallel;
-  // The axis of the extent which was used to compute this split.
-  slinky::index_t axis;
+  slinky::expr extent;
   // If this is true the corresponding loop is required to have this specific
   // step, i.e. it can not get scheduled in the loop of the other function
   // unless the step matches or the other loop doesn't have required step yet.
@@ -119,7 +142,7 @@ struct scheduled_buffer {
   // location:
   // * if it's 0 then it will be stored at the same loop level it's computed at.
   // * if it's root it's an outermost location.
-  slinky::index_t store_at_min_depth = root;
+  slinky::index_t store_at_min_depth = 0;
 };
 
 struct scheduling_info {
@@ -130,10 +153,6 @@ struct scheduling_info {
   // A set of loop splits for a given function.
   std::vector<scheduling_split> loop_splits;
   std::vector<scheduled_buffer> scheduled_buffers;
-
-  // This is an ID of the buffer whose extents were used to compute this
-  // scheduling info.
-  uint32_t base_buffer_id = 0;
 
   bool force_root = false;
 };
@@ -167,11 +186,6 @@ YNN_ALWAYS_INLINE bool all_of_pairs(F&& f, A&& a, B&& b, Pairs&&... pairs) {
 
 }  // namespace internal
 
-YNN_ALWAYS_INLINE const slinky::dim& dim0_or_broadcast(
-    const slinky::raw_buffer& buf) {
-  return buf.rank > 0 ? buf.dim(0) : slinky::dim::broadcast();
-}
-
 YNN_ALWAYS_INLINE bool same_bounds(const slinky::dim& a, const slinky::dim& b) {
   // Return true if the dimensions have the same min and max or if they are
   // both broadcasts.
@@ -188,10 +202,73 @@ YNN_ALWAYS_INLINE bool same_bounds(const slinky::dim& a, const slinky::dim& b,
 // A dimension is contiguous if it satisfies one of the following:
 //   1. Its extent is 1. In this case, we disregard stride.
 //   2. Its stride is equal to its element size.
-YNN_ALWAYS_INLINE bool is_continguous(const slinky::dim& dim,
-                                      const int element_size) {
+YNN_ALWAYS_INLINE bool is_contiguous(const slinky::dim& dim,
+                                     const int element_size) {
   return dim.extent() == 1 || dim.stride() == element_size;
 }
+
+YNN_ALWAYS_INLINE bool is_broadcast(const slinky::dim& dim) {
+  return dim.extent() == 1 || dim.stride() == 0;
+}
+
+// Remove dimension 0 from the buffer and return a reference to it. This
+// function is only possible because slicing dimension 0 will not modify the
+// dims array.
+YNN_ALWAYS_INLINE const slinky::dim& slice_dim0(slinky::raw_buffer& buffer) {
+  const slinky::dim& dim0 = buffer.dim(0);
+  buffer.slice(0);
+  return dim0;
+}
+YNN_ALWAYS_INLINE const slinky::dim& slice_dim0(slinky::raw_buffer& buffer,
+                                                slinky::in_bounds at) {
+  const slinky::dim& dim0 = buffer.dim(0);
+  buffer.slice(0, at);
+  return dim0;
+}
+
+namespace internal {
+
+// Try to fuse the next dimension of `x` and `inputs` into the `i`-th dimension
+// of `x_dims` and `in_dims`. Returns true if the fusion was successful.
+template <typename... DimBufferPairs>
+bool fuse_and_slice_leading_dim(int i, slinky::dim* x_dims,
+                                slinky::raw_buffer& x,
+                                DimBufferPairs&&... inputs) {
+  // First check whether fusing dimensions is possible.
+  const slinky::dim& x_dim_0 = x.dims[0];
+  bool can_fuse_all =
+      !x_dim_0.empty() &&
+      slinky::can_fuse(x_dims[i], x_dim_0) &&
+      all_of_pairs(
+          [x_dims, i, &x_dim_0](const slinky::dim* in_dims,
+                                const slinky::raw_buffer& in_buf) {
+            return same_bounds(x_dims[i], in_dims[i]) &&
+                   same_bounds(x_dim_0, in_buf.dim(0)) &&
+                   slinky::can_fuse(in_dims[i], in_buf.dim(0));
+          },
+          inputs...);
+  if (!can_fuse_all) {
+    return false;
+  }
+
+  // Fuse the dimensions and slice.
+  x_dims[i] = slinky::fuse(x_dims[i], x_dim_0);
+  --x.rank;
+  ++x.dims;
+  apply_to_pairs(
+      [i, x_min_i = x_dim_0.min()](slinky::dim* in_dims,
+                                   slinky::raw_buffer& in_buf) {
+        if (in_buf.rank > 0) {
+          const slinky::dim& in_dim_0 =
+              slice_dim0(in_buf, slinky::in_bounds{x_min_i});
+          in_dims[i] = slinky::fuse(in_dims[i], in_dim_0);
+        }
+      },
+      inputs...);
+  return true;
+}
+
+}  // namespace internal
 
 // Peels off the innermost `NumInnerDims` dimensions of `x` and `inputs`,
 // and where possible, fuses dimensions of buffers from the innermost to the
@@ -205,16 +282,21 @@ YNN_ALWAYS_INLINE bool is_continguous(const slinky::dim& dim,
 // inputs after the peeling, and the buffers themselves e.g. { &a_dims[0], a,
 // &b_dims[0], b, ... }. The dimensions must be pointers to arrays of size
 // `NumInnerDims`.
+//
+// This function assumes that all of the input buffers are in bounds.
 template <int NumInnerDims, typename... DimBufferPairs>
-void fuse_and_slice_leading_dims(slinky::dim* x_dims, slinky::raw_buffer& x,
+bool fuse_and_slice_leading_dims(slinky::dim* x_dims, slinky::raw_buffer& x,
                                  DimBufferPairs&&... inputs) {
   for (int i = 0; i < NumInnerDims; ++i) {
     // If the output innermost (n) dimension has extent 1, we need to make the n
     // dimension of all inputs a broadcast. This case is not expected to happen.
     // For now, we add an assert to catch this case if it does.
-    assert(i != 0 || is_continguous(dim0_or_broadcast(x), x.elem_size));
+    assert(i != 0 || is_contiguous(x.dim(0), x.elem_size));
 
-    x_dims[i] = dim0_or_broadcast(x);
+    x_dims[i] = slice_dim0(x);
+    if (x_dims[i].empty()) {
+      return false;
+    }
 
     // Initialize `in_dims[i]` for each input.
     // `x` is already a view to the correct tile in the larger output buffer.
@@ -223,41 +305,22 @@ void fuse_and_slice_leading_dims(slinky::dim* x_dims, slinky::raw_buffer& x,
     internal::apply_to_pairs(
         [i, x_min_i = x_dims[i].min()](slinky::dim* in_dims,
                                        slinky::raw_buffer& in_buf) {
-          in_dims[i] = in_buf.dim(0);
-          in_buf.slice(0, x_min_i);
+          in_dims[i] = slice_dim0(in_buf, slinky::in_bounds{x_min_i});
         },
         inputs...);
-    if (x.rank > 0) x.slice(0);
 
+    // Try to fuse more dimensions into this new dimension. This is separated
+    // into a helper function with the hope that maybe this outer function might
+    // inline, while this inner fusion helper may not, which might provide a
+    // nice "fast path" for 1D buffers.
     while (x.rank > 0) {
-      // First check whether fusing dimensions is possible.
-      bool can_fuse_all =
-          slinky::can_fuse(x_dims[i], x.dim(0)) &&
-          internal::all_of_pairs(
-              [x_dims, i](const slinky::dim* in_dims,
-                          const slinky::raw_buffer& in_buf) {
-                return same_bounds(x_dims[i], in_dims[i]) &&
-                       slinky::can_fuse(in_dims[i], dim0_or_broadcast(in_buf));
-              },
-              inputs...);
-      if (!can_fuse_all) {
+      if (!internal::fuse_and_slice_leading_dim(i, x_dims, x, inputs...)) {
         break;
       }
-
-      // Fuse the dimensions and slice.
-      x_dims[i] = slinky::fuse(x_dims[i], x.dim(0));
-      internal::apply_to_pairs(
-          [i, x_min_i = x.dim(0).min()](slinky::dim* in_dims,
-                                        slinky::raw_buffer& in_buf) {
-            if (in_buf.rank > 0) {
-              in_dims[i] = slinky::fuse(in_dims[i], in_buf.dim(0));
-              in_buf.slice(0, x_min_i);
-            }
-          },
-          inputs...);
-      x.slice(0);
     }
   }
+
+  return true;
 }
 
 }  // namespace ynn

@@ -26,6 +26,7 @@
 #include "libavcodec/avcodec.h"
 #include "libavcodec/codec_par.h"
 
+#include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 #include "libavutil/iamf.h"
 #include "libavutil/internal.h"
@@ -365,6 +366,20 @@ static const AVClass lcevc_class = {
     .option     = lcevc_options,
 };
 
+#define OFFSET(x) offsetof(AVStreamGroupTREF, x)
+static const AVOption tref_options[] = {
+    { "metadata_index", "Index of the data stream within the group", OFFSET(metadata_index),
+        AV_OPT_TYPE_UINT, { .i64 = 0 }, 0, UINT_MAX, FLAGS },
+    { NULL },
+};
+#undef OFFSET
+
+static const AVClass tref_class = {
+    .class_name = "AVStreamGroupTREF",
+    .version    = LIBAVUTIL_VERSION_INT,
+    .option     = tref_options,
+};
+
 static void *stream_group_child_next(void *obj, void *prev)
 {
     AVStreamGroup *stg = obj;
@@ -378,6 +393,8 @@ static void *stream_group_child_next(void *obj, void *prev)
             return stg->params.tile_grid;
         case AV_STREAM_GROUP_PARAMS_LCEVC:
             return stg->params.lcevc;
+        case AV_STREAM_GROUP_PARAMS_TREF:
+            return stg->params.tref;
         default:
             break;
         }
@@ -395,7 +412,7 @@ static const AVClass *stream_group_child_iterate(void **opaque)
     switch(i) {
     case AV_STREAM_GROUP_PARAMS_NONE:
         i++;
-    // fall-through
+        av_fallthrough;
     case AV_STREAM_GROUP_PARAMS_IAMF_AUDIO_ELEMENT:
         ret = av_iamf_audio_element_get_class();
         break;
@@ -407,6 +424,9 @@ static const AVClass *stream_group_child_iterate(void **opaque)
         break;
     case AV_STREAM_GROUP_PARAMS_LCEVC:
         ret = &lcevc_class;
+        break;
+    case AV_STREAM_GROUP_PARAMS_TREF:
+        ret = &tref_class;
         break;
     default:
         break;
@@ -483,6 +503,13 @@ AVStreamGroup *avformat_stream_group_create(AVFormatContext *s,
             goto fail;
         stg->params.lcevc->av_class = &lcevc_class;
         av_opt_set_defaults(stg->params.lcevc);
+        break;
+    case AV_STREAM_GROUP_PARAMS_TREF:
+        stg->params.tref = av_mallocz(sizeof(*stg->params.tref));
+        if (!stg->params.tref)
+            goto fail;
+        stg->params.tref->av_class = &tref_class;
+        av_opt_set_defaults(stg->params.tref);
         break;
     default:
         goto fail;

@@ -731,8 +731,7 @@ TEST_F(HlslWriterTest, ConstantTypeArrayModuleScopeZero) {
     auto result = Generate();
     ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
-static const float v_1[65536] = (float[65536])0;
-static float v[65536] = v_1;
+static float v[65536] = (float[65536])0;
 [numthreads(1, 1, 1)]
 void main() {
 }
@@ -1129,8 +1128,7 @@ TEST_F(HlslWriterTest, ConstantTypeStructStaticEmpty) {
 };
 
 
-static const S v = {int(0)};
-static S p = v;
+static S p = (S)0;
 [numthreads(1, 1, 1)]
 void main() {
 }

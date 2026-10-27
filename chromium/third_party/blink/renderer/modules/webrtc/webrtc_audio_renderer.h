@@ -118,6 +118,16 @@ class MODULES_EXPORT WebRtcAudioRenderer
   // Stop() has to be called before |source| is deleted.
   bool Initialize(WebRtcAudioRendererSource* source);
 
+  // Called when the source is going away to clear the reference to the source
+  // and remove circular references.
+  void DisconnectSource();
+
+  // Returns the task runner associated with the creating frame (the main
+  // thread).
+  scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() const {
+    return task_runner_;
+  }
+
   // When sharing a single instance of WebRtcAudioRenderer between multiple
   // users (e.g. WebMediaPlayerMS), call this method to create a proxy object
   // that maintains the Play and Stop states per caller.
@@ -129,9 +139,6 @@ class MODULES_EXPORT WebRtcAudioRenderer
   // is the usage pattern that WebRtcAudioRenderer requires.
   scoped_refptr<MediaStreamAudioRenderer> CreateSharedAudioRendererProxy(
       MediaStreamDescriptor* media_stream_descriptor);
-
-  // Used to DCHECK on the expected state.
-  bool IsStarted() const;
 
   // Accessors to the sink audio parameters.
   int channels() const { return sink_params_.channels(); }
@@ -324,7 +331,7 @@ class MODULES_EXPORT WebRtcAudioRenderer
   // Audio data source from the browser process.
   //
   // TODO(crbug.com/704136): Make it a Member.
-  raw_ptr<WebRtcAudioRendererSource> source_;
+  raw_ptr<WebRtcAudioRendererSource> source_ GUARDED_BY(lock_);
 
   // Protects access to |state_|, |source_|, |audio_fifo_|,
   // |audio_delay_milliseconds_|, |fifo_delay_milliseconds_|, |current_time_|,

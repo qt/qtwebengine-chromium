@@ -18,19 +18,19 @@
 #include "crypto/signature_verifier.h"
 
 namespace crypto {
-class UnexportableSigningKey;
 class UnexportableKeyProvider;
 }  // namespace crypto
 
 namespace unexportable_keys {
 
+class RefCountedUnexportableKey;
 class RefCountedUnexportableSigningKey;
 
-// A `BackgroundTask` to retrieve all `crypto::UnexportableSigningKey`s from the
+// A `BackgroundTask` to retrieve all `crypto::UnexportableKey`s from the
 // key provider.
 class GetAllKeysTask
     : public internal::BackgroundTaskImpl<ServiceErrorOr<
-          std::vector<scoped_refptr<RefCountedUnexportableSigningKey>>>> {
+          std::vector<scoped_refptr<RefCountedUnexportableKey>>>> {
  public:
   GetAllKeysTask(
       std::unique_ptr<crypto::UnexportableKeyProvider> key_provider,
@@ -80,20 +80,19 @@ class SignTask : public internal::BackgroundTaskImpl<
       const ServiceErrorOr<std::vector<uint8_t>>& result) const override;
 };
 
-// A `BackgroundTask` to delete a collection of
-// `crypto::UnexportableSigningKey`.
+// A `BackgroundTask` to delete a collection of `crypto::UnexportableKey`.
 class DeleteKeysTask
     : public internal::BackgroundTaskImpl<ServiceErrorOr<size_t>> {
  public:
   DeleteKeysTask(
       std::unique_ptr<crypto::UnexportableKeyProvider> key_provider,
-      std::vector<scoped_refptr<RefCountedUnexportableSigningKey>> signing_keys,
+      std::vector<scoped_refptr<RefCountedUnexportableKey>> keys,
       BackgroundTaskPriority priority,
       base::OnceCallback<void(DeleteKeysTask::ReturnType, size_t)> callback);
 };
 
-// A `BackgroundTask` to delete all `crypto::UnexportableSigningKey`s matching
-// the key provider config.
+// A `BackgroundTask` to delete all `crypto::UnexportableKey`s matching the key
+// provider config.
 class DeleteAllKeysTask
     : public internal::BackgroundTaskImpl<ServiceErrorOr<size_t>> {
  public:

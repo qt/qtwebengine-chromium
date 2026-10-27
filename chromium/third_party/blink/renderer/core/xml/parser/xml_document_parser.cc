@@ -752,7 +752,8 @@ static void ErrorFunc(void*, const char*, ...) {
   // FIXME: It would be nice to display error messages somewhere.
 }
 
-static void EnsureLibXMLInitialized() {
+// static
+void XMLDocumentParser::EnsureLibXMLInitialized() {
   static bool did_init = false;
   if (did_init)
     return;
@@ -766,7 +767,7 @@ static void EnsureLibXMLInitialized() {
 scoped_refptr<XMLParserContext> XMLParserContext::CreateStringParser(
     xmlSAXHandlerPtr handlers,
     void* user_data) {
-  EnsureLibXMLInitialized();
+  XMLDocumentParser::EnsureLibXMLInitialized();
   xmlParserCtxtPtr parser =
       xmlCreatePushParserCtxt(handlers, nullptr, nullptr, 0, nullptr);
 
@@ -790,7 +791,7 @@ scoped_refptr<XMLParserContext> XMLParserContext::CreateMemoryParser(
     xmlSAXHandlerPtr handlers,
     void* user_data,
     const std::string& chunk) {
-  EnsureLibXMLInitialized();
+  XMLDocumentParser::EnsureLibXMLInitialized();
 
   // appendFragmentSource() checks that the length doesn't overflow an int.
   xmlParserCtxtPtr parser = xmlCreateMemoryParserCtxt(
@@ -1172,7 +1173,8 @@ void XMLDocumentParser::StartElementNs(
 
   SetAttributes(new_element, prefixed_attributes, GetParserContentPolicy());
 
-  if (parsing_fragment_ && encountered_namespace_reset) {
+  if (parsing_fragment_ && encountered_namespace_reset &&
+      !ancestor_resetting_namespace_) {
     ancestor_resetting_namespace_ = new_element;
   }
 
@@ -1223,6 +1225,15 @@ void XMLDocumentParser::EndElementNs() {
   ContainerNode* n = current_node_;
   auto* element = DynamicTo<Element>(n);
   if (!element) {
+    // Check if the current node is the DocumentFragment for an
+    // HTMLTemplateElement that is ancestor_resetting_namespace_.
+    if (auto* resetting_template = DynamicTo<HTMLTemplateElement>(
+            ancestor_resetting_namespace_.Get())) {
+      if (resetting_template->content() == current_node_) {
+        ancestor_resetting_namespace_ = nullptr;
+      }
+    }
+
     PopCurrentNode();
     return;
   }
@@ -1568,7 +1579,7 @@ static base::span<const char> ConvertUTF16EntityToUTF8(
       base::as_writable_bytes(base::span(g_shared_xhtml_entity_result));
   unicode::ConversionResult conversion_result =
       unicode::ConvertUtf16ToUtf8(utf16_entity, entity_buffer);
-  if (conversion_result.status != unicode::kConversionOK) {
+  if (!conversion_result.IsSuccess()) {
     return {};
   }
 
@@ -1752,7 +1763,7 @@ xmlDocPtr XmlDocPtrForString(Document* document,
 
   // In situations where the XMLDocumentParserRs is used as the primary parser,
   // this might be the first call into libxml2.
-  EnsureLibXMLInitialized();
+  XMLDocumentParser::EnsureLibXMLInitialized();
 
   // Parse in a single chunk into an xmlDocPtr
   // FIXME: Hook up error handlers so that a failure to parse the main

@@ -27,12 +27,39 @@ BASE_DECLARE_FEATURE(kReportingServiceAlwaysFlush);
 // trimming behaviour via serverside parameters. Do not remove. See
 // components/metrics/metrics_service_client.cc and
 // components/metrics/unsent_log_store.cc.
+// Note: On Android WebView, while this feature still controls whether trimming
+// is enabled, a separate feature controls the trimming parameters themselves,
+// as they have different defaults than Android Chrome.
+// See: android_webview/browser/metrics/aw_metrics_service_client.cc
 BASE_DECLARE_FEATURE(kMetricsLogTrimming);
 
 #if BUILDFLAG(IS_ANDROID)
+// If enabled, disables the mechanism where when foregrounding, the
+// ReportingService backoff will be reset so that uploads are scheduled normally
+// again.
+// Context: In crbug.com/420459511, it was discovered that starting from Android
+// 15, apps cannot issue network requests from the background (they will fail).
+// This resulted in the ReportingService being throttled due to the backoff
+// logic, with uploads being scheduled very far ahead in the future (up to 24h).
+// During this time, periodic ongoing logs stop getting created. Even if there
+// are other scenarios where logs get created (upon backgrounding and
+// foregrounding), those simply accumulate on disk since no logs are being
+// uploaded. This can eventually lead to log trimming which in turn leads to
+// data loss.
+// Additional context: This feature is intended to disable this band-aid
+// mechanism, as we've implemented a better solution through JobScheduler in
+// crbug.com/445735421.
+BASE_DECLARE_FEATURE(kNoResetMetricsUploadBackoffOnForeground);
+
 // Controls whether various metrics services (UMA, UKM, etc.) should upload logs
 // through a JobScheduler on Android.
 BASE_DECLARE_FEATURE(kMetricsLogJobSchedulerUpload);
+
+// When enabled, when the Android OS requests a background upload task to be
+// stopped (e.g. due to the device being under pressure), the ReportingService
+// will increase the backoff interval for the next upload. Only has an effect if
+// `kMetricsLogJobSchedulerUpload` above is also enabled.
+BASE_DECLARE_FEATURE(kMetricsLogJobSchedulerUploadBackoffOnStopTask);
 #endif  // BUILDFLAG(IS_ANDROID)
 
 // Creates the ProfileMetricsService, which can be used to log per-profile UMA

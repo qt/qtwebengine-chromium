@@ -16,6 +16,7 @@
 #include "base/environment.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/process/process_metrics.h"
 #include "base/run_loop.h"
@@ -25,6 +26,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/gmock_expected_support.h"
 #include "base/test/scoped_chromeos_version_info.h"
 #include "base/test/scoped_running_on_chromeos.h"
 #include "base/test/task_environment.h"
@@ -150,6 +152,17 @@ TEST_F(SysInfoTest, AmountOfTotalDiskSpace) {
   EXPECT_GT(SysInfo::AmountOfTotalDiskSpace(tmp_path), 0) << tmp_path;
 }
 
+TEST_F(SysInfoTest, AmountOfDiskSpace) {
+  // We aren't actually testing that it's correct, just that it's sane.
+  FilePath tmp_path;
+  ASSERT_TRUE(GetTempDir(&tmp_path));
+  ASSERT_OK_AND_ASSIGN(SysInfo::DiskSpaceInfo disk_space,
+                       SysInfo::AmountOfDiskSpace(tmp_path));
+  EXPECT_TRUE(disk_space.total.is_positive()) << tmp_path;
+  EXPECT_GE(disk_space.available, ByteSize()) << tmp_path;
+  EXPECT_GE(disk_space.total, disk_space.available) << tmp_path;
+}
+
 #if BUILDFLAG(IS_FUCHSIA)
 // Verify that specifying total disk space for nested directories matches
 // the deepest-nested.
@@ -171,6 +184,33 @@ TEST_F(SysInfoTest, NestedVolumesAmountOfTotalDiskSpace) {
   SysInfo::SetAmountOfTotalDiskSpace(subdirectory_path, -1);
   EXPECT_EQ(SysInfo::AmountOfTotalDiskSpace(subdirectory_path),
             kOuterVolumeQuota);
+}
+
+// Verify that AmountOfDiskSpace returns the correct total for nested
+// directories, matching the deepest-nested quota.
+TEST_F(SysInfoTest, NestedVolumesAmountOfDiskSpace) {
+  constexpr int64_t kOuterVolumeQuota = 1024;
+  constexpr int64_t kInnerVolumeQuota = kOuterVolumeQuota / 2;
+
+  FilePath tmp_path;
+  ASSERT_TRUE(GetTempDir(&tmp_path));
+  SysInfo::SetAmountOfTotalDiskSpace(tmp_path, kOuterVolumeQuota);
+  const FilePath subdirectory_path = tmp_path.Append("subdirectory");
+  SysInfo::SetAmountOfTotalDiskSpace(subdirectory_path, kInnerVolumeQuota);
+
+  ASSERT_OK_AND_ASSIGN(SysInfo::DiskSpaceInfo outer_disk_space,
+                       SysInfo::AmountOfDiskSpace(tmp_path));
+  EXPECT_EQ(outer_disk_space.total, ByteSize(uint64_t{kOuterVolumeQuota}));
+
+  ASSERT_OK_AND_ASSIGN(SysInfo::DiskSpaceInfo inner_disk_space,
+                       SysInfo::AmountOfDiskSpace(subdirectory_path));
+  EXPECT_EQ(inner_disk_space.total, ByteSize(uint64_t{kInnerVolumeQuota}));
+
+  // Remove the inner directory quota setting and check again.
+  SysInfo::SetAmountOfTotalDiskSpace(subdirectory_path, -1);
+  ASSERT_OK_AND_ASSIGN(SysInfo::DiskSpaceInfo fallback_disk_space,
+                       SysInfo::AmountOfDiskSpace(subdirectory_path));
+  EXPECT_EQ(fallback_disk_space.total, ByteSize(uint64_t{kOuterVolumeQuota}));
 }
 #endif  // BUILDFLAG(IS_FUCHSIA)
 
@@ -274,6 +314,14 @@ TEST_F(SysInfoTest, GetHardwareInfo) {
   EXPECT_EQ(hardware_info->manufacturer.empty(), empty_result_expected);
   EXPECT_EQ(hardware_info->model.empty(), empty_result_expected);
 }
+
+#if BUILDFLAG(IS_ANDROID)
+TEST_F(SysInfoTest, HardwareManufacturer) {
+  std::string manufacturer = SysInfo::HardwareManufacturer();
+  EXPECT_TRUE(IsStringUTF8(manufacturer));
+  EXPECT_FALSE(manufacturer.empty());
+}
+#endif
 
 #if BUILDFLAG(IS_WIN)
 TEST_F(SysInfoTest, GetHardwareInfoWMIMatchRegistry) {

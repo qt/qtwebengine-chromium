@@ -100,7 +100,7 @@ SchedulingEmbedder::SchedulingEmbedder(
 
 SchedulingEmbedder::~SchedulingEmbedder() = default;
 
-SchedulingEmbedder::TaskId SchedulingEmbedder::ComputePassagesEmbeddings(
+Embedder::Job SchedulingEmbedder::ComputePassagesEmbeddings(
     PassagePriority priority,
     std::vector<std::string> passages,
     ComputePassagesEmbeddingsCallback callback) {
@@ -123,14 +123,15 @@ SchedulingEmbedder::TaskId SchedulingEmbedder::ComputePassagesEmbeddings(
         base::BindOnce(std::move(callback), std::vector<std::string>(),
                        std::vector<Embedding>(), task_id,
                        ComputeEmbeddingsStatus::kSuccess));
-    return task_id;
+    return Embedder::Job(weak_ptr_factory_.GetWeakPtr(), task_id);
   }
 
   // Limit the number of jobs accepted to avoid high memory use when
   // waiting a long time to process the queue.
   while (jobs_.size() >= max_jobs_ && !jobs_.back().in_progress) {
-    FinishJob(std::move(jobs_.back()), ComputeEmbeddingsStatus::kCanceled);
+    Job canceled_job = std::move(jobs_.back());
     jobs_.pop_back();
+    FinishJob(std::move(canceled_job), ComputeEmbeddingsStatus::kCanceled);
   }
 
   jobs_.emplace_back(priority, task_id, std::move(passages),
@@ -138,7 +139,11 @@ SchedulingEmbedder::TaskId SchedulingEmbedder::ComputePassagesEmbeddings(
 
   SubmitWorkToEmbedder();
 
-  return task_id;
+  return Embedder::Job(weak_ptr_factory_.GetWeakPtr(), task_id);
+}
+
+base::WeakPtr<Embedder> SchedulingEmbedder::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
 }
 
 void SchedulingEmbedder::SubmitWorkToEmbedder() {
@@ -283,16 +288,19 @@ void SchedulingEmbedder::OnEmbeddingsComputed(
     ComputeEmbeddingsStatus status) {
   std::vector<Embedding> embeddings;
   for (auto& result : results) {
-    embeddings.emplace_back(result->embeddings);
-    embeddings.back().Normalize();
+    std::optional<std::vector<float>> normalized =
+        Embedding::Normalize(std::move(result->embeddings));
+    DCHECK(normalized);
+    embeddings.emplace_back(std::move(normalized.value()));
   }
 
   VLOG(3) << embeddings.size() << " embeddings computed with status "
           << static_cast<int>(status);
 
   if (embeddings.empty()) {
-    FinishJob(std::move(jobs_.front()), status);
+    Job completed_job = std::move(jobs_.front());
     jobs_.pop_front();
+    FinishJob(std::move(completed_job), status);
     // Continue on to allow possibility of resuming any remaining jobs.
     // This upholds the 1:1 callback requirement and gives jobs another
     // chance to succeed even when primary embedder fails a batch.
@@ -317,8 +325,9 @@ void SchedulingEmbedder::OnEmbeddingsComputed(
       read_index++;
     }
     if (job.embeddings.size() == job.passages.size()) {
-      FinishJob(std::move(job), status);
+      Job completed_job = std::move(job);
       jobs_.pop_front();
+      FinishJob(std::move(completed_job), status);
     }
   }
 

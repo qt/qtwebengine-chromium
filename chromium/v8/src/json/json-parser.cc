@@ -8,6 +8,7 @@
 
 #include "hwy/highway.h"
 #include "include/v8config.h"
+#include "src/base/logging.h"
 #include "src/base/macros.h"
 #include "src/base/small-vector.h"
 #include "src/base/strings.h"
@@ -28,6 +29,8 @@
 #include "src/objects/objects-inl.h"
 #include "src/objects/property-descriptor.h"
 #include "src/objects/property-details.h"
+#include "src/objects/string-inl.h"
+#include "src/objects/string-table.h"
 #include "src/roots/roots.h"
 #include "src/strings/char-predicates-inl.h"
 #include "src/strings/string-hasher.h"
@@ -258,7 +261,7 @@ MaybeHandle<Object> JsonParseInternalizer::InternalizeJsonProperty(
           HandleScope inner_scope(isolate_);
           Handle<String> key_name(Cast<String>(contents->get(i)), isolate_);
           auto property_val_node_and_snapshot =
-              val_nodes_and_snapshots->Lookup(isolate_, key_name);
+              val_nodes_and_snapshots->Lookup(key_name);
           Handle<Object> property_val_node(property_val_node_and_snapshot[0],
                                            isolate_);
           Handle<Object> property_snapshot(property_val_node_and_snapshot[1],
@@ -334,7 +337,7 @@ bool JsonParseInternalizer::RecurseAndApply(Handle<JSReceiver> holder,
       InternalizeJsonProperty<reviver_mode>(holder, name, val_node, snapshot),
       false);
   Maybe<bool> change_result = Nothing<bool>();
-  if (IsUndefined(*result, isolate_)) {
+  if (IsUndefined(*result)) {
     change_result = JSReceiver::DeletePropertyOrElement(isolate_, holder, name,
                                                         LanguageMode::kSloppy);
   } else {
@@ -357,16 +360,16 @@ JsonParser<Char>::JsonParser(Isolate* isolate, Handle<String> source,
       object_constructor_(isolate_->object_function()),
       original_source_(source),
       script_details_(script_details),
-      parsed_val_node_() {
+      parsed_val_node_(),
+      remaining_heuristic_internalizations_(
+          v8_flags.json_parse_max_heuristically_internalized_strings) {
   size_t start = 0;
   size_t length = source->length();
-  PtrComprCageBase cage_base(isolate);
-  if (IsSlicedString(*source, cage_base)) {
+  if (IsSlicedString(*source)) {
     Tagged<SlicedString> string = Cast<SlicedString>(*source);
     start = string->offset();
     Tagged<String> parent = string->parent();
-    if (IsThinString(parent, cage_base))
-      parent = Cast<ThinString>(parent)->actual();
+    if (IsThinString(parent)) parent = Cast<ThinString>(parent)->actual();
     source_ = handle(parent, isolate);
   } else {
     source_ = String::Flatten(isolate, source);
@@ -970,6 +973,7 @@ V8_INLINE MaybeHandle<Object> JsonParser<Char>::ParseJsonValueRecursive(
     case JsonToken::WHITESPACE:
       UNREACHABLE();
   }
+  UNREACHABLE();
 }
 
 template <typename Char>
@@ -1845,18 +1849,51 @@ Handle<String> JsonParser<Char>::MakeString(const JsonString& string,
     return factory()->LookupSingleCharacterStringFromCode(first_char);
   }
 
-  if (string.internalize() && !string.has_escape()) {
-    if (!hint.is_null()) {
-      base::Vector<const Char> data(chars_ + string.start(), string.length());
-      if (Matches(data, hint)) return hint;
+  if (!string.has_escape()) {
+    bool should_internalize = string.internalize();
+    // For non-escaped strings, try to internalize the following candidates:
+    // 1. Property keys (string.internalize() is true in that case).
+    // 2. Short one-byte strings. If we have a budget for heuristic,
+    //    we can consider inserting them. Otherwise, at least try to reuse
+    //    existing internalized strings without inserting new ones.
+    constexpr int kMaxInternalizedStringValueLength = 10;
+    if (!should_internalize && sizeof(Char) == 1 &&
+        string.length() < kMaxInternalizedStringValueLength) {
+      if (remaining_heuristic_internalizations_ > 0) {
+        --remaining_heuristic_internalizations_;
+        should_internalize = true;
+      } else {
+        if (chars_may_relocate_) {
+          SeqSubStringKey<SeqOneByteString> key(
+              isolate_, Cast<SeqOneByteString>(source_), string.start(),
+              string.length(), string.needs_conversion());
+          auto existing =
+              isolate_->string_table()->TryLookupKey(isolate_, &key);
+          if (existing) return handle(*existing.value(), isolate_);
+        } else {
+          base::Vector<const Char> chars(chars_ + string.start(),
+                                         string.length());
+          SequentialStringKey<Char> key(chars, HashSeed(isolate_),
+                                        string.needs_conversion());
+          auto existing =
+              isolate_->string_table()->TryLookupKey(isolate_, &key);
+          if (existing) return handle(*existing.value(), isolate_);
+        }
+      }
     }
-    if (chars_may_relocate_) {
-      return factory()->InternalizeSubString(Cast<SeqString>(source_),
-                                             string.start(), string.length(),
-                                             string.needs_conversion());
+    if (should_internalize) {
+      if (!hint.is_null()) {
+        base::Vector<const Char> data(chars_ + string.start(), string.length());
+        if (Matches(data, hint)) return hint;
+      }
+      if (chars_may_relocate_) {
+        return factory()->InternalizeSubString(Cast<SeqString>(source_),
+                                               string.start(), string.length(),
+                                               string.needs_conversion());
+      }
+      base::Vector<const Char> chars(chars_ + string.start(), string.length());
+      return factory()->InternalizeString(chars, string.needs_conversion());
     }
-    base::Vector<const Char> chars(chars_ + string.start(), string.length());
-    return factory()->InternalizeString(chars, string.needs_conversion());
   }
 
   if (sizeof(Char) == 1 ? V8_LIKELY(!string.needs_conversion())
@@ -2008,11 +2045,8 @@ JsonString JsonParser<Char>::ScanJsonString(bool needs_internalization) {
       uint32_t length = end - offset;
       bool convert = sizeof(Char) == 1 ? bits > unibrow::Latin1::kMaxChar
                                        : bits <= unibrow::Latin1::kMaxChar;
-      constexpr int kMaxInternalizedStringValueLength = 10;
-      bool internalize =
-          needs_internalization ||
-          (sizeof(Char) == 1 && length < kMaxInternalizedStringValueLength);
-      return JsonString(start, length, convert, internalize, has_escape);
+      return JsonString(start, length, convert, needs_internalization,
+                        has_escape);
     }
 
     if (*cursor_ == '\\') {
@@ -2100,6 +2134,12 @@ MaybeHandle<Object> JsonParser<Char>::Parse(
     ASSIGN_RETURN_ON_EXCEPTION(isolate, result,
                                parser.ParseJson(collect_source_strings));
     val_node = parser.parsed_val_node_;
+    if (v8_flags.trace_json_parse_internalization) {
+      PrintF(
+          "[JSON.parse internalization] source length=%d "
+          "remaining budget for heuristic-based string internalization=%u\n",
+          source->length(), parser.remaining_heuristic_internalizations_);
+    }
   }
   if (IsCallable(*reviver)) {
     return JsonParseInternalizer::Internalize(isolate, result, reviver, source,

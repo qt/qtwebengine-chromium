@@ -648,26 +648,6 @@ bool WebSocket::AllowCookies(const GURL& url) const {
              url, isolation_info_.site_for_cookies()) == net::OK;
 }
 
-bool WebSocket::RevokeIfNonceMatches(const base::UnguessableToken& nonce) {
-  if (isolation_info_.nonce() != nonce) {
-    return false;
-  }
-
-  std::string message =
-      "This WebSocket is in a frame whose network access "
-      "is being revoked.";
-  DVLOG(3) << "WebSocketEventHandler::RevokeIfNonceMatches @"
-           << reinterpret_cast<void*>(this) << " " << message;
-  // OnAddChannelResponse may have already reset |impl_->handshake_client_| if
-  // the failure happened after a successful connection.
-  if (handshake_client_.is_bound()) {
-    handshake_client_->OnFailure(message, net::kWebSocketErrorGoingAway, -1);
-  }
-  client_.ResetWithReason(0, message);
-
-  return true;
-}
-
 int WebSocket::OnBeforeStartTransaction(
     const net::HttpRequestHeaders& headers,
     net::NetworkDelegate::OnBeforeStartTransactionCallback callback) {
@@ -748,9 +728,13 @@ void WebSocket::AddChannel(
       headers_to_pass.SetHeader(header->name, header->value);
     }
   }
-  channel_->SendAddChannelRequest(socket_url, requested_protocols, origin_,
-                                  storage_access_api_status, isolation_info,
-                                  headers_to_pass, traffic_annotation_);
+  channel_->SendAddChannelRequest(
+      socket_url, requested_protocols, origin_, storage_access_api_status,
+      isolation_info, headers_to_pass,
+      (options_ & mojom::kWebSocketOptionMaximumPriority)
+          ? net::WebSocketPriorityHint::kMaximum
+          : net::WebSocketPriorityHint::kDefault,
+      traffic_annotation_);
 }
 
 void WebSocket::OnWritable(MojoResult result,

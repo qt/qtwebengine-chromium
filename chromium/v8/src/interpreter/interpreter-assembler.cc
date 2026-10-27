@@ -7,6 +7,7 @@
 #include <limits>
 #include <ostream>
 
+#include "src/base/logging.h"
 #include "src/builtins/builtins-inl.h"
 #include "src/codegen/code-stub-assembler-inl.h"
 #include "src/codegen/interface-descriptors-inl.h"
@@ -148,11 +149,10 @@ TNode<BytecodeArray> InterpreterAssembler::BytecodeArrayTaggedPointer() {
 void InterpreterAssembler::UpdateEmbeddedFeedback(TNode<Smi> feedback,
                                                   int feedback_operand_index) {
 #ifndef V8_JITLESS
-  TNode<IntPtrT> feedback_value_offset =
+  TNode<IntPtrT> feedback_index_offset =
       BytecodeOperandOffset(feedback_operand_index);
-  CodeStubAssembler::UpdateEmbeddedFeedback(SmiToInt32(feedback),
-                                            BytecodeArrayTaggedPointer(),
-                                            feedback_value_offset);
+  CodeStubAssembler::UpdateEmbeddedFeedback(
+      feedback, BytecodeArrayTaggedPointer(), feedback_index_offset);
 #endif  // V8_JITLESS
 }
 
@@ -542,6 +542,7 @@ TNode<Int32T> InterpreterAssembler::BytecodeSignedOperand(
     case OperandSize::kNone:
       UNREACHABLE();
   }
+  UNREACHABLE();
 }
 
 TNode<Uint32T> InterpreterAssembler::BytecodeUnsignedOperand(
@@ -558,6 +559,7 @@ TNode<Uint32T> InterpreterAssembler::BytecodeUnsignedOperand(
     case OperandSize::kNone:
       UNREACHABLE();
   }
+  UNREACHABLE();
 }
 
 TNode<Uint32T> InterpreterAssembler::BytecodeOperandCount(int operand_index) {
@@ -721,7 +723,7 @@ TNode<Uint32T> InterpreterAssembler::BytecodeOperandEmbeddedFeedback(
             Bytecodes::GetOperandType(bytecode_, operand_index));
   OperandSize operand_size =
       Bytecodes::GetOperandSize(bytecode_, operand_index, operand_scale());
-  DCHECK_EQ(operand_size, OperandSize::kShort);
+  DCHECK_EQ(operand_size, OperandSize::kByte);
   return BytecodeUnsignedOperand(operand_index, operand_size);
 }
 
@@ -771,7 +773,8 @@ TNode<IntPtrT> InterpreterAssembler::BytecodeOperandOffset(int operand_index) {
 TNode<Object> InterpreterAssembler::LoadConstantPoolEntry(TNode<WordT> index) {
   TNode<TrustedFixedArray> constant_pool =
       LoadProtectedPointerField<TrustedFixedArray>(
-          BytecodeArrayTaggedPointer(), BytecodeArray::kConstantPoolOffset);
+          BytecodeArrayTaggedPointer(),
+          offsetof(BytecodeArray, constant_pool_));
   return CAST(LoadArrayElement(constant_pool,
                                OFFSET_OF_DATA_START(TrustedFixedArray),
                                UncheckedCast<IntPtrT>(index), 0));
@@ -1048,7 +1051,7 @@ TNode<Object> InterpreterAssembler::ConstructWithSpread(
           // Check that the JSFunction {current} is in the current native
           // context.
           TNode<Context> current_context =
-              CAST(LoadObjectField(current, JSFunction::kContextOffset));
+              CAST(LoadObjectField(current, offsetof(JSFunction, context_)));
           TNode<NativeContext> current_native_context =
               LoadNativeContext(current_context);
           Branch(
@@ -1060,7 +1063,7 @@ TNode<Object> InterpreterAssembler::ConstructWithSpread(
         {
           // Continue with the [[BoundTargetFunction]] of {current}.
           var_current = LoadObjectField<HeapObject>(
-              current, JSBoundFunction::kBoundTargetFunctionOffset);
+              current, offsetof(JSBoundFunction, bound_target_function_));
           Goto(&loop);
         }
       }
@@ -1159,8 +1162,8 @@ InterpreterAssembler::CallRuntimeN(TNode<Uint32T> function_id,
 TNode<Int32T> InterpreterAssembler::UpdateInterruptBudget(
     TNode<Int32T> weight) {
   TNode<JSFunction> function = LoadFunctionClosure();
-  TNode<FeedbackCell> feedback_cell =
-      LoadObjectField<FeedbackCell>(function, JSFunction::kFeedbackCellOffset);
+  TNode<FeedbackCell> feedback_cell = LoadObjectField<FeedbackCell>(
+      function, offsetof(JSFunction, feedback_cell_));
   TNode<Int32T> old_budget = LoadObjectField<Int32T>(
       feedback_cell, offsetof(FeedbackCell, interrupt_budget_));
 
@@ -1397,10 +1400,6 @@ void InterpreterAssembler::DispatchToBytecodeWithOptionalStarLookahead(
 
 void InterpreterAssembler::DispatchToBytecode(
     TNode<WordT> target_bytecode, TNode<IntPtrT> new_bytecode_offset) {
-  if (V8_IGNITION_DISPATCH_COUNTING_BOOL) {
-    TraceBytecodeDispatch(target_bytecode);
-  }
-
   TNode<RawPtrT> target_code_entry = Load<RawPtrT>(
       DispatchTablePointer(), TimesSystemPointerSize(target_bytecode));
 
@@ -1425,10 +1424,6 @@ void InterpreterAssembler::DispatchWide(OperandScale operand_scale) {
   DCHECK_IMPLIES(Bytecodes::MakesCallAlongCriticalPath(bytecode_), made_call_);
   TNode<IntPtrT> next_bytecode_offset = Advance(1);
   TNode<WordT> next_bytecode = LoadBytecode(next_bytecode_offset);
-
-  if (V8_IGNITION_DISPATCH_COUNTING_BOOL) {
-    TraceBytecodeDispatch(next_bytecode);
-  }
 
   TNode<IntPtrT> base_index;
   switch (operand_scale) {
@@ -1476,9 +1471,10 @@ void InterpreterAssembler::UpdateInterruptBudgetOnReturn() {
 TNode<Int8T> InterpreterAssembler::LoadOsrState(
     TNode<FeedbackVector> feedback_vector) {
   // We're loading an 8-bit field, mask it.
-  return UncheckedCast<Int8T>(Word32And(
-      LoadObjectField<Int8T>(feedback_vector, FeedbackVector::kOsrStateOffset),
-      0xFF));
+  return UncheckedCast<Int8T>(
+      Word32And(LoadObjectField<Int8T>(feedback_vector,
+                                       offsetof(FeedbackVector, osr_state_)),
+                0xFF));
 }
 
 void InterpreterAssembler::Abort(AbortReason abort_reason) {
@@ -1549,7 +1545,7 @@ void InterpreterAssembler::OnStackReplacement(
     BIND(&maybe_osr_to_opt);
     {
       TNode<Uint16T> flags = LoadObjectField<Uint16T>(
-          feedback_vector, FeedbackVector::kFlagsOffset);
+          feedback_vector, offsetof(FeedbackVector, flags_));
       TNode<Word32T> in_progress = Word32And(
           flags, Int32Constant(FeedbackVector::OsrTieringInProgressBit::kMask));
       GotoIf(Word32Equal(in_progress, 0), &osr_to_opt);
@@ -1563,7 +1559,7 @@ void InterpreterAssembler::OnStackReplacement(
     } else {
       DCHECK_EQ(params, OnStackReplacementParams::kDefault);
       TNode<SharedFunctionInfo> sfi = LoadObjectField<SharedFunctionInfo>(
-          LoadFunctionClosure(), JSFunction::kSharedFunctionInfoOffset);
+          LoadFunctionClosure(), offsetof(JSFunction, shared_function_info_));
       GotoIfSharedFunctionInfoHasBaselineCode(sfi, &osr_to_sparkplug);
       JumpBackward(relative_jump);
     }
@@ -1600,33 +1596,6 @@ void InterpreterAssembler::TraceBytecode(Runtime::FunctionId function_id) {
               SmiTag(BytecodeOffset()), GetAccumulatorUnchecked());
 }
 
-void InterpreterAssembler::TraceBytecodeDispatch(TNode<WordT> target_bytecode) {
-  TNode<ExternalReference> counters_table = ExternalConstant(
-      ExternalReference::interpreter_dispatch_counters(isolate()));
-  TNode<IntPtrT> source_bytecode_table_index = IntPtrConstant(
-      static_cast<int>(bytecode_) * (static_cast<int>(Bytecode::kLast) + 1));
-
-  TNode<WordT> counter_offset = TimesSystemPointerSize(
-      IntPtrAdd(source_bytecode_table_index, target_bytecode));
-  TNode<IntPtrT> old_counter = Load<IntPtrT>(counters_table, counter_offset);
-
-  Label counter_ok(this), counter_saturated(this, Label::kDeferred);
-
-  TNode<BoolT> counter_reached_max = WordEqual(
-      old_counter, IntPtrConstant(std::numeric_limits<uintptr_t>::max()));
-  Branch(counter_reached_max, &counter_saturated, &counter_ok);
-
-  BIND(&counter_ok);
-  {
-    TNode<IntPtrT> new_counter = IntPtrAdd(old_counter, IntPtrConstant(1));
-    StoreNoWriteBarrier(MachineType::PointerRepresentation(), counters_table,
-                        counter_offset, new_counter);
-    Goto(&counter_saturated);
-  }
-
-  BIND(&counter_saturated);
-}
-
 // static
 bool InterpreterAssembler::TargetSupportsUnalignedAccess() {
 #if V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_RISCV64 || V8_TARGET_ARCH_RISCV32
@@ -1644,7 +1613,7 @@ void InterpreterAssembler::AbortIfRegisterCountInvalid(
     TNode<FixedArray> parameters_and_registers, TNode<IntPtrT> parameter_count,
     TNode<UintPtrT> register_count) {
   TNode<IntPtrT> array_size =
-      LoadAndUntagFixedArrayBaseLength(parameters_and_registers);
+      LoadFixedArrayBaseLength(parameters_and_registers);
 
   Label ok(this), abort(this, Label::kDeferred);
   Branch(UintPtrLessThanOrEqual(IntPtrAdd(parameter_count, register_count),

@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "build/build_config.h"
+#include "core/fxcrt/bytestring.h"
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "public/cpp/fpdf_scopers.h"
@@ -97,7 +98,7 @@ class EmbedderTest : public ::testing::Test,
    public:
     ScopedSavedDoc();
     explicit ScopedSavedDoc(EmbedderTest* test);
-    ScopedSavedDoc(EmbedderTest* test, const char* password);
+    ScopedSavedDoc(EmbedderTest* test, const ByteString& password);
     ScopedSavedDoc(const ScopedSavedDoc&) = delete;
     ScopedSavedDoc& operator=(const ScopedSavedDoc&) = delete;
     ScopedSavedDoc(ScopedSavedDoc&&) noexcept;
@@ -183,11 +184,11 @@ class EmbedderTest : public ::testing::Test,
   // Open the document specified by `filename`, and create its form fill
   // environment, or return false on failure. The `filename` is relative to
   // the test data directory where we store all the test files. `password` can
-  // be nullptr if the file is not password protected. If `javascript_opts`
-  // is kDisableJavascript, then the document will be given stubs in place
-  // of the real JS engine.
+  // be an empty string if the file is not password protected. If
+  // `javascript_opts` is kDisableJavascript, then the document will be given
+  // stubs in place of the real JS engine.
   virtual bool OpenDocumentWithOptions(const std::string& filename,
-                                       const char* password,
+                                       const ByteString& password,
                                        LinearizeOption linearize_option,
                                        JavaScriptOption javascript_option);
 
@@ -195,7 +196,7 @@ class EmbedderTest : public ::testing::Test,
   bool OpenDocument(const std::string& filename);
   bool OpenDocumentLinearized(const std::string& filename);
   bool OpenDocumentWithPassword(const std::string& filename,
-                                const char* password);
+                                const ByteString& password);
   bool OpenDocumentWithoutJavaScript(const std::string& filename);
 
   // Close the document from a previous OpenDocument() call. This happens
@@ -290,7 +291,7 @@ class EmbedderTest : public ::testing::Test,
  protected:
   using PageNumberToHandleMap = std::map<int, FPDF_PAGE>;
 
-  bool OpenDocumentHelper(const char* password,
+  bool OpenDocumentHelper(const ByteString& password,
                           LinearizeOption linearize_option,
                           JavaScriptOption javascript_option,
                           FakeFileAccess* network_simulator,
@@ -355,7 +356,8 @@ class EmbedderTest : public ::testing::Test,
 
   // See comments in the respective non-Saved versions of these methods.
   ScopedSavedDoc OpenScopedSavedDocument();
-  ScopedSavedDoc OpenScopedSavedDocumentWithPassword(const char* password);
+  ScopedSavedDoc OpenScopedSavedDocumentWithPassword(
+      const ByteString& password);
   ScopedSavedPage LoadScopedSavedPage(int page_index);
   FPDF_PAGE LoadSavedPage(int page_index);
   void CloseSavedPage(FPDF_PAGE page);
@@ -406,7 +408,7 @@ class EmbedderTest : public ::testing::Test,
   // only. Callers should use the Scoped methods that manage lifetime
   // automatically.
   FPDF_DOCUMENT OpenSavedDocument();
-  FPDF_DOCUMENT OpenSavedDocumentWithPassword(const char* password);
+  FPDF_DOCUMENT OpenSavedDocumentWithPassword(const ByteString& password);
 
   // Closes a document opened via OpenSavedDocument(). This must only be invoked
   // in documents opened by the helpers above. This is intended for internal use

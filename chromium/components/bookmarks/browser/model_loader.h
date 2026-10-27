@@ -34,11 +34,12 @@ class ModelLoader : public base::RefCountedThreadSafe<ModelLoader> {
   using LoadCallback =
       base::OnceCallback<void(std::unique_ptr<BookmarkLoadDetails>)>;
 
-  // Invoked when bookmarks needs to be saved to disk. Only save the bookmarks
-  // to the file with the given encryption type. The other file will not be
-  // touched.
+  // Invoked when bookmarks `json_content` needs to be saved to disk. Only save
+  // the bookmarks to the file with the given encryption type. The other file
+  // will not be touched. `json_content` should be a clear text JSON string.
   using SaveSingleFileCallback =
-      base::OnceCallback<void(StorageFileEncryptionType encryption_type)>;
+      base::OnceCallback<void(StorageFileEncryptionType encryption_type,
+                              std::string json_content)>;
 
   // Creates the ModelLoader, and schedules loading on a backend task runner.
   // `callback` is run once loading completes (on the main thread).
@@ -60,8 +61,7 @@ class ModelLoader : public base::RefCountedThreadSafe<ModelLoader> {
   // unencrypted or encrypted bookmarks, see
   // BookmarkStorage::SaveBookmarksToSecondaryFile for more details.
   static scoped_refptr<ModelLoader> Create(
-      scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-          encryptor,
+      scoped_refptr<const os_crypt_async::Encryptor> encryptor,
       const base::FilePath& local_or_syncable_file_path,
       const base::FilePath& encrypted_local_or_syncable_file_path,
       const base::FilePath& account_file_path,
@@ -97,8 +97,7 @@ class ModelLoader : public base::RefCountedThreadSafe<ModelLoader> {
 
   // Performs the load on a background thread.
   std::unique_ptr<BookmarkLoadDetails> DoLoadOnBackgroundThread(
-      scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-          encryptor,
+      scoped_refptr<const os_crypt_async::Encryptor> encryptor,
       const base::FilePath& local_or_syncable_file_path,
       const base::FilePath& encrypted_local_or_syncable_file_path,
       const base::FilePath& account_file_path,

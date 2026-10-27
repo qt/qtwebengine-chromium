@@ -1,6 +1,8 @@
 // Benchmarks for self-adjoint (symmetric/hermitian) matrix operations.
 //
 // Tests SYMM (selfadjointView * dense) and rank-k updates.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>

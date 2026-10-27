@@ -5,9 +5,12 @@
 import("//build_overrides/build.gni")
 
 if (!build_with_chromium) {
-  config("valijson_config") {
+  config("valijson_private_config") {
     cflags_cc = [ "-Wno-extra-semi" ]
+    configs = [ "//build/config/compiler:no_exit_time_destructors" ]
+  }
 
+  config("valijson_config") {
     # NOTE: while this allows files to use #include "valijson/<foo>.hpp", Open
     # Screen files should use the fully qualified include and this should be
     # reserved for valijson files to include each other.
@@ -40,5 +43,6 @@ if (!build_with_chromium) {
 
     defines = [ "VALIJSON_USE_EXCEPTIONS=0" ]
     public_configs = [ ":valijson_config" ]
+    configs += [ ":valijson_private_config" ]
   }
 }

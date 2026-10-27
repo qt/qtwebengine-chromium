@@ -35,6 +35,7 @@
 #include "base/functional/function_ref.h"
 #include "base/gtest_prod_util.h"
 #include "base/time/time.h"
+#include "cc/metrics/begin_main_frame_metrics.h"
 #include "third_party/blink/public/common/metrics/document_update_reason.h"
 #include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/frame/viewport_intersection_state.mojom-blink.h"
@@ -72,7 +73,6 @@ class AnimationHost;
 class AnimationTimeline;
 class Layer;
 class PaintRecord;
-enum class PaintHoldingCommitTrigger;
 enum class PropertyChangeForcesCommitCriteria;
 struct PaintBenchmarkResult;
 }
@@ -344,6 +344,7 @@ class CORE_EXPORT LocalFrameView final
   void ViewportSizeChanged();
   void InvalidateLayoutForViewportConstrainedObjects();
   void DynamicViewportUnitsChanged();
+  void LargeViewportUnitsChanged();
 
   AtomicString MediaType() const;
   void SetMediaType(const AtomicString&);
@@ -541,9 +542,11 @@ class CORE_EXPORT LocalFrameView final
 
   void ServiceScrollAnimations(base::TimeTicks);
 
-  void ScheduleAnimation(base::TimeDelta = base::TimeDelta(),
-                         base::Location location = base::Location::Current(),
-                         bool urgent = false);
+  void ScheduleAnimation(
+      cc::BeginMainFrameReason reason = cc::BeginMainFrameReason::kOther,
+      base::TimeDelta = base::TimeDelta(),
+      base::Location location = base::Location::Current(),
+      bool urgent = false);
 
   void OnCommitRequested();
 
@@ -655,7 +658,6 @@ class CORE_EXPORT LocalFrameView final
   void Hide() override;
 
   bool IsLocalFrameView() const override { return true; }
-  bool ShouldReportMainFrameIntersection() const override { return true; }
 
   void Trace(Visitor*) const override;
 
@@ -1146,8 +1148,6 @@ class CORE_EXPORT LocalFrameView final
   DarkModeFilter& EnsureDarkModeFilter();
 
   void UpdateCanCompositeBackgroundAttachmentFixed();
-
-  void EnqueueScrollSnapChangingFromImplIfNecessary();
 
   void RunCanvasOnpaintSteps();
 

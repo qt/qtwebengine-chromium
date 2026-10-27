@@ -2,30 +2,29 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {assert, assertNotReachedCase} from '//resources/js/assert.js';
-import {EventTracker} from '//resources/js/event_tracker.js';
-import {CrLitElement, html} from '//resources/lit/v3_0/lit.rollup.js';
+import {assertNotReachedCase} from '//resources/js/assert.js';
+import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 import {type Range as MojomRange} from '//resources/mojo/ui/gfx/range/mojom/range.mojom-webui.js';
 
 import type {OmniboxViewState} from './browser_proxy.js';
+import {BrowserProxyImpl} from './browser_proxy.js';
+import type {BrowserProxy} from './browser_proxy.js';
 import {getCss} from './readonly_omnibox.css.js';
 import {getHtml} from './readonly_omnibox.html.js';
+import {getEventDispositionFlags} from './toolbar_button.js';
 import type {OmniboxTextPortion} from './toolbar_ui_api_data_model.mojom-webui.js';
 import {OmniboxTextColor} from './toolbar_ui_api_data_model.mojom-webui.js';
-
-enum UserSelectionStatus {
-  NOT_SET = 0,
-  EXPLICITLY_CLEARED = 1
-}
 
 export interface ReadonlyOmniboxElement {
   $: {
     textContainer: HTMLElement,
     textContainerWrap: HTMLElement,
+    textInput: HTMLInputElement,
   };
 }
 
+// TODO(crbug.com/500653057): Rename since it's no longer readonly.
 export class ReadonlyOmniboxElement extends CrLitElement {
   static get is() {
     return 'readonly-omnibox';
@@ -41,287 +40,305 @@ export class ReadonlyOmniboxElement extends CrLitElement {
 
   static override get properties() {
     return {
+      // State pushed by browser.
+      browserOmniboxState: {type: Object},
+
+      // Current state on this side.
       omniboxViewState: {type: Object},
     };
   }
 
-  accessor omniboxViewState: OmniboxViewState = {
+  accessor browserOmniboxState: OmniboxViewState = {
+    browserVersion: 0,
+    uiVersion: 0,
     textPieces: [],
+    inlineAutocompletion: '',
     selection: null,
     textIsUrl: false,
   };
 
-  private eventTracker: EventTracker = new EventTracker();
+  accessor omniboxViewState: OmniboxViewState =
+      Object.assign(this.browserOmniboxState);
 
-  // Selection state set here, rather than gotten from the browser.
-  private userSelection: MojomRange|UserSelectionStatus =
-      UserSelectionStatus.NOT_SET;
+  // The portion of the text that the user entered or accepted (rather than
+  // what's being merely suggested by inline autocompletion).
+  private userText: string = '';
 
-  override connectedCallback() {
-    super.connectedCallback();
-    this.eventTracker.add(
-        document, 'selectionchange', this.onSelectionChange.bind(this));
+  private browserProxy_: BrowserProxy = BrowserProxyImpl.getInstance();
+
+  // Keys that may need to be forwarded to the browser.
+  private maybeForwardKeys: Set<string>;
+
+  constructor() {
+    super();
+    this.maybeForwardKeys = new Set([
+      'Control',
+      'Enter',
+      'Escape',
+      'ArrowUp',
+      'ArrowDown',
+      ' ',
+      'Backspace',
+    ]);
   }
 
-  override disconnectedCallback() {
-    super.disconnectedCallback();
-    this.eventTracker.removeAll();
+  override willUpdate(changedProperties: PropertyValues<this>): void {
+    super.willUpdate(changedProperties);
+    if (changedProperties.has('browserOmniboxState')) {
+      // Updates are accepted either if browser version changes, or if the
+      // ui version matches.
+      if ((this.browserOmniboxState.browserVersion ===
+           this.omniboxViewState.browserVersion) &&
+          (this.browserOmniboxState.uiVersion !==
+           this.omniboxViewState.uiVersion)) {
+        return;
+      }
+
+      this.omniboxViewState = Object.assign(this.browserOmniboxState);
+    }
   }
 
   override firstUpdated(changedProperties: PropertyValues<this>): void {
     super.firstUpdated(changedProperties);
-    this.addEventListener('blur', this.onBlur.bind(this));
-    this.addEventListener('focus', this.onFocus.bind(this));
     this.$.textContainerWrap.addEventListener(
         'focus', this.onWrapFocus.bind(this));
+    const textInput = this.$.textInput;
+    textInput.addEventListener('focus', this.onInputFocus.bind(this));
+    textInput.addEventListener('blur', this.onInputBlur.bind(this));
+    textInput.addEventListener('input', this.onInputInput.bind(this));
+    textInput.addEventListener('keydown', this.onInputKeyDown.bind(this));
+    textInput.addEventListener('keyup', this.onInputKeyUp.bind(this));
   }
 
   override updated(changedProperties: PropertyValues<this>): void {
     super.updated(changedProperties);
     if (changedProperties.has('omniboxViewState')) {
-      // We got fresh state from browser, so drop saved user selection ---
-      // either the browser changed the URL, so it's not gonna make sense,
-      // or it specifically wants specific things selected (or not).
-      this.userSelection = UserSelectionStatus.NOT_SET;
-      this.updateSelection();
-
       this.$.textContainer.classList.toggle(
           'force-ltr', this.omniboxViewState.textIsUrl);
-    }
-  }
 
-  // Update displayed selection/caret based on browser-provided state
-  // (`this.omniboxViewState`) and saved user selection (`this.userSelection`),
-  // clearing it if the omnibox is not focused.
-  // In the latter case, also makes sure to scroll long URLs to beginning.
-  private updateSelection() {
-    const textContainer = this.$.textContainer;
-    let selectionState: MojomRange|null;
-    if (this.userSelection === UserSelectionStatus.EXPLICITLY_CLEARED) {
-      selectionState = null;
-    } else if (this.userSelection === UserSelectionStatus.NOT_SET) {
-      selectionState = this.omniboxViewState.selection;
-    } else {
-      selectionState = this.userSelection;
-    }
+      this.userText = this.$.textContainer.textContent;
+      let selection = this.omniboxViewState.selection;
 
-    const selection = document.getSelection();
-    if (!selection) {
-      return;
-    }
-
-    // Range doesn't have Views's backwards selection feature, so normalize.
-    if (selectionState && selectionState.start > selectionState.end) {
-      selectionState = {start: selectionState.end, end: selectionState.start};
-    }
-
-    if (this.hasFocus() && selectionState) {
-      selection.removeAllRanges();
-      const textChildren = this.textChildren();
-      if (textChildren.length) {
-        const range = document.createRange();
-        const start =
-            this.globalOffsetToNodeRel(textChildren, selectionState.start);
-        const end =
-            this.globalOffsetToNodeRel(textChildren, selectionState.end);
-
-        assert(start[0]);
-        assert(end[0]);
-        range.setStart(start[0], start[1]);
-        range.setEnd(end[0], end[1]);
-        selection.addRange(range);
+      // If there is an inline autocompletion, render it as selected text
+      // after the input.
+      // TODO(crbug.com/500653057): We will likely need to do something
+      // different when IME is popped up.
+      if (this.omniboxViewState.inlineAutocompletion.length > 0) {
+        selection = {
+          start: this.userText.length,
+          end: this.userText.length +
+              this.omniboxViewState.inlineAutocompletion.length,
+        };
       }
-    } else if (selection.containsNode(
-                   textContainer, /*allowPartialContainment=*/ true)) {
-      // Make sure we make the beginning of the line visible.
-      textContainer.scrollLeft = 0;
 
-      // We should clear selection if it's with us and we're not focused or
-      // it's blank in state.
-      selection.removeAllRanges();
+      const allText =
+          this.userText + this.omniboxViewState.inlineAutocompletion;
+      if (this.$.textInput.value !== allText) {
+        this.$.textInput.value = allText;
+      }
+
+      if (selection) {
+        let selectionDirection: SelectionDirection = 'forward';
+        if (selection.start > selection.end) {
+          selection = {start: selection.end, end: selection.start};
+          selectionDirection = 'backward';
+        }
+
+        this.$.textInput.setSelectionRange(
+            selection.start, selection.end, selectionDirection);
+      }
+
+      if (!this.hasFocus()) {
+        // Make sure we make the beginning of the line visible when we're not
+        // focused.
+        this.$.textContainer.scrollLeft = 0;
+      }
     }
   }
 
   private hasFocus(): boolean {
     return document.hasFocus() &&
-        this.shadowRoot.activeElement === this.$.textContainer;
+        this.shadowRoot.activeElement === this.$.textInput;
   }
 
-  private onBlur(): void {
-    this.updateSelection();
+  private onInputBlur(): void {
+    // Make the read-only view visible.
+    this.$.textContainer.style.zIndex = '1';
+
+    this.browserProxy_.toolbarUIHandler.onOmniboxAction({
+      focusChange: {
+        hasFocus: false,
+        selection: this.getSelection(),
+      },
+    });
   }
 
-  private onFocus(): void {
-    // TODO(crbug.com/474060468): The Views behavior is pretty subtle here: it
+  private onInputFocus(): void {
+    // Make the <input> visible.
+    this.$.textContainer.style.zIndex = '-1';
+
+    // TODO(crbug.com/500653057): The Views behavior is pretty subtle here: it
     // mostly selects all but you can drag-select to get that specific
     // selection. Focus restore only seems to happen on keyboard focus.
-    this.updateSelection();
+    this.browserProxy_.toolbarUIHandler.onOmniboxAction({
+      focusChange: {
+        hasFocus: true,
+        selection: this.getSelection(),
+      },
+    });
   }
 
-  // Called when the selection in the document is changed. If this happened when
-  // this has the focus, update `state.userSelection` to match.
-  //
-  // TODO(crbug.com/474060468): We need to push selection to the browser. This
-  // needs to worry about asynchrony.
-  private onSelectionChange(): void {
-    // TODO(crbug.com/474060468): This does weird stuff if other things can get
-    // selection, which can hypothetically happen much down the line.
+  // Sync ups the textPieces to be an unhighlighted version of `userText`.
+  private updateTextPiecesFromUserText() {
+    this.omniboxViewState.textPieces = [{
+      text: this.userText,
+      strikethrough: false,
+      color: OmniboxTextColor.kOmniboxText,
+    }];
+    this.requestUpdate();  // Since our changes were deep.
+  }
 
-    // Ignore changes if we're not focused; this helps ignore our own
-    // clearing of it in this case.
-    if (!this.hasFocus()) {
-      return;
+  private onInputInput(): void {
+    // If we got here (rather than blocking things in onInputKeyDown),
+    // there is no longer any inline completion.
+    this.userText = this.$.textInput.value;
+
+    // Sync up the read-only view to have the right text.
+    ++this.omniboxViewState.uiVersion;
+    this.omniboxViewState.inlineAutocompletion = '';
+    this.updateTextPiecesFromUserText();
+
+    this.browserProxy_.toolbarUIHandler.onOmniboxAction({
+      textInput: {
+        uiVersion: this.omniboxViewState.uiVersion,
+        browserVersion: this.omniboxViewState.browserVersion,
+        text: this.$.textInput.value,
+        inlineAutocompletion: '',
+        selection: this.getSelection(),
+      },
+    });
+  }
+
+  private onInputKeyDown(event: KeyboardEvent): void {
+    const inlineAutocompletion = this.omniboxViewState.inlineAutocompletion;
+    if (inlineAutocompletion.length > 0) {
+      // If the current input state (its value and selection) matches its last
+      // state (text and inline autocompletion) and the user types the next
+      // character in the inline autocompletion, stop the keydown event. Just
+      // move the selection. This is needed to avoid flicker. (Shamelessly
+      // adapted from searchbox_input.ts).
+      const inputValue = this.$.textInput.value;
+      let textPortionLength = this.$.textInput.selectionStart!;
+      const inputSelection = inputValue.substring(
+          textPortionLength, this.$.textInput.selectionEnd!);
+      if (inlineAutocompletion[0]!.toLocaleLowerCase() ===
+              event.key.toLocaleLowerCase() &&
+          inputSelection === inlineAutocompletion &&
+          inputValue === (this.userText + inlineAutocompletion)) {
+        ++textPortionLength;
+        this.$.textInput.selectionStart = textPortionLength;
+        this.userText = inputValue.substr(0, textPortionLength);
+        this.omniboxViewState.inlineAutocompletion =
+            inlineAutocompletion.substr(1);
+        ++this.omniboxViewState.uiVersion;
+        this.updateTextPiecesFromUserText();
+
+        this.browserProxy_.toolbarUIHandler.onOmniboxAction({
+          textInput: {
+            uiVersion: this.omniboxViewState.uiVersion,
+            browserVersion: this.omniboxViewState.browserVersion,
+            text: this.userText,
+            inlineAutocompletion: this.omniboxViewState.inlineAutocompletion,
+            selection: {
+              start: textPortionLength,
+              end: textPortionLength,
+            },
+          },
+        });
+
+        event.preventDefault();
+        return;
+      }
     }
 
-    const selection = document.getSelection();
-    if (!selection) {
-      return;
-    }
-    const ranges =
-        selection.getComposedRanges({shadowRoots: [this.shadowRoot]});
-    if (ranges.length === 0) {
-      this.userSelection = UserSelectionStatus.EXPLICITLY_CLEARED;
-      return;
-    }
+    if (this.maybeForwardKeys.has(event.key)) {
+      // TODO(crbug.com/503785596): shouldn't do this if shift is down.
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault();
+      }
 
-    assert(ranges.length === 1);
-    assert(ranges[0]);
-    const range = ranges[0];
-    const textChildren = this.textChildren();
-    if (textChildren.length === 0 || !range.startContainer ||
-        !range.endContainer) {
-      return;
+      // Backspace is only relevant to the other end if we're at the very
+      // beginning (where it deletes the search keyword rather than a
+      // character).
+      if (event.key === 'Backspace' &&
+          (this.$.textInput.selectionStart! !== 0 ||
+           this.$.textInput.selectionEnd! !== 0)) {
+        return;
+      }
+
+      this.browserProxy_.toolbarUIHandler.onOmniboxAction({
+        key: {
+          key: event.key,
+          isKeyDown: true,
+          selection: this.getSelection(),
+          modifiers: getEventDispositionFlags(event),
+        },
+      });
     }
+  }
 
-    // Convert from StaticRange to full DOM Range for the API access.
-    const domRange = document.createRange();
-    domRange.setStart(range.startContainer, range.startOffset);
-    domRange.setEnd(range.endContainer, range.endOffset);
+  private onInputKeyUp(event: KeyboardEvent): void {
+    // OmniboxEditModel keeps track of state of control key separately, and
+    // needs to be notified of its releases. Everything else is handled on
+    // keydown.
+    if (event.key === 'Control') {
+      this.browserProxy_.toolbarUIHandler.onOmniboxAction({
+        key: {
+          key: event.key,
+          isKeyDown: false,
+          selection: this.getSelection(),
+          modifiers: getEventDispositionFlags(event),
+        },
+      });
+    }
+  }
 
-    this.userSelection = {
-      start: ReadonlyOmniboxElement.nodeRelToGlobalOffsetStart(
-          textChildren, domRange),
-      end: ReadonlyOmniboxElement.nodeRelToGlobalOffsetEnd(
-          textChildren, domRange),
+  private getSelection(): MojomRange {
+    // selectionStart/End should work since <input> is of appropriate type
+    // for them.
+    let selection: MojomRange = {
+      start: this.$.textInput.selectionStart || 0,
+      end: this.$.textInput.selectionEnd || 0,
     };
+
+    if (this.$.textInput.selectionDirection === 'backward') {
+      selection = {
+        end: selection.start,
+        start: selection.end,
+      };
+    }
+
+    return selection;
   }
 
   private onWrapFocus(): void {
     // We forward focus requests from the entirety of textContainerWrap to
-    // textContainer.
-    this.$.textContainer.focus();
+    // textInput.
+    this.$.textInput.focus();
   }
 
-  // Given character offset `offset`, returns which of `textChildren`
-  // (representing pieces of the overall text) and the offset into that
-  // child, that correspond to it. Will return null for the node if `offset`
-  // is out of range.
-  private globalOffsetToNodeRel(textChildren: Text[], offset: number):
-      [Text|null, number] {
-    for (const child of textChildren) {
-      if (offset <= child.length) {
-        return [child, offset];
-      }
-      offset -= child.length;
-    }
-    return [null, 0];
-  }
-
-  // Assuming the overall text is represented as concatenation of
-  // `textChildren`, returns the offset into the text corresponding to the
-  // beginning of `range`.
-  static nodeRelToGlobalOffsetStart(textChildren: Text[], range: Range):
-      number {
-    let offset = 0;
-    for (const child of textChildren) {
-      if (child === range.startContainer) {
-        return offset + range.startOffset;
-      }
-
-      const rel = range.comparePoint(child, 0);
-      if (rel === -1) {
-        // The child is before the range (and isn't startContainer),
-        // so the text offset should skip it.
-        offset += child.length;
-      } else {
-        // The text child is within the range (and isn't startContainer), or
-        // after, so we skipped over everything that needs to be skipped.
-        break;
-      }
-    }
-    return offset;
-  }
-
-  // Assuming the overall text is represented as concatenation of
-  // `textChildren`, returns the offset into the text corresponding to the
-  // end of `range`.
-  static nodeRelToGlobalOffsetEnd(textChildren: Text[], range: Range): number {
-    let offset = 0;
-    for (const child of textChildren) {
-      offset += child.length;
-    }
-
-    for (let i = textChildren.length - 1; i >= 0; --i) {
-      const child = textChildren[i]!;
-
-      if (child === range.endContainer) {
-        return offset - child.length + range.endOffset;
-      }
-
-      const rel = range.comparePoint(child, 0);
-      if (rel === 1) {
-        // The child is after the range (and isn't endContainer),
-        // so the text offset should skip it.
-        offset -= child.length;
-      } else {
-        // The text child is within the range (and isn't endContainer) or
-        // before, so we skipped over everything that needs to be skipped.
-        break;
-      }
-    }
-    return offset;
-  }
-
-  // Return all Text nodes that are descendants of the textContainer.
-  textChildren(): Text[] {
-    const result: Text[] = [];
-    this.collectTextChildren(this.$.textContainer, result);
-    return result;
-  }
-
-  // Helper to recursively accumulate Text nodes into `out` starting from
-  // `node`.
-  private collectTextChildren(node: Node|null, out: Text[]): void {
-    if (!node) {
-      return;
-    }
-
-    if (node.nodeType === Node.TEXT_NODE) {
-      out.push(node as Text);
-      return;
-    }
-
-    if (node.nodeType === Node.ELEMENT_NODE) {
-      node = node.firstChild;
-      while (node) {
-        this.collectTextChildren(node, out);
-        node = node.nextSibling;
-      }
-    }
-  }
-
-  // Returns an html template for rendering the given text piece.
-  static renderTextPiece(piece: OmniboxTextPortion) {
-    let classes = '';
+  // Returns the CSS classes for rendering the given text piece.
+  static getTextPieceClasses(piece: OmniboxTextPortion): string {
+    const classes = [];
     switch (piece.color) {
       case OmniboxTextColor.kOmniboxTextDimmed:
-        classes = 'color-dim ';
+        classes.push('color-dim');
         break;
       case OmniboxTextColor.kOmniboxForegroundDisabled:
-        classes = 'color-foreground-disabled ';
+        classes.push('color-foreground-disabled');
         break;
       case OmniboxTextColor.kOmniboxSecurityChipDangerous:
-        classes = 'color-danger ';
+        classes.push('color-danger');
         break;
       case OmniboxTextColor.kUnspecified:
         console.error('Unexected kUnspecified for text color');
@@ -333,9 +350,9 @@ export class ReadonlyOmniboxElement extends CrLitElement {
         assertNotReachedCase(piece.color);
     }
     if (piece.strikethrough) {
-      classes += 'strikethrough';
+      classes.push('strikethrough');
     }
-    return html`<span class='${classes}'>${piece.text}</span>`;
+    return classes.join(' ');
   }
 }
 

@@ -214,6 +214,8 @@ ash/webui/personalization_app/mojom/personalization_app.mojom -->
   <int value="2" label="Fingerprint"/>
 </enum>
 
+<!-- LINT.IfChange(AuthMethod) -->
+
 <enum name="AuthMethod">
   <int value="0" label="Password"/>
   <int value="1" label="PIN"/>
@@ -222,6 +224,10 @@ ash/webui/personalization_app/mojom/personalization_app.mojom -->
   <int value="4" label="Challenge-response"/>
   <int value="5" label="Nothing"/>
 </enum>
+
+<!-- LINT.ThenChange(//chrome/browser/ash/login/login_auth_recorder.h:AuthMethod) -->
+
+<!-- LINT.IfChange(AuthMethodSwitchType) -->
 
 <enum name="AuthMethodSwitchType">
   <int value="0" label="Password to PIN"/>
@@ -243,6 +249,8 @@ ash/webui/personalization_app/mojom/personalization_app.mojom -->
   <int value="16" label="Nothing to Fingerprint"/>
   <int value="17" label="Nothing to Challenge-response"/>
 </enum>
+
+<!-- LINT.ThenChange(//chrome/browser/ash/login/login_auth_recorder.h:AuthMethodSwitchType) -->
 
 <!-- LINT.IfChange(BabelOrcaReceivingStoppedReason) -->
 
@@ -420,12 +428,6 @@ ash/webui/personalization_app/mojom/personalization_app.mojom -->
   <int value="1" label="kBottomLeft"/>
   <int value="2" label="kBottomRight"/>
   <int value="3" label="kTopRight"/>
-</enum>
-
-<enum name="CameraPrivacySwitchEvent">
-  <int value="0" label="Camera privacy switch toggled on"/>
-  <int value="1" label="Camera privacy switch toggled off"/>
-  <int value="2" label="Camera privacy switch on notification shown"/>
 </enum>
 
 <enum name="CaptureModeBarButtonType">
@@ -1529,21 +1531,6 @@ ash/webui/personalization_app/mojom/personalization_app.mojom -->
   <int value="1" label="Group Child"/>
 </enum>
 
-<enum name="HapticClickSensitivity">
-  <int value="1" label="1"/>
-  <int value="2" label="2"/>
-  <int value="3" label="3"/>
-  <int value="4" label="4"/>
-  <int value="5" label="5"/>
-</enum>
-
-<enum name="HotseatInAppGesture">
-  <int value="0" label="Swipe up the hotseat"/>
-  <int value="1" label="Swipe down the hotseat"/>
-  <int value="2" label="Fling up the hotseat to show homescreen"/>
-  <int value="3" label="Interact outside of shelf to hide hotseat"/>
-</enum>
-
 <enum name="KcerPkcs12MigrationEvent">
   <int value="0" label="MigrationStarted"/>
   <int value="1" label="NothingToMigrate"/>
@@ -1913,15 +1900,6 @@ chromeos/ash/components/peripheral_notification/peripheral_notification_manager.
   <int value="2" label="kLightPink"/>
   <int value="3" label="kDarkGreen"/>
   <int value="4" label="kLightPurple"/>
-</enum>
-
-<enum name="PersonalizationEntryPoint">
-  <int value="0" label="Home Screen"/>
-  <int value="1" label="System Tray"/>
-  <int value="2" label="Launcher search"/>
-  <int value="3" label="Settings"/>
-  <int value="4" label="Settings search"/>
-  <int value="5" label="Keyboard brightness slider"/>
 </enum>
 
 <enum name="PersonalizationKeyboardBacklightColor">
@@ -3305,11 +3283,6 @@ chromeos/ash/components/peripheral_notification/peripheral_notification_manager.
   <int value="1" label="Center Cropped"/>
   <int value="2" label="Stretch"/>
   <int value="3" label="Tile"/>
-</enum>
-
-<enum name="WallpaperMigrationFailureReason">
-  <int value="0" label="Failed to fetch online variants"/>
-  <int value="1" label="Failed to find a valid online variant"/>
 </enum>
 
 <enum name="WallpaperMigrationStatus">

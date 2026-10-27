@@ -5,7 +5,7 @@
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as SDK from '../../core/sdk/sdk.js';
-import * as HeapSnapshotModel from '../../models/heap_snapshot_model/heap_snapshot_model.js';
+import * as HeapSnapshotModel from '../../models/heap_snapshot/heap_snapshot.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -300,7 +300,7 @@ export class HeapSnapshotSortableDataGrid extends Common.ObjectWrapper
       let field1 = nodeA[sortFields.fieldName1];
       // @ts-expect-error
       let field2 = nodeB[sortFields.fieldName1];
-      let result: number|(0 | 1 | -1) = field1 < field2 ? -1 : (field1 > field2 ? 1 : 0);
+      let result: number = field1 < field2 ? -1 : (field1 > field2 ? 1 : 0);
       if (!sortFields.ascending1) {
         result = -result;
       }

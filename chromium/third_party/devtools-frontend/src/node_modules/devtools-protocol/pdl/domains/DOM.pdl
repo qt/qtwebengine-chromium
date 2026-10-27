@@ -13,6 +13,7 @@
 # corresponding document elements as their child nodes.
 domain DOM
   depends on Runtime
+  depends on Network
 
   # Unique DOM node identifier.
   type NodeId extends integer
@@ -20,6 +21,9 @@ domain DOM
   # Unique DOM node identifier used to reference a node that may not have been pushed to the
   # front-end.
   type BackendNodeId extends integer
+
+  # Unique identifier for a CSS stylesheet.
+  type StyleSheetId extends string
 
   # Backend node with a friendly name.
   type BackendNode extends object
@@ -38,6 +42,7 @@ domain DOM
       checkmark
       before
       after
+      expand-icon
       picker-icon
       interest-hint
       marker
@@ -72,6 +77,7 @@ domain DOM
       details-content
       picker
       permission-icon
+      overscroll-area-parent
 
   # Shadow root type.
   type ShadowRootType extends string
@@ -178,6 +184,8 @@ domain DOM
       optional BackendNode assignedSlot
       experimental optional boolean isScrollable
       experimental optional boolean affectedByStartingStyles
+      experimental optional array of StyleSheetId adoptedStyleSheets
+      experimental optional Network.AdProvenance adProvenance
 
   # A structure to hold the top-level node of a detached tree and an array of its retained descendants.
   type DetachedElementInfo extends object
@@ -821,6 +829,14 @@ domain DOM
       # Attribute value.
       string value
 
+  # Fired when `Element`'s adoptedStyleSheets are modified.
+  experimental event adoptedStyleSheetsModified
+    parameters
+      # Id of the node that has changed.
+      NodeId nodeId
+      # New adoptedStyleSheets array.
+      experimental array of StyleSheetId adoptedStyleSheets
+
   # Fired when `Element`'s attribute is removed.
   event attributeRemoved
     parameters
@@ -898,6 +914,14 @@ domain DOM
       DOM.NodeId nodeId
       # If the node is scrollable.
       boolean isScrollable
+
+  # Fired when a node's ad related state changes.
+  experimental event adRelatedStateUpdated
+    parameters
+      # The id of the node.
+      DOM.NodeId nodeId
+      # The provenance of the ad related node, if it is ad related.
+      optional Network.AdProvenance adProvenance
 
   # Fired when a node's starting styles changes.
   experimental event affectedByStartingStylesFlagUpdated

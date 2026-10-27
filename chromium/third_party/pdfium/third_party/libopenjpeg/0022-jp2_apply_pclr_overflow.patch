@@ -28,7 +28,7 @@ index 38715b80f..dcaf3872c 100644
 +        /* Prevent null pointer access */
 +        if (!src || !dst) {
 +          for (j = 0; j < nr_channels; ++j) {
-+            opj_free(new_comps[j].data);
++            opj_image_data_free(new_comps[j].data);
 +          }
 +          opj_free(new_comps);
 +          new_comps = NULL;

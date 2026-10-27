@@ -369,6 +369,9 @@ class Texture final : public RefCountObject<TextureID>,
     void setMaxLod(const Context *context, GLfloat maxLod);
     GLfloat getMaxLod() const;
 
+    void setLodBias(const Context *context, GLfloat lodBias);
+    GLfloat getLodBias() const;
+
     void setCompareMode(const Context *context, GLenum compareMode);
     GLenum getCompareMode() const;
 
@@ -638,6 +641,10 @@ class Texture final : public RefCountObject<TextureID>,
     bool isSamplerComplete(const Context *context, const Sampler *optionalSampler);
     bool isSamplerCompleteForCopyImage(const Context *context,
                                        const Sampler *optionalSampler) const;
+    // Check the rules in Framebuffer Attachment Completeness sections, excluding those related to
+    // framebuffer layers.  If a texture is immutable, always returns true, otherwise checks
+    // cube-completeness, mip-completeness, etc, if necessary.
+    bool isFramebufferAttachmentComplete(GLuint attachmentMipLevel, const char **error) const;
 
     GLenum getImplementationColorReadFormat(const Context *context) const;
     GLenum getImplementationColorReadType(const Context *context) const;
@@ -737,6 +744,7 @@ class Texture final : public RefCountObject<TextureID>,
         DIRTY_BIT_DEPTH_STENCIL_TEXTURE_MODE,
         DIRTY_BIT_RENDERABILITY_VALIDATION_ANGLE,
         DIRTY_BIT_ASTC_DECODE_PRECISION,
+        DIRTY_BIT_LOD_BIAS_QCOM,
 
         // Image state
         DIRTY_BIT_BOUND_AS_IMAGE,

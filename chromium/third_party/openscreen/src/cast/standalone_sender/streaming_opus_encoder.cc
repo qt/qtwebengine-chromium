@@ -93,10 +93,6 @@ void StreamingOpusEncoder::EncodeAndSend(const float* interleaved_samples,
 
   ResolveTimestampsAndMaybeSkip(reference_time);
 
-  if (frame_.capture_begin_time == Clock::time_point::min()) {
-    frame_.capture_begin_time = capture_begin_time;
-  }
-  frame_.capture_end_time = capture_end_time;
   while (num_samples > 0) {
     const int samples_copied =
         FillInputBuffer(interleaved_samples, num_samples);
@@ -112,7 +108,7 @@ void StreamingOpusEncoder::EncodeAndSend(const float* interleaved_samples,
                           output_.get(), kOpusMaxPayloadSize);
     num_samples_queued_ = 0;
     if (packet_size_or_error < 0) {
-      OSP_LOG_FATAL << "AUDIO[" << sender_->ssrc()
+      OSP_LOG_FATAL << "AUDIO[" << sender_->config().sender_ssrc
                     << "] Error code from opus_encode_float(): "
                     << packet_size_or_error;
       return;
@@ -124,16 +120,18 @@ void StreamingOpusEncoder::EncodeAndSend(const float* interleaved_samples,
     // audio frame anyway, to represent the passage of silence and to send other
     // stream metadata.
     frame_.data = ByteView(output_.get(), packet_size_or_error);
+    frame_.capture_begin_time = capture_begin_time;
+    frame_.capture_end_time = capture_end_time;
     last_sent_frame_reference_time_ = frame_.reference_time;
     switch (sender_->EnqueueFrame(frame_)) {
       case Sender::OK:
         break;
       case Sender::REACHED_ID_SPAN_LIMIT:
-        OSP_LOG_WARN << "AUDIO[" << sender_->ssrc()
+        OSP_LOG_WARN << "AUDIO[" << sender_->config().sender_ssrc
                      << "] Dropping: FrameId span limit reached.";
         break;
       case Sender::MAX_DURATION_IN_FLIGHT:
-        OSP_LOG_INFO << "AUDIO[" << sender_->ssrc()
+        OSP_LOG_INFO << "AUDIO[" << sender_->config().sender_ssrc
                      << "] Dropping: In-flight duration would be too high.";
         break;
       case Sender::PAYLOAD_TOO_LARGE:

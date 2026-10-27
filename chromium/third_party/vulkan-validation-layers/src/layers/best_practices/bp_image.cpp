@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -20,6 +20,7 @@
 #include "best_practices/best_practices_validation.h"
 #include "best_practices/bp_state.h"
 #include "state_tracker/queue_state.h"
+#include "generated/dispatch_functions.h"
 
 bool BestPractices::PreCallValidateCreateImage(VkDevice device, const VkImageCreateInfo* pCreateInfo,
                                                const VkAllocationCallbacks* pAllocator, VkImage* pImage,
@@ -93,7 +94,7 @@ bool BestPractices::PreCallValidateCreateImage(VkDevice device, const VkImageCre
             (pCreateInfo->sharingMode == VK_SHARING_MODE_CONCURRENT)) {
             skip |= LogPerformanceWarning("BestPractices-AMD-vkImage-AvoidConcurrentRenderTargets", device, error_obj.location,
                                           "%s Trying to create an image as a render target with VK_SHARING_MODE_CONCURRENT. "
-                                          "Using a SHARING_MODE_CONCURRENT "
+                                          "Using SHARING_MODE_CONCURRENT "
                                           "is not recommended with color and depth targets",
                                           VendorSpecificTag(kBPVendorAMD));
         }
@@ -104,17 +105,16 @@ bool BestPractices::PreCallValidateCreateImage(VkDevice device, const VkImageCre
             skip |=
                 LogPerformanceWarning("BestPractices-AMD-vkImage-DontUseMutableRenderTargets", device, error_obj.location,
                                       "%s Trying to create an image as a render target with VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT. "
-                                      "Using a MUTABLE_FORMAT is not recommended with color, depth, and storage targets",
+                                      "Using MUTABLE_FORMAT is not recommended with color, depth, and storage targets",
                                       VendorSpecificTag(kBPVendorAMD));
         }
 
         if ((pCreateInfo->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) &&
             (pCreateInfo->usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
-            skip |=
-                LogPerformanceWarning("BestPractices-AMD-vkImage-DontUseStorageRenderTargets", device, error_obj.location,
-                                      "%s Trying to create an image as a render target with VK_IMAGE_USAGE_STORAGE_BIT. Using a "
-                                      "VK_IMAGE_USAGE_STORAGE_BIT is not recommended with color and depth targets",
-                                      VendorSpecificTag(kBPVendorAMD));
+            skip |= LogPerformanceWarning("BestPractices-AMD-vkImage-DontUseStorageRenderTargets", device, error_obj.location,
+                                          "%s Trying to create an image as a render target with VK_IMAGE_USAGE_STORAGE_BIT. Using "
+                                          "VK_IMAGE_USAGE_STORAGE_BIT is not recommended with color and depth targets",
+                                          VendorSpecificTag(kBPVendorAMD));
         }
     }
 
@@ -150,12 +150,12 @@ void BestPractices::QueueValidateImage(QueueCallbacks& funcs, const Location& lo
                                        IMAGE_SUBRESOURCE_USAGE_BP usage, const VkImageSubresourceRange& subresource_range) {
     // If we're viewing a 3D slice, ignore base array layer.
     // The entire 3D subresource is accessed as one atomic unit.
-    const uint32_t base_array_layer = image_state.create_info.imageType == VK_IMAGE_TYPE_3D ? 0 : subresource_range.baseArrayLayer;
+    const uint32_t base_array_layer = image_state.GetImageType() == VK_IMAGE_TYPE_3D ? 0 : subresource_range.baseArrayLayer;
 
-    const uint32_t max_layers = image_state.create_info.arrayLayers - base_array_layer;
+    const uint32_t max_layers = image_state.GetArrayLayers() - base_array_layer;
     const uint32_t array_layers = std::min(subresource_range.layerCount, max_layers);
-    const uint32_t max_levels = image_state.create_info.mipLevels - subresource_range.baseMipLevel;
-    const uint32_t mip_levels = std::min(image_state.create_info.mipLevels, max_levels);
+    const uint32_t max_levels = image_state.GetMipLevels() - subresource_range.baseMipLevel;
+    const uint32_t mip_levels = std::min(image_state.GetMipLevels(), max_levels);
 
     for (uint32_t layer = 0; layer < array_layers; layer++) {
         for (uint32_t level = 0; level < mip_levels; level++) {
@@ -166,7 +166,7 @@ void BestPractices::QueueValidateImage(QueueCallbacks& funcs, const Location& lo
 
 void BestPractices::QueueValidateImage(QueueCallbacks& funcs, const Location& loc, vvl::Image& image_state,
                                        IMAGE_SUBRESOURCE_USAGE_BP usage, const VkImageSubresourceLayers& subresource_layers) {
-    const uint32_t max_layers = image_state.create_info.arrayLayers - subresource_layers.baseArrayLayer;
+    const uint32_t max_layers = image_state.GetArrayLayers() - subresource_layers.baseArrayLayer;
     const uint32_t array_layers = std::min(subresource_layers.layerCount, max_layers);
 
     for (uint32_t layer = 0; layer < array_layers; layer++) {
@@ -265,7 +265,27 @@ void BestPractices::ValidateImageInQueue(const vvl::Queue& qs, const vvl::Comman
     auto last_usage = sub_state.UpdateUsage(array_layer, mip_level, usage, queue_family);
 
     // Concurrent sharing usage of image with exclusive sharing mode
-    if (image_state.create_info.sharingMode == VK_SHARING_MODE_EXCLUSIVE && last_usage.queue_family_index != queue_family) {
+    bool qfot_required = true;
+    if (enabled_features.maintenance9) {
+        if (image_state.GetTiling() == VK_IMAGE_TILING_LINEAR) {
+            qfot_required = false;
+        } else if ((image_state.usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                                         VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
+                                         VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT |
+                                         VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR)) == 0) {
+            // The list of image usages not allowed comes from
+            // https://registry.khronos.org/vulkan/specs/latest/man/html/VkSharingMode.html
+            VkQueueFamilyOwnershipTransferPropertiesKHR qfot_props = vku::InitStructHelper();
+            uint32_t qf_count = last_usage.queue_family_index + 1;
+            std::vector<VkQueueFamilyProperties2> qf_props(qf_count);
+            qf_props.back().pNext = &qfot_props;
+            DispatchGetPhysicalDeviceQueueFamilyProperties2(cbs.dev_data.physical_device, &qf_count, qf_props.data());
+            qfot_required = (qfot_props.optimalImageTransferToQueueFamilies & (1 << last_usage.queue_family_index)) == 0;
+        }
+    }
+
+    if (image_state.GetSharingMode() == VK_SHARING_MODE_EXCLUSIVE && last_usage.queue_family_index != queue_family &&
+        qfot_required) {
         // if UNDEFINED then first use/acquisition of subresource
         if (last_usage.type != IMAGE_SUBRESOURCE_USAGE_BP::UNDEFINED) {
             // If usage might read from the subresource, as contents are undefined

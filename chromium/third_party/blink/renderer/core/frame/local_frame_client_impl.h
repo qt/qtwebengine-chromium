@@ -85,6 +85,7 @@ class CORE_EXPORT LocalFrameClientImpl final : public LocalFrameClient {
   bool AllowScriptExtensions() override;
 
   bool HasWebView() const override;
+  bool IsForInitialWebUI() const override;
   bool InShadowTree() const override;
   void WillBeDetached() override;
   void Detached(FrameDetachType) override;
@@ -105,7 +106,8 @@ class CORE_EXPORT LocalFrameClientImpl final : public LocalFrameClient {
       bool is_client_redirect,
       bool is_browser_initiated,
       bool should_skip_screenshot,
-      base::UnguessableToken same_document_metrics_token) override;
+      base::UnguessableToken same_document_metrics_token,
+      bool caused_by_ad) override;
   void DidFailAsyncSameDocumentCommit() override;
   void DispatchDidOpenDocumentInputStream(const KURL& url) override;
   void DispatchDidReceiveTitle(const String&) override;
@@ -148,7 +150,8 @@ class CORE_EXPORT LocalFrameClientImpl final : public LocalFrameClient {
       bool is_container_initiated,
       bool has_rel_opener,
       mojo::PendingReceiver<
-          mojom::blink::NavigationResumeDeferredCommitListener>) override;
+          mojom::blink::NavigationResumeDeferredCommitListener>,
+      std::optional<base::UnguessableToken> script_tool_invocation_id) override;
   void DispatchWillSendSubmitEvent(HTMLFormElement*) override;
   void DidStartLoading() override;
   void DidStopLoading() override;
@@ -258,8 +261,7 @@ class CORE_EXPORT LocalFrameClientImpl final : public LocalFrameClient {
 
   void FocusedElementChanged(Element* element) override;
 
-  void OnMainFrameIntersectionChanged(
-      const gfx::Rect& main_frame_intersection_rect) override;
+  void OnMainFrameRectangleChanged(const gfx::Rect& main_frame_rect) override;
 
   void OnMainFrameViewportRectangleChanged(
       const gfx::Rect& main_frame_viewport_rect) override;

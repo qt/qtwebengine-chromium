@@ -60,7 +60,6 @@
 #include "fcp/client/federated_select.h"
 #include "fcp/client/files.h"
 #include "fcp/client/fl_runner.pb.h"
-#include "fcp/client/fl_runner_tensorflow_spec_result.pb.h"
 #include "fcp/client/flags.h"
 #include "fcp/client/http/http_client.h"
 #include "fcp/client/http/http_federated_protocol.h"
@@ -70,7 +69,6 @@
 #include "fcp/client/opstats/opstats_logger.h"
 #include "fcp/client/opstats/opstats_logger_impl.h"
 #include "fcp/client/opstats/opstats_utils.h"
-#include "fcp/client/parsing_utils.h"
 #include "fcp/client/phase_logger.h"
 #include "fcp/client/phase_logger_impl.h"
 #include "fcp/client/runner_common.h"
@@ -583,36 +581,18 @@ absl::Status ReportPlanResult(
   return result;
 }
 
-// Writes the given data to the stream, and returns true if successful and false
-// if not.
-bool WriteStringOrCordToFstream(
-    std::fstream& stream, const std::variant<std::string, absl::Cord>& data) {
-  if (stream.fail()) {
-    return false;
-  }
-  if (std::holds_alternative<std::string>(data)) {
-    return (stream << std::get<std::string>(data)).good();
-  }
-  for (absl::string_view chunk : std::get<absl::Cord>(data).Chunks()) {
-    if (!(stream << chunk).good()) {
-      return false;
-    }
-  }
-  return true;
-}
-
 // Writes the given checkpoint data to a newly created temporary file.
 // Returns the filename if successful, or an error if the file could not be
 // created, or if writing to the file failed.
 absl::StatusOr<std::string> CreateInputCheckpointFile(
-    Files* files, const std::variant<std::string, absl::Cord>& checkpoint) {
+    Files* files, const absl::Cord& checkpoint) {
   // Create the temporary checkpoint file.
   // Deletion of the file is left to the caller / the Files implementation.
   FCP_ASSIGN_OR_RETURN(absl::StatusOr<std::string> filename,
                        files->CreateTempFile("init", ".ckp"));
   // Write the checkpoint data to the file.
   std::fstream checkpoint_stream(*filename, std::ios_base::out);
-  if (!WriteStringOrCordToFstream(checkpoint_stream, checkpoint)) {
+  if (!(checkpoint_stream << checkpoint).good()) {
     return absl::InvalidArgumentError("Failed to write to file");
   }
   checkpoint_stream.close();
@@ -657,7 +637,7 @@ absl::StatusOr<std::optional<TaskEligibilityInfo>> RunEligibilityEvalPlan(
     const absl::Time time_before_plan_download,
     const NetworkStats& network_stats, Clock& clock) {
   ClientOnlyPlan plan;
-  if (!ParseFromStringOrCord(plan, eligibility_eval_task.payloads.plan)) {
+  if (!plan.ParseFromString(eligibility_eval_task.payloads.plan)) {
     auto message = "Failed to parse received eligibility eval plan";
     phase_logger.LogEligibilityEvalCheckinInvalidPayloadError(
         message, network_stats, time_before_plan_download);
@@ -1010,8 +990,7 @@ absl::StatusOr<CheckinResult> CreateCheckinResultFromTaskAssignment(
         log_io_error,
     const Flags* flags) {
   ClientOnlyPlan plan;
-  auto plan_bytes = task_assignment.payloads.plan;
-  if (!ParseFromStringOrCord(plan, plan_bytes)) {
+  if (!plan.ParseFromString(task_assignment.payloads.plan)) {
     auto message = "Failed to parse received plan";
     log_invalid_payload_error(task_assignment.task_name, message);
     FCP_LOG(ERROR) << message;
@@ -1033,11 +1012,7 @@ absl::StatusOr<CheckinResult> CreateCheckinResultFromTaskAssignment(
     }
     computation_id = ComputeSHA256(merged_criteria);
   } else if (flags->enable_computation_id()) {
-    if (std::holds_alternative<std::string>(plan_bytes)) {
-      computation_id = ComputeSHA256(std::get<std::string>(plan_bytes));
-    } else {
-      computation_id = ComputeSHA256(std::get<absl::Cord>(plan_bytes));
-    }
+    computation_id = ComputeSHA256(task_assignment.payloads.plan);
   }
 
   int32_t minimum_clients_in_server_visible_aggregate = 0;
@@ -1900,7 +1875,7 @@ absl::StatusOr<FLRunnerResult> RunFederatedComputation(
   // Eligibility eval plans can use example iterators from the
   // SimpleTaskEnvironment and those reading the OpStats DB.
   opstats::OpStatsExampleIteratorFactory opstats_example_iterator_factory(
-      opstats_logger, log_manager);
+      log_manager);
   // This iterator factory is used by the task to query the environment's
   // example store for eligibility, and thus does not log first access time
   // since we do not implement example-level SWOR for eligibility.
@@ -1937,11 +1912,9 @@ absl::StatusOr<FLRunnerResult> RunFederatedComputation(
   }
 
   std::optional<std::string> attestation_measurement = std::nullopt;
-  if (flags->move_device_attestation_to_start_task_assignment()) {
-    FCP_ASSIGN_OR_RETURN(attestation_measurement,
-                         env_deps->GetAttestationMeasurement(
-                             eligibility_eval_result->content_binding));
-  }
+  FCP_ASSIGN_OR_RETURN(attestation_measurement,
+                       env_deps->GetAttestationMeasurement(
+                           eligibility_eval_result->content_binding));
 
   size_t expected_num_tasks = 0;
   std::vector<std::string> successful_task_names;
@@ -2036,160 +2009,6 @@ absl::StatusOr<FLRunnerResult> RunFederatedComputation(
                                    phase_logger, fl_runner_result);
 
   return fl_runner_result;
-}
-
-FLRunnerTensorflowSpecResult RunPlanWithTensorflowSpecForTesting(
-    SimpleTaskEnvironment* env_deps, EventPublisher* event_publisher,
-    Files* files, LogManager* log_manager, const Flags* flags,
-    const ClientOnlyPlan& client_plan,
-    const std::string& checkpoint_input_filename,
-    const fcp::client::InterruptibleRunner::TimingConfig& timing_config,
-    const absl::Time run_plan_start_time, const absl::Time reference_time,
-    std::optional<PopulationEligibilitySpec> population_eligibility_spec) {
-  FLRunnerTensorflowSpecResult result;
-  result.set_outcome(engine::PhaseOutcome::ERROR);
-  engine::PlanResult plan_result(engine::PlanOutcome::kTensorflowError,
-                                 absl::UnknownError(""));
-  std::function<bool()> should_abort = [env_deps, &timing_config]() {
-    return env_deps->ShouldAbort(absl::Now(), timing_config.polling_period);
-  };
-  Clock* clock = Clock::RealClock();
-
-  auto opstats_logger =
-      opstats::CreateOpStatsLogger(env_deps->GetBaseDir(), flags, log_manager,
-                                   /*session_name=*/"", /*population_name=*/"");
-  PhaseLoggerImpl phase_logger(event_publisher, opstats_logger.get(),
-                               log_manager, flags);
-
-  // Regular plans can use example iterators from the SimpleTaskEnvironment,
-  // those reading the OpStats DB, or those serving Federated Select slices.
-  // However, we don't provide a Federated Select-specific example iterator
-  // factory. That way, the Federated Select slice queries will be forwarded
-  // to SimpleTaskEnvironment, which can handle them by providing
-  // test-specific slices if they want to.
-  //
-  // Eligibility eval plans can only use iterators from the
-  // SimpleTaskEnvironment and those reading the OpStats DB.
-  opstats::OpStatsExampleIteratorFactory opstats_example_iterator_factory(
-      opstats_logger.get(), log_manager);
-  std::unique_ptr<engine::ExampleIteratorFactory> env_example_iterator_factory =
-      CreateSimpleTaskEnvironmentIteratorFactory(env_deps, SelectorContext(),
-                                                 &phase_logger, true);
-  std::vector<engine::ExampleIteratorFactory*> example_iterator_factories{
-      &opstats_example_iterator_factory, env_example_iterator_factory.get()};
-
-  auto tensorflow_runner_factory =
-      GetGlobalTensorflowRunnerFactoryRegistry().Get(
-          TensorflowRunnerImplementation::kTensorflowRunnerImpl);
-  FCP_CHECK(tensorflow_runner_factory)
-      << "RunPlanWithTensorflowSpecForTesting requires a tensorflow_runner "
-         "implementation to be linked in.";
-  std::unique_ptr<TensorflowRunner> tensorflow_runner =
-      tensorflow_runner_factory();
-
-  phase_logger.LogComputationStarted("");
-  if (client_plan.phase().has_federated_compute()) {
-    absl::StatusOr<std::string> checkpoint_output_filename =
-        files->CreateTempFile("output", ".ckp");
-    if (!checkpoint_output_filename.ok()) {
-      phase_logger.LogComputationIOError(
-          checkpoint_output_filename.status(), ExampleStats(),
-          // Empty network stats, since no network protocol is actually used
-          // in this method.
-          NetworkStats(), run_plan_start_time);
-      return result;
-    }
-    // Regular TensorflowSpec-based plans.
-    PlanResultAndCheckpointFile plan_result_and_checkpoint_file =
-        tensorflow_runner->RunPlanWithTensorflowSpec(
-            example_iterator_factories, should_abort, log_manager,
-            opstats_logger.get(), flags,
-            /*example_iterator_query_recorder=*/nullptr, client_plan,
-            checkpoint_input_filename, *checkpoint_output_filename,
-            timing_config);
-    result.set_checkpoint_output_filename(
-        plan_result_and_checkpoint_file.checkpoint_filename);
-    plan_result = std::move(plan_result_and_checkpoint_file.plan_result);
-  } else if (client_plan.phase().has_federated_compute_eligibility()) {
-    if (population_eligibility_spec.has_value()) {
-      std::function<absl::StatusOr<TaskEligibilityInfo>(
-          std::vector<engine::ExampleIteratorFactory*>)>
-          run_plan_func =
-              [&should_abort, &log_manager, &opstats_logger, &flags,
-               &client_plan, &checkpoint_input_filename, &timing_config,
-               &run_plan_start_time, &reference_time,
-               &tensorflow_runner](std::vector<engine::ExampleIteratorFactory*>
-                                       override_iterator_factories)
-          -> absl::StatusOr<TaskEligibilityInfo> {
-        engine::PlanResult result =
-            tensorflow_runner->RunEligibilityEvalPlanWithTensorflowSpec(
-                override_iterator_factories, should_abort, log_manager,
-                opstats_logger.get(), flags, client_plan,
-                checkpoint_input_filename, timing_config, run_plan_start_time,
-                reference_time);
-        if (result.outcome != engine::PlanOutcome::kSuccess) {
-          return result.original_status;
-        }
-        return result.task_eligibility_info;
-      };
-      EetPlanRunnerImpl eet_plan_runner(run_plan_func);
-      absl::StatusOr<std::optional<TaskEligibilityInfo>>
-          native_task_eligibility_info = ComputeNativeEligibility(
-              population_eligibility_spec.value(), *log_manager, phase_logger,
-              opstats_logger.get(), *clock, example_iterator_factories,
-              eet_plan_runner, flags);
-
-      if (native_task_eligibility_info.ok()) {
-        plan_result =
-            engine::PlanResult(engine::PlanOutcome::kSuccess, absl::OkStatus());
-        if (native_task_eligibility_info->has_value()) {
-          result.set_task_eligibility_info(
-              native_task_eligibility_info->value().SerializeAsString());
-        }
-      } else {
-        plan_result = engine::PlanResult(engine::PlanOutcome::kTensorflowError,
-                                         native_task_eligibility_info.status());
-      }
-    } else {
-      // Legacy eligibility eval plan.
-      plan_result = tensorflow_runner->RunEligibilityEvalPlanWithTensorflowSpec(
-          example_iterator_factories, should_abort, log_manager,
-          opstats_logger.get(), flags, client_plan, checkpoint_input_filename,
-          timing_config, run_plan_start_time, reference_time);
-      if (plan_result.task_eligibility_info.ok()) {
-        result.set_task_eligibility_info(
-            plan_result.task_eligibility_info->SerializeAsString());
-      }
-    }
-
-  } else {
-    // This branch shouldn't be taken, unless we add an additional type of
-    // TensorflowSpec-based plan in the future. We return a readable error so
-    // that when such new plan types *are* added, they result in clear
-    // compatibility test failures when such plans are erroneously targeted at
-    // old releases that don't support them yet.
-    event_publisher->PublishIoError("Unsupported TensorflowSpec-based plan");
-    return result;
-  }
-
-  result.set_outcome(
-      engine::ConvertPlanOutcomeToPhaseOutcome(plan_result.outcome));
-  if (plan_result.outcome == engine::PlanOutcome::kSuccess) {
-    std::optional<int64_t> min_sep_policy_index =
-        GetMinSepPolicyIndexFromCheckinResult(client_plan);
-    phase_logger.LogComputationCompleted(
-        plan_result.example_stats,
-        // Empty network stats, since no network protocol is actually used in
-        // this method.
-        NetworkStats(), run_plan_start_time, reference_time,
-        min_sep_policy_index);
-  } else {
-    phase_logger.LogComputationTensorflowError(
-        plan_result.original_status, plan_result.example_stats, NetworkStats(),
-        run_plan_start_time, reference_time);
-  }
-
-  return result;
 }
 
 }  // namespace client

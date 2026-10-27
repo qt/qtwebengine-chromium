@@ -36,13 +36,6 @@ struct AccountInfo {
 };
 std::ostream& operator<<(std::ostream& os, const AccountInfo& o);
 
-enum class RefreshTaskId {
-  kRefreshForYouFeed,
-  // TODO(crbug.com/40158714): Refresh is not currently used for the Web Feed.
-  // Remove this code if we don't need it.
-  kRefreshWebFeed,
-};
-
 enum class AccountTokenFetchStatus {
   // Token fetch was not attempted, or status is unknown.
   kUnspecified = 0,
@@ -150,8 +143,6 @@ class WebFeedPageInformation {
   // The Canonical URL for the page, if one was found. `url().has_ref()` is
   // always false
   const GURL& canonical_url() const { return canonical_url_; }
-  // The list of RSS urls embedded in the page with the <link> tag.
-  const std::vector<GURL>& GetRssUrls() const { return rss_urls_; }
 
   // Set the URL for the page. Trims off the URL ref.
   void SetUrl(const GURL& url);
@@ -159,12 +150,9 @@ class WebFeedPageInformation {
   // Set the canonical URL for the page. Trims off the URL ref.
   void SetCanonicalUrl(const GURL& url);
 
-  void SetRssUrls(const std::vector<GURL>& rss_urls);
-
  private:
   GURL url_;
   GURL canonical_url_;
-  std::vector<GURL> rss_urls_;
 };
 std::ostream& operator<<(std::ostream& os, const WebFeedPageInformation& value);
 
@@ -244,23 +232,6 @@ std::ostream& operator<<(std::ostream& out, WebFeedQueryRequestStatus value);
 
 using NetworkRequestId = base::IdTypeU32<class NetworkRequestIdClass>;
 
-// Values for the UMA
-// ContentSuggestions.Feed.WebFeed.PageInformationRequested histogram.
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused. This must be kept in sync with
-// WebFeedPageInformationRequestReason in enums.xml.
-// GENERATED_JAVA_ENUM_PACKAGE: org.chromium.chrome.browser.feed.webfeed
-enum class WebFeedPageInformationRequestReason : int {
-  // The user requested to Follow the current web page.
-  kUserRequestedFollow = 0,
-  // A Follow recommendation is being considered the current web page.
-  kFollowRecommendation = 1,
-  // The Follow menu item state needs to reflect the current web page.
-  kMenuItemPresentation = 2,
-
-  kMaxValue = kMenuItemPresentation,
-};
-
 // Values for feed type
 // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.chrome.browser.feed
 enum class StreamKind : int {
@@ -268,35 +239,10 @@ enum class StreamKind : int {
   kUnknown = 0,
   // For you stream.
   kForYou = 1,
-  // Following stream.
-  kFollowing = 2,
-  // Single Web Feed (Cormorant) stream.
-  kSingleWebFeed = 3,
-
-  kMaxValue = kSingleWebFeed,
+  // Deprecated, as web feed is removed
+  // kFollowing = 2,
+  kMaxValue = kForYou,
 };
-
-// Singe Web entry points
-// GENERATED_JAVA_ENUM_PACKAGE: org.chromium.chrome.browser.feed
-enum class SingleWebFeedEntryPoint : int {
-  // Three dot menu
-  kMenu = 0,
-  // Feed Atteribution
-  kAttribution = 1,
-  // Feed Recomentation
-  kRecommendation = 2,
-  // Feed Recomentation
-  kGroupHeader = 3,
-  // Other
-  kOther = 4,
-
-  kMaxValue = kOther,
-};
-std::ostream& operator<<(std::ostream& out, SingleWebFeedEntryPoint value);
-
-// For testing and debugging only.
-std::ostream& operator<<(std::ostream& out,
-                         WebFeedPageInformationRequestReason value);
 
 // Used to tell how to open an URL.
 // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.chrome.browser.feed

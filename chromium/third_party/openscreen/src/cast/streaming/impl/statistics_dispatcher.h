@@ -42,6 +42,12 @@ class StatisticsDispatcher {
                         RtpTimeTicks rtp_timestamp,
                         FrameId frame_id);
 
+  // Dispatches a frame dropped by encoder event.
+  void DispatchFrameDropEvent(StreamType stream_type,
+                              FrameId frame_id,
+                              RtpTimeTicks rtp_timestamp,
+                              Clock::time_point drop_time);
+
  private:
   Environment& environment_;
 };

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 Vector3d v(1, 0, 0);
 Vector3d w(1e-4, 0, 1);
 cout << "Here's the vector v:" << endl << v << endl;

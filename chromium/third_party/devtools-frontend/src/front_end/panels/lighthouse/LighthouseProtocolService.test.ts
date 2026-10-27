@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
@@ -108,5 +110,38 @@ describeWithMockConnection('LighthouseProtocolService', () => {
     } finally {
       workerStub.restore();
     }
+  });
+
+  it('auto-accepts same-origin dialogs and blocks cross-origin dialogs', async () => {
+    sinon.stub(primaryTarget, 'inspectedURL').returns(urlString`https://example.com/page`);
+    const service = new Lighthouse.LighthouseProtocolService.ProtocolService();
+    await service.attach();
+
+    const resourceTreeModel = primaryTarget.model(SDK.ResourceTreeModel.ResourceTreeModel);
+    assert.exists(resourceTreeModel);
+
+    const pageAgent = primaryTarget.pageAgent();
+    const handleDialogStub = sinon.stub(pageAgent, 'invoke_handleJavaScriptDialog');
+
+    // Same origin
+    resourceTreeModel.dispatchEventToListeners(SDK.ResourceTreeModel.Events.JavaScriptDialogOpening, {
+      url: urlString`https://example.com/another-page`,
+      message: 'test',
+      type: 'alert',
+      hasBrowserHandler: true,
+    } as unknown as Protocol.Page.JavascriptDialogOpeningEvent);
+
+    sinon.assert.calledOnce(handleDialogStub);
+
+    // Cross origin
+    handleDialogStub.resetHistory();
+    resourceTreeModel.dispatchEventToListeners(SDK.ResourceTreeModel.Events.JavaScriptDialogOpening, {
+      url: urlString`https://attacker.com/page`,
+      message: 'test',
+      type: 'alert',
+      hasBrowserHandler: true,
+    } as unknown as Protocol.Page.JavascriptDialogOpeningEvent);
+
+    sinon.assert.notCalled(handleDialogStub);
   });
 });

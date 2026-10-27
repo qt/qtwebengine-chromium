@@ -43,6 +43,7 @@ class MockVideoCaptureDeviceClient : public VideoCaptureDevice::Client {
                base::TimeTicks reference_time,
                base::TimeDelta timestamp,
                std::optional<base::TimeTicks> capture_begin_time,
+               const gfx::Size& natural_size,
                const std::optional<VideoFrameMetadata>& metadata,
                int frame_feedback_id),
               (override));
@@ -53,6 +54,7 @@ class MockVideoCaptureDeviceClient : public VideoCaptureDevice::Client {
                base::TimeDelta timestamp,
                std::optional<base::TimeTicks> capture_begin_time,
                const gfx::Rect& visible_rect,
+               const gfx::Size& natural_size,
                const std::optional<VideoFrameMetadata>& additional_metadata),
               (override));
   MOCK_METHOD(ReserveResult,

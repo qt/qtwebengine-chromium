@@ -8,6 +8,7 @@
 #include <optional>
 #include <ostream>
 
+#include "src/base/logging.h"
 #include "src/builtins/accessors.h"
 #include "src/common/globals.h"
 #include "src/compiler/compilation-dependencies.h"
@@ -16,6 +17,7 @@
 #include "src/compiler/simplified-operator.h"
 #include "src/compiler/type-cache.h"
 #include "src/ic/call-optimization.h"
+#include "src/ic/handler-configuration-inl.h"
 #include "src/objects/cell-inl.h"
 #include "src/objects/elements-kind.h"
 #include "src/objects/field-index-inl.h"
@@ -24,7 +26,13 @@
 #include "src/objects/objects-inl.h"
 #include "src/objects/property-details.h"
 #include "src/objects/struct-inl.h"
+#include "src/objects/swiss-name-dictionary.h"
 #include "src/objects/templates.h"
+
+#if V8_ENABLE_WEBASSEMBLY
+#include "src/wasm/value-type.h"
+#include "src/wasm/wasm-objects-inl.h"
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 namespace v8 {
 namespace internal {
@@ -172,12 +180,11 @@ PropertyAccessInfo PropertyAccessInfo::FastAccessorConstant(
 }
 
 // static
-PropertyAccessInfo PropertyAccessInfo::ModuleExport(Zone* zone,
-                                                    MapRef receiver_map,
-                                                    CellRef cell) {
-  return PropertyAccessInfo(zone, kModuleExport, {} /* holder */,
-                            cell /* constant */, {} /* api_holder */,
-                            {} /* name */, {{receiver_map}, zone});
+PropertyAccessInfo PropertyAccessInfo::ModuleExport(
+    Zone* zone, MapRef receiver_map, CellRef cell, OptionalJSObjectRef holder) {
+  return PropertyAccessInfo(zone, kModuleExport, holder, cell /* constant */,
+                            {} /* api_holder */, {} /* name */,
+                            {{receiver_map}, zone});
 }
 
 // static
@@ -200,6 +207,14 @@ PropertyAccessInfo PropertyAccessInfo::TypedArrayLength(Zone* zone,
                             {{receiver_map}, zone});
   result.set_elements_kind(receiver_map.elements_kind());
   return result;
+}
+
+// static
+PropertyAccessInfo PropertyAccessInfo::DictionaryDataField(
+    Zone* zone, MapRef receiver_map, OptionalJSObjectRef holder,
+    InternalIndex dictionary_index, NameRef name) {
+  return PropertyAccessInfo(zone, kDictionaryDataField, holder,
+                            {{receiver_map}, zone}, dictionary_index, name);
 }
 
 // static
@@ -381,6 +396,13 @@ bool PropertyAccessInfo::Merge(PropertyAccessInfo const* that,
       return true;
     }
 
+    case kDictionaryDataField: {
+      DCHECK_EQ(AccessMode::kLoad, access_mode);
+      if (dictionary_index_ != that->dictionary_index_) return false;
+      AppendVector(&lookup_start_object_maps_, that->lookup_start_object_maps_);
+      return true;
+    }
+
     case kNotFound:
     case kStringLength:
     case kStringWrapperLength: {
@@ -396,6 +418,7 @@ bool PropertyAccessInfo::Merge(PropertyAccessInfo const* that,
     case kModuleExport:
       return false;
   }
+  UNREACHABLE();
 }
 
 ConstFieldInfo PropertyAccessInfo::GetConstFieldInfo() const {
@@ -561,9 +584,6 @@ std::optional<ElementAccessInfo> AccessInfoFactory::ComputeElementAccessInfo(
             sfi.object()->GetTrustedData(broker()->local_isolate_or_isolate());
         Tagged<WasmExportedFunctionData> wasm_data;
         if (!TryCast(trusted_data, &wasm_data)) return {};
-        // Supporting receiver-is-first-param mode would require passing
-        // the Proxy's handler to the eventual building of the Call node.
-        if (wasm_data->receiver_is_first_param()) return {};
         const wasm::CanonicalSig* wasm_signature = wasm_data->internal()->sig();
         if (wasm_signature->parameter_count() < 2) return {};
         wasm::CanonicalValueType key_type = wasm_signature->GetParam(1);
@@ -587,6 +607,11 @@ std::optional<ElementAccessInfo> AccessInfoFactory::ComputeElementAccessInfo(
         // Finally: all good!
         bool string_keys = key_type == wasm::kWasmExternRef;
         return ElementAccessInfo(map, trap_value, target, string_keys, zone());
+      }
+      if (proto_map.IsWasmObjectMap()) {
+        // Wasm objects are opaque and frozen, so we can safely skip over them.
+        prototype = proto_map.prototype(broker());
+        continue;
       }
       // Nothing else can occur on prototype chains.
       UNREACHABLE();
@@ -758,8 +783,7 @@ PropertyAccessInfo AccessorAccessInfoHelper(
             Cast<JSModuleNamespace>(proto_info->module_namespace()));
     Handle<Cell> cell = broker->CanonicalPersistentHandle(
         Cast<Cell>(module_namespace->module()->exports()->Lookup(
-            isolate, name.object(),
-            Smi::ToInt(Object::GetHash(*name.object())))));
+            name.object(), Smi::ToInt(Object::GetHash(*name.object())))));
     if (IsAnyStore(access_mode)) {
       // https://tc39.es/ecma262/#sec-module-namespace-exotic-objects-set-p-v-receiver
       // https://tc39.es/ecma262/#sec-module-namespace-exotic-objects-defineownproperty-p-desc
@@ -768,7 +792,7 @@ PropertyAccessInfo AccessorAccessInfoHelper(
       // JS.
       return PropertyAccessInfo::Invalid(zone);
     }
-    if (IsTheHole(cell->value(kRelaxedLoad), isolate)) {
+    if (IsTheHole(cell->value(kRelaxedLoad))) {
       // This module has not been fully initialized yet.
       return PropertyAccessInfo::Invalid(zone);
     }
@@ -777,7 +801,7 @@ PropertyAccessInfo AccessorAccessInfoHelper(
       return PropertyAccessInfo::Invalid(zone);
     }
     return PropertyAccessInfo::ModuleExport(zone, receiver_map,
-                                            cell_ref.value());
+                                            cell_ref.value(), holder);
   }
   if (access_mode == AccessMode::kHas) {
     // kHas is not supported for dictionary mode objects.
@@ -841,7 +865,8 @@ PropertyAccessInfo AccessorAccessInfoHelper(
           TryMakeRef(broker, cached_property_name.value());
       if (cached_property_name_ref.has_value()) {
         PropertyAccessInfo access_info = ai_factory->ComputePropertyAccessInfo(
-            holder_map, cached_property_name_ref.value(), access_mode);
+            holder_map, cached_property_name_ref.value(), access_mode,
+            std::nullopt);
         if (!access_info.IsInvalid()) return access_info;
       }
     }
@@ -955,13 +980,33 @@ bool AccessInfoFactory::TryLoadPropertyDetails(
 }
 
 PropertyAccessInfo AccessInfoFactory::ComputePropertyAccessInfo(
-    MapRef map, NameRef name, AccessMode access_mode) const {
+    MapRef map, NameRef name, AccessMode access_mode,
+    OptionalObjectRef handler) const {
   CHECK(name.IsUniqueName());
 
   // Dictionary property const tracking is unsupported with concurrent inlining.
   CHECK(!V8_DICT_PROPERTY_CONST_TRACKING_BOOL);
 
   JSHeapBroker::MapUpdaterGuardIfNeeded mumd_scope(broker());
+
+  if (map.is_dictionary_map() && access_mode == AccessMode::kLoad &&
+      handler.has_value() && handler->IsSmi()) {
+    if constexpr (V8_ENABLE_SWISS_NAME_DICTIONARY_BOOL) {
+      return Invalid();
+    }
+    auto smi_handler = Cast<Smi>(*handler->object());
+    if (LoadHandler::GetHandlerKind(smi_handler) ==
+        LoadHandler::Kind::kNormal) {
+      if (LoadHandler::IsDataPropertyBits::decode(smi_handler.value())) {
+        uint32_t index =
+            LoadHandler::DictionaryIndexBits::decode(smi_handler.value());
+        if (index != LoadHandler::DictionaryIndexBits::kMax) {
+          return PropertyAccessInfo::DictionaryDataField(
+              zone(), map, OptionalJSObjectRef(), InternalIndex(index), name);
+        }
+      }
+    }
+  }
 
   if (access_mode == AccessMode::kHas && !IsJSReceiverMap(*map.object())) {
     return Invalid();

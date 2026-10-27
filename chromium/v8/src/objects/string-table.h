@@ -64,12 +64,21 @@ class V8_EXPORT_PRIVATE StringTable {
   DirectHandle<InternalizedString> LookupString(Isolate* isolate,
                                                 DirectHandle<String> key);
 
+  // Returns true if the string is already in the string table.
+  bool HasString(Isolate* isolate, DirectHandle<String> key);
+
   // Find string in the string table, using the given key. If the string is not
   // there yet, it is created (by the key) and added. The return value is the
   // string found.
   template <typename StringTableKey, typename IsolateT>
   DirectHandle<InternalizedString> LookupKey(IsolateT* isolate,
                                              StringTableKey* key);
+
+  // Try to find a string in the string table using the given key, without
+  // inserting it if not found. This is a lock-free, read-only probe.
+  template <typename StringTableKey, typename IsolateT>
+  std::optional<DirectHandle<InternalizedString>> TryLookupKey(
+      IsolateT* isolate, StringTableKey* key);
 
   // {raw_string} must be a tagged String pointer.
   // Returns a tagged pointer: either a Smi if the string is an array index, an

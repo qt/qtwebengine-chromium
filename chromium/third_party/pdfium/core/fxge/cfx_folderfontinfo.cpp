@@ -115,26 +115,6 @@ ByteString LoadTableFromTT(FILE* pFile,
   return ByteString();
 }
 
-uint32_t GetCharset(FX_Charset charset) {
-  switch (charset) {
-    case FX_Charset::kShiftJIS:
-      return CHARSET_FLAG_SHIFTJIS;
-    case FX_Charset::kChineseSimplified:
-      return CHARSET_FLAG_GB;
-    case FX_Charset::kChineseTraditional:
-      return CHARSET_FLAG_BIG5;
-    case FX_Charset::kHangul:
-      return CHARSET_FLAG_KOREAN;
-    case FX_Charset::kSymbol:
-      return CHARSET_FLAG_SYMBOL;
-    case FX_Charset::kANSI:
-      return CHARSET_FLAG_ANSI;
-    default:
-      break;
-  }
-  return 0;
-}
-
 }  // namespace
 
 CFX_FolderFontInfo::CFX_FolderFontInfo() = default;
@@ -204,7 +184,7 @@ void CFX_FolderFontInfo::ScanFile(const ByteString& path) {
     return;
   }
   uint32_t magic = fxcrt::GetUInt32MSBFirst(pdfium::span(buffer).first<4u>());
-  if (magic != kTableTTCF) {
+  if (magic != SystemFontInfoIface::kTableTTCF) {
     ReportFace(path, pFile.get(), filesize, 0);
     return;
   }
@@ -286,27 +266,27 @@ void CFX_FolderFontInfo::ReportFace(const ByteString& path,
     uint32_t codepages = fxcrt::GetUInt32MSBFirst(p.first<4u>());
     if (codepages & (1U << 17)) {
       mapper_->AddInstalledFont(facename, FX_Charset::kShiftJIS);
-      pInfo->charsets_ |= CHARSET_FLAG_SHIFTJIS;
+      pInfo->charsets_ |= FontFaceInfo::CharsetFlag::kShiftJis;
     }
     if (codepages & (1U << 18)) {
       mapper_->AddInstalledFont(facename, FX_Charset::kChineseSimplified);
-      pInfo->charsets_ |= CHARSET_FLAG_GB;
+      pInfo->charsets_ |= FontFaceInfo::CharsetFlag::kGb;
     }
     if (codepages & (1U << 20)) {
       mapper_->AddInstalledFont(facename, FX_Charset::kChineseTraditional);
-      pInfo->charsets_ |= CHARSET_FLAG_BIG5;
+      pInfo->charsets_ |= FontFaceInfo::CharsetFlag::kBig5;
     }
     if ((codepages & (1U << 19)) || (codepages & (1U << 21))) {
       mapper_->AddInstalledFont(facename, FX_Charset::kHangul);
-      pInfo->charsets_ |= CHARSET_FLAG_KOREAN;
+      pInfo->charsets_ |= FontFaceInfo::CharsetFlag::kKorean;
     }
     if (codepages & (1U << 31)) {
       mapper_->AddInstalledFont(facename, FX_Charset::kSymbol);
-      pInfo->charsets_ |= CHARSET_FLAG_SYMBOL;
+      pInfo->charsets_ |= FontFaceInfo::CharsetFlag::kSymbol;
     }
   }
   mapper_->AddInstalledFont(facename, FX_Charset::kANSI);
-  pInfo->charsets_ |= CHARSET_FLAG_ANSI;
+  pInfo->charsets_ |= FontFaceInfo::CharsetFlag::kAnsi;
   pInfo->styles_ = 0;
   if (style.Contains("Bold")) {
     pInfo->styles_ |= pdfium::kFontStyleForceBold;
@@ -331,6 +311,26 @@ void* CFX_FolderFontInfo::GetSubstFont(const ByteString& face) {
   return nullptr;
 }
 
+CFX_FolderFontInfo::FontFaceInfo::CharsetFlag
+CFX_FolderFontInfo::FontFaceInfo::GetCharset(FX_Charset charset) {
+  switch (charset) {
+    case FX_Charset::kShiftJIS:
+      return CharsetFlag::kShiftJis;
+    case FX_Charset::kChineseSimplified:
+      return CharsetFlag::kGb;
+    case FX_Charset::kChineseTraditional:
+      return CharsetFlag::kBig5;
+    case FX_Charset::kHangul:
+      return CharsetFlag::kKorean;
+    case FX_Charset::kSymbol:
+      return CharsetFlag::kSymbol;
+    case FX_Charset::kANSI:
+      return CharsetFlag::kAnsi;
+    default:
+      return CharsetFlag::kNone;
+  }
+}
+
 void* CFX_FolderFontInfo::FindFont(int weight,
                                    bool bItalic,
                                    FX_Charset charset,
@@ -338,7 +338,7 @@ void* CFX_FolderFontInfo::FindFont(int weight,
                                    const ByteString& family,
                                    bool bMatchName) {
   FontFaceInfo* pFind = nullptr;
-  uint32_t charset_flag = GetCharset(charset);
+  FontFaceInfo::CharsetFlag charset_flag = FontFaceInfo::GetCharset(charset);
 
   int32_t iBestSimilar = 0;
   if (bMatchName) {
@@ -415,9 +415,9 @@ size_t CFX_FolderFontInfo::GetFontData(void* hFont,
   const FontFaceInfo* font = static_cast<FontFaceInfo*>(hFont);
   uint32_t datasize = 0;
   uint32_t offset = 0;
-  if (table == 0) {
+  if (table == SystemFontInfoIface::kTableNone) {
     datasize = font->font_offset_ ? 0 : font->file_size_;
-  } else if (table == kTableTTCF) {
+  } else if (table == SystemFontInfoIface::kTableTTCF) {
     datasize = font->font_offset_ ? font->file_size_ : 0;
   } else {
     size_t nTables = font->font_tables_.GetLength() / 16;
@@ -477,7 +477,7 @@ CFX_FolderFontInfo::FontFaceInfo::FontFaceInfo(ByteString filePath,
       file_size_(fileSize) {}
 
 bool CFX_FolderFontInfo::FontFaceInfo::IsEligibleForFindFont(
-    uint32_t flag,
+    CharsetFlag flag,
     FX_Charset charset) const {
   return (charsets_ & flag) || charset == FX_Charset::kDefault;
 }

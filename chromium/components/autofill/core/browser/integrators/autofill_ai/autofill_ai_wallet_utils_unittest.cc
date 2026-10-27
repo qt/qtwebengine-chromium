@@ -55,7 +55,6 @@ class AutofillAiWalletUtilsTest : public ::testing::Test {
             webdata_helper_.autofill_webdata_service(),
             /*history_service=*/nullptr,
             /*strike_database=*/nullptr,
-            /*accessibility_annotator_service=*/nullptr,
             /*variation_country_code=*/GeoIpCountryCode("US")));
     // Wait until EDM has finished its load to ensure that the waits in tests
     // are not interrupted due to the notification from the initial load.
@@ -269,9 +268,10 @@ TEST_F(AutofillAiWalletUtilsTest, RecordWalletPrivatePassConsent) {
                       SaveArg<2>(&consent)));
 
   consent_auditor::ConsentAuditor::SessionId returned_session_id =
-      RecordWalletPrivatePassConsent(/*consent_string_id=*/1,
-                                     /*clicked_button_string_id=*/2,
-                                     autofill_client());
+      RecordWalletPrivatePassConsent(/*accepted_consent_string_id=*/1,
+                                     /*accept_button_string_id=*/2,
+                                     *autofill_client().GetConsentAuditor(),
+                                     *autofill_client().GetIdentityManager());
   // Expect that the consent details are populated correctly and that the same
   // session ID passed to the ConsentAuditor is returned;
   EXPECT_EQ(gaia_id, autofill_client()

@@ -5,9 +5,11 @@
 #include "components/javascript_dialogs/app_modal_dialog_manager.h"
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/no_destructor.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "components/javascript_dialogs/app_modal_dialog_manager_delegate.h"
@@ -51,7 +53,8 @@ bool ShouldDisplaySuppressCheckbox(
 
 // static
 AppModalDialogManager* AppModalDialogManager::GetInstance() {
-  return base::Singleton<AppModalDialogManager>::get();
+  static base::NoDestructor<AppModalDialogManager> instance;
+  return instance.get();
 }
 
 void AppModalDialogManager::SetNativeDialogFactory(
@@ -120,15 +123,16 @@ void AppModalDialogManager::RunJavaScriptDialog(
 
   extensions_client_->OnDialogOpened(web_contents);
 
-  AppModalDialogQueue::GetInstance()->AddDialog(new AppModalDialogController(
-      web_contents, &javascript_dialog_extra_data_, dialog_title, dialog_type,
-      message_text, default_prompt_text,
-      ShouldDisplaySuppressCheckbox(extra_data),
-      false,  // is_before_unload_dialog
-      false,  // is_reload
-      base::BindOnce(&AppModalDialogManager::OnDialogClosed,
-                     base::Unretained(this), web_contents,
-                     std::move(callback))));
+  AppModalDialogQueue::GetInstance()->AddDialog(
+      std::make_unique<AppModalDialogController>(
+          web_contents, &javascript_dialog_extra_data_, dialog_title,
+          dialog_type, message_text, default_prompt_text,
+          ShouldDisplaySuppressCheckbox(extra_data),
+          /*is_before_unload_dialog=*/false,
+          /*is_reload=*/false,
+          base::BindOnce(&AppModalDialogManager::OnDialogClosed,
+                         base::Unretained(this), web_contents,
+                         std::move(callback))));
 }
 
 void AppModalDialogManager::RunBeforeUnloadDialog(
@@ -183,16 +187,16 @@ void AppModalDialogManager::RunBeforeUnloadDialogWithOptions(
 
   extensions_client_->OnDialogOpened(web_contents);
 
-  AppModalDialogQueue::GetInstance()->AddDialog(new AppModalDialogController(
-      web_contents, &javascript_dialog_extra_data_, title,
-      content::JAVASCRIPT_DIALOG_TYPE_CONFIRM, message,
-      std::u16string(),  // default_prompt_text
-      ShouldDisplaySuppressCheckbox(extra_data),
-      true,  // is_before_unload_dialog
-      is_reload,
-      base::BindOnce(&AppModalDialogManager::OnDialogClosed,
-                     base::Unretained(this), web_contents,
-                     std::move(callback))));
+  AppModalDialogQueue::GetInstance()->AddDialog(
+      std::make_unique<AppModalDialogController>(
+          web_contents, &javascript_dialog_extra_data_, title,
+          content::JAVASCRIPT_DIALOG_TYPE_CONFIRM, message,
+          /*default_prompt_text=*/std::u16string(),
+          ShouldDisplaySuppressCheckbox(extra_data),
+          /*is_before_unload_dialog=*/true, is_reload,
+          base::BindOnce(&AppModalDialogManager::OnDialogClosed,
+                         base::Unretained(this), web_contents,
+                         std::move(callback))));
 }
 
 bool AppModalDialogManager::HandleJavaScriptDialog(
@@ -216,8 +220,9 @@ bool AppModalDialogManager::HandleJavaScriptDialog(
   }
 
   if (accept) {
-    if (prompt_override)
+    if (prompt_override) {
       dialog->SetOverridePromptText(*prompt_override);
+    }
     dialog->view()->AcceptAppModalDialog();
   } else {
     dialog->view()->CancelAppModalDialog();
@@ -228,16 +233,19 @@ bool AppModalDialogManager::HandleJavaScriptDialog(
 void AppModalDialogManager::CancelDialogs(content::WebContents* web_contents,
                                           bool reset_state) {
   AppModalDialogQueue* queue = AppModalDialogQueue::GetInstance();
-  for (auto* dialog : *queue) {
-    if (dialog->web_contents() == web_contents)
+  for (auto& dialog : *queue) {
+    if (dialog->web_contents() == web_contents) {
       dialog->Invalidate();
+    }
   }
   AppModalDialogController* active_dialog = queue->active_dialog();
-  if (active_dialog && active_dialog->web_contents() == web_contents)
+  if (active_dialog && active_dialog->web_contents() == web_contents) {
     active_dialog->Invalidate();
+  }
 
-  if (reset_state)
+  if (reset_state) {
     javascript_dialog_extra_data_.erase(web_contents);
+  }
 }
 
 void AppModalDialogManager::OnDialogClosed(content::WebContents* web_contents,

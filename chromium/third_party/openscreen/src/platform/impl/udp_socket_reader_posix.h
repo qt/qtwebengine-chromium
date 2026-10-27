@@ -14,6 +14,7 @@
 #include "platform/impl/socket_handle.h"
 #include "platform/impl/socket_handle_waiter.h"
 #include "platform/impl/udp_socket_posix.h"
+#include "util/thread_annotations.h"
 
 namespace openscreen {
 
@@ -63,10 +64,10 @@ class UdpSocketReaderPosix : public SocketHandleWaiter::Subscriber {
                 bool disable_locking_for_testing = false);
 
   // The set of all sockets that are being read from
-  std::vector<UdpSocketPosix*> sockets_;
+  std::vector<UdpSocketPosix*> sockets_ OSP_GUARDED_BY(mutex_);
 
   // Mutex to protect against concurrent modification of socket info.
-  std::mutex mutex_;
+  mutable std::mutex mutex_;
 
   // NetworkWaiter watching this NetworkReader.
   SocketHandleWaiter& waiter_;

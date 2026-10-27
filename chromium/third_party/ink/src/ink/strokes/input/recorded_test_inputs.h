@@ -15,36 +15,39 @@
 #ifndef INK_STROKES_INPUT_RECORDED_TEST_INPUTS_H_
 #define INK_STROKES_INPUT_RECORDED_TEST_INPUTS_H_
 
+#include <optional>
 #include <utility>
 #include <vector>
 
+#include "absl/status/statusor.h"
+#include "absl/strings/string_view.h"
 #include "ink/geometry/rect.h"
 #include "ink/strokes/input/stroke_input_batch.h"
 
 namespace ink {
 
-// Returns inputs for a short straight line based on collected input, scaled to
-// fit within `bounds`. In the incremental case the scaling is based on both
-// real and predicted inputs.
-//
-// Incremental returns a tuple of pairs of real and predicted input as collected
-// at the time of drawing. Complete returns a single StrokeInputBatch that
-// coalesces only the real inputs that make up the input of that stroke.
-std::vector<std::pair<StrokeInputBatch, StrokeInputBatch>>
-MakeIncrementalStraightLineInputs(const Rect& bounds);
-StrokeInputBatch MakeCompleteStraightLineInputs(const Rect& bounds);
+// The test inputs were recorded with the Stylus Showcase App. The inputs use
+// pixels as stroke-space units. They have a typical scale of O(100) pixels, and
+// typical durations of O(.1) seconds.
+constexpr std::array<absl::string_view, 2> kTestDataFiles = {
+    "spring_shape.binarypb", "straight_line.binarypb"};
 
-// Returns inputs for a spring shaped spiral with two loops based on collected
-// input, scaled to fit within `bounds`. In the incremental case the scaling is
-// based on both real and predicted inputs.
-//
-// Incremental returns a tuple of pairs of real and predicted input as collected
-// at the time of drawing. Complete returns a single StrokeInputBatch that
-// coalesces only the real inputs that make up the input of that stroke.
-std::vector<std::pair<StrokeInputBatch, StrokeInputBatch>>
-MakeIncrementalSpringShapeInputs(const Rect& bounds);
-StrokeInputBatch MakeCompleteSpringShapeInputs(const Rect& bounds);
+// The typical brush epsilon used by Stylus Showcase to render the inputs.
+constexpr float kTestBrushEpsilon = 0.1;
 
+// Returns incremental inputs loaded from the given `IncrementalStrokeInputs`
+// binary proto test file, rescaled to fit to `bounds` if provided. Each
+// incremental input consists of a a pair of real and predicted
+// `StrokeInputBatch`.
+absl::StatusOr<std::vector<std::pair<StrokeInputBatch, StrokeInputBatch>>>
+LoadIncrementalStrokeInputs(absl::string_view filename,
+                            std::optional<Rect> bounds = std::nullopt);
+
+// Returns a complete `StrokeInputBatch` loaded from the given
+// `IncrementalStrokeInputs` binary proto test file, obtained by coalescing the
+// incremental real inputs and rescaled to fit to`bounds` if provided.
+absl::StatusOr<StrokeInputBatch> LoadCompleteStrokeInputs(
+    absl::string_view filename, std::optional<Rect> bounds = std::nullopt);
 }  // namespace ink
 
 #endif  // INK_STROKES_INPUT_RECORDED_TEST_INPUTS_H_

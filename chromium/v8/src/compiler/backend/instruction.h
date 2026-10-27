@@ -10,6 +10,7 @@
 #include <optional>
 
 #include "src/base/compiler-specific.h"
+#include "src/base/logging.h"
 #include "src/base/numbers/double.h"
 #include "src/codegen/external-reference.h"
 #include "src/codegen/register.h"
@@ -599,6 +600,7 @@ class LocationOperand : public InstructionOperand {
       case MachineRepresentation::kFloat16RawBits:
         UNREACHABLE();
     }
+    UNREACHABLE();
   }
 
   // Return true if the locations can be moved to one another.
@@ -1076,7 +1078,8 @@ class V8_EXPORT_PRIVATE Instruction final {
   }
   bool HasCallDescriptorFlag(CallDescriptor::Flag flag) const {
     DCHECK(IsCallWithDescriptorFlags());
-    static_assert(CallDescriptor::kFlagsBitsEncodedInInstructionCode == 10);
+    static_assert(CallDescriptor::kFlagsBitsEncodedInInstructionCode ==
+                  MiscField::kSize);
 #ifdef DEBUG
     static constexpr int kInstructionCodeFlagsMask =
         ((1 << CallDescriptor::kFlagsBitsEncodedInInstructionCode) - 1);
@@ -1092,7 +1095,7 @@ class V8_EXPORT_PRIVATE Instruction final {
       case kArchCallWasmFunctionIndirect:
         return InputCount() - 1 -
                HasCallDescriptorFlag(CallDescriptor::kHasExceptionHandler) -
-               2 * HasCallDescriptorFlag(CallDescriptor::kHasEffectHandler);
+               3 * HasCallDescriptorFlag(CallDescriptor::kHasEffectHandler);
       case kArchTailCallWasmIndirect:
         return InputCount() - 3;
       default:
@@ -1108,7 +1111,7 @@ class V8_EXPORT_PRIVATE Instruction final {
       case kArchCallCodeObject:
         return InputCount() - 1 -
                HasCallDescriptorFlag(CallDescriptor::kHasExceptionHandler) -
-               2 * HasCallDescriptorFlag(CallDescriptor::kHasEffectHandler);
+               3 * HasCallDescriptorFlag(CallDescriptor::kHasEffectHandler);
       case kArchTailCallCodeObject:
         return InputCount() - 3;
       default:
@@ -1121,7 +1124,7 @@ class V8_EXPORT_PRIVATE Instruction final {
     // Keep in sync with instruction-selector.cc where the inputs are assembled.
     return InputCount() - 1 -
            HasCallDescriptorFlag(CallDescriptor::kHasExceptionHandler) -
-           2 * HasCallDescriptorFlag(CallDescriptor::kHasEffectHandler);
+           3 * HasCallDescriptorFlag(CallDescriptor::kHasEffectHandler);
   }
 
   enum GapPosition {

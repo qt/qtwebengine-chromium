@@ -60,7 +60,7 @@
 
     // CSSOM View Module
     // https://drafts.csswg.org/cssom-view/#extensions-to-the-htmlelement-interface
-    [RuntimeEnabled=HTMLElementScrollParent, ImplementedAs=unclosedScrollParent] readonly attribute Element? scrollParent;
+    [RuntimeEnabled=HTMLElementScrollParent, ImplementedAs=unclosedScrollParent] Element? scrollParent();
     [PerWorldBindings, ImplementedAs=unclosedOffsetParent] readonly attribute Element? offsetParent;
     [ImplementedAs=offsetTopForBinding] readonly attribute long offsetTop;
     [ImplementedAs=offsetLeftForBinding] readonly attribute long offsetLeft;
@@ -73,6 +73,14 @@
     [MeasureAs=ElementHidePopover,RaisesException] void hidePopover();
     [CEReactions,Reflect,ReflectOnly=("auto","hint","manual"),ReflectEmpty="auto",ReflectInvalid="manual"] attribute DOMString? popover;
 
+    // Overscroll API
+    [RuntimeEnabled=OverscrollGestures,CEReactions,Reflect,ReflectOnly=("auto", "overlay"),ReflectEmpty="auto",ReflectInvalid="auto"] attribute DOMString? overscrollcontainer;
+    [RuntimeEnabled=OverscrollGestures,CEReactions,Reflect,ReflectOnly=("auto"),ReflectEmpty="auto",ReflectInvalid="auto"] attribute DOMString? overscrollarea;
+
+    // Unbounded Element API
+    [RuntimeEnabled=UnboundedElement,CEReactions,Reflect] attribute boolean unbounded;
+    [RuntimeEnabled=UnboundedElement,CallWith=ScriptState] Promise<undefined> showUnboundedElement();
+
     // Non-standard APIs
     [CEReactions, RaisesException=Setter, MeasureAs=HTMLElementInnerText, ImplementedAs=innerTextForBinding] attribute ([LegacyNullToEmptyString] DOMString or TrustedScript) innerText;
     [CEReactions, RaisesException=Setter, MeasureAs=HTMLElementOuterText] attribute [LegacyNullToEmptyString] DOMString outerText;
@@ -82,5 +90,5 @@
 
 HTMLElement includes GlobalEventHandlers;
 HTMLElement includes DocumentAndElementEventHandlers;
-HTMLElement includes HTMLOrForeignElement;
+HTMLElement includes HTMLOrSVGOrMathMLElement;
 HTMLElement includes ElementCSSInlineStyle;

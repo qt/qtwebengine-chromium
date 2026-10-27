@@ -9,13 +9,13 @@
 #include "chrome/browser/actor/actor_task.h"
 #include "chrome/browser/preloading/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/actor/task_id.h"
+#include "components/actor/core/task_id.h"
 #include "components/no_state_prefetch/browser/no_state_prefetch_contents.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/buildflags/buildflags.h"
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/common/constants.h"
 #endif
@@ -38,7 +38,7 @@ ChromeNavigationUIData::ChromeNavigationUIData() = default;
 ChromeNavigationUIData::ChromeNavigationUIData(
     content::NavigationHandle* navigation_handle) {
   auto* web_contents = navigation_handle->GetWebContents();
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   int tab_id = extension_misc::kUnknownTabId;
   int window_id = extension_misc::kUnknownWindowId;
   // The browser client can be null in unittests.
@@ -73,7 +73,7 @@ ChromeNavigationUIData::CreateForMainFrameNavigation(
       is_using_https_as_default_scheme;
   navigation_ui_data->force_no_https_upgrade_ = force_no_https_upgrade;
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   int tab_id = extension_misc::kUnknownTabId;
   int window_id = extension_misc::kUnknownWindowId;
   // The browser client can be null in unittests.
@@ -98,7 +98,7 @@ std::unique_ptr<content::NavigationUIData> ChromeNavigationUIData::Clone() {
   copy->is_using_https_as_default_scheme_ = is_using_https_as_default_scheme_;
   copy->force_no_https_upgrade_ = force_no_https_upgrade_;
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   if (extension_data_) {
     copy->SetExtensionNavigationUIData(extension_data_->DeepCopy());
   }
@@ -118,7 +118,7 @@ std::unique_ptr<content::NavigationUIData> ChromeNavigationUIData::Clone() {
   return std::move(copy);
 }
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 void ChromeNavigationUIData::SetExtensionNavigationUIData(
     std::unique_ptr<extensions::ExtensionNavigationUIData> extension_data) {
   extension_data_ = std::move(extension_data);

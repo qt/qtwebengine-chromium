@@ -268,18 +268,20 @@ function renderItem(
       aria-details=url-pattern-${index}>
         ${constructorStringOrWildcardURL}
     </div>
-    <devtools-widget
+    <select
        class=conditions-selector
        title=${i18nString(UIStrings.requestConditionsLabel)}
+       @ConditionsChanged=${(e: CustomEvent<SDK.NetworkManager.ThrottlingConditions>) => {
+         onConditionsChanged(condition, e.detail);
+       }}
        ${widget(
-         MobileThrottling.NetworkThrottlingSelector.NetworkThrottlingSelectorWidget, {
+         MobileThrottling.NetworkThrottlingSelector.NetworkThrottlingSelect, {
            variant:
              MobileThrottling.NetworkThrottlingSelector.NetworkThrottlingSelect.Variant.INDIVIDUAL_REQUEST_CONDITIONS,
            jslogContext: 'request-conditions',
            disabled: !editable,
-           onConditionsChanged: conditions => onConditionsChanged(condition, conditions),
            currentConditions: condition.conditions,
-         })}></devtools-widget>
+         })}></select>
     <devtools-widget
       ?disabled=${!editable || !originalOrUpgradedURLPattern}
       ${widget(AffectedCountWidget, {condition, lookUpRequestCount})}></devtools-widget>`;
@@ -291,7 +293,9 @@ interface AffectedCountViewInput {
 }
 type AffectedCountView = (input: AffectedCountViewInput, output: object, target: HTMLElement) => void;
 export const AFFECTED_COUNT_DEFAULT_VIEW: AffectedCountView = (input, output, target) => {
-  render(html`${i18nString(UIStrings.dAffected, {PH1: input.count})}`, target);
+  render(
+      html`${i18nString(UIStrings.dAffected, {PH1: input.count})}`, target,
+      {container: {classes: ['blocked-url-count']}});
 };
 
 function matchesUrl(conditions: SDK.NetworkManager.RequestCondition, url: string): boolean {
@@ -304,7 +308,7 @@ export class AffectedCountWidget extends UI.Widget.Widget {
   #lookUpRequestCount?: (condition: SDK.NetworkManager.RequestCondition) => number;
 
   constructor(target?: HTMLElement, view = AFFECTED_COUNT_DEFAULT_VIEW) {
-    super(target, {classes: ['blocked-url-count']});
+    super(target);
     this.#view = view;
   }
 

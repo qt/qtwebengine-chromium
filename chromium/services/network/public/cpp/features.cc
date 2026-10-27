@@ -281,11 +281,6 @@ BASE_FEATURE(kLocalNetworkAccessChecksWebSockets,
 BASE_FEATURE(kLocalNetworkAccessChecksWebTransport,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-// Splits the Local Network Access permission into 2 permissions. See
-// crbug.com/465491626.
-BASE_FEATURE(kLocalNetworkAccessChecksSplitPermissions,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 // If enabled, then the network service will parse the Cookie-Indices header.
 // This does not currently control changing cache behavior according to the
 // value of this header.
@@ -320,11 +315,6 @@ BASE_FEATURE(kCompressionDictionaryTTL, base::FEATURE_DISABLED_BY_DEFAULT);
 // which enables developers to ensure all their external scripts have their
 // integrity enforced.
 BASE_FEATURE(kIntegrityPolicyScript, base::FEATURE_ENABLED_BY_DEFAULT);
-
-// This feature will reduce TransferSizeUpdated IPC from the network service.
-// When enabled, the network service will send the IPC only when DevTools is
-// attached or the request is for an ad request.
-BASE_FEATURE(kReduceTransferSizeUpdatedIPC, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables content decoding in the renderer process.
 // See https://crbug.com/391950057 and this doc for more details.
@@ -545,8 +535,6 @@ BASE_FEATURE_PARAM(int,
                    "max_ops_before_maintenance",
                    1000);
 
-BASE_FEATURE(kGetCookiesOnSet, base::FEATURE_DISABLED_BY_DEFAULT);
-
 BASE_FEATURE(kIncreaseCookieAccessCacheSize, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE_PARAM(int,
@@ -568,7 +556,7 @@ BASE_FEATURE(kCSPScriptSrcHashesInV1,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kCacheSharingForPervasiveResources,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kSendSameSiteLaxForFedCM, base::FEATURE_DISABLED_BY_DEFAULT);
 
@@ -599,14 +587,21 @@ BASE_FEATURE_PARAM(bool,
                    "url_loader",
                    true);
 
-BASE_FEATURE(kNetworkServicePerPriorityTaskQueues,
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 BASE_FEATURE(kUseUnexportableKeyServiceInBrowserProcess,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+#if BUILDFLAG(IS_WIN)
+             base::FEATURE_ENABLED_BY_DEFAULT
+#else
+             base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+);
 
 BASE_FEATURE(kBypassRequestForbiddenHeadersCheck,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// When enabled, the network service will prohibit modifications to the Origin
+// header in FollowRedirect.
+BASE_FEATURE(kBlockOriginHeaderModificationOnRedirect,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kServiceWorkerSyntheticResponseHeaderCheck,
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -634,6 +629,9 @@ BASE_FEATURE_PARAM(int,
                    /*name=*/"max_global_buffer_size",
                    /*default_value=*/base::MiB(350).InBytes());
 
+BASE_FEATURE(kReportingApiEnableVariationsHeaders,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kNetworkContextDirectReceiver, base::FEATURE_DISABLED_BY_DEFAULT);
 
 bool ShouldBindNetworkContextDirectReceiver() {
@@ -648,5 +646,14 @@ BASE_FEATURE_PARAM(base::TimeDelta,
                    &kDelayInitialDohProbeTimeout,
                    "initial_doh_probe_timeout",
                    base::Seconds(5));
+
+BASE_FEATURE(kRestrictForbiddenSecurityHeaders,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kDeclarativePerformanceObserver,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kBrowserInitiatedFileUploadValidation,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 }  // namespace network::features

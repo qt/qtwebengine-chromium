@@ -1710,8 +1710,7 @@ void CXFA_Document::ParseUse(const WideString& wsUseVal,
   if (wsUseVal.IsEmpty()) {
     return;
   }
-
-  if (wsUseVal[0] == '#') {
+  if (wsUseVal.Front() == '#') {
     wsID = wsUseVal.AsStringView().Substr(1);
     return;
   }

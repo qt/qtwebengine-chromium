@@ -51,6 +51,7 @@ default_visibility = [
     "//tensorflow/compiler/mlir/utils:__subpackages__",
     #internal library 2,
     #internal library 1,
+    #internal library 3,
 ]
 
 package(
@@ -738,10 +739,7 @@ cc_library(
         "//tensorflow/compiler/tf2xla:__pkg__",
         "//tensorflow/examples/custom_ops_doc/simple_hash_table:__pkg__",
         "//third_party/py/grain/_src/tensorflow/ops:__pkg__",
-        "//waymo/ml/compiler/frontend/kernels:__pkg__",
-        "//waymo/ml/compiler/runtime/alpine/core:__pkg__",
-        "//waymo/ml/data/ops:__pkg__",
-        "//waymo/ml/woodshed/ops:__pkg__",
+        "//waymo/ml:__subpackages__",
         "//waymo/sim/simulator/sensor/rendering_engine:__pkg__",
     ],
     deps = [
@@ -895,6 +893,7 @@ tf_cuda_library(
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/numeric:bits",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:cord",
         "@eigen_archive//:eigen3",
         "@tsl//tsl/platform:ml_dtypes",
         "@xla//xla/tsl/framework:device_type",
@@ -1428,6 +1427,7 @@ tf_cc_tests(
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:cord",
         "@com_google_absl//absl/synchronization",
         "@com_google_googletest//:gtest",
         "@eigen_archive//:eigen3",

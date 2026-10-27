@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 SparseMatrix<double> A(3, 3);
 A.insert(1, 2) = 0;
 A.insert(0, 1) = 1;

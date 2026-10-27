@@ -48,9 +48,10 @@ void SocketHandleWaiter::UnsubscribeAll(Subscriber* subscriber) {
   }
 }
 
-void SocketHandleWaiter::OnHandleDeletion(Subscriber* subscriber,
-                                          SocketHandleRef handle,
-                                          bool disable_locking_for_testing) {
+void SocketHandleWaiter::OnHandleDeletion(
+    Subscriber* subscriber,
+    SocketHandleRef handle,
+    bool disable_locking_for_testing) OSP_NO_THREAD_SAFETY_ANALYSIS {
   std::unique_lock<std::mutex> lock(mutex_);
   auto it = handle_mappings_.find(handle);
   if (it != handle_mappings_.end()) {
@@ -63,9 +64,9 @@ void SocketHandleWaiter::OnHandleDeletion(Subscriber* subscriber,
       // (and subsequent invalidation of pointers to this socket) until we no
       // longer are waiting on a SELECT(...) call to it, since we only signal
       // this condition variable's wait(...) to proceed outside of SELECT(...).
-      handle_deletion_block_.wait(lock, [this, handle]() {
-        return !Contains(handles_being_deleted_, handle);
-      });
+      while (Contains(handles_being_deleted_, handle)) {
+        handle_deletion_block_.wait(lock);
+      }
       OSP_DVLOG << "\tDone blocking for handle deletion!";
     }
   }

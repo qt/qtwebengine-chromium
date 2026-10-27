@@ -8,6 +8,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_PACKET_MATH_NEON_H
 #define EIGEN_PACKET_MATH_NEON_H
@@ -4630,9 +4631,7 @@ EIGEN_STRONG_INLINE Packet2f pdiv<Packet2f>(const Packet2f& a, const Packet2f& b
 typedef eigen_packet_wrapper<uint16x4_t, 19> Packet4bf;
 
 template <>
-struct is_arithmetic<Packet4bf> {
-  enum { value = true };
-};
+struct is_arithmetic<Packet4bf> : std::true_type {};
 
 template <>
 struct packet_traits<bfloat16> : default_packet_traits {
@@ -4954,18 +4953,7 @@ EIGEN_STRONG_INLINE Packet4bf pnegate<Packet4bf>(const Packet4bf& a) {
 
 //---------- double ----------
 
-// Clang 3.5 in the iOS toolchain has an ICE triggered by NEON intrinsics for double.
-// Confirmed at least with __apple_build_version__ = 6000054.
-#if EIGEN_COMP_CLANGAPPLE
-// Let's hope that by the time __apple_build_version__ hits the 601* range, the bug will be fixed.
-// https://gist.github.com/yamaya/2924292 suggests that the 3 first digits are only updated with
-// major toolchain updates.
-#define EIGEN_APPLE_DOUBLE_NEON_BUG (EIGEN_COMP_CLANGAPPLE < 6010000)
-#else
-#define EIGEN_APPLE_DOUBLE_NEON_BUG 0
-#endif
-
-#if EIGEN_ARCH_ARM64 && !EIGEN_APPLE_DOUBLE_NEON_BUG
+#if EIGEN_ARCH_ARM64
 
 #if EIGEN_COMP_GNUC
 // Bug 907: workaround missing declarations of the following two functions in the ADK
@@ -5042,7 +5030,7 @@ struct packet_traits<double> : default_packet_traits {
 
     HasDiv = 1,
 
-#if EIGEN_ARCH_ARM64 && !EIGEN_APPLE_DOUBLE_NEON_BUG
+#if EIGEN_ARCH_ARM64
     HasExp = 1,
     HasLog = 1,
     HasLog10 = 1,
@@ -5389,7 +5377,7 @@ EIGEN_STRONG_INLINE Packet2d psqrt(const Packet2d& _x) {
   return vsqrtq_f64(_x);
 }
 
-#endif  // EIGEN_ARCH_ARM64 && !EIGEN_APPLE_DOUBLE_NEON_BUG
+#endif  // EIGEN_ARCH_ARM64
 
 // Do we have an fp16 types and supporting Neon intrinsics?
 #if EIGEN_HAS_ARM64_FP16_VECTOR_ARITHMETIC

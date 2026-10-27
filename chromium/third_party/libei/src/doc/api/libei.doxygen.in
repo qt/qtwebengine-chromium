@@ -1,0 +1,27 @@
+PROJECT_NAME           = @PACKAGE_NAME@
+PROJECT_NUMBER         = @PACKAGE_VERSION@
+PROJECT_BRIEF          = "A library for Emulated Input"
+JAVADOC_AUTOBRIEF      = YES
+TAB_SIZE               = 8
+OPTIMIZE_OUTPUT_FOR_C  = YES
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+MAX_INITIALIZER_LINES  = 0
+WARNINGS               = YES
+QUIET                  = YES
+INPUT                  = "@builddir@"
+IMAGE_PATH             = "@builddir@"
+GENERATE_HTML          = YES
+OUTPUT_DIRECTORY       = doc
+HTML_OUTPUT            = html
+SEARCHENGINE           = NO
+USE_MATHJAX            = YES
+GENERATE_LATEX         = NO
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+DOTFILE_DIRS           = "@builddir@"
+EXAMPLE_PATH           = "@builddir@"
+SHOW_NAMESPACES        = NO
+GENERATE_TREEVIEW      = YES
+
+HTML_EXTRA_STYLESHEET = "@builddir@/doxygen-awesome.css"

@@ -29,10 +29,18 @@ class X25519Implementation : public AlgorithmImplementation {
                    const blink::WebCryptoKey& key,
                    std::vector<uint8_t>* buffer) const override;
 
+  Status GetPublicKey(const blink::WebCryptoKey& key,
+                      blink::WebCryptoKeyUsageMask usages,
+                      blink::WebCryptoKey* public_key) const override;
+
   Status DeriveBits(const blink::WebCryptoAlgorithm& algorithm,
                     const blink::WebCryptoKey& base_key,
                     std::optional<unsigned int> length_bits,
                     std::vector<uint8_t>* derived_bytes) const override;
+
+  bool Supports(blink::WebCryptoOperation op,
+                const blink::WebCryptoAlgorithm& algorithm,
+                std::optional<unsigned int> length_bits) const override;
 
   Status DeserializeKeyForClone(const blink::WebCryptoKeyAlgorithm& algorithm,
                                 blink::WebCryptoKeyType type,

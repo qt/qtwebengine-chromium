@@ -45,6 +45,7 @@
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "net/cert/x509_util_apple.h"
 #include "ui/accelerated_widget_mac/window_resize_helper_mac.h"
+#include "ui/base/cocoa/animation_utils.h"
 #import "ui/base/cocoa/constrained_window/constrained_window_animation.h"
 #include "ui/base/cocoa/cursor_utils.h"
 #include "ui/base/cocoa/remote_accessibility_api.h"
@@ -52,6 +53,7 @@
 #include "ui/base/emoji/emoji_panel_helper.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/mojom/ui_base_types.mojom-shared.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/color/color_provider_key.h"
 #include "ui/display/display.h"
@@ -87,6 +89,16 @@ constexpr auto kUIPaintTimeout = base::Milliseconds(500);
 display::Display GetDisplayForWindow(NSWindow* window) {
   return display::Screen::Get()->GetDisplayNearestWindow(
       gfx::NativeWindow(window));
+}
+
+bool IsBackgroundEffectView(NSView* view) {
+  if ([view isKindOfClass:[NSVisualEffectView class]]) {
+    return true;
+  }
+
+  Class glass_effect_view_class = NSClassFromString(@"NSGlassEffectView");
+  return glass_effect_view_class &&
+         [view isKindOfClass:glass_effect_view_class];
 }
 
 }  // namespace
@@ -252,14 +264,13 @@ NSComparisonResult SubviewSorter(__kindof NSView* lhs,
                                  void* rank_as_void) {
   DCHECK_NE(lhs, rhs);
 
-  // Put `NSVisualEffectView` before `ViewsCompositorSuperview` otherwise when
-  // using `NSVisualEffectView` for `vibrancy` it will hide content displayed by
-  // the compositor.
-  if ([lhs isKindOfClass:[NSVisualEffectView class]]) {
+  // Put background effect views before `ViewsCompositorSuperview`, otherwise
+  // they can cover content displayed by the compositor.
+  if (IsBackgroundEffectView(lhs)) {
     return NSOrderedAscending;
   }
   if ([lhs isKindOfClass:[ViewsCompositorSuperview class]]) {
-    if ([rhs isKindOfClass:[NSVisualEffectView class]]) {
+    if (IsBackgroundEffectView(rhs)) {
       return NSOrderedDescending;
     }
     return NSOrderedAscending;
@@ -636,6 +647,18 @@ void NativeWidgetNSWindowBridge::SetBounds(
     const gfx::Rect& new_bounds,
     const gfx::Size& minimum_content_size,
     const std::optional<gfx::Size>& maximum_content_size) {
+  // Ensure that any changes to the window frame be atomic with the updates to
+  // their content.
+  if (!ca_transaction_sync_suppressed_ &&
+      base::FeatureList::IsEnabled(features::kCATransactionV2) &&
+      !base::FeatureList::IsEnabled(features::kAsyncLiveResize)) {
+    ui::CATransactionCoordinator::Get().Synchronize();
+  }
+
+  // Discard any pending live resizes.
+  live_resize_.pending_window_frame = std::nullopt;
+  live_resize_.queued_pending_window_frame = std::nullopt;
+
   // -[NSWindow contentMinSize] and [NSWindow contentMaxSize] are only checked
   // by Cocoa for user-initiated resizes. This is not what toolkit-views
   // expects, so clamp.
@@ -1437,12 +1460,7 @@ void NativeWidgetNSWindowBridge::OnVisibilityChanged() {
 }
 
 void NativeWidgetNSWindowBridge::OnSpaceActivationMayHaveChanged() {
-  const bool window_on_active_space = window_.onActiveSpace;
-  if (window_on_active_space_ == window_on_active_space) {
-    return;
-  }
-  window_on_active_space_ = window_on_active_space;
-  host_->OnSpaceActivationChanged(window_on_active_space);
+  host_->OnSpaceActivationChanged(window_.onActiveSpace);
 }
 
 void NativeWidgetNSWindowBridge::OnSystemColorsChanged() {
@@ -1656,16 +1674,31 @@ void NativeWidgetNSWindowBridge::FullscreenControllerSetFrame(
 
 void NativeWidgetNSWindowBridge::FullscreenControllerToggleFullscreen() {
   bool is_key_window = [window_ isKeyWindow];
+
+  // If a request to close the window comes in during the nested loop of
+  // -[NSWindow toggleFullScreen:], `this` may be destroyed when the call
+  // returns (see NativeWidgetNSWindowFullscreenController::
+  // HandleDeferredClose). Use a weak pointer to check for this case.
+  // https://crbug.com/503792787
+  auto weak_ptr = factory_.GetWeakPtr();
   [window_ toggleFullScreen:nil];
-  // Ensure the transitioning window maintains focus.
-  // When a key window moves to a different space, AppKit will focus a
-  // different window on the previously focused space to become key, which can
+  if (!weak_ptr) {
+    return;
+  }
+
+  // Ensure the transitioning window and any companion windows (such as speaker
+  // notes) maintain focus and Z order when moving to fullscreen. When a key
+  // window becomes fullscreen in a different space, AppKit will sometimes make
+  // different window on the previously focused space the key window, which can
   // break cross-display fullscreen transitions by losing focus of the
-  // transitioning window (crbug.com/1338659) or changing the z-order of
-  // windows on the previous space. Making the window key here seems to
-  // alleviate those apparent defects (crbug.com/1392542).
-  if (is_key_window)
+  // transitioning window (crbug.com/40229685) or changing the z-order of
+  // windows on the previous space (crbug.com/40247797). This is only done when
+  // transitioning to fullscreen, as changes to window order during the
+  // transition from fullscreen can break the transition animation
+  // (crbug.com/503845404)
+  if (is_key_window && [window_ styleMask] & NSWindowStyleMaskFullScreen) {
     [window_ makeKeyAndOrderFront:nil];
+  }
 }
 
 void NativeWidgetNSWindowBridge::FullscreenControllerCloseWindow() {
@@ -1884,7 +1917,7 @@ void NativeWidgetNSWindowBridge::SetAspectRatio(
 }
 
 void NativeWidgetNSWindowBridge::SetCALayerParams(
-    const gfx::CALayerParams& ca_layer_params) {
+    gfx::CALayerParams ca_layer_params) {
   // Ignore frames arriving "late" for an old size. A frame at the new size
   // should arrive soon.
   // TODO(danakj): We should avoid lossy conversions to integer DIPs.
@@ -1894,9 +1927,15 @@ void NativeWidgetNSWindowBridge::SetCALayerParams(
     return;
   compositor_frame_dip_size_ = frame_dip_size;
 
+  // Update the contents atomically with the NSWindow frame resize.
+  std::optional<ScopedCAActionDisabler> disabler;
+  if (live_resize_.pending_window_frame.has_value()) {
+    disabler.emplace();
+  }
+
   // Update the DisplayCALayerTree with the most recent CALayerParams, to make
   // the content display on-screen.
-  display_ca_layer_tree_->UpdateCALayerTree(ca_layer_params);
+  display_ca_layer_tree_->UpdateCALayerTree(std::move(ca_layer_params));
 
   if (ca_transaction_sync_suppressed_)
     ca_transaction_sync_suppressed_ = false;
@@ -1904,6 +1943,26 @@ void NativeWidgetNSWindowBridge::SetCALayerParams(
   if (invalidate_shadow_on_frame_swap_) {
     invalidate_shadow_on_frame_swap_ = false;
     [window_ invalidateShadow];
+  }
+
+  // If this frame is in response to a live-resize, then update the NSWindow's
+  // frame now.
+  if (live_resize_.pending_window_frame.has_value()) {
+    [window_ setFrame:live_resize_.pending_window_frame.value()
+              display:YES
+              animate:NO];
+
+    // If a subsequent resize came in, send the new size to the compositor now.
+    live_resize_.pending_window_frame =
+        std::exchange(live_resize_.queued_pending_window_frame, std::nullopt);
+    if (live_resize_.pending_window_frame.has_value()) {
+      // The pending size must be different from the current size (otherwise we
+      // will never un-set `live_resize_.pending_window_frame`) and hang the
+      // resize.
+      DCHECK_NE(gfx::Size(live_resize_.pending_window_frame->size),
+                content_dip_size_);
+      SendWindowFrameChangeToHost(live_resize_.pending_window_frame.value());
+    }
   }
 }
 
@@ -1989,8 +2048,9 @@ void NativeWidgetNSWindowBridge::OrderChildren() {
   // Bail here (and call OrderChildren() in a few places) to defer adding
   // children until the window is visible.
   NSWindow* window = window_;
-  if (!window.isVisible || !window.isOnActiveSpace)
+  if (!window.visible || !window.onActiveSpace) {
     return;
+  }
   for (auto* child : child_windows_) {
     if (!child->wants_to_be_visible())
       continue;
@@ -2025,28 +2085,15 @@ void NativeWidgetNSWindowBridge::RemoveOrDestroyChildren() {
 }
 
 void NativeWidgetNSWindowBridge::CheckAndNotifyZoomedStateChanged() {
-  const bool window_zoomed = [window_ isZoomed];
-  if (window_zoomed_ == window_zoomed)
-    return;
-
-  window_zoomed_ = window_zoomed;
-
-  // Notify that the window's zoomed state has changed.
-  host_->OnWindowZoomedChanged(window_zoomed_);
+  host_->OnWindowZoomedChanged(window_.zoomed);
 }
 
 void NativeWidgetNSWindowBridge::CheckAndNotifyAllWorkspacesStateChanged() {
   const bool visible_on_all_spaces =
       ([window_ collectionBehavior] &
        NSWindowCollectionBehaviorCanJoinAllSpaces) != 0;
-  if (visible_on_all_spaces_ == visible_on_all_spaces) {
-    return;
-  }
-
-  visible_on_all_spaces_ = visible_on_all_spaces;
-
   // Notify that the window's "visible on all spaces" state has changed.
-  host_->OnVisibleOnAllWorkspacesChanged(visible_on_all_spaces_);
+  host_->OnVisibleOnAllWorkspacesChanged(visible_on_all_spaces);
 }
 
 void NativeWidgetNSWindowBridge::NotifyVisibilityChangeDown() {
@@ -2075,25 +2122,69 @@ void NativeWidgetNSWindowBridge::NotifyVisibilityChangeDown() {
   OrderChildren();
 }
 
-void NativeWidgetNSWindowBridge::UpdateWindowGeometry() {
-  gfx::Rect window_in_screen = gfx::ScreenRectFromNSRect([window_ frame]);
-  gfx::Rect content_in_screen = gfx::ScreenRectFromNSRect(
-      [window_ contentRectForFrameRect:[window_ frame]]);
-  bool content_resized = content_dip_size_ != content_in_screen.size();
-  content_dip_size_ = content_in_screen.size();
+void NativeWidgetNSWindowBridge::OnLiveResizeToFrame(NSRect new_window_frame) {
+  // If there is a pending live resize, just queue the resize request (wait for
+  // the compositor to produce a frame of the previously-requested size before
+  // asking it for a new one).
+  if (live_resize_.pending_window_frame.has_value()) {
+    if (gfx::Size(new_window_frame.size) ==
+        gfx::Size(live_resize_.pending_window_frame->size)) {
+      // If this request is the same as the pending live resize request, just
+      // discard it.
+      live_resize_.queued_pending_window_frame = std::nullopt;
+    } else {
+      live_resize_.queued_pending_window_frame = new_window_frame;
+    }
+    return;
+  }
 
-  host_->OnWindowGeometryChanged(window_in_screen, content_in_screen);
+  // If we already have a compositor frame of the expected size, then we will
+  // not get re-notified of frames of the current size, which will cause us to
+  // never un-set `live_resize_.pending_window_frame` and hang the resize.
+  // http://crbug.com/510621306
+  if (gfx::Size(new_window_frame.size) == content_dip_size_) {
+    return;
+  }
+
+  // Tell the compositor about the new frame, so it can produce the right
+  // sized frame. We will call -[NSWindow setFrame:] when the compositor
+  // produces the frame.
+  live_resize_.pending_window_frame = new_window_frame;
+  SendWindowFrameChangeToHost(new_window_frame);
+}
+
+void NativeWidgetNSWindowBridge::UpdateWindowGeometry() {
+  // When a live resize is in progress, do not read the window's frame. Continue
+  // to use the pending size.
+  if (live_resize_.pending_window_frame.has_value()) {
+    return;
+  }
+
+  const auto content_dip_size_before = content_dip_size_;
+  SendWindowFrameChangeToHost([window_ frame]);
+  bool content_resized = content_dip_size_before != content_dip_size_;
 
   CheckAndNotifyZoomedStateChanged();
   CheckAndNotifyAllWorkspacesStateChanged();
 
-  if (content_resized && !ca_transaction_sync_suppressed_)
+  if (content_resized && !ca_transaction_sync_suppressed_ &&
+      !base::FeatureList::IsEnabled(features::kAsyncLiveResize)) {
     ui::CATransactionCoordinator::Get().Synchronize();
+  }
 
   // For a translucent window, the shadow calculation needs to be carried out
   // after the frame from the compositor arrives.
   if (content_resized && ![window_ isOpaque])
     invalidate_shadow_on_frame_swap_ = true;
+}
+
+void NativeWidgetNSWindowBridge::SendWindowFrameChangeToHost(
+    NSRect new_window_frame) {
+  gfx::Rect window_in_screen = gfx::ScreenRectFromNSRect(new_window_frame);
+  gfx::Rect content_in_screen = gfx::ScreenRectFromNSRect(
+      [window_ contentRectForFrameRect:new_window_frame]);
+  content_dip_size_ = content_in_screen.size();
+  host_->OnWindowGeometryChanged(window_in_screen, content_in_screen);
 }
 
 void NativeWidgetNSWindowBridge::UpdateWindowDisplay() {

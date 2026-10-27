@@ -24,6 +24,7 @@
 #include "absl/container/fixed_array.h"
 #include "absl/functional/function_ref.h"
 #include "absl/status/status.h"
+#include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
@@ -65,7 +66,7 @@ TEST(VerifySignatureTest, P1363Format) {
   key.set_purpose(Key::VERIFY);
   key.set_key_material(signer.GetPublicKey());
 
-  EXPECT_OK(
+  ABSL_EXPECT_OK(
       VerifySignature(signer.Sign("data"), SignatureFormat::kP1363, {&key},
                       [](absl::FunctionRef<void(absl::string_view)> emitter) {
                         emitter("data");
@@ -81,9 +82,9 @@ TEST(VerifySignatureTest, Asn1Format) {
 
   absl::StatusOr<std::string> asn1_signature =
       ConvertP1363SignatureToAsn1(signer.Sign("data"));
-  ASSERT_OK(asn1_signature);
+  ABSL_ASSERT_OK(asn1_signature);
 
-  EXPECT_OK(
+  ABSL_EXPECT_OK(
       VerifySignature(*asn1_signature, SignatureFormat::kAsn1, {&key},
                       [](absl::FunctionRef<void(absl::string_view)> emitter) {
                         emitter("data");
@@ -97,7 +98,8 @@ TEST(VerifySignatureTest, NoKeys) {
                       [](absl::FunctionRef<void(absl::string_view)> emitter) {
                         emitter("data");
                       });
-  EXPECT_THAT(status, IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(status,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(status.message(), HasSubstr("no matching signing keys"));
 }
 
@@ -116,7 +118,7 @@ TEST(VerifySignatureTest, MultipleKeys) {
   key3.set_purpose(Key::VERIFY);
   key3.set_key_material(EcdsaP256R1Signer::Create().GetPublicKey());
 
-  EXPECT_OK(VerifySignature(
+  ABSL_EXPECT_OK(VerifySignature(
       signer.Sign("data"), SignatureFormat::kP1363, {&key1, &key2, &key3},
       [](absl::FunctionRef<void(absl::string_view)> emitter) {
         emitter("data");
@@ -130,7 +132,7 @@ TEST(VerifySignatureTest, MultipleEmitterCalls) {
   key.set_purpose(Key::VERIFY);
   key.set_key_material(signer.GetPublicKey());
 
-  EXPECT_OK(
+  ABSL_EXPECT_OK(
       VerifySignature(signer.Sign("data"), SignatureFormat::kP1363, {&key},
                       [](absl::FunctionRef<void(absl::string_view)> emitter) {
                         emitter("d");
@@ -148,7 +150,7 @@ TEST(VerifySignatureTest, PrecomputedDigest) {
 
   std::string digest = ComputeSHA256("data");
 
-  EXPECT_OK(VerifySignature(
+  ABSL_EXPECT_OK(VerifySignature(
       signer.Sign("data"), SignatureFormat::kP1363, {&key},
       absl::MakeSpan(reinterpret_cast<const uint8_t*>(digest.data()),
                      digest.size())));
@@ -165,7 +167,8 @@ TEST(VerifySignatureTest, InvalidSignature) {
                       [](absl::FunctionRef<void(absl::string_view)> emitter) {
                         emitter("data");
                       });
-  EXPECT_THAT(status, IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(status,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(status.message(), HasSubstr("invalid signature"));
 
   status =
@@ -173,7 +176,8 @@ TEST(VerifySignatureTest, InvalidSignature) {
                       [](absl::FunctionRef<void(absl::string_view)> emitter) {
                         emitter("data");
                       });
-  EXPECT_THAT(status, IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(status,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(status.message(), HasSubstr("invalid signature"));
 }
 
@@ -189,7 +193,8 @@ TEST(VerifySignatureTest, InvalidAlgorithm) {
                       [](absl::FunctionRef<void(absl::string_view)> emitter) {
                         emitter("data");
                       });
-  EXPECT_THAT(status, IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(status,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(status.message(), HasSubstr("unsupported key algorithm"));
 }
 
@@ -205,7 +210,8 @@ TEST(VerifySignatureTest, InvalidPurpose) {
                       [](absl::FunctionRef<void(absl::string_view)> emitter) {
                         emitter("data");
                       });
-  EXPECT_THAT(status, IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(status,
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(status.message(), HasSubstr("key is not a verifying key"));
 }
 

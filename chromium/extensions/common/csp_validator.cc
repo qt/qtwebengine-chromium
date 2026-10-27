@@ -38,6 +38,8 @@ namespace {
 
 const char kDefaultSrc[] = "default-src";
 const char kScriptSrc[] = "script-src";
+const char kScriptSrcElem[] = "script-src-elem";
+const char kScriptSrcAttr[] = "script-src-attr";
 const char kObjectSrc[] = "object-src";
 const char kFrameSrc[] = "frame-src";
 const char kChildSrc[] = "child-src";
@@ -69,11 +71,13 @@ const char* const kHashSourcePrefixes[] = {
   "'sha512-"
 };
 
-// TODO(karandeepb): This is not the same list as used by the CSP spec. See
-// https://infra.spec.whatwg.org/#ascii-whitespace.
-const char kWhitespaceDelimiters[] = " \t\r\n";
-
 constexpr char kChromeResourcesUrl[] = "chrome://resources";
+constexpr const char* const kExtensionsAllowedToUseChromeResources[] = {
+    extension_misc::kChromeVoxExtensionId,
+    extension_misc::kIndigoExtensionId,
+    // Used for ComponentExtensionWorkerChromeResourcesBrowserTest.
+    extension_misc::kChromeResourcesTestExtensionId,
+};
 
 using Directive = CSPParser::Directive;
 
@@ -298,8 +302,9 @@ std::string GetAppSandboxSecureDirectiveValues(
     // Keyword directive sources are surrounded with quotes, e.g. 'self',
     // 'sha256-...', 'unsafe-eval', 'nonce-...'. These do not specify a remote
     // host or '*', so keep them and restrict the rest.
-    if (source_lower.size() > 1u && source_lower[0] == '\'' &&
-        source_lower.back() == '\'') {
+    if ((source_lower.size() > 1u && source_lower[0] == '\'' &&
+         source_lower.back() == '\'') ||
+        source_lower == "blob:" || source_lower == "filesystem:") {
       seen_self_or_none |= source_lower == "'none'" || source_lower == "'self'";
       sane_csp_parts.push_back(source_lower);
     } else if (warnings) {
@@ -484,7 +489,8 @@ class ExtensionCSPEnforcer : public CSPEnforcer {
       : CSPEnforcer(std::move(manifest_key),
                     true,
                     base::BindRepeating(&GetSecureDirectiveValues, options)) {
-    secure_directives_.emplace_back(std::vector<std::string>({kScriptSrc}));
+    secure_directives_.emplace_back(std::vector<std::string>(
+        {kScriptSrc, kScriptSrcElem, kScriptSrcAttr, kWorkerSrc, kChildSrc}));
     if (!allow_insecure_object_src)
       secure_directives_.emplace_back(std::vector<std::string>({kObjectSrc}));
   }
@@ -496,7 +502,9 @@ class ExtensionCSPEnforcer : public CSPEnforcer {
   std::string GetDefaultCSPValue(const DirectiveStatus& status) override {
     if (status.Matches(kObjectSrc))
       return kObjectSrcDefaultDirective;
-    DCHECK(status.Matches(kScriptSrc));
+    DCHECK(status.Matches(kScriptSrc) || status.Matches(kScriptSrcElem) ||
+           status.Matches(kScriptSrcAttr) || status.Matches(kWorkerSrc) ||
+           status.Matches(kChildSrc));
     return kScriptSrcDefaultDirective;
   }
 };
@@ -509,7 +517,8 @@ class AppSandboxPageCSPEnforcer : public CSPEnforcer {
                     base::BindRepeating(&GetAppSandboxSecureDirectiveValues)) {
     secure_directives_.emplace_back(
         std::vector<std::string>({kChildSrc, kFrameSrc}));
-    secure_directives_.emplace_back(std::vector<std::string>({kScriptSrc}));
+    secure_directives_.emplace_back(std::vector<std::string>(
+        {kScriptSrc, kScriptSrcElem, kScriptSrcAttr, kWorkerSrc}));
   }
 
   AppSandboxPageCSPEnforcer(const AppSandboxPageCSPEnforcer&) = delete;
@@ -520,7 +529,8 @@ class AppSandboxPageCSPEnforcer : public CSPEnforcer {
   std::string GetDefaultCSPValue(const DirectiveStatus& status) override {
     if (status.Matches(kChildSrc))
       return kAppSandboxSubframeSrcDefaultDirective;
-    DCHECK(status.Matches(kScriptSrc));
+    DCHECK(status.Matches(kScriptSrc) || status.Matches(kScriptSrcElem) ||
+           status.Matches(kScriptSrcAttr) || status.Matches(kWorkerSrc));
     return kAppSandboxScriptSrcDefaultDirective;
   }
 };
@@ -563,7 +573,7 @@ void CSPParser::Parse() {
            policy_, ";", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
     // Get whitespace separated tokens.
     std::vector<std::string_view> tokens = base::SplitStringPiece(
-        directive_str, kWhitespaceDelimiters, base::TRIM_WHITESPACE,
+        directive_str, base::kWhitespaceASCII, base::TRIM_WHITESPACE,
         base::SPLIT_WANT_NONEMPTY);
 
     // |directive_str| is non-empty and has had whitespace trimmed. Hence, it
@@ -722,11 +732,11 @@ bool DoesCSPDisallowRemoteCode(const std::string& extension_id,
           std::string source_lower = base::ToLowerASCII(source);
 
           if (source_lower == kChromeResourcesUrl &&
-              extension_id == extension_misc::kChromeVoxExtensionId &&
+              IsExtensionAllowedToUseChromeResources(extension_id) &&
               location == mojom::ManifestLocation::kComponent) {
-            // We explicitly allow ChromeVox to include scripts from
-            // chrome://resources. ChromeVox is built into the browser as a
-            // component extension, and chrome://resources aren't remote.
+            // We explicitly allow some component extensions to include scripts
+            // from chrome://resources. These extensions are built into the
+            // browser, and chrome://resources isn't really remote.
             return true;
           }
 
@@ -767,6 +777,11 @@ bool DoesCSPDisallowRemoteCode(const std::string& extension_id,
   }
 
   return true;
+}
+
+bool IsExtensionAllowedToUseChromeResources(const std::string& extension_id) {
+  return std::ranges::contains(kExtensionsAllowedToUseChromeResources,
+                               extension_id);
 }
 
 }  // namespace csp_validator

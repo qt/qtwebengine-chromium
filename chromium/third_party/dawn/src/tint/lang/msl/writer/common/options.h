@@ -36,7 +36,7 @@
 #include "src/tint/api/common/bindings.h"
 #include "src/tint/api/common/substitute_overrides_config.h"
 #include "src/tint/api/common/vertex_pulling_config.h"
-#include "src/tint/utils/reflection.h"
+#include "src/tint/utils/reflection/reflection.h"
 
 namespace tint::msl::writer {
 
@@ -64,7 +64,7 @@ struct ArrayLengthOptions {
 /// Information to configure an argument buffer
 struct ArgumentBufferInfo {
     /// The buffer ID to use for this argument buffer
-    uint32_t id;
+    uint32_t id = 0;
 
     /// The buffer ID to use for the dynamic buffer if needed
     std::optional<uint32_t> dynamic_buffer_id{};
@@ -127,6 +127,9 @@ struct Options {
         /// Set to `true` to collapse nested subgroupMin and subgroupMax operations.
         bool collapse_subgroup_min_max = false;
 
+        /// Set to `true` to work around a driver bug with u32 divide and modulo operations.
+        bool fix_u32_div_mod = false;
+
         TINT_REFLECT(Workarounds,
                      scalarize_max_min_clamp,
                      disable_module_constant_f16,
@@ -136,7 +139,8 @@ struct Options {
                      polyfill_unpack_2x16_unorm,
                      polyfill_tanh_f16,
                      replace_workgroup_bool_with_u32,
-                     collapse_subgroup_min_max);
+                     collapse_subgroup_min_max,
+                     fix_u32_div_mod);
         TINT_REFLECT_HASH_CODE(Workarounds);
 
         bool operator==(const Workarounds&) const = default;
@@ -207,6 +211,9 @@ struct Options {
     /// Any used extensions
     Extensions extensions{};
 
+    /// Set to `true` to generate polyfill for `sample_mask` builtin
+    bool polyfill_sample_mask = false;
+
     /// The fixed sample mask to combine with fragment shader outputs.
     /// Defaults to 0xFFFFFFFF.
     uint32_t fixed_sample_mask = 0xFFFFFFFF;
@@ -249,6 +256,7 @@ struct Options {
                  use_argument_buffers,
                  workarounds,
                  extensions,
+                 polyfill_sample_mask,
                  fixed_sample_mask,
                  pixel_local_attachments,
                  array_length_from_constants,

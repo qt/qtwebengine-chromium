@@ -10,6 +10,12 @@
 
 #include "common/angleutils.h"
 
+#include <array>
+#include <condition_variable>
+#include <mutex>
+#include <string>
+#include <thread>
+
 namespace
 {
 

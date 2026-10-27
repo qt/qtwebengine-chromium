@@ -20,6 +20,7 @@
 #include "base/task/thread_pool.h"
 #include "base/trace_event/process_memory_dump.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
+#include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/client/internal/mappable_buffer.h"
 #include "gpu/command_buffer/client/internal/mappable_buffer_shared_memory.h"
@@ -34,6 +35,7 @@
 #include "third_party/dawn/include/dawn/wire/client/webgpu_cpp.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/buffer_usage_util.h"
+#include "ui/gfx/gpu_fence.h"
 
 #if BUILDFLAG(IS_APPLE)
 #include "gpu/command_buffer/client/internal/mappable_buffer_io_surface.h"
@@ -221,6 +223,8 @@ ClientSharedImage::CreateMappableBufferFromHandle(
       base::BindRepeating(&ClientSharedImage::CopyNativeGmbToSharedMemoryAsync,
                           base::Unretained(this));
   switch (handle.type) {
+    case gfx::EMPTY_BUFFER:
+      NOTREACHED();
     case gfx::SHARED_MEMORY_BUFFER:
       return MappableBufferSharedMemory::CreateFromHandle(std::move(handle),
                                                           size, format);
@@ -273,10 +277,6 @@ ClientSharedImage::CreateMappableBufferFromHandle(
           std::move(pool));
     }
 #endif
-    default:
-      // TODO(dcheng): Remove default case (https://crbug.com/676224).
-      NOTREACHED() << format.ToString() << ", "
-                   << gfx::BufferUsageToString(usage);
   }
 }
 
@@ -332,7 +332,7 @@ ClientSharedImage::ClientSharedImage(
     scoped_refptr<SharedImageInterfaceHolder> sii_holder,
     gfx::GpuMemoryBufferType gmb_type)
     : mailbox_(mailbox),
-      metadata_(info.meta),
+      metadata_(info),
       debug_label_(info.debug_label),
       creation_sync_token_(sync_token),
       sii_holder_(std::move(sii_holder)),
@@ -369,7 +369,7 @@ ClientSharedImage::ClientSharedImage(
     scoped_refptr<SharedImageInterfaceHolder> sii_holder,
     uint32_t texture_target)
     : mailbox_(mailbox),
-      metadata_(info.meta),
+      metadata_(info),
       debug_label_(info.debug_label),
       creation_sync_token_(sync_token),
       sii_holder_(std::move(sii_holder)),
@@ -440,7 +440,7 @@ ClientSharedImage::ClientSharedImage(
     scoped_refptr<SharedImageInterfaceHolder> sii_holder,
     scoped_refptr<base::UnsafeSharedMemoryPool> shared_memory_pool)
     : mailbox_(mailbox),
-      metadata_(info.meta),
+      metadata_(info),
       debug_label_(info.debug_label),
       creation_sync_token_(sync_token),
       mappable_buffer_(
@@ -448,7 +448,7 @@ ClientSharedImage::ClientSharedImage(
                                          metadata_.size,
                                          metadata_.format,
                                          handle_info.buffer_usage,
-                                         info.meta.usage,
+                                         info.usage,
                                          std::move(shared_memory_pool))),
       buffer_usage_(handle_info.buffer_usage),
       sii_holder_(std::move(sii_holder)),
@@ -465,7 +465,7 @@ ClientSharedImage::ClientSharedImage(
 
 ClientSharedImage::ClientSharedImage(const Mailbox& mailbox,
                                      const SharedImageInfo& info)
-    : mailbox_(mailbox), metadata_(info.meta), debug_label_(info.debug_label) {
+    : mailbox_(mailbox), metadata_(info), debug_label_(info.debug_label) {
   CHECK(!mailbox.IsZero());
   texture_target_ = GL_TEXTURE_2D;
 }
@@ -552,6 +552,14 @@ void ClientSharedImage::MapAsync(
                                   std::move(result_cb));
 }
 
+gfx::GpuMemoryBufferType ClientSharedImage::GetGpuMemoryBufferType() const {
+  return mappable_buffer_ ? mappable_buffer_->GetType() : gfx::EMPTY_BUFFER;
+}
+
+bool ClientSharedImage::SupportsZeroCopyWebGPUImport() const {
+  return mappable_buffer_ && mappable_buffer_->SupportsZeroCopyWebGPUImport();
+}
+
 gfx::GpuMemoryBufferHandle ClientSharedImage::CloneGpuMemoryBufferHandle()
     const {
   // Supported only if this ClientSI is backed by a MappableBuffer that is
@@ -605,6 +613,23 @@ scoped_refptr<ClientSharedImage> ClientSharedImage::ImportUnowned(
     ExportedSharedImage exported_shared_image) {
   return base::WrapRefCounted<ClientSharedImage>(
       new ClientSharedImage(std::move(exported_shared_image)));
+}
+
+void ClientSharedImage::CreateGpuFenceForSyncTokens(
+    std::vector<scoped_refptr<ClientSharedImage>> shared_images,
+    std::vector<SyncToken> sync_tokens,
+    gles2::GLES2Interface* gl,
+    ContextSupport* context_support,
+    base::OnceCallback<void(std::unique_ptr<gfx::GpuFence>)> callback) {
+  CHECK(gl && context_support);
+
+  for (auto& sync_token : sync_tokens) {
+    gl->WaitSyncTokenCHROMIUM(sync_token.GetConstData());
+  }
+
+  GLuint id = gl->CreateGpuFenceCHROMIUM();
+  context_support->GetGpuFence(id, std::move(callback));
+  gl->DestroyGpuFenceCHROMIUM(id);
 }
 
 gpu::SyncToken ClientSharedImage::BackingWasExternallyUpdated(
@@ -796,16 +821,16 @@ scoped_refptr<ClientSharedImage> ClientSharedImage::CreateForTesting(
   SharedImageInfo info(metadata, "CSICreateForTesting");
 
   gfx::GpuMemoryBufferHandle handle;
-  MappableBufferSharedMemory::AllocateForTesting(
-      info.meta.size, info.meta.format, buffer_usage, &handle);
+  MappableBufferSharedMemory::AllocateForTesting(info.size, info.format,
+                                                 buffer_usage, &handle);
   auto mappable_buffer = MappableBufferSharedMemory::CreateFromHandle(
-      std::move(handle), info.meta.size, info.meta.format);
+      std::move(handle), info.size, info.format);
 
   // Since the |mappable_buffer| here is always a shared memory, clear the
   // external sampler prefs if it is already set by client.
   // https://issues.chromium.org/339546249.
-  if (info.meta.format.PrefersExternalSampler()) {
-    info.meta.format.ClearPrefersExternalSampler();
+  if (info.format.PrefersExternalSampler()) {
+    info.format.ClearPrefersExternalSampler();
   }
 
   auto client_si = base::MakeRefCounted<ClientSharedImage>(

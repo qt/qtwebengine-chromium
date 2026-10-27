@@ -47,10 +47,8 @@ bool CBC_QRCodeWriter::SetErrorCorrectionLevel(int32_t level) {
   return true;
 }
 
-DataVector<uint8_t> CBC_QRCodeWriter::Encode(WideStringView contents,
-                                             int32_t ecLevel,
-                                             int32_t* pOutWidth,
-                                             int32_t* pOutHeight) {
+CBC_TwoDimWriter::EncodeResult CBC_QRCodeWriter::Encode(WideStringView contents,
+                                                        int32_t ecLevel) {
   CBC_QRCoderErrorCorrectionLevel* ec = nullptr;
   switch (ecLevel) {
     case 0:
@@ -66,15 +64,13 @@ DataVector<uint8_t> CBC_QRCodeWriter::Encode(WideStringView contents,
       ec = CBC_QRCoderErrorCorrectionLevel::H;
       break;
     default:
-      return DataVector<uint8_t>();
-  }
-  CBC_QRCoder qr;
-  if (!CBC_QRCoderEncoder::Encode(contents, ec, &qr)) {
-    return DataVector<uint8_t>();
+      return {};
   }
 
-  *pOutWidth = qr.GetMatrixWidth();
-  *pOutHeight = qr.GetMatrixWidth();
+  CBC_QRCoder qr;
+  if (!CBC_QRCoderEncoder::Encode(contents, ec, &qr)) {
+    return {};
+  }
   std::unique_ptr<CBC_CommonByteMatrix> matrix = qr.TakeMatrix();
-  return matrix->TakeArray();
+  return {matrix->TakeArray(), qr.GetMatrixWidth(), qr.GetMatrixWidth()};
 }

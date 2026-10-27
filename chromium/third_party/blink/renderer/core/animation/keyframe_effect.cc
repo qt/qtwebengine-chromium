@@ -341,6 +341,13 @@ void KeyframeEffect::RefreshTarget() {
   }
 }
 
+void KeyframeEffect::UpdateEffectTarget(PseudoElement* new_effect_target) {
+  DetachTarget(GetAnimation());
+  effect_target_ = new_effect_target;
+  AttachTarget(GetAnimation());
+  InvalidateAndNotifyOwner();
+}
+
 V8CompositeOperation KeyframeEffect::composite() const {
   return V8CompositeOperation(
       EffectModel::CompositeOperationToEnum(CompositeInternal()));
@@ -488,7 +495,7 @@ KeyframeEffect::CheckCanStartAnimationOnCompositor(
 void KeyframeEffect::StartAnimationOnCompositor(
     int group,
     std::optional<double> start_time,
-    base::TimeDelta time_offset,
+    std::optional<base::TimeDelta> hold_time,
     double animation_playback_rate,
     CompositorAnimation* compositor_animation,
     bool is_monotonic_timeline,
@@ -505,7 +512,7 @@ void KeyframeEffect::StartAnimationOnCompositor(
   DCHECK(Model());
 
   CompositorAnimations::StartAnimationOnCompositor(
-      *effect_target_, group, start_time, time_offset, SpecifiedTiming(),
+      *effect_target_, group, start_time, hold_time, SpecifiedTiming(),
       NormalizedTiming(), GetAnimation(), *compositor_animation, *Model(),
       compositor_keyframe_model_ids_, animation_playback_rate,
       is_monotonic_timeline, is_boundary_aligned);
@@ -538,11 +545,11 @@ bool KeyframeEffect::CancelAnimationOnCompositor(
   }
 
   DCHECK(Model());
-  for (const auto& compositor_keyframe_model_id :
-       compositor_keyframe_model_ids_) {
-    CompositorAnimations::CancelAnimationOnCompositor(
-        *effect_target_, compositor_animation, compositor_keyframe_model_id,
-        *Model());
+  if (compositor_animation) {
+    for (const auto& compositor_keyframe_model_id :
+         compositor_keyframe_model_ids_) {
+      compositor_animation->RemoveKeyframeModel(compositor_keyframe_model_id);
+    }
   }
   compositor_keyframe_model_ids_.clear();
   return true;
@@ -557,7 +564,7 @@ void KeyframeEffect::CancelIncompatibleAnimationsOnCompositor() {
 }
 
 void KeyframeEffect::PauseAnimationForTestingOnCompositor(
-    base::TimeDelta pause_time) {
+    base::TimeDelta hold_time) {
   DCHECK(!compositor_keyframe_model_ids_.empty());
   if (!effect_target_ || !effect_target_->GetLayoutObject())
     return;
@@ -567,7 +574,7 @@ void KeyframeEffect::PauseAnimationForTestingOnCompositor(
        compositor_keyframe_model_ids_) {
     CompositorAnimations::PauseAnimationForTestingOnCompositor(
         *effect_target_, *GetAnimation(), compositor_keyframe_model_id,
-        pause_time, *Model());
+        hold_time, *Model());
   }
 }
 

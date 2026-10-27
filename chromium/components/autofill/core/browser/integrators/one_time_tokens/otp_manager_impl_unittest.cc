@@ -156,7 +156,7 @@ TEST_F(OtpManagerImplTest, GetOtpSuggestions_TriggersFirstRetrieval) {
 
   // Prepare the handling of SMS requests from the SMS backend.
   one_time_tokens::OneTimeToken otp(one_time_tokens::OneTimeTokenType::kSmsOtp,
-                                    kDefaultOtpValue, base::Time::Now());
+                                    kDefaultOtpValue, base::TimeTicks::Now());
   EXPECT_CALL(sms_otp_backend_, RetrieveSmsOtp)
       .WillOnce(RunOnceCallback<0>(otp));
   EXPECT_CALL(otp_phish_guard_delegate(), StartOtpPhishGuardCheck)
@@ -179,7 +179,7 @@ TEST_F(OtpManagerImplTest, GetOtpSuggestions_DoesNotTriggerWhileInProgress) {
 
   // Prepare the handling of SMS requests from the SMS backend.
   one_time_tokens::OneTimeToken otp(one_time_tokens::OneTimeTokenType::kSmsOtp,
-                                    kDefaultOtpValue, base::Time::Now());
+                                    kDefaultOtpValue, base::TimeTicks::Now());
   base::OnceCallback<void(
       base::expected<one_time_tokens::OneTimeToken,
                      one_time_tokens::OneTimeTokenRetrievalError>)>
@@ -217,7 +217,7 @@ TEST_F(OtpManagerImplTest, GetOtpSuggestions_FetchesSmsOnlyOnce) {
   OtpManagerImpl otp_manager(autofill_manager(), &one_time_token_service_);
 
   one_time_tokens::OneTimeToken otp(one_time_tokens::OneTimeTokenType::kSmsOtp,
-                                    kDefaultOtpValue, base::Time::Now());
+                                    kDefaultOtpValue, base::TimeTicks::Now());
   EXPECT_CALL(sms_otp_backend_, RetrieveSmsOtp)
       .WillOnce(RunOnceCallback<0>(otp));
   EXPECT_CALL(otp_phish_guard_delegate(), StartOtpPhishGuardCheck)
@@ -252,7 +252,7 @@ TEST_F(OtpManagerImplTest, GetOtpSuggestions_NewCallInvalidatesOldCallback) {
 
   // Prepare the handling of SMS requests from the SMS backend.
   one_time_tokens::OneTimeToken otp(one_time_tokens::OneTimeTokenType::kSmsOtp,
-                                    kDefaultOtpValue, base::Time::Now());
+                                    kDefaultOtpValue, base::TimeTicks::Now());
   base::OnceCallback<void(
       base::expected<one_time_tokens::OneTimeToken,
                      one_time_tokens::OneTimeTokenRetrievalError>)>
@@ -301,7 +301,7 @@ TEST_F(OtpManagerImplTest, GetOtpSuggestions_EmptyOtpIsNotStored) {
 
   // Prepare a otp with an empty OTP.
   one_time_tokens::OneTimeToken otp(one_time_tokens::OneTimeTokenType::kSmsOtp,
-                                    "", base::Time::Now());
+                                    "", base::TimeTicks::Now());
 
   EXPECT_CALL(sms_otp_backend_, RetrieveSmsOtp)
       .WillOnce(RunOnceCallback<0>(otp));
@@ -324,7 +324,7 @@ TEST_F(OtpManagerImplTest, GetOtpSuggestions_FiltersExpiredOtps) {
   // Prepare the otp from the SMS backend.
   one_time_tokens::OneTimeToken otp(one_time_tokens::OneTimeTokenType::kSmsOtp,
                                     kDefaultOtpValue,
-                                    task_environment_.GetMockClock()->Now());
+                                    task_environment_.NowTicks());
   base::OnceCallback<void(
       base::expected<one_time_tokens::OneTimeToken,
                      one_time_tokens::OneTimeTokenRetrievalError>)>
@@ -369,7 +369,7 @@ TEST_F(OtpManagerImplTest, GetOtpSuggestions_PhishingCheckReturnsTrue) {
 
   // Prepare the handling of SMS requests from the SMS backend.
   one_time_tokens::OneTimeToken otp(one_time_tokens::OneTimeTokenType::kSmsOtp,
-                                    kDefaultOtpValue, base::Time::Now());
+                                    kDefaultOtpValue, base::TimeTicks::Now());
   EXPECT_CALL(sms_otp_backend_, RetrieveSmsOtp)
       .WillOnce(RunOnceCallback<0>(otp));
   base::OnceCallback<void(bool)> phish_guard_callback;
@@ -407,7 +407,7 @@ TEST_F(OtpManagerImplTest, GetOtpSuggestions_PhishingCheckReturnsFalse) {
 
   // Prepare the handling of SMS requests from the SMS backend.
   one_time_tokens::OneTimeToken otp(one_time_tokens::OneTimeTokenType::kSmsOtp,
-                                    kDefaultOtpValue, base::Time::Now());
+                                    kDefaultOtpValue, base::TimeTicks::Now());
   EXPECT_CALL(sms_otp_backend_, RetrieveSmsOtp)
       .WillOnce(RunOnceCallback<0>(otp));
   base::OnceCallback<void(bool)> phish_guard_callback;
@@ -448,7 +448,7 @@ TEST_F(OtpManagerImplTest, GetOtpSuggestions_NoPhishingDelegate) {
 
   // Prepare the handling of SMS requests from the SMS backend.
   one_time_tokens::OneTimeToken otp(one_time_tokens::OneTimeTokenType::kSmsOtp,
-                                    kDefaultOtpValue, base::Time::Now());
+                                    kDefaultOtpValue, base::TimeTicks::Now());
   EXPECT_CALL(sms_otp_backend_, RetrieveSmsOtp)
       .WillOnce(RunOnceCallback<0>(otp));
 
@@ -468,6 +468,80 @@ TEST_F(OtpManagerImplTest, GetOtpSuggestions_NoPhishingDelegate) {
       /*OneTimeTokensPhishGuardVerdict::kUnknown*/ 0, 1);
 }
 
+// Tests that `OnOtpAvailable` is logged even if the PhishGuard check blocks delivery.
+TEST_F(OtpManagerImplTest, OnOtpAvailable_LoggedEvenIfPhishGuardBlocks) {
+  OtpManagerImpl otp_manager(autofill_manager(), &one_time_token_service_);
+
+  one_time_tokens::OneTimeToken otp(one_time_tokens::OneTimeTokenType::kSmsOtp,
+                                    kDefaultOtpValue, base::TimeTicks::Now());
+  EXPECT_CALL(sms_otp_backend_, RetrieveSmsOtp)
+      .WillOnce(RunOnceCallback<0>(otp));
+
+  base::OnceCallback<void(bool)> phish_guard_callback;
+  EXPECT_CALL(otp_phish_guard_delegate(), StartOtpPhishGuardCheck)
+      .WillOnce([&](const GURL&, base::OnceCallback<void(bool)> callback) {
+        phish_guard_callback = std::move(callback);
+      });
+
+  // Observing an OTP field triggers retrieval.
+  AddFormWithOtpField();
+
+  base::test::TestFuture<const std::vector<std::string>> future;
+  otp_manager.GetOtpSuggestions(future.GetCallback());
+
+  // Simulate phishing detection.
+  std::move(phish_guard_callback).Run(true);
+
+  // Suggestions should be empty because delivery is blocked.
+  EXPECT_TRUE(future.Get().empty());
+
+  // However, the metric should still be logged as the OTP was successfully retrieved.
+  EXPECT_TRUE(autofill_manager()
+                  .GetOtpFormEventLogger()
+                  .HasLoggedDataToFillAvailableForTesting());
+}
+
+// Tests that `OnOtpAvailable` is not logged if there is no pending callback
+// when the OTP arrives.
+TEST_F(OtpManagerImplTest, OnOtpAvailable_NotLoggedIfNoPendingCallback) {
+  OtpManagerImpl otp_manager(autofill_manager(), &one_time_token_service_);
+
+  one_time_tokens::OneTimeToken otp(one_time_tokens::OneTimeTokenType::kSmsOtp,
+                                    kDefaultOtpValue, base::TimeTicks::Now());
+  base::OnceCallback<void(
+      base::expected<one_time_tokens::OneTimeToken,
+                     one_time_tokens::OneTimeTokenRetrievalError>)>
+      sms_backend_callback;
+  EXPECT_CALL(sms_otp_backend_, RetrieveSmsOtp)
+      .WillOnce(
+          [&](base::OnceCallback<void(
+                  base::expected<one_time_tokens::OneTimeToken,
+                                 one_time_tokens::OneTimeTokenRetrievalError>)>
+                  callback) { sms_backend_callback = std::move(callback); });
+
+  // Observing an OTP field triggers retrieval.
+  AddFormWithOtpField();
+
+  base::test::TestFuture<const std::vector<std::string>> future;
+  otp_manager.GetOtpSuggestions(future.GetCallback());
+
+  // Simulate a focus on a form field. This should clear the pending callback.
+  otp_manager.OnBeforeFocusOnFormField(autofill_manager(), FormGlobalId(),
+                                       FieldGlobalId());
+
+  EXPECT_FALSE(autofill_manager()
+                   .GetOtpFormEventLogger()
+                   .HasLoggedDataToFillAvailableForTesting());
+
+  // Receive the token. The metric should not be logged because the pending
+  // callback was cleared.
+  std::move(sms_backend_callback).Run(otp);
+
+  EXPECT_FALSE(autofill_manager()
+                   .GetOtpFormEventLogger()
+                   .HasLoggedDataToFillAvailableForTesting());
+}
+
 // Tests that `OnBeforeFocusOnFormField` clears the pending callback for
 // `GetOtpSuggestions`.
 TEST_F(OtpManagerImplTest, OnBeforeFocusOnFormField_ClearsPendingCallback) {
@@ -475,7 +549,7 @@ TEST_F(OtpManagerImplTest, OnBeforeFocusOnFormField_ClearsPendingCallback) {
 
   // Prepare the handling of SMS requests from the SMS backend.
   one_time_tokens::OneTimeToken otp(one_time_tokens::OneTimeTokenType::kSmsOtp,
-                                    kDefaultOtpValue, base::Time::Now());
+                                    kDefaultOtpValue, base::TimeTicks::Now());
   base::OnceCallback<void(
       base::expected<one_time_tokens::OneTimeToken,
                      one_time_tokens::OneTimeTokenRetrievalError>)>
@@ -514,7 +588,7 @@ TEST_F(OtpManagerImplTest, OnBeforeFocusOnNonFormField_ClearsPendingCallback) {
 
   // Prepare the handling of SMS requests from the SMS backend.
   one_time_tokens::OneTimeToken otp(one_time_tokens::OneTimeTokenType::kSmsOtp,
-                                    kDefaultOtpValue, base::Time::Now());
+                                    kDefaultOtpValue, base::TimeTicks::Now());
   base::OnceCallback<void(
       base::expected<one_time_tokens::OneTimeToken,
                      one_time_tokens::OneTimeTokenRetrievalError>)>
@@ -551,11 +625,11 @@ TEST_F(OtpManagerImplTest, OnBeforeFocusOnNonFormField_ClearsPendingCallback) {
 TEST_F(OtpManagerImplTest, SelectMostRecentToken) {
   std::vector<one_time_tokens::OneTimeToken> tokens = {
       {one_time_tokens::OneTimeTokenType::kSmsOtp, "123",
-       base::Time::FromDeltaSinceWindowsEpoch(base::Seconds(10))},
+       base::TimeTicks() + base::Seconds(10)},
       {one_time_tokens::OneTimeTokenType::kSmsOtp, "456",
-       base::Time::FromDeltaSinceWindowsEpoch(base::Seconds(20))},
+       base::TimeTicks() + base::Seconds(20)},
       {one_time_tokens::OneTimeTokenType::kSmsOtp, "789",
-       base::Time::FromDeltaSinceWindowsEpoch(base::Seconds(15))}};
+       base::TimeTicks() + base::Seconds(15)}};
 
   OtpManagerImpl otp_manager(autofill_manager(), &one_time_token_service_);
   test_api(otp_manager).SetReceivedOtps(tokens);

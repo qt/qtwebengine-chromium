@@ -60,7 +60,7 @@ void TlsDataRouterPosix::RegisterAcceptObserver(
   OSP_CHECK(observer);
   StreamSocketPosix* socket_ptr = socket.get();
   {
-    std::unique_lock<std::mutex> lock(accept_socket_mutex_);
+    std::lock_guard<std::mutex> lock(accept_socket_mutex_);
     accept_stream_sockets_.push_back(std::move(socket));
     accept_socket_mappings_[socket_ptr] = observer;
   }
@@ -73,7 +73,7 @@ void TlsDataRouterPosix::RegisterAcceptObserver(
 void TlsDataRouterPosix::DeregisterAcceptObserver(SocketObserver* observer) {
   std::vector<std::unique_ptr<StreamSocketPosix>> sockets_to_delete;
   {
-    std::unique_lock<std::mutex> lock(accept_socket_mutex_);
+    std::lock_guard<std::mutex> lock(accept_socket_mutex_);
     for (auto it = accept_stream_sockets_.begin();
          it != accept_stream_sockets_.end();) {
       auto map_entry = accept_socket_mappings_.find(it->get());
@@ -98,7 +98,7 @@ void TlsDataRouterPosix::ProcessReadyHandle(
     SocketHandleWaiter::SocketHandleRef handle,
     uint32_t flags) {
   if (flags & SocketHandleWaiter::Flags::kReadable) {
-    std::unique_lock<std::mutex> lock(accept_socket_mutex_);
+    std::lock_guard<std::mutex> lock(accept_socket_mutex_);
     for (const auto& pair : accept_socket_mappings_) {
       if (pair.first->socket_handle() == handle) {
         pair.second->OnConnectionPending(pair.first);
@@ -145,7 +145,7 @@ bool TlsDataRouterPosix::HasTimedOut(Clock::time_point start_time,
 }
 
 bool TlsDataRouterPosix::IsSocketWatched(StreamSocketPosix* socket) const {
-  std::unique_lock<std::mutex> lock(accept_socket_mutex_);
+  std::lock_guard<std::mutex> lock(accept_socket_mutex_);
   return accept_socket_mappings_.find(socket) != accept_socket_mappings_.end();
 }
 

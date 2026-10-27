@@ -7,10 +7,16 @@
 import * as Bidi from './gen/main.js';
 import * as BidiPermissions from './gen/permissions.js';
 import * as BidiBluetooth from './gen/web-bluetooth.js';
+import * as BidiUaClientHints from './gen/ua-client-hints.js';
 
 export * from './gen/main.js';
 export * from './gen/permissions.js';
 export * from './gen/web-bluetooth.js';
+// Only `UserAgentClientHintsCommand` is exported, because the UA-CH extends
+// the `emulation` WebDriver BiDi domain and exposes `Emulation` namespace
+// which is already exported by main spec.
+export {UserAgentClientHintsCommand} from './gen/ua-client-hints.js';
+export {BidiUaClientHints};
 
 export * from './gen/mapping.js';
 
@@ -25,7 +31,8 @@ export type Result = Bidi.ResultData;
 export type Command =
   | Bidi.Command
   | ExternalSpecCommand<BidiPermissions.PermissionsCommand>
-  | ExternalSpecCommand<BidiBluetooth.BluetoothCommand>;
+  | ExternalSpecCommand<BidiBluetooth.BluetoothCommand>
+  | ExternalSpecCommand<BidiUaClientHints.UserAgentClientHintsCommand>;
 
 type ExternalSpecEvent<T> = {
   // type is defined by the main WebDriver BiDi spec and extension specs do

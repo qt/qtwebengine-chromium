@@ -101,6 +101,8 @@
 *> \ingroup complex16_blas_testing
 *
 *  =====================================================================
+*> SPDX-FileCopyrightText: The Eigen Authors
+*> SPDX-License-Identifier: BSD-3-Clause
       PROGRAM ZBLAT2
 *
 *  -- Reference BLAS test routine (version 3.4.1) --

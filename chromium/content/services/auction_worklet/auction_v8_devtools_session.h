@@ -80,12 +80,14 @@ class AuctionV8DevToolsSession : public blink::mojom::DevToolsSession,
   // Invoked from IOSession via DebugCommandQueue.
   void DispatchProtocolCommandFromIO(int32_t call_id,
                                      const std::string& method,
-                                     std::vector<uint8_t> message);
+                                     std::vector<uint8_t> message,
+                                     const std::string& fallthrough_data);
 
   // DevToolsSession implementation:
   void DispatchProtocolCommand(int32_t call_id,
                                const std::string& method,
-                               base::span<const uint8_t> message) override;
+                               base::span<const uint8_t> message,
+                               const std::string& fallthrough_data) override;
   void UnpauseAndTerminate() override;
 
   // V8Inspector::Channel implementation:
@@ -103,9 +105,6 @@ class AuctionV8DevToolsSession : public blink::mojom::DevToolsSession,
       std::unique_ptr<crdtp::Serializable> message) override;
   void SendProtocolNotification(
       std::unique_ptr<crdtp::Serializable> message) override;
-  void FallThrough(int call_id,
-                   crdtp::span<uint8_t> method,
-                   crdtp::span<uint8_t> message) override;
   void FlushProtocolNotifications() override;
 
  private:

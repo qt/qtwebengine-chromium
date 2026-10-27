@@ -90,11 +90,11 @@ if (!defined(dawn_abseil_dir)) {
 }
 
 if (!defined(dawn_dxc_dir)) {
-  dawn_dxc_dir = "//third_party/dxc"
+  dawn_dxc_dir = "//third_party/directx-shader-compiler/src"
 }
 
 if (!defined(dawn_dxc_gn_dir)) {
-  dawn_dxc_gn_dir = "//third_party/gn/dxc"
+  dawn_dxc_gn_dir = "//third_party/directx-shader-compiler"
 }
 
 if (!defined(dawn_dxheaders_dir)) {
@@ -127,4 +127,8 @@ if (!defined(dawn_emscripten_dir)) {
   } else {
     dawn_emscripten_dir = ""
   }
+}
+
+if (!defined(dawn_use_static_angle)) {
+  dawn_use_static_angle = false
 }

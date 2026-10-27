@@ -14,35 +14,11 @@
 
 #include <jni.h>
 
-#include <utility>
+#include <cstdint>
 
-#include "absl/container/flat_hash_set.h"
-#include "absl/container/inlined_vector.h"
 #include "absl/log/absl_check.h"
-#include "absl/types/span.h"
-#include "ink/brush/brush_coat.h"
-#include "ink/brush/brush_paint.h"
-#include "ink/brush/internal/jni/brush_jni_helper.h"
-#include "ink/geometry/internal/jni/mesh_format_jni_helper.h"
-#include "ink/geometry/mesh_format.h"
+#include "ink/brush/internal/jni/brush_coat_native.h"
 #include "ink/jni/internal/jni_defines.h"
-
-namespace {
-
-using ::ink::BrushCoat;
-using ::ink::BrushPaint;
-using ::ink::MeshFormat;
-using ::ink::brush_internal::AddAttributeIdsRequiredByCoat;
-using ::ink::jni::CastToBrushCoat;
-using ::ink::jni::CastToBrushPaint;
-using ::ink::jni::CastToBrushTip;
-using ::ink::jni::CastToMeshFormat;
-using ::ink::jni::DeleteNativeBrushCoat;
-using ::ink::jni::NewNativeBrushCoat;
-using ::ink::jni::NewNativeBrushPaint;
-using ::ink::jni::NewNativeBrushTip;
-
-}  // namespace
 
 extern "C" {
 
@@ -50,63 +26,50 @@ extern "C" {
 JNI_METHOD(brush, BrushCoatNative, jlong, create)
 (JNIEnv* env, jobject thiz, jlong tip_native_pointer,
  jlongArray paint_preferences_native_pointers_array) {
-  absl::InlinedVector<BrushPaint, 1> paint_preferences;
   ABSL_CHECK(paint_preferences_native_pointers_array != nullptr);
   const jsize paint_preferences_count =
       env->GetArrayLength(paint_preferences_native_pointers_array);
-  ABSL_CHECK_GT(paint_preferences_count, 0);
-  paint_preferences.reserve(paint_preferences_count);
   jlong* paint_preferences_native_pointers = env->GetLongArrayElements(
       paint_preferences_native_pointers_array, nullptr);
-  for (int i = 0; i < paint_preferences_count; ++i) {
-    jlong paint_native_pointer = paint_preferences_native_pointers[i];
-    paint_preferences.push_back(CastToBrushPaint(paint_native_pointer));
-  }
+  // Both `jlong` and `int64_t` are required to be 64-bit integers which JNI and
+  // Kotlin-cinterop respectively both map to Kotlin `Long`. However, on MacOS
+  // they represent two distinct (though equivalent) types, `jlong` is `long`
+  // but `int64_t` is `long long`.
+  static_assert(sizeof(jlong) == sizeof(int64_t));
+  jlong result = BrushCoatNative_create(
+      tip_native_pointer,
+      reinterpret_cast<int64_t*>(paint_preferences_native_pointers),
+      paint_preferences_count);
   env->ReleaseLongArrayElements(paint_preferences_native_pointers_array,
                                 paint_preferences_native_pointers, JNI_ABORT);
-
-  return NewNativeBrushCoat(BrushCoat{
-      .tip = CastToBrushTip(tip_native_pointer),
-      .paint_preferences = std::move(paint_preferences),
-  });
+  return result;
 }
 
 JNI_METHOD(brush, BrushCoatNative, jboolean, isCompatibleWithMeshFormat)
 (JNIEnv* env, jobject obj, jlong native_pointer,
  jlong mesh_format_native_pointer) {
-  // Gather all the attributes that are required by the brush coat.
-  absl::flat_hash_set<MeshFormat::AttributeId> required_attribute_ids;
-  AddAttributeIdsRequiredByCoat(CastToBrushCoat(native_pointer),
-                                required_attribute_ids);
-
-  // Check if all required attributes are present in the mesh format.
-  absl::Span<const MeshFormat::Attribute> mesh_attributes =
-      CastToMeshFormat(mesh_format_native_pointer).Attributes();
-  for (const MeshFormat::Attribute& attr : mesh_attributes) {
-    required_attribute_ids.erase(attr.id);
-  }
-  return required_attribute_ids.empty();
+  return BrushCoatNative_isCompatibleWithMeshFormat(native_pointer,
+                                                    mesh_format_native_pointer);
 }
 
 JNI_METHOD(brush, BrushCoatNative, void, free)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  DeleteNativeBrushCoat(native_pointer);
+  BrushCoatNative_free(native_pointer);
 }
 
 JNI_METHOD(brush, BrushCoatNative, jlong, newCopyOfBrushTip)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  return NewNativeBrushTip(CastToBrushCoat(native_pointer).tip);
+  return BrushCoatNative_newCopyOfBrushTip(native_pointer);
 }
 
 JNI_METHOD(brush, BrushCoatNative, jint, getBrushPaintPreferencesCount)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  return CastToBrushCoat(native_pointer).paint_preferences.size();
+  return BrushCoatNative_getBrushPaintPreferencesCount(native_pointer);
 }
 
 JNI_METHOD(brush, BrushCoatNative, jlong, newCopyOfBrushPaintPreference)
 (JNIEnv* env, jobject thiz, jlong native_pointer, jint index) {
-  return NewNativeBrushPaint(
-      CastToBrushCoat(native_pointer).paint_preferences[index]);
+  return BrushCoatNative_newCopyOfBrushPaintPreference(native_pointer, index);
 }
 
 }  // extern "C"

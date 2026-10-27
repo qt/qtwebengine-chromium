@@ -331,7 +331,7 @@ static int search_new_mv(AV1_COMP *cpi, MACROBLOCK *x,
     MV ref_mv = av1_get_ref_mv(x, 0).as_mv;
     tmp_sad = av1_int_pro_motion_estimation(
         cpi, x, bsize, mi_row, mi_col, &ref_mv, &y_sad_zero, me_search_size_col,
-        me_search_size_row);
+        me_search_size_row, 0, 0);
 
     if (tmp_sad > x->pred_mv_sad[LAST_FRAME]) return -1;
 
@@ -1588,9 +1588,18 @@ void av1_nonrd_pick_intra_mode(AV1_COMP *cpi, MACROBLOCK *x, RD_STATS *rd_cost,
   struct estimate_block_intra_args args;
   init_estimate_block_intra_args(&args, cpi, x);
   const TxfmSearchParams *txfm_params = &x->txfm_search_params;
+  const int mi_row = xd->mi_row;
+  const int mi_col = xd->mi_col;
   mi->tx_size =
       AOMMIN(max_txsize_lookup[bsize],
              tx_mode_to_biggest_tx_size[txfm_params->tx_mode_search_type]);
+  // For flat blocks at high qp, along the top/left boundary, cap the
+  // transform size to 16x16. This is avoid chessboard artifact that
+  // can occur for flat input at high QP.
+  if (cm->quant_params.base_qindex > 150 && x->source_variance == 0 &&
+      (mi_row == 0 || mi_col == 0) && mi->tx_size > TX_16X16) {
+    mi->tx_size = TX_16X16;
+  }
   assert(IMPLIES(xd->lossless[mi->segment_id], mi->tx_size == TX_4X4));
   const BLOCK_SIZE tx_bsize = txsize_to_bsize[mi->tx_size];
 
@@ -1609,8 +1618,6 @@ void av1_nonrd_pick_intra_mode(AV1_COMP *cpi, MACROBLOCK *x, RD_STATS *rd_cost,
   const int left_ctx = intra_mode_context[L];
   const unsigned int source_variance = x->source_variance;
   bmode_costs = x->mode_costs.y_mode_costs[above_ctx][left_ctx];
-  const int mi_row = xd->mi_row;
-  const int mi_col = xd->mi_col;
   // Use this flag to signal large flat blocks that may need special
   // treatment: in the current case H/V/SMOOTH may not be skipped if
   // DC has nonzero distortion and skippable is set. This is to remove
@@ -3591,7 +3598,7 @@ void av1_nonrd_pick_inter_mode_sb(AV1_COMP *cpi, TileDataEnc *tile_data,
   if (cpi->oxcf.tune_cfg.content == AOM_CONTENT_SCREEN &&
       x->content_state_sb.source_sad_nonrd != kZeroSad &&
       bsize <= BLOCK_16X16) {
-    unsigned int thresh_sse = cpi->rc.high_source_sad ? 15000 : 200000;
+    unsigned int thresh_sse = cpi->rc.high_source_sad ? 15000 : 100000;
     unsigned int thresh_source_var = cpi->rc.high_source_sad ? 50 : 200;
     unsigned int best_sse_inter_motion =
         (unsigned int)(search_state.best_rdc.sse >>
@@ -3622,7 +3629,7 @@ void av1_nonrd_pick_inter_mode_sb(AV1_COMP *cpi, TileDataEnc *tile_data,
                           x->content_state_sb.source_sad_nonrd != kZeroSad &&
                           !cpi->rc.high_source_sad &&
                           (cpi->rc.high_motion_content_screen_rtc ||
-                           cpi->rc.frame_source_sad < 10000);
+                           cpi->rc.frame_source_sad < 1000);
 
   bool try_palette = enable_palette(
       cpi, is_mode_intra(best_pickmode->best_mode), bsize, x->source_variance,

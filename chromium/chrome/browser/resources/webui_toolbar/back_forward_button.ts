@@ -13,7 +13,7 @@ import {getCss} from './back_forward_button.css.js';
 import {getHtml} from './back_forward_button.html.js';
 import {BrowserProxyImpl, ContextMenuType} from './browser_proxy.js';
 import type {BackForwardButtonState, BrowserProxy} from './browser_proxy.js';
-import {getClickDispositionFlags, getContextMenuPosition, PressHandler} from './toolbar_button.js';
+import {getContextMenuPosition, getEventDispositionFlags, PressHandler, roundedIconsEnabled} from './toolbar_button.js';
 
 export class BackForwardButtonElement extends CrLitElement {
   static get is() {
@@ -33,16 +33,18 @@ export class BackForwardButtonElement extends CrLitElement {
       direction: {type: String},
       state: {type: Object},
       leadingMargin: {type: Number},
+      touchUi: {type: Boolean},
     };
   }
 
   accessor direction: 'back'|'forward' = 'back';
   accessor state: BackForwardButtonState = {
     enabled: false,
-    visible: true,
+    shouldBeShown: true,
     isContextMenuVisible: false,
   };
   accessor leadingMargin: number = 0;
+  accessor touchUi: boolean = false;
 
   private browserProxy_: BrowserProxy = BrowserProxyImpl.getInstance();
   protected pressHandler_: PressHandler = new PressHandler(
@@ -59,7 +61,7 @@ export class BackForwardButtonElement extends CrLitElement {
   }
 
   private onShortPress_(e: MouseEvent) {
-    const flags = getClickDispositionFlags(e);
+    const flags = getEventDispositionFlags(e);
     if (this.direction === 'back') {
       this.browserProxy_.browserControlsHandler.back(flags);
     } else {
@@ -67,13 +69,13 @@ export class BackForwardButtonElement extends CrLitElement {
     }
   }
 
-  protected get ariaLabel_(): string {
+  protected getAriaLabel_(): string {
     return this.direction === 'back' ?
         loadTimeData.getString('backButtonAccName') :
         loadTimeData.getString('forwardButtonAccName');
   }
 
-  protected get tooltip_(): string {
+  protected getTooltip_(): string {
     return this.direction === 'back' ?
         loadTimeData.getString('backButtonTooltip') :
         loadTimeData.getString('forwardButtonTooltip');
@@ -90,6 +92,24 @@ export class BackForwardButtonElement extends CrLitElement {
     // Other events like mouse 'click' are handled in onShortPress_.
     if (e.detail === 0) {
       this.onShortPress_(e);
+    }
+  }
+
+  protected getIronIcon_(): string {
+    if (this.direction === 'back') {
+      if (roundedIconsEnabled()) {
+        return 'webui-toolbar:arrow_back';
+      } else {
+        return this.touchUi ? 'webui-toolbar:back_arrow_touch_old' :
+                              'webui-toolbar:back_arrow_chrome_refresh_old';
+      }
+    } else {
+      if (roundedIconsEnabled()) {
+        return 'webui-toolbar:arrow_forward';
+      } else {
+        return this.touchUi ? 'webui-toolbar:forward_arrow_touch_old' :
+                              'webui-toolbar:forward_arrow_chrome_refresh_old';
+      }
     }
   }
 }

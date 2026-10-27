@@ -25,30 +25,31 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/d3d12/BufferD3D12.h"
+#include "src/dawn/native/d3d12/BufferD3D12.h"
 
 #include <algorithm>
 #include <utility>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/Constants.h"
-#include "dawn/common/Math.h"
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/CommandBuffer.h"
-#include "dawn/native/DynamicUploader.h"
-#include "dawn/native/Queue.h"
-#include "dawn/native/d3d/D3DError.h"
-#include "dawn/native/d3d12/CommandRecordingContext.h"
-#include "dawn/native/d3d12/DeviceD3D12.h"
-#include "dawn/native/d3d12/HeapD3D12.h"
-#include "dawn/native/d3d12/QueueD3D12.h"
-#include "dawn/native/d3d12/ResidencyManagerD3D12.h"
-#include "dawn/native/d3d12/SharedBufferMemoryD3D12.h"
-#include "dawn/native/d3d12/SharedFenceD3D12.h"
-#include "dawn/native/d3d12/UtilsD3D12.h"
 #include "dawn/platform/DawnPlatform.h"
-#include "dawn/platform/tracing/TraceEvent.h"
 #include "partition_alloc/pointers/raw_ptr.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/Constants.h"
+#include "src/dawn/common/Math.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/CommandBuffer.h"
+#include "src/dawn/native/DynamicUploader.h"
+#include "src/dawn/native/Queue.h"
+#include "src/dawn/native/d3d/D3DError.h"
+#include "src/dawn/native/d3d12/CommandRecordingContext.h"
+#include "src/dawn/native/d3d12/DeviceD3D12.h"
+#include "src/dawn/native/d3d12/HeapD3D12.h"
+#include "src/dawn/native/d3d12/QueueD3D12.h"
+#include "src/dawn/native/d3d12/ResidencyManagerD3D12.h"
+#include "src/dawn/native/d3d12/SharedBufferMemoryD3D12.h"
+#include "src/dawn/native/d3d12/SharedFenceD3D12.h"
+#include "src/dawn/native/d3d12/UtilsD3D12.h"
+#include "src/dawn/platform/tracing/TraceEvent.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native::d3d12 {
 
@@ -165,7 +166,7 @@ MaybeError Buffer::InitializeAsExternalBuffer(ComPtr<ID3D12Resource> d3d12Buffer
     mAllocatedSize = descriptor->size;
     AllocationInfo info;
     info.mMethod = AllocationMethod::kExternal;
-    info.mRequestedSize = mAllocatedSize;
+    info.mRequestedSize = mAllocatedSize.value();
     mResourceAllocation = {info, 0, std::move(d3d12Buffer), nullptr, ResourceHeapKind::InvalidEnum};
     return {};
 }
@@ -186,7 +187,7 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
     D3D12_RESOURCE_DESC resourceDescriptor;
     resourceDescriptor.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
     resourceDescriptor.Alignment = 0;
-    resourceDescriptor.Width = mAllocatedSize;
+    resourceDescriptor.Width = mAllocatedSize.value();
     resourceDescriptor.Height = 1;
     resourceDescriptor.DepthOrArraySize = 1;
     resourceDescriptor.MipLevels = 1;
@@ -315,8 +316,8 @@ MaybeError Buffer::InitializeHostMapped(const BufferHostMappedPointer* hostMappe
                                                        IID_PPV_ARGS(&placedResource)),
         "ID3D12Device::CreatePlacedResource"));
 
-    mResourceAllocation = {AllocationInfo{0, AllocationMethod::kExternal, mAllocatedSize}, 0,
-                           std::move(placedResource),
+    mResourceAllocation = {AllocationInfo{0, AllocationMethod::kExternal, mAllocatedSize.value()},
+                           0, std::move(placedResource),
                            /* heap is external, and not tracked for residency */ nullptr,
                            ResourceHeapKind::InvalidEnum};
     mHostMappedHeap = std::move(heap);
@@ -718,7 +719,7 @@ MaybeError Buffer::ClearBuffer(CommandRecordingContext* commandContext,
     if (GetInternalUsage() & wgpu::BufferUsage::MapWrite) {
         DAWN_TRY(MapInternal(true, static_cast<size_t>(offset), static_cast<size_t>(size),
                              "D3D12 map at clear buffer"));
-        memset(mMappedData, clearValue, size);
+        DAWN_UNSAFE_TODO(memset(mMappedData, clearValue, size));
         UnmapImpl(GetState(), BufferState::Unmapped);
     } else if (clearValue == 0u) {
         DAWN_TRY(device->ClearBufferToZero(commandContext, this, offset, size));
@@ -728,7 +729,7 @@ MaybeError Buffer::ClearBuffer(CommandRecordingContext* commandContext,
         DAWN_TRY(device->GetDynamicUploader()->WithUploadReservation(
             size, kCopyBufferToBufferOffsetAlignment,
             [&](UploadReservation reservation) -> MaybeError {
-                memset(reservation.mappedPointer, clearValue, size);
+                DAWN_UNSAFE_TODO(memset(reservation.mappedPointer, clearValue, size));
                 device->CopyFromStagingToBufferHelper(commandContext, reservation.buffer.Get(),
                                                       reservation.offsetInBuffer, this, offset,
                                                       size);

@@ -23,6 +23,15 @@ class CFX_SubstFont {
   void UseChromeSerif();
   bool IsActualFontLoaded(const ByteString& base_font_name) const;
 
+  // Returns negative values on failure.
+  int GetWeightLevel(size_t index) const;
+
+  // Clamps index to size of table.
+  int GetWeightLevelForLoad(size_t index) const;
+
+  int GetSkew() const;
+  int GetSkewCJK() const;
+
   void SetIsBuiltInGenericFont() { flag_mm_ = true; }
   bool IsBuiltInGenericFont() const { return flag_mm_; }
 

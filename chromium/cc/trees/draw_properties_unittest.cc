@@ -1759,7 +1759,7 @@ TEST_F(DrawPropertiesTest,
       std::unique_ptr<gfx::AnimationCurve>(new FakeTransformTransition(1.0)), 0,
       1, KeyframeModel::TargetPropertyId(TargetProperty::TRANSFORM));
   keyframe_model->set_fill_mode(KeyframeModel::FillMode::NONE);
-  keyframe_model->set_time_offset(base::Milliseconds(-1000));
+  keyframe_model->set_start_delay(base::Milliseconds(1000));
   AddKeyframeModelToElementWithAnimation(
       grand_child->element_id(), timeline_impl(), std::move(keyframe_model));
 
@@ -3160,8 +3160,8 @@ TEST_F(DrawPropertiesTest,
   root->layer_tree_impl()
       ->property_trees()
       ->effect_tree_mutable()
-      .Node(child1->effect_tree_index())
-      ->backdrop_filters.Append(
+      .MutableNode(child1->effect_tree_index())
+      .backdrop_filters.Append(
           FilterOperation::CreateZoomFilter(1.f /* zoom */, 0 /* inset */));
 
   auto& child1_transform_node = CreateTransformNode(child1);
@@ -5151,15 +5151,17 @@ TEST_F(DrawPropertiesStickyPositionTest, StickyPositionBottomRounded) {
 
   // Once we get past the top of the container it moves to be aligned 10px
   // up from the the bottom of the scroller.
+  // bottom_offset = 10.5 causes bottom_delta = -45.5 at this scroll position.
+  // floor(-45.5 + 0.5) = floor(-45.0) = -45. Screen y = 150 + (-45) - 25 = 80.
   SetScrollOffsetDelta(scroller_impl_, gfx::Vector2dF(0.f, 25.f));
   UpdateActiveTreeDrawProperties();
   EXPECT_VECTOR2DF_EQ(
-      gfx::Vector2dF(0.f, 79.f),
+      gfx::Vector2dF(0.f, 80.f),
       sticky_pos_impl_->ScreenSpaceTransform().To2dTranslation());
   SetScrollOffsetDelta(scroller_impl_, gfx::Vector2dF(0.f, 30.f));
   UpdateActiveTreeDrawProperties();
   EXPECT_VECTOR2DF_EQ(
-      gfx::Vector2dF(0.f, 79.f),
+      gfx::Vector2dF(0.f, 80.f),
       sticky_pos_impl_->ScreenSpaceTransform().To2dTranslation());
 }
 
@@ -5619,6 +5621,38 @@ TEST_F(DrawPropertiesStickyPositionTest, StickyPositionNested) {
   EXPECT_VECTOR2DF_EQ(
       gfx::Vector2dF(0.f, 25.f),
       inner_sticky_impl->ScreenSpaceTransform().To2dTranslation());
+}
+
+TEST_F(DrawPropertiesStickyPositionTest,
+       StickyPositionBottomPixelSnapRounding) {
+  CreateTree();
+
+  // Element at y=90, height=10, bottom at 100.
+  // constraint_box_rect bottom = 100 (integer, no clip mismatch).
+  SetPostTranslation(sticky_pos_.get(), gfx::Vector2dF(0, 90));
+  auto& sticky_position = EnsureStickyData(sticky_pos_.get()).constraints;
+  sticky_position.is_anchored_bottom = true;
+  sticky_position.bottom_offset = 0.0f;
+  sticky_position.constraint_box_rect = gfx::RectF(0, 0, 100, 100);
+  sticky_position.scroll_container_relative_sticky_box_rect =
+      gfx::RectF(0, 90, 10, 10);
+  sticky_position.scroll_container_relative_containing_block_rect =
+      gfx::RectF(0, 0, 50, 200);
+  // pixel_snap_offset of -0.5 is where LayoutUnit::Round and std::round
+  // disagree. LayoutUnit::Round(-0.5)=0, std::round(-0.5)=-1.
+  sticky_position.pixel_snap_offset = gfx::Vector2dF(0.0f, -0.5f);
+
+  CommitAndUpdateImplPointers();
+
+  // At scroll=0: clip bottom = 100, sticky_box bottom = 100.
+  // bottom_delta = min(0, 100 - 100) = 0. No sticking needed.
+  // sticky_offset = 0 + pixel_snap(-0.5) = -0.5.
+  //
+  // With std::round: round(-0.5) = -1. Element at 90 + (-1) = 89. Wrong!
+  // With floor(x+0.5): floor(0) = 0. Element at 90 + 0 = 90. Correct!
+  EXPECT_VECTOR2DF_EQ(
+      gfx::Vector2dF(0.f, 90.f),
+      sticky_pos_impl_->ScreenSpaceTransform().To2dTranslation());
 }
 
 class DrawPropertiesAnchorPositionScrollTest : public DrawPropertiesTest {
@@ -6861,7 +6895,7 @@ TEST_F(DrawPropertiesTestWithLayerTree, SkippingSubtreeMain) {
       keyframe_model_id, 1,
       KeyframeModel::TargetPropertyId(TargetProperty::TRANSFORM));
   keyframe_model->set_fill_mode(KeyframeModel::FillMode::NONE);
-  keyframe_model->set_time_offset(base::Milliseconds(-1000));
+  keyframe_model->set_start_delay(base::Milliseconds(1000));
   AddKeyframeModelToElementWithAnimation(child->element_id(), timeline(),
                                          std::move(keyframe_model));
   UpdateMainDrawProperties();
@@ -6890,7 +6924,7 @@ TEST_F(DrawPropertiesTestWithLayerTree, SkippingSubtreeMain) {
       keyframe_model_id, 1,
       KeyframeModel::TargetPropertyId(TargetProperty::OPACITY));
   keyframe_model->set_fill_mode(KeyframeModel::FillMode::NONE);
-  keyframe_model->set_time_offset(base::Milliseconds(-1000));
+  keyframe_model->set_start_delay(base::Milliseconds(1000));
   AddKeyframeModelToElementWithExistingKeyframeEffect(
       child->element_id(), timeline(), std::move(keyframe_model));
   UpdateMainDrawProperties();
@@ -8085,7 +8119,7 @@ TEST_F(DrawPropertiesTestWithLayerTree, OpacityAnimationsTrackingTest) {
       keyframe_model_id, 1,
       KeyframeModel::TargetPropertyId(TargetProperty::OPACITY));
   keyframe_model->set_fill_mode(KeyframeModel::FillMode::NONE);
-  keyframe_model->set_time_offset(base::Milliseconds(-1000));
+  keyframe_model->set_start_delay(base::Milliseconds(1000));
   KeyframeModel* keyframe_model_ptr = keyframe_model.get();
   AddKeyframeModelToElementWithExistingKeyframeEffect(
       animated->element_id(), timeline(), std::move(keyframe_model));
@@ -8095,7 +8129,7 @@ TEST_F(DrawPropertiesTestWithLayerTree, OpacityAnimationsTrackingTest) {
   EffectNode* node = GetEffectNode(animated.get());
   EXPECT_TRUE(node->has_potential_opacity_animation);
 
-  keyframe_model_ptr->set_time_offset(base::Milliseconds(0));
+  keyframe_model_ptr->set_start_delay(base::TimeDelta());
   host()->AnimateLayers(base::TimeTicks::Max());
   node = GetEffectNode(animated.get());
   EXPECT_TRUE(node->has_potential_opacity_animation);
@@ -8140,7 +8174,7 @@ TEST_F(DrawPropertiesTestWithLayerTree, TransformAnimationsTrackingTest) {
       std::move(curve), 3, 3,
       KeyframeModel::TargetPropertyId(TargetProperty::TRANSFORM)));
   keyframe_model->set_fill_mode(KeyframeModel::FillMode::NONE);
-  keyframe_model->set_time_offset(base::Milliseconds(-1000));
+  keyframe_model->set_start_delay(base::Milliseconds(1000));
   KeyframeModel* keyframe_model_ptr = keyframe_model.get();
   AddKeyframeModelToElementWithExistingKeyframeEffect(
       animated->element_id(), timeline(), std::move(keyframe_model));
@@ -8151,7 +8185,7 @@ TEST_F(DrawPropertiesTestWithLayerTree, TransformAnimationsTrackingTest) {
   EXPECT_FALSE(node->is_currently_animating);
   EXPECT_TRUE(node->has_potential_animation);
 
-  keyframe_model_ptr->set_time_offset(base::Milliseconds(0));
+  keyframe_model_ptr->set_start_delay(base::TimeDelta());
   host()->AnimateLayers(base::TimeTicks::Max());
   node = GetTransformNode(animated.get());
   EXPECT_TRUE(node->is_currently_animating);

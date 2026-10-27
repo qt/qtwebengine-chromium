@@ -14,6 +14,8 @@
 
 #include <gtest/gtest.h>
 #include "ynnpack/base/arch.h"  // IWYU pragma: keep
+#include "ynnpack/base/arithmetic.h"
+#include "ynnpack/base/test/buffer.h"
 #include "ynnpack/base/test/tensor.h"
 #include "ynnpack/base/test/util.h"
 #include "ynnpack/base/type.h"
@@ -36,6 +38,9 @@ class type_info<std::array<uint8_t, N>> {
                                     size_t i) {
     return ptr[i];
   }
+  static std::array<uint8_t, N>& ref(std::array<uint8_t, N>* ptr, size_t i) {
+    return ptr[i];
+  }
 };
 
 template <typename T>
@@ -49,30 +54,30 @@ template <typename T>
 void TestTranspose(T, transpose_fn kernel, std::vector<size_t> ms,
                    std::vector<size_t> ns) {
   constexpr size_t element_count = type_info<T>::element_count();
-  const size_t max_m = *std::max_element(ms.begin(), ms.end());
-  const size_t max_n = *std::max_element(ns.begin(), ns.end());
-  Tensor<T> input({max_n, max_m / element_count});
-  Tensor<T> output({max_m, max_n / element_count});
-  Tensor<T> expected({max_m, max_n / element_count});
+  const size_t max_m =
+      align_up(*std::max_element(ms.begin(), ms.end()), element_count);
+  const size_t max_n =
+      align_up(*std::max_element(ns.begin(), ns.end()), element_count);
+  Tensor<T> input({max_n, max_m});
+  Tensor<T> output({max_m, max_n});
   for (size_t m : ms) {
     for (size_t i = 0; i < max_n; ++i) {
-      fill_ramp(&input(i, 0), m, i, m);
+      fill_ramp(address_of(input(i, 0)), m, i, m);
     }
 
     for (size_t n : ns) {
-      if (m % element_count != 0 || n % element_count != 0) continue;
+      if (m % element_count != 0) continue;
 
       // TODO(dsharlet): Find a better way to test the padding capability.
       for (size_t n_input : {m, m - 1, m / 2}) {
-        if (n_input % element_count != 0) continue;
-
-        kernel(m, n, n_input * sizeof(T) / element_count,
-               input.stride(0) * sizeof(T), input.base(),
-               output.stride(0) * sizeof(T), output.base());
+        size_t n_bytes = ceil_div(n_input * sizeof(T), element_count);
+        kernel(m, n, n_bytes, input.stride_bytes(0), input.base(),
+               output.stride_bytes(0), output.base());
 
         // Verify results.
         for (size_t i = 0; i < m; ++i) {
-          const T* output_i = &output(i, 0);
+          const T* output_i = address_of(output(i, 0));
+          if (element_count > 1 && i >= n_input) continue;
           for (size_t j = 0; j < n; ++j) {
             T expected;
             type_info<T>::set(&expected, 0, i < n_input ? i * m + j : 0);
@@ -89,15 +94,14 @@ template <typename T>
 void TestInterleave(T type, size_t factor, interleave_kernel_fn kernel) {
   constexpr size_t element_count = type_info<T>::element_count();
   constexpr int max_n = 64;
-  Tensor<T> input({factor, max_n / element_count});
-  Tensor<T> output({factor * max_n / element_count});
+  Tensor<T> input({factor, max_n});
+  Buffer<T> output(factor * max_n);
   for (size_t i = 0; i < factor; ++i) {
-    fill_ramp(&input(i, 0), max_n, i, factor);
+    fill_ramp(address_of(input(i, 0)), max_n, i, factor);
   }
   for (size_t m = 1; m <= factor; ++m) {
     for (size_t n : simd_sizes_up_to(max_n, element_count)) {
-      kernel(factor, m, n, input.stride(0) * sizeof(T), input.base(),
-             output.base());
+      kernel(factor, m, n, input.stride_bytes(0), input.base(), output.data());
 
       for (size_t j = 0; j < n; ++j) {
         for (size_t i = 0; i < factor; ++i) {
@@ -109,8 +113,7 @@ void TestInterleave(T type, size_t factor, interleave_kernel_fn kernel) {
           } else {
             type_info<T>::set(&expected, 0, 0);
           }
-          ASSERT_EQ(type_info<T>::get(output.base(), j * factor + i),
-                    type_info<T>::get(&expected, 0));
+          ASSERT_EQ(output[j * factor + i], type_info<T>::get(&expected, 0));
         }
       }
     }
@@ -158,9 +161,10 @@ TEST_P(Transpose, 1xn) {
   TransposeParam kernel = GetParam();
   if (!is_arch_supported(kernel.arch_flags)) GTEST_SKIP();
   const size_t element_size_bits = kernel.element_size_bits;
+  const size_t element_count = std::max<size_t>(1, 8 / element_size_bits);
   switch_element_size(element_size_bits, [&](auto type) {
     auto sizes = unaligned_sizes(element_size_bits);
-    TestTranspose(type, kernel.kernel, {1}, sizes);
+    TestTranspose(type, kernel.kernel, {element_count}, sizes);
   });
 }
 

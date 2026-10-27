@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 #include <Eigen/Core>
 #include <Eigen/LU>
 #include <iostream>

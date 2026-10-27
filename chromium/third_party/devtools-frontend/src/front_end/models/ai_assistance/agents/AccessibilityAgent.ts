@@ -4,9 +4,11 @@
 
 import * as Host from '../../../core/host/host.js';
 import * as i18n from '../../../core/i18n/i18n.js';
+import type * as Platform from '../../../core/platform/platform.js';
 import * as Root from '../../../core/root/root.js';
 import * as SDK from '../../../core/sdk/sdk.js';
 import type * as LHModel from '../../lighthouse/lighthouse.js';
+import {isSameOrigin} from '../AiUtils.js';
 import {ChangeManager} from '../ChangeManager.js';
 import {LighthouseFormatter} from '../data_formatters/LighthouseFormatter.js';
 import {debugLog} from '../debug.js';
@@ -62,6 +64,7 @@ Your role is to help users understand and fix accessibility issues found in Ligh
 # Constraints
 * **CRITICAL**: ALWAYS call a tool before providing an answer if an element path is available.
 * **CRITICAL**: You are an accessibility agent. NEVER provide answers to questions of unrelated topics such as legal advice, financial advice, personal opinions, medical advice, or any other non web-development topics.
+* **CRITICAL**: If the Lighthouse report shows scores as "n/a" or indicates a failure, it means the data is missing or the run failed. Do NOT assume that the page passed or has no issues.
 
 ## Response Structure
 
@@ -216,7 +219,23 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
     if (!nodeId) {
       return null;
     }
-    return domModel.nodeForId(nodeId);
+    const node = domModel.nodeForId(nodeId);
+    if (!node) {
+      return null;
+    }
+
+    const mainDocument = domModel.existingDocument();
+    if (!mainDocument) {
+      return null;
+    }
+    const mainDocumentURL = mainDocument.documentURL;
+    const nodeDocumentURL = node.ownerDocument?.documentURL ?? '' as Platform.DevToolsPath.UrlString;
+
+    if (!isSameOrigin(mainDocumentURL, nodeDocumentURL)) {
+      return null;
+    }
+
+    return node;
   }
 
   #declareFunctions(): void {
@@ -259,7 +278,10 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
           return {error: 'Failed to run accessibility audits.'};
         }
         const audits = new LighthouseFormatter().audits(report, 'accessibility');
-        return {result: {audits}};
+        return {
+          result: {audits},
+          widgets: [{name: 'LIGHTHOUSE_REPORT', data: {report, snapshotReport: true}}],
+        };
       }
     });
 
@@ -293,7 +315,10 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
           return {error: 'No Lighthouse report available.'};
         }
         const audits = new LighthouseFormatter().audits(report, params.categoryId);
-        return {result: {audits}};
+        return {
+          result: {audits},
+          widgets: [{name: 'LIGHTHOUSE_REPORT', data: {report}}],
+        };
       }
     });
 
@@ -302,7 +327,8 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
       styleProperties: string[],
       explanation: string,
     }>('getStyles', {
-      description: 'Get computed styles for an element on the inspected page by its Lighthouse path.',
+      description:
+          'Get computed styles for an element on the inspected page by its Lighthouse path. **CRITICAL** You MUST provide a specific list of CSS property names. Do not use generic values like "all" or "*".',
       parameters: {
         type: Host.AidaClient.ParametersTypes.OBJECT,
         description: '',
@@ -321,7 +347,8 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
           },
           styleProperties: {
             type: Host.AidaClient.ParametersTypes.ARRAY,
-            description: 'One or more CSS style property names to fetch.',
+            description:
+                'One or more specific CSS style property names to fetch. Generic values like "all" or "*" are not supported.',
             nullable: false,
             items: {
               type: Host.AidaClient.ParametersTypes.STRING,
@@ -446,7 +473,19 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
           backendNodeId: node.backendNodeId(),
         };
 
-        return {result: JSON.stringify(result, null, 2)};
+        const widgets: AiWidget[] = [];
+        const snapshot = await node.takeSnapshot();
+        widgets.push({
+          name: 'DOM_TREE',
+          data: {
+            root: snapshot,
+          },
+        });
+
+        return {
+          result: JSON.stringify(result, null, 2),
+          widgets: widgets.length > 0 ? widgets : undefined,
+        };
       },
     });
   }
@@ -460,7 +499,13 @@ export class AccessibilityAgent extends AiAgent<LHModel.ReporterTypes.ReportJSON
   #getInitialPayload(context: ConversationContext<LHModel.ReporterTypes.ReportJSON>): string {
     const report = context.getItem();
     const formatter = new LighthouseFormatter();
-    return `# Lighthouse Report:\n${formatter.summary(report)}\n${formatter.audits(report, 'accessibility')}\n`;
+    const summary = formatter.summary(report);
+    const audits = formatter.audits(report, 'accessibility');
+    const allFailed = Object.values(report.categories).every(category => category.score === null);
+    if (allFailed) {
+      return '**CRITICAL**: The Lighthouse report failed to record or all category scores are error/unavailable (n/a). This indicates a failed run or missing data.';
+    }
+    return `# Lighthouse Report:\n${summary}\n${audits}`;
   }
 
   override async enhanceQuery(query: string, lhr: ConversationContext<LHModel.ReporterTypes.ReportJSON>|null):

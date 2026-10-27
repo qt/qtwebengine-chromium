@@ -2,30 +2,40 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Protocol from '../../generated/protocol.js';
-import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import {MockCDPConnection} from '../../testing/MockCDPConnection.js';
+import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
+import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
+import {TestUniverse} from '../../testing/TestUniverse.js';
 
 import * as SDK from './sdk.js';
 
-describeWithEnvironment('CPUThrottlingManager', () => {
-  it('can get the current hardwareConcurrency.', async () => {
-    const connection = new MockCDPConnection();
-    connection.setHandler('Runtime.evaluate', ({expression}) => {
-      assert.strictEqual(expression, 'navigator.hardwareConcurrency');
-      return {result: {result: {value: 42, type: Protocol.Runtime.RemoteObjectType.Number}}};
-    });
-    createTarget({connection});
+describe('CPUThrottlingManager', () => {
+  setupSettingsHooks();  // For the MultitargetNetworkManager.
+  setupRuntimeHooks();
 
-    const manager = SDK.CPUThrottlingManager.CPUThrottlingManager.instance({forceNew: true});
+  it('can get the current hardwareConcurrency.', async () => {
+    const universe = new TestUniverse();
+    const connection = new MockCDPConnection();
+    connection.setSuccessHandler('Runtime.evaluate', ({expression}) => {
+      assert.strictEqual(expression, 'navigator.hardwareConcurrency');
+      return {result: {value: 42, type: Protocol.Runtime.RemoteObjectType.Number}};
+    });
+    universe.createTarget({connection});
+
+    const manager = new SDK.CPUThrottlingManager.CPUThrottlingManager(universe.settings, universe.targetManager);
     const concurrency = await manager.getHardwareConcurrency();
     assert.strictEqual(concurrency, 42);
   });
 
   it('can set the current hardwareConcurrency', async () => {
-    const cdpStub = sinon.stub(createTarget().emulationAgent(), 'invoke_setHardwareConcurrencyOverride').resolves();
+    const universe = new TestUniverse();
+    const cdpStub =
+        sinon.stub(universe.createTarget().emulationAgent(), 'invoke_setHardwareConcurrencyOverride').resolves();
 
-    const manager = SDK.CPUThrottlingManager.CPUThrottlingManager.instance({forceNew: true});
+    const manager = new SDK.CPUThrottlingManager.CPUThrottlingManager(universe.settings, universe.targetManager);
     manager.setHardwareConcurrency(5);
 
     sinon.assert.calledOnce(cdpStub);
@@ -33,9 +43,11 @@ describeWithEnvironment('CPUThrottlingManager', () => {
   });
 
   it('does not set concurrency to 0 or negative numbers', async () => {
-    const cdpStub = sinon.stub(createTarget().emulationAgent(), 'invoke_setHardwareConcurrencyOverride').resolves();
+    const universe = new TestUniverse();
+    const cdpStub =
+        sinon.stub(universe.createTarget().emulationAgent(), 'invoke_setHardwareConcurrencyOverride').resolves();
 
-    const manager = SDK.CPUThrottlingManager.CPUThrottlingManager.instance({forceNew: true});
+    const manager = new SDK.CPUThrottlingManager.CPUThrottlingManager(universe.settings, universe.targetManager);
     manager.setHardwareConcurrency(0);
     sinon.assert.notCalled(cdpStub);
 

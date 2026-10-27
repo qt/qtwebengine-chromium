@@ -83,7 +83,8 @@ void InitializeBinaryUploadRequest(BinaryUploadRequest* request,
 // the user was allowed to use the data independent of the scanning result.
 EventResult CalculateEventResult(const AnalysisSettings& settings,
                                  bool allowed_by_scan_result,
-                                 bool should_warn);
+                                 bool should_warn,
+                                 ScanRequestUploadResult result);
 
 // Returns true if `result` as returned by BinaryUploadService is considered a
 // fail-closed result, regardless of attempting a cloud-based or a local-based
@@ -137,6 +138,12 @@ enum class ScanningCrashKey {
 };
 void IncrementCrashKey(ScanningCrashKey key, int delta = 1);
 void DecrementCrashKey(ScanningCrashKey key, int delta = 1);
+
+// Maps the request's connector and reason to the corresponding
+// DeepScanAccessPoint.
+DeepScanAccessPoint AccessPointFromRequest(
+    AnalysisConnector connector,
+    ContentAnalysisRequest::Reason reason);
 
 }  // namespace enterprise_connectors
 

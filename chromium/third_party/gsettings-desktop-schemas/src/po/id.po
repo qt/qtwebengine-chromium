@@ -1,0 +1,3865 @@
+# Indonesian translation for gsettings-desktop-schemas.
+# Copyright (C) 2012 gsettings-desktop-schemas's COPYRIGHT HOLDER
+# This file is distributed under the same license as the gsettings-desktop-schemas package.
+# Andika Triwidada <andika@gmail.com>, 2012, 2013, 2015, 2022, 2024, 2025.
+# Kukuh Syafaat <kukuhsyafaat@gnome.org>, 2017-2022, 2024.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: gsettings-desktop-schemas master\n"
+"Report-Msgid-Bugs-To: https://gitlab.gnome.org/GNOME/gsettings-desktop-"
+"schemas/issues/\n"
+"POT-Creation-Date: 2025-03-10 22:45+0000\n"
+"PO-Revision-Date: 2025-03-12 18:29+0700\n"
+"Last-Translator: Andika Triwidada <andika@gmail.com>\n"
+"Language-Team: Indonesian <gnome@i15n.org>\n"
+"Language: id\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"X-Poedit-SourceCharset: UTF-8\n"
+"X-Generator: Poedit 3.5\n"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:6
+msgid "On-screen keyboard"
+msgstr "Papan tik di layar"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:7
+msgid "Whether the on-screen keyboard is turned on."
+msgstr "Apakah papan tik pada layar dinyalakan."
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:11
+msgid "Screen magnifier"
+msgstr "Pembesar layar"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:12
+msgid "Whether the screen magnifier is turned on."
+msgstr "Apakah kaca pembesar layar dinyalakan."
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:16
+msgid "Screen reader"
+msgstr "Pembaca layar"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:17
+msgid "Whether the screen reader is turned on."
+msgstr "Apakah pembaca layar dinyalakan."
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:6
+msgid "Always show the Universal Access status icon"
+msgstr "Selalu tampilkan ikon status Akses Universal"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:7
+msgid ""
+"This key overrides the automatic hiding of the Universal Access status icon "
+"when no accessibility features are enabled."
+msgstr ""
+"Kunci ini menimpa penyembunyian otomatis ikon status Akses Universal ketika "
+"tak ada fitur aksesibilitas yang difungsikan."
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:14
+msgid "Always show the text caret"
+msgstr "Selalu tampilkan karet teks"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:15
+msgid ""
+"This key overrides the hiding of the text caret in noneditable text in "
+"applications."
+msgstr ""
+"Kunci ini menimpa penyembunyian karet teks dalam teks yang tak dapat "
+"disunting di aplikasi."
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:6
+msgid "High contrast"
+msgstr "Kontras tinggi"
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:7
+msgid "Whether to use the high contrast style."
+msgstr "Apakah akan menggunakan gaya kontras tinggi."
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:13
+msgid "Show status shapes"
+msgstr "Tampilkan bentuk status"
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:14
+msgid ""
+"Whether to use shapes to indicate status in addition or instead of color."
+msgstr ""
+"Apakah akan menggunakan bentuk untuk menunjukkan status sebagai tambahan "
+"atau sebagai pengganti warna."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:6
+msgid "Enable accessibility keyboard shortcuts"
+msgstr "Fungsikan pintasan papan tik aksesibilitas"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:10
+msgid "Beep when a keyboard accessibility feature changes"
+msgstr "Bip ketika fitur aksesibilitas papan tik berubah"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:11
+msgid ""
+"Whether to beep when a keyboard accessibility feature is enabled or disabled."
+msgstr ""
+"Apakah berbunyi bip ketika suatu fitur aksesibilitas papan tik difungsikan "
+"atau dinonaktifkan."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:15
+msgid "Disable keyboard accessibility after a timeout"
+msgstr "Nonaktifkan aksesibilitas papan tik setelah suatu tenggang waktu"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:16
+msgid ""
+"Whether to disable keyboard accessibility after a timeout, useful for shared "
+"machines."
+msgstr ""
+"Apakah aksesibilitas papan tik dinonaktifkan setelah suatu tenggang waktu, "
+"berguna untuk mesin yang dipakai bersama."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:20
+msgid "Duration of the disabling timeout"
+msgstr "Durasi tenggang waktu penonaktifan"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:21
+msgid "Duration of the timeout before disabling the keyboard accessibility."
+msgstr "Durasi tenggang waktu sebelum mematikan aksesibilitas papan tik."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:25
+msgid "Enable “Bounce Keys”"
+msgstr "Aktifkan \"Tombol Pantul\""
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:26
+msgid "Whether the “Bounce Keys” keyboard accessibility feature is turned on."
+msgstr "Apakah fitur aksesibilitas papan tik \"Tombol Pantul\" dinyalakan."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:30
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:65
+msgid "Minimum interval in milliseconds"
+msgstr "Interval terkecil dalam milidetik"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:31
+msgid "Ignore multiple presses of the same key within this many milliseconds."
+msgstr ""
+"Abaikan penekanan berganda atas tombol yang sama pada selang waktu sekian "
+"mili detik ini."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:35
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:80
+msgid "Beep when a key is rejected"
+msgstr "Bip ketika kunci ditolak"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:36
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:81
+msgid "Whether to beep when a key is rejected."
+msgstr "Apakah bip saat tombol pengubah ditolak."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:40
+msgid "Enable “Mouse Keys”"
+msgstr "Aktifkan \"Tombol Tetikus\""
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:41
+msgid "Whether the “Mouse Keys” accessibility feature is turned on."
+msgstr "Apakah fitur aksesibilitas \"Tombol Tetikus\" dinyalakan."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:45
+msgid "Pixels per seconds"
+msgstr "Piksel per detik"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:46
+msgid "How many pixels per second to move at the maximum speed."
+msgstr "Berapa piksel per detik untuk digerakkan pada kecepatan tertinggi."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:50
+msgid "How long to accelerate in milliseconds"
+msgstr "Berapa lama mempercepat dalam milidetik"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:51
+msgid "How many milliseconds it takes to go from 0 to maximum speed."
+msgstr "Berapa milidetik lamanya dari 0 hingga kecepatan tertinggi."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:55
+msgid "Initial delay in milliseconds"
+msgstr "Jeda awal dalam milidetik"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:56
+msgid ""
+"How many milliseconds to wait before mouse movement keys start to operate."
+msgstr ""
+"Berapa milidetik yang ditunggu sebelum tombol pergerakan mouse beroperasi."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:60
+msgid "Enable “Slow Keys”"
+msgstr "Aktifkan \"Tombol Lambat\""
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:61
+msgid "Whether the “Slow Keys” accessibility feature is turned on."
+msgstr "Apakah fitur aksesibilitas \"Tombol Lambat\" dinyalakan."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:66
+msgid ""
+"Do not accept a key as being pressed unless held for this many milliseconds."
+msgstr ""
+"Jangan anggap suatu tombol sedang ditekan kecuali ditahan selama sekian mili "
+"detik ini."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:70
+msgid "Beep when a key is first pressed"
+msgstr "Bipt ketika kunci ditekan pertama kali"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:71
+msgid "Whether to beep when a key is first pressed."
+msgstr "Apakah bip saat tombol pertama kali ditekan."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:75
+msgid "Beep when a key is accepted"
+msgstr "Bip ketika kunci diterima"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:76
+msgid "Whether to beep when a key is accepted."
+msgstr "Apakah bip saat tombol diterima."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:85
+msgid "Enable sticky keys"
+msgstr "Aktifkan tombol lengket"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:86
+msgid "Whether the sticky keys accessibility feature is turned on."
+msgstr "Apakah fitur aksesibilitas tombol lengket dinyalakan."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:90
+msgid "Disable when two keys are pressed at the same time"
+msgstr "Nonaktifkan bila ada dua tombol ditekan pada saat yang sama"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:91
+msgid ""
+"Whether to disable sticky keys if two keys are pressed at the same time."
+msgstr ""
+"Apakah mematikan tombol lengket bila dua tombol ditekan pada saat yang sama."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:95
+msgid "Beep when a modifier is pressed."
+msgstr "Bip saat modifier ditekan."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:96
+msgid "Whether to beep when a modifier key is pressed."
+msgstr "Apakah bip saat tombol pengubah ditekan."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:100
+msgid "Enable “Toggle Keys”"
+msgstr "Aktifkan \"Tombol Jungkit\""
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:101
+msgid "Whether the “Toggle Keys” accessibility feature is turned on."
+msgstr "Apakah fitur aksesibilitas \"Tombol Jungkit\" dinyalakan."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:8
+msgid "Mouse Tracking Mode"
+msgstr "Mode Pelacakan Tetikus"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:9
+msgid ""
+"Determines the position of the magnified mouse image within the magnified "
+"view and how it reacts to system mouse movement. The values are • none: no "
+"mouse tracking; • centered: the mouse image is displayed at the center of "
+"the zoom region (which also represents the point under the system mouse) and "
+"the magnified contents are scrolled as the system mouse moves; • "
+"proportional: the position of the magnified mouse in the zoom region is "
+"proportionally the same as the position of the system mouse on screen; • "
+"push: when the magnified mouse intersects a boundary of the zoom region, the "
+"contents are scrolled into view."
+msgstr ""
+"Menentukan posisi citra tetikus yang diperbesar dalam tilikan yang "
+"diperbesar dan bagaimana itu berreaksi terhadap pergerakan tetikus sistem. "
+"Nilanya adalah • none: tak ada pelacakan tetikus; • centered: citra tetikus "
+"ditampilkan di tengah wilayah zum (yang juga mewakili titik di bawah tetikus "
+"sistem) dan isi yang diperbesar digulung ketika tetikus sistem bergerak; • "
+"proportional: posisi tetikus yang diperbesar dalam wilayah zum secara "
+"proposi sama dengan posisi tetikus sistem pada layar; • push: ketika tetikus "
+"yang diperbesar memotong batas wilayah zum, isi digulung ke dalam tilikan."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:26
+msgid "Focus Tracking Mode"
+msgstr "Mode Pelacakan Fokus"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:27
+msgid ""
+"Determines the position of the focused widget within magnified view. The "
+"values are: • none: no focus tracking • centered: the focused image is "
+"displayed at the center of the zoom region (which also represents the point "
+"under the system focus) and the magnified contents are scrolled as the "
+"system focus moves • proportional: the position of the magnified focus in "
+"the zoom region is proportionally the same as the position of the system "
+"focus on screen • push: when the magnified focus intersects a boundary of "
+"the zoom region, the contents are scrolled into view"
+msgstr ""
+"Menentukan posisi widget yang difokuskan dalam tilikan yang diperbesar. "
+"Nilainya adalah: • none: tak ada pelacakan fokus • centered: citra yang "
+"difokuskan ditampilkan di tengah wilayah zum (yang juga mewakili titik di "
+"bawah fokus sistem) dan isi yang diperbesar digulung ketika fokus sistem "
+"bergerak • proportional: posisi fokus yang diperbesar dalam wilayah zum "
+"secara proposi sama dengan posisi fokus sistem pada layar • push: ketika "
+"fokus yang diperbesar memotong batas wilayah zum, isi digulung ke dalam "
+"tilikan"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:46
+msgid "Caret Tracking Mode"
+msgstr "Mode Pelacakan Karet"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:47
+msgid ""
+"Determines the position of the caret within magnified view. The values are: "
+"• none: no caret tracking • centered: the image of the caret is displayed at "
+"the center of the zoom region (which also represents the point under the "
+"system caret) and the magnified contents are scrolled as the system caret "
+"moves • proportional: the position of the magnified caret in the zoom region "
+"is proportionally the same as the position of the system caret on screen • "
+"push: when the magnified caret intersects a boundary of the zoom region, the "
+"contents are scrolled into view"
+msgstr ""
+"Menentukan posisi karet dalam tilikan yang diperbesar. Nilainya adalah: • "
+"none: tak ada pelacakan karet • centered: citra karet ditampilkan di tengah "
+"wilayah zum (yang juga mewakili titik di bawah karet sistem) dan isi yang "
+"diperbesar digulung ketika karet sistem bergerak • proportional: posisi "
+"karet yang diperbesar dalam wilayah zum secara proposi sama dengan posisi "
+"karet sistem pada layar • push: ketika karet yang diperbesar memotong batas "
+"wilayah zum, isi digulung ke dalam tilikan"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:64
+msgid "Screen position"
+msgstr "Posisi layar"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:65
+msgid ""
+"The magnified view either fills the entire screen, or occupies the top-half, "
+"bottom-half, left-half, or right-half of the screen."
+msgstr ""
+"Tilikan yang diperbesar bisa memenuhi seluruh layar, atau menempati separo "
+"atas, separo bawah, separo kiri, atau separo kanan layar."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:73
+msgid "Magnification factor"
+msgstr "Faktor pembesaran"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:74
+msgid ""
+"The power of the magnification. A value of 1.0 means no magnification. A "
+"value of 2.0 doubles the size."
+msgstr ""
+"Tingkat pembesaran. Nilai 1.0 berarti tanpa pembesaran. Nilai 2.0 "
+"menggandakan ukuran."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:81
+msgid "Enable lens mode"
+msgstr "Aktifkan moda lensa"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:82
+msgid ""
+"Whether the magnified view should be centered over the location of the "
+"system mouse and move with it."
+msgstr ""
+"Apakah tilikan yang diperbesar mesti berpusat pada lokasi dari tetikus "
+"sistem dan berpindah dengannya."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:89
+msgid "Scroll magnified contents beyond the edges of the desktop"
+msgstr "Gulung isi yang diperbesar diluar tepi destop"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:92
+msgid ""
+"For centered mouse tracking, when the system pointer is at or near the edge "
+"of the screen, the magnified contents continue to scroll such that the "
+"screen edge moves into the magnified view."
+msgstr ""
+"Untuk pelacakan tetikus yang dipusatkan, ketika penunjuk sistem pada atau "
+"dekat tepi layar, isi yang diperbesar terus menggulung sehingga tepi layar "
+"berpindah ke dalam tilikan yang diperbesar."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:102
+msgid "Show or hide crosshairs"
+msgstr "Tampilkan atau sembunyikan pembidik silang"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:103
+msgid ""
+"Enables/disables display of crosshairs centered on the magnified mouse "
+"sprite."
+msgstr ""
+"Aktifkan/nonaktifkan tampilan pembidik silang yang berpusat pada sprite "
+"tetikus yang diperbesar."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:110
+msgid "Thickness of the crosshairs in pixels"
+msgstr "Tebal pembidik silang dalam piksel"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:111
+msgid ""
+"Width in pixels of the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr ""
+"Lebar dalam piksel dari garis vertikal dan horisontal yang menyusun pembidik "
+"silang."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:117
+msgid "Color of the crosshairs"
+msgstr "Warna pembidik silang"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:118
+msgid ""
+"The color of the the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr ""
+"Warna dari garis vertikal dan horisontal yang menyusun pembidik silang."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:126
+msgid "Opacity of the crosshairs"
+msgstr "Tingkat transparansi pembidik silang"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:127
+msgid ""
+"Determines the transparency of the crosshairs, from fully opaque to fully "
+"transparent."
+msgstr ""
+"Menentukan tingkat tembus pandang dari pembidik silang, dari sepenuhnya "
+"legap ke sepenuhnya tembus pandang."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:135
+msgid "Length of the crosshairs in pixels"
+msgstr "Panjang pembidik silang dalam piksel"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:136
+msgid ""
+"Determines the length in pixels of the vertical and horizontal lines that "
+"make up the crosshairs."
+msgstr ""
+"Menentukan panjang dalam piksel dari garis vertikal dan horisontal yang "
+"menyusun pembidik silang."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:143
+msgid "Clip the crosshairs at the center"
+msgstr "Potong pembidik silang di pusat"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:144
+msgid ""
+"Determines whether the crosshairs intersect the magnified mouse sprite, or "
+"are clipped such that the ends of the horizontal and vertical lines surround "
+"the mouse image."
+msgstr ""
+"Menentukan apakah pembidik silang memotong sprite tetikus yang diperbesar, "
+"atau dipotong sedemikian sehingga akhir dari garis horisontal dan vertikal "
+"mengelilingi citra tetikus."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:152
+msgid "Inverse lightness"
+msgstr "Balikkan kecerahan"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:153
+msgid ""
+"Determines whether the lightness values are inverted: darker colors become "
+"lighter and vice versa, and white and black are interchanged."
+msgstr ""
+"Menentukan apakah nilai kecerahan dibalik: warna gelap menjadi lebih cerah "
+"dan sebaliknya, serta hitam dan putih dipertukarkan."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:161
+msgid "Color Saturation"
+msgstr "Saturasi Warna"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:162
+msgid ""
+"Represents a change to the color saturation, from 0.0 (grayscale) to 1.0 "
+"(full color)."
+msgstr ""
+"Mewakili perubahan ke saturasi warna, mulai dari 0.0 (skala kelabu) ke 1.0 "
+"(warna penuh)."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:170
+msgid "Change brightness of red"
+msgstr "Ubah kecerahan merah"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:171
+msgid ""
+"Represents a change to the default brightness of the red component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Mewakili perubahan ke kecerahan bawaan dari komponen merah. Nol menandakan "
+"tak ada perubahan, nilai kurang dari nol menandakan pengurangan, dan nilai "
+"lebih dari nol menandakan peningkatan."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:180
+msgid "Change brightness of green"
+msgstr "Ubah kecerahan hijau"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:181
+msgid ""
+"Represents a change to the default brightness for the green component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Mewakili perubahan ke kecerahan bawaan dari komponen hijau. Nol menandakan "
+"tak ada perubahan, nilai kurang dari nol menandakan pengurangan, dan nilai "
+"lebih dari nol menandakan peningkatan."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:190
+msgid "Change brightness of blue"
+msgstr "Ubah kecerahan biru"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:191
+msgid ""
+"Represents a change to the default brightness for the blue component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Mewakili perubahan ke kecerahan bawaan dari komponen biru. Nol menandakan "
+"tak ada perubahan, nilai kurang dari nol menandakan pengurangan, dan nilai "
+"lebih dari nol menandakan peningkatan."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:200
+msgid "Change contrast of red"
+msgstr "Ubah kontras merah"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:201
+msgid ""
+"Represents a change to the default contrast of the red component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Mewakili perubahan ke kontras bawaan dari komponen merah. Nol menandakan tak "
+"ada perubahan kontras, nilai kurang dari nol menandakan pengurangan, dan "
+"nilai lebih dari nol menandakan peningkatan."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:210
+msgid "Change contrast of green"
+msgstr "Ubah kontras hijau"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:211
+msgid ""
+"Represents a change to the default contrast of the green component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Mewakili perubahan ke kontras bawaan dari komponen hijau. Nol menandakan tak "
+"ada perubahan kontras, nilai kurang dari nol menandakan pengurangan, dan "
+"nilai lebih dari nol menandakan peningkatan."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:220
+msgid "Change contrast of blue"
+msgstr "Ubah kontras biru"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:221
+msgid ""
+"Represents a change to the default contrast of the blue component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Mewakili perubahan ke kontras bawaan dari komponen biru. Nol menandakan tak "
+"ada perubahan kontras, nilai kurang dari nol menandakan pengurangan, dan "
+"nilai lebih dari nol menandakan peningkatan."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:6
+msgid "Dwell click time"
+msgstr "Waktu klik menetap"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:7
+msgid "Time in seconds before a click is triggered."
+msgstr "Waktu dalam detik sebelum klik dipicu."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:11
+msgid "Movement threshold"
+msgstr "Ambang pergerakan"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:12
+msgid "Distance in pixels before movement will be recognized."
+msgstr "Jarak dalam piksel sebelum gerakan akan dikenali."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:16
+msgid "Gesture single click"
+msgstr "Sikap klik tunggal"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:17
+msgid "Direction to perform a single click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Arah untuk melakukan klik tunggal (\"left\"=kiri, \"right\"=kanan, "
+"\"up\"=naik, \"down\"=turun)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:21
+msgid "Gesture double click"
+msgstr "Sikap klik ganda"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:22
+msgid "Direction to perform a double click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Arah untuk melakukan klik ganda (\"left\"=kiri, \"right\"=kanan, "
+"\"up\"=naik, \"down\"=turun)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:26
+msgid "Gesture drag click"
+msgstr "Sikap klik seret"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:27
+msgid "Direction to perform dragging (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Arah untuk melakukan penyeretan (\"left\"=kiri, \"right\"=kanan, "
+"\"up\"=naik, \"down\"=turun)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:31
+msgid "Gesture secondary click"
+msgstr "Sikap klik sekunder"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:32
+msgid "Direction to perform a secondary click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Arah untuk melakukan klik sekunder (\"left\"=kiri, \"right\"=kanan, "
+"\"up\"=naik, \"down\"=turun)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:36
+msgid "Dwell click mode"
+msgstr "Mode klik-menetap"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:37
+msgid ""
+"The active dwell click mode. Possible values are “window” and “gesture”."
+msgstr ""
+"Mode klik menetap yang aktif. Nilai yang mungkin adalah \"window\" (jendela) "
+"dan \"gesture\" (sikap)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:41
+msgid "Show click type window"
+msgstr "Tampilkan jendela tipe klik"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:42
+msgid "Show click type window."
+msgstr "Tampilkan jendela tipe klik."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:46
+msgid "Enable dwell clicks"
+msgstr "Aktifkan klik-menetap"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:47
+msgid "Enable dwell clicks."
+msgstr "Aktifkan klik-menetap."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:51
+msgid "Secondary click enabled"
+msgstr "Klik sekunder diaktifkan"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:52
+msgid "Enable simulated secondary clicks"
+msgstr "Mengaktifkan klik sekunder yang disimulasikan"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:56
+msgid "Secondary click time"
+msgstr "Waktu klik sekunder"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:57
+msgid "Time in seconds before a simulated secondary click is triggered."
+msgstr "Waktu dalam detik sebelum klik sekunder yang disimulasikan dipicu."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:6
+msgid "Folder children"
+msgstr "Anak folder"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:7
+msgid ""
+"List of relative settings paths at which app-folders are stored. Each folder "
+"uses the org.gnome.desktop.app-folders.folder schema."
+msgstr ""
+"Daftar path pengaturan relatif dimana app-folder disimpan. Setiap folder "
+"memakai skema org.gnome.desktop.app-folders.folder."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:15
+msgid "Folder name"
+msgstr "Nama folder"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:16
+msgid "The name of the application folder."
+msgstr "Nama folder aplikasi."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:20
+msgid "Translate the name"
+msgstr "Terjemahkan nama"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:21
+msgid ""
+"Whether the name key is a filename to be looked up in /usr/share/desktop-"
+"directories."
+msgstr ""
+"Apakah kunci nama adalah nama berkas yang akan dicari di /usr/share/desktop-"
+"directories."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:26
+msgid "Applications"
+msgstr "Aplikasi"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:27
+msgid ""
+"The list of IDs of applications that are explicitly included in this folder."
+msgstr "Daftar ID aplikasi yang secara ekplisit disertakan dalam folder ini."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:32
+msgid "Categories"
+msgstr "Kategori"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:33
+msgid ""
+"A list of categories for which apps will be placed into this folder by "
+"default, in addition to the apps that are listed in the apps key."
+msgstr ""
+"Suatu daftar katergori dimana app akan ditempatkan ke dalam folder ini "
+"secara baku, sebagai tambahan ke app yang didaftar dalam kunci app."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:39
+msgid "Excluded applications"
+msgstr "Aplikasi yang tak disertakan"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:40
+msgid ""
+"A list of IDs of applications that are excluded from this folder. This can "
+"be used to remove applications that would otherwise be included by category."
+msgstr ""
+"Daftar ID aplikasi yang tak disertakan dalam folder ini. Ini dapat dipakai "
+"untuk menghapus aplikasi yang bila tidak akan disertakan menurut kategori."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:6
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:90
+msgid "Picture Options"
+msgstr "Opsi Gambar"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:7
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:91
+msgid ""
+"Determines how the image set by wallpaper_filename is rendered. Possible "
+"values are “none”, “wallpaper”, “centered”, “scaled”, “stretched”, “zoom”, "
+"“spanned”."
+msgstr ""
+"Menentukan bagaimana gambar yang ditata oleh wallpaper_filename dirender. "
+"Nilai yang mungkin adalah \"none\", \"wallpaper\", \"centered\", \"scaled\", "
+"\"stretched\", \"zoom\", \"spanned\"."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:15
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:99
+msgid "Picture URI"
+msgstr "URI Gambar"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:16
+#: schemas/org.gnome.desktop.background.gschema.xml.in:24
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:100
+msgid ""
+"URI to use for the background image. Note that the backend only supports "
+"local (file://) URIs."
+msgstr ""
+"URI yang dipakai untuk gambar latar. Catatlah bahwa backend hanya mendukung "
+"URI lokal (file://)."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:23
+msgid "Picture URI (dark)"
+msgstr "URI Gambar (gelap)"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:32
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:108
+msgid "Picture Opacity"
+msgstr "Tingkat Transparansi Gambar"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:33
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:109
+msgid "Opacity with which to draw the background picture."
+msgstr "Derajat transparansi saat menggambar latar belakang."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:39
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:115
+msgid "Primary Color"
+msgstr "Warna Primer"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:40
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:116
+msgid "Left or Top color when drawing gradients, or the solid color."
+msgstr ""
+"Warna sebelah kiri atau sebelah atas saat menggambar gradien, atau warna "
+"padat."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:46
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:122
+msgid "Secondary Color"
+msgstr "Warna Sekunder"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:47
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:123
+msgid "Right or Bottom color when drawing gradients, not used for solid color."
+msgstr ""
+"Warna sebelah kanan atau sebelah bawah saat menggambar gradien, warna ini "
+"tidak digunakan saat menggambar warna padat."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:53
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:129
+msgid "Color Shading Type"
+msgstr "Tipe Warna Berbayang"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:54
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:130
+msgid ""
+"How to shade the background color. Possible values are “horizontal”, "
+"“vertical”, and “solid”."
+msgstr ""
+"Menentukan bagaimana cara menggambar warna latar belakang. Cara yang "
+"digunakan yaitu \"horizontal\", \"vertical\", dan \"solid\"."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:61
+msgid "Have file manager handle the desktop"
+msgstr "Jadikan manajer berkas yang menangani destop"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:62
+msgid "If set to true, then file manager will draw the icons on the desktop."
+msgstr "Jika true, maka manajer berkas akan menggambar ikon pada destop."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:10
+msgid "List of breaks that are currently enabled"
+msgstr "Daftar istirahat yang sedang diaktifkan"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:22
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:87
+msgid "Time between breaks"
+msgstr "Waktu antar istirahat"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:23
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:88
+msgid "The time between rest breaks, in seconds."
+msgstr "Waktu antar istirahat, dalam detik."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:29
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:94
+msgid "Duration of each break"
+msgstr "Durasi setiap istirahat"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:30
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:95
+msgid "The duration of each rest break, in seconds."
+msgstr "Durasi setiap istirahat, dalam detik."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:36
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:101
+msgid "Amount to delay break if requested"
+msgstr "Banyaknya penundaan istirahat jika diminta"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:37
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:102
+msgid ""
+"The amount to delay taking the break by, if the user requests a delay, in "
+"seconds."
+msgstr ""
+"Banyaknya penundaan untuk mengambil jeda, jika pengguna meminta penundaan, "
+"dalam detik."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:43
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:108
+msgid "Fade screen during breaks"
+msgstr "Memudarkan layar selama istirahat"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:44
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:109
+msgid "True to fade the screen during rest breaks."
+msgstr "True untuk memudarkan layar selama istirahat."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:49
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:114
+msgid "Lock screen during breaks"
+msgstr "Kunci layar selama istirahat"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:50
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:115
+msgid "True to lock the screen during rest breaks."
+msgstr "True untuk mengunci layar selama istirahat."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:55
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:120
+msgid "Play sound when a break finishes"
+msgstr "Memutar suara saat istirahat selesai"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:56
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:121
+msgid "True to play a sound when a break finishes."
+msgstr "True untuk memainkan suara saat istirahat selesai."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:61
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:79
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:126
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:144
+msgid "Notify when a break is due"
+msgstr "Beri tahu saat istirahat jatuh tempo"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:62
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:127
+msgid "True to emit a notification when a break is due to start."
+msgstr "True untuk memancarkan pemberitahuan saat jeda akan dimulai."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:67
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:132
+msgid "Notify when a break is upcoming"
+msgstr "Beri tahu saat istirahat akan datang"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:68
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:133
+msgid "True to emit a notification a few minutes before a break is due."
+msgstr ""
+"True untuk memancarkan pemberitahuan beberapa menit sebelum istirahat jatuh "
+"tempo."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:73
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:138
+msgid "Notify when a break is overdue"
+msgstr "Beri tahu saat istirahat terlambat"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:74
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:139
+msgid "True to emit a notification when a break is overdue."
+msgstr "True untuk memancarkan pemberitahuan saat jeda terlambat."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:80
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:145
+msgid "True to show a prominent countdown shortly before a break is due."
+msgstr ""
+"True untuk menunjukkan hitungan mundur yang menonjol sesaat sebelum "
+"istirahat jatuh tempo."
+
+#: schemas/org.gnome.desktop.calendar.gschema.xml.in:6
+msgid "Show the week date in the calendar"
+msgstr "Tampilkan tanggal minggu dalam kalender"
+
+#: schemas/org.gnome.desktop.calendar.gschema.xml.in:7
+msgid "If true, display the ISO week date in the calendar."
+msgstr "Jika true, tampilkan tanggal minggu ISO dalam kalender."
+
+#: schemas/org.gnome.desktop.datetime.gschema.xml.in:6
+msgid "Automatically update timezone"
+msgstr "Otomatis mutakhirkan zona waktu"
+
+#: schemas/org.gnome.desktop.datetime.gschema.xml.in:7
+msgid "Whether to automatically update the timezone using geolocation."
+msgstr "Apakah secara otomatis memutakhirkan zona waktu memakai geolocation."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:14
+msgid "Default calendar"
+msgstr "Kalender bawaan"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:15
+msgid ""
+"Default calendar application DEPRECATED: This key is deprecated and ignored. "
+"The preferred calendar application is the application handling the text/"
+"calendar mime type."
+msgstr ""
+"Aplikasi kalender baku TAK BERLAKU LAGI: Kunci ini tak berlaku lagi dan "
+"diabaikan. Aplikasi kalender yang disukai adalah aplikasi yang menangani "
+"tipe mime text/calendar."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:24
+msgid "Calendar needs terminal"
+msgstr "Kalender perlu terminal"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:25
+msgid ""
+"Whether the default calendar application needs a terminal to run. "
+"DEPRECATED: This key is deprecated and ignored. The preferred calendar "
+"application is the application handling the text/calendar mime type, whether "
+"it needs a terminal is taken from its desktop file."
+msgstr ""
+"Apakah aplikasi kalender baku memerlukan terminal untuk berjalan. TAK "
+"BERLAKU LAGI: Kunci ini tak berlaku lagi dan diabaikan. Aplikasi kalender "
+"yang disukai adalah aplikasi yang menangani tipe mime text/calendar, apakah "
+"itu memerlukan terminal diambil dari berkas destopnya."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:37
+msgid "Default tasks"
+msgstr "Tugas bawaan"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:38
+msgid "Default tasks application."
+msgstr "Aplikasi tugas bawaan."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:44
+msgid "Tasks needs terminal"
+msgstr "Tugas yang memerlukan terminal"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:45
+msgid "Whether the default tasks application needs a terminal to run."
+msgstr "Apakah aplikasi tugas bawaan perlu terminal untuk berjalan."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:53
+msgid "Terminal application"
+msgstr "Aplikasi terminal"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:54
+msgid ""
+"Terminal program to use when starting applications that require one. "
+"DEPRECATED: This key is deprecated and ignored. The default terminal is "
+"handled in GIO."
+msgstr ""
+"Program terminal yang digunakan ketika aplikasi yang dimulai memerlukannya. "
+"TAK BERLAKU LAGI: Kunci ini tak berlaku lagi dan diabaikan. Terminal baku "
+"ditangani dalam GIO."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:63
+msgid "Exec Arguments"
+msgstr "Argumen Exec"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:64
+msgid ""
+"Argument used to execute programs in the terminal defined by the “exec” key. "
+"DEPRECATED: This key is deprecated and ignored. The default terminal and how "
+"to invoke it is handled in GIO."
+msgstr ""
+"Argumen yang dipakai untuk mengeksekusi program dalam terminal yang "
+"didefinisikan oleh kunci \"exec\". TAK BERLAKU LAGI: Kunci ini tak berlaku "
+"lagi dan diabaikan. Terminal baku dan bagaimana memanggilnya ditangani dalam "
+"GIO."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:7
+msgid "Current input source"
+msgstr "Sumber masukan kini"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:8
+msgid ""
+"The zero-based index into the input sources list specifying the current one "
+"in effect. The value is automatically capped to remain in the range [0, "
+"sources_length) as long as the sources list isn’t empty. DEPRECATED: This "
+"key is deprecated and ignored."
+msgstr ""
+"Indeks berbasis nol atas daftar sumber masukan yang menyatakan mana yang "
+"aktif. Nilai otomatis dibatasi agar tetap pada jangkauan [0, sources_length) "
+"selama daftar sumber tidak kosong. TIDAK BERLAKU LAGI: Kunci ini tidak "
+"berlaku lagi dan diabaikan."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:19
+msgid "List of input sources"
+msgstr "Daftar sumber masukan"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:20
+msgid ""
+"List of input source identifiers available. Each source is specified as a "
+"tuple of 2 strings. The first string is the type and can be one of “xkb” or "
+"“ibus”. For “xkb” sources the second string is “xkb_layout+xkb_variant” or "
+"just “xkb_layout” if a XKB variant isn’t needed. For “ibus” sources the "
+"second string is the IBus engine name. An empty list means that the X "
+"server’s current XKB layout and variant won’t be touched and IBus won’t be "
+"used."
+msgstr ""
+"Daftar dari identifier sumber masukan yang tersedia. Setiap sumber "
+"dinyatakan sebagai tupel dari 2 string. String pertama adalah tipe dan bisa "
+"berisi satu dari \"xkb\" atau \"ibus\". Bagi sumber \"xkb\" maka string "
+"kedua adalah \"'xkb_layout+xkb_variant\" atau hanya \"xkb_layout\" bila "
+"suatu varian XKB tak diperlukan. Bagi sumber \"ibus\" maka string kedua "
+"adalah nama engine IBus. Suatu daftar kosong berarti bahwa varian dan tata "
+"letak XKB kini milik X server tak akan disentuh dan IBus tak akan dipakai."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:33
+msgid "List of most recently used input sources"
+msgstr "Daftar sumber masukan yang baru-baru ini dipakai"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:34
+msgid ""
+"List of most recently used input sources. The value is in the same format as "
+"the available sources list."
+msgstr ""
+"Daftar dari sumber masukan yang baru-baru ini dipakai. Nilai dalam format "
+"yang sama dengan daftar sumber yang tersedia."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:41
+msgid "List of XKB options"
+msgstr "Daftar opsi XKB"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:42
+msgid ""
+"List of XKB options. Each option is an XKB option string as defined by "
+"xkeyboard-config’s rules files."
+msgstr ""
+"Daftar opsi XKB. Setiap opsi adalaha string opsi XKB sebagaimana "
+"didefinisikan oleh berkas aturan xkeyboard-config."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:49
+msgid "XKB model to use"
+msgstr "Model XKB untuk digunakan"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:50
+msgid ""
+"The XKB model to use. The value is the same identifier as defined by "
+"xkeyboard-config’s geometry files."
+msgstr ""
+"Model XKB yang akan digunakan. Nilainya adalah pengidentifikasi yang sama "
+"seperti yang ditentukan oleh berkas geometri xkeyboard-config."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:57
+msgid "Show all installed input sources"
+msgstr "Tunjukkan semua sumber masukan yang terpasang"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:58
+msgid ""
+"Makes all installed input sources available for choosing in System Settings."
+msgstr ""
+"Membuat semua sumber masukan yang terpasang tersedia untuk dipilih dalam "
+"Pengaturan Sistem."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:65
+msgid "Use different input sources for each window"
+msgstr "Gunakan sumber masukan yang berbeda bagi setiap jendela"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:66
+msgid ""
+"When enabled, input sources get attached to the currently focused window "
+"when activated."
+msgstr ""
+"Bila difungsikan, sumber-sumber masukan dicantolkan ke jendela yang kini "
+"difokuskan ketika diaktifkan."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:6
+msgid "Enable Toolkit Accessibility"
+msgstr "Aktifkan Aksesibilitas Toolkit"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:7
+msgid "Whether toolkits should load accessibility related modules."
+msgstr "Apakah toolkit mesti memuat modul terkait aksesibilitas."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:13
+msgid "Enable Animations"
+msgstr "Aktifkan Animasi"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:14
+msgid ""
+"Whether animations should be displayed. Note: This is a global key, it "
+"changes the behaviour of the window manager, the panel etc."
+msgstr ""
+"Apakah animasi mesti ditampilkan. Perhatian: ini adalah kunci global, yang "
+"mengubah perilaku manajer jendela, panel, dsb."
+
+# Menu Bisa Dilepas
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:21
+msgid "Menus Have Tearoff"
+msgstr "Menu Bisa Dilepas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:22
+msgid "Whether menus should have a tearoff."
+msgstr "Apakah menu dapat dilepas."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:28
+msgid "Can Change Accels"
+msgstr "Dapat Mengganti Akselerator"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:29
+msgid ""
+"Whether the user can dynamically type a new accelerator when positioned over "
+"an active menuitem."
+msgstr ""
+"Apakah pengguna dapat mengganti kombinasi tombol yang telah ditentukan saat "
+"menu dimunculkan."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:36
+msgid "Toolbar Style"
+msgstr "Gaya Bilah Alat"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:37
+msgid ""
+"Toolbar Style. Valid values are “both”, “both-horiz”, “icons”, and “text”."
+msgstr ""
+"Gaya Bilah Alat. Gaya yang diterima adalah \"both\", \"both_horiz\", "
+"\"icon\", dan \"text\"."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:44
+msgid "Menubar Detachable"
+msgstr "Bilah Menu Bisa Dilepas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:45
+msgid "Whether the user can detach menubars and move them around."
+msgstr "Apakah pengguna dapat melepas bilah menu dan memindahkannya."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:51
+msgid "Toolbar Detachable"
+msgstr "Bilah Alat Bisa Dilepas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:52
+msgid "Whether the user can detach toolbars and move them around."
+msgstr "Apakah pengguna dapat melepas bilah alat dan memindahkannya."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:58
+msgid "Toolbar Icon Size"
+msgstr "Ukuran Ikon Batang Perkakas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:59
+msgid "Size of icons in toolbars, either “small” or “large”."
+msgstr ""
+"Ukuran ikon di bilah alat, boleh \"small\" (kecil) atau \"large\" (besar)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:65
+msgid "Cursor Blink"
+msgstr "Kursor Berkedip"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:66
+msgid "Whether the cursor should blink."
+msgstr "Apakah kursor berkedip."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:73
+msgid "Cursor Blink Time"
+msgstr "Waktu Berkedip Kursor"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:74
+msgid "Length of the cursor blink cycle, in milliseconds."
+msgstr "Panjang periode kedipan kursor, dalam satuan milidetik."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:81
+msgid "Cursor Blink Timeout"
+msgstr "Tenggat Kedip Kursor"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:82
+msgid "Time after which the cursor stops blinking, in seconds."
+msgstr "Waktu setelah kursor berhenti berkedip, dalam detik."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:88
+msgid "Icon Theme"
+msgstr "Tema Ikon"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:89
+msgid "Icon theme to use for the panel, nautilus etc."
+msgstr "Tema ikon yang digunakan pada panel, nautilus, dsb."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:95
+msgid "Gtk+ Theme"
+msgstr "Tema Gtk+"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:96
+msgid "Basename of the default theme used by gtk+."
+msgstr "Nama dasar tema bawaan yang digunakan oleh gtk+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:102
+msgid "Gtk+ Keybinding Theme"
+msgstr "Tema Pengikatan Tombol Gtk+"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:103
+msgid "Basename of the default keybinding theme used by gtk+."
+msgstr "Nama basis dari tema pengikatan tombol bawaan yang dipakai oleh gtk+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:109
+msgid "Default font"
+msgstr "Fonta bawaan"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:110
+msgid "Name of the default font used by gtk+."
+msgstr "Nama font standar yang digunakan gtk+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:116
+msgid "Directories with avatar faces"
+msgstr "Direktori dengan wajah avatar"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:117
+msgid ""
+"Directories to override the default avatar faces installed by gnome-control-"
+"center."
+msgstr ""
+"Direktori untuk mengganti wajah avatar bawaan yang dipasang oleh gnome-"
+"control-center."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:124
+msgid "Text scaling factor"
+msgstr "Faktor skala teks"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:125
+msgid ""
+"Factor used to enlarge or reduce text display, without changing font size."
+msgstr ""
+"Faktor yang dipakai untuk memperbesar atau mengurangi tampilan teks, tanpa "
+"mengubah ukuran fonta."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:131
+msgid "Window scaling factor"
+msgstr "Faktor skala jendela"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:132
+msgid ""
+"Integer factor used to scale windows by. For use on high-dpi screens. 0 "
+"means pick automatically based on monitor."
+msgstr ""
+"Faktor integer yang dipakai untuk mengatur skala jendela. Untuk dipakai pada "
+"layar dengan dpi tinggi. 0 berarti ambil otomatis berdasarkan pada monitor."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:139
+msgid "GTK IM Preedit Style"
+msgstr "Gaya Preedit Metode Masukan GTK"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:140
+msgid "Name of the GTK+ input method Preedit Style used by gtk+."
+msgstr "Nama Gaya Preedit metode masukan GTK+ yang digunakan oleh gtk+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:146
+msgid "GTK IM Status Style"
+msgstr "Gaya Status Metode Masukan GTK"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:147
+msgid "Name of the GTK+ input method Status Style used by gtk+."
+msgstr "Nama Gaya Status metode masukan GTK+ yang digunakan oleh gtk+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:153
+msgid "GTK IM Module"
+msgstr "Modul IM GTK"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:154
+msgid "Name of the input method module used by GTK+."
+msgstr "Nama modul metode masukan yang digunakan oleh GTK+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:160
+msgid "Document font"
+msgstr "Fonta dokumen"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:161
+msgid "Name of the default font used for reading documents."
+msgstr "Nama fonta bawaan yang digunakan untuk membuka dokumen."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:167
+msgid "Monospace font"
+msgstr "Fonta monospace"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:168
+msgid ""
+"Name of a monospaced (fixed-width) font for use in locations like terminals."
+msgstr ""
+"Nama huruf monospace (dengan lebar tetap) yang akan digunakan oleh program-"
+"program semacam terminal."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:175
+msgid "Menubar accelerator"
+msgstr "Akselerator bilah menu"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:176
+msgid "Keyboard shortcut to open the menu bars."
+msgstr "Tombol pintas untuk membuka kotak menu."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:182
+msgid "Cursor theme"
+msgstr "Tema kursor"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:183
+msgid ""
+"Cursor theme name. Used only by Xservers that support the Xcursor extension."
+msgstr ""
+"Nama tema kursor. Hanya dipergunakan oleh Xserver yang mendukung ekstensi "
+"Xcursor."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:187
+msgid "Cursor size"
+msgstr "Ukuran kursor"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:188
+msgid "Size of the cursor used as cursor theme."
+msgstr "Ukuran kursor yang dipakai sebagai tema kursor."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:192
+msgid "Timeout before click repeat"
+msgstr "Tenggat sebelum pengulangan klik"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:193
+msgid ""
+"Timeout in milliseconds before a click starts repeating (on spinner buttons "
+"for example)."
+msgstr ""
+"Tenggang waktu dalam milidetik sebelum suatu klik mulai berulang (pada "
+"tombol gasing misalnya)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:197
+msgid "Timeout between click repeats"
+msgstr "Waktu tenggat antara pengulangan klik"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:198
+msgid ""
+"Timeout in milliseconds between repeated clicks when a button is left "
+"pressed."
+msgstr ""
+"Tenggang waktu dalam milidetik antara klik berulang ketika tombol kiri "
+"ditekan."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:202
+msgid "Palette used in the color selector"
+msgstr "Palet yang digunakan pada pemilih warna"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:203
+msgid ""
+"Palette used in the color selector as defined by the “gtk-color-palette” "
+"setting"
+msgstr ""
+"Palet yang dipakai dalam pemilih warna seperti didefinisikan oleh pengaturan "
+"\"gkt-color-palette\""
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:207
+msgid "List of symbolic names and color equivalents"
+msgstr "Daftar nama simbolis dan ekuivalen warna"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:208
+msgid ""
+"A “\\n” separated list of “name:color” as defined by the “gtk-color-scheme” "
+"setting"
+msgstr ""
+"Suatu daftar yang dipisah oleh \"\\n\" atas \"name:color\" seperti "
+"didefinisikan oleh pengaturan \"gtk-color-scheme\""
+
+#. TRANSLATORS: select your locale's default clock format, this should be '12h' or '24h' (with the quotes!)
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:212
+msgid "'24h'"
+msgstr "'24h'"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:213
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:214
+msgid "Whether the clock displays in 24h or 12h format"
+msgstr "Apakah jam ditampilkan dalam format 24j atau 12j"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:220
+msgid "Whether the clock shows seconds"
+msgstr "Apakah jam menampilkan detik"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:221
+msgid "If true, display seconds in the clock."
+msgstr "Jika true, detik akan ditampilkan."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:227
+msgid "Show date in clock"
+msgstr "Tampilkan tanggal pada jam"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:228
+msgid "If true, display date in the clock, in addition to time."
+msgstr "Jika true, tanggal akan ditampilkan."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:234
+msgid "Show weekday in clock"
+msgstr "Tampilkan hari kerja pada jam"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:235
+msgid "If true, display weekday in the clock, in addition to time."
+msgstr "Jika true, tampilkan hari kerja pada jam, disamping waktu."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:241
+msgid "Enable hot corners"
+msgstr "Aktifkan sudut panas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:242
+msgid ""
+"If true, the activities overview can be accessed by moving the mouse to the "
+"top-left corner."
+msgstr ""
+"Jika true, ikhtisar aktivitas dapat diakses dengan menggerakkan tetikus ke "
+"sudut kiri atas."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:249
+msgid "Show battery percentage"
+msgstr "Tampilkan persentase baterai"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:250
+msgid ""
+"If true, display battery percentage in the status menu, in addition to the "
+"icon."
+msgstr ""
+"Jika true, tampilkan persentase baterai pada menu status, sebagai tambahan "
+"ke ikon."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:256
+msgid "Enable the primary paste selection"
+msgstr "Aktifkan pilihan tempel primer"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:257
+msgid ""
+"If true, gtk+ uses the primary paste selection, usually triggered by a "
+"middle mouse button click."
+msgstr ""
+"Jika true, gtk+ menggunakan pilihan tempel primer, biasanya dipicu oleh "
+"tombol tetikus klik tengah."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:263
+msgid "Allow overlay scrolling"
+msgstr "Izinkan pengguliran overlay"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:264
+msgid ""
+"Whether scrollbars should be overlayed as indicators. Depending on input "
+"devices in use, permanent scrollbars may still be displayed."
+msgstr ""
+"Apakah bilah gulir harus di-overlay sebagai indikator. Tergantung pada "
+"perangkat masukan yang digunakan, bilah gulir permanen mungkin masih "
+"ditampilkan."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:272
+msgid "Highlights the current location of the pointer."
+msgstr "Sorot lokasi pointer saat ini."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:273
+msgid ""
+"If true, pressing a key will highlight the current pointer location on "
+"screen."
+msgstr ""
+"Jika true, menekan tombol akan menyorot lokasi penunjuk saat ini di layar."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:279
+msgid "Antialiasing"
+msgstr "Antialias"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:280
+msgid ""
+"The type of antialiasing to use when rendering fonts. Possible values are: "
+"“none” for no antialiasing, “grayscale” for standard grayscale antialiasing, "
+"and “rgba” for subpixel antialiasing (LCD screens only)."
+msgstr ""
+"Jenis antialias yang dipakai untuk merender fonta. Nilai yang mungkin "
+"adalah: \"none\" untuk tanpa antialias, \"grayscale\" untuk antialias skala "
+"abu standar, dan \"rgba\" untuk antialias sub piksel (layar LCD saja)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:286
+msgid "Hinting"
+msgstr "Hinting"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:287
+msgid ""
+"The type of hinting to use when rendering fonts. Possible values are: “none” "
+"for no hinting and “slight” for fitting only to the Y-axis like Microsoft’s "
+"ClearType, DirectWrite and Adobe’s proprietary font rendering engine. "
+"Ignores native hinting within the font, generates hints algorithmically. "
+"Used on Ubuntu by default. Recommended. The meaning of “medium” and “full” "
+"depends on the font format (.ttf, .otf, .pfa/.pfb) and the installed version "
+"of FreeType. They usually try to fit glyphs to both the X and the Y axis "
+"(except for .otf: Y-only). This can lead to distortion and/or inconsistent "
+"rendering depending on the quality of the font, the font format and the "
+"state of FreeType’s font engines."
+msgstr ""
+"Tipe petunjuk yang dipakai ketika merender fonta. Nilai yang mungkin adalah: "
+"\"none\" (nihil) untuk tanpa petunjuk dan \"slight\" (sedikit) untuk "
+"mengepaskan hanya ke sumbu-Y seperti Microsoft ClearType, DirectWrite, dan "
+"mesin render fonta proprietari Adobe. Mengabaikan petunjuk native dari dalam "
+"fonta, membangkitkan petunjuk secara algoritmis. Dipakai pada Ubuntu secara "
+"baku. Disarankan. Arti dari \"medium\" (sedang) dan \"full\" (penuh) "
+"bergantung kepada format fonta (.ttf, .otf, .pfa/.pfb) dan versi FreeType "
+"yang dipasang. Mereka biasanya mencoba mengepaskan glyph ke sumbu X dan Y "
+"(kecuali .otf: hanya-Y). Ini bisa menyebabkan distorsi dan/atau "
+"ketidakkonsistenan perenderan bergantung kepada kualitas fonta, format "
+"fonta, dan keadaan dari mesin fonta FreeType."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:293
+msgid "RGBA order"
+msgstr "Urutan RGBA"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:294
+msgid ""
+"The order of subpixel elements on an LCD screen; only used when antialiasing "
+"is set to “rgba”. Possible values are: “rgb” for red on left (most common), "
+"“bgr” for blue on left, “vrgb” for red on top, “vbgr” for red on bottom."
+msgstr ""
+"Urutan elemen sub piksel pada layar LCD; hanya dipakai ketika antialias "
+"ditata ke \"rgba\". Nilai yang mungkin adalah: \"rgb\" untuk merah di kiri "
+"(paling umum), \"bgr\" untuk biru di kiri, \"vrgb\" untuk merah di atas, "
+"\"vbgr\" untuk merah di bawah."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:300
+msgid "Color scheme"
+msgstr "Skema warna"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:301
+msgid ""
+"The preferred color scheme for the user interface. Valid values are "
+"“default”, “prefer-dark”, “prefer-light”."
+msgstr ""
+"Skema warna yang disukai untuk antarmuka pengguna. Nilai yang valid adalah "
+"\"default\", \"prefer-dark\", \"prefer-light\"."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:307
+msgid "Font rendering"
+msgstr "Perenderan fonta"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:308
+msgid ""
+"Preference to indicate whether font rendering should follow the low-level "
+"`font-hinting` and `font-antialiasing` and `font-rgba-order` settings, or "
+"take environmental factors such as screen resolution and scaling into "
+"account. Possible values are: \"manual\" for respecting the low-level "
+"settings, or \"automatic\" for letting the toolkit make its own decisions."
+msgstr ""
+"Preferensi untuk menunjukkan apakah perenderan fonta harus mengikuti "
+"pengaturan 'font-hinting' dan 'font-antialiasing' dan 'font-rgba-order' "
+"tingkat rendah, atau mempertimbangkan faktor lingkungan seperti resolusi "
+"layar dan penskalaan. Nilai yang mungkin adalah: \"manual\" untuk "
+"menghormati pengaturan tingkat rendah, atau \"otomatis\" untuk membiarkan "
+"toolkit membuat keputusannya sendiri."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:316
+msgid "Accent color"
+msgstr "Warna aksen"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:317
+msgid ""
+"The preferred accent color for the user interface. Valid values are "
+"\"blue\", \"teal\", \"green\", \"yellow\", \"orange\", \"red\", \"pink\", "
+"\"purple\", \"slate\"."
+msgstr ""
+"Warna aksen yang disukai untuk antarmuka pengguna. Nilai yang valid adalah "
+"\"blue\", \"teal\", \"green\", \"yellow\", \"orange\", \"red\", \"pink\", "
+"\"purple\", \"slate\"."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:6
+msgid "Disable command line"
+msgstr "Matikan baris perintah"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:7
+msgid ""
+"Prevent the user from accessing the terminal or specifying a command line to "
+"be executed. For example, this would disable access to the panel’s “Run "
+"Application” dialog."
+msgstr ""
+"Mencegah pemakai untuk mengakses terminal atau menjalankan program. Ini juga "
+"akan mematikan fasilitas \"Jalankan Aplikasi\" pada panel."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:15
+msgid "Disable saving files to disk"
+msgstr "Matikan penyimpanan berkas ke disk"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:16
+msgid ""
+"Prevent the user from saving files to disk. For example, this would disable "
+"access to all applications’ “Save as” dialogs."
+msgstr ""
+"Mencegah pemakai untuk menyimpan berkas ke disk. Ini juga akan mematikan "
+"akses ke dialog aplikasi \"Simpan sebagai\"."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:23
+msgid "Disable printing"
+msgstr "Matikan pencetakan"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:24
+msgid ""
+"Prevent the user from printing. For example, this would disable access to "
+"all applications’ “Print” dialogs."
+msgstr ""
+"Mencegah pemakai untuk mencetak. Ini akan mematikan semua akses ke dialog "
+"\"Cetak\"."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:31
+msgid "Disable print setup"
+msgstr "Matikan penyiapan pencetakan"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:32
+msgid ""
+"Prevent the user from modifying print settings. For example, this would "
+"disable access to all applications’ “Print Setup” dialogs."
+msgstr ""
+"Mencegah pemakai untuk mengganti konfigurasi cetakan. Hal ini akan mematikan "
+"akses ke semua dialog \"Atur Cetakan\"."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:39
+msgid "Disable user switching"
+msgstr "Matikan perpindahan pengguna"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:40
+msgid ""
+"Prevent the user from switching to another account while their session is "
+"active."
+msgstr ""
+"Mencegah pemakai untuk berpindah ke akun lain ketika sesi mereka sedang "
+"aktif."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:47
+msgid "Disable lock screen"
+msgstr "Matikan penguncian layar"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:48
+msgid "Prevent the user from locking their screen."
+msgstr "Mencegah pemakai mengunci layar mereka."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:54
+msgid "Disable URL and MIME type handlers"
+msgstr "Matikan penangan URL dan tipe MIME"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:55
+msgid "Prevent running any URL or MIME type handler applications."
+msgstr "Mencegah berjalannya aplikasi penangan sebarang URL atau tipe MIME."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:61
+msgid "Disable log out"
+msgstr "Nonaktifkan log keluar"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:62
+msgid "Prevent the user from logging out."
+msgstr "Mencegah pengguna log keluar."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:68
+msgid "Disable user administration"
+msgstr "Matikan administrasi pengguna"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:69
+msgid ""
+"Stop the user from modifying user accounts. By default, we allow adding and "
+"removing users, as well as changing other users settings."
+msgstr ""
+"Mencegah pengguna mengubah akun pengguna. Secara baku, kami mengijinkan "
+"penambahan dan penghapusan pengguna, maupun pengubahan pengaturan pengguna "
+"lain."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:76
+msgid "Mount removable storage devices as read-only"
+msgstr "Kaitkan perangkat penyimpanan yang dapat dilepas sebagai hanya-baca"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:77
+msgid ""
+"Prevent users from writing or modifying files on removable storage devices "
+"(i.e. flash disks, mobile phones, cameras)."
+msgstr ""
+"Cegah pengguna dari menulis atau memodifikasi berkas pada perangkat "
+"penyimpanan yang dapat dilepas (mis. flash disk, ponsel, kamera)."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:84
+msgid "Disable password showing"
+msgstr "Nonaktifkan kata sandi yang diperlihatkan"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:85
+msgid "Disable the \"Show Password\" menu item in password entries."
+msgstr ""
+"Nonaktifkan butir menu \"Tampilkan Kata Sandi\" dalam entri kata sandi."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:6
+msgid "Whether to automatically mount media"
+msgstr "Apakah mengait otomatis media"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:7
+msgid ""
+"If set to true, then Nautilus will automatically mount media such as user-"
+"visible hard disks and removable media on start-up and media insertion."
+msgstr ""
+"Jika true, maka Nautilus akan mengait otomatis media seperti cakram keras "
+"yang terlihat oleh pengguna dan media copot pasang saat mulai dan penyisipan "
+"media."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:11
+msgid "Whether to automatically open a folder for automounted media"
+msgstr "Apakah otomatis membuka folder bagi media yang dikait otomatis"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:12
+msgid ""
+"If set to true, then Nautilus will automatically open a folder when media is "
+"automounted. This only applies to media where no known x-content/* type was "
+"detected; for media where a known x-content type is detected, the user "
+"configurable action will be taken instead."
+msgstr ""
+"Jika true, maka Nautilus akan membuka otomatis suatu folder ketika media "
+"dikait otomatis. Ini hanya berlaku ke media dimana tidak ada tipe x-content/"
+"* yang dikenal terdeteksi; bagi media dimana suatu tipe x-content "
+"terdeteksi, aksi yang dapat diubah penggunalah yang akan diambil."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:16
+msgid "Never prompt or autorun/autostart programs when media are inserted"
+msgstr ""
+"Jangan pernah tanya atau jalankan otomatis program ketika media dimasukkan"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:17
+msgid ""
+"If set to true, then Nautilus will never prompt nor autorun/autostart "
+"programs when a medium is inserted."
+msgstr ""
+"Jika true, Nautilus tidak akan pernah menjalankan secara otomatis sebuah "
+"program apabila medium yang menyimpan program tersebut dimasukkan."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:21
+msgid ""
+"List of x-content/* types where the preferred application will be launched"
+msgstr ""
+"Daftar jenis x-content/* yang akan dibuka oleh aplikasi yang telah ditentukan"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:22
+msgid ""
+"List of x-content/* types for which the user have chosen to start an "
+"application in the preference capplet. The preferred application for the "
+"given type will be started on insertion on media matching these types."
+msgstr ""
+"Daftar dari tipe x-content/* yang dipilih pengguna untuk memulai suatu "
+"aplikasi di caplet preferensi. Aplikasi yang disukai bagi tipe tersebut akan "
+"dimulai saat penyisipan media yang cocok dengan tipe ini."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:26
+msgid "List of x-content/* types set to “Do Nothing”"
+msgstr ""
+"Daftar jenis x-content/* yang disetel untuk aksi \"Jangan Lakukan Apa-apa\""
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:27
+msgid ""
+"List of x-content/* types for which the user have chosen “Do Nothing” in the "
+"preference capplet. No prompt will be shown nor will any matching "
+"application be started on insertion of media matching these types."
+msgstr ""
+"Daftar dari tipe x-content/* yang dipilih pengguna untuk \"Tak Lakukan "
+"Apapun\" di caplet preferensi. Tak ada pertanyaan dimunculkan dan tak ada "
+"aplikasi yang cocok yang dijalankan saat penyisipan media yang cocok dengan "
+"tipe ini."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:31
+msgid "List of x-content/* types set to “Open Folder”"
+msgstr "Daftar jenis x-content/* yang disetel untuk aksi \"Buka Folder\""
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:32
+msgid ""
+"List of x-content/* types for which the user have chosen “Open Folder” in "
+"the preferences capplet. A folder window will be opened on insertion of "
+"media matching these types."
+msgstr ""
+"Daftar dari tipe x-content/* yang dipilih pengguna untuk \"Buka Folder\" di "
+"caplet preferensi. Suatu jendela folder akan dibuka saat dimasukkannya media "
+"yang cocok dengan tipe ini."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:6
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:55
+msgid "Show notification banners"
+msgstr "Tampilkan banner pemberitahuan"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:7
+msgid "Whether notification banners are visible for application notifications."
+msgstr "Apakah banner pemberitahuan nampak bagi pemberitahuan aplikasi."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:14
+msgid "Show notifications in the lock screen"
+msgstr "Tampilkan pemberitahuan pada kuncian layar"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:15
+msgid "Whether notifications are shown in the lock screen or not."
+msgstr "Apakah pemberitahuan ditampilkan pada kuncian layar atau tidak."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:31
+msgid "Application ID"
+msgstr "ID Aplikasi"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:32
+msgid "The application that this policy is for."
+msgstr "Aplikasi tempat peruntukan kebijakan ini."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:39
+msgid "Enable notifications"
+msgstr "Aktifkan pemberitahuan"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:40
+msgid "Whether notifications are globally enabled for this application."
+msgstr "Apakah pemberitahuan difungsikan secara global bagi aplikasi ini."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:47
+msgid "Enable sound alerts"
+msgstr "Aktifkan peringatan suara"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:48
+msgid "Whether notifications should be accompanied by sound alerts."
+msgstr "Apakah pemberitahun mesti disertai dengan peringatan suara."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:56
+msgid ""
+"Whether notification banners for this application are shown or not. Does not "
+"affect clicking on message tray buttons."
+msgstr ""
+"Apakah banner pemberitahuan bagi aplikasi ini ditampilkan atau tidak. Tak "
+"mempengaruhi pengklikan pada tombol baki pesan."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:64
+msgid "Force automatic expanding of banners"
+msgstr "Paksakan pengembangan banner secara otomatis"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:65
+msgid ""
+"Whether notifications from this application are expanded automatically when "
+"in banner mode."
+msgstr ""
+"Apakah notifikasi bagi aplikasi ini dikembangkan secara otomatis ketika "
+"dalam mode banner."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:72
+msgid "Show in the lock screen"
+msgstr "Tampilkan dalam layar terkunci"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:73
+msgid ""
+"Whether notifications from this application are shown when the screen is "
+"locked."
+msgstr ""
+"Apakah pemberitahuan dari aplikasi ini ditampilkan ketika layar dikunci."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:80
+msgid "Show details in the lock screen"
+msgstr "Tampilkan rincian dalam layar terkunci"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:81
+msgid ""
+"Whether the summary and body of notifications from this application will be "
+"visible in the locked screen."
+msgstr ""
+"Apakah ringkasan dan isi pemberitahuan dari aplikasi ini akan nampak pada "
+"layar yang terkunci."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:15
+msgid "Whether edge scrolling is enabled"
+msgstr "Apakah pengguliran tepi difungsikan"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:16
+msgid ""
+"When enabled, touchpads that support edge scrolling will have that feature "
+"enabled."
+msgstr ""
+"Ketika difungsikan, touchpad yang mendukung pengguliran tepi akan "
+"difungsikan fiturnya."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:20
+msgid "Whether two-finger scrolling is enabled"
+msgstr "Apakah pengguliran dua jari difungsikan"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:21
+msgid ""
+"When enabled, touchpads that support two-finger scrolling will have that "
+"feature enabled."
+msgstr ""
+"Ketika difungsikan, touchpad yang mendukung pengguliran dua jari akan "
+"difungsikan fiturnya."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:25
+msgid "Whether to disable the touchpad while typing"
+msgstr "Apakah untuk menonaktifkan touchpad saat mengetik"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:26
+msgid "When enabled, touchpads will be disabled while typing on the keyboard."
+msgstr ""
+"Ketika diaktifkan, touchpad akan dinonaktifkan saat mengetik pada papan tik."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:30
+msgid "Enable mouse clicks with touchpad"
+msgstr "Fungsikan klik tetikus dengan touchpad"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:31
+msgid ""
+"Set this to TRUE to be able to send mouse clicks by tapping on the touchpad."
+msgstr ""
+"Atur ini ke TRUE agar dapat mengirim klik tetikus dengan mengetuk pada "
+"touchpad."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:35
+msgid "Tap Button Map"
+msgstr "Ketuk Tombol Peta"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:36
+msgid ""
+"Defines the mapping between the number of fingers and touchpad buttons. The "
+"default is to have a 1, 2 and 3 finger tap to map to the left, right and "
+"middle button (\"lrm\"), respectively."
+msgstr ""
+"Mendefinisikan pemetaan antara jumlah jari dan tombol touchpad. Bawaan "
+"adalah, masing-masing, mengetuk 1, 2, dan 3 jari, dipetakan ke tombol kiri, "
+"kanan, dan tengah (\"lrm\")."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:40
+msgid "Enable tap-and-drag with touchpad"
+msgstr "Fungsikan ketuk-dan-tarik dengan touchpad"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:41
+msgid ""
+"Set this to TRUE to be able to start a drag by tapping and immediately "
+"moving the finger that’s now pressed on the touchpad."
+msgstr ""
+"Atur ini ke TRUE agar dapat mengirim klik tetikus dengan mengetuk pada "
+"touchpad."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:45
+msgid "Enable tap-and-drag-lock with touchpad"
+msgstr "Fungsikan kunci-ketuk-dan-tarik dengan touchpad"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:46
+msgid ""
+"Set this to TRUE to lock the dragging process within a short timeout when "
+"the finger is lifted on the touchpad and the tap-and-drag setting is enabled."
+msgstr ""
+"Atur ini ke TRUE untuk mengunci proses seret dalam waktu singkat yang pendek "
+"saat jari diangkat pada touchpad dan pengaturan ketuk-dan-tarik diaktifkan."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:50
+msgid "Touchpad enabled"
+msgstr "Touchpad difungsikan"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:51
+msgid "Defines the situations in which the touchpad is enabled."
+msgstr "Mendefinisikan situasi dimana touchpad difungsikan."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:55
+msgid "Touchpad button orientation"
+msgstr "Orientasi tombol touchpad"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:56
+msgid ""
+"Swap left and right mouse buttons for left-handed mice with “left”, “right” "
+"for right-handed, “mouse” to follow the mouse setting."
+msgstr ""
+"Pertukarkan tombol tetikus kiri dan kanan untuk tetikus kidal dengan "
+"\"left\", \"right\" untuk kinan, \"mouse\" untuk mengikuti pengaturan "
+"tetikus."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:60
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:131
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:261
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:279
+msgid "Acceleration profile"
+msgstr "Profil akselerasi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:61
+msgid ""
+"Acceleration profile used for connected touchpads. The acceleration profile "
+"can be set to either default (“default”) which uses the default acceleration "
+"profile for each device, flat (“flat”), which accelerates by a device "
+"specific constant factor derived from the configured pointer speed, or "
+"adaptive (“adaptive”) which adapts the acceleration depending on the mouse "
+"movement. If a touchpad doesn’t support the configured profile, “default” "
+"will be used."
+msgstr ""
+"Profil akselerasi yang dipakai untuk touchpad yang tersambung. Profil "
+"akselerasi dapat ditata ke baku (\"default\") yang memakai profil akselerasi "
+"baku bagi setiap perangkat, rata (\"flat\"), yang mempercepat berdasarkan "
+"suatu faktor konstan spesifik perangkat yang diturunkan dari kecepatan "
+"penunjuk yang dikonfigurasi, atau adaptif (\"adaptive\") yang menyesuaikan "
+"akselerasi bergantung kepada pergerakan tetikus. Bila suatu touchpads tidak "
+"mendukung profil yang dikonfigurasi, \"default\" akan dipakai."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:65
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:120
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:273
+msgid "Pointer speed"
+msgstr "Kecepatan penunjuk"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:66
+msgid ""
+"Pointer speed for the touchpad. Accepted values are in the [-1..1] range "
+"(from “unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Laju penunjuk bagi touchpad. Nilai yang diterima adalah dalam jangkauan "
+"[-1..1] (dari \"unaccelerated\" atau tak dipercepat sampai \"fast\" atau "
+"cepat). Nilai baku sistem adalah 0."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:71
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:126
+msgid "Natural scrolling"
+msgstr "Pengguliran alami"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:72
+msgid "Set this to TRUE to enable natural (reverse) scrolling for touchpads."
+msgstr ""
+"Atur ini ke TRUE untuk memfungsikan pengguliran alami (terbalik) bagi "
+"touchpad."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:76
+msgid "Click method"
+msgstr "Metoda klik"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:77
+msgid ""
+"How to generate software-emulated buttons, either disabled (“none”), through "
+"specific areas (“areas”), number of fingers (“fingers”) or left as hardware "
+"default (“default”)."
+msgstr ""
+"Bagaimana menjangkitkan tombol yang diemulasi perangkat lunak, bisa "
+"dimatikan (\"none\"), melalui area tertentu (\"areas\"), cacah jari "
+"(\"fingers\"), atau dibiarkan mengikuti nilai baku perangkat keras "
+"(\"default\")."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:81
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:136
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:266
+msgid "Emulate middle click"
+msgstr "Emulasikan klik tengah"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:82
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:137
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:267
+msgid ""
+"Set this to TRUE to enable middle click during simultaneous left and right "
+"click."
+msgstr ""
+"Atur ini ke TRUE untuk mengaktifkan klik tengah selama klik kiri dan kanan "
+"simultan."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:88
+msgid "Keyboard repeat"
+msgstr "Pengulangan papan tik"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:89
+msgid "Set this to TRUE to enable keyboard repeat."
+msgstr "Atur ini ke TRUE untuk memfungsikan pengulangan tombol."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:93
+msgid "Key Repeat Interval"
+msgstr "Selang Waktu Pengulangan Tombol"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:94
+msgid "Delay between repeats in milliseconds."
+msgstr "Tundaan antar pengulangan dalam milidetik."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:98
+msgid "Initial Key Repeat Delay"
+msgstr "Tundaan Awal Pengulangan Tombol"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:99
+msgid "Initial key repeat delay in milliseconds."
+msgstr "Jeda awal pengulangan kunci dalam milidetik."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:103
+msgid "Remember NumLock state"
+msgstr "Ingat keadaan NumLock"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:104
+msgid ""
+"When set to true, GNOME will remember the state of the NumLock LED between "
+"sessions."
+msgstr ""
+"Bila diatur ke true, GNOME akan mengingat keadaan LED Num Lock di antara "
+"sesi."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:108
+msgid "NumLock state"
+msgstr "Keadaan NumLock"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:109
+msgid "The remembered state of the NumLock LED."
+msgstr "Keadaan LED NumLock yang diingat."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:115
+msgid "Mouse button orientation"
+msgstr "Orientasi tombol tetikus"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:116
+msgid "Swap left and right mouse buttons for left-handed mice."
+msgstr "Pertukarkan tombol kiri dan kanan tetikus bagi orang kidal."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:121
+msgid ""
+"Pointer speed for mice. Accepted values are in the [-1..1] range (from "
+"“unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Kecepatan penunjuk bagi tetikus. Nilai yang diteima adalah dalam jangkauan "
+"[-1..1] (dari \"unaccelerated\" atau tak dipercepat sampai \"fast\" atau "
+"cepat). Nilai 0 adalah nilai baku sistem."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:127
+msgid "Set this to TRUE to enable natural (reverse) scrolling for mice."
+msgstr ""
+"Atur ini ke TRUE untuk memfungsikan pengguliran alami (terbalik) bagi "
+"tetikus."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:132
+msgid ""
+"Acceleration profile used for connected mice. The acceleration profile can "
+"be set to either default (“default”) which uses the default acceleration "
+"profile for each device, flat (“flat”), which accelerates by a device "
+"specific constant factor derived from the configured pointer speed, or "
+"adaptive (“adaptive”) which adapts the acceleration depending on the mouse "
+"movement. If a mouse doesn’t support the configured profile, “default” will "
+"be used."
+msgstr ""
+"Profil akselerasi yang dipakai untuk tetikus yang tersambung. Profil "
+"akselerasi dapat ditata ke baku (\"default\") yang memakai profil akselerasi "
+"baku bagi setiap perangkat, rata (\"flat\"), yang mempercepat berdasarkan "
+"suatu faktor konstan spesifik perangkat yang diturunkan dari kecepatan "
+"penunjuk yang dikonfigurasi, atau adaptif (\"adaptive\") yang menyesuaikan "
+"akselerasi bergantung kepada pergerakan tetikus. Bila suatu tetikus tidak "
+"mendukung profil yang dikonfigurasi, \"default\" akan dipakai."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:141
+msgid "Double click time"
+msgstr "Waktu klik ganda"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:142
+msgid "Length of a double click in milliseconds."
+msgstr "Panjang waktu klik ganda dalam milidetik."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:146
+msgid "Drag threshold"
+msgstr "Derajat seret"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:147
+msgid "Distance before a drag is started."
+msgstr "Jarak sebelum penyeretan (drag) dimulai."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:153
+msgid "Drawing tablet mapping"
+msgstr "Pemetaan tablet gambar"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:154
+msgid ""
+"EDID information of the output the tablet is mapped to. Must be in the "
+"format [vendor, product, serial]. [\"\",\"\",\"\"] relies on automatic "
+"mapping."
+msgstr ""
+"Informasi EDID dari keluaran tempat tablet dipetakan. Mesti dalam format "
+"[vendor, produk, nomor seri]. [\"\",\"\",\"\"] mematikan pemetaan."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:158
+msgid "Tablet mapping"
+msgstr "Pemetaan tablet"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:159
+msgid "How input affects the pointer on the screen"
+msgstr "Bagaimana masukan mempengaruhi penunjuk pada layar"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:163
+msgid "Tablet area"
+msgstr "Area tablet"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:164
+msgid ""
+"Dead area padding around the active area, in percentages. Respectively "
+"applied to left,right,top and bottom sides."
+msgstr ""
+"Area mati pengganjal di sekitar area aktif, dalam persentase. Masing-masing "
+"diterapkan ke sisi kiri, kanan, atas, dan bawah."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:168
+msgid "Tablet aspect ratio"
+msgstr "Rasio aspek tablet"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:169
+msgid ""
+"Enable this to restrict the tablet area to match the aspect ratio of the "
+"output."
+msgstr ""
+"Fungsikan ini untuk membatasi area tablet agar cocok dengan rasio aspek "
+"keluaran."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:173
+msgid "Tablet left-handed mode"
+msgstr "Mode kidal tablet"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:174
+msgid ""
+"Enable this to allow physically rotating the tablet for left-handed setups"
+msgstr ""
+"Fungsikan ini untuk mengijinkan memutar tablet secara fisik untuk penyiapan "
+"kidal"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:180
+msgid "Stylus pressure curve"
+msgstr "Kurva tekanan stylus"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:181
+msgid ""
+"Set this to x1, y1 and x2, y2 of the pressure curve applied to the stylus."
+msgstr ""
+"Atur ini ke x1, y1 dan x2, y2 dari kurva tekanan yang diterapkan ke stylus."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:185
+msgid "Stylus pressure range"
+msgstr "Rentang tekanan stylus"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:186
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:196
+msgid ""
+"Set this to the percentage of the physical pressure range that should map to "
+"the logical range."
+msgstr ""
+"Atur ini ke persentase rentang tekanan fisik yang harus dipetakan ke rentang "
+"logis."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:190
+msgid "Eraser pressure curve"
+msgstr "Kurva tekanan penghapus"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:191
+msgid ""
+"Set this to x1, y1 and x2, y2 of the pressure curve applied to the eraser."
+msgstr ""
+"Atur ini ke x1, y1 dan x2, y2 dari kurva tekanan yang diterapkan ke "
+"penghapus."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:195
+msgid "Eraser pressure range"
+msgstr "Rentang tekanan penghapus"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:200
+msgid "Button action"
+msgstr "Aksi tombol"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:201
+msgid "Stylus button action, this button is located along the pen handle."
+msgstr "Aksi tombol stylus, tombol ini terletak di sepanjang pegangan pena."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:205
+msgid "Secondary button action"
+msgstr "Aksi tombol sekunder"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:206
+msgid ""
+"Secondary stylus button action, this button is located along the pen handle "
+"on some styli like the Grip Pen. Other styli like the Airbrush Pen or the "
+"Inking Pen only have one button, this setting is ineffective on those."
+msgstr ""
+"Aksi tombol stylus sekunder, tombol ini terletak sepanjang pegangan pena "
+"pada beberapa stylus seperti Grip Pen. Stylus lain seperti Airbrush Pen atau "
+"Inking Pen hanya punya satu tombol, pengaturan ini tidak efektif pada mereka."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:210
+msgid "Tertiary button action"
+msgstr "Aksi tombol tersier"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:211
+msgid ""
+"Tertiary stylus button action, this button is located along the pen handle "
+"on some styli like the 3D Pen. Other styli like the Grip Pen only have two "
+"buttons, this setting is ineffective on those."
+msgstr ""
+"Aksi tombol stylus tersier, tombol ini terletak sepanjang pegangan pena pada "
+"beberapa stylus seperti Pen 3D. Stylus lain seperti Airbrush Pen atau Inking "
+"Pen hanya punya satu tombol, pengaturan ini tidak efektif pada mereka."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:215
+msgid "Key combination for the primary button"
+msgstr "Kombinasi tombol untuk tombol utama"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:216
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:221
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:226
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:238
+msgid ""
+"The keyboard shortcut generated when the button is pressed for custom "
+"actions."
+msgstr ""
+"Pintasan papan ketik yang dihasilkan ketika tombol ditekan untuk aksi ubahan."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:220
+msgid "Key combination for the secondary button"
+msgstr "Kombinasi tombol untuk tombol sekunder"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:225
+msgid "Key combination for the tertiary button"
+msgstr "Kombinasi tombol untuk tombol tersier"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:232
+msgid "Pad button action type"
+msgstr "Tipe aksi tombol pad"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:233
+msgid "The type of action triggered by the button being pressed."
+msgstr "Tipe aksi yang dipicu oleh tombol yang ditekan."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:237
+msgid "Key combination for the custom action"
+msgstr "Kombinasi tombol untuk aksi ubahan"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:244
+msgid "Touchscreen output mapping"
+msgstr "Pemetaan keluaran  layar sentuh"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:245
+msgid ""
+"EDID information of the output the touchscreen is mapped to. Must be in the "
+"format [vendor, product, serial]. [\"\",\"\",\"\"] relies on automatic "
+"mapping."
+msgstr ""
+"Informasi EDID dari keluaran tempat layar sentuh dipetakan. Mesti dalam "
+"format [vendor, produk, nomor seri]. [\"\",\"\",\"\"] mematikan pemetaan."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:252
+msgid "Mouse wheel emulation button. 0 to disable the feature."
+msgstr "Tombol emulasi roda tetikus. 0 untuk mematikan fitur ini."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:256
+msgid "Mouse wheel emulation button lock"
+msgstr "Kunci tombol emulasi roda tetikus"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:257
+msgid ""
+"Set this to TRUE to enable button locking for the wheel emulation button. If "
+"enabled, the first click of the button enables scrolling, the second click "
+"disables scrolling again."
+msgstr ""
+"Atur ini ke TRUE untuk mengaktifkan penguncian tombol untuk tombol emulasi "
+"roda. Jika diaktifkan, klik pertama tombol memungkinkan pengguliran, klik "
+"kedua menonaktifkan menggulir lagi."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:262
+msgid ""
+"Acceleration profile used for the trackball. The acceleration profile can be "
+"set to either default (“default”) which uses the default acceleration "
+"profile, flat (“flat”), which accelerates by a device specific constant "
+"factor derived from the configured speed, or adaptive (“adaptive”) which "
+"adapts the acceleration depending on the movement. If the trackball doesn’t "
+"support the configured profile, “default” will be used."
+msgstr ""
+"Profil akselerasi yang dipakai untuk trackball. Profil akselerasi dapat "
+"ditata ke baku (\"default\") yang memakai profil akselerasi baku bagi setiap "
+"perangkat, rata (\"flat\"), yang mempercepat berdasarkan suatu faktor "
+"konstan spesifik perangkat yang diturunkan dari kecepatan yang "
+"dikonfigurasi, atau adaptif (\"adaptive\") yang menyesuaikan akselerasi "
+"bergantung kepada pergerakan. Bila trackball tidak mendukung profil yang "
+"dikonfigurasi, \"default\" akan dipakai."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:274
+msgid ""
+"Pointer speed for pointing sticks. Accepted values are in the [-1..1] range "
+"(from “unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Kecepatan penunjuk bagi tongkat penunjuk. Nilai yang diterima adalah dalam "
+"jangkauan [-1..1] (dari \"unaccelerated\" atau tak dipercepat sampai "
+"\"fast\" atau cepat). Nilai 0 adalah nilai baku sistem."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:280
+msgid ""
+"Acceleration profile used for the pointing stick. The acceleration profile "
+"can be set to either default (“default”) which uses the default acceleration "
+"profile, flat (“flat”), which accelerates by a device specific constant "
+"factor derived from the configured speed, or adaptive (“adaptive”) which "
+"adapts the acceleration depending on the movement. If the pointing stick "
+"doesn’t support the configured profile, “default” will be used."
+msgstr ""
+"Profil akselerasi yang dipakai untuk tongkat penunjuk. Profil akselerasi "
+"dapat ditata ke baku (\"default\") yang memakai profil akselerasi baku bagi "
+"setiap perangkat, rata (\"flat\"), yang mempercepat berdasarkan suatu faktor "
+"konstan spesifik perangkat yang diturunkan dari kecepatan yang "
+"dikonfigurasi, atau adaptif (\"adaptive\") yang menyesuaikan akselerasi "
+"bergantung kepada pergerakan. Bila tongkat penunjuk tidak mendukung profil "
+"yang dikonfigurasi, \"default\" akan dipakai."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:284
+msgid "Scrolling method"
+msgstr "Metode gulir"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:285
+msgid ""
+"Scrolling method used for pointing sticks. The scrolling method can be set "
+"to either default (“default”) which uses the default method, none (“none”), "
+"which disables scrolling, or middle-button (“on-button-down”) which enables "
+"scrolling whilst the middle button is held down."
+msgstr ""
+"Metode pengguliran yang digunakan untuk menunjuk tongkat penunjuk. Metode "
+"pengguliran dapat diatur ke bawaan (\"default\") yang menggunakan metode "
+"bawaan, tidak ada (\"none\"), yang menonaktifkan pengguliran, atau tombol "
+"tengah (\"on-button-down\") yang memungkinkan pengguliran sementara tombol "
+"tengah ditekan."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:6
+msgid "Controls visibility of personal information"
+msgstr "Kendalikan kenampakan informasi pribadi"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:7
+msgid ""
+"If set to true, the system will make an effort to not divulge the user’s "
+"identity on screen or on the network."
+msgstr ""
+"Jika true, sistem akan berupaya untuk tidak mengungkap identitas pengguna "
+"pada layar atau pada jaringan."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:12
+msgid "Show full name in the user menu"
+msgstr "Tampilkan name lengkap dalam menu pengguna"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:13
+msgid "Whether the users full name is shown in the user menu or not."
+msgstr ""
+"Apakah nama lengkap pengguna ditampilkan dalam menu pengguna atau tidak."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:17
+msgid "Whether to remove old files from the trash automatically"
+msgstr "Apakah menghapus berkas-berkas lama dari tong sampah secara otomatis"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:18
+msgid ""
+"If TRUE, automatically remove files from the trash when they are older than "
+"“old-files-age” days."
+msgstr ""
+"Jika TRUE, secara otomatis menghapus berkas-berkas dari tong sampah ketika "
+"mereka lebih lama daripada \"old-files-age\" hari."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:23
+msgid "Whether to remove old temporary files automatically"
+msgstr "Apakah akan menghapus berkas temporer lama secara otomatis"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:24
+msgid ""
+"If TRUE, automatically remove temporary files when they are older than “old-"
+"files-age” days."
+msgstr ""
+"Jika TRUE, secara otomatis menghapus berkas-berkas temporer ketika mereka "
+"lebih lama daripada \"old-files-age\" hari."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:29
+msgid "Number of days to keep trash and temporary files"
+msgstr ""
+"Banyaknya hari untuk mempertahankan berkas-berkas temporer dan tong sampah"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:30
+msgid "Consider trash and temporary files old after this many days."
+msgstr "Anggap berkas-berkas temporer dan tong sampah tua setelah sekian hari."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:35
+msgid "Whether to remember recently used files"
+msgstr "Apakah mengingat berkas-berkas yang baru-baru ini dipakai"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:36
+msgid "If FALSE, applications will not remember recently used files."
+msgstr ""
+"Jika FALSE, aplikasi tidak akan mengingat berkas yang baru-baru ini dipakai."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:41
+msgid "Number of days to remember recently used files for"
+msgstr "Lamanya hari untuk mengingat berkas yang baru-baru ini dipakai"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:42
+msgid ""
+"Recently used files will be remembered for this many days. If set to 0, "
+"recent files will not be remembered; if set to -1, they will be retained "
+"indefinitely."
+msgstr ""
+"Berkas yang baru-baru ini dipakai akan diingat selama sekian hari. Bila "
+"diisi 0, berkas terkini tak akan diingat; bila diisi -1, akan diingat "
+"selamanya."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:48
+msgid "Whether to remember application usage"
+msgstr "Apakah mengingat pemakaian aplikasi"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:49
+msgid "If FALSE, application usage will not be monitored and recorded."
+msgstr "Jika FALSE, pemakaian aplikasi tidak akan dipantau dan direkam."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:54
+msgid "Send statistics when applications are removed or installed"
+msgstr "Kirim statistik ketika aplikasi dihapus atau dipasang"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:55
+msgid ""
+"If FALSE, no anonymous installation or removal information will be sent to "
+"the vendor."
+msgstr ""
+"Jika FALSE, tak ada informasi pemasangan atau penghapusan secara anonim yang "
+"akan dikirim ke vendor."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:59
+msgid "Send reports of technical problems to the vendor"
+msgstr "Kirim laporan masalah teknis ke vendor"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:60
+msgid "If TRUE, anonymized reports will be sent automatically to the vendor."
+msgstr ""
+"Jika TRUE, laporan yang dianonimkan akan dikirim secara otomatis ke vendor."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:64
+msgid "Don’t allow applications to access the microphone"
+msgstr "Jangan izinkan aplikasi mengakses mikrofon"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:65
+msgid "If TRUE, applications should not use the microphone."
+msgstr "Jika TRUE, aplikasi tidak boleh menggunakan mikrofon."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:69
+msgid "Don’t allow applications to access the camera"
+msgstr "Jangan izinkan aplikasi mengakses kamera"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:70
+msgid "If TRUE, applications should not use the camera."
+msgstr "Jika TRUE, aplikasi tidak boleh menggunakan kamera."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:74
+msgid "Don’t allow applications to output sound"
+msgstr "Jangan izinkan aplikasi mengakses keluaran suara"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:75
+msgid "If TRUE, applications should not make sound."
+msgstr "Jika TRUE, aplikasi seharusnya tidak membuat suara."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:79
+msgid "Whether to protect USB devices"
+msgstr "Apakah akan melindungi perangkat USB atau tidak"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:80
+msgid ""
+"If the USBGuard service is present and this setting is enabled, USB devices "
+"will be protected as configured in the usb-protection-level setting."
+msgstr ""
+"Jika Layanan USBGuard ada dan pengaturan ini diaktifkan, perangkat USB akan "
+"dilindungi seperti yang dikonfigurasi di pengaturan tingkat perlindungan USB."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:87
+msgid "When USB devices should be rejected"
+msgstr "Kapan perangkat USB harus ditolak"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:88
+msgid ""
+"If set to “lockscreen”, only when the lock screen is present new USB devices "
+"will be rejected; if set to “always”, all new USB devices will always be "
+"rejected."
+msgstr ""
+"Jika diatur ke \"lockscreen\", hanya ketika layar kunci ada, perangkat USB "
+"baru akan ditolak; jika diatur ke \"always\", semua perangkat USB baru akan "
+"selalu ditolak."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:95
+msgid "Whether the privacy screen is enabled"
+msgstr "Apakah layar privasi diaktifkan"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:96
+msgid ""
+"If the underlying hardware has privacy screen support and this setting is "
+"enabled, the panels supporting this technology will be obscured from lateral "
+"view."
+msgstr ""
+"Jika perangkat keras yang mendasarinya memiliki dukungan layar privasi dan "
+"pengaturan ini diaktifkan, panel yang mendukung teknologi ini akan "
+"dikaburkan dari tampilan lateral."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:6
+msgid "Activate when idle"
+msgstr "Diaktifkan ketika menganggur"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:7
+msgid ""
+"Set this to TRUE to activate the screensaver when the session is idle. "
+"DEPRECATED: This key is deprecated and ignored. Set org.gnome.desktop."
+"session idle-delay to 0 if you do not want to activate the screensaver."
+msgstr ""
+"Atur ini ke TRUE untuk mengaktifkan penyelamat layar ketika sesi menganggur. "
+"TAK BERLAKU LAGI: Kunci ini tak berlaku lagi dan diabaikan. Isi org.gnome."
+"desktop.session idle-delay dengan 0 bila Anda tak ingin mengaktifkan "
+"penyelamat layar."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:16
+msgid "Lock on activation"
+msgstr "Aktivasi penguncian"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:17
+msgid "Set this to TRUE to lock the screen when the screensaver goes active."
+msgstr "Atur ini ke TRUE untuk mengunci layar ketika pengaman diaktifkan."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:21
+msgid "Time before locking"
+msgstr "Waktu sebelum penguncian"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:22
+msgid ""
+"The number of seconds after screensaver activation before locking the screen."
+msgstr ""
+"Lamanya waktu dalam detik setelah pengaman layar aktif sebelum layar dikunci."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:26
+msgid "Show full name in the lock screen"
+msgstr "Tampilkan nama lengkap di kuncian layar"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:27
+msgid ""
+"Whether the user’s full name is shown in the lock screen or not. This only "
+"affects the screen shield, the name is always shown in the unlock dialog."
+msgstr ""
+"Apakah nama lengkap pengguna ditampilkan pada kuncian layar atau tidak. Ini "
+"hanya mempengaruhi tameng layar, nama selalu ditampilkan dalam dialog buka "
+"kunci."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:31
+msgid "Allow embedding a keyboard into the window"
+msgstr "Membolehkan penyertaan papan ketik pada jendela"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:32
+msgid ""
+"Set this to TRUE to allow embedding a keyboard into the window when trying "
+"to unlock. The “keyboard_command” key must be set with the appropriate "
+"command. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Atur ini ke TRUE untuk membolehkan penyertaan papan ketik pada jendela saat "
+"mencoba untuk membuka kunci. Kunci \"keyboard_command\" harus disetel dengan "
+"perintah yang sesuai. TAK BERLAKU LAGI: Kunci ini tak berlaku lagi dan "
+"diabaikan."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:40
+msgid "Embedded keyboard command"
+msgstr "Perintah papan ketik yang disertakan"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:41
+msgid ""
+"The command that will be run, if the “embedded_keyboard_enabled” key is set "
+"to TRUE, to embed a keyboard widget into the window. This command should "
+"implement an XEMBED plug interface and output a window XID on the standard "
+"output. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Perintah yang akan dijalankan, bila kunci \"embedded_keyboard_enabled\" "
+"diisi TRUE, untuk menempelkan widget papan tik ke dalam jendela. Perintah "
+"ini mesti mengimplementasi suatu antarmuka plug XEMBED dan mengeluarkan "
+"suatu XID jendela ke keluaran standar. TAK BERLAKU LAGI: Kunci ini tak "
+"berlaku lagi dan diabaikan."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:49
+msgid "Allow logout"
+msgstr "Membolehkan log keluar"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:50
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to allow logging "
+"out after a delay. The delay is specified in the “logout_delay” key. "
+"DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Atur ini ke TRUE untuk menawarkan opsi pada dialog pembuka kunci untuk "
+"membolehkan log keluar setelah sekian waktu. Waktu jeda ditentukan pada "
+"kunci \"logout_delay\". TAK BERLAKU LAGI: Kunci ini tak berlaku lagi dan "
+"diabaikan."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:58
+msgid "Time before logout option"
+msgstr "Waktu sebelum opsi log keluar"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:59
+msgid ""
+"The number of seconds after the screensaver activation before a logout "
+"option will appear in the unlock dialog. This key has effect only if the "
+"“logout_enable” key is set to TRUE. DEPRECATED: This key is deprecated and "
+"ignored"
+msgstr ""
+"Lamanya waktu dalam detik setelah pengaktifan screensaver sebelum pilihan "
+"log keluar muncul di dialog buka kunci. Kunci ini hanya berlaku jika kunci "
+"\"logout_enable\" dibuat menjadi TRUE. TAK BERLAKU LAGI: Kunci ini tak "
+"berlaku lagi dan diabaikan"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:67
+msgid "Logout command"
+msgstr "Perintah log keluar"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:68
+msgid ""
+"The command to invoke when the logout button is clicked. This command should "
+"simply log the user out without any interaction. This key has effect only if "
+"the “logout_enable” key is set to TRUE. DEPRECATED: This key is deprecated "
+"and ignored."
+msgstr ""
+"Perintah yang dijalankan ketika tombol log keluar diklik. Perintah ini "
+"mestinya cukup sekedar mengeluarkan pengguna tanpa adanya interaksi. Kunci "
+"ini hanya berlaku jika kunci \"logout_enable\" dipilih menjadi TRUE. TAK "
+"BERLAKU LAGI: Kunci ini tak berlaku lagi dan diabaikan."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:76
+msgid "Allow user switching"
+msgstr "Membolehkan berpindah pengguna"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:77
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to switch to a "
+"different user account."
+msgstr ""
+"Atur ini ke TRUE untuk menawarkan opsi pada dialog pembuka kunci untuk "
+"berpindah pengguna."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:81
+msgid "Allow the session status message to be displayed"
+msgstr "Membolehkan pesan status sesi ditampilkan"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:82
+msgid ""
+"Allow the session status message to be displayed when the screen is locked. "
+"DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Membolehkan pesan status sesi tampil saat layar dalam keadaan dikunci. TAK "
+"BERLAKU LAGI: Kunci ini tak berlaku lagi dan diabaikan."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:9
+msgid "Enable screen time history"
+msgstr "Memfungsikan riwayat waktu layar"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:10
+msgid ""
+"Enable basic screen time functionality, recording usage data for viewing "
+"history."
+msgstr ""
+"Memfungsikan fungsionalitas waktu layar dasar, merekam data penggunaan untuk "
+"riwayat melihat."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:17
+msgid "Enable daily screen time limit"
+msgstr "Memfungsikan batas waktu layar harian"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:18
+msgid ""
+"Enable imposing a screen time limit on the user, as set in daily-limit-"
+"seconds."
+msgstr ""
+"Memfungsikan penerapan batas waktu layar ke pengguna, sebagaimana ditata "
+"dalam daily-limit-seconds."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:23
+msgid "Daily screen time limit"
+msgstr "Batas waktu layar harian"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:24
+msgid ""
+"The limit on the amount of daily screen time the user is allowed, in seconds."
+msgstr ""
+"Batas banyaknya waktu layar harian yang diizinkan ke pengguna, dalam detik."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:30
+msgid "Grayscale once limit is reached"
+msgstr "Skala kelabu begitu batas dicapai"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:31
+msgid ""
+"Whether to make the screen grayscale once the user’s screen time limit is "
+"reached."
+msgstr ""
+"Apakah membuat layar menjadi skala kelabu sekali batas waktu layar pengguna "
+"tercapai."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:7
+msgid "Disable all external search providers"
+msgstr "Nonaktifkan semua penyedia pencarian eksternal"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:8
+msgid ""
+"Set to true to disable all external search provider programs, whether or not "
+"they are independently disabled or enabled. External search providers are "
+"installed by applications in $XDG_DATA_DIR/gnome-shell/search-providers."
+msgstr ""
+"Atur ke true untuk menonaktifkan semua program penyedia pencarian eksternal, "
+"tak peduli masing-masing difungsikan atau tidak. Penyedia pencarian "
+"eksternal dipasang oleh aplikasi dalam $XDG_DATA_DIR/gnome-shell/search-"
+"providers."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:18
+msgid ""
+"List of desktop file IDs for which the associated default-enabled search "
+"provider should be disabled"
+msgstr ""
+"Daftar dari ID berkas destop yang bagi mereka penyedia pencarian baku-"
+"difungsikan mesti dimatikan"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:22
+msgid ""
+"Results for applications contained in this list will not be displayed when "
+"searching."
+msgstr ""
+"Hasil bagi aplikasi yang dimuat dalam daftar ini tak akan ditampilkan ketika "
+"mencari."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:30
+msgid ""
+"List of desktop file IDs for which the associated default-disabled search "
+"provider should be enabled"
+msgstr ""
+"Daftar dari ID berkas destop yang bagi mereka penyedia pencarian baku-"
+"dimatikan mesti difungsikan"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:34
+msgid ""
+"Results for applications contained in this list will be displayed when "
+"searching."
+msgstr ""
+"Hasil bagi aplikasi yang dimuat dalam daftar ini akan ditampilkan ketika "
+"mencari."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:42
+msgid "List of desktop file IDs for search providers sort order"
+msgstr "Daftar dari ID berkas destop bagi pengurutan penyedia pencarian"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:43
+msgid ""
+"Results for applications contained in this list will be displayed in the "
+"specified order. Results for applications not specified in this list will be "
+"displayed last, sorted alphabetically."
+msgstr ""
+"Hasil bagi aplikasi yang dimuat dalam daftar ini akan ditampilkan dalam "
+"urutan yang dinyatakan. Hasil bagi aplikasi yang tak dinyatakan dalam daftar "
+"ini akan ditampilkan terakhir, diurutkan secara alfabet."
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:6
+msgid "Time before session is considered idle"
+msgstr "Waktu sebelum sesi dinyatakan menganggur"
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:7
+msgid ""
+"The number of seconds of inactivity before the session is considered idle."
+msgstr ""
+"Lamanya waktu dalam detik komputer tidak dipakai sebelum sesi dinyatakan "
+"menganggur."
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:11
+msgid "Session type"
+msgstr "Tipe sesi"
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:12
+msgid "The name of the session to use. Known value is “gnome”."
+msgstr "Nama sesi yang akan dipakai. Nilai yang dikenal adalah \"gnome\"."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:6
+msgid "Sounds for events"
+msgstr "Suara untuk peristiwa"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:7
+msgid "Whether to play sounds on user events."
+msgstr "Apakah memainkan suara saat ada kejadian pengguna."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:11
+msgid "Sound theme name"
+msgstr "Nama tema suara"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:12
+msgid "The XDG sound theme to use for event sounds."
+msgstr "Tema suara XDG yang digunakan untuk suara peristiwa."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:16
+msgid "Input feedback sounds"
+msgstr "Suara umpan balik masukan"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:17
+msgid "Whether to play sounds on input events."
+msgstr "Apakah memainkan suara saat ada kejadian masukan."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:21
+msgid "Allow volume above 100%"
+msgstr "Izinkan volume di atas 100%"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:22
+msgid "Whether volume can be set above 100%, using software amplification."
+msgstr ""
+"Apakah volume bisa diatur di atas 100%, menggunakan amplifikasi perangkat "
+"lunak."
+
+#: schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in:6
+msgid ""
+"Maximum age for thumbnails in the cache, in days. Set to -1 to disable "
+"cleaning."
+msgstr ""
+"Usia maksimum gambar mini di dalam singgahan, dalam hari. Tata ke -1 untuk "
+"menonaktifkan pembersihan."
+
+#: schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in:10
+msgid ""
+"Maximum size of the thumbnail cache, in megabytes. Set to -1 to disable "
+"cleaning."
+msgstr ""
+"Ukuran maksimum singgahan gambar mini, dalam megabyte. Tata ke -1 untuk "
+"menonaktifkan pembersihan."
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:6
+msgid "Disable all external thumbnailers"
+msgstr "Matikan semua pembuat gambar kecil eksternal"
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:7
+msgid ""
+"Set to true to disable all external thumbnailer programs, independent on "
+"whether they are independently disabled/enabled."
+msgstr ""
+"Atur ke true untuk menonaktifkan semua program pembuat gambar kecil, "
+"terserah nantinya mau dinonaktifkan/dinyalakan per program atau tidak."
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:15
+msgid ""
+"List of mime-types for which external thumbnailer programs will be disabled"
+msgstr ""
+"Daftar dari mime-type yang bagi mereka program pembuat gambar mini eksternal "
+"dimatikan"
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:19
+msgid ""
+"Thumbnails will not be created for files whose mime-type is contained in the "
+"list."
+msgstr ""
+"Gambar mini tak akan dibuat bagi berkas yang mime-typenya termuat dalam "
+"daftar."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:8
+msgid "Switch to workspace 1"
+msgstr "Ganti ke area kerja 1"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:12
+msgid "Switch to workspace 2"
+msgstr "Ganti ke area kerja 2"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:16
+msgid "Switch to workspace 3"
+msgstr "Ganti ke area kerja 3"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:20
+msgid "Switch to workspace 4"
+msgstr "Ganti ke area kerja 4"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:24
+msgid "Switch to workspace 5"
+msgstr "Ganti ke area kerja 5"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:28
+msgid "Switch to workspace 6"
+msgstr "Ganti ke area kerja 6"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:32
+msgid "Switch to workspace 7"
+msgstr "Ganti ke area kerja 7"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:36
+msgid "Switch to workspace 8"
+msgstr "Ganti ke area kerja 8"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:40
+msgid "Switch to workspace 9"
+msgstr "Ganti ke area kerja 9"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:44
+msgid "Switch to workspace 10"
+msgstr "Ganti ke area kerja 10"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:48
+msgid "Switch to workspace 11"
+msgstr "Ganti ke area kerja 11"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:52
+msgid "Switch to workspace 12"
+msgstr "Ganti ke area kerja 12"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:56
+msgid "Switch to workspace left"
+msgstr "Bertukar ke area kerja kiri"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:60
+msgid "Switch to workspace right"
+msgstr "Bertukar ke area kerja kanan"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:64
+msgid "Switch to workspace above"
+msgstr "Bertukar ke area kerja yang lebih atas"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:68
+msgid "Switch to workspace below"
+msgstr "Bertukar ke area kerja yang lebih bawah"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:72
+msgid "Switch to last workspace"
+msgstr "Ganti ke area kerja terakhir"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:76
+msgid "Switch windows of an application"
+msgstr "Berpindah antar jendela-jendela aplikasi"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:80
+msgid "Reverse switch windows of an application"
+msgstr "Berpindah mundur antar jendela-jendela aplikasi"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:84
+msgid "Switch applications"
+msgstr "Berpindah aplikasi"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:88
+msgid "Reverse switch applications"
+msgstr "Berpindah mundur aplikasi"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:92
+msgid "Switch windows"
+msgstr "Berpindah antar jendela"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:96
+msgid "Reverse switch windows"
+msgstr "Berpindah mundur antar jendela"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:100
+msgid "Switch system controls"
+msgstr "Berpindah kendali sistem"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:104
+msgid "Reverse switch system controls"
+msgstr "Berpindah mundur kendali sistem"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:108
+msgid "Switch windows of an app directly"
+msgstr "Berpindah antar jendela-jendela aplikasi seketika"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:112
+msgid "Reverse switch windows of an app directly"
+msgstr "Berpindah mundur antar jendela-jendela aplikasi seketika"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:116
+msgid "Switch windows directly"
+msgstr "Berpindah jendela seketika"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:120
+msgid "Reverse switch windows directly"
+msgstr "Berpindah mundur jendela seketika"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:124
+msgid "Switch system controls directly"
+msgstr "Berpindah kendali sistem seketika"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:128
+msgid "Reverse switch system controls directly"
+msgstr "Berpindah mundur kendali sistem seketika"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:132
+msgid "Hide all normal windows"
+msgstr "Sembunyikan semua jendela normal"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:136
+msgid "DEPRECATED: This key is deprecated and ignored."
+msgstr "USANG: Kunci ini sudah usang dan diabaikan."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:140
+msgid "Show the run command prompt"
+msgstr "Tampilkan prompt jalankan perintah"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:144
+msgid "Don’t use"
+msgstr "Jangan pakai"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:148
+msgid "Activate the window menu"
+msgstr "Aktifkan menu jendela"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:152
+msgid "Toggle fullscreen mode"
+msgstr "Jungkit mode layar penuh"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:156
+msgid "Toggle maximization state"
+msgstr "Jungkit kondisi maksimum"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:160
+msgid "Toggle window always appearing on top"
+msgstr "Jungkitkan jendela selalu muncul di puncak"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:164
+msgid "Maximize window"
+msgstr "Maksimalkan ukuran jendela"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:168
+msgid "Restore window"
+msgstr "Kembalikan ukuran jendela"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:172
+msgid "Minimize window"
+msgstr "Minimalkan ukuran jendela"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:176
+msgid "Close window"
+msgstr "Menutup jendela"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:180
+msgid "Move window"
+msgstr "Pindahkan jendela"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:184
+msgid "Resize window"
+msgstr "Ubah ukuran jendela"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:188
+msgid "Toggle window on all workspaces or one"
+msgstr "Jungkit apakah jendela pada semua area kerja atau hanya satu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:192
+msgid "Move window to workspace 1"
+msgstr "Pindahkan jendela ke area kerja 1"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:196
+msgid "Move window to workspace 2"
+msgstr "Pindahkan jendela ke area kerja 2"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:200
+msgid "Move window to workspace 3"
+msgstr "Pindahkan jendela ke area kerja 3"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:204
+msgid "Move window to workspace 4"
+msgstr "Pindahkan jendela ke area kerja 4"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:208
+msgid "Move window to workspace 5"
+msgstr "Pindahkan jendela ke area kerja 5"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:212
+msgid "Move window to workspace 6"
+msgstr "Pindahkan jendela ke area kerja 6"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:216
+msgid "Move window to workspace 7"
+msgstr "Pindahkan jendela ke area kerja 7"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:220
+msgid "Move window to workspace 8"
+msgstr "Pindahkan jendela ke area kerja 8"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:224
+msgid "Move window to workspace 9"
+msgstr "Pindahkan jendela ke area kerja 9"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:228
+msgid "Move window to workspace 10"
+msgstr "Pindahkan jendela ke area kerja 10"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:232
+msgid "Move window to workspace 11"
+msgstr "Pindahkan jendela ke area kerja 11"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:236
+msgid "Move window to workspace 12"
+msgstr "Pindahkan jendela ke area kerja 12"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:240
+msgid "Move window to last workspace"
+msgstr "Pindahkan jendela ke area kerja terakhir"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:244
+msgid "Move window one workspace to the left"
+msgstr "Pindahkan jendela ke area kerja kiri"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:248
+msgid "Move window one workspace to the right"
+msgstr "Pindahkan jendela ke area kerja kanan"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:252
+msgid "Move window one workspace up"
+msgstr "Pindahkan jendela ke area kerja atas"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:256
+msgid "Move window one workspace down"
+msgstr "Pindahkan jendela ke area kerja bawah"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:260
+msgid "Move window to the next monitor on the left"
+msgstr "Pindahkan jendela ke monitor selanjutnya di kiri"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:264
+msgid "Move window to the next monitor on the right"
+msgstr "Pindahkan jendela ke monitor selanjutnya di kanan"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:268
+msgid "Move window to the next monitor above"
+msgstr "Pindahkan jendela ke monitor selanjutnya di atas"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:272
+msgid "Move window to the next monitor below"
+msgstr "Pindahkan jendela ke monitor selanjutnya di bawah"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:276
+msgid "Raise window if covered, otherwise lower it"
+msgstr "Naikkan jendela bila terhalangi, bila tidak maka turunkan"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:280
+msgid "Raise window above other windows"
+msgstr "Naikkan jendela ini di atas jendela-jendela lain"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:284
+msgid "Lower window below other windows"
+msgstr "Turunkan jendela di bawah jendela lain"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:288
+msgid "Maximize window vertically"
+msgstr "Maksimalkan ukuran jendela secara vertikal"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:292
+msgid "Maximize window horizontally"
+msgstr "Maksimalkan ukuran jendela secara horisontal"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:296
+msgid "Move window to top left corner"
+msgstr "Pindahkan jendela ke pojok kiri atas"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:300
+msgid "Move window to top right corner"
+msgstr "Pindahkan jendela ke pojok kanan atas"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:304
+msgid "Move window to bottom left corner"
+msgstr "Pindahkan jendela ke pojok kiri bawah"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:308
+msgid "Move window to bottom right corner"
+msgstr "Pindahkan jendela ke pojok kanan bawah"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:312
+msgid "Move window to top edge of screen"
+msgstr "Pindahkan jendela ke tepi atas layar"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:316
+msgid "Move window to bottom edge of screen"
+msgstr "Pindahkan jendela ke tepi bawah layar"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:320
+msgid "Move window to right side of screen"
+msgstr "Pindahkan jendela ke tepi kanan layar"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:324
+msgid "Move window to left side of screen"
+msgstr "Pindahkan jendela ke tepi kiri layar"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:328
+msgid "Move window to center of screen"
+msgstr "Pindahkan jendela ke tengah layar"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:332
+msgid "Switch input source"
+msgstr "Tukar sumber masukan"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:333
+msgid "Binding to select the next input source"
+msgstr "Pengikatan untuk memilih sumber masukan selanjutnya"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:337
+msgid "Switch input source backward"
+msgstr "Tukar mundur sumber masukan"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:338
+msgid "Binding to select the previous input source"
+msgstr "Pengikatan untuk memilih sumber masukan sebelumnya"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:342
+msgid "Toggle window to be always on top"
+msgstr "Jungkitkan jendela agar selalu muncul di puncak"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:343
+msgid "Set or unset window to appear always on top"
+msgstr "Tata atau matikan jendela yang akan selalu di puncak"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:8
+msgid "Modifier to use for modified window click actions"
+msgstr ""
+"Tombol yang digunakan untuk menjalankan suatu perintah apabila jendela diklik"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:9
+msgid ""
+"Clicking a window while holding down this modifier key will move the window "
+"(left click), resize the window (middle click), or show the window menu "
+"(right click). The middle and right click operations may be swapped using "
+"the “resize-with-right-button” key. Modifier is expressed as “<Alt>” or "
+"“<Super>” for example."
+msgstr ""
+"Klik pada jendela sambil menekan tombol pengubah ini akan memindahkan "
+"jendela (klik kiri), mengubah ukuran jendela (klik tengah), atau menampilkan "
+"menu jendela (klik kanan). Operasi klik tengah dan kanan dapat ditukar "
+"dengan kunci \"resize-with-right-button\". Tombol tambahan ini dinyatakan "
+"misalnya sebagai \"<Alt>\" atau \"<Super>\"."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:19
+msgid "Whether to resize with the right button"
+msgstr "Apakah akan mengubah ukuran dengan tombol kanan"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:20
+msgid ""
+"Set this to true to resize with the right button and show a menu with the "
+"middle button while holding down the key given in “mouse-button-modifier”; "
+"set it to false to make it work the opposite way around."
+msgstr ""
+"Atur ini ke true untuk mengubah ukuran dengan tombol kanan dan menampilkan "
+"suatu menu dengan tombol tengah ketika menekan kunci yang diberikan di "
+"\"mouse_button_modifier\"; tata ini ke false untuk membuat sebaliknya."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:29
+msgid "Arrangement of buttons on the titlebar"
+msgstr "Pengaturan tombol pada judul jendela"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:30
+msgid ""
+"Arrangement of buttons on the titlebar. The value should be a string, such "
+"as “menu:minimize,maximize,spacer,close”; the colon separates the left "
+"corner of the window from the right corner, and the button names are comma-"
+"separated. Duplicate buttons are not allowed. Unknown button names are "
+"silently ignored so that buttons can be added in future metacity versions "
+"without breaking older versions. A special spacer tag can be used to insert "
+"some space between two adjacent buttons."
+msgstr ""
+"Pengaturan tombol pada judul menu. Nilai di sini harus berupa string, "
+"misalnya \"menu:minimize,maximize,space,close\". Tanda titik dua memisahkan "
+"bagian kiri window dan bagian kanan window, dan nama tombol dipisahkan "
+"dengan tanda koma. Tombol tak boleh lebih dari satu kali dicantumkan. Nama "
+"tombol yang tidak dikenal akan diabaikan sehingga di kemudian hari tombol "
+"tersebut akan dapat ditambahkan bila memang diperlukan tanpa harus merusak "
+"konfigurasi Metacity yang ada sekarang. Suatu tag khusus spacer dapat "
+"dipakai untuk menyisipkan ruang antara dua tombol bersebelahan."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:43
+msgid "Window focus mode"
+msgstr "Mode fokus jendela"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:44
+msgid ""
+"The window focus mode indicates how windows are activated. It has three "
+"possible values; “click” means windows must be clicked in order to focus "
+"them, “sloppy” means windows are focused when the mouse enters the window, "
+"and “mouse” means windows are focused when the mouse enters the window and "
+"unfocused when the mouse leaves the window."
+msgstr ""
+"Modus fokus suatu window yang menentukan bagaimana cara mengaktifkan window "
+"tersebut. Ada tiga macam yaitu: \"klik\" berarti window harus diklik "
+"terlebih dahulu baru dinaikkan, \"sloppy\" berarti window akan menerima "
+"fokus saat mouse memasuki area window, dan \"mouse\" berarti window akan "
+"diberi fokus apabila mouse memasuki area window dan akan kembali kehilangan "
+"fokus saat mouse keluar dari area window."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:55
+msgid "Control how new windows get focus"
+msgstr "Kendalikan bagaimana jendela baru berfokus"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:56
+msgid ""
+"This option provides additional control over how newly created windows get "
+"focus. It has two possible values; “smart” applies the user’s normal focus "
+"mode, and “strict” results in new windows not being given focus "
+"automatically."
+msgstr ""
+"Pilihan ini menyediakan kendali tambahan pada bagaimana jendela yang baru di "
+"buat berfokus. Dia memiliki dua nilai yang mungkin; \"smart\" menerapkan "
+"mode fokus normal pengguna, dan \"strict\" menghasilkan jendela baru yang "
+"tidak akan berfokus."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:65
+msgid "Whether windows should be raised when their client area is clicked"
+msgstr "Apakah jendela mesti dinaikkan ketika area klien mereka diklik"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:68
+msgid ""
+"The default, true, indicates that a window will be raised whenever its "
+"client area or its frame is clicked. Setting this to false means that a "
+"window will not be raised if it is clicked on the client area. To raise it, "
+"one can click anywhere in the window’s frame, or Super-click on any part of "
+"the window. This mode is useful if one uses many overlapping windows."
+msgstr ""
+"Nilai baku, true, menunjukkan bahwa suatu jendela akan dinaikkan ketika area "
+"kliennya atau kerangkanya diklik. Menata ini ke false berarti bahwa suatu "
+"jendela tak akan dinaikkan bila diklik pada area klien. Untuk menaikkannya, "
+"kita dapat mengklik di manapun dalam kerangka jendela, atau Klik-super pada "
+"sebarang bagian jendela. Mode ini berguna bila kita memakai banyak jendela "
+"bertumpuk."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:82
+msgid "Action on title bar double-click"
+msgstr "Aksi saat batang judul diklik ganda"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:83
+msgid ""
+"This option determines the effects of double-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Pilihan ini menentukan efek samping klik ganda pada judul jendela. Pilihan "
+"yang sah adalah \"toggle-maximize\" yang akan menggulung/membuka jendela, "
+"\"toggle-maximize-horizontally\" dan \"toggle-maximize-vertically\" yang "
+"akan memaksimalkan/membatalkan pemaksimalan jendela hanya ke arah itu, "
+"\"minimize\" yang akan meminimalkan jendela, \"menu\" yang akan menampilkan "
+"menu jendela, \"lower\" yang akan menempatkan jendela di belakang yang lain, "
+"dan \"none\" tidak akan melakukan apapun."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:105
+msgid "Action on title bar middle-click"
+msgstr "Aksi saat batang judul diklik tengah"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:106
+msgid ""
+"This option determines the effects of middle-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Pilihan ini menentukan efek samping klik tengah pada judul jendela. Pilihan "
+"yang sah adalah \"toggle-maximize\" yang akan menggulung/membuka jendela, "
+"\"toggle-maximize-horizontally\" dan \"toggle-maximize-vertically\" yang "
+"akan memaksimalkan/membatalkan pemaksimalan jendela hanya ke arah itu, "
+"\"minimize\" yang akan meminimalkan jendela, \"menu\" yang akan menampilkan "
+"menu jendela, \"lower\" yang akan menempatkan jendela di belakang yang lain, "
+"dan \"none\" tidak akan melakukan apapun."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:129
+msgid "Action on title bar right-click"
+msgstr "Aksi saat batang judul diklik kanan"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:130
+msgid ""
+"This option determines the effects of right-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Pilihan ini menentukan efek samping klik kanan pada judul jendela.Pilihan "
+"yang sah adalah \"toggle-maximize\" yang akan menggulung/membuka jendela, "
+"\"toggle-maximize-horizontally\" dan \"toggle-maximize-vertically\" yang "
+"akan memaksimalkan/membatalkan pemaksimalan jendela hanya ke arah itu, "
+"\"minimize\" yang akan meminimalkan jendela, \"menu\" yang akan menampilkan "
+"menu jendela, \"lower\" yang akan menempatkan jendela di belakang yang lain, "
+"dan \"none\" tidak akan melakukan apapun."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:152
+msgid "Automatically raises the focused window"
+msgstr "Naikan jendela yang berfokus secara otomatis"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:153
+msgid ""
+"If set to true, and the focus mode is either “sloppy” or “mouse” then the "
+"focused window will be automatically raised after a delay specified by the "
+"auto-raise-delay key. This is not related to clicking on a window to raise "
+"it, nor to entering a window during drag-and-drop."
+msgstr ""
+"Jika true, dan modus fokus bernilai \"sloppy\" atau \"mouse\" maka window "
+"yang berfokus akan dinaikkan secara otomatis setelah waktu jeda ditetapkan "
+"oleh key auto-raise-delay. Hal ini tidak berhubungan untuk mengklik pada "
+"jendela untuk memunculkannya, ataupun untuk memasukkan jendela ketika seret-"
+"dan-letakkan."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:163
+msgid "Delay in milliseconds for the auto raise option"
+msgstr "Jeda dalam milidetik untuk pilihan naikan jendela secara otomatis"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:164
+msgid ""
+"The time delay before raising a window if auto-raise is set to true. The "
+"delay is given in thousandths of a second."
+msgstr ""
+"Waktu jeda sebelum suatu window akan otomatis naik apabila auto_rise "
+"diaktifkan. Waktu jeda dinyatakan dalam seperseribu detik."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:171
+msgid "Current theme"
+msgstr "Tema yang aktif"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:172
+msgid ""
+"The theme determines the appearance of window borders, titlebar, and so "
+"forth. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Tema menentukan kemunculan batas-batas pada window, judul, dan lain-lain. "
+"TAK BERLAKU LAGI: Kunci ini tak berlaku lagi dan diabaikan."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:181
+msgid "Use standard system font in window titles"
+msgstr "Gunakan jenis huruf sistem standar pada judul jendela"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:182
+msgid ""
+"If true, ignore the titlebar-font option, and use the standard application "
+"font for window titles."
+msgstr ""
+"Jika true, pilihan titlebar_font akan diabaikan dan gunakan jenis huruf yang "
+"digunakan aplikasi standar pada judul windownya."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:189
+msgid "Window title font"
+msgstr "Fonta judul jendela"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:190
+msgid ""
+"A font description string describing a font for window titlebars. The size "
+"from the description will only be used if the titlebar-font-size option is "
+"set to 0. Also, this option is disabled if the titlebar-uses-desktop-font "
+"option is set to true."
+msgstr ""
+"Kalimat deskripsi font menjelaskan jenis huruf yang akan digunakan untuk "
+"judul jendela. Ukuran pada deskripsi akan digunakan hanya jika pilihan "
+"titlebar-font-size diset ke angka 0.Pilihan ini juga akan mati apabila "
+"pilihan titlebar-uses-desktop-font bernilai true."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:200
+msgid "Number of workspaces"
+msgstr "Cacah area kerja"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:201
+msgid ""
+"Number of workspaces. Must be more than zero, and has a fixed maximum to "
+"prevent making the desktop unusable by accidentally asking for too many "
+"workspaces."
+msgstr ""
+"Cacah ruang kerja. Harus bernilai lebih dari nol, dan memiliki batas "
+"maksimum untuk mencegah kerusakan pada destop, misalnya karena minta membuat "
+"begitu banyak ruang kerja."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:209
+msgid "System Bell is Audible"
+msgstr "Bel Sistem dapat Terdengar"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:210
+msgid ""
+"Determines whether applications or the system can generate audible “beeps”; "
+"may be used in conjunction with “visual bell” to allow silent “beeps”."
+msgstr ""
+"Menentukan apakah aplikasi atau sistem dapat membuat bel yang dapat "
+"terdengar. Hal ini berlawanan dengan bel visual yang tidak mengeluarkan "
+"suara pada saat membunyikan bel."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:218
+msgid "Enable Visual Bell"
+msgstr "Gunakan Bel Visual"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:219
+msgid ""
+"Turns on a visual indication when an application or the system issues a "
+"“bell” or “beep”; useful for the hard-of-hearing and for use in noisy "
+"environments."
+msgstr ""
+"Nyalakan indikasi visual saat aplikasi atau sistem mengeluarkan \"bell\" "
+"atau \"beep\"; berguna bagi pengguna yang mengalami kurang pendengaran dan "
+"pada penggunaan di tempat-tempat yang berisik."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:228
+msgid "Visual Bell Type"
+msgstr "Tipe Bel Visual"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:229
+msgid ""
+"Tells the WM how to implement the visual indication that the system bell or "
+"another application “bell” indicator has been rung. Currently there are two "
+"valid values, “fullscreen-flash”, which causes a fullscreen white-black "
+"flash, and “frame-flash” which causes the titlebar of the application which "
+"sent the bell signal to flash. If the application which sent the bell is "
+"unknown (as is usually the case for the default “system beep”), the "
+"currently focused window’s titlebar is flashed."
+msgstr ""
+"Menentukan cara WM menyajikan indikasi visual saat bel sistem atau aplikasi "
+"sedang dibunyikan. Ada dua cara yang digunakan, yaitu \"fullscreen-flash\", "
+"yang akan menampilkan kilatan hitam putih di seluruh area layar, dan \"frame-"
+"flash\" yang akan menampikan kilatan pada kotak judul window aplikasi yang "
+"membunyikan bel. Jika tidak diketahui aplikasi mana yang membunyikan bel "
+"(biasanya karena ini merupakan bel sistem standar) maka kilatan akan "
+"ditampilkan pada kotak judul window yang sedang memiliki fokus saat ini."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:250
+msgid "Disable misfeatures that are required by old or broken applications"
+msgstr "Nonaktifkan fitur yang diperlukan oleh aplikasi tua dan aplikasi jelek"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:253
+msgid ""
+"Some applications disregard specifications in ways that result in window "
+"manager misfeatures. This option puts the WM in a rigorously correct mode, "
+"which gives a more consistent user interface, provided one does not need to "
+"run any misbehaving applications."
+msgstr ""
+"Beberapa aplikasi tidak mengacuhkan spesifikasi yang dapat menyebabkan "
+"kesalahan pengelola jendela. Pilihan ini menempatkan WM pada mode yang benar "
+"secara kaku, yang akan memberikan antar muka pengguna yang lebih konsisten, "
+"ketika pengguna tidak perlu menjalankan aplikasi yang berkelakuan tidak "
+"benar."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:263
+msgid "The names of the workspaces"
+msgstr "Nama-nama area kerja"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:264
+msgid ""
+"Defines the names that should be assigned to workspaces. If the list is too "
+"long for the current number of workspaces, names in excess will be ignored. "
+"If the list is too short, or includes empty names, missing values will be "
+"replaced with the default (“Workspace N”)."
+msgstr ""
+"Menentukan nama yang mesti diberikan ke ruang kerja. Bila daftar ini terlalu "
+"panjang bagi sejumlah ruang kerja kini, nama yang berlebih akan diabaikan. "
+"Bila daftar terlalu pendek, atau memuat nama kosong, nilai yang hilang akan "
+"digantikan dengan bawaan (\"Workspace N\")."
+
+#: schemas/org.gnome.system.locale.gschema.xml.in:6
+msgid "The locale to use for dates / numbers formats"
+msgstr "Locale yang dipakai untuk format tanggal / bilangan"
+
+#: schemas/org.gnome.system.locale.gschema.xml.in:7
+msgid ""
+"Specify the locale to be used for displaying dates, times and numbers "
+"formats."
+msgstr ""
+"Menyatakan locale yang dipakai untuk menampilkan tanggal, waktu, dan format "
+"bilangan."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:7
+msgid "Geolocation services are enabled."
+msgstr "Layanan geolokasi tak difungsikan."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:8
+msgid "If true, applications are allowed to access location information."
+msgstr "Jika true, aplikasi diijinkan mengakses informasi lokasi."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:14
+msgid "The maximum accuracy level of location."
+msgstr "Tingkat akurasi lokasi maksimum."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:15
+msgid ""
+"Configures the maximum level of location accuracy applications are allowed "
+"to see. Valid options are “country”, “city”, “neighborhood”, “street”, and "
+"“exact” (typically requires GPS receiver). Please keep in mind that this "
+"only controls what GeoClue will allow applications to see and they can find "
+"user’s location on their own using network resources (albeit with street-"
+"level accuracy at best)."
+msgstr ""
+"Menata aras maksimum dari akurasi lokasi yang diijinkan dibaca oleh "
+"aplikasi. Opsi yang valid adalah \"country\" (negara), \"city\" (kota), "
+"\"neighborhood\" (lingkungan tetangga), \"street\" (jalan), dan \"exact' "
+"(eksak) (biasanya perlu penerima GPS). Harap diingat bahwa ini hanya "
+"mengendalikan apa yang akan diijinkan dilihat dari GeoClue oleh aplikasi dan "
+"mereka dapat mencari lokasi pengguna sendiri memakai sumber daya jaringan "
+"(walaupun paling baik hanya akurasi aras jalan)."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:10
+msgid "Proxy configuration mode"
+msgstr "Mode konfigurasi proksi"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:11
+msgid ""
+"Select the proxy configuration mode. Supported values are “none”, “manual”, "
+"“auto”. If this is “none”, then proxies are not used. If it is “auto”, the "
+"autoconfiguration URL described by the “autoconfig-url” key is used. If it "
+"is “manual”, then the proxies described by “/system/proxy/http”, “/system/"
+"proxy/https”, “/system/proxy/ftp” and “/system/proxy/socks” will be used. "
+"Each of the 4 proxy types is enabled if its “host” key is non-empty and its "
+"“port” key is non-0. If an http proxy is configured, but an https proxy is "
+"not, then the http proxy is also used for https. If a SOCKS proxy is "
+"configured, it is used for all protocols, except that the http, https, and "
+"ftp proxy settings override it for those protocols only."
+msgstr ""
+"Pilih mode konfigurasi proksi. Nilai yang didukung adalah \"none\" (nihil), "
+"\"manual\" (diatur sendiri), atau \"auto\" (otomatis). Bila ini \"none\", "
+"maka proksi tak akan dipakai. Bila \"auto\", URL konfigurasi otomatis yang "
+"diuraikan oleh kunci \"autoconfig-url\" akan dipakai. Bila \"manual\", maka "
+"proksi yang diuraikan oleh \"/system/proxy/http\", \"/system/proxy/https\", "
+"\"/system/proxy/ftp\" and \"/system/proxy/socks\" akan dipakai. Masing-"
+"masing ke-4 tipe proksi diaktifkan bila kunci \"host\" berisi dan kunci "
+"\"port\" bukan 0. Bila proksi http ditata, tapi proksi https tidak, maka "
+"proksi http juga dipakai untuk https. Bila proksi SOCKS ditata, itu akan "
+"dipakai untuk semua protokol, kecuali bila pengaturan proksi http, https, "
+"dan ftp menimpanya hanya untuk protokol tersebut."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:36
+msgid "Automatic proxy configuration URL"
+msgstr "URl konfigurasi otomatis proksi"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:37
+msgid ""
+"URL that provides proxy configuration values. When mode is “auto”, this URL "
+"is used to look up proxy information for all protocols."
+msgstr ""
+"URL yang menyediakan nilai konfigurasi proksi. Ketika mode adalah \"auto\", "
+"URL ini dipakai untuk mencari informasi proksi bagi semua protokol."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:45
+msgid "Non-proxy hosts"
+msgstr "Host Tanpa Proksi"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:46
+msgid ""
+"This key contains a list of hosts which are connected to directly, rather "
+"than via the proxy (if it is active). The values can be hostnames, domains "
+"(using an initial wildcard like *.foo.com), IP host addresses (both IPv4 and "
+"IPv6) and network addresses with a netmask (something like 192.168.0.0/24)."
+msgstr ""
+"Kunci ini mengandung daftar host yang terhubung secara langsung, ketimbang "
+"melalui proksi (jika aktif). Nilainya bisa nama host, domain (memakai wilkar "
+"seperti *.foo.com), alamat IP host (baik IPv4 maupun IPv6), serta alamat "
+"jaringan dengan netmask (seperti 192.168.0.0/24)."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:56
+msgid "Use HTTP proxy for all protocols"
+msgstr "Gunakan proksi HTTP untuk semua protokol"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:57
+msgid "Whether to use the HTTP proxy for all protocols or not."
+msgstr "Apakah akan menggunakan proksi HTTP untuk semua protokol atau tidak."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:65
+msgid "Unused; ignore"
+msgstr "Tak dipakai; abaikan"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:66
+msgid ""
+"This key is not used; HTTP proxying is enabled when the host key is non-"
+"empty and the port is non-0."
+msgstr ""
+"Kunci ini tak dipakai; proksi HTTP diaktifkan ketika kunci host tak kosong "
+"dan port bukan 0."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:73
+msgid "HTTP proxy host name"
+msgstr "Nama host proksi HTTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:74
+msgid "The machine name to proxy HTTP through."
+msgstr "Nama mesin untuk melakukan proksi terhadap HTTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:81
+msgid "HTTP proxy port"
+msgstr "Port proksi HTTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:82
+msgid ""
+"The port on the machine defined by “/system/proxy/http/host” that you proxy "
+"through."
+msgstr ""
+"Port pada mesin yang ditentukan oleh \"/system/proxy/http/host\" yang Anda "
+"proksikan."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:89
+msgid "Authenticate proxy server connections"
+msgstr "Autentikasi koneksi server proksi"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:90
+msgid ""
+"If true, then connections to the proxy server require authentication. The "
+"username/password combo is defined by “/system/proxy/http/authentication-"
+"user” and “/system/proxy/http/authentication-password”. This applies only to "
+"the http proxy; when using a separate https proxy, there is currently no way "
+"to specify that it should use authentication."
+msgstr ""
+"Jika true, maka koneksi ke server proksi memerlukan autentikasi. Kombo nama "
+"pengguna/sandi didefinisikan oleh \"/system/proxy/http/authentication-user\" "
+"dan \"/system/proxy/http/authentication-password\". Ini hanya berlaku pada "
+"proksi http; ketika memakai proksi https yang terpisah, kini belum ada cara "
+"untuk menyatakan bahwa itu mesti memakai autentikasi."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:103
+msgid "HTTP proxy username"
+msgstr "Nama pengguna proksi HTTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:104
+msgid "User name to pass as authentication when doing HTTP proxying."
+msgstr "Nama pengguna untuk menerapkan proksi terhadap HTTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:110
+msgid "HTTP proxy password"
+msgstr "Sandi proksi HTTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:111
+msgid "Password to pass as authentication when doing HTTP proxying."
+msgstr "Kata sandi untuk autentikasi ketika memakai proxy HTTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:119
+msgid "Secure HTTP proxy host name"
+msgstr "Nama host proksi Secure HTTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:120
+msgid "The machine name to proxy secure HTTP through."
+msgstr "Nama mesin untuk melakukan proksi terhadap HTTP aman."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:127
+msgid "Secure HTTP proxy port"
+msgstr "Port proksi Secure HTTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:128
+msgid ""
+"The port on the machine defined by “/system/proxy/https/host” that you proxy "
+"through."
+msgstr ""
+"Port pada mesin yang ditentukan oleh \"/system/proxy/https/host\" yang Anda "
+"proksikan."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:137
+msgid "FTP proxy host name"
+msgstr "Nama host proksi FTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:138
+msgid "The machine name to proxy FTP through."
+msgstr "Nama mesin untuk melakukan proksi terhadap FTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:145
+msgid "FTP proxy port"
+msgstr "Port proksi FTP"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:146
+msgid ""
+"The port on the machine defined by “/system/proxy/ftp/host” that you proxy "
+"through."
+msgstr ""
+"Port pada mesin yang ditentukan oleh \"/system/proxy/ftp/host\" yang Anda "
+"proksikan."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:155
+msgid "SOCKS proxy host name"
+msgstr "Nama host proksi SOCKS"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:156
+msgid "The machine name to use as a SOCKS proxy."
+msgstr "Nama mesin yang dipakai sebagai proksi SOCKS."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:163
+msgid "SOCKS proxy port"
+msgstr "Port proksi SOCKS"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:164
+msgid ""
+"The port on the machine defined by “/system/proxy/socks/host” that you proxy "
+"through."
+msgstr ""
+"Port pada mesin yang ditentukan oleh \"/system/proxy/socks/host\" yang Anda "
+"proksikan."

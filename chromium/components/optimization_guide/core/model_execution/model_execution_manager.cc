@@ -12,6 +12,7 @@
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/types/expected.h"
 #include "components/optimization_guide/core/model_execution/feature_keys.h"
 #include "components/optimization_guide/core/model_execution/model_execution_features.h"
@@ -90,7 +91,6 @@ void RecordModelExecutionLatency(ModelBasedCapabilityKey feature,
 size_t GetMaxParallelFeatureExecutions(ModelBasedCapabilityKey feature) {
   switch (feature) {
     case ModelBasedCapabilityKey::kCompose:
-    case ModelBasedCapabilityKey::kTabOrganization:
     case ModelBasedCapabilityKey::kWallpaperSearch:
     case ModelBasedCapabilityKey::kTest:
     case ModelBasedCapabilityKey::kHistorySearch:
@@ -114,6 +114,21 @@ size_t GetMaxParallelFeatureExecutions(ModelBasedCapabilityKey feature) {
       // Since there can be multiple forms on a single page, multiple parallel
       // executions are allowed for `kFormsClassifications`.
       return 10;
+    case ModelBasedCapabilityKey::kUpdaterChat:
+      // Allow multiple parallel executions for `kUpdaterChat` so the LLM
+      // can generate summaries for multiple log snippets concurrently,
+      // enabling the front-end to display a multi-snippet status view.
+      return 10;
+  }
+}
+
+bool IsEligibleForPrivateAI(ModelBasedCapabilityKey feature) {
+  switch (feature) {
+    case ModelBasedCapabilityKey::kZeroStateSuggestions:
+    case ModelBasedCapabilityKey::kContextualCueing:
+      return true;
+    default:
+      return false;
   }
 }
 
@@ -163,8 +178,10 @@ void ModelExecutionManager::ExecuteModel(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (test_execution_results_.find(feature) != test_execution_results_.end()) {
-    std::move(callback).Run(std::move(test_execution_results_[feature]),
-                            nullptr);
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE,
+        base::BindOnce(std::move(callback),
+                       std::move(test_execution_results_[feature]), nullptr));
     test_execution_results_.erase(feature);
     return;
   }
@@ -174,33 +191,6 @@ void ModelExecutionManager::ExecuteModel(
         optimization_guide_common::mojom::LogSource::MODEL_EXECUTION,
         optimization_guide_logger_)
         << "ExecuteModel: " << ProtoName(feature);
-    switch (feature) {
-      case ModelBasedCapabilityKey::kTabOrganization: {
-        proto::Any any = AnyWrapProto(request_metadata);
-        auto tab_request = optimization_guide::ParsedAnyMetadata<
-            optimization_guide::proto::TabOrganizationRequest>(any);
-        std::string tabs = "";
-        for (const auto& tab : tab_request->tabs()) {
-          tabs += base::StringPrintf("%s\"%s\"", tabs.empty() ? "" : ",",
-                                     tab.title());
-        }
-        OPTIMIZATION_GUIDE_LOGGER(
-            optimization_guide_common::mojom::LogSource::MODEL_EXECUTION,
-            optimization_guide_logger_)
-            << "TabOrganization Request: "
-            << base::StringPrintf(
-                   "{\"model_strategy\": \"%s\", \"tabs\" : [%s]}",
-                   optimization_guide::proto::
-                       TabOrganizationRequest_TabOrganizationModelStrategy_Name(
-                           tab_request->model_strategy()),
-                   tabs);
-
-        break;
-      }
-      default: {
-        break;
-      }
-    }
   }
 
   // Create log request if not already provided.
@@ -216,14 +206,24 @@ void ModelExecutionManager::ExecuteModel(
     fetchers_for_feature.erase(fetchers_for_feature.begin());
   }
   FetcherId fetcher_id = next_model_execution_fetcher_id++;
-  // Currently only ZSS is supported by PrivateAI. Update or remove this CHECK
-  // when other features are supported too.
   CHECK(service_type != ModelExecutionServiceType::kPrivateAi ||
-        feature == ModelBasedCapabilityKey::kZeroStateSuggestions)
+        IsEligibleForPrivateAI(feature))
       << feature;
   base::TimeTicks start_time = base::TimeTicks::Now();
   auto fetcher = CreateModelExecutionFetcher(service_type);
-  CHECK(fetcher);
+  if (!fetcher) {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE,
+        base::BindOnce(
+            std::move(callback),
+            OptimizationGuideModelExecutionResult(
+                base::unexpected(OptimizationGuideModelExecutionError::
+                                     FromModelExecutionError(
+                                         ModelExecutionError::kGenericFailure)),
+                nullptr),
+            nullptr));
+    return;
+  }
   auto fetcher_it =
       fetchers_for_feature.emplace(fetcher_id, std::move(fetcher));
   fetcher_it.first->second->ExecuteModel(
@@ -243,7 +243,9 @@ ModelExecutionManager::CreateModelExecutionFetcher(
           url_loader_factory_, model_execution_service_url_,
           optimization_guide_logger_);
     case ModelExecutionServiceType::kPrivateAi:
-      CHECK(delegate_);
+      if (!delegate_) {
+        return nullptr;
+      }
       return delegate_->CreatePrivateAiFetcher();
   }
 }
@@ -342,35 +344,6 @@ void ModelExecutionManager::OnModelExecuteResponse(
         optimization_guide_common::mojom::LogSource::MODEL_EXECUTION,
         optimization_guide_logger_)
         << "ExecuteModel Response: " << ProtoName(feature);
-    switch (feature) {
-      case ModelBasedCapabilityKey::kTabOrganization: {
-        std::string message = "";
-        auto tab_response = optimization_guide::ParsedAnyMetadata<
-            optimization_guide::proto::TabOrganizationResponse>(
-            execute_response->response_metadata());
-        message += "Response: [";
-        int group_cnt = 0;
-        for (const auto& tab_group : tab_response->tab_groups()) {
-          std::string tab_titles = "";
-          for (const auto& tab : tab_group.tabs()) {
-            tab_titles += base::StringPrintf(
-                "%s\" %s \"", tab_titles.empty() ? "" : ",", tab.title());
-          }
-          message += base::StringPrintf(
-              "%s{"
-              "\"label\": \"%s\", "
-              "\"tabs\": [%s] }",
-              group_cnt > 0 ? "," : "", tab_group.label(), tab_titles);
-          group_cnt += 1;
-        }
-        message += "]";
-        scoped_logger.set_message(message);
-        break;
-      }
-      default: {
-        break;
-      }
-    }
   }
 
   RecordModelExecutionResultHistogram(feature, true);

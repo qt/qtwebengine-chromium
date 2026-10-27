@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_BAND_TRIANGULARSOLVER_H
 #define EIGEN_BAND_TRIANGULARSOLVER_H
@@ -44,7 +45,7 @@ struct band_solve_triangular_selector<Index, Mode, LhsScalar, ConjLhs, RhsScalar
                                         .cwiseProduct(other.col(col).segment(IsLower ? i - actual_k : i + 1, actual_k))
                                         .sum();
 
-        if ((Mode & UnitDiag) == 0) other.coeffRef(i, col) /= cjLhs(i, IsLower ? k : 0);
+        EIGEN_IF_CONSTEXPR((Mode & UnitDiag) == 0) other.coeffRef(i, col) /= cjLhs(i, IsLower ? k : 0);
       }
     }
   }
@@ -68,7 +69,7 @@ struct band_solve_triangular_selector<Index, Mode, LhsScalar, ConjLhs, RhsScalar
         int actual_k = (std::min)(k, size - ii - 1);
         int actual_start = IsLower ? 1 : k - actual_k;
 
-        if ((Mode & UnitDiag) == 0) other.coeffRef(i, col) /= cjLhs(IsLower ? 0 : k, i);
+        EIGEN_IF_CONSTEXPR((Mode & UnitDiag) == 0) other.coeffRef(i, col) /= cjLhs(IsLower ? 0 : k, i);
 
         if (actual_k > 0)
           other.col(col).segment(IsLower ? i + 1 : i - actual_k, actual_k) -=

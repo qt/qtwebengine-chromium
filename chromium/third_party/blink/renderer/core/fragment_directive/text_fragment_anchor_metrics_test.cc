@@ -53,6 +53,12 @@ class TextFragmentAnchorMetricsTest : public TextFragmentAnchorTestBase {
     return scoped_fake_ukm_recorder_.recorder();
   }
 
+  void ResetRelatedPagesFinalized() {
+    GetDocument()
+        .GetPage()
+        ->related_pages_mutation_from_previous_page_finalized_ = false;
+  }
+
   base::HistogramTester histogram_tester_;
   ScopedFakeUkmRecorder scoped_fake_ukm_recorder_;
 };
@@ -100,8 +106,8 @@ TEST_F(TextFragmentAnchorMetricsTest, UMAMetricsCollectedSearchEngineReferrer) {
   // Set the referrer to a known search engine URL. This should cause metrics
   // to be reported for the SearchEngine variant of histograms.
   SimRequest::Params params;
-  params.requestor_origin = WebSecurityOrigin::CreateFromString(
-      WebString::FromUTF8("https://www.bing.com"));
+  params.requestor_origin =
+      WebSecurityOrigin::CreateFromString(WebString("https://www.bing.com"));
   SimRequest request("https://example.com/test.html#:~:text=test&text=cat",
                      "text/html", params);
   LoadURL("https://example.com/test.html#:~:text=test&text=cat");
@@ -182,8 +188,8 @@ TEST_F(TextFragmentAnchorMetricsTest, NoMatchFoundWithSearchEngineSource) {
   // Set the referrer to a known search engine URL. This should cause metrics
   // to be reported for the SearchEngine variant of histograms.
   SimRequest::Params params;
-  params.requestor_origin = WebSecurityOrigin::CreateFromString(
-      WebString::FromUTF8("https://www.bing.com"));
+  params.requestor_origin =
+      WebSecurityOrigin::CreateFromString(WebString("https://www.bing.com"));
   SimRequest request("https://example.com/test.html#:~:text=cat", "text/html",
                      params);
   LoadURL("https://example.com/test.html#:~:text=cat");
@@ -250,6 +256,9 @@ TEST_F(TextFragmentAnchorMetricsTest, MatchFoundNoScroll) {
     <!DOCTYPE html>
     <p>This is a test page</p>
   )HTML");
+  GetDocument().GetPage()->NotifyRelatedPagesFinalized(false);
+  GetDocument().GetFrame()->Loader().ProcessPendingCrossDocumentFragment();
+  Compositor().BeginFrame();
   Compositor().BeginFrame();
 
   // The anchor should have been found and finalized.
@@ -370,6 +379,8 @@ TEST_F(TextFragmentAnchorMetricsTest, InvalidFragmentDirective) {
       <!DOCTYPE html>
       <p id="element">This is a test page</p>
     )HTML");
+    GetDocument().GetPage()->NotifyRelatedPagesFinalized(false);
+    GetDocument().GetFrame()->Loader().ProcessPendingCrossDocumentFragment();
     FragmentAnchor* anchor =
         GetDocument().GetFrame()->View()->GetFragmentAnchor();
     if (anchor && anchor->IsTextFragmentAnchor()) {
@@ -625,7 +636,7 @@ TEST_F(TextFragmentAnchorMetricsTest, TextFragmentLinkOpenSource_GoogleDomain) {
   // Set the referrer to a google domain page.
   SimRequest::Params params;
   params.requestor_origin = WebSecurityOrigin::CreateFromString(
-      WebString::FromUTF8("https://www.mail.google.com"));
+      WebString("https://www.mail.google.com"));
   SimRequest request("https://example.com/test.html#:~:text=test&text=cat",
                      "text/html", params);
   LoadURL("https://example.com/test.html#:~:text=test&text=cat");
@@ -668,6 +679,7 @@ TEST_F(TextFragmentAnchorMetricsTest, ShadowDOMUseCounter) {
   }
 
   {
+    ResetRelatedPagesFinalized();
     SimRequest request("https://example.com/shadowtest.html#:~:text=ShadowDOM",
                        "text/html");
     LoadURL("https://example.com/shadowtest.html#:~:text=ShadowDOM");

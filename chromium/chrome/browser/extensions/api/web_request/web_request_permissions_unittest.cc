@@ -90,10 +90,10 @@ void ExtensionWebRequestHelpersTestWithThreadsTest::TearDown() {
 TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest,
        BlocklistUpdateUrlsHidden) {
   auto create_request_params = [](const std::string& url) {
-    const int kRendererProcessId = 2;
+    const content::ChildProcessId kRendererProcessId(2);
     WebRequestInfoInitParams request;
     request.url = GURL(url);
-    request.render_process_id = kRendererProcessId;
+    request.global_id.child_id = kRendererProcessId;
     return request;
   };
 
@@ -120,14 +120,14 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest, LocalWebUINTPRequests) {
         WebRequestInfoInitParams info_params;
         info_params.url = example_com;
         info_params.initiator = initiator;
-        info_params.render_process_id = -1;
+        info_params.global_id.child_id = content::ChildProcessId();
         info_params.web_request_type = web_request_type;
         info_params.is_navigation_request = is_navigation_request;
         return info_params;
       };
 
   url::Origin ntp_origin =
-      url::Origin::Create(GURL(chrome::kChromeUINewTabPageURL));
+      url::Origin::Create(chrome::ChromeUINewTabPageURLAsGURL());
 
   // Sub-resource browser initiated requests are hidden from extensions.
   WebRequestInfoInitParams info_params_1 = create_request_params(

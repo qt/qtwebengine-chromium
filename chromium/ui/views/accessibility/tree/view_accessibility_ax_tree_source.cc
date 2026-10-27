@@ -9,6 +9,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "ui/accessibility/ax_action_data.h"
+#include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/accessibility/ax_tree_data.h"
 #include "ui/gfx/geometry/point_f.h"
@@ -57,9 +58,32 @@ void ViewAccessibilityAXTreeSource::HandleAccessibleAction(
 bool ViewAccessibilityAXTreeSource::GetTreeData(
     ui::AXTreeData* tree_data) const {
   tree_data->tree_id = tree_id_;
+  tree_data->parent_tree_id = parent_tree_id_;
   tree_data->loaded = true;
   tree_data->loading_progress = 1.0;
-  // TODO(accessibility): Implement focus handling.
+  const ui::AXNodeID focus_id =
+      transient_focus_id_for_serialization_.value_or(focused_node_id_);
+  tree_data->focus_id = focus_id;
+
+  // Populate text selection fields from the focused node's attributes.
+  if (focus_id != ui::kInvalidAXNodeID) {
+    if (ViewAccessibility* focused_node = cache_->Get(focus_id)) {
+      ui::AXNodeData node_data;
+      focused_node->GetAccessibleNodeData(&node_data);
+      if (node_data.HasIntAttribute(ax::mojom::IntAttribute::kTextSelStart) &&
+          node_data.HasIntAttribute(ax::mojom::IntAttribute::kTextSelEnd)) {
+        tree_data->sel_anchor_object_id = focus_id;
+        tree_data->sel_focus_object_id = focus_id;
+        tree_data->sel_anchor_offset =
+            node_data.GetIntAttribute(ax::mojom::IntAttribute::kTextSelStart);
+        tree_data->sel_focus_offset =
+            node_data.GetIntAttribute(ax::mojom::IntAttribute::kTextSelEnd);
+        tree_data->sel_is_backward =
+            tree_data->sel_anchor_offset > tree_data->sel_focus_offset;
+      }
+    }
+  }
+
   return true;
 }
 

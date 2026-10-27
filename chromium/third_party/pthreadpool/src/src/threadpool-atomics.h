@@ -142,7 +142,7 @@ static inline void pthreadpool_thread_join(
  * i.e. two or more atomic variables sharing the same cache line will block
  * each other during atomic operations.
  */
-typedef atomic_uint_fast32_t PTHREADPOOL_CACHELINE_ALIGNED
+typedef atomic_uint_least32_t PTHREADPOOL_CACHELINE_ALIGNED
     pthreadpool_atomic_uint32_t;
 typedef atomic_int_least32_t PTHREADPOOL_CACHELINE_ALIGNED
     pthreadpool_atomic_int32_t;

@@ -49,9 +49,9 @@ namespace {
 // For WebAssembly we care about the full floating point register. If we are not
 // running Wasm, we can get away with saving half of those registers.
 #if V8_ENABLE_WEBASSEMBLY
-constexpr int kStackSavedSavedFPSizeInBits = kQRegSizeInBits;
+constexpr bool kSaveFullFPRegistersOnStack = true;
 #else
-constexpr int kStackSavedSavedFPSizeInBits = kDRegSizeInBits;
+constexpr bool kSaveFullFPRegistersOnStack = false;
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 }  // namespace
@@ -147,7 +147,11 @@ int MacroAssembler::RequiredStackSizeForCallerSaved(SaveFPRegsMode fp_mode,
   int bytes = list.TotalSizeInBytes();
 
   if (fp_mode == SaveFPRegsMode::kSave) {
-    auto fp_list = CPURegList::GetCallerSavedV(kStackSavedSavedFPSizeInBits);
+    // TODO(all): consider splitting SaveFPRegsMode::kSave into kSaveFPOnly
+    // and kSaveFPAndSIMD. The former is useful for those functions that don't
+    // use SIMD registers.
+    auto fp_list = kSaveFullFPRegistersOnStack ? CPURegList::GetCallerSavedV()
+                                               : CPURegList::GetCallerSavedD();
     DCHECK_EQ(fp_list.Count() % 2, 0);
     bytes += fp_list.TotalSizeInBytes();
   }
@@ -166,7 +170,11 @@ int MacroAssembler::PushCallerSaved(SaveFPRegsMode fp_mode,
   int bytes = list.TotalSizeInBytes();
 
   if (fp_mode == SaveFPRegsMode::kSave) {
-    auto fp_list = CPURegList::GetCallerSavedV(kStackSavedSavedFPSizeInBits);
+    // TODO(all): consider splitting SaveFPRegsMode::kSave into kSaveFPOnly
+    // and kSaveFPAndSIMD. The former is useful for those functions that don't
+    // use SIMD registers.
+    auto fp_list = kSaveFullFPRegistersOnStack ? CPURegList::GetCallerSavedV()
+                                               : CPURegList::GetCallerSavedD();
     DCHECK_EQ(fp_list.Count() % 2, 0);
     PushCPURegList(fp_list);
     bytes += fp_list.TotalSizeInBytes();
@@ -178,7 +186,11 @@ int MacroAssembler::PopCallerSaved(SaveFPRegsMode fp_mode, Register exclusion) {
   ASM_CODE_COMMENT(this);
   int bytes = 0;
   if (fp_mode == SaveFPRegsMode::kSave) {
-    auto fp_list = CPURegList::GetCallerSavedV(kStackSavedSavedFPSizeInBits);
+    // TODO(all): consider splitting SaveFPRegsMode::kSave into kSaveFPOnly
+    // and kSaveFPAndSIMD. The former is useful for those functions that don't
+    // use SIMD registers.
+    auto fp_list = kSaveFullFPRegistersOnStack ? CPURegList::GetCallerSavedV()
+                                               : CPURegList::GetCallerSavedD();
     DCHECK_EQ(fp_list.Count() % 2, 0);
     PopCPURegList(fp_list);
     bytes += fp_list.TotalSizeInBytes();
@@ -1512,7 +1524,7 @@ void MacroAssembler::GenerateTailCallToReturnedCode(
 #ifndef V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE
   Move(kJavaScriptCallDispatchHandleRegister.W(),
        FieldMemOperand(kJavaScriptCallTargetRegister,
-                       JSFunction::kDispatchHandleOffset));
+                       offsetof(JSFunction, dispatch_handle_)));
 #endif
   // We jump through x17 here because for Branch Identification (BTI) we use
   // "Call" (`bti c`) rather than "Jump" (`bti j`) landing pads for tail-called
@@ -1627,7 +1639,7 @@ void MacroAssembler::AssertConstructor(Register object) {
   Register temp = temps.AcquireX();
 
   LoadMap(temp, object);
-  Ldrb(temp, FieldMemOperand(temp, Map::kBitFieldOffset));
+  Ldrb(temp, FieldMemOperand(temp, offsetof(Map, bit_field_)));
   Tst(temp, Operand(Map::Bits1::IsConstructorBit::kMask));
 
   Check(ne, AbortReason::kOperandIsNotAConstructor);
@@ -2436,12 +2448,14 @@ void MacroAssembler::LoadCodeInstructionStart(Register destination,
                                               Register code_object,
                                               CodeEntrypointTag tag) {
   ASM_CODE_COMMENT(this);
-#ifdef V8_ENABLE_SANDBOX
-  LoadCodeEntrypointViaCodePointer(
-      destination,
-      FieldMemOperand(code_object, Code::kSelfIndirectPointerOffset), tag);
-#else
   Ldr(destination, FieldMemOperand(code_object, Code::kInstructionStartOffset));
+#ifdef V8_ENABLE_SANDBOX
+  if (tag != 0) {
+    UseScratchRegisterScope temps(this);
+    Register scratch = temps.AcquireX();
+    Mov(scratch, Immediate(tag));
+    Eor(destination, destination, scratch);
+  }
 #endif
 }
 
@@ -2477,7 +2491,7 @@ void MacroAssembler::CallJSFunction(Register function_object,
   Register scratch = x21;
 
   Ldr(dispatch_handle.W(),
-      FieldMemOperand(function_object, JSFunction::kDispatchHandleOffset));
+      FieldMemOperand(function_object, offsetof(JSFunction, dispatch_handle_)));
   LoadEntrypointAndParameterCountFromJSDispatchTable(code, parameter_count,
                                                      dispatch_handle, scratch);
   // Force a safe crash if the parameter count doesn't match.
@@ -2828,7 +2842,8 @@ void MacroAssembler::InvokeFunction(
   DCHECK_EQ(function, x1);
 
   // Set up the context.
-  LoadTaggedField(cp, FieldMemOperand(function, JSFunction::kContextOffset));
+  LoadTaggedField(cp,
+                  FieldMemOperand(function, offsetof(JSFunction, context_)));
 
   InvokeFunctionCode(function, no_reg, actual_parameter_count, type,
                      argument_adaption_mode);
@@ -2845,7 +2860,8 @@ void MacroAssembler::InvokeFunctionWithNewTarget(
   // (See FullCodeGenerator::Generate().)
   DCHECK_EQ(function, x1);
 
-  LoadTaggedField(cp, FieldMemOperand(function, JSFunction::kContextOffset));
+  LoadTaggedField(cp,
+                  FieldMemOperand(function, offsetof(JSFunction, context_)));
 
   InvokeFunctionCode(function, new_target, actual_parameter_count, type);
 }
@@ -2861,7 +2877,7 @@ void MacroAssembler::InvokeFunctionCode(
 
   Register dispatch_handle = kJavaScriptCallDispatchHandleRegister;
   Ldr(dispatch_handle.W(),
-      FieldMemOperand(function, JSFunction::kDispatchHandleOffset));
+      FieldMemOperand(function, offsetof(JSFunction, dispatch_handle_)));
 
   // On function call, call into the debugger if necessary.
   Label debug_hook, continue_after_hook;
@@ -3362,26 +3378,30 @@ void MacroAssembler::JumpIfIsInRange(Register value, Register scratch,
 
 void MacroAssembler::LoadCompressedMap(Register dst, Register object) {
   ASM_CODE_COMMENT(this);
-  Ldr(dst.W(), FieldMemOperand(object, HeapObject::kMapOffset));
+  Ldr(dst.W(), FieldMemOperand(object, offsetof(HeapObject, map_)));
 }
 
 void MacroAssembler::LoadMap(Register dst, Register object) {
   ASM_CODE_COMMENT(this);
-  LoadTaggedField(dst, FieldMemOperand(object, HeapObject::kMapOffset));
+  LoadTaggedField(dst, FieldMemOperand(object, offsetof(HeapObject, map_)));
 }
 
-void MacroAssembler::LoadFeedbackVector(Register dst, Register closure,
-                                        Register scratch, Label* fbv_undef) {
-  Label done;
+void MacroAssembler::LoadFeedbackCell(Register dst, Register closure) {
+  LoadTaggedField(
+      dst, FieldMemOperand(closure, offsetof(JSFunction, feedback_cell_)));
+}
 
-  // Load the feedback vector from the closure.
-  LoadTaggedField(dst,
-                  FieldMemOperand(closure, JSFunction::kFeedbackCellOffset));
-  LoadTaggedField(dst, FieldMemOperand(dst, offsetof(FeedbackCell, value_)));
+void MacroAssembler::LoadFeedbackVectorFromCell(Register dst,
+                                                Register feedback_cell,
+                                                Register scratch,
+                                                Label* fbv_undef) {
+  Label done;
+  LoadTaggedField(
+      dst, FieldMemOperand(feedback_cell, offsetof(FeedbackCell, value_)));
 
   // Check if feedback vector is valid.
-  LoadTaggedField(scratch, FieldMemOperand(dst, HeapObject::kMapOffset));
-  Ldrh(scratch, FieldMemOperand(scratch, Map::kInstanceTypeOffset));
+  LoadTaggedField(scratch, FieldMemOperand(dst, offsetof(HeapObject, map_)));
+  Ldrh(scratch, FieldMemOperand(scratch, offsetof(Map, instance_type_)));
   Cmp(scratch, FEEDBACK_VECTOR_TYPE);
   B(eq, &done);
 
@@ -3390,6 +3410,12 @@ void MacroAssembler::LoadFeedbackVector(Register dst, Register closure,
   B(fbv_undef);
 
   Bind(&done);
+}
+
+void MacroAssembler::LoadFeedbackVector(Register dst, Register closure,
+                                        Register scratch, Label* fbv_undef) {
+  LoadFeedbackCell(dst, closure);
+  LoadFeedbackVectorFromCell(dst, dst, scratch, fbv_undef);
 }
 
 void MacroAssembler::LoadInterpreterDataBytecodeArray(
@@ -3411,7 +3437,7 @@ void MacroAssembler::LoadInterpreterDataInterpreterTrampoline(
 void MacroAssembler::CompareInstanceType(Register map, Register type_reg,
                                          InstanceType type) {
   ASM_CODE_COMMENT(this);
-  Ldrh(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
+  Ldrh(type_reg, FieldMemOperand(map, offsetof(Map, instance_type_)));
   Cmp(type_reg, type);
 }
 
@@ -3423,14 +3449,14 @@ void MacroAssembler::CompareInstanceTypeRange(Register map, Register type_reg,
   DCHECK_LT(lower_limit, higher_limit);
   UseScratchRegisterScope temps(this);
   Register scratch = temps.AcquireX();
-  Ldrh(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
+  Ldrh(type_reg, FieldMemOperand(map, offsetof(Map, instance_type_)));
   CompareRange(type_reg, scratch, lower_limit, higher_limit);
 }
 
 void MacroAssembler::LoadElementsKindFromMap(Register result, Register map) {
   ASM_CODE_COMMENT(this);
   // Load the map's "bit field 2".
-  Ldrb(result, FieldMemOperand(map, Map::kBitField2Offset));
+  Ldrb(result, FieldMemOperand(map, offsetof(Map, bit_field2_)));
   // Retrieve elements_kind from bit field 2.
   DecodeField<Map::Bits2::ElementsKindBits>(result);
 }
@@ -3953,7 +3979,7 @@ void MacroAssembler::LoadTrustedUnknownPointerField(
   }
 #else
   LoadMap(scratch, destination);
-  Ldrh(scratch, FieldMemOperand(scratch, Map::kInstanceTypeOffset));
+  Ldrh(scratch, FieldMemOperand(scratch, offsetof(Map, instance_type_)));
   for (auto& [type, label] : cases) {
     if (V8_ENABLE_SANDBOX_BOOL && type == CODE_TYPE) {
       continue;
@@ -4000,8 +4026,8 @@ void MacroAssembler::StoreIndirectPointerField(Register value,
   ASM_CODE_COMMENT(this);
   UseScratchRegisterScope temps(this);
   Register scratch = temps.AcquireX();
-  Ldr(scratch.W(),
-      FieldMemOperand(value, ExposedTrustedObject::kSelfIndirectPointerOffset));
+  Ldr(scratch.W(), FieldMemOperand(value, offsetof(ExposedTrustedObject,
+                                                   self_indirect_pointer_)));
   Str(scratch.W(), dst_field_operand);
 #else
   UNREACHABLE();
@@ -4071,26 +4097,6 @@ void MacroAssembler::ResolveCodePointerHandle(Register destination,
   // The LSB is used as marking bit by the code pointer table, so here we have
   // to set it using a bitwise OR as it may or may not be set.
   Orr(destination, destination, Immediate(kHeapObjectTag));
-}
-
-void MacroAssembler::LoadCodeEntrypointViaCodePointer(Register destination,
-                                                      MemOperand field_operand,
-                                                      CodeEntrypointTag tag) {
-  DCHECK_NE(tag, kInvalidEntrypointTag);
-  ASM_CODE_COMMENT(this);
-  UseScratchRegisterScope temps(this);
-  Register scratch = temps.AcquireX();
-  LoadCodePointerTableBase(scratch);
-  Ldr(destination.W(), field_operand);
-  // TODO(saelo): can the offset computation be done more efficiently?
-  Mov(destination, Operand(destination, LSR, kCodePointerHandleShift));
-  Mov(destination, Operand(destination, LSL, kCodePointerTableEntrySizeLog2));
-  static_assert(kCodePointerTableEntryEntrypointOffset == 0);
-  Ldr(destination, MemOperand(scratch, destination));
-  if (tag != 0) {
-    Mov(scratch, Immediate(tag));
-    Eor(destination, destination, scratch);
-  }
 }
 
 void MacroAssembler::LoadCodePointerTableBase(Register destination) {
@@ -4478,8 +4484,9 @@ void MacroAssembler::Abort(AbortReason reason) {
 void MacroAssembler::LoadNativeContextSlot(Register dst, int index) {
   LoadMap(dst, cp);
   LoadTaggedField(
-      dst, FieldMemOperand(
-               dst, Map::kConstructorOrBackPointerOrNativeContextOffset));
+      dst,
+      FieldMemOperand(
+          dst, offsetof(Map, constructor_or_back_pointer_or_native_context_)));
   LoadTaggedField(dst, MemOperand(dst, Context::SlotOffset(index)));
 }
 

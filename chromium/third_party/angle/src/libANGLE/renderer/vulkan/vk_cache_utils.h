@@ -197,8 +197,6 @@ class alignas(4) RenderPassDesc final
 
     // Set format for an enabled GL color attachment.
     void packColorAttachment(size_t colorIndexGL, angle::FormatID formatID);
-    // Mark a GL color attachment index as disabled.
-    void packColorAttachmentGap(size_t colorIndexGL);
     // The caller must pack the depth/stencil attachment last, which is packed right after the color
     // attachments (including gaps), i.e. with an index starting from |colorAttachmentRange()|.
     void packDepthStencilAttachment(angle::FormatID angleFormatID);
@@ -778,11 +776,9 @@ struct GraphicsPipelineShadersVulkanStructs
     VkPipelineRasterizationLineStateCreateInfoEXT rasterLineState                 = {};
     VkPipelineRasterizationProvokingVertexStateCreateInfoEXT provokingVertexState = {};
     VkPipelineRasterizationStateStreamCreateInfoEXT rasterStreamState             = {};
-    VkSpecializationInfo specializationInfo                                       = {};
 
     // Support storage
     angle::FixedVector<VkPipelineShaderStageCreateInfo, 5> shaderStages;
-    SpecializationConstantMap<VkSpecializationMapEntry> specializationEntries;
 };
 
 struct GraphicsPipelineSharedNonVertexInputVulkanStructs
@@ -880,10 +876,7 @@ class PipelineHelper;
 struct GraphicsPipelineShadersInfo final
 {
   public:
-    GraphicsPipelineShadersInfo(const ShaderModuleMap *shaders,
-                                const SpecializationConstants *specConsts)
-        : mShaders(shaders), mSpecConsts(specConsts)
-    {}
+    GraphicsPipelineShadersInfo(const ShaderModuleMap *shaders) : mShaders(shaders) {}
     GraphicsPipelineShadersInfo(vk::PipelineHelper *pipelineLibrary)
         : mPipelineLibrary(pipelineLibrary)
     {}
@@ -894,7 +887,6 @@ struct GraphicsPipelineShadersInfo final
   private:
     // If the shaders state should be directly specified in the final pipeline.
     const ShaderModuleMap *mShaders            = nullptr;
-    const SpecializationConstants *mSpecConsts = nullptr;
 
     // If the shaders state is provided via a pipeline library.
     vk::PipelineHelper *mPipelineLibrary = nullptr;
@@ -1158,7 +1150,6 @@ class GraphicsPipelineDesc final
     void initializePipelineShadersState(
         ErrorContext *context,
         const ShaderModuleMap &shaders,
-        const SpecializationConstants &specConsts,
         GraphicsPipelineShadersVulkanStructs *stateOut,
         GraphicsPipelineDynamicStateList *dynamicStateListOut) const;
 
@@ -1548,7 +1539,6 @@ class CreateMonolithicPipelineTask : public ErrorContext, public angle::Closure
                                  const PipelineCacheAccess &pipelineCache,
                                  const PipelineLayout &pipelineLayout,
                                  const ShaderModuleMap &shaders,
-                                 const SpecializationConstants &specConsts,
                                  const GraphicsPipelineDesc &desc);
 
     // The compatible render pass is set only when the task is ready to run.  This is because the
@@ -1577,7 +1567,6 @@ class CreateMonolithicPipelineTask : public ErrorContext, public angle::Closure
     const RenderPass *mCompatibleRenderPass;
     const PipelineLayout &mPipelineLayout;
     const ShaderModuleMap &mShaders;
-    SpecializationConstants mSpecConsts;
     GraphicsPipelineDesc mDesc;
 
     // Results
@@ -1867,10 +1856,6 @@ class WriteDescriptorDescs
     void updateImages(const gl::ProgramExecutable &executable,
                       const ShaderInterfaceVariableInfoMap &variableInfoMap);
 
-    void updateInputAttachments(const gl::ProgramExecutable &executable,
-                                const ShaderInterfaceVariableInfoMap &variableInfoMap,
-                                const FramebufferVk *framebufferVk);
-
     void updateExecutableActiveTextures(const ShaderInterfaceVariableInfoMap &variableInfoMap,
                                         const gl::ProgramExecutable &executable);
 
@@ -1883,6 +1868,10 @@ class WriteDescriptorDescs
 
     void updateDynamicDescriptorsCount();
 
+    void initInputAttachments(const gl::ProgramExecutable &executable,
+                              const ShaderInterfaceVariableInfoMap &variableInfoMap,
+                              uint32_t maxColorCount);
+
     size_t size() const { return mDescs.size(); }
     bool empty() const { return mDescs.size() == 0; }
 
@@ -1890,6 +1879,8 @@ class WriteDescriptorDescs
     {
         return mDescs[bindingIndex];
     }
+
+    WriteDescriptorDesc &operator[](uint32_t bindingIndex) { return mDescs[bindingIndex]; }
 
     size_t getTotalDescriptorCount() const { return mCurrentInfoIndex; }
     size_t getDynamicDescriptorSetCount() const { return mDynamicDescriptorSetCount; }
@@ -2130,11 +2121,13 @@ class DescriptorSetDescBuilder final
                                const gl::ActiveTextureArray<TextureVk *> &activeImages,
                                const std::vector<gl::ImageUnit> &imageUnits,
                                const WriteDescriptorDescs &writeDescriptorDescs);
+
     angle::Result updateInputAttachments(ContextVk *contextVk,
                                          const gl::ProgramExecutable &executable,
                                          const ShaderInterfaceVariableInfoMap &variableInfoMap,
                                          const FramebufferVk *framebufferVk,
-                                         const WriteDescriptorDescs &writeDescriptorDescs);
+                                         WriteDescriptorDescs &writeDescriptorDescs,
+                                         gl::AttachmentsMask *currentMaskOut);
 
     // Specialized update for textures.
     void updatePreCacheActiveTextures(Context *context,
@@ -2144,9 +2137,14 @@ class DescriptorSetDescBuilder final
                                       const WriteDescriptorDescs &writeDescriptorDescs);
 
     const uint32_t *getDynamicOffsets() const { return mDynamicOffsets.data(); }
-    size_t getDynamicOffsetsSize() const { return mDynamicOffsets.size(); }
 
     const DescriptorDescHandles *getHandles() const { return mHandles.data(); }
+
+    void resetDescriptor(uint32_t infoIndex)
+    {
+        mDesc.getInfoDesc(infoIndex) = {};
+        mHandles[infoIndex]          = {};
+    }
 
   private:
     void updateInputAttachment(Context *context,
@@ -2900,7 +2898,7 @@ class SamplerCache final : public HasCacheStats<VulkanCacheType::Sampler>
     SamplerCache();
     ~SamplerCache() override;
 
-    void destroy(vk::Renderer *renderer, bool orphanReferencedSamplers);
+    void destroy(vk::Renderer *renderer);
 
     angle::Result getSampler(ContextVk *contextVk,
                              const vk::SamplerDesc &desc,
@@ -2918,7 +2916,7 @@ class SamplerYcbcrConversionCache final
     SamplerYcbcrConversionCache();
     ~SamplerYcbcrConversionCache() override;
 
-    void destroy(vk::Renderer *renderer, bool orphanConversionInfo);
+    void destroy(vk::Renderer *renderer);
 
     angle::Result getSamplerYcbcrConversion(vk::ErrorContext *context,
                                             const vk::YcbcrConversionDesc &ycbcrConversionDesc,

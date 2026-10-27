@@ -18,6 +18,8 @@
 //   GemvTrans  y += A^T * x         -> RowMajor kernel, no conjugation
 //   GemvConj   y += conj(A) * x     -> ColMajor kernel, ConjugateLhs=true
 //   GemvAdj    y += A^H * x         -> RowMajor kernel, ConjugateLhs=true
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>
@@ -119,10 +121,14 @@ static void BM_GemvAdj(benchmark::State& state) {
 
 // clang-format off
 // Square matrices; tall-thin (m >> n); short-wide (m << n).
+// The 4096..32768-row x 1..3-col cases straddle the run_small_cols
+// "stride*sizeof > L1" threshold where the 8-row inner unroll flips off.
 #define GEMV_SIZES \
     ->Args({8, 8})->Args({32, 32})->Args({128, 128})->Args({512, 512})->Args({1024, 1024}) \
     ->Args({256, 1})->Args({1024, 1})->Args({256, 16})->Args({1024, 16}) \
-    ->Args({1, 256})->Args({1, 1024})->Args({16, 256})->Args({16, 1024})
+    ->Args({1, 256})->Args({1, 1024})->Args({16, 256})->Args({16, 1024}) \
+    ->Args({4096, 1})->Args({8192, 1})->Args({16384, 1})->Args({32768, 1}) \
+    ->Args({4096, 2})->Args({8192, 2})->Args({16384, 2})
 
 // Real types: Gemv and GemvTrans exercise the two kernel specializations.
 // Conjugation is a no-op for real scalars.

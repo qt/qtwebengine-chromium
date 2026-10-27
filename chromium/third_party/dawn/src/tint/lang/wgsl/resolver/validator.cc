@@ -300,11 +300,10 @@ bool Validator::Enables(VectorRef<const ast::Enable*> enables) const {
         }
     }
 
-    if (enabled_extensions_.Contains(wgsl::Extension::kChromiumExperimentalSubgroupSizeControl) &&
+    if (enabled_extensions_.Contains(wgsl::Extension::kSubgroupSizeControl) &&
         !enabled_extensions_.Contains(wgsl::Extension::kSubgroups)) {
-        AddError(source_of(wgsl::Extension::kChromiumExperimentalSubgroupSizeControl))
-            << "extension "
-            << style::Code(wgsl::Extension::kChromiumExperimentalSubgroupSizeControl)
+        AddError(source_of(wgsl::Extension::kSubgroupSizeControl))
+            << "extension " << style::Code(wgsl::Extension::kSubgroupSizeControl)
             << " cannot be used without extension " << style::Code(wgsl::Extension::kSubgroups);
         return false;
     }
@@ -420,14 +419,6 @@ bool Validator::SampledTexture(const core::type::SampledTexture* t, const Source
         AddError(source) << "texture_2d<type>: type must be f32, i32 or u32";
         return false;
     }
-
-    if (t->Filterable() != core::TextureFilterable::kUndefined &&
-        !t->Type()->IsAnyOf<core::type::F32, core::type::F16>()) {
-        AddError(source) << "texture filterability only applies to float textures, got '"
-                         << sem_.TypeNameOf(t->Type()) << "'";
-        return false;
-    }
-
     return true;
 }
 
@@ -1425,12 +1416,10 @@ bool Validator::Function(const sem::Function* func, ast::PipelineStage stage) co
                 return true;
             },
             [&](const ast::SubgroupSizeAttribute*) {
-                if (!enabled_extensions_.Contains(
-                        wgsl::Extension::kChromiumExperimentalSubgroupSizeControl)) {
+                if (!enabled_extensions_.Contains(wgsl::Extension::kSubgroupSizeControl)) {
                     AddError(attr->source)
                         << "use of " << style::Attribute("@subgroup_size")
-                        << " requires enabling extension "
-                        << style::Code("chromium_experimental_subgroup_size_control");
+                        << " requires enabling extension " << style::Code("subgroup_size_control");
                     return false;
                 }
                 if (decl->PipelineStage() != ast::PipelineStage::kCompute) {
@@ -2183,6 +2172,25 @@ bool Validator::BufferView(const sem::Call* call) const {
     TINT_ASSERT(builtin->Fn() == wgsl::BuiltinFn::kBufferView ? call->Arguments().Length() == 2
                                                               : call->Arguments().Length() == 3);
 
+    uint64_t ret_min_size = 0;
+    uint64_t ret_offset = 0;
+    uint64_t ret_stride = 0;
+    if (ret_store_type->HasFixedFootprint()) {
+        ret_min_size = ret_store_type->Size();
+    } else {
+        if (const auto* str_ty = ret_store_type->As<core::type::Struct>()) {
+            const auto* last = str_ty->Members().Back();
+            const auto* last_ty = last->Type();
+            TINT_ASSERT(last_ty->Is<core::type::Array>());
+            ret_offset = last->Offset();
+            ret_stride = last_ty->As<core::type::Array>()->ImplicitStride();
+        } else {
+            TINT_ASSERT(ret_store_type->Is<core::type::Array>());
+            ret_stride = ret_store_type->As<core::type::Array>()->ImplicitStride();
+        }
+        ret_min_size = ret_offset + ret_stride;
+    }
+
     auto* buffer_ptr = call->Arguments()[0];
     auto* buffer_type =
         buffer_ptr->Type()->As<core::type::Pointer>()->StoreType()->As<core::type::Buffer>();
@@ -2213,16 +2221,18 @@ bool Validator::BufferView(const sem::Call* call) const {
 
     auto count = buffer_type->ConstantCount();
     if (builtin->Fn() == wgsl::BuiltinFn::kBufferView) {
-        if (offset_value + ret_store_type->Size() > std::numeric_limits<uint32_t>::max()) {
+        if (offset_value + ret_min_size > std::numeric_limits<uint32_t>::max()) {
             AddError(offset->Declaration()->source)
                 << "the offset argument of " << builtin->str()
-                << " plus the size of the return type must not overflow a 32-bit unsigned integer";
+                << " plus the minimum size of the return type must not overflow a 32-bit unsigned "
+                   "integer";
             return false;
         }
-        if (count != std::nullopt && offset_value + ret_store_type->Size() >= count.value()) {
+        if (count != std::nullopt && offset_value + ret_min_size > count.value()) {
             AddError(offset->Declaration()->source)
                 << "the offset argument of " << builtin->str()
-                << " plus the size of the return type must be smaller than the buffer size";
+                << " plus the minimum size of the return type must be less than or equal to the "
+                   "buffer size";
             return false;
         }
 
@@ -2231,21 +2241,6 @@ bool Validator::BufferView(const sem::Call* call) const {
 
     // bufferArrayView specific checks
     // Return type must not have a fixed footprint.
-    uint64_t ret_offset = 0;
-    uint64_t ret_stride = 0;
-    if (const auto* str_ty = ret_store_type->As<core::type::Struct>()) {
-        auto members = str_ty->Members();
-        const auto* last = members[members.Length() - 1];
-        const auto* last_type = last->Type();
-        TINT_ASSERT(last_type->Is<core::type::Array>());
-        ret_offset = last->Offset();
-        ret_stride = last_type->As<core::type::Array>()->ImplicitStride();
-    } else {
-        TINT_ASSERT(ret_store_type->Is<core::type::Array>());
-        ret_stride = ret_store_type->As<core::type::Array>()->ImplicitStride();
-    }
-    uint64_t ret_min_size = ret_offset + ret_stride;
-
     uint64_t size_value = 0;
     auto* size = call->Arguments()[2];
     auto* size_constant_value = size->ConstantValue();
@@ -2544,14 +2539,18 @@ bool Validator::FunctionCall(const sem::Call* call, sem::Statement* current_stat
             auto* param_store_type = param_ptr_type->StoreType();
             if (arg_store_type->Is<core::type::Buffer>() &&
                 param_store_type->Is<core::type::Buffer>()) {
-                const bool param_unsized = param_store_type->As<core::type::Buffer>()
-                                               ->Count()
-                                               ->Is<core::type::RuntimeArrayCount>();
-                auto arg_count = arg_store_type->As<core::type::Buffer>()->ConstantCount();
-                auto param_count = param_store_type->As<core::type::Buffer>()->ConstantCount();
+                auto* arg_buffer_ty = arg_store_type->As<core::type::Buffer>();
+                auto* param_buffer_ty = param_store_type->As<core::type::Buffer>();
+                const bool param_unsized =
+                    param_buffer_ty->Count()->Is<core::type::RuntimeArrayCount>();
+                const bool both_constant =
+                    arg_buffer_ty->Count()->Is<core::type::ConstantArrayCount>() &&
+                    param_buffer_ty->Count()->Is<core::type::ConstantArrayCount>();
+                auto arg_count = arg_buffer_ty->ConstantCount().value_or(0);
+                auto param_count = param_buffer_ty->ConstantCount().value_or(0);
                 if (arg_ptr_type->AddressSpace() == param_ptr_type->AddressSpace() &&
                     arg_ptr_type->Access() == param_ptr_type->Access() &&
-                    (param_unsized || arg_count.value_or(0) > param_count.value_or(0))) {
+                    (param_unsized || (both_constant && arg_count > param_count))) {
                     // Any buffer argument can match an unsized buffer parameter.
                     // A larger buffer argument can match a smaller buffer parameter.
                     allow_mismatch = true;

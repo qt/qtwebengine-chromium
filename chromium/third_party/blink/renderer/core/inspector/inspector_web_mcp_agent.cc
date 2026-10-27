@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 #include "third_party/blink/renderer/core/inspector/inspector_web_mcp_agent.h"
 
+#include "base/functional/callback_helpers.h"
 #include "base/unguessable_token.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -39,14 +40,10 @@ ModelContext* InspectorWebMCPAgent::GetModelContext(LocalFrame* frame) {
     return nullptr;
   }
   auto* window = frame->DomWindow();
-  if (!window) {
+  if (!window || !window->document()) {
     return nullptr;
   }
-  auto* navigator = window->navigator();
-  if (!navigator) {
-    return nullptr;
-  }
-  return ModelContextSupplement::GetIfExists(*navigator);
+  return ModelContextSupplement::GetIfExists(*window->document());
 }
 
 namespace {
@@ -68,6 +65,23 @@ std::unique_ptr<protocol::Value> ParseJSON(const String& value) {
   }
   return protocol::StringValue::create(value);
 }
+
+std::unique_ptr<protocol::WebMCP::Annotation> BuildAnnotations(
+    const mojom::blink::ScriptToolAnnotationsPtr& annotations,
+    Element* element) {
+  auto builder = protocol::WebMCP::Annotation::create();
+  bool has_annotations = false;
+  if (annotations) {
+    builder.setReadOnly(annotations->read_only);
+    builder.setUntrustedContent(annotations->untrusted_content);
+    has_annotations = true;
+  }
+  if (element && element->FastHasAttribute(html_names::kToolautosubmitAttr)) {
+    builder.setAutosubmit(true);
+    has_annotations = true;
+  }
+  return has_annotations ? builder.build() : nullptr;
+}
 }  // namespace
 
 std::unique_ptr<protocol::WebMCP::Tool> InspectorWebMCPAgent::BuildProtocolTool(
@@ -85,6 +99,11 @@ std::unique_ptr<protocol::WebMCP::Tool> InspectorWebMCPAgent::BuildProtocolTool(
             protocol::DictionaryValue::cast(ParseJSON(input_schema))) {
       tool->setInputSchema(std::move(parsed));
     }
+  }
+
+  if (auto annotations = BuildAnnotations(tool_data.ScriptTool().annotations,
+                                          tool_data.BackingFormElement())) {
+    tool->setAnnotations(std::move(annotations));
   }
   if (auto* node = tool_data.BackingFormElement()) {
     tool->setBackendNodeId(IdentifiersFactory::IntIdForNode(node));
@@ -119,6 +138,34 @@ protocol::Response InspectorWebMCPAgent::disable() {
   return protocol::Response::Success();
 }
 
+protocol::Response InspectorWebMCPAgent::cancelInvocation(
+    const String& invocationId) {
+  auto invocation_token =
+      base::UnguessableToken::DeserializeFromString(invocationId.Ascii());
+  if (!invocation_token) {
+    return protocol::Response::InvalidParams("Invalid invocation id");
+  }
+
+  // Find the model context. Since we don't have the frame ID, we have to
+  // iterate over all frames.
+  bool cancelled = false;
+  for (LocalFrame* frame : *inspected_frames_) {
+    if (auto* model_context = GetModelContext(frame)) {
+      if (model_context->CancelTool(*invocation_token)) {
+        cancelled = true;
+        break;
+      }
+    }
+  }
+
+  if (!cancelled) {
+    return protocol::Response::InvalidParams(
+        "No pending execution for invocation id");
+  }
+
+  return protocol::Response::Success();
+}
+
 void InspectorWebMCPAgent::WebMCPToolAdded(Document* document,
                                            const ToolData& tool) {
   LocalFrame* frame = document->GetFrame();
@@ -136,8 +183,12 @@ void InspectorWebMCPAgent::WebMCPToolRemoved(Document* document,
   if (!enabled_.Get() || !frame) {
     return;
   }
-  auto tools = std::make_unique<protocol::Array<protocol::WebMCP::Tool>>();
-  tools->push_back(BuildProtocolTool(frame, tool));
+  auto tools =
+      std::make_unique<protocol::Array<protocol::WebMCP::RemovedTool>>();
+  tools->push_back(protocol::WebMCP::RemovedTool::create()
+                       .setName(tool.Name())
+                       .setFrameId(IdentifiersFactory::FrameId(frame))
+                       .build());
   GetFrontend()->toolsRemoved(std::move(tools));
 }
 
@@ -145,10 +196,13 @@ void InspectorWebMCPAgent::WebMCPToolExecuted(
     Document* document,
     const String& name,
     const String& input_arguments,
-    const base::UnguessableToken& execution_id) {
+    const base::UnguessableToken& invocation_id) {
+  if (!enabled_.Get()) {
+    return;
+  }
   if (LocalFrame* frame = document->GetFrame()) {
     GetFrontend()->toolInvoked(name, IdentifiersFactory::FrameId(frame),
-                               String(execution_id.ToString()),
+                               String(invocation_id.ToString()),
                                input_arguments);
   }
 }
@@ -156,17 +210,23 @@ void InspectorWebMCPAgent::WebMCPToolExecuted(
 void InspectorWebMCPAgent::WebMCPToolResponded(
     Document* document,
     const String& result,
-    const base::UnguessableToken& execution_id) {
-  GetFrontend()->toolResponded(String(execution_id.ToString()),
-                               protocol::WebMCP::InvocationStatusEnum::Success,
-                               ParseJSON(result));
+    const base::UnguessableToken& invocation_id) {
+  if (!enabled_.Get()) {
+    return;
+  }
+  GetFrontend()->toolResponded(
+      String(invocation_id.ToString()),
+      protocol::WebMCP::InvocationStatusEnum::Completed, ParseJSON(result));
 }
 
 void InspectorWebMCPAgent::WebMCPToolFailed(
     Document* document,
     const ScriptToolError& error,
-    const base::UnguessableToken& execution_id,
+    const base::UnguessableToken& invocation_id,
     std::optional<std::pair<ScriptValue, ScriptState*>> exception) {
+  if (!enabled_.Get()) {
+    return;
+  }
   const char* status = error.code == ScriptToolErrorCode::kToolCancelled
                            ? protocol::WebMCP::InvocationStatusEnum::Canceled
                            : protocol::WebMCP::InvocationStatusEnum::Error;
@@ -180,7 +240,8 @@ void InspectorWebMCPAgent::WebMCPToolFailed(
                                             v8_inspector::StringView(), false);
   }
 
-  GetFrontend()->toolResponded(String(execution_id.ToString()), status, nullptr,
-                               error.message, std::move(remote_object));
+  GetFrontend()->toolResponded(String(invocation_id.ToString()), status,
+                               nullptr, error.message,
+                               std::move(remote_object));
 }
 }  // namespace blink

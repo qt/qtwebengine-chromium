@@ -11,12 +11,12 @@
 #include "base/test/mock_callback.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
+#include "chrome/browser/new_tab_page/ntp_pref_names.h"
 #include "chrome/browser/preloading/scoped_prewarm_feature_list.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/webui/new_tab_page/ntp_pref_names.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -25,6 +25,7 @@
 #include "components/prefs/pref_service.h"
 #include "components/search/ntp_features.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/security_principal.h"
 #include "content/public/browser/spare_render_process_host_manager.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/child_process_id.h"
@@ -70,7 +71,7 @@ class WebContentsRemovedObserver : public TabStripModelObserver {
 };
 
 void ExpectIsWebUiNtp(content::WebContents* tab) {
-  EXPECT_EQ(GURL(chrome::kChromeUINewTabPageURL).spec(),
+  EXPECT_EQ(chrome::ChromeUINewTabPageURLAsGURL().spec(),
             EvalJs(tab, "window.location.href",
                    content::EXECUTE_SCRIPT_DEFAULT_OPTIONS, /*world_id=*/1));
 }
@@ -112,17 +113,18 @@ class WebUiNtpBrowserTest : public InProcessBrowserTest {
 
 // Verify that the WebUI NTP commits in a SiteInstance with the WebUI URL.
 IN_PROC_BROWSER_TEST_F(WebUiNtpBrowserTest, VerifySiteInstance) {
-  GURL ntp_url(chrome::kChromeUINewTabURL);
+  const GURL& ntp_url = chrome::ChromeUINewTabURLAsGURL();
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), ntp_url));
 
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_EQ(ntp_url, web_contents->GetLastCommittedURL());
 
-  GURL webui_ntp_url(chrome::kChromeUINewTabPageURL);
-  ASSERT_EQ(
-      webui_ntp_url,
-      web_contents->GetPrimaryMainFrame()->GetSiteInstance()->GetSiteURL());
+  const GURL& webui_ntp_url = chrome::ChromeUINewTabPageURLAsGURL();
+  ASSERT_EQ(webui_ntp_url, web_contents->GetPrimaryMainFrame()
+                               ->GetSiteInstance()
+                               ->GetSecurityPrincipal()
+                               .GetDeprecatedSiteURL());
 }
 
 // Verify that the WebUI NTP uses process-per-site.
@@ -153,7 +155,7 @@ IN_PROC_BROWSER_TEST_F(WebUiNtpBrowserTest, ProcessPerSite) {
 }
 
 // Verify that the WebUI NTP uses an available spare process and does not
-// discard it as in https://crbug.com/1094088.
+// discard it as in https://crbug.com/40699271.
 IN_PROC_BROWSER_TEST_F(WebUiNtpBrowserTest, SpareRenderer) {
   // Capture current spare renderer.
   std::vector<content::ChildProcessId> spare_ids_before_navigation =
@@ -215,7 +217,7 @@ IN_PROC_BROWSER_TEST_F(WebUiNtpBrowserTest, LoadsSuccessfullyWithoutTabModel) {
 
   // Load the NTP into the detached tab. The NTP should load without crashing.
   EXPECT_TRUE(content::NavigateToURL(extracted_contents.get(),
-                                     GURL(chrome::kChromeUINewTabURL)));
+                                     chrome::ChromeUINewTabURLAsGURL()));
 
   // Re-insert the tab into the tab strip.
   tab_strip_model->AppendWebContents(std::move(extracted_contents), true);
@@ -229,7 +231,7 @@ IN_PROC_BROWSER_TEST_F(WebUiNtpBrowserTest, LoadsSuccessfullyWithoutTabModel) {
 IN_PROC_BROWSER_TEST_F(WebUiNtpBrowserTest, HandlesTabModelChanges) {
   // Add a new NTP tab to the browser tab strip.
   TabStripModel* tab_strip_model = browser()->tab_strip_model();
-  chrome::AddTabAt(browser(), GURL(chrome::kChromeUINewTabURL), 1, true);
+  chrome::AddTabAt(browser(), chrome::ChromeUINewTabURLAsGURL(), 1, true);
   tabs::TabInterface* initial_tab = tab_strip_model->GetTabAtIndex(1);
   EXPECT_EQ(2, tab_strip_model->count());
 
@@ -271,7 +273,7 @@ IN_PROC_BROWSER_TEST_F(WebUiNtpEnterpriseShortcutsBrowserTest,
 
   // 2. Navigate to the New Tab Page.
   ASSERT_TRUE(ui_test_utils::NavigateToURL(
-      browser(), GURL(chrome::kChromeUINewTabPageURL)));
+      browser(), chrome::ChromeUINewTabPageURLAsGURL()));
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
 

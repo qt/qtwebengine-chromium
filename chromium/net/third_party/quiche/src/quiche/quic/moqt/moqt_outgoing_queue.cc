@@ -17,7 +17,6 @@
 #include "quiche/quic/moqt/moqt_object.h"
 #include "quiche/quic/moqt/moqt_priority.h"
 #include "quiche/quic/moqt/moqt_publisher.h"
-#include "quiche/quic/moqt/moqt_subscribe_windows.h"
 #include "quiche/quic/moqt/moqt_types.h"
 #include "quiche/common/platform/api/quiche_bug_tracker.h"
 #include "quiche/common/quiche_mem_slice.h"
@@ -75,11 +74,15 @@ void MoqtOutgoingQueue::AddRawObject(MoqtObjectStatus status,
                                      quiche::QuicheMemSlice payload) {
   Location sequence{current_group_id_, queue_.back().size()};
   bool fin = status == MoqtObjectStatus::kEndOfGroup;
-  queue_.back().push_back(CachedObject{
-      PublishedObjectMetadata{sequence, 0, "", status,
-                              default_publisher_priority(),
-                              clock_->ApproximateNow()},
-      std::make_shared<quiche::QuicheMemSlice>(std::move(payload)), fin});
+  PublishedObjectMetadata metadata{sequence,
+                                   0,
+                                   "",
+                                   status,
+                                   default_publisher_priority(),
+                                   payload.length(),
+                                   clock_->ApproximateNow()};
+  queue_.back().push_back(
+      std::make_unique<CachedObject>(metadata, std::move(payload), fin));
   for (MoqtObjectListener* listener : listeners_) {
     listener->OnNewObjectAvailable(sequence, /*subgroup=*/0,
                                    default_publisher_priority());
@@ -87,7 +90,8 @@ void MoqtOutgoingQueue::AddRawObject(MoqtObjectStatus status,
 }
 
 std::optional<PublishedObject> MoqtOutgoingQueue::GetCachedObject(
-    uint64_t group, std::optional<uint64_t> subgroup, uint64_t object) const {
+    uint64_t group, std::optional<uint64_t> subgroup, uint64_t object,
+    uint64_t offset) const {
   QUICHE_DCHECK(subgroup.has_value() && subgroup == 0u);
   if (group < first_group_in_queue()) {
     return std::nullopt;
@@ -95,24 +99,24 @@ std::optional<PublishedObject> MoqtOutgoingQueue::GetCachedObject(
   if (group > current_group_id_) {
     return std::nullopt;
   }
-  const std::vector<CachedObject>& group_objects =
+  const std::vector<std::unique_ptr<CachedObject>>& group_objects =
       queue_[group - first_group_in_queue()];
   if (object >= group_objects.size()) {
     return std::nullopt;
   }
   QUICHE_DCHECK(Location(group, object) ==
-                group_objects[object].metadata.location);
-  return CachedObjectToPublishedObject(group_objects[object]);
+                group_objects[object]->metadata().location);
+  return group_objects[object]->ToPublishedObject(offset);
 }
 
 std::vector<Location> MoqtOutgoingQueue::GetCachedObjectsInRange(
     Location start, Location end) const {
   std::vector<Location> sequences;
-  SubscribeWindow window(start, end);
   for (const Group& group : queue_) {
-    for (const CachedObject& object : group) {
-      if (window.InWindow(object.metadata.location)) {
-        sequences.push_back(object.metadata.location);
+    for (const std::unique_ptr<CachedObject>& object : group) {
+      if (object->metadata().location >= start &&
+          object->metadata().location <= end) {
+        sequences.push_back(object->metadata().location);
       }
     }
   }
@@ -158,45 +162,19 @@ std::unique_ptr<MoqtFetchTask> MoqtOutgoingQueue::StandaloneFetch(
 }
 
 std::unique_ptr<MoqtFetchTask> MoqtOutgoingQueue::RelativeFetch(
-    uint64_t group_diff, MoqtDeliveryOrder order) {
-  if (queue_.empty()) {
-    return std::make_unique<MoqtFailedFetch>(
-        absl::NotFoundError("No objects available on the track"));
-  }
-
-  uint64_t start_group = (group_diff > first_group_in_queue())
-                             ? 0
-                             : current_group_id_ - group_diff;
-  start_group = std::max(start_group, first_group_in_queue());
-  Location start = Location(start_group, 0);
-  Location end = Location(current_group_id_, queue_.back().size() - 1);
-
-  std::vector<Location> objects = GetCachedObjectsInRange(start, end);
-  if (order == MoqtDeliveryOrder::kDescending) {
-    ObjectsInDescendingOrder(objects);
-  }
-  return std::make_unique<FetchTask>(this, std::move(objects));
+    uint64_t /*group_diff*/, MoqtDeliveryOrder /*order*/) {
+  QUICHE_BUG(MoqtOutgoingQueue_RelativeFetch)
+      << "Calling RelativeFetch() on an established subscription";
+  return std::make_unique<MoqtFailedFetch>(absl::InternalError(
+      "RelativeFetch called on an established subscription"));
 }
 
 std::unique_ptr<MoqtFetchTask> MoqtOutgoingQueue::AbsoluteFetch(
-    uint64_t group, MoqtDeliveryOrder order) {
-  if (queue_.empty()) {
-    return std::make_unique<MoqtFailedFetch>(
-        absl::NotFoundError("No objects available on the track"));
-  }
-
-  Location start(std::max(group, first_group_in_queue()), 0);
-  Location end = Location(current_group_id_, queue_.back().size() - 1);
-  if (start > end) {
-    return std::make_unique<MoqtFailedFetch>(
-        absl::NotFoundError("All of the requested objects are in the future"));
-  }
-
-  std::vector<Location> objects = GetCachedObjectsInRange(start, end);
-  if (order == MoqtDeliveryOrder::kDescending) {
-    ObjectsInDescendingOrder(objects);
-  }
-  return std::make_unique<FetchTask>(this, std::move(objects));
+    uint64_t /*group*/, MoqtDeliveryOrder /*order*/) {
+  QUICHE_BUG(MoqtOutgoingQueue_AbsoluteFetch)
+      << "Calling AbsoluteFetch() on an established subscription";
+  return std::make_unique<MoqtFailedFetch>(absl::InternalError(
+      "AbsoluteFetch called on an established subscription"));
 }
 
 MoqtFetchTask::GetNextObjectResult MoqtOutgoingQueue::FetchTask::GetNextObject(

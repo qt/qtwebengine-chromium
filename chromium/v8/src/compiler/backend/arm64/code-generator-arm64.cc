@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/builtins/builtins-inl.h"
 #include "src/codegen/arm64/assembler-arm64-inl.h"
 #include "src/codegen/arm64/constants-arm64.h"
 #include "src/codegen/arm64/macro-assembler-arm64-inl.h"
@@ -16,6 +17,10 @@
 #include "src/compiler/osr.h"
 #include "src/execution/frame-constants.h"
 #include "src/heap/mutable-page.h"
+#include "src/objects/code-inl.h"
+#include "src/objects/js-function-inl.h"
+#include "src/objects/shared-function-info-inl.h"
+#include "src/sandbox/js-dispatch-table-inl.h"
 
 #if V8_ENABLE_WEBASSEMBLY
 #include "src/wasm/wasm-linkage.h"
@@ -642,16 +647,16 @@ void EmitFpOrNeonUnop(MacroAssembler* masm, Fn fn, Instruction* instr,
       __ Casal##suffix(i.Output##reg(), i.Input##reg(3),                   \
                        MemOperand(i.TempRegister(0)));                     \
     } else {                                                               \
-      Label compareExchange;                                               \
+      Label compare_exchange;                                              \
       Label exit;                                                          \
-      __ Bind(&compareExchange);                                           \
+      __ Bind(&compare_exchange);                                          \
       RecordTrapInfoIfNeeded(zone(), this, opcode, instr, __ pc_offset()); \
       __ ldaxr##suffix(i.Output##reg(), i.TempRegister(0));                \
       __ Cmp(i.Output##reg(), Operand(i.Input##reg(2), ext));              \
       __ B(ne, &exit);                                                     \
       __ stlxr##suffix(i.TempRegister32(1), i.Input##reg(3),               \
                        i.TempRegister(0));                                 \
-      __ Cbnz(i.TempRegister32(1), &compareExchange);                      \
+      __ Cbnz(i.TempRegister32(1), &compare_exchange);                     \
       __ Bind(&exit);                                                      \
     }                                                                      \
   } while (0)
@@ -1055,8 +1060,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
           // Check the function's context matches the context argument.
           UseScratchRegisterScope scope(masm());
           Register temp = scope.AcquireX();
-          __ LoadTaggedField(temp,
-                             FieldMemOperand(func, JSFunction::kContextOffset));
+          __ LoadTaggedField(
+              temp, FieldMemOperand(func, offsetof(JSFunction, context_)));
           __ cmp(cp, temp);
           __ Assert(eq, AbortReason::kWrongFunctionContext);
         }
@@ -1579,6 +1584,22 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
                i.InputOperand2_32(1));
       }
       break;
+    case kArm64Add128: {
+      Register low_out = i.OutputRegister(0);
+      Register high_out = i.OutputRegister(1);
+      Operand b_low = i.InputOperand2_64(1);
+      __ Adds(low_out, i.InputRegister(0), b_low);
+      __ Adc(high_out, i.InputRegister(2), i.InputRegister(3));
+      break;
+    }
+    case kArm64Sub128: {
+      Register low_out = i.OutputRegister(0);
+      Register high_out = i.OutputRegister(1);
+      Operand b_low = i.InputOperand2_64(1);
+      __ Subs(low_out, i.InputRegister(0), b_low);
+      __ Sbc(high_out, i.InputRegister(2), i.InputRegister(3));
+      break;
+    }
     case kArm64And:
       if (FlagsModeField::decode(opcode) != kFlags_none) {
         // The ands instruction only sets N and Z, so only the following
@@ -1661,14 +1682,16 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kArm64Sadalp: {
       DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
-      VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat dst_f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat src_f = VectorFormatHalfWidthDoubleLanes(dst_f);
       __ Sadalp(i.OutputSimd128Register().Format(dst_f),
                 i.InputSimd128Register(1).Format(src_f));
       break;
     }
     case kArm64Saddlp: {
-      VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat dst_f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat src_f = VectorFormatHalfWidthDoubleLanes(dst_f);
       __ Saddlp(i.OutputSimd128Register().Format(dst_f),
                 i.InputSimd128Register(0).Format(src_f));
@@ -1676,29 +1699,33 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kArm64Uadalp: {
       DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
-      VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat dst_f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat src_f = VectorFormatHalfWidthDoubleLanes(dst_f);
       __ Uadalp(i.OutputSimd128Register().Format(dst_f),
                 i.InputSimd128Register(1).Format(src_f));
       break;
     }
     case kArm64Uaddlp: {
-      VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat dst_f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat src_f = VectorFormatHalfWidthDoubleLanes(dst_f);
       __ Uaddlp(i.OutputSimd128Register().Format(dst_f),
                 i.InputSimd128Register(0).Format(src_f));
       break;
     }
     case kArm64ISplat: {
-      VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
-      Register src = LaneSizeField::decode(opcode) == 64 ? i.InputRegister64(0)
-                                                         : i.InputRegister32(0);
+      VectorFormat f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
+      Register src = LaneSizeBits(LaneSizeField::decode(opcode)) == 64
+                         ? i.InputRegister64(0)
+                         : i.InputRegister32(0);
       __ Dup(i.OutputSimd128Register().Format(f), src);
       break;
     }
     case kArm64FSplat: {
       VectorFormat src_f =
-          ScalarFormatFromLaneSize(LaneSizeField::decode(opcode));
+          ScalarFormatFromLaneSize(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat dst_f = VectorFormatFillQ(src_f);
       if (src_f == kFormatH) {
         __ Fcvt(i.OutputFloat32Register(0).H(), i.InputFloat32Register(0));
@@ -1711,7 +1738,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Smlal: {
-      VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat dst_f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat src_f = VectorFormatHalfWidth(dst_f);
       DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
       __ Smlal(i.OutputSimd128Register().Format(dst_f),
@@ -1720,7 +1748,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Smlal2: {
-      VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat dst_f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat src_f = VectorFormatHalfWidthDoubleLanes(dst_f);
       DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
       __ Smlal2(i.OutputSimd128Register().Format(dst_f),
@@ -1729,7 +1758,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Umlal: {
-      VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat dst_f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat src_f = VectorFormatHalfWidth(dst_f);
       DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
       __ Umlal(i.OutputSimd128Register().Format(dst_f),
@@ -1738,7 +1768,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Umlal2: {
-      VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat dst_f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat src_f = VectorFormatHalfWidthDoubleLanes(dst_f);
       DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
       __ Umlal2(i.OutputSimd128Register().Format(dst_f),
@@ -1753,7 +1784,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
                  i.InputRegister32(1));
       } else {
         DCHECK(instr->InputAt(0)->IsSimd128Register());
-        VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+        VectorFormat dst_f =
+            VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
         VectorFormat src_f = VectorFormatHalfWidth(dst_f);
         __ Smull(i.OutputSimd128Register().Format(dst_f),
                  i.InputSimd128Register(0).Format(src_f),
@@ -1762,7 +1794,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Smull2: {
-      VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat dst_f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat src_f = VectorFormatHalfWidthDoubleLanes(dst_f);
       __ Smull2(i.OutputSimd128Register().Format(dst_f),
                 i.InputSimd128Register(0).Format(src_f),
@@ -1775,7 +1808,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
                  i.InputRegister32(1));
       } else {
         DCHECK(instr->InputAt(0)->IsSimd128Register());
-        VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+        VectorFormat dst_f =
+            VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
         VectorFormat src_f = VectorFormatHalfWidth(dst_f);
         __ Umull(i.OutputSimd128Register().Format(dst_f),
                  i.InputSimd128Register(0).Format(src_f),
@@ -1784,7 +1818,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Umull2: {
-      VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat dst_f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat src_f = VectorFormatHalfWidthDoubleLanes(dst_f);
       __ Umull2(i.OutputSimd128Register().Format(dst_f),
                 i.InputSimd128Register(0).Format(src_f),
@@ -1968,6 +2003,10 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kArm64Ubfx32:
       __ Ubfx(i.OutputRegister32(), i.InputRegister32(0), i.InputInt5(1),
               i.InputInt32(2));
+      break;
+    case kArm64Ubfiz:
+      __ Ubfiz(i.OutputRegister(), i.InputRegister(0), i.InputInt6(1),
+               i.InputInt6(2));
       break;
     case kArm64Ubfiz32:
       __ Ubfiz(i.OutputRegister32(), i.InputRegister32(0), i.InputInt5(1),
@@ -2159,7 +2198,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Cnt: {
-      VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       __ Cnt(i.OutputSimd128Register().Format(f),
              i.InputSimd128Register(0).Format(f));
       break;
@@ -2389,15 +2429,27 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         __ Cset(i.OutputRegister(1), ne);
       }
       break;
-    case kArm64Float64ToUint64:
+    case kArm64Float64ToUint64: {
       __ Fcvtzu(i.OutputRegister64(), i.InputDoubleRegister(0));
       if (i.OutputCount() > 1) {
         // See kArm64Float32ToInt64 for a detailed description.
         __ Fcmp(i.InputDoubleRegister(0), -1.0);
         __ Ccmp(i.OutputRegister(0), -1, ZFlag, gt);
         __ Cset(i.OutputRegister(1), ne);
+        break;
+      }
+      bool set_overflow_to_min_u64 = MiscField::decode(instr->opcode());
+      if (set_overflow_to_min_u64) {
+        // Avoid UINT64_MAX as an overflow indicator and use 0 instead,
+        // because 0 allows easier out-of-bounds detection.
+        // Cmn(x0, 1) will set the carry flag if x0 is UINT64_MAX.
+        // Adc(x0, x0, 0) will then set x0 to 0 if the carry flag is set,
+        // otherwise it will leave x0 unchanged.
+        __ Cmn(i.OutputRegister64(), 1);
+        __ Adc(i.OutputRegister64(), i.OutputRegister64(), Operand(0));
       }
       break;
+    }
     case kArm64Int32ToFloat32:
       __ Scvtf(i.OutputFloat32Register(), i.InputRegister32(0));
       break;
@@ -2513,6 +2565,53 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       RecordTrapInfoIfNeeded(zone(), this, opcode, instr, __ pc_offset());
       __ DecompressProtected(i.OutputRegister(), i.MemoryOperand());
       break;
+#if V8_ENABLE_SANDBOX
+    case kArchLoadTrustedPointer: {
+      CHECK(instr->HasOutput());
+      Register base = i.InputRegister(0);
+      int32_t offset = i.InputInt32(1);
+      Register table = i.InputRegister(2);
+      IndirectPointerTag first =
+          static_cast<IndirectPointerTag>(i.InputInt32(3));
+      IndirectPointerTag last =
+          static_cast<IndirectPointerTag>(i.InputInt32(4));
+      IndirectPointerTagRange tag_range(first, last);
+
+      Register destination = i.OutputRegister();
+      Register handle = i.TempRegister(0);
+
+      RecordTrapInfoIfNeeded(zone(), this, opcode, instr, __ pc_offset());
+      __ Ldr(handle.W(), MemOperand(base, offset));
+      __ Lsr(handle, handle, kTrustedPointerHandleShift);
+      __ Ldr(destination,
+             MemOperand(table, handle, LSL, kTrustedPointerTableEntrySizeLog2));
+
+      if (IsFastIndirectPointerTagRange(tag_range)) {
+        uint64_t mask =
+            ComputeUntaggingMaskForFastIndirectPointerTag(tag_range);
+        __ And(destination, destination, mask);
+      } else {
+        Register tag = handle;  // Reuse handle for tag
+        __ Lsr(tag, destination, kTrustedPointerTableTagShift);
+
+        UseScratchRegisterScope scope(masm());
+        Register scratch = scope.AcquireX();
+        __ Mov(scratch, 0);
+        if (tag_range.Size() == 1) {
+          __ Cmp(tag.W(), static_cast<int32_t>(tag_range.first));
+          __ CmovX(destination, scratch, ne);
+        } else {
+          __ Sub(tag.W(), tag.W(), static_cast<int32_t>(tag_range.first));
+          __ Cmp(tag.W(),
+                 static_cast<int32_t>(tag_range.last - tag_range.first));
+          __ CmovX(destination, scratch, hi);
+        }
+
+        __ And(destination, destination, kTrustedPointerTablePayloadMask);
+      }
+      break;
+    }
+#endif
     case kArm64LdarDecompressTaggedSigned:
       __ AtomicDecompressTaggedSigned(i.OutputRegister(), i.InputRegister(0),
                                       i.InputRegister(1), i.TempRegister(0));
@@ -2694,28 +2793,61 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       ASSEMBLE_ATOMIC_COMPARE_EXCHANGE_INTEGER(, UXTX, Register);
       break;
     case kAtomicCompareExchangeWithWriteBarrier: {
-      if constexpr (COMPRESS_POINTERS_BOOL) {
-        ASSEMBLE_ATOMIC_COMPARE_EXCHANGE_INTEGER(, UXTW, Register32);
-        // Contrary to x64, the instruction sequence we emit on arm64 always
-        // writes an uncompressed value into the output register, so we can
-        // unconditionally decompress it.
-        __ Add(i.OutputRegister(), i.OutputRegister(),
-               kPtrComprCageBaseRegister);
+      // Perform the atomic compare exchange.
+      // This is mostly ASSEMBLE_ATOMIC_COMPARE_EXCHANGE_INTEGER, either on 32
+      // or 64 bit depending on whether pointer compression is enabled.
+
+      __ Add(i.TempRegister(0), i.InputRegister(0), i.InputRegister(1));
+      Register output_register =
+          COMPRESS_POINTERS_BOOL ? i.OutputRegister32() : i.OutputRegister();
+      Register expected =
+          COMPRESS_POINTERS_BOOL ? i.InputRegister32(2) : i.InputRegister(2);
+      Register new_value =
+          COMPRESS_POINTERS_BOOL ? i.InputRegister32(3) : i.InputRegister(3);
+      Extend extend = COMPRESS_POINTERS_BOOL ? UXTW : UXTX;
+
+      Label exit;
+      if (CpuFeatures::IsSupported(LSE)) {
+        DCHECK_NE(i.OutputRegister(), i.InputRegister(2));
+        __ Mov(output_register, expected);
+        CpuFeatureScope scope(masm(), LSE);
+        RecordTrapInfoIfNeeded(zone(), this, opcode, instr, __ pc_offset());
+        __ Casal(output_register, new_value, MemOperand(i.TempRegister(0)));
+        // If the loaded value isn't the expected value, nothing was written,
+        // so the write barrier can be skipped.
+        __ Cmp(output_register, Operand(expected, extend));
+        __ B(ne, &exit);
       } else {
-        ASSEMBLE_ATOMIC_COMPARE_EXCHANGE_INTEGER(, UXTX, Register);
+        Label compare_exchange;
+        __ Bind(&compare_exchange);
+        RecordTrapInfoIfNeeded(zone(), this, opcode, instr, __ pc_offset());
+        __ ldaxr(output_register, i.TempRegister(0));
+        __ Cmp(output_register, Operand(expected, extend));
+        __ B(ne, &exit);
+        __ stlxr(i.TempRegister32(1), new_value, i.TempRegister(0));
+        __ Cbnz(i.TempRegister32(1), &compare_exchange);
       }
-      if (v8_flags.disable_write_barriers) break;
-      // Emit the write barrier.
-      Register object = i.InputRegister(0);
-      Register offset = i.InputRegister(1);
-      Register new_value = i.InputRegister(3);
-      auto ool = zone()->New<OutOfLineRecordWrite>(
-          this, object, offset, new_value, RecordWriteMode::kValueIsAny,
-          DetermineStubCallMode(), &unwinding_info_writer_);
-      __ JumpIfSmi(new_value, ool->exit());
-      __ CheckPageFlag(object, MemoryChunk::kPointersFromHereAreInterestingMask,
-                       ne, ool->entry());
-      __ Bind(ool->exit());
+      if (!v8_flags.disable_write_barriers) {
+        Register object = i.InputRegister(0);
+        Register offset = i.InputRegister(1);
+        Register new_value = i.InputRegister(3);
+        auto ool = zone()->New<OutOfLineRecordWrite>(
+            this, object, offset, new_value, RecordWriteMode::kValueIsAny,
+            DetermineStubCallMode(), &unwinding_info_writer_);
+        __ JumpIfSmi(new_value, ool->exit());
+        __ CheckPageFlag(object,
+                         MemoryChunk::kPointersFromHereAreInterestingMask, ne,
+                         ool->entry());
+        __ Bind(ool->exit());
+      }
+      __ Bind(&exit);
+
+      if constexpr (COMPRESS_POINTERS_BOOL) {
+        // Contrary to x64, the instruction sequence we emit on arm64 always
+        // writes a compressed value into the output register, so we can
+        // unconditionally decompress it.
+        __ DecompressTagged(i.OutputRegister(), i.OutputRegister());
+      }
       break;
     }
     case kAtomicSubInt8:
@@ -2798,12 +2930,13 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     __ Instr(i.OutputSimd128Register().V##FORMAT(),  \
              i.InputSimd128Register(0).V##FORMAT()); \
     break;
-#define SIMD_UNOP_LANE_SIZE_CASE(Op, Instr)                            \
-  case Op: {                                                           \
-    VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode)); \
-    __ Instr(i.OutputSimd128Register().Format(f),                      \
-             i.InputSimd128Register(0).Format(f));                     \
-    break;                                                             \
+#define SIMD_UNOP_LANE_SIZE_CASE(Op, Instr)                             \
+  case Op: {                                                            \
+    VectorFormat f =                                                    \
+        VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode))); \
+    __ Instr(i.OutputSimd128Register().Format(f),                       \
+             i.InputSimd128Register(0).Format(f));                      \
+    break;                                                              \
   }
 #define SIMD_BINOP_CASE(Op, Instr, FORMAT)           \
   case Op:                                           \
@@ -2811,65 +2944,70 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
              i.InputSimd128Register(0).V##FORMAT(),  \
              i.InputSimd128Register(1).V##FORMAT()); \
     break;
-#define SIMD_BINOP_LANE_SIZE_CASE(Op, Instr)                           \
-  case Op: {                                                           \
-    VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode)); \
-    __ Instr(i.OutputSimd128Register().Format(f),                      \
-             i.InputSimd128Register(0).Format(f),                      \
-             i.InputSimd128Register(1).Format(f));                     \
-    break;                                                             \
+#define SIMD_BINOP_LANE_SIZE_CASE(Op, Instr)                            \
+  case Op: {                                                            \
+    VectorFormat f =                                                    \
+        VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode))); \
+    __ Instr(i.OutputSimd128Register().Format(f),                       \
+             i.InputSimd128Register(0).Format(f),                       \
+             i.InputSimd128Register(1).Format(f));                      \
+    break;                                                              \
   }
-#define SIMD_LOW_BINOP_LANE_SIZE_CASE(Op, Instr)       \
-  case Op: {                                           \
-    int lane_size = LaneSizeField::decode(opcode);     \
-    VectorFormat f = VectorFormatFillHalfQ(lane_size); \
-    __ Instr(i.OutputSimd128Register().Format(f),      \
-             i.InputSimd128Register(0).Format(f),      \
-             i.InputSimd128Register(1).Format(f));     \
-    break;                                             \
+#define SIMD_LOW_BINOP_LANE_SIZE_CASE(Op, Instr)                 \
+  case Op: {                                                     \
+    int lane_size = LaneSizeBits(LaneSizeField::decode(opcode)); \
+    VectorFormat f = VectorFormatFillHalfQ(lane_size);           \
+    __ Instr(i.OutputSimd128Register().Format(f),                \
+             i.InputSimd128Register(0).Format(f),                \
+             i.InputSimd128Register(1).Format(f));               \
+    break;                                                       \
   }
-#define SIMD_FCM_L_CASE(Op, ImmOp, RegOp)                              \
-  case Op: {                                                           \
-    VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode)); \
-    if (instr->InputCount() == 1) {                                    \
-      __ Fcm##ImmOp(i.OutputSimd128Register().Format(f),               \
-                    i.InputSimd128Register(0).Format(f), +0.0);        \
-    } else {                                                           \
-      __ Fcm##RegOp(i.OutputSimd128Register().Format(f),               \
-                    i.InputSimd128Register(1).Format(f),               \
-                    i.InputSimd128Register(0).Format(f));              \
-    }                                                                  \
-    break;                                                             \
+#define SIMD_FCM_L_CASE(Op, ImmOp, RegOp)                               \
+  case Op: {                                                            \
+    VectorFormat f =                                                    \
+        VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode))); \
+    if (instr->InputCount() == 1) {                                     \
+      __ Fcm##ImmOp(i.OutputSimd128Register().Format(f),                \
+                    i.InputSimd128Register(0).Format(f), +0.0);         \
+    } else {                                                            \
+      __ Fcm##RegOp(i.OutputSimd128Register().Format(f),                \
+                    i.InputSimd128Register(1).Format(f),                \
+                    i.InputSimd128Register(0).Format(f));               \
+    }                                                                   \
+    break;                                                              \
   }
-#define SIMD_FCM_G_CASE(Op, ImmOp)                                     \
-  case Op: {                                                           \
-    VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode)); \
-    /* Currently Gt/Ge instructions are only used with zero */         \
-    DCHECK_EQ(instr->InputCount(), 1);                                 \
-    __ Fcm##ImmOp(i.OutputSimd128Register().Format(f),                 \
-                  i.InputSimd128Register(0).Format(f), +0.0);          \
-    break;                                                             \
+#define SIMD_FCM_G_CASE(Op, ImmOp)                                      \
+  case Op: {                                                            \
+    VectorFormat f =                                                    \
+        VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode))); \
+    /* Currently Gt/Ge instructions are only used with zero */          \
+    DCHECK_EQ(instr->InputCount(), 1);                                  \
+    __ Fcm##ImmOp(i.OutputSimd128Register().Format(f),                  \
+                  i.InputSimd128Register(0).Format(f), +0.0);           \
+    break;                                                              \
   }
-#define SIMD_CM_L_CASE(Op, ImmOp)                                      \
-  case Op: {                                                           \
-    VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode)); \
-    DCHECK_EQ(instr->InputCount(), 1);                                 \
-    __ Cm##ImmOp(i.OutputSimd128Register().Format(f),                  \
-                 i.InputSimd128Register(0).Format(f), 0);              \
-    break;                                                             \
+#define SIMD_CM_L_CASE(Op, ImmOp)                                       \
+  case Op: {                                                            \
+    VectorFormat f =                                                    \
+        VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode))); \
+    DCHECK_EQ(instr->InputCount(), 1);                                  \
+    __ Cm##ImmOp(i.OutputSimd128Register().Format(f),                   \
+                 i.InputSimd128Register(0).Format(f), 0);               \
+    break;                                                              \
   }
-#define SIMD_CM_G_CASE(Op, CmOp)                                       \
-  case Op: {                                                           \
-    VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode)); \
-    if (instr->InputCount() == 1) {                                    \
-      __ Cm##CmOp(i.OutputSimd128Register().Format(f),                 \
-                  i.InputSimd128Register(0).Format(f), 0);             \
-    } else {                                                           \
-      __ Cm##CmOp(i.OutputSimd128Register().Format(f),                 \
-                  i.InputSimd128Register(0).Format(f),                 \
-                  i.InputSimd128Register(1).Format(f));                \
-    }                                                                  \
-    break;                                                             \
+#define SIMD_CM_G_CASE(Op, CmOp)                                        \
+  case Op: {                                                            \
+    VectorFormat f =                                                    \
+        VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode))); \
+    if (instr->InputCount() == 1) {                                     \
+      __ Cm##CmOp(i.OutputSimd128Register().Format(f),                  \
+                  i.InputSimd128Register(0).Format(f), 0);              \
+    } else {                                                            \
+      __ Cm##CmOp(i.OutputSimd128Register().Format(f),                  \
+                  i.InputSimd128Register(0).Format(f),                  \
+                  i.InputSimd128Register(1).Format(f));                 \
+    }                                                                   \
+    break;                                                              \
   }
 #define SIMD_DESTRUCTIVE_BINOP_CASE(Op, Instr, FORMAT)     \
   case Op: {                                               \
@@ -2879,14 +3017,15 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
              i.InputSimd128Register(2).V##FORMAT());       \
     break;                                                 \
   }
-#define SIMD_DESTRUCTIVE_BINOP_LANE_SIZE_CASE(Op, Instr)               \
-  case Op: {                                                           \
-    VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode)); \
-    VRegister dst = i.OutputSimd128Register().Format(f);               \
-    DCHECK_EQ(dst, i.InputSimd128Register(0).Format(f));               \
-    __ Instr(dst, i.InputSimd128Register(1).Format(f),                 \
-             i.InputSimd128Register(2).Format(f));                     \
-    break;                                                             \
+#define SIMD_DESTRUCTIVE_BINOP_LANE_SIZE_CASE(Op, Instr)                \
+  case Op: {                                                            \
+    VectorFormat f =                                                    \
+        VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode))); \
+    VRegister dst = i.OutputSimd128Register().Format(f);                \
+    DCHECK_EQ(dst, i.InputSimd128Register(0).Format(f));                \
+    __ Instr(dst, i.InputSimd128Register(1).Format(f),                  \
+             i.InputSimd128Register(2).Format(f));                      \
+    break;                                                              \
   }
       SIMD_BINOP_LANE_SIZE_CASE(kArm64FMin, Fmin);
       SIMD_BINOP_LANE_SIZE_CASE(kArm64FMax, Fmax);
@@ -2907,28 +3046,32 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       SIMD_DESTRUCTIVE_BINOP_LANE_SIZE_CASE(kArm64Mla, Mla);
       SIMD_DESTRUCTIVE_BINOP_LANE_SIZE_CASE(kArm64Mls, Mls);
     case kArm64Sxtl: {
-      VectorFormat wide = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat wide =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat narrow = VectorFormatHalfWidth(wide);
       __ Sxtl(i.OutputSimd128Register().Format(wide),
               i.InputSimd128Register(0).Format(narrow));
       break;
     }
     case kArm64Sxtl2: {
-      VectorFormat wide = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat wide =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat narrow = VectorFormatHalfWidthDoubleLanes(wide);
       __ Sxtl2(i.OutputSimd128Register().Format(wide),
                i.InputSimd128Register(0).Format(narrow));
       break;
     }
     case kArm64Uxtl: {
-      VectorFormat wide = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat wide =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat narrow = VectorFormatHalfWidth(wide);
       __ Uxtl(i.OutputSimd128Register().Format(wide),
               i.InputSimd128Register(0).Format(narrow));
       break;
     }
     case kArm64Uxtl2: {
-      VectorFormat wide = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat wide =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat narrow = VectorFormatHalfWidthDoubleLanes(wide);
       __ Uxtl2(i.OutputSimd128Register().Format(wide),
                i.InputSimd128Register(0).Format(narrow));
@@ -2996,7 +3139,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kArm64FExtractLane: {
       VectorFormat dst_f =
-          ScalarFormatFromLaneSize(LaneSizeField::decode(opcode));
+          ScalarFormatFromLaneSize(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat src_f = VectorFormatFillQ(dst_f);
       __ Mov(i.OutputSimd128Register().Format(dst_f),
              i.InputSimd128Register(0).Format(src_f), i.InputInt8(1));
@@ -3006,7 +3149,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64FReplaceLane: {
-      VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VRegister dst = i.OutputSimd128Register().Format(f),
                 src1 = i.InputSimd128Register(0).Format(f);
       if (dst != src1) {
@@ -3024,7 +3168,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
       SIMD_FCM_L_CASE(kArm64FEq, eq, eq);
     case kArm64FNe: {
-      VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VRegister dst = i.OutputSimd128Register().Format(f);
       if (instr->InputCount() == 1) {
         __ Fcmeq(dst, i.InputSimd128Register(0).Format(f), +0.0);
@@ -3040,7 +3185,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       SIMD_FCM_G_CASE(kArm64FGt, gt);
       SIMD_FCM_G_CASE(kArm64FGe, ge);
     case kArm64Ffma: {
-      VectorFormat format = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat format =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VRegister dst = i.OutputSimd128Register().Format(format);
       DCHECK_EQ(dst, i.InputSimd128Register(2).Format(format));
       __ Fmla(dst, i.InputSimd128Register(0).Format(format),
@@ -3048,7 +3194,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Ffms: {
-      VectorFormat format = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat format =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VRegister dst = i.OutputSimd128Register().Format(format);
       DCHECK_EQ(dst, i.InputSimd128Register(2).Format(format));
       __ Fmls(dst, i.InputSimd128Register(0).Format(format),
@@ -3056,7 +3203,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Pmin: {
-      VectorFormat format = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat format =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VRegister dst = i.OutputSimd128Register().Format(format);
       VRegister lhs = i.InputSimd128Register(0).Format(format);
       VRegister rhs = i.InputSimd128Register(1).Format(format);
@@ -3068,7 +3216,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Pmax: {
-      VectorFormat format = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat format =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       // 64:
       VRegister dst = i.OutputSimd128Register().Format(format);
       VRegister lhs = i.InputSimd128Register(0).Format(format);
@@ -3083,7 +3232,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       SIMD_UNOP_CASE(kArm64F32x4UConvertI32x4, Ucvtf, 4S);
     case kArm64FMulElement: {
       VectorFormat s_f =
-          ScalarFormatFromLaneSize(LaneSizeField::decode(opcode));
+          ScalarFormatFromLaneSize(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat v_f = VectorFormatFillQ(s_f);
       __ Fmul(i.OutputSimd128Register().Format(v_f),
               i.InputSimd128Register(0).Format(v_f),
@@ -3091,14 +3240,16 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64IExtractLane: {
-      VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       Register dst =
           f == kFormat2D ? i.OutputRegister64() : i.OutputRegister32();
       __ Mov(dst, i.InputSimd128Register(0).Format(f), i.InputInt8(1));
       break;
     }
     case kArm64IReplaceLane: {
-      VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VRegister dst = i.OutputSimd128Register().Format(f),
                 src1 = i.InputSimd128Register(0).Format(f);
       Register src2 =
@@ -3109,11 +3260,20 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ Mov(dst, i.InputInt8(1), src2);
       break;
     }
+    case kArm64IShll: {
+      int lane_size = LaneSizeBits(LaneSizeField::decode(opcode));
+      VectorFormat dst_f = VectorFormatFillQ(lane_size);
+      VectorFormat src_f = VectorFormatHalfWidth(dst_f);
+      int shift_value = lane_size / 2;
+      __ Shll(i.OutputSimd128Register().Format(dst_f),
+              i.InputSimd128Register(0).Format(src_f), shift_value);
+      break;
+    }
     case kArm64IShl: {
       // If shift value is an immediate, we can call Shl, taking the shift
       // value modulo 2^width. Otherwise, emit code to perform the modulus
       // operation, and call Sshl.
-      const int lane_size = LaneSizeField::decode(opcode);
+      const int lane_size = LaneSizeBits(LaneSizeField::decode(opcode));
       VectorFormat format = VectorFormatFillQ(lane_size);
       if (instr->InputAt(1)->IsImmediate()) {
         __ Shl(i.OutputSimd128Register().Format(format),
@@ -3137,7 +3297,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       // value modulo 2^width. Otherwise, emit code to perform the modulus
       // operation, and call Sshl, passing in the negative shift value (treated
       // as right shift).
-      const int lane_size = LaneSizeField::decode(opcode);
+      const int lane_size = LaneSizeBits(LaneSizeField::decode(opcode));
       VectorFormat format = VectorFormatFillQ(lane_size);
       if (instr->InputAt(1)->IsImmediate()) {
         __ Sshr(i.OutputSimd128Register().Format(format),
@@ -3162,7 +3322,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       // value modulo 2^width. Otherwise, emit code to perform the modulus
       // operation, and call Ushl, passing in the negative shift value (treated
       // as right shift).
-      const int lane_size = LaneSizeField::decode(opcode);
+      const int lane_size = LaneSizeBits(LaneSizeField::decode(opcode));
       VectorFormat format = VectorFormatFillQ(lane_size);
       if (instr->InputAt(1)->IsImmediate()) {
         __ Ushr(i.OutputSimd128Register().Format(format),
@@ -3184,68 +3344,10 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
       SIMD_BINOP_LANE_SIZE_CASE(kArm64IAdd, Add);
       SIMD_BINOP_LANE_SIZE_CASE(kArm64ISub, Sub);
-    case kArm64I64x2Mul: {
-      UseScratchRegisterScope scope(masm());
-      VRegister dst = i.OutputSimd128Register();
-      VRegister src1 = i.InputSimd128Register(0);
-      VRegister src2 = i.InputSimd128Register(1);
-      VRegister tmp1 = scope.AcquireSameSizeAs(dst);
-      VRegister tmp2 = scope.AcquireSameSizeAs(dst);
-      VRegister tmp3 = i.ToSimd128Register(instr->TempAt(0));
-
-      // This 2x64-bit multiplication is performed with several 32-bit
-      // multiplications.
-
-      // 64-bit numbers x and y, can be represented as:
-      //   x = a + 2^32(b)
-      //   y = c + 2^32(d)
-
-      // A 64-bit multiplication is:
-      //   x * y = ac + 2^32(ad + bc) + 2^64(bd)
-      // note: `2^64(bd)` can be ignored, the value is too large to fit in
-      // 64-bits.
-
-      // This sequence implements a 2x64bit multiply, where the registers
-      // `src1` and `src2` are split up into 32-bit components:
-      //   src1 = |d|c|b|a|
-      //   src2 = |h|g|f|e|
-      //
-      //   src1 * src2 = |cg + 2^32(ch + dg)|ae + 2^32(af + be)|
-
-      // Reverse the 32-bit elements in the 64-bit words.
-      //   tmp2 = |g|h|e|f|
-      __ Rev64(tmp2.V4S(), src2.V4S());
-
-      // Calculate the high half components.
-      //   tmp2 = |dg|ch|be|af|
-      __ Mul(tmp2.V4S(), tmp2.V4S(), src1.V4S());
-
-      // Extract the low half components of src1.
-      //   tmp1 = |c|a|
-      __ Xtn(tmp1.V2S(), src1.V2D());
-
-      // Sum the respective high half components.
-      //   tmp2 = |dg+ch|be+af||dg+ch|be+af|
-      __ Addp(tmp2.V4S(), tmp2.V4S(), tmp2.V4S());
-
-      // Extract the low half components of src2.
-      //   tmp3 = |g|e|
-      __ Xtn(tmp3.V2S(), src2.V2D());
-
-      // Shift the high half components, into the high half.
-      //   dst = |dg+ch << 32|be+af << 32|
-      __ Shll(dst.V2D(), tmp2.V2S(), 32);
-
-      // Multiply the low components together, and accumulate with the high
-      // half.
-      //   dst = |dst[1] + cg|dst[0] + ae|
-      __ Umlal(dst.V2D(), tmp3.V2S(), tmp1.V2S());
-
-      break;
-    }
       SIMD_CM_G_CASE(kArm64IEq, eq);
     case kArm64INe: {
-      VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VRegister dst = i.OutputSimd128Register().Format(f);
       if (instr->InputCount() == 1) {
         __ Cmeq(dst, i.InputSimd128Register(0).Format(f), 0);
@@ -3265,7 +3367,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
       SIMD_UNOP_CASE(kArm64I32x4SConvertF32x4, Fcvtzs, 4S);
-      SIMD_BINOP_CASE(kArm64I32x4Mul, Mul, 4S);
       SIMD_UNOP_CASE(kArm64I32x4UConvertF32x4, Fcvtzu, 4S);
       SIMD_BINOP_LANE_SIZE_CASE(kArm64IGtU, Cmhi);
       SIMD_BINOP_LANE_SIZE_CASE(kArm64IGeU, Cmhs);
@@ -3273,8 +3374,17 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ I32x4BitMask(i.OutputRegister32(), i.InputSimd128Register(0));
       break;
     }
+    case kArm64IMul: {
+      uint32_t lane_size = LaneSizeBits(LaneSizeField::decode(opcode));
+      DCHECK_NE(lane_size, 64);
+      VectorFormat format = VectorFormatFillQ(lane_size);
+      __ Mul(i.OutputSimd128Register().Format(format),
+             i.InputSimd128Register(0).Format(format),
+             i.InputSimd128Register(1).Format(format));
+      break;
+    }
     case kArm64IAddv: {
-      uint32_t lane_size = LaneSizeField::decode(opcode);
+      uint32_t lane_size = LaneSizeBits(LaneSizeField::decode(opcode));
       VectorFormat dst_f = ScalarFormatFromLaneSize(lane_size);
       VectorFormat src_f = VectorFormatFillQ(lane_size);
       __ Addv(i.OutputSimd128Register().Format(dst_f),
@@ -3282,7 +3392,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64IAddp: {
-      uint32_t lane_size = LaneSizeField::decode(opcode);
+      uint32_t lane_size = LaneSizeBits(LaneSizeField::decode(opcode));
       DCHECK_NE(lane_size, 64);
       VectorFormat f = VectorFormatFillQ(lane_size);
       __ Addp(i.OutputSimd128Register().Format(f),
@@ -3295,7 +3405,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64FAddp: {
-      uint32_t lane_size = LaneSizeField::decode(opcode);
+      uint32_t lane_size = LaneSizeBits(LaneSizeField::decode(opcode));
       VectorFormat f = VectorFormatFillQ(lane_size);
       __ Faddp(i.OutputSimd128Register().Format(f),
                i.InputSimd128Register(0).Format(f),
@@ -3303,7 +3413,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64FAddpScalar: {
-      uint32_t lane_size = LaneSizeField::decode(opcode);
+      uint32_t lane_size = LaneSizeBits(LaneSizeField::decode(opcode));
       if (lane_size == 64) {
         __ Faddp(i.OutputSimd128Register().D(),
                  i.InputSimd128Register(0).V2D());
@@ -3325,13 +3435,15 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64IExtractLaneU: {
-      VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       __ Umov(i.OutputRegister32(), i.InputSimd128Register(0).Format(f),
               i.InputInt8(1));
       break;
     }
     case kArm64IExtractLaneS: {
-      VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       __ Smov(i.OutputRegister32(), i.InputSimd128Register(0).Format(f),
               i.InputInt8(1));
       break;
@@ -3352,7 +3464,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
       SIMD_BINOP_LANE_SIZE_CASE(kArm64IAddSatS, Sqadd);
       SIMD_BINOP_LANE_SIZE_CASE(kArm64ISubSatS, Sqsub);
-      SIMD_BINOP_CASE(kArm64I16x8Mul, Mul, 8H);
     case kArm64I16x8UConvertI32x4: {
       VRegister dst = i.OutputSimd128Register(),
                 src0 = i.InputSimd128Register(0),
@@ -3423,7 +3534,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       SIMD_BINOP_CASE(kArm64S128Xor, Eor, 16B);
       SIMD_UNOP_CASE(kArm64S128Not, Mvn, 16B);
     case kArm64S128Dup: {
-      VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VRegister dst = i.OutputSimd128Register().Format(f),
                 src = i.InputSimd128Register(0).Format(f);
       int lane_count = LaneCountFromFormat(f);
@@ -3435,7 +3547,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       SIMD_DESTRUCTIVE_BINOP_CASE(kArm64S128Select, Bsl, 16B);
     case kArm64S128AndNot:
       if (instr->InputAt(1)->IsImmediate()) {
-        VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+        VectorFormat f =
+            VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
         VRegister dst = i.OutputSimd128Register().Format(f);
         DCHECK_EQ(dst, i.InputSimd128Register(0).Format(f));
         __ Bic(dst, i.InputInt32(1), i.InputInt8(2));
@@ -3450,7 +3563,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
              i.InputSimd128Register(1).V16B());
       break;
     case kArm64Saddw: {
-      VectorFormat ta = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat ta =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat tb = VectorFormatHalfWidth(ta);
       __ Saddw(i.OutputSimd128Register().Format(ta),
                i.InputSimd128Register(0).Format(ta),
@@ -3458,7 +3572,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Saddw2: {
-      VectorFormat ta = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat ta =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat tb = VectorFormatFillQ(VectorFormatHalfWidth(ta));
       __ Saddw2(i.OutputSimd128Register().Format(ta),
                 i.InputSimd128Register(0).Format(ta),
@@ -3466,7 +3581,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Uaddw: {
-      VectorFormat ta = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat ta =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat tb = VectorFormatHalfWidth(ta);
       __ Uaddw(i.OutputSimd128Register().Format(ta),
                i.InputSimd128Register(0).Format(ta),
@@ -3474,7 +3590,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Uaddw2: {
-      VectorFormat ta = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat ta =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat tb = VectorFormatFillQ(VectorFormatHalfWidth(ta));
       __ Uaddw2(i.OutputSimd128Register().Format(ta),
                 i.InputSimd128Register(0).Format(ta),
@@ -3482,7 +3599,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Saddl: {
-      VectorFormat ta = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat ta =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat tb = VectorFormatHalfWidth(ta);
       __ Saddl(i.OutputSimd128Register().Format(ta),
                i.InputSimd128Register(0).Format(tb),
@@ -3490,7 +3608,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Saddl2: {
-      VectorFormat ta = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat ta =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat tb = VectorFormatFillQ(VectorFormatHalfWidth(ta));
       __ Saddl2(i.OutputSimd128Register().Format(ta),
                 i.InputSimd128Register(0).Format(tb),
@@ -3498,7 +3617,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Uaddl: {
-      VectorFormat ta = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat ta =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat tb = VectorFormatHalfWidth(ta);
       __ Uaddl(i.OutputSimd128Register().Format(ta),
                i.InputSimd128Register(0).Format(tb),
@@ -3506,7 +3626,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Uaddl2: {
-      VectorFormat ta = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat ta =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat tb = VectorFormatFillQ(VectorFormatHalfWidth(ta));
       __ Uaddl2(i.OutputSimd128Register().Format(ta),
                 i.InputSimd128Register(0).Format(tb),
@@ -3514,7 +3635,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Ssubw: {
-      VectorFormat ta = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat ta =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat tb = VectorFormatHalfWidth(ta);
       __ Ssubw(i.OutputSimd128Register().Format(ta),
                i.InputSimd128Register(0).Format(ta),
@@ -3522,7 +3644,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Ssubw2: {
-      VectorFormat ta = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat ta =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat tb = VectorFormatFillQ(VectorFormatHalfWidth(ta));
       __ Ssubw2(i.OutputSimd128Register().Format(ta),
                 i.InputSimd128Register(0).Format(ta),
@@ -3530,7 +3653,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Usubw: {
-      VectorFormat ta = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat ta =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat tb = VectorFormatHalfWidth(ta);
       __ Usubw(i.OutputSimd128Register().Format(ta),
                i.InputSimd128Register(0).Format(ta),
@@ -3538,7 +3662,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Usubw2: {
-      VectorFormat ta = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat ta =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat tb = VectorFormatFillQ(VectorFormatHalfWidth(ta));
       __ Usubw2(i.OutputSimd128Register().Format(ta),
                 i.InputSimd128Register(0).Format(ta),
@@ -3546,7 +3671,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Ssubl: {
-      VectorFormat ta = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat ta =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat tb = VectorFormatHalfWidth(ta);
       __ Ssubl(i.OutputSimd128Register().Format(ta),
                i.InputSimd128Register(0).Format(tb),
@@ -3554,7 +3680,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Ssubl2: {
-      VectorFormat ta = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat ta =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat tb = VectorFormatFillQ(VectorFormatHalfWidth(ta));
       __ Ssubl2(i.OutputSimd128Register().Format(ta),
                 i.InputSimd128Register(0).Format(tb),
@@ -3562,7 +3689,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Usubl: {
-      VectorFormat ta = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat ta =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat tb = VectorFormatHalfWidth(ta);
       __ Usubl(i.OutputSimd128Register().Format(ta),
                i.InputSimd128Register(0).Format(tb),
@@ -3570,7 +3698,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Usubl2: {
-      VectorFormat ta = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat ta =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VectorFormat tb = VectorFormatFillQ(VectorFormatHalfWidth(ta));
       __ Usubl2(i.OutputSimd128Register().Format(ta),
                 i.InputSimd128Register(0).Format(tb),
@@ -3578,7 +3707,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Ssra: {
-      int8_t laneSize = LaneSizeField::decode(opcode);
+      int8_t laneSize = LaneSizeBits(LaneSizeField::decode(opcode));
       VectorFormat f = VectorFormatFillQ(laneSize);
       int8_t mask = laneSize - 1;
       VRegister dst = i.OutputSimd128Register().Format(f);
@@ -3587,7 +3716,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64Usra: {
-      int8_t laneSize = LaneSizeField::decode(opcode);
+      int8_t laneSize = LaneSizeBits(LaneSizeField::decode(opcode));
       VectorFormat f = VectorFormatFillQ(laneSize);
       int8_t mask = laneSize - 1;
       VRegister dst = i.OutputSimd128Register().Format(f);
@@ -3649,9 +3778,20 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       SIMD_UNOP_LANE_SIZE_CASE(kArm64S128Rev16, Rev16);
       SIMD_UNOP_LANE_SIZE_CASE(kArm64S128Rev32, Rev32);
       SIMD_UNOP_LANE_SIZE_CASE(kArm64S128Rev64, Rev64);
+    case kArm64S128ExtractNarrow: {
+      VectorFormat dst_f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
+      DCHECK_EQ(VectorLengthField::decode(opcode), VectorLength::kV64);
+      dst_f = VectorFormatHalfLanes(dst_f);
+      VectorFormat src_f = VectorFormatDoubleWidth(dst_f);
+      __ Xtn(i.OutputSimd128Register().Format(dst_f),
+             i.InputSimd128Register(0).Format(src_f));
+      break;
+    }
     case kArm64LoadSplat: {
       RecordTrapInfoIfNeeded(zone(), this, opcode, instr, __ pc_offset());
-      VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       __ ld1r(i.OutputSimd128Register().Format(f), i.MemoryOperand(0));
       break;
     }
@@ -3678,21 +3818,24 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kArm64LoadLane: {
       DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
       RecordTrapInfoIfNeeded(zone(), this, opcode, instr, __ pc_offset());
-      VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       int laneidx = i.InputInt8(1);
       __ ld1(i.OutputSimd128Register().Format(f), laneidx, i.MemoryOperand(2));
       break;
     }
     case kArm64StoreLane: {
       RecordTrapInfoIfNeeded(zone(), this, opcode, instr, __ pc_offset());
-      VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       int laneidx = i.InputInt8(1);
       __ st1(i.InputSimd128Register(0).Format(f), laneidx, i.MemoryOperand(2));
       break;
     }
     case kArm64S128LoadPairDeinterleave: {
       DCHECK_EQ(i.OutputCount(), 2);
-      VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       __ Ld2(i.OutputSimd128Register(0).Format(f),
              i.OutputSimd128Register(1).Format(f), i.MemoryOperand(0));
       break;
@@ -3717,7 +3860,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64S128MoveLane: {
-      VectorFormat f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat f =
+          VectorFormatFillQ(LaneSizeBits(LaneSizeField::decode(opcode)));
       VRegister dst = i.OutputSimd128Register().Format(f),
                 src1 = i.InputSimd128Register(1).Format(f);
       DCHECK_EQ(dst, i.InputSimd128Register(0).Format(f));
@@ -3727,7 +3871,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64AllTrue: {
-      int lane_size = LaneSizeField::decode(opcode);
+      int lane_size = LaneSizeBits(LaneSizeField::decode(opcode));
       if (lane_size == 64) {
         __ I64x2AllTrue(i.OutputRegister32(), i.InputSimd128Register(0));
       } else {
@@ -4111,7 +4255,9 @@ void CodeGenerator::FinishFrame(Frame* frame) {
       CPURegList(kDRegSizeInBits, call_descriptor->CalleeSavedFPRegisters());
   int saved_count = saves_fp.Count();
   if (saved_count != 0) {
-    DCHECK(saves_fp.bits() == CPURegList::GetCalleeSavedV().bits());
+    DCHECK_EQ(saves_fp.bits(), CPURegList::GetCalleeSavedD().bits());
+    // None of V registers are expected to be preserved besides D registers.
+    DCHECK(CPURegList::GetCalleeSavedV().IsEmpty());
     frame->AllocateSavedCalleeRegisterSlots(saved_count *
                                             (kDoubleSize / kSystemPointerSize));
   }
@@ -4259,8 +4405,10 @@ void CodeGenerator::AssembleConstructFrame() {
             WasmHandleStackOverflowDescriptor::FrameBaseRegister());
         for (auto reg : wasm::kGpParamRegisters) regs_to_save.Combine(reg);
         __ PushCPURegList(regs_to_save);
-        CPURegList fp_regs_to_save(kDRegSizeInBits, DoubleRegList{});
-        for (auto reg : wasm::kFpParamRegisters) fp_regs_to_save.Combine(reg);
+        CPURegList fp_regs_to_save(kQRegSizeInBits, DoubleRegList{});
+        for (auto reg : wasm::kFpParamRegisters) {
+          fp_regs_to_save.Combine(reg.Q());
+        }
         __ PushCPURegList(fp_regs_to_save);
         __ Mov(WasmHandleStackOverflowDescriptor::GapRegister(),
                required_slots * kSystemPointerSize);
@@ -4304,7 +4452,9 @@ void CodeGenerator::AssembleConstructFrame() {
 
   // Save FP registers.
   DCHECK_IMPLIES(saves_fp.Count() != 0,
-                 saves_fp.bits() == CPURegList::GetCalleeSavedV().bits());
+                 saves_fp.bits() == CPURegList::GetCalleeSavedD().bits());
+  // None of V registers are expected to be preserved besides D registers.
+  DCHECK(CPURegList::GetCalleeSavedV().IsEmpty());
   __ PushCPURegList(saves_fp);
 
   // Save registers.
@@ -4371,8 +4521,10 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
     CPURegList regs_to_save(kXRegSizeInBits, RegList{});
     for (auto reg : wasm::kGpReturnRegisters) regs_to_save.Combine(reg);
     __ PushCPURegList(regs_to_save);
-    CPURegList fp_regs_to_save(kDRegSizeInBits, DoubleRegList{});
-    for (auto reg : wasm::kFpReturnRegisters) fp_regs_to_save.Combine(reg);
+    CPURegList fp_regs_to_save(kQRegSizeInBits, DoubleRegList{});
+    for (auto reg : wasm::kFpReturnRegisters) {
+      fp_regs_to_save.Combine(reg.Q());
+    }
     __ PushCPURegList(fp_regs_to_save);
     __ Mov(kCArgRegs[0], ExternalReference::isolate_address());
     __ CallCFunction(ExternalReference::wasm_shrink_stack(), 1);

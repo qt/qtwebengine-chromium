@@ -5,13 +5,15 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_DATA_MODEL_PAYMENTS_IBAN_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_DATA_MODEL_PAYMENTS_IBAN_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include <ostream>
 #include <string>
 #include <string_view>
 #include <variant>
 
-#include "base/time/time.h"
 #include "base/types/strong_alias.h"
-#include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/data_model/usage_history_information.h"
 
 namespace autofill {
@@ -47,6 +49,7 @@ class Iban {
 
   // These values are persisted to logs. Entries should not be renumbered and
   // numeric values should never be reused.
+  // Next ID: 80
   enum class IbanSupportedCountry {
     kUnsupported = 0,
     kAD = 1,   // Andorra
@@ -81,6 +84,7 @@ class Iban {
     kGT = 30,  // Guatemala
     kHR = 31,  // Croatia
     kHU = 32,  // Hungary
+    kIE = 79,  // Ireland
     kIL = 33,  // Israel
     kIQ = 34,  // Iraq
     kIS = 35,  // Iceland
@@ -127,7 +131,7 @@ class Iban {
     kVA = 76,  // Vatican City
     kVG = 77,  // Virgin Islands, British
     kXK = 78,  // Kosovo
-    kMaxValue = kXK,
+    kMaxValue = kIE,
   };
 
   // Creates an IBAN with `kUnknown` record type.

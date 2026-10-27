@@ -39,8 +39,9 @@ SenderMessage::Type GetMessageType(const Json::Value& root) {
 
 // static
 ErrorOr<SenderMessage> SenderMessage::Parse(const Json::Value& value) {
-  if (!value) {
-    return Error(Error::Code::kParameterInvalid, "Empty JSON");
+  if (!value.isObject()) {
+    return Error(Error::Code::kParameterInvalid,
+                 "SenderMessage body is not a JSON object");
   }
 
   SenderMessage message;

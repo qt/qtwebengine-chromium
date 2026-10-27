@@ -16,11 +16,11 @@
 #include "components/input/render_input_router.mojom.h"
 #include "components/viz/common/vertical_scroll_direction.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/common/drop_data.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "third_party/blink/public/common/page/drag_operation.h"
-#include "third_party/blink/public/mojom/device_posture/device_posture_provider.mojom.h"
 #include "third_party/blink/public/mojom/frame/lifecycle.mojom.h"
 #include "third_party/blink/public/mojom/input/input_handler.mojom-shared.h"
 #include "third_party/blink/public/mojom/manifest/display_mode.mojom.h"
@@ -56,10 +56,12 @@ namespace content {
 
 class RenderFrameProxyHost;
 class RenderWidgetHostImpl;
+class DevicePostureProviderImpl;
 class RenderWidgetHostViewBase;
 class RenderViewHostDelegateView;
 class TextInputManager;
 class VisibleTimeRequestTrigger;
+class WebContents;
 enum class KeyboardEventProcessingResult;
 
 //
@@ -197,7 +199,12 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // in rendering a page, yet keyboard events all arrive at the main frame's
   // RenderWidgetHostView.  When a main frame's RenderWidgetHost is passed in,
   // the function returns the focused frame that should consume keyboard
-  // events. In all other cases, the function returns back |receiving_widget|.
+  // events.
+  // Returns nullptr if the focused frame's renderer process has crashed or
+  // the focused frame is outside of this WebContents that is embedded via
+  // SurfaceEmbed (e.g. this is an inner WebContents and the focused frame
+  // is in the outer WebContents).
+  // In all other cases, the function returns back |receiving_widget|.
   virtual RenderWidgetHostImpl* GetFocusedRenderWidgetHost(
       RenderWidgetHostImpl* receiving_widget);
 
@@ -238,7 +245,7 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   virtual ui::mojom::WindowShowState GetWindowShowState();
 
   // Returns the device posture provider tracking the device posture.
-  virtual blink::mojom::DevicePostureProvider* GetDevicePostureProvider();
+  virtual DevicePostureProviderImpl* GetDevicePostureProvider();
 
   // Returns whether the window can be resized or not. Defaults to true for
   // desktopOSs and false for mobileOSs.
@@ -257,6 +264,17 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // Returns the widget that holds the pointer lock or nullptr if the mouse
   // pointer isn't locked.
   virtual RenderWidgetHostImpl* GetPointerLockWidget();
+
+  // Returns true if the owning frame of |render_widget_host| is sandboxed
+  // with the kPointerLock flag, meaning the pointer lock request should be
+  // denied. It is ok to only check the top-most frame of the widget, because
+  // any subframes within the widget will be at least as restrictive as it.
+  // Any additional restrictions imposed on subframes of the widget cannot be
+  // enforced by the browser process, because they share a renderer process
+  // with the top-most frame of the widget.
+  // Note: crbug.com/492211919
+  virtual bool IsPointerLockSandboxedForWidget(
+      RenderWidgetHostImpl* render_widget_host);
 
   // Returns true if we are waiting for the user to make a selection on the
   // pointer lock permission request dialog.
@@ -307,6 +325,14 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // the WebContents.
   virtual VisibleTimeRequestTrigger& GetVisibleTimeRequestTrigger() = 0;
 
+  // Notifies the delegate that a drag has started.
+  virtual void OnStartDragging(
+      DropData* drop_data,
+      const GlobalRenderFrameHostToken& source_rfh_token) {}
+
+  // Notifies the delegate that a drag source has ended.
+  virtual void OnDragSourceEnded() {}
+
   // Returns the delegated ink point renderer associated with this WebContents
   // for dispatching delegated ink points to viz. This also attempts to setup
   // mojo connection using |compositor|, if the DelegatedInkPointRenderer
@@ -322,6 +348,9 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // Get the RenderWidgetHost that should receive page level focus events. This
   // will be the widget that is rendering the main frame of the currently
   // focused WebContents.
+  // Returns nullptr if the focused frame is outside of this WebContents that is
+  // embedded via SurfaceEmbed (e.g. this is an inner WebContents and the
+  // focused frame is in the outer WebContents).
   virtual RenderWidgetHostImpl* GetRenderWidgetHostWithPageFocus();
 
   // In cases with multiple RenderWidgetHosts involved in rendering a page, only

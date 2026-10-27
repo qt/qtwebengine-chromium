@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SELFADJOINT_PRODUCT_H
 #define EIGEN_SELFADJOINT_PRODUCT_H
@@ -39,7 +40,7 @@ struct selfadjoint_rank1_update<Scalar, Index, ColMajor, UpLo, ConjLhs, ConjRhs>
       Packet ps0 = internal::pset1<Packet>(s0);
       Packet ps1 = internal::pset1<Packet>(s1);
 
-      if (UpLo == Lower) {
+      EIGEN_IF_CONSTEXPR(UpLo == Lower) {
         Scalar* EIGEN_RESTRICT col0 = mat + stride * j + j;
         Scalar* EIGEN_RESTRICT col1 = mat + stride * (j + 1) + (j + 1);
 
@@ -70,7 +71,8 @@ struct selfadjoint_rank1_update<Scalar, Index, ColMajor, UpLo, ConjLhs, ConjRhs>
           d0[k] += s0 * cx;
           d1[k] += s1 * cx;
         }
-      } else {
+      }
+      else {
         // UpLo == Upper
         Scalar* EIGEN_RESTRICT col0 = mat + stride * j;
         Scalar* EIGEN_RESTRICT col1 = mat + stride * (j + 1);
@@ -160,8 +162,9 @@ struct selfadjoint_product_selector<MatrixType, OtherType, UpLo, true> {
         Scalar, actualOtherPtr, other.size(),
         (UseOtherDirectly ? const_cast<Scalar*>(actualOther.data()) : static_other.data()));
 
-    if (!UseOtherDirectly)
+    EIGEN_IF_CONSTEXPR(!UseOtherDirectly) {
       Map<typename ActualOtherType_::PlainObject>(actualOtherPtr, actualOther.size()) = actualOther;
+    }
 
     selfadjoint_rank1_update<
         Scalar, Index, StorageOrder, UpLo, OtherBlasTraits::NeedToConjugate && NumTraits<Scalar>::IsComplex,
@@ -213,7 +216,7 @@ template <typename MatrixType, unsigned int UpLo>
 template <typename DerivedU>
 EIGEN_DEVICE_FUNC SelfAdjointView<MatrixType, UpLo>& SelfAdjointView<MatrixType, UpLo>::rankUpdate(
     const MatrixBase<DerivedU>& u, const Scalar& alpha) {
-  selfadjoint_product_selector<MatrixType, DerivedU, UpLo>::run(_expression().const_cast_derived(), u.derived(), alpha);
+  selfadjoint_product_selector<MatrixType, DerivedU, UpLo>::run(nestedExpression(), u.derived(), alpha);
 
   return *this;
 }

@@ -127,16 +127,6 @@ int FindSupportedFormat(vk::Renderer *renderer,
     // We couldn't find a valid fallback, ignore the skip and return 0
     return 0;
 }
-
-bool HasNonFilterableTextureFormatSupport(vk::Renderer *renderer, angle::FormatID formatID)
-{
-    constexpr uint32_t kBitsColor =
-        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
-    constexpr uint32_t kBitsDepth = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
-
-    return renderer->hasImageFormatFeatureBits(formatID, kBitsColor) ||
-           renderer->hasImageFormatFeatureBits(formatID, kBitsDepth);
-}
 }  // anonymous namespace
 
 namespace vk
@@ -174,7 +164,7 @@ void Format::initImageFallback(Renderer *renderer, const ImageFormatInitInfo *in
 
     SupportTest testFunction    = HasNonRenderableTextureFormatSupport;
     const angle::Format &format = angle::Format::Get(info[0].format);
-    if (format.isInt() || (format.isFloat() && format.redBits >= 32))
+    if (!IsFilterableFormat(format))
     {
         // Integer formats don't support filtering in GL, so don't test for it.
         // Filtering of 32-bit float textures is not supported on Android, and
@@ -226,6 +216,12 @@ size_t Format::getVertexInputAlignment() const
     const angle::Format &bufferFormat = getActualBufferFormat();
     size_t pixelBytes                 = bufferFormat.pixelBytes;
     return mVkBufferFormatIsPacked ? pixelBytes : (pixelBytes / bufferFormat.channelCount);
+}
+
+LoadFunctionMap Format::GetRGB565TextureLoadFunction(const Renderer *renderer)
+{
+    ASSERT(renderer->getFeatures().preferBGR565ToRGB565.enabled);
+    return GetLoadFunctionsMap(GL_RGB565, angle::FormatID::R5G6B5_UNORM);
 }
 
 bool HasEmulatedImageChannels(const angle::Format &intendedFormat,
@@ -529,6 +525,30 @@ bool HasNonRenderableTextureFormatSupport(vk::Renderer *renderer, angle::FormatI
 
     return renderer->hasImageFormatFeatureBits(formatID, kBitsColor) ||
            renderer->hasImageFormatFeatureBits(formatID, kBitsDepth);
+}
+
+bool HasNonFilterableTextureFormatSupport(vk::Renderer *renderer, angle::FormatID formatID)
+{
+    constexpr uint32_t kBitsColor =
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+    constexpr uint32_t kBitsDepth = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+    return renderer->hasImageFormatFeatureBits(formatID, kBitsColor) ||
+           renderer->hasImageFormatFeatureBits(formatID, kBitsDepth);
+}
+
+bool HasSampleOnlyTextureFormatSupport(vk::Renderer *renderer, angle::FormatID formatID)
+{
+    constexpr uint32_t kBitsColor = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+    constexpr uint32_t kBitsDepth = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+    return renderer->hasImageFormatFeatureBits(formatID, kBitsColor) ||
+           renderer->hasImageFormatFeatureBits(formatID, kBitsDepth);
+}
+
+bool IsFilterableFormat(const angle::Format &format)
+{
+    return !(format.isInt() || (format.isFloat() && format.redBits >= 32));
 }
 
 // Checks if it is a ETC texture format

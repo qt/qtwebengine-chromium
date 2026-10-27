@@ -224,13 +224,10 @@ angle::Result FramebufferD3D::readPixels(const gl::Context *context,
     ContextD3D *contextD3D = GetImplAs<ContextD3D>(context);
 
     GLuint outputPitch = 0;
-    ANGLE_CHECK_GL_MATH(contextD3D,
-                        sizedFormatInfo.computeRowPitch(type, area.width, pack.alignment,
-                                                        pack.rowLength, &outputPitch));
-
     GLuint outputSkipBytes = 0;
-    ANGLE_CHECK_GL_MATH(contextD3D, sizedFormatInfo.computeSkipBytes(type, outputPitch, 0, pack,
-                                                                     false, &outputSkipBytes));
+
+    ANGLE_CHECK_GL_MATH(contextD3D, sizedFormatInfo.computeRowSkipBytes(
+                                        type, area.width, pack, &outputPitch, &outputSkipBytes));
     outputSkipBytes += (clippedArea.x - area.x) * sizedFormatInfo.pixelBytes +
                        (clippedArea.y - area.y) * outputPitch;
 
@@ -266,9 +263,9 @@ gl::FramebufferStatus FramebufferD3D::checkStatus(const gl::Context *context) co
     }
 
     // D3D11 does not allow for overlapping RenderTargetViews.
-    // If WebGL compatibility is enabled, this has already been checked at a higher level.
-    ASSERT(!context->isWebGL() || mState.colorAttachmentsAreUniqueImages());
-    if (!context->isWebGL())
+    // If WebGL compatibility (or hardened context) is enabled, this has already been checked at a
+    // higher level.
+    if (!context->isWebGL() && !context->isHardenedContext())
     {
         if (!mState.colorAttachmentsAreUniqueImages())
         {
@@ -277,6 +274,7 @@ gl::FramebufferStatus FramebufferD3D::checkStatus(const gl::Context *context) co
                 gl::err::kFramebufferIncompleteUnsupportedNonUniqueAttachments);
         }
     }
+    ASSERT(mState.colorAttachmentsAreUniqueImages());
 
     // D3D requires all render targets to have the same dimensions.
     if (!mState.attachmentsHaveSameDimensions())

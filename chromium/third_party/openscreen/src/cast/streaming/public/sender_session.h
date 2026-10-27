@@ -13,7 +13,6 @@
 
 #include "cast/common/public/message_port.h"
 #include "cast/streaming/capture_configs.h"
-#include "cast/streaming/impl/session_config.h"
 #include "cast/streaming/impl/statistics_analyzer.h"
 #include "cast/streaming/input.pb.h"
 #include "cast/streaming/public/answer_messages.h"
@@ -21,11 +20,13 @@
 #include "cast/streaming/public/protobuf_messenger.h"
 #include "cast/streaming/public/rpc_messenger.h"
 #include "cast/streaming/public/sender.h"
+#include "cast/streaming/public/session_config.h"
 #include "cast/streaming/public/session_messenger.h"
 #include "cast/streaming/public/statistics.h"
 #include "cast/streaming/remoting_capabilities.h"
 #include "cast/streaming/sender_packet_router.h"
 #include "json/value.h"
+#include "platform/base/ip_address.h"
 #include "util/json/json_serialization.h"
 
 namespace openscreen::cast {

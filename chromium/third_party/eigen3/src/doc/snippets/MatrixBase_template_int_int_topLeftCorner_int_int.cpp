@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 Matrix4i m = Matrix4i::Random();
 cout << "Here is the matrix m:" << endl << m << endl;
 cout << "Here is m.topLeftCorner<2,Dynamic>(2,2):" << endl;

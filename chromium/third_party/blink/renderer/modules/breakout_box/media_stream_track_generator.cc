@@ -113,7 +113,7 @@ MediaStreamComponent* MediaStreamTrackGenerator::MakeMediaStreamComponent(
       NOTREACHED();
   }
 
-  const String track_id = CreateCanonicalUUIDString();
+  const String track_id = CreateCanonicalUuidString();
   return MakeGarbageCollected<MediaStreamComponentImpl>(
       MakeGarbageCollected<MediaStreamSource>(track_id, type, track_id,
                                               /*remote=*/false,
@@ -173,7 +173,7 @@ void MediaStreamTrackGenerator::CreateAudioStream(ScriptState* script_state) {
           Component()->Source()->GetPlatformSource());
   audio_underlying_sink_ =
       MakeGarbageCollected<MediaStreamAudioTrackUnderlyingSink>(
-          source->GetBroker());
+          script_state, source->GetBroker());
   writable_ = WritableStream::CreateWithCountQueueingStrategy(
       script_state, audio_underlying_sink_, /*high_water_mark=*/1,
       audio_underlying_sink_->GetTransferringOptimizer());

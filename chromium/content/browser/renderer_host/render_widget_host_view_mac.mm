@@ -24,6 +24,7 @@
 #include "base/mac/mac_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
+#include "base/numerics/ranges.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -46,8 +47,10 @@
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
+#include "content/browser/renderer_host/render_widget_host_delegate.h"
 #import "content/browser/renderer_host/text_input_client_mac.h"
 #include "content/browser/renderer_host/visible_time_request_trigger.h"
+#include "content/common/features.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_plugin_guest_manager.h"
 #include "content/public/browser/render_widget_host.h"
@@ -101,19 +104,9 @@ namespace {
 BASE_FEATURE(kDelayUpdateWindowsAfterTextInputStateChanged,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused.
-// LINT.IfChange(GetCachedFirstRectResult)
-enum class GetCachedFirstRectResult {
-  kFound = 0,
-  kNoTextInputManager = 1,
-  kNoTextSelection = 2,
-  kNotBoundedBySelection = 3,
-  kNoCompositionBounds = 4,
-  kInvalidCompositionRange = 5,
-  kMaxValue = kInvalidCompositionRange,
-};
-// LINT.ThenChange(//tools/metrics/histograms/metadata/input/enums.xml:GetCachedFirstRectResult)
+// If enabled, throttles resize IPCs on Mac to prevent jank during window
+// resize.
+BASE_FEATURE(kThrottleResizeIpc, base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace
 
@@ -164,14 +157,15 @@ void RenderWidgetHostViewMac::SetCurrentDeviceScaleFactor(
   screen_infos_.mutable_current().device_scale_factor = device_scale_factor;
 }
 
-bool RenderWidgetHostViewMac::ShouldWaitRemoteCompositorFrameOnResize() const {
-  return remote_ns_view_.is_bound();
+bool RenderWidgetHostViewMac::ShouldUseDefaultDeadlineOnResize() const {
+  return use_default_deadline_on_resize_ || remote_ns_view_.is_bound();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // AcceleratedWidgetMacNSView, public:
 
-void RenderWidgetHostViewMac::AcceleratedWidgetCALayerParamsUpdated() {
+void RenderWidgetHostViewMac::AcceleratedWidgetCALayerParamsUpdated(
+    gfx::CALayerParams ca_layer_params) {
   // Set the background color for the root layer from the frame that just
   // swapped. See RenderWidgetHostViewAura for more details. Note that this is
   // done only after the swap has completed, so that the background is not set
@@ -179,10 +173,7 @@ void RenderWidgetHostViewMac::AcceleratedWidgetCALayerParamsUpdated() {
   SetBackgroundLayerColor(last_frame_root_background_color_);
 
   // Update the contents that the NSView is displaying.
-  const gfx::CALayerParams* ca_layer_params =
-      browser_compositor_->GetLastCALayerParams();
-  if (ca_layer_params)
-    ns_view_->SetCALayerParams(*ca_layer_params);
+  ns_view_->SetCALayerParams(std::move(ca_layer_params));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -441,6 +432,10 @@ void RenderWidgetHostViewMac::InitAsChild(gfx::NativeView parent_view) {
   DCHECK_EQ(widget_type_, WidgetType::kFrame);
 }
 
+ui::Compositor* RenderWidgetHostViewMac::GetCompositor() {
+  return browser_compositor_ ? browser_compositor_->GetCompositor() : nullptr;
+}
+
 void RenderWidgetHostViewMac::InitAsPopup(
     RenderWidgetHostView* parent_host_view,
     const gfx::Rect& pos,
@@ -471,7 +466,7 @@ void RenderWidgetHostViewMac::InitAsPopup(
 
   // This path is used by the time/date picker.
   ns_view_->InitAsPopup(pos, popup_parent_host_view_->ns_view_id_);
-  Show();
+  ShowWithVisibility(PageVisibilityState::kVisible);
 }
 
 RenderWidgetHostViewBase*
@@ -520,32 +515,28 @@ void RenderWidgetHostViewMac::Hide() {
   }
 }
 
-void RenderWidgetHostViewMac::WasUnOccluded() {
-  OnShowWithPageVisibility(PageVisibilityState::kVisible);
-}
-
 void RenderWidgetHostViewMac::NotifyHostAndDelegateOnWasShown(
     std::optional<blink::RecordContentToVisibleTimeRequest>
         tab_switch_start_state) {
   DCHECK(host_->IsHidden());
 
   // SetRenderWidgetHostIsHidden may cause a state transition that switches to
-  // a new instance of DelegatedFrameHost and calls WasShown, which causes
-  // HasSavedFrame to always return true. So cache the HasSavedFrame result
-  // before the transition, and do not save this DelegatedFrameHost* locally.
-  const bool has_saved_frame =
-      browser_compositor_->GetDelegatedFrameHost()->HasSavedFrame();
-
+  // a new instance of DelegatedFrameHost and calls WasShown without a
+  // RecordContentToVisibleTimeRequest. So if there's a saved frame (meaning the
+  // tab switch measurement should go through DelegatedFrameHost) it's important
+  // to call RequestSuccessfulPresentationTimeForNextFrame to register the
+  // request before the compositor has a chance to commit.
   browser_compositor_->SetRenderWidgetHostIsHidden(false);
 
   // If the frame for the renderer is already available, then the
   // tab-switching time is the presentation time for the browser-compositor.
   // SetRenderWidgetHostIsHidden above will show the DelegatedFrameHost
   // in this state, but doesn't include the presentation time request.
-  if (has_saved_frame && tab_switch_start_state) {
+  if (tab_switch_start_state) {
     if (std::optional<blink::RecordContentToVisibleTimeRequest>
             delegated_visible_time_request =
-                tab_switch_start_state->ExtractTabSwitchEvents()) {
+                tab_switch_start_state
+                    ->ExtractTabSwitchEventsWithSavedFrame()) {
       browser_compositor_->GetDelegatedFrameHost()
           ->RequestSuccessfulPresentationTimeForNextFrame(
               std::move(*delegated_visible_time_request));
@@ -560,18 +551,14 @@ void RenderWidgetHostViewMac::
         blink::RecordContentToVisibleTimeRequest visible_time_request) {
   DCHECK(!host_->IsHidden());
 
-  // No state transition here so don't use
-  // has_saved_frame_before_state_transition.
-  if (browser_compositor_->GetDelegatedFrameHost()->HasSavedFrame()) {
-    // If the frame for the renderer is already available, then the
-    // tab-switching time is the presentation time for the browser-compositor.
-    if (std::optional<blink::RecordContentToVisibleTimeRequest>
-            delegated_visible_time_request =
-                visible_time_request.ExtractTabSwitchEvents()) {
-      browser_compositor_->GetDelegatedFrameHost()
-          ->RequestSuccessfulPresentationTimeForNextFrame(
-              std::move(*delegated_visible_time_request));
-    }
+  // If the frame for the renderer is already available, then the tab-switching
+  // time is the presentation time for the browser-compositor.
+  if (std::optional<blink::RecordContentToVisibleTimeRequest>
+          delegated_visible_time_request =
+              visible_time_request.ExtractTabSwitchEventsWithSavedFrame()) {
+    browser_compositor_->GetDelegatedFrameHost()
+        ->RequestSuccessfulPresentationTimeForNextFrame(
+            std::move(*delegated_visible_time_request));
   }
 
   if (!visible_time_request.events.empty()) {
@@ -939,10 +926,21 @@ void RenderWidgetHostViewMac::UpdateScreenInfo() {
   // Update with the latest display list from the remote process if needed.
   bool current_display_changed = false;
   bool any_display_changed = false;
+  bool refresh_rate_changed_on_same_display = false;
   if (new_screen_infos_from_shim_.has_value()) {
     current_display_changed =
         new_screen_infos_from_shim_->current() != screen_infos_.current();
     any_display_changed = new_screen_infos_from_shim_.value() != screen_infos_;
+
+    if (new_screen_infos_from_shim_->current().display_id ==
+            screen_infos_.current().display_id &&
+        screen_infos_.current().display_frequency != 0 &&
+        !base::IsApproximatelyEqual(
+            new_screen_infos_from_shim_->current().display_frequency,
+            screen_infos_.current().display_frequency,
+            display::Display::kRefreshRateEpsilon)) {
+      refresh_rate_changed_on_same_display = true;
+    }
 
     screen_infos_ = new_screen_infos_from_shim_.value();
     original_screen_infos_ = screen_infos_;
@@ -956,9 +954,11 @@ void RenderWidgetHostViewMac::UpdateScreenInfo() {
   bool dip_size_changed = view_bounds_in_window_dip_.size() !=
                           browser_compositor_->GetRendererSize();
 
-  if (dip_size_changed || current_display_changed) {
+  if (dip_size_changed || current_display_changed ||
+      refresh_rate_changed_on_same_display) {
     browser_compositor_->UpdateSurfaceFromNSView(
-        view_bounds_in_window_dip_.size());
+        view_bounds_in_window_dip_.size(),
+        refresh_rate_changed_on_same_display);
   }
 
   // TODO(crbug.com/40165361): Unify display info caching and change detection.
@@ -967,8 +967,11 @@ void RenderWidgetHostViewMac::UpdateScreenInfo() {
   // and for web platform APIs that expose screen and window info and events.
   // RenderWidgetHostImpl will query BrowserCompositorMac for the dimensions
   // to send to the renderer, so BrowserCompositorMac must be updated first.
-  if (dip_size_changed || any_display_changed)
-    host()->NotifyScreenInfoChanged();
+  if (dip_size_changed || any_display_changed) {
+    host()->NotifyScreenInfoChanged(
+        /*ignore_ack=*/any_display_changed ||
+        !base::FeatureList::IsEnabled(kThrottleResizeIpc));
+  }
 }
 
 viz::ScopedSurfaceIdAllocator
@@ -1076,6 +1079,25 @@ void RenderWidgetHostViewMac::SetWindowFrameInScreen(const gfx::Rect& rect) {
   RenderWidgetHostViewBase::UpdateScreenInfo();
 }
 
+void RenderWidgetHostViewMac::SetForceSpecifiedDeadline(
+    std::optional<uint32_t> deadline_in_frames) {
+  if (browser_compositor_) {
+    if (auto* dfh = browser_compositor_->GetDelegatedFrameHost()) {
+      dfh->SetForceSpecifiedDeadline(deadline_in_frames);
+    }
+  }
+}
+
+std::optional<uint32_t>
+RenderWidgetHostViewMac::GetForceSpecifiedDeadlineForTesting() {
+  if (browser_compositor_) {
+    if (auto* dfh = browser_compositor_->GetDelegatedFrameHost()) {
+      return dfh->GetForceSpecifiedDeadlineForTesting();
+    }
+  }
+  return std::nullopt;
+}
+
 //
 // RenderWidgetHostViewCocoa uses the stored selection text,
 // which implements NSServicesRequests protocol.
@@ -1143,7 +1165,7 @@ void RenderWidgetHostViewMac::TakeFallbackContentFrom(
   const gfx::CALayerParams* ca_layer_params =
       view_mac->browser_compositor_->GetLastCALayerParams();
   if (ca_layer_params)
-    ns_view_->SetCALayerParams(*ca_layer_params);
+    ns_view_->SetCALayerParams(ca_layer_params->CloneWithoutFence());
   browser_compositor_->TakeFallbackContentFrom(
       view_mac->browser_compositor_.get());
 }
@@ -1154,6 +1176,10 @@ bool RenderWidgetHostViewMac::IsHTMLFormPopup() const {
 
 uint64_t RenderWidgetHostViewMac::GetNSViewId() const {
   return ns_view_id_;
+}
+
+void RenderWidgetHostViewMac::SetShouldUseDefaultDeadlineOnResize(bool enable) {
+  use_default_deadline_on_resize_ = enable;
 }
 
 bool RenderWidgetHostViewMac::GetLineBreakIndex(
@@ -1233,9 +1259,8 @@ gfx::Rect RenderWidgetHostViewMac::GetFirstRectForCompositionRange(
 }
 
 gfx::Range RenderWidgetHostViewMac::ConvertCharacterRangeToCompositionRange(
-    const gfx::Range& request_range) {
-  const TextInputManager::CompositionRangeInfo* composition_info =
-      GetCompositionRangeInfo();
+    const gfx::Range& request_range,
+    const TextInputManager::CompositionRangeInfo* composition_info) {
   if (!composition_info)
     return gfx::Range::InvalidRange();
 
@@ -1262,18 +1287,13 @@ WebContents* RenderWidgetHostViewMac::GetWebContents() {
   return WebContents::FromRenderViewHost(RenderViewHost::From(host()));
 }
 
-bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
+RenderWidgetHostViewMac::GetCachedFirstRectResult
+RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
     const gfx::Range& requested_range,
     gfx::Rect* rect,
     gfx::Range* actual_range) {
-  auto log_result = [](GetCachedFirstRectResult result) -> bool {
-    base::UmaHistogramEnumeration("TextInputClient.GetCachedFirstRectResult",
-                                  result);
-    return result == GetCachedFirstRectResult::kFound;
-  };
-
   if (!GetTextInputManager()) {
-    return log_result(GetCachedFirstRectResult::kNoTextInputManager);
+    return GetCachedFirstRectResult::kNoTextInputManager;
   }
 
   DCHECK(rect);
@@ -1284,7 +1304,7 @@ bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
 
   const TextInputManager::TextSelection* selection = GetTextSelection();
   if (!selection) {
-    return log_result(GetCachedFirstRectResult::kNoTextSelection);
+    return GetCachedFirstRectResult::kNoTextSelection;
   }
 
   // If requested range is right after caret, we can just return it.
@@ -1303,7 +1323,7 @@ bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
           "ime",
           "RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange",
           "GetTextSelectionBounds", rect->ToString());
-      return log_result(GetCachedFirstRectResult::kFound);
+      return GetCachedFirstRectResult::kFound;
     }
 
     // If no selection bounds, fall back to use selection region.
@@ -1313,37 +1333,38 @@ bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
     TRACE_EVENT1(
         "ime", "RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange",
         "caret_rect", rect->ToString());
-    return log_result(GetCachedFirstRectResult::kFound);
+    return GetCachedFirstRectResult::kFound;
   }
 
   const TextInputManager::CompositionRangeInfo* composition_info =
       GetCompositionRangeInfo();
   if (!composition_info || composition_info->range.is_empty()) {
-    if (!requested_range.IsBoundedBy(selection->range())) {
-      return log_result(GetCachedFirstRectResult::kNotBoundedBySelection);
-    }
-    DCHECK(GetFocusedWidget());
-    if (actual_range)
-      *actual_range = selection->range();
-    *rect = GetTextInputManager()
-                ->GetSelectionRegion(GetFocusedWidget()->GetView())
-                ->first_selection_rect;
-    TRACE_EVENT1(
-        "ime", "RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange",
-        "first_selection_rect", rect->ToString());
-    return log_result(GetCachedFirstRectResult::kFound);
+    // Fall back to the selection range if there's no composition range.
+    return GetFirstRectFromSelection(requested_range, selection, rect,
+                                     actual_range);
   }
 
   // If firstRectForCharacterRange in WebFrame is failed in renderer,
   // ImeCompositionRangeChanged will be sent with empty vector.
   if (!composition_info || composition_info->character_bounds.empty()) {
-    return log_result(GetCachedFirstRectResult::kNoCompositionBounds);
+    if (base::FeatureList::IsEnabled(
+            features::kCachedFirstRectMoreSelectionFallbacks)) {
+      return GetFirstRectFromSelection(requested_range, selection, rect,
+                                       actual_range);
+    }
+    return GetCachedFirstRectResult::kNoCompositionBounds;
   }
 
   const gfx::Range request_range_in_composition =
-      ConvertCharacterRangeToCompositionRange(requested_range);
+      ConvertCharacterRangeToCompositionRange(requested_range,
+                                              composition_info);
   if (request_range_in_composition == gfx::Range::InvalidRange()) {
-    return log_result(GetCachedFirstRectResult::kInvalidCompositionRange);
+    if (base::FeatureList::IsEnabled(
+            features::kCachedFirstRectMoreSelectionFallbacks)) {
+      return GetFirstRectFromSelection(requested_range, selection, rect,
+                                       actual_range);
+    }
+    return GetCachedFirstRectResult::kInvalidCompositionRange;
   }
 
   DCHECK_EQ(composition_info->character_bounds.size(),
@@ -1362,7 +1383,41 @@ bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
         gfx::Range(composition_info->range.start() + ui_actual_range.start(),
                    composition_info->range.start() + ui_actual_range.end());
   }
-  return log_result(GetCachedFirstRectResult::kFound);
+  return GetCachedFirstRectResult::kFound;
+}
+
+RenderWidgetHostViewMac::GetCachedFirstRectResult
+RenderWidgetHostViewMac::GetFirstRectFromSelection(
+    const gfx::Range& requested_range,
+    const TextInputManager::TextSelection* selection,
+    gfx::Rect* rect,
+    gfx::Range* actual_range) {
+  CHECK(selection);
+  // An invalid range will fail the IsBoundedBy() check, but needs to be tested
+  // separately in case the check is skipped.
+  if (!base::FeatureList::IsEnabled(
+          features::kCachedFirstRectAllowInvalidSelection) &&
+      !selection->range().IsValid()) {
+    return GetCachedFirstRectResult::kInvalidSelection;
+  }
+  if (!base::FeatureList::IsEnabled(
+          features::kCachedFirstRectAllowRangeOutsideSelection) &&
+      !requested_range.IsBoundedBy(selection->range())) {
+    return selection->range().IsValid()
+               ? GetCachedFirstRectResult::kNotBoundedBySelection
+               : GetCachedFirstRectResult::kInvalidSelection;
+  }
+  DCHECK(GetFocusedWidget());
+  if (actual_range) {
+    *actual_range = selection->range();
+  }
+  *rect = GetTextInputManager()
+              ->GetSelectionRegion(GetFocusedWidget()->GetView())
+              ->first_selection_rect;
+  TRACE_EVENT1("ime",
+               "RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange",
+               "first_selection_rect", rect->ToString());
+  return GetCachedFirstRectResult::kFound;
 }
 
 void RenderWidgetHostViewMac::FocusedNodeChanged(
@@ -1397,6 +1452,11 @@ void RenderWidgetHostViewMac::OnUnconfirmedTapConvertedToTap() {
 
 bool RenderWidgetHostViewMac::RequestRepaintOnNewSurface() {
   return browser_compositor_->ForceNewSurfaceId();
+}
+
+bool RenderWidgetHostViewMac::HasSavedCompositorFrame() const {
+  return browser_compositor_ &&
+         browser_compositor_->GetDelegatedFrameHost()->HasSavedFrame();
 }
 
 void RenderWidgetHostViewMac::TransformPointToRootSurface(gfx::PointF* point) {
@@ -1823,7 +1883,8 @@ void RenderWidgetHostViewMac::OnFirstResponderChanged(bool is_first_responder) {
   //   overwriting the valid focus set by OnWindowIsKeyChanged.
   //
   // - Losing focus:
-  //   - Only when the host is currently focused.
+  //   - When the widget is currently focused. The widget can be the main
+  //   frame's widget, or a guest view's widget.
   //   This prevents duplicate LostFocus notifications.
   if (is_first_responder_) {
     if (IsHeadless() || is_getting_focus_ || is_window_key_) {
@@ -1831,7 +1892,11 @@ void RenderWidgetHostViewMac::OnFirstResponderChanged(bool is_first_responder) {
       SetTextInputActive(true);
     }
   } else {
-    if (IsHeadless() || host()->is_focused()) {
+    bool has_focused_widget =
+        host()->delegate() &&
+        host()->delegate()->GetRenderWidgetHostWithPageFocus() &&
+        host()->delegate()->GetRenderWidgetHostWithPageFocus()->is_focused();
+    if (IsHeadless() || has_focused_widget) {
       SetTextInputActive(false);
       host()->LostFocus();
     }
@@ -2152,7 +2217,7 @@ bool RenderWidgetHostViewMac::SyncGetCharacterIndexAtPoint(
   if (!widget_host)
     return true;
 
-  *index = TextInputClientMac::GetInstance()->GetCharacterIndexAtPoint(
+  *index = TextInputClientMac::GetInstance()->SyncGetCharacterIndexAtPoint(
       widget_host, gfx::ToFlooredPoint(transformed_point));
   return true;
 }
@@ -2179,18 +2244,22 @@ bool RenderWidgetHostViewMac::SyncGetFirstRectForRange(
     return true;
   }
   *success = true;
-  if (!GetCachedFirstRectForCharacterRange(requested_range, rect,
-                                           actual_range)) {
-    // GetFirstRectForRange() can enter a nested RunLoop that might clear the
-    // ScreenInfos list used by GetDeviceScaleFactor(), so cache the result
-    // first.
+
+  GetCachedFirstRectResult cache_result =
+      GetCachedFirstRectForCharacterRange(requested_range, rect, actual_range);
+  base::UmaHistogramEnumeration("TextInputClient.GetCachedFirstRectResult",
+                                cache_result);
+  if (cache_result != GetCachedFirstRectResult::kFound) {
+    // Cache the result of GetDeviceScaleFactor() before calling
+    // GetFirstRectForRange() in case anything clear the ScreenInfos list while
+    // waiting for the result.
     const float device_scale_factor = GetDeviceScaleFactor();
 
     // https://crbug.com/121917
     base::ScopedAllowBlocking allow_wait;
     // TODO(thakis): Pipe |actualRange| through TextInputClientMac machinery.
     gfx::Rect blink_rect =
-        TextInputClientMac::GetInstance()->GetFirstRectForRange(
+        TextInputClientMac::GetInstance()->SyncGetFirstRectForRange(
             GetFocusedWidget(), requested_range);
 
     // With zoom-for-dsf, RenderWidgetHost coordinate system is physical points,

@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_EXPR_H
-#define EIGEN_CXX11_TENSOR_TENSOR_EXPR_H
+#ifndef EIGEN_TENSOR_TENSOR_EXPR_H
+#define EIGEN_TENSOR_TENSOR_EXPR_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -31,7 +32,7 @@ struct traits<TensorCwiseNullaryOp<NullaryOp, XprType> > : traits<XprType> {
 }  // end namespace internal
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Tensor nullary expression.
  *
@@ -87,7 +88,7 @@ struct nested<TensorCwiseUnaryOp<UnaryOp, XprType>, 1, typename eval<TensorCwise
 }  // end namespace internal
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Tensor unary expression.
  *
@@ -159,7 +160,7 @@ struct nested<TensorCwiseBinaryOp<BinaryOp, LhsXprType, RhsXprType>, 1,
 }  // end namespace internal
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Tensor binary expression.
  *
@@ -335,4 +336,4 @@ class TensorSelectOp : public TensorBase<TensorSelectOp<IfXprType, ThenXprType, 
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_EXPR_H
+#endif  // EIGEN_TENSOR_TENSOR_EXPR_H

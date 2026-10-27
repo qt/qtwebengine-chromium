@@ -31,6 +31,7 @@
 * Generated November, 2011
 * Modified: stripped to the subset of declarations actually used by Eigen.
 *****************************************************************************/
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef _MKL_LAPACKE_H_
 

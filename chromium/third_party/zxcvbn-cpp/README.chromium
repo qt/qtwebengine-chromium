@@ -4,7 +4,7 @@ URL: https://thelig.ht/code/zxcvbn-cpp
 Version: N/A
 Date: 2024-07-10
 Revision: 6559806fc0c1671aa2d77dfc66e1d4784a57beaa
-Update Mechanism: Manual
+Update Mechanism: Static.HardFork (https://crbug.com/504447975)
 License: MIT
 License File: LICENSE.txt
 Security Critical: yes
@@ -70,6 +70,7 @@ Applied the following changes:
   //base equivalents as the former is deprecated in C++17.
 - Add a getter for testing and replace
   StringPiece with std::string_view.
+- Refactor zxcvbn RankedDicts to be thread-safe.
 
 Ran the following commands to generate adjacency graphs:
 $ python ./data-scripts/build_keyboard_adjacency_graphs.py ./native-src/zxcvbn/adjacency_graphs.hpp

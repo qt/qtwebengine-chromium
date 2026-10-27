@@ -30,7 +30,6 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/printing/browser_printing_context_factory_for_test.h"
-#include "chrome/browser/printing/print_compositor_util.h"
 #include "chrome/browser/printing/print_error_dialog.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/browser/printing/print_job_manager.h"
@@ -886,8 +885,8 @@ IN_PROC_BROWSER_TEST_F(PrintBrowserTest, SelectionContainsIframe) {
   PrintAndWaitUntilPreviewIsReady(kParams);
 }
 
-// https://crbug.com/1125972
-// https://crbug.com/1131598
+// https://crbug.com/40147936
+// https://crbug.com/40150272
 IN_PROC_BROWSER_TEST_F(PrintBrowserTest, NoScrolling) {
   ASSERT_NO_FATAL_FAILURE(
       StartEmbeddedTestServerAndNavigate("/printing/with-scrollable.html"));
@@ -916,7 +915,7 @@ IN_PROC_BROWSER_TEST_F(PrintBrowserTest, NoScrolling) {
   EXPECT_EQ(old_scroll3, new_scroll3);
 }
 
-// https://crbug.com/1131598
+// https://crbug.com/40150272
 IN_PROC_BROWSER_TEST_F(PrintBrowserTest, DISABLED_NoScrollingFrameset) {
   ASSERT_NO_FATAL_FAILURE(
       StartEmbeddedTestServerAndNavigate("/printing/frameset.html"));
@@ -934,7 +933,7 @@ IN_PROC_BROWSER_TEST_F(PrintBrowserTest, DISABLED_NoScrollingFrameset) {
   EXPECT_EQ(old_scroll, new_scroll);
 }
 
-// https://crbug.com/1125972
+// https://crbug.com/40147936
 IN_PROC_BROWSER_TEST_F(PrintBrowserTest, NoScrollingVerticalRl) {
   ASSERT_NO_FATAL_FAILURE(
       StartEmbeddedTestServerAndNavigate("/printing/vertical-rl.html"));
@@ -946,7 +945,7 @@ IN_PROC_BROWSER_TEST_F(PrintBrowserTest, NoScrollingVerticalRl) {
                          "window.scrollX"));
 }
 
-// https://crbug.com/1285208
+// https://crbug.com/40814851
 IN_PROC_BROWSER_TEST_F(PrintBrowserTest, LegacyLayoutEngineFallback) {
   ASSERT_NO_FATAL_FAILURE(StartEmbeddedTestServerAndNavigate(
       "/printing/legacy-layout-engine-known-bug.html"));
@@ -1266,7 +1265,7 @@ IN_PROC_BROWSER_TEST_F(PrintBrowserTest,
       kDefaultDocumentCookie, main_frame,
       *TestPrintRenderFrame::GetDefaultDidPrintContentParams(),
       ui::AXTreeUpdate(), mojom::GenerateDocumentOutline::kNone,
-      GetCompositorDocumentType(), base::DoNothing());
+      base::DoNothing());
   ASSERT_TRUE(client->GetCompositeRequest(kDefaultDocumentCookie));
   // `requested_subframes_` should be empty.
   ASSERT_TRUE(client->requested_subframes_.empty());
@@ -1585,13 +1584,13 @@ IN_PROC_BROWSER_TEST_F(PrintExtensionBrowserTest,
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(web_contents);
-  TestPrintViewManager print_view_manager(web_contents);
-  PrintViewManager::SetReceiverImplForTesting(&print_view_manager);
+  TestPrintViewManager* print_view_manager =
+      TestPrintViewManager::CreateForWebContents(web_contents);
 
   PrintAndWaitUntilPreviewIsReady();
 
   const mojom::PrintPagesParamsPtr& snooped_params =
-      print_view_manager.snooped_params();
+      print_view_manager->snooped_params();
   ASSERT_TRUE(snooped_params);
   EXPECT_EQ(gfx::Size(kDefaultPdfDpi, kDefaultPdfDpi),
             snooped_params->params->dpi);
@@ -1632,13 +1631,13 @@ IN_PROC_BROWSER_TEST_F(
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(web_contents);
-  TestPrintViewManager print_view_manager(web_contents);
-  PrintViewManager::SetReceiverImplForTesting(&print_view_manager);
+  TestPrintViewManager* print_view_manager =
+      TestPrintViewManager::CreateForWebContents(web_contents);
 
   PrintAndWaitUntilPreviewIsReady();
 
   const mojom::PrintPagesParamsPtr& snooped_params =
-      print_view_manager.snooped_params();
+      print_view_manager->snooped_params();
   ASSERT_TRUE(snooped_params);
   EXPECT_EQ(gfx::Size(kDefaultPdfDpi, kDefaultPdfDpi),
             snooped_params->params->dpi);
@@ -1667,14 +1666,11 @@ IN_PROC_BROWSER_TEST_F(PrintBrowserTest, DISABLED_PrintNup) {
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(web_contents);
-  TestPrintViewManager print_view_manager(web_contents);
-  PrintViewManager::SetReceiverImplForTesting(&print_view_manager);
+  TestPrintViewManager::CreateForWebContents(web_contents);
 
   // Override print parameters to do N-up, specify 4 pages per sheet.
   const PrintParams kParams{.pages_per_sheet = 4};
   PrintAndWaitUntilPreviewIsReady(kParams);
-
-  PrintViewManager::SetReceiverImplForTesting(nullptr);
 
   // With 4 pages per sheet requested by `GetPrintParams()`, a 7 page input
   // will result in 2 pages in the print preview.
@@ -1690,14 +1686,11 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessPrintBrowserTest, DISABLED_PrintNup) {
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(web_contents);
-  TestPrintViewManager print_view_manager(web_contents);
-  PrintViewManager::SetReceiverImplForTesting(&print_view_manager);
+  TestPrintViewManager::CreateForWebContents(web_contents);
 
   // Override print parameters to do N-up, specify 4 pages per sheet.
   const PrintParams kParams{.pages_per_sheet = 4};
   PrintAndWaitUntilPreviewIsReady(kParams);
-
-  PrintViewManager::SetReceiverImplForTesting(nullptr);
 
   // With 4 pages per sheet requested by `GetPrintParams()`, a 7 page input
   // will result in 2 pages in the print preview.
@@ -1722,7 +1715,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessPrintBrowserTest, MultipagePrint) {
   EXPECT_EQ(rendered_page_count(), 3u);
 }
 
-// Disabled due to flakiness: crbug.com/1311998
+// Disabled due to flakiness: crbug.com/40831392
 IN_PROC_BROWSER_TEST_F(PrintBrowserTest,
                        DISABLED_PDFPluginNotKeyboardFocusable) {
   ASSERT_NO_FATAL_FAILURE(
@@ -2169,77 +2162,6 @@ IN_PROC_BROWSER_TEST_F(PrintFencedFrameBrowserTest, BrowserPrint) {
 }
 
 #if BUILDFLAG(IS_WIN)
-std::string GetDocumentDataTypeTestSuffix(
-    const testing::TestParamInfo<DocumentDataType>& info) {
-  switch (info.param) {
-    case DocumentDataType::kUnknown:
-      NOTREACHED();
-    case DocumentDataType::kPdf:
-      return "Pdf";
-    case DocumentDataType::kXps:
-      return "Xps";
-  }
-}
-
-class PrintCompositorDocumentDataTypeBrowserTest
-    : public PrintBrowserTest,
-      public testing::WithParamInterface<DocumentDataType> {
- public:
-  PrintCompositorDocumentDataTypeBrowserTest() = default;
-  ~PrintCompositorDocumentDataTypeBrowserTest() override = default;
-
-  void SetUp() override {
-    std::vector<base::test::FeatureRefAndParams> enabled_features;
-    std::vector<base::test::FeatureRef> disabled_features;
-
-    // Force use of out-of-process print drivers, since it is required for
-    // printing with XPS.
-    enabled_features.push_back(
-        {features::kEnableOopPrintDrivers,
-         {{features::kEnableOopPrintDriversJobPrint.name, "true"}}});
-    if (GetParam() == DocumentDataType::kXps) {
-      enabled_features.push_back({features::kUseXpsForPrinting, {}});
-
-      // Use of XPS printing requires using LPAC for the sandbox, otherwise
-      // the permissions for token-based sandboxing have to be significantly
-      // relaxed.
-      enabled_features.push_back(
-          {sandbox::policy::features::kPrintCompositorLPAC, {}});
-    } else {
-      disabled_features.push_back(features::kUseXpsForPrinting);
-    }
-
-    scoped_feature_list_.InitWithFeaturesAndParameters(enabled_features,
-                                                       disabled_features);
-    PrintBrowserTest::SetUp();
-  }
-
- private:
-  base::test::ScopedFeatureList scoped_feature_list_;
-};
-
-INSTANTIATE_TEST_SUITE_P(All,
-                         PrintCompositorDocumentDataTypeBrowserTest,
-                         testing::Values(DocumentDataType::kPdf,
-                                         DocumentDataType::kXps),
-                         GetDocumentDataTypeTestSuffix);
-
-// Demonstrate that the Print Compositor is plumbed to generate the different
-// document types.
-IN_PROC_BROWSER_TEST_P(PrintCompositorDocumentDataTypeBrowserTest,
-                       WindowDotPrint) {
-  content::WebContents* web_contents =
-      browser()->tab_strip_model()->GetActiveWebContents();
-
-  TestPrintPreviewObserver print_preview_observer(/*wait_for_loaded=*/true);
-  content::ExecuteScriptAsync(web_contents->GetPrimaryMainFrame(),
-                              "window.print();");
-  print_preview_observer.WaitUntilPreviewIsReady();
-
-  EXPECT_THAT(print_preview_observer.last_document_composite_data_type(),
-              testing::Optional(GetParam()));
-}
-
 // Demonstrate that the Print Compositor still works using the legacy sandbox
 // method, should the `kPrintCompositorLPAC` flag be disabled.
 // TODO(crbug.com/40283514):  Remove once LPAC sandboxing has been proven to
@@ -2250,7 +2172,6 @@ class PrintCompositorLegacySandboxBrowserTest : public PrintBrowserTest {
 
     disabled_features.push_back(
         sandbox::policy::features::kPrintCompositorLPAC);
-    disabled_features.push_back(features::kUseXpsForPrinting);
 
     scoped_feature_list_.InitWithFeatures(/*enabled_features=*/{},
                                           disabled_features);
@@ -2271,8 +2192,7 @@ IN_PROC_BROWSER_TEST_F(PrintCompositorLegacySandboxBrowserTest,
                               "window.print();");
   print_preview_observer.WaitUntilPreviewIsReady();
 
-  EXPECT_THAT(print_preview_observer.last_document_composite_data_type(),
-              testing::Optional(DocumentDataType::kPdf));
+  EXPECT_TRUE(print_preview_observer.did_composite_pdf_document());
 }
 #endif  // BUILDFLAG(IS_WIN)
 

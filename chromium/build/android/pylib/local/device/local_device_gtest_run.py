@@ -35,6 +35,7 @@ from pylib.base import test_exception
 from pylib.gtest import gtest_test_instance
 from pylib.local.device import local_device_environment
 from pylib.local.device import local_device_test_run
+from pylib.output import local_output_manager
 from pylib.symbols import stack_symbolizer
 from pylib.utils import code_coverage_utils
 from pylib.utils import device_dependencies
@@ -729,8 +730,12 @@ class LocalDeviceGtestRun(local_device_test_run.LocalDeviceTestRun):
                     gtest_test_instance.ParseGTestListTestsJSON(f.read()))
             except (device_errors.CommandFailedError,
                     device_errors.CommandTimeoutError):
-              logging.exception(
-                  'Failed to pull gtest list tests JSON from device.')
+              logging.critical(
+                  'Failed to pull gtest list tests JSON from device. '
+                  'This file maps tests to source files for accurate bug '
+                  ' filing on dashboards. Test execution will continue via '
+                  'stdout fallback, but results will lack source file '
+                  'locations.')
       return tests
 
     # Query all devices in case one fails.
@@ -804,6 +809,36 @@ class LocalDeviceGtestRun(local_device_test_run.LocalDeviceTestRun):
         dst_path = os.path.join(self._test_instance.render_test_output_dir,
                                 output_file)
         shutil.move(src_path, dst_path)
+
+  def _PullSavedTraces(self, device):
+    # Automatically pull all generated traces from the device to the host
+    package = self._test_instance.package
+    if not package:
+      return
+
+    device_dir = posixpath.join(device.GetExternalStoragePath(), 'Android',
+                                'data', package, 'files', 'Download')
+
+    if not device.PathExists(device_dir):
+      return
+
+    files = device.ListDirectory(device_dir)
+    pulled_files = []
+    for f in files:
+      # Only pull Perfetto trace files (*.pftrace)
+      if f.endswith('.pftrace'):
+        device_file = posixpath.join(device_dir, f)
+        try:
+          with self._env.output_manager.ArchivedTempfile(
+              f, 'traces',
+              datatype=output_manager.Datatype.BINARY) as host_file:
+            device.PullFile(device_file, host_file.name)
+            pulled_files.append(host_file)
+        except device_errors.CommandFailedError as e:
+          logging.warning('Failed to pull trace file %s: %s', device_file, e)
+
+    if pulled_files:
+      logging.info('Pulled %d Perfetto trace(s) to host.', len(pulled_files))
 
   @contextlib.contextmanager
   def _ArchiveLogcat(self, device, test):
@@ -974,6 +1009,12 @@ class LocalDeviceGtestRun(local_device_test_run.LocalDeviceTestRun):
     if self._test_instance.app_files:
       self._delegate.PullAppFiles(device, self._test_instance.app_files,
                                   self._test_instance.app_file_dir)
+
+    # Pull trace files for local run only. See crbug.com/517048010 for details.
+    if isinstance(self._env.output_manager,
+                  local_output_manager.LocalOutputManager):
+      self._PullSavedTraces(device)
+
     if not self._env.skip_clear_data:
       self._delegate.Clear(device)
 

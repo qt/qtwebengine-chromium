@@ -26,6 +26,7 @@ export async function _connectToCdpBrowser(
   const {
     acceptInsecureCerts = false,
     networkEnabled = true,
+    issuesEnabled = true,
     defaultViewport = DEFAULT_VIEWPORT,
     downloadBehavior,
     targetFilter,
@@ -34,6 +35,8 @@ export async function _connectToCdpBrowser(
     protocolTimeout,
     handleDevToolsAsPage,
     idGenerator = createIncrementalIdGenerator(),
+    blocklist,
+    allowlist,
   } = options;
 
   const connection = new Connection(
@@ -62,7 +65,10 @@ export async function _connectToCdpBrowser(
     isPageTarget,
     undefined,
     networkEnabled,
+    issuesEnabled,
     handleDevToolsAsPage,
+    blocklist,
+    allowlist,
   );
   return browser;
 }

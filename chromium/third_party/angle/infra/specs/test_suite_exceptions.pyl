@@ -47,15 +47,6 @@
           'shards': 5,
         },
       },
-      # anglebug.com/40644897 suspecting device lost caused by multiprocess
-      'win10-x64-ir-intel': {
-        'args': [
-          '--max-processes=1',
-        ],
-        'swarming': {
-          'shards': 10,
-        },
-      },
     },
     'replacements': {
       # anglebug.com/408276172 suspecting WebGPU backend flakiness caused by multiprocess
@@ -64,17 +55,24 @@
           '--max-processes': '1',
         },
       },
-      # anglebug.com/408276172 suspecting WebGPU backend flakiness caused by multiprocess
-      'linux-ir-intel': {
+      # crbug.com/506180945 low capacity in this pool
+      'angle-win-x64-intel-uhd630-rel': {
         'args': {
-          '--max-processes': '1',
+          '--gtest_filter': '-*Vulkan_SwiftShader*:*D3D9*:*WebGPU*',
         },
       },
     },
   },
   'angle_perftests': {
     'modifications': {
-      'android-arm64-pixel6-perf': {
+      'angle-android-arm64-google-pixel4-perf': {
+        'args': [
+          # Remove vulkan tests
+          '-f',
+          '*-*vulkan*:*Vulkan*',
+        ],
+      },
+      'angle-android-arm64-google-pixel6-perf': {
         'args': [
           # Custom temp throttling for perf tests on pixel6 b/345514719
           '--custom-throttling-temp=38',
@@ -84,6 +82,13 @@
   },
   'angle_restricted_trace_gold_tests': {
     'modifications': {
+      'angle-linux-x64-sws-rel': {
+        # anglebug.com/505781390 long time to download traces
+        'swarming': {
+          'hard_timeout': 1800,
+          'io_timeout': 1800,
+        },
+      },
       'angle-win-x64-intel-uhd630-rel': {
         # anglebug.com/42263955 flaky 4x8 pixel artifacts on Win Intel
         'args': [
@@ -98,20 +103,11 @@
           'shards': 4,
         },
       },
-      'win10-x64-ir-intel': {
-        # anglebug.com/42263955 flaky 4x8 pixel artifacts on Win Intel
-        'args': [
-          '--flaky-retries=1',
-        ],
-        'swarming': {
-          'shards': 5,
-        },
-      },
     },
   },
   'angle_trace_perf_native_tests': {
     'modifications': {
-      'android-arm64-pixel6-perf': {
+      'angle-android-arm64-google-pixel6-perf': {
         'args': [
           # Custom temp throttling for perf tests on pixel6 b/345514719
           '--custom-throttling-temp=38',
@@ -121,7 +117,7 @@
   },
   'angle_trace_perf_vulkan_tests': {
     'modifications': {
-      'android-arm64-pixel6-perf': {
+      'angle-android-arm64-google-pixel6-perf': {
         'args': [
           # Custom temp throttling for perf tests on pixel6 b/345514719
           '--custom-throttling-temp=38',
@@ -137,23 +133,12 @@
           'shards': 4,
         },
       },
-      'win10-x64-ir-intel': {
-        'swarming': {
-          'shards': 3,
-        },
-      },
     },
   },
   'angle_white_box_tests': {
     'modifications': {
       # anglebug.com/40644897 suspecting device lost caused by multiprocess
       'angle-win-x64-intel-uhd630-rel': {
-        'args': [
-          '--max-processes=1',
-        ],
-      },
-      # anglebug.com/40644897 suspecting device lost caused by multiprocess
-      'win10-x64-ir-intel': {
         'args': [
           '--max-processes=1',
         ],

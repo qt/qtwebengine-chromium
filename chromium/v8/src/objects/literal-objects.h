@@ -24,7 +24,7 @@ class StructBodyDescriptor;
 
 #include "torque-generated/src/objects/literal-objects-tq.inc"
 
-V8_OBJECT class PrototypeSharedClosureInfo : public StructLayout {
+V8_OBJECT class PrototypeSharedClosureInfo : public Struct {
  public:
   inline Tagged<ObjectBoilerplateDescription> boilerplate_description() const;
   inline void set_boilerplate_description(
@@ -51,31 +51,18 @@ V8_OBJECT class PrototypeSharedClosureInfo : public StructLayout {
   TaggedMember<Context> context_;
 } V8_OBJECT_END;
 
-class ObjectBoilerplateDescriptionShape final : public AllStatic {
- public:
-  using ElementT = Object;
-  using CompressionScheme = V8HeapCompressionScheme;
-  static constexpr RootIndex kMapRootIndex =
-      RootIndex::kObjectBoilerplateDescriptionMap;
-  static constexpr bool kLengthEqualsCapacity = true;
-
-  V8_ARRAY_EXTRA_FIELDS({
-    TaggedMember<Smi> backing_store_size_;
-    TaggedMember<Smi> flags_;
-  });
-};
 
 // ObjectBoilerplateDescription is a list of properties consisting of name
 // value pairs. In addition to the properties, it provides the projected number
 // of properties in the backing store. This number includes properties with
 // computed names that are not in the list.
 class ObjectBoilerplateDescription
-    : public TaggedArrayBase<ObjectBoilerplateDescription,
-                             ObjectBoilerplateDescriptionShape> {
-  using Super = TaggedArrayBase<ObjectBoilerplateDescription,
-                                ObjectBoilerplateDescriptionShape>;
+    : public TaggedArrayBase<ObjectBoilerplateDescription, Object> {
+  using Super = TaggedArrayBase<ObjectBoilerplateDescription, Object>;
+
  public:
-  using Shape = ObjectBoilerplateDescriptionShape;
+  static constexpr RootIndex kMapRootIndex =
+      RootIndex::kObjectBoilerplateDescriptionMap;
   using KeyT = UnionOf<InternalizedString, Number>;
 
   template <class IsolateT>
@@ -104,6 +91,10 @@ class ObjectBoilerplateDescription
 
   class BodyDescriptor;
 
+  static constexpr uint32_t kLengthOffset = sizeof(HeapObject);
+  static constexpr uint32_t kHeaderSize =
+      kLengthOffset + 3 * (TAGGED_SIZE_8_BYTES ? kTaggedSize : kApiInt32Size);
+
  private:
   using TaggedArrayBase::get;
   using TaggedArrayBase::set;
@@ -111,9 +102,18 @@ class ObjectBoilerplateDescription
   static constexpr int kElementsPerEntry = 2;
   static constexpr int NameIndex(int i) { return i * kElementsPerEntry; }
   static constexpr int ValueIndex(int i) { return i * kElementsPerEntry + 1; }
+
+ public:
+  uint32_t length_;
+#if TAGGED_SIZE_8_BYTES
+  uint32_t optional_padding_;
+#endif
+  TaggedMember<Smi> backing_store_size_;
+  TaggedMember<Smi> flags_;
+  FLEXIBLE_ARRAY_MEMBER(typename Super::ElementMemberT, objects);
 };
 
-V8_OBJECT class ArrayBoilerplateDescription : public StructLayout {
+V8_OBJECT class ArrayBoilerplateDescription : public Struct {
  public:
   inline ElementsKind elements_kind() const;
   inline void set_elements_kind(ElementsKind kind);
@@ -145,7 +145,7 @@ V8_OBJECT class ArrayBoilerplateDescription : public StructLayout {
   TaggedMember<FixedArrayBase> constant_elements_;
 } V8_OBJECT_END;
 
-V8_OBJECT class RegExpBoilerplateDescription : public StructLayout {
+V8_OBJECT class RegExpBoilerplateDescription : public Struct {
  public:
   // Dispatched behavior.
   void BriefPrintDetails(std::ostream& os);
@@ -181,7 +181,7 @@ struct ObjectTraits<RegExpBoilerplateDescription> {
                                kRegExpDataIndirectPointerTag>>;
 };
 
-V8_OBJECT class ClassBoilerplate : public StructLayout {
+V8_OBJECT class ClassBoilerplate : public Struct {
  public:
   enum ValueKind { kData, kGetter, kSetter, kAutoAccessor };
 

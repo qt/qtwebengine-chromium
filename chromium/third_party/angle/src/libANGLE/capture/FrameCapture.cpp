@@ -21,6 +21,7 @@
 
 #include "common/aligned_memory.h"
 #include "common/angle_version_info.h"
+#include "common/base/anglebase/no_destructor.h"
 #include "common/frame_capture_utils.h"
 #include "common/gl_enum_utils.h"
 #include "common/mathutil.h"
@@ -297,7 +298,14 @@ void WriteCppReplayForCall(const CallCapture &call,
 
         if (param.arrayClientPointerIndex != -1 && param.value.voidConstPointerVal != nullptr)
         {
-            callOut << "gClientArrays[" << param.arrayClientPointerIndex << "]";
+            int clientIndex = (param.arrayClientPointerMergedIndex != -1)
+                                  ? param.arrayClientPointerMergedIndex
+                                  : param.arrayClientPointerIndex;
+            callOut << "gClientArrays[" << clientIndex << "]";
+            if (param.arrayClientPointerOffset != 0)
+            {
+                callOut << " + " << param.arrayClientPointerOffset;
+            }
         }
         else if (param.readBufferSizeBytes > 0)
         {
@@ -487,6 +495,147 @@ void DeleteResourcesInReset(std::stringstream &out,
             << ", gResourceIDBuffer);\n";
 
         *maxResourceIDBufferSize = std::max(*maxResourceIDBufferSize, count);
+    }
+}
+
+struct MergedAttribRanges
+{
+    gl::AttribArray<uintptr_t> startAddr;
+    gl::AttribArray<uintptr_t> endAddr;
+};
+
+void MaybeMergeClientAttributes(const gl::VertexArray *vao,
+                                const gl::AttributesMask clientVertexArrayAttrMask,
+                                const gl::AttribArray<const void *> clientVertexArrayData,
+                                std::vector<CallCapture> *frameCalls,
+                                const std::vector<size_t> &clientVACallIndices,
+                                bool shouldCaptureClientArrayData,
+                                size_t vertexCount,
+                                size_t instanceCount,
+                                MergedAttribRanges &mergedAddrRangesOut,
+                                gl::AttribArray<size_t> &mergedIndexMapOut)
+{
+    // In case the data should be captured (e.g., for draw time), the vertex or instance count
+    // should be given for address range calculations. Otherwise, both are expected to be 0 and
+    // neither is used.
+    ASSERT(shouldCaptureClientArrayData || (vertexCount == 0 && instanceCount == 0));
+
+    // Initialize the merge indices. In case there is no merging, each attribute is mapped to a
+    // gClientArray with the same index.
+    for (size_t i = 0; i < gl::MAX_VERTEX_ATTRIBS; i++)
+    {
+        mergedIndexMapOut[i] = i;
+    }
+
+    if (!clientVertexArrayAttrMask.any())
+    {
+        // Nothing to merge.
+        return;
+    }
+
+    // Collect the start and end addresses for each attribute in the attribute mask.
+    gl::AttribArray<size_t> addrOffset;
+    gl::AttribArray<size_t> sortedIndices;
+    size_t sortedCount = 0;
+    for (size_t attribIndex : clientVertexArrayAttrMask)
+    {
+        const gl::VertexAttribute &attrib = vao->getVertexAttribute(attribIndex);
+        const gl::VertexBinding &binding  = vao->getVertexBinding(attrib.bindingIndex);
+
+        const void *clientSideAddress = clientVertexArrayData[attribIndex];
+        if (clientSideAddress == nullptr)
+        {
+            continue;
+        }
+
+        size_t bytesToCapture = attrib.format->pixelBytes;
+        if (shouldCaptureClientArrayData)
+        {
+            size_t count = binding.getDivisor() > 0
+                               ? rx::UnsignedCeilDivide(static_cast<uint32_t>(instanceCount),
+                                                        binding.getDivisor())
+                               : vertexCount;
+            // The last capture element doesn't take up the full stride.
+            bytesToCapture = (count - 1) * binding.getStride() + attrib.format->pixelBytes;
+        }
+
+        // Set the addresses for potential merge.
+        mergedAddrRangesOut.startAddr[attribIndex] = reinterpret_cast<uintptr_t>(clientSideAddress);
+        mergedAddrRangesOut.endAddr[attribIndex] =
+            mergedAddrRangesOut.startAddr[attribIndex] + bytesToCapture;
+        addrOffset[attribIndex]      = 0;
+        sortedIndices[sortedCount++] = attribIndex;
+    }
+
+    // Determine which attributes should be merged and their relative offset with respect to the
+    // leading attribute (i.e., attribute with offset 0).
+    auto compareRangesFunc = [&mergedAddrRangesOut](size_t a, size_t b) -> bool {
+        return mergedAddrRangesOut.startAddr[a] == mergedAddrRangesOut.startAddr[b]
+                   ? mergedAddrRangesOut.endAddr[a] < mergedAddrRangesOut.endAddr[b]
+                   : mergedAddrRangesOut.startAddr[a] < mergedAddrRangesOut.startAddr[b];
+    };
+    std::sort(sortedIndices.begin(), sortedIndices.begin() + sortedCount, compareRangesFunc);
+
+    size_t currentMergeIndex = 0;
+    if (sortedCount > 0)
+    {
+        currentMergeIndex                    = sortedIndices[0];
+        mergedIndexMapOut[currentMergeIndex] = currentMergeIndex;
+    }
+    for (size_t sortedAttribIndex = 1; sortedAttribIndex < sortedCount; sortedAttribIndex++)
+    {
+        size_t nextAttribIndex = sortedIndices[sortedAttribIndex];
+
+        // Check for overlap or adjacency:
+        // Current leader: [Start ............ End]
+        // Next:                    [Start ............ End]
+        if (mergedAddrRangesOut.endAddr[currentMergeIndex] >=
+            mergedAddrRangesOut.startAddr[nextAttribIndex])
+        {
+            // Overlap/Adjacency; the leader's end address is extended to cover the next attribute,
+            // and the next attribute is now mapped to the leader index, merging the two attributes.
+            // The offset of the next attribute will also be set with respect to the leader.
+            mergedAddrRangesOut.endAddr[currentMergeIndex] =
+                std::max(mergedAddrRangesOut.endAddr[currentMergeIndex],
+                         mergedAddrRangesOut.endAddr[nextAttribIndex]);
+            addrOffset[nextAttribIndex] = mergedAddrRangesOut.startAddr[nextAttribIndex] -
+                                          mergedAddrRangesOut.startAddr[currentMergeIndex];
+            mergedIndexMapOut[currentMergeIndex] = currentMergeIndex;
+            mergedIndexMapOut[nextAttribIndex]   = currentMergeIndex;
+        }
+        else
+        {
+            // No overlap; the next attribute becomes the new leader for subsequent attributes.
+            currentMergeIndex = nextAttribIndex;
+        }
+    }
+
+    // Update the pointers and offsets in the captured code for the corresponding vertex attribute
+    // calls. The last instance using a vertex client attribute for each called attribute should be
+    // updated.
+    for (size_t attribIndex : clientVertexArrayAttrMask)
+    {
+        size_t mergedIndex = mergedIndexMapOut[attribIndex];
+        size_t offset      = addrOffset[attribIndex];
+
+        for (auto vaIndex = clientVACallIndices.rbegin(); vaIndex != clientVACallIndices.rend();
+             vaIndex++)
+        {
+            CallCapture &framecall = frameCalls->at(*vaIndex);
+            ASSERT(framecall.params.hasClientArrayData());
+
+            // The client pointer index is originally set to the attribute index. It should now be
+            // changed to the merged index with an offset.
+            ParamCapture &clientArrayPointerParams =
+                framecall.params.getClientArrayPointerParameter();
+            if (clientArrayPointerParams.arrayClientPointerIndex == static_cast<int>(attribIndex))
+            {
+                clientArrayPointerParams.arrayClientPointerMergedIndex =
+                    static_cast<int>(mergedIndex);
+                clientArrayPointerParams.arrayClientPointerOffset = static_cast<int>(offset);
+                break;
+            }
+        }
     }
 }
 
@@ -961,6 +1110,37 @@ void MaybeResetFenceSyncObjects(std::stringstream &out,
             WriteCppReplayForCall(call, replayWriter, out, header, binaryData,
                                   maxResourceIDBufferSize);
             out << ";\n";
+        }
+    }
+}
+
+// Emit external-texture EGLImage rebinds for any bindings this context changed
+// during capture. Per-context placement ensures each glEGLImageTargetTexture2DOES
+// runs with the originating context current, so the rebind scopes correctly
+void MaybeResetEGLImageBindings(gl::ContextID contextID,
+                                std::stringstream &resetStream,
+                                ResourceTracker *resourceTracker,
+                                bool *anyResourceReset)
+{
+    auto imageBinding = resourceTracker->getExternalImageBindingsToRestore().find(contextID);
+    if (imageBinding != resourceTracker->getExternalImageBindingsToRestore().end() &&
+        !imageBinding->second.empty())
+    {
+        const std::map<GLuint, egl::ImageID> &textureIDToImageTable =
+            resourceTracker->getTextureIDToImageTable();
+        for (GLuint textureID : imageBinding->second)
+        {
+            auto imageBindingMap = textureIDToImageTable.find(textureID);
+            if (imageBindingMap != textureIDToImageTable.end())
+            {
+                resetStream << "    glBindTexture(GL_TEXTURE_EXTERNAL_OES, "
+                               "gTextureMap["
+                            << textureID << "]);\n";
+                resetStream << "    glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, "
+                               "gEGLImageMap2["
+                            << imageBindingMap->second.value << "]);\n";
+                *anyResourceReset = true;
+            }
         }
     }
 }
@@ -1956,14 +2136,7 @@ bool IsTextureUpdate(CallCapture &call)
 
 bool IsImageUpdate(CallCapture &call)
 {
-    switch (call.entryPoint)
-    {
-        case EntryPoint::GLDispatchCompute:
-        case EntryPoint::GLDispatchComputeIndirect:
-            return true;
-        default:
-            return false;
-    }
+    return IsDispatchEntryPoint(call.entryPoint);
 }
 
 bool IsVertexArrayUpdate(CallCapture &call)
@@ -1984,6 +2157,12 @@ bool IsVertexArrayUpdate(CallCapture &call)
         default:
             return false;
     }
+}
+
+bool IsFramebufferUpdate(CallCapture &call)
+{
+    return (IsDrawEntryPoint(call.entryPoint) || IsClearEntryPoint(call.entryPoint) ||
+            call.entryPoint == EntryPoint::GLBlitFramebuffer);
 }
 
 bool IsSharedObjectResource(ResourceIDType type)
@@ -2556,6 +2735,23 @@ void CaptureUpdateUniformValues(const gl::State &replayState,
     }
 }
 
+void CaptureUpdateClientArrayPointer(uint32_t attribIndex,
+                                     const void *clientAttribAddress,
+                                     size_t bytesToCapture,
+                                     std::vector<CallCapture> *frameCalls)
+{
+    ParamBuffer updateParamBuffer;
+    updateParamBuffer.addValueParam<GLint>("arrayIndex", ParamType::TGLint, attribIndex);
+
+    ParamCapture updateMemory("pointer", ParamType::TvoidConstPointer);
+    CaptureMemory(clientAttribAddress, bytesToCapture, &updateMemory);
+    updateParamBuffer.addParam(std::move(updateMemory));
+
+    updateParamBuffer.addValueParam<GLuint64>("size", ParamType::TGLuint64, bytesToCapture);
+
+    frameCalls->emplace_back("UpdateClientArrayPointer", std::move(updateParamBuffer));
+}
+
 void CaptureVertexPointerES1(std::vector<CallCapture> *setupCalls,
                              gl::State *replayState,
                              GLuint attribIndex,
@@ -2671,6 +2867,10 @@ void CaptureTextureEnvironmentState(std::vector<CallCapture> *setupCalls,
                            gl::TextureEnvParameter::PointCoordReplace,
                            currentEnv.pointSpriteCoordReplace));
 
+    capIfNe(currentEnv.lodBias, defaultEnv.lodBias,
+            CaptureTexEnvf(*replayState, true, gl::TextureEnvTarget::TextureFilterControl,
+                           gl::TextureEnvParameter::LodBias, currentEnv.lodBias));
+
     // In case of non-default sampler units, the default unit must be set back here.
     capIfNe(currentUnit, defaultUnit, CaptureActiveTexture(*replayState, true, defaultUnit));
 }
@@ -2697,6 +2897,9 @@ void CaptureVertexArrayState(std::vector<CallCapture> *setupCalls,
     const gl::BufferManager &capturedBuffers = context->getState().getBufferManagerForCapture();
 
     gl::AttributesMask vertexPointerBindings;
+    gl::AttributesMask clientVertexArrayMask;
+    gl::AttribArray<const void *> clientVertexArrayData;
+    std::vector<size_t> clientVACallIndices;
 
     ASSERT(vertexAttribs.size() <= vertexBindings.size());
     for (GLuint attribIndex = 0; attribIndex < vertexAttribs.size(); ++attribIndex)
@@ -2811,7 +3014,37 @@ void CaptureVertexArrayState(std::vector<CallCapture> *setupCalls,
                 Capture(setupCalls, CaptureVertexAttribBinding(*replayState, true, attribIndex,
                                                                attrib.bindingIndex));
             }
+            if (setupCalls->back().params.hasClientArrayData())
+            {
+                // The last call's index is kept so the call's pointer and offset can be updated if
+                // its corresponding attribute is merged into another attribute later.
+                ParamCapture &clientArrayPointerParams =
+                    setupCalls->back().params.getClientArrayPointerParameter();
+                const void *clientArrayPointer = clientArrayPointerParams.value.voidConstPointerVal;
+
+                // If the attribute pointer is set to 0 in the setup, it should not be merged.
+                if (clientArrayPointer != nullptr)
+                {
+                    const size_t currentSetupCallLastIndex = setupCalls->size() - 1;
+                    clientVACallIndices.push_back(currentSetupCallLastIndex);
+                    clientVertexArrayMask.set(clientArrayPointerParams.arrayClientPointerIndex);
+                    clientVertexArrayData[clientArrayPointerParams.arrayClientPointerIndex] =
+                        clientArrayPointer;
+                }
+            }
         }
+    }
+
+    // Merge attribute pointers in the setup if possible.
+    if (clientVertexArrayMask.any())
+    {
+        ASSERT(!clientVACallIndices.empty());
+        MergedAttribRanges mergedAddrRanges;
+        gl::AttribArray<size_t> mergedIndexMap;
+
+        MaybeMergeClientAttributes(vertexArray, clientVertexArrayMask, clientVertexArrayData,
+                                   setupCalls, clientVACallIndices, false, 0, 0, mergedAddrRanges,
+                                   mergedIndexMap);
     }
 
     // The loop below expects attribs and bindings to have equal counts
@@ -3742,8 +3975,14 @@ void CaptureShareGroupMidExecutionSetup(
 
         auto eglImageAttribIter = resourceTracker->getImageToAttribTable().find(
             reinterpret_cast<EGLImage>(static_cast<uintptr_t>(eglImageID)));
-        ASSERT(eglImageAttribIter != resourceTracker->getImageToAttribTable().end());
-        const egl::AttributeMap &attribs = eglImageAttribIter->second;
+
+        // EGLCreateImage calls commonly specify no attribs so use an empty default
+        // if needed
+        static const angle::base::NoDestructor<egl::AttributeMap> kDefaultAttribs;
+        const egl::AttributeMap &attribs =
+            (eglImageAttribIter != resourceTracker->getImageToAttribTable().end())
+                ? eglImageAttribIter->second
+                : *kDefaultAttribs;
 
         for (std::vector<CallCapture> *calls : imageGenCalls)
         {
@@ -4041,23 +4280,40 @@ void CaptureShareGroupMidExecutionSetup(
                 }
                 else
                 {
-                    // Original image was deleted and needs to be recreated first
+                    // Original image was deleted, just use a placeholder ID for now.
+                    // UpdateEGLImageData() will create the staging texture at bind
+                    // time
                     eglImageID = {maxAccessedResourceIDs[ResourceIDType::Image] + 1};
-                    for (std::vector<CallCapture> *calls : texSetupCalls)
-                    {
-                        egl::AttributeMap attribs = egl::AttributeMap::CreateFromIntArray(nullptr);
-                        CallCapture eglCreateImageKHRCall = egl::CaptureCreateImageKHR(
-                            nullptr, true, nullptr, context->id(), EGL_GL_TEXTURE_2D,
-                            reinterpret_cast<EGLClientBuffer>(static_cast<uintptr_t>(0)), attribs,
-                            reinterpret_cast<EGLImage>(static_cast<uintptr_t>(eglImageID.value)));
-                        CaptureCustomCreateEGLImage(context, "CreateEGLImageKHR", desc.size.width,
-                                                    desc.size.height, eglCreateImageKHRCall,
-                                                    *calls);
-                    }
                 }
-                // Pass the eglImage to the texture that is bound to GL_TEXTURE_EXTERNAL_OES target
+
+                // Output an UpdateEGLImageData() call immediately before the external bind call to
+                // prepare a texture with either a representation of the AHB or a default texture
+                // if AHB retrieval fails
                 for (std::vector<CallCapture> *calls : texSetupCalls)
                 {
+                    auto imageEntry = resourceTracker->getImageDataMap().find(eglImageID);
+
+                    ParamBuffer params;
+                    params.addValueParam("imageID", ParamType::TGLuint, eglImageID.value);
+                    params.addValueParam("width", ParamType::TGLsizei,
+                                         static_cast<GLsizei>(desc.size.width));
+                    params.addValueParam("height", ParamType::TGLsizei,
+                                         static_cast<GLsizei>(desc.size.height));
+
+                    ParamCapture pixelsParam("pixels", ParamType::TvoidConstPointer);
+                    if (imageEntry != resourceTracker->getImageDataMap().end())
+                    {
+                        pixelsParam.value.voidConstPointerVal = imageEntry->second.data();
+                        pixelsParam.data.push_back(imageEntry->second);
+                    }
+                    else
+                    {
+                        pixelsParam.value.voidConstPointerVal = nullptr;
+                    }
+                    params.addParam(std::move(pixelsParam));
+
+                    calls->emplace_back("UpdateEGLImageData", std::move(params));
+
                     Capture(calls, CaptureEGLImageTargetTexture2DOES(
                                        replayState, true, gl::TextureType::External, eglImageID));
                 }
@@ -5416,85 +5672,88 @@ void CaptureMidExecutionSetup(const gl::Context *context,
     }
 
     // Blend state.
+    const gl::BlendStateExt &defaultBlend = replayState.getBlendStateExt();
+    const gl::BlendStateExt &currentBlend = apiState.getBlendStateExt();
 
     // First, check if every draw buffer blend state matches zero buffer.
     // If so, we can set them all the same using calls available before ES 3.2
     if (BlendStateEqualPerDrawBuffer(apiState))
     {
-        const gl::BlendState &defaultBlendState = replayState.getBlendState();
-        const gl::BlendState &currentBlendState = apiState.getBlendState();
-
-        if (currentBlendState.blend != defaultBlendState.blend)
+        if (currentBlend.getEnabledMask().test(0) != defaultBlend.getEnabledMask().test(0))
         {
-            capCap(GL_BLEND, currentBlendState.blend);
+            capCap(GL_BLEND, currentBlend.getEnabledMask().test(0));
         }
 
-        if (currentBlendState.sourceBlendRGB != defaultBlendState.sourceBlendRGB ||
-            currentBlendState.destBlendRGB != defaultBlendState.destBlendRGB ||
-            currentBlendState.sourceBlendAlpha != defaultBlendState.sourceBlendAlpha ||
-            currentBlendState.destBlendAlpha != defaultBlendState.destBlendAlpha)
+        if (currentBlend.getSrcColorIndexed(0) != defaultBlend.getSrcColorIndexed(0) ||
+            currentBlend.getDstColorIndexed(0) != defaultBlend.getDstColorIndexed(0) ||
+            currentBlend.getSrcAlphaIndexed(0) != defaultBlend.getSrcAlphaIndexed(0) ||
+            currentBlend.getDstAlphaIndexed(0) != defaultBlend.getDstAlphaIndexed(0))
         {
+            GLenum srcColor = ToGLenum(currentBlend.getSrcColorIndexed(0));
+            GLenum dstColor = ToGLenum(currentBlend.getDstColorIndexed(0));
+            GLenum srcAlpha = ToGLenum(currentBlend.getSrcAlphaIndexed(0));
+            GLenum dstAlpha = ToGLenum(currentBlend.getDstAlphaIndexed(0));
+
             if (context->isGLES1())
             {
                 // Even though their states are tracked independently, in GLES1 blendAlpha
                 // and blendRGB cannot be set separately and are always equal
-                cap(CaptureBlendFunc(replayState, true, currentBlendState.sourceBlendRGB,
-                                     currentBlendState.destBlendRGB));
+                cap(CaptureBlendFunc(replayState, true, srcColor, dstColor));
                 Capture(&resetCalls[angle::EntryPoint::GLBlendFunc],
-                        CaptureBlendFunc(replayState, true, currentBlendState.sourceBlendRGB,
-                                         currentBlendState.destBlendRGB));
+                        CaptureBlendFunc(replayState, true, srcColor, dstColor));
             }
             else
             {
                 // Always use BlendFuncSeparate for non-GLES1 as it covers all cases
-                cap(CaptureBlendFuncSeparate(replayState, true, currentBlendState.sourceBlendRGB,
-                                             currentBlendState.destBlendRGB,
-                                             currentBlendState.sourceBlendAlpha,
-                                             currentBlendState.destBlendAlpha));
+                cap(CaptureBlendFuncSeparate(replayState, true, srcColor, dstColor, srcAlpha,
+                                             dstAlpha));
                 Capture(&resetCalls[angle::EntryPoint::GLBlendFuncSeparate],
-                        CaptureBlendFuncSeparate(
-                            replayState, true, currentBlendState.sourceBlendRGB,
-                            currentBlendState.destBlendRGB, currentBlendState.sourceBlendAlpha,
-                            currentBlendState.destBlendAlpha));
+                        CaptureBlendFuncSeparate(replayState, true, srcColor, dstColor, srcAlpha,
+                                                 dstAlpha));
             }
         }
 
-        if (currentBlendState.blendEquationRGB != defaultBlendState.blendEquationRGB ||
-            currentBlendState.blendEquationAlpha != defaultBlendState.blendEquationAlpha)
+        if (currentBlend.getEquationColorIndexed(0) != defaultBlend.getEquationColorIndexed(0) ||
+            currentBlend.getEquationAlphaIndexed(0) != defaultBlend.getEquationAlphaIndexed(0))
         {
+            GLenum eqColor = ToGLenum(currentBlend.getEquationColorIndexed(0));
+            GLenum eqAlpha = ToGLenum(currentBlend.getEquationAlphaIndexed(0));
+
             // Similarly to BlendFunc, using BlendEquation in some cases complicates Reset.
-            cap(CaptureBlendEquationSeparate(replayState, true, currentBlendState.blendEquationRGB,
-                                             currentBlendState.blendEquationAlpha));
-            Capture(
-                &resetCalls[angle::EntryPoint::GLBlendEquationSeparate],
-                CaptureBlendEquationSeparate(replayState, true, currentBlendState.blendEquationRGB,
-                                             currentBlendState.blendEquationAlpha));
+            cap(CaptureBlendEquationSeparate(replayState, true, eqColor, eqAlpha));
+            Capture(&resetCalls[angle::EntryPoint::GLBlendEquationSeparate],
+                    CaptureBlendEquationSeparate(replayState, true, eqColor, eqAlpha));
         }
 
-        if (currentBlendState.colorMaskRed != defaultBlendState.colorMaskRed ||
-            currentBlendState.colorMaskGreen != defaultBlendState.colorMaskGreen ||
-            currentBlendState.colorMaskBlue != defaultBlendState.colorMaskBlue ||
-            currentBlendState.colorMaskAlpha != defaultBlendState.colorMaskAlpha)
+        bool defaultColorMaskRed, defaultColorMaskGreen, defaultColorMaskBlue,
+            defaultColorMaskAlpha;
+        defaultBlend.getColorMaskIndexed(0, &defaultColorMaskRed, &defaultColorMaskGreen,
+                                         &defaultColorMaskBlue, &defaultColorMaskAlpha);
+
+        bool currentColorMaskRed, currentColorMaskGreen, currentColorMaskBlue,
+            currentColorMaskAlpha;
+        currentBlend.getColorMaskIndexed(0, &currentColorMaskRed, &currentColorMaskGreen,
+                                         &currentColorMaskBlue, &currentColorMaskAlpha);
+
+        if (currentColorMaskRed != defaultColorMaskRed ||
+            currentColorMaskGreen != defaultColorMaskGreen ||
+            currentColorMaskBlue != defaultColorMaskBlue ||
+            currentColorMaskAlpha != defaultColorMaskAlpha)
         {
-            cap(CaptureColorMask(replayState, true,
-                                 gl::ConvertToGLBoolean(currentBlendState.colorMaskRed),
-                                 gl::ConvertToGLBoolean(currentBlendState.colorMaskGreen),
-                                 gl::ConvertToGLBoolean(currentBlendState.colorMaskBlue),
-                                 gl::ConvertToGLBoolean(currentBlendState.colorMaskAlpha)));
+            cap(CaptureColorMask(replayState, true, gl::ConvertToGLBoolean(currentColorMaskRed),
+                                 gl::ConvertToGLBoolean(currentColorMaskGreen),
+                                 gl::ConvertToGLBoolean(currentColorMaskBlue),
+                                 gl::ConvertToGLBoolean(currentColorMaskAlpha)));
             Capture(&resetCalls[angle::EntryPoint::GLColorMask],
-                    CaptureColorMask(replayState, true,
-                                     gl::ConvertToGLBoolean(currentBlendState.colorMaskRed),
-                                     gl::ConvertToGLBoolean(currentBlendState.colorMaskGreen),
-                                     gl::ConvertToGLBoolean(currentBlendState.colorMaskBlue),
-                                     gl::ConvertToGLBoolean(currentBlendState.colorMaskAlpha)));
+                    CaptureColorMask(replayState, true, gl::ConvertToGLBoolean(currentColorMaskRed),
+                                     gl::ConvertToGLBoolean(currentColorMaskGreen),
+                                     gl::ConvertToGLBoolean(currentColorMaskBlue),
+                                     gl::ConvertToGLBoolean(currentColorMaskAlpha)));
         }
     }
     else
     {
         // Otherwise, we must use EXT_draw_buffers_indexed features to set them independently
-        const gl::BlendStateExt &defaultBlend = replayState.getBlendStateExt();
-        const gl::BlendStateExt &currentBlend = apiState.getBlendStateExt();
-
         for (int idx = 0; idx < currentBlend.getDrawBufferCount(); idx++)
         {
             if (currentBlend.getEnabledMask().test(idx) != defaultBlend.getEnabledMask().test(idx))
@@ -6564,6 +6823,137 @@ void FrameCaptureShared::trackTextureUpdate(const gl::Context *context, const Ca
     // Mark it as modified
     mResourceTracker.getTrackedResource(context->id(), ResourceIDType::Texture)
         .setModifiedResource(id);
+}
+
+// Identify and mark texture-based framebuffer attachments as modified
+void FrameCaptureShared::trackFramebufferAttachmentUpdate(const gl::Context *context,
+                                                          const CallCapture &call)
+{
+    const gl::State &state                 = context->getState();
+    const gl::Framebuffer *drawFramebuffer = state.getDrawFramebuffer();
+
+    // Only FBOs can have attachments that we need to track
+    if (drawFramebuffer->isDefault())
+    {
+        return;
+    }
+
+    bool colorModified          = false;
+    bool depthModified          = false;
+    bool stencilModified        = false;
+    const EntryPoint entryPoint = call.entryPoint;
+
+    if (IsDrawEntryPoint(entryPoint))
+    {
+        // Based on the current draw call, determine if any attachments are modified
+        colorModified = drawFramebuffer->getDrawBufferMask().any() &&
+                        !state.allActiveDrawBufferChannelsMasked();
+        depthModified   = drawFramebuffer->getDepthAttachment() && state.isDepthWriteEnabled();
+        stencilModified = drawFramebuffer->getStencilAttachment() &&
+                          state.isStencilWriteEnabled(drawFramebuffer->getStencilBitCount());
+    }
+    else
+    {
+        switch (entryPoint)
+        {
+            case EntryPoint::GLClear:
+            case EntryPoint::GLBlitFramebuffer:
+            {
+                // BlitFramebuffer mask is at index 8, Clear mask is at index 0
+                int maskIndex   = (entryPoint == EntryPoint::GLClear) ? 0 : 8;
+                GLbitfield mask = call.params.getParam("mask", ParamType::TGLbitfield, maskIndex)
+                                      .value.GLbitfieldVal;
+                colorModified   = (mask & GL_COLOR_BUFFER_BIT);
+                depthModified   = (mask & GL_DEPTH_BUFFER_BIT);
+                stencilModified = (mask & GL_STENCIL_BUFFER_BIT);
+                break;
+            }
+            case EntryPoint::GLClearBufferfi:
+                depthModified   = true;
+                stencilModified = true;
+                break;
+            case EntryPoint::GLClearBufferfv:
+            case EntryPoint::GLClearBufferiv:
+            case EntryPoint::GLClearBufferuiv:
+            {
+                GLenum buffer =
+                    call.params.getParam("buffer", ParamType::TGLenum, 0).value.GLenumVal;
+                colorModified   = (buffer == GL_COLOR);
+                depthModified   = (buffer == GL_DEPTH || buffer == GL_DEPTH_STENCIL);
+                stencilModified = (buffer == GL_STENCIL || buffer == GL_DEPTH_STENCIL);
+                break;
+            }
+            case EntryPoint::GLInvalidateFramebuffer:
+            case EntryPoint::GLDiscardFramebufferEXT:
+            {
+                GLsizei numAttachments =
+                    call.params.getParam("numAttachments", ParamType::TGLsizei, 1).value.GLsizeiVal;
+                const GLenum *attachments =
+                    call.params.getParam("attachments", ParamType::TGLenumConstPointer, 2)
+                        .value.GLenumConstPointerVal;
+                for (GLsizei i = 0; i < numAttachments; ++i)
+                {
+                    if (attachments[i] == GL_DEPTH_ATTACHMENT ||
+                        attachments[i] == GL_DEPTH_STENCIL_ATTACHMENT)
+                    {
+                        depthModified = true;
+                    }
+                    if (attachments[i] == GL_STENCIL_ATTACHMENT ||
+                        attachments[i] == GL_DEPTH_STENCIL_ATTACHMENT)
+                    {
+                        stencilModified = true;
+                    }
+                    if (attachments[i] == GL_COLOR || (attachments[i] >= GL_COLOR_ATTACHMENT0 &&
+                                                       attachments[i] <= GL_COLOR_ATTACHMENT31))
+                    {
+                        colorModified = true;
+                    }
+                }
+                break;
+            }
+            default:
+                return;
+        }
+    }
+
+    if (!colorModified && !depthModified && !stencilModified)
+    {
+        return;
+    }
+
+    auto &textureTracker =
+        mResourceTracker.getTrackedResource(context->id(), ResourceIDType::Texture);
+
+    // Helper for marking texture attachment as modified
+    auto markModified = [&](const gl::FramebufferAttachment *attachment) {
+        if (attachment && attachment->type() == GL_TEXTURE)
+        {
+            textureTracker.setModifiedResource(attachment->getTexture()->id().value);
+        }
+    };
+
+    // Mark the identified textures as modified
+    if (depthModified)
+    {
+        markModified(drawFramebuffer->getDepthAttachment());
+    }
+    if (stencilModified)
+    {
+        markModified(drawFramebuffer->getStencilAttachment());
+    }
+    if (colorModified)
+    {
+        gl::DrawBufferMask colorMask = drawFramebuffer->getDrawBufferMask();
+        // If it's a draw mark only the buffers the shader actually writes to
+        if (IsDrawEntryPoint(entryPoint))
+        {
+            colorMask &= state.getBlendStateExt().compareColorMask(0);
+        }
+        for (size_t i : colorMask)
+        {
+            markModified(drawFramebuffer->getColorAttachment(i));
+        }
+    }
 }
 
 // Identify and mark writeable shader image textures as modified
@@ -7670,8 +8060,16 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(
                     .value.TextureTypeVal;
             egl::ImageID imageID =
                 call.params.getParam("imagePacked", ParamType::TImageID, 1).value.ImageIDVal;
-            mResourceTracker.getTextureIDToImageTable().insert(std::pair<GLuint, egl::ImageID>(
-                context->getState().getTargetTexture(target)->getId(), imageID));
+            GLuint textureID            = context->getState().getTargetTexture(target)->getId();
+            auto &textureIDToImageTable = mResourceTracker.getTextureIDToImageTable();
+            auto existingBinding        = textureIDToImageTable.find(textureID);
+            if (isCaptureActive() && existingBinding != textureIDToImageTable.end() &&
+                existingBinding->second != imageID)
+            {
+                mResourceTracker.getExternalImageBindingsToRestore()[context->id()].insert(
+                    textureID);
+            }
+            textureIDToImageTable.insert(std::pair<GLuint, egl::ImageID>(textureID, imageID));
             break;
         }
 
@@ -7719,6 +8117,8 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(
                     ++texImageIter;
                 }
             }
+
+            mResourceTracker.getImageDataMap().erase(eglImageID);
 
             FrameCaptureShared *frameCaptureShared =
                 context->getShareGroup()->getFrameCaptureShared();
@@ -7772,6 +8172,13 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(
     {
         // If this call modified texture contents, track it for possible reset
         trackTextureUpdate(context, call);
+    }
+
+    if (IsFramebufferUpdate(call))
+    {
+        // If this call modified framebuffer contents, track its drawable attachments for possible
+        // update
+        trackFramebufferAttachmentUpdate(context, call);
     }
 
     if (IsImageUpdate(call))
@@ -8054,6 +8461,66 @@ void FrameCaptureShared::maybeCapturePostCallUpdates(const gl::Context *context)
             CaptureUpdateUniformBlockIndexes(program, &mFrameCalls);
             break;
         }
+        case EntryPoint::GLEGLImageTargetTexture2DOES:
+        {
+            gl::TextureType target =
+                lastCall.params.getParam("targetPacked", ParamType::TTextureType, 0)
+                    .value.TextureTypeVal;
+            egl::ImageID imageID =
+                lastCall.params.getParam("imagePacked", ParamType::TImageID, 1).value.ImageIDVal;
+
+            const egl::Image *eglImage = context->getDisplay()->getImage(imageID);
+            if (!eglImage)
+            {
+                break;
+            }
+
+            size_t width  = eglImage->getWidth();
+            size_t height = eglImage->getHeight();
+
+            // Try to read back AHB contents. External textures are normally unreadable in
+            // GLES but the ANGLE Vulkan backend supports this. If unsupported, output
+            // UpdateEGLImageData(..., nullptr) which will then default to a fallback green
+            // placeholder texture.
+            bool imageDataCaptured = false;
+            gl::Texture *texture   = context->getState().getTargetTexture(target);
+            if (texture && context->getExtensions().getImageANGLE)
+            {
+                std::vector<uint8_t> imagePixels(width * height * 4);
+                gl::PixelPackState packState;
+                packState.alignment = 1;
+                if (texture->getTexImage(
+                        context, packState, nullptr, gl::NonCubeTextureTypeToTarget(target), 0,
+                        GL_RGBA, GL_UNSIGNED_BYTE, imagePixels.data()) == angle::Result::Continue)
+                {
+                    mResourceTracker.getImageDataMap()[imageID] = std::move(imagePixels);
+                    imageDataCaptured                           = true;
+                }
+            }
+
+            ParamBuffer params;
+            params.addValueParam("imageID", ParamType::TGLuint, imageID.value);
+            params.addValueParam("width", ParamType::TGLsizei, static_cast<GLsizei>(width));
+            params.addValueParam("height", ParamType::TGLsizei, static_cast<GLsizei>(height));
+
+            ParamCapture pixelsParam("pixels", ParamType::TvoidConstPointer);
+            if (imageDataCaptured)
+            {
+                auto &storedImagePixels               = mResourceTracker.getImageDataMap()[imageID];
+                pixelsParam.value.voidConstPointerVal = storedImagePixels.data();
+                pixelsParam.data.push_back(storedImagePixels);
+            }
+            else
+            {
+                pixelsParam.value.voidConstPointerVal = nullptr;
+            }
+            params.addParam(std::move(pixelsParam));
+
+            // Insert UpdateEGLImageData so the EGLImage and data are valid for the
+            // glEGLImageTargetTexture2DOES() bind call
+            mFrameCalls.emplace(mFrameCalls.end() - 1, "UpdateEGLImageData", std::move(params));
+            break;
+        }
         case EntryPoint::GLUseProgram:
             CaptureUpdateCurrentProgram(lastCall, 0, &mFrameCalls);
             break;
@@ -8138,6 +8605,25 @@ void FrameCaptureShared::maybeCapturePostCallUpdates(const gl::Context *context)
             }
             break;
         }
+        case EntryPoint::GLVertexAttribPointer:
+        case EntryPoint::GLVertexAttribIPointer:
+        case EntryPoint::GLVertexPointer:
+        case EntryPoint::GLNormalPointer:
+        case EntryPoint::GLColorPointer:
+        case EntryPoint::GLPointSizePointerOES:
+        case EntryPoint::GLTexCoordPointer:
+        {
+            if (lastCall.params.hasClientArrayData())
+            {
+                // The last call's index is kept so the call's pointer and offset can be updated if
+                // its corresponding attribute is merged into another attribute later.
+                const size_t currentFrameCallsLastIndex = mFrameCalls.size() - 1;
+                mClientVertexArrayCallIndices.push_back(currentFrameCallsLastIndex);
+                mClientVertexArrayDirtyAttribMask.set(
+                    lastCall.params.getClientArrayPointerParameter().arrayClientPointerIndex);
+            }
+            break;
+        }
         default:
             break;
     }
@@ -8153,45 +8639,57 @@ void FrameCaptureShared::captureClientArraySnapshot(const gl::Context *context,
         return;
     }
 
-    const gl::VertexArray *vao = context->getState().getVertexArray();
+    // Capture client array data. If the address ranges for the vertex attribute pointers overlap,
+    // they should use a single memory space with different offsets.
+    MergedAttribRanges mergedAddrRanges;
+    gl::AttribArray<size_t> mergedIndexMap;
 
-    // Capture client array data.
-    for (size_t attribIndex : context->getActiveClientAttribsMask())
+    // For draw time, the data active client attributes should always be copied, even if there is no
+    // new call in the beginning of the frame to set the attribute pointer.
+    gl::AttributesMask clientVADirtyAndActiveAttribsMask =
+        mClientVertexArrayDirtyAttribMask | context->getActiveClientAttribsMask();
+
+    // If any updated attribute since the beginning or the last draw call is currently not using a
+    // client address (at draw time), there is no need for merging it.
+    for (size_t attribIndex : clientVADirtyAndActiveAttribsMask)
     {
-        const gl::VertexAttribute &attrib = vao->getVertexAttribute(attribIndex);
-        const gl::VertexBinding &binding  = vao->getVertexBinding(attrib.bindingIndex);
-
-        const void *clientSideAddress = mClientVertexArrayData[attribIndex];
-
-        if (clientSideAddress)
+        if (mClientVertexArrayData[attribIndex] == nullptr)
         {
-            size_t count = vertexCount;
-
-            if (binding.getDivisor() > 0)
-            {
-                count = rx::UnsignedCeilDivide(static_cast<uint32_t>(instanceCount),
-                                               binding.getDivisor());
-            }
-
-            // The last capture element doesn't take up the full stride.
-            size_t bytesToCapture = (count - 1) * binding.getStride() + attrib.format->pixelBytes;
-
-            ParamBuffer updateParamBuffer;
-            updateParamBuffer.addValueParam<GLint>("arrayIndex", ParamType::TGLint,
-                                                   static_cast<uint32_t>(attribIndex));
-
-            ParamCapture updateMemory("pointer", ParamType::TvoidConstPointer);
-            CaptureMemory(clientSideAddress, bytesToCapture, &updateMemory);
-            updateParamBuffer.addParam(std::move(updateMemory));
-
-            updateParamBuffer.addValueParam<GLuint64>("size", ParamType::TGLuint64, bytesToCapture);
-
-            mFrameCalls.emplace_back("UpdateClientArrayPointer", std::move(updateParamBuffer));
-
-            mClientArraySizes[attribIndex] =
-                std::max(mClientArraySizes[attribIndex], bytesToCapture);
+            clientVADirtyAndActiveAttribsMask.set(attribIndex, 0);
         }
     }
+
+    // Merge attribute pointers at draw if possible.
+    const gl::VertexArray *vao = context->getState().getVertexArray();
+    MaybeMergeClientAttributes(vao, clientVADirtyAndActiveAttribsMask, mClientVertexArrayData,
+                               &mFrameCalls, mClientVertexArrayCallIndices, true, vertexCount,
+                               instanceCount, mergedAddrRanges, mergedIndexMap);
+
+    // Capture the data used by the active vertex attribute pointers. So a merged attribute index is
+    // marked as active if at least one attribute merged into it is active. This ensures that only
+    // the data necessary for the draw is copied.
+    gl::AttributesMask activeMergedAttrMask;
+    for (size_t attribIndex : clientVADirtyAndActiveAttribsMask)
+    {
+        if (context->getActiveClientAttribsMask().test(attribIndex))
+        {
+            activeMergedAttrMask.set(mergedIndexMap[attribIndex]);
+        }
+    }
+    for (size_t attribIndex : activeMergedAttrMask)
+    {
+        size_t bytesToCapture =
+            mergedAddrRanges.endAddr[attribIndex] - mergedAddrRanges.startAddr[attribIndex];
+        CaptureUpdateClientArrayPointer(
+            static_cast<uint32_t>(attribIndex),
+            reinterpret_cast<const void *>(mergedAddrRanges.startAddr[attribIndex]), bytesToCapture,
+            &mFrameCalls);
+        mClientArraySizes[attribIndex] = std::max(mClientArraySizes[attribIndex], bytesToCapture);
+    }
+
+    // Clear the vertex attribute pointer calls after the merge processing is finished.
+    mClientVertexArrayCallIndices.clear();
+    mClientVertexArrayDirtyAttribMask.reset();
 }
 
 void FrameCaptureShared::captureCoherentBufferSnapshot(const gl::Context *context, gl::BufferID id)
@@ -8545,6 +9043,34 @@ void FrameCaptureShared::onEndFrame(gl::Context *context)
         CaptureValidateSerializedState(context, &mFrameCalls);
     }
 
+    // Merge attribute pointers in the end of the frame if possible.
+    if (mClientVertexArrayDirtyAttribMask.any())
+    {
+        ASSERT(!mClientVertexArrayCallIndices.empty());
+        MergedAttribRanges mergedAddrRanges;
+        gl::AttribArray<size_t> mergedIndexMap;
+        const gl::VertexArray *vao = context->getState().getVertexArray();
+
+        // If any updated attribute since the beginning or the last draw call is currently not using
+        // a client address at the end of the frame, there is no need for merging it.
+        for (size_t attribIndex : mClientVertexArrayDirtyAttribMask)
+        {
+            const void *clientSideAddress = mClientVertexArrayData[attribIndex];
+            if (clientSideAddress == nullptr)
+            {
+                mClientVertexArrayDirtyAttribMask.set(attribIndex, 0);
+            }
+        }
+
+        MaybeMergeClientAttributes(vao, mClientVertexArrayDirtyAttribMask, mClientVertexArrayData,
+                                   &mFrameCalls, mClientVertexArrayCallIndices, false, 0, 0,
+                                   mergedAddrRanges, mergedIndexMap);
+
+        // Clear the vertex attribute pointer calls after the merge processing is finished.
+        mClientVertexArrayCallIndices.clear();
+        mClientVertexArrayDirtyAttribMask.reset();
+    }
+
     writeMainContextCppReplay(context, frameCapture->getSetupCalls(),
                               frameCapture->getStateResetHelper());
 
@@ -8613,8 +9139,6 @@ void FrameCaptureShared::initalizeTraceStorage()
 void StateResetHelper::setDefaultResetCalls(const gl::Context *context,
                                             angle::EntryPoint entryPoint)
 {
-    static const gl::BlendState kDefaultBlendState;
-
     // Populate default reset calls for entrypoints to support looping to beginning
     switch (entryPoint)
     {
@@ -8645,18 +9169,14 @@ void StateResetHelper::setDefaultResetCalls(const gl::Context *context,
             // non-GLES1 apps as it covers all cases
             if (context->isGLES1())
             {
-                Capture(
-                    &mResetCalls[angle::EntryPoint::GLBlendFunc],
-                    CaptureBlendFunc(context->getState(), true, kDefaultBlendState.sourceBlendRGB,
-                                     kDefaultBlendState.destBlendRGB));
+                Capture(&mResetCalls[angle::EntryPoint::GLBlendFunc],
+                        CaptureBlendFunc(context->getState(), true, GL_ONE, GL_ZERO));
             }
             else
             {
                 Capture(&mResetCalls[angle::EntryPoint::GLBlendFuncSeparate],
-                        CaptureBlendFuncSeparate(
-                            context->getState(), true, kDefaultBlendState.sourceBlendRGB,
-                            kDefaultBlendState.destBlendRGB, kDefaultBlendState.sourceBlendAlpha,
-                            kDefaultBlendState.destBlendAlpha));
+                        CaptureBlendFuncSeparate(context->getState(), true, GL_ONE, GL_ZERO, GL_ONE,
+                                                 GL_ZERO));
             }
             break;
         }
@@ -8667,20 +9187,16 @@ void StateResetHelper::setDefaultResetCalls(const gl::Context *context,
         }
         case angle::EntryPoint::GLBlendEquationSeparate:
         {
-            Capture(&mResetCalls[angle::EntryPoint::GLBlendEquationSeparate],
-                    CaptureBlendEquationSeparate(context->getState(), true,
-                                                 kDefaultBlendState.blendEquationRGB,
-                                                 kDefaultBlendState.blendEquationAlpha));
+            Capture(
+                &mResetCalls[angle::EntryPoint::GLBlendEquationSeparate],
+                CaptureBlendEquationSeparate(context->getState(), true, GL_FUNC_ADD, GL_FUNC_ADD));
             break;
         }
         case angle::EntryPoint::GLColorMask:
         {
-            Capture(&mResetCalls[angle::EntryPoint::GLColorMask],
-                    CaptureColorMask(context->getState(), true,
-                                     gl::ConvertToGLBoolean(kDefaultBlendState.colorMaskRed),
-                                     gl::ConvertToGLBoolean(kDefaultBlendState.colorMaskGreen),
-                                     gl::ConvertToGLBoolean(kDefaultBlendState.colorMaskBlue),
-                                     gl::ConvertToGLBoolean(kDefaultBlendState.colorMaskAlpha)));
+            Capture(
+                &mResetCalls[angle::EntryPoint::GLColorMask],
+                CaptureColorMask(context->getState(), true, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE));
             break;
         }
         case angle::EntryPoint::GLBlendColor:
@@ -8924,6 +9440,7 @@ void FrameCaptureShared::writeJSON(const gl::Context *context)
     json.addBool("AreClientArraysEnabled", glState.areClientArraysEnabled());
     json.addBool("IsBindGeneratesResourcesEnabled", glState.isBindGeneratesResourceEnabled());
     json.addBool("IsWebGLCompatibilityEnabled", glState.isWebGL());
+    json.addBool("IsHardenedContextEnabled", context->isHardenedContext());
     json.addBool("IsRobustResourceInitEnabled", glState.isRobustResourceInitEnabled());
     json.addBool("AreExtensionsEnabled", context->getExtensionsEnabled());
     json.endGroup();
@@ -9280,6 +9797,9 @@ void FrameCaptureShared::writeMainContextCppReplay(const gl::Context *context,
                                         &mBinaryData, anyResourceReset, &mResourceIDBufferSize);
                 }
 
+                MaybeResetEGLImageBindings(contextID, resetStream, &mResourceTracker,
+                                           &anyResourceReset);
+
                 // Only call eglMakeCurrent if anything was actually reset in the function and the
                 // context differs from current
                 if (anyResourceReset && contextID != context->id())
@@ -9550,6 +10070,15 @@ namespace egl
 {
 angle::ParamCapture CaptureAttributeMap(const egl::AttributeMap &attribMap)
 {
+    // It is common for EGL entrypoints to take NULL attribute lists, for instance
+    // eglCreateImage()
+    if (attribMap.getType() == AttributeMapType::Invalid || attribMap.isEmpty())
+    {
+        angle::ParamCapture paramCapture("attrib_list", angle::ParamType::TEGLintPointer);
+        paramCapture.value.EGLintPointerVal = nullptr;
+        return paramCapture;
+    }
+
     switch (attribMap.getType())
     {
         case AttributeMapType::Attrib:

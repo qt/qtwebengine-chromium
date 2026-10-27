@@ -41,7 +41,6 @@ openscreen_source_set("cast_receiver_lib") {
   if (have_ffmpeg && have_libsdl2) {
     defines = [ "CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS" ]
     sources += [
-      "avcodec_glue.h",
       "decoder.cc",
       "decoder.h",
       "sdl_audio_player.cc",
@@ -53,6 +52,7 @@ openscreen_source_set("cast_receiver_lib") {
       "sdl_video_player.cc",
       "sdl_video_player.h",
     ]
+    deps += [ "../standalone_common:ffmpeg_glue" ]
     include_dirs = ffmpeg_include_dirs + libsdl2_include_dirs
     lib_dirs = external_lib_dirs + ffmpeg_lib_dirs + libsdl2_lib_dirs
     libs = ffmpeg_libs + libsdl2_libs

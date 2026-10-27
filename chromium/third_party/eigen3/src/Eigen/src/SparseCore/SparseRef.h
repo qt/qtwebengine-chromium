@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SPARSE_REF_H
 #define EIGEN_SPARSE_REF_H
@@ -38,7 +39,7 @@ struct traits<Ref<SparseMatrix<MatScalar, MatOptions, MatIndex>, Options_, Strid
                           ((PlainObjectType::Flags & RowMajorBit) == (Derived::Flags & RowMajorBit)),
       MatchAtCompileTime = (Derived::Flags & CompressedAccessBit) && StorageOrderMatch
     };
-    typedef std::conditional_t<MatchAtCompileTime, internal::true_type, internal::false_type> type;
+    typedef std::conditional_t<MatchAtCompileTime, std::true_type, std::false_type> type;
   };
 };
 
@@ -60,7 +61,7 @@ struct traits<Ref<SparseVector<MatScalar, MatOptions, MatIndex>, Options_, Strid
   template <typename Derived>
   struct match {
     enum { MatchAtCompileTime = (Derived::Flags & CompressedAccessBit) && Derived::IsVectorAtCompileTime };
-    typedef std::conditional_t<MatchAtCompileTime, internal::true_type, internal::false_type> type;
+    typedef std::conditional_t<MatchAtCompileTime, std::true_type, std::false_type> type;
   };
 };
 
@@ -89,11 +90,21 @@ class SparseRefBase : public SparseMapBase<Derived> {
  protected:
   template <typename Expression>
   void construct(Expression& expr) {
-    if (expr.outerIndexPtr() == 0)
+    EIGEN_IF_CONSTEXPR(Expression::IsVectorAtCompileTime) {
+      const Index offset = expr.outerIndexPtr() ? expr.outerIndexPtr()[0] : 0;
+      auto inner_index_ptr = expr.innerIndexPtr();
+      auto value_ptr = expr.valuePtr();
+      if (inner_index_ptr) inner_index_ptr += offset;
+      if (value_ptr) value_ptr += offset;
+      internal::construct_at<Base>(this, expr.size(), expr.nonZeros(), inner_index_ptr, value_ptr);
+    }
+    else if (expr.outerIndexPtr() == 0) {
       internal::construct_at<Base>(this, expr.size(), expr.nonZeros(), expr.innerIndexPtr(), expr.valuePtr());
-    else
+    }
+    else {
       internal::construct_at<Base>(this, expr.rows(), expr.cols(), expr.nonZeros(), expr.outerIndexPtr(),
                                    expr.innerIndexPtr(), expr.valuePtr(), expr.innerNonZeroPtr());
+    }
   }
 };
 
@@ -199,7 +210,7 @@ class Ref<const SparseMatrix<MatScalar, MatOptions, MatIndex>, Options, StrideTy
 
  protected:
   template <typename Expression>
-  void construct(const Expression& expr, internal::true_type) {
+  void construct(const Expression& expr, std::true_type) {
     if ((Options & int(StandardCompressedFormat)) && (!expr.isCompressed())) {
       TPlainObjectType* obj = internal::construct_at(reinterpret_cast<TPlainObjectType*>(&m_storage), expr);
       m_hasCopy = true;
@@ -210,7 +221,7 @@ class Ref<const SparseMatrix<MatScalar, MatOptions, MatIndex>, Options, StrideTy
   }
 
   template <typename Expression>
-  void construct(const Expression& expr, internal::false_type) {
+  void construct(const Expression& expr, std::false_type) {
     TPlainObjectType* obj = internal::construct_at(reinterpret_cast<TPlainObjectType*>(&m_storage), expr);
     m_hasCopy = true;
     Base::construct(*obj);
@@ -268,6 +279,8 @@ class Ref<SparseVectorType> : public SparseMapBase<Derived, WriteAccessors>
   {
     EIGEN_STATIC_ASSERT(bool(internal::is_lvalue<Derived>::value), THIS_EXPRESSION_IS_NOT_A_LVALUE__IT_IS_READ_ONLY);
     EIGEN_STATIC_ASSERT(bool(Traits::template match<Derived>::MatchAtCompileTime), STORAGE_LAYOUT_DOES_NOT_MATCH);
+    EIGEN_STATIC_ASSERT((!std::is_same<Derived, PlainObjectType>::value),
+                        THIS_EXPRESSION_IS_NOT_A_LVALUE__IT_IS_READ_ONLY);
     Base::construct(expr.const_cast_derived());
   }
 };
@@ -305,12 +318,12 @@ class Ref<const SparseVector<MatScalar, MatOptions, MatIndex>, Options, StrideTy
 
  protected:
   template <typename Expression>
-  void construct(const Expression& expr, internal::true_type) {
+  void construct(const Expression& expr, std::true_type) {
     Base::construct(expr);
   }
 
   template <typename Expression>
-  void construct(const Expression& expr, internal::false_type) {
+  void construct(const Expression& expr, std::false_type) {
     TPlainObjectType* obj = internal::construct_at(reinterpret_cast<TPlainObjectType*>(&m_storage), expr);
     m_hasCopy = true;
     Base::construct(*obj);

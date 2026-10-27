@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
+
 find_package(Qt4 REQUIRED)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)

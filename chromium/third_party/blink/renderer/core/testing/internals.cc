@@ -188,6 +188,7 @@
 #include "third_party/blink/renderer/platform/heap/cross_thread_handle.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/instrumentation/instance_counters.h"
+#include "third_party/blink/renderer/platform/instrumentation/memory_pressure_listener.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/language.h"
 #include "third_party/blink/renderer/platform/loader/fetch/memory_cache.h"
@@ -4015,40 +4016,6 @@ ScriptPromise<IDLString> Internals::LCPPrediction(ScriptState* script_state,
   CHECK(lcpp);
   lcpp->AddLCPPredictedCallback(
       BindOnce(&OnLCPPredicted, WrapPersistent(resolver)));
-  return promise;
-}
-
-void ExemptUrlFromNetworkRevocationComplete(
-    ScriptPromiseResolver<IDLUndefined>* resolver) {
-  resolver->Resolve();
-}
-
-ScriptPromise<IDLUndefined> Internals::exemptUrlFromNetworkRevocation(
-    ScriptState* script_state,
-    const String& url) {
-  if (!blink::features::IsFencedFramesEnabled()) {
-    return EmptyPromise();
-  }
-  if (!base::FeatureList::IsEnabled(
-          blink::features::kFencedFramesLocalUnpartitionedDataAccess)) {
-    return EmptyPromise();
-  }
-  if (!base::FeatureList::IsEnabled(
-          blink::features::kExemptUrlFromNetworkRevocationForTesting)) {
-    return EmptyPromise();
-  }
-  if (!GetFrame()) {
-    return EmptyPromise();
-  }
-  LocalFrame* frame = GetFrame();
-  DCHECK(frame->GetDocument());
-  auto* resolver =
-      MakeGarbageCollected<ScriptPromiseResolver<IDLUndefined>>(script_state);
-  auto promise = resolver->Promise();
-  frame->GetLocalFrameHostRemote().ExemptUrlFromNetworkRevocationForTesting(
-      url_test_helpers::ToKURL(url.Utf8()),
-      BindOnce(&ExemptUrlFromNetworkRevocationComplete,
-               WrapPersistent(resolver)));
   return promise;
 }
 

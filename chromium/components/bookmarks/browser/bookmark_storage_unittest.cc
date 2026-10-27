@@ -10,6 +10,8 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/strings/strcat.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
@@ -74,6 +76,13 @@ std::optional<base::DictValue> ReadEncryptedFileToDict(
                                     base::JSON_PARSE_CHROMIUM_EXTENSIONS);
 }
 
+std::string DictValueToJsonString(const base::DictValue& dict_value) {
+  std::string json_string;
+  base::JSONWriter::WriteWithOptions(
+      dict_value, base::JSONWriter::OPTIONS_PRETTY_PRINT, &json_string);
+  return json_string;
+}
+
 }  // namespace
 
 class BookmarkStorageWithSingleFileTest
@@ -84,9 +93,7 @@ class BookmarkStorageWithSingleFileTest
         encrypted_file_path_(GetTestEncryptedBookmarksFileNameInNewTempDir()) {
     test::InitFeaturesForBookmarkTestEncryptionStage(feature_list_, GetParam());
     if (IsEncryptedFilePrimary()) {
-      encryptor_ = base::MakeRefCounted<
-          base::RefCountedData<const os_crypt_async::Encryptor>>(
-          std::in_place, os_crypt_async::GetTestEncryptorForTesting());
+      encryptor_ = os_crypt_async::GetTestEncryptorForTesting();
     }
   }
 
@@ -111,7 +118,7 @@ class BookmarkStorageWithSingleFileTest
 
   std::optional<base::DictValue> GetPrimaryFileContent() {
     if (IsEncryptedFilePrimary()) {
-      return ReadEncryptedFileToDict(encrypted_file_path_, encryptor_->data);
+      return ReadEncryptedFileToDict(encrypted_file_path_, *encryptor_);
     }
     return ReadFileToDict(clear_text_file_path_);
   }
@@ -124,8 +131,7 @@ class BookmarkStorageWithSingleFileTest
   }
 
   base::test::ScopedFeatureList feature_list_;
-  scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-      encryptor_;
+  scoped_refptr<const os_crypt_async::Encryptor> encryptor_;
   const base::FilePath clear_text_file_path_;
   const base::FilePath encrypted_file_path_;
 };
@@ -356,10 +362,8 @@ TEST_P(BookmarkStorageWithSecondayFileTest,
   const base::FilePath encrypted_bookmarks_file_path =
       GetTestEncryptedBookmarksFileNameInNewTempDir();
 
-  scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-      encryptor = base::MakeRefCounted<
-          base::RefCountedData<const os_crypt_async::Encryptor>>(
-          std::in_place, os_crypt_async::GetTestEncryptorForTesting());
+  scoped_refptr<os_crypt_async::Encryptor> encryptor =
+      os_crypt_async::GetTestEncryptorForTesting();
   base::test::TaskEnvironment task_environment{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   BookmarkStorage storage(
@@ -373,7 +377,7 @@ TEST_P(BookmarkStorageWithSecondayFileTest,
   std::optional<base::DictValue> file_content =
       ReadFileToDict(bookmarks_file_path);
   std::optional<base::DictValue> decrypted_file_content =
-      ReadEncryptedFileToDict(encrypted_bookmarks_file_path, encryptor->data);
+      ReadEncryptedFileToDict(encrypted_bookmarks_file_path, *encryptor);
   ASSERT_TRUE(decrypted_file_content.has_value());
   BookmarkCodec codec;
   base::DictValue expected_file_content = codec.Encode(
@@ -414,10 +418,8 @@ TEST_P(BookmarkStorageWithSecondayFileTest,
 
   base::test::TaskEnvironment task_environment{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
-  scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-      encryptor = base::MakeRefCounted<
-          base::RefCountedData<const os_crypt_async::Encryptor>>(
-          std::in_place, os_crypt_async::GetTestEncryptorForTesting());
+  scoped_refptr<os_crypt_async::Encryptor> encryptor =
+      os_crypt_async::GetTestEncryptorForTesting();
   BookmarkStorage storage(
       model.get(), BookmarkStorage::kSelectLocalOrSyncableNodes, encryptor,
       bookmarks_file_path, encrypted_bookmarks_file_path);
@@ -454,11 +456,8 @@ TEST_P(BookmarkStorageWithSecondayFileTest,
   const base::FilePath encrypted_bookmarks_file_path =
       GetTestEncryptedBookmarksFileNameInNewTempDir();
 
-  scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-      encryptor = base::MakeRefCounted<
-          base::RefCountedData<const os_crypt_async::Encryptor>>(
-          std::in_place,
-          os_crypt_async::GetTestEncryptorWithoutKeysForTesting());
+  scoped_refptr<os_crypt_async::Encryptor> encryptor =
+      os_crypt_async::GetTestEncryptorWithoutKeysForTesting();
   base::test::TaskEnvironment task_environment{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   BookmarkStorage storage(
@@ -492,7 +491,7 @@ TEST_P(BookmarkStorageWithSecondayFileTest,
 }
 
 TEST_P(BookmarkStorageWithSecondayFileTest,
-       SaveToSingleFileNow_OnlyEncryptedFileIsSavedRightAway) {
+       SaveSingleFileIfNoPreviousSave_OnlyEncryptedFileIsSavedRightAway) {
   base::HistogramTester histogram_tester;
   std::unique_ptr<BookmarkModel> model = CreateModelWithOneBookmark();
 
@@ -501,29 +500,29 @@ TEST_P(BookmarkStorageWithSecondayFileTest,
   const base::FilePath encrypted_bookmarks_file_path =
       GetTestEncryptedBookmarksFileNameInNewTempDir();
 
-  scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-      encryptor = base::MakeRefCounted<
-          base::RefCountedData<const os_crypt_async::Encryptor>>(
-          std::in_place, os_crypt_async::GetTestEncryptorForTesting());
+  scoped_refptr<os_crypt_async::Encryptor> encryptor =
+      os_crypt_async::GetTestEncryptorForTesting();
   base::test::TaskEnvironment task_environment{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   BookmarkStorage storage(
       model.get(), BookmarkStorage::kSelectLocalOrSyncableNodes, encryptor,
       bookmarks_file_path, encrypted_bookmarks_file_path);
+  BookmarkCodec codec;
+  base::DictValue expected_file_content = codec.Encode(
+      model->bookmark_bar_node(), model->other_node(), model->mobile_node(),
+      model->client()->EncodeLocalOrSyncableBookmarkSyncMetadata());
 
-  storage.SaveToSingleFileNow(StorageFileEncryptionType::kEncrypted);
+  storage.SaveSingleFileIfNoPreviousSave(
+      StorageFileEncryptionType::kEncrypted,
+      DictValueToJsonString(expected_file_content));
   // No impact on the unencrypted bookmarks file.
   EXPECT_FALSE(storage.HasScheduledSaveForTesting());
   task_environment.FastForwardUntilNoTasksRemain();
 
   ASSERT_FALSE(base::PathExists(bookmarks_file_path));
   std::optional<base::DictValue> decrypted_file_content =
-      ReadEncryptedFileToDict(encrypted_bookmarks_file_path, encryptor->data);
+      ReadEncryptedFileToDict(encrypted_bookmarks_file_path, *encryptor);
   ASSERT_TRUE(decrypted_file_content.has_value());
-  BookmarkCodec codec;
-  base::DictValue expected_file_content = codec.Encode(
-      model->bookmark_bar_node(), model->other_node(), model->mobile_node(),
-      model->client()->EncodeLocalOrSyncableBookmarkSyncMetadata());
   EXPECT_EQ(expected_file_content, *decrypted_file_content);
   histogram_tester.ExpectTotalCount(
       "ImportantFile.WriteDuration.BookmarkStorageEncryptedImmediate", 1);
@@ -536,7 +535,7 @@ TEST_P(BookmarkStorageWithSecondayFileTest,
 }
 
 TEST_P(BookmarkStorageWithSecondayFileTest,
-       SaveToSingleFileNow_OnlyClearTextFileIsSavedRightAway) {
+       SaveSingleFileIfNoPreviousSave_OnlyClearTextFileIsSavedRightAway) {
   base::HistogramTester histogram_tester;
   std::unique_ptr<BookmarkModel> model = CreateModelWithOneBookmark();
 
@@ -545,27 +544,27 @@ TEST_P(BookmarkStorageWithSecondayFileTest,
   const base::FilePath encrypted_bookmarks_file_path =
       GetTestEncryptedBookmarksFileNameInNewTempDir();
 
-  scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-      encryptor = base::MakeRefCounted<
-          base::RefCountedData<const os_crypt_async::Encryptor>>(
-          std::in_place, os_crypt_async::GetTestEncryptorForTesting());
+  scoped_refptr<os_crypt_async::Encryptor> encryptor =
+      os_crypt_async::GetTestEncryptorForTesting();
   base::test::TaskEnvironment task_environment{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
+  BookmarkCodec codec;
+  base::DictValue expected_file_content = codec.Encode(
+      model->bookmark_bar_node(), model->other_node(), model->mobile_node(),
+      model->client()->EncodeLocalOrSyncableBookmarkSyncMetadata());
   BookmarkStorage storage(
       model.get(), BookmarkStorage::kSelectLocalOrSyncableNodes, encryptor,
       bookmarks_file_path, encrypted_bookmarks_file_path);
 
-  storage.SaveToSingleFileNow(StorageFileEncryptionType::kClearText);
+  storage.SaveSingleFileIfNoPreviousSave(
+      StorageFileEncryptionType::kClearText,
+      DictValueToJsonString(expected_file_content));
   task_environment.FastForwardUntilNoTasksRemain();
 
   ASSERT_FALSE(base::PathExists(encrypted_bookmarks_file_path));
   std::optional<base::DictValue> file_content =
       ReadFileToDict(bookmarks_file_path);
   ASSERT_TRUE(file_content.has_value());
-  BookmarkCodec codec;
-  base::DictValue expected_file_content = codec.Encode(
-      model->bookmark_bar_node(), model->other_node(), model->mobile_node(),
-      model->client()->EncodeLocalOrSyncableBookmarkSyncMetadata());
   EXPECT_EQ(expected_file_content, *file_content);
   histogram_tester.ExpectTotalCount(
       "ImportantFile.WriteDuration.BookmarkStorageImmediate", 1);
@@ -577,7 +576,7 @@ TEST_P(BookmarkStorageWithSecondayFileTest,
 }
 
 TEST_P(BookmarkStorageWithSecondayFileTest,
-       SaveToSingleFileNow_SaveToBothFilesIfWriteAlreadyScheduled) {
+       SaveSingleFileIfNoPreviousSave_SaveToBothFilesIfWriteAlreadyScheduled) {
   base::HistogramTester histogram_tester;
   std::unique_ptr<BookmarkModel> model = CreateModelWithOneBookmark();
 
@@ -586,29 +585,73 @@ TEST_P(BookmarkStorageWithSecondayFileTest,
   const base::FilePath encrypted_bookmarks_file_path =
       GetTestEncryptedBookmarksFileNameInNewTempDir();
 
-  scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-      encryptor = base::MakeRefCounted<
-          base::RefCountedData<const os_crypt_async::Encryptor>>(
-          std::in_place, os_crypt_async::GetTestEncryptorForTesting());
+  scoped_refptr<os_crypt_async::Encryptor> encryptor =
+      os_crypt_async::GetTestEncryptorForTesting();
   base::test::TaskEnvironment task_environment{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   BookmarkStorage storage(
       model.get(), BookmarkStorage::kSelectLocalOrSyncableNodes, encryptor,
       bookmarks_file_path, encrypted_bookmarks_file_path);
+  BookmarkCodec codec;
+  base::DictValue expected_file_content = codec.Encode(
+      model->bookmark_bar_node(), model->other_node(), model->mobile_node(),
+      model->client()->EncodeLocalOrSyncableBookmarkSyncMetadata());
 
   storage.ScheduleSave();
-  storage.SaveToSingleFileNow(StorageFileEncryptionType::kEncrypted);
+  storage.SaveSingleFileIfNoPreviousSave(
+      StorageFileEncryptionType::kEncrypted,
+      DictValueToJsonString(expected_file_content));
   task_environment.FastForwardUntilNoTasksRemain();
 
   std::optional<base::DictValue> file_content =
       ReadFileToDict(bookmarks_file_path);
   std::optional<base::DictValue> decrypted_file_content =
-      ReadEncryptedFileToDict(encrypted_bookmarks_file_path, encryptor->data);
+      ReadEncryptedFileToDict(encrypted_bookmarks_file_path, *encryptor);
   ASSERT_TRUE(decrypted_file_content.has_value());
+  EXPECT_EQ(expected_file_content, *file_content);
+  EXPECT_EQ(expected_file_content, *decrypted_file_content);
+  histogram_tester.ExpectTotalCount(
+      "ImportantFile.WriteDuration.BookmarkStorage", 1);
+  histogram_tester.ExpectTotalCount(
+      "ImportantFile.WriteDuration.BookmarkStorageEncrypted", 1);
+}
+
+TEST_P(BookmarkStorageWithSecondayFileTest,
+       SaveSingleFileIfNoPreviousSave_NoImpactIfSaveAlreadyCompleted) {
+  base::HistogramTester histogram_tester;
+  std::unique_ptr<BookmarkModel> model = CreateModelWithOneBookmark();
+
+  const base::FilePath bookmarks_file_path =
+      GetTestBookmarksFileNameInNewTempDir();
+  const base::FilePath encrypted_bookmarks_file_path =
+      GetTestEncryptedBookmarksFileNameInNewTempDir();
+
+  scoped_refptr<os_crypt_async::Encryptor> encryptor =
+      os_crypt_async::GetTestEncryptorForTesting();
+  base::test::TaskEnvironment task_environment{
+      base::test::TaskEnvironment::TimeSource::MOCK_TIME};
+  BookmarkStorage storage(
+      model.get(), BookmarkStorage::kSelectLocalOrSyncableNodes, encryptor,
+      bookmarks_file_path, encrypted_bookmarks_file_path);
   BookmarkCodec codec;
   base::DictValue expected_file_content = codec.Encode(
       model->bookmark_bar_node(), model->other_node(), model->mobile_node(),
       model->client()->EncodeLocalOrSyncableBookmarkSyncMetadata());
+
+  storage.ScheduleSave();
+  task_environment.FastForwardUntilNoTasksRemain();
+  // Try to write a different json content to the file.
+  storage.SaveSingleFileIfNoPreviousSave(StorageFileEncryptionType::kEncrypted,
+                                         "{}");
+  task_environment.FastForwardUntilNoTasksRemain();
+
+  std::optional<base::DictValue> file_content =
+      ReadFileToDict(bookmarks_file_path);
+  std::optional<base::DictValue> decrypted_file_content =
+      ReadEncryptedFileToDict(encrypted_bookmarks_file_path, *encryptor);
+  ASSERT_TRUE(decrypted_file_content.has_value());
+  // SaveToSingleFileNow was a no-op, file content still matches the original
+  // save.
   EXPECT_EQ(expected_file_content, *file_content);
   EXPECT_EQ(expected_file_content, *decrypted_file_content);
   histogram_tester.ExpectTotalCount(

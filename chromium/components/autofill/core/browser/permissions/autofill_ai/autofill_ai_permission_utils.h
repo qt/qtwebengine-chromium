@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 
+#include "build/buildflag.h"
 #include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
 
@@ -44,6 +45,8 @@ enum class AutofillAiAction {
   // Import (i.e. saving or updating) AutofillAI data on form submission.
   kImport,
   // Show the IPH for opting into AutofillAI.
+  // TODO(crbug.com/440488776): Remove. Default availability is enabled by
+  // default and thus no IPH for opt-in is shown anymore.
   kIphForOptIn,
   // List existing AutofillAI data in settings.
   kListEntityInstancesInSettings,
@@ -70,7 +73,13 @@ enum class AutofillAiAction {
   // Whether the user should see a promotion to allow Wallet to share data with
   // Chrome.
   kWalletDataSharingPromotion,
-  kMaxValue = kWalletDataSharingPromotion,
+  // When true autofill AI will offer personalized suggestions.
+  // TODO(crbug.com/503319530): Correctly implement this action, it is currently
+  // hardcoded to false.
+  kAccessibilityAnnotatorInfraAvailable,
+  // Returns true if the entity type supports accessibility annotation data.
+  kTypeSupportsAccessibilityAnnotatorData,
+  kMaxValue = kTypeSupportsAccessibilityAnnotatorData,
 };
 
 // Opt-in status for the AutofillAI feature.
@@ -100,7 +109,8 @@ enum class AutofillAiOptInStatus {
 // - Account state (sign-in status).
 // - Whether the `action` can be performed for the `entity_type`.
 //   `entity_type` is only considered to kFilling, kIphForOptIn, kImport,
-//   kImportToWallet and must be non-empty in these cases.
+//   kImportToWallet, kTypeSupportsAccessibilityAnnotatorData and must be
+//   non-empty in these cases.
 // - Miscellaneous state (OTR, locale, GeoIP).
 //
 // See go/forms-ai:permissions for more detail.
@@ -175,9 +185,8 @@ bool SetAutofillAiOptInStatus(
 [[nodiscard]] bool IsAutofillAiDisabledByEnterprisePolicy(
     const PrefService* prefs);
 
-// Checks whether Autofill AI is enabled by enterprise policy but without
-// logging.
-[[nodiscard]] bool IsAutofillAiEnabledByEnterprisePolicyWithoutLogging(
+// Checks whether Autofill AI is enabled by enterprise policy including logging.
+[[nodiscard]] bool IsAutofillAiAllowedByEnterprisePolicy(
     const PrefService* prefs);
 
 }  // namespace autofill

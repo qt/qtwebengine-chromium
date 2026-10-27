@@ -19,6 +19,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/base/casts.h"
 #include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -37,7 +38,7 @@ limitations under the License.
 namespace xla::cpu {
 
 static absl::Status CopyThunkToProto(const Thunk& thunk, ThunkProto& proto) {
-  const auto& copy_thunk = tsl::down_cast<const CopyThunk&>(thunk);
+  const auto& copy_thunk = absl::down_cast<const CopyThunk&>(thunk);
   CopyThunkProto* copy_thunk_proto = proto.mutable_copy_thunk();
 
   TF_RETURN_IF_ERROR(SerializeSliceShapeIntoProto(

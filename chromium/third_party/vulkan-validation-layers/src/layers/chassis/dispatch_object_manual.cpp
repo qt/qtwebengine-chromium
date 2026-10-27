@@ -4,6 +4,7 @@
  * Copyright (c) 2015-2026 Valve Corporation
  * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2026 Qualcomm Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +19,10 @@
  * limitations under the License.
  ****************************************************************************/
 
+#include <vulkan/vulkan_core.h>
 #include "chassis/dispatch_object.h"
 #include <vulkan/utility/vk_safe_struct.hpp>
+#include "containers/custom_containers.h"
 #include "generated/vk_extension_helper.h"
 #include "state_tracker/pipeline_state.h"
 #include "containers/small_vector.h"
@@ -493,6 +496,8 @@ StatelessDeviceData::StatelessDeviceData(DispatchInstance* instance, VkPhysicalD
                                              &phys_dev_ext_props.renderpass_counter_by_region_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_shader_long_vector,
                                              &phys_dev_ext_props.shader_long_vector_props);
+    instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_qcom_tile_shading,
+                                             &phys_dev_ext_props.tile_shading_props);
 
     // None of these "check if supported" features are possible without first having gpdp2 first
     if (IsExtEnabled(extensions.vk_khr_get_physical_device_properties2)) {
@@ -1041,12 +1046,52 @@ void CopyCreatePipelineFeedbackData(const void* src_chain, const void* dst_chain
     auto src_feedback_struct = vku::FindStructInPNextChain<VkPipelineCreationFeedbackCreateInfo>(src_chain);
     auto dst_feedback_struct = const_cast<VkPipelineCreationFeedbackCreateInfo*>(
         vku::FindStructInPNextChain<VkPipelineCreationFeedbackCreateInfo>(dst_chain));
-    if (!src_feedback_struct || !dst_feedback_struct) return;
+    if (!src_feedback_struct || !dst_feedback_struct) {
+        return;
+    }
     ASSERT_AND_RETURN(dst_feedback_struct->pPipelineCreationFeedback && src_feedback_struct->pPipelineCreationFeedback);
 
     *dst_feedback_struct->pPipelineCreationFeedback = *src_feedback_struct->pPipelineCreationFeedback;
     for (uint32_t i = 0; i < src_feedback_struct->pipelineStageCreationFeedbackCount; i++) {
         dst_feedback_struct->pPipelineStageCreationFeedbacks[i] = src_feedback_struct->pPipelineStageCreationFeedbacks[i];
+    }
+}
+
+// https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/12108
+// We can have a case where 2 chained pNext can share the same handle and don't have a local copy
+// Simple answer is to just track as a set, might be a better way to do
+static void UnwrapMappingInfo(HandleWrapper* handle_wrapper, const void* pNext) {
+    if (auto* mapping_info = vku::FindStructInPNextChain<VkShaderDescriptorSetAndBindingMappingInfoEXT>(pNext)) {
+        for (uint32_t idx2 = 0; idx2 < mapping_info->mappingCount; ++idx2) {
+            const auto& mapping = mapping_info->pMappings[idx2];
+            const void* embedded_sampler_pNext = nullptr;
+            if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT &&
+                mapping.sourceData.constantOffset.pEmbeddedSampler) {
+                embedded_sampler_pNext = mapping.sourceData.constantOffset.pEmbeddedSampler->pNext;
+            } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT &&
+                       mapping.sourceData.pushIndex.pEmbeddedSampler) {
+                embedded_sampler_pNext = mapping.sourceData.pushIndex.pEmbeddedSampler->pNext;
+            } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT &&
+                       mapping.sourceData.indirectIndex.pEmbeddedSampler) {
+                embedded_sampler_pNext = mapping.sourceData.indirectIndex.pEmbeddedSampler->pNext;
+            } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT &&
+                       mapping.sourceData.indirectIndexArray.pEmbeddedSampler) {
+                embedded_sampler_pNext = mapping.sourceData.indirectIndexArray.pEmbeddedSampler->pNext;
+            } else if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT &&
+                       mapping.sourceData.shaderRecordIndex.pEmbeddedSampler) {
+                embedded_sampler_pNext = mapping.sourceData.shaderRecordIndex.pEmbeddedSampler->pNext;
+            }
+
+            if (auto* sampler_conversion_info = vku::FindStructInPNextChain<VkSamplerYcbcrConversionInfo>(embedded_sampler_pNext)) {
+                // TODO - This is bad, we are hoping that if 2 structs are pointing to the same handle that unwrapping it twice will
+                // not be in the handle wrapping list (which very high chance it won't be)... This needs a proper, auto generated
+                // solution https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/12108
+                VkSamplerYcbcrConversion unwrapped_conversion = handle_wrapper->Unwrap(sampler_conversion_info->conversion);
+                if (unwrapped_conversion != VK_NULL_HANDLE) {
+                    const_cast<VkSamplerYcbcrConversionInfo*>(sampler_conversion_info)->conversion = unwrapped_conversion;
+                }
+            }
+        }
     }
 }
 
@@ -1114,8 +1159,11 @@ VkResult DispatchDevice::CreateGraphicsPipelines(VkDevice device, VkPipelineCach
             if (pCreateInfos[idx0].layout) {
                 local_pCreateInfos[idx0].layout = Unwrap(pCreateInfos[idx0].layout);
             }
+
             if (pCreateInfos[idx0].pStages) {
                 for (uint32_t idx1 = 0; idx1 < pCreateInfos[idx0].stageCount; ++idx1) {
+                    UnwrapMappingInfo(this, local_pCreateInfos[idx0].pStages[idx1].pNext);
+
                     if (pCreateInfos[idx0].pStages[idx1].module) {
                         local_pCreateInfos[idx0].pStages[idx1].module = Unwrap(pCreateInfos[idx0].pStages[idx1].module);
                     }
@@ -1737,19 +1785,19 @@ void DispatchDevice::CmdPushDescriptorSetWithTemplateKHR(VkCommandBuffer command
 void DispatchDevice::CmdPushDescriptorSetWithTemplate2(VkCommandBuffer commandBuffer,
                                                const VkPushDescriptorSetWithTemplateInfo* pPushDescriptorSetWithTemplateInfo) {
     if (!wrap_handles)
-        return device_dispatch_table.CmdPushDescriptorSetWithTemplate2KHR(commandBuffer, pPushDescriptorSetWithTemplateInfo);
+        return device_dispatch_table.CmdPushDescriptorSetWithTemplate2(commandBuffer, pPushDescriptorSetWithTemplateInfo);
     uint64_t template_handle = CastToUint64(pPushDescriptorSetWithTemplateInfo->descriptorUpdateTemplate);
+    VkPushDescriptorSetWithTemplateInfo local_push_descriptor_set_with_template_info = *pPushDescriptorSetWithTemplateInfo;
     void* unwrapped_buffer = nullptr;
     {
         ReadLockGuard lock(dispatch_lock);
-        const_cast<VkPushDescriptorSetWithTemplateInfo*>(pPushDescriptorSetWithTemplateInfo)->descriptorUpdateTemplate =
-            Unwrap(pPushDescriptorSetWithTemplateInfo->descriptorUpdateTemplate);
-        const_cast<VkPushDescriptorSetWithTemplateInfo*>(pPushDescriptorSetWithTemplateInfo)->layout =
-            Unwrap(pPushDescriptorSetWithTemplateInfo->layout);
+        local_push_descriptor_set_with_template_info.descriptorUpdateTemplate =
+            Unwrap(local_push_descriptor_set_with_template_info.descriptorUpdateTemplate);
+        local_push_descriptor_set_with_template_info.layout = Unwrap(local_push_descriptor_set_with_template_info.layout);
         unwrapped_buffer = BuildUnwrappedUpdateTemplateBuffer(this, template_handle, pPushDescriptorSetWithTemplateInfo->pData);
-        const_cast<VkPushDescriptorSetWithTemplateInfo*>(pPushDescriptorSetWithTemplateInfo)->pData = unwrapped_buffer;
+        local_push_descriptor_set_with_template_info.pData = unwrapped_buffer;
     }
-    device_dispatch_table.CmdPushDescriptorSetWithTemplate2(commandBuffer, pPushDescriptorSetWithTemplateInfo);
+    device_dispatch_table.CmdPushDescriptorSetWithTemplate2(commandBuffer, &local_push_descriptor_set_with_template_info);
     free(unwrapped_buffer);
 }
 
@@ -1758,17 +1806,17 @@ void DispatchDevice::CmdPushDescriptorSetWithTemplate2KHR(
     if (!wrap_handles)
         return device_dispatch_table.CmdPushDescriptorSetWithTemplate2KHR(commandBuffer, pPushDescriptorSetWithTemplateInfo);
     uint64_t template_handle = CastToUint64(pPushDescriptorSetWithTemplateInfo->descriptorUpdateTemplate);
+    VkPushDescriptorSetWithTemplateInfoKHR local_push_descriptor_set_with_template_info = *pPushDescriptorSetWithTemplateInfo;
     void* unwrapped_buffer = nullptr;
     {
         ReadLockGuard lock(dispatch_lock);
-        const_cast<VkPushDescriptorSetWithTemplateInfoKHR*>(pPushDescriptorSetWithTemplateInfo)->descriptorUpdateTemplate =
-            Unwrap(pPushDescriptorSetWithTemplateInfo->descriptorUpdateTemplate);
-        const_cast<VkPushDescriptorSetWithTemplateInfoKHR*>(pPushDescriptorSetWithTemplateInfo)->layout =
-            Unwrap(pPushDescriptorSetWithTemplateInfo->layout);
+        local_push_descriptor_set_with_template_info.descriptorUpdateTemplate =
+            Unwrap(local_push_descriptor_set_with_template_info.descriptorUpdateTemplate);
+        local_push_descriptor_set_with_template_info.layout = Unwrap(local_push_descriptor_set_with_template_info.layout);
         unwrapped_buffer = BuildUnwrappedUpdateTemplateBuffer(this, template_handle, pPushDescriptorSetWithTemplateInfo->pData);
-        const_cast<VkPushDescriptorSetWithTemplateInfoKHR*>(pPushDescriptorSetWithTemplateInfo)->pData = unwrapped_buffer;
+        local_push_descriptor_set_with_template_info.pData = unwrapped_buffer;
     }
-    device_dispatch_table.CmdPushDescriptorSetWithTemplate2KHR(commandBuffer, pPushDescriptorSetWithTemplateInfo);
+    device_dispatch_table.CmdPushDescriptorSetWithTemplate2KHR(commandBuffer, &local_push_descriptor_set_with_template_info);
     free(unwrapped_buffer);
 }
 
@@ -2226,6 +2274,14 @@ void DispatchDevice::GetDescriptorEXT(VkDevice device, const VkDescriptorGetInfo
     vku::safe_VkDescriptorAddressInfoEXT address_info;
 
     switch (pDescriptorInfo->type) {
+        case VK_DESCRIPTOR_TYPE_TENSOR_ARM: {
+            if (auto* tensor_pnext = vku::FindStructInPNextChain<VkDescriptorGetTensorInfoARM>(pDescriptorInfo->pNext)) {
+                VkDescriptorGetTensorInfoARM local_tensor = *tensor_pnext;
+                local_tensor.tensorView = Unwrap(local_tensor.tensorView);
+                local_pDescriptorInfo.pNext = vku::SafePnextCopy(&local_tensor);
+            }
+            break;
+        }
         case VK_DESCRIPTOR_TYPE_SAMPLER: {
             // if using null descriptors can be null
             if (pDescriptorInfo->data.pSampler) {
@@ -2733,8 +2789,12 @@ VkResult DispatchDevice::CreateShadersEXT(VkDevice device, uint32_t createInfoCo
     if (pCreateInfos) {
         var_local_pCreateInfos.resize(createInfoCount);
         local_pCreateInfos = var_local_pCreateInfos.data();
+
         for (uint32_t index0 = 0; index0 < createInfoCount; ++index0) {
             local_pCreateInfos[index0].initialize(&pCreateInfos[index0]);
+
+            UnwrapMappingInfo(this, local_pCreateInfos[index0].pNext);
+
             if (local_pCreateInfos[index0].pSetLayouts) {
                 for (uint32_t index1 = 0; index1 < local_pCreateInfos[index0].setLayoutCount; ++index1) {
                     local_pCreateInfos[index0].pSetLayouts[index1] = Unwrap(local_pCreateInfos[index0].pSetLayouts[index1]);

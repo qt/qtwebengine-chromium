@@ -36,20 +36,6 @@ class TestHelper;
 // Info about Buffers currently in the system.
 class GPU_GLES2_EXPORT Buffer : public base::RefCounted<Buffer> {
  public:
-  struct MappedRange {
-    GLintptr offset;
-    GLsizeiptr size;
-    GLenum access;
-    raw_ptr<void, DanglingUntriaged> pointer;  // Pointer returned by driver.
-    scoped_refptr<gpu::Buffer> shm;  // Client side mem buffer.
-    unsigned int shm_offset;  // Client side mem buffer offset.
-
-    MappedRange(GLintptr offset, GLsizeiptr size, GLenum access, void* pointer,
-                scoped_refptr<gpu::Buffer> shm, unsigned int shm_offset);
-    ~MappedRange();
-    void* GetShmPointer() const;
-  };
-
   Buffer(BufferManager* manager, GLuint service_id);
 
   GLenum initial_target() const { return initial_target_; }
@@ -98,14 +84,7 @@ class GPU_GLES2_EXPORT Buffer : public base::RefCounted<Buffer> {
     return is_client_side_array_;
   }
 
-  void SetMappedRange(GLintptr offset, GLsizeiptr size, GLenum access,
-                      void* pointer, scoped_refptr<gpu::Buffer> shm,
-                      unsigned int shm_offset);
-  void RemoveMappedRange();
   void ClearMapping();
-  const MappedRange* GetMappedRange() const {
-    return mapped_range_.get();
-  }
 
   // These maintain the reference counts for checking whether a buffer is
   // double-bound to transform feedback and non-transform-feedback binding
@@ -232,9 +211,6 @@ class GPU_GLES2_EXPORT Buffer : public base::RefCounted<Buffer> {
   // Usage of buffer.
   GLenum usage_;
 
-  // Data cached from last glMapBufferRange call.
-  std::unique_ptr<MappedRange> mapped_range_;
-
   // A map of ranges to the highest value in that range of a certain type.
   typedef std::map<Range, GLuint, Range::Less> RangeToMaxValueMap;
   RangeToMaxValueMap range_set_;
@@ -325,14 +301,6 @@ class GPU_GLES2_EXPORT BufferManager
 
   void set_max_buffer_size(GLsizeiptr max_buffer_size) {
     max_buffer_size_ = max_buffer_size;
-  }
-
-  void set_allow_buffers_on_multiple_targets(bool allow) {
-    allow_buffers_on_multiple_targets_ = allow;
-  }
-
-  void set_allow_fixed_attribs(bool allow) {
-    allow_fixed_attribs_ = allow;
   }
 
   size_t mem_represented() const {
@@ -461,12 +429,6 @@ class GPU_GLES2_EXPORT BufferManager
 
   // The maximum size of buffers.
   GLsizeiptr max_buffer_size_;
-
-  // Whether or not buffers can be bound to multiple targets.
-  bool allow_buffers_on_multiple_targets_;
-
-  // Whether or not allow using GL_FIXED type for vertex attribs.
-  bool allow_fixed_attribs_;
 
   // Counts the number of Buffer allocated with 'this' as its manager.
   // Allows to check no Buffer will outlive this.

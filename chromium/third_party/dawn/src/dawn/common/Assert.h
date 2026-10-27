@@ -29,8 +29,9 @@
 #define SRC_DAWN_COMMON_ASSERT_H_
 
 #include <cstdlib>
+#include <type_traits>
 
-#include "dawn/common/Compiler.h"
+#include "src/dawn/common/Compiler.h"
 
 // Dawn asserts to be used instead of the regular C stdlib assert function (if you don't use assert
 // yet, you should start now!). In debug DAWN_ASSERT(condition) will trigger an error, otherwise in
@@ -57,20 +58,31 @@
 // code.
 #if defined(DAWN_ENABLE_ASSERTS)
 
-#define DAWN_CHECK_CALLSITE_HELPER(file, func, line, condition)           \
-    do {                                                                  \
-        if (!(condition)) [[unlikely]] {                                  \
-            ::dawn::HandleAssertionFailure(file, func, line, #condition); \
-            abort();                                                      \
-        }                                                                 \
+#define DAWN_CHECK_CALLSITE_HELPER(file, func, line, condition)               \
+    do {                                                                      \
+        if (!(condition)) [[unlikely]] {                                      \
+            if (std::is_constant_evaluated()) {                               \
+                ::dawn::XXXXXXXXXX_CheckFailedInConsteval_XXXXXXXXXX();       \
+            } else {                                                          \
+                ::dawn::HandleAssertionFailure(file, func, line, #condition); \
+                abort();                                                      \
+            }                                                                 \
+        }                                                                     \
     } while (DAWN_ASSERT_LOOP_CONDITION)
 
-#define DAWN_ASSERT_CALLSITE_HELPER(file, func, line, condition)          \
-    do {                                                                  \
-        if (!(condition)) [[unlikely]] {                                  \
-            ::dawn::HandleAssertionFailure(file, func, line, #condition); \
-        }                                                                 \
+#define DAWN_ASSERT_CALLSITE_HELPER(file, func, line, condition)              \
+    do {                                                                      \
+        if (!(condition)) [[unlikely]] {                                      \
+            if (std::is_constant_evaluated()) {                               \
+                ::dawn::XXXXXXXXXX_CheckFailedInConsteval_XXXXXXXXXX();       \
+            } else {                                                          \
+                ::dawn::HandleAssertionFailure(file, func, line, #condition); \
+            }                                                                 \
+        }                                                                     \
     } while (DAWN_ASSERT_LOOP_CONDITION)
+
+#define DAWN_RELEASE_ASSUME_CALLSITE_HELPER(file, func, line, condition) \
+    DAWN_ASSERT_CALLSITE_HELPER(file, func, line, condition)
 
 #else  // defined(DAWN_ENABLE_ASSERTS)
 
@@ -81,40 +93,51 @@
         }                                                       \
     } while (DAWN_ASSERT_LOOP_CONDITION)
 
-#if DAWN_COMPILER_IS(MSVC)
-#define DAWN_ASSERT_CALLSITE_HELPER(file, func, line, condition) __assume(condition)
-#elif DAWN_COMPILER_IS(CLANG) && __has_builtin(__builtin_assume)
-#define DAWN_ASSERT_CALLSITE_HELPER(file, func, line, condition) __builtin_assume(!!(condition))
-#else  // DAWN_COMPILER_IS(*)
 #define DAWN_ASSERT_CALLSITE_HELPER(file, func, line, condition) \
     do {                                                         \
-        [[maybe_unused]] auto unused = sizeof(!!(condition));    \
+        static_assert(sizeof(!!(condition)) == sizeof(bool));    \
     } while (DAWN_ASSERT_LOOP_CONDITION)
+
+#if DAWN_COMPILER_IS(MSVC)
+#define DAWN_RELEASE_ASSUME_CALLSITE_HELPER(file, func, line, condition) __assume(condition)
+#elif DAWN_COMPILER_IS(CLANG) && __has_builtin(__builtin_assume)
+#define DAWN_RELEASE_ASSUME_CALLSITE_HELPER(file, func, line, condition) \
+    __builtin_assume(!!(condition))
+#else  // DAWN_COMPILER_IS(*)
+#define DAWN_RELEASE_ASSUME_CALLSITE_HELPER(file, func, line, condition) \
+    DAWN_ASSERT_CALLSITE_HELPER(file, func, line, condition)
 #endif  // DAWN_COMPILER_IS(*)
 
 #endif  // defined(DAWN_ENABLE_ASSERTS)
 
-// Debug-only assert (similar to Chromium DCHECK).
-// In release, this provides optimization hints to the compiler.
-#define DAWN_ASSERT(condition) DAWN_ASSERT_CALLSITE_HELPER(__FILE__, __func__, __LINE__, condition)
-// Debug-only assert-false (similar to Chromium NOTREACHED).
-// In release, this provides optimization hints to the compiler.
-#define DAWN_UNREACHABLE()                                                 \
-    do {                                                                   \
-        DAWN_ASSERT(DAWN_ASSERT_LOOP_CONDITION && "Unreachable code hit"); \
-        DAWN_BUILTIN_UNREACHABLE();                                        \
-    } while (DAWN_ASSERT_LOOP_CONDITION)
 // Release-mode assert (similar to Chromium CHECK).
-// First does a debug-mode assert for better a better debugging experience, then hard-aborts.
+// First does a debug-mode assert for a better debugging experience, then hard-aborts.
 #define DAWN_CHECK(condition) DAWN_CHECK_CALLSITE_HELPER(__FILE__, __func__, __LINE__, condition)
+// Asserts in debug if condition is not true (similar to Chromium DCHECK).
+// In release this is a NOOP. (No longer calls assume compiler hint)
+#define DAWN_ASSERT(condition) DAWN_ASSERT_CALLSITE_HELPER(__FILE__, __func__, __LINE__, condition)
+// In release, this provides powerful optimization hints to the compiler.
+// In debug, this is a DAWN_ASSERT.
+#define DAWN_RELEASE_ASSUME(condition) \
+    DAWN_RELEASE_ASSUME_CALLSITE_HELPER(__FILE__, __func__, __LINE__, condition)
+
+// Check-false (similar to Chromium NOTREACHED).
+// This will hard-abort in both debug and release.
+#define DAWN_UNREACHABLE()                                                \
+    do {                                                                  \
+        DAWN_CHECK(DAWN_ASSERT_LOOP_CONDITION && "Unreachable code hit"); \
+    } while (DAWN_ASSERT_LOOP_CONDITION)
 
 namespace dawn {
 
-void BreakPoint();
 void HandleAssertionFailure(const char* file,
                             const char* function,
                             int line,
                             const char* condition);
+
+// This non-consteval function is invalid to call in consteval. If it's called, the compiler will
+// print "note: declared here" pointing to this function so the reader knows what's going on.
+inline void XXXXXXXXXX_CheckFailedInConsteval_XXXXXXXXXX() {}
 
 }  // namespace dawn
 

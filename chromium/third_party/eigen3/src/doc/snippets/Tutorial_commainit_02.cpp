@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 int rows = 5, cols = 5;
 MatrixXf m(rows, cols);
 m << (Matrix3f() << 1, 2, 3, 4, 5, 6, 7, 8, 9).finished(),

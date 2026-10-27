@@ -17,37 +17,39 @@
 #include "fcp/secagg/server/distribution_utilities.h"
 
 #include <cmath>
-#include <iostream>
 #include <memory>
+
+#include "absl/status/status.h"
+#include "fcp/base/monitoring.h"
 
 namespace fcp {
 namespace secagg {
 
-StatusOr<std::unique_ptr<HypergeometricDistribution>>
+absl::StatusOr<std::unique_ptr<HypergeometricDistribution>>
 HypergeometricDistribution::Create(int total, int marked, int sampled) {
   if (total < 0) {
-    return FCP_STATUS(FAILED_PRECONDITION)
+    return FCP_STATUS(absl::StatusCode::kFailedPrecondition)
            << "The population should be at least zero. Value provided = "
            << total;
   }
   if (marked < 0) {
-    return FCP_STATUS(FAILED_PRECONDITION)
+    return FCP_STATUS(absl::StatusCode::kFailedPrecondition)
            << "The marked population should have size at least zero. Value "
               "provided = "
            << marked;
   }
   if (sampled < 0) {
-    return FCP_STATUS(FAILED_PRECONDITION)
+    return FCP_STATUS(absl::StatusCode::kFailedPrecondition)
            << "The sample size should be at least zero. Value provided = "
            << sampled;
   }
   if (marked > total) {
-    return FCP_STATUS(FAILED_PRECONDITION)
+    return FCP_STATUS(absl::StatusCode::kFailedPrecondition)
            << "The marked population " << marked
            << " should not exceed the total population " << total;
   }
   if (sampled > total) {
-    return FCP_STATUS(FAILED_PRECONDITION)
+    return FCP_STATUS(absl::StatusCode::kFailedPrecondition)
            << "The sample size " << sampled
            << " should not exceed the total population " << total;
   }

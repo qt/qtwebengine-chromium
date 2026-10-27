@@ -116,7 +116,6 @@ GpuChannelSharedImageInterface::CreateSharedImageForD3D11Video(
   }
 
   auto mailbox = Mailbox::Generate();
-  auto metadata = si_info.meta;
   auto caps = shared_image_stub_->shared_context_state()->GetGLFormatCaps();
   // The target must be GL_TEXTURE_EXTERNAL_OES as the texture is not created
   // with D3D11_BIND_RENDER_TARGET bind flag and so it cannot be bound to the
@@ -124,10 +123,8 @@ GpuChannelSharedImageInterface::CreateSharedImageForD3D11Video(
   // it to be GL_TEXTURE_EXTERNAL_OES.
   std::unique_ptr<gpu::SharedImageBacking> backing =
       gpu::D3DImageBacking::Create(
-          mailbox, metadata.format, metadata.size, metadata.color_space,
-          metadata.surface_origin, metadata.alpha_type, metadata.usage,
-          si_info.debug_label, texture, std::move(dxgi_shared_handle_state),
-          caps, GL_TEXTURE_EXTERNAL_OES, array_slice,
+          mailbox, si_info, texture, std::move(dxgi_shared_handle_state), caps,
+          GL_TEXTURE_EXTERNAL_OES, array_slice,
           /*use_update_subresource1=*/false,
           /*want_dcomp_texture=*/false, is_thread_safe);
   if (!backing) {

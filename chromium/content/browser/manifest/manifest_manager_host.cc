@@ -8,8 +8,10 @@
 
 #include "base/check_is_test.h"
 #include "base/functional/bind.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/types/expected.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
@@ -18,7 +20,10 @@
 #include "net/base/schemeful_site.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+#include "third_party/blink/public/common/custom_handlers/protocol_handler_utils.h"
 #include "third_party/blink/public/common/manifest/manifest_util.h"
+#include "third_party/blink/public/common/scheme_registry.h"
+#include "third_party/blink/public/common/security/protocol_handler_security_level.h"
 #include "third_party/blink/public/mojom/manifest/manifest.mojom.h"
 #include "third_party/blink/public/mojom/manifest/manifest_manager.mojom.h"
 #include "url/gurl.h"
@@ -40,7 +45,7 @@ void DispatchManifestNotFound(
 std::optional<std::string> MaybeGetBadMessageStringForManifest(
     blink::mojom::ManifestRequestResult result,
     const blink::mojom::Manifest& manifest,
-    const GURL& document_url) {
+    const url::Origin& document_origin) {
   if (result == blink::mojom::ManifestRequestResult::kSuccess &&
       blink::IsEmptyManifest(manifest)) {
     return "RequestManifest reported success but didn't return a manifest";
@@ -65,27 +70,69 @@ std::optional<std::string> MaybeGetBadMessageStringForManifest(
            valid_to_string(scope_valid), ")."});
     }
 
+    if (!document_origin.IsSameOriginWith(manifest.start_url)) {
+      return base::StrCat({"Manifest start_url (" + manifest.start_url.spec() +
+                           ") must be same-origin with the document (" +
+                           document_origin.Serialize() + ")."});
+    }
+
+    if (!document_origin.IsSameOriginWith(manifest.id)) {
+      return "Manifest id must be same-origin with the document.";
+    }
+
+    if (!document_origin.IsSameOriginWith(manifest.scope)) {
+      return "Manifest scope must be same-origin with the document.";
+    }
+
+    if (manifest.share_target &&
+        !document_origin.IsSameOriginWith(manifest.share_target->action)) {
+      return "Manifest share_target must be same-origin with the document.";
+    }
+
+    for (const auto& file_handler : manifest.file_handlers) {
+      if (!document_origin.IsSameOriginWith(file_handler->action)) {
+        return "Manifest file_handlers must be same-origin with the document.";
+      }
+    }
+
+    for (const auto& protocol_handler : manifest.protocol_handlers) {
+      if (!document_origin.IsSameOriginWith(protocol_handler->url)) {
+        return "Manifest protocol_handlers must be same-origin with the "
+               "document.";
+      }
+
+      blink::ProtocolHandlerSecurityLevel security_level =
+          blink::CommonSchemeRegistry::IsIsolatedAppScheme(
+              document_origin.scheme())
+              ? blink::ProtocolHandlerSecurityLevel::kIsolatedAppFeatures
+              : blink::ProtocolHandlerSecurityLevel::kStrict;
+      if (!blink::IsValidCustomHandlerScheme(
+              base::UTF16ToUTF8(protocol_handler->protocol), security_level)) {
+        return "Manifest protocol_handlers protocol is invalid or restricted "
+               "for security level:" +
+               base::ToString(security_level);
+      }
+    }
+
+    net::SchemefulSite document_site(document_origin);
     for (const auto& migrate_from : manifest.migrate_from) {
-      if (!net::SchemefulSite::IsSameSite(document_url, migrate_from->id)) {
+      if (!document_site.IsSameSiteWith(migrate_from->id)) {
         return "Manifest migrate_from id must be the same site as the "
                "document.";
       }
       if (migrate_from->install_url && migrate_from->install_url->is_valid() &&
-          !net::SchemefulSite::IsSameSite(document_url,
-                                          *migrate_from->install_url)) {
+          !document_site.IsSameSiteWith(*migrate_from->install_url)) {
         return "Manifest migrate_from install_url must be the same site as the "
                "document.";
       }
     }
 
     if (manifest.migrate_to) {
-      if (!net::SchemefulSite::IsSameSite(document_url,
-                                          manifest.migrate_to->id)) {
+      if (!document_site.IsSameSiteWith(manifest.migrate_to->id)) {
         return "Manifest migrate_to id must be the same site as the document.";
       }
       if (manifest.migrate_to->install_url.is_valid() &&
-          !net::SchemefulSite::IsSameSite(document_url,
-                                          manifest.migrate_to->install_url)) {
+          !document_site.IsSameSiteWith(manifest.migrate_to->install_url)) {
         return "Manifest migrate_to install_url must be the same site as the "
                "document.";
       }
@@ -99,6 +146,17 @@ std::optional<std::string> MaybeGetBadMessageStringForManifest(
             base::StartsWith(shortcut.url.path(), manifest.scope.path(),
                              base::CompareCase::SENSITIVE))) {
         return "Manifest shortcut urls must be within scope.";
+      }
+    }
+
+    for (const auto& icon : manifest.icons) {
+      if (!icon.src.is_valid()) {
+        return "Manifest icon urls must be valid.";
+      }
+      if (!icon.src.SchemeIsHTTPOrHTTPS() && !icon.src.SchemeIs("data") &&
+          !icon.src.SchemeIs(document_origin.scheme())) {
+        return "Manifest icon urls must be http, https, data, or match the "
+               "document scheme.";
       }
     }
   }
@@ -188,9 +246,20 @@ blink::mojom::ManifestPtr ManifestManagerHost::ValidateAndMaybeOverrideManifest(
     blink::mojom::ManifestPtr manifest) {
   // Mojo bindings guarantee that `manifest` isn't null.
   CHECK(manifest);
-  const GURL& document_url = page().GetMainDocument().GetLastCommittedURL();
+
+  auto& document_origin = page().GetMainDocument().GetLastCommittedOrigin();
+  if (!blink::IsEmptyManifest(manifest) && document_origin.opaque()) {
+    // We should never get a manifest for an opaque origin, unless perhaps due
+    // to a race condition. Override to empty and log.
+    base::UmaHistogramBoolean("WebApp.Manifest.ForOpaqueOrigin", true);
+    DVLOG(1) << "Manifest received for opaque origin with start_url"
+             << manifest->start_url.spec();
+    return blink::mojom::Manifest::New();
+  }
+
   if (std::optional<std::string> bad_message_error =
-          MaybeGetBadMessageStringForManifest(result, *manifest, document_url);
+          MaybeGetBadMessageStringForManifest(result, *manifest,
+                                              document_origin);
       bad_message_error.has_value()) {
     mojo::ReportBadMessage(*bad_message_error);
     return blink::mojom::Manifest::New();
@@ -244,9 +313,20 @@ void ManifestManagerHost::OnRequestManifestResponse(
 }
 
 void ManifestManagerHost::OnRequestManifestAndErrors(
+    const GURL& manifest_url_for_fetch,
     base::expected<blink::mojom::ManifestPtr,
                    blink::mojom::RequestManifestErrorPtr> result) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  // Reset the information for the current manifest url being fetched if it
+  // matches the request that was sent to the ManifestManager, and only process
+  // requests for the latest manifest url on the page.
+  // This helps filter out stale manifest fetches if the manifest url on the
+  // page has changed dynamically.
+  if (current_fetching_manifest_url_ != manifest_url_for_fetch) {
+    return;
+  }
+
+  current_fetching_manifest_url_.reset();
   if (result.has_value()) {
     result = ValidateAndMaybeOverrideManifest(
         blink::mojom::ManifestRequestResult::kSuccess, std::move(*result));
@@ -294,14 +374,18 @@ void ManifestManagerHost::ManifestUrlChanged(const GURL& manifest_url) {
 }
 
 void ManifestManagerHost::MaybeFetchManifestForSubscriptions() {
+  bool is_manifest_fetch_in_progress =
+      current_fetching_manifest_url_.has_value() &&
+      current_fetching_manifest_url_ == page().GetManifestUrl();
   if (!page().GetManifestUrl().has_value() ||
-      !page().GetManifestUrl()->is_valid()) {
+      !page().GetManifestUrl()->is_valid() || is_manifest_fetch_in_progress) {
     return;
   }
+  current_fetching_manifest_url_ = page().GetManifestUrl();
   auto& manifest_manager = GetManifestManager();
-  manifest_manager.RequestManifestAndErrors(
-      base::BindOnce(&ManifestManagerHost::OnRequestManifestAndErrors,
-                     weak_factory_.GetWeakPtr()));
+  manifest_manager.RequestManifestAndErrors(base::BindOnce(
+      &ManifestManagerHost::OnRequestManifestAndErrors,
+      weak_factory_.GetWeakPtr(), *current_fetching_manifest_url_));
 }
 
 void ManifestManagerHost::NotifyOnceSubscriptionsIfSuccessCached() {

@@ -29,11 +29,13 @@ Local Modifications:
 0023-opj_j2k_read_mct_records.patch: Fix opj_j2k_read to prevent heap-use-after-free.
 0025-opj_j2k_add_mct_null_data.patch: Check m_data != null before trying to read from it.
 0034-opj_malloc.patch: PDFium changes in opj_malloc.
-0035-opj_image_data_free.patch: Use the right free function in opj_jp2_apply_pclr.
-0039-opj_mqc_renorme.patch: Remove unused opj_mqc_renorme().
+0039-opj_mqc_renorme.patch: Remove unused opj_mqc_renorme(), part of https://github.com/uclouvain/openjpeg/pull/1632
 0041-remove_opj_clock.patch: Remove unused opj_clock.h include.
 0046-func-ptr-mixup.patch: Prevent mixing up function pointer types.
-0047-opj_j2k_read_sod.patch: Fix out of bounds read.
+0047-opj_j2k_read_sod.patch: Cherry-pick https://github.com/uclouvain/openjpeg/pull/1621
+0048-dwt_neon_9-7_idwt.patch: Cherry-pick https://github.com/uclouvain/openjpeg/pull/1629
+0049-dwt_neon_5-3_idwt.patch: Cherry-pick https://github.com/uclouvain/openjpeg/pull/1630
+0050-opj_pi_initialise_encode_overflow.patch: Cherry-pick https://github.com/uclouvain/openjpeg/pull/1619
 
 Note:
 

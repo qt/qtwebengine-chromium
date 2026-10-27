@@ -1,6 +1,8 @@
 // Benchmarks for diagonal operations.
 //
 // Tests diagonal extraction, diagonal-matrix product, and matrix-diagonal product.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>

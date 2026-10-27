@@ -39,13 +39,13 @@
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_navigator.h"
-#include "chrome/browser/ui/browser_navigator_params.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/hats/trust_safety_sentiment_service.h"
 #include "chrome/browser/ui/hats/trust_safety_sentiment_service_factory.h"
+#include "chrome/browser/ui/navigator/browser_navigator.h"
+#include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/user_education/browser_user_education_interface.h"
 #include "chrome/browser/ui/web_applications/app_browser_controller.h"
 #include "chrome/browser/ui/web_applications/web_app_dialog_utils.h"
@@ -88,7 +88,6 @@
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
-#include "device/fido/public/features.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
@@ -966,7 +965,8 @@ void PasswordsPrivateDelegateImpl::SwitchBiometricAuthBeforeFillingState(
 
 void PasswordsPrivateDelegateImpl::ShowAddShortcutDialog(
     content::WebContents* web_contents) {
-  BrowserWindowInterface* browser = chrome::FindBrowserWithTab(web_contents);
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(web_contents);
   DCHECK(browser);
   web_app::CreateWebAppFromCurrentWebContents(
       browser->GetBrowserForMigrationOnly(),
@@ -980,14 +980,14 @@ void PasswordsPrivateDelegateImpl::ShowAddShortcutDialog(
 void PasswordsPrivateDelegateImpl::ShowExportedFileInShell(
     content::WebContents* web_contents,
     std::string file_path) {
-  BrowserWindowInterface* browser = chrome::FindBrowserWithTab(web_contents);
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(web_contents);
   DCHECK(browser);
-#if !BUILDFLAG(IS_WIN)
-  base::FilePath path(file_path);
-#else
-  base::FilePath path(base::UTF8ToWide(file_path));
-#endif
-  platform_util::ShowItemInFolder(browser->GetProfile(), path);
+  // TODO(b/516745102): Move this logic to PasswordExportController after
+  // splitting PasswordManagerPorter.
+  if (!last_exported_path_.empty()) {
+    platform_util::ShowItemInFolder(browser->GetProfile(), last_exported_path_);
+  }
 }
 
 void PasswordsPrivateDelegateImpl::ChangePasswordManagerPin(
@@ -1132,7 +1132,8 @@ void PasswordsPrivateDelegateImpl::MaybeShowPasswordShareButtonIPH(
     return;
   }
   BrowserWindowInterface* browser =
-      chrome::FindBrowserWithTab(web_contents.get());
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+          web_contents.get());
   if (!browser || !browser->GetWindow()) {
     return;
   }
@@ -1142,6 +1143,14 @@ void PasswordsPrivateDelegateImpl::MaybeShowPasswordShareButtonIPH(
 
 void PasswordsPrivateDelegateImpl::OnPasswordsExportProgress(
     const password_manager::PasswordExportInfo& progress) {
+  if (progress.status == password_manager::ExportProgressStatus::kSucceeded) {
+#if !BUILDFLAG(IS_WIN)
+    last_exported_path_ = base::FilePath(progress.file_path);
+#else
+    last_exported_path_ = base::FilePath(base::UTF8ToWide(progress.file_path));
+#endif
+  }
+
   PasswordsPrivateEventRouter* router =
       PasswordsPrivateEventRouterFactory::GetForProfile(profile_);
   if (router) {
@@ -1312,7 +1321,7 @@ void PasswordsPrivateDelegateImpl::OnLoginsChanged(
 
 void PasswordsPrivateDelegateImpl::OnLoginsRetained(
     password_manager::PasswordStoreInterface*,
-    const std::vector<password_manager::PasswordForm>&) {}
+    const std::vector<password_manager::StoredCredential>&) {}
 
 void PasswordsPrivateDelegateImpl::OnErrorStateChanged(
     password_manager::PasswordStoreInterface* store,
@@ -1450,11 +1459,7 @@ PasswordsPrivateDelegateImpl::CreatePasswordUiEntryFromCredentialUiEntry(
             /*pattern=*/"MMM dd"));
     entry.backup_password = std::move(backup_password_info);
   }
-  // Gate this behind a flag since other clients may be setting `hidden` to
-  // `true` before the Chrome desktop feature is ready.
-  if (base::FeatureList::IsEnabled(device::kWebAuthnSignalApiHidePasskeys)) {
-    entry.hidden = credential.hidden;
-  }
+  entry.hidden = credential.hidden;
   entry.id = credential_id_generator_.GenerateId(std::move(credential));
   return entry;
 }

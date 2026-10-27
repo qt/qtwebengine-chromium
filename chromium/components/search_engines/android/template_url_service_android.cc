@@ -19,11 +19,14 @@
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/field_trial_params.h"
+#include "base/metrics/user_metrics.h"
 #include "base/notreached.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_ostream_operators.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/google/core/common/google_util.h"
+#include "components/omnibox/common/omnibox_feature_configs.h"
+#include "components/omnibox/common/omnibox_features.h"
 #include "components/search_engines/android/template_url_android.h"
 #include "components/search_engines/search_engine_choice/search_engine_choice_utils.h"
 #include "components/search_engines/search_engines_switches.h"
@@ -31,6 +34,7 @@
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_prepopulate_data.h"
 #include "components/search_engines/template_url_service.h"
+#include "components/search_engines/ui_utils.h"
 #include "components/search_engines/util.h"
 #include "components/search_provider_logos/switches.h"
 #include "components/url_formatter/url_fixer.h"
@@ -43,6 +47,7 @@
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "components/search_engines/android/jni_headers/TemplateUrlService_jni.h"
 
+using base::UserMetricsAction;
 using base::android::JavaRef;
 using base::android::ScopedJavaLocalRef;
 
@@ -379,7 +384,7 @@ TemplateUrlServiceAndroid::GetSearchEngineUrlFromTemplateUrl(
   TemplateURL* template_url =
       template_url_service_->GetTemplateURLForKeyword(keyword);
   if (!template_url)
-    return base::android::ScopedJavaLocalRef<jstring>::Adopt(env, nullptr);
+    return nullptr;
   std::string url(template_url->url_ref().ReplaceSearchTerms(
       TemplateURLRef::SearchTermsArgs(u"query"),
       template_url_service_->search_terms_data()));
@@ -518,6 +523,10 @@ bool TemplateUrlServiceAndroid::AddSearchEngine(
     return false;
   }
 
+  // For WML, this is recorded at
+  // chrome/browser/ui/search_engines/keyword_editor_controller.cc
+  base::RecordAction(UserMetricsAction("KeywordEditor_AddKeyword"));
+
   TemplateURLData data;
   data.SetShortName(short_name);
   data.SetKeyword(keyword);
@@ -648,7 +657,14 @@ TemplateUrlServiceAndroid::FilterTemplateUrlsByCategory(
     const std::vector<raw_ptr<TemplateURL, VectorExperimental>>& template_urls,
     TemplateUrlServiceAndroid::TemplateUrlCategory category) {
   std::vector<const TemplateURL*> result;
+  template_url_starter_pack_data::StarterPackIdSet disabled_starter_pack_ids =
+      GetDisabledStarterPackIds();
+
   for (TemplateURL* turl : template_urls) {
+    if (disabled_starter_pack_ids.Has(turl->starter_pack_id())) {
+      continue;
+    }
+
     bool is_default = template_url_service_->ShowInDefaultList(turl);
     bool is_extension = turl->type() == TemplateURL::OMNIBOX_API_EXTENSION;
     bool is_active = template_url_service_->ShowInActivesList(turl);
@@ -682,12 +698,41 @@ TemplateUrlServiceAndroid::FilterTemplateUrlsByCategory(
   return result;
 }
 
+template_url_starter_pack_data::StarterPackIdSet
+TemplateUrlServiceAndroid::GetDisabledStarterPackIds() {
+  // TODO(crbug.com/512766345): Add profile check for aimode and gemini
+  template_url_starter_pack_data::StarterPackIdSet disabled_ids;
+  // Skip @page if feature disabled.
+  if (!omnibox_feature_configs::ContextualSearch::Get().starter_pack_page) {
+    disabled_ids.Put(template_url_starter_pack_data::StarterPackId::kPage);
+  }
+
+  // Skip @gemini if feature disabled.
+  if (!base::FeatureList::IsEnabled(omnibox::kStarterPackExpansion)) {
+    disabled_ids.Put(template_url_starter_pack_data::StarterPackId::kGemini);
+  }
+
+  // Skip @bookmarks.
+  disabled_ids.Put(template_url_starter_pack_data::StarterPackId::kBookmarks);
+
+  return disabled_ids;
+}
+
 std::vector<const TemplateURL*>
 TemplateUrlServiceAndroid::GetTemplateUrlsByCategory(
     JNIEnv* env,
     TemplateUrlCategory category) {
-  return FilterTemplateUrlsByCategory(template_url_service_->GetTemplateURLs(),
-                                      category);
+  auto template_urls = FilterTemplateUrlsByCategory(
+      template_url_service_->GetTemplateURLs(), category);
+
+  // Sort the list for site search sections only. Search engines will preserve
+  // the original order returned by {@link GetTemplateURLs}.
+  if (category == TemplateUrlCategory::kActiveSiteSearch ||
+      category == TemplateUrlCategory::kInactiveSiteSearch) {
+    std::ranges::sort(template_urls,
+                      internal::OrderTemplateUrlsByManagedAndAlphabetically());
+  }
+  return template_urls;
 }
 
 base::android::ScopedJavaLocalRef<jobject>
@@ -695,7 +740,7 @@ TemplateUrlServiceAndroid::GetDefaultSearchEngine(JNIEnv* env) {
   const TemplateURL* default_search_provider =
       template_url_service_->GetDefaultSearchProvider();
   if (default_search_provider == nullptr) {
-    return base::android::ScopedJavaLocalRef<jobject>::Adopt(env, nullptr);
+    return nullptr;
   }
   return CreateTemplateUrlAndroid(env, default_search_provider);
 }

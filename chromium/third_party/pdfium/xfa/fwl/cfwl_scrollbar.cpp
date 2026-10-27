@@ -34,6 +34,11 @@ CFWL_ScrollBar::CFWL_ScrollBar(CFWL_App* app,
 
 CFWL_ScrollBar::~CFWL_ScrollBar() = default;
 
+void CFWL_ScrollBar::PreFinalize() {
+  timer_.reset();
+  CFWL_Widget::PreFinalize();
+}
+
 FWL_Type CFWL_ScrollBar::GetClassID() const {
   return FWL_Type::ScrollBar;
 }

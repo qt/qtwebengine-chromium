@@ -16,6 +16,7 @@
 #include "third_party/blink/renderer/core/layout/geometry/static_position.h"
 #include "third_party/blink/renderer/core/layout/inline/inline_containing_block_utils.h"
 #include "third_party/blink/renderer/core/layout/non_overflowing_scroll_range.h"
+#include "third_party/blink/renderer/core/layout/oof_positioned_node.h"
 #include "third_party/blink/renderer/core/style/computed_style_base_constants.h"
 #include "third_party/blink/renderer/platform/geometry/physical_offset.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
@@ -30,12 +31,7 @@ class BlockBreakToken;
 class LayoutBox;
 class LayoutObject;
 class LayoutResult;
-template <typename OffsetType>
-class OofContainingBlock;
 class SimplifiedOofLayoutAlgorithm;
-struct LogicalOofPositionedNode;
-template <typename OffsetType>
-struct MulticolWithPendingOofs;
 
 // Helper class for positioning of out-of-flow blocks.
 // It should be used together with BoxFragmentBuilder.
@@ -230,10 +226,11 @@ class CORE_EXPORT OutOfFlowLayoutPart {
     // re-used or replaced in the final layout pass.
     Member<const LayoutResult> initial_layout_result;
 
-    // The `block_estimate` and `container_content_size` is wrt. the
-    // candidate's writing mode.
-    std::optional<LayoutUnit> block_estimate;
+    // The following fields are in the writing-direction of the candidate, and
+    // are used for creating the constraint space for layout.
     LogicalSize container_content_size;
+    LayoutUnit imcb_block_size;
+    AutoSizeBehavior block_auto_size_behavior;
 
     LogicalOofDimensions node_dimensions;
 

@@ -104,6 +104,8 @@
 *> \ingroup doubleOTHERauxiliary
 *
 *  =====================================================================
+*> SPDX-FileCopyrightText: The Eigen Authors
+*> SPDX-License-Identifier: BSD-3-Clause
       SUBROUTINE DLARFG( N, ALPHA, X, INCX, TAU )
 *
 *  -- LAPACK auxiliary routine (version 3.4.0) --

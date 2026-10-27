@@ -760,6 +760,8 @@ wgpu::FeatureName AsDawnEnum(const V8GPUFeatureName& webgpu_enum) {
       return wgpu::FeatureName::TextureFormatsTier1;
     case V8GPUFeatureName::Enum::kTextureFormatsTier2:
       return wgpu::FeatureName::TextureFormatsTier2;
+    case V8GPUFeatureName::Enum::kSubgroupSizeControl:
+      return wgpu::FeatureName::SubgroupSizeControl;
   }
 }
 
@@ -1121,6 +1123,8 @@ const char* FromDawnEnum(wgpu::WGSLLanguageFeatureName dawn_enum) {
       return "swizzle_assignment";
     case wgpu::WGSLLanguageFeatureName::LinearIndexing:
       return "linear_indexing";
+    case wgpu::WGSLLanguageFeatureName::ImmediateAddressSpace:
+      return "immediate_address_space";
 
     // Non-standard.
     case wgpu::WGSLLanguageFeatureName::ChromiumTestingUnimplemented:

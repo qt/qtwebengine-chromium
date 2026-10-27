@@ -321,6 +321,8 @@ message StartPluginVmRequest {
 
 // Information that must be included with every StartArcVm request.
 message StartArcVmRequest {
+  reserved 10, 18;
+
   // The VM that should be started.
   VirtualMachineSpec vm = 1;
 
@@ -345,9 +347,6 @@ message StartArcVmRequest {
 
   // Ignore development configuration directives when ARCVM is started.
   bool ignore_dev_conf = 9;
-
-  // Whether rt-vcpus are enabled.
-  bool enable_rt_vcpu = 10;
 
   // Whether Huge Pages should be used.
   bool use_hugepages = 11;
@@ -380,9 +379,6 @@ message StartArcVmRequest {
   // 'ro.surface_flinger.primary_display_orientation' property to tell the
   // orientation to surfaceflinger.
   DisplayOrientation panel_orientation = 17;
-
-  // Whether to lock guest memory (for the purpose of disabling host swap).
-  bool lock_guest_memory = 18;
 
   // Whether virtio blk data is enabled
   bool enable_virtio_blk_data = 27;

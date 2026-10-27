@@ -11,7 +11,6 @@
 #include "fxjs/fxv8.h"
 #include "fxjs/xfa/cfxjse_engine.h"
 #include "fxjs/xfa/cfxjse_isolatetracker.h"
-#include "fxjs/xfa/cfxjse_value.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/scoped_set_tz.h"
 #include "testing/xfa_js_embedder_test.h"

@@ -4,8 +4,8 @@
 
 source_set("model") {
   sources = [
-    "zero_state_suggestions_service_impl.h",
-    "zero_state_suggestions_service_impl.mm",
+    "model_led_suggestions_service_impl.h",
+    "model_led_suggestions_service_impl.mm",
   ]
 
   deps = [
@@ -18,5 +18,26 @@ source_set("model") {
     "//ios/chrome/browser/optimization_guide/mojom",
     "//ios/chrome/browser/shared/model/profile",
     "//ios/web/public",
+  ]
+}
+
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "model_led_suggestions_service_impl_unittest.mm" ]
+  deps = [
+    ":model",
+    "//base",
+    "//base/test:test_support",
+    "//components/optimization_guide/core",
+    "//components/optimization_guide/proto:optimization_guide_proto",
+    "//ios/chrome/browser/intelligence/proto_wrappers",
+    "//ios/chrome/browser/optimization_guide/model",
+    "//ios/chrome/browser/optimization_guide/model:test_support",
+    "//ios/chrome/browser/shared/model/browser",
+    "//ios/chrome/browser/shared/model/profile/test",
+    "//ios/chrome/browser/signin/model",
+    "//ios/web/public/test",
+    "//testing/gtest",
+    "//third_party/ocmock",
   ]
 }

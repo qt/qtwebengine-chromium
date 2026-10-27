@@ -23,6 +23,10 @@ import {SkillsDialogType, SkillSource} from './skill.mojom-webui.js';
 import {SkillsManagementAction, SkillsManagementPage} from './skill_metrics.mojom-webui.js';
 import {SkillsPageBrowserProxy} from './skills_page_browser_proxy.js';
 
+const GSTATIC_HOSTS: string[] = ['www.gstatic.com', 'gstatic.com'];
+const ILLUSTRATION_WIDTH: number = 238;
+const ILLUSTRATION_HEIGHT: number = 119;
+
 export enum CardType {
   USER_SKILL_CARD = 'user-skill-card',
   DISCOVER_SKILL_CARD = 'discover-skill-card',
@@ -60,6 +64,7 @@ export class SkillCardElement extends CrLitElement {
       skill: {type: Object},
       cardType: {type: String},
       saveDisabled: {type: Boolean},
+      hideTooltip: {type: Boolean},
     };
   }
 
@@ -79,6 +84,7 @@ export class SkillCardElement extends CrLitElement {
   };
   accessor cardType: CardType = CardType.USER_SKILL_CARD;
   accessor saveDisabled: boolean = false;
+  accessor hideTooltip: boolean = false;
 
   private proxy_: SkillsPageBrowserProxy = SkillsPageBrowserProxy.getInstance();
 
@@ -92,6 +98,25 @@ export class SkillCardElement extends CrLitElement {
 
   protected getCardBodyText_(): string {
     return this.isDiscoverCard_() ? this.skill.description : this.skill.prompt;
+  }
+
+  protected getIllustrationUrl_(): string {
+    const urlString = this.skill.imageUrl;
+    if (!urlString) {
+      return '';
+    }
+    try {
+      const url = new URL(urlString);
+      if (url.protocol === 'https:' && GSTATIC_HOSTS.includes(url.hostname)) {
+        const dpr = window.devicePixelRatio || 1;
+        const width = Math.round(ILLUSTRATION_WIDTH * dpr);
+        const height = Math.round(ILLUSTRATION_HEIGHT * dpr);
+        return `${urlString}=w${width}-h${height}-rw`;
+      }
+    } catch (_) {
+      // Invalid URL, ignore and return original.
+    }
+    return urlString;
   }
 
   protected onEditButtonClick_() {

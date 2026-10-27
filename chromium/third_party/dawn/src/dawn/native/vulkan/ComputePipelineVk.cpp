@@ -25,22 +25,22 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/vulkan/ComputePipelineVk.h"
+#include "src/dawn/native/vulkan/ComputePipelineVk.h"
 
 #include <memory>
 #include <utility>
 #include <vector>
 
-#include "dawn/native/CreatePipelineAsyncEvent.h"
-#include "dawn/native/ImmediateConstantsLayout.h"
-#include "dawn/native/vulkan/DeviceVk.h"
-#include "dawn/native/vulkan/FencedDeleter.h"
-#include "dawn/native/vulkan/PipelineCacheVk.h"
-#include "dawn/native/vulkan/PipelineLayoutVk.h"
-#include "dawn/native/vulkan/ShaderModuleVk.h"
-#include "dawn/native/vulkan/UtilsVulkan.h"
-#include "dawn/native/vulkan/VulkanError.h"
-#include "dawn/platform/metrics/HistogramMacros.h"
+#include "src/dawn/native/CreatePipelineAsyncEvent.h"
+#include "src/dawn/native/ImmediatesLayout.h"
+#include "src/dawn/native/vulkan/DeviceVk.h"
+#include "src/dawn/native/vulkan/FencedDeleter.h"
+#include "src/dawn/native/vulkan/PipelineCacheVk.h"
+#include "src/dawn/native/vulkan/PipelineLayoutVk.h"
+#include "src/dawn/native/vulkan/ShaderModuleVk.h"
+#include "src/dawn/native/vulkan/UtilsVulkan.h"
+#include "src/dawn/native/vulkan/VulkanError.h"
+#include "src/dawn/platform/metrics/HistogramMacros.h"
 
 namespace dawn::native::vulkan {
 
@@ -71,7 +71,7 @@ ResultOrError<Extent3D> ComputePipeline::InitializeImpl() {
     mHandles = {.pipeline = r.pipeline->Get(), .layout = r.layout->Get()};
     Extent3D workgroupSize = r.workgroupSize;
 
-    mSpecializations.emplace(std::move(specialization), std::move(r));
+    mSpecializations->emplace(std::move(specialization), std::move(r));
 
     return workgroupSize;
 }
@@ -81,9 +81,16 @@ ResultOrError<PipelineHandles> ComputePipeline::GetOrCreateSpecializedHandle(
     Specialization specialization = specializationIn;
     specialization.layout.pushConstantBytes = ToPushConstantBytes(mImmediateMask);
 
-    if (auto it = mSpecializations.find(specialization); it != mSpecializations.end()) {
-        return PipelineHandles{.pipeline = it->second.pipeline->Get(),
-                               .layout = it->second.layout->Get()};
+    if (auto specialized =
+            mSpecializations.ConstUse([&](auto specializations) -> std::optional<PipelineHandles> {
+                if (auto it = specializations->find(specialization); it != specializations->end()) {
+                    return PipelineHandles{.pipeline = it->second.pipeline->Get(),
+                                           .layout = it->second.layout->Get()};
+                }
+                return std::nullopt;
+            });
+        specialized) {
+        return *specialized;
     }
 
     // Do no make a new cache key, so that the VkPipelineCache from InitializeImpl is used for all
@@ -91,10 +98,16 @@ ResultOrError<PipelineHandles> ComputePipeline::GetOrCreateSpecializedHandle(
     SpecializationResult r;
     DAWN_TRY_ASSIGN(r, InitializeSpecialization(specialization, /*buildCacheKey=*/false));
 
-    auto handles = PipelineHandles{.pipeline = r.pipeline->Get(), .layout = r.layout->Get()};
+    return mSpecializations.Use([&](auto specializations) -> ResultOrError<PipelineHandles> {
+        auto handles = PipelineHandles{.pipeline = r.pipeline->Get(), .layout = r.layout->Get()};
 
-    mSpecializations.emplace(std::move(specialization), std::move(r));
-    return handles;
+        auto [it, inserted] = specializations->insert({specialization, r});
+        if (!inserted) {
+            return PipelineHandles{.pipeline = it->second.pipeline->Get(),
+                                   .layout = it->second.layout->Get()};
+        }
+        return handles;
+    });
 }
 
 ResultOrError<ComputePipeline::SpecializationResult> ComputePipeline::InitializeSpecialization(
@@ -148,7 +161,7 @@ ResultOrError<ComputePipeline::SpecializationResult> ComputePipeline::Initialize
     // with SPIR-V 1.6.
     if (computeStage.metadata->usesSubgroupMatrix ||
         moduleAndSpirv.explicitSubgroupSize.has_value()) {
-        createInfo.flags |= VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT;
+        createInfo.stage.flags |= VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT;
     }
 
     VkPipelineShaderStageRequiredSubgroupSizeCreateInfoEXT subgroupSizeInfo = {};
@@ -175,7 +188,7 @@ ResultOrError<ComputePipeline::SpecializationResult> ComputePipeline::Initialize
         // `VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT flag` set if a
         // `VkPipelineShaderStageRequiredSubgroupSizeCreateInfo` structure is included in the pNext
         // chain,
-        createInfo.flags |= VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT;
+        createInfo.stage.flags |= VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT;
     }
 
     // Record cache key information now since createInfo is not stored. Only store for the noop
@@ -215,7 +228,7 @@ ComputePipeline::~ComputePipeline() = default;
 void ComputePipeline::DestroyImpl(DestroyReason reason) {
     ComputePipelineBase::DestroyImpl(reason);
 
-    mSpecializations.clear();
+    mSpecializations->clear();
 
     // Handles were owned by refs in mSpecializations that were just deleted.
     mHandles = {};

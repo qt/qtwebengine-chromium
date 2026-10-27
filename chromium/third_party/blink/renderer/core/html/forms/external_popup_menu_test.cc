@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/strings/stringprintf.h"
 #include "content/test/test_blink_web_unit_test_support.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/mojom/choosers/popup_menu.mojom-blink.h"
@@ -21,11 +22,13 @@
 #include "third_party/blink/renderer/core/html/html_div_element.h"
 #include "third_party/blink/renderer/core/html/html_iframe_element.h"
 #include "third_party/blink/renderer/core/html_names.h"
+#include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/testing/fake_local_frame_host.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/task_environment.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/url_loader_mock_factory.h"
@@ -275,8 +278,8 @@ class ExternalPopupMenuTest : public PageTestBase {
     // TODO(crbug.com/751425): We should use the mock functionality
     // via |helper_|.
     url_test_helpers::RegisterMockedURLLoadFromBase(
-        WebString::FromUTF8(base_url_), test::CoreTestDataPath("popup"),
-        WebString::FromUTF8(file_name), WebString::FromUTF8("text/html"));
+        WebString::FromUtf8(base_url_), test::CoreTestDataPath("popup"),
+        WebString::FromUtf8(file_name), WebString("text/html"));
   }
 
   void LoadFrame(const std::string& file_name) {
@@ -346,6 +349,104 @@ TEST_F(ExternalPopupMenuTest, PopupAccountsForVisualViewportTransform) {
 
   EXPECT_EQ(expected_x, ShownBounds().x());
   EXPECT_EQ(expected_y, ShownBounds().y());
+}
+
+TEST_F(ExternalPopupMenuTest, PopupClippedToViewportVariations) {
+  struct TestCase {
+    int left;
+    int top;
+    int width;
+    int height;
+    float dpr;
+    bool expect_shown;
+    int expected_x;
+    int expected_y;
+    int expected_width;
+    int expected_height;
+  } test_cases[] = {
+      // Top left partial
+      {-50, -50, 200, 200, 1.0f, true, 0, 0, 150, 150},
+  // Top left partial with DPR
+// The android differences here and below correspond to the OS_ANDROID check in
+// ExternalPopupMenu::GetDprForSizeAdjustment.
+#ifdef OS_ANDROID
+      {-50, -50, 200, 200, 2.0f, true, 0, 0, 300, 300},
+#else
+      {-50, -50, 200, 200, 2.0f, true, 0, 0, 150, 150},
+#endif
+      // Top left complete
+      {-250, -250, 200, 200, 1.0f, false, 0, 0, 0, 0},
+      // Top left complete with DPR
+      {-250, -250, 200, 200, 2.0f, false, 0, 0, 0, 0},
+      // Bottom right partial
+      {750, 550, 200, 200, 1.0f, true, 750, 550, 50, 50},
+  // Bottom right partial with DPR
+#ifdef OS_ANDROID
+      {750, 550, 200, 200, 2.0f, true, 1500, 1100, 100, 100},
+#else
+      {750, 550, 200, 200, 2.0f, true, 750, 550, 200, 200},
+#endif
+      // Bottom right complete
+      {850, 650, 200, 200, 1.0f, false, 0, 0, 0, 0},
+      // Bottom right complete with DPR
+      {850, 650, 200, 200, 2.0f, false, 0, 0, 0, 0},
+  };
+
+  for (const auto& test_case : test_cases) {
+    SCOPED_TRACE(testing::Message()
+                 << "left: " << test_case.left << ", top: " << test_case.top
+                 << ", dpr: " << test_case.dpr);
+
+    WebView()->MainFrameWidget()->SetDeviceScaleFactorForTesting(test_case.dpr);
+
+    frame_test_helpers::LoadHTMLString(
+        MainFrame(),
+        base::StringPrintf(R"HTML(
+      <!DOCTYPE html>
+      <html>
+      <style>
+        body { margin: 0; }
+        select {
+          position: fixed;
+          left: %dpx;
+          top: %dpx;
+          width: %dpx;
+          height: %dpx;
+        }
+      </style>
+      <body>
+      <select id=select>
+        <option>option</option>
+      </select>
+      </body>
+      </html>
+      )HTML",
+          test_case.left, test_case.top, test_case.width, test_case.height),
+        url_test_helpers::ToKURL("http://www.test.com/"));
+
+    WebView()->MainFrameViewWidget()->Resize(
+        gfx::Size(800 * test_case.dpr, 600 * test_case.dpr));
+    WebView()->MainFrameWidget()->UpdateAllLifecyclePhases(
+        DocumentUpdateReason::kTest);
+
+    auto* select = To<HTMLSelectElement>(
+        MainFrame()->GetFrame()->GetDocument()->getElementById(
+            AtomicString("select")));
+    auto* layout_object = select->GetLayoutObject();
+    ASSERT_TRUE(layout_object);
+
+    select->ShowPopup();
+
+    if (test_case.expect_shown) {
+      WaitUntilShowedPopup();
+      EXPECT_EQ(test_case.expected_x, ShownBounds().x());
+      EXPECT_EQ(test_case.expected_y, ShownBounds().y());
+      EXPECT_EQ(test_case.expected_width, ShownBounds().width());
+      EXPECT_EQ(test_case.expected_height, ShownBounds().height());
+    } else {
+      EXPECT_FALSE(select->PopupIsVisible());
+    }
+  }
 }
 
 // Android doesn't use this position data and we don't adjust it for DPR there..
@@ -601,6 +702,70 @@ TEST_F(ExternalPopupMenuTest, RemoveFrameOnChange) {
   // the page.
   select->SelectOptionByPopup(1);
   // The test passes if the test didn't crash and ASAN didn't complain.
+}
+
+TEST_F(ExternalPopupMenuTest, OopifSelectOutsideViewport) {
+  frame_test_helpers::WebViewHelper helper;
+  helper.InitializeRemote();
+  WebLocalFrameImpl* local_child =
+      helper.CreateLocalChild(*helper.RemoteMainFrame());
+  ASSERT_TRUE(local_child);
+  helper.GetWebView()->Resize(gfx::Size(800, 600));
+
+  // The select is positioned at (200, 200)
+  std::string html = R"HTML(
+    <!DOCTYPE html>
+    <style>
+      body {
+        margin: 0;
+      }
+      select {
+        position: absolute;
+        left: 200px;
+        top: 200px;
+        width: 100px;
+        height: 30px;
+      }
+    </style>
+    <select id="select">
+      <option>1</option>
+      <option>2</option>
+    </select>
+  )HTML";
+
+  frame_test_helpers::LoadHTMLString(
+      local_child, html, url_test_helpers::ToKURL("http://example.com/"));
+
+  // Resize the child frame view to be large enough to contain the select.
+  local_child->GetFrameView()->Resize(500, 500);
+  local_child->GetFrame()->GetDocument()->UpdateStyleAndLayout(
+      DocumentUpdateReason::kTest);
+
+  // Set the visual viewport to be smaller than the select's position.
+  // Select is at (200, 200, 100, 30).
+  // Viewport is 100x100.
+  helper.GetWebView()->GetPage()->GetVisualViewport().SetSize(
+      gfx::Size(100, 100));
+
+  helper.GetWebView()->GetChromeClient().SetUseExternalPopupMenus(true);
+  auto* select = To<HTMLSelectElement>(
+      local_child->GetFrame()->GetDocument()->getElementById(
+          AtomicString("select")));
+  ASSERT_TRUE(select);
+
+  // Set viewport intersection.
+  mojom::blink::ViewportIntersectionState intersection_state;
+  intersection_state.main_frame_intersection = gfx::Rect(0, 0, 500, 500);
+  intersection_state.viewport_intersection = gfx::Rect(0, 0, 500, 500);
+  intersection_state.outermost_main_frame_size = gfx::Size(800, 600);
+  local_child->GetFrame()->SetViewportIntersectionFromParent(
+      intersection_state);
+
+  // The select is at (200, 200) which does not intersect the 100x100 viewport,
+  // but it is visible within the 500x500 child frame (as configured by the
+  // viewport intersection). The select should not open.
+  select->ShowPopup();
+  EXPECT_FALSE(select->PopupIsVisible());
 }
 
 }  // namespace blink

@@ -94,6 +94,16 @@ struct State {
                     !operand->Type()->IsAnyOf<core::type::Struct, core::type::Array>()) {
                     continue;
                 }
+
+                // Avoid promoting const-zero structs and arrays in the root block, because they may
+                // fail to be const-folded by DXC. This allows them to be initialized with
+                // zero-casting in HLSL instead.
+                if (is_root_block) {
+                    if (auto* c = operand->As<core::ir::Constant>(); c && c->Value()->AllZero()) {
+                        continue;
+                    }
+                }
+
                 if (operand->IsAnyOf<core::ir::InstructionResult, core::ir::Constant>()) {
                     worklist.Push({inst, i, operand});
                 }

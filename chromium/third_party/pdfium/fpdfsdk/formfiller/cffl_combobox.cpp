@@ -21,7 +21,7 @@ CFFL_ComboBox::CFFL_ComboBox(CFFL_InteractiveFormFiller* pFormFiller,
     : CFFL_TextObject(pFormFiller, pWidget) {}
 
 CFFL_ComboBox::~CFFL_ComboBox() {
-  // See comment in cffl_formfiller.h.
+  // See comment in cffl_formfield.h.
   // The font map should be stored somewhere more appropriate so it will live
   // until the PWL_Edit is done with it. pdfium:566
   DestroyWindows();
@@ -30,7 +30,7 @@ CFFL_ComboBox::~CFFL_ComboBox() {
 CPWL_Wnd::CreateParams CFFL_ComboBox::GetCreateParam() {
   CPWL_Wnd::CreateParams cp = CFFL_TextObject::GetCreateParam();
   if (widget_->GetFieldFlags() & pdfium::form_flags::kChoiceEdit) {
-    cp.dwFlags |= PCBS_ALLOWCUSTOMTEXT;
+    cp.dwFlags |= CPWL_Wnd::Styles::kComboboxAllowCustomText;
   }
 
   cp.font_map = GetOrCreateFontMap();

@@ -125,7 +125,9 @@ WebCryptoKeyAlgorithm WebCryptoKeyAlgorithm::CreateX25519(
 WebCryptoKeyAlgorithm WebCryptoKeyAlgorithm::CreateWithoutParams(
     WebCryptoAlgorithmId id) {
   if (!WebCryptoAlgorithm::IsKdf(id) && !WebCryptoAlgorithm::IsMlDsa(id) &&
-      id != kWebCryptoAlgorithmIdChaCha20Poly1305) {
+      !WebCryptoAlgorithm::IsMlKem(id) &&
+      id != kWebCryptoAlgorithmIdChaCha20Poly1305 &&
+      id != kWebCryptoAlgorithmIdMlKem768X25519) {
     return WebCryptoKeyAlgorithm();
   }
   return WebCryptoKeyAlgorithm(id, nullptr);

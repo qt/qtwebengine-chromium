@@ -22,14 +22,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   // also contains a NtpTimeConverter, which samples the system clock at
   // construction time. There is no reason to re-construct these objects for
   // each fuzzer test input.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wexit-time-destructors"
-  static RtcpSession session(kSenderSsrcInSeedCorpus, kReceiverSsrcInSeedCorpus,
-                             openscreen::Clock::now());
-  static SenderReportParser parser(session);
-#pragma clang diagnostic pop
+  static auto* session =
+      new RtcpSession(kSenderSsrcInSeedCorpus, kReceiverSsrcInSeedCorpus,
+                      openscreen::Clock::now());
+  static auto* parser = new SenderReportParser(*session);
 
-  parser.Parse(openscreen::ByteView(data, size));
+  parser->Parse(openscreen::ByteView(data, size));
 
   return 0;
 }

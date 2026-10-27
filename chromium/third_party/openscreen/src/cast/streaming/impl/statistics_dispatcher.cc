@@ -8,11 +8,11 @@
 
 #include "cast/streaming/impl/rtcp_common.h"
 #include "cast/streaming/impl/rtp_defines.h"
-#include "cast/streaming/impl/session_config.h"
 #include "cast/streaming/impl/statistics_collector.h"
 #include "cast/streaming/impl/statistics_common.h"
 #include "cast/streaming/public/encoded_frame.h"
 #include "cast/streaming/public/environment.h"
+#include "cast/streaming/public/session_config.h"
 #include "platform/base/trivial_clock_traits.h"
 #include "util/chrono_helpers.h"
 #include "util/osp_logging.h"
@@ -88,6 +88,24 @@ void StatisticsDispatcher::DispatchAckEvent(StreamType stream_type,
   ack_event.frame_id = frame_id;
 
   environment_.statistics_collector()->CollectFrameEvent(std::move(ack_event));
+}
+
+void StatisticsDispatcher::DispatchFrameDropEvent(StreamType stream_type,
+                                                  FrameId frame_id,
+                                                  RtpTimeTicks rtp_timestamp,
+                                                  Clock::time_point drop_time) {
+  if (!environment_.statistics_collector()) {
+    return;
+  }
+
+  FrameEvent drop_event;
+  drop_event.timestamp = drop_time;
+  drop_event.type = StatisticsEvent::Type::kFrameDroppedByEncoder;
+  drop_event.media_type = StatisticsEvent::ToMediaType(stream_type);
+  drop_event.rtp_timestamp = rtp_timestamp;
+  drop_event.frame_id = frame_id;
+
+  environment_.statistics_collector()->CollectFrameEvent(std::move(drop_event));
 }
 
 void StatisticsDispatcher::DispatchFrameLogMessages(

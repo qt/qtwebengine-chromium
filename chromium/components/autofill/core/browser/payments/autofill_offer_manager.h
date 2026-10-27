@@ -10,10 +10,9 @@
 #include <map>
 #include <set>
 #include <string>
-#include <vector>
 
 #include "base/gtest_prod_util.h"
-#include "base/memory/raw_ptr.h"
+#include "base/memory/raw_ref.h"
 #include "base/scoped_observation.h"
 #include "components/autofill/core/browser/data_manager/payments/payments_data_manager.h"
 #include "components/autofill/core/browser/payments/offer_notification_handler.h"
@@ -45,11 +44,6 @@ class AutofillOfferManager : public KeyedService,
 
   // Invoked when the navigation happens.
   void OnDidNavigateFrame(AutofillClient& client);
-
-  // Gets a mapping between credit card's guid id and eligible card-linked
-  // offers on the `last_committed_primary_main_frame_url`.
-  CardLinkedOffersMap GetCardLinkedOffersMap(
-      const GURL& last_committed_primary_main_frame_url) const;
 
   // Returns true only if the domain of `last_committed_primary_main_frame_url`
   // has an offer.

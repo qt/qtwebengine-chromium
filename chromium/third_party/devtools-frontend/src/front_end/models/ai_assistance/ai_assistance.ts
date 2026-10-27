@@ -5,15 +5,19 @@
 import * as AgentProject from './AgentProject.js';
 import * as AccessibilityAgent from './agents/AccessibilityAgent.js';
 import * as AiAgent from './agents/AiAgent.js';
-import * as BreakpointDebuggerAgent from './agents/BreakpointDebuggerAgent.js';
 import * as ContextSelectionAgent from './agents/ContextSelectionAgent.js';
 import * as ConversationSummaryAgent from './agents/ConversationSummaryAgent.js';
 import * as FileAgent from './agents/FileAgent.js';
+import * as GreenDevAgent from './agents/GreenDevAgent.js';
+import * as GreenDevAgentAntigravityCliSocketClient from './agents/GreenDevAgentAntigravityCliSocketClient.js';
+import * as GreenDevAgentGeminiCliSocketClient from './agents/GreenDevAgentGeminiCliSocketClient.js';
 import * as NetworkAgent from './agents/NetworkAgent.js';
 import * as PatchAgent from './agents/PatchAgent.js';
 import * as PerformanceAgent from './agents/PerformanceAgent.js';
 import * as PerformanceAnnotationsAgent from './agents/PerformanceAnnotationsAgent.js';
+import * as StorageAgent from './agents/StorageAgent.js';
 import * as StylingAgent from './agents/StylingAgent.js';
+import * as AiAgent2 from './AiAgent2.js';
 import * as AiConversation from './AiConversation.js';
 import * as AiHistoryStorage from './AiHistoryStorage.js';
 import * as AiUtils from './AiUtils.js';
@@ -32,18 +36,19 @@ import * as Injected from './injected.js';
 import * as AICallTree from './performance/AICallTree.js';
 import * as AIContext from './performance/AIContext.js';
 import * as AIQueries from './performance/AIQueries.js';
+import * as StorageItem from './StorageItem.js';
 
 export {
   AccessibilityAgent,
   AgentProject,
   AiAgent,
+  AiAgent2,
   AICallTree,
   AIContext,
   AiConversation,
   AiHistoryStorage,
   AIQueries,
   AiUtils,
-  BreakpointDebuggerAgent,
   BuiltInAi,
   ChangeManager,
   ContextSelectionAgent,
@@ -53,6 +58,9 @@ export {
   ExtensionScope,
   FileAgent,
   FileFormatter,
+  GreenDevAgent,
+  GreenDevAgentAntigravityCliSocketClient,
+  GreenDevAgentGeminiCliSocketClient,
   Injected,
   LighthouseFormatter,
   NetworkAgent,
@@ -62,6 +70,8 @@ export {
   PerformanceAnnotationsAgent,
   PerformanceInsightFormatter,
   PerformanceTraceFormatter,
+  StorageAgent,
+  StorageItem,
   StylingAgent,
   UnitFormatters,
 };

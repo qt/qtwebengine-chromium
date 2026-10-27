@@ -7,9 +7,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_ARG_MAX_H
-#define EIGEN_CXX11_TENSOR_TENSOR_ARG_MAX_H
+#ifndef EIGEN_TENSOR_TENSOR_ARG_MAX_H
+#define EIGEN_TENSOR_TENSOR_ARG_MAX_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -42,7 +43,7 @@ struct nested<TensorIndexPairOp<XprType>, 1, typename eval<TensorIndexPairOp<Xpr
 }  // end namespace internal
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Tensor + Index Pair class.
  */
@@ -118,7 +119,7 @@ struct TensorEvaluator<const TensorIndexPairOp<ArgType>, Device> {
 namespace internal {
 
 /** \class TensorPairIndex
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Converts to Tensor<Pair<Index, Scalar> > and reduces to Tensor<Index>.
  *
@@ -213,10 +214,11 @@ struct TensorEvaluator<const TensorPairReducerOp<ReduceOp, Dims, ArgType>, Devic
         m_impl(op.expression().index_pairs().reduce(op.reduce_dims(), op.reduce_op()), device),
         m_return_dim(op.return_dim()) {
     gen_strides(m_orig_impl.dimensions(), m_strides);
-    if (Layout == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(Layout == static_cast<int>(ColMajor)) {
       const Index total_size = internal::array_prod(m_orig_impl.dimensions());
       m_stride_mod = (m_return_dim < NumDims - 1) ? m_strides[m_return_dim + 1] : total_size;
-    } else {
+    }
+    else {
       const Index total_size = internal::array_prod(m_orig_impl.dimensions());
       m_stride_mod = (m_return_dim > 0) ? m_strides[m_return_dim - 1] : total_size;
     }
@@ -255,12 +257,13 @@ struct TensorEvaluator<const TensorPairReducerOp<ReduceOp, Dims, ArgType>, Devic
 
     // Calculate m_stride_div and m_stride_mod, which are used to
     // calculate the value of an index w.r.t. the m_return_dim.
-    if (Layout == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(Layout == static_cast<int>(ColMajor)) {
       strides[0] = 1;
       for (int i = 1; i < NumDims; ++i) {
         strides[i] = strides[i - 1] * dims[i - 1];
       }
-    } else {
+    }
+    else {
       strides[NumDims - 1] = 1;
       for (int i = NumDims - 2; i >= 0; --i) {
         strides[i] = strides[i + 1] * dims[i + 1];
@@ -279,4 +282,4 @@ struct TensorEvaluator<const TensorPairReducerOp<ReduceOp, Dims, ArgType>, Devic
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_ARG_MAX_H
+#endif  // EIGEN_TENSOR_TENSOR_ARG_MAX_H

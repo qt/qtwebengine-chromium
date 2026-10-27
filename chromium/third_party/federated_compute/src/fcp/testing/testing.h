@@ -24,10 +24,10 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/status/status.h"
+#include "absl/base/macros.h"
+#include "absl/status/status_matchers.h"
 #include "absl/strings/string_view.h"
 #include "fcp/base/monitoring.h"
-#include "fcp/base/platform.h"
 #include "google/protobuf/util/message_differencer.h"
 
 #include "fcp/testing/parse_text_proto.h"
@@ -36,15 +36,6 @@
 // based on the public version of googletest.
 
 namespace fcp {
-
-// Convenience macros for `EXPECT_THAT(s, IsOk())`, where `s` is either
-// a `Status` or a `StatusOr<T>`.
-// Old versions of the protobuf library define EXPECT_OK as well, so we only
-// conditionally define our version.
-#if !defined(EXPECT_OK)
-#define EXPECT_OK(result) EXPECT_THAT(result, fcp::IsOk())
-#endif
-#define ASSERT_OK(result) ASSERT_THAT(result, fcp::IsOk())
 
 /** Returns the current test's name. */
 std::string TestName();
@@ -69,54 +60,20 @@ std::string TemporaryTestFile(absl::string_view suffix);
  *
  * The baseline file name must be provided relative to the project root.
  */
-StatusOr<std::string> VerifyAgainstBaseline(absl::string_view baseline_file,
-                                            absl::string_view content);
+absl::StatusOr<std::string> VerifyAgainstBaseline(
+    absl::string_view baseline_file, absl::string_view content);
 
-/**
- * Polymorphic matchers for Status or StatusOr on status code.
- */
-template <typename T>
-bool IsCode(StatusOr<T> const& x, StatusCode code) {
-  return x.status().code() == code;
-}
-inline bool IsCode(Status const& x, StatusCode code) {
-  return x.code() == code;
+[[deprecated(
+    "use absl_testing::StatusIs instead")]] ABSL_REFACTOR_INLINE inline auto
+IsCode(absl::StatusCode code) {
+  return absl_testing::StatusIs(code);
 }
 
-template <typename T>
-class StatusMatcherImpl : public ::testing::MatcherInterface<T> {
- public:
-  explicit StatusMatcherImpl(StatusCode code) : code_(code) {}
-  void DescribeTo(::std::ostream* os) const override {
-    *os << "is " << absl::StatusCodeToString(code_);
-  }
-  void DescribeNegationTo(::std::ostream* os) const override {
-    *os << "is not " << absl::StatusCodeToString(code_);
-  }
-  bool MatchAndExplain(
-      T x, ::testing::MatchResultListener* listener) const override {
-    return IsCode(x, code_);
-  }
-
- private:
-  StatusCode code_;
-};
-
-class StatusMatcher {
- public:
-  explicit StatusMatcher(StatusCode code) : code_(code) {}
-
-  template <typename T>
-  operator testing::Matcher<T>() const {  // NOLINT
-    return ::testing::MakeMatcher(new StatusMatcherImpl<T>(code_));
-  }
-
- private:
-  StatusCode code_;
-};
-
-StatusMatcher IsCode(StatusCode code);
-StatusMatcher IsOk();
+[[deprecated(
+    "Use absl_testing::IsOk instead")]] ABSL_REFACTOR_INLINE inline auto
+IsOk() {
+  return absl_testing::IsOk();
+}
 
 template <typename T>
 class ProtoMatcherImpl : public ::testing::MatcherInterface<T> {

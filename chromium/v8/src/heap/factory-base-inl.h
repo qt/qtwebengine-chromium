@@ -11,7 +11,6 @@
 #include <type_traits>
 
 #include "src/execution/local-isolate-inl.h"
-#include "src/heap/local-heap-inl.h"
 #include "src/numbers/conversions.h"
 #include "src/objects/heap-number.h"
 #include "src/objects/map.h"
@@ -132,14 +131,10 @@ template <typename Impl>
 template <typename StructType>
 Tagged<StructType> FactoryBase<Impl>::NewStructInternal(
     InstanceType type, AllocationType allocation) {
+  static_assert(std::is_base_of_v<Struct, StructType>);
   ReadOnlyRoots roots = read_only_roots();
   Tagged<Map> map = Map::GetMapFor(roots, type);
-  int size;
-  if constexpr (std::is_base_of_v<StructLayout, StructType>) {
-    size = sizeof(StructType);
-  } else {
-    size = StructType::kSize;
-  }
+  int size = sizeof(StructType);
   return Cast<StructType>(NewStructInternal(roots, map, size, allocation));
 }
 
@@ -149,11 +144,10 @@ Tagged<Struct> FactoryBase<Impl>::NewStructInternal(ReadOnlyRoots roots,
                                                     AllocationType allocation) {
   DCHECK_EQ(size, map->instance_size());
   Tagged<HeapObject> result = AllocateRawWithImmortalMap(size, allocation, map);
-  Tagged<Struct> str = Cast<Struct>(result);
   Tagged<Undefined> undefined = roots.undefined_value();
   int length = (size >> kTaggedSizeLog2) - 1;
-  MemsetTagged(str->RawField(Struct::kHeaderSize), undefined, length);
-  return str;
+  MemsetTagged(result->RawField(sizeof(Struct)), undefined, length);
+  return Cast<Struct>(result);
 }
 
 }  // namespace internal

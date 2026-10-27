@@ -407,6 +407,13 @@ component("base") {
       ]
     }
 
+    if (is_linux) {
+      sources += [
+        "linux/xdg_shortcut.cc",
+        "linux/xdg_shortcut.h",
+      ]
+    }
+
     if (is_chromeos) {
       sources += [
         "accelerators/ash/quick_insert_event_property.cc",
@@ -596,6 +603,7 @@ component("base") {
       "Carbon.framework",
       "CoreVideo.framework",
       "Foundation.framework",
+      "IOKit.framework",
       "QuartzCore.framework",
       "UniformTypeIdentifiers.framework",
     ]
@@ -773,6 +781,8 @@ static_library("test_support") {
     "resource/mock_resource_bundle_delegate.h",
     "test/idle_test_utils.cc",
     "test/idle_test_utils.h",
+    "test/mock_base_window.cc",
+    "test/mock_base_window.h",
   ]
 
   if (is_mac) {
@@ -943,10 +953,7 @@ if (is_android) {
 
 bundle_data("ui_base_unittests_bundle_data") {
   testonly = true
-  sources = [
-    "//testing/buildbot/filters/ios.ui_base_unittests.filter",
-    "test/data/data_pack_unittest/truncated-header.pak",
-  ]
+  sources = [ "test/data/data_pack_unittest/truncated-header.pak" ]
   outputs = [ "{{bundle_resources_dir}}/" +
               "{{source_root_relative_dir}}/{{source_file_part}}" ]
 }
@@ -1001,6 +1008,14 @@ source_set("run_all_unittests") {
     "//ui/base",
     "//ui/display",
   ]
+}
+
+if (is_win) {
+  executable("shell_test_helper") {
+    testonly = true
+    sources = [ "win/shell_test_helper.cc" ]
+    deps = [ "//base" ]
+  }
 }
 
 test("ui_base_unittests") {
@@ -1099,6 +1114,7 @@ test("ui_base_unittests") {
       "cocoa/base_view_unittest.mm",
       "cocoa/bubble_closer_unittest.mm",
       "cocoa/cocoa_base_utils_unittest.mm",
+      "cocoa/command_dispatcher_unittest.mm",
       "cocoa/constrained_window/constrained_window_animation_unittest.mm",
       "cocoa/defaults_utils_unittest.mm",
       "cocoa/nsmenu_additions_unittest.mm",
@@ -1140,6 +1156,7 @@ test("ui_base_unittests") {
   }
 
   if (use_blink) {
+    sources += [ "pointer/pointer_device_unittest.cc" ]
     deps += [
       "//ui/events:events_base",
       "//ui/events:test_support",
@@ -1244,6 +1261,7 @@ test("ui_base_unittests") {
       "dragdrop/os_exchange_data_win_unittest.cc",
       "view_prop_unittest.cc",
       "win/hwnd_subclass_unittest.cc",
+      "win/shell_unittest.cc",
       "win/win_cursor_factory_unittest.cc",
     ]
     deps += [
@@ -1251,6 +1269,9 @@ test("ui_base_unittests") {
       "//ui/base/cursor/mojom:cursor_type_shared",
       "//ui/base/idle:unit_tests",
     ]
+    if (!is_component_build && !is_asan) {
+      data_deps += [ ":shell_test_helper" ]
+    }
   }
 
   if (is_android) {
@@ -1333,6 +1354,10 @@ test("ui_base_unittests") {
       "//ui/base/accelerators/global_accelerator_listener",
       "//ui/linux:linux_ui",
     ]
+  }
+
+  if (is_linux) {
+    sources += [ "linux/xdg_shortcut_unittest.cc" ]
   }
 
   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and

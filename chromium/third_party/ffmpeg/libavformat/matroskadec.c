@@ -34,6 +34,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 
+#include "libavutil/attributes.h"
 #include "libavutil/avstring.h"
 #include "libavutil/base64.h"
 #include "libavutil/bprint.h"
@@ -1608,6 +1609,7 @@ static void ebml_free(EbmlSyntax *syntax, void *data)
                 list->alloc_elem_size = 0;
             } else
                 ebml_free(syntax[i].def.n, data_off);
+            break;
         default:
             break;
         }
@@ -2529,7 +2531,7 @@ static int mkv_parse_block_addition_mappings(AVFormatContext *s, AVStream *st, M
                    "Explicit block Addition Mapping type \"Use BlockAddIDValue\", value %"PRIu64","
                    " name \"%s\" found.\n", mapping->value, mapping->name ? mapping->name : "");
             type = MATROSKA_BLOCK_ADD_ID_TYPE_OPAQUE;
-            // fall-through
+            av_fallthrough;
         case MATROSKA_BLOCK_ADD_ID_TYPE_OPAQUE:
         case MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35:
             if (mapping->value != type) {
@@ -2800,6 +2802,10 @@ static int mka_parse_audio_codec(MatroskaTrack *track, AVCodecParameters *par,
             par->block_align  = track->audio.sub_packet_size;
             *extradata_offset = 78;
         }
+        if (par->block_align <= 0 ||
+            track->audio.sub_packet_h * (unsigned)track->audio.frame_size > INT_MAX ||
+            track->audio.frame_size * track->audio.sub_packet_h < par->block_align)
+            return AVERROR_INVALIDDATA;
         track->audio.buf = av_malloc_array(track->audio.sub_packet_h,
                                             track->audio.frame_size);
         if (!track->audio.buf)
@@ -3969,43 +3975,102 @@ static int matroska_parse_block_additional(MatroskaDemuxContext *matroska,
 
         /* ITU-T T.35 metadata */
         country_code  = bytestream2_get_byteu(&bc);
-        provider_code = bytestream2_get_be16u(&bc);
+        switch (country_code) {
+        case ITU_T_T35_COUNTRY_CODE_US:
+            provider_code = bytestream2_get_be16u(&bc);
 
-        if (country_code != ITU_T_T35_COUNTRY_CODE_US ||
-            provider_code != ITU_T_T35_PROVIDER_CODE_SAMSUNG)
-            break; // ignore
+            switch (provider_code) {
+            case ITU_T_T35_PROVIDER_CODE_SAMSUNG: {
+                provider_oriented_code = bytestream2_get_be16u(&bc);
+                application_identifier = bytestream2_get_byteu(&bc);
 
-        provider_oriented_code = bytestream2_get_be16u(&bc);
-        application_identifier = bytestream2_get_byteu(&bc);
+                if (provider_oriented_code != 1 || application_identifier != 4)
+                    break; // ignore
 
-        if (provider_oriented_code != 1 || application_identifier != 4)
-            break; // ignore
+                hdrplus = av_dynamic_hdr_plus_alloc(&hdrplus_size);
+                if (!hdrplus)
+                    return AVERROR(ENOMEM);
 
-        hdrplus = av_dynamic_hdr_plus_alloc(&hdrplus_size);
-        if (!hdrplus)
-            return AVERROR(ENOMEM);
+                if ((res = av_dynamic_hdr_plus_from_t35(hdrplus, bc.buffer,
+                                                        bytestream2_get_bytes_left(&bc))) < 0 ||
+                    (res = av_packet_add_side_data(pkt, AV_PKT_DATA_DYNAMIC_HDR10_PLUS,
+                                                   (uint8_t *)hdrplus, hdrplus_size)) < 0) {
+                    av_free(hdrplus);
+                    return res;
+                }
 
-        if ((res = av_dynamic_hdr_plus_from_t35(hdrplus, bc.buffer,
-                                                bytestream2_get_bytes_left(&bc))) < 0 ||
-            (res = av_packet_add_side_data(pkt, AV_PKT_DATA_DYNAMIC_HDR10_PLUS,
-                                           (uint8_t *)hdrplus, hdrplus_size)) < 0) {
-            av_free(hdrplus);
-            return res;
+                break;
+            }
+            case ITU_T_T35_PROVIDER_CODE_SMPTE: {
+                AVDynamicHDRSmpte2094App5 *hdr_smpte_2094_app5;
+                size_t hdr_smpte_2094_app5_size;
+
+                provider_oriented_code = bytestream2_get_be16u(&bc);
+                if (provider_oriented_code != 1)
+                    break; // ignore
+
+                hdr_smpte_2094_app5 = av_dynamic_hdr_smpte2094_app5_alloc(&hdr_smpte_2094_app5_size);
+                if (!hdr_smpte_2094_app5)
+                    return AVERROR(ENOMEM);
+
+                if ((res = av_dynamic_hdr_smpte2094_app5_from_t35(hdr_smpte_2094_app5,
+                                                                  bc.buffer,
+                                                                  bytestream2_get_bytes_left(&bc))) < 0 ||
+                    (res = av_packet_add_side_data(pkt,
+                                                   AV_PKT_DATA_DYNAMIC_HDR_SMPTE_2094_APP5,
+                                                   (uint8_t *)hdr_smpte_2094_app5,
+                                                   hdr_smpte_2094_app5_size)) < 0) {
+                    av_free(hdr_smpte_2094_app5);
+                    return res;
+                }
+
+                break;
+            }
+            default:
+                break;
+            }
+            break;
+        case ITU_T_T35_COUNTRY_CODE_UK:
+            bytestream2_skipu(&bc, 1); // t35_uk_country_code_second_octet
+            if (bytestream2_get_bytes_left(&bc) < 2)
+                return AVERROR_INVALIDDATA;
+
+            provider_code = bytestream2_get_be16u(&bc);
+
+            switch (provider_code) {
+            case ITU_T_T35_PROVIDER_CODE_VNOVA: {
+                uint8_t *data;
+                int left = bytestream2_get_bytes_left(&bc);
+
+                if (left < 2)
+                    return AVERROR_INVALIDDATA;
+                data = av_packet_new_side_data(pkt, AV_PKT_DATA_LCEVC, left);
+                if (!data)
+                    return AVERROR(ENOMEM);
+
+                bytestream2_get_bufferu(&bc, data, left);
+
+                return 0;
+            }
+            default:
+                break;
+            }
+            break;
+        default:
+            break;
         }
-
-        return 0;
-    }
-    default:
         break;
     }
-
-    side_data = av_packet_new_side_data(pkt, AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL,
+    default:
+        side_data = av_packet_new_side_data(pkt, AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL,
                                         size + (size_t)8);
-    if (!side_data)
-        return AVERROR(ENOMEM);
+        if (!side_data)
+            return AVERROR(ENOMEM);
 
-    AV_WB64(side_data, id);
-    memcpy(side_data + 8, data, size);
+        AV_WB64(side_data, id);
+        memcpy(side_data + 8, data, size);
+        break;
+    }
 
     return 0;
 }

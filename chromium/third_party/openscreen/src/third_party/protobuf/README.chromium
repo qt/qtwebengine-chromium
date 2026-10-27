@@ -3,14 +3,23 @@ Short Name: protobuf
 URL: https://github.com/google/protobuf
 License: BSD-3-Clause
 License File: LICENSE
-Version: 33.0
-CPEPrefix: cpe:/a:google:protobuf:33.0
-Revision: a79f2d2e9fadd75e94f3fe40a0399bf0a5d90551
+Version: 33.6
+CPEPrefix: cpe:/a:google:protobuf:33.6
+Revision: 6e1998413a5bca7c058b85999667893f167434bc
 Update Mechanism: Manual
 Security Critical: yes
 Shipped: yes
 
 Steps used to create the current version (or roll a newer one):
+
+** NOTE for Open Screen developers: **
+Please use the `tools/roll_protobuf.py` script to automate all of these steps.
+
+It handles fetching the release, restoring files, applying patches, and updating
+version strings. Just run `tools/roll_protobuf.py <version>` from the
+repository root. Invoking the script without any arguments will output a list
+of supported versions from the protobuf tree.
+
 
 0. Nuke third_party/protobuf from orbit (rm -rf `third_party/protobuf`). Note
    that this removes this README.chromium so you may want it open in code search
@@ -163,7 +172,7 @@ Description of the patches:
   Later updated to patch out PROTOBUF_DESCRIPTOR_WEAK_MESSAGES_ALLOWED code
   which was not optimizable.
 
-- 0030-workaround-window-constinit.patch
+- 0030-workaround-windows-constinit.patch
 
   Disables PROTOBUF_CONSTINIT in generated code in Windows shared library
   builds. Protobuf's default instances take pointers to a dllimport variable,
@@ -229,7 +238,7 @@ Description of the patches:
 
   Adds some missing export defines to fix Windows component build.
 
-- 0052-remove-dynanmic-annotations.patch
+- 0052-remove-dynamic-annotations.patch
 
   This removes dynamic annotations (for containers; an ASAN tool). The use of
   absl's dynamic_annotations is banned in Chromium (see

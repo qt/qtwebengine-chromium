@@ -8,6 +8,7 @@ import argparse
 import json
 import logging
 import pathlib
+import subprocess
 import tempfile
 from util import jj_log
 from util import run_command
@@ -15,9 +16,8 @@ from util import run_jj
 from util import join_revsets
 from util import percent_encode_for_git_ref
 from util import split_description
-
-_IMMUTABLE_PARENTS = 'parents.filter(|p| p.immutable()).map(|p| p.commit_id())'
-_MUTABLE_PARENTS = 'parents.filter(|p| !p.immutable()).map(|p| p.commit_id())'
+from util import IMMUTABLE_PARENTS
+from util import MUTABLE_PARENTS
 
 
 def fatal(*args, **kwargs):
@@ -25,26 +25,12 @@ def fatal(*args, **kwargs):
   exit(1)
 
 
-def _collect_ids(values):
-  ids = set()
-  for value in values:
-    if value:
-      ids.update(value.split(' '))
-  return ids
-
-
 def get_refspec_opts(args) -> list[str]:
   # Extra options that can be specified at push time. Doc:
   # https://gerrit-review.googlesource.com/Documentation/user-upload.html
   refspec_opts = []
-  if args.topic:
-    # Documentation on Gerrit topics is here:
-    # https://gerrit-review.googlesource.com/Documentation/user-upload.html#topic
-    refspec_opts.append(f'topic={args.topic}')
 
   # Code mostly stolen from `git_cl.py`
-  if args.private:
-    refspec_opts.append('private')
   if args.send_mail:
     refspec_opts.append('ready')
     refspec_opts.append('notify=ALL')
@@ -58,14 +44,12 @@ def get_refspec_opts(args) -> list[str]:
     refspec_opts.append('l=Commit-Queue+1')
   if args.title:
     refspec_opts.append(f'm={percent_encode_for_git_ref(args.title)}')
-  for cc in args.cc:
-    refspec_opts.append(f'cc={cc}')
   for reviewer in args.reviewers:
     refspec_opts.append(f'r={reviewer}')
   return refspec_opts
 
 
-def main(args):
+def main(args, unknown_args):
   logging.basicConfig(level=logging.getLevelNamesMapping()[args.verbosity])
 
   revs = args.revisions + args.revision
@@ -91,7 +75,7 @@ def main(args):
           'commit_id': 'commit_id',
           'empty': 'empty',
           'desc': 'description',
-          'mutable_parents': _MUTABLE_PARENTS,
+          'mutable_parents': MUTABLE_PARENTS,
       },
       ignore_working_copy=snapshot_taken,
   )
@@ -123,20 +107,33 @@ def main(args):
           'bug, run `jj bug add [--inherit]`', name)
 
   if not args.bypass_hooks:
+    jj_root = run_jj(['root'],
+                     ignore_working_copy=True,
+                     stdout=subprocess.PIPE,
+                     text=True).stdout.strip()
+    if not (pathlib.Path(jj_root) / '.git').exists():
+      logging.warning('`git cl presubmit` will be skipped because this is a '
+                      'standalone jj workspace that is not a git working tree')
+      args.bypass_hooks = True
+
+  if not args.bypass_hooks:
     # Find the commits that `git cl presubmit` will actually run on
     got_presubmits = jj_log(
         revisions=f'mutable()::@',
         templates={
             'empty': 'empty',
-            'immutable_parents': _IMMUTABLE_PARENTS
+            'immutable_parents': IMMUTABLE_PARENTS
         },
         ignore_working_copy=snapshot_taken,
     )
 
     # We could simplify this with another call to jj_log, but each call to
     # jj_log can take a nontrivial amount of time.
-    immutable_parents = _collect_ids(c['immutable_parents']
-                                     for c in got_presubmits)
+    immutable_parents = {
+        commit_id
+        for c in got_presubmits
+        for commit_id in c['immutable_parents']
+    }
     if len(immutable_parents) != 1:
       fatal(
           '%s has multiple different immutable parents of mutable ancestors. ' +
@@ -171,13 +168,16 @@ def main(args):
       with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
         out = pathlib.Path(f.name)
       try:
-        run_command([
+        presubmit_cmd = [
             'git',
             'cl',
             'presubmit',
             # Allows it to run with a dirty tree and on no branch
             '--force',
-            '--parallel',
+        ]
+        if args.parallel:
+          presubmit_cmd.append('--parallel')
+        presubmit_cmd.extend([
             # Unfortunately, upload skips certain checks which would be
             # useful. However, it also skips certain checks we really don't
             # want to run. CheckTreeIsOpen(), for example.
@@ -185,6 +185,7 @@ def main(args):
             f'--json={out}',
             next(iter(immutable_parents))
         ])
+        run_command(presubmit_cmd)
         results = json.loads(out.read_text())
         if results.get('errors', []) or results.get('warnings', []):
           if not args.allow_warnings:
@@ -208,7 +209,7 @@ def main(args):
   cmd = [
       'gerrit', 'upload', '--remote', 'origin', '--remote-branch',
       args.target_branch + refspec_suffix
-  ]
+  ] + unknown_args
   for rev in revs:
     cmd.extend(['-r', rev])
   if args.upload:
@@ -249,6 +250,11 @@ if __name__ == '__main__':
       help='Prevents presubmit warnings from blocking upload',
       action='store_true',
   )
+  parser.add_argument(
+      '--parallel',
+      help='Runs git cl presubmit checks in parallel',
+      action='store_true',
+  )
 
   # These args are directly copied from git_cl.py
   parser.add_argument('--bypass-hooks',
@@ -261,10 +267,6 @@ if __name__ == '__main__':
                       action='append',
                       default=[],
                       help='reviewer email addresses')
-  parser.add_argument('--cc',
-                      action='append',
-                      default=[],
-                      help='cc email addresses')
   parser.add_argument('-s',
                       '--send-mail',
                       '--send-email',
@@ -276,9 +278,6 @@ if __name__ == '__main__':
                       metavar='TARGET',
                       help='Apply CL to remote branch TARGET.',
                       default='main')
-  parser.add_argument('--topic',
-                      default=None,
-                      help='Topic to specify when uploading')
 
   parser.add_argument(
       '-c',
@@ -313,8 +312,6 @@ if __name__ == '__main__':
   parser.add_argument('--enable-owners-override',
                       action='store_true',
                       help='Adds the Owners-Override label to your change.')
-  parser.add_argument('--private',
-                      action='store_true',
-                      help='Set the review private.')
 
-  main(parser.parse_args())
+  args, unknown_args = parser.parse_known_args()
+  main(args, unknown_args)

@@ -26,15 +26,12 @@ import {
   Frame,
   throwIfDetached,
   type GoToOptions,
+  type SetContentWaitForOptions,
   type WaitForOptions,
 } from '../api/Frame.js';
 import {PageEvent, type WaitTimeoutOptions} from '../api/Page.js';
+import type {Realm} from '../api/Realm.js';
 import {Accessibility} from '../cdp/Accessibility.js';
-import type {ConsoleMessageType} from '../common/ConsoleMessage.js';
-import {
-  ConsoleMessage,
-  type ConsoleMessageLocation,
-} from '../common/ConsoleMessage.js';
 import {TargetCloseError, UnsupportedOperation} from '../common/Errors.js';
 import type {TimeoutSettings} from '../common/TimeoutSettings.js';
 import type {Awaitable, HandleFor} from '../common/types.js';
@@ -50,33 +47,21 @@ import {BidiCdpSession} from './CDPSession.js';
 import type {BrowsingContext} from './core/BrowsingContext.js';
 import type {Navigation} from './core/Navigation.js';
 import type {Request} from './core/Request.js';
-import {BidiDeserializer} from './Deserializer.js';
 import {BidiDialog} from './Dialog.js';
 import {BidiElementHandle} from './ElementHandle.js';
 import {ExposableFunction} from './ExposedFunction.js';
 import {BidiHTTPRequest, requests} from './HTTPRequest.js';
 import type {BidiHTTPResponse} from './HTTPResponse.js';
-import {BidiJSHandle} from './JSHandle.js';
 import type {BidiPage} from './Page.js';
 import type {BidiRealm} from './Realm.js';
 import {BidiFrameRealm} from './Realm.js';
-import {rewriteNavigationError} from './util.js';
+import {
+  getConsoleMessage,
+  isConsoleLogEntry,
+  isJavaScriptLogEntry,
+  rewriteNavigationError,
+} from './util.js';
 import {BidiWebWorker} from './WebWorker.js';
-
-// TODO: Remove this and map CDP the correct method.
-// Requires breaking change.
-function convertConsoleMessageLevel(method: string): ConsoleMessageType {
-  switch (method) {
-    case 'group':
-      return 'startGroup';
-    case 'groupCollapsed':
-      return 'startGroupCollapsed';
-    case 'groupEnd':
-      return 'endGroup';
-    default:
-      return method as ConsoleMessageType;
-  }
-}
 
 export class BidiFrame extends Frame {
   static from(
@@ -124,7 +109,7 @@ export class BidiFrame extends Frame {
       this.#createFrameTarget(browsingContext);
     }
 
-    this.browsingContext.on('browsingcontext', ({browsingContext}) => {
+    this.browsingContext.on('browsingcontext', browsingContext => {
       this.#createFrameTarget(browsingContext);
     });
     this.browsingContext.on('closed', () => {
@@ -136,7 +121,7 @@ export class BidiFrame extends Frame {
       this.page().trustedEmitter.emit(PageEvent.FrameDetached, this);
     });
 
-    this.browsingContext.on('request', ({request}) => {
+    this.browsingContext.on('request', request => {
       const httpRequest = BidiHTTPRequest.from(
         request,
         this,
@@ -152,7 +137,7 @@ export class BidiFrame extends Frame {
       void httpRequest.finalizeInterceptions();
     });
 
-    this.browsingContext.on('navigation', ({navigation}) => {
+    this.browsingContext.on('navigation', navigation => {
       navigation.once('fragment', () => {
         this.page().trustedEmitter.emit(PageEvent.FrameNavigated, this);
       });
@@ -166,42 +151,28 @@ export class BidiFrame extends Frame {
       this.page().trustedEmitter.emit(PageEvent.FrameNavigated, this);
     });
 
-    this.browsingContext.on('userprompt', ({userPrompt}) => {
+    this.browsingContext.on('userprompt', userPrompt => {
       this.page().trustedEmitter.emit(
         PageEvent.Dialog,
         BidiDialog.from(userPrompt),
       );
     });
 
-    this.browsingContext.on('log', ({entry}) => {
+    this.browsingContext.on('log', entry => {
       if (this._id !== entry.source.context) {
         return;
       }
       if (isConsoleLogEntry(entry)) {
+        if (!this.page().listenerCount(PageEvent.Console)) {
+          return;
+        }
         const args = entry.args.map(arg => {
           return this.mainRealm().createHandle(arg);
         });
 
-        const text = args
-          .reduce((value, arg) => {
-            const parsedValue =
-              arg instanceof BidiJSHandle && arg.isPrimitiveValue
-                ? BidiDeserializer.deserialize(arg.remoteValue())
-                : arg.toString();
-            return `${value} ${parsedValue}`;
-          }, '')
-          .slice(1);
-
         this.page().trustedEmitter.emit(
           PageEvent.Console,
-          new ConsoleMessage(
-            convertConsoleMessageLevel(entry.method),
-            text,
-            args,
-            getStackTraceLocations(entry.stackTrace),
-            this,
-            undefined,
-          ),
+          getConsoleMessage(entry, args, this),
         );
       } else if (isJavaScriptLogEntry(entry)) {
         const error = new Error(entry.text ?? '');
@@ -233,7 +204,7 @@ export class BidiFrame extends Frame {
       }
     });
 
-    this.browsingContext.on('worker', ({realm}) => {
+    this.browsingContext.on('worker', realm => {
       const worker = BidiWebWorker.from(this, realm);
       realm.on('destroyed', () => {
         this.page().trustedEmitter.emit(PageEvent.WorkerDestroyed, worker);
@@ -363,7 +334,7 @@ export class BidiFrame extends Frame {
   @throwIfDetached
   override async setContent(
     html: string,
-    options: WaitForOptions = {},
+    options: SetContentWaitForOptions = {},
   ): Promise<void> {
     await Promise.all([
       this.setFrameContent(html),
@@ -392,13 +363,13 @@ export class BidiFrame extends Frame {
           fromEmitterEvent(this.browsingContext, 'navigation'),
           fromEmitterEvent(this.browsingContext, 'historyUpdated').pipe(
             map(() => {
-              return {navigation: null};
+              return null;
             }),
           ),
         )
           .pipe(first())
           .pipe(
-            switchMap(({navigation}) => {
+            switchMap(navigation => {
               if (navigation === null) {
                 return of(null);
               }
@@ -638,32 +609,8 @@ export class BidiFrame extends Frame {
       [element.remoteValue() as Bidi.Script.SharedReference],
     );
   }
-}
 
-function isConsoleLogEntry(
-  event: Bidi.Log.Entry,
-): event is Bidi.Log.ConsoleLogEntry {
-  return event.type === 'console';
-}
-
-function isJavaScriptLogEntry(
-  event: Bidi.Log.Entry,
-): event is Bidi.Log.JavascriptLogEntry {
-  return event.type === 'javascript';
-}
-
-function getStackTraceLocations(
-  stackTrace?: Bidi.Script.StackTrace,
-): ConsoleMessageLocation[] {
-  const stackTraceLocations: ConsoleMessageLocation[] = [];
-  if (stackTrace) {
-    for (const callFrame of stackTrace.callFrames) {
-      stackTraceLocations.push({
-        url: callFrame.url,
-        lineNumber: callFrame.lineNumber,
-        columnNumber: callFrame.columnNumber,
-      });
-    }
+  override extensionRealms(): Realm[] {
+    throw new UnsupportedOperation();
   }
-  return stackTraceLocations;
 }

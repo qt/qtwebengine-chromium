@@ -37,6 +37,9 @@ dictionary SetHTMLUnsafeOptions {
   (Sanitizer or SanitizerConfig or SanitizerPresets) sanitizer = {};
   boolean runScripts = false;
 };
+dictionary ParseHTMLUnsafeOptions {
+  (Sanitizer or SanitizerConfig or SanitizerPresets) sanitizer = {};
+};
 
 // https://dom.spec.whatwg.org/#interface-element
 
@@ -143,6 +146,8 @@ dictionary SetHTMLUnsafeOptions {
     // https://drafts.csswg.org/cssom-view/#extension-to-the-element-interface
     [Measure] DOMRectList getClientRects();
     [Affects=Nothing, Measure, RuntimeCallStatsCounter=ElementGetBoundingClientRect, ImplementedAs=GetBoundingClientRectForBinding] DOMRect getBoundingClientRect();
+
+    [RuntimeEnabled=ElementMatchContainer, NewObject] ContainerQueryList matchContainer(DOMString query);
 
     // https://drafts.csswg.org/cssom-view/#dom-element-checkvisibility
     [MeasureAs=ElementCheckVisibility] boolean checkVisibility(optional CheckVisibilityOptions options = {});

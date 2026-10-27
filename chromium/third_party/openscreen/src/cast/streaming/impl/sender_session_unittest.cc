@@ -22,6 +22,7 @@
 #include "platform/test/fake_clock.h"
 #include "platform/test/fake_task_runner.h"
 #include "util/chrono_helpers.h"
+#include "util/no_destructor.h"
 #include "util/stringprintf.h"
 
 using ::testing::_;
@@ -124,46 +125,53 @@ constexpr char kInputMessage[] = R"({
   "input": "CGQQnBiCGQgSAggMGgIIBg=="
 })";
 
-const AudioCaptureConfig kAudioCaptureConfigInvalidChannels{
-    AudioCodec::kAac, -1 /* channels */, 44000 /* bit_rate */,
-    96000 /* sample_rate */
-};
+const AudioCaptureConfig& GetAudioCaptureConfigInvalidChannels() {
+  static const NoDestructor<AudioCaptureConfig>
+      kAudioCaptureConfigInvalidChannels(AudioCodec::kAac, -1 /* channels */,
+                                         44000 /* bit_rate */,
+                                         96000 /* sample_rate */);
+  return *kAudioCaptureConfigInvalidChannels;
+}
 
-const AudioCaptureConfig kAudioCaptureConfigValid{
-    AudioCodec::kAac,
-    5 /* channels */,
-    32000 /* bit_rate */,
-    44000 /* sample_rate */,
-    std::chrono::milliseconds(300),
-    "mp4a.40.5"};
+const AudioCaptureConfig& GetAudioCaptureConfigValid() {
+  static const NoDestructor<AudioCaptureConfig> kAudioCaptureConfigValid(
+      AudioCodec::kAac, 5 /* channels */, 32000 /* bit_rate */,
+      44000 /* sample_rate */, std::chrono::milliseconds(300), "mp4a.40.5");
+  return *kAudioCaptureConfigValid;
+}
 
-const VideoCaptureConfig kVideoCaptureConfigMissingResolutions{
-    VideoCodec::kHevc,
-    {60, 1},
-    300000 /* max_bit_rate */,
-    std::vector<Resolution>{},
-    std::chrono::milliseconds(500),
-    "hev1.1.6.L150.B0"};
+const VideoCaptureConfig& GetVideoCaptureConfigMissingResolutions() {
+  static const NoDestructor<VideoCaptureConfig>
+      kVideoCaptureConfigMissingResolutions(
+          VideoCodec::kHevc, SimpleFraction{60, 1}, 300000 /* max_bit_rate */,
+          std::vector<Resolution>{}, std::chrono::milliseconds(500),
+          "hev1.1.6.L150.B0");
+  return *kVideoCaptureConfigMissingResolutions;
+}
 
-const VideoCaptureConfig kVideoCaptureConfigInvalid{
-    VideoCodec::kHevc,
-    {60, 1},
-    -300000 /* max_bit_rate */,
-    std::vector<Resolution>{Resolution{1920, 1080}, Resolution{1280, 720}}};
+const VideoCaptureConfig& GetVideoCaptureConfigInvalid() {
+  static const NoDestructor<VideoCaptureConfig> kVideoCaptureConfigInvalid(
+      VideoCodec::kHevc, SimpleFraction{60, 1}, -300000 /* max_bit_rate */,
+      std::vector<Resolution>{Resolution{1920, 1080}, Resolution{1280, 720}});
+  return *kVideoCaptureConfigInvalid;
+}
 
-const VideoCaptureConfig kVideoCaptureConfigValid{
-    VideoCodec::kHevc,
-    {60, 1},
-    300000 /* max_bit_rate */,
-    std::vector<Resolution>{Resolution{1280, 720}, Resolution{1920, 1080}},
-    std::chrono::milliseconds(250),
-    "hev1.1.6.L150.B0"};
+const VideoCaptureConfig& GetVideoCaptureConfigValid() {
+  static const NoDestructor<VideoCaptureConfig> kVideoCaptureConfigValid(
+      VideoCodec::kHevc, SimpleFraction{60, 1}, 300000 /* max_bit_rate */,
+      std::vector<Resolution>{Resolution{1280, 720}, Resolution{1920, 1080}},
+      std::chrono::milliseconds(250), "hev1.1.6.L150.B0");
+  return *kVideoCaptureConfigValid;
+}
 
-const VideoCaptureConfig kVideoCaptureConfigValidSimplest{
-    VideoCodec::kHevc,
-    {60, 1},
-    300000 /* max_bit_rate */,
-    std::vector<Resolution>{Resolution{1920, 1080}}};
+[[maybe_unused]] const VideoCaptureConfig&
+GetVideoCaptureConfigValidSimplest() {
+  static const NoDestructor<VideoCaptureConfig>
+      kVideoCaptureConfigValidSimplest(
+          VideoCodec::kHevc, SimpleFraction{60, 1}, 300000 /* max_bit_rate */,
+          std::vector<Resolution>{Resolution{1920, 1080}});
+  return *kVideoCaptureConfigValidSimplest;
+}
 
 class FakeClient : public SenderSession::Client {
  public:
@@ -221,14 +229,14 @@ class SenderSessionTest : public ::testing::Test {
 
   void NegotiateMirroringWithValidConfigs() {
     const Error error = session_->Negotiate(
-        std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-        std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+        std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
+        std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
     ASSERT_TRUE(error.ok());
   }
 
   void NegotiateRemotingWithValidConfigs() {
-    const Error error = session_->NegotiateRemoting(kAudioCaptureConfigValid,
-                                                    kVideoCaptureConfigValid);
+    const Error error = session_->NegotiateRemoting(
+        GetAudioCaptureConfigValid(), GetVideoCaptureConfigValid());
     ASSERT_TRUE(error.ok());
   }
 
@@ -300,7 +308,7 @@ TEST_F(SenderSessionTest, ComplainsIfNoConfigsToOffer) {
 
 TEST_F(SenderSessionTest, ComplainsIfInvalidAudioCaptureConfig) {
   const Error error = session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigInvalidChannels},
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigInvalidChannels()},
       std::vector<VideoCaptureConfig>{});
 
   EXPECT_EQ(error,
@@ -310,23 +318,24 @@ TEST_F(SenderSessionTest, ComplainsIfInvalidAudioCaptureConfig) {
 TEST_F(SenderSessionTest, ComplainsIfInvalidVideoCaptureConfig) {
   const Error error = session_->Negotiate(
       std::vector<AudioCaptureConfig>{},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigInvalid});
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigInvalid()});
   EXPECT_EQ(error,
             Error(Error::Code::kParameterInvalid, "Invalid configs provided."));
 }
 
 TEST_F(SenderSessionTest, ComplainsIfMissingResolutions) {
-  const Error error = session_->Negotiate(
-      std::vector<AudioCaptureConfig>{},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigMissingResolutions});
+  const Error error =
+      session_->Negotiate(std::vector<AudioCaptureConfig>{},
+                          std::vector<VideoCaptureConfig>{
+                              GetVideoCaptureConfigMissingResolutions()});
   EXPECT_EQ(error,
             Error(Error::Code::kParameterInvalid, "Invalid configs provided."));
 }
 
 TEST_F(SenderSessionTest, SendsOfferWithZeroBitrateOptions) {
-  VideoCaptureConfig video_config = kVideoCaptureConfigValid;
+  VideoCaptureConfig video_config = GetVideoCaptureConfigValid();
   video_config.max_bit_rate = 0;
-  AudioCaptureConfig audio_config = kAudioCaptureConfigValid;
+  AudioCaptureConfig audio_config = GetAudioCaptureConfigValid();
   audio_config.bit_rate = 0;
 
   const Error error =
@@ -345,7 +354,7 @@ TEST_F(SenderSessionTest, SendsOfferWithZeroBitrateOptions) {
 TEST_F(SenderSessionTest, SendsOfferWithSimpleVideoOnly) {
   const Error error = session_->Negotiate(
       std::vector<AudioCaptureConfig>{},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
   EXPECT_TRUE(error.ok());
 
   const auto& messages = message_port_->posted_messages();
@@ -358,7 +367,7 @@ TEST_F(SenderSessionTest, SendsOfferWithSimpleVideoOnly) {
 
 TEST_F(SenderSessionTest, SendsOfferAudioOnly) {
   const Error error = session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
       std::vector<VideoCaptureConfig>{});
   EXPECT_TRUE(error.ok());
 
@@ -372,8 +381,8 @@ TEST_F(SenderSessionTest, SendsOfferAudioOnly) {
 
 TEST_F(SenderSessionTest, SendsOfferMessage) {
   session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
 
   const auto& messages = message_port_->posted_messages();
   ASSERT_EQ(1u, messages.size());
@@ -453,8 +462,8 @@ TEST_F(SenderSessionTest, HandlesInvalidNamespace) {
 
 TEST_F(SenderSessionTest, HandlesMalformedAnswer) {
   session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
 
   // Note that unlike when we simply don't select any streams, when the answer
   // is actually malformed we have no way of knowing it was an answer at all,
@@ -465,8 +474,8 @@ TEST_F(SenderSessionTest, HandlesMalformedAnswer) {
 
 TEST_F(SenderSessionTest, HandlesImproperlyFormattedAnswer) {
   session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
 
   EXPECT_CALL(client_,
               OnError(session_.get(), CodeEquals(Error::Code::kInvalidAnswer)));
@@ -475,8 +484,8 @@ TEST_F(SenderSessionTest, HandlesImproperlyFormattedAnswer) {
 
 TEST_F(SenderSessionTest, HandlesInvalidAnswer) {
   const Error error = session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
 
   EXPECT_CALL(client_,
               OnError(session_.get(), CodeEquals(Error::Code::kInvalidAnswer)));
@@ -485,8 +494,8 @@ TEST_F(SenderSessionTest, HandlesInvalidAnswer) {
 
 TEST_F(SenderSessionTest, HandlesNullAnswer) {
   const Error error = session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
 
   EXPECT_TRUE(error.ok());
   EXPECT_CALL(client_, OnError(session_.get(), _));
@@ -495,8 +504,8 @@ TEST_F(SenderSessionTest, HandlesNullAnswer) {
 
 TEST_F(SenderSessionTest, HandlesAnswerTimeout) {
   const Error error = session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
   EXPECT_TRUE(error.ok());
 
   // No ANSWER received in time, should report an error.
@@ -517,8 +526,8 @@ TEST_F(SenderSessionTest, HandlesCapabilitiesTimeout) {
 
 TEST_F(SenderSessionTest, HandlesInvalidSequenceNumber) {
   const Error error = session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
 
   // We should just discard messages with an invalid sequence number.
   message_port_->ReceiveMessage(kInvalidSequenceNumberMessage);
@@ -526,8 +535,8 @@ TEST_F(SenderSessionTest, HandlesInvalidSequenceNumber) {
 
 TEST_F(SenderSessionTest, HandlesUnknownTypeMessageWithValidSeqNum) {
   session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
 
   // If a message is of unknown type but has an expected seqnum, it's
   // probably a malformed response.
@@ -537,8 +546,8 @@ TEST_F(SenderSessionTest, HandlesUnknownTypeMessageWithValidSeqNum) {
 
 TEST_F(SenderSessionTest, HandlesInvalidTypeMessageWithValidSeqNum) {
   session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
 
   // If a message is of unknown type but has an expected seqnum, it's
   // probably a malformed response. The sender session will end up
@@ -551,8 +560,8 @@ TEST_F(SenderSessionTest, HandlesInvalidTypeMessageWithValidSeqNum) {
 
 TEST_F(SenderSessionTest, HandlesInvalidTypeMessage) {
   session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
 
   // We should just discard messages with an invalid message type and
   // no sequence number.
@@ -561,8 +570,8 @@ TEST_F(SenderSessionTest, HandlesInvalidTypeMessage) {
 
 TEST_F(SenderSessionTest, HandlesErrorMessage) {
   session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
 
   // We should report error responses. NOTE: according to the spec,
   // RPC messages should never be an error result.
@@ -578,8 +587,8 @@ TEST_F(SenderSessionTest, HandlesErrorMessage) {
 
 TEST_F(SenderSessionTest, HandlesMessagePortError) {
   session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
 
   // We should report message port errors.
   EXPECT_CALL(client_, OnError(session_.get(), _));
@@ -595,20 +604,20 @@ TEST_F(SenderSessionTest, ReportsZeroBandwidthWhenNoPacketsSent) {
 
 TEST_F(SenderSessionTest, ComplainsIfInvalidAudioCaptureConfigRemoting) {
   const Error error = session_->NegotiateRemoting(
-      kAudioCaptureConfigInvalidChannels, kVideoCaptureConfigValid);
+      GetAudioCaptureConfigInvalidChannels(), GetVideoCaptureConfigValid());
 
   EXPECT_EQ(error.code(), Error::Code::kParameterInvalid);
 }
 
 TEST_F(SenderSessionTest, ComplainsIfInvalidVideoCaptureConfigRemoting) {
-  const Error error = session_->NegotiateRemoting(kAudioCaptureConfigValid,
-                                                  kVideoCaptureConfigInvalid);
+  const Error error = session_->NegotiateRemoting(
+      GetAudioCaptureConfigValid(), GetVideoCaptureConfigInvalid());
   EXPECT_EQ(error.code(), Error::Code::kParameterInvalid);
 }
 
 TEST_F(SenderSessionTest, ComplainsIfMissingResolutionsRemoting) {
   const Error error = session_->NegotiateRemoting(
-      kAudioCaptureConfigValid, kVideoCaptureConfigMissingResolutions);
+      GetAudioCaptureConfigValid(), GetVideoCaptureConfigMissingResolutions());
   EXPECT_EQ(error.code(), Error::Code::kParameterInvalid);
 }
 
@@ -678,8 +687,8 @@ TEST_F(SenderSessionTest, SendsOfferWithoutDscp) {
   session_ = std::make_unique<SenderSession>(std::move(config));
 
   session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
 
   const auto& messages = message_port_->posted_messages();
   ASSERT_EQ(1u, messages.size());
@@ -718,8 +727,8 @@ TEST_F(SenderSessionTest, SendsOfferWithDscp) {
   session_ = std::make_unique<SenderSession>(std::move(config));
 
   session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
 
   const auto& messages = message_port_->posted_messages();
   ASSERT_EQ(1u, messages.size());
@@ -746,8 +755,8 @@ TEST_F(SenderSessionTest, InputEventsOptIn) {
   session_->SetInputCallback([](InputMessage message) {});
 
   session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+      std::vector<AudioCaptureConfig>{GetAudioCaptureConfigValid()},
+      std::vector<VideoCaptureConfig>{GetVideoCaptureConfigValid()});
 
   const auto& messages = message_port_->posted_messages();
   ASSERT_EQ(1u, messages.size());

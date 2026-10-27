@@ -50,7 +50,6 @@
 #include "ui/base/l10n/l10n_util.h"
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/dialogs/browser_dialogs.h"
 #include "components/strings/grit/components_strings.h"
 #include "ui/base/interaction/element_identifier.h"
@@ -116,7 +115,7 @@ void CookiesMover::StartMovingCookies() {
   source_profile_->GetDefaultStoragePartition()
       ->GetCookieManagerForBrowserProcess()
       ->GetCookieList(url_, net::CookieOptions::MakeAllInclusive(),
-                      net::CookiePartitionKeyCollection::Todo(),
+                      net::CookiePartitionKeyCollection(),
                       base::BindOnce(&CookiesMover::OnCookiesReceived,
                                      weak_pointer_factory_.GetWeakPtr()));
 }
@@ -489,11 +488,14 @@ bool IsValidAccessPointForHistoryOptinScreen(
     case signin_metrics::AccessPoint::kAddressBubble:
     case signin_metrics::AccessPoint::kSearchAIModeBubble:
     case signin_metrics::AccessPoint::kIosAppBar:
+    case signin_metrics::AccessPoint::kIosGeminiButtonToolbar:
+    case signin_metrics::AccessPoint::kIndigo:
       return false;
     case signin_metrics::AccessPoint::kStartPage:
     case signin_metrics::AccessPoint::kMenu:
     case signin_metrics::AccessPoint::kSettings:
     case signin_metrics::AccessPoint::kSettingsYourSavedInfo:
+    case signin_metrics::AccessPoint::kSettingsAutofillAndPasswords:
     case signin_metrics::AccessPoint::kExtensions:
     case signin_metrics::AccessPoint::kBookmarkManager:
     case signin_metrics::AccessPoint::kAvatarBubbleSignIn:
@@ -562,6 +564,9 @@ bool IsValidAccessPointForHistoryOptinScreen(
     case signin_metrics::AccessPoint::kAshUserSessionManager:
     case signin_metrics::AccessPoint::kAvatarPillExpandPromo:
     case signin_metrics::AccessPoint::kIosPageActionMenu:
+    case signin_metrics::AccessPoint::kDeepLinkDefault:
+    case signin_metrics::AccessPoint::kAgeMismatchSignout:
+    case signin_metrics::AccessPoint::kOverflowMenu:
       return true;
   }
 }

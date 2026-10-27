@@ -50,12 +50,13 @@
 #include "cc/paint/paint_worklet_layer_painter.h"
 #include "cc/resources/ui_resource_manager.h"
 #include "cc/tiles/raster_dark_mode_filter.h"
+#include "cc/trees/client_layer_tree_host_impl.h"
 #include "cc/trees/clip_node.h"
 #include "cc/trees/commit_state.h"
 #include "cc/trees/compositor_commit_data.h"
 #include "cc/trees/draw_property_utils.h"
 #include "cc/trees/effect_node.h"
-#include "cc/trees/layer_tree_host_client.h"
+#include "cc/trees/layer_tree_host_delegate.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/mobile_optimized_viewport_util.h"
@@ -127,14 +128,14 @@ std::unique_ptr<LayerTreeHost> LayerTreeHost::CreateThreaded(
 }
 
 std::unique_ptr<LayerTreeHost> LayerTreeHost::CreateSingleThreaded(
-    LayerTreeHostSingleThreadClient* single_thread_client,
+    LayerTreeHostSingleThreadDelegate* single_thread_delegate,
     InitParams params) {
   DCHECK(params.settings);
   scoped_refptr<base::SingleThreadTaskRunner> main_task_runner =
       params.main_task_runner;
   auto layer_tree_host = base::WrapUnique(
       new LayerTreeHost(std::move(params), CompositorMode::SINGLE_THREADED));
-  layer_tree_host->InitializeSingleThreaded(single_thread_client,
+  layer_tree_host->InitializeSingleThreaded(single_thread_delegate,
                                             std::move(main_task_runner));
   return layer_tree_host;
 }
@@ -145,7 +146,7 @@ LayerTreeHost::LayerTreeHost(InitParams params, CompositorMode mode)
       compositor_mode_(mode),
       ui_resource_manager_(std::make_unique<UIResourceManager>()),
       client_(params.client),
-      scheduling_client_(params.scheduling_client),
+      scheduling_delegate_(params.scheduling_delegate),
       rendering_stats_instrumentation_(RenderingStatsInstrumentation::Create()),
       pending_commit_state_(std::make_unique<CommitState>()),
       thread_unsafe_commit_state_(params.mutator_host),
@@ -182,26 +183,30 @@ LayerTreeHost::LayerTreeHost(InitParams params, CompositorMode mode)
 
 bool LayerTreeHost::IsMobileOptimized() const {
   gfx::SizeF scrollable_viewport_size;
-  const auto* inner_node = property_trees()->scroll_tree().Node(
-      pending_commit_state()->viewport_property_ids.inner_scroll);
-  if (!inner_node)
+  int inner_scroll_id =
+      pending_commit_state()->viewport_property_ids.inner_scroll;
+  if (inner_scroll_id == kInvalidPropertyNodeId) {
     scrollable_viewport_size = gfx::SizeF();
-  else
+  } else {
     scrollable_viewport_size = gfx::ScaleSize(
-        gfx::SizeF(inner_node->container_bounds),
+        gfx::SizeF(property_trees()
+                       ->scroll_tree()
+                       .Node(inner_scroll_id)
+                       .container_bounds),
         1.0f / (pending_commit_state()->external_page_scale_factor *
                 page_scale_factor()));
+  }
 
   gfx::SizeF scrollable_size;
-  const auto* scroll_node = property_trees()->scroll_tree().Node(
-      pending_commit_state()->viewport_property_ids.outer_scroll);
-  if (!scroll_node) {
-    DCHECK(!inner_node);
+  int outer_scroll_id =
+      pending_commit_state()->viewport_property_ids.outer_scroll;
+  if (outer_scroll_id == kInvalidPropertyNodeId) {
+    DCHECK(inner_scroll_id == kInvalidPropertyNodeId);
     scrollable_size = gfx::SizeF();
   } else {
     const auto& scroll_tree = property_trees()->scroll_tree();
-    auto size = scroll_tree.scroll_bounds(scroll_node->id);
-    size.SetToMax(gfx::SizeF(scroll_tree.container_bounds(scroll_node->id)));
+    auto size = scroll_tree.scroll_bounds(outer_scroll_id);
+    size.SetToMax(gfx::SizeF(scroll_tree.container_bounds(outer_scroll_id)));
     scrollable_size = size;
   }
 
@@ -222,10 +227,10 @@ void LayerTreeHost::InitializeThreaded(
 }
 
 void LayerTreeHost::InitializeSingleThreaded(
-    LayerTreeHostSingleThreadClient* single_thread_client,
+    LayerTreeHostSingleThreadDelegate* single_thread_delegate,
     scoped_refptr<base::SingleThreadTaskRunner> main_task_runner) {
   task_runner_provider_ = TaskRunnerProvider::Create(main_task_runner, nullptr);
-  InitializeProxy(SingleThreadProxy::Create(this, single_thread_client,
+  InitializeProxy(SingleThreadProxy::Create(this, single_thread_delegate,
                                             task_runner_provider_.get()));
 }
 
@@ -241,7 +246,7 @@ void LayerTreeHost::SetTaskRunnerProviderForTesting(
   DCHECK(!task_runner_provider_);
   task_runner_provider_ = std::move(task_runner_provider);
   // This is done in InitializeProxy(), but not all tests call it.
-  mutator_host_->SetMutatorHostClient(this);
+  mutator_host_->SetMutatorHostDelegate(this);
 }
 
 void LayerTreeHost::SetUIResourceManagerForTesting(
@@ -254,7 +259,7 @@ void LayerTreeHost::InitializeProxy(std::unique_ptr<Proxy> proxy) {
   DCHECK(task_runner_provider_);
   DCHECK(IsMainThread());
 
-  mutator_host_->SetMutatorHostClient(this);
+  mutator_host_->SetMutatorHostDelegate(this);
 
   proxy_ = std::move(proxy);
   proxy_->Start();
@@ -270,7 +275,7 @@ LayerTreeHost::~LayerTreeHost() {
   TRACE_EVENT0("cc", "LayerTreeHost::~LayerTreeHost");
 
   // Clear any references into the LayerTreeHost.
-  mutator_host()->SetMutatorHostClient(nullptr);
+  mutator_host()->SetMutatorHostDelegate(nullptr);
 
   if (root_layer()) {
     root_layer()->SetLayerTreeHost(nullptr);
@@ -470,11 +475,9 @@ std::unique_ptr<CommitState> LayerTreeHost::WillCommit(
     // ActiveCommitState() and return.
     pending_commit_state_ = std::move(activated_commit_state);
     pending_commit_state()->source_frame_number++;
+    property_trees()->ApplyChangeStateFrom(
+        pending_commit_state()->property_trees);
     pending_commit_state()->property_trees.clear();
-    property_trees()->ApplyChangeState(
-        pending_commit_state()->property_trees_change_state);
-    pending_commit_state()->property_trees_change_state =
-        PropertyTreesChangeState();
     // The completion event will be handled appropriately by the caller that
     // provided it.
     commit_completion_event_ = std::move(completion);
@@ -505,9 +508,8 @@ std::unique_ptr<CommitState> LayerTreeHost::ActivateCommitState() {
 
   // Snapshot property trees now to lock in the commit state while paint event
   // handlers run.
-  property_trees()->GetChangeState(
-      pending_commit_state()->property_trees_change_state);
   pending_commit_state()->property_trees = *property_trees();
+  pending_commit_state()->property_trees.TakeChangeStateFrom(*property_trees());
   property_trees()->ResetAllChangeTracking();
 
   std::unique_ptr<CommitState> result = std::move(pending_commit_state_);
@@ -663,8 +665,8 @@ void LayerTreeHost::DidFailToInitializeLayerTreeFrameSink() {
   client_->DidFailToInitializeLayerTreeFrameSink();
 }
 
-std::unique_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
-    LayerTreeHostImplClient* client) {
+std::unique_ptr<ClientLayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
+    LayerTreeHostImplDelegate* delegate) {
   // This method is special: it should be the only LayerTreeHost method that
   // runs on the impl thread. As such, it cannot use LayerTreeHost getter
   // methods that enforce DCHECK(IsMainThread()). Because it only ever runs when
@@ -672,15 +674,15 @@ std::unique_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
   DCHECK(IsImplThread());
   DCHECK(task_runner_provider_->IsMainThreadBlocked());
   return CreateLayerTreeHostImplInternal(
-      client, thread_unsafe_commit_state_.mutator_host, settings_,
+      delegate, thread_unsafe_commit_state_.mutator_host, settings_,
       task_runner_provider_.get(), dark_mode_filter_, id_, task_graph_runner_,
-      image_worker_task_runner_, scheduling_client_,
+      image_worker_task_runner_, scheduling_delegate_,
       rendering_stats_instrumentation_.get(), compositor_delegate_weak_ptr_);
 }
 
-std::unique_ptr<LayerTreeHostImpl>
+std::unique_ptr<ClientLayerTreeHostImpl>
 LayerTreeHost::CreateLayerTreeHostImplInternal(
-    LayerTreeHostImplClient* client,
+    LayerTreeHostImplDelegate* delegate,
     MutatorHost* mutator_host,
     const LayerTreeSettings& settings,
     TaskRunnerProvider* task_runner_provider,
@@ -688,7 +690,7 @@ LayerTreeHost::CreateLayerTreeHostImplInternal(
     int id,
     raw_ptr<TaskGraphRunner>& task_graph_runner,
     scoped_refptr<base::SequencedTaskRunner> image_worker_task_runner,
-    LayerTreeHostSchedulingClient* scheduling_client,
+    LayerTreeHostSchedulingDelegate* scheduling_delegate,
     RenderingStatsInstrumentation* rendering_stats_instrumentation,
     base::WeakPtr<CompositorDelegateForInput>& compositor_delegate_weak_ptr) {
   std::unique_ptr<MutatorHost> mutator_host_impl =
@@ -699,10 +701,12 @@ LayerTreeHost::CreateLayerTreeHostImplInternal(
         settings.scroll_animation_duration_for_testing);
   }
 
-  std::unique_ptr<LayerTreeHostImpl> host_impl = LayerTreeHostImpl::Create(
-      settings, client, task_runner_provider, rendering_stats_instrumentation,
-      task_graph_runner, std::move(mutator_host_impl), dark_mode_filter, id,
-      std::move(image_worker_task_runner), scheduling_client);
+  std::unique_ptr<ClientLayerTreeHostImpl> host_impl =
+      ClientLayerTreeHostImpl::Create(
+          settings, delegate, task_runner_provider,
+          rendering_stats_instrumentation, task_graph_runner,
+          std::move(mutator_host_impl), dark_mode_filter, id,
+          std::move(image_worker_task_runner), scheduling_delegate);
 
   task_graph_runner = nullptr;
   dark_mode_filter = nullptr;
@@ -740,7 +744,7 @@ LayerTreeHost::DeferMainFrameUpdate() {
 ScopedPauseRendering::ScopedPauseRendering(LayerTreeHost* host)
     : host_(host->weak_ptr_factory_.GetWeakPtr()) {
   host->pause_rendering_count_++;
-  host->proxy_->SetPauseRendering(true);
+  host->proxy_->SetPauseRendering(true, false);
 }
 
 ScopedPauseRendering::~ScopedPauseRendering() {
@@ -749,7 +753,7 @@ ScopedPauseRendering::~ScopedPauseRendering() {
     DCHECK_GT(host->pause_rendering_count_, 0u);
     if (--host->pause_rendering_count_ == 0) {
       host->SetNeedsCommit();
-      host->proxy_->SetPauseRendering(false);
+      host->proxy_->SetPauseRendering(false, delay_until_visibility_change_);
     }
   }
 }
@@ -770,9 +774,9 @@ bool LayerTreeHost::StartDeferringCommits(base::TimeDelta timeout,
   return proxy_->StartDeferringCommits(timeout, reason);
 }
 
-void LayerTreeHost::StopDeferringCommits(PaintHoldingCommitTrigger trigger) {
+void LayerTreeHost::StopDeferringCommits() {
   DCHECK(IsMainThread());
-  proxy_->StopDeferringCommits(trigger);
+  proxy_->StopDeferringCommits();
 }
 
 bool LayerTreeHost::IsDeferringCommits() const {
@@ -784,12 +788,10 @@ bool LayerTreeHost::IsRenderingPaused() const {
   return pause_rendering_count_ > 0;
 }
 
-void LayerTreeHost::OnDeferCommitsChanged(
-    bool defer_status,
-    PaintHoldingReason reason,
-    std::optional<PaintHoldingCommitTrigger> trigger) {
+void LayerTreeHost::OnDeferCommitsChanged(bool defer_status,
+                                          PaintHoldingReason reason) {
   DCHECK(IsMainThread());
-  client_->OnDeferCommitsChanged(defer_status, reason, trigger);
+  client_->OnDeferCommitsChanged(defer_status, reason);
 }
 
 void LayerTreeHost::SetShouldThrottleFrameRate(bool flag) {
@@ -819,9 +821,9 @@ void LayerTreeHost::SetRequestHighFramerate(bool flag) {
 }
 
 DISABLE_CFI_PERF
-void LayerTreeHost::SetNeedsAnimate(bool urgent) {
+void LayerTreeHost::SetNeedsAnimate(BeginMainFrameReason reason, bool urgent) {
   DCHECK(IsMainThread());
-  proxy_->SetNeedsAnimate(urgent);
+  proxy_->SetNeedsAnimate(reason, urgent);
   swap_promise_manager_.NotifyLatencyInfoSwapPromiseMonitors();
   events_metrics_manager_.SaveActiveEventMetrics();
 }
@@ -881,7 +883,7 @@ void LayerTreeHost::SetNeedsCommitWithForcedRedraw() {
   pending_commit_state()->next_commit_forces_redraw = true;
   // This method is used by tests to ensure a commit before grabbing a screen
   // shot or processing input, so do not defer the commit.
-  StopDeferringCommits(PaintHoldingCommitTrigger::kFeatureDisabled);
+  StopDeferringCommits();
   proxy_->SetNeedsCommit();
 }
 
@@ -1047,8 +1049,7 @@ void LayerTreeHost::AddViewTransitionRequest(
   if (auto callback = request->TakeFinishedCallback()) {
     view_transition_callbacks_[request->sequence_id()] = std::move(callback);
   }
-  if (request->maybe_cross_frame_sink() &&
-      features::ShouldAckCOREarlyForViewTransition()) {
+  if (request->maybe_cross_frame_sink()) {
     auto request_token = request->token();
     auto request_type = request->type();
     if (request_type == viz::CompositorFrameTransitionDirective::Type::kSave &&
@@ -1105,18 +1106,16 @@ bool LayerTreeHost::DoUpdateLayers() {
   // |PropertyTreeBuilder::BuildPropertyTrees| fails to create property tree
   // nodes.
   for (auto* layer : *this) {
-    DCHECK(property_trees()->effect_tree().Node(layer->effect_tree_index()));
-    DCHECK(
-        property_trees()->transform_tree().Node(layer->transform_tree_index()));
-    DCHECK(property_trees()->clip_tree().Node(layer->clip_tree_index()));
-    DCHECK(property_trees()->scroll_tree().Node(layer->scroll_tree_index()));
+    property_trees()->effect_tree().Node(layer->effect_tree_index());
+    property_trees()->transform_tree().Node(layer->transform_tree_index());
+    property_trees()->clip_tree().Node(layer->clip_tree_index());
+    property_trees()->scroll_tree().Node(layer->scroll_tree_index());
   }
 #else
   // This is a quick sanity check for readiness of paint properties.
   // TODO(crbug.com/40605801): This is to help analysis of crashes of the bug.
-  // Remove this CHECK when we close the bug.
-  CHECK(
-      property_trees()->effect_tree().Node(root_layer()->effect_tree_index()));
+  // Remove this check when we close the bug.
+  property_trees()->effect_tree().Node(root_layer()->effect_tree_index());
 #endif
 
   draw_property_utils::UpdatePropertyTrees(this);
@@ -1172,10 +1171,12 @@ void LayerTreeHost::ApplyViewportChanges(
   // const_cast to ensure the compiler chooses to the const version of
   // property_trees(), to avoid blocking on commit.
   const auto* pt = const_cast<const LayerTreeHost*>(this)->property_trees();
-  if (const auto* inner_scroll = pt->scroll_tree().Node(
-          pending_commit_state()->viewport_property_ids.inner_scroll)) {
+  int inner_scroll_id =
+      pending_commit_state()->viewport_property_ids.inner_scroll;
+  if (inner_scroll_id != kInvalidPropertyNodeId) {
+    const ScrollNode& inner_scroll = pt->scroll_tree().Node(inner_scroll_id);
     UpdateScrollOffsetFromImpl(
-        inner_scroll->element_id, inner_viewport_scroll_delta,
+        inner_scroll.element_id, inner_viewport_scroll_delta,
         ScrollSourceType::kNone,
         commit_data.inner_viewport_scroll.snap_target_element_ids);
   }
@@ -1425,9 +1426,13 @@ void LayerTreeHost::SetViewportPropertyIds(const ViewportPropertyIds& ids) {
 }
 
 Layer* LayerTreeHost::InnerViewportScrollLayerForTesting() {
-  auto* scroll_node = property_trees()->scroll_tree_mutable().Node(
-      pending_commit_state()->viewport_property_ids.inner_scroll);
-  return scroll_node ? LayerByElementId(scroll_node->element_id) : nullptr;
+  int scroll_id = pending_commit_state()->viewport_property_ids.inner_scroll;
+  if (scroll_id == kInvalidPropertyNodeId) {
+    return nullptr;
+  }
+  auto& scroll_node =
+      property_trees()->scroll_tree_mutable().MutableNode(scroll_id);
+  return LayerByElementId(scroll_node.element_id);
 }
 
 Layer* LayerTreeHost::OuterViewportScrollLayerForTesting() {
@@ -1435,9 +1440,11 @@ Layer* LayerTreeHost::OuterViewportScrollLayerForTesting() {
 }
 
 ElementId LayerTreeHost::OuterViewportScrollElementId() const {
-  const auto* scroll_node = property_trees()->scroll_tree().Node(
-      pending_commit_state()->viewport_property_ids.outer_scroll);
-  return scroll_node ? scroll_node->element_id : ElementId();
+  int outer_scroll_id =
+      pending_commit_state()->viewport_property_ids.outer_scroll;
+  return outer_scroll_id != kInvalidPropertyNodeId
+             ? property_trees()->scroll_tree().Node(outer_scroll_id).element_id
+             : ElementId();
 }
 
 void LayerTreeHost::RegisterSelection(const LayerSelection& selection) {
@@ -2118,6 +2125,12 @@ void LayerTreeHost::SetNeedsDisplayOnAllLayers() {
 void LayerTreeHost::SetHasCopyRequest(bool has_copy_request) {
   DCHECK(IsMainThread());
   has_copy_request_ = has_copy_request;
+}
+
+void LayerTreeHost::RequestImmediateBeginMainFrame() {
+  if (features::SendEarlyFinalBeginMainFrameIsEnabled()) {
+    proxy_->SendImmediateBeginMainFrame();
+  }
 }
 
 void LayerTreeHost::RequestBeginMainFrameNotExpected(bool new_state) {

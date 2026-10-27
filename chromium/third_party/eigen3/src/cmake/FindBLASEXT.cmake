@@ -22,6 +22,7 @@
 #  BLAS_LIBRARY_DIRS  - Link directories for BLAS libraries
 #  BLAS_SEQ_LIBRARIES - BLAS component libraries to be linked (sequential)
 #  BLAS_PAR_LIBRARIES - BLAS component libraries to be linked (multithreaded)
+# SPDX-License-Identifier: BSD-3-Clause
 
 #=============================================================================
 # Copyright 2012-2013 Inria

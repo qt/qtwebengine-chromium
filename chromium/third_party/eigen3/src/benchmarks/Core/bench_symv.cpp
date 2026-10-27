@@ -2,6 +2,8 @@
 //
 // Tests y += selfadjointView(A) * x for various sizes and scalar types.
 // Exercises SelfadjointMatrixVector.h kernel.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>

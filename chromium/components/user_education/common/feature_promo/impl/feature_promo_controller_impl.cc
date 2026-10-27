@@ -17,6 +17,7 @@
 #include "base/notreached.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
+#include "base/types/pass_key.h"
 #include "components/feature_engagement/public/feature_constants.h"
 #include "components/feature_engagement/public/feature_list.h"
 #include "components/user_education/common/feature_promo/feature_promo_controller.h"
@@ -231,7 +232,9 @@ FeaturePromoResult FeaturePromoControllerImpl::CanShowPromo(
     return FeaturePromoResult::kError;
   }
   auto result = private_->queues.CanShow(*spec, params, context);
-  if (result && !private_->tracker_->WouldTriggerHelpUI(*params.feature)) {
+  if (result &&
+      !private_->tracker_->WouldTriggerHelpUI(
+          *params.feature, base::PassKey<FeaturePromoControllerImpl>())) {
     // This can happen if a non-IPH promo is showing.
     // These are strongly advised against but they can happen.
     result = FeaturePromoResult::kBlockedByConfig;
@@ -610,7 +613,8 @@ FeaturePromoResult FeaturePromoControllerImpl::ShowPromo(
   // starting. Since this is also one of the preconditions for the promo,
   //
   if (!promo_data.for_demo &&
-      !feature_engagement_tracker()->ShouldTriggerHelpUI(feature)) {
+      !feature_engagement_tracker()->ShouldTriggerHelpUI(
+          feature, base::PassKey<FeaturePromoControllerImpl>())) {
     return FeaturePromoResult::kBlockedByConfig;
   }
 
@@ -626,7 +630,8 @@ FeaturePromoResult FeaturePromoControllerImpl::ShowPromo(
   if (!bubble) {
     set_current_promo(nullptr);
     if (!promo_data.for_demo) {
-      feature_engagement_tracker()->Dismissed(feature);
+      feature_engagement_tracker()->Dismissed(
+          feature, base::PassKey<FeaturePromoControllerImpl>());
     }
     return FeaturePromoResult::kError;
   }
@@ -892,14 +897,16 @@ bool FeaturePromoControllerImpl::CheckExtendedPropertiesPromptAvailable(
   const base::Feature* const prompt_feature =
       GetScreenReaderPromptPromoFeature();
   if (!prompt_feature ||
-      !feature_engagement_tracker_->ShouldTriggerHelpUI(*prompt_feature)) {
+      !feature_engagement_tracker_->ShouldTriggerHelpUI(
+          *prompt_feature, base::PassKey<FeaturePromoControllerImpl>())) {
     return false;
   }
 
   // TODO(crbug.com/40200981): Once we have our answer, immediately dismiss
   // so that this doesn't interfere with actually showing the bubble. This
   // dismiss can be moved elsewhere once we support concurrency.
-  feature_engagement_tracker_->Dismissed(*prompt_feature);
+  feature_engagement_tracker_->Dismissed(
+      *prompt_feature, base::PassKey<FeaturePromoControllerImpl>());
 
   return true;
 }
@@ -1015,6 +1022,24 @@ std::unique_ptr<HelpBubble> FeaturePromoControllerImpl::ShowPromoBubbleImpl(
 
     switch (spec.promo_type()) {
       case FeaturePromoSpecification::PromoType::kToast: {
+        if (current_promo_) {
+          if (current_promo_->promo_subtype() ==
+              FeaturePromoSpecification::PromoSubtype::kLegalNotice) {
+            bubble_params.buttons =
+                CreateSnoozeButtons(*spec.feature(), /*can_snooze=*/false);
+            // Generally focus notices when they're shown.
+            bubble_params.focus_on_show_hint =
+                bubble_params.focus_on_show_hint.value_or(true);
+          } else if (current_promo_->promo_type() ==
+                     FeaturePromoSpecification::PromoType::kRotating) {
+            bubble_params.buttons = CreateRotatingToastButtons(*spec.feature());
+            // If no hint is set, promos with buttons take focus. However,
+            // toasts do not take focus by default. So if the hint isn't already
+            // set, set the promo not to take focus.
+            bubble_params.focus_on_show_hint =
+                bubble_params.focus_on_show_hint.value_or(false);
+          }
+        }
         // Rotating toast promos require a "got it" button.
         if (current_promo_ &&
             current_promo_->promo_type() ==

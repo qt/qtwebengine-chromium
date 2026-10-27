@@ -7,9 +7,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_REVERSE_H
-#define EIGEN_CXX11_TENSOR_TENSOR_REVERSE_H
+#ifndef EIGEN_TENSOR_TENSOR_REVERSE_H
+#define EIGEN_TENSOR_TENSOR_REVERSE_H
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
 
@@ -43,7 +44,7 @@ struct nested<TensorReverseOp<ReverseDimensions, XprType>, 1,
 }  // end namespace internal
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Tensor reverse elements class.
  *
@@ -115,13 +116,14 @@ struct TensorEvaluator<const TensorReverseOp<ReverseDimensions, ArgType>, Device
 
     // Compute strides
     m_dimensions = m_impl.dimensions();
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_strides[0] = 1;
       for (int i = 1; i < NumDims; ++i) {
         m_strides[i] = m_strides[i - 1] * m_dimensions[i - 1];
         if (m_strides[i] > 0) m_fastStrides[i] = IndexDivisor(m_strides[i]);
       }
-    } else {
+    }
+    else {
       m_strides[NumDims - 1] = 1;
       for (int i = NumDims - 2; i >= 0; --i) {
         m_strides[i] = m_strides[i + 1] * m_dimensions[i + 1];
@@ -149,7 +151,7 @@ struct TensorEvaluator<const TensorReverseOp<ReverseDimensions, ArgType>, Device
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index reverseIndex(Index index) const {
     eigen_assert(index < dimensions().TotalSize());
     Index inputIndex = 0;
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       EIGEN_UNROLL_LOOP
       for (int i = NumDims - 1; i > 0; --i) {
         Index idx = index / m_fastStrides[i];
@@ -164,7 +166,8 @@ struct TensorEvaluator<const TensorReverseOp<ReverseDimensions, ArgType>, Device
       } else {
         inputIndex += index;
       }
-    } else {
+    }
+    else {
       EIGEN_UNROLL_LOOP
       for (int i = 0; i < NumDims - 1; ++i) {
         Index idx = index / m_fastStrides[i];
@@ -191,15 +194,28 @@ struct TensorEvaluator<const TensorReverseOp<ReverseDimensions, ArgType>, Device
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE PacketReturnType packet(Index index) const {
     eigen_assert(index + PacketSize - 1 < dimensions().TotalSize());
 
-    // TODO(ndjaitly): write a better packing routine that uses
-    // local structure.
+    // Fast path: when the whole packet stays inside a single inner-most
+    // slice of the input, replace PacketSize coeff() calls with one packet
+    // load (plus a preverse when the inner dim is reversed).
+    constexpr int inner_dim = (static_cast<int>(Layout) == static_cast<int>(ColMajor)) ? 0 : NumDims - 1;
+    const Index inner_size = m_dimensions[inner_dim];
+    const Index inner_pos = index - (index / inner_size) * inner_size;
+    if (inner_pos + PacketSize <= inner_size) {
+      if (m_reverse[inner_dim]) {
+        const Index input_index = reverseIndex(index + PacketSize - 1);
+        return internal::preverse(m_impl.template packet<Unaligned>(input_index));
+      }
+      return m_impl.template packet<Unaligned>(reverseIndex(index));
+    }
+
+    // Slow path: the packet crosses an inner-slice boundary, so the
+    // contiguous-load trick does not apply.
     EIGEN_ALIGN_MAX std::remove_const_t<CoeffReturnType> values[PacketSize];
     EIGEN_UNROLL_LOOP
     for (int i = 0; i < PacketSize; ++i) {
       values[i] = coeff(index + i);
     }
-    PacketReturnType rslt = internal::pload<PacketReturnType>(values);
-    return rslt;
+    return internal::pload<PacketReturnType>(values);
   }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE internal::TensorBlockResourceRequirements getResourceRequirements() const {
@@ -216,7 +232,7 @@ struct TensorEvaluator<const TensorReverseOp<ReverseDimensions, ArgType>, Device
     // access into the underlying tensor expression.
     static const bool isColMajor = static_cast<int>(Layout) == static_cast<int>(ColMajor);
 
-    static const Index inner_dim_idx = isColMajor ? 0 : NumDims - 1;
+    static constexpr Index inner_dim_idx = isColMajor ? 0 : NumDims - 1;
     const bool inner_dim_reversed = m_reverse[inner_dim_idx];
 
     // Offset in the output block.
@@ -322,7 +338,9 @@ struct TensorEvaluator<const TensorReverseOp<ReverseDimensions, ArgType>, Device
         compute_cost += 2 * TensorOpCost::AddCost<Index>();
       }
     }
-    return m_impl.costPerCoeff(vectorized) + TensorOpCost(0, 0, compute_cost, false /* vectorized */, PacketSize);
+    // The inner-slice fast path runs the per-coeff index math once per packet,
+    // so the amortized compute cost matches the vectorized convention.
+    return m_impl.costPerCoeff(vectorized) + TensorOpCost(0, 0, compute_cost, vectorized, PacketSize);
   }
 
   EIGEN_DEVICE_FUNC typename Storage::Type data() const { return NULL; }
@@ -403,4 +421,4 @@ struct TensorEvaluator<TensorReverseOp<ReverseDimensions, ArgType>, Device>
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_REVERSE_H
+#endif  // EIGEN_TENSOR_TENSOR_REVERSE_H

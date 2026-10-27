@@ -8,7 +8,6 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
-import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as Badges from '../../models/badges/badges.js';
@@ -1157,9 +1156,18 @@ export class LinkableNameRenderer extends rendererBase(SDK.CSSPropertyParserMatc
         return {
           jslogContext: 'css-font-palette',
           metric: null,
-          ruleBlock: '@font-*',
+          ruleBlock: '',  // Not used
           isDefined: Boolean(this.#matchedStyles.atRules().find(
               ar => ar.type() === 'font-palette-values' && ar.name()?.text === match.text)),
+        };
+      case SDK.CSSPropertyParserMatchers.LinkableNameProperties.LIST_STYLE:
+      case SDK.CSSPropertyParserMatchers.LinkableNameProperties.LIST_STYLE_TYPE:
+        return {
+          jslogContext: 'css-list-style-type',
+          metric: null,
+          ruleBlock: '',  // Not used
+          isDefined: Boolean(this.#matchedStyles.atRules().find(
+              ar => ar.type() === 'counter-style' && ar.name()?.text === match.text)),
         };
       case SDK.CSSPropertyParserMatchers.LinkableNameProperties.POSITION_TRY:
       case SDK.CSSPropertyParserMatchers.LinkableNameProperties.POSITION_TRY_FALLBACKS:
@@ -1183,6 +1191,10 @@ export class LinkableNameRenderer extends rendererBase(SDK.CSSPropertyParserMatc
         metric && Host.userMetrics.swatchActivated(metric);
         if (match.propertyName === SDK.CSSPropertyParserMatchers.LinkableNameProperties.FONT_PALETTE) {
           this.#stylesContainer.jumpToFontPaletteDefinition(match.text);
+        } else if (
+            match.propertyName === SDK.CSSPropertyParserMatchers.LinkableNameProperties.LIST_STYLE ||
+            match.propertyName === SDK.CSSPropertyParserMatchers.LinkableNameProperties.LIST_STYLE_TYPE) {
+          this.#stylesContainer.jumpToCounterStyleDefinition(match.text);
         } else {
           this.#stylesContainer.jumpToSectionBlock(`${ruleBlock} ${match.text}`);
         }
@@ -1596,20 +1608,6 @@ export class ShadowRenderer extends rendererBase(SDK.CSSPropertyParserMatchers.S
     }
 
     return result;
-  }
-}
-
-// clang-format off
-export class FontRenderer extends rendererBase(SDK.CSSPropertyParserMatchers.FontMatch) {
-  // clang-format on
-  constructor(readonly treeElement: StylePropertyTreeElement) {
-    super();
-  }
-
-  override render(match: SDK.CSSPropertyParserMatchers.FontMatch, context: RenderingContext): Node[] {
-    this.treeElement.section().registerFontProperty(this.treeElement);
-    const {nodes} = Renderer.render(ASTUtils.siblings(ASTUtils.declValue(match.node)), context);
-    return nodes;
   }
 }
 
@@ -2462,9 +2460,6 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
             this.getComputedStyles() ?? new Map(), this.getComputedStyleExtraFields()) :
         [];
 
-    if (Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.FONT_EDITOR) && this.property.parsedOk) {
-      renderers.push(new FontRenderer(this));
-    }
     this.listItemElement.removeChildren();
     const matchedResult = this.property.parseValue(this.matchedStyles(), this.computedStyles);
     this.valueElement = Renderer.renderValueElement(this.property, matchedResult, renderers).valueElement;
@@ -2782,7 +2777,8 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       existingElement?.remove();
     }
 
-    if (!this.overriddenByAnimation() || UI.ViewManager.ViewManager.instance().isViewVisible('animations')) {
+    if (!this.overriddenByAnimation() || UI.ViewManager.ViewManager.instance().isViewVisible('animations') ||
+        !Common.Settings.Settings.instance().moduleSetting('css-animations-only-when-animations-tab-open').get()) {
       return;
     }
 
@@ -3514,7 +3510,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     if (this.prompt) {
       this.prompt.detach();
       this.prompt = null;
-      this.#clearGhostTextInValue();
+      this.section().activeAiSuggestion = undefined;
     }
   }
 
@@ -3609,9 +3605,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     // This occurs when deleting the last index of a StylePropertiesSection as this.style._allProperties array gets updated
     // before we index it when setting the value for updatedProperty
     const deleteProperty = majorChange && !styleText.length;
-    if (deleteProperty) {
-      this.#parentSection.resetToolbars();
-    } else if (!deleteProperty && updatedProperty) {
+    if (!deleteProperty && updatedProperty) {
       this.property = updatedProperty;
     }
 
@@ -3636,12 +3630,12 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     }
     const isEditingName = UI.UIUtils.isBeingEdited(this.nameElement);
     if (isEditingName) {
-      this.prompt.applySuggestion({text: activeAiSuggestion.name}, true);
+      this.prompt.applySuggestion({text: activeAiSuggestion.name, disableAcceptSuggestionOnStopCharacters: true}, true);
       this.#showGhostTextInValue(activeAiSuggestion.value);
     } else {
       // Only has ghost text for one field - name part or value part
       const currentSuggestedText = isEditingName ? activeAiSuggestion.name : activeAiSuggestion.value;
-      this.prompt.applySuggestion({text: currentSuggestedText}, true);
+      this.prompt.applySuggestion({text: currentSuggestedText, disableAcceptSuggestionOnStopCharacters: true}, true);
     }
   }
 
@@ -3654,15 +3648,40 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       return;
     }
     this.#clearGhostTextInValue();
-    this.valueElement.createChild('span', 'ghost-value-prediction').textContent = text;
+    if (this.value === text) {
+      return;
+    }
+    if (this.value) {
+      // If there is an existing value, and user is editing the name field
+      // which leads to a new value suggestion, then the previous value should no
+      // longer be valid.
+      this.listItemElement.classList.add('not-parsed-ok', 'invalid-property-value');
+    }
+    const ghostTextElement = document.createElement('span');
+    ghostTextElement.classList.add('ghost-value-prediction');
+    ghostTextElement.textContent = text;
+    this.valueElement.insertAdjacentElement('afterend', ghostTextElement);
   }
 
   #clearGhostTextInValue(): void {
-    if (!this.valueElement) {
+    const ghostTextElement = this.listItemElement.querySelector('.ghost-value-prediction');
+    if (!ghostTextElement) {
       return;
     }
-    const ghostElement = this.valueElement.querySelector('.ghost-value-prediction');
-    ghostElement?.remove();
+    ghostTextElement.remove();
+    // If there's no value, there's nothing to restore
+    if (!this.value) {
+      return;
+    }
+    // Restore original classes
+    if (this.property.parsedOk) {
+      this.listItemElement.classList.remove('not-parsed-ok', 'invalid-property-value');
+    } else {
+      const invalidPropertyValue = SDK.CSSMetadata.cssMetadata().isCSSPropertyName(this.property.name);
+      if (!invalidPropertyValue) {
+        this.listItemElement.classList.remove('invalid-property-value');
+      }
+    }
   }
 }
 

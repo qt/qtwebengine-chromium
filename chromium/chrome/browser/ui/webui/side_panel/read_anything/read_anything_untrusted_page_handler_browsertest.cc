@@ -17,7 +17,6 @@
 #include "base/test/values_test_util.h"
 #include "base/values.h"
 #include "chrome/browser/pdf/pdf_extension_test_util.h"
-#include "chrome/browser/pdf/pdf_viewer_stream_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/actions/chrome_action_id.h"
@@ -46,6 +45,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_web_ui.h"
+#include "extensions/browser/mime_handler/mime_handler_stream_manager.h"
 #include "mojo/public/mojom/base/values.mojom.h"
 #include "pdf/pdf_features.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -429,7 +429,10 @@ class ReadAnythingUntrustedPageHandlerTest
 
   void OnSpeechRateChange(double rate) { handler_->OnSpeechRateChange(rate); }
 
-  void OnTabWillDetach() { handler_->OnTabWillDetach(); }
+  void OnTabWillDetach() {
+    handler_->OnTabWillDetach(nullptr,
+                              tabs::TabInterface::DetachReason::kDelete);
+  }
 
   void OnEntryShown(SidePanelEntry* entry) {
     if (IsImmersiveEnabled()) {
@@ -562,7 +565,7 @@ IN_PROC_BROWSER_TEST_P(ReadAnythingUntrustedPageHandlerTest,
   const read_anything::mojom::LineFocus kLineFocus =
       read_anything::mojom::LineFocus::kSmallCursorWindow;
   handler_ = CreateHandler();
-  handler_->OnLineFocusChanged(kLineFocus);
+  handler_->OnLineFocusChanged(kLineFocus, kLineFocus);
 
 #if BUILDFLAG(IS_CHROMEOS)
   extension_wrapper_ptr_ = nullptr;
@@ -707,12 +710,12 @@ IN_PROC_BROWSER_TEST_P(ReadAnythingUntrustedPageHandlerTest,
       read_anything::mojom::LineFocus::kOff;
   handler_ = CreateHandler();
 
-  handler_->OnLineFocusChanged(kLineFocus1);
+  handler_->OnLineFocusChanged(kLineFocus1, kLineFocus1);
   const int LineFocus1 = browser()->profile()->GetPrefs()->GetInteger(
       prefs::kAccessibilityReadAnythingLineFocus);
   ASSERT_EQ(LineFocus1, static_cast<int>(kLineFocus1));
 
-  handler_->OnLineFocusChanged(kLineFocus2);
+  handler_->OnLineFocusChanged(kLineFocus2, kLineFocus1);
   const int LineFocus2 = browser()->profile()->GetPrefs()->GetInteger(
       prefs::kAccessibilityReadAnythingLineFocus);
   ASSERT_EQ(LineFocus2, static_cast<int>(kLineFocus2));
@@ -726,13 +729,13 @@ IN_PROC_BROWSER_TEST_P(ReadAnythingUntrustedPageHandlerTest,
       read_anything::mojom::LineFocus::kOff;
   handler_ = CreateHandler();
 
-  handler_->OnLineFocusChanged(kLineFocus1);
+  handler_->OnLineFocusChanged(kLineFocus1, kLineFocus1);
   const int LineFocus1 = browser()->profile()->GetPrefs()->GetInteger(
       prefs::kAccessibilityReadAnythingLastNonDisabledLineFocus);
   ASSERT_EQ(LineFocus1, static_cast<int>(kLineFocus1));
 
   // When line focus changes to off, enabled mode should not change
-  handler_->OnLineFocusChanged(kLineFocus2);
+  handler_->OnLineFocusChanged(kLineFocus2, kLineFocus1);
   const int LineFocus2 = browser()->profile()->GetPrefs()->GetInteger(
       prefs::kAccessibilityReadAnythingLastNonDisabledLineFocus);
   ASSERT_EQ(LineFocus2, static_cast<int>(kLineFocus1));
@@ -2067,7 +2070,7 @@ IN_PROC_BROWSER_TEST_P(ReadAnythingUntrustedPageHandlerDistillerTest,
     // OnReadabilityDistillationStateChanged should only be called on non-pdfs.
     // Previously we were calling it in step 2 above, but we know it's a pdf at
     // that point, so we shouldn't be. Now, Chrome
-    // detects the PDF frame immediately via PdfViewerStreamManager which
+    // detects the PDF frame immediately via MimeHandlerStreamManager which
     // triggers an early return in `OnActiveAXTreeIDChanged`, bypassing the
     // Readability distillation block entirely. The 2 expected calls come solely
     // from the initial test setup on `about:blank` (once for
@@ -2211,15 +2214,16 @@ IN_PROC_BROWSER_TEST_P(ReadAnythingUntrustedPageHandlerDistillerTest,
   content::WebContents* contents = GetReadAnythingWebContents();
   page_.receiver_.FlushForTesting();
 
-  // Manually attach a PdfViewerStreamManager to the contents. This simulates
+  // Manually attach a MimeHandlerStreamManager to the contents. This simulates
   // the scenario where we identify the page as a PDF but the PDF frame has not
   // loaded yet, setting is_waiting_for_pdf_frame_ to true.
-  pdf::PdfViewerStreamManager::Create(contents);
+  extensions::mime_handler::MimeHandlerStreamManager::Create(contents);
   handler_->OnActiveAXTreeIDChanged();
 
-  // Remove PdfViewerStreamManager so  subsequent navigations are treated as
+  // Remove MimeHandlerStreamManager so  subsequent navigations are treated as
   // normal pages.
-  contents->RemoveUserData(pdf::PdfViewerStreamManager::UserDataKey());
+  contents->RemoveUserData(
+      extensions::mime_handler::MimeHandlerStreamManager::UserDataKey());
 
   // Verify that navigating to a normal page correctly resets the PDF waiting
   // state. If the state isn't reset, we would return early and be stuck in a
@@ -2232,6 +2236,24 @@ IN_PROC_BROWSER_TEST_P(ReadAnythingUntrustedPageHandlerDistillerTest,
         .Times(2);
   }
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
+}
+
+IN_PROC_BROWSER_TEST_P(ReadAnythingUntrustedPageHandlerDistillerTest,
+                       RequestReadabilityDistillation_TriggersDistillation) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  handler_ = CreateHandler();
+
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(), GURL(embedded_test_server()->GetURL("/simple.html")),
+      WindowOpenDisposition::CURRENT_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
+
+  EXPECT_CALL(page_, OnReadabilityDistillationStateChanged(
+                         read_anything::mojom::ReadAnythingDistillationState::
+                             kDistillationInProgress))
+      .Times(testing::AtLeast(1));
+
+  handler_->RequestReadabilityDistillation();
 }
 
 // In order to test that Readability isn't used in automated tests,

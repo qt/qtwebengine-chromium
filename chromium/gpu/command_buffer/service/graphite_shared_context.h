@@ -132,6 +132,27 @@ class GPU_GLES2_EXPORT GraphiteSharedContext {
                                        SkImageReadPixelsCallback callback,
                                        SkImage::ReadPixelsContext context);
 
+  bool asyncRescaleAndReadPixelsYUV420AndSubmit(
+      const SkImage* src,
+      SkYUVColorSpace yuvColorSpace,
+      sk_sp<SkColorSpace> dstColorSpace,
+      const SkIRect& srcRect,
+      const SkISize& dstSize,
+      SkImage::RescaleGamma rescaleGamma,
+      SkImage::RescaleMode rescaleMode,
+      SkImageReadPixelsCallback callback,
+      SkImage::ReadPixelsContext context);
+  bool asyncRescaleAndReadPixelsYUV420AndSubmit(
+      const SkSurface* src,
+      SkYUVColorSpace yuvColorSpace,
+      sk_sp<SkColorSpace> dstColorSpace,
+      const SkIRect& srcRect,
+      const SkISize& dstSize,
+      SkImage::RescaleGamma rescaleGamma,
+      SkImage::RescaleMode rescaleMode,
+      SkImageReadPixelsCallback callback,
+      SkImage::ReadPixelsContext context);
+
   void asyncRescaleAndReadPixelsYUVA420(const SkImage* src,
                                         SkYUVColorSpace yuvColorSpace,
                                         sk_sp<SkColorSpace> dstColorSpace,
@@ -150,6 +171,27 @@ class GPU_GLES2_EXPORT GraphiteSharedContext {
                                         SkImage::RescaleMode rescaleMode,
                                         SkImageReadPixelsCallback callback,
                                         SkImage::ReadPixelsContext context);
+
+  bool asyncRescaleAndReadPixelsYUVA420AndSubmit(
+      const SkImage* src,
+      SkYUVColorSpace yuvColorSpace,
+      sk_sp<SkColorSpace> dstColorSpace,
+      const SkIRect& srcRect,
+      const SkISize& dstSize,
+      SkImage::RescaleGamma rescaleGamma,
+      SkImage::RescaleMode rescaleMode,
+      SkImageReadPixelsCallback callback,
+      SkImage::ReadPixelsContext context);
+  bool asyncRescaleAndReadPixelsYUVA420AndSubmit(
+      const SkSurface* src,
+      SkYUVColorSpace yuvColorSpace,
+      sk_sp<SkColorSpace> dstColorSpace,
+      const SkIRect& srcRect,
+      const SkISize& dstSize,
+      SkImage::RescaleGamma rescaleGamma,
+      SkImage::RescaleMode rescaleMode,
+      SkImageReadPixelsCallback callback,
+      SkImage::ReadPixelsContext context);
 
   void checkAsyncWorkCompletion();
 
@@ -196,6 +238,9 @@ class GPU_GLES2_EXPORT GraphiteSharedContext {
   // is_thread_safe is not enabled or when |lock_| is released.
   mutable std::atomic<base::PlatformThreadId> locked_thread_id_{
       base::kInvalidThreadId};
+
+  mutable std::atomic<bool> locked_thread_in_submit_{false};
+  mutable std::atomic<bool> locked_thread_in_insert_recording_{false};
 
   const std::unique_ptr<skgpu::graphite::Context> graphite_context_;
 

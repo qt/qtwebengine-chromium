@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-#include "cast/standalone_receiver/avcodec_glue.h"
+#include "cast/standalone_common/ffmpeg_glue.h"
 #include "cast/streaming/public/frame_id.h"
 #include "platform/base/span.h"
 

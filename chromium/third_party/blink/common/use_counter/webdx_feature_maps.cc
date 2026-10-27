@@ -479,6 +479,10 @@ GetWebFeatureToWebDXFeatureMap() {
            WebDXFeature::kNavigatorModelcontext},
           {WebFeature::kModelContextRegisterDeclarativeTool,
            WebDXFeature::kDeclarativeWebmcp},
+          {WebFeature::kIdentityDigitalCredentials,
+           WebDXFeature::kDigitalCredentials},
+          {WebFeature::kIdentityDigitalCredentialsCreation,
+           WebDXFeature::kDigitalCredentials},
           // Add new features above this line.
       }};
 
@@ -526,6 +530,7 @@ GetCSSPropertiesToWebDXFeatureMap() {
           {CSSSampleId::kTextBox, WebDXFeature::kTextBox},
           {CSSSampleId::kTextBoxEdge, WebDXFeature::kTextBox},
           {CSSSampleId::kTextBoxTrim, WebDXFeature::kTextBox},
+          {CSSSampleId::kTextFit, WebDXFeature::kTextFit},
           {CSSSampleId::kTextIndent, WebDXFeature::kTextIndent},
           {CSSSampleId::kTextSpacingTrim, WebDXFeature::kTextSpacingTrim},
           {CSSSampleId::kTextUnderlineOffset,

@@ -439,7 +439,7 @@ mod tests {
         for min_quantizer in 0..63 {
             for max_quantizer in 0..63 {
                 let quality = super::quality_from_quantizers(min_quantizer, max_quantizer);
-                assert!(quality >= 0 && quality <= 100);
+                assert!((0..=100).contains(&quality));
             }
         }
     }

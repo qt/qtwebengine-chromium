@@ -240,12 +240,12 @@ RootCompositorFrameSinkImpl::Create(
   BeginFrameSource* begin_frame_source = synthetic_begin_frame_source.get();
   if (external_begin_frame_source)
     begin_frame_source = external_begin_frame_source.get();
-  DCHECK(begin_frame_source);
+  CHECK(begin_frame_source);
 
   auto task_runner = base::SingleThreadTaskRunner::GetCurrentDefault();
 
   const auto& capabilities = output_surface->capabilities();
-  DCHECK_GT(capabilities.pending_swap_params.max_pending_swaps, 0);
+  CHECK_GT(capabilities.pending_swap_params.max_pending_swaps, 0);
   auto scheduler = std::make_unique<DisplayScheduler>(
       begin_frame_source, task_runner.get(), capabilities.pending_swap_params,
       hint_session_factory, run_all_compositor_stages_before_draw);
@@ -281,7 +281,8 @@ RootCompositorFrameSinkImpl::Create(
       std::move(params->display_private), std::move(display_client),
       std::move(synthetic_begin_frame_source),
       std::move(external_begin_frame_source), std::move(display),
-      hw_support_for_multiple_refresh_rates));
+      hw_support_for_multiple_refresh_rates,
+      params->enable_video_conference_matcher));
 
   // Set up the callback for updating VSyncParameters.
 #if !BUILDFLAG(IS_APPLE)
@@ -328,7 +329,7 @@ void RootCompositorFrameSinkImpl::DidEvictSurface(const SurfaceId& surface_id) {
   if (!current_surface_id.is_valid()) {
     return;
   }
-  DCHECK_EQ(surface_id.frame_sink_id(), current_surface_id.frame_sink_id());
+  CHECK_EQ(surface_id.frame_sink_id(), current_surface_id.frame_sink_id());
 
   // This matches CompositorFrameSinkSupport's eviction logic, which will
   // evict `surface_id` or matching but older ones. Avoid overwriting the
@@ -373,6 +374,10 @@ void RootCompositorFrameSinkImpl::SetDisplayColorSpaces(
 #if BUILDFLAG(IS_MAC)
 void RootCompositorFrameSinkImpl::SetVSyncDisplayID(int64_t display_id) {
   begin_frame_source()->SetVSyncDisplayID(display_id, /*force_update=*/false);
+}
+
+void RootCompositorFrameSinkImpl::RefreshRateChangedOnSameDisplay() {
+  begin_frame_source()->RefreshRateChangedOnSameDisplay();
 }
 #endif
 
@@ -620,7 +625,8 @@ RootCompositorFrameSinkImpl::RootCompositorFrameSinkImpl(
     std::unique_ptr<SyntheticBeginFrameSource> synthetic_begin_frame_source,
     std::unique_ptr<ExternalBeginFrameSource> external_begin_frame_source,
     std::unique_ptr<Display> display,
-    bool hw_support_for_multiple_refresh_rates)
+    bool hw_support_for_multiple_refresh_rates,
+    bool enable_video_conference_matcher)
     : compositor_frame_sink_client_(std::move(frame_sink_client)),
       compositor_frame_sink_receiver_(this, std::move(frame_sink_receiver)),
       display_client_(std::move(display_client)),
@@ -632,9 +638,10 @@ RootCompositorFrameSinkImpl::RootCompositorFrameSinkImpl(
           /*is_root=*/true)),
       synthetic_begin_frame_source_(std::move(synthetic_begin_frame_source)),
       external_begin_frame_source_(std::move(external_begin_frame_source)),
-      display_(std::move(display)) {
-  DCHECK(display_);
-  DCHECK(begin_frame_source());
+      display_(std::move(display)),
+      enable_video_conference_matcher_(enable_video_conference_matcher) {
+  CHECK(display_);
+  CHECK(begin_frame_source());
   frame_sink_manager->RegisterBeginFrameSource(begin_frame_source(),
                                                support_->frame_sink_id());
   display_->Initialize(this, support_->frame_sink_manager()->surface_manager());
@@ -644,7 +651,7 @@ RootCompositorFrameSinkImpl::RootCompositorFrameSinkImpl(
   // client wants to refresh the content. It works two ways - a client setting a
   // preferred refresh rate and the system throttling the refresh rate in case
   // of battery saving or any other events.
-  DCHECK(hw_support_for_multiple_refresh_rates);
+  CHECK(hw_support_for_multiple_refresh_rates);
   use_preferred_interval_ = true;
 #else
   if (!hw_support_for_multiple_refresh_rates) {
@@ -702,9 +709,11 @@ void RootCompositorFrameSinkImpl::UpdateFrameIntervalDeciderSettings() {
     matchers.push_back(std::make_unique<OnlyVideoMatcher>());
   }
 
-  // Only desktop platforms get VideoConferenceMatcher.
-  matchers.push_back(std::make_unique<VideoConferenceMatcher>());
 #endif
+
+  if (enable_video_conference_matcher_) {
+    matchers.push_back(std::make_unique<VideoConferenceMatcher>());
+  }
 
   FrameIntervalDecider::Settings settings = decider->settings();
   if (interval_decider_use_fixed_intervals_) {
@@ -824,7 +833,7 @@ void RootCompositorFrameSinkImpl::DisplayOutputSurfaceLost() {
 void RootCompositorFrameSinkImpl::DisplayWillDrawAndSwap(
     bool will_draw_and_swap,
     AggregatedRenderPassList* render_passes) {
-  DCHECK(support_->GetHitTestAggregator());
+  CHECK(support_->GetHitTestAggregator());
   support_->GetHitTestAggregator()->Aggregate(display_->CurrentSurfaceId());
 
   if (external_begin_frame_source_ &&
@@ -893,16 +902,16 @@ RootCompositorFrameSinkImpl::StopOverdrawTracking() {
 }
 
 void RootCompositorFrameSinkImpl::DisplayDidReceiveCALayerParams(
-    const gfx::CALayerParams& ca_layer_params) {
+    gfx::CALayerParams ca_layer_params) {
 #if BUILDFLAG(IS_APPLE)
   // If |ca_layer_params| should have content only when there exists a client
   // to send it to.
-  DCHECK(ca_layer_params.is_empty || display_client_);
+  CHECK(ca_layer_params.IsEmpty() || display_client_);
   if (last_ca_layer_params_ == ca_layer_params &&
       base::TimeTicks::Now() < next_forced_ca_layer_params_update_time_) {
     return;
   }
-  last_ca_layer_params_ = ca_layer_params;
+  last_ca_layer_params_ = ca_layer_params.CloneWithoutFence();
   // OnDisplayReceivedCALayerParams() is ultimately responsible for triggering
   // updates to vsync. VSync may change dynamically. To ensure the value is
   // updated correctly, OnDisplayReceivedCALayerParams() is periodically called,
@@ -911,7 +920,9 @@ void RootCompositorFrameSinkImpl::DisplayDidReceiveCALayerParams(
   next_forced_ca_layer_params_update_time_ =
       base::TimeTicks::Now() + base::Seconds(10);
   if (display_client_)
-    display_client_->OnDisplayReceivedCALayerParams(ca_layer_params);
+    display_client_->OnDisplayReceivedCALayerParams(std::move(ca_layer_params));
+
+  external_begin_frame_source()->DidReceiveNewCALayerParams();
 #else
   NOTREACHED();
 #endif

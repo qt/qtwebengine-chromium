@@ -11,23 +11,18 @@ export function getHtml(this: OmniboxPopupAppElement) {
   // clang-format off
   return html`<!--_html_template_start_-->
 <div class="context-menu-container">
-  ${this.shouldHideEntrypointButton_ ||
+  ${this.shouldHideEntrypointButton_() ||
     !hasAllowedInputs(this.inputState_, this.usePecApi_) ? '' : html`
     <cr-composebox-contextual-entrypoint-button id="context"
         class="upload-button"
-        ?show-context-menu-description="${
-            this.computeShowContextEntrypointDescription_()}"
+        .inputState="${this.inputState_}"
+        .applyContextButtonBackground="${this.applyContextButtonBackground_}"
+        .isOblongShape="${this.isOblongShape_}"
+        ?show-suggestion-label="${this.showContextButtonSuggestionLabel_}"
         @context-menu-entrypoint-click="${this.onContextMenuEntrypointClick_}">
     </cr-composebox-contextual-entrypoint-button>
   `}
-  ${this.isContentSharingEnabled_ && this.computeShowRecentTabChip_() ? html`
-    <composebox-recent-tab-chip id="recentTabChip"
-        class="upload-button contextual-chip"
-        .recentTab="${this.recentTabForChip_!}"
-        @add-tab-context="${this.onAddTabContext_}">
-    </composebox-recent-tab-chip>
-  ` : nothing}
-  ${this.isContentSharingEnabled_ && this.isLensSearchEligible_ ? html`
+  ${this.isLensChipShown_ ? html`
     <cr-composebox-lens-search id="lensSearchChip"
         class="upload-button contextual-chip"
         @lens-search-click="${this.onLensSearchClick_}">

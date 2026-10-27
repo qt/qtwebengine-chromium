@@ -54,6 +54,7 @@
 #include "chrome/browser/signin/signin_util.h"
 #include "components/autofill/core/browser/data_manager/personal_data_manager.h"
 #include "components/autofill/core/browser/data_quality/addresses/profile_requirement_utils.h"
+#include "components/signin/public/base/signin_switches.h"
 #include "components/sync/base/data_type.h"
 #include "components/sync/base/user_selectable_type.h"
 #include "components/sync/service/sync_service.h"
@@ -243,9 +244,9 @@ struct PromoUsageInfo {
   int shown_count = 0;
   int used_count = 0;
   // Optional as not every promo type supports it.
-  std::optional<base::Time> last_shown_time = std::nullopt;
+  std::optional<base::Time> last_shown_time;
   // Optional as not every promo type supports it.
-  std::optional<base::Time> last_external_event_time = std::nullopt;
+  std::optional<base::Time> last_external_event_time;
 };
 
 PromoUsageInfo GetPromoUsageInfo(
@@ -282,6 +283,38 @@ PromoUsageInfo GetPromoUsageInfo(
       MaybeGetLastExternalEventTime(promo_type, signin_prefs, gaia);
 
   return usage_info;
+}
+
+bool IsAllowedByPromoFrequency(Profile& profile,
+                               SignInPromoType type,
+                               const GaiaId& gaia_id) {
+  switch (type) {
+    case SignInPromoType::kPassword:
+    case SignInPromoType::kAddress:
+    case SignInPromoType::kBookmark:
+    case SignInPromoType::kExtension:
+    case SignInPromoType::kSendTabToSelf:
+      // No specific frequency exists for this promo type.
+      return true;
+    case SignInPromoType::kSearchAIMode:
+      break;
+  }
+  // For the Search AI Mode there should be a gap between impressions,
+  // configured in `kSearchAIModePromoFrequency`.
+  std::optional<base::Time> last_impression_time;
+  if (gaia_id.empty()) {
+    last_impression_time = profile.GetPrefs()->GetTime(
+        prefs::kSearchAIModeSignInPromoLastImpressionTimestampPerProfile);
+  } else {
+    SigninPrefs signin_prefs(*profile.GetPrefs());
+    last_impression_time =
+        signin_prefs.GetSearchAIModeSigninPromoLastImpressionTime(gaia_id);
+  }
+  if (!last_impression_time.has_value()) {
+    return true;
+  }
+  base::TimeDelta gap = base::Time::Now() - last_impression_time.value();
+  return (gap >= switches::kSearchAIModePromoFrequency.Get());
 }
 
 bool WasPreviouslySyncingWithPrimaryAccount(Profile* profile) {
@@ -370,10 +403,26 @@ syncer::DataType GetDataTypeFromSignInPromoType(SignInPromoType type) {
     case SignInPromoType::kExtension:
       return syncer::EXTENSIONS;
     case SignInPromoType::kSearchAIMode:
-      // Search AI Mode sign-in promo is not related to any
-      // synced data type.
+      // Search AI Mode sign-in promo is not related to any synced data type.
       NOTREACHED();
+    case SignInPromoType::kSendTabToSelf:
+      return syncer::SEND_TAB_TO_SELF;
   }
+}
+
+bool PromoTypeHasSyncableData(SignInPromoType type) {
+  switch (type) {
+    case SignInPromoType::kPassword:
+    case SignInPromoType::kAddress:
+    case SignInPromoType::kBookmark:
+    case SignInPromoType::kExtension:
+    case SignInPromoType::kSendTabToSelf:
+      return true;
+    case SignInPromoType::kSearchAIMode:
+      // Search AI Mode sign-in promo is not related to any synced data type.
+      return false;
+  }
+  NOTREACHED();
 }
 
 int GetAddressPromoShownCount(Profile& profile, const GaiaId& gaia_id) {
@@ -400,6 +449,16 @@ int GetPasswordPromoShownCount(Profile& profile, const GaiaId& gaia_id) {
           : prefs::kPasswordSignInPromoShownCountPerProfile);
 }
 
+int GetSearchAIModePromoShownCount(Profile& profile, const GaiaId& gaia_id) {
+  if (!gaia_id.empty()) {
+    return SigninPrefs(*profile.GetPrefs())
+        .GetSearchAIModeSigninPromoImpressionCount(gaia_id);
+  }
+
+  return profile.GetPrefs()->GetInteger(
+      prefs::kSearchAIModeSignInPromoShownCountPerProfile);
+}
+
 int GetBookmarkPromoShownCount(Profile& profile, const GaiaId& gaia_id) {
   if (!gaia_id.empty()) {
     return SigninPrefs(*profile.GetPrefs())
@@ -414,7 +473,7 @@ int GetBookmarkPromoShownCount(Profile& profile, const GaiaId& gaia_id) {
 
 int GetContextualPromoDismissCountPerSignedOutProfile(Profile& profile,
                                                       SignInPromoType type) {
-  if (!base::FeatureList::IsEnabled(switches::kSigninPromoLimitsExperiment)) {
+  if (ShouldUseAutofillSignInPromoLimits(type)) {
     return profile.GetPrefs()->GetInteger(
         prefs::kAutofillSignInPromoDismissCountPerProfile);
   }
@@ -430,17 +489,18 @@ int GetContextualPromoDismissCountPerSignedOutProfile(Profile& profile,
       return profile.GetPrefs()->GetInteger(
           prefs::kBookmarkSignInPromoDismissCountPerProfileForLimitsExperiment);
     case SignInPromoType::kExtension:
+    case SignInPromoType::kSendTabToSelf:
       NOTREACHED();
     case SignInPromoType::kSearchAIMode:
-      // TODO(crbug.com4/86858498): Implement rate limits.
-      NOTREACHED();
+      return profile.GetPrefs()->GetInteger(
+          prefs::kSearchAIModeSignInPromoDismissCountPerProfile);
   }
 }
 
 int GetContextualPromoDismissCountPerAccount(Profile& profile,
                                              SignInPromoType type,
                                              const GaiaId& gaia_id) {
-  if (!base::FeatureList::IsEnabled(switches::kSigninPromoLimitsExperiment)) {
+  if (ShouldUseAutofillSignInPromoLimits(type)) {
     return SigninPrefs(*profile.GetPrefs())
         .GetAutofillSigninPromoDismissCount(gaia_id);
   }
@@ -453,12 +513,14 @@ int GetContextualPromoDismissCountPerAccount(Profile& profile,
       return SigninPrefs(*profile.GetPrefs())
           .GetPasswordSigninPromoDismissCount(gaia_id);
     case SignInPromoType::kSearchAIMode:
-      // TODO(crbug.com4/86858498): Implement rate limits.
+      return SigninPrefs(*profile.GetPrefs())
+          .GetSearchAIModeSigninPromoDismissCount(gaia_id);
       NOTREACHED();
     case SignInPromoType::kBookmark:
       return SigninPrefs(*profile.GetPrefs())
           .GetBookmarkSigninPromoDismissCount(gaia_id);
     case SignInPromoType::kExtension:
+    case SignInPromoType::kSendTabToSelf:
       NOTREACHED();
   }
 }
@@ -467,6 +529,7 @@ bool ShouldShowPromoBasedOnImpressionOrDismissalCount(Profile& profile,
                                                       SignInPromoType type) {
   // Footer sign in promos are always shown.
   if (type == signin::SignInPromoType::kExtension ||
+      type == signin::SignInPromoType::kSendTabToSelf ||
       (type == signin::SignInPromoType::kBookmark &&
        !base::FeatureList::IsEnabled(syncer::kUnoPhase2FollowUp))) {
     return true;
@@ -484,8 +547,8 @@ bool ShouldShowPromoBasedOnImpressionOrDismissalCount(Profile& profile,
       show_count = GetPasswordPromoShownCount(profile, account.gaia);
       break;
     case SignInPromoType::kSearchAIMode:
-      NOTREACHED();
-      // TODO(crbug.com4/86858498): Implement rate limits.
+      show_count = GetSearchAIModePromoShownCount(profile, account.gaia);
+      break;
     case SignInPromoType::kBookmark:
       if (!base::FeatureList::IsEnabled(syncer::kUnoPhase2FollowUp)) {
         NOTREACHED();
@@ -493,6 +556,7 @@ bool ShouldShowPromoBasedOnImpressionOrDismissalCount(Profile& profile,
       show_count = GetBookmarkPromoShownCount(profile, account.gaia);
       break;
     case SignInPromoType::kExtension:
+    case SignInPromoType::kSendTabToSelf:
       NOTREACHED();
   }
 
@@ -502,28 +566,73 @@ bool ShouldShowPromoBasedOnImpressionOrDismissalCount(Profile& profile,
           : GetContextualPromoDismissCountPerAccount(profile, type,
                                                      account.gaia);
 
-  if (base::FeatureList::IsEnabled(switches::kSigninPromoLimitsExperiment)) {
+  if (base::FeatureList::IsEnabled(switches::kSigninPromoLimitsExperiment) &&
+      type != SignInPromoType::kSearchAIMode) {
     return show_count < switches::kContextualSigninPromoShownThreshold.Get() &&
            dismiss_count <
                switches::kContextualSigninPromoDismissedThreshold.Get();
   }
 
-  // Don't show the promo again if it
-  // - has already been shown `kSigninPromoShownThreshold` times for its
+  // Don't show the promo again if:
+  // - it has already been shown `kSigninPromoShownThreshold` times for its
   // autofill bubble promo type.
-  // - has already been dismissed `kSigninPromoDismissedThreshold` times,
+  // - it has already been dismissed `kSigninPromoDismissedThreshold` times,
   // regardless of autofill bubble promo type.
+  // - the promo type has a minimum required frequency between impressions
+  // which is currently not met.
   return show_count < kSigninPromoShownThreshold &&
-         dismiss_count < kSigninPromoDismissedThreshold;
+         dismiss_count < kSigninPromoDismissedThreshold &&
+         IsAllowedByPromoFrequency(profile, type, account.gaia);
 }
 
-#if !BUILDFLAG(IS_ANDROID)
-bool ShouldShowSyncPromo(Profile& profile) {
-#if BUILDFLAG(IS_CHROMEOS)
-  // There's no need to show the sign in promo on cros since cros users are
-  // already logged in.
-  return false;
-#else
+bool IsDataTypeManagedByPolicy(const syncer::SyncService* sync_service,
+                               syncer::DataType data_type) {
+  if (!sync_service) {
+    return false;
+  }
+  std::optional<syncer::UserSelectableType> selectable_type =
+      syncer::GetUserSelectableTypeFromDataType(data_type);
+  return selectable_type.has_value() &&
+         sync_service->GetUserSettings()->IsTypeManagedByPolicy(
+             *selectable_type);
+}
+
+// Common eligibility checks for signin promos relating to the syncing of an
+// underlying syncable data type.
+bool CanShowPromoForSyncableDataType(SignInPromoType type, Profile& profile) {
+  syncer::SyncPrefs prefs(profile.GetPrefs());
+  // Don't show if sync is not allowed to start or is running in local mode.
+  if (!SyncServiceFactory::IsSyncAllowed(&profile) ||
+      prefs.IsLocalSyncEnabled()) {
+    return false;
+  }
+
+  syncer::SyncService* sync_service =
+      SyncServiceFactory::GetForProfile(&profile);
+
+  // Don't show the promo if the sync service is not available, e.g. if the
+  // profile is off-the-record.
+  if (!sync_service) {
+    return false;
+  }
+
+  syncer::DataType data_type = GetDataTypeFromSignInPromoType(type);
+
+  // Don't show the promo if policies disallow account storage.
+  if (IsDataTypeManagedByPolicy(sync_service, data_type) ||
+      !sync_service->GetDataTypesForTransportOnlyMode().Has(data_type)) {
+    return false;
+  }
+  return true;
+}
+
+// Performs base checks for whether the sign in promos should be shown.
+// Needs additional checks depending on the type of the promo.
+// `profile` is the profile of the tab the promo would be shown on.
+bool ShouldShowSignInPromoCommon(Profile& profile, SignInPromoType type) {
+  if (profile.IsOffTheRecord()) {
+    return false;
+  }
 
   // Don't bother if we don't have any kind of network connection.
   if (net::NetworkChangeNotifier::IsOffline()) {
@@ -543,9 +652,7 @@ bool ShouldShowSyncPromo(Profile& profile) {
   signin::IdentityManager* identity_manager =
       IdentityManagerFactory::GetForProfile(original_profile);
   AccountInfo promo_account =
-      profile.IsOffTheRecord()
-          ? AccountInfo()  // Incognito profiles do not personalize promos.
-          : signin_ui_util::GetSingleAccountForPromos(identity_manager);
+      signin_ui_util::GetSingleAccountForPromos(identity_manager);
 
   // Don't show if sign in can't be offered (ex: signin disallowed).
   if (!CanOfferSignin(original_profile, promo_account.gaia, promo_account.email,
@@ -554,54 +661,8 @@ bool ShouldShowSyncPromo(Profile& profile) {
     return false;
   }
 
-  // No promo if the user is already syncing.
-  if (identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync)) {
-    return false;
-  }
-
-  syncer::SyncPrefs prefs(profile.GetPrefs());
-  // Don't show if sync is not allowed to start or is running in local mode.
-  if (!SyncServiceFactory::IsSyncAllowed(&profile) ||
-      prefs.IsLocalSyncEnabled()) {
-    return false;
-  }
-
-  // Verified the base checks. Depending on whether the promo should be for sync
-  // or signin, additional checks are necessary.
-  return true;
-#endif
-}
-#endif  // !BUILDFLAG(IS_ANDROID)
-
-// Performs base checks for whether the sign in promos should be shown.
-// Needs additional checks depending on the type of the promo (see
-// `ShouldShowAddressSignInPromo` and `ShouldShowPasswordSignInPromo`).
-// `profile` is the profile of the tab the promo would be shown on.
-bool ShouldShowSignInPromoCommon(Profile& profile, SignInPromoType type) {
-  if (profile.IsOffTheRecord()) {
-    return false;
-  }
-
-  // Don't show the promo if it does not pass the sync base checks.
-  if (!signin::ShouldShowSyncPromo(profile)) {
-    return false;
-  }
-
-  syncer::SyncService* sync_service =
-      SyncServiceFactory::GetForProfile(&profile);
-
-  // Don't show the promo if the sync service is not available, e.g. if the
-  // profile is off-the-record.
-  if (!sync_service) {
-    return false;
-  }
-
-  syncer::DataType data_type = GetDataTypeFromSignInPromoType(type);
-
-  // Don't show the promo if policies disallow account storage.
-  if (sync_service->GetUserSettings()->IsTypeManagedByPolicy(
-          GetUserSelectableTypeFromDataType(data_type).value()) ||
-      !sync_service->GetDataTypesForTransportOnlyMode().Has(data_type)) {
+  if (PromoTypeHasSyncableData(type) &&
+      !CanShowPromoForSyncableDataType(type, profile)) {
     return false;
   }
 
@@ -633,19 +694,14 @@ bool ShouldShowSignInPromoCommon(Profile& profile, SignInPromoType type) {
 bool ShouldShowExtensionSignInPromo(Profile& profile,
                                     const extensions::Extension& extension) {
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
-  // Don't show the promo if it does not pass the sync base checks.
-  if (!signin::ShouldShowSyncPromo(profile)) {
-    return false;
-  }
-
   if (!extensions::sync_util::ShouldSync(&profile, &extension)) {
     return false;
   }
 
   if (!base::FeatureList::IsEnabled(syncer::kUnoPhase2FollowUp)) {
-    // `ShouldShowSyncPromo()` does not check if extensions are syncing in
-    // transport mode. That's why `IsSyncingExtensionsEnabled()` is added so the
-    // sign in promo is not shown in that case.
+    // `ShouldShowSignInPromoCommon()` does not check if extensions are syncing
+    // in transport mode. That's why `IsSyncingExtensionsEnabled()` is added so
+    // the sign in promo is not shown in that case.
     if (extensions::sync_util::IsSyncingExtensionsEnabled(&profile)) {
       return false;
     }
@@ -687,6 +743,14 @@ bool ShouldShowAddressSignInPromo(Profile& profile,
   }
 
   return ShouldShowSignInPromoCommon(profile, SignInPromoType::kAddress);
+#else
+  return false;
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+}
+
+bool ShouldShowSearchAIModeSignInPromo(Profile& profile) {
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+  return ShouldShowSignInPromoCommon(profile, SignInPromoType::kSearchAIMode);
 #else
   return false;
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
@@ -745,8 +809,19 @@ bool IsSignInPromo(signin_metrics::AccessPoint access_point) {
   }
 
   if (access_point == signin_metrics::AccessPoint::kExtensionInstallBubble) {
-    return switches::IsExtensionsExplicitBrowserSigninEnabled();
+#if BUILDFLAG(IS_CHROMEOS)
+    return base::FeatureList::IsEnabled(
+        syncer::kReplaceSyncPromosWithSignInPromos);
+#else
+    return true;
+#endif
   }
+
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+  if (access_point == signin_metrics::AccessPoint::kSendTabToSelfPromo) {
+    return true;
+  }
+#endif
 
   return false;
 }
@@ -764,6 +839,8 @@ SignInPromoType GetSignInPromoTypeFromAccessPoint(
       return SignInPromoType::kSearchAIMode;
     case signin_metrics::AccessPoint::kExtensionInstallBubble:
       return SignInPromoType::kExtension;
+    case signin_metrics::AccessPoint::kSendTabToSelfPromo:
+      return SignInPromoType::kSendTabToSelf;
     default:
       NOTREACHED();
   }
@@ -798,8 +875,11 @@ void RecordSignInPromoShown(signin_metrics::AccessPoint access_point,
                 : prefs::kAddressSignInPromoShownCountPerProfile;
         break;
       case SignInPromoType::kSearchAIMode:
-        // TODO(crbug.com4/86858498): Implement rate limits.
-        return;
+        pref_name = prefs::kSearchAIModeSignInPromoShownCountPerProfile;
+        profile->GetPrefs()->SetTime(
+            prefs::kSearchAIModeSignInPromoLastImpressionTimestampPerProfile,
+            base::Time::Now());
+        break;
       case SignInPromoType::kBookmark:
         if (!base::FeatureList::IsEnabled(syncer::kUnoPhase2FollowUp)) {
           return;
@@ -811,6 +891,7 @@ void RecordSignInPromoShown(signin_metrics::AccessPoint access_point,
                 : prefs::kBookmarkSignInPromoShownCountPerProfile;
         break;
       case SignInPromoType::kExtension:
+      case SignInPromoType::kSendTabToSelf:
         return;
     }
 
@@ -831,7 +912,11 @@ void RecordSignInPromoShown(signin_metrics::AccessPoint access_point,
           .IncrementAddressSigninPromoImpressionCount(account.gaia);
       return;
     case SignInPromoType::kSearchAIMode:
-      // TODO(crbug.com4/86858498): Implement rate limits.
+      SigninPrefs(*profile->GetPrefs())
+          .IncrementSearchAIModeSigninPromoImpressionCount(account.gaia);
+      SigninPrefs(*profile->GetPrefs())
+          .SetSearchAIModeSigninPromoLastImpressionTime(account.gaia,
+                                                        base::Time::Now());
       return;
     case SignInPromoType::kBookmark:
       if (base::FeatureList::IsEnabled(syncer::kUnoPhase2FollowUp)) {
@@ -840,8 +925,14 @@ void RecordSignInPromoShown(signin_metrics::AccessPoint access_point,
       }
       return;
     case SignInPromoType::kExtension:
+    case SignInPromoType::kSendTabToSelf:
       return;
   }
+}
+
+bool ShouldUseAutofillSignInPromoLimits(signin::SignInPromoType promo_type) {
+  return promo_type != signin::SignInPromoType::kSearchAIMode &&
+         !base::FeatureList::IsEnabled(switches::kSigninPromoLimitsExperiment);
 }
 
 void RecordAvatarButtonPromoAcceptedAtPromoShownCount(

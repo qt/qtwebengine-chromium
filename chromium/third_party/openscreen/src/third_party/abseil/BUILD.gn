@@ -7,6 +7,10 @@ import("//build_overrides/build.gni")
 if (build_with_chromium) {
   source_set("abseil") {
     public_deps = [ "//third_party/abseil-cpp:absl" ]
+
+    openscreen_root =
+        get_path_info(get_path_info(get_label_info(".", "dir"), "dir"), "dir")
+    visibility = [ "${openscreen_root}/*" ]
   }
 } else {
   config("abseil_config") {
@@ -40,13 +44,10 @@ if (build_with_chromium) {
   source_set("internal") {
     sources = [
       "src/absl/base/internal/atomic_hook.h",
-      "src/absl/base/internal/identity.h",
       "src/absl/base/internal/inline_variable.h",
       "src/absl/base/internal/invoke.h",
       "src/absl/base/internal/raw_logging.cc",
       "src/absl/base/internal/raw_logging.h",
-      "src/absl/base/internal/throw_delegate.cc",
-      "src/absl/base/internal/throw_delegate.h",
       "src/absl/container/internal/common.h",
       "src/absl/hash/internal/city.cc",
       "src/absl/hash/internal/city.h",
@@ -79,6 +80,8 @@ if (build_with_chromium) {
       "src/absl/base/optimization.h",
       "src/absl/base/policy_checks.h",
       "src/absl/base/port.h",
+      "src/absl/base/throw_delegate.cc",
+      "src/absl/base/throw_delegate.h",
       "src/absl/hash/hash.h",
       "src/absl/hash/hash_testing.h",
       "src/absl/memory/memory.h",
@@ -320,6 +323,8 @@ if (build_with_chromium) {
     ]
 
     sources = [
+      "src/absl/base/casts.cc",
+      "src/absl/base/casts.h",
       "src/absl/crc/crc32c.cc",
       "src/absl/crc/crc32c.h",
       "src/absl/debugging/stacktrace.cc",
@@ -357,7 +362,6 @@ if (build_with_chromium) {
       "src/absl/status/statusor.h",
       "src/absl/strings/cord.cc",
       "src/absl/strings/cord.h",
-      "src/absl/strings/string_view.cc",
       "src/absl/strings/string_view.h",
       "src/absl/synchronization/mutex.cc",
       "src/absl/synchronization/mutex.h",

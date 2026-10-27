@@ -25,6 +25,7 @@
 #include "content/browser/service_worker/service_worker_main_resource_handle.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/url_loader_factory_params_helper.h"
+#include "content/browser/worker_host/dedicated_worker_host.h"
 #include "content/browser/worker_host/network_restrictions_worker_throttle.h"
 #include "content/browser/worker_host/worker_script_loader.h"
 #include "content/browser/worker_host/worker_script_loader_factory.h"
@@ -257,6 +258,7 @@ void WorkerScriptFetcher::CreateAndStart(
     const GURL& initial_request_url,
     RenderFrameHostImpl& ancestor_render_frame_host,
     RenderFrameHostImpl* creator_render_frame_host,
+    DedicatedWorkerHost* creator_worker,
     const net::SiteForCookies& site_for_cookies,
     const url::Origin& request_initiator,
     const blink::StorageKey& request_initiator_storage_key,
@@ -312,12 +314,14 @@ void WorkerScriptFetcher::CreateAndStart(
       factory_bundle_for_browser = CreateFactoryBundle(
           LoaderType::kMainResource, worker_process_id, storage_partition,
           storage_domain, constructor_uses_file_url, filesystem_url_support,
-          creator_render_frame_host, request_initiator_storage_key);
+          creator_render_frame_host, request_initiator_storage_key,
+          request_destination);
   std::unique_ptr<blink::PendingURLLoaderFactoryBundle>
       subresource_loader_factories = CreateFactoryBundle(
           LoaderType::kSubResource, worker_process_id, storage_partition,
           storage_domain, constructor_uses_file_url, filesystem_url_support,
-          creator_render_frame_host, request_initiator_storage_key);
+          creator_render_frame_host, request_initiator_storage_key,
+          request_destination);
 
   // Create a resource request for initiating worker script fetch from the
   // browser process.
@@ -335,7 +339,23 @@ void WorkerScriptFetcher::CreateAndStart(
   resource_request->url = initial_request_url;
   resource_request->site_for_cookies = site_for_cookies;
   resource_request->request_initiator = request_initiator;
-  resource_request->referrer = sanitized_referrer.url,
+  resource_request->referrer = sanitized_referrer.url;
+
+  // DevTools throttling profiles are only associated with local frame roots,
+  // not each individual frame. If the creator is a worker on the other hand,
+  // we should use its token for throttling.
+  if (creator_worker) {  // a nested dedicated worker
+    resource_request->throttling_profile_id =
+        creator_worker->GetToken().value();
+  } else {
+    RenderFrameHostImpl* local_root_rfh = creator_render_frame_host;
+    while (!local_root_rfh->is_local_root()) {
+      local_root_rfh = local_root_rfh->GetParent();
+    }
+    CHECK(local_root_rfh);
+    resource_request->throttling_profile_id =
+        local_root_rfh->GetDevToolsFrameToken();
+  }
   resource_request->referrer_policy = Referrer::ReferrerPolicyForUrlRequest(
       outside_fetch_client_settings_object->policy_container_policies
           ->referrer_policy);
@@ -393,7 +413,8 @@ void WorkerScriptFetcher::CreateAndStart(
   // shared workers, `ancestor_render_frame_host` and
   // `creator_render_frame_host` are always same.
   devtools_instrumentation::OnWorkerMainScriptRequestWillBeSent(
-      ancestor_render_frame_host, devtools_worker_token, *resource_request);
+      ancestor_render_frame_host, creator_worker, devtools_worker_token,
+      *resource_request);
 
   WorkerScriptFetcher::CreateScriptLoader(
       worker_process_id, worker_token, initial_request_url,
@@ -603,7 +624,8 @@ WorkerScriptFetcher::CreateFactoryBundle(
     bool file_support,
     bool filesystem_url_support,
     RenderFrameHostImpl* creator_render_frame_host,
-    const blink::StorageKey& request_initiator_storage_key) {
+    const blink::StorageKey& request_initiator_storage_key,
+    network::mojom::RequestDestination request_destination) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   ContentBrowserClient::NonNetworkURLLoaderFactoryMap non_network_factories;
@@ -636,7 +658,9 @@ WorkerScriptFetcher::CreateFactoryBundle(
       GetContentClient()
           ->browser()
           ->RegisterNonNetworkWorkerMainResourceURLLoaderFactories(
-              storage_partition->browser_context(), &non_network_factories);
+              storage_partition->browser_context(),
+              request_initiator_storage_key.origin(), request_destination,
+              &non_network_factories);
       break;
     case LoaderType::kSubResource:
       GetContentClient()
@@ -774,9 +798,7 @@ void WorkerScriptFetcher::OnReceiveRedirect(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   redirect_infos_.push_back(redirect_info);
   redirect_response_heads_.push_back(std::move(response_head));
-  url_loader_->FollowRedirect({}, /* removed_headers */
-                              {}, /* modified_headers */
-                              {} /* modified_cors_exempt_headers */);
+  url_loader_->FollowRedirect(/*headers_update_params=*/{});
 }
 
 void WorkerScriptFetcher::OnUploadProgress(int64_t current_position,

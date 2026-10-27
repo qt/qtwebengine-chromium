@@ -163,7 +163,7 @@ class CORE_EXPORT HTMLCanvasElement final
   bool HasCanvasCapture() const final { return !listeners_.empty(); }
 
   // Used for rendering
-  void DidDraw(const SkIRect&) override;
+  void DidDraw(const gfx::Rect&) override;
   using CanvasRenderingContextHost::DidDraw;
 
   void Paint(GraphicsContext&,
@@ -203,7 +203,7 @@ class CORE_EXPORT HTMLCanvasElement final
 
   UniqueFontSelector* GetFontSelector() override;
 
-  bool ShouldBeDirectComposited() const;
+  bool ShouldSkipPaintInvalidation() const;
 
   const AtomicString ImageSourceURL() const override;
 
@@ -249,12 +249,10 @@ class CORE_EXPORT HTMLCanvasElement final
   // CanvasResourceProvider::Delegate implementation
   void NotifyGpuContextLost() override;
   bool IsPrinting() const override;
-  bool TransferToGPUTextureWasInvoked() override;
 
   // CanvasRenderingContextHost implementation
   bool ShouldAccelerate2dContext() const override;
   bool LowLatencyEnabled() const override;
-  void SetTransferToGPUTextureWasInvoked() override;
   UkmParameters GetUkmParameters() override;
   void SetNeedsCompositingUpdate() override;
 
@@ -266,8 +264,8 @@ class CORE_EXPORT HTMLCanvasElement final
       ExceptionState&) override;
 
   // OffscreenCanvasPlaceholder implementation.
-  void SetOffscreenCanvasResource(scoped_refptr<CanvasResource>&&,
-                                  viz::ResourceId resource_id) override;
+  void SetOffscreenCanvasResource(
+      scoped_refptr<ExportedCanvasResource>&&) override;
   void Trace(Visitor*) const override;
 
   static void RegisterRenderingContextFactory(
@@ -356,6 +354,11 @@ class CORE_EXPORT HTMLCanvasElement final
   bool VerifyDrawElementImageEligibility(Element* element,
                                          const String& func_name,
                                          ExceptionState& exception_state) const;
+
+  bool VerifyDrawElementImageEligibility(
+      const V8UnionElementOrElementImage* element,
+      const String& func_name,
+      ExceptionState& exception_state) const;
 
   ElementImage* captureElementImage(Element* element, ExceptionState&);
 

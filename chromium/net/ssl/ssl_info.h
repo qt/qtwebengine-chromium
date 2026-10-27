@@ -12,7 +12,7 @@
 #include "net/cert/ct_policy_status.h"
 #include "net/cert/sct_status_flags.h"
 #include "net/cert/signed_certificate_timestamp_and_status.h"
-#include "third_party/boringssl/src/include/openssl/pki/ocsp.h"
+#include "net/net_buildflags.h"
 
 namespace net {
 
@@ -108,12 +108,25 @@ class NET_EXPORT SSLInfo {
   ct::CTPolicyCompliance ct_policy_compliance =
       ct::CTPolicyCompliance::CT_POLICY_COMPLIANCE_DETAILS_NOT_AVAILABLE;
 
-  // OCSP stapling details.
-  bssl::OCSPVerifyResult ocsp_result;
-
   // True if there was a certificate error which should be treated as fatal,
   // and false otherwise.
   bool is_fatal_cert_error = false;
+
+#if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+  // The stable identifier of the root of the chain of `verified_cert`, or one
+  // of the special values in CertVerifyResult::CrsRootIdSpecialValues.
+  // May be nullopt in builds where CRS is optionally supported but was not
+  // used, or when the SSLInfo was loaded from cache.
+  std::optional<int32_t> crs_root_id;
+#endif
+
+  // True if the client requested padding through the server padding extension.
+  // This field is only set for client sockets.
+  bool server_padding_requested = false;
+
+  // True if the server sent the requested padding to the client.
+  // This field is only set for client sockets.
+  bool server_padding_received = false;
 };
 
 }  // namespace net

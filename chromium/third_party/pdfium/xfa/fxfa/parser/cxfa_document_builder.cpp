@@ -75,7 +75,7 @@ bool GetAttributeLocalName(WideStringView wsAttributeName,
     wsLocalAttrName = std::move(wsAttrName);
     return false;
   }
-  wsLocalAttrName = wsAttrName.Last(wsAttrName.GetLength() - pos.value() - 1);
+  wsLocalAttrName = wsAttrName.Substr(pos.value() + 1);
   return true;
 }
 

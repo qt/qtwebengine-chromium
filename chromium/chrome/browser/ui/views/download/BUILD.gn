@@ -16,6 +16,7 @@ source_set("download") {
     "//components/offline_items_collection/core",
     "//content/public/browser",
     "//ui/base",
+    "//ui/base/unowned_user_data",
     "//ui/events",
     "//ui/gfx",
     "//ui/gfx/animation",
@@ -36,6 +37,9 @@ source_set("download") {
 
   if (!is_chromeos) {
     sources += [
+      "download_cuj_event_emitter.cc",
+      "download_cuj_event_emitter.h",
+
       # Download bubble UI is not used on ChromeOS.
       "bubble/download_bubble_contents_view.cc",
       "bubble/download_bubble_contents_view.h",
@@ -66,7 +70,9 @@ source_set("download") {
     deps += [
       "//chrome/app:command_ids",
       "//chrome/browser:browser_process",
+      "//chrome/browser:icon_manager",
       "//chrome/browser:primitives",
+      "//chrome/browser/download/bubble",
       "//chrome/browser/picture_in_picture",
       "//chrome/browser/profiles:profile",
       "//chrome/browser/profiles:profile_util",
@@ -74,7 +80,6 @@ source_set("download") {
       "//chrome/browser/safe_browsing:advanced_protection",
       "//chrome/browser/themes",
       "//chrome/browser/ui:browser_element_identifiers",
-      "//chrome/browser/ui:browser_list",
       "//chrome/browser/ui:ui_features",
       "//chrome/browser/ui/actions:actions_headers",
       "//chrome/browser/ui/browser_window",

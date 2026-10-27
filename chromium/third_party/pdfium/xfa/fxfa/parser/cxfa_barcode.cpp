@@ -107,8 +107,7 @@ std::optional<char> CXFA_Barcode::GetStartChar() {
   if (!wsStartEndChar.has_value() || wsStartEndChar->IsEmpty()) {
     return std::nullopt;
   }
-
-  return static_cast<char>(wsStartEndChar.value()[0]);
+  return static_cast<char>(wsStartEndChar->Front());
 }
 
 std::optional<char> CXFA_Barcode::GetEndChar() {
@@ -117,8 +116,7 @@ std::optional<char> CXFA_Barcode::GetEndChar() {
   if (!wsStartEndChar.has_value() || wsStartEndChar->IsEmpty()) {
     return std::nullopt;
   }
-
-  return static_cast<char>(wsStartEndChar.value()[0]);
+  return static_cast<char>(wsStartEndChar->Front());
 }
 
 std::optional<int32_t> CXFA_Barcode::GetECLevel() {

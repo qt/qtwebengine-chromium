@@ -8,6 +8,8 @@ import * as Host from '../../core/host/host.js';
 import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
+import * as Marked from '../../third_party/marked/marked.js';
+import * as MarkdownView from '../../ui/components/markdown_view/markdown_view.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import greenDevPanelStyles from './GreenDevPanel.css.js';
@@ -265,9 +267,11 @@ export class GreenDevPanel extends UI.Panel.Panel {
     if (data.type === 'new-message' && data.text) {
       this.#appendMessageToContainer(session.container, data.text, data.isUser ?? false);
     } else if (data.type === 'update-last-message') {
-      const lastMsg = session.container.lastElementChild?.querySelector('.message-content');
+      const lastMsg = session.container.lastElementChild?.querySelector('.message-content devtools-markdown-view');
       if (lastMsg) {
-        lastMsg.textContent = data.text ?? null;
+        (lastMsg as MarkdownView.MarkdownView.MarkdownView).data = {
+          tokens: Marked.Marked.lexer(data.text ?? ''),
+        };
       }
     } else if (data.type === 'full-state') {
       session.container.innerHTML = '';
@@ -306,7 +310,30 @@ export class GreenDevPanel extends UI.Panel.Panel {
 
     const content = document.createElement('div');
     content.className = 'message-content';
-    content.textContent = text;
+    if (isUser) {
+      content.textContent = text;
+    } else {
+      const markdown = new MarkdownView.MarkdownView.MarkdownView();
+      markdown.data = {
+        tokens: Marked.Marked.lexer(text),
+      };
+      content.append(markdown);
+      const style = document.createElement('style');
+      style.textContent = `
+        .message { font-size: 1.0rem; }
+        .message code { font-size: 1.0rem; font-family: 'Roboto Mono', monospace; color: green; }
+        devtools-code-block {
+          white-space: pre-wrap;
+        }
+      `;
+      markdown.shadowRoot?.appendChild(style);
+
+      const codeBlocks = markdown.shadowRoot?.querySelectorAll('devtools-code-block');
+      for (const block of codeBlocks ?? []) {
+        // We need to rerender the component for the styles to be applied.
+        block.connectedCallback();
+      }
+    }
     content.style.flexGrow = '1';
     messageElement.appendChild(content);
 

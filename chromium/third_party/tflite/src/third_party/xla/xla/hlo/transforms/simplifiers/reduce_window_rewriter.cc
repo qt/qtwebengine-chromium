@@ -37,8 +37,12 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/hlo/ir/hlo_opcode.h"
 #include "xla/hlo/transforms/simplifiers/reduce_window_util.h"
+#include "xla/hlo/utils/hlo_query.h"
+#include "xla/literal_util.h"
+#include "xla/service/hlo.pb.h"
 #include "xla/shape.h"
 #include "xla/shape_util.h"
+#include "xla/status_macros.h"
 #include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/util.h"
@@ -46,6 +50,148 @@ limitations under the License.
 #include "xla/xla_data.pb.h"
 
 namespace xla {
+
+// Returns true if all the shapes in the computation are scalars or tuples of
+// scalars. Nested tuples are not supported.
+static bool IsAlreadyScalar(const HloComputation* comp) {
+  for (const HloInstruction* inst : comp->instructions()) {
+    if (inst->shape().IsTuple()) {
+      for (const Shape& subshape : inst->shape().tuple_shapes()) {
+        if (!ShapeUtil::IsScalar(subshape)) {
+          return false;
+        }
+      }
+    } else if (!ShapeUtil::IsScalar(inst->shape())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static absl::StatusOr<HloComputation*> ScalarizeComputation(
+    HloComputation* comp, HloComputation* parent_for_embedded) {
+  if (IsAlreadyScalar(comp)) {
+    return comp;
+  }
+
+  absl::flat_hash_map<const HloInstruction*, HloInstruction*> replacements;
+  HloComputation::Builder builder(absl::StrCat(comp->name(), "_scalarized"));
+
+  auto get_scalar_shape = [](const Shape& shape) -> absl::StatusOr<Shape> {
+    if (!shape.IsTuple()) {
+      return ShapeUtil::MakeScalarShape(shape.element_type());
+    }
+    std::vector<Shape> subshapes;
+    subshapes.reserve(shape.tuple_shapes().size());
+    for (const Shape& subshape : shape.tuple_shapes()) {
+      TF_RET_CHECK(!subshape.IsTuple())
+          << "Only one level of nesting is supported.";
+      subshapes.push_back(ShapeUtil::MakeScalarShape(subshape.element_type()));
+    }
+    return ShapeUtil::MakeTupleShape(subshapes);
+  };
+
+  auto get_mapped_operands = [&](const HloInstruction* inst) {
+    std::vector<HloInstruction*> operands;
+    operands.reserve(inst->operand_count());
+    for (HloInstruction* op : inst->operands()) {
+      operands.push_back(replacements[op]);
+    }
+    return operands;
+  };
+
+  for (HloInstruction* inst : comp->MakeInstructionPostOrder()) {
+    HloInstruction* new_inst = nullptr;
+    switch (inst->opcode()) {
+      case HloOpcode::kParameter: {
+        TF_ASSIGN_OR_RETURN(Shape shape, get_scalar_shape(inst->shape()));
+        new_inst = builder.AddInstruction(HloInstruction::CreateParameter(
+            inst->parameter_number(), shape, inst->name()));
+        break;
+      }
+      case HloOpcode::kTuple:
+        new_inst = builder.AddInstruction(
+            HloInstruction::CreateTuple(get_mapped_operands(inst)));
+        break;
+      case HloOpcode::kGetTupleElement: {
+        TF_ASSIGN_OR_RETURN(Shape shape, get_scalar_shape(inst->shape()));
+        new_inst = builder.AddInstruction(HloInstruction::CreateGetTupleElement(
+            shape, replacements[inst->operand(0)], inst->tuple_index()));
+        break;
+      }
+      case HloOpcode::kConstant:
+        if (!inst->shape().IsArray()) {
+          return absl::InvalidArgumentError("Constant is not an array.");
+        }
+        if (ShapeUtil::IsScalar(inst->shape())) {
+          new_inst = builder.AddInstruction(
+              HloInstruction::CreateConstant(inst->literal().Clone()));
+        } else if (inst->literal().IsAllFirst()) {
+          new_inst = builder.AddInstruction(HloInstruction::CreateConstant(
+              LiteralUtil::GetFirstScalarLiteral(inst->literal())));
+        } else {
+          return absl::InvalidArgumentError("Constant is not uniform.");
+        }
+        break;
+      case HloOpcode::kBroadcast:
+        if (!ShapeUtil::IsScalar(inst->operand(0)->shape())) {
+          return absl::InvalidArgumentError(
+              "Broadcast operand is not a scalar.");
+        }
+        new_inst = replacements[inst->operand(0)];
+        break;
+      case HloOpcode::kBitcast:
+        if (inst->operand(0)->shape().element_type() !=
+            inst->shape().element_type()) {
+          return absl::InvalidArgumentError("Bitcast changes element type.");
+        }
+        new_inst = replacements[inst->operand(0)];
+        break;
+      case HloOpcode::kReshape:
+        new_inst = replacements[inst->operand(0)];
+        break;
+      default: {
+        if (!inst->IsElementwise()) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("Instruction is not elementwise: ",
+                           HloOpcodeString(inst->opcode())));
+        }
+        TF_ASSIGN_OR_RETURN(Shape shape, get_scalar_shape(inst->shape()));
+        new_inst = builder.AddInstruction(
+            inst->CloneWithNewOperands(shape, get_mapped_operands(inst)));
+        break;
+      }
+    }
+    replacements[inst] = new_inst;
+  }
+  return parent_for_embedded->parent()->AddEmbeddedComputation(
+      builder.Build(replacements[comp->root_instruction()]));
+}
+
+static absl::StatusOr<HloInstruction*> GetScalarInitValue(
+    HloInstruction* init, HloComputation* parent) {
+  while (HloPredicateIsOp<HloOpcode::kBroadcast, HloOpcode::kReshape,
+                          HloOpcode::kBitcast>(init)) {
+    if (init->opcode() == HloOpcode::kBitcast &&
+        init->shape().element_type() !=
+            init->operand(0)->shape().element_type()) {
+      return absl::InvalidArgumentError(
+          "Bitcast changes element type, cannot extract scalar init value.");
+    }
+    init = init->mutable_operand(0);
+  }
+  if (ShapeUtil::IsScalar(init->shape())) {
+    return init;
+  }
+  if (init->opcode() != HloOpcode::kConstant) {
+    return absl::InvalidArgumentError("Init value is not a constant.");
+  }
+  if (!init->literal().IsAllFirst()) {
+    return absl::InvalidArgumentError("Init value is a non-uniform constant.");
+  }
+  return parent->AddInstruction(HloInstruction::CreateConstant(
+      LiteralUtil::GetFirstScalarLiteral(init->literal())));
+}
 
 static size_t FlattenShapeIndex(const ShapeIndex& shape_index) {
   if (shape_index.empty()) {
@@ -509,7 +655,7 @@ absl::StatusOr<bool> ReduceWindowRewriter::TryOptimizeCumSumOrProd(
 
 absl::StatusOr<bool> ReduceWindowRewriter::TryOptimizeAssociativeScan(
     HloScanInstruction* scan) {
-  if (scan->is_associative() != TRI_STATE_TRUE) {
+  if (!hlo_query::IsStandardAssociativeScan(scan)) {
     return false;
   }
 
@@ -518,134 +664,52 @@ absl::StatusOr<bool> ReduceWindowRewriter::TryOptimizeAssociativeScan(
   int64_t scan_dim = scan->scan_dimension();
   int64_t scan_length = operand_shape.dimensions(scan_dim);
 
-  if (scan_length <= base_length_) {
-    return false;
-  }
-
   VLOG(2) << "Rewriting associative scan: " << scan->ToString();
   HloComputation* parent = scan->parent();
-  std::vector<HloInstruction*> sources(scan->inputs().begin(),
-                                       scan->inputs().end());
-  std::vector<HloInstruction*> inits(scan->inits().begin(),
-                                     scan->inits().end());
 
-  int64_t num_carries = scan->num_carries();
-  int64_t num_outputs = scan->shape().IsTuple()
-                            ? scan->shape().tuple_shapes().size() - num_carries
-                            : 1 - num_carries;
-
-  HloComputation* scan_to_apply = scan->to_apply();
+  TF_ASSIGN_OR_RETURN(HloInstruction * init,
+                      GetScalarInitValue(scan->inits()[0], parent));
+  TF_ASSIGN_OR_RETURN(HloComputation * scan_to_apply,
+                      ScalarizeComputation(scan->to_apply(), parent));
   HloComputation::Builder builder(
       absl::StrCat(scan_to_apply->name(), "_rw_wrapper"));
-  int64_t num_inputs = sources.size();
 
-  std::vector<HloInstruction*> wrapper_params;
-  wrapper_params.resize(num_carries + num_inputs);
-
-  for (int64_t i = 0; i < num_carries; ++i) {
-    wrapper_params[i] = builder.AddInstruction(HloInstruction::CreateParameter(
-        i, scan_to_apply->parameter_instruction(num_inputs + i)->shape(),
-        absl::StrCat("carry_", i)));
-  }
-  for (int64_t i = 0; i < num_inputs; ++i) {
-    wrapper_params[num_carries + i] =
-        builder.AddInstruction(HloInstruction::CreateParameter(
-            num_carries + i, scan_to_apply->parameter_instruction(i)->shape(),
-            absl::StrCat("input_", i)));
-  }
-
-  std::vector<HloInstruction*> call_operands;
-  call_operands.reserve(num_inputs + num_carries);
-  for (int64_t i = 0; i < num_inputs; ++i) {
-    call_operands.push_back(wrapper_params[num_carries + i]);
-  }
-  for (int64_t i = 0; i < num_carries; ++i) {
-    call_operands.push_back(wrapper_params[i]);
-  }
-
+  HloInstruction* carry_param =
+      builder.AddInstruction(HloInstruction::CreateParameter(
+          0, scan_to_apply->parameter_instruction(1)->shape(), "carry_0"));
+  HloInstruction* input_param =
+      builder.AddInstruction(HloInstruction::CreateParameter(
+          1, scan_to_apply->parameter_instruction(0)->shape(), "input_0"));
   HloInstruction* call = builder.AddInstruction(
       HloInstruction::CreateCall(scan_to_apply->root_instruction()->shape(),
-                                 call_operands, scan_to_apply));
-
-  if (num_carries == 1) {
-    builder.AddInstruction(
-        HloInstruction::CreateGetTupleElement(call, num_outputs));
-  } else {
-    std::vector<HloInstruction*> carry_results;
-    carry_results.reserve(num_carries);
-    for (int64_t i = 0; i < num_carries; ++i) {
-      carry_results.push_back(builder.AddInstruction(
-          HloInstruction::CreateGetTupleElement(call, num_outputs + i)));
-    }
-    builder.AddInstruction(HloInstruction::CreateTuple(carry_results));
-  }
-
+                                 {input_param, carry_param}, scan_to_apply));
+  builder.AddInstruction(HloInstruction::CreateGetTupleElement(call, 1));
   HloComputation* rw_to_apply =
       parent->parent()->AddEmbeddedComputation(builder.Build());
 
-  Shape outputs_shape;
-  if (num_outputs == 1 && !scan->shape().IsTuple()) {
-    outputs_shape = scan->shape();
-  } else if (num_outputs == 1) {
-    outputs_shape = scan->shape().tuple_shapes(0);
+  HloInstruction* result = nullptr;
+  HloInstruction* input = scan->inputs()[0];
+  if (scan_length <= base_length_) {
+    Window window = window_util::MakeWindow(std::vector<int64_t>(rank, 1));
+    window.mutable_dimensions(scan_dim)->set_size(scan_length);
+    window.mutable_dimensions(scan_dim)->set_padding_low(scan_length - 1);
+
+    result = parent->AddInstruction(HloInstruction::CreateReduceWindow(
+        input->shape(), input, init, window, rw_to_apply));
   } else {
-    std::vector<Shape> output_shapes;
-    output_shapes.reserve(num_outputs);
-    for (int i = 0; i < num_outputs; ++i) {
-      output_shapes.push_back(scan->shape().tuple_shapes(i));
-    }
-    outputs_shape = ShapeUtil::MakeTupleShape(output_shapes);
+    Shape outputs_shape = scan->shape().tuple_shapes(0);
+    TF_ASSIGN_OR_RETURN(result, RewriteScanAsTreeReduction(
+                                    parent, {input}, {init}, rw_to_apply,
+                                    outputs_shape, rank, scan_dim, scan_length,
+                                    /*forward_scan=*/true,
+                                    /*is_exclusive=*/false));
   }
 
-  bool forward_scan = !scan->is_reverse();
-  TF_ASSIGN_OR_RETURN(HloInstruction * result,
-                      RewriteScanAsTreeReduction(
-                          parent, sources, inits, rw_to_apply, outputs_shape,
-                          rank, scan_dim, scan_length, forward_scan,
-                          /*is_exclusive=*/false));
+  // Replace carry with init value, users are guaranteed to be dead.
+  HloInstruction* tuple = parent->AddInstruction(
+      HloInstruction::CreateTuple({result, scan->inits()[0]}));
+  TF_RETURN_IF_ERROR(parent->ReplaceInstruction(scan, tuple));
 
-  std::vector<HloInstruction*> final_results;
-  for (int i = 0; i < num_outputs; ++i) {
-    if (outputs_shape.IsTuple()) {
-      final_results.push_back(parent->AddInstruction(
-          HloInstruction::CreateGetTupleElement(result, i)));
-    } else {
-      final_results.push_back(result);
-    }
-  }
-
-  for (int i = 0; i < num_outputs; ++i) {
-    HloInstruction* out = final_results[i];
-    std::vector<int64_t> starts(rank, 0);
-    std::vector<int64_t> limits(out->shape().dimensions().begin(),
-                                out->shape().dimensions().end());
-    std::vector<int64_t> strides(rank, 1);
-    if (forward_scan) {
-      starts[scan_dim] = scan_length - 1;
-    } else {
-      limits[scan_dim] = 1;
-    }
-    Shape slice_shape = out->shape();
-    slice_shape.set_dimensions(scan_dim, 1);
-    HloInstruction* carry = parent->AddInstruction(
-        HloInstruction::CreateSlice(slice_shape, out, starts, limits, strides));
-    Shape carry_shape = carry->shape();
-    carry_shape.DeleteDimension(scan_dim);
-    carry = parent->AddInstruction(
-        HloInstruction::CreateReshape(carry_shape, carry));
-    final_results.push_back(carry);
-  }
-
-  HloInstruction* final_result;
-  if (scan->shape().IsTuple()) {
-    final_result =
-        parent->AddInstruction(HloInstruction::CreateTuple(final_results));
-  } else {
-    final_result = final_results[0];
-  }
-
-  TF_RETURN_IF_ERROR(scan->ReplaceAllUsesWith(final_result));
-  TF_RETURN_IF_ERROR(parent->RemoveInstruction(scan));
   return true;
 }
 
@@ -653,14 +717,14 @@ absl::StatusOr<bool> ReduceWindowRewriter::RunImpl(
     HloModule* module,
     const absl::flat_hash_set<absl::string_view>& execution_threads) {
   bool changed = false;
+  const bool decompose_assoc_scan = DecomposeAssociativeScan();
   for (const auto& computation : module->computations(execution_threads)) {
     for (HloInstruction* instruction :
          computation->MakeInstructionPostOrder()) {
       if (auto* scan = DynCast<HloScanInstruction>(instruction)) {
-        auto result = TryOptimizeAssociativeScan(scan);
-        TF_RETURN_IF_ERROR(result.status());
-        if (*result) {
-          changed = true;
+        if (decompose_assoc_scan) {
+          TF_ASSIGN_OR_RETURN(bool result, TryOptimizeAssociativeScan(scan));
+          changed |= result;
         }
         continue;
       }

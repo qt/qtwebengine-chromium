@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_CONSERVATIVESPARSESPARSEPRODUCT_H
 #define EIGEN_CONSERVATIVESPARSESPARSEPRODUCT_H
@@ -79,8 +80,6 @@ static void conservative_sparse_sparse_product_impl(const Lhs& lhs, const Rhs& r
       const Index t200 = rows / 11;  // 11 == (log2(200)*1.39)
       const Index t = (rows * 100) / 139;
 
-      // FIXME: reserve space for the expected number of non-zeros.
-      // FIXME: implement faster sorting for very small nnz counts.
       // if the result is sparse enough => use a quick sort
       // otherwise => loop through the entire vector
       // In order to avoid to perform an expensive log2 when the
@@ -127,7 +126,8 @@ struct conservative_sparse_sparse_product_selector<Lhs, Rhs, ResultType, ColMajo
 
     // If the result is tall and thin (in the extreme case a column vector)
     // then it is faster to sort the coefficients inplace instead of transposing twice.
-    // FIXME: this heuristic has known limitations and should be improved.
+    // The dimension-only test here ignores nnz / per-column density; a proper
+    // cost model using estimated_nnz_prod would pick the right path more often.
     if (lhs.rows() > rhs.cols()) {
       using ColMajorMatrix = typename sparse_eval<ColMajorMatrixAux, ResultType::RowsAtCompileTime,
                                                   ResultType::ColsAtCompileTime, ColMajorMatrixAux::Flags>::type;

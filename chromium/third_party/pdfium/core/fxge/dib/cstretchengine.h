@@ -44,6 +44,14 @@ class CStretchEngine {
                                      int src_width,
                                      int src_height);
 
+  template <typename T>
+  static bool IsValidDestinationDimension(T value) {
+    // Note: Negate `kMaxImageDimension` in this check, and not the dimension
+    // value, since negating the dimension may be undefined behavior.
+    static constexpr int kMaxImageDimension = 1024 * 1024;
+    return value >= -kMaxImageDimension && value <= kMaxImageDimension;
+  }
+
   struct PixelWeight {
     void SetStartEnd(int src_start, int src_end, size_t weight_count) {
       CHECK_LT(src_end - src_start, static_cast<int>(weight_count));

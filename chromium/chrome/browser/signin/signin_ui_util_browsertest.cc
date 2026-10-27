@@ -34,8 +34,8 @@
 #include "chrome/browser/signin/signin_util.h"
 #include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
 #include "chrome/browser/ui/signin/promos/signin_promo_tab_helper.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/ui_features.h"
@@ -789,33 +789,6 @@ IN_PROC_BROWSER_TEST_F(SigninUiUtilTest,
   EXPECT_EQ(1, tab_strip->count());
 }
 
-IN_PROC_BROWSER_TEST_P(SigninUiUtilTest_ReplaceSyncPromosWithSignInPromos,
-                       ShowSigninPromptFromPromo) {
-  Profile* profile = browser()->profile();
-  TabStripModel* tab_strip = browser()->tab_strip_model();
-  ShowSigninPromptFromPromo(profile, access_point_);
-  EXPECT_EQ(1, tab_strip->count());
-
-  content::WebContents* tab = tab_strip->GetWebContentsAt(0);
-  ASSERT_TRUE(tab);
-  EXPECT_TRUE(base::StartsWith(
-      tab->GetVisibleURL().spec(),
-      GaiaUrls::GetInstance()->signin_chrome_sync_dice().spec(),
-      base::CompareCase::INSENSITIVE_ASCII));
-}
-
-IN_PROC_BROWSER_TEST_F(SigninUiUtilTest,
-                       ShowSigninPromptFromPromoWithExistingAccount) {
-  signin::MakePrimaryAccountAvailable(GetIdentityManager(), "foo@example.com",
-                                      signin::ConsentLevel::kSignin);
-
-  Profile* profile = browser()->profile();
-  TabStripModel* tab_strip = browser()->tab_strip_model();
-  EXPECT_EQ(1, tab_strip->count());
-  ShowSigninPromptFromPromo(profile, access_point_);
-  EXPECT_EQ(1, tab_strip->count());
-}
-
 IN_PROC_BROWSER_TEST_F(SigninUiUtilTest, GetSignInTabWithAccessPoint) {
   signin::MakePrimaryAccountAvailable(GetIdentityManager(), "foo@example.com",
                                       signin::ConsentLevel::kSignin);
@@ -991,19 +964,21 @@ class DiceSigninUiUtilBrowserTest : public InProcessBrowserTest {
 };
 
 // Tests that `ShowExtensionSigninPrompt()` doesn't crash when it cannot create
-// a new browser. Regression test for https://crbug.com/1273370.
+// a new browser. Regression test for https://crbug.com/40806926.
 IN_PROC_BROWSER_TEST_F(DiceSigninUiUtilBrowserTest,
                        ShowExtensionSigninPrompt_NoBrowser) {
   Profile* new_profile = CreateProfile();
 
   // New profile should not have any browser windows.
-  EXPECT_FALSE(chrome::FindBrowserWithProfile(new_profile));
+  EXPECT_FALSE(ProfileBrowserCollection::GetForProfile(new_profile)
+                   ->GetLastActiveBrowser());
 
   ShowExtensionSigninPrompt(new_profile, /*enable_sync=*/false,
                             /*email_hint=*/std::string());
   // `ShowExtensionSigninPrompt()` creates a new browser.
   BrowserWindowInterface* browser =
-      chrome::FindBrowserWithProfile(new_profile);
+      ProfileBrowserCollection::GetForProfile(new_profile)
+          ->GetLastActiveBrowser();
   ASSERT_TRUE(browser);
   EXPECT_EQ(1, browser->GetTabStripModel()->count());
 
@@ -1018,12 +993,14 @@ IN_PROC_BROWSER_TEST_F(DiceSigninUiUtilBrowserTest,
           new_profile->GetPath(), base::DoNothing(),
           ProfileMetrics::DELETE_PROFILE_USER_MANAGER);
   observer.Wait();
-  EXPECT_FALSE(chrome::FindBrowserWithProfile(new_profile));
+  EXPECT_FALSE(ProfileBrowserCollection::GetForProfile(new_profile)
+                   ->GetLastActiveBrowser());
 
   // `ShowExtensionSigninPrompt()` does nothing for deleted profile.
   ShowExtensionSigninPrompt(new_profile, /*enable_sync=*/false,
                             /*email_hint=*/std::string());
-  EXPECT_FALSE(chrome::FindBrowserWithProfile(new_profile));
+  EXPECT_FALSE(ProfileBrowserCollection::GetForProfile(new_profile)
+                   ->GetLastActiveBrowser());
 }
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)

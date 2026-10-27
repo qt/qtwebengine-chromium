@@ -35,10 +35,10 @@
 #include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_random.h"
+#include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/widestring.h"
-#include "core/fxge/cfx_fontmapper.h"
 #include "core/fxge/fx_font.h"
 
 namespace {
@@ -150,12 +150,7 @@ CPDF_FontSubsetter::GenerateObjectOverrides(
 
     // OpenType fonts containing CFF data have an "OTTO" tag at the start of the
     // file.
-    bool is_opentype_cff = false;
-    if (original_stream_span.size() > 4) {
-      // OpenType fonts use big-endian order.
-      uint32_t tag = fxcrt::GetUInt32MSBFirst(original_stream_span.first<4>());
-      is_opentype_cff = tag == CFX_FontMapper::MakeTag('O', 'T', 'T', 'O');
-    }
+    bool is_opentype_cff = IsOpenTypeCFF(original_stream_span);
 
     // Override the font file stream.
     // See ISO 32000-1:2008 section 9.9 "Embedded Font Programs" for OpenType
@@ -326,8 +321,8 @@ void CPDF_FontSubsetter::AddUsedText(const CPDF_TextObject* text,
 
     WideString unicode = font->UnicodeFromCharCode(char_code);
     if (!unicode.IsEmpty()) {
-      candidate.char_code_to_unicode.emplace(char_code,
-                                             static_cast<uint32_t>(unicode[0]));
+      candidate.char_code_to_unicode.emplace(
+          char_code, static_cast<uint32_t>(unicode.Front()));
     }
   }
 }

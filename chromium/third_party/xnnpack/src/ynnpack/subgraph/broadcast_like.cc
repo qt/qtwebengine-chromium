@@ -123,12 +123,13 @@ ynn_status ynn_define_broadcast_like(ynn_subgraph_t subgraph, size_t num_axes,
     output.make_buffer(runtime, input.buffer->elem_size());
 
     std::vector<slinky::var> dims = runtime.globals.make_dims(output.rank());
-    slinky::box_expr bounds = make_elementwise_bounds(dims, input.extents);
+    slinky::box_expr bounds =
+        make_elementwise_bounds(dims, input.physical_extents());
 
     for (size_t i = 0; i < axes.size(); ++i) {
       if (!axes[i]) continue;
-      bounds[i] =
-          make_broadcast_bounds(dims[i], input.extents[i], output.extents[i]);
+      bounds[i] = make_broadcast_bounds(dims[i], input.physical_extent(i),
+                                        output.physical_extent(i));
     }
 
     if (bounds.size() > input.rank()) {
@@ -138,16 +139,6 @@ ynn_status ynn_define_broadcast_like(ynn_subgraph_t subgraph, size_t num_axes,
     auto func = slinky::func::make_copy({input.buffer, std::move(bounds)},
                                         {output.buffer, std::move(dims)});
     runtime.funcs.push_back(std::move(func));
-
-    auto sched = std::make_unique<scheduling_info>();
-
-    // Schedule the output buffer to be stored at the same level it's
-    // computed at.
-    scheduled_buffer sched_bc_buffer = {output.buffer, 0};
-    sched->scheduled_buffers.push_back(std::move(sched_bc_buffer));
-
-    runtime.funcs.back().user_data() = sched.get();
-    runtime.scheduling_info_storage.push_back(std::move(sched));
 
     return ynn_status_success;
   };

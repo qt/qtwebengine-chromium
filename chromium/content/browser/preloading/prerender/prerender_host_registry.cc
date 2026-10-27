@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/byte_size.h"
 #include "base/check.h"
 #include "base/check_op.h"
 #include "base/feature_list.h"
@@ -14,6 +15,7 @@
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/observer_list.h"
 #include "base/system/sys_info.h"
 #include "base/task/sequenced_task_runner.h"
@@ -99,7 +101,8 @@ bool DeviceHasEnoughMemoryForPrerender() {
       blink::features::kPrerender2MemoryThresholdParamName,
       kDefaultMemoryThresholdMb);
 
-  return base::SysInfo::AmountOfPhysicalMemory().InMiB() > memory_threshold_mb;
+  return base::SysInfo::AmountOfTotalPhysicalMemory() >
+         base::MiBU(base::saturated_cast<uint64_t>(memory_threshold_mb));
 }
 
 // Create a resource request for `back_url` that only checks whether the
@@ -1251,10 +1254,10 @@ PrerenderHostRegistry::ReserveHostToActivate(
   CHECK(!reserved_prerender_host_);
   reserved_prerender_host_ = std::move(host);
 
-  return ReservedPrerenderHostInfo(
-      expected_host_id, reserved_prerender_host_->trigger_type(),
-      reserved_prerender_host_->embedder_histogram_suffix(),
-      reserved_prerender_host_->host_reused());
+  return ReservedPrerenderHostInfo(expected_host_id,
+                                   reserved_prerender_host_->trigger_type(),
+                                   reserved_prerender_host_->histogram_suffix(),
+                                   reserved_prerender_host_->host_reused());
 }
 
 RenderFrameHostImpl* PrerenderHostRegistry::GetRenderFrameHostForReservedHost(
@@ -1353,6 +1356,20 @@ std::vector<FrameTree*> PrerenderHostRegistry::GetPrerenderFrameTrees() {
     result.push_back(&reserved_prerender_host_->GetPrerenderFrameTree());
   }
 
+  return result;
+}
+
+std::vector<FrameTreeNode*>
+PrerenderHostRegistry::GetNewTabPrerenderFrameTreeNodes() {
+  std::vector<FrameTreeNode*> result;
+  for (auto& [id, handle] : prerender_new_tab_handle_by_id_) {
+    PrerenderHost* host =
+        handle->GetPrerenderHostRegistry().FindNonReservedHostById(
+            handle->prerender_host_id());
+    if (host) {
+      result.push_back(host->GetPrerenderFrameTree().root());
+    }
+  }
   return result;
 }
 

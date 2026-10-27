@@ -43,6 +43,7 @@
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/struct.h"
+#include "src/tint/lang/core/type/subgroup_matrix.h"
 
 namespace tint::core::ir {
 
@@ -475,6 +476,8 @@ TEST_F(IR_ValidatorTest, Var_NonResourceWithBindingPoint) {
 }
 
 TEST_F(IR_ValidatorTest, Var_Uniform_NotConstructible) {
+    mod.properties.Add(Property::kAllowOverrides);
+
     b.Append(mod.root_block, [&] {
         auto* count = b.Override("count", ty.u32());
         count->SetOverrideId({2});
@@ -485,7 +488,7 @@ TEST_F(IR_ValidatorTest, Var_Uniform_NotConstructible) {
         v->SetBindingPoint(0, 0);
     });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowOverrides});
+    auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(
         res.Failure().reason,
@@ -527,6 +530,54 @@ TEST_F(IR_ValidatorTest, Var_Immediate_NotHostShareable) {
 )")) << res.Failure();
 }
 
+TEST_F(IR_ValidatorTest, Var_Immediate_f16) {
+    auto* v = b.Var<immediate, f16>();
+    mod.root_block->Append(v);
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:2:34 error: var: vars in the 'immediate' address space cannot contain f16 types
+  %1:ptr<immediate, f16, read> = var undef
+                                 ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Var_Immediate_Struct_f16) {
+    auto* s = ty.Struct(mod.symbols.New("S"), {
+                                                  {mod.symbols.New("f"), ty.f16()},
+                                              });
+    auto* v = b.Var(ty.ptr<immediate, read>(s));
+    mod.root_block->Append(v);
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:6:32 error: var: vars in the 'immediate' address space cannot contain f16 types
+  %1:ptr<immediate, S, read> = var undef
+                               ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Var_Immediate_vec3f16) {
+    auto* v = b.Var<immediate, vec3<f16>>();
+    mod.root_block->Append(v);
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:2:40 error: var: vars in the 'immediate' address space cannot contain f16 types
+  %1:ptr<immediate, vec3<f16>, read> = var undef
+                                       ^^^
+)")) << res.Failure();
+}
+
 TEST_F(IR_ValidatorTest, Var_Immediate_Multiple_SameEntryPoint) {
     auto* v1 = b.Var<immediate, u32>();
     auto* v2 = b.Var<immediate, u32>();
@@ -552,6 +603,8 @@ TEST_F(IR_ValidatorTest, Var_Immediate_Multiple_SameEntryPoint) {
 }
 
 TEST_F(IR_ValidatorTest, Var_Immediate_Multiple_DifferentEntryPoints) {
+    mod.properties.Add(Property::kAllowMultipleEntryPoints);
+
     auto* v1 = b.Var<immediate, u32>();
     auto* v2 = b.Var<immediate, u32>();
     mod.root_block->Append(v1);
@@ -569,7 +622,7 @@ TEST_F(IR_ValidatorTest, Var_Immediate_Multiple_DifferentEntryPoints) {
         b.Return(f2);
     });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowMultipleEntryPoints});
+    auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success) << res.Failure();
 }
 
@@ -637,6 +690,8 @@ TEST_F(IR_ValidatorTest, Var_DuplicateBindingPoints_OnlyOneReferenced) {
 }
 
 TEST_F(IR_ValidatorTest, Var_DuplicateBindingPoints_ReferencedInDifferentFunctions) {
+    mod.properties.Add(Property::kAllowMultipleEntryPoints);
+
     auto* var_a = b.Var<uniform, f32>();
     var_a->SetBindingPoint(1, 2);
     mod.root_block->Append(var_a);
@@ -657,7 +712,7 @@ TEST_F(IR_ValidatorTest, Var_DuplicateBindingPoints_ReferencedInDifferentFunctio
         b.Return(func_b);
     });
 
-    auto res = ir::Validate(mod, Capabilities{Capability::kAllowMultipleEntryPoints});
+    auto res = ir::Validate(mod);
     ASSERT_EQ(res, Success);
 }
 
@@ -732,7 +787,7 @@ TEST_F(IR_ValidatorTest, Var_Struct_MultipleIOAnnotations) {
 
     auto* str_ty =
         ty.Struct(mod.symbols.New("MyStruct"), {
-                                                   {mod.symbols.New("a"), ty.f32(), attr},
+                                                   {mod.symbols.New("a"), ty.vec4<f32>(), attr},
                                                });
     auto* v = b.Var(ty.ptr(AddressSpace::kOut, str_ty, read_write));
     mod.root_block->Append(v);
@@ -1281,7 +1336,7 @@ TEST_F(IR_ValidatorTest, Var_Atomic_Storage_Read) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:2:40 error: var: atomic variables in 'storage' address space must have 'read_write' access mode
+            R"(:2:40 error: var: atomic types may only be used by 'workspace' or read write 'storage' variables
   %1:ptr<storage, atomic<i32>, read> = var undef @binding_point(0, 0)
                                        ^^^
 )"));
@@ -1313,7 +1368,7 @@ TEST_F(IR_ValidatorTest, Var_Atomic_Private) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:2:46 error: var: atomic variables must be in the 'workgroup' or 'storage' address space
+            R"(:2:46 error: var: atomic types may only be used by 'workspace' or read write 'storage' variables
   %1:ptr<private, atomic<i32>, read_write> = var undef
                                              ^^^
 )"));
@@ -1331,7 +1386,7 @@ TEST_F(IR_ValidatorTest, Var_Atomic_Function) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:3:49 error: var: atomic variables must be in the 'workgroup' or 'storage' address space
+            R"(:3:49 error: var: atomic types may only be used by 'workspace' or read write 'storage' variables
     %2:ptr<function, atomic<i32>, read_write> = var undef
                                                 ^^^
 )"));
@@ -1351,7 +1406,7 @@ TEST_F(IR_ValidatorTest, Var_Struct_Atomic_Storage_Read) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:6:37 error: var: atomic variables in 'storage' address space must have 'read_write' access mode
+            R"(:6:37 error: var: atomic types may only be used by 'workspace' or read write 'storage' variables
   %1:ptr<storage, MyStruct, read> = var undef @binding_point(0, 0)
                                     ^^^
 )"));
@@ -1370,10 +1425,68 @@ TEST_F(IR_ValidatorTest, Var_Struct_Atomic_Private) {
     EXPECT_THAT(
         res.Failure().reason,
         testing::HasSubstr(
-            R"(:6:43 error: var: atomic variables must be in the 'workgroup' or 'storage' address space
+            R"(:6:43 error: var: atomic types may only be used by 'workspace' or read write 'storage' variables
   %1:ptr<private, MyStruct, read_write> = var undef
                                           ^^^
 )"));
+}
+
+TEST_F(IR_ValidatorTest, Var_Atomic_Array_Private) {
+    auto* v = b.Var(ty.ptr(private_, ty.array(ty.atomic(ty.i32()), 4u), read_write));
+    mod.root_block->Append(v);
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:2:56 error: var: atomic types may only be used by 'workspace' or read write 'storage' variables
+  %1:ptr<private, array<atomic<i32>, 4>, read_write> = var undef
+                                                       ^^^
+)"));
+}
+
+TEST_F(IR_ValidatorTest, Var_Atomic_NestedArray_Private) {
+    auto* v = b.Var(ty.ptr(private_, ty.array(ty.array(ty.atomic(ty.i32()), 4u), 10u), read_write));
+    mod.root_block->Append(v);
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:2:67 error: var: atomic types may only be used by 'workspace' or read write 'storage' variables
+  %1:ptr<private, array<array<atomic<i32>, 4>, 10>, read_write> = var undef
+                                                                  ^^^
+)"));
+}
+
+TEST_F(IR_ValidatorTest, WorkgroupVar_RuntimeSizedArray_WithMslCapability) {
+    auto* v = b.Var("v", ty.ptr<workgroup, array<i32>>());
+    mod.root_block->Append(v);
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kMslAllowEntryPointInterface});
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            "vars not in the 'storage' or 'handle' address spaces must have a fixed footprint"));
+}
+
+TEST_F(IR_ValidatorTest, SubgroupMatrix_Constant) {
+    auto* f = b.Function("f", ty.void_());
+    b.Append(f->Block(), [&] {
+        auto* sm = ty.subgroup_matrix_result(ty.f32(), 8, 8);
+        auto* c = b.Constant(0_f);
+        c->SetType(sm);
+        b.Let("l", c);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr("error: let: subgroup_matrix values cannot be constant"));
 }
 
 }  // namespace tint::core::ir

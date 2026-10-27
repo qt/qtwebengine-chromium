@@ -21,7 +21,6 @@
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/mapped_data_bytes.h"
 #include "core/fxge/android/cfpf_skiafont.h"
-#include "core/fxge/android/cfpf_skiapathfont.h"
 #include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/fx_font.h"
 
@@ -222,6 +221,10 @@ CFPF_SkiaFontMgr::CFPF_SkiaFontMgr() = default;
 
 CFPF_SkiaFontMgr::~CFPF_SkiaFontMgr() = default;
 
+CFPF_SkiaFontMgr::Entry::Entry() = default;
+
+CFPF_SkiaFontMgr::Entry::~Entry() = default;
+
 void CFPF_SkiaFontMgr::LoadFonts(const char** user_paths) {
   if (loaded_fonts_) {
     return;
@@ -263,33 +266,33 @@ CFPF_SkiaFont* CFPF_SkiaFontMgr::CreateFont(ByteStringView family_name,
   int32_t expected_score = kSkiaMatchNameWeight +
                            kSkiaMatchSerifStyleWeight * 3 +
                            kSkiaMatchScriptStyleWeight * 2;
-  const CFPF_SkiaPathFont* best_font = nullptr;
+  const Entry* best_font = nullptr;
   int32_t best_score = -1;
   int32_t best_glyph_num = 0;
-  for (const std::unique_ptr<CFPF_SkiaPathFont>& font :
-       pdfium::Reversed(font_faces_)) {
-    if (!(font->charsets() & SkiaGetCharset(charset))) {
+  for (const std::unique_ptr<Entry>& font : pdfium::Reversed(font_faces_)) {
+    if (!(font->charsets & SkiaGetCharset(charset))) {
       continue;
     }
     int32_t score = 0;
-    const uint32_t sys_font_name_hash = SkiaNormalizeFontName(font->family());
+    const uint32_t sys_font_name_hash =
+        SkiaNormalizeFontName(font->family.AsStringView());
     if (face_name_hash == sys_font_name_hash) {
       score += kSkiaMatchNameWeight;
     }
     bool matches_name = (score == kSkiaMatchNameWeight);
-    if (FontStyleIsForceBold(style) == FontStyleIsForceBold(font->style())) {
+    if (FontStyleIsForceBold(style) == FontStyleIsForceBold(font->style)) {
       score += kSkiaMatchSerifStyleWeight;
     }
-    if (FontStyleIsItalic(style) == FontStyleIsItalic(font->style())) {
+    if (FontStyleIsItalic(style) == FontStyleIsItalic(font->style)) {
       score += kSkiaMatchSerifStyleWeight;
     }
-    if (FontStyleIsFixedPitch(style) == FontStyleIsFixedPitch(font->style())) {
+    if (FontStyleIsFixedPitch(style) == FontStyleIsFixedPitch(font->style)) {
       score += kSkiaMatchScriptStyleWeight;
     }
-    if (FontStyleIsSerif(style) == FontStyleIsSerif(font->style())) {
+    if (FontStyleIsSerif(style) == FontStyleIsSerif(font->style)) {
       score += kSkiaMatchSerifStyleWeight;
     }
-    if (FontStyleIsScript(style) == FontStyleIsScript(font->style())) {
+    if (FontStyleIsScript(style) == FontStyleIsScript(font->style)) {
       score += kSkiaMatchScriptStyleWeight;
     }
     if (subst_hash == sys_font_name_hash ||
@@ -303,9 +306,9 @@ CFPF_SkiaFont* CFPF_SkiaFontMgr::CreateFont(ByteStringView family_name,
         best_font = font.get();
       }
     } else if (SkiaIsCJK(charset)) {
-      if (matches_name || font->glyph_num() > best_glyph_num) {
+      if (matches_name || font->glyph_num > best_glyph_num) {
         best_font = font.get();
-        best_glyph_num = font->glyph_num();
+        best_glyph_num = font->glyph_num;
       }
     } else if (score > best_score) {
       best_score = score;
@@ -320,10 +323,11 @@ CFPF_SkiaFont* CFPF_SkiaFontMgr::CreateFont(ByteStringView family_name,
     return nullptr;
   }
 
-  auto font = std::make_unique<CFPF_SkiaFont>(this, best_font, charset);
-  if (!font->IsValid()) {
+  auto face = GetFontFace(best_font->path, best_font->face_index);
+  if (!face) {
     return nullptr;
   }
+  auto font = std::make_unique<CFPF_SkiaFont>(std::move(face), charset);
 
   CFPF_SkiaFont* ret = font.get();
   family_font_map_[hash] = std::move(font);
@@ -382,7 +386,7 @@ void CFPF_SkiaFontMgr::ScanFile(const ByteString& file) {
   font_faces_.push_back(ReportFace(face, file, kFaceIndex));
 }
 
-std::unique_ptr<CFPF_SkiaPathFont> CFPF_SkiaFontMgr::ReportFace(
+std::unique_ptr<CFPF_SkiaFontMgr::Entry> CFPF_SkiaFontMgr::ReportFace(
     RetainPtr<CFX_Face> face,
     const ByteString& file,
     int face_index) {
@@ -391,7 +395,12 @@ std::unique_ptr<CFPF_SkiaPathFont> CFPF_SkiaFontMgr::ReportFace(
   if (cp_range.has_value()) {
     charset |= SkiaGetFaceCharset(cp_range.value()[0]);
   }
-  return std::make_unique<CFPF_SkiaPathFont>(file, face->GetFamilyName(),
-                                             face->GetFontStyle(), face_index,
-                                             charset, face->GetGlyphCount());
+  auto entry = std::make_unique<Entry>();
+  entry->path = file;
+  entry->family = face->GetFamilyName();
+  entry->style = face->GetFontStyle();
+  entry->face_index = face_index;
+  entry->charsets = charset;
+  entry->glyph_num = face->GetGlyphCount();
+  return entry;
 }

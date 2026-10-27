@@ -85,8 +85,6 @@ class TestVariationsServiceClient : public VariationsServiceClient {
     return false;
   }
   bool IsEnterprise() override { return false; }
-  void RemoveGoogleGroupsFromPrefsForDeletedProfiles(
-      PrefService* local_state) override {}
 
  private:
   // VariationsServiceClient:
@@ -299,7 +297,6 @@ TEST_F(FieldTrialUtilTest,
       Study::PLATFORM_ANDROID_WEBLAYER,
       Study::PLATFORM_ANDROID_WEBVIEW,
       Study::PLATFORM_CHROMEOS,
-      Study::PLATFORM_CHROMEOS_LACROS,
       Study::PLATFORM_FUCHSIA,
       Study::PLATFORM_IOS,
       Study::PLATFORM_LINUX,

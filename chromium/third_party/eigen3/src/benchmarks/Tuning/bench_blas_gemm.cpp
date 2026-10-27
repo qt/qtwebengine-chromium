@@ -2,6 +2,8 @@
 // Requires CBLAS: compile with -DHAVE_BLAS and link -lcblas
 //
 // Based on the old bench/benchBlasGemm.cpp (removed)
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>

@@ -338,12 +338,10 @@ void WaylandEventSource::OnPointerFocusChanged(
     // Save new pointer location.
     pointer_location_ = location;
     window_manager_->SetPointerFocusedWindow(window);
+    pending_focus_loss_release_ = false;
   } else {
-    // The compositor may swallow the release event for any buttons that are
-    // pressed when the window loses focus, e.g. when right-clicking the
-    // titlebar to open the system menu on GNOME.
-    if (!connection_->IsDragInProgress()) {
-      ReleasePressedPointerButtons(window, ui::EventTimeForNow());
+    if (!connection_->IsDragInProgress() && pointer_flags_) {
+      pending_focus_loss_release_ = true;
     }
   }
 
@@ -536,6 +534,15 @@ const gfx::PointF& WaylandEventSource::GetPointerLocation() const {
 
 void WaylandEventSource::OnPointerFrameEvent() {
   base::TimeTicks now = EventTimeForNow();
+
+  // Release pressed buttons if focus was lost and not regained within the same
+  // frame. This handles cases where the compositor swallows release events
+  // (e.g. right-clicking the titlebar to open the system menu on GNOME).
+  if (pending_focus_loss_release_) {
+    pending_focus_loss_release_ = false;
+    ReleasePressedPointerButtons(nullptr, now);
+  }
+
   if (pointer_scroll_data_) {
     pointer_scroll_data_->dt = now - last_pointer_frame_time_;
     ProcessPointerScrollData();
@@ -543,17 +550,22 @@ void WaylandEventSource::OnPointerFrameEvent() {
 
   last_pointer_frame_time_ = now;
 
-  auto* target = window_manager_->GetCurrentPointerFocusedWindow();
-  if (!target) {
+  auto* target_window = window_manager_->GetCurrentPointerFocusedWindow();
+  if (!target_window) {
     return;
   }
+  // Dispatching an event may synchronously destroy the focused window (e.g. a
+  // popup closing on click), so hold a WeakPtr and re-check on each iteration.
+  base::WeakPtr<WaylandWindow> target = target_window->AsWeakPtr();
 
   while (!pointer_frames_.empty()) {
     // It is safe to pop the first queued event for processing.
     auto pointer_frame = std::move(pointer_frames_.front());
     pointer_frames_.pop_front();
 
-    SetTargetAndDispatchEvent(pointer_frame->event.get(), target);
+    if (target) {
+      SetTargetAndDispatchEvent(pointer_frame->event.get(), target.get());
+    }
     if (!pointer_frame->completion_cb.is_null()) {
       std::move(pointer_frame->completion_cb).Run();
     }
@@ -581,9 +593,15 @@ void WaylandEventSource::OnTabletToolProximityIn(WaylandWindow* window,
                                                  const PointerDetails& details,
                                                  base::TimeTicks time) {
   WaylandWindow* old_focus = tablet_tool_focused_window_.get();
+  base::WeakPtr<WaylandWindow> window_weak = window->AsWeakPtr();
   if (old_focus && old_focus != window) {
     OnTabletToolProximityOut(time);
   }
+
+  if (!window_weak) {
+    return;
+  }
+
   tablet_tool_focused_window_ = window->AsWeakPtr();
   tablet_tool_location_ = location;
 
@@ -726,6 +744,7 @@ void WaylandEventSource::OnTouchReleaseInternal(PointerId id) {
 
 void WaylandEventSource::SetTargetAndDispatchEvent(Event* event,
                                                    EventTarget* target) {
+  CHECK(target);
   Event::DispatcherApi(event).set_target(target);
   if (event->IsLocatedEvent()) {
     auto* located_event = event->AsLocatedEvent();

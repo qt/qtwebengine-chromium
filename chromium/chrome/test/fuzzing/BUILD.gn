@@ -51,7 +51,7 @@ if (fuzzing_engine_supports_custom_main && !is_android) {
       "IS_LIBFUZZER=$use_libfuzzer",
       "IS_FUZZILLI=$use_chromium_fuzzilli",
 
-      # crbug.com/1474421: remove these lines once the bug is fixed.
+      # crbug.com/40279313: remove these lines once the bug is fixed.
       "DEBUG_CLUSTERFUZZ_FAILURE=$use_libfuzzer",
     ]
   }
@@ -73,8 +73,13 @@ if (!is_android) {
     deps = [
       ":in_process_fuzzer_buildflags",
       "//chrome/browser",
+    ]
+    data_deps = [
       "//mojo/public/js:bindings_lite",
-      "//third_party/blink/public/mojom:mojom_platform_js",
+      "//mojo/public/mojom/base:base_js_data_deps",
+      "//third_party/blink/public/mojom:mojom_platform_js_data_deps",
+      "//url/mojom:url_mojom_gurl_js_data_deps",
+      "//url/mojom:url_mojom_scheme_host_port_js_data_deps",
     ]
     is_fuzzilli_compatible = true
   }

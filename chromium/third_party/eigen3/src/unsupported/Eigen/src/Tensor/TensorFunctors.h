@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_FUNCTORS_H
-#define EIGEN_CXX11_TENSOR_TENSOR_FUNCTORS_H
+#ifndef EIGEN_TENSOR_TENSOR_FUNCTORS_H
+#define EIGEN_TENSOR_TENSOR_FUNCTORS_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -419,4 +420,4 @@ struct functor_traits<scalar_clamp_op<Scalar> > {
 }  // end namespace internal
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_FUNCTORS_H
+#endif  // EIGEN_TENSOR_TENSOR_FUNCTORS_H

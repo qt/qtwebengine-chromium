@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_ITERATIVE_SOLVER_BASE_H
 #define EIGEN_ITERATIVE_SOLVER_BASE_H
@@ -17,37 +18,15 @@ namespace Eigen {
 
 namespace internal {
 
-template <typename MatrixType>
-struct is_ref_compatible_impl {
- private:
-  template <typename T0>
-  struct any_conversion {
-    template <typename T>
-    any_conversion(const volatile T&);
-    template <typename T>
-    any_conversion(T&);
-  };
-  struct yes {
-    int a[1];
-  };
-  struct no {
-    int a[2];
-  };
-
-  template <typename T>
-  static yes test(const Ref<const T>&, int);
-  template <typename T>
-  static no test(any_conversion<T>, ...);
-
- public:
-  static MatrixType ms_from;
-  enum { value = sizeof(test<MatrixType>(ms_from, 0)) == sizeof(yes) };
-};
+template <typename T>
+auto is_ref_compatible_test(T& matrix) -> decltype(Ref<const T>(matrix), std::true_type());
+std::false_type is_ref_compatible_test(...);
 
 template <typename MatrixType>
-struct is_ref_compatible {
-  enum { value = is_ref_compatible_impl<remove_all_t<MatrixType>>::value };
-};
+struct is_ref_compatible_impl : decltype(is_ref_compatible_test(std::declval<MatrixType&>())) {};
+
+template <typename MatrixType>
+struct is_ref_compatible : std::integral_constant<bool, is_ref_compatible_impl<remove_all_t<MatrixType>>::value> {};
 
 template <typename MatrixType, bool MatrixFree = !internal::is_ref_compatible<MatrixType>::value>
 class generic_matrix_wrapper;
@@ -64,7 +43,8 @@ class generic_matrix_wrapper<MatrixType, false> {
 
   enum { MatrixFree = false };
 
-  generic_matrix_wrapper() : m_dummy(0, 0), m_matrix(m_dummy) {}
+  // Default-construct: passing (0,0) trips the size assertion for fixed-size MatrixType (#1704).
+  generic_matrix_wrapper() : m_dummy(), m_matrix(m_dummy) {}
 
   template <typename InputType>
   generic_matrix_wrapper(const InputType& mat) : m_matrix(mat) {}

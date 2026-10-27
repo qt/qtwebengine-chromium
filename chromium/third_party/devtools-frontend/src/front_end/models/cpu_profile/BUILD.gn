@@ -13,7 +13,6 @@ devtools_module("cpu_profile") {
   ]
 
   deps = [
-    "../../core/common:bundle",
     "../../core/platform:bundle",
     "../../generated",
   ]
@@ -42,6 +41,7 @@ ts_library("unittests") {
 
   deps = [
     ":bundle",
+    "../../generated",
     "../../testing",
   ]
 }

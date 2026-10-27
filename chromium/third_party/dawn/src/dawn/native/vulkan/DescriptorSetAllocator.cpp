@@ -25,15 +25,15 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/vulkan/DescriptorSetAllocator.h"
+#include "src/dawn/native/vulkan/DescriptorSetAllocator.h"
 
 #include <algorithm>
 #include <utility>
 
-#include "dawn/native/Queue.h"
-#include "dawn/native/vulkan/DeviceVk.h"
-#include "dawn/native/vulkan/FencedDeleter.h"
-#include "dawn/native/vulkan/VulkanError.h"
+#include "src/dawn/native/Queue.h"
+#include "src/dawn/native/vulkan/DeviceVk.h"
+#include "src/dawn/native/vulkan/FencedDeleter.h"
+#include "src/dawn/native/vulkan/VulkanError.h"
 
 namespace dawn::native::vulkan {
 
@@ -56,7 +56,7 @@ DescriptorSetAllocator::DescriptorSetAllocator(
     uint32_t totalDescriptorCount = 0;
     mPoolSizes.reserve(descriptorCountPerType.size());
     for (const auto& [type, count] : descriptorCountPerType) {
-        DAWN_ASSERT(count > 0);
+        DAWN_CHECK(count > 0);
         totalDescriptorCount += count;
         mPoolSizes.push_back(VkDescriptorPoolSize{type, count});
     }
@@ -68,7 +68,7 @@ DescriptorSetAllocator::DescriptorSetAllocator(
     // that at least one descriptor set can be made (bindings with visibility none can force giant
     // sets to be made).
     mMaxSets = std::max(kMaxDescriptorsPerPool / totalDescriptorCount, 1u);
-    DAWN_ASSERT(mMaxSets > 0);
+    DAWN_CHECK(mMaxSets > 0);
 
     // Grow the number of descriptors in the pool to fit the computed |mMaxSets|.
     for (auto& poolSize : mPoolSizes) {

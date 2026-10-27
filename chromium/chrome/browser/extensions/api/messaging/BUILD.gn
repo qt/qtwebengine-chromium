@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
 import("//chrome/common/features.gni")
 import("//extensions/buildflags/buildflags.gni")
 
@@ -21,13 +20,6 @@ source_set("messaging") {
     "native_messaging_host_manifest.cc",
     "native_messaging_host_manifest.h",
   ]
-
-  if (is_android) {
-    sources += [
-      "native_message_android_host.cc",
-      "native_message_android_host.h",
-    ]
-  }
 
   if (!is_chromeos) {
     sources += [
@@ -107,7 +99,14 @@ source_set("messaging") {
   }
 
   if (is_win) {
-    deps += [ "//components/app_launch_prefetch" ]
+    deps += [
+      "//components/app_launch_prefetch",
+      "//ui/views",
+    ]
+  }
+
+  if (is_android) {
+    deps += [ "android" ]
   }
 }
 
@@ -181,6 +180,7 @@ source_set("platform_browser_tests") {
     "//base",
     "//base/test:test_support",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/ssl",
     "//chrome/browser/ui",
     "//chrome/test:test_support",
     "//components/embedder_support",
@@ -227,7 +227,7 @@ if (!is_android) {
 if (is_win) {
   # The files below are required to exercise the code that properly launches
   # Native Hosts with paths containing characters that are problematic for
-  # cmd.exe. crbug.com/335558
+  # cmd.exe. crbug.com/41084583
   executable("native_messaging_test_echo_host") {
     testonly = true
     sources = [ "native_messaging_test_echo_host.cc" ]

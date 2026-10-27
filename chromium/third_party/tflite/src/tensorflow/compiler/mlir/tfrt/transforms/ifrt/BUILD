@@ -319,3 +319,18 @@ tf_proto_library(
         "@xla//xla/python/ifrt:layout_proto",
     ],
 )
+
+cc_library(
+    name = "pack_inputs_pass",
+    srcs = ["pack_inputs_pass.cc"],
+    hdrs = ["pack_inputs_pass.h"],
+    deps = [
+        "@com_google_absl//absl/strings",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Support",
+        "@stablehlo//:stablehlo_ops",
+    ],
+)

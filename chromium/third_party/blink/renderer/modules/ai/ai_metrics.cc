@@ -28,6 +28,8 @@ std::string_view GetAISessionTypeName(AIMetrics::AISessionType session_type) {
       return "LanguageDetector";
     case AIMetrics::AISessionType::kProofreader:
       return "Proofreader";
+    case AIMetrics::AISessionType::kClassifier:
+      return "Classifier";
   }
   NOTREACHED();
 }
@@ -71,6 +73,34 @@ std::string AIMetrics::GetAISessionResponseCallbackCountMetricName(
     AISessionType session_type) {
   return base::StrCat({"AI.Session.", GetAISessionTypeName(session_type),
                        ".PromptResponseCallbackCount"});
+}
+
+// static
+std::string AIMetrics::GetAISessionFirstResponseTimeMetricName(
+    AISessionType session_type) {
+  return base::StrCat({"AI.Session.", GetAISessionTypeName(session_type),
+                       ".FirstResponseTime"});
+}
+
+// static
+std::string AIMetrics::GetAISessionResponseCompleteTimeMetricName(
+    AISessionType session_type) {
+  return base::StrCat({"AI.Session.", GetAISessionTypeName(session_type),
+                       ".ResponseCompleteTime"});
+}
+
+// static
+std::string AIMetrics::GetAISessionContextTokensMetricName(
+    AISessionType session_type) {
+  return base::StrCat(
+      {"AI.Session.", GetAISessionTypeName(session_type), ".ContextTokens"});
+}
+
+// static
+std::string AIMetrics::GetAISessionCrashedMetricName(
+    AISessionType session_type) {
+  return base::StrCat(
+      {"AI.Session.", GetAISessionTypeName(session_type), ".Crashed"});
 }
 
 // static

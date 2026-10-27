@@ -297,7 +297,7 @@ void PannerHandler::ProcessSampleAccurateValues(AudioBus* destination,
       elevation_values_.as_span().first(frames_to_process), source, destination,
       frames_to_process, InternalChannelInterpretation());
   destination->CopyWithSampleAccurateGainValuesFrom(
-      *destination, total_gain_values_.Data(), frames_to_process);
+      *destination, total_gain_values_.as_span().first(frames_to_process));
 }
 
 void PannerHandler::ProcessOnlyAudioParams(uint32_t frames_to_process) {
@@ -390,7 +390,8 @@ bool PannerHandler::SetPanningModel(Panner::PanningModel model) {
     // We need the graph lock to secure the panner backend because
     // BaseAudioContext::Handle{Pre,Post}RenderTasks() from the audio thread
     // can touch it.
-    DeferredTaskHandler::GraphAutoLocker context_locker(Context());
+    DeferredTaskHandler::GraphAutoLocker context_locker(
+        Context()->GetDeferredTaskHandler());
 
     // This synchronizes with process().
     base::AutoLock process_locker(process_lock_);
@@ -403,7 +404,7 @@ bool PannerHandler::SetPanningModel(Panner::PanningModel model) {
 }
 
 V8DistanceModelType::Enum PannerHandler::DistanceModel() const {
-  switch (const_cast<PannerHandler*>(this)->distance_effect_.Model()) {
+  switch (distance_effect_.Model()) {
     case DistanceEffect::kModelLinear:
       return V8DistanceModelType::Enum::kLinear;
     case DistanceEffect::kModelInverse:
@@ -679,7 +680,8 @@ void PannerHandler::MarkPannerAsDirty(unsigned dirty) {
 void PannerHandler::SetChannelCount(unsigned channel_count,
                                     ExceptionState& exception_state) {
   DCHECK(IsMainThread());
-  DeferredTaskHandler::GraphAutoLocker locker(Context());
+  DeferredTaskHandler::GraphAutoLocker locker(
+      Context()->GetDeferredTaskHandler());
 
   if (channel_count >= kMinimumOutputChannels &&
       channel_count <= kMaximumOutputChannels) {
@@ -702,7 +704,8 @@ void PannerHandler::SetChannelCount(unsigned channel_count,
 void PannerHandler::SetChannelCountMode(V8ChannelCountMode::Enum mode,
                                         ExceptionState& exception_state) {
   DCHECK(IsMainThread());
-  DeferredTaskHandler::GraphAutoLocker locker(Context());
+  DeferredTaskHandler::GraphAutoLocker locker(
+      Context()->GetDeferredTaskHandler());
 
   V8ChannelCountMode::Enum old_mode = InternalChannelCountMode();
 

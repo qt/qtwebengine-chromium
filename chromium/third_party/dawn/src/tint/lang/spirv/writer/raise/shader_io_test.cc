@@ -1394,7 +1394,7 @@ TEST_F(SpirvWriter_ShaderIOTest, ForcePixelCenters_SampleInterpolation) {
 $B1: {  # root
   %foo_position_Input:ptr<__in, vec4<f32>, read> = var undef @builtin(position)
   %foo_loc0_Input:ptr<__in, f32, read> = var undef @location(0) @interpolate(linear, sample)
-  %foo_loc1_Input:ptr<__in, vec4<f32>, read> = var undef @location(1) @interpolate(linear, center)
+  %foo_loc1_Input:ptr<__in, vec4<f32>, read> = var undef @location(1) @interpolate(perspective, center)
 }
 
 %foo_inner = func(%position:vec4<f32>, %color:f32):void {
@@ -1409,12 +1409,14 @@ $B1: {  # root
     %10:vec2<f32> = swizzle %9, xy
     %11:vec2<f32> = floor %10
     %12:vec2<f32> = add %11, vec2<f32>(0.5f)
-    %13:vec4<f32> = load %foo_loc1_Input
+    %13:vec4<f32> = spirv.interpolate_at_offset %foo_loc1_Input, vec2<f32>(0.0f)
     %14:f32 = swizzle %13, z
     %15:f32 = swizzle %13, w
-    %16:vec4<f32> = construct %12, %14, %15
-    %17:f32 = load %foo_loc0_Input
-    %18:void = call %foo_inner, %16, %17
+    %16:f32 = div %14, %15
+    %17:f32 = div 1.0f, %15
+    %18:vec4<f32> = construct %12, %16, %17
+    %19:f32 = load %foo_loc0_Input
+    %20:void = call %foo_inner, %18, %19
     ret
   }
 }
@@ -1422,7 +1424,7 @@ $B1: {  # root
 
     core::ir::transform::ImmediateDataLayout immediate_data;
     ShaderIOConfig config{immediate_data};
-    config.polyfill_pixel_center = true;
+    config.polyfill_pixel_center = 1;
     Run(ShaderIO, config);
 
     EXPECT_EQ(expect, str());
@@ -1457,7 +1459,7 @@ TEST_F(SpirvWriter_ShaderIOTest, ForcePixelCenters_SampleIndex) {
 $B1: {  # root
   %foo_position_Input:ptr<__in, vec4<f32>, read> = var undef @builtin(position)
   %foo_sample_index_Input:ptr<__in, u32, read> = var undef @interpolate(flat) @builtin(sample_index)
-  %foo_loc0_Input:ptr<__in, vec4<f32>, read> = var undef @location(0) @interpolate(linear, center)
+  %foo_loc1_Input:ptr<__in, vec4<f32>, read> = var undef @location(1) @interpolate(perspective, center)
 }
 
 %foo_inner = func(%position:vec4<f32>, %idx:u32):void {
@@ -1472,12 +1474,14 @@ $B1: {  # root
     %10:vec2<f32> = swizzle %9, xy
     %11:vec2<f32> = floor %10
     %12:vec2<f32> = add %11, vec2<f32>(0.5f)
-    %13:vec4<f32> = load %foo_loc0_Input
+    %13:vec4<f32> = spirv.interpolate_at_offset %foo_loc1_Input, vec2<f32>(0.0f)
     %14:f32 = swizzle %13, z
     %15:f32 = swizzle %13, w
-    %16:vec4<f32> = construct %12, %14, %15
-    %17:u32 = load %foo_sample_index_Input
-    %18:void = call %foo_inner, %16, %17
+    %16:f32 = div %14, %15
+    %17:f32 = div 1.0f, %15
+    %18:vec4<f32> = construct %12, %16, %17
+    %19:u32 = load %foo_sample_index_Input
+    %20:void = call %foo_inner, %18, %19
     ret
   }
 }
@@ -1485,7 +1489,7 @@ $B1: {  # root
 
     core::ir::transform::ImmediateDataLayout immediate_data;
     ShaderIOConfig config{immediate_data};
-    config.polyfill_pixel_center = true;
+    config.polyfill_pixel_center = 1;
     Run(ShaderIO, config);
 
     EXPECT_EQ(expect, str());
@@ -1520,7 +1524,7 @@ TEST_F(SpirvWriter_ShaderIOTest, ForcePixelCenters_NoModification) {
 $B1: {  # root
   %foo_position_Input:ptr<__in, vec4<f32>, read> = var undef @builtin(position)
   %foo_loc0_Input:ptr<__in, f32, read> = var undef @location(0)
-  %foo_loc1_Input:ptr<__in, vec4<f32>, read> = var undef @location(1) @interpolate(linear, center)
+  %foo_loc1_Input:ptr<__in, vec4<f32>, read> = var undef @location(1) @interpolate(perspective, center)
 }
 
 %foo_inner = func(%position:vec4<f32>, %color:f32):void {
@@ -1535,12 +1539,14 @@ $B1: {  # root
     %10:vec2<f32> = swizzle %9, xy
     %11:vec2<f32> = floor %10
     %12:vec2<f32> = add %11, vec2<f32>(0.5f)
-    %13:vec4<f32> = load %foo_loc1_Input
+    %13:vec4<f32> = spirv.interpolate_at_offset %foo_loc1_Input, vec2<f32>(0.0f)
     %14:f32 = swizzle %13, z
     %15:f32 = swizzle %13, w
-    %16:vec4<f32> = construct %12, %14, %15
-    %17:f32 = load %foo_loc0_Input
-    %18:void = call %foo_inner, %16, %17
+    %16:f32 = div %14, %15
+    %17:f32 = div 1.0f, %15
+    %18:vec4<f32> = construct %12, %16, %17
+    %19:f32 = load %foo_loc0_Input
+    %20:void = call %foo_inner, %18, %19
     ret
   }
 }
@@ -1548,7 +1554,7 @@ $B1: {  # root
 
     core::ir::transform::ImmediateDataLayout immediate_data;
     ShaderIOConfig config{immediate_data};
-    config.polyfill_pixel_center = true;
+    config.polyfill_pixel_center = 1;
     Run(ShaderIO, config);
 
     EXPECT_EQ(expect, str());
@@ -1606,7 +1612,7 @@ MyStruct = struct @align(4) {
 $B1: {  # root
   %foo_position_Input:ptr<__in, vec4<f32>, read> = var undef @builtin(position)
   %foo_loc1_Input:ptr<__in, f32, read> = var undef @location(1) @interpolate(linear, sample)
-  %foo_loc0_Input:ptr<__in, vec4<f32>, read> = var undef @location(0) @interpolate(linear, center)
+  %foo_loc0_Input:ptr<__in, vec4<f32>, read> = var undef @location(0) @interpolate(perspective, center)
 }
 
 %foo_inner = func(%position:vec4<f32>, %input:MyStruct):void {
@@ -1621,13 +1627,15 @@ $B1: {  # root
     %10:vec2<f32> = swizzle %9, xy
     %11:vec2<f32> = floor %10
     %12:vec2<f32> = add %11, vec2<f32>(0.5f)
-    %13:vec4<f32> = load %foo_loc0_Input
+    %13:vec4<f32> = spirv.interpolate_at_offset %foo_loc0_Input, vec2<f32>(0.0f)
     %14:f32 = swizzle %13, z
     %15:f32 = swizzle %13, w
-    %16:vec4<f32> = construct %12, %14, %15
-    %17:f32 = load %foo_loc1_Input
-    %18:MyStruct = construct %17
-    %19:void = call %foo_inner, %16, %18
+    %16:f32 = div %14, %15
+    %17:f32 = div 1.0f, %15
+    %18:vec4<f32> = construct %12, %16, %17
+    %19:f32 = load %foo_loc1_Input
+    %20:MyStruct = construct %19
+    %21:void = call %foo_inner, %18, %20
     ret
   }
 }
@@ -1635,7 +1643,7 @@ $B1: {  # root
 
     core::ir::transform::ImmediateDataLayout immediate_data;
     ShaderIOConfig config{immediate_data};
-    config.polyfill_pixel_center = true;
+    config.polyfill_pixel_center = 0;
     Run(ShaderIO, config);
 
     EXPECT_EQ(expect, str());
@@ -1688,7 +1696,7 @@ MyStruct = struct @align(4) {
 $B1: {  # root
   %foo_position_Input:ptr<__in, vec4<f32>, read> = var undef @builtin(position)
   %foo_sample_index_Input:ptr<__in, u32, read> = var undef @interpolate(flat) @builtin(sample_index)
-  %foo_loc0_Input:ptr<__in, vec4<f32>, read> = var undef @location(0) @interpolate(linear, center)
+  %foo_loc0_Input:ptr<__in, vec4<f32>, read> = var undef @location(0) @interpolate(perspective, center)
 }
 
 %foo_inner = func(%position:vec4<f32>, %input:MyStruct):void {
@@ -1703,13 +1711,15 @@ $B1: {  # root
     %10:vec2<f32> = swizzle %9, xy
     %11:vec2<f32> = floor %10
     %12:vec2<f32> = add %11, vec2<f32>(0.5f)
-    %13:vec4<f32> = load %foo_loc0_Input
+    %13:vec4<f32> = spirv.interpolate_at_offset %foo_loc0_Input, vec2<f32>(0.0f)
     %14:f32 = swizzle %13, z
     %15:f32 = swizzle %13, w
-    %16:vec4<f32> = construct %12, %14, %15
-    %17:u32 = load %foo_sample_index_Input
-    %18:MyStruct = construct %17
-    %19:void = call %foo_inner, %16, %18
+    %16:f32 = div %14, %15
+    %17:f32 = div 1.0f, %15
+    %18:vec4<f32> = construct %12, %16, %17
+    %19:u32 = load %foo_sample_index_Input
+    %20:MyStruct = construct %19
+    %21:void = call %foo_inner, %18, %20
     ret
   }
 }
@@ -1717,7 +1727,7 @@ $B1: {  # root
 
     core::ir::transform::ImmediateDataLayout immediate_data;
     ShaderIOConfig config{immediate_data};
-    config.polyfill_pixel_center = true;
+    config.polyfill_pixel_center = 0;
     Run(ShaderIO, config);
 
     EXPECT_EQ(expect, str());
@@ -1754,7 +1764,7 @@ TEST_F(SpirvWriter_ShaderIOTest, ForcePixelCenters_PositionNotUsed) {
 $B1: {  # root
   %foo_position_Input:ptr<__in, vec4<f32>, read> = var undef @builtin(position)
   %foo_loc0_Input:ptr<__in, f32, read> = var undef @location(0) @interpolate(linear, sample)
-  %foo_loc1_Input:ptr<__in, vec4<f32>, read> = var undef @location(1) @interpolate(linear, center)
+  %foo_loc1_Input:ptr<__in, vec4<f32>, read> = var undef @location(1) @interpolate(perspective, center)
 }
 
 %foo_inner = func(%position:vec4<f32>, %color:f32):void {
@@ -1769,12 +1779,14 @@ $B1: {  # root
     %10:vec2<f32> = swizzle %9, xy
     %11:vec2<f32> = floor %10
     %12:vec2<f32> = add %11, vec2<f32>(0.5f)
-    %13:vec4<f32> = load %foo_loc1_Input
+    %13:vec4<f32> = spirv.interpolate_at_offset %foo_loc1_Input, vec2<f32>(0.0f)
     %14:f32 = swizzle %13, z
     %15:f32 = swizzle %13, w
-    %16:vec4<f32> = construct %12, %14, %15
-    %17:f32 = load %foo_loc0_Input
-    %18:void = call %foo_inner, %16, %17
+    %16:f32 = div %14, %15
+    %17:f32 = div 1.0f, %15
+    %18:vec4<f32> = construct %12, %16, %17
+    %19:f32 = load %foo_loc0_Input
+    %20:void = call %foo_inner, %18, %19
     ret
   }
 }
@@ -1782,7 +1794,7 @@ $B1: {  # root
 
     core::ir::transform::ImmediateDataLayout immediate_data;
     ShaderIOConfig config{immediate_data};
-    config.polyfill_pixel_center = true;
+    config.polyfill_pixel_center = 1;
     Run(ShaderIO, config);
 
     EXPECT_EQ(expect, str());

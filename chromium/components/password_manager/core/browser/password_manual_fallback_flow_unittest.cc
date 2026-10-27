@@ -11,8 +11,10 @@
 #include "base/test/gmock_callback_support.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/task_environment.h"
+#include "build/build_config.h"
 #include "components/affiliations/core/browser/fake_affiliation_service.h"
 #include "components/autofill/core/browser/foundations/test_autofill_client.h"
+#include "components/autofill/core/browser/integrators/password_manager/mock_password_manager_delegate.h"
 #include "components/autofill/core/browser/suggestions/suggestion.h"
 #include "components/autofill/core/browser/suggestions/suggestion_test_helpers.h"
 #include "components/autofill/core/browser/ui/autofill_suggestion_delegate.h"
@@ -27,6 +29,7 @@
 #include "components/password_manager/core/browser/password_form_digest.h"
 #include "components/password_manager/core/browser/password_manager_test_utils.h"
 #include "components/password_manager/core/browser/password_manual_fallback_metrics_recorder.h"
+#include "components/password_manager/core/browser/password_store/password_form_converters.h"
 #include "components/password_manager/core/browser/password_store/test_password_store.h"
 #include "components/password_manager/core/browser/stub_password_manager_client.h"
 #include "components/password_manager/core/browser/stub_password_manager_driver.h"
@@ -67,9 +70,6 @@ constexpr const char kUrl[] = "https://example.com/";
 constexpr const char kPSLExtension[] = "https://psl.example.com/";
 constexpr const char kUrlWithNoExactMatches[] = "https://www.foo.com/";
 
-constexpr char kShowSuggestionLatency[] =
-    "PasswordManager.ManualFallback.ShowSuggestions.Latency";
-
 Matcher<Suggestion> EqualsManualFallbackSuggestion(SuggestionType type,
                                                    bool is_acceptable) {
   return AllOf(Field("type", &Suggestion::type, type),
@@ -92,8 +92,8 @@ class MockAutofillClient : public TestAutofillClient {
                base::WeakPtr<AutofillSuggestionDelegate>),
               (override));
   MOCK_METHOD(void,
-              HideAutofillSuggestions,
-              (SuggestionHidingReason),
+              HideSuggestions,
+              (SuggestionHidingReason, std::optional<autofill::FillingProduct>),
               (override));
 };
 
@@ -138,6 +138,10 @@ class MockPasswordManagerDriver : public StubPasswordManagerDriver {
                base::OnceCallback<void(bool)>),
               (override));
   MOCK_METHOD(const GURL&, GetLastCommittedURL, (), (const override));
+  MOCK_METHOD(autofill::PasswordManagerDelegate*,
+              GetPasswordManagerDelegate,
+              (),
+              (override));
 };
 
 class MockPasswordManagerClient : public StubPasswordManagerClient {
@@ -195,15 +199,14 @@ class PasswordManualFallbackFlowTest : public Test {
     ON_CALL(password_manager_client(), GetProfilePasswordStore)
         .WillByDefault(Return(&profile_password_store()));
 
-    auto profile_store_match_helper =
+    mock_affiliated_match_helper_ =
         std::make_unique<NiceMock<MockAffiliatedMatchHelper>>(
             affiliation_service_.get());
-    mock_affiliated_match_helper_ = profile_store_match_helper.get();
-    profile_password_store().Init(std::move(profile_store_match_helper));
+    profile_password_store().SetAffiliatedMatchHelper(
+        mock_affiliated_match_helper_.get());
+    profile_password_store().Init();
   }
-
   ~PasswordManualFallbackFlowTest() override {
-    mock_affiliated_match_helper_ = nullptr;
     profile_password_store_->ShutdownOnUIThread();
   }
 
@@ -211,19 +214,18 @@ class PasswordManualFallbackFlowTest : public Test {
     Test::SetUp();
 
     // Add 1 password form to the password store.
-    profile_password_store().AddLogin(
+    profile_password_store().AddLogin(password_manager::FromPasswordForm(
         CreateEntry("username@example.com", "password", GURL(kUrl),
-                    PasswordForm::MatchType::kExact));
-  }
-
-  void TearDown() override {
-    profile_password_store().Clear();
-    Test::TearDown();
+                    PasswordForm::MatchType::kExact)));
   }
 
   PasswordManualFallbackFlow& flow() { return *flow_; }
 
   MockPasswordManagerDriver& driver() { return *driver_; }
+
+  autofill::MockPasswordManagerDelegate& password_manager_delegate() {
+    return *password_manager_delegate_;
+  }
 
   MockAutofillClient& autofill_client() { return *autofill_client_; }
 
@@ -288,11 +290,35 @@ class PasswordManualFallbackFlowTest : public Test {
   // operation asynchronously.
   void ProcessPasswordStoreUpdates() { task_environment_.RunUntilIdle(); }
 
- protected:
+  void SetupAffiliatedAndGroupedRealms(
+      const PasswordFormDigest& form,
+      const std::vector<std::string>& affiliated_realms,
+      const std::vector<std::string>& grouped_realms = {}) {
+#if BUILDFLAG(IS_ANDROID)
+    profile_password_store().SetAffiliatedAndGroupedRealms(
+        form.signon_realm, affiliated_realms, grouped_realms);
+#else
+    affiliated_match_helper().ExpectCallToGetAffiliatedAndGrouped(
+        form, affiliated_realms, grouped_realms);
+#endif
+  }
+
+  void ResetFlowAndMetricsRecorder() {
+    // Reset `flow_` first since it hold a raw pointer to
+    // `manual_fallback_metrics_recorder_`. In production, `flow_` and
+    // `manual_fallback_metrics_recorder_` always die at the same time.
+    flow_.reset();
+    manual_fallback_metrics_recorder_.reset();
+  }
+
+ private:
   base::test::SingleThreadTaskEnvironment task_environment_;
   AutofillUnitTestEnvironment autofill_test_environment_;
   std::unique_ptr<NiceMock<MockPasswordManagerDriver>> driver_ =
       std::make_unique<NiceMock<MockPasswordManagerDriver>>();
+  std::unique_ptr<NiceMock<autofill::MockPasswordManagerDelegate>>
+      password_manager_delegate_ =
+          std::make_unique<NiceMock<autofill::MockPasswordManagerDelegate>>();
   std::unique_ptr<NiceMock<MockAutofillClient>> autofill_client_ =
       std::make_unique<NiceMock<MockAutofillClient>>();
   std::unique_ptr<NiceMock<MockPasswordManagerClient>>
@@ -303,7 +329,8 @@ class PasswordManualFallbackFlowTest : public Test {
       manual_fallback_metrics_recorder_;
   std::unique_ptr<NiceMock<MockAffiliationService>> affiliation_service_ =
       std::make_unique<NiceMock<MockAffiliationService>>();
-  raw_ptr<MockAffiliatedMatchHelper> mock_affiliated_match_helper_;
+  std::unique_ptr<NiceMock<MockAffiliatedMatchHelper>>
+      mock_affiliated_match_helper_;
   scoped_refptr<TestPasswordStore> profile_password_store_ =
       base::MakeRefCounted<TestPasswordStore>();
   GURL triggering_form_domain_ = GURL::EmptyGURL();
@@ -319,8 +346,6 @@ TEST_F(PasswordManualFallbackFlowTest, RunFlow_NoSuggestionsReturned) {
 
   flow().RunFlow(MakeFieldRendererId(), gfx::RectF{},
                  TextDirection::LEFT_TO_RIGHT);
-  // Latency should not be logged if the passwords are not read from disk.
-  histogram_tester.ExpectTotalCount(kShowSuggestionLatency, 0);
 }
 
 // Test that the suggestions are not shown when the passwords are fetched from
@@ -332,9 +357,6 @@ TEST_F(PasswordManualFallbackFlowTest, ReturnSuggestions_NoFlowInvocation) {
   EXPECT_CALL(autofill_client(), ShowAutofillSuggestions).Times(0);
 
   ProcessPasswordStoreUpdates();
-  // The latency should be logged if the passwords are read from disk but the
-  // flow is not invoked.
-  histogram_tester.ExpectTotalCount(kShowSuggestionLatency, 1);
 }
 
 // Test that the suggestions are shown when the flow is invoked after the
@@ -360,9 +382,6 @@ TEST_F(PasswordManualFallbackFlowTest, ReturnSuggestions_InvokeFlow) {
           _));
 
   flow().RunFlow(MakeFieldRendererId(), bounds, TextDirection::LEFT_TO_RIGHT);
-  // The latency should be logged if the passwords are read from disk before the
-  // flow is invoked.
-  histogram_tester.ExpectTotalCount(kShowSuggestionLatency, 1);
 }
 
 // Test that the suggestions are shown when the flow is invoked before the
@@ -389,9 +408,6 @@ TEST_F(PasswordManualFallbackFlowTest, InvokeFlow_ReturnSuggestions) {
           _));
 
   ProcessPasswordStoreUpdates();
-  // The latency should be logged if the passwords are read from disk after the
-  // flow is invoked.
-  histogram_tester.ExpectTotalCount(kShowSuggestionLatency, 1);
 }
 
 // Test that the suggestions are shown using the last parameters passed to
@@ -531,8 +547,7 @@ TEST_F(PasswordManualFallbackFlowTest,
   PasswordFormDigest digest(PasswordForm::Scheme::kHtml,
                             GetSignonRealm(GURL(kUrlWithNoExactMatches)),
                             GURL(kUrlWithNoExactMatches));
-  affiliated_match_helper().ExpectCallToGetAffiliatedAndGrouped(
-      digest, {kUrlWithNoExactMatches}, {kUrl});
+  SetupAffiliatedAndGroupedRealms(digest, {kUrlWithNoExactMatches}, {kUrl});
   // Trigger flow for the `kUrlWithNoExactMatches` domain.
   InitializeFlow(kUrlWithNoExactMatches);
   ProcessPasswordStoreUpdates();
@@ -627,7 +642,8 @@ TEST_F(PasswordManualFallbackFlowTest, AcceptUsernameFieldByFieldSuggestion) {
                         _));
   EXPECT_CALL(
       autofill_client(),
-      HideAutofillSuggestions(SuggestionHidingReason::kAcceptSuggestion));
+      HideSuggestions(SuggestionHidingReason::kAcceptSuggestion,
+                      std::optional(autofill::FillingProduct::kPassword)));
   ShowAndAcceptSuggestion(autofill::test::CreateAutofillSuggestion(
                               SuggestionType::kPasswordFieldByFieldFilling,
                               u"username@example.com"),
@@ -751,6 +767,43 @@ TEST_F(PasswordManualFallbackFlowTest,
   // `suggestion.is_acceptable` is `false` if the popup is triggered on a
   // different type of form or a standalone field.
   suggestion.acceptability = Suggestion::Acceptability::kUnacceptable;
+  flow().DidSelectSuggestion(suggestion);
+}
+
+// Test that webauth suggestion selection is delegated to the password manager
+// delegate.
+TEST_F(PasswordManualFallbackFlowTest, SelectWebauthnSignInSuggestion) {
+  InitializeFlow();
+  ProcessPasswordStoreUpdates();
+
+  flow().RunFlow(MakeFieldRendererId(), gfx::RectF{},
+                 TextDirection::LEFT_TO_RIGHT);
+
+  Suggestion suggestion = autofill::test::CreateAutofillSuggestion(
+      SuggestionType::kWebauthnSignInWithAnotherDevice, u"Select passkey");
+  ON_CALL(driver(), GetPasswordManagerDelegate)
+      .WillByDefault(Return(&password_manager_delegate()));
+  EXPECT_CALL(password_manager_delegate(), SelectSuggestion(suggestion));
+  flow().DidSelectSuggestion(suggestion);
+}
+
+// Test that webauth suggestion selection doesn't crash if the password manager
+// delegate is `nullptr`. This can happen in several scenarios, one of which is
+// the `RenderFrameHost` being destructed for whatever reason.
+TEST_F(PasswordManualFallbackFlowTest,
+       SelectWebauthnSignInSuggestion_DelegateIsNull) {
+  InitializeFlow();
+  ProcessPasswordStoreUpdates();
+
+  flow().RunFlow(MakeFieldRendererId(), gfx::RectF{},
+                 TextDirection::LEFT_TO_RIGHT);
+
+  Suggestion suggestion = autofill::test::CreateAutofillSuggestion(
+      SuggestionType::kWebauthnSignInWithAnotherDevice, u"Select passkey");
+  EXPECT_CALL(password_manager_delegate(), SelectSuggestion(suggestion))
+      .Times(0);
+  // The `autofill::PasswordManagerDelegate` is `nullptr`, the flow should not
+  // crash.
   flow().DidSelectSuggestion(suggestion);
 }
 
@@ -957,6 +1010,50 @@ TEST_F(PasswordManualFallbackFlowTest,
   ShowAndAcceptSuggestion(suggestion,
                           AutofillSuggestionDelegate::SuggestionMetadata{
                               .row = 0, .sub_popup_level = 0});
+}
+
+// Test that webauth suggestion acceptance is delegated to the password manager
+// delegate.
+TEST_F(PasswordManualFallbackFlowTest, AcceptWebauthnSignInSuggestion) {
+  InitializeFlow();
+  ProcessPasswordStoreUpdates();
+
+  flow().RunFlow(MakeFieldRendererId(), gfx::RectF{},
+                 TextDirection::LEFT_TO_RIGHT);
+
+  Suggestion suggestion = autofill::test::CreateAutofillSuggestion(
+      SuggestionType::kWebauthnSignInWithAnotherDevice, u"Select passkey");
+  AutofillSuggestionDelegate::SuggestionMetadata metadata =
+      AutofillSuggestionDelegate::SuggestionMetadata{.row = 0,
+                                                     .sub_popup_level = 0};
+  ON_CALL(driver(), GetPasswordManagerDelegate)
+      .WillByDefault(Return(&password_manager_delegate()));
+  EXPECT_CALL(password_manager_delegate(),
+              AcceptSuggestion(suggestion, metadata));
+  flow().DidAcceptSuggestion(suggestion, metadata);
+}
+
+// Test that webauth suggestion acceptance doesn't crash if the password manager
+// delegate is `nullptr`.
+TEST_F(PasswordManualFallbackFlowTest,
+       AcceptWebauthnSignInSuggestion_DelegateIsNull) {
+  InitializeFlow();
+  ProcessPasswordStoreUpdates();
+
+  flow().RunFlow(MakeFieldRendererId(), gfx::RectF{},
+                 TextDirection::LEFT_TO_RIGHT);
+
+  Suggestion suggestion = autofill::test::CreateAutofillSuggestion(
+      SuggestionType::kWebauthnSignInWithAnotherDevice, u"Select passkey");
+  AutofillSuggestionDelegate::SuggestionMetadata metadata =
+      AutofillSuggestionDelegate::SuggestionMetadata{.row = 0,
+                                                     .sub_popup_level = 0};
+  EXPECT_CALL(password_manager_delegate(),
+              AcceptSuggestion(suggestion, metadata))
+      .Times(0);
+  // The `autofill::PasswordManagerDelegate` is `nullptr`, the flow should not
+  // crash.
+  flow().DidAcceptSuggestion(suggestion, metadata);
 }
 
 // Test that "Fill password" field-by-field suggestion is not previewed by the
@@ -1286,7 +1383,8 @@ TEST_F(PasswordManualFallbackFlowTest, ShowPasswordDetails) {
   PasswordForm form_de =
       CreateEntry("username@google.com", "password", GURL("https://google.de/"),
                   PasswordForm::MatchType::kExact);
-  profile_password_store().AddLogins({form_com, form_de});
+  profile_password_store().AddLogins(
+      password_manager::FromPasswordForms({form_com, form_de}));
 
   InitializeFlow();
   ProcessPasswordStoreUpdates();
@@ -1344,14 +1442,6 @@ class PasswordManualFallbackFlowFillAfterSuggestionMetricsTest
     } else {
       return metric_name("NotClassifiedAsTargetFilling");
     }
-  }
-
-  void ResetFlowAndMetricsRecorder() {
-    // Reset `flow_` first since it hold a raw pointer to
-    // `manual_fallback_metrics_recorder_`. In production, `flow_` and
-    // `manual_fallback_metrics_recorder_` always die at the same time.
-    flow_.reset();
-    manual_fallback_metrics_recorder_.reset();
   }
 };
 

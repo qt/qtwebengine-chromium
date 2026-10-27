@@ -1,5 +1,7 @@
 //  To use the simple FFT implementation
 //  g++ -o demofft -I.. -Wall -O3 FFT.cpp
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 //  To use the FFTW implementation
 //  g++ -o demofft -I.. -DUSE_FFTW -Wall -O3 FFT.cpp -lfftw3 -lfftw3f -lfftw3l

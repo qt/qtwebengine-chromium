@@ -111,6 +111,24 @@ Extended attributes are generally not inherited: only extended attributes on the
 
 These are defined in the [ECMAScript-specific extended attributes](https://webidl.spec.whatwg.org/#es-extended-attributes) section of the [Web IDL spec](https://webidl.spec.whatwg.org/), and alter the binding behavior.
 
+### [AllowResizable]
+
+Standard: [AllowResizable](https://webidl.spec.whatwg.org/#AllowResizable)
+
+Summary: `[AllowResizable]` specified on a type indicates that for ArrayBuffer or ArrayBufferView arguments the values backed by resizable array buffers are allowed. In case of a SharedArrayBuffer being passed, if allowed by specifying `[AllowShared]` (documented below)), this implies that the shared array buffer is growable.
+
+Usage: `[AllowResizable]` must be specified on a parameter to a method or a typedef:
+
+```webidl
+interface Context {
+    void bufferData1([AllowResizable] ArrayBufferView buffer);
+    void bufferData2([AllowResizable] Float32Array buffer);
+    void bufferData3([AllowResizable] ArrayBuffer buffer);
+};
+```
+
+Note that while there's a low-level support for resizable array buffers, Blink IDL code generator currently does not support this attribute and, at the time of writing, there are no APIs using it in the blink tree.
+
 ### [AllowShared]
 
 Standard: [AllowShared](https://webidl.spec.whatwg.org/#AllowShared)
@@ -765,6 +783,25 @@ Usage: `[NotEnumerable]` can be specified on methods and attributes
 ```
 
 `[NotEnumerable]` indicates that the method or attribute is not enumerable.
+
+### [NotSubclassable]
+
+Summary: Disallows constructing subclasses of an interface.
+
+Usage: `[NotSubclassable]` can be specified on interfaces with a constructor.
+
+```webidl
+[Exposed=Window, NotSubclassable]
+interface XXX {
+  constructor();
+};
+```
+
+`[NotSubclassable]` makes the generated constructor reject `NewTarget`s
+that are not the interface's own constructor function, throwing a `TypeError("Illegal constructor")`.
+This forbids constructing subclasses with `class Foo extends XXX { ... }; new Foo()` (or equivalent
+`Reflect.construct` calls). The check only runs at construction time; existing
+instances may still be placed on the prototype chain of other objects.
 
 ### [PassAsSpan]
 

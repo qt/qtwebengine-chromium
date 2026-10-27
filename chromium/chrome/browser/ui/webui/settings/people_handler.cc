@@ -40,9 +40,10 @@
 #include "chrome/browser/signin/signin_util.h"
 #include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/browser/sync/sync_ui_util.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/signin/signin_view_controller.h"
 #include "chrome/browser/ui/singleton_tabs.h"
@@ -51,7 +52,6 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/common/webui_url_constants.h"
-#include "chrome/grit/generated_resources.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/signin_error_controller.h"
@@ -376,10 +376,13 @@ void PeopleHandler::RegisterMessages() {
       "SyncSetupStartSignIn",
       base::BindRepeating(&PeopleHandler::HandleStartSignin,
                           base::Unretained(this)));
+#endif
+
   web_ui()->RegisterMessageCallback(
       "SyncShowSyncPassphraseDialog",
       base::BindRepeating(&PeopleHandler::HandleShowSyncPassphraseDialog,
                           base::Unretained(this)));
+
   web_ui()->RegisterMessageCallback(
       "ShowAccountSettingsUI",
       base::BindRepeating(&PeopleHandler::HandleShowAccountSettingsUI,
@@ -388,7 +391,6 @@ void PeopleHandler::RegisterMessages() {
       "SetDatatype", base::BindRepeating(&PeopleHandler::HandleSetDatatype,
                                          base::Unretained(this)));
 
-#endif
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
   web_ui()->RegisterMessageCallback(
       "SyncSetupSignout", base::BindRepeating(&PeopleHandler::HandleSignout,
@@ -779,7 +781,8 @@ void PeopleHandler::HandleShowSyncSetupUI(const base::ListValue& args) {
 
 #if BUILDFLAG(IS_CHROMEOS)
   // Mark Sync as requested by the user, in case it was reset via dashboard.
-  if (service) {
+  if (service && (service->HasSyncConsent() ||
+                  !syncer::IsReplaceSyncPromosWithSignInPromosEnabled())) {
     service->GetUserSettings()->ClearSyncFeatureDisabledViaDashboard();
   }
 #endif  // BUILDFLAG(IS_CHROMEOS)
@@ -862,7 +865,9 @@ void PeopleHandler::HandleSignout(const base::ListValue& args) {
            "allowed.";
   }
 
-  Browser* browser = chrome::FindBrowserWithTab(web_ui()->GetWebContents());
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+          web_ui()->GetWebContents());
   if (!browser) {
     return;
   }
@@ -885,10 +890,12 @@ void PeopleHandler::HandleTurnOffSync(bool delete_profile,
     identity_manager->GetPrimaryAccountMutator()->RevokeSyncConsent(
         signin_metrics::ProfileSignout::kRevokeSyncFromSettings);
   } else {
-    Browser* browser = chrome::FindBrowserWithTab(web_ui()->GetWebContents());
+    BrowserWindowInterface* browser =
+        GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+            web_ui()->GetWebContents());
     if (browser) {
       // Clearing the primary account isn't sufficient to signout SAML accounts,
-      // see http://crbug.com/1114646.
+      // see http://crbug.com/40710922.
       browser->GetFeatures().signin_view_controller()->ShowGaiaLogoutTab(
           signin_metrics::SourceForRefreshTokenOperation::kSettings_Signout);
     }
@@ -924,18 +931,23 @@ void PeopleHandler::HandlePauseSync(const base::ListValue& args) {
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
 void PeopleHandler::HandleStartKeyRetrieval(const base::ListValue& args) {
-  Browser* browser = chrome::FindBrowserWithTab(web_ui()->GetWebContents());
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+          web_ui()->GetWebContents());
   if (!browser) {
     return;
   }
 
   OpenTabForSyncKeyRetrieval(
-      browser, trusted_vault::TrustedVaultUserActionTriggerForUMA::kSettings);
+      browser,
+      trusted_vault::TrustedVaultUserActionTriggerForUMA::kSettings);
 }
 
 void PeopleHandler::HandleSyncShowBookmarkLimitExceededHelp(
     const base::ListValue& args) {
-  Browser* browser = chrome::FindBrowserWithTab(web_ui()->GetWebContents());
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+          web_ui()->GetWebContents());
   if (!browser) {
     return;
   }
@@ -944,15 +956,17 @@ void PeopleHandler::HandleSyncShowBookmarkLimitExceededHelp(
       syncer::SyncService::BookmarksLimitExceededHelpClickedSource::kSettings);
 }
 
-#if !BUILDFLAG(IS_CHROMEOS)
 void PeopleHandler::HandleShowSyncPassphraseDialog(
     const base::ListValue& args) {
-  Browser* browser = chrome::FindBrowserWithTab(web_ui()->GetWebContents());
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+          web_ui()->GetWebContents());
   if (!browser) {
     return;
   }
 
-  ShowSyncPassphraseDialogAndDecryptData(*browser);
+  ShowSyncPassphraseDialogAndDecryptData(
+      *browser->GetBrowserForMigrationOnly());
 }
 
 void PeopleHandler::HandleShowAccountSettingsUI(const base::ListValue& args) {
@@ -990,7 +1004,6 @@ void PeopleHandler::HandleSetDatatype(const base::ListValue& args) {
 
   ResolveJavascriptCallback(callback_id, base::Value(kConfigurePageStatus));
 }
-#endif
 
 void PeopleHandler::HandleGetSyncStatus(const base::ListValue& args) {
   AllowJavascript();
@@ -1049,7 +1062,7 @@ void PeopleHandler::CloseSyncSetup() {
 
     // The call to RevokeSyncConsent() above may delete the current browser that
     // owns `this` if force signin is enabled. Accessing instance members caused
-    // crashes (see https://crbug.com/1441820) which we guard against by
+    // crashes (see https://crbug.com/40266665) which we guard against by
     // checking a weak pointer to the current instance.
     if (!self_weak_ptr) {
       return;
@@ -1099,7 +1112,7 @@ void PeopleHandler::OnPrimaryAccountChanged(
     case signin::PrimaryAccountChangeEvent::Type::kSet: {
       // After a primary account was set, the Sync setup will start soon. Grab a
       // SetupInProgressHandle right now to avoid a temporary "missing Sync
-      // confirmation" error in the avatar menu. See crbug.com/928696.
+      // confirmation" error in the avatar menu. See crbug.com/41439343.
       syncer::SyncService* service = GetSyncService();
       if (service && !sync_blocker_) {
         sync_blocker_ = service->GetSetupInProgressHandle();

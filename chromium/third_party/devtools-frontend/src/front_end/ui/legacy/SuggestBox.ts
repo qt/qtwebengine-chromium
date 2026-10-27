@@ -345,6 +345,7 @@ export interface Suggestion {
   };
   hideGhostText?: boolean;
   iconElement?: HTMLElement;
+  disableAcceptSuggestionOnStopCharacters?: boolean;
 }
 
 export type Suggestions = Suggestion[];

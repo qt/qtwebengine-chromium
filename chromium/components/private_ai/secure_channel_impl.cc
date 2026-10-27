@@ -37,24 +37,31 @@ namespace private_ai {
 SecureChannelImpl::FactoryImpl::FactoryImpl(
     const GURL& url,
     network::mojom::NetworkContext* network_context,
-    PrivateAiLogger* logger)
-    : url_(url), network_context_(network_context), logger_(logger) {}
+    PrivateAiLogger* logger,
+    PrivateAiOakSessionDriver* oak_session_driver)
+    : url_(url),
+      network_context_(network_context),
+      logger_(logger),
+      oak_session_driver_(oak_session_driver) {}
 
 SecureChannelImpl::FactoryImpl::~FactoryImpl() = default;
 
 std::unique_ptr<SecureChannel> SecureChannelImpl::FactoryImpl::Create(
+    base::OnceClosure on_established,
     ResponseCallback callback) {
   auto transport =
       std::make_unique<WebSocketClient>(url_, network_context_, logger_);
-  auto secure_session = std::make_unique<SecureSessionAsyncImpl>();
+  auto secure_session =
+      std::make_unique<SecureSessionAsyncImpl>(oak_session_driver_);
   auto attestation_handler = std::make_unique<AttestationHandlerImpl>(logger_);
 
   return std::make_unique<SecureChannelImpl>(
-      std::move(callback), std::move(transport), std::move(secure_session),
-      std::move(attestation_handler), logger_);
+      std::move(on_established), std::move(callback), std::move(transport),
+      std::move(secure_session), std::move(attestation_handler), logger_);
 }
 
 SecureChannelImpl::SecureChannelImpl(
+    base::OnceClosure on_established,
     ResponseCallback callback,
     std::unique_ptr<Transport> transport,
     std::unique_ptr<SecureSession> secure_session,
@@ -64,7 +71,8 @@ SecureChannelImpl::SecureChannelImpl(
       secure_session_(std::move(secure_session)),
       attestation_handler_(std::move(attestation_handler)),
       logger_(logger),
-      response_callback_(std::move(callback)) {
+      response_callback_(std::move(callback)),
+      on_established_(std::move(on_established)) {
   CHECK(transport_);
   CHECK(secure_session_);
   CHECK(attestation_handler_);
@@ -130,16 +138,16 @@ void SecureChannelImpl::OnResponseReceived(
                                          static_cast<int>(response.error()),
                                          static_cast<int>(state_)));
 
-    ErrorCode error_code = ErrorCode::kError;
+    StatusCode status_code = StatusCode::kError;
     switch (state_) {
       case State::kPerformingAttestation:
-        error_code = ErrorCode::kAttestationFailed;
+        status_code = StatusCode::kAttestationFailed;
         break;
       case State::kPerformingHandshake:
-        error_code = ErrorCode::kHandshakeFailed;
+        status_code = StatusCode::kHandshakeFailed;
         break;
       case State::kEstablished:
-        error_code = ErrorCode::kNetworkError;
+        status_code = StatusCode::kNetworkError;
         break;
       case State::kWaitingHandshakeMessage:
       case State::kVerifyingHandshake:
@@ -156,7 +164,7 @@ void SecureChannelImpl::OnResponseReceived(
         break;
     }
 
-    FailAllRequestsAndClose(error_code);
+    FailAllRequestsAndClose(status_code);
     return;
   }
 
@@ -198,7 +206,7 @@ void SecureChannelImpl::OnAttestationResponse(
         "PrivateAi.SecureChannel.SendAttestationRequestLatency.Error",
         base::TimeTicks::Now() -
             state_entry_times_[State::kPerformingAttestation]);
-    FailAllRequestsAndClose(ErrorCode::kAttestationFailed);
+    FailAllRequestsAndClose(StatusCode::kAttestationFailed);
     return;
   }
 
@@ -214,7 +222,7 @@ void SecureChannelImpl::OnAttestationResponse(
         "PrivateAi.SecureChannel.SendAttestationRequestLatency.Error",
         base::TimeTicks::Now() -
             state_entry_times_[State::kPerformingAttestation]);
-    FailAllRequestsAndClose(ErrorCode::kAttestationFailed);
+    FailAllRequestsAndClose(StatusCode::kAttestationFailed);
     return;
   }
 
@@ -226,7 +234,7 @@ void SecureChannelImpl::OnAttestationResponse(
           "PrivateAi.SecureChannel.SendAttestationRequestLatency.Error",
           base::TimeTicks::Now() -
               state_entry_times_[State::kPerformingAttestation]);
-      FailAllRequestsAndClose(ErrorCode::kAttestationFailed);
+      FailAllRequestsAndClose(StatusCode::kAttestationFailed);
       return;
     }
     logger_->LogInfo(FROM_HERE, "Attestation verified successfully.");
@@ -258,7 +266,7 @@ void SecureChannelImpl::OnHandshakeMessageReady(
         "PrivateAi.SecureChannel.GetHandshakeMessageLatency.Error",
         base::TimeTicks::Now() -
             state_entry_times_[State::kPerformingHandshake]);
-    FailAllRequestsAndClose(ErrorCode::kHandshakeFailed);
+    FailAllRequestsAndClose(StatusCode::kHandshakeFailed);
     return;
   }
 
@@ -279,8 +287,8 @@ void SecureChannelImpl::OnHandshakeMessageReady(
 void SecureChannelImpl::RecordSessionDurationMetrics() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (state_ == State::kEstablished) {
-    base::UmaHistogramMediumTimes(
-        "PrivateAi.SecureChannel.SessionDuration",
+    base::UmaHistogramLongTimes(
+        "PrivateAi.SecureChannel.SessionDuration2",
         base::TimeTicks::Now() - state_entry_times_[State::kEstablished]);
     base::UmaHistogramCounts1000("PrivateAi.SecureChannel.RequestsPerSession",
                                  requests_in_session_count_);
@@ -300,7 +308,7 @@ void SecureChannelImpl::OnHandshakeResponse(
         "PrivateAi.SecureChannel.SendHandshakeRequestLatency.Error",
         base::TimeTicks::Now() -
             state_entry_times_[State::kPerformingHandshake]);
-    FailAllRequestsAndClose(ErrorCode::kHandshakeFailed);
+    FailAllRequestsAndClose(StatusCode::kHandshakeFailed);
     return;
   }
 
@@ -326,7 +334,7 @@ void SecureChannelImpl::OnHandshakeVerification(bool handshake_verified) {
         "PrivateAi.SecureChannel.SendHandshakeRequestLatency.Error",
         base::TimeTicks::Now() -
             state_entry_times_[State::kPerformingHandshake]);
-    FailAllRequestsAndClose(ErrorCode::kHandshakeFailed);
+    FailAllRequestsAndClose(StatusCode::kHandshakeFailed);
     return;
   }
   logger_->LogInfo(FROM_HERE, "Session established.");
@@ -337,6 +345,10 @@ void SecureChannelImpl::OnHandshakeVerification(bool handshake_verified) {
 
   state_ = State::kEstablished;
   state_entry_times_[state_] = base::TimeTicks::Now();
+
+  if (on_established_) {
+    std::move(on_established_).Run();
+  }
 
   ProcessPendingEncryptionRequests();
 }
@@ -350,7 +362,7 @@ void SecureChannelImpl::OnEncryptedResponse(
   if (!session_response.has_encrypted_message()) {
     logger_->LogError(FROM_HERE,
                       "Response proto does not have encrypted message.");
-    FailAllRequestsAndClose(ErrorCode::kDecryptionFailed);
+    FailAllRequestsAndClose(StatusCode::kDecryptionFailed);
     return;
   }
 
@@ -369,7 +381,7 @@ void SecureChannelImpl::OnDecryptedResponse(
 
   if (!decrypted_response.has_value()) {
     logger_->LogError(FROM_HERE, "Failed to decrypt response.");
-    FailAllRequestsAndClose(ErrorCode::kDecryptionFailed);
+    FailAllRequestsAndClose(StatusCode::kDecryptionFailed);
     return;
   }
   DVLOG(1) << "Response decrypted successfully.";
@@ -396,7 +408,7 @@ void SecureChannelImpl::StartSessionEstablishment() {
     base::UmaHistogramMediumTimes(
         "PrivateAi.SecureChannel.GetAttestationRequestLatency.Error",
         base::TimeTicks::Now() - get_attestation_start_time);
-    FailAllRequestsAndClose(ErrorCode::kAttestationFailed);
+    FailAllRequestsAndClose(StatusCode::kAttestationFailed);
     return;
   }
   base::UmaHistogramMediumTimes(
@@ -411,7 +423,7 @@ void SecureChannelImpl::StartSessionEstablishment() {
   Send(request);
 }
 
-void SecureChannelImpl::FailAllRequestsAndClose(ErrorCode error_code) {
+void SecureChannelImpl::FailAllRequestsAndClose(StatusCode status_code) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (state_ == State::kClosed) {
@@ -420,7 +432,7 @@ void SecureChannelImpl::FailAllRequestsAndClose(ErrorCode error_code) {
 
   logger_->LogError(
       FROM_HERE, base::StringPrintf("SecureChannel closed with error code: %d",
-                                    static_cast<int>(error_code)));
+                                    static_cast<int>(status_code)));
 
   RecordSessionDurationMetrics();
 
@@ -429,7 +441,7 @@ void SecureChannelImpl::FailAllRequestsAndClose(ErrorCode error_code) {
   pending_encryption_requests_.clear();
 
   if (response_callback_) {
-    response_callback_.Run(base::unexpected(error_code));
+    response_callback_.Run(base::unexpected(status_code));
   }
 }
 
@@ -461,7 +473,7 @@ void SecureChannelImpl::OnRequestEncrypted(
 
   if (!encrypted_request.has_value()) {
     logger_->LogError(FROM_HERE, "Failed to encrypt request.");
-    FailAllRequestsAndClose(ErrorCode::kEncryptionFailed);
+    FailAllRequestsAndClose(StatusCode::kEncryptionFailed);
     return;
   }
 

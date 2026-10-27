@@ -15,6 +15,7 @@ class PrefService;
 
 namespace optimization_guide::model_execution::prefs {
 
+// TODO: crbug.com/514743962 - This is a remote model execution thing.
 // The possible values for the model execution enterprise policy.
 // LINT.IfChange(ModelExecutionEnterprisePolicyValue)
 enum class ModelExecutionEnterprisePolicyValue {
@@ -32,6 +33,7 @@ enum class GenAILocalFoundationalModelEnterprisePolicySettings {
   kMaxValue = kDisallowed,
 };
 
+// TODO: crbug.com/514743962 - This is a remote model execution thing.
 COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
 void RegisterProfilePrefs(PrefRegistrySimple* registry);
 
@@ -83,6 +85,9 @@ bool WasFeatureRecentlyUsed(const PrefService* local_state,
 COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
 void RecordUseCaseUsage(PrefService* local_state,
                         const std::string& use_case_name);
+COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
+void ClearUseCaseUsage(PrefService* local_state,
+                       const std::string& use_case_name);
 COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
 bool WasUseCaseRecentlyUsed(const PrefService* local_state,
                             const std::string& use_case_name);

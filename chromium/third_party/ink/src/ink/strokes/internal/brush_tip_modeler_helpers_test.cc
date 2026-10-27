@@ -15,6 +15,7 @@
 #include "ink/strokes/internal/brush_tip_modeler_helpers.h"
 
 #include <cmath>
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -44,6 +45,9 @@ using ::testing::ElementsAre;
 using ::testing::FloatEq;
 using ::testing::FloatNear;
 using ::testing::IsEmpty;
+
+constexpr float kFloatMax = std::numeric_limits<float>::max();
+constexpr float kInfinity = std::numeric_limits<float>::infinity();
 
 MATCHER(NullNodeValueMatcher, "") { return IsNullBehaviorNodeValue(arg); }
 
@@ -271,13 +275,13 @@ TEST_F(ProcessBehaviorNodeTest, SourceNodeDirectionInRadians) {
       .source_value_range = {0, Angle::Degrees(360).ValueInRadians()},
   };
 
-  context_.current_travel_direction = Angle::Degrees(-60);
+  current_input_.velocity = Vec::UnitVecWithDirection(Angle::Degrees(-60));
   ProcessBehaviorNode(source_node, context_);
   EXPECT_THAT(stack_, ElementsAre(FloatNear(5.0f / 6.0f, 1e-5)));
 
   // If the direction is undefined, the source node emits a null value.
   stack_.clear();
-  context_.current_travel_direction = std::nullopt;
+  current_input_.velocity = Vec();
   ProcessBehaviorNode(source_node, context_);
   EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
 }
@@ -289,13 +293,13 @@ TEST_F(ProcessBehaviorNodeTest, SourceNodeDirectionAboutZeroInRadians) {
                              Angle::Degrees(180).ValueInRadians()},
   };
 
-  context_.current_travel_direction = Angle::Degrees(-60);
+  current_input_.velocity = Vec::UnitVecWithDirection(Angle::Degrees(-60));
   ProcessBehaviorNode(source_node, context_);
   EXPECT_THAT(stack_, ElementsAre(FloatNear(1.0f / 3.0f, 1e-5)));
 
   // If the direction is undefined, the source node emits a null value.
   stack_.clear();
-  context_.current_travel_direction = std::nullopt;
+  current_input_.velocity = Vec();
   ProcessBehaviorNode(source_node, context_);
   EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
 }
@@ -306,13 +310,13 @@ TEST_F(ProcessBehaviorNodeTest, SourceNodeNormalizedDirectionX) {
       .source_value_range = {-1, 1},
   };
 
-  context_.current_travel_direction = Angle::Degrees(-60);
+  current_input_.velocity = Vec::UnitVecWithDirection(Angle::Degrees(-60));
   ProcessBehaviorNode(source_node, context_);
   EXPECT_THAT(stack_, ElementsAre(FloatNear(0.75f, 1e-5)));
 
   // If the direction is undefined, the source node emits a null value.
   stack_.clear();
-  context_.current_travel_direction = std::nullopt;
+  current_input_.velocity = Vec();
   ProcessBehaviorNode(source_node, context_);
   EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
 }
@@ -323,13 +327,13 @@ TEST_F(ProcessBehaviorNodeTest, SourceNodeNormalizedDirectionY) {
       .source_value_range = {-1, 1},
   };
 
-  context_.current_travel_direction = Angle::Degrees(-150);
+  current_input_.velocity = Vec::UnitVecWithDirection(Angle::Degrees(-150));
   ProcessBehaviorNode(source_node, context_);
   EXPECT_THAT(stack_, ElementsAre(FloatNear(0.25f, 1e-5)));
 
   // If the direction is undefined, the source node emits a null value.
   stack_.clear();
-  context_.current_travel_direction = std::nullopt;
+  current_input_.velocity = Vec();
   ProcessBehaviorNode(source_node, context_);
   EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
 }
@@ -356,14 +360,28 @@ TEST_F(ProcessBehaviorNodeTest, SourceNodeTimeOfInputInSeconds) {
   EXPECT_THAT(stack_, ElementsAre(0.75f));
 }
 
-TEST_F(ProcessBehaviorNodeTest, SourceNodeTimeOfInputInMillis) {
+TEST_F(ProcessBehaviorNodeTest, SourceNodeTimeFromInputToStrokeEndInSeconds) {
   BrushBehavior::SourceNode source_node = {
-      .source = BrushBehavior::Source::kTimeOfInputInMillis,
-      .source_value_range = {0, 10000},
+      .source = BrushBehavior::Source::kTimeFromInputToStrokeEndInSeconds,
+      .source_value_range = {0, 10},
   };
-  current_input_.elapsed_time = Duration32::Seconds(7.5);
+  current_input_.elapsed_time = Duration32::Seconds(4);
+  // Until stroke inputs are finished, measure from `input.elapsed_time` to
+  // `complete_elapsed_time`, so that the source value continues to smoothly
+  // advance even if new inputs aren't arriving.
+  input_modeler_state_.full_input_metrics.elapsed_time = Duration32::Seconds(6);
+  input_modeler_state_.complete_elapsed_time = Duration32::Seconds(6.5);
+  input_modeler_state_.inputs_are_finished = false;
   ProcessBehaviorNode(source_node, context_);
-  EXPECT_THAT(stack_, ElementsAre(0.75f));
+  EXPECT_THAT(stack_, ElementsAre(0.25f));
+  // Once stroke inputs are finished, measure from `input.elapsed_time` to
+  // `full_input_metrics.elapsed_time` instead.
+  stack_.clear();
+  input_modeler_state_.full_input_metrics.elapsed_time = Duration32::Seconds(9);
+  input_modeler_state_.complete_elapsed_time = Duration32::Seconds(10.5);
+  input_modeler_state_.inputs_are_finished = true;
+  ProcessBehaviorNode(source_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(0.5f));
 }
 
 TEST_F(ProcessBehaviorNodeTest,
@@ -375,7 +393,7 @@ TEST_F(ProcessBehaviorNodeTest,
   };
   context_.brush_size = 3;
   current_input_.traveled_distance = 15;
-  input_modeler_state_.total_real_distance = 9;
+  input_modeler_state_.real_input_metrics.traveled_distance = 9;
   ProcessBehaviorNode(source_node, context_);
   EXPECT_THAT(stack_, ElementsAre(0.2f));
 }
@@ -386,18 +404,7 @@ TEST_F(ProcessBehaviorNodeTest, SourceNodePredictedTimeElapsedInSeconds) {
       .source_value_range = {0, 10},
   };
   current_input_.elapsed_time = Duration32::Seconds(15);
-  input_modeler_state_.total_real_elapsed_time = Duration32::Seconds(9);
-  ProcessBehaviorNode(source_node, context_);
-  EXPECT_THAT(stack_, ElementsAre(0.6f));
-}
-
-TEST_F(ProcessBehaviorNodeTest, SourceNodePredictedTimeElapsedInMillis) {
-  BrushBehavior::SourceNode source_node = {
-      .source = BrushBehavior::Source::kPredictedTimeElapsedInMillis,
-      .source_value_range = {0, 10000},
-  };
-  current_input_.elapsed_time = Duration32::Seconds(15);
-  input_modeler_state_.total_real_elapsed_time = Duration32::Seconds(9);
+  input_modeler_state_.real_input_metrics.elapsed_time = Duration32::Seconds(9);
   ProcessBehaviorNode(source_node, context_);
   EXPECT_THAT(stack_, ElementsAre(0.6f));
 }
@@ -410,7 +417,7 @@ TEST_F(ProcessBehaviorNodeTest,
   };
   context_.brush_size = 3;
   current_input_.traveled_distance = 9;
-  input_modeler_state_.complete_traveled_distance = 15;
+  input_modeler_state_.full_input_metrics.traveled_distance = 15;
   ProcessBehaviorNode(source_node, context_);
   EXPECT_THAT(stack_, ElementsAre(0.2f));
 }
@@ -426,13 +433,22 @@ TEST_F(ProcessBehaviorNodeTest, SourceNodeTimeSinceInputInSeconds) {
   EXPECT_THAT(stack_, ElementsAre(0.2f));
 }
 
-TEST_F(ProcessBehaviorNodeTest, SourceNodeTimeSinceInputInMillis) {
+TEST_F(ProcessBehaviorNodeTest, SourceNodeTimeSinceStrokeEndInSeconds) {
   BrushBehavior::SourceNode source_node = {
-      .source = BrushBehavior::Source::kTimeSinceInputInMillis,
-      .source_value_range = {0, 10000},
+      .source = BrushBehavior::Source::kTimeSinceStrokeEndInSeconds,
+      .source_value_range = {0, 10},
   };
-  current_input_.elapsed_time = Duration32::Seconds(3);
+
+  // If `inputs_are_finished` is still `false`, the source node emits zero.
+  input_modeler_state_.full_input_metrics.elapsed_time = Duration32::Seconds(3);
   input_modeler_state_.complete_elapsed_time = Duration32::Seconds(5);
+  input_modeler_state_.inputs_are_finished = false;
+  ProcessBehaviorNode(source_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(0.0f));
+
+  // Once `inputs_are_finished` is `true`, the source node emits its value.
+  stack_.clear();
+  input_modeler_state_.inputs_are_finished = true;
   ProcessBehaviorNode(source_node, context_);
   EXPECT_THAT(stack_, ElementsAre(0.2f));
 }
@@ -526,9 +542,9 @@ TEST_F(ProcessBehaviorNodeTest,
   EXPECT_THAT(stack_, ElementsAre(0.5f));
 }
 
-TEST_F(ProcessBehaviorNodeTest, SourceNodeInputSpeedInCentimetersPerSecond) {
+TEST_F(ProcessBehaviorNodeTest, SourceNodeSpeedInCentimetersPerSecond) {
   BrushBehavior::SourceNode source_node = {
-      .source = BrushBehavior::Source::kInputSpeedInCentimetersPerSecond,
+      .source = BrushBehavior::Source::kSpeedInCentimetersPerSecond,
       .source_value_range = {0, 1},
   };
 
@@ -545,10 +561,9 @@ TEST_F(ProcessBehaviorNodeTest, SourceNodeInputSpeedInCentimetersPerSecond) {
   EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
 }
 
-TEST_F(ProcessBehaviorNodeTest,
-       SourceNodeInputVelocityXInCentimetersPerSecond) {
+TEST_F(ProcessBehaviorNodeTest, SourceNodeVelocityXInCentimetersPerSecond) {
   BrushBehavior::SourceNode source_node = {
-      .source = BrushBehavior::Source::kInputVelocityXInCentimetersPerSecond,
+      .source = BrushBehavior::Source::kVelocityXInCentimetersPerSecond,
       .source_value_range = {-1, 1},
   };
 
@@ -576,10 +591,9 @@ TEST_F(ProcessBehaviorNodeTest,
   EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
 }
 
-TEST_F(ProcessBehaviorNodeTest,
-       SourceNodeInputVelocityYInCentimetersPerSecond) {
+TEST_F(ProcessBehaviorNodeTest, SourceNodeVelocityYInCentimetersPerSecond) {
   BrushBehavior::SourceNode source_node = {
-      .source = BrushBehavior::Source::kInputVelocityYInCentimetersPerSecond,
+      .source = BrushBehavior::Source::kVelocityYInCentimetersPerSecond,
       .source_value_range = {-1, 1},
   };
 
@@ -607,9 +621,9 @@ TEST_F(ProcessBehaviorNodeTest,
   EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
 }
 
-TEST_F(ProcessBehaviorNodeTest, SourceNodeInputDistanceTraveledInCentimeters) {
+TEST_F(ProcessBehaviorNodeTest, SourceNodeDistanceTraveledInCentimeters) {
   BrushBehavior::SourceNode source_node = {
-      .source = BrushBehavior::Source::kInputDistanceTraveledInCentimeters,
+      .source = BrushBehavior::Source::kDistanceTraveledInCentimeters,
       .source_value_range = {0, 10},
   };
 
@@ -627,16 +641,15 @@ TEST_F(ProcessBehaviorNodeTest, SourceNodeInputDistanceTraveledInCentimeters) {
 }
 
 TEST_F(ProcessBehaviorNodeTest,
-       SourceNodePredictedInputDistanceTraveledInCentimeters) {
+       SourceNodePredictedDistanceTraveledInCentimeters) {
   BrushBehavior::SourceNode source_node = {
-      .source =
-          BrushBehavior::Source::kPredictedInputDistanceTraveledInCentimeters,
+      .source = BrushBehavior::Source::kPredictedDistanceTraveledInCentimeters,
       .source_value_range = {0, 1},
   };
 
   input_modeler_state_.stroke_unit_length = PhysicalDistance::Centimeters(0.1f);
   current_input_.traveled_distance = 50;
-  input_modeler_state_.total_real_distance = 46;
+  input_modeler_state_.real_input_metrics.traveled_distance = 46;
   ProcessBehaviorNode(source_node, context_);
   EXPECT_THAT(stack_, ElementsAre(FloatNear(0.4f, 1e-5)));
 
@@ -649,10 +662,10 @@ TEST_F(ProcessBehaviorNodeTest,
 }
 
 TEST_F(ProcessBehaviorNodeTest,
-       SourceNodeInputAccelerationInCentimetersPerSecondSquared) {
+       SourceNodeAccelerationInCentimetersPerSecondSquared) {
   BrushBehavior::SourceNode source_node = {
-      .source = BrushBehavior::Source::
-          kInputAccelerationInCentimetersPerSecondSquared,
+      .source =
+          BrushBehavior::Source::kAccelerationInCentimetersPerSecondSquared,
       .source_value_range = {0, 100},
   };
 
@@ -670,10 +683,10 @@ TEST_F(ProcessBehaviorNodeTest,
 }
 
 TEST_F(ProcessBehaviorNodeTest,
-       SourceNodeInputAccelerationXInCentimetersPerSecondSquared) {
+       SourceNodeAccelerationXInCentimetersPerSecondSquared) {
   BrushBehavior::SourceNode source_node = {
-      .source = BrushBehavior::Source::
-          kInputAccelerationXInCentimetersPerSecondSquared,
+      .source =
+          BrushBehavior::Source::kAccelerationXInCentimetersPerSecondSquared,
       .source_value_range = {0, 100},
   };
 
@@ -691,10 +704,10 @@ TEST_F(ProcessBehaviorNodeTest,
 }
 
 TEST_F(ProcessBehaviorNodeTest,
-       SourceNodeInputAccelerationYInCentimetersPerSecondSquared) {
+       SourceNodeAccelerationYInCentimetersPerSecondSquared) {
   BrushBehavior::SourceNode source_node = {
-      .source = BrushBehavior::Source::
-          kInputAccelerationYInCentimetersPerSecondSquared,
+      .source =
+          BrushBehavior::Source::kAccelerationYInCentimetersPerSecondSquared,
       .source_value_range = {0, -100},
   };
 
@@ -712,10 +725,10 @@ TEST_F(ProcessBehaviorNodeTest,
 }
 
 TEST_F(ProcessBehaviorNodeTest,
-       SourceNodeInputAccelerationForwardInCentimetersPerSecondSquared) {
+       SourceNodeAccelerationForwardInCentimetersPerSecondSquared) {
   BrushBehavior::SourceNode source_node = {
       .source = BrushBehavior::Source::
-          kInputAccelerationForwardInCentimetersPerSecondSquared,
+          kAccelerationForwardInCentimetersPerSecondSquared,
       .source_value_range = {0, 100},
   };
 
@@ -744,10 +757,10 @@ TEST_F(ProcessBehaviorNodeTest,
 }
 
 TEST_F(ProcessBehaviorNodeTest,
-       SourceNodeInputAccelerationLateralInCentimetersPerSecondSquared) {
+       SourceNodeAccelerationLateralInCentimetersPerSecondSquared) {
   BrushBehavior::SourceNode source_node = {
       .source = BrushBehavior::Source::
-          kInputAccelerationLateralInCentimetersPerSecondSquared,
+          kAccelerationLateralInCentimetersPerSecondSquared,
       .source_value_range = {-100, 100},
   };
 
@@ -784,7 +797,7 @@ TEST_F(ProcessBehaviorNodeTest,
   };
 
   current_input_.traveled_distance = 3.0f;
-  input_modeler_state_.complete_traveled_distance = 12.0f;
+  input_modeler_state_.full_input_metrics.traveled_distance = 12.0f;
   ProcessBehaviorNode(source_node, context_);
   EXPECT_THAT(stack_, ElementsAre(0.75f));
 }
@@ -801,7 +814,7 @@ TEST_F(ProcessBehaviorNodeTest,
   // then the fraction of distance remaining isn't well-defined (0/0), so we
   // arbitrarily define that as 0% distance remaining.
   current_input_.traveled_distance = 0.0f;
-  input_modeler_state_.complete_traveled_distance = 0.0f;
+  input_modeler_state_.full_input_metrics.traveled_distance = 0.0f;
   ProcessBehaviorNode(source_node, context_);
   EXPECT_THAT(stack_, ElementsAre(0.0f));
 }
@@ -888,7 +901,7 @@ TEST_F(ProcessBehaviorNodeTest, NoiseNodeDistanceInCentimeters) {
   context_.previous_input_metrics = InputMetrics{.traveled_distance = 0};
   NoiseNodeImplementation noise_impl = {
       .generator_index = 0,
-      .vary_over = BrushBehavior::DampingSource::kDistanceInCentimeters,
+      .vary_over = BrushBehavior::ProgressDomain::kDistanceInCentimeters,
       .base_period = 3.0,
   };
 
@@ -906,27 +919,21 @@ TEST_F(ProcessBehaviorNodeTest, NoiseNodeDistanceInCentimeters) {
 
 TEST_F(ProcessBehaviorNodeTest,
        NoiseNodeDistanceInCentimetersWithNoStrokeUnitLength) {
-  NoiseGenerator reference_generator(23456);
-  // Set the node up to use a copy of the reference generator.
-  std::vector<NoiseGenerator> generators = {reference_generator};
+  std::vector<NoiseGenerator> generators = {NoiseGenerator(23456)};
   context_.noise_generators = absl::MakeSpan(generators);
   input_modeler_state_.stroke_unit_length = std::nullopt;
   context_.previous_input_metrics = InputMetrics{.traveled_distance = 0};
   NoiseNodeImplementation noise_impl = {
       .generator_index = 0,
-      .vary_over = BrushBehavior::DampingSource::kDistanceInCentimeters,
+      .vary_over = BrushBehavior::ProgressDomain::kDistanceInCentimeters,
       .base_period = 3.0,
   };
 
   // Since there's no mapping set between stroke units and physical units, the
-  // noise node should treat any stroke distance traveled as if no physical
-  // distance had been traveled. Thus, we should get the same random output as
-  // the reference generator gives for an input of 0.
+  // noise node should return null.
   current_input_.traveled_distance = 22.5f;
   ProcessBehaviorNode(noise_impl, context_);
-  reference_generator.AdvanceInputBy(0.f);
-  EXPECT_THAT(stack_,
-              ElementsAre(FloatEq(reference_generator.CurrentOutputValue())));
+  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
 }
 
 TEST_F(ProcessBehaviorNodeTest, NoiseNodeDistanceInMultiplesOfBrushSize) {
@@ -939,7 +946,7 @@ TEST_F(ProcessBehaviorNodeTest, NoiseNodeDistanceInMultiplesOfBrushSize) {
   NoiseNodeImplementation noise_impl = {
       .generator_index = 0,
       .vary_over =
-          BrushBehavior::DampingSource::kDistanceInMultiplesOfBrushSize,
+          BrushBehavior::ProgressDomain::kDistanceInMultiplesOfBrushSize,
       .base_period = 3.0,
   };
 
@@ -963,7 +970,7 @@ TEST_F(ProcessBehaviorNodeTest, NoiseNodeTimeInSeconds) {
   };
   NoiseNodeImplementation noise_impl = {
       .generator_index = 0,
-      .vary_over = BrushBehavior::DampingSource::kTimeInSeconds,
+      .vary_over = BrushBehavior::ProgressDomain::kTimeInSeconds,
       .base_period = 3.0,
   };
 
@@ -974,81 +981,6 @@ TEST_F(ProcessBehaviorNodeTest, NoiseNodeTimeInSeconds) {
   reference_generator.AdvanceInputBy(0.75f);
   EXPECT_THAT(stack_,
               ElementsAre(FloatEq(reference_generator.CurrentOutputValue())));
-}
-
-TEST_F(ProcessBehaviorNodeTest, FallbackFilterNodePressure) {
-  BrushBehavior::FallbackFilterNode filter_node = {
-      .is_fallback_for = BrushBehavior::OptionalInputProperty::kPressure};
-
-  // The stack is left unchanged if the input lacks the fallback-for property.
-  current_input_.pressure = StrokeInput::kNoPressure;
-  stack_.push_back(0.75f);
-  ProcessBehaviorNode(filter_node, context_);
-  EXPECT_THAT(stack_, ElementsAre(0.75f));
-
-  // The top of the stack is set to null if the input includes the fallback-for
-  // property.
-  current_input_.pressure = 0.5f;
-  ProcessBehaviorNode(filter_node, context_);
-  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
-}
-
-TEST_F(ProcessBehaviorNodeTest, FallbackFilterNodeTilt) {
-  BrushBehavior::FallbackFilterNode filter_node = {
-      .is_fallback_for = BrushBehavior::OptionalInputProperty::kTilt};
-
-  // The stack is left unchanged if the input lacks the fallback-for property.
-  current_input_.tilt = StrokeInput::kNoTilt;
-  stack_.push_back(0.75f);
-  ProcessBehaviorNode(filter_node, context_);
-  EXPECT_THAT(stack_, ElementsAre(0.75f));
-
-  // The top of the stack is set to null if the input includes the fallback-for
-  // property.
-  current_input_.tilt = Angle::Degrees(30);
-  ProcessBehaviorNode(filter_node, context_);
-  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
-}
-
-TEST_F(ProcessBehaviorNodeTest, FallbackFilterNodeOrientation) {
-  BrushBehavior::FallbackFilterNode filter_node = {
-      .is_fallback_for = BrushBehavior::OptionalInputProperty::kOrientation};
-
-  // The stack is left unchanged if the input lacks the fallback-for property.
-  current_input_.orientation = StrokeInput::kNoOrientation;
-  stack_.push_back(0.75f);
-  ProcessBehaviorNode(filter_node, context_);
-  EXPECT_THAT(stack_, ElementsAre(0.75f));
-
-  // The top of the stack is set to null if the input includes the fallback-for
-  // property.
-  current_input_.orientation = Angle::Degrees(120);
-  ProcessBehaviorNode(filter_node, context_);
-  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
-}
-
-TEST_F(ProcessBehaviorNodeTest, FallbackFilterNodeTiltXAndY) {
-  BrushBehavior::FallbackFilterNode filter_node = {
-      .is_fallback_for = BrushBehavior::OptionalInputProperty::kTiltXAndY};
-
-  // For kTiltXAndY, both tilt and orientation data must be present. So the
-  // stack is left unchanged if the input lacks either property.
-  stack_.push_back(0.75f);
-  current_input_.tilt = StrokeInput::kNoTilt;
-  current_input_.orientation = Angle::Degrees(45);
-  ProcessBehaviorNode(filter_node, context_);
-  EXPECT_THAT(stack_, ElementsAre(0.75f));
-
-  current_input_.tilt = Angle::Degrees(45);
-  current_input_.orientation = StrokeInput::kNoOrientation;
-  ProcessBehaviorNode(filter_node, context_);
-  EXPECT_THAT(stack_, ElementsAre(0.75f));
-
-  // The top of the stack is set to null if the input includes both properties.
-  current_input_.tilt = Angle::Degrees(45);
-  current_input_.orientation = Angle::Degrees(45);
-  ProcessBehaviorNode(filter_node, context_);
-  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
 }
 
 TEST_F(ProcessBehaviorNodeTest, ToolTypeFilterNode) {
@@ -1084,7 +1016,7 @@ TEST_F(ProcessBehaviorNodeTest, DampingNodeDistanceInCentimeters) {
   context_.previous_input_metrics = InputMetrics{.traveled_distance = 0};
   DampingNodeImplementation damping_impl = {
       .damping_index = 0,
-      .damping_source = BrushBehavior::DampingSource::kDistanceInCentimeters,
+      .damping_source = BrushBehavior::ProgressDomain::kDistanceInCentimeters,
       .damping_gap = 5.0f,
   };
 
@@ -1133,17 +1065,16 @@ TEST_F(ProcessBehaviorNodeTest,
   context_.previous_input_metrics = InputMetrics{.traveled_distance = 0};
   DampingNodeImplementation damping_impl = {
       .damping_index = 0,
-      .damping_source = BrushBehavior::DampingSource::kDistanceInCentimeters,
+      .damping_source = BrushBehavior::ProgressDomain::kDistanceInCentimeters,
       .damping_gap = 5.0f,
   };
 
-  // If the input changes, but no stroke_unit_length is set, the damped value
-  // snaps to the new input.
+  // Since there's no mapping set between stroke units and physical units, the
+  // damping node should return null.
   current_input_.traveled_distance = 25;
   stack_.push_back(0.75f);
   ProcessBehaviorNode(damping_impl, context_);
-  EXPECT_THAT(stack_, ElementsAre(0.75f));
-  EXPECT_THAT(damped_values, ElementsAre(0.75f));
+  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
 }
 
 TEST_F(ProcessBehaviorNodeTest, DampingNodeDistanceInMultiplesOfBrushSize) {
@@ -1154,7 +1085,7 @@ TEST_F(ProcessBehaviorNodeTest, DampingNodeDistanceInMultiplesOfBrushSize) {
   DampingNodeImplementation damping_impl = {
       .damping_index = 0,
       .damping_source =
-          BrushBehavior::DampingSource::kDistanceInMultiplesOfBrushSize,
+          BrushBehavior::ProgressDomain::kDistanceInMultiplesOfBrushSize,
       .damping_gap = 5.0f,
   };
 
@@ -1203,7 +1134,7 @@ TEST_F(ProcessBehaviorNodeTest, DampingNodeTimeInSeconds) {
   };
   DampingNodeImplementation damping_impl = {
       .damping_index = 0,
-      .damping_source = BrushBehavior::DampingSource::kTimeInSeconds,
+      .damping_source = BrushBehavior::ProgressDomain::kTimeInSeconds,
       .damping_gap = 0.5f,
   };
 
@@ -1248,6 +1179,91 @@ TEST_F(ProcessBehaviorNodeTest, ResponseNode) {
   EXPECT_THAT(stack_, ElementsAre(FloatNear(0.87f, 0.01f)));
 }
 
+TEST_F(ProcessBehaviorNodeTest, IntegralNodeTimeInSeconds) {
+  IntegralNodeImplementation integral_impl = {
+      .integral_index = 0,
+      .integrate_over = BrushBehavior::ProgressDomain::kTimeInSeconds,
+      .integral_out_of_range_behavior = BrushBehavior::OutOfRange::kMirror,
+      .integral_value_range = {-5, 5},
+  };
+  std::vector<IntegralState> integrals = {{
+      .last_input = kNullBehaviorNodeValue,
+      .last_integral = 0,
+  }};
+  context_.integrals = absl::MakeSpan(integrals);
+  context_.previous_input_metrics = InputMetrics{
+      .elapsed_time = Duration32::Zero(),
+  };
+
+  // The integral remains at its initial value of zero as long as the input
+  // remains null, and this gets scaled within `integral_value_range`.
+  current_input_.elapsed_time = Duration32::Seconds(4);
+  stack_.push_back(kNullBehaviorNodeValue);
+  ProcessBehaviorNode(integral_impl, context_);
+  EXPECT_FLOAT_EQ(integrals[0].last_integral, 0);
+  EXPECT_THAT(stack_, ElementsAre(0.5));
+  context_.previous_input_metrics->elapsed_time = current_input_.elapsed_time;
+
+  // After the first non-null input, the integral is still at its initial value.
+  current_input_.elapsed_time += Duration32::Seconds(4);
+  stack_[0] = 0.75f;
+  ProcessBehaviorNode(integral_impl, context_);
+  EXPECT_FLOAT_EQ(integrals[0].last_integral, 0);
+  EXPECT_THAT(stack_, ElementsAre(0.5));
+  context_.previous_input_metrics->elapsed_time = current_input_.elapsed_time;
+
+  // As time passes, the integral increases equal to the input value integrated
+  // over time.
+  current_input_.elapsed_time += Duration32::Seconds(4);
+  stack_[0] = 0.75f;
+  ProcessBehaviorNode(integral_impl, context_);
+  EXPECT_FLOAT_EQ(integrals[0].last_integral, 3);
+  EXPECT_THAT(stack_, ElementsAre(FloatNear(0.8, 0.001f)));
+  context_.previous_input_metrics->elapsed_time = current_input_.elapsed_time;
+
+  // If the integral exceeds `integral_value_range`, the output value of the
+  // node follows `integral_out_of_range_behavior` (in this case, `kMirror`).
+  current_input_.elapsed_time += Duration32::Seconds(4);
+  stack_[0] = 0.75f;
+  ProcessBehaviorNode(integral_impl, context_);
+  EXPECT_FLOAT_EQ(integrals[0].last_integral, 6);
+  EXPECT_THAT(stack_, ElementsAre(FloatNear(0.9, 0.001f)));
+  context_.previous_input_metrics->elapsed_time = current_input_.elapsed_time;
+
+  // If the input becomes null, the integral node treats it as though it were
+  // still its previous value.
+  current_input_.elapsed_time += Duration32::Seconds(4);
+  stack_[0] = kNullBehaviorNodeValue;
+  ProcessBehaviorNode(integral_impl, context_);
+  EXPECT_FLOAT_EQ(integrals[0].last_integral, 9);
+  EXPECT_THAT(stack_, ElementsAre(FloatNear(0.6, 0.001f)));
+}
+
+TEST_F(ProcessBehaviorNodeTest,
+       IntegralNodeDistanceInCentimetersWithNoStrokeUnitLength) {
+  IntegralNodeImplementation integral_impl = {
+      .integral_index = 0,
+      .integrate_over = BrushBehavior::ProgressDomain::kDistanceInCentimeters,
+      .integral_out_of_range_behavior = BrushBehavior::OutOfRange::kRepeat,
+      .integral_value_range = {0, 10},
+  };
+  std::vector<IntegralState> integrals = {{
+      .last_input = kNullBehaviorNodeValue,
+      .last_integral = 0,
+  }};
+  context_.integrals = absl::MakeSpan(integrals);
+  context_.previous_input_metrics = InputMetrics{
+      .elapsed_time = Duration32::Zero(),
+  };
+
+  // Since there's no mapping set between stroke units and physical units, the
+  // integral node should return null.
+  current_input_.traveled_distance = 22.5f;
+  stack_.push_back(4.0f);
+  ProcessBehaviorNode(integral_impl, context_);
+  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
+}
+
 TEST_F(ProcessBehaviorNodeTest, BinaryOpNodeSum) {
   BrushBehavior::BinaryOpNode binary_op_node = {
       .operation = BrushBehavior::BinaryOp::kSum};
@@ -1273,6 +1289,134 @@ TEST_F(ProcessBehaviorNodeTest, BinaryOpNodeProduct) {
   EXPECT_THAT(stack_, ElementsAre(6.0f));
 
   // `kProduct` returns null when one of the two inputs is null.
+  stack_.push_back(kNullBehaviorNodeValue);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
+}
+
+TEST_F(ProcessBehaviorNodeTest, BinaryOpNodeMin) {
+  BrushBehavior::BinaryOpNode binary_op_node = {
+      .operation = BrushBehavior::BinaryOp::kMin};
+
+  stack_.push_back(2.0f);
+  stack_.push_back(3.0f);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(2.0f));
+
+  // `kMin` returns null when either of the two inputs is null.
+  stack_.push_back(kNullBehaviorNodeValue);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
+  stack_.push_back(1.0f);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
+}
+
+TEST_F(ProcessBehaviorNodeTest, BinaryOpNodeMax) {
+  BrushBehavior::BinaryOpNode binary_op_node = {
+      .operation = BrushBehavior::BinaryOp::kMax};
+
+  stack_.push_back(2.0f);
+  stack_.push_back(3.0f);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(3.0f));
+
+  // `kMax` returns null when either of the two inputs is null.
+  stack_.push_back(kNullBehaviorNodeValue);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
+  stack_.push_back(1.0f);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
+}
+
+TEST_F(ProcessBehaviorNodeTest, BinaryOpNodeAndThen) {
+  BrushBehavior::BinaryOpNode binary_op_node = {
+      .operation = BrushBehavior::BinaryOp::kAndThen};
+
+  // `kAndThen` returns the second input as long as the first input isn't null.
+  stack_.push_back(2.0f);
+  stack_.push_back(7.0f);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(7.0f));
+
+  stack_.clear();
+  stack_.push_back(2.0f);
+  stack_.push_back(kNullBehaviorNodeValue);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
+
+  // If the first input is null, `kAndThen` always returns null.
+  stack_.clear();
+  stack_.push_back(kNullBehaviorNodeValue);
+  stack_.push_back(7.0f);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
+
+  stack_.clear();
+  stack_.push_back(kNullBehaviorNodeValue);
+  stack_.push_back(kNullBehaviorNodeValue);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
+}
+
+TEST_F(ProcessBehaviorNodeTest, BinaryOpNodeOrElse) {
+  BrushBehavior::BinaryOpNode binary_op_node = {
+      .operation = BrushBehavior::BinaryOp::kOrElse};
+
+  // `kOrElse` returns the first input as long as it isn't null.
+  stack_.push_back(2.0f);
+  stack_.push_back(7.0f);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(2.0f));
+
+  stack_.clear();
+  stack_.push_back(2.0f);
+  stack_.push_back(kNullBehaviorNodeValue);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(2.0f));
+
+  // If the first input is null, `kOrElse` returns the second input.
+  stack_.clear();
+  stack_.push_back(kNullBehaviorNodeValue);
+  stack_.push_back(7.0f);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(7.0f));
+
+  stack_.clear();
+  stack_.push_back(kNullBehaviorNodeValue);
+  stack_.push_back(kNullBehaviorNodeValue);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
+}
+
+TEST_F(ProcessBehaviorNodeTest, BinaryOpNodeXorElse) {
+  BrushBehavior::BinaryOpNode binary_op_node = {
+      .operation = BrushBehavior::BinaryOp::kXorElse};
+
+  // If neither input is null, `kXorElse` returns null.
+  stack_.push_back(2.0f);
+  stack_.push_back(7.0f);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
+
+  // If only the first input is null, `kXorElse` returns the second input.
+  stack_.clear();
+  stack_.push_back(kNullBehaviorNodeValue);
+  stack_.push_back(7.0f);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(7.0f));
+
+  // If only the second input is null, `kXorElse` returns the first input.
+  stack_.clear();
+  stack_.push_back(2.0f);
+  stack_.push_back(kNullBehaviorNodeValue);
+  ProcessBehaviorNode(binary_op_node, context_);
+  EXPECT_THAT(stack_, ElementsAre(2.0f));
+
+  // If both inputs are null, `kXorElse` returns null.
+  stack_.clear();
+  stack_.push_back(kNullBehaviorNodeValue);
   stack_.push_back(kNullBehaviorNodeValue);
   ProcessBehaviorNode(binary_op_node, context_);
   EXPECT_THAT(stack_, ElementsAre(NullNodeValueMatcher()));
@@ -1382,12 +1526,11 @@ TEST_F(ProcessBehaviorNodeTest, PolarTargetNode) {
 }
 
 TEST(CreateTipStateTest, HasPassedInPosition) {
-  EXPECT_THAT(CreateTipState({0, 0}, Angle(), BrushTip{}, 1.f, {}, {}).position,
+  EXPECT_THAT(CreateTipState({0, 0}, Vec(), BrushTip{}, 1.f, {}, {}).position,
               PointEq({0, 0}));
-  EXPECT_THAT(
-      CreateTipState({-1, 2}, Angle(), BrushTip{}, 1.f, {}, {}).position,
-      PointEq({-1, 2}));
-  EXPECT_THAT(CreateTipState({6, 8}, Angle(), BrushTip{}, 1.f, {}, {}).position,
+  EXPECT_THAT(CreateTipState({-1, 2}, Vec(), BrushTip{}, 1.f, {}, {}).position,
+              PointEq({-1, 2}));
+  EXPECT_THAT(CreateTipState({6, 8}, Vec(), BrushTip{}, 1.f, {}, {}).position,
               PointEq({6, 8}));
 }
 
@@ -1405,11 +1548,11 @@ TEST(CreateTipStateTest, HasBasePropertiesWithoutBehaviors) {
   BrushTip brush_tip = MakeBaseBrushTip();
   float brush_size = 3.f;
   BrushTipState state =
-      CreateTipState({0, 0}, Angle(), brush_tip, brush_size, {}, {});
+      CreateTipState({0, 0}, Vec(), brush_tip, brush_size, {}, {});
 
   EXPECT_FLOAT_EQ(state.width, brush_tip.scale.x * brush_size);
   EXPECT_FLOAT_EQ(state.height, brush_tip.scale.y * brush_size);
-  EXPECT_FLOAT_EQ(state.percent_radius, brush_tip.corner_rounding);
+  EXPECT_FLOAT_EQ(state.corner_rounding, brush_tip.corner_rounding);
   EXPECT_THAT(state.slant, AngleEq(brush_tip.slant));
   EXPECT_FLOAT_EQ(state.pinch, brush_tip.pinch);
   EXPECT_THAT(state.rotation, AngleEq(brush_tip.rotation));
@@ -1420,22 +1563,22 @@ TEST(CreateTipStateTest, WithBehaviorTargetingWidth) {
   float brush_size = 2.f;
   float width_multiplier = 1.5f;
   BrushTipState state = CreateTipState(
-      {0, 0}, Angle(), brush_tip, brush_size,
+      {0, 0}, Vec(), brush_tip, brush_size,
       {BrushBehavior::Target::kWidthMultiplier}, {width_multiplier});
 
   // Only the width should be affected by the multiplier:
   EXPECT_FLOAT_EQ(state.width,
                   width_multiplier * brush_tip.scale.x * brush_size);
   EXPECT_FLOAT_EQ(state.height, brush_tip.scale.y * brush_size);
-  EXPECT_FLOAT_EQ(state.percent_radius, brush_tip.corner_rounding);
+  EXPECT_FLOAT_EQ(state.corner_rounding, brush_tip.corner_rounding);
   EXPECT_THAT(state.rotation, AngleEq(brush_tip.rotation));
 
-  float clamp_multiplier = 5.f;
-  state = CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+  width_multiplier = 5.f;
+  state = CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                          {BrushBehavior::Target::kWidthMultiplier},
-                         {clamp_multiplier});
+                         {width_multiplier});
   EXPECT_FLOAT_EQ(state.width,
-                  /**clamped to 2*/ 2 * brush_tip.scale.x * brush_size);
+                  width_multiplier * brush_tip.scale.x * brush_size);
 }
 
 TEST(CreateTipStateTest, WithBehaviorTargetingHeight) {
@@ -1443,18 +1586,18 @@ TEST(CreateTipStateTest, WithBehaviorTargetingHeight) {
   float brush_size = 3.f;
   float height_multiplier = 1.75f;
   BrushTipState state = CreateTipState(
-      {0, 0}, Angle(), brush_tip, brush_size,
+      {0, 0}, Vec(), brush_tip, brush_size,
       {BrushBehavior::Target::kHeightMultiplier}, {height_multiplier});
 
   // Only the height should be affected by the multiplier:
   EXPECT_FLOAT_EQ(state.width, brush_tip.scale.x * brush_size);
   EXPECT_FLOAT_EQ(state.height,
                   height_multiplier * brush_tip.scale.y * brush_size);
-  EXPECT_FLOAT_EQ(state.percent_radius, brush_tip.corner_rounding);
+  EXPECT_FLOAT_EQ(state.corner_rounding, brush_tip.corner_rounding);
   EXPECT_THAT(state.rotation, AngleEq(brush_tip.rotation));
 
   float clamp_multiplier = -4.f;
-  state = CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+  state = CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                          {BrushBehavior::Target::kHeightMultiplier},
                          {clamp_multiplier});
   EXPECT_FLOAT_EQ(state.height, /**clamped to 0*/ 0);
@@ -1464,7 +1607,7 @@ TEST(CreateTipStateTest, WithBehaviorTargetingSize) {
   BrushTip brush_tip = MakeBaseBrushTip();
   float brush_size = 2.5f;
   float size_multiplier = 1.3;
-  BrushTipState state = CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+  BrushTipState state = CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                                        {BrushBehavior::Target::kSizeMultiplier},
                                        {size_multiplier});
 
@@ -1473,17 +1616,17 @@ TEST(CreateTipStateTest, WithBehaviorTargetingSize) {
                   size_multiplier * brush_tip.scale.x * brush_size);
   EXPECT_FLOAT_EQ(state.height,
                   size_multiplier * brush_tip.scale.y * brush_size);
-  EXPECT_FLOAT_EQ(state.percent_radius, brush_tip.corner_rounding);
+  EXPECT_FLOAT_EQ(state.corner_rounding, brush_tip.corner_rounding);
   EXPECT_THAT(state.rotation, AngleEq(brush_tip.rotation));
 
-  float clamp_multiplier = 5.f;
-  state = CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+  size_multiplier = 5.f;
+  state = CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                          {BrushBehavior::Target::kSizeMultiplier},
-                         {clamp_multiplier});
+                         {size_multiplier});
   EXPECT_FLOAT_EQ(state.width,
-                  /**clamped to 2*/ 2 * brush_tip.scale.x * brush_size);
+                  size_multiplier * brush_tip.scale.x * brush_size);
   EXPECT_FLOAT_EQ(state.height,
-                  /**clamped to 2*/ 2 * brush_tip.scale.y * brush_size);
+                  size_multiplier * brush_tip.scale.y * brush_size);
 }
 
 TEST(CreateTipStateTest, WithBehaviorTargetingSlant) {
@@ -1491,18 +1634,18 @@ TEST(CreateTipStateTest, WithBehaviorTargetingSlant) {
   float brush_size = 2.5f;
   float slant_offset_in_radians = 0.3;
   BrushTipState state =
-      CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+      CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                      {BrushBehavior::Target::kSlantOffsetInRadians},
                      {slant_offset_in_radians});
 
   EXPECT_FLOAT_EQ(state.width, brush_tip.scale.x * brush_size);
   EXPECT_FLOAT_EQ(state.height, brush_tip.scale.y * brush_size);
-  EXPECT_FLOAT_EQ(state.percent_radius, brush_tip.corner_rounding);
+  EXPECT_FLOAT_EQ(state.corner_rounding, brush_tip.corner_rounding);
   EXPECT_THAT(state.slant, AngleEq(brush_tip.slant +
                                    Angle::Radians(slant_offset_in_radians)));
 
   float clamp_offset_in_radians = kFullTurn.ValueInRadians();
-  state = CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+  state = CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                          {BrushBehavior::Target::kSlantOffsetInRadians},
                          {clamp_offset_in_radians});
 
@@ -1515,7 +1658,7 @@ TEST(CreateTipStateTest, WithBehaviorTargetingPinch) {
   float brush_size = 2.5f;
   float pinch_offset = 0.3;
   BrushTipState state =
-      CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+      CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                      {BrushBehavior::Target::kPinchOffset}, {pinch_offset});
 
   EXPECT_FLOAT_EQ(state.pinch, brush_tip.pinch + pinch_offset);
@@ -1524,7 +1667,7 @@ TEST(CreateTipStateTest, WithBehaviorTargetingPinch) {
   EXPECT_THAT(state.rotation, AngleEq(brush_tip.rotation));
 
   float clamp_offset = 5;
-  state = CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+  state = CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                          {BrushBehavior::Target::kPinchOffset}, {clamp_offset});
   EXPECT_FLOAT_EQ(state.pinch, 1);  // clamped to 1
 }
@@ -1534,17 +1677,17 @@ TEST(CreateTipStateTest, WithBehaviorTargetingRotation) {
   float brush_size = 2.5f;
   float rotation_offset_in_radians = 0.3;
   BrushTipState state =
-      CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+      CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                      {BrushBehavior::Target::kRotationOffsetInRadians},
                      {rotation_offset_in_radians});
 
   EXPECT_FLOAT_EQ(state.width, brush_tip.scale.x * brush_size);
   EXPECT_FLOAT_EQ(state.height, brush_tip.scale.y * brush_size);
-  EXPECT_FLOAT_EQ(state.percent_radius, brush_tip.corner_rounding);
+  EXPECT_FLOAT_EQ(state.corner_rounding, brush_tip.corner_rounding);
   EXPECT_THAT(
       state.rotation,
       AngleEq((brush_tip.rotation + Angle::Radians(rotation_offset_in_radians))
-                  .Normalized()));
+                  .NormalizedAboutZero()));
 }
 
 TEST(CreateTipStateTest, WithBehaviorTargetingCornerRounding) {
@@ -1552,20 +1695,20 @@ TEST(CreateTipStateTest, WithBehaviorTargetingCornerRounding) {
   float brush_size = 2.5f;
   float rounding_offset = 0.3;
   BrushTipState state = CreateTipState(
-      {0, 0}, Angle(), brush_tip, brush_size,
+      {0, 0}, Vec(), brush_tip, brush_size,
       {BrushBehavior::Target::kCornerRoundingOffset}, {rounding_offset});
 
-  EXPECT_FLOAT_EQ(state.percent_radius,
+  EXPECT_FLOAT_EQ(state.corner_rounding,
                   brush_tip.corner_rounding + rounding_offset);
   EXPECT_FLOAT_EQ(state.width, brush_tip.scale.x * brush_size);
   EXPECT_FLOAT_EQ(state.height, brush_tip.scale.y * brush_size);
   EXPECT_THAT(state.rotation, AngleEq(brush_tip.rotation));
 
   float clamp_offset = -5;
-  state = CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+  state = CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                          {BrushBehavior::Target::kCornerRoundingOffset},
                          {clamp_offset});
-  EXPECT_FLOAT_EQ(state.percent_radius, /**clamped to 0*/ 0);
+  EXPECT_FLOAT_EQ(state.corner_rounding, /**clamped to 0*/ 0);
 }
 
 TEST(CreateTipStateTest, WithBehaviorTargetingTextureAnimationProgress) {
@@ -1573,7 +1716,7 @@ TEST(CreateTipStateTest, WithBehaviorTargetingTextureAnimationProgress) {
   float brush_size = 2.5f;
   float texture_animation_progress_offset = -3.25;
   BrushTipState state =
-      CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+      CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                      {BrushBehavior::Target::kTextureAnimationProgressOffset},
                      {texture_animation_progress_offset});
   // The final progress offset should be computed mod 1.
@@ -1585,7 +1728,7 @@ TEST(CreateTipStateTest, WithBehaviorTargetingHue) {
   float brush_size = 2.5f;
   float hue_offset_in_radians = 0.3f;
   BrushTipState state = CreateTipState(
-      {0, 0}, Angle(), brush_tip, brush_size,
+      {0, 0}, Vec(), brush_tip, brush_size,
       {BrushBehavior::Target::kHueOffsetInRadians}, {hue_offset_in_radians});
 
   EXPECT_FLOAT_EQ(state.hue_offset_in_full_turns,
@@ -1595,7 +1738,7 @@ TEST(CreateTipStateTest, WithBehaviorTargetingHue) {
   EXPECT_THAT(state.rotation, AngleEq(brush_tip.rotation));
 
   Angle normalize_offset = kFullTurn * 1.5f;
-  state = CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+  state = CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                          {BrushBehavior::Target::kHueOffsetInRadians},
                          {normalize_offset.ValueInRadians()});
   EXPECT_FLOAT_EQ(state.hue_offset_in_full_turns, 0.5);
@@ -1606,7 +1749,7 @@ TEST(CreateTipStateTest, WithBehaviorTargetingSaturation) {
   float brush_size = 2.5f;
   float saturation_multiplier = 1.3;
   BrushTipState state = CreateTipState(
-      {0, 0}, Angle(), brush_tip, brush_size,
+      {0, 0}, Vec(), brush_tip, brush_size,
       {BrushBehavior::Target::kSaturationMultiplier}, {saturation_multiplier});
 
   EXPECT_FLOAT_EQ(state.saturation_multiplier, saturation_multiplier);
@@ -1615,7 +1758,7 @@ TEST(CreateTipStateTest, WithBehaviorTargetingSaturation) {
   EXPECT_THAT(state.rotation, AngleEq(brush_tip.rotation));
 
   float clamp_multiplier = 3.f;
-  state = CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+  state = CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                          {BrushBehavior::Target::kSaturationMultiplier},
                          {clamp_multiplier});
   EXPECT_FLOAT_EQ(state.saturation_multiplier, 2.f);
@@ -1625,19 +1768,20 @@ TEST(CreateTipStateTest, WithBehaviorTargetingLuminosity) {
   BrushTip brush_tip = MakeBaseBrushTip();
   float brush_size = 2.5f;
   float luminosity_offset = 0.3;
-  BrushTipState state =
-      CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
-                     {BrushBehavior::Target::kLuminosity}, {luminosity_offset});
+  BrushTipState state = CreateTipState(
+      {0, 0}, Vec(), brush_tip, brush_size,
+      {BrushBehavior::Target::kLuminosityOffset}, {luminosity_offset});
 
-  EXPECT_FLOAT_EQ(state.luminosity_shift, luminosity_offset);
+  EXPECT_FLOAT_EQ(state.luminosity_offset, luminosity_offset);
   EXPECT_FLOAT_EQ(state.width, brush_tip.scale.x * brush_size);
   EXPECT_FLOAT_EQ(state.height, brush_tip.scale.y * brush_size);
   EXPECT_THAT(state.rotation, AngleEq(brush_tip.rotation));
 
   float clamp_offset = 2.f;
-  state = CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
-                         {BrushBehavior::Target::kLuminosity}, {clamp_offset});
-  EXPECT_FLOAT_EQ(state.luminosity_shift, 1.f);
+  state = CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
+                         {BrushBehavior::Target::kLuminosityOffset},
+                         {clamp_offset});
+  EXPECT_FLOAT_EQ(state.luminosity_offset, 1.f);
 }
 
 TEST(CreateTipStateTest, WithBehaviorTargetingOpacity) {
@@ -1645,7 +1789,7 @@ TEST(CreateTipStateTest, WithBehaviorTargetingOpacity) {
   float brush_size = 2.5f;
   float opacity_multiplier = 1.3;
   BrushTipState state = CreateTipState(
-      {0, 0}, Angle(), brush_tip, brush_size,
+      {0, 0}, Vec(), brush_tip, brush_size,
       {BrushBehavior::Target::kOpacityMultiplier}, {opacity_multiplier});
 
   EXPECT_FLOAT_EQ(state.opacity_multiplier, opacity_multiplier);
@@ -1654,7 +1798,7 @@ TEST(CreateTipStateTest, WithBehaviorTargetingOpacity) {
   EXPECT_THAT(state.rotation, AngleEq(brush_tip.rotation));
 
   float clamp_multiplier = 3.f;
-  state = CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+  state = CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                          {BrushBehavior::Target::kOpacityMultiplier},
                          {clamp_multiplier});
   EXPECT_FLOAT_EQ(state.opacity_multiplier, 2.f);
@@ -1665,7 +1809,7 @@ TEST(CreateTipStateTest, WithBehaviorsTargetingTheSameProperty) {
   float brush_size = 3.f;
   float modifiers[] = {1.5f, 0.8f};
   BrushTipState state =
-      CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+      CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                      {BrushBehavior::Target::kWidthMultiplier,
                       BrushBehavior::Target::kWidthMultiplier},
                      modifiers);
@@ -1674,7 +1818,7 @@ TEST(CreateTipStateTest, WithBehaviorsTargetingTheSameProperty) {
   EXPECT_FLOAT_EQ(state.width,
                   modifiers[0] * modifiers[1] * brush_tip.scale.x * brush_size);
   EXPECT_FLOAT_EQ(state.height, brush_tip.scale.y * brush_size);
-  EXPECT_FLOAT_EQ(state.percent_radius, brush_tip.corner_rounding);
+  EXPECT_FLOAT_EQ(state.corner_rounding, brush_tip.corner_rounding);
   EXPECT_THAT(state.rotation, AngleEq(brush_tip.rotation));
 }
 
@@ -1683,169 +1827,111 @@ TEST(CreateTipStateTest, WithBehaviorTargetingEachProperty) {
   float brush_size = 1.f;
   float modifiers[] = {0.9f, 1.2f};
   BrushTipState state =
-      CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+      CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                      {BrushBehavior::Target::kWidthMultiplier,
                       BrushBehavior::Target::kHeightMultiplier},
                      modifiers);
 
   EXPECT_FLOAT_EQ(state.width, modifiers[0] * brush_tip.scale.x * brush_size);
   EXPECT_FLOAT_EQ(state.height, modifiers[1] * brush_tip.scale.y * brush_size);
-  EXPECT_FLOAT_EQ(state.percent_radius, brush_tip.corner_rounding);
+  EXPECT_FLOAT_EQ(state.corner_rounding, brush_tip.corner_rounding);
   EXPECT_THAT(state.rotation, AngleEq(brush_tip.rotation));
 }
 
-TEST(CreateTipStateTest, WidthIsClampedZeroToTwiceBaseValue) {
+TEST(CreateTipStateTest, WidthIsClampedToNonNegative) {
   BrushTip brush_tip = MakeBaseBrushTip();
   float brush_size = 3.f;
 
-  EXPECT_FLOAT_EQ(CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+  EXPECT_FLOAT_EQ(CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                                  {BrushBehavior::Target::kWidthMultiplier,
                                   BrushBehavior::Target::kWidthMultiplier},
                                  {-0.9f, 1.7f})
                       .width,
                   0);
-  EXPECT_FLOAT_EQ(CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
-                                 {BrushBehavior::Target::kWidthMultiplier,
-                                  BrushBehavior::Target::kWidthMultiplier},
-                                 {1.8f, 1.7f})
-                      .width,
-                  2 * brush_tip.scale.x * brush_size);
 }
 
-TEST(CreateTipStateTest, HeightIsClampedZeroToTwiceBaseValue) {
+TEST(CreateTipStateTest, HeightIsClampedToNonNegative) {
   BrushTip brush_tip = MakeBaseBrushTip();
   float brush_size = 3.f;
 
-  EXPECT_FLOAT_EQ(CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
+  EXPECT_FLOAT_EQ(CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
                                  {BrushBehavior::Target::kHeightMultiplier,
                                   BrushBehavior::Target::kHeightMultiplier},
                                  {0.5f, -0.3f})
                       .height,
                   0);
-  EXPECT_FLOAT_EQ(CreateTipState({0, 0}, Angle(), brush_tip, brush_size,
-                                 {BrushBehavior::Target::kHeightMultiplier,
-                                  BrushBehavior::Target::kHeightMultiplier},
-                                 {1.2f, 1.9f})
-                      .height,
-                  2 * brush_tip.scale.y * brush_size);
 }
 
-TEST(ModeledStrokeInputLerpTest, ZeroT) {
-  ModeledStrokeInput a = {.position = {0, 0},
-                          .velocity = {0, 0},
-                          .traveled_distance = 73.f,
-                          .elapsed_time = Duration32::Seconds(52),
-                          .pressure = .3f,
-                          .tilt = kQuarterTurn,
-                          .orientation = kFullTurn / 16};
-  ModeledStrokeInput b = {.position = {10, 10},
-                          .velocity = {5, 5},
-                          .traveled_distance = 79.f,
-                          .elapsed_time = Duration32::Seconds(56),
-                          .pressure = .7f,
-                          .tilt = kFullTurn / 8,
-                          .orientation = kFullTurn / 8};
-
-  ModeledStrokeInput result = Lerp(a, b, 0);
-  EXPECT_THAT(result, ModeledStrokeInputEq(a));
+TEST(CreateTipStateTest, WidthMultiplierOverflowTimesZeroModifier) {
+  BrushTip brush_tip = MakeBaseBrushTip();
+  float brush_size = 1.f;
+  BrushTipState tip_state =
+      CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
+                     {BrushBehavior::Target::kWidthMultiplier,
+                      BrushBehavior::Target::kWidthMultiplier,
+                      BrushBehavior::Target::kWidthMultiplier},
+                     {kFloatMax, kFloatMax, 0});
+  EXPECT_THAT(tip_state, IsValidBrushTipState());
+  EXPECT_EQ(tip_state.width, 0);
 }
 
-TEST(ModeledStrokeInputLerpTest, OneT) {
-  ModeledStrokeInput a = {.position = {0, 0},
-                          .velocity = {0, 0},
-                          .traveled_distance = 73.f,
-                          .elapsed_time = Duration32::Seconds(52),
-                          .pressure = .3f,
-                          .tilt = kQuarterTurn,
-                          .orientation = kFullTurn / 16};
-  ModeledStrokeInput b = {.position = {10, 10},
-                          .velocity = {5, 5},
-                          .traveled_distance = 79.f,
-                          .elapsed_time = Duration32::Seconds(56),
-                          .pressure = .7f,
-                          .tilt = kFullTurn / 8,
-                          .orientation = kFullTurn / 8};
+TEST(CreateTipStateTest, BrushSizeOverflowWithZeroModifier) {
+  // Make a brush tip with a base width/height scale factor of 2.
+  BrushTip brush_tip = MakeBaseBrushTip();
+  brush_tip.scale = {2, 2};
 
-  ModeledStrokeInput result = Lerp(a, b, 1);
-  EXPECT_THAT(result, ModeledStrokeInputEq(b));
+  // Applying a large enough (finite) brush size will cause the base tip size to
+  // overflow to infinity.
+  float brush_size = kFloatMax;
+  BrushTipState tip_state =
+      CreateTipState({0, 0}, Vec(), brush_tip, brush_size, {}, {});
+  EXPECT_THAT(tip_state, IsValidBrushTipState());
+  EXPECT_EQ(tip_state.width, kInfinity);
+  EXPECT_EQ(tip_state.height, kInfinity);
+
+  // Try again, but this time apply a size multiplier behavior modifier of zero.
+  tip_state = CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
+                             {BrushBehavior::Target::kSizeMultiplier}, {0});
+  // Normally, infinity times zero is NaN, which would be an invalid tip state
+  // width/height. Instead, we should produce a size of zero, effectively
+  // allowing the zero size multiplier to take precedence over the overflow.
+  EXPECT_THAT(tip_state, IsValidBrushTipState());
+  EXPECT_EQ(tip_state.width, 0);
+  EXPECT_EQ(tip_state.height, 0);
 }
 
-TEST(ModeledStrokeInputLerpTest, TBetweenZeroAndOne) {
-  ModeledStrokeInput a = {.position = {0, 0},
-                          .velocity = {0, 0},
-                          .traveled_distance = 73.f,
-                          .elapsed_time = Duration32::Seconds(52),
-                          .pressure = .3f,
-                          .tilt = kQuarterTurn,
-                          .orientation = kFullTurn / 16};
-  ModeledStrokeInput b = {.position = {10, 10},
-                          .velocity = {5, 5},
-                          .traveled_distance = 79.f,
-                          .elapsed_time = Duration32::Seconds(56),
-                          .pressure = .7f,
-                          .tilt = kFullTurn / 8,
-                          .orientation = kFullTurn / 8};
-
-  ModeledStrokeInput result = Lerp(a, b, 0.2);
-  EXPECT_THAT(result.position, PointEq({2, 2}));
-  EXPECT_THAT(result.velocity, VecEq({1, 1}));
-  EXPECT_FLOAT_EQ(result.traveled_distance, 74.2);
-  EXPECT_THAT(result.elapsed_time, Duration32Eq(Duration32::Seconds(52.8)));
-  EXPECT_FLOAT_EQ(result.pressure, 0.38);
-  EXPECT_THAT(result.tilt, AngleEq(0.45 * kHalfTurn));
-  EXPECT_THAT(result.orientation, AngleEq(0.15 * kHalfTurn));
+TEST(CreateTipStateTest, RotationOffsetOverflow) {
+  BrushTip brush_tip = MakeBaseBrushTip();
+  float brush_size = 1.f;
+  BrushTipState tip_state =
+      CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
+                     {BrushBehavior::Target::kRotationOffsetInRadians,
+                      BrushBehavior::Target::kRotationOffsetInRadians},
+                     {kFloatMax, kFloatMax});
+  EXPECT_THAT(tip_state, IsValidBrushTipState());
 }
 
-TEST(ModeledStrokeInputLerpTest, AboveOneT) {
-  ModeledStrokeInput a = {.position = {0, 0},
-                          .velocity = {0, 0},
-                          .traveled_distance = 73.f,
-                          .elapsed_time = Duration32::Seconds(52),
-                          .pressure = .3f,
-                          .tilt = kQuarterTurn,
-                          .orientation = kFullTurn / 16};
-  ModeledStrokeInput b = {.position = {10, 10},
-                          .velocity = {5, 5},
-                          .traveled_distance = 79.f,
-                          .elapsed_time = Duration32::Seconds(56),
-                          .pressure = .7f,
-                          .tilt = kFullTurn / 8,
-                          .orientation = kFullTurn / 8};
-
-  ModeledStrokeInput result = Lerp(a, b, 1.1);
-  EXPECT_THAT(result.position, PointEq({11, 11}));
-  EXPECT_THAT(result.velocity, VecEq({5.5, 5.5}));
-  EXPECT_FLOAT_EQ(result.traveled_distance, 79.6);
-  EXPECT_THAT(result.elapsed_time, Duration32Eq(Duration32::Seconds(56.4)));
-  EXPECT_FLOAT_EQ(result.pressure, 0.74);
-  EXPECT_THAT(result.tilt, AngleEq(0.225 * kHalfTurn));
-  EXPECT_THAT(result.orientation, AngleEq(0.2625 * kHalfTurn));
+TEST(CreateTipStateTest, TextureAnimationProgressOffsetOverflow) {
+  BrushTip brush_tip = MakeBaseBrushTip();
+  float brush_size = 1.f;
+  BrushTipState tip_state =
+      CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
+                     {BrushBehavior::Target::kTextureAnimationProgressOffset,
+                      BrushBehavior::Target::kTextureAnimationProgressOffset},
+                     {kFloatMax, kFloatMax});
+  EXPECT_THAT(tip_state, IsValidBrushTipState());
+  EXPECT_EQ(tip_state.texture_animation_progress_offset, 0.f);
 }
 
-TEST(ModeledStrokeInputLerpTest, BelowZeroT) {
-  ModeledStrokeInput a = {.position = {0, 0},
-                          .velocity = {0, 0},
-                          .traveled_distance = 73.f,
-                          .elapsed_time = Duration32::Seconds(52),
-                          .pressure = .3f,
-                          .tilt = kQuarterTurn,
-                          .orientation = kFullTurn / 16};
-  ModeledStrokeInput b = {.position = {10, 10},
-                          .velocity = {5, 5},
-                          .traveled_distance = 79.f,
-                          .elapsed_time = Duration32::Seconds(56),
-                          .pressure = .7f,
-                          .tilt = kFullTurn / 8,
-                          .orientation = kFullTurn / 8};
-
-  ModeledStrokeInput result = Lerp(a, b, -0.1);
-  EXPECT_THAT(result.position, PointEq({-1, -1}));
-  EXPECT_THAT(result.velocity, VecEq({-.5, -.5}));
-  EXPECT_FLOAT_EQ(result.traveled_distance, 72.4);
-  EXPECT_THAT(result.elapsed_time, Duration32Eq(Duration32::Seconds(51.6)));
-  EXPECT_FLOAT_EQ(result.pressure, 0.26);
-  EXPECT_THAT(result.tilt, AngleEq(0.525 * kHalfTurn));
-  EXPECT_THAT(result.orientation, AngleEq(0.1125 * kHalfTurn));
+TEST(CreateTipStateTest, HueOffsetOverflow) {
+  BrushTip brush_tip = MakeBaseBrushTip();
+  float brush_size = 1.f;
+  BrushTipState tip_state =
+      CreateTipState({0, 0}, Vec(), brush_tip, brush_size,
+                     {BrushBehavior::Target::kHueOffsetInRadians,
+                      BrushBehavior::Target::kHueOffsetInRadians},
+                     {kFloatMax, kFloatMax});
+  EXPECT_THAT(tip_state, IsValidBrushTipState());
 }
 
 }  // namespace

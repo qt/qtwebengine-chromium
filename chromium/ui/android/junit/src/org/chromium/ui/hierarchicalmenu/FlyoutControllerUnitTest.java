@@ -20,7 +20,7 @@ import static org.chromium.ui.hierarchicalmenu.HierarchicalMenuTestUtils.MENU_IT
 import static org.chromium.ui.hierarchicalmenu.HierarchicalMenuTestUtils.MENU_ITEM_ID;
 import static org.chromium.ui.hierarchicalmenu.HierarchicalMenuTestUtils.MENU_ITEM_SUBMENU_HEADER;
 import static org.chromium.ui.hierarchicalmenu.HierarchicalMenuTestUtils.MENU_ITEM_WITH_SUBMENU;
-import static org.chromium.ui.hierarchicalmenu.HierarchicalMenuTestUtils.SUBMENU_ITEMS;
+import static org.chromium.ui.hierarchicalmenu.HierarchicalMenuTestUtils.SUBMENU_PROVIDER;
 import static org.chromium.ui.hierarchicalmenu.HierarchicalMenuTestUtils.TITLE;
 
 import android.content.Context;
@@ -65,14 +65,14 @@ public class FlyoutControllerUnitTest {
     @Mock private ListView mListView;
     @Mock private FlyoutHandler<Object> mFlyoutHandler;
 
-    private FlyoutController mFlyoutController;
+    private FlyoutController<Object> mFlyoutController;
 
     private ListItem mListItemWithModelClickCallback;
     private ListItem mSubmenuLevel1;
     private ListItem mSubmenu0Child1;
     private ListItem mSubmenuLevel0;
     private ListItem mListItemWithoutModelClickCallback;
-    private HierarchicalMenuController mHierarchicalMenuController;
+    private HierarchicalMenuController<Object> mHierarchicalMenuController;
 
     private Context mContext;
 
@@ -91,10 +91,10 @@ public class FlyoutControllerUnitTest {
                 };
 
         mHierarchicalMenuController =
-                new HierarchicalMenuController(mContext, keyProvider, headerFactory);
+                new HierarchicalMenuController<>(mContext, keyProvider, headerFactory);
 
         mFlyoutController =
-                new FlyoutController(
+                new FlyoutController<>(
                         mFlyoutHandler,
                         HierarchicalMenuTestUtils.createKeyProvider(),
                         new Object(),
@@ -116,7 +116,9 @@ public class FlyoutControllerUnitTest {
                         new PropertyModel.Builder(ALL_SUBMENU_ITEM_KEYS)
                                 .with(TITLE, SUBMENU_LEVEL_1)
                                 .with(ENABLED, true)
-                                .with(SUBMENU_ITEMS, List.of(mListItemWithModelClickCallback))
+                                .with(
+                                        SUBMENU_PROVIDER,
+                                        () -> List.of(mListItemWithModelClickCallback))
                                 .with(IS_HIGHLIGHTED, false)
                                 .build());
 
@@ -135,7 +137,9 @@ public class FlyoutControllerUnitTest {
                         new PropertyModel.Builder(ALL_SUBMENU_ITEM_KEYS)
                                 .with(TITLE, SUBMENU_LEVEL_0)
                                 .with(ENABLED, true)
-                                .with(SUBMENU_ITEMS, List.of(mSubmenuLevel1, mSubmenu0Child1))
+                                .with(
+                                        SUBMENU_PROVIDER,
+                                        () -> List.of(mSubmenuLevel1, mSubmenu0Child1))
                                 .with(IS_HIGHLIGHTED, false)
                                 .build());
 
@@ -166,7 +170,9 @@ public class FlyoutControllerUnitTest {
         waitForUiDelay();
 
         // Verify that the call to create a new popup (level 1) is called.
-        verify(mFlyoutHandler).createAndShowFlyoutPopup(eq(mSubmenuLevel0), eq(mListView), any());
+        verify(mFlyoutHandler)
+                .createAndShowFlyoutPopup(
+                        eq(List.of(mSubmenuLevel1, mSubmenu0Child1)), eq(mListView), any());
         Assert.assertEquals("There should be 2 popups.", 2, mFlyoutController.getNumberOfPopups());
 
         // Hover on an item inside the level 1 popup for long enough.
@@ -174,7 +180,9 @@ public class FlyoutControllerUnitTest {
         waitForUiDelay();
 
         // Verify that the call to create another popup (level 2) is called.
-        verify(mFlyoutHandler).createAndShowFlyoutPopup(eq(mSubmenuLevel1), eq(mListView), any());
+        verify(mFlyoutHandler)
+                .createAndShowFlyoutPopup(
+                        eq(List.of(mListItemWithModelClickCallback)), eq(mListView), any());
         Assert.assertEquals("There should be 3 popups.", 3, mFlyoutController.getNumberOfPopups());
     }
 
@@ -225,7 +233,7 @@ public class FlyoutControllerUnitTest {
     }
 
     private void triggerHoverEnter(ListItem item, int level, List<ListItem> path) {
-        mFlyoutController.onItemHovered(item, mListView, level, path);
+        mFlyoutController.onItemHovered(item, mListView, level, path, () -> {});
     }
 
     private static void waitForUiDelay() {

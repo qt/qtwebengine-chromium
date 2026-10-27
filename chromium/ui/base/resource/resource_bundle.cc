@@ -18,6 +18,7 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
+#include "base/containers/span_reader.h"
 #include "base/debug/crash_logging.h"
 #include "base/files/file.h"
 #include "base/files/file_util.h"
@@ -149,13 +150,12 @@ base::span<uint8_t> GetBufferForWriting(OutputBufferType out_buf, size_t len) {
   if (std::holds_alternative<std::string*>(out_buf)) {
     std::string* str = std::get<std::string*>(out_buf);
     str->resize(len);
-    return UNSAFE_TODO(
-        base::span<uint8_t>(reinterpret_cast<uint8_t*>(str->data()), len));
+    return base::as_writable_byte_span(*str);
   }
 
   std::vector<uint8_t>* vec = std::get<std::vector<uint8_t>*>(out_buf);
   vec->resize(len);
-  return UNSAFE_TODO(base::span<uint8_t>(vec->data(), len));
+  return base::as_writable_byte_span(*vec);
 }
 
 // Decompresses data in |input| using brotli, storing
@@ -1297,8 +1297,9 @@ std::u16string ResourceBundle::GetLocalizedStringImpl(int resource_id) const {
   // Data pack encodes strings as either UTF8 or UTF16.
   std::u16string msg;
   if (encoding == ResourceHandle::UTF16) {
-    msg.assign(UNSAFE_TODO(reinterpret_cast<const char16_t*>(data->data())),
-               data->length() / 2);
+    auto utf16_span = base::subtle::reinterpret_span<const char16_t>(
+        base::as_byte_span(*data));
+    msg.assign(utf16_span.begin(), utf16_span.end());
   } else if (encoding == ResourceHandle::UTF8) {
     // Best-effort conversion.
     base::UTF8ToUTF16(data->data(), data->size(), &msg);
@@ -1308,37 +1309,33 @@ std::u16string ResourceBundle::GetLocalizedStringImpl(int resource_id) const {
 
 // static
 bool ResourceBundle::PNGContainsFallbackMarker(base::span<const uint8_t> buf) {
-  if (buf.size() < std::size(kPngMagic) ||
-      buf.first(std::size(kPngMagic)) != kPngMagic) {
+  base::SpanReader reader(buf);
+
+  auto magic = reader.Read(std::size(kPngMagic));
+  if (!magic || *magic != kPngMagic) {
     return false;  // Data invalid or a JPEG.
   }
-  buf = buf.subspan(std::size(kPngMagic));
 
   // Scan for custom chunks until we find one, find the IDAT chunk, or run out
   // of chunks.
-  for (;;) {
-    if (buf.size() < kPngChunkMetadataSize) {
-      break;
+  while (reader.remaining() >= kPngChunkMetadataSize) {
+    uint32_t length = *reader.ReadU32BigEndian();
+    auto type = *reader.Read(4u);
+
+    if (length == 0u && type == kPngScaleChunkType) {
+      return true;
     }
-    uint32_t length = base::U32FromBigEndian(buf.first<4u>());
-    if (buf.size() - kPngChunkMetadataSize < length) {
-      break;
-    }
-    if (length == 0u) {
-      auto scale_chunk =
-          buf.subspan(sizeof(uint32_t), std::size(kPngScaleChunkType));
-      if (scale_chunk == kPngScaleChunkType) {
-        return true;
-      }
-    }
-    auto data_chunk =
-        buf.subspan(sizeof(uint32_t), std::size(kPngDataChunkType));
-    if (data_chunk == kPngDataChunkType) {
+
+    if (type == kPngDataChunkType) {
       // Stop looking for custom chunks, any custom chunks should be before an
       // IDAT chunk.
       break;
     }
-    buf = buf.subspan(length + kPngChunkMetadataSize);
+
+    // Skip data and CRC.
+    if (!reader.Skip(length + 4u)) {
+      break;
+    }
   }
   return false;
 }

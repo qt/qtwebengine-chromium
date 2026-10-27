@@ -51,6 +51,7 @@ constexpr size_t kV8MaxWasmFunctionLocals = 50'000;
 constexpr size_t kV8MaxWasmFunctionParams = 1'000;
 constexpr size_t kV8MaxWasmFunctionReturns = 1'000;
 constexpr size_t kV8MaxWasmFunctionBrTableSize = 65'520;
+constexpr size_t kV8MaxWasmEffectHandlers = 1'000;
 // Don't use this limit directly, but use the value of
 // v8_flags.wasm_max_table_size.
 constexpr size_t kV8MaxWasmTableSize = 10'000'000;
@@ -59,7 +60,9 @@ constexpr size_t kV8MaxWasmTables = 100'000;
 constexpr size_t kV8MaxWasmMemories = 100'000;
 
 // GC proposal.
+// LINT.IfChange(WasmMaxStructFields)
 constexpr size_t kV8MaxWasmStructFields = 10'000;
+// LINT.ThenChange(/test/mjsunit/wasm/large-struct.js:WasmMaxStructFields)
 constexpr uint32_t kV8MaxRttSubtypingDepth = 63;
 constexpr size_t kV8MaxWasmArrayNewFixedLength = 10'000;
 

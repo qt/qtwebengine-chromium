@@ -13,12 +13,14 @@
 #include "base/barrier_closure.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
+#include "base/feature_list.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/notimplemented.h"
 #include "base/strings/strcat.h"
@@ -32,6 +34,7 @@
 #include "net/base/features.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
+#include "net/disk_cache/sql/sql_async_task_token.h"
 #include "net/disk_cache/sql/sql_entry_impl.h"
 #include "net/disk_cache/sql/sql_persistent_store.h"
 #include "sql_backend_constants.h"
@@ -49,8 +52,11 @@ size_t GetShardCount() {
 // Checks the fake index file, creating it if it doesn't exist. Returns an
 // error code if the file is corrupted or cannot be created.
 FakeIndexFileError CheckFakeIndexFileInternal(const base::FilePath& path) {
+  base::FieldTrial* backend_field_trial = base::FeatureList::GetFieldTrial(
+      net::features::kDiskCacheBackendExperiment);
   const std::string expected_contents = base::StrCat(
-      {kSqlBackendFakeIndexPrefix, base::NumberToString(GetShardCount())});
+      {kSqlBackendFakeIndexPrefix, base::NumberToString(GetShardCount()),
+       backend_field_trial ? backend_field_trial->group_name() : ""});
   const base::FilePath file_path = path.Append(kSqlBackendFakeIndexFileName);
   const std::optional<int64_t> file_size = base::GetFileSize(file_path);
   if (file_size.has_value()) {
@@ -395,7 +401,8 @@ SqlBackendImpl::SqlBackendImpl(const base::FilePath& path,
       store_(std::make_unique<SqlPersistentStore>(path,
                                                   max_bytes > 0 ? max_bytes : 0,
                                                   GetCacheType(),
-                                                  background_task_runners_)),
+                                                  background_task_runners_,
+                                                  async_task_manager_)),
       optimistic_write_buffer_monitor_(
           net::features::kSqlDiskCacheOptimisticWriteBufferSize.Get()),
       write_buffer_monitor_(
@@ -406,9 +413,23 @@ SqlBackendImpl::SqlBackendImpl(const base::FilePath& path,
 SqlBackendImpl::~SqlBackendImpl() = default;
 
 void SqlBackendImpl::Init(CompletionOnceCallback callback) {
+  if (net::features::kSqlDiskCacheSerialInitialize.Get()) {
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE,
+        {base::MayBlock(), base::TaskPriority::USER_BLOCKING,
+         base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
+        base::BindOnce(&CheckFakeIndexFile, path_),
+        base::BindOnce(&SqlBackendImpl::OnCheckFakeIndexFileFinished,
+                       weak_factory_.GetWeakPtr(),
+                       std::move(callback).Then(OnceClosureWithBoundArgs(
+                           async_task_manager_.StartTask())),
+                       base::ElapsedTimer()));
+    return;
+  }
   auto barrier_callback = base::BarrierCallback<bool>(
-      2, base::BindOnce(&SqlBackendImpl::OnInitialized,
-                        weak_factory_.GetWeakPtr(), std::move(callback)));
+      2,
+      base::BindOnce(&SqlBackendImpl::OnInitialized, weak_factory_.GetWeakPtr(),
+                     std::move(callback), base::ElapsedTimer()));
 
   store_->Initialize(base::BindOnce([](SqlPersistentStore::Error result) {
                        return result == SqlPersistentStore::Error::kOk;
@@ -419,19 +440,53 @@ void SqlBackendImpl::Init(CompletionOnceCallback callback) {
       {base::MayBlock(), base::TaskPriority::USER_BLOCKING,
        base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
       base::BindOnce(&CheckFakeIndexFile, path_),
-      base::OnceCallback<void(bool)>(barrier_callback));
+      base::OnceCallback<void(bool)>(barrier_callback)
+          .Then(OnceClosureWithBoundArgs(async_task_manager_.StartTask())));
+}
+
+void SqlBackendImpl::OnCheckFakeIndexFileFinished(
+    CompletionOnceCallback callback,
+    base::ElapsedTimer init_start_time,
+    bool success) {
+  if (!success) {
+    OnInitialized(std::move(callback), init_start_time, {false});
+    return;
+  }
+  store_->Initialize(base::BindOnce(&SqlBackendImpl::OnStoreInitialized,
+                                    weak_factory_.GetWeakPtr(),
+                                    std::move(callback), init_start_time));
+}
+
+void SqlBackendImpl::OnStoreInitialized(CompletionOnceCallback callback,
+                                        base::ElapsedTimer init_start_time,
+                                        SqlPersistentStore::Error error) {
+  OnInitialized(std::move(callback), init_start_time,
+                {error == SqlPersistentStore::Error::kOk});
 }
 
 void SqlBackendImpl::OnInitialized(CompletionOnceCallback callback,
+                                   base::ElapsedTimer init_start_time,
                                    const std::vector<bool>& results) {
+  CHECK_EQ(results.size(),
+           net::features::kSqlDiskCacheSerialInitialize.Get() ? 1u : 2u);
   const bool success = std::all_of(results.begin(), results.end(),
                                    [](bool result) { return result; });
+  base::UmaHistogramMicrosecondsTimes(
+      base::StrCat(
+          {"Net.SqlDiskCache.Init.", success ? "Success" : "Failure", "Time"}),
+      init_start_time.Elapsed());
+
   if (success) {
     // Schedule a one-time task to load in-memory index and clean up doomed
     // entries from previous sessions. This runs after a delay to avoid
     // impacting startup performance. This is especially important for Android
     // WebView where Performance Scenario Detection doesn't work. See
     // https://crbug.com/456009994 for more details.
+    // Note: Intentionally do not pass a SqlAsyncTaskToken to this
+    // PostDelayedTask. This allows tests (e.g.
+    // SqlBackendImplTest.DelayedPostInitializationTasks) to verify that the
+    // index is not loaded until this task runs when
+    // SqlDiskCacheLoadIndexOnInit is false.
     base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&SqlBackendImpl::RunDelayedPostInitializationTasks,
@@ -926,6 +981,9 @@ void SqlBackendImpl::OnBrowserIdle() {
   store_->MaybeLoadInMemoryIndex(base::DoNothing());
   store_->MaybeRunCleanupDoomedEntries(base::DoNothing());
   store_->MaybeRunCheckpoint(base::DoNothing());
+  store_->MaybeRunIncrementalVacuum(
+      exclusive_operation_coordinator_.GetHasPendingTaskFlag(),
+      base::DoNothing());
   MaybeTriggerEviction(/*is_idle_time_eviction=*/true);
 }
 
@@ -1120,6 +1178,8 @@ int SqlBackendImpl::WriteEntryData(
     EntryWriteBuffer buffer,
     bool truncate,
     base::Time last_used,
+    bool sparse_write,
+    int64_t header_size,
     bool copy_buffer_for_optimistic_write,
     CompletionOnceCallback callback) {
   if (db_handle->GetError().has_value()) {
@@ -1156,7 +1216,7 @@ int SqlBackendImpl::WriteEntryData(
         base::BindOnce(
             &SqlBackendImpl::HandleOptimisticWriteEntryDataOperation,
             weak_factory_.GetWeakPtr(), key, db_handle, old_body_end,
-            std::move(buffer), truncate, last_used,
+            std::move(buffer), truncate, last_used, sparse_write, header_size,
             WrapCallbackWithAbortError<SqlPersistentStore::ResIdOrError>(
                 MakeUpdateDbHandleCallback(db_handle)
                     .Then(base::BindOnce(
@@ -1175,17 +1235,18 @@ int SqlBackendImpl::WriteEntryData(
   auto sync_result_receiver =
       base::MakeRefCounted<SyncResultReceiver<int>>(std::move(callback));
   exclusive_operation_coordinator_.PostOrRunNormalOperation(
-      key, base::BindOnce(
-               &SqlBackendImpl::HandleWriteEntryDataOperation,
-               weak_factory_.GetWeakPtr(), key, db_handle, old_body_end,
-               std::move(buffer), truncate, last_used,
-               WrapCallbackWithAbortError<SqlPersistentStore::ResIdOrError>(
-                   MakeUpdateDbHandleCallback(db_handle)
-                       .Then(MakeResIdOrErrorToIntCallback(buf_len))
-                       .Then(sync_result_receiver->GetCallback()),
-                   base::unexpected(SqlPersistentStore::Error::kAborted)),
-               PushInFlightEntryModification(
-                   key, InFlightEntryModification(db_handle, body_end))));
+      key,
+      base::BindOnce(
+          &SqlBackendImpl::HandleWriteEntryDataOperation,
+          weak_factory_.GetWeakPtr(), key, db_handle, old_body_end,
+          std::move(buffer), truncate, last_used, sparse_write, header_size,
+          WrapCallbackWithAbortError<SqlPersistentStore::ResIdOrError>(
+              MakeUpdateDbHandleCallback(db_handle)
+                  .Then(MakeResIdOrErrorToIntCallback(buf_len))
+                  .Then(sync_result_receiver->GetCallback()),
+              base::unexpected(SqlPersistentStore::Error::kAborted)),
+          PushInFlightEntryModification(
+              key, InFlightEntryModification(db_handle, body_end))));
   auto sync_result = sync_result_receiver->FinishSyncCall();
   return sync_result ? std::move(*sync_result) : net::ERR_IO_PENDING;
 }
@@ -1197,6 +1258,8 @@ void SqlBackendImpl::HandleWriteEntryDataOperation(
     EntryWriteBuffer buffer,
     bool truncate,
     base::Time last_used,
+    bool sparse_write,
+    int64_t header_size,
     SqlPersistentStore::ResIdOrErrorCallback callback,
     PopInFlightEntryModificationRunner pop_in_flight_entry_modification,
     std::unique_ptr<ExclusiveOperationCoordinator::OperationHandle> handle) {
@@ -1213,6 +1276,7 @@ void SqlBackendImpl::HandleWriteEntryDataOperation(
           ? SqlPersistentStore::ResIdOrTime(*db_handle->GetResId())
           : SqlPersistentStore::ResIdOrTime(last_used),
       old_body_end, std::move(buffer), truncate, db_handle->doomed(),
+      sparse_write, header_size,
       std::move(callback)
           .Then(OnceClosureWithBoundArgs(
               std::move(pop_in_flight_entry_modification)))
@@ -1231,6 +1295,8 @@ void SqlBackendImpl::HandleOptimisticWriteEntryDataOperation(
     EntryWriteBuffer buffer,
     bool truncate,
     base::Time last_used,
+    bool sparse_write,
+    int64_t header_size,
     SqlPersistentStore::ResIdOrErrorCallback callback,
     PopInFlightEntryModificationRunner pop_in_flight_entry_modification,
     std::unique_ptr<ExclusiveOperationCoordinator::OperationHandle> handle) {
@@ -1250,6 +1316,7 @@ void SqlBackendImpl::HandleOptimisticWriteEntryDataOperation(
           ? SqlPersistentStore::ResIdOrTime(*optional_res_id)
           : SqlPersistentStore::ResIdOrTime(last_used),
       old_body_end, std::move(buffer), truncate, db_handle->doomed(),
+      sparse_write, header_size,
       base::BindOnce(
           &SqlBackendImpl::OnOptimisticWriteFinished,
           weak_factory_.GetWeakPtr(), key, optional_res_id, std::move(callback),
@@ -1460,33 +1527,8 @@ void SqlBackendImpl::ApplyInFlightEntryModifications(
   }
 }
 
-int SqlBackendImpl::FlushQueueForTest(CompletionOnceCallback callback) {
-  // `FlushQueueForTest` posts an exclusive operation to wait for all queued
-  // operations to complete. However, if this operation sets the "has pending
-  // task" flag, it would pause the eviction process (which checks this flag)
-  // that we might be waiting for. To avoid this, post the operation with
-  // `low_priority=true`.
-  exclusive_operation_coordinator_.PostOrRunExclusiveOperation(
-      base::BindOnce(
-          [](std::vector<scoped_refptr<base::SequencedTaskRunner>>
-                 background_task_runners,
-             CompletionOnceCallback callback,
-             std::unique_ptr<ExclusiveOperationCoordinator::OperationHandle>
-                 handle) {
-            auto barrier_closure = base::BarrierClosure(
-                background_task_runners.size(),
-                base::BindOnce(std::move(callback), net::OK)
-                    .Then(OnceClosureWithBoundArgs(std::move(handle))));
-            for (auto& runner : background_task_runners) {
-              runner->PostTaskAndReply(
-                  // Post a no-op task to the background runner.
-                  FROM_HERE, base::BindOnce([]() {}), barrier_closure);
-            }
-          },
-          background_task_runners_, std::move(callback)),
-      /*low_priority=*/true);
-
-  return net::ERR_IO_PENDING;
+void SqlBackendImpl::RunUntilAllTasksCompleteForTest() {
+  async_task_manager_.RunUntilAllTasksCompleteForTest();  // IN-TEST
 }
 
 void SqlBackendImpl::MaybeTriggerEviction(bool is_idle_time_eviction) {

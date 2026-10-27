@@ -19,16 +19,6 @@ class ExecutionContext;
 class Node;
 class ScrollTimeline;
 
-// https://drafts.csswg.org/web-animations-2/#trigger-state
-enum class TimelineTriggerState {
-  // The initial state of the trigger. The trigger has not yet taken any action.
-  kIdle,
-  // The last action taken by the trigger was due to entering the trigger range.
-  kPrimary,
-  // The last action taken by the trigger was due to exiting the exit range.
-  kInverse,
-};
-
 // This class encapsulates a single instance of the configuration that a
 // TimelineTrigger needs to function, i.e. an AnimationTimeline, the boundaries
 // of an activation range and the boundaries of an exit range.
@@ -40,7 +30,7 @@ class CORE_EXPORT TimelineTriggerRange : public ScriptWrappable {
 
  public:
   using Boundary = V8UnionStringOrTimelineRangeOffset;
-  using State = TimelineTriggerState;
+  using State = cc::AnimationTrigger::State;
   using CcBoundaries = cc::TimelineTrigger::Boundaries;
 
   TimelineTriggerRange(AnimationTimeline* timeline,
@@ -91,6 +81,7 @@ class CORE_EXPORT TimelineTriggerRange : public ScriptWrappable {
   std::optional<CcBoundaries> ComputeCcBoundaries(
       cc::AnimationTimeline* cc_timeline);
 
+  void SetState(State state) { state_ = state; }
   std::optional<State> UpdateState();
   std::optional<State> ComputeState();
   void SetRangeBoundariesForTest(Boundary* activation_start,
@@ -118,7 +109,7 @@ class CORE_EXPORT TimelineTriggerRange : public ScriptWrappable {
   // TimelineTriggerRange track its state and have TimelineTrigger read its
   // state from this range. When we support multiple TimelineTriggerRanges, we
   // might want to have only the TimelineTrigger tracking state.
-  State last_snapshot_state_;
+  State state_;
 };
 
 }  // namespace blink

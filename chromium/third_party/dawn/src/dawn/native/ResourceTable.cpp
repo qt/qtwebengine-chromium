@@ -25,17 +25,18 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/ResourceTable.h"
+#include "src/dawn/native/ResourceTable.h"
 
 #include <utility>
 
-#include "dawn/common/Enumerator.h"
-#include "dawn/common/MatchVariant.h"
-#include "dawn/common/Range.h"
-#include "dawn/native/Buffer.h"
-#include "dawn/native/Device.h"
-#include "dawn/native/Queue.h"
-#include "dawn/native/ResourceTableDefaultResources.h"
+#include "src/dawn/common/Enumerator.h"
+#include "src/dawn/common/MatchVariant.h"
+#include "src/dawn/common/Range.h"
+#include "src/dawn/native/Buffer.h"
+#include "src/dawn/native/Device.h"
+#include "src/dawn/native/Queue.h"
+#include "src/dawn/native/ResourceTableDefaultResources.h"
+#include "src/utils/compiler.h"
 #include "tint/tint.h"
 
 namespace dawn::native {
@@ -95,7 +96,7 @@ MaybeError ValidateBindingResource(const DeviceBase* device, const BindingResour
 
 MaybeError ValidateResourceTableDescriptor(const DeviceBase* device,
                                            const ResourceTableDescriptor* descriptor) {
-    DAWN_ASSERT(descriptor);
+    DAWN_CHECK(descriptor);
 
     DAWN_INVALID_IF(!device->HasFeature(Feature::ChromiumExperimentalSamplingResourceTable),
                     "Resource table used without the %s feature enabled.",
@@ -150,7 +151,7 @@ ResourceTableSlot ResourceTableBase::GetSizeWithDefaultResources() const {
 }
 
 BufferBase* ResourceTableBase::GetMetadataBuffer() const {
-    DAWN_ASSERT(!mDestroyed);
+    DAWN_CHECK(!mDestroyed);
     return mMetadataBuffer.Get();
 }
 
@@ -159,7 +160,7 @@ bool ResourceTableBase::IsDestroyed() const {
 }
 
 MaybeError ResourceTableBase::ValidateCanUseInSubmitNow() const {
-    DAWN_ASSERT(!IsError());
+    DAWN_CHECK(!IsError());
     DAWN_INVALID_IF(IsDestroyed(), "%s used while destroyed.", this);
     return {};
 }
@@ -168,7 +169,7 @@ MaybeError ResourceTableBase::InitializeBase() {
     DeviceBase* device = GetDevice();
 
     // Create a storage buffer that will hold the shader-visible metadata for the dynamic array.
-    uint32_t metadataArrayLength = uint32_t(GetSizeWithDefaultResources());
+    uint32_t metadataArrayLength = uint32_t{GetSizeWithDefaultResources()};
     BufferDescriptor metadataDesc{
         .label = "resource table metadata",
         .usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst,
@@ -179,21 +180,22 @@ MaybeError ResourceTableBase::InitializeBase() {
 
     // Initialize the metadata buffer with the arrayLength and a bunch of zeroes that correspond to
     // empty entries.
-    DAWN_ASSERT(uint32_t(tint::ResourceType::kEmpty) == 0);
+    DAWN_CHECK(uint32_t(tint::ResourceType::kEmpty) == 0);
     // TODO(https://crbug.com/435317394): We could rely on zero initialization if it is enabled, and
     // also apply the initial dirty slots in this mapping instead of on the first use of the
     // resource table.
     uint32_t* data = static_cast<uint32_t*>(mMetadataBuffer->GetMappedRange(0, metadataDesc.size));
-    *data = uint32_t(mAPISize);
-    memset(data + 1, 0, metadataDesc.size - sizeof(uint32_t));
+    // Store APISize at element 0 in the metadata buffer, which will be used in the shader to index
+    // default resources at APISize + resource type index.
+    data[0] = uint32_t(mAPISize);
+    DAWN_UNSAFE_TODO(memset(data + 1, 0, metadataDesc.size - sizeof(uint32_t)));
     DAWN_TRY(mMetadataBuffer->Unmap());
 
     // Add the default resources at the end of the table.
-    ityp::span<ResourceTableSlot, ResourceTableDefaultResources::Resource> defaultResources;
-    DAWN_TRY_ASSIGN(defaultResources,
-                    device->GetResourceTableDefaultResources()->GetOrCreate(device));
+    ResourceTableDefaultResources* defaultResources;
+    DAWN_TRY_ASSIGN(defaultResources, device->GetOrCreateResourceTableDefaultsResource());
 
-    for (auto [i, defaultResource] : Enumerate(defaultResources)) {
+    for (auto [i, defaultResource] : Enumerate(defaultResources->GetResources())) {
         BindingResource entryContents;
         MatchVariant(
             defaultResource,
@@ -206,7 +208,7 @@ MaybeError ResourceTableBase::InitializeBase() {
 }
 
 void ResourceTableBase::DestroyImpl(DestroyReason reason) {
-    DAWN_ASSERT(!mDestroyed);
+    DAWN_CHECK(!mDestroyed);
 
     for (auto [i, slot] : Enumerate(mSlots)) {
         if (auto view = GetRef<TextureViewBase>(slot.resource)) {
@@ -308,7 +310,7 @@ tint::ResourceType ResourceTableBase::ComputeTypeId(
         [&](const Ref<TextureViewBase>& view) {
             const TextureBase* texture = view->GetTexture();
             if (texture->IsMultisampledTexture()) {
-                DAWN_ASSERT(view->GetDimension() == wgpu::TextureViewDimension::e2D);
+                DAWN_CHECK(view->GetDimension() == wgpu::TextureViewDimension::e2D);
 
                 switch (view->GetAspects()) {
                     case Aspect::Color:
@@ -331,7 +333,7 @@ tint::ResourceType ResourceTableBase::ComputeTypeId(
             }
 
             if (view->GetAspects() == Aspect::Depth) {
-                DAWN_ASSERT(!texture->IsMultisampledTexture());
+                DAWN_CHECK(!texture->IsMultisampledTexture());
 
                 switch (view->GetDimension()) {
                     case wgpu::TextureViewDimension::e2D:
@@ -441,18 +443,18 @@ bool ResourceTableBase::IsValidSlot(ResourceTableSlot slot) const {
 }
 
 void ResourceTableBase::OnPinned(ResourceTableSlot slot, TextureBase* texture) {
-    DAWN_ASSERT(!mDestroyed);
-    DAWN_ASSERT(std::holds_alternative<Ref<TextureViewBase>>(mSlots[slot].resource));
-    DAWN_ASSERT(std::get<Ref<TextureViewBase>>(mSlots[slot].resource)->GetTexture() == texture);
+    DAWN_CHECK(!mDestroyed);
+    DAWN_CHECK(std::holds_alternative<Ref<TextureViewBase>>(mSlots[slot].resource));
+    DAWN_CHECK(std::get<Ref<TextureViewBase>>(mSlots[slot].resource)->GetTexture() == texture);
     DAWN_ASSERT(!mSlots[slot].pinned);
     mSlots[slot].pinned = true;
     MarkStateDirty(slot);
 }
 
 void ResourceTableBase::OnUnpinned(ResourceTableSlot slot, TextureBase* texture) {
-    DAWN_ASSERT(!mDestroyed);
-    DAWN_ASSERT(std::holds_alternative<Ref<TextureViewBase>>(mSlots[slot].resource));
-    DAWN_ASSERT(std::get<Ref<TextureViewBase>>(mSlots[slot].resource)->GetTexture() == texture);
+    DAWN_CHECK(!mDestroyed);
+    DAWN_CHECK(std::holds_alternative<Ref<TextureViewBase>>(mSlots[slot].resource));
+    DAWN_CHECK(std::get<Ref<TextureViewBase>>(mSlots[slot].resource)->GetTexture() == texture);
     DAWN_ASSERT(mSlots[slot].pinned);
     mSlots[slot].pinned = false;
     MarkStateDirty(slot);
@@ -461,7 +463,7 @@ void ResourceTableBase::OnUnpinned(ResourceTableSlot slot, TextureBase* texture)
 void ResourceTableBase::Update(ResourceTableSlot slot, const BindingResource* contents) {
     DAWN_ASSERT(mSlots[slot].availableAfter <=
                 GetDevice()->GetQueue()->GetCompletedCommandSerial());
-    DAWN_ASSERT(mSlots[slot].typeId == tint::ResourceType::kEmpty);
+    DAWN_CHECK(mSlots[slot].typeId == tint::ResourceType::kEmpty);
     mSlots[slot].availableAfter = kMaxExecutionSerial;
     SetEntry(slot, contents);
 }
@@ -495,7 +497,7 @@ void ResourceTableBase::UpdateWithDeviceValidation(ResourceTableSlot slot,
 }
 
 void ResourceTableBase::SetEntry(ResourceTableSlot slot, const BindingResource* contents) {
-    DAWN_ASSERT(contents->buffer == nullptr);
+    DAWN_CHECK(contents->buffer == nullptr);
     SlotState& state = mSlots[slot];
 
     // Check the current state. If it's already set to the input value, early out.
@@ -517,6 +519,7 @@ void ResourceTableBase::SetEntry(ResourceTableSlot slot, const BindingResource* 
     // Update to new state
     state.resource = {};
     state.pinned = false;
+    // Note: state.lastResource is only updated by AcquireDirtySlotUpdates
 
     if (TextureViewBase* view = contents->textureView) {
         // Add the mapping to the slot stored in the textures.
@@ -534,12 +537,12 @@ void ResourceTableBase::SetEntry(ResourceTableSlot slot, const BindingResource* 
 }
 
 ResourceTableBase::Updates ResourceTableBase::AcquireDirtySlotUpdates() {
-    DAWN_ASSERT(!mDestroyed);
+    DAWN_CHECK(!mDestroyed);
 
     Updates updates;
-    for (ResourceTableSlot dirtyIndex : mDirtySlots) {
-        SlotState& state = mSlots[dirtyIndex];
-        DAWN_ASSERT(state.dirty);
+    for (ResourceTableSlot dirtySlot : mDirtySlots) {
+        SlotState& state = mSlots[dirtySlot];
+        DAWN_CHECK(state.dirty);
         state.dirty = false;
 
         // Set the value in the table to the type id. If the resource requires pinning, we only set
@@ -550,8 +553,10 @@ ResourceTableBase::Updates ResourceTableBase::AcquireDirtySlotUpdates() {
         }
 
         // Add the update for the metadata buffer.
-        size_t offset = sizeof(uint32_t) * (uint32_t(dirtyIndex) + 1);
+        // Add 1 because the 0th element holds the table size (APISize).
+        size_t offset = sizeof(uint32_t) * (uint32_t(dirtySlot) + 1);
         updates.metadataUpdates.push_back({
+            .slot = dirtySlot,
             .offset = uint32_t(offset),
             .data = uint32_t(effectiveType),
         });
@@ -562,24 +567,22 @@ ResourceTableBase::Updates ResourceTableBase::AcquireDirtySlotUpdates() {
         }
         state.resourceDirty = false;
 
-        // Don't add updates for removing resources because the shader-side validation will prevent
-        // accesses anyway.
-        if (std::holds_alternative<std::monostate>(state.resource)) {
-            continue;
-        }
+        ResourceDiff update{
+            .slot = dirtySlot,
+            .removed = state.lastResource,
+            .added = state.resource,
+        };
 
-        if (auto view = GetRef<TextureViewBase>(state.resource)) {
-            updates.resourceUpdates.push_back({
-                .slot = dirtyIndex,
-                .resource = view.Get(),
-            });
-        } else if (auto sampler = GetRef<SamplerBase>(state.resource)) {
-            updates.resourceUpdates.push_back({
-                .slot = dirtyIndex,
-                .resource = sampler.Get(),
-            });
-        }
+        // At least one of removed and added must be set
+        DAWN_ASSERT(!(std::holds_alternative<std::monostate>(update.removed) &&
+                      std::holds_alternative<std::monostate>(update.added)));
+
+        updates.resourceDiffs.push_back(update);
+
+        // Update the last resource for future slot updates
+        state.lastResource = state.resource;
     }
+
     mDirtySlots.clear();
 
     return updates;

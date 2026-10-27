@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 // <if expr="enable_pdf_ink2">
+type Typeface = chrome.pdfViewerPrivate.Typeface;
+
 export enum AnnotationMode {
   OFF = 'off',
   DRAW = 'draw',
@@ -14,6 +16,12 @@ export enum AnnotationBrushType {
   ERASER = 'eraser',
   HIGHLIGHTER = 'highlighter',
   PEN = 'pen',
+}
+
+export enum TextAnnotationSource {
+  USER = 'user',
+  UNDO = 'undo',
+  REDO = 'redo',
 }
 
 export interface Color {
@@ -32,6 +40,9 @@ export interface AnnotationBrush {
 
 export interface TextAnnotation {
   id: number;
+  // Stored because the backend requires it to be re-sent with every update.
+  // Not used by frontend code.
+  mojoTextInfo: ArrayBuffer;
   pageIndex: number;
   text: string;
   textAttributes: TextAttributes;
@@ -43,6 +54,15 @@ export interface TextAnnotation {
   // Orientation of the text in the box relative to the PDF page, in number of
   // clockwise rotations from 0 to 3.
   textOrientation: number;
+}
+
+export interface TextAnnotationMessageData extends TextAnnotation {
+  isEdited: boolean;
+  // Serialized SkTypeface font data that the backend needs. Only contains
+  // fonts that the backend has never seen before.
+  newTypefaces: Typeface[];
+  pdfZoom: number;
+  source: TextAnnotationSource;
 }
 
 export enum TextAlignment {

@@ -645,15 +645,6 @@ void FrameTreeNode::ResetNavigationRequest(NavigationDiscardReason reason) {
   // it created for the navigation. Also register that the load stopped.
   DidStopLoading();
   render_manager_.DiscardSpeculativeRFHIfUnused(reason);
-
-  // An ancestor's network revocation status could've changed as a result of
-  // the NavigationRequest getting reset. When fenced frames revoke network
-  // access by calling `window.fence.disableUntrustedNetwork`, the returned
-  // promise cannot be resolved until ongoing navigations in descendant frames
-  // complete.
-  current_frame_host()
-      ->GetOutermostMainFrame()
-      ->CalculateUntrustedNetworkStatus();
 }
 
 void FrameTreeNode::ResetNavigationRequestButKeepState(
@@ -1238,6 +1229,7 @@ FrameTreeNode::CreateNavigationRequestForSynchronousRendererCommit(
     bool is_same_document,
     const GURL& url,
     const url::Origin& origin,
+    const std::optional<url::Origin>& initiator_origin,
     const std::optional<GURL>& initiator_base_url,
     const net::IsolationInfo& isolation_info_for_subresources,
     blink::mojom::ReferrerPtr referrer,
@@ -1253,7 +1245,7 @@ FrameTreeNode::CreateNavigationRequestForSynchronousRendererCommit(
     int http_response_code,
     base::TimeTicks actual_navigation_start) {
   return NavigationRequest::CreateForSynchronousRendererCommit(
-      this, render_frame_host, is_same_document, url, origin,
+      this, render_frame_host, is_same_document, url, origin, initiator_origin,
       initiator_base_url, isolation_info_for_subresources, std::move(referrer),
       transition, should_replace_current_entry, method,
       has_transient_activation, is_overriding_user_agent, redirects,

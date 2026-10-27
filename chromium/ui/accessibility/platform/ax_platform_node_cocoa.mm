@@ -24,6 +24,7 @@
 #include "ui/accessibility/ax_role_properties.h"
 #include "ui/accessibility/platform/ax_platform_node_mac.h"
 #include "ui/accessibility/platform/ax_private_attributes_mac.h"
+#include "ui/accessibility/platform/ax_private_webkit_constants_mac.h"
 #include "ui/accessibility/platform/ax_private_roles_mac.h"
 #include "ui/accessibility/platform/ax_utils_mac.h"
 #include "ui/accessibility/platform/child_iterator.h"
@@ -140,8 +141,6 @@ EventMap BuildEventMap() {
       {ax::mojom::Event::kCheckedStateChanged,
        NSAccessibilityValueChangedNotification},
       {ax::mojom::Event::kFocus,
-       NSAccessibilityFocusedUIElementChangedNotification},
-      {ax::mojom::Event::kFocusContext,
        NSAccessibilityFocusedUIElementChangedNotification},
 
       // Do not map kMenuStart/End to the Mac's opened/closed notifications.
@@ -1014,6 +1013,16 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   return it != event_map->end() ? it->second : nil;
 }
 
++ (NSString*)nativeNotificationForExpandedChangedWithRole:(ax::mojom::Role)role
+                                               isExpanded:(BOOL)isExpanded {
+  if (role == ax::mojom::Role::kRow ||
+      role == ax::mojom::Role::kTreeItem) {
+    return isExpanded ? NSAccessibilityRowExpandedNotification
+                      : NSAccessibilityRowCollapsedNotification;
+  }
+  return ui::NSAccessibilityExpandedChanged;
+}
+
 - (instancetype)initWithNode:(ui::AXPlatformNodeBase*)node {
   if ((self = [super init])) {
     _node = node;
@@ -1664,10 +1673,20 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   }
   if (ui::IsMenuItem(role))
     [axAttributes addObject:@"AXMenuItemMarkChar"];
-  if (ui::IsItemLike(role))
-    [axAttributes addObjectsFromArray:@[ @"AXARIAPosInSet", @"AXARIASetSize" ]];
-  if (ui::IsSetLike(role))
-    [axAttributes addObject:@"AXARIASetSize"];
+  // Only expose AXARIAPosInSet/AXARIASetSize when explicit ARIA attributes
+  // are present. Exposing computed values for plain HTML items (e.g. <li>)
+  // causes VoiceOver to use its ARIA code path instead of its native
+  // children-counting logic, which results in the position announcement
+  // being dropped for the last item in the list. WebKit/Safari only exposes
+  // these attributes when explicit aria-posinset/aria-setsize are set.
+  if (ui::IsItemLike(role) &&
+      _node->HasIntAttribute(ax::mojom::IntAttribute::kPosInSet)) {
+    [axAttributes addObject:NSAccessibilityARIAPosInSetAttribute];
+  }
+  if (ui::IsSetLike(role) &&
+      _node->HasIntAttribute(ax::mojom::IntAttribute::kSetSize)) {
+    [axAttributes addObject:NSAccessibilityARIASetSizeAttribute];
+  }
 
   if ([[self accessibilityRole] isEqualToString:NSAccessibilityWebAreaRole]) {
     [axAttributes addObjectsFromArray:@[
@@ -2292,6 +2311,12 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
 - (NSString*)AXSubrole {
   ax::mojom::Role role = _node->GetRole();
   switch (role) {
+    case ax::mojom::Role::kForm:
+      // Per Core AAM, unnamed forms should not be exposed as landmarks.
+      if (!_node->HasStringAttribute(ax::mojom::StringAttribute::kName)) {
+        return nil;
+      }
+      break;
     case ax::mojom::Role::kTextField:
       if (_node->HasState(ax::mojom::State::kProtected))
         return NSAccessibilitySecureTextFieldSubrole;
@@ -2344,6 +2369,16 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
         _node->GetIntAttribute(ax::mojom::IntAttribute::kCheckedState));
     return checkedState == ax::mojom::CheckedState::kTrue ? @1 : @0;
   }
+
+  // Must be kept in sync with BrowserAccessibilityCocoa::value.
+  if (_node->GetData().IsRangeValueSupported()) {
+    float floatValue;
+    if (_node->GetFloatAttribute(ax::mojom::FloatAttribute::kValueForRange,
+                                 &floatValue)) {
+      return @(floatValue);
+    }
+  }
+
   return base::SysUTF16ToNSString(_node->GetValueForControl());
 }
 
@@ -2738,8 +2773,25 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   if ([self titleUIElement])
     return @"";
 
-  if (![self isNameFromLabel])
+  // For web dialogs whose name comes from aria-labelledby
+  // (NameFrom::kRelatedElement), additionally expose the name as
+  // AXDescription. accessibilityTitle still publishes it as AXTitle, so
+  // the dialog ends up with both attributes populated, matching Safari.
+  // Without AXDescription, VoiceOver does not announce the AXTitle of
+  // AXApplicationDialog or AXApplicationAlertDialog subroles, leaving
+  // dialogs labelled via aria-labelledby silent on focus. See
+  // https://issues.chromium.org/issues/41487406 and
+  // https://github.com/w3c/core-aam/issues/213.
+  ax::mojom::Role role = _node->GetRole();
+  bool isWebDialogLabelledBy =
+      (role == ax::mojom::Role::kDialog ||
+       role == ax::mojom::Role::kAlertDialog) &&
+      _node->IsWebContent() &&
+      _node->GetNameFrom() == ax::mojom::NameFrom::kRelatedElement;
+
+  if (![self isNameFromLabel] && !isWebDialogLabelledBy) {
     return @"";
+  }
 
   std::string name = _node->GetName();
 

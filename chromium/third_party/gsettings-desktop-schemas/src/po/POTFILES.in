@@ -1,0 +1,33 @@
+# List of source files containing translatable strings.
+# Please keep this list in alphabetic order.
+schemas/org.gnome.desktop.a11y.applications.gschema.xml.in
+schemas/org.gnome.desktop.a11y.gschema.xml.in
+schemas/org.gnome.desktop.a11y.interface.gschema.xml.in
+schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in
+schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in
+schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in
+schemas/org.gnome.desktop.app-folders.gschema.xml.in
+schemas/org.gnome.desktop.background.gschema.xml.in
+schemas/org.gnome.desktop.break-reminders.gschema.xml.in
+schemas/org.gnome.desktop.calendar.gschema.xml.in
+schemas/org.gnome.desktop.datetime.gschema.xml.in
+schemas/org.gnome.desktop.default-applications.gschema.xml.in
+schemas/org.gnome.desktop.input-sources.gschema.xml.in
+schemas/org.gnome.desktop.interface.gschema.xml.in
+schemas/org.gnome.desktop.lockdown.gschema.xml.in
+schemas/org.gnome.desktop.media-handling.gschema.xml.in
+schemas/org.gnome.desktop.notifications.gschema.xml.in
+schemas/org.gnome.desktop.peripherals.gschema.xml.in
+schemas/org.gnome.desktop.privacy.gschema.xml.in
+schemas/org.gnome.desktop.screensaver.gschema.xml.in
+schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in
+schemas/org.gnome.desktop.search-providers.gschema.xml.in
+schemas/org.gnome.desktop.session.gschema.xml.in
+schemas/org.gnome.desktop.sound.gschema.xml.in
+schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in
+schemas/org.gnome.desktop.thumbnailers.gschema.xml.in
+schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in
+schemas/org.gnome.desktop.wm.preferences.gschema.xml.in
+schemas/org.gnome.system.locale.gschema.xml.in
+schemas/org.gnome.system.location.gschema.xml.in
+schemas/org.gnome.system.proxy.gschema.xml.in

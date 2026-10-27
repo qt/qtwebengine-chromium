@@ -4,12 +4,11 @@
 
 **Shipping new Web Platform features (WPFs) in Chromium requires tooling support.**
 
-Many new Web Platform Features (WPFs) can piggyback off of DevTools' general tooling for HTML, DOM, CSS, JavaScript,
-WebAssembly, Network, and other aspects — requiring only minimal or no changes to make DevTools behave as expected
-in light of the new WPF. This document refers to such cases as _basic support_.
+A feature is *debuggable* if developers can use DevTools (including the classic Chrome DevTools UI *and* [Chrome DevTools for agents](https://github.com/ChromeDevTools/chrome-devtools-mcp)) to more easily identify and fix a bug related to this feature. In some cases, debuggability is important for feature adoption, especially when a feature is complex by nature.
 
-However, some WPFs might warrant larger changes, including brand-new DevTools features. This document refers to such
-cases as _extended support_.
+Many new Web Platform Features (WPFs) can piggyback off of DevTools' general tooling for HTML, DOM, CSS, JavaScript, WebAssembly, Network, and other aspects — requiring only minimal or no changes to make DevTools behave as expected in light of the new WPF. This document refers to such cases as _basic support_.
+
+However, some WPFs might warrant larger changes, including brand-new DevTools features. This document refers to such cases as _extended support_.
 
 **What is basic support?**
 Basic support ensures that a new WPF is introspectable and DevTools does not break or crash Chromium in its presence. In addition, developers should have a way of knowing if their web application uses this WPF correctly. Definitions and examples of basic support for common WPF categories can be found below.
@@ -59,6 +58,7 @@ This is often automatically supported because the Elements panel directly reflec
 This is often automatically supported because the DevTools Console has access to the same JavaScript runtime as the page. Any property that is programmatically accessible on a DOM object will be discoverable by the Console's autocomplete mechanism.
 
 Verify that the new properties show up in the DevTools Console autocomplete functionality. To enable argument hints for new or changed parameterized functions, run
+
 ```bash
 devtools-frontend/src/scripts/deps/roll_deps.py
 ```
@@ -114,6 +114,7 @@ Any new CSS property that is applied to an element should also appear correctly 
 
 To recognize new CSS properties/values in the DevTools Styles tab’s autocomplete functionality, roll
 [Chromium’s `css_properties.json5`](https://source.chromium.org/chromium/chromium/src/+/main:third\_party/blink/renderer/core/css/css_properties.json5;drc=be2c473625b9c28a4ff6735547cb0c1b6743f4ae) into the `devtools-frontend` repository by running
+
 ```bash
 devtools-frontend/src/scripts/deps/roll_deps.py
 ```
@@ -123,7 +124,7 @@ see this [example CL](https://chromium-review.googlesource.com/c/devtools/devtoo
 
 Additionally, verify that the Styles tab tooltips showing the property's definition and baseline status are correct and up-to-date. Otherwise, let DevTools team know that this should be updated.
 
-### New CSS Functions and Value Indirection
+### New CSS functions and value indirection
 
 > **Basic support requirement:** The new function or value mechanism is correctly parsed and displayed in the Styles tab, showing the *authored* value (e.g., `var(--my-color)`). Hovering over the value should reveal its computed result in a tooltip. The function name should also be autocompleted.
 
@@ -135,7 +136,7 @@ Support for new CSS functions and other forms of value indirection (like CSS cus
 
 Support for new pseudo-elements is not automatic. The browser's backend must be updated to expose the new pseudo-element over the Chrome DevTools Protocol (CDP). Additionally, the DevTools frontend must be updated to recognize and display these pseudo-elements in the Elements panel.
 
-Pointers: [InspectorDOMAgent's supported pesudos](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/inspector/inspector_dom_agent.cc;l=122;drc=90e6a37b7c43154ea99d7cc7ff632ee181078fb2), [InspectorStyleResolver's list of supported pseudo-elements](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/inspector/inspector_style_resolver.cc;l=57-71;drc=c182cb38dc164e2b83c75cdf8699b076dfe6bc5e), and [DevTools Frontend DOMModel updates example CL](https://chromium-review.googlesource.com/c/devtools/devtools-frontend/+/6195233).
+Pointers: [`InspectorDOMAgent`’s supported pseudos](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/inspector/inspector_dom_agent.cc;l=122;drc=90e6a37b7c43154ea99d7cc7ff632ee181078fb2), [`InspectorStyleResolver`’s list of supported pseudo-elements](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/inspector/inspector_style_resolver.cc;l=57-71;drc=c182cb38dc164e2b83c75cdf8699b076dfe6bc5e), and [DevTools Frontend `DOMModel` updates example CL](https://chromium-review.googlesource.com/c/devtools/devtools-frontend/+/6195233).
 
 
 ## Network-related features

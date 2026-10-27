@@ -103,13 +103,12 @@ NSEvent* KeyEventForWindow(NSWindow* window, NSEvent* event) {
   // triggered on the first pass of the event.
   if ([self isEventBeingRedispatched:event]) {
     // TODO(bokan): Tracing added temporarily to diagnose crbug.com/1039833.
-    TRACE_EVENT_INSTANT0("ui", "IsRedispatch", TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT("ui", "IsRedispatch");
     ui::PerformKeyEquivalentResult result =
         [_delegate postPerformKeyEquivalent:event
                                      window:_owner
                                isRedispatch:YES];
-    TRACE_EVENT_INSTANT1("ui", "postPerformKeyEquivalent",
-                         TRACE_EVENT_SCOPE_THREAD, "result", result);
+    TRACE_EVENT_INSTANT("ui", "postPerformKeyEquivalent", "result", result);
     if (result == ui::PerformKeyEquivalentResult::kHandled)
       return YES;
     if (result == ui::PerformKeyEquivalentResult::kPassToMainMenu)
@@ -197,6 +196,13 @@ NSEvent* KeyEventForWindow(NSWindow* window, NSEvent* event) {
   NSEventType eventType = event.type;
   CHECK(eventType == NSEventTypeKeyDown || eventType == NSEventTypeKeyUp ||
         eventType == NSEventTypeFlagsChanged);
+
+  // To avoid incorrectly routing events, only redispatch if the target window
+  // is still key (https://crbug.com/514063409, https://crbug.com/517173918).
+  NSWindow* target_window = event.window ? event.window : _owner;
+  if (target_window && !target_window.keyWindow) {
+    return NO;
+  }
 
   // Sometimes, an event will be redispatched from a child window to a parent
   // window to allow the parent window a chance to handle it. In that case, fix

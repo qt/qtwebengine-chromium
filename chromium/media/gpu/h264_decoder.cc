@@ -172,11 +172,12 @@ void H264Decoder::Reset() {
   decoder_buffer_.reset();
   secure_handle_ = 0;
 
-  // If we are in kDecoding, we can resume without processing an SPS.
-  // The state becomes kDecoding again, (1) at the first IDR slice or (2) at
-  // the first slice after the recovery point SEI.
-  if (state_ == State::kDecoding)
+  // If we have already parsed stream metadata, we can resume without processing
+  // an SPS. The state becomes kDecoding again, (1) at the first IDR slice or
+  // (2) at the first slice after the recovery point SEI.
+  if (state_ != State::kNeedStreamMetadata && state_ != State::kError) {
     state_ = State::kAfterReset;
+  }
 }
 
 void H264Decoder::PrepareRefPicLists() {
@@ -756,6 +757,7 @@ bool H264Decoder::OutputAllRemainingPics() {
   // Output all pictures that are waiting to be outputted.
   if (FinishPrevFrameIfPresent() != H264Accelerator::Status::kOk)
     return false;
+
   H264Picture::Vector to_output;
   dpb_.GetNotOutputtedPicsAppending(&to_output);
   // Sort them by ascending POC to output in order.
@@ -1172,10 +1174,15 @@ bool H264Decoder::UpdateMaxNumReorderFrames(const H264SPS* sps) {
   return true;
 }
 
-bool H264Decoder::ProcessSPS(int sps_id, bool* need_new_buffers) {
-  DVLOG(4) << "Processing SPS id:" << sps_id;
+bool H264Decoder::ProcessPPSAndSPS(int pps_id, bool* need_new_buffers) {
+  DVLOG(4) << "Processing PPS id:" << pps_id;
 
-  const H264SPS* sps = parser_.GetSPS(sps_id);
+  const H264PPS* pps = parser_.GetPPS(pps_id);
+  if (!pps) {
+    return false;
+  }
+
+  const H264SPS* sps = parser_.GetSPS(pps->seq_parameter_set_id);
   if (!sps)
     return false;
 
@@ -1269,7 +1276,7 @@ bool H264Decoder::ProcessSPS(int sps_id, bool* need_new_buffers) {
     new_color_space = container_color_space_;
   }
 
-  if (new_color_space.matrix == VideoColorSpace::MatrixID::RGB) {
+  if (new_color_space.matrix() == VideoColorSpace::MatrixID::RGB) {
     // Some H.264 videos contain a VUI that specifies a color matrix of GBR,
     // when they are actually ordinary YUV. H264 only supports 4:2:0 subsampling
     // and BGR should only be used with 4:4:4, hence default to Rec709. See
@@ -1314,6 +1321,11 @@ bool H264Decoder::ProcessSPS(int sps_id, bool* need_new_buffers) {
     return false;
   DVLOG(1) << "max_num_reorder_frames: " << max_num_reorder_frames_;
 
+  if (*need_new_buffers) {
+    ref_pic_list_p0_.clear();
+    ref_pic_list_b0_.clear();
+    ref_pic_list_b1_.clear();
+  }
   return true;
 }
 
@@ -1353,6 +1365,60 @@ bool H264Decoder::HandleFrameNumGap(int frame_num) {
 
   // 7.4.3/7-23
   int unused_short_term_frame_num = (prev_ref_frame_num_ + 1) % max_frame_num_;
+
+  const int gap_size =
+      (frame_num - unused_short_term_frame_num + max_frame_num_) %
+      max_frame_num_;
+  if (gap_size > H264DPB::kDPBMaxSize) {
+    // A gap larger than the DPB size will inevitably push out all existing
+    // frames. Instead of allocating thousands of dummy pictures to fill the
+    // gap (which can cause a timeout/OOM), fast-forward the state to just
+    // before the last `H264DPB::kDPBMaxSize` frames. The while loop below
+    // will then naturally fill the DPB with those dummy frames.
+
+    int skip_count = gap_size - H264DPB::kDPBMaxSize;
+
+    if (recovery_frame_num_) {
+      int recovery_offset = (*recovery_frame_num_ -
+                             unused_short_term_frame_num + max_frame_num_) %
+                            max_frame_num_;
+      if (recovery_offset < skip_count) {
+        // The recovery frame was skipped. Stop dropping frames.
+        recovery_frame_num_ = std::nullopt;
+      }
+    }
+
+    if (prev_has_memmgmnt5_) {
+      prev_frame_num_offset_ = 0;
+      prev_has_memmgmnt5_ = false;
+    }
+
+    int wrap_count = 0;
+    if (prev_frame_num_ > unused_short_term_frame_num) {
+      wrap_count++;
+    }
+    if (unused_short_term_frame_num + skip_count > max_frame_num_) {
+      wrap_count++;
+    }
+
+    if (wrap_count > 0) {
+      if (!base::CheckAdd(prev_frame_num_offset_, wrap_count * max_frame_num_)
+               .AssignIfValid(&prev_frame_num_offset_)) {
+        DVLOG(1) << "Frame num offset overflow";
+        return false;
+      }
+    }
+
+    int advanced_frame_num =
+        (unused_short_term_frame_num + skip_count) % max_frame_num_;
+    prev_ref_frame_num_ =
+        (advanced_frame_num - 1 + max_frame_num_) % max_frame_num_;
+    prev_frame_num_ = prev_ref_frame_num_;
+    prev_ref_has_memmgmnt5_ = false;
+
+    unused_short_term_frame_num = advanced_frame_num;
+  }
+
   while (unused_short_term_frame_num != frame_num) {
     auto pic = base::MakeRefCounted<H264Picture>();
     if (!InitNonexistingPicture(pic, unused_short_term_frame_num))
@@ -1489,6 +1555,11 @@ void H264Decoder::SetStream(int32_t id,
   CHECK(decoder_buffer);
   prior_cencv1_nalus_.clear();
   prior_cencv1_subsamples_.clear();
+  curr_nalu_.reset();
+  curr_slice_hdr_.reset();
+  // Keep the old buffer alive until the end of this function to ensure
+  // that any active spans in the parser are cleared before the memory is freed.
+  auto outgoing_decoder_buffer = std::move(decoder_buffer_);
   decoder_buffer_ = std::move(decoder_buffer);
   const DecryptConfig* decrypt_config = decoder_buffer_->decrypt_config();
 
@@ -1595,6 +1666,25 @@ H264Decoder::DecodeResult H264Decoder::Decode() {
             // There is only a single clear byte for the NALU information for
             // full sample encryption, and the rest is encrypted.
             if (!subsamples.empty() && subsamples[0].clear_bytes == 1) {
+              if (base::FeatureList::IsEnabled(
+                      kVaapiEarlyPPSParsingForCENCv1)) {
+                // On ChromeOS for CENCv1 on some devices, we need to wait until
+                // after the decoder buffers are created to be able to process
+                // the encrypted slice header.
+                bool need_new_buffers = false;
+                if (!ProcessPPSAndSPS(last_parsed_pps_id_, &need_new_buffers)) {
+                  SET_ERROR_AND_RETURN();
+                }
+
+                if (need_new_buffers) {
+                  // Yield `kConfigChange` to the client so they can allocate
+                  // new surfaces. We do not advance `state_` or clear
+                  // `curr_nalu_`. When Decode() resumes, it will re-enter this
+                  // block, but ProcessPPSAndSPS will evaluate `need_new_buffers
+                  // = false` and proceed.
+                  return kConfigChange;
+                }
+              }
               CHECK_ACCELERATOR_RESULT(ProcessEncryptedSliceHeader(subsamples));
               parsed_header = true;
               curr_slice_hdr_->pic_parameter_set_id = last_parsed_pps_id_;
@@ -1619,6 +1709,25 @@ H264Decoder::DecodeResult H264Decoder::Decode() {
             // |curr_pic_| already exists, so skip to ProcessCurrentSlice().
             state_ = State::kTryCurrentSlice;
           } else {
+            // When kVaapiEarlyPPSParsingForCENCv1 is enabled and the stream is
+            // CENCv1, ProcessPPSAndSPS will always set `need_new_buffers` to
+            // false, since the configuration change gets handled in the
+            // ProcessPPSAndSPS call above.
+            bool need_new_buffers = false;
+            if (!ProcessPPSAndSPS(curr_slice_hdr_->pic_parameter_set_id,
+                                  &need_new_buffers)) {
+              SET_ERROR_AND_RETURN();
+            }
+
+            if (need_new_buffers) {
+              // Yield `kConfigChange` to the client so they can allocate new
+              // surfaces. We do not advance `state_` or clear `curr_nalu_`.
+              // When Decode() resumes, it will re-enter this block, but
+              // ProcessPPSAndSPS will evaluate `need_new_buffers = false` and
+              // proceed.
+              return kConfigChange;
+            }
+
             // New picture/finished previous one, try to start a new one
             // or tell the client we need more surfaces.
             if (secure_handle_) {
@@ -1657,26 +1766,11 @@ H264Decoder::DecodeResult H264Decoder::Decode() {
         if (par_res != H264Parser::kOk)
           SET_ERROR_AND_RETURN();
 
-        bool need_new_buffers = false;
-        if (!ProcessSPS(sps_id, &need_new_buffers)) {
-          SET_ERROR_AND_RETURN();
-        }
         accelerator_->ProcessSPS(parser_.GetSPS(sps_id), curr_nalu_->data);
 
         if (state_ == State::kNeedStreamMetadata)
           state_ = State::kAfterReset;
 
-        if (need_new_buffers) {
-          curr_pic_ = nullptr;
-          curr_nalu_ = nullptr;
-          ref_pic_list_p0_.clear();
-          ref_pic_list_b0_.clear();
-          ref_pic_list_b1_.clear();
-        }
-        // Prefer config changes over color space changes.
-        if (need_new_buffers) {
-          return kConfigChange;
-        }
         break;
       }
 

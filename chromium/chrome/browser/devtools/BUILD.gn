@@ -24,6 +24,8 @@ _protocol_generated = [
 
 if (enable_devtools_frontend) {
   _protocol_generated += [
+    "protocol/ads.cc",
+    "protocol/ads.h",
     "protocol/autofill.cc",
     "protocol/autofill.h",
     "protocol/extensions.cc",
@@ -111,14 +113,18 @@ static_library("devtools") {
 
   deps = [
     "//base",
+    "//chrome/browser:file_select_helper",
     "//chrome/browser/infobars",
+    "//chrome/browser/lifetime",
+    "//chrome/browser/net",
     "//chrome/browser/search",
     "//chrome/browser/search_engines",
     "//chrome/browser/sync",
-    "//chrome/browser/tpcd/metadata",
     "//chrome/browser/ui/autofill",
     "//chrome/browser/ui/dialogs",
     "//chrome/browser/ui/select_file_policy",
+    "//components/page_load_metrics/browser",
+    "//components/page_load_metrics/browser/observers/ad_metrics",
 
     # To prevent circular GN dependencies, this target does not depend on
     # //chrome/browser:browser, even though it has a real build dependency on
@@ -135,7 +141,7 @@ static_library("devtools") {
     "//chrome/browser/autofill",
     "//chrome/browser/profiles:profile_manager",
     "//chrome/browser/profiles/keep_alive",
-    "//chrome/browser/ui:browser_navigator_params_headers",
+    "//chrome/browser/ui/navigator",
     "//components/autofill/content/browser",
     "//components/autofill/core/browser",
     "//components/enterprise/buildflags",
@@ -226,6 +232,9 @@ static_library("devtools") {
       "//components/viz/host",
       "//ui/shell_dialogs",
     ]
+    if (!is_android) {
+      deps += [ "//chrome/browser:certificate_viewer" ]
+    }
   }
 
   if (is_mac || is_win || is_linux || is_chromeos) {
@@ -242,10 +251,9 @@ static_library("devtools") {
       "protocol/target_handler_android.h",
     ]
 
-    deps += [ "//chrome/browser/ui/android/tab_model" ]
+    deps += [ "//chrome/android:chrome_jni_headers" ]
   } else {
     public_deps += [
-      "//chrome/browser/ui:browser_list",
       "//chrome/browser/ui:browser_tab_strip",
       "//chrome/browser/ui/tabs:tab_strip_model_observer",
     ]
@@ -257,8 +265,8 @@ static_library("devtools") {
       "//chrome/browser/infobars",
       "//chrome/browser/media/router:media_router_feature",
       "//chrome/browser/themes",
-      "//chrome/browser/ui:browser_navigator_params_headers",
       "//chrome/browser/ui/exclusive_access",
+      "//chrome/browser/ui/navigator",
       "//chrome/browser/ui/tabs:tab_strip",
       "//chrome/browser/ui/user_education",
       "//chrome/browser/ui/webui_browser:headers",
@@ -360,6 +368,7 @@ static_library("devtools") {
         "device/cast_device_provider.cc",
         "device/cast_device_provider.h",
       ]
+      deps += [ "//chrome/browser/local_discovery" ]
     }
   }
 
@@ -399,6 +408,8 @@ static_library("devtools") {
       "//ui/gfx/geometry",
     ]
     sources += [
+      "protocol/ads_handler.cc",
+      "protocol/ads_handler.h",
       "protocol/autofill_handler.cc",
       "protocol/autofill_handler.h",
       "protocol/browser_handler.cc",

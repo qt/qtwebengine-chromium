@@ -143,16 +143,12 @@ DescriptorValidator::DescriptorValidator(vvl::DeviceProxy& dev, CommandBuffer& c
       descriptor_set(descriptor_set),
       framebuffer(framebuffer),
       loc(loc),
-      vuids(&GetDrawDispatchVuid(loc.function)),
       original_spirv(nullptr),  // chance might not find
       instruction_position_offset(0),
       set_index(set_index),
       objlist(objlist) {}
 
-void DescriptorValidator::SetLocationForGpuAv(const Location& gpuav_loc) {
-    loc = LocationCapture(gpuav_loc);
-    vuids = &GetDrawDispatchVuid(gpuav_loc.function);
-}
+void DescriptorValidator::SetLocationForGpuAv(const Location& gpuav_loc) { loc = LocationCapture(gpuav_loc); }
 
 template <typename T>
 bool DescriptorValidator::ValidateDescriptorsStatic(const spirv::ResourceInterfaceVariable& resource_variable,
@@ -173,7 +169,7 @@ bool DescriptorValidator::ValidateDescriptorsStatic(const spirv::ResourceInterfa
         if (!binding.updated[index]) {
             const LogObjectList objlist(this->objlist, descriptor_set.Handle());
             skip |=
-                LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+                LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
                          "the %s is being used in %s but has never been updated via vkUpdateDescriptorSets() or a similar call.",
                          DescribeDescriptor(resource_variable, index, VK_DESCRIPTOR_TYPE_MAX_ENUM).c_str(),
                          GetActionType(loc.Get().function));
@@ -228,7 +224,7 @@ bool DescriptorValidator::ValidateDescriptorsDynamic(const spirv::ResourceInterf
 
     if (!binding.updated[index]) {
         const LogObjectList objlist(this->objlist, descriptor_set.Handle());
-        skip |= LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+        skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
                          "the %s is being used in %s but has never been updated via vkUpdateDescriptorSets() or a similar call.%s",
                          DescribeDescriptor(resource_variable, index, VK_DESCRIPTOR_TYPE_MAX_ENUM).c_str(),
                          GetActionType(loc.Get().function), DescribeInstruction().c_str());
@@ -295,7 +291,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
     auto buffer_node = descriptor.GetBufferState();
     if ((!buffer_node && !dev_proxy.enabled_features.nullDescriptor) || (buffer_node && buffer_node->Destroyed())) {
         const LogObjectList objlist(this->objlist, descriptor_set.Handle());
-        skip |= LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+        skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
                          "the %s is using buffer %s that is invalid or has been destroyed.%s",
                          DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(buffer).c_str(),
                          DescribeInstruction().c_str());
@@ -310,7 +306,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
     if (buffer_node /* && !buffer_node->sparse*/) {
         for (const auto& binding : buffer_node->GetInvalidMemory()) {
             const LogObjectList objlist(this->objlist, descriptor_set.Handle());
-            skip |= LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+            skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
                              "the %s is using buffer %s that references invalid memory %s.%s",
                              DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(buffer).c_str(),
                              FormatHandle(binding->Handle()).c_str(), DescribeInstruction().c_str());
@@ -320,10 +316,12 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
         }
     }
     if (dev_proxy.enabled_features.protectedMemory == VK_TRUE) {
-        skip |= dev_proxy.ValidateProtectedBuffer(cb_state, *buffer_node, loc.Get(), vuids->unprotected_command_buffer_02707,
+        std::string temp_vuid = CreateActionVuid(loc.Get().function, ActionVUID::CB_UNPROTECTED_02707);
+        skip |= dev_proxy.ValidateProtectedBuffer(cb_state, *buffer_node, loc.Get(), temp_vuid.c_str(),
                                                   " (Buffer is in a descriptorSet)");
         if (resource_variable.IsWrittenTo()) {
-            skip |= dev_proxy.ValidateUnprotectedBuffer(cb_state, *buffer_node, loc.Get(), vuids->protected_command_buffer_02712,
+            temp_vuid = CreateActionVuid(loc.Get().function, ActionVUID::CB_PROTECTED_02712);
+            skip |= dev_proxy.ValidateUnprotectedBuffer(cb_state, *buffer_node, loc.Get(), temp_vuid.c_str(),
                                                         " (Buffer is in a descriptorSet)");
         }
     }
@@ -382,7 +380,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
         // Image view must have been destroyed since initial update. Could potentially flag the descriptor
         //  as "invalid" (updated = false) at DestroyImageView() time and detect this error at bind time
         const LogObjectList objlist(this->objlist, descriptor_set.Handle());
-        skip |= LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+        skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
                          "the %s is using imageView %s that is invalid or has been destroyed.%s",
                          DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(image_view).c_str(),
                          DescribeInstruction().c_str());
@@ -413,13 +411,14 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
     // SubpassData gets validated elsewhere
     if (resource_variable.IsImage() && dim != spv::DimSubpassData) {
         bool valid_dim = true;
+        const bool alias_single_layer = (image_state->create_flags & VK_IMAGE_CREATE_ALIAS_SINGLE_LAYER_DESCRIPTOR_BIT_KHR) != 0;
         // From vkspec.html#textures-operation-validation
         switch (image_view_ci.viewType) {
             case VK_IMAGE_VIEW_TYPE_1D:
-                valid_dim = (dim == spv::Dim1D) && !is_image_array;
+                valid_dim = (dim == spv::Dim1D) && (!is_image_array || alias_single_layer);
                 break;
             case VK_IMAGE_VIEW_TYPE_2D:
-                valid_dim = (dim == spv::Dim2D) && !is_image_array;
+                valid_dim = (dim == spv::Dim2D) && (!is_image_array || alias_single_layer);
                 break;
             case VK_IMAGE_VIEW_TYPE_3D:
                 valid_dim = (dim == spv::Dim3D) && !is_image_array;
@@ -428,10 +427,10 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
                 valid_dim = (dim == spv::DimCube) && !is_image_array;
                 break;
             case VK_IMAGE_VIEW_TYPE_1D_ARRAY:
-                valid_dim = (dim == spv::Dim1D) && is_image_array;
+                valid_dim = (dim == spv::Dim1D) && (is_image_array || alias_single_layer);
                 break;
             case VK_IMAGE_VIEW_TYPE_2D_ARRAY:
-                valid_dim = (dim == spv::Dim2D) && is_image_array;
+                valid_dim = (dim == spv::Dim2D) && (is_image_array || alias_single_layer);
                 break;
             case VK_IMAGE_VIEW_TYPE_CUBE_ARRAY:
                 valid_dim = (dim == spv::DimCube) && is_image_array;
@@ -441,18 +440,25 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
         }
         if (!valid_dim) {
             const LogObjectList objlist(this->objlist, descriptor_set.Handle(), image_view);
-            skip |= LogError(
-                CreateActionVuid(loc.Get().function, ActionVUID::IMAGE_VIEW_DIM_07752), objlist, loc.Get(),
-                "the %s VkImageViewType is %s but the OpTypeImage has (Dim = %s) and (Arrayed = %" PRIu32
-                ").\nEither fix in shader or update the VkImageViewType to %s%s%s",
-                DescribeDescriptor(resource_variable, index, descriptor_type).c_str(),
-                string_VkImageViewType(image_view_ci.viewType), string_SpvDim(dim), is_image_array,
-                SuggestImageViewType(dim, is_image_array),
-                (is_gpu_av && resource_variable.IsArray())
-                    ? "\nAdvice: The dimension is tied to the descriptor variable, so for descriptor indexing, you might need to "
-                      "express two different arrays of different types that share the same descriptor binding."
-                    : "",
-                DescribeInstruction().c_str());
+            std::ostringstream ss;
+            ss << "the " << DescribeDescriptor(resource_variable, index, descriptor_type) << " VkImageViewType is "
+               << string_VkImageViewType(image_view_ci.viewType) << " but the OpTypeImage has (Dim = " << string_SpvDim(dim)
+               << ") and (Arrayed = " << is_image_array << ").\nEither fix in the shader or update the VkImageViewType to "
+               << SuggestImageViewType(dim, is_image_array);
+            if (((image_view_ci.viewType == VK_IMAGE_VIEW_TYPE_1D || image_view_ci.viewType == VK_IMAGE_VIEW_TYPE_1D_ARRAY) &&
+                 dim == spv::Dim1D) ||
+                ((image_view_ci.viewType == VK_IMAGE_VIEW_TYPE_2D || image_view_ci.viewType == VK_IMAGE_VIEW_TYPE_2D_ARRAY) &&
+                 dim == spv::Dim2D)) {
+                ss << "\nHint: With VK_KHR_maintenance11 there is VK_IMAGE_CREATE_ALIAS_SINGLE_LAYER_DESCRIPTOR_BIT_KHR which "
+                      "would make this legal.";
+            }
+            if (is_gpu_av && resource_variable.IsArray()) {
+                ss << "\nAdvice: The dimension is tied to the descriptor variable, so for descriptor indexing, you might need to "
+                      "express two different arrays of different types that share the same descriptor binding.";
+            }
+            ss << DescribeInstruction();
+            skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::IMAGE_VIEW_DIM_07752), objlist, loc.Get(), "%s",
+                             ss.str().c_str());
         }
 
         const uint32_t view_numeric_type = spirv::GetFormatNumericType(image_view_ci.format);
@@ -712,16 +718,29 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
     }
 
     if (dev_proxy.enabled_features.protectedMemory == VK_TRUE) {
-        skip |= dev_proxy.ValidateProtectedImage(cb_state, *image_state, loc.Get(), vuids->unprotected_command_buffer_02707,
+        std::string temp_vuid = CreateActionVuid(loc.Get().function, ActionVUID::CB_UNPROTECTED_02707);
+        skip |= dev_proxy.ValidateProtectedImage(cb_state, *image_state, loc.Get(), temp_vuid.c_str(),
                                                  " (Image is in a descriptorSet)");
         if (resource_variable.IsWrittenTo()) {
-            skip |= dev_proxy.ValidateUnprotectedImage(cb_state, *image_state, loc.Get(), vuids->protected_command_buffer_02712,
+            temp_vuid = CreateActionVuid(loc.Get().function, ActionVUID::CB_PROTECTED_02712);
+            skip |= dev_proxy.ValidateUnprotectedImage(cb_state, *image_state, loc.Get(), temp_vuid.c_str(),
                                                        " (Image is in a descriptorSet)");
         }
     }
 
     if (dev_proxy.enabled_features.tileMemoryHeap) {
         skip |= dev_proxy.ValidateBoundTileMemory(*image_view_state->image_state, cb_state, loc.Get());
+    }
+
+    if (cb_state.per_tile_execution_model_enabled &&
+        image_descriptor.GetImageLayout() == VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT) {
+        const LogObjectList objlist(this->objlist, descriptor_set.Handle(), image_view);
+        skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::PER_TILE_MODEL_FEEDBACK_LOOP_IMAGE_ACCESS_10679),
+                         objlist, loc.Get(),
+                         "the %s has %s which has been transitioned to VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT "
+                         "layout and but is also accessed in shader.%s",
+                         DescribeDescriptor(resource_variable, index, descriptor_type).c_str(),
+                         FormatHandle(image_view).c_str(), DescribeInstruction().c_str());
     }
 
     // If the Image View is invalid, the combined sampler mayb have the same issue
@@ -870,7 +889,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
                 }
             }
         }
-        if ((image_state->create_info.flags & VK_IMAGE_CREATE_CORNER_SAMPLED_BIT_NV) &&
+        if ((image_state->create_flags & VK_IMAGE_CREATE_CORNER_SAMPLED_BIT_NV) &&
             (sampler_state->create_info.addressModeU != VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE ||
              sampler_state->create_info.addressModeV != VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE ||
              sampler_state->create_info.addressModeW != VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)) {
@@ -918,7 +937,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
                     "the %s (%s) was created with levelCount of %s, but %s was created with "
                     "unnormalizedCoordinates.%s",
                     DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(image_view).c_str(),
-                    string_LevelCount(image_state->create_info, image_view_ci.subresourceRange).c_str(),
+                    string_LevelCount(image_state->GetMipLevels(), image_view_ci.subresourceRange).c_str(),
                     FormatHandle(sampler_state->Handle()).c_str(), DescribeInstruction().c_str());
             } else if (subresource_range.layerCount != 1) {
                 const LogObjectList objlist(this->objlist, descriptor_set.Handle(), image_view, sampler_state->Handle());
@@ -927,7 +946,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
                     "the %s (%s) was created with layerCount of %s, but %s was created with "
                     "unnormalizedCoordinates.%s",
                     DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(image_view).c_str(),
-                    string_LayerCount(image_state->create_info, image_view_ci.subresourceRange).c_str(),
+                    string_LayerCount(image_state->GetArrayLayers(), image_view_ci.subresourceRange).c_str(),
                     FormatHandle(sampler_state->Handle()).c_str(), DescribeInstruction().c_str());
             } else if (image_insn.is_sampler_implicitLod_dref_proj) {
                 // sampler must not be used with any of the SPIR-V OpImageSample* or OpImageSparseSample*
@@ -997,7 +1016,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
     if ((!buffer_view_state && !dev_proxy.enabled_features.nullDescriptor) ||
         (buffer_view_state && buffer_view_state->Destroyed())) {
         const LogObjectList objlist(this->objlist, descriptor_set.Handle());
-        skip |= LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+        skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
                          "the %s is using bufferView %s that is invalid or has been destroyed.%s",
                          DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(buffer_view).c_str(),
                          DescribeInstruction().c_str());
@@ -1014,7 +1033,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
     const auto* buffer_state = buffer_view_state->buffer_state.get();
     if (!buffer_state || buffer_state->Destroyed()) {
         const LogObjectList objlist(this->objlist, descriptor_set.Handle());
-        skip |= LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+        skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
                          "the %s is using buffer %s that has been destroyed.%s",
                          DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(buffer).c_str(),
                          DescribeInstruction().c_str());
@@ -1101,12 +1120,13 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
     if ((resource_variable.IsAtomic()) && (descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) &&
         !(buffer_format_features & VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_ATOMIC_BIT)) {
         const LogObjectList objlist(this->objlist, descriptor_set.Handle(), buffer_view);
-        skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::BUFFER_VIEW_ATOMIC_07888), objlist, loc.Get(),
-                         "the %s has %s with format of %s which doesn't support VK_FORMAT_FEATURE_STORAGE_IMAGE_ATOMIC_BIT.\n"
-                         "(supported features: %s).%s",
-                         DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(buffer_view).c_str(),
-                         string_VkFormat(buffer_view_format), string_VkFormatFeatureFlags2(buffer_format_features).c_str(),
-                         DescribeInstruction().c_str());
+        skip |=
+            LogError(CreateActionVuid(loc.Get().function, ActionVUID::BUFFER_VIEW_ATOMIC_07888), objlist, loc.Get(),
+                     "the %s has %s with format of %s which doesn't support VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_ATOMIC_BIT.\n"
+                     "(supported features: %s).%s",
+                     DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(buffer_view).c_str(),
+                     string_VkFormat(buffer_view_format), string_VkFormatFeatureFlags2(buffer_format_features).c_str(),
+                     DescribeInstruction().c_str());
     }
 
     // When KHR_format_feature_flags2 is supported, the read/write without
@@ -1139,11 +1159,13 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
     }
 
     if (dev_proxy.enabled_features.protectedMemory == VK_TRUE && buffer_view_state->buffer_state) {
-        skip |= dev_proxy.ValidateProtectedBuffer(cb_state, *buffer_view_state->buffer_state, loc.Get(),
-                                                  vuids->unprotected_command_buffer_02707, " (Buffer is in a descriptorSet)");
+        std::string temp_vuid = CreateActionVuid(loc.Get().function, ActionVUID::CB_UNPROTECTED_02707);
+        skip |= dev_proxy.ValidateProtectedBuffer(cb_state, *buffer_view_state->buffer_state, loc.Get(), temp_vuid.c_str(),
+                                                  " (Buffer is in a descriptorSet)");
         if (resource_variable.IsWrittenTo()) {
-            skip |= dev_proxy.ValidateUnprotectedBuffer(cb_state, *buffer_view_state->buffer_state, loc.Get(),
-                                                        vuids->protected_command_buffer_02712, " (Buffer is in a descriptorSet)");
+            temp_vuid = CreateActionVuid(loc.Get().function, ActionVUID::CB_PROTECTED_02712);
+            skip |= dev_proxy.ValidateUnprotectedBuffer(cb_state, *buffer_view_state->buffer_state, loc.Get(), temp_vuid.c_str(),
+                                                        " (Buffer is in a descriptorSet)");
         }
     }
 
@@ -1179,7 +1201,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
             // the AccelerationStructure could be null via nullDescriptor and accessing it is legal
             if (acc != VK_NULL_HANDLE || !dev_proxy.enabled_features.nullDescriptor) {
                 const LogObjectList objlist(this->objlist, descriptor_set.Handle());
-                skip |= LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+                skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
                                  "the %s is using acceleration structure %s that is invalid or has been destroyed.%s",
                                  DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(acc).c_str(),
                                  DescribeInstruction().c_str());
@@ -1187,7 +1209,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
         } else if (auto as_buffer = acc_node->GetFirstValidBuffer(*dev_proxy.device_state)) {
             for (const auto& mem_binding : as_buffer.state->GetInvalidMemory()) {
                 const LogObjectList objlist(this->objlist, descriptor_set.Handle());
-                skip |= LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+                skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
                                  "the %s is using acceleration structure %s that references invalid memory %s.%s",
                                  DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(acc).c_str(),
                                  FormatHandle(mem_binding->Handle()).c_str(), DescribeInstruction().c_str());
@@ -1200,7 +1222,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
             // the AccelerationStructure could be null via nullDescriptor and accessing it is legal
             if (acc != VK_NULL_HANDLE || !dev_proxy.enabled_features.nullDescriptor) {
                 const LogObjectList objlist(this->objlist, descriptor_set.Handle());
-                skip |= LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+                skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
                                  "the %s is using acceleration structure %s that is invalid or has been destroyed.%s",
                                  DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(acc).c_str(),
                                  DescribeInstruction().c_str());
@@ -1208,7 +1230,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
         } else {
             for (const auto& mem_binding : acc_node->GetInvalidMemory()) {
                 const LogObjectList objlist(this->objlist, descriptor_set.Handle());
-                skip |= LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+                skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
                                  "the %s is using acceleration structure %s that references invalid memory %s.%s",
                                  DescribeDescriptor(resource_variable, index, descriptor_type).c_str(), FormatHandle(acc).c_str(),
                                  FormatHandle(mem_binding->Handle()).c_str(), DescribeInstruction().c_str());
@@ -1232,13 +1254,13 @@ bool DescriptorValidator::ValidateSamplerDescriptor(const spirv::ResourceInterfa
     // Verify Sampler still valid
     if (!sampler_state || (sampler_state->Destroyed() && !can_be_destroyed)) {
         const LogObjectList objlist(this->objlist, descriptor_set.Handle());
-        skip |= LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+        skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
                          "the %s is using sampler %s that is invalid or has been destroyed.%s",
                          DescribeDescriptor(resource_variable, index, VK_DESCRIPTOR_TYPE_SAMPLER).c_str(),
                          FormatHandle(sampler).c_str(), DescribeInstruction().c_str());
     } else if (sampler_state->sampler_conversion && !is_immutable) {
         const LogObjectList objlist(this->objlist, descriptor_set.Handle());
-        skip |= LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+        skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
                          "the %s sampler (%s) contains a YCBCR conversion (%s), but the sampler is not an "
                          "immutable sampler.%s",
                          DescribeDescriptor(resource_variable, index, VK_DESCRIPTOR_TYPE_SAMPLER).c_str(),
@@ -1262,7 +1284,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
     ASSERT_AND_RETURN_SKIP(tensor_view_state);
     if (tensor_view_state->Destroyed()) {
         const LogObjectList objlist(this->objlist, descriptor_set.Handle());
-        skip |= LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+        skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
                          "the %s is using tensor view %s that is invalid or has been destroyed.%s",
                          DescribeDescriptor(resource_variable, index, VK_DESCRIPTOR_TYPE_TENSOR_ARM).c_str(),
                          FormatHandle(tensor_view_state->Handle()).c_str(), DescribeInstruction().c_str());
@@ -1272,7 +1294,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
     ASSERT_AND_RETURN_SKIP(tensor_state);
     if (tensor_state->Destroyed()) {
         const LogObjectList objlist(this->objlist, descriptor_set.Handle());
-        skip |= LogError(vuids->descriptor_buffer_bit_set_08114, objlist, loc.Get(),
+        skip |= LogError(CreateActionVuid(loc.Get().function, ActionVUID::DESCRIPTOR_08114), objlist, loc.Get(),
                          "the %s is using tensor %s that is invalid or has been destroyed.%s",
                          DescribeDescriptor(resource_variable, index, VK_DESCRIPTOR_TYPE_TENSOR_ARM).c_str(),
                          FormatHandle(tensor_state->Handle()).c_str(), DescribeInstruction().c_str());
@@ -1280,9 +1302,9 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
     }
 
     if (tensor_state->unprotected) {
-        skip |= dev_proxy.ValidateUnprotectedTensor(cb_state, *tensor_state, loc.Get(), vuids->protected_command_buffer_02712);
+        skip |= dev_proxy.ValidateUnprotectedTensor(cb_state, *tensor_state, loc.Get());
     } else {
-        skip |= dev_proxy.ValidateProtectedTensor(cb_state, *tensor_state, loc.Get(), vuids->unprotected_command_buffer_02707);
+        skip |= dev_proxy.ValidateProtectedTensor(cb_state, *tensor_state, loc.Get());
     }
 
     // These VUs are only for tensors used in _shaders_. For use in _datagraphs_, VU 9923 applies.
@@ -1290,7 +1312,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
     if (loc.Get().function != Func::vkCmdDispatchDataGraphARM) {
         if (resource_variable.info.tensor_rank != tensor_state->create_info.pDescription->dimensionCount) {
             const LogObjectList objlist(cb_state.Handle(), this->objlist, descriptor_set.Handle(), tensor_state->Handle());
-            skip |= LogError(vuids->tensorARM_dimensionCount_09905, objlist, loc.Get(),
+            skip |= LogError(CreateActionVuid(loc.Get().function, vvl::ActionVUID::TENSOR_09905), objlist, loc.Get(),
                              "the %s is using tensor %s created with dimensionCount %" PRIu32
                              ", but the corresponding OpTypeTensorARM has rank %" PRIu32 ".%s",
                              DescribeDescriptor(resource_variable, index, descriptor_type).c_str(),
@@ -1315,7 +1337,7 @@ bool DescriptorValidator::ValidateDescriptor(const spirv::ResourceInterfaceVaria
                                               : VK_TENSOR_USAGE_SHADER_BIT_ARM;
     if ((tensor_state->create_info.pDescription->usage & usage_flag) == 0) {
         const LogObjectList objlist(cb_state.Handle(), this->objlist, descriptor_set.Handle(), tensor_state->Handle());
-        skip |= LogError(vuids->tensorARM_pDescription_09900, objlist, loc.Get(),
+        skip |= LogError(CreateActionVuid(loc.Get().function, vvl::ActionVUID::TENSOR_09900), objlist, loc.Get(),
                          "the %s is using tensor %s created with usage %s, which doesn't include %s.%s",
                          DescribeDescriptor(resource_variable, index, descriptor_type).c_str(),
                          FormatHandle(tensor_state->Handle()).c_str(),

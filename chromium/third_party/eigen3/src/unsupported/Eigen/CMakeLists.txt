@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
+
 set(Eigen_HEADERS
   AdolcForward
   AlignedVector3
@@ -6,6 +9,7 @@ set(Eigen_HEADERS
   BVH
   EulerAngles
   FFT
+  GPU
   IterativeSolvers
   KroneckerProduct
   LevenbergMarquardt

@@ -12,6 +12,7 @@ include_rules = [
   '+cast/streaming/public',
   '+cast/streaming/message_fields.h',
   '+cast/streaming/remoting.pb.h',
+  '+cast/standalone_common',
   '+platform/impl',
   '+discovery/common',
   '+discovery/public',

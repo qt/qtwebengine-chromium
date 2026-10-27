@@ -163,16 +163,12 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
   // in the next list.
   const RuntimeFeatureToChromiumFeatureMap<void (*)(bool)>
       blinkFeatureToBaseFeatureMapping[] = {
-          {wf::EnableAccessibilityAriaVirtualContent,
-           raw_ref(features::kEnableAccessibilityAriaVirtualContent)},
           {wf::EnableAccessibilityUseAXPositionForDocumentMarkers,
            raw_ref(features::kUseAXPositionForDocumentMarkers)},
 #if BUILDFLAG(IS_ANDROID)
           {wf::EnableAudioOutputDevices,
            raw_ref(features::kAAudioPerStreamDeviceSelection)},
 #endif
-          {wf::EnableAuthenticatorPasswordsOnlyImmediateRequests,
-           raw_ref(device::kAuthenticatorPasswordsOnlyImmediateRequests)},
           {wf::EnableBackgroundFetch, raw_ref(features::kBackgroundFetch)},
           {wf::EnableBoundaryEventDispatchTracksNodeRemoval,
            raw_ref(blink::features::kBoundaryEventDispatchTracksNodeRemoval)},
@@ -183,7 +179,7 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
           {wf::EnableDocumentPolicyNegotiation,
            raw_ref(features::kDocumentPolicyNegotiation)},
           {wf::EnableEmailVerificationProtocol,
-           raw_ref(features::kEmailVerificationProtocol), kDefault},
+           raw_ref(features::kEmailVerificationProtocol), kSetOnlyIfOverridden},
           {wf::EnableEyeDropperAPI, raw_ref(features::kEyeDropper),
            kSetOnlyIfOverridden},
           {wf::EnableFedCm, raw_ref(features::kFedCm), kSetOnlyIfOverridden},
@@ -258,8 +254,10 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
            raw_ref(features::kTouchDragAndContextMenu)},
           {wf::EnableWebAuthenticationAmbient,
            raw_ref(device::kWebAuthnAmbientSignin)},
+          {wf::EnableWebAuthenticationCrossDeviceFallbackUrl,
+           raw_ref(device::kWebAuthnCrossDeviceFallbackUrl)},
           {wf::EnableWebAuthenticationImmediateGet,
-           raw_ref(device::kWebAuthnImmediateGet), kSetOnlyIfOverridden},
+           raw_ref(device::kWebAuthnImmediateGet), kDefault},
           {wf::EnableWebBluetooth, raw_ref(features::kWebBluetooth),
            kSetOnlyIfOverridden},
           {wf::EnableWebBluetoothGetDevices,
@@ -353,7 +351,10 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
            kSetOnlyIfOverridden},
           {"FledgeBiddingAndAuctionServerAPI",
            raw_ref(blink::features::kFledgeBiddingAndAuctionServer), kDefault},
-          {"FontSrcLocalMatching", raw_ref(features::kFontSrcLocalMatching)},
+#if BUILDFLAG(IS_WIN)
+          {"FontDataService",
+           raw_ref(features::kFontDataServiceAllWebContents)},
+#endif
           {"HstsTopLevelNavigationsOnly",
            raw_ref(net::features::kHstsTopLevelNavigationsOnly)},
           {"MachineLearningNeuralNetwork",
@@ -367,6 +368,7 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
           {"SerialPortConnected", raw_ref(features::kSerialPortConnected)},
           {"WebSerialWorldIsolatedCache",
            raw_ref(features::kWebSerialWorldIsolatedCache)},
+          {"SplitViewLinkOpen", raw_ref(features::kSplitViewLinkOpen)},
 #if BUILDFLAG(IS_MAC)
           {"SystemDefaultAccentColors",
            raw_ref(features::kUseSystemDefaultAccentColors)},
@@ -393,10 +395,7 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
                        kExperimentalWebMachineLearningNeuralNetwork),
            kSetOnlyIfOverridden},
           {"LocalNetworkAccessPermissionPolicy",
-           raw_ref(network::features::kLocalNetworkAccessChecks)},
-          {"LocalNetworkAccessSplitPermissions",
-           raw_ref(
-               network::features::kLocalNetworkAccessChecksSplitPermissions)}};
+           raw_ref(network::features::kLocalNetworkAccessChecks)}};
   for (const auto& mapping : runtimeFeatureNameToChromiumFeatureMapping) {
     SetRuntimeFeatureFromChromiumFeature(
         *mapping.chromium_feature, mapping.option, [&mapping](bool enabled) {

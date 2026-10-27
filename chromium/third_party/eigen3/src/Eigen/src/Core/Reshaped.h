@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_RESHAPED_H
 #define EIGEN_RESHAPED_H
@@ -65,10 +66,11 @@ struct traits<Reshaped<XprType, Rows, Cols, Order> > : traits<XprType> {
                                                                                 : XpxStorageOrder,
     HasSameStorageOrderAsXprType = (ReshapedStorageOrder == XpxStorageOrder),
     InnerSize = (ReshapedStorageOrder == int(RowMajor)) ? int(ColsAtCompileTime) : int(RowsAtCompileTime),
-    InnerStrideAtCompileTime = HasSameStorageOrderAsXprType ? int(inner_stride_at_compile_time<XprType>::ret) : Dynamic,
+    InnerStrideAtCompileTime =
+        HasSameStorageOrderAsXprType ? int(inner_stride_at_compile_time<XprType>::value) : Dynamic,
     OuterStrideAtCompileTime = Dynamic,
 
-    HasDirectAccess = internal::has_direct_access<XprType>::ret && (Order == int(XpxStorageOrder)) &&
+    HasDirectAccess = internal::has_direct_access<XprType>::value && (Order == int(XpxStorageOrder)) &&
                       ((evaluator<XprType>::Flags & LinearAccessBit) == LinearAccessBit),
 
     MaskPacketAccessBit =
@@ -248,7 +250,7 @@ struct evaluator<Reshaped<ArgType, Rows, Cols, Order> >
     //     MaxColsAtCompileTime = traits<XprType>::MaxColsAtCompileTime,
     //
     //     InnerStrideAtCompileTime = traits<XprType>::HasSameStorageOrderAsXprType
-    //                              ? int(inner_stride_at_compile_time<ArgType>::ret)
+    //                              ? int(inner_stride_at_compile_time<ArgType>::value)
     //                              : Dynamic,
     //     OuterStrideAtCompileTime = Dynamic,
 
@@ -294,10 +296,11 @@ struct reshaped_evaluator<ArgType, Rows, Cols, Order, /* HasDirectAccess */ fals
   typedef std::pair<Index, Index> RowCol;
 
   EIGEN_DEVICE_FUNC constexpr inline RowCol index_remap(Index rowId, Index colId) const {
-    if (Order == ColMajor) {
+    EIGEN_IF_CONSTEXPR(Order == ColMajor) {
       const Index nth_elem_idx = colId * m_xpr.rows() + rowId;
       return RowCol(nth_elem_idx % m_xpr.nestedExpression().rows(), nth_elem_idx / m_xpr.nestedExpression().rows());
-    } else {
+    }
+    else {
       const Index nth_elem_idx = colId + rowId * m_xpr.cols();
       return RowCol(nth_elem_idx / m_xpr.nestedExpression().cols(), nth_elem_idx % m_xpr.nestedExpression().cols());
     }
@@ -349,8 +352,6 @@ struct reshaped_evaluator<ArgType, Rows, Cols, Order, /* HasDirectAccess */ true
 
   EIGEN_DEVICE_FUNC constexpr explicit reshaped_evaluator(const XprType& xpr)
       : mapbase_evaluator<XprType, typename XprType::PlainObject>(xpr) {
-    // TODO: for the 3.4 release, this should be turned to an internal assertion, but let's keep it as is for the beta
-    // lifetime
     eigen_assert(((std::uintptr_t(xpr.data()) % plain_enum_max(1, evaluator<XprType>::Alignment)) == 0) &&
                  "data is not aligned");
   }

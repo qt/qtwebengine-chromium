@@ -8,7 +8,7 @@
 #include <sstream>
 #include <utility>
 
-#include "cast/standalone_receiver/avcodec_glue.h"
+#include "cast/standalone_common/ffmpeg_glue.h"
 #include "cast/streaming/public/constants.h"
 #include "cast/streaming/public/encoded_frame.h"
 #include "util/big_endian.h"
@@ -68,7 +68,7 @@ Clock::time_point SDLPlayerBase::ResyncAndDeterminePresentationTime(
   constexpr auto kMaxPlayoutDrift = milliseconds(100);
   const auto media_time_since_last_sync =
       (frame.rtp_timestamp - last_sync_rtp_timestamp_)
-          .ToDuration<Clock::duration>(receiver_.rtp_timebase());
+          .ToDuration<Clock::duration>(receiver_.config().rtp_timebase);
   Clock::time_point presentation_time =
       last_sync_reference_time_ + media_time_since_last_sync;
   const auto drift = to_milliseconds(frame.reference_time - presentation_time);
@@ -88,7 +88,7 @@ Clock::time_point SDLPlayerBase::ResyncAndDeterminePresentationTime(
   return presentation_time;
 }
 
-void SDLPlayerBase::OnFramesReady(int buffer_size) {
+void SDLPlayerBase::OnFramesReady(size_t buffer_size) {
   // Do not consume anything if there are too many frames in the pipeline
   // already.
   if (static_cast<int>(frames_to_render_.size()) > kMaxFramesInPipeline) {
@@ -230,9 +230,10 @@ void SDLPlayerBase::RenderAndSchedulePresentation() {
 void SDLPlayerBase::ResumeDecoding() {
   decode_alarm_.Schedule(
       [this] {
-        const int buffer_size = receiver_.AdvanceToNextFrame();
-        if (buffer_size != Receiver::kNoFramesReady) {
-          OnFramesReady(buffer_size);
+        const std::optional<size_t> buffer_size =
+            receiver_.AdvanceToNextFrame();
+        if (buffer_size) {
+          OnFramesReady(*buffer_size);
         }
       },
       Alarm::kImmediately);

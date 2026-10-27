@@ -1,4 +1,6 @@
 # Powershell script to set up MSVC cmake builds that mirror the CI.  Useful for reproducing issues.
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 param ($EIGEN_CI_ROOTDIR,
        $EIGEN_CI_BUILDDIR,

@@ -56,9 +56,6 @@ extern const base::FeatureParam<bool>
 COMPONENT_EXPORT(CONTENT_SETTINGS_FEATURES)
 BASE_DECLARE_FEATURE(kApproximateGeolocationPermission);
 
-COMPONENT_EXPORT(CONTENT_SETTINGS_FEATURES)
-extern const base::FeatureParam<int> kApproximateGeolocationPermissionPromptArm;
-
 // Feature to enable the feedback button in the User Bypass UI.
 COMPONENT_EXPORT(CONTENT_SETTINGS_FEATURES)
 BASE_DECLARE_FEATURE(kUserBypassFeedback);
@@ -66,6 +63,10 @@ BASE_DECLARE_FEATURE(kUserBypassFeedback);
 // Feature to enable the User Bypass UI.
 COMPONENT_EXPORT(CONTENT_SETTINGS_FEATURES)
 BASE_DECLARE_FEATURE(kUserBypassUI);
+
+// Feature to enable User Bypass UX Simplification.
+COMPONENT_EXPORT(CONTENT_SETTINGS_FEATURES)
+BASE_DECLARE_FEATURE(kUserBypassUxSimplification);
 
 // Determines the time interval after which a user bypass exception expires.
 // Note that it affects only new exceptions, previously created exceptions won't
@@ -93,15 +94,6 @@ extern const base::FeatureParam<base::TimeDelta>
 // Move activity indicators to the left-hand side of Omnibox.
 COMPONENT_EXPORT(CONTENT_SETTINGS_FEATURES)
 BASE_DECLARE_FEATURE(kLeftHandSideActivityIndicators);
-
-// Feature to enable redesigned tracking protection UX + prefs for 3PCD.
-COMPONENT_EXPORT(CONTENT_SETTINGS_FEATURES)
-BASE_DECLARE_FEATURE(kTrackingProtection3pcd);
-
-// Shows the option to disable the v8 optimizer for unfamiliar sites on the
-// site settings page.
-COMPONENT_EXPORT(CONTENT_SETTINGS_FEATURES)
-BASE_DECLARE_FEATURE(kBlockV8OptimizerOnUnfamiliarSitesSetting);
 
 }  // namespace features
 }  // namespace content_settings

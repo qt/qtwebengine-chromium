@@ -15,12 +15,14 @@
 #include "base/json/json_writer.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
+#include "base/test/bind.h"
 #include "base/test/gmock_callback_support.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
 #include "components/unexportable_keys/background_task_origin.h"
 #include "components/unexportable_keys/mock_unexportable_key_service.h"
+#include "components/unexportable_keys/unexportable_key_id.h"
 #include "components/unexportable_keys/unexportable_key_service.h"
 #include "components/unexportable_keys/unexportable_key_service_impl.h"
 #include "components/unexportable_keys/unexportable_key_task_manager.h"
@@ -69,6 +71,7 @@ using ::testing::Invoke;
 using ::testing::Property;
 using ::testing::Return;
 using ::testing::WithArg;
+using ::unexportable_keys::UnexportableSigningKeyId;
 
 constexpr char kBasicValidJson[] =
     R"({
@@ -81,6 +84,27 @@ constexpr char kBasicValidJson[] =
       {
         "type": "include",
         "domain": "trusted.a.test",
+        "path": "/only_trusted_path"
+      }
+    ]
+  },
+  "credentials": [{
+    "type": "cookie",
+    "name": "auth_cookie",
+    "attributes": "Domain=a.test; Path=/; Secure; SameSite=None"
+  }]
+})";
+
+constexpr char kSubdomainValidJsonIncludeSiteFalse[] =
+    R"({
+  "session_identifier": "session_id",
+  "refresh_url": "/refresh",
+  "scope": {
+    "origin": "https://a.test",
+    "include_site": false,
+    "scope_specification" : [
+      {
+        "type": "include",
         "path": "/only_trusted_path"
       }
     ]
@@ -201,19 +225,18 @@ class RegistrationTest : public TestWithTaskEnvironment {
         /*authorization=*/std::nullopt);
   }
 
-  unexportable_keys::UnexportableKeyId CreateKey() {
+  UnexportableSigningKeyId CreateSigningKey() {
     base::test::TestFuture<
-        unexportable_keys::ServiceErrorOr<unexportable_keys::UnexportableKeyId>>
+        unexportable_keys::ServiceErrorOr<UnexportableSigningKeyId>>
         future;
     unexportable_key_service_.GenerateSigningKeySlowlyAsync(
         CreateAlgArray(), kTaskPriority, future.GetCallback());
     return *future.Take();
   }
 
-  RegistrationResult FetchWithFederatedKey(
-      RegistrationRequestParam param,
-      unexportable_keys::UnexportableKeyId key,
-      const GURL& provider_url) {
+  RegistrationResult FetchWithFederatedKey(RegistrationRequestParam param,
+                                           UnexportableSigningKeyId key,
+                                           const GURL& provider_url) {
     base::test::TestFuture<RegistrationFetcher*, RegistrationResult> future;
     std::unique_ptr<RegistrationFetcher> fetcher =
         RegistrationFetcher::CreateFetcher(
@@ -221,7 +244,8 @@ class RegistrationTest : public TestWithTaskEnvironment {
             context_.get(),
             IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
             /*net_log_source=*/std::nullopt,
-            /*original_request_initiator=*/std::nullopt);
+            /*original_request_initiator=*/std::nullopt,
+            unexportable_keys::BackgroundTaskPriority::kBestEffort);
     fetcher->StartFetchWithFederatedKey(param, key, provider_url,
                                         future.GetCallback());
     return std::get<1>(future.Take());
@@ -230,11 +254,11 @@ class RegistrationTest : public TestWithTaskEnvironment {
   std::unique_ptr<Session> CreateTestSession(std::string session_identifier) {
     SessionParams::Scope scope;
     scope.origin = url::Origin::Create(GetBaseURL()).Serialize();
-    auto session_or_error = Session::CreateIfValid(
-        SessionParams(std::move(session_identifier), GetBaseURL(),
-                      GetBaseURL().spec(), std::move(scope),
-                      /*creds=*/{}, unexportable_keys::UnexportableKeyId(),
-                      /*allowed_refresh_initiators=*/{}));
+    auto session_or_error = Session::CreateIfValid(SessionParams(
+        std::move(session_identifier), GetBaseURL(), GetBaseURL().spec(),
+        std::move(scope),
+        /*creds=*/{}, unexportable_keys::UnexportableSigningKeyId(),
+        /*allowed_refresh_initiators=*/{}));
     return std::move(*session_or_error);
   }
 
@@ -463,7 +487,8 @@ TEST_F(RegistrationTest, BasicSuccess) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -482,6 +507,41 @@ TEST_F(RegistrationTest, BasicSuccess) {
           "auth_cookie", "Domain=.a.test; Path=/; Secure; SameSite=None")));
   histogram_tester.ExpectUniqueSample(
       "Net.DeviceBoundSessions.Registration.Network.Result", HTTP_OK, 1);
+}
+
+TEST_F(RegistrationTest, VerifyTaskPriority) {
+  unexportable_keys::MockUnexportableKeyService mock_service;
+
+  EXPECT_CALL(mock_service, GetAlgorithm)
+      .WillRepeatedly(
+          Return(crypto::SignatureVerifier::SignatureAlgorithm::ECDSA_SHA256));
+  EXPECT_CALL(mock_service, GetSubjectPublicKeyInfo)
+      .WillRepeatedly(Return(std::vector<uint8_t>{1, 2, 3}));
+
+  EXPECT_CALL(
+      mock_service,
+      SignSlowlyAsync(
+          _, _, Eq(unexportable_keys::BackgroundTaskPriority::kUserVisible), _))
+      .WillOnce(base::test::RunOnceCallback<3>(std::vector<uint8_t>{4, 5, 6}));
+
+  auto isolation_info = IsolationInfo::CreateTransient(/*nonce=*/std::nullopt);
+  auto request_param = RegistrationRequestParam::CreateForTesting(
+      GURL("https://a.test"), kSessionIdentifier, kChallenge,
+      /*authorization=*/std::nullopt);
+
+  std::unique_ptr<RegistrationFetcher> fetcher =
+      RegistrationFetcher::CreateFetcher(
+          request_param, session_service(), std::ref(mock_service),
+          context_.get(), std::ref(isolation_info),
+          /*net_log_source=*/std::nullopt,
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kUserVisible);
+
+  TestRegistrationCallback callback;
+  fetcher->StartFetchWithExistingKey(
+      request_param, unexportable_keys::UnexportableSigningKeyId(),
+      callback.callback());
+  callback.WaitForCall();
 }
 
 TEST_F(RegistrationTest, NoScopeJson) {
@@ -508,7 +568,8 @@ TEST_F(RegistrationTest, NoScopeJson) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -542,7 +603,8 @@ TEST_F(RegistrationTest, NoSessionIdJson) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -577,7 +639,8 @@ TEST_F(RegistrationTest, EmptySessionIdJson) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -616,7 +679,8 @@ TEST_F(RegistrationTest, SpecificationNotDictJson) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -664,7 +728,8 @@ TEST_F(RegistrationTest, MissingPathDefaults) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -719,7 +784,8 @@ TEST_F(RegistrationTest, MissingDomainDefaults) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -773,7 +839,8 @@ TEST_F(RegistrationTest, MissingRefreshUrlDefault) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -821,7 +888,8 @@ TEST_F(RegistrationTest, OneSpecTypeInvalid) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -859,7 +927,8 @@ TEST_F(RegistrationTest, InvalidTypeSpecList) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -899,7 +968,8 @@ TEST_F(RegistrationTest, TypeIsNotCookie) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -942,7 +1012,8 @@ TEST_F(RegistrationTest, TwoTypesCookie_NotCookie) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -985,7 +1056,8 @@ TEST_F(RegistrationTest, TwoTypesNotCookie_Cookie) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1022,7 +1094,8 @@ TEST_F(RegistrationTest, CredEntryWithoutDict) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1060,11 +1133,12 @@ TEST_F(RegistrationTest, CredEntryWithoutAttributes) {
 
   auto param = GetBasicParam();
   std::unique_ptr<RegistrationFetcher> fetcher =
-      RegistrationFetcher::CreateFetcher(param, session_service(),
-                                         unexportable_key_service(),
-                                         context_.get(), isolation_info,
-                                         /*net_log_source=*/std::nullopt,
-                                         /*original_request_initiator=*/origin);
+      RegistrationFetcher::CreateFetcher(
+          param, session_service(), unexportable_key_service(), context_.get(),
+          isolation_info,
+          /*net_log_source=*/std::nullopt,
+          /*original_request_initiator=*/origin,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1099,7 +1173,8 @@ TEST_F(RegistrationTest, CredEntryWithEmptyName) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1121,7 +1196,8 @@ TEST_F(RegistrationTest, ReturnTextFile) {
           params, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(params, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1145,7 +1221,8 @@ TEST_F(RegistrationTest, ReturnInvalidJson) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1169,7 +1246,8 @@ TEST_F(RegistrationTest, ReturnEmptyJson) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1193,7 +1271,8 @@ TEST_F(RegistrationTest, NetworkErrorServerShutdown) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1220,7 +1299,8 @@ TEST_F(RegistrationTest, NetworkErrorInvalidResponse) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1243,7 +1323,8 @@ TEST_F(RegistrationTest, ResponseErrorCaptured) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1273,7 +1354,8 @@ TEST_F(RegistrationTest, NetErrorCaptured) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1304,7 +1386,8 @@ TEST_F(RegistrationTest, ServerError407) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1328,7 +1411,8 @@ TEST_F(RegistrationTest, ServerError400) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1352,7 +1436,8 @@ TEST_F(RegistrationTest, ServerError500) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1387,7 +1472,8 @@ TEST_F(RegistrationTest, ServerErrorReturnOne403ThenSuccess) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1453,13 +1539,77 @@ TEST_F(RegistrationTest, FollowHttpsToHttpsRedirect) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
 
   EXPECT_TRUE(followed);
   callback.outcome().SessionForTesting();
+}
+
+TEST_F(RegistrationTest, Registration_RedirectToCrossOrigin_Fails) {
+  crypto::ScopedFakeUnexportableKeyProvider scoped_fake_key_provider;
+  bool followed = false;
+  server_.RegisterRequestHandler(base::BindLambdaForTesting(
+      [&](const test_server::HttpRequest& request)
+          -> std::unique_ptr<test_server::HttpResponse> {
+        if (request.relative_url == "/") {
+          auto response = std::make_unique<test_server::BasicHttpResponse>();
+          response->set_code(HTTP_FOUND);
+          response->AddCustomHeader(
+              "Location",
+              server_.GetURL("subdomain.a.test", "/redirect_dest").spec());
+          response->set_content("Redirected");
+          response->set_content_type("text/plain");
+          return response;
+        }
+        if (request.relative_url == "/redirect_dest") {
+          followed = true;
+          return ReturnResponse(HTTP_OK, R"json(
+            {
+              "session_identifier": "session_id",
+              "credentials": [
+                {
+                  "type": "cookie",
+                  "name": "auth_cookie",
+                  "attributes": "Domain=.a.test; Path=/; Secure; SameSite=None"
+                }
+              ],
+              "scope": {
+                "origin": "https://a.test",
+                "include_site": false
+              }
+            }
+          )json",
+                                request);
+        }
+        return nullptr;
+      }));
+
+  server_.SetSSLConfig(EmbeddedTestServer::CERT_TEST_NAMES);
+  ASSERT_TRUE(server_.Start());
+
+  RecordingNetLogObserver net_log_observer;
+  TestRegistrationCallback callback;
+
+  RegistrationRequestParam param = GetBasicParam(server_.GetURL("a.test", "/"));
+  std::unique_ptr<RegistrationFetcher> fetcher =
+      RegistrationFetcher::CreateFetcher(
+          param, session_service(), unexportable_key_service(), context_.get(),
+          IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
+          /*net_log_source=*/std::nullopt,
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
+  fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
+                                    callback.callback());
+
+  callback.WaitForCall();
+
+  EXPECT_TRUE(followed);
+  EXPECT_EQ(callback.outcome().SessionErrorForTesting()->type,
+            SessionError::kCrossOriginRegistrationSiteNotIncluded);
 }
 
 TEST_F(RegistrationTest, FailOnSslErrorExpired) {
@@ -1478,7 +1628,8 @@ TEST_F(RegistrationTest, FailOnSslErrorExpired) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
 
@@ -1525,14 +1676,15 @@ TEST_F(RegistrationTest, BasicSuccessForExistingKey) {
   auto request_param = RegistrationRequestParam::CreateForTesting(
       GetBaseURL(), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   std::unique_ptr<RegistrationFetcher> fetcher =
       RegistrationFetcher::CreateFetcher(
           request_param, session_service(),
           std::ref(unexportable_key_service()), context_.get(),
           std::ref(isolation_info),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartFetchWithExistingKey(request_param, std::move(key),
                                      callback.callback());
   callback.WaitForCall();
@@ -1567,14 +1719,15 @@ TEST_F(RegistrationTest, FetchRegistrationWithCachedChallenge) {
       GetBaseURL(), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
   auto isolation_info = IsolationInfo::CreateTransient(/*nonce=*/std::nullopt);
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   std::unique_ptr<RegistrationFetcher> fetcher =
       RegistrationFetcher::CreateFetcher(
           request_param, session_service(),
           std::ref(unexportable_key_service()), context_.get(),
           std::ref(isolation_info),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartFetchWithExistingKey(request_param, std::move(key),
                                      callback.callback());
   callback.WaitForCall();
@@ -1605,14 +1758,15 @@ TEST_F(RegistrationTest, FetchRegistrationAndChallengeRequired) {
       GetBaseURL(), /*session_identifier=*/std::nullopt, kChallenge,
       /*authorization=*/std::nullopt);
   auto isolation_info = IsolationInfo::CreateTransient(/*nonce=*/std::nullopt);
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   std::unique_ptr<RegistrationFetcher> fetcher =
       RegistrationFetcher::CreateFetcher(
           request_param, session_service(),
           std::ref(unexportable_key_service()), context_.get(),
           std::ref(isolation_info),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartFetchWithExistingKey(request_param, std::move(key),
                                      callback.callback());
   callback.WaitForCall();
@@ -1638,14 +1792,15 @@ TEST_F(RegistrationTest, FetchRefreshAndChallengeRequired_NoChallenge) {
       GetBaseURL(), "session_identifier", kChallenge,
       /*authorization=*/std::nullopt);
   auto isolation_info = IsolationInfo::CreateTransient(/*nonce=*/std::nullopt);
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   std::unique_ptr<RegistrationFetcher> fetcher =
       RegistrationFetcher::CreateFetcher(
           request_param, session_service(),
           std::ref(unexportable_key_service()), context_.get(),
           std::ref(isolation_info),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartFetchWithExistingKey(request_param, std::move(key),
                                      callback.callback());
   callback.WaitForCall();
@@ -1692,14 +1847,15 @@ TEST_F(RegistrationTest,
 
   auto request_param = RegistrationRequestParam::CreateForRefresh(*session);
   auto isolation_info = IsolationInfo::CreateTransient(/*nonce=*/std::nullopt);
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   std::unique_ptr<RegistrationFetcher> fetcher =
       RegistrationFetcher::CreateFetcher(
           request_param, session_service(),
           std::ref(unexportable_key_service()), context_.get(),
           std::ref(isolation_info),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartFetchWithExistingKey(request_param, std::move(key),
                                      callback.callback());
   callback.WaitForCall();
@@ -1747,14 +1903,15 @@ TEST_F(RegistrationTest,
 
   auto request_param = RegistrationRequestParam::CreateForRefresh(*session);
   auto isolation_info = IsolationInfo::CreateTransient(/*nonce=*/std::nullopt);
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   std::unique_ptr<RegistrationFetcher> fetcher =
       RegistrationFetcher::CreateFetcher(
           request_param, session_service(),
           std::ref(unexportable_key_service()), context_.get(),
           std::ref(isolation_info),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartFetchWithExistingKey(request_param, std::move(key),
                                      callback.callback());
   callback.WaitForCall();
@@ -1781,7 +1938,8 @@ TEST_F(RegistrationTest, ContinueFalse) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1816,13 +1974,14 @@ TEST_F(RegistrationTest, TerminateSessionOnRepeatedFailure_Refresh) {
   auto request_param = RegistrationRequestParam::CreateForTesting(
       GetBaseURL(), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   std::unique_ptr<RegistrationFetcher> fetcher =
       RegistrationFetcher::CreateFetcher(
           request_param, session_service(), std::ref(mock_service),
           context_.get(), std::ref(isolation_info),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartFetchWithExistingKey(request_param, std::move(key),
                                      callback.callback());
   callback.WaitForCall();
@@ -1858,13 +2017,14 @@ TEST_F(RegistrationTest, TerminateSessionOnRepeatedFailure_Registration) {
   auto request_param = RegistrationRequestParam::CreateForTesting(
       GetBaseURL(), /*session_identifier=*/std::nullopt, kChallenge,
       /*authorization=*/std::nullopt);
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   std::unique_ptr<RegistrationFetcher> fetcher =
       RegistrationFetcher::CreateFetcher(
           request_param, session_service(), std::ref(mock_service),
           context_.get(), std::ref(isolation_info),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartFetchWithExistingKey(request_param, std::move(key),
                                      callback.callback());
   callback.WaitForCall();
@@ -1887,7 +2047,8 @@ TEST_F(RegistrationTest, NetLogRegistrationResultLogged) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -1910,14 +2071,15 @@ TEST_F(RegistrationTest, NetLogRefreshResultLogged) {
   auto request_param = RegistrationRequestParam::CreateForTesting(
       GetBaseURL(), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   std::unique_ptr<RegistrationFetcher> fetcher =
       RegistrationFetcher::CreateFetcher(
           request_param, session_service(),
           std::ref(unexportable_key_service()), context_.get(),
           std::ref(isolation_info),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartFetchWithExistingKey(request_param, std::move(key),
                                      callback.callback());
   callback.WaitForCall();
@@ -1950,14 +2112,15 @@ TEST_F(RegistrationTest, TerminateSessionOnRepeatedChallenge) {
   auto request_param = RegistrationRequestParam::CreateForTesting(
       GetBaseURL(), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   std::unique_ptr<RegistrationFetcher> fetcher =
       RegistrationFetcher::CreateFetcher(
           request_param, session_service(),
           std::ref(unexportable_key_service()), context_.get(),
           std::ref(isolation_info),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartFetchWithExistingKey(request_param, std::move(key),
                                      callback.callback());
   callback.WaitForCall();
@@ -2005,15 +2168,14 @@ TEST_F(RegistrationTest, RefreshCachesSignedChallenge) {
   auto request_param = RegistrationRequestParam::CreateForTesting(
       GetBaseURL(), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
-  unexportable_keys::UnexportableKeyId key =
-      unexportable_keys::UnexportableKeyId();
   std::unique_ptr<RegistrationFetcher> fetcher =
       RegistrationFetcher::CreateFetcher(
           request_param, session_service(), std::ref(mock_key_service),
           context_.get(), std::ref(isolation_info),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
-  fetcher->StartFetchWithExistingKey(request_param, std::move(key),
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
+  fetcher->StartFetchWithExistingKey(request_param, UnexportableSigningKeyId(),
                                      callback.callback());
   callback.WaitForCall();
 
@@ -2038,7 +2200,6 @@ TEST_F(RegistrationTest, RefreshCachedSignedChallengeUsed) {
   // Create a matching cached challenge.
   SessionService::SignedRefreshChallenge cached_challenge;
   cached_challenge.challenge = kChallenge;
-  cached_challenge.key_id = unexportable_keys::UnexportableKeyId();
   cached_challenge.signed_challenge = "mock_signed_challenge";
 
   EXPECT_CALL(session_service(), GetLatestSignedRefreshChallenge(_))
@@ -2054,14 +2215,14 @@ TEST_F(RegistrationTest, RefreshCachedSignedChallengeUsed) {
   auto request_param = RegistrationRequestParam::CreateForTesting(
       GetBaseURL(), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
-  unexportable_keys::UnexportableKeyId key = cached_challenge.key_id;
   std::unique_ptr<RegistrationFetcher> fetcher =
       RegistrationFetcher::CreateFetcher(
           request_param, session_service(), std::ref(mock_key_service),
           context_.get(), std::ref(isolation_info),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
-  fetcher->StartFetchWithExistingKey(request_param, std::move(key),
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
+  fetcher->StartFetchWithExistingKey(request_param, cached_challenge.key_id,
                                      callback.callback());
   callback.WaitForCall();
 
@@ -2093,7 +2254,6 @@ TEST_F(RegistrationTest, RefreshCachedSignedChallengeDoesNotMatch) {
   // different).
   SessionService::SignedRefreshChallenge cached_challenge;
   cached_challenge.challenge = "different_challenge";
-  cached_challenge.key_id = unexportable_keys::UnexportableKeyId();
   cached_challenge.signed_challenge = "mock_signed_challenge";
   EXPECT_CALL(session_service(), GetLatestSignedRefreshChallenge(_))
       .WillOnce(Return(&cached_challenge));
@@ -2110,15 +2270,14 @@ TEST_F(RegistrationTest, RefreshCachedSignedChallengeDoesNotMatch) {
   auto request_param = RegistrationRequestParam::CreateForTesting(
       GetBaseURL(), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
-  unexportable_keys::UnexportableKeyId key =
-      unexportable_keys::UnexportableKeyId();
   std::unique_ptr<RegistrationFetcher> fetcher =
       RegistrationFetcher::CreateFetcher(
           request_param, session_service(), std::ref(mock_key_service),
           context_.get(), std::ref(isolation_info),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
-  fetcher->StartFetchWithExistingKey(request_param, std::move(key),
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
+  fetcher->StartFetchWithExistingKey(request_param, UnexportableSigningKeyId(),
                                      callback.callback());
   callback.WaitForCall();
 
@@ -2153,7 +2312,8 @@ TEST_F(RegistrationTest, RegistrationTriggersSigningOccurrence) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -2173,14 +2333,15 @@ TEST_F(RegistrationTest, RefreshWithNewSessionIdFails) {
   auto request_param = RegistrationRequestParam::CreateForTesting(
       GetBaseURL(), "old_session_id", kChallenge,
       /*authorization=*/std::nullopt);
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   std::unique_ptr<RegistrationFetcher> fetcher =
       RegistrationFetcher::CreateFetcher(
           request_param, session_service(),
           std::ref(unexportable_key_service()), context_.get(),
           std::ref(isolation_info),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartFetchWithExistingKey(request_param, std::move(key),
                                      callback.callback());
   callback.WaitForCall();
@@ -2225,14 +2386,15 @@ TEST_F(RegistrationTest, RegistrationWithNonStringRefreshInitiatorsFails) {
   auto request_param = RegistrationRequestParam::CreateForTesting(
       GetBaseURL(), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   std::unique_ptr<RegistrationFetcher> fetcher =
       RegistrationFetcher::CreateFetcher(
           request_param, session_service(),
           std::ref(unexportable_key_service()), context_.get(),
           std::ref(isolation_info),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartFetchWithExistingKey(request_param, std::move(key),
                                      callback.callback());
   callback.WaitForCall();
@@ -2282,7 +2444,8 @@ TEST_F(RegistrationTest, MissingIncludeSiteFails) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -2312,7 +2475,8 @@ TEST_F(RegistrationTest, ShutdownDuringRequest) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
 
@@ -2340,7 +2504,8 @@ TEST_F(RegistrationTest, EmptyResponseOnRegistration) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -2361,14 +2526,15 @@ TEST_F(RegistrationTest, EmptyResponseOnRefresh) {
   auto request_param = RegistrationRequestParam::CreateForTesting(
       GetBaseURL(), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   std::unique_ptr<RegistrationFetcher> fetcher =
       RegistrationFetcher::CreateFetcher(
           request_param, session_service(), unexportable_key_service(),
           context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartFetchWithExistingKey(request_param, std::move(key),
                                      callback.callback());
   callback.WaitForCall();
@@ -2400,7 +2566,8 @@ TEST_F(RegistrationTest, SetChallengeOnRegistration) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -2433,7 +2600,8 @@ TEST_F(RegistrationTest, RegistrationBySubdomain_Success) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -2461,7 +2629,8 @@ TEST_F(RegistrationTest, RegistrationBySubdomain_WellKnownUnavailable) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -2491,7 +2660,8 @@ TEST_F(RegistrationTest, RegistrationBySubdomain_WellKnownMalformed) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -2522,7 +2692,8 @@ TEST_F(RegistrationTest, RegistrationBySubdomain_WellKnownMalformedEntry) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -2555,13 +2726,43 @@ TEST_F(RegistrationTest, RegistrationBySubdomain_Unauthorized) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
   const RegistrationResult& out_session = callback.outcome();
   EXPECT_EQ(out_session.SessionErrorForTesting()->type,
             SessionError::kSubdomainRegistrationUnauthorized);
+}
+
+TEST_F(RegistrationTest, RegistrationBySubdomain_IncludeSiteFalse_Fails) {
+  crypto::ScopedFakeUnexportableKeyProvider scoped_fake_key_provider;
+
+  server_.RegisterRequestHandler(base::BindRepeating(
+      &ReturnResponse, HTTP_OK, kSubdomainValidJsonIncludeSiteFalse));
+  ASSERT_TRUE(server_.Start());
+
+  GURL registration_url = server_.GetURL("subdomain.a.test", "/");
+
+  RecordingNetLogObserver net_log_observer;
+  TestRegistrationCallback callback;
+
+  auto param = GetBasicParam(registration_url);
+  std::unique_ptr<RegistrationFetcher> fetcher =
+      RegistrationFetcher::CreateFetcher(
+          param, session_service(), unexportable_key_service(), context_.get(),
+          IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
+          /*net_log_source=*/std::nullopt,
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
+  fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
+                                    callback.callback());
+  callback.WaitForCall();
+  const RegistrationResult& out_session = callback.outcome();
+  ASSERT_NE(out_session.SessionErrorForTesting(), nullptr);
+  EXPECT_EQ(out_session.SessionErrorForTesting()->type,
+            SessionError::kCrossOriginRegistrationSiteNotIncluded);
 }
 
 TEST_F(RegistrationTest, RegistrationBySubdomain_MultipleAllowed) {
@@ -2591,7 +2792,8 @@ TEST_F(RegistrationTest, RegistrationBySubdomain_MultipleAllowed) {
             context_.get(),
             IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
             /*net_log_source=*/std::nullopt,
-            /*original_request_initiator=*/std::nullopt);
+            /*original_request_initiator=*/std::nullopt,
+            unexportable_keys::BackgroundTaskPriority::kBestEffort);
     fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                       callback.callback());
 
@@ -2612,12 +2814,76 @@ TEST_F(RegistrationTest, RegistrationBySubdomain_MultipleAllowed) {
             context_.get(),
             IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
             /*net_log_source=*/std::nullopt,
-            /*original_request_initiator=*/std::nullopt);
+            /*original_request_initiator=*/std::nullopt,
+            unexportable_keys::BackgroundTaskPriority::kBestEffort);
     fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                       callback.callback());
     callback.WaitForCall();
     callback.outcome().SessionForTesting();
   }
+}
+
+TEST_F(RegistrationTest, RegistrationRedirectToSubdomain) {
+  crypto::ScopedFakeUnexportableKeyProvider scoped_fake_key_provider;
+  bool well_known_fetched = false;
+
+  // 1. Redirect request
+  server_.RegisterRequestHandler(base::BindLambdaForTesting(
+      [&](const test_server::HttpRequest& request)
+          -> std::unique_ptr<test_server::HttpResponse> {
+        if (request.relative_url != "/") {
+          return nullptr;
+        }
+        auto response = std::make_unique<test_server::BasicHttpResponse>();
+        response->set_code(HTTP_FOUND);
+        response->AddCustomHeader(
+            "Location", server_.GetURL("subdomain.a.test", "/dbsc").spec());
+        return response;
+      }));
+
+  // 2. Return config
+  server_.RegisterRequestHandler(base::BindLambdaForTesting(
+      [&](const test_server::HttpRequest& request)
+          -> std::unique_ptr<test_server::HttpResponse> {
+        if (request.relative_url != "/dbsc") {
+          return nullptr;
+        }
+        return ReturnResponse(HTTP_OK, kBasicValidJson, request);
+      }));
+
+  // 3. Monitor well-known requests
+  server_.RegisterRequestHandler(base::BindLambdaForTesting(
+      [&](const test_server::HttpRequest& request)
+          -> std::unique_ptr<test_server::HttpResponse> {
+        if (request.relative_url != "/.well-known/device-bound-sessions") {
+          return nullptr;
+        }
+        well_known_fetched = true;
+        return ReturnResponse(HTTP_NOT_FOUND, "", request);
+      }));
+
+  ASSERT_TRUE(server_.Start());
+
+  GURL registration_url = server_.GetURL("a.test", "/");
+  RecordingNetLogObserver net_log_observer;
+  TestRegistrationCallback callback;
+
+  auto param = GetBasicParam(registration_url);
+  std::unique_ptr<RegistrationFetcher> fetcher =
+      RegistrationFetcher::CreateFetcher(
+          param, session_service(), unexportable_key_service(), context_.get(),
+          IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
+          /*net_log_source=*/std::nullopt,
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
+  fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
+                                    callback.callback());
+  callback.WaitForCall();
+
+  // Verify well-known check is triggered and registration fails.
+  EXPECT_TRUE(well_known_fetched);
+  EXPECT_EQ(callback.outcome().SessionErrorForTesting()->type,
+            SessionError::kSubdomainRegistrationWellKnownUnavailable);
 }
 
 TEST_F(RegistrationTest, FederatedSuccess) {
@@ -2640,7 +2906,7 @@ TEST_F(RegistrationTest, FederatedSuccess) {
       base::BindRepeating(&ReturnResponse, HTTP_OK, kBasicValidJson));
   ASSERT_TRUE(server_.Start());
 
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   auto param = RegistrationRequestParam::CreateForTesting(
       server_.GetURL("rp.a.test", "/"), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
@@ -2670,7 +2936,7 @@ TEST_F(RegistrationTest, FederatedProviderHasProvider) {
       base::BindRepeating(&ReturnResponse, HTTP_OK, kBasicValidJson));
   ASSERT_TRUE(server_.Start());
 
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   auto param = RegistrationRequestParam::CreateForTesting(
       server_.GetURL("rp.a.test", "/"), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
@@ -2698,7 +2964,7 @@ TEST_F(RegistrationTest, FederatedProviderUnvailable) {
       base::BindRepeating(&ReturnResponse, HTTP_OK, kBasicValidJson));
   ASSERT_TRUE(server_.Start());
 
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   auto param = RegistrationRequestParam::CreateForTesting(
       server_.GetURL("rp.a.test", "/"), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
@@ -2729,7 +2995,7 @@ TEST_F(RegistrationTest, FederatedProviderUnauthorized) {
       base::BindRepeating(&ReturnResponse, HTTP_OK, kBasicValidJson));
   ASSERT_TRUE(server_.Start());
 
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   auto param = RegistrationRequestParam::CreateForTesting(
       server_.GetURL("rp.a.test", "/"), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
@@ -2757,7 +3023,7 @@ TEST_F(RegistrationTest, FederatedRelyingUnavailable) {
       base::BindRepeating(&ReturnResponse, HTTP_OK, kBasicValidJson));
   ASSERT_TRUE(server_.Start());
 
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   auto param = RegistrationRequestParam::CreateForTesting(
       server_.GetURL("rp.a.test", "/"), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
@@ -2789,7 +3055,7 @@ TEST_F(RegistrationTest, FederatedRelyingHasRelying) {
       base::BindRepeating(&ReturnResponse, HTTP_OK, kBasicValidJson));
   ASSERT_TRUE(server_.Start());
 
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   auto param = RegistrationRequestParam::CreateForTesting(
       server_.GetURL("rp.a.test", "/"), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
@@ -2820,7 +3086,7 @@ TEST_F(RegistrationTest, FederatedRelyingNotAuthorized) {
       base::BindRepeating(&ReturnResponse, HTTP_OK, kBasicValidJson));
   ASSERT_TRUE(server_.Start());
 
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   auto param = RegistrationRequestParam::CreateForTesting(
       server_.GetURL("rp.a.test", "/"), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
@@ -2858,7 +3124,7 @@ TEST_F(RegistrationTest, FederatedTooManyRelying) {
       base::BindRepeating(&ReturnResponse, HTTP_OK, kBasicValidJson));
   ASSERT_TRUE(server_.Start());
 
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   auto param = RegistrationRequestParam::CreateForTesting(
       server_.GetURL("rp.a.test", "/"), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
@@ -2896,7 +3162,7 @@ TEST_F(RegistrationTest, FederatedTooManyRelyingFirstLabelAllowed) {
       base::BindRepeating(&ReturnResponse, HTTP_OK, kBasicValidJson));
   ASSERT_TRUE(server_.Start());
 
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   auto param = RegistrationRequestParam::CreateForTesting(
       server_.GetURL("rp.a.test", "/"), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
@@ -2932,7 +3198,7 @@ TEST_F(RegistrationTest, FederatedNotRegistrableDoesNotCount) {
       base::BindRepeating(&ReturnResponse, HTTP_OK, kBasicValidJson));
   ASSERT_TRUE(server_.Start());
 
-  unexportable_keys::UnexportableKeyId key = CreateKey();
+  UnexportableSigningKeyId key = CreateSigningKey();
   auto param = RegistrationRequestParam::CreateForTesting(
       server_.GetURL("rp.a.test", "/"), kSessionIdentifier, kChallenge,
       /*authorization=*/std::nullopt);
@@ -2959,7 +3225,8 @@ TEST_F(RegistrationTest, RegistrationFailsIfCantSetCookies) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
 
   network_delegate()->set_cookie_options(TestNetworkDelegate::NO_SET_COOKIE);
 
@@ -2989,7 +3256,8 @@ TEST_F(RegistrationTest, RegisterAuthorizationNoChallenge) {
           param, session_service(), unexportable_key_service(), context_.get(),
           IsolationInfo::CreateTransient(/*nonce=*/std::nullopt),
           /*net_log_source=*/std::nullopt,
-          /*original_request_initiator=*/std::nullopt);
+          /*original_request_initiator=*/std::nullopt,
+          unexportable_keys::BackgroundTaskPriority::kBestEffort);
   fetcher->StartCreateTokenAndFetch(param, CreateAlgArray(),
                                     callback.callback());
   callback.WaitForCall();
@@ -3017,7 +3285,7 @@ class RegistrationTokenHelperTest : public testing::Test {
 
 TEST_F(RegistrationTokenHelperTest, CreateSuccess) {
   crypto::ScopedFakeUnexportableKeyProvider scoped_fake_key_provider;
-  base::test::TestFuture<std::optional<RegistrationFetcher::RegistrationToken>>
+  base::test::TestFuture<SessionErrorOr<RegistrationFetcher::RegistrationToken>>
       future;
   RegistrationFetcher::CreateRegistrationTokenAsyncForTesting(
       unexportable_key_service(), "test_challenge",
@@ -3028,7 +3296,7 @@ TEST_F(RegistrationTokenHelperTest, CreateSuccess) {
 
 TEST_F(RegistrationTokenHelperTest, CreateFail) {
   crypto::ScopedNullUnexportableKeyProvider scoped_null_key_provider;
-  base::test::TestFuture<std::optional<RegistrationFetcher::RegistrationToken>>
+  base::test::TestFuture<SessionErrorOr<RegistrationFetcher::RegistrationToken>>
       future;
   RegistrationFetcher::CreateRegistrationTokenAsyncForTesting(
       unexportable_key_service(), "test_challenge",

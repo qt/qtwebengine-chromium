@@ -32,7 +32,10 @@ class CFX_PSFontTracker;
 class CFX_Path;
 class TextCharPos;
 struct CFX_FillRenderOptions;
+
+namespace fxge {
 struct FXDIB_ResampleOptions;
+}
 
 struct EncoderIface {
   DataVector<uint8_t> (*pA85EncodeFunc)(pdfium::span<const uint8_t> src_span);
@@ -86,11 +89,11 @@ class CFX_PSRenderer {
                      int dest_top,
                      int dest_width,
                      int dest_height,
-                     const FXDIB_ResampleOptions& options);
+                     const fxge::FXDIB_ResampleOptions& options);
   bool DrawDIBits(RetainPtr<const CFX_DIBBase> bitmap,
                   uint32_t color,
                   const CFX_Matrix& matrix,
-                  const FXDIB_ResampleOptions& options);
+                  const fxge::FXDIB_ResampleOptions& options);
   bool DrawText(int nChars,
                 const TextCharPos* pCharPos,
                 CFX_Font* font,

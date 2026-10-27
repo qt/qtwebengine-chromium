@@ -14,6 +14,7 @@
 #include "cast/common/channel/message_util.h"
 #include "cast/common/public/message_port.h"
 #include "cast/streaming/impl/message_constants.h"
+#include "cast/streaming/impl/receiver_impl.h"
 #include "cast/streaming/message_fields.h"
 #include "cast/streaming/public/answer_messages.h"
 #include "cast/streaming/public/constants.h"
@@ -150,6 +151,7 @@ ReceiverSession::ReceiverSession(Client& client,
 }
 
 ReceiverSession::~ReceiverSession() {
+  environment_.SetSocketSubscriber(nullptr);
   // messenger_ must be destroyed before OnReceiversDestroying runs, since it
   // calls message_port_.ResetClient(). That MessagePort is destroyed before
   // OnReceiversDestroying returns. See crbug.com/374199735 for more details.
@@ -167,6 +169,12 @@ void ReceiverSession::SetInputCallback(
   } else {
     input_messenger_.SetReceiveMessageCallback(nullptr);
   }
+}
+
+void ReceiverSession::SetCustomMessageHandler(
+    std::string_view message_namespace,
+    ReceiverSessionMessenger::CustomMessageCallback cb) {
+  messenger_->SetCustomMessageHandler(message_namespace, std::move(cb));
 }
 
 void ReceiverSession::SendInputMessage(const InputMessage& message) {
@@ -430,8 +438,8 @@ std::unique_ptr<Receiver> ReceiverSession::ConstructReceiver(
   if (!config.IsValid()) {
     return nullptr;
   }
-  return std::make_unique<Receiver>(environment_, packet_router_,
-                                    std::move(config));
+  return std::make_unique<ReceiverImpl>(environment_, packet_router_,
+                                        std::move(config));
 }
 
 ReceiverSession::ConfiguredReceivers ReceiverSession::SpawnReceivers(

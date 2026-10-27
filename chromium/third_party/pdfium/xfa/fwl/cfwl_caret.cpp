@@ -32,6 +32,11 @@ CFWL_Caret::CFWL_Caret(CFWL_App* app,
 
 CFWL_Caret::~CFWL_Caret() = default;
 
+void CFWL_Caret::PreFinalize() {
+  timer_.reset();
+  CFWL_Widget::PreFinalize();
+}
+
 FWL_Type CFWL_Caret::GetClassID() const {
   return FWL_Type::Caret;
 }

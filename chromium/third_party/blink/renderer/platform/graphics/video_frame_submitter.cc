@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/platform/graphics/video_frame_submitter.h"
 
+#include <cmath>
 #include <optional>
 #include <utility>
 
@@ -228,6 +229,33 @@ bool VideoFrameSubmitter::IsDrivingFrameUpdates() const {
   return (is_rendering_ && ShouldSubmit()) || force_begin_frames_;
 }
 
+std::optional<base::TimeTicks> VideoFrameSubmitter::GetExpectedDisplayTime()
+    const {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  if (average_delta_between_receive_and_present_.is_zero()) {
+    return std::nullopt;
+  }
+  return SnapToNearestVsync(base::TimeTicks::Now() +
+                            average_delta_between_receive_and_present_);
+}
+
+base::TimeTicks VideoFrameSubmitter::SnapToNearestVsync(
+    base::TimeTicks estimate) const {
+  const base::TimeDelta interval = last_begin_frame_args_.interval;
+  if (!interval.is_positive()) {
+    return estimate;
+  }
+  const base::TimeTicks phase = last_begin_frame_args_.frame_time;
+  const base::TimeDelta offset = estimate - phase;
+  const double interval_us = interval.InMicrosecondsF();
+  DCHECK_GT(interval_us, 0);
+  // Integer k in phase + k * interval, chosen by rounding (see declaration in
+  // video_frame_submitter.h).
+  const int64_t rounded_periods_from_phase =
+      std::llround(offset.InMicrosecondsF() / interval_us);
+  return phase + interval * rounded_periods_from_phase;
+}
+
 void VideoFrameSubmitter::Initialize(cc::VideoFrameProvider* provider,
                                      bool is_media_stream) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
@@ -372,11 +400,12 @@ void VideoFrameSubmitter::OnBeginFrame(
   for (const auto& id : timing_details.Keys())
     frame_tokens.push_back(id);
   std::sort(frame_tokens.begin(), frame_tokens.end(),
-            [](uint32_t a, uint32_t b) { return viz::FrameTokenGT(b, a); });
+            [](uint32_t a, uint32_t b) { return b > a; });
 
   for (const auto& frame_token : frame_tokens) {
-    if (viz::FrameTokenGT(frame_token, *next_frame_token_))
+    if (frame_token > *next_frame_token_) {
       continue;
+    }
 
     auto& details = timing_details.find(frame_token)->value;
     auto& feedback = details.presentation_feedback;
@@ -467,8 +496,13 @@ void VideoFrameSubmitter::OnBeginFrame(
 
   base::TimeTicks deadline_min = args.frame_time + args.interval;
   base::TimeTicks deadline_max = args.frame_time + 2 * args.interval;
-  // The default value for the expected display time of the frame is the
-  // same as the deadline_max.
+  // Default expected display time for tracing: the end of the BeginFrame
+  // deadline window (two intervals after frame_time). This is unrelated to how
+  // |average_delta_between_receive_and_present_| is computed: that EMA is built
+  // only from presentation feedback (receive→present deltas). When the EMA is
+  // still zero, we keep this deadline_max for the trace field; once the EMA is
+  // non-zero, we switch the trace field to Now()+EMA instead (still not mixing
+  // in deadline_max numerically).
   base::TimeTicks frame_expected_display_time = deadline_max;
   // The expected display time of a frame can be computed from the average delta
   // between the frame arriving at the compositor and being presented. We
@@ -480,9 +514,9 @@ void VideoFrameSubmitter::OnBeginFrame(
         base::TimeTicks::Now() + average_delta_between_receive_and_present_;
   }
 
-  TRACE_EVENT_INSTANT1("media", "FrameExpectedDisplayTime",
-                       TRACE_EVENT_SCOPE_THREAD, "frame_expected_display_time",
-                       frame_expected_display_time);
+  TRACE_EVENT_INSTANT("media", "FrameExpectedDisplayTime",
+                      "frame_expected_display_time",
+                      frame_expected_display_time);
 
   frame_trackers_.NotifyBeginImplFrame(args);
   frame_sorter_.AddNewFrame(args);

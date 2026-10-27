@@ -917,6 +917,28 @@ def make_check_constructor_call(cg_context):
         ]))
     return node
 
+
+def make_check_not_subclassable_constructor(cg_context):
+    assert isinstance(cg_context, CodeGenContext)
+
+    if "NotSubclassable" not in cg_context.interface.extended_attributes:
+        return None
+
+    node = CxxUnlikelyIfNode(
+        cond=("${info}.NewTarget() != "
+              "${per_context_data}->ConstructorForType("
+              "${class_name}::GetWrapperTypeInfo())"),
+        attribute="[[unlikely]]",
+        body=TextNode("V8ThrowException::ThrowTypeError(${isolate}, "
+                      "\"Illegal constructor\");\n"
+                      "return;"))
+    node.accumulate(
+        CodeGenAccumulator.require_include_headers([
+            "third_party/blink/renderer/platform/bindings/v8_per_context_data.h",
+        ]))
+    return node
+
+
 def make_promise_return_context(cg_context):
     assert isinstance(cg_context, CodeGenContext)
 
@@ -1809,7 +1831,7 @@ def _make_empty_callback_def(cg_context, function_name):
         arg_decls = [
             "v8::Local<v8::Name> v8_property_name",
             "v8::Local<v8::Value> v8_property_value",
-            "const v8::PropertyCallbackInfo<void>& info",
+            "const v8::PropertyCallbackInfo<v8::Boolean>& info",
         ]
         arg_names = ["v8_property_name", "v8_property_value", "info"]
     elif (cg_context.v8_callback_type ==
@@ -1826,7 +1848,7 @@ def _make_empty_callback_def(cg_context, function_name):
         arg_decls = [
             "v8::Local<v8::Name> v8_property_name",
             "v8::Local<v8::Value> v8_property_value",
-            "const v8::PropertyCallbackInfo<void>& info",
+            "const v8::PropertyCallbackInfo<v8::Boolean>& info",
         ]
         arg_names = ["v8_property_name", "v8_property_value", "info"]
 
@@ -2201,6 +2223,8 @@ def make_constructor_function_def(cg_context, function_name):
         make_report_measure_as(cg_context),
         make_log_activity(cg_context),
         EmptyNode(),
+        make_check_not_subclassable_constructor(cg_context),
+        EmptyNode(),
         make_check_argument_length(cg_context),
         EmptyNode(),
     ])
@@ -2488,7 +2512,9 @@ def make_no_alloc_direct_call_callback_def(cg_context, function_name,
     body.register_code_symbol(
         S(
             "kPerformDetachCheckFlag",
-            "constexpr auto kPerformDetachCheckFlag = PassAsSpanMarkerBase::Flags::kNone;"
+            # TODO(caseq): figure out if it makes sense to skip it when we can.
+            # See https://crbug.com/499365904 for details.
+            "constexpr auto kPerformDetachCheckFlag = PassAsSpanMarkerBase::Flags::kPerformDetachCheck;"
         ))
 
     bind_callback_local_vars(body, cg_context)
@@ -2736,7 +2762,7 @@ def _make_interceptor_callback_args(cg_context, named_or_indexed,
     elif callback_type == "Setter":
         arg_decls.append("v8::Local<v8::Value> v8_property_value")
         arg_names.append("v8_property_value")
-        callback_info_type = "void"
+        callback_info_type = "v8::Boolean"
     elif callback_type == "Query":
         callback_info_type = "v8::Integer"
     elif callback_type == "Deleter":
@@ -2747,7 +2773,7 @@ def _make_interceptor_callback_args(cg_context, named_or_indexed,
     elif callback_type == "Definer":
         arg_decls.append("const v8::PropertyDescriptor& v8_property_desc")
         arg_names.append("v8_property_desc")
-        callback_info_type = "void"
+        callback_info_type = "v8::Boolean"
     elif callback_type == "Descriptor":
         callback_info_type = "v8::Value"
     elif callback_type == "IndexOf":
@@ -6441,6 +6467,10 @@ const WrapperTypeInfo ${class_name}::wrapper_type_info_{{
     if class_like.is_interface and class_like.inherited:
         wrapper_type_info_of_inherited = "{}::GetWrapperTypeInfo()".format(
             v8_bridge_class_name(class_like.inherited))
+        wrapper_type_info_def.append(
+            F("static_assert(std::derived_from<{blink_class}, {blink_base_class}>);",
+              blink_class=blink_class_name(class_like),
+              blink_base_class=blink_class_name(class_like.inherited)))
     else:
         wrapper_type_info_of_inherited = "nullptr"
     if (class_like.is_interface or class_like.is_async_iterator

@@ -53,6 +53,8 @@ enum FontWeight {
 struct CharCodeAndIndex {
   uint32_t char_code;
   uint32_t glyph_index;
+
+  bool operator==(const CharCodeAndIndex&) const = default;
 };
 
 enum class FontAntiAliasingMode : int {
@@ -128,5 +130,9 @@ int NormalizeFontMetric(int64_t value, uint16_t upem);
 // Removes the "XXXXXX+" prefix from a subsetted font name if present. The
 // prefix must be 6 uppercase ASCII letters followed by a '+'.
 void MaybeRemoveSubsettedFontPrefix(ByteString& font_name);
+
+// Returns true if the font data starts with the "OTTO" tag, indicating an
+// OpenType font with CFF data.
+bool IsOpenTypeCFF(pdfium::span<const uint8_t> data);
 
 #endif  // CORE_FXGE_FX_FONT_H_

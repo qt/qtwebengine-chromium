@@ -43,6 +43,7 @@
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/pseudo_element.h"
 #include "third_party/blink/renderer/core/editing/forward.h"
+#include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/layout/geometry/physical_rect.h"
 #include "third_party/blink/renderer/core/layout/geometry/transform_state.h"
@@ -321,9 +322,6 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
   // Returns the decorated name, and DOM node info (tag name and style / class /
   // id attributes, if present).
   String ToString() const;
-
-  // TODO(crbug.com/478682594): Remove when done investigating.
-  void DumpForBug478682594() const;
 
   // This is an inexact determination of whether the display of this objects is
   // altered or obscured by CSS effects.
@@ -702,12 +700,14 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
     // This is an inlined version of the following:
     // `IsStackingContextWithoutContainment() ||
     //  ShouldApplyLayoutContainment() ||
-    //  ShouldApplyPaintContainment()`
+    //  ShouldApplyPaintContainment() ||
+    //  IsOverscrollAreaParent()`
     // The reason it is inlined is that the containment checks share
     // common logic, which is extracted here to avoid repeated computation.
     return style.IsStackingContextWithoutContainment() ||
            ((style.ContainsLayout() || style.ContainsPaint()) &&
-            IsEligibleForPaintOrLayoutContainment());
+            IsEligibleForPaintOrLayoutContainment()) ||
+           IsOverscrollAreaParent();
   }
 
   virtual bool IsReplacedNormalFlowStackingContext(const ComputedStyle&) const {
@@ -721,6 +721,13 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
   }
   inline bool IsStacked(const ComputedStyle& style) const {
     NOT_DESTROYED();
+    if (auto* html_element = DynamicTo<HTMLElement>(GetNode());
+        html_element && html_element->IsUnboundedElementActive()) {
+      // For unbounded elements, we treat them as stacked, so they get their own
+      // paint layer by default.
+      DCHECK(RuntimeEnabledFeatures::UnboundedElementEnabled());
+      return true;
+    }
     return style.GetPosition() != EPosition::kStatic ||
            (IsStackingContext(style) &&
             (!RuntimeEnabledFeatures::StackingContextIsNotStackedEnabled() ||
@@ -1053,18 +1060,6 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
     return IsTableCell() || IsLayoutTableCol() || IsTableCaption() ||
            IsTableRow() || IsTableSection();
   }
-  inline bool IsCheckContent() const;
-  inline bool IsBeforeContent() const;
-  inline bool IsAfterContent() const;
-  inline bool IsMarkerContent() const;
-  inline bool IsScrollButtonContent() const;
-  inline bool IsScrollMarkerContent() const;
-  inline bool IsScrollButtonOrMarkerContent() const;
-  inline bool IsBeforeOrAfterContent() const;
-  inline bool IsInterestHintContent() const;
-  static inline bool IsAfterContent(const LayoutObject* obj) {
-    return obj && obj->IsAfterContent();
-  }
 
   bool IsOverscrollAreaParent() const {
     NOT_DESTROYED();
@@ -1294,10 +1289,10 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
   virtual gfx::RectF ObjectBoundingBox() const;
 
   // Returns the smallest rectangle enclosing all of the painted content
-  // respecting clipping, masking, filters, opacity, stroke-width and markers.
-  // The local SVG coordinate space is the space where localSVGTransform
-  // applies. For SVG objects defining viewports (e.g.
-  // LayoutSVGViewportContainer and  LayoutSVGResourceMarker), the local SVG
+  // respecting clipping, masking, opacity, stroke-width, and markers (but not
+  // filters). The local SVG coordinate space is the space where
+  // `LocalSVGTransform` applies. For SVG objects defining viewports (e.g.
+  // `LayoutSVGViewportContainer` and `LayoutSVGResourceMarker`), the local SVG
   // coordinate space is the viewport space.
   virtual gfx::RectF VisualRectInLocalSVGCoordinates() const;
 
@@ -1320,7 +1315,7 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
 
   // Returns the full transform mapping from local coordinates to parent's local
   // coordinates. For most SVG objects, this is the same as localSVGTransform.
-  // For SVG objects defining viewports (see visualRectInLocalSVGCoordinates),
+  // For SVG objects defining viewports (see VisualRectInLocalSVGCoordinates),
   // this includes any viewport transforms and x/y offsets as well as
   // localSVGTransform.
   virtual AffineTransform LocalToSVGParentTransform() const {
@@ -2244,9 +2239,10 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
   // See layout_block.h for some extra explanations on containing blocks.
   LayoutBlock* ContainingBlock(AncestorSkipInfo* = nullptr) const;
 
-  // Returns the containing block, resolving anonymous blocks to their
-  // Parent(). This mirrors the lookup in ShouldTruncateOverflowingText().
-  LayoutObject* NonAnonymousContainingBlock() const;
+  // Returns the containing block that owns the text-overflow style,
+  // resolving anonymous blocks to their parent. Returns nullptr if the
+  // resolved parent is not a block container (e.g., flex or inline).
+  LayoutObject* ContainingBlockForTextOverflow() const;
 
   // Returns the nearest ancestor in the layout tree that IsForElement(),
   // or null if there is none.
@@ -2549,7 +2545,7 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
   virtual bool MapToVisualRectInAncestorSpaceInternal(
       const LayoutBoxModelObject* ancestor,
       TransformState&,
-      VisualRectFlags = kDefaultVisualRectFlags) const;
+      VisualRectFlags) const;
 
   // Returns the nearest ancestor in the containing block chain that
   // HasLocalBorderBoxProperties. If AncestorSkipInfo* is non-null and the
@@ -3095,6 +3091,10 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
       layout_object_.UpdateInsideBlockingWheelEventHandler(inside);
     }
 
+    void UpdateIsActiveUnboundedElementOrDescendant(bool inside) {
+      layout_object_.UpdateIsActiveUnboundedElementOrDescendant(inside);
+    }
+
 #if DCHECK_IS_ON()
     void ClearNeedsPaintPropertyUpdateForTesting() {
       layout_object_.bitfields_.SetNeedsPaintPropertyUpdate(false);
@@ -3335,7 +3335,16 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
     return bitfields_.PreviousVisibilityVisible();
   }
 
-  // See LocalVisualRect().
+  bool IsInclusiveDescendantOfUnboundedElement() const {
+    NOT_DESTROYED();
+    return bitfields_.IsActiveUnboundedElementOrDescendant();
+  }
+
+  void UpdateIsActiveUnboundedElementOrDescendant(bool inside) {
+    NOT_DESTROYED();
+    bitfields_.SetIsActiveUnboundedElementOrDescendant(inside);
+  }
+
   virtual bool VisualRectRespectsVisibility() const {
     NOT_DESTROYED();
     return true;
@@ -3463,9 +3472,6 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
   // Context used by StyleWillChange() and StyleDidChange(). The former will
   // typically set members, and the latter will check them.
   struct StyleChangeContext {
-    // An object ceased to be floating or out-of-flow.
-    bool became_normal_flow = false;
-
     // An object prevented descendants from becoming column spanners (before
     // style change).
     bool did_prevent_spanner_descendants = false;
@@ -3662,10 +3668,6 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
   // |SetShouldInvalidateSelection| on all selected children.
   void InvalidateSelectedChildrenOnStyleChange();
 
-  // Returns `true` if the LayoutObject is for the specified pseudo-element
-  // type.
-  inline bool IsPseudoElementContent(PseudoId pseudo_id) const;
-
   // It's unclear why Clang doesn't inline this.
   ALWAYS_INLINE
   StyleDifference AdjustStyleDifference(StyleDifference) const;
@@ -3841,7 +3843,8 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
           may_be_non_contiguous_ifc_(false),
           has_svg_text_descendants_(false),
           is_multicol_container_(false),
-          contains_selection_focus_(false) {}
+          contains_selection_focus_(false),
+          is_active_unbounded_element_or_descendant_(false) {}
 
     // Typically indicates that this object has had its style changed, and
     // requires a "full" layout.
@@ -4197,6 +4200,10 @@ class CORE_EXPORT LayoutObject : public GarbageCollected<LayoutObject>,
     // Whether the selection focus is inside this element.
     // Used for text-overflow ellipsis.
     ADD_BOOLEAN_BITFIELD(contains_selection_focus_, ContainsSelectionFocus);
+
+    // Whether this is an (inclusive) descendant of an unbounded element.
+    ADD_BOOLEAN_BITFIELD(is_active_unbounded_element_or_descendant_,
+                         IsActiveUnboundedElementOrDescendant);
   };
 
 #undef ADD_BOOLEAN_BITFIELD
@@ -4249,74 +4256,6 @@ struct ThreadingTrait<T> {
 // Allow equality comparisons of LayoutObjects by reference or pointer,
 // interchangeably.
 DEFINE_COMPARISON_OPERATORS_WITH_REFERENCES(LayoutObject)
-
-inline bool LayoutObject::IsPseudoElementContent(PseudoId pseudo_id) const {
-  NOT_DESTROYED();
-  if (StyleRef().StyleType() != pseudo_id) {
-    return false;
-  }
-  // Text nodes don't have their own styles, so ignore the style on a text node.
-  if (IsText() && !IsBR()) {
-    return false;
-  }
-  return true;
-}
-
-inline bool LayoutObject::IsCheckContent() const {
-  NOT_DESTROYED();
-  return IsPseudoElementContent(kPseudoIdCheckMark);
-}
-
-inline bool LayoutObject::IsBeforeContent() const {
-  NOT_DESTROYED();
-  return IsPseudoElementContent(kPseudoIdBefore);
-}
-
-inline bool LayoutObject::IsAfterContent() const {
-  NOT_DESTROYED();
-  return IsPseudoElementContent(kPseudoIdAfter);
-}
-
-inline bool LayoutObject::IsMarkerContent() const {
-  NOT_DESTROYED();
-  return IsPseudoElementContent(kPseudoIdMarker);
-}
-
-inline bool LayoutObject::IsScrollButtonContent() const {
-  NOT_DESTROYED();
-  if (StyleRef().StyleType() != kPseudoIdScrollButton &&
-      StyleRef().StyleType() != kPseudoIdScrollButtonBlockStart &&
-      StyleRef().StyleType() != kPseudoIdScrollButtonInlineStart &&
-      StyleRef().StyleType() != kPseudoIdScrollButtonInlineEnd &&
-      StyleRef().StyleType() != kPseudoIdScrollButtonBlockEnd) {
-    return false;
-  }
-  // Text nodes don't have their own styles, so ignore the style on a text node.
-  if (IsText() && !IsBR()) {
-    return false;
-  }
-  return true;
-}
-
-inline bool LayoutObject::IsScrollMarkerContent() const {
-  NOT_DESTROYED();
-  return IsPseudoElementContent(kPseudoIdScrollMarker);
-}
-
-inline bool LayoutObject::IsScrollButtonOrMarkerContent() const {
-  NOT_DESTROYED();
-  return IsScrollButtonContent() || IsScrollMarkerContent();
-}
-
-inline bool LayoutObject::IsInterestHintContent() const {
-  NOT_DESTROYED();
-  return IsPseudoElementContent(kPseudoIdInterestHint);
-}
-
-inline bool LayoutObject::IsBeforeOrAfterContent() const {
-  NOT_DESTROYED();
-  return IsBeforeContent() || IsAfterContent();
-}
 
 inline void LayoutObject::ClearNeedsLayoutWithoutPaintInvalidation() {
   NOT_DESTROYED();

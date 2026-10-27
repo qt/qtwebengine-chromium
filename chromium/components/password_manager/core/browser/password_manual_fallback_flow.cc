@@ -10,11 +10,13 @@
 
 #include "base/check.h"
 #include "base/check_deref.h"
+#include "base/containers/to_vector.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
+#include "components/autofill/core/browser/integrators/password_manager/password_manager_delegate.h"
 #include "components/autofill/core/browser/suggestions/suggestion.h"
 #include "components/autofill/core/browser/suggestions/suggestion_hiding_reason.h"
 #include "components/autofill/core/browser/ui/popup_open_enums.h"
@@ -29,6 +31,7 @@
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
 #include "components/password_manager/core/browser/password_manager_util.h"
 #include "components/password_manager/core/browser/password_manual_fallback_metrics_recorder.h"
+#include "components/password_manager/core/browser/password_store/password_form_converters.h"
 #include "components/password_manager/core/browser/password_ui_utils.h"
 #include "components/password_manager/core/browser/ui/credential_ui_entry.h"
 #include "url/gurl.h"
@@ -132,6 +135,7 @@ bool PasswordManualFallbackFlow::SupportsSuggestionType(
     case autofill::SuggestionType::kFillPassword:
     case autofill::SuggestionType::kViewPasswordDetails:
     case autofill::SuggestionType::kAllSavedPasswordsEntry:
+    case autofill::SuggestionType::kWebauthnSignInWithAnotherDevice:
       return true;
     default:
       return false;
@@ -145,7 +149,6 @@ void PasswordManualFallbackFlow::OnFetchCompleted() {
     flow_state_ = FlowState::kFlowInitialized;
     // The flow state transition to `FlowState::kFlowInitialized` can happen
     // only once.
-    manual_fallback_metrics_recorder_->RecordDataFetchingLatency();
     if (on_all_password_data_ready_) {
       std::move(on_all_password_data_ready_).Run();
     }
@@ -160,7 +163,6 @@ void PasswordManualFallbackFlow::OnSavedPasswordsChanged(
     flow_state_ = FlowState::kFlowInitialized;
     // The flow state transition to `FlowState::kFlowInitialized` can happen
     // only once.
-    manual_fallback_metrics_recorder_->RecordDataFetchingLatency();
     if (on_all_password_data_ready_) {
       std::move(on_all_password_data_ready_).Run();
     }
@@ -200,6 +202,15 @@ void PasswordManualFallbackFlow::OnSuggestionsShown(
 void PasswordManualFallbackFlow::OnSuggestionsHidden(
     autofill::SuggestionHidingReason reason) {}
 
+bool PasswordManualFallbackFlow::OnFilterChanged(const std::u16string& filter) {
+  return false;
+}
+
+bool PasswordManualFallbackFlow::OnSearchSubmitted(
+    const std::u16string& filter) {
+  return false;
+}
+
 void PasswordManualFallbackFlow::DidSelectSuggestion(
     const Suggestion& suggestion) {
   CHECK(SupportsSuggestionType(suggestion.type));
@@ -225,6 +236,12 @@ void PasswordManualFallbackFlow::DidSelectSuggestion(
     case autofill::SuggestionType::kPasswordFieldByFieldFilling:
       password_manager_driver_->PreviewField(field_id_,
                                              suggestion.main_text.value);
+      break;
+    case autofill::SuggestionType::kWebauthnSignInWithAnotherDevice:
+      if (auto* password_manager_delegate =
+              password_manager_driver_->GetPasswordManagerDelegate()) {
+        password_manager_delegate->SelectSuggestion(suggestion);
+      }
       break;
     case autofill::SuggestionType::kFillPassword:
     case autofill::SuggestionType::kViewPasswordDetails:
@@ -326,12 +343,19 @@ void PasswordManualFallbackFlow::DidAcceptSuggestion(
           metrics_util::PasswordDropdownSelectedOption::kShowAll,
           password_client_->IsOffTheRecord());
       break;
+    case autofill::SuggestionType::kWebauthnSignInWithAnotherDevice:
+      if (auto* password_manager_delegate =
+              password_manager_driver_->GetPasswordManagerDelegate()) {
+        password_manager_delegate->AcceptSuggestion(suggestion, metadata);
+      }
+      break;
     default:
       // Other suggestion types are not supported.
       NOTREACHED();
   }
-  autofill_client_->HideAutofillSuggestions(
-      autofill::SuggestionHidingReason::kAcceptSuggestion);
+  autofill_client_->HideSuggestions(
+      autofill::SuggestionHidingReason::kAcceptSuggestion,
+      GetMainFillingProduct());
 }
 
 void PasswordManualFallbackFlow::DidPerformButtonActionForSuggestion(
@@ -363,6 +387,10 @@ void PasswordManualFallbackFlow::OnTabSelected(
   NOTREACHED();
 }
 
+bool PasswordManualFallbackFlow::IsSearching() const {
+  return false;
+}
+
 void PasswordManualFallbackFlow::RunFlowImpl(
     const gfx::RectF& bounds,
     base::i18n::TextDirection text_direction) {
@@ -374,7 +402,8 @@ void PasswordManualFallbackFlow::RunFlowImpl(
   // parsed password form and the form contains at most one password field.
   std::vector<Suggestion> suggestions =
       suggestion_generator_.GetManualFallbackSuggestions(
-          form_fetcher_->GetBestMatches(),
+          base::ToVector(form_fetcher_->GetBestMatches(),
+                         [](const auto& cred) { return ToPasswordForm(cred); }),
           passwords_presenter_->GetSavedPasswords(),
           IsTriggeredOnPasswordForm(
               password_form &&

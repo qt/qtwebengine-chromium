@@ -4,14 +4,14 @@
 
 bundle_data("animation_files") {
   sources = [
+    "browse_in_incognito.json",
     "locked_incognito_tabs.json",
     "locked_incognito_tabs_darkmode.json",
     "password_sharing.json",
-    "password_sharing_darkmode.json",
     "price_tracking.json",
-    "price_tracking_darkmode.json",
+    "safe_browsing_tutorial.json",
+    "search_with_lens_promo.json",
     "tab_groups.json",
-    "tab_groups_darkmode.json",
   ]
   outputs = [ "{{bundle_resources_dir}}/{{source_file_part}}" ]
 }

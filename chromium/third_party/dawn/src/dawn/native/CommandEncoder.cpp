@@ -25,46 +25,47 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/CommandEncoder.h"
+#include "src/dawn/native/CommandEncoder.h"
 
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include "absl/container/inlined_vector.h"
-#include "dawn/common/Enumerator.h"
-#include "dawn/common/Math.h"
-#include "dawn/common/NonMovable.h"
-#include "dawn/native/Adapter.h"
-#include "dawn/native/ApplyClearColorValueWithDrawHelper.h"
-#include "dawn/native/BindGroup.h"
-#include "dawn/native/BlitBufferToDepthStencil.h"
-#include "dawn/native/BlitBufferToTexture.h"
-#include "dawn/native/BlitDepthToDepth.h"
-#include "dawn/native/BlitTextureToBuffer.h"
-#include "dawn/native/Buffer.h"
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/CommandBuffer.h"
-#include "dawn/native/CommandBufferStateTracker.h"
-#include "dawn/native/CommandValidation.h"
-#include "dawn/native/Commands.h"
-#include "dawn/native/ComputePassEncoder.h"
-#include "dawn/native/Device.h"
-#include "dawn/native/ErrorData.h"
 #include "dawn/native/ObjectType_autogen.h"
-#include "dawn/native/QueryHelper.h"
-#include "dawn/native/QuerySet.h"
-#include "dawn/native/Queue.h"
-#include "dawn/native/RenderPassEncoder.h"
-#include "dawn/native/RenderPassWorkaroundsHelper.h"
-#include "dawn/native/RenderPipeline.h"
-#include "dawn/native/ValidationUtils.h"
 #include "dawn/native/ValidationUtils_autogen.h"
-#include "dawn/native/dawn_platform.h"
-#include "dawn/native/utils/WGPUHelpers.h"
 #include "dawn/platform/DawnPlatform.h"
-#include "dawn/platform/tracing/TraceEvent.h"
 #include "partition_alloc/pointers/raw_ptr.h"
+#include "src/dawn/common/Enumerator.h"
+#include "src/dawn/common/Math.h"
+#include "src/dawn/native/Adapter.h"
+#include "src/dawn/native/ApplyClearColorValueWithDrawHelper.h"
+#include "src/dawn/native/BindGroup.h"
+#include "src/dawn/native/BlitBufferToDepthStencil.h"
+#include "src/dawn/native/BlitBufferToTexture.h"
+#include "src/dawn/native/BlitDepthToDepth.h"
+#include "src/dawn/native/BlitTextureToBuffer.h"
+#include "src/dawn/native/Buffer.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/CommandBuffer.h"
+#include "src/dawn/native/CommandBufferStateTracker.h"
+#include "src/dawn/native/CommandValidation.h"
+#include "src/dawn/native/Commands.h"
+#include "src/dawn/native/ComputePassEncoder.h"
+#include "src/dawn/native/Device.h"
+#include "src/dawn/native/ErrorData.h"
+#include "src/dawn/native/QueryHelper.h"
+#include "src/dawn/native/QuerySet.h"
+#include "src/dawn/native/Queue.h"
+#include "src/dawn/native/RenderPassEncoder.h"
+#include "src/dawn/native/RenderPassWorkaroundsHelper.h"
+#include "src/dawn/native/RenderPipeline.h"
+#include "src/dawn/native/ValidationUtils.h"
+#include "src/dawn/native/dawn_platform.h"
+#include "src/dawn/native/utils/WGPUHelpers.h"
+#include "src/dawn/platform/tracing/TraceEvent.h"
+#include "src/utils/compiler.h"
+#include "src/utils/non_movable.h"
 
 namespace dawn::native {
 
@@ -72,10 +73,10 @@ namespace {
 
 // Record the subresource range of a attachment used in render pass for checking overlaps.
 struct RecordedAttachment {
-    raw_ptr<const TextureBase> texture;
-    uint32_t mipLevel;
+    raw_ptr<const TextureBase> texture = nullptr;
+    uint32_t mipLevel = 0;
     // For 3d color attachment, it's the attachment's depthSlice.
-    uint32_t depthOrArrayLayer;
+    uint32_t depthOrArrayLayer = 0;
 
     bool operator==(const RecordedAttachment& other) const = default;
 };
@@ -118,7 +119,7 @@ class RenderPassValidationState final : public NonMovable {
             return {};
         }
 
-        DAWN_ASSERT(attachment->GetLevelCount() == 1);
+        DAWN_CHECK(attachment->GetLevelCount() == 1);
 
         const std::string_view attachmentTypeStr = GetAttachmentTypeStr(attachmentType);
 
@@ -257,7 +258,7 @@ class RenderPassValidationState final : public NonMovable {
                 }
             }
         } else {
-            DAWN_ASSERT(attachmentType != AttachmentType::ResolveTarget);
+            DAWN_CHECK(attachmentType != AttachmentType::ResolveTarget);
             mRenderWidth = renderSize.width;
             mRenderHeight = renderSize.height;
             mAttachmentValidationWidth = attachmentValidationSize.width;
@@ -265,21 +266,21 @@ class RenderPassValidationState final : public NonMovable {
             if (!mMsrtssAllowed) {
                 mSampleCount = attachment->GetTexture()->GetSampleCount();
             }
-            DAWN_ASSERT(mRenderWidth != 0);
-            DAWN_ASSERT(mRenderHeight != 0);
-            DAWN_ASSERT(mAttachmentValidationWidth != 0);
-            DAWN_ASSERT(mAttachmentValidationHeight != 0);
-            DAWN_ASSERT(mSampleCount != 0);
+            DAWN_CHECK(mRenderWidth != 0);
+            DAWN_CHECK(mRenderHeight != 0);
+            DAWN_CHECK(mAttachmentValidationWidth != 0);
+            DAWN_CHECK(mAttachmentValidationHeight != 0);
+            DAWN_CHECK(mSampleCount != 0);
         }
 
         RecordedAttachment record;
         record.texture = attachment->GetTexture();
         record.mipLevel = attachment->GetBaseMipLevel();
         if (attachment->GetDimension() == wgpu::TextureViewDimension::e3D) {
-            DAWN_ASSERT(attachment->GetBaseArrayLayer() == 0);
+            DAWN_CHECK(attachment->GetBaseArrayLayer() == 0);
             record.depthOrArrayLayer = depthSlice;
         } else {
-            DAWN_ASSERT(depthSlice == wgpu::kDepthSliceUndefined);
+            DAWN_CHECK(depthSlice == wgpu::kDepthSliceUndefined);
             record.depthOrArrayLayer = attachment->GetBaseArrayLayer();
         }
 
@@ -298,10 +299,10 @@ class RenderPassValidationState final : public NonMovable {
     // Only sets the values needed for executing the render pass, used when validation is disabled.
     void SetUnvalidatedAttachment(const TextureViewBase* attachment) {
         // Should only be called once.
-        DAWN_ASSERT(!HasAttachment());
+        DAWN_CHECK(!HasAttachment());
 
-        DAWN_ASSERT(attachment);
-        DAWN_ASSERT(attachment->GetLevelCount() == 1);
+        DAWN_CHECK(attachment);
+        DAWN_CHECK(attachment->GetLevelCount() == 1);
 
         Extent3D renderSize = attachment->GetSingleSubresourceVirtualSize();
         mRenderWidth = renderSize.width;
@@ -312,9 +313,9 @@ class RenderPassValidationState final : public NonMovable {
             mSampleCount = attachment->GetTexture()->GetSampleCount();
         }
 
-        DAWN_ASSERT(mRenderWidth != 0);
-        DAWN_ASSERT(mRenderHeight != 0);
-        DAWN_ASSERT(mSampleCount != 0);
+        DAWN_CHECK(mRenderWidth != 0);
+        DAWN_CHECK(mRenderHeight != 0);
+        DAWN_CHECK(mSampleCount != 0);
 
         RecordedAttachment record;
         record.texture = attachment->GetTexture();
@@ -563,10 +564,10 @@ MaybeError ValidateColorAttachmentRenderToSingleSampled(
     const RenderPassColorAttachment& colorAttachment,
     const DawnRenderPassSampleCount* renderPassSampleCount) {
     TextureViewBase* attachment = colorAttachment.view;
-    DAWN_ASSERT(attachment);
+    DAWN_CHECK(attachment);
 
     DAWN_ASSERT(renderPassSampleCount != nullptr);
-    DAWN_ASSERT(device->HasFeature(Feature::MSAARenderToSingleSampled));
+    DAWN_CHECK(device->HasFeature(Feature::MSAARenderToSingleSampled));
 
     uint32_t passSampleCount = renderPassSampleCount->sampleCount;
     uint32_t attachmentSampleCount = attachment->GetTexture()->GetSampleCount();
@@ -609,9 +610,9 @@ MaybeError ValidateExpandResolveTextureLoadOp(const DeviceBase* device,
                     colorAttachment.view, textureSampleCount, wgpu::LoadOp::ExpandResolveTexture);
 
     // These should already be validated before entering this function.
-    DAWN_ASSERT(colorAttachment.resolveTarget != nullptr &&
-                !colorAttachment.resolveTarget->IsError());
-    DAWN_ASSERT(colorAttachment.view->GetFormat().SupportsResolveTarget());
+    DAWN_CHECK(colorAttachment.resolveTarget != nullptr &&
+               !colorAttachment.resolveTarget->IsError());
+    DAWN_CHECK(colorAttachment.view->GetFormat().SupportsResolveTarget());
 
     DAWN_INVALID_IF(
         (colorAttachment.resolveTarget->GetUsage() & wgpu::TextureUsage::TextureBinding) == 0,
@@ -622,7 +623,7 @@ MaybeError ValidateExpandResolveTextureLoadOp(const DeviceBase* device,
 
     // TODO(42240662): multiplanar textures are not supported as resolve target.
     // The RenderPassValidationState currently rejects such usage.
-    DAWN_ASSERT(!colorAttachment.resolveTarget->GetTexture()->GetFormat().IsMultiPlanar());
+    DAWN_CHECK(!colorAttachment.resolveTarget->GetTexture()->GetFormat().IsMultiPlanar());
 
     validationState->SetWillExpandResolveTexture(true);
 
@@ -707,7 +708,7 @@ MaybeError ValidateRenderPassDepthStencilAttachment(
     const RenderPassDepthStencilAttachment* depthStencilAttachment,
     UsageValidationMode usageValidationMode,
     RenderPassValidationState* validationState) {
-    DAWN_ASSERT(depthStencilAttachment != nullptr);
+    DAWN_CHECK(depthStencilAttachment != nullptr);
     UnpackedPtr<RenderPassDepthStencilAttachment> unpacked;
     DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(depthStencilAttachment));
 
@@ -724,7 +725,7 @@ MaybeError ValidateRenderPassDepthStencilAttachment(
         attachment->GetAspects() != format.aspects,
         "The depth stencil attachment %s must encompass all aspects of it's texture's format (%s).",
         attachment, format.format);
-    DAWN_ASSERT(attachment->GetFormat().format == format.format);
+    DAWN_CHECK(attachment->GetFormat().format == format.format);
 
     DAWN_INVALID_IF(!format.HasDepthOrStencil(),
                     "The depth stencil attachment %s format (%s) is not a depth stencil format.",
@@ -833,7 +834,8 @@ MaybeError ValidateRenderPassPLS(DeviceBase* device,
     absl::InlinedVector<StorageAttachmentInfoForValidation, 4> attachments;
 
     for (size_t i = 0; i < pls->storageAttachmentCount; i++) {
-        const RenderPassStorageAttachment& attachment = pls->storageAttachments[i];
+        const RenderPassStorageAttachment& attachment =
+            DAWN_UNSAFE_TODO(pls->storageAttachments[i]);
 
         // Validate the attachment can be used as a storage attachment.
         DAWN_TRY(device->ValidateObject(attachment.storage));
@@ -976,7 +978,7 @@ MaybeError InitializeValidationStateAttachment(DeviceBase* device,
 
     // Check every attachment to guard against invalid objects caused by OOM errors.
     auto CheckAttachment = [&](TextureViewBase* view) -> MaybeError {
-        DAWN_ASSERT(view);
+        DAWN_CHECK(view);
         DAWN_TRY(device->IsNotErrorObject(view));
         representativeView = view;
         return {};
@@ -985,7 +987,8 @@ MaybeError InitializeValidationStateAttachment(DeviceBase* device,
     auto pls = descriptor.Get<RenderPassPixelLocalStorage>();
     if (pls != nullptr && pls->storageAttachmentCount > 0) {
         for (size_t i = 0; i < pls->storageAttachmentCount; i++) {
-            const RenderPassStorageAttachment& attachment = pls->storageAttachments[i];
+            const RenderPassStorageAttachment& attachment =
+                DAWN_UNSAFE_TODO(pls->storageAttachments[i]);
             DAWN_TRY(CheckAttachment(attachment.storage));
         }
     }
@@ -995,7 +998,8 @@ MaybeError InitializeValidationStateAttachment(DeviceBase* device,
     }
 
     for (size_t i = 0; i < descriptor->colorAttachmentCount; ++i) {
-        const RenderPassColorAttachment& colorAttachment = descriptor->colorAttachments[i];
+        const RenderPassColorAttachment& colorAttachment =
+            DAWN_UNSAFE_TODO(descriptor->colorAttachments[i]);
         if (colorAttachment.view != nullptr) {
             DAWN_TRY(CheckAttachment(colorAttachment.view));
             if (colorAttachment.resolveTarget != nullptr) {
@@ -1005,7 +1009,7 @@ MaybeError InitializeValidationStateAttachment(DeviceBase* device,
     }
 
     // Only one attachment needs to be added to the validation state.
-    DAWN_ASSERT(representativeView);
+    DAWN_CHECK(representativeView);
     validationState->SetUnvalidatedAttachment(representativeView);
 
     return {};
@@ -1026,8 +1030,8 @@ MaybeError ValidateComputePassDescriptor(const DeviceBase* device,
 }
 
 MaybeError ValidateQuerySetResolve(const QuerySetBase* querySet,
-                                   uint32_t firstQuery,
-                                   uint32_t queryCount,
+                                   QueryIndex firstQuery,
+                                   QueryIndex queryCount,
                                    const BufferBase* destination,
                                    uint64_t destinationOffset) {
     DAWN_INVALID_IF(firstQuery >= querySet->GetQueryCount(),
@@ -1061,35 +1065,19 @@ MaybeError ValidateQuerySetResolve(const QuerySetBase* querySet,
 
 MaybeError EncodeTimestampsToNanosecondsConversion(CommandEncoder* encoder,
                                                    QuerySetBase* querySet,
-                                                   uint32_t firstQuery,
-                                                   uint32_t queryCount,
+                                                   QueryIndex firstQuery,
+                                                   QueryIndex queryCount,
                                                    BufferBase* destination,
                                                    uint64_t destinationOffset) {
     DeviceBase* device = encoder->GetDevice();
 
-    // The availability got from query set is a reference to vector<bool>, need to covert
-    // bool to uint32_t due to a user input in pipeline must not contain a bool type in
-    // WGSL.
-    std::vector<uint32_t> availability{querySet->GetQueryAvailability().begin(),
-                                       querySet->GetQueryAvailability().end()};
-
-    // Timestamp availability storage buffer
-    BufferDescriptor availabilityDesc = {};
-    availabilityDesc.usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst;
-    availabilityDesc.size = querySet->GetQueryCount() * sizeof(uint32_t);
-    Ref<BufferBase> availabilityBuffer;
-    DAWN_TRY_ASSIGN(availabilityBuffer, device->CreateBuffer(&availabilityDesc));
-
-    DAWN_TRY(device->GetQueue()->WriteBuffer(availabilityBuffer.Get(), 0, availability.data(),
-                                             availability.size() * sizeof(uint32_t)));
-
-    const uint32_t quantization_mask = (device->IsToggleEnabled(Toggle::TimestampQuantization))
-                                           ? kTimestampQuantizationMask
-                                           : 0xFFFFFFFF;
+    const uint32_t quantizationMask = device->IsToggleEnabled(Toggle::TimestampQuantization)
+                                          ? kTimestampQuantizationMask
+                                          : 0xFFFFFFFF;
 
     // Timestamp params uniform buffer
-    TimestampParams params(firstQuery, queryCount, static_cast<uint32_t>(destinationOffset),
-                           quantization_mask, device->GetTimestampPeriodInNS());
+    TimestampParams params(uint32_t{queryCount}, static_cast<uint32_t>(destinationOffset),
+                           quantizationMask, device->GetTimestampPeriodInNS());
 
     BufferDescriptor parmsDesc = {};
     parmsDesc.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
@@ -1099,7 +1087,7 @@ MaybeError EncodeTimestampsToNanosecondsConversion(CommandEncoder* encoder,
 
     DAWN_TRY(device->GetQueue()->WriteBuffer(paramsBuffer.Get(), 0, &params, sizeof(params)));
 
-    return EncodeConvertTimestampsToNanoseconds(encoder, destination, availabilityBuffer.Get(),
+    return EncodeConvertTimestampsToNanoseconds(encoder, uint32_t{queryCount}, destination,
                                                 paramsBuffer.Get());
 }
 
@@ -1293,16 +1281,7 @@ void CommandEncoder::TrackUsedQuerySet(QuerySetBase* querySet) {
     mUsedQuerySets.insert(querySet);
 }
 
-void CommandEncoder::TrackQueryAvailability(QuerySetBase* querySet, uint32_t queryIndex) {
-    DAWN_ASSERT(querySet != nullptr);
-
-    TrackUsedQuerySet(querySet);
-
-    // Set the query at queryIndex to available for resolving in query set.
-    querySet->SetQueryAvailability(queryIndex, true);
-}
-
-std::vector<IndirectDrawMetadata> CommandEncoder::AcquireIndirectDrawMetadata() {
+ityp::vector<PassIndex, IndirectDrawMetadata> CommandEncoder::AcquireIndirectDrawMetadata() {
     return mEncodingContext.AcquireIndirectDrawMetadata();
 }
 
@@ -1339,19 +1318,14 @@ Ref<ComputePassEncoder> CommandEncoder::BeginComputePass(const ComputePassDescri
 
             if (descriptor->timestampWrites != nullptr) {
                 QuerySetBase* querySet = descriptor->timestampWrites->querySet;
-                uint32_t beginningOfPassWriteIndex =
-                    descriptor->timestampWrites->beginningOfPassWriteIndex;
-                uint32_t endOfPassWriteIndex = descriptor->timestampWrites->endOfPassWriteIndex;
+                QueryIndex beginningOfPassWriteIndex{
+                    descriptor->timestampWrites->beginningOfPassWriteIndex};
+                QueryIndex endOfPassWriteIndex{descriptor->timestampWrites->endOfPassWriteIndex};
 
+                TrackUsedQuerySet(querySet);
                 cmd->timestampWrites.querySet = querySet;
                 cmd->timestampWrites.beginningOfPassWriteIndex = beginningOfPassWriteIndex;
                 cmd->timestampWrites.endOfPassWriteIndex = endOfPassWriteIndex;
-                if (beginningOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
-                    TrackQueryAvailability(querySet, beginningOfPassWriteIndex);
-                }
-                if (endOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
-                    TrackQueryAvailability(querySet, endOfPassWriteIndex);
-                }
             }
             return {};
         },
@@ -1421,7 +1395,7 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
                 DAWN_TRY(InitializeValidationStateAttachment(device, descriptor, &validationState));
             }
 
-            DAWN_ASSERT(validationState.IsValidState());
+            DAWN_CHECK(validationState.IsValidState());
 
             DAWN_TRY(clearWithDrawHelper.Initialize(this, descriptor));
             DAWN_TRY(renderpassWorkaroundsHelper.Initialize(this, descriptor));
@@ -1502,8 +1476,8 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
                 // GPURenderPassDepthStencilAttachment.stencilClearValue will be converted to
                 // the type of the stencil aspect of view by taking the same number of LSBs as
                 // the number of bits in the stencil aspect of one texel block of view.
-                DAWN_ASSERT(!(view->GetFormat().aspects & Aspect::Stencil) ||
-                            view->GetFormat().GetAspectInfo(Aspect::Stencil).block.byteSize == 1u);
+                DAWN_CHECK(!(view->GetFormat().aspects & Aspect::Stencil) ||
+                           view->GetFormat().GetAspectInfo(Aspect::Stencil).block.byteSize == 1u);
                 cmd->depthStencilAttachment.clearStencil =
                     descriptor->depthStencilAttachment->stencilClearValue & 0xFF;
 
@@ -1578,34 +1552,37 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
 
             cmd->renderArea = renderArea;
 
-            cmd->occlusionQuerySet = descriptor->occlusionQuerySet;
+            if (descriptor->occlusionQuerySet) {
+                TrackUsedQuerySet(descriptor->occlusionQuerySet);
+                cmd->occlusionQuerySet = descriptor->occlusionQuerySet;
+            }
 
             if (descriptor->timestampWrites != nullptr) {
                 QuerySetBase* querySet = descriptor->timestampWrites->querySet;
-                uint32_t beginningOfPassWriteIndex =
-                    descriptor->timestampWrites->beginningOfPassWriteIndex;
-                uint32_t endOfPassWriteIndex = descriptor->timestampWrites->endOfPassWriteIndex;
+                QueryIndex beginningOfPassWriteIndex{
+                    descriptor->timestampWrites->beginningOfPassWriteIndex};
+                QueryIndex endOfPassWriteIndex{descriptor->timestampWrites->endOfPassWriteIndex};
 
+                TrackUsedQuerySet(querySet);
                 cmd->timestampWrites.querySet = querySet;
                 cmd->timestampWrites.beginningOfPassWriteIndex = beginningOfPassWriteIndex;
                 cmd->timestampWrites.endOfPassWriteIndex = endOfPassWriteIndex;
-                if (beginningOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
-                    TrackQueryAvailability(querySet, beginningOfPassWriteIndex);
-                    // Track the query availability with true on render pass again for rewrite
-                    // validation and query reset on Vulkan
+
+                // The render pass usage tracker contains data about written queries. This is
+                // necessary on Vulkan to be able to reset queries before the start of render passes
+                // (it can only be done outside of a render pass).
+                if (beginningOfPassWriteIndex != kQuerySetIndexUndefinedTyped) {
                     usageTracker.TrackQueryAvailability(querySet, beginningOfPassWriteIndex);
                 }
-                if (endOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
-                    TrackQueryAvailability(querySet, endOfPassWriteIndex);
-                    // Track the query availability with true on render pass again for rewrite
-                    // validation and query reset on Vulkan
+                if (endOfPassWriteIndex != kQuerySetIndexUndefinedTyped) {
                     usageTracker.TrackQueryAvailability(querySet, endOfPassWriteIndex);
                 }
             }
 
             if (auto* pls = descriptor.Get<RenderPassPixelLocalStorage>()) {
                 for (size_t i = 0; i < pls->storageAttachmentCount; i++) {
-                    const RenderPassStorageAttachment& apiAttachment = pls->storageAttachments[i];
+                    const RenderPassStorageAttachment& apiAttachment =
+                        DAWN_UNSAFE_TODO(pls->storageAttachments[i]);
                     RenderPassStorageAttachmentInfo* attachmentInfo =
                         &cmd->storageAttachments[apiAttachment.offset / kPLSSlotByteSize];
 
@@ -1993,8 +1970,8 @@ void CommandEncoder::APICopyTextureToTexture(const TexelCopyTextureInfo* sourceO
             mTopLevelTextures.insert(destination.texture);
 
             Aspect aspect = ConvertAspect(source.texture->GetFormat(), source.aspect);
-            DAWN_ASSERT(aspect ==
-                        ConvertAspect(destination.texture->GetFormat(), destination.aspect));
+            DAWN_CHECK(aspect ==
+                       ConvertAspect(destination.texture->GetFormat(), destination.aspect));
 
             TextureCopy src;
             src.texture = source.texture;
@@ -2111,7 +2088,7 @@ void CommandEncoder::APIClearBuffer(BufferBase* buffer, uint64_t offset, uint64_
 
             } else {
                 if (size == wgpu::kWholeSize) {
-                    DAWN_ASSERT(buffer->GetSize() >= offset);
+                    DAWN_CHECK(buffer->GetSize() >= offset);
                     size = buffer->GetSize() - offset;
                 }
             }
@@ -2186,10 +2163,13 @@ void CommandEncoder::APIPushDebugGroup(StringView groupLabelIn) {
 }
 
 void CommandEncoder::APIResolveQuerySet(QuerySetBase* querySet,
-                                        uint32_t firstQuery,
-                                        uint32_t queryCount,
+                                        uint32_t firstQueryUntyped,
+                                        uint32_t queryCountUntyped,
                                         BufferBase* destination,
                                         uint64_t destinationOffset) {
+    QueryIndex firstQuery{firstQueryUntyped};
+    QueryIndex queryCount{queryCountUntyped};
+
     mEncodingContext.TryEncode(
         this,
         [&](CommandAllocator* allocator) -> MaybeError {
@@ -2201,10 +2181,9 @@ void CommandEncoder::APIResolveQuerySet(QuerySetBase* querySet,
                                                  destinationOffset));
 
                 DAWN_TRY(ValidateCanUseAs(destination, wgpu::BufferUsage::QueryResolve));
-
-                TrackUsedQuerySet(querySet);
             }
 
+            TrackUsedQuerySet(querySet);
             mTopLevelBuffers.insert(destination);
 
             ResolveQuerySetCmd* cmd =
@@ -2215,26 +2194,27 @@ void CommandEncoder::APIResolveQuerySet(QuerySetBase* querySet,
             cmd->destination = destination;
             cmd->destinationOffset = destinationOffset;
 
-            // Encode internal compute pipeline for timestamp query
-            if (querySet->GetQueryType() == wgpu::QueryType::Timestamp &&
-                !GetDevice()->IsToggleEnabled(Toggle::DisableTimestampQueryConversion) &&
-                (GetDevice()->GetTimestampPeriodInNS() != 1.0f ||
-                 GetDevice()->IsToggleEnabled(Toggle::TimestampQueryConversionEvenIf1NS))) {
-                // The below function might create new resources. Need to lock the Device.
-                // TODO(crbug.com/dawn/1618): In future, all temp resources should be created at
-                // Command Submit time, so the locking would be removed from here at that point.
-                auto deviceGuard = GetDevice()->GetGuard();
-
-                DAWN_TRY(EncodeTimestampsToNanosecondsConversion(
-                    this, querySet, firstQuery, queryCount, destination, destinationOffset));
+            if (querySet->GetQueryType() != wgpu::QueryType::Timestamp) {
+                return {};
             }
 
-            return {};
+            const bool needsConversion =
+                GetDevice()->GetTimestampPeriodInNS() != 1.0f &&
+                !GetDevice()->IsToggleEnabled(Toggle::DisableTimestampQueryConversion);
+            const bool needsQuantization =
+                GetDevice()->IsToggleEnabled(Toggle::TimestampQuantization) &&
+                !GetDevice()->AreTimestampsQuantized();
+            if (!needsConversion && !needsQuantization) {
+                return {};
+            }
+
+            auto deviceGuard = GetDevice()->GetGuard();
+            return EncodeTimestampsToNanosecondsConversion(this, querySet, firstQuery, queryCount,
+                                                           destination, destinationOffset);
         },
         "encoding %s.ResolveQuerySet(%s, %u, %u, %s, %u).", this, querySet, firstQuery, queryCount,
         destination, destinationOffset);
 }
-
 
 void CommandEncoder::APIWriteBuffer(BufferBase* buffer,
                                     uint64_t bufferOffset,
@@ -2253,7 +2233,7 @@ void CommandEncoder::APIWriteBuffer(BufferBase* buffer,
             cmd->size = size;
 
             uint8_t* inlinedData = allocator->AllocateData<uint8_t>(size);
-            memcpy(inlinedData, data, size);
+            DAWN_UNSAFE_TODO(memcpy(inlinedData, data, size));
 
             mTopLevelBuffers.insert(buffer);
 
@@ -2262,7 +2242,9 @@ void CommandEncoder::APIWriteBuffer(BufferBase* buffer,
         "encoding %s.WriteBuffer(%s, %u, ..., %u).", this, buffer, bufferOffset, size);
 }
 
-void CommandEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t queryIndex) {
+void CommandEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t queryIndexUntyped) {
+    QueryIndex queryIndex{queryIndexUntyped};
+
     mEncodingContext.TryEncode(
         this,
         [&](CommandAllocator* allocator) -> MaybeError {
@@ -2273,7 +2255,7 @@ void CommandEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t queryInd
                 DAWN_TRY(ValidateTimestampQuery(GetDevice(), querySet, queryIndex));
             }
 
-            TrackQueryAvailability(querySet, queryIndex);
+            TrackUsedQuerySet(querySet);
 
             WriteTimestampCmd* cmd =
                 allocator->Allocate<WriteTimestampCmd>(Command::WriteTimestamp);
@@ -2297,7 +2279,7 @@ CommandBufferBase* CommandEncoder::APIFinish(const CommandBufferDescriptor* desc
         return ReturnToAPI(std::move(errorCommandBuffer));
     }
 
-    DAWN_ASSERT(!IsError());
+    DAWN_CHECK(!IsError());
     return ReturnToAPI(std::move(commandBuffer));
 }
 

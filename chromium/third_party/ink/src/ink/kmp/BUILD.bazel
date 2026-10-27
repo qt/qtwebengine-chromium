@@ -1,0 +1,41 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_cc//cc:cc_static_library.bzl", "cc_static_library")
+load(":ink_combine_headers.bzl", "ink_combine_headers")
+
+package(
+    default_visibility = ["//ink:__subpackages__"],
+)
+
+cc_static_library(
+    name = "ink",
+    deps = [
+        "//ink/brush/internal/jni:cinterop",
+        "//ink/geometry/internal/jni:cinterop",
+        "//ink/jni/internal:cinterop",
+        "//ink/strokes/internal/jni:cinterop",
+    ],
+)
+
+ink_combine_headers(
+    name = "combined_headers",
+    srcs = [
+        "//ink/brush/internal/jni:cinterop_headers",
+        "//ink/geometry/internal/jni:cinterop_headers",
+        "//ink/jni/internal:cinterop_headers",
+        "//ink/strokes/internal/jni:cinterop_headers",
+    ],
+    out = "ink_cinterop.h",
+)

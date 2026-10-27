@@ -552,7 +552,9 @@ export default defineConfig([
         },
       ],
 
-      '@typescript-eslint/prefer-optional-chain': 'error',
+      // Broke in 8.58.0, waiting for a fix
+      // https://github.com/typescript-eslint/typescript-eslint/issues/12204
+      '@typescript-eslint/prefer-optional-chain': 'off',
 
       '@typescript-eslint/no-unsafe-function-type': 'error',
 
@@ -895,6 +897,13 @@ export default defineConfig([
       // expensive rule to run and we do not need it
       // for any code that doesn't use Canvas.
       '@devtools/canvas-context-tracking': 'error',
+    },
+  },
+  {
+    name: 'AI Assistance agents',
+    files: ['front_end/models/ai_assistance/agents/**/*.ts'],
+    rules: {
+      '@devtools/no-dynamic-preamble': 'error',
     },
   },
   {

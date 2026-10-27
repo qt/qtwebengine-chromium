@@ -664,7 +664,9 @@ bool RenderPassAccessContext::ValidateDrawSubpassAttachment(const CommandBufferA
 void RenderPassAccessContext::RecordDrawSubpassAttachment(const vvl::CommandBuffer& cmd_buffer, const ResourceUsageTag tag) {
     const auto& last_bound_state = cmd_buffer.GetLastBoundGraphics();
     const auto* pipe = last_bound_state.pipeline_state;
-    if (!pipe || pipe->RasterizationDisabled()) return;
+    if (!pipe || pipe->RasterizationDisabled()) {
+        return;
+    }
 
     const auto& list = pipe->fs_writable_output_location_list;
     const auto& subpass = rp_state_->create_info.pSubpasses[current_subpass_];
@@ -1074,16 +1076,21 @@ DynamicRenderingInfo::Attachment::Attachment(const SyncValidator& state, const v
 }
 
 ImageRangeGen DynamicRenderingInfo::Attachment::GetRangeGen(uint32_t view_mask) const {
+    // VkRenderingAttachmentInfo::imageView is allowed to be VK_NULL_HANDLE
+    if (!view) {
+        return {};
+    }
+    // Multiview is disabled: return precomputed range gen
     if (view_mask == 0) {
-        return view_gen;  // precomputed range gen when multivie is disabled
+        return view_gen;
+    }
+    // Initialize range gen based on view mask
+    if (type == AttachmentType::kColor) {
+        return MakeImageRangeGen(*view, view_mask);
+    } else if (type == AttachmentType::kDepth) {
+        return MakeImageRangeGen(*view, view_mask, VK_IMAGE_ASPECT_DEPTH_BIT);
     } else {
-        if (type == AttachmentType::kColor) {
-            return MakeImageRangeGen(*view, view_mask);
-        } else if (type == AttachmentType::kDepth) {
-            return MakeImageRangeGen(*view, view_mask, VK_IMAGE_ASPECT_DEPTH_BIT);
-        } else {
-            return MakeImageRangeGen(*view, view_mask, VK_IMAGE_ASPECT_STENCIL_BIT);
-        }
+        return MakeImageRangeGen(*view, view_mask, VK_IMAGE_ASPECT_STENCIL_BIT);
     }
 }
 

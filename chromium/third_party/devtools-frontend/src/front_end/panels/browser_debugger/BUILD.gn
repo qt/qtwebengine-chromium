@@ -30,9 +30,8 @@ devtools_ui_module("browser_debugger") {
     "../../core/common:bundle",
     "../../core/i18n:bundle",
     "../../core/platform:bundle",
-    "../../core/root:bundle",
     "../../core/sdk:bundle",
-    "../../generated:protocol",
+    "../../generated",
     "../../panels/event_listeners:bundle",
     "../../panels/sources:bundle",
     "../../ui/components/buttons:bundle",
@@ -84,6 +83,10 @@ devtools_ui_module("unittests") {
 
   deps = [
     ":bundle",
+    "../../core/sdk:bundle",
+    "../../generated",
     "../../testing",
+    "../../ui/legacy:bundle",
+    "../common:bundle",
   ]
 }

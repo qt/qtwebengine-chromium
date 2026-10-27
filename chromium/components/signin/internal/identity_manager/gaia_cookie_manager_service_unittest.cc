@@ -26,6 +26,7 @@
 #include "components/signin/internal/identity_manager/account_tracker_service.h"
 #include "components/signin/internal/identity_manager/fake_profile_oauth2_token_service.h"
 #include "components/signin/public/base/signin_pref_names.h"
+#include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/base/test_signin_client.h"
 #include "components/signin/public/identity_manager/accounts_in_cookie_jar_info.h"
 #include "components/signin/public/identity_manager/identity_test_utils.h"
@@ -117,6 +118,25 @@ class InstrumentedGaiaCookieManagerService : public GaiaCookieManagerService {
   MOCK_METHOD0(StartSetAccounts, void());
 };
 
+class CustomTestSigninClient : public TestSigninClient {
+ public:
+  using TestSigninClient::TestSigninClient;
+
+  network::mojom::DeviceBoundSessionManager* GetDeviceBoundSessionManager()
+      const override {
+    return mock_device_bound_session_manager_;
+  }
+
+  void SetDeviceBoundSessionManager(
+      network::mojom::DeviceBoundSessionManager* manager) {
+    mock_device_bound_session_manager_ = manager;
+  }
+
+ private:
+  raw_ptr<network::mojom::DeviceBoundSessionManager>
+      mock_device_bound_session_manager_ = nullptr;
+};
+
 class GaiaCookieManagerServiceTest : public testing::Test {
  public:
   GaiaCookieManagerServiceTest()
@@ -126,13 +146,17 @@ class GaiaCookieManagerServiceTest : public testing::Test {
         account_id4_(CoreAccountId::FromGaiaId(kAccountId4)),
         no_error_(GoogleServiceAuthError::NONE),
         error_(GoogleServiceAuthError::SERVICE_ERROR),
-        canceled_(GoogleServiceAuthError::REQUEST_CANCELED),
-        account_tracker_service_(CreateAccountTrackerService()) {
+        canceled_(GoogleServiceAuthError::REQUEST_CANCELED) {
     AccountTrackerService::RegisterPrefs(pref_service_.registry());
     GaiaCookieManagerService::RegisterPrefs(pref_service_.registry());
-    signin_client_ = std::make_unique<TestSigninClient>(&pref_service_);
-    account_tracker_service_ = std::make_unique<AccountTrackerService>();
-    account_tracker_service_->Initialize(&pref_service_, base::FilePath());
+    signin_client_ = std::make_unique<CustomTestSigninClient>(&pref_service_);
+
+#if BUILDFLAG(IS_ANDROID)
+    signin::SetUpFakeAccountManagerFacade();
+#endif
+
+    account_tracker_service_ = std::make_unique<AccountTrackerService>(
+        &pref_service_, base::FilePath());
     token_service_ =
         std::make_unique<FakeProfileOAuth2TokenService>(&pref_service_);
   }
@@ -141,7 +165,7 @@ class GaiaCookieManagerServiceTest : public testing::Test {
     return account_tracker_service_.get();
   }
   ProfileOAuth2TokenService* token_service() { return token_service_.get(); }
-  TestSigninClient* signin_client() { return signin_client_.get(); }
+  CustomTestSigninClient* signin_client() { return signin_client_.get(); }
 
   void SimulateAccessTokenFailure(OAuth2AccessTokenManager::Consumer* consumer,
                                   OAuth2AccessTokenManager::Request* request,
@@ -240,19 +264,12 @@ class GaiaCookieManagerServiceTest : public testing::Test {
   const CoreAccountId account_id4_;
 
  private:
-  std::unique_ptr<AccountTrackerService> CreateAccountTrackerService() {
-#if BUILDFLAG(IS_ANDROID)
-    signin::SetUpFakeAccountManagerFacade();
-#endif
-    return std::make_unique<AccountTrackerService>();
-  }
-
   base::test::TaskEnvironment task_environment_;
   GoogleServiceAuthError no_error_;
   GoogleServiceAuthError error_;
   GoogleServiceAuthError canceled_;
   TestingPrefServiceSimple pref_service_;
-  std::unique_ptr<TestSigninClient> signin_client_;
+  std::unique_ptr<CustomTestSigninClient> signin_client_;
   std::unique_ptr<AccountTrackerService> account_tracker_service_;
   std::unique_ptr<FakeProfileOAuth2TokenService> token_service_;
 };
@@ -284,6 +301,46 @@ TEST_F(GaiaCookieManagerServiceTest, MultiloginCookiesDisabled) {
       {{account_id1_, kAccountId1}}, gaia::GaiaSource::kChrome,
       set_accounts_in_cookie_completed.Get());
 }
+
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+TEST_F(GaiaCookieManagerServiceTest,
+       GetDeviceBoundSessionManagerForPartition_FlagDisabled) {
+  InstrumentedGaiaCookieManagerService helper(account_tracker_service(),
+                                              token_service(), signin_client());
+
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndDisableFeature(
+      switches::kEnableOAuthMultiloginStandardCookiesBinding);
+
+  network::mojom::DeviceBoundSessionManager* dummy_manager =
+      reinterpret_cast<network::mojom::DeviceBoundSessionManager*>(0x1234);
+  signin_client()->SetDeviceBoundSessionManager(dummy_manager);
+
+  EXPECT_EQ(
+      static_cast<signin::AccountsCookieMutator::PartitionDelegate*>(&helper)
+          ->GetDeviceBoundSessionManagerForPartition(),
+      nullptr);
+}
+
+TEST_F(GaiaCookieManagerServiceTest,
+       GetDeviceBoundSessionManagerForPartition_FlagEnabled) {
+  InstrumentedGaiaCookieManagerService helper(account_tracker_service(),
+                                              token_service(), signin_client());
+
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      switches::kEnableOAuthMultiloginStandardCookiesBinding);
+
+  network::mojom::DeviceBoundSessionManager* dummy_manager =
+      reinterpret_cast<network::mojom::DeviceBoundSessionManager*>(0x1234);
+  signin_client()->SetDeviceBoundSessionManager(dummy_manager);
+
+  EXPECT_EQ(
+      static_cast<signin::AccountsCookieMutator::PartitionDelegate*>(&helper)
+          ->GetDeviceBoundSessionManagerForPartition(),
+      dummy_manager);
+}
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
 TEST_F(GaiaCookieManagerServiceTest, LogoutRetried) {
   InstrumentedGaiaCookieManagerService helper(account_tracker_service(),
@@ -1246,6 +1303,20 @@ TEST_F(GaiaCookieManagerServiceTest, OptimizeListAccounts) {
                              signin::SetAccountsInCookieResult::kSuccess);
   SimulateListAccountsSuccess(&helper, data);
   EXPECT_FALSE(helper.is_running());
+}
+
+// Tests delaying a network call, then calling `CancelAll`. This used to crash.
+// Regression test for crbug.com/462549500.
+TEST_F(GaiaCookieManagerServiceTest, CancelAllWithDelayedBlock) {
+  GaiaCookieManagerService helper(account_tracker_service(), token_service(),
+                                  signin_client());
+  signin_client()->SetNetworkCallsDelayed(true);
+  helper.TriggerListAccounts();
+  helper.CancelAll();
+
+  // Release delayed network calls.
+  // This used to crash in `StartFetchingListAccounts`.
+  signin_client()->SetNetworkCallsDelayed(false);
 }
 
 class GaiaCookieManagerServiceCookieTest

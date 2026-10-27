@@ -58,7 +58,7 @@ bool CPWL_Edit::RepositionChildWnd() {
       return false;
     }
   }
-  if (this_observed->caret_ && !HasFlag(PES_TEXTOVERFLOW)) {
+  if (this_observed->caret_ && !HasFlag(Styles::kEditTextOverflow)) {
     CFX_FloatRect rect = this_observed->GetClientRect();
     if (!rect.IsEmpty()) {
       // +1 for caret beside border
@@ -98,7 +98,7 @@ void CPWL_Edit::OnCreated() {
   edit_impl_->Initialize();
 
   if (CPWL_ScrollBar* pScroll = GetVScrollBar()) {
-    pScroll->RemoveFlag(PWS_AUTOTRANSPARENT);
+    pScroll->RemoveFlag(Styles::kWindowAutoTransparent);
     pScroll->SetTransparency(255);
   }
 
@@ -107,31 +107,31 @@ void CPWL_Edit::OnCreated() {
 }
 
 void CPWL_Edit::SetParamByFlag() {
-  if (HasFlag(PES_RIGHT)) {
+  if (HasFlag(Styles::kEditRight)) {
     edit_impl_->SetAlignmentH(2);
-  } else if (HasFlag(PES_MIDDLE)) {
+  } else if (HasFlag(Styles::kEditMiddle)) {
     edit_impl_->SetAlignmentH(1);
   } else {
     edit_impl_->SetAlignmentH(0);
   }
 
-  if (HasFlag(PES_CENTER)) {
+  if (HasFlag(Styles::kEditCenter)) {
     edit_impl_->SetAlignmentV(1);
   } else {
     edit_impl_->SetAlignmentV(0);
   }
 
-  if (HasFlag(PES_PASSWORD)) {
+  if (HasFlag(Styles::kEditPassword)) {
     edit_impl_->SetPasswordChar('*');
   }
 
-  edit_impl_->SetMultiLine(HasFlag(PES_MULTILINE));
-  edit_impl_->SetAutoReturn(HasFlag(PES_AUTORETURN));
-  edit_impl_->SetAutoFontSize(HasFlag(PWS_AUTOFONTSIZE));
-  edit_impl_->SetAutoScroll(HasFlag(PES_AUTOSCROLL));
-  edit_impl_->EnableUndo(HasFlag(PES_UNDO));
+  edit_impl_->SetMultiLine(HasFlag(Styles::kEditMultiline));
+  edit_impl_->SetAutoReturn(HasFlag(Styles::kEditAutoReturn));
+  edit_impl_->SetAutoFontSize(HasFlag(Styles::kWindowAutoFontSize));
+  edit_impl_->SetAutoScroll(HasFlag(Styles::kEditAutoScroll));
+  edit_impl_->EnableUndo(HasFlag(Styles::kEditUndo));
 
-  if (HasFlag(PES_TEXTOVERFLOW)) {
+  if (HasFlag(Styles::kEditTextOverflow)) {
     SetClipRect(CFX_FloatRect());
     edit_impl_->SetTextOverflow(true);
   } else {
@@ -192,7 +192,7 @@ void CPWL_Edit::DrawThisAppearance(CFX_RenderDevice* pDevice,
   CFX_FloatRect rcClip;
   CPVT_WordRange wrRange = edit_impl_->GetVisibleWordRange();
   CPVT_WordRange* pRange = nullptr;
-  if (!HasFlag(PES_TEXTOVERFLOW)) {
+  if (!HasFlag(Styles::kEditTextOverflow)) {
     rcClip = GetClientRect();
     pRange = &wrRange;
   }
@@ -277,7 +277,7 @@ float CPWL_Edit::GetCharArrayAutoFontSize(const CPDF_Font* font,
 }
 
 void CPWL_Edit::SetCharArray(int32_t nCharArray) {
-  if (!HasFlag(PES_CHARARRAY) || nCharArray <= 0) {
+  if (!HasFlag(Styles::kEditCharArray) || nCharArray <= 0) {
     return;
   }
 
@@ -285,7 +285,7 @@ void CPWL_Edit::SetCharArray(int32_t nCharArray) {
   edit_impl_->SetTextOverflow(true);
   edit_impl_->Paint();
 
-  if (!HasFlag(PWS_AUTOFONTSIZE)) {
+  if (!HasFlag(Styles::kWindowAutoFontSize)) {
     return;
   }
 
@@ -400,7 +400,7 @@ bool CPWL_Edit::OnChar(uint16_t nChar, Mask<FWL_EVENTFLAG> nFlag) {
 bool CPWL_Edit::OnMouseWheel(Mask<FWL_EVENTFLAG> nFlag,
                              const CFX_PointF& point,
                              const CFX_Vector& delta) {
-  if (!HasFlag(PES_MULTILINE)) {
+  if (!HasFlag(Styles::kEditMultiline)) {
     return false;
   }
 
@@ -476,7 +476,7 @@ void CPWL_Edit::CreateEditCaret(const CreateParams& cp) {
   }
 
   CreateParams ecp = cp;
-  ecp.dwFlags = PWS_NOREFRESHCLIP;
+  ecp.dwFlags = Styles::kWindowNoRefreshClip;
   ecp.dwBorderWidth = 0;
   ecp.nBorderStyle = BorderStyle::kSolid;
   ecp.rcRectWnd = CFX_FloatRect();
@@ -592,7 +592,7 @@ bool CPWL_Edit::OnCharInternal(uint16_t nChar, Mask<FWL_EVENTFLAG> nFlag) {
 bool CPWL_Edit::OnLButtonDown(Mask<FWL_EVENTFLAG> nFlag,
                               const CFX_PointF& point) {
   CPWL_Wnd::OnLButtonDown(nFlag, point);
-  if (HasFlag(PES_TEXTOVERFLOW) || ClientHitTest(point)) {
+  if (HasFlag(Styles::kEditTextOverflow) || ClientHitTest(point)) {
     if (mouse_down_ && !InvalidateRect(nullptr)) {
       return true;
     }
@@ -622,7 +622,7 @@ bool CPWL_Edit::OnLButtonUp(Mask<FWL_EVENTFLAG> nFlag,
 bool CPWL_Edit::OnLButtonDblClk(Mask<FWL_EVENTFLAG> nFlag,
                                 const CFX_PointF& point) {
   CPWL_Wnd::OnLButtonDblClk(nFlag, point);
-  if (HasFlag(PES_TEXTOVERFLOW) || ClientHitTest(point)) {
+  if (HasFlag(Styles::kEditTextOverflow) || ClientHitTest(point)) {
     edit_impl_->SelectAll();
   }
 
@@ -636,7 +636,7 @@ bool CPWL_Edit::OnRButtonUp(Mask<FWL_EVENTFLAG> nFlag,
   }
 
   CPWL_Wnd::OnRButtonUp(nFlag, point);
-  if (!HasFlag(PES_TEXTOVERFLOW) && !ClientHitTest(point)) {
+  if (!HasFlag(Styles::kEditTextOverflow) && !ClientHitTest(point)) {
     return true;
   }
 

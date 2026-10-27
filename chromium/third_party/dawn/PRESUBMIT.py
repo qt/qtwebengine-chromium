@@ -86,6 +86,93 @@ NONINCLUSIVE_LANGUAGE_REGEXES = [
 
 LINT_FILTERS = []
 
+EXPECTED_LICENSE_TEXT = {
+    "//": [
+        "//",
+        "// Redistribution and use in source and binary forms, with or without",
+        "// modification, are permitted provided that the following conditions are met:",
+        "//",
+        "// 1. Redistributions of source code must retain the above copyright notice, this",
+        "//    list of conditions and the following disclaimer.",
+        "//",
+        "// 2. Redistributions in binary form must reproduce the above copyright notice,",
+        "//    this list of conditions and the following disclaimer in the documentation",
+        "//    and/or other materials provided with the distribution.",
+        "//",
+        "// 3. Neither the name of the copyright holder nor the names of its",
+        "//    contributors may be used to endorse or promote products derived from",
+        "//    this software without specific prior written permission.",
+        "//",
+        "// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\"",
+        "// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE",
+        "// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE",
+        "// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE",
+        "// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL",
+        "// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR",
+        "// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER",
+        "// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,",
+        "// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE",
+        "// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.",
+    ],
+    "#": [
+        "#",
+        "# Redistribution and use in source and binary forms, with or without",
+        "# modification, are permitted provided that the following conditions are met:",
+        "#",
+        "# 1. Redistributions of source code must retain the above copyright notice, this",
+        "#    list of conditions and the following disclaimer.",
+        "#",
+        "# 2. Redistributions in binary form must reproduce the above copyright notice,",
+        "#    this list of conditions and the following disclaimer in the documentation",
+        "#    and/or other materials provided with the distribution.",
+        "#",
+        "# 3. Neither the name of the copyright holder nor the names of its",
+        "#    contributors may be used to endorse or promote products derived from",
+        "#    this software without specific prior written permission.",
+        "#",
+        "# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\"",
+        "# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE",
+        "# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE",
+        "# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE",
+        "# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL",
+        "# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR",
+        "# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER",
+        "# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,",
+        "# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE",
+        "# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.",
+    ]
+}
+
+# 'go fmt' has slightly different spacing rules relative to our C++
+# style, so .go files need their own variant
+EXPECTED_LICENSE_TEXT_GO = [
+    "//",
+    "// Redistribution and use in source and binary forms, with or without",
+    "// modification, are permitted provided that the following conditions are met:",
+    "//",
+    "//  1. Redistributions of source code must retain the above copyright notice, this",
+    "//     list of conditions and the following disclaimer.",
+    "//",
+    "//  2. Redistributions in binary form must reproduce the above copyright notice,",
+    "//     this list of conditions and the following disclaimer in the documentation",
+    "//     and/or other materials provided with the distribution.",
+    "//",
+    "//  3. Neither the name of the copyright holder nor the names of its",
+    "//     contributors may be used to endorse or promote products derived from",
+    "//     this software without specific prior written permission.",
+    "//",
+    "// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\"",
+    "// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE",
+    "// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE",
+    "// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE",
+    "// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL",
+    "// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR",
+    "// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER",
+    "// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,",
+    "// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE",
+    "// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.",
+]
+
 
 def _NonInclusiveFileFilter(file):
     """Filters files that are exempt from the non-inclusive language check."""
@@ -111,7 +198,9 @@ def _NonInclusiveFileFilter(file):
         "src/dawn/tests/end2end/DepthBiasTests.cpp",  # External URL
         "src/tint/transform/canonicalize_entry_point_io.cc",  # External URL
         "test/tint/samples/compute_boids.wgsl",  # External URL
-        "third_party/gn/dxc/BUILD.gn",  # Third party file
+        "third_party/directx-shader-compiler/BUILD.gn",  # Third party file
+        "third_party/directx-shader-compiler/LICENSE",  # Third party file
+        "third_party/directx-shader-compiler/build/message_compiler.py",  # Third party file
         "third_party/EGL-Registry/src/api/KHR/khrplatform.h",  # Third party file
         "tools/roll-all",  # Branch name
         "tools/src/container/key.go",  # External URL
@@ -302,61 +391,116 @@ def _HasNoStrayWhitespaceFilter(file):
     return file.LocalPath().replace('\\', '/') not in filter_list
 
 
-def _CheckCopyrightHeaders(input_api, output_api):
-    """Checks that newly added files have a correct copyright year and prompts when it finds a discrepancy"""
-    current_year = int(input_api.time.strftime('%Y'))
+def _CheckCopyrightYear(input_api, output_api, f, new_contents_lines,
+                        current_year):
     copyright_regex = re.compile(r'Copyright (\d{4})')
+    for line in new_contents_lines:
+        if match := copyright_regex.search(line):
+            year = int(match.group(1))
+            if year != current_year:
+                return [
+                    output_api.PresubmitPromptWarning(
+                        f'{f.LocalPath()}: Copyright year is {year}, should be {current_year} as this is a new file.'
+                    )
+                ]
+            return []
+    return [
+        output_api.PresubmitPromptWarning(
+            f'{f.LocalPath()}: No copyright header found.')
+    ]
+
+
+def _CheckCopyrightText(input_api, output_api, f, new_contents_lines):
+    # Find the copyright line and check the lines after it.
+    copyright_regex = re.compile(r'Copyright (\d{4})')
+    for i, line in enumerate(new_contents_lines):
+        if match := copyright_regex.search(line):
+            # Determine the comment prefix.
+            prefix = "//"
+            if line.strip().startswith("#"):
+                prefix = "#"
+
+            expected = EXPECTED_LICENSE_TEXT.get(prefix)
+            if f.LocalPath().endswith('.go') and prefix == "//":
+                expected = EXPECTED_LICENSE_TEXT_GO
+
+            if not expected:
+                return []
+
+            # Check the next len(expected) lines.
+            actual_license_text = new_contents_lines[i + 1:i + 1 +
+                                                     len(expected)]
+            if actual_license_text != expected:
+                return [
+                    output_api.PresubmitPromptWarning(
+                        f'{f.LocalPath()}: Copyright license text is incorrect.'
+                    )
+                ]
+            return []
+    return []
+
+
+def _CheckCopyright(input_api, output_api):
+    """Checks that newly added files have a correct copyright year and license text."""
+    current_year = int(input_api.time.strftime('%Y'))
 
     errors = []
 
-    added_files = []
     # Use a list for deleted contents to handle multiple files with the same
     # content being renamed.
     deleted_files_hashes = []
     for f in input_api.AffectedFiles(include_deletes=True):
-        if not (f.LocalPath().endswith(('.h', '.cc', '.cpp'))):
-            continue
-
-        if f.Action() == 'A':
-            added_files.append(f)
-        elif f.Action() == 'D':
+        if f.Action() == 'D':
             deleted_files_hashes.append(
                 hashlib.sha256(''.join(
                     f.OldContents()).encode('utf-8')).hexdigest())
 
-    for f in added_files:
-        new_contents_lines = list(f.NewContents())
-        new_content_hash = hashlib.sha256(
-            ''.join(new_contents_lines).encode('utf-8')).hexdigest()
-
-        # If the file is a rename, we don't check for the copyright.
-        # A rename is detected if a file with the same content is also
-        # deleted in the same changelist.
-        is_rename = False
-        if new_content_hash in deleted_files_hashes:
-            deleted_files_hashes.remove(new_content_hash)
-            is_rename = True
-
-        if is_rename:
+    for f in input_api.AffectedFiles(include_deletes=False):
+        path = f.LocalPath().replace('\\', '/')
+        if not (path.endswith(
+            ('.h', '.cc', '.cpp', '.mm', '.gn', '.gni', '.cmake',
+             'CMakeLists.txt', 'BUILD.bazel', '.py', '.go', '.star', '.js',
+             '.mjs', '.sh', '.def', '.idl'))):
             continue
 
-        found_copyright = False
-        for line in new_contents_lines:
-            if match := copyright_regex.search(line):
-                found_copyright = True
-                year = int(match.group(1))
-                if year != current_year:
-                    errors.append(
-                        output_api.PresubmitPromptWarning(
-                            f'{f.LocalPath()}: Copyright year is {year}, should be {current_year} as this is a new file.'
-                        ))
-                break
-        if not found_copyright:
-            errors.append(
-                output_api.PresubmitPromptWarning(
-                    f'{f.LocalPath()}: No copyright header found.'))
+        new_contents_lines = list(f.NewContents())
+
+        # Always check for the copyright license text body if the file is modified.
+        errors.extend(
+            _CheckCopyrightText(input_api, output_api, f, new_contents_lines))
+
+        # Only check for the copyright year if the file is newly added.
+        if f.Action() == 'A':
+            new_content_hash = hashlib.sha256(
+                ''.join(new_contents_lines).encode('utf-8')).hexdigest()
+
+            # If the file is a rename, we don't check for the copyright year.
+            # A rename is detected if a file with the same content is also
+            # deleted in the same changelist.
+            is_rename = False
+            if new_content_hash in deleted_files_hashes:
+                deleted_files_hashes.remove(new_content_hash)
+                is_rename = True
+
+            if not is_rename:
+                errors.extend(
+                    _CheckCopyrightYear(input_api, output_api, f,
+                                        new_contents_lines, current_year))
 
     return errors
+
+
+def CheckPresubmitTests(input_api, output_api):
+    """Test PRESUBMIT.py during presubmit."""
+    # TODO(crbug.com/517626950): consider running the tests only when
+    # PRESUBMIT.py has been modified. For now, this is very cheap, so it
+    # doesn't matter.
+    return input_api.RunTests(
+        input_api.canned_checks.GetUnitTestsInDirectory(
+            input_api,
+            output_api,
+            input_api.PresubmitLocalPath(),
+            files_to_check=[r'^PRESUBMIT_test\.py$']))
 
 
 def CheckChange(input_api, output_api):
@@ -392,7 +536,7 @@ def CheckChange(input_api, output_api):
             input_api, output_api))
     results.extend(
         input_api.canned_checks.CheckDoNotSubmit(input_api, output_api))
-    results.extend(_CheckCopyrightHeaders(input_api, output_api))
+    results.extend(_CheckCopyright(input_api, output_api))
     # Note, the verbose_level here should match what is set in tools/lint so
     # the same set of lint errors are reported on the CQ and Kokoro bots.
     results.extend(

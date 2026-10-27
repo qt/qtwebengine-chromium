@@ -28,8 +28,6 @@
 #include "chrome/browser/screen_ai/screen_ai_service_router_factory.h"
 #include "chrome/browser/speech/extension_api/tts_engine_extension_api.h"
 #include "chrome/browser/translate/chrome_translate_client.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/read_anything/read_anything_controller.h"
 #include "chrome/browser/ui/read_anything/read_anything_enums.h"
 #include "chrome/browser/ui/read_anything/read_anything_prefs.h"
@@ -83,8 +81,8 @@
 #include "url/url_constants.h"
 
 #if BUILDFLAG(ENABLE_PDF)
-#include "chrome/browser/pdf/pdf_viewer_stream_manager.h"
 #include "components/pdf/common/pdf_util.h"
+#include "extensions/browser/mime_handler/mime_handler_stream_manager.h"
 #include "pdf/pdf_features.h"
 #endif  // BUILDFLAG(ENABLE_PDF)
 
@@ -388,6 +386,9 @@ ReadAnythingUntrustedPageHandler::ReadAnythingUntrustedPageHandler(
   tab_discard_subscription_ = tab_->RegisterWillDiscardContents(
       base::BindRepeating(&ReadAnythingUntrustedPageHandler::OnTabDiscarded,
                           weak_factory_.GetWeakPtr()));
+  tab_detach_subscription_ = tab_->RegisterWillDetach(
+      base::BindRepeating(&ReadAnythingUntrustedPageHandler::OnTabWillDetach,
+                          weak_factory_.GetWeakPtr()));
 
   PrefService* prefs = profile_->GetPrefs();
   base::DictValue voices = base::DictValue();
@@ -474,7 +475,6 @@ ReadAnythingUntrustedPageHandler::~ReadAnythingUntrustedPageHandler() {
   extensions::ExtensionRegistry::Get(profile_)->RemoveObserver(this);
 #endif
   translate_observation_.Reset();
-  web_screenshotter_.reset();
   main_observer_.reset();
   pdf_observer_.reset();
   LogTextStyle();
@@ -851,7 +851,8 @@ bool ReadAnythingUntrustedPageHandler::IsObservingTree(
 
   bool are_contents_pdf =
       chrome_pdf::features::IsOopifPdfEnabled()
-          ? !!pdf::PdfViewerStreamManager::FromWebContents(contents)
+          ? !!extensions::mime_handler::MimeHandlerStreamManager::
+                 FromWebContents(contents)
           : !!pdf_observer_;
 
   if (!are_contents_pdf) {
@@ -938,15 +939,14 @@ void ReadAnythingUntrustedPageHandler::OnHighlightGranularityChanged(
 }
 
 void ReadAnythingUntrustedPageHandler::OnLineFocusChanged(
-    read_anything::mojom::LineFocus line_focus) {
+    read_anything::mojom::LineFocus current_line_focus,
+    read_anything::mojom::LineFocus last_non_disabled_line_focus) {
   if (features::IsReadAnythingLineFocusEnabled()) {
     profile_->GetPrefs()->SetInteger(prefs::kAccessibilityReadAnythingLineFocus,
-                                     static_cast<size_t>(line_focus));
-    if (line_focus != read_anything::mojom::LineFocus::kOff) {
-      profile_->GetPrefs()->SetInteger(
-          prefs::kAccessibilityReadAnythingLastNonDisabledLineFocus,
-          static_cast<size_t>(line_focus));
-    }
+                                     static_cast<size_t>(current_line_focus));
+    profile_->GetPrefs()->SetInteger(
+        prefs::kAccessibilityReadAnythingLastNonDisabledLineFocus,
+        static_cast<size_t>(last_non_disabled_line_focus));
   }
 }
 
@@ -976,6 +976,11 @@ void ReadAnythingUntrustedPageHandler::OnLinkClicked(
             << " which is not currently being observed";
     return;
   }
+  if (!ui::IsValidAXNodeIDFromRenderer(target_node_id)) {
+    VLOG(1) << "Received link click request with invalid target_node_id "
+            << target_node_id;
+    return;
+  }
   ui::AXActionData action_data;
   action_data.target_tree_id = target_tree_id;
   action_data.action = ax::mojom::Action::kDoDefault;
@@ -992,6 +997,11 @@ void ReadAnythingUntrustedPageHandler::OnImageDataRequested(
   if (!is_observing_tree) {
     VLOG(1) << "Received image data request for tree_id " << target_tree_id
             << " which is not currently being observed";
+    return;
+  }
+  if (!ui::IsValidAXNodeIDFromRenderer(target_node_id)) {
+    VLOG(1) << "Received image data request with invalid target_node_id "
+            << target_node_id;
     return;
   }
   main_observer_->web_contents()->DownloadImageFromAxNode(
@@ -1012,6 +1022,12 @@ void ReadAnythingUntrustedPageHandler::OnImageDataDownloaded(
     const std::vector<SkBitmap>& bitmaps,
     const std::vector<gfx::Size>& sizes) {
   CHECK(IsObservingTree(target_tree_id));
+  if (!ui::IsValidAXNodeIDFromRenderer(node_id)) {
+    VLOG(1) << "Received image data download notification with invalid node_id "
+            << node_id;
+    return;
+  }
+
   bool download_was_successful =
       network::IsSuccessfulStatus(http_status_code) || http_status_code == 0;
 
@@ -1036,6 +1052,11 @@ void ReadAnythingUntrustedPageHandler::ScrollToTargetNode(
   if (!is_observing_tree) {
     VLOG(1) << "Received scroll request for tree_id " << target_tree_id
             << " which is not currently being observed";
+    return;
+  }
+  if (!ui::IsValidAXNodeIDFromRenderer(target_node_id)) {
+    VLOG(1) << "Received scroll request with invalid target_node_id "
+            << target_node_id;
     return;
   }
   ui::AXActionData action_data;
@@ -1078,7 +1099,7 @@ void ReadAnythingUntrustedPageHandler::SendPinStateRequest() {
 void ReadAnythingUntrustedPageHandler::TogglePresentation() {
   if (features::IsImmersiveReadAnythingEnabled()) {
     CHECK(read_anything_controller_);
-    read_anything_controller_->TogglePresentation();
+    read_anything_controller_->TogglePresentation(/*is_user_initiated=*/true);
   }
 }
 
@@ -1099,6 +1120,13 @@ void ReadAnythingUntrustedPageHandler::OnSpeechEngineStalled() {
         extension_misc::kComponentUpdaterTTSEngineExtensionId);
   }
 #endif
+}
+
+void ReadAnythingUntrustedPageHandler::RequestReadabilityDistillation() {
+  if (!features::IsReadAnythingWithReadabilityEnabled()) {
+    return;
+  }
+  RequestDomDistillerDistillation(tab_->GetContents());
 }
 
 void ReadAnythingUntrustedPageHandler::PerformActionInTargetTree(
@@ -1127,6 +1155,16 @@ void ReadAnythingUntrustedPageHandler::OnSelectionChange(
             << " which is not currently being observed";
     return;
   }
+  if (!ui::IsValidAXNodeIDFromRenderer(anchor_node_id)) {
+    VLOG(1) << "Received selection request with invalid anchor_node_id "
+            << anchor_node_id;
+    return;
+  }
+  if (!ui::IsValidAXNodeIDFromRenderer(focus_node_id)) {
+    VLOG(1) << "Received selection request with invalid focus_node_id "
+            << focus_node_id;
+    return;
+  }
   ui::AXActionData action_data;
   action_data.target_tree_id = target_tree_id;
   action_data.action = ax::mojom::Action::kSetSelection;
@@ -1142,22 +1180,6 @@ void ReadAnythingUntrustedPageHandler::OnCollapseSelection() {
   if (main_observer_ && main_observer_->web_contents()) {
     main_observer_->web_contents()->CollapseSelection();
   }
-}
-
-void ReadAnythingUntrustedPageHandler::OnScreenshotRequested() {
-  if (!features::IsDataCollectionModeForScreen2xEnabled()) {
-    return;
-  }
-  if (!main_observer_ || !main_observer_->web_contents()) {
-    VLOG(2) << "The main observer didn't observe the main web contents";
-    return;
-  }
-
-  if (!web_screenshotter_) {
-    web_screenshotter_ = std::make_unique<ReadAnythingScreenshotter>();
-  }
-  VLOG(2) << "Requesting a screenshot for the main web contents";
-  web_screenshotter_->RequestScreenshot(main_observer_->web_contents());
 }
 
 void ReadAnythingUntrustedPageHandler::OnDistillationStatus(
@@ -1186,7 +1208,8 @@ void ReadAnythingUntrustedPageHandler::SetDefaultLanguageCode(
 
 void ReadAnythingUntrustedPageHandler::Activate(
     bool active,
-    std::optional<ReadAnythingOpenTrigger> open_trigger) {
+    std::optional<ReadAnythingOpenTrigger> open_trigger,
+    std::optional<base::TimeDelta> completed_session_duration) {
   active_ = active;
   if (active_) {
     last_open_trigger_ = open_trigger;
@@ -1248,7 +1271,9 @@ void ReadAnythingUntrustedPageHandler::OnDestroyed() {
   read_anything_controller_ = nullptr;
 }
 
-void ReadAnythingUntrustedPageHandler::OnTabWillDetach() {
+void ReadAnythingUntrustedPageHandler::OnTabWillDetach(
+    tabs::TabInterface* tab,
+    tabs::TabInterface::DetachReason reason) {
   OnReadAloudAudioStateChange(false);
 
   // When multiple tabs are open, we receive this call multiple times, so only
@@ -1297,7 +1322,8 @@ void ReadAnythingUntrustedPageHandler::CheckIfActiveAXTreeChangedToPdf() {
                                        : main_observer_->web_contents();
   bool are_contents_pdf =
       chrome_pdf::features::IsOopifPdfEnabled()
-          ? !!pdf::PdfViewerStreamManager::FromWebContents(contents)
+          ? !!extensions::mime_handler::MimeHandlerStreamManager::
+                 FromWebContents(contents)
           : !!pdf_observer_;
   if (!are_contents_pdf) {
     return;

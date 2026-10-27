@@ -21,6 +21,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/notreached.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -108,6 +109,11 @@ const size_t kMaxRetryAttempts = 2;
 // after which we give up and crash early.
 const size_t kMaxRetryAttemptsOnConnectionErrors = 50;
 
+// The threshold of connection error retry attempts at which we switch to
+// asynchronous retry.
+const size_t kAsyncRetryThresholdOnConnectionErrors =
+    kMaxRetryAttemptsOnConnectionErrors / 2;
+
 // Max number of calls to RestartWith* allowed for a single connection. A single
 // HttpNetworkTransaction should not signal very many restartable errors, but it
 // may occur due to a bug (e.g. https://crbug.com/823387 or
@@ -137,11 +143,12 @@ bool EarlyHintsAreAllowedOn(HttpConnectionInfo connection_info) {
 // numeric values should never be reused.
 enum class WebSocketFallbackResult {
   kSuccessHttp11 = 0,
-  kSuccessHttp2,
-  kSuccessHttp11AfterFallback,
-  kFailure,
-  kFailureAfterFallback,
-  kMaxValue = kFailureAfterFallback,
+  kSuccessHttp2 = 1,
+  kSuccessHttp11AfterFallback = 2,
+  kFailure = 3,
+  kFailureAfterFallback = 4,
+  kSuccessHttp3 = 5,
+  kMaxValue = kSuccessHttp3,
 };
 
 WebSocketFallbackResult CalculateWebSocketFallbackResult(
@@ -151,6 +158,9 @@ WebSocketFallbackResult CalculateWebSocketFallbackResult(
   if (result == OK) {
     if (connection_info == HttpConnectionInfoCoarse::kHTTP2) {
       return WebSocketFallbackResult::kSuccessHttp2;
+    }
+    if (connection_info == HttpConnectionInfoCoarse::kQUIC) {
+      return WebSocketFallbackResult::kSuccessHttp3;
     }
     return http_1_1_was_required
                ? WebSocketFallbackResult::kSuccessHttp11AfterFallback
@@ -164,8 +174,6 @@ WebSocketFallbackResult CalculateWebSocketFallbackResult(
 void RecordWebSocketFallbackResult(int result,
                                    bool http_1_1_was_required,
                                    HttpConnectionInfoCoarse connection_info) {
-  CHECK_NE(connection_info, HttpConnectionInfoCoarse::kQUIC);
-
   // `connection_info` could be kOTHER in tests.
   if (connection_info == HttpConnectionInfoCoarse::kOTHER) {
     return;
@@ -337,6 +345,13 @@ HttpNetworkTransaction::HttpNetworkTransaction(RequestPriority priority,
       priority_(priority) {}
 
 HttpNetworkTransaction::~HttpNetworkTransaction() {
+  if (retry_attempts_on_connection_errors_ > 0) {
+    base::UmaHistogramExactLinear(
+        "Net.NetworkTransaction.RetryAttemptsOnConnectionErrors",
+        retry_attempts_on_connection_errors_,
+        kMaxRetryAttemptsOnConnectionErrors + 1);
+  }
+
 #if BUILDFLAG(ENABLE_REPORTING)
   // If no error or success report has been generated yet at this point, then
   // this network transaction was prematurely cancelled.
@@ -656,23 +671,23 @@ int HttpNetworkTransaction::Read(IOBuffer* buf,
 
 void HttpNetworkTransaction::StopCaching() {}
 
-int64_t HttpNetworkTransaction::GetTotalReceivedBytes() const {
+base::ByteSize HttpNetworkTransaction::GetTotalReceivedBytes() const {
   base::ByteSize total_received_bytes = total_received_bytes_;
   if (stream_) {
     total_received_bytes += stream_->GetTotalReceivedBytes();
   }
-  return total_received_bytes.InBytes();
+  return total_received_bytes;
 }
 
-int64_t HttpNetworkTransaction::GetTotalSentBytes() const {
+base::ByteSize HttpNetworkTransaction::GetTotalSentBytes() const {
   base::ByteSize total_sent_bytes = total_sent_bytes_;
   if (stream_) {
     total_sent_bytes += stream_->GetTotalSentBytes();
   }
-  return total_sent_bytes.InBytes();
+  return total_sent_bytes;
 }
 
-int64_t HttpNetworkTransaction::GetReceivedBodyBytes() const {
+base::ByteSize HttpNetworkTransaction::GetReceivedBodyBytes() const {
   return received_body_bytes_;
 }
 
@@ -1724,12 +1739,12 @@ int HttpNetworkTransaction::DoReadBodyComplete(int result) {
     DCHECK_NE(ERR_IO_PENDING, result);
     done = true;
   } else {
-    received_body_bytes_ += result;
+    received_body_bytes_ += base::ByteSize(base::as_unsigned(result));
   }
 
   TRACE_EVENT("net", "HttpNetworkTransaction::ReadBodyComplete",
               NetLogWithSourceToFlow(net_log_), "result", result,
-              "received_body_bytes", received_body_bytes_);
+              "received_body_bytes", received_body_bytes_.InBytes());
 
   // Clean up connection if we are done.
   if (done) {
@@ -2112,18 +2127,32 @@ int HttpNetworkTransaction::HandleIOError(int error) {
         // By yielding (PostTask) at DEFAULT priority after several attempts, we
         // restore FIFO ordering relative to the cleanup tasks, allowing the
         // pool to be scrubbed before the next retry.
+        //
+        // TODO(crbug.com/482074640): Write unit tests to reproduce this issue.
         if (base::FeatureList::IsEnabled(
                 features::kAsyncRetryOnTooManyConnectionErrors) &&
             // For performance reasons, we initially retry synchronously.
-            // However, after a threshold of attempts
-            // (= kMaxRetryAttemptsOnConnectionErrors / 2), we switch to
-            // asynchronous retry to break potential priority starvation loops
-            // as described above.
+            // However, after a threshold of attempts, we switch to asynchronous
+            // retry to break potential priority starvation loops as described
+            // above.
             retry_attempts_on_connection_errors_ >=
-                kMaxRetryAttemptsOnConnectionErrors / 2) {
+                kAsyncRetryThresholdOnConnectionErrors) {
+          base::UmaHistogramBoolean(
+              "Net.NetworkTransaction.AsyncRetryOnTooManyConnectionErrors."
+              "Every",
+              true);
+          if (retry_attempts_on_connection_errors_ ==
+              kAsyncRetryThresholdOnConnectionErrors) {
+            base::UmaHistogramBoolean(
+                "Net.NetworkTransaction.AsyncRetryOnTooManyConnectionErrors."
+                "First",
+                true);
+          }
+          // Use WeakPtr to prevent a potential dangling pointer crash. See
+          // http://crbug.com/506964502 for more details.
           base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
               FROM_HERE, base::BindOnce(&HttpNetworkTransaction::OnIOComplete,
-                                        base::Unretained(this), OK));
+                                        weak_ptr_factory_.GetWeakPtr(), OK));
           return ERR_IO_PENDING;
         }
         return OK;

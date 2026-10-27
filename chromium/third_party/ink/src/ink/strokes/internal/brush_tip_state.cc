@@ -14,27 +14,27 @@
 
 #include "ink/strokes/internal/brush_tip_state.h"
 
-#include "ink/geometry/internal/algorithms.h"
+#include "ink/geometry/internal/lerp.h"
 
 namespace ink::strokes_internal {
+
+using ::ink::geometry_internal::Lerp;
+using ::ink::geometry_internal::NormalizedAngleLerp;
 
 BrushTipState BrushTipState::LerpShapeAttributes(const BrushTipState& a,
                                                  const BrushTipState& b,
                                                  float t) {
-  using ::ink::geometry_internal::Lerp;
-  using ::ink::geometry_internal::NormalizedAngleLerp;
-
   return {
       .position = b.position,
       .width = Lerp(a.width, b.width, t),
       .height = Lerp(a.height, b.height, t),
-      .percent_radius = Lerp(a.percent_radius, b.percent_radius, t),
+      .corner_rounding = Lerp(a.corner_rounding, b.corner_rounding, t),
       .rotation = NormalizedAngleLerp(a.rotation, b.rotation, t),
       .slant = Lerp(a.slant, b.slant, t),
       .pinch = Lerp(a.pinch, b.pinch, t),
       .hue_offset_in_full_turns = b.hue_offset_in_full_turns,
       .saturation_multiplier = b.saturation_multiplier,
-      .luminosity_shift = b.luminosity_shift,
+      .luminosity_offset = b.luminosity_offset,
       .opacity_multiplier = b.opacity_multiplier,
   };
 }

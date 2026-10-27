@@ -28,8 +28,6 @@ ALIASES                = "only_for_vectors=This is only for vectors (either row-
                          "nonstableyet=\warning This is not considered to be part of the stable public API yet. Changes may happen in future releases. See \ref Experimental \"Experimental parts of Eigen\"" \
                          "implsparsesolverconcept=This class follows the \link TutorialSparseSolverConcept sparse solver concept \endlink." \
                          blank= \
-                         "cpp11=<span class='cpp11'>[c++11]</span>" \
-                         "cpp14=<span class='cpp14'>[c++14]</span>" \
                          "cpp17=<span class='cpp17'>[c++17]</span>" \
                          "newin{1}=<span class='newin3x'>New in %Eigen \1.</span>" \
                          "eigenAutoToc=<!-- TOC placeholder -->" \

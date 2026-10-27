@@ -1,0 +1,4160 @@
+# Slovak translation for gsettings-desktop-schemas.
+# Copyright (C) 2012 Free Software Foundation, Inc.
+# This file is distributed under the same license as the gsettings-desktop-schemas package.
+# Dušan Kazik <prescott66@gmail.com>, 2012 a, 2016.
+# Jose Riha <jose1711@gmail.com>, 2024.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: gsettings-desktop-schemas master\n"
+"Report-Msgid-Bugs-To: https://gitlab.gnome.org/GNOME/gsettings-desktop-"
+"schemas/issues/\n"
+"POT-Creation-Date: 2024-09-10 17:24+0000\n"
+"PO-Revision-Date: 2024-09-14 23:04+0200\n"
+"Last-Translator: Jose Riha <jose1711@gmail.com>\n"
+"Language-Team: Slovak <gnome-sk-list@gnome.org>\n"
+"Language: sk\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n==1) ? 1 : (n>=2 && n<=4) ? 2 : 0;\n"
+"X-Generator: Poedit 3.4.2\n"
+
+# summary
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:6
+msgid "On-screen keyboard"
+msgstr "Klávesnica na obrazovke"
+
+# description
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:7
+msgid "Whether the on-screen keyboard is turned on."
+msgstr "Určuje, či sa má zobraziť klávesnica na obrazovke."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:11
+msgid "Screen magnifier"
+msgstr "Lupa"
+
+# description
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:12
+msgid "Whether the screen magnifier is turned on."
+msgstr "Určuje, či má byť zapnutá lupa."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:16
+msgid "Screen reader"
+msgstr "Čítačka obrazovky"
+
+# description
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:17
+msgid "Whether the screen reader is turned on."
+msgstr "Určuje, či má byť zapnutá čítačka obrazovky."
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:6
+msgid "Always show the Universal Access status icon"
+msgstr "Vždy zobraziť stavovú ikonu Bezbariérový prístup"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:7
+msgid ""
+"This key overrides the automatic hiding of the Universal Access status icon "
+"when no accessibility features are enabled."
+msgstr ""
+"Tento kľúč preváži automatické skrývanie stavovej ikony Bezbariérový "
+"prístup, keď nie sú povolené žiadne funkcionality zjednodušeného ovládania."
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:14
+msgid "Always show the text caret"
+msgstr "Vždy zobraziť textový kurzor"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:15
+msgid ""
+"This key overrides the hiding of the text caret in noneditable text in "
+"applications."
+msgstr ""
+"Tento kľúč preváži skrývanie textového kurzora v needitovateľnom texte "
+"aplikácií."
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:6
+msgid "High contrast"
+msgstr "Vysoký kontrast"
+
+# summary
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:7
+msgid "Whether to use the high contrast style."
+msgstr "Určiť, či sa má použiť štýl s vysokým kontrastom."
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:13
+msgid "Show status shapes"
+msgstr "Zobraziť stavové tvary"
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:14
+msgid ""
+"Whether to use shapes to indicate status in addition or instead of color."
+msgstr "Či použiť tvary na označenie stavu okrem farby alebo miesto nej."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:6
+msgid "Enable accessibility keyboard shortcuts"
+msgstr "Povoliť klávesové skratky zjednodušenia ovládania"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:10
+msgid "Beep when a keyboard accessibility feature changes"
+msgstr "Zapípať pri zmene funkcie zjednodušenia ovládania klávesnice"
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:11
+msgid ""
+"Whether to beep when a keyboard accessibility feature is enabled or disabled."
+msgstr ""
+"Určuje, či sa má zvukovým tónom oznámiť povolenie alebo zakázanie niektorej "
+"z funkcií zjednodušenia ovládania klávesnice."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:15
+msgid "Disable keyboard accessibility after a timeout"
+msgstr "Zakázať zjednodušenie ovládania klávesnice po určitom čase"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:16
+msgid ""
+"Whether to disable keyboard accessibility after a timeout, useful for shared "
+"machines."
+msgstr ""
+"Určuje, či sa má zjednodušenie ovládania klávesnice po určitom čase zakázať. "
+"Táto funkcia je užitočná pre stroje používané viacerými používateľmi."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:20
+msgid "Duration of the disabling timeout"
+msgstr "Dĺžka časového limitu pre zakázanie"
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:21
+msgid "Duration of the timeout before disabling the keyboard accessibility."
+msgstr "Časový limit pred zakázaním zjednodušenia ovládania klávesnice."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:25
+msgid "Enable “Bounce Keys”"
+msgstr "Povoliť „Poskakujúce klávesy“"
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:26
+msgid "Whether the “Bounce Keys” keyboard accessibility feature is turned on."
+msgstr ""
+"Určuje, či má byť zapnutá funkcia zjednodušenia ovládania „Poskakujúce "
+"klávesy“."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:30
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:65
+msgid "Minimum interval in milliseconds"
+msgstr "Minimálny časový úsek v milisekundách"
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:31
+msgid "Ignore multiple presses of the same key within this many milliseconds."
+msgstr ""
+"Vynechá viacpočetné stlačenia toho istého klávesu v rozsahu tohoto počtu "
+"milisekúnd"
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:35
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:80
+msgid "Beep when a key is rejected"
+msgstr "Zapípať pri odmietnutí klávesu"
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:36
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:81
+msgid "Whether to beep when a key is rejected."
+msgstr "Určuje, či má byť zvukovým tónom oznámené odmietnutie klávesu."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:40
+msgid "Enable “Mouse Keys”"
+msgstr "Povoliť funkciu „Myš klávesami“"
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:41
+msgid "Whether the “Mouse Keys” accessibility feature is turned on."
+msgstr "Určuje, či má byť zapnutá funkcia „Myš klávesami“."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:45
+msgid "Pixels per seconds"
+msgstr "Počet pixelov za sekundu"
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:46
+msgid "How many pixels per second to move at the maximum speed."
+msgstr ""
+"Určuje, koľko pixelov za sekundu zaberie pohyb pri maximálnej rýchlosti."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:50
+msgid "How long to accelerate in milliseconds"
+msgstr "Doba zrýchlenia v milisekundách"
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:51
+msgid "How many milliseconds it takes to go from 0 to maximum speed."
+msgstr "Určuje, koľko milisekúnd zaberie pohyb z 0 na maximálnu rýchlosť."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:55
+msgid "Initial delay in milliseconds"
+msgstr "Počiatočné oneskorenie v milisekundách"
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:56
+msgid ""
+"How many milliseconds to wait before mouse movement keys start to operate."
+msgstr ""
+"Určuje, koľko milisekúnd bude trvať čakanie pred zareagovaním myši na pohyb."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:60
+msgid "Enable “Slow Keys”"
+msgstr "Povoliť funkciu „Pomalé klávesy“"
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:61
+msgid "Whether the “Slow Keys” accessibility feature is turned on."
+msgstr ""
+"Určuje, či má byť zapnutá funkcia zjednodušenia ovládania „Pomalé klávesy“."
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:66
+msgid ""
+"Do not accept a key as being pressed unless held for this many milliseconds."
+msgstr ""
+"Neprijmú sa klávesy, ktoré nebudú stlačené aspoň po dobu tohoto počtu "
+"milisekúnd."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:70
+msgid "Beep when a key is first pressed"
+msgstr "Zapípať pri skoršom stlačení klávesu"
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:71
+msgid "Whether to beep when a key is first pressed."
+msgstr "Určuje, či sa má zvukovým tónom oznámiť skoršie stlačenie klávesu."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:75
+msgid "Beep when a key is accepted"
+msgstr "Zapípať pri prijatí klávesu"
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:76
+msgid "Whether to beep when a key is accepted."
+msgstr "Určuje, či sa má zvukovým tónom oznámiť prijatie klávesu."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:85
+msgid "Enable sticky keys"
+msgstr "Povoliť lepkavé klávesy"
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:86
+msgid "Whether the sticky keys accessibility feature is turned on."
+msgstr ""
+"Určuje, či má byť zapnutá funkcia zjednodušenia ovládania „Lepkavé klávesy“."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:90
+msgid "Disable when two keys are pressed at the same time"
+msgstr "Zakázať pri súčasnom stlačení dvoch klávesov"
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:91
+msgid ""
+"Whether to disable sticky keys if two keys are pressed at the same time."
+msgstr ""
+"Určuje, či majú byť zakázané lepkavé klávesy po stlačení dvoch klávesov "
+"súčasne."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:95
+msgid "Beep when a modifier is pressed."
+msgstr "Zapípať pri stlačení modifikačného klávesu."
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:96
+msgid "Whether to beep when a modifier key is pressed."
+msgstr ""
+"Určuje, či sa má pri stlačení modifikačného klávesu prehrať zvukový tón."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:100
+msgid "Enable “Toggle Keys”"
+msgstr "Povoliť funkciu „Prepínacie klávesy“"
+
+# description
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:101
+msgid "Whether the “Toggle Keys” accessibility feature is turned on."
+msgstr ""
+"Určuje, či má byť zapnutá funkcia zjednodušenia ovládania „Prepínacie "
+"klávesy“."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:8
+msgid "Mouse Tracking Mode"
+msgstr "Režim sledovania myši"
+
+# MČ: tie hodnoty na výber nie sú niekde inde preložené? (neviem, nenašiel som, len sa pýtam)
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:9
+msgid ""
+"Determines the position of the magnified mouse image within the magnified "
+"view and how it reacts to system mouse movement. The values are • none: no "
+"mouse tracking; • centered: the mouse image is displayed at the center of "
+"the zoom region (which also represents the point under the system mouse) and "
+"the magnified contents are scrolled as the system mouse moves; • "
+"proportional: the position of the magnified mouse in the zoom region is "
+"proportionally the same as the position of the system mouse on screen; • "
+"push: when the magnified mouse intersects a boundary of the zoom region, the "
+"contents are scrolled into view."
+msgstr ""
+"Určuje polohu zväčšeného ukazovateľa myši vo zväčšenom zobrazení a spôsob "
+"akým bude reagovať na pohyb myši. Hodnoty na výber sú • „none“: bez "
+"sledovania myši; • „centered“: obraz myši je zobrazený v strede zväčšenej "
+"oblasti (ktorý reprezentuje bod pod skutočným ukazovateľom myši) a zväčšený "
+"obsah je posúvaný pohybom skutočného ukazovateľa myši; • „proportional“: "
+"umiestnenie zväčšenej myši vo zväčšenej oblasti je proporčne rovnaké ako má "
+"skutočný ukazovateľ myši na obrazovke; • „push“: ak zväčšená myš prechádza "
+"hranicou zväčšenej oblasti, obsah je rolovaný do zobrazenia."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:26
+msgid "Focus Tracking Mode"
+msgstr "Režim sledovania zamerania"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:27
+msgid ""
+"Determines the position of the focused widget within magnified view. The "
+"values are: • none: no focus tracking • centered: the focused image is "
+"displayed at the center of the zoom region (which also represents the point "
+"under the system focus) and the magnified contents are scrolled as the "
+"system focus moves • proportional: the position of the magnified focus in "
+"the zoom region is proportionally the same as the position of the system "
+"focus on screen • push: when the magnified focus intersects a boundary of "
+"the zoom region, the contents are scrolled into view"
+msgstr ""
+"Určuje polohu zameraného prvku vo zväčšenom zobrazení. Hodnoty sú: • none: "
+"bez sledovania zamerania • centered: obrázok zameriavača je zobrazený v "
+"strede zväčšenej oblasti (čo tiež reprezentuje bod pod systémovým "
+"zameriavačom) a zväčšený obsah bude rolovaný spolu s presunom zameriavača • "
+"proportional: poloha zväčšeného zameriavača vo zväčšenej oblasti je "
+"proporčne rovnaká ako poloha systémového zameriavača na obrazovke • push: "
+"keď zväčšený zameriavač pretína hranice zväčšenej oblasti, obsah sa naroluje "
+"do zobrazenia"
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:46
+msgid "Caret Tracking Mode"
+msgstr "Režim sledovania textového kurzora"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:47
+msgid ""
+"Determines the position of the caret within magnified view. The values are: "
+"• none: no caret tracking • centered: the image of the caret is displayed at "
+"the center of the zoom region (which also represents the point under the "
+"system caret) and the magnified contents are scrolled as the system caret "
+"moves • proportional: the position of the magnified caret in the zoom region "
+"is proportionally the same as the position of the system caret on screen • "
+"push: when the magnified caret intersects a boundary of the zoom region, the "
+"contents are scrolled into view"
+msgstr ""
+"Určuje polohu kurzora vo zväčšenom zobrazení. Hodnoty sú: • none: bez "
+"sledovania kurzora • centered: obrázok kurzora je zobrazený v strede "
+"zväčšenej oblasti (čo tiež reprezentuje bod pod systémovým kurzorom) a "
+"zväčšený obsah bude rolovaný spolu s presunom kurzora • proportional: poloha "
+"zväčšeného kurzora vo zväčšenej oblasti je proporčne rovnaká ako poloha "
+"systémového kurzora na obrazovke • push: keď zväčšený kurzor pretína hranice "
+"zväčšenej oblasti, obsah sa naroluje do zobrazenia"
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:64
+msgid "Screen position"
+msgstr "Poloha obrazovky"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:65
+msgid ""
+"The magnified view either fills the entire screen, or occupies the top-half, "
+"bottom-half, left-half, or right-half of the screen."
+msgstr ""
+"Zväčšené zobrazenie vypĺňa buď celú obrazovku, alebo zaberá „top-half“ "
+"(hornú polovicu), „bottom-half“ (spodnú polovicu), „left-half“ (ľavú "
+"polovicu) alebo „right-half“ (pravú polovicu) obrazovky."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:73
+msgid "Magnification factor"
+msgstr "Koeficient zväčšenia"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:74
+msgid ""
+"The power of the magnification. A value of 1.0 means no magnification. A "
+"value of 2.0 doubles the size."
+msgstr ""
+"Určuje úroveň zväčšenia. Hodnota 1.0 znamená nulové zväčšenie. Hodnota 2.0 "
+"zdvojnásobí veľkosť."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:81
+msgid "Enable lens mode"
+msgstr "Povoliť režim objektívu"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:82
+msgid ""
+"Whether the magnified view should be centered over the location of the "
+"system mouse and move with it."
+msgstr ""
+"Určuje, či má byť zväčšené zobrazenie vystredené podľa polohy systémového "
+"ukazovateľa myši, a či sa má presúvať spolu s ním. "
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:89
+msgid "Scroll magnified contents beyond the edges of the desktop"
+msgstr "Rolovať zväčšený obsah za hranice pracovnej plochy"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:92
+msgid ""
+"For centered mouse tracking, when the system pointer is at or near the edge "
+"of the screen, the magnified contents continue to scroll such that the "
+"screen edge moves into the magnified view."
+msgstr ""
+"Ak sa pri vystredenom sledovaní ukazovateľa myši systémový ukazovateľ "
+"nachádza v blízkosti okraja obrazovky, zväčšený obsah bude rolovať tak, že "
+"sa okraj obrazovky presunie do zväčšeného zobrazenia."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:102
+msgid "Show or hide crosshairs"
+msgstr "Zobraziť alebo skryť nitkový kríž"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:103
+msgid ""
+"Enables/disables display of crosshairs centered on the magnified mouse "
+"sprite."
+msgstr ""
+"Povolí alebo zakáže zobrazenie vystredeného nitkového kríža na zväčšenom "
+"obryse ukazovateľa myši."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:110
+msgid "Thickness of the crosshairs in pixels"
+msgstr "Hrúbka nitkového kríža v pixeloch"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:111
+msgid ""
+"Width in pixels of the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr ""
+"Určuje šírku vodorovných a zvislých čiar v pixeloch, z ktorých sú vytvorené "
+"nitkové kríže."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:117
+msgid "Color of the crosshairs"
+msgstr "Farba nitkového kríža"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:118
+msgid ""
+"The color of the the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr ""
+"Určuje farbu vodorovných a zvislých čiar, z ktorých je vytvorené nitkový "
+"kríž."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:126
+msgid "Opacity of the crosshairs"
+msgstr "Krytie nitkového kríža"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:127
+msgid ""
+"Determines the transparency of the crosshairs, from fully opaque to fully "
+"transparent."
+msgstr ""
+"Určuje priehľadnosť nitkového kríža, ktorá môže byť plne nepriehľadná alebo "
+"plne priehľadná."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:135
+msgid "Length of the crosshairs in pixels"
+msgstr "Dĺžka nitkového kríža v pixeloch"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:136
+msgid ""
+"Determines the length in pixels of the vertical and horizontal lines that "
+"make up the crosshairs."
+msgstr ""
+"Určuje dĺžku zvislých a vodorovných čiar v pixeloch, z ktorých je vytvorený "
+"nitkový kríž."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:143
+msgid "Clip the crosshairs at the center"
+msgstr "Orezať nitkový kríž v strede"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:144
+msgid ""
+"Determines whether the crosshairs intersect the magnified mouse sprite, or "
+"are clipped such that the ends of the horizontal and vertical lines surround "
+"the mouse image."
+msgstr ""
+"Určuje, či sa má nitkový kríž pretínať so zväčšeným obrysom ukazovateľa "
+"myši, alebo či sa má vodorovná a zvislá čiara orezať podľa koncov obrázka "
+"ukazovateľa myši."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:152
+msgid "Inverse lightness"
+msgstr "Obrátená svetlosť"
+
+# DK: vsade som pouzil tvar "..., či sa má/majú..." takze nechavam takto.vyznam to nemeni
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:153
+msgid ""
+"Determines whether the lightness values are inverted: darker colors become "
+"lighter and vice versa, and white and black are interchanged."
+msgstr ""
+"Určuje, či sa majú hodnoty svetlosti invertovať: tmavé farby sa zmenia na "
+"svetlé a naopak a biela bude zamenená s čiernou."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:161
+msgid "Color Saturation"
+msgstr "Sýtosť farieb"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:162
+msgid ""
+"Represents a change to the color saturation, from 0.0 (grayscale) to 1.0 "
+"(full color)."
+msgstr ""
+"Predstavuje zmenu sýtosti farieb od 0.0 (odtiene šedej) po 1.0 (všetky "
+"farby)."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:170
+msgid "Change brightness of red"
+msgstr "Zmeniť jas červenej farby"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:171
+msgid ""
+"Represents a change to the default brightness of the red component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Predstavuje zmenu predvoleného jasu červenej farby. Nula nemení jas, hodnoty "
+"menšie ako nula znamenajú zníženie jasu a hodnoty väčšie ako nula naopak "
+"zvýšenie jasu."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:180
+msgid "Change brightness of green"
+msgstr "Zmeniť jas zelenej farby"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:181
+msgid ""
+"Represents a change to the default brightness for the green component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Predstavuje zmenu predvoleného jasu zelenej farby. Nula nemení jas, hodnoty "
+"menšie ako nula znamenajú zníženie jasu a hodnoty väčšie ako nula naopak "
+"zvýšenie jasu."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:190
+msgid "Change brightness of blue"
+msgstr "Zmeniť jas modrej farby"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:191
+msgid ""
+"Represents a change to the default brightness for the blue component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Predstavuje zmenu predvoleného jasu modrej farby. Nula nemení jas, hodnoty "
+"menšie ako nula znamenajú zníženie jasu a hodnoty väčšie ako nula naopak "
+"zvýšenie jasu."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:200
+msgid "Change contrast of red"
+msgstr "Zmeniť kontrast červenej farby"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:201
+msgid ""
+"Represents a change to the default contrast of the red component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Predstavuje zmenu predvoleného kontrastu červenej zložky farebnej škály. "
+"Nula nemení kontrast, hodnoty menšie ako nula znamenajú zníženie kontrastu a "
+"hodnoty väčšie ako nula naopak zvýšenie kontrastu."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:210
+msgid "Change contrast of green"
+msgstr "Zmeniť kontrast zelenej farby"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:211
+msgid ""
+"Represents a change to the default contrast of the green component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Predstavuje zmenu predvoleného kontrastu zelenej farby. Nula nemení "
+"kontrast, hodnoty menšie ako nula znamenajú zníženie kontrastu a hodnoty "
+"väčšie ako nula naopak zvýšenie kontrastu."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:220
+msgid "Change contrast of blue"
+msgstr "Zmeniť kontrast modrej farby"
+
+# description
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:221
+msgid ""
+"Represents a change to the default contrast of the blue component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Predstavuje zmenu predvoleného kontrastu modrej farby. Nula nemení kontrast, "
+"hodnoty menšie ako nula znamenajú zníženie kontrastu a hodnoty väčšie ako "
+"nula naopak zvýšenie kontrastu."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:6
+msgid "Dwell click time"
+msgstr "Kliknutie zotrvaním"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:7
+msgid "Time in seconds before a click is triggered."
+msgstr "Čas v sekundách pred uskutočnením kliknutia."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:11
+msgid "Movement threshold"
+msgstr "Prah pohybu"
+
+# description
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:12
+msgid "Distance in pixels before movement will be recognized."
+msgstr "Vzdialenosť v pixeloch pred rozpoznaním pohybu."
+
+# TODO
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:16
+msgid "Gesture single click"
+msgstr "Gesto pre jedno kliknutie"
+
+# description
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:17
+msgid "Direction to perform a single click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Určuje smer pohybu, ktorý uskutoční jedno kliknutie („left“ (doľava), "
+"„right“ (doprava), „up“ (nahor), „down“ (nadol))."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:21
+msgid "Gesture double click"
+msgstr "Gesto pre dvojité kliknutie"
+
+# description
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:22
+msgid "Direction to perform a double click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Určuje smer pohybu, ktorý uskutoční dvojité kliknutie („left“ (doľava), "
+"„right“ (doprava), „up“ (nahor), „down“ (nadol))."
+
+# PK: co je toto?
+# DK: malo by to byt asi nasymulovanie kliknutia a pridrzanie tlacidla-nasledne umoznene tahanie(napr. oznacovanie textu)
+# summary
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:26
+msgid "Gesture drag click"
+msgstr "Gesto pre kliknutie a potiahnutie"
+
+# description
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:27
+msgid "Direction to perform dragging (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Určuje smer pohybu, ktorý uskutoční potiahnutie („left“ (doľava), „right“ "
+"(doprava), „up“ (nahor), „down“ (nadol))."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:31
+msgid "Gesture secondary click"
+msgstr "Gesto pre kliknutie sekundárnym tlačidlom"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:32
+msgid "Direction to perform a secondary click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Určuje smer pohybu na vykonanie kliknutia sekundárnym tlačidlom („left“ "
+"(doľava), „right“ (doprava), „up“ (nahor), „down“ (nadol))."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:36
+msgid "Dwell click mode"
+msgstr "Režim kliknutia zotrvaním"
+
+# description
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:37
+msgid ""
+"The active dwell click mode. Possible values are “window” and “gesture”."
+msgstr ""
+"Aktivuje režim kliknutia zotrvaním, Možné hodnoty sú „window“ - okno a "
+"„gesture“ - gesto."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:41
+msgid "Show click type window"
+msgstr "Zobraziť okno pre typ kliknutia"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:42
+msgid "Show click type window."
+msgstr "Zobrazí okno pre typ kliknutia."
+
+# summary
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:46
+msgid "Enable dwell clicks"
+msgstr "Povoliť kliknutia zotrvaním"
+
+# description
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:47
+msgid "Enable dwell clicks."
+msgstr "Povolí kliknutia zotrvaním."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:51
+msgid "Secondary click enabled"
+msgstr "Povolené kliknutie sekundárnym tlačidlom"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:52
+msgid "Enable simulated secondary clicks"
+msgstr "Povoliť simulované kliknutie sekundárnym tlačidlom"
+
+# summary
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:56
+msgid "Secondary click time"
+msgstr "Čas kliknutia sekundárnym tlačidlom"
+
+# description
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:57
+msgid "Time in seconds before a simulated secondary click is triggered."
+msgstr ""
+"Čas v sekundách pred uskutočnením simulovaného kliknutia sekundárnym "
+"tlačidlom."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:6
+msgid "Folder children"
+msgstr "Potomok priečinka"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:7
+msgid ""
+"List of relative settings paths at which app-folders are stored. Each folder "
+"uses the org.gnome.desktop.app-folders.folder schema."
+msgstr ""
+"Zoznam relatívne nastavených ciest, v ktorých sú uložené priečinky "
+"aplikácií. Každý priečinok používa schému „org.gnome.desktop.app-folders."
+"folder“."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:15
+msgid "Folder name"
+msgstr "Názov priečinka"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:16
+msgid "The name of the application folder."
+msgstr "Názov priečinka s aplikáciami."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:20
+msgid "Translate the name"
+msgstr "Preložiť názov"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:21
+msgid ""
+"Whether the name key is a filename to be looked up in /usr/share/desktop-"
+"directories."
+msgstr ""
+"Určuje, či má kľúč name obsahovať názov súboru hľádaný v adresári /usr/share/"
+"desktop-directories."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:26
+msgid "Applications"
+msgstr "Aplikácie"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:27
+msgid ""
+"The list of IDs of applications that are explicitly included in this folder."
+msgstr ""
+"Zoznam identifikátorov aplikácií, ktoré sú výlučne zahrnuté v tomto "
+"priečinku."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:32
+msgid "Categories"
+msgstr "Kategórie"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:33
+msgid ""
+"A list of categories for which apps will be placed into this folder by "
+"default, in addition to the apps that are listed in the apps key."
+msgstr ""
+"Názov kategórií, pre ktoré sa aplikácie štandardne umiestnia do týchto "
+"priečinkov, spolu s aplikáciami ktoré sú v zozname kľúča apps."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:39
+msgid "Excluded applications"
+msgstr "Vylúčené aplikácie"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:40
+msgid ""
+"A list of IDs of applications that are excluded from this folder. This can "
+"be used to remove applications that would otherwise be included by category."
+msgstr ""
+"Zoznam identifikátorov aplikácií, ktoré sú vylúčené z tohto priečinka. Toto "
+"môže byť použité na odobratie aplikácií, ktoré by inak boli zahrnuté do "
+"kategórie. "
+
+# summary
+#: schemas/org.gnome.desktop.background.gschema.xml.in:6
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:90
+msgid "Picture Options"
+msgstr "Voľby obrázka"
+
+# description
+#: schemas/org.gnome.desktop.background.gschema.xml.in:7
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:91
+msgid ""
+"Determines how the image set by wallpaper_filename is rendered. Possible "
+"values are “none”, “wallpaper”, “centered”, “scaled”, “stretched”, “zoom”, "
+"“spanned”."
+msgstr ""
+"Určuje ako bude vyobrazený obrázok nastavený vo wallpaper_filename. Možnosti "
+"zobrazenia sú „none“ (žiadny), „wallpaper“ (tapeta), „centered“ "
+"(vystredený), „scaled“ (prispôsobený), „stretched“ (natiahnutý), „zoom“ "
+"(zväčšený) , „spanned“ (rozprestrený)."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:15
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:99
+msgid "Picture URI"
+msgstr "URI obrázka"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:16
+#: schemas/org.gnome.desktop.background.gschema.xml.in:24
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:100
+msgid ""
+"URI to use for the background image. Note that the backend only supports "
+"local (file://) URIs."
+msgstr ""
+"Identifikátor URI, ktorý sa použije ako obrázok pozadia. Obslužný program "
+"podporuje iba miestne URI (file://)"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:23
+msgid "Picture URI (dark)"
+msgstr "URI adresa obrázka (tmavého)"
+
+# summary
+#: schemas/org.gnome.desktop.background.gschema.xml.in:32
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:108
+msgid "Picture Opacity"
+msgstr "Krytie obrázka"
+
+# description
+#: schemas/org.gnome.desktop.background.gschema.xml.in:33
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:109
+msgid "Opacity with which to draw the background picture."
+msgstr "Určuje krytie, s ktorým bude vykreslený obrázok pozadia."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:39
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:115
+msgid "Primary Color"
+msgstr "Primárna farba"
+
+# description
+#: schemas/org.gnome.desktop.background.gschema.xml.in:40
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:116
+msgid "Left or Top color when drawing gradients, or the solid color."
+msgstr ""
+"Určuje farbu ľavej alebo hornej strany pre vykresľovanie prechodu farieb "
+"alebo jednotnú farbu."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:46
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:122
+msgid "Secondary Color"
+msgstr "Sekundárna farba"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:47
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:123
+msgid "Right or Bottom color when drawing gradients, not used for solid color."
+msgstr ""
+"Určuje farbu pravej alebo dolnej strany pri vykresľovaní prechodu. Nebude "
+"použitá pri jednotnej farbe."
+
+# summary
+#: schemas/org.gnome.desktop.background.gschema.xml.in:53
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:129
+msgid "Color Shading Type"
+msgstr "Typ tieňovania farby"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:54
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:130
+msgid ""
+"How to shade the background color. Possible values are “horizontal”, "
+"“vertical”, and “solid”."
+msgstr ""
+"Určuje ako bude vytieňovaná farba pozadia. Možnosti sú „horizontal“ "
+"(vodorovne), „vertical“ (zvislo), a „solid“ (jednotná farba)."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:61
+msgid "Have file manager handle the desktop"
+msgstr "Určuje, či má správca súborov spravovať pracovnú plochu"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:62
+msgid "If set to true, then file manager will draw the icons on the desktop."
+msgstr ""
+"Ak je nastavené na true, bude správca súborov vykresľovať ikony na pracovnej "
+"ploche."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:10
+msgid "List of breaks that are currently enabled"
+msgstr "Zoznam prestávok, ktoré sú aktuálne povolené"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:22
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:87
+#| msgid "Timeout between click repeats"
+msgid "Time between breaks"
+msgstr "Čas medzi prestávkami"
+
+# summary
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:23
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:88
+#| msgid "Delay between repeats in milliseconds."
+msgid "The time between rest breaks, in seconds."
+msgstr "Čas medzi prestávkami na odpočinok, v sekundách."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:29
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:94
+msgid "Duration of each break"
+msgstr "Trvanie každej prestávky"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:30
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:95
+msgid "The duration of each rest break, in seconds."
+msgstr "Trvanie každej prestávky na odpočinok, v sekundách."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:36
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:101
+msgid "Amount to delay break if requested"
+msgstr "Hodnota oneskorenia prestávky, ak je vyžiadané"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:37
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:102
+msgid ""
+"The amount to delay taking the break by, if the user requests a delay, in "
+"seconds."
+msgstr ""
+"Hodnota v sekundách, o ktorú sa má posunúť prestávka v prípade, že používateľ "
+"o odklad požiada."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:43
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:108
+msgid "Fade screen during breaks"
+msgstr "Stmaviť obrazovku počas prestávok"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:44
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:109
+msgid "True to fade the screen during rest breaks."
+msgstr "Zapnite pre stmavenie obrazovky počas prestávok na odpočinok."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:49
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:114
+msgid "Lock screen during breaks"
+msgstr "Uzamknúť obrazovku počas prestávok"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:50
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:115
+msgid "True to lock the screen during rest breaks."
+msgstr "Zapnite pre uzamknutie obrazovky počas prestávok na odpočinok."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:55
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:120
+msgid "Play sound when a break finishes"
+msgstr "Prehrať zvuk po skončení prestávky"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:56
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:121
+msgid "True to play a sound when a break finishes."
+msgstr "Zapnite pre prehranie zvuku po skončení prestávky."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:61
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:79
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:126
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:144
+msgid "Notify when a break is due"
+msgstr "Upozorniť, keď nadíde čas na prestávku"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:62
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:127
+msgid "True to emit a notification when a break is due to start."
+msgstr "Zapnite pre zobrazenie upozornenia pred začiatkom prestávky."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:67
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:132
+msgid "Notify when a break is upcoming"
+msgstr "Upozorniť na blížiacu sa prestávku"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:68
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:133
+msgid "True to emit a notification a few minutes before a break is due."
+msgstr "Zapnite pre zobrazenie upozornenia pár minút pred začiatkom prestávky."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:73
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:138
+msgid "Notify when a break is overdue"
+msgstr "Upozorniť na oneskorenie prestávky"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:74
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:139
+msgid "True to emit a notification when a break is overdue."
+msgstr "Zapnite pre zobrazenie upozornenia, keď je prestávka oneskorená."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:80
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:145
+msgid "True to show a prominent countdown shortly before a break is due."
+msgstr "Zapnite pre zobrazenie výrazného odpočítavania krátko pred začiatkom prestávky."
+
+#: schemas/org.gnome.desktop.calendar.gschema.xml.in:6
+msgid "Show the week date in the calendar"
+msgstr "Zobraziť v kalendári dátum s číslom týždňa"
+
+#: schemas/org.gnome.desktop.calendar.gschema.xml.in:7
+msgid "If true, display the ISO week date in the calendar."
+msgstr ""
+"Ak je nastavené na true, bude v kalendári zobrazené dátum s číslom týždňa "
+"podľa štandardu ISO."
+
+#: schemas/org.gnome.desktop.datetime.gschema.xml.in:6
+msgid "Automatically update timezone"
+msgstr "Automaticky aktualizovať časovú zónu"
+
+#: schemas/org.gnome.desktop.datetime.gschema.xml.in:7
+msgid "Whether to automatically update the timezone using geolocation."
+msgstr ""
+"Určuje, či sa má automaticky aktualizovať časová zóna pomocou geolokácie."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:14
+msgid "Default calendar"
+msgstr "Predvolený kalendár"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:15
+msgid ""
+"Default calendar application DEPRECATED: This key is deprecated and ignored. "
+"The preferred calendar application is the application handling the text/"
+"calendar mime type."
+msgstr ""
+"Predvolená aplikácia kalendára. ZAVRHNUTÉ: Tento kľúč je zavrhnutý a "
+"ignoruje sa. Uprednostňovaná aplikácia kalendára je aplikácia, ktorá "
+"spracováva typ MIME text/calendar."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:24
+msgid "Calendar needs terminal"
+msgstr "Kalendár vyžaduje terminál"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:25
+msgid ""
+"Whether the default calendar application needs a terminal to run. "
+"DEPRECATED: This key is deprecated and ignored. The preferred calendar "
+"application is the application handling the text/calendar mime type, whether "
+"it needs a terminal is taken from its desktop file."
+msgstr ""
+"Určuje, či predvolená aplikácia kalendára potrebuje na spustenie terminál. "
+"ZAVRHNUTÉ: Tento kľúč je zavrhnutý a ignoruje sa. Uprednostňovaná aplikácia "
+"kalendára je aplikácia ktorá spracováva typ MIME text/calendar, to či "
+"potrebuje terminál sa určí podľa jej súboru „.desktop“."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:37
+msgid "Default tasks"
+msgstr "Predvolené úlohy"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:38
+msgid "Default tasks application."
+msgstr "Predvolená aplikácia úloh."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:44
+msgid "Tasks needs terminal"
+msgstr "Úlohy vyžadujú terminál"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:45
+msgid "Whether the default tasks application needs a terminal to run."
+msgstr "Určuje, či predvolené aplikácie úloh vyžadujú na spustenie terminál."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:53
+msgid "Terminal application"
+msgstr "Aplikácia terminálu"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:54
+msgid ""
+"Terminal program to use when starting applications that require one. "
+"DEPRECATED: This key is deprecated and ignored. The default terminal is "
+"handled in GIO."
+msgstr ""
+"Program terminálu na spustenie aplikácií, ktoré ho vyžadujú. ZAVRHNUTÉ: "
+"Tento kľúč je zavrhnutý a ignoruje sa. Predvolený terminál je spravovaný "
+"knižnicou GIO."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:63
+msgid "Exec Arguments"
+msgstr "Parametre spustenia"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:64
+msgid ""
+"Argument used to execute programs in the terminal defined by the “exec” key. "
+"DEPRECATED: This key is deprecated and ignored. The default terminal and how "
+"to invoke it is handled in GIO."
+msgstr ""
+"Parameter použitý pri spustení programov v termináli určený kľúčom „exec“. "
+"ZAVRHNUTÉ: Tento kľúč je zavrhnutý a ignoruje sa. Predvolený terminál a ako "
+"ho vyvolať je spravované knižnicou GIO."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:7
+msgid "Current input source"
+msgstr "Aktuálny zdroj vstupu"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:8
+msgid ""
+"The zero-based index into the input sources list specifying the current one "
+"in effect. The value is automatically capped to remain in the range [0, "
+"sources_length) as long as the sources list isn’t empty. DEPRECATED: This "
+"key is deprecated and ignored."
+msgstr ""
+"Nulou začínajúci index do zoznamu zdrojov určujúci aktuálny zdroj. Hodnota "
+"sa automaticky nastaví v rozsahu [0, dĺžka_zoznam] v prípade, ak zoznam "
+"zdrojov nie je prázdny. ZAVRHNUTÉ: Tento kľúč je zavrhnutý a ignoruje sa."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:19
+msgid "List of input sources"
+msgstr "Zoznam zdrojov vstupu"
+
+# description
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:20
+msgid ""
+"List of input source identifiers available. Each source is specified as a "
+"tuple of 2 strings. The first string is the type and can be one of “xkb” or "
+"“ibus”. For “xkb” sources the second string is “xkb_layout+xkb_variant” or "
+"just “xkb_layout” if a XKB variant isn’t needed. For “ibus” sources the "
+"second string is the IBus engine name. An empty list means that the X "
+"server’s current XKB layout and variant won’t be touched and IBus won’t be "
+"used."
+msgstr ""
+"Zoznam identifikátorov dostupných zdrojov vstupu. Každý zdroj je určený ako "
+"dvojica reťazcov. Prvý reťazec je typ a môže byť „xkb“' alebo „ibus“. Pre "
+"zdroje „xkb“ je druhý reťazec „xkb_layout+xkb_variant“ (rozloženie a "
+"variant) alebo iba „xkb_layout“ ak XKB variant nie je potrebný. Pre zdroje "
+"„ibus“ je druhý reťazec názov stroja IBus. Prázdny zoznam znamená, že XKB "
+"rozloženie a variant X servera má zostať zachované a IBus sa nemá použiť."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:33
+msgid "List of most recently used input sources"
+msgstr "Zoznam nedávno použitých zdrojov vstupu"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:34
+msgid ""
+"List of most recently used input sources. The value is in the same format as "
+"the available sources list."
+msgstr ""
+"Zoznam nedávno použitých zdrojov vstupu. Hodnota je v rovnakom formáte ako "
+"zoznam dostupných zdrojov."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:41
+msgid "List of XKB options"
+msgstr "Zoznam volieb XKB"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:42
+msgid ""
+"List of XKB options. Each option is an XKB option string as defined by "
+"xkeyboard-config’s rules files."
+msgstr ""
+"Zoznam volieb XKB. Každá voľba XKB je určená reťazcom uloženým v "
+"konfiguračnom súbore pravidiel xkeyboard."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:49
+msgid "XKB model to use"
+msgstr "Model XKB, ktorý sa má použiť"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:50
+msgid ""
+"The XKB model to use. The value is the same identifier as defined by "
+"xkeyboard-config’s geometry files."
+msgstr ""
+"Model XBK, ktorý sa má použiť. Hodnota je rovnaký identifikátor, aký je "
+"definovaný v súboroch geometrie xkeyboard-config."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:57
+msgid "Show all installed input sources"
+msgstr "Zobraziť všetky nainštalované zdroje vstupu"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:58
+msgid ""
+"Makes all installed input sources available for choosing in System Settings."
+msgstr ""
+"Sprístupní výber všetkých nainštalovaných zdrojov vstupu v programe "
+"„Nastavenia systému“."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:65
+msgid "Use different input sources for each window"
+msgstr "Použiť rozdielny zdroj vstupu pre každé okno"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:66
+msgid ""
+"When enabled, input sources get attached to the currently focused window "
+"when activated."
+msgstr ""
+"Keď je povolené, zdroje vstupu získajú prístup do aktuálne zameraného okna "
+"pri aktivovaní."
+
+# summary
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:6
+msgid "Enable Toolkit Accessibility"
+msgstr "Povoliť nástroje so zjednodušeným ovládaním"
+
+# description
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:7
+msgid "Whether toolkits should load accessibility related modules."
+msgstr "Či majú nástroje načítať moduly súvisiace so zjednodušeným ovládaním."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:13
+msgid "Enable Animations"
+msgstr "Povoliť animácie"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:14
+msgid ""
+"Whether animations should be displayed. Note: This is a global key, it "
+"changes the behaviour of the window manager, the panel etc."
+msgstr ""
+"Určuje, či sa zobrazia animácie. Poznámka: Toto je globálny kľúč, ktorý mení "
+"správanie správcu okien, panelov, atď."
+
+# summary
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:21
+msgid "Menus Have Tearoff"
+msgstr "Ponuky majú odpájač"
+
+# description
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:22
+msgid "Whether menus should have a tearoff."
+msgstr "Či ponuky majú mať rúčku na odpojenie."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:28
+msgid "Can Change Accels"
+msgstr "Umožniť zmenu akcelerátorov"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:29
+msgid ""
+"Whether the user can dynamically type a new accelerator when positioned over "
+"an active menuitem."
+msgstr ""
+"Určuje, či používateľ môže podľa potreby zadať nový akcelerátor pre aktívnu "
+"položku ponuky."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:36
+msgid "Toolbar Style"
+msgstr "Štýl panela nástrojov"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:37
+msgid ""
+"Toolbar Style. Valid values are “both”, “both-horiz”, “icons”, and “text”."
+msgstr ""
+"Štýl panela nástrojov. Voľby na výber sú „both“ (oboje), „both-horz“ (oboje-"
+"vodorovne), „icons“ (ikony), a „text“."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:44
+msgid "Menubar Detachable"
+msgstr "Oddeliteľný panel ponuky"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:45
+msgid "Whether the user can detach menubars and move them around."
+msgstr ""
+"Určuje, či používateľ môže oddeliť a následne premiestniť panely ponúk."
+
+# summary
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:51
+msgid "Toolbar Detachable"
+msgstr "Oddeliteľný panel nástrojov"
+
+# description
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:52
+msgid "Whether the user can detach toolbars and move them around."
+msgstr ""
+"Určuje, či môže používateľ oddeliť a následne premiestniť panely nástrojov."
+
+# http://slovnik.juls.savba.sk/?w=ikona&s=exact&c=o572&d=kssj4&d=psp&ie=utf-8&oe=utf-8
+# summary
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:58
+msgid "Toolbar Icon Size"
+msgstr "Veľkosť ikon v paneli nástrojov"
+
+# description
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:59
+msgid "Size of icons in toolbars, either “small” or “large”."
+msgstr ""
+"Veľkosť ikon v paneloch nástrojov a to buď „small“ (malé) alebo „large“ "
+"(veľké)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:65
+msgid "Cursor Blink"
+msgstr "Blikanie kurzora"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:66
+msgid "Whether the cursor should blink."
+msgstr "Určuje, či má kurzor blikať."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:73
+msgid "Cursor Blink Time"
+msgstr "Trvanie bliknutia kurzora"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:74
+msgid "Length of the cursor blink cycle, in milliseconds."
+msgstr "Časový rozsah v milisekundách pre cyklus bliknutia kurzora."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:81
+msgid "Cursor Blink Timeout"
+msgstr "Časový limit pre blikanie kurzora"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:82
+msgid "Time after which the cursor stops blinking, in seconds."
+msgstr "Čas v sekundách, po ktorom kurzor prestane blikať."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:88
+msgid "Icon Theme"
+msgstr "Téma ikon"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:89
+msgid "Icon theme to use for the panel, nautilus etc."
+msgstr "Téma ikon použitá pre panel, nautilus, atď."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:95
+msgid "Gtk+ Theme"
+msgstr "Téma pre Gtk+"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:96
+msgid "Basename of the default theme used by gtk+."
+msgstr "Názov predvolenej témy použitej v GTK+."
+
+# summary
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:102
+msgid "Gtk+ Keybinding Theme"
+msgstr "Téma klávesových skratiek Gtk+"
+
+# description
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:103
+msgid "Basename of the default keybinding theme used by gtk+."
+msgstr "Základný názov predvolenej témy klávesových skratiek použitých v GTK+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:109
+msgid "Default font"
+msgstr "Predvolené písmo"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:110
+msgid "Name of the default font used by gtk+."
+msgstr "Názov predvoleného písma použitého v GTK+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:116
+msgid "Directories with avatar faces"
+msgstr "Adresáre s obrázkami avatarov"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:117
+msgid ""
+"Directories to override the default avatar faces installed by gnome-control-"
+"center."
+msgstr ""
+"Priečinky, ktoré sa použijú miesto predvolených obrázkov avatarov "
+"nainštalovaných aplikáciou gnome-control-center."
+
+# summary
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:124
+msgid "Text scaling factor"
+msgstr "Faktor mierky textu"
+
+# description
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:125
+msgid ""
+"Factor used to enlarge or reduce text display, without changing font size."
+msgstr ""
+"Faktor použitý na zväčšenie alebo zmenšenie zobrazeného textu, bez zmeny "
+"veľkosti písma."
+
+# summary
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:131
+msgid "Window scaling factor"
+msgstr "Faktor mierky okna"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:132
+msgid ""
+"Integer factor used to scale windows by. For use on high-dpi screens. 0 "
+"means pick automatically based on monitor."
+msgstr ""
+"Celočíselný faktor používaný na zmenu mierky okien. Slúži na použitie na "
+"obrazovkách s vysokým DPI. 0 znamená, že sa automaticky zvolí hodnota podľa "
+"monitora."
+
+# summary
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:139
+msgid "GTK IM Preedit Style"
+msgstr "Štýl predúpravy metódy vstupu GTK"
+
+# description
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:140
+msgid "Name of the GTK+ input method Preedit Style used by gtk+."
+msgstr "Názov štýlu predúpravy metódy vstupu použitého v GTK+ "
+
+# summary
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:146
+msgid "GTK IM Status Style"
+msgstr "Štýl stavu metódy vstupu GTK"
+
+# description
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:147
+msgid "Name of the GTK+ input method Status Style used by gtk+."
+msgstr "Názov štýlu stavu metódy vstupu použitého v GTK+"
+
+# summary
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:153
+msgid "GTK IM Module"
+msgstr "Modul metódy vstupu GTK"
+
+# description
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:154
+msgid "Name of the input method module used by GTK+."
+msgstr "Názov modulu metódy vstupu použitého v GTK+."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:160
+msgid "Document font"
+msgstr "Písmo pre dokumenty"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:161
+msgid "Name of the default font used for reading documents."
+msgstr "Názov predvoleného písma použitého pri čítaní dokumentov."
+
+# summary
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:167
+msgid "Monospace font"
+msgstr "Písmo typu monospace"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:168
+msgid ""
+"Name of a monospaced (fixed-width) font for use in locations like terminals."
+msgstr ""
+"Názov písma typu monospace (písmo s pevnou šírkou), ktoré sa použije v "
+"programoch ako je napríklad terminál."
+
+# summary
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:175
+msgid "Menubar accelerator"
+msgstr "Akcelerátor panelov ponúk"
+
+# description
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:176
+msgid "Keyboard shortcut to open the menu bars."
+msgstr "Určuje klávesovú skratku na otváranie panelov ponúk."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:182
+msgid "Cursor theme"
+msgstr "Téma ukazovateľa"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:183
+msgid ""
+"Cursor theme name. Used only by Xservers that support the Xcursor extension."
+msgstr ""
+"Názov témy ukazovateľa. Používané iba Xservermi, ktoré podporujú rozšírenie "
+"Xcursor."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:187
+msgid "Cursor size"
+msgstr "Veľkosť ukazovateľa"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:188
+msgid "Size of the cursor used as cursor theme."
+msgstr "Veľkosť ukazovateľa použitého témou ukazovateľa."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:192
+msgid "Timeout before click repeat"
+msgstr "Časový limit pred opakovaním kliknutia"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:193
+msgid ""
+"Timeout in milliseconds before a click starts repeating (on spinner buttons "
+"for example)."
+msgstr ""
+"Určuje časový limit v milisekundách pred začatím opakovaného kliknutia "
+"(napríklad pri rotujúcich tlačidlách)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:197
+msgid "Timeout between click repeats"
+msgstr "Časový limit medzi opakovaním kliknutí"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:198
+msgid ""
+"Timeout in milliseconds between repeated clicks when a button is left "
+"pressed."
+msgstr ""
+"Určuje časový limit medzi opakovanými kliknutiami pri stlačení tlačidla "
+"ľavým tlačidlom myši."
+
+# summary
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:202
+msgid "Palette used in the color selector"
+msgstr "Paleta použitá vo výbere farieb"
+
+# description
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:203
+msgid ""
+"Palette used in the color selector as defined by the “gtk-color-palette” "
+"setting"
+msgstr ""
+"Paleta použitá vo výbere farieb definovaná nastavením „gtk-color-palette“"
+
+# summary
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:207
+msgid "List of symbolic names and color equivalents"
+msgstr "Zoznam symbolických názvov a farebných ekvivalentov"
+
+# description
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:208
+msgid ""
+"A “\\n” separated list of “name:color” as defined by the “gtk-color-scheme” "
+"setting"
+msgstr ""
+"Zoznam položiek „názov:farba“ oddelených „\\n“ tak, ako je definovaný v "
+"nastaveniach „gtk-color-scheme“."
+
+#. TRANSLATORS: select your locale's default clock format, this should be '12h' or '24h' (with the quotes!)
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:212
+msgid "'24h'"
+msgstr "'24h'"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:213
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:214
+msgid "Whether the clock displays in 24h or 12h format"
+msgstr "Určuje, či sa zobrazia hodiny v 24 alebo 12 hodinovom formáte"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:220
+msgid "Whether the clock shows seconds"
+msgstr "Určuje, či sa pri hodinách zobrazia sekundy"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:221
+msgid "If true, display seconds in the clock."
+msgstr "Ak je nastavené na true, budú v hodinách zobrazené sekundy."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:227
+msgid "Show date in clock"
+msgstr "Zobraziť dátum v hodinách"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:228
+msgid "If true, display date in the clock, in addition to time."
+msgstr "Ak je nastavené na true, bude vedľa času hodín zobrazený dátum."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:234
+msgid "Show weekday in clock"
+msgstr "Zobraziť v hodinách deň v týždni"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:235
+msgid "If true, display weekday in the clock, in addition to time."
+msgstr "Ak je nastavené na true, bude vedľa času hodín zobrazený aj dátum"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:241
+msgid "Enable hot corners"
+msgstr "Povoliť aktívne rohy"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:242
+msgid ""
+"If true, the activities overview can be accessed by moving the mouse to the "
+"top-left corner."
+msgstr ""
+"Ak je nastavené na true, prehľad aktivít je možné aktivovať prejdením myši "
+"do ľavého horného rohu."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:249
+msgid "Show battery percentage"
+msgstr "Zobraziť percentá batérie"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:250
+msgid ""
+"If true, display battery percentage in the status menu, in addition to the "
+"icon."
+msgstr ""
+"Ak je nastavené na true, v stavovej ponuke sa okrem ikony zobrazia aj "
+"percentá batérie."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:256
+msgid "Enable the primary paste selection"
+msgstr "Povolí hlavné vloženie výberu"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:257
+msgid ""
+"If true, gtk+ uses the primary paste selection, usually triggered by a "
+"middle mouse button click."
+msgstr ""
+"Ak je nastavené na true, gtk+ použije hlavné vloženie výberu, zvyčajne "
+"vyvolávané stredným tlačidlom myši."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:263
+msgid "Allow overlay scrolling"
+msgstr "Povoliť prekrývajúce posuvníky"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:264
+msgid ""
+"Whether scrollbars should be overlayed as indicators. Depending on input "
+"devices in use, permanent scrollbars may still be displayed."
+msgstr ""
+"Určuje, ci majú posuvníky prekrývať v podobe ukazovateľov pozície. V "
+"závislosti na vstupnom zariadení, môžu byť i tak zobrazené trvalé posuvníky."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:272
+msgid "Highlights the current location of the pointer."
+msgstr "Zvýrazní aktuálnu polohu ukazovateľa."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:273
+msgid ""
+"If true, pressing a key will highlight the current pointer location on "
+"screen."
+msgstr ""
+"Keď je zapnuté, stlačenie klávesu zvýrazní aktuálnu polohu ukazovateľa na "
+"obrazovke."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:279
+msgid "Antialiasing"
+msgstr "Vyhladzovanie"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:280
+msgid ""
+"The type of antialiasing to use when rendering fonts. Possible values are: "
+"“none” for no antialiasing, “grayscale” for standard grayscale antialiasing, "
+"and “rgba” for subpixel antialiasing (LCD screens only)."
+msgstr ""
+"Typ vyhladzovania, ktorý sa použije pri vykresľovaní písiem. Možné hodnoty "
+"sú „none“ pre žiadne, „grayscale“ pre štandardné Vyhladzovanie v stupňoch "
+"šedej a „rgba“ pre subpixelové vyhladzovanie (iba pre LCD displeje)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:286
+msgid "Hinting"
+msgstr "Hinting"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:287
+msgid ""
+"The type of hinting to use when rendering fonts. Possible values are: “none” "
+"for no hinting and “slight” for fitting only to the Y-axis like Microsoft’s "
+"ClearType, DirectWrite and Adobe’s proprietary font rendering engine. "
+"Ignores native hinting within the font, generates hints algorithmically. "
+"Used on Ubuntu by default. Recommended. The meaning of “medium” and “full” "
+"depends on the font format (.ttf, .otf, .pfa/.pfb) and the installed version "
+"of FreeType. They usually try to fit glyphs to both the X and the Y axis "
+"(except for .otf: Y-only). This can lead to distortion and/or inconsistent "
+"rendering depending on the quality of the font, the font format and the "
+"state of FreeType’s font engines."
+msgstr ""
+"Typ hintingu, ktorý sa použije pri vykresľovaní písiem. Možné hodnoty sú "
+"„none“ pre žiadny hinting a „slight“ pre napasovanie iba v smere osi Y, "
+"podobne ako pri komerčných vykresľovacích jadrách ClearType, DirectWrite a "
+"Adobe. Ignoruje prirodzený hinting definovaný v písme a miesto toho ho "
+"generuje algoritmicky. Používa sa ako predvolený v Ubuntu. Odporúčané. "
+"Význam ďalších dvoch hodnôt „medium“ a „full“ závisí na formáte písma (."
+"ttf, .otf, .pba/pfb) a nainštalovanej verzii knižnice FreeType. Zvyčajne sa "
+"snaží napasovať glyfy v osi X aj Y (iba pri .otf iba v osi Y). To môže viesť "
+"k rušivému a nekonzistentnému vykresľovaniu v závislosti na kvalite alebo "
+"formáte písma a stavu vykresľovacieho jadra FreeType. "
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:293
+msgid "RGBA order"
+msgstr "Poradie RGBA"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:294
+msgid ""
+"The order of subpixel elements on an LCD screen; only used when antialiasing "
+"is set to “rgba”. Possible values are: “rgb” for red on left (most common), "
+"“bgr” for blue on left, “vrgb” for red on top, “vbgr” for red on bottom."
+msgstr ""
+"Poradie subpixelov na LCD obrazovke. Použije sa iba vtedy, keď je "
+"vyhladzovanie nastavené na „rgba“. Možné hodnoty sú „rgb“ pre červenú vľavo "
+"(najčastejšie), „bgr“ pre modrú vľavo, „vrgb“ pre červenú hore, „vbgr“ pre "
+"červenú dole."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:300
+msgid "Color scheme"
+msgstr "Schéma farieb"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:301
+msgid ""
+"The preferred color scheme for the user interface. Valid values are "
+"“default”, “prefer-dark”, “prefer-light”."
+msgstr ""
+"Preferovaná schéma farieb pre používateľské rozhranie. Platné hodnoty sú "
+"„default“ (predvolená), „prefer-dark“ (uprednostniť tmavú) a „prefer-light“ "
+"(uprednostniť svetlú)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:307
+msgid "Font rendering"
+msgstr "Vykresľovanie písma"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:308
+msgid ""
+"Preference to indicate whether font rendering should follow the low-level "
+"`font-hinting` and `font-antialiasing` and `font-rgba-order` settings, or "
+"take environmental factors such as screen resolution and scaling into "
+"account. Possible values are: \"manual\" for respecting the low-level "
+"settings, or \"automatic\" for letting the toolkit make its own decisions."
+msgstr ""
+"Predvoľba, ktorá určuje, či sa má vykresľovanie písma riadiť nízkoúrovňovým "
+"nastavením `font-hinting`, `font-antialiasing` a `font-rgba-order` alebo "
+"sa majú zohľadňovať faktory prostredia, ako je rozlíšenie obrazovky a škálovanie. "
+"Možné hodnoty sú: „manual“ pre rešpektovanie nízkoúrovňových nastavení alebo "
+"„automatic“ pre ponechanie sade nástrojov, aby sa sama rozhodla."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:316
+msgid "Accent color"
+msgstr "Farebný odtieň"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:317
+#| msgid ""
+#| "The preferred color scheme for the user interface. Valid values are "
+#| "“default”, “prefer-dark”, “prefer-light”."
+msgid ""
+"The preferred accent color for the user interface. Valid values are "
+"\"blue\", \"teal\", \"green\", \"yellow\", \"orange\", \"red\", \"pink\", "
+"\"purple\", \"slate\"."
+msgstr ""
+"Preferovaná schéma farieb pre používateľské rozhranie. Platné hodnoty sú "
+"„blue“ (modrá), „teal“ (modrozelená), „green“ (zelená), „yellow“ (žltá), "
+"„orange“ (oranžová), „red“ (červená), „pink“ (ružová), „purple“ (fialová), "
+"„slate“ (bridlicová)."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:6
+msgid "Disable command line"
+msgstr "Zakázať príkazový riadok"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:7
+msgid ""
+"Prevent the user from accessing the terminal or specifying a command line to "
+"be executed. For example, this would disable access to the panel’s “Run "
+"Application” dialog."
+msgstr ""
+"Zakáže používateľovi prístup k terminálu alebo spustenie príkazového riadka. "
+"Týmto sa napríklad zakáže aj prístup k dialógovému oknu panela „Spustiť "
+"aplikáciu“."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:15
+msgid "Disable saving files to disk"
+msgstr "Zakázať ukladanie súborov na disk"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:16
+msgid ""
+"Prevent the user from saving files to disk. For example, this would disable "
+"access to all applications’ “Save as” dialogs."
+msgstr ""
+"Zakáže používateľovi ukladanie súborov na disk. Týmto sa napríklad zakáže aj "
+"prístup k dialógovému oknu „Uložiť ako“ vo všetkých aplikáciách."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:23
+msgid "Disable printing"
+msgstr "Zakázať tlačenie"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:24
+msgid ""
+"Prevent the user from printing. For example, this would disable access to "
+"all applications’ “Print” dialogs."
+msgstr ""
+"Zakáže používateľovi tlačenie. Týmto sa napríklad zakáže aj prístup k "
+"dialógovým oknám „Tlač“ vo všetkých aplikáciách."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:31
+msgid "Disable print setup"
+msgstr "Zakázať nastavenie tlače"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:32
+msgid ""
+"Prevent the user from modifying print settings. For example, this would "
+"disable access to all applications’ “Print Setup” dialogs."
+msgstr ""
+"Zakáže používateľovi meniť nastavenia tlače. Týmto sa napríklad zakáže aj "
+"prístup ku všetkým dialógovým oknám „Nastavenia tlače“ vo všetkých "
+"aplikáciách."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:39
+msgid "Disable user switching"
+msgstr "Zakázať prepínanie používateľov"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:40
+msgid ""
+"Prevent the user from switching to another account while his session is "
+"active."
+msgstr ""
+"Zakáže používateľovi prepnutie do iného účtu, pokiaľ je jeho relácia stále "
+"aktívna."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:47
+msgid "Disable lock screen"
+msgstr "Zakázať uzamykaciu obrazovku"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:48
+msgid "Prevent the user to lock his screen."
+msgstr "Zakáže používateľovi uzamknutie svojej obrazovky."
+
+# summary
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:54
+msgid "Disable URL and MIME type handlers"
+msgstr "Zakázať obslužné programy pre typy URL a MIME"
+
+# description
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:55
+msgid "Prevent running any URL or MIME type handler applications."
+msgstr "Zabráni spustenie akéhokoľvek obslužného programu pre typy URL a MIME."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:61
+msgid "Disable log out"
+msgstr "Zakázať odhlásenie"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:62
+msgid "Prevent the user from logging out."
+msgstr "Zakáže používateľovi odhlásiť sa."
+
+# summary
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:68
+msgid "Disable user administration"
+msgstr "Zakázať administráciu používateľov"
+
+# description
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:69
+msgid ""
+"Stop the user from modifying user accounts. By default, we allow adding and "
+"removing users, as well as changing other users settings."
+msgstr ""
+"Znemožní používateľovi meniť používateľské účty. Obvykle umožňujeme pridanie "
+"a odstránenie používateľov, ako aj zmenu nastavení iných používateľov."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:76
+msgid "Mount removable storage devices as read-only"
+msgstr "Pripájať vymeniteniteľné úložné zariadenia iba pre čítanie"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:77
+msgid ""
+"Prevent users from writing or modifying files on removable storage devices "
+"(i.e. flash disks, mobile phones, cameras)."
+msgstr ""
+"Zabrániť používateľom zapisovať alebo meniť súbory na vymeniteľných úložných "
+"zariadeniach (napr. flash diskoch, mobilných telefónoch, kamerách)."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:84
+msgid "Disable password showing"
+msgstr "Zakázať zobrazovanie hesiel"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:85
+msgid "Disable the \"Show Password\" menu item in password entries."
+msgstr "Zakáže položku „Zobraziť heslo“ v poliach na zadávanie hesiel."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:6
+msgid "Whether to automatically mount media"
+msgstr "Určuje, či sa majú nosiče automaticky pripojiť"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:7
+msgid ""
+"If set to true, then Nautilus will automatically mount media such as user-"
+"visible hard disks and removable media on start-up and media insertion."
+msgstr ""
+"Ak je nastavené na true, bude Nautilus pri spustení a vložení nosiča "
+"automaticky pripájať nosiče ako sú napríklad používateľom viditeľné pevné "
+"disky a vymeniteľné nosiče."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:11
+msgid "Whether to automatically open a folder for automounted media"
+msgstr ""
+"Určuje, či sa má automaticky otvoriť priečinok pre automaticky pripojené "
+"nosiče"
+
+# description
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:12
+msgid ""
+"If set to true, then Nautilus will automatically open a folder when media is "
+"automounted. This only applies to media where no known x-content/* type was "
+"detected; for media where a known x-content type is detected, the user "
+"configurable action will be taken instead."
+msgstr ""
+"Ak je nastavené na true, bude Nautilus pri pripojení nosiča automaticky "
+"otvárať priečinok. Toto sa aplikuje iba pri nosičoch, ktoré sa detegujú ako "
+"neznámy typ x-content/*; ak sa deteguje nosič známeho typu x-content, vykoná "
+"sa miesto toho používateľom nastaviteľná akcia."
+
+# summary
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:16
+msgid "Never prompt or autorun/autostart programs when media are inserted"
+msgstr ""
+"Nikdy nezobrazovať výzvu na automatické spustenie programov pri vložení "
+"nosiča"
+
+# description
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:17
+msgid ""
+"If set to true, then Nautilus will never prompt nor autorun/autostart "
+"programs when a medium is inserted."
+msgstr ""
+"Ak je nastavené na true, program Nautilus nebude nikdy pri vložení nosiča "
+"zobrazovať výzvu na automatické spustenie programov."
+
+# summary
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:21
+msgid ""
+"List of x-content/* types where the preferred application will be launched"
+msgstr "Zoznam typov x-content/*, u ktorých sa spúšťa uprednostnená aplikácia"
+
+# description
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:22
+msgid ""
+"List of x-content/* types for which the user have chosen to start an "
+"application in the preference capplet. The preferred application for the "
+"given type will be started on insertion on media matching these types."
+msgstr ""
+"Zoznam typov x-content/*, pre ktoré používateľ v nastaveniach zvolil, že "
+"majú spustiť aplikáciu. Po vložení nosiča zodpovedajúceho typu sa spustí "
+"uprednostnená aplikácia pre daný typ."
+
+# summary
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:26
+msgid "List of x-content/* types set to “Do Nothing”"
+msgstr "Zoznam typov x-content/* nastavených na „Nerobiť nič“"
+
+# description
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:27
+msgid ""
+"List of x-content/* types for which the user have chosen “Do Nothing” in the "
+"preference capplet. No prompt will be shown nor will any matching "
+"application be started on insertion of media matching these types."
+msgstr ""
+"Zoznam typov x-content/*, pre ktoré používateľ v nastaveniach zvolil možnosť "
+"„Nerobiť nič“. Po vložení nosiča zodpovedajúceho typu sa nezobrazí žiadna "
+"výzva ani sa nespustí žiadna aplikácia."
+
+# summary
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:31
+msgid "List of x-content/* types set to “Open Folder”"
+msgstr "Zoznam typov x-content/* nastavených na „Otvoriť priečinok“"
+
+# description
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:32
+msgid ""
+"List of x-content/* types for which the user have chosen “Open Folder” in "
+"the preferences capplet. A folder window will be opened on insertion of "
+"media matching these types."
+msgstr ""
+"Zoznam typov x-content/*, pre ktoré používateľ v nastaveniach zvolil možnosť "
+"„Otvoriť priečinok“. Po vložení nosiča zodpovedajúceho typu sa otvorí okno "
+"zobrazujúce priečinok."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:6
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:55
+msgid "Show notification banners"
+msgstr "Zobraziť oznamovacie pútače"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:7
+msgid "Whether notification banners are visible for application notifications."
+msgstr "Či majú byť viditeľné oznamovacie pútače pre oznámenia aplikácií."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:14
+msgid "Show notifications in the lock screen"
+msgstr "Zobraziť oznámenia na uzamknutej obrazovke"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:15
+msgid "Whether notifications are shown in the lock screen or not."
+msgstr ""
+"Určuje, či sa majú alebo nemajú zobraziť oznámenia na uzamknutej obrazovke."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:31
+msgid "Application ID"
+msgstr "ID aplikácie"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:32
+msgid "The application that this policy is for."
+msgstr "Aplikácia, pre ktorú platí toto pravidlo."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:39
+msgid "Enable notifications"
+msgstr "Povoliť oznámenia"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:40
+msgid "Whether notifications are globally enabled for this application."
+msgstr "Určuje, či budú globálne povolené upozornenia tejto aplikácie."
+
+# summary
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:47
+msgid "Enable sound alerts"
+msgstr "Povoliť zvukové varovania"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:48
+msgid "Whether notifications should be accompanied by sound alerts."
+msgstr "Či majú byť oznámenia sprevádzané zvukovým varovaním."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:56
+msgid ""
+"Whether notification banners for this application are shown or not. Does not "
+"affect clicking on message tray buttons."
+msgstr ""
+"Či majú pútače oznámení pre aplikáciu zobraziť alebo nie.Toto neovplyvní "
+"klikanie na tlačidlá na lište správ."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:64
+msgid "Force automatic expanding of banners"
+msgstr "Vynútiť automatické roztváranie pútačov"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:65
+msgid ""
+"Whether notifications from this application are expanded automatically when "
+"in banner mode."
+msgstr "Či sa majú oznámenia automaticky roztvoriť, keď sú v režime pútačov."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:72
+msgid "Show in the lock screen"
+msgstr "Zobraziť na uzamknutej obrazovke"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:73
+msgid ""
+"Whether notifications from this application are shown when the screen is "
+"locked."
+msgstr "Či sa majú zobraziť oznámenia z aplikácií keď je uzamknutá obrazovka."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:80
+msgid "Show details in the lock screen"
+msgstr "Zobraziť podrobnosti na uzamknutej obrazovke"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:81
+msgid ""
+"Whether the summary and body of notifications from this application will be "
+"visible in the locked screen."
+msgstr ""
+"Či má byť na uzamknutej obrazovke viditeľné na oznámeniach z aplikácií "
+"zhrnutie aj telo."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:15
+msgid "Whether edge scrolling is enabled"
+msgstr "Či je povolené rolovanie okrajom"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:16
+msgid ""
+"When enabled, touchpads that support edge scrolling will have that feature "
+"enabled."
+msgstr ""
+"Keď je povolené, touchpady, ktoré podporujú rolovanie na okraji, budú mať "
+"túto funkcionalitu povolenú."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:20
+msgid "Whether two-finger scrolling is enabled"
+msgstr "Či je povolené rolovanie dvoma prstami"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:21
+msgid ""
+"When enabled, touchpads that support two-finger scrolling will have that "
+"feature enabled."
+msgstr ""
+"Keď je povolené, touchpady, ktoré podporujú rolovanie dvoma prstami, budú "
+"mať túto funkcionalitu zapnutú."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:25
+msgid "Whether to disable the touchpad while typing"
+msgstr "Či sa má počas písania vypnúť touchpad"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:26
+msgid "When enabled, touchpads will be disabled while typing on the keyboard."
+msgstr "Keď je povolené, tochpady budú počas písania na klávesnici zakázané."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:30
+msgid "Enable mouse clicks with touchpad"
+msgstr "Povoliť kliknutia touchpadom"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:31
+msgid ""
+"Set this to TRUE to be able to send mouse clicks by tapping on the touchpad."
+msgstr ""
+"Nastavte na TRUE, keď chcete klepnutiami na touchpad odosielať kliknutia "
+"myši."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:35
+msgid "Tap Button Map"
+msgstr "Mapovanie klepnutí a tlačidiel"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:36
+msgid ""
+"Defines the mapping between the number of fingers and touchpad buttons. The "
+"default is to have a 1, 2 and 3 finger tap to map to the left, right and "
+"middle button (\"lrm\"), respectively."
+msgstr ""
+"Definuje mapovanie medzi počtom prstov a tlačidiel touchpadu. Predvolené je "
+"mapovanie 1, 2 a 3 prstov na ľavé, pravé a prostredné tlačidlo („lrm“)."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:40
+msgid "Enable tap-and-drag with touchpad"
+msgstr "Povoliť kliknutie a ťahanie touchpadom"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:41
+msgid ""
+"Set this to TRUE to be able to start a drag by tapping and immediately "
+"moving the finger that’s now pressed on the touchpad."
+msgstr ""
+"Nastavte na TRUE, keď chcete  ťahať klepnutím a následným presunom prsta, "
+"ktorý teraz zatlačil na touchpad."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:45
+msgid "Enable tap-and-drag-lock with touchpad"
+msgstr "Povoliť uzamknutie kliknutia a ťahania touchpadom"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:46
+msgid ""
+"Set this to TRUE to lock the dragging process within a short timeout when "
+"the finger is lifted on the touchpad and the tap-and-drag setting is enabled."
+msgstr ""
+"Nastavte na TRUE pre krátko trvajúce uzamknutie procesu ťahania kurzorom, "
+"kedy sa prsty zdvihnú nad touchpad a pritom je zapnuté nastavenie tap-and-"
+"drag."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:50
+msgid "Touchpad enabled"
+msgstr "Touchpad povolený"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:51
+msgid "Defines the situations in which the touchpad is enabled."
+msgstr "Určuje situácie, v ktorých je povolený touchpad."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:55
+msgid "Touchpad button orientation"
+msgstr "Orientácia tlačidiel touchpadu"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:56
+msgid ""
+"Swap left and right mouse buttons for left-handed mice with “left”, “right” "
+"for right-handed, “mouse” to follow the mouse setting."
+msgstr ""
+"Vymieňa ľavé a pravé tlačidlo. „left“ pre ľavákov, „right“ pre pravákov "
+"„mouse“ použije nastavenia myši."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:60
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:131
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:261
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:279
+msgid "Acceleration profile"
+msgstr "Profil zrýchlenia"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:61
+msgid ""
+"Acceleration profile used for connected touchpads. The acceleration profile "
+"can be set to either default (“default”) which uses the default acceleration "
+"profile for each device, flat (“flat”), which accelerates by a device "
+"specific constant factor derived from the configured pointer speed, or "
+"adaptive (“adaptive”) which adapts the acceleration depending on the mouse "
+"movement. If a touchpad doesn’t support the configured profile, “default” "
+"will be used."
+msgstr ""
+"Profil zrýchlenia pre pripojený tablet. Profil zrýchlenia môže byť nastavený "
+"buď na hodnotu „default“, ktorá použije predvolený profil zrýchlenia pre "
+"každé zariadenie, „flat“, ktorá zrýchľuje podľa konštanty odvodenej z "
+"nastavenia rýchlosti ukazovateľa alebo „adaptive“, ktorá prispôsobuje "
+"zrýchlenie podľa pohybu. Ak tablet nepodporuje nastavený profil, použije sa "
+"hodnota „default“."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:65
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:120
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:273
+msgid "Pointer speed"
+msgstr "Rýchlosť ukazovateľa"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:66
+msgid ""
+"Pointer speed for the touchpad. Accepted values are in the [-1..1] range "
+"(from “unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Rýchlosť ukazovateľa pre touchpad. Platné hodnoty sú v rozsahu [-1..1] (od "
+"„nezrýchlenej“ po „rýchlu“). Hodnota 0 je predvolená systémom."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:71
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:126
+msgid "Natural scrolling"
+msgstr "Prirodzené rolovanie"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:72
+msgid "Set this to TRUE to enable natural (reverse) scrolling for touchpads."
+msgstr ""
+"Nastavte na TRUE, keď chcete pre touchpady použiť prirodzené (opačné) "
+"rolovanie."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:76
+msgid "Click method"
+msgstr "Metóda kliknutia"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:77
+msgid ""
+"How to generate software-emulated buttons, either disabled (“none”), through "
+"specific areas (“areas”), number of fingers (“fingers”) or left as hardware "
+"default (“default”)."
+msgstr ""
+"Ako sa majú generovať softvérovo simulované tlačidlá. Buď sú vypnuté "
+"(„none“), cez konkrétnu oblasť („areas“), počtom prstov („fingers“) alebo sa "
+"ponechá hardvérové prednastavenie („default“)."
+
+# summary
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:81
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:136
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:266
+msgid "Emulate middle click"
+msgstr "Emulovať kliknutie stredného tlačidla"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:82
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:137
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:267
+msgid ""
+"Set this to TRUE to enable middle click during simultaneous left and right "
+"click."
+msgstr ""
+"Nastavte na TRUE, ak chcete zapnúť emuláciu stlačenia stredného tlačidla "
+"myši súčasným kliknutím ľavého a pravého tlačidla."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:88
+msgid "Keyboard repeat"
+msgstr "Opakovanie klávesnice"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:89
+msgid "Set this to TRUE to enable keyboard repeat."
+msgstr "Nastavte na TRUE, keď chcete povoliť opakovanie klávesnice."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:93
+msgid "Key Repeat Interval"
+msgstr "Interval opakovania klávesov"
+
+# summary
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:94
+msgid "Delay between repeats in milliseconds."
+msgstr "Oneskorenie medzi opakovaniami v milisekundách."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:98
+msgid "Initial Key Repeat Delay"
+msgstr "Počiatočné oneskorenie opakovania klávesov"
+
+# summary
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:99
+msgid "Initial key repeat delay in milliseconds."
+msgstr "Počiatočné oneskorenie opakovania klávesov v milisekundách."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:103
+msgid "Remember NumLock state"
+msgstr "Pamätať si stav Num Lock"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:104
+msgid ""
+"When set to true, GNOME will remember the state of the NumLock LED between "
+"sessions."
+msgstr ""
+"Keď nastavené na true, bude si GNOME pamätať stav kontrolky Num Lock medzi "
+"sedeniami."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:108
+msgid "NumLock state"
+msgstr "Stav Num Lock"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:109
+msgid "The remembered state of the NumLock LED."
+msgstr "Zapamätaný stav kontrolky Num Lock."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:115
+msgid "Mouse button orientation"
+msgstr "Orientácia tlačidiel myši"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:116
+msgid "Swap left and right mouse buttons for left-handed mice."
+msgstr "Prepína ľavé a pravé tlačidlo myši pre ľavákov."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:121
+msgid ""
+"Pointer speed for mice. Accepted values are in the [-1..1] range (from "
+"“unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Rýchlosť ukazovateľa myši. Platné hodnoty sú v rozsahu [-1..1] (od "
+"„nezrýchlenej“ po „rýchlu“). Hodnota 0 je predvolená systémom."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:127
+msgid "Set this to TRUE to enable natural (reverse) scrolling for mice."
+msgstr ""
+"Nastavte na TRUE, keď chcete pre myš použiť prirodzené (opačné) rolovanie."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:132
+msgid ""
+"Acceleration profile used for connected mice. The acceleration profile can "
+"be set to either default (“default”) which uses the default acceleration "
+"profile for each device, flat (“flat”), which accelerates by a device "
+"specific constant factor derived from the configured pointer speed, or "
+"adaptive (“adaptive”) which adapts the acceleration depending on the mouse "
+"movement. If a mouse doesn’t support the configured profile, “default” will "
+"be used."
+msgstr ""
+"Profil zrýchlenia pre pripojenú myš. Profil zrýchlenia môže byť nastavený "
+"buď na hodnotu „default“, ktorá použije predvolený profil zrýchlenia pre "
+"každé zariadenie, „flat“, ktorá zrýchľuje podľa konštanty odvodenej z "
+"nastavenia rýchlosti ukazovateľa alebo „adaptive“, ktorá prispôsobuje "
+"zrýchlenie na základe pohybu myši. Ak myš nepodporuje nastavený profil, "
+"použije sa hodnota „default“."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:141
+msgid "Double click time"
+msgstr "Čas dvojitého kliknutia"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:142
+msgid "Length of a double click in milliseconds."
+msgstr "Dĺžka dvojitého kliknutia, v milisekundách."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:146
+msgid "Drag threshold"
+msgstr "Prah pre ťahanie"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:147
+msgid "Distance before a drag is started."
+msgstr "Vzdialenosť, ktorá spustí funkciu „ťahaj“"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:153
+msgid "Drawing tablet mapping"
+msgstr "Mapovanie grafického tabletu"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:154
+msgid ""
+"EDID information of the output the tablet is mapped to. Must be in the "
+"format [vendor, product, serial]. [\"\",\"\",\"\"] relies on automatic "
+"mapping."
+msgstr ""
+"Informácie EDID identifikujúce monitor, ku ktorému je tablet mapovaný. Musí "
+"byť vo formáte [výrobca, produkt, sériové_číslo]. [\"\",\"\",\"\"] ponechá "
+"mapovanie na automatike."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:158
+msgid "Tablet mapping"
+msgstr "Mapovanie tabletu"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:159
+msgid "How input affects the pointer on the screen"
+msgstr "Ako vstup ovplyvňuje kurzor na obrazovke"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:163
+msgid "Tablet area"
+msgstr "Oblasť tabletu"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:164
+msgid ""
+"Dead area padding around the active area, in percentages. Respectively "
+"applied to left,right,top and bottom sides."
+msgstr ""
+"Pomer mŕtvej oblasti voči aktívnej oblasti v percentách. Jednotlivo "
+"aplikovaný na ľavú, pravú, hornú a dolnú stranu."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:168
+msgid "Tablet aspect ratio"
+msgstr "Pomer strán tabletu"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:169
+msgid ""
+"Enable this to restrict the tablet area to match the aspect ratio of the "
+"output."
+msgstr ""
+"Toto povoľte, keď chcete obmedziť aby sa pomer strán oblasti tabletu "
+"zhodoval s výstupom."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:173
+msgid "Tablet left-handed mode"
+msgstr "Režim tabletu pre ľavákov"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:174
+msgid ""
+"Enable this to allow physically rotating the tablet for left-handed setups"
+msgstr "Toto povoľte, keď chcete umožniť fyzické otočenie tabletu pre ľavákov"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:180
+msgid "Stylus pressure curve"
+msgstr "Prítlaková krivka hrotu"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:181
+msgid ""
+"Set this to x1, y1 and x2, y2 of the pressure curve applied to the stylus."
+msgstr ""
+"Toto nastavte na x1, y1 a x2, y2 prítlakovej krivky, ktorá sa aplikuje na hrot."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:185
+#| msgid "Stylus pressure curve"
+msgid "Stylus pressure range"
+msgstr "Rozsah prítlaku hrotu"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:186
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:196
+msgid ""
+"Set this to the percentage of the physical pressure range that should map to "
+"the logical range."
+msgstr ""
+"Toto nastavte na percento rozsahu fyzického tlaku, ktoré by sa malo mapovať "
+"do logického rozsahu."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:190
+msgid "Eraser pressure curve"
+msgstr "Prítlaková krivky gumy"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:191
+msgid ""
+"Set this to x1, y1 and x2, y2 of the pressure curve applied to the eraser."
+msgstr ""
+"Toto nastavte na x1, y1 a x2, y2 prítlakovej krivky, ktorá sa aplikuje na gumu."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:195
+#| msgid "Eraser pressure curve"
+msgid "Eraser pressure range"
+msgstr "Rozsah prítlaku gumy"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:200
+msgid "Button action"
+msgstr "Akcia tlačidla"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:201
+msgid "Stylus button action, this button is located along the pen handle."
+msgstr "Akcia tlačidla hrotu, toto tlačidlo je umiestnené na rúčke pera."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:205
+msgid "Secondary button action"
+msgstr "Akcia sekundárneho tlačidla"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:206
+msgid ""
+"Secondary stylus button action, this button is located along the pen handle "
+"on some styli like the Grip Pen. Other styli like the Airbrush Pen or the "
+"Inking Pen only have one button, this setting is ineffective on those."
+msgstr ""
+"Akcia sekundárneho tlačidla hrotu, toto tlačidlo je umiestnené na rúčke pera "
+"na niektorých hrotoch ako je pero Grip. Ostatné hroty ako pero Airprush "
+"alebo pero Inking majú len jedno tlačidlo, toto nastavenie sa ich netýka."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:210
+msgid "Tertiary button action"
+msgstr "Akcia tretieho tlačidla"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:211
+msgid ""
+"Tertiary stylus button action, this button is located along the pen handle "
+"on some styli like the 3D Pen. Other styli like the Grip Pen only have two "
+"buttons, this setting is ineffective on those."
+msgstr ""
+"Akcia tretieho tlačidla stylusu. Toto tlačidlo sa nachádza v mieste úchopu "
+"pera pri niektorých stylusoch, ako napr. 3D Pen. Iné stylusy, ako napríklad "
+"Airbrush Grip Pen, majú len jedno tlačidlo a v takých prípadoch nemá toto "
+"nastavenie žiaden význam."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:215
+#| msgid "Key combination for the custom action"
+msgid "Key combination for the primary button"
+msgstr "Kombinácia kláves pre hlavné tlačidlo"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:216
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:221
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:226
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:238
+msgid ""
+"The keyboard shortcut generated when the button is pressed for custom "
+"actions."
+msgstr "Klávesová skratka generovaná pri stlačení tlačidla pre vlastnú akciu."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:220
+#| msgid "Key combination for the custom action"
+msgid "Key combination for the secondary button"
+msgstr "Kombinácia kláves pre sekundárne tlačidlo"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:225
+#| msgid "Key combination for the custom action"
+msgid "Key combination for the tertiary button"
+msgstr "Kombinácia kláves pre tretie tlačidlo"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:232
+msgid "Pad button action type"
+msgstr "Typ akcie tlačidla podložky"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:233
+msgid "The type of action triggered by the button being pressed."
+msgstr "Typ akcie spustenej stlačením tlačidla."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:237
+msgid "Key combination for the custom action"
+msgstr "Kombinácia kláves pre vlastnú akciu"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:244
+msgid "Touchscreen output mapping"
+msgstr "Mapovanie výstupu dotykovej obrazovky"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:245
+msgid ""
+"EDID information of the output the touchscreen is mapped to. Must be in the "
+"format [vendor, product, serial]. [\"\",\"\",\"\"] relies on automatic "
+"mapping."
+msgstr ""
+"Informácie EDID identifikujúce monitor, ku ktorému je dotyková obrazovka "
+"mapovaná. Musí byť vo formáte [výrobca, produkt, sériové_číslo]. [\"\",\"\","
+"\"\"] ponechá mapovanie na automatike."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:252
+msgid "Mouse wheel emulation button. 0 to disable the feature."
+msgstr "Simulácia tlačidla kolieska myši. 0 túto funkcionalitu zakáže."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:256
+msgid "Mouse wheel emulation button lock"
+msgstr "Zamykanie emulácie kolieska myši tlačidlom"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:257
+msgid ""
+"Set this to TRUE to enable button locking for the wheel emulation button. If "
+"enabled, the first click of the button enables scrolling, the second click "
+"disables scrolling again."
+msgstr ""
+"Nastavte na TRUE pre povolenie zamykania tlačidlom pre emuláciu kolieska "
+"myši. Keď je zapnuté, prvé stlačenie tlačidla zapne rolovanie, druhé "
+"stlačenie ho zasa vypne."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:262
+msgid ""
+"Acceleration profile used for the trackball. The acceleration profile can be "
+"set to either default (“default”) which uses the default acceleration "
+"profile, flat (“flat”), which accelerates by a device specific constant "
+"factor derived from the configured speed, or adaptive (“adaptive”) which "
+"adapts the acceleration depending on the movement. If the trackball doesn’t "
+"support the configured profile, “default” will be used."
+msgstr ""
+"Profil zrýchlenia použitý pre trackball. Profil zrýchlenia môže byť "
+"nastavený buď na hodnotu „default“, ktorá použije predvolený profil "
+"zrýchlenia pre každé zariadenie, „flat“, ktorá zrýchľuje podľa konštanty "
+"odvodenej z nastavenia rýchlosti ukazovateľa alebo „adaptive“, ktorá "
+"prispôsobuje zrýchlenie na základe pohybu myši. Ak trackball nepodporuje "
+"nastavený profil, použije sa hodnota „default“."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:274
+msgid ""
+"Pointer speed for pointing sticks. Accepted values are in the [-1..1] range "
+"(from “unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Rýchlosť ukazovateľa trackpointu. Platné hodnoty sú v rozsahu [-1..1] (od "
+"„nezrýchlenej“ po „rýchlu“). Hodnota 0 je predvolená systémom."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:280
+msgid ""
+"Acceleration profile used for the pointing stick. The acceleration profile "
+"can be set to either default (“default”) which uses the default acceleration "
+"profile, flat (“flat”), which accelerates by a device specific constant "
+"factor derived from the configured speed, or adaptive (“adaptive”) which "
+"adapts the acceleration depending on the movement. If the pointing stick "
+"doesn’t support the configured profile, “default” will be used."
+msgstr ""
+"Profil zrýchlenia použitý pre trackpoint. Profil zrýchlenia môže byť "
+"nastavený buď na hodnotu „default“, ktorá použije predvolený profil "
+"zrýchlenia, „flat“, ktorá zrýchľuje podľa konštanty odvodenej z nastavenia "
+"rýchlosti ukazovateľa alebo „adaptive“, ktorá prispôsobuje zrýchlenie na "
+"základe pohybu. Ak trackpoint nepodporuje nastavený profil, použije sa "
+"hodnota „default“."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:284
+msgid "Scrolling method"
+msgstr "Metóda rolovania"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:285
+msgid ""
+"Scrolling method used for pointing sticks. The scrolling method can be set "
+"to either default (“default”) which uses the default method, none (“none”), "
+"which disables scrolling, or middle-button (“on-button-down”) which enables "
+"scrolling whilst the middle button is held down."
+msgstr ""
+"Metóda rolovania pre trackpoint. Môže byť nastavená buď na predvolenú "
+"(„default“), kedy sa bude používať predvolená metóda, na žiadnu („none“), "
+"čím sa rolovanie vypne alebo na prostredné tlačidlo („on-button-down“), "
+"ktorá zapne rolovanie v okamihu, kedy podržíte stlačené prostredné tlačidlo."
+
+# summary
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:6
+msgid "Controls visibility of personal information"
+msgstr "Ovládať viditeľnosť osobných informácií"
+
+# description
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:7
+msgid ""
+"If set to true, the system will make an effort to not divulge the user’s "
+"identity on screen or on the network."
+msgstr ""
+"Ak je nastavené na true, systém sa pokúsi neprezradiť identitu používateľa "
+"na obrazovke ani na sieti."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:12
+msgid "Show full name in the user menu"
+msgstr "Zobraziť celé meno v ponuke používateľa"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:13
+msgid "Whether the users full name is shown in the user menu or not."
+msgstr "Určuje, či sa má alebo nemá zobraziť celé meno v ponuke používateľa."
+
+# summary
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:17
+msgid "Whether to remove old files from the trash automatically"
+msgstr "Určiť, či sa majú automaticky odstrániť staré súbory z Koša"
+
+# description
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:18
+msgid ""
+"If TRUE, automatically remove files from the trash when they are older than "
+"“old-files-age” days."
+msgstr ""
+"Ak je nastavené na true, budú automaticky odstránené súbory z Koša, ak sú "
+"staršie ako počet dní zadefinovaných v kľúči „old-files-age“."
+
+# summary
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:23
+msgid "Whether to remove old temporary files automatically"
+msgstr "Určiť, či sa majú automaticky odstrániť staré dočasné súbory"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:24
+msgid ""
+"If TRUE, automatically remove temporary files when they are older than “old-"
+"files-age” days."
+msgstr ""
+"Ak je nastavené na true, budú automaticky odstránené dočasné súbory, ak sú "
+"staršie ako počet dní zadefinovaných v kľúči „old-files-age“."
+
+# summary
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:29
+msgid "Number of days to keep trash and temporary files"
+msgstr "Počet dní, ako dlho sa majú zachovať dočasné súbory a súbory v koši"
+
+# desc
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:30
+msgid "Consider trash and temporary files old after this many days."
+msgstr ""
+"Po tomto počte dní budú dočasné súbory a súbory v koši považované za staré."
+
+# summary
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:35
+msgid "Whether to remember recently used files"
+msgstr "Určiť, či sa majú zapamätať nedávno použité súbory"
+
+# desc
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:36
+msgid "If FALSE, applications will not remember recently used files."
+msgstr ""
+"Ak je nastavené na false, aplikácie si nebudú pamätať nedávno použité súbory."
+
+# summary
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:41
+msgid "Number of days to remember recently used files for"
+msgstr "Počet dní, na koľko sa majú pamätať nedávno použité súbory"
+
+# description
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:42
+msgid ""
+"Recently used files will be remembered for this many days. If set to 0, "
+"recent files will not be remembered; if set to -1, they will be retained "
+"indefinitely."
+msgstr ""
+"Nedávno použité súbory budú zapamätané na tento počet dní. Ak je hodnota "
+"nastavená na 0, nedávne súbory nebudú zapamätané. Ak je hodnota nastavená na "
+"-1, budú uchované na neurčitú dobu."
+
+# summary
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:48
+msgid "Whether to remember application usage"
+msgstr "Určiť, či sa má zapamätať využitie aplikácií"
+
+# desc
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:49
+msgid "If FALSE, application usage will not be monitored and recorded."
+msgstr ""
+"Ak je nastavené na false, využitie aplikácií nebude sledované ani "
+"zaznamenané."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:54
+msgid "Send statistics when applications are removed or installed"
+msgstr "Odoslať štatistiky pri odstraňovaní alebo inštalovaní aplikácií"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:55
+msgid ""
+"If FALSE, no anonymous installation or removal information will be sent to "
+"the vendor."
+msgstr ""
+"Ak je nastavené na false, žiadne anonymné informácie o odstraňovaní alebo "
+"inštalovaní sa nebudú zasielané výrobcovi."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:59
+msgid "Send reports of technical problems to the vendor"
+msgstr "Zaslať správy o technických problémoch výrobcovi"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:60
+msgid "If TRUE, anonymized reports will be sent automatically to the vendor."
+msgstr "Ak je nastavené na tru, budú anonymné správy zasielané výrobcovi."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:64
+msgid "Don’t allow applications to access the microphone"
+msgstr "Nepovoľovať aplikáciám prístup k mikrofónu"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:65
+msgid "If TRUE, applications should not use the microphone."
+msgstr "Ak je nastavené na TRUE, aplikácie by nemali používať mikrofón."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:69
+msgid "Don’t allow applications to access the camera"
+msgstr "Neumožňovať aplikáciám prístup ku kamere"
+
+# desc
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:70
+msgid "If TRUE, applications should not use the camera."
+msgstr "Ak je nastavené na TRUE, aplikácie by nemali používať kameru."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:74
+msgid "Don’t allow applications to output sound"
+msgstr "Neumožňovať aplikáciám výstup zvuku"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:75
+msgid "If TRUE, applications should not make sound."
+msgstr "Ak je nastavené na TRUE, aplikácie by nemali vydávať zvuk."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:79
+msgid "Whether to protect USB devices"
+msgstr "Či chrániť USB zariadenia"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:80
+msgid ""
+"If the USBGuard service is present and this setting is enabled, USB devices "
+"will be protected as configured in the usb-protection-level setting."
+msgstr ""
+"Ak je prítomná služba USBGuard a toto nastavenie je zapnuté, budú zariadenia "
+"USB chránené podľa nastavenia v kľúči usb-protection-level."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:87
+msgid "When USB devices should be rejected"
+msgstr "Kedy majú byť USB zariadenia odmietané"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:88
+msgid ""
+"If set to “lockscreen”, only when the lock screen is present new USB devices "
+"will be rejected; if set to “always”, all new USB devices will always be "
+"rejected."
+msgstr ""
+"Ak je nastavené na „lockscreen“, budú nové USB zariadenia odmietané len ak "
+"je práve zamknutá obrazovka. Pri nastavení na „always“ budú všetky nové USB "
+"zariadenia odmietané za každých okolností."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:95
+msgid "Whether the privacy screen is enabled"
+msgstr "Či je povolené súkromie obrazovky"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:96
+msgid ""
+"If the underlying hardware has privacy screen support and this setting is "
+"enabled, the panels supporting this technology will be obscured from lateral "
+"view."
+msgstr ""
+"Ak má základný hardvér podporu súkromia obrazovky a zároveň je toto "
+"nastavenie zapnuté, budú panely podporujúce túto technológiu zabraňovať pred "
+"pohľadom zboku."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:6
+msgid "Activate when idle"
+msgstr "Spustiť pri nečinnosti"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:7
+msgid ""
+"Set this to TRUE to activate the screensaver when the session is idle. "
+"DEPRECATED: This key is deprecated and ignored. Set org.gnome.desktop."
+"session idle-delay to 0 if you do not want to activate the screensaver."
+msgstr ""
+"Nastavte na TRUE, ak sa má pri nečinnosti aktivovať šetrič obrazovky. "
+"ZAVRHNUTÉ: Tento kľúč je zavrhnutý a ignoruje sa. Ak nechcete aktivovať "
+"šetrič obrazovky, nastavte org.gnome.desktop.session idle-delay na 0."
+
+# DK: jedna sa o spustenie setrica obrazovky
+# summary
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:16
+msgid "Lock on activation"
+msgstr "Uzamknúť pri spustení"
+
+# summary
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:17
+msgid "Set this to TRUE to lock the screen when the screensaver goes active."
+msgstr ""
+"Nastavte na true, ak sa má po spustení šetriča obrazovky uzamknúť obrazovka."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:21
+msgid "Time before locking"
+msgstr "Doba pred uzamknutím"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:22
+msgid ""
+"The number of seconds after screensaver activation before locking the screen."
+msgstr ""
+"Určuje po koľkých sekundách sa po spustení šetriča obrazovky uzamkne "
+"obrazovka."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:26
+msgid "Show full name in the lock screen"
+msgstr "Zobraziť celé meno na uzamknutej obrazovke"
+
+# MČ: „štít“? Čo si mám pod tým predstaviť?
+#  PM: ja neviem ani čo si mám predstaviť pod screen shield
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:27
+msgid ""
+"Whether the user’s full name is shown in the lock screen or not. This only "
+"affects the screen shield, the name is always shown in the unlock dialog."
+msgstr ""
+"Určuje, či bude alebo nebude zobrazené celé meno na uzamknutej obrazovke. "
+"Táto funkcia má vplyv iba na štít obrazovky, meno je vždy zobrazené v "
+"odomykacom dialógovom okne."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:31
+msgid "Allow embedding a keyboard into the window"
+msgstr "Povoliť zabudovanie klávesnice do okna"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:32
+msgid ""
+"Set this to TRUE to allow embedding a keyboard into the window when trying "
+"to unlock. The “keyboard_command” key must be set with the appropriate "
+"command. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Ak je nastavené na TRUE, bude pri odomykaní obrazovky povolené zabudovať "
+"klávesnicu do okna. Do kľúča „keyboard_command“ musí byť nastavený náležitý "
+"príkaz. ZAVRHNUTÉ: Tento kľúč je zavrhnutý a ignoruje sa."
+
+# summary
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:40
+msgid "Embedded keyboard command"
+msgstr "Príkaz zabudovanej klávesnice"
+
+# description
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:41
+msgid ""
+"The command that will be run, if the “embedded_keyboard_enabled” key is set "
+"to TRUE, to embed a keyboard widget into the window. This command should "
+"implement an XEMBED plug interface and output a window XID on the standard "
+"output. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Príkaz, ktorý sa má spustiť na zabudovanie klávesnice do okna, ak je kľúč "
+"„embedded_keyboard_enabled“ nastavený na TRUE. Tento príkaz by mal byť "
+"implementáciou zásuvného rozhrania XEMBED a ako výstup dávať identifikátor "
+"okna XID do predvoleného výstupu. ZAVRHNUTÉ: Tento kľúč je zavrhnutý a "
+"ignoruje sa."
+
+# summary
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:49
+msgid "Allow logout"
+msgstr "Povoliť odhlásenie"
+
+# description
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:50
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to allow logging "
+"out after a delay. The delay is specified in the “logout_delay” key. "
+"DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Ak je nastavené na TRUE, bude v odomykacom dialógovom okne ponúknutá voľba "
+"na odhlásenie po určitom časovom oneskorení. Toto časové oneskorenie je "
+"určené kľúčom „logout_delay“. ZAVRHNUTÉ: Tento kľúč je zavrhnutý a ignoruje "
+"sa."
+
+# summary
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:58
+msgid "Time before logout option"
+msgstr "Čas pred zobrazením voľby na odhlásenie"
+
+# description
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:59
+msgid ""
+"The number of seconds after the screensaver activation before a logout "
+"option will appear in the unlock dialog. This key has effect only if the "
+"“logout_enable” key is set to TRUE. DEPRECATED: This key is deprecated and "
+"ignored"
+msgstr ""
+"Počet sekúnd po spustení šetriča obrazovky, než sa v odomykacom dialógovom "
+"okne zobrazí voľba na odhlásenie. Tento kľúč sa dá použiť iba keď je kľúč "
+"„logout_enable“ nastavený na TRUE. ZAVRHNUTÉ: Tento kľúč je zavrhnutý a "
+"ignoruje sa."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:67
+msgid "Logout command"
+msgstr "Príkaz na odhlásenie"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:68
+msgid ""
+"The command to invoke when the logout button is clicked. This command should "
+"simply log the user out without any interaction. This key has effect only if "
+"the “logout_enable” key is set to TRUE. DEPRECATED: This key is deprecated "
+"and ignored."
+msgstr ""
+"Určuje príkaz, ktorý sa vykoná po stlačení tlačidla Odhlásiť. Tento príkaz "
+"by mal používateľa jednoducho odhlásiť bez vyžadovania akejkoľvek dodatočnej "
+"pozornosti. Tento kľúč sa dá použiť iba keď je kľúč „logout_enable“ "
+"nastavený na TRUE. ZAVRHNUTÉ: Tento kľúč je zavrhnutý a ignoruje sa."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:76
+msgid "Allow user switching"
+msgstr "Povoliť prepínanie používateľov"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:77
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to switch to a "
+"different user account."
+msgstr ""
+"Ak je nastavené na true, bude v odomykacom dialógovom okne poskytnutá voľba "
+"prepnutia na iný účet používateľa."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:81
+msgid "Allow the session status message to be displayed"
+msgstr "Povoliť zobrazenie stavovej správy relácie"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:82
+msgid ""
+"Allow the session status message to be displayed when the screen is locked. "
+"DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Povolí zobrazenie stavovej správy relácie v uzamknutej obrazovke. ZAVRHNUTÉ: "
+"Tento kľúč je zavrhnutý a ignoruje sa."
+
+# MČ: „vyhľadávania“? Neviem čo sa teraz vlastne používa
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:7
+msgid "Disable all external search providers"
+msgstr "Zakázať všetkých dodatočných poskytovateľov hľadania"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:8
+msgid ""
+"Set to true to disable all external search provider programs, whether or not "
+"they are independently disabled or enabled. External search providers are "
+"installed by applications in $XDG_DATA_DIR/gnome-shell/search-providers."
+msgstr ""
+"Toto nastavte na true, keď chcete zakázať dodatočných poskytovateľov "
+"hľadania, či už sú jednotlivo povolení alebo zakázaní. Dodatoční "
+"poskytovatelia sú inštalovaný aplikáciami v $XDG_DATA_DIR/gnome-shell/search-"
+"providers."
+
+# summary
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:18
+msgid ""
+"List of desktop file IDs for which the associated default-enabled search "
+"provider should be disabled"
+msgstr ""
+"Zoznam identifikátorov súborov „.destkop“, pre ktoré by mal byť zakázaný "
+"priradený štandardne povolený poskytovateľ hľadania."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:22
+msgid ""
+"Results for applications contained in this list will not be displayed when "
+"searching."
+msgstr ""
+"Aplikácie, ktoré sa nachádzajú v tomto zozname, nebudú zobrazené ako "
+"výsledky pri hľadaní."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:30
+msgid ""
+"List of desktop file IDs for which the associated default-disabled search "
+"provider should be enabled"
+msgstr ""
+"Zoznam identifikátorov súborov „.destkop“, pre ktoré by mal byť povolený "
+"priradený štandardne zakázaný poskytovateľ hľadania."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:34
+msgid ""
+"Results for applications contained in this list will be displayed when "
+"searching."
+msgstr ""
+"Aplikácie, ktoré sa nachádzajú v tomto zozname, budú zobrazené ako výsledky "
+"pri hľadaní."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:42
+msgid "List of desktop file IDs for search providers sort order"
+msgstr ""
+"Zoznam identifikátorov súborov „.destkop“ pre poradie u poskytovateľov "
+"hľadania"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:43
+msgid ""
+"Results for applications contained in this list will be displayed in the "
+"specified order. Results for applications not specified in this list will be "
+"displayed last, sorted alphabetically."
+msgstr ""
+"Aplikácie z tohto zoznamu sa zobrazia ako výsledky v určenom poradí. "
+"Aplikácie nezahrnuté v tomto zozname sa zobrazia ako posledné výsledky v "
+"abecednom poradí. "
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:6
+msgid "Time before session is considered idle"
+msgstr "Doba, za ktorú sa relácia bude považovať za nečinnú"
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:7
+msgid ""
+"The number of seconds of inactivity before the session is considered idle."
+msgstr ""
+"Určuje počet sekúnd nečinnosti, po ktorých bude relácia považovaná za "
+"nečinnú."
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:11
+msgid "Session type"
+msgstr "Typ relácie"
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:12
+msgid "The name of the session to use. Known value is “gnome”."
+msgstr "Názov relácie, ktorá sa má použiť. Známa hodnota je „gnome“."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:6
+msgid "Sounds for events"
+msgstr "Zvuky pri udalostiach"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:7
+msgid "Whether to play sounds on user events."
+msgstr "Určuje, či sa majú pri udalostiach používateľa prehrávať zvuky."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:11
+msgid "Sound theme name"
+msgstr "Názov zvukovej témy"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:12
+msgid "The XDG sound theme to use for event sounds."
+msgstr "Zvuková téma XDG, ktorá sa použije pre zvuky udalostí."
+
+# DK:fraza pouzita v module libgnome
+# summary
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:16
+msgid "Input feedback sounds"
+msgstr "Zvuky spätnej väzby vstupu"
+
+# description
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:17
+msgid "Whether to play sounds on input events."
+msgstr ""
+"Určuje, či sa majú pri udalostiach vyvolaných zadávaním vstupu prehrávať "
+"zvuky."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:21
+msgid "Allow volume above 100%"
+msgstr "Povolí nastaviť hlasitosť nad 100 %"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:22
+msgid "Whether volume can be set above 100%, using software amplification."
+msgstr ""
+"Či bude umožnené nastaviť hlasitosť nad 100 % pomocou softvérového "
+"zosilnenia."
+
+#: schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in:6
+msgid ""
+"Maximum age for thumbnails in the cache, in days. Set to -1 to disable "
+"cleaning."
+msgstr ""
+"Maximálny počet dní, na ako dlho sa budú miniatúry ukladať do vyrovnávacej "
+"pamäte. Nastavením hodnoty na -1 zakážete odstránenie miniatúr."
+
+#: schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in:10
+msgid ""
+"Maximum size of the thumbnail cache, in megabytes. Set to -1 to disable "
+"cleaning."
+msgstr ""
+"Maximálna veľkosť vyrovnávacej pamäte v megabajtoch, ktorá je poskytnutá pre "
+"uloženie miniatúr. Nastavením hodnoty na -1 zakážete odstránenie miniatúr."
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:6
+msgid "Disable all external thumbnailers"
+msgstr "Zakázať všetkých dodatočných tvorcov miniatúr"
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:7
+msgid ""
+"Set to true to disable all external thumbnailer programs, independent on "
+"whether they are independently disabled/enabled."
+msgstr ""
+"Ak je nastavené na true, budú zakázané všetky dodatočné programy na tvorbu "
+"minatúr, bez ohľadu na to, či sú nezávisle na sebe povolené alebo zakázané."
+
+# summary
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:15
+msgid ""
+"List of mime-types for which external thumbnailer programs will be disabled"
+msgstr ""
+"Zoznam typov MIME, pre ktoré budú zakázané externé programy na tvorbu "
+"miniatúr"
+
+# description
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:19
+msgid ""
+"Thumbnails will not be created for files whose mime-type is contained in the "
+"list."
+msgstr ""
+"Miniatúry nebudú vytvorené pre súbory, ktorých typy MIME sú obsiahnuté v "
+"zozname."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:8
+msgid "Switch to workspace 1"
+msgstr "Prepnúť na pracovný priestor č. 1"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:12
+msgid "Switch to workspace 2"
+msgstr "Prepnúť na pracovný priestor č. 2"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:16
+msgid "Switch to workspace 3"
+msgstr "Prepnúť na pracovný priestor č. 3"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:20
+msgid "Switch to workspace 4"
+msgstr "Prepnúť na pracovný priestor č. 4"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:24
+msgid "Switch to workspace 5"
+msgstr "Prepnúť na pracovný priestor č. 5"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:28
+msgid "Switch to workspace 6"
+msgstr "Prepnúť na pracovný priestor č. 6"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:32
+msgid "Switch to workspace 7"
+msgstr "Prepnúť na pracovný priestor č. 7"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:36
+msgid "Switch to workspace 8"
+msgstr "Prepnúť na pracovný priestor č. 8"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:40
+msgid "Switch to workspace 9"
+msgstr "Prepnúť na pracovný priestor č. 9"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:44
+msgid "Switch to workspace 10"
+msgstr "Prepnúť na pracovný priestor č. 10"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:48
+msgid "Switch to workspace 11"
+msgstr "Prepnúť na pracovný priestor č. 11"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:52
+msgid "Switch to workspace 12"
+msgstr "Prepnúť na pracovný priestor č. 12"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:56
+msgid "Switch to workspace left"
+msgstr "Prepnúť na pracovný priestor vľavo"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:60
+msgid "Switch to workspace right"
+msgstr "Prepnúť na pracovný priestor vpravo"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:64
+msgid "Switch to workspace above"
+msgstr "Prepnúť na pracovný priestor vyššie"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:68
+msgid "Switch to workspace below"
+msgstr "Prepnúť na pracovný priestor nižšie"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:72
+msgid "Switch to last workspace"
+msgstr "Prepnúť na posledný pracovný priestor"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:76
+msgid "Switch windows of an application"
+msgstr "Prepnúť okná aplikácie"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:80
+msgid "Reverse switch windows of an application"
+msgstr "Opačne prepnúť okná aplikácie"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:84
+msgid "Switch applications"
+msgstr "Prepnúť aplikácie"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:88
+msgid "Reverse switch applications"
+msgstr "Opačne prepnúť aplikácie"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:92
+msgid "Switch windows"
+msgstr "Prepnúť okná"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:96
+msgid "Reverse switch windows"
+msgstr "Opačne prepnúť okná"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:100
+msgid "Switch system controls"
+msgstr "Prepnúť systémové ovládacie prvky"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:104
+msgid "Reverse switch system controls"
+msgstr "Opačne prepnúť systémové ovládacie prvky"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:108
+msgid "Switch windows of an app directly"
+msgstr "Priamo prepnúť okná aplikácie"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:112
+msgid "Reverse switch windows of an app directly"
+msgstr "Priamo opačne prepnúť okná aplikácie"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:116
+msgid "Switch windows directly"
+msgstr "Priamo prepnúť okná"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:120
+msgid "Reverse switch windows directly"
+msgstr "Priamo opačne prepnúť okná"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:124
+msgid "Switch system controls directly"
+msgstr "Priamo prepnúť systémové ovládacie prvky"
+
+# summary
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:128
+msgid "Reverse switch system controls directly"
+msgstr "Priamo opačne prepnúť systémové ovládacie prvky"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:132
+msgid "Hide all normal windows"
+msgstr "Skryť všetky bežné okná"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:136
+msgid "DEPRECATED: This key is deprecated and ignored."
+msgstr "ZAVRHNUTÉ: Tento kľúč je zavrhnutý a ignoruje sa."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:140
+msgid "Show the run command prompt"
+msgstr "Zobraziť výzvu na spustenie príkazu"
+
+# DK: https://bugzilla.gnome.org/show_bug.cgi?id=687291
+# summary
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:144
+msgid "Don’t use"
+msgstr "Nepoužívať"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:148
+msgid "Activate the window menu"
+msgstr "Aktivovať ponuku okna"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:152
+msgid "Toggle fullscreen mode"
+msgstr "Prepnúť celoobrazovkový režim"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:156
+msgid "Toggle maximization state"
+msgstr "Prepnúť stav maximalizácie"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:160
+msgid "Toggle window always appearing on top"
+msgstr "Prepnúť stav zobrazenia okna vždy navrchu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:164
+msgid "Maximize window"
+msgstr "Maximalizovať okno"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:168
+msgid "Restore window"
+msgstr "Obnoviť okno"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:172
+msgid "Minimize window"
+msgstr "Minimalizovať okno"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:176
+msgid "Close window"
+msgstr "Zavrieť okno"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:180
+msgid "Move window"
+msgstr "Premiestniť okno"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:184
+msgid "Resize window"
+msgstr "Zmeniť veľkosť okna"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:188
+msgid "Toggle window on all workspaces or one"
+msgstr ""
+"Prepnúť viditeľnosť okna, buď na všetkých pracovných priestoroch alebo len "
+"na jednom"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:192
+msgid "Move window to workspace 1"
+msgstr "Premiestniť okno do pracovného priestoru č. 1"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:196
+msgid "Move window to workspace 2"
+msgstr "Premiestniť okno do pracovného priestoru č. 2"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:200
+msgid "Move window to workspace 3"
+msgstr "Premiestniť okno do pracovného priestoru č. 3"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:204
+msgid "Move window to workspace 4"
+msgstr "Premiestniť okno do pracovného priestoru č. 4"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:208
+msgid "Move window to workspace 5"
+msgstr "Premiestniť okno do pracovného priestoru č. 5"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:212
+msgid "Move window to workspace 6"
+msgstr "Premiestniť okno do pracovného priestoru č. 6"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:216
+msgid "Move window to workspace 7"
+msgstr "Premiestniť okno do pracovného priestoru č. 7"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:220
+msgid "Move window to workspace 8"
+msgstr "Premiestniť okno do pracovného priestoru č. 8"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:224
+msgid "Move window to workspace 9"
+msgstr "Premiestniť okno do pracovného priestoru č. 9"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:228
+msgid "Move window to workspace 10"
+msgstr "Premiestniť okno do pracovného priestoru č. 10"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:232
+msgid "Move window to workspace 11"
+msgstr "Premiestniť okno do pracovného priestoru č. 11"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:236
+msgid "Move window to workspace 12"
+msgstr "Premiestniť okno do pracovného priestoru č. 12"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:240
+msgid "Move window to last workspace"
+msgstr "Premiestniť okno na posledný pracovný priestor"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:244
+msgid "Move window one workspace to the left"
+msgstr "Premiestniť okno o jeden pracovný priestor vľavo"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:248
+msgid "Move window one workspace to the right"
+msgstr "Premiestniť okno o jeden pracovný priestor vpravo"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:252
+msgid "Move window one workspace up"
+msgstr "Premiestniť okno o jeden pracovný priestor nahor"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:256
+msgid "Move window one workspace down"
+msgstr "Premiestniť okno o jeden pracovný priestor nadol"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:260
+msgid "Move window to the next monitor on the left"
+msgstr "Premiestniť okno na nasledujúci monitor vľavo"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:264
+msgid "Move window to the next monitor on the right"
+msgstr "Premiestniť okno na nasledujúci monitor vpravo"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:268
+msgid "Move window to the next monitor above"
+msgstr "Premiestniť okno na nasledujúci monitor hore"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:272
+msgid "Move window to the next monitor below"
+msgstr "Premiestniť okno na nasledujúci monitor dole"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:276
+msgid "Raise window if covered, otherwise lower it"
+msgstr "Preniesť do popredia okno ak je skryté, inak bude prenesené do pozadia"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:280
+msgid "Raise window above other windows"
+msgstr "Preniesť okno do popredia pred ostatné okná"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:284
+msgid "Lower window below other windows"
+msgstr "Preniesť okno do pozadia za ostatné okná"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:288
+msgid "Maximize window vertically"
+msgstr "Maximalizovať okno zvislo"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:292
+msgid "Maximize window horizontally"
+msgstr "Maximalizovať okno vodorovne"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:296
+msgid "Move window to top left corner"
+msgstr "Premiestniť okno do ľavého horného rohu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:300
+msgid "Move window to top right corner"
+msgstr "Premiestniť okno do pravého horného rohu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:304
+msgid "Move window to bottom left corner"
+msgstr "Premiestniť okno do ľavého dolného rohu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:308
+msgid "Move window to bottom right corner"
+msgstr "Premiestniť okno do pravého dolného rohu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:312
+msgid "Move window to top edge of screen"
+msgstr "Premiestniť okno na horný okraj obrazovky"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:316
+msgid "Move window to bottom edge of screen"
+msgstr "Premiestniť okno na dolný okraj obrazovky"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:320
+msgid "Move window to right side of screen"
+msgstr "Premiestniť okno na pravú stranu obrazovky"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:324
+msgid "Move window to left side of screen"
+msgstr "Premiestniť okno na ľavú stranu obrazovky"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:328
+msgid "Move window to center of screen"
+msgstr "Premiestniť okno do stredu obrazovky"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:332
+msgid "Switch input source"
+msgstr "Prepnúť zdroj vstupu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:333
+msgid "Binding to select the next input source"
+msgstr "Väzba na výber nasledujúceho zdroja vstupu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:337
+msgid "Switch input source backward"
+msgstr "Opačne prepnúť zdroj vstupu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:338
+msgid "Binding to select the previous input source"
+msgstr "Väzba na výber predchádzajúceho zdroja vstupu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:342
+msgid "Toggle window to be always on top"
+msgstr "Prepnúť stav okna zobrazenia vždy navrchu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:343
+msgid "Set or unset window to appear always on top"
+msgstr "Nastaviť alebo zrušiť nastavenie stavu zobrazenia okna vždy navrchu"
+
+# summary
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:8
+msgid "Modifier to use for modified window click actions"
+msgstr ""
+"Modifikátor, ktorý sa použije na úpravu akcií vykonaných pri kliknutí na okno"
+
+# description
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:9
+msgid ""
+"Clicking a window while holding down this modifier key will move the window "
+"(left click), resize the window (middle click), or show the window menu "
+"(right click). The middle and right click operations may be swapped using "
+"the “resize-with-right-button” key. Modifier is expressed as “<Alt>” or "
+"“<Super>” for example."
+msgstr ""
+"Kliknutie na okno počas držania modifikačného klávesu presunie okno (ľavé "
+"kliknutie), zmení veľkosť okna (stredné kliknutie), alebo zobrazí ponuku "
+"okna (pravé kliknutie). Operácie stredného a pravého kliknutia môžu byť "
+"zamenené pomocou kľúča „resize-with-right-button“. Modifikátor je vyjadrený "
+"napríklad ako „<Alt>“ alebo „<Super>“."
+
+# summary
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:19
+msgid "Whether to resize with the right button"
+msgstr "Určiť, či sa má umožniť zmena veľkosti pravým tlačidlom"
+
+# description
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:20
+msgid ""
+"Set this to true to resize with the right button and show a menu with the "
+"middle button while holding down the key given in “mouse-button-modifier”; "
+"set it to false to make it work the opposite way around."
+msgstr ""
+"Nastavte túto možnosť na true, aby sa dala meniť veľkosť pravým tlačidlom a "
+"taktiež, či sa má zobraziť ponuka po stlačení stredného tlačidla spolu s "
+"klávesom ureným v kľúči „mouse-button-modifier“; nastavte túto možnosť na "
+"false, ak má táto funkcia fungovať obrátene."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:29
+msgid "Arrangement of buttons on the titlebar"
+msgstr "Rozloženie tlačidiel na titulku okna"
+
+# description
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:30
+msgid ""
+"Arrangement of buttons on the titlebar. The value should be a string, such "
+"as “menu:minimize,maximize,spacer,close”; the colon separates the left "
+"corner of the window from the right corner, and the button names are comma-"
+"separated. Duplicate buttons are not allowed. Unknown button names are "
+"silently ignored so that buttons can be added in future metacity versions "
+"without breaking older versions. A special spacer tag can be used to insert "
+"some space between two adjacent buttons."
+msgstr ""
+"Rozloženie tlačidiel na titulku okna. Hodnoty by mali byť reťazce, ako "
+"napríklad „menu:minimize,maximize,spacer,close“; dvojbodka oddeľuje ľavý roh "
+"okna od pravého a názvy tlačidiel sú oddelené čiarkami. Duplikovanie "
+"tlačidiel nie je povolené. Neznáme názvy budú ignorované, takže môžu byť "
+"použité z novšej verzie systému metacity bez narušenia staršej verzie. Ako "
+"oddeľovač môže byť použitá špeciálna značka spacer, ktorá vloží medzi dve "
+"susediace tlačidlá medzeru."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:43
+msgid "Window focus mode"
+msgstr "Režim spôsobu zamerania okna"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:44
+msgid ""
+"The window focus mode indicates how windows are activated. It has three "
+"possible values; “click” means windows must be clicked in order to focus "
+"them, “sloppy” means windows are focused when the mouse enters the window, "
+"and “mouse” means windows are focused when the mouse enters the window and "
+"unfocused when the mouse leaves the window."
+msgstr ""
+"Režim spôsobu zamerania okna určuje, ako sa majú okná aktivovať. Na výber sú "
+"tri možnosti; „click“ znamená, že na okná je potrebné kliknúť aby sa "
+"zamerali, „sloppy“ znamená, že okná sa zamerajú, keď sa myšou prejde ponad "
+"okno, a „mouse“ znamená, že je zamerané vždy okno, ktoré sa nachádza práve "
+"pod myšou."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:55
+msgid "Control how new windows get focus"
+msgstr "Ovláda ako budú okná zamerané"
+
+# description
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:56
+msgid ""
+"This option provides additional control over how newly created windows get "
+"focus. It has two possible values; “smart” applies the user’s normal focus "
+"mode, and “strict” results in new windows not being given focus "
+"automatically."
+msgstr ""
+"Táto voľba poskytuje dodatočnú kontrolu nad tým, ako novo vytvorené okná "
+"získavajú zameranie. Môže nadobúdať dve rôzne hodnoty: „smart“ - aplikuje "
+"bežný používateľský režim zamerania a „strict“ sa správa tak, že nové okná "
+"nezískavajú zameranie automaticky."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:65
+msgid "Whether windows should be raised when their client area is clicked"
+msgstr ""
+"Či sa má okno preniesť do popredia keď nastane kliknutie na jeho klientskú "
+"oblasť"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:68
+msgid ""
+"The default, true, indicates that a window will be raised whenever its "
+"client area or its frame is clicked. Setting this to false means that a "
+"window will not be raised if it is clicked on the client area. To raise it, "
+"one can click anywhere in the window’s frame, or Super-click on any part of "
+"the window. This mode is useful if one uses many overlapping windows."
+msgstr ""
+"Predvolená hodnota true určuje, že okno bude prenesené do popredia pri "
+"kliknutí na jeho klientskú oblasť alebo rám. Nastavenie na false znamená, že "
+"okno nebude prenesené do popredia po kliknutí na jeho klientskú oblasť. Na "
+"jeho presunutie je potrebné kliknúť niekam na rám okna alebo použiť Super-"
+"kliknutie na časť okna. Tento režim je užitočný pri používaní mnohých "
+"prekrývajúcich sa okien."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:82
+msgid "Action on title bar double-click"
+msgstr "Akcia pri dvojitom kliknutí na titulok okna"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:83
+msgid ""
+"This option determines the effects of double-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Táto voľba určuje, čo sa udeje po dvojitom kliknutí na titulok okna. "
+"Aktuálne platné voľby sú „toggle-maximize“, ktorá okno maximalizuje/zruší "
+"jeho maximalizáciu, „toggle-maximize-horizontally“ a „toggle-maximize-"
+"vertically“, ktorá okno maximalizuje/zruší jeho maximalizáciu iba vo "
+"vodorovnom, resp. zvislom smere, „minimize“, ktorá okno minimalizuje, "
+"„menu“, ktorá zobrazí ponuku okna, „lower“, ktorá odsunie okno do pozadia za "
+"ostatné okná a „none“, ktorá neurobí nič."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:105
+msgid "Action on title bar middle-click"
+msgstr "Akcia pri kliknutí stredným tlačidlom na titulok okna"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:106
+msgid ""
+"This option determines the effects of middle-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Táto voľba určuje, ako sa prejaví kliknutie stredným tlačidlom na titulok "
+"okna. Aktuálne platné voľby sú „toggle-maximize“, ktorá okno maximalizuje/"
+"zruší jeho maximalizáciu, „toggle-maximize-horizontally“ a „toggle-maximize-"
+"vertically“, ktoré maximalizujú alebo zrušia maximalizovanie okna iba vo "
+"vodorovnom alebo zvislom smere, „minimize“, ktorá minimalizuje okno, „menu“, "
+"ktorá zobrazí ponuku okna, „lower“, ktorá presunie okno za ostatné a „none“, "
+"ktorá neurobí nič."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:129
+msgid "Action on title bar right-click"
+msgstr "Akcia pri kliknutí pravým tlačidlom na titulok okna"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:130
+msgid ""
+"This option determines the effects of right-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Táto voľba určuje, ako sa prejaví kliknutie pravým tlačidlom na titulok "
+"okna. Aktuálne platné voľby sú „toggle-maximize“, ktorá okno maximalizuje/"
+"zruší jeho maximalizáciu, „toggle-maximize-horizontally“ a „toggle-maximize-"
+"vertically“, ktoré maximalizujú alebo zrušia maximalizovanie okna iba vo "
+"vodorovnom alebo zvislom smere, „minimize“, ktorá minimalizuje okno, „menu“, "
+"ktorá zobrazí ponuku okna, „lower“, ktorá presunie okno za ostatné a „none“, "
+"ktorá neurobí nič.Aktuálne platné voľby sú 'toggle-shade', ktorá zatieni "
+"alebo zruší zatienenie okna, „toggle-maximize“, ktorá maximalizuje alebo "
+"zruší maximalizáciu okna, „toggle-maximize-horizontally“ a „toggle-maximize-"
+"vertically“, ktoré maximalizujú alebo zrušia maximalizovanie okna iba vo "
+"vodorovnom alebo zvislom smere, „minimize“, ktorá minimalizuje okno, "
+"„shade“, ktorá zroluje okno, „menu“, ktorá zobrazí ponuku okna, „lower“, "
+"ktorá presunie okno za ostatné a „none“, ktorá neurobí nič."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:152
+msgid "Automatically raises the focused window"
+msgstr "Automaticky preniesť aktivované okno do popredia"
+
+# description
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:153
+msgid ""
+"If set to true, and the focus mode is either “sloppy” or “mouse” then the "
+"focused window will be automatically raised after a delay specified by the "
+"auto-raise-delay key. This is not related to clicking on a window to raise "
+"it, nor to entering a window during drag-and-drop."
+msgstr ""
+"Ak je nastavené na true a režim zameriavania je buď „sloppy“ alebo „mouse“, "
+"bude zamerané okno automaticky prenesené do popredia po oneskorení "
+"zadefinovanom v kľúči auto-raise-dekay. Toto sa nevzťahuje na kliknutia na "
+"okno prenášané do popredia ani na vstupy do okna počas potiahnutí. "
+
+# summary
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:163
+msgid "Delay in milliseconds for the auto raise option"
+msgstr ""
+"Oneskorenie v milisekundách pre voľbu automatického prenesenia do popredia "
+
+# description
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:164
+msgid ""
+"The time delay before raising a window if auto-raise is set to true. The "
+"delay is given in thousandths of a second."
+msgstr ""
+"Časové oneskorenie pred prenesením okna do popredia ak je kľúč auto-raise "
+"nastavený na true. Oneskorenie sa zadáva v tisícinách sekundy. "
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:171
+msgid "Current theme"
+msgstr "Aktuálna téma"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:172
+msgid ""
+"The theme determines the appearance of window borders, titlebar, and so "
+"forth. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Téma určuje vzhľad okrajov okien, titulku okna, atď. ZAVRHNUTÉ: Tento kľúč "
+"je zavrhnutý a ignoruje sa."
+
+# summary
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:181
+msgid "Use standard system font in window titles"
+msgstr "Použiť predvolené písmo systému v titulkoch okien"
+
+# description
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:182
+msgid ""
+"If true, ignore the titlebar-font option, and use the standard application "
+"font for window titles."
+msgstr ""
+"Ak je nastavené na true, bude vynechaná voľba písma titulku okna a bude "
+"namiesto toho použité štandardné písmo aplikácie."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:189
+msgid "Window title font"
+msgstr "Písmo titulku okna"
+
+# description
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:190
+msgid ""
+"A font description string describing a font for window titlebars. The size "
+"from the description will only be used if the titlebar-font-size option is "
+"set to 0. Also, this option is disabled if the titlebar-uses-desktop-font "
+"option is set to true."
+msgstr ""
+"Popisný reťazec písma popisujúci písmo pre titulok okna. Veľkosť z popisu sa "
+"použije ak je titlebar-font-size nastavený na 0. Táto voľba je tiež zakázaná "
+"ak je titlebar-uses-desktop-font nastavený na true. "
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:200
+msgid "Number of workspaces"
+msgstr "Počet pracovných priestorov"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:201
+msgid ""
+"Number of workspaces. Must be more than zero, and has a fixed maximum to "
+"prevent making the desktop unusable by accidentally asking for too many "
+"workspaces."
+msgstr ""
+"Určuje počet pracovných priestorov. Počet musí byť viac ako nula a musí "
+"obsahovať pevne stanovený maximálny počet na zaistenie použiteľnosti "
+"pracovného prostredia kvôli náhodnej požiadavke na príliš veľa pracovných "
+"priestorov."
+
+# DK: takyto preklad je pouzity v module Metacity
+# summary
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:209
+msgid "System Bell is Audible"
+msgstr "Systémový zvonček je počuteľný"
+
+# PK: preco je to v uvodzovkach?
+# DK: frazy v uvodzovkach sa vyskytuju v nastaveniach ako volby, tak preto asi.podla mna je to OK
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:210
+msgid ""
+"Determines whether applications or the system can generate audible “beeps”; "
+"may be used in conjunction with “visual bell” to allow silent “beeps”."
+msgstr ""
+"Určuje, či majú aplikácie alebo systém vydávať počuteľné „pípnutia“; táto "
+"voľba môže byť použitá v spojení s „vizuálnym zvončekom“ a povoliť tak tiché "
+"„pípnutia“."
+
+# DK: preklad pouzity v metacity
+# summary
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:218
+msgid "Enable Visual Bell"
+msgstr "Povoliť vizuálny zvonček"
+
+# PK: preco je to v uvodzovkach?
+# description
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:219
+msgid ""
+"Turns on a visual indication when an application or the system issues a "
+"“bell” or “beep”; useful for the hard-of-hearing and for use in noisy "
+"environments."
+msgstr ""
+"Zapne vizuálne oznámenie, keď aplikácia alebo systém „zazvoní“ alebo "
+"„zapípa“; užitočné pre nedoslýchavých a na použitie v hlučnom prostredí."
+
+# summary
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:228
+msgid "Visual Bell Type"
+msgstr "Typ vizuálneho zvončeka"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:229
+msgid ""
+"Tells the WM how to implement the visual indication that the system bell or "
+"another application “bell” indicator has been rung. Currently there are two "
+"valid values, “fullscreen-flash”, which causes a fullscreen white-black "
+"flash, and “frame-flash” which causes the titlebar of the application which "
+"sent the bell signal to flash. If the application which sent the bell is "
+"unknown (as is usually the case for the default “system beep”), the "
+"currently focused window’s titlebar is flashed."
+msgstr ""
+"Hovorí správcovi okien, ako má implementovať vizuálnu indikáciu zazvonenia "
+"systému alebo „zazvonenia“ inej aplikácie. Aktuálne sa používajú dve platné "
+"hodnoty: „fullscreen-flash“, ktorá spôsobuje čiernobiele zablikanie celej "
+"obrazovky a „frame-flash“, ktorá spôsobuje zablikanie titulku aplikácie, "
+"ktorá poslala signál zvonenia. Ak aplikácia, ktorá poslala zvonenie nie je "
+"známa (ako je to u predvoleného „pípnutia systému“), zabliká titulok práve "
+"zameraného okna."
+
+# summary
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:250
+msgid "Disable misfeatures that are required by old or broken applications"
+msgstr ""
+"Zakázať chýbajúce funkcionality, ktoré sú požadované starými alebo chybnými "
+"aplikáciami"
+
+# description
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:253
+msgid ""
+"Some applications disregard specifications in ways that result in window "
+"manager misfeatures. This option puts the WM in a rigorously correct mode, "
+"which gives a more consistent user interface, provided one does not need to "
+"run any misbehaving applications."
+msgstr ""
+"Niektoré aplikácie nerešpektujú špecifikácie, čo vedie k volaniu chýbajúcich "
+"funkcionalít správcu okien. Táto voľba nastaví správcu okien do prísne "
+"správneho režimu, ktorý poskytne konzistentnejšie používateľské rozhranie "
+"pre tých, čo nepotrebujú spúšťať aplikácie s chýbajúcim správaním."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:263
+msgid "The names of the workspaces"
+msgstr "Názvy pracovných priestorov"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:264
+msgid ""
+"Defines the names that should be assigned to workspaces. If the list is too "
+"long for the current number of workspaces, names in excess will be ignored. "
+"If the list is too short, or includes empty names, missing values will be "
+"replaced with the default (“Workspace N”)."
+msgstr ""
+"Určuje názvy, ktoré sa majú priradiť pracovným priestorom. Ak je zoznam pre "
+"aktuálny počet pracovných priestorov príliš veľký, prebytočné názvy budú "
+"vynechané. Ak je zoznam príliš malý, alebo obsahuje prázdne názvy, budú "
+"chýbajúce hodnoty nahradené predvolenou „Pracovný priestor č.“."
+
+# summary
+#: schemas/org.gnome.system.locale.gschema.xml.in:6
+msgid "The locale to use for dates / numbers formats"
+msgstr "Miestne nastavenia formátov použitých pre dátumy a čísla"
+
+# description
+#: schemas/org.gnome.system.locale.gschema.xml.in:7
+msgid ""
+"Specify the locale to be used for displaying dates, times and numbers "
+"formats."
+msgstr ""
+"Určuje miestne nastavenia formátov, podľa ktorých sa majú zobrazovať dátumy, "
+"čas a čísla."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:7
+msgid "Geolocation services are enabled."
+msgstr "Služby pre určenie polohy sú povolené."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:8
+msgid "If true, applications are allowed to access location information."
+msgstr ""
+"AK je nastavené na true, aplikácie môžu pristupovať k informáciám o polohe."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:14
+msgid "The maximum accuracy level of location."
+msgstr "Úroveň maximálnej presnosti polohy."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:15
+msgid ""
+"Configures the maximum level of location accuracy applications are allowed "
+"to see. Valid options are “country”, “city”, “neighborhood”, “street”, and "
+"“exact” (typically requires GPS receiver). Please keep in mind that this "
+"only controls what GeoClue will allow applications to see and they can find "
+"user’s location on their own using network resources (albeit with street-"
+"level accuracy at best)."
+msgstr ""
+"Nastavuje úroveň maximálnej presnosti určenia polohy, ktorú môžu aplikácie "
+"vidieť. Platné voľby sú „country“ (krajina), „city“ (mesto) „neighborhood“ "
+"(štvrť), „street“ (ulica) a „exact“ (presná poloha) - zvyčajne vyžaduje GPS "
+"prijímač. Táto voľba ovláda iba to čo GeoClue povolí aplikáciam vidieť, tie "
+"však môžu nájsť polohu používateľa pomocou svojich vlastných sieťových "
+"zdrojov (hoci iba s presnosťou na ulicu).  "
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:10
+msgid "Proxy configuration mode"
+msgstr "Režim pre nastavenie proxy"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:11
+msgid ""
+"Select the proxy configuration mode. Supported values are “none”, “manual”, "
+"“auto”. If this is “none”, then proxies are not used. If it is “auto”, the "
+"autoconfiguration URL described by the “autoconfig-url” key is used. If it "
+"is “manual”, then the proxies described by “/system/proxy/http”, “/system/"
+"proxy/https”, “/system/proxy/ftp” and “/system/proxy/socks” will be used. "
+"Each of the 4 proxy types is enabled if its “host” key is non-empty and its "
+"“port” key is non-0. If an http proxy is configured, but an https proxy is "
+"not, then the http proxy is also used for https. If a SOCKS proxy is "
+"configured, it is used for all protocols, except that the http, https, and "
+"ftp proxy settings override it for those protocols only."
+msgstr ""
+"Výber režimu nastavenia proxy. Podporované hodnoty sú „none“ (žiadne), "
+"„manual“ (ručné), „auto“ (automatické). Ak je použitá voľba „none“, proxy sa "
+"nebude používať. Ak je použitá voľba „auto“, použije sa URL pre automatické "
+"nastavenie z kľúča „autoconfig-url“. Ak je použitá voľba „manual“, použijú "
+"sa proxy podľa nastavení v „/system/proxy/http“, „/system/proxy/https“, „/"
+"system/proxy/ftp“ a „/system/proxy/socks“. Každá zo 4 typov proxy je "
+"zapnutá, ak jej kľúč „host“ nie je prázdny a jej kľúč „port“ nie je 0. Ak je "
+"nastavená http proxy, no https nastavená nie je, http proxy sa použije aj "
+"pre https komunikáciu. Ak je nastavená SOCKS proxy, použije sa pre všetky "
+"protokoly, okrem prípadu, kedy nastavenia proxy pre http, https a ftp "
+"prevážia nastavenie len pre dané protokoly."
+
+# summary
+#: schemas/org.gnome.system.proxy.gschema.xml.in:36
+msgid "Automatic proxy configuration URL"
+msgstr "Adresa URL automatického nastavenia proxy"
+
+# description
+#: schemas/org.gnome.system.proxy.gschema.xml.in:37
+msgid ""
+"URL that provides proxy configuration values. When mode is “auto”, this URL "
+"is used to look up proxy information for all protocols."
+msgstr ""
+"Adresa URL, ktorý poskytuje hodnotu pre nastavenie proxy. Keď je v režime "
+"„auto“, použije sa tento URL na vyhľadanie informácií o proxy serveroch pre "
+"všetky protokoly."
+
+# summary
+#: schemas/org.gnome.system.proxy.gschema.xml.in:45
+msgid "Non-proxy hosts"
+msgstr "Hostitelia bez proxy"
+
+# description
+#: schemas/org.gnome.system.proxy.gschema.xml.in:46
+msgid ""
+"This key contains a list of hosts which are connected to directly, rather "
+"than via the proxy (if it is active). The values can be hostnames, domains "
+"(using an initial wildcard like *.foo.com), IP host addresses (both IPv4 and "
+"IPv6) and network addresses with a netmask (something like 192.168.0.0/24)."
+msgstr ""
+"Tento kľúč obsahuje zoznam všetkých hostiteľov, ku ktorým sa má pripájať "
+"priamo, a nie cez proxy (ak je aktívna). Hodnotami môžu byť názvy počítačov, "
+"domény (s použitím zástupných znakov ako napríklad *.nieco.sk), adresy IP (a "
+"to IPv4 aj IPv6) a sieťové adresy s maskami (ako napríklad 192.168.0.0/24)."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:56
+msgid "Use HTTP proxy for all protocols"
+msgstr "Používať HTTP proxy pre všetky protokoly"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:57
+msgid "Whether to use the HTTP proxy for all protocols or not."
+msgstr "Či používať alebo nepoužívať HTTP proxy pre všetky protokoly."
+
+# summary
+#: schemas/org.gnome.system.proxy.gschema.xml.in:65
+msgid "Unused; ignore"
+msgstr "Nepoužitý; ignorujte ho"
+
+# desritpion
+#: schemas/org.gnome.system.proxy.gschema.xml.in:66
+msgid ""
+"This key is not used; HTTP proxying is enabled when the host key is non-"
+"empty and the port is non-0."
+msgstr ""
+"Tento kľúč nie je použitý; HTTP proxy je zapnuté, ak nie je kľúč „host“ "
+"prázdny a „port“ nie je nastavený na 0."
+
+# summary
+#: schemas/org.gnome.system.proxy.gschema.xml.in:73
+msgid "HTTP proxy host name"
+msgstr "Meno počítača s HTTP proxy"
+
+# description
+#: schemas/org.gnome.system.proxy.gschema.xml.in:74
+msgid "The machine name to proxy HTTP through."
+msgstr "Meno stroja, ktorý sprostredkováva spojenie cez HTTP."
+
+# summary
+#: schemas/org.gnome.system.proxy.gschema.xml.in:81
+msgid "HTTP proxy port"
+msgstr "Port HTTP proxy"
+
+# description
+#: schemas/org.gnome.system.proxy.gschema.xml.in:82
+msgid ""
+"The port on the machine defined by “/system/proxy/http/host” that you proxy "
+"through."
+msgstr ""
+"Port definovaný na stroji v kľúči „/system/proxy/http/host“, cez ktorý "
+"prebieha komunikácia s proxy."
+
+# summary
+#: schemas/org.gnome.system.proxy.gschema.xml.in:89
+msgid "Authenticate proxy server connections"
+msgstr "Overiť totožnosť pred pripojením k sprostredkujúcemu serveru "
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:90
+msgid ""
+"If true, then connections to the proxy server require authentication. The "
+"username/password combo is defined by “/system/proxy/http/authentication-"
+"user” and “/system/proxy/http/authentication-password”. This applies only to "
+"the http proxy; when using a separate https proxy, there is currently no way "
+"to specify that it should use authentication."
+msgstr ""
+"Ak je nastavené na TRUE, pripojenie na proxy server bude vyžadovať overenie "
+"totožnosti. Kombinácia používateľské_meno/heslo je definovaná pomocou „/"
+"system/proxy/http/authentication-user“ a „/system/proxy/http/authentication-"
+"password“. Toto sa použije iba pri http proxy; pri použití https proxy už "
+"neexistuje spôsob ako určiť, že sa má použiť overenie totožnosti."
+
+# summary
+#: schemas/org.gnome.system.proxy.gschema.xml.in:103
+msgid "HTTP proxy username"
+msgstr "Používateľské meno pre HTTP proxy"
+
+# description
+#: schemas/org.gnome.system.proxy.gschema.xml.in:104
+msgid "User name to pass as authentication when doing HTTP proxying."
+msgstr ""
+"Používateľské meno na overenie totožnosti pri sprostredkovaní spojenia cez "
+"HTTP."
+
+# summary
+#: schemas/org.gnome.system.proxy.gschema.xml.in:110
+msgid "HTTP proxy password"
+msgstr "Heslo pre HTTP proxy"
+
+# description
+#: schemas/org.gnome.system.proxy.gschema.xml.in:111
+msgid "Password to pass as authentication when doing HTTP proxying."
+msgstr "Heslo na overenie totožnosti pri sprostredkovaní spojenia cez HTTP."
+
+# summary
+#: schemas/org.gnome.system.proxy.gschema.xml.in:119
+msgid "Secure HTTP proxy host name"
+msgstr "Meno počítača so zabezpečeným HTTP (HTTPS) proxy"
+
+# description
+#: schemas/org.gnome.system.proxy.gschema.xml.in:120
+msgid "The machine name to proxy secure HTTP through."
+msgstr ""
+"Meno stroja, ktorý sprostredkováva spojenie cez zabezpečené HTTP (HTTPS)."
+
+# summary
+#: schemas/org.gnome.system.proxy.gschema.xml.in:127
+msgid "Secure HTTP proxy port"
+msgstr "Port HTTPS proxy"
+
+# description
+#: schemas/org.gnome.system.proxy.gschema.xml.in:128
+msgid ""
+"The port on the machine defined by “/system/proxy/https/host” that you proxy "
+"through."
+msgstr ""
+"Port definovaný na stroji v kľúči „/system/proxy/https/host“, cez ktorý "
+"prebieha komunikácia s proxy."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:137
+msgid "FTP proxy host name"
+msgstr "Meno počítača s FTP proxy"
+
+# description
+#: schemas/org.gnome.system.proxy.gschema.xml.in:138
+msgid "The machine name to proxy FTP through."
+msgstr "Meno stroja, ktorý sprostredkováva spojenie cez FTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:145
+msgid "FTP proxy port"
+msgstr "Port pre FTP proxy"
+
+# description
+#: schemas/org.gnome.system.proxy.gschema.xml.in:146
+msgid ""
+"The port on the machine defined by “/system/proxy/ftp/host” that you proxy "
+"through."
+msgstr ""
+"Port definovaný na stroji v kľúči „/system/proxy/ftp/host“, cez ktorý "
+"prebieha komunikácia s proxy."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:155
+msgid "SOCKS proxy host name"
+msgstr "Meno počítača so SOCKS proxy"
+
+# description
+#: schemas/org.gnome.system.proxy.gschema.xml.in:156
+msgid "The machine name to use as a SOCKS proxy."
+msgstr "Názov stroja, ktorý sprostredkováva spojenie cez SOCKS."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:163
+msgid "SOCKS proxy port"
+msgstr "Port pre SOCKS proxy"
+
+# description
+#: schemas/org.gnome.system.proxy.gschema.xml.in:164
+msgid ""
+"The port on the machine defined by “/system/proxy/socks/host” that you proxy "
+"through."
+msgstr ""
+"Port definovaný na stroji v kľúči „/system/proxy/socks/host“, cez ktorý "
+"prebieha komunikácia s proxy."
+
+#~ msgid "Show the activities overview"
+#~ msgstr "Zobraziť prehľad aktivít"
+
+# summary
+#~ msgid "Toggle shaded state"
+#~ msgstr "Prepnúť stav tieňovania"
+
+# desritpion
+#~ msgid "This key is not used, and should not be read or modified."
+#~ msgstr "Tento kľúč nie je použitý a nemal by byť načítaný ani zmenený."
+
+#~ msgid "Menus Have Icons"
+#~ msgstr "Ponuky obsahujú ikony"
+
+#~ msgid "Whether menus may display an icon next to a menu entry."
+#~ msgstr "Určuje, či sa majú vedľa položiek v ponukách zobrazovať ikony."
+
+#~ msgid "Whether buttons may display an icon in addition to the button text."
+#~ msgstr "Určuje, či sa majú pri texte tlačidiel zobrazovať ikony."
+
+#~ msgid "Show the 'Input Methods' menu"
+#~ msgstr "Zobraziť ponuku „Metódy vstupu“"
+
+#~ msgid ""
+#~ "Whether the context menus of entries and text views should offer to "
+#~ "change the input method."
+#~ msgstr ""
+#~ "Určuje, či majú kontextové ponuky položiek a textových zobrazení ponúkať "
+#~ "zmenu vstupnej metódy."
+
+#~ msgid "Show the 'Unicode Control Character' menu"
+#~ msgstr "Zobraziť ponuku „Vložiť ovládací znak Unicode“"
+
+#~ msgid ""
+#~ "Whether the context menus of entries and text views should offer to "
+#~ "insert control characters."
+#~ msgstr ""
+#~ "Určuje, či majú kontextové ponuky položiek a textových zobrazení ponúkať "
+#~ "vkladanie ovládacích znakov."
+
+#~ msgid "Draw Desktop Background"
+#~ msgstr "Vykresliť pozadie pracovnej plochy"
+
+#~ msgid "Be resident in the lock screen"
+#~ msgstr "Pretrvávať na uzamknutej obrazovke"
+
+#~| msgid ""
+#~| "Whether notifications are shown in the lock screen or not. This only "
+#~| "affects the standard experience."
+#~ msgid ""
+#~ "Whether notifications are shown in the lock screen or not. This only "
+#~ "affects the standard experience. DEPRECATED: This key is deprecated and "
+#~ "ignored. It has been superseded by org.gnome.desktop.notifications show-"
+#~ "in-lock-screen."
+#~ msgstr ""
+#~ "Určuje, či sa majú alebo nemajú zobraziť oznámenia na uzamknutej "
+#~ "obrazovke. Táto funkcia má vplyv na obvyklé správanie systému."
+
+#~ msgid "Default calendar application"
+#~ msgstr "Predvolená aplikácia kalendára"
+
+#~ msgid "Whether the default calendar application needs a terminal to run."
+#~ msgstr ""
+#~ "Určuje, či predvolená aplikácia kalendára vyžaduje na spustenie terminál."
+
+#, fuzzy
+#~ msgid ""
+#~ "Argument used to execute programs in the terminal defined by the 'exec' "
+#~ "key."
+#~ msgstr ""
+#~ "Určuje parameter, ktorý sa má použiť pri spustení programov v termináli, "
+#~ "definovanom v kľúči „exec“."
+
+#~ msgid ""
+#~ "Set this to TRUE to activate the screensaver when the session is idle."
+#~ msgstr ""
+#~ "Nastavte na true, ak sa má pri nečinnosti relácie spustiť šetrič "
+#~ "obrazovky."

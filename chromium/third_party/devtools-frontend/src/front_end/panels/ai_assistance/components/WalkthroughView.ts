@@ -9,9 +9,17 @@ import * as Input from '../../../ui/components/input/input.js';
 import type {MarkdownLitRenderer} from '../../../ui/components/markdown_view/MarkdownView.js';
 import * as UI from '../../../ui/legacy/legacy.js';
 import * as Lit from '../../../ui/lit/lit.js';
+import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 
 import chatMessageStyles from './chatMessage.css.js';
-import {type ModelChatMessage, renderStep, type Step, titleForStep} from './ChatMessage.js';
+import {
+  getDeduplicatedWidgetsMessage,
+  type ModelChatMessage,
+  renderStep,
+  type Step,
+  titleForStep
+} from './ChatMessage.js';
+import {getButtonLabel} from './WalkthroughUtils.js';
 import walkthroughViewStyles from './walkthroughView.css.js';
 
 const lockedString = i18n.i18n.lockedString;
@@ -45,6 +53,10 @@ const UIStrings = {
    * @description Title for the button that hides the walkthrough when there are widgets in the walkthrough.
    */
   hideAgentWalkthrough: 'Hide agent walkthrough',
+  /**
+   * @description Aria label for the spinner to be read by screen reader when a step is in progress.
+   */
+  inProgress: 'In progress',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/ai_assistance/components/WalkthroughView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -55,6 +67,7 @@ export interface ViewInput {
   markdownRenderer: MarkdownLitRenderer;
   isInlined: boolean;
   isExpanded: boolean;
+  prompt: string;
   onToggle: (isOpen: boolean, message: ModelChatMessage) => void;
   onOpen: (message: ModelChatMessage) => void;
   handleScroll: (ev: Event) => void;
@@ -115,21 +128,30 @@ function renderInlineWalkthrough(input: ViewInput, stepsOutput: Lit.LitTemplate,
 
   // clang-format off
   return html`
-    <div class="inline-wrapper" ?data-open=${input.isExpanded}>
+    <div class="inline-wrapper" ?data-open=${input.isExpanded} jslog=${VisualLogging.section('walkthrough-container')}>
       <span class="inline-icon">
         ${input.isLoading ?
-            html`<devtools-spinner></devtools-spinner>` :
+            html`<devtools-spinner aria-label=${lockedString(UIStrings.inProgress)}></devtools-spinner>` :
             html`<devtools-icon name=${icon}></devtools-icon>`
         }
       </span>
-      <details class="walkthrough-inline" ?open=${input.isExpanded} @toggle=${onToggle}>
-        <summary ?data-has-widgets=${!input.isLoading && hasWidgets}>
-          <span class="walkthrough-inline-title">
+      <details class="walkthrough-inline" ?open=${input.isExpanded} @toggle=${onToggle} jslog=${VisualLogging.expand('walkthrough').track({click: true})}>
+        <summary
+          ?data-has-widgets=${!input.isLoading && hasWidgets}
+          aria-label=${getButtonLabel({
+            isExpanded: input.isExpanded,
+            isLoading: input.isLoading,
+            hasWidgets,
+            prompt: input.prompt,
+            stepTitle: titleForStep(lastStep),
+          })}
+        >
+          <h2 class="walkthrough-inline-title">
             ${input.isExpanded ?
               walkthroughCloseTitle({hasWidgets, isInlined: true}) :
               walkthroughTitle({isLoading: input.isLoading, lastStep, hasWidgets})
             }
-          </span>
+          </h2>
           <devtools-icon name="chevron-right"></devtools-icon>
         </summary>
 
@@ -147,9 +169,9 @@ function renderSidebarWalkthrough(input: ViewInput, stepsOutput: Lit.LitTemplate
 
   // clang-format off
   return html`
-    <div class="walkthrough-view">
+    <div class="walkthrough-view" jslog=${VisualLogging.section('walkthrough-container')}>
       <div class="walkthrough-header">
-         <div class="walkthrough-title">${i18nString(UIStrings.title)}</div>
+         <h2 class="walkthrough-title">${i18nString(UIStrings.title)}</h2>
          <devtools-button
           .data=${{
             variant: Buttons.Button.Variant.TOOLBAR,
@@ -235,6 +257,7 @@ export class WalkthroughView extends UI.Widget.Widget {
   #onOpen: (message: ModelChatMessage) => void = () => {};
   #isInlined = false;
   #isExpanded = false;
+  #prompt = '';
 
   #pinScrollToBottom = true;
   #isProgrammaticScroll = false;
@@ -246,6 +269,7 @@ export class WalkthroughView extends UI.Widget.Widget {
   constructor(element?: HTMLElement, view: View = DEFAULT_VIEW) {
     super(element);
     this.#view = view;
+    this.setMinimumSize(330, 0);
   }
 
   override wasShown(): void {
@@ -380,10 +404,20 @@ export class WalkthroughView extends UI.Widget.Widget {
     this.requestUpdate();
   }
 
+  get prompt(): string {
+    return this.#prompt;
+  }
+
+  set prompt(prompt: string) {
+    this.#prompt = prompt;
+    this.requestUpdate();
+  }
+
   override performUpdate(): void {
     if (!this.#markdownRenderer) {
       return;
     }
+    const message = this.#message ? getDeduplicatedWidgetsMessage(this.#message) : null;
     this.#view(
         {
           isLoading: this.#isLoading,
@@ -392,7 +426,8 @@ export class WalkthroughView extends UI.Widget.Widget {
           onOpen: this.#onOpen,
           isInlined: this.#isInlined,
           isExpanded: this.#isExpanded,
-          message: this.#message,
+          prompt: this.#prompt,
+          message,
           handleScroll: this.#handleScroll,
         },
         this.#output, this.contentElement);

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import * as Common from '../../../core/common/common.js';
 import * as Host from '../../../core/host/host.js';
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Root from '../../../core/root/root.js';
@@ -11,12 +12,15 @@ import * as Logs from '../../logs/logs.js';
 import * as NetworkTimeCalculator from '../../network_time_calculator/network_time_calculator.js';
 import type * as Trace from '../../trace/trace.js';
 import * as Workspace from '../../workspace/workspace.js';
+import {debugLog} from '../debug.js';
 
 import {AccessibilityContext} from './AccessibilityAgent.js';
 import {
   type AgentOptions,
   AiAgent,
+  type AllowedOriginResult,
   type ContextResponse,
+  isOpaqueOrigin,
   type RequestOptions,
 } from './AiAgent.js';
 import {FileContext} from './FileAgent.js';
@@ -85,7 +89,7 @@ export class ContextSelectionAgent extends AiAgent<never> {
   readonly #networkTimeCalculator?: NetworkTimeCalculator.NetworkTransferTimeCalculator;
   readonly #lighthouseRecording?:
       (overrides?: LHModel.RunTypes.RunOverrides) => Promise<LHModel.ReporterTypes.ReportJSON|null>;
-  #allowedOrigin: () => string | undefined;
+  #allowedOrigin: () => AllowedOriginResult;
 
   constructor(opts: AgentOptions&{
     performanceRecordAndReload?: () => Promise<Trace.TraceModel.ParsedTrace>,
@@ -97,7 +101,7 @@ export class ContextSelectionAgent extends AiAgent<never> {
     this.#lighthouseRecording = opts.lighthouseRecording;
     this.#onInspectElement = opts.onInspectElement;
     this.#networkTimeCalculator = opts.networkTimeCalculator;
-    this.#allowedOrigin = opts.allowedOrigin ?? (() => undefined);
+    this.#allowedOrigin = opts.allowedOrigin ?? (() => ({origin: undefined}));
 
     this.declareFunction<Record<string, never>>('listNetworkRequests', {
       description: `Gives a list of network requests including URL, status code, and duration.`,
@@ -116,11 +120,22 @@ export class ContextSelectionAgent extends AiAgent<never> {
       },
       handler: async () => {
         const requests = [];
-        const origin = this.#allowedOrigin();
+        const allowedOriginResult = this.#allowedOrigin();
+        if ('blocked' in allowedOriginResult) {
+          return {
+            error: 'Cross-origin access blocked due to navigation. Please start a new chat.',
+          };
+        }
+        const origin = allowedOriginResult.origin;
+        if (origin && isOpaqueOrigin(origin)) {
+          return {
+            error: 'No requests recorded by DevTools',
+          };
+        }
 
         let hasCrossOriginRequest = false;
         for (const request of Logs.NetworkLog.NetworkLog.instance().requests()) {
-          const requestOrigin = new URL(request.documentURL).origin;
+          const documentOrigin = Common.ParsedURL.ParsedURL.extractOrigin(request.documentURL);
           /**
            * NOTE: this origin check does not ensure that all the requests are
            * from the same origin as the target page. Instead, it ensures that
@@ -129,7 +144,7 @@ export class ContextSelectionAgent extends AiAgent<never> {
            * during the loading of the target page, and do not leak URLs from
            * other pages.
            */
-          if (origin && requestOrigin !== origin) {
+          if (origin && documentOrigin !== origin) {
             hasCrossOriginRequest = true;
             continue;
           }
@@ -180,14 +195,25 @@ export class ContextSelectionAgent extends AiAgent<never> {
         };
       },
       handler: async ({id}) => {
-        const origin = this.#allowedOrigin();
+        const allowedOriginResult = this.#allowedOrigin();
+        if ('blocked' in allowedOriginResult) {
+          return {
+            error: 'Cross-origin access blocked due to navigation. Please start a new chat.',
+          };
+        }
+        const origin = allowedOriginResult.origin;
+        if (origin && isOpaqueOrigin(origin)) {
+          return {
+            error: 'No request found',
+          };
+        }
         const request = Logs.NetworkLog.NetworkLog.instance().requests().find(req => {
           if (req.requestId() !== id) {
             return false;
           }
 
-          const requestOrigin = new URL(req.documentURL).origin;
-          return !origin || requestOrigin === origin;
+          const documentOrigin = Common.ParsedURL.ParsedURL.extractOrigin(req.documentURL);
+          return !origin || documentOrigin === origin;
         });
 
         if (request) {
@@ -195,6 +221,12 @@ export class ContextSelectionAgent extends AiAgent<never> {
           return {
             context: new RequestContext(request, calculator),
             description: 'User selected a network request',
+            widgets: [{
+              name: 'NETWORK_REQUEST_GENERAL_HEADERS',
+              data: {
+                request,
+              },
+            }],
           };
         }
 
@@ -220,8 +252,23 @@ export class ContextSelectionAgent extends AiAgent<never> {
         };
       },
       handler: async () => {
+        const allowedOriginResult = this.#allowedOrigin();
+        if ('blocked' in allowedOriginResult) {
+          return {
+            error: 'Cross-origin access blocked due to navigation. Please start a new chat.',
+          };
+        }
+        const origin = allowedOriginResult.origin;
+
         const files: Array<{file: string, id: number | undefined}> = [];
         for (const file of ContextSelectionAgent.getUISourceCodes()) {
+          const fileUrl = file.url();
+          const fileOrigin = Common.ParsedURL.ParsedURL.extractOrigin(fileUrl);
+
+          if (origin && fileOrigin !== origin) {
+            continue;
+          }
+
           files.push({
             file: file.fullDisplayName(),
             id: ContextSelectionAgent.uiSourceCodeId.get(file),
@@ -257,8 +304,22 @@ export class ContextSelectionAgent extends AiAgent<never> {
         };
       },
       handler: async params => {
-        const file = ContextSelectionAgent.getUISourceCodes().find(
-            file => ContextSelectionAgent.uiSourceCodeId.get(file) === params.id);
+        const allowedOriginResult = this.#allowedOrigin();
+        if ('blocked' in allowedOriginResult) {
+          return {
+            error: 'Cross-origin access blocked due to navigation. Please start a new chat.',
+          };
+        }
+        const origin = allowedOriginResult.origin;
+
+        const file = ContextSelectionAgent.getUISourceCodes().find(file => {
+          if (ContextSelectionAgent.uiSourceCodeId.get(file) !== params.id) {
+            return false;
+          }
+          const fileUrl = file.url();
+          const fileOrigin = Common.ParsedURL.ParsedURL.extractOrigin(fileUrl);
+          return !origin || fileOrigin === origin;
+        });
 
         if (!file) {
           return {
@@ -269,6 +330,12 @@ export class ContextSelectionAgent extends AiAgent<never> {
         return {
           context: new FileContext(file),
           description: 'User selected a source file',
+          widgets: [{
+            name: 'SOURCE_FILE',
+            data: {
+              uiSourceCode: file,
+            },
+          }],
         };
       },
     });
@@ -305,29 +372,44 @@ export class ContextSelectionAgent extends AiAgent<never> {
       }
     });
 
-    this.declareFunction('runLighthouseAudits', {
+    type LHSupportedRunMode = Extract<LHModel.RunTypes.RunMode, 'navigation'|'snapshot'>;
+    const parseLighthouseMode = (mode?: string): LHSupportedRunMode => {
+      return mode === 'snapshot' ? 'snapshot' : 'navigation';
+    };
+
+    this.declareFunction<{mode: LHSupportedRunMode}>('runLighthouseAudits', {
       description:
           'Records a Lighthouse audit on the current page. Use this to debug accessibility, SEO, and best practices. (For performance metrics like LCP, use performanceRecordAndReload instead).',
       parameters: {
         type: Host.AidaClient.ParametersTypes.OBJECT,
         description: '',
         nullable: true,
-        required: [],
-        properties: {},
+        required: ['mode'],
+        properties: {
+          mode: {
+            type: Host.AidaClient.ParametersTypes.STRING,
+            description:
+                'The mode to run Lighthouse in. Your ONLY options are "navigation" or "snapshot". You should determine this based on the user\'s question. If the user is asking specifically about accessibility, you can run in "snapshot" mode which avoids reloading the page. If the user asks for a full Lighthouse report, you should run in "navigation" mode which is the default. These are the only options you can pass.',
+            nullable: false,
+          }
+        },
       },
-      displayInfoFromArgs: () => {
+      displayInfoFromArgs: args => {
+        const mode = parseLighthouseMode(args.mode);
         return {
           title: 'Auditing your page with Lighthouse',
-          action: 'runLighthouseAudits()',
+          action: `runLighthouseAudits(${mode})`,
         };
       },
-      handler: async () => {
+      handler: async params => {
         if (!this.#lighthouseRecording) {
           return {
             error: 'Lighthouse report is not available.',
           };
         }
-        const result = await this.#lighthouseRecording();
+        const mode = parseLighthouseMode(params.mode);
+        debugLog(`Recording with Lighthouse; runMode=${mode}`);
+        const result = await this.#lighthouseRecording({mode});
         if (!result) {
           return {error: 'Failed to generate Lighthouse report.'};
         }
@@ -335,6 +417,7 @@ export class ContextSelectionAgent extends AiAgent<never> {
         return {
           context: new AccessibilityContext(result),
           description: 'User has selected a Lighthouse report',
+          widgets: [{name: 'LIGHTHOUSE_REPORT', data: {report: result}}],
         };
       }
     });

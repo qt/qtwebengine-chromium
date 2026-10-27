@@ -25,20 +25,20 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/metal/UtilsMetal.h"
+#include "src/dawn/native/metal/UtilsMetal.h"
 
 #include <Metal/Metal.h>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/Math.h"
-#include "dawn/common/Range.h"
-#include "dawn/native/Buffer.h"
-#include "dawn/native/CommandBuffer.h"
-#include "dawn/native/EnumMaskIterator.h"
-#include "dawn/native/Pipeline.h"
-#include "dawn/native/ShaderModule.h"
-#include "dawn/native/dawn_platform.h"
-#include "dawn/native/metal/BufferMTL.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/Math.h"
+#include "src/dawn/common/Range.h"
+#include "src/dawn/native/Buffer.h"
+#include "src/dawn/native/CommandBuffer.h"
+#include "src/dawn/native/EnumMaskIterator.h"
+#include "src/dawn/native/Pipeline.h"
+#include "src/dawn/native/ShaderModule.h"
+#include "src/dawn/native/dawn_platform.h"
+#include "src/dawn/native/metal/BufferMTL.h"
 
 namespace dawn::native::metal {
 
@@ -260,11 +260,13 @@ void MakeResourcesResident(Encoder encoder, const SyncScopeResourceUsage& resour
             continue;
         }
 
+        // The texture is either a normal one, or a planar texture with up to 3 planes.
         // There are at most three planes. Call useResource for each plane that is used.
-        const Aspect kAspectsCorrespondingToPlane0{~(Aspect::Plane1 | Aspect::Plane2)};
-        for (Aspect plane : {kAspectsCorrespondingToPlane0, Aspect::Plane1, Aspect::Plane2}) {
-            if (aspects & plane) {
-                MakeResourceResident(encoder, texture->GetMTLTexture(plane),
+        const Aspect kNonPlanarAspects{~(Aspect::Plane0 | Aspect::Plane1 | Aspect::Plane2)};
+        for (Aspect plane : {kNonPlanarAspects, Aspect::Plane0, Aspect::Plane1, Aspect::Plane2}) {
+            auto aspect = aspects & plane;
+            if (aspect) {
+                MakeResourceResident(encoder, texture->GetMTLTexture(aspect),
                                      ToMTLResourceUsage(usages), stages);
             }
         }
@@ -272,6 +274,26 @@ void MakeResourcesResident(Encoder encoder, const SyncScopeResourceUsage& resour
 }
 
 }  // anonymous namespace
+
+MTLTextureType MetalTextureViewType(wgpu::TextureViewDimension dimension, bool multisampled) {
+    switch (dimension) {
+        case wgpu::TextureViewDimension::e1D:
+            return MTLTextureType1D;
+        case wgpu::TextureViewDimension::e2D:
+            return multisampled ? MTLTextureType2DMultisample : MTLTextureType2D;
+        case wgpu::TextureViewDimension::e2DArray:
+            return MTLTextureType2DArray;
+        case wgpu::TextureViewDimension::Cube:
+            return MTLTextureTypeCube;
+        case wgpu::TextureViewDimension::CubeArray:
+            return MTLTextureTypeCubeArray;
+        case wgpu::TextureViewDimension::e3D:
+            return MTLTextureType3D;
+        case wgpu::TextureViewDimension::Undefined:
+            break;
+    }
+    DAWN_UNREACHABLE();
+}
 
 MTLPixelFormat MetalPixelFormat(const DeviceBase* device, wgpu::TextureFormat format) {
     switch (format) {

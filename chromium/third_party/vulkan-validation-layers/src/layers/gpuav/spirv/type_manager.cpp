@@ -712,6 +712,37 @@ const Constant& TypeManager::GetConstantNull(const Type& type) {
     return AddConstant(std::move(new_inst), type);
 }
 
+const AccessPath TypeManager::BuildAccessPath(const Function& function, const Instruction& inst) const {
+    AccessPath path;
+
+    // |Operand 0| works for both Store/Load
+    const uint32_t ptr_id = inst.Operand(0);
+
+    // Buffer/Image Descriptor will always have an access chains, but some cases can have direct access.
+    // TaskPayload can be a scalar that does a direct variable access
+    // An non-array AccelerationStructure (which uses UniformConstant storage class)
+    path.variable = FindVariableById(ptr_id);
+    if (path.variable) {
+        return path;
+    }
+
+    const Instruction* next_access_chain = function.FindInstruction(ptr_id);
+    // We need to walk down possibly multiple chained OpAccessChains or OpCopyObject to get the variable
+    while (next_access_chain && next_access_chain->IsNonPtrAccessChain()) {
+        // inserting in front allows us to walk over the loop from the front
+        path.ac_list.insert(path.ac_list.begin(), next_access_chain);
+
+        const uint32_t access_chain_base_id = next_access_chain->Operand(0);
+        path.variable = FindVariableById(access_chain_base_id);
+        if (path.variable) {
+            break;  // found
+        }
+        next_access_chain = function.FindInstruction(access_chain_base_id);
+    }
+
+    return path;
+}
+
 const Variable& TypeManager::AddVariable(std::unique_ptr<Instruction> new_inst, const Type& type) {
     const auto& inst = module_.types_values_constants_.emplace_back(std::move(new_inst));
 
@@ -794,19 +825,26 @@ bool Type::Is64Bit() const {
     return false;
 }
 
-uint32_t TypeManager::GetNumScalarElements(const Type& type) const {
+// Current use for SharedMemoryDataRace where each scalar is a slot and we need to know where inside a data type the slot index is.
+uint32_t TypeManager::GetScalarElementCount(const Type& type) const {
     switch (type.spv_type_) {
-        case SpvType::kStruct:
-            return GetNumScalarElementsBeforeCompositeMember(type, type.inst_.Length() - 2);
+        case SpvType::kStruct: {
+            uint32_t count = 0;
+            uint32_t members = type.inst_.Length() - 2;
+            for (uint32_t i = 0; i < members; ++i) {
+                count += GetScalarElementCount(*FindChildType(type, i));
+            }
+            return count;
+        }
         case SpvType::kArray: {
             const Type* element_type = FindTypeById(type.inst_.Word(2));
-            return type.meta_.array.length * GetNumScalarElements(*element_type);
+            return type.meta_.array.length * GetScalarElementCount(*element_type);
         }
         case SpvType::kVectorIdEXT:
         case SpvType::kVector:
             return type.meta_.vector.component_count;
         case SpvType::kMatrix:
-            return type.meta_.matrix.component_count * GetNumScalarElements(*FindTypeById(type.inst_.Word(2)));
+            return type.meta_.matrix.component_count * GetScalarElementCount(*FindTypeById(type.inst_.Word(2)));
         case SpvType::kInt:
         case SpvType::kFloat:
         case SpvType::kBool:
@@ -848,6 +886,7 @@ void TypeManager::AddUndef(std::unique_ptr<Instruction> new_inst) {
 
 bool TypeManager::IsUndef(uint32_t id) const { return undef_ids_.find(id) != undef_ids_.end(); }
 
+// Not ideal to use, the caller really should already know which type it wants
 const Type* TypeManager::FindChildType(const Type& type, uint32_t idx) const {
     switch (type.spv_type_) {
         case SpvType::kPointer:
@@ -871,14 +910,6 @@ const Type* TypeManager::FindChildType(const Type& type, uint32_t idx) const {
             assert(0);
             return nullptr;
     }
-}
-
-uint32_t TypeManager::GetNumScalarElementsBeforeCompositeMember(const Type& type, uint32_t idx) const {
-    uint32_t count = 0;
-    for (uint32_t i = 0; i < idx; ++i) {
-        count += GetNumScalarElements(*FindChildType(type, i));
-    }
-    return count;
 }
 
 // This stems from the fact even if you have two OpTypeStruct that are the EXACT SAME, it is not valid to mix and match them

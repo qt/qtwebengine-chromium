@@ -81,12 +81,13 @@ v8::LocalVector<v8::Value> ExpandKeywordParams(
   }
   result[0] = v8::Local<v8::Value>();  // Make unknown.
 
-  v8::Local<v8::Object> pObj = pRuntime->ToObject(originals[0]);
+  v8::Local<v8::Object> pObj = pRuntime->ToObjectReentrant(originals[0]);
   va_list ap;
   va_start(ap, nKeywords);
   for (size_t i = 0; i < nKeywords; ++i) {
     const char* property = va_arg(ap, const char*);
-    v8::Local<v8::Value> v8Value = pRuntime->GetObjectProperty(pObj, property);
+    v8::Local<v8::Value> v8Value =
+        pRuntime->GetObjectPropertyReentrant(pObj, property);
     if (!v8Value->IsUndefined()) {
       result[i] = v8Value;
     }

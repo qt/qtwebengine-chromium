@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Deprecation from '../../../generated/Deprecation.js';
 /* eslint-disable @devtools/es-modules-import */
@@ -47,8 +49,9 @@ describeWithEnvironment('MarkdownView', () => {
           tokens: [
             {
               raw: '\'',
-              text: '&#39;',
+              text: '\'',
               type: 'text',
+              escaped: false,
             },
             {
               href: 'https://example.test',
@@ -65,8 +68,9 @@ describeWithEnvironment('MarkdownView', () => {
             },
             {
               raw: '\'',
-              text: '&#39;',
+              text: '\'',
               type: 'text',
+              escaped: false,
             },
           ],
           type: 'paragraph',

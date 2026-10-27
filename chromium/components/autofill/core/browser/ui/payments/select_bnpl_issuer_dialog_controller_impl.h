@@ -5,9 +5,13 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_UI_PAYMENTS_SELECT_BNPL_ISSUER_DIALOG_CONTROLLER_IMPL_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_UI_PAYMENTS_SELECT_BNPL_ISSUER_DIALOG_CONTROLLER_IMPL_H_
 
+#include <memory>
+#include <string>
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "base/memory/raw_ref.h"
+#include "base/memory/weak_ptr.h"
 #include "components/autofill/core/browser/data_model/payments/bnpl_issuer.h"
 #include "components/autofill/core/browser/ui/payments/select_bnpl_issuer_dialog_controller.h"
 
@@ -15,7 +19,6 @@ namespace autofill::payments {
 struct BnplIssuerContext;
 class PaymentsAutofillClient;
 class SelectBnplIssuerView;
-struct TextWithLink;
 
 // Implementation for the SelectBnplIssuerDialogController.
 class SelectBnplIssuerDialogControllerImpl
@@ -48,10 +51,8 @@ class SelectBnplIssuerDialogControllerImpl
   void Dismiss() override;
   const std::vector<BnplIssuerContext>& GetIssuerContexts() const override;
   const std::string& GetAppLocale() const override;
-  TextWithLink GetLinkText() const override;
   std::u16string GetTitle() const override;
-  std::u16string GetSelectionOptionText(
-      autofill::BnplIssuer::IssuerId issuer_id) const override;
+  const PaymentsDataManager& GetPaymentsDataManager() const override;
 
  private:
   // The dialog view, managed by the views infrastructure on desktop.

@@ -19,6 +19,7 @@
 #include "platform/base/error.h"
 #include "util/osp_logging.h"
 #include "util/string_util.h"
+#include "util/no_destructor.h"
 
 namespace openscreen::cast {
 
@@ -73,8 +74,8 @@ Error ParseAuthMessage(const CastMessage& challenge_reply,
 class CastNonce {
  public:
   static CastNonce* GetInstance() {
-    static CastNonce* cast_nonce = new CastNonce();
-    return cast_nonce;
+    static openscreen::NoDestructor<CastNonce> cast_nonce;
+    return cast_nonce.get();
   }
 
   static const std::string& Get() {
@@ -82,8 +83,9 @@ class CastNonce {
     return GetInstance()->nonce_;
   }
 
- private:
   CastNonce() : nonce_(kNonceSizeInBytes, 0) { GenerateNonce(); }
+
+ private:
   void GenerateNonce() {
     OSP_CHECK_EQ(
         RAND_bytes(reinterpret_cast<uint8_t*>(&nonce_[0]), kNonceSizeInBytes),

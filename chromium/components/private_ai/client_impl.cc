@@ -24,7 +24,7 @@ namespace {
 
 void ReceiveTextRequest(
     Client::OnTextRequestCompletedCallback cb,
-    base::expected<proto::GenerateContentResponse, ErrorCode> result) {
+    base::expected<proto::GenerateContentResponse, StatusCode> result) {
   if (!result.has_value()) {
     std::move(cb).Run(base::unexpected(result.error()));
     return;
@@ -33,7 +33,7 @@ void ReceiveTextRequest(
   auto text = ConvertGenerateContentResponseToText(*result);
   if (!text.has_value()) {
     LOG(ERROR) << "GenerateContentResponse did not contain any content";
-    std::move(cb).Run(base::unexpected(ErrorCode::kNoContent));
+    std::move(cb).Run(base::unexpected(StatusCode::kNoContent));
     return;
   }
 
@@ -42,7 +42,7 @@ void ReceiveTextRequest(
 
 void ReceiveGenerateContentResponse(
     Client::OnGenerateContentRequestCompletedCallback cb,
-    base::expected<proto::PrivateAiResponse, ErrorCode> private_ai_response) {
+    base::expected<proto::PrivateAiResponse, StatusCode> private_ai_response) {
   if (!private_ai_response.has_value()) {
     std::move(cb).Run(base::unexpected(private_ai_response.error()));
     return;
@@ -51,7 +51,7 @@ void ReceiveGenerateContentResponse(
   if (!private_ai_response->has_generate_content_response()) {
     LOG(ERROR) << "PrivateAiResponse did not contain a "
                   "generate_content_response";
-    std::move(cb).Run(base::unexpected(ErrorCode::kNoResponse));
+    std::move(cb).Run(base::unexpected(StatusCode::kNoResponse));
     return;
   }
   std::move(cb).Run(
@@ -60,7 +60,7 @@ void ReceiveGenerateContentResponse(
 
 void ReceivePaicMessage(
     Client::OnPaicMessageRequestCompletedCallback cb,
-    base::expected<proto::PrivateAiResponse, ErrorCode> private_ai_response) {
+    base::expected<proto::PrivateAiResponse, StatusCode> private_ai_response) {
   if (!private_ai_response.has_value()) {
     std::move(cb).Run(base::unexpected(private_ai_response.error()));
     return;
@@ -69,7 +69,7 @@ void ReceivePaicMessage(
   if (!private_ai_response->has_paic_response()) {
     LOG(ERROR) << "PrivateAiResponse did not contain a "
                   "paic_response";
-    std::move(cb).Run(base::unexpected(ErrorCode::kNoResponse));
+    std::move(cb).Run(base::unexpected(StatusCode::kNoResponse));
     return;
   }
   std::move(cb).Run(std::move(private_ai_response->paic_response()));
@@ -90,8 +90,8 @@ ClientImpl::~ClientImpl() {
   connection_manager_.reset();
 }
 
-void ClientImpl::EstablishConnection() {
-  connection_manager_->GetConnection();
+void ClientImpl::EstablishConnection(proto::FeatureName feature_name) {
+  connection_manager_->GetConnection(feature_name);
 }
 
 void ClientImpl::SendTextRequest(proto::FeatureName feature_name,
@@ -101,7 +101,7 @@ void ClientImpl::SendTextRequest(proto::FeatureName feature_name,
   proto::GenerateContentRequest request;
   if (feature_name ==
       proto::FeatureName::FEATURE_NAME_DEMO_GEMINI_GENERATE_CONTENT) {
-    request.set_model("dev_v3xs");
+    request.set_model("models/dev-v3-xs-sc-text");
   }
   auto* content = request.add_contents();
   content->set_role("user");
@@ -152,20 +152,20 @@ void ClientImpl::SendRequest(proto::FeatureName feature_name,
 
   private_ai_request.set_feature_name(feature_name);
 
-  connection_manager_->GetConnection()->Send(
-      std::move(private_ai_request), options.timeout,
-      base::BindOnce(&ClientImpl::OnReponseReceived, weak_factory_.GetWeakPtr(),
-                     std::move(callback)));
+  connection_manager_->GetConnection(feature_name)
+      ->Send(std::move(private_ai_request), options.timeout,
+             base::BindOnce(&ClientImpl::OnReponseReceived,
+                            weak_factory_.GetWeakPtr(), std::move(callback)));
 }
 
 void ClientImpl::OnReponseReceived(
     OnRequestCompletedCallback cb,
-    base::expected<proto::PrivateAiResponse, ErrorCode> private_ai_response) {
+    base::expected<proto::PrivateAiResponse, StatusCode> private_ai_response) {
   if (private_ai_response.has_value()) {
     logger_->LogInfo(FROM_HERE, "Response received.");
   } else {
     logger_->LogError(FROM_HERE,
-                      "Error: " + base::ToString(private_ai_response.error()));
+                      "Status: " + base::ToString(private_ai_response.error()));
   }
   std::move(cb).Run(private_ai_response);
 }

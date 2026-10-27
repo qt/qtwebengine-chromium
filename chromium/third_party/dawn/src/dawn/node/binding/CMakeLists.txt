@@ -72,6 +72,8 @@ add_library(dawn_node_binding STATIC
     "GPURenderPassEncoder.h"
     "GPURenderPipeline.cpp"
     "GPURenderPipeline.h"
+    "GPUResourceTable.cpp"
+    "GPUResourceTable.h"
     "GPUSampler.cpp"
     "GPUSampler.h"
     "GPUShaderModule.cpp"

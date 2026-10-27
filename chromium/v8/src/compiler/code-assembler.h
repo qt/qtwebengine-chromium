@@ -77,9 +77,6 @@ class PromiseReactionJobTask;
 class PromiseRejectReactionJobTask;
 class TurbofanCompilationJob;
 class Zone;
-#define MAKE_FORWARD_DECLARATION(Name) class Name;
-TORQUE_DEFINED_CLASS_LIST(MAKE_FORWARD_DECLARATION)
-#undef MAKE_FORWARD_DECLARATION
 
 template <typename T>
 class Signature;
@@ -92,6 +89,7 @@ inline bool NeedsBoundsCheck(CheckBounds check_bounds) {
     case CheckBounds::kDebugOnly:
       return DEBUG_BOOL;
   }
+  UNREACHABLE();
 }
 
 enum class StoreToObjectWriteBarrier { kNone, kMap, kFull };
@@ -350,6 +348,7 @@ TNode<Float64T> Float64Add(TNode<Float64T> a, TNode<Float64T> b);
   V(TruncateFloat64ToWord32, Uint32T, Float64T)                 \
   V(TruncateInt64ToInt32, Int32T, Int64T)                       \
   V(ChangeFloat32ToFloat64, Float64T, Float32T)                 \
+  V(ChangeFloat16RawBitsToFloat64, Float64T, Float16RawBitsT)   \
   V(ChangeFloat64ToUint32, Uint32T, Float64T)                   \
   V(ChangeFloat64ToUint64, Uint64T, Float64T)                   \
   V(ChangeFloat64ToInt64, Int64T, Float64T)                     \
@@ -390,7 +389,7 @@ TNode<Float64T> Float64Add(TNode<Float64T> a, TNode<Float64T> b);
 // create code objects with TurboFan's backend. This class is mostly a thin
 // shim around the RawMachineAssembler, and its primary job is to ensure that
 // the innards of the RawMachineAssembler and other compiler implementation
-// details don't leak outside of the the compiler directory..
+// details don't leak outside of the compiler directory.
 //
 // V8 components that need to generate low-level code using this interface
 // should include this header--and this header only--from the compiler
@@ -421,6 +420,7 @@ class V8_EXPORT_PRIVATE CodeAssembler {
   bool IsFloat64RoundTiesEvenSupported() const;
   bool IsFloat64RoundTruncateSupported() const;
   bool IsTruncateFloat64ToFloat16RawBitsSupported() const;
+  bool IsChangeFloat16RawBitsToFloat64Supported() const;
   bool IsInt32AbsWithOverflowSupported() const;
   bool IsInt64AbsWithOverflowSupported() const;
   bool IsIntPtrAbsWithOverflowSupported() const;
@@ -1352,6 +1352,7 @@ class V8_EXPORT_PRIVATE CodeAssembler {
   TNode<UintPtrT> ChangeFloat64ToUintPtr(TNode<Float64T> value);
   // Same in the opposite direction.
   TNode<Float64T> ChangeUintPtrToFloat64(TNode<UintPtrT> value);
+  TNode<Float64T> ChangeUint64ToFloat64(TNode<Uint64T> value);
 
   // Changes an intptr_t to a double, e.g. for storing an element index
   // outside Smi range in a HeapNumber. Lossless on 32-bit,

@@ -65,7 +65,7 @@ v8::Intercepted ObjectTemplateBuilder::NamedPropertySetterImpl(
     WrappablePointerTag tag,
     v8::Local<v8::Name> property,
     v8::Local<v8::Value> value,
-    const v8::PropertyCallbackInfo<void>& info) {
+    const v8::PropertyCallbackInfo<v8::Boolean>& info) {
   v8::Isolate* isolate = info.GetIsolate();
   NamedPropertyInterceptor* interceptor =
       NamedInterceptorFromV8(isolate, info.Holder(), tag);
@@ -141,9 +141,7 @@ ObjectTemplateBuilder::ObjectTemplateBuilder(v8::Isolate* isolate,
                                   " cannot be created using the constructor."})
                   : "Objects of this type cannot be created using the "
                     "constructor"))),
-      template_(constructor_template_->InstanceTemplate()) {
-  template_->SetInternalFieldCount(kNumberOfInternalFields);
-}
+      template_(constructor_template_->InstanceTemplate()) {}
 
 ObjectTemplateBuilder::ObjectTemplateBuilder(
     const ObjectTemplateBuilder& other) = default;

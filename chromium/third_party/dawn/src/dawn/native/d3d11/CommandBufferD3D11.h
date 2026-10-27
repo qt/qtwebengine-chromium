@@ -28,7 +28,7 @@
 #ifndef SRC_DAWN_NATIVE_D3D11_COMMANDBUFFERD3D11_H_
 #define SRC_DAWN_NATIVE_D3D11_COMMANDBUFFERD3D11_H_
 
-#include "dawn/native/CommandBuffer.h"
+#include "src/dawn/native/CommandBuffer.h"
 
 namespace dawn::native {
 enum class Command;
@@ -39,6 +39,7 @@ struct DispatchCmd;
 namespace dawn::native::d3d11 {
 
 class ComputePipeline;
+class PipelineStateTracker;
 class RenderPipeline;
 class ScopedSwapStateCommandRecordingContext;
 
@@ -51,9 +52,12 @@ class CommandBuffer final : public CommandBufferBase {
   private:
     using CommandBufferBase::CommandBufferBase;
 
-    MaybeError ExecuteComputePass(const ScopedSwapStateCommandRecordingContext* commandContext);
+    MaybeError ExecuteComputePass(const ScopedSwapStateCommandRecordingContext* commandContext,
+                                  PipelineStateTracker* pipelineStateTracker);
     MaybeError ExecuteRenderPass(BeginRenderPassCmd* renderPass,
-                                 const ScopedSwapStateCommandRecordingContext* commandContext);
+                                 const ScopedSwapStateCommandRecordingContext* commandContext,
+                                 PipelineStateTracker* pipelineStateTracker,
+                                 PassIndex renderPassIndex);
     void HandleDebugCommands(const ScopedSwapStateCommandRecordingContext* commandContext,
                              CommandIterator* iter,
                              Command command);

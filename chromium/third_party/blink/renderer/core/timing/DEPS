@@ -2,10 +2,11 @@ specific_include_rules = {
     "background_tracing_helper.cc": [
         "+base/strings/string_split.h",
         "+crypto/obsolete/md5.h",
+        "+crypto/hash.h",
         "+url/url_constants.h",
     ],
-    ".*test\.cc": [
-      "+base/test/trace_event_analyzer.h",
+    ".*test\\.cc": [
+      "+base/test/tracing/trace_event_analyzer.h",
       "+base/json/json_reader.h",
     ],
     "performance_mark_test.cc": [
@@ -19,5 +20,8 @@ specific_include_rules = {
     ],
     "window_performance.h": [
         "+components/viz/common/frame_sinks/begin_frame_args.h",
+    ],
+    "window_performance_test.cc": [
+        "+ui/events/keycodes/keyboard_code_conversion.h",
     ],
 }

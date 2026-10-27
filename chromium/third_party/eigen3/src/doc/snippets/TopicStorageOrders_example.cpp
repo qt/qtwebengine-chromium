@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 Matrix<int, 3, 4, ColMajor> Acolmajor;
 Acolmajor << 8, 2, 2, 9, 9, 1, 4, 4, 3, 5, 4, 5;
 cout << "The matrix A:" << endl;

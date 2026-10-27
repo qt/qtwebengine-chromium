@@ -8,6 +8,7 @@
 
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
 #include "base/strings/strcat.h"
@@ -1063,14 +1064,13 @@ base::FilePath CreateCopyWithBackup(const base::FilePath& filepath,
 std::optional<base::FilePath> CreateTempEncryptedFile(
     const base::FilePath& file,
     const std::string_view& file_name,
-    const scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>&
-        encryptor) {
+    scoped_refptr<const os_crypt_async::Encryptor> encryptor) {
   std::string file_content;
   if (!base::ReadFileToString(file, &file_content)) {
     return std::nullopt;
   }
   std::string encrypted_file_content;
-  if (!encryptor->data.EncryptString(file_content, &encrypted_file_content)) {
+  if (!encryptor->EncryptString(file_content, &encrypted_file_content)) {
     return std::nullopt;
   }
   const base::FilePath temp_dir = base::CreateUniqueTempDirectoryScopedToTest();
@@ -1164,11 +1164,8 @@ class ModelLoaderWithSecondayFileTest
   }
 
   base::test::ScopedFeatureList feature_list_;
-  scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-      encryptor_ = base::MakeRefCounted<
-          base::RefCountedData<const os_crypt_async::Encryptor>>(
-          std::in_place,
-          os_crypt_async::GetTestEncryptorForTesting());
+  scoped_refptr<const os_crypt_async::Encryptor> encryptor_ =
+      os_crypt_async::GetTestEncryptorForTesting();
 };
 
 TEST_P(ModelLoaderWithSecondayFileTest,
@@ -1192,11 +1189,10 @@ TEST_P(ModelLoaderWithSecondayFileTest,
   const base::FilePath secondary_account_file_path =
       GetTestDataDir().AppendASCII("bookmarks/missing_file_2.json");
 
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_local_or_syncable_bookmark_future;
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_account_bookmark_future;
-  base::test::TestFuture<std::unique_ptr<BookmarkLoadDetails>> details_future;
   scoped_refptr<ModelLoader> loader =
       CreateModelLoader(primary_local_or_syncable_file_path,
                         secondary_local_or_syncable_file_path,
@@ -1210,10 +1206,11 @@ TEST_P(ModelLoaderWithSecondayFileTest,
       histogram_tester,
       /*secondary_result=*/metrics::BookmarksFileLoadResult::kFileMissing);
   // Verify that the save encrypted file callback is called for both files.
+  EXPECT_EQ(
+      GetSecondaryStorageFileEncryptionType(),
+      save_local_or_syncable_bookmark_future.Get<StorageFileEncryptionType>());
   EXPECT_EQ(GetSecondaryStorageFileEncryptionType(),
-            save_local_or_syncable_bookmark_future.Get());
-  EXPECT_EQ(GetSecondaryStorageFileEncryptionType(),
-            save_account_bookmark_future.Get());
+            save_account_bookmark_future.Get<StorageFileEncryptionType>());
 }
 
 TEST_P(ModelLoaderWithSecondayFileTest,
@@ -1243,9 +1240,9 @@ TEST_P(ModelLoaderWithSecondayFileTest,
           /*existing_file_name=*/"bookmarks/model_with_sync_metadata_1.json",
           /*new_file_name=*/"TestBookmarks1");
 
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_local_or_syncable_bookmark_future;
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_account_bookmark_future;
   scoped_refptr<ModelLoader> loader =
       CreateModelLoader(primary_local_or_syncable_file_path,
@@ -1270,10 +1267,11 @@ TEST_P(ModelLoaderWithSecondayFileTest,
       false,
       /*expected_bucket_count=*/1);
   // Verify that saving of the encrypted files is scheduled.
+  EXPECT_EQ(
+      GetSecondaryStorageFileEncryptionType(),
+      save_local_or_syncable_bookmark_future.Get<StorageFileEncryptionType>());
   EXPECT_EQ(GetSecondaryStorageFileEncryptionType(),
-            save_local_or_syncable_bookmark_future.Get());
-  EXPECT_EQ(GetSecondaryStorageFileEncryptionType(),
-            save_account_bookmark_future.Get());
+            save_account_bookmark_future.Get<StorageFileEncryptionType>());
 
   EXPECT_THAT(GetClearTextFilePath(primary_local_or_syncable_file_path,
                                    secondary_local_or_syncable_file_path),
@@ -1310,9 +1308,9 @@ TEST_P(ModelLoaderWithSecondayFileTest,
           /*existing_file_name=*/"bookmarks/model_with_sync_metadata_2.json",
           /*new_file_name=*/"TestBookmarks2");
 
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_local_or_syncable_bookmark_future;
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_account_bookmark_future;
   base::test::TestFuture<std::unique_ptr<BookmarkLoadDetails>> details_future;
   scoped_refptr<ModelLoader> loader =
@@ -1373,11 +1371,10 @@ TEST_P(ModelLoaderWithSecondayFileTest,
   const base::FilePath secondary_account_file_path =
       GetTestDataDir().AppendASCII("bookmarks/missing_file_2.json");
 
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_local_or_syncable_bookmark_future;
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_account_bookmark_future;
-  base::test::TestFuture<std::unique_ptr<BookmarkLoadDetails>> details_future;
   scoped_refptr<ModelLoader> loader =
       CreateModelLoader(primary_local_or_syncable_file_path,
                         secondary_local_or_syncable_file_path,
@@ -1406,7 +1403,7 @@ TEST_P(ModelLoaderWithSecondayFileTest,
                     GetSecondaryEncryptionHistogramSuffix()}),
       metrics::BookmarksFileLoadResult::kFileMissing,
       /*expected_bucket_count=*/1);
-  EXPECT_EQ(save_account_bookmark_future.Get(),
+  EXPECT_EQ(save_account_bookmark_future.Get<StorageFileEncryptionType>(),
             GetSecondaryStorageFileEncryptionType());
 }
 
@@ -1437,9 +1434,9 @@ TEST_P(ModelLoaderWithSecondayFileTest,
           /*existing_file_name=*/"bookmarks/model_with_sync_metadata_2.json",
           /*new_file_name=*/"TestBookmarks2");
 
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_local_or_syncable_bookmark_future;
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_account_bookmark_future;
   scoped_refptr<ModelLoader> loader =
       CreateModelLoader(primary_local_or_syncable_file_path,
@@ -1495,9 +1492,9 @@ TEST_P(ModelLoaderWithSecondayFileTest,
   const base::FilePath secondary_account_file_path =
       GetTestDataDir().AppendASCII("bookmarks/missing_file_4.json");
 
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_local_or_syncable_bookmark_future;
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_account_bookmark_future;
   scoped_refptr<ModelLoader> loader =
       CreateModelLoader(primary_local_or_syncable_file_path,
@@ -1548,10 +1545,8 @@ TEST(ModelLoaderTest, LoadBookmarks_ShouldReportDecryptionFailed) {
   base::test::TaskEnvironment task_environment{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
 
-  scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-      encryptor = base::MakeRefCounted<
-          base::RefCountedData<const os_crypt_async::Encryptor>>(
-          std::in_place, os_crypt_async::GetTestEncryptorForTesting());
+  scoped_refptr<const os_crypt_async::Encryptor> encryptor =
+      os_crypt_async::GetTestEncryptorForTesting();
   const base::FilePath local_or_syncable_file_path = CreateCopyWithBackup(
       GetTestDataDir().AppendASCII("bookmarks/model_with_sync_metadata_1.json"),
       "Bookmarks");
@@ -1564,9 +1559,9 @@ TEST(ModelLoaderTest, LoadBookmarks_ShouldReportDecryptionFailed) {
   const base::FilePath encrypted_account_file_path =
       GetTestDataDir().AppendASCII("bookmarks/model_with_sync_metadata_2.json");
 
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_local_or_syncable_bookmark_future;
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_account_bookmark_future;
   base::test::TestFuture<std::unique_ptr<BookmarkLoadDetails>> details_future;
   scoped_refptr<ModelLoader> loader = ModelLoader::Create(
@@ -1583,9 +1578,10 @@ TEST(ModelLoaderTest, LoadBookmarks_ShouldReportDecryptionFailed) {
       /*secondary_histogram_suffix=*/".Encrypted",
       /*secondary_result=*/metrics::BookmarksFileLoadResult::kDecryptionFailed);
   // Verify that saving of the encrypted files is scheduled.
-  EXPECT_EQ(save_local_or_syncable_bookmark_future.Get(),
-            StorageFileEncryptionType::kEncrypted);
-  EXPECT_EQ(save_account_bookmark_future.Get(),
+  EXPECT_EQ(
+      save_local_or_syncable_bookmark_future.Get<StorageFileEncryptionType>(),
+      StorageFileEncryptionType::kEncrypted);
+  EXPECT_EQ(save_account_bookmark_future.Get<StorageFileEncryptionType>(),
             StorageFileEncryptionType::kEncrypted);
 
   EXPECT_THAT(local_or_syncable_file_path, FileAndBackupFileExist());
@@ -1607,10 +1603,8 @@ TEST_P(ModelLoaderWithEncryptionFileAsPrimaryTest,
   base::test::TaskEnvironment task_environment{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
 
-  scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-      encryptor = base::MakeRefCounted<
-          base::RefCountedData<const os_crypt_async::Encryptor>>(
-          std::in_place, os_crypt_async::GetTestEncryptorForTesting());
+  scoped_refptr<const os_crypt_async::Encryptor> encryptor =
+      os_crypt_async::GetTestEncryptorForTesting();
   const base::FilePath local_or_syncable_file_path = CreateCopyWithBackup(
       GetTestDataDir().AppendASCII("bookmarks/model_with_sync_metadata_1.json"),
       "Bookmarks");
@@ -1628,9 +1622,9 @@ TEST_P(ModelLoaderWithEncryptionFileAsPrimaryTest,
                               "EncryptedAccountBookmarks", encryptor)
           .value();
 
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_local_or_syncable_bookmark_future;
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_account_bookmark_future;
   base::test::TestFuture<std::unique_ptr<BookmarkLoadDetails>> details_future;
   scoped_refptr<ModelLoader> loader = ModelLoader::Create(
@@ -1659,10 +1653,8 @@ TEST_P(ModelLoaderWithEncryptionFileAsPrimaryTest,
   base::test::TaskEnvironment task_environment{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
 
-  scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-      encryptor = base::MakeRefCounted<
-          base::RefCountedData<const os_crypt_async::Encryptor>>(
-          std::in_place, os_crypt_async::GetTestEncryptorForTesting());
+  scoped_refptr<const os_crypt_async::Encryptor> encryptor =
+      os_crypt_async::GetTestEncryptorForTesting();
   const base::FilePath local_or_syncable_file_path = CreateCopyWithBackup(
       GetTestDataDir().AppendASCII("bookmarks/model_with_sync_metadata_1.json"),
       "Bookmarks");
@@ -1674,9 +1666,9 @@ TEST_P(ModelLoaderWithEncryptionFileAsPrimaryTest,
   const base::FilePath encrypted_account_file_path =
       GetTestDataDir().AppendASCII("bookmarks/missing_file_2.json");
 
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_local_or_syncable_bookmark_future;
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_account_bookmark_future;
   base::test::TestFuture<std::unique_ptr<BookmarkLoadDetails>> details_future;
   scoped_refptr<ModelLoader> loader = ModelLoader::Create(
@@ -1718,25 +1710,24 @@ TEST_P(ModelLoaderWithEncryptionFileAsPrimaryTest,
           {kBookmarksFileLoadResultMetricName, ".Account", ".Encrypted"}),
       /*expected_count=*/0);
   // Verify that the save encrypted file callback is called for both files.
+  EXPECT_EQ(
+      StorageFileEncryptionType::kEncrypted,
+      save_local_or_syncable_bookmark_future.Get<StorageFileEncryptionType>());
   EXPECT_EQ(StorageFileEncryptionType::kEncrypted,
-            save_local_or_syncable_bookmark_future.Get());
-  EXPECT_EQ(StorageFileEncryptionType::kEncrypted,
-            save_account_bookmark_future.Get());
+            save_account_bookmark_future.Get<StorageFileEncryptionType>());
 
   EXPECT_THAT(local_or_syncable_file_path, FileAndBackupFileExist());
   EXPECT_THAT(account_file_path, FileAndBackupFileExist());
 }
 
 TEST_P(ModelLoaderWithEncryptionFileAsPrimaryTest,
-       LoadBookmarks_ShouldSaveEncryptedFileEvenIfClearTextFallbackFails) {
+       LoadBookmarks_ShouldNotSaveEncryptedFileEvenIfClearTextFallbackFails) {
   base::HistogramTester histogram_tester;
   base::test::TaskEnvironment task_environment{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
 
-  scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-      encryptor = base::MakeRefCounted<
-          base::RefCountedData<const os_crypt_async::Encryptor>>(
-          std::in_place, os_crypt_async::GetTestEncryptorForTesting());
+  scoped_refptr<const os_crypt_async::Encryptor> encryptor =
+      os_crypt_async::GetTestEncryptorForTesting();
   const base::FilePath local_or_syncable_file_path = CreateCopyWithBackup(
       GetTestDataDir().AppendASCII("bookmarks/model_invalid_json.json"),
       "Bookmarks");
@@ -1748,9 +1739,9 @@ TEST_P(ModelLoaderWithEncryptionFileAsPrimaryTest,
   const base::FilePath encrypted_account_file_path =
       GetTestDataDir().AppendASCII("bookmarks/missing_file_2.json");
 
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_local_or_syncable_bookmark_future;
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_account_bookmark_future;
   base::test::TestFuture<std::unique_ptr<BookmarkLoadDetails>> details_future;
   scoped_refptr<ModelLoader> loader = ModelLoader::Create(
@@ -1791,11 +1782,9 @@ TEST_P(ModelLoaderWithEncryptionFileAsPrimaryTest,
       base::StrCat(
           {kBookmarksFileLoadResultMetricName, ".Account", ".Encrypted"}),
       /*expected_count=*/0);
-  // Verify that the save encrypted file callback is called for both files.
-  EXPECT_EQ(StorageFileEncryptionType::kEncrypted,
-            save_local_or_syncable_bookmark_future.Get());
-  EXPECT_EQ(StorageFileEncryptionType::kEncrypted,
-            save_account_bookmark_future.Get());
+  // Verify that the save encrypted file callback is not called for either file.
+  EXPECT_FALSE(save_local_or_syncable_bookmark_future.IsReady());
+  EXPECT_FALSE(save_account_bookmark_future.IsReady());
 
   EXPECT_THAT(local_or_syncable_file_path, FileAndBackupFileExist());
   EXPECT_THAT(account_file_path, FileAndBackupFileExist());
@@ -1814,10 +1803,8 @@ TEST(ModelLoaderWithEncryptionWriteOnly,
   test::InitFeaturesForBookmarkTestEncryptionStage(
       features,
       BookmarkEncryptionStage::kWriteOnlyEncryptedReadPreferEncrypted);
-  scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-      encryptor = base::MakeRefCounted<
-          base::RefCountedData<const os_crypt_async::Encryptor>>(
-          std::in_place, os_crypt_async::GetTestEncryptorForTesting());
+  scoped_refptr<const os_crypt_async::Encryptor> encryptor =
+      os_crypt_async::GetTestEncryptorForTesting();
   base::HistogramTester histogram_tester;
   base::test::TaskEnvironment task_environment{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
@@ -1837,9 +1824,9 @@ TEST(ModelLoaderWithEncryptionWriteOnly,
                               "TestEncryptedBookmarks2", encryptor)
           .value();
 
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_local_or_syncable_bookmark_future;
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_account_bookmark_future;
   base::test::TestFuture<std::unique_ptr<BookmarkLoadDetails>> details_future;
   scoped_refptr<ModelLoader> loader = ModelLoader::Create(
@@ -1901,10 +1888,8 @@ TEST(ModelLoaderWithEncryptionWriteOnly,
   test::InitFeaturesForBookmarkTestEncryptionStage(
       features,
       BookmarkEncryptionStage::kWriteOnlyEncryptedReadPreferEncrypted);
-  scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-      encryptor = base::MakeRefCounted<
-          base::RefCountedData<const os_crypt_async::Encryptor>>(
-          std::in_place, os_crypt_async::GetTestEncryptorForTesting());
+  scoped_refptr<const os_crypt_async::Encryptor> encryptor =
+      os_crypt_async::GetTestEncryptorForTesting();
   base::HistogramTester histogram_tester;
   base::test::TaskEnvironment task_environment{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
@@ -1924,9 +1909,9 @@ TEST(ModelLoaderWithEncryptionWriteOnly,
                               "TestEncryptedBookmarks2", encryptor)
           .value();
 
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_local_or_syncable_bookmark_future;
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_account_bookmark_future;
   scoped_refptr<ModelLoader> loader = ModelLoader::Create(
       encryptor, local_or_syncable_file_path,
@@ -1959,10 +1944,8 @@ TEST(ModelLoaderWithEncryptionWriteOnly,
   test::InitFeaturesForBookmarkTestEncryptionStage(
       features,
       BookmarkEncryptionStage::kWriteOnlyEncryptedReadPreferEncrypted);
-  scoped_refptr<base::RefCountedData<const os_crypt_async::Encryptor>>
-      encryptor = base::MakeRefCounted<
-          base::RefCountedData<const os_crypt_async::Encryptor>>(
-          std::in_place, os_crypt_async::GetTestEncryptorForTesting());
+  scoped_refptr<const os_crypt_async::Encryptor> encryptor =
+      os_crypt_async::GetTestEncryptorForTesting();
   base::HistogramTester histogram_tester;
   base::test::TaskEnvironment task_environment{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
@@ -1984,9 +1967,9 @@ TEST(ModelLoaderWithEncryptionWriteOnly,
                               "TestEncryptedBookmarks2", encryptor)
           .value();
 
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_local_or_syncable_bookmark_future;
-  base::test::TestFuture<StorageFileEncryptionType>
+  base::test::TestFuture<StorageFileEncryptionType, std::string>
       save_account_bookmark_future;
   scoped_refptr<ModelLoader> loader = ModelLoader::Create(
       encryptor, local_or_syncable_file_path,

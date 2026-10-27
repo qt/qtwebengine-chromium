@@ -11,7 +11,7 @@ devtools_ui_module("helper") {
 
   deps = [
     "../../../../core/sdk:bundle",
-    "../../../../generated:protocol",
+    "../../../../generated",
     "../../../../models/logs:bundle",
   ]
 }

@@ -27,6 +27,7 @@
 #include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/compositor/compositor.h"
+#include "ui/compositor/external_begin_frame_adapter.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/paint_recorder.h"
 #include "ui/display/display.h"
@@ -34,6 +35,7 @@
 #include "ui/display/types/display_constants.h"
 #include "ui/gfx/geometry/dip_util.h"
 #include "ui/ozone/public/ozone_platform.h"
+#include "ui/platform_window/extensions/begin_frame_source_extension.h"
 #include "ui/platform_window/extensions/workspace_extension.h"
 #include "ui/platform_window/platform_window.h"
 #include "ui/platform_window/platform_window_delegate.h"
@@ -297,10 +299,22 @@ void DesktopWindowTreeHostPlatform::Init(const Widget::InitParams& params) {
 
   CreateAndSetPlatformWindow(std::move(properties));
 
+  auto* begin_frame_source =
+      platform_window() ? GetBeginFrameSourceExtension(*platform_window())
+                        : nullptr;
+
   // Disable compositing on tooltips as a workaround for
   // https://crbug.com/442111.
   CreateCompositor(params.force_software_compositing ||
-                   params.type == Widget::InitParams::TYPE_TOOLTIP);
+                       params.type == Widget::InitParams::TYPE_TOOLTIP,
+                   begin_frame_source != nullptr);
+
+  if (begin_frame_source) {
+    begin_frame_adapter_ = std::make_unique<ui::ExternalBeginFrameAdapter>(
+        compositor(), begin_frame_source);
+    compositor()->SetExternalBeginFrameControllerClientFactory(
+        begin_frame_adapter_.get());
+  }
 
   WindowTreeHost::OnAcceleratedWidgetAvailable();
   InitHost();
@@ -400,6 +414,9 @@ void DesktopWindowTreeHostPlatform::CloseNow() {
     return;
   }
 
+  compositor()->SetExternalBeginFrameControllerClientFactory(nullptr);
+  begin_frame_adapter_.reset();
+
 #if BUILDFLAG(IS_OZONE)
   SetWmDropHandler(platform_window(), nullptr);
 #endif
@@ -446,9 +463,17 @@ void DesktopWindowTreeHostPlatform::Show(ui::mojom::WindowShowState show_state,
 
   platform_window()->Show(DetermineInactivity(show_state));
 
+  auto weak_ptr = weak_factory_.GetWeakPtr();
+  if (!weak_ptr) {
+    return;
+  }
+
   switch (show_state) {
     case ui::mojom::WindowShowState::kMaximized:
       platform_window()->Maximize();
+      if (!weak_ptr) {
+        return;
+      }
       if (!restore_bounds.IsEmpty()) {
         // Enforce |restored_bounds_in_pixels_| since calling Maximize() could
         // have reset it.
@@ -463,6 +488,10 @@ void DesktopWindowTreeHostPlatform::Show(ui::mojom::WindowShowState show_state,
       break;
     default:
       break;
+  }
+
+  if (!weak_ptr) {
+    return;
   }
 
   if (WidgetActivationDelegate::Get()) {
@@ -644,7 +673,11 @@ bool DesktopWindowTreeHostPlatform::IsActive() const {
 }
 
 void DesktopWindowTreeHostPlatform::Maximize() {
+  auto weak_ptr = weak_factory_.GetWeakPtr();
   platform_window()->Maximize();
+  if (!weak_ptr) {
+    return;
+  }
   if (IsMinimized()) {
     Show(ui::mojom::WindowShowState::kNormal, gfx::Rect());
   }
@@ -1086,6 +1119,25 @@ void DesktopWindowTreeHostPlatform::OnActivationChanged(bool active) {
   ScheduleRelayout();
 }
 
+void DesktopWindowTreeHostPlatform::OnPaintAsActiveChanged(
+    bool paint_as_active) {
+  if (WidgetActivationDelegate::Get()) {
+    return;
+  }
+
+  // Bridge the paint-as-active hint into the Widget by holding a
+  // PaintAsActiveLock, which forces the frame to render as active regardless
+  // of input activation.
+  if (paint_as_active) {
+    Widget* widget = GetWidget();
+    if (widget && !paint_as_active_lock_) {
+      paint_as_active_lock_ = widget->LockPaintAsActive();
+    }
+  } else {
+    paint_as_active_lock_.reset();
+  }
+}
+
 std::optional<gfx::Size>
 DesktopWindowTreeHostPlatform::GetMinimumSizeForWindow() const {
   return native_widget_delegate_->GetMinimumSize();
@@ -1129,6 +1181,13 @@ gfx::Rect DesktopWindowTreeHostPlatform::ConvertRectToPixels(
 gfx::Rect DesktopWindowTreeHostPlatform::ConvertRectToDIP(
     const gfx::Rect& rect_in_pixels) const {
   return ToDIPRect(rect_in_pixels);
+}
+
+gfx::Point DesktopWindowTreeHostPlatform::ConvertPointToPixels(
+    const gfx::Point& point_in_dip) const {
+  gfx::Point point_in_pixels(point_in_dip);
+  ConvertDIPToPixels(&point_in_pixels);
+  return point_in_pixels;
 }
 
 gfx::PointF DesktopWindowTreeHostPlatform::ConvertScreenPointToLocalDIP(

@@ -173,6 +173,7 @@ typedef struct VkuInstanceDispatchTable_ {
     PFN_vkGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV;
     PFN_vkEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM EnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM;
     PFN_vkEnumeratePhysicalDeviceShaderInstrumentationMetricsARM EnumeratePhysicalDeviceShaderInstrumentationMetricsARM;
+    PFN_vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM;
 #ifdef VK_USE_PLATFORM_UBM_SEC
     PFN_vkCreateUbmSurfaceSEC CreateUbmSurfaceSEC;
     PFN_vkGetPhysicalDeviceUbmPresentationSupportSEC GetPhysicalDeviceUbmPresentationSupportSEC;
@@ -587,6 +588,18 @@ typedef struct VkuDeviceDispatchTable_ {
     PFN_vkGetAndroidHardwareBufferPropertiesANDROID GetAndroidHardwareBufferPropertiesANDROID;
     PFN_vkGetMemoryAndroidHardwareBufferANDROID GetMemoryAndroidHardwareBufferANDROID;
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
+    PFN_vkCreateGpaSessionAMD CreateGpaSessionAMD;
+    PFN_vkDestroyGpaSessionAMD DestroyGpaSessionAMD;
+    PFN_vkSetGpaDeviceClockModeAMD SetGpaDeviceClockModeAMD;
+    PFN_vkGetGpaDeviceClockInfoAMD GetGpaDeviceClockInfoAMD;
+    PFN_vkCmdBeginGpaSessionAMD CmdBeginGpaSessionAMD;
+    PFN_vkCmdEndGpaSessionAMD CmdEndGpaSessionAMD;
+    PFN_vkCmdBeginGpaSampleAMD CmdBeginGpaSampleAMD;
+    PFN_vkCmdEndGpaSampleAMD CmdEndGpaSampleAMD;
+    PFN_vkGetGpaSessionStatusAMD GetGpaSessionStatusAMD;
+    PFN_vkGetGpaSessionResultsAMD GetGpaSessionResultsAMD;
+    PFN_vkResetGpaSessionAMD ResetGpaSessionAMD;
+    PFN_vkCmdCopyGpaSessionResultsAMD CmdCopyGpaSessionResultsAMD;
 #ifdef VK_ENABLE_BETA_EXTENSIONS
     PFN_vkCreateExecutionGraphPipelinesAMDX CreateExecutionGraphPipelinesAMDX;
     PFN_vkGetExecutionGraphPipelineScratchSizeAMDX GetExecutionGraphPipelineScratchSizeAMDX;
@@ -1318,6 +1331,18 @@ static inline void vkuInitDeviceDispatchTable(VkDevice device, VkuDeviceDispatch
     table->GetAndroidHardwareBufferPropertiesANDROID = (PFN_vkGetAndroidHardwareBufferPropertiesANDROID)gdpa(device, "vkGetAndroidHardwareBufferPropertiesANDROID");
     table->GetMemoryAndroidHardwareBufferANDROID = (PFN_vkGetMemoryAndroidHardwareBufferANDROID)gdpa(device, "vkGetMemoryAndroidHardwareBufferANDROID");
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
+    table->CreateGpaSessionAMD = (PFN_vkCreateGpaSessionAMD)gdpa(device, "vkCreateGpaSessionAMD");
+    table->DestroyGpaSessionAMD = (PFN_vkDestroyGpaSessionAMD)gdpa(device, "vkDestroyGpaSessionAMD");
+    table->SetGpaDeviceClockModeAMD = (PFN_vkSetGpaDeviceClockModeAMD)gdpa(device, "vkSetGpaDeviceClockModeAMD");
+    table->GetGpaDeviceClockInfoAMD = (PFN_vkGetGpaDeviceClockInfoAMD)gdpa(device, "vkGetGpaDeviceClockInfoAMD");
+    table->CmdBeginGpaSessionAMD = (PFN_vkCmdBeginGpaSessionAMD)gdpa(device, "vkCmdBeginGpaSessionAMD");
+    table->CmdEndGpaSessionAMD = (PFN_vkCmdEndGpaSessionAMD)gdpa(device, "vkCmdEndGpaSessionAMD");
+    table->CmdBeginGpaSampleAMD = (PFN_vkCmdBeginGpaSampleAMD)gdpa(device, "vkCmdBeginGpaSampleAMD");
+    table->CmdEndGpaSampleAMD = (PFN_vkCmdEndGpaSampleAMD)gdpa(device, "vkCmdEndGpaSampleAMD");
+    table->GetGpaSessionStatusAMD = (PFN_vkGetGpaSessionStatusAMD)gdpa(device, "vkGetGpaSessionStatusAMD");
+    table->GetGpaSessionResultsAMD = (PFN_vkGetGpaSessionResultsAMD)gdpa(device, "vkGetGpaSessionResultsAMD");
+    table->ResetGpaSessionAMD = (PFN_vkResetGpaSessionAMD)gdpa(device, "vkResetGpaSessionAMD");
+    table->CmdCopyGpaSessionResultsAMD = (PFN_vkCmdCopyGpaSessionResultsAMD)gdpa(device, "vkCmdCopyGpaSessionResultsAMD");
 #ifdef VK_ENABLE_BETA_EXTENSIONS
     table->CreateExecutionGraphPipelinesAMDX = (PFN_vkCreateExecutionGraphPipelinesAMDX)gdpa(device, "vkCreateExecutionGraphPipelinesAMDX");
     table->GetExecutionGraphPipelineScratchSizeAMDX = (PFN_vkGetExecutionGraphPipelineScratchSizeAMDX)gdpa(device, "vkGetExecutionGraphPipelineScratchSizeAMDX");
@@ -1792,6 +1817,7 @@ static inline void vkuInitInstanceDispatchTable(VkInstance instance, VkuInstance
     table->GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV = (PFN_vkGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV)gipa(instance, "vkGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV");
     table->EnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM = (PFN_vkEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM)gipa(instance, "vkEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM");
     table->EnumeratePhysicalDeviceShaderInstrumentationMetricsARM = (PFN_vkEnumeratePhysicalDeviceShaderInstrumentationMetricsARM)gipa(instance, "vkEnumeratePhysicalDeviceShaderInstrumentationMetricsARM");
+    table->GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM = (PFN_vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM)gipa(instance, "vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM");
 #ifdef VK_USE_PLATFORM_UBM_SEC
     table->CreateUbmSurfaceSEC = (PFN_vkCreateUbmSurfaceSEC)gipa(instance, "vkCreateUbmSurfaceSEC");
     table->GetPhysicalDeviceUbmPresentationSupportSEC = (PFN_vkGetPhysicalDeviceUbmPresentationSupportSEC)gipa(instance, "vkGetPhysicalDeviceUbmPresentationSupportSEC");

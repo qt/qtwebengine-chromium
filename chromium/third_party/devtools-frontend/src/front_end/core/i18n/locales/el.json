@@ -101,6 +101,9 @@
   "core/common/Revealer.ts | issuesView": {
     "message": "Προβολή προβλημάτων"
   },
+  "core/common/Revealer.ts | lighthousePanel": {
+    "message": "Πλαίσιο Lighthouse"
+  },
   "core/common/Revealer.ts | memoryInspectorPanel": {
     "message": "Πλαίσιο Επιθεώρηση μνήμης"
   },
@@ -322,6 +325,9 @@
   },
   "core/sdk/NetworkManager.ts | noContentForRedirect": {
     "message": "Δεν υπάρχει διαθέσιμο περιεχόμενο επειδή έγινε ανακατεύθυνση αυτού του αιτήματος"
+  },
+  "core/sdk/NetworkManager.ts | noContentForSSE": {
+    "message": "Το περιεχόμενο για Server-Sent Event (SSE) δεν υποστηρίζεται προς το παρόν"
   },
   "core/sdk/NetworkManager.ts | noContentForWebSocket": {
     "message": "Το περιεχόμενο για WebSocket δεν υποστηρίζεται προς το παρόν"
@@ -559,6 +565,9 @@
   },
   "core/sdk/sdk-meta.ts | achromatopsia": {
     "message": "Αχρωματοψία (χωρίς χρώμα)"
+  },
+  "core/sdk/sdk-meta.ts | apca": {
+    "message": "Ο προηγμένος αντιληπτικός αλγόριθμος αντίθεσης (APCA) αντικαθιστά την προηγούμενη αναλογία αντίθεσης και τις οδηγίες AA/AAA"
   },
   "core/sdk/sdk-meta.ts | blurredVision": {
     "message": "Θολή όραση"
@@ -1442,6 +1451,9 @@
   "generated/Deprecation.ts | PrefixedVideoSupportsFullscreen": {
     "message": "Το HTMLVideoElement.webkitSupportsFullscreen έχει καταργηθεί. Εναλλακτικά, χρησιμοποιήστε το Document.fullscreenEnabled."
   },
+  "generated/Deprecation.ts | PreventSvgFilterPaint": {
+    "message": "Δεν είναι δυνατή η εφαρμογή φίλτρων SVG σε iframe διαφορετικής προέλευσης, περιορισμένα iframe (π.χ. σε sandbox) ή προσθήκες."
+  },
   "generated/Deprecation.ts | RTCConstraintEnableDtlsSrtpFalse": {
     "message": "Ο περιορισμός DtlsSrtpKeyAgreement καταργήθηκε. Έχετε καθορίσει μια τιμή false για αυτόν τον περιορισμό, η οποία ερμηνεύεται ως προσπάθεια χρήσης της μεθόδου SDES key negotiation που καταργήθηκε. Αυτή η λειτουργία καταργήθηκε, χρησιμοποιήστε εναλλακτικά μια υπηρεσία που υποστηρίζει το DTLS key negotiation."
   },
@@ -1646,6 +1658,9 @@
   "models/issues_manager/DeprecationIssue.ts | title": {
     "message": "Χρησιμοποιήθηκε λειτουργία που έχει καταργηθεί"
   },
+  "models/issues_manager/EmailVerificationRequestIssue.ts | emailVerification": {
+    "message": "Πρωτόκολλο επαλήθευσης διεύθυνσης ηλεκτρονικού ταχυδρομείου"
+  },
   "models/issues_manager/FederatedAuthRequestIssue.ts | fedCm": {
     "message": "Federated Credential Management API"
   },
@@ -1654,6 +1669,9 @@
   },
   "models/issues_manager/GenericIssue.ts | autocompleteAttributePageTitle": {
     "message": "Χαρακτηριστικό HTML: αυτόματη συμπλήρωση"
+  },
+  "models/issues_manager/GenericIssue.ts | backToAdInterventionPageTitle": {
+    "message": "Επεξήγηση παρέμβασης επιστροφής στη διαφήμιση"
   },
   "models/issues_manager/GenericIssue.ts | corbExplainerPageTitle": {
     "message": "Επεξηγηματικό CORB"
@@ -2351,6 +2369,9 @@
   "models/trace/insights/DuplicatedJavaScript.ts | description": {
     "message": "Καταργήστε τις μεγάλες, [διπλότυπες λειτουργικές μονάδες JavaScript](https://developer.chrome.com/docs/performance/insights/duplicated-javascript) από τα πακέτα, για να μειώσετε τα μη απαραίτητα byte που καταναλώνονται από τη δραστηριότητα δικτύου."
   },
+  "models/trace/insights/DuplicatedJavaScript.ts | noDuplicatedJavaScript": {
+    "message": "Δεν βρέθηκε διπλότυπο JavaScript"
+  },
   "models/trace/insights/DuplicatedJavaScript.ts | title": {
     "message": "Διπλότυπο JavaScript"
   },
@@ -2359,6 +2380,9 @@
   },
   "models/trace/insights/FontDisplay.ts | fontColumn": {
     "message": "Γραμματοσειρά"
+  },
+  "models/trace/insights/FontDisplay.ts | noFonts": {
+    "message": "Δεν βρέθηκαν γραμματοσειρές με μη βέλτιστη προβολή γραμματοσειράς"
   },
   "models/trace/insights/FontDisplay.ts | title": {
     "message": "Προβολή γραμματοσειράς"
@@ -2509,6 +2533,9 @@
   },
   "models/trace/insights/LegacyJavaScript.ts | description": {
     "message": "Τα polyfill και οι μετασχηματισμοί επιτρέπουν στα προγράμματα περιήγησης παλαιού τύπου να χρησιμοποιούν νέες λειτουργίες JavaScript. Ωστόσο, πολλές από αυτές δεν είναι απαραίτητες για σύγχρονα προγράμματα περιήγησης. Εξετάστε το ενδεχόμενο να τροποποιήσετε τη διαδικασία κατασκευής JavaScript, ώστε να μην μετατρέπονται οι λειτουργίες [Baseline](https://web.dev/articles/baseline-and-polyfills), εκτός εάν γνωρίζετε ότι πρέπει να υποστηρίζετε παλαιότερα προγράμματα περιήγησης. [Μάθετε γιατί οι περισσότεροι ιστότοποι μπορούν να αναπτύξουν κώδικα ES6+ χωρίς μετατροπή](https://developer.chrome.com/docs/performance/insights/legacy-javascript)"
+  },
+  "models/trace/insights/LegacyJavaScript.ts | noLegacyJavaScript": {
+    "message": "Δεν βρέθηκε JavaScript παλαιού τύπου"
   },
   "models/trace/insights/LegacyJavaScript.ts | title": {
     "message": "JavaScript παλαιού τύπου"
@@ -3192,10 +3219,10 @@
     "message": "Ενεργοποιήστε τη {PH1}, για να λάβετε βοήθεια με τα στιλ, τα αιτήματα δικτύου, την απόδοση και τα αρχεία"
   },
   "panels/ai_assistance/components/ExportForAgentsDialog.ts | asMarkdown": {
-    "message": "Σε μορφή Markdown"
+    "message": "Πλήρης συζήτηση"
   },
   "panels/ai_assistance/components/ExportForAgentsDialog.ts | asPrompt": {
-    "message": "Σε μορφή προτροπής"
+    "message": "Προτροπή σύνοψης"
   },
   "panels/ai_assistance/components/ExportForAgentsDialog.ts | copiedToClipboard": {
     "message": "Αντιγράφηκε στο πρόχειρο"
@@ -3207,13 +3234,34 @@
     "message": "Αυτή είναι μια πειραματική λειτουργία AI η οποία δεν λειτουργεί πάντα σωστά. Επαληθεύστε αυτό το κείμενο πριν το επικολλήσετε σε άλλο εργαλείο."
   },
   "panels/ai_assistance/components/ExportForAgentsDialog.ts | exportForAgents": {
-    "message": "Αντιγραφή για το agent προγραμματισμού"
+    "message": "Αντιγραφή στο agent προγραμματισμού"
   },
   "panels/ai_assistance/components/ExportForAgentsDialog.ts | generatingSummary": {
     "message": "Δημιουργία σύνοψης…"
   },
   "panels/ai_assistance/components/ExportForAgentsDialog.ts | saveAsMarkdown": {
     "message": "Αποθήκευση ως…"
+  },
+  "panels/ai_assistance/components/OptInChangeDialog.ts | gotIt": {
+    "message": "Το κατάλαβα"
+  },
+  "panels/ai_assistance/components/OptInChangeDialog.ts | integrationPoint": {
+    "message": "Η βοήθεια AI είναι πλέον ενσωματωμένη στα πλαίσια Εφαρμογή και Lighthouse και αντλεί ταυτόχρονα το ευρύτερο πλαίσιο από πηγές δεδομένων"
+  },
+  "panels/ai_assistance/components/OptInChangeDialog.ts | manageSettings": {
+    "message": "Διαχείριση στις ρυθμίσεις"
+  },
+  "panels/ai_assistance/components/OptInChangeDialog.ts | privacyDisclaimer": {
+    "message": "Τα μηνύματα συνομιλίας, τα δεδομένα που είναι προσβάσιμα για αυτόν τον ιστότοπο μέσω των πλαισίων των Εργαλείων για προγραμματιστές και των Web API, καθώς και τα στοιχεία που επιλέγετε, όπως αιτήματα δικτύου, αρχεία και ίχνη απόδοσης αποστέλλονται στην Google και ενδέχεται να ελεγχθούν από αναθεωρητές για τη βελτίωση αυτής της λειτουργίας. Αυτή είναι μια πειραματική λειτουργία AI η οποία δεν λειτουργεί πάντα σωστά."
+  },
+  "panels/ai_assistance/components/OptInChangeDialog.ts | privacyDisclaimerEnterpriseNoLogging": {
+    "message": "Τα μηνύματα συνομιλίας, τα δεδομένα που είναι προσβάσιμα για αυτόν τον ιστότοπο μέσω των πλαισίων των Εργαλείων για προγραμματιστές και των Web API, καθώς και τα στοιχεία που επιλέγετε, όπως αιτήματα δικτύου, αρχεία και ίχνη απόδοσης αποστέλλονται στην Google. Το περιεχόμενο που υποβάλλεται και δημιουργείται από αυτή τη λειτουργία δεν θα χρησιμοποιείται για τη βελτίωση των μοντέλων AI της Google. Αυτή είναι μια πειραματική λειτουργία AI η οποία δεν λειτουργεί πάντα σωστά."
+  },
+  "panels/ai_assistance/components/OptInChangeDialog.ts | title": {
+    "message": "Η βοήθεια AI μόλις βελτιώθηκε"
+  },
+  "panels/ai_assistance/components/OptInChangeDialog.ts | widgetPoint": {
+    "message": "Χρησιμοποιήστε γραφικά στοιχεία για να επαληθεύσετε τα αποτελέσματα ή μεταβείτε στα δεδομένα πηγής για επιλεγμένες περιπτώσεις αποσφαλμάτωσης"
   },
   "panels/ai_assistance/components/WalkthroughView.ts | close": {
     "message": "Κλείσιμο"
@@ -3223,6 +3271,9 @@
   },
   "panels/ai_assistance/components/WalkthroughView.ts | hideThinking": {
     "message": "Απόκρυψη συλλογιστικής"
+  },
+  "panels/ai_assistance/components/WalkthroughView.ts | inProgress": {
+    "message": "Σε εξέλιξη"
   },
   "panels/ai_assistance/components/WalkthroughView.ts | showAgentWalkthrough": {
     "message": "Εμφάνιση επεξήγησης παράγοντα"
@@ -3677,9 +3728,6 @@
   "panels/application/ApplicationPanelSidebar.ts | theContentOfThisDocumentHasBeen": {
     "message": "Το περιεχόμενο αυτού του εγγράφου δημιουργήθηκε δυναμικά μέσω του document.write()."
   },
-  "panels/application/ApplicationPanelSidebar.ts | thirdPartyPhaseout": {
-    "message": "Τα cookie από το {PH1} ενδέχεται να έχουν αποκλειστεί λόγω κατάργησης των cookie τρίτου μέρους."
-  },
   "panels/application/ApplicationPanelSidebar.ts | versionS": {
     "message": "Έκδοση: {PH1}"
   },
@@ -3829,6 +3877,9 @@
   },
   "panels/application/DOMStorageItemsView.ts | domStorageItemsCleared": {
     "message": "Τα στοιχεία αποθηκευτικού χώρου DOM διαγράφηκαν."
+  },
+  "panels/application/DeviceBoundSessionsTreeElement.ts | clear": {
+    "message": "Διαγραφή"
   },
   "panels/application/DeviceBoundSessionsTreeElement.ts | deviceBoundSessions": {
     "message": "Περίοδοι λειτουργίας συνδεδεμένες με τη συσκευή"
@@ -4922,11 +4973,17 @@
   "panels/application/TrustTokensTreeElement.ts | trustTokens": {
     "message": "Διακριτικά ιδιωτικής κατάστασης"
   },
+  "panels/application/WebMCPView.ts | cancelCall": {
+    "message": "Ακύρωση"
+  },
   "panels/application/WebMCPView.ts | canceled": {
     "message": "Ακυρώθηκε"
   },
   "panels/application/WebMCPView.ts | canceledCount": {
     "message": "Ακύρωση {PH1} κλήσεων"
+  },
+  "panels/application/WebMCPView.ts | causedBy": {
+    "message": "Προκλήθηκε από:"
   },
   "panels/application/WebMCPView.ts | clearFilters": {
     "message": "Διαγραφή φίλτρων"
@@ -4937,8 +4994,20 @@
   "panels/application/WebMCPView.ts | close": {
     "message": "Κλείσιμο"
   },
+  "panels/application/WebMCPView.ts | completed": {
+    "message": "Ολοκληρώθηκε"
+  },
+  "panels/application/WebMCPView.ts | copyDescription": {
+    "message": "Αντιγραφή περιγραφής"
+  },
+  "panels/application/WebMCPView.ts | copyName": {
+    "message": "Αντιγραφή ονόματος"
+  },
   "panels/application/WebMCPView.ts | declarative": {
     "message": "Δηλωτικού προγραμματισμού"
+  },
+  "panels/application/WebMCPView.ts | editAndRun": {
+    "message": "Επεξεργασία και εκτέλεση"
   },
   "panels/application/WebMCPView.ts | error": {
     "message": "Σφάλμα"
@@ -4982,17 +5051,23 @@
   "panels/application/WebMCPView.ts | output": {
     "message": "Έξοδος"
   },
+  "panels/application/WebMCPView.ts | paste": {
+    "message": "Επικόλληση"
+  },
   "panels/application/WebMCPView.ts | pending": {
     "message": "Σε εξέλιξη"
+  },
+  "panels/application/WebMCPView.ts | revealTool": {
+    "message": "Εργαλείο αποκάλυψης"
+  },
+  "panels/application/WebMCPView.ts | runTool": {
+    "message": "Εκτέλεση εργαλείου"
   },
   "panels/application/WebMCPView.ts | status": {
     "message": "Κατάσταση"
   },
   "panels/application/WebMCPView.ts | statusTypes": {
     "message": "Τύποι κατάστασης"
-  },
-  "panels/application/WebMCPView.ts | success": {
-    "message": "Επιτυχία"
   },
   "panels/application/WebMCPView.ts | toolDetails": {
     "message": "Λεπτομέρειες"
@@ -5002,6 +5077,9 @@
   },
   "panels/application/WebMCPView.ts | toolTypes": {
     "message": "Τύποι εργαλείων"
+  },
+  "panels/application/WebMCPView.ts | toolUnregisteredNotice": {
+    "message": "Η εγγραφή αυτού του εργαλείου καταργήθηκε"
   },
   "panels/application/WebMCPView.ts | totalCalls": {
     "message": "{PH1} κλήσεις συνολικά"
@@ -5873,6 +5951,9 @@
   "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsFailureReason": {
     "message": "Αιτία αποτυχίας"
   },
+  "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsFormSubmission": {
+    "message": "Υποβολή φόρμας"
+  },
   "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsRuleSet": {
     "message": "Σετ κανόνων"
   },
@@ -5882,11 +5963,17 @@
   "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsTargetHint": {
     "message": "Υπόδειξη στόχευσης"
   },
+  "panels/application/preloading/components/PreloadingDetailsReportView.ts | no": {
+    "message": "Όχι"
+  },
   "panels/application/preloading/components/PreloadingDetailsReportView.ts | noElementSelected": {
     "message": "Δεν έχει επιλεγεί κανένα στοιχείο"
   },
   "panels/application/preloading/components/PreloadingDetailsReportView.ts | selectAnElementForMoreDetails": {
     "message": "Επιλέξτε ένα στοιχείο για περισσότερες λεπτομέρειες"
+  },
+  "panels/application/preloading/components/PreloadingDetailsReportView.ts | yes": {
+    "message": "Ναι"
   },
   "panels/application/preloading/components/PreloadingDisabledInfobar.ts | descriptionDisabledByBatterySaver": {
     "message": "Η προληπτική φόρτωση είναι απενεργοποιημένη λόγω της λειτουργίας Εξοικονόμηση μπαταρίας του λειτουργικού συστήματος."
@@ -6734,6 +6821,15 @@
   "panels/console/ConsoleContextSelector.ts | javascriptContextS": {
     "message": "Περιβάλλον JavaScript: {PH1}"
   },
+  "panels/console/ConsolePinPane.ts | allowPasting": {
+    "message": "να επιτρέπεται η επικόλληση"
+  },
+  "panels/console/ConsolePinPane.ts | doNotPaste": {
+    "message": "Μην επικολλήσετε κώδικα που δεν κατανοείτε ή δεν έχετε ελέγξει στα Εργαλεία για προγραμματιστές. Αυτό μπορεί να επιτρέψει σε υπευθύνους επίθεσης να υποκλέψουν την ταυτότητά σας ή να αποκτήσουν τον έλεγχο του υπολογιστή σας. Πληκτρολογήστε \"{PH1}\" παρακάτω, για να επιτρέψετε την επικόλληση."
+  },
+  "panels/console/ConsolePinPane.ts | doYouTrustThisCode": {
+    "message": "Εμπιστεύεστε αυτόν τον κώδικα;"
+  },
   "panels/console/ConsolePinPane.ts | evaluateAllowingSideEffects": {
     "message": "Αξιολόγηση, επιτρέπονται οι παρενέργειες"
   },
@@ -6757,6 +6853,9 @@
   },
   "panels/console/ConsolePinPane.ts | removeExpressionS": {
     "message": "Κατάργηση έκφρασης: {PH1}"
+  },
+  "panels/console/ConsolePinPane.ts | typeAllowPasting": {
+    "message": "Πληκτρολογήστε “{PH1}”"
   },
   "panels/console/ConsolePrompt.ts | allowPasting": {
     "message": "να επιτρέπεται η επικόλληση"
@@ -6793,6 +6892,9 @@
   },
   "panels/console/ConsoleView.ts | autocompleteFromHistory": {
     "message": "Αυτόματη συμπλήρωση από ιστορικό"
+  },
+  "panels/console/ConsoleView.ts | collapseAll": {
+    "message": "Σύμπτυξη όλων"
   },
   "panels/console/ConsoleView.ts | consoleCleared": {
     "message": "Η κονσόλα διαγράφηκε"
@@ -6832,6 +6934,9 @@
   },
   "panels/console/ConsoleView.ts | errors": {
     "message": "Σφάλματα"
+  },
+  "panels/console/ConsoleView.ts | expandAll": {
+    "message": "Ανάπτυξη όλων"
   },
   "panels/console/ConsoleView.ts | filteredMessagesInConsole": {
     "message": "{PH1} μηνύματα στην κονσόλα"
@@ -7991,9 +8096,6 @@
   "panels/elements/MarkerDecorator.ts | elementIsHidden": {
     "message": "Το στοιχείο είναι κρυφό"
   },
-  "panels/elements/NodeStackTraceWidget.ts | noStackTraceAvailable": {
-    "message": "Δεν υπάρχει διαθέσιμη ιχνηλάτηση στοίβας"
-  },
   "panels/elements/PlatformFontsWidget.ts | dGlyphs": {
     "message": "{n,plural, =1{(# σύμβολο)}other{(# σύμβολα)}}"
   },
@@ -8147,6 +8249,12 @@
   "panels/elements/StylePropertyTreeElement.ts | viewComputedValue": {
     "message": "Προβολή υπολογισμένης τιμής"
   },
+  "panels/elements/StylesSidebarPane.ts | aiSuggestionAccepted": {
+    "message": "{PH1} Η πρόταση έγινε αποδεκτή."
+  },
+  "panels/elements/StylesSidebarPane.ts | atRuleSection": {
+    "message": "Άλλοι @κανόνες"
+  },
   "panels/elements/StylesSidebarPane.ts | automaticDarkMode": {
     "message": "Αυτόματη λειτουργία χαμηλού φωτισμού"
   },
@@ -8249,8 +8357,14 @@
   "panels/elements/elements-meta.ts | captureAreaScreenshot": {
     "message": "Λήψη στιγμιότυπου οθόνης περιοχής"
   },
+  "panels/elements/elements-meta.ts | collapseNonContributingCSSRules": {
+    "message": "Σύμπτυξη κανόνων CSS που δεν συνεισφέρουν"
+  },
   "panels/elements/elements-meta.ts | copyStyles": {
     "message": "Αντιγραφή στιλ"
+  },
+  "panels/elements/elements-meta.ts | cssAnimationsOnlyWhenAnimationsTabOpen": {
+    "message": "Εμφάνιση στιλ κινούμενων εικόνων μόνο όταν είναι ανοιχτή η καρτέλα Κινούμενες εικόνες"
   },
   "panels/elements/elements-meta.ts | detailedInspectTooltip": {
     "message": "Λεπτομερής επεξήγηση εργαλείου επιθεώρησης"
@@ -8315,14 +8429,8 @@
   "panels/elements/elements-meta.ts | showProperties": {
     "message": "Εμφάνιση εργαλείου ιδιοτήτων"
   },
-  "panels/elements/elements-meta.ts | showStackTrace": {
-    "message": "Εμφάνιση εργαλείου ιχνηλάτησης στοίβας"
-  },
   "panels/elements/elements-meta.ts | showStyles": {
     "message": "Εμφάνιση στιλ"
-  },
-  "panels/elements/elements-meta.ts | stackTrace": {
-    "message": "Ιχνηλάτηση στοίβας"
   },
   "panels/elements/elements-meta.ts | toggleA11yTree": {
     "message": "Εναλλαγή δέντρου προσβασιμότητας"
@@ -9056,6 +9164,12 @@
   "panels/js_timeline/js_timeline-meta.ts | stop": {
     "message": "Διακοπή"
   },
+  "panels/js_timeline/js_timeline-meta.ts | timelineDebugMode": {
+    "message": "Λειτουργία αποσφαλμάτωσης χρονολογίου (λεπτομέρειες συμβάντος ίχνους κ.λπ.)"
+  },
+  "panels/js_timeline/js_timeline-meta.ts | timelineShowAllEvents": {
+    "message": "Εμφάνιση όλων των συμβάντων"
+  },
   "panels/layer_viewer/LayerDetailsView.ts | compositingReasons": {
     "message": "Λόγοι σύνθεσης"
   },
@@ -9238,6 +9352,12 @@
   },
   "panels/lighthouse/LighthouseController.ts | accessibility": {
     "message": "Προσβασιμότητα"
+  },
+  "panels/lighthouse/LighthouseController.ts | agenticBrowsing": {
+    "message": "Περιήγηση μέσω agent"
+  },
+  "panels/lighthouse/LighthouseController.ts | agenticBrowsingDescription": {
+    "message": "Αυτοί οι έλεγχοι διασφαλίζουν ιστοτόπους υψηλής ποιότητας με δυνατότητα περιήγησης για agent AI και επικυρώνουν την ορθότητα των ενσωματώσεων WebMCP. Αυτή η κατηγορία βρίσκεται ακόμα σε φάση ανάπτυξης και υπόκειται σε αλλαγές."
   },
   "panels/lighthouse/LighthouseController.ts | applyDesktopEmulationDuring": {
     "message": "Εφαρμογή προσομοίωσης υπολογιστή κατά τη διάρκεια ελέγχου"
@@ -11723,6 +11843,9 @@
   "panels/profiler/HeapProfileView.ts | sBytes": {
     "message": "{PH1} byte"
   },
+  "panels/profiler/HeapProfileView.ts | samplingHeapProfilerTimeline": {
+    "message": "Χρονολόγιο εργαλείου δημιουργίας προφίλ σωρού δειγματοληψίας"
+  },
   "panels/profiler/HeapProfileView.ts | samplingProfiles": {
     "message": "Προφίλ δειγματοληψίας"
   },
@@ -11930,9 +12053,6 @@
   "panels/profiler/HeapSnapshotView.ts | duplicatedStrings": {
     "message": "Διπλότυπες συμβολοσειρές"
   },
-  "panels/profiler/HeapSnapshotView.ts | exposeInternals": {
-    "message": "Εσωτερικά στοιχεία με λεπτομέρειες υλοποίησης"
-  },
   "panels/profiler/HeapSnapshotView.ts | filter": {
     "message": "Φίλτρο"
   },
@@ -12070,33 +12190,6 @@
   },
   "panels/profiler/IsolateSelector.ts | totalPageJsHeapSizeChangeTrend": {
     "message": "Συνολική τάση αλλαγής για το μέγεθος σωρού JS σελίδας τα τελευταία {PH1} λεπτά."
-  },
-  "panels/profiler/LiveHeapProfileView.ts | allocatedJsHeapSizeCurrentlyIn": {
-    "message": "Κατανεμημένο μέγεθος σωρού JS που χρησιμοποιείται αυτήν τη στιγμή"
-  },
-  "panels/profiler/LiveHeapProfileView.ts | anonymousScriptS": {
-    "message": "(Ανώνυμο σενάριο {PH1})"
-  },
-  "panels/profiler/LiveHeapProfileView.ts | heapProfile": {
-    "message": "Προφίλ σωρού"
-  },
-  "panels/profiler/LiveHeapProfileView.ts | jsHeap": {
-    "message": "Σωρός JS"
-  },
-  "panels/profiler/LiveHeapProfileView.ts | kb": {
-    "message": "kB"
-  },
-  "panels/profiler/LiveHeapProfileView.ts | numberOfVmsSharingTheSameScript": {
-    "message": "Ο αριθμός των VM που μοιράζονται την ίδια πηγή σεναρίων"
-  },
-  "panels/profiler/LiveHeapProfileView.ts | scriptUrl": {
-    "message": "URL σεναρίου"
-  },
-  "panels/profiler/LiveHeapProfileView.ts | urlOfTheScriptSource": {
-    "message": "Το URL για την πηγή σεναρίου"
-  },
-  "panels/profiler/LiveHeapProfileView.ts | vms": {
-    "message": "VM"
   },
   "panels/profiler/ModuleUIStrings.ts | buildingAllocationStatistics": {
     "message": "Δημιουργία στατιστικών στοιχείων κατανομής…"
@@ -12275,9 +12368,6 @@
   "panels/profiler/profiler-meta.ts | deleteProfile": {
     "message": "Διαγραφή προφίλ"
   },
-  "panels/profiler/profiler-meta.ts | liveHeapProfile": {
-    "message": "Ζωντανό προφίλ σωρού"
-  },
   "panels/profiler/profiler-meta.ts | loadProfile": {
     "message": "Φόρτωση προφίλ…"
   },
@@ -12287,23 +12377,11 @@
   "panels/profiler/profiler-meta.ts | saveProfile": {
     "message": "Αποθήκευση προφίλ…"
   },
-  "panels/profiler/profiler-meta.ts | showLiveHeapProfile": {
-    "message": "Εμφάνιση ζωντανού προφίλ σωρού"
-  },
   "panels/profiler/profiler-meta.ts | showMemory": {
     "message": "Εμφάνιση Μνήμης"
   },
-  "panels/profiler/profiler-meta.ts | startRecordingHeapAllocations": {
-    "message": "Έναρξη εγγραφής κατανομών σωρού"
-  },
-  "panels/profiler/profiler-meta.ts | startRecordingHeapAllocationsAndReload": {
-    "message": "Έναρξη εγγραφής κατανομών σωρού και επανάληψη φόρτωσης σελίδας"
-  },
   "panels/profiler/profiler-meta.ts | startStopRecording": {
     "message": "Έναρξη/διακοπή καταγραφής"
-  },
-  "panels/profiler/profiler-meta.ts | stopRecordingHeapAllocations": {
-    "message": "Διακοπή εγγραφής κατανομών σωρού"
   },
   "panels/protocol_monitor/JSONEditor.ts | addCustomProperty": {
     "message": "Προσθήκη προσαρμοσμένης ιδιότητας"
@@ -12417,7 +12495,7 @@
     "message": "Διαγραφή εγγραφής"
   },
   "panels/recorder/RecorderController.ts | doNotImport": {
-    "message": "Μην εισάγετε εγγραφές που δεν κατανοείτε ή δεν έχετε ελέγξει οι ίδιοι στα Εργαλεία για προγραμματιστές. Αυτό μπορεί να δώσει τη δυνατότητα σε υπευθύνους επίθεσης να υποκλέψουν την ταυτότητά σας ή να αποκτήσουν τον έλεγχο του υπολογιστή σας. Πληκτρολογήστε {PH1} παρακάτω, για να επιτρέψετε την εισαγωγή."
+    "message": "Μην εισάγετε εγγραφές που δεν κατανοείτε ή δεν έχετε ελέγξει στα Εργαλεία για προγραμματιστές. Αυτό μπορεί να επιτρέψει σε υπευθύνους επίθεσης να υποκλέψουν την ταυτότητά σας ή να αποκτήσουν τον έλεγχο του υπολογιστή σας. Πληκτρολογήστε \"{PH1}\" παρακάτω, για να επιτρέψετε την εισαγωγή."
   },
   "panels/recorder/RecorderController.ts | doYouTrustThisCode": {
     "message": "Εμπιστεύεστε αυτή την εγγραφή;"
@@ -12477,7 +12555,7 @@
     "message": "Εναλλαγή προβολής κώδικα"
   },
   "panels/recorder/RecorderController.ts | typeAllowImporting": {
-    "message": "Πληκτρολογήστε {PH1}"
+    "message": "Πληκτρολογήστε “{PH1}”"
   },
   "panels/recorder/components/CreateRecordingView.ts | cancelRecording": {
     "message": "Ακύρωση εγγραφής"
@@ -13459,6 +13537,21 @@
   },
   "panels/settings/AISettingsTab.ts | aIAnnotationsFeatureDescription": {
     "message": "Αυτόματη δημιουργία τίτλων για σχολιασμούς ιχνών απόδοσης"
+  },
+  "panels/settings/AISettingsTab.ts | aiAssistanceDescriptionV2": {
+    "message": "Λάβετε βοήθεια με βάση τα συμφραζόμενα στην επιθεωρούμενη σελίδα"
+  },
+  "panels/settings/AISettingsTab.ts | aiAssistanceThingsToConsiderNoLoggingV2": {
+    "message": "Για τη δημιουργία επεξηγήσεων, τα μηνύματα συνομιλίας, τα δεδομένα που είναι προσβάσιμα για αυτόν τον ιστότοπο μέσω των πλαισίων των Εργαλείων για προγραμματιστές και των Web API, καθώς και τα στοιχεία που επιλέγετε, όπως αιτήματα δικτύου, αρχεία και ίχνη απόδοσης αποστέλλονται στην Google. Το περιεχόμενο που υποβάλλετε και που δημιουργείται από αυτή τη λειτουργία δεν θα χρησιμοποιείται για τη βελτίωση των μοντέλων AI της Google. Αυτή είναι μια πειραματική λειτουργία AI η οποία δεν λειτουργεί πάντα σωστά."
+  },
+  "panels/settings/AISettingsTab.ts | aiAssistanceThingsToConsiderV2": {
+    "message": "Για τη δημιουργία επεξηγήσεων, τα μηνύματα συνομιλίας, τα δεδομένα που είναι προσβάσιμα για αυτόν τον ιστότοπο μέσω των πλαισίων των Εργαλείων για προγραμματιστές και των Web API, καθώς και τα στοιχεία που επιλέγετε, όπως αιτήματα δικτύου, αρχεία και ίχνη απόδοσης, αποστέλλονται στην Google και ενδέχεται να ελεγχθούν από αναθεωρητές για τη βελτίωση αυτής της λειτουργίας. Αυτή είναι μια πειραματική λειτουργία AI η οποία δεν λειτουργεί πάντα σωστά."
+  },
+  "panels/settings/AISettingsTab.ts | aiAssistanceWhenOnItem1V2": {
+    "message": "Πραγματοποιήστε αποσφαλμάτωση για ζητήματα στιλ, δικτύου, απόδοσης, πηγαίου κώδικα, προσβασιμότητας και αποθηκευτικού χώρου με τη βοήθεια AI των Εργαλείων για προγραμματιστές"
+  },
+  "panels/settings/AISettingsTab.ts | aiAssistanceWhenOnItem2V2": {
+    "message": "Ακολουθήστε τον συλλογισμό του agent βήμα προς βήμα και μεταβείτε γρήγορα στα σχετικά δεδομένα πηγής"
   },
   "panels/settings/AISettingsTab.ts | asYouTypeCodeSuggestions": {
     "message": "Καθώς πληκτρολογείτε στο πλαίσιο Κονσόλα ή Πηγές, θα εμφανίζονται προτάσεις κώδικα. Πατήστε το πλήκτρο Tab για να αποδεχτείτε μια πρόταση."
@@ -14539,12 +14632,6 @@
   },
   "panels/sources/PersistenceActions.ts | showOverrides": {
     "message": "Εμφάνιση όλων των παρακάμψεων"
-  },
-  "panels/sources/ProfilePlugin.ts | kb": {
-    "message": "kB"
-  },
-  "panels/sources/ProfilePlugin.ts | mb": {
-    "message": "MB"
   },
   "panels/sources/ProfilePlugin.ts | ms": {
     "message": "ms"
@@ -16922,6 +17009,12 @@
   "panels/timeline/timeline-meta.ts | stop": {
     "message": "Διακοπή"
   },
+  "panels/timeline/timeline-meta.ts | timelineDebugMode": {
+    "message": "Λειτουργία αποσφαλμάτωσης χρονολογίου (λεπτομέρειες συμβάντος ίχνους κ.λπ.)"
+  },
+  "panels/timeline/timeline-meta.ts | timelineInvalidationTracking": {
+    "message": "Παρακολούθηση ακυρώσεων"
+  },
   "panels/timeline/timeline-meta.ts | timelineShowAllEvents": {
     "message": "Εμφάνιση όλων των συμβάντων"
   },
@@ -17183,6 +17276,9 @@
   "ui/components/markdown_view/CodeBlock.ts | copy": {
     "message": "Αντιγραφή κώδικα"
   },
+  "ui/components/markdown_view/CodeBlock.ts | copyCodeSnippet": {
+    "message": "Αντιγραφή αποσπάσματος κώδικα {PH1}"
+  },
   "ui/components/markdown_view/CodeBlock.ts | disclaimer": {
     "message": "Χρησιμοποιήστε τα αποσπάσματα κώδικα με προσοχή"
   },
@@ -17306,6 +17402,9 @@
   "ui/legacy/ActionRegistration.ts | sources": {
     "message": "Πηγές"
   },
+  "ui/legacy/Dialog.ts | close": {
+    "message": "Κλείσιμο"
+  },
   "ui/legacy/DockController.ts | close": {
     "message": "Κλείσιμο"
   },
@@ -17339,6 +17438,12 @@
   "ui/legacy/InspectorDrawerView.ts | closeDrawer": {
     "message": "Κλείσιμο συρταριού"
   },
+  "ui/legacy/InspectorDrawerView.ts | expandDrawer": {
+    "message": "Ανάπτυξη συρταριού"
+  },
+  "ui/legacy/InspectorDrawerView.ts | minimizeDrawer": {
+    "message": "Ελαχιστοποίηση συρταριού"
+  },
   "ui/legacy/InspectorDrawerView.ts | moreTools": {
     "message": "Περισσότερα εργαλεία"
   },
@@ -17354,8 +17459,14 @@
   "ui/legacy/InspectorView.ts | drawer": {
     "message": "Συρτάρι εργαλείων"
   },
+  "ui/legacy/InspectorView.ts | drawerExpanded": {
+    "message": "Το συρτάρι αναπτύχθηκε"
+  },
   "ui/legacy/InspectorView.ts | drawerHidden": {
     "message": "Το συρτάρι δεν είναι ορατό"
+  },
+  "ui/legacy/InspectorView.ts | drawerMinimized": {
+    "message": "Το συρτάρι ελαχιστοποιήθηκε"
   },
   "ui/legacy/InspectorView.ts | drawerShown": {
     "message": "Το συρτάρι είναι ορατό"
@@ -17413,6 +17524,9 @@
   },
   "ui/legacy/ListWidget.ts | saveString": {
     "message": "Αποθήκευση"
+  },
+  "ui/legacy/PlusButton.ts | moreTools": {
+    "message": "Περισσότερα εργαλεία"
   },
   "ui/legacy/RemoteDebuggingTerminatedScreen.ts | connectionClosedReason": {
     "message": "Αιτία: {PH1}."
@@ -17831,66 +17945,6 @@
   "ui/legacy/components/inline_editor/ColorSwatch.ts | shiftclickToChangeColorFormat": {
     "message": "Πατήστε Shift και κάντε κλικ για να αλλάξετε τη μορφή χρωμάτων"
   },
-  "ui/legacy/components/inline_editor/FontEditor.ts | PleaseEnterAValidValueForSText": {
-    "message": "* Εισαγάγετε μια έγκυρη τιμή για την εισαγωγή κειμένου {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | cssProperties": {
-    "message": "Ιδιότητες CSS"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | deleteS": {
-    "message": "Διαγραφή {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | fallbackS": {
-    "message": "Εναλλακτικό {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | fontFamily": {
-    "message": "Οικογένεια γραμματοσειρών"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | fontSelectorDeletedAtIndexS": {
-    "message": "Ο επιλογέας γραμματοσειρών διαγράφηκε κατά την καταλογοποίηση: {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | fontSize": {
-    "message": "Μέγεθος γραμματοσειράς"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | fontWeight": {
-    "message": "Πάχος γραμματοσειράς"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | lineHeight": {
-    "message": "Ύψος γραμμής"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | sKeyValueSelector": {
-    "message": "Επιλογέας κλειδιών τιμών {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | sSliderInput": {
-    "message": "Εισαγωγή ρυθμιστικού {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | sTextInput": {
-    "message": "Εισαγωγή κειμένου {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | sToggleInputType": {
-    "message": "Εναλλαγή τύπου εισαγωγής {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | sUnitInput": {
-    "message": "Εισαγωγή μονάδας {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | selectorInputMode": {
-    "message": "Λειτουργία εισαγωγής επιλογέα"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | sliderInputMode": {
-    "message": "Λειτουργία εισαγωγής ρυθμιστικού"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | spacing": {
-    "message": "Διάστιχο"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | thereIsNoValueToDeleteAtIndexS": {
-    "message": "Δεν υπάρχει τιμή για διαγραφή κατά την καταλογοποίηση: {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | thisPropertyIsSetToContainUnits": {
-    "message": "Αυτή η ιδιότητα έχει οριστεί να περιέχει μονάδες, αλλά δεν έχει προσδιορισμένο αντίστοιχο unitsArray: {PH1}"
-  },
-  "ui/legacy/components/inline_editor/FontEditor.ts | units": {
-    "message": "Μονάδες"
-  },
   "ui/legacy/components/object_ui/CustomPreviewComponent.ts | showAsJavascriptObject": {
     "message": "Εμφάνιση με τη μορφή αντικειμένου JavaScript"
   },
@@ -18047,17 +18101,8 @@
   "ui/legacy/components/perf_ui/perf_ui-meta.ts | flamechartSelectedNavigation": {
     "message": "Πλοήγηση σε γράφημα φλόγας:"
   },
-  "ui/legacy/components/perf_ui/perf_ui-meta.ts | hideLiveMemoryAllocation": {
-    "message": "Απόκρυψη ζωντανών σχολιασμών κατανομής μνήμης"
-  },
-  "ui/legacy/components/perf_ui/perf_ui-meta.ts | liveMemoryAllocationAnnotations": {
-    "message": "Ζωντανοί σχολιασμοί κατανομής μνήμης"
-  },
   "ui/legacy/components/perf_ui/perf_ui-meta.ts | modern": {
     "message": "Σύγχρονη"
-  },
-  "ui/legacy/components/perf_ui/perf_ui-meta.ts | showLiveMemoryAllocation": {
-    "message": "Εμφάνιση ζωντανών σχολιασμών κατανομής μνήμης"
   },
   "ui/legacy/components/quick_open/CommandMenu.ts | command": {
     "message": "Εντολή"
@@ -18140,6 +18185,9 @@
   "ui/legacy/components/source_frame/ImageView.ts | saveImageAs": {
     "message": "Αποθήκευση εικόνας ως…"
   },
+  "ui/legacy/components/source_frame/ImageView.ts | thisImageIsTooBig": {
+    "message": "Αυτή η εικόνα είναι πολύ μεγάλη για να εμφανιστεί στα Εργαλεία για προγραμματιστές. Κάντε κλικ εδώ για να την ανοίξετε σε νέα καρτέλα."
+  },
   "ui/legacy/components/source_frame/JSONView.ts | find": {
     "message": "Εύρεση"
   },
@@ -18189,7 +18237,7 @@
     "message": "Πηγή"
   },
   "ui/legacy/components/source_frame/SourceFrame.ts | typeAllowPasting": {
-    "message": "Πληκτρολογήστε {PH1}"
+    "message": "Πληκτρολογήστε “{PH1}”"
   },
   "ui/legacy/components/source_frame/XMLView.ts | find": {
     "message": "Εύρεση"

@@ -43,7 +43,23 @@ depending on your matrix, the problem you are trying to solve, and the trade-off
         <th>Requirements<br/>on the matrix</th>
         <th>Speed<br/> (small-to-medium)</th>
         <th>Speed<br/> (large)</th>
-        <th>Accuracy</th>
+        <th>Robustness<sup><a href="#note_robust">*</a></sup></th>
+    </tr>
+    <tr>
+        <td>LLT</td>
+        <td>llt()</td>
+        <td>Positive definite</td>
+        <td>+++</td>
+        <td>+++</td>
+        <td>+</td>
+    </tr>
+    <tr class="alt">
+        <td>LDLT</td>
+        <td>ldlt()</td>
+        <td>Positive or negative<br/> semidefinite</td>
+        <td>+++</td>
+        <td>+</td>
+        <td>++</td>
     </tr>
     <tr>
         <td>PartialPivLU</td>
@@ -54,14 +70,6 @@ depending on your matrix, the problem you are trying to solve, and the trade-off
         <td>+</td>
     </tr>
     <tr class="alt">
-        <td>FullPivLU</td>
-        <td>fullPivLu()</td>
-        <td>None</td>
-        <td>-</td>
-        <td>- -</td>
-        <td>+++</td>
-    </tr>
-    <tr>
         <td>HouseholderQR</td>
         <td>householderQr()</td>
         <td>None</td>
@@ -69,20 +77,12 @@ depending on your matrix, the problem you are trying to solve, and the trade-off
         <td>++</td>
         <td>+</td>
     </tr>
-    <tr class="alt">
+    <tr>
         <td>ColPivHouseholderQR</td>
         <td>colPivHouseholderQr()</td>
         <td>None</td>
         <td>+</td>
         <td>-</td>
-        <td>+++</td>
-    </tr>
-    <tr>
-        <td>FullPivHouseholderQR</td>
-        <td>fullPivHouseholderQr()</td>
-        <td>None</td>
-        <td>-</td>
-        <td>- -</td>
         <td>+++</td>
     </tr>
     <tr class="alt">
@@ -93,23 +93,7 @@ depending on your matrix, the problem you are trying to solve, and the trade-off
         <td>-</td>
         <td>+++</td>
     </tr>
-    <tr class="alt">
-        <td>LLT</td>
-        <td>llt()</td>
-        <td>Positive definite</td>
-        <td>+++</td>
-        <td>+++</td>
-        <td>+</td>
-    </tr>
     <tr>
-        <td>LDLT</td>
-        <td>ldlt()</td>
-        <td>Positive or negative<br/> semidefinite</td>
-        <td>+++</td>
-        <td>+</td>
-        <td>++</td>
-    </tr>
-    <tr class="alt">
         <td>BDCSVD</td>
         <td>bdcSvd()</td>
         <td>None</td>
@@ -126,15 +110,36 @@ depending on your matrix, the problem you are trying to solve, and the trade-off
         <td>+++</td>
     </tr>
 </table>
+
+<a name="note_robust"><b>*</b></a> The <b>Robustness</b> column indicates how well the decomposition handles
+ill-conditioned or rank-deficient matrices. All decompositions give excellent accuracy when their
+requirements on the matrix are met and the problem is well-conditioned.
+
 To get an overview of the true relative speed of the different decompositions, check this \link DenseDecompositionBenchmark benchmark \endlink.
 
-All of these decompositions offer a solve() method that works as in the above example. 
+All of these decompositions offer a solve() method that works as in the above example.
 
-If you know more about the properties of your matrix, you can use the above table to select the best method.
-For example, a good choice for solving linear systems with a non-symmetric matrix of full rank is PartialPivLU.
-If you know that your matrix is also symmetric and positive definite, the above table says that
-a very good choice is the LLT or LDLT decomposition. Here's an example, also demonstrating that using a general
-matrix (not a vector) as right hand side is possible:
+\b Practical \b recommendations:
+\li If your matrix is symmetric positive definite, use \b LLT. It is the fastest and is perfectly accurate
+    for this class of problems. If your matrix is only positive or negative semidefinite, use \b LDLT.
+\li For a general invertible matrix, \b PartialPivLU is the best choice. It is fast (uses cache-friendly
+    blocking) and reliable for the vast majority of problems.
+\li For least squares problems (over- or under-determined systems), \b CompleteOrthogonalDecomposition
+    is the recommended default. Like the SVD, it robustly computes the minimum-norm solution for
+    rank-deficient and under-determined problems, but at the cost of a QR decomposition rather than
+    an SVD. Use \b ColPivHouseholderQR if you only need least squares for full-rank overdetermined
+    systems and don't need the minimum-norm property.
+\li \b SVD decompositions (BDCSVD, JacobiSVD) are the most robust but also the slowest. Use these when
+    you need singular values/vectors, not just the solution.
+\li \b HouseholderQR is the fastest option for full-rank least squares problems, but it does not
+    reveal rank and cannot compute minimum-norm solutions for rank-deficient problems.
+\li FullPivLU and FullPivHouseholderQR use complete pivoting, which is significantly slower due to
+    lack of blocking. In practice, they rarely provide meaningful benefits over PartialPivLU and
+    ColPivHouseholderQR, respectively, and are not recommended for general use. They are primarily useful
+    for debugging or for pedagogical purposes.
+
+Here's an example showing the use of LLT for a symmetric positive definite system, also demonstrating
+that using a general matrix (not a vector) as right hand side is possible:
 
 <table class="example">
 <tr><th>Example:</th><th>Output:</th></tr>
@@ -151,14 +156,15 @@ supports many other decompositions), see our special page on
 
 \section TutorialLinAlgLeastsquares Least squares solving
 
-The most general and accurate method to solve under- or over-determined linear systems
-in the least squares sense, is the SVD decomposition. Eigen provides two implementations.
-The recommended one is the BDCSVD class, which scales well for large problems
-and automatically falls back to the JacobiSVD class for smaller problems.
-For both classes, their solve() method solved the linear system in the least-squares
-sense. 
+The recommended method to solve under- or over-determined linear systems in the least squares sense is
+\b CompleteOrthogonalDecomposition. Like the SVD, it robustly computes the minimum-norm least squares
+solution, correctly handling rank-deficient and under-determined problems, but it is significantly faster
+since it is based on a rank-revealing QR decomposition rather than a full SVD.
 
-Here is an example:
+If you also need the singular values or vectors themselves (not just the least squares solution), use
+\b BDCSVD, which scales well for large problems and automatically falls back to JacobiSVD for smaller ones.
+
+Here is an example using the SVD:
 <table class="example">
 <tr><th>Example:</th><th>Output:</th></tr>
 <tr>
@@ -167,11 +173,9 @@ Here is an example:
 </tr>
 </table>
 
-An alternative to the SVD, which is usually faster and about as accurate, is CompleteOrthogonalDecomposition. 
-
-Again, if you know more about the problem, the table above contains methods that are potentially faster.
-If your matrix is full rank, HouseHolderQR is the method of choice. If your matrix is full rank and well conditioned,
-using the Cholesky decomposition (LLT) on the matrix of the normal equations can be faster still.
+If you know more about the problem, faster methods are available.
+If your matrix is full rank, HouseholderQR is the fastest method. If your matrix is full rank and
+well conditioned, using the Cholesky decomposition (LLT) on the normal equations can be faster still.
 Our page on \link LeastSquares least squares solving \endlink has more details.
 
 
@@ -267,8 +271,9 @@ singular matrix). On \ref TopicLinearAlgebraDecompositions "this table" you can 
 whether they are rank-revealing or not.
 
 Rank-revealing decompositions offer at least a rank() method. They can also offer convenience methods such as isInvertible(),
-and some are also providing methods to compute the kernel (null-space) and image (column-space) of the matrix, as is the
-case with FullPivLU:
+and some are also providing methods to compute the kernel (null-space) and image (column-space) of the matrix.
+ColPivHouseholderQR, CompleteOrthogonalDecomposition, and FullPivLU all provide these methods. Here is an example using
+FullPivLU:
 
 <table class="example">
 <tr><th>Example:</th><th>Output:</th></tr>

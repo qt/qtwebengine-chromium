@@ -53,8 +53,7 @@ class ContextWgpu : public ContextImpl
         // - layered FBO
         uint32_t misc;
 
-        // Only the lower 16 bits used
-        uint32_t dither;
+        uint32_t padding;
 
         std::array<uint32_t, 2> acbBufferOffsets;
     };

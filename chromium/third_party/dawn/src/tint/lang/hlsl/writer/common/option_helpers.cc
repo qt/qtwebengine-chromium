@@ -36,6 +36,7 @@
 #include "src/tint/lang/core/type/binding_array.h"
 #include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/core/type/storage_texture.h"
+#include "src/tint/lang/core/type/texel_buffer.h"
 #include "src/tint/utils/containers/hashmap.h"
 #include "src/tint/utils/diagnostic/diagnostic.h"
 
@@ -170,6 +171,26 @@ Result<SuccessType> ValidateBindingOptions(const core::ir::Module& ir, const Opt
         return Failure{diagnostics.Str()};
     }
 
+    // texel buffers use register t# or u#.
+    auto texel_buffer_map = [&](const tint::BindingPoint& src) -> PointToPointMap& {
+        bool is_read_only = false;
+        if (auto* var = binding_to_var.GetOr(src, nullptr)) {
+            auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
+            auto* store_ty = ptr->StoreType();
+            if (auto* arr = store_ty->As<core::type::BindingArray>()) {
+                store_ty = arr->ElemType();
+            }
+            if (auto* tb = store_ty->As<core::type::TexelBuffer>()) {
+                is_read_only = tb->Access() == core::Access::kRead;
+            }
+        }
+        return is_read_only ? seen_hlsl_register_t : seen_hlsl_register_u;
+    };
+    if (!valid(texel_buffer_map, options.bindings.texel_buffer)) {
+        diagnostics.AddNote(Source{}) << "when processing texel_buffer";
+        return Failure{diagnostics.Str()};
+    }
+
     for (const auto& it : options.bindings.external_texture) {
         const auto& src_binding = it.first;
 
@@ -255,6 +276,7 @@ void PopulateBindingRelatedOptions(
     create_remappings(options.bindings.storage);
     create_remappings(options.bindings.texture);
     create_remappings(options.bindings.storage_texture);
+    create_remappings(options.bindings.texel_buffer);
     create_remappings(options.bindings.sampler);
 
     // External textures are re-bound to their plane0 location

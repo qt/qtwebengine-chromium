@@ -4,6 +4,8 @@
 # This module first tries to find UMFPACK via its CMake config-mode package
 # (shipped with SuiteSparse >= 7.0). If that fails, it falls back to a
 # manual header/library search for compatibility with older installations.
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 if (UMFPACK_INCLUDES AND UMFPACK_LIBRARIES)
   set(UMFPACK_FIND_QUIETLY TRUE)

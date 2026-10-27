@@ -16,6 +16,8 @@
 #include <windows.h>
 #endif
 
+namespace fxge {
+
 #if BUILDFLAG(IS_WIN)
 static_assert(sizeof(FX_COLORREF) == sizeof(COLORREF),
               "FX_COLORREF vs. COLORREF mismatch");
@@ -65,3 +67,5 @@ FX_ARGB AlphaAndColorRefToArgb(int a, FX_COLORREF colorref) {
   return ArgbEncode(a, FXSYS_GetRValue(colorref), FXSYS_GetGValue(colorref),
                     FXSYS_GetBValue(colorref));
 }
+
+}  // namespace fxge

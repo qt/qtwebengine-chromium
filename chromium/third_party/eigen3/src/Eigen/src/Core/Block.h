@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_BLOCK_H
 #define EIGEN_BLOCK_H
@@ -42,10 +43,10 @@ struct traits<Block<XprType_, BlockRows, BlockCols, InnerPanel_>> : traits<XprTy
                                                                             : XprTypeIsRowMajor,
     HasSameStorageOrderAsXprType = (IsRowMajor == XprTypeIsRowMajor),
     InnerSize = IsRowMajor ? int(ColsAtCompileTime) : int(RowsAtCompileTime),
-    InnerStrideAtCompileTime = HasSameStorageOrderAsXprType ? int(inner_stride_at_compile_time<XprType_>::ret)
-                                                            : int(outer_stride_at_compile_time<XprType_>::ret),
-    OuterStrideAtCompileTime = HasSameStorageOrderAsXprType ? int(outer_stride_at_compile_time<XprType_>::ret)
-                                                            : int(inner_stride_at_compile_time<XprType_>::ret),
+    InnerStrideAtCompileTime = HasSameStorageOrderAsXprType ? int(inner_stride_at_compile_time<XprType_>::value)
+                                                            : int(outer_stride_at_compile_time<XprType_>::value),
+    OuterStrideAtCompileTime = HasSameStorageOrderAsXprType ? int(outer_stride_at_compile_time<XprType_>::value)
+                                                            : int(inner_stride_at_compile_time<XprType_>::value),
 
     // FIXME, this traits is rather specialized for dense object and it needs to be cleaned further
     FlagsLvalueBit = is_lvalue<XprType_>::value ? LvalueBit : 0,
@@ -63,7 +64,7 @@ struct traits<Block<XprType_, BlockRows, BlockCols, InnerPanel_>> : traits<XprTy
 };
 
 template <typename XprType, int BlockRows = Dynamic, int BlockCols = Dynamic, bool InnerPanel = false,
-          bool HasDirectAccess = internal::has_direct_access<XprType>::ret>
+          bool HasDirectAccess = internal::has_direct_access<XprType>::value>
 class BlockImpl_dense;
 
 }  // end namespace internal
@@ -392,8 +393,7 @@ class BlockImpl_dense<XprType, BlockRows, BlockCols, InnerPanel, true>
   EIGEN_DEVICE_FUNC constexpr StorageIndex startCol() const noexcept { return m_startCol.value(); }
 
 #ifndef __SUNPRO_CC
-  // FIXME sunstudio is not friendly with the above friend...
-  // META-FIXME there is no 'friend' keyword around here. Is this obsolete?
+  // Historical workaround for SunStudio's handling of the access specifier here.
  protected:
 #endif
 

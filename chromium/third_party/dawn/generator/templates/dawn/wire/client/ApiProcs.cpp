@@ -29,11 +29,12 @@
 #include <cstring>
 #include <string_view>
 #include <type_traits>
-#include <vector>
 #include <utility>
+#include <vector>
 
-#include "dawn/wire/client/Client.h"
 #include "dawn/wire/client/webgpu.h"
+#include "dawn/dawn_version.h"
+#include "src/dawn/wire/client/Client.h"
 
 namespace dawn::wire::client {
 
@@ -170,6 +171,7 @@ namespace dawn::wire::client {
 
     constexpr {{Prefix}}ProcTable MakeProcTable() {
         {{Prefix}}ProcTable procs = {};
+        std::ranges::copy(dawn::kDawnVersion, procs.version);
         {% for function in by_category["function"] %}
             procs.{{as_varName(function.name)}} = {{as_cMethodNamespaced(None, function.name, Name('dawn wire client'))}};
         {% endfor %}

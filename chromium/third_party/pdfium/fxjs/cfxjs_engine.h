@@ -21,7 +21,7 @@
 #include <vector>
 
 #include "core/fxcrt/widestring.h"
-#include "fxjs/cfx_v8.h"
+#include "fxjs/cfx_isolate_wrapper.h"
 #include "fxjs/ijs_runtime.h"
 #include "v8/include/v8-forward.h"
 #include "v8/include/v8-function-callback.h"
@@ -107,7 +107,7 @@ bool FXJS_GetIsolate(v8::Isolate** pResultIsolate);
 // Get the global isolate's ref count.
 size_t FXJS_GlobalIsolateRefCount();
 
-class CFXJS_Engine : public CFX_V8 {
+class CFXJS_Engine : public CFX_IsolateWrapper {
  public:
   explicit CFXJS_Engine(v8::Isolate* pIsolate);
   ~CFXJS_Engine() override;
@@ -135,11 +135,11 @@ class CFXJS_Engine : public CFX_V8 {
   void DefineObjProperty(uint32_t nObjDefnID,
                          const char* sPropName,
                          v8::AccessorNameGetterCallback pPropGet,
-                         v8::AccessorNameSetterCallback pPropPut);
+                         v8::AccessorNameSetterCallbackV2 pPropPut);
   void DefineObjAllProperties(uint32_t nObjDefnID,
                               v8::NamedPropertyQueryCallback pPropQurey,
                               v8::NamedPropertyGetterCallback pPropGet,
-                              v8::NamedPropertySetterCallback pPropPut,
+                              v8::NamedPropertySetterCallbackV2 pPropPut,
                               v8::NamedPropertyDeleterCallback pPropDel,
                               v8::NamedPropertyEnumeratorCallback pPropEnum);
   void DefineObjConst(uint32_t nObjDefnID,

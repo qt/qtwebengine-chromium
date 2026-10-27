@@ -272,7 +272,10 @@ void VisitDatabase::FillVisitRow(sql::Statement& statement, VisitRow* visit) {
   visit->url_id = statement.ColumnInt64(1);
   visit->visit_time = statement.ColumnTime(2);
   visit->referring_visit = statement.ColumnInt64(3);
-  visit->external_referrer_url = GURL(statement.ColumnStringView(4));
+  // Skip GURL parsing for empty referrer URLs (the common case).
+  auto referrer_view = statement.ColumnStringView(4);
+  visit->external_referrer_url =
+      referrer_view.empty() ? GURL() : GURL(referrer_view);
   visit->transition = PageTransitionFromIntWithFallback(statement.ColumnInt(5));
   visit->segment_id = statement.ColumnInt64(6);
   visit->visit_duration = statement.ColumnTimeDelta(7);
@@ -285,9 +288,10 @@ void VisitDatabase::FillVisitRow(sql::Statement& statement, VisitRow* visit) {
   visit->is_known_to_sync = statement.ColumnBool(14);
   visit->consider_for_ntp_most_visited = statement.ColumnBool(15);
   visit->visited_link_id = statement.ColumnInt64(16);
-  std::string app_id = statement.ColumnString(17);
-  if (!app_id.empty()) {
-    visit->app_id = app_id;
+  // Use ColumnStringView to avoid allocating when the value is empty.
+  auto app_id_view = statement.ColumnStringView(17);
+  if (!app_id_view.empty()) {
+    visit->app_id = std::string(app_id_view);
   }
   if (statement.ColumnCount() > 18) {
     visit->source = VisitSourceFromInt(statement.ColumnInt(18));
@@ -302,9 +306,8 @@ bool VisitDatabase::FillVisitVector(sql::Statement& statement,
   }
 
   while (statement.Step()) {
-    VisitRow visit;
-    FillVisitRow(statement, &visit);
-    visits->push_back(visit);
+    visits->emplace_back();
+    FillVisitRow(statement, &visits->back());
   }
 
   return statement.Succeeded();
@@ -339,9 +342,7 @@ bool VisitDatabase::FillVisitVectorWithOptions(sql::Statement& statement,
 
       bool is_actor_visit = false;
 #if !BUILDFLAG(IS_IOS)
-      if (history::IsBrowsingHistoryActorIntegrationM2Enabled()) {
-        is_actor_visit = (visit.source == SOURCE_ACTOR);
-      }
+      is_actor_visit = visit.source == SOURCE_ACTOR;
 #endif
 
       // Make sure the (URLID, is_actor_visit) is unique.
@@ -607,26 +608,24 @@ bool VisitDatabase::PrepareVisibleVisitsQuery(
 // TODO(crbug.com/457641486) Clean up preprocessor statements once feature is
 // rolled out.
 #if !BUILDFLAG(IS_IOS)
-  if (history::IsBrowsingHistoryActorIntegrationM2Enabled()) {
-    sql += ", IFNULL(visit_source.source, 1)";
-    joins += " LEFT JOIN visit_source ON visits.id = visit_source.id";
+  sql += ", IFNULL(visit_source.source, 1)";
+  joins += " LEFT JOIN visit_source ON visits.id = visit_source.id";
 
-    if (history::IsBrowsingHistoryActorIntegrationM3Enabled()) {
-      CHECK(options.include_user_visits || options.include_actor_visits);
+  if (history::IsBrowsingHistoryActorIntegrationM3Enabled()) {
+    CHECK(options.include_user_visits || options.include_actor_visits);
 
-      if (options.include_user_visits && !options.include_actor_visits) {
-        where_clauses.push_back(
-            "(visit_source.source IS NULL OR visit_source.source != ?)");
-        binding_values.push_back(SOURCE_ACTOR);
-      } else if (!options.include_user_visits && options.include_actor_visits) {
-        where_clauses.push_back("visit_source.source = ?");
-        binding_values.push_back(SOURCE_ACTOR);
-      }
-    } else if (!options.include_actor_visits) {
+    if (options.include_user_visits && !options.include_actor_visits) {
       where_clauses.push_back(
           "(visit_source.source IS NULL OR visit_source.source != ?)");
       binding_values.push_back(SOURCE_ACTOR);
+    } else if (!options.include_user_visits && options.include_actor_visits) {
+      where_clauses.push_back("visit_source.source = ?");
+      binding_values.push_back(SOURCE_ACTOR);
     }
+  } else if (!options.include_actor_visits) {
+    where_clauses.push_back(
+        "(visit_source.source IS NULL OR visit_source.source != ?)");
+    binding_values.push_back(SOURCE_ACTOR);
   }
 #endif
 

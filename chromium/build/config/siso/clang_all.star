@@ -14,18 +14,6 @@ load("./mac_sdk.star", "mac_sdk")
 load("./win_sdk.star", "win_sdk")
 load("./clang_code_coverage_wrapper.star", "clang_code_coverage_wrapper")
 
-def __clang_plugin_configs(ctx):
-    configs = [
-        "build/config/unsafe_buffers_paths.txt",
-        "build/config/warning_suppression.txt",
-        # crbug.com/418842344: Angle, PDFium use a different plugin config.
-        "unsafe_buffers_paths.txt",
-    ]
-
-    if "args.gn" in ctx.metadata and gn.args(ctx).get("sanitizer_coverage_skip_stdlib_and_absl"):
-        configs += ["build/config/sanitizers/ignorelist_stdlib_and_absl.txt"]
-    return configs
-
 def __check_crash_diagnostics(ctx, args):
     # If multiple -fcrash-diagnostics-dir flags are provided, clang uses the last one.
     crash_dir = None
@@ -66,14 +54,6 @@ def __filegroups(ctx):
             "type": "glob",
             "includes": ["*.h"],
         },
-        # vendor provided headers for libc++.
-        path.join(root, "buildtools/third_party/libc++") + ":headers": {
-            "type": "glob",
-            "includes": [
-                "__*",
-            ],
-        },
-
         # toolchain root
         # :headers for compiling
         path.join(root, "third_party/llvm-build/Release+Asserts") + ":headers": {
@@ -98,27 +78,18 @@ def __filegroups(ctx):
 
 def __input_deps(ctx):
     build_dir = ctx.fs.canonpath(".")
-    clang_plugin_configs = __clang_plugin_configs(ctx)
+
+    libcxx_inputs = [
+        "buildtools/third_party/libc++/__assertion_handler",
+        "buildtools/third_party/libc++/__config_site",
+        "third_party/libc++/src/include:headers",
+    ]
 
     return {
-        # need this because we use
-        # third_party/libc++/src/include:headers,
-        # but scandeps doesn't scan `__config` file, which uses
-        # `#include <__config_site>`
-        # also need `__assertion_handler`. b/321171148
-        "third_party/libc++/src/include": [
-            "buildtools/third_party/libc++:headers",
-        ],
-        # This is necessary for modules build where libc++ headers are copied to build directory.
-        path.join(build_dir, "gen/third_party/libc++/src/include") + ":headers": [
-            path.join(build_dir, "gen/third_party/libc++/src/include/module.modulemap"),
-            path.join(build_dir, "phony/buildtools/third_party/libc++/copy_custom_headers") + ":inputs",
-            path.join(build_dir, "phony/buildtools/third_party/libc++/copy_libcxx_headers") + ":inputs",
-        ],
-        "third_party/llvm-build/Release+Asserts/bin/clang": clang_plugin_configs,
-        "third_party/llvm-build/Release+Asserts/bin/clang++": clang_plugin_configs,
-        "third_party/llvm-build/Release+Asserts/bin/clang-cl": clang_plugin_configs,
-        "third_party/llvm-build/Release+Asserts/bin/clang-cl.exe": clang_plugin_configs,
+        "third_party/llvm-build/Release+Asserts/bin/clang++": libcxx_inputs,
+        "third_party/llvm-build/Release+Asserts/bin/clang++.exe": libcxx_inputs,
+        "third_party/llvm-build/Release+Asserts/bin/clang-cl": libcxx_inputs,
+        "third_party/llvm-build/Release+Asserts/bin/clang-cl.exe": libcxx_inputs,
         "third_party/llvm-build/Release+Asserts/bin/lld-link": [
             "build/config/c++/libc++.natvis",
             "build/win/as_invoker.manifest",

@@ -25,19 +25,15 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/439062058): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
-#include "dawn/wire/client/ShaderModule.h"
+#include "src/dawn/wire/client/ShaderModule.h"
 
 #include <memory>
 #include <utility>
 
-#include "dawn/common/StringViewUtils.h"
-#include "dawn/wire/client/Client.h"
 #include "partition_alloc/pointers/raw_ptr.h"
+#include "src/dawn/common/StringViewUtils.h"
+#include "src/dawn/wire/client/Client.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::wire::client {
 
@@ -74,15 +70,16 @@ class ShaderModule::CompilationInfoEvent final : public TrackedEvent {
         mShader->mMessages.reserve(info->messageCount);
         mShader->mUtf16s.reserve(info->messageCount);
         for (size_t i = 0; i < info->messageCount; i++) {
-            DAWN_ASSERT(info->messages[i].length != WGPU_STRLEN);
-            mShader->mMessageStrings.push_back(ToString(info->messages[i].message));
-            mShader->mMessages.push_back(info->messages[i]);
+            DAWN_UNSAFE_TODO(DAWN_ASSERT(info->messages[i].length != WGPU_STRLEN));
+            mShader->mMessageStrings.push_back(
+                ToString(DAWN_UNSAFE_TODO(info->messages[i]).message));
+            mShader->mMessages.push_back(DAWN_UNSAFE_TODO(info->messages[i]));
             mShader->mMessages[i].message = ToOutputStringView(mShader->mMessageStrings[i]);
             mShader->mMessages[i].nextInChain = nullptr;
 
             // Iterate the message chain for extensions that we want to handle.
             WGPUChainedStruct** tail = &mShader->mMessages[i].nextInChain;
-            WGPUChainedStruct* chain = info->messages[i].nextInChain;
+            WGPUChainedStruct* chain = DAWN_UNSAFE_TODO(info->messages[i]).nextInChain;
             while (chain != nullptr) {
                 switch (chain->sType) {
                     case WGPUSType_DawnCompilationMessageUtf16: {
@@ -161,8 +158,8 @@ WGPUFuture ShaderModule::APIGetCompilationInfo(
 
     // If we already have a cached compilation info object, we can set it ready now.
     if (mCompilationInfo) {
-        DAWN_CHECK(GetEventManager().SetFutureReady<CompilationInfoEvent>(futureIDInternal) ==
-                   WireResult::Success);
+        auto wireStatus = GetEventManager().SetFutureReady<CompilationInfoEvent>(futureIDInternal);
+        DAWN_CHECK(wireStatus == WireResult::Success);
         return {futureIDInternal};
     }
 

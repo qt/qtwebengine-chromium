@@ -1,0 +1,255 @@
+// Copyright 2026 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#include "ui/views/controls/button/single_animated_image_container.h"
+
+#include <utility>
+#include <vector>
+
+#include "base/memory/raw_ptr.h"
+#include "cc/paint/paint_flags.h"
+#include "ui/gfx/animation/slide_animation.h"
+#include "ui/gfx/canvas.h"
+#include "ui/gfx/image/canvas_image_source.h"
+#include "ui/lottie/animation.h"
+#include "ui/views/controls/button/label_button.h"
+#include "ui/views/controls/image_view.h"
+
+namespace {
+
+class LottieIconSource : public gfx::CanvasImageSource {
+ public:
+  LottieIconSource(lottie::Animation* animation,
+                   float progress,
+                   int size,
+                   SkColor color)
+      : gfx::CanvasImageSource(gfx::Size(size, size)),
+        animation_(animation),
+        progress_(progress),
+        color_(color) {}
+  LottieIconSource(const LottieIconSource&) = delete;
+  LottieIconSource& operator=(const LottieIconSource&) = delete;
+  ~LottieIconSource() override = default;
+
+  // gfx::CanvasImageSource:
+  void Draw(gfx::Canvas* canvas) override {
+    if (!animation_) {
+      return;
+    }
+
+    // TODO(b/517231960): Use SkottieColorMap to set the colors in the
+    // lottie animation itself, instead of using a color filter.
+    cc::PaintFlags flags;
+    flags.setColorFilter(cc::ColorFilter::MakeBlend(
+        SkColor4f::FromColor(color_), SkBlendMode::kSrcIn));
+    canvas->SaveLayerWithFlags(flags);
+    animation_->PaintFrame(canvas, progress_, size());
+    canvas->Restore();
+  }
+
+ private:
+  raw_ptr<lottie::Animation> animation_;
+  const float progress_;
+  const SkColor color_;
+};
+
+}  // namespace
+
+namespace views {
+
+SingleAnimatedImageContainer::SingleAnimatedImageContainer(LabelButton* button)
+    : button_(button), slide_animation_(this) {}
+
+SingleAnimatedImageContainer::~SingleAnimatedImageContainer() {
+  // The image in the image_view may still contain a reference to the
+  // lottie animation owned by this class. We need to clear the ImageModel
+  // before the lottie animation is deleted.
+  if (ImageView* image_view = static_cast<ImageView*>(GetView()); image_view) {
+    image_view->SetImage(ui::ImageModel());
+  }
+}
+
+void SingleAnimatedImageContainer::AddAnimatedImage(int resource_id) {
+  if (HasAnimatedImage(resource_id)) {
+    return;
+  }
+
+  animated_images_.emplace(resource_id, LoadAnimatedImage(resource_id));
+}
+
+std::unique_ptr<lottie::Animation>
+SingleAnimatedImageContainer::LoadAnimatedImage(int resource_id) {
+  std::optional<std::vector<uint8_t>> lottie_bytes =
+      ui::ResourceBundle::GetSharedInstance().GetLottieData(resource_id);
+  CHECK(lottie_bytes.has_value());
+  scoped_refptr<cc::SkottieWrapper> skottie =
+      cc::SkottieWrapper::UnsafeCreateSerializable(std::move(*lottie_bytes));
+  return std::make_unique<lottie::Animation>(skottie);
+}
+
+void SingleAnimatedImageContainer::ClearAnimatedImages() {
+  ResetAnimation();
+  animated_images_.clear();
+}
+
+void SingleAnimatedImageContainer::UpdateImage(const LabelButton* button) {
+  // In order to update back to static image, we shouldn't be showing animation.
+  if (!IsShowingAnimation()) {
+    SingleImageContainer::UpdateImage(button);
+  }
+}
+
+bool SingleAnimatedImageContainer::HasAnimatedImage(int resource_id) const {
+  return animated_images_.contains(resource_id);
+}
+
+std::optional<float> SingleAnimatedImageContainer::animation_progress() const {
+  if (playing_animation_.has_value()) {
+    float start = playing_animation_->start_offset;
+    float end = playing_animation_->end_offset;
+
+    CHECK(start <= end);
+    return gfx::Tween::FloatValueBetween(slide_animation_.GetCurrentValue(),
+                                         start, end);
+  }
+  return std::nullopt;
+}
+
+bool SingleAnimatedImageContainer::IsShowingAnimation() const {
+  // Showing animation state includes paused state at the end of a forward
+  // animation.
+  return slide_animation_.is_animating() ||
+         slide_animation_.GetCurrentValue() != 0.0f;
+}
+
+void SingleAnimatedImageContainer::PlayAnimation(AnimationDefinition definition,
+                                                 AnimationConfig config) {
+  PlayAnimation(definition, std::vector<AnimationConfig>{config});
+}
+
+void SingleAnimatedImageContainer::PlayAnimation(
+    AnimationDefinition definition,
+    const std::vector<AnimationConfig>& config_cycles) {
+  if (!gfx::Animation::ShouldRenderRichAnimation()) {
+    return;
+  }
+
+  ValidateSequence(definition, config_cycles);
+
+  AddAnimatedImage(definition.resource_id);
+  playing_animation_ = AnimationState{
+      .definition = definition, .config = config_cycles, .cycle_index = 0};
+
+  PlayNextAnimationCycle();
+}
+
+void SingleAnimatedImageContainer::PlayNextAnimationCycle() {
+  CHECK(playing_animation_);
+  const size_t index = playing_animation_->cycle_index;
+  CHECK_LT(index, playing_animation_->config.size());
+
+  const AnimationConfig& config = playing_animation_->config[index];
+  slide_animation_.SetTweenType(config.tween);
+
+  playing_animation_->start_offset =
+      config.boundary.has_value() ? config.boundary->start_offset : 0.0f;
+  playing_animation_->end_offset =
+      config.boundary.has_value() ? config.boundary->end_offset : 1.0f;
+  slide_animation_.SetSlideDuration(
+      config.duration.is_zero()
+          ? animated_images_[playing_animation_->definition.resource_id]
+                ->GetAnimationDuration()
+          : config.duration);
+
+  if (playing_animation_->definition.direction ==
+      AnimationDirection::kForward) {
+    slide_animation_.Reset(0.0f);
+    slide_animation_.Show();
+  } else {
+    CHECK(playing_animation_->definition.direction ==
+          AnimationDirection::kBackward);
+    CHECK(playing_animation_->definition.end_behavior ==
+          AnimationEndBehavior::kReset);
+    slide_animation_.Reset(1.0f);
+    slide_animation_.Hide();
+  }
+}
+
+void SingleAnimatedImageContainer::ResetAnimation() {
+  if (slide_animation_.GetCurrentValue() != 0.0f) {
+    slide_animation_.Reset(0.0f);
+  }
+}
+
+void SingleAnimatedImageContainer::AnimationProgressed(
+    const gfx::Animation* animation) {
+  CHECK(playing_animation_);
+
+  ImageView* image_view = static_cast<ImageView*>(GetView());
+  if (!image_view) {
+    return;
+  }
+  const gfx::Size& size = image_view->size();
+  std::optional<float> progress = animation_progress();
+  CHECK(progress.has_value());
+
+  ui::ImageModel model = ui::ImageModel::FromImageSkia(
+      gfx::CanvasImageSource::MakeImageSkia<LottieIconSource>(
+          animated_images_[playing_animation_->definition.resource_id].get(),
+          progress.value(), size.width(),
+          playing_animation_->definition.color));
+
+  image_view->SetImage(model);
+}
+
+void SingleAnimatedImageContainer::AnimationEnded(
+    const gfx::Animation* animation) {
+  CHECK(playing_animation_);
+
+  if (playing_animation_->cycle_index + 1 < playing_animation_->config.size()) {
+    ++playing_animation_->cycle_index;
+    PlayNextAnimationCycle();
+    return;
+  }
+
+  // Process the end behavior on the last cycle.
+  if (playing_animation_->definition.end_behavior ==
+      AnimationEndBehavior::kReset) {
+    ResetAnimation();
+    UpdateImage(button_);
+  }
+
+  playing_animation_.reset();
+}
+
+void SingleAnimatedImageContainer::ValidateSequence(
+    const AnimationDefinition& definition,
+    const std::vector<AnimationConfig>& config_cycles) const {
+  for (size_t i = 0; i < config_cycles.size(); ++i) {
+    const float current_start = config_cycles[i].boundary.has_value()
+                                    ? config_cycles[i].boundary->start_offset
+                                    : 0.0f;
+    const float current_end = config_cycles[i].boundary.has_value()
+                                  ? config_cycles[i].boundary->end_offset
+                                  : 1.0f;
+    CHECK_GE(current_start, 0.0f);
+    CHECK_LE(current_end, 1.0f);
+    CHECK_LE(current_start, current_end);
+    if (i > 0) {
+      const float prev_start = config_cycles[i - 1].boundary.has_value()
+                                   ? config_cycles[i - 1].boundary->start_offset
+                                   : 0.0f;
+      const float prev_end = config_cycles[i - 1].boundary.has_value()
+                                 ? config_cycles[i - 1].boundary->end_offset
+                                 : 1.0f;
+      if (definition.direction == AnimationDirection::kForward) {
+        CHECK_GE(current_start, prev_end);
+      } else {
+        CHECK_GE(prev_start, current_end);
+      }
+    }
+  }
+}
+
+}  // namespace views

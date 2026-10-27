@@ -56,7 +56,6 @@ using data from registry_xml.py and gl.xml.
 | [GL_EXT_debug_marker](https://khronos.org/registry/OpenGL/extensions/EXT/EXT_debug_marker.txt) | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; |
 | [GL_OES_depth24](https://khronos.org/registry/OpenGL/extensions/OES/OES_depth24.txt) | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; |
 | [GL_OES_depth32](https://khronos.org/registry/OpenGL/extensions/OES/OES_depth32.txt) | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; |
-| [GL_NV_depth_buffer_float2](https://khronos.org/registry/OpenGL/extensions/NV/NV_depth_buffer_float2.txt) | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; |
 | [GL_EXT_depth_clamp](https://khronos.org/registry/OpenGL/extensions/EXT/EXT_depth_clamp.txt) |  |  |  |  |  |  |  |
 | [GL_ANGLE_depth_texture](https://khronos.org/registry/OpenGL/extensions/ANGLE/ANGLE_depth_texture.txt) | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; |
 | [GL_OES_depth_texture](https://khronos.org/registry/OpenGL/extensions/OES/OES_depth_texture.txt) | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; |
@@ -193,6 +192,7 @@ using data from registry_xml.py and gl.xml.
 | [GL_QCOM_texture_foveated](https://khronos.org/registry/OpenGL/extensions/QCOM/QCOM_texture_foveated.txt) |  |  |  |  |  |  |  |
 | [GL_OES_texture_half_float](https://khronos.org/registry/OpenGL/extensions/OES/OES_texture_half_float.txt) | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; |
 | [GL_OES_texture_half_float_linear](https://khronos.org/registry/OpenGL/extensions/OES/OES_texture_half_float_linear.txt) | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; |
+| [GL_QCOM_texture_lod_bias](https://khronos.org/registry/OpenGL/extensions/QCOM/QCOM_texture_lod_bias.txt) |  |  |  |  |  |  |  |
 | [GL_EXT_texture_mirror_clamp_to_edge](https://khronos.org/registry/OpenGL/extensions/EXT/EXT_texture_mirror_clamp_to_edge.txt) |  |  |  |  |  |  |  |
 | [GL_EXT_texture_norm16](https://khronos.org/registry/OpenGL/extensions/EXT/EXT_texture_norm16.txt) |  | &#x2714; |  | &#x2714; |  |  |  |
 | [GL_OES_texture_npot](https://khronos.org/registry/OpenGL/extensions/OES/OES_texture_npot.txt) | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; | &#x2714; |
@@ -289,6 +289,7 @@ using data from registry_xml.py and gl.xml.
 | [GL_OES_point_sprite](https://khronos.org/registry/OpenGL/extensions/OES/OES_point_sprite.txt) | &#x2714; |
 | [GL_OES_query_matrix](https://khronos.org/registry/OpenGL/extensions/OES/OES_query_matrix.txt) |  |
 | [GL_OES_texture_cube_map](https://khronos.org/registry/OpenGL/extensions/OES/OES_texture_cube_map.txt) | &#x2714; |
+| [GL_EXT_texture_lod_bias](https://khronos.org/registry/OpenGL/extensions/EXT/EXT_texture_lod_bias.txt) |  |
 | [GL_OES_texture_mirrored_repeat](https://khronos.org/registry/OpenGL/extensions/OES/OES_texture_mirrored_repeat.txt) |  |
 
 ## EGL extension support

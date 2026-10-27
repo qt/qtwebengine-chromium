@@ -12,6 +12,7 @@
 #include "base/time/time.h"
 #include "third_party/blink/public/mojom/frame/frame.mojom-blink.h"
 #include "third_party/blink/public/web/web_frame_load_type.h"
+#include "third_party/blink/renderer/bindings/core/v8/binding_security.h"
 #include "third_party/blink/renderer/bindings/core/v8/capture_source_location.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
@@ -56,6 +57,7 @@
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/task_attribution_info.h"
 #include "third_party/blink/renderer/platform/scheduler/public/task_attribution_tracker.h"
+#include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 
 namespace blink {
 
@@ -281,7 +283,7 @@ void NavigationApi::UpdateForNavigation(HistoryItem& item,
   // Without the microtasks scope deferring promise continuations, the order
   // inverts when committing a browser-initiated same-document navigation and
   // an event listener is present for either currententrychange or dispose.
-  V8RunMicrotasksScope scope(window_.Get());
+  V8RunMicrotasksScope run_microtasks_scope(window_.Get());
 
   auto* init = NavigationCurrentEntryChangeEventInit::Create();
   init->setNavigationType(ToV8NavigationType(type));
@@ -298,6 +300,12 @@ void NavigationApi::UpdateForNavigation(HistoryItem& item,
 
   if (auto* routemap = RouteMap::Get(window_->document())) {
     routemap->OnNavigationCommitted();
+  }
+
+  if (ongoing_navigate_event && window_->GetFrame()) {
+    auto* script_state = ToScriptStateForMainWorld(window_->GetFrame());
+    ScriptState::Scope scope(script_state);
+    ongoing_navigate_event->React(script_state);
   }
 }
 
@@ -479,6 +487,8 @@ NavigationResult* NavigationApi::navigate(ScriptState* script_state,
 
   if (completed_url.ProtocolIsJavaScript()) {
     UseCounter::Count(window_, WebFeature::kNavigationNavigateJavaScriptURL);
+    return EarlyErrorResult(script_state, DOMExceptionCode::kNotSupportedError,
+                            "The javascript: protocol is not supported");
   }
 
   scoped_refptr<SerializedScriptValue> serialized_state = nullptr;
@@ -753,6 +763,11 @@ NavigationApi::DispatchResult NavigationApi::DispatchNavigateEvent(
     return DispatchResult::kContinue;
   }
 
+  if (params->source_element && !BindingSecurity::ShouldAllowAccessTo(
+                                    window_, params->source_element.Get())) {
+    params->source_element = nullptr;
+  }
+
   LocalFrame* frame = window_->GetFrame();
   auto* script_state = ToScriptStateForMainWorld(frame);
   ScriptState::Scope scope(script_state);
@@ -898,14 +913,31 @@ NavigationApi::DispatchResult NavigationApi::DispatchNavigateEvent(
     return DispatchResult::kAbort;
   }
 
+  // Stash the destination URL for
+  // performance.getSpeculations().navigationDestinationURL. We only do this
+  // once handlers have run without canceling and without calling intercept()
+  // (which would convert this into a same-document navigation). The explainer
+  // restricts exposure to non-same-document, same-origin navigations.
+  //
+  // The URL is stashed as "pending" here and only promoted to the public
+  // value once pagehide is about to be dispatched, so that a later
+  // cancellation (e.g. by beforeunload, by a network error before commit, or
+  // by another navigation preempting this one) does not leave a stale URL
+  // exposed.
+  if (params->event_type == NavigateEventType::kCrossDocument &&
+      !navigate_event->HasNavigationActions() &&
+      window_->GetSecurityOrigin()->IsSameOriginWith(
+          SecurityOrigin::Create(params->url).get())) {
+    DOMWindowPerformance::performance(*window_)
+        ->SetPendingNavigationDestinationURL(params->url);
+  }
+
   if (navigate_event->HasNavigationActions()) {
     transition_ = MakeGarbageCollected<NavigationTransition>(
         window_, navigation_type, currentEntry(),
         navigate_event->destination());
     navigate_event->MaybeCommitImmediately(script_state);
-  } else if (params->event_type != NavigateEventType::kCrossDocument) {
-    navigate_event->React(script_state);
-  } else {
+  } else if (params->event_type == NavigateEventType::kCrossDocument) {
     window_->document()->GetViewTransitions().StartNavigationPreviewIfNeeded();
     navigate_event->MaybeDeferCrossDocumentCommit(script_state, params);
   }

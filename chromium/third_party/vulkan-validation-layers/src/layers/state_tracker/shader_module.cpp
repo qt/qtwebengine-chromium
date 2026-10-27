@@ -31,7 +31,7 @@
 
 #include <spirv/unified1/spirv.hpp>
 #include <spirv/1.2/GLSL.std.450.h>
-#include <spirv/unified1/NonSemanticShaderDebugInfo100.h>
+#include <spirv/unified1/NonSemanticShaderDebugInfo.h>
 #include <vulkan/vulkan_core.h>
 #include "error_message/spirv_logging.h"
 #include "utils/math_utils.h"
@@ -146,6 +146,7 @@ bool DecorationSet::HasAnyBuiltIn() const {
     return false;
 }
 
+// Assumes is being called from a OpTypeStruct
 bool DecorationSet::HasInMember(FlagBit flag_bit) const {
     for (const auto& decoration : member_decorations) {
         if (decoration.second.Has(flag_bit)) {
@@ -701,7 +702,7 @@ std::vector<ResourceInterfaceVariable> EntryPoint::GetResourceInterfaceVariables
         // These are the only storage classes that interface with a descriptor
         // see vkspec.html#interfaces-resources-descset
         if (storage_class == spv::StorageClassUniform || storage_class == spv::StorageClassUniformConstant ||
-            storage_class == spv::StorageClassStorageBuffer) {
+            storage_class == spv::StorageClassStorageBuffer || storage_class == spv::StorageClassTileAttachmentQCOM) {
             variables.emplace_back(module_state, entrypoint, insn, parsed);
         } else if (storage_class == spv::StorageClassPushConstant) {
             entrypoint.push_constant_variable =
@@ -1221,7 +1222,7 @@ Module::StaticData::StaticData(const Module& module_state, bool parse, Stateless
                         uses_interpolate_at_sample = true;
                     }
                 } else if (set == extended.shader_debug_info) {
-                    if (ext_instruction == NonSemanticShaderDebugInfo100DebugGlobalVariable) {
+                    if (ext_instruction == NonSemanticShaderDebugInfoDebugGlobalVariable) {
                         parsed.debug_global_variables.emplace_back(&insn);
                     }
                 } else if (set == extended.tosa_001000_1) {
@@ -1252,9 +1253,9 @@ Module::StaticData::StaticData(const Module& module_state, bool parse, Stateless
                 const char* ext_name = insn.GetAsString(2);
                 if (strcmp(ext_name, "GLSL.std.450") == 0) {
                     extended.glsl_std450 = insn.ResultId();
-                } else if (strcmp(ext_name, "NonSemantic.Shader.DebugInfo.100") == 0) {
+                } else if (strncmp(ext_name, "NonSemantic.Shader.DebugInfo.", 29) == 0) {
                     extended.shader_debug_info = insn.ResultId();
-                } else if (strncmp(ext_name, "TOSA.001000.1", strlen("TOSA.001000.1")) == 0) {
+                } else if (strncmp(ext_name, "TOSA.001000.1", 13) == 0) {
                     extended.tosa_001000_1 = insn.ResultId();
                 }
                 break;
@@ -1576,7 +1577,7 @@ std::string Module::DescribeInstruction(const Instruction& error_insn) const {
     for (const auto& insn : static_data_.instructions) {
         const uint32_t opcode = insn.Opcode();
         if (opcode == spv::OpExtInst && insn.Word(3) == static_data_.extended.shader_debug_info &&
-            insn.Word(4) == NonSemanticShaderDebugInfo100DebugLine) {
+            insn.Word(4) == NonSemanticShaderDebugInfoDebugLine) {
             last_line_inst = &insn;
         } else if (opcode == spv::OpLine) {
             last_line_inst = &insn;
@@ -1841,8 +1842,11 @@ uint32_t Module::GetComponentsConsumedByType(const Instruction* insn) const {
     }
 }
 
-// characterizes a SPIR-V type appearing in an interface to a FF stage, for comparison to a VkFormat's characterization above.
-// also used for input attachments, as we statically know their format.
+// "Numeric Type" is the spec language to help map a SPIR-V format to a VkFormat
+// Currently only used in
+// 1. Vertex Input
+// 2. Fragment Output
+// 3. Tensor interface
 NumericType Module::GetNumericType(const Instruction& insn) const {
     switch (insn.Opcode()) {
         case spv::OpTypeBool:
@@ -1860,6 +1864,9 @@ NumericType Module::GetNumericType(const Instruction& insn) const {
             return GetNumericType(*FindDef(insn.Word(2)));
         case spv::OpTypePointer:
             return GetNumericType(*FindDef(insn.Word(3)));
+        case spv::OpTypeStruct:
+            // TODO - // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/12281
+            return NumericTypeUnknown;
         default:
             return NumericTypeUnknown;
     }
@@ -1937,21 +1944,6 @@ VkFormat Module::GetTensorFormat(const spirv::Instruction& type_inst) const {
     return VK_FORMAT_UNDEFINED;
 }
 
-bool Module::HasRuntimeArray(uint32_t type_id) const {
-    const Instruction* type = FindDef(type_id);
-    if (!type) {
-        return false;
-    }
-    while (type->IsArray() || type->Opcode() == spv::OpTypePointer || type->Opcode() == spv::OpTypeSampledImage) {
-        if (type->Opcode() == spv::OpTypeRuntimeArray) {
-            return true;
-        }
-        const uint32_t next_word = (type->Opcode() == spv::OpTypePointer) ? 3 : 2;
-        type = FindDef(type->Word(next_word));
-    }
-    return false;
-}
-
 std::string InterfaceSlot::Describe() const {
     std::ostringstream msg;
     msg << "Location = " << Location() << " | Component = " << Component() << " | Type = " << string_SpvOpcode(type) << " "
@@ -1976,6 +1968,14 @@ const char* string_NumericType(uint32_t type) {
     if (type == NumericTypeBool) return "BOOL";
     if (type == NumericTypeFloat) return "FLOAT";
     return "(none)";
+}
+
+// When we want to check a OpVariable that has a OpTypeStruct on it
+bool VariableBase::HasInMember(DecorationSet::FlagBit flag_bit) const {
+    if (!type_struct_info) {
+        return false;
+    }
+    return type_struct_info->decorations.HasInMember(flag_bit);
 }
 
 const Instruction* VariableBase::FindDebugGlobalVariable(const VariableBase& variable, const Module& module_state,
@@ -2084,9 +2084,8 @@ std::string StageInterfaceVariable::Describe() const {
 
 bool StageInterfaceVariable::IsPerTaskNV(const StageInterfaceVariable& variable) {
     // will always be in a struct member
-    if (variable.type_struct_info &&
-        (variable.stage == VK_SHADER_STAGE_MESH_BIT_EXT || variable.stage == VK_SHADER_STAGE_TASK_BIT_EXT)) {
-        return variable.type_struct_info->decorations.HasInMember(DecorationSet::per_task_nv);
+    if ((variable.stage == VK_SHADER_STAGE_MESH_BIT_EXT || variable.stage == VK_SHADER_STAGE_TASK_BIT_EXT)) {
+        return variable.HasInMember(DecorationSet::per_task_nv);
     }
     return false;
 }
@@ -2391,21 +2390,20 @@ const Instruction& ResourceInterfaceVariable::FindBaseType(ResourceInterfaceVari
     // Takes a OpVariable and looks at the the descriptor type it uses. This will find things such as if the variable is writable,
     // image atomic operation, matching images to samplers, etc
     const Instruction* type = module_state.FindDef(variable.type_id);
+    assert(type->Opcode() == spv::OpTypePointer || type->Opcode() == spv::OpTypeUntypedPointerKHR);
+
+    if (variable.data_type_id != 0) {
+        type = module_state.FindDef(variable.data_type_id);
+    }
 
     // Strip off any array or ptrs. Where we remove array levels, adjust the  descriptor count for each dimension.
-    while (type->IsArray() || type->Opcode() == spv::OpTypePointer || type->Opcode() == spv::OpTypeSampledImage) {
-        if (type->IsArray() || type->Opcode() == spv::OpTypeSampledImage) {
-            // currently just tracks 1D arrays
-            if (type->Opcode() == spv::OpTypeArray && variable.array_length == 0) {
-                variable.array_length = module_state.GetConstantValueById(type->Word(3));
-            } else if (type->Opcode() == spv::OpTypeRuntimeArray) {
-                variable.array_length = spirv::kRuntimeArray;
-            }
-
-            if (type->Opcode() == spv::OpTypeSampledImage) {
-                variable.is_type_sampled_image = true;
-            }
-
+    while (type->IsArray() || type->Opcode() == spv::OpTypePointer) {
+        // currently just tracks 1D arrays
+        if (type->Opcode() == spv::OpTypeArray && variable.array_length == 0) {
+            variable.array_length = module_state.GetConstantValueById(type->Word(3));
+            type = module_state.FindDef(type->Word(2));  // Element type
+        } else if (type->Opcode() == spv::OpTypeRuntimeArray) {
+            variable.array_length = spirv::kRuntimeArray;
             type = module_state.FindDef(type->Word(2));  // Element type
         } else {
             type = module_state.FindDef(type->Word(3));  // Pointer type
@@ -2414,54 +2412,139 @@ const Instruction& ResourceInterfaceVariable::FindBaseType(ResourceInterfaceVari
     return *type;
 }
 
-bool ResourceInterfaceVariable::IsStorageBuffer(const ResourceInterfaceVariable& variable) {
-    // before VK_KHR_storage_buffer_storage_class Storage Buffer were a Uniform storage class
-    const bool physical_storage_buffer = variable.storage_class == spv::StorageClassPhysicalStorageBuffer;
-    const bool storage_buffer = variable.storage_class == spv::StorageClassStorageBuffer;
-    const bool uniform = variable.storage_class == spv::StorageClassUniform;
-    // Block decorations are always on the struct of the variable
-    const bool buffer_block =
-        variable.type_struct_info && variable.type_struct_info->decorations.Has(DecorationSet::buffer_block_bit);
-    const bool block = variable.type_struct_info && variable.type_struct_info->decorations.Has(DecorationSet::block_bit);
-    return ((uniform && buffer_block) || ((storage_buffer || physical_storage_buffer) && block));
+// Used for things that just want to report the error message with "some" type
+// should NOT be used for checking the shader interface (use GetAllDescriptorTypes instead)
+VkDescriptorType ResourceInterfaceVariable::GetPotentialDescriptorType() const {
+    if (is_storage_image) {
+        return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    } else if (is_storage_texel_buffer) {
+        return VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER;
+    } else if (is_uniform_texel_buffer) {
+        return VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
+    } else if (is_storage_buffer) {
+        return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    } else if (is_uniform_buffer) {
+        return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    } else if (is_input_attachment) {
+        return VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    } else if (is_storage_tensor) {
+        return VK_DESCRIPTOR_TYPE_TENSOR_ARM;
+    } else if (is_sampler) {
+        return VK_DESCRIPTOR_TYPE_SAMPLER;
+    } else if (is_sampled_image) {
+        return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    } else if (is_combined_image_sampler) {
+        return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    } else if (is_acceleration_structure || is_acceleration_structure_nv) {
+        return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    }
+    return VK_DESCRIPTOR_TYPE_MAX_ENUM;
 }
 
-bool ResourceInterfaceVariable::IsUniformBuffer(const ResourceInterfaceVariable& variable) {
-    const bool uniform = variable.storage_class == spv::StorageClassUniform;
-    const bool block = variable.type_struct_info && variable.type_struct_info->decorations.Has(DecorationSet::block_bit);
-    return (uniform && block);
+vvl::unordered_set<VkDescriptorType> ResourceInterfaceVariable::GetAllDescriptorTypes() const {
+    vvl::unordered_set<VkDescriptorType> types;
+
+    if (is_combined_image_sampler) {
+        types.insert(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    } else if (is_sampler) {
+        types.insert(VK_DESCRIPTOR_TYPE_SAMPLER);
+        // See PositivePipeline.CombinedImageSamplerConsumedAsSampler
+        types.insert(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    } else if (is_sampled_image) {
+        types.insert(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+        // See PositivePipeline.CombinedImageSamplerConsumedAsImage
+        types.insert(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    } else if (is_storage_buffer) {
+        types.insert(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        types.insert(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
+    } else if (is_uniform_buffer) {
+        types.insert(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+        types.insert(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC);
+        types.insert(VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK);
+    } else if (is_storage_image) {
+        types.insert(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+    } else if (is_storage_texel_buffer) {
+        types.insert(VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER);
+    } else if (is_uniform_texel_buffer) {
+        types.insert(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER);
+    } else if (is_input_attachment) {
+        types.insert(VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT);
+    } else if (is_storage_tensor) {
+        types.insert(VK_DESCRIPTOR_TYPE_TENSOR_ARM);
+    } else if (is_acceleration_structure) {
+        types.insert(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
+        if (is_partitioned_acceleration_structure) {
+            types.insert(VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV);
+        }
+    } else if (is_acceleration_structure_nv) {
+        types.insert(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV);
+        if (is_partitioned_acceleration_structure) {
+            types.insert(VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV);
+        }
+    }
+
+    assert(!types.empty() || IsHeap());
+    return types;
 }
 
 ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state, const EntryPoint& entrypoint,
                                                      const Instruction& insn, const ParsedInfo& parsed)
-    : VariableBase(module_state, insn, entrypoint.stage, parsed),
-      is_type_sampled_image(false),
-      base_type(FindBaseType(*this, module_state)),
-      is_runtime_descriptor_array(module_state.HasRuntimeArray(type_id)),
-      is_storage_buffer(IsStorageBuffer(*this)),
-      is_uniform_buffer(IsUniformBuffer(*this)) {
+    : VariableBase(module_state, insn, entrypoint.stage, parsed), base_type(FindBaseType(*this, module_state)) {
     // to make sure no padding in-between the struct produce noise and force same data to become a different hash
     info = {};  // will be cleared with c++11 initialization
-    info.image_dim = base_type.FindImageDim();
-    info.is_image_array = base_type.IsImageArray();
-    info.is_multisampled = base_type.IsImageMultisampled();
 
-    // Handle anything specific to the base type
-    if (base_type.Opcode() == spv::OpTypeImage) {
-        const spirv::Instruction& element_type_instr = *module_state.FindDef(base_type.Word(2));
+    const uint32_t base_type_opcode = base_type.Opcode();
+    if (base_type_opcode == spv::OpTypeStruct) {
+        assert(type_struct_info);
+        // Block/BufferBlock are always on the OpTypeStruct
+        if (type_struct_info->decorations.Has(DecorationSet::block_bit)) {
+            if (storage_class == spv::StorageClassStorageBuffer) {
+                is_storage_buffer = true;
+            } else {
+                is_uniform_buffer = true;
+            }
+        } else if (type_struct_info->decorations.Has(DecorationSet::buffer_block_bit)) {
+            is_buffer_block = true;
+            is_storage_buffer = true;
+        }
+    } else if (base_type_opcode == spv::OpTypeImage || base_type_opcode == spv::OpTypeSampledImage) {
+        // OpTypeSamplerImage == CombinedImageSampler, so we want the image information from it still
+        const spirv::Instruction& image_type =
+            (base_type_opcode == spv::OpTypeImage) ? base_type : *module_state.FindDef(base_type.Word(2));
+
+        const spirv::Instruction& element_type_instr = *module_state.FindDef(image_type.Word(2));
         info.numeric_type = module_state.GetNumericType(element_type_instr);
         info.bit_width = static_cast<uint8_t>(element_type_instr.GetBitWidth());
-        info.vk_format = CompatibleSpirvImageFormat(base_type.Word(8));
+        info.vk_format = CompatibleSpirvImageFormat(image_type.Word(8));
+        info.image_dim = spv::Dim(image_type.Word(3));
+        info.is_image_array = image_type.Word(5) != 0;
+        // spirv-val makes sure that the MS operand is only non-zero when possible to be Multisampled
+        info.is_multisampled = image_type.Word(6) != 0;
+        const bool is_sampled_without_sampler = image_type.Word(7) == 2;  // Word(7) == Sampled
 
-        // Things marked regardless of the image being accessed or not
-        const bool is_sampled_without_sampler = base_type.Word(7) == 2;  // Word(7) == Sampled
-        if (is_sampled_without_sampler) {
-            if (info.image_dim == spv::DimSubpassData) {
-                is_input_attachment = true;
-            } else if (info.image_dim == spv::DimBuffer) {
-                is_storage_texel_buffer = true;
+        if (base_type_opcode == spv::OpTypeSampledImage) {
+            // Slight relaxation for some GLSL historical madness: samplerBuffer doesn't really have a sampler, and a texel
+            // buffer descriptor doesn't really provide one. Allow this slight mismatch.
+            const uint32_t dim = image_type.Word(3);
+            const uint32_t sampled = image_type.Word(7);
+            if (dim == spv::DimBuffer && sampled == 1) {
+                is_uniform_texel_buffer = true;
             } else {
-                is_storage_image = true;
+                is_combined_image_sampler = true;
+            }
+        } else if (base_type_opcode == spv::OpTypeImage) {
+            if (is_sampled_without_sampler) {
+                if (info.image_dim == spv::DimSubpassData) {
+                    is_input_attachment = true;
+                } else if (info.image_dim == spv::DimBuffer) {
+                    is_storage_texel_buffer = true;
+                } else {
+                    is_storage_image = true;
+                }
+            } else if (info.image_dim == spv::DimBuffer) {
+                is_uniform_texel_buffer = true;
+            } else {
+                is_sampled_image = true;
             }
         }
 
@@ -2483,7 +2566,7 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
                 access_mask |= image_access.access_mask;
 
                 const bool is_image_without_format =
-                    ((is_sampled_without_sampler) && (base_type.Word(8) == spv::ImageFormatUnknown));
+                    ((is_sampled_without_sampler) && (image_type.Word(8) == spv::ImageFormatUnknown));
                 if (image_access.access_mask & AccessBit::image_write) {
                     if (is_image_without_format) {
                         info.is_write_without_format |= true;
@@ -2517,7 +2600,7 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
                 }
 
                 // if not CombinedImageSampler, need to find all Samplers that were accessed with the image
-                if (!image_access.variable_sampler_insn.empty() && !is_type_sampled_image) {
+                if (!image_access.variable_sampler_insn.empty() && !is_combined_image_sampler) {
                     // if no AccessChain, it is same conceptually as being zero
                     // TODO - Handle Spec Constants
                     const uint32_t image_index = (image_access.image_access_chain_index != kInvalidValue &&
@@ -2543,15 +2626,29 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
                 }
             }
         }
-    } else if (base_type.Opcode() == spv::OpTypeTensorARM) {
+    } else if (base_type_opcode == spv::OpTypeTensorARM) {
         is_storage_tensor = true;
         const spirv::Instruction& element_type_instr = *module_state.FindDef(base_type.Word(2));
         info.numeric_type = module_state.GetNumericType(element_type_instr);
         info.bit_width = static_cast<uint8_t>(element_type_instr.GetBitWidth());
         info.vk_format = module_state.GetTensorFormat(element_type_instr);
         info.tensor_rank = module_state.GetConstantValueById(base_type.Word(3));
-    } else if (base_type.Opcode() == spv::OpTypeSampler) {
+    } else if (base_type_opcode == spv::OpTypeSampler) {
         is_sampler = true;
+    } else if (base_type_opcode == spv::OpTypeAccelerationStructureKHR) {
+        // The SPIR-V OpType* are alias, but the Descriptor Types are different
+
+        // Only KHR or NV base acceleration structure is selected
+        if (module_state.HasCapability(spv::CapabilityRayTracingNV)) {
+            is_acceleration_structure_nv = true;
+        } else {
+            is_acceleration_structure = true;
+        }
+
+        // Additionally allow PTLAS if shader uses cluster acceleration structure features
+        if (module_state.HasCapability(spv::CapabilityRayTracingClusterAccelerationStructureNV)) {
+            is_partitioned_acceleration_structure = true;
+        }
     }
 
     for (const auto& accessible_id : entrypoint.accessible_ids) {
@@ -2575,7 +2672,7 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
         }
     }
 
-    if (!decorations.IsDescriptorSet()) {
+    if (IsHeap()) {
         // Should only be possible with VK_EXT_descriptor_heap + Untyped Pointers
         assert(module_state.static_data_.has_descriptor_heap);
         // TODO - This works for GLSL, make sure this catches all uses

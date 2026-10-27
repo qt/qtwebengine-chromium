@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 std::string sep = "\n----------------------------------------\n";
 Matrix3d m1;
 m1 << 1.111111, 2, 3.33333, 4, 5, 6, 7, 8.888888, 9;

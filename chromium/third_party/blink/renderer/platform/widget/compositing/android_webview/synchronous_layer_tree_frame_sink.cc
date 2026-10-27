@@ -383,7 +383,7 @@ void SynchronousLayerTreeFrameSink::SubmitCompositorFrame(
     gpu::SwapBuffersCompleteParams params;
     params.swap_response.timings = {now, now};
     params.swap_response.result = gfx::SwapResult::SWAP_ACK;
-    display_->DidReceiveSwapBuffersAck(params,
+    display_->DidReceiveSwapBuffersAck(std::move(params),
                                        /*release_fence=*/gfx::GpuFenceHandle());
     display_->DidReceivePresentationFeedback(
         gfx::PresentationFeedback::Failure());
@@ -621,11 +621,11 @@ void SynchronousLayerTreeFrameSink::OnBeginFramePausedChanged(bool paused) {
 void SynchronousLayerTreeFrameSink::OnNeedsBeginFrames(
     bool needs_begin_frames) {
   if (needs_begin_frames_ != needs_begin_frames) {
+    auto track = perfetto::NamedTrack::FromPointer("NeedsBeginFrames", this);
     if (needs_begin_frames) {
-      TRACE_EVENT_BEGIN("cc,benchmark", "NeedsBeginFrames",
-                        perfetto::Track::FromPointer(this));
+      TRACE_EVENT_BEGIN("cc,benchmark", "NeedsBeginFrames", track);
     } else {
-      TRACE_EVENT_END("cc,benchmark", perfetto::Track::FromPointer(this));
+      TRACE_EVENT_END("cc,benchmark", track);
     }
   }
   needs_begin_frames_ = needs_begin_frames;

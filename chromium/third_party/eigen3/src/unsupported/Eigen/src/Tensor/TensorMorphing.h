@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_MORPHING_H
-#define EIGEN_CXX11_TENSOR_TENSOR_MORPHING_H
+#ifndef EIGEN_TENSOR_TENSOR_MORPHING_H
+#define EIGEN_TENSOR_TENSOR_MORPHING_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -43,7 +44,7 @@ struct nested<TensorReshapingOp<NewDimensions, XprType>, 1,
 }  // end namespace internal
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Tensor reshaping class.
  */
@@ -248,7 +249,7 @@ struct TensorEvaluator<TensorReshapingOp<NewDimensions, ArgType>, Device>
 };
 
 /** \class TensorSlicing
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Tensor slicing class.
  *
@@ -367,9 +368,7 @@ struct TensorEvaluator<const TensorSlicingOp<StartIndices, Sizes, ArgType>, Devi
     // slice offsets and sizes.
     IsAligned = false,
     PacketAccess = TensorEvaluator<ArgType, Device>::PacketAccess,
-    BlockAccess = TensorEvaluator<ArgType, Device>::BlockAccess &&
-                  // FIXME: Temporary workaround for bug in slicing of bool tensors.
-                  !internal::is_same<std::remove_const_t<Scalar>, bool>::value,
+    BlockAccess = TensorEvaluator<ArgType, Device>::BlockAccess,
     PreferBlockAccess = true,
     CoordAccess = false,
     RawAccess = false
@@ -400,7 +399,7 @@ struct TensorEvaluator<const TensorSlicingOp<StartIndices, Sizes, ArgType>, Devi
 
     const typename TensorEvaluator<ArgType, Device>::Dimensions& input_dims = m_impl.dimensions();
     const Sizes& output_dims = op.sizes();
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_inputStrides[0] = 1;
       for (int i = 1; i < NumDims; ++i) {
         m_inputStrides[i] = m_inputStrides[i - 1] * input_dims[i - 1];
@@ -412,7 +411,8 @@ struct TensorEvaluator<const TensorSlicingOp<StartIndices, Sizes, ArgType>, Devi
         m_outputStrides[i] = m_outputStrides[i - 1] * output_dims[i - 1];
         m_fastOutputStrides[i] = internal::TensorIntDivisor<Index>(m_outputStrides[i] > 0 ? m_outputStrides[i] : 1);
       }
-    } else {
+    }
+    else {
       m_inputStrides[NumDims - 1] = 1;
       for (int i = NumDims - 2; i >= 0; --i) {
         m_inputStrides[i] = m_inputStrides[i + 1] * input_dims[i + 1];
@@ -433,14 +433,15 @@ struct TensorEvaluator<const TensorSlicingOp<StartIndices, Sizes, ArgType>, Devi
     m_impl.evalSubExprsIfNeeded(NULL);
     if (!NumTraits<std::remove_const_t<Scalar>>::RequireInitialization && data && m_impl.data()) {
       Index contiguous_values = 1;
-      if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+      EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
         for (int i = 0; i < NumDims; ++i) {
           contiguous_values *= dimensions()[i];
           if (dimensions()[i] != m_impl.dimensions()[i]) {
             break;
           }
         }
-      } else {
+      }
+      else {
         for (int i = NumDims - 1; i >= 0; --i) {
           contiguous_values *= dimensions()[i];
           if (dimensions()[i] != m_impl.dimensions()[i]) {
@@ -492,7 +493,7 @@ struct TensorEvaluator<const TensorSlicingOp<StartIndices, Sizes, ArgType>, Devi
 
     Index inputIndices[] = {0, 0};
     Index indices[] = {index, index + packetSize - 1};
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       EIGEN_UNROLL_LOOP
       for (int i = NumDims - 1; i > 0; --i) {
         const Index idx0 = indices[0] / m_fastOutputStrides[i];
@@ -504,7 +505,8 @@ struct TensorEvaluator<const TensorSlicingOp<StartIndices, Sizes, ArgType>, Devi
       }
       inputIndices[0] += (indices[0] + m_offsets[0]);
       inputIndices[1] += (indices[1] + m_offsets[0]);
-    } else {
+    }
+    else {
       EIGEN_UNROLL_LOOP
       for (int i = 0; i < NumDims - 1; ++i) {
         const Index idx0 = indices[0] / m_fastOutputStrides[i];
@@ -555,7 +557,7 @@ struct TensorEvaluator<const TensorSlicingOp<StartIndices, Sizes, ArgType>, Devi
     typename Storage::Type result = constCast(m_impl.data());
     if (result) {
       Index offset = 0;
-      if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+      EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
         for (int i = 0; i < NumDims; ++i) {
           if (m_dimensions[i] != m_impl.dimensions()[i]) {
             offset += m_offsets[i] * m_inputStrides[i];
@@ -568,7 +570,8 @@ struct TensorEvaluator<const TensorSlicingOp<StartIndices, Sizes, ArgType>, Devi
             break;
           }
         }
-      } else {
+      }
+      else {
         for (int i = NumDims - 1; i >= 0; --i) {
           if (m_dimensions[i] != m_impl.dimensions()[i]) {
             offset += m_offsets[i] * m_inputStrides[i];
@@ -590,7 +593,7 @@ struct TensorEvaluator<const TensorSlicingOp<StartIndices, Sizes, ArgType>, Devi
  protected:
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index srcCoeff(Index index) const {
     Index inputIndex = 0;
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       EIGEN_UNROLL_LOOP
       for (int i = NumDims - 1; i > 0; --i) {
         const Index idx = index / m_fastOutputStrides[i];
@@ -598,7 +601,8 @@ struct TensorEvaluator<const TensorSlicingOp<StartIndices, Sizes, ArgType>, Devi
         index -= idx * m_outputStrides[i];
       }
       inputIndex += (index + m_offsets[0]);
-    } else {
+    }
+    else {
       EIGEN_UNROLL_LOOP
       for (int i = 0; i < NumDims - 1; ++i) {
         const Index idx = index / m_fastOutputStrides[i];
@@ -671,7 +675,7 @@ struct TensorEvaluator<TensorSlicingOp<StartIndices, Sizes, ArgType>, Device>
     const int packetSize = PacketType<CoeffReturnType, Device>::size;
     Index inputIndices[] = {0, 0};
     Index indices[] = {index, index + packetSize - 1};
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       EIGEN_UNROLL_LOOP
       for (int i = NumDims - 1; i > 0; --i) {
         const Index idx0 = indices[0] / this->m_fastOutputStrides[i];
@@ -683,7 +687,8 @@ struct TensorEvaluator<TensorSlicingOp<StartIndices, Sizes, ArgType>, Device>
       }
       inputIndices[0] += (indices[0] + this->m_offsets[0]);
       inputIndices[1] += (indices[1] + this->m_offsets[0]);
-    } else {
+    }
+    else {
       EIGEN_UNROLL_LOOP
       for (int i = 0; i < NumDims - 1; ++i) {
         const Index idx0 = indices[0] / this->m_fastOutputStrides[i];
@@ -839,7 +844,7 @@ struct TensorEvaluator<const TensorStridingSlicingOp<StartIndices, StopIndices, 
 
     Strides output_dims = m_dimensions;
 
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_inputStrides[0] = m_strides[0];
       m_offsets[0] = startIndicesClamped[0];
       Index previousDimProduct = 1;
@@ -855,7 +860,8 @@ struct TensorEvaluator<const TensorStridingSlicingOp<StartIndices, StopIndices, 
         m_outputStrides[i] = m_outputStrides[i - 1] * output_dims[i - 1];
         m_fastOutputStrides[i] = internal::TensorIntDivisor<Index>(m_outputStrides[i] > 0 ? m_outputStrides[i] : 1);
       }
-    } else {
+    }
+    else {
       m_inputStrides[NumDims - 1] = m_strides[NumDims - 1];
       m_offsets[NumDims - 1] = startIndicesClamped[NumDims - 1];
       Index previousDimProduct = 1;
@@ -899,14 +905,15 @@ struct TensorEvaluator<const TensorStridingSlicingOp<StartIndices, StopIndices, 
  protected:
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index srcCoeff(Index index) const {
     Index inputIndex = 0;
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       EIGEN_UNROLL_LOOP
       for (int i = NumDims - 1; i >= 0; --i) {
         const Index idx = index / m_fastOutputStrides[i];
         inputIndex += idx * m_inputStrides[i] + m_offsets[i];
         index -= idx * m_outputStrides[i];
       }
-    } else {
+    }
+    else {
       EIGEN_UNROLL_LOOP
       for (int i = 0; i < NumDims; ++i) {
         const Index idx = index / m_fastOutputStrides[i];
@@ -978,4 +985,4 @@ struct TensorEvaluator<TensorStridingSlicingOp<StartIndices, StopIndices, Stride
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_MORPHING_H
+#endif  // EIGEN_TENSOR_TENSOR_MORPHING_H

@@ -60,7 +60,8 @@ class DownloadPathReservationTrackerTest : public testing::Test {
       bool create_directory,
       DownloadPathReservationTracker::FilenameConflictAction conflict_action,
       base::FilePath* return_path,
-      PathValidationResult* return_result);
+      PathValidationResult* return_result,
+      const base::FilePath& containment_directory = base::FilePath());
   void CreateReservation(
       MockDownloadItem* item,
       const base::FilePath& path,
@@ -125,6 +126,13 @@ DownloadPathReservationTrackerTest::CreateDownloadItem(int32_t id) {
   EXPECT_CALL(*item, GetState())
       .WillRepeatedly(Return(DownloadItem::IN_PROGRESS));
   EXPECT_CALL(*item, GetURL()).WillRepeatedly(ReturnRefOfCopy(GURL()));
+  EXPECT_CALL(*item, IsTransient()).WillRepeatedly(Return(false));
+  EXPECT_CALL(*item, GetForcedFilePath())
+      .WillRepeatedly(ReturnRefOfCopy(base::FilePath()));
+  EXPECT_CALL(*item, GetLastReason())
+      .WillRepeatedly(Return(DOWNLOAD_INTERRUPT_REASON_NONE));
+  EXPECT_CALL(*item, GetTargetDisposition())
+      .WillRepeatedly(Return(DownloadItem::TARGET_DISPOSITION_OVERWRITE));
 
   static constexpr base::Time::Exploded kReferenceTime = {.year = 2019,
                                                           .month = 1,
@@ -162,7 +170,8 @@ void DownloadPathReservationTrackerTest::CallGetReservedPath(
     bool create_directory,
     DownloadPathReservationTracker::FilenameConflictAction conflict_action,
     base::FilePath* return_path,
-    PathValidationResult* return_result) {
+    PathValidationResult* return_result,
+    const base::FilePath& containment_directory) {
   // Weak pointer factory to prevent the callback from running after this
   // function has returned.
   base::WeakPtrFactory<DownloadPathReservationTrackerTest> weak_ptr_factory(
@@ -172,7 +181,8 @@ void DownloadPathReservationTrackerTest::CallGetReservedPath(
       create_directory, conflict_action,
       base::BindOnce(
           &DownloadPathReservationTrackerTest::TestReservedPathCallback,
-          weak_ptr_factory.GetWeakPtr(), return_path, return_result));
+          weak_ptr_factory.GetWeakPtr(), return_path, return_result),
+      containment_directory);
   task_environment_.RunUntilIdle();
 }
 
@@ -727,5 +737,111 @@ TEST_F(DownloadPathReservationTrackerTest, TruncationFail) {
 }
 
 #endif  // Platforms that support filename truncation.
+
+#if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_ANDROID)
+TEST_F(DownloadPathReservationTrackerTest, SymlinkTraversingPath) {
+  std::unique_ptr<MockDownloadItem> item = CreateDownloadItem(1);
+  base::ScopedTempDir external_dir;
+  ASSERT_TRUE(external_dir.CreateUniqueTempDir());
+
+  base::FilePath symlink_path =
+      GetPathInDownloadsDirectory(FILE_PATH_LITERAL("symlink_dir"));
+  ASSERT_TRUE(base::CreateSymbolicLink(external_dir.GetPath(), symlink_path));
+
+  base::FilePath target_path =
+      symlink_path.Append(FILE_PATH_LITERAL("payload.txt"));
+  ASSERT_FALSE(IsPathInUse(target_path));
+
+  CreateReservation(
+      item.get(), target_path, DownloadPathReservationTracker::OVERWRITE,
+      PathValidationResult::PATH_NOT_WRITABLE,
+      default_download_path().Append(FILE_PATH_LITERAL("payload.txt")));
+
+  SetDownloadItemState(item.get(), DownloadItem::COMPLETE);
+}
+#endif
+
+TEST_F(DownloadPathReservationTrackerTest,
+       ConfirmedPathOutsideDownloadsResumption) {
+  std::unique_ptr<MockDownloadItem> item = CreateDownloadItem(1);
+  EXPECT_CALL(*item, GetTargetDisposition())
+      .WillRepeatedly(Return(DownloadItem::TARGET_DISPOSITION_PROMPT));
+
+  base::ScopedTempDir external_dir;
+  ASSERT_TRUE(external_dir.CreateUniqueTempDir());
+
+  base::FilePath target_path =
+      external_dir.GetPath().Append(FILE_PATH_LITERAL("payload.txt"));
+  ASSERT_FALSE(IsPathInUse(target_path));
+
+  base::FilePath reserved_path;
+  PathValidationResult result = PathValidationResult::SUCCESS;
+  DownloadPathReservationTracker::FilenameConflictAction conflict_action =
+      DownloadPathReservationTracker::OVERWRITE;
+  bool create_directory = false;
+  CallGetReservedPath(item.get(), target_path, create_directory,
+                      conflict_action, &reserved_path, &result);
+  EXPECT_EQ(PathValidationResult::SUCCESS, result);
+  EXPECT_EQ(target_path, reserved_path);
+
+  SetDownloadItemState(item.get(), DownloadItem::COMPLETE);
+}
+
+TEST_F(DownloadPathReservationTrackerTest,
+       ResumedPathOutsideDownloadsAfterRestart) {
+  std::unique_ptr<MockDownloadItem> item = CreateDownloadItem(1);
+  // Simulate a restart where TargetDisposition defaults to OVERWRITE,
+  // but the download is recognized as resumed due to a non-zero interrupt
+  // reason.
+  EXPECT_CALL(*item, GetTargetDisposition())
+      .WillRepeatedly(Return(DownloadItem::TARGET_DISPOSITION_OVERWRITE));
+  EXPECT_CALL(*item, GetLastReason())
+      .WillRepeatedly(Return(download::DOWNLOAD_INTERRUPT_REASON_CRASH));
+
+  base::ScopedTempDir external_dir;
+  ASSERT_TRUE(external_dir.CreateUniqueTempDir());
+
+  base::FilePath target_path =
+      external_dir.GetPath().Append(FILE_PATH_LITERAL("payload.txt"));
+  ASSERT_FALSE(IsPathInUse(target_path));
+
+  base::FilePath reserved_path;
+  PathValidationResult result = PathValidationResult::SUCCESS;
+  DownloadPathReservationTracker::FilenameConflictAction conflict_action =
+      DownloadPathReservationTracker::OVERWRITE;
+  bool create_directory = false;
+  CallGetReservedPath(item.get(), target_path, create_directory,
+                      conflict_action, &reserved_path, &result);
+  EXPECT_EQ(PathValidationResult::SUCCESS, result);
+  EXPECT_EQ(target_path, reserved_path);
+
+  SetDownloadItemState(item.get(), DownloadItem::COMPLETE);
+}
+
+TEST_F(DownloadPathReservationTrackerTest,
+       PathOutsideDownloadsButInsideContainment) {
+  std::unique_ptr<MockDownloadItem> item = CreateDownloadItem(1);
+
+  base::ScopedTempDir external_dir;
+  ASSERT_TRUE(external_dir.CreateUniqueTempDir());
+
+  base::FilePath target_path =
+      external_dir.GetPath().Append(FILE_PATH_LITERAL("payload.txt"));
+  ASSERT_FALSE(IsPathInUse(target_path));
+
+  base::FilePath reserved_path;
+  PathValidationResult result = PathValidationResult::SUCCESS;
+  DownloadPathReservationTracker::FilenameConflictAction conflict_action =
+      DownloadPathReservationTracker::OVERWRITE;
+  bool create_directory = false;
+
+  CallGetReservedPath(item.get(), target_path, create_directory,
+                      conflict_action, &reserved_path, &result,
+                      external_dir.GetPath());
+  EXPECT_EQ(PathValidationResult::SUCCESS, result);
+  EXPECT_EQ(target_path, reserved_path);
+
+  SetDownloadItemState(item.get(), DownloadItem::COMPLETE);
+}
 
 }  // namespace download

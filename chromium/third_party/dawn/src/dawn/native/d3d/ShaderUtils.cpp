@@ -25,21 +25,21 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/d3d/ShaderUtils.h"
+#include "src/dawn/native/d3d/ShaderUtils.h"
 
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "dawn/native/d3d/BlobD3D.h"
-#include "dawn/native/d3d/D3DCompilationRequest.h"
-#include "dawn/native/d3d/D3DError.h"
-#include "dawn/native/d3d/DeviceD3D.h"
-#include "dawn/native/d3d/PlatformFunctions.h"
-#include "dawn/native/d3d/UtilsD3D.h"
 #include "dawn/platform/DawnPlatform.h"
-#include "dawn/platform/tracing/TraceEvent.h"
+#include "src/dawn/native/d3d/BlobD3D.h"
+#include "src/dawn/native/d3d/D3DCompilationRequest.h"
+#include "src/dawn/native/d3d/D3DError.h"
+#include "src/dawn/native/d3d/DeviceD3D.h"
+#include "src/dawn/native/d3d/PlatformFunctions.h"
+#include "src/dawn/native/d3d/UtilsD3D.h"
+#include "src/dawn/platform/tracing/TraceEvent.h"
 #include "tint/tint.h"
 
 namespace dawn::native::d3d {
@@ -48,7 +48,8 @@ namespace {
 
 // Be careful that the return vector may contain the pointers that point to non-static memory.
 std::vector<const wchar_t*> GetDXCArguments(std::wstring_view entryPointNameW,
-                                            const d3d::D3DBytecodeCompilationRequest& r) {
+                                            const d3d::D3DBytecodeCompilationRequest& r,
+                                            const wchar_t* hlslVersion) {
     std::vector<const wchar_t*> arguments;
 
     arguments.push_back(L"-T");
@@ -130,12 +131,12 @@ std::vector<const wchar_t*> GetDXCArguments(std::wstring_view entryPointNameW,
 #undef ASSERT_UNHANDLED
 
     if (r.hasShaderF16Feature) {
-        // enable-16bit-types are only allowed in -HV 2018 (default)
+        // enable-16bit-types is allowed starting in -HV 2018
         arguments.push_back(L"/enable-16bit-types");
     }
 
     arguments.push_back(L"-HV");
-    arguments.push_back(L"2018");
+    arguments.push_back(hlslVersion);
 
     return arguments;
 }
@@ -143,6 +144,7 @@ std::vector<const wchar_t*> GetDXCArguments(std::wstring_view entryPointNameW,
 ResultOrError<ComPtr<IDxcBlob>> CompileShaderDXC(const d3d::D3DBytecodeCompilationRequest& r,
                                                  const std::string& entryPointName,
                                                  const std::string& hlslSource,
+                                                 const wchar_t* hlslVersion,
                                                  bool dumpShadersOnFailure) {
     DxcBuffer dxcBuffer;
     dxcBuffer.Ptr = hlslSource.c_str();
@@ -154,7 +156,7 @@ ResultOrError<ComPtr<IDxcBlob>> CompileShaderDXC(const d3d::D3DBytecodeCompilati
 
     // Note that the contents in `arguments` shouldn't be mutated or moved around as some of the
     // pointers in this vector don't have static lifetime.
-    std::vector<const wchar_t*> arguments = GetDXCArguments(entryPointW, r);
+    std::vector<const wchar_t*> arguments = GetDXCArguments(entryPointW, r, hlslVersion);
     ComPtr<IDxcResult> result;
     DAWN_TRY(CheckHRESULT(
         r.dxcCompiler.UnsafeGetValue()->Compile(&dxcBuffer, arguments.data(), arguments.size(),
@@ -256,9 +258,28 @@ MaybeError TranslateToHLSL(d3d::HlslCompilationRequest r,
                         ValidateComputeStageWorkgroupSize(
                             result->workgroup_info, /*usesSubgroupMatrix=*/false, r.maxSubgroupSize,
                             r.limits, r.adapterSupportedLimits.UnsafeGetValue()));
-        DAWN_TRY(ValidateExplicitComputeSubgroupSize(
-            result->workgroup_info, r.minExplicitComputeSubgroupSize,
-            r.maxExplicitComputeSubgroupSize, r.maxComputeWorkgroupSubgroups));
+
+        if (result->workgroup_info.subgroup_size.has_value()) {
+            const uint32_t explicitSubgroupSize = result->workgroup_info.subgroup_size.value();
+            if (explicitSubgroupSize < r.waveLaneCountMin ||
+                explicitSubgroupSize > r.waveLaneCountMax) {
+                if (r.waveLaneCountMin == r.minSubgroupSize &&
+                    r.waveLaneCountMax == r.maxSubgroupSize) {
+                    return DAWN_VALIDATION_ERROR(
+                        "The subgroup_size attribute (%u) is not in the allowed range "
+                        "([%u, %u]).",
+                        explicitSubgroupSize, r.waveLaneCountMin, r.waveLaneCountMax);
+                } else {
+                    return DAWN_VALIDATION_ERROR(
+                        "The subgroup_size attribute (%u) is not in the allowed range "
+                        "([%u, %u]). Note that on this device the allowed range is not "
+                        "[minSubgroupSize, maxSubgroupsize]([%u, %u]).",
+                        explicitSubgroupSize, r.waveLaneCountMin, r.waveLaneCountMax,
+                        r.minSubgroupSize, r.maxSubgroupSize);
+                }
+            }
+        }
+
         compiledShader->workgroupSize = workgroupSize;
     }
 
@@ -349,10 +370,14 @@ ResultOrError<CompiledShader> CompileShader(d3d::D3DCompilationRequest r) {
         case d3d::Compiler::DXC: {
             TRACE_EVENT0(r.tracePlatform.UnsafeGetValue(), General, "CompileShaderDXC");
             ComPtr<IDxcBlob> compiledDXCShader;
+            const wchar_t* hlslVersion =
+                (r.hlsl.tintOptions.compiler == tint::hlsl::writer::Options::Compiler::kDXC_2018)
+                    ? L"2018"
+                    : L"2021";
             DAWN_TRY_ASSIGN(
                 compiledDXCShader,
                 CompileShaderDXC(r.bytecode, r.hlsl.tintOptions.remapped_entry_point_name,
-                                 compiledShader.hlslSource, dumpShadersOnFailure));
+                                 compiledShader.hlslSource, hlslVersion, dumpShadersOnFailure));
             compiledShader.shaderBlob = CreateBlob(std::move(compiledDXCShader));
             break;
         }
@@ -369,8 +394,7 @@ ResultOrError<CompiledShader> CompileShader(d3d::D3DCompilationRequest r) {
     }
 
     // Compute SHA3 of the shader blob.
-    compiledShader.sha3 =
-        Sha3_256::Hash(compiledShader.shaderBlob.Data(), compiledShader.shaderBlob.Size());
+    compiledShader.sha3 = Sha3_256::Hash(compiledShader.shaderBlob.Data());
 
     // If dumpShaders is false, we don't need the HLSL for logging. Clear the contents so it
     // isn't stored into the cache.
@@ -396,8 +420,8 @@ void DumpFXCCompiledShader(Device* device,
         // Some literals are printed as floats with precision(6) which is not enough
         // precision for values very close to 0, so always print literals as hex values.
         D3D_DISASM_PRINT_HEX_LITERALS;
-    if (FAILED(device->GetFunctions()->d3dDisassemble(shaderBlob.Data(), shaderBlob.Size(), flags,
-                                                      nullptr, &disassembly))) {
+    if (FAILED(device->GetFunctions()->d3dDisassemble(shaderBlob.DataPtr(), shaderBlob.Size(),
+                                                      flags, nullptr, &disassembly))) {
         dumpedMsg << "D3D disassemble failed\n";
     } else {
         dumpedMsg << std::string_view(static_cast<const char*>(disassembly->GetBufferPointer()),

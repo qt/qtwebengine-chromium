@@ -182,7 +182,7 @@ _rebaseline_builder(
     ),
     targets = targets.bundle(
         targets = [
-            "chromium_webkit_isolated_scripts",
+            "chromium_blink_isolated_scripts",
         ],
         mixins = [
             targets.mixin(
@@ -242,7 +242,7 @@ _rebaseline_builder(
     ),
     targets = targets.bundle(
         targets = [
-            "chromium_webkit_isolated_scripts",
+            "chromium_blink_isolated_scripts",
         ],
         mixins = [
             targets.mixin(
@@ -305,7 +305,7 @@ _rebaseline_builder(
     ),
     targets = targets.bundle(
         targets = [
-            "chromium_webkit_isolated_scripts",
+            "chromium_blink_isolated_scripts",
         ],
         mixins = [
             targets.mixin(
@@ -363,7 +363,7 @@ _mac_rebaseline_builder(
     ),
     targets = targets.bundle(
         targets = [
-            "chromium_webkit_isolated_scripts",
+            "chromium_blink_isolated_scripts",
         ],
         mixins = [
             "mac_12_x64",
@@ -415,7 +415,7 @@ _mac_rebaseline_builder(
     ),
     targets = targets.bundle(
         targets = [
-            "chromium_webkit_isolated_scripts",
+            "chromium_blink_isolated_scripts",
         ],
         mixins = [
             "mac_12_arm64",
@@ -468,7 +468,7 @@ _mac_rebaseline_builder(
     ),
     targets = targets.bundle(
         targets = [
-            "chromium_webkit_isolated_scripts",
+            "chromium_blink_isolated_scripts",
         ],
         mixins = [
             "mac_13_x64",
@@ -523,7 +523,7 @@ _mac_rebaseline_builder(
     ),
     targets = targets.bundle(
         targets = [
-            "chromium_webkit_isolated_scripts",
+            "chromium_blink_isolated_scripts",
         ],
         mixins = [
             "mac_13_arm64",
@@ -531,35 +531,6 @@ _mac_rebaseline_builder(
     ),
     cores = None,
     cpu = cpu.ARM64,
-)
-
-_mac_rebaseline_builder(
-    name = "mac-skia-alt-arm64-blink-rel",
-    branch_selector = None,
-    mirrors = [
-        "ci/mac-arm64-rel",
-        "ci/mac-skia-alt-arm64-rel-tests",
-    ],
-    gn_args = gn_args.config(
-        # TODO(crbug.com/40937352): Currently we override the gn args instead
-        # of using mac-arm64-rel's gn args. Ideally Graphite should be tested
-        # with dcheck on. However, mac-arm64-rel's gn args has dcheck off so
-        # we override gn args here to enable dcheck via "release_try_builder".
-        # In future, we should add a dedicated CI builder with dcheck enabled
-        # and mirror it here.
-        configs = [
-            "release_try_builder",
-            "remoteexec",
-            "chrome_with_codecs",
-            "mac",
-            "arm64",
-            "minimal_symbols",
-        ],
-    ),
-    cores = None,
-    cpu = cpu.ARM64,
-    contact_team_email = "chrome-skia-graphite@google.com",
-    main_list_view = "try",
 )
 
 _mac_rebaseline_builder(
@@ -593,7 +564,7 @@ _mac_rebaseline_builder(
     ),
     targets = targets.bundle(
         targets = [
-            "chromium_webkit_isolated_scripts",
+            "chromium_blink_isolated_scripts",
         ],
         mixins = [
             "mac_14_x64",
@@ -633,7 +604,7 @@ _mac_rebaseline_builder(
     ),
     targets = targets.bundle(
         targets = [
-            "chromium_webkit_isolated_scripts",
+            "chromium_blink_isolated_scripts",
         ],
         mixins = [
             "mac_14_arm64",
@@ -673,7 +644,7 @@ _mac_rebaseline_builder(
     ),
     targets = targets.bundle(
         targets = [
-            "chromium_webkit_isolated_scripts",
+            "chromium_blink_isolated_scripts",
         ],
         mixins = [
             "mac_15_x64",
@@ -713,7 +684,7 @@ _mac_rebaseline_builder(
     ),
     targets = targets.bundle(
         targets = [
-            "chromium_webkit_isolated_scripts",
+            "chromium_blink_isolated_scripts",
         ],
         mixins = [
             "mac_15_arm64",

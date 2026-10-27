@@ -37,6 +37,40 @@ void RecordNotificationDismissReasonUnknown();
 // Records when a received STTS notification is throttled from being sent.
 void RecordNotificationThrottled();
 
+// Status of the auto-open attempt for a received STTS tab.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+//
+// GENERATED_JAVA_ENUM_PACKAGE: (
+//   org.chromium.chrome.browser.share.send_tab_to_self)
+// LINT.IfChange(AutoOpenOutcome)
+enum class AutoOpenOutcome {
+  kSuccess = 0,
+  kPending = 1,
+  kOpenedPending = 2,
+  kMaxValue = kOpenedPending,
+};
+// LINT.ThenChange(/tools/metrics/histograms/metadata/sharing/enums.xml:SendTabToSelfAutoOpenOutcome)
+
+// Records the outcome of an auto-open attempt.
+void RecordAutoOpenOutcome(AutoOpenOutcome outcome);
+
+// Outcome of matching a received form field to a field on the page.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+// LINT.IfChange(SendTabToSelfFormFieldMatchOutcome)
+enum class FormFieldMatchOutcome {
+  kMatchedByIdNameAndType = 0,
+  kMatchedBySignature = 1,
+  kMatchedByExactTypeSet = 2,
+  kNoMatch = 3,
+  kMaxValue = kNoMatch,
+};
+// LINT.ThenChange(/tools/metrics/histograms/metadata/sharing/enums.xml:SendTabToSelfFormFieldMatchOutcome)
+
+// Records the outcome of matching a received form field.
+void RecordFormFieldMatchOutcome(FormFieldMatchOutcome outcome, int count = 1);
+
 // Status of scroll position generation when sending a tab.
 // These values are persisted to logs. Entries should not be renumbered and
 // numeric values should never be reused.

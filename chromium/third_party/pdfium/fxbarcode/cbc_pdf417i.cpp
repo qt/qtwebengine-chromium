@@ -45,10 +45,9 @@ bool CBC_PDF417I::Encode(WideStringView contents) {
   if (contents.GetLength() > kMaxPDF417InputLengthBytes) {
     return false;
   }
-
   auto* pWriter = GetPDF417Writer();
-  CBC_PDF417Writer::EncodeResult result = pWriter->Encode(contents);
-  return pWriter->RenderResult(result.data, result.width, result.height);
+  CBC_TwoDimWriter::EncodeResult result = pWriter->Encode(contents);
+  return pWriter->RenderResult(result);
 }
 
 bool CBC_PDF417I::RenderDevice(CFX_RenderDevice* device,

@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/config/chromebox_for_meetings/buildflags.gni")
-import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/cuttlefish/buildflags.gni")
 import("//build/config/squid/buildflags.gni")
 
@@ -103,6 +102,7 @@ static_library("dbus") {
     "//chrome/browser/ash/profiles",
     "//chrome/browser/ash/settings",
     "//chrome/browser/chromeos/policy/dlp",
+    "//chrome/browser/component_updater",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/profiles:profile_manager",
     "//chrome/common:chrome_features",

@@ -1,4 +1,6 @@
 // Benchmarks for Kronecker product (dense and sparse).
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>
@@ -63,21 +65,8 @@ static void BM_KroneckerSparse(benchmark::State& state) {
   state.counters["output_size"] = na * nb;
 }
 
-static void KroneckerSizes(::benchmark::Benchmark* b) {
-  for (int na : {4, 8, 16}) {
-    for (int nb : {4, 8, 16}) {
-      b->Args({na, nb});
-    }
-  }
-}
+#define KRONECKER_SIZES ->ArgsProduct({{4, 8, 16}, {4, 8, 16}})
+#define KRONECKER_SPARSE_SIZES ->ArgsProduct({{16, 32, 64, 128}, {16, 32, 64, 128}})
 
-static void KroneckerSparseSizes(::benchmark::Benchmark* b) {
-  for (int na : {16, 32, 64, 128}) {
-    for (int nb : {16, 32, 64, 128}) {
-      b->Args({na, nb});
-    }
-  }
-}
-
-BENCHMARK(BM_KroneckerDense)->Apply(KroneckerSizes);
-BENCHMARK(BM_KroneckerSparse)->Apply(KroneckerSparseSizes);
+BENCHMARK(BM_KroneckerDense) KRONECKER_SIZES;
+BENCHMARK(BM_KroneckerSparse) KRONECKER_SPARSE_SIZES;

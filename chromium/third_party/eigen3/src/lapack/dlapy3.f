@@ -66,6 +66,8 @@
 *> \ingroup auxOTHERauxiliary
 *
 *  =====================================================================
+*> SPDX-FileCopyrightText: The Eigen Authors
+*> SPDX-License-Identifier: BSD-3-Clause
       DOUBLE PRECISION FUNCTION DLAPY3( X, Y, Z )
 *
 *  -- LAPACK auxiliary routine (version 3.4.0) --

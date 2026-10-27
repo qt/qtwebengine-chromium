@@ -37,6 +37,7 @@
 #include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/core/html/blocking_attribute.h"
 #include "third_party/blink/renderer/core/html/html_style_element.h"
+#include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/loader/modulescript/module_script_creation_params.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/script/import_map.h"
@@ -200,22 +201,34 @@ StyleElement::ProcessingResult StyleElement::CreateSheetOrModule(
           : nullptr;
 
   // CSP is bypassed for style elements in user agent shadow DOM.
-  const bool passes_content_security_policy_checks =
+  const bool passes_style_csp =
       IsInUserAgentShadowDOM(element) ||
       (csp && csp->AllowInline(ContentSecurityPolicy::InlineType::kStyle,
                                &element, text, element.nonce(), document.Url(),
                                start_position_.line_));
 
-  // TODO(crbug.com/448174611) - should Declarative CSS Modules continue
-  // respecting CSP? Need to confirm with WHATWG.
+  // Declarative CSS Modules impact the module map, so they must also respect
+  // `script-src` CSP. The strictest union applies: the module is blocked if
+  // either `style-src` or `script-src` denies it.
+  const bool passes_script_csp =
+      !IsModule(document) || IsInUserAgentShadowDOM(element) ||
+      (csp && csp->AllowInline(ContentSecurityPolicy::InlineType::kScript,
+                               &element, text, element.nonce(), document.Url(),
+                               start_position_.line_));
+
+  const bool passes_content_security_policy_checks =
+      passes_style_csp && passes_script_csp;
+
   if (passes_content_security_policy_checks && IsModule(document)) {
     CHECK(RuntimeEnabledFeatures::DeclarativeCSSModulesStyleTagEnabled(
         document.GetExecutionContext()));
     UseCounter::Count(document, WebFeature::kStyleTypeModule);
     AddImportMapEntry(element, text);
 
-    // Return early, since we explicitly *don't* want to create a
-    // CSSStyleSheet for CSS modules.
+    // Return early, since we explicitly *don't* want to create a CSSStyleSheet
+    // for CSS modules.
+    // TODO(crbug.com/448174611): Should this fire `load` and `error` events to
+    // match the behavior of classic <style> tags?
     return kProcessingSuccessful;
   }
 
@@ -272,9 +285,15 @@ StyleElement::ProcessingResult StyleElement::CreateSheetOrModule(
 void StyleElement::AddImportMapEntry(Element& element, const String& text) {
   CHECK(!sheet_);
 
-  // Return early if there is no specifier
-  // TODO(crbug.com/448174611) - Is this the correct behavior?
+  // A `specifier` attribute is required to register the module under a name
+  // that other code can import. Without it the element is effectively a
+  // no-op, so warn the developer.
   if (!element.hasAttribute(html_names::kSpecifierAttr)) {
+    element.GetDocument().AddConsoleMessage(
+        MakeGarbageCollected<ConsoleMessage>(
+            mojom::blink::ConsoleMessageSource::kOther,
+            mojom::blink::ConsoleMessageLevel::kWarning,
+            "<style type=module> has no `specifier` value"));
     return;
   }
 

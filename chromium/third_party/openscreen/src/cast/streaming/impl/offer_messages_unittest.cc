@@ -225,6 +225,17 @@ TEST(OfferTest, ErrorOnEmptyOffer) {
   ExpectFailureOnParse("{}");
 }
 
+TEST(OfferTest, ErrorOnNonObjectOffer) {
+  Json::Value array_val(Json::arrayValue);
+  EXPECT_TRUE(Offer::TryParse(array_val).is_error());
+
+  Json::Value string_val("string");
+  EXPECT_TRUE(Offer::TryParse(string_val).is_error());
+
+  Json::Value int_val(42);
+  EXPECT_TRUE(Offer::TryParse(int_val).is_error());
+}
+
 TEST(OfferTest, ErrorOnMissingMandatoryFields) {
   // It's okay if castMode is omitted, but if supportedStreams is omitted we
   // should fail here.

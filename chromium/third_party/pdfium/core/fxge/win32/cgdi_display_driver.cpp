@@ -21,7 +21,6 @@ CGdiDisplayDriver::CGdiDisplayDriver(HDC hDC)
   auto* pPlatform =
       static_cast<CWin32Platform*>(CFX_GEModule::Get()->GetPlatform());
   if (pPlatform->gdiplus_ext_.IsAvailable()) {
-    render_cap_alpha_path_ = true;
     render_cap_alpha_image_ = true;
   }
 }

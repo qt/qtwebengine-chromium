@@ -36,8 +36,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
-#include "dawn/common/Constants.h"
-#include "dawn/utils/TextureUtils.h"
+#include "src/dawn/common/Constants.h"
+#include "src/dawn/utils/TextureUtils.h"
 
 namespace dawn::utils {
 
@@ -101,10 +101,10 @@ struct BasicRenderPass {
 
     static constexpr wgpu::TextureFormat kDefaultColorFormat = wgpu::TextureFormat::RGBA8Unorm;
 
-    uint32_t width;
-    uint32_t height;
-    wgpu::Texture color;
-    wgpu::TextureFormat colorFormat;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    wgpu::Texture color = nullptr;
+    wgpu::TextureFormat colorFormat = kDefaultColorFormat;
     ComboRenderPassDescriptor renderPassInfo;
 };
 BasicRenderPass CreateBasicRenderPass(

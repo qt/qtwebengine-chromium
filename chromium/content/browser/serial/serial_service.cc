@@ -10,7 +10,7 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/strings/utf_string_conversions.h"
-#include "content/browser/renderer_host/back_forward_cache_disable.h"
+#include "content/browser/back_forward_cache/back_forward_cache_disable.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/back_forward_cache.h"
 #include "content/public/browser/content_browser_client.h"
@@ -74,9 +74,10 @@ void SerialService::GetPorts(GetPortsCallback callback) {
   }
 
   delegate->GetPortManager(&render_frame_host())
-      ->GetDevices(base::BindOnce(&SerialService::FinishGetPorts,
-                                  weak_factory_.GetWeakPtr(),
-                                  std::move(callback)));
+      ->GetDevices(
+          /*allow_bluetooth_system_prompt=*/false,
+          base::BindOnce(&SerialService::FinishGetPorts,
+                         weak_factory_.GetWeakPtr(), std::move(callback)));
 }
 
 void SerialService::RequestPort(

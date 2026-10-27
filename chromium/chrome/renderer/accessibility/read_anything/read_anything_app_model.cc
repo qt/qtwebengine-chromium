@@ -6,14 +6,19 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <numeric>
+#include <stack>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include "base/check.h"
+#include "base/containers/flat_map.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
+#include "base/timer/elapsed_timer.h"
 #include "chrome/common/read_anything/read_anything_util.h"
 #if !BUILDFLAG(IS_CHROMEOS)
 #include "chrome/common/webui_url_constants.h"
@@ -41,12 +46,6 @@
 
 namespace {
 
-// TODO(crbug.com/355925253): Consider removing one constant when a working
-// combination is found.
-base::TimeDelta kTimeElapsedSincePageLoadForDataCollection = base::Seconds(30);
-base::TimeDelta kTimeElapsedSinceTreeChangedForDataCollection =
-    base::Seconds(30);
-
 const ui::AXNode* GetUnignoredParentForSelection(const ui::AXNode* node) {
   const ui::AXNode* parent = node;
   while (const ui::AXNode* ancestor =
@@ -68,24 +67,6 @@ const ui::AXNode* GetUnignoredParentForSelection(const ui::AXNode* node) {
   return parent == node ? nullptr : parent;
 }
 
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused.
-// LINT.IfChange(ReadAnythingHeuristics)
-enum class ReadAnythingHeuristics {
-  kNone = 0,
-  kNodeNotFound = 1,
-  kInvisibleOrIgnored = 2,
-  kNotExpanded = 3,
-  kNoDeepsetLastDecendent = 4,
-  kMaxValue = kNoDeepsetLastDecendent
-};
-// LINT.ThenChange(//tools/metrics/histograms/metadata/accessibility/enums.xml:ReadAnythingHeuristics)
-
-void RecordHeuristicMetric(ReadAnythingHeuristics heuristic) {
-  base::UmaHistogramEnumeration("Accessibility.ReadAnything.Heuristics",
-                                heuristic);
-}
-
 }  // namespace
 
 ReadAnythingAppModel::AXTreeInfo::AXTreeInfo(
@@ -99,6 +80,9 @@ ReadAnythingAppModel::AnchorData::AnchorData(const AnchorData& other) = default;
 ReadAnythingAppModel::AnchorData& ReadAnythingAppModel::AnchorData::operator=(
     const AnchorData& other) = default;
 ReadAnythingAppModel::AnchorData::~AnchorData() = default;
+
+ReadAnythingAppModel::SuffixArray::SuffixArray() = default;
+ReadAnythingAppModel::SuffixArray::~SuffixArray() = default;
 
 ReadAnythingAppModel::SelectionEndpoint::SelectionEndpoint(
     const ui::AXSelection& selection,
@@ -161,6 +145,7 @@ void ReadAnythingAppModel::Reset(std::vector<ui::AXNodeID> content_node_ids) {
 }
 
 void ReadAnythingAppModel::ResetSelection() {
+  side_panel_distillation_mode_ = SidePanelDistillationMode::kMainContent;
   selection_node_ids_.clear();
   start_ = SelectionEndpoint();
   end_ = SelectionEndpoint();
@@ -180,6 +165,16 @@ bool ReadAnythingAppModel::PostProcessSelection() {
   CHECK(it != tree_infos_.end());
 
   requires_post_process_selection_ = false;
+  const bool was_empty = is_empty();
+
+  UpdateSelectionEndpoints();
+
+  // TODO: crbug.com/505770261 - Implement selection_mode for readability.
+  // AXtree mapping is needed first and is_empty() must be redefined since a
+  // readability distillation doesn't use display_node_ids.
+  if (is_readability_next_distillation_method()) {
+    return false;
+  }
 
   // If the new selection came from the side panel, we don't need to draw
   // anything in the side panel, since whatever was being selected had to have
@@ -188,19 +183,58 @@ bool ReadAnythingAppModel::PostProcessSelection() {
   // inside the distilled content. In this case, we will only draw if the new
   // selection is outside the distilled content.
   // If there was a previous selection outside the distilled content, we always
-  // redraw. This will be either a) the new selected content or b) the original
-  // distilled content if the new selection is inside that or was cleared.
-  const auto selection_in_distilled_content = [&] {
-    return display_node_ids_.contains(start_.id) &&
-           display_node_ids_.contains(end_.id);
-  };
-  const bool need_to_draw = (selections_from_reading_mode_ == 0) &&
-                            has_selection() &&
-                            !selection_in_distilled_content();
-  const bool was_empty = is_empty();
+  // redraw (unless the selection came from the side panel). This will be either
+  // a) the new selected content or b) the original distilled content if the new
+  // selection is inside that or was cleared.
+  bool selection_outside_distilled_content =
+      has_selection() && !IsSelectionInDistilledContent();
+  SidePanelDistillationMode intended_view_mode =
+      selection_outside_distilled_content
+          ? SidePanelDistillationMode::kSelection
+          : SidePanelDistillationMode::kMainContent;
 
-  // Update selection.
-  ResetSelection();
+  // Determine if a redraw is required to sync the UI with the intended state.
+  // Redraw if a) The distillation mode is entering or leaving kSelection state
+  // or b) The view is remaining in selection mode but the selected range has
+  // changed.
+  const bool need_to_draw =
+      (selections_from_reading_mode_ == 0) &&
+      (side_panel_distillation_mode_ != intended_view_mode ||
+       intended_view_mode == SidePanelDistillationMode::kSelection);
+
+  // Only update side panel view mode if the SP view will be updated.
+  if (need_to_draw) {
+    side_panel_distillation_mode_ = intended_view_mode;
+    // Clear IDs only if redrawing to keep |selection_node_ids_| consistent with
+    // the current UI.
+    selection_node_ids_.clear();
+  }
+
+  if (!has_selection()) {
+    return need_to_draw;
+  }
+
+  if (was_empty) {
+    base::UmaHistogramEnumeration(kEmptyStateHistogramName,
+                                  EmptyState::kShownWithSelectionAfter);
+    ++it->second->num_selections;
+  }
+
+  if (IsSelectionInDistilledContent()) {
+    return need_to_draw;
+  }
+
+  // Only update |selection_node_ids| if redrawing to prevent merging new
+  // selections with existing ones.
+  if (need_to_draw) {
+    ComputeSelectionNodeIdsForSelectionMode();
+  }
+  return need_to_draw;
+}
+
+void ReadAnythingAppModel::UpdateSelectionEndpoints() {
+  start_ = SelectionEndpoint();
+  end_ = SelectionEndpoint();
   if (const ui::AXSelection selection =
           GetTreeFromId(active_tree_id_)->GetUnignoredSelection();
       selection.anchor_object_id != ui::kInvalidAXNodeID &&
@@ -218,21 +252,14 @@ bool ReadAnythingAppModel::PostProcessSelection() {
     start_ = SelectionEndpoint(selection, source_start);
     end_ = SelectionEndpoint(selection, source_end);
   }
+}
 
-  if (!has_selection()) {
-    return need_to_draw;
-  }
+bool ReadAnythingAppModel::IsSelectionInDistilledContent() const {
+  return display_node_ids_.contains(start_.id) &&
+         display_node_ids_.contains(end_.id);
+}
 
-  if (was_empty) {
-    base::UmaHistogramEnumeration(kEmptyStateHistogramName,
-                                  EmptyState::kShownWithSelectionAfter);
-    ++it->second->num_selections;
-  }
-
-  if (selection_in_distilled_content()) {
-    return need_to_draw;
-  }
-
+void ReadAnythingAppModel::ComputeSelectionNodeIdsForSelectionMode() {
   const ui::AXNode* node = GetAXNode(start_.id);
   const ui::AXNode* end = GetAXNode(end_.id);
   DUMP_WILL_BE_CHECK(node && end);
@@ -240,7 +267,7 @@ bool ReadAnythingAppModel::PostProcessSelection() {
     // Fail gracefully if the returned nodes are ever missing.
     // This should never happen given that the AXSelection object is retrieved
     // from the active tree.
-    return false;
+    return;
   }
 
   // The main panel selection contains content outside of the distilled
@@ -264,12 +291,12 @@ bool ReadAnythingAppModel::PostProcessSelection() {
       end = end->GetDeepestLastUnignoredDescendantCrossingTreeBoundary();
       if (node && end) {
         // Traverse the tree from the first sibling node to the last sibling
-        // node, inclusive. This ensures that when select-to-distill is used to
-        // distill non-distillable content (such as Gmail), text outside of the
-        // selected portion but on the same line is still distilled, even if
-        // there's special formatting.
-        // TODO(crbug.com/40802192): Consider using ax_position.h here to better
-        // manage selection.
+        // node, inclusive. This ensures that when select-to-distill is used
+        // to distill non-distillable content (such as Gmail), text outside of
+        // the selected portion but on the same line is still distilled, even
+        // if there's special formatting.
+        // TODO(crbug.com/40802192): Consider using ax_position.h here to
+        // better manage selection.
         for (node = node->GetFirstUnignoredChildCrossingTreeBoundary();
              node && node->CompareTo(*end).value_or(1) <= 0;
              node = node->GetNextUnignoredInTreeOrder()) {
@@ -278,7 +305,6 @@ bool ReadAnythingAppModel::PostProcessSelection() {
       }
     }
   }
-  return true;
 }
 
 bool ReadAnythingAppModel::ContentNodesOnlyContainHeadings() {
@@ -329,16 +355,14 @@ void ReadAnythingAppModel::ComputeDisplayNodeIdsForDistilledTree() {
     // active ax tree, GetAXNode will return nullptr. Fix GetAXNode to harvest
     // nodes from child trees, and then replace the `if (!content_node)` check
     // with `DCHECK(content_node)`.
-    // TODO(abigailbklein) This prevents the crash in crbug.com/1402788, but may
-    // not be the correct approach. Do we need a version of
+    // TODO(abigailbklein) This prevents the crash in crbug.com/40884999, but
+    // may not be the correct approach. Do we need a version of
     // GetDeepestLastUnignoredDescendant() that works on ignored nodes?
     if (!content_node) {
-      RecordHeuristicMetric(ReadAnythingHeuristics::kNodeNotFound);
       continue;
     }
 
     if (content_node->IsInvisibleOrIgnored()) {
-      RecordHeuristicMetric(ReadAnythingHeuristics::kInvisibleOrIgnored);
       continue;
     }
 
@@ -350,7 +374,6 @@ void ReadAnythingAppModel::ComputeDisplayNodeIdsForDistilledTree() {
       // attribute directly for that reason.
       if (!content_node->HasState(ax::mojom::State::kExpanded)) {
         // Don't include collapsed aria-expanded items.
-        RecordHeuristicMetric(ReadAnythingHeuristics::kNotExpanded);
         continue;
       }
     }
@@ -381,15 +404,12 @@ void ReadAnythingAppModel::ComputeDisplayNodeIdsForDistilledTree() {
     ui::AXNode* deepest_last_descendant =
         content_node->GetDeepestLastUnignoredDescendant();
     if (!deepest_last_descendant) {
-      RecordHeuristicMetric(ReadAnythingHeuristics::kNoDeepsetLastDecendent);
       continue;
     }
     while (next_node != deepest_last_descendant) {
       next_node = next_node->GetNextUnignoredInTreeOrder();
       InsertIdIfNotIgnored(next_node->id(), display_node_ids_);
     }
-
-    RecordHeuristicMetric(ReadAnythingHeuristics::kNone);
   }
 }
 
@@ -512,10 +532,17 @@ void ReadAnythingAppModel::AddPendingUpdates(const ui::AXTreeID& tree_id,
 
 void ReadAnythingAppModel::ClearPendingUpdates() {
   pending_updates_.clear();
+  has_pending_selection_ = false;
 }
 
 void ReadAnythingAppModel::UnserializePendingUpdates(
     const ui::AXTreeID& tree_id) {
+  // has_pending_selection_ is used to process updates that would not have
+  // otherwise been processed if Immersive is opening and already had a good
+  // distillation. Therefore, it should be reset once UnserializePendingUpdates
+  // is called. If no selection is processed (e.g. due to no pending updates),
+  // that means there is no longer a pending selection to process.
+  has_pending_selection_ = false;
   if (!pending_updates_.contains(tree_id)) {
     VLOG(1) << "Returning early in UnserializePendingUpdates because it "
                "doesn't contain tree id "
@@ -620,6 +647,12 @@ void ReadAnythingAppModel::EnsureAXTreeExists(const ui::AXTreeID& tree_id) {
 
 void ReadAnythingAppModel::UpdateActiveTreeIfNeeded(
     const ui::AXTreeID& tree_id) {
+  // Readability distillation does not use child trees so skip to avoid
+  // triggering unnecessary re-distillation or tree-switching.
+  if (is_readability_next_distillation_method()) {
+    return;
+  }
+
   if (!may_use_child_for_active_tree_) {
     return;
   }
@@ -668,18 +701,10 @@ void ReadAnythingAppModel::ApplyAccessibilityUpdates(
     UnserializeUpdates(updates, tree_id);
   }
 
-  HandleScreen2xDataCollection(updates);
-}
-
-void ReadAnythingAppModel::HandleScreen2xDataCollection(
-    const Updates& updates) {
-  if (features::IsDataCollectionModeForScreen2xEnabled() && updates.size()) {
-    waiting_for_tree_change_timer_trigger_ = true;
-    timer_since_tree_changed_for_data_collection_.Start(
-        FROM_HERE, kTimeElapsedSinceTreeChangedForDataCollection,
-        base::BindRepeating(&ReadAnythingAppModel::OnTreeChangeTimerTriggered,
-                            weak_ptr_factory_.GetWeakPtr()));
-  }
+  // has_pending_selection_ is used to process updates that would not have
+  // otherwise been processed if Immersive is opening and already had a good
+  // distillation. Therefore, it should be reset once updates are applied.
+  has_pending_selection_ = false;
 }
 
 void ReadAnythingAppModel::QueueAccessibilityUpdates(
@@ -699,10 +724,6 @@ void ReadAnythingAppModel::QueueAccessibilityUpdates(
   // complete.
   AddPendingUpdates(tree_id, updates);
   ProcessNonGeneratedEvents(events);
-  if (timer_since_tree_changed_for_data_collection_.IsRunning()) {
-    CHECK(features::IsDataCollectionModeForScreen2xEnabled());
-    timer_since_tree_changed_for_data_collection_.Reset();
-  }
 }
 
 void ReadAnythingAppModel::OnAXTreeDestroyed(const ui::AXTreeID& tree_id) {
@@ -896,34 +917,10 @@ void ReadAnythingAppModel::SetActiveTreeId(ui::AXTreeID active_tree_id) {
   }
 
   active_tree_id_ = std::move(active_tree_id);
-  // If data collection mode for screen2x is enabled, begin
-  // `timer_since_page_load_for_data_collection_` from here. This is a
-  // one-shot timer which times 30 seconds from when the active AXTree changes.
-  // This is one of two timers associated with the data collection flow. When
-  // either of these timers expires, this triggers the screen2x distillation
-  // data collection flow.
-  if (features::IsDataCollectionModeForScreen2xEnabled()) {
-    timer_since_page_load_for_data_collection_.Start(
-        FROM_HERE, kTimeElapsedSincePageLoadForDataCollection,
-        base::BindOnce(&ReadAnythingAppModel::OnPageLoadTimerTriggered,
-                       weak_ptr_factory_.GetWeakPtr()));
-
-    // If tree does not change until the page load timer triggers, assume that
-    // the page is not changing. `waiting_for_tree_change_timer_trigger_` is set
-    // again when tree changes.
-    if (timer_since_tree_changed_for_data_collection_.IsRunning()) {
-      timer_since_tree_changed_for_data_collection_.Stop();
-    }
-    waiting_for_tree_change_timer_trigger_ = false;
-  }
 }
 
 void ReadAnythingAppModel::ProcessNonGeneratedEvents(
     const std::vector<ui::AXEvent>& events) {
-  // Marks if an event has happened that can affect collection of training data
-  // for Screen2x.
-  bool delay_screen2x_training_data_collection_ = false;
-
   // Note that this list of events may overlap with generated events in the
   // model. It's up to the consumer to pick but its generally good to prefer
   // generated. The consumer should not process the same event here and for
@@ -932,18 +929,37 @@ void ReadAnythingAppModel::ProcessNonGeneratedEvents(
 #if BUILDFLAG(IS_MAC)
     VLOG(2) << "Non-generated event type: " << event.event_type;
 #endif
+    if (event.event_type == ax::mojom::Event::kDocumentSelectionChanged ||
+        event.event_type == ax::mojom::Event::kTextSelectionChanged) {
+      // Keep track of pending selections so that Immersive can properly
+      // update if there's been a selection change.
+      has_pending_selection_ = true;
+    }
+
+    // Readability distillation reacts to major document changes to support
+    // SPA navigations.
+    if (is_readability_next_distillation_method()) {
+      switch (event.event_type) {
+        case ax::mojom::Event::kLoadComplete:
+          requires_readability_distillation_ = true;
+          page_finished_loading_ = true;
+          break;
+        default:
+          break;
+      }
+      continue;
+    }
+
     switch (event.event_type) {
       case ax::mojom::Event::kLoadComplete:
         requires_distillation_ = true;
         page_finished_loading_ = true;
-        delay_screen2x_training_data_collection_ = true;
         // TODO(accessibility): Some pages may never completely load; use a
         // timer with a reasonable delay to force distillation -> drawing.
         // Investigate if this is needed.
         break;
 
       case ax::mojom::Event::kLocationChanged:
-        delay_screen2x_training_data_collection_ = true;
         break;
       case ax::mojom::Event::kCheckedStateChanged:
         if (IsWhatsNew()) {
@@ -974,10 +990,11 @@ void ReadAnythingAppModel::ProcessNonGeneratedEvents(
       case ax::mojom::Event::kAutocorrectionOccured:
       case ax::mojom::Event::kClicked:
       case ax::mojom::Event::kControlsChanged:
+      case ax::mojom::Event::kEnabledChanged:
       case ax::mojom::Event::kEndOfTest:
       case ax::mojom::Event::kFocus:
       case ax::mojom::Event::kFocusAfterMenuClose:
-      case ax::mojom::Event::kFocusContext:
+      case ax::mojom::Event::kFocusContextDeprecated:
       case ax::mojom::Event::kHide:
       case ax::mojom::Event::kHitTestResult:
       case ax::mojom::Event::kHover:
@@ -1041,22 +1058,6 @@ void ReadAnythingAppModel::ProcessNonGeneratedEvents(
         NOTREACHED();
     }
   }
-
-  // If data collection mode for screen2x is enabled, begin
-  // `timer_since_tree_changed_for_data_collection_` from here. This is a
-  // repeating one-shot timer which times 10 seconds from page load and
-  // resets every time the accessibility tree changes in a way that affects data
-  // collection. This is one of two timers associated with the data collection
-  // flow. When both of these timers expire, the screen2x distillation data
-  // collection flow is triggered.
-  if (features::IsDataCollectionModeForScreen2xEnabled() &&
-      delay_screen2x_training_data_collection_) {
-    waiting_for_tree_change_timer_trigger_ = true;
-    timer_since_tree_changed_for_data_collection_.Start(
-        FROM_HERE, kTimeElapsedSinceTreeChangedForDataCollection,
-        base::BindRepeating(&ReadAnythingAppModel::OnTreeChangeTimerTriggered,
-                            weak_ptr_factory_.GetWeakPtr()));
-  }
 }
 
 void ReadAnythingAppModel::ProcessGeneratedEvents(
@@ -1069,9 +1070,37 @@ void ReadAnythingAppModel::ProcessGeneratedEvents(
 #if BUILDFLAG(IS_MAC)
     VLOG(2) << "Generated event type: " << event.event_params->event;
 #endif
+
+    // Readability only requires selection and title change events. This ensures
+    // the side panel content and selection stays synchronized with the main
+    // panel.
+    if (is_readability_next_distillation_method()) {
+      switch (event.event_params->event) {
+        case ui::AXEventGenerator::Event::DOCUMENT_SELECTION_CHANGED:
+          requires_post_process_selection_ = true;
+          if (event.event_params->event_from == ax::mojom::EventFrom::kUser) {
+            // Direct main panel user interaction fully supersedes any stale
+            // reading-mode-initiated selection actions.
+            selections_from_reading_mode_ = 0;
+          }
+          break;
+        case ui::AXEventGenerator::Event::DOCUMENT_TITLE_CHANGED:
+          requires_readability_distillation_ = true;
+          break;
+        default:
+          break;
+      }
+      continue;
+    }
+
     switch (event.event_params->event) {
       case ui::AXEventGenerator::Event::DOCUMENT_SELECTION_CHANGED:
         requires_post_process_selection_ = true;
+        if (event.event_params->event_from == ax::mojom::EventFrom::kUser) {
+          // Direct main panel user interaction fully supersedes any stale
+          // reading-mode-initiated selection actions.
+          selections_from_reading_mode_ = 0;
+        }
         break;
       case ui::AXEventGenerator::Event::DOCUMENT_TITLE_CHANGED:
         if (event.event_params->event_from == ax::mojom::EventFrom::kUser) {
@@ -1100,6 +1129,7 @@ void ReadAnythingAppModel::ProcessGeneratedEvents(
         // capture the complete PDF load mentioned earlier).
         if (is_pdf_ && prev_tree_size < tree_size) {
           requires_distillation_ = true;
+          reset_distillation_delay_timer_ = true;
         }
         break;
       case ui::AXEventGenerator::Event::COLLAPSED:
@@ -1185,58 +1215,13 @@ void ReadAnythingAppModel::ProcessGeneratedEvents(
       case ui::AXEventGenerator::Event::STATE_CHANGED:
       case ui::AXEventGenerator::Event::TEXT_ATTRIBUTE_CHANGED:
       case ui::AXEventGenerator::Event::TEXT_SELECTION_CHANGED:
+      case ui::AXEventGenerator::Event::VALUE_IN_SPIN_BUTTON_DECREMENTED:
+      case ui::AXEventGenerator::Event::VALUE_IN_SPIN_BUTTON_INCREMENTED:
       case ui::AXEventGenerator::Event::VALUE_IN_TEXT_FIELD_CHANGED:
       case ui::AXEventGenerator::Event::WIN_IACCESSIBLE_STATE_CHANGED:
         break;
     }
   }
-}
-
-bool ReadAnythingAppModel::ScreenAIServiceReadyForDataCollection() const {
-  CHECK(features::IsDataCollectionModeForScreen2xEnabled());
-  return screen_ai_service_ready_for_data_collection_;
-}
-
-void ReadAnythingAppModel::SetScreenAIServiceReadyForDataCollection() {
-  screen_ai_service_ready_for_data_collection_ = true;
-  MaybeRunDataCollectionForScreen2xCallback();
-}
-
-bool ReadAnythingAppModel::PageFinishedLoadingForDataCollection() const {
-  CHECK(features::IsDataCollectionModeForScreen2xEnabled());
-  return !waiting_for_page_load_completion_timer_trigger_ &&
-         !waiting_for_tree_change_timer_trigger_;
-}
-
-void ReadAnythingAppModel::OnPageLoadTimerTriggered() {
-  CHECK(waiting_for_page_load_completion_timer_trigger_);
-  waiting_for_page_load_completion_timer_trigger_ = false;
-  MaybeRunDataCollectionForScreen2xCallback();
-}
-
-void ReadAnythingAppModel::OnTreeChangeTimerTriggered() {
-  CHECK(waiting_for_tree_change_timer_trigger_);
-  waiting_for_tree_change_timer_trigger_ = false;
-  MaybeRunDataCollectionForScreen2xCallback();
-}
-
-void ReadAnythingAppModel::SetDataCollectionForScreen2xCallback(
-    base::OnceCallback<void()> callback) {
-  CHECK(features::IsDataCollectionModeForScreen2xEnabled());
-  data_collection_for_screen2x_callback_ = std::move(callback);
-}
-
-void ReadAnythingAppModel::MaybeRunDataCollectionForScreen2xCallback() {
-  CHECK(features::IsDataCollectionModeForScreen2xEnabled());
-  if (!PageFinishedLoadingForDataCollection() ||
-      !ScreenAIServiceReadyForDataCollection()) {
-    return;
-  }
-  if (data_collection_for_screen2x_callback_.is_null()) {
-    LOG(ERROR) << "Callback not set or triggered more than once.";
-    return;
-  }
-  std::move(data_collection_for_screen2x_callback_).Run();
 }
 
 void ReadAnythingAppModel::SetBaseLanguageCode(std::string base_language_code) {
@@ -1259,9 +1244,10 @@ void ReadAnythingAppModel::SetFontSize(double font_size, int increment) {
 
 const std::set<ui::AXNodeID>* ReadAnythingAppModel::GetCurrentlyVisibleNodes()
     const {
-  return (selection_node_ids_.empty() || !has_selection())
-             ? &display_node_ids()
-             : &selection_node_ids_;
+  return (side_panel_distillation_mode_ ==
+          SidePanelDistillationMode::kSelection)
+             ? &selection_node_ids_
+             : &display_node_ids_;
 }
 
 void ReadAnythingAppModel::AllowChildTreeForActiveTree(bool use_child_tree) {
@@ -1299,24 +1285,31 @@ bool ReadAnythingAppModel::SelectionNodesContainedInDistilledContent() const {
 }
 
 bool ReadAnythingAppModel::ProcessAXTreeAnchors() {
-  DUMP_WILL_BE_CHECK(
-      features::IsReadAnythingWithReadabilityAllowLinksEnabled());
   if (!should_extract_anchors_from_tree_for_readability_) {
     return false;
   }
 
-  if (active_tree_id_ == ui::AXTreeIDUnknown() || !ContainsActiveTree()) {
-    return false;
-  }
-
-  ui::AXSerializableTree* tree = GetActiveTree();
-  if (!tree || !tree->root()) {
+  ui::AXSerializableTree* tree = GetValidActiveTree();
+  if (!tree) {
     return false;
   }
 
   should_extract_anchors_from_tree_for_readability_ = false;
   ax_tree_anchors_ = CollectAnchorsFromAXTree(tree);
   return true;
+}
+
+ui::AXSerializableTree* ReadAnythingAppModel::GetValidActiveTree() const {
+  if (active_tree_id_ == ui::AXTreeIDUnknown() || !ContainsActiveTree()) {
+    return nullptr;
+  }
+
+  ui::AXSerializableTree* tree = GetActiveTree();
+  if (!tree || !tree->root()) {
+    return nullptr;
+  }
+
+  return tree;
 }
 
 std::map<std::string, std::vector<ReadAnythingAppModel::AnchorData>>
@@ -1424,4 +1417,599 @@ ReadAnythingAppModel::CollectAnchorsFromAXTree(ui::AXSerializableTree* tree) {
 
 void ReadAnythingAppModel::ResetAXTreeAnchors() {
   ax_tree_anchors_.clear();
+}
+
+void ReadAnythingAppModel::SuffixArray::Build(std::u16string_view t) {
+  this->text = t;
+  this->suffix_array.resize(this->text.size());
+
+  // Fill the suffix array with the starting index of every possible suffix in
+  // the text: [0, 1, 2, ... N-1].
+  std::iota(this->suffix_array.begin(), this->suffix_array.end(), 0);
+
+  // Sort these indices lexicographically based on the text starting at each
+  // index to  the suffix array.
+  std::sort(this->suffix_array.begin(), this->suffix_array.end(),
+            [this](uint32_t i, uint32_t j) {
+              return this->text.substr(i) < this->text.substr(j);
+            });
+}
+
+std::pair<std::vector<uint32_t>::const_iterator,
+          std::vector<uint32_t>::const_iterator>
+ReadAnythingAppModel::SuffixArray::FindRange(std::u16string_view query) const {
+  // Find the range of suffixes that start with the query string. Since the
+  // suffixes are sorted, all occurrences of the same prefix will be adjacent in
+  // the array.
+  return std::equal_range(
+      this->suffix_array.begin(), this->suffix_array.end(), query,
+      [this](const auto& element, const auto& value) {
+        if constexpr (std::is_same_v<std::decay_t<decltype(element)>,
+                                     uint32_t>) {
+          // Comparing a suffix in the array against the query string.
+          return this->text.substr(element, value.size()) < value;
+        } else {
+          // Comparing the query string against a suffix in the array.
+          return element < this->text.substr(value, element.size());
+        }
+      });
+}
+
+bool ReadAnythingAppModel::MapRenderedTextToTree(
+    const std::vector<std::u16string>& blocks) {
+  if (!should_map_rendered_text_to_tree_for_readability()) {
+    return false;
+  }
+
+  ui::AXSerializableTree* tree = GetValidActiveTree();
+  if (!tree) {
+    return false;
+  }
+
+  base::ElapsedTimer total_timer;
+  base::ElapsedTimer step_timer;
+
+  text_to_ax_map_.clear();
+  occupied_ax_ranges_.clear();
+  // Ensure the mapping storage size matches the input blocks.
+  text_to_ax_map_.resize(blocks.size());
+  should_map_rendered_text_to_tree_for_readability_ = false;
+
+  FlattenAXTree(tree);
+  base::TimeDelta flattening_duration = step_timer.Elapsed();
+
+  // If the AXTree is empty, there is no text to map back to.
+  if (global_ax_tree_text_.empty()) {
+    return false;
+  }
+
+  // Build a Suffix Array index of the original page's text. Finding a text
+  // block can then be done in O(log N) time.
+  step_timer = base::ElapsedTimer();
+  SuffixArray index;
+  index.Build(global_ax_tree_text_);
+  base::TimeDelta suffix_array_duration = step_timer.Elapsed();
+
+  // Build a frequency map of the distilled blocks.
+  step_timer = base::ElapsedTimer();
+  base::flat_map<std::u16string_view, int> readability_block_counts;
+  for (const auto& block : blocks) {
+    if (!block.empty()) {
+      readability_block_counts[block]++;
+    }
+  }
+
+  std::vector<AlignmentAnchor> candidates =
+      FindGloballyUniqueBlocks(blocks, index, readability_block_counts);
+
+  std::vector<AlignmentAnchor> major_anchors =
+      FilterMonotonicAnchors(std::move(candidates));
+  base::TimeDelta initial_anchors_duration = step_timer.Elapsed();
+
+  step_timer = base::ElapsedTimer();
+  GapSubstringAlignment(blocks, index, major_anchors);
+  base::TimeDelta gap_alignment_duration = step_timer.Elapsed();
+
+  // Sort mapping segments for every block to ensure physical DOM splitting
+  // happens in sequential order in the WebUI.
+  for (auto& block_segments : text_to_ax_map_) {
+    std::sort(block_segments.begin(), block_segments.end(),
+              [](const MappingSegment& a, const MappingSegment& b) {
+                return a.start < b.start;
+              });
+  }
+
+  RecordReadabilityMappingMetrics(
+      blocks, total_timer.Elapsed(), flattening_duration, suffix_array_duration,
+      initial_anchors_duration, gap_alignment_duration);
+
+  return true;
+}
+
+std::vector<ReadAnythingAppModel::AlignmentAnchor>
+ReadAnythingAppModel::FindGloballyUniqueBlocks(
+    const std::vector<std::u16string>& blocks,
+    const SuffixArray& index,
+    const base::flat_map<std::u16string_view, int>& block_counts) {
+  CHECK_EQ(blocks.size(), text_to_ax_map_.size());
+
+  std::vector<AlignmentAnchor> candidates;
+
+  // Skip block 0 (title). Defer its mapping to subsequent steps once the search
+  // space has been restricted. This avoids false body matches if the title is
+  // synthesized metadata.
+  for (size_t i = 1; i < blocks.size(); ++i) {
+    const std::u16string& block = blocks[i];
+
+    if (block.empty()) {
+      continue;
+    }
+
+    // Binary search the Suffix Array to find all occurrences of this block.
+    auto range = index.FindRange(block);
+
+    // If the block exists exactly once in the source page and in the distilled
+    // output, set the AXNode segments for this block in [text_to_ax_map_| and
+    // add it as a candidate for a major anchor.
+    auto it = block_counts.find(block);
+    if (std::distance(range.first, range.second) == 1 &&
+        it != block_counts.end() && it->second == 1) {
+      size_t ax_start = *range.first;
+      size_t ax_end = ax_start + block.size();
+      DUMP_WILL_BE_CHECK(ax_end <= global_ax_tree_text_.size())
+          << "Block exceeds total text length";
+      if (ax_end > global_ax_tree_text_.size()) {
+        continue;
+      }
+
+      text_to_ax_map_[i] = CreateSegmentsForMatch(ax_start, ax_end, 0);
+      occupied_ax_ranges_.emplace_back(ax_start, ax_end);
+      candidates.emplace_back(i, 0, block.size(), ax_start, ax_end);
+    }
+  }
+  return candidates;
+}
+
+std::vector<ReadAnythingAppModel::AlignmentAnchor>
+ReadAnythingAppModel::FilterMonotonicAnchors(
+    std::vector<AlignmentAnchor> candidates) {
+  if (candidates.empty()) {
+    return {};
+  }
+
+  size_t n = candidates.size();
+  std::vector<size_t> tails_indices(n, 0);
+  std::vector<int> prev(n, -1);
+  size_t len = 0;
+
+  // Find the longest increasing anchor set using the LIS algorithm.
+  for (size_t i = 0; i < n; ++i) {
+    // Find the smallest tail that is >= the current anchor's AX position.
+    auto it =
+        std::lower_bound(tails_indices.begin(), tails_indices.begin() + len, i,
+                         [&candidates](size_t tail_idx, size_t current_idx) {
+                           return candidates[tail_idx].ax_start <
+                                  candidates[current_idx].ax_start;
+                         });
+    size_t pos = std::distance(tails_indices.begin(), it);
+
+    if (pos > 0) {
+      prev[i] = static_cast<int>(tails_indices[pos - 1]);
+    }
+
+    tails_indices[pos] = i;
+    if (pos == len) {
+      len++;
+    }
+  }
+
+  // Reconstruct the monotonic subsequence via backtracking.
+  std::vector<AlignmentAnchor> result;
+  for (int i = static_cast<int>(tails_indices[len - 1]); i != -1; i = prev[i]) {
+    result.push_back(candidates[i]);
+  }
+  std::reverse(result.begin(), result.end());
+  return result;
+}
+
+void ReadAnythingAppModel::GapSubstringAlignment(
+    const std::vector<std::u16string>& blocks,
+    const SuffixArray& index,
+    const std::vector<AlignmentAnchor>& major_anchors) {
+  if (major_anchors.empty()) {
+    // If no major anchors were found, treat the whole text as one gap.
+    AlignGap(blocks, index, 0, blocks.size(), 0, global_ax_tree_text_.size());
+    return;
+  }
+
+  // Gap before the first major anchor.
+  AlignGap(blocks, index, 0, major_anchors[0].block_index, 0,
+           major_anchors[0].ax_start);
+
+  // Gaps between major anchors.
+  for (size_t i = 0; i < major_anchors.size() - 1; ++i) {
+    AlignGap(blocks, index, major_anchors[i].block_index + 1,
+             major_anchors[i + 1].block_index, major_anchors[i].ax_end,
+             major_anchors[i + 1].ax_start);
+  }
+
+  // Gap after the last major anchor.
+  AlignGap(blocks, index, major_anchors.back().block_index + 1, blocks.size(),
+           major_anchors.back().ax_end, global_ax_tree_text_.size());
+}
+
+void ReadAnythingAppModel::AlignGap(const std::vector<std::u16string>& blocks,
+                                    const SuffixArray& index,
+                                    size_t block_index_start,
+                                    size_t block_index_end,
+                                    size_t ax_start,
+                                    size_t ax_end) {
+  if (block_index_start >= block_index_end || ax_start >= ax_end) {
+    return;
+  }
+
+  // Prepare unmapped ranges for this specific gap. Only attempt to fill
+  // gaps for blocks that haven't been anchored yet.
+  std::vector<TextRange> ranges;
+  for (size_t i = block_index_start; i < block_index_end; ++i) {
+    if (!blocks[i].empty() && text_to_ax_map_[i].empty()) {
+      ranges.emplace_back(i, 0, blocks[i].size());
+    }
+  }
+
+  if (!ranges.empty()) {
+    AlignSubstring(blocks, index, std::move(ranges), ax_start, ax_end);
+  }
+}
+
+void ReadAnythingAppModel::AlignSubstring(
+    const std::vector<std::u16string>& blocks,
+    const SuffixArray& index,
+    std::vector<TextRange> distilled_ranges,
+    size_t ax_start,
+    size_t ax_end) {
+  if (distilled_ranges.empty() || ax_start >= ax_end) {
+    return;
+  }
+
+  AlignmentAnchor best_match = FindLongestLocallyUniqueSubstring(
+      blocks, index, distilled_ranges, ax_start, ax_end);
+
+  // If no sufficiently long match was found, stop recursing in this gap.
+  size_t best_match_length = best_match.block_end - best_match.block_start;
+  if (best_match_length < kMinAnchorLength) {
+    AlignRelativeOrder(blocks, index, std::move(distilled_ranges), ax_start,
+                       ax_end);
+    return;
+  }
+
+  // Map the found substring.
+  std::vector<MappingSegment> segments = CreateSegmentsForMatch(
+      best_match.ax_start, best_match.ax_end, best_match.block_start);
+
+  auto& block_mappings = text_to_ax_map_[best_match.block_index];
+  block_mappings.insert(block_mappings.end(), segments.begin(), segments.end());
+
+  // Split the distilled_ranges into two sets: those before and after the match.
+  std::vector<TextRange> pre_ranges;
+  std::vector<TextRange> post_ranges;
+
+  for (const auto& tr : distilled_ranges) {
+    if (tr.block_index < best_match.block_index) {
+      pre_ranges.push_back(tr);
+    } else if (tr.block_index > best_match.block_index) {
+      post_ranges.push_back(tr);
+    } else {
+      // tr is the block containing the match. Split it within the block.
+      if (best_match.block_start > tr.start) {
+        pre_ranges.emplace_back(tr.block_index, tr.start,
+                                best_match.block_start);
+      }
+      if (best_match.block_end < tr.end) {
+        post_ranges.emplace_back(tr.block_index, best_match.block_end, tr.end);
+      }
+    }
+  }
+
+  // Recurse on the remaining gaps.
+  AlignSubstring(blocks, index, std::move(pre_ranges), ax_start,
+                 best_match.ax_start);
+  AlignSubstring(blocks, index, std::move(post_ranges), best_match.ax_end,
+                 ax_end);
+}
+
+ReadAnythingAppModel::AlignmentAnchor
+ReadAnythingAppModel::FindLongestLocallyUniqueSubstring(
+    const std::vector<std::u16string>& blocks,
+    const SuffixArray& index,
+    const std::vector<TextRange>& distilled_ranges,
+    size_t ax_start,
+    size_t ax_end) {
+  AlignmentAnchor best_match = {0, 0, 0, 0, 0};
+
+  // Check unmapped blocks in the given gap range.
+  for (const auto& range : distilled_ranges) {
+    const std::u16string& block_text = blocks[range.block_index];
+
+    // Try every character position in the unmapped range as a potential
+    // anchor start.
+    for (size_t i = range.start; i < range.end; ++i) {
+      // Use binary search on the substring length to find the longest locally
+      // unique match starting at index 'i'.
+      // Only search for lengths longer than our current 'best' to
+      // prune the search space.
+      size_t low = (best_match.block_end - best_match.block_start) + 1;
+      size_t high = range.end - i;
+
+      // Skip search if remaining text in this range is shorter than minimum
+      // anchor length or shorter than the current best match.
+      size_t current_best_len = best_match.block_end - best_match.block_start;
+      if (high < kMinAnchorLength || high <= current_best_len) {
+        break;
+      }
+
+      while (low <= high) {
+        size_t mid = low + (high - low) / 2;
+        std::u16string_view query =
+            std::u16string_view(block_text).substr(i, mid);
+
+        // Find all global occurrences of the substring.
+        auto global_ax_occurrences = index.FindRange(query);
+
+        // Count how many of the global occurrences fall within our current gap
+        // that aren't overlapping with existing anchors. Update our best
+        // match if unique and longer.
+        size_t valid_count = 0;
+        size_t first_valid_ax_start = 0;
+
+        for (auto it = global_ax_occurrences.first;
+             it != global_ax_occurrences.second; ++it) {
+          size_t cand_ax_start = *it;
+          size_t cand_ax_end = cand_ax_start + mid;
+
+          if (cand_ax_start >= ax_start && cand_ax_end <= ax_end &&
+              !IsAXRangeOccupied(cand_ax_start, cand_ax_end)) {
+            valid_count++;
+            first_valid_ax_start = cand_ax_start;
+            if (valid_count > 1) {
+              break;  // Not locally unique.
+            }
+          }
+        }
+
+        if (valid_count == 1) {
+          // Found a locally unique match longer than our current best.
+          best_match = {range.block_index, i, i + mid, first_valid_ax_start,
+                        first_valid_ax_start + mid};
+          low = mid + 1;  // Try to find an even longer one.
+        } else {
+          high = mid - 1;
+        }
+      }
+    }
+  }
+  return best_match;
+}
+
+void ReadAnythingAppModel::AlignRelativeOrder(
+    const std::vector<std::u16string>& blocks,
+    const SuffixArray& index,
+    std::vector<TextRange> distilled_ranges,
+    size_t ax_start,
+    size_t ax_end) {
+  size_t current_ax_cursor = ax_start;
+
+  for (const auto& range : distilled_ranges) {
+    if (current_ax_cursor >= ax_end) {
+      break;
+    }
+
+    const std::u16string& block_text = blocks[range.block_index];
+
+    // The search length is bounded by the remaining AXTree gap. Adjust it to
+    // ensure candidates can physically fit within [current_ax_cursor, ax_end).
+    size_t max_possible_len = ax_end - current_ax_cursor;
+    size_t start_len = std::min(range.length(), max_possible_len);
+
+    // Attempt to find the largest substring of the current block range that
+    // exists in the remaining AXtree gap.
+    for (size_t len = start_len; len >= kMinSequentialMatchLength; --len) {
+      std::u16string_view query =
+          std::u16string_view(block_text).substr(range.start, len);
+      auto occurrences = index.FindRange(query);
+      size_t best_cand_ax_start = std::numeric_limits<size_t>::max();
+
+      for (auto it = occurrences.first; it != occurrences.second; ++it) {
+        size_t cand_ax_start = *it;
+        size_t cand_ax_end = cand_ax_start + len;
+
+        // Verify the occurrence is within the search gap and track the
+        // earliest (chronological) candidate to maintain sequential integrity.
+        if (cand_ax_start >= current_ax_cursor && cand_ax_end <= ax_end &&
+            !IsAXRangeOccupied(cand_ax_start, cand_ax_end)) {
+          if (cand_ax_start < best_cand_ax_start) {
+            best_cand_ax_start = cand_ax_start;
+          }
+        }
+      }
+      // Map the match and advance the cursor for the next sequential block.
+      if (best_cand_ax_start != std::numeric_limits<size_t>::max()) {
+        size_t cand_ax_end = best_cand_ax_start + len;
+        auto segments = CreateSegmentsForMatch(best_cand_ax_start, cand_ax_end,
+                                               range.start);
+        auto& block_mappings = text_to_ax_map_[range.block_index];
+        block_mappings.insert(block_mappings.end(), segments.begin(),
+                              segments.end());
+
+        current_ax_cursor = cand_ax_end;
+        break;
+      }
+    }
+  }
+}
+
+bool ReadAnythingAppModel::IsAXRangeOccupied(size_t ax_start,
+                                             size_t ax_end) const {
+  return std::any_of(occupied_ax_ranges_.begin(), occupied_ax_ranges_.end(),
+                     [ax_start, ax_end](const auto& range) {
+                       return ax_start < range.second && ax_end > range.first;
+                     });
+}
+
+// TODO: crbug.com/509578412 - Evaluate consolidating logic with existing text
+// traversal methods.
+void ReadAnythingAppModel::FlattenAXTree(ui::AXSerializableTree* tree) {
+  flattened_ax_tree_nodes_.clear();
+  global_ax_tree_text_.clear();
+  if (!tree || !tree->root()) {
+    return;
+  }
+
+  std::stack<ui::AXNode*> stack;
+  stack.push(tree->root());
+
+  // Traverse tree in pre-order DFS to build a contiguous text representation.
+  while (!stack.empty()) {
+    ui::AXNode* node = stack.top();
+    stack.pop();
+
+    // Check if current node should be added to |global_ax_tree_text_|.
+    // We use IsLeaf() because it identifies nodes that the accessibility
+    // engine considers semantic units (like StaticText). This automatically
+    // skips "virtual" internal layout nodes like kInlineTextBox (negative
+    // IDs) while keeping structural nodes that contain text.
+    if (node->IsLeaf()) {
+      // Only process nodes that actually contribute readable
+      // text. This helper (from read_anything_node_utils.cc) filters out
+      // decorative/empty tags that shouldn't be part of the text alignment.
+      if (!a11y::IsTextForReadAnything(node, is_pdf_, IsDocs())) {
+        continue;
+      }
+
+      // Use a11y::GetTextContent to get the node's normalized text. Add this
+      // text to the global string and record the node's position.
+      std::u16string node_text = a11y::GetTextContent(node, is_pdf_, IsDocs());
+      if (!node_text.empty()) {
+        flattened_ax_tree_nodes_.push_back(
+            {node->id(), node_text, global_ax_tree_text_.length()});
+        global_ax_tree_text_ += node_text;
+      }
+      // Since this is a leaf node we don't need to process its children.
+      continue;
+    }
+
+    // Add unignored descendants to the stack for processing.
+    std::vector<ui::AXNode*> children_to_push;
+    for (auto it = node->UnignoredChildrenBegin();
+         it != node->UnignoredChildrenEnd(); ++it) {
+      children_to_push.push_back(&*it);
+    }
+    // Push children in reverse order for pre-order traversal.
+    for (ui::AXNode* child : base::Reversed(children_to_push)) {
+      stack.push(child);
+    }
+  }
+}
+
+std::vector<ReadAnythingAppModel::MappingSegment>
+ReadAnythingAppModel::CreateSegmentsForMatch(size_t ax_start,
+                                             size_t ax_end,
+                                             size_t block_internal_offset) {
+  std::vector<MappingSegment> segments;
+
+  // Find the first node starting after ax_start and backtrack to land on the
+  // segment containing it. This approach is used for binary search ranges,
+  // as it identifies the node starting at or before the target offset.
+  auto it = std::upper_bound(flattened_ax_tree_nodes_.begin(),
+                             flattened_ax_tree_nodes_.end(), ax_start,
+                             [](size_t value, const AXNodeSegment& segment) {
+                               return value < segment.start_offset;
+                             });
+  if (it != flattened_ax_tree_nodes_.begin()) {
+    --it;
+  }
+
+  // Find all AXNodes that overlap the [ax_start, ax_end) range.
+  for (; it != flattened_ax_tree_nodes_.end(); ++it) {
+    const auto& ax_segment = *it;
+    size_t seg_start = ax_segment.start_offset;
+    size_t seg_end = seg_start + ax_segment.text.length();
+
+    if (seg_end <= ax_start) {
+      continue;
+    }
+    if (seg_start >= ax_end) {
+      break;
+    }
+
+    MappingSegment ms;
+    ms.id = ax_segment.id;
+
+    // Convert global AXTree offsets to block-relative offsets for the WebUI.
+    ms.start = static_cast<int>(std::max(ax_start, seg_start) - ax_start +
+                                block_internal_offset);
+    ms.end = static_cast<int>(std::min(ax_end, seg_end) - ax_start +
+                              block_internal_offset);
+    ms.ax_node_offset =
+        static_cast<int>(std::max(ax_start, seg_start) - seg_start);
+    segments.push_back(ms);
+  }
+  return segments;
+}
+
+void ReadAnythingAppModel::RecordReadabilityMappingMetrics(
+    const std::vector<std::u16string>& blocks,
+    base::TimeDelta total_duration,
+    base::TimeDelta flattening_duration,
+    base::TimeDelta suffix_array_duration,
+    base::TimeDelta initial_anchors_duration,
+    base::TimeDelta gap_alignment_duration) {
+  size_t total_distilled_chars = 0;
+  for (const auto& block : blocks) {
+    total_distilled_chars += block.length();
+  }
+
+  if (total_distilled_chars > 0) {
+    size_t total_mapped_chars = 0;
+    for (const auto& block_segments : text_to_ax_map_) {
+      for (const auto& segment : block_segments) {
+        total_mapped_chars += (segment.end - segment.start);
+      }
+    }
+    int success_rate =
+        static_cast<int>((total_mapped_chars * 100) / total_distilled_chars);
+    base::UmaHistogramPercentage(
+        "Accessibility.ReadAnything.ReadabilityMapping.SuccessRate",
+        success_rate);
+  }
+
+  base::UmaHistogramTimes(
+      "Accessibility.ReadAnything.ReadabilityMapping.1_Flattening."
+      "ExecutionTime",
+      flattening_duration);
+  base::UmaHistogramTimes(
+      "Accessibility.ReadAnything.ReadabilityMapping.2_SuffixArray."
+      "ExecutionTime",
+      suffix_array_duration);
+  base::UmaHistogramTimes(
+      "Accessibility.ReadAnything.ReadabilityMapping.3_InitialAnchors."
+      "ExecutionTime",
+      initial_anchors_duration);
+  base::UmaHistogramTimes(
+      "Accessibility.ReadAnything.ReadabilityMapping.4_GapAlignment."
+      "ExecutionTime",
+      gap_alignment_duration);
+  base::UmaHistogramTimes(
+      "Accessibility.ReadAnything.ReadabilityMapping.0_Total.ExecutionTime",
+      total_duration);
+}
+
+std::vector<ReadAnythingAppModel::MappingSegment>
+ReadAnythingAppModel::GetAXMapping(size_t index) const {
+  // TODO: crbug.com/507447796 - 10. Implement getter for frontend to receive
+  // mapped segments from a block. Done in ReadAnythingAppController.
+  if (index >= text_to_ax_map_.size()) {
+    return {};
+  }
+  return text_to_ax_map_[index];
 }

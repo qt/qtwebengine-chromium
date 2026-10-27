@@ -25,22 +25,14 @@ extern const base::FeatureParam<int> kLocalWebApprovalBottomSheetLoadTimeoutMs;
 #endif  // BUILDFLAG(IS_IOS) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
         // BUILDFLAG(IS_WIN)
 
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
-// Whether we show an error screen in case of failure of a local web approval.
-BASE_DECLARE_FEATURE(kEnableLocalWebApprovalErrorDialog);
-#endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
-
-// Whether the Pacp widget can process a url payload as part of the local
-// approval request.
-BASE_DECLARE_FEATURE(kLocalWebApprovalsWidgetSupportsUrlPayload);
-
-// Whether supervised users see an updated URL filter interstitial.
-BASE_DECLARE_FEATURE(kSupervisedUserBlockInterstitialV3);
-
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 // Uses supervised user strings on the signout dialog.
 BASE_DECLARE_FEATURE(kEnableSupervisedUserVersionSignOutDialog);
 #endif
+
+// Whether the Pacp widget can process a url payload as part of the local
+// approval request.
+BASE_DECLARE_FEATURE(kLocalWebApprovalsWidgetSupportsUrlPayload);
 
 // SupervisedUserUrlFilteringService does not use the PrefService indirection
 // (specifically, the SupervisedUserPrefStore) to get the URL filtering
@@ -58,10 +50,6 @@ BASE_DECLARE_FEATURE(
 // log record separately. When disabled, the system assumes that the device log
 // record is mutually exclusive with the account/policy based log record.
 BASE_DECLARE_FEATURE(kSupervisedUserEmitLogRecordSeparately);
-
-// Returns whether the V3 version of the URL filter interstitial is
-// enabled.
-bool IsBlockInterstitialV3Enabled();
 
 // Returns whether local parent approvals on Family Link user's device are
 // enabled.

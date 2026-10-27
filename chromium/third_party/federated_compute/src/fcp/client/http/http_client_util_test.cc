@@ -23,6 +23,7 @@
 #include "gtest/gtest.h"
 #include "absl/random/random.h"
 #include "absl/status/status.h"
+#include "absl/status/status_matchers.h"
 #include "absl/time/time.h"
 #include "fcp/base/monitoring.h"
 #include "fcp/testing/testing.h"
@@ -39,61 +40,67 @@ using ::testing::Optional;
 using ::testing::StrEq;
 
 TEST(ConvertHttpCodeToStatusTest, ConvertsKnownCodesCorrectly) {
-  EXPECT_OK(ConvertHttpCodeToStatus(kHttpOk));
+  ABSL_EXPECT_OK(ConvertHttpCodeToStatus(kHttpOk));
   EXPECT_THAT(ConvertHttpCodeToStatus(kHttpBadRequest),
-              IsCode(INVALID_ARGUMENT));
+              absl_testing::StatusIs(INVALID_ARGUMENT));
   EXPECT_THAT(ConvertHttpCodeToStatus(kHttpForbidden),
-              IsCode(PERMISSION_DENIED));
-  EXPECT_THAT(ConvertHttpCodeToStatus(kHttpNotFound), IsCode(NOT_FOUND));
-  EXPECT_THAT(ConvertHttpCodeToStatus(kHttpConflict), IsCode(ABORTED));
+              absl_testing::StatusIs(PERMISSION_DENIED));
+  EXPECT_THAT(ConvertHttpCodeToStatus(kHttpNotFound),
+              absl_testing::StatusIs(NOT_FOUND));
+  EXPECT_THAT(ConvertHttpCodeToStatus(kHttpConflict),
+              absl_testing::StatusIs(ABORTED));
   EXPECT_THAT(ConvertHttpCodeToStatus(kHttpTooManyRequests),
-              IsCode(RESOURCE_EXHAUSTED));
+              absl_testing::StatusIs(RESOURCE_EXHAUSTED));
   EXPECT_THAT(ConvertHttpCodeToStatus(kHttpClientClosedRequest),
-              IsCode(CANCELLED));
+              absl_testing::StatusIs(CANCELLED));
   EXPECT_THAT(ConvertHttpCodeToStatus(kHttpGatewayTimeout),
-              IsCode(DEADLINE_EXCEEDED));
+              absl_testing::StatusIs(DEADLINE_EXCEEDED));
   EXPECT_THAT(ConvertHttpCodeToStatus(kHttpNotImplemented),
-              IsCode(UNIMPLEMENTED));
+              absl_testing::StatusIs(UNIMPLEMENTED));
   EXPECT_THAT(ConvertHttpCodeToStatus(kHttpServiceUnavailable),
-              IsCode(UNAVAILABLE));
+              absl_testing::StatusIs(UNAVAILABLE));
   EXPECT_THAT(ConvertHttpCodeToStatus(kHttpUnauthorized),
-              IsCode(UNAUTHENTICATED));
+              absl_testing::StatusIs(UNAUTHENTICATED));
 }
 
 TEST(ConvertHttpCodeToStatusTest, ConvertsUnknown200CodesToOk) {
-  EXPECT_OK(ConvertHttpCodeToStatus(201));
-  EXPECT_OK(ConvertHttpCodeToStatus(210));
-  EXPECT_OK(ConvertHttpCodeToStatus(299));
+  ABSL_EXPECT_OK(ConvertHttpCodeToStatus(201));
+  ABSL_EXPECT_OK(ConvertHttpCodeToStatus(210));
+  ABSL_EXPECT_OK(ConvertHttpCodeToStatus(299));
 }
 
 TEST(ConvertHttpCodeToStatusTest, ConvertsUnknown400CodesToFailedPrecondition) {
   // Note: 400, 401, and 499 are known errors codes that map to other values. We
   // hence test a few other values in the 400 range that aren't "known".
-  EXPECT_THAT(ConvertHttpCodeToStatus(402), IsCode(FAILED_PRECONDITION));
-  EXPECT_THAT(ConvertHttpCodeToStatus(405), IsCode(FAILED_PRECONDITION));
-  EXPECT_THAT(ConvertHttpCodeToStatus(410), IsCode(FAILED_PRECONDITION));
-  EXPECT_THAT(ConvertHttpCodeToStatus(498), IsCode(FAILED_PRECONDITION));
+  EXPECT_THAT(ConvertHttpCodeToStatus(402),
+              absl_testing::StatusIs(FAILED_PRECONDITION));
+  EXPECT_THAT(ConvertHttpCodeToStatus(405),
+              absl_testing::StatusIs(FAILED_PRECONDITION));
+  EXPECT_THAT(ConvertHttpCodeToStatus(410),
+              absl_testing::StatusIs(FAILED_PRECONDITION));
+  EXPECT_THAT(ConvertHttpCodeToStatus(498),
+              absl_testing::StatusIs(FAILED_PRECONDITION));
 }
 
 TEST(ConvertHttpCodeToStatusTest, ConvertsUnknown500CodesToInternal) {
   // note: 501 is a known error code that maps to other values. We hence test
   // 502 instead.
-  EXPECT_THAT(ConvertHttpCodeToStatus(500), IsCode(INTERNAL));
-  EXPECT_THAT(ConvertHttpCodeToStatus(502), IsCode(INTERNAL));
-  EXPECT_THAT(ConvertHttpCodeToStatus(510), IsCode(INTERNAL));
-  EXPECT_THAT(ConvertHttpCodeToStatus(599), IsCode(INTERNAL));
+  EXPECT_THAT(ConvertHttpCodeToStatus(500), absl_testing::StatusIs(INTERNAL));
+  EXPECT_THAT(ConvertHttpCodeToStatus(502), absl_testing::StatusIs(INTERNAL));
+  EXPECT_THAT(ConvertHttpCodeToStatus(510), absl_testing::StatusIs(INTERNAL));
+  EXPECT_THAT(ConvertHttpCodeToStatus(599), absl_testing::StatusIs(INTERNAL));
 }
 
 TEST(ConvertHttpCodeToStatusTest, ConvertsUnknownAllOtherCodesToUnknown) {
-  EXPECT_THAT(ConvertHttpCodeToStatus(300), IsCode(UNKNOWN));
-  EXPECT_THAT(ConvertHttpCodeToStatus(301), IsCode(UNKNOWN));
-  EXPECT_THAT(ConvertHttpCodeToStatus(310), IsCode(UNKNOWN));
-  EXPECT_THAT(ConvertHttpCodeToStatus(399), IsCode(UNKNOWN));
-  EXPECT_THAT(ConvertHttpCodeToStatus(0), IsCode(UNKNOWN));
-  EXPECT_THAT(ConvertHttpCodeToStatus(1), IsCode(UNKNOWN));
-  EXPECT_THAT(ConvertHttpCodeToStatus(10), IsCode(UNKNOWN));
-  EXPECT_THAT(ConvertHttpCodeToStatus(99), IsCode(UNKNOWN));
-  EXPECT_THAT(ConvertHttpCodeToStatus(600), IsCode(UNKNOWN));
+  EXPECT_THAT(ConvertHttpCodeToStatus(300), absl_testing::StatusIs(UNKNOWN));
+  EXPECT_THAT(ConvertHttpCodeToStatus(301), absl_testing::StatusIs(UNKNOWN));
+  EXPECT_THAT(ConvertHttpCodeToStatus(310), absl_testing::StatusIs(UNKNOWN));
+  EXPECT_THAT(ConvertHttpCodeToStatus(399), absl_testing::StatusIs(UNKNOWN));
+  EXPECT_THAT(ConvertHttpCodeToStatus(0), absl_testing::StatusIs(UNKNOWN));
+  EXPECT_THAT(ConvertHttpCodeToStatus(1), absl_testing::StatusIs(UNKNOWN));
+  EXPECT_THAT(ConvertHttpCodeToStatus(10), absl_testing::StatusIs(UNKNOWN));
+  EXPECT_THAT(ConvertHttpCodeToStatus(99), absl_testing::StatusIs(UNKNOWN));
+  EXPECT_THAT(ConvertHttpCodeToStatus(600), absl_testing::StatusIs(UNKNOWN));
 }
 
 // Test to ensure that when we map an 'unknown' HTTP response to its fallback
@@ -143,7 +150,7 @@ TEST(ConvertRpcStatusToAbslStatusTest, InvalidCodesShouldConvertToUnknown) {
   *rpc_status.mutable_message() = "the_message";
   rpc_status.set_code(100);  // 100 is not a valid status code.
   absl::Status converted_status = ConvertRpcStatusToAbslStatus(rpc_status);
-  EXPECT_THAT(converted_status, IsCode(UNKNOWN));
+  EXPECT_THAT(converted_status, absl_testing::StatusIs(UNKNOWN));
   EXPECT_EQ(converted_status.message(), "the_message");
 }
 
@@ -223,105 +230,106 @@ TEST(FindHeaderTest, ReturnsFirstMatch) {
 TEST(JoinBaseUriWithSuffixTest, ReturnsJoinedUri) {
   // No trailing slash in base URI.
   auto result = JoinBaseUriWithSuffix("https://foo", "/bar");
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(*result, StrEq("https://foo/bar"));
 
   // Trailing slash in base URI.
   result = JoinBaseUriWithSuffix("https://foo/", "/bar");
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(*result, StrEq("https://foo/bar"));
 
   // Additional URI components are correctly merged.
   result = JoinBaseUriWithSuffix("https://foo:123", "/bar/baz");
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(*result, StrEq("https://foo:123/bar/baz"));
 
   result = JoinBaseUriWithSuffix("https://foo:123/", "/bar/baz");
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(*result, StrEq("https://foo:123/bar/baz"));
 
   // Empty suffixes should be allowed.
   result = JoinBaseUriWithSuffix("https://foo", "");
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(*result, StrEq("https://foo/"));
 
   // Trailing slash in base URI.
   result = JoinBaseUriWithSuffix("https://foo/", "");
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(*result, StrEq("https://foo/"));
 }
 
 TEST(JoinBaseUriWithSuffixTest, NoLeadingSlashInSuffixFails) {
   // No leading slash in the URI suffix, should result in error.
   auto result = JoinBaseUriWithSuffix("https://foo", "bar");
-  EXPECT_THAT(result.status(), IsCode(INVALID_ARGUMENT));
+  EXPECT_THAT(result.status(), absl_testing::StatusIs(INVALID_ARGUMENT));
   result = JoinBaseUriWithSuffix("https://foo/", "bar");
-  EXPECT_THAT(result.status(), IsCode(INVALID_ARGUMENT));
+  EXPECT_THAT(result.status(), absl_testing::StatusIs(INVALID_ARGUMENT));
 }
 
 TEST(EncodeUriTest, UnencodedCharsShouldRemainUnencoded) {
   std::string unencoded_single_path_segment_chars =
       "-_.~0123456789abcxyzABCXYZ";
   auto result = EncodeUriSinglePathSegment(unencoded_single_path_segment_chars);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(*result, StrEq(unencoded_single_path_segment_chars));
 
   std::string unencoded_multi_path_segment_chars =
       "-_.~/01234567899abcxyzABCXYZ";
   result = EncodeUriMultiplePathSegments(unencoded_multi_path_segment_chars);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(*result, StrEq(unencoded_multi_path_segment_chars));
 }
 
 TEST(EncodeUriTest, OtherCharsShouldBeEncoded) {
   auto result = EncodeUriSinglePathSegment("#?+%/");
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(*result, StrEq("%23%3F%2B%25%2F"));
 
   // For the "multiple path segments" version the slash should remain unencoded.
   result = EncodeUriMultiplePathSegments("#?+%/");
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(*result, StrEq("%23%3F%2B%25/"));
 
   // Non-encodable characters before/in between/after the encodable characters
   // should remain unencoded.
   result = EncodeUriSinglePathSegment("abc#?123+%/XYZ");
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(*result, StrEq("abc%23%3F123%2B%25%2FXYZ"));
 
   result = EncodeUriMultiplePathSegments("abc#?123+%/XYZ");
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(*result, StrEq("abc%23%3F123%2B%25/XYZ"));
 }
 
 TEST(EncodeUriTest, EmptyStringShouldReturnEmptyString) {
   auto result = EncodeUriSinglePathSegment("");
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(*result, StrEq(""));
 
   // For the "multiple path segments" version the slash should remain unencoded.
   result = EncodeUriMultiplePathSegments("");
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(*result, StrEq(""));
 }
 
 TEST(EncodeUriTest, NonAsciiStringShouldReturnError) {
   auto result = EncodeUriSinglePathSegment("€");
-  EXPECT_THAT(result, IsCode(INVALID_ARGUMENT));
+  EXPECT_THAT(result, absl_testing::StatusIs(INVALID_ARGUMENT));
 
   // For the "multiple path segments" version the slash should remain unencoded.
   result = EncodeUriMultiplePathSegments("€");
-  EXPECT_THAT(result, IsCode(INVALID_ARGUMENT));
+  EXPECT_THAT(result, absl_testing::StatusIs(INVALID_ARGUMENT));
 }
 
 TEST(CreateByteStreamUriTest, HappyCase) {
   auto result = CreateByteStreamUploadUriSuffix("my/resource");
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(*result, "/upload/v1/media/my/resource");
 }
 
 TEST(CreateByteStreamUriTest, NonAsciiResourceNameShouldReturnError) {
-  EXPECT_THAT(CreateByteStreamUploadUriSuffix("€"), IsCode(INVALID_ARGUMENT));
+  EXPECT_THAT(CreateByteStreamUploadUriSuffix("€"),
+              absl_testing::StatusIs(INVALID_ARGUMENT));
 }
 
 TEST(IsRetryableErrorTest, ReturnsTrueForRetryableErrors) {

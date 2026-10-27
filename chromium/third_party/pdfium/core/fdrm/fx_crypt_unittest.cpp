@@ -21,11 +21,11 @@ using ::testing::ElementsAreArray;
 
 namespace {
 
-std::string CRYPT_MD5String(const char* str) {
+std::string CryptMd5String(const char* str) {
   return GenerateMD5Base16(ByteStringView(str).unsigned_span());
 }
 
-void CheckArcFourContext(const CRYPT_rc4_context& context,
+void CheckArcFourContext(const CryptRc4Context& context,
                          int32_t expected_x,
                          int32_t expected_y,
                          pdfium::span<const uint8_t> expected_permutation) {
@@ -61,7 +61,7 @@ TEST(FXCRYPT, CryptToBase16) {
 
 TEST(FXCRYPT, MD5GenerateEmtpyData) {
   uint8_t digest[16];
-  CRYPT_MD5Generate({}, digest);
+  CryptMd5Generate({}, digest);
   EXPECT_THAT(digest,
               ElementsAre(0xd4, 0x1d, 0x8c, 0xd9, 0x8f, 0x00, 0xb2, 0x04, 0xe9,
                           0x80, 0x09, 0x98, 0xec, 0xf8, 0x42, 0x7e));
@@ -70,7 +70,7 @@ TEST(FXCRYPT, MD5GenerateEmtpyData) {
 TEST(FXCRYPT, MD5GenerateOneByteData) {
   const char c = 'a';
   uint8_t digest[16];
-  CRYPT_MD5Generate(pdfium::byte_span_from_ref(c), digest);
+  CryptMd5Generate(pdfium::byte_span_from_ref(c), digest);
   EXPECT_THAT(digest,
               ElementsAre(0x0c, 0xc1, 0x75, 0xb9, 0xc0, 0xf1, 0xb6, 0xa8, 0x31,
                           0xc3, 0x99, 0xe2, 0x69, 0x77, 0x26, 0x61));
@@ -85,24 +85,24 @@ TEST(FXCRYPT, MD5GenerateLongData) {
   }
 
   uint8_t digest[16];
-  CRYPT_MD5Generate(data, digest);
+  CryptMd5Generate(data, digest);
   EXPECT_THAT(digest,
               ElementsAre(0x90, 0xbd, 0x6a, 0xd9, 0x0a, 0xce, 0xf5, 0xad, 0xaa,
                           0x92, 0x20, 0x3e, 0x21, 0xc7, 0xa1, 0x3e));
 }
 
 TEST(FXCRYPT, ContextWithEmptyData) {
-  CRYPT_md5_context ctx = CRYPT_MD5Start();
+  CryptMd5Context ctx = CryptMd5Start();
 
   uint8_t digest[16];
-  CRYPT_MD5Finish(&ctx, digest);
+  CryptMd5Finish(&ctx, digest);
   EXPECT_THAT(digest,
               ElementsAre(0xd4, 0x1d, 0x8c, 0xd9, 0x8f, 0x00, 0xb2, 0x04, 0xe9,
                           0x80, 0x09, 0x98, 0xec, 0xf8, 0x42, 0x7e));
 }
 
 TEST(FXCRYPT, ContextWithLongData) {
-  CRYPT_md5_context ctx = CRYPT_MD5Start();
+  CryptMd5Context ctx = CryptMd5Start();
 
   const uint32_t length = 10 * 1024 * 1024 + 1;
   std::vector<uint8_t> data(length);
@@ -116,14 +116,14 @@ TEST(FXCRYPT, ContextWithLongData) {
   while (total < length) {
     static constexpr uint32_t kChunkLen = 4097;  // intentionally not 2^k.
     uint32_t len = std::min(kChunkLen, length - total);
-    CRYPT_MD5Update(&ctx, data_span.subspan(total, len));
+    CryptMd5Update(&ctx, data_span.subspan(total, len));
     total += len;
   }
 
   EXPECT_EQ(length, total);
 
   uint8_t digest[16];
-  CRYPT_MD5Finish(&ctx, digest);
+  CryptMd5Finish(&ctx, digest);
   EXPECT_THAT(digest,
               ElementsAre(0x90, 0xbd, 0x6a, 0xd9, 0x0a, 0xce, 0xf5, 0xad, 0xaa,
                           0x92, 0x20, 0x3e, 0x21, 0xc7, 0xa1, 0x3e));
@@ -131,37 +131,37 @@ TEST(FXCRYPT, ContextWithLongData) {
 
 // Example data from http://www.ietf.org/rfc/rfc1321.txt A.5 Test Suite
 TEST(FXCRYPT, MD5StringTestSuite1) {
-  std::string actual = CRYPT_MD5String("");
+  std::string actual = CryptMd5String("");
   std::string expected = "d41d8cd98f00b204e9800998ecf8427e";
   EXPECT_EQ(expected, actual);
 }
 
 TEST(FXCRYPT, MD5StringTestSuite2) {
-  std::string actual = CRYPT_MD5String("a");
+  std::string actual = CryptMd5String("a");
   std::string expected = "0cc175b9c0f1b6a831c399e269772661";
   EXPECT_EQ(expected, actual);
 }
 
 TEST(FXCRYPT, MD5StringTestSuite3) {
-  std::string actual = CRYPT_MD5String("abc");
+  std::string actual = CryptMd5String("abc");
   std::string expected = "900150983cd24fb0d6963f7d28e17f72";
   EXPECT_EQ(expected, actual);
 }
 
 TEST(FXCRYPT, MD5StringTestSuite4) {
-  std::string actual = CRYPT_MD5String("message digest");
+  std::string actual = CryptMd5String("message digest");
   std::string expected = "f96b697d7cb7938d525a2f31aaf161d0";
   EXPECT_EQ(expected, actual);
 }
 
 TEST(FXCRYPT, MD5StringTestSuite5) {
-  std::string actual = CRYPT_MD5String("abcdefghijklmnopqrstuvwxyz");
+  std::string actual = CryptMd5String("abcdefghijklmnopqrstuvwxyz");
   std::string expected = "c3fcd3d76192e4007dfb496cca67e13b";
   EXPECT_EQ(expected, actual);
 }
 
 TEST(FXCRYPT, MD5StringTestSuite6) {
-  std::string actual = CRYPT_MD5String(
+  std::string actual = CryptMd5String(
       "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
       "abcdefghijklmnopqrstuvwxyz"
       "0123456789");
@@ -170,7 +170,7 @@ TEST(FXCRYPT, MD5StringTestSuite6) {
 }
 
 TEST(FXCRYPT, MD5StringTestSuite7) {
-  std::string actual = CRYPT_MD5String(
+  std::string actual = CryptMd5String(
       "12345678901234567890"
       "12345678901234567890"
       "12345678901234567890"
@@ -180,11 +180,11 @@ TEST(FXCRYPT, MD5StringTestSuite7) {
 }
 
 TEST(FXCRYPT, ContextWithStringData) {
-  CRYPT_md5_context ctx = CRYPT_MD5Start();
-  CRYPT_MD5Update(&ctx, ByteStringView("abc").unsigned_span());
+  CryptMd5Context ctx = CryptMd5Start();
+  CryptMd5Update(&ctx, ByteStringView("abc").unsigned_span());
 
   uint8_t digest[16];
-  CRYPT_MD5Finish(&ctx, digest);
+  CryptMd5Finish(&ctx, digest);
 
   std::string actual = CryptToBase16(digest);
   std::string expected = "900150983cd24fb0d6963f7d28e17f72";
@@ -194,7 +194,7 @@ TEST(FXCRYPT, ContextWithStringData) {
 TEST(FXCRYPT, Sha1Empty) {
   static const char kInput[] = "";
   DataVector<uint8_t> actual =
-      CRYPT_SHA1Generate(ByteStringView(kInput).unsigned_span());
+      CryptSha1Generate(ByteStringView(kInput).unsigned_span());
   EXPECT_THAT(actual, ElementsAre(0xda, 0x39, 0xa3, 0xee, 0x5e, 0x6b, 0x4b,
                                   0x0d, 0x32, 0x55, 0xbf, 0xef, 0x95, 0x60,
                                   0x18, 0x90, 0xaf, 0xd8, 0x07, 0x09));
@@ -205,7 +205,7 @@ TEST(FXCRYPT, Sha1TestA1) {
   // Example A.1 from FIPS 180-2: one-block message.
   static const char kInput[] = "abc";
   DataVector<uint8_t> actual =
-      CRYPT_SHA1Generate(ByteStringView(kInput).unsigned_span());
+      CryptSha1Generate(ByteStringView(kInput).unsigned_span());
   EXPECT_THAT(actual, ElementsAre(0xa9, 0x99, 0x3e, 0x36, 0x47, 0x06, 0x81,
                                   0x6a, 0xba, 0x3e, 0x25, 0x71, 0x78, 0x50,
                                   0xc2, 0x6c, 0x9c, 0xd0, 0xd8, 0x9d));
@@ -216,7 +216,7 @@ TEST(FXCRYPT, Sha1TestA2) {
   static const char kInput[] =
       "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
   DataVector<uint8_t> actual =
-      CRYPT_SHA1Generate(ByteStringView(kInput).unsigned_span());
+      CryptSha1Generate(ByteStringView(kInput).unsigned_span());
   EXPECT_THAT(actual, ElementsAre(0x84, 0x98, 0x3e, 0x44, 0x1c, 0x3b, 0xd2,
                                   0x6e, 0xba, 0xae, 0x4a, 0xa1, 0xf9, 0x51,
                                   0x29, 0xe5, 0xe5, 0x46, 0x70, 0xf1));
@@ -226,7 +226,7 @@ TEST(FXCRYPT, Sha256Empty) {
   static const char kInput[] = "";
   DataVector<uint8_t> actual =
 
-      CRYPT_SHA256Generate(ByteStringView(kInput).unsigned_span());
+      CryptSha256Generate(ByteStringView(kInput).unsigned_span());
   EXPECT_THAT(actual,
               ElementsAre(0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a,
                           0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae,
@@ -238,7 +238,7 @@ TEST(FXCRYPT, Sha256TestB1) {
   // Example B.1 from FIPS 180-2: one-block message.
   static const char kInput[] = "abc";
   DataVector<uint8_t> actual =
-      CRYPT_SHA256Generate(ByteStringView(kInput).unsigned_span());
+      CryptSha256Generate(ByteStringView(kInput).unsigned_span());
   EXPECT_THAT(actual,
               ElementsAre(0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41,
                           0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23, 0xb0, 0x03,
@@ -251,7 +251,7 @@ TEST(FXCRYPT, Sha256TestB2) {
   static const char kInput[] =
       "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
   DataVector<uint8_t> actual =
-      CRYPT_SHA256Generate(ByteStringView(kInput).unsigned_span());
+      CryptSha256Generate(ByteStringView(kInput).unsigned_span());
   EXPECT_THAT(actual,
               ElementsAre(0x24, 0x8d, 0x6a, 0x61, 0xd2, 0x06, 0x38, 0xb8, 0xe5,
                           0xc0, 0x26, 0x93, 0x0c, 0x3e, 0x60, 0x39, 0xa3, 0x3c,
@@ -261,35 +261,33 @@ TEST(FXCRYPT, Sha256TestB2) {
 
 TEST(FXCRYPT, CRYPTArcFourSetup) {
   {
-    static const uint8_t
-        kNullPermutation[CRYPT_rc4_context::kPermutationLength] = {
-            0,   35,  3,   43,  9,   11,  65,  229, 32,  36,  134, 98,  59,
-            34,  173, 153, 214, 200, 64,  161, 191, 62,  6,   25,  56,  234,
-            49,  246, 69,  133, 203, 194, 10,  42,  228, 198, 195, 245, 236,
-            91,  206, 23,  235, 27,  138, 18,  143, 250, 244, 76,  123, 217,
-            132, 249, 72,  127, 94,  151, 33,  60,  248, 85,  177, 210, 142,
-            83,  110, 140, 41,  135, 196, 238, 156, 242, 141, 67,  5,   185,
-            131, 63,  137, 37,  172, 121, 70,  144, 237, 130, 17,  44,  253,
-            166, 78,  201, 12,  119, 215, 7,   126, 114, 97,  192, 53,  4,
-            254, 45,  102, 122, 230, 88,  193, 129, 160, 124, 84,  108, 239,
-            189, 152, 120, 115, 207, 50,  176, 86,  157, 164, 187, 71,  1,
-            15,  58,  29,  21,  46,  145, 247, 162, 95,  183, 13,  226, 159,
-            175, 221, 100, 96,  202, 101, 178, 154, 47,  205, 106, 148, 104,
-            93,  112, 26,  165, 128, 186, 146, 218, 66,  211, 171, 90,  252,
-            19,  40,  99,  223, 174, 255, 51,  77,  227, 48,  220, 168, 118,
-            224, 103, 75,  105, 125, 199, 73,  82,  57,  181, 81,  149, 68,
-            52,  232, 22,  2,   216, 113, 30,  109, 163, 92,  61,  14,  8,
-            38,  225, 79,  231, 170, 240, 20,  219, 204, 150, 180, 188, 116,
-            190, 241, 197, 179, 87,  74,  147, 80,  54,  212, 16,  167, 222,
-            136, 213, 55,  182, 139, 24,  209, 251, 208, 28,  111, 89,  158,
-            155, 243, 107, 233, 169, 117, 184, 31,  39};
-    CRYPT_rc4_context context;
-    CRYPT_ArcFourSetup(&context, {});
+    static const uint8_t kNullPermutation[CryptRc4Context::kPermutationLength] =
+        {0,   35,  3,   43,  9,   11,  65,  229, 32,  36,  134, 98,  59,  34,
+         173, 153, 214, 200, 64,  161, 191, 62,  6,   25,  56,  234, 49,  246,
+         69,  133, 203, 194, 10,  42,  228, 198, 195, 245, 236, 91,  206, 23,
+         235, 27,  138, 18,  143, 250, 244, 76,  123, 217, 132, 249, 72,  127,
+         94,  151, 33,  60,  248, 85,  177, 210, 142, 83,  110, 140, 41,  135,
+         196, 238, 156, 242, 141, 67,  5,   185, 131, 63,  137, 37,  172, 121,
+         70,  144, 237, 130, 17,  44,  253, 166, 78,  201, 12,  119, 215, 7,
+         126, 114, 97,  192, 53,  4,   254, 45,  102, 122, 230, 88,  193, 129,
+         160, 124, 84,  108, 239, 189, 152, 120, 115, 207, 50,  176, 86,  157,
+         164, 187, 71,  1,   15,  58,  29,  21,  46,  145, 247, 162, 95,  183,
+         13,  226, 159, 175, 221, 100, 96,  202, 101, 178, 154, 47,  205, 106,
+         148, 104, 93,  112, 26,  165, 128, 186, 146, 218, 66,  211, 171, 90,
+         252, 19,  40,  99,  223, 174, 255, 51,  77,  227, 48,  220, 168, 118,
+         224, 103, 75,  105, 125, 199, 73,  82,  57,  181, 81,  149, 68,  52,
+         232, 22,  2,   216, 113, 30,  109, 163, 92,  61,  14,  8,   38,  225,
+         79,  231, 170, 240, 20,  219, 204, 150, 180, 188, 116, 190, 241, 197,
+         179, 87,  74,  147, 80,  54,  212, 16,  167, 222, 136, 213, 55,  182,
+         139, 24,  209, 251, 208, 28,  111, 89,  158, 155, 243, 107, 233, 169,
+         117, 184, 31,  39};
+    CryptRc4Context context;
+    CryptArcFourSetup(&context, {});
     CheckArcFourContext(context, 0, 0, kNullPermutation);
   }
   {
     static const uint8_t
-        kFoobarPermutation[CRYPT_rc4_context::kPermutationLength] = {
+        kFoobarPermutation[CryptRc4Context::kPermutationLength] = {
             102, 214, 39,  49,  17,  132, 244, 106, 114, 76,  183, 212, 116,
             73,  42,  103, 128, 246, 139, 199, 31,  234, 25,  109, 48,  19,
             121, 4,   20,  54,  134, 77,  163, 38,  61,  101, 145, 78,  215,
@@ -310,9 +308,9 @@ TEST(FXCRYPT, CRYPTArcFourSetup) {
             187, 254, 64,  159, 67,  211, 108, 178, 146, 202, 11,  164, 226,
             184, 50,  190, 174, 71,  233, 235, 198, 95,  51,  110, 255, 253,
             72,  115, 0,   47,  94,  29,  45,  14,  111};
-    CRYPT_rc4_context context;
+    CryptRc4Context context;
     ByteStringView foobar = "foobar";
-    CRYPT_ArcFourSetup(&context, foobar.unsigned_span());
+    CryptArcFourSetup(&context, foobar.unsigned_span());
     CheckArcFourContext(context, 0, 0, kFoobarPermutation);
   }
 }
@@ -327,8 +325,8 @@ TEST(FXCRYPT, CRYPTArcFourCrypt) {
       "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\n"
       "!@#$%^&*()[]{};':\",.<>/?\\|\r\t\n";
   {
-    CRYPT_rc4_context context;
-    CRYPT_ArcFourSetup(&context, {});
+    CryptRc4Context context;
+    CryptArcFourSetup(&context, {});
 
     std::vector<uint8_t> data_short(std::begin(kDataShort),
                                     std::end(kDataShort));
@@ -337,10 +335,10 @@ TEST(FXCRYPT, CRYPTArcFourCrypt) {
         47,  78,  216, 24,  170, 106, 26,  199, 208, 131, 157, 242,
         55,  11,  25,  90,  66,  182, 19,  255, 210, 181, 85,  69,
         31,  240, 206, 171, 97,  62,  202, 172, 30,  252};
-    CRYPT_ArcFourCrypt(&context, data_short);
+    CryptArcFourCrypt(&context, data_short);
     EXPECT_THAT(data_short, ElementsAreArray(kExpectedEncryptedDataShort));
 
-    static const uint8_t kPermutation[CRYPT_rc4_context::kPermutationLength] = {
+    static const uint8_t kPermutation[CryptRc4Context::kPermutationLength] = {
         0,   198, 10,  37,  253, 192, 171, 183, 99,  8,   144, 103, 208, 191,
         149, 9,   228, 243, 94,  150, 169, 151, 210, 206, 221, 235, 32,  186,
         212, 122, 72,  200, 236, 138, 244, 217, 158, 213, 139, 242, 17,  143,
@@ -363,8 +361,8 @@ TEST(FXCRYPT, CRYPTArcFourCrypt) {
     CheckArcFourContext(context, 46, 135, kPermutation);
   }
   {
-    CRYPT_rc4_context context;
-    CRYPT_ArcFourSetup(&context, {});
+    CryptRc4Context context;
+    CryptArcFourSetup(&context, {});
 
     std::vector<uint8_t> data_long(std::begin(kDataLong), std::end(kDataLong));
     static const uint8_t kExpectedEncryptedDataLong[] = {
@@ -388,10 +386,10 @@ TEST(FXCRYPT, CRYPTArcFourCrypt) {
         208, 161, 105, 226, 164, 114, 80,  137, 58,  107, 109, 42,  110, 100,
         202, 170, 224, 89,  28,  5,   138, 19,  253, 105, 220, 105, 24,  187,
         109, 89,  205, 89,  202};
-    CRYPT_ArcFourCrypt(&context, data_long);
+    CryptArcFourCrypt(&context, data_long);
     EXPECT_THAT(data_long, ElementsAreArray(kExpectedEncryptedDataLong));
 
-    static const uint8_t kPermutation[CRYPT_rc4_context::kPermutationLength] = {
+    static const uint8_t kPermutation[CryptRc4Context::kPermutationLength] = {
         172, 59,  196, 72,  101, 21,  215, 210, 212, 52,  243, 73,  47,  213,
         211, 50,  228, 144, 66,  93,  169, 31,  237, 206, 221, 235, 222, 250,
         97,  87,  174, 164, 190, 111, 27,  217, 173, 189, 65,  11,  115, 171,
@@ -414,9 +412,9 @@ TEST(FXCRYPT, CRYPTArcFourCrypt) {
     CheckArcFourContext(context, 15, 222, kPermutation);
   }
   {
-    CRYPT_rc4_context context;
+    CryptRc4Context context;
     ByteStringView foobar = "foobar";
-    CRYPT_ArcFourSetup(&context, foobar.unsigned_span());
+    CryptArcFourSetup(&context, foobar.unsigned_span());
 
     std::vector<uint8_t> data_short(std::begin(kDataShort),
                                     std::end(kDataShort));
@@ -425,10 +423,10 @@ TEST(FXCRYPT, CRYPTArcFourCrypt) {
         90,  205, 196, 25,  36,  114, 199, 218, 161, 107, 122, 119,
         106, 167, 44,  175, 240, 123, 192, 102, 174, 167, 105, 187,
         202, 70,  121, 81,  17,  30,  5,   138, 116, 166};
-    CRYPT_ArcFourCrypt(&context, data_short);
+    CryptArcFourCrypt(&context, data_short);
     EXPECT_THAT(data_short, ElementsAreArray(kExpectedEncryptedDataShort));
 
-    static const uint8_t kPermutation[CRYPT_rc4_context::kPermutationLength] = {
+    static const uint8_t kPermutation[CryptRc4Context::kPermutationLength] = {
         102, 41,  45,  82,  124, 141, 237, 38,  6,   64,  90,  140, 254, 96,
         220, 109, 99,  49,  27,  227, 205, 75,  191, 37,  17,  54,  83,  196,
         108, 79,  31,  190, 180, 0,   125, 194, 243, 156, 224, 246, 253, 193,
@@ -451,9 +449,9 @@ TEST(FXCRYPT, CRYPTArcFourCrypt) {
     CheckArcFourContext(context, 46, 39, kPermutation);
   }
   {
-    CRYPT_rc4_context context;
+    CryptRc4Context context;
     ByteStringView foobar = "foobar";
-    CRYPT_ArcFourSetup(&context, foobar.unsigned_span());
+    CryptArcFourSetup(&context, foobar.unsigned_span());
 
     std::vector<uint8_t> data_long(std::begin(kDataLong), std::end(kDataLong));
     static const uint8_t kExpectedEncryptedDataLong[] = {
@@ -478,10 +476,10 @@ TEST(FXCRYPT, CRYPTArcFourCrypt) {
         243, 73,  206, 89,  9,   93,  156, 167, 205, 166, 75,  227, 36,  34,
         81,  124, 195, 246, 152};
     static_assert(std::size(kDataLong) > 256, "too short");
-    CRYPT_ArcFourCrypt(&context, data_long);
+    CryptArcFourCrypt(&context, data_long);
     EXPECT_THAT(data_long, ElementsAreArray(kExpectedEncryptedDataLong));
 
-    static const uint8_t kPermutation[CRYPT_rc4_context::kPermutationLength] = {
+    static const uint8_t kPermutation[CryptRc4Context::kPermutationLength] = {
         188, 12,  81,  130, 228, 58,  124, 218, 72,  210, 50,  70,  166, 38,
         110, 111, 73,  49,  27,  227, 249, 21,  1,   226, 17,  54,  53,  16,
         108, 51,  31,  123, 221, 23,  125, 148, 5,   200, 208, 246, 253, 193,
@@ -508,7 +506,7 @@ TEST(FXCRYPT, CRYPTArcFourCrypt) {
 TEST(FXCRYPT, Sha384Empty) {
   static const char kInput[] = "";
   DataVector<uint8_t> actual =
-      CRYPT_SHA384Generate(ByteStringView(kInput).unsigned_span());
+      CryptSha384Generate(ByteStringView(kInput).unsigned_span());
   EXPECT_THAT(
       actual,
       ElementsAre(0x38, 0xb0, 0x60, 0xa7, 0x51, 0xac, 0x96, 0x38, 0x4c, 0xd9,
@@ -523,7 +521,7 @@ TEST(FXCRYPT, Sha384Test) {
   static const char kInput[] =
       "This is a simple test. To see whether it is getting correct value.";
   DataVector<uint8_t> actual =
-      CRYPT_SHA384Generate(ByteStringView(kInput).unsigned_span());
+      CryptSha384Generate(ByteStringView(kInput).unsigned_span());
   EXPECT_THAT(
       actual,
       ElementsAre(0x95, 0x54, 0xff, 0xd3, 0x89, 0xf0, 0xd6, 0x42, 0xe9, 0x33,
@@ -540,7 +538,7 @@ TEST(FXCRYPT, Sha384Pad112) {
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   EXPECT_EQ(112u, strlen(kInput));
   DataVector<uint8_t> actual =
-      CRYPT_SHA384Generate(ByteStringView(kInput).unsigned_span());
+      CryptSha384Generate(ByteStringView(kInput).unsigned_span());
   EXPECT_THAT(
       actual,
       ElementsAre(0x18, 0x7d, 0x4e, 0x07, 0xcb, 0x30, 0x61, 0x03, 0xc6, 0x99,
@@ -553,7 +551,7 @@ TEST(FXCRYPT, Sha384Pad112) {
 TEST(FXCRYPT, Sha512Empty) {
   static const char kInput[] = "";
   DataVector<uint8_t> actual =
-      CRYPT_SHA512Generate(ByteStringView(kInput).unsigned_span());
+      CryptSha512Generate(ByteStringView(kInput).unsigned_span());
   EXPECT_THAT(
       actual,
       ElementsAre(0xcf, 0x83, 0xe1, 0x35, 0x7e, 0xef, 0xb8, 0xbd, 0xf1, 0x54,
@@ -570,7 +568,7 @@ TEST(FXCRYPT, Sha512Test) {
   static const char kInput[] =
       "This is a simple test. To see whether it is getting correct value.";
   DataVector<uint8_t> actual =
-      CRYPT_SHA512Generate(ByteStringView(kInput).unsigned_span());
+      CryptSha512Generate(ByteStringView(kInput).unsigned_span());
   EXPECT_THAT(
       actual,
       ElementsAre(0x86, 0xB5, 0x05, 0x63, 0xA2, 0x6F, 0xD6, 0xFA, 0xEB, 0x9B,
@@ -589,7 +587,7 @@ TEST(FXCRYPT, Sha512Pad112) {
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   EXPECT_EQ(112u, strlen(kInput));
   DataVector<uint8_t> actual =
-      CRYPT_SHA512Generate(ByteStringView(kInput).unsigned_span());
+      CryptSha512Generate(ByteStringView(kInput).unsigned_span());
   EXPECT_THAT(
       actual,
       ElementsAre(0xc0, 0x1d, 0x08, 0x0e, 0xfd, 0x49, 0x27, 0x76, 0xa1, 0xc4,

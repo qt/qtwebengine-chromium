@@ -178,6 +178,10 @@ class Parser {
             }
         }
 
+        // Set properties that are supported by the SPIR-V parser.
+        ir_.properties.Add(core::ir::Property::kAllowMultipleEntryPoints);
+        ir_.properties.Add(core::ir::Property::kAllowOverrides);
+
         RegisterNames();
 
         id_stack_.emplace_back();
@@ -1431,15 +1435,32 @@ class Parser {
             return *v;
         }
 
-        if (auto* c = SpvConstant(id)) {
-            auto* val = b_.Constant(Constant(c));
+        const spvtools::opt::Instruction* inst = spirv_context_->get_def_use_mgr()->GetDef(id);
+        const core::type::Type* inst_ty = Type(inst->type_id());
+
+        if (const spvtools::opt::analysis::Constant* c = SpvConstant(id)) {
+            core::ir::Constant* val = b_.Constant(Constant(c));
+            // SPIR-V opt will deduplicate structs with the same shape. We handle this in the type
+            // code below by using the specific instructions type, not the spirv-opt type. But, when
+            // we retrieve constants, then opt might have used the other type for the struct type.
+            // So, check the instructions type, if it doesn't match what opt returns, then we
+            // rebuild the struct below with our corrected type.
+            if (val->Type() == inst_ty) {
+                values_.Add(id, val);
+                return val;
+            }
+        }
+
+        // In the case of a deduplicated structure, we may need to re-create a null constant
+        if (inst->opcode() == spv::Op::OpConstantNull) {
+            TINT_ASSERT(inst_ty->Is<core::type::Struct>());
+            core::ir::Value* val = b_.Zero(inst_ty);
             values_.Add(id, val);
             return val;
         }
 
         // If we didn't have a value already, and this instruction is a constructed constant, then
         // do the construction.
-        const spvtools::opt::Instruction* inst = spirv_context_->get_def_use_mgr()->GetDef(id);
         if (inst->opcode() == spv::Op::OpConstantComposite) {
             Vector<const core::constant::Value*, 4> args;
             args.Reserve(inst->NumInOperands());
@@ -1450,7 +1471,7 @@ class Parser {
                 args.Push(cnst->Value());
             }
 
-            auto* composite = b_.Composite(Type(inst->type_id()), args);
+            auto* composite = b_.Composite(inst_ty, args);
             AddValue(id, composite);
             return composite;
         }

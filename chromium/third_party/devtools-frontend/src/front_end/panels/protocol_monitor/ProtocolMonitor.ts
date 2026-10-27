@@ -5,7 +5,6 @@
 import '../../ui/legacy/legacy.js';
 import '../../ui/legacy/components/data_grid/data_grid.js';
 
-import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as ProtocolClient from '../../core/protocol_client/protocol_client.js';
@@ -13,12 +12,13 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
+import * as UIHelpers from '../../ui/helpers/helpers.js';
 import * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import {Directives, html, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
-import {Events as JSONEditorEvents, JSONEditor, type Parameter} from './JSONEditor.js';
+import {JSONEditor, type Parameter} from './JSONEditor.js';
 import protocolMonitorStyles from './protocolMonitor.css.js';
 
 const {styleMap} = Directives;
@@ -183,6 +183,7 @@ export interface ViewInput {
   onCommandSubmitted: (input: string) => void;
   onTargetChange: (targetId: string) => void;
   onToggleSidebar: () => void;
+  onEditorSubmit: (command: string, parameters: Record<string, unknown>, targetId?: string) => void;
   targets: SDK.Target.Target[];
   selectedTargetId: string;
 }
@@ -350,6 +351,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
           </div>
           <devtools-widget slot="sidebar"
               ${widget(JSONEditor, { metadataByCommand, typesByName, enumsByName})}
+              @submiteditor=${(e: CustomEvent) => input.onEditorSubmit(e.detail.command, e.detail.parameters, e.detail.targetId)}
               ${widgetRef(JSONEditor, e => {output.editorWidget = e;})}>
           </devtools-widget>
         </devtools-split-view>`,
@@ -385,9 +387,6 @@ export class ProtocolMonitorImpl extends UI.Panel.Panel implements SDK.TargetMan
 
     this.#selectedTargetId = 'main';
     this.performUpdate();
-    this.#editorWidget.addEventListener(JSONEditorEvents.SUBMIT_EDITOR, event => {
-      this.onCommandSend(event.data.command, event.data.parameters, event.data.targetId);
-    });
     SDK.TargetManager.TargetManager.instance().addEventListener(
         SDK.TargetManager.Events.AVAILABLE_TARGETS_CHANGED, () => {
           this.requestUpdate();
@@ -471,6 +470,9 @@ export class ProtocolMonitorImpl extends UI.Panel.Panel implements SDK.TargetMan
         this.#sidebarVisible = !this.#sidebarVisible;
         this.requestUpdate();
       },
+      onEditorSubmit: (command: string, parameters: Record<string, unknown>, targetId?: string) => {
+        this.onCommandSend(command, parameters, targetId);
+      },
       targets: SDK.TargetManager.TargetManager.instance().targets(),
       selectedTargetId: this.#selectedTargetId,
     };
@@ -521,7 +523,7 @@ export class ProtocolMonitorImpl extends UI.Panel.Panel implements SDK.TargetMan
     menu.footerSection().appendItem(i18nString(UIStrings.documentation), () => {
       const [domain, method] = message.method.split('.');
       const type = 'id' in message ? 'method' : 'event';
-      Host.InspectorFrontendHost.InspectorFrontendHostInstance.openInNewTab(
+      UIHelpers.openInNewTab(
           `https://chromedevtools.github.io/devtools-protocol/tot/${domain}#${type}-${method}` as
           Platform.DevToolsPath.UrlString);
     }, {jslogContext: 'documentation'});

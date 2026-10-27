@@ -342,11 +342,14 @@ class TestPrintViewManagerWin : public PrintViewManagerBase {
                            number_pages());
     return true;
   }
+  void GetPrintPreviewParams(GetPrintPreviewParamsCallback callback) override {
+    NOTREACHED();
+  }
   void SetupScriptedPrintPreview(
       SetupScriptedPrintPreviewCallback callback) override {
     NOTREACHED();
   }
-  void ShowScriptedPrintPreview(bool is_modifiable) override { NOTREACHED(); }
+  void ShowScriptedPrintPreview() override { NOTREACHED(); }
   void RequestPrintPreview(
       mojom::RequestPrintPreviewParamsPtr params) override {
     NOTREACHED();

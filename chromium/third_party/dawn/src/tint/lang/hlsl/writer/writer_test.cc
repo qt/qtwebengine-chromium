@@ -26,7 +26,9 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "gmock/gmock.h"
+#include "src/tint/lang/core/type/struct.h"
 #include "src/tint/lang/hlsl/writer/helper_test.h"
+#include "src/tint/utils/internal_limits.h"
 
 namespace tint::hlsl::writer {
 namespace {
@@ -93,6 +95,63 @@ void tint_entry_point(tint_struct_1 v_8) {
 )");
 }
 
+TEST_F(HlslWriterTest, RenameInvalidIdentifiers) {
+    auto* str =
+        ty.Struct(mod.symbols.New("My!Struct"), {
+                                                    {mod.symbols.Register("a$"), ty.i32()},
+                                                    {mod.symbols.Register("@b"), ty.vec4i()},
+                                                });
+    auto* foo = b.Function("f%oo", ty.u32());
+    auto* param = b.FunctionParam("pa^ram", ty.u32());
+    foo->AppendParam(param);
+    b.Append(foo->Block(), [&] {  //
+        b.Return(foo, param);
+    });
+
+    auto* func = b.ComputeFunction("main");
+    auto* idx = b.FunctionParam("123", ty.u32());
+    idx->SetBuiltin(core::BuiltinValue::kLocalInvocationIndex);
+    func->AppendParam(idx);
+    b.Append(func->Block(), [&] {  //
+        auto* var = b.Var("s*tr", ty.ptr<function>(str));
+        auto* val = b.Load(var);
+        mod.SetName(val, "va(l");
+        auto* a = b.Access<i32>(val, 0_u);
+        mod.SetName(a, "a)");
+        b.Let("let=", b.Call<u32>(foo, idx));
+        b.Return(func);
+    });
+
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
+    EXPECT_EQ(output_.hlsl, R"(struct tint_struct {
+  int tint_member;
+  int4 tint_member_1;
+};
+
+struct main_inputs {
+  uint tint_member_2 : SV_GroupIndex;
+};
+
+
+uint v(uint v_1) {
+  return v_1;
+}
+
+void main_inner(uint v_2) {
+  tint_struct v_3 = (tint_struct)0;
+  tint_struct v_4 = v_3;
+  uint v_5 = v(v_2);
+}
+
+[numthreads(1, 1, 1)]
+void main(main_inputs inputs) {
+  main_inner(inputs.tint_member_2);
+}
+
+)");
+}
+
 TEST_F(HlslWriterTest, CanGenerate_TexelBufferUnsupported) {
     auto* buffer_ty = ty.texel_buffer(core::TexelFormat::kRgba8Unorm, core::Access::kRead);
     auto* var = b.Var("buf", ty.ptr<handle>(buffer_ty));
@@ -124,17 +183,25 @@ TEST_F(HlslWriterTest, CanGenerate_AtomicStoreMax_Unsupported) {
     auto* func = b.ComputeFunction("main");
     b.Append(func->Block(), [&] {
         auto* access = b.Access(ty.ptr<storage, read_write>(ty.atomic(ty.u64())), var, 0_u);
-        b.Call<void>(core::BuiltinFn::kAtomicStoreMax, access, 1_u);
+        b.Call<void>(core::BuiltinFn::kAtomicStoreMax, access,
+                     b.Bitcast(ty.u64(), b.Splat(ty.vec2u(), 1_u)));
         b.Return(func);
     });
 
     Options options;
     options.entry_point_name = "main";
     auto result = Generate(options);
-    ASSERT_NE(result, Success);
-    EXPECT_THAT(result.Failure().reason,
-                testing::HasSubstr(
-                    "64-bit (vec2u) atomic operations are not yet supported by the HLSL backend"));
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
+    EXPECT_EQ(output_.hlsl, R"(
+RWByteAddressBuffer sb : register(u0);
+[numthreads(1, 1, 1)]
+void main() {
+  uint64_t v = uint64_t((1u).xx.x);
+  uint64_t v_1 = uint64_t((1u).xx.y);
+  sb.InterlockedMax64(0u, ((v_1 << uint64_t(32u)) | v));
+}
+
+)");
 }
 
 TEST_F(HlslWriterTest, CanGenerate_AtomicStoreMin_Unsupported) {
@@ -149,17 +216,46 @@ TEST_F(HlslWriterTest, CanGenerate_AtomicStoreMin_Unsupported) {
     auto* func = b.ComputeFunction("main");
     b.Append(func->Block(), [&] {
         auto* access = b.Access(ty.ptr<storage, read_write>(ty.atomic(ty.u64())), var, 0_u);
-        b.Call<void>(core::BuiltinFn::kAtomicStoreMin, access, 1_u);
+        b.Call<void>(core::BuiltinFn::kAtomicStoreMin, access,
+                     b.Bitcast(ty.u64(), b.Splat(ty.vec2u(), 1_u)));
         b.Return(func);
     });
 
     Options options;
     options.entry_point_name = "main";
     auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
+    EXPECT_EQ(output_.hlsl, R"(
+RWByteAddressBuffer sb : register(u0);
+[numthreads(1, 1, 1)]
+void main() {
+  uint64_t v = uint64_t((1u).xx.x);
+  uint64_t v_1 = uint64_t((1u).xx.y);
+  sb.InterlockedMin64(0u, ((v_1 << uint64_t(32u)) | v));
+}
+
+)");
+}
+
+TEST_F(HlslWriterTest, CanGenerate_StructMemberPadding_TooLarge) {
+    ty.Get<core::type::Struct>(
+        mod.symbols.New("S"),
+        tint::Vector{ty.Get<core::type::StructMember>(mod.symbols.New("a"), ty.i32(), 0u, 0u, 4u,
+                                                      4u, core::IOAttributes{}),
+                     ty.Get<core::type::StructMember>(
+                         mod.symbols.New("b"), ty.i32(), 1u,
+                         static_cast<uint32_t>(tint::internal_limits::kMaxStructMemberPadding + 4),
+                         4u, 4u, core::IOAttributes{})},
+        8u /* size */);
+
+    auto* ep = b.ComputeFunction("main");
+    b.Append(ep->Block(), [&] { b.Return(ep); });
+
+    Options options;
+    options.entry_point_name = "main";
+    auto result = Generate(options);
     ASSERT_NE(result, Success);
-    EXPECT_THAT(result.Failure().reason,
-                testing::HasSubstr(
-                    "64-bit (vec2u) atomic operations are not yet supported by the HLSL backend"));
+    EXPECT_THAT(result.Failure().reason, testing::HasSubstr("is larger than the maximum"));
 }
 
 TEST_F(HlslWriterTest, WorkgroupStorageSize_OverflowAfterAlign) {

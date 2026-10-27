@@ -1,0 +1,3862 @@
+# Turkish translation for gsettings-desktop-schemas.
+# Copyright (c) 2011 Rosetta Contributors and Canonical Ltd 2011
+# Copyright (C) 2014-2025 gsettings-desktop-schemas's COPYRIGHT HOLDER
+# This file is distributed under the same license as the gsettings-desktop-schemas package.
+#
+# Gökhan Gurbetoğlu <ggurbet@gmail.com>, 2014.
+# Simge Sezgin <simgesezgin88@gmail.com>, 2015.
+# Muhammet Kara <muhammetk@gmail.com>, 2014, 2015.
+# Çağatay Yiğit Şahin <cyigitsahin@outlook.com>, 2017-2019.
+# Sabri Ünal <yakushabb@gmail.com>, 2014, 2019-2025.
+# Emin Tufan Çetin <etcetin@gmail.com>, 2017-2025.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: gsettings-desktop-schemas master\n"
+"Report-Msgid-Bugs-To: https://gitlab.gnome.org/GNOME/gsettings-desktop-"
+"schemas/issues/\n"
+"POT-Creation-Date: 2025-02-19 19:39+0000\n"
+"PO-Revision-Date: 2025-02-23 00:18+0300\n"
+"Last-Translator: Sabri Ünal <yakushabb@gmail.com>\n"
+"Language-Team: Turkish <takim@gnome.org.tr>\n"
+"Language: tr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"X-Generator: Poedit 3.5\n"
+"X-POOTLE-MTIME: 1436898428.000000\n"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:6
+msgid "On-screen keyboard"
+msgstr "Ekran klavyesi"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:7
+msgid "Whether the on-screen keyboard is turned on."
+msgstr "Ekran klavyesinin açık olması."
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:11
+msgid "Screen magnifier"
+msgstr "Ekran büyüteci"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:12
+msgid "Whether the screen magnifier is turned on."
+msgstr "Ekran büyütecinin açık olması."
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:16
+msgid "Screen reader"
+msgstr "Ekran okuyucu"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:17
+msgid "Whether the screen reader is turned on."
+msgstr "Ekran okuyucusunun açık olması."
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:6
+msgid "Always show the Universal Access status icon"
+msgstr "Her zaman Evrensel Erişim durum simgesini göster"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:7
+msgid ""
+"This key overrides the automatic hiding of the Universal Access status icon "
+"when no accessibility features are enabled."
+msgstr ""
+"Bu seçenek, erişilebilirlik özellikleri aktif olmadığı zaman Evrensel Erişim "
+"durum simgesinin kendiliğinden gizlenmesini değiştirir."
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:14
+msgid "Always show the text caret"
+msgstr "Metin imlecini her zaman göster"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:15
+msgid ""
+"This key overrides the hiding of the text caret in noneditable text in "
+"applications."
+msgstr ""
+"Bu anahtar metin imlecinin uygulamalardaki düzenlenemez metinlerde "
+"saklanmasını geçersiz kılar."
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:6
+msgid "High contrast"
+msgstr "Yüksek karşıtlık"
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:7
+msgid "Whether to use the high contrast style."
+msgstr "Yüksek karşıtlık biçeminin kullanılması."
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:13
+msgid "Show status shapes"
+msgstr "Durum biçimlerini göster"
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:14
+msgid ""
+"Whether to use shapes to indicate status in addition or instead of color."
+msgstr ""
+"Durumu belirtmek için ek olarak ya da renk yerine biçimlerin kullanılıp "
+"kullanılmaması."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:6
+msgid "Enable accessibility keyboard shortcuts"
+msgstr "Erişilebilirlik klavye kısayollarını etkinleştir"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:10
+msgid "Beep when a keyboard accessibility feature changes"
+msgstr "Klavye erişilebilirlik özellikleri değiştirildiğinde uyarı sesi çal"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:11
+msgid ""
+"Whether to beep when a keyboard accessibility feature is enabled or disabled."
+msgstr ""
+"Klavye erişilebilirlik özellikleri etkinleştirildiğinde ya da "
+"etkisizleştirildiğinde uyarı sesi çalınması."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:15
+msgid "Disable keyboard accessibility after a timeout"
+msgstr "Klavye erişilebilirliğini belirli bir süre sonra etkisizleştir"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:16
+msgid ""
+"Whether to disable keyboard accessibility after a timeout, useful for shared "
+"machines."
+msgstr ""
+"Klavye erişilebilirliğini belirli bir süre sonra etkisizleştir, ortak "
+"kullanılan bilgisayarlarda kullanışlıdır."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:20
+msgid "Duration of the disabling timeout"
+msgstr "Etkisizleştirme zaman aşımı süresi"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:21
+msgid "Duration of the timeout before disabling the keyboard accessibility."
+msgstr ""
+"Klavye erişilebilirliğini etkisizleştirmek için gerekli zaman aşımı süresi."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:25
+msgid "Enable “Bounce Keys”"
+msgstr "“Zıplayan Tuşlar”ı Etkinleştir"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:26
+msgid "Whether the “Bounce Keys” keyboard accessibility feature is turned on."
+msgstr "“Zıplayan Tuşlar” klavye erişilebilirlik özelliğinin etkin olması."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:30
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:65
+msgid "Minimum interval in milliseconds"
+msgstr "Milisaniye türünden en düşük aralık"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:31
+msgid "Ignore multiple presses of the same key within this many milliseconds."
+msgstr "Bu kadar milisaniye süre içinde aynı tuşa çoklu basımı göz ardı et."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:35
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:80
+msgid "Beep when a key is rejected"
+msgstr "Bir tuş reddedildiğinde uyarı sesi çal"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:36
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:81
+msgid "Whether to beep when a key is rejected."
+msgstr "Bir tuş reddedildiğinde sesli uyarı verilmesi."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:40
+msgid "Enable “Mouse Keys”"
+msgstr "“Fare Tuşları”nı Etkinleştir"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:41
+msgid "Whether the “Mouse Keys” accessibility feature is turned on."
+msgstr "“Fare Tuşları” erişilebilirlik özelliğinin açık olması."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:45
+msgid "Pixels per seconds"
+msgstr "Saniye başına piksel"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:46
+msgid "How many pixels per second to move at the maximum speed."
+msgstr ""
+"En yüksek hızda hareket edilmesi için ne kadar piksel / saniye gerektiği."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:50
+msgid "How long to accelerate in milliseconds"
+msgstr "Milisaniye türünden ne kadar hızlandırılacağı"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:51
+msgid "How many milliseconds it takes to go from 0 to maximum speed."
+msgstr "0’dan en yüksek hıza ulaşmak için kaç milisaniye gerektiği."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:55
+msgid "Initial delay in milliseconds"
+msgstr "Milisaniye türünden başlangıç gecikmesi"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:56
+msgid ""
+"How many milliseconds to wait before mouse movement keys start to operate."
+msgstr ""
+"Fare hareket tuşlarının çalışmaya başlamasından önce kaç milisaniye "
+"bekleneceği."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:60
+msgid "Enable “Slow Keys”"
+msgstr "“Yavaş Tuşlar”ı Etkinleştir"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:61
+msgid "Whether the “Slow Keys” accessibility feature is turned on."
+msgstr "“Yavaş Tuşlar” erişilebilirlik özelliğinin açık olması."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:66
+msgid ""
+"Do not accept a key as being pressed unless held for this many milliseconds."
+msgstr "Şu kadar milisaniye basılı tutulmadığı sürece tuşu basılmış sayma."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:70
+msgid "Beep when a key is first pressed"
+msgstr "Bir tuşa ilk kez basıldığında uyarı sesi çal"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:71
+msgid "Whether to beep when a key is first pressed."
+msgstr "Bir tuşa basıldığında sesli uyarı verilmesi."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:75
+msgid "Beep when a key is accepted"
+msgstr "Bir tuş kabul edildiğinde uyarı sesi çal"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:76
+msgid "Whether to beep when a key is accepted."
+msgstr "Bir tuş kabul edildiğinde sesli uyarı verilmesi."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:85
+msgid "Enable sticky keys"
+msgstr "Yapışkan tuşları etkinleştir"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:86
+msgid "Whether the sticky keys accessibility feature is turned on."
+msgstr "Yapışkan tuşlar erişilebilirlik özelliğinin açık olması."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:90
+msgid "Disable when two keys are pressed at the same time"
+msgstr "Aynı anda iki tuşa basıldığında etkisizleştir"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:91
+msgid ""
+"Whether to disable sticky keys if two keys are pressed at the same time."
+msgstr "Aynı anda iki tuşa basıldığında yapışkan tuşların etkisizleştirilmesi."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:95
+msgid "Beep when a modifier is pressed."
+msgstr "Değiştirici tuşa basıldığında uyarı sesi çal."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:96
+msgid "Whether to beep when a modifier key is pressed."
+msgstr "Bir değiştirici tuşa basıldığında sesli uyarı verilmesi."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:100
+msgid "Enable “Toggle Keys”"
+msgstr "“Geçiş Tuşları”nı Etkinleştir"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:101
+msgid "Whether the “Toggle Keys” accessibility feature is turned on."
+msgstr "“Geçiş Tuşları” erişilebilirlik özelliğinin açık olması."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:8
+msgid "Mouse Tracking Mode"
+msgstr "Fare İzleme Kipi"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:9
+msgid ""
+"Determines the position of the magnified mouse image within the magnified "
+"view and how it reacts to system mouse movement. The values are • none: no "
+"mouse tracking; • centered: the mouse image is displayed at the center of "
+"the zoom region (which also represents the point under the system mouse) and "
+"the magnified contents are scrolled as the system mouse moves; • "
+"proportional: the position of the magnified mouse in the zoom region is "
+"proportionally the same as the position of the system mouse on screen; • "
+"push: when the magnified mouse intersects a boundary of the zoom region, the "
+"contents are scrolled into view."
+msgstr ""
+"Büyütülmüş görünüm içinde büyütülmüş fare görüntüsünün konumunu ve sistem "
+"fare hareketine nasıl tepki vereceğini belirler. Bu değerler • hiçbiri: fare "
+"izleme yok; • merkezli: fare görüntüsü, yakınlaştırma bölgesinin (ayrıca "
+"sistem faresinin altındaki noktanın) merkezinde gösterilir ve büyütülmüş "
+"içerikler sistem faresi hareketleri gibi kaydırılır; • orantılı: "
+"yakınlaştırma bölgesindeki büyütülmüş fare konumu ile ekrandaki sistem "
+"faresinin konumu orantılı olarak aynıdır; • itme: büyütülmüş fare, "
+"yakınlaştırma bölgesinin sınırıyla kesiştiğinde, içerikler görünüm içinde "
+"kaydırılır."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:26
+msgid "Focus Tracking Mode"
+msgstr "Odak İzleme Kipi"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:27
+msgid ""
+"Determines the position of the focused widget within magnified view. The "
+"values are: • none: no focus tracking • centered: the focused image is "
+"displayed at the center of the zoom region (which also represents the point "
+"under the system focus) and the magnified contents are scrolled as the "
+"system focus moves • proportional: the position of the magnified focus in "
+"the zoom region is proportionally the same as the position of the system "
+"focus on screen • push: when the magnified focus intersects a boundary of "
+"the zoom region, the contents are scrolled into view"
+msgstr ""
+"Büyütülmüş görünüm içinde odaklanılmış parçacığın konumunu belirler. "
+"Değerler: • none: odak izleme yok • centered: odaklanılan görüntü "
+"yakınlaştırma bölgesinin merkezinde gösterilir (ayrıca sistem odağı "
+"altındaki noktada da gösterilir) ve büyütülmüş içerikler sistem odak "
+"hareketleri ile kaydırılır • proportional: yakınlaştırma bölgesindeki "
+"büyütülmüş odağın konumu ekrandaki sistem odağı konumu ile orantılı olarak "
+"aynıdır • push: büyütülmüş odak, yakınlaştırma bölgesinin bir sınırı ile "
+"kesiştiğinde içerikler görünüm içinde kaydırılır"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:46
+msgid "Caret Tracking Mode"
+msgstr "İmleç İzleme Kipi"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:47
+msgid ""
+"Determines the position of the caret within magnified view. The values are: "
+"• none: no caret tracking • centered: the image of the caret is displayed at "
+"the center of the zoom region (which also represents the point under the "
+"system caret) and the magnified contents are scrolled as the system caret "
+"moves • proportional: the position of the magnified caret in the zoom region "
+"is proportionally the same as the position of the system caret on screen • "
+"push: when the magnified caret intersects a boundary of the zoom region, the "
+"contents are scrolled into view"
+msgstr ""
+"Büyütülmüş görünümde imlecin konumunu belirler. Bu değerler: • none: imleç "
+"izlenmiyor • centered: yakınlaştırma bölgesinin merkezinde imlecin görüntüsü "
+"gösterilir (ayrıca sistem imleci altındaki nokta da gösterilir) ve "
+"büyütülmüş içerikler sistem imleç hareketleri ile kaydırılır • proportional: "
+"yakınlaştırma bölgesindeki büyütülmüş imlecin konumu ekran üzerindeki sistem "
+"imlecinin konumu ile orantılı olarak aynıdır • push: büyütülmüş imleç "
+"yakınlaştırma bölgesinin bir sınırı ile kesiştiğinde, içerikler görünüm "
+"içinde kaydırılır"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:64
+msgid "Screen position"
+msgstr "Ekran konumu"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:65
+msgid ""
+"The magnified view either fills the entire screen, or occupies the top-half, "
+"bottom-half, left-half, or right-half of the screen."
+msgstr ""
+"Büyütülmüş görünüm tüm ekranı doldurur ya da ekranın üst yarısını, alt "
+"yarısını, sol yarısını veya sağ yarısını kaplar."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:73
+msgid "Magnification factor"
+msgstr "Büyütme katsayısı"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:74
+msgid ""
+"The power of the magnification. A value of 1.0 means no magnification. A "
+"value of 2.0 doubles the size."
+msgstr ""
+"Büyütme katsayısı değeri. 1.0 değeri büyütme yapılmaması anlamına gelir. 2.0 "
+"değeri ise boyutu iki kat büyütür."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:81
+msgid "Enable lens mode"
+msgstr "Mercek kipini etkinleştir"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:82
+msgid ""
+"Whether the magnified view should be centered over the location of the "
+"system mouse and move with it."
+msgstr ""
+"Yakınlaştırılmış görüntünün sistem faresinin konumu üzerinde ortalanması ve "
+"birlikte hareket etmesi."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:89
+msgid "Scroll magnified contents beyond the edges of the desktop"
+msgstr "Yakınlaştırılan içeriği masaüstü sınırlarının dışına kaydır"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:92
+msgid ""
+"For centered mouse tracking, when the system pointer is at or near the edge "
+"of the screen, the magnified contents continue to scroll such that the "
+"screen edge moves into the magnified view."
+msgstr ""
+"Ortalanmış fare izlemede sistem imleci ekranın sınırında ya da sınıra yakın "
+"bir yerdeyse; büyütülen içerik, sanki ekranın kenarı büyütülen görüntünün "
+"içine doğru hareket ediyormuş gibi kaydırılır."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:102
+msgid "Show or hide crosshairs"
+msgstr "İnce artı imlecini göster ya da gizle"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:103
+msgid ""
+"Enables/disables display of crosshairs centered on the magnified mouse "
+"sprite."
+msgstr ""
+"Büyütülmüş fare görüntüsünün merkezinde ince artı imleci gösterimini "
+"etkinleştirir/devre dışı bırakır."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:110
+msgid "Thickness of the crosshairs in pixels"
+msgstr "İnce artı imlecinin piksel olarak kalınlığı"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:111
+msgid ""
+"Width in pixels of the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr ""
+"İnce artı imlecini oluşturan dikey ve yatay çizgilerin piksel olarak "
+"genişliği."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:117
+msgid "Color of the crosshairs"
+msgstr "İnce artı imlecinin rengi"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:118
+msgid ""
+"The color of the the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr "İnce artı imlecini oluşturan dikey ve yatay çizgilerin rengi."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:126
+msgid "Opacity of the crosshairs"
+msgstr "İnce artı imlecinin matlığı"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:127
+msgid ""
+"Determines the transparency of the crosshairs, from fully opaque to fully "
+"transparent."
+msgstr ""
+"İnce artı imlecinin saydamlığını belirler, tümüyle mattan tümüyle saydama."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:135
+msgid "Length of the crosshairs in pixels"
+msgstr "İnce artı imlecinin piksel olarak uzunluğu"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:136
+msgid ""
+"Determines the length in pixels of the vertical and horizontal lines that "
+"make up the crosshairs."
+msgstr ""
+"İnce artı imlecini oluşturan yatay ve dikey çizgilerin piksel olarak "
+"uzunluğunu belirler."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:143
+msgid "Clip the crosshairs at the center"
+msgstr "Merkezdeki ince artı imlecini kırp"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:144
+msgid ""
+"Determines whether the crosshairs intersect the magnified mouse sprite, or "
+"are clipped such that the ends of the horizontal and vertical lines surround "
+"the mouse image."
+msgstr ""
+"İnce artı imlecinin büyütülmüş bağımsız fare görüntüsü ile kesişip "
+"kesişmediğini ya da fare görüntüsünü çevreleyen yatay ya da dikey çizgilerin "
+"uçlarının kısaltılıp kısaltılmadığını belirler."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:152
+msgid "Inverse lightness"
+msgstr "Ters açıklık"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:153
+msgid ""
+"Determines whether the lightness values are inverted: darker colors become "
+"lighter and vice versa, and white and black are interchanged."
+msgstr ""
+"Açıklık değerinin tersine çevrilip çevrilmeyeceğini belirler: daha koyu "
+"renkler daha açık olur ya da tam tersi ve siyah ve beyaz aralarında yer "
+"değiştirir."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:161
+msgid "Color Saturation"
+msgstr "Renk Doygunluğu"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:162
+msgid ""
+"Represents a change to the color saturation, from 0.0 (grayscale) to 1.0 "
+"(full color)."
+msgstr ""
+"0.0 (gri tonlama)dan 1.0(tam renk)lere bir renk doygunluğu değişikliğini "
+"temsil eder."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:170
+msgid "Change brightness of red"
+msgstr "Kırmızının parlaklığını değiştir"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:171
+msgid ""
+"Represents a change to the default brightness of the red component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Kırmızı bileşenin öntanımlı parlaklığında bir değişikliği temsil eder. Sıfır "
+"hiçbir değişiklik olmadığını, sıfırdan daha az değerler bir azalışı, daha "
+"büyük değerler ise bir artışı gösterir."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:180
+msgid "Change brightness of green"
+msgstr "Yeşilin parlaklığını değiştir"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:181
+msgid ""
+"Represents a change to the default brightness for the green component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Yeşil bileşen için öntanımlı parlaklıkta bir değişikliği temsil eder. Sıfır "
+"hiçbir değişiklik olmadığını, sıfırdan daha az değerler bir azalışı, daha "
+"büyük değerler ise bir artışı gösterir."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:190
+msgid "Change brightness of blue"
+msgstr "Mavinin parlaklığını değiştir"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:191
+msgid ""
+"Represents a change to the default brightness for the blue component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Mavi bileşen için öntanımlı parlaklıkta bir değişikliği temsil eder. Sıfır "
+"hiçbir değişiklik olmadığını, sıfırdan daha az değerler bir azalışı, daha "
+"büyük değerler ise bir artışı gösterir."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:200
+msgid "Change contrast of red"
+msgstr "Kırmızının karşıtlığını değiştir"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:201
+msgid ""
+"Represents a change to the default contrast of the red component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Kırmızı bileşenin öntanımlı kontrastında bir değişikliği temsil eder. Sıfır "
+"hiçbir değişiklik olmadığını, sıfırdan daha az değerler bir azalışı, daha "
+"büyük değerler ise bir artışı gösterir."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:210
+msgid "Change contrast of green"
+msgstr "Yeşilin karşıtlığını değiştir"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:211
+msgid ""
+"Represents a change to the default contrast of the green component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Yeşil bileşenin öntanımlı kontrastında bir değişikliği temsil eder. Sıfır "
+"hiçbir değişiklik olmadığını, sıfırdan daha az değerler bir azalışı, daha "
+"büyük değerler ise bir artışı gösterir."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:220
+msgid "Change contrast of blue"
+msgstr "Mavinin karşıtlığını değiştir"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:221
+msgid ""
+"Represents a change to the default contrast of the blue component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Mavi bileşenin öntanımlı kontrastında bir değişikliği temsil eder. Sıfır "
+"hiçbir değişiklik olmadığını, sıfırdan daha az değerler bir azalışı, daha "
+"büyük değerler ise bir artışı gösterir."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:6
+msgid "Dwell click time"
+msgstr "Durağan tıklama süresi"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:7
+msgid "Time in seconds before a click is triggered."
+msgstr "Tıklama tetiklenmeden önce saniye türünden geçecek süre."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:11
+msgid "Movement threshold"
+msgstr "Hareket eşiği"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:12
+msgid "Distance in pixels before movement will be recognized."
+msgstr "Hareket algılanmadan önce piksel türünden alınması gereken mesafe."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:16
+msgid "Gesture single click"
+msgstr "Tek tıklama hareketi"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:17
+msgid "Direction to perform a single click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Tek tıklamanın gerçekleştirileceği yön (“left” [sol], “right” [sağ], “up” "
+"[yukarı], “down” [aşağı])."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:21
+msgid "Gesture double click"
+msgstr "Çift tıklama hareketi"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:22
+msgid "Direction to perform a double click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Çift tıklamanın gerçekleştirileceği yön (“left” [sol], “right” [sağ], “up” "
+"[yukarı], “down” [aşağı])."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:26
+msgid "Gesture drag click"
+msgstr "Sürükleme tıklaması hareketi"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:27
+msgid "Direction to perform dragging (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Sürüklemenin gerçekleştirileceği yön (“left” [sol], “right” [sağ], “up” "
+"[yukarı], “down” [aşağı])."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:31
+msgid "Gesture secondary click"
+msgstr "İkincil tıklama hareketi"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:32
+msgid "Direction to perform a secondary click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"İkincil tıklamanın gerçekleştirileceği yön (“left” [sol], “right” [sağ], "
+"“up” [yukarı], “down” [aşağı])."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:36
+msgid "Dwell click mode"
+msgstr "Durağan tıklama kipi"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:37
+msgid ""
+"The active dwell click mode. Possible values are “window” and “gesture”."
+msgstr "Etkin dwell tıklama kipi. Olası değerler “window” ve “gesture”."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:41
+msgid "Show click type window"
+msgstr "Tıklama türü penceresini göster"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:42
+msgid "Show click type window."
+msgstr "Tıklama türü penceresini göster."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:46
+msgid "Enable dwell clicks"
+msgstr "Durağan tıklamaları etkinleştir"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:47
+msgid "Enable dwell clicks."
+msgstr "Durağan tıklamaları etkinleştir."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:51
+msgid "Secondary click enabled"
+msgstr "İkincil tıklama etkinleştirildi"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:52
+msgid "Enable simulated secondary clicks"
+msgstr "İkincil tıklama benzetimini etkinleştir"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:56
+msgid "Secondary click time"
+msgstr "İkincil tıklama süresi"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:57
+msgid "Time in seconds before a simulated secondary click is triggered."
+msgstr ""
+"İkincil tıklama benzetimi tetiklenmeden önce saniye türünden geçecek süre."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:6
+msgid "Folder children"
+msgstr "Klasör çocukları"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:7
+msgid ""
+"List of relative settings paths at which app-folders are stored. Each folder "
+"uses the org.gnome.desktop.app-folders.folder schema."
+msgstr ""
+"Uygulama klasörlerinin depolandığı bağıl ayar yolları listesi. Her klasör "
+"org.gnome.desktop.app-folders.folder şemasını kullanır."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:15
+msgid "Folder name"
+msgstr "Klasör adı"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:16
+msgid "The name of the application folder."
+msgstr "Uygulama klasörünün adı."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:20
+msgid "Translate the name"
+msgstr "Adı tercüme et"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:21
+msgid ""
+"Whether the name key is a filename to be looked up in /usr/share/desktop-"
+"directories."
+msgstr ""
+"Ad anahtarının /usr/share/desktop-directories dizininde aranacak bir dosya "
+"adı olup olmaması."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:26
+msgid "Applications"
+msgstr "Uygulamalar"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:27
+msgid ""
+"The list of IDs of applications that are explicitly included in this folder."
+msgstr "Bu klasörün açıkça içerdiği uygulamaların Kimlik listesi."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:32
+msgid "Categories"
+msgstr "Kategoriler"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:33
+msgid ""
+"A list of categories for which apps will be placed into this folder by "
+"default, in addition to the apps that are listed in the apps key."
+msgstr ""
+"Uygulamalar anahtarında listelenen uygulamalara ek, öntanımlı olarak bu "
+"klasöre yerleştirilecek uygulama kategorilerinin listesi."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:39
+msgid "Excluded applications"
+msgstr "Dışlanan Uygulamalar"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:40
+msgid ""
+"A list of IDs of applications that are excluded from this folder. This can "
+"be used to remove applications that would otherwise be included by category."
+msgstr ""
+"Klasörden hariç tutulan uygulamaların numaralarının bir listesi. Bu, aksi "
+"halde kategorisine göre içeri aktarılmış uygulamaların kaldırılması için "
+"kullanılabilir."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:6
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:90
+msgid "Picture Options"
+msgstr "Resim Seçenekleri"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:7
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:91
+msgid ""
+"Determines how the image set by wallpaper_filename is rendered. Possible "
+"values are “none”, “wallpaper”, “centered”, “scaled”, “stretched”, “zoom”, "
+"“spanned”."
+msgstr ""
+"Bu ayar, wallpaper_filename ile ayarlanmış görüntülerin nasıl "
+"gerçekleneceğini belirler. Olası değerler “none” (hiçbiri), “wallpaper” "
+"(duvar kağıdı), “centered” (merkezli), “scaled” (ölçeklenmiş), “stretched” "
+"(uzatılmış), “zoom” (yakın), “spanned” (dağıtılmış)."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:15
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:99
+msgid "Picture URI"
+msgstr "Resim URI’si"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:16
+#: schemas/org.gnome.desktop.background.gschema.xml.in:24
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:100
+msgid ""
+"URI to use for the background image. Note that the backend only supports "
+"local (file://) URIs."
+msgstr ""
+"Arka plan görüntüsü için kullanılacak URI. Arka ucun yalnızca yerel "
+"(file://) URI’lerini desteklediğine dikkat ediniz."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:23
+msgid "Picture URI (dark)"
+msgstr "Resim URI’si (karanlık)"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:32
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:108
+msgid "Picture Opacity"
+msgstr "Resim Işıkgeçirmezliği"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:33
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:109
+msgid "Opacity with which to draw the background picture."
+msgstr "Arka plan resminin çizileceği matlık."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:39
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:115
+msgid "Primary Color"
+msgstr "Birincil Renk"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:40
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:116
+msgid "Left or Top color when drawing gradients, or the solid color."
+msgstr "Geçişleri çizerken kullanılacak Sol ya da Üst renk ya da sabit renk."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:46
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:122
+msgid "Secondary Color"
+msgstr "İkincil Renk"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:47
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:123
+msgid "Right or Bottom color when drawing gradients, not used for solid color."
+msgstr ""
+"Geçişleri çizerken kullanılacak Sağ ya da Alt renk, sabit renk için "
+"kullanılmaz."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:53
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:129
+msgid "Color Shading Type"
+msgstr "Renk Gölgelendirme Türü"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:54
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:130
+msgid ""
+"How to shade the background color. Possible values are “horizontal”, "
+"“vertical”, and “solid”."
+msgstr ""
+"Arka plan renginin nasıl gölgelendirileceği. Olası değerler “horizontal” "
+"(yatay), “vertical” (dikey)  ve “solid” (sabit)."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:61
+msgid "Have file manager handle the desktop"
+msgstr "Masaüstünü dosya yöneticisi idare etsin"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:62
+msgid "If set to true, then file manager will draw the icons on the desktop."
+msgstr ""
+"Eğer seçiliyse, sonrasında dosya yöneticisi masaüstüne simgeleri çizecek."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:10
+msgid "List of breaks that are currently enabled"
+msgstr "Şu anda etkin molaların listesi"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:22
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:87
+msgid "Time between breaks"
+msgstr "Molalar arası zaman"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:23
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:88
+msgid "The time between rest breaks, in seconds."
+msgstr "Molalar arası zaman, saniye türünde."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:29
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:94
+msgid "Duration of each break"
+msgstr "Her molanın süresi"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:30
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:95
+msgid "The duration of each rest break, in seconds."
+msgstr "Her molanın süresi, saniye türünde."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:36
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:101
+msgid "Amount to delay break if requested"
+msgstr "Eğer istenirse molayı erteleme miktarı"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:37
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:102
+msgid ""
+"The amount to delay taking the break by, if the user requests a delay, in "
+"seconds."
+msgstr ""
+"Eğer kullanıcı erteleme isterse, molaya eklenecek erteleme miktarı, saniye "
+"türünde."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:43
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:108
+msgid "Fade screen during breaks"
+msgstr "Molalarda ekranı soldur"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:44
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:109
+msgid "True to fade the screen during rest breaks."
+msgstr "Molalarda ekran solacaksa doğru."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:49
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:114
+msgid "Lock screen during breaks"
+msgstr "Molalarda ekranı kilitle"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:50
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:115
+msgid "True to lock the screen during rest breaks."
+msgstr "Molalarda ekran kilitlenecekse doğru."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:55
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:120
+msgid "Play sound when a break finishes"
+msgstr "Mola bittiğinde ses çıkar"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:56
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:121
+msgid "True to play a sound when a break finishes."
+msgstr "Mola bittiğinde ses çıkarılacaksa doğru."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:61
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:79
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:126
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:144
+msgid "Notify when a break is due"
+msgstr "Mola geldiğinde bildir"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:62
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:127
+msgid "True to emit a notification when a break is due to start."
+msgstr "Mola başlayacaksa bildirim gönder."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:67
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:132
+msgid "Notify when a break is upcoming"
+msgstr "Mola yaklaştığında bildir"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:68
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:133
+msgid "True to emit a notification a few minutes before a break is due."
+msgstr "Mola başlamadan birkaç dakika önce bildirim gönder."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:73
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:138
+msgid "Notify when a break is overdue"
+msgstr "Mola aşıldığında bildir"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:74
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:139
+msgid "True to emit a notification when a break is overdue."
+msgstr "Mola zamanı aşıldığında bildir"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:80
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:145
+msgid "True to show a prominent countdown shortly before a break is due."
+msgstr ""
+"Mola başlamadan kısa süre önce göze çarpan geri sayım gösterilecekse doğru."
+
+#: schemas/org.gnome.desktop.calendar.gschema.xml.in:6
+msgid "Show the week date in the calendar"
+msgstr "Hafta tarihini takvimde göster"
+
+#: schemas/org.gnome.desktop.calendar.gschema.xml.in:7
+msgid "If true, display the ISO week date in the calendar."
+msgstr "Eğer seçiliyse, ISO hafta tarihini takvimde görüntüle."
+
+#: schemas/org.gnome.desktop.datetime.gschema.xml.in:6
+msgid "Automatically update timezone"
+msgstr "Saat dilimini kendiliğinden güncelle"
+
+#: schemas/org.gnome.desktop.datetime.gschema.xml.in:7
+msgid "Whether to automatically update the timezone using geolocation."
+msgstr ""
+"Coğrafi konum kullanarak saat diliminin kendiliğinden güncellenip "
+"güncellenmemesi."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:14
+msgid "Default calendar"
+msgstr "Öntanımlı takvim"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:15
+msgid ""
+"Default calendar application DEPRECATED: This key is deprecated and ignored. "
+"The preferred calendar application is the application handling the text/"
+"calendar mime type."
+msgstr ""
+"Öntanımlı takvim uygulaması TERK EDİLDİ: Bu anahtar terk edildi ve yok "
+"sayılıyor. Yeğlenen takvim uygulaması, metin/takvim mime türünü işleyen "
+"uygulamadır."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:24
+msgid "Calendar needs terminal"
+msgstr "Takvim uçbirime gereksiniyor"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:25
+msgid ""
+"Whether the default calendar application needs a terminal to run. "
+"DEPRECATED: This key is deprecated and ignored. The preferred calendar "
+"application is the application handling the text/calendar mime type, whether "
+"it needs a terminal is taken from its desktop file."
+msgstr ""
+"Öntanımlı takvim uygulamasının çalışabilmesi için bir uçbirime gerek olup "
+"olmaması. TERK EDİLDİ: Bu anahtar terk edildi ve yok sayılıyor. Yeğlenen "
+"takvim uygulaması, metin/takvim mime türünü işleyen uygulamadır, uygulamanın "
+"masaüstü dosyasından alınan bir uçbirime gereksinip gereksinmediğidir."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:37
+msgid "Default tasks"
+msgstr "Öntanımlı görevler"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:38
+msgid "Default tasks application."
+msgstr "Öntanımlı görev uygulaması."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:44
+msgid "Tasks needs terminal"
+msgstr "Görevler uçbirime gereksiniyor"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:45
+msgid "Whether the default tasks application needs a terminal to run."
+msgstr ""
+"Öntanımlı görevler uygulamasının çalışabilmesi için bir uçbirime gereksinip "
+"gereksinmemesidir."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:53
+msgid "Terminal application"
+msgstr "Uçbirim uygulaması"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:54
+msgid ""
+"Terminal program to use when starting applications that require one. "
+"DEPRECATED: This key is deprecated and ignored. The default terminal is "
+"handled in GIO."
+msgstr ""
+"Gereksinimi olan uygulamalar başlatılırken kullanılacak uçbirim programı. "
+"TERK EDİLDİ: Bu anahtar terk edildi ve yok sayılıyor. Öntanımlı uçbirim GIO "
+"da işlenir."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:63
+msgid "Exec Arguments"
+msgstr "Exec Değişkenleri"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:64
+msgid ""
+"Argument used to execute programs in the terminal defined by the “exec” key. "
+"DEPRECATED: This key is deprecated and ignored. The default terminal and how "
+"to invoke it is handled in GIO."
+msgstr ""
+"Uçbirimde programları yürütmek için kullanılan değişkenler “exec” anahtarı "
+"tarafından tanımlanır. TERK EDİLDİ: Bu anahtar terk edildi ve yok sayılıyor. "
+"Öntanımlı uçbirim ve nasıl çalıştırılacağı GIO da işlenir."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:7
+msgid "Current input source"
+msgstr "Geçerli giriş kaynağı"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:8
+msgid ""
+"The zero-based index into the input sources list specifying the current one "
+"in effect. The value is automatically capped to remain in the range [0, "
+"sources_length) as long as the sources list isn’t empty. DEPRECATED: This "
+"key is deprecated and ignored."
+msgstr ""
+"Girdi kaynakları listesinin geçerli olarak etkin olan ögesini belirten sıfır "
+"tabanlı dizin. Kaynaklar listesi boş olmadığı sürece bu değer, aralıkta [0, "
+"sources_length) kalacak biçimde sınırlandırılır. TERK EDİLDİ: Bu anahtar "
+"terk edildi ve yok sayılıyor."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:19
+msgid "List of input sources"
+msgstr "Giriş kaynaklarının listesi"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:20
+msgid ""
+"List of input source identifiers available. Each source is specified as a "
+"tuple of 2 strings. The first string is the type and can be one of “xkb” or "
+"“ibus”. For “xkb” sources the second string is “xkb_layout+xkb_variant” or "
+"just “xkb_layout” if a XKB variant isn’t needed. For “ibus” sources the "
+"second string is the IBus engine name. An empty list means that the X "
+"server’s current XKB layout and variant won’t be touched and IBus won’t be "
+"used."
+msgstr ""
+"Kullanılabilir giriş kaynağı tanımlayıcıları listesi. Her kaynak iki dizge "
+"birleşimi olarak belirtilir. Birinci dizge türdür ve “xkb” ya da “ibus” "
+"türlerinden biri olabilir. Eğer bir XKB değişkeni gerekli değilse, “xkb” "
+"kaynakları için ikinci dizge “xkb_layout+xkb_variant” ya da yalnızca "
+"“xkb_layout” olabilir. “ibus” kaynakları için ikinci dizge IBus motor "
+"adıdır. Boş bir liste, Xserver’ların var olan XKB yerleşimine ve değişkenine "
+"dokunulamayacak ve IBus kullanılamayacak anlamına gelir."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:33
+msgid "List of most recently used input sources"
+msgstr "En son kullanılan giriş kaynaklarının listesi"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:34
+msgid ""
+"List of most recently used input sources. The value is in the same format as "
+"the available sources list."
+msgstr ""
+"En son kullanılan giriş kaynaklarının listesi. Değer, kullanılabilir "
+"kaynaklar listesiyle aynı biçimdedir."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:41
+msgid "List of XKB options"
+msgstr "XKB seçeneklerinin listesi"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:42
+msgid ""
+"List of XKB options. Each option is an XKB option string as defined by "
+"xkeyboard-config’s rules files."
+msgstr ""
+"XKB seçeneklerinin listesi. Her seçenek, xkeyboard-config kural dosyaları "
+"ile tanımlandığı gibi bir XKB seçenek dizgesidir."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:49
+msgid "XKB model to use"
+msgstr "Kullanılacak XKB modeli"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:50
+msgid ""
+"The XKB model to use. The value is the same identifier as defined by "
+"xkeyboard-config’s geometry files."
+msgstr ""
+"Kullanılacak XKB modeli. Değer, xkeyboard-config geometri dosyalarınca "
+"tanımlananla aynı tanımlayıcıdır."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:57
+msgid "Show all installed input sources"
+msgstr "Kurulu tüm giriş kaynaklarını göster"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:58
+msgid ""
+"Makes all installed input sources available for choosing in System Settings."
+msgstr ""
+"Sistem Ayarlarında seçim için tüm kurulu girdi kaynaklarını kullanılabilir "
+"kılar."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:65
+msgid "Use different input sources for each window"
+msgstr "Her pencere için farklı giriş kaynağı kullan"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:66
+msgid ""
+"When enabled, input sources get attached to the currently focused window "
+"when activated."
+msgstr ""
+"Etkinleştirildiğinde, etkin olan girdi kaynakları şu anda odaklanılan "
+"pencereye eklensin."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:6
+msgid "Enable Toolkit Accessibility"
+msgstr "Araç Takımı Erişilebilirliğini Etkinleştir"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:7
+msgid "Whether toolkits should load accessibility related modules."
+msgstr "Araçlara erişilebilirlik ile ilgili modüllerin yüklenmesi gerekliliği."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:13
+msgid "Enable Animations"
+msgstr "Canlandırmaları Etkinleştir"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:14
+msgid ""
+"Whether animations should be displayed. Note: This is a global key, it "
+"changes the behaviour of the window manager, the panel etc."
+msgstr ""
+"Canlandırmaların gösterilip gösterilmeyeceği. Not: Bu genel bir anahtardır, "
+"pencere yöneticisinin, panelin vb. davranışlarını değiştirir."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:21
+msgid "Menus Have Tearoff"
+msgstr "Menülerde Ayraç Bulunsun"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:22
+msgid "Whether menus should have a tearoff."
+msgstr "Menulerin ayrılabilir olmasının gerekip gerekmemesi."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:28
+msgid "Can Change Accels"
+msgstr "Hızlandırıcılar Değiştirilebilir"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:29
+msgid ""
+"Whether the user can dynamically type a new accelerator when positioned over "
+"an active menuitem."
+msgstr ""
+"Etkin bir menü ögesi açıldığında kullanıcının dinamik olarak yeni bir "
+"hızlandırıcı girip giremeyeceği."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:36
+msgid "Toolbar Style"
+msgstr "Araç Çubuğu Biçemi"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:37
+msgid ""
+"Toolbar Style. Valid values are “both”, “both-horiz”, “icons”, and “text”."
+msgstr ""
+"Araç Çubuğu Biçemi. Geçerli değerler, “both” (her ikisi), “both-horiz” (her "
+"ikisi yanyana), “icons” (simgeler) ve “text” (metin)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:44
+msgid "Menubar Detachable"
+msgstr "Menü Çubuğu Ayrılabilir"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:45
+msgid "Whether the user can detach menubars and move them around."
+msgstr "Kullanıcının menü çubuğunu ayırabilmesi ve ekranda taşıyabilmesi."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:51
+msgid "Toolbar Detachable"
+msgstr "Araç Çubuğu Ayrılabilir"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:52
+msgid "Whether the user can detach toolbars and move them around."
+msgstr "Kullanıcının araç çubuğunu ayırabilmesi ve ekranda taşıyabilmesi."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:58
+msgid "Toolbar Icon Size"
+msgstr "Araç Çubuğu Simge Boyutu"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:59
+msgid "Size of icons in toolbars, either “small” or “large”."
+msgstr ""
+"Araç çubuğundaki simgelerin boyutları, ya “small” (küçük) ya da “large” "
+"(büyük)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:65
+msgid "Cursor Blink"
+msgstr "İmleç Yanıp Sönsün"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:66
+msgid "Whether the cursor should blink."
+msgstr "İmlecin yanıp sönmesinin gerekliliği."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:73
+msgid "Cursor Blink Time"
+msgstr "İmleç Yanıp Sönme Süresi"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:74
+msgid "Length of the cursor blink cycle, in milliseconds."
+msgstr "İmlecin milisaniye türünden yanıp sönme döngüsünün uzunluğu."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:81
+msgid "Cursor Blink Timeout"
+msgstr "İmleç Yanıp Sönme Zaman Aşımı"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:82
+msgid "Time after which the cursor stops blinking, in seconds."
+msgstr ""
+"İmlecin yanıp sönmeyi bırakması için saniye türünden geçmesi gereken süre."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:88
+msgid "Icon Theme"
+msgstr "Simge Teması"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:89
+msgid "Icon theme to use for the panel, nautilus etc."
+msgstr "Panel, nautilus vb. için kullanılacak simge teması."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:95
+msgid "Gtk+ Theme"
+msgstr "Gtk+ Teması"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:96
+msgid "Basename of the default theme used by gtk+."
+msgstr "Gtk+ tarafından kullanılan öntanımlı temanın esas adı."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:102
+msgid "Gtk+ Keybinding Theme"
+msgstr "Gtk+ Anahtar Bağlama Teması"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:103
+msgid "Basename of the default keybinding theme used by gtk+."
+msgstr ""
+"Gtk+ tarafından kullanılan öntanımlı anahtar bağlama temasının esas adı."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:109
+msgid "Default font"
+msgstr "Öntanımlı yazı tipi"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:110
+msgid "Name of the default font used by gtk+."
+msgstr "Gtk+ tarafından kullanılan öntanımlı yazı tipinin adı."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:116
+msgid "Directories with avatar faces"
+msgstr "Profil resmi yüzleri olan dizinler"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:117
+msgid ""
+"Directories to override the default avatar faces installed by gnome-control-"
+"center."
+msgstr ""
+"gnome-control-center tarafından kurulan öntanımlı profil resmi yüzlerini "
+"geçersiz kılacak dizinler."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:124
+msgid "Text scaling factor"
+msgstr "Metin ölçekleme katsayısı"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:125
+msgid ""
+"Factor used to enlarge or reduce text display, without changing font size."
+msgstr ""
+"Yazı tipi boyutunu değiştirmeksizin metin görüntüsünü büyütmek ya da "
+"küçültmek için kullanılan katsayı."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:131
+msgid "Window scaling factor"
+msgstr "Pencere ölçekleme katsayısı"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:132
+msgid ""
+"Integer factor used to scale windows by. For use on high-dpi screens. 0 "
+"means pick automatically based on monitor."
+msgstr ""
+"Pencerenin ölçeklendirilmesi için kullanılan tam sayı katsayı. Yüksek nokta/"
+"inç ekranlarda kullanmak için. 0 ekrana göre kendiliğinden seçilmesi "
+"anlamına gelir."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:139
+msgid "GTK IM Preedit Style"
+msgstr "GTK IM Öndüzenleme Biçemi"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:140
+msgid "Name of the GTK+ input method Preedit Style used by gtk+."
+msgstr "Gtk+ tarafından kullanılan Öndüzenli Biçemi GTK+ girdi metodu adı."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:146
+msgid "GTK IM Status Style"
+msgstr "GTK IM Durum Biçemi"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:147
+msgid "Name of the GTK+ input method Status Style used by gtk+."
+msgstr "Gtk+ tarafından kullanılan Durum Biçemi GTK+ girdi metodu adı."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:153
+msgid "GTK IM Module"
+msgstr "GTK IM Modülü"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:154
+msgid "Name of the input method module used by GTK+."
+msgstr "GTK+ tarafından kullanılan girdi yöntemi modülünün adı."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:160
+msgid "Document font"
+msgstr "Belge yazı tipi"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:161
+msgid "Name of the default font used for reading documents."
+msgstr "Okuma belgeleri için kullanılan öntanımlı yazı tipinin adı."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:167
+msgid "Monospace font"
+msgstr "Eş aralıklı yazı tipi"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:168
+msgid ""
+"Name of a monospaced (fixed-width) font for use in locations like terminals."
+msgstr ""
+"Uçbirim gibi konumlarda kullanılacak eş aralıklı (sabit genişlikli) yazı "
+"tipinin adı."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:175
+msgid "Menubar accelerator"
+msgstr "Menü çubuğu hızlandırıcısı"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:176
+msgid "Keyboard shortcut to open the menu bars."
+msgstr "Menü çubuklarını açmak için kullanılan klavye kısayolu."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:182
+msgid "Cursor theme"
+msgstr "İmleç teması"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:183
+msgid ""
+"Cursor theme name. Used only by Xservers that support the Xcursor extension."
+msgstr ""
+"İmleç tema adı. Yalnızca Xcursor uzantısını destekleyen Xserver’lar "
+"tarafından kullanılır."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:187
+msgid "Cursor size"
+msgstr "İmleç boyutu"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:188
+msgid "Size of the cursor used as cursor theme."
+msgstr "İmleç teması olarak kullanılan imlecin boyutu."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:192
+msgid "Timeout before click repeat"
+msgstr "Yinele seçeneğini tıklamadan önce zaman aşımı"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:193
+msgid ""
+"Timeout in milliseconds before a click starts repeating (on spinner buttons "
+"for example)."
+msgstr ""
+"Bir tıklama yinelemeyi başlatmadan önce milisaniye türünden zaman aşımı "
+"(örnek olarak değer değiştirici düğmeler)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:197
+msgid "Timeout between click repeats"
+msgstr "Yinelemeleri tıklama arasındaki zaman aşımı"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:198
+msgid ""
+"Timeout in milliseconds between repeated clicks when a button is left "
+"pressed."
+msgstr ""
+"Bir düğme basılı bırakıldığında, yinelenen tıklamalar arasındaki milisaniye "
+"türünden zaman aşımı."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:202
+msgid "Palette used in the color selector"
+msgstr "Renk seçicide kullanılacak palet"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:203
+msgid ""
+"Palette used in the color selector as defined by the “gtk-color-palette” "
+"setting"
+msgstr ""
+"“gtk-color-palette” ayarı ile tanımlanan renk seçicide kullanılacak palet"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:207
+msgid "List of symbolic names and color equivalents"
+msgstr "Sembolik adlar ve renk eşdeğerlerinin listesi"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:208
+msgid ""
+"A “\\n” separated list of “name:color” as defined by the “gtk-color-scheme” "
+"setting"
+msgstr ""
+"“gtk-color-scheme” ayarı ile tanımlanan bir “name:color” (ad:renk) “\\n” "
+"ayrılmış listesi"
+
+#. TRANSLATORS: select your locale's default clock format, this should be '12h' or '24h' (with the quotes!)
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:212
+msgid "'24h'"
+msgstr "'24h'"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:213
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:214
+msgid "Whether the clock displays in 24h or 12h format"
+msgstr "Saatin 24 ya da 12 saat biçimlerinden hangisinde gösterileceği"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:220
+msgid "Whether the clock shows seconds"
+msgstr "Saatin saniyeleri gösterip göstermeyeceği"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:221
+msgid "If true, display seconds in the clock."
+msgstr "Eğer seçiliyse saatte saniyeleri göster."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:227
+msgid "Show date in clock"
+msgstr "Saatte tarihi göster"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:228
+msgid "If true, display date in the clock, in addition to time."
+msgstr "Eğer seçiliyse, zamana ek olarak saatin içinde tarihi göster."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:234
+msgid "Show weekday in clock"
+msgstr "Saatte iş gününü göster"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:235
+msgid "If true, display weekday in the clock, in addition to time."
+msgstr "Eğer seçiliyse, zamana ek olarak saatin içinde iş gününü göster."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:241
+msgid "Enable hot corners"
+msgstr "Sıcak köşeleri etkinleştir"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:242
+msgid ""
+"If true, the activities overview can be accessed by moving the mouse to the "
+"top-left corner."
+msgstr ""
+"Eğer doğruysa, fare sol üst köşeye sürüklenerek etkinlikler genel görünümüne "
+"erişilebilir."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:249
+msgid "Show battery percentage"
+msgstr "Batarya yüzdesini göster"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:250
+msgid ""
+"If true, display battery percentage in the status menu, in addition to the "
+"icon."
+msgstr ""
+"Eğer seçiliyse, simgeye ek olarak durum çubuğunda batarya yüzdesini göster."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:256
+msgid "Enable the primary paste selection"
+msgstr "Birincil yapıştırma seçimini etkinleştir"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:257
+msgid ""
+"If true, gtk+ uses the primary paste selection, usually triggered by a "
+"middle mouse button click."
+msgstr ""
+"Eğer seçiliyse, gtk+ genellikle orta fare düğmesi tıklamasıyla tetiklenen "
+"birincil yapıştırma seçimini kullanır."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:263
+msgid "Allow overlay scrolling"
+msgstr "Yerpaylaşımlı kaydırmaya izin ver"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:264
+msgid ""
+"Whether scrollbars should be overlayed as indicators. Depending on input "
+"devices in use, permanent scrollbars may still be displayed."
+msgstr ""
+"Kaydırma çubuklarının belirteç olarak üste bindirilmesi. Kullanımdaki girdi "
+"aygıtlarına bağlı olarak yine de kalıcı kaydırma çubukları gösterilebilir."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:272
+msgid "Highlights the current location of the pointer."
+msgstr "İmlecin geçerli konumunu vurgular."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:273
+msgid ""
+"If true, pressing a key will highlight the current pointer location on "
+"screen."
+msgstr ""
+"Eğer doğruysa, bir tuşa basarak ekrandaki geçerli imleç vurgulanabilir."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:279
+msgid "Antialiasing"
+msgstr "Kenar yumuşatma"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:280
+msgid ""
+"The type of antialiasing to use when rendering fonts. Possible values are: "
+"“none” for no antialiasing, “grayscale” for standard grayscale antialiasing, "
+"and “rgba” for subpixel antialiasing (LCD screens only)."
+msgstr ""
+"Yazı tipleri taranırken kullanılacak yumuşatma türü. Geçerli değerler: "
+"“none” - yumuşatma yok. “grayscale” - standart gri ölçek yumuşatma ve “rgba” "
+"- alt piksel yumuşatma (yalnızca LCD ekranlar)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:286
+msgid "Hinting"
+msgstr "Düzeltim"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:287
+msgid ""
+"The type of hinting to use when rendering fonts. Possible values are: “none” "
+"for no hinting and “slight” for fitting only to the Y-axis like Microsoft’s "
+"ClearType, DirectWrite and Adobe’s proprietary font rendering engine. "
+"Ignores native hinting within the font, generates hints algorithmically. "
+"Used on Ubuntu by default. Recommended. The meaning of “medium” and “full” "
+"depends on the font format (.ttf, .otf, .pfa/.pfb) and the installed version "
+"of FreeType. They usually try to fit glyphs to both the X and the Y axis "
+"(except for .otf: Y-only). This can lead to distortion and/or inconsistent "
+"rendering depending on the quality of the font, the font format and the "
+"state of FreeType’s font engines."
+msgstr ""
+"Yazı tipleri işlenirken kullanılacak düzeltmenin türü. Olası değerler "
+"şunlardır: düzeltme olmaması için “none”, Microsoft’un ClearType’ı, "
+"DirectWrite ve Adobe’un sahipli yazı tipi işleme motoru gibi yalnızca Y "
+"eksenine sığdırmak için “slight”. Yazı tipindeki yerli düzeltmeyi göz ardı "
+"eder, düzeltmeleri algoritmik olarak oluşturur. Ubuntu’da öntanımlı olarak "
+"kullanılır. Önerilir. “medium” ve “full”ün anlamı, yazı tipi biçimine (."
+"ttf, .otf, .pfa/.pfb) ve kurulu FreeType sürümüne bağlıdır. Onlar genellikle "
+"glifleri X ve Y eksenlerinin ikisine de sığdırmayı denerler (.otf dışında: "
+"yalnızca Y). Bu; yazı tipinin niteliğine, yazı tipi biçimine ve FreeType’ın "
+"yazı tipi motorlarının durumuna bağlı olarak bozulmaya ve/veya tutarsız "
+"işlemeye yol açabilir."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:293
+msgid "RGBA order"
+msgstr "RGBA sırası"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:294
+msgid ""
+"The order of subpixel elements on an LCD screen; only used when antialiasing "
+"is set to “rgba”. Possible values are: “rgb” for red on left (most common), "
+"“bgr” for blue on left, “vrgb” for red on top, “vbgr” for red on bottom."
+msgstr ""
+"LCD ekranında kullanılacak alt piksel öğelerinin sırası; yalnızca, yumuşatma "
+"“rgba” olarak atandığında kullanılır. Geçerli değerler: “rgb” - kırmızı "
+"solda (en yaygın), “bgr” - mavi solda. “vrgb”- kırmızı yukarıda. “vbgr” - "
+"kırmızı aşağıda."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:300
+msgid "Color scheme"
+msgstr "Renk şeması"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:301
+msgid ""
+"The preferred color scheme for the user interface. Valid values are "
+"“default”, “prefer-dark”, “prefer-light”."
+msgstr ""
+"Kullanıcı arayüzü için yeğlenen renk şeması. Geçerli değerler şunlardır: "
+"“default” (öntanımlı), “prefer-dark” (karanlığı yeğle), “prefer-light” "
+"(aydınlığı yeğle)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:307
+msgid "Font rendering"
+msgstr "Yazı tipi gerçekleme"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:308
+msgid ""
+"Preference to indicate whether font rendering should follow the low-level "
+"`font-hinting` and `font-antialiasing` and `font-rgba-order` settings, or "
+"take environmental factors such as screen resolution and scaling into "
+"account. Possible values are: \"manual\" for respecting the low-level "
+"settings, or \"automatic\" for letting the toolkit make its own decisions."
+msgstr ""
+"Yazı tipi gerçeklemenin düşük düzey `font-hinting`, `font-antialiasing` ve "
+"`font-rgba-order` ayarlarını mı yoksa ekran çözünürlüğü ve ölçekleme gibi "
+"çevresel faktörleri mi yeğleyeceği. Olası değerler: düşük düzey ayarlara "
+"uyum için \"manual\" ya da araç takımının kendi kararlarını vermesi için "
+"\"automatic\"."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:316
+msgid "Accent color"
+msgstr "Vurgu rengi"
+
+# Slate için Arduvaz çevirisi de kullanılıyormuş. Pek bilmediğim bir konu.
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:317
+msgid ""
+"The preferred accent color for the user interface. Valid values are "
+"\"blue\", \"teal\", \"green\", \"yellow\", \"orange\", \"red\", \"pink\", "
+"\"purple\", \"slate\"."
+msgstr ""
+"Kullanıcı arayüzü için yeğlenen vurgu rengi. Geçerli değerler \"blue\" "
+"(mavi), \"teal\" (deniz mavisi), \"green\" (yeşil), \"yellow\" (sarı), "
+"\"orange\" (turuncu), \"red\" (kırmızı), \"pink\" (pembe), \"purple\" (mor), "
+"\"slate\" (kayrak)."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:6
+msgid "Disable command line"
+msgstr "Komut satırını devre dışı bırak"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:7
+msgid ""
+"Prevent the user from accessing the terminal or specifying a command line to "
+"be executed. For example, this would disable access to the panel’s “Run "
+"Application” dialog."
+msgstr ""
+"Kullanıcının uçbirime erişmesini ya da yürütülecek bir komut satırı "
+"belirtmesini engelle. Örneğin, bu paneldeki “Uygulama Çalıştır” penceresine "
+"erişimi kapatır."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:15
+msgid "Disable saving files to disk"
+msgstr "Dosyaları diske yazmayı devre dışı bırak"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:16
+msgid ""
+"Prevent the user from saving files to disk. For example, this would disable "
+"access to all applications’ “Save as” dialogs."
+msgstr ""
+"Kullanıcının dosyaları diske kaydetmesini engelle. Örneğin, bu, tüm "
+"uygulamaların “Farklı Kaydet” penceresine erişimini kapatacaktır."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:23
+msgid "Disable printing"
+msgstr "Yazdırmayı devre dışı bırak"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:24
+msgid ""
+"Prevent the user from printing. For example, this would disable access to "
+"all applications’ “Print” dialogs."
+msgstr ""
+"Yazdırma işleminde kullanıcıyı engelle. Örneğin bu, tüm uygulamalardaki "
+"“Yazdır” penceresine erişimi kapatacaktır."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:31
+msgid "Disable print setup"
+msgstr "Yazıcı yapılandırmasını devre dışı bırak"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:32
+msgid ""
+"Prevent the user from modifying print settings. For example, this would "
+"disable access to all applications’ “Print Setup” dialogs."
+msgstr ""
+"Kullanıcının yazdırma ayarlarını değiştirmesini engelle. Örneğin bu, tüm "
+"uygulamalardaki “Yazdırma Ayarları” penceresine erişimi kapatacaktır."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:39
+msgid "Disable user switching"
+msgstr "Kullanıcı değişimini devre dışı bırak"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:40
+msgid ""
+"Prevent the user from switching to another account while their session is "
+"active."
+msgstr ""
+"Kullanıcının kendi oturumu etkinken başka bir hesaba geçmesini engelle."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:47
+msgid "Disable lock screen"
+msgstr "Ekran kilitlemeyi devre dışı bırak"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:48
+msgid "Prevent the user from locking their screen."
+msgstr "Kullanıcının ekranı kilitlemesini engelle."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:54
+msgid "Disable URL and MIME type handlers"
+msgstr "URL ve MIME türü işleyicilerini devre dışı bırak"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:55
+msgid "Prevent running any URL or MIME type handler applications."
+msgstr ""
+"Herhangi bir URL ya da MIME tür işleyici uygulamaların çalışmasını engelle."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:61
+msgid "Disable log out"
+msgstr "Oturum kapatmayı devre dışı bırak"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:62
+msgid "Prevent the user from logging out."
+msgstr "Kullanıcının oturumu kapatmasını engelle."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:68
+msgid "Disable user administration"
+msgstr "Kullanıcı yönetimini devre dışı bırak"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:69
+msgid ""
+"Stop the user from modifying user accounts. By default, we allow adding and "
+"removing users, as well as changing other users settings."
+msgstr ""
+"Kullanıcının, kullanıcı hesaplarını değiştirmesini durdur. Öntanımlı olarak, "
+"kullanıcı ekleme ve çıkarma bunun yanı sıra diğer kullanıcı ayarlarının "
+"değiştirilmesine izin veriyoruz."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:76
+msgid "Mount removable storage devices as read-only"
+msgstr "Çıkarılabilir depolama aygıtlarını salt okunur olarak bağla"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:77
+msgid ""
+"Prevent users from writing or modifying files on removable storage devices "
+"(i.e. flash disks, mobile phones, cameras)."
+msgstr ""
+"Kullanıcıların çıkarılabilir depolama aygıtlarına (ör. flaş diskler, mobil "
+"telefonlar, kameralar) dosya yazmasını veya bu aygıtlardaki dosyaları "
+"düzenlemesini engelle."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:84
+msgid "Disable password showing"
+msgstr "Parola gösterimini devre dışı bırak"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:85
+msgid "Disable the \"Show Password\" menu item in password entries."
+msgstr "Parola girdilerinde \"Parolayı Göster\" menü ögesini devre dışı bırak."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:6
+msgid "Whether to automatically mount media"
+msgstr "Ortamın kendiliğinden bağlanıp bağlanmayacağı"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:7
+msgid ""
+"If set to true, then Nautilus will automatically mount media such as user-"
+"visible hard disks and removable media on start-up and media insertion."
+msgstr ""
+"Seçildiğinde, Nautilus, kullanıcının görebileceği sabit diskleri ve "
+"çıkartılabilir ortamları başlangıçta ve takıldıklarında kendiliğinden bağlar."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:11
+msgid "Whether to automatically open a folder for automounted media"
+msgstr "Kendiliğinden bağlanmış ortamlar için klasörün açılıp açılmayacağı"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:12
+msgid ""
+"If set to true, then Nautilus will automatically open a folder when media is "
+"automounted. This only applies to media where no known x-content/* type was "
+"detected; for media where a known x-content type is detected, the user "
+"configurable action will be taken instead."
+msgstr ""
+"Seçildiğinde, Nautilus, ortam kendiliğinden bağlandığında kendiliğinden "
+"klasör açar. Bu yalnızca ortam bilinen bir x-content/* türü saptanmadığında "
+"uygulanır, bilinen bir x-content türü saptandığında kullanıcı tanımlı eylem "
+"gerçekleştirilir."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:16
+msgid "Never prompt or autorun/autostart programs when media are inserted"
+msgstr "Bir ortam takıldığında autorun/autostart programlarını asla gösterme"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:17
+msgid ""
+"If set to true, then Nautilus will never prompt nor autorun/autostart "
+"programs when a medium is inserted."
+msgstr ""
+"Eğer doğru olarak ayarlandıysa, sonrasında Nautilus bir ortam takıldığında "
+"asla autorun/autostart programlarını başlatmayacak."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:21
+msgid ""
+"List of x-content/* types where the preferred application will be launched"
+msgstr "Yeğlenen uygulamanın başlatılacağı x-content/* türlerinin listesi"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:22
+msgid ""
+"List of x-content/* types for which the user have chosen to start an "
+"application in the preference capplet. The preferred application for the "
+"given type will be started on insertion on media matching these types."
+msgstr ""
+"Karmaşık uygulama tercihlerinde kullanıcının başlatmak için bir uygulamayı "
+"seçtiği x-content/* türlerinin listesi. Verilen türde yeğlenen uygulama bu "
+"tür ile eşleşen ortamın yerleştirilmesi üzerine başlatılacaktır."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:26
+msgid "List of x-content/* types set to “Do Nothing”"
+msgstr "“Hiçbir Şey Yapma”ya ayarlı x-content/* türleri listesi"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:27
+msgid ""
+"List of x-content/* types for which the user have chosen “Do Nothing” in the "
+"preference capplet. No prompt will be shown nor will any matching "
+"application be started on insertion of media matching these types."
+msgstr ""
+"Karmaşık uygulama tercihlerinde kullanıcının “Hiçbir Şey Yapma”yı seçtiği x-"
+"content/* türlerinin listesi. Ne ekran gösterilecek ne de herhangi bir "
+"eşleşen uygulama bu türler ile eşleşen ortamın yerleştirilmesi üzerine "
+"başlatılacaktır."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:31
+msgid "List of x-content/* types set to “Open Folder”"
+msgstr "“Klasör Aç”a ayarlı x-content/* türleri listesi"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:32
+msgid ""
+"List of x-content/* types for which the user have chosen “Open Folder” in "
+"the preferences capplet. A folder window will be opened on insertion of "
+"media matching these types."
+msgstr ""
+"Karmaşık uygulama tercihlerinde kullanıcının “Klasör Aç”ı seçtiği x-content/"
+"* türlerinin listesi. Bir klasör penceresi bu türler ile eşleşen ortamın "
+"yerleşmesi üzerine açılacaktır."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:6
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:55
+msgid "Show notification banners"
+msgstr "Bildirim başlıklarını göster"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:7
+msgid "Whether notification banners are visible for application notifications."
+msgstr ""
+"Uygulama bildirimleri için bildirim başlıklarının görünür yapılıp "
+"yapılmaması."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:14
+msgid "Show notifications in the lock screen"
+msgstr "Kilit ekranında bildirimleri göster"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:15
+msgid "Whether notifications are shown in the lock screen or not."
+msgstr "Bildirimlerin kilit ekranında gösterilip gösterilmemesi."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:31
+msgid "Application ID"
+msgstr "Uygulama Kimliği"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:32
+msgid "The application that this policy is for."
+msgstr "Bu uygulama için bir ilkedir."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:39
+msgid "Enable notifications"
+msgstr "Bildirimleri etkinleştir"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:40
+msgid "Whether notifications are globally enabled for this application."
+msgstr ""
+"Bildirimlerin bu uygulama için genel olarak etkinleştirilip "
+"etkinleştirilmemesi."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:47
+msgid "Enable sound alerts"
+msgstr "Sesli uyarıları etkinleştir"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:48
+msgid "Whether notifications should be accompanied by sound alerts."
+msgstr "Bildirimlere ses alarmlarının eşlik etmesinin gerekip gerekmemesi."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:56
+msgid ""
+"Whether notification banners for this application are shown or not. Does not "
+"affect clicking on message tray buttons."
+msgstr ""
+"Bu uygulama için bildirim başlıklarının gösterilmesi ya da gösterilmemesi. "
+"İleti çekmecesi düğmelerini tıklamak etkilemez."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:64
+msgid "Force automatic expanding of banners"
+msgstr "Başlıkların kendiliğinden genişletilmesini zorla"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:65
+msgid ""
+"Whether notifications from this application are expanded automatically when "
+"in banner mode."
+msgstr ""
+"Ana başlık kipindeyken bu uygulamadan bildirimlerin kendiliğinden genişletip "
+"genişletilmemesi."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:72
+msgid "Show in the lock screen"
+msgstr "Kilit ekranında göster"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:73
+msgid ""
+"Whether notifications from this application are shown when the screen is "
+"locked."
+msgstr ""
+"Bu uygulama bildirimlerinin ekran kilitlendiğinde gösterilip gösterilmemesi."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:80
+msgid "Show details in the lock screen"
+msgstr "Kilit ekranında ayrıntıları göster"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:81
+msgid ""
+"Whether the summary and body of notifications from this application will be "
+"visible in the locked screen."
+msgstr ""
+"Bu uygulama bildirimlerinin özet ve gövdesinin kilitli ekranda görünür olup "
+"olmaması."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:15
+msgid "Whether edge scrolling is enabled"
+msgstr "Kenar kaydırmanın etkin olup olmadığı"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:16
+msgid ""
+"When enabled, touchpads that support edge scrolling will have that feature "
+"enabled."
+msgstr ""
+"Etkinse, kenar kaydırmayı destekleyen dokunmatik yüzeylerin bu özelliği "
+"etkin olacaktır."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:20
+msgid "Whether two-finger scrolling is enabled"
+msgstr "İki parmak kaydırmanın etkin olup olmadığı"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:21
+msgid ""
+"When enabled, touchpads that support two-finger scrolling will have that "
+"feature enabled."
+msgstr ""
+"Etkinse, iki parmak kaydırmayı destekleyen dokunmatik yüzeylerin bu özelliği "
+"etkin olacaktır."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:25
+msgid "Whether to disable the touchpad while typing"
+msgstr "Yazarken dokunmatik yüzeyin devre dışı bırakılıp bırakılmayacağı"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:26
+msgid "When enabled, touchpads will be disabled while typing on the keyboard."
+msgstr ""
+"Etkinse, klavyede yazarken dokunmatik yüzeyler devre dışı bırakılacaktır."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:30
+msgid "Enable mouse clicks with touchpad"
+msgstr "Dokunmatik yüzey ile fare tıklamalarını etkinleştir"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:31
+msgid ""
+"Set this to TRUE to be able to send mouse clicks by tapping on the touchpad."
+msgstr ""
+"Dokunmatik yüzeye vurarak fare tıklamaları gönderebilmek için bunu DOĞRU "
+"olarak imleyin."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:35
+msgid "Tap Button Map"
+msgstr "Dokunma ve Düğme Eşleme"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:36
+msgid ""
+"Defines the mapping between the number of fingers and touchpad buttons. The "
+"default is to have a 1, 2 and 3 finger tap to map to the left, right and "
+"middle button (\"lrm\"), respectively."
+msgstr ""
+"Parmak sayılarıyla dokunmatik yüzey düğmelerini eşleştirmeyi tanımlar. "
+"Öntanımlı olan şudur: sol düğme için 1, sağ düğme için 2, orta düğme "
+"(\"lrm\") için 3 parmak."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:40
+msgid "Enable tap-and-drag with touchpad"
+msgstr "Dokunmatik yüzey ile dokun ve sürükleyi etkinleştir"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:41
+msgid ""
+"Set this to TRUE to be able to start a drag by tapping and immediately "
+"moving the finger that’s now pressed on the touchpad."
+msgstr ""
+"Dokunmatik yüzeye dokunarak ve basılı parmağı hemen hareket ettirerek bir "
+"sürükleme başlatabilmek için bunu DOĞRU olarak imleyin."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:45
+msgid "Enable tap-and-drag-lock with touchpad"
+msgstr "Dokunmatik yüzey ile dokun ve sürükle kilidini etkinleştir"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:46
+msgid ""
+"Set this to TRUE to lock the dragging process within a short timeout when "
+"the finger is lifted on the touchpad and the tap-and-drag setting is enabled."
+msgstr ""
+"tap-and-drag ayarı etkinken ve parmak dokunmatik yüzeye konduğunda sürükleme "
+"sürecini kısa zaman aşımıyla kilitlemek için bunu TRUE olarak belirleyin."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:50
+msgid "Touchpad enabled"
+msgstr "Dokunmatik yüzey etkin"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:51
+msgid "Defines the situations in which the touchpad is enabled."
+msgstr "Dokunmatik yüzeyin etkin olduğu durumları tanımlar."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:55
+msgid "Touchpad button orientation"
+msgstr "Dokunmatik yüzey düğme yönlendirmeleri"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:56
+msgid ""
+"Swap left and right mouse buttons for left-handed mice with “left”, “right” "
+"for right-handed, “mouse” to follow the mouse setting."
+msgstr ""
+"Solak fareler için “left” ile sol ve sağ fare düğmelerini değiştirin, "
+"sağlaklar için “right”, fare ayarlarını izlemek için “mouse”."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:60
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:131
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:261
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:279
+msgid "Acceleration profile"
+msgstr "Hızlandırma profili"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:61
+msgid ""
+"Acceleration profile used for connected touchpads. The acceleration profile "
+"can be set to either default (“default”) which uses the default acceleration "
+"profile for each device, flat (“flat”), which accelerates by a device "
+"specific constant factor derived from the configured pointer speed, or "
+"adaptive (“adaptive”) which adapts the acceleration depending on the mouse "
+"movement. If a touchpad doesn’t support the configured profile, “default” "
+"will be used."
+msgstr ""
+"Bağlı dokunmatik yüzeyler için kullanılan hızlandırma profili. Hızlandırma "
+"profili ya her aygıt için öntanımlı hızlandırma profilini kullanan "
+"öntanımlıya (“default”), ya yapılandırılmış imleç hızından çıkarsanan bir "
+"aygıta özel çarpanla hızlandıran düze (“flat”), ya da hızlandırmayı fare "
+"hareketine göre uyarlayan uyarlanana (“adaptive”) ayarlanabilir. Eğer "
+"dokunmatik yüzey yapılandırılmış profili desteklemiyorsa “default” "
+"kullanılır."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:65
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:120
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:273
+msgid "Pointer speed"
+msgstr "İmleç hızı"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:66
+msgid ""
+"Pointer speed for the touchpad. Accepted values are in the [-1..1] range "
+"(from “unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Dokunmatik yüzey için imleç hızı. Kabul edilen değerler [-1..1] "
+"aralığındadır (“hızlandırılmamış”tan “hızlı”ya). 0 ise sistem öntanımlı "
+"değeridir."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:71
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:126
+msgid "Natural scrolling"
+msgstr "Doğal kaydırma"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:72
+msgid "Set this to TRUE to enable natural (reverse) scrolling for touchpads."
+msgstr ""
+"Dokunmatik yüzey için doğal (ters) kaydırmayı etkinleştirmek için bunu DOĞRU "
+"olarak ayarlayın."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:76
+msgid "Click method"
+msgstr "Tıklama yöntemi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:77
+msgid ""
+"How to generate software-emulated buttons, either disabled (“none”), through "
+"specific areas (“areas”), number of fingers (“fingers”) or left as hardware "
+"default (“default”)."
+msgstr ""
+"Yazılım-öykünmüş düğmelerin nasıl oluşturulacağı, ya devre dışı (“none”), ya "
+"belirli alanlar ile (“areas”), ya parmak sayısı (“fingers”) ya da donanım "
+"öntanımlı olarak sol (“default”)."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:81
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:136
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:266
+msgid "Emulate middle click"
+msgstr "Orta tuşu öykün"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:82
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:137
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:267
+msgid ""
+"Set this to TRUE to enable middle click during simultaneous left and right "
+"click."
+msgstr ""
+"Aynı anda sol ve sağ tık sırasında orta tıkı etkinleştirmek için bunu DOĞRU "
+"olarak ayarlayın."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:88
+msgid "Keyboard repeat"
+msgstr "Klavye yinelemesi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:89
+msgid "Set this to TRUE to enable keyboard repeat."
+msgstr "Klavye yinelemesini etkinleştirmek için DOĞRU olarak imleyin."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:93
+msgid "Key Repeat Interval"
+msgstr "Tuş Yineleme Aralığı"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:94
+msgid "Delay between repeats in milliseconds."
+msgstr "Yinelemelerin milisaniye türünden gecikmesi."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:98
+msgid "Initial Key Repeat Delay"
+msgstr "Başlangıç Anahtar Yineleme Gecikmesi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:99
+msgid "Initial key repeat delay in milliseconds."
+msgstr "Milisaniye türünden başlangıç anahtar yineleme gecikmesi."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:103
+msgid "Remember NumLock state"
+msgstr "NumLock durumunu anımsa"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:104
+msgid ""
+"When set to true, GNOME will remember the state of the NumLock LED between "
+"sessions."
+msgstr ""
+"Eğer doğruysa; GNOME, oturumlar arasında NumLock’un durumunu anımsayacak."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:108
+msgid "NumLock state"
+msgstr "NumLock durumu"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:109
+msgid "The remembered state of the NumLock LED."
+msgstr "NumLock LED’inin anımsanan durumu."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:115
+msgid "Mouse button orientation"
+msgstr "Fare düğmeleri konumlandırması"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:116
+msgid "Swap left and right mouse buttons for left-handed mice."
+msgstr "Solaklar için sağ ve sol düğmelerin yerini değiştir."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:121
+msgid ""
+"Pointer speed for mice. Accepted values are in the [-1..1] range (from "
+"“unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Fare için imleç hızı. Kabul edilen değerler [-1..1] aralığındadır "
+"(“hızlandırılmamış”la “hızlı” arasında). 0 ise öntanımlı sistem değeridir."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:127
+msgid "Set this to TRUE to enable natural (reverse) scrolling for mice."
+msgstr ""
+"Fareler için doğal (test) kaydırmayı etkinleştirmek için bunu TRUE olarak "
+"imleyin."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:132
+msgid ""
+"Acceleration profile used for connected mice. The acceleration profile can "
+"be set to either default (“default”) which uses the default acceleration "
+"profile for each device, flat (“flat”), which accelerates by a device "
+"specific constant factor derived from the configured pointer speed, or "
+"adaptive (“adaptive”) which adapts the acceleration depending on the mouse "
+"movement. If a mouse doesn’t support the configured profile, “default” will "
+"be used."
+msgstr ""
+"Bağlı fareler için kullanılan hızlandırma profili. Hızlandırma profili ya "
+"her aygıt için öntanımlı hızlandırma profilini kullanan öntanımlıya "
+"(“default”), ya yapılandırılmış imleç hızından çıkarsanan bir aygıta özel "
+"çarpanla hızlandıran düze (“flat”), ya da hızlandırmayı fare hareketine göre "
+"uyarlayan uyarlanana (“adaptive”) ayarlanabilir. Eğer bir fare "
+"yapılandırılmış profili desteklemiyorsa “default” kullanılır."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:141
+msgid "Double click time"
+msgstr "Çift tıklama zamanı"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:142
+msgid "Length of a double click in milliseconds."
+msgstr "Çift tıklamanın milisaniye türünden uzunluğu."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:146
+msgid "Drag threshold"
+msgstr "Sürükleme eşiği"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:147
+msgid "Distance before a drag is started."
+msgstr "Sürüklemenin başlamasından önceki uzaklık."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:153
+msgid "Drawing tablet mapping"
+msgstr "Çizim tableti eşleştirmesi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:154
+msgid ""
+"EDID information of the output the tablet is mapped to. Must be in the "
+"format [vendor, product, serial]. [\"\",\"\",\"\"] relies on automatic "
+"mapping."
+msgstr ""
+"Tableti eşleyen çıktının EDID bilgisi. [üretici, ürün, seri numarası] "
+"biçiminde olmalıdır. [\"\",\"\",\"\"] kendiliğinden haritalamayı temel alır."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:158
+msgid "Tablet mapping"
+msgstr "Tablet haritalaması"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:159
+msgid "How input affects the pointer on the screen"
+msgstr "Girdinin ekrandaki imleci nasıl etkileyeceği"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:163
+msgid "Tablet area"
+msgstr "Tablet alanı"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:164
+msgid ""
+"Dead area padding around the active area, in percentages. Respectively "
+"applied to left,right,top and bottom sides."
+msgstr ""
+"Etkin alan çevresindeki ölü alan dolgusu, yüzdeyle. Sırayla sol, sağ, üst ve "
+"alt kenarlara uygulanır."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:168
+msgid "Tablet aspect ratio"
+msgstr "Tablet çerçeve oranı"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:169
+msgid ""
+"Enable this to restrict the tablet area to match the aspect ratio of the "
+"output."
+msgstr ""
+"Tablet oranını çıktının çerçeve oranıyla kısıtlamak için bunu eşleştirin."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:173
+msgid "Tablet left-handed mode"
+msgstr "Tablet solak kipi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:174
+msgid ""
+"Enable this to allow physically rotating the tablet for left-handed setups"
+msgstr ""
+"Tableti solak kurulumlar için fiziksel olarak döndürmeye olanak sağlamak "
+"için bunu etkinleştirin"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:180
+msgid "Stylus pressure curve"
+msgstr "Stylus basınç eğrisi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:181
+msgid ""
+"Set this to x1, y1 and x2, y2 of the pressure curve applied to the stylus."
+msgstr ""
+"Bunu, stylusa uygulanan basınç eğrisinin x1, y1 ve x2, y2’sine ayarlayın."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:185
+msgid "Stylus pressure range"
+msgstr "Stylus basınç aralığı"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:186
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:196
+msgid ""
+"Set this to the percentage of the physical pressure range that should map to "
+"the logical range."
+msgstr ""
+"Bunu, mantıksal aralığa eşlenecek fiziksel baskı aralığının yüzdesine "
+"belirle."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:190
+msgid "Eraser pressure curve"
+msgstr "Silgi basınç eğrisi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:191
+msgid ""
+"Set this to x1, y1 and x2, y2 of the pressure curve applied to the eraser."
+msgstr ""
+"Bunu, silgiye uygulanan basınç eğrisinin x1, y1 ve x2, y2’sine ayarlayın."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:195
+msgid "Eraser pressure range"
+msgstr "Silgi basınç aralığı"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:200
+msgid "Button action"
+msgstr "Düğme eylemi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:201
+msgid "Stylus button action, this button is located along the pen handle."
+msgstr ""
+"Stylus düğmesi eylemi, bu düğme kalem tutacağı kenarında konumlandırılmıştır."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:205
+msgid "Secondary button action"
+msgstr "İkincil düğme eylemi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:206
+msgid ""
+"Secondary stylus button action, this button is located along the pen handle "
+"on some styli like the Grip Pen. Other styli like the Airbrush Pen or the "
+"Inking Pen only have one button, this setting is ineffective on those."
+msgstr ""
+"İkincil stylus düğmesi eylemi; bu düğme, Grip Pen gibi bazı styluslarda "
+"kalem tutacağı kenarında konumlandırılmıştır. Airbrush Pen veya Inking Pen "
+"gibi diğer styluslar yalnızca bir düğmeye sahiptir, bu ayar onlar için "
+"etkisizdir."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:210
+msgid "Tertiary button action"
+msgstr "Üçüncül düğme eylemi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:211
+msgid ""
+"Tertiary stylus button action, this button is located along the pen handle "
+"on some styli like the 3D Pen. Other styli like the Grip Pen only have two "
+"buttons, this setting is ineffective on those."
+msgstr ""
+"Üçüncül stylus düğmesi eylemi; bu düğme, 3D Pen gibi bazı styluslarda kalem "
+"tutacağı kenarında konumlandırılmıştır. Grip Pen gibi diğer styluslar "
+"yalnızca iki düğmeye sahiptir, bu ayar onlar için etkisizdir."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:215
+msgid "Key combination for the primary button"
+msgstr "Birincil düğme için tuş birleşimi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:216
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:221
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:226
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:238
+msgid ""
+"The keyboard shortcut generated when the button is pressed for custom "
+"actions."
+msgstr "Düğme özel eylemler için basıldığında üretilen klavye kısayolu."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:220
+msgid "Key combination for the secondary button"
+msgstr "İkincil düğme için tuş birleşimi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:225
+msgid "Key combination for the tertiary button"
+msgstr "Üçüncül düğme için tuş birleşimi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:232
+msgid "Pad button action type"
+msgstr "Dokunmatik yüzey düğme eylem türü"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:233
+msgid "The type of action triggered by the button being pressed."
+msgstr "Düğmenin basılmasıyla tetiklenen eylemin türü."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:237
+msgid "Key combination for the custom action"
+msgstr "Özel eylem için tuş birleşimi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:244
+msgid "Touchscreen output mapping"
+msgstr "Dokunmatik ekran çıktı eşleme"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:245
+msgid ""
+"EDID information of the output the touchscreen is mapped to. Must be in the "
+"format [vendor, product, serial]. [\"\",\"\",\"\"] relies on automatic "
+"mapping."
+msgstr ""
+"Dokunmatik ekranın eşleştirildiği ekranın EDID bilgisi. [üretici, ürün, seri "
+"numarası] biçiminde olmalıdır. [\"\",\"\",\"\"] kendiliğinden haritalamayı "
+"temel alır."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:252
+msgid "Mouse wheel emulation button. 0 to disable the feature."
+msgstr "Fare tekerleği öykünme düğmesi. Özelliği devre dışı bırakmak için 0."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:256
+msgid "Mouse wheel emulation button lock"
+msgstr "Fare tekerleği öykünme düğmesi kilidi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:257
+msgid ""
+"Set this to TRUE to enable button locking for the wheel emulation button. If "
+"enabled, the first click of the button enables scrolling, the second click "
+"disables scrolling again."
+msgstr ""
+"Tekerlek öykünme düğmesi için düğme kilitlemeyi etkinleştirmek için bunu "
+"TRUE olarak belirle. Eğer etkinse, düğmeye ilk tıklanış kaydırmayı "
+"etkinleştirir, ikinci tık kaydırmayı yeniden devre dışı bırakır."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:262
+msgid ""
+"Acceleration profile used for the trackball. The acceleration profile can be "
+"set to either default (“default”) which uses the default acceleration "
+"profile, flat (“flat”), which accelerates by a device specific constant "
+"factor derived from the configured speed, or adaptive (“adaptive”) which "
+"adapts the acceleration depending on the movement. If the trackball doesn’t "
+"support the configured profile, “default” will be used."
+msgstr ""
+"İztopu için kullanılan hızlandırma profili. Hızlandırma profili ya öntanımlı "
+"hızlandırma profilini kullanan öntanımlıya (“default”), ya yapılandırılmış "
+"hızdan çıkarsanan bir aygıta özel çarpanla hızlandıran düze (“flat”), ya da "
+"hızlandırmayı harekete göre uyarlayan uyarlanana (“adaptive”) ayarlanabilir. "
+"Eğer iztopu yapılandırılmış profili desteklemiyorsa “default” kullanılır."
+
+# Pointing stick için açıklama eklendi.
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:274
+msgid ""
+"Pointer speed for pointing sticks. Accepted values are in the [-1..1] range "
+"(from “unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"İşaret çubuğu için imleç hızı. Kabul edilen değerler [-1..1] aralığındadır "
+"(“hızlandırılmamış”la “fast” arasında). 0 ise öntanımlı sistem değeridir. "
+"(İşaret çubuğu, kimi bilgisayarlada klavyede bulunan kırmızı noktalı fare "
+"işlevi gören araçlardır)"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:280
+msgid ""
+"Acceleration profile used for the pointing stick. The acceleration profile "
+"can be set to either default (“default”) which uses the default acceleration "
+"profile, flat (“flat”), which accelerates by a device specific constant "
+"factor derived from the configured speed, or adaptive (“adaptive”) which "
+"adapts the acceleration depending on the movement. If the pointing stick "
+"doesn’t support the configured profile, “default” will be used."
+msgstr ""
+"İşaret çubuğu için kullanılan hızlandırma profili. Hızlandırma profili ya "
+"öntanımlı hızlandırma profilini kullanan öntanımlıya (“default”), ya "
+"yapılandırılmış hızdan çıkarsanan bir aygıta özel çarpanla hızlandıran düze "
+"(“flat”), ya da hızlandırmayı harekete göre uyarlayan uyarlanana "
+"(“adaptive”) ayarlanabilir. Eğer işaret çubuğu yapılandırılmış profili "
+"desteklemiyorsa “default” kullanılır."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:284
+msgid "Scrolling method"
+msgstr "Kaydırma yöntemi"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:285
+msgid ""
+"Scrolling method used for pointing sticks. The scrolling method can be set "
+"to either default (“default”) which uses the default method, none (“none”), "
+"which disables scrolling, or middle-button (“on-button-down”) which enables "
+"scrolling whilst the middle button is held down."
+msgstr ""
+"İşaret çubuğu için kullanılan kaydırma yöntemi. Kaydırma yöntemi ya "
+"öntanımlı yöntemi kullanan öntanımlıya (“default”), ya kaydırmayı devre dışı "
+"bırakan (“none”), ya da orta düğme tutuluyken kaydırmayı sağlayan (“on-"
+"button-down”) olarak ayarlanabilir."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:6
+msgid "Controls visibility of personal information"
+msgstr "Kişisel bilgilerin görünürlüğünü denetler"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:7
+msgid ""
+"If set to true, the system will make an effort to not divulge the user’s "
+"identity on screen or on the network."
+msgstr ""
+"Eğer seçiliyse, sistem kullanıcının kimliğini ekranda ya da ağda açığa "
+"çıkarmamak için çaba harcayacaktır."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:12
+msgid "Show full name in the user menu"
+msgstr "Kullanıcı menüsünde tam adı göster"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:13
+msgid "Whether the users full name is shown in the user menu or not."
+msgstr "Kullanıcı menüsünde kullanıcının tam adının görünüp görünmeyeceği."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:17
+msgid "Whether to remove old files from the trash automatically"
+msgstr "Eskimiş dosyaların çöpten kendiliğinden silinip silinmeyeceği"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:18
+msgid ""
+"If TRUE, automatically remove files from the trash when they are older than "
+"“old-files-age” days."
+msgstr ""
+"DOĞRU ise, “old-files-age” günden daha eski dosyalar kendiliğinden çöpten "
+"silinir."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:23
+msgid "Whether to remove old temporary files automatically"
+msgstr "Geçici dosyaların kendiliğinden silinip silinmeyeceği"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:24
+msgid ""
+"If TRUE, automatically remove temporary files when they are older than “old-"
+"files-age” days."
+msgstr ""
+"DOĞRU ise, “old-files-age” günden daha eski geçici dosyalar kendiliğinden "
+"silinir."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:29
+msgid "Number of days to keep trash and temporary files"
+msgstr "Çöpün ve geçici dosyaların saklanacağı gün sayısı"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:30
+msgid "Consider trash and temporary files old after this many days."
+msgstr "Bu birkaç günden eski çöp ve geçici dosyaları göz önünde bulundur."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:35
+msgid "Whether to remember recently used files"
+msgstr "Son kullanılan dosyaların hatırlanıp hatırlanmayacağı"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:36
+msgid "If FALSE, applications will not remember recently used files."
+msgstr ""
+"Eğer seçili değilse, uygulamalar son kullanılan dosyaları hatırlamayacak."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:41
+msgid "Number of days to remember recently used files for"
+msgstr "Son kullanılan dosyalar için hatırlanacak gün sayısı"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:42
+msgid ""
+"Recently used files will be remembered for this many days. If set to 0, "
+"recent files will not be remembered; if set to -1, they will be retained "
+"indefinitely."
+msgstr ""
+"Son kullanılan dosyalar bu birkaç gün için hatırlanacak. Eğer 0 olarak "
+"ayarlanırsa, son dosyalar hatırlanmayacak; eğer -1 olarak ayarlanırsa, "
+"dosyalar süresiz muhafaza edilecektir."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:48
+msgid "Whether to remember application usage"
+msgstr "Uygulama kullanımının hatırlanıp hatırlanmaması"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:49
+msgid "If FALSE, application usage will not be monitored and recorded."
+msgstr ""
+"Eğer seçili değilse, uygulama kullanımı izlenemeyecek ve kaydedilemeyecektir."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:54
+msgid "Send statistics when applications are removed or installed"
+msgstr "Uygulama kaldırıldığında ya da kurulduğunda istatistikleri gönder"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:55
+msgid ""
+"If FALSE, no anonymous installation or removal information will be sent to "
+"the vendor."
+msgstr ""
+"Eğer seçili değilse, anonim olmayan kurulum ya da kaldırma bilgileri "
+"üreticiye gönderilecektir."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:59
+msgid "Send reports of technical problems to the vendor"
+msgstr "Teknik sorunların raporlarını üreticiye gönder"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:60
+msgid "If TRUE, anonymized reports will be sent automatically to the vendor."
+msgstr ""
+"Eğer seçiliyse, anonim raporlar üreticiye kendiliğinden gönderilecektir."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:64
+msgid "Don’t allow applications to access the microphone"
+msgstr "Uygulamanın mikrofona erişmesine izin verme"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:65
+msgid "If TRUE, applications should not use the microphone."
+msgstr "DOĞRU ise, uygulama mikrofonu kullanamaz."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:69
+msgid "Don’t allow applications to access the camera"
+msgstr "Uygulamanın kameraya erişmesine izin verme"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:70
+msgid "If TRUE, applications should not use the camera."
+msgstr "DOĞRU ise, uygulama kamerayı kullanamaz."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:74
+msgid "Don’t allow applications to output sound"
+msgstr "Uygulamaların ses çıkarmasına izin verme"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:75
+msgid "If TRUE, applications should not make sound."
+msgstr "DOĞRU ise, uygulama ses çıkaramaz."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:79
+msgid "Whether to protect USB devices"
+msgstr "USB aygıtların korunup korunmayacağı"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:80
+msgid ""
+"If the USBGuard service is present and this setting is enabled, USB devices "
+"will be protected as configured in the usb-protection-level setting."
+msgstr ""
+"Eğer USBGuard hizmeti varsa ve bu ayar etkinse, USB aygıtları usb-protection-"
+"level ayarında yapılandırıldığı gibi korunacaktır."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:87
+msgid "When USB devices should be rejected"
+msgstr "USB aygıtların ne zaman reddedileceği"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:88
+msgid ""
+"If set to “lockscreen”, only when the lock screen is present new USB devices "
+"will be rejected; if set to “always”, all new USB devices will always be "
+"rejected."
+msgstr ""
+"“lockscreen” (kilit ekranı) olarak ayarlanırsa, yalnızca kilit ekranında "
+"yeni USB aygıtları reddedilecek; “always” (her zaman) olarak ayarlanırsa, "
+"tüm yeni USB aygıtları reddedilecektir."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:95
+msgid "Whether the privacy screen is enabled"
+msgstr "Gizlilik ekranının etkin olup olmadığı"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:96
+msgid ""
+"If the underlying hardware has privacy screen support and this setting is "
+"enabled, the panels supporting this technology will be obscured from lateral "
+"view."
+msgstr ""
+"Eğer temeldeki donanım gizlilik ekranını destekliyorsa ve bu ayar etkinse, "
+"bu teknolojiyi destekleyen paneller yandan bakışta belirsizleşecektir."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:6
+msgid "Activate when idle"
+msgstr "Boştayken etkinleştir"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:7
+msgid ""
+"Set this to TRUE to activate the screensaver when the session is idle. "
+"DEPRECATED: This key is deprecated and ignored. Set org.gnome.desktop."
+"session idle-delay to 0 if you do not want to activate the screensaver."
+msgstr ""
+"Oturum boştayken ekran koruyucusunu etkinleştirmek için bunu DOĞRU olarak "
+"ayarlayın. TERK EDİLDİ: Bu anahtar terk edildi ve yok sayılıyor. Eğer ekran "
+"koruyucuyu etkinleştirmek istemiyorsanız, org.gnome.desktop.session idle-"
+"delay seçeneğini 0 olarak ayarlayın."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:16
+msgid "Lock on activation"
+msgstr "Etkinleştirmede kilitle"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:17
+msgid "Set this to TRUE to lock the screen when the screensaver goes active."
+msgstr ""
+"Ekran koruyucu etkinleştiğinde ekranı kilitlemek için bunu DOĞRU olarak "
+"ayarlayın."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:21
+msgid "Time before locking"
+msgstr "Kilitlemeden önce geçecek süre"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:22
+msgid ""
+"The number of seconds after screensaver activation before locking the screen."
+msgstr ""
+"Ekranı kilitlemeden önce, ekran koruyucu etkinleşme sonrasındaki saniye "
+"sayısı."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:26
+msgid "Show full name in the lock screen"
+msgstr "Kilit ekranında tam adı göster"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:27
+msgid ""
+"Whether the user’s full name is shown in the lock screen or not. This only "
+"affects the screen shield, the name is always shown in the unlock dialog."
+msgstr ""
+"Kullanıcının tam adının kilit ekranında gösterilip gösterilmemesi. Bu "
+"yalnızca ekran kalkanını etkiler, ad kilit kaldırma penceresinde her zaman "
+"gösterilir."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:31
+msgid "Allow embedding a keyboard into the window"
+msgstr "Pencereye bir klavye gömmeye izin ver"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:32
+msgid ""
+"Set this to TRUE to allow embedding a keyboard into the window when trying "
+"to unlock. The “keyboard_command” key must be set with the appropriate "
+"command. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Kilit açma işlemi denendiğinde, pencereye bir klavye gömülmesine izin vermek "
+"için bunu DOĞRU olarak ayarlayın. “keyboard_command” anahtarı uygun komut "
+"ile ayarlanmış olmalıdır. TERK EDİLDİ: Bu anahtar terk edildi ve yok "
+"sayılıyor."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:40
+msgid "Embedded keyboard command"
+msgstr "Gömülü klavye komutu"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:41
+msgid ""
+"The command that will be run, if the “embedded_keyboard_enabled” key is set "
+"to TRUE, to embed a keyboard widget into the window. This command should "
+"implement an XEMBED plug interface and output a window XID on the standard "
+"output. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Eğer “embedded_keyboard_enabled” anahtarı DOĞRU olarak ayarlanırsa, "
+"pencerede gömülü bir klavye programcığı için çalıştırılacak komut. Bu komut "
+"bir XEMBED takma arayüzü ve standart çıktıda bir XID penceresi sağlamalıdır. "
+"TERK EDİLDİ: Bu anahtar terk edildi ve yok sayılıyor."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:49
+msgid "Allow logout"
+msgstr "Oturumu kapatmaya izin ver"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:50
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to allow logging "
+"out after a delay. The delay is specified in the “logout_delay” key. "
+"DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Bir gecikmeden sonra oturumu kapatmaya izin verme seçeneğinin kilit açma "
+"penceresinde sunulması için bunu DOĞRU olarak ayarlayın. Bu gecikme "
+"“logout_delay” anahtarında belirtilir. TERK EDİLDİ: Bu anahtar terk edildi "
+"ve yok sayılıyor."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:58
+msgid "Time before logout option"
+msgstr "Oturumu kapat seçeneğinden önceki zaman"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:59
+msgid ""
+"The number of seconds after the screensaver activation before a logout "
+"option will appear in the unlock dialog. This key has effect only if the "
+"“logout_enable” key is set to TRUE. DEPRECATED: This key is deprecated and "
+"ignored"
+msgstr ""
+"Kilit açma penceresinde oturumu kapat seçeneği belirmeden önce, ekran "
+"koruyucu etkinleştirme sonrasındaki saniye sayısı. Bu anahtar yalnızca "
+"“logout_enable” anahtarı DOĞRU olarak ayarlandıysa etkilidir. TERK EDİLDİ: "
+"Bu anahtar terk edildi ve yok sayılıyor"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:67
+msgid "Logout command"
+msgstr "Oturum kapatma komutu"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:68
+msgid ""
+"The command to invoke when the logout button is clicked. This command should "
+"simply log the user out without any interaction. This key has effect only if "
+"the “logout_enable” key is set to TRUE. DEPRECATED: This key is deprecated "
+"and ignored."
+msgstr ""
+"Oturumu kapat düğmesi tıklandığında çalıştırılacak komut. Bu komut herhangi "
+"bir etkileşim olmadan kullanıcının basitçe oturumunu kapatmalıdır. Bu "
+"anahtar yalnızca eğer “logout_enable” anahtarı DOĞRU olarak ayarlanmışsa "
+"etki eder. TERK EDİLDİ: Bu anahtar terk edildi ve yok sayılıyor."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:76
+msgid "Allow user switching"
+msgstr "Kullanıcı değiştirmeye izin ver"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:77
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to switch to a "
+"different user account."
+msgstr ""
+"Kilit açma penceresinde farklı bir kullanıcı hesabına geçme seçeneği "
+"sunulması için bunu DOĞRU olarak ayarlayın."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:81
+msgid "Allow the session status message to be displayed"
+msgstr "Oturum durum iletisinin gösterilmesine izin ver"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:82
+msgid ""
+"Allow the session status message to be displayed when the screen is locked. "
+"DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Ekran kilitlendiğinde oturum durum iletisinin görüntülenmesine izin ver. "
+"TERK EDİLDİ: Bu anahtar terk edildi ve yok sayılıyor."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:9
+msgid "Enable screen time history"
+msgstr "Ekran süresi geçmişini etkinleştir"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:10
+msgid ""
+"Enable basic screen time functionality, recording usage data for viewing "
+"history."
+msgstr ""
+"Basit ekran süresi işlevselliğini etkinleştir, geçmişi görüntülemek için "
+"kullanım verisi kaydedilir"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:17
+msgid "Enable daily screen time limit"
+msgstr "Günlük ekran süresi sınırını etkinleştir"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:18
+msgid ""
+"Enable imposing a screen time limit on the user, as set in daily-limit-"
+"seconds."
+msgstr ""
+"Kullanıcıya daily-limit-seconds ile ayarlandığı gibi ekran süresi sınırı "
+"koymayı etkinleştir."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:23
+msgid "Daily screen time limit"
+msgstr "Günlük ekran süresi sınırı"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:24
+msgid ""
+"The limit on the amount of daily screen time the user is allowed, in seconds."
+msgstr ""
+"Kullanıcının izin verilen günlük ekran süresinin saniye türünden sınırı."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:30
+msgid "Grayscale once limit is reached"
+msgstr "Sınıra ulaşıldığında gri tonlama"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:31
+msgid ""
+"Whether to make the screen grayscale once the user’s screen time limit is "
+"reached."
+msgstr ""
+"Kullanıcının ekran süresi sınırına ulaşıldığında ekranın gri tonlamalı "
+"yapılma durumu."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:7
+msgid "Disable all external search providers"
+msgstr "Tüm dış arama sağlayıcılarını etkisizleştir"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:8
+msgid ""
+"Set to true to disable all external search provider programs, whether or not "
+"they are independently disabled or enabled. External search providers are "
+"installed by applications in $XDG_DATA_DIR/gnome-shell/search-providers."
+msgstr ""
+"Tüm dış arama sağlayıcı programları devre dışı bırakmak için, bağımsız "
+"biçimde devre dışı olsalar da olmasalar da doğru olarak ayarla. Dış arama "
+"sağlayıcıları, $XDG_DATA_DIR/gnome-shell/search-providers konumundaki "
+"uygulamalarca kurulur."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:18
+msgid ""
+"List of desktop file IDs for which the associated default-enabled search "
+"provider should be disabled"
+msgstr ""
+"Öntanımlı olarak etkinleştirilen ilişkili arama sağlayıcısının devre dışı "
+"bırakılacağı masaüstü dosya kimlikleri (ID) listesi"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:22
+msgid ""
+"Results for applications contained in this list will not be displayed when "
+"searching."
+msgstr "Arama yapıldığında bu listedeki uygulama sonuçları gösterilmeyecek."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:30
+msgid ""
+"List of desktop file IDs for which the associated default-disabled search "
+"provider should be enabled"
+msgstr ""
+"Öntanımlı olarak devre dışı bırakılan ilişkili arama sağlayıcısının "
+"etkinleştirileceği masaüstü dosya kimlikleri (ID) listesi"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:34
+msgid ""
+"Results for applications contained in this list will be displayed when "
+"searching."
+msgstr "Arama yapıldığında bu listedeki uygulama sonuçları gösterilmeyecek."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:42
+msgid "List of desktop file IDs for search providers sort order"
+msgstr ""
+"Arama sağlayıcılarının sıralaması için masaüstü dosya kimliklerinin (ID) "
+"listesi"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:43
+msgid ""
+"Results for applications contained in this list will be displayed in the "
+"specified order. Results for applications not specified in this list will be "
+"displayed last, sorted alphabetically."
+msgstr ""
+"Bu listedeki uygulama sonuçları belirtilen sırada gösterilmeyecek. Bu "
+"listede belirtilmeyen uygulama sonuçları alfabetik sıra ile sonda "
+"gösterilecektir."
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:6
+msgid "Time before session is considered idle"
+msgstr "Oturumun boşta sayılmasından önceki zaman"
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:7
+msgid ""
+"The number of seconds of inactivity before the session is considered idle."
+msgstr "Oturumun boşta olduğu anlaşılmadan önce etkin olmayan saniye sayısı."
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:11
+msgid "Session type"
+msgstr "Oturum türü"
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:12
+msgid "The name of the session to use. Known value is “gnome”."
+msgstr "Kullanılacak oturumun adı. Bilinen değer: “gnome”."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:6
+msgid "Sounds for events"
+msgstr "Olaylar için sesler"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:7
+msgid "Whether to play sounds on user events."
+msgstr "Kullanıcı olaylarında seslerin çalınıp çalınmaması."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:11
+msgid "Sound theme name"
+msgstr "Ses teması adı"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:12
+msgid "The XDG sound theme to use for event sounds."
+msgstr "Olay sesleri için kullanılacak XDG ses teması."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:16
+msgid "Input feedback sounds"
+msgstr "Giriş geri bildirim sesleri"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:17
+msgid "Whether to play sounds on input events."
+msgstr "Giriş olaylarında ses çalınması."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:21
+msgid "Allow volume above 100%"
+msgstr "Sesin %100’ü geçmesine izin ver"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:22
+msgid "Whether volume can be set above 100%, using software amplification."
+msgstr ""
+"Yazılımsal yükseltme kullanılarak sesin %100'ün üstünde belirlenip "
+"belirlenemeyeceği."
+
+#: schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in:6
+msgid ""
+"Maximum age for thumbnails in the cache, in days. Set to -1 to disable "
+"cleaning."
+msgstr ""
+"Önbellekteki küçük resimler için gün türünden azami yaş. Temizlemeyi "
+"kapatmak için -1 olarak ayarla."
+
+#: schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in:10
+msgid ""
+"Maximum size of the thumbnail cache, in megabytes. Set to -1 to disable "
+"cleaning."
+msgstr ""
+"Megabayt olarak ön bellekteki küçük resimlerin azami boyutu. Temizlemeyi "
+"kapatmak için -1 olarak ayarla."
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:6
+msgid "Disable all external thumbnailers"
+msgstr "Tüm dış küçük resimleyicileri iptal et"
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:7
+msgid ""
+"Set to true to disable all external thumbnailer programs, independent on "
+"whether they are independently disabled/enabled."
+msgstr ""
+"Eğer seçiliyse, ayrı ayrı kapat/etkinleştir ayarlarından bağımsız olarak tüm "
+"dış küçük resimleyici programlarını iptal eder."
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:15
+msgid ""
+"List of mime-types for which external thumbnailer programs will be disabled"
+msgstr ""
+"Dış küçük resimleyici programlarının devre dışı bırakılacağı mime türleri "
+"listesi"
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:19
+msgid ""
+"Thumbnails will not be created for files whose mime-type is contained in the "
+"list."
+msgstr ""
+"Listede bulunan mime türündeki dosyalar için küçük resimler "
+"oluşturulmayacaktır."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:8
+msgid "Switch to workspace 1"
+msgstr "Çalışma alanı 1’e geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:12
+msgid "Switch to workspace 2"
+msgstr "Çalışma alanı 2’ye geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:16
+msgid "Switch to workspace 3"
+msgstr "Çalışma alanı 3’e geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:20
+msgid "Switch to workspace 4"
+msgstr "Çalışma alanı 4’e geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:24
+msgid "Switch to workspace 5"
+msgstr "Çalışma alanı 5’e geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:28
+msgid "Switch to workspace 6"
+msgstr "Çalışma alanı 6’ya geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:32
+msgid "Switch to workspace 7"
+msgstr "Çalışma alanı 7’ye geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:36
+msgid "Switch to workspace 8"
+msgstr "Çalışma alanı 8’e geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:40
+msgid "Switch to workspace 9"
+msgstr "Çalışma alanı 9’a geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:44
+msgid "Switch to workspace 10"
+msgstr "Çalışma alanı 10’a geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:48
+msgid "Switch to workspace 11"
+msgstr "Çalışma alanı 11’e geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:52
+msgid "Switch to workspace 12"
+msgstr "Çalışma alanı 12’ye geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:56
+msgid "Switch to workspace left"
+msgstr "Soldaki çalışma alanına geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:60
+msgid "Switch to workspace right"
+msgstr "Sağdaki çalışma alanına geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:64
+msgid "Switch to workspace above"
+msgstr "Üstteki çalışma alanına geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:68
+msgid "Switch to workspace below"
+msgstr "Alttaki çalışma alanına geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:72
+msgid "Switch to last workspace"
+msgstr "Son çalışma alanına geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:76
+msgid "Switch windows of an application"
+msgstr "Uygulamanın pencereleri arasında geçiş yap"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:80
+msgid "Reverse switch windows of an application"
+msgstr "Uygulamanın pencereleri arasında tersine geçiş yap"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:84
+msgid "Switch applications"
+msgstr "Uygulamalar arasında geçiş yap"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:88
+msgid "Reverse switch applications"
+msgstr "Uygulamalar arasında tersine geçiş yap"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:92
+msgid "Switch windows"
+msgstr "Pencereler arasında geçiş yap"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:96
+msgid "Reverse switch windows"
+msgstr "Pencereler arasında tersine geçiş yap"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:100
+msgid "Switch system controls"
+msgstr "Sistem denetimleri arasında geçiş yap"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:104
+msgid "Reverse switch system controls"
+msgstr "Sistem denetimleri arasında tersine geçiş yap"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:108
+msgid "Switch windows of an app directly"
+msgstr "Bir uygulamanın pencerelerine doğrudan geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:112
+msgid "Reverse switch windows of an app directly"
+msgstr "Bir uygulamanın pencerelerine ters yönde doğrudan geç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:116
+msgid "Switch windows directly"
+msgstr "Pencereler arasında doğrudan geçiş yap"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:120
+msgid "Reverse switch windows directly"
+msgstr "Pencereler arasında ters yönde doğrudan geçiş yap"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:124
+msgid "Switch system controls directly"
+msgstr "Sistem denetimleri arasında doğrudan geçiş yap"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:128
+msgid "Reverse switch system controls directly"
+msgstr "Sistem denetimleri arasında ters yönde doğrudan geçiş yap"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:132
+msgid "Hide all normal windows"
+msgstr "Tüm olağan pencereleri sakla"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:136
+msgid "DEPRECATED: This key is deprecated and ignored."
+msgstr "TERK EDİLDİ: Bu anahtar terk edildi ve yok sayılıyor."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:140
+msgid "Show the run command prompt"
+msgstr "Komut çalıştırma istemini göster"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:144
+msgid "Don’t use"
+msgstr "Kullanma"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:148
+msgid "Activate the window menu"
+msgstr "Pencere menüsünü etkinleştir"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:152
+msgid "Toggle fullscreen mode"
+msgstr "Tam ekran kipini aç/kapat"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:156
+msgid "Toggle maximization state"
+msgstr "Ekranı kaplama durumunu değiştir"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:160
+msgid "Toggle window always appearing on top"
+msgstr "Her zaman en üstte görünen pencereyi değiştir"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:164
+msgid "Maximize window"
+msgstr "Pencereyi büyüt"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:168
+msgid "Restore window"
+msgstr "Pencereyi yeniden yükle"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:172
+msgid "Minimize window"
+msgstr "Pencereyi simge durumuna küçült"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:176
+msgid "Close window"
+msgstr "Pencereyi kapat"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:180
+msgid "Move window"
+msgstr "Pencereyi taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:184
+msgid "Resize window"
+msgstr "Pencereyi yeniden boyutlandır"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:188
+msgid "Toggle window on all workspaces or one"
+msgstr ""
+"Pencerenin tüm çalışma alanlarında veya yalnızca bir tanesi üzerinde "
+"olmasını seç"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:192
+msgid "Move window to workspace 1"
+msgstr "Pencereyi çalışma alanı 1’e taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:196
+msgid "Move window to workspace 2"
+msgstr "Pencereyi çalışma alanı 2’ye taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:200
+msgid "Move window to workspace 3"
+msgstr "Pencereyi çalışma alanı 3’e taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:204
+msgid "Move window to workspace 4"
+msgstr "Pencereyi çalışma alanı 4’e taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:208
+msgid "Move window to workspace 5"
+msgstr "Pencereyi çalışma alanı 5’e taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:212
+msgid "Move window to workspace 6"
+msgstr "Pencereyi çalışma alanı 6’ya taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:216
+msgid "Move window to workspace 7"
+msgstr "Pencereyi çalışma alanı 7’ye taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:220
+msgid "Move window to workspace 8"
+msgstr "Pencereyi çalışma alanı 8’e taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:224
+msgid "Move window to workspace 9"
+msgstr "Pencereyi çalışma alanı 9’a taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:228
+msgid "Move window to workspace 10"
+msgstr "Pencereyi çalışma alanı 10’a taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:232
+msgid "Move window to workspace 11"
+msgstr "Pencereyi çalışma alanı 11’e taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:236
+msgid "Move window to workspace 12"
+msgstr "Pencereyi çalışma alanı 12’ye taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:240
+msgid "Move window to last workspace"
+msgstr "Pencereyi son çalışma alanına taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:244
+msgid "Move window one workspace to the left"
+msgstr "Pencereyi bir çalışma alanı sola taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:248
+msgid "Move window one workspace to the right"
+msgstr "Pencereyi bir çalışma alanı sağa taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:252
+msgid "Move window one workspace up"
+msgstr "Pencereyi bir üstteki çalışma alanına taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:256
+msgid "Move window one workspace down"
+msgstr "Pencereyi bir alttaki çalışma alanına taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:260
+msgid "Move window to the next monitor on the left"
+msgstr "Pencereyi soldaki monitöre taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:264
+msgid "Move window to the next monitor on the right"
+msgstr "Pencereyi sağdaki monitöre taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:268
+msgid "Move window to the next monitor above"
+msgstr "Pencereyi yukarıdaki monitöre taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:272
+msgid "Move window to the next monitor below"
+msgstr "Pencereyi aşağıdaki monitöre taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:276
+msgid "Raise window if covered, otherwise lower it"
+msgstr "Pencere altta kalmışsa yükselt, aksi halde alçalt"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:280
+msgid "Raise window above other windows"
+msgstr "Pencereyi diğer pencerelerin üstüne getir"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:284
+msgid "Lower window below other windows"
+msgstr "Pencereyi diğer pencerelerin altına indir"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:288
+msgid "Maximize window vertically"
+msgstr "Pencereyi dikey olarak büyüt"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:292
+msgid "Maximize window horizontally"
+msgstr "Pencereyi yatay olarak büyüt"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:296
+msgid "Move window to top left corner"
+msgstr "Pencereyi sol üst köşeye taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:300
+msgid "Move window to top right corner"
+msgstr "Pencereyi sağ üst köşeye taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:304
+msgid "Move window to bottom left corner"
+msgstr "Pencereyi sol alt köşeye taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:308
+msgid "Move window to bottom right corner"
+msgstr "Pencereyi sağ alt köşeye taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:312
+msgid "Move window to top edge of screen"
+msgstr "Pencereyi ekranın üst kenarına taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:316
+msgid "Move window to bottom edge of screen"
+msgstr "Pencereyi ekranın alt kenarına taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:320
+msgid "Move window to right side of screen"
+msgstr "Pencereyi ekranın sağ tarafına taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:324
+msgid "Move window to left side of screen"
+msgstr "Pencereyi eranın sol tarafına taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:328
+msgid "Move window to center of screen"
+msgstr "Pencereyi ekranın ortasına taşı"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:332
+msgid "Switch input source"
+msgstr "Giriş kaynağını değiştir"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:333
+msgid "Binding to select the next input source"
+msgstr "Sonraki girdi kaynağını seçmek için bağlama"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:337
+msgid "Switch input source backward"
+msgstr "Girdi kaynağını geri değiştir"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:338
+msgid "Binding to select the previous input source"
+msgstr "Önceki girdi kaynağını seçmek için bağla"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:342
+msgid "Toggle window to be always on top"
+msgstr "Pencereyi her zaman en üstte olacak biçimde değiştir"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:343
+msgid "Set or unset window to appear always on top"
+msgstr ""
+"Pencerenin her zaman en üstte belirmesi için ayarla ya da ayarını kaldır"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:8
+msgid "Modifier to use for modified window click actions"
+msgstr "Değiştirilmiş pencere tıklama eylemleri için kullanılacak değiştirici"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:9
+msgid ""
+"Clicking a window while holding down this modifier key will move the window "
+"(left click), resize the window (middle click), or show the window menu "
+"(right click). The middle and right click operations may be swapped using "
+"the “resize-with-right-button” key. Modifier is expressed as “<Alt>” or "
+"“<Super>” for example."
+msgstr ""
+"Bu değiştirici tuş basılıyken pencereye tıklayış, pencereyi taşır (sol "
+"tıklama), pencereyi boyutlandırır (orta tıklama) ya da pencere menüsünü "
+"gösterir (sağ tıklama). Orta ve sağ tıklama işlemleri “resize-with-right-"
+"button” anahtarı kullanılarak değiştirilebilir. Değiştirici, “<Alt>” veya "
+"“<Super>” örneklerindeki gibi gösterilir."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:19
+msgid "Whether to resize with the right button"
+msgstr "Sağ düğme ile yeniden boyutlandırıp boyutlandırılmayacağı"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:20
+msgid ""
+"Set this to true to resize with the right button and show a menu with the "
+"middle button while holding down the key given in “mouse-button-modifier”; "
+"set it to false to make it work the opposite way around."
+msgstr ""
+"Bunu pencereyi sağ düğme ile yeniden boyutlandırmak ve orta düğmeye "
+"basılıyken “mouse-button-modifier” anahtarında verilen tuşa basıldığında "
+"menü göstermek için doğru olarak atayın; tam tersi çalışması için bunu "
+"yanlış olarak atayın."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:29
+msgid "Arrangement of buttons on the titlebar"
+msgstr "Başlık çubuğundaki düğmelerin düzeni"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:30
+msgid ""
+"Arrangement of buttons on the titlebar. The value should be a string, such "
+"as “menu:minimize,maximize,spacer,close”; the colon separates the left "
+"corner of the window from the right corner, and the button names are comma-"
+"separated. Duplicate buttons are not allowed. Unknown button names are "
+"silently ignored so that buttons can be added in future metacity versions "
+"without breaking older versions. A special spacer tag can be used to insert "
+"some space between two adjacent buttons."
+msgstr ""
+"Başlık çubuğundaki düğmelerin düzeni. Dizge türünde bir değer alır, örneğin "
+"“menu:minimize,maximize,spacer,close”; pencerenin sol köşesindekilerle sağ "
+"köşesindekileri iki noktayla, düğme adlarını virgülle ayırın. Bir düğme "
+"birden çok kez kullanılamaz. Gelecek metacity sürümlerinde eski sürümlerde "
+"soruna yol açmadan yeni düğmeler eklenebilmesi için bilinmeyen düğme adları "
+"hata vermeden göz ardı edilecektir. Ard arda iki düğme arasında biraz boşluk "
+"eklemek için özel spacer etiketi kullanılabilir."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:43
+msgid "Window focus mode"
+msgstr "Pencere odaklama kipi"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:44
+msgid ""
+"The window focus mode indicates how windows are activated. It has three "
+"possible values; “click” means windows must be clicked in order to focus "
+"them, “sloppy” means windows are focused when the mouse enters the window, "
+"and “mouse” means windows are focused when the mouse enters the window and "
+"unfocused when the mouse leaves the window."
+msgstr ""
+"Pencere odaklama kipi, pencerelerin nasıl etkinleştirileceğini belirler. Üç "
+"olası değeri vardır; “click” (tıkla) olursa pencereler tıklanarak odaklanır, "
+"“sloppy” (dağınık) olursa fare pencere sınırlarına girince kendiliğinden "
+"odaklanır, “mouse” (fare) olursa fare pencereye girince odaklanır ama fare "
+"çıktığında odaklama kaybolur."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:55
+msgid "Control how new windows get focus"
+msgstr "Yeni pencerelerin nasıl odaklanacağını denetle"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:56
+msgid ""
+"This option provides additional control over how newly created windows get "
+"focus. It has two possible values; “smart” applies the user’s normal focus "
+"mode, and “strict” results in new windows not being given focus "
+"automatically."
+msgstr ""
+"Bu seçenek yeni oluşturulan pencerelere nasıl odaklanıldığına dair ek "
+"denetimler sağlar. İki geçerli değeri vardır; “smart” (akıllı) kullanıcının "
+"olağan odak kipini uygular ve “strict” (kesin) yeni pencerelerin "
+"kendiliğinden odaklanmaması ile sonuçlanır."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:65
+msgid "Whether windows should be raised when their client area is clicked"
+msgstr ""
+"Pencerelerin istemci alanları tıklandığında üste getirilmesinin gerekip "
+"gerekmemesi"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:68
+msgid ""
+"The default, true, indicates that a window will be raised whenever its "
+"client area or its frame is clicked. Setting this to false means that a "
+"window will not be raised if it is clicked on the client area. To raise it, "
+"one can click anywhere in the window’s frame, or Super-click on any part of "
+"the window. This mode is useful if one uses many overlapping windows."
+msgstr ""
+"Öntanımlı yani doğru ayarı, bir pencerenin, istemci alanı ya da çerçevesi "
+"tıklandığında üste getirileceğini gösterir. Bunu yanlış olarak ayarlamak bir "
+"pencerenin istemci alanı tıklandığında üste getirilmeyeceği anlamına gelir. "
+"Onu üste getirmek için pencerenin çerçevesinde herhangi bir yere bir tıklama "
+"ya da pencerenin herhangi bir kısmına Süper-tıklama kullanılabilir. Bu kip, "
+"birçok örtüşen pencere kullanılıyorsa yararlıdır."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:82
+msgid "Action on title bar double-click"
+msgstr "Başlık çubuğuna çift tıklandığındaki eylem"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:83
+msgid ""
+"This option determines the effects of double-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Bu seçenek başlık çubuğuna çift tıklamanın ne yapacağını belirler. Geçerli "
+"seçenekler: “toggle-maximize” pencereyi büyütür/büyütmeyi geri alır, “toggle-"
+"maximize-horizontally” ve “toggle-maximize-vertically” sırasıyla yalnızca "
+"yatay veya dikey olarak pencereyi büyütür/büyütmeyi geri alır, “minimize” "
+"pencereyi küçültür, “menu” pencere menüsünü gösterir, “lower” pencereyi "
+"diğerlerinin arkasına koyar ve “none” hiçbir şey yapmaz."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:105
+msgid "Action on title bar middle-click"
+msgstr "Başlık çubuğuna orta tuşla tıklandığındaki eylem"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:106
+msgid ""
+"This option determines the effects of middle-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Bu seçenek başlık çubuğuna orta tıklamanın ne yapacağını belirler. Geçerli "
+"seçenekler: “toggle-maximize” pencereyi büyütür/büyütmeyi geri alır, “toggle-"
+"maximize-horizontally” ve “toggle-maximize-vertically” sırasıyla yalnızca "
+"yatay veya dikey olarak pencereyi büyütür/büyütmeyi geri alır, “minimize” "
+"pencereyi küçültür, “menu” pencere menüsünü gösterir, “lower” pencereyi "
+"diğerlerinin arkasına koyar ve “none” hiçbir şey yapmaz."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:129
+msgid "Action on title bar right-click"
+msgstr "Başlık çubuğuna sağ tıklandığındaki eylem"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:130
+msgid ""
+"This option determines the effects of right-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Bu seçenek başlık çubuğuna sağ tıklamanın ne yapacağını belirler. Geçerli "
+"seçenekler: “toggle-maximize” pencereyi büyütür/büyütmeyi geri alır, “toggle-"
+"maximize-horizontally” ve “toggle-maximize-vertically” sırasıyla yalnızca "
+"yatay veya dikey olarak pencereyi büyütür/büyütmeyi geri alır, “minimize” "
+"pencereyi küçültür, “menu” pencere menüsünü gösterir, “lower” pencereyi "
+"diğerlerinin arkasına koyar ve “none” hiçbir şey yapmaz."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:152
+msgid "Automatically raises the focused window"
+msgstr "Odaklanılan pencereyi kendiliğinden üste getirir"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:153
+msgid ""
+"If set to true, and the focus mode is either “sloppy” or “mouse” then the "
+"focused window will be automatically raised after a delay specified by the "
+"auto-raise-delay key. This is not related to clicking on a window to raise "
+"it, nor to entering a window during drag-and-drop."
+msgstr ""
+"Eğer seçiliyse, ve odaklama kipi “sloppy” ya da “mouse” ise odaklanan "
+"pencere belirli bir süre sonra kendiliğinden üste çıkar (bu süre auto-raise-"
+"delay anahtarıyla belirlenir). Bu, üste çıkarmak için bir pencereye tıklamak "
+"ya da sürükle ve bırak sırasında pencere sınırlarına girmek ile ilgili "
+"değildir."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:163
+msgid "Delay in milliseconds for the auto raise option"
+msgstr "Kendiliğinden üste çıkarma seçeneği için milisaniye olarak gecikme"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:164
+msgid ""
+"The time delay before raising a window if auto-raise is set to true. The "
+"delay is given in thousandths of a second."
+msgstr ""
+"Pencereyi auto-raise ayarı seçiliyse yükseltmeden önceki gecikme. Bu gecikme "
+"saniyenin binde biri türünden verilir."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:171
+msgid "Current theme"
+msgstr "Geçerli tema"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:172
+msgid ""
+"The theme determines the appearance of window borders, titlebar, and so "
+"forth. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Tema pencerenin kenarlıklarının, başlık çubuğunun ve benzerlerinin "
+"görünüşünü belirler. TERK EDİLDİ: Bu anahtar terk edildi ve yok sayılıyor."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:181
+msgid "Use standard system font in window titles"
+msgstr "Pencere başlıklarında standart sistem yazı tipini kullan"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:182
+msgid ""
+"If true, ignore the titlebar-font option, and use the standard application "
+"font for window titles."
+msgstr ""
+"Eğer seçiliyse, titlebar-font seçeneğini göz ardı edip pencere başlıklarında "
+"standart uygulama yazı tipi kullanılır."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:189
+msgid "Window title font"
+msgstr "Pencere başlığı yazı tipi"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:190
+msgid ""
+"A font description string describing a font for window titlebars. The size "
+"from the description will only be used if the titlebar-font-size option is "
+"set to 0. Also, this option is disabled if the titlebar-uses-desktop-font "
+"option is set to true."
+msgstr ""
+"Pencere başlık çubuklarının yazı tipini tanımlayan yazı tipi tanımlama "
+"satırı. Bu tanımın boyut kısmı yalnızca titlebar-font-size (başlık çubuğu "
+"yazı tipi boyutu) seçeneği 0’a ayarlıysa kullanılacaktır. Ayrıca eğer "
+"titlebar-uses-desktop-font (başlık çubuğu masaüstü yazı tipini kullanır) "
+"seçeneği seçilmişse bu seçenek kapalı kabul edilir."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:200
+msgid "Number of workspaces"
+msgstr "Çalışma alanı sayısı"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:201
+msgid ""
+"Number of workspaces. Must be more than zero, and has a fixed maximum to "
+"prevent making the desktop unusable by accidentally asking for too many "
+"workspaces."
+msgstr ""
+"Çalışma alanlarının sayısı. Sıfırdan büyük olmalıdır ve yanlışlıkla çok "
+"fazla sayıda çalışma alanı talep edip masaüstünü kullanılamaz hale "
+"getirmenizi engellemek için bir üst sınır vardır."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:209
+msgid "System Bell is Audible"
+msgstr "Sistem Zili Duyulabilir"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:210
+msgid ""
+"Determines whether applications or the system can generate audible “beeps”; "
+"may be used in conjunction with “visual bell” to allow silent “beeps”."
+msgstr ""
+"Uygulamaların ya da sistemin duyulabilir “bip” sesleri oluşturup "
+"oluşturamayacağını belirler; sessiz “bip” sesleri için “görsel zil” ile "
+"birlikte kullanılabilir."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:218
+msgid "Enable Visual Bell"
+msgstr "Görsel Zili Etkinleştir"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:219
+msgid ""
+"Turns on a visual indication when an application or the system issues a "
+"“bell” or “beep”; useful for the hard-of-hearing and for use in noisy "
+"environments."
+msgstr ""
+"Bir uygulama veya sistem “zil” ya da “bip” uygulamadığında görsel "
+"uyarıcıları açar; duyma zorluğu ve gürültülü ortamlar için kullanışlıdır."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:228
+msgid "Visual Bell Type"
+msgstr "Görsel Zil Türü"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:229
+msgid ""
+"Tells the WM how to implement the visual indication that the system bell or "
+"another application “bell” indicator has been rung. Currently there are two "
+"valid values, “fullscreen-flash”, which causes a fullscreen white-black "
+"flash, and “frame-flash” which causes the titlebar of the application which "
+"sent the bell signal to flash. If the application which sent the bell is "
+"unknown (as is usually the case for the default “system beep”), the "
+"currently focused window’s titlebar is flashed."
+msgstr ""
+"WM’ye (pencere yöneticisi) sistem zilinin veya diğer uygulama “bell” (zil) "
+"belirticilerinin kullanacağı görsel uyarıcı biçimini belirtir. Şu an için "
+"iki geçerli değer vardır, tüm ekranın siyah-beyaz yanıp sönmesi için "
+"“fullscreen-flash”, ve zil sinyalini gönderen uygulamanın başlık çubuğunun "
+"yanıp sönmesi için “frame-flash”. Eğer zil sinyalini gönderen uygulama "
+"bilinmiyorsa (öntanımlı “system beep” (sistem zili) ile genelde olduğu "
+"gibi), güncel odaklanmış pencerenin başlık çubuğu yanıp söner."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:250
+msgid "Disable misfeatures that are required by old or broken applications"
+msgstr "Eski ya da hatalı uygulamaların gerektirdiği hatalı özellikleri kapat"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:253
+msgid ""
+"Some applications disregard specifications in ways that result in window "
+"manager misfeatures. This option puts the WM in a rigorously correct mode, "
+"which gives a more consistent user interface, provided one does not need to "
+"run any misbehaving applications."
+msgstr ""
+"Bazı uygulamalar, belirtimleri pencere yöneticisinin yanlış işlemesine neden "
+"olacak biçimde göz ardı ederler. Bu seçenek, WM’yi sıkı biçimde doğru kipe "
+"sokar, böylece kullanıcı hatalı işleyen uygulama çalıştırmaya "
+"gereksinmiyorsa kullanıcı arayüzünün daha tutarlı olmasını sağlar."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:263
+msgid "The names of the workspaces"
+msgstr "Çalışma alanlarının adları"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:264
+msgid ""
+"Defines the names that should be assigned to workspaces. If the list is too "
+"long for the current number of workspaces, names in excess will be ignored. "
+"If the list is too short, or includes empty names, missing values will be "
+"replaced with the default (“Workspace N”)."
+msgstr ""
+"Çalışma alanlarına atanması gereken adları tanımlar. Eğer liste güncel "
+"çalışma alanı sayısı için çok uzunsa, fazladan adlar göz ardı edilecektir. "
+"Eğer liste çok kısa ise ya da boş adlar içeriyorsa, eksik değerler öntanımlı "
+"(“Çalışma Alanı N”) ile değiştirilecektir."
+
+#: schemas/org.gnome.system.locale.gschema.xml.in:6
+msgid "The locale to use for dates / numbers formats"
+msgstr "Kullanılacak yerel tarih / sayı biçimleri"
+
+#: schemas/org.gnome.system.locale.gschema.xml.in:7
+msgid ""
+"Specify the locale to be used for displaying dates, times and numbers "
+"formats."
+msgstr ""
+"Tarih, saat ve numara biçimini göstermek için kullanılacak yerel ayarları "
+"belirt."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:7
+msgid "Geolocation services are enabled."
+msgstr "Coğrafi konumlama hizmetleri etkinleştirildi."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:8
+msgid "If true, applications are allowed to access location information."
+msgstr "Eğer etkinse, uygulamaların konum bilgisine erişmesine izin verilir."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:14
+msgid "The maximum accuracy level of location."
+msgstr "Kounumun en yüksek hassasiyet düzeyi."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:15
+msgid ""
+"Configures the maximum level of location accuracy applications are allowed "
+"to see. Valid options are “country”, “city”, “neighborhood”, “street”, and "
+"“exact” (typically requires GPS receiver). Please keep in mind that this "
+"only controls what GeoClue will allow applications to see and they can find "
+"user’s location on their own using network resources (albeit with street-"
+"level accuracy at best)."
+msgstr ""
+"Uygulamaların görmesine izin verilen en yüksek konumlama hassasiyeti "
+"düzeyini yapılandırır. Geçerli seçenekler “country” (ülke), “city” (şehir), "
+"“neighborhood” (mahalle), “street” (sokak) ve “exact”tir (tam) (genellikle "
+"GPS alıcısı gerektirir). Lütfen bu değerin yalnızca GeoClue’nun "
+"uygulamaların neyi görmesine izin vereceğini denetlediğini ve bu "
+"uygulamaların ağ kaynaklarını kullanarak kullanıcı konumunu (en iyi "
+"ihtimalle sokak düzeyinde hassasiyetle de olsa) kendi başlarına "
+"bulabileceklerini unutmayınız."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:10
+msgid "Proxy configuration mode"
+msgstr "Vekil sunucu yapılandırma kipi"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:11
+msgid ""
+"Select the proxy configuration mode. Supported values are “none”, “manual”, "
+"“auto”. If this is “none”, then proxies are not used. If it is “auto”, the "
+"autoconfiguration URL described by the “autoconfig-url” key is used. If it "
+"is “manual”, then the proxies described by “/system/proxy/http”, “/system/"
+"proxy/https”, “/system/proxy/ftp” and “/system/proxy/socks” will be used. "
+"Each of the 4 proxy types is enabled if its “host” key is non-empty and its "
+"“port” key is non-0. If an http proxy is configured, but an https proxy is "
+"not, then the http proxy is also used for https. If a SOCKS proxy is "
+"configured, it is used for all protocols, except that the http, https, and "
+"ftp proxy settings override it for those protocols only."
+msgstr ""
+"Vekil sunucu yapılandırma kipini seç. Desteklenen değerler “none”, “manual”, "
+"“auto”. Eğer “none” (hiçbiri) ise, vekil sunucular kullanılmaz. Eğer “auto” "
+"(kendiliğinden) ise, “autoconfig-url” anahtarınca tanımlanan kendiliğinden "
+"yapılandırma URL’si kullanılır. Eğer “manual” (elle) ise, “/system/proxy/"
+"http”, “/system/proxy/https”, “/system/proxy/ftp” ve “/system/proxy/socks” "
+"tarafından tanımlanan vekil sunucular kullanılacaktır. 4 vekil sunucu "
+"türünün her biri Eğer “host” anahtarı boş değilse ve “port” (bağlantı "
+"noktası) anahtarı 0 değilse etkindir. Eğer bir http vekil sunucusu "
+"yapılandırıldıysa fakat https vekili yapılandırılmadıysa, o zaman http "
+"vekili ayrıca https olarak da kullanılır. Eğer bir SOCKS vekili "
+"yapılandırıldıysa; http, https ve ftp vekil ayarlarının yalnızca bu iletişim "
+"kuralları için üzerine yazması dışında tüm iletişim kuralları için "
+"kullanılır."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:36
+msgid "Automatic proxy configuration URL"
+msgstr "Kendiliğinden vekil sunucu yapılandırma URL’si"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:37
+msgid ""
+"URL that provides proxy configuration values. When mode is “auto”, this URL "
+"is used to look up proxy information for all protocols."
+msgstr ""
+"Vekil sunucu yapılandırma değerlerini sağlayan URL. Kip “auto” iken, bu URL, "
+"tüm iletişim kurallarında vekil bilgilerini aramak için kullanılır."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:45
+msgid "Non-proxy hosts"
+msgstr "Vekil olmayan makineler"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:46
+msgid ""
+"This key contains a list of hosts which are connected to directly, rather "
+"than via the proxy (if it is active). The values can be hostnames, domains "
+"(using an initial wildcard like *.foo.com), IP host addresses (both IPv4 and "
+"IPv6) and network addresses with a netmask (something like 192.168.0.0/24)."
+msgstr ""
+"Bu anahtar vekil (eğer aktifse) aracılığından daha çok, direk bağlanmış "
+"sunucuların listesini içerir. Değerler, sunucu adları, alanları (en başta "
+"maske kullanarak, *.foo.com), IP sunucu adresleri (hem IPv4 hem IPv6) ve ağ "
+"maskeli ağ adresleri (192.168.0.0/24 benzeri) olabilir."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:56
+msgid "Use HTTP proxy for all protocols"
+msgstr "Tüm iletişim kuralları için HTTP vekilini kullan"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:57
+msgid "Whether to use the HTTP proxy for all protocols or not."
+msgstr "Tüm iletişim kuralları için HTTP vekilinin kullanılması."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:65
+msgid "Unused; ignore"
+msgstr "Kullanılmıyor; yok say"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:66
+msgid ""
+"This key is not used; HTTP proxying is enabled when the host key is non-"
+"empty and the port is non-0."
+msgstr ""
+"Bu anahtar kullanılmaz; sunucu anahtarı boş değil ve bağlantı noktası 0 "
+"değilse, HTTP vekili etkindir."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:73
+msgid "HTTP proxy host name"
+msgstr "HTTP vekil sunucu makine adı"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:74
+msgid "The machine name to proxy HTTP through."
+msgstr "HTTP için kullanılacak vekil sunucunun adı."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:81
+msgid "HTTP proxy port"
+msgstr "HTTP vekil sunucu bağlantı noktası"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:82
+msgid ""
+"The port on the machine defined by “/system/proxy/http/host” that you proxy "
+"through."
+msgstr ""
+"“/system/proxy/http/host” ile tanımlanmış vekil sunucunun bağlantı noktası."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:89
+msgid "Authenticate proxy server connections"
+msgstr "Vekil sunucu bağlantılarında kimlik doğrulaması yap"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:90
+msgid ""
+"If true, then connections to the proxy server require authentication. The "
+"username/password combo is defined by “/system/proxy/http/authentication-"
+"user” and “/system/proxy/http/authentication-password”. This applies only to "
+"the http proxy; when using a separate https proxy, there is currently no way "
+"to specify that it should use authentication."
+msgstr ""
+"Eğer seçiliyse, vekil sunucusuna bağlantılar kimlik doğrulaması gerektirir. "
+"“/system/proxy/http/authentication-user” ve “/system/proxy/http/"
+"authentication-password” tarafından kullanıcı adı/parola menüsü tanımlanır. "
+"Bu, yalnızca http vekil sunucusuna uygulanır; ayrı bir https vekil sunucusu "
+"kullanırken, kimlik doğrulamasını kullanılması gerektiğini belirtmenin şu "
+"anda bir yolu yoktur."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:103
+msgid "HTTP proxy username"
+msgstr "HTTP vekil sunucu kullanıcı adı"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:104
+msgid "User name to pass as authentication when doing HTTP proxying."
+msgstr ""
+"HTTP vekili kullanılırken kimlik doğrulamasında kullanılacak kullanıcı adı."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:110
+msgid "HTTP proxy password"
+msgstr "HTTP vekil sunucu parolası"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:111
+msgid "Password to pass as authentication when doing HTTP proxying."
+msgstr "HTTP vekili kullanılırken kimlik doğrulamasında kullanılacak parola."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:119
+msgid "Secure HTTP proxy host name"
+msgstr "Güvenli HTTP vekil sunucu makine adı"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:120
+msgid "The machine name to proxy secure HTTP through."
+msgstr "Güvenli HTTP için kullanılacak vekilin makine adı."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:127
+msgid "Secure HTTP proxy port"
+msgstr "Güvenli HTTP vekil sunucu bağlantı noktası"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:128
+msgid ""
+"The port on the machine defined by “/system/proxy/https/host” that you proxy "
+"through."
+msgstr ""
+"“/system/proxy/https/host” ile tanımlanmış vekil sunucunun bağlantı noktası."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:137
+msgid "FTP proxy host name"
+msgstr "FTP vekil sunucu makine adı"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:138
+msgid "The machine name to proxy FTP through."
+msgstr "FTP için kullanılacak vekilin makine adı."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:145
+msgid "FTP proxy port"
+msgstr "FTP vekil sunucu bağlantı noktası"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:146
+msgid ""
+"The port on the machine defined by “/system/proxy/ftp/host” that you proxy "
+"through."
+msgstr ""
+"“/system/proxy/ftp/host” ile tanımlanmış vekil sunucunun bağlantı noktası."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:155
+msgid "SOCKS proxy host name"
+msgstr "SOCKS vekil sunucu makine adı"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:156
+msgid "The machine name to use as a SOCKS proxy."
+msgstr "SOCKS vekil sunucusu olarak kullanılacak makinenin adı."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:163
+msgid "SOCKS proxy port"
+msgstr "SOCKS vekil sunucu bağlantı noktası"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:164
+msgid ""
+"The port on the machine defined by “/system/proxy/socks/host” that you proxy "
+"through."
+msgstr ""
+"“/system/proxy/socks/host” ile tanımlanmış vekil sunucunun bağlantı noktası."

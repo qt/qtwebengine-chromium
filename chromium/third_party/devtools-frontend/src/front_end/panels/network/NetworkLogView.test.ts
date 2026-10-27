@@ -1,6 +1,8 @@
 // Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+import {assert} from 'chai';
+
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -157,6 +159,48 @@ describeWithMockConnection('NetworkLogView', () => {
     assert.strictEqual(
         await Network.NetworkLogView.NetworkLogView.generateCurlCommand(request, 'win'),
         'curl ^"http://localhost^" -b ^"eva=^\\^"Sg4=^\\^"^"',
+    );
+  });
+
+  it('generates a valid curl command for nameless cookies without an equal sign', async () => {
+    const request = createNetworkRequest(urlString`http://localhost`, {
+      requestHeaders: [{name: 'cookie', value: 'namelesscookie'}],
+    });
+    assert.strictEqual(
+        await Network.NetworkLogView.NetworkLogView.generateCurlCommand(request, 'unix'),
+        'curl \'http://localhost\' -H \'cookie: namelesscookie\'',
+    );
+    assert.strictEqual(
+        await Network.NetworkLogView.NetworkLogView.generateCurlCommand(request, 'win'),
+        'curl ^"http://localhost^" -H ^"cookie: namelesscookie^"',
+    );
+  });
+
+  it('generates a valid curl command using -b for cookies with an equal sign', async () => {
+    const request = createNetworkRequest(urlString`http://localhost`, {
+      requestHeaders: [{name: 'cookie', value: 'name=value'}],
+    });
+    assert.strictEqual(
+        await Network.NetworkLogView.NetworkLogView.generateCurlCommand(request, 'unix'),
+        'curl \'http://localhost\' -b \'name=value\'',
+    );
+    assert.strictEqual(
+        await Network.NetworkLogView.NetworkLogView.generateCurlCommand(request, 'win'),
+        'curl ^"http://localhost^" -b ^"name=value^"',
+    );
+  });
+
+  it('generates a valid curl command using -b for nameless cookies containing an equal sign', async () => {
+    const request = createNetworkRequest(urlString`http://localhost`, {
+      requestHeaders: [{name: 'cookie', value: '\\\\attacker.com\\share\\leak=foo'}],
+    });
+    assert.strictEqual(
+        await Network.NetworkLogView.NetworkLogView.generateCurlCommand(request, 'unix'),
+        'curl \'http://localhost\' -b \'\\\\attacker.com\\share\\leak=foo\'',
+    );
+    assert.strictEqual(
+        await Network.NetworkLogView.NetworkLogView.generateCurlCommand(request, 'win'),
+        'curl ^"http://localhost^" -b ^"^\\^\\^\\^\\attacker.com^\\^\\share^\\^\\leak=foo^"',
     );
   });
 

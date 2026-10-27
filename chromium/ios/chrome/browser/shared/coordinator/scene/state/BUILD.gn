@@ -6,15 +6,25 @@ source_set("state") {
   sources = [
     "incognito_state.h",
     "incognito_state.mm",
+    "layout_state.h",
+    "layout_state.mm",
+    "layout_transition_coordinating.h",
+    "scene_ui_blocker_state.h",
+    "scene_ui_blocker_state.mm",
     "tab_grid_state.h",
     "tab_grid_state.mm",
+    "tab_grid_state_observer.h",
+    "tab_grid_state_observer_bridge.h",
+    "tab_grid_state_observer_bridge.mm",
   ]
   deps = [
     ":incognito_lock_state",
     "//base",
     "//ios/chrome/browser/shared/coordinator/scene:scene_state_header",
     "//ios/chrome/browser/shared/public/features",
+    "//ios/chrome/browser/shared/ui/util",
     "//ios/chrome/browser/tab_switcher/ui_bundled/tab_grid:tab_grid_paging",
+    "//ios/chrome/common/ui/util",
   ]
 }
 

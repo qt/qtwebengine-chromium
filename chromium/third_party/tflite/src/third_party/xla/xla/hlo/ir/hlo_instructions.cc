@@ -491,7 +491,10 @@ void HloAsyncStartInstruction::PrintExtraAttributesImpl(
   }
   if (options.syntax_sugar_async_ops() &&
       async_wrapped_computation()->CanExpandIntoSingleInstruction()) {
-    async_wrapped_instruction()->PrintExtraAttributes(printer, options);
+    HloPrintOptions nested_options = options;
+    nested_options.set_print_frontend_attributes(
+        frontend_attributes().map().empty());
+    async_wrapped_instruction()->PrintExtraAttributes(printer, nested_options);
   }
 
   if (!output_to_operand_aliasing().empty()) {
@@ -1390,7 +1393,6 @@ HloCollectivePermuteInstruction::HloCollectivePermuteInstruction(
     : HloChannelInstruction(opcode, shape, channel_id),
       source_target_pairs_(source_target_pairs) {
   AppendOperands(operands);
-  inplace_ = false;
 }
 
 HloCollectivePermuteInstruction::HloCollectivePermuteInstruction(
@@ -1408,7 +1410,6 @@ HloCollectivePermuteInstruction::HloCollectivePermuteInstruction(
   AppendOperand(output);
   AppendOperand(input_start_indices);
   AppendOperand(output_start_indices);
-  inplace_ = true;
 }
 
 void HloCollectivePermuteInstruction::ToProto(

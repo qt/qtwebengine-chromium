@@ -22,7 +22,7 @@
 #include "partition_alloc/shim/shim_alloc_functions.h"
 #include "partition_alloc/shim/winheap_stubs_win.h"
 
-#if defined(COMPONENT_BUILD)
+#if PA_BUILDFLAG(IS_COMPONENT_BUILD)
 #include <cstdlib>
 #include <cstring>
 #endif
@@ -276,7 +276,7 @@ __declspec(restrict) void* _aligned_offset_recalloc(void* address,
   __builtin_unreachable();
 }
 
-#if defined(COMPONENT_BUILD)
+#if PA_BUILDFLAG(IS_COMPONENT_BUILD)
 // Overrides CRT functions which internally call malloc() and expect callers
 // will free().
 PA_COMPONENT_EXPORT(ALLOCATOR_SHIM)
@@ -501,7 +501,7 @@ __declspec(restrict) void* _aligned_offset_recalloc_dbg(void* address,
   __builtin_unreachable();
 }
 
-#if defined(COMPONENT_BUILD)
+#if PA_BUILDFLAG(IS_COMPONENT_BUILD)
 // Overrides CRT functions which internally call malloc() and expect callers
 // will free().
 PA_COMPONENT_EXPORT(ALLOCATOR_SHIM)
@@ -527,7 +527,7 @@ errno_t _wdupenv_s_dbg(wchar_t** buffer,
                        const wchar_t* varname) {
   return _wdupenv_s(buffer, number_of_elements, varname);
 }
-#endif  // defined(COMPONENT_BUILD)
+#endif  // PA_BUILDFLAG(IS_COMPONENT_BUILD)
 
 #endif  // PA_BUILDFLAG(IS_DEBUG)
 
@@ -536,41 +536,41 @@ errno_t _wdupenv_s_dbg(wchar_t** buffer,
 #define DEFINE_ALLOC_TOKEN_STDLIB(id)                                          \
   PA_COMPONENT_EXPORT(ALLOCATOR_SHIM)                                          \
   SHIM_ALWAYS_EXPORT void* __alloc_token_##id##_malloc(size_t size) noexcept { \
-    return ShimMalloc(size, nullptr, AllocToken(id));                          \
+    return ShimMalloc(size, nullptr, allocator_shim::AllocToken(id));          \
   }                                                                            \
   PA_COMPONENT_EXPORT(ALLOCATOR_SHIM)                                          \
   SHIM_ALWAYS_EXPORT void* __alloc_token_##id##_realloc(                       \
       void* ptr, size_t size) noexcept {                                       \
-    return ShimRealloc(ptr, size, nullptr, AllocToken(id));                    \
+    return ShimRealloc(ptr, size, nullptr, allocator_shim::AllocToken(id));    \
   }                                                                            \
   PA_COMPONENT_EXPORT(ALLOCATOR_SHIM)                                          \
   SHIM_ALWAYS_EXPORT void* __alloc_token_##id##_calloc(size_t n,               \
                                                        size_t size) noexcept { \
-    return ShimCalloc(n, size, nullptr, AllocToken(id));                       \
+    return ShimCalloc(n, size, nullptr, allocator_shim::AllocToken(id));       \
   }                                                                            \
   PA_COMPONENT_EXPORT(ALLOCATOR_SHIM)                                          \
   SHIM_ALWAYS_EXPORT void* __alloc_token_##id##_memalign(                      \
       size_t align, size_t size) noexcept {                                    \
-    return ShimMemalign(align, size, nullptr, AllocToken(id));                 \
+    return ShimMemalign(align, size, nullptr, allocator_shim::AllocToken(id)); \
   }                                                                            \
   PA_COMPONENT_EXPORT(ALLOCATOR_SHIM)                                          \
   SHIM_ALWAYS_EXPORT void* __alloc_token_##id##_aligned_alloc(                 \
       size_t align, size_t size) noexcept {                                    \
-    return ShimMemalign(align, size, nullptr, AllocToken(id));                 \
+    return ShimMemalign(align, size, nullptr, allocator_shim::AllocToken(id)); \
   }                                                                            \
   PA_COMPONENT_EXPORT(ALLOCATOR_SHIM)                                          \
   SHIM_ALWAYS_EXPORT void* __alloc_token_##id##_valloc(size_t size) noexcept { \
-    return ShimValloc(size, nullptr, AllocToken(id));                          \
+    return ShimValloc(size, nullptr, allocator_shim::AllocToken(id));          \
   }                                                                            \
   PA_COMPONENT_EXPORT(ALLOCATOR_SHIM)                                          \
   SHIM_ALWAYS_EXPORT void* __alloc_token_##id##_pvalloc(                       \
       size_t size) noexcept {                                                  \
-    return ShimPvalloc(size, AllocToken(id));                                  \
+    return ShimPvalloc(size, allocator_shim::AllocToken(id));                  \
   }                                                                            \
   PA_COMPONENT_EXPORT(ALLOCATOR_SHIM)                                          \
   SHIM_ALWAYS_EXPORT int __alloc_token_##id##_posix_memalign(                  \
       void** r, size_t a, size_t s) noexcept {                                 \
-    return ShimPosixMemalign(r, a, s, AllocToken(id));                         \
+    return ShimPosixMemalign(r, a, s, allocator_shim::AllocToken(id));         \
   }
 
 #if PA_BUILDFLAG(SHIM_SUPPORTS_ALLOC_TOKEN)
@@ -617,36 +617,36 @@ DEFINE_ALLOC_TOKEN_STDLIB(1)
 #if PA_BUILDFLAG(SHIM_SUPPORTS_ALLOC_TOKEN)
 extern "C" {
 SHIM_ALWAYS_EXPORT void* OPERATOR_NEW_0(size_t size) {
-  return ShimCppNew(size, AllocToken(0));
+  return ShimCppNew(size, allocator_shim::AllocToken(0));
 }
 SHIM_ALWAYS_EXPORT void* OPERATOR_NEW_1(size_t size) {
-  return ShimCppNew(size, AllocToken(1));
+  return ShimCppNew(size, allocator_shim::AllocToken(1));
 }
 SHIM_ALWAYS_EXPORT void* OPERATOR_NEW_ARRAY_0(size_t size) {
-  return ShimCppNew(size, AllocToken(0));
+  return ShimCppNew(size, allocator_shim::AllocToken(0));
 }
 SHIM_ALWAYS_EXPORT void* OPERATOR_NEW_ARRAY_1(size_t size) {
-  return ShimCppNew(size, AllocToken(1));
+  return ShimCppNew(size, allocator_shim::AllocToken(1));
 }
 SHIM_ALWAYS_EXPORT void* OPERATOR_NEW_NOTHROW_0(
     size_t size,
     const std::nothrow_t&) noexcept {
-  return ShimCppNewNoThrow(size, AllocToken(0));
+  return ShimCppNewNoThrow(size, allocator_shim::AllocToken(0));
 }
 SHIM_ALWAYS_EXPORT void* OPERATOR_NEW_NOTHROW_1(
     size_t size,
     const std::nothrow_t&) noexcept {
-  return ShimCppNewNoThrow(size, AllocToken(1));
+  return ShimCppNewNoThrow(size, allocator_shim::AllocToken(1));
 }
 SHIM_ALWAYS_EXPORT void* OPERATOR_NEW_ARRAY_NOTHROW_0(
     size_t size,
     const std::nothrow_t&) noexcept {
-  return ShimCppNewNoThrow(size, AllocToken(0));
+  return ShimCppNewNoThrow(size, allocator_shim::AllocToken(0));
 }
 SHIM_ALWAYS_EXPORT void* OPERATOR_NEW_ARRAY_NOTHROW_1(
     size_t size,
     const std::nothrow_t&) noexcept {
-  return ShimCppNewNoThrow(size, AllocToken(1));
+  return ShimCppNewNoThrow(size, allocator_shim::AllocToken(1));
 }
 }
 #endif  // PA_BUILDFLAG(SHIM_SUPPORTS_ALLOC_TOKEN)

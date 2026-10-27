@@ -61,12 +61,13 @@ bool CPDF_Page::IsValidPageDictLoose(const CPDF_Dictionary* page_dict) {
   if (!page_dict) {
     return false;
   }
-  if (!page_dict->KeyExist(pdfium::page_object::kType)) {
+  RetainPtr<const CPDF_Object> type =
+      page_dict->GetObjectFor(pdfium::page_object::kType);
+  if (!type) {
     return true;
   }
-  RetainPtr<const CPDF_Name> name =
-      ToName(page_dict->GetObjectFor(pdfium::page_object::kType)->GetDirect());
-  return name && name->GetString() == "Page";
+  RetainPtr<const CPDF_Name> name_type = ToName(type->GetDirect());
+  return name_type && name_type->GetString() == "Page";
 }
 
 CPDF_Page* CPDF_Page::AsPDFPage() {

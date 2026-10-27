@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_MAPBASE_H
 #define EIGEN_MAPBASE_H
@@ -176,7 +177,7 @@ class MapBase<Derived, ReadOnlyAccessors> : public internal::dense_xpr_base<Deri
 #if EIGEN_MAX_ALIGN_BYTES > 0
     // innerStride() is not set yet when this function is called, so we optimistically assume the lowest plausible
     // value:
-    const Index minInnerStride = InnerStrideAtCompileTime == Dynamic ? 1 : Index(InnerStrideAtCompileTime);
+    constexpr Index minInnerStride = InnerStrideAtCompileTime == Dynamic ? 1 : Index(InnerStrideAtCompileTime);
     EIGEN_ONLY_USED_FOR_DEBUG(minInnerStride);
     eigen_assert((((std::uintptr_t(m_data) % internal::traits<Derived>::Alignment) == 0) ||
                   (cols() * rows() * minInnerStride * sizeof(Scalar)) < internal::traits<Derived>::Alignment) &&

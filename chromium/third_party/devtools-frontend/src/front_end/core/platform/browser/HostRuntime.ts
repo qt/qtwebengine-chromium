@@ -5,8 +5,10 @@
 import type * as Api from '../api/api.js';
 
 class WebWorkerScope implements Api.HostRuntime.WorkerScope {
-  postMessage(message: unknown): void {
-    self.postMessage(message);
+  postMessage(message: unknown, transfer?: Api.HostRuntime.WorkerTransferable[]): void {
+    // Type for frame.postMessage is conflicting here.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    self.postMessage(message, transfer as any);
   }
 
   set onmessage(listener: (event: Api.HostRuntime.WorkerMessageEvent) => Promise<void>| void) {
@@ -72,4 +74,14 @@ export const HOST_RUNTIME: Api.HostRuntime.HostRuntime = {
     return new WebWorker(url);
   },
   workerScope: new WebWorkerScope(),
+  getOnLine(): boolean {
+    return navigator.onLine;
+  },
+  getUserAgent(): string {
+    return navigator.userAgent;
+  },
+  getLocalStorage(): Storage |
+      undefined {
+        return 'localStorage' in globalThis ? globalThis.localStorage : undefined;
+      },
 };

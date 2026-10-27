@@ -29,6 +29,7 @@
  *   Triangular matrix-vector product functionality based on ?TRMV.
  ********************************************************************************
 */
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef EIGEN_TRIANGULAR_MATRIX_VECTOR_BLAS_H
 #define EIGEN_TRIANGULAR_MATRIX_VECTOR_BLAS_H

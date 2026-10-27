@@ -38,6 +38,7 @@
 #include "content/browser/renderer_host/text_input_manager.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/visibility.h"
 #include "third_party/blink/public/common/input/web_mouse_event.h"
 #include "third_party/blink/public/common/page/content_to_visible_time_request.h"
 #include "third_party/blink/public/mojom/input/input_handler.mojom-forward.h"
@@ -89,7 +90,6 @@ class OverscrollControllerAndroid;
 class SelectionPopupController;
 class SynchronousCompositorHost;
 class SynchronousCompositorClient;
-class TextSuggestionHostAndroid;
 class TouchSelectionControllerClientManagerAndroid;
 class WebContentsAccessibilityAndroid;
 struct ContextMenuParams;
@@ -213,6 +213,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       blink::mojom::StylusWritingFocusResultPtr focus_result) override;
   void RenderProcessGone() override;
   void ShowWithVisibility(PageVisibilityState page_visibility) final;
+  void WasOccluded() override;
   void Destroy() override;
   void UpdateTooltipUnderCursor(const std::u16string& tooltip_text) override;
   void UpdateTooltip(const std::u16string& tooltip_text) override;
@@ -284,6 +285,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   display::ScreenInfo GetScreenInfo() const override;
   ui::mojom::VirtualKeyboardMode GetVirtualKeyboardMode() override;
   viz::SurfaceId GetFallbackSurfaceIdForTesting() const override;
+  bool HasSavedCompositorFrame() const override;
   void ResetGestureDetection() override;
 
   // ui::EventHandlerAndroid implementation.
@@ -363,13 +365,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   SelectionPopupController* selection_popup_controller() const {
     return selection_popup_controller_.get();
   }
-  void set_text_suggestion_host(
-      TextSuggestionHostAndroid* text_suggestion_host) {
-    text_suggestion_host_ = text_suggestion_host;
-  }
-  TextSuggestionHostAndroid* text_suggestion_host() const {
-    return text_suggestion_host_;
-  }
+
   void SetGestureListenerManager(GestureListenerManager* manager);
 
   // See
@@ -407,6 +403,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   }
 
   void OnOverscrollRefreshHandlerAvailable();
+  void ResetOverscrollController();
 
   // TextInputManager::Observer overrides.
   void OnUpdateTextInputStateCalled(TextInputManager* text_input_manager,
@@ -497,10 +494,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
     return input_transfer_handler_.get();
   }
 
-  void SetInputTransferHandlerForTesting(InputTransferHandlerAndroid* handler) {
-    input_transfer_handler_ =
-        std::unique_ptr<InputTransferHandlerAndroid>(handler);
-  }
+  void SetInputTransferHandlerForTesting(InputTransferHandlerAndroid* handler);
 
  protected:
   ~RenderWidgetHostViewAndroid() override;
@@ -620,6 +614,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   void ShowInternal();
   void HideInternal();
+  void UpdateVisibility();
+  bool VisibilityNeedsDrawing() const;
+  void TryUpdateVisibilities(Visibility new_view_visibility,
+                             PageVisibilityState new_page_visibility);
   void AttachLayers();
   void RemoveLayers();
 
@@ -671,13 +669,12 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void ComputeDisplayFeature();
   void SetDisplayFeatureBoundsForTesting(const gfx::Rect& bounds);
 
-  bool is_showing_;
-
   // Window-specific bits that affect widget visibility.
   bool is_window_visible_;
   bool is_window_activity_started_;
 
   PageVisibilityState page_visibility_ = PageVisibilityState::kHidden;
+  Visibility view_visibility_ = Visibility::HIDDEN;
 
   // Specifies whether touch selection handles are hidden due to the dropdown
   // menu.
@@ -696,7 +693,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   raw_ptr<ImeAdapterAndroid> ime_adapter_android_;
   raw_ptr<SelectionPopupController> selection_popup_controller_;
-  raw_ptr<TextSuggestionHostAndroid> text_suggestion_host_;
+
   raw_ptr<GestureListenerManager> gesture_listener_manager_;
 
   mutable ui::ViewAndroid view_;

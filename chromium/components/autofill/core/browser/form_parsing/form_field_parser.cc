@@ -4,23 +4,34 @@
 
 #include "components/autofill/core/browser/form_parsing/form_field_parser.h"
 
+#include <stddef.h>
+
 #include <algorithm>
-#include <cstddef>
-#include <iterator>
+#include <functional>
+#include <initializer_list>
+#include <memory>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include "base/auto_reset.h"
+#include "base/check.h"
+#include "base/check_op.h"
 #include "base/containers/flat_map.h"
+#include "base/containers/flat_tree.h"
+#include "base/containers/span.h"
+#include "base/feature_list.h"
 #include "base/functional/function_ref.h"
 #include "base/memory/raw_ptr.h"
+#include "base/no_destructor.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/browser/autofill_field.h"
-#include "components/autofill/core/browser/autofill_type.h"
+#include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_parsing/address_field_parser.h"
 #include "components/autofill/core/browser/form_parsing/address_field_parser_ng.h"
@@ -29,30 +40,36 @@
 #include "components/autofill/core/browser/form_parsing/autofill_scanner.h"
 #include "components/autofill/core/browser/form_parsing/credit_card_field_parser.h"
 #include "components/autofill/core/browser/form_parsing/email_field_parser.h"
+#include "components/autofill/core/browser/form_parsing/field_candidates.h"
 #include "components/autofill/core/browser/form_parsing/form_field_parser.h"
 #include "components/autofill/core/browser/form_parsing/iban_field_parser.h"
 #include "components/autofill/core/browser/form_parsing/loyalty_field_parser.h"
 #include "components/autofill/core/browser/form_parsing/merchant_promo_code_field_parser.h"
 #include "components/autofill/core/browser/form_parsing/name_field_parser.h"
+#include "components/autofill/core/browser/form_parsing/one_time_code_field_parser.h"
 #include "components/autofill/core/browser/form_parsing/phone_field_parser.h"
 #include "components/autofill/core/browser/form_parsing/price_field_parser.h"
+#include "components/autofill/core/browser/form_parsing/regex_patterns.h"
 #include "components/autofill/core/browser/form_parsing/search_field_parser.h"
 #include "components/autofill/core/browser/form_parsing/standalone_cvc_field_parser.h"
 #include "components/autofill/core/browser/form_parsing/travel_field_parser.h"
-#include "components/autofill/core/browser/form_processing/label_processing_util.h"
 #include "components/autofill/core/browser/form_processing/name_processing_util.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/logging/log_manager.h"
-#include "components/autofill/core/common/autocomplete_parsing_util.h"
 #include "components/autofill/core/common/autofill_constants.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_internals/log_message.h"
 #include "components/autofill/core/common/autofill_internals/logging_scope.h"
-#include "components/autofill/core/common/autofill_payments_features.h"
 #include "components/autofill/core/common/autofill_regexes.h"
 #include "components/autofill/core/common/autofill_util.h"
 #include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/form_field_data.h"
+#include "components/autofill/core/common/label_source_util.h"
+#include "components/autofill/core/common/language_code.h"
+#include "components/autofill/core/common/logging/log_buffer.h"
+#include "components/autofill/core/common/logging/log_macros.h"
+#include "components/autofill/core/common/unique_ids.h"
+#include "third_party/icu/source/i18n/unicode/regex.h"
 
 namespace autofill {
 
@@ -101,34 +118,6 @@ void MaybePrintMatchLogs(LogManager* log_manager,
                       << std::move(table_rows) << CTag{"table"};
 }
 
-// Prior to `AutofillBetterLocalHeuristicPlaceholderSupport`, the renderer
-// prioritized placeholders lower than labels assigned with the for-attribute
-// and labels inferred via `InferLabelFromSibling()`. This same prioritization
-// is used here. It's unclear whether this is the right prioritization.
-bool IsLabelHigherQualityThanPlaceholder(
-    FormFieldData::LabelSource label_source) {
-  switch (label_source) {
-    case FormFieldData::LabelSource::kCombined:
-    case FormFieldData::LabelSource::kForId:
-    case FormFieldData::LabelSource::kForName:
-    case FormFieldData::LabelSource::kForShadowHostId:
-    case FormFieldData::LabelSource::kForShadowHostName:
-    case FormFieldData::LabelSource::kLabelTag:
-    case FormFieldData::LabelSource::kPTag:
-      return true;
-    case FormFieldData::LabelSource::kAriaLabel:
-    case FormFieldData::LabelSource::kDdTag:
-    case FormFieldData::LabelSource::kDivTable:
-    case FormFieldData::LabelSource::kLiTag:
-    case FormFieldData::LabelSource::kOverlayingLabel:
-    case FormFieldData::LabelSource::kPlaceHolder:
-    case FormFieldData::LabelSource::kTdTag:
-    case FormFieldData::LabelSource::kUnknown:
-    case FormFieldData::LabelSource::kValue:
-      return false;
-  }
-}
-
 bool IsRelevant(const FormFieldData& field) {
   return !IsCheckable(field.check_status()) &&
          (field.role() != FormFieldData::RoleAttribute::kPresentation ||
@@ -165,7 +154,6 @@ ParsingContext::ParsingContext(base::span<const FormFieldData> fields,
                                DenseSet<RegexFeature> active_features,
                                LogManager* log_manager)
     : name_overrides(GetParseableNames(fields)),
-      label_overrides(GetParseableLabels(fields)),
       client_country(std::move(client_country)),
       page_language(std::move(page_language)),
       pattern_file(pattern_file),
@@ -187,7 +175,6 @@ ParsingContext::ParsingContext(
     DenseSet<RegexFeature> active_features,
     LogManager* log_manager)
     : name_overrides(GetParseableNames(fields)),
-      label_overrides(GetParseableLabels(fields)),
       client_country(std::move(client_country)),
       page_language(std::move(page_language)),
       pattern_file(pattern_file),
@@ -290,6 +277,13 @@ void FormFieldParser::ParseFormFields(ParsingContext& context,
   ParseFormFieldsPass(MerchantPromoCodeFieldParser::Parse, context, fields,
                       &IsRelevant, field_candidates);
 
+  // OTP pass.
+  if (base::FeatureList::IsEnabled(
+          features::kAutofillEnableOneTimeCodeHeuristics)) {
+    ParseFormFieldsPass(OneTimeCodeFieldParser::Parse, context, fields,
+                        &IsRelevant, field_candidates);
+  }
+
   // IBAN pass.
   ParseFormFieldsPass(IbanFieldParser::Parse, context, fields, &IsRelevant,
                       field_candidates);
@@ -323,26 +317,27 @@ void FormFieldParser::ClearCandidatesIfHeuristicsDidNotFindEnoughFields(
   size_t fillable_distinct_field_types = heuristic_types.size();
 
   // Do not autofill a form if there aren't enough fields. Otherwise, it is
-  // very easy to have false positives. See http://crbug.com/447332
-  // For <form> tags, make an exception for email fields, which are commonly
-  // the only recognized field on account registration sites. Also make an
-  // exception for single-field Autofillable types, even when the form contains
-  // less than kMinRequiredFieldsForHeuristics fields in its form signature.
+  // very easy to have false positives (see http://crbug.com/447332 for more
+  // details) (see `permitted_single_field_types` for the exceptions).
   if (!ignore_small_forms ||
       fillable_distinct_field_types >= kMinRequiredFieldsForHeuristics) {
     return;
   }
 
   FieldTypeSet permitted_single_field_types{
-      MERCHANT_PROMO_CODE, IBAN_VALUE, CREDIT_CARD_STANDALONE_VERIFICATION_CODE,
-      EMAIL_ADDRESS};
+      CREDIT_CARD_STANDALONE_VERIFICATION_CODE,
+      EMAIL_ADDRESS,
+      EMAIL_OR_LOYALTY_MEMBERSHIP_ID,
+      IBAN_VALUE,
+      LOYALTY_MEMBERSHIP_ID,
+      MERCHANT_PROMO_CODE};
+  if (base::FeatureList::IsEnabled(
+          features::kAutofillEnableOneTimeCodeHeuristics)) {
+    permitted_single_field_types.insert(ONE_TIME_CODE);
+  }
   if (AddressFieldParser::IsStandaloneZipSupported(client_country)) {
     permitted_single_field_types.insert(ADDRESS_HOME_ZIP);
   }
-
-  permitted_single_field_types.insert(LOYALTY_MEMBERSHIP_ID);
-
-  permitted_single_field_types.insert(EMAIL_OR_LOYALTY_MEMBERSHIP_ID);
 
   struct WipedField {
     FieldGlobalId field_id;
@@ -402,6 +397,13 @@ void FormFieldParser::ParseSingleFields(ParsingContext& context,
   // Merchant promo code pass.
   ParseFormFieldsPass(MerchantPromoCodeFieldParser::Parse, context, fields,
                       &IsRelevant, field_candidates);
+
+  // OTP pass.
+  if (base::FeatureList::IsEnabled(
+          features::kAutofillEnableOneTimeCodeHeuristics)) {
+    ParseFormFieldsPass(OneTimeCodeFieldParser::Parse, context, fields,
+                        &IsRelevant, field_candidates);
+  }
 
   // IBAN pass.
   ParseFormFieldsPass(IbanFieldParser::Parse, context, fields, &IsRelevant,
@@ -572,7 +574,7 @@ bool FormFieldParser::ParseInAnyOrder(
   // scanners fields. While this has a terrible runtime for general n, the only
   // planned use cases are dates (2 or 3 components).
   // If necessary, bipartite matching could be used for general n.
-  DCHECK(fields_and_parsers.size() <= 3);
+  DCHECK_LE(fields_and_parsers.size(), 3UL);
   std::vector<int> p(fields_and_parsers.size());
   std::iota(p.begin(), p.end(), 0);
   do {
@@ -715,13 +717,7 @@ std::optional<FormFieldParser::MatchInfo> FormFieldParser::MatchInLabel(
       context.log_manager && context.log_manager->IsLoggingActive() ? &matches
                                                                     : nullptr;
 
-  const std::u16string& label = [&]() -> const std::u16string& {
-    if (auto it = context.label_overrides.find(field.global_id());
-        it != context.label_overrides.end()) {
-      return it->second;
-    }
-    return field.label();
-  }();
+  const std::u16string& label = field.label();
 
   if (!context.better_placeholder_support || field.placeholder().empty()) {
     if (MatchesRegexWithCache(context, label, pattern, capture_destination)) {

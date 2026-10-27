@@ -10,6 +10,7 @@ import 'chrome://resources/cr_components/managed_footnote/managed_footnote.js';
 import 'chrome://resources/cr_elements/cr_button/cr_button.js';
 import 'chrome://resources/cr_elements/cr_infinite_list/cr_infinite_list.js';
 
+import {ColorChangeUpdater, COLORS_CSS_SELECTOR} from 'chrome://resources/cr_components/color_change_listener/colors_css_updater.js';
 import {getInstance as getAnnouncerInstance} from 'chrome://resources/cr_elements/cr_a11y_announcer/cr_a11y_announcer.js';
 import type {CrInfiniteListElement} from 'chrome://resources/cr_elements/cr_infinite_list/cr_infinite_list.js';
 import {getToastManager} from 'chrome://resources/cr_elements/cr_toast/cr_toast_manager.js';
@@ -32,7 +33,7 @@ import type {DownloadsToolbarElement} from './toolbar.js';
 export interface DownloadsManagerElement {
   $: {
     toolbar: DownloadsToolbarElement,
-    downloadsList: CrInfiniteListElement,
+    downloadsList: CrInfiniteListElement<MojomData>,
     mainContainer: HTMLElement,
   };
 }
@@ -134,6 +135,13 @@ export class DownloadsManagerElement extends DownloadsManagerElementBase {
     this.toggleAttribute('loading', true);
     document.documentElement.classList.remove('loading');
 
+    const enableWebuiRefresh2026 =
+        loadTimeData.getString('webuiRefresh2026') !== '';
+    if (enableWebuiRefresh2026) {
+      this.addThemedColors_();
+      ColorChangeUpdater.forDocument().start();
+    }
+
     this.listenerIds_ = [
       this.mojoEventTarget_.clearAll.addListener(this.clearAll_.bind(this)),
       this.mojoEventTarget_.insertItems.addListener(
@@ -148,8 +156,7 @@ export class DownloadsManagerElement extends DownloadsManagerElementBase {
 
     this.loaded_.promise.then(() => {
       requestIdleCallback(function() {
-        // https://github.com/microsoft/TypeScript/issues/13569
-        (document as any).fonts.load('bold 12px Roboto');
+        document.fonts.load('bold 12px Roboto');
       });
     });
 
@@ -465,6 +472,14 @@ export class DownloadsManagerElement extends DownloadsManagerElementBase {
   // Override FindShortcutMixin methods.
   override searchInputHasFocus() {
     return this.$.toolbar.isSearchFocused();
+  }
+
+  private addThemedColors_() {
+    assert(document.body.querySelector(COLORS_CSS_SELECTOR) === null);
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'chrome://theme/colors.css?sets=ui,chrome';
+    document.body.appendChild(link);
   }
 }
 

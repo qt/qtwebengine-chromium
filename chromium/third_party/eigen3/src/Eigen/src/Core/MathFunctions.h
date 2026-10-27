@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_MATHFUNCTIONS_H
 #define EIGEN_MATHFUNCTIONS_H
@@ -388,8 +389,7 @@ struct cast_impl<OldType, bool> {
 // Casting from S -> Complex<T> leads to an implicit conversion from S to T,
 // generating warnings on clang.  Here we explicitly cast the real component.
 template <typename OldType, typename NewType>
-struct cast_impl<OldType, NewType,
-                 typename std::enable_if_t<!NumTraits<OldType>::IsComplex && NumTraits<NewType>::IsComplex>> {
+struct cast_impl<OldType, NewType, std::enable_if_t<!NumTraits<OldType>::IsComplex && NumTraits<NewType>::IsComplex>> {
   EIGEN_DEVICE_FUNC static inline NewType run(const OldType& x) {
     typedef typename NumTraits<NewType>::Real NewReal;
     return static_cast<NewType>(static_cast<NewReal>(x));
@@ -411,9 +411,10 @@ EIGEN_DEVICE_FUNC inline NewType cast(const OldType& x) {
 // This seems to be fixed in VS 2019.
 #if (!EIGEN_COMP_MSVC || EIGEN_COMP_MSVC >= 1920)
 // std::arg is only defined for types of std::complex, or integer types or float/double/long double
-template <typename Scalar, bool HasStdImpl = NumTraits<Scalar>::IsComplex || is_integral<Scalar>::value ||
-                                             is_same<Scalar, float>::value || is_same<Scalar, double>::value ||
-                                             is_same<Scalar, long double>::value>
+template <typename Scalar, bool HasStdImpl = NumTraits<Scalar>::IsComplex || std::is_integral<Scalar>::value ||
+                                             std::is_same<Scalar, float>::value ||
+                                             std::is_same<Scalar, double>::value ||
+                                             std::is_same<Scalar, long double>::value>
 struct arg_default_impl;
 
 template <typename Scalar>
@@ -621,19 +622,18 @@ template <unsigned int n, int lower = 0, int upper = sizeof(unsigned int) * CHAR
 struct meta_floor_log2 {};
 
 template <unsigned int n, int lower, int upper>
-struct meta_floor_log2<n, lower, upper, meta_floor_log2_move_down> {
-  enum { value = meta_floor_log2<n, lower, meta_floor_log2_selector<n, lower, upper>::middle>::value };
+struct meta_floor_log2<n, lower, upper, meta_floor_log2_move_down>
+    : std::integral_constant<int, meta_floor_log2<n, lower, meta_floor_log2_selector<n, lower, upper>::middle>::value> {
 };
 
 template <unsigned int n, int lower, int upper>
-struct meta_floor_log2<n, lower, upper, meta_floor_log2_move_up> {
-  enum { value = meta_floor_log2<n, meta_floor_log2_selector<n, lower, upper>::middle, upper>::value };
+struct meta_floor_log2<n, lower, upper, meta_floor_log2_move_up>
+    : std::integral_constant<int, meta_floor_log2<n, meta_floor_log2_selector<n, lower, upper>::middle, upper>::value> {
 };
 
 template <unsigned int n, int lower, int upper>
-struct meta_floor_log2<n, lower, upper, meta_floor_log2_terminate> {
-  enum { value = (n >= ((unsigned int)(1) << (lower + 1))) ? lower + 1 : lower };
-};
+struct meta_floor_log2<n, lower, upper, meta_floor_log2_terminate>
+    : std::integral_constant<int, (n >= ((unsigned int)(1) << (lower + 1))) ? lower + 1 : lower> {};
 
 template <unsigned int n, int lower, int upper>
 struct meta_floor_log2<n, lower, upper, meta_floor_log2_bogus> {
@@ -901,6 +901,37 @@ struct sign_retval {
   typedef Scalar type;
 };
 
+template <typename Scalar, bool IsComplex = (NumTraits<Scalar>::IsComplex != 0),
+          bool IsInteger = (NumTraits<Scalar>::IsInteger != 0)>
+struct copysign_impl {
+  EIGEN_DEVICE_FUNC static inline Scalar run(const Scalar& a, const Scalar& b) {
+    EIGEN_USING_STD(copysign);
+    return Scalar(copysign(a, b));
+  }
+};
+
+template <typename Scalar, bool IsInteger>
+struct copysign_impl<Scalar, true, IsInteger> {
+  EIGEN_DEVICE_FUNC static inline Scalar run(const Scalar& a, const Scalar& b) {
+    EIGEN_USING_STD(copysign);
+    return Scalar(copysign(numext::real(a), numext::real(b)), copysign(numext::imag(a), numext::imag(b)));
+  }
+};
+
+template <typename Scalar>
+struct copysign_impl<Scalar, false, true> {
+  EIGEN_DEVICE_FUNC static inline Scalar run(const Scalar& a, const Scalar& b) {
+    EIGEN_IF_CONSTEXPR(!NumTraits<Scalar>::IsSigned) return a;
+    const Scalar abs_a = a < Scalar(0) ? -a : a;
+    return b < Scalar(0) ? -abs_a : abs_a;
+  }
+};
+
+template <typename Scalar>
+struct copysign_retval {
+  typedef Scalar type;
+};
+
 // suppress "unary minus operator applied to unsigned type, result still unsigned" warnings on MSVC
 // note: `0 - a` is distinct from `-a` when Scalar is a floating point type and `a` is zero
 
@@ -911,7 +942,7 @@ struct negate_impl {
 
 template <typename Scalar>
 struct negate_impl<Scalar, true> {
-  EIGEN_STATIC_ASSERT((!is_same<Scalar, bool>::value), NEGATE IS NOT DEFINED FOR BOOLEAN TYPES)
+  EIGEN_STATIC_ASSERT((!std::is_same<Scalar, bool>::value), NEGATE IS NOT DEFINED FOR BOOLEAN TYPES)
   static EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE Scalar run(const Scalar& a) { return Scalar(0) - a; }
 };
 
@@ -982,7 +1013,7 @@ struct fma_impl<T, std::enable_if_t<has_fma<T>::value>> {
 
 #if defined(EIGEN_GPUCC)
 template <>
-struct has_fma<float> : public true_type {};
+struct has_fma<float> : public std::true_type {};
 
 template <>
 struct fma_impl<float, void> {
@@ -992,7 +1023,7 @@ struct fma_impl<float, void> {
 };
 
 template <>
-struct has_fma<double> : public true_type {};
+struct has_fma<double> : public std::true_type {};
 
 template <>
 struct fma_impl<double, void> {
@@ -1181,6 +1212,11 @@ EIGEN_DEVICE_FUNC inline EIGEN_MATHFUNC_RETVAL(sign, Scalar) sign(const Scalar& 
 }
 
 template <typename Scalar>
+EIGEN_DEVICE_FUNC inline EIGEN_MATHFUNC_RETVAL(copysign, Scalar) copysign(const Scalar& x, const Scalar& y) {
+  return EIGEN_MATHFUNC_IMPL(copysign, Scalar)::run(x, y);
+}
+
+template <typename Scalar>
 EIGEN_DEVICE_FUNC inline EIGEN_MATHFUNC_RETVAL(negate, Scalar) negate(const Scalar& x) {
   return EIGEN_MATHFUNC_IMPL(negate, Scalar)::run(x);
 }
@@ -1340,7 +1376,7 @@ EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE double trunc(const double& x) {
 // T is assumed to be an integer type with a>=0, and b>0
 template <typename T>
 EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE constexpr T div_ceil(T a, T b) {
-  using UnsignedT = typename internal::make_unsigned<T>::type;
+  using UnsignedT = std::make_unsigned_t<T>;
   EIGEN_STATIC_ASSERT((NumTraits<T>::IsInteger), THIS FUNCTION IS FOR INTEGER TYPES)
   // Note: explicitly declaring a and b as non-negative values allows the compiler to use better optimizations
   const UnsignedT ua = UnsignedT(a);
@@ -1353,8 +1389,8 @@ EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE constexpr T div_ceil(T a, T b) {
 // T is assumed to be an integer type with a>=0, and b>0
 template <typename T, typename U>
 EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE constexpr T round_down(T a, U b) {
-  using UnsignedT = typename internal::make_unsigned<T>::type;
-  using UnsignedU = typename internal::make_unsigned<U>::type;
+  using UnsignedT = std::make_unsigned_t<T>;
+  using UnsignedU = std::make_unsigned_t<U>;
   EIGEN_STATIC_ASSERT((NumTraits<T>::IsInteger), THIS FUNCTION IS FOR INTEGER TYPES)
   EIGEN_STATIC_ASSERT((NumTraits<U>::IsInteger), THIS FUNCTION IS FOR INTEGER TYPES)
   // Note: explicitly declaring a and b as non-negative values allows the compiler to use better optimizations

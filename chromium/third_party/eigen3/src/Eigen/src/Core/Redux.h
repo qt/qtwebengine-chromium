@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_REDUX_H
 #define EIGEN_REDUX_H
@@ -432,7 +433,7 @@ class redux_evaluator : public internal::evaluator<XprType_> {
 /** \returns the result of a full redux operation on the whole matrix or vector using \a func
  *
  * The template parameter \a BinaryOp is the type of the functor \a func which must be
- * an associative operator. Both current C++98 and C++11 functor styles are handled.
+ * an associative operator.
  *
  * \warning the matrix must be not empty, otherwise an assertion is triggered.
  *

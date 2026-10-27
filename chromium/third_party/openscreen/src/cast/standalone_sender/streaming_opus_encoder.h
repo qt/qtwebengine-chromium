@@ -28,7 +28,7 @@ class StreamingOpusEncoder {
   // audio samples up into chunks as determined by the given
   // `cast_frames_per_second`, and for EncodedFrame output to the given
   // `sender`. The sample rate of the audio is assumed to be the Sender's fixed
-  // `rtp_timebase()`.
+  // `config().rtp_timebase`.
   StreamingOpusEncoder(int num_channels,
                        int cast_frames_per_second,
                        std::unique_ptr<Sender> sender);
@@ -36,7 +36,7 @@ class StreamingOpusEncoder {
   ~StreamingOpusEncoder();
 
   int num_channels() const { return num_channels_; }
-  int sample_rate() const { return sender_->rtp_timebase(); }
+  int sample_rate() const { return sender_->config().rtp_timebase; }
 
   int GetBitrate() const;
 

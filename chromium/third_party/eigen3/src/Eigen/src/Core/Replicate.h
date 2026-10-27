@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_REPLICATE_H
 #define EIGEN_REPLICATE_H
@@ -73,7 +74,7 @@ class Replicate : public internal::dense_xpr_base<Replicate<MatrixType, RowFacto
   template <typename OriginalMatrixType>
   EIGEN_DEVICE_FUNC constexpr inline explicit Replicate(const OriginalMatrixType& matrix)
       : m_matrix(matrix), m_rowFactor(RowFactor), m_colFactor(ColFactor) {
-    EIGEN_STATIC_ASSERT((internal::is_same<std::remove_const_t<MatrixType>, OriginalMatrixType>::value),
+    EIGEN_STATIC_ASSERT((std::is_same<std::remove_const_t<MatrixType>, OriginalMatrixType>::value),
                         THE_MATRIX_OR_EXPRESSION_THAT_YOU_PASSED_DOES_NOT_HAVE_THE_EXPECTED_TYPE)
     eigen_assert(RowFactor != Dynamic && ColFactor != Dynamic);
   }
@@ -81,7 +82,7 @@ class Replicate : public internal::dense_xpr_base<Replicate<MatrixType, RowFacto
   template <typename OriginalMatrixType>
   EIGEN_DEVICE_FUNC constexpr inline Replicate(const OriginalMatrixType& matrix, Index rowFactor, Index colFactor)
       : m_matrix(matrix), m_rowFactor(rowFactor), m_colFactor(colFactor) {
-    EIGEN_STATIC_ASSERT((internal::is_same<std::remove_const_t<MatrixType>, OriginalMatrixType>::value),
+    EIGEN_STATIC_ASSERT((std::is_same<std::remove_const_t<MatrixType>, OriginalMatrixType>::value),
                         THE_MATRIX_OR_EXPRESSION_THAT_YOU_PASSED_DOES_NOT_HAVE_THE_EXPECTED_TYPE)
   }
 

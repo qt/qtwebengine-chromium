@@ -177,7 +177,7 @@ receive asynchronous events and data.
   ```cpp
   class MyPlayer : public openscreen::cast::Receiver::Consumer {
    public:
-    void OnFramesReady(int next_frame_buffer_size) override {
+    void OnFramesReady(size_t next_frame_buffer_size) override {
       // The Receiver has one or more frames ready.
       std::vector<uint8_t> buffer(next_frame_buffer_size);
       openscreen::cast::EncodedFrame frame =

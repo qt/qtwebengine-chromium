@@ -25,11 +25,11 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/d3d12/TextureCopySplitter.h"
+#include "src/dawn/native/d3d12/TextureCopySplitter.h"
 
-#include "dawn/common/Assert.h"
-#include "dawn/native/Format.h"
-#include "dawn/native/d3d12/d3d12_platform.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/native/Format.h"
+#include "src/dawn/native/d3d12/d3d12_platform.h"
 
 namespace dawn::native::d3d12 {
 
@@ -253,7 +253,7 @@ TextureCopySubresource Compute2DTextureCopySubresourceAligned(BlockOrigin3D orig
 
     // The copies must be 512-aligned. To do this, we calculate the first 512-aligned address
     // preceding our data.
-    uint64_t alignedOffset = AlignDownForDataPlacement(static_cast<uint32_t>(offset));
+    uint64_t alignedOffset = AlignDownForDataPlacement(offset);
 
     // If the provided offset to the data was already 512-aligned, we can simply copy the data
     // without further translation.

@@ -2,6 +2,8 @@
 //
 // Each function is benchmarked on ArrayXf/ArrayXd with inputs chosen to
 // stay in the valid domain and avoid NaN/Inf.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>

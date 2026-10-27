@@ -1,0 +1,175 @@
+/* Copyright 2026 The Chromium Authors
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
+/* #css_wrapper_metadata_start
+ * #type=style-lit
+ * #css_wrapper_metadata_end */
+
+:host {
+  /* TODO(b/515804243): Update the proportional values once UX is finalized. */
+  --indigo-steps-font-size: max(12px, 3.5vw);
+  --indigo-disclaimer-font-size:
+      max(10px, calc(var(--indigo-steps-font-size) * 0.8));
+  --indigo-entry-icon-base-size: max(15px, 7vw);
+  --indigo-disclaimer-margin-top: max(10px, 10vh);
+
+  --indigo-entry-icon-pulse-size:
+      calc(var(--indigo-entry-icon-base-size) * 1.8);
+  --indigo-icon-transition-duration: 300ms;
+  --indigo-text-transition-duration: 300ms;
+  --indigo-text-transition-delay: 100ms;
+  --indigo-wipe-in-start: inset(0 100% 0 0);
+  --indigo-wipe-out-end: inset(0 0 0 100%);
+
+  align-items: flex-start;
+  display: flex;
+  font-family: 'Google Sans', 'Roboto', sans-serif;
+  font-size: 16px;
+  height: 100%;
+  width: 100%;
+  top: 0;
+  left: 0;
+  justify-content: center;
+  position: absolute;
+}
+
+:host-context([dir='rtl']) {
+  --indigo-wipe-in-start: inset(0 0 0 100%);
+  --indigo-wipe-out-end: inset(0 100% 0 0);
+}
+
+#container {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: absolute;
+  top: 35%;
+  transform: translateY(
+    calc(
+      (
+        var(--indigo-entry-icon-pulse-size) -
+        var(--indigo-entry-icon-base-size)
+      ) / 2
+    )
+  );
+  width: 60%;
+  left: 20%;
+}
+
+@keyframes icon-entry {
+  0% {
+    opacity: 1;
+    height: var(--indigo-entry-icon-base-size);
+    width: var(--indigo-entry-icon-base-size);
+    transform: rotate(-180deg);
+  }
+
+  65% {
+    height: var(--indigo-entry-icon-pulse-size);
+    width: var(--indigo-entry-icon-pulse-size);
+    transform: rotate(0deg);
+  }
+
+  80% {
+    height: var(--indigo-entry-icon-pulse-size);
+    width: var(--indigo-entry-icon-pulse-size);
+    transform: rotate(0deg);
+  }
+
+  100% {
+    opacity: 1;
+    height: var(--indigo-entry-icon-base-size);
+    width: var(--indigo-entry-icon-base-size);
+    transform: rotate(0deg);
+  }
+}
+
+#icon {
+  background-image: url(text_layer_entry_icon.png);
+  background-size: contain;
+  height: var(--indigo-entry-icon-base-size);
+  width: var(--indigo-entry-icon-base-size);
+  opacity: 0;
+  transition: height var(--indigo-icon-transition-duration) ease-out,
+      width var(--indigo-icon-transition-duration) ease-out;
+  animation: icon-entry var(--indigo-text-entry-delay) ease-out forwards;
+}
+
+#steps {
+  color: rgb(11, 87, 208);
+  display: grid;
+  font-size: var(--indigo-steps-font-size);
+  font-weight: 500;
+  justify-items: center;
+}
+
+#steps > div {
+  grid-area: 1 / 1;
+}
+
+#steps > div.hidden {
+  opacity: 0;
+}
+
+#steps > div.wipe-in {
+  animation: wipe-in var(--indigo-text-transition-duration) ease-out both;
+}
+
+#steps > div.wipe-out {
+  animation: wipe-out var(--indigo-text-transition-duration) ease-out both;
+}
+
+/* Each step wipe-in animation will be delayed to allow time for the previous
+ * step to complete its wipe-out animation. This does not apply to the very
+ * first string. */
+#steps > div.wipe-in:not(:first-child) {
+  animation-delay: var(--indigo-text-transition-delay);
+}
+
+#disclaimer {
+  color: rgb(94, 94, 94);
+  font-size: var(--indigo-disclaimer-font-size);
+  font-weight: 400;
+  margin-top: var(--indigo-disclaimer-margin-top);
+  animation: fade-in var(--indigo-text-transition-duration) ease-out forwards;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes wipe-in {
+  from {
+    clip-path: var(--indigo-wipe-in-start);
+    opacity: 0;
+  }
+
+  to {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+  }
+}
+
+@keyframes wipe-out {
+  from {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+  }
+
+  to {
+    clip-path: var(--indigo-wipe-out-end);
+    opacity: 0;
+  }
+}
+
+div {
+  text-align: center;
+}

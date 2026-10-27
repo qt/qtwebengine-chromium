@@ -29,6 +29,7 @@
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/stl_util.h"
+#include "core/fxge/cfx_cttnametable.h"
 #include "core/fxge/cfx_font.h"
 #include "core/fxge/cfx_fontmapper.h"
 #include "core/fxge/cfx_fontmgr.h"
@@ -393,54 +394,6 @@ uint16_t FX_GetUnicodeBit(wchar_t wcUnicode) {
   return x ? x->wBitField : FGAS_FONTUSB::kNoBitField;
 }
 
-uint16_t ReadUInt16FromSpanAtOffset(pdfium::span<const uint8_t> data,
-                                    size_t offset) {
-  return fxcrt::GetUInt16MSBFirst(data.subspan(offset).first<2u>());
-}
-
-std::vector<WideString> GetNames(pdfium::span<const uint8_t> name_table) {
-  std::vector<WideString> results;
-  if (name_table.empty()) {
-    return results;
-  }
-
-  uint16_t nNameCount = ReadUInt16FromSpanAtOffset(name_table, 2);
-  pdfium::span<const uint8_t> str =
-      name_table.subspan(ReadUInt16FromSpanAtOffset(name_table, 4));
-  pdfium::span<const uint8_t> name_record = name_table.subspan<6u>();
-  for (uint16_t i = 0; i < nNameCount; ++i) {
-    uint16_t nNameID = ReadUInt16FromSpanAtOffset(name_table, i * 12 + 6);
-    if (nNameID != 1) {
-      continue;
-    }
-
-    uint16_t nPlatformID = ReadUInt16FromSpanAtOffset(name_record, i * 12);
-    uint16_t nNameLength = ReadUInt16FromSpanAtOffset(name_record, i * 12 + 8);
-    uint16_t nNameOffset = ReadUInt16FromSpanAtOffset(name_record, i * 12 + 10);
-    if (nPlatformID != 1) {
-      WideString wsFamily;
-      for (uint16_t j = 0; j < nNameLength / 2; ++j) {
-        wchar_t wcTemp = ReadUInt16FromSpanAtOffset(str, nNameOffset + j * 2);
-        wsFamily += wcTemp;
-      }
-      results.push_back(wsFamily);
-      continue;
-    }
-
-    // Avoid out of bounds crashes if the length and/or offset are wrong.
-    if (static_cast<size_t>(nNameLength) + nNameOffset >= str.size()) {
-      continue;
-    }
-
-    WideString wsFamily;
-    for (uint16_t j = 0; j < nNameLength; ++j) {
-      wchar_t wcTemp = str[nNameOffset + j];
-      wsFamily += wcTemp;
-    }
-    results.push_back(wsFamily);
-  }
-  return results;
-}
 
 RetainPtr<CFX_ReadOnlyFixedSizeDataVectorStream> CreateFontStream(
     CFX_FontMapper* font_mapper,
@@ -480,12 +433,14 @@ int32_t CalcPenalty(CFGAS_FontDescriptor* pInstalled,
   if (FontName.GetLength() != 0) {
     if (FontName != pInstalled->face_name_) {
       size_t i;
-      for (i = 0; i < pInstalled->family_names_.size(); ++i) {
-        if (pInstalled->family_names_[i] == FontName) {
+      pdfium::span<const WideString> names =
+          pInstalled->family_names_->GetFamilyNames();
+      for (i = 0; i < names.size(); ++i) {
+        if (names[i] == FontName) {
           break;
         }
       }
-      if (i == pInstalled->family_names_.size()) {
+      if (i == names.size()) {
         nPenalty += 0xFFFF;
       } else {
         nPenalty -= 28000;
@@ -495,12 +450,14 @@ int32_t CalcPenalty(CFGAS_FontDescriptor* pInstalled,
     }
     if (nPenalty == 30000 && !IsPartName(pInstalled->face_name_, FontName)) {
       size_t i;
-      for (i = 0; i < pInstalled->family_names_.size(); i++) {
-        if (IsPartName(pInstalled->family_names_[i], FontName)) {
+      pdfium::span<const WideString> names =
+          pInstalled->family_names_->GetFamilyNames();
+      for (i = 0; i < names.size(); i++) {
+        if (IsPartName(names[i], FontName)) {
           break;
         }
       }
-      if (i == pInstalled->family_names_.size()) {
+      if (i == names.size()) {
         nPenalty += 0xFFFF;
       } else {
         nPenalty -= 26000;
@@ -704,19 +661,11 @@ void CFGAS_FontMgr::RegisterFace(RetainPtr<CFX_Face> face,
     fxcrt::Copy(code_page_range.value(), font->csb_);
   }
 
-  static constexpr uint32_t kNameTag =
-      CFX_FontMapper::MakeTag('n', 'a', 'm', 'e');
-
-  DataVector<uint8_t> table;
-  size_t table_size = face->GetSfntTable(kNameTag, table);
-  if (table_size) {
-    table.resize(table_size);
-    if (!face->GetSfntTable(kNameTag, table)) {
-      table.clear();
-    }
+  font->family_names_ = face->ParseNameTable();
+  if (!font->family_names_) {
+    font->family_names_ = std::make_unique<CFX_CTTNameTable>();
   }
-  font->family_names_ = GetNames(table);
-  font->family_names_.push_back(
+  font->family_names_->AddFamilyName(
       WideString::FromUTF8(face->GetFamilyName().AsStringView()));
   font->face_name_ = wsFaceName;
   font->face_index_ = face_index;

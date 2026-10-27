@@ -51,6 +51,9 @@ const AccessPoint kAccessPointsThatSupportUserAction[] = {
     AccessPoint::kEnterpriseDialogAfterSigninInterception,
     AccessPoint::kCredentialExchangeImport,
     AccessPoint::kIosPageActionMenu,
+    AccessPoint::kIosGeminiButtonToolbar,
+    AccessPoint::kSettingsAutofillAndPasswords,
+    AccessPoint::kIndigo,
 };
 
 const AccessPoint kAccessPointsThatSupportImpression[] = {
@@ -79,6 +82,8 @@ const AccessPoint kAccessPointsThatSupportImpression[] = {
     AccessPoint::kAddressBubble,
     AccessPoint::kEnterpriseDialogAfterSigninInterception,
     AccessPoint::kCredentialExchangeImport,
+    AccessPoint::kIosGeminiButtonToolbar,
+    AccessPoint::kSettingsAutofillAndPasswords,
 };
 
 class SigninMetricsTest : public ::testing::Test {
@@ -241,8 +246,20 @@ class SigninMetricsTest : public ::testing::Test {
         return "SearchAIModeBubble";
       case AccessPoint::kIosAppBar:
         return "IOSAppBar";
+      case AccessPoint::kIosGeminiButtonToolbar:
+        return "IOSGeminiButtonToolbar";
       case AccessPoint::kIosPageActionMenu:
         return "PageActionMenu";
+      case AccessPoint::kSettingsAutofillAndPasswords:
+        return "SettingsAutofillAndPasswords";
+      case AccessPoint::kDeepLinkDefault:
+        return "DeepLinkDefault";
+      case AccessPoint::kAgeMismatchSignout:
+        return "AgeMismatchSignout";
+      case AccessPoint::kIndigo:
+        return "Indigo";
+      case AccessPoint::kOverflowMenu:
+        return "OverflowMenu";
     }
   }
 };

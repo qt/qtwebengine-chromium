@@ -5,6 +5,7 @@
 #include "services/on_device_model/android/on_device_model_bridge_native_unittest_helper.h"
 
 #include "base/android/jni_android.h"
+#include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
 #include "services/on_device_model/android/native_j_unittests_jni_headers/OnDeviceModelBridgeNativeUnitTestHelper_jni.h"
 
@@ -14,6 +15,7 @@ OnDeviceModelBridgeNativeUnitTestHelper::
     OnDeviceModelBridgeNativeUnitTestHelper() {
   JNIEnv* env = base::android::AttachCurrentThread();
   java_helper_ = Java_OnDeviceModelBridgeNativeUnitTestHelper_create(env);
+  settings_.Init(&java_helper_);
 }
 
 OnDeviceModelBridgeNativeUnitTestHelper::
@@ -48,35 +50,9 @@ void OnDeviceModelBridgeNativeUnitTestHelper::VerifyGenerateOptions(
       env, java_helper_, index, max_output_tokens);
 }
 
-void OnDeviceModelBridgeNativeUnitTestHelper::SetGenerateResult(
-    BackendSessionImplAndroid::GenerateResult result) {
-  JNIEnv* env = base::android::AttachCurrentThread();
-  Java_OnDeviceModelBridgeNativeUnitTestHelper_setGenerateResult(
-      env, java_helper_, static_cast<int>(result));
-}
-
-void OnDeviceModelBridgeNativeUnitTestHelper::SetCompleteAsync() {
-  JNIEnv* env = base::android::AttachCurrentThread();
-  Java_OnDeviceModelBridgeNativeUnitTestHelper_setCompleteAsync(env,
-                                                                java_helper_);
-}
-
-void OnDeviceModelBridgeNativeUnitTestHelper::SetCallbackOnDifferentThread() {
-  JNIEnv* env = base::android::AttachCurrentThread();
-  Java_OnDeviceModelBridgeNativeUnitTestHelper_setCallbackOnDifferentThread(
-      env, java_helper_);
-}
-
 void OnDeviceModelBridgeNativeUnitTestHelper::ResumeOnCompleteCallback() {
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_OnDeviceModelBridgeNativeUnitTestHelper_resumeOnCompleteCallback(
-      env, java_helper_);
-}
-
-void OnDeviceModelBridgeNativeUnitTestHelper::
-    SetDownloaderCallbackOnDifferentThread() {
-  JNIEnv* env = base::android::AttachCurrentThread();
-  Java_OnDeviceModelBridgeNativeUnitTestHelper_setDownloaderCallbackOnDifferentThread(
       env, java_helper_);
 }
 
@@ -108,11 +84,111 @@ void OnDeviceModelBridgeNativeUnitTestHelper::TriggerDownloaderOnAvailable(
 }
 
 void OnDeviceModelBridgeNativeUnitTestHelper::
+    TriggerDownloaderOnDownloadProgress(int64_t downloaded_bytes,
+                                        int64_t total_bytes) {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_OnDeviceModelBridgeNativeUnitTestHelper_triggerDownloaderOnDownloadProgress(
+      env, java_helper_, downloaded_bytes, total_bytes);
+}
+
+void OnDeviceModelBridgeNativeUnitTestHelper::
     TriggerDownloaderOnStatusCheckResult(
         ModelDownloaderAndroid::ModelStatus model_status) {
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_OnDeviceModelBridgeNativeUnitTestHelper_triggerDownloaderOnStatusCheckResult(
       env, java_helper_, static_cast<int>(model_status));
+}
+
+void OnDeviceModelBridgeNativeUnitTestHelper::
+    TriggerAllDownloadersOnStatusCheckResult(
+        ModelDownloaderAndroid::ModelStatus model_status) {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_OnDeviceModelBridgeNativeUnitTestHelper_triggerAllDownloadersOnStatusCheckResult(
+      env, java_helper_, static_cast<int>(model_status));
+}
+
+int OnDeviceModelBridgeNativeUnitTestHelper::GetStatusCheckerCount() {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  return Java_OnDeviceModelBridgeNativeUnitTestHelper_getStatusCheckerCount(
+      env, java_helper_);
+}
+
+void OnDeviceModelBridgeNativeUnitTestHelper::UnInstallModel() {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_OnDeviceModelBridgeNativeUnitTestHelper_unInstallModel(env,
+                                                              java_helper_);
+}
+
+OnDeviceModelBridgeNativeUnitTestSettings::
+    OnDeviceModelBridgeNativeUnitTestSettings() = default;
+
+OnDeviceModelBridgeNativeUnitTestSettings::
+    ~OnDeviceModelBridgeNativeUnitTestSettings() = default;
+
+void OnDeviceModelBridgeNativeUnitTestSettings::Init(
+    base::android::ScopedJavaGlobalRef<jobject>* java_helper) {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  java_settings_ =
+      Java_OnDeviceModelBridgeNativeUnitTestHelper_getMockAiCoreSettings(
+          env, *java_helper);
+}
+
+void OnDeviceModelBridgeNativeUnitTestSettings::SetGenerateResult(
+    BackendSessionImplAndroid::GenerateResult result) {
+  CHECK(java_settings_);
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_MockAiCoreSettings_setGenerateResult(env, java_settings_,
+                                            static_cast<int>(result));
+}
+
+void OnDeviceModelBridgeNativeUnitTestSettings::SetCompleteAsync(
+    bool complete_async) {
+  CHECK(java_settings_);
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_MockAiCoreSettings_setCompleteAsync(env, java_settings_, complete_async);
+}
+
+void OnDeviceModelBridgeNativeUnitTestSettings::
+    SetSessionCallbackOnDifferentThread(
+        bool session_callback_on_different_thread) {
+  CHECK(java_settings_);
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_MockAiCoreSettings_setSessionCallbackOnDifferentThread(
+      env, java_settings_, session_callback_on_different_thread);
+}
+
+void OnDeviceModelBridgeNativeUnitTestSettings::
+    SetDownloaderCallbackOnDifferentThread(
+        bool downloader_callback_on_different_thread) {
+  CHECK(java_settings_);
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_MockAiCoreSettings_setDownloaderCallbackOnDifferentThread(
+      env, java_settings_, downloader_callback_on_different_thread);
+}
+
+void OnDeviceModelBridgeNativeUnitTestSettings::SetDefaultStatusCheckResult(
+    std::optional<ModelDownloaderAndroid::ModelStatus> status) {
+  CHECK(java_settings_);
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_MockAiCoreSettings_setDefaultStatusCheckResult(
+      env, java_settings_, status.has_value() ? static_cast<int>(*status) : -1);
+}
+
+void OnDeviceModelBridgeNativeUnitTestSettings::SetSizeInTokens(
+    int size_in_tokens) {
+  CHECK(java_settings_);
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_MockAiCoreSettings_setSizeInTokens(env, java_settings_, size_in_tokens);
+}
+
+void OnDeviceModelBridgeNativeUnitTestSettings::SetExecuteResult(
+    const std::vector<std::string>& execute_result) {
+  CHECK(java_settings_);
+  JNIEnv* env = base::android::AttachCurrentThread();
+  base::android::ScopedJavaLocalRef<jobjectArray> j_string_result =
+      base::android::ToJavaArrayOfStrings(env, execute_result);
+  Java_MockAiCoreSettings_setExecuteResult(env, java_settings_,
+                                           j_string_result);
 }
 
 }  // namespace on_device_model

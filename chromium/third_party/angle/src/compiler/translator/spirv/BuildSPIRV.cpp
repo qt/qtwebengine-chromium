@@ -693,8 +693,6 @@ SPIRVBuilder::SPIRVBuilder(TCompiler *compiler,
         addCapability(spv::CapabilityTessellation);
     }
 
-    mExtInstImportIdStd = getNewId({});
-
     predefineCommonTypes();
 }
 
@@ -939,8 +937,7 @@ SpirvDecorations SPIRVBuilder::getArithmeticDecorations(const TType &type,
 
 spirv::IdRef SPIRVBuilder::getExtInstImportIdStd()
 {
-    ASSERT(mExtInstImportIdStd.valid());
-    return mExtInstImportIdStd;
+    return spirv::IdRef(vk::spirv::kIdGlslStdInstructionSet);
 }
 
 void SPIRVBuilder::predefineCommonTypes()
@@ -1010,6 +1007,12 @@ void SPIRVBuilder::predefineCommonTypes()
     spirv::WriteTypeInt(&mSpirvTypeAndConstantDecls, id, spirv::LiteralInteger(32),
                         spirv::LiteralInteger(1));
 
+    type.primarySize = 2;
+    id               = spirv::IdRef(kIdIVec2);
+    mTypeMap.insert({type, {id}});
+    spirv::WriteTypeVector(&mSpirvTypeAndConstantDecls, id, spirv::IdRef(kIdInt),
+                           spirv::LiteralInteger(type.primarySize));
+
     type.primarySize = 4;
     id               = spirv::IdRef(kIdIVec4);
     mTypeMap.insert({type, {id}});
@@ -1020,13 +1023,37 @@ void SPIRVBuilder::predefineCommonTypes()
     static_assert(kIdIntOne == kIdIntZero + 1);
     static_assert(kIdIntTwo == kIdIntZero + 2);
     static_assert(kIdIntThree == kIdIntZero + 3);
-    for (uint32_t value = 0; value < 4; ++value)
+    static_assert(kIdIntFour == kIdIntZero + 4);
+    static_assert(kIdIntFive == kIdIntZero + 5);
+    static_assert(kIdIntSix == kIdIntZero + 6);
+    static_assert(kIdIntSeven == kIdIntZero + 7);
+    for (uint32_t value = 0; value < 8; ++value)
     {
         id = spirv::IdRef(kIdIntZero + value);
         spirv::WriteConstant(&mSpirvTypeAndConstantDecls, spirv::IdRef(kIdInt), id,
                              spirv::LiteralContextDependentNumber(value));
         mIntConstants.insert({value, id});
     }
+
+    id             = spirv::IdRef(kIdFloatTwo);
+    uint32_t value = gl::bitCast<spirv::LiteralContextDependentNumber, float>(2.0f);
+    spirv::WriteConstant(&mSpirvTypeAndConstantDecls, spirv::IdRef(kIdFloat), id,
+                         spirv::LiteralContextDependentNumber(value));
+    mFloatConstants.insert({value, id});
+
+    ASSERT(kIdIVec4 > kIdVec4);
+    if (kIdIVec4 >= mNullConstants.size())
+    {
+        mNullConstants.resize(kIdIVec4 + 1);
+    }
+    ASSERT(!mNullConstants[kIdVec4].valid());
+    ASSERT(!mNullConstants[kIdIVec4].valid());
+    mNullConstants[kIdVec4] = spirv::IdRef(kIdVec4Zero);
+    spirv::WriteConstantNull(&mSpirvTypeAndConstantDecls, spirv::IdRef(kIdVec4),
+                             spirv::IdRef(kIdVec4Zero));
+    mNullConstants[kIdIVec4] = spirv::IdRef(kIdIVec4Zero);
+    spirv::WriteConstantNull(&mSpirvTypeAndConstantDecls, spirv::IdRef(kIdIVec4),
+                             spirv::IdRef(kIdIVec4Zero));
 
     // A few type pointers that are helpful for the SPIR-V transformer
     if (mShaderType != gl::ShaderType::Compute)
@@ -1044,7 +1071,17 @@ void SPIRVBuilder::predefineCommonTypes()
             },
             {
                 kIdVec4,
+                kIdVec4InputTypePointer,
+                spv::StorageClassInput,
+            },
+            {
+                kIdVec4,
                 kIdVec4OutputTypePointer,
+                spv::StorageClassOutput,
+            },
+            {
+                kIdVec3,
+                kIdVec3OutputTypePointer,
                 spv::StorageClassOutput,
             },
             {
@@ -1790,6 +1827,41 @@ spirv::IdRef SPIRVBuilder::getCompositeConstant(spirv::IdRef typeId, const spirv
     return iter->second;
 }
 
+bool SPIRVBuilder::isCompositeConstantId(spirv::IdRef id) const
+{
+    // Linear scan is fine: this query is only invoked from the rvalue-with-
+    // runtime-index path in OutputSPIRV's accessChainLoad, which is itself
+    // rare relative to most SPIR-V emission, and the map is bounded by the
+    // number of distinct OpConstantComposite values in the shader.
+    for (const auto &entry : mCompositeConstants)
+    {
+        if (entry.second == id)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+spirv::IdRef SPIRVBuilder::getOrDeclarePrivateConstantVar(spirv::IdRef typeId,
+                                                          spirv::IdRef constantId,
+                                                          const SpirvDecorations &decorations,
+                                                          const char *name)
+{
+    auto iter = mPrivateConstantVars.find(constantId);
+    if (iter != mPrivateConstantVars.end())
+    {
+        return iter->second;
+    }
+
+    spirv::IdRef initializer = constantId;
+    const spirv::IdRef varId =
+        declareVariable(typeId, spv::StorageClassPrivate, decorations, &initializer, name, nullptr);
+
+    mPrivateConstantVars.insert({constantId, varId});
+    return varId;
+}
+
 void SPIRVBuilder::startNewFunction(spirv::IdRef functionId, const TFunction *func)
 {
     ASSERT(mSpirvCurrentFunctionBlocks.empty());
@@ -1856,6 +1928,10 @@ spirv::IdRef SPIRVBuilder::declareVariable(spirv::IdRef typeId,
         else if (variableId == vk::spirv::kIdSampleID)
         {
             mOverviewFlags |= vk::spirv::kOverviewHasSampleIDMask;
+        }
+        else if (variableId == vk::spirv::kIdFragCoord)
+        {
+            mOverviewFlags |= vk::spirv::kOverviewHasFragCoordMask;
         }
     }
     else

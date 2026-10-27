@@ -25,7 +25,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/RenderPassEncoder.h"
+#include "src/dawn/native/RenderPassEncoder.h"
 
 #include <math.h>
 
@@ -33,26 +33,25 @@
 #include <cstring>
 #include <utility>
 
-#include "dawn/common/Constants.h"
-#include "dawn/native/Adapter.h"
-#include "dawn/native/Buffer.h"
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/CommandEncoder.h"
-#include "dawn/native/CommandValidation.h"
-#include "dawn/native/Commands.h"
-#include "dawn/native/Device.h"
 #include "dawn/native/ObjectType_autogen.h"
-#include "dawn/native/QuerySet.h"
-#include "dawn/native/RenderBundle.h"
-#include "dawn/native/RenderPipeline.h"
-#include "dawn/native/ValidationUtils.h"
+#include "src/dawn/native/Adapter.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/CommandEncoder.h"
+#include "src/dawn/native/CommandValidation.h"
+#include "src/dawn/native/Commands.h"
+#include "src/dawn/native/Device.h"
+#include "src/dawn/native/QuerySet.h"
+#include "src/dawn/native/RenderBundle.h"
+#include "src/dawn/native/RenderPipeline.h"
+#include "src/dawn/native/ValidationUtils.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native {
 namespace {
 
 // Check the query at queryIndex is unavailable, otherwise it cannot be written.
 MaybeError ValidateQueryIndexOverwrite(QuerySetBase* querySet,
-                                       uint32_t queryIndex,
+                                       QueryIndex queryIndex,
                                        const QueryAvailabilityMap& queryAvailabilityMap) {
     auto it = queryAvailabilityMap.find(querySet);
     DAWN_INVALID_IF(it != queryAvailabilityMap.end() && it->second[queryIndex],
@@ -147,17 +146,6 @@ ObjectType RenderPassEncoder::GetType() const {
     return ObjectType::RenderPassEncoder;
 }
 
-void RenderPassEncoder::TrackQueryAvailability(QuerySetBase* querySet, uint32_t queryIndex) {
-    DAWN_ASSERT(querySet != nullptr);
-
-    // Track the query availability with true on render pass for rewrite validation and query
-    // reset on render pass on Vulkan
-    mUsageTracker.TrackQueryAvailability(querySet, queryIndex);
-
-    // Track it again on command encoder for zero-initializing when resolving unused queries.
-    mCommandEncoder->TrackQueryAvailability(querySet, queryIndex);
-}
-
 void RenderPassEncoder::APIEnd() {
     // The encoding context might create additional resources, so we need to lock the device.
     auto deviceGuard = GetDevice()->GetGuard();
@@ -197,6 +185,9 @@ void RenderPassEncoder::End() {
                                                       std::move(mIndirectDrawMetadata)));
 
             DAWN_TRY(mEndCallback());
+            // Once the end callback has been called explicitly set it to null so that any
+            // references the lambdas may be holding can be dropped.
+            mEndCallback = nullptr;
             return {};
         },
         "encoding %s.End().", this);
@@ -341,56 +332,70 @@ void RenderPassEncoder::APIExecuteBundles(uint32_t count, RenderBundleBase* cons
                 bool depthReadOnlyInPass = IsDepthReadOnly();
                 bool stencilReadOnlyInPass = IsStencilReadOnly();
                 for (uint32_t i = 0; i < count; ++i) {
-                    DAWN_TRY(GetDevice()->ValidateObject(renderBundles[i]));
+                    DAWN_UNSAFE_TODO(DAWN_TRY(GetDevice()->ValidateObject(renderBundles[i])));
 
-                    DAWN_INVALID_IF(attachmentState != renderBundles[i]->GetAttachmentState(),
-                                    "Attachment state of renderBundles[%i] (%s) is not "
-                                    "compatible with %s.\n"
-                                    "%s expects an attachment state of %s.\n"
-                                    "renderBundles[%i] (%s) has an attachment state of %s.",
-                                    i, renderBundles[i], this, this, attachmentState, i,
-                                    renderBundles[i], renderBundles[i]->GetAttachmentState());
+                    DAWN_UNSAFE_TODO(
+                        DAWN_INVALID_IF(attachmentState != renderBundles[i]->GetAttachmentState(),
+                                        "Attachment state of renderBundles[%i] (%s) is not "
+                                        "compatible with %s.\n"
+                                        "%s expects an attachment state of %s.\n"
+                                        "renderBundles[%i] (%s) has an attachment state of %s.",
+                                        i, renderBundles[i], this, this, attachmentState, i,
+                                        renderBundles[i], renderBundles[i]->GetAttachmentState()));
 
-                    bool depthReadOnlyInBundle = renderBundles[i]->IsDepthReadOnly();
-                    DAWN_INVALID_IF(depthReadOnlyInPass && !depthReadOnlyInBundle,
-                                    "DepthReadOnly (%u) of renderBundle[%i] (%s) is not compatible "
-                                    "with DepthReadOnly (%u) of %s.",
-                                    depthReadOnlyInBundle, i, renderBundles[i], depthReadOnlyInPass,
-                                    this);
+                    bool depthReadOnlyInBundle =
+                        DAWN_UNSAFE_TODO(renderBundles[i])->IsDepthReadOnly();
+                    DAWN_UNSAFE_TODO(DAWN_INVALID_IF(
+                        depthReadOnlyInPass && !depthReadOnlyInBundle,
+                        "DepthReadOnly (%u) of renderBundle[%i] (%s) is not compatible "
+                        "with DepthReadOnly (%u) of %s.",
+                        depthReadOnlyInBundle, i, renderBundles[i], depthReadOnlyInPass, this));
 
-                    bool stencilReadOnlyInBundle = renderBundles[i]->IsStencilReadOnly();
-                    DAWN_INVALID_IF(stencilReadOnlyInPass && !stencilReadOnlyInBundle,
-                                    "StencilReadOnly (%u) of renderBundle[%i] (%s) is not "
-                                    "compatible with StencilReadOnly (%u) of %s.",
-                                    stencilReadOnlyInBundle, i, renderBundles[i],
-                                    stencilReadOnlyInPass, this);
+                    bool stencilReadOnlyInBundle =
+                        DAWN_UNSAFE_TODO(renderBundles[i])->IsStencilReadOnly();
+                    DAWN_UNSAFE_TODO(DAWN_INVALID_IF(
+                        stencilReadOnlyInPass && !stencilReadOnlyInBundle,
+                        "StencilReadOnly (%u) of renderBundle[%i] (%s) is not "
+                        "compatible with StencilReadOnly (%u) of %s.",
+                        stencilReadOnlyInBundle, i, renderBundles[i], stencilReadOnlyInPass, this));
                 }
             }
 
+            // Always reset state
             mCommandBufferState = CommandBufferStateTracker{};
 
-            ExecuteBundlesCmd* cmd =
-                allocator->Allocate<ExecuteBundlesCmd>(Command::ExecuteBundles);
-            cmd->count = count;
+            // Only encode an ExecuteBundles command if count > 0
+            if (count) {
+                ExecuteBundlesCmd* cmd =
+                    allocator->Allocate<ExecuteBundlesCmd>(Command::ExecuteBundles);
+                cmd->count = count;
 
-            Ref<RenderBundleBase>* bundles = allocator->AllocateData<Ref<RenderBundleBase>>(count);
-            for (uint32_t i = 0; i < count; ++i) {
-                bundles[i] = renderBundles[i];
+                Ref<RenderBundleBase>* bundles =
+                    allocator->AllocateData<Ref<RenderBundleBase>>(count);
+                for (uint32_t i = 0; i < count; ++i) {
+                    DAWN_UNSAFE_TODO(bundles[i]) = DAWN_UNSAFE_TODO(renderBundles[i]);
 
-                mUsageTracker.MergeResourceUsages(bundles[i]->GetResourceUsage());
-                if (IsValidationEnabled()) {
-                    mIndirectDrawMetadata.AddBundle(renderBundles[i]);
+                    mUsageTracker.MergeResourceUsages(
+                        DAWN_UNSAFE_TODO(bundles[i])->GetResourceUsage());
+                    if (DAWN_UNSAFE_TODO(bundles[i])->GetResourceUsage().usesFramebufferFetch) {
+                        mUsageTracker.MarkFramebufferFetchUsed();
+                    }
+
+                    if (IsValidationEnabled()) {
+                        mIndirectDrawMetadata.AddBundle(DAWN_UNSAFE_TODO(renderBundles[i]));
+                    }
+
+                    mDrawCount += DAWN_UNSAFE_TODO(bundles[i])->GetDrawCount();
                 }
-
-                mDrawCount += bundles[i]->GetDrawCount();
             }
-
             return {};
         },
         "encoding %s.ExecuteBundles(%u, ...).", this, count);
 }
 
-void RenderPassEncoder::APIBeginOcclusionQuery(uint32_t queryIndex) {
+void RenderPassEncoder::APIBeginOcclusionQuery(uint32_t queryIndexUntyped) {
+    QueryIndex queryIndex{queryIndexUntyped};
+
     mEncodingContext->TryEncode(
         this,
         [&](CommandAllocator* allocator) -> MaybeError {
@@ -438,7 +443,11 @@ void RenderPassEncoder::APIEndOcclusionQuery() {
                 DAWN_INVALID_IF(!mOcclusionQueryActive, "No occlusion queries are active.");
             }
 
-            TrackQueryAvailability(mOcclusionQuerySet.Get(), mCurrentOcclusionQueryIndex);
+            // The render pass usage tracker contains data about written queries. This is
+            // necessary on Vulkan to be able to reset queries before the start of render passes
+            // (it can only be done outside of a render pass).
+            mUsageTracker.TrackQueryAvailability(mOcclusionQuerySet.Get(),
+                                                 mCurrentOcclusionQueryIndex);
 
             mOcclusionQueryActive = false;
 
@@ -452,7 +461,9 @@ void RenderPassEncoder::APIEndOcclusionQuery() {
         "encoding %s.EndOcclusionQuery().", this);
 }
 
-void RenderPassEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t queryIndex) {
+void RenderPassEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t queryIndexUntyped) {
+    QueryIndex queryIndex{queryIndexUntyped};
+
     mEncodingContext->TryEncode(
         this,
         [&](CommandAllocator* allocator) -> MaybeError {
@@ -466,7 +477,12 @@ void RenderPassEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t query
                                  querySet);
             }
 
-            TrackQueryAvailability(querySet, queryIndex);
+            mCommandEncoder->TrackUsedQuerySet(querySet);
+
+            // The render pass usage tracker contains data about written queries. This is
+            // necessary on Vulkan to be able to reset queries before the start of render passes
+            // (it can only be done outside of a render pass).
+            mUsageTracker.TrackQueryAvailability(querySet, queryIndex);
 
             WriteTimestampCmd* cmd =
                 allocator->Allocate<WriteTimestampCmd>(Command::WriteTimestamp);

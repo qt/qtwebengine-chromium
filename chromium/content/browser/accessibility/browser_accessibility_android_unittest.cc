@@ -1640,6 +1640,135 @@ TEST_F(BrowserAccessibilityAndroidTest, CaptionMapsToLabeledBy) {
   EXPECT_EQ(caption_node->GetUniqueId(), labeled_by_ids[0]);
 }
 
+TEST_F(BrowserAccessibilityAndroidTest, TestGetLineBoundariesWithLineIds) {
+  ui::AXNodeData text1;
+  text1.id = 11;
+  text1.role = ax::mojom::Role::kStaticText;
+  text1.child_ids = {111, 112, 113};
+
+  ui::AXNodeData box1;
+  box1.id = 111;
+  box1.role = ax::mojom::Role::kInlineTextBox;
+  box1.SetName("One ");
+  box1.AddIntAttribute(ax::mojom::IntAttribute::kNextOnLineId, 112);
+
+  ui::AXNodeData box2;
+  box2.id = 112;
+  box2.role = ax::mojom::Role::kInlineTextBox;
+  box2.SetName("Two");
+  box2.AddIntAttribute(ax::mojom::IntAttribute::kPreviousOnLineId, 111);
+  // box2 has NO kNextOnLineId, so end of line
+
+  ui::AXNodeData box3;
+  box3.id = 113;
+  box3.role = ax::mojom::Role::kInlineTextBox;
+  box3.SetName("Three");
+  // box3 has NO kPreviousOnLineId, so start of new line
+
+  ui::AXNodeData root;
+  root.id = 1;
+  root.role = ax::mojom::Role::kRootWebArea;
+  root.child_ids = {text1.id};
+
+  std::unique_ptr<ui::BrowserAccessibilityManager> manager(
+      BrowserAccessibilityManagerAndroid::Create(
+          MakeAXTreeUpdateForTesting(root, text1, box1, box2, box3),
+          node_id_delegate_, test_browser_accessibility_delegate_.get()));
+
+  BrowserAccessibilityAndroid* text_node =
+      static_cast<BrowserAccessibilityAndroid*>(manager->GetFromID(11));
+
+  std::vector<int32_t> starts;
+  std::vector<int32_t> ends;
+  text_node->GetLineBoundaries(&starts, &ends, 0);
+
+  EXPECT_THAT(starts, ::testing::ElementsAre(0, 7));
+  EXPECT_THAT(ends, ::testing::ElementsAre(7, 12));
+}
+
+TEST_F(BrowserAccessibilityAndroidTest, TestGetLineBoundariesMissingLineIds) {
+  ui::AXNodeData text1;
+  text1.id = 11;
+  text1.role = ax::mojom::Role::kStaticText;
+  text1.child_ids = {111, 112, 113};
+
+  ui::AXNodeData box1;
+  box1.id = 111;
+  box1.role = ax::mojom::Role::kInlineTextBox;
+  box1.SetName("One ");
+
+  ui::AXNodeData box2;
+  box2.id = 112;
+  box2.role = ax::mojom::Role::kInlineTextBox;
+  box2.SetName("Two");
+
+  ui::AXNodeData box3;
+  box3.id = 113;
+  box3.role = ax::mojom::Role::kInlineTextBox;
+  box3.SetName("Three");
+
+  ui::AXNodeData root;
+  root.id = 1;
+  root.role = ax::mojom::Role::kRootWebArea;
+  root.child_ids = {text1.id};
+
+  std::unique_ptr<ui::BrowserAccessibilityManager> manager(
+      BrowserAccessibilityManagerAndroid::Create(
+          MakeAXTreeUpdateForTesting(root, text1, box1, box2, box3),
+          node_id_delegate_, test_browser_accessibility_delegate_.get()));
+
+  BrowserAccessibilityAndroid* text_node =
+      static_cast<BrowserAccessibilityAndroid*>(manager->GetFromID(11));
+
+  std::vector<int32_t> starts;
+  std::vector<int32_t> ends;
+  text_node->GetLineBoundaries(&starts, &ends, 0);
+
+  // When attributes are missing, it will treat each inline text box as on a
+  // separate line.
+  EXPECT_THAT(starts, ::testing::ElementsAre(0, 4, 7));
+  EXPECT_THAT(ends, ::testing::ElementsAre(4, 7, 12));
+}
+
+TEST_F(BrowserAccessibilityAndroidTest,
+       IsFocusableContainerWithCollectionChildren) {
+  ui::AXNodeData text1;
+  text1.id = 111;
+  text1.role = ax::mojom::Role::kStaticText;
+  text1.SetName("Item");
+
+  ui::AXNodeData list_item;
+  list_item.id = 11;
+  list_item.role = ax::mojom::Role::kListItem;
+  list_item.child_ids = {text1.id};
+
+  ui::AXNodeData list;
+  list.id = 2;
+  list.role = ax::mojom::Role::kList;
+  list.child_ids = {list_item.id};
+
+  ui::AXNodeData container;
+  container.id = 1;
+  container.role = ax::mojom::Role::kGenericContainer;
+  container.AddState(ax::mojom::State::kFocusable);
+  container.child_ids = {list.id};
+
+  ui::AXNodeData root;
+  root.id = 100;
+  root.role = ax::mojom::Role::kRootWebArea;
+  root.child_ids = {container.id};
+
+  std::unique_ptr<ui::BrowserAccessibilityManager> manager(
+      BrowserAccessibilityManagerAndroid::Create(
+          MakeAXTreeUpdateForTesting(root, container, list, list_item, text1),
+          node_id_delegate_, test_browser_accessibility_delegate_.get()));
+
+  BrowserAccessibilityAndroid* container_node =
+      static_cast<BrowserAccessibilityAndroid*>(manager->GetFromID(1));
+
+  EXPECT_FALSE(container_node->IsFocusable());
+}
+
 TEST_F(BrowserAccessibilityAndroidTest, SnapshotIdsDoNotCollideWithLiveTree) {
   UniqueAXNodeIdDelegate live_node_id_delegate;
   ui::AXNodeData live_root;

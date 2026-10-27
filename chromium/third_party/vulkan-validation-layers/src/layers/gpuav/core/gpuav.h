@@ -87,7 +87,9 @@ class Validator : public GpuShaderInstrumentor {
   private:
     void InitSettings(const Location& loc);
     void DestroySubstate();
-    void BindBufferMemory(VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset);
+    void BindBufferMemory(VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset, const Location& loc);
+    void SetMemoryWithNullDescriptor(const vvl::Buffer& buffer_state, VkDeviceMemory memory, VkDeviceSize offset,
+                                     const Location& loc);
 
     // gpuav_record.cpp
     // --------------
@@ -149,6 +151,11 @@ class Validator : public GpuShaderInstrumentor {
                                                       const RecordObject& record_obj) final;
     void PreCallRecordCmdDrawMeshTasksIndirectCount2EXT(VkCommandBuffer commandBuffer, const VkDrawIndirectCount2InfoKHR* pInfo,
                                                         const RecordObject& record_obj) final;
+    void PreCallRecordCmdDrawIndirectByteCount(VkCommandBuffer commandBuffer, const RecordObject& record_obj);
+    void PreCallRecordCmdDrawIndirectByteCount2EXT(VkCommandBuffer commandBuffer, uint32_t instanceCount, uint32_t firstInstance,
+                                                   const VkBindTransformFeedbackBuffer2InfoEXT* pCounterInfo,
+                                                   uint32_t counterOffset, uint32_t vertexStride,
+                                                   const RecordObject& record_obj) final;
     void PreCallRecordCmdDrawIndirectByteCountEXT(VkCommandBuffer commandBuffer, uint32_t instanceCount, uint32_t firstInstance,
                                                   VkBuffer counterBuffer, VkDeviceSize counterBufferOffset, uint32_t counterOffset,
                                                   uint32_t vertexStride, const RecordObject& record_obj) final;
@@ -188,6 +195,10 @@ class Validator : public GpuShaderInstrumentor {
                                                         const VkAccelerationStructureBuildGeometryInfoKHR* pInfos,
                                                         const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos,
                                                         const RecordObject& record_obj) final;
+    void PostCallRecordCmdBuildAccelerationStructuresKHR(VkCommandBuffer commandBuffer, uint32_t infoCount,
+                                                         const VkAccelerationStructureBuildGeometryInfoKHR* pInfos,
+                                                         const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos,
+                                                         const RecordObject& record_obj) final;
     void PreCallRecordCmdTraceRaysNV(VkCommandBuffer commandBuffer, VkBuffer raygenShaderBindingTableBuffer,
                                      VkDeviceSize raygenShaderBindingOffset, VkBuffer missShaderBindingTableBuffer,
                                      VkDeviceSize missShaderBindingOffset, VkDeviceSize missShaderBindingStride,
@@ -241,9 +252,9 @@ class Validator : public GpuShaderInstrumentor {
     bool ValidateUnprotectedBuffer(const vvl::CommandBuffer& cb_state, const vvl::Buffer& buffer_state, const Location& buffer_loc,
                                    const char* vuid, const char* more_message = "") const final;
     bool ValidateProtectedTensor(const vvl::CommandBuffer& cb_state, const vvl::Tensor& tensor_state, const Location& tensor_loc,
-                                 const char* vuid, const char* more_message = "") const final;
+                                 const char* more_message = "") const final;
     bool ValidateUnprotectedTensor(const vvl::CommandBuffer& cb_state, const vvl::Tensor& tensor_state, const Location& tensor_loc,
-                                   const char* vuid, const char* more_message = "") const final;
+                                   const char* more_message = "") const final;
 
     void Created(vvl::DescriptorSet& set) final;
     void Created(vvl::CommandBuffer& cb_state) final;
@@ -306,6 +317,9 @@ class Validator : public GpuShaderInstrumentor {
 
     // Make sure we call the right versions of any timeline semaphore functions.
     bool timeline_khr_ = false;
+
+    VkQueue internal_transfer_queue_handle_ = VK_NULL_HANDLE;
+    uint32_t internal_transfer_queue_family_index_ = 0;
 
   public:
     vko::GpuResourcesManager gpu_resources_manager_;

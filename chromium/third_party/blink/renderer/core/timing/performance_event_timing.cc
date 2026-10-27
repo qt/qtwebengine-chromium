@@ -8,6 +8,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_object_builder.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
+#include "third_party/blink/renderer/core/events/pointer_event_factory.h"
 #include "third_party/blink/renderer/core/frame/frame.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
@@ -140,11 +141,20 @@ uint64_t PerformanceEventTiming::interactionId() const {
   if (reporting_info_.prevent_counting_as_interaction) {
     return 0u;
   }
-  CHECK(HasKnownInteractionID());
+  CHECK(HasInteractionId());
   return interaction_id_->id;
 }
 
-bool PerformanceEventTiming::HasKnownInteractionID() const {
+UserInteractionType PerformanceEventTiming::InteractionType() const {
+  std::optional<PointerId> pointer_id =
+      GetEventTimingReportingInfo()->pointer_id;
+  return (pointer_id.has_value() &&
+          *pointer_id != PointerEventFactory::kReservedNonPointerId)
+             ? UserInteractionType::kTapOrClick
+             : UserInteractionType::kKeyboard;
+}
+
+bool PerformanceEventTiming::HasInteractionId() const {
   return interaction_id_.has_value();
 }
 
@@ -159,12 +169,9 @@ bool PerformanceEventTiming::HasKnownEndTime() const {
 
 bool PerformanceEventTiming::IsReadyForReporting() const {
   return !reporting_info_.processing_end_time.is_null() && HasKnownEndTime() &&
-         HasKnownInteractionID();
+         HasInteractionId();
 }
 
-bool PerformanceEventTiming::IsReadyForReportingForIssue328902994() const {
-  return !reporting_info_.processing_end_time.is_null() && HasKnownEndTime();
-}
 
 base::TimeTicks PerformanceEventTiming::GetStartTime() const {
   return reporting_info_.creation_time;

@@ -64,10 +64,14 @@ function getLocaleFetchUrl(locale: Intl.UnicodeBCP47LocaleIdentifier, location: 
  * fetched locally or remotely.
  */
 export async function fetchAndRegisterLocaleData(
-    locale: Intl.UnicodeBCP47LocaleIdentifier, location = self.location.toString()): Promise<void> {
-  const localeDataTextPromise = fetch(getLocaleFetchUrl(locale, location)).then(result => result.json());
-  const timeoutPromise =
-      new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error('timed out fetching locale')), 5000));
+    locale: Intl.UnicodeBCP47LocaleIdentifier,
+    // Type issue with universal types.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    location = (globalThis as any).location?.toString() ?? ''): Promise<void> {
+  const localeDataTextPromise =
+      fetch(getLocaleFetchUrl(locale, location)).then(result => result.json()) as Promise<I18n.I18n.LocalizedMessages>;
+  const timeoutPromise = new Promise<never>(
+      (_, reject) => globalThis.setTimeout(() => reject(new Error('timed out fetching locale')), 5000));
   const localeData = await Promise.race([timeoutPromise, localeDataTextPromise]);
   i18nInstance.registerLocaleData(locale, localeData);
 }

@@ -622,6 +622,20 @@ VkResult GetAndroidHardwareBufferPropertiesANDROID(VkDevice device, const struct
 VkResult GetMemoryAndroidHardwareBufferANDROID(VkDevice device, const VkMemoryGetAndroidHardwareBufferInfoANDROID* pInfo,
                                                struct AHardwareBuffer** pBuffer);
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
+VkResult CreateGpaSessionAMD(VkDevice device, const VkGpaSessionCreateInfoAMD* pCreateInfo, const VkAllocationCallbacks* pAllocator,
+                             VkGpaSessionAMD* pGpaSession);
+void DestroyGpaSessionAMD(VkDevice device, VkGpaSessionAMD gpaSession, const VkAllocationCallbacks* pAllocator);
+VkResult SetGpaDeviceClockModeAMD(VkDevice device, VkGpaDeviceClockModeInfoAMD* pInfo);
+VkResult GetGpaDeviceClockInfoAMD(VkDevice device, VkGpaDeviceGetClockInfoAMD* pInfo);
+VkResult CmdBeginGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession);
+VkResult CmdEndGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession);
+VkResult CmdBeginGpaSampleAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                              const VkGpaSampleBeginInfoAMD* pGpaSampleBeginInfo, uint32_t* pSampleID);
+void CmdEndGpaSampleAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession, uint32_t sampleID);
+VkResult GetGpaSessionStatusAMD(VkDevice device, VkGpaSessionAMD gpaSession);
+VkResult GetGpaSessionResultsAMD(VkDevice device, VkGpaSessionAMD gpaSession, uint32_t sampleID, size_t* pSizeInBytes, void* pData);
+VkResult ResetGpaSessionAMD(VkDevice device, VkGpaSessionAMD gpaSession);
+void CmdCopyGpaSessionResultsAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession);
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 VkResult CreateExecutionGraphPipelinesAMDX(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
                                            const VkExecutionGraphPipelineCreateInfoAMDX* pCreateInfos,
@@ -670,7 +684,7 @@ VkResult CreateAccelerationStructureNV(VkDevice device, const VkAccelerationStru
 void DestroyAccelerationStructureNV(VkDevice device, VkAccelerationStructureNV accelerationStructure,
                                     const VkAllocationCallbacks* pAllocator);
 void GetAccelerationStructureMemoryRequirementsNV(VkDevice device, const VkAccelerationStructureMemoryRequirementsInfoNV* pInfo,
-                                                  VkMemoryRequirements2KHR* pMemoryRequirements);
+                                                  VkMemoryRequirements2* pMemoryRequirements);
 VkResult BindAccelerationStructureMemoryNV(VkDevice device, uint32_t bindInfoCount,
                                            const VkBindAccelerationStructureMemoryInfoNV* pBindInfos);
 void CmdBuildAccelerationStructureNV(VkCommandBuffer commandBuffer, const VkAccelerationStructureInfoNV* pInfo,
@@ -788,6 +802,7 @@ VkResult SetPrivateDataEXT(VkDevice device, VkObjectType objectType, uint64_t ob
                            uint64_t data);
 void GetPrivateDataEXT(VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkPrivateDataSlot privateDataSlot,
                        uint64_t* pData);
+VkResult QueueSetPerfHintQCOM(VkQueue queue, const VkPerfHintInfoQCOM* pPerfHintInfo);
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 VkResult CreateCudaModuleNV(VkDevice device, const VkCudaModuleCreateInfoNV* pCreateInfo, const VkAllocationCallbacks* pAllocator,
                             VkCudaModuleNV* pModule);
@@ -854,7 +869,7 @@ void CmdSubpassShadingHUAWEI(VkCommandBuffer commandBuffer);
 void CmdBindInvocationMaskHUAWEI(VkCommandBuffer commandBuffer, VkImageView imageView, VkImageLayout imageLayout);
 VkResult GetMemoryRemoteAddressNV(VkDevice device, const VkMemoryGetRemoteAddressInfoNV* pMemoryGetRemoteAddressInfo,
                                   VkRemoteAddressNV* pAddress);
-VkResult GetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoEXT* pPipelineInfo, VkBaseOutStructure* pPipelineProperties);
+VkResult GetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoKHR* pPipelineInfo, VkBaseOutStructure* pPipelineProperties);
 void CmdSetPatchControlPointsEXT(VkCommandBuffer commandBuffer, uint32_t patchControlPoints);
 void CmdSetRasterizerDiscardEnableEXT(VkCommandBuffer commandBuffer, VkBool32 rasterizerDiscardEnable);
 void CmdSetDepthBiasEnableEXT(VkCommandBuffer commandBuffer, VkBool32 depthBiasEnable);
@@ -890,6 +905,7 @@ void GetMicromapBuildSizesEXT(VkDevice device, VkAccelerationStructureBuildTypeK
 void CmdDrawClusterHUAWEI(VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ);
 void CmdDrawClusterIndirectHUAWEI(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset);
 void SetDeviceMemoryPriorityEXT(VkDevice device, VkDeviceMemory memory, float priority);
+void CmdSetDispatchParametersARM(VkCommandBuffer commandBuffer, const VkDispatchParametersARM* pDispatchParameters);
 void GetDescriptorSetLayoutHostMappingInfoVALVE(VkDevice device, const VkDescriptorSetBindingReferenceVALVE* pBindingReference,
                                                 VkDescriptorSetLayoutHostMappingInfoVALVE* pHostMapping);
 void GetDescriptorSetHostMappingVALVE(VkDevice device, VkDescriptorSet descriptorSet, void** ppData);
@@ -1077,6 +1093,7 @@ void ClearShaderInstrumentationMetricsARM(VkDevice device, VkShaderInstrumentati
 void CmdEndRendering2EXT(VkCommandBuffer commandBuffer, const VkRenderingEndInfoKHR* pRenderingEndInfo);
 void CmdBeginCustomResolveEXT(VkCommandBuffer commandBuffer, const VkBeginCustomResolveInfoEXT* pBeginCustomResolveInfo);
 void CmdSetComputeOccupancyPriorityNV(VkCommandBuffer commandBuffer, const VkComputeOccupancyPriorityParametersNV* pParameters);
+void CmdSetPrimitiveRestartIndexEXT(VkCommandBuffer commandBuffer, uint32_t primitiveRestartIndex);
 VkResult CreateAccelerationStructureKHR(VkDevice device, const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
                                         const VkAllocationCallbacks* pAllocator,
                                         VkAccelerationStructureKHR* pAccelerationStructure);

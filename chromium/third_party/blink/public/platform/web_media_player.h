@@ -56,6 +56,7 @@ class PaintFlags;
 
 namespace media {
 class PaintCanvasVideoRenderer;
+class VideoFrameSharedImageCache;
 }
 
 namespace viz {
@@ -172,9 +173,6 @@ class WebMediaPlayer {
     // when a muted HTMLMediaElement has started autoplaying and is not rendered
     // in the viewport anymore.
     kAutoplayAutoPause,
-    // The audio description track is lagging behind and we need to pause for it
-    // to catch up.
-    kLetAudioDescriptionFinish,
   };
 
   // For video.requestVideoFrameCallback(). https://wicg.github.io/video-rvfc/
@@ -334,7 +332,8 @@ class WebMediaPlayer {
   // Renders the current frame into the provided cc::PaintCanvas.
   virtual void Paint(cc::PaintCanvas*,
                      const gfx::Rect&,
-                     const cc::PaintFlags&) = 0;
+                     const cc::PaintFlags&,
+                     bool force_pixel_readback) = 0;
 
   // Similar to Paint(), but just returns the frame directly instead of trying
   // to upload or convert it. Note: This may kick off a process to update the
@@ -353,6 +352,14 @@ class WebMediaPlayer {
   // the underlying frame is unchanged). May only be used on the main thread and
   // should not be held outside the scope of a single call site.
   virtual media::PaintCanvasVideoRenderer* GetPaintCanvasVideoRenderer() {
+    return nullptr;
+  }
+
+  virtual media::VideoFrameSharedImageCache* GetRGBSharedImageCache() {
+    return nullptr;
+  }
+
+  virtual media::VideoFrameSharedImageCache* GetYUVSharedImageCache() {
     return nullptr;
   }
 

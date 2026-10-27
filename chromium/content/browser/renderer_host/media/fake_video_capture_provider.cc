@@ -38,8 +38,19 @@ void FakeVideoCaptureProvider::OpenNativeScreenCapturePicker(
     base::OnceCallback<void(DesktopMediaID::Id)> created_callback,
     base::OnceCallback<void(webrtc::DesktopCapturer::Source)> picker_callback,
     base::OnceCallback<void()> cancel_callback,
-    base::OnceCallback<void()> error_callback) {}
+    base::OnceCallback<void()> error_callback,
+    base::OnceCallback<void(DesktopMediaID::Id)> stop_audio_callback) {}
 
 void FakeVideoCaptureProvider::CloseNativeScreenCapturePicker(
     DesktopMediaID device_id) {}
+
+#if BUILDFLAG(IS_MAC)
+void FakeVideoCaptureProvider::GetApplicationAudioCaptureId(
+    DesktopMediaID::Id session_id,
+    base::OnceCallback<
+        void(const std::optional<desktop_capture::ApplicationAudioCaptureId>&)>
+        callback) {
+  std::move(callback).Run(std::nullopt);
+}
+#endif
 }  // namespace content

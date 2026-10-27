@@ -996,12 +996,18 @@ Called by update_protocol_commands_enum.py.-->
   <int value="104" label="timelineAlternativeNavigation"/>
   <int value="110" label="durableMessages"/>
   <int value="111" label="jpegXL"/>
+  <int value="112" label="plusButton"/>
 </enum>
 
 <enum name="DevToolsExtensionEvalTarget">
   <int value="0" label="Web Page"/>
   <int value="1" label="Same Extension"/>
   <int value="2" label="Other Extension"/>
+</enum>
+
+<enum name="DevToolsFrontendLocation">
+  <int value="0" label="Local"/>
+  <int value="1" label="Remote"/>
 </enum>
 
 <enum name="DevToolsIssueCreated">
@@ -1191,6 +1197,7 @@ Called by update_protocol_commands_enum.py.-->
   <int value="3" label="Hamburger Menu"/>
   <int value="4" label="Adorner"/>
   <int value="5" label="Command Menu"/>
+  <int value="6" label="More Tools Menu"/>
 </enum>
 
 <enum name="DevToolsIssuesPanelResourceOpened">
@@ -1565,10 +1572,14 @@ Called by update_protocol_commands_enum.py.-->
   <int value="2" label="Recording finished"/>
 </enum>
 
+<!-- LINT.IfChange(DevToolsRemoteDebuggingConnectionPermission) -->
+
 <enum name="DevToolsRemoteDebuggingConnectionPermission">
   <int value="0" label="Allowed"/>
   <int value="1" label="Denied"/>
 </enum>
+
+<!-- LINT.ThenChange(//chrome/browser/devtools/chrome_devtools_manager_delegate.cc:DevToolsRemoteDebuggingConnectionPermission) -->
 
 <enum name="DevToolsRemoteDebuggingServerAction">
   <int value="0" label="Started"/>

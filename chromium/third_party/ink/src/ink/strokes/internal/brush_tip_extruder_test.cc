@@ -41,6 +41,7 @@ using ::testing::Gt;
 using ::testing::IsEmpty;
 using ::testing::Not;
 using ::testing::Optional;
+using ::testing::SizeIs;
 
 constexpr float kBrushEpsilon = 0.05;
 
@@ -48,14 +49,14 @@ BrushTipState MakeSquareTipState(Point position, float side_length) {
   return {.position = position,
           .width = side_length,
           .height = side_length,
-          .percent_radius = 0};
+          .corner_rounding = 0};
 }
 
 BrushTipState MakeCircularTipState(Point position, float radius) {
   return {.position = position,
           .width = 2 * radius,
           .height = 2 * radius,
-          .percent_radius = 1};
+          .corner_rounding = 1};
 }
 
 std::vector<BrushTipState> MakeUniformCircularTipStates(
@@ -421,6 +422,45 @@ TEST_F(BrushTipExtruderTest, EmptyExtendClearsCompletelyVolatileStroke) {
   EXPECT_TRUE(extruder.GetBounds().IsEmpty());
   ASSERT_EQ(extruder.GetOutlines().size(), 1);
   EXPECT_THAT(extruder.GetOutlines()[0].GetIndices(), IsEmpty());
+}
+
+TEST_F(BrushTipExtruderTest, RestartStroke) {
+  BrushTipExtruder extruder;
+  extruder.StartStroke(kBrushEpsilon,
+                       /* is_particle_brush = */ false, mesh_);
+
+  // Extrude some geometry, using some fixed and some volatile tip states.
+  extruder.ExtendStroke(
+      MakeUniformCircularTipStates({{0, 0}, {1, 0}, {2, 0}}, 1),
+      MakeUniformCircularTipStates({{3, 0}, {4, 0}, {5, 0}}, 1));
+  Envelope original_bounds = extruder.GetBounds();
+  EXPECT_FALSE(mesh_.IsEmpty());
+  EXPECT_FALSE(original_bounds.IsEmpty());
+  ASSERT_THAT(extruder.GetOutlines(), SizeIs(1));
+  std::vector<uint32_t> original_outline_indices(
+      extruder.GetOutlines()[0].GetIndices().begin(),
+      extruder.GetOutlines()[0].GetIndices().end());
+  EXPECT_THAT(original_outline_indices, Not(IsEmpty()));
+
+  // Restart extrusion for this stroke.  All geometry should get discarded, even
+  // for the fixed tip states.
+  extruder.RestartStroke();
+  EXPECT_TRUE(mesh_.IsEmpty());
+  EXPECT_TRUE(extruder.GetBounds().IsEmpty());
+  ASSERT_THAT(extruder.GetOutlines(), SizeIs(1));
+  EXPECT_THAT(extruder.GetOutlines()[0].GetIndices(), IsEmpty());
+
+  // Re-extrude with the same tip states as before (all of them now fixed). We
+  // should re-extrude the exact same geometry, since any `StartStroke` settings
+  // (such as the brush epsilon) should be preserved.
+  extruder.ExtendStroke(
+      MakeUniformCircularTipStates(
+          {{0, 0}, {1, 0}, {2, 0}, {3, 0}, {4, 0}, {5, 0}}, 1),
+      {});
+  EXPECT_FALSE(mesh_.IsEmpty());
+  EXPECT_THAT(extruder.GetBounds(), EnvelopeEq(original_bounds));
+  ASSERT_THAT(extruder.GetOutlines(), SizeIs(1));
+  EXPECT_EQ(extruder.GetOutlines()[0].GetIndices(), original_outline_indices);
 }
 
 TEST_F(BrushTipExtruderTest, StartSecondStroke) {
@@ -917,7 +957,7 @@ TEST_F(BrushTipExtruderTest, TextureUVsAreSetForWindingTextureParticles) {
       /* new_fixed_states = */ {{.position = {0, 0},
                                  .width = 10,
                                  .height = 10,
-                                 .percent_radius = 0.4}},
+                                 .corner_rounding = 0.4}},
       /* volatile_states = */ {});
 
   ASSERT_EQ(mesh_.VertexCount(), 8);
@@ -953,7 +993,7 @@ TEST_F(BrushTipExtruderTest, TextureUVsAreSetForWindingTextureParticles) {
                                 {.position = {20, 0},
                                  .width = 10,
                                  .height = 10,
-                                 .percent_radius = 0.4}},
+                                 .corner_rounding = 0.4}},
       /* volatile_states = */ {});
 
   ASSERT_EQ(mesh_.VertexCount(), 16);
@@ -991,7 +1031,7 @@ TEST_F(BrushTipExtruderTest, TextureUVsAreNotSetForNonWindingTextureParticles) {
       /* new_fixed_states = */ {{.position = {0, 0},
                                  .width = 10,
                                  .height = 10,
-                                 .percent_radius = 0.4}},
+                                 .corner_rounding = 0.4}},
       /* volatile_states = */ {});
 
   for (uint32_t i = 0; i < mesh_.VertexCount(); ++i) {
@@ -1008,7 +1048,7 @@ TEST_F(BrushTipExtruderTest, WindingTextureParticleUVsAreClamped) {
       /* new_fixed_states = */ {{.position = {1669.30981, 761.19311},
                                  .width = 109.525535,
                                  .height = 109.525535,
-                                 .percent_radius = 0}},
+                                 .corner_rounding = 0}},
       /* volatile_states = */ {});
 
   for (uint32_t i = 0; i < mesh_.VertexCount(); ++i) {
@@ -1031,7 +1071,7 @@ TEST_F(BrushTipExtruderTest, TextureUVsFollowTipRotation) {
       /* new_fixed_states = */ {{.position = {5, 5},
                                  .width = 2,
                                  .height = 2,
-                                 .percent_radius = 0,
+                                 .corner_rounding = 0,
                                  .rotation = kQuarterTurn}},
       /* volatile_states = */ {});
 

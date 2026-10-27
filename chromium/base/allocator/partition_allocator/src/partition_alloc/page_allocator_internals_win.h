@@ -8,9 +8,9 @@
 #include <cstdint>
 
 #include "partition_alloc/buildflags.h"
+#include "partition_alloc/internal/page_allocator_internal.h"
 #include "partition_alloc/oom.h"
 #include "partition_alloc/page_allocator.h"
-#include "partition_alloc/page_allocator_internal.h"
 #include "partition_alloc/partition_alloc_base/notreached.h"
 #include "partition_alloc/partition_alloc_check.h"
 
@@ -246,6 +246,10 @@ void DiscardSystemPagesInternal(uintptr_t address, size_t length) {
 
 bool SealSystemPagesInternal(uintptr_t address, size_t length) {
   return false;
+}
+
+size_t GetZeroSegmentSizeFromOS() {
+  return 0;
 }
 
 }  // namespace partition_alloc::internal

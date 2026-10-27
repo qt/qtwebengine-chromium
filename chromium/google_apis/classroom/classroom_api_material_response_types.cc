@@ -18,6 +18,8 @@ constexpr char kApiResponseMaterialDriveKey[] = "driveFile";
 constexpr char kApiResponseMaterialYoutubeVideoKey[] = "youtubeVideo";
 constexpr char kApiResponseMaterialLinkKey[] = "link";
 constexpr char kApiResponseMaterialFormKey[] = "form";
+constexpr char kApiResponseMaterialGuidedLearningKey[] = "guidedLearning";
+constexpr char kApiResponseMaterialNotebook[] = "notebook";
 
 }  // namespace
 
@@ -36,6 +38,9 @@ bool Material::ConvertMaterial(const base::Value* input, Material* output) {
       dict->FindDict(kApiResponseMaterialYoutubeVideoKey);
   const auto* const link = dict->FindDict(kApiResponseMaterialLinkKey);
   const auto* const form = dict->FindDict(kApiResponseMaterialFormKey);
+  const auto* const guidedLearning =
+      dict->FindDict(kApiResponseMaterialGuidedLearningKey);
+  const auto* const notebook = dict->FindDict(kApiResponseMaterialNotebook);
 
   const base::DictValue* content_dict = nullptr;
   Material::Type content_type = Material::Type::kUnknown;
@@ -56,6 +61,12 @@ bool Material::ConvertMaterial(const base::Value* input, Material* output) {
   } else if (form) {
     content_dict = form;
     content_type = Material::Type::kForm;
+  } else if (guidedLearning) {
+    content_dict = guidedLearning;
+    content_type = Material::Type::kGuidedLearning;
+  } else if (notebook) {
+    content_dict = notebook;
+    content_type = Material::Type::kNotebook;
   }
 
   if (!content_dict) {

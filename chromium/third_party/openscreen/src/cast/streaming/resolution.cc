@@ -39,6 +39,11 @@ bool FrameRateEquals(double a, double b) {
 }  // namespace
 
 ErrorOr<Resolution> Resolution::TryParse(const Json::Value& root) {
+  if (!root.isObject()) {
+    return Error(Error::Code::kJsonParseError,
+                 "Resolution is not a JSON object");
+  }
+
   Resolution out;
   if (!json::TryParseInt(root[kWidth], &out.width) ||
       !json::TryParseInt(root[kHeight], &out.height)) {
@@ -76,6 +81,11 @@ bool Resolution::IsSupersetOf(const Resolution& other) const {
 }
 
 ErrorOr<Dimensions> Dimensions::TryParse(const Json::Value& root) {
+  if (!root.isObject()) {
+    return Error(Error::Code::kJsonParseError,
+                 "Dimensions is not a JSON object");
+  }
+
   Dimensions out;
   if (!json::TryParseInt(root[kWidth], &out.width) ||
       !json::TryParseInt(root[kHeight], &out.height)) {

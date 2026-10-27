@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSORSYMMETRY_TEMPLATEGROUPTHEORY_H
-#define EIGEN_CXX11_TENSORSYMMETRY_TEMPLATEGROUPTHEORY_H
+#ifndef EIGEN_TENSORSYMMETRY_TEMPLATEGROUPTHEORY_H
+#define EIGEN_TENSORSYMMETRY_TEMPLATEGROUPTHEORY_H
 
 // IWYU pragma: private
 #include "../InternalHeaderCheck.h"
@@ -20,7 +21,7 @@ namespace internal {
 namespace group_theory {
 
 /** \internal
- * \file CXX11/src/TensorSymmetry/util/TemplateGroupTheory.h
+ * \file src/TensorSymmetry/util/TemplateGroupTheory.h
  * This file contains C++ templates that implement group theory algorithms.
  *
  * The algorithms allow for a compile-time analysis of finite groups.
@@ -67,7 +68,7 @@ namespace group_theory {
  *
  * The main interface for Dimino's algorithm is the template
  * enumerate_group_elements. All lists are implemented as variadic
- * type_list<typename...> and numeric_list<typename = int, int...>
+ * type_list<typename...> and std::integer_sequence<int, ...>
  * templates.
  *
  * 'Calling' templates is usually done via typedefs.
@@ -109,7 +110,7 @@ namespace group_theory {
 /** \internal
  *
  * \class strip_identities
- * \ingroup CXX11_TensorSymmetry_Module
+ * \ingroup TensorSymmetry_Module
  *
  * \brief Cleanse a list of group elements of the identity element
  *
@@ -141,7 +142,7 @@ struct strip_identities<Equality, id, type_list<>> {
 /** \internal
  *
  * \class dimino_first_step_elements_helper
- * \ingroup CXX11_TensorSymmetry_Module
+ * \ingroup TensorSymmetry_Module
  *
  * \brief Recursive template that adds powers of the first generator to the list of group elements
  *
@@ -175,7 +176,7 @@ struct dimino_first_step_elements_helper<Multiply, Equality, id, g, current_elem
 /** \internal
  *
  * \class dimino_first_step_elements
- * \ingroup CXX11_TensorSymmetry_Module
+ * \ingroup TensorSymmetry_Module
  *
  * \brief Add all powers of the first generator to the list of group elements
  *
@@ -202,7 +203,7 @@ struct dimino_first_step_elements {
 /** \internal
  *
  * \class dimino_get_coset_elements
- * \ingroup CXX11_TensorSymmetry_Module
+ * \ingroup TensorSymmetry_Module
  *
  * \brief Generate all elements of a specific coset
  *
@@ -234,7 +235,7 @@ struct dimino_get_coset_elements<Multiply, sub_group_elements, new_coset_rep, fa
 /** \internal
  *
  * \class dimino_add_cosets_for_rep
- * \ingroup CXX11_TensorSymmetry_Module
+ * \ingroup TensorSymmetry_Module
  *
  * \brief Recursive template for adding coset spaces
  *
@@ -288,7 +289,7 @@ struct dimino_add_cosets_for_rep<Multiply, Equality, id, sub_group_elements, ele
 /** \internal
  *
  * \class dimino_add_all_coset_spaces
- * \ingroup CXX11_TensorSymmetry_Module
+ * \ingroup TensorSymmetry_Module
  *
  * \brief Recursive template for adding all coset spaces for a new generator
  *
@@ -332,7 +333,7 @@ struct dimino_add_all_coset_spaces<Multiply, Equality, id, sub_group_elements, e
 /** \internal
  *
  * \class dimino_add_generator
- * \ingroup CXX11_TensorSymmetry_Module
+ * \ingroup TensorSymmetry_Module
  *
  * \brief Enlarge the group by adding a new generator.
  *
@@ -379,7 +380,7 @@ struct dimino_add_generator<Multiply, Equality, id, elements, generators_done, c
 /** \internal
  *
  * \class dimino_add_remaining_generators
- * \ingroup CXX11_TensorSymmetry_Module
+ * \ingroup TensorSymmetry_Module
  *
  * \brief Recursive template that adds all remaining generators to a group
  *
@@ -419,7 +420,7 @@ struct dimino_add_remaining_generators<Multiply, Equality, id, generators_done, 
 /** \internal
  *
  * \class enumerate_group_elements_noid
- * \ingroup CXX11_TensorSymmetry_Module
+ * \ingroup TensorSymmetry_Module
  *
  * \brief Helper template that implements group element enumeration
  *
@@ -457,7 +458,7 @@ struct enumerate_group_elements_noid<Multiply, Equality, id, type_list<>, initia
 /** \internal
  *
  * \class enumerate_group_elements
- * \ingroup CXX11_TensorSymmetry_Module
+ * \ingroup TensorSymmetry_Module
  *
  * \brief Enumerate all elements in a finite group
  *
@@ -484,7 +485,7 @@ struct enumerate_group_elements
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSORSYMMETRY_TEMPLATEGROUPTHEORY_H
+#endif  // EIGEN_TENSORSYMMETRY_TEMPLATEGROUPTHEORY_H
 
 /*
  * kate: space-indent on; indent-width 2; mixedindent off; indent-mode cstyle;

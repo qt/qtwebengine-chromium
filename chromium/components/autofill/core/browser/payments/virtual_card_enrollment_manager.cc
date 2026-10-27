@@ -4,11 +4,21 @@
 
 #include "components/autofill/core/browser/payments/virtual_card_enrollment_manager.h"
 
-#include <string>
+#include <stdint.h>
 
+#include <memory>
+#include <optional>
+#include <string>
+#include <utility>
+
+#include "base/check.h"
 #include "base/check_deref.h"
+#include "base/check_op.h"
+#include "base/functional/bind.h"
+#include "base/functional/callback.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/string_number_conversions.h"
+#include "build/buildflag.h"
 #include "components/autofill/core/browser/data_manager/payments/payments_data_manager.h"
 #include "components/autofill/core/browser/data_manager/personal_data_manager.h"
 #include "components/autofill/core/browser/data_model/payments/credit_card.h"
@@ -17,13 +27,14 @@
 #include "components/autofill/core/browser/payments/autofill_payments_feature_availability.h"
 #include "components/autofill/core/browser/payments/multiple_request_payments_network_interface.h"
 #include "components/autofill/core/browser/payments/payments_autofill_client.h"
+#include "components/autofill/core/browser/payments/payments_request_details.h"
 #include "components/autofill/core/browser/payments/payments_util.h"
 #include "components/autofill/core/browser/payments/virtual_card_enrollment_flow.h"
 #include "components/autofill/core/browser/strike_databases/payments/virtual_card_enrollment_strike_database.h"
-#include "components/autofill/core/common/autofill_payments_features.h"
 #include "components/strike_database/strike_database.h"
 #include "components/strike_database/strike_database_base.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image.h"
 
 namespace autofill {
@@ -336,17 +347,27 @@ void VirtualCardEnrollmentManager::OnDidGetUpdateVirtualCardEnrollmentResponse(
         state_.virtual_card_enrollment_fields.credit_card.instrument_id()));
   }
 
+  base::WeakPtr<VirtualCardEnrollmentManager> weak_this =
+      weak_ptr_factory_.GetWeakPtr();
+  VirtualCardEnrollmentSource source =
+      state_.virtual_card_enrollment_fields.virtual_card_enrollment_source;
+
   // Relay the response to the server card editor page. This also destroys the
-  // payments delegate if the editor was already closed.
+  // payments delegate if the editor was already closed. Running this callback
+  // may synchronously delete `this`, so no further accesses to `this` are
+  // allowed.
   if (virtual_card_enrollment_update_response_callback_.has_value()) {
     std::move(virtual_card_enrollment_update_response_callback_.value())
         .Run(result);
   }
 
   LogUpdateVirtualCardEnrollmentRequestResult(
-      state_.virtual_card_enrollment_fields.virtual_card_enrollment_source,
-      type, result == PaymentsRpcResult::kSuccess);
-  Reset();
+      source, type, result == PaymentsRpcResult::kSuccess);
+
+  // Guard `Reset()` to prevent UAF if the object was deleted synchronously.
+  if (weak_this) {
+    Reset();
+  }
 }
 
 void VirtualCardEnrollmentManager::OnVirtualCardEnrollCompleted(

@@ -168,6 +168,7 @@ IPEndpoint UdpSocketPosix::GetLocalEndpoint() const {
 }
 
 void UdpSocketPosix::Bind() {
+  OSP_CHECK(task_runner_.IsRunningOnTaskRunner());
   if (is_closed()) {
     OnError(Error::Code::kSocketClosedFailure);
     return;
@@ -220,6 +221,7 @@ void UdpSocketPosix::Bind() {
 
 void UdpSocketPosix::SetMulticastOutboundInterface(
     NetworkInterfaceIndex ifindex) {
+  OSP_CHECK(task_runner_.IsRunningOnTaskRunner());
   if (is_closed()) {
     OnError(Error::Code::kSocketClosedFailure);
     return;
@@ -256,6 +258,7 @@ void UdpSocketPosix::SetMulticastOutboundInterface(
 
 void UdpSocketPosix::JoinMulticastGroup(const IPAddress& address,
                                         NetworkInterfaceIndex ifindex) {
+  OSP_CHECK(task_runner_.IsRunningOnTaskRunner());
   if (is_closed()) {
     OnError(Error::Code::kSocketClosedFailure);
     return;
@@ -513,6 +516,7 @@ void UdpSocketPosix::ReceiveMessage() {
 }
 
 void UdpSocketPosix::SendMessage(ByteView data, const IPEndpoint& dest) {
+  OSP_CHECK(task_runner_.IsRunningOnTaskRunner());
   if (is_closed()) {
     if (client_) {
       client_->OnSendError(this, Error::Code::kSocketClosedFailure);
@@ -572,6 +576,7 @@ void UdpSocketPosix::SendMessage(ByteView data, const IPEndpoint& dest) {
 }
 
 void UdpSocketPosix::SetDscp(UdpSocket::DscpMode mode) {
+  OSP_CHECK(task_runner_.IsRunningOnTaskRunner());
   if (is_closed()) {
     OnError(Error::Code::kSocketClosedFailure);
     return;

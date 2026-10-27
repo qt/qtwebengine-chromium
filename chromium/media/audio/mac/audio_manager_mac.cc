@@ -46,6 +46,7 @@
 #include "media/base/audio_timestamp_helper.h"
 #include "media/base/channel_layout.h"
 #include "media/base/limits.h"
+#include "media/base/mac/channel_layout_util_mac.h"
 #include "media/base/media_switches.h"
 
 namespace media {
@@ -75,7 +76,7 @@ static const int kMaxOutputStreams = 50;
 static const int kFallbackSampleRate = 44100;
 
 static bool GetOutputDeviceChannelsAndLayout(AudioUnit audio_unit,
-                                             int* channels,
+                                             uint32_t* channels,
                                              ChannelLayout* channel_layout);
 
 // Helper method to construct AudioObjectPropertyAddress structure given
@@ -154,12 +155,20 @@ static std::string GetAudioDeviceNameFromDeviceId(AudioDeviceID device_id,
 
 // Retrieves information on audio devices, and prepends the default
 // device to the list if the list is non-empty.
-static void GetAudioDeviceInfo(bool is_input,
+static bool GetAudioDeviceInfo(bool is_input,
                                media::AudioDeviceNames* device_names,
                                const AudioManager::LogCallback& log_callback) {
   DCHECK(AudioManager::Get()->GetTaskRunner()->BelongsToCurrentThread());
   CoreAudioUtilMac core_audio_mac(log_callback);
-  std::vector<AudioObjectID> device_ids = core_audio_mac.GetAllAudioDeviceIDs();
+  std::optional<std::vector<AudioObjectID>> device_ids_opt =
+      core_audio_mac.GetAllAudioDeviceIDs();
+  if (!device_ids_opt.has_value()) {
+    return false;
+  }
+
+  std::vector<AudioObjectID>& device_ids = *device_ids_opt;
+  bool had_error = false;
+
   for (AudioObjectID device_id : device_ids) {
     const bool is_valid_for_direction =
         (is_input ? core_audio_mac.IsInputDevice(device_id)
@@ -172,12 +181,14 @@ static void GetAudioDeviceInfo(bool is_input,
     std::optional<std::string> unique_id =
         core_audio_mac.GetDeviceUniqueID(device_id);
     if (!unique_id) {
+      had_error = true;
       continue;
     }
 
     std::optional<std::string> label =
         core_audio_mac.GetDeviceLabel(device_id, is_input);
     if (!label) {
+      had_error = true;
       continue;
     }
 
@@ -196,6 +207,8 @@ static void GetAudioDeviceInfo(bool is_input,
     // counting here since the default device has been abstracted out before.
     device_names->push_front(media::AudioDeviceName::CreateDefault());
   }
+
+  return !had_error;
 }
 
 AudioDeviceID AudioManagerMac::GetAudioDeviceIdByUId(
@@ -361,16 +374,106 @@ static bool GetInputDeviceChannels(AudioDeviceID device, int* channels) {
   return true;
 }
 
+// Attempts to find a standard Chromium layout that matches the Apple
+// `AudioChannelLayout`. If no valid channels are found, we default to zero
+// channels and `CHANNEL_LAYOUT_DISCRETE`.
+void ParseCoreAudioChannelLayout(AudioChannelLayout* device_layout,
+                                 uint32_t* channels,
+                                 ChannelLayout* channel_layout) {
+  // There is no channel info for stereo, assume so for mono as well.
+  if (device_layout->mNumberChannelDescriptions == 1 ||
+      device_layout->mNumberChannelDescriptions == 2) {
+    *channels = device_layout->mNumberChannelDescriptions;
+    *channel_layout =
+        *channels == 2 ? CHANNEL_LAYOUT_STEREO : CHANNEL_LAYOUT_MONO;
+    return;
+  }
+
+  *channels = 0;
+  // use `CHANNEL_LAYOUT_DISCRETE` as the default layout if we can't
+  // find out a matched one.
+  *channel_layout = CHANNEL_LAYOUT_DISCRETE;
+
+  const auto descriptions = GetDescriptions(*device_layout);
+  std::vector<Channels> channels_to_match;
+  for (const auto& description : descriptions) {
+    AudioChannelLabel label = description.mChannelLabel;
+    if (label == kAudioChannelLabel_Unknown) {
+      continue;
+    }
+
+    *channels += 1;
+
+    const std::optional<Channels> maybe_channel =
+        AudioChannelLabelToChannel(label);
+    if (maybe_channel.has_value()) {
+      channels_to_match.push_back(*maybe_channel);
+    }
+  }
+
+  if (*channels == 0 || *channels != channels_to_match.size()) {
+    return;
+  }
+
+  for (int i = 0; i <= ChannelLayout::CHANNEL_LAYOUT_MAX; i++) {
+    ChannelLayout layout = static_cast<ChannelLayout>(i);
+    if (static_cast<uint32_t>(ChannelLayoutToChannelCount(layout)) !=
+        *channels) {
+      continue;
+    }
+
+    bool matched = true;
+    for (const auto& channel : channels_to_match) {
+      auto channel_order = ChannelOrder(layout, channel);
+      if (channel_order == -1) {
+        matched = false;
+        break;
+      }
+    }
+
+    if (matched) {
+      *channel_layout = layout;
+      return;
+    }
+  }
+}
+
 // Returns the `channels` and `channel_layout` for `device` as provided by the
 // AudioUnit attached to that output device. Returns true if the `channels` and
 // `channel_layout` could be pulled from the AudioUnit successfully, otherwise
 // return false and `channels` and `channel_layout` are untouched.
 static bool GetOutputDeviceChannelsAndLayout(AudioDeviceID device,
-                                             int* channels,
+                                             uint32_t* channels,
                                              ChannelLayout* channel_layout) {
   DCHECK(AudioManager::Get()->GetTaskRunner()->BelongsToCurrentThread());
   CHECK(channels);
   CHECK(channel_layout);
+
+  // First attempt to grab the "preferred layout" (i.e. the configuration of the
+  // hardware speakers in Audio MIDI Setup). For example, if the user has a 10ch
+  // setup and if they configured to be quadrophonic, we should downmix to 4
+  // channels, rather than utilizing all 10 channels. Note that it is not a
+  // guarantee that a device will have this property set, so we fall back to the
+  // total channel count if this fails.
+  AudioObjectPropertyAddress pa = {kAudioDevicePropertyPreferredChannelLayout,
+                                   kAudioDevicePropertyScopeOutput,
+                                   kAudioObjectPropertyElementMain};
+  UInt32 size = 0;
+  OSStatus result =
+      AudioObjectGetPropertyDataSize(device, &pa, 0, nullptr, &size);
+  if (result == noErr && size > 0) {
+    auto preferred_layout = std::make_unique<ScopedAudioChannelLayout>(size);
+    result = AudioObjectGetPropertyData(device, &pa, 0, nullptr, &size,
+                                        preferred_layout->layout());
+    if (result == noErr) {
+      ParseCoreAudioChannelLayout(preferred_layout->layout(), channels,
+                                  channel_layout);
+      // Some devices can return noErr but 0 channels.
+      if (*channels) {
+        return true;
+      }
+    }
+  }
 
   // If the device has more channels than possible for layouts to express, use
   // the total count of channels on the device; as of this writing, macOS will
@@ -401,7 +504,7 @@ static bool GetOutputDeviceChannelsAndLayout(AudioDeviceID device,
 }
 
 static bool GetOutputDeviceChannelsAndLayout(AudioUnit audio_unit,
-                                             int* channels,
+                                             uint32_t* channels,
                                              ChannelLayout* channel_layout) {
   // Attempt to retrieve the channel layout from the AudioUnit.
   std::unique_ptr<ScopedAudioChannelLayout> scoped_device_layout =
@@ -410,64 +513,9 @@ static bool GetOutputDeviceChannelsAndLayout(AudioUnit audio_unit,
     DLOG(ERROR) << "Failed to retrieve output device channel layout.";
     return false;
   }
-  AudioChannelLayout* device_layout = scoped_device_layout->layout();
 
-  // There is no channel info for stereo, assume so for mono as well.
-  if (device_layout->mNumberChannelDescriptions == 1 ||
-      device_layout->mNumberChannelDescriptions == 2) {
-    *channels = device_layout->mNumberChannelDescriptions;
-    *channel_layout =
-        *channels == 2 ? CHANNEL_LAYOUT_STEREO : CHANNEL_LAYOUT_MONO;
-    return true;
-  }
-
-  *channels = 0;
-  // use `CHANNEL_LAYOUT_DISCRETE` as the default layout if we can't
-  // find out a matched one.
-  *channel_layout = CHANNEL_LAYOUT_DISCRETE;
-
-  std::vector<Channels> channels_to_match;
-  for (UInt32 i = 0; i < device_layout->mNumberChannelDescriptions; i++) {
-    AudioChannelLabel label =
-        UNSAFE_TODO(device_layout->mChannelDescriptions[i]).mChannelLabel;
-    if (label == kAudioChannelLabel_Unknown) {
-      continue;
-    }
-
-    (*channels)++;
-
-    Channels channel;
-    if (AudioChannelLabelToChannel(label, &channel)) {
-      channels_to_match.push_back(channel);
-    }
-  }
-
-  if (*channels == 0 ||
-      *channels != static_cast<int>(channels_to_match.size())) {
-    return true;
-  }
-
-  for (int i = 0; i <= ChannelLayout::CHANNEL_LAYOUT_MAX; i++) {
-    ChannelLayout layout = static_cast<ChannelLayout>(i);
-    if (ChannelLayoutToChannelCount(layout) != *channels) {
-      continue;
-    }
-
-    bool matched = true;
-    for (const auto& channel : channels_to_match) {
-      auto channel_order = ChannelOrder(layout, channel);
-      if (channel_order == -1) {
-        matched = false;
-        break;
-      }
-    }
-
-    if (matched) {
-      *channel_layout = layout;
-      return true;
-    }
-  }
-
+  ParseCoreAudioChannelLayout(scoped_device_layout->layout(), channels,
+                              channel_layout);
   return true;
 }
 
@@ -581,7 +629,8 @@ void AudioManagerMac::ShutdownOnAudioThread() {
   AudioManagerBase::ShutdownOnAudioThread();
 }
 
-std::vector<AudioObjectID> AudioManagerMac::GetAllAudioDeviceIDs() {
+std::optional<std::vector<AudioObjectID>>
+AudioManagerMac::GetAllAudioDeviceIDs() {
   DCHECK(AudioManager::Get()->GetTaskRunner()->BelongsToCurrentThread());
   return core_audio_mac_->GetAllAudioDeviceIDs();
 }
@@ -618,7 +667,12 @@ std::vector<AudioObjectID> AudioManagerMac::GetRelatedBluetoothDeviceIDs(
 
   // Iterate through all device IDs and match the unique IDs base to find the
   // related devices.
-  for (const auto& id : GetAllAudioDeviceIDs()) {
+  auto all_device_ids_opt = GetAllAudioDeviceIDs();
+  if (!all_device_ids_opt) {
+    return result_ids;
+  }
+
+  for (const auto& id : *all_device_ids_opt) {
     std::optional<std::string> unique_id = GetDeviceUniqueID(id);
     if (!unique_id) {
       continue;
@@ -636,6 +690,7 @@ std::vector<AudioObjectID> AudioManagerMac::GetRelatedBluetoothDeviceIDs(
       result_ids.push_back(id);
     }
   }
+
   return result_ids;
 }
 
@@ -669,16 +724,16 @@ bool AudioManagerMac::HasAudioInputDevices() {
   return HasAudioHardware(kAudioHardwarePropertyDefaultInputDevice);
 }
 
-void AudioManagerMac::GetAudioInputDeviceNames(
+bool AudioManagerMac::GetAudioInputDeviceNames(
     media::AudioDeviceNames* device_names) {
   DCHECK(device_names->empty());
-  GetAudioDeviceInfo(true, device_names, GetEnumerationLogCallback());
+  return GetAudioDeviceInfo(true, device_names, GetEnumerationLogCallback());
 }
 
-void AudioManagerMac::GetAudioOutputDeviceNames(
+bool AudioManagerMac::GetAudioOutputDeviceNames(
     media::AudioDeviceNames* device_names) {
   DCHECK(device_names->empty());
-  GetAudioDeviceInfo(false, device_names, GetEnumerationLogCallback());
+  return GetAudioDeviceInfo(false, device_names, GetEnumerationLogCallback());
 }
 
 AudioParameters AudioManagerMac::GetInputStreamParameters(
@@ -957,7 +1012,7 @@ AudioParameters AudioManagerMac::GetPreferredOutputStreamParameters(
     buffer_size = ChooseBufferSize(false, hardware_sample_rate);
   }
 
-  int hardware_channels;
+  uint32_t hardware_channels;
   ChannelLayout hardware_channel_layout;
   if (!GetOutputDeviceChannelsAndLayout(device, &hardware_channels,
                                         &hardware_channel_layout)) {
@@ -978,7 +1033,8 @@ AudioParameters AudioManagerMac::GetPreferredOutputStreamParameters(
       input_params.latency_tag() == AudioLatency::Type::kPlayback;
 
   if (!has_valid_input_params ||
-      (output_channels > hardware_channels && !use_avf_streams)) {
+      (base::checked_cast<uint32_t>(output_channels) > hardware_channels &&
+       !use_avf_streams)) {
     output_channels = hardware_channels;
     output_channel_layout = hardware_channel_layout;
   }

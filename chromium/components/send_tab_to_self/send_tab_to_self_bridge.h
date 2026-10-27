@@ -40,6 +40,7 @@ class SessionSyncService;
 
 namespace send_tab_to_self {
 
+class SendTabToSelfCommitTracker;
 struct TargetDeviceInfo;
 
 // Interface for a persistence layer for send tab to self.
@@ -65,8 +66,6 @@ class SendTabToSelfBridge : public syncer::DataTypeSyncBridge,
   ~SendTabToSelfBridge() override;
 
   // syncer::DataTypeSyncBridge overrides.
-  std::unique_ptr<syncer::MetadataChangeList> CreateMetadataChangeList()
-      override;
   std::optional<syncer::ModelError> MergeFullSyncData(
       std::unique_ptr<syncer::MetadataChangeList> metadata_change_list,
       syncer::EntityChangeList entity_data) override;
@@ -85,18 +84,25 @@ class SendTabToSelfBridge : public syncer::DataTypeSyncBridge,
   bool IsEntityDataValid(const syncer::EntityData& entity_data) const override;
   void ApplyDisableSyncChanges(std::unique_ptr<syncer::MetadataChangeList>
                                    delete_metadata_change_list) override;
+  void OnCommitAttemptErrors(
+      const syncer::FailedCommitResponseDataList& error_response_list) override;
+  CommitAttemptFailedBehavior OnCommitAttemptFailed(
+      syncer::SyncCommitError error) override;
 
   // SendTabToSelfModel overrides.
   std::vector<std::string> GetAllGuids() const override;
   const SendTabToSelfEntry* GetEntryByGUID(
       const std::string& guid) const override;
-  const SendTabToSelfEntry* AddEntry(
+  std::vector<const SendTabToSelfEntry*>
+  GetUnopenedEntriesTargetedToLocalDevice() const override;
+  const SendTabToSelfEntry* SendEntry(
       const GURL& url,
       const std::string& title,
       const std::string& target_device_cache_guid,
       const PageContext& context,
-      NavigationHistory navigation_history) override;
-  void DeleteEntry(const std::string& guid) override;
+      NavigationHistory navigation_history,
+      base::OnceCallback<void(SendTabToSelfResult)> commit_confirmation)
+      override;
   void DismissEntry(const std::string& guid) override;
   void MarkEntryOpened(const std::string& guid) override;
   bool IsReady() override;
@@ -131,8 +137,6 @@ class SendTabToSelfBridge : public syncer::DataTypeSyncBridge,
   void NotifyRemoteSendTabToSelfEntryOpened(
       const std::vector<const SendTabToSelfEntry*>& opened_entries);
 
-  // Notify all observers that the model is loaded;
-  void NotifySendTabToSelfModelLoaded();
 
   // Methods used as callbacks given to DataTypeStore.
   void OnStoreCreated(const std::optional<syncer::ModelError>& error,
@@ -149,6 +153,8 @@ class SendTabToSelfBridge : public syncer::DataTypeSyncBridge,
   // Returns a specific entry for editing. Returns null if the entry does not
   // exist.
   SendTabToSelfEntry* GetMutableEntryByGUID(const std::string& guid) const;
+
+  bool IsTargetedToLocalDevice(const SendTabToSelfEntry& entry) const;
 
   // Returns the name of the local device.
   std::string GetLocalFullName() const;
@@ -172,8 +178,12 @@ class SendTabToSelfBridge : public syncer::DataTypeSyncBridge,
   void EraseEntryInBatch(const std::string& guid,
                          syncer::DataTypeStore::WriteBatch* batch);
 
+
+
   // |entries_| is keyed by GUIDs.
   SendTabToSelfEntries entries_;
+
+  std::unique_ptr<SendTabToSelfCommitTracker> commit_tracker_;
 
   // Stores guids of entries that have been opened from a layer other than
   // SendTabToSelfModel, along with the time the open was requested. Once
@@ -203,8 +213,9 @@ class SendTabToSelfBridge : public syncer::DataTypeSyncBridge,
   // In charge of actually persisting changes to disk, or loading previous data.
   std::unique_ptr<syncer::DataTypeStore> store_;
 
-  // A pointer to the most recently used entry used for deduplication.
-  raw_ptr<const SendTabToSelfEntry, DanglingUntriaged> mru_entry_;
+  // The string identifier of the most recently used entry used for
+  // deduplication.
+  std::string mru_entry_guid_;
 
   base::ScopedObservation<history::HistoryService, HistoryServiceObserver>
       history_service_observation_{this};

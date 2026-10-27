@@ -4,6 +4,7 @@
 
 #include "quiche/quic/test_tools/simple_quic_framer.h"
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -259,14 +260,11 @@ class SimpleFramerVisitor : public QuicFramerVisitorInterface {
     return false;
   }
 
-  void OnAuthenticatedIetfStatelessResetPacket(
-      const QuicIetfStatelessResetPacket& packet) override {
-    stateless_reset_packet_ =
-        std::make_unique<QuicIetfStatelessResetPacket>(packet);
-  }
+  void OnAuthenticatedIetfStatelessResetPacket() override {}
 
   void OnKeyUpdate(KeyUpdateReason /*reason*/) override {}
   void OnDecryptedFirstPacketInKeyPhase() override {}
+  void OnSconePacket(uint8_t /*signal*/) override {}
   std::unique_ptr<QuicDecrypter> AdvanceKeysAndCreateCurrentOneRttDecrypter()
       override {
     return nullptr;
@@ -331,7 +329,6 @@ class SimpleFramerVisitor : public QuicFramerVisitorInterface {
   bool has_header_;
   QuicPacketHeader header_;
   std::unique_ptr<QuicVersionNegotiationPacket> version_negotiation_packet_;
-  std::unique_ptr<QuicIetfStatelessResetPacket> stateless_reset_packet_;
   std::vector<QuicFrameType> frame_types_;
   std::vector<QuicAckFrame> ack_frames_;
   std::vector<QuicStopWaitingFrame> stop_waiting_frames_;

@@ -7,6 +7,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "util/chrono_helpers.h"
+#include "util/no_destructor.h"
 
 namespace openscreen::json {
 namespace {
@@ -14,9 +15,18 @@ namespace {
 using ::testing::ElementsAre;
 
 // NOTE: not constexpr as Json::Value ctor is not constexpr
-const Json::Value kNone;
-const Json::Value kEmptyString = "";
-const Json::Value kEmptyArray(Json::arrayValue);
+const Json::Value& GetNone() {
+  static const NoDestructor<Json::Value> kNone;
+  return *kNone;
+}
+const Json::Value& GetEmptyString() {
+  static const NoDestructor<Json::Value> kEmptyString("");
+  return *kEmptyString;
+}
+const Json::Value& GetEmptyArray() {
+  static const NoDestructor<Json::Value> kEmptyArray(Json::arrayValue);
+  return *kEmptyArray;
+}
 
 struct Dummy {
   int value;
@@ -51,7 +61,7 @@ TEST(ParsingHelpersTest, TryParseDouble) {
   EXPECT_DOUBLE_EQ(0.0, out);
   EXPECT_FALSE(TryParseDouble(kNotDouble, &out));
   EXPECT_FALSE(TryParseDouble(kNegativeDouble, &out));
-  EXPECT_FALSE(TryParseDouble(kNone, &out));
+  EXPECT_FALSE(TryParseDouble(GetNone(), &out));
   EXPECT_FALSE(TryParseDouble(kNanDouble, &out));
 }
 
@@ -66,7 +76,7 @@ TEST(ParsingHelpersTest, TryParseInt) {
   EXPECT_EQ(1337, out);
   EXPECT_TRUE(TryParseInt(kZeroInt, &out));
   EXPECT_EQ(0, out);
-  EXPECT_FALSE(TryParseInt(kNone, &out));
+  EXPECT_FALSE(TryParseInt(GetNone(), &out));
   EXPECT_FALSE(TryParseInt(kNotInt, &out));
   EXPECT_FALSE(TryParseInt(kNegativeInt, &out));
 }
@@ -81,7 +91,7 @@ TEST(ParsingHelpersTest, TryParseUint) {
   EXPECT_EQ(1337u, out);
   EXPECT_TRUE(TryParseUint(kZeroUint, &out));
   EXPECT_EQ(0u, out);
-  EXPECT_FALSE(TryParseUint(kNone, &out));
+  EXPECT_FALSE(TryParseUint(GetNone(), &out));
   EXPECT_FALSE(TryParseUint(kNotUint, &out));
 }
 
@@ -92,9 +102,9 @@ TEST(ParsingHelpersTest, TryParseString) {
   std::string out;
   EXPECT_TRUE(TryParseString(kValid, &out));
   EXPECT_EQ("macchiato", out);
-  EXPECT_TRUE(TryParseString(kEmptyString, &out));
+  EXPECT_TRUE(TryParseString(GetEmptyString(), &out));
   EXPECT_EQ("", out);
-  EXPECT_FALSE(TryParseString(kNone, &out));
+  EXPECT_FALSE(TryParseString(GetNone(), &out));
   EXPECT_FALSE(TryParseString(kNotString, &out));
 }
 
@@ -121,8 +131,8 @@ TEST(ParsingHelpersTest, TryParseSimpleFraction) {
   EXPECT_FALSE(TryParseSimpleFraction(kNegative, &out));
   EXPECT_FALSE(TryParseSimpleFraction(kInvalidNumber, &out));
   EXPECT_FALSE(TryParseSimpleFraction(kNotSimpleFraction, &out));
-  EXPECT_FALSE(TryParseSimpleFraction(kNone, &out));
-  EXPECT_FALSE(TryParseSimpleFraction(kEmptyString, &out));
+  EXPECT_FALSE(TryParseSimpleFraction(GetNone(), &out));
+  EXPECT_FALSE(TryParseSimpleFraction(GetEmptyString(), &out));
   EXPECT_FALSE(TryParseSimpleFraction(kNegativeInteger, &out));
 }
 
@@ -140,7 +150,7 @@ TEST(ParsingHelpersTest, TryParseMilliseconds) {
   EXPECT_EQ(milliseconds(500), out);
   EXPECT_TRUE(TryParseMilliseconds(kZeroNumber, &out));
   EXPECT_EQ(milliseconds(0), out);
-  EXPECT_FALSE(TryParseMilliseconds(kNone, &out));
+  EXPECT_FALSE(TryParseMilliseconds(GetNone(), &out));
   EXPECT_FALSE(TryParseMilliseconds(kNegativeNumber, &out));
   EXPECT_FALSE(TryParseMilliseconds(kNotNumber, &out));
 }
@@ -158,7 +168,7 @@ TEST(ParsingHelpersTest, TryParseArray) {
   EXPECT_TRUE(TryParseArray<Dummy>(valid_dummy_array, TryParseDummy, &out));
   EXPECT_THAT(out, ElementsAre(Dummy{123}, Dummy{456}));
   EXPECT_FALSE(TryParseArray<Dummy>(invalid_dummy_array, TryParseDummy, &out));
-  EXPECT_FALSE(TryParseArray<Dummy>(kEmptyArray, TryParseDummy, &out));
+  EXPECT_FALSE(TryParseArray<Dummy>(GetEmptyArray(), TryParseDummy, &out));
 }
 
 TEST(ParsingHelpersTest, TryParseIntArray) {
@@ -174,7 +184,7 @@ TEST(ParsingHelpersTest, TryParseIntArray) {
   EXPECT_TRUE(TryParseIntArray(valid_int_array, &out));
   EXPECT_THAT(out, ElementsAre(123, 456));
   EXPECT_FALSE(TryParseIntArray(invalid_int_array, &out));
-  EXPECT_FALSE(TryParseIntArray(kEmptyArray, &out));
+  EXPECT_FALSE(TryParseIntArray(GetEmptyArray(), &out));
 }
 
 TEST(ParsingHelpersTest, TryParseUintArray) {
@@ -190,7 +200,7 @@ TEST(ParsingHelpersTest, TryParseUintArray) {
   EXPECT_TRUE(TryParseUintArray(valid_uint_array, &out));
   EXPECT_THAT(out, ElementsAre(123u, 456u));
   EXPECT_FALSE(TryParseUintArray(invalid_uint_array, &out));
-  EXPECT_FALSE(TryParseUintArray(kEmptyArray, &out));
+  EXPECT_FALSE(TryParseUintArray(GetEmptyArray(), &out));
 }
 
 TEST(ParsingHelpersTest, TryParseStringArray) {
@@ -206,7 +216,7 @@ TEST(ParsingHelpersTest, TryParseStringArray) {
   EXPECT_TRUE(TryParseStringArray(valid_string_array, &out));
   EXPECT_THAT(out, ElementsAre("nitro cold brew", "doppio espresso"));
   EXPECT_FALSE(TryParseStringArray(invalid_string_array, &out));
-  EXPECT_FALSE(TryParseStringArray(kEmptyArray, &out));
+  EXPECT_FALSE(TryParseStringArray(GetEmptyArray(), &out));
 }
 
 }  // namespace openscreen::json

@@ -468,10 +468,11 @@ class Command(Record):
         self.derived_method = None
 
 
-def linked_record_members(json_data, types):
+def linked_record_members(json_data, types, check_span_regularity=False):
     members = []
     members_by_name = {}
-    for m in json_data:
+    index_of_member = {}
+    for (i, m) in enumerate(json_data):
         member = RecordMember(Name(m['name']),
                               types[m['type']],
                               m.get('annotation', 'value'),
@@ -490,6 +491,7 @@ def linked_record_members(json_data, types):
             member.set_id_type(types[id_type])
         members.append(member)
         members_by_name[member.name.canonical_case()] = member
+        index_of_member[member.name.canonical_case()] = i
 
     for (member, m) in zip(members, json_data):
         if member.annotation != 'value':
@@ -504,6 +506,13 @@ def linked_record_members(json_data, types):
                 member.length = "constant"
                 member.constant_length = m['length']
             else:
+                # Check that the length member comes just before the `member`
+                if check_span_regularity:
+                    length_index = index_of_member[m['length']]
+                    member_index = index_of_member[
+                        member.name.canonical_case()]
+                    assert length_index == member_index - 1
+
                 member.length = members_by_name[m['length']]
 
     return members
@@ -532,7 +541,9 @@ def link_object(obj, types):
 
 
 def link_structure(struct, types):
-    struct.members = linked_record_members(struct.json_data['members'], types)
+    struct.members = linked_record_members(struct.json_data['members'],
+                                           types,
+                                           check_span_regularity=True)
     for root in struct.json_data.get('chain roots', []):
         struct.chain_roots.append(types[root])
         types[root].extensions.append(struct)
@@ -746,6 +757,7 @@ def parse_json(json, enabled_tags, disabled_tags=None):
         'c_methods_sorted_by_parent':
         get_c_methods_sorted_by_parent(api_params),
         'c_methods_sorted_by_name': get_c_methods_sorted_by_name(api_params),
+        'cpp_methods': lambda typ: cpp_methods(api_params, typ),
     }
 
 
@@ -1398,6 +1410,18 @@ def c_methods(params, typ):
         assert False, "c_methods only valid on objects and structure"
 
 
+def cpp_methods(params, typ):
+    if typ.category == 'structure':
+        methods = []
+        for member in typ.members:
+            if member.type.category == 'callback info':
+                methods.append(
+                    Method(Name(" ".join(["set"] + member.name.chunks[:-1])),
+                           None, [member], False, {}))
+        return methods
+    else:
+        assert False, "cpp_methods only valid on structures"
+
 def get_c_methods_sorted_by_parent(api_params):
     return sorted([(typ, c_methods(api_params, typ))
                    for typ in (api_params['by_category']['object'] +
@@ -1431,9 +1455,8 @@ def has_callback_info(method):
         and arg.type.category != 'callback info' for arg in method.arguments)
 
 
-def has_callbackInfoStruct(method):
-    return any(arg.type.category == 'callback info'
-               for arg in method.arguments)
+def has_callbackInfoStruct(args):
+    return any(arg.type.category == 'callback info' for arg in args)
 
 
 def is_wire_serializable(type):
@@ -1784,66 +1807,63 @@ class MultiGeneratorFromDawnJSON(Generator):
             namespace = metadata.namespace
             renders.append(
                 FileRender('dawn/native/ValidationUtils.h',
-                           'src/' + native_dir + '/ValidationUtils_autogen.h',
+                           native_dir + '/ValidationUtils_autogen.h',
+                           frontend_params))
+            renders.append(
+                FileRender('dawn/native/ValidationUtils.cpp',
+                           native_dir + '/ValidationUtils_autogen.cpp',
+                           frontend_params))
+            renders.append(
+                FileRender('dawn/native/dawn_platform.h',
+                           native_dir + '/' + prefix + '_platform_autogen.h',
+                           frontend_params))
+            renders.append(
+                FileRender('dawn/native/api_structs.h',
+                           native_dir + '/' + namespace + '_structs_autogen.h',
                            frontend_params))
             renders.append(
                 FileRender(
-                    'dawn/native/ValidationUtils.cpp',
-                    'src/' + native_dir + '/ValidationUtils_autogen.cpp',
+                    'dawn/native/api_structs.cpp',
+                    native_dir + '/' + namespace + '_structs_autogen.cpp',
                     frontend_params))
-            renders.append(
-                FileRender(
-                    'dawn/native/dawn_platform.h',
-                    'src/' + native_dir + '/' + prefix + '_platform_autogen.h',
-                    frontend_params))
-            renders.append(
-                FileRender(
-                    'dawn/native/api_structs.h', 'src/' + native_dir + '/' +
-                    namespace + '_structs_autogen.h', frontend_params))
-            renders.append(
-                FileRender(
-                    'dawn/native/api_structs.cpp', 'src/' + native_dir + '/' +
-                    namespace + '_structs_autogen.cpp', frontend_params))
             renders.append(
                 FileRender('dawn/native/ProcTable.cpp',
-                           'src/' + native_dir + '/ProcTable.cpp',
-                           frontend_params))
+                           native_dir + '/ProcTable.cpp', frontend_params))
             renders.append(
                 FileRender('dawn/native/ChainUtils.h',
-                           'src/' + native_dir + '/ChainUtils_autogen.h',
+                           native_dir + '/ChainUtils_autogen.h',
                            frontend_params))
             renders.append(
                 FileRender('dawn/native/ChainUtils.cpp',
-                           'src/' + native_dir + '/ChainUtils_autogen.cpp',
+                           native_dir + '/ChainUtils_autogen.cpp',
                            frontend_params))
             renders.append(
                 FileRender('dawn/native/Features.h',
-                           'src/' + native_dir + '/Features_autogen.h',
+                           native_dir + '/Features_autogen.h',
                            frontend_params))
             renders.append(
                 FileRender('dawn/native/Features.inl',
-                           'src/' + native_dir + '/Features_autogen.inl',
+                           native_dir + '/Features_autogen.inl',
                            frontend_params))
             renders.append(
-                FileRender(
-                    'dawn/native/api_absl_format.h',
-                    'src/' + native_dir + '/' + api + '_absl_format_autogen.h',
-                    frontend_params))
+                FileRender('dawn/native/api_absl_format.h',
+                           native_dir + '/' + api + '_absl_format_autogen.h',
+                           frontend_params))
             renders.append(
-                FileRender(
-                    'dawn/native/api_absl_format.cpp', 'src/' + native_dir +
-                    '/' + api + '_absl_format_autogen.cpp', frontend_params))
+                FileRender('dawn/native/api_absl_format.cpp',
+                           native_dir + '/' + api + '_absl_format_autogen.cpp',
+                           frontend_params))
             renders.append(
-                FileRender(
-                    'dawn/native/api_StreamImpl.cpp', 'src/' + native_dir +
-                    '/' + api + '_StreamImpl_autogen.cpp', frontend_params))
+                FileRender('dawn/native/api_StreamImpl.cpp',
+                           native_dir + '/' + api + '_StreamImpl_autogen.cpp',
+                           frontend_params))
             renders.append(
                 FileRender('dawn/native/ObjectType.h',
-                           'src/' + native_dir + '/ObjectType_autogen.h',
+                           native_dir + '/ObjectType_autogen.h',
                            frontend_params))
             renders.append(
                 FileRender('dawn/native/ObjectType.cpp',
-                           'src/' + native_dir + '/ObjectType_autogen.cpp',
+                           native_dir + '/ObjectType_autogen.cpp',
                            frontend_params))
 
         if 'dawn_utils' in targets:

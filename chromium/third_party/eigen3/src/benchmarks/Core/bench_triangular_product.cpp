@@ -1,6 +1,8 @@
 // Benchmarks for triangular-dense matrix products (TRMM).
 //
 // Tests C = triangular(A) * B for various modes (Lower/Upper) and sides (Left/Right).
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>

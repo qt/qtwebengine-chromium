@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "build/build_config.h"
+#include "gpu/config/gpu_feature_info.h"
 #include "ui/gl/gpu_preference.h"
 
 #if BUILDFLAG(IS_WIN)
@@ -25,6 +26,7 @@
 #include <vector>
 
 #include "base/base_paths.h"
+#include "base/byte_size.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
@@ -290,7 +292,7 @@ GpuFeatureStatus GetSkiaGraphiteFeatureStatus(
     const std::set<int>& blocklisted_features,
     const GpuPreferences& gpu_preferences) {
   if (blocklisted_features.count(GPU_FEATURE_TYPE_SKIA_GRAPHITE)) {
-    return kGpuFeatureStatusDisabled;
+    return kGpuFeatureStatusBlocklisted;
   }
 #if BUILDFLAG(SKIA_USE_DAWN)
   if (gpu_preferences.gr_context_type == GrContextType::kGraphiteDawn) {
@@ -360,18 +362,11 @@ void AdjustGpuFeatureStatusToWorkarounds(GpuFeatureInfo* gpu_feature_info,
   }
   // If disable_webnn_for_gpu workaround is enabled for the GPU device, we need
   // to check to see if there is a NPU device available before setting the WebNN
-  // gpu feature status. If there is a NPU device, check the
-  // disable_webnn_for_npu workaround.
-  if (gpu_feature_info->IsWorkaroundEnabled(DISABLE_WEBNN_FOR_GPU)) {
-    if (gpu_info.npus.size() > 0) {
-      if (gpu_feature_info->IsWorkaroundEnabled(DISABLE_WEBNN_FOR_NPU)) {
-        gpu_feature_info->status_values[GPU_FEATURE_TYPE_WEBNN] =
-            kGpuFeatureStatusSoftware;
-      }
-    } else {
-      gpu_feature_info->status_values[GPU_FEATURE_TYPE_WEBNN] =
-          kGpuFeatureStatusSoftware;
-    }
+  // gpu feature status to software.
+  if (gpu_feature_info->IsWorkaroundEnabled(DISABLE_WEBNN_FOR_GPU) &&
+      gpu_info.npus.empty()) {
+    gpu_feature_info->status_values[GPU_FEATURE_TYPE_WEBNN] =
+        kGpuFeatureStatusSoftware;
   }
 }
 
@@ -384,35 +379,35 @@ void AdjustGpuFeatureStatusToWorkarounds(GpuFeatureInfo* gpu_feature_info,
 uint32_t EstimateAmountOfTotalDiskSpaceMB() {
   const base::BasePathKey kPathKeys[] = {base::DIR_EXE, base::DIR_TEMP,
                                          base::DIR_HOME};
-  std::vector<uint32_t> total_space_vector, free_space_vector;
-  uint32_t sum = 0;
+  std::vector<base::ByteSize> total_space_vector, free_space_vector;
+  base::ByteSize sum;
   for (const auto& path_key : kPathKeys) {
     base::FilePath path;
     if (base::PathService::Get(path_key, &path)) {
-      uint32_t total_space = static_cast<uint32_t>(
-          base::SysInfo::AmountOfTotalDiskSpace(path).value_or(0) / 1024 /
-          1024);
-      uint32_t free_space = static_cast<uint32_t>(
-          base::SysInfo::AmountOfFreeDiskSpace(path).value_or(0) / 1024 / 1024);
+      std::optional<base::SysInfo::DiskSpaceInfo> disk_space =
+          base::SysInfo::AmountOfDiskSpace(path);
+      if (!disk_space.has_value()) {
+        continue;
+      }
       bool duplicated = false;
       for (size_t ii = 0; ii < total_space_vector.size(); ++ii) {
-        if (total_space == total_space_vector[ii] &&
-            free_space == free_space_vector[ii]) {
+        if (disk_space->total == total_space_vector[ii] &&
+            disk_space->available == free_space_vector[ii]) {
           duplicated = true;
           break;
         }
       }
       if (!duplicated) {
-        total_space_vector.push_back(total_space);
-        free_space_vector.push_back(free_space);
-        sum += total_space;
+        total_space_vector.push_back(disk_space->total);
+        free_space_vector.push_back(disk_space->available);
+        sum += disk_space->total;
       }
     }
   }
-  return sum;
+  return static_cast<uint32_t>(sum.InMiB());
 }
 
-// Only record Nvidia and AMD GPUs.
+// Only record Nvidia GPUs.
 void RecordGpuHistogram(uint32_t vendor_id, uint32_t device_id) {
   switch (vendor_id) {
     case 0x10de:
@@ -420,13 +415,8 @@ void RecordGpuHistogram(uint32_t vendor_id, uint32_t device_id) {
           "GPU.MultiGpu.Nvidia", base::HistogramBase::kUmaTargetedHistogramFlag)
           ->Add(device_id);
       break;
-    case 0x1002:
-      base::SparseHistogram::FactoryGet(
-          "GPU.MultiGpu.AMD", base::HistogramBase::kUmaTargetedHistogramFlag)
-          ->Add(device_id);
-      break;
     default:
-      // Do nothing if it's not Nvidia/AMD.
+      // Do nothing if it's not Nvidia.
       break;
   }
 }
@@ -609,7 +599,8 @@ GpuFeatureInfo ComputeGpuFeatureInfo(const GPUInfo& gpu_info,
       target_test_group = ::features::kGPUBlockListTestGroupId.Get();
     }
     blocklisted_features = list->MakeDecision(
-        GpuControlList::kOsAny, std::string(), gpu_info, target_test_group);
+        GpuControlList::kOsAny, std::string(), gpu_info, target_test_group,
+        gpu_preferences.ignored_gpu_blocklist_entries);
     gpu_feature_info.applied_gpu_blocklist_entries = list->GetActiveEntries();
     blocklist_needs_more_info = list->needs_more_info();
   }
@@ -695,7 +686,8 @@ GpuFeatureInfo ComputeGpuFeatureInfo(const GPUInfo& gpu_info,
       target_test_group = ::features::kGPUDriverBugListTestGroupId.Get();
     }
     enabled_driver_bug_workarounds = list->MakeDecision(
-        GpuControlList::kOsAny, std::string(), gpu_info, target_test_group);
+        GpuControlList::kOsAny, std::string(), gpu_info, target_test_group,
+        gpu_preferences.ignored_gpu_blocklist_entries);
     gpu_feature_info.applied_gpu_driver_bug_list_entries =
         list->GetActiveEntries();
 
@@ -1069,8 +1061,8 @@ IntelGpuGeneration GetIntelGpuGeneration(const GPUInfo& gpu_info) {
 void CollectDevicePerfInfo(DevicePerfInfo* device_perf_info,
                            bool in_browser_process) {
   DCHECK(device_perf_info);
-  device_perf_info->total_physical_memory_mb =
-      static_cast<uint32_t>(base::SysInfo::AmountOfPhysicalMemory().InMiB());
+  device_perf_info->total_physical_memory_mb = static_cast<uint32_t>(
+      base::SysInfo::AmountOfTotalPhysicalMemory().InMiB());
   if (!in_browser_process)
     device_perf_info->total_disk_space_mb = EstimateAmountOfTotalDiskSpaceMB();
   device_perf_info->hardware_concurrency =
@@ -1115,7 +1107,7 @@ void RecordDiscreteGpuHistograms(const GPUInfo& gpu_info) {
   if (gpu_info.GpuCount() < 2)
     return;
   // To simplify logic, if there are multiple GPUs identified on a device,
-  // assume AMD or Nvidia is the discrete GPU.
+  // assume Nvidia is the discrete GPU.
   RecordGpuHistogram(gpu_info.gpu.vendor_id, gpu_info.gpu.device_id);
   for (const auto& gpu : gpu_info.secondary_gpus)
     RecordGpuHistogram(gpu.vendor_id, gpu.device_id);

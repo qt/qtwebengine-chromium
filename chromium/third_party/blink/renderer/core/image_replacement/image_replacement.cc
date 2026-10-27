@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/core/image_replacement/image_replacement.h"
 
+#include "components/viz/common/surfaces/tracked_element_rects.h"
+#include "mojo/public/cpp/base/big_buffer.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
@@ -11,10 +13,60 @@
 #include "third_party/blink/renderer/core/html/html_iframe_element.h"
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/image_replacement/document_image_replacements.h"
+#include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_image_replacement.h"
+#include "third_party/blink/renderer/core/layout/map_coordinates_flags.h"
+#include "third_party/blink/renderer/platform/image-encoders/image_encoder.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
+#include "third_party/skia/include/core/SkImage.h"
+#include "third_party/skia/include/core/SkPixmap.h"
 
 namespace blink {
+
+namespace {
+
+mojom::blink::ImageDataPtr ImageDataForImageResource(
+    ImageResourceContent* image_content) {
+  Image* image = image_content->GetImage();
+  if (!image) {
+    return nullptr;
+  }
+  PaintImage paint_image = image->PaintImageForCurrentFrame();
+  if (!image->HasDefaultOrientation()) {
+    paint_image =
+        Image::ResizeAndOrientImage(paint_image, image->Orientation());
+  }
+  sk_sp<SkImage> sk_image = paint_image.GetSwSkImage();
+  if (!sk_image) {
+    return nullptr;
+  }
+  SkPixmap pixmap;
+  Vector<uint8_t> buffer;
+  if (!sk_image->peekPixels(&pixmap)) {
+    SkImageInfo info = sk_image->imageInfo();
+    buffer.resize(info.computeMinByteSize());
+    pixmap.reset(info, buffer.data(), info.minRowBytes());
+    if (!sk_image->readPixels(pixmap, 0, 0)) {
+      return nullptr;
+    }
+  }
+
+  // TODO(b/501538138): Consider encoding on a background thread, rescaling
+  // the image if it's larger than 2048 in some dimension, and passing the
+  // original bytes unmodified if it is already suitable, as possible future
+  // optimizations.
+  Vector<unsigned char> webp_bytes;
+  if (!ImageEncoder::Encode(&webp_bytes, pixmap,
+                            ImageEncoder::ComputeWebpOptions(0.8))) {
+    return nullptr;
+  }
+
+  mojom::blink::ImageDataPtr image_data = mojom::blink::ImageData::New();
+  image_data->webp_bytes = base::span<const uint8_t>(webp_bytes);
+  return image_data;
+}
+
+}  // namespace
 
 // static
 base::expected<mojo::PendingRemote<mojom::blink::ImageReplacement>, String>
@@ -76,19 +128,27 @@ void ImageReplacement::ResetImageReplacement(base::PassKey<HTMLImageElement>,
 }
 
 void ImageReplacement::StartReplacement(
-    mojo::PendingRemote<mojom::blink::ImageReplacementHost> host_remote) {
+    mojo::PendingRemote<mojom::blink::ImageReplacementHost> host_remote,
+    std::optional<int32_t> tracked_element_feature_id) {
   CHECK(base::FeatureList::IsEnabled(features::kImageReplacement));
   CHECK(image_element_->isConnected());
   // If there's already an active replacement, we do nothing.
   if (image_element_->HasImageReplacement()) {
     return;
   }
+  tracked_element_feature_id_ = tracked_element_feature_id;
   if (!image_element_->complete()) {
     pending_host_remote_ = std::move(host_remote);
     return;
   }
   ImageResourceContent* image_content = image_element_->CachedImage();
   if (!image_content || image_content->ErrorOccurred()) {
+    image_element_->ResetImageReplacement();
+    return;
+  }
+  mojom::blink::ImageDataPtr image_data =
+      ImageDataForImageResource(image_content);
+  if (!image_data) {
     image_element_->ResetImageReplacement();
     return;
   }
@@ -109,7 +169,21 @@ void ImageReplacement::StartReplacement(
     host_.Bind(std::move(host_remote),
                image_element_->GetDocument().GetTaskRunner(
                    TaskType::kInternalDefault));
-    host_->ReplacementFrameAttached(frame->GetLocalFrameToken());
+
+    std::optional<base::Token> tracking_token;
+    if (tracked_element_feature_id.has_value()) {
+      tracking_token = base::Token::CreateRandom();
+      viz::TrackedElementFeature tracking_feature =
+          static_cast<viz::TrackedElementFeature>(*tracked_element_feature_id);
+      image_element_->SetTrackedElementSubRect(
+          tracking_feature,
+          TrackedElementSubRect(
+              TrackedElementId(*tracking_token),
+              /*should_add_to_compositor_frame_metadata=*/false));
+    }
+
+    host_->ReplacementFrameAttached(frame->GetLocalFrameToken(),
+                                    std::move(image_data), tracking_token);
   }
 }
 
@@ -169,6 +243,11 @@ void ImageReplacement::CreateImageReplacementShadowTree(
 }
 
 void ImageReplacement::Reset(Document& document) {
+  if (image_element_ && tracked_element_feature_id_.has_value()) {
+    viz::TrackedElementFeature tracking_feature =
+        static_cast<viz::TrackedElementFeature>(*tracked_element_feature_id_);
+    image_element_->ClearTrackedElementSubRect(tracking_feature);
+  }
   receiver_.reset();
   host_.reset();
   pending_host_remote_.reset();
@@ -193,7 +272,7 @@ bool ImageReplacement::ResumeReplacementAfterImageLoad() {
   CHECK(image_element_ && image_element_->complete());
   mojo::PendingRemote<mojom::blink::ImageReplacementHost> remote =
       std::move(pending_host_remote_);
-  StartReplacement(std::move(remote));
+  StartReplacement(std::move(remote), tracked_element_feature_id_);
   // Note: `image_element_` can be nullptr here if the image load failed with
   // an error (StartReplacement will reset the image replacement in that case).
   return image_element_ && image_element_->HasImageReplacement();

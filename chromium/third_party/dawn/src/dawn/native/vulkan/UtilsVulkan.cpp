@@ -25,18 +25,20 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/vulkan/UtilsVulkan.h"
+#include "src/dawn/native/vulkan/UtilsVulkan.h"
 
-#include "dawn/common/Assert.h"
-#include "dawn/native/EnumMaskIterator.h"
-#include "dawn/native/Format.h"
-#include "dawn/native/Pipeline.h"
-#include "dawn/native/ShaderModule.h"
-#include "dawn/native/vulkan/DeviceVk.h"
-#include "dawn/native/vulkan/Forward.h"
-#include "dawn/native/vulkan/TextureVk.h"
-#include "dawn/native/vulkan/VulkanError.h"
-#include "dawn/native/vulkan/VulkanFunctions.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/native/EnumMaskIterator.h"
+#include "src/dawn/native/Format.h"
+#include "src/dawn/native/Pipeline.h"
+#include "src/dawn/native/ShaderModule.h"
+#include "src/dawn/native/vulkan/DeviceVk.h"
+#include "src/dawn/native/vulkan/Forward.h"
+#include "src/dawn/native/vulkan/PhysicalDeviceVk.h"
+#include "src/dawn/native/vulkan/TextureVk.h"
+#include "src/dawn/native/vulkan/VulkanError.h"
+#include "src/dawn/native/vulkan/VulkanFunctions.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native::vulkan {
 
@@ -63,8 +65,12 @@ VK_OBJECT_TYPE_GETTER(VkBufferView, VK_OBJECT_TYPE_BUFFER_VIEW)
 
 #undef VK_OBJECT_TYPE_GETTER
 
-uint32_t ToPushConstantBytes(const ImmediateConstantMask& immediates) {
-    return static_cast<uint32_t>(immediates.count()) * kImmediateConstantElementByteSize;
+uint32_t ToPushConstantBytes(const ImmediateMask& immediates) {
+    return static_cast<uint32_t>(immediates.count()) * kImmediateElementByteSize;
+}
+
+uint32_t AttachmentCount(const ColorAttachmentMask& mask) {
+    return static_cast<uint32_t>(mask.count());
 }
 
 VkCompareOp ToVulkanCompareOp(wgpu::CompareFunction op) {
@@ -342,11 +348,13 @@ std::string GetDeviceDebugPrefixFromDebugName(const char* debugName) {
         return {};
     }
 
-    if (strncmp(debugName, kDeviceDebugPrefix, sizeof(kDeviceDebugPrefix) - 1) != 0) {
+    if (DAWN_UNSAFE_TODO(strncmp(debugName, kDeviceDebugPrefix, sizeof(kDeviceDebugPrefix) - 1)) !=
+        0) {
         return {};
     }
 
-    const char* separator = strstr(debugName + sizeof(kDeviceDebugPrefix), kDeviceDebugSeparator);
+    const char* separator =
+        DAWN_UNSAFE_TODO(strstr(debugName + sizeof(kDeviceDebugPrefix), kDeviceDebugSeparator));
     if (separator == nullptr) {
         return {};
     }
@@ -435,6 +443,25 @@ ResultOrError<VkSamplerYcbcrConversion> CreateSamplerYCbCrConversion(
     vulkanYCbCrCreateInfo.chromaFilter = ToVulkanSamplerFilter(yCbCrDescriptor.vkChromaFilter);
     vulkanYCbCrCreateInfo.forceExplicitReconstruction =
         static_cast<VkBool32>(yCbCrDescriptor.forceExplicitReconstruction);
+
+    // VUID-VkSamplerYcbcrConversionCreateInfo-chromaFilter-01657
+    // Adjust linear filter to nearest if the format doesn't support linear. This is to support
+    // samplers created with YCrCb conversion info directly, which can't easily validate against the
+    // driver information at creation time.
+    if (vulkanFormat != VK_FORMAT_UNDEFINED &&
+        vulkanYCbCrCreateInfo.chromaFilter == VK_FILTER_LINEAR) {
+        VkPhysicalDevice vkPhysicalDevice =
+            ToBackend(device->GetPhysicalDevice())->GetVkPhysicalDevice();
+        VkFormatProperties formatProperties;
+        device->fn.GetPhysicalDeviceFormatProperties(vkPhysicalDevice, vulkanFormat,
+                                                     &formatProperties);
+        bool supportsLinear = IsSubset(
+            VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT,
+            formatProperties.optimalTilingFeatures | formatProperties.linearTilingFeatures);
+        if (!supportsLinear) {
+            vulkanYCbCrCreateInfo.chromaFilter = VK_FILTER_NEAREST;
+        }
+    }
 
 #if DAWN_PLATFORM_IS(ANDROID)
     VkExternalFormatANDROID vulkanExternalFormat;

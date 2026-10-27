@@ -26,6 +26,9 @@
 #include "third_party/blink/renderer/core/css/resolver/style_cascade.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver_state.h"
+#include "third_party/blink/renderer/core/css/style_auto_color.h"
+#include "third_party/blink/renderer/core/css/style_caret_color.h"
+#include "third_party/blink/renderer/core/css/style_color.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
@@ -106,8 +109,8 @@ class ComputedStyleTest : public testing::Test {
 };
 
 TEST_F(ComputedStyleTest, ShapeOutsideBoxEqual) {
-  auto* shape1 = MakeGarbageCollected<ShapeValue>(CSSBoxType::kContent);
-  auto* shape2 = MakeGarbageCollected<ShapeValue>(CSSBoxType::kContent);
+  auto* shape1 = MakeGarbageCollected<ShapeValue>(ShapeBox::kContentBox);
+  auto* shape2 = MakeGarbageCollected<ShapeValue>(ShapeBox::kContentBox);
   ComputedStyleBuilder builder1 = CreateComputedStyleBuilder();
   ComputedStyleBuilder builder2 = CreateComputedStyleBuilder();
   builder1.SetShapeOutside(shape1);
@@ -118,10 +121,10 @@ TEST_F(ComputedStyleTest, ShapeOutsideBoxEqual) {
 TEST_F(ComputedStyleTest, ShapeOutsideCircleEqual) {
   BasicShapeCircle* circle1 = MakeGarbageCollected<BasicShapeCircle>();
   BasicShapeCircle* circle2 = MakeGarbageCollected<BasicShapeCircle>();
-  auto* shape1 = MakeGarbageCollected<ShapeValue>(std::move(circle1),
-                                                  CSSBoxType::kContent);
-  auto* shape2 = MakeGarbageCollected<ShapeValue>(std::move(circle2),
-                                                  CSSBoxType::kContent);
+  auto* shape1 =
+      MakeGarbageCollected<ShapeValue>(*circle1, ShapeBox::kContentBox);
+  auto* shape2 =
+      MakeGarbageCollected<ShapeValue>(*circle2, ShapeBox::kContentBox);
   ComputedStyleBuilder builder1 = CreateComputedStyleBuilder();
   ComputedStyleBuilder builder2 = CreateComputedStyleBuilder();
   builder1.SetShapeOutside(shape1);
@@ -132,9 +135,9 @@ TEST_F(ComputedStyleTest, ShapeOutsideCircleEqual) {
 TEST_F(ComputedStyleTest, ClipPathEqual) {
   BasicShapeCircle* shape = MakeGarbageCollected<BasicShapeCircle>();
   ShapeClipPathOperation* path1 = MakeGarbageCollected<ShapeClipPathOperation>(
-      shape, GeometryBox::kBorderBox);
+      *shape, GeometryBox::kBorderBox);
   ShapeClipPathOperation* path2 = MakeGarbageCollected<ShapeClipPathOperation>(
-      shape, GeometryBox::kBorderBox);
+      *shape, GeometryBox::kBorderBox);
   ComputedStyleBuilder builder1 = CreateComputedStyleBuilder();
   ComputedStyleBuilder builder2 = CreateComputedStyleBuilder();
   builder1.SetClipPath(path1);
@@ -870,12 +873,16 @@ TEST_F(ComputedStyleTest, ApplyColorSchemeLightOnDark) {
   light_value->Append(*CSSIdentifierValue::Create(CSSValueID::kLight));
 
   To<Longhand>(ref.GetProperty())
-      .ApplyValue(state, *dark_value, CSSProperty::ValueMode::kNormal);
+      .ApplyValue(state, *dark_value,
+                  static_cast<CSSProperty::ValueModeFlags>(
+                      CSSProperty::ValueMode::kNormal));
   EXPECT_EQ(mojom::blink::ColorScheme::kDark,
             state.StyleBuilder().UsedColorScheme());
 
   To<Longhand>(ref.GetProperty())
-      .ApplyValue(state, *light_value, CSSProperty::ValueMode::kNormal);
+      .ApplyValue(state, *light_value,
+                  static_cast<CSSProperty::ValueModeFlags>(
+                      CSSProperty::ValueMode::kNormal));
   EXPECT_EQ(mojom::blink::ColorScheme::kLight,
             state.StyleBuilder().UsedColorScheme());
 }
@@ -975,7 +982,10 @@ TEST_F(ComputedStyleTest, ApplyLightDarkBackgroundImage) {
       light_declaration, /*env_bindings=*/nullptr,
       {.origin = CascadeOrigin::kAuthor});
   cascade2.Apply();
-  EXPECT_FALSE(state.TakeStyle()->HasBackgroundImage());
+  // 'none' in light-dark() computes to image(transparent), which is a
+  // transparent background image.
+  // https://drafts.csswg.org/css-color-5/#valdef-light-dark-none
+  EXPECT_TRUE(state.TakeStyle()->HasBackgroundImage());
 }
 
 TEST_F(ComputedStyleTest, StrokeWidthZoomAndCalc) {
@@ -994,8 +1004,10 @@ TEST_F(ComputedStyleTest, StrokeWidthZoomAndCalc) {
       CSSMathExpressionNumericLiteral::Create(CSSNumericLiteralValue::Create(
           10, CSSPrimitiveValue::UnitType::kNumber)));
 
-  GetCSSPropertyStrokeWidth().ApplyValue(state, *calc_value,
-                                         CSSProperty::ValueMode::kNormal);
+  GetCSSPropertyStrokeWidth().ApplyValue(
+      state, *calc_value,
+      static_cast<CSSProperty::ValueModeFlags>(
+          CSSProperty::ValueMode::kNormal));
   const ComputedStyle* style = state.TakeStyle();
   auto* computed_value =
       GetCSSPropertyStrokeWidth().CSSValueFromComputedStyleInternal(
@@ -1978,8 +1990,10 @@ TEST_F(ComputedStyleTest, BackgroundRepeat) {
   auto* repeat_style_value = MakeGarbageCollected<CSSRepeatStyleValue>(
       CSSIdentifierValue::Create(CSSValueID::kRepeatX));
 
-  GetCSSPropertyBackgroundRepeat().ApplyValue(state, *repeat_style_value,
-                                              CSSProperty::ValueMode::kNormal);
+  GetCSSPropertyBackgroundRepeat().ApplyValue(
+      state, *repeat_style_value,
+      static_cast<CSSProperty::ValueModeFlags>(
+          CSSProperty::ValueMode::kNormal));
   const ComputedStyle* style = state.TakeStyle();
   auto* computed_value =
       GetCSSPropertyBackgroundRepeat().CSSValueFromComputedStyleInternal(
@@ -2003,8 +2017,10 @@ TEST_F(ComputedStyleTest, MaskRepeat) {
   auto* repeat_style_value = MakeGarbageCollected<CSSRepeatStyleValue>(
       CSSIdentifierValue::Create(CSSValueID::kRepeatY));
 
-  GetCSSPropertyMaskRepeat().ApplyValue(state, *repeat_style_value,
-                                        CSSProperty::ValueMode::kNormal);
+  GetCSSPropertyMaskRepeat().ApplyValue(
+      state, *repeat_style_value,
+      static_cast<CSSProperty::ValueModeFlags>(
+          CSSProperty::ValueMode::kNormal));
   const ComputedStyle* style = state.TakeStyle();
   auto* computed_value =
       GetCSSPropertyMaskRepeat().CSSValueFromComputedStyleInternal(
@@ -2028,7 +2044,8 @@ TEST_F(ComputedStyleTest, MaskMode) {
   auto* mode_style_value = CSSIdentifierValue::Create(CSSValueID::kAlpha);
 
   GetCSSPropertyMaskMode().ApplyValue(state, *mode_style_value,
-                                      CSSProperty::ValueMode::kNormal);
+                                      static_cast<CSSProperty::ValueModeFlags>(
+                                          CSSProperty::ValueMode::kNormal));
   const ComputedStyle* style = state.TakeStyle();
   auto* computed_value =
       GetCSSPropertyMaskMode().CSSValueFromComputedStyleInternal(
@@ -2063,7 +2080,9 @@ TEST_F(ComputedStyleTest, DynamicRangeLimitMixStandardToConstrainedHigh) {
   state.CreateNewClonedStyle(*initial);
 
   GetCSSPropertyDynamicRangeLimit().ApplyValue(
-      state, *dynamic_range_limit_mix_value, CSSProperty::ValueMode::kNormal);
+      state, *dynamic_range_limit_mix_value,
+      static_cast<CSSProperty::ValueModeFlags>(
+          CSSProperty::ValueMode::kNormal));
 
   const DynamicRangeLimit converted_limit =
       state.TakeStyle()->GetDynamicRangeLimit();
@@ -2097,7 +2116,9 @@ TEST_F(ComputedStyleTest, DynamicRangeLimitMixStandardToHigh) {
   state.CreateNewClonedStyle(*initial);
 
   GetCSSPropertyDynamicRangeLimit().ApplyValue(
-      state, *dynamic_range_limit_mix_value, CSSProperty::ValueMode::kNormal);
+      state, *dynamic_range_limit_mix_value,
+      static_cast<CSSProperty::ValueModeFlags>(
+          CSSProperty::ValueMode::kNormal));
 
   const DynamicRangeLimit converted_limit =
       state.TakeStyle()->GetDynamicRangeLimit();
@@ -2131,7 +2152,9 @@ TEST_F(ComputedStyleTest, DynamicRangeLimitMixConstrainedHighToHigh) {
   state.CreateNewClonedStyle(*initial);
 
   GetCSSPropertyDynamicRangeLimit().ApplyValue(
-      state, *dynamic_range_limit_mix_value, CSSProperty::ValueMode::kNormal);
+      state, *dynamic_range_limit_mix_value,
+      static_cast<CSSProperty::ValueModeFlags>(
+          CSSProperty::ValueMode::kNormal));
 
   const DynamicRangeLimit converted_limit =
       state.TakeStyle()->GetDynamicRangeLimit();
@@ -2166,7 +2189,9 @@ TEST_F(ComputedStyleTest, DynamicRangeLimitMixAllThree) {
   state.CreateNewClonedStyle(*initial);
 
   GetCSSPropertyDynamicRangeLimit().ApplyValue(
-      state, *dynamic_range_limit_mix_value, CSSProperty::ValueMode::kNormal);
+      state, *dynamic_range_limit_mix_value,
+      static_cast<CSSProperty::ValueModeFlags>(
+          CSSProperty::ValueMode::kNormal));
 
   const DynamicRangeLimit converted_limit =
       state.TakeStyle()->GetDynamicRangeLimit();
@@ -2554,6 +2579,44 @@ TEST_F(ComputedStyleTest, ApplyTextTransformUpdateOffsetMap) {
     EXPECT_EQ(String(u"SS\u3053"), result);
     EXPECT_EQ(offset_map.Entries(), Vector<Entry>({{1, 2}, {3, 3}}));
   }
+}
+
+TEST_F(ComputedStyleTest, ResolvedCaretTextColorAuto) {
+  ComputedStyleBuilder builder = CreateComputedStyleBuilder();
+  builder.SetCaretColor(StyleCaretColor(
+      StyleAutoColor(StyleColor(Color::kBlack)), StyleAutoColor::AutoColor()));
+  const ComputedStyle* style = builder.TakeStyle();
+
+  EXPECT_FALSE(style->ResolvedCaretTextColor().has_value());
+}
+
+TEST_F(ComputedStyleTest, ResolvedCaretTextColorNonAuto) {
+  ComputedStyleBuilder builder = CreateComputedStyleBuilder();
+  const Color red = Color::FromRGB(255, 0, 0);
+  builder.SetCaretColor(
+      StyleCaretColor(StyleAutoColor(StyleColor(Color::kBlack)),
+                      StyleAutoColor(StyleColor(red))));
+  const ComputedStyle* style = builder.TakeStyle();
+
+  std::optional<Color> resolved = style->ResolvedCaretTextColor();
+  ASSERT_TRUE(resolved.has_value());
+  EXPECT_EQ(*resolved, red);
+}
+
+TEST_F(ComputedStyleTest, ResolvedCaretTextColorCurrentcolor) {
+  ComputedStyleBuilder builder = CreateComputedStyleBuilder();
+  // The element's `color` is green; the caret-color second value is
+  // currentcolor — ResolvedCaretTextColor() must resolve to green.
+  const Color green = Color::FromRGB(0, 128, 0);
+  builder.SetColor(StyleColor(green));
+  builder.SetCaretColor(
+      StyleCaretColor(StyleAutoColor(StyleColor(Color::kBlack)),
+                      StyleAutoColor(StyleColor::CurrentColor())));
+  const ComputedStyle* style = builder.TakeStyle();
+
+  std::optional<Color> resolved = style->ResolvedCaretTextColor();
+  ASSERT_TRUE(resolved.has_value());
+  EXPECT_EQ(*resolved, green);
 }
 
 }  // namespace blink

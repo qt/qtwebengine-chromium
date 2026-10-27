@@ -67,11 +67,10 @@ ImageDecoder::AnimationOption AnimationOptionFromIsAnimated(bool is_animated) {
                      : ImageDecoder::AnimationOption::kPreferStillImage;
 }
 
-DOMException* CreateUnsupportedImageTypeException(String type) {
+DOMException* CreateUnsupportedImageTypeException(const String& type) {
   return MakeGarbageCollected<DOMException>(
       DOMExceptionCode::kNotSupportedError,
-      String::Format("The provided image type (%s) is not supported",
-                     type.Ascii().c_str()));
+      StrCat({"The provided image type (", type, ") is not supported"}));
 }
 
 // Helper class for ensuring memory safe usage of ArrayBufferContents by the
@@ -159,6 +158,9 @@ ImageDecoderExternal::ImageDecoderExternal(ScriptState* script_state,
                                       "Invalid context.");
     return;
   }
+
+  // Do not report unhandled rejections of the completed promise.
+  completed_property_->MarkAsHandled();
 
   UseCounter::Count(GetExecutionContext(), WebFeature::kWebCodecs);
 

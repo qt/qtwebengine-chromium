@@ -1,7 +1,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
 import("//components/guest_view/buildflags/buildflags.gni")
 import("//extensions/buildflags/buildflags.gni")
 import("//testing/test.gni")
@@ -37,8 +36,9 @@ config("component_implementation") {
 group("extensions_resources") {
   public_deps = [
     ":extensions_browser_resources",
-    ":extensions_renderer_resources",
     ":extensions_resources_grd",
+    "//extensions/renderer/resources:extensions_renderer_generated_resources",
+    "//extensions/renderer/resources:extensions_renderer_resources",
   ]
 }
 
@@ -58,24 +58,6 @@ grit("extensions_browser_resources") {
     "grit/extensions_browser_resources_map.h",
     "extensions_browser_resources_100_percent.pak",
     "extensions_browser_resources_200_percent.pak",
-  ]
-}
-
-grit("extensions_renderer_resources") {
-  source = "renderer/resources/extensions_renderer_resources.grd"
-  outputs = [
-    "grit/extensions_renderer_resources.h",
-    "extensions_renderer_resources.pak",
-  ]
-  grit_flags = [
-    "-E",
-    "mojom_root=" + rebase_path(root_gen_dir, root_build_dir),
-  ]
-
-  deps = [
-    "//extensions/common:mojom_js",
-    "//extensions/common/api:mojom_js",
-    "//services/device/public/mojom:mojom_js",
   ]
 }
 
@@ -217,6 +199,7 @@ static_library("test_support") {
   configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
+# TODO(crbug.com/40425056): Rename to test_pak.
 repack("shell_and_test_pak") {
   testonly = true
 
@@ -224,6 +207,7 @@ repack("shell_and_test_pak") {
     "$root_gen_dir/content/content_resources.pak",
     "$root_gen_dir/content/shell/shell_resources.pak",
     "$root_gen_dir/extensions/extensions_browser_resources_100_percent.pak",
+    "$root_gen_dir/extensions/extensions_renderer_generated_resources.pak",
     "$root_gen_dir/extensions/extensions_renderer_resources.pak",
     "$root_gen_dir/extensions/extensions_resources.pak",
     "$root_gen_dir/extensions/strings/extensions_strings_en-US.pak",
@@ -238,6 +222,7 @@ repack("shell_and_test_pak") {
     "$root_gen_dir/ui/strings/ui_strings_en-US.pak",
   ]
 
+  # TODO(crbug.com/40425056): Rename to extensions_test.pak.
   output = "$root_out_dir/extensions_shell_and_test.pak"
 
   deps = [
@@ -258,13 +243,11 @@ repack("shell_and_test_pak") {
     sources += [
       "$root_gen_dir/content/browser/devtools/devtools_resources.pak",
       "$root_gen_dir/device/bluetooth/strings/bluetooth_strings_en-US.pak",
-      "$root_gen_dir/extensions/shell/app_shell_resources.pak",
     ]
 
     deps += [
       "//content/browser/devtools:devtools_resources",
       "//device/bluetooth/strings",
-      "//extensions/shell:resources",
     ]
   }
 }
@@ -273,6 +256,7 @@ test("extensions_unittests") {
   use_xvfb = use_xvfb_in_this_config
 
   sources = [
+    "test/extension_test_message_listener_unittest.cc",
     "test/extensions_unittests_main.cc",
     "test/flakiness_test_util_test.cc",
     "test/logging_timer_unittest.cc",
@@ -293,6 +277,7 @@ test("extensions_unittests") {
     "//content/public/common",
     "//content/test:test_support",
     "//extensions/browser:unit_tests",
+    "//extensions/browser/api/test",
     "//extensions/common",
     "//extensions/common:unit_tests",
     "//extensions/renderer:unit_tests",
@@ -314,37 +299,10 @@ test("extensions_unittests") {
 
   if (is_android) {
     deps += [
+      "//components/signin/public/android:signin_java_test_support",
       "//content/public/android:content_full_java",
       "//gin:v8_snapshot_assets",
       "//ui/android:ui_full_java",
     ]
-  }
-
-  # TODO(https://crbug.com/356905053): Gradually include more of these sources
-  # in the desktop-android build.
-  if (enable_extensions) {
-    deps += [ "//extensions/shell:unit_tests" ]
-  }
-}
-
-if (enable_extensions) {
-  # Browser tests are not currently supported in desktop-android builds.
-  test("extensions_browsertests") {
-    use_xvfb = use_xvfb_in_this_config
-
-    data = [
-      "//extensions/test/data/",
-      "//net/tools/testserver/",
-      "//third_party/pywebsocket3/src/mod_pywebsocket/",
-      "$root_out_dir/extensions_shell_and_test.pak",
-    ]
-
-    deps = [
-      "//extensions/browser:browser_tests",
-      "//extensions/renderer:browser_tests",
-      "//extensions/shell:browser_tests",
-    ]
-
-    data_deps = [ "//third_party/angle:includes" ]
   }
 }

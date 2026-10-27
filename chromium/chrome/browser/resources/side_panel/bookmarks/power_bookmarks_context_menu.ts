@@ -4,7 +4,6 @@
 
 import '/strings.m.js';
 import './icons.html.js';
-import '//bookmarks-side-panel.top-chrome/shared/sp_shared_style.css.js';
 import '//resources/cr_elements/cr_action_menu/cr_action_menu.js';
 import '//resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import '//resources/cr_elements/icons.html.js';
@@ -14,14 +13,14 @@ import {PriceTrackingBrowserProxyImpl} from '//resources/cr_components/commerce/
 import type {CrActionMenuElement} from '//resources/cr_elements/cr_action_menu/cr_action_menu.js';
 import {assert, assertNotReachedCase} from 'chrome://resources/js/assert.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
-import type {DomRepeatEvent} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {afterNextRender, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import {ActionSource} from './bookmarks.mojom-webui.js';
 import type {BookmarksTreeNode} from './bookmarks.mojom-webui.js';
 import type {BookmarksApiProxy} from './bookmarks_api_proxy.js';
 import {BookmarksApiProxyImpl} from './bookmarks_api_proxy.js';
-import {getTemplate} from './power_bookmarks_context_menu.html.js';
+import {getCss} from './power_bookmarks_context_menu.css.js';
+import {getHtml} from './power_bookmarks_context_menu.html.js';
 import {editingDisabledByPolicy} from './power_bookmarks_service.js';
 
 export interface PowerBookmarksContextMenuElement {
@@ -51,25 +50,26 @@ export interface MenuItem {
   disabled?: boolean;
 }
 
-export class PowerBookmarksContextMenuElement extends PolymerElement {
+export class PowerBookmarksContextMenuElement extends CrLitElement {
   static get is() {
     return 'power-bookmarks-context-menu';
   }
 
-  static get template() {
-    return getTemplate();
+  static override get styles() {
+    return getCss();
   }
 
-  static get properties() {
+  override render() {
+    return getHtml.bind(this)();
+  }
+
+  static override get properties() {
     return {
-      bookmarks_: {
-        type: Array,
-        value: () => [],
-      },
-      priceTracked_: Boolean,
-      priceTrackingEligible_: Boolean,
-      isInSplitView_: Boolean,
-      incognitoCount_: Number,
+      bookmarks_: {type: Array},
+      priceTracked_: {type: Boolean},
+      priceTrackingEligible_: {type: Boolean},
+      isInSplitView_: {type: Boolean},
+      incognitoCount_: {type: Number},
     };
   }
 
@@ -77,11 +77,11 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
       BookmarksApiProxyImpl.getInstance();
   private priceTrackingProxy_: PriceTrackingBrowserProxy =
       PriceTrackingBrowserProxyImpl.getInstance();
-  declare private bookmarks_: BookmarksTreeNode[];
-  declare private priceTracked_: boolean;
-  declare private priceTrackingEligible_: boolean;
-  declare private isInSplitView_: boolean;
-  declare private incognitoCount_: number;
+  private accessor bookmarks_: BookmarksTreeNode[] = [];
+  private accessor priceTracked_: boolean = false;
+  private accessor priceTrackingEligible_: boolean = false;
+  private accessor isInSplitView_: boolean = false;
+  private accessor incognitoCount_: number = 0;
 
   showAt(
       target: HTMLElement, bookmarks: BookmarksTreeNode[],
@@ -93,7 +93,7 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
     this.priceTrackingEligible_ = priceTrackingEligible;
     this.isInSplitView_ = isInSplitView;
     this.incognitoCount_ = incognitoCount;
-    afterNextRender(this, () => {
+    this.updateComplete.then(() => {
       this.$.menu.showAt(target);
       onShown();
     });
@@ -112,7 +112,7 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
     const doc = document.scrollingElement!;
     const minX = doc.scrollLeft + menuMargin;
     const maxX = doc.scrollLeft + doc.clientWidth - menuMargin;
-    afterNextRender(this, () => {
+    this.updateComplete.then(() => {
       this.$.menu.showAtPosition({
         top: event.clientY,
         left: event.clientX,
@@ -135,7 +135,7 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
     return this.bookmarks_.some(bookmark => bookmark.id === id);
   }
 
-  private getMenuItemsForBookmarks_(): MenuItem[] {
+  protected getMenuItemsForBookmarks_(): MenuItem[] {
     // TODO(crbug.com/40262319): Factor in URLs not available in incognito.
     let bookmarkCount = 0;
     // Filter out undefined bookmarks which might exist temporarily as the
@@ -216,6 +216,75 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
       return menuItems;
     }
 
+    if (this.bookmarks_.length === 1 && !this.bookmarks_[0].url &&
+        loadTimeData.getBoolean('menuSimplification')) {
+      const folder = this.bookmarks_[0];
+      const bookmarkCount = folder.children ?
+          folder.children.filter(child => !!child.url).length :
+          0;
+
+      const revisedItems: MenuItem[] = [
+        {
+          id: MenuItemId.OPEN_NEW_TAB,
+          label: bookmarkCount < 2 ?
+              loadTimeData.getString('menuOpenNewTab') :
+              loadTimeData.getStringF('menuOpenNewTabWithCount', bookmarkCount),
+          disabled: bookmarkCount === 0,
+        },
+        {
+          id: MenuItemId.OPEN_NEW_WINDOW,
+          label: bookmarkCount < 2 ?
+              loadTimeData.getString('menuOpenNewWindow') :
+              loadTimeData.getStringF(
+                  'menuOpenNewWindowWithCount', bookmarkCount),
+          disabled: bookmarkCount === 0,
+        },
+        {
+          id: MenuItemId.OPEN_NEW_TAB_GROUP,
+          label: bookmarkCount < 2 ?
+              loadTimeData.getString('menuOpenNewTabGroup') :
+              loadTimeData.getStringF(
+                  'menuOpenNewTabGroupWithCount', bookmarkCount),
+          disabled: bookmarkCount === 0,
+        },
+      ];
+
+      if (!loadTimeData.getBoolean('incognitoMode') &&
+          loadTimeData.getBoolean('isIncognitoModeAvailable')) {
+        revisedItems.push({
+          id: MenuItemId.OPEN_INCOGNITO,
+          label: this.incognitoCount_ < 2 ?
+              loadTimeData.getString('menuOpenIncognito') :
+              loadTimeData.getStringF(
+                  'menuOpenIncognitoWithCount', this.incognitoCount_),
+          disabled: this.incognitoCount_ === 0,
+        });
+      }
+
+      revisedItems.push({id: MenuItemId.DIVIDER});
+
+      if (folder.parentId === loadTimeData.getString('otherBookmarksId') ||
+          folder.parentId === loadTimeData.getString('mobileBookmarksId')) {
+        revisedItems.push({
+          id: MenuItemId.ADD_TO_BOOKMARKS_BAR,
+          label: loadTimeData.getString('menuMoveToBookmarksBar'),
+        });
+        revisedItems.push({id: MenuItemId.DIVIDER});
+      }
+
+      revisedItems.push(
+          {
+            id: MenuItemId.RENAME,
+            label: loadTimeData.getString('menuRename'),
+          },
+          {id: MenuItemId.DIVIDER}, {
+            id: MenuItemId.DELETE,
+            label: loadTimeData.getString('tooltipDelete'),
+          });
+
+      return revisedItems;
+    }
+
     if (this.bookmarks_[0].url ||
         this.bookmarks_[0].parentId ===
             loadTimeData.getString('bookmarksBarId') ||
@@ -283,7 +352,7 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
     return menuItems;
   }
 
-  private showDivider_(menuItem: MenuItem): boolean {
+  protected showDivider_(menuItem: MenuItem): boolean {
     return menuItem.id === MenuItemId.DIVIDER;
   }
 
@@ -296,7 +365,7 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
    * This allows the user to right click the list while a context menu is
    * showing and get another context menu.
    */
-  private onMousedown_(e: Event): void {
+  protected onMousedown_(e: Event): void {
     if ((e.composedPath()[0] as HTMLElement).tagName !== 'DIALOG') {
       return;
     }
@@ -304,10 +373,12 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
     this.$.menu.close();
   }
 
-  private onMenuItemClicked_(event: DomRepeatEvent<MenuItem>) {
+  protected onMenuItemClick_(event: Event) {
     event.preventDefault();
     event.stopPropagation();
-    switch (event.model.item.id) {
+    const id = Number((event.currentTarget as HTMLElement).dataset['id']) as
+        MenuItemId;
+    switch (id) {
       case MenuItemId.OPEN_NEW_TAB:
         this.bookmarksApi_.contextMenuOpenBookmarkInNewTab(
             this.bookmarks_.map(bookmark => bookmark.id),
@@ -370,26 +441,14 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
         }
         break;
       case MenuItemId.EDIT:
-        this.dispatchEvent(new CustomEvent('edit-clicked', {
-          bubbles: true,
-          composed: true,
-          detail: {
-            bookmarks: this.bookmarks_,
-          },
-        }));
+        this.fire('edit-clicked', {bookmarks: this.bookmarks_});
         break;
       case MenuItemId.RENAME:
         assert(this.bookmarks_.length === 1);
         if (editingDisabledByPolicy(this.bookmarks_)) {
           this.dispatchDisabledFeatureEvent_();
         } else {
-          this.dispatchEvent(new CustomEvent('rename-clicked', {
-            bubbles: true,
-            composed: true,
-            detail: {
-              id: this.bookmarks_[0].id,
-            },
-          }));
+          this.fire('rename-clicked', {id: this.bookmarks_[0].id});
         }
         break;
       case MenuItemId.DELETE:
@@ -399,20 +458,14 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
           this.bookmarksApi_.contextMenuDelete(
               this.bookmarks_.map(bookmark => bookmark.id),
               ActionSource.kBookmark);
-          this.dispatchEvent(new CustomEvent('delete-clicked', {
-            bubbles: true,
-            composed: true,
-            detail: {
-              bookmarks: this.bookmarks_,
-            },
-          }));
+          this.fire('delete-clicked', {bookmarks: this.bookmarks_});
         }
         break;
       case MenuItemId.DIVIDER:
       case MenuItemId.EDIT:
         break;
       default:
-        assertNotReachedCase(event.model.item.id);
+        assertNotReachedCase(id);
     }
     this.$.menu.close();
   }

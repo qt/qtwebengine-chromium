@@ -90,7 +90,7 @@ uint64_t CPDF_StreamAcc::KeyForCache() const {
 }
 
 DataVector<uint8_t> CPDF_StreamAcc::ComputeDigest() const {
-  return CRYPT_SHA1Generate(GetSpan());
+  return CryptSha1Generate(GetSpan());
 }
 
 DataVector<uint8_t> CPDF_StreamAcc::DetachData() {

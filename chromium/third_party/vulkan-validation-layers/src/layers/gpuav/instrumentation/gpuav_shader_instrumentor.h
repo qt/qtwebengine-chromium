@@ -62,7 +62,7 @@ struct InstrumentedShader {
     VkPipeline pipeline;
     VkShaderModule shader_module;
     VkShaderEXT shader_object;
-    // We keep the original SPIR-V so we can match up where the error occured to map to shader source files
+    // We keep the original SPIR-V so we can match up where the error occurred to map to shader source files
     std::vector<uint32_t> original_spirv;
 };
 
@@ -188,11 +188,8 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
 
     // We have GPL variations for graphics as they defer instrumentation until linking
     [[nodiscard]] bool PreCallRecordPipelineCreationShaderInstrumentationGPL(
-        const VkAllocationCallbacks *pAllocator, vvl::Pipeline &linked_pipeline_state,
-        vku::safe_VkGraphicsPipelineCreateInfo &modified_pipeline_ci, const Location &loc,
-        std::vector<chassis::ShaderInstrumentationMetadata> &shader_instrumentation_metadata);
-    void PostCallRecordPipelineCreationShaderInstrumentationGPL(
-        vvl::Pipeline &pipeline_state, std::vector<chassis::ShaderInstrumentationMetadata> &shader_instrumentation_metadata);
+        const VkAllocationCallbacks* pAllocator, vvl::Pipeline& linked_pipeline_state,
+        vku::safe_VkGraphicsPipelineCreateInfo& modified_pipeline_ci, const Location& loc);
 
     // Function that will hook into the SPIR-V instrumentation passes.
     // Returns if shader was instrumented successfully or not.
@@ -244,6 +241,9 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
     // might force on. We need to track these changes separately so that they don't influence non-GPU-AV parts of validation.
     DeviceExtensions modified_extensions;
     DeviceFeatures modified_features;
+
+    // If we should be setting null descriptors for the app (for Descriptor Buffer/Heap)
+    bool set_null_descriptors_ = false;
 
   private:
     bool IsPipelineSelectedForInstrumentation(VkPipeline pipeline, const Location &loc);

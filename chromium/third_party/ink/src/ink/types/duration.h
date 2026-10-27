@@ -26,8 +26,15 @@ namespace ink {
 // `Duration32` is a 32-bit floating point precision type for representing
 // signed "short" durations of time.
 //
-// This type should only be used for memory savings when storing many values and
-// the maximum duration will be on the order of minutes to a few hours.
+// This type should only be used for memory savings, when all of the following
+// are true:
+//     1) You're storing many values (e.g. input timestamps for a stroke).
+//     2) The maximum duration stored will very likely be on the order of a few
+//        minutes at most.
+//     3) Inexact floating-point values are tolerable (e.g. you don't need the
+//        ability to represent *exactly* 10 milliseconds).
+// For other use cases, prefer using `absl::Duration`, which is exact and
+// higher-precision (at the cost of taking up 12 bytes instead of 4 bytes).
 //
 // Objects of this type can represent durations of up to around 28 minutes with
 // precision to the tenth of a millsecond. That means adding a 0.1 ms

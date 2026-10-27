@@ -150,9 +150,6 @@ const core::type::Type* DedupType(const core::type::Type* ty, core::type::Manage
             if (s->IsComparison()) {
                 return types.Get<core::type::Sampler>(core::type::SamplerKind::kSampler);
             }
-            if (s->Filtering() != core::SamplerFiltering::kUndefined) {
-                return types.Get<core::type::Sampler>(core::type::SamplerKind::kSampler);
-            }
             return s;
         },
 
@@ -183,6 +180,12 @@ const core::type::Type* DedupType(const core::type::Type* ty, core::type::Manage
 
         [&](Default) { return ty; });
 }
+
+// The list of properties that are not supported.
+const core::ir::Properties kUnsupportedProperties{
+    core::ir::Property::kAllowMultipleEntryPoints,
+    core::ir::Property::kAllowOverrides,
+};
 
 /// PIMPL class for SPIR-V writer
 class Printer {
@@ -298,6 +301,7 @@ class Printer {
     /// Builds the SPIR-V from the IR
     Result<SuccessType> Generate() {
         AssertValid(ir_, kPrinterCapabilities, "before spirv.Printer");
+        AssertNoUnsupportedProperties(ir_, kUnsupportedProperties);
 
         module_.PushCapability(SpvCapabilityShader);
 
@@ -323,11 +327,16 @@ class Printer {
 
         // Emit RelaxedPrecision decorations.
         auto relaxed_precision_decorations = analysis::GetRelaxedPrecisionDecorations(ir_);
+        Hashset<uint32_t, 32> decorated_ids;
         for (const auto& deco : relaxed_precision_decorations) {
-            module_.PushAnnot(spv::Op::OpDecorate, {
-                                                       Value(deco),
-                                                       U32Operand(SpvDecorationRelaxedPrecision),
-                                                   });
+            uint32_t id = Value(deco);
+            if (decorated_ids.Add(id)) {
+                module_.PushAnnot(spv::Op::OpDecorate,
+                                  {
+                                      id,
+                                      U32Operand(SpvDecorationRelaxedPrecision),
+                                  });
+            }
         }
 
         return Success;
@@ -1552,6 +1561,13 @@ class Printer {
             case spirv::BuiltinFn::kImageWrite:
                 op = spv::Op::OpImageWrite;
                 break;
+            case spirv::BuiltinFn::kInterpolateAtOffset:
+                // InterpolateAtOffset requires the InterpolationFunction capability.
+                // In Dawn this is only used for the pixel center polyfill which is only
+                // enabled if SampleRateShading is available.
+                module_.PushCapability(SpvCapabilityInterpolationFunction);
+                ext_inst(GLSLstd450InterpolateAtOffset);
+                break;
             case spirv::BuiltinFn::kMatrixTimesMatrix:
                 op = spv::Op::OpMatrixTimesMatrix;
                 break;
@@ -1782,6 +1798,9 @@ class Printer {
                 break;
             case BuiltinFn::kSConvert:
                 op = spv::Op::OpSConvert;
+                break;
+            case BuiltinFn::kAddCarry:
+                op = spv::Op::OpIAddCarry;
                 break;
             case spirv::BuiltinFn::kNone:
                 TINT_IR_ICE(ir_) << "undefined spirv ir function";

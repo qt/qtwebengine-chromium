@@ -1,4 +1,6 @@
 # Base configuration for windows builds.
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 .build:windows:
   needs: []
   extends: .common:windows
@@ -14,11 +16,7 @@
     - eigen-runner
     - windows
     - x86-64
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_NAMESPACE == "libeigen"
-    - if: $CI_PIPELINE_SOURCE == "web" && $CI_PROJECT_NAMESPACE == "libeigen"
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_MERGE_REQUEST_LABELS =~ "/all-tests/"
-
+  rules: !reference [.rules:libeigen:all-tests, rules]
   cache:
     key: "$CI_JOB_NAME_SLUG-$CI_COMMIT_REF_SLUG-BUILD"
     paths:
@@ -55,19 +53,20 @@ build:windows:x86-64:msvc-14.29:avx512dq:
   extends: .build:windows
   variables:
     # Compute architectures present in the GitLab CI runners.
-    EIGEN_CI_CUDA_COMPUTE_ARCH: "50;75"
+    EIGEN_CI_CUDA_COMPUTE_ARCH: "70;80"
     EIGEN_CI_BUILD_TARGET: buildtests_gpu
     EIGEN_CI_ADDITIONAL_ARGS:
       -DEIGEN_TEST_CUDA=on
       -DEIGEN_CUDA_COMPUTE_ARCH=${EIGEN_CI_CUDA_COMPUTE_ARCH}
+  rules: !reference [.rules:libeigen:gpu, rules]
   tags:
     - eigen-runner
     - windows
     - x86-64
     - cuda
 
-# MSVC 14.29 + CUDA 11.4
-build:windows:x86-64:cuda-11.4:msvc-14.29:
+# MSVC 14.29 + CUDA 12.2
+build:windows:x86-64:cuda-12.2:msvc-14.29:
   extends: .build:windows:cuda
   variables:
-    EIGEN_CI_BEFORE_SCRIPT: $$env:CUDA_PATH=$$env:CUDA_PATH_V11_4
+    EIGEN_CI_BEFORE_SCRIPT: $$env:CUDA_PATH=$$env:CUDA_PATH_V12_2

@@ -50,11 +50,11 @@ BASE_DECLARE_FEATURE(kSyncGeminiThread);
 // Enables syncing of themes across iOS devices.
 BASE_DECLARE_FEATURE(kSyncThemesIos);
 
+// Enables syncing of New Tab Page customization themes on Android.
+BASE_DECLARE_FEATURE(kNewTabPageCustomizationThemeSync);
+
 // Enables syncing of usage metadata for loyalty cards.
 BASE_DECLARE_FEATURE(kSyncLoyaltyCardMetadata);
-
-// Enables syncing of accessibility annotations to devices.
-BASE_DECLARE_FEATURE(kSyncAccessibilityAnnotation);
 
 #if !BUILDFLAG(IS_CHROMEOS)
 // Flag that controls Uno fast-follow features which are:
@@ -68,10 +68,6 @@ BASE_DECLARE_FEATURE(kSyncAccessibilityAnnotation);
 // `kReplaceSyncPromosWithSignInPromos`.
 BASE_DECLARE_FEATURE(kUnoPhase2FollowUp);
 #endif  // !BUILDFLAG(IS_CHROMEOS)
-
-// If enabled, the error that the bookmarks count exceeded the limit during the
-// last initial merge is reset after a certain period.
-BASE_DECLARE_FEATURE(kSyncResetBookmarksInitialMergeLimitExceededError);
 
 // If enabled, shows a user-actionable error when the bookmarks count limit is
 // exceeded.
@@ -147,12 +143,6 @@ constexpr bool IsReadingListAccountStorageEnabled() {
 // If enabled, sync-the-transport will auto-start (avoid deferring startup) if
 // sync metadata isn't available (i.e. initial sync never completed).
 BASE_DECLARE_FEATURE(kSyncAlwaysForceImmediateStartIfTransportDataMissing);
-
-#if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
-// If enabled, holds the account preference values under a dictionary in the
-// main preferences file.
-BASE_DECLARE_FEATURE(kMigrateAccountPrefs);
-#endif  // BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
 
 // If enabled, support displaying and uploading individual Reading List items in
 // the Batch Upload UI.
@@ -242,10 +232,24 @@ BASE_DECLARE_FEATURE(kSyncValidateAccessToken);
 // If enabled, Sync invalidations will bypass the scheduler on Android.
 BASE_DECLARE_FEATURE(kSyncInvalidationsBypassScheduler);
 
+#if BUILDFLAG(IS_ANDROID)
+// If enabled, search engines and site search will be synced on Android LFF.
+BASE_DECLARE_FEATURE(kSyncSearchEnginesAndroidLFF);
+
+// If enabled, ignores the value set in sessions_invalidations_enabled_ and
+// always registers for sessions invalidations.
+BASE_DECLARE_FEATURE(kAlwaysRegisterSessionsInvalidationsAndroid);
+#endif  // BUILDFLAG(IS_ANDROID)
+
 #if BUILDFLAG(IS_CHROMEOS)
 // Feature flag for ChromeOS only to estimate new sign-in users population.
 BASE_DECLARE_FEATURE(kEstimateNewSignInUsersWithFinchAvailablePopulation);
 #endif  // BUILDFLAG(IS_CHROMEOS)
+
+// If enabled, computes the web sign-in status based on account in cookies
+// values even if they are stale. This ensures that we log the last known cookie
+// sign-in status for short-lived sessions instead of the default OFF value.
+BASE_DECLARE_FEATURE(kSyncFixWebSigninSessionDurationForShortLivedSessions);
 
 }  // namespace syncer
 

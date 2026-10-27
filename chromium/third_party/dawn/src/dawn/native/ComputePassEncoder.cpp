@@ -25,27 +25,28 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/ComputePassEncoder.h"
+#include "src/dawn/native/ComputePassEncoder.h"
 
 #include <algorithm>
 #include <limits>
 
-#include "dawn/common/Range.h"
-#include "dawn/common/Strings.h"
-#include "dawn/native/Adapter.h"
-#include "dawn/native/BindGroup.h"
-#include "dawn/native/BindGroupLayout.h"
-#include "dawn/native/Buffer.h"
-#include "dawn/native/CommandEncoder.h"
-#include "dawn/native/CommandValidation.h"
-#include "dawn/native/Commands.h"
-#include "dawn/native/ComputePipeline.h"
-#include "dawn/native/Device.h"
-#include "dawn/native/InternalPipelineStore.h"
 #include "dawn/native/ObjectType_autogen.h"
-#include "dawn/native/PassResourceUsageTracker.h"
-#include "dawn/native/QuerySet.h"
-#include "dawn/native/utils/WGPUHelpers.h"
+#include "src/dawn/common/Range.h"
+#include "src/dawn/common/Strings.h"
+#include "src/dawn/native/Adapter.h"
+#include "src/dawn/native/BindGroup.h"
+#include "src/dawn/native/BindGroupLayout.h"
+#include "src/dawn/native/Buffer.h"
+#include "src/dawn/native/CommandEncoder.h"
+#include "src/dawn/native/CommandValidation.h"
+#include "src/dawn/native/Commands.h"
+#include "src/dawn/native/ComputePipeline.h"
+#include "src/dawn/native/Device.h"
+#include "src/dawn/native/InternalPipelineStore.h"
+#include "src/dawn/native/PassResourceUsageTracker.h"
+#include "src/dawn/native/QuerySet.h"
+#include "src/dawn/native/utils/WGPUHelpers.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native {
 
@@ -367,7 +368,7 @@ ComputePassEncoder::TransformIndirectDispatchBuffer(Ref<BufferBase> indirectBuff
     // Create a uniform buffer to hold parameters for the shader.
     Ref<BufferBase> uniformBuffer;
     {
-        UniformParams params;
+        UniformParams params = {};
         params.maxComputeWorkgroupsPerDimension =
             device->GetLimits().v1.maxComputeWorkgroupsPerDimension;
         params.clientOffsetInU32 = clientOffsetFromAlignedBoundary / sizeof(uint32_t);
@@ -571,7 +572,7 @@ void ComputePassEncoder::APISetImmediates(uint32_t offset, const void* data, siz
             cmd->offset = offset;
             cmd->size = uint32_t(size);
             uint8_t* immediateDatas = allocator->AllocateData<uint8_t>(cmd->size);
-            memcpy(immediateDatas, data, size);
+            DAWN_UNSAFE_TODO(memcpy(immediateDatas, data, size));
 
             mCommandBufferState.SetImmediateData(offset, uint32_t(size));
 
@@ -580,7 +581,9 @@ void ComputePassEncoder::APISetImmediates(uint32_t offset, const void* data, siz
         "encoding %s.SetImmediates(%u, %u, ...).", this, offset, size);
 }
 
-void ComputePassEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t queryIndex) {
+void ComputePassEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t queryIndexUntyped) {
+    QueryIndex queryIndex{queryIndexUntyped};
+
     mEncodingContext->TryEncode(
         this,
         [&](CommandAllocator* allocator) -> MaybeError {
@@ -590,7 +593,7 @@ void ComputePassEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t quer
                     Feature::ChromiumExperimentalTimestampQueryInsidePasses));
             }
 
-            mCommandEncoder->TrackQueryAvailability(querySet, queryIndex);
+            mCommandEncoder->TrackUsedQuerySet(querySet);
 
             WriteTimestampCmd* cmd =
                 allocator->Allocate<WriteTimestampCmd>(Command::WriteTimestamp);

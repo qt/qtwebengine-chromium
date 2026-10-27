@@ -15,16 +15,8 @@ namespace {
 
 inline constexpr uint32_t kEmbeddingsModelInputWindowSize = 256u;
 
-Embedding ComputeEmbeddingForPassage(size_t embeddings_model_output_size) {
-  constexpr size_t kMockPassageWordCount = 10;
-  Embedding embedding(std::vector<float>(embeddings_model_output_size, 1.0f));
-  embedding.Normalize();
-  embedding.SetPassageWordCount(kMockPassageWordCount);
-  return embedding;
-}
-
 EmbedderMetadata GetValidEmbedderMetadata() {
-  return EmbedderMetadata(kEmbeddingsModelVersion, kEmbeddingsModelOutputSize);
+  return EmbedderMetadata(kEmbeddingsModelVersion, 3ul);
 }
 
 }  // namespace
@@ -46,7 +38,7 @@ optimization_guide::TestModelInfoBuilder GetBuilderWithValidModelInfo() {
   // Create serialized metadata.
   optimization_guide::proto::PassageEmbeddingsModelMetadata model_metadata;
   model_metadata.set_input_window_size(kEmbeddingsModelInputWindowSize);
-  model_metadata.set_output_size(kEmbeddingsModelOutputSize);
+  model_metadata.set_output_size(3ul);
 
   // Load a model info builder.
   optimization_guide::TestModelInfoBuilder builder;
@@ -58,28 +50,32 @@ optimization_guide::TestModelInfoBuilder GetBuilderWithValidModelInfo() {
   return builder;
 }
 
-std::vector<Embedding> ComputeEmbeddingsForPassages(
-    const std::vector<std::string>& passages) {
-  return std::vector<Embedding>(
-      passages.size(), ComputeEmbeddingForPassage(kEmbeddingsModelOutputSize));
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 
-Embedder::TaskId TestEmbedder::ComputePassagesEmbeddings(
+TestEmbedder::TestEmbedder() = default;
+TestEmbedder::~TestEmbedder() = default;
+
+Embedder::Job TestEmbedder::ComputePassagesEmbeddings(
     PassagePriority priority,
     std::vector<std::string> passages,
     ComputePassagesEmbeddingsCallback callback) {
+  TaskId task_id = next_task_id_++;
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(
-                     [](std::vector<std::string> passages,
+                     [](std::vector<std::string> passages, TaskId task_id,
                         ComputePassagesEmbeddingsCallback callback) {
+                       std::vector<Embedding> embeddings(
+                           passages.size(), Embedding({1.0f, 0.0f, 0.0f}));
                        std::move(callback).Run(
-                           passages, ComputeEmbeddingsForPassages(passages),
-                           /*task_id=*/0, ComputeEmbeddingsStatus::kSuccess);
+                           passages, std::move(embeddings), task_id,
+                           ComputeEmbeddingsStatus::kSuccess);
                      },
-                     passages, std::move(callback)));
-  return 0;
+                     passages, task_id, std::move(callback)));
+  return Embedder::Job(weak_ptr_factory_.GetWeakPtr(), task_id);
+}
+
+base::WeakPtr<Embedder> TestEmbedder::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
 }
 
 void TestEmbedder::ReprioritizeTasks(PassagePriority priority,

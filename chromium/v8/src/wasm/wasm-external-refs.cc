@@ -8,6 +8,9 @@
 
 #include <limits>
 
+#if !V8_TARGET_ARCH_64_BIT
+#include "absl/numeric/int128.h"
+#endif
 #include "src/base/bits.h"
 #include "src/base/float16.h"
 #include "src/base/ieee754.h"
@@ -22,9 +25,11 @@
 #include "src/utils/memcopy.h"
 #include "src/wasm/canonical-types.h"
 #include "src/wasm/leb-helper.h"
+#include "src/wasm/signature-hashing.h"
 #include "src/wasm/wasm-code-manager.h"
 #include "src/wasm/wasm-engine-globals.h"
 #include "src/wasm/wasm-objects-inl.h"
+#include "src/wasm/wasm-subtyping.h"
 
 #if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
     defined(THREAD_SANITIZER) || defined(LEAK_SANITIZER) ||    \
@@ -362,6 +367,74 @@ uint64_t word64_rol_wrapper(uint64_t input, uint32_t shift) {
 
 uint64_t word64_ror_wrapper(uint64_t input, uint32_t shift) {
   return (input >> (shift & 63)) | (input << ((64 - shift) & 63));
+}
+
+void wasm_int128_add_wrapper(Address data) {
+  // Implemented for 32-bit platforms, where __uint128_t is not available.
+  uint64_t* ptr = reinterpret_cast<uint64_t*>(data);
+
+  uint64_t bh = ptr[0];
+  uint64_t bl = ptr[1];
+  uint64_t ah = ptr[2];
+  uint64_t al = ptr[3];
+
+  uint64_t rl = al + bl;
+  bool carry = (rl < al);
+  uint64_t rh = ah + bh + (carry ? 1 : 0);
+
+  // Overwrite slots for Operand A.
+  ptr[2] = rh;
+  ptr[3] = rl;
+}
+
+void wasm_int128_sub_wrapper(Address data) {
+  // Implemented for 32-bit platforms, where __uint128_t is not available.
+  uint64_t* ptr = reinterpret_cast<uint64_t*>(data);
+
+  uint64_t bh = ptr[0];
+  uint64_t bl = ptr[1];
+  uint64_t ah = ptr[2];
+  uint64_t al = ptr[3];
+
+  uint64_t rl = al - bl;
+  bool borrow = (al < bl);
+  uint64_t rh = ah - bh - (borrow ? 1 : 0);
+
+  // Overwrite slots for Operand A.
+  ptr[2] = rh;
+  ptr[3] = rl;
+}
+
+void wasm_int64_mul_wide_s_wrapper(Address data) {
+#if V8_TARGET_ARCH_64_BIT
+  UNREACHABLE();
+#else
+  int64_t* ptr = reinterpret_cast<int64_t*>(data);
+
+  int64_t b = ptr[0];
+  int64_t a = ptr[1];
+
+  absl::int128 res = absl::int128(a) * absl::int128(b);
+
+  ptr[0] = absl::Int128High64(res);
+  ptr[1] = absl::Int128Low64(res);
+#endif
+}
+
+void wasm_int64_mul_wide_u_wrapper(Address data) {
+#if V8_TARGET_ARCH_64_BIT
+  UNREACHABLE();
+#else
+  uint64_t* ptr = reinterpret_cast<uint64_t*>(data);
+
+  uint64_t b = ptr[0];
+  uint64_t a = ptr[1];
+
+  absl::uint128 res = absl::uint128(a) * absl::uint128(b);
+
+  ptr[0] = absl::Uint128High64(res);
+  ptr[1] = absl::Uint128Low64(res);
+#endif
 }
 
 void float64_pow_wrapper(Address data) {
@@ -926,8 +999,6 @@ void array_fill_wrapper(Address raw_array, uint32_t index, uint32_t length,
       DCHECK_EQ(base::ReadUnalignedValue<int64_t>(initial_value_addr), 0);
       std::memset(initial_element_address, 0, bytes_to_set);
       return;
-    case kWaitQueue:
-      UNIMPLEMENTED();
     case kVoid:
     case kTop:
     case kBottom:
@@ -1085,7 +1156,8 @@ wasm::StackMemory* find_wasmfx_handler_stack(Isolate* isolate,
                                              Address wanted_tag_raw,
                                              bool is_switch, Address& target_sp,
                                              Address& target_fp,
-                                             Address& target_pc) {
+                                             Address& target_pc,
+                                             CanonicalTypeIndex* sig) {
   Tagged<Object> tag_obj(wanted_tag_raw);
   auto wanted_tag = TrustedCast<WasmExceptionTag>(tag_obj);
   wasm::StackMemory* from = isolate->isolate_data()->active_stack();
@@ -1107,7 +1179,9 @@ wasm::StackMemory* find_wasmfx_handler_stack(Isolate* isolate,
       break;
     }
 
-    // The caller frame is the WASM frame that contains the handler table.
+    // The caller frame is the WASM frame that contains the handler table, or
+    // a WASM_SEGMENT_START frame if this happens to be the first frame of a new
+    // growable stack segment.
     target_pc = StackFrame::ReadPC(reinterpret_cast<Address*>(
         target_fp + CommonFrameConstants::kCallerPCOffset));
     target_sp = target_fp + CommonFrameConstants::kCallerSPOffset;
@@ -1115,7 +1189,7 @@ wasm::StackMemory* find_wasmfx_handler_stack(Isolate* isolate,
                                       CommonFrameConstants::kCallerFPOffset);
     type = StackFrame::MarkerToType(base::Memory<intptr_t>(
         target_fp + CommonFrameConstants::kContextOrFrameTypeOffset));
-    CHECK_EQ(type, StackFrame::WASM);
+    CHECK(type == StackFrame::WASM || type == StackFrame::WASM_SEGMENT_START);
 
     // Get the handler table and search for a matching tag.
     WasmCode* wasm_code =
@@ -1133,12 +1207,15 @@ wasm::StackMemory* find_wasmfx_handler_stack(Isolate* isolate,
           LEBHelper::read_u32v(&effect_handlers_ptr)};
       if (!tag_index.is_switch()) {
         uint32_t handler_offset = LEBHelper::read_u32v(&effect_handlers_ptr);
+        CanonicalTypeIndex sig_index{
+            LEBHelper::read_u32v(&effect_handlers_ptr)};
         auto tag = trusted_instance_data->tags_table()->get(tag_index.index());
         if (wasm_code->instruction_start() + call_offset == target_pc &&
             tag == wanted_tag && !is_switch) {
           to->jmpbuf()->pc = wasm_code->instruction_start() + handler_offset;
           to->jmpbuf()->sp = target_sp;
           to->jmpbuf()->fp = target_fp;
+          *sig = sig_index;
           return to;
         }
       } else if (tag_index.is_switch() && is_switch) {
@@ -1162,24 +1239,36 @@ wasm::StackMemory* find_wasmfx_handler_stack(Isolate* isolate,
 Address suspend_wasmfx_stack(Isolate* isolate, Address sp, Address fp,
                              Address pc, Address wanted_tag_raw,
                              Address cont_raw, Address arg_buffer,
-                             const uint32_t sig_index) {
+                             const uint32_t tag_sig_index) {
   Address target_sp, target_fp, target_pc;
   Tagged<Object> cont_obj(cont_raw);
   auto cont = TrustedCast<WasmContinuationObject>(cont_obj);
   wasm::StackMemory* from = isolate->isolate_data()->active_stack();
   cont->set_stack_obj(from->stack_obj());
-  wasm::StackMemory* to = find_wasmfx_handler_stack(
-      isolate, wanted_tag_raw, false, target_sp, target_fp, target_pc);
+  CanonicalTypeIndex cont_sig_index;
+  wasm::StackMemory* to =
+      find_wasmfx_handler_stack(isolate, wanted_tag_raw, false, target_sp,
+                                target_fp, target_pc, &cont_sig_index);
   if (to == nullptr) return kNullAddress;
 
   DCHECK(from->Contains(arg_buffer));
   from->set_arg_buffer(arg_buffer);
   from->set_current_continuation(cont);
 
-  const CanonicalSig* sig = GetTypeCanonicalizer()->LookupFunctionSignature(
-      CanonicalTypeIndex{sig_index});
+  const CanonicalSig* tag_sig = GetTypeCanonicalizer()->LookupFunctionSignature(
+      CanonicalTypeIndex{tag_sig_index});
 
-  from->set_param_types(sig->returns());
+  from->set_param_types(tag_sig->returns());
+#ifdef DEBUG
+  const CanonicalSig* cont_sig =
+      GetTypeCanonicalizer()->LookupFunctionSignature(
+          CanonicalTypeIndex{cont_sig_index});
+  DCHECK_EQ(tag_sig->return_count(), cont_sig->parameter_count());
+  for (size_t i = 0; i < tag_sig->return_count(); ++i) {
+    DCHECK(IsSubtypeOf(cont_sig->GetParam(i), tag_sig->GetReturn(i)));
+  }
+#endif
+  from->set_signature_id(cont_sig_index);
 
   if (v8_flags.trace_wasm_stack_switching) {
     PrintF("Switch from stack %d to %d (suspend)\n", from->id(), to->id());
@@ -1199,12 +1288,12 @@ Address switch_wasmfx_stack(Isolate* isolate, Address sp, Address fp,
 
   cont->set_stack_obj(from->stack_obj());
   wasm::StackMemory* parent = find_wasmfx_handler_stack(
-      isolate, wanted_tag_raw, true, target_sp, target_fp, target_pc);
+      isolate, wanted_tag_raw, true, target_sp, target_fp, target_pc, nullptr);
   if (!parent) return kNullAddress;
 
   if (v8_flags.trace_wasm_stack_switching) {
-    PrintF("Switch from stack %d to %d\n", from->id(), target_stack->id());
-    PrintF("parent is %d\n", parent->id());
+    PrintF("Switch from stack %d to %d, parent %d\n", from->id(),
+           target_stack->id(), parent->id());
   }
 
   const CanonicalSig* return_sig =
@@ -1212,10 +1301,12 @@ Address switch_wasmfx_stack(Isolate* isolate, Address sp, Address fp,
           CanonicalTypeIndex{sig_index});
 
   target_stack->set_current_continuation({});
+  target_stack->clear_bound_args();
 
   from->set_arg_buffer(arg_buffer);
   from->set_current_continuation(cont);
   from->set_param_types(return_sig->parameters());
+  from->set_signature_id(return_sig->index());
   SuspendStack(isolate, from, parent, sp, fp, pc);
   ResumeStack(isolate, parent, target_stack, parent->jmpbuf()->sp,
               parent->jmpbuf()->fp, parent->jmpbuf()->pc);
@@ -1237,8 +1328,6 @@ void return_jspi_stack(Isolate* isolate, wasm::StackMemory* to) {
       isolate->isolate_data()->active_suspender();
   // Clear the external stack pointer to avoid a UAF.
   suspender->set_stack(isolate, nullptr);
-  // Also unpublish the trusted suspender object just in case.
-  suspender->Unpublish(isolate);
   return_stack(isolate, to);
 }
 

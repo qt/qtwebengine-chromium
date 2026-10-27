@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_FFT_MODULE_H
 #define EIGEN_FFT_MODULE_H
@@ -39,7 +40,7 @@
  * incompatible with Eigen in GPL form.
  * - PocketFFT/DUCC (https://gitlab.mpcdf.mpg.de/mtr/pocketfft, https://gitlab.mpcdf.mpg.de/mtr/ducc) : faster than
  *   kissfft, BSD 3-clause. A heavily modified implementation of FFTPack with the following advantages:
- *   -# strictly C++11 compliant
+ *   -# strictly C++14 compliant
  *   -# more accurate twiddle factor computation
  *   -# very fast plan generation
  *   -# worst case complexity for transform sizes with large prime factors is N*log(N),
@@ -236,7 +237,7 @@ class FFT {
     EIGEN_STATIC_ASSERT_VECTOR_ONLY(ComplexDerived)
     EIGEN_STATIC_ASSERT_SAME_VECTOR_SIZE(ComplexDerived, InputDerived)  // size at compile-time
     EIGEN_STATIC_ASSERT(
-        (internal::is_same<dst_type, Complex>::value),
+        (std::is_same<dst_type, Complex>::value),
         YOU_MIXED_DIFFERENT_NUMERIC_TYPES__YOU_NEED_TO_USE_THE_CAST_METHOD_OF_MATRIXBASE_TO_CAST_NUMERIC_TYPES_EXPLICITLY)
     EIGEN_STATIC_ASSERT(int(InputDerived::Flags) & int(ComplexDerived::Flags) & DirectAccessBit,
                         THIS_METHOD_IS_ONLY_FOR_EXPRESSIONS_WITH_DIRECT_MEMORY_ACCESS_SUCH_AS_MAP_OR_PLAIN_MATRICES)
@@ -307,7 +308,7 @@ class FFT {
     EIGEN_STATIC_ASSERT_VECTOR_ONLY(ComplexDerived)
     EIGEN_STATIC_ASSERT_SAME_VECTOR_SIZE(ComplexDerived, OutputDerived)  // size at compile-time
     EIGEN_STATIC_ASSERT(
-        (internal::is_same<src_type, Complex>::value),
+        (std::is_same<src_type, Complex>::value),
         YOU_MIXED_DIFFERENT_NUMERIC_TYPES__YOU_NEED_TO_USE_THE_CAST_METHOD_OF_MATRIXBASE_TO_CAST_NUMERIC_TYPES_EXPLICITLY)
     EIGEN_STATIC_ASSERT(int(OutputDerived::Flags) & int(ComplexDerived::Flags) & DirectAccessBit,
                         THIS_METHOD_IS_ONLY_FOR_EXPRESSIONS_WITH_DIRECT_MEMORY_ACCESS_SUCH_AS_MAP_OR_PLAIN_MATRICES)

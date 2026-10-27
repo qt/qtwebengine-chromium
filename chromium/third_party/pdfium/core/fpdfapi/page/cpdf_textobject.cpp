@@ -14,6 +14,7 @@
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/span_util.h"
+#include "core/fxcrt/zip.h"
 
 #define ISLATINWORD(u) (u != 0x20 && u <= 0x28FF)
 
@@ -89,11 +90,7 @@ int CPDF_TextObject::CountWords() const {
   int word_count = 0;
   for (uint32_t char_code : char_codes_) {
     WideString unicode_str = font->UnicodeFromCharCode(char_code);
-    uint16_t unicode = 0;
-    if (unicode_str.GetLength() > 0) {
-      unicode = unicode_str[0];
-    }
-
+    uint16_t unicode = unicode_str.Front();  // Front() safe when empty.
     bool is_latin = ISLATINWORD(unicode);
     if (is_latin && is_in_latin_word) {
       continue;
@@ -115,12 +112,8 @@ WideString CPDF_TextObject::GetWordString(int word_index) const {
   bool is_in_latin_word = false;
   for (uint32_t char_code : char_codes_) {
     WideString unicode_str = font->UnicodeFromCharCode(char_code);
-    uint16_t unicode = 0;
-    if (unicode_str.GetLength() > 0) {
-      unicode = unicode_str[0];
-    }
-
-    bool is_latin = ISLATINWORD(unicode);
+    uint16_t unicode = unicode_str.Front();  // Front() safe when empty.
+    const bool is_latin = ISLATINWORD(unicode);
     if (!is_latin || !is_in_latin_word) {
       is_in_latin_word = is_latin;
       if (unicode != 0x20) {
@@ -163,6 +156,48 @@ CPDF_TextObject* CPDF_TextObject::AsText() {
 
 const CPDF_TextObject* CPDF_TextObject::AsText() const {
   return this;
+}
+
+bool CPDF_TextObject::SetAbsolutePositions(
+    pdfium::span<const float> absolute_positions) {
+  if (char_codes_.size() <= 1) {
+    return false;
+  }
+
+  if (absolute_positions.size() != char_codes_.size() - 1) {
+    return false;
+  }
+
+  float font_size = GetFontSize();
+  if (font_size == 0.0f) {
+    return false;
+  }
+  font_size /= 1000;
+
+  RetainPtr<CPDF_Font> font = GetFont();
+  const CPDF_CIDFont* cid_font = font->AsCIDFont();
+  const float char_space = text_state().GetCharSpace();
+  const float word_space = text_state().GetWordSpace();
+
+  // Re-calculate `char_kernings_` based on `absolute_positions`. Then let
+  // CalcPositionDataInternal() re-calculate `char_positions_`.
+  auto char_codes = pdfium::span(char_codes_).first(absolute_positions.size());
+  auto char_kernings =
+      pdfium::span(char_kernings_).first(absolute_positions.size());
+  float current_position = 0;
+  for (auto [char_code, next_position, kerning] :
+       fxcrt::Zip(char_codes, absolute_positions, char_kernings)) {
+    current_position += GetCharWidth(char_code);
+    current_position += GetWordSpaceIfNeeded(cid_font, char_code, word_space);
+    current_position += char_space;
+
+    kerning = (current_position - next_position) / font_size;
+    current_position = next_position;
+  }
+  char_kernings_.back() = 0;
+
+  CalcPositionDataInternal(font);
+  return true;
 }
 
 CFX_Matrix CPDF_TextObject::GetTextMatrix() const {

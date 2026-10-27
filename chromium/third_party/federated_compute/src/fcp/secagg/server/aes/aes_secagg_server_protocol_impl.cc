@@ -48,7 +48,7 @@ void AddReduce(
   }
   // Finally add to the sum of all inputs
   {
-    absl::MutexLock lock(mu);
+    absl::MutexLock lock(*mu);
     sum_of_maps.Add(partial_sum);
   }
 }
@@ -89,11 +89,11 @@ AsyncToken AesSecAggServerProtocolImpl::SetupMaskedInputCollection() {
 
 std::vector<std::unique_ptr<SecAggVectorMap>>
 AesSecAggServerProtocolImpl::TakeMaskedInputQueue() {
-  absl::MutexLock lock(&mutex_);
+  absl::MutexLock lock(mutex_);
   return std::move(masked_input_queue_);
 }
 
-Status AesSecAggServerProtocolImpl::HandleMaskedInputCollectionResponse(
+absl::Status AesSecAggServerProtocolImpl::HandleMaskedInputCollectionResponse(
     std::unique_ptr<MaskedInputCollectionResponse> masked_input_response) {
   FCP_CHECK(masked_input_response);
   // Make sure the received vectors match the specification.
@@ -134,7 +134,7 @@ Status AesSecAggServerProtocolImpl::HandleMaskedInputCollectionResponse(
     // eventually.
     size_t is_queue_empty;
     {
-      absl::MutexLock lock(&mutex_);
+      absl::MutexLock lock(mutex_);
       is_queue_empty = masked_input_queue_.empty();
       masked_input_queue_.emplace_back(std::move(checked_masked_vectors));
     }
@@ -170,7 +170,7 @@ void AesSecAggServerProtocolImpl::FinalizeMaskedInputCollection() {
 
 AsyncToken AesSecAggServerProtocolImpl::StartPrng(
     const PrngWorkItems& work_items,
-    std::function<void(Status)> done_callback) {
+    std::function<void(absl::Status)> done_callback) {
   FCP_CHECK(done_callback);
   FCP_CHECK(masked_input_);
   auto generators =

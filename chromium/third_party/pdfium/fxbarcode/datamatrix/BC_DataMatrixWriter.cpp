@@ -108,24 +108,23 @@ bool CBC_DataMatrixWriter::SetErrorCorrectionLevel(int32_t level) {
   return true;
 }
 
-DataVector<uint8_t> CBC_DataMatrixWriter::Encode(const WideString& contents,
-                                                 int32_t* pOutWidth,
-                                                 int32_t* pOutHeight) {
+CBC_TwoDimWriter::EncodeResult CBC_DataMatrixWriter::Encode(
+    const WideString& contents) {
   WideString encoded = CBC_HighLevelEncoder::EncodeHighLevel(contents);
   if (encoded.IsEmpty()) {
-    return DataVector<uint8_t>();
+    return {};
   }
 
   const CBC_SymbolInfo* pSymbolInfo =
       CBC_SymbolInfo::Lookup(encoded.GetLength(), false);
   if (!pSymbolInfo) {
-    return DataVector<uint8_t>();
+    return {};
   }
 
   WideString codewords =
       CBC_ErrorCorrection::EncodeECC200(encoded, pSymbolInfo);
   if (codewords.IsEmpty()) {
-    return DataVector<uint8_t>();
+    return {};
   }
 
   int32_t width = pSymbolInfo->GetSymbolDataWidth();
@@ -136,9 +135,6 @@ DataVector<uint8_t> CBC_DataMatrixWriter::Encode(const WideString& contents,
   auto placement =
       std::make_unique<CBC_DefaultPlacement>(codewords, width, height);
   auto bytematrix = EncodeLowLevel(placement.get(), pSymbolInfo);
-  DCHECK(bytematrix);
-
-  *pOutWidth = bytematrix->GetWidth();
-  *pOutHeight = bytematrix->GetHeight();
-  return bytematrix->TakeArray();
+  return {bytematrix->TakeArray(), static_cast<int32_t>(bytematrix->GetWidth()),
+          static_cast<int32_t>(bytematrix->GetHeight())};
 }

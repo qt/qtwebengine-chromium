@@ -10,8 +10,9 @@ namespace openscreen::osp {
 
 // static
 QuicAgentCertificate& QuicServiceBase::GetAgentCertificate() {
-  static QuicAgentCertificate agent_certificate;
-  return agent_certificate;
+  static QuicAgentCertificate* const agent_certificate =
+      new QuicAgentCertificate();
+  return *agent_certificate;
 }
 
 QuicServiceBase::QuicServiceBase(

@@ -396,7 +396,7 @@ ServiceWorkerProviderContext::GetFetchHandlerBypassOption() const {
 }
 
 const blink::WebString ServiceWorkerProviderContext::client_id() const {
-  return blink::WebString::FromUTF8(client_id_);
+  return blink::WebString::FromUtf8(client_id_);
 }
 
 std::unique_ptr<blink::WebServiceWorkerProvider>
@@ -492,6 +492,14 @@ void ServiceWorkerProviderContext::SetController(
         std::move(controller_info->router_data->running_status_receiver);
     remote_cache_storage_ =
         std::move(controller_info->router_data->remote_cache_storage);
+  } else {
+    // The new controller has no static router. Reset any router state inherited
+    // from a previous controller so that a subsequent subresource loader
+    // factory cannot pair stale router rules.
+    router_rules_.reset();
+    initial_running_status_.reset();
+    running_status_receiver_.reset();
+    remote_cache_storage_.reset();
   }
 
   // Propagate the controller to workers related to this provider.

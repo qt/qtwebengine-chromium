@@ -66,6 +66,11 @@ function normalizeUrl(urlString: string): URL|null {
   return null;
 }
 
+export interface AutoRemovedEventDetail {
+  message: string;
+  undo: () => void;
+}
+
 const MostVisitedElementBase = I18nMixinLit(CrLitElement);
 
 export interface MostVisitedElement {
@@ -269,11 +274,10 @@ export class MostVisitedElement extends MostVisitedElementBase {
 
     this.onSingleRowChange_();
 
-    this.callbackRouter_.setMostVisitedInfo.addListener(
-        (info: MostVisitedInfo) => {
-          performance.measure('most-visited-mojo', 'most-visited-mojo-start');
-          this.info_ = info;
-        });
+    this.callbackRouter_.setMostVisitedInfo.addListener(info => {
+      performance.measure('most-visited-mojo', 'most-visited-mojo-start');
+      this.info_ = info;
+    });
 
     this.callbackRouter_.onMostVisitedTilesAutoRemoval.addListener(() => {
       this.autoRemovalToast_();
@@ -1161,7 +1165,7 @@ export class MostVisitedElement extends MostVisitedElementBase {
   }
 
   private autoRemovalToast_() {
-    this.fire('most-visited-auto-removed', {
+    this.fire<AutoRemovedEventDetail>('most-visited-auto-removed', {
       message: loadTimeData.getString('shortcutsInactivityRemovalMsg'),
       undo: () => {
         this.pageHandler_.undoMostVisitedAutoRemoval();

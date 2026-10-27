@@ -27,7 +27,7 @@
 #include "ink/brush/brush_behavior.h"
 #include "ink/brush/brush_tip.h"
 #include "ink/geometry/angle.h"
-#include "ink/geometry/internal/algorithms.h"
+#include "ink/geometry/internal/lerp.h"
 #include "ink/geometry/internal/modulo.h"
 #include "ink/geometry/point.h"
 #include "ink/geometry/vec.h"
@@ -42,6 +42,7 @@
 namespace ink::strokes_internal {
 namespace {
 
+using ::ink::geometry_internal::FloatModulo;
 using ::ink::geometry_internal::InverseLerp;
 using ::ink::geometry_internal::Lerp;
 
@@ -79,25 +80,23 @@ std::optional<float> GetTiltY(Angle tilt, Angle orientation) {
 float GetPredictedDistanceTraveledInStrokeUnits(
     const InputModelerState& input_modeler_state,
     const ModeledStrokeInput& input) {
-  return std::max(
-      0.f, input.traveled_distance - input_modeler_state.total_real_distance);
+  return std::max(0.f,
+                  input.traveled_distance -
+                      input_modeler_state.real_input_metrics.traveled_distance);
 }
 
 Duration32 GetPredictedTimeElapsed(const InputModelerState& input_modeler_state,
                                    const ModeledStrokeInput& input) {
   return std::max(
       Duration32::Zero(),
-      input.elapsed_time - input_modeler_state.total_real_elapsed_time);
+      input.elapsed_time - input_modeler_state.real_input_metrics.elapsed_time);
 }
 
-Duration32 GetTimeSinceInput(const InputModelerState& input_modeler_state,
-                             const ModeledStrokeInput& input) {
-  return input_modeler_state.complete_elapsed_time - input.elapsed_time;
-}
-
+// Returns the value of the given `Source` at the given modeled input, or
+// `std::nullopt` if the source value is indeterminate at that input.
 std::optional<float> GetSourceValue(
-    const ModeledStrokeInput& input, std::optional<Angle> travel_direction,
-    float brush_size, const InputModelerState& input_modeler_state,
+    const ModeledStrokeInput& input, float brush_size,
+    const InputModelerState& input_modeler_state,
     BrushBehavior::Source source) {
   switch (source) {
     case BrushBehavior::Source::kNormalizedPressure:
@@ -133,23 +132,28 @@ std::optional<float> GetSourceValue(
     case BrushBehavior::Source::kVelocityYInMultiplesOfBrushSizePerSecond:
       return input.velocity.y / brush_size;
     case BrushBehavior::Source::kDirectionInRadians:
-      if (!travel_direction.has_value()) break;
-      return travel_direction->Normalized().ValueInRadians();
+      if (input.velocity == Vec()) break;
+      return input.velocity.Direction().Normalized().ValueInRadians();
     case BrushBehavior::Source::kDirectionAboutZeroInRadians:
-      if (!travel_direction.has_value()) break;
-      return travel_direction->ValueInRadians();
+      if (input.velocity == Vec()) break;
+      return input.velocity.Direction().ValueInRadians();
     case BrushBehavior::Source::kNormalizedDirectionX:
-      if (!travel_direction.has_value()) break;
-      return Cos(*travel_direction);
+      if (input.velocity == Vec()) break;
+      return input.velocity.AsUnitVec().x;
     case BrushBehavior::Source::kNormalizedDirectionY:
-      if (!travel_direction.has_value()) break;
-      return Sin(*travel_direction);
+      if (input.velocity == Vec()) break;
+      return input.velocity.AsUnitVec().y;
     case BrushBehavior::Source::kDistanceTraveledInMultiplesOfBrushSize:
       return input.traveled_distance / brush_size;
     case BrushBehavior::Source::kTimeOfInputInSeconds:
       return input.elapsed_time.ToSeconds();
-    case BrushBehavior::Source::kTimeOfInputInMillis:
-      return input.elapsed_time.ToMillis();
+    case BrushBehavior::Source::kTimeFromInputToStrokeEndInSeconds: {
+      Duration32 stroke_end_time =
+          input_modeler_state.inputs_are_finished
+              ? input_modeler_state.full_input_metrics.elapsed_time
+              : input_modeler_state.complete_elapsed_time;
+      return (stroke_end_time - input.elapsed_time).ToSeconds();
+    }
     case BrushBehavior::Source::
         kPredictedDistanceTraveledInMultiplesOfBrushSize:
       return GetPredictedDistanceTraveledInStrokeUnits(input_modeler_state,
@@ -157,16 +161,18 @@ std::optional<float> GetSourceValue(
              brush_size;
     case BrushBehavior::Source::kPredictedTimeElapsedInSeconds:
       return GetPredictedTimeElapsed(input_modeler_state, input).ToSeconds();
-    case BrushBehavior::Source::kPredictedTimeElapsedInMillis:
-      return GetPredictedTimeElapsed(input_modeler_state, input).ToMillis();
     case BrushBehavior::Source::kDistanceRemainingInMultiplesOfBrushSize:
-      return (input_modeler_state.complete_traveled_distance -
+      return (input_modeler_state.full_input_metrics.traveled_distance -
               input.traveled_distance) /
              brush_size;
     case BrushBehavior::Source::kTimeSinceInputInSeconds:
-      return GetTimeSinceInput(input_modeler_state, input).ToSeconds();
-    case BrushBehavior::Source::kTimeSinceInputInMillis:
-      return GetTimeSinceInput(input_modeler_state, input).ToMillis();
+      return (input_modeler_state.complete_elapsed_time - input.elapsed_time)
+          .ToSeconds();
+    case BrushBehavior::Source::kTimeSinceStrokeEndInSeconds:
+      if (!input_modeler_state.inputs_are_finished) return 0.0f;
+      return (input_modeler_state.complete_elapsed_time -
+              input_modeler_state.full_input_metrics.elapsed_time)
+          .ToSeconds();
     case BrushBehavior::Source::
         kAccelerationInMultiplesOfBrushSizePerSecondSquared:
       return input.acceleration.Magnitude() / brush_size;
@@ -185,76 +191,59 @@ std::optional<float> GetSourceValue(
       return Vec::DotProduct(input.acceleration,
                              input.velocity.AsUnitVec().Orthogonal()) /
              brush_size;
-    case BrushBehavior::Source::kInputSpeedInCentimetersPerSecond:
+    case BrushBehavior::Source::kSpeedInCentimetersPerSecond:
       if (!input_modeler_state.stroke_unit_length.has_value()) break;
       return input.velocity.Magnitude() *
              input_modeler_state.stroke_unit_length->ToCentimeters();
-    case BrushBehavior::Source::kInputVelocityXInCentimetersPerSecond:
+    case BrushBehavior::Source::kVelocityXInCentimetersPerSecond:
       if (!input_modeler_state.stroke_unit_length.has_value()) break;
       return input.velocity.x *
              input_modeler_state.stroke_unit_length->ToCentimeters();
-    case BrushBehavior::Source::kInputVelocityYInCentimetersPerSecond:
+    case BrushBehavior::Source::kVelocityYInCentimetersPerSecond:
       if (!input_modeler_state.stroke_unit_length.has_value()) break;
       return input.velocity.y *
              input_modeler_state.stroke_unit_length->ToCentimeters();
-    case BrushBehavior::Source::kInputDistanceTraveledInCentimeters:
+    case BrushBehavior::Source::kDistanceTraveledInCentimeters:
       if (!input_modeler_state.stroke_unit_length.has_value()) break;
       return input.traveled_distance *
              input_modeler_state.stroke_unit_length->ToCentimeters();
-    case BrushBehavior::Source::kPredictedInputDistanceTraveledInCentimeters:
+    case BrushBehavior::Source::kPredictedDistanceTraveledInCentimeters:
       if (!input_modeler_state.stroke_unit_length.has_value()) break;
       return GetPredictedDistanceTraveledInStrokeUnits(input_modeler_state,
                                                        input) *
              input_modeler_state.stroke_unit_length->ToCentimeters();
-    case BrushBehavior::Source::kInputAccelerationInCentimetersPerSecondSquared:
+    case BrushBehavior::Source::kAccelerationInCentimetersPerSecondSquared:
       if (!input_modeler_state.stroke_unit_length.has_value()) break;
       return input.acceleration.Magnitude() *
              input_modeler_state.stroke_unit_length->ToCentimeters();
-    case BrushBehavior::Source::
-        kInputAccelerationXInCentimetersPerSecondSquared:
+    case BrushBehavior::Source::kAccelerationXInCentimetersPerSecondSquared:
       if (!input_modeler_state.stroke_unit_length.has_value()) break;
       return input.acceleration.x *
              input_modeler_state.stroke_unit_length->ToCentimeters();
-    case BrushBehavior::Source::
-        kInputAccelerationYInCentimetersPerSecondSquared:
+    case BrushBehavior::Source::kAccelerationYInCentimetersPerSecondSquared:
       if (!input_modeler_state.stroke_unit_length.has_value()) break;
       return input.acceleration.y *
              input_modeler_state.stroke_unit_length->ToCentimeters();
     case BrushBehavior::Source::
-        kInputAccelerationForwardInCentimetersPerSecondSquared:
+        kAccelerationForwardInCentimetersPerSecondSquared:
       if (!input_modeler_state.stroke_unit_length.has_value()) break;
       return Vec::DotProduct(input.acceleration, input.velocity.AsUnitVec()) *
              input_modeler_state.stroke_unit_length->ToCentimeters();
     case BrushBehavior::Source::
-        kInputAccelerationLateralInCentimetersPerSecondSquared:
+        kAccelerationLateralInCentimetersPerSecondSquared:
       if (!input_modeler_state.stroke_unit_length.has_value()) break;
       return Vec::DotProduct(input.acceleration,
                              input.velocity.AsUnitVec().Orthogonal()) *
              input_modeler_state.stroke_unit_length->ToCentimeters();
-    case BrushBehavior::Source::kDistanceRemainingAsFractionOfStrokeLength:
-      return input_modeler_state.complete_traveled_distance == 0.0f
+    case BrushBehavior::Source::kDistanceRemainingAsFractionOfStrokeLength: {
+      float stroke_length =
+          input_modeler_state.full_input_metrics.traveled_distance;
+      return stroke_length == 0.0f
                  ? 0.0f
-                 : 1.0f - input.traveled_distance /
-                              input_modeler_state.complete_traveled_distance;
+                 : 1.0f - input.traveled_distance / stroke_length;
+    }
   }
   return std::nullopt;
-}
-
-bool IsOptionalInputPropertyPresent(
-    const BrushBehavior::OptionalInputProperty& property,
-    const ModeledStrokeInput& input) {
-  switch (property) {
-    case BrushBehavior::OptionalInputProperty::kPressure:
-      return input.pressure != StrokeInput::kNoPressure;
-    case BrushBehavior::OptionalInputProperty::kTilt:
-      return input.tilt != StrokeInput::kNoTilt;
-    case BrushBehavior::OptionalInputProperty::kOrientation:
-      return input.orientation != StrokeInput::kNoOrientation;
-    case BrushBehavior::OptionalInputProperty::kTiltXAndY:
-      return input.tilt != StrokeInput::kNoTilt &&
-             input.orientation != StrokeInput::kNoOrientation;
-  }
-  return false;
 }
 
 // Applies the `out_of_range_behavior` to `x` to return a value in [0, 1].
@@ -304,22 +293,27 @@ inline float DampOffsetTransition(float target_offset, float previous_offset,
 
 void ProcessBehaviorNodeImpl(const BrushBehavior::SourceNode& node,
                              const BehaviorNodeContext& context) {
-  std::optional<float> source_value = GetSourceValue(
-      context.current_input, context.current_travel_direction,
-      context.brush_size, context.input_modeler_state, node.source);
+  std::optional<float> source_value =
+      GetSourceValue(context.current_input, context.brush_size,
+                     context.input_modeler_state, node.source);
   if (!source_value.has_value()) {
     context.stack.push_back(kNullBehaviorNodeValue);
     return;
   }
 
-  context.stack.push_back(ApplyOutOfRangeBehavior(
+  float value = ApplyOutOfRangeBehavior(
       node.source_out_of_range_behavior,
       InverseLerp(node.source_value_range[0], node.source_value_range[1],
-                  *source_value)));
+                  *source_value));
+  if (!std::isfinite(value)) {
+    value = kNullBehaviorNodeValue;
+  }
+  context.stack.push_back(value);
 }
 
 void ProcessBehaviorNodeImpl(const BrushBehavior::ConstantNode& node,
                              const BehaviorNodeContext& context) {
+  ABSL_DCHECK(std::isfinite(node.value));
   context.stack.push_back(node.value);
 }
 
@@ -327,21 +321,23 @@ void ProcessBehaviorNodeImpl(const NoiseNodeImplementation& node,
                              const BehaviorNodeContext& context) {
   float advance_by = 0.0f;
   switch (node.vary_over) {
-    case BrushBehavior::DampingSource::kDistanceInCentimeters: {
+    case BrushBehavior::ProgressDomain::kDistanceInCentimeters: {
+      if (!context.input_modeler_state.stroke_unit_length.has_value()) {
+        context.stack.push_back(kNullBehaviorNodeValue);
+        return;
+      }
       PhysicalDistance period = PhysicalDistance::Centimeters(node.base_period);
       float previous_traveled_distance =
           context.previous_input_metrics.has_value()
               ? context.previous_input_metrics->traveled_distance
               : 0.0f;
       PhysicalDistance traveled_distance_delta =
-          context.input_modeler_state.stroke_unit_length.has_value()
-              ? *context.input_modeler_state.stroke_unit_length *
-                    (context.current_input.traveled_distance -
-                     previous_traveled_distance)
-              : PhysicalDistance::Zero();
+          *context.input_modeler_state.stroke_unit_length *
+          (context.current_input.traveled_distance -
+           previous_traveled_distance);
       advance_by = traveled_distance_delta / period;
     } break;
-    case BrushBehavior::DampingSource::kDistanceInMultiplesOfBrushSize: {
+    case BrushBehavior::ProgressDomain::kDistanceInMultiplesOfBrushSize: {
       float period = context.brush_size * node.base_period;
       float previous_traveled_distance =
           context.previous_input_metrics.has_value()
@@ -351,7 +347,7 @@ void ProcessBehaviorNodeImpl(const NoiseNodeImplementation& node,
           context.current_input.traveled_distance - previous_traveled_distance;
       advance_by = traveled_distance_delta / period;
     } break;
-    case BrushBehavior::DampingSource::kTimeInSeconds: {
+    case BrushBehavior::ProgressDomain::kTimeInSeconds: {
       Duration32 period = Duration32::Seconds(node.base_period);
       Duration32 previous_elapsed_time =
           context.previous_input_metrics.has_value()
@@ -363,17 +359,13 @@ void ProcessBehaviorNodeImpl(const NoiseNodeImplementation& node,
     } break;
   }
   NoiseGenerator& generator = context.noise_generators[node.generator_index];
-  generator.AdvanceInputBy(advance_by);
-  context.stack.push_back(generator.CurrentOutputValue());
-}
-
-void ProcessBehaviorNodeImpl(const BrushBehavior::FallbackFilterNode& node,
-                             const BehaviorNodeContext& context) {
-  ABSL_DCHECK(!context.stack.empty());
-  if (IsOptionalInputPropertyPresent(node.is_fallback_for,
-                                     context.current_input)) {
-    context.stack.back() = kNullBehaviorNodeValue;
+  // If the above calculation produces an undefined `advance_by` value (e.g. due
+  // to extreme input values overflowing and producing ill-defined computed
+  // values), just don't advance the noise generator.
+  if (!std::isnan(advance_by)) {
+    generator.AdvanceInputBy(advance_by);
   }
+  context.stack.push_back(generator.CurrentOutputValue());
 }
 
 void ProcessBehaviorNodeImpl(const BrushBehavior::ToolTypeFilterNode& node,
@@ -388,17 +380,25 @@ void ProcessBehaviorNodeImpl(const BrushBehavior::ToolTypeFilterNode& node,
 void ProcessBehaviorNodeImpl(const DampingNodeImplementation& node,
                              const BehaviorNodeContext& context) {
   ABSL_DCHECK(!context.stack.empty());
-  float& damped_value = context.damped_values[node.damping_index];
+  if (node.damping_source ==
+          BrushBehavior::ProgressDomain::kDistanceInCentimeters &&
+      !context.input_modeler_state.stroke_unit_length.has_value()) {
+    context.stack.back() = kNullBehaviorNodeValue;
+    return;
+  }
+  float old_damped_value = context.damped_values[node.damping_index];
+  float new_damped_value = kNullBehaviorNodeValue;
   float input = context.stack.back();
   if (IsNullBehaviorNodeValue(input)) {
     // Input is null, so use previous damped value unchanged.
-  } else if (IsNullBehaviorNodeValue(damped_value) ||
+    new_damped_value = old_damped_value;
+  } else if (IsNullBehaviorNodeValue(old_damped_value) ||
              node.damping_gap == 0.0f) {
     // Input is non-null.  If previous damped value is null, then this is the
     // first non-null input, so snap the damped value to the input.  Or, if the
     // damping_gap is zero, then there's no damping to be done, so also snap the
     // damped value to the input.
-    damped_value = input;
+    new_damped_value = input;
   } else {
     // Input and previous damped value are both non-null, so move the damped
     // value towards the input according to the damping settings.  Note that a
@@ -406,47 +406,56 @@ void ProcessBehaviorNodeImpl(const DampingNodeImplementation& node,
     // previous input, and thus `context.previous_input_metrics` is present.
     ABSL_DCHECK(context.previous_input_metrics.has_value());
     switch (node.damping_source) {
-      case BrushBehavior::DampingSource::kDistanceInCentimeters: {
-        // If no mapping from stroke units to physical units is available, then
-        // don't perform any damping (i.e. snap damped value to input).
-        if (!context.input_modeler_state.stroke_unit_length.has_value()) {
-          damped_value = input;
-          break;
-        }
+      case BrushBehavior::ProgressDomain::kDistanceInCentimeters: {
         PhysicalDistance damping_distance =
             PhysicalDistance::Centimeters(node.damping_gap);
         PhysicalDistance traveled_distance_delta =
             *context.input_modeler_state.stroke_unit_length *
             (context.current_input.traveled_distance -
              context.previous_input_metrics->traveled_distance);
-        damped_value = DampOffsetTransition(
-            input, damped_value, traveled_distance_delta, damping_distance);
+        new_damped_value = DampOffsetTransition(
+            input, old_damped_value, traveled_distance_delta, damping_distance);
       } break;
-      case BrushBehavior::DampingSource::kDistanceInMultiplesOfBrushSize: {
+      case BrushBehavior::ProgressDomain::kDistanceInMultiplesOfBrushSize: {
         float damping_distance = context.brush_size * node.damping_gap;
         float traveled_distance_delta =
             context.current_input.traveled_distance -
             context.previous_input_metrics->traveled_distance;
-        damped_value = DampOffsetTransition(
-            input, damped_value, traveled_distance_delta, damping_distance);
+        new_damped_value = DampOffsetTransition(
+            input, old_damped_value, traveled_distance_delta, damping_distance);
       } break;
-      case BrushBehavior::DampingSource::kTimeInSeconds: {
+      case BrushBehavior::ProgressDomain::kTimeInSeconds: {
         Duration32 damping_time = Duration32::Seconds(node.damping_gap);
         Duration32 elapsed_time_delta =
             context.current_input.elapsed_time -
             context.previous_input_metrics->elapsed_time;
-        damped_value = DampOffsetTransition(input, damped_value,
-                                            elapsed_time_delta, damping_time);
+        new_damped_value = DampOffsetTransition(
+            input, old_damped_value, elapsed_time_delta, damping_time);
       } break;
     }
   }
-  context.stack.back() = damped_value;
+  // If the calculation above produced a null or non-finite damped value
+  // (e.g. due to float overflow or a null input), then leave the old damped
+  // value unchanged.
+  if (!std::isfinite(new_damped_value)) {
+    new_damped_value = old_damped_value;
+  }
+  context.damped_values[node.damping_index] = new_damped_value;
+  context.stack.back() = new_damped_value;
 }
 
 void ProcessBehaviorNodeImpl(const EasingImplementation& node,
                              const BehaviorNodeContext& context) {
   ABSL_DCHECK(!context.stack.empty());
-  context.stack.back() = node.GetY(context.stack.back());
+  float input = context.stack.back();
+  float* result = &context.stack.back();
+  if (IsNullBehaviorNodeValue(input)) return;
+  *result = node.GetY(input);
+  // If the easing function resulted in a non-finite value (e.g. due to overflow
+  // to infinity), treat the result as null.
+  if (!std::isfinite(*result)) {
+    *result = kNullBehaviorNodeValue;
+  }
 }
 
 void ProcessBehaviorNodeImpl(const BrushBehavior::BinaryOpNode& node,
@@ -456,18 +465,53 @@ void ProcessBehaviorNodeImpl(const BrushBehavior::BinaryOpNode& node,
   context.stack.pop_back();
   float first_input = context.stack.back();
   float* result = &context.stack.back();
+
+  // Some operations always return null if either input is null.
   switch (node.operation) {
     case BrushBehavior::BinaryOp::kProduct:
-      // kNullBehaviorNodeValue is NaN, so if either input value is null (NaN),
-      // the result will be null (NaN).
+    case BrushBehavior::BinaryOp::kSum:
+    case BrushBehavior::BinaryOp::kMin:
+    case BrushBehavior::BinaryOp::kMax:
+    case BrushBehavior::BinaryOp::kAndThen:
+      if (IsNullBehaviorNodeValue(first_input) ||
+          IsNullBehaviorNodeValue(second_input)) {
+        *result = kNullBehaviorNodeValue;
+        return;
+      }
+      break;
+    case BrushBehavior::BinaryOp::kOrElse:
+    case BrushBehavior::BinaryOp::kXorElse:
+      break;
+  }
+
+  switch (node.operation) {
+    case BrushBehavior::BinaryOp::kProduct:
       *result = first_input * second_input;
       break;
     case BrushBehavior::BinaryOp::kSum:
-      // kNullBehaviorNodeValue is NaN, so if either input value is null (NaN),
-      // the result will be null (NaN).
       *result = first_input + second_input;
       break;
+    case BrushBehavior::BinaryOp::kMin:
+      *result = std::min(first_input, second_input);
+      break;
+    case BrushBehavior::BinaryOp::kMax:
+      *result = std::max(first_input, second_input);
+      break;
+    case BrushBehavior::BinaryOp::kAndThen:
+      *result = second_input;
+      break;
+    case BrushBehavior::BinaryOp::kOrElse:
+      *result =
+          IsNullBehaviorNodeValue(first_input) ? second_input : first_input;
+      break;
+    case BrushBehavior::BinaryOp::kXorElse:
+      *result = IsNullBehaviorNodeValue(first_input) ? second_input
+                : IsNullBehaviorNodeValue(second_input)
+                    ? first_input
+                    : kNullBehaviorNodeValue;
+      break;
   }
+
   // If any of the above operations resulted in a non-finite value
   // (e.g. overflow to infinity), treat the result as null.
   if (!std::isfinite(*result)) {
@@ -508,14 +552,84 @@ void ProcessBehaviorNodeImpl(const BrushBehavior::InterpolationNode& node,
   }
 }
 
+void ProcessBehaviorNodeImpl(const IntegralNodeImplementation& node,
+                             const BehaviorNodeContext& context) {
+  ABSL_DCHECK(!context.stack.empty());
+  if (node.integrate_over ==
+          BrushBehavior::ProgressDomain::kDistanceInCentimeters &&
+      !context.input_modeler_state.stroke_unit_length.has_value()) {
+    context.stack.back() = kNullBehaviorNodeValue;
+    return;
+  }
+  IntegralState& state = context.integrals[node.integral_index];
+  float new_input = context.stack.back();
+  if (IsNullBehaviorNodeValue(state.last_input)) {
+    // As long as all previous inputs have been null, the integral remains at
+    // its initial value of zero.
+    ABSL_DCHECK_EQ(state.last_integral, 0);
+    state.last_input = new_input;
+  } else {
+    // Otherwise, we've had at least one previous non-null input. If the current
+    // input is null, use the last non-null input value unchanged.
+    if (IsNullBehaviorNodeValue(new_input)) {
+      new_input = state.last_input;
+    }
+    // Since there was at least one previous input, we know that
+    // `context.previous_input_metrics` is present.
+    ABSL_DCHECK(context.previous_input_metrics.has_value());
+    // Compute the progress delta between the last input and this one.
+    float delta = 0;
+    switch (node.integrate_over) {
+      case BrushBehavior::ProgressDomain::kDistanceInCentimeters: {
+        PhysicalDistance traveled_distance_delta =
+            *context.input_modeler_state.stroke_unit_length *
+            (context.current_input.traveled_distance -
+             context.previous_input_metrics->traveled_distance);
+        delta = traveled_distance_delta.ToCentimeters();
+      } break;
+      case BrushBehavior::ProgressDomain::kDistanceInMultiplesOfBrushSize: {
+        float traveled_distance_delta =
+            context.current_input.traveled_distance -
+            context.previous_input_metrics->traveled_distance;
+        delta = traveled_distance_delta / context.brush_size;
+      } break;
+      case BrushBehavior::ProgressDomain::kTimeInSeconds: {
+        Duration32 elapsed_time_delta =
+            context.current_input.elapsed_time -
+            context.previous_input_metrics->elapsed_time;
+        delta = elapsed_time_delta.ToSeconds();
+      } break;
+    }
+    // Compute a new integral value, using the trapezoidal rule (see
+    // https://en.wikipedia.org/wiki/Trapezoidal_rule).
+    state.last_integral += 0.5 * (state.last_input + new_input) * delta;
+    state.last_input = new_input;
+  }
+
+  float output = ApplyOutOfRangeBehavior(
+      node.integral_out_of_range_behavior,
+      InverseLerp(node.integral_value_range[0], node.integral_value_range[1],
+                  state.last_integral));
+  if (!std::isfinite(output)) {
+    output = kNullBehaviorNodeValue;
+  }
+  context.stack.back() = output;
+}
+
 void ProcessBehaviorNodeImpl(const TargetNodeImplementation& node,
                              const BehaviorNodeContext& context) {
   ABSL_DCHECK(!context.stack.empty());
   float input = context.stack.back();
   context.stack.pop_back();
   if (IsNullBehaviorNodeValue(input)) return;
-  context.target_modifiers[node.target_index] =
+
+  float modifier =
       Lerp(node.target_modifier_range[0], node.target_modifier_range[1], input);
+  // If the new modifier is non-finite (e.g. due to float overflow), then leave
+  // the previous modifier unchanged.
+  if (!std::isfinite(modifier)) return;
+
+  context.target_modifiers[node.target_index] = modifier;
 }
 
 void ProcessBehaviorNodeImpl(const PolarTargetNodeImplementation& node,
@@ -529,10 +643,15 @@ void ProcessBehaviorNodeImpl(const PolarTargetNodeImplementation& node,
       IsNullBehaviorNodeValue(magnitude_input)) {
     return;
   }
+
   Vec modifier = Vec::FromDirectionAndMagnitude(
       Angle::Radians(
           Lerp(node.angle_range[0], node.angle_range[1], angle_input)),
       Lerp(node.magnitude_range[0], node.magnitude_range[1], magnitude_input));
+  // If the new modifier vector is non-finite (e.g. due to float overflow), then
+  // leave the previous modifier vector unchanged.
+  if (!std::isfinite(modifier.x) || !std::isfinite(modifier.y)) return;
+
   context.target_modifiers[node.target_x_index] = modifier.x;
   context.target_modifiers[node.target_y_index] = modifier.y;
 }
@@ -548,21 +667,29 @@ void ProcessBehaviorNode(const BehaviorNodeImplementation& node,
 
 namespace {
 
-// Percentage shifts for each `BrushBehavior::Target` of a `BrushTipState`.
+// Modifiers for each `BrushBehavior::Target` of a `BrushTipState`.
 struct BrushTipStateModifiers {
   Vec position_offset_in_stroke_units;
   float width_multiplier = 1;
   float height_multiplier = 1;
   Angle slant_offset;
   float corner_rounding_offset = 0;
-  Angle rotation_offset;
+  Angle rotation_offset;  // always in range [-π, π] radians
   float pinch_offset = 0;
-  float texture_animation_progress_offset = 0;
-  Angle hue_offset;
+  float texture_animation_progress_offset = 0;  // always in range [0, 1)
+  Angle hue_offset;  // always in range [0, 2π) radians
   float saturation_multiplier = 1;
-  float luminosity = 0;
+  float luminosity_offset = 0;
   float opacity_multiplier = 1;
 };
+
+// Multiplies two non-NaN values, except that zero times infinity results in
+// zero instead of NaN.
+float NanSafeMultiply(float a, float b) {
+  ABSL_DCHECK(!std::isnan(a));
+  ABSL_DCHECK(!std::isnan(b));
+  return (a == 0 || b == 0) ? 0 : a * b;
+}
 
 // Adds `modifier` to the appropriate member of `tip_state_modifiers` according
 // to the `target` enum.
@@ -573,14 +700,18 @@ void ApplyModifierToTarget(float modifier, BrushBehavior::Target target,
   ABSL_DCHECK(std::isfinite(modifier));
   switch (target) {
     case BrushBehavior::Target::kWidthMultiplier:
-      tip_state_modifiers.width_multiplier *= modifier;
+      tip_state_modifiers.width_multiplier =
+          NanSafeMultiply(tip_state_modifiers.width_multiplier, modifier);
       break;
     case BrushBehavior::Target::kHeightMultiplier:
-      tip_state_modifiers.height_multiplier *= modifier;
+      tip_state_modifiers.height_multiplier =
+          NanSafeMultiply(tip_state_modifiers.height_multiplier, modifier);
       break;
     case BrushBehavior::Target::kSizeMultiplier:
-      tip_state_modifiers.width_multiplier *= modifier;
-      tip_state_modifiers.height_multiplier *= modifier;
+      tip_state_modifiers.width_multiplier =
+          NanSafeMultiply(tip_state_modifiers.width_multiplier, modifier);
+      tip_state_modifiers.height_multiplier =
+          NanSafeMultiply(tip_state_modifiers.height_multiplier, modifier);
       break;
     case BrushBehavior::Target::kSlantOffsetInRadians:
       tip_state_modifiers.slant_offset += Angle::Radians(modifier);
@@ -589,7 +720,9 @@ void ApplyModifierToTarget(float modifier, BrushBehavior::Target target,
       tip_state_modifiers.pinch_offset += modifier;
       break;
     case BrushBehavior::Target::kRotationOffsetInRadians:
-      tip_state_modifiers.rotation_offset += Angle::Radians(modifier);
+      tip_state_modifiers.rotation_offset =
+          (tip_state_modifiers.rotation_offset + Angle::Radians(modifier))
+              .NormalizedAboutZero();
       break;
     case BrushBehavior::Target::kCornerRoundingOffset:
       tip_state_modifiers.corner_rounding_offset += modifier;
@@ -617,19 +750,24 @@ void ApplyModifierToTarget(float modifier, BrushBehavior::Target target,
       }
       break;
     case BrushBehavior::Target::kTextureAnimationProgressOffset:
-      tip_state_modifiers.texture_animation_progress_offset += modifier;
+      tip_state_modifiers.texture_animation_progress_offset = FloatModulo(
+          tip_state_modifiers.texture_animation_progress_offset + modifier, 1);
       break;
     case BrushBehavior::Target::kHueOffsetInRadians:
-      tip_state_modifiers.hue_offset += Angle::Radians(modifier);
+      tip_state_modifiers.hue_offset =
+          (tip_state_modifiers.hue_offset + Angle::Radians(modifier))
+              .Normalized();
       break;
     case BrushBehavior::Target::kSaturationMultiplier:
-      tip_state_modifiers.saturation_multiplier *= modifier;
+      tip_state_modifiers.saturation_multiplier =
+          NanSafeMultiply(tip_state_modifiers.saturation_multiplier, modifier);
       break;
-    case BrushBehavior::Target::kLuminosity:
-      tip_state_modifiers.luminosity += modifier;
+    case BrushBehavior::Target::kLuminosityOffset:
+      tip_state_modifiers.luminosity_offset += modifier;
       break;
     case BrushBehavior::Target::kOpacityMultiplier:
-      tip_state_modifiers.opacity_multiplier *= modifier;
+      tip_state_modifiers.opacity_multiplier =
+          NanSafeMultiply(tip_state_modifiers.opacity_multiplier, modifier);
       break;
   }
 }
@@ -638,10 +776,12 @@ void ApplyModifiersToTipState(const BrushTipStateModifiers& modifiers,
                               BrushTipState& tip_state) {
   tip_state.position += modifiers.position_offset_in_stroke_units;
   if (modifiers.width_multiplier != 1) {
-    tip_state.width *= std::clamp(modifiers.width_multiplier, 0.f, 2.f);
+    tip_state.width = NanSafeMultiply(
+        tip_state.width, std::max(modifiers.width_multiplier, 0.f));
   }
   if (modifiers.height_multiplier != 1) {
-    tip_state.height *= std::clamp(modifiers.height_multiplier, 0.f, 2.f);
+    tip_state.height = NanSafeMultiply(
+        tip_state.height, std::max(modifiers.height_multiplier, 0.f));
   }
   if (modifiers.slant_offset != Angle()) {
     tip_state.slant = std::clamp(tip_state.slant + modifiers.slant_offset,
@@ -653,18 +793,17 @@ void ApplyModifiersToTipState(const BrushTipStateModifiers& modifiers,
   }
   if (modifiers.rotation_offset != Angle()) {
     tip_state.rotation =
-        (tip_state.rotation + modifiers.rotation_offset).Normalized();
+        (tip_state.rotation + modifiers.rotation_offset).NormalizedAboutZero();
   }
   if (modifiers.corner_rounding_offset != 0) {
-    tip_state.percent_radius = std::clamp(
-        tip_state.percent_radius + modifiers.corner_rounding_offset, 0.f, 1.f);
+    tip_state.corner_rounding = std::clamp(
+        tip_state.corner_rounding + modifiers.corner_rounding_offset, 0.f, 1.f);
   }
   if (modifiers.texture_animation_progress_offset != 0) {
     tip_state.texture_animation_progress_offset =
-        geometry_internal::FloatModulo(
-            tip_state.texture_animation_progress_offset +
-                modifiers.texture_animation_progress_offset,
-            1);
+        FloatModulo(tip_state.texture_animation_progress_offset +
+                        modifiers.texture_animation_progress_offset,
+                    1);
   }
   if (modifiers.hue_offset != Angle()) {
     tip_state.hue_offset_in_full_turns =
@@ -674,8 +813,9 @@ void ApplyModifiersToTipState(const BrushTipStateModifiers& modifiers,
     tip_state.saturation_multiplier =
         std::clamp(modifiers.saturation_multiplier, 0.f, 2.f);
   }
-  if (modifiers.luminosity != 0) {
-    tip_state.luminosity_shift = std::clamp(modifiers.luminosity, -1.f, 1.f);
+  if (modifiers.luminosity_offset != 0) {
+    tip_state.luminosity_offset =
+        std::clamp(modifiers.luminosity_offset, -1.f, 1.f);
   }
   if (modifiers.opacity_multiplier != 1) {
     tip_state.opacity_multiplier = std::clamp(
@@ -685,11 +825,16 @@ void ApplyModifiersToTipState(const BrushTipStateModifiers& modifiers,
 
 }  // namespace
 
-BrushTipState CreateTipState(Point position, std::optional<Angle> direction,
+BrushTipState CreateTipState(Point position, Vec velocity,
                              const BrushTip& brush_tip, float brush_size,
                              absl::Span<const BrushBehavior::Target> targets,
                              absl::Span<const float> target_modifiers) {
   ABSL_DCHECK_EQ(targets.size(), target_modifiers.size());
+
+  std::optional<Angle> direction;
+  if (velocity != Vec()) {
+    direction = velocity.Direction();
+  }
 
   BrushTipStateModifiers tip_state_modifiers = {};
   for (size_t i = 0; i < targets.size(); ++i) {
@@ -701,29 +846,13 @@ BrushTipState CreateTipState(Point position, std::optional<Angle> direction,
       .position = position,
       .width = brush_size * brush_tip.scale.x,
       .height = brush_size * brush_tip.scale.y,
-      .percent_radius = brush_tip.corner_rounding,
-      .rotation = brush_tip.rotation,
+      .corner_rounding = brush_tip.corner_rounding,
+      .rotation = brush_tip.rotation.NormalizedAboutZero(),
       .slant = brush_tip.slant,
       .pinch = brush_tip.pinch,
   };
   ApplyModifiersToTipState(tip_state_modifiers, tip_state);
   return tip_state;
-}
-
-ModeledStrokeInput Lerp(const ModeledStrokeInput& a,
-                        const ModeledStrokeInput& b, float t) {
-  return {.position = geometry_internal::Lerp(a.position, b.position, t),
-          .velocity = geometry_internal::Lerp(a.velocity, b.velocity, t),
-          .acceleration =
-              geometry_internal::Lerp(a.acceleration, b.acceleration, t),
-          .traveled_distance = geometry_internal::Lerp(a.traveled_distance,
-                                                       b.traveled_distance, t),
-          .elapsed_time = Duration32::Millis(geometry_internal::Lerp(
-              a.elapsed_time.ToMillis(), b.elapsed_time.ToMillis(), t)),
-          .pressure = geometry_internal::Lerp(a.pressure, b.pressure, t),
-          .tilt = geometry_internal::Lerp(a.tilt, b.tilt, t),
-          .orientation = geometry_internal::NormalizedAngleLerp(
-              a.orientation, b.orientation, t)};
 }
 
 }  // namespace ink::strokes_internal

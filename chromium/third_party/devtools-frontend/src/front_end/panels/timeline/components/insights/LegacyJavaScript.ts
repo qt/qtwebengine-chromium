@@ -58,6 +58,10 @@ export class LegacyJavaScript extends BaseInsightComponent<LegacyJavaScriptInsig
       return Lit.nothing;
     }
 
+    if (this.model.legacyJavaScriptResults.size === 0) {
+      return html`<div class="insight-section">${i18nString(UIStrings.noLegacyJavaScript)}</div>`;
+    }
+
     const rows: TableDataRow[] =
         [...this.model.legacyJavaScriptResults.entries()].slice(0, 10).map(([script, result]) => {
           const overlays: Trace.Types.Overlays.Overlay[] = [];

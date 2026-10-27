@@ -60,12 +60,11 @@ class IRToProgramTest : public core::ir::IRTestHelper {
     /// @param name the var name
     /// @param init the var initializer
     /// @returns the instruction
-    template <
-        core::AddressSpace SPACE = core::AddressSpace::kFunction,
-        core::Access ACCESS = core::Access::kReadWrite,
-        typename VALUE = void,
-        typename = std::enable_if_t<
-            !traits::IsTypeOrDerived<std::remove_pointer_t<std::decay_t<VALUE>>, core::type::Type>>>
+    template <core::AddressSpace SPACE = core::AddressSpace::kFunction,
+              core::Access ACCESS = core::Access::kReadWrite,
+              typename VALUE = void>
+        requires(
+            !traits::IsTypeOrDerived<std::remove_pointer_t<std::decay_t<VALUE>>, core::type::Type>)
     core::ir::Var* Var(std::string_view name, VALUE&& init) {
         auto* val = b.Value(std::forward<VALUE>(init));
         if (DAWN_UNLIKELY(!val)) {

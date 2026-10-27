@@ -516,7 +516,7 @@ const std::map<std::string, std::string> *GetNameHashingMap(const ShHandle handl
 {
     TCompiler *compiler = GetCompilerFromHandle(handle);
     ASSERT(compiler);
-    return &(compiler->getNameMap());
+    return &(compiler->getNameMap().getInternalMap());
 }
 
 const std::vector<ShaderVariable> *GetUniforms(const ShHandle handle)
@@ -645,16 +645,6 @@ const std::vector<ShPixelLocalStorageLayout> *GetPixelLocalStorageLayouts(const 
     ASSERT(compiler);
 
     return &compiler->getPixelLocalStorageLayouts();
-}
-
-uint32_t GetShaderSpecConstUsageBits(const ShHandle handle)
-{
-    TCompiler *compiler = GetCompilerFromHandle(handle);
-    if (compiler == nullptr)
-    {
-        return 0;
-    }
-    return compiler->getSpecConstUsageBits().bits();
 }
 
 bool CheckVariablesWithinPackingLimits(int maxVectors, const std::vector<ShaderVariable> &variables)

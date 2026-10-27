@@ -89,6 +89,7 @@
 #include "ui/wm/core/focus_controller.h"
 #include "ui/wm/core/shadow_controller.h"
 #include "ui/wm/core/shadow_controller_delegate.h"
+#include "ui/wm/core/window_properties.h"
 #endif
 
 #if BUILDFLAG(IS_WIN)
@@ -518,6 +519,105 @@ TEST_F(WidgetTest, NativeWindowProperty) {
   widget->SetNativeWindowProperty(key, nullptr);
   EXPECT_EQ(nullptr, widget->GetNativeWindowProperty(key));
 }
+
+#if BUILDFLAG(IS_WIN)
+using WidgetExcludeFromScreenCaptureTest = DesktopWidgetTest;
+
+TEST_F(WidgetExcludeFromScreenCaptureTest,
+       ExcludeFromScreenCaptureInheritance) {
+  Widget parent_widget;
+  Widget::InitParams parent_params = CreateParams(
+      Widget::InitParams::CLIENT_OWNS_WIDGET, Widget::InitParams::TYPE_WINDOW);
+  parent_widget.Init(std::move(parent_params));
+  parent_widget.SetExcludeFromScreenCapture(true);
+
+  Widget child_widget;
+  Widget::InitParams child_params = CreateParams(
+      Widget::InitParams::CLIENT_OWNS_WIDGET, Widget::InitParams::TYPE_WINDOW);
+  // Use context instead of parent to ensure the child can be a desktop widget.
+  child_params.context = parent_widget.GetNativeWindow();
+  child_widget.Init(std::move(child_params));
+
+  EXPECT_TRUE(child_widget.GetNativeView()->GetProperty(
+      wm::kExcludeFromScreenCaptureKey));
+}
+
+TEST_F(WidgetExcludeFromScreenCaptureTest,
+       ExcludeFromScreenCaptureInheritanceContext) {
+  Widget context_widget;
+  Widget::InitParams context_params = CreateParams(
+      Widget::InitParams::CLIENT_OWNS_WIDGET, Widget::InitParams::TYPE_WINDOW);
+  context_widget.Init(std::move(context_params));
+  context_widget.SetExcludeFromScreenCapture(true);
+
+  Widget child_widget;
+  Widget::InitParams child_params = CreateParams(
+      Widget::InitParams::CLIENT_OWNS_WIDGET, Widget::InitParams::TYPE_WINDOW);
+  child_params.context = context_widget.GetNativeWindow();
+  child_widget.Init(std::move(child_params));
+
+  EXPECT_TRUE(child_widget.GetNativeView()->GetProperty(
+      wm::kExcludeFromScreenCaptureKey));
+}
+
+TEST_F(WidgetExcludeFromScreenCaptureTest, SetExcludeFromScreenCapture) {
+  Widget widget;
+  Widget::InitParams params = CreateParams(
+      Widget::InitParams::CLIENT_OWNS_WIDGET, Widget::InitParams::TYPE_WINDOW);
+  widget.Init(std::move(params));
+
+  EXPECT_FALSE(
+      widget.GetNativeView()->GetProperty(wm::kExcludeFromScreenCaptureKey));
+
+  widget.SetExcludeFromScreenCapture(true);
+  EXPECT_TRUE(
+      widget.GetNativeView()->GetProperty(wm::kExcludeFromScreenCaptureKey));
+
+  widget.SetExcludeFromScreenCapture(false);
+  EXPECT_FALSE(
+      widget.GetNativeView()->GetProperty(wm::kExcludeFromScreenCaptureKey));
+}
+
+TEST_F(WidgetExcludeFromScreenCaptureTest,
+       SetExcludeFromScreenCapturePropagation) {
+  Widget parent_widget;
+  Widget::InitParams parent_params = CreateParams(
+      Widget::InitParams::CLIENT_OWNS_WIDGET, Widget::InitParams::TYPE_WINDOW);
+  parent_widget.Init(std::move(parent_params));
+
+  Widget child_widget;
+  Widget::InitParams child_params = CreateParams(
+      Widget::InitParams::CLIENT_OWNS_WIDGET, Widget::InitParams::TYPE_WINDOW);
+  child_params.parent = parent_widget.GetNativeView();
+  // Force DesktopNativeWidgetAura to ensure the logic there is exercised.
+  child_params.native_widget = new DesktopNativeWidgetAura(&child_widget);
+  child_widget.Init(std::move(child_params));
+
+  Widget grandchild_widget;
+  Widget::InitParams grandchild_params = CreateParams(
+      Widget::InitParams::CLIENT_OWNS_WIDGET, Widget::InitParams::TYPE_WINDOW);
+  grandchild_params.parent = child_widget.GetNativeView();
+  grandchild_params.native_widget =
+      new DesktopNativeWidgetAura(&grandchild_widget);
+  grandchild_widget.Init(std::move(grandchild_params));
+
+  parent_widget.SetExcludeFromScreenCapture(true);
+  EXPECT_TRUE(parent_widget.GetNativeView()->GetProperty(
+      wm::kExcludeFromScreenCaptureKey));
+  EXPECT_TRUE(child_widget.GetNativeView()->GetProperty(
+      wm::kExcludeFromScreenCaptureKey));
+  EXPECT_TRUE(grandchild_widget.GetNativeView()->GetProperty(
+      wm::kExcludeFromScreenCaptureKey));
+
+  parent_widget.SetExcludeFromScreenCapture(false);
+  EXPECT_FALSE(parent_widget.GetNativeView()->GetProperty(
+      wm::kExcludeFromScreenCaptureKey));
+  EXPECT_FALSE(child_widget.GetNativeView()->GetProperty(
+      wm::kExcludeFromScreenCaptureKey));
+  EXPECT_FALSE(grandchild_widget.GetNativeView()->GetProperty(
+      wm::kExcludeFromScreenCaptureKey));
+}
+#endif
 
 TEST_F(WidgetTest, GetParent) {
   // Create a hierarchy of native widgets.
@@ -2614,6 +2714,30 @@ TEST_F(DesktopWidgetTest, MinimumSizeConstraints) {
   widget->SetSize(smaller_size);
   EXPECT_EQ(minimum_size, widget->GetClientAreaBoundsInScreen().size());
 }
+
+#if BUILDFLAG(IS_WIN)
+// On Windows, size constraints are client-sized but SetBounds()
+// operates on window size which includes insets. Ensure the window
+// is clamped correctly if it exceeds its constraints.
+// https://crbug.com/506480944
+TEST_F(DesktopWidgetTest, SetBoundsRespectsMaximumSize) {
+  TestDesktopWidgetDelegate delegate;
+  const gfx::Size maximum_size(400, 300);
+
+  // Start with a smaller preferred/min size to ensure that minimum
+  // size enforcement does not pass the test by itself.
+  auto contents = std::make_unique<StaticSizedView>(gfx::Size(200, 200));
+  contents->set_maximum_size(maximum_size);
+  delegate.set_contents_view(contents.release());
+  delegate.InitWidget(CreateParams(Widget::InitParams::CLIENT_OWNS_WIDGET,
+                                   Widget::InitParams::TYPE_WINDOW));
+  Widget* widget = delegate.GetWidget();
+  widget->Show();
+
+  widget->SetBounds(gfx::Rect(0, 0, 4000, 3000));
+  EXPECT_EQ(maximum_size, widget->GetClientAreaBoundsInScreen().size());
+}
+#endif  // BUILDFLAG(IS_WIN)
 
 // When a non-desktop widget has a desktop child widget, due to the
 // async nature of desktop widget shutdown, the parent can be destroyed before
@@ -6462,6 +6586,70 @@ TEST_F(WidgetTest, IsDragging) {
   static_cast<internal::NativeWidgetDelegate*>(widget.get())
       ->OnNativeWidgetUserDragEnded();
   EXPECT_FALSE(widget->is_dragging());
+}
+
+TEST_F(WidgetTest, GetNonDecoratedClientAreaBoundsInScreenDefault) {
+  const gfx::Rect bounds(100, 100, 200, 200);
+  std::unique_ptr<Widget> widget(
+      CreateTopLevelPlatformWidget(Widget::InitParams::CLIENT_OWNS_WIDGET));
+  widget->SetBounds(bounds);
+
+  ASSERT_NE(nullptr, widget->non_client_view());
+  ASSERT_NE(nullptr, widget->non_client_view()->frame_view());
+
+  // By default, if a frame view exists, it should return the client view bounds
+  // in screen (as per `FrameView` base implementation).
+  gfx::Rect expected_bounds =
+      widget->non_client_view()->frame_view()->GetBoundsForClientView();
+  views::View::ConvertRectToScreen(widget->non_client_view()->frame_view(),
+                                   &expected_bounds);
+
+  EXPECT_EQ(expected_bounds, widget->GetNonDecoratedClientAreaBoundsInScreen());
+}
+
+TEST_F(WidgetTest,
+       GetNonDecoratedClientAreaBoundsInScreenDelegatesToFrameView) {
+  const gfx::Rect bounds(100, 100, 200, 200);
+  std::unique_ptr<Widget> widget(
+      CreateTopLevelPlatformWidget(Widget::InitParams::CLIENT_OWNS_WIDGET));
+  widget->SetBounds(bounds);
+
+  class TestFrameView : public FrameView {
+   public:
+    TestFrameView() = default;
+    ~TestFrameView() override = default;
+    gfx::Rect GetNonDecoratedClientAreaBoundsInScreen() const override {
+      return expected_bounds_;
+    }
+    gfx::Rect expected_bounds() const { return expected_bounds_; }
+
+   private:
+    const gfx::Rect expected_bounds_ = gfx::Rect(10, 10, 50, 50);
+  };
+
+  ASSERT_NE(nullptr, widget->non_client_view());
+  auto frame_view = std::make_unique<TestFrameView>();
+  const gfx::Rect expected_bounds = frame_view->expected_bounds();
+  widget->non_client_view()->SetFrameView(std::move(frame_view));
+  ASSERT_NE(nullptr, widget->non_client_view()->frame_view());
+
+  EXPECT_EQ(expected_bounds, widget->GetNonDecoratedClientAreaBoundsInScreen());
+}
+
+TEST_F(WidgetTest, GetNonDecoratedClientAreaBoundsInScreenNoNonClientView) {
+  const gfx::Rect bounds(100, 100, 200, 200);
+  auto widget = std::make_unique<Widget>();
+
+  // Use a widget type that does not create a non-client view.
+  Widget::InitParams params = CreateParams(
+      Widget::InitParams::CLIENT_OWNS_WIDGET, Widget::InitParams::TYPE_CONTROL);
+  widget->Init(std::move(params));
+  widget->SetBounds(bounds);
+
+  ASSERT_EQ(nullptr, widget->non_client_view());
+
+  EXPECT_EQ(widget->GetRootView()->GetBoundsInScreen(),
+            widget->GetNonDecoratedClientAreaBoundsInScreen());
 }
 
 }  // namespace views::test

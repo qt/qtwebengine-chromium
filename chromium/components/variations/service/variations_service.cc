@@ -16,6 +16,7 @@
 #include "base/base64.h"
 #include "base/command_line.h"
 #include "base/debug/crash_logging.h"
+#include "base/debug/dump_without_crashing.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -79,6 +80,9 @@ const uint32_t kServerPublicKeyVersion = 1;
 
 // For the HTTP date headers, the resolution of the server time is 1 second.
 const uint32_t kServerTimeResolutionInSeconds = 1;
+
+// Timeout for fetching the variations seed.
+const base::TimeDelta kVariationsSeedFetchTimeout = base::Seconds(60);
 
 // Whether the VariationsService should fetch the seed for testing.
 bool g_should_fetch_for_testing = false;
@@ -513,7 +517,11 @@ GURL VariationsService::GetVariationsServerURL(HttpOptions http_options) {
         net::AppendOrReplaceQueryParameter(server_url, "corpus", corpus);
   }
 
-  DCHECK(server_url.is_valid());
+  if (!server_url.is_valid()) {
+    SCOPED_CRASH_KEY_STRING1024("VariationsService", "server_url",
+                                server_url.possibly_invalid_spec());
+    base::debug::DumpWithoutCrashing();
+  }
   return server_url;
 }
 
@@ -682,6 +690,7 @@ bool VariationsService::DoFetchFromURL(const GURL& url, bool is_http_retry) {
       std::move(resource_request), traffic_annotation);
   // Ensure our callback is called even with "304 Not Modified" responses.
   pending_seed_request_->SetAllowHttpErrorResults(true);
+  pending_seed_request_->SetTimeoutDuration(kVariationsSeedFetchTimeout);
   pending_seed_request_->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
       client_->GetURLLoaderFactory().get(),
       base::BindOnce(&VariationsService::OnSimpleLoaderComplete,
@@ -897,8 +906,17 @@ void VariationsService::OnSimpleLoaderComplete(
 
   std::string_view signature =
       GetHeaderValue(headers.get(), "X-Seed-Signature");
-  std::string_view country_code = GetHeaderValue(headers.get(), "X-Country");
-  std::string_view geo_level1 = GetHeaderValue(headers.get(), "X-Geo-Level-1");
+  std::string_view country_code;
+  std::string_view geo_level1;
+  // Only trust the header contents when the seed was fetched over HTTPS. This
+  // does not apply to the seed signature as that can't be easily forged.
+  // Note: In the case of an insecure fetch, the empty `country_code` and
+  // `geo_level1` strings will be ignored downstream and the existing location
+  // values in Local State will be preserved.
+  if (!last_request_was_http_retry_) {
+    country_code = GetHeaderValue(headers.get(), "X-Country");
+    geo_level1 = GetHeaderValue(headers.get(), "X-Geo-Level-1");
+  }
   StoreSeed(std::move(*response_body), std::string(signature),
             std::string(country_code), std::string(geo_level1),
             response_date.value_or(base::Time()), is_delta_compressed,

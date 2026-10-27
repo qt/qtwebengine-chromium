@@ -49,6 +49,8 @@ libtint_source_set("type") {
     "byte_address_buffer.h",
     "int8_t4_packed.cc",
     "int8_t4_packed.h",
+    "matrix_layout.cc",
+    "matrix_layout.h",
     "rasterizer_ordered_texture_2d.cc",
     "rasterizer_ordered_texture_2d.h",
     "uint8_t4_packed.cc",
@@ -65,6 +67,7 @@ libtint_source_set("type") {
     "${tint_src_dir}/utils/macros",
     "${tint_src_dir}/utils/math",
     "${tint_src_dir}/utils/memory",
+    "${tint_src_dir}/utils/reflection",
     "${tint_src_dir}/utils/rtti",
     "${tint_src_dir}/utils/symbol",
     "${tint_src_dir}/utils/text",
@@ -75,6 +78,7 @@ if (tint_build_unittests) {
     sources = [
       "byte_address_buffer_test.cc",
       "int8_t4_packed_test.cc",
+      "matrix_layout_test.cc",
       "uint8_t4_packed_test.cc",
     ]
     deps = [
@@ -89,6 +93,7 @@ if (tint_build_unittests) {
       "${tint_src_dir}/utils/macros",
       "${tint_src_dir}/utils/math",
       "${tint_src_dir}/utils/memory",
+      "${tint_src_dir}/utils/reflection",
       "${tint_src_dir}/utils/rtti",
     ]
   }

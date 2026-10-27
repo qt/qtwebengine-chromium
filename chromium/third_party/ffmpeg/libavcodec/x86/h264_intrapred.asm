@@ -584,7 +584,7 @@ cglobal pred8x8_vertical_8, 2,2
 ;-----------------------------------------------------------------------------
 
 %macro PRED8x8_H 0
-cglobal pred8x8_horizontal_8, 2,3
+cglobal pred8x8_horizontal_8, 2,3,3
     mov       r2, 4
 %if cpuflag(ssse3)
     mova      m2, [pb_3]
@@ -592,66 +592,60 @@ cglobal pred8x8_horizontal_8, 2,3
 .loop:
     SPLATB_LOAD m0, r0+r1*0-1, m2
     SPLATB_LOAD m1, r0+r1*1-1, m2
-    mova [r0+r1*0], m0
-    mova [r0+r1*1], m1
+    movq [r0+r1*0], m0
+    movq [r0+r1*1], m1
     lea       r0, [r0+r1*2]
     dec       r2
     jg .loop
     RET
 %endmacro
 
-INIT_MMX mmxext
+INIT_XMM sse2
 PRED8x8_H
-INIT_MMX ssse3
+INIT_XMM ssse3
 PRED8x8_H
 
 ;-----------------------------------------------------------------------------
-; void ff_pred8x8_top_dc_8_mmxext(uint8_t *src, ptrdiff_t stride)
+; void ff_pred8x8_top_dc_8_sse2(uint8_t *src, ptrdiff_t stride)
 ;-----------------------------------------------------------------------------
-INIT_MMX mmxext
+INIT_XMM sse2
 cglobal pred8x8_top_dc_8, 2,5
     sub         r0, r1
-    movq       mm0, [r0]
-    pxor       mm1, mm1
-    pxor       mm2, mm2
+    movq      xmm0, [r0]
+    pxor      xmm1, xmm1
     lea         r2, [r0+r1*2]
-    punpckhbw  mm1, mm0
-    punpcklbw  mm0, mm2
-    psadbw     mm1, mm2        ; s1
+    punpcklbw xmm0, xmm1
+    psadbw    xmm0, xmm1       ; s0,0,0,0,s1,0,0,0 (w)
     lea         r3, [r2+r1*2]
-    psadbw     mm0, mm2        ; s0
-    psrlw      mm1, 1
-    psrlw      mm0, 1
-    pavgw      mm1, mm2
-    lea         r4, [r3+r1*2]
-    pavgw      mm0, mm2
-    pshufw     mm1, mm1, 0
-    pshufw     mm0, mm0, 0     ; dc0 (w)
-    packuswb   mm0, mm1        ; dc0,dc1 (b)
-    movq [r0+r1*1], mm0
-    movq [r0+r1*2], mm0
+    psrlw     xmm0, 1
+    pavgw     xmm0, xmm1
+    pshuflw   xmm0, xmm0, 0    ; dc0,dc0,dc0,dc0,dc1,0,0,0
+    pshufhw   xmm0, xmm0, 0    ; dc0,dc1 (w)
+    packuswb  xmm0, xmm1       ; dc0,dc1 (b)
+    movq [r0+r1*1], xmm0
+    movq [r0+r1*2], xmm0
     lea         r0, [r3+r1*2]
-    movq [r2+r1*1], mm0
-    movq [r2+r1*2], mm0
-    movq [r3+r1*1], mm0
-    movq [r3+r1*2], mm0
-    movq [r0+r1*1], mm0
-    movq [r0+r1*2], mm0
+    movq [r2+r1*1], xmm0
+    movq [r2+r1*2], xmm0
+    movq [r3+r1*1], xmm0
+    movq [r3+r1*2], xmm0
+    movq [r0+r1*1], xmm0
+    movq [r0+r1*2], xmm0
     RET
 
 ;-----------------------------------------------------------------------------
-; void ff_pred8x8_dc_8_mmxext(uint8_t *src, ptrdiff_t stride)
+; void ff_pred8x8_dc_8_sse2(uint8_t *src, ptrdiff_t stride)
 ;-----------------------------------------------------------------------------
 
-INIT_MMX mmxext
-cglobal pred8x8_dc_8, 2,5
+INIT_XMM sse2
+cglobal pred8x8_dc_8, 2,5,5
     sub       r0, r1
-    pxor      m7, m7
+    pxor      m4, m4
     movd      m0, [r0+0]
     movd      m1, [r0+4]
-    psadbw    m0, m7            ; s0
+    psadbw    m0, m4            ; s0
     mov       r4, r0
-    psadbw    m1, m7            ; s1
+    psadbw    m1, m4            ; s1
 
     movzx    r2d, byte [r0+r1*1-1]
     movzx    r3d, byte [r0+r1*2-1]
@@ -677,27 +671,25 @@ cglobal pred8x8_dc_8, 2,5
     mov       r0, r4
     punpcklwd m2, m3
     punpckldq m0, m2            ; s0, s1, s2, s3
-    pshufw    m3, m0, 11110110b ; s2, s1, s3, s3
+    pshuflw   m3, m0, 11110110b ; s2, s1, s3, s3
     lea       r2, [r0+r1*2]
-    pshufw    m0, m0, 01110100b ; s0, s1, s3, s1
+    pshuflw   m0, m0, 01110100b ; s0, s1, s3, s1
     paddw     m0, m3
     lea       r3, [r2+r1*2]
     psrlw     m0, 2
-    pavgw     m0, m7            ; s0+s2, s1, s3, s1+s3
+    pavgw     m0, m4            ; s0+s2, s1, s3, s1+s3
     lea       r4, [r3+r1*2]
     packuswb  m0, m0
     punpcklbw m0, m0
-    movq      m1, m0
-    punpcklbw m0, m0
-    punpckhbw m1, m1
+    punpcklwd m0, m0
     movq [r0+r1*1], m0
     movq [r0+r1*2], m0
     movq [r2+r1*1], m0
     movq [r2+r1*2], m0
-    movq [r3+r1*1], m1
-    movq [r3+r1*2], m1
-    movq [r4+r1*1], m1
-    movq [r4+r1*2], m1
+    movhps [r3+r1*1], m0
+    movhps [r3+r1*2], m0
+    movhps [r4+r1*1], m0
+    movhps [r4+r1*2], m0
     RET
 
 ;-----------------------------------------------------------------------------

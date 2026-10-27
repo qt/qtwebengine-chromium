@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as Platform from '../../core/platform/platform.js';
@@ -38,6 +40,100 @@ describeWithMockConnection('ConsoleView', () => {
     consoleView.detach();
   });
 
+  it('expands a minimized drawer when toggling console', () => {
+    const inspectorView = UI.InspectorView.InspectorView.instance({forceNew: true});
+    const drawerVisibleStub = sinon.stub(inspectorView, 'drawerVisible').returns(true);
+    const isDrawerMinimizedStub = sinon.stub(inspectorView, 'isDrawerMinimized').returns(true);
+    const setDrawerMinimizedStub = sinon.stub(inspectorView, 'setDrawerMinimized');
+    const hasFocusStub = sinon.stub(consoleView, 'hasFocus').returns(false);
+    const bringToFrontStub = sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'bringToFront');
+    const showStub = sinon.stub(Common.Console.Console.instance(), 'show');
+    const focusPromptStub = sinon.stub(consoleView, 'focusPrompt');
+
+    const delegate = new Console.ConsoleView.ActionDelegate();
+    assert.isTrue(delegate.handleAction({} as UI.Context.Context, 'console.toggle'));
+
+    sinon.assert.calledOnceWithExactly(setDrawerMinimizedStub, false);
+    sinon.assert.calledOnce(showStub);
+    sinon.assert.calledOnce(focusPromptStub);
+    sinon.assert.calledOnce(bringToFrontStub);
+
+    drawerVisibleStub.restore();
+    isDrawerMinimizedStub.restore();
+    setDrawerMinimizedStub.restore();
+    hasFocusStub.restore();
+    bringToFrontStub.restore();
+    showStub.restore();
+    focusPromptStub.restore();
+    UI.InspectorView.InspectorView.removeInstance();
+  });
+
+  it('minimizes drawer when console is already shown and focused in expanded drawer', () => {
+    const inspectorView = UI.InspectorView.InspectorView.instance({forceNew: true});
+    const drawerVisibleStub = sinon.stub(inspectorView, 'drawerVisible').returns(true);
+    const isDrawerMinimizedStub = sinon.stub(inspectorView, 'isDrawerMinimized').returns(false);
+    const setDrawerMinimizedStub = sinon.stub(inspectorView, 'setDrawerMinimized');
+    const minimizeDrawerStub = sinon.stub(inspectorView, 'minimizeDrawer');
+    const isShowingStub = sinon.stub(consoleView, 'isShowing').returns(true);
+    const hasFocusStub = sinon.stub(consoleView, 'hasFocus').returns(true);
+    const bringToFrontStub = sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'bringToFront');
+    const showStub = sinon.stub(Common.Console.Console.instance(), 'show');
+    const focusPromptStub = sinon.stub(consoleView, 'focusPrompt');
+
+    const delegate = new Console.ConsoleView.ActionDelegate();
+    assert.isTrue(delegate.handleAction({} as UI.Context.Context, 'console.toggle'));
+
+    sinon.assert.notCalled(setDrawerMinimizedStub);
+    sinon.assert.calledOnce(minimizeDrawerStub);
+    sinon.assert.notCalled(showStub);
+    sinon.assert.notCalled(focusPromptStub);
+    sinon.assert.notCalled(bringToFrontStub);
+
+    drawerVisibleStub.restore();
+    isDrawerMinimizedStub.restore();
+    setDrawerMinimizedStub.restore();
+    minimizeDrawerStub.restore();
+    isShowingStub.restore();
+    hasFocusStub.restore();
+    bringToFrontStub.restore();
+    showStub.restore();
+    focusPromptStub.restore();
+    UI.InspectorView.InspectorView.removeInstance();
+  });
+
+  it('focuses console prompt when drawer is expanded but console is not focused', () => {
+    const inspectorView = UI.InspectorView.InspectorView.instance({forceNew: true});
+    const drawerVisibleStub = sinon.stub(inspectorView, 'drawerVisible').returns(true);
+    const isDrawerMinimizedStub = sinon.stub(inspectorView, 'isDrawerMinimized').returns(false);
+    const setDrawerMinimizedStub = sinon.stub(inspectorView, 'setDrawerMinimized');
+    const minimizeDrawerStub = sinon.stub(inspectorView, 'minimizeDrawer');
+    const isShowingStub = sinon.stub(consoleView, 'isShowing').returns(true);
+    const hasFocusStub = sinon.stub(consoleView, 'hasFocus').returns(false);
+    const bringToFrontStub = sinon.stub(Host.InspectorFrontendHost.InspectorFrontendHostInstance, 'bringToFront');
+    const showStub = sinon.stub(Common.Console.Console.instance(), 'show');
+    const focusPromptStub = sinon.stub(consoleView, 'focusPrompt');
+
+    const delegate = new Console.ConsoleView.ActionDelegate();
+    assert.isTrue(delegate.handleAction({} as UI.Context.Context, 'console.toggle'));
+
+    sinon.assert.notCalled(minimizeDrawerStub);
+    sinon.assert.notCalled(setDrawerMinimizedStub);
+    sinon.assert.calledOnce(bringToFrontStub);
+    sinon.assert.calledOnce(showStub);
+    sinon.assert.calledOnce(focusPromptStub);
+
+    drawerVisibleStub.restore();
+    isDrawerMinimizedStub.restore();
+    setDrawerMinimizedStub.restore();
+    minimizeDrawerStub.restore();
+    isShowingStub.restore();
+    hasFocusStub.restore();
+    bringToFrontStub.restore();
+    showStub.restore();
+    focusPromptStub.restore();
+    UI.InspectorView.InspectorView.removeInstance();
+  });
+
   it('adds a title to every checkbox label in the settings view', async () => {
     const consoleSettingsCheckboxes =
         consoleView.element.querySelector('devtools-toolbar')!.querySelectorAll('devtools-checkbox');
@@ -59,6 +155,21 @@ describeWithMockConnection('ConsoleView', () => {
   ) {
     return new SDK.ConsoleModel.ConsoleMessage(
         target.model(SDK.RuntimeModel.RuntimeModel), Protocol.Log.LogEntrySource.Javascript, level, message, {type});
+  }
+
+  let globalMessageTimestamp = 0;
+
+  function addMessage(
+      consoleModel: SDK.ConsoleModel.ConsoleModel,
+      target: SDK.Target.Target,
+      message: string,
+      type: SDK.ConsoleModel.MessageType,
+      level: Protocol.Log.LogEntryLevel,
+      timestamp?: number,
+  ) {
+    const consoleMessage = createConsoleMessage(target, message, type, level);
+    consoleMessage.timestamp = timestamp ?? ++globalMessageTimestamp;
+    consoleModel.addMessage(consoleMessage);
   }
 
   it('can save to file', async () => {
@@ -238,7 +349,7 @@ describeWithMockConnection('ConsoleView', () => {
       dispatchPasteEvent(messagesElement, {clipboardData: dt, bubbles: true});
       assert.strictEqual(
           Common.Console.Console.instance().messages()[0].text,
-          'Warning: Don’t paste code into the DevTools Console that you don’t understand or haven’t reviewed yourself. This could allow attackers to steal your identity or take control of your computer. Please type ‘allow pasting’ below and press Enter to allow pasting.');
+          'Warning: Don’t paste code into the DevTools Console that you don’t understand or haven’t reviewed yourself. This could allow attackers to steal your identity or take control of your computer. Please type “allow pasting” below and press Enter to allow pasting.');
     });
 
     it('is turned off when console history reaches a length of 5', async () => {
@@ -358,7 +469,8 @@ describeWithMockConnection('ConsoleView', () => {
     });
 
     it('shows a loading state when a request is triggered', async () => {
-      const setLoadingSpy = sinon.stub(AiCodeCompletionSummaryToolbar.prototype, 'setLoading');
+      const setLoadingSpy =
+          sinon.stub(AiCodeCompletionSummaryToolbar.AiCodeCompletionSummaryToolbar.prototype, 'setLoading');
       const providerConfig = consoleView.aiCodeCompletionConfig;
       assert.exists(providerConfig);
       providerConfig.onFeatureEnabled();
@@ -370,7 +482,8 @@ describeWithMockConnection('ConsoleView', () => {
     });
 
     it('hides the loading indicator when a response is received', async () => {
-      const setLoadingSpy = sinon.stub(AiCodeCompletionSummaryToolbar.prototype, 'setLoading');
+      const setLoadingSpy =
+          sinon.stub(AiCodeCompletionSummaryToolbar.AiCodeCompletionSummaryToolbar.prototype, 'setLoading');
       const providerConfig = consoleView.aiCodeCompletionConfig;
       assert.exists(providerConfig);
       providerConfig.onFeatureEnabled();
@@ -385,7 +498,8 @@ describeWithMockConnection('ConsoleView', () => {
     });
 
     it('attaches the citations toolbar when a suggestion with citations is accepted', async () => {
-      const updateCitationsSpy = sinon.spy(AiCodeCompletionSummaryToolbar.prototype, 'updateCitations');
+      const updateCitationsSpy =
+          sinon.spy(AiCodeCompletionSummaryToolbar.AiCodeCompletionSummaryToolbar.prototype, 'updateCitations');
       const providerConfig = consoleView.aiCodeCompletionConfig;
       assert.exists(providerConfig);
 
@@ -399,7 +513,8 @@ describeWithMockConnection('ConsoleView', () => {
     });
 
     it('does not attach the citations toolbar if there are no citations', async () => {
-      const updateCitationsSpy = sinon.spy(AiCodeCompletionSummaryToolbar.prototype, 'updateCitations');
+      const updateCitationsSpy =
+          sinon.spy(AiCodeCompletionSummaryToolbar.AiCodeCompletionSummaryToolbar.prototype, 'updateCitations');
       const providerConfig = consoleView.aiCodeCompletionConfig;
       assert.exists(providerConfig);
 
@@ -432,13 +547,6 @@ describeWithMockConnection('ConsoleView', () => {
       }
     });
 
-    function addMessage(
-        message: string, type: Protocol.Runtime.ConsoleAPICalledEventType, level: Protocol.Log.LogEntryLevel) {
-      const consoleMessage = createConsoleMessage(target, message, type, level);
-      consoleMessage.timestamp = ++messageTimestamp;
-      consoleModel!.addMessage(consoleMessage);
-    }
-
     for (const level
              of [Protocol.Log.LogEntryLevel.Error,
                  Protocol.Log.LogEntryLevel.Warning,
@@ -454,9 +562,14 @@ describeWithMockConnection('ConsoleView', () => {
         renderElementIntoDOM(consoleView);
 
         addMessage(
-            'group', Protocol.Runtime.ConsoleAPICalledEventType.StartGroupCollapsed, Protocol.Log.LogEntryLevel.Info);
-        addMessage('message', Protocol.Runtime.ConsoleAPICalledEventType.Log, level);
-        addMessage('', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup, Protocol.Log.LogEntryLevel.Info);
+            consoleModel!, target, 'group', Protocol.Runtime.ConsoleAPICalledEventType.StartGroupCollapsed,
+            Protocol.Log.LogEntryLevel.Info, ++messageTimestamp);
+        addMessage(
+            consoleModel!, target, 'message', Protocol.Runtime.ConsoleAPICalledEventType.Log, level,
+            ++messageTimestamp);
+        addMessage(
+            consoleModel!, target, '', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup,
+            Protocol.Log.LogEntryLevel.Info, ++messageTimestamp);
 
         const messages = await getConsoleMessages();
         assert.include(messages, 'group');
@@ -471,9 +584,15 @@ describeWithMockConnection('ConsoleView', () => {
         consoleView.markAsRoot();
         renderElementIntoDOM(consoleView);
 
-        addMessage('group', Protocol.Runtime.ConsoleAPICalledEventType.StartGroup, Protocol.Log.LogEntryLevel.Info);
-        addMessage('message', Protocol.Runtime.ConsoleAPICalledEventType.Log, level);
-        addMessage('', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup, Protocol.Log.LogEntryLevel.Info);
+        addMessage(
+            consoleModel!, target, 'group', Protocol.Runtime.ConsoleAPICalledEventType.StartGroup,
+            Protocol.Log.LogEntryLevel.Info, ++messageTimestamp);
+        addMessage(
+            consoleModel!, target, 'message', Protocol.Runtime.ConsoleAPICalledEventType.Log, level,
+            ++messageTimestamp);
+        addMessage(
+            consoleModel!, target, '', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup,
+            Protocol.Log.LogEntryLevel.Info, ++messageTimestamp);
 
         const messages = await getConsoleMessages();
         assert.include(messages, 'group');
@@ -489,9 +608,15 @@ describeWithMockConnection('ConsoleView', () => {
       consoleView.markAsRoot();
       renderElementIntoDOM(consoleView);
 
-      addMessage('group', Protocol.Runtime.ConsoleAPICalledEventType.StartGroup, Protocol.Log.LogEntryLevel.Info);
-      addMessage('message', Protocol.Runtime.ConsoleAPICalledEventType.Log, Protocol.Log.LogEntryLevel.Error);
-      addMessage('', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup, Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, 'group', Protocol.Runtime.ConsoleAPICalledEventType.StartGroup,
+          Protocol.Log.LogEntryLevel.Info, ++messageTimestamp);
+      addMessage(
+          consoleModel!, target, 'message', Protocol.Runtime.ConsoleAPICalledEventType.Log,
+          Protocol.Log.LogEntryLevel.Error, ++messageTimestamp);
+      addMessage(
+          consoleModel!, target, '', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup,
+          Protocol.Log.LogEntryLevel.Info, ++messageTimestamp);
 
       const messages = await getConsoleMessages();
       assert.notInclude(messages, 'group');
@@ -509,11 +634,21 @@ describeWithMockConnection('ConsoleView', () => {
          console.groupEnd() // B
          console.groupEnd() // A
       */
-      addMessage('A', Protocol.Runtime.ConsoleAPICalledEventType.StartGroup, Protocol.Log.LogEntryLevel.Info);
-      addMessage('B', Protocol.Runtime.ConsoleAPICalledEventType.StartGroup, Protocol.Log.LogEntryLevel.Info);
-      addMessage('C', Protocol.Runtime.ConsoleAPICalledEventType.Log, Protocol.Log.LogEntryLevel.Info);
-      addMessage('', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup, Protocol.Log.LogEntryLevel.Info);
-      addMessage('', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup, Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, 'A', Protocol.Runtime.ConsoleAPICalledEventType.StartGroup,
+          Protocol.Log.LogEntryLevel.Info, ++messageTimestamp);
+      addMessage(
+          consoleModel!, target, 'B', Protocol.Runtime.ConsoleAPICalledEventType.StartGroup,
+          Protocol.Log.LogEntryLevel.Info, ++messageTimestamp);
+      addMessage(
+          consoleModel!, target, 'C', Protocol.Runtime.ConsoleAPICalledEventType.Log, Protocol.Log.LogEntryLevel.Info,
+          ++messageTimestamp);
+      addMessage(
+          consoleModel!, target, '', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup,
+          Protocol.Log.LogEntryLevel.Info, ++messageTimestamp);
+      addMessage(
+          consoleModel!, target, '', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup,
+          Protocol.Log.LogEntryLevel.Info, ++messageTimestamp);
 
       let messages = await getConsoleMessages();
       assert.include(messages, 'A', 'A should be visible');
@@ -529,6 +664,165 @@ describeWithMockConnection('ConsoleView', () => {
       assert.include(messages, 'A', 'A should be visible after collapsing');
       assert.notInclude(messages, 'B', 'B should be hidden after collapsing parent A');
       assert.notInclude(messages, 'C', 'C should be hidden after collapsing parent A');
+    });
+  });
+
+  describe('collapse all and expand all', () => {
+    let target: ReturnType<typeof createTarget>;
+    let consoleModel: SDK.ConsoleModel.ConsoleModel|null;
+
+    beforeEach(() => {
+      target = createTarget();
+      SDK.TargetManager.TargetManager.instance().setScopeTarget(target);
+      consoleModel = target.model(SDK.ConsoleModel.ConsoleModel);
+      assert.exists(consoleModel);
+      consoleView.markAsRoot();
+      renderElementIntoDOM(consoleView);
+    });
+
+    it('collapseAll collapses expanded groups', async () => {
+      addMessage(
+          consoleModel!, target, 'group 1', Protocol.Runtime.ConsoleAPICalledEventType.StartGroup,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, 'inner message 1', Protocol.Runtime.ConsoleAPICalledEventType.Log,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, '', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, 'group 2', Protocol.Runtime.ConsoleAPICalledEventType.StartGroup,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, 'inner message 2', Protocol.Runtime.ConsoleAPICalledEventType.Log,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, '', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup,
+          Protocol.Log.LogEntryLevel.Info);
+      await consoleView.getScheduledRefreshPromiseForTest();
+
+      // Both groups are expanded by default, so all group headers and messages are visible.
+      assert.strictEqual(consoleView.itemCount(), 4);
+
+      consoleView.collapseAll();
+
+      // After collapsing, only the two group headers should be visible.
+      assert.strictEqual(consoleView.itemCount(), 2);
+    });
+
+    it('expandAll expands collapsed groups', async () => {
+      addMessage(
+          consoleModel!, target, 'group 1', Protocol.Runtime.ConsoleAPICalledEventType.StartGroupCollapsed,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, 'inner message 1', Protocol.Runtime.ConsoleAPICalledEventType.Log,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, '', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, 'group 2', Protocol.Runtime.ConsoleAPICalledEventType.StartGroupCollapsed,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, 'inner message 2', Protocol.Runtime.ConsoleAPICalledEventType.Log,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, '', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup,
+          Protocol.Log.LogEntryLevel.Info);
+      await consoleView.getScheduledRefreshPromiseForTest();
+
+      // Both groups are collapsed by default, so only group headers are visible.
+      assert.strictEqual(consoleView.itemCount(), 2);
+
+      consoleView.expandAll();
+
+      // After expanding, all group headers and messages are visible.
+      assert.strictEqual(consoleView.itemCount(), 4);
+    });
+
+    it('collapseAll then expandAll round-trips groups correctly', async () => {
+      addMessage(
+          consoleModel!, target, 'expanded group', Protocol.Runtime.ConsoleAPICalledEventType.StartGroup,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, 'expanded message', Protocol.Runtime.ConsoleAPICalledEventType.Log,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, '', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, 'collapsed group', Protocol.Runtime.ConsoleAPICalledEventType.StartGroupCollapsed,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, 'collapsed message', Protocol.Runtime.ConsoleAPICalledEventType.Log,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, '', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup,
+          Protocol.Log.LogEntryLevel.Info);
+      await consoleView.getScheduledRefreshPromiseForTest();
+
+      // Mixed state: one expanded group and one collapsed group.
+      assert.strictEqual(consoleView.itemCount(), 3);
+
+      consoleView.collapseAll();
+      assert.strictEqual(consoleView.itemCount(), 2);
+
+      consoleView.expandAll();
+      assert.strictEqual(consoleView.itemCount(), 4);
+    });
+
+    it('collapseAll collapses nested groups', async () => {
+      addMessage(
+          consoleModel!, target, 'outer', Protocol.Runtime.ConsoleAPICalledEventType.StartGroup,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, 'inner', Protocol.Runtime.ConsoleAPICalledEventType.StartGroup,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, 'deep message', Protocol.Runtime.ConsoleAPICalledEventType.Log,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, '', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, '', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup,
+          Protocol.Log.LogEntryLevel.Info);
+      await consoleView.getScheduledRefreshPromiseForTest();
+
+      // All three are visible: outer, inner, deep message.
+      assert.strictEqual(consoleView.itemCount(), 3);
+
+      consoleView.collapseAll();
+
+      // After collapse, only outer is visible.
+      assert.strictEqual(consoleView.itemCount(), 1);
+    });
+
+    it('expandAll expands nested groups', async () => {
+      addMessage(
+          consoleModel!, target, 'outer', Protocol.Runtime.ConsoleAPICalledEventType.StartGroupCollapsed,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, 'inner', Protocol.Runtime.ConsoleAPICalledEventType.StartGroupCollapsed,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, 'deep message', Protocol.Runtime.ConsoleAPICalledEventType.Log,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, '', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup,
+          Protocol.Log.LogEntryLevel.Info);
+      addMessage(
+          consoleModel!, target, '', Protocol.Runtime.ConsoleAPICalledEventType.EndGroup,
+          Protocol.Log.LogEntryLevel.Info);
+      await consoleView.getScheduledRefreshPromiseForTest();
+
+      // All collapsed, only outer visible.
+      assert.strictEqual(consoleView.itemCount(), 1);
+
+      consoleView.expandAll();
+
+      // After expanding, all three are visible.
+      assert.strictEqual(consoleView.itemCount(), 3);
     });
   });
 });

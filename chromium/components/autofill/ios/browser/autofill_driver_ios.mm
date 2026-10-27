@@ -187,6 +187,8 @@ std::optional<LocalFrameToken> AutofillDriverIOS::Resolve(FrameToken query) {
     return std::nullopt;
   }
 
+  // TODO(crbug.com/503264715): Resolve() should returns std::nullopt if `query`
+  // does not refer to a child frame of `web_frame()`.
   if (std::holds_alternative<LocalFrameToken>(query)) {
     return std::get<LocalFrameToken>(query);
   }
@@ -551,9 +553,10 @@ void AutofillDriverIOS::FormsSeen(
     const std::vector<FormData>& updated_forms,
     const std::vector<FormGlobalId>& removed_forms) {
   auto callback = [](AutofillDriver& driver,
-                     const std::vector<FormData>& updated_forms,
-                     const std::vector<FormGlobalId>& removed_forms) {
-    driver.GetAutofillManager().OnFormsSeen(updated_forms, removed_forms);
+                     std::vector<FormData> updated_forms,
+                     std::vector<FormGlobalId> removed_forms) {
+    driver.GetAutofillManager().OnFormsSeen(std::move(updated_forms),
+                                            std::move(removed_forms));
   };
 
   if (IsAcrossIframesEnabled()) {
@@ -578,7 +581,7 @@ void AutofillDriverIOS::FormsSeen(
     }
     router_->FormsSeen(callback, *this, updated_forms, removed_forms);
   } else {
-    callback(*this, updated_forms, removed_forms);
+    callback(*this, std::move(updated_forms), std::move(removed_forms));
   }
 }
 
@@ -668,6 +671,10 @@ void AutofillDriverIOS::SetParent(base::WeakPtr<AutofillDriverIOS> parent) {
 
 void AutofillDriverIOS::SetSelfAsParent(const autofill::FormData& form,
                                         LocalFrameToken token) {
+  if (unregistered_) {
+    return;
+  }
+
   AutofillDriverIOS* child_driver =
       FromWebStateAndLocalFrameToken(web_state_, token);
   if (child_driver) {
@@ -677,9 +684,10 @@ void AutofillDriverIOS::SetSelfAsParent(const autofill::FormData& form,
   // establish the relation between the child frames and their host form in the
   // forms tree.
   auto callback = [](AutofillDriver& driver,
-                     const std::vector<FormData>& updated_forms,
-                     const std::vector<FormGlobalId>& removed_forms) {
-    driver.GetAutofillManager().OnFormsSeen(updated_forms, removed_forms);
+                     std::vector<FormData> updated_forms,
+                     std::vector<FormGlobalId> removed_forms) {
+    driver.GetAutofillManager().OnFormsSeen(std::move(updated_forms),
+                                            std::move(removed_forms));
   };
   router_->FormsSeen(callback, *this, {form}, {});
 }
@@ -811,6 +819,8 @@ bool AutofillDriverIOS::DetectFormSubmissionAfterFormRemoval(
 void AutofillDriverIOS::Unregister() {
   router_->UnregisterDriver(*this, /*driver_is_dying=*/true);
   unregistered_ = true;
+  parent_ = nullptr;
+  weak_ptr_factory_.InvalidateWeakPtrs();
 }
 
 void AutofillDriverIOS::OnDidTriggerFormFetch() {
@@ -876,8 +886,10 @@ void AutofillDriverIOS::RecordTriggeredFormExtractionMetrics() {
       form_extraction_trigger_count_);
 }
 
-void AutofillDriverIOS::DispatchEmailVerifiedEvent(
-    FieldGlobalId field_id,
+void AutofillDriverIOS::SendEmailVerificationToken(
+    FieldGlobalId email_field_id,
+    const std::string& email,
+    FieldGlobalId token_field_id,
     const std::string& presentation_token) {
   // TODO(crbug.com/380367784): Implement email verification on iOS.
   NOTIMPLEMENTED();

@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_CWISE_NULLARY_OP_H
 #define EIGEN_CWISE_NULLARY_OP_H
@@ -50,7 +51,7 @@ struct traits<CwiseNullaryOp<NullaryOp, PlainObjectType> > : traits<PlainObjectT
   for vectors.
   *
   * See DenseBase::NullaryExpr(Index,const CustomNullaryOp&) for an example binding
-  * C++11 random number generators.
+  * std random number generators.
   *
   * A nullary expression can also be used to implement custom sophisticated matrix manipulations
   * that cannot be covered by the existing set of natively supported matrix manipulations.
@@ -126,8 +127,8 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
  *
  * The template parameter \a CustomNullaryOp is the type of the functor.
  *
- * Here is an example with C++11 random generators: \include random_cpp11.cpp
- * Output: \verbinclude random_cpp11.out
+ * Here is an example with std random generators: \include random_generators.cpp
+ * Output: \verbinclude random_generators.out
  *
  * \sa class CwiseNullaryOp
  */
@@ -141,10 +142,10 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
 #endif
     DenseBase<Derived>::NullaryExpr(Index size, const CustomNullaryOp& func) {
   EIGEN_STATIC_ASSERT_VECTOR_ONLY(Derived)
-  if (RowsAtCompileTime == 1)
-    return CwiseNullaryOp<CustomNullaryOp, PlainObject>(1, size, func);
-  else
+  EIGEN_IF_CONSTEXPR(RowsAtCompileTime == 1) { return CwiseNullaryOp<CustomNullaryOp, PlainObject>(1, size, func); }
+  else {
     return CwiseNullaryOp<CustomNullaryOp, PlainObject>(size, 1, func);
+  }
 }
 
 /** \returns an expression of a matrix defined by a custom functor \a func

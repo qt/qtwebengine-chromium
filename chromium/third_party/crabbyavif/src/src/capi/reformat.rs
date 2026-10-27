@@ -184,7 +184,7 @@ fn CopyPlanes(dst: &mut avifImage, src: &Image) -> AvifResult<()> {
                 dst.alphaRowBytes,
             ];
             for y in 0..plane_data.height {
-                let src_slice = src.row_exact(plane, y)?;
+                let src_slice = src.row(plane, y)?;
                 let dst_slice = unsafe {
                     std::slice::from_raw_parts_mut(
                         dst_planes[plane.as_usize()]
@@ -221,7 +221,7 @@ fn CopyPlanes(dst: &mut avifImage, src: &Image) -> AvifResult<()> {
                 dst.alphaRowBytes / 2,
             ];
             for y in 0..plane_data.height {
-                let src_slice = src.row16_exact(plane, y)?;
+                let src_slice = src.row16(plane, y)?;
                 let dst_slice = unsafe {
                     std::slice::from_raw_parts_mut(
                         dst_planes[plane.as_usize()]

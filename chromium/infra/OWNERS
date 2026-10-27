@@ -3,14 +3,14 @@ chrome-dev-infra-reviewers@google.com
 # This is reserved for people that are comfortable with Chromium builders
 # and understand the implications of changing their configurations.
 bpastene@chromium.org
-estaab@chromium.org
 gatong@chromium.org
 hypan@google.com
 sshrimp@google.com
 svenzheng@chromium.org
 
 # For Mac bot related changes.
-yueshe@google.com
+wyeager@google.com
+yueshe@google.com  # Emeritus. Prefer wyeager@ for reviews.
 
 # For GPU bot related changes.
 bsheedy@chromium.org

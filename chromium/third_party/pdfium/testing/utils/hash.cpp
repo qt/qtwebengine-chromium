@@ -20,6 +20,6 @@ std::string CryptToBase16(const uint8_t* digest) {
 
 std::string GenerateMD5Base16(pdfium::span<const uint8_t> data) {
   uint8_t digest[16];
-  CRYPT_MD5Generate(data, digest);
+  CryptMd5Generate(data, digest);
   return CryptToBase16(digest);
 }

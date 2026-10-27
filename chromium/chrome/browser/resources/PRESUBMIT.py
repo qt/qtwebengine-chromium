@@ -12,6 +12,20 @@ ACTION_XML_PATH = '../../../tools/metrics/actions/actions.xml'
 PRESUBMIT_VERSION = '2.0.0'
 
 
+def CheckIconNames(input_api, output_api):
+  import sys
+  old_sys_path = sys.path[:]
+  try:
+    sys.path.append(
+        input_api.os_path.join(input_api.PresubmitLocalPath(), '..', '..', '..',
+                               'tools', 'resources', 'icon_checker'))
+    import icon_checker
+    affected_icons = icon_checker.ExtractIconsFromHtml(input_api)
+    return icon_checker.CheckIcons(input_api, output_api, affected_icons)
+  finally:
+    sys.path = old_sys_path
+
+
 def InternalCheckUserActionUpdate(input_api, output_api, action_xml_path):
   """Checks if any new user action has been added."""
   if any('actions.xml' == input_api.os_path.basename(f) for f in
@@ -164,11 +178,12 @@ def CheckNoNewJs(input_api, output_api):
 def CheckNoNewPolymer(input_api, output_api):
   EXCLUDED_PATHS = [
     'chrome/browser/resources/ash/',
-    'chrome/browser/resources/certificate_manager/',
     'chrome/browser/resources/chromeos/',
     'chrome/browser/resources/lens/overlay/',
     'chrome/browser/resources/password_manager/',
     'chrome/browser/resources/settings/',
+    # Temporary exception to allow refactoring before Lit migration.
+    'chrome/browser/resources/side_panel/bookmarks/',
   ]
 
   normalized_excluded_paths = []

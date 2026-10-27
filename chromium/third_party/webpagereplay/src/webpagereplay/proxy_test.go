@@ -65,7 +65,7 @@ func TestDoNotSaveInjectedScriptInResponseBody(t *testing.T) {
 		t.Fatalf("OpenWritableArchive: %v", err)
 	}
 
-	si, err := NewScriptInjector([]byte("let x = 1;"))
+	si, err := NewScriptInjector([]byte("let x = 1;"), DefaultScriptInjectorConfig())
 	if err != nil {
 		t.Fatalf("failed to create script injector: %v", err)
 	}

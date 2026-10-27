@@ -14,7 +14,6 @@
 #include "cast/common/public/message_port.h"
 #include "cast/streaming/capture_configs.h"
 #include "cast/streaming/impl/receiver_packet_router.h"
-#include "cast/streaming/impl/session_config.h"
 #include "cast/streaming/input.pb.h"
 #include "cast/streaming/public/constants.h"
 #include "cast/streaming/public/environment.h"
@@ -22,9 +21,11 @@
 #include "cast/streaming/public/protobuf_messenger.h"
 #include "cast/streaming/public/receiver_constraints.h"
 #include "cast/streaming/public/rpc_messenger.h"
+#include "cast/streaming/public/session_config.h"
 #include "cast/streaming/public/session_messenger.h"
 #include "cast/streaming/resolution.h"
 #include "cast/streaming/sender_message.h"
+#include "platform/base/ip_address.h"
 
 namespace openscreen::cast {
 
@@ -170,6 +171,12 @@ class ReceiverSession final : public Environment::SocketSubscriber {
 
   // Sends an input message to the currently negotiated sender.
   void SendInputMessage(const InputMessage& message);
+
+  void SetCustomMessageHandler(
+      std::string_view message_namespace,
+      ReceiverSessionMessenger::CustomMessageCallback cb);
+
+  ReceiverSessionMessenger* messenger() { return messenger_.get(); }
 
   // Environment::SocketSubscriber event callbacks.
   void OnSocketReady() override;

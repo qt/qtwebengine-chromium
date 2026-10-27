@@ -57,13 +57,16 @@ class API_AVAILABLE(macos(12.3)) TensorImplCoreml final
       const;
 
   // mojom::WebNNTensor
-  void ExportTensor(uint64_t flow_id, ExportTensorCallback callback) override;
+  void ExportTensor(uint64_t flow_id, uint64_t release_count) override;
+  void ExportTensorSync(uint64_t flow_id,
+                        uint64_t release_count,
+                        ExportTensorSyncCallback callback) override;
 
  private:
   ~TensorImplCoreml() override;
 
   scoped_refptr<QueueableResourceState<BufferContent>> buffer_state_
-      GUARDED_BY_CONTEXT(gpu_sequence_checker_);
+      GUARDED_BY_CONTEXT(sequence_checker_);
 };
 
 }  // namespace coreml

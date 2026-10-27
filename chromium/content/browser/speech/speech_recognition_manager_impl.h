@@ -33,6 +33,7 @@ class MediaStreamManager;
 class MediaStreamUIProxy;
 class SpeechRecognitionManagerDelegate;
 class SpeechRecognizer;
+struct GlobalRenderFrameHostId;
 
 // This is the manager for speech recognition. It is a single instance in
 // the browser process and can serve several requests. Each recognition request
@@ -62,8 +63,11 @@ class CONTENT_EXPORT SpeechRecognitionManagerImpl
   static SpeechRecognitionManagerImpl* GetInstance();
 
   // Returns the number of sessions tracked by FrameSessionTracker.
-  static int GetSessionTrackerCountForTesting(int render_process_id,
-                                              int render_frame_id);
+  static int GetSessionTrackerCountForTesting(
+      GlobalRenderFrameHostId global_id);
+
+  static bool IsOptimizationGuideSpeechModel(
+      const SpeechRecognitionSessionConfig& config);
 
   // SpeechRecognitionManager implementation.
   int CreateSession(const SpeechRecognitionSessionConfig& config) override;
@@ -77,8 +81,8 @@ class CONTENT_EXPORT SpeechRecognitionManagerImpl
           audio_forwarder_config) override;
   void StartSession(int session_id) override;
   void AbortSession(int session_id) override;
-  void AbortAllSessionsForRenderFrame(int render_process_id,
-                                      int render_frame_id) override;
+  void AbortAllSessionsForRenderFrame(
+      GlobalRenderFrameHostId global_id) override;
   void StopAudioCaptureForSession(int session_id) override;
   void UpdateRecognitionContextForSession(
       int session_id,
@@ -174,6 +178,10 @@ class CONTENT_EXPORT SpeechRecognitionManagerImpl
   void RecognitionAllowedCallback(int session_id,
                                   bool ask_user,
                                   bool is_allowed);
+
+  void LogBackendSpecificErrorOccurred(
+      const SpeechRecognitionSessionConfig& config,
+      media::mojom::SpeechRecognitionErrorCode error_code);
 
   // Callback to get back the result of a media request. |devices| is an array
   // of devices approved to be used for the request, |devices| is empty if the

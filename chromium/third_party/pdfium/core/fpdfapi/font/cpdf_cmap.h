@@ -92,7 +92,7 @@ class CPDF_CMap final : public Retainable {
 
   bool loaded_ = false;
   bool vertical_ = false;
-  CIDSet charset_ = CIDSET_UNKNOWN;
+  CIDSet charset_ = CIDSet::kUnknown;
   CodingScheme coding_scheme_ = TwoBytes;
   CIDCoding coding_ = CIDCoding::kUNKNOWN;
   std::vector<bool> mixed_two_byte_leading_bytes_;

@@ -17,8 +17,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/buildflag.h"
 #include "components/os_crypt/async/common/algorithm.mojom.h"
-#include "components/os_crypt/async/common/features.h"
-#include "components/os_crypt/sync/os_crypt.h"
 #include "crypto/aead.h"
 #include "crypto/aes_cbc.h"
 #include "crypto/random.h"
@@ -95,9 +93,6 @@ Encryptor::Key Encryptor::Key::Clone() const {
 Encryptor::Encryptor() = default;
 Encryptor::Encryptor(mojo::DefaultConstruct::Tag) : Encryptor() {}
 
-Encryptor::Encryptor(Encryptor&& other) = default;
-Encryptor& Encryptor::operator=(Encryptor&& other) = default;
-
 Encryptor::Encryptor(
     KeyRing keys,
     const std::string& provider_for_encryption,
@@ -115,10 +110,9 @@ std::vector<uint8_t> Encryptor::Key::Encrypt(
 
   switch (*algorithm_) {
     case mojom::Algorithm::kAES256GCM: {
-      crypto::Aead aead(crypto::Aead::AES_256_GCM);
       base::span<const uint8_t> key(key_);
 #if BUILDFLAG(IS_WIN)
-      // Copy. This makes it thread safe. Must outlive aead.
+      // Copy. This makes it thread safe.
       std::vector<uint8_t> decrypted_key(key_);
       absl::Cleanup zero_memory = [&decrypted_key] {
         ::SecureZeroMemory(decrypted_key.data(), decrypted_key.size());
@@ -131,15 +125,15 @@ std::vector<uint8_t> Encryptor::Key::Encrypt(
         key = base::span<const uint8_t>(decrypted_key);
       }
 #endif  // BUILDFLAG(IS_WIN)
-      aead.Init(key);
 
-      // Note: can only check this once AEAD is initialized.
-      DCHECK_EQ(kNonceLength, aead.NonceLength());
+      DCHECK_EQ(kNonceLength,
+                crypto::aead::NonceSizeFor(crypto::aead::AES_256_GCM));
 
       std::array<uint8_t, kNonceLength> nonce = {};
       crypto::RandBytes(nonce);
       std::vector<uint8_t> ciphertext =
-          aead.Seal(plaintext, nonce, /*additional_data=*/{});
+          crypto::aead::Seal(crypto::aead::AES_256_GCM, key, plaintext, nonce,
+                             /*associated_data=*/{});
 
       // Nonce goes at the front of the ciphertext.
       ciphertext.insert(ciphertext.begin(), nonce.cbegin(), nonce.cend());
@@ -162,11 +156,9 @@ std::optional<std::vector<uint8_t>> Encryptor::Key::Decrypt(
       if (ciphertext.size() < kNonceLength) {
         return std::nullopt;
       }
-      crypto::Aead aead(crypto::Aead::AES_256_GCM);
-
       base::span<const uint8_t> key(key_);
 #if BUILDFLAG(IS_WIN)
-      // Copy. This makes it thread safe. Must outlive aead.
+      // Copy. This makes it thread safe.
       std::vector<uint8_t> decrypted_key(key_);
       absl::Cleanup zero_memory = [&decrypted_key] {
         ::SecureZeroMemory(decrypted_key.data(), decrypted_key.size());
@@ -178,13 +170,13 @@ std::optional<std::vector<uint8_t>> Encryptor::Key::Decrypt(
         key = base::span<const uint8_t>(decrypted_key);
       }
 #endif  // BUILDFLAG(IS_WIN)
-      aead.Init(key);
 
       // The nonce is at the start of the ciphertext and must be removed.
       auto nonce = ciphertext.first(kNonceLength);
       auto data = ciphertext.subspan(kNonceLength);
 
-      return aead.Open(data, nonce, /*additional_data=*/{});
+      return crypto::aead::Open(crypto::aead::AES_256_GCM, key, data, nonce,
+                                /*associated_data=*/{});
     }
     case mojom::Algorithm::kAES128CBC: {
       auto plaintext =
@@ -238,27 +230,9 @@ std::optional<std::vector<uint8_t>> Encryptor::EncryptString(
     return std::vector<uint8_t>();
   }
 
-  bool fallback_to_sync = false;
-
-  absl::Cleanup record_metric = [&fallback_to_sync] {
-    base::UmaHistogramBoolean("OSCrypt.Async.EncryptionFallbackToSync",
-                              fallback_to_sync);
-  };
   const auto& it = keys_.find(provider_for_encryption_);
 
   if (it == keys_.end() || !it->second.has_value()) {
-    // This can happen if there is no default provider, or `keys_` is empty, or
-    // if the key is temporarily unavailable for encryption. In these cases,
-    // fall back to legacy OSCrypt encryption.
-    if (base::FeatureList::IsEnabled(kOSCryptAsyncPreventFallbackToSync)) {
-      return std::nullopt;
-    }
-
-    std::string ciphertext;
-    if (OSCrypt::EncryptString(data, &ciphertext)) {
-      fallback_to_sync = true;
-      return std::vector<uint8_t>(ciphertext.cbegin(), ciphertext.cend());
-    }
     return std::nullopt;
   }
 
@@ -283,13 +257,6 @@ std::optional<std::string> Encryptor::DecryptData(
     return std::string();
   }
 
-  bool fallback_to_sync = false;
-
-  absl::Cleanup record_metric = [&fallback_to_sync] {
-    base::UmaHistogramBoolean("OSCrypt.Async.DecryptionFallbackToSync",
-                              fallback_to_sync);
-  };
-
   for (const auto& [provider, key] : keys_) {
     if (data.size() < provider.size()) {
       continue;
@@ -312,46 +279,13 @@ std::optional<std::string> Encryptor::DecryptData(
           return std::nullopt;
         }
       } else {
-        // Indicate that this might be a temporary failure. Do not return an
-        // error yet as OSCrypt Sync might still be able to decrypt this data.
+        // Indicate that this might be a temporary failure.
         if (flags) {
           flags->temporarily_unavailable = true;
         }
         break;
       }
     }
-  }
-
-  // OSCrypt is available, so fallback to using legacy OSCrypt to attempt
-  // decryption. This must be attempted first because some platforms report
-  // IsEncryptionAvailable is false when it really is available.
-  if (!base::FeatureList::IsEnabled(kOSCryptAsyncPreventFallbackToSync)) {
-    std::string string_data(data.begin(), data.end());
-    std::string plaintext;
-    if (OSCrypt::DecryptString(string_data, &plaintext)) {
-      fallback_to_sync = true;
-      if (flags) {
-        // Possibly, an OSCrypt sync compatible Key Provider had temporarily
-        // failed to provide a key for this data, so reset the
-        // `temporarily_unavailable` flag here, as the data successfully
-        // decrypted.
-        flags->temporarily_unavailable = false;
-        // If fallback to OSCrypt happened but there is a valid key provider,
-        // with a valid key, then recommend re-encryption.
-        if (DefaultEncryptionProviderAvailable()) {
-          flags->should_reencrypt = true;
-        }
-      }
-      return plaintext;
-    }
-  }
-
-  // If OSCrypt failed to decrypt, then check if EncryptionIsAvailable. If
-  // encryption is not available, then this is a temporary failure. See above
-  // for why this check can't be earlier.
-  if (!base::FeatureList::IsEnabled(kOSCryptAsyncPreventFallbackToSync) &&
-      !OSCrypt::IsEncryptionAvailable() && flags) {
-    flags->temporarily_unavailable = true;
   }
 
   return std::nullopt;
@@ -374,7 +308,7 @@ bool Encryptor::DecryptString16(const std::string& ciphertext,
   return true;
 }
 
-Encryptor Encryptor::Clone(Option option) const {
+scoped_refptr<Encryptor> Encryptor::Clone(Option option) const {
   KeyRing keyring;
   for (const auto& [provider, key] : keys_) {
     if (key.has_value()) {
@@ -386,39 +320,24 @@ Encryptor Encryptor::Clone(Option option) const {
 
   switch (option) {
     case Option::kNone:
-      return Encryptor(std::move(keyring), provider_for_encryption_,
-                       provider_for_os_crypt_sync_compatible_encryption_);
+      return base::WrapRefCounted(
+          new Encryptor(std::move(keyring), provider_for_encryption_,
+                        provider_for_os_crypt_sync_compatible_encryption_));
     case Option::kEncryptSyncCompat:
-      return Encryptor(std::move(keyring),
-                       provider_for_os_crypt_sync_compatible_encryption_,
-                       provider_for_os_crypt_sync_compatible_encryption_);
+      return base::WrapRefCounted(new Encryptor(
+          std::move(keyring), provider_for_os_crypt_sync_compatible_encryption_,
+          provider_for_os_crypt_sync_compatible_encryption_));
   }
 
   NOTREACHED() << "Unsupported Option.";
 }
 
 bool Encryptor::IsEncryptionAvailable() const {
-  if (DefaultEncryptionProviderAvailable()) {
-    return true;
-  }
-
-  if (!base::FeatureList::IsEnabled(kOSCryptAsyncPreventFallbackToSync)) {
-    return OSCrypt::IsEncryptionAvailable();
-  }
-
-  return false;
+  return DefaultEncryptionProviderAvailable();
 }
 
 bool Encryptor::IsDecryptionAvailable() const {
-  if (!keys_.empty()) {
-    return true;
-  }
-
-  if (!base::FeatureList::IsEnabled(kOSCryptAsyncPreventFallbackToSync)) {
-    return OSCrypt::IsEncryptionAvailable();
-  }
-
-  return false;
+  return !keys_.empty();
 }
 
 bool Encryptor::DefaultEncryptionProviderAvailable() const {

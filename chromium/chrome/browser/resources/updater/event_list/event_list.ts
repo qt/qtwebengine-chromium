@@ -12,12 +12,11 @@ import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 import {PluralStringProxyImpl} from 'chrome://resources/js/plural_string_proxy.js';
 
-import {BrowserProxyImpl} from '../browser_proxy.js';
 import {deduplicateEvents, mergeEvents, parseEvents, UpdaterProcessMap} from '../event_history.js';
 import type {HistoryEvent, MergedHistoryEvent, PolicySet} from '../event_history.js';
 import {loadTimeData} from '../i18n_setup.js';
 import {formatDateShort, formatRelativeDate} from '../tools.js';
-import {HistoryFilter} from '../updater_ui.mojom-webui.js';
+import {browserProxyFactory, HistoryFilter} from '../updater_ui.mojom-webui.js';
 
 import {getCss} from './event_list.css.js';
 import {getHtml} from './event_list.html.js';
@@ -93,6 +92,7 @@ export class EventListElement extends CrLitElement {
       expandAllButtonLabel: {type: String},
       events: {type: Array},
       scrollTarget: {type: Object},
+      processMap: {type: Object},
     };
   }
 
@@ -104,8 +104,7 @@ export class EventListElement extends CrLitElement {
       loadTimeData.getString('expandAll');
   protected accessor events: EventEntry[] = [];
   protected accessor scrollTarget: HTMLElement = document.documentElement;
-
-  protected processMap: UpdaterProcessMap|undefined = undefined;
+  protected accessor processMap: UpdaterProcessMap|undefined = undefined;
   protected sortedEventsWithDates: Array<HistoryEvent|MergedHistoryEvent> = [];
 
   override willUpdate(changedProperties: PropertyValues<this>) {
@@ -157,7 +156,7 @@ export class EventListElement extends CrLitElement {
     });
   }
 
-  protected get anyExpanded(): boolean {
+  protected isAnyExpanded(): boolean {
     return this.eventListItems.some(item => item.expanded);
   }
 
@@ -203,11 +202,11 @@ export class EventListElement extends CrLitElement {
       default:
         assertNotReachedCase(category);
     }
-    BrowserProxyImpl.getInstance().handler.recordFilterChange(mojoCategory);
+    browserProxyFactory.getInstance().handler.recordFilterChange(mojoCategory);
   }
 
   protected onExpandCollapseAllClick() {
-    if (this.anyExpanded) {
+    if (this.isAnyExpanded()) {
       this.collapseAll();
     } else {
       this.expandAll();
@@ -215,11 +214,11 @@ export class EventListElement extends CrLitElement {
   }
 
   protected onEventItemExpandedChanged() {
-    this.expandAllButtonLabel =
-        loadTimeData.getString(this.anyExpanded ? 'collapseAll' : 'expandAll');
+    this.expandAllButtonLabel = loadTimeData.getString(
+        this.isAnyExpanded() ? 'collapseAll' : 'expandAll');
   }
 
-  protected get numDisplayedEventsLabel(): string {
+  protected getNumDisplayedEventsLabel(): string {
     return loadTimeData.getStringF(
         'displayedEventsCount', this.events.length,
         this.sortedEventsWithDates.length);

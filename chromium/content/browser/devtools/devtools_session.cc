@@ -10,7 +10,9 @@
 #include "base/containers/flat_set.h"
 #include "base/functional/bind.h"
 #include "base/trace_event/trace_event.h"
+#include "content/browser/bad_message.h"
 #include "content/browser/devtools/devtools_manager.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/browser/devtools/protocol/devtools_domain_handler.h"
 #include "content/browser/devtools/protocol/protocol.h"
 #include "content/browser/devtools/render_frame_devtools_agent_host.h"
@@ -83,6 +85,7 @@ bool TerminateOnCrossProcessNavigation(crdtp::span<uint8_t> method) {
       crdtp::SpanFrom("Runtime.evaluate"),
       crdtp::SpanFrom("Runtime.runScript"),
       crdtp::SpanFrom("Runtime.terminateExecution"),
+      crdtp::SpanFrom("WebMCP.invokeTool"),
   };
   DCHECK(std::is_sorted(kEntries->begin(), kEntries->end(), crdtp::SpanLt()));
   return std::binary_search(kEntries->begin(), kEntries->end(), method,
@@ -103,10 +106,12 @@ std::atomic<int> g_root_session_count{0};
 DevToolsSession::PendingMessage::PendingMessage(PendingMessage&&) = default;
 DevToolsSession::PendingMessage::PendingMessage(int call_id,
                                                 crdtp::span<uint8_t> method,
-                                                crdtp::span<uint8_t> payload)
+                                                crdtp::span<uint8_t> payload,
+                                                std::string fallthrough_data)
     : call_id(call_id),
       method(method.begin(), method.end()),
-      payload(payload.begin(), payload.end()) {}
+      payload(payload.begin(), payload.end()),
+      fallthrough_data(std::move(fallthrough_data)) {}
 
 DevToolsSession::PendingMessage::~PendingMessage() = default;
 
@@ -118,6 +123,11 @@ int DevToolsSession::GetRootSessionCount() {
 DevToolsSession::DevToolsSession(DevToolsAgentHostClient* client, Mode mode)
     : client_(client), mode_(mode) {
   ++g_root_session_count;
+  session_state_cookie_ = blink::mojom::DevToolsSessionState::New();
+  session_state_cookie_->browser_originating_session_state =
+      blink::mojom::BrowserOriginatingSessionState::New();
+  handle_command_callback_ = base::BindRepeating(
+      &DevToolsSession::HandleCommand, weak_factory_.GetWeakPtr());
 }
 
 DevToolsSession::DevToolsSession(DevToolsAgentHostClient* client,
@@ -130,6 +140,11 @@ DevToolsSession::DevToolsSession(DevToolsAgentHostClient* client,
       mode_(mode) {
   DCHECK(root_session_);
   DCHECK(!session_id_.empty());
+  session_state_cookie_ = blink::mojom::DevToolsSessionState::New();
+  session_state_cookie_->browser_originating_session_state =
+      blink::mojom::BrowserOriginatingSessionState::New();
+  handle_command_callback_ = base::BindRepeating(
+      &DevToolsSession::HandleCommand, weak_factory_.GetWeakPtr());
 }
 
 DevToolsSession::~DevToolsSession() {
@@ -217,8 +232,10 @@ void DevToolsSession::AttachToAgent(blink::mojom::DevToolsAgent* agent,
       &DevToolsSession::MojoConnectionDestroyed, base::Unretained(this)));
 
   // Set cookie to an empty struct to reattach next time instead of attaching.
-  if (!session_state_cookie_)
-    session_state_cookie_ = blink::mojom::DevToolsSessionState::New();
+  if (!session_state_cookie_->renderer_originating_session_state) {
+    session_state_cookie_->renderer_originating_session_state =
+        blink::mojom::RendererOriginatingSessionState::New();
+  }
 
   // Only use script_to_evaluate_on_load_ once.
   script_to_evaluate_on_load_.clear();
@@ -317,7 +334,14 @@ void DevToolsSession::DispatchProtocolMessage(
     message = converted_cbor_message;
   }
   // At this point |message| is CBOR.
-  crdtp::Dispatchable dispatchable(crdtp::SpanFrom(message));
+  crdtp::Dispatchable dispatchable(
+      crdtp::SpanFrom(message), std::string_view(),
+      [cb = base::BindRepeating(&DevToolsSession::FallThrough,
+                                weak_factory_.GetWeakPtr())](
+          int call_id, crdtp::span<uint8_t> method,
+          crdtp::span<uint8_t> message, std::string_view fallthrough_data) {
+        cb.Run(call_id, method, message, fallthrough_data);
+      });
   if (!dispatchable.ok()) {
     DispatchProtocolMessageToClient(
         (dispatchable.HasCallId()
@@ -370,41 +394,44 @@ void DevToolsSession::DispatchProtocolMessageInternal(
   DevToolsManagerDelegate* delegate =
       DevToolsManager::GetInstance()->delegate();
   if (delegate && !dispatchable.Method().empty()) {
-    delegate->HandleCommand(this, message,
-                            base::BindOnce(&DevToolsSession::HandleCommand,
-                                           weak_factory_.GetWeakPtr()));
+    delegate->HandleCommand(this, message, handle_command_callback_);
   } else {
     HandleCommandInternal(std::move(dispatchable), message);
   }
 }
 
 void DevToolsSession::HandleCommand(base::span<const uint8_t> message) {
-  HandleCommandInternal(crdtp::Dispatchable(crdtp::SpanFrom(message)), message);
+  HandleCommandInternal(
+      crdtp::Dispatchable(
+          crdtp::SpanFrom(message), std::string_view(),
+          [cb = base::BindRepeating(&DevToolsSession::FallThrough,
+                                    weak_factory_.GetWeakPtr())](
+              int call_id, crdtp::span<uint8_t> method,
+              crdtp::span<uint8_t> message, std::string_view fallthrough_data) {
+            cb.Run(call_id, method, message, fallthrough_data);
+          }),
+      message);
 }
 
 void DevToolsSession::HandleCommandInternal(crdtp::Dispatchable dispatchable,
                                             base::span<const uint8_t> message) {
   DCHECK(dispatchable.ok());
-  crdtp::UberDispatcher::DispatchResult dispatched =
-      dispatcher_->Dispatch(dispatchable);
-  if (browser_only_ || dispatched.MethodFound()) {
-    TRACE_EVENT(
-        "devtools", "DevToolsSession::HandleCommand in Browser",
-        perfetto::Flow::ProcessScoped(dispatchable.CallId()), "method",
-        std::string(dispatchable.Method().begin(), dispatchable.Method().end()),
-        "call_id", dispatchable.CallId());
-    dispatched.Run();
-  } else {
-    FallThrough(dispatchable.CallId(), dispatchable.Method(),
-                crdtp::SpanFrom(message));
-  }
+  TRACE_EVENT(
+      "devtools", "DevToolsSession::HandleCommand in Browser",
+      perfetto::Flow::ProcessScoped(dispatchable.CallId()), "method",
+      std::string(dispatchable.Method().begin(), dispatchable.Method().end()),
+      "call_id", dispatchable.CallId());
+  dispatcher_->Dispatch(dispatchable);
 }
 
 void DevToolsSession::FallThrough(int call_id,
                                   crdtp::span<uint8_t> method,
-                                  crdtp::span<uint8_t> message) {
-  // In browser-only mode, we should've handled everything in dispatcher.
-  DCHECK(!browser_only_);
+                                  crdtp::span<uint8_t> message,
+                                  std::string_view fallthrough_data) {
+  if (browser_only_) {
+    dispatcher_->SendMethodNotFound(call_id, method);
+    return;
+  }
 
   if (waiting_for_response_.contains(call_id)) {
     DispatchProtocolMessageToClient(
@@ -415,7 +442,7 @@ void DevToolsSession::FallThrough(int call_id,
   }
 
   auto it = pending_messages_.emplace(pending_messages_.end(), call_id, method,
-                                      message);
+                                      message, std::string(fallthrough_data));
   if (suspended_sending_messages_to_agent_ &&
       ShouldSuspendDuringNavigation(method))
     return;
@@ -463,7 +490,8 @@ void DevToolsSession::DispatchToAgent(const PendingMessage& message) {
                   perfetto::Flow::ProcessScoped(message.call_id), "method",
                   message.method, "call_id", message.call_id);
       io_session_->DispatchProtocolCommand(message.call_id, message.method,
-                                           message.payload);
+                                           message.payload,
+                                           message.fallthrough_data);
     }
   } else {
     if (session_) {
@@ -471,7 +499,8 @@ void DevToolsSession::DispatchToAgent(const PendingMessage& message) {
                   perfetto::Flow::ProcessScoped(message.call_id), "method",
                   message.method, "call_id", message.call_id);
       session_->DispatchProtocolCommand(message.call_id, message.method,
-                                        message.payload);
+                                        message.payload,
+                                        message.fallthrough_data);
     }
   }
 }
@@ -537,17 +566,46 @@ void DevToolsSession::FlushProtocolNotifications() {}
 // parsed and sent as is, since a renderer may be compromised; so therefore,
 // we're not sending them via the DevToolsAgentHostClientChannel interface
 // (::DispatchProtocolMessageToClient) but directly to the client instead.
-static void DispatchProtocolResponseOrNotification(
+void DevToolsSession::DispatchProtocolResponseOrNotification(
     DevToolsAgentHostClient* client,
     DevToolsAgentHostImpl* agent_host,
-    blink::mojom::DevToolsMessagePtr message) {
+    blink::mojom::DevToolsMessagePtr message,
+    const std::string& session_id,
+    const bool& is_notification) {
+  // If BigBuffer is backed by shared memory, make a copy so that a compromised
+  // renderer wouldn't be able to mess with the message as we validate it.
+  std::vector<uint8_t> message_bytes;
+  base::span<const uint8_t> message_span;
+  switch (message->data.storage_type()) {
+    case mojo_base::BigBuffer::StorageType::kBytes:
+      message_span = message->data.byte_span();
+      break;
+    case mojo_base::BigBuffer::StorageType::kSharedMemory:
+      message_bytes.assign(message->data.begin(), message->data.end());
+      message_span = message_bytes;
+      break;
+    default:
+      // just keep span empty, this will cause renderer killed for invalid
+      // message below.
+      break;
+  }
+
+  if (message_span.empty() ||
+      !ValidateMessage(session_id, /*expected_has_id=*/!is_notification,
+                       message_span)) {
+    if (RenderProcessHost* process_host = agent_host->GetProcessHost()) {
+      bad_message::ReceivedBadMessage(
+          process_host, bad_message::RFH_INCONSISTENT_DEVTOOLS_MESSAGE);
+    }
+    return;
+  }
   client->DispatchProtocolMessage(agent_host, message->data);
 }
 
 void DevToolsSession::DispatchProtocolResponse(
     blink::mojom::DevToolsMessagePtr message,
     int call_id,
-    blink::mojom::DevToolsSessionStatePtr updates) {
+    blink::mojom::RendererOriginatingSessionStatePtr updates) {
   TRACE_EVENT("devtools", "DevToolsSession::DispatchProtocolResponse",
               perfetto::TerminatingFlow::ProcessScoped(call_id), "call_id",
               call_id);
@@ -560,16 +618,18 @@ void DevToolsSession::DispatchProtocolResponse(
   pending_messages_.erase(it->second);
   waiting_for_response_.erase(it);
   DispatchProtocolResponseOrNotification(client_, agent_host_,
-                                         std::move(message));
+                                         std::move(message), session_id_,
+                                         /*is_notification=*/false);
   // |this| may be deleted at this point.
 }
 
 void DevToolsSession::DispatchProtocolNotification(
     blink::mojom::DevToolsMessagePtr message,
-    blink::mojom::DevToolsSessionStatePtr updates) {
+    blink::mojom::RendererOriginatingSessionStatePtr updates) {
   ApplySessionStateUpdates(std::move(updates));
   DispatchProtocolResponseOrNotification(client_, agent_host_,
-                                         std::move(message));
+                                         std::move(message), session_id_,
+                                         /*is_notification=*/true);
   // |this| may be deleted at this point.
 }
 
@@ -602,16 +662,21 @@ void DevToolsSession::ConnectionClosed() {
 }
 
 void DevToolsSession::ApplySessionStateUpdates(
-    blink::mojom::DevToolsSessionStatePtr updates) {
+    blink::mojom::RendererOriginatingSessionStatePtr updates) {
   if (!updates)
     return;
-  if (!session_state_cookie_)
-    session_state_cookie_ = blink::mojom::DevToolsSessionState::New();
+  if (!session_state_cookie_->renderer_originating_session_state) {
+    session_state_cookie_->renderer_originating_session_state =
+        blink::mojom::RendererOriginatingSessionState::New();
+  }
   for (auto& entry : updates->entries) {
-    if (entry.second.has_value())
-      session_state_cookie_->entries[entry.first] = std::move(*entry.second);
-    else
-      session_state_cookie_->entries.erase(entry.first);
+    if (entry.second.has_value()) {
+      session_state_cookie_->renderer_originating_session_state
+          ->entries[entry.first] = std::move(*entry.second);
+    } else {
+      session_state_cookie_->renderer_originating_session_state->entries.erase(
+          entry.first);
+    }
   }
 }
 
@@ -656,6 +721,8 @@ void DevToolsSession::RemoveObserver(ChildObserver* obs) {
   child_observers_.RemoveObserver(obs);
 }
 
+
+
 void DevToolsSession::PrepareForReload(std::string script_to_evaluate_on_load) {
   script_to_evaluate_on_load_ = std::move(script_to_evaluate_on_load);
   io_session_->UnpauseAndTerminate();
@@ -692,6 +759,63 @@ DevToolsSession::MaybeGetDurableMessageCollector() {
   return durable_message_collector_.is_bound()
              ? durable_message_collector_.get()
              : nullptr;
+}
+
+DevToolsSession* DevToolsSession::GetSessionById(const std::string& session_id) {
+  auto it = child_sessions_.find(session_id);
+  return it == child_sessions_.end() ? nullptr : it->second.get();
+}
+
+// static
+bool DevToolsSession::ValidateMessage(const std::string& expected_session_id,
+                                      const bool expected_has_id,
+                                      base::span<const uint8_t> message) {
+  std::vector<uint8_t> cbor_message;
+  crdtp::span<uint8_t> span_message = crdtp::SpanFrom(message);
+
+  if (!crdtp::cbor::IsCBORMessage(span_message)) {
+    if (!crdtp::json::ConvertJSONToCBOR(span_message, &cbor_message).ok()) {
+      return false;  // Safely terminate renderer on malformed JSON
+    }
+    span_message = crdtp::SpanFrom(cbor_message);
+  }
+
+  // Do NOT use crdtp::Dispatchable here. It enforces the presence of both
+  // 'id' and 'method', which are not guaranteed in Responses and Notifications.
+  crdtp::span<uint8_t> extracted_session_id =
+      crdtp::cbor::GetString8ValueFromMap(span_message,
+                                          crdtp::SpanFrom("sessionId"));
+
+  if (!expected_has_id &&
+      crdtp::cbor::HasKeyInMap(span_message, crdtp::SpanFrom("id"))) {
+    DLOG(ERROR) << "Expected no id in the message but received one";
+    return false;
+  }
+
+  if (expected_session_id.empty()) {
+    if (!extracted_session_id.empty()) {
+      DLOG(ERROR) << "Root session expected no sessionId but received one: "
+                  << (extracted_session_id.empty()
+                          ? ""
+                          : std::string(extracted_session_id.begin(),
+                                        extracted_session_id.end()));
+      return false;
+    }
+    return true;
+  } else {
+    if (extracted_session_id.empty() ||
+        !crdtp::SpanEquals(crdtp::SpanFrom(expected_session_id),
+                           extracted_session_id)) {
+      DLOG(ERROR) << "Child session expected sessionId: " << expected_session_id
+                  << ", but got: "
+                  << (extracted_session_id.empty()
+                          ? ""
+                          : std::string(extracted_session_id.begin(),
+                                        extracted_session_id.end()));
+      return false;
+    }
+    return true;
+  }
 }
 
 }  // namespace content

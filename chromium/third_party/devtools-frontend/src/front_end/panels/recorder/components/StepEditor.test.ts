@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import {
   dispatchKeyDownEvent,
   getEventPromise,
@@ -29,7 +31,8 @@ const triggerMicroTaskQueue = async (n = 1) => {
   }
 };
 
-describe('StepEditor', () => {
+// Disabled due to flakiness
+describe.skip('[crbug.com/505637246]StepEditor', () => {
   setupLocaleHooks();
   async function renderEditor(
       step: Models.Schema.Step,

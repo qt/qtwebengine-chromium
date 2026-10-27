@@ -30,6 +30,7 @@ ARCHS = [
     "x86_avx",
     "x86_avx2",
     "x86_avx512",
+    "arm64_neon",
     "arm_neon",
     "wasm_simd128",
 ]
@@ -60,6 +61,7 @@ ynn_cc_library(
     deps = [
         "//ynnpack:ynnpack_h",
         "//ynnpack/base",
+        "//ynnpack/base:log",
         "//ynnpack/base/simd",
     ],
 )
@@ -74,7 +76,7 @@ cc_library(
         "//ynnpack:ynnpack_h",
         "//ynnpack/base",
         "//ynnpack/base/test:tensor",
-        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest",  # no g3
     ],
 )
 

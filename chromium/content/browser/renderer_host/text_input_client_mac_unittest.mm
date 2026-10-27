@@ -12,7 +12,6 @@
 #include <tuple>
 #include <utility>
 #include <variant>
-#include <vector>
 
 #include "base/containers/queue.h"
 #include "base/functional/bind.h"
@@ -48,6 +47,7 @@ namespace content {
 
 namespace {
 
+using ::testing::Bool;
 using ::testing::Combine;
 using ::testing::Values;
 
@@ -68,13 +68,6 @@ enum class TimeoutParam {
 enum class FunctionToTest {
   kGetCharacterIndexAtPoint,
   kGetFirstRectForRange,
-};
-
-// State of the kTextInputClientUseNestedLoop feature.
-enum class NestedLoopFeatureState {
-  kDisabled,
-  kEnabledWithoutEventMask,
-  kEnabledWithEventMask,
 };
 
 // GetCharacterIndexAtPoint() returns uint32_t.
@@ -233,57 +226,41 @@ class FakeAsyncRequestDelegate final
       GUARDED_BY_CONTEXT(sequence_checker_);
 };
 
-class TextInputClientMacTestBase : public content::RenderViewHostTestHarness {
+// This test does not test the Blink side of the dictionary system (which
+// performs the actual data fetching), but rather this just tests that the
+// service's signaling system works.
+class TextInputClientMacTest
+    : public content::RenderViewHostTestHarness,
+      public ::testing::WithParamInterface<
+          std::tuple<FunctionToTest, bool, TimeoutParam>> {
  public:
-  TextInputClientMacTestBase(TimeoutParam timeout_param,
-                             NestedLoopFeatureState feature_state)
-      : RenderViewHostTestHarness(BrowserTaskEnvironment::REAL_IO_THREAD) {
+  TextInputClientMacTest()
+      : RenderViewHostTestHarness(BrowserTaskEnvironment::REAL_IO_THREAD),
+        function_to_test_(std::get<0>(GetParam())),
+        is_sync_(std::get<1>(GetParam())) {
     base::TimeDelta ipc_timeout;
-    switch (timeout_param) {
+    switch (std::get<2>(GetParam())) {
       case TimeoutParam::kLongTimeout:
         ipc_timeout = TestTimeouts::action_max_timeout();
         break;
       case TimeoutParam::kShortTimeout:
-        // See SyncGetter_StaleResult for the exact value.
+        // See SyncOrAsyncGetter_StaleResult for the exact value.
         ipc_timeout = TestTimeouts::tiny_timeout() * 1.5;
         break;
     }
-
-    std::vector<base::test::FeatureRefAndParams> enabled_features;
-    std::vector<base::test::FeatureRef> disabled_features;
-    enabled_features.push_back(base::test::FeatureRefAndParams(
+    feature_list_.InitAndEnableFeatureWithParameters(
         features::kTextInputClient,
         {{"ipc_timeout",
-          absl::StrFormat("%dms", ipc_timeout.InMilliseconds())}}));
-    switch (feature_state) {
-      case NestedLoopFeatureState::kDisabled:
-        disabled_features.push_back(
-            base::test::FeatureRef(features::kTextInputClientUseNestedLoop));
-        break;
-      case NestedLoopFeatureState::kEnabledWithoutEventMask:
-        enabled_features.push_back(base::test::FeatureRefAndParams(
-            features::kTextInputClientUseNestedLoop,
-            {{"enable_event_mask", "false"}}));
-        break;
-      case NestedLoopFeatureState::kEnabledWithEventMask:
-        enabled_features.push_back(base::test::FeatureRefAndParams(
-            features::kTextInputClientUseNestedLoop,
-            {{"enable_event_mask", "true"}}));
-        break;
-    }
-    feature_list_.InitWithFeaturesAndParameters(enabled_features,
-                                                disabled_features);
+          absl::StrFormat("%dms", ipc_timeout.InMilliseconds())}});
   }
 
  protected:
-  virtual std::unique_ptr<TextInputClientMac::AsyncRequestDelegate>
-  CreateDelegate() = 0;
-
   void SetUp() override {
     RenderViewHostTestHarness::SetUp();
     RenderViewHostTester::For(rvh())->CreateTestRenderView();
 
-    auto delegate = CreateDelegate();
+    auto delegate =
+        std::make_unique<FakeAsyncRequestDelegate>(function_to_test_);
     delegate_ = delegate.get();
     TextInputClientMac::GetInstance()->SetAsyncRequestDelegateForTesting(
         std::move(delegate));
@@ -304,34 +281,6 @@ class TextInputClientMacTestBase : public content::RenderViewHostTestHarness {
     GetIOThreadTaskRunner()->PostTaskAndReply(
         FROM_HERE, base::DoNothing(), task_environment()->QuitClosure());
     task_environment()->RunUntilQuit();
-  }
-
-  TextInputClientMac::AsyncRequestDelegate* delegate() {
-    return delegate_.get();
-  }
-
- private:
-  base::test::ScopedFeatureList feature_list_;
-  raw_ptr<TextInputClientMac::AsyncRequestDelegate> delegate_ = nullptr;
-};
-
-// This test does not test the WebKit side of the dictionary system (which
-// performs the actual data fetching), but rather this just tests that the
-// service's signaling system works.
-class TextInputClientMacTest
-    : public TextInputClientMacTestBase,
-      public ::testing::WithParamInterface<
-          std::tuple<FunctionToTest, TimeoutParam, NestedLoopFeatureState>> {
- public:
-  TextInputClientMacTest()
-      : TextInputClientMacTestBase(/*ipc_timeout=*/std::get<1>(GetParam()),
-                                   /*feature_state=*/std::get<2>(GetParam())),
-        function_to_test_(std::get<0>(GetParam())) {}
-
- protected:
-  std::unique_ptr<TextInputClientMac::AsyncRequestDelegate> CreateDelegate()
-      override {
-    return std::make_unique<FakeAsyncRequestDelegate>(function_to_test_);
   }
 
   // Initializes a ResponseType value from an arbitrary integer.
@@ -364,63 +313,109 @@ class TextInputClientMacTest
     }
   }
 
-  // Calls the TextInputClientMac sync getter method under test, with `rwh` as a
-  // parameter.
-  ResponseType TextInputClientGetSync(RenderWidgetHost* rwh) const {
+  // Wrappers to call the TextInputClientMac getter method under test, with
+  // `rwh` as a parameter.
+
+  ResponseType TextInputClientSyncGet(RenderWidgetHost* rwh) const {
     switch (function_to_test_) {
       case FunctionToTest::kGetCharacterIndexAtPoint:
-        return TextInputClientMac::GetInstance()->GetCharacterIndexAtPoint(
+        return TextInputClientMac::GetInstance()->SyncGetCharacterIndexAtPoint(
             rwh, gfx::Point(2, 2));
       case FunctionToTest::kGetFirstRectForRange:
-        return TextInputClientMac::GetInstance()->GetFirstRectForRange(
+        return TextInputClientMac::GetInstance()->SyncGetFirstRectForRange(
             rwh, gfx::Range(NSMakeRange(0, 32)));
     }
   }
 
+  base::test::TestFuture<ResponseType> TextInputClientAsyncGet(
+      RenderWidgetHost* rwh) const {
+    base::test::TestFuture<ResponseType> future;
+    switch (function_to_test_) {
+      case FunctionToTest::kGetCharacterIndexAtPoint:
+        TextInputClientMac::GetInstance()->AsyncGetCharacterIndexAtPoint(
+            rwh, gfx::Point(2, 2), base::BindOnce([](uint32_t index) {
+                                     return ResponseType(index);
+                                   }).Then(future.GetCallback()));
+        break;
+      case FunctionToTest::kGetFirstRectForRange:
+        TextInputClientMac::GetInstance()->AsyncGetFirstRectForRange(
+            rwh, gfx::Range(NSMakeRange(0, 32)),
+            base::BindOnce([](gfx::Rect rect) {
+              return ResponseType(rect);
+            }).Then(future.GetCallback()));
+        break;
+    }
+    return future;
+  }
+
+  ResponseType TextInputClientGet(RenderWidgetHost* rwh) const {
+    if (is_sync_) {
+      return TextInputClientSyncGet(rwh);
+    }
+    return TextInputClientAsyncGet(rwh).Get();
+  }
+
   RenderWidgetHost* widget() { return rvh()->GetWidget(); }
 
-  FakeAsyncRequestDelegate& request_delegate() {
-    return *reinterpret_cast<FakeAsyncRequestDelegate*>(delegate());
-  }
+  FakeAsyncRequestDelegate& request_delegate() { return *delegate_; }
 
  private:
   FunctionToTest function_to_test_;
+  bool is_sync_;
+  base::test::ScopedFeatureList feature_list_;
+  raw_ptr<FakeAsyncRequestDelegate> delegate_ = nullptr;
 };
 
 using TextInputClientMacTimeoutTest = TextInputClientMacTest;
+
+// Test cases that only apply to sync or async getters.
+using TextInputClientMacSyncTest = TextInputClientMacTest;
+using TextInputClientMacAsyncTest = TextInputClientMacTest;
 
 INSTANTIATE_TEST_SUITE_P(
     All,
     TextInputClientMacTest,
     Combine(Values(FunctionToTest::kGetCharacterIndexAtPoint,
                    FunctionToTest::kGetFirstRectForRange),
-            Values(TimeoutParam::kLongTimeout),
-            Values(NestedLoopFeatureState::kDisabled,
-                   NestedLoopFeatureState::kEnabledWithoutEventMask,
-                   NestedLoopFeatureState::kEnabledWithEventMask)));
+            /*is_sync=*/Bool(),
+            Values(TimeoutParam::kLongTimeout)));
 
 INSTANTIATE_TEST_SUITE_P(
     All,
     TextInputClientMacTimeoutTest,
     Combine(Values(FunctionToTest::kGetCharacterIndexAtPoint,
                    FunctionToTest::kGetFirstRectForRange),
-            Values(TimeoutParam::kShortTimeout),
-            Values(NestedLoopFeatureState::kDisabled,
-                   NestedLoopFeatureState::kEnabledWithoutEventMask,
-                   NestedLoopFeatureState::kEnabledWithEventMask)));
+            /*is_sync=*/Bool(),
+            Values(TimeoutParam::kShortTimeout)));
+
+INSTANTIATE_TEST_SUITE_P(
+    All,
+    TextInputClientMacSyncTest,
+    Combine(Values(FunctionToTest::kGetCharacterIndexAtPoint,
+                   FunctionToTest::kGetFirstRectForRange),
+            /*is_sync=*/Values(true),
+            Values(TimeoutParam::kLongTimeout)));
+
+INSTANTIATE_TEST_SUITE_P(
+    All,
+    TextInputClientMacAsyncTest,
+    Combine(Values(FunctionToTest::kGetCharacterIndexAtPoint,
+                   FunctionToTest::kGetFirstRectForRange),
+            /*is_sync=*/Values(false),
+            Values(TimeoutParam::kLongTimeout)));
 
 }  // namespace
 
 // Test Cases //////////////////////////////////////////////////////////////////
 
-TEST_P(TextInputClientMacTest, SyncGetter_NoFocus) {
+TEST_P(TextInputClientMacTest, SyncOrAsyncGetter_NoFocus) {
   // Return this value if the client (incorrectly) sends a request to an
   // unfocused frame.
   request_delegate().AddResponse(CreateResponse(42));
-  EXPECT_EQ(TextInputClientGetSync(widget()), NoFocusResponse());
+  EXPECT_EQ(TextInputClientGet(widget()), NoFocusResponse());
 }
 
-TEST_P(TextInputClientMacTest, SyncGetter_Basic) {
+TEST_P(TextInputClientMacTest, SyncOrAsyncGetter_Basic) {
   const ResponseType kSuccessValue = CreateResponse(42);
   request_delegate().AddResponse(
       kSuccessValue, TestTimeouts::tiny_timeout(),
@@ -428,18 +423,18 @@ TEST_P(TextInputClientMacTest, SyncGetter_Basic) {
           [this](RenderFrameHost* rfh) { EXPECT_EQ(rfh, this->main_rfh()); }));
 
   FocusWebContentsOnMainFrame();
-  EXPECT_EQ(TextInputClientGetSync(widget()), kSuccessValue);
+  EXPECT_EQ(TextInputClientGet(widget()), kSuccessValue);
 }
 
-TEST_P(TextInputClientMacTimeoutTest, SyncGetter_Timeout) {
+TEST_P(TextInputClientMacTimeoutTest, SyncOrAsyncGetter_Timeout) {
   FocusWebContentsOnMainFrame();
-  EXPECT_EQ(TextInputClientGetSync(widget()), TimeoutResponse());
+  EXPECT_EQ(TextInputClientGet(widget()), TimeoutResponse());
 }
 
 // Tests that TextInputClient doesn't get confused if TextInputHost sends a
 // response that's also used if a request times out. (eg.
 // GetCharacterIndexAtPoint() can return NSNotFound, which is UINT32_MAX.)
-TEST_P(TextInputClientMacTest, SyncGetter_NotFound) {
+TEST_P(TextInputClientMacTest, SyncOrAsyncGetter_NotFound) {
   // Set an arbitrary value to ensure the response doesn't just default to the
   // timeout value.
   const ResponseType kPreviousValue = CreateResponse(42);
@@ -449,24 +444,24 @@ TEST_P(TextInputClientMacTest, SyncGetter_NotFound) {
   request_delegate().AddResponse(TimeoutResponse());
 
   FocusWebContentsOnMainFrame();
-  EXPECT_EQ(TextInputClientGetSync(widget()), kPreviousValue);
-  EXPECT_EQ(TextInputClientGetSync(widget()), TimeoutResponse());
+  EXPECT_EQ(TextInputClientGet(widget()), kPreviousValue);
+  EXPECT_EQ(TextInputClientGet(widget()), TimeoutResponse());
 }
 
 // Tests that TextInputClient doesn't get confused if TextInputHost sends a
 // response before the calling thread blocks.
-TEST_P(TextInputClientMacTest, SyncGetter_Immediate) {
+TEST_P(TextInputClientMacSyncTest, SyncGetter_Immediate) {
   // A response with 0 delay is sent immediately, not posted.
   const ResponseType kSuccessValue = CreateResponse(42);
   request_delegate().AddResponse(kSuccessValue, base::TimeDelta());
 
   FocusWebContentsOnMainFrame();
-  EXPECT_EQ(TextInputClientGetSync(widget()), kSuccessValue);
+  EXPECT_EQ(TextInputClientGet(widget()), kSuccessValue);
 }
 
 // Tests that TextInputClient sends a request to the focused frame, even if it's
 // not the main frame.
-TEST_P(TextInputClientMacTest, SyncGetter_ChildFrame) {
+TEST_P(TextInputClientMacTest, SyncOrAsyncGetter_ChildFrame) {
   const ResponseType kSuccessValue = CreateResponse(42);
 
   RenderFrameHost* child_rfh =
@@ -478,12 +473,12 @@ TEST_P(TextInputClientMacTest, SyncGetter_ChildFrame) {
       base::BindLambdaForTesting(
           [child_rfh](RenderFrameHost* rfh) { EXPECT_EQ(child_rfh, rfh); }));
 
-  EXPECT_EQ(TextInputClientGetSync(widget()), kSuccessValue);
+  EXPECT_EQ(TextInputClientGet(widget()), kSuccessValue);
 }
 
-// Tests that TextInputClient can handle a frame being deleted by a nested
-// RunLoop while waiting for a reply.
-TEST_P(TextInputClientMacTest, SyncGetter_DeleteFrame) {
+// Tests that TextInputClient can handle a frame being deleted while waiting for
+// a reply.
+TEST_P(TextInputClientMacTest, SyncOrAsyncGetter_DeleteFrame) {
   const ResponseType kSuccessValue = CreateResponse(42);
 
   request_delegate().AddResponse(
@@ -495,50 +490,64 @@ TEST_P(TextInputClientMacTest, SyncGetter_DeleteFrame) {
   FocusWebContentsOnMainFrame();
 
   // GetFirstRectForRange needs the frame to do coordinate translation.
-  EXPECT_EQ(TextInputClientGetSync(widget()),
+  EXPECT_EQ(TextInputClientGet(widget()),
             request_delegate().function_to_test() ==
                     FunctionToTest::kGetFirstRectForRange
                 ? NoFocusResponse()
                 : kSuccessValue);
 }
 
-// Tests that reentrant calls into TextInputClient immediately return dummy
-// results.
-TEST_P(TextInputClientMacTest, SyncGetter_ReentrantGetCharacterIndex) {
-  const ResponseType kSuccessValue = CreateResponse(42);
+// Tests that multiple async calls can be made at the same time.
+TEST_P(TextInputClientMacAsyncTest, AsyncGetter_MultipleCalls) {
+  const ResponseType kSuccessValue1 = CreateResponse(42);
+  const ResponseType kSuccessValue2 = CreateResponse(43);
+  const ResponseType kSuccessValue3 = CreateResponse(44);
+  const ResponseType kSuccessValue4 = CreateResponse(45);
 
-  request_delegate().AddResponse(
-      kSuccessValue, TestTimeouts::tiny_timeout(),
-      base::BindLambdaForTesting([](RenderFrameHost* rfh) {
-        // Reentrant call to GetCharacterIndexAtPoint.
-        EXPECT_EQ(TextInputClientMac::GetInstance()->GetCharacterIndexAtPoint(
-                      rfh->GetRenderWidgetHost(), gfx::Point(2, 2)),
-                  0);
-      }));
-
-  FocusWebContentsOnMainFrame();
-  EXPECT_EQ(TextInputClientGetSync(widget()), kSuccessValue);
-}
-
-TEST_P(TextInputClientMacTest, SyncGetter_ReentrantGetFirstRect) {
-  const ResponseType kSuccessValue = CreateResponse(42);
-
-  request_delegate().AddResponse(
-      kSuccessValue, TestTimeouts::tiny_timeout(),
-      base::BindLambdaForTesting([](RenderFrameHost* rfh) {
-        // Reentrant call to GetFirstRectForRange.
-        EXPECT_EQ(
-            TextInputClientMac::GetInstance()->GetFirstRectForRange(
-                rfh->GetRenderWidgetHost(), gfx::Range(NSMakeRange(0, 32))),
-            gfx::Rect(0, 0));
-      }));
+  // Responses arrive in reverse order, except that the last request arrives
+  // between 2 and 3.
+  request_delegate().AddResponse(kSuccessValue1,
+                                 3 * TestTimeouts::tiny_timeout());
+  request_delegate().AddResponse(kSuccessValue2,
+                                 2 * TestTimeouts::tiny_timeout());
+  request_delegate().AddResponse(kSuccessValue3,
+                                 1 * TestTimeouts::tiny_timeout());
+  request_delegate().AddResponse(kSuccessValue4,
+                                 1.5 * TestTimeouts::tiny_timeout());
 
   FocusWebContentsOnMainFrame();
-  EXPECT_EQ(TextInputClientGetSync(widget()), kSuccessValue);
+
+  base::test::TestFuture<ResponseType> result_future1 =
+      TextInputClientAsyncGet(widget());
+  base::test::TestFuture<ResponseType> result_future2 =
+      TextInputClientAsyncGet(widget());
+  base::test::TestFuture<ResponseType> result_future3 =
+      TextInputClientAsyncGet(widget());
+  ResponseType result4 = TextInputClientSyncGet(widget());
+
+  // Even though result 3 has arrived on the IO thread, it shouldn't be
+  // delivered to the UI thread because nothing pumped the message loop after
+  // the sync getter was unblocked. This shows that async callbacks won't be
+  // invoked in the middle of a sync method.
+  EXPECT_EQ(result4, kSuccessValue4);
+  EXPECT_FALSE(result_future3.IsReady());
+  EXPECT_FALSE(result_future2.IsReady());
+  EXPECT_FALSE(result_future1.IsReady());
+
+  // TestFuture::Get() pumps the message loop, so now the async results start to
+  // arrive.
+  EXPECT_EQ(result_future3.Get(), kSuccessValue3);
+  EXPECT_FALSE(result_future2.IsReady());
+  EXPECT_FALSE(result_future1.IsReady());
+
+  EXPECT_EQ(result_future2.Get(), kSuccessValue2);
+  EXPECT_FALSE(result_future1.IsReady());
+
+  EXPECT_EQ(result_future1.Get(), kSuccessValue1);
 }
 
 // Tests that TextInputClient ignores replies that arrive after it times out.
-TEST_P(TextInputClientMacTimeoutTest, SyncGetter_StaleResult) {
+TEST_P(TextInputClientMacTimeoutTest, SyncOrAsyncGetter_StaleResult) {
   const ResponseType kStaleValue = CreateResponse(42);
   const ResponseType kSuccessValue = CreateResponse(84);
 
@@ -569,8 +578,8 @@ TEST_P(TextInputClientMacTimeoutTest, SyncGetter_StaleResult) {
     request_delegate().AddResponse(kStaleValue, delay * 2);
     request_delegate().AddResponse(kSuccessValue, delay);
 
-    first_response = TextInputClientGetSync(widget());
-    second_response = TextInputClientGetSync(widget());
+    first_response = TextInputClientGet(widget());
+    second_response = TextInputClientGet(widget());
   } while (first_response != TimeoutResponse() ||
            second_response == TimeoutResponse());
   EXPECT_EQ(first_response, TimeoutResponse());  // Replaces kStaleValue.

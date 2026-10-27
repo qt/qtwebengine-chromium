@@ -8,8 +8,7 @@
 #include <utility>
 
 #include "core/fxcrt/check.h"
-#include "core/fxcrt/unowned_ptr.h"
-#include "core/fxge/android/cfpf_skiadevicemodule.h"
+#include "core/fxge/android/cfpf_skiafontmgr.h"
 #include "core/fxge/android/cfx_androidfontinfo.h"
 #include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/cfx_gemodule.h"
@@ -20,29 +19,27 @@ class CAndroidPlatform : public CFX_GEModule::PlatformIface {
   ~CAndroidPlatform() override = default;
 
   void Init() override {
-    CHECK(!device_module_);
-    device_module_ = CFPF_SkiaDeviceModule::GetOrCreate();
+    CHECK(!font_mgr_);
+    font_mgr_ = std::make_unique<CFPF_SkiaFontMgr>();
   }
 
   void Terminate() override {
-    CHECK(device_module_);
-    device_module_->Destroy();
-    device_module_ = nullptr;
+    CHECK(font_mgr_);
+    font_mgr_.reset();
   }
 
   std::unique_ptr<SystemFontInfoIface> CreateDefaultSystemFontInfo() override {
-    CFPF_SkiaFontMgr* font_mgr = device_module_->GetFontMgr();
-    if (!font_mgr) {
+    if (!font_mgr_) {
       return nullptr;
     }
 
     auto font_info = std::make_unique<CFX_AndroidFontInfo>();
-    font_info->Init(font_mgr, CFX_GEModule::Get()->GetUserFontPaths());
+    font_info->Init(font_mgr_.get(), CFX_GEModule::Get()->GetUserFontPaths());
     return font_info;
   }
 
  private:
-  UnownedPtr<CFPF_SkiaDeviceModule> device_module_;
+  std::unique_ptr<CFPF_SkiaFontMgr> font_mgr_;
 };
 
 // static

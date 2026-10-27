@@ -14,16 +14,8 @@
 
 #include <jni.h>
 
-#include "ink/geometry/point.h"
-#include "ink/geometry/triangle.h"
+#include "ink/geometry/internal/jni/triangle_native.h"
 #include "ink/jni/internal/jni_defines.h"
-
-namespace {
-
-using ::ink::Point;
-using ::ink::Triangle;
-
-}  // namespace
 
 extern "C" {
 
@@ -31,11 +23,9 @@ JNI_METHOD(geometry, TriangleNative, jboolean, contains)
 (JNIEnv* env, jobject object, jfloat triangle_p0_x, jfloat triangle_p0_y,
  jfloat triangle_p1_x, jfloat triangle_p1_y, jfloat triangle_p2_x,
  jfloat triangle_p2_y, jfloat point_x, jfloat point_y) {
-  Point point = Point{point_x, point_y};
-  Triangle triangle{{triangle_p0_x, triangle_p0_y},
-                    {triangle_p1_x, triangle_p1_y},
-                    {triangle_p2_x, triangle_p2_y}};
-  return triangle.Contains(point);
+  return TriangleNative_contains(triangle_p0_x, triangle_p0_y, triangle_p1_x,
+                                 triangle_p1_y, triangle_p2_x, triangle_p2_y,
+                                 point_x, point_y);
 }
 
 }  // extern "C"

@@ -40,7 +40,6 @@ class TranslatorMSL;
 #endif  // ANGLE_ENABLE_METAL
 
 using MetadataFlagBits   = angle::PackedEnumBitSet<sh::MetadataFlags, uint32_t>;
-using SpecConstUsageBits = angle::PackedEnumBitSet<vk::SpecConstUsage, uint32_t>;
 
 //
 // Helper function to check if the shader type is GLSL.
@@ -49,13 +48,7 @@ bool IsGLSL150OrNewer(ShShaderOutput output);
 bool IsGLSL420OrNewer(ShShaderOutput output);
 bool IsGLSL410OrOlder(ShShaderOutput output);
 
-//
-// Helper function to check if the invariant qualifier can be removed.
-//
-bool RemoveInvariant(sh::GLenum shaderType,
-                     int shaderVersion,
-                     ShShaderOutput outputType,
-                     const ShCompileOptions &compileOptions);
+int GetMaxShaderVersionForSpec(ShShaderSpec spec);
 
 //
 // The base class used to back handles returned to the driver.
@@ -113,7 +106,6 @@ class TCompiler : public TShHandleBase
     bool specifyEarlyFragmentTests() { return mEarlyFragmentTestsSpecified = true; }
     bool isEarlyFragmentTestsSpecified() const { return mEarlyFragmentTestsSpecified; }
     MetadataFlagBits getMetadataFlags() const { return mMetadataFlags; }
-    SpecConstUsageBits getSpecConstUsageBits() const { return mSpecConstUsageBits; }
 
     bool isComputeShaderLocalSizeDeclared() const { return mComputeShaderLocalSizeDeclared; }
     const sh::WorkGroupSize &getComputeShaderLocalSize() const { return mComputeShaderLocalSize; }
@@ -260,9 +252,6 @@ class TCompiler : public TShHandleBase
 
     MetadataFlagBits mMetadataFlags;
 
-    // Specialization constant usage bits
-    SpecConstUsageBits mSpecConstUsageBits;
-
   private:
     // Initialize symbol-table with built-in symbols.
     bool initBuiltInSymbolTable(const ShBuiltInResources &resources);
@@ -302,9 +291,6 @@ class TCompiler : public TShHandleBase
     // Fetches and stores shader metadata that is not stored within the AST itself, such as shader
     // version.
     void setShaderMetadata(const TParseContext &parseContext);
-
-    // Check if shader version meets the requirement.
-    bool checkShaderVersion(TParseContext *parseContext);
 
     // Does checks that need to be run after parsing is complete and returns true if they pass.
     bool checkAndSimplifyAST(TIntermBlock *root,

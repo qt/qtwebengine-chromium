@@ -142,11 +142,6 @@
     "module_scheme": "gtest",
     "skip_usage_check": True,
   },
-  "app_shell_unittests": {
-    "label": "//extensions/shell:app_shell_unittests",
-    "type": "windowed_test_launcher",
-    "module_scheme": "gtest",
-  },
   "ash_components_unittests": {
     "label": "//chromeos/ash/experiences:ash_components_unittests",
     "type": "windowed_test_launcher",
@@ -276,6 +271,8 @@
     "args": [
       "--results-directory",
       "${ISOLATED_OUTDIR}",
+      "--test-launcher-filter-file=../../third_party/blink/web_tests/TestLists/content_shell.filter",
+      "--inverted-test-launcher-filter-file=../../third_party/blink/web_tests/TestLists/chrome.filter",
     ],
   },
   "boringssl_crypto_tests": {
@@ -585,6 +582,12 @@
     "module_scheme": "junit",
     "skip_usage_check": True,
   },
+  "chrome_public_bundle_smoke_test": {
+    "label": "//chrome/android:chrome_public_bundle_smoke_test",
+    "type": "console_test_launcher",
+    "module_scheme": "junit",
+    "skip_usage_check": True,
+  },
   "chrome_public_smoke_test": {
     "label": "//chrome/android:chrome_public_smoke_test",
     "type": "console_test_launcher",
@@ -833,6 +836,13 @@
     "module_scheme": "single",
     "script": "//testing/scripts/content_shell_crash_test.py",
   },
+  "content_shell_freeze_test": {
+    "label": "//content/shell:content_shell_freeze_test",
+    "type": "script",
+    "module_scheme": "single",
+    "script": "//content/shell/tools/aaudio_freezer_integration_test.py",
+    "skip_usage_check": True,
+  },
   "content_shell_test_apk": {
     "label": "//content/shell/android:content_shell_test_apk",
     "type": "console_test_launcher",
@@ -1067,11 +1077,6 @@
     "type": "windowed_test_launcher",
     "module_scheme": "gtest",
   },
-  "extensions_browsertests": {
-    "label": "//extensions:extensions_browsertests",
-    "type": "windowed_test_launcher",
-    "module_scheme": "gtest",
-  },
   "extensions_unittests": {
     "label": "//extensions:extensions_unittests",
     "type": "windowed_test_launcher",
@@ -1202,6 +1207,12 @@
     "args": [
       "../../tools/grit/grit/test_suite_all.py",
     ],
+  },
+  "gtk_unittests": {
+    "label": "//ui/gtk:gtk_unittests",
+    "type": "windowed_test_launcher",
+    "module_scheme": "gtest",
+    "skip_usage_check": True,
   },
   "gwp_asan_unittests": {
     "label": "//components/gwp_asan:gwp_asan_unittests",
@@ -1440,6 +1451,11 @@
   },
   "litert_e2e_tests": {
     "label": "//components/optimization_guide/internal/testing:litert_e2e_tests",
+    "type": "generated_script",
+    "module_scheme": "flat",
+  },
+  "litert_lm_advanced_main_legacy_tests": {
+    "label": "//components/optimization_guide/internal/testing:litert_lm_advanced_main_legacy_tests",
     "type": "generated_script",
     "module_scheme": "flat",
   },
@@ -1689,6 +1705,11 @@
     "label": "//third_party/pdfium/testing:pdfium_test",
     "type": "additional_compile_target",
   },
+  "perfetto_diff_tests": {
+    "label": "//base/tracing:perfetto_diff_tests",
+    "type": "generated_script",
+    "skip_usage_check": True,
+  },
   "perfetto_unittests": {
     "label": "//third_party/perfetto:perfetto_unittests",
     "type": "console_test_launcher",
@@ -1793,6 +1814,11 @@
   },
   "pthreadpool_unittests": {
     "label": "//third_party/pthreadpool:pthreadpool_unittests",
+    "type": "console_test_launcher",
+    "module_scheme": "gtest",
+  },
+  "puffin_unittests": {
+    "label": "//third_party/puffin:puffin_unittests",
     "type": "console_test_launcher",
     "module_scheme": "gtest",
   },
@@ -2065,12 +2091,6 @@
     "label": "//chrome/browser/privacy:traffic_annotation_proto",
     "type": "additional_compile_target",
   },
-  "trichrome_chrome_bundle_smoke_test": {
-    "label": "//chrome/android:trichrome_chrome_bundle_smoke_test",
-    "type": "console_test_launcher",
-    "module_scheme": "junit",
-    "skip_usage_check": True,
-  },
   "trichrome_webview_wpt_64": {
     "label": "//android_webview/test:trichrome_webview_wpt_64",
     "type": "generated_script",
@@ -2117,6 +2137,12 @@
     "label": "//chrome/test:unit_tests",
     "type": "windowed_test_launcher",
     "module_scheme": "gtest",
+  },
+  "updater_fuzztests": {
+    "label": "//chrome/updater:updater_fuzztests",
+    "type": "console_test_launcher",
+    "module_scheme": "gtest",
+    "skip_usage_check": True,
   },
   "updater_tests": {
     "label": "//chrome/updater:updater_tests",

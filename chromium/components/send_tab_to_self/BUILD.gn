@@ -24,6 +24,8 @@ static_library("send_tab_to_self") {
     "received_tab_forms_filler.h",
     "send_tab_to_self_bridge.cc",
     "send_tab_to_self_bridge.h",
+    "send_tab_to_self_commit_tracker.cc",
+    "send_tab_to_self_commit_tracker.h",
     "send_tab_to_self_data_type_controller.cc",
     "send_tab_to_self_data_type_controller.h",
     "send_tab_to_self_entry.cc",
@@ -61,16 +63,6 @@ static_library("send_tab_to_self") {
     ":features",
     "//components/send_tab_to_self/proto:send_tab_to_self_proto",
   ]
-  if (is_android) {
-    sources += [
-      "send_tab_to_self_infobar_delegate.cc",
-      "send_tab_to_self_infobar_delegate.h",
-    ]
-    deps += [
-      "//components/infobars/core",
-      "//content/public/browser",
-    ]
-  }
 }
 
 source_set("features") {
@@ -90,6 +82,7 @@ if (is_android) {
     sources = [
       "entry_point_display_reason.h",
       "metrics_util.h",
+      "send_tab_to_self_model.h",
     ]
   }
 
@@ -101,16 +94,23 @@ if (is_android) {
     deps = [ "//third_party/androidx:androidx_annotation_annotation_java" ]
   }
 }
-
 source_set("test_support") {
   testonly = true
   sources = [
-    "test_send_tab_to_self_model.cc",
-    "test_send_tab_to_self_model.h",
+    "fake_send_tab_to_self_model.cc",
+    "fake_send_tab_to_self_model.h",
+    "stub_send_tab_to_self_sync_service.cc",
+    "stub_send_tab_to_self_sync_service.h",
+    "test_matchers.cc",
+    "test_matchers.h",
   ]
   deps = [
     ":send_tab_to_self",
     "//base",
+    "//components/autofill/core/common",
+    "//components/sync:test_support",
+    "//testing/gmock",
+    "//url",
   ]
 }
 
@@ -119,8 +119,10 @@ source_set("unit_tests") {
   sources = [
     "entry_point_display_reason_unittest.cc",
     "outgoing_tab_form_field_extractor_unittest.cc",
+    "proto_conversions_unittest.cc",
     "received_tab_forms_filler_unittest.cc",
     "send_tab_to_self_bridge_unittest.cc",
+    "send_tab_to_self_commit_tracker_unittest.cc",
     "send_tab_to_self_entry_unittest.cc",
     "target_device_info_unittest.cc",
   ]

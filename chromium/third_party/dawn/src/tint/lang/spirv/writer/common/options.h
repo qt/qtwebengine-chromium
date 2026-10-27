@@ -37,7 +37,7 @@
 #include "src/tint/api/common/bindings.h"
 #include "src/tint/api/common/resource_table_config.h"
 #include "src/tint/api/common/substitute_overrides_config.h"
-#include "src/tint/utils/reflection.h"
+#include "src/tint/utils/reflection/reflection.h"
 
 namespace tint::spirv::writer {
 
@@ -95,6 +95,10 @@ struct Options {
         /// of cube depth.
         bool texture_sample_compare_depth_cube_array = false;
 
+        /// Set to 'true' to force a polyfill for 'textureSampleCompare(Level)' for all 2D
+        /// textures (and arrays) using bilinear interpolation.
+        bool texture_sample_compare_2d_polyfill = false;
+
         /// Set to `true` to generate polyfill for `subgroupBroadcast(f16)`
         bool polyfill_subgroup_broadcast_f16 = false;
 
@@ -130,6 +134,7 @@ struct Options {
                      polyfill_pack_unpack_4x8_norm,
                      subgroup_shuffle_clamped,
                      texture_sample_compare_depth_cube_array,
+                     texture_sample_compare_2d_polyfill,
                      polyfill_subgroup_broadcast_f16,
                      pass_matrix_by_pointer,
                      polyfill_float_negation,
@@ -229,8 +234,9 @@ struct Options {
     /// from all vertex shaders in the module.
     bool emit_vertex_point_size = true;
 
-    /// Set to `true` to apply builtin 'position' pixel center emulation.
-    bool polyfill_pixel_center = false;
+    /// If the optional is set, then we apply the builtin 'position' pixel center emulation with a
+    /// location provided by the optional.
+    std::optional<uint32_t> polyfill_pixel_center = std::nullopt;
 
     /// Set to `true` if framebuffer fetch should be multisampled
     bool multisampled_framebuffer_fetch = false;

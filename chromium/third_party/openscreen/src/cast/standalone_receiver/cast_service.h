@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include "cast/common/public/receiver_info.h"
 #include "cast/receiver/application_agent.h"
@@ -72,6 +73,12 @@ class CastService final : public discovery::ReportingClient {
 
   explicit CastService(Configuration config);
   ~CastService() final;
+
+  // Registers a namespace handler for the mirroring application.
+  void AddApplicationNamespace(
+      std::string_view namespace_,
+      MirroringApplication::CustomMessageCallback handler);
+  void RemoveApplicationNamespace(std::string_view namespace_);
 
  private:
   using LazyDeletedDiscoveryPublisher =

@@ -109,9 +109,13 @@ struct view_options_t
     has_background = false;
     if (back && *back)
     {
-      if (!parse_color (back,
-			background_color.r, background_color.g,
-			background_color.b, background_color.a))
+      if (0 == g_ascii_strcasecmp (back, "none"))
+      {
+	background_color = {0, 0, 0, 0};
+      }
+      else if (!parse_color (back,
+			     background_color.r, background_color.g,
+			     background_color.b, background_color.a))
       {
 	g_set_error (error, G_OPTION_ERROR, G_OPTION_ERROR_BAD_VALUE,
 		     "Invalid background color `%s`", back);
@@ -242,6 +246,8 @@ struct view_options_t
   hb_bool_t logical = false;
   hb_bool_t ink = false;
   hb_bool_t show_extents = false;
+  hb_bool_t force_draw = false;   /* --draw  : use mono outline path */
+  hb_bool_t force_paint = false;  /* --paint : use color paint path */
 
   bool parse_custom_palette_entries (GError **error)
   {
@@ -362,11 +368,11 @@ view_options_t::add_options (option_parser_t *parser)
   {
     {"annotate",	0, G_OPTION_FLAG_HIDDEN,
 			      G_OPTION_ARG_NONE,	&this->show_extents,		"Annotate output rendering",				nullptr},
-    {"background",	0, 0, G_OPTION_ARG_STRING,	&this->back,			"Set background color (default: " DEFAULT_BACK ")",	"rrggbb/rrggbbaa"},
+    {"background",	0, 0, G_OPTION_ARG_STRING,	&this->back,			"Set background color (default: " DEFAULT_BACK "); use \"none\" for transparent",	"rrggbb/rrggbbaa/none"},
     {"foreground",	0, 0, G_OPTION_ARG_STRING,	&this->fore,			"Set foreground color (default: " DEFAULT_FORE ")",	"rrggbb/rrggbbaa[,...]"},
     {"rainbow",		0, 0, G_OPTION_ARG_NONE,	&this->foreground_use_rainbow,	"Rotate glyph foreground colors through a default palette",	nullptr},
     {"lgbtq",		0, G_OPTION_FLAG_HIDDEN, G_OPTION_ARG_NONE,	&this->foreground_use_rainbow,	"Hidden alias for --rainbow",	nullptr},
-    {"stroke",		0, 0, G_OPTION_ARG_STRING,	&this->stroke,			"Stroke glyph outlines; `--stroke=` enables defaults",	"rrggbb/rrggbbaa[+width]"},
+    {"stroke",		0, G_OPTION_FLAG_HIDDEN, G_OPTION_ARG_STRING,	&this->stroke,			"Stroke glyph outlines; `--stroke=` enables defaults",	"rrggbb/rrggbbaa[+width]"},
     {"font-palette",    0, 0, G_OPTION_ARG_INT,         &this->palette,                 "Set font palette (default: 0)",                "index"},
     {"custom-palette",  0, 0, G_OPTION_ARG_STRING,      &this->custom_palette,          "Custom palette",                               "comma-separated colors"},
     {"line-space",	0, 0, G_OPTION_ARG_DOUBLE,	&this->line_space,		"Set space between lines (default: 0)",			"units"},
@@ -375,6 +381,8 @@ view_options_t::add_options (option_parser_t *parser)
     {"logical",		0, 0, G_OPTION_ARG_NONE,	&this->logical,		"Render to logical box instead of union of logical and ink boxes",	nullptr},
     {"ink",		0, 0, G_OPTION_ARG_NONE,	&this->ink,			"Render to ink box instead of union of logical and ink boxes",	nullptr},
     {"show-extents",	0, 0, G_OPTION_ARG_NONE,	&this->show_extents,		"Draw glyph extents",							nullptr},
+    {"draw",		0, 0, G_OPTION_ARG_NONE,	&this->force_draw,		"Force monochrome draw path (overrides auto-detect)",	nullptr},
+    {"paint",		0, 0, G_OPTION_ARG_NONE,	&this->force_paint,		"Force color paint path (overrides auto-detect)",	nullptr},
     {nullptr}
   };
   parser->add_group (entries,

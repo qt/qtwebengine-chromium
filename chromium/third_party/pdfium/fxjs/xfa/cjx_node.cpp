@@ -139,7 +139,8 @@ CJS_Result CJX_Node::clone(CFXJSE_Engine* runtime,
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  CXFA_Node* pCloneNode = GetXFANode()->Clone(runtime->ToBoolean(params[0]));
+  CXFA_Node* pCloneNode =
+      GetXFANode()->Clone(runtime->ToBooleanReentrant(params[0]));
   return CJS_Result::Success(runtime->GetOrCreateJSBindingFromMap(pCloneNode));
 }
 
@@ -149,7 +150,7 @@ CJS_Result CJX_Node::getAttribute(CFXJSE_Engine* runtime,
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  WideString expression = runtime->ToWideString(params[0]);
+  WideString expression = runtime->ToWideStringReentrant(params[0]);
   return CJS_Result::Success(runtime->NewString(
       GetAttributeByString(expression.AsStringView()).ToUTF8().AsStringView()));
 }
@@ -160,8 +161,9 @@ CJS_Result CJX_Node::getElement(CFXJSE_Engine* runtime,
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  WideString expression = runtime->ToWideString(params[0]);
-  int32_t iValue = params.size() >= 2 ? runtime->ToInt32(params[1]) : 0;
+  WideString expression = runtime->ToWideStringReentrant(params[0]);
+  int32_t iValue =
+      params.size() >= 2 ? runtime->ToInt32Reentrant(params[1]) : 0;
   XFA_Element eElement = XFA_GetElementByName(expression.AsStringView());
   if (eElement == XFA_Element::Unknown) {
     return CJS_Result::Success(runtime->NewNull());
@@ -182,7 +184,7 @@ CJS_Result CJX_Node::isPropertySpecified(
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  WideString expression = runtime->ToWideString(params[0]);
+  WideString expression = runtime->ToWideStringReentrant(params[0]);
   std::optional<XFA_ATTRIBUTEINFO> attr =
       XFA_GetAttributeByName(expression.AsStringView());
   if (attr.has_value() && HasAttribute(attr.value().attribute)) {
@@ -194,8 +196,8 @@ CJS_Result CJX_Node::isPropertySpecified(
     return CJS_Result::Success(runtime->NewBoolean(false));
   }
 
-  bool bParent = params.size() < 2 || runtime->ToBoolean(params[1]);
-  int32_t index = params.size() == 3 ? runtime->ToInt32(params[2]) : 0;
+  bool bParent = params.size() < 2 || runtime->ToBooleanReentrant(params[1]);
+  int32_t index = params.size() == 3 ? runtime->ToInt32Reentrant(params[2]) : 0;
   bool bHas = !!GetOrCreateProperty<CXFA_Node>(index, eType);
   if (!bHas && bParent && GetXFANode()->GetParent()) {
     // Also check on the parent.
@@ -212,19 +214,19 @@ CJS_Result CJX_Node::loadXML(CFXJSE_Engine* runtime,
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  ByteString expression = runtime->ToByteString(params[0]);
+  ByteString expression = runtime->ToByteStringReentrant(params[0]);
   if (expression.IsEmpty()) {
     return CJS_Result::Success();
   }
 
   bool bIgnoreRoot = true;
   if (params.size() >= 2) {
-    bIgnoreRoot = runtime->ToBoolean(params[1]);
+    bIgnoreRoot = runtime->ToBooleanReentrant(params[1]);
   }
 
   bool bOverwrite = false;
   if (params.size() >= 3) {
-    bOverwrite = runtime->ToBoolean(params[2]);
+    bOverwrite = runtime->ToBooleanReentrant(params[2]);
   }
 
   auto stream =
@@ -351,7 +353,7 @@ CJS_Result CJX_Node::saveXML(CFXJSE_Engine* runtime,
   }
 
   if (params.size() == 1 &&
-      !runtime->ToWideString(params[0]).EqualsASCII("pretty")) {
+      !runtime->ToWideStringReentrant(params[0]).EqualsASCII("pretty")) {
     return CJS_Result::Failure(JSMessage::kValueError);
   }
 
@@ -395,8 +397,8 @@ CJS_Result CJX_Node::setAttribute(CFXJSE_Engine* runtime,
 
   // Note: yes, arglist is spec'd absolutely backwards from what any sane
   // person would do, namely value first, attribute second.
-  WideString attributeValue = runtime->ToWideString(params[0]);
-  WideString attribute = runtime->ToWideString(params[1]);
+  WideString attributeValue = runtime->ToWideStringReentrant(params[0]);
+  WideString attribute = runtime->ToWideStringReentrant(params[1]);
 
   // Pass them to our method, however, in the more usual manner.
   SetAttributeByString(attribute.AsStringView(), attributeValue);

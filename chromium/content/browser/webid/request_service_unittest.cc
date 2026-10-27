@@ -18,6 +18,7 @@
 #include "base/run_loop.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/metrics/histogram_tester.h"
+#include "base/test/mock_callback.h"
 #include "base/test/scoped_feature_list.h"
 #include "components/ukm/test_ukm_recorder.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -40,6 +41,7 @@
 #include "content/public/common/content_features.h"
 #include "content/public/test/back_forward_cache_util.h"
 #include "content/public/test/fake_local_frame.h"
+#include "content/public/test/mock_web_contents_observer.h"
 #include "content/public/test/navigation_simulator.h"
 #include "content/test/test_render_frame_host.h"
 #include "content/test/test_render_view_host.h"
@@ -625,8 +627,11 @@ class TestDialogController
             config.idp_signin_status_mismatch_dialog_action),
         error_dialog_action_(config.error_dialog_action),
         loading_dialog_action_(config.loading_dialog_action),
-        should_show_accounts_passive_dialog_(
-            !config.suppressed_by_segmentation_platform) {}
+        passive_dialog_volume_(
+            config.suppressed_by_segmentation_platform
+                ? IdentityRequestDialogController::PassiveDialogVolume::kAmbient
+                : IdentityRequestDialogController::PassiveDialogVolume::
+                      kDefault) {}
 
   ~TestDialogController() override = default;
   TestDialogController(TestDialogController&) = delete;
@@ -639,9 +644,8 @@ class TestDialogController
     idp_signin_status_mismatch_dialog_action_ = action;
   }
 
-  void ShouldShowAccountsPassiveDialog(
-      ShouldShowAccountsPassiveDialogCallback cb) override {
-    std::move(cb).Run(should_show_accounts_passive_dialog_);
+  void GetPassiveDialogVolume(GetPassiveDialogVolumeCallback cb) override {
+    std::move(cb).Run(passive_dialog_volume_);
   }
 
   bool ShowAccountsDialog(
@@ -850,7 +854,7 @@ class TestDialogController
   ErrorDialogAction error_dialog_action_{ErrorDialogAction::kNone};
   LoadingDialogAction loading_dialog_action_{LoadingDialogAction::kNone};
   bool did_show_ui_ = false;
-  bool should_show_accounts_passive_dialog_;
+  IdentityRequestDialogController::PassiveDialogVolume passive_dialog_volume_;
 
   // Pointer so that the state can be queried after RequestService
   // destroys TestDialogController.
@@ -1464,6 +1468,14 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
         IdentityRequestDialogController::DismissReason::kCloseButton);
   }
 
+  void CallRedirectTo(const GURL& idp_config_url,
+                      blink::mojom::RedirectParams::Tag method,
+                      const GURL& redirect_to,
+                      const std::string& request_body) {
+    federated_auth_request_impl_->RedirectTo(idp_config_url, method,
+                                             redirect_to, request_body);
+  }
+
   void CompleteDisconnectRequest() {
     std::unique_ptr<TestIdpNetworkRequestManager> network_request_manager =
         std::make_unique<TestIdpNetworkRequestManager>();
@@ -2008,6 +2020,51 @@ TEST_F(RequestServiceTest, SuccessfulRequest) {
   ExpectUkmValueInEntry("DidShowUI", FedCmEntry::kEntryName, true);
 }
 
+TEST_F(RequestServiceTest, OnFedCmFederatedLoginSuccess) {
+  testing::NiceMock<MockWebContentsObserver> observer(web_contents());
+
+  EXPECT_CALL(observer, OnFedCmFederatedLogin(true)).Times(1);
+
+  RunAuthTest(kDefaultRequestParameters, kExpectationSuccess,
+              kConfigurationValid);
+}
+
+TEST_F(RequestServiceTest, OnFedCmFederatedLoginFailure) {
+  testing::NiceMock<MockWebContentsObserver> observer(web_contents());
+
+  EXPECT_CALL(observer, OnFedCmFederatedLogin(false)).Times(1);
+
+  RequestExpectations error_request = {
+      RequestTokenStatus::kError,
+      FederatedAuthRequestResult::kConfigInvalidResponse,
+      /*standalone_console_message=*/std::nullopt,
+      /*selected_idp_config_url=*/std::nullopt};
+  MockConfiguration configuration = kConfigurationValid;
+  configuration.idp_info[kProviderUrlFull].config.token_endpoint = "";
+
+  RunAuthTest(kDefaultRequestParameters, error_request, configuration);
+}
+
+// Test that the FederatedEmbedderLoginRequest is notified when the FedCM flow
+// completes.
+TEST_F(RequestServiceTest, NotifiesFederatedEmbedderLoginRequest) {
+  GURL idp_url(kProviderUrlFull);
+  url::Origin idp_origin = url::Origin::Create(idp_url);
+  std::string account_id = "account_id123";
+
+  base::MockCallback<base::OnceCallback<void(webid::FederatedLoginResult)>>
+      result_callback;
+  // We expect kSuccess because kExpectationSuccess results in kSuccess.
+  EXPECT_CALL(result_callback, Run(webid::FederatedLoginResult::kSuccess))
+      .Times(1);
+
+  content::webid::FederatedEmbedderLoginRequest::Set(
+      web_contents(), idp_origin, account_id, result_callback.Get());
+
+  RunAuthTest(kDefaultRequestParameters, kExpectationSuccess,
+              kConfigurationValid);
+}
+
 // Test successful well-known fetching.
 TEST_F(RequestServiceTest, WellKnownSuccess) {
   // Use IdpNetworkRequestManagerParamChecker to validate passed-in parameters
@@ -2336,6 +2393,8 @@ TEST_F(RequestServiceTest, AccountsCannotBeParsed) {
 
   histogram_tester_.ExpectTotalCount("Blink.FedCm.AccountsSize.Raw", 0);
   histogram_tester_.ExpectTotalCount("Blink.FedCm.AccountsSize.ReadyToShow", 0);
+  ExpectNoUKMPresence("AccountsSize.Raw");
+  ExpectNoUKMPresence("AccountsSize.ReadyToShow");
 
   // Only records the following histograms if there are accounts to be shown.
   histogram_tester_.ExpectTotalCount(
@@ -3429,6 +3488,8 @@ TEST_F(RequestServiceTest, MetricsForSuccessfulSignInCase) {
   histogram_tester_.ExpectUniqueSample("Blink.FedCm.AccountsSize.Raw", 1, 1);
   histogram_tester_.ExpectUniqueSample("Blink.FedCm.AccountsSize.ReadyToShow",
                                        1, 1);
+  ExpectUkmValueInEntry("AccountsSize.Raw", FedCmEntry::kEntryName, 1);
+  ExpectUkmValueInEntry("AccountsSize.ReadyToShow", FedCmEntry::kEntryName, 1);
   histogram_tester_.ExpectUniqueSample("Blink.FedCm.RpMode",
                                        static_cast<int>(RpMode::kPassive), 1);
   histogram_tester_.ExpectUniqueSample(
@@ -5798,6 +5859,8 @@ TEST_F(RequestServiceTest, AccountLabelMultipleAccountsNoMatch) {
       Metrics::NumAccounts::kZero, 1);
   histogram_tester_.ExpectUniqueSample("Blink.FedCm.AccountsSize.Raw", 3, 1);
   histogram_tester_.ExpectTotalCount("Blink.FedCm.AccountsSize.ReadyToShow", 0);
+  ExpectUkmValueInEntry("AccountsSize.Raw", FedCmEntry::kEntryName, 3);
+  ExpectNoUKMPresence("AccountsSize.ReadyToShow");
   ExpectUkmValueInEntry("AccountLabel.NumMatchingAccounts",
                         FedCmEntry::kEntryName, 0);
   ExpectNoUKMPresence("DomainHint.NumMatchingAccounts");
@@ -5931,6 +5994,8 @@ TEST_F(RequestServiceTest, LoginHintLastAccountMatch) {
   histogram_tester_.ExpectUniqueSample("Blink.FedCm.AccountsSize.Raw", 3, 1);
   histogram_tester_.ExpectUniqueSample("Blink.FedCm.AccountsSize.ReadyToShow",
                                        1, 1);
+  ExpectUkmValueInEntry("AccountsSize.Raw", FedCmEntry::kEntryName, 3);
+  ExpectUkmValueInEntry("AccountsSize.ReadyToShow", FedCmEntry::kEntryName, 1);
   ExpectUkmValueInEntry("LoginHint.NumMatchingAccounts", FedCmEntry::kEntryName,
                         1);
   ExpectNoUKMPresence("AccountLabel.NumMatchingAccounts");
@@ -5963,6 +6028,7 @@ TEST_F(RequestServiceTest, LoginHintMultipleAccountsNoMatch) {
   ExpectNoUKMPresence("DomainHint.NumMatchingAccounts");
   histogram_tester_.ExpectUniqueSample("Blink.FedCm.AccountsSize.Raw", 3, 1);
   histogram_tester_.ExpectTotalCount("Blink.FedCm.AccountsSize.ReadyToShow", 0);
+  ExpectUkmValueInEntry("AccountsSize.Raw", FedCmEntry::kEntryName, 3);
 }
 
 TEST_F(RequestServiceTest, DomainHintSingleAccountMatch) {
@@ -6060,6 +6126,7 @@ TEST_F(RequestServiceTest, DomainHintSingleAccountNoMatch) {
   ExpectNoUKMPresence("LoginHint.NumMatchingAccounts");
   histogram_tester_.ExpectUniqueSample("Blink.FedCm.AccountsSize.Raw", 1, 1);
   histogram_tester_.ExpectTotalCount("Blink.FedCm.AccountsSize.ReadyToShow", 0);
+  ExpectUkmValueInEntry("AccountsSize.Raw", FedCmEntry::kEntryName, 1);
 }
 
 TEST_F(RequestServiceTest, DomainHintNoMatch) {
@@ -6106,6 +6173,8 @@ TEST_F(RequestServiceTest, DomainHintMultipleAccountsSingleMatch) {
   histogram_tester_.ExpectUniqueSample("Blink.FedCm.AccountsSize.Raw", 3, 1);
   histogram_tester_.ExpectUniqueSample("Blink.FedCm.AccountsSize.ReadyToShow",
                                        1, 1);
+  ExpectUkmValueInEntry("AccountsSize.Raw", FedCmEntry::kEntryName, 3);
+  ExpectUkmValueInEntry("AccountsSize.ReadyToShow", FedCmEntry::kEntryName, 1);
 }
 
 TEST_F(RequestServiceTest, DomainHintMultipleAccountsMultipleMatches) {
@@ -6131,6 +6200,8 @@ TEST_F(RequestServiceTest, DomainHintMultipleAccountsMultipleMatches) {
   histogram_tester_.ExpectUniqueSample("Blink.FedCm.AccountsSize.Raw", 3, 1);
   histogram_tester_.ExpectUniqueSample("Blink.FedCm.AccountsSize.ReadyToShow",
                                        2, 1);
+  ExpectUkmValueInEntry("AccountsSize.Raw", FedCmEntry::kEntryName, 3);
+  ExpectUkmValueInEntry("AccountsSize.ReadyToShow", FedCmEntry::kEntryName, 2);
 }
 
 TEST_F(RequestServiceTest, DomainHintMultipleAccountsStar) {
@@ -8468,17 +8539,12 @@ TEST_F(RequestServiceTest, CancelReasonMetrics) {
           IdentityRequestDialogController::DismissReason::kCloseButton));
 }
 
-// Tests that the correct FederatedAuthRequestResult is returned when the
-// accounts dialog is suppressed by segmentation platform.
-TEST_F(RequestServiceTest, SuppressedBySegmentationPlatform) {
+// Tests that the request is successful when the segmentation platform
+// recommends the ambient UI volume.
+TEST_F(RequestServiceTest, SegmentationPlatformRecommendsAmbientVolume) {
   MockConfiguration configuration = kConfigurationValid;
   configuration.suppressed_by_segmentation_platform = true;
-  RequestExpectations expectations = {
-      RequestTokenStatus::kError,
-      FederatedAuthRequestResult::kSuppressedBySegmentationPlatform,
-      /*standalone_console_message=*/std::nullopt,
-      /*selected_idp_config_url=*/std::nullopt};
-  RunAuthTest(kDefaultRequestParameters, expectations, configuration);
+  RunAuthTest(kDefaultRequestParameters, kExpectationSuccess, configuration);
 }
 
 TEST_F(RequestServiceTest, MetricsForConsecutiveSuccessfulRequests) {
@@ -8943,7 +9009,18 @@ TEST_F(RequestServiceTest, DisconnectDeniedByPermissionsPolicy) {
             bad_message_observer.WaitForBadMessage());
 }
 
-TEST_F(RequestServiceTest, NotifyAutofillSuggestionAcceptedWithUnknownIdp) {
+struct NotifyAutofillTestParams {
+  bool unknown_idp;
+  bool show_modal;
+};
+
+class RequestServiceNotifyAutofillParamTest
+    : public RequestServiceTest,
+      public ::testing::WithParamInterface<NotifyAutofillTestParams> {};
+
+TEST_P(RequestServiceNotifyAutofillParamTest,
+       NotifyAutofillSuggestionAccepted) {
+  NotifyAutofillTestParams params = GetParam();
   auto dialog_controller =
       std::make_unique<TestDialogController>(kConfigurationValid);
 
@@ -8951,9 +9028,11 @@ TEST_F(RequestServiceTest, NotifyAutofillSuggestionAcceptedWithUnknownIdp) {
   federated_auth_request_impl_->SetDialogControllerForTests(
       std::move(dialog_controller));
 
-  // Call NotifyAutofillSuggestionAccepted with an IDP that is not in
-  // token_request_get_infos_.
-  GURL unknown_idp("https://unknownidp.example/");
+  GURL idp = params.unknown_idp ? GURL("https://unknownidp.example/")
+                                : GURL(kProviderUrlFull);
+  std::string account_id =
+      params.unknown_idp ? "account_id" : "unknown_account_id";
+
   std::optional<bool> callback_result;
   base::RunLoop run_loop;
   RequestService::OnFederatedTokenReceivedCallback callback = base::BindOnce(
@@ -8966,7 +9045,7 @@ TEST_F(RequestServiceTest, NotifyAutofillSuggestionAcceptedWithUnknownIdp) {
 
   // This should return early and not crash.
   federated_auth_request_impl_->NotifyAutofillSuggestionAccepted(
-      unknown_idp, "account_id", /*show_modal=*/true, std::move(callback));
+      idp, account_id, params.show_modal, std::move(callback));
 
   run_loop.Run();
 
@@ -8974,6 +9053,54 @@ TEST_F(RequestServiceTest, NotifyAutofillSuggestionAcceptedWithUnknownIdp) {
   EXPECT_FALSE(dialog_controller_state_.did_show_loading_dialog);
   // Verify that the callback was called with false.
   EXPECT_EQ(callback_result, false);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    /*no prefix*/,
+    RequestServiceNotifyAutofillParamTest,
+    ::testing::Values(NotifyAutofillTestParams{/*unknown_idp=*/true,
+                                               /*show_modal=*/true},
+                      NotifyAutofillTestParams{/*unknown_idp=*/true,
+                                               /*show_modal=*/false},
+                      NotifyAutofillTestParams{/*unknown_idp=*/false,
+                                               /*show_modal=*/true},
+                      NotifyAutofillTestParams{/*unknown_idp=*/false,
+                                               /*show_modal=*/false}));
+
+TEST_F(RequestServiceTest, DismissIgnoredDuringRedirectTo) {
+  base::HistogramTester histogram_tester;
+
+  MockConfiguration config = kConfigurationValid;
+  config.delay_token_response = true;
+
+  federated_auth_request_impl_->SetForceAllowRedirectToForTesting(true);
+
+  // Start the request flow.
+  RunAuthDontWaitForCallback(kDefaultRequestParameters, config);
+
+  content::MockWebContentsObserver observer(web_contents());
+  EXPECT_CALL(observer, DidStartNavigation(_))
+      .WillOnce([&](content::NavigationHandle* handle) { CloseDialog(); });
+
+  // Call RedirectTo. This should trigger navigation and thus the observer.
+  CallRedirectTo(GURL(kProviderUrlFull),
+                 blink::mojom::RedirectParams::Tag::kGet,
+                 GURL("https://rp.example/redirect"), "");
+
+  WaitForCurrentAuthRequest(/*should_fast_forward=*/true);
+
+  // Verify that the request completed successfully.
+  EXPECT_EQ(auth_helper_->status(), RequestTokenStatus::kSuccess);
+  // In the success case via RedirectTo, the token is explicitly returned as a
+  // null base::Value (type NONE). So token().has_value() is true (it contains
+  // the null value), but is_none() is true.
+  EXPECT_TRUE(auth_helper_->token().has_value());
+  EXPECT_TRUE(auth_helper_->token()->is_none());
+
+  // Verify that the histogram records success (53) instead of dismiss (5).
+  histogram_tester.ExpectUniqueSample(
+      "Blink.FedCm.Status.RequestIdToken",
+      static_cast<int>(RequestIdTokenStatus::kSuccessUsingRedirectTo), 1);
 }
 
 }  // namespace content::webid

@@ -25,19 +25,20 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/d3d12/PipelineLayoutD3D12.h"
+#include "src/dawn/native/d3d12/PipelineLayoutD3D12.h"
 
 #include <limits>
 #include <sstream>
 #include <utility>
 
-#include "dawn/common/Assert.h"
-#include "dawn/native/d3d/D3DError.h"
-#include "dawn/native/d3d12/BindGroupLayoutD3D12.h"
-#include "dawn/native/d3d12/DeviceD3D12.h"
-#include "dawn/native/d3d12/PlatformFunctionsD3D12.h"
-#include "dawn/native/d3d12/ResourceTableD3D12.h"
-#include "dawn/native/d3d12/UtilsD3D12.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/native/d3d/D3DError.h"
+#include "src/dawn/native/d3d12/BindGroupLayoutD3D12.h"
+#include "src/dawn/native/d3d12/DeviceD3D12.h"
+#include "src/dawn/native/d3d12/PlatformFunctionsD3D12.h"
+#include "src/dawn/native/d3d12/ResourceTableD3D12.h"
+#include "src/dawn/native/d3d12/UtilsD3D12.h"
+#include "src/utils/compiler.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -99,7 +100,8 @@ HRESULT SerializeRootParameter1_0(Device* device,
     std::vector<std::vector<D3D12_DESCRIPTOR_RANGE>> allDescriptorRanges1_0;
     std::vector<D3D12_ROOT_PARAMETER> rootParameters1_0(rootSignature1_1.Desc_1_1.NumParameters);
     for (size_t i = 0; i < rootParameters1_0.size(); ++i) {
-        const D3D12_ROOT_PARAMETER1& rootParameter1_1 = rootSignature1_1.Desc_1_1.pParameters[i];
+        const D3D12_ROOT_PARAMETER1& rootParameter1_1 =
+            DAWN_UNSAFE_TODO(rootSignature1_1.Desc_1_1.pParameters[i]);
 
         rootParameters1_0[i].ParameterType = rootParameter1_1.ParameterType;
         rootParameters1_0[i].ShaderVisibility = rootParameter1_1.ShaderVisibility;
@@ -126,8 +128,8 @@ HRESULT SerializeRootParameter1_0(Device* device,
                         rootParameters1_0[i].DescriptorTable.NumDescriptorRanges);
                     for (uint32_t index = 0;
                          index < rootParameter1_1.DescriptorTable.NumDescriptorRanges; ++index) {
-                        const D3D12_DESCRIPTOR_RANGE1& descriptorRange1_1 =
-                            rootParameter1_1.DescriptorTable.pDescriptorRanges[index];
+                        const D3D12_DESCRIPTOR_RANGE1& descriptorRange1_1 = DAWN_UNSAFE_TODO(
+                            rootParameter1_1.DescriptorTable.pDescriptorRanges[index]);
                         descriptorRanges1_0[index].BaseShaderRegister =
                             descriptorRange1_1.BaseShaderRegister;
                         descriptorRanges1_0[index].NumDescriptors =
@@ -186,10 +188,10 @@ MaybeError PipelineLayout::Initialize() {
         staticSamplerCount += bindGroupLayout->GetStaticSamplerCount();
     }
 
-    std::vector<D3D12_DESCRIPTOR_RANGE1> resourceTableCbvUavSrvDescriptorRanges;
+    ResourceTable::DescriptorRanges resourceTableRanges;
     if (UsesResourceTable()) {
-        resourceTableCbvUavSrvDescriptorRanges = ResourceTable::GetCbvUavSrvDescriptorRanges(*this);
-        rangesCount += resourceTableCbvUavSrvDescriptorRanges.size();
+        DAWN_TRY_ASSIGN(resourceTableRanges, ResourceTable::GetDescriptorRanges(*this));
+        rangesCount += resourceTableRanges.cbvUavSrvs.size() + resourceTableRanges.samplers.size();
     }
 
     // We are taking pointers to `ranges`, so we cannot let it resize while we're pushing to it.
@@ -227,10 +229,14 @@ MaybeError PipelineLayout::Initialize() {
         return static_cast<uint32_t>(rootParameters.size() - 1);
     };
 
-    mResourceTableRootParameterIndex = kInvalidResourceTableRootParameterIndex;
+    mResourceTableCbvUavSrvRootParameterIndex = kInvalidResourceTableRootParameterIndex;
+    mResourceTableSamplerRootParameterIndex = kInvalidResourceTableRootParameterIndex;
     if (UsesResourceTable()) {
-        if (auto paramIndex = SetRootDescriptorTable(resourceTableCbvUavSrvDescriptorRanges)) {
-            mResourceTableRootParameterIndex = *paramIndex;
+        if (auto paramIndex = SetRootDescriptorTable(resourceTableRanges.cbvUavSrvs)) {
+            mResourceTableCbvUavSrvRootParameterIndex = *paramIndex;
+        }
+        if (auto paramIndex = SetRootDescriptorTable(resourceTableRanges.samplers)) {
+            mResourceTableSamplerRootParameterIndex = *paramIndex;
         }
     }
 
@@ -381,15 +387,14 @@ MaybeError PipelineLayout::Initialize() {
     }
 
     if (GetImmediateDataRangeByteSize() > 0) {
-        D3D12_ROOT_PARAMETER1 immediateConstants{};
-        immediateConstants.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-        immediateConstants.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-        immediateConstants.Constants.Num32BitValues =
-            GetImmediateDataRangeByteSize() / sizeof(uint32_t);
-        immediateConstants.Constants.RegisterSpace = kImmediatesRegisterSpace;
-        immediateConstants.Constants.ShaderRegister = kImmediatesBaseRegister;
+        D3D12_ROOT_PARAMETER1 immediates{};
+        immediates.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+        immediates.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        immediates.Constants.Num32BitValues = GetImmediateDataRangeByteSize() / sizeof(uint32_t);
+        immediates.Constants.RegisterSpace = kImmediatesRegisterSpace;
+        immediates.Constants.ShaderRegister = kImmediatesBaseRegister;
         mImmediatesParameterIndex = rootParameters.size();
-        rootParameters.emplace_back(immediateConstants);
+        rootParameters.emplace_back(immediates);
     } else {
         mImmediatesParameterIndex = kInvalidImmediatesParameterIndex;
     }
@@ -464,9 +469,15 @@ void PipelineLayout::DestroyImpl(DestroyReason reason) {
     }
 }
 
-uint32_t PipelineLayout::GetResourceTableRootParameterIndex() const {
-    DAWN_ASSERT(mResourceTableRootParameterIndex != kInvalidResourceTableRootParameterIndex);
-    return mResourceTableRootParameterIndex;
+uint32_t PipelineLayout::GetResourceTableCbvUavSrvRootParameterIndex() const {
+    DAWN_ASSERT(mResourceTableCbvUavSrvRootParameterIndex !=
+                kInvalidResourceTableRootParameterIndex);
+    return mResourceTableCbvUavSrvRootParameterIndex;
+}
+
+uint32_t PipelineLayout::GetResourceTableSamplerRootParameterIndex() const {
+    DAWN_ASSERT(mResourceTableSamplerRootParameterIndex != kInvalidResourceTableRootParameterIndex);
+    return mResourceTableSamplerRootParameterIndex;
 }
 
 uint32_t PipelineLayout::GetBaseResourceTableRegisterSpace() const {

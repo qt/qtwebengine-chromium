@@ -36,6 +36,7 @@
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/notreached.h"
 #include "core/fxcrt/numerics/safe_conversions.h"
+#include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/span_util.h"
 #include "core/fxcrt/stl_util.h"
@@ -273,22 +274,23 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFPage_GetRotation(FPDF_PAGE page) {
   return IsPageObject(pPage) ? pPage->GetPageRotation() : -1;
 }
 
-FPDF_EXPORT void FPDF_CALLCONV
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFPage_InsertObject(FPDF_PAGE page, FPDF_PAGEOBJECT page_object) {
   CPDF_PageObject* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
   if (!pPageObj) {
-    return;
+    return false;
   }
 
   std::unique_ptr<CPDF_PageObject> pPageObjHolder(pPageObj);
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!IsPageObject(pPage)) {
-    return;
+    return false;
   }
 
   pPageObj->SetDirty(true);
   pPage->AppendPageObject(std::move(pPageObjHolder));
   CalcBoundingBox(pPageObj);
+  return true;
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -392,6 +394,22 @@ FPDFPageObj_GetMark(FPDF_PAGEOBJECT page_object, unsigned long index) {
   }
 
   return FPDFPageObjectMarkFromCPDFContentMarkItem(pMarks->GetItem(index));
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_AddExistingMark(FPDF_PAGEOBJECT page_object,
+                            FPDF_PAGEOBJECTMARK mark) {
+  CPDF_PageObject* page = CPDFPageObjectFromFPDFPageObject(page_object);
+  CPDF_ContentMarkItem* mark_item =
+      CPDFContentMarkItemFromFPDFPageObjectMark(mark);
+  if (!page || !mark_item) {
+    return false;
+  }
+
+  CPDF_ContentMarks* marks = page->GetContentMarks();
+  marks->AddExistingMark(pdfium::WrapRetain(mark_item));
+  page->SetDirty(true);
+  return true;
 }
 
 FPDF_EXPORT FPDF_PAGEOBJECTMARK FPDF_CALLCONV

@@ -1,5 +1,7 @@
 // Benchmarks for matrix exponential.
 // Critical for Sophus Lie group operations (SLAM, visual odometry).
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>

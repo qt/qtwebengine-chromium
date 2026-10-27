@@ -12,7 +12,6 @@
 #include "third_party/blink/renderer/core/editing/dom_selection.h"
 #include "third_party/blink/renderer/core/editing/ephemeral_range.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
-#include "third_party/blink/renderer/core/fragment_directive/css_selector_directive.h"
 #include "third_party/blink/renderer/core/fragment_directive/text_directive.h"
 #include "third_party/blink/renderer/core/fragment_directive/text_fragment_selector_generator.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -89,7 +88,7 @@ ScriptPromise<SelectorDirective> FragmentDirective::createSelectorDirective(
   bool is_content_type_selection =
       arg->GetContentType() == V8UnionRangeOrSelection::ContentType::kSelection;
   if (is_content_type_selection) {
-    DOMSelection* selection = arg->GetAsSelection();
+    DomSelection* selection = arg->GetAsSelection();
     if (selection->rangeCount() == 0) {
       resolver->RejectWithDOMException(DOMExceptionCode::kNotSupportedError,
                                        "Selection must contain a range");
@@ -184,9 +183,6 @@ void FragmentDirective::ParseDirectives(const StringView& fragment_directive) {
       if (TextDirective* text_directive = TextDirective::Create(value)) {
         new_directives.push_back(text_directive);
       }
-    } else if (auto* selector_directive =
-                   CssSelectorDirective::TryParse(directive_string)) {
-      new_directives.push_back(selector_directive);
     }
   }
 

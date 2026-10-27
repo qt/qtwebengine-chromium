@@ -58,6 +58,7 @@
 #include "base/types/optional_util.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
+#include "content/browser/back_forward_cache/back_forward_cache_impl.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/browser/browser_context_impl.h"
@@ -67,7 +68,6 @@
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/preloading/prerender/prerender_host.h"
 #include "content/browser/process_lock.h"
-#include "content/browser/renderer_host/back_forward_cache_impl.h"
 #include "content/browser/renderer_host/debug_urls.h"
 #include "content/browser/renderer_host/frame_tree.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
@@ -83,6 +83,7 @@
 #include "content/browser/site_instance_impl.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/content_navigation_policy.h"
+#include "content/common/features.h"
 #include "content/common/navigation_params_utils.h"
 #include "content/common/trace_utils.h"
 #include "content/public/browser/back_forward_transition_animation_manager.h"
@@ -108,6 +109,7 @@
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "services/network/public/mojom/fetch_api.mojom.h"
+#include "services/network/public/mojom/link_header.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom-shared.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/blink/public/common/blob/blob_utils.h"
@@ -877,7 +879,7 @@ NavigationControllerImpl::NavigationControllerImpl(
       delegate_(delegate),
       ssl_manager_(this),
       get_timestamp_callback_(base::BindRepeating(&base::Time::Now)),
-      back_forward_cache_(browser_context) {
+      back_forward_cache_(*this) {
   DCHECK(browser_context_);
 }
 
@@ -1109,6 +1111,9 @@ void NavigationControllerImpl::SetPendingEntry(
   DiscardNonCommittedEntries();
   pending_entry_ = entry.release();
   DCHECK_EQ(-1, pending_entry_index_);
+  if (delegate_ && pending_entry_->is_renderer_initiated()) {
+    delegate_->NotifyNavigationStateChangedFromController(INVALIDATE_TYPE_URL);
+  }
 }
 
 NavigationEntryImpl* NavigationControllerImpl::GetActiveEntry() {
@@ -1307,15 +1312,15 @@ std::optional<int> NavigationControllerImpl::GetIndexWithSkipping(
     }
   }
 
-  // Helper to conditionally record metrics for the back-to-ad intervention.
-  // The `is_cross_origin_skip` parameter indicates if the ad-skipping logic
-  // attempts to land on a cross-origin page relative to the start point. (Refer
-  // to `get_origin_for_intervention` below for details on the
-  // 'same-origin exception').
-  auto maybe_record_back_to_ad_metrics = [&](bool is_cross_origin_skip) {
-    // Only record metrics if we are doing a single-step navigation
-    // (GoBack/GoForward), or during the first iteration of a multi-step
-    // navigation (GoToOffsetWithSkipping).
+  // Helper to conditionally report DevTools issues or record metrics for the
+  // back-to-ad intervention. The `is_cross_origin_skip` parameter indicates if
+  // the ad-skipping logic attempts to land on a cross-origin page relative to
+  // the start point. (Refer to `get_origin_for_intervention` below for details
+  // on the 'same-origin exception').
+  auto maybe_report_back_to_ad_intervention = [&](bool is_cross_origin_skip) {
+    // Only report DevTools issues or record metrics if we are doing a
+    // single-step navigation (GoBack/GoForward), or during the first iteration
+    // of a multi-step navigation (GoToOffsetWithSkipping).
     //
     // Also, we attribute the UKM to the page where the navigation started,
     // instead of the intermediate ad entry, i.e., while the start page and ad
@@ -1328,33 +1333,58 @@ std::optional<int> NavigationControllerImpl::GetIndexWithSkipping(
     // TODO(crbug.com/489138113): Investigate expanding the metrics API to allow
     // consistent metrics logging for non-active, intermediate entries during
     // multi-step navigations.
-    if (performing_navigation && from_index == GetCurrentEntryIndex()) {
-      RenderFrameHostImpl* main_frame_rfh_for_ukm =
+    if (from_index == GetCurrentEntryIndex()) {
+      RenderFrameHostImpl* main_frame_rfh_for_reporting =
           frame_tree_->root()->current_frame_host();
-      auto* browser_client = GetContentClient()->browser();
 
-      blink::mojom::WebFeature feature_skipped =
-          (direction == Direction::kBack)
-              ? blink::mojom::WebFeature::kHistoryGoBackWouldSkipAd
-              : blink::mojom::WebFeature::kHistoryGoForwardWouldSkipAd;
+      // DevTools Reporting Notes:
+      // 1. Not conditioned on `performing_navigation` to give developers a
+      //    better chance to notice issues on the pre-skip page. This might
+      //    triggers duplicate reports since `GetIndexWithSkipping` may be
+      //    called multiple times (e.g., via `NotifyUserActivation`), but the
+      //    frontend safely drops duplicates.
+      // 2. We use the main frame RFH because this event signals that the next
+      //    UI navigation will skip an ad entry. Using the pre-skip page's main
+      //    frame is the most logical fit since it isn't tied to the current
+      //    entry.
+      if (is_cross_origin_skip &&
+          base::FeatureList::IsEnabled(features::kBackToAdIntervention) &&
+          direction == Direction::kBack) {
+        devtools_instrumentation::OnBackUINavigationWouldSkipAd(
+            main_frame_rfh_for_reporting);
+      }
 
-      blink::mojom::WebFeature feature_excluded =
-          (direction == Direction::kBack)
-              ? blink::mojom::WebFeature::
-                    kHistoryGoBackWouldNotSkipAdDueToSameOriginExclusion
-              : blink::mojom::WebFeature::
-                    kHistoryGoForwardWouldNotSkipAdDueToSameOriginExclusion;
+      // Condition metrics reporting on `performing_navigation` to reduce
+      // reporting volume and to better align with actual user impact. Because
+      // metrics are collected across all eligible clients, it's unlikely a
+      // potentially impacted site is missed completely.
+      if (performing_navigation) {
+        auto* browser_client = GetContentClient()->browser();
 
-      browser_client->LogWebFeatureForCurrentPage(
-          main_frame_rfh_for_ukm,
-          is_cross_origin_skip ? feature_skipped : feature_excluded);
+        blink::mojom::WebFeature feature_skipped =
+            (direction == Direction::kBack)
+                ? blink::mojom::WebFeature::kHistoryGoBackWouldSkipAd
+                : blink::mojom::WebFeature::kHistoryGoForwardWouldSkipAd;
+
+        blink::mojom::WebFeature feature_excluded =
+            (direction == Direction::kBack)
+                ? blink::mojom::WebFeature::
+                      kHistoryGoBackWouldNotSkipAdDueToSameOriginExclusion
+                : blink::mojom::WebFeature::
+                      kHistoryGoForwardWouldNotSkipAdDueToSameOriginExclusion;
+
+        browser_client->LogWebFeatureForCurrentPage(
+            main_frame_rfh_for_reporting,
+            is_cross_origin_skip ? feature_skipped : feature_excluded);
+      }
     }
   };
 
   // Handle the case where the ad-skipping logic exhausts all history entries.
   if (!result_index_with_ad_skipping.has_value()) {
-    // Treat "skipping all entries" as a cross-origin skip for metrics purposes.
-    maybe_record_back_to_ad_metrics(/*is_cross_origin_skip=*/true);
+    // Treat "skipping all entries" as a cross-origin skip for reporting
+    // purposes (metrics and DevTools).
+    maybe_report_back_to_ad_intervention(/*is_cross_origin_skip=*/true);
 
     if (base::FeatureList::IsEnabled(features::kBackToAdIntervention)) {
       return std::nullopt;
@@ -1410,7 +1440,7 @@ std::optional<int> NavigationControllerImpl::GetIndexWithSkipping(
 
     bool is_cross_origin_skip = !start_origin.IsSameOriginWith(target_origin);
 
-    maybe_record_back_to_ad_metrics(is_cross_origin_skip);
+    maybe_report_back_to_ad_intervention(is_cross_origin_skip);
 
     // Only execute the skip if it takes the user to a cross-origin page
     // relative to the page where the navigation started, AND the feature is
@@ -3262,7 +3292,6 @@ void NavigationControllerImpl::NavigateFromFrameProxy(
     bool force_new_browsing_instance,
     bool is_container_initiated,
     bool has_rel_opener,
-    net::StorageAccessApiStatus storage_access_api_status,
     std::optional<std::u16string> embedder_shared_storage_context) {
   if (is_renderer_initiated) {
     DCHECK(initiator_origin.has_value());
@@ -3393,7 +3422,7 @@ void NavigationControllerImpl::NavigateFromFrameProxy(
           /*from_frame_proxy=*/true,
           is_embedder_initiated_fenced_frame_navigation,
           is_unfenced_top_navigation, is_container_initiated,
-          storage_access_api_status, embedder_shared_storage_context);
+          embedder_shared_storage_context);
 
   if (!request) {
     return;
@@ -4204,7 +4233,6 @@ base::WeakPtr<NavigationHandle> NavigationControllerImpl::NavigateWithoutEntry(
         CreateNavigationEntryFromLoadParams(node, params, override_user_agent,
                                             should_replace_current_entry,
                                             params.has_user_gesture);
-    DiscardPendingEntry(false);
     SetPendingEntry(std::move(entry));
   }
 
@@ -4221,6 +4249,14 @@ base::WeakPtr<NavigationHandle> NavigationControllerImpl::NavigateWithoutEntry(
     if (GetContentClient()->browser()->ShouldBlockRendererDebugURL(
             params.url, browser_context_, node->current_frame_host())) {
       DiscardPendingEntry(false);
+      return nullptr;
+    }
+
+    // Don't trust opaque origins to run debug URLs (like javascript: URLs) on
+    // the current page.
+    if (params.initiator_origin.has_value() &&
+        params.initiator_origin->opaque()) {
+      DiscardPendingEntry(true);
       return nullptr;
     }
 
@@ -4474,7 +4510,7 @@ NavigationControllerImpl::CreateNavigationEntryFromLoadParams(
   // started_from_context_menu. Move started_from_context_menu to
   // NavigationUIData.
   entry->set_started_from_context_menu(params.started_from_context_menu);
-  entry->set_remove_extra_headers_on_cross_origin_redirect(
+  entry->SetRemoveExtraHeadersOnCrossOriginRedirect(
       params.remove_extra_headers_on_cross_origin_redirect);
 
   return entry;
@@ -4496,7 +4532,6 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
     bool is_embedder_initiated_fenced_frame_navigation,
     bool is_unfenced_top_navigation,
     bool is_container_initiated,
-    net::StorageAccessApiStatus storage_access_api_status,
     std::optional<std::u16string> embedder_shared_storage_context) {
   DCHECK_EQ(-1, GetIndexOfEntry(entry));
 
@@ -4618,6 +4653,16 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
           false /* is_history_navigation_in_new_child_frame */,
           params.input_start, network::mojom::RequestDestination::kEmpty);
 
+  // It is safe to convert GURL to an Origin and back in the code below because
+  // we only want to discard the rest of the URL (e.g., path and params). The
+  // actual underlying Origin is not needed, which could be inherited or opaque
+  // in sandbox cases.
+  const GURL original_url_for_renderer =
+      base::FeatureList::IsEnabled(
+          features::kSanitizeOriginalUrlDuringNavigation)
+          ? common_params->url.DeprecatedGetOriginAsURL()
+          : common_params->url;
+
   blink::mojom::CommitNavigationParamsPtr commit_params =
       blink::mojom::CommitNavigationParams::New(
           url::Origin(),
@@ -4626,7 +4671,7 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
           blink::StorageKey(), override_user_agent, params.redirect_chain,
           std::vector<network::mojom::URLResponseHeadPtr>(),
           std::vector<net::RedirectInfo>(), params.post_content_type,
-          common_params->url, common_params->method,
+          original_url_for_renderer, common_params->method,
           params.can_load_local_resources, page_state_data,
           entry->GetUniqueID(), entry->GetSubframeUniqueNames(node),
           /*intended_as_new_entry=*/true,
@@ -4655,7 +4700,7 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
           /*old_page_info=*/nullptr,
           /*http_response_code=*/-1,
           blink::mojom::NavigationApiHistoryEntryArrays::New(),
-          /*early_hints_preloaded_resources=*/std::vector<GURL>(),
+          std::vector<network::mojom::LinkHeaderPtr>(),
           // This timestamp will be populated when the commit IPC is sent.
           /*commit_sent=*/base::TimeTicks(), /*srcdoc_value=*/std::string(),
           /*should_load_data_url=*/false,
@@ -4720,8 +4765,7 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
       params.impression, started_with_transient_activation,
       params.started_by_ad, params.is_pdf,
       is_embedder_initiated_fenced_frame_navigation, is_container_initiated,
-      params.has_rel_opener, storage_access_api_status,
-      embedder_shared_storage_context);
+      params.has_rel_opener, embedder_shared_storage_context);
 
   if (!navigation_request) {
     return nullptr;
@@ -4826,12 +4870,22 @@ NavigationControllerImpl::CreateNavigationRequestFromEntry(
   common_params->is_history_navigation_in_new_child_frame =
       is_history_navigation_in_new_child_frame;
 
+  // It is safe to convert GURL to an Origin and back in the code below because
+  // we only want to discard the rest of the URL (e.g., path and params). The
+  // actual underlying Origin is not needed, which could be inherited or opaque
+  // in sandbox cases.
+  const GURL original_url_for_renderer =
+      base::FeatureList::IsEnabled(
+          features::kSanitizeOriginalUrlDuringNavigation)
+          ? common_params->url.DeprecatedGetOriginAsURL()
+          : common_params->url;
+
   // TODO(clamy): |intended_as_new_entry| below should always be false once
   // Reload no longer leads to this being called for a pending NavigationEntry
   // of index -1.
   blink::mojom::CommitNavigationParamsPtr commit_params =
       entry->ConstructCommitNavigationParams(
-          *frame_entry, common_params->url, common_params->method,
+          *frame_entry, original_url_for_renderer, common_params->method,
           entry->GetSubframeUniqueNames(frame_tree_node),
           GetPendingEntryIndex() == -1 /* intended_as_new_entry */,
           GetIndexOfEntry(entry), GetLastCommittedEntryIndex(), GetEntryCount(),
@@ -4858,7 +4912,7 @@ NavigationControllerImpl::CreateNavigationRequestFromEntry(
       false /* is_pdf */);
 
   request->set_remove_extra_headers_on_cross_origin_redirect(
-      entry->remove_extra_headers_on_cross_origin_redirect());
+      entry->GetRemoveExtraHeadersOnCrossOriginRedirect());
   return request;
 }
 
@@ -5644,7 +5698,6 @@ bool NavigationControllerImpl::ShouldMaintainTrivialSessionHistory(
   // The preview mode appears as prerendered page in renderers, and
   // GetDocument()->IsPrerendering() covers the case together.
   return frame_tree_->is_prerendering() ||
-         frame_tree_->page_delegate()->IsPageInPreviewMode() ||
          frame_tree_node->IsInFencedFrameTree();
 }
 
@@ -5703,7 +5756,15 @@ NavigationControllerImpl::CreateNavigationRequestForErrorPage(
 
   blink::mojom::CommitNavigationParamsPtr commit_params =
       blink::CreateCommitNavigationParams();
-  commit_params->original_url = common_params->url;
+  // It is safe to convert GURL to an Origin and back in the code below because
+  // we only want to discard the rest of the URL (e.g., path and params). The
+  // actual underlying Origin is not needed, which could be inherited or opaque
+  // in sandbox cases.
+  commit_params->original_url =
+      base::FeatureList::IsEnabled(
+          features::kSanitizeOriginalUrlDuringNavigation)
+          ? common_params->url.DeprecatedGetOriginAsURL()
+          : common_params->url;
 
   // TODO(arthursonzogni): Consider providing the minimal capabilities to the
   // error pages.

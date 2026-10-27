@@ -206,6 +206,11 @@ std::optional<CtapGetAssertionRequest> CtapGetAssertionRequest::Parse(
           // No other combinations of keys are acceptable.
           return std::nullopt;
         }
+      } else if (extension_id == kExtensionCrossDeviceFallbackUrl) {
+        if (!extension.second.is_string()) {
+          return std::nullopt;
+        }
+        request.cross_device_fallback_url = extension.second.GetString();
       }
     }
   }
@@ -284,12 +289,6 @@ CtapGetAssertionRequest& CtapGetAssertionRequest::operator=(
 
 CtapGetAssertionRequest::~CtapGetAssertionRequest() = default;
 
-void CtapGetAssertionRequest::SetClientDataJson(
-    std::string in_client_data_json) {
-  client_data_hash = crypto::hash::Sha256(in_client_data_json);
-  client_data_json = std::move(in_client_data_json);
-}
-
 std::pair<CtapRequestCommand, std::optional<cbor::Value>>
 AsCTAPRequestValuePair(const CtapGetAssertionRequest& request) {
   cbor::Value::MapValue cbor_map;
@@ -337,6 +336,11 @@ AsCTAPRequestValuePair(const CtapGetAssertionRequest& request) {
 
   if (request.get_cred_blob) {
     extensions.emplace(kExtensionCredBlob, true);
+  }
+
+  if (request.cross_device_fallback_url) {
+    extensions.emplace(kExtensionCrossDeviceFallbackUrl,
+                       cbor::Value(*request.cross_device_fallback_url));
   }
 
   if (!request.prf_inputs.empty()) {

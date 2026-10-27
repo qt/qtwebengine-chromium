@@ -13,6 +13,7 @@
 #include "src/objects/js-regexp-inl.h"
 #include "src/regexp/regexp-macro-assembler-arch.h"
 #include "src/regexp/regexp-stack.h"
+#include "src/regexp/regexp.h"
 #include "src/regexp/special-case.h"
 #include "src/strings/unicode-inl.h"
 
@@ -27,8 +28,7 @@ namespace regexp {
 
 RegExpMacroAssembler::RegExpMacroAssembler(Isolate* isolate, Zone* zone,
                                            Mode mode)
-    : slow_safe_compiler_(false),
-      backtrack_limit_(JSRegExp::kNoBacktrackLimit),
+    : backtrack_limit_(JSRegExp::kNoBacktrackLimit),
       global_mode_(NOT_GLOBAL),
       isolate_(isolate),
       zone_(zone),
@@ -52,8 +52,7 @@ int RegExpMacroAssembler::stack_limit_slack_slot_count() const {
 }
 
 bool RegExpMacroAssembler::CanReadUnaligned() const {
-  return kUnalignedReadSupported && v8_flags.enable_regexp_unaligned_accesses &&
-         !slow_safe();
+  return kUnalignedReadSupported && v8_flags.enable_regexp_unaligned_accesses;
 }
 
 // static
@@ -202,13 +201,13 @@ Handle<ByteArray> NativeRegExpMacroAssembler::GetOrAddRangeArray(
     const ZoneList<CharacterRange>* ranges) {
   const uint32_t hash = Hash(ranges);
 
-  if (range_array_cache_.count(hash) != 0) {
-    Handle<FixedUInt16Array> range_array = range_array_cache_[hash];
+  if (auto it = range_array_cache_.find(hash); it != range_array_cache_.end()) {
+    Handle<FixedUInt16Array> range_array = it->second;
     if (Equals(ranges, range_array)) return range_array;
   }
 
   Handle<FixedUInt16Array> range_array = MakeRangeArray(isolate(), ranges);
-  range_array_cache_[hash] = range_array;
+  range_array_cache_.insert_or_assign(hash, range_array);
   return range_array;
 }
 
@@ -493,13 +492,14 @@ int NativeRegExpMacroAssembler::CheckStackGuardState(
     } else if (check.InterruptRequested()) {
       AllowGarbageCollection yes_gc;
       Tagged<Object> result = isolate->stack_guard()->HandleInterrupts();
-      if (IsExceptionHole(result, isolate)) return_value = EXCEPTION;
+      if (IsExceptionHole(result)) return_value = EXCEPTION;
     }
 
     // We are not using operator == here because it does a slow DCHECK
     // CheckObjectComparisonAllowed() which might crash when trying to access
     // the page header of the stale pointer.
-    if (!code_handle->SafeEquals(re_code)) {  // Return address no longer valid
+    if (!Tagged<InstructionStream>(*code_handle).SafeEquals(re_code)) {
+      // Return address no longer valid
       // Overwrite the return address on the stack.
       intptr_t delta = code_handle->address() - re_code.address();
       Address new_pc = old_pc + delta;
@@ -571,8 +571,23 @@ int NativeRegExpMacroAssembler::Match(DirectHandle<IrRegExpData> regexp_data,
       subject_ptr->AddressOfCharacterAt(start_offset + slice_offset, no_gc);
   int byte_length = char_length << char_size_shift;
   const uint8_t* input_end = input_start + byte_length;
-  return Execute(*subject, start_offset, input_start, input_end, offsets_vector,
-                 offsets_vector_length, isolate, *regexp_data);
+
+#ifdef V8_ENABLE_REGEXP_DIAGNOSTICS
+  if (V8_UNLIKELY(v8_flags.trace_regexp_exec)) {
+    RegExp::TraceExecutionBegin(reinterpret_cast<Address>(isolate));
+  }
+#endif  // V8_ENABLE_REGEXP_DIAGNOSTICS
+  int res =
+      Execute(*subject, start_offset, input_start, input_end, offsets_vector,
+              offsets_vector_length, isolate, *regexp_data);
+#ifdef V8_ENABLE_REGEXP_DIAGNOSTICS
+  if (V8_UNLIKELY(v8_flags.trace_regexp_exec)) {
+    RegExp::TraceExecutionEnd(reinterpret_cast<Address>(isolate),
+                              regexp_data->ptr(), subject->ptr(), start_offset,
+                              res);
+  }
+#endif  // V8_ENABLE_REGEXP_DIAGNOSTICS
+  return res;
 }
 
 // static

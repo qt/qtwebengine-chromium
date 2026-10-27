@@ -8,11 +8,10 @@
 #include "src/codegen/assembler.h"
 #include "src/codegen/atomic-memory-order.h"
 #include "src/codegen/interface-descriptors-inl.h"
+#include "src/compiler/backend/simd-shuffle.h"
 #include "src/heap/mutable-page.h"
 #include "src/wasm/baseline/liftoff-assembler.h"
 #include "src/wasm/baseline/parallel-move-inl.h"
-#include "src/wasm/object-access.h"
-#include "src/wasm/simd-shuffle.h"
 #include "src/wasm/wasm-linkage.h"
 #include "src/wasm/wasm-objects.h"
 
@@ -268,9 +267,9 @@ void LiftoffAssembler::CheckTierUp(int declared_func_index, int budget_used,
     LoadInstanceDataFromFrame(instance_data);
   }
 
-  constexpr int kArrayOffset = wasm::ObjectAccess::ToTagged(
-      WasmTrustedInstanceData::kTieringBudgetArrayOffset);
-  LoadU64(budget_array, MemOperand(instance_data, kArrayOffset));
+  LoadU64(budget_array,
+          FieldMemOperand(instance_data,
+                          WasmTrustedInstanceData::kTieringBudgetArrayOffset));
 
   int budget_arr_offset = kInt32Size * declared_func_index;
   Register budget = r1;
@@ -373,13 +372,13 @@ void LiftoffAssembler::LoadFromInstance(Register dst, Register instance,
   DCHECK_LE(0, offset);
   switch (size) {
     case 1:
-      LoadU8(dst, MemOperand(instance, offset));
+      LoadU8(dst, FieldMemOperand(instance, offset));
       break;
     case 4:
-      LoadU32(dst, MemOperand(instance, offset));
+      LoadU32(dst, FieldMemOperand(instance, offset));
       break;
     case 8:
-      LoadU64(dst, MemOperand(instance, offset));
+      LoadU64(dst, FieldMemOperand(instance, offset));
       break;
     default:
       UNIMPLEMENTED();
@@ -390,7 +389,7 @@ void LiftoffAssembler::LoadTaggedPointerFromInstance(Register dst,
                                                      Register instance,
                                                      int offset) {
   DCHECK_LE(0, offset);
-  LoadTaggedField(dst, MemOperand(instance, offset));
+  LoadTaggedField(dst, FieldMemOperand(instance, offset));
 }
 
 void LiftoffAssembler::ResetOSRTarget() {}
@@ -423,9 +422,9 @@ void LiftoffAssembler::AtomicLoadTaggedPointer(Register dst, Register src_addr,
 }
 
 void LiftoffAssembler::LoadProtectedPointer(Register dst, Register src_addr,
-                                            int32_t offset) {
+                                            int32_t field_offset) {
   static_assert(!V8_ENABLE_SANDBOX_BOOL);
-  LoadTaggedPointer(dst, src_addr, no_reg, offset);
+  LoadTaggedField(dst, FieldMemOperand(src_addr, field_offset));
 }
 
 void LiftoffAssembler::LoadFullPointer(Register dst, Register src_addr,
@@ -1484,12 +1483,17 @@ void LiftoffAssembler::AtomicCompareExchangeTaggedPointer(
       trapping_load_pc, false, LiftoffAssembler::kNative);
 
   if constexpr (COMPRESS_POINTERS_BOOL) {
-    AddS64(result.gp(), result.gp(), kPtrComprCageBaseRegister);
+    lay(result.gp(), MemOperand(result.gp(), kPtrComprCageBaseRegister));
   }
 
   if (v8_flags.disable_write_barriers) return;
-  // Emit the write barrier.
+  // We only need a write barrier if the CAS was successful.
+  // The AtomicCompareExchange above leaves the condition flags from the
+  // final comparison.
   Label exit;
+  bne(&exit);
+
+  // Emit the write barrier.
   JumpIfSmi(new_value.gp(), &exit);
   CheckPageFlag(dst_addr, r1, MemoryChunk::kPointersFromHereAreInterestingMask,
                 to_condition(kZero), &exit);
@@ -2006,6 +2010,49 @@ void LiftoffAssembler::IncrementSmi(LiftoffRegister dst, int offset) {
   }
 }
 
+void LiftoffAssembler::DecrementMaxSteps(int32_t* max_steps_ptr,
+                                         MaxStepsVariant steps,
+                                         Label* trap_label,
+                                         LiftoffRegList pinned) {
+  Register addr = pinned.set(GetUnusedRegister(kGpReg, pinned)).gp();
+  mov(addr, Operand(reinterpret_cast<uintptr_t>(max_steps_ptr)));
+  Register max_steps = pinned.set(GetUnusedRegister(kGpReg, pinned)).gp();
+  LoadS32(max_steps, MemOperand(addr));
+
+  if (auto* steps_const = std::get_if<int32_t>(&steps)) {
+    SubS32(max_steps, max_steps, Operand(*steps_const));
+    StoreU32(max_steps, MemOperand(addr));
+    blt(trap_label);
+    return;
+  }
+
+  auto [reg, kind] = std::get<std::pair<Register, ValueKind>>(steps);
+  Register scratch = pinned.set(GetUnusedRegister(kGpReg, pinned)).gp();
+
+  // Decrement the counter. If it underflows, clamp to -1 to prevent
+  // wraparound into positive range.
+  // Save the original value then subtract. SubS64 clobbers CC so compare after.
+  mov(scratch, max_steps);
+  SubS64(max_steps, max_steps, reg);
+  if (kind == kI64) {
+    CmpU64(scratch, reg);
+  } else {
+    CmpU32(scratch, reg);
+  }
+  // If max_steps was `unsigned less than` reg, the subtraction wrapped around,
+  // clamp to -1.
+  Label no_underflow;
+  bge(&no_underflow);
+  mov(max_steps, Operand(-1));
+  bind(&no_underflow);
+
+  StoreU32(max_steps, MemOperand(addr));
+  CmpS32(max_steps, Operand(0));
+
+  // Now trap if the (possibly capped) result is negative.
+  blt(trap_label);
+}
+
 void LiftoffAssembler::emit_i32_divs(Register dst, Register lhs, Register rhs,
                                      Label* trap_div_by_zero,
                                      Label* trap_div_unrepresentable) {
@@ -2065,6 +2112,40 @@ void LiftoffAssembler::emit_i32_remu(Register dst, Register lhs, Register rhs,
   ltr(r0, rhs);
   beq(trap_div_by_zero);
   ModU32(dst, lhs, rhs);
+}
+
+void LiftoffAssembler::emit_i64_mul_wide_s() {
+  DCHECK(!cache_state()->frozen);
+  LiftoffRegList pinned;
+  LiftoffRegister rhs = pinned.set(PopToRegister(pinned));
+  LiftoffRegister lhs = pinned.set(PopToRegister(pinned));
+
+  LiftoffRegister high_result = pinned.set(GetUnusedRegister(kGpReg, pinned));
+  LiftoffRegister low_result =
+      GetUnusedRegister(kGpReg, {lhs, rhs}, LiftoffRegList{high_result});
+
+  MulHighS64(high_result.gp(), lhs.gp(), rhs.gp());
+  MulS64(low_result.gp(), lhs.gp(), rhs.gp());
+
+  PushRegister(kI64, low_result);
+  PushRegister(kI64, high_result);
+}
+
+void LiftoffAssembler::emit_i64_mul_wide_u() {
+  DCHECK(!cache_state()->frozen);
+  LiftoffRegList pinned;
+  LiftoffRegister rhs = pinned.set(PopToRegister(pinned));
+  LiftoffRegister lhs = pinned.set(PopToRegister(pinned));
+
+  LiftoffRegister high_result = pinned.set(GetUnusedRegister(kGpReg, pinned));
+  LiftoffRegister low_result =
+      GetUnusedRegister(kGpReg, {lhs, rhs}, LiftoffRegList{high_result});
+
+  MulHighU64(high_result.gp(), lhs.gp(), rhs.gp());
+  MulS64(low_result.gp(), lhs.gp(), rhs.gp());
+
+  PushRegister(kI64, low_result);
+  PushRegister(kI64, high_result);
 }
 
 bool LiftoffAssembler::emit_i64_divs(LiftoffRegister dst, LiftoffRegister lhs,

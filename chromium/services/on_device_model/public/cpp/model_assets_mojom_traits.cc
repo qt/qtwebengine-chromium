@@ -26,7 +26,10 @@ bool StructTraits<on_device_model::mojom::ModelAssetsDataView,
             data.ReadSpModelPath(&sp_model_path) &&
             data.ReadCache(&assets->cache) &&
             data.ReadEncoderCache(&assets->encoder_cache) &&
-            data.ReadAdapterCache(&assets->adapter_cache);
+            data.ReadAdapterCache(&assets->adapter_cache) &&
+            data.ReadProgramCache(&assets->program_cache) &&
+            data.ReadEncoderProgramCache(&assets->encoder_program_cache) &&
+            data.ReadAdapterProgramCache(&assets->adapter_program_cache);
   if (!ok) {
     return false;
   }

@@ -1,4 +1,6 @@
 # Change to build directory.
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 $rootdir = Get-Location
 cd ${EIGEN_CI_BUILDDIR}
 

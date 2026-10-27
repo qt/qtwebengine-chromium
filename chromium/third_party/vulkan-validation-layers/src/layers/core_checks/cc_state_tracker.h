@@ -18,11 +18,11 @@
  * limitations under the License.
  */
 #pragma once
-#include "cc_submit.h"
+#include "core_checks/cc_synchronization.h"
 #include "state_tracker/state_tracker.h"
 #include "state_tracker/cmd_buffer_state.h"
 #include "state_tracker/queue_state.h"
-#include "state_tracker/event_map.h"
+#include "state_tracker/event_state.h"
 #include "state_tracker/shader_stage_state.h"
 
 class CoreChecks;
@@ -45,6 +45,12 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
     void RecordSetViewportWithCount(uint32_t viewport_count) final;
     void RecordSetScissor(uint32_t first_scissor, uint32_t scissor_count) final;
     void RecordSetScissorWithCount(uint32_t scissor_count) final;
+
+    void RecordBindIndexbuffer() final;
+    void RecordSetPrimitiveRestartIndex(uint32_t primitive_restart_index) final;
+
+    void RecordPushData(const VkPushDataInfoEXT& push_data_info) final;
+    void ClearPushData() final;
 
     void RecordBeginRendering(const VkRenderingInfo &rendering_info, const Location &loc) final;
     void RecordBeginRenderPass(const VkRenderPassBeginInfo &render_pass_begin, const VkSubpassBeginInfo &subpass_begin_info,
@@ -91,10 +97,11 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
     void RecordClearAttachments(uint32_t attachment_count, const VkClearAttachment *pAttachments, uint32_t rect_count,
                                 const VkClearRect *pRects, const Location &loc) final;
 
-    void RecordSetEvent(VkEvent event, VkPipelineStageFlags2 stageMask, const VkDependencyInfo *dependency_info) final;
+    void RecordSetEvent(VkEvent event, VkPipelineStageFlags stageMask) final;
+    void RecordSetEvent2(VkEvent event, const VkDependencyInfo& dependency_info) final;
     void RecordResetEvent(VkEvent event, VkPipelineStageFlags2 stageMask) final;
-    void RecordWaitEvents(uint32_t eventCount, const VkEvent *pEvents, VkPipelineStageFlags2 src_stage_mask,
-                          const VkDependencyInfo *dependency_info, const Location &loc) final;
+    void RecordWaitEvents(vvl::span<const VkEvent> events, VkPipelineStageFlags src_stage_mask, const Location& loc) final;
+    void RecordWaitEvent2(VkEvent event, const VkDependencyInfo& dependency_info, const Location& loc) final;
     void RecordBarriers(uint32_t buffer_barrier_count, const VkBufferMemoryBarrier *buffer_barriers, uint32_t image_barrier_count,
                         const VkImageMemoryBarrier *image_barriers, VkPipelineStageFlags src_stage_mask,
                         VkPipelineStageFlags dst_stage_mask, const Location &loc) final;
@@ -130,8 +137,6 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
 
     void RecordExecuteCommand(vvl::CommandBuffer &secondary_command_buffer, uint32_t cmd_index, const Location &loc) final;
 
-    // Called from the Queue state
-    void SubmitTimeValidate();
     // Called from the Command Buffer state
     void Submit(vvl::Queue &queue_state, uint32_t perf_submit_pass, const Location &loc) final;
 
@@ -178,6 +183,13 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
         bool used_dynamic_count;  // true if any draw recorded used VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT
     } scissor;
 
+    // VK_EXT_primitive_restart_index
+    uint32_t custom_primitive_restart_index;
+
+    // VK_EXT_descriptor_heap
+    // Mark which ranges vkCmdPushDataKHR has set (will be 0 or 1)
+    std::vector<uint8_t> push_data_mask{};
+
     uint32_t used_viewport_scissor_count;
 
     QFOTransferBarrierSets<QFOBufferTransferBarrier> qfo_transfer_buffer_barriers;
@@ -197,13 +209,9 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
     using QueueCallback = std::function<bool(const class vvl::Queue &queue_state, const vvl::CommandBuffer &cb_state)>;
     std::vector<QueueCallback> queue_submit_functions;
 
-    // The subresources from dynamic rendering barriers that can't be validated during record time.
-    vvl::unordered_map<VkImage, std::vector<std::pair<VkImageSubresourceRange, vvl::LocationCapture>>>
-        submit_validate_dynamic_rendering_barrier_subresources;
-
-    using EventCallback = std::function<bool(vvl::CommandBuffer &cb_state, bool do_validate, EventMap &local_event_signal_info,
-                                             VkQueue waiting_queue, const Location &loc)>;
-    std::vector<EventCallback> event_updates;
+    EventSignalingStateMap event_signaling_states;
+    std::vector<WaitEventSubmitInfo> wait_event_submit_infos;
+    std::vector<WaitEvent2SubmitInfo> wait_event2_submit_infos;
 
     // Validation functions run when secondary CB is executed in primary
     std::vector<
@@ -239,15 +247,15 @@ static inline const CommandBufferSubState &SubState(const vvl::CommandBuffer &cb
 
 class QueueSubState : public vvl::QueueSubState {
   public:
-    QueueSubState(CoreChecks &core_checks, vvl::Queue& q);
+    QueueSubState(vvl::Queue& q, vvl::SubmitTimeTracker& submit_time_tracker)
+        : vvl::QueueSubState(q), submit_time_tracker(&submit_time_tracker) {}
 
-    void PreSubmit(std::vector<vvl::QueueSubmission> &submissions) override;
+    void PreSubmit(std::vector<vvl::QueueSubmission>& submissions) override;
 
     // Override Retire to validate submissions in the order defined by synchronization
     void Retire(vvl::QueueSubmission&) override;
 
-  private:
-    QueueSubmissionValidator queue_submission_validator_;
+    vvl::SubmitTimeTracker* submit_time_tracker = nullptr;
 };
 
 }  // namespace core

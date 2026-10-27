@@ -30,10 +30,10 @@
 
 #import <Metal/Metal.h>
 
-#include "dawn/common/ityp_stack_vec.h"
-#include "dawn/native/BindingInfo.h"
-#include "dawn/native/PerStage.h"
-#include "dawn/native/PipelineLayout.h"
+#include "src/dawn/common/ityp_stack_vec.h"
+#include "src/dawn/native/BindingInfo.h"
+#include "src/dawn/native/PerStage.h"
+#include "src/dawn/native/PipelineLayout.h"
 
 namespace dawn::native::metal {
 
@@ -44,7 +44,7 @@ inline constexpr size_t kMetalBufferTableSize = 31;
 // The Metal buffer slot that Dawn reserves for immediate block.
 // The layout of ImmediateBlock:
 // struct ImmediateBlock {
-//    - Normal render/compute immediates, ref to ImmediateConstantLayout.h
+//    - Normal render/compute immediates, ref to ImmediateLayout.h
 //    - Optional Paddings to align the following vec4 to 16 bytes
 //    - Storage Buffer sizes - vec4<u32> arrays
 // };

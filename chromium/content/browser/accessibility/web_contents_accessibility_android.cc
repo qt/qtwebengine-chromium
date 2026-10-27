@@ -416,11 +416,13 @@ std::optional<int> MaybeFindRowColumn(ui::BrowserAccessibility* start_node,
   // Move in the desired direction by the element type.
   int want_row_index = cur_row_index, want_col_index = cur_col_index;
   if (want_row) {
-    want_row_index += forwards ? 1 : -1;
+    want_row_index +=
+        forwards ? cell_node->GetTableCellRowSpan().value_or(1) : -1;
   }
 
   if (want_col) {
-    want_col_index += forwards ? 1 : -1;
+    want_col_index +=
+        forwards ? cell_node->GetTableCellColSpan().value_or(1) : -1;
   }
 
   if (want_col_bounds || want_table_bounds) {
@@ -537,6 +539,46 @@ ScopedJavaLocalRef<jobject> ToJavaStringRangesMap(
       base::BindRepeating(&base::android::ConvertUTF16ToJavaString,
                           base::Unretained(env)),
       ranges_count);
+}
+
+// If `node` is or is under an editable, returns the highest editable parent,
+// otherwise returns null.
+ui::AXNode* GetRootEditable(ui::AXNode* node) {
+  while (node) {
+    if (node->data().IsAtomicTextField() ||
+        node->data().GetBoolAttribute(
+            ax::mojom::BoolAttribute::kNonAtomicTextFieldRoot)) {
+      return node;
+    }
+    node = node->parent();
+  }
+  return node;
+}
+
+// Selection is not valid if it is cross documents, or its start and end have
+// different root editable nodes.
+// These restrictions are primarily validated in `blink::AXSelection::IsValid()`
+// for atomic text fields and in `blink::AssertUserSelection` in general, and
+// are based on the behavior in `blink::SelectionAdjuster` class.
+bool IsSelectionValid(
+    const ui::BrowserAccessibility::AXPosition& start_position,
+    const ui::BrowserAccessibility::AXPosition& end_position) {
+  CHECK(!start_position->IsNullPosition());
+  CHECK(!end_position->IsNullPosition());
+
+  if (start_position->tree_id() != end_position->tree_id()) {
+    return false;
+  }
+
+  if (start_position->GetAnchor() == end_position->GetAnchor()) {
+    return true;
+  }
+
+  ui::AXNode* start_root_editable =
+      GetRootEditable(start_position->GetAnchor());
+  ui::AXNode* end_root_editable = GetRootEditable(end_position->GetAnchor());
+
+  return start_root_editable == end_root_editable;
 }
 
 }  // anonymous namespace
@@ -1074,20 +1116,6 @@ void WebContentsAccessibilityAndroid::HandleTextSelectionChanged(
                                                                unique_id);
 }
 
-void WebContentsAccessibilityAndroid::HandleExtendedSelectionChanged(
-    int32_t unique_id,
-    int32_t focus_unique_id,
-    int32_t focus_offset) {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj = GetJavaObject(env);
-  if (obj.is_null()) {
-    return;
-  }
-
-  Java_WebContentsAccessibilityImpl_handleExtendedSelectionChange(
-      env, obj, unique_id, focus_unique_id, focus_offset);
-}
-
 void WebContentsAccessibilityAndroid::HandleEditableTextChanged(
     int32_t unique_id,
     int32_t subType) {
@@ -1377,6 +1405,16 @@ bool WebContentsAccessibilityAndroid::IsFocused(JNIEnv* env,
   return node->IsFocused();
 }
 
+bool WebContentsAccessibilityAndroid::IsTextSelectable(JNIEnv* env,
+                                                       int32_t unique_id) {
+  BrowserAccessibilityAndroid* node = GetAXFromUniqueID(unique_id);
+  if (!node) {
+    return false;
+  }
+
+  return node->IsTextSelectable();
+}
+
 int32_t WebContentsAccessibilityAndroid::GetEditableTextSelectionStart(
     JNIEnv* env,
     int32_t unique_id) {
@@ -1399,12 +1437,25 @@ int32_t WebContentsAccessibilityAndroid::GetEditableTextSelectionEnd(
   return node->GetSelectionEnd();
 }
 
+gfx::Rect WebContentsAccessibilityAndroid::GetAbsoluteBoundsForNode(
+    BrowserAccessibilityAndroid* node,
+    ui::AXOffscreenResult* offscreen_result) {
+  BrowserAccessibilityManagerAndroid* root_manager =
+      GetRootBrowserAccessibilityManager();
+  if (!root_manager || !node) {
+    return gfx::Rect();
+  }
+
+  float dip_scale = 1 / root_manager->device_scale_factor();
+  return gfx::ScaleToEnclosingRect(
+      node->GetUnclippedRootFrameBoundsRect(offscreen_result), dip_scale,
+      dip_scale);
+}
+
 ScopedJavaLocalRef<jintArray>
 WebContentsAccessibilityAndroid::GetAbsolutePositionForNode(JNIEnv* env,
                                                             int32_t unique_id) {
-  BrowserAccessibilityManagerAndroid* root_manager =
-      GetRootBrowserAccessibilityManager();
-  if (!root_manager) {
+  if (!GetRootBrowserAccessibilityManager()) {
     return nullptr;
   }
 
@@ -1413,9 +1464,7 @@ WebContentsAccessibilityAndroid::GetAbsolutePositionForNode(JNIEnv* env,
     return nullptr;
   }
 
-  float dip_scale = 1 / root_manager->device_scale_factor();
-  gfx::Rect absolute_rect = gfx::ScaleToEnclosingRect(
-      node->GetUnclippedRootFrameBoundsRect(), dip_scale, dip_scale);
+  gfx::Rect absolute_rect = GetAbsoluteBoundsForNode(node);
   int rect[] = {absolute_rect.x(), absolute_rect.y(), absolute_rect.right(),
                 absolute_rect.bottom()};
   return ToJavaIntArray(env, rect);
@@ -1439,22 +1488,16 @@ void WebContentsAccessibilityAndroid::UpdateAccessibilityNodeInfoBoundsRect(
     const JavaRef<jobject>& info,
     int32_t unique_id,
     BrowserAccessibilityAndroid* node) {
-  BrowserAccessibilityManagerAndroid* root_manager =
-      GetRootBrowserAccessibilityManager();
-  if (!root_manager) {
+  if (!GetRootBrowserAccessibilityManager()) {
     return;
   }
 
   ui::AXOffscreenResult offscreen_result = ui::AXOffscreenResult::kOnscreen;
-  float dip_scale = 1 / root_manager->device_scale_factor();
-  gfx::Rect absolute_rect = gfx::ScaleToEnclosingRect(
-      node->GetUnclippedRootFrameBoundsRect(&offscreen_result), dip_scale,
-      dip_scale);
+  gfx::Rect absolute_rect = GetAbsoluteBoundsForNode(node, &offscreen_result);
   gfx::Rect parent_relative_rect = absolute_rect;
-  if (node->PlatformGetParent()) {
-    gfx::Rect parent_rect = gfx::ScaleToEnclosingRect(
-        node->PlatformGetParent()->GetUnclippedRootFrameBoundsRect(), dip_scale,
-        dip_scale);
+  if (auto* parent = static_cast<BrowserAccessibilityAndroid*>(
+          node->PlatformGetParent())) {
+    gfx::Rect parent_rect = GetAbsoluteBoundsForNode(parent);
     parent_relative_rect.Offset(-parent_rect.OffsetFromOrigin());
   }
   bool is_offscreen = offscreen_result == ui::AXOffscreenResult::kOffscreen;
@@ -2079,13 +2122,32 @@ void WebContentsAccessibilityAndroid::Blur(JNIEnv* env) {
   }
 }
 
+int32_t WebContentsAccessibilityAndroid::GetFocus(JNIEnv* env) {
+  BrowserAccessibilityManagerAndroid* root_manager =
+      GetRootBrowserAccessibilityManager();
+  if (!root_manager) {
+    return ui::kInvalidAXNodeID;
+  }
+
+  ui::BrowserAccessibility* current_focus = root_manager->GetFocus();
+  if (!current_focus) {
+    return ui::kInvalidAXNodeID;
+  }
+  return static_cast<BrowserAccessibilityAndroid*>(current_focus)
+      ->GetUniqueId();
+}
+
 void WebContentsAccessibilityAndroid::ScrollToMakeNodeVisible(
     JNIEnv* env,
     int32_t unique_id) {
   BrowserAccessibilityAndroid* node = GetAXFromUniqueID(unique_id);
   if (node) {
-    node->manager()->ScrollToMakeVisible(
-        *node, gfx::Rect(node->GetUnclippedFrameBoundsRect().size()));
+    // Passing an empty gfx::Rect() signals to Blink to scroll the element's
+    // natural layout bounds into view. Explicitly deriving and passing
+    // absolute-sized target rects can miscalculate scroll destinations for
+    // elements nested inside positioned layers or web components, leading to
+    // unexpected page over-scrolling.
+    node->manager()->ScrollToMakeVisible(*node, gfx::Rect());
   }
 }
 
@@ -2152,6 +2214,10 @@ bool WebContentsAccessibilityAndroid::SetExtendedSelection(
     return false;
   }
 
+  if (!IsSelectionValid(start_position, end_position)) {
+    return false;
+  }
+
   node->manager()->SetSelection(ui::BrowserAccessibility::AXRange(
       std::move(start_position), std::move(end_position)));
   return true;
@@ -2172,7 +2238,6 @@ void WebContentsAccessibilityAndroid::ClearExtendedSelection(JNIEnv* env,
   ui::BrowserAccessibility::AXPosition end_position =
       node->CreatePositionForSelectionAt(ax::mojom::kNoSelectionOffset);
 
-  // TODO(crbug.com/443078007): Add test.
   node->manager()->SetSelection(ui::BrowserAccessibility::AXRange(
       std::move(start_position), std::move(end_position)));
 }
@@ -2247,9 +2312,21 @@ int32_t WebContentsAccessibilityAndroid::FindElementType(
             MaybeFindRowColumn(start_node, element_type, forwards);
         ret) {
       ui::BrowserAccessibility* node = start_node->manager()->GetFromID(*ret);
-      return node ? static_cast<BrowserAccessibilityAndroid*>(node)
-                        ->GetUniqueId()
-                  : ui::kInvalidAXNodeID;
+      if (node) {
+        const BrowserAccessibilityAndroid* android_node =
+            static_cast<const BrowserAccessibilityAndroid*>(node);
+        // Per the W3C ARIA APG for grids[1], if a table/grid cell contains a
+        // single interactive widget, focus should be delegated to that widget.
+        // This logic is safely restricted to tables/grids via
+        // MaybeFindRowColumn().
+        // [1] https://www.w3.org/WAI/ARIA/apg/patterns/grid/#gridNav_focus
+        if (const BrowserAccessibilityAndroid* sole_interesting_node =
+                android_node->GetSoleInterestingNodeFromSubtree()) {
+          android_node = sole_interesting_node;
+        }
+        return android_node->GetUniqueId();
+      }
+      return ui::kInvalidAXNodeID;
     }
 
     predicate = PredicateForSearchKey(element_type);

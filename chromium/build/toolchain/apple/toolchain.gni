@@ -54,9 +54,10 @@ if (swift_toolchain_path == -1) {
   # TODO(crbug.com/40915887) The custom swift toolchain not does currently work
   # with Xcode 15 beta 1.
   if (_can_use_hermetic_swift && !(is_ios && xcode_version_int >= 1500)) {
-    # Version of the hermetic compiler. Needs to be updated when a new version of
-    # the compiler is rolled to ensure that all outputs are regenerated. It must
-    # be kept in sync with the `version` of `third_party/swift-toolchain` in
+    # Version of the hermetic compiler. Needs to be updated when a new version
+    # of the compiler is rolled to ensure that all outputs are regenerated. It
+    # must be kept in sync with the `version` of `third_party/swift-toolchain`
+    # in
     # //DEPS.
     swiftc_version = "swift-5.8-release"
 
@@ -108,6 +109,23 @@ template("single_apple_toolchain") {
     toolchain_args = {
       # Populate toolchain args from the invoker.
       forward_variables_from(invoker.toolchain_args, "*")
+
+      # Re-evaluate use_apple_linker inside toolchain_args to resolve the GN
+      # parent-child context evaluation mismatch.
+      #
+      # Since GN arguments inside toolchain_args are static values and do not
+      # dynamically propagate their global dependency formulas inside the
+      # toolchain() definition block (which is processed in the default
+      # toolchain context), we must explicitly check both the global opt-in
+      # flag and the platform support conditions here.
+      # LINT.IfChange(use_apple_linker)
+      use_apple_linker =
+          use_apple_linker && host_os == "mac" && current_os == "mac" &&
+          !use_thin_lto && host_cpu == "arm64" && current_cpu == "arm64" &&
+          !(use_remoteexec && use_system_xcode)
+      use_lld = use_lld && !use_apple_linker
+
+      # LINT.ThenChange(//build/config/compiler/compiler.gni:use_apple_linker)
 
       # The host toolchain value computed by the default toolchain's setup
       # needs to be passed through unchanged to all secondary toolchains to
@@ -185,8 +203,9 @@ template("single_apple_toolchain") {
 
     # Set the explicit search path for clang++ so it uses the right linker
     # binary.
+    bin_flag = ""
     if (!toolchain_uses_lld) {
-      ld += " -B " + invoker.bin_path
+      bin_flag = "-B " + invoker.bin_path
     }
 
     coverage_wrapper = ""
@@ -298,12 +317,6 @@ template("single_apple_toolchain") {
       rustc = "$rust_compiler_prefix${rustc_bin}"
       rustc_wrapper += " --rustc=$rustc"
 
-      rustc_wrapper_inputs = [
-        "//build/action_helpers.py",
-        "//build/gn_helpers.py",
-        "//build/rust/gni_impl/rustc_wrapper.py",
-      ]
-
       tool("rust_staticlib") {
         libname = "{{output_dir}}/{{target_output_name}}{{output_extension}}"
         rspfile = rustc_rsp_path
@@ -328,7 +341,7 @@ template("single_apple_toolchain") {
 
         rspfile_content =
             "$rustc_common_args {{rustdeps}} {{externs}} SOURCES {{sources}}"
-        command = "$rustc_wrapper --depfile=$depfile --emit=dep-info=$depfile,link -o $libname -- -Clinker=\"$_cxx\" {{source}} LDFLAGS RUSTENV {{rustenv}}"
+        command = "$rustc_wrapper --depfile=$depfile --emit=dep-info=$depfile,link -o $libname -- -Clinker=\"$_cxx\" {{source}} LDFLAGS $bin_flag RUSTENV {{rustenv}}"
         rust_sysroot = rust_sysroot_relative
         inputs = rustc_wrapper_inputs
       }
@@ -395,7 +408,7 @@ template("single_apple_toolchain") {
 
         rspfile_content =
             "$rustc_common_args {{rustdeps}} {{externs}} SOURCES {{sources}}"
-        command = "$linker_driver_env $rustc_wrapper --depfile=$depfile --emit=dep-info=$depfile,link -o $exename -- -Clinker=\"$linker_driver\" {{source}} LDFLAGS $linker_driver_args {{ldflags}} RUSTENV {{rustenv}}"
+        command = "$linker_driver_env $rustc_wrapper --depfile=$depfile --emit=dep-info=$depfile,link -o $exename -- -Clinker=\"$linker_driver\" {{source}} LDFLAGS $linker_driver_args $bin_flag {{ldflags}} RUSTENV {{rustenv}}"
         rust_sysroot = rust_sysroot_relative
         inputs = rustc_wrapper_inputs
       }
@@ -430,7 +443,44 @@ template("single_apple_toolchain") {
 
         rspfile_content =
             "$rustc_common_args {{rustdeps}} {{externs}} SOURCES {{sources}}"
-        command = "$linker_driver_env $rustc_wrapper --depfile=$depfile --emit=dep-info=$depfile,link -o $dllname -- -Clinker=\"$linker_driver\" {{source}} LDFLAGS $linker_driver_args {{ldflags}} RUSTENV {{rustenv}}"
+        command = "$linker_driver_env $rustc_wrapper --depfile=$depfile --emit=dep-info=$depfile,link -o $dllname -- -Clinker=\"$linker_driver\" {{source}} LDFLAGS $linker_driver_args $bin_flag {{ldflags}} RUSTENV {{rustenv}}"
+        rust_sysroot = rust_sysroot_relative
+        inputs = rustc_wrapper_inputs
+      }
+
+      tool("rust_dylib") {
+        dllname = "{{output_dir}}/{{target_output_name}}{{output_extension}}"
+        rspfile = rustc_rsp_path
+        depfile = "$dllname.d"
+        pool = "//build/toolchain:link_pool($default_toolchain)"
+        rmetaname = "{{output_dir}}/lib{{target_output_name}}.rmeta"
+
+        # TODO(danakj): solink can generate TOC files for re-exporting library
+        # symbols, and we should do the same here.
+
+        default_output_extension = ".dylib"
+        output_prefix = "lib"
+        default_output_dir = "{{root_out_dir}}"
+        description = "RUST(DYLIB) {{output}}"
+        outputs = [
+          dllname,
+          rmetaname,
+          rustc_env_and_flags_path,
+          "${rspfile}.rust",
+        ]
+
+        # TODO(danakj): Support dsym_switch like C++ targets.
+        # link_command += dsym_switch
+        # if (_enable_dsyms) {
+        #   outputs += dsym_output
+        # }
+        # if (_save_unstripped_output) {
+        #   outputs += [ _unstripped_output ]
+        # }
+
+        rspfile_content =
+            "$rustc_common_args {{rustdeps}} {{externs}} SOURCES {{sources}}"
+        command = "$linker_driver_env $rustc_wrapper --depfile=$depfile --emit=dep-info=$depfile,link,metadata=$rmetaname -o $dllname -- -Clinker=\"$linker_driver\" {{source}} LDFLAGS $linker_driver_args {{ldflags}} RUSTENV {{rustenv}}"
         rust_sysroot = rust_sysroot_relative
         inputs = rustc_wrapper_inputs
       }
@@ -465,7 +515,7 @@ template("single_apple_toolchain") {
 
         rspfile_content =
             "$rustc_common_args {{rustdeps}} {{externs}} SOURCES {{sources}}"
-        command = "$rustc_wrapper --depfile=$depfile --emit=dep-info=$depfile,link -o $dllname -- -Clinker=\"${_cxx}\" {{source}} LDFLAGS {{ldflags}} RUSTENV {{rustenv}}"
+        command = "$rustc_wrapper --depfile=$depfile --emit=dep-info=$depfile,link -o $dllname -- -Clinker=\"${_cxx}\" {{source}} LDFLAGS $bin_flag {{ldflags}} RUSTENV {{rustenv}}"
         rust_sysroot = rust_sysroot_relative
         inputs = rustc_wrapper_inputs
       }
@@ -474,7 +524,7 @@ template("single_apple_toolchain") {
     tool("cc") {
       depfile = "{{output}}.d"
       precompiled_header_type = "gcc"
-      command = "$coverage_wrapper$cc $md -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_c}} -c {{source}} -o {{output}}"
+      command = "$coverage_wrapper$cc $md -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_c}} -fmodule-name=\"{{cc_module_name}}_Private\"  -c {{source}} -o {{output}}"
       depsformat = "gcc"
       description = "CC {{output}}"
       outputs = [ "$object_subdir/{{source_name_part}}.o" ]
@@ -483,7 +533,8 @@ template("single_apple_toolchain") {
     tool("cxx") {
       depfile = "{{output}}.d"
       precompiled_header_type = "gcc"
-      command = "$coverage_wrapper$cxx $md -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}} {{module_deps_no_self}} -c {{source}} -o {{output}}"
+
+      command = "$coverage_wrapper$cxx $md -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}} {{module_deps}} -fmodule-name=\"{{cc_module_name}}_Private\" -c {{source}} -o {{output}}"
       depsformat = "gcc"
       description = "CXX {{output}}"
       outputs = [ "$object_subdir/{{source_name_part}}.o" ]
@@ -495,7 +546,7 @@ template("single_apple_toolchain") {
 
       # Module file doesn't need coverage instrumentation because module files
       # represent interfaces rather than implementations.
-      command = "$cxx -MD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}} {{module_deps_no_self}} -fmodule-name={{cc_module_name}} -c -x c++ -Xclang -emit-module {{source}} -o {{output}}"
+      command = "$cxx -MD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}} {{module_deps_no_self}} -fmodule-name=\"{{cc_module_name}}\" -c -x c++ -Xclang -emit-module {{source}} -o {{output}}"
       depsformat = "gcc"
       description = "CXX_MODULE {{output}}"
       outputs = [ "$object_subdir/{{source_name_part}}.pcm" ]
@@ -539,8 +590,9 @@ template("single_apple_toolchain") {
         # Specify explicit path for libtool.
         libtool = invoker.bin_path + "libtool"
 
-        # Apple's libtool fails if the response file is empty (e.g., for empty targets).
-        # We work around this by writing a dummy archive with the ar magic number.
+        # Apple's libtool fails if the response file is empty (e.g., for empty
+        # targets). We work around this by writing a dummy archive with the ar
+        # magic number.
         command = "rm -f {{output}} && if [ -s \"$rspfile\" ]; then TOOL_VERSION=${tool_versions.filter_libtool} $python_path $script $libtool -static -D {{arflags}} -o {{output}} @$rspfile; else printf '!<arch>\n' > {{output}}; fi"
         description = "LIBTOOL-STATIC {{output}}"
       } else {
@@ -589,7 +641,8 @@ template("single_apple_toolchain") {
         link_command += " -Wl,-install_name,@rpath/\"{{target_output_name}}{{output_extension}}\" "
       }
       link_command += dsym_switch
-      link_command += "{{ldflags}} -o \"$dylib\" \"@$rspfile\" {{rlibs}}"
+      link_command += bin_flag
+      link_command += " {{ldflags}} -o \"$dylib\" \"@$rspfile\" {{rlibs}}"
 
       command = "$link_command"
 
@@ -634,7 +687,7 @@ template("single_apple_toolchain") {
       rspfile = sofile + ".rsp"
       pool = "//build/toolchain:link_pool($default_toolchain)"
 
-      link_command = "$linker_driver_env $linker_driver $linker_driver_args -bundle {{ldflags}} -o \"$sofile\" \"@$rspfile\" {{rlibs}}"
+      link_command = "$linker_driver_env $linker_driver $linker_driver_args -bundle $bin_flag {{ldflags}} -o \"$sofile\" \"@$rspfile\" {{rlibs}}"
       link_command += dsym_switch
       command = link_command
 
@@ -664,7 +717,7 @@ template("single_apple_toolchain") {
       rspfile = "$outfile.rsp"
       pool = "//build/toolchain:link_pool($default_toolchain)"
 
-      command = "$linker_driver_env $linker_driver $linker_driver_args $dsym_switch {{ldflags}} -o \"$outfile\" \"@$rspfile\" {{rlibs}}"
+      command = "$linker_driver_env $linker_driver $linker_driver_args $bin_flag $dsym_switch {{ldflags}} -o \"$outfile\" \"@$rspfile\" {{rlibs}}"
       description = "LINK $outfile"
       rspfile_content =
           "{{inputs}} {{frameworks}} {{swiftmodules}} {{solibs}} {{libs}}"

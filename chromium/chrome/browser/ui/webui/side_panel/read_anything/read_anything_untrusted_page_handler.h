@@ -22,7 +22,6 @@
 #include "chrome/browser/ui/read_anything/read_anything_side_panel_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.h"
-#include "chrome/browser/ui/webui/side_panel/read_anything/read_anything_screenshotter.h"
 #include "chrome/common/read_anything/read_anything.mojom.h"
 #include "components/dom_distiller/core/task_tracker.h"
 #include "components/translate/core/browser/translate_client.h"
@@ -144,6 +143,7 @@ class ReadAnythingUntrustedPageHandler :
     public ReadAnythingLifecycleObserver,
     public PinnedToolbarActionsModel::Observer,
     public translate::TranslateDriver::LanguageDetectionObserver {
+
  public:
   ReadAnythingUntrustedPageHandler(
       mojo::PendingRemote<read_anything::mojom::UntrustedPage> page,
@@ -207,7 +207,9 @@ class ReadAnythingUntrustedPageHandler :
   void OnColorChange(read_anything::mojom::Colors color) override;
   void OnHighlightGranularityChanged(
       read_anything::mojom::HighlightGranularity granularity) override;
-  void OnLineFocusChanged(read_anything::mojom::LineFocus line_focus) override;
+  void OnLineFocusChanged(
+      read_anything::mojom::LineFocus current_line_focus,
+      read_anything::mojom::LineFocus last_non_disabled_line_focus) override;
   void GetVoicePackInfo(const std::string& language) override;
   void InstallVoicePack(const std::string& language) override;
   void UninstallVoice(const std::string& language) override;
@@ -222,6 +224,7 @@ class ReadAnythingUntrustedPageHandler :
   void OnDistillationStateChanged(
       read_anything::mojom::ReadAnythingDistillationState new_state) override;
   void OnSpeechEngineStalled() override;
+  void RequestReadabilityDistillation() override;
 
   // PinnedToolbarModel::Observer
   void OnActionsChanged() override;
@@ -237,10 +240,14 @@ class ReadAnythingUntrustedPageHandler :
 
   // ReadAnythingLifecycleObserver:
   void OnDestroyed() override;
-  void OnTabWillDetach() override;
-  void Activate(bool active,
-                std::optional<ReadAnythingOpenTrigger> open_trigger) override;
+  void Activate(
+      bool active,
+      std::optional<ReadAnythingOpenTrigger> open_trigger,
+      std::optional<base::TimeDelta> completed_session_duration) override;
   void OnReadingModePresenterChanged() override;
+
+  void OnTabWillDetach(tabs::TabInterface* tab,
+                       tabs::TabInterface::DetachReason reason);
 
   // Logs the extension installation state. Intended to get more information
   // on system voice usage.
@@ -316,7 +323,6 @@ class ReadAnythingUntrustedPageHandler :
                          ui::AXNodeID focus_node_id,
                          int focus_offset) override;
   void OnCollapseSelection() override;
-  void OnScreenshotRequested() override;
 
   void SetDefaultLanguageCode(const std::string& code);
 
@@ -388,10 +394,6 @@ class ReadAnythingUntrustedPageHandler :
   // contained.
   std::unique_ptr<ReadAnythingWebContentsObserver> pdf_observer_;
 
-  // `web_screenshotter_` is used to capture a screenshot of the main web
-  // contents requested.
-  std::unique_ptr<ReadAnythingScreenshotter> web_screenshotter_;
-
   // Private implementation for dom_distiller::ViewRequestDelegate, not part of
   // the public API.
   class DistillerDelegate;
@@ -438,6 +440,7 @@ class ReadAnythingUntrustedPageHandler :
 
   // Subscription for tab discard events.
   base::CallbackListSubscription tab_discard_subscription_;
+  base::CallbackListSubscription tab_detach_subscription_;
 
   // This manages the life cycle of the pinned toolbar observer. We observe
   // the pinned toolbar to ensure capture user pin changes in the toolbar ui.

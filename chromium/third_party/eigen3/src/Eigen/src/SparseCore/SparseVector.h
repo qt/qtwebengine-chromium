@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SPARSEVECTOR_H
 #define EIGEN_SPARSEVECTOR_H
@@ -226,6 +227,12 @@ class SparseVector : public SparseCompressedBase<SparseVector<Scalar_, Options_,
     eigen_assert((IsColVector ? cols : rows) == 1 && "Outer dimension must equal 1");
     resize(IsColVector ? rows : cols);
   }
+
+  /** \sa resize(Index,Index) */
+  void resize(NoChange_t, Index cols) { resize(rows(), cols); }
+
+  /** \sa resize(Index,Index) */
+  void resize(Index rows, NoChange_t) { resize(rows, cols()); }
 
   /** Resizes the sparse vector to \a newSize
    * This method deletes all entries, thus leaving an empty sparse vector

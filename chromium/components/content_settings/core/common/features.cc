@@ -38,12 +38,12 @@ const base::FeatureParam<bool> kSafetyCheckUnusedSitePermissionsWithDelay{
     "unused-site-permissions-with-delay-for-testing", false};
 
 BASE_FEATURE(kApproximateGeolocationPermission,
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-const base::FeatureParam<int> kApproximateGeolocationPermissionPromptArm(
-    &features::kApproximateGeolocationPermission,
-    "prompt_arm",
-    0);
+#if BUILDFLAG(IS_ANDROID)
+             base::FEATURE_ENABLED_BY_DEFAULT
+#else
+             base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+);
 
 BASE_FEATURE(kUserBypassUI, base::FEATURE_ENABLED_BY_DEFAULT);
 
@@ -59,14 +59,11 @@ const base::FeatureParam<base::TimeDelta> kUserBypassUIReloadTime{
 const base::FeatureParam<base::TimeDelta> kUserBypassUIReloadBubbleTimeout{
     &kUserBypassUI, "reload-bubble-timeout", base::Seconds(5)};
 
-BASE_FEATURE(kUserBypassFeedback, base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kUserBypassFeedback, base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kUserBypassUxSimplification, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kLeftHandSideActivityIndicators, base::FEATURE_ENABLED_BY_DEFAULT);
-
-BASE_FEATURE(kTrackingProtection3pcd, base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kBlockV8OptimizerOnUnfamiliarSitesSetting,
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 }  // namespace features
 }  // namespace content_settings

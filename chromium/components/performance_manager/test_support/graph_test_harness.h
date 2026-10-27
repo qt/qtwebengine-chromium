@@ -15,6 +15,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/test/task_environment.h"
+#include "base/unguessable_token.h"
 #include "components/performance_manager/embedder/graph_features.h"
 #include "components/performance_manager/graph/frame_node_impl.h"
 #include "components/performance_manager/graph/graph_impl.h"
@@ -125,6 +126,8 @@ struct TestNodeWrapper<FrameNodeImpl>::Factory {
     return std::make_unique<FrameNodeImpl>(
         process_node, page_node, parent_frame_node,
         outer_document_for_fenced_frame, render_frame_id, frame_token,
+        perfetto::NamedTrack("Frame",
+                             base::PersistentHash(frame_token->AsBytes())),
         browsing_instance_id, site_instance_group_id, is_current, is_active);
   }
 };
@@ -181,12 +184,15 @@ template <>
 struct TestNodeWrapper<PageNodeImpl>::Factory {
   static std::unique_ptr<PageNodeImpl> Create(
       base::WeakPtr<content::WebContents> web_contents = nullptr,
-      const std::string& browser_context_id = std::string(),
+      const base::UnguessableToken& browser_context_id =
+          base::UnguessableToken(),
       const GURL& url = GURL(),
       PagePropertyFlags initial_property_flags = {},
-      base::TimeTicks visibility_change_time = base::TimeTicks::Now()) {
+      base::TimeTicks visibility_change_time = base::TimeTicks::Now(),
+      const content::WebContents::UniqueToken& page_token =
+          content::WebContents::UniqueToken()) {
     return std::make_unique<PageNodeImpl>(
-        std::move(web_contents), browser_context_id, url,
+        std::move(web_contents), page_token, browser_context_id, url,
         initial_property_flags, visibility_change_time);
   }
 };
@@ -198,7 +204,8 @@ struct TestNodeWrapper<WorkerNodeImpl>::Factory {
   static std::unique_ptr<WorkerNodeImpl> Create(
       WorkerNode::WorkerType worker_type,
       ProcessNodeImpl* process_node,
-      const std::string& browser_context_id = std::string(),
+      const base::UnguessableToken& browser_context_id =
+          base::UnguessableToken(),
       const blink::WorkerToken& token = blink::WorkerToken(),
       const url::Origin& origin = url::Origin()) {
     return std::make_unique<WorkerNodeImpl>(browser_context_id, worker_type,

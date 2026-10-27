@@ -1,6 +1,8 @@
 // Benchmarks for dot product (BLAS-1 critical path).
 //
 // Flop count: 2n for real, 8n for complex.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>

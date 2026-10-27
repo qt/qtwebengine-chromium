@@ -355,9 +355,10 @@ if (is_mac) {
           [ "-Wl,-install_name,@rpath/$output_name.framework/$output_name" ]
 
       # Set up the rpath for the framework so that it can find dylibs in the
-      # root output directory. The framework is at
-      # Views Examples.app/Contents/Frameworks/Views Examples Framework.framework/Versions/[views_examples_version]/Views Examples Framework
-      # so use loader_path to go back to the root output directory.
+      # root output directory. The framework is at Views
+      # Examples.app/Contents/Frameworks/Views Examples
+      # Framework.framework/Versions/[views_examples_version]/Views Examples
+      # Framework so use loader_path to go back to the root output directory.
       ldflags += [ "-Wl,-rpath,@loader_path/../../../../../.." ]
     } else {
       # Specify a sensible install_name for static builds. The library is
@@ -535,4 +536,33 @@ test("views_examples_unittests") {
   ]
 
   data = [ "$root_out_dir/views_examples_resources.pak" ]
+}
+
+executable("vector_icon_viewer") {
+  testonly = true
+  sources = [ "vector_icon_viewer.cc" ]
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//ui/gfx",
+    "//ui/views",
+    "//ui/views/examples:views_examples_lib",
+    "//ui/views/examples:views_examples_proc",
+  ]
+}
+
+executable("lottie_viewer") {
+  testonly = true
+  sources = [ "lottie_viewer.cc" ]
+  deps = [
+    ":views_examples_lib",
+    ":views_examples_proc",
+    "//base",
+    "//base/test:test_support",
+    "//skia",
+    "//ui/base",
+    "//ui/gfx",
+    "//ui/gfx/geometry",
+    "//ui/views",
+  ]
 }

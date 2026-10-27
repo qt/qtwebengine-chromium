@@ -11,6 +11,7 @@
 
 #include <memory>
 
+#include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/span.h"
 #include "fxbarcode/BC_Writer.h"
@@ -20,12 +21,20 @@ class CFX_RenderDevice;
 
 class CBC_TwoDimWriter : public CBC_Writer {
  public:
+  struct EncodeResult {
+    EncodeResult();
+    EncodeResult(DataVector<uint8_t> code, int32_t width, int32_t height);
+    ~EncodeResult();
+
+    DataVector<uint8_t> code;
+    int32_t width = 0;
+    int32_t height = 0;
+  };
+
   explicit CBC_TwoDimWriter(bool bFixedSize);
   ~CBC_TwoDimWriter() override;
 
-  bool RenderResult(pdfium::span<const uint8_t> code,
-                    int32_t codeWidth,
-                    int32_t codeHeight);
+  bool RenderResult(const EncodeResult& result);
   void RenderDeviceResult(CFX_RenderDevice* device, const CFX_Matrix& matrix);
 
   int32_t error_correction_level() const { return correction_level_; }

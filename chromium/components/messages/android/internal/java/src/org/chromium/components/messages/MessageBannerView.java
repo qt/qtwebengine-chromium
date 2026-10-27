@@ -38,6 +38,7 @@ import org.chromium.components.browser_ui.widget.RoundedCornerOutlineProvider;
 import org.chromium.components.browser_ui.widget.gesture.SwipeGestureListener;
 import org.chromium.components.browser_ui.widget.gesture.SwipeGestureListener.SwipeHandler;
 import org.chromium.components.browser_ui.widget.text.TextViewWithCompoundDrawables;
+import org.chromium.ui.base.UiAndroidFeatureList;
 import org.chromium.ui.base.ViewUtils;
 import org.chromium.ui.listmenu.BasicListMenu;
 import org.chromium.ui.listmenu.ListMenu;
@@ -145,8 +146,7 @@ public class MessageBannerView extends RelativeLayout {
         mDescription.setVisibility(drawable == null ? GONE : VISIBLE);
         mDescriptionDrawable = drawable;
         mDescription.setDrawableTintColor(
-                AppCompatResources.getColorStateList(
-                        getContext(), R.color.default_icon_color_secondary_tint_list));
+                getContext().getColorStateList(R.color.default_icon_color_secondary_tint_list));
         ((TextView) mDescription).setCompoundDrawablesRelative(drawable, null, null, null);
     }
 
@@ -477,6 +477,13 @@ public class MessageBannerView extends RelativeLayout {
             return mSwipeGestureDetector.onTouchEvent(event) || super.onTouchEvent(event);
         }
         return super.onTouchEvent(event);
+    }
+
+    @Override
+    public boolean onGenericMotionEvent(MotionEvent event) {
+        if (UiAndroidFeatureList.sBlockMouseEventsOnView.isEnabled()
+                && MotionEventUtils.isPointerEvent(event)) return true;
+        return super.onGenericMotionEvent(event);
     }
 
     private boolean isWithinTapProtectionPeriod() {

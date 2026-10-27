@@ -15,10 +15,11 @@
 load("@rules_java//java:defs.bzl", "java_library")
 
 package(
+    default_applicable_licenses = ["//fcp:license"],
     default_visibility = [
         "//fcp:internal",
     ],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 java_library(
@@ -43,7 +44,7 @@ java_library(
         "//fcp/client/http/java:jni_java_proto",
         "//fcp/java_src/main/java/com/google/fcp/client",
         "@com_google_googleapis//google/rpc:rpc_java_proto",
-        "@com_google_protobuf//:protobuf_java",
+        "@com_google_protobuf//:protobuf_javalite",
         "@fcp_maven//:com_google_code_findbugs_jsr305",
         "@fcp_maven//:com_google_errorprone_error_prone_annotations",
         "@fcp_maven//:com_google_guava_guava",

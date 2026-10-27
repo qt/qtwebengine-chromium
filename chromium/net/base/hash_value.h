@@ -30,11 +30,7 @@ class NET_EXPORT HashValue {
   using iterator = base::span<uint8_t>::iterator;
   using const_iterator = base::span<const uint8_t>::iterator;
 
-  explicit HashValue(const SHA256HashValue& hash);
-  // `hash` must match the size of a `SHA256HashValue`.
-  explicit HashValue(base::span<const uint8_t> hash);
-  explicit HashValue(HashValueTag tag) : tag_(tag) {}
-  HashValue() : tag_(HASH_VALUE_SHA256) {}
+  HashValue(HashValueTag tag, base::span<const uint8_t> hash);
 
   // Serializes/Deserializes hashes in the form of
   // <hash-name>"/"<base64-hash-value>
@@ -47,15 +43,14 @@ class NET_EXPORT HashValue {
   //   - logging public-key pins
   //   - serializing public-key pins
 
-  // Deserializes a HashValue from a string. Returns false if the input is not
-  // valid.
-  bool FromString(std::string_view input);
+  // Deserializes a HashValue from a string. Returns nullopt if the input is
+  // not valid.
+  static std::optional<HashValue> FromString(std::string_view input);
 
   // Serializes the HashValue to a string.
   std::string ToString() const;
 
-  // These return the bytes of the contained hash value.
-  base::span<uint8_t> span();
+  // This returns the bytes of the contained hash value.
   base::span<const uint8_t> span() const;
 
   // Returns the SHA256 byte array. CHECK-fails if tag() != HASH_VALUE_SHA256;
@@ -70,7 +65,7 @@ class NET_EXPORT HashValue {
   NET_EXPORT friend bool operator>=(const HashValue& lhs, const HashValue& rhs);
 
  private:
-  HashValueTag tag_;
+  const HashValueTag tag_;
 
   union {
     SHA256HashValue sha256;

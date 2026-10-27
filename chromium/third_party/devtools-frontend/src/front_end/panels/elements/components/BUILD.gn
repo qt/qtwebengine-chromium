@@ -37,28 +37,23 @@ devtools_ui_module("components") {
     "ElementsBreadcrumbs.ts",
     "ElementsBreadcrumbsUtils.ts",
     "ElementsTreeExpandButton.ts",
-    "Helper.ts",
     "QueryContainer.ts",
     "StylePropertyEditor.ts",
   ]
 
   deps = [
     "../../../core/common:bundle",
-    "../../../core/host:bundle",
     "../../../core/i18n:bundle",
     "../../../core/platform:bundle",
     "../../../core/sdk:bundle",
-    "../../../generated:protocol",
+    "../../../generated",
     "../../../ui/components/buttons:bundle",
     "../../../ui/components/helpers:bundle",
-    "../../../ui/components/legacy_wrapper:bundle",
+    "../../../ui/components/input:bundle",
     "../../../ui/components/node_text:bundle",
     "../../../ui/components/render_coordinator:bundle",
-    "../../../ui/components/survey_link:bundle",
-    "../../../ui/components/tree_outline:bundle",
     "../../../ui/kit:bundle",
     "../../../ui/legacy:bundle",
-    "../../../ui/legacy/components/inline_editor:bundle",
     "../../../ui/lit:bundle",
     "../../../ui/visual_logging:bundle",
   ]
@@ -105,10 +100,10 @@ devtools_ui_module("unittests") {
 
   deps = [
     ":bundle",
+    "..:bundle",
     "../../../core/sdk:bundle",
+    "../../../generated",
     "../../../testing",
-    "../../../ui/components/node_text:bundle",
     "../../../ui/components/render_coordinator:bundle",
-    "../../../ui/legacy/components/inline_editor:bundle",
   ]
 }

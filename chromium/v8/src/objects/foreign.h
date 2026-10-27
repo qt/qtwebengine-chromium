@@ -16,7 +16,7 @@ namespace v8::internal {
 #include "torque-generated/src/objects/foreign-tq.inc"
 
 // Foreign describes objects pointing from JavaScript to C structures.
-V8_OBJECT class Foreign : public HeapObjectLayout {
+V8_OBJECT class Foreign : public HeapObject {
  public:
   // [foreign_address]: field containing the address.
   template <ExternalPointerTag tag>
@@ -50,7 +50,7 @@ V8_OBJECT class Foreign : public HeapObjectLayout {
 } V8_OBJECT_END;
 
 // TrustedForeign is similar to Foreign but lives in trusted space.
-V8_OBJECT class TrustedForeign : public TrustedObjectLayout {
+V8_OBJECT class TrustedForeign : public TrustedObject {
  public:
   // [foreign_address]: field containing the address of a C object.
   inline Address foreign_address() const;

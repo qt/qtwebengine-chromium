@@ -271,6 +271,11 @@ viz::SurfaceId RenderWidgetHostViewIOS::GetCurrentSurfaceId() const {
   return browser_compositor_->GetDelegatedFrameHost()->GetCurrentSurfaceId();
 }
 
+bool RenderWidgetHostViewIOS::HasSavedCompositorFrame() const {
+  return browser_compositor_ &&
+         browser_compositor_->GetDelegatedFrameHost()->HasSavedFrame();
+}
+
 void RenderWidgetHostViewIOS::InitAsPopup(
     RenderWidgetHostView* parent_host_view,
     const gfx::Rect& pos,
@@ -296,22 +301,21 @@ void RenderWidgetHostViewIOS::NotifyHostAndDelegateOnWasShown(
     std::optional<blink::RecordContentToVisibleTimeRequest>
         visible_time_request) {
   // SetRenderWidgetHostIsHidden may cause a state transition that switches to
-  // a new instance of DelegatedFrameHost and calls WasShown, which causes
-  // HasSavedFrame to always return true. So cache the HasSavedFrame result
-  // before the transition, and do not save this DelegatedFrameHost* locally.
-  bool has_saved_frame =
-      browser_compositor_->GetDelegatedFrameHost()->HasSavedFrame();
-
+  // a new instance of DelegatedFrameHost and calls WasShown without a
+  // RecordContentToVisibleTimeRequest. So if there's a saved frame (meaning the
+  // tab switch measurement should go through DelegatedFrameHost) it's important
+  // to call RequestSuccessfulPresentationTimeForNextFrame to register the
+  // request before the compositor has a chance to commit.
   browser_compositor_->SetRenderWidgetHostIsHidden(false);
 
   // If the frame for the renderer is already available, then the
   // tab-switching time is the presentation time for the browser-compositor.
   // SetRenderWidgetHostIsHidden above will show the DelegatedFrameHost
   // in this state, but doesn't include the presentation time request.
-  if (has_saved_frame && visible_time_request) {
+  if (visible_time_request) {
     if (std::optional<blink::RecordContentToVisibleTimeRequest>
             delegated_visible_time_request =
-                visible_time_request->ExtractTabSwitchEvents()) {
+                visible_time_request->ExtractTabSwitchEventsWithSavedFrame()) {
       browser_compositor_->GetDelegatedFrameHost()
           ->RequestSuccessfulPresentationTimeForNextFrame(
               std::move(*delegated_visible_time_request));
@@ -350,6 +354,21 @@ gfx::Size RenderWidgetHostViewIOS::GetRequestedRendererSize() {
   return GetViewBounds().size();
 }
 
+#if !BUILDFLAG(IS_IOS_TVOS)
+gfx::Size RenderWidgetHostViewIOS::GetVisibleViewportSize() {
+  int bottom_adjust =
+      std::max(0, static_cast<int>([ui_view_->view_ keyboardHeight]));
+  gfx::Rect requested_rect(GetRequestedRendererSize());
+  requested_rect.Inset(gfx::Insets::TLBR(0, 0, bottom_adjust, 0));
+  return requested_rect.size();
+}
+
+gfx::Size RenderWidgetHostViewIOS::GetVisibleViewportSizeDevicePx() {
+  return gfx::ScaleToCeiledSize(GetVisibleViewportSize(),
+                                GetDeviceScaleFactor());
+}
+#endif  // !BUILDFLAG(IS_IOS_TVOS)
+
 std::optional<DisplayFeature> RenderWidgetHostViewIOS::GetDisplayFeature() {
   return display_feature_;
 }
@@ -381,18 +400,14 @@ void RenderWidgetHostViewIOS::UpdateBackgroundColor() {}
 void RenderWidgetHostViewIOS::
     RequestSuccessfulPresentationTimeFromHostOrDelegate(
         blink::RecordContentToVisibleTimeRequest visible_time_request) {
-  // No state transition here so don't use
-  // has_saved_frame_before_state_transition.
-  if (browser_compositor_->GetDelegatedFrameHost()->HasSavedFrame()) {
-    // If the frame for the renderer is already available, then the
-    // tab-switching time is the presentation time for the browser-compositor.
-    if (std::optional<blink::RecordContentToVisibleTimeRequest>
-            delegated_visible_time_request =
-                visible_time_request.ExtractTabSwitchEvents()) {
-      browser_compositor_->GetDelegatedFrameHost()
-          ->RequestSuccessfulPresentationTimeForNextFrame(
-              std::move(*delegated_visible_time_request));
-    }
+  // If the frame for the renderer is already available, then the tab-switching
+  // time is the presentation time for the browser-compositor.
+  if (std::optional<blink::RecordContentToVisibleTimeRequest>
+          delegated_visible_time_request =
+              visible_time_request.ExtractTabSwitchEventsWithSavedFrame()) {
+    browser_compositor_->GetDelegatedFrameHost()
+        ->RequestSuccessfulPresentationTimeForNextFrame(
+            std::move(*delegated_visible_time_request));
   }
 
   if (!visible_time_request.events.empty()) {
@@ -470,7 +485,7 @@ void RenderWidgetHostViewIOS::OnSynchronizedDisplayPropertiesChanged(
 }
 
 void RenderWidgetHostViewIOS::UpdateCALayerTree(
-    const gfx::CALayerParams& ca_layer_params) {}
+    gfx::CALayerParams ca_layer_params) {}
 
 void RenderWidgetHostViewIOS::OnOldViewDidNavigatePreCommit() {
   CHECK(browser_compositor_) << "Shouldn't be called during destruction!";
@@ -962,6 +977,19 @@ void RenderWidgetHostViewIOS::ContentInsetChanged() {
     host()->SynchronizeVisualProperties();
   }
 }
+
+#if !BUILDFLAG(IS_IOS_TVOS)
+void RenderWidgetHostViewIOS::OnKeyboardVisibilityChanged() {
+  host()->SynchronizeVisualProperties();
+
+  if ([ui_view_->view_ keyboardHeight] > 0) {
+    auto* input_handler = GetFrameWidgetInputHandlerForFocusedWidget();
+    if (input_handler) {
+      input_handler->ScrollFocusedEditableNodeIntoView();
+    }
+  }
+}
+#endif  // !BUILDFLAG(IS_IOS_TVOS)
 
 void RenderWidgetHostViewIOS::ExtendSelectionAndDelete(int32_t before,
                                                        int32_t after) {

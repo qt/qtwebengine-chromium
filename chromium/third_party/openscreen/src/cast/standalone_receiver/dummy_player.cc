@@ -24,7 +24,7 @@ DummyPlayer::~DummyPlayer() {
   receiver_.SetConsumer(nullptr);
 }
 
-void DummyPlayer::OnFramesReady(int buffer_size) {
+void DummyPlayer::OnFramesReady(size_t buffer_size) {
   // Consume the next frame.
   buffer_.resize(buffer_size);
   const EncodedFrame frame = receiver_.ConsumeNextFrame(buffer_);
@@ -33,8 +33,8 @@ void DummyPlayer::OnFramesReady(int buffer_size) {
   // some short information about the frame.
   const auto media_timestamp =
       frame.rtp_timestamp.ToTimeSinceOrigin<microseconds>(
-          receiver_.rtp_timebase());
-  OSP_LOG_INFO << "[SSRC " << receiver_.ssrc() << "] "
+          receiver_.config().rtp_timebase);
+  OSP_LOG_INFO << "[SSRC " << receiver_.config().receiver_ssrc << "] "
                << (frame.dependency == EncodedFrame::Dependency::kKeyFrame
                        ? "KEY "
                        : "")

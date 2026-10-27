@@ -1235,11 +1235,10 @@ static inline void clamp_mv2(MV *mv, const MACROBLOCKD *xd) {
 
 /* If the current mode shares the same mv with other modes with higher cost,
  * skip this mode. */
-static int skip_repeated_mv(const AV1_COMMON *const cm,
-                            const MACROBLOCK *const x,
-                            PREDICTION_MODE this_mode,
-                            const MV_REFERENCE_FRAME ref_frames[2],
-                            InterModeSearchState *search_state) {
+static AOM_FORCE_INLINE int skip_repeated_mv(
+    const AV1_COMMON *const cm, const MACROBLOCK *const x,
+    PREDICTION_MODE this_mode, const MV_REFERENCE_FRAME ref_frames[2],
+    InterModeSearchState *search_state) {
   const int is_comp_pred = ref_frames[1] > INTRA_FRAME;
   const uint8_t ref_frame_type = av1_ref_frame_type(ref_frames);
   const MB_MODE_INFO_EXT *const mbmi_ext = &x->mbmi_ext;
@@ -2690,10 +2689,9 @@ static inline int prune_modes_based_on_tpl_stats(
  *                                  to skip the transform search if the computed
  *                                  skip RD for the current mode is not better
  *                                  than the best skip_rd so far.
- * \param[in,out] skip_build_pred   Indicates whether or not to build the inter
- *                                  predictor. If this is 0, the inter predictor
- *                                  has already been built and thus we can avoid
- *                                  repeating computation.
+ * \param[out] skip_build_pred      Indicates whether or not to build the inter
+ *                                  predictor during/after interpolation
+ *                                  filter search.
  * \return Returns 1 if this mode is worse than one already seen and 0 if it is
  * a viable candidate.
  */
@@ -2747,7 +2745,7 @@ static int process_compound_inter_mode(
       av1_enc_build_inter_predictor(cm, xd, mi_row, mi_col, orig_dst, bsize,
                                     AOM_PLANE_U, num_planes - 1);
     }
-    *skip_build_pred = 1;
+    *skip_build_pred = INTERP_SKIP_LUMA_SKIP_CHROMA;
   }
   return 0;
 }
@@ -3275,7 +3273,9 @@ static int64_t handle_inter_mode(
       }
     }
 
-    int skip_build_pred = 0;
+    // Flag to indicate whether to skip av1_enc_build_inter_predictor() after
+    // interpolation filter search
+    int skip_build_pred = INTERP_EVAL_LUMA_EVAL_CHROMA;
     const int mi_row = xd->mi_row;
     const int mi_col = xd->mi_col;
 
@@ -3335,12 +3335,19 @@ static int64_t handle_inter_mode(
     }
 
     rd_stats->rate += compmode_interinter_cost;
-    if (skip_build_pred != 1) {
+    if (skip_build_pred != INTERP_SKIP_LUMA_SKIP_CHROMA) {
+      // Chroma plane of COMPOUND_DIFFWTD mode shares the segment mask of luma
+      // which is stored in xd->seg_mask. Hence, the predictor is populated for
+      // all planes. This should avoid usage of incorrect segment mask when the
+      // call is made only for chroma.
+      const int skip_luma_plane =
+          skip_build_pred == INTERP_SKIP_LUMA_EVAL_CHROMA &&
+          mbmi->interinter_comp.type != COMPOUND_DIFFWTD;
+      const int start_plane = skip_luma_plane ? AOM_PLANE_U : AOM_PLANE_Y;
       // Build this inter predictor if it has not been previously built
-      av1_enc_build_inter_predictor(cm, xd, mi_row, mi_col, &orig_dst, bsize, 0,
-                                    av1_num_planes(cm) - 1);
+      av1_enc_build_inter_predictor(cm, xd, mi_row, mi_col, &orig_dst, bsize,
+                                    start_plane, num_planes - 1);
     }
-
 #if CONFIG_COLLECT_COMPONENT_TIMING
     start_timing(cpi, motion_mode_rd_time);
 #endif
@@ -4107,7 +4114,13 @@ static inline void init_mode_skip_mask(mode_skip_mask_t *mask,
     for (int r_idx = 0; r_idx < num_rt_refs; r_idx++) {
       const MV_REFERENCE_FRAME ref = real_time_ref_combos[r_idx][0];
       if (ref != INTRA_FRAME) {
-        min_pred_mv_sad = AOMMIN(min_pred_mv_sad, x->pred_mv_sad[ref]);
+        const MV_REFERENCE_FRAME ref_frames[2] = { ref, NONE_FRAME };
+        const int_mv ref_mv =
+            av1_get_ref_mv_from_stack(0, ref_frames, 0, &x->mbmi_ext);
+        const FULLPEL_MV full_mv = get_fullmv_from_mv(&ref_mv.as_mv);
+        if (av1_is_fullmv_in_range(&x->mv_limits, full_mv)) {
+          min_pred_mv_sad = AOMMIN(min_pred_mv_sad, x->pred_mv_sad[ref]);
+        }
       }
     }
   } else {
@@ -4571,10 +4584,9 @@ static bool mask_says_skip(const mode_skip_mask_t *mode_skip_mask,
   return mode_skip_mask->ref_combo[ref_frame[0]][ref_frame[1] + 1];
 }
 
-static int inter_mode_compatible_skip(const AV1_COMP *cpi, const MACROBLOCK *x,
-                                      BLOCK_SIZE bsize,
-                                      PREDICTION_MODE curr_mode,
-                                      const MV_REFERENCE_FRAME *ref_frames) {
+static AOM_FORCE_INLINE int inter_mode_compatible_skip(
+    const AV1_COMP *cpi, const MACROBLOCK *x, BLOCK_SIZE bsize,
+    PREDICTION_MODE curr_mode, const MV_REFERENCE_FRAME *ref_frames) {
   const int comp_pred = ref_frames[1] > INTRA_FRAME;
   if (comp_pred) {
     if (!is_comp_ref_allowed(bsize)) return 1;
@@ -4634,7 +4646,7 @@ static inline int match_ref_frame_pair(const MB_MODE_INFO *mbmi,
 // Case 1: return 0, means don't skip this mode
 // Case 2: return 1, means skip this mode completely
 // Case 3: return 2, means skip compound only, but still try single motion modes
-static int inter_mode_search_order_independent_skip(
+static AOM_FORCE_INLINE int inter_mode_search_order_independent_skip(
     const AV1_COMP *cpi, const MACROBLOCK *x, mode_skip_mask_t *mode_skip_mask,
     InterModeSearchState *search_state, int skip_ref_frame_mask,
     PREDICTION_MODE mode, const MV_REFERENCE_FRAME *ref_frame) {
@@ -4973,7 +4985,7 @@ static int compound_skip_get_candidates(
   return candidates;
 }
 
-static int compound_skip_by_single_states(
+static AOM_FORCE_INLINE int compound_skip_by_single_states(
     const AV1_COMP *cpi, const InterModeSearchState *search_state,
     const PREDICTION_MODE this_mode, const MV_REFERENCE_FRAME ref_frame,
     const MV_REFERENCE_FRAME second_ref_frame, const MACROBLOCK *x) {
@@ -5297,9 +5309,11 @@ typedef struct {
 } InterModeSFArgs;
 /*!\endcond */
 
-static int skip_inter_mode(AV1_COMP *cpi, MACROBLOCK *x, const BLOCK_SIZE bsize,
-                           int64_t *ref_frame_rd, int midx,
-                           InterModeSFArgs *args, int is_low_temp_var) {
+static AOM_FORCE_INLINE int skip_inter_mode(AV1_COMP *cpi, MACROBLOCK *x,
+                                            const BLOCK_SIZE bsize,
+                                            int64_t *ref_frame_rd, int midx,
+                                            InterModeSFArgs *args,
+                                            int is_low_temp_var) {
   const SPEED_FEATURES *const sf = &cpi->sf;
   MACROBLOCKD *const xd = &x->e_mbd;
   // Get the actual prediction mode we are trying in this iteration

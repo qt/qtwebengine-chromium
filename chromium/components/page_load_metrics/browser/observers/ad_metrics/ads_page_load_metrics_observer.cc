@@ -257,6 +257,9 @@ base::ByteCount AdsPageLoadMetricsObserver::HeavyAdThresholdNoiseProvider::
           : 0);
 }
 
+const char AdsPageLoadMetricsObserver::kObserverName[] =
+    "AdsPageLoadMetricsObserver";
+
 AdsPageLoadMetricsObserver::AdsPageLoadMetricsObserver(
     heavy_ad_intervention::HeavyAdService* heavy_ad_service,
     history::HistoryService* history_service,
@@ -283,8 +286,7 @@ AdsPageLoadMetricsObserver::AdsPageLoadMetricsObserver(
 AdsPageLoadMetricsObserver::~AdsPageLoadMetricsObserver() = default;
 
 const char* AdsPageLoadMetricsObserver::GetObserverName() const {
-  static const char kName[] = "AdsPageLoadMetricsObserver";
-  return kName;
+  return kObserverName;
 }
 
 PageLoadMetricsObserver::ObservePolicy AdsPageLoadMetricsObserver::OnStart(
@@ -317,9 +319,8 @@ AdsPageLoadMetricsObserver::OnFencedFramesStart(
     content::NavigationHandle* navigation_handle,
     const GURL& currently_committed_url) {
   // Need the observer-level forwarding for FrameReceivedUserActivation,
-  // FrameDisplayStateChanged, FrameSizeChanged, MediaStartedPlaying,
-  // OnMainFrameIntersectionRectChanged, OnMainFrameViewportRectChanged,
-  // and OnV8MemoryChanged.
+  // FrameDisplayStateChanged, FrameSizeChanged, MediaStartedPlaying, and
+  // OnV8MemoryChanged.
   return FORWARD_OBSERVING;
 }
 
@@ -707,12 +708,9 @@ void AdsPageLoadMetricsObserver::MediaStartedPlaying(
   }
 }
 
-void AdsPageLoadMetricsObserver::OnMainFrameIntersectionRectChanged(
-    content::RenderFrameHost* render_frame_host,
-    const gfx::Rect& main_frame_intersection_rect) {
-  if (render_frame_host->IsInPrimaryMainFrame()) {
-    page_ad_density_tracker_.UpdateMainFrameRect(main_frame_intersection_rect);
-  }
+void AdsPageLoadMetricsObserver::OnMainFrameRectChanged(
+    const gfx::Rect& main_frame_rect) {
+  page_ad_density_tracker_.UpdateMainFrameRect(main_frame_rect);
 }
 
 void AdsPageLoadMetricsObserver::OnMainFrameViewportRectChanged(
@@ -796,6 +794,18 @@ void AdsPageLoadMetricsObserver::OnAdAuctionComplete(
     content::AuctionResult result) {
   aggregate_frame_data_->OnAdAuctionComplete(is_server_auction,
                                              is_on_device_auction, result);
+}
+
+base::TimeDelta AdsPageLoadMetricsObserver::GetTotalAdCpuTime() const {
+  return aggregate_frame_data_ ? aggregate_frame_data_->live_ad_cpu_usage()
+                               : base::TimeDelta();
+}
+
+int64_t AdsPageLoadMetricsObserver::GetTotalAdNetworkBytes() const {
+  return aggregate_frame_data_ ? aggregate_frame_data_->resource_data()
+                                     .ad_network_bytes()
+                                     .InBytes()
+                               : 0;
 }
 
 void AdsPageLoadMetricsObserver::OnSubresourceFilterGoingAway() {

@@ -17,7 +17,7 @@
 #include "base/types/expected.h"
 #include "components/unexportable_keys/background_task_origin.h"
 #include "components/unexportable_keys/background_task_priority.h"
-#include "components/unexportable_keys/ref_counted_unexportable_signing_key.h"
+#include "components/unexportable_keys/ref_counted_unexportable_key.h"
 #include "components/unexportable_keys/service_error.h"
 #include "components/unexportable_keys/unexportable_key_id.h"
 #include "components/unexportable_keys/unexportable_key_service.h"
@@ -66,19 +66,30 @@ class COMPONENT_EXPORT(UNEXPORTABLE_KEYS) UnexportableKeyServiceImpl
       base::span<const crypto::SignatureVerifier::SignatureAlgorithm>
           acceptable_algorithms,
       BackgroundTaskPriority priority,
-      base::OnceCallback<void(ServiceErrorOr<UnexportableKeyId>)> callback)
-      override;
+      base::OnceCallback<void(ServiceErrorOr<UnexportableSigningKeyId>)>
+          callback) override;
   void FromWrappedSigningKeySlowlyAsync(
       base::span<const uint8_t> wrapped_key,
       BackgroundTaskPriority priority,
-      base::OnceCallback<void(ServiceErrorOr<UnexportableKeyId>)> callback)
-      override;
-  void GetAllSigningKeysForGarbageCollectionSlowlyAsync(
+      base::OnceCallback<void(ServiceErrorOr<UnexportableSigningKeyId>)>
+          callback) override;
+  void GenerateAttestationKeySlowlyAsync(
+      base::span<const crypto::SignatureVerifier::SignatureAlgorithm>
+          acceptable_algorithms,
+      BackgroundTaskPriority priority,
+      base::OnceCallback<void(ServiceErrorOr<UnexportableAttestationKeyId>)>
+          callback) override;
+  void FromWrappedAttestationKeySlowlyAsync(
+      base::span<const uint8_t> wrapped_key,
+      BackgroundTaskPriority priority,
+      base::OnceCallback<void(ServiceErrorOr<UnexportableAttestationKeyId>)>
+          callback) override;
+  void GetAllKeysForGarbageCollectionSlowlyAsync(
       BackgroundTaskPriority priority,
       base::OnceCallback<void(ServiceErrorOr<std::vector<UnexportableKeyId>>)>
           callback) override;
   void SignSlowlyAsync(
-      UnexportableKeyId key_id,
+      UnexportableSigningKeyId key_id,
       base::span<const uint8_t> data,
       BackgroundTaskPriority priority,
       base::OnceCallback<void(ServiceErrorOr<std::vector<uint8_t>>)> callback)
@@ -119,31 +130,42 @@ class COMPONENT_EXPORT(UNEXPORTABLE_KEYS) UnexportableKeyServiceImpl
   using KeyIdMap =
       absl::flat_hash_map<UnexportableKeyId,
                           scoped_refptr<RefCountedUnexportableSigningKey>>;
+  using AllKeysForGarbageCollectionMap =
+      absl::flat_hash_map<UnexportableKeyId,
+                          scoped_refptr<RefCountedUnexportableKey>>;
 
   // Convenience method to create a `WrappedKeyAndTag` from a
-  // `RefCountedUnexportableSigningKey`.
+  // `RefCountedUnexportableKey`.
   static WrappedKeyAndTag GetWrappedKeyAndTag(
-      const RefCountedUnexportableSigningKey& key);
+      const RefCountedUnexportableKey& key);
 
   // Convenience method to create a `WrappedKeyAndTag` from a
   // `WrappedKeyAndTagView`.
   static WrappedKeyAndTag Materialize(WrappedKeyAndTagView view);
 
-  // Removes the key with `key_id` from the in-memory maps.
-  // Returns the mapped signing key on success, or
-  // `ServiceError::kKeyNotFound` if the key was not found.
-  ServiceErrorOr<scoped_refptr<RefCountedUnexportableSigningKey>>
-  ExtractKeyFromMaps(UnexportableKeyId key_id);
+  // Returns a pointer to the unexportable key with the given ID, or an error
+  // if it is not found. The returned pointer is guaranteed to be non-null on
+  // success. The returned pointer is only valid for as long as the key is
+  // present in the service (i.e., not deleted and not garbage collected).
+  ServiceErrorOr<const crypto::UnexportableKey*> GetKey(
+      UnexportableKeyId key_id) const;
+  ServiceErrorOr<const crypto::StatefulKey*> GetStatefulKey(
+      UnexportableKeyId key_id) const;
 
-  // Callback for `GetAllSigningKeysForGarbageCollectionSlowlyAsync()`.
+  // Removes the key with `key_id` from the in-memory maps.
+  // Returns the mapped key on success, or `ServiceError::kKeyNotFound` if the
+  // key was not found.
+  ServiceErrorOr<scoped_refptr<RefCountedUnexportableKey>> ExtractKeyFromMaps(
+      UnexportableKeyId key_id);
+
+  // Callback for `GetAllKeysForGarbageCollectionSlowlyAsync()`.
   ServiceErrorOr<std::vector<UnexportableKeyId>>
-  OnGetAllSigningKeysForGarbageCollectionSlowlyImpl(
-      ServiceErrorOr<
-          std::vector<scoped_refptr<RefCountedUnexportableSigningKey>>>
+  OnGetAllKeysForGarbageCollectionSlowlyImpl(
+      ServiceErrorOr<std::vector<scoped_refptr<RefCountedUnexportableKey>>>
           keys_or_error);
 
   // Callback for `GenerateSigningKeySlowlyAsync()`.
-  ServiceErrorOr<UnexportableKeyId> OnKeyGeneratedImpl(
+  ServiceErrorOr<UnexportableSigningKeyId> OnSigningKeyGeneratedImpl(
       ServiceErrorOr<scoped_refptr<RefCountedUnexportableSigningKey>>
           key_or_error);
 
@@ -188,6 +210,11 @@ class COMPONENT_EXPORT(UNEXPORTABLE_KEYS) UnexportableKeyServiceImpl
   // Stores unexportable signing keys that were created during the current
   // session.
   KeyIdMap key_by_key_id_;
+
+  // Stores all unexportable keys for garbage collection purposes. This map is
+  // disjoint from `key_by_key_id_` and will be overwritten on each call to
+  // `GetAllKeysForGarbageCollection`.
+  AllKeysForGarbageCollectionMap all_gc_keys_by_key_id_;
 
   base::WeakPtrFactory<UnexportableKeyServiceImpl> weak_ptr_factory_{this};
 };

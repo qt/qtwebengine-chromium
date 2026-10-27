@@ -30,6 +30,7 @@ bazel_dep(name = "bazel_skylib", version = "1.8.2")
 
 # Bazel Platforms
 bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "abseil-cpp", version = "20260107.1")
 
 # TODO: some (most? all?) of the http_archive() calls below could become bazel_dep() calls,
 # but it would require verifying that the semver provided by the Bazel registry matches the hash
@@ -41,8 +42,13 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 # LINT.IfChange(googletest)
 # Google Test framework, used by most unit-tests.
-http_archive(
-    name = "com_google_googletest",
+
+# Note: some `bazel_dep`s also have a dependency on an older googletest that
+# isn't compatible with bazel 9. The version specified in this dep is not
+# important as we override it with a specific archive just below.
+bazel_dep(name = "googletest", version = "1.17.0.bcr.2", repo_name = "com_google_googletest")
+archive_override(
+    module_name = "googletest",
     sha256 = "a4cb11930215b071168811982dfbebc82a2bb0f90db0e8713245931eb742ea46",
     strip_prefix = "googletest-d72f9c8aea6817cdf1ca0ac10887f328de7f3da2",
     urls = ["https://github.com/google/googletest/archive/d72f9c8aea6817cdf1ca0ac10887f328de7f3da2.zip"],
@@ -83,10 +89,10 @@ http_archive(
 # cpuinfo library, used for detecting processor characteristics
 http_archive(
     name = "cpuinfo",
-    sha256 = "45807bf49ac57cabef37271053be3372415ca25d9648da366e7d41620a077c9c",
-    strip_prefix = "cpuinfo-7364b490b5f78d58efe23ea76e74210fd6c3c76f",
+    sha256 = "995316f224247d1611ab1b624a66bc5cbd5b5d2e5ce991ed68d983aac950ad8b",
+    strip_prefix = "cpuinfo-bc3c01e230c6974283e4b89421cfb0e232435589",
     urls = [
-        "https://github.com/pytorch/cpuinfo/archive/7364b490b5f78d58efe23ea76e74210fd6c3c76f.zip",
+        "https://github.com/pytorch/cpuinfo/archive/bc3c01e230c6974283e4b89421cfb0e232435589.zip",
     ],
 )
 # LINT.ThenChange(cmake/DownloadCpuinfo.cmake)
@@ -115,9 +121,9 @@ http_archive(
 
 http_archive(
     name = "slinky",
-    sha256 = "22e075dc4b40b53ab47f48c62a9c9c1d99a24fbb8f17c8ee39b14901a6e72169",
-    strip_prefix = "slinky-e36fd1197a2ae6a53fd41833731e25eb4ee1bb26",
+    sha256 = "cd84dd2ff1956480fac6e50f477441d74e0ad08e34e863ffad2a1d3adf043dc2",
+    strip_prefix = "slinky-eb004cb32169f87a4d95ee73af4eb9cf3df42868",
     urls = [
-        "https://github.com/dsharlet/slinky/archive/e36fd1197a2ae6a53fd41833731e25eb4ee1bb26.zip",
+        "https://github.com/dsharlet/slinky/archive/eb004cb32169f87a4d95ee73af4eb9cf3df42868.zip",
     ],
 )

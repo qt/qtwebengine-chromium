@@ -1262,7 +1262,7 @@ static void btreeParseCellPtr(
   CellInfo *pInfo         /* Fill in this structure */
 ){
   u8 *pIter;              /* For scanning through pCell */
-  u32 nPayload;           /* Number of bytes of cell payload */
+  u64 nPayload;           /* Number of bytes of cell payload */
   u64 iKey;               /* Extracted Key value */
 
   assert( sqlite3_mutex_held(pPage->pBt->mutex) );
@@ -1284,6 +1284,7 @@ static void btreeParseCellPtr(
     do{
       nPayload = (nPayload<<7) | (*++pIter & 0x7f);
     }while( (*pIter)>=0x80 && pIter<pEnd );
+    nPayload &= 0xffffffff;
   }
   pIter++;
 
@@ -1327,11 +1328,10 @@ static void btreeParseCellPtr(
   pIter++;
 
   pInfo->nKey = *(i64*)&iKey;
-  pInfo->nPayload = nPayload;
+  pInfo->nPayload = (u32)nPayload;
   pInfo->pPayload = pIter;
   testcase( nPayload==pPage->maxLocal );
   testcase( nPayload==(u32)pPage->maxLocal+1 );
-  assert( nPayload>=0 );
   assert( pPage->maxLocal <= BT_MAX_LOCAL );
   if( nPayload<=pPage->maxLocal ){
     /* This is the (easy) common case where the entire payload fits
@@ -1646,7 +1646,7 @@ static int defragmentPage(MemPage *pPage, int nMaxFrag){
   ** reconstruct the entire page.  */
   if( (int)data[hdr+7]<=nMaxFrag ){
     int iFree = get2byte(&data[hdr+1]);
-    if( iFree>usableSize-4 ) return SQLITE_CORRUPT_PAGE(pPage);
+    if( NEVER(iFree>usableSize-4) ) return SQLITE_CORRUPT_PAGE(pPage);
     if( iFree ){
       int iFree2 = get2byte(&data[iFree]);
       if( iFree2>usableSize-4 ) return SQLITE_CORRUPT_PAGE(pPage);
@@ -3673,6 +3673,30 @@ static SQLITE_NOINLINE int btreeBeginTrans(
     }
 #endif
 
+#ifdef SQLITE_EXPERIMENTAL_PRAGMA_20251114
+    /* If both a read and write transaction will be opened by this call,
+    ** then issue a file-control as if the following pragma command had
+    ** been evaluated:
+    **
+    **     PRAGMA experimental_pragma_20251114 = 1|2
+    **
+    ** where the RHS is "1" if wrflag is 1 (RESERVED lock), or "2" if wrflag 
+    ** is 2 (EXCLUSIVE lock). Ignore any result or error returned by the VFS.
+    **
+    ** WARNING: This code will likely remain part of SQLite only temporarily -
+    ** it exists to allow users to experiment with certain types of blocking 
+    ** locks in custom VFS implementations. It MAY BE REMOVED AT ANY TIME.  */
+    if( pBt->pPage1==0 && wrflag ){
+      sqlite3_file *fd = sqlite3PagerFile(pPager);
+      char *aFcntl[3] = {0,0,0};
+      aFcntl[1] = "experimental_pragma_20251114";
+      assert( wrflag==1 || wrflag==2 );
+      aFcntl[2] = (wrflag==1 ? "1" : "2");
+      sqlite3OsFileControlHint(fd, SQLITE_FCNTL_PRAGMA, (void*)aFcntl);
+      sqlite3_free(aFcntl[0]);
+    }
+#endif
+
     /* Call lockBtree() until either pBt->pPage1 is populated or
     ** lockBtree() returns something other than SQLITE_OK. lockBtree()
     ** may return SQLITE_OK but leave pBt->pPage1 set to 0 if after
@@ -5266,6 +5290,12 @@ static int accessPayload(
               (eOp==0 ? PAGER_GET_READONLY : 0)
           );
           if( rc==SQLITE_OK ){
+            if( eOp!=0
+             && (sqlite3PagerPageRefcount(pDbPage)!=1
+                 || NEVER(((MemPage*)sqlite3PagerGetExtra(pDbPage))->isInit)) ){
+              sqlite3PagerUnref(pDbPage);
+              return SQLITE_CORRUPT_PAGE(pPage);
+            }
             aPayload = sqlite3PagerGetData(pDbPage);
             nextPage = get4byte(aPayload);
             rc = copyPayload(&aPayload[offset+4], pBuf, a, eOp, pDbPage);
@@ -5677,7 +5707,7 @@ int sqlite3BtreeIsEmpty(BtCursor *pCur, int *pRes){
 
   assert( cursorOwnsBtShared(pCur) );
   assert( sqlite3_mutex_held(pCur->pBtree->db->mutex) );
-  if( pCur->eState==CURSOR_VALID ){
+  if( NEVER(pCur->eState==CURSOR_VALID) ){
     *pRes = 0;
     return SQLITE_OK;
   }
@@ -9758,7 +9788,7 @@ int sqlite3BtreeTransferRow(BtCursor *pDest, BtCursor *pSrc, i64 iKey){
       }while( rc==SQLITE_OK && nOut>0 );
  
       if( rc==SQLITE_OK && nRem>0 && ALWAYS(pPgnoOut) ){
-        Pgno pgnoNew;
+        Pgno pgnoNew = 0;  /* Prevent harmless static-analyzer warning */
         MemPage *pNew = 0;
         rc = allocateBtreePage(pBt, &pNew, &pgnoNew, 0, 0);
         put4byte(pPgnoOut, pgnoNew);

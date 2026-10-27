@@ -29,6 +29,7 @@
  *   General matrix-vector product functionality based on ?GEMV.
  ********************************************************************************
 */
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef EIGEN_GENERAL_MATRIX_VECTOR_BLAS_H
 #define EIGEN_GENERAL_MATRIX_VECTOR_BLAS_H

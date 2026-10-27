@@ -25,15 +25,16 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/opengl/SharedTextureMemoryGL.h"
+#include "src/dawn/native/opengl/SharedTextureMemoryGL.h"
 
 #include <utility>
 
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/opengl/DeviceGL.h"
-#include "dawn/native/opengl/QueueGL.h"
-#include "dawn/native/opengl/SharedFenceGL.h"
-#include "dawn/native/opengl/TextureGL.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/opengl/DeviceGL.h"
+#include "src/dawn/native/opengl/QueueGL.h"
+#include "src/dawn/native/opengl/SharedFenceGL.h"
+#include "src/dawn/native/opengl/TextureGL.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native::opengl {
 
@@ -64,7 +65,7 @@ MaybeError SharedTextureMemory::BeginAccessImpl(
     const UnpackedPtr<BeginAccessDescriptor>& descriptor) {
     DAWN_TRY(descriptor.ValidateSubset<>());
     for (size_t i = 0; i < descriptor->fenceCount; ++i) {
-        SharedFenceBase* fence = descriptor->fences[i];
+        SharedFenceBase* fence = DAWN_UNSAFE_TODO(descriptor->fences[i]);
 
         SharedFenceExportInfo exportInfo;
         DAWN_TRY(fence->ExportInfo(&exportInfo));
@@ -86,8 +87,9 @@ MaybeError SharedTextureMemory::BeginAccessImpl(
         }
 
         // All GL sync objects are binary.
-        DAWN_INVALID_IF(descriptor->signaledValues[i] != 1, "%s signaled value (%u) was not 1.",
-                        fence, descriptor->signaledValues[i]);
+        DAWN_UNSAFE_TODO(DAWN_INVALID_IF(descriptor->signaledValues[i] != 1,
+                                         "%s signaled value (%u) was not 1.", fence,
+                                         descriptor->signaledValues[i]));
     }
 
     return {};

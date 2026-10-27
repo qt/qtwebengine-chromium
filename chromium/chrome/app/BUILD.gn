@@ -4,18 +4,32 @@
 
 import("//build/config/chrome_build.gni")
 import("//build/config/chromebox_for_meetings/buildflags.gni")
-import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/locales.gni")
 import("//build/config/ozone.gni")
 import("//build/config/ui.gni")
 import("//chrome/common/features.gni")
 import("//crypto/features.gni")
 import("//tools/grit/grit_rule.gni")
+import("//ui/webui/webui_features.gni")
 
 assert(!is_fuchsia, "Fuchsia shouldn't use anything in //chrome")
 
 if (is_android) {
   import("//build/config/android/rules.gni")
+}
+
+if (is_posix && !is_mac) {
+  # Header-only target so non-:browser targets can include this header
+  # without depending on //chrome/browser:browser. The .cc file remains
+  # in //chrome/browser:browser.
+  source_set("chrome_crash_reporter_client") {
+    public = [ "chrome_crash_reporter_client.h" ]
+    public_deps = [
+      "//base",
+      "//build:buildflag_header_h",
+      "//components/crash/core/app",
+    ]
+  }
 }
 
 # This target is for dependency tracking for the command ID header.
@@ -82,7 +96,10 @@ if (is_win) {
 grit_strings("generated_resources") {
   source = "generated_resources.grd"
   gritdeps = "generated_resources.grd.gritdeps"
-  defines = chrome_grit_defines + [ "is_cfm=${is_cfm}" ]
+  defines = chrome_grit_defines + [
+              "is_cfm=${is_cfm}",
+              "enable_webui_ntp=$enable_webui_ntp",
+            ]
   output_dir = "$root_gen_dir/chrome"
   outputs = [ "grit/generated_resources.h" ]
 
@@ -131,8 +148,13 @@ static_library("test_support") {
     "//base",
     "//chrome/browser",
     "//chrome/browser:buildflags",
+    "//chrome/browser:chrome_content_browser_client",
+    "//chrome/browser:defaults",
+    "//chrome/browser:process_singleton",
     "//chrome/browser:shell_integration",
+    "//chrome/browser:startup_data",
     "//chrome/browser/diagnostics",
+    "//chrome/browser/lifetime",
     "//chrome/browser/policy:path_parser",
     "//chrome/child",
     "//chrome/common",
@@ -163,6 +185,7 @@ static_library("test_support") {
 
   if (is_android) {
     deps += [
+      "//chrome/browser/android",
       "//chrome/browser/flags:flags_android",
       "//components/crash/android:crash_android",
     ]
@@ -171,7 +194,11 @@ static_library("test_support") {
   if (is_mac) {
     sources += [ "chrome_main_mac.mm" ]
 
-    deps += [ "//chrome:chrome_framework" ]
+    deps += [
+      "//chrome:chrome_framework",
+      "//chrome/browser:chrome_browser_application_mac",
+      "//chrome/browser/mac",
+    ]
   }
 
   if (is_win) {
@@ -196,10 +223,22 @@ static_library("test_support") {
     ]
   }
 
+  if (is_posix && !is_mac) {
+    deps += [ ":chrome_crash_reporter_client" ]
+  }
+
+  if (!is_android) {
+    deps += [ "//chrome/browser:chrome_process_singleton" ]
+  }
+
   if (use_ozone) {
     deps += [ "//ui/ozone" ]
     if (is_linux) {
       deps += [ "//ui/linux:display_server_utils" ]
     }
+  }
+
+  if (is_chrome_for_testing) {
+    deps += [ "//chrome/browser/chrome_for_testing:browser" ]
   }
 }

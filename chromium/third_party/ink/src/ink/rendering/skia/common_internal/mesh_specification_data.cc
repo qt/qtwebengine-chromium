@@ -17,7 +17,6 @@
 #include <optional>
 
 #include "absl/container/inlined_vector.h"
-#include "absl/log/absl_check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
@@ -25,6 +24,7 @@
 #include "absl/types/span.h"
 #include "ink/brush/brush_paint.h"
 #include "ink/geometry/mesh_format.h"
+#include "ink/rendering/common/stroke_attribute_helpers.h"
 #include "ink/rendering/skia/common_internal/sksl_common_shader_helper_functions.h"
 #include "ink/rendering/skia/common_internal/sksl_fragment_shader_helper_functions.h"
 #include "ink/rendering/skia/common_internal/sksl_vertex_shader_helper_functions.h"
@@ -158,58 +158,47 @@ MeshSpecificationData MeshSpecificationData::CreateForInProgressStroke() {
         return varyings;
       }
   )";
-  static_assert(static_cast<int>(BrushPaint::TextureMapping::kStamping) == 1);
+  static_assert(
+      BrushPaint::TextureLayer{BrushPaint::StampingTexture{}}.index() == 1);
 
   // Translate from `MeshFormat` to `MeshSpecificationData` attributes. Where
   // applicable below, multiple `MeshFormat` attributes are combined into one
   // attribute for rendering.
 
   const MeshFormat kInProgressStrokeFormat = StrokeVertex::FullMeshFormat();
-  absl::Span<const MeshFormat::Attribute> format_attributes =
-      kInProgressStrokeFormat.Attributes();
   constexpr StrokeVertex::FormatAttributeIndices kAttributeIndices =
       StrokeVertex::kFullFormatAttributeIndices;
+
+  auto types_and_offsets =
+      ink::rendering::GetInProgressStrokeAttributeTypesAndOffsets(
+          kInProgressStrokeFormat, kAttributeIndices);
 
   constexpr int kRenderingAttributeCount = 5;
   SmallArray<Attribute, kMaxAttributes> rendering_attributes(
       kRenderingAttributeCount);
 
-  // Position + opacity-shift
-  static_assert(kAttributeIndices.position + 1 ==
-                kAttributeIndices.opacity_shift);
   rendering_attributes[0] = {
-      .type = AttributeType::kFloat3,
-      .offset = format_attributes[kAttributeIndices.position].unpacked_offset,
+      .type = types_and_offsets.position_and_opacity_shift.type,
+      .offset = types_and_offsets.position_and_opacity_shift.offset,
       .name = "positionAndOpacityShift"};
 
-  // HSL color-shift
-  rendering_attributes[1] = {
-      .type = AttributeType::kFloat3,
-      .offset = format_attributes[kAttributeIndices.hsl_shift].unpacked_offset,
-      .name = "hslShift"};
+  rendering_attributes[1] = {.type = types_and_offsets.hsl_shift->type,
+                             .offset = types_and_offsets.hsl_shift->offset,
+                             .name = "hslShift"};
 
-  // Side derivative + label
-  static_assert(kAttributeIndices.side_derivative + 1 ==
-                kAttributeIndices.side_label);
   rendering_attributes[2] = {
-      .type = AttributeType::kFloat3,
-      .offset =
-          format_attributes[kAttributeIndices.side_derivative].unpacked_offset,
+      .type = types_and_offsets.side_derivative_and_label.type,
+      .offset = types_and_offsets.side_derivative_and_label.offset,
       .name = "sideDerivativeAndLabel"};
 
-  // Forward derivative + label
-  static_assert(kAttributeIndices.forward_derivative + 1 ==
-                kAttributeIndices.forward_label);
   rendering_attributes[3] = {
-      .type = AttributeType::kFloat3,
-      .offset = format_attributes[kAttributeIndices.forward_derivative]
-                    .unpacked_offset,
+      .type = types_and_offsets.forward_derivative_and_label.type,
+      .offset = types_and_offsets.forward_derivative_and_label.offset,
       .name = "forwardDerivativeAndLabel"};
 
-  // Surface UV + animation offset
   rendering_attributes[4] = {
-      .type = AttributeType::kFloat3,
-      .offset = format_attributes[kAttributeIndices.surface_uv].unpacked_offset,
+      .type = types_and_offsets.surface_uv_and_animation_offset->type,
+      .offset = types_and_offsets.surface_uv_and_animation_offset->offset,
       .name = "surfaceUvAndAnimationOffset"};
 
   return MeshSpecificationData{
@@ -241,247 +230,13 @@ MeshSpecificationData MeshSpecificationData::CreateForInProgressStroke() {
   };
 }
 
-namespace {
-
-// Returns the supported `AttributeType` for the combined packed
-// position-and-opacity attribute based on their `MeshFormat::AttributeType`s.
-std::optional<MeshSpecificationData::AttributeType>
-FindTypeForPositionAndOpacityShift(MeshFormat::AttributeType position_type,
-                                   MeshFormat::AttributeType opacity_type) {
-  if (position_type == MeshFormat::AttributeType::kFloat2PackedInOneFloat &&
-      opacity_type == MeshFormat::AttributeType::kFloat1Unpacked) {
-    return MeshSpecificationData::AttributeType::kFloat2;
-  }
-  if (position_type ==
-          MeshFormat::AttributeType::kFloat2PackedInThreeUnsignedBytes_XY12 &&
-      opacity_type ==
-          MeshFormat::AttributeType::kFloat1PackedInOneUnsignedByte) {
-    return MeshSpecificationData::AttributeType::kUByte4;
-  }
-  return std::nullopt;
-}
-
-// Returns the supported `AttributeType` for the HSL shift attribute based on
-// its `MeshFormat::AttributeType`.
-std::optional<MeshSpecificationData::AttributeType> FindTypeForHslShift(
-    MeshFormat::AttributeType hsl_shift_type) {
-  if (hsl_shift_type == MeshFormat::AttributeType::kFloat3Unpacked) {
-    return MeshSpecificationData::AttributeType::kFloat3;
-  }
-  if (hsl_shift_type ==
-      MeshFormat::AttributeType::kFloat3PackedInFourUnsignedBytes_XYZ10) {
-    return MeshSpecificationData::AttributeType::kUByte4;
-  }
-  return std::nullopt;
-}
-
-// Returns the supported `AttributeType` for either the "side" or "forward"
-// derivative-and-label attribute based on their `MeshFormat::AttributeType`s.
-std::optional<MeshSpecificationData::AttributeType>
-FindTypeForDerivativeAndLabel(MeshFormat::AttributeType derivative_type,
-                              MeshFormat::AttributeType label_type) {
-  if (derivative_type == MeshFormat::AttributeType::kFloat2Unpacked &&
-      label_type == MeshFormat::AttributeType::kFloat1Unpacked) {
-    return MeshSpecificationData::AttributeType::kFloat3;
-  }
-  if (derivative_type ==
-          MeshFormat::AttributeType::kFloat2PackedInThreeUnsignedBytes_XY12 &&
-      label_type == MeshFormat::AttributeType::kFloat1PackedInOneUnsignedByte) {
-    return MeshSpecificationData::AttributeType::kUByte4;
-  }
-  return std::nullopt;
-}
-
-// Returns the supported `AttributeType` for the surface UV attribute based on
-// its `MeshFormat::AttributeType`.
-std::optional<MeshSpecificationData::AttributeType>
-FindTypeForSurfaceUvAndAnimationOffset(
-    MeshFormat::AttributeType surface_uv_type,
-    std::optional<MeshFormat::AttributeType> animation_offset_type) {
-  if (surface_uv_type == MeshFormat::AttributeType::kFloat2Unpacked &&
-      animation_offset_type == MeshFormat::AttributeType::kFloat1Unpacked) {
-    return MeshSpecificationData::AttributeType::kFloat3;
-  }
-  if (surface_uv_type ==
-          MeshFormat::AttributeType::kFloat2PackedInThreeUnsignedBytes_XY12 &&
-      animation_offset_type ==
-          MeshFormat::AttributeType::kFloat1PackedInOneUnsignedByte) {
-    return MeshSpecificationData::AttributeType::kUByte4;
-  }
-  if (surface_uv_type ==
-          MeshFormat::AttributeType::kFloat2PackedInFourUnsignedBytes_X12_Y20 &&
-      animation_offset_type == std::nullopt) {
-    return MeshSpecificationData::AttributeType::kUByte4;
-  }
-  return std::nullopt;
-}
-
-// Vertex attribute type and offset.
-struct TypeAndByteOffset {
-  MeshSpecificationData::AttributeType type;
-  int offset;
-};
-
-struct SkiaStrokeAttributeTypesAndOffsets {
-  TypeAndByteOffset position_and_opacity_shift;
-  std::optional<TypeAndByteOffset> hsl_shift;
-  TypeAndByteOffset side_derivative_and_label;
-  TypeAndByteOffset forward_derivative_and_label;
-  std::optional<TypeAndByteOffset> surface_uv_and_animation_offset;
-};
-
-// Validates that the given `mesh_format` is supported and returns the shader
-// variable types and byte offsets. `attribute_indices` is expected to hold
-// precomputed values for the given `mesh_format`.
-absl::StatusOr<SkiaStrokeAttributeTypesAndOffsets>
-GetValidatedStrokeAttributeTypesAndOffsets(
-    const MeshFormat& mesh_format,
-    const StrokeVertex::FormatAttributeIndices& attribute_indices) {
-  // `MeshFormat` creation requires a position attribute:
-  ABSL_DCHECK_NE(attribute_indices.position, -1);
-
-  // Opacity-shift and anti-aliasing attributes are currently always required.
-  if (attribute_indices.opacity_shift == -1 ||
-      attribute_indices.side_derivative == -1 ||
-      attribute_indices.side_label == -1 ||
-      attribute_indices.forward_derivative == -1 ||
-      attribute_indices.forward_label == -1) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Attributes with id `kOpacityShift`, `kSideDerivative`, "
-                     "`kSideLabel`, `kForwardDerivative`, and `kForwardLabel` "
-                     "are required. Got `mesh_format`: ",
-                     mesh_format));
-  }
-
-  // For each Skia attribute used for strokes, check that the order of
-  // `MeshFormat` attributes is compatible and find a supported `AttributeType`.
-
-  SkiaStrokeAttributeTypesAndOffsets result;
-  absl::Span<const MeshFormat::Attribute> attributes = mesh_format.Attributes();
-
-  // --------------------------------------------------------------------------
-  // Position + opacity-shift
-  if (attribute_indices.position + 1 != attribute_indices.opacity_shift) {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "The `kOpacityShift` attribute must be immediately after the "
-        "`kPosition` attribute. Got `mesh_format`: ",
-        mesh_format));
-  }
-  auto position_and_opacity_type = FindTypeForPositionAndOpacityShift(
-      attributes[attribute_indices.position].type,
-      attributes[attribute_indices.opacity_shift].type);
-  if (!position_and_opacity_type.has_value()) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Unsupported type combination for `kPosition` and "
-                     "`kOpacity` attributes. Got `mesh_format`: ",
-                     mesh_format));
-  }
-  result.position_and_opacity_shift = {
-      .type = *position_and_opacity_type,
-      .offset = attributes[attribute_indices.position].packed_offset};
-
-  // --------------------------------------------------------------------------
-  // HSL color-shift
-  if (attribute_indices.hsl_shift != -1) {
-    auto hsl_shift_type =
-        FindTypeForHslShift(attributes[attribute_indices.hsl_shift].type);
-    if (!hsl_shift_type.has_value()) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("Unsupported type for `kColorShiftHsl` attribute. Got "
-                       "`mesh_format`: ",
-                       mesh_format));
-    }
-    result.hsl_shift = {
-        .type = *hsl_shift_type,
-        .offset = attributes[attribute_indices.hsl_shift].packed_offset};
-  }
-
-  // --------------------------------------------------------------------------
-  // Side derivative + label
-  if (attribute_indices.side_derivative + 1 != attribute_indices.side_label) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("The `kSideLabel` attribute must be immediately after the "
-                     "`kSideDerivative` attribute. Got `mesh_format`: ",
-                     mesh_format));
-  }
-  auto derivative_and_label_type = FindTypeForDerivativeAndLabel(
-      attributes[attribute_indices.side_derivative].type,
-      attributes[attribute_indices.side_label].type);
-  if (!derivative_and_label_type.has_value()) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Unsupported type combination for `kSideDerivative` and "
-                     "`kSideLabel` attributes. Got `mesh_format`: ",
-                     mesh_format));
-  }
-  result.side_derivative_and_label = {
-      .type = *derivative_and_label_type,
-      .offset = attributes[attribute_indices.side_derivative].packed_offset};
-
-  // --------------------------------------------------------------------------
-  // Forward derivative + label
-  if (attribute_indices.forward_derivative + 1 !=
-      attribute_indices.forward_label) {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "The `kForwardLabel` attribute must be immediately after the "
-        "`kForwardDerivative` attribute. Got `mesh_format`: ",
-        mesh_format));
-  }
-  derivative_and_label_type = FindTypeForDerivativeAndLabel(
-      attributes[attribute_indices.forward_derivative].type,
-      attributes[attribute_indices.forward_label].type);
-  if (!derivative_and_label_type.has_value()) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Unsupported type combination for `kForwardDerivative` "
-                     "and `kForwardLabel` attributes. Got `mesh_format`: ",
-                     mesh_format));
-  }
-  result.forward_derivative_and_label = {
-      .type = *derivative_and_label_type,
-      .offset = attributes[attribute_indices.forward_derivative].packed_offset};
-
-  // --------------------------------------------------------------------------
-  // Surface UV + animation offset
-  if (attribute_indices.surface_uv != -1) {
-    std::optional<MeshFormat::AttributeType> animation_offset_type;
-    if (attribute_indices.animation_offset != -1) {
-      if (attribute_indices.surface_uv + 1 !=
-          attribute_indices.animation_offset) {
-        return absl::InvalidArgumentError(absl::StrCat(
-            "The `kAnimationOffset` attribute must be immediately after the "
-            "`kSurfaceUv` attribute. Got `mesh_format`: ",
-            mesh_format));
-      }
-      animation_offset_type =
-          attributes[attribute_indices.animation_offset].type;
-    }
-    std::optional<MeshSpecificationData::AttributeType>
-        surface_uv_and_animation_offset_type =
-            FindTypeForSurfaceUvAndAnimationOffset(
-                attributes[attribute_indices.surface_uv].type,
-                animation_offset_type);
-    if (!surface_uv_and_animation_offset_type.has_value()) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("Unsupported type combination for `kSurfaceUv` and "
-                       "`kAnimationOffset` attributes. Got `mesh_format`: ",
-                       mesh_format));
-    }
-    result.surface_uv_and_animation_offset = {
-        .type = *surface_uv_and_animation_offset_type,
-        .offset = attributes[attribute_indices.surface_uv].packed_offset};
-  }
-
-  return result;
-}
-
-}  // namespace
-
 absl::StatusOr<MeshSpecificationData> MeshSpecificationData::CreateForStroke(
     const MeshFormat& mesh_format) {
   StrokeVertex::FormatAttributeIndices attribute_indices =
       StrokeVertex::FindAttributeIndices(mesh_format);
-  absl::StatusOr<SkiaStrokeAttributeTypesAndOffsets> types_and_offsets =
-      GetValidatedStrokeAttributeTypesAndOffsets(mesh_format,
-                                                 attribute_indices);
+  auto types_and_offsets =
+      ink::rendering::GetValidatedStrokeAttributeTypesAndOffsets(
+          mesh_format, attribute_indices);
   if (!types_and_offsets.ok()) return types_and_offsets.status();
 
   static_assert(kUniformBrushColorName == "uBrushColor");
@@ -547,7 +302,8 @@ absl::StatusOr<MeshSpecificationData> MeshSpecificationData::CreateForStroke(
   // Case 1: 12-bit surface U and V and 8-bit animation offset. This is used for
   // particle-based meshes to support (potentially-animated) "stamping" textured
   // particles.
-  static_assert(static_cast<int>(BrushPaint::TextureMapping::kStamping) == 1);
+  static_assert(
+      BrushPaint::TextureLayer{BrushPaint::StampingTexture{}}.index() == 1);
   constexpr absl::string_view
       kVertexMainTextureUvWithSurfaceUvAndAnimationOffset = R"(
         if (uTextureMapping == 1) {

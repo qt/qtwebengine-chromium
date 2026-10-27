@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/callback_list.h"
 #include "base/cancelable_callback.h"
 #include "base/containers/id_map.h"
 #include "base/functional/callback.h"
@@ -30,7 +31,7 @@
 #include "base/timer/timer.h"
 #include "base/uuid.h"
 #include "components/services/storage/public/mojom/service_worker_storage_control.mojom.h"
-#include "content/browser/renderer_host/back_forward_cache_metrics.h"
+#include "content/browser/back_forward_cache/back_forward_cache_metrics.h"
 #include "content/browser/renderer_host/policy_container_host.h"
 #include "content/browser/service_worker/embedded_worker_instance.h"
 #include "content/browser/service_worker/service_worker_client_utils.h"
@@ -103,6 +104,8 @@ FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, StaleUpdate_FreshWorker);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, StaleUpdate_NonActiveWorker);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, StaleUpdate_RunningWorker);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, StaleUpdate_StartWorker);
+FORWARD_DECLARE_TEST(ServiceWorkerVersionTest,
+                     InstalledScriptsSenderResetOnStopping);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest,
                      StallInStopping_DetachThenRestart);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, StallInStopping_DetachThenStart);
@@ -317,7 +320,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // Returns true if the worker will be terminated and the worker should not
   // handle any events dispatched directly from clients (e.g. FetchEvents for
   // subresources).
-  bool OnRequestTermination();
+  bool OnRequestTermination(uint64_t observed_keepalive_sequence_number);
 
   // Schedules an update to be run 'soon'.
   void ScheduleUpdate();
@@ -579,6 +582,11 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   // Sets the response information used to load the main script.
   void SetMainScriptResponse(std::unique_ptr<MainScriptResponse> response);
+
+  // Ensures that the response information for the main script is set. If it is
+  // not set yet, it starts fetching it.
+  void EnsureMainScriptResponseSet(base::OnceClosure callback);
+  bool main_script_fetched() const;
   const MainScriptResponse* GetMainScriptResponse();
 
   // Simulate ping timeout. Should be used for tests-only.
@@ -597,6 +605,11 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // Returns the number of pending external request count of this worker.
   size_t GetExternalRequestCountForTest() const {
     return external_request_uuid_to_request_id_.size();
+  }
+
+  // Returns the latest browser keepalive sequence number for testing.
+  uint64_t GetLatestExternalKeepaliveSequenceNumberForTest() const {
+    return latest_external_keepalive_sequence_number_;
   }
 
   // Returns the amount of time left until the request with the latest
@@ -834,6 +847,9 @@ class CONTENT_EXPORT ServiceWorkerVersion
   FRIEND_TEST_ALL_PREFIXES(
       service_worker_version_unittest::ServiceWorkerVersionTest,
       StallInStopping_DetachThenRestart);
+  FRIEND_TEST_ALL_PREFIXES(
+      service_worker_version_unittest::ServiceWorkerVersionTest,
+      InstalledScriptsSenderResetOnStopping);
   FRIEND_TEST_ALL_PREFIXES(
       service_worker_version_unittest::ServiceWorkerVersionTest,
       RequestNowTimeout);
@@ -1206,6 +1222,10 @@ class CONTENT_EXPORT ServiceWorkerVersion
   using RequestUUIDToRequestIDMap = std::map<base::Uuid, int>;
   RequestUUIDToRequestIDMap external_request_uuid_to_request_id_;
 
+  // Monotonically increases for accepted external requests in this worker run.
+  // Resets when the worker stops.
+  uint64_t latest_external_keepalive_sequence_number_ = 0;
+
   // External request infos that were issued before this worker reached RUNNING.
   // Info contains UUID and timeout type.
   std::map<base::Uuid, ServiceWorkerExternalRequestTimeoutType>
@@ -1224,6 +1244,9 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   std::unique_ptr<ServiceWorkerInstalledScriptsSender>
       installed_scripts_sender_;
+
+  base::OnceClosureList main_script_response_callbacks_;
+  bool main_script_fetched_ = false;
 
   std::vector<SkipWaitingCallback> pending_skip_waiting_requests_;
   base::TimeTicks skip_waiting_time_;

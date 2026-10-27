@@ -33,6 +33,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
+#include <string_view>
 
 #include "dawn/platform/dawn_platform_export.h"
 
@@ -50,19 +52,23 @@ class DAWN_PLATFORM_EXPORT CachingInterface {
     CachingInterface();
     virtual ~CachingInterface();
 
-    // LoadData has two modes. The first mode is used to get a value which
-    // corresponds to the |key|. The |valueOut| is a caller provided buffer
-    // allocated to the size |valueSize| which is loaded with data of the
-    // size returned. The second mode is used to query for the existence of
-    // the |key| where |valueOut| is nullptr and |valueSize| must be 0.
-    // The return size is non-zero if the |key| exists.
-    virtual size_t LoadData(const void* key, size_t keySize, void* valueOut, size_t valueSize) = 0;
+    // Returns zero if there does not exist a cached entry for |key|, otherwise returns a non-zero
+    // size indicating the size of cached data
+    virtual size_t FindKey(std::string_view key) { return 0; }
 
-    // StoreData puts a |value| in the cache which corresponds to the |key|.
-    virtual void StoreData(const void* key,
-                           size_t keySize,
-                           const void* value,
-                           size_t valueSize) = 0;
+    // Returns zero if unable to load cached entry for |key| into |dest|, otherwise returns number
+    // of bytes written to |dest|.
+    virtual size_t LoadData(std::string_view key, std::span<uint8_t> dest) { return 0; }
+
+    // Stores the data in |src| at the entry specified by |key|.
+    virtual void StoreData(std::string_view key, std::span<const uint8_t> src) {}
+
+    // TODO(503801946): Remove these outdated default implementations and make the newer API above
+    // fully virtual once users are updated.
+    virtual size_t LoadData(const void* key, size_t keySize, void* valueOut, size_t valueSize) {
+        return 0;
+    }
+    virtual void StoreData(const void* key, size_t keySize, const void* value, size_t valueSize) {}
 
   private:
     CachingInterface(const CachingInterface&) = delete;
@@ -138,6 +144,7 @@ enum class Features {
     kWebGPUEnableRangeAnalysisForRobustness,
     kWebGPUUseSpirv14,
     kWebGPUDecomposeUniformBuffers,
+    kWebGPUUseHLSL2021,
 };
 
 class DAWN_PLATFORM_EXPORT Platform {

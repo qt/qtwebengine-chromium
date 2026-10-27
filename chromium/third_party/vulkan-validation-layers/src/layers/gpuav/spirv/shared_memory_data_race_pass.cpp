@@ -15,6 +15,7 @@
 
 #include "shared_memory_data_race_pass.h"
 #include "containers/container_utils.h"
+#include "gpuav/shaders/gpuav_shaders_constants.h"
 #include "module.h"
 #include <spirv/unified1/spirv.hpp>
 #include <iostream>
@@ -66,15 +67,20 @@ void SharedMemoryDataRacePass::CreateFunctionCall(const Function& function, Basi
 
     if (meta.function_idx == INIT_SHADOW) {
         const uint32_t function_result = module_.TakeNextId();
-        const uint32_t length_id = type_manager_.GetConstantUInt32(num_slots_).Id();
+        const uint32_t length_id = type_manager_.GetConstantUInt32(slot_count_).Id();
         block.CreateInstruction(spv::OpFunctionCall, {void_type, function_result, function_def, length_id, work_group_size_id_},
                                 inst_it);
     } else {
-        const uint32_t inst_position = meta.target_instruction->GetPositionOffset();
+        // inst_position is packed into bits [28..12] of the shadow alongside thread_id and
+        // flags so a racing atomicExchange returns the offender's thread and source location
+        // together. Fall back to 0 if it doesn't fit; the host logger treats 0 as "no source
+        // available" rather than print a misleading line.
+        const uint32_t inst_position_raw = meta.target_instruction->GetPositionOffset();
+        const uint32_t inst_position = (inst_position_raw <= glsl::kSharedMemoryDataRace_InstOffsetMax) ? inst_position_raw : 0u;
         const uint32_t inst_position_id = type_manager_.GetConstantUInt32(inst_position).Id();
 
         const uint32_t variable_idx_id = type_manager_.GetConstantUInt32(meta.variable_idx).Id();
-        for (uint32_t i = 0; i < meta.num_elements; ++i) {
+        for (uint32_t i = 0; i < meta.element_count; ++i) {
             const uint32_t function_result = module_.TakeNextId();
             uint32_t start = type_manager_.GetConstantUInt32(meta.start + i).Id();
 
@@ -102,14 +108,13 @@ void SharedMemoryDataRacePass::CreateFunctionCall(const Function& function, Basi
                 // get type of pointee
                 auto ptr_inst = FindInstructionGlobal(function, ptr_id);
                 const Type* ptr_type = type_manager_.FindTypeById(ptr_inst->TypeId());
-                const Type* ptr_elem_type = type_manager_.FindChildType(*ptr_type, 0);
-                const Type* scalar_elem_type = ptr_elem_type;
+                const Type* scalar_elem_type = type_manager_.FindChildType(*ptr_type, 0);
 
                 const Type& uint32_type = type_manager_.GetTypeInt(32, false);
 
                 // if the pointer is to a vector type, scale stride_id by the vector size
-                if (ptr_elem_type->VectorSize()) {
-                    uint32_t vec_size = ptr_elem_type->VectorSize();
+                if (scalar_elem_type->VectorSize() > 0) {
+                    uint32_t vec_size = scalar_elem_type->VectorSize();
 
                     uint32_t next_id = module_.TakeNextId();
                     block.CreateInstruction(spv::OpIMul,
@@ -117,7 +122,7 @@ void SharedMemoryDataRacePass::CreateFunctionCall(const Function& function, Basi
                                             inst_it);
                     stride_id = next_id;
 
-                    scalar_elem_type = type_manager_.FindChildType(*ptr_elem_type, 0);
+                    scalar_elem_type = type_manager_.FindChildType(*scalar_elem_type, 0);
                 }
 
                 // If the size of the scalar element type doesn't match the component size,
@@ -187,25 +192,10 @@ bool SharedMemoryDataRacePass::RequiresInstrumentation(const Function& function,
         return true;
     }
 
-    const uint32_t ptr_id = inst.Operand(0);  // works with both store and loads
-
-    std::vector<const Instruction*> access_chains;
-    const Variable* variable = type_manager_.FindVariableById(ptr_id);
-    const Instruction* access_chain_inst = FindInstructionGlobal(function, ptr_id);
-    // We need to walk down possibly multiple chained OpAccessChains or OpCopyObject to get the variable
-    while (access_chain_inst && access_chain_inst->IsNonPtrAccessChain()) {
-        // inserting in front allows us to walk over the loop from the front
-        access_chains.insert(access_chains.begin(), access_chain_inst);
-        const uint32_t access_chain_base_id = access_chain_inst->Operand(0);
-        variable = type_manager_.FindVariableById(access_chain_base_id);
-        if (variable) {
-            break;  // found
-        }
-        access_chain_inst = FindInstructionGlobal(function, access_chain_base_id);
-    }
-    if (!variable) {
+    const AccessPath access_path = type_manager_.BuildAccessPath(function, inst);
+    if (!access_path.IsValid()) {
         return false;
-    } else if (variable->StorageClass() != spv::StorageClassWorkgroup) {
+    } else if (access_path.variable->StorageClass() != spv::StorageClassWorkgroup) {
         return false;
     }
 
@@ -214,8 +204,8 @@ bool SharedMemoryDataRacePass::RequiresInstrumentation(const Function& function,
 
     // ptr_elem_type will point to the portion of the variable being accessed. Initialize it
     // to the variable's pointee type in case of no access chains.
-    const Type* ptr_elem_type = type_manager_.FindChildType(*type_manager_.FindTypeById(variable->inst_.Word(1)), 0);
-    for (auto ac : access_chains) {
+    const Type* ptr_elem_type = type_manager_.FindChildType(*type_manager_.FindTypeById(access_path.variable->inst_.Word(1)), 0);
+    for (auto ac : access_path.ac_list) {
         auto ptr = FindInstructionGlobal(function, ac->Word(3));
         const Type* base_ptr_type = type_manager_.FindTypeById(ptr->Word(1));
 
@@ -239,16 +229,22 @@ bool SharedMemoryDataRacePass::RequiresInstrumentation(const Function& function,
                     // offset_id += offsetof(struct member idx)
                     auto idx_c = type_manager_.FindConstantById(idx_id);
                     uint32_t idx_u32 = idx_c->GetValueUint32();
-                    uint32_t off = type_manager_.GetNumScalarElementsBeforeCompositeMember(*ptr_elem_type, idx_u32);
+
+                    uint32_t scalar_offset = 0;
+                    for (uint32_t idx_m = 0; idx_m < idx_u32; idx_m++) {
+                        scalar_offset += type_manager_.GetScalarElementCount(*type_manager_.FindChildType(*ptr_elem_type, idx_m));
+                    }
+
                     uint32_t new_id = module_.TakeNextId();
                     block.CreateInstruction(
-                        spv::OpIAdd, {uint32_type.Id(), new_id, offset_id, type_manager_.GetConstantUInt32(off).Id()}, &inst_it);
+                        spv::OpIAdd, {uint32_type.Id(), new_id, offset_id, type_manager_.GetConstantUInt32(scalar_offset).Id()},
+                        &inst_it);
                     offset_id = new_id;
                     ptr_elem_type = type_manager_.FindChildType(*ptr_elem_type, idx_u32);
                 } break;
                 default: {
                     // offset_id += (stride of first member) * idx
-                    uint32_t stride = type_manager_.GetNumScalarElementsBeforeCompositeMember(*ptr_elem_type, 1);
+                    uint32_t stride = type_manager_.GetScalarElementCount(*type_manager_.FindChildType(*ptr_elem_type, 0));
 
                     uint32_t stride_times_idx_id = module_.TakeNextId();
                     block.CreateInstruction(
@@ -265,9 +261,9 @@ bool SharedMemoryDataRacePass::RequiresInstrumentation(const Function& function,
     }
 
     meta.access_chain_idx_id = offset_id;
-    meta.start = slot_start_[variable->Id()];
-    meta.num_elements = type_manager_.GetNumScalarElements(*ptr_elem_type);
-    meta.variable_idx = variable->Id();
+    meta.start = slot_start_[access_path.variable->Id()];
+    meta.element_count = type_manager_.GetScalarElementCount(*ptr_elem_type);
+    meta.variable_idx = access_path.variable->Id();
 
     switch (opcode) {
         case spv::OpLoad:
@@ -278,11 +274,11 @@ bool SharedMemoryDataRacePass::RequiresInstrumentation(const Function& function,
             break;
         case spv::OpCooperativeMatrixLoadKHR:
             meta.function_idx = DO_COOPMAT_LOAD;
-            meta.num_elements = 1;
+            meta.element_count = 1;
             break;
         case spv::OpCooperativeMatrixStoreKHR:
             meta.function_idx = DO_COOPMAT_STORE;
-            meta.num_elements = 1;
+            meta.element_count = 1;
             break;
         default:
             meta.function_idx = DO_ATOMIC;
@@ -355,21 +351,21 @@ bool SharedMemoryDataRacePass::Instrument() {
     // Compute how much shared memory is needed.
     for (const Variable* v : shmem_vars) {
         const uint32_t v_id = v->Id();
-        slot_start_[v_id] = num_slots_;
+        slot_start_[v_id] = slot_count_;
         const Type* pointee_type = v->PointerType(type_manager_);
-        uint32_t num_scalar_elements = type_manager_.GetNumScalarElements(*pointee_type);
-        assert(num_scalar_elements != 0);
-        num_slots_ += num_scalar_elements;
+        uint32_t scalar_elements = type_manager_.GetScalarElementCount(*pointee_type);
+        assert(scalar_elements != 0);
+        slot_count_ += scalar_elements;
 
         shared_memory_size += type_manager_.GetTypeBytesSize(*pointee_type);
     }
 
-    if (num_slots_ == 0) {
+    if (slot_count_ == 0) {
         return false;  // no shared memory being used
     }
 
     // Bail if we would overflow the limit
-    if (shared_memory_size + (num_slots_ * sizeof(uint32_t)) > module_.settings_.max_compute_shared_memory_size) {
+    if (shared_memory_size + (slot_count_ * sizeof(uint32_t)) > module_.settings_.max_compute_shared_memory_size) {
         return false;
     }
 
@@ -378,6 +374,11 @@ bool SharedMemoryDataRacePass::Instrument() {
 
     // Need size to init the shadow memory
     const uint32_t work_group_size = GetWorkgroupSize();
+    // The shadow's thread_id field is 12 bits so this is bound to 4k
+    // But the maxComputeWorkGroupInvocations for 99% of known devices is already under 4k
+    if (work_group_size > glsl::kSharedMemoryDataRace_ThreadIdMask) {
+        return false;
+    }
     work_group_size_id_ = type_manager_.GetConstantUInt32(work_group_size).Id();
 
     // Can safely loop function list as there is no injecting of new Functions until linking time
@@ -430,7 +431,7 @@ bool SharedMemoryDataRacePass::Instrument() {
     // Need to actutally add the shadow array variable type into the module
     if (instrumentations_count_ != 0) {
         const Type& uint32_type = type_manager_.GetTypeInt(32, false);
-        const Constant& array_size = type_manager_.GetConstantUInt32(num_slots_);
+        const Constant& array_size = type_manager_.GetConstantUInt32(slot_count_);
         const Type& uint32_arr_type = type_manager_.GetTypeArray(uint32_type, array_size);
         const Type& uint32_arr_ptr_type = type_manager_.GetTypePointer(spv::StorageClassWorkgroup, uint32_arr_type);
 

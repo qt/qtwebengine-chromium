@@ -17,6 +17,7 @@ android_library("java") {
     "java/src/org/chromium/chrome/browser/tab/SadTab.java",
     "java/src/org/chromium/chrome/browser/tab/SadTabView.java",
     "java/src/org/chromium/chrome/browser/tab/ScopedStorageBatch.java",
+    "java/src/org/chromium/chrome/browser/tab/SendTabToSelfTabCardLabelData.java",
     "java/src/org/chromium/chrome/browser/tab/StorageCollectionSynchronizer.java",
     "java/src/org/chromium/chrome/browser/tab/StorageLoadedData.java",
     "java/src/org/chromium/chrome/browser/tab/StorageRestoreOrchestratorFactory.java",
@@ -33,7 +34,6 @@ android_library("java") {
     "java/src/org/chromium/chrome/browser/tab/TabId.java",
     "java/src/org/chromium/chrome/browser/tab/TabIdManager.java",
     "java/src/org/chromium/chrome/browser/tab/TabLifecycle.java",
-    "java/src/org/chromium/chrome/browser/tab/TabLoadIfNeededCaller.java",
     "java/src/org/chromium/chrome/browser/tab/TabObscuringHandler.java",
     "java/src/org/chromium/chrome/browser/tab/TabObscuringHandlerSupplier.java",
     "java/src/org/chromium/chrome/browser/tab/TabObserver.java",
@@ -70,6 +70,7 @@ android_library("java") {
     "java/src/org/chromium/chrome/browser/tab/state/Serializer.java",
     "java/src/org/chromium/chrome/browser/tab/state/ShoppingPersistedTabData.java",
     "java/src/org/chromium/chrome/browser/tab/state/ShoppingPersistedTabDataService.java",
+    "java/src/org/chromium/chrome/browser/tab/utilities/TabLoadingService.java",
   ]
 
   srcjar_deps = [
@@ -87,6 +88,7 @@ android_library("java") {
     ":critical_persisted_tab_data_proto_java",
     ":java_resources",
     "//base:base_java",
+    "//base:supplier_java",
     "//build/android:build_java",
     "//cc:cc_java",
     "//chrome/browser/android/crypto:java",
@@ -100,6 +102,7 @@ android_library("java") {
     "//chrome/browser/profiles/android:java",
     "//chrome/browser/ui/android/native_page:java",
     "//chrome/browser/ui/android/pdf:java",
+    "//chrome/browser/ui/android/pdf:pdf_info_java",
     "//chrome/browser/ui/android/strings:ui_strings_grd",
     "//chrome/browser/util:java",
     "//components/autofill/android:autofill_features_java",
@@ -177,6 +180,7 @@ proto_java_library("critical_persisted_tab_data_proto_java") {
 robolectric_library("junit") {
   sources = [
     "java/src/org/chromium/chrome/browser/tab/CurrentTabObserverTest.java",
+    "java/src/org/chromium/chrome/browser/tab/SendTabToSelfTabCardLabelDataUnitTest.java",
     "java/src/org/chromium/chrome/browser/tab/TabAssociatedAppTest.java",
     "java/src/org/chromium/chrome/browser/tab/TabContextMenuDataUnitTest.java",
     "java/src/org/chromium/chrome/browser/tab/TabDragStateDataTest.java",
@@ -185,6 +189,7 @@ robolectric_library("junit") {
     "java/src/org/chromium/chrome/browser/tab/TabStateExtractorTest.java",
     "java/src/org/chromium/chrome/browser/tab/TabSupplierObserverTest.java",
     "java/src/org/chromium/chrome/browser/tab/state/PriceDropMetricsLoggerTest.java",
+    "java/src/org/chromium/chrome/browser/tab/utilities/TabLoadingServiceTest.java",
   ]
 
   deps = [
@@ -226,6 +231,7 @@ source_set("tab") {
     "storage_id.h",
     "storage_id_mapping.h",
     "storage_loaded_data.h",
+    "storage_loading_context.h",
     "storage_package.h",
     "storage_pending_updates.h",
     "storage_restore_orchestrator.h",
@@ -266,6 +272,7 @@ source_set("impl") {
     "storage_collection_synchronizer.cc",
     "storage_id.cc",
     "storage_loaded_data.cc",
+    "storage_loading_context.cc",
     "storage_pending_updates.cc",
     "storage_restore_orchestrator.cc",
     "tab_group_collection_data.cc",

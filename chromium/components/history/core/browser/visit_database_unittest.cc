@@ -1242,9 +1242,6 @@ TEST_F(VisitDatabaseTest, GetVisibleVisitsForURL) {
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 TEST_F(VisitDatabaseTest, GetVisibleVisits_ActorVisits) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(kBrowsingHistoryActorIntegrationM2);
-
   const URLID kUrlId1 = 1U;
   VisitRow visit_browsed(
       kUrlId1, Time::Now(), 0,
@@ -1298,9 +1295,6 @@ TEST_F(VisitDatabaseTest, GetVisibleVisits_ActorVisits) {
 }
 
 TEST_F(VisitDatabaseTest, GetVisibleVisits_SeparateBySource) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(kBrowsingHistoryActorIntegrationM2);
-
   const URLID kUrlId = 1U;
   const Time kDay = Time::Now().LocalMidnight() + base::Hours(1);
 
@@ -2353,16 +2347,13 @@ TEST_F(VisitDatabaseTest, ShouldFilterUserAndActorVisits) {
     SCOPED_TRACE(c.name);
     base::test::ScopedFeatureList feature_list;
 
-    std::vector<base::test::FeatureRef> enabled = {
-        history::kBrowsingHistoryActorIntegrationM2};
-    std::vector<base::test::FeatureRef> disabled;
-
     if (c.m3_enabled) {
-      enabled.push_back(history::kBrowsingHistoryActorIntegrationM3);
+      feature_list.InitAndEnableFeature(
+          history::kBrowsingHistoryActorIntegrationM3);
     } else {
-      disabled.push_back(history::kBrowsingHistoryActorIntegrationM3);
+      feature_list.InitAndDisableFeature(
+          history::kBrowsingHistoryActorIntegrationM3);
     }
-    feature_list.InitWithFeatures(enabled, disabled);
 
     QueryOptions options;
     options.include_user_visits = c.include_user;
@@ -2393,5 +2384,84 @@ TEST_F(VisitDatabaseTest, ShouldFilterUserAndActorVisits) {
   }
 }
 #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+
+// Tests for FillVisitRow micro-optimizations ----------------------------------
+
+TEST_F(VisitDatabaseTest, FillVisitRowEmptyReferrer) {
+  // Most visits have no external referrer. Verify the empty-referrer
+  // optimization produces the same default GURL() as before.
+  VisitRow visit(1, Time::Now(), 0, ui::PAGE_TRANSITION_LINK, 0, false, 0);
+  visit.source = SOURCE_BROWSED;
+  // external_referrer_url is default (empty GURL).
+  ASSERT_TRUE(AddVisit(&visit));
+
+  VisitRow fetched;
+  ASSERT_TRUE(GetRowForVisit(visit.visit_id, &fetched));
+  EXPECT_FALSE(fetched.external_referrer_url.is_valid());
+  EXPECT_TRUE(fetched.external_referrer_url.is_empty());
+}
+
+TEST_F(VisitDatabaseTest, FillVisitRowNonEmptyReferrer) {
+  // Verify visits with a real external referrer URL are preserved correctly.
+  VisitRow visit(1, Time::Now(), 0, ui::PAGE_TRANSITION_LINK, 0, false, 0);
+  visit.source = SOURCE_BROWSED;
+  visit.external_referrer_url = GURL("http://referrer.example.com/page");
+  ASSERT_TRUE(AddVisit(&visit));
+
+  VisitRow fetched;
+  ASSERT_TRUE(GetRowForVisit(visit.visit_id, &fetched));
+  EXPECT_EQ(fetched.external_referrer_url,
+            GURL("http://referrer.example.com/page"));
+}
+
+TEST_F(VisitDatabaseTest, FillVisitRowEmptyAppId) {
+  // Most visits have no app_id. Verify the ColumnStringView optimization
+  // correctly leaves app_id as nullopt when the column is empty.
+  VisitRow visit(1, Time::Now(), 0, ui::PAGE_TRANSITION_LINK, 0, false, 0);
+  visit.source = SOURCE_BROWSED;
+  // app_id is default (nullopt).
+  ASSERT_TRUE(AddVisit(&visit));
+
+  VisitRow fetched;
+  ASSERT_TRUE(GetRowForVisit(visit.visit_id, &fetched));
+  EXPECT_FALSE(fetched.app_id.has_value());
+}
+
+TEST_F(VisitDatabaseTest, FillVisitRowNonEmptyAppId) {
+  // Verify visits with an app_id preserve it correctly.
+  VisitRow visit(1, Time::Now(), 0, ui::PAGE_TRANSITION_LINK, 0, false, 0);
+  visit.source = SOURCE_BROWSED;
+  visit.app_id = "com.example.app";
+  ASSERT_TRUE(AddVisit(&visit));
+
+  VisitRow fetched;
+  ASSERT_TRUE(GetRowForVisit(visit.visit_id, &fetched));
+  ASSERT_TRUE(fetched.app_id.has_value());
+  EXPECT_EQ(fetched.app_id.value(), "com.example.app");
+}
+
+TEST_F(VisitDatabaseTest, FillVisitVectorEmplaceBack) {
+  // Add multiple visits and verify FillVisitVector returns them all correctly
+  // (exercises the emplace_back + reserve optimization).
+  URLID url_id = 1;
+  std::vector<VisitID> visit_ids;
+  for (int i = 0; i < 50; i++) {
+    VisitRow visit(url_id, Time::Now() + base::Seconds(i), 0,
+                   ui::PAGE_TRANSITION_LINK, 0, false, 0);
+    visit.source = SOURCE_BROWSED;
+    ASSERT_TRUE(AddVisit(&visit));
+    visit_ids.push_back(visit.visit_id);
+  }
+
+  VisitVector visits;
+  ASSERT_TRUE(GetMostRecentVisitsForURL(
+      url_id, 50, VisitQuery404sPolicy::kInclude404s, &visits));
+  EXPECT_EQ(50u, visits.size());
+
+  // Verify visits are in descending time order.
+  for (size_t i = 1; i < visits.size(); i++) {
+    EXPECT_GE(visits[i - 1].visit_time, visits[i].visit_time);
+  }
+}
 
 }  // namespace history

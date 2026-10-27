@@ -134,7 +134,40 @@ void MojoVideoEncodeAcceleratorService::Initialize(
     return;
   }
 
+  for (const auto& spatial_layer : config.spatial_layers) {
+    if (spatial_layer.width > limits::kMaxDimension ||
+        spatial_layer.height > limits::kMaxDimension ||
+        base::CheckMul<uint64_t>(spatial_layer.width, spatial_layer.height)
+                .ValueOrDefault(std::numeric_limits<uint64_t>::max()) >
+            limits::kMaxCanvas) {
+      MEDIA_LOG(ERROR, media_log_.get())
+          << __func__ << "too large spatial_layer " << spatial_layer.width
+          << "x" << spatial_layer.height;
+      std::move(success_callback)
+          .Run({EncoderStatus::Codes::kEncoderInitializationError});
+      return;
+    }
+    if (spatial_layer.width > config.input_visible_size.width() ||
+        spatial_layer.height > config.input_visible_size.height()) {
+      MEDIA_LOG(ERROR, media_log_.get())
+          << __func__
+          << " spatial layer size is larger than input_visible_size: "
+          << spatial_layer.width << "x" << spatial_layer.height << " vs "
+          << config.input_visible_size.ToString();
+
+      std::move(success_callback)
+          .Run({EncoderStatus::Codes::kEncoderInitializationError});
+      return;
+    }
+  }
+
   encoder_.reset();
+  if (config.framerate == 0) {
+    MEDIA_LOG(ERROR, media_log_.get()) << __func__ << " framerate must be > 0";
+    std::move(success_callback)
+        .Run({EncoderStatus::Codes::kEncoderInitializationError});
+    return;
+  }
   auto encoder_or_error =
       std::move(create_vea_callback_)
           .Run(config, this, gpu_preferences_, gpu_workarounds_, gpu_device_,

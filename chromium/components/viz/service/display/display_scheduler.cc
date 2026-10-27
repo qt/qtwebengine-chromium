@@ -20,6 +20,7 @@
 #include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
+#include "components/viz/service/display/frame_deadline_decider.h"
 #include "components/viz/service/performance_hint/hint_session.h"
 #include "third_party/perfetto/include/perfetto/tracing/track.h"
 #include "ui/gfx/presentation_feedback.h"
@@ -289,9 +290,9 @@ void DisplayScheduler::OnPresentationFeedback(
     // can detect this issue. It currently happens too often to emit a metric
     // or trace for.
     if (feedback.ready_timestamp > target_latch_time) {
-      TRACE_EVENT_INSTANT1("viz", "DisplayScheduler::ReadyAfterTargetLatch",
-                           TRACE_EVENT_SCOPE_THREAD, "delta",
-                           feedback.ready_timestamp - target_latch_time);
+      TRACE_EVENT_INSTANT("viz", "DisplayScheduler::ReadyAfterTargetLatch",
+                          "delta",
+                          feedback.ready_timestamp - target_latch_time);
     }
   }
 }
@@ -309,8 +310,9 @@ bool DisplayScheduler::DrawAndSwap() {
   params.max_pending_swaps = MaxPendingSwaps();
   if (current_begin_frame_args_.possible_deadlines) {
     auto& deadlines = *current_begin_frame_args_.possible_deadlines;
-    auto selected_deadline = deadlines.GetPreferredDeadline();
-
+    auto selected_deadline =
+        deadlines.deadlines[decider_.SelectDeadline(deadlines)];
+    // TODO(crbug.com/500826814): Move this logic into FrameDeadlineDecider.
     if (base::FeatureList::IsEnabled(features::kSelectFutureFrameDeadline)) {
       base::TimeTicks now = NowTicks();
       base::TimeTicks preferred_latch_time =
@@ -509,6 +511,7 @@ void DisplayScheduler::StartObservingBeginFrames() {
 }
 
 void DisplayScheduler::StopObservingBeginFrames() {
+  decider_.OnGoIdle();
   if (observing_begin_frame_source_) {
     begin_frame_source_->RemoveObserver(begin_frame_observer_.get());
     observing_begin_frame_source_ = false;
@@ -562,21 +565,19 @@ DisplayScheduler::AdjustedBeginFrameDeadlineMode() const {
 DisplayScheduler::BeginFrameDeadlineMode
 DisplayScheduler::DesiredBeginFrameDeadlineMode() const {
   if (output_surface_lost_) {
-    TRACE_EVENT_INSTANT0("viz", "Lost output surface",
-                         TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT("viz", "Lost output surface");
     return BeginFrameDeadlineMode::kImmediate;
   }
 
   const int max_pending_swaps = MaxPendingSwaps();
   if (pending_swaps_ >= max_pending_swaps) {
-    TRACE_EVENT_INSTANT2("viz", "Swap throttled", TRACE_EVENT_SCOPE_THREAD,
-                         "pending_swaps", pending_swaps_, "max_pending_swaps",
-                         max_pending_swaps);
+    TRACE_EVENT_INSTANT("viz", "Swap throttled", "pending_swaps",
+                        pending_swaps_, "max_pending_swaps", max_pending_swaps);
     return BeginFrameDeadlineMode::kLate;
   }
 
   if (damage_tracker_->root_frame_missing()) {
-    TRACE_EVENT_INSTANT0("viz", "Root frame missing", TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT("viz", "Root frame missing");
     return BeginFrameDeadlineMode::kLate;
   }
 
@@ -597,25 +598,22 @@ DisplayScheduler::DesiredBeginFrameDeadlineMode() const {
 
   if (all_surfaces_ready &&
       (needs_draw_ || allow_early_deadline_without_draw)) {
-    TRACE_EVENT_INSTANT0("viz", "All active surfaces ready",
-                         TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT("viz", "All active surfaces ready");
     return BeginFrameDeadlineMode::kImmediate;
   }
 
   if (!needs_draw_) {
-    TRACE_EVENT_INSTANT0("viz", "No damage yet", TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT("viz", "No damage yet");
     return BeginFrameDeadlineMode::kLate;
   }
 
   // TODO(mithro): Be smarter about resize deadlines.
   if (damage_tracker_->expecting_root_surface_damage_because_of_resize()) {
-    TRACE_EVENT_INSTANT0("viz", "Entire display damaged",
-                         TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT("viz", "Entire display damaged");
     return BeginFrameDeadlineMode::kLate;
   }
 
-  TRACE_EVENT_INSTANT0("viz", "More damage expected soon",
-                       TRACE_EVENT_SCOPE_THREAD);
+  TRACE_EVENT_INSTANT("viz", "More damage expected soon");
   return BeginFrameDeadlineMode::kRegular;
 }
 
@@ -624,8 +622,7 @@ void DisplayScheduler::ScheduleBeginFrameDeadline() {
 
   // We need to wait for the next BeginFrame before scheduling a deadline.
   if (!inside_begin_frame_deadline_interval_) {
-    TRACE_EVENT_INSTANT0("viz", "Waiting for next BeginFrame",
-                         TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT("viz", "Waiting for next BeginFrame");
     DCHECK(!begin_frame_deadline_timer_.IsRunning());
     return;
   }
@@ -638,8 +635,7 @@ void DisplayScheduler::ScheduleBeginFrameDeadline() {
   // Avoid re-scheduling the deadline if it's already correctly scheduled.
   if (begin_frame_deadline_timer_.IsRunning() &&
       desired_deadline == begin_frame_deadline_task_time_) {
-    TRACE_EVENT_INSTANT0("viz", "Using existing deadline",
-                         TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT("viz", "Using existing deadline");
     return;
   }
 
@@ -648,8 +644,7 @@ void DisplayScheduler::ScheduleBeginFrameDeadline() {
   begin_frame_deadline_timer_.Stop();
 
   if (begin_frame_deadline_task_time_ == base::TimeTicks::Max()) {
-    TRACE_EVENT_INSTANT0("viz", "Using infinite deadline",
-                         TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT("viz", "Using infinite deadline");
     return;
   }
 

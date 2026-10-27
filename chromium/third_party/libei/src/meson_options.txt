@@ -1,0 +1,6 @@
+option('documentation', type: 'array', value: [], choices: ['api', 'protocol'], description: 'Enable documentation builds')
+option('sd-bus-provider', type: 'combo', choices: ['auto', 'libsystemd', 'libelogind', 'basu'], value: 'auto', description: 'Provider of the sd-bus library')
+option('tests', type: 'feature', value: 'auto', description: 'Enable/disable tests')
+option('liboeffis', type: 'feature', value: 'auto', description: 'Build liboeffis.so')
+option('libeis', type: 'feature', value: 'auto', description: 'Build libeis.so')
+option('libei', type: 'feature', value: 'auto', description: 'Build libei.so')

@@ -25,7 +25,7 @@ MessageWrapper::MessageWrapper(MessageIdentifier message_identifier,
                                DismissCallback dismiss_callback)
     : action_callback_(std::move(action_callback)),
       dismiss_callback_(std::move(dismiss_callback)),
-      message_enqueued_(false) {
+      is_in_queue_(false) {
   JNIEnv* env = base::android::AttachCurrentThread();
   java_message_wrapper_ =
       Java_MessageWrapper_create(env, reinterpret_cast<int64_t>(this),
@@ -33,7 +33,14 @@ MessageWrapper::MessageWrapper(MessageIdentifier message_identifier,
 }
 
 MessageWrapper::~MessageWrapper() {
-  CHECK(!message_enqueued_);
+  CHECK(!is_in_queue_);
+  if (java_message_wrapper_) {
+    // Clear the native pointer on the Java side in case the Java object
+    // outlives the C++ object, such as message_wrapper is created but never
+    // enqueued.
+    JNIEnv* env = base::android::AttachCurrentThread();
+    Java_MessageWrapper_clearNativePtr(env, java_message_wrapper_);
+  }
 }
 
 std::u16string MessageWrapper::GetTitle() {
@@ -126,6 +133,29 @@ void MessageWrapper::SetSecondaryButtonMenuText(
       base::android::ConvertUTF16ToJavaString(env, secondary_button_menu_text);
   Java_MessageWrapper_setSecondaryButtonMenuText(env, java_message_wrapper_,
                                                  jsecondary_button_menu_text);
+}
+
+std::u16string MessageWrapper::GetSecondaryIconContentDescription() {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  base::android::ScopedJavaLocalRef<jstring>
+      jsecondary_icon_content_description =
+          Java_MessageWrapper_getSecondaryIconContentDescription(
+              env, java_message_wrapper_);
+  return jsecondary_icon_content_description.is_null()
+             ? std::u16string()
+             : base::android::ConvertJavaStringToUTF16(
+                   jsecondary_icon_content_description);
+}
+
+void MessageWrapper::SetSecondaryIconContentDescription(
+    const std::u16string& secondary_icon_content_description) {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  base::android::ScopedJavaLocalRef<jstring>
+      jsecondary_icon_content_description =
+          base::android::ConvertUTF16ToJavaString(
+              env, secondary_icon_content_description);
+  Java_MessageWrapper_setSecondaryIconContentDescription(
+      env, java_message_wrapper_, jsecondary_icon_content_description);
 }
 
 void MessageWrapper::SetSecondaryMenuMaxSize(SecondaryMenuMaxSize max_size) {
@@ -259,7 +289,7 @@ void MessageWrapper::HandleSecondaryMenuItemSelected(JNIEnv* env, int item_id) {
 
 void MessageWrapper::HandleDismissCallback(JNIEnv* env, int dismiss_reason) {
   // Make sure message dismissed callback is called exactly once.
-  message_enqueued_ = false;
+  is_in_queue_ = false;
   Java_MessageWrapper_clearNativePtr(env, java_message_wrapper_);
   if (!dismiss_callback_.is_null())
     std::move(dismiss_callback_)
@@ -276,7 +306,7 @@ const base::android::JavaRef<jobject>& MessageWrapper::GetJavaMessageWrapper()
 
 void MessageWrapper::SetMessageEnqueued(
     const base::android::JavaRef<jobject>& java_window_android) {
-  message_enqueued_ = true;
+  is_in_queue_ = true;
   java_window_android_ = java_window_android;
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_MessageWrapper_initializeSecondaryMenu(

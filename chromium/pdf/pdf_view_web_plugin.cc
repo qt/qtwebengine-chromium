@@ -129,6 +129,7 @@
 #include "pdf/pdf_ink_metrics_handler.h"
 #include "pdf/pdf_ink_module.h"
 #include "pdf/pdf_ink_module_client.h"
+#include "pdf/pdf_ink_text.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #endif
 
@@ -310,10 +311,25 @@ class PdfViewWebPlugin::PdfInkModuleClientImpl : public PdfInkModuleClient {
   ~PdfInkModuleClientImpl() override = default;
 
   // PdfInkModuleClient:
+  void AddFont(FontId font_id,
+               base::span<const uint8_t> serialized_typeface) override {
+    plugin_->engine_->AddFont(font_id, serialized_typeface);
+  }
+
   void ClearSelection() override { plugin_->engine_->ClearTextSelection(); }
 
   void DiscardStroke(int page_index, InkStrokeId id) override {
     plugin_->engine_->DiscardStroke(page_index, id);
+  }
+
+  void DiscardText(InkTextId id) override { plugin_->engine_->DiscardText(id); }
+
+  void DrawText(int page_index,
+                InkTextId id,
+                base::span<const InkTextInfo> text_info,
+                double pdf_zoom,
+                const InkTextBoxAttributes& attributes) override {
+    plugin_->engine_->DrawText(page_index, id, text_info, pdf_zoom, attributes);
   }
 
   void ExtendSelectionByPoint(const gfx::PointF& point) override {
@@ -373,6 +389,12 @@ class PdfViewWebPlugin::PdfInkModuleClientImpl : public PdfInkModuleClient {
 
   bool IsSelectableTextOrLinkArea(const gfx::PointF& point) override {
     return plugin_->engine_->IsSelectableTextOrLinkArea(point);
+  }
+
+  DocumentInkTextBoxesMap LoadTextAnnotationsFromPdf(
+      GenerateTextIdCallback generate_text_id_callback) override {
+    return plugin_->engine_->LoadTextAnnotationsFromPdf(
+        std::move(generate_text_id_callback));
   }
 
   DocumentV2InkPathShapesMap LoadV2InkPathsFromPdf() override {
@@ -456,6 +478,10 @@ class PdfViewWebPlugin::PdfInkModuleClientImpl : public PdfInkModuleClient {
                           InkStrokeId id,
                           bool active) override {
     plugin_->engine_->UpdateStrokeActive(page_index, id, active);
+  }
+
+  void UpdateTextActiveAndInvalidate(InkTextId id, bool active) override {
+    plugin_->engine_->UpdateTextActiveAndInvalidate(id, active);
   }
 
   int VisiblePageIndexFromPoint(const gfx::PointF& point) override {
@@ -1281,18 +1307,18 @@ void PdfViewWebPlugin::Beep() {
 }
 
 void PdfViewWebPlugin::Alert(const std::string& message) {
-  client_->Alert(blink::WebString::FromUTF8(message));
+  client_->Alert(blink::WebString::FromUtf8(message));
 }
 
 bool PdfViewWebPlugin::Confirm(const std::string& message) {
-  return client_->Confirm(blink::WebString::FromUTF8(message));
+  return client_->Confirm(blink::WebString::FromUtf8(message));
 }
 
 std::string PdfViewWebPlugin::Prompt(const std::string& question,
                                      const std::string& default_answer) {
   return client_
-      ->Prompt(blink::WebString::FromUTF8(question),
-               blink::WebString::FromUTF8(default_answer))
+      ->Prompt(blink::WebString::FromUtf8(question),
+               blink::WebString::FromUtf8(default_answer))
       .Utf8();
 }
 
@@ -1620,7 +1646,7 @@ void PdfViewWebPlugin::SetSelectedText(const std::string& selected_text) {
     return;
   }
 #endif  // BUILDFLAG(ENABLE_PDF_INK2)
-  selected_text_ = blink::WebString::FromUTF8(selected_text);
+  selected_text_ = blink::WebString::FromUtf8(selected_text);
   client_->TextSelectionChanged(selected_text_, /*offset=*/0,
                                 gfx::Range(0, selected_text_.length()));
 }
@@ -3316,8 +3342,7 @@ void PdfViewWebPlugin::LoadAccessibility() {
 }
 
 void PdfViewWebPlugin::ApplyAndObserveRendererPreferences() {
-  if (!features::kPdfInk2TextHighlighting.Get() || IsPrintPreview() ||
-      !Container()) {
+  if (IsPrintPreview() || !Container()) {
     return;
   }
 

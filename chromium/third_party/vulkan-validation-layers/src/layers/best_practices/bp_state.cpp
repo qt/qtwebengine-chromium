@@ -66,9 +66,9 @@ uint32_t ImageSubState::GetLastQueueFamily(uint32_t array_layer, uint32_t mip_le
 }
 
 void ImageSubState::SetupUsages() {
-    usages_.resize(base.create_info.arrayLayers);
+    usages_.resize(base.GetArrayLayers());
     for (auto& mip_vec : usages_) {
-        mip_vec.resize(base.create_info.mipLevels, {IMAGE_SUBRESOURCE_USAGE_BP::UNDEFINED, VK_QUEUE_FAMILY_IGNORED});
+        mip_vec.resize(base.GetMipLevels(), {IMAGE_SUBRESOURCE_USAGE_BP::UNDEFINED, VK_QUEUE_FAMILY_IGNORED});
     }
 }
 
@@ -501,7 +501,7 @@ void CommandBufferSubState::RecordClearColorImage(vvl::Image& image_state, VkIma
     }
 
     if (validator.VendorCheckEnabled(kBPVendorNVIDIA)) {
-        validator.RecordClearColor(image_state.create_info.format, *color_values);
+        validator.RecordClearColor(image_state.GetFormat(), *color_values);
     }
 }
 
@@ -626,7 +626,15 @@ void CommandBufferSubState::RecordActionCommand(LastBound& last_bound, const Loc
     validator.UpdateBoundDescriptorSets(*this, last_bound, loc);
 }
 
-void CommandBufferSubState::RecordSetEvent(VkEvent event, VkPipelineStageFlags2, const VkDependencyInfo*) {
+void CommandBufferSubState::RecordSetEvent(VkEvent event, VkPipelineStageFlags) {
+    if (auto* signaling_info = vvl::Find(event_signaling_state, event)) {
+        signaling_info->signaled = true;
+    } else {
+        event_signaling_state.emplace(event, bp_state::CommandBufferSubState::SignalingInfo(true));
+    }
+}
+
+void CommandBufferSubState::RecordSetEvent2(VkEvent event, const VkDependencyInfo&) {
     if (auto* signaling_info = vvl::Find(event_signaling_state, event)) {
         signaling_info->signaled = true;
     } else {
@@ -919,8 +927,8 @@ void CommandBufferSubState::RecordBindZcullScopeNV(VkImage depth_attachment, con
     auto image_state = base.dev_data.Get<vvl::Image>(depth_attachment);
     ASSERT_AND_RETURN(image_state);
 
-    const uint32_t mip_levels = image_state->create_info.mipLevels;
-    const uint32_t array_layers = image_state->create_info.arrayLayers;
+    const uint32_t mip_levels = image_state->GetMipLevels();
+    const uint32_t array_layers = image_state->GetArrayLayers();
 
     auto& tree = nv.zcull_per_image[depth_attachment];
     if (tree.states.empty()) {

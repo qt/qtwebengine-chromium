@@ -32,11 +32,11 @@
 #include "cc/layers/texture_layer_impl.h"
 #include "cc/test/fake_impl_task_runner_provider.h"
 #include "cc/test/fake_layer_tree_frame_sink.h"
-#include "cc/test/fake_layer_tree_host_client.h"
+#include "cc/test/fake_layer_tree_host_delegate.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/layer_test_common.h"
 #include "cc/test/layer_tree_test.h"
-#include "cc/test/stub_layer_tree_host_single_thread_client.h"
+#include "cc/test/stub_layer_tree_host_single_thread_delegate.h"
 #include "cc/test/test_layer_tree_frame_sink.h"
 #include "cc/test/test_task_graph_runner.h"
 #include "cc/trees/layer_tree_host.h"
@@ -113,7 +113,7 @@ viz::TransferableResource MakeFakeSoftwareResource() {
 class MockLayerTreeHost : public LayerTreeHost {
  public:
   static std::unique_ptr<MockLayerTreeHost> Create(
-      FakeLayerTreeHostClient* client,
+      FakeLayerTreeHostDelegate* client,
       TaskGraphRunner* task_graph_runner,
       MutatorHost* mutator_host) {
     LayerTreeHost::InitParams params;
@@ -132,11 +132,11 @@ class MockLayerTreeHost : public LayerTreeHost {
  private:
   explicit MockLayerTreeHost(LayerTreeHost::InitParams params)
       : LayerTreeHost(std::move(params), CompositorMode::SINGLE_THREADED) {
-    InitializeSingleThreaded(&single_thread_client_,
+    InitializeSingleThreaded(&single_thread_delegate_,
                              base::SingleThreadTaskRunner::GetCurrentDefault());
   }
 
-  StubLayerTreeHostSingleThreadClient single_thread_client_;
+  StubLayerTreeHostSingleThreadDelegate single_thread_delegate_;
 };
 
 class MockReleaseCallback {
@@ -211,7 +211,7 @@ class TextureLayerTest : public testing::Test {
     Mock::VerifyAndClearExpectations(layer_tree_host_.get());
     EXPECT_CALL(*layer_tree_host_, SetNeedsCommit()).Times(AnyNumber());
 
-    animation_host_->SetMutatorHostClient(nullptr);
+    animation_host_->SetMutatorHostDelegate(nullptr);
     layer_tree_host_->SetRootLayer(nullptr);
     layer_tree_host_ = nullptr;
     animation_host_ = nullptr;
@@ -220,7 +220,7 @@ class TextureLayerTest : public testing::Test {
   std::unique_ptr<MockLayerTreeHost> layer_tree_host_;
   std::unique_ptr<AnimationHost> animation_host_;
   FakeImplTaskRunnerProvider task_runner_provider_;
-  FakeLayerTreeHostClient fake_client_;
+  FakeLayerTreeHostDelegate fake_client_;
   TestTaskGraphRunner task_graph_runner_;
   std::unique_ptr<LayerTreeFrameSink> layer_tree_frame_sink_;
   FakeLayerTreeHostImpl host_impl_;
@@ -248,7 +248,7 @@ TEST_F(TextureLayerTest, CheckPropertyChangeCausesCorrectBehavior) {
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetBlendBackgroundColor(true));
 }
 
-class RunOnCommitLayerTreeHostClient : public FakeLayerTreeHostClient {
+class RunOnCommitLayerTreeHostDelegate : public FakeLayerTreeHostDelegate {
  public:
   void set_run_on_commit_and_draw(base::OnceClosure c) {
     run_on_commit_and_draw_ = std::move(c);
@@ -270,8 +270,8 @@ TEST_F(TextureLayerTest, ShutdownWithResource) {
     bool gpu = i == 0;
     SCOPED_TRACE(gpu);
     // Make our own LayerTreeHost for this test so we can control the lifetime.
-    StubLayerTreeHostSingleThreadClient single_thread_client;
-    RunOnCommitLayerTreeHostClient client;
+    StubLayerTreeHostSingleThreadDelegate single_thread_delegate;
+    RunOnCommitLayerTreeHostDelegate client;
     LayerTreeHost::InitParams params;
     params.client = &client;
     params.task_graph_runner = &task_graph_runner_;
@@ -279,7 +279,7 @@ TEST_F(TextureLayerTest, ShutdownWithResource) {
     LayerTreeSettings settings;
     params.settings = &settings;
     params.main_task_runner = base::SingleThreadTaskRunner::GetCurrentDefault();
-    auto host = LayerTreeHost::CreateSingleThreaded(&single_thread_client,
+    auto host = LayerTreeHost::CreateSingleThreaded(&single_thread_delegate,
                                                     std::move(params));
 
     client.SetLayerTreeHost(host.get());
@@ -315,9 +315,9 @@ TEST_F(TextureLayerTest, ShutdownWithResource) {
     host = nullptr;
 
     // We have to wait for the posted ReleaseCallback to run.
-    // Our LayerTreeHostClient makes a FakeLayerTreeFrameSink which returns all
-    // resources when its detached, so the resources will not be in use in the
-    // display compositor, and will be returned as not lost.
+    // Our LayerTreeHostDelegate makes a FakeLayerTreeFrameSink which returns
+    // all resources when its detached, so the resources will not be in use in
+    // the display compositor, and will be returned as not lost.
     test_resource.ExpectRelease();
     {
       base::RunLoop loop;
@@ -815,7 +815,7 @@ class TextureLayerImplWithResourceTest : public TextureLayerTest {
     return will_draw;
   }
 
-  FakeLayerTreeHostClient fake_client_;
+  FakeLayerTreeHostDelegate fake_client_;
 };
 
 // Test conditions for results of TextureLayerImpl::WillDraw under
@@ -1426,15 +1426,15 @@ class StubTextureLayerClient : public TextureLayerClient {
   }
 };
 
-class SoftwareLayerTreeHostClient : public StubLayerTreeHostClient {
+class SoftwareLayerTreeHostDelegate : public StubLayerTreeHostDelegate {
  public:
-  SoftwareLayerTreeHostClient() = default;
-  ~SoftwareLayerTreeHostClient() override = default;
+  SoftwareLayerTreeHostDelegate() = default;
+  ~SoftwareLayerTreeHostDelegate() override = default;
 
   // Caller responsible for unsetting this and maintaining the host's lifetime.
   void SetLayerTreeHost(LayerTreeHost* host) { host_ = host; }
 
-  // StubLayerTreeHostClient overrides.
+  // StubLayerTreeHostDelegate overrides.
   void RequestNewLayerTreeFrameSink() override {
     auto sink = FakeLayerTreeFrameSink::CreateSoftware();
     frame_sink_ = sink.get();

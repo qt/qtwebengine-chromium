@@ -45,6 +45,9 @@ SISO="1"
 SHARED=""
 INSTALL=""
 UBSAN=""
+ANDROID_ABI="arm64-v8a"
+ANDROID_NDK=""
+ANDROID_PLATFORM="android-28"
 
 function show_usage() {
   echo "setup-build [-f] $POSSIBLE_BUILD_SYSTEMS $POSSIBLE_BUILD_TYPES $POSSIBLE_BUILD_ARCHS [fuzz|fuzzer]"
@@ -70,6 +73,11 @@ function show_usage() {
   echo "  remoteexec    Use siso to improve compile time (the default)"
   echo "  shared        Build shared libs (cmake only)"
   echo "  ubsan         Enable undefined behaviour sanitizer"
+  echo "  ndk=\$NDK_DIR The Android NDK root directory."
+  echo "                Targets Android. Only usable with cmake."
+  echo "  abi=\$ANDROID_API"
+  echo "                The Android target ABI. Default is arm64-v8a"
+  echo " "
   if [[ ! -z "$1" ]]; then
     echo
     echo "error: $1"
@@ -145,6 +153,12 @@ for arg in "$@"; do
     "ubsan")
       UBSAN=1
     ;;
+    ndk=*)
+      ANDROID_NDK="${arg:4}"
+    ;;
+    abi=*)
+      ANDROID_ABI="${arg:4}"
+    ;;
     "--help" | "-help" | "-h")
       show_usage
     ;;
@@ -166,8 +180,22 @@ if [[ ( -n "$UBSAN" ) && ( "$BUILD_SYSTEM-$BUILD_TYPE" == "gn-debug" ) ]]; then
   show_usage "the gn build does not support ubsan with debug builds: use a release build instead"
 fi
 
+if [[ -n "$ANDROID_NDK" ]]; then
+  if [[ "$BUILD_SYSTEM" != "cmake" ]]; then
+    show_usage "the Android build only works with cmake"
+  fi
+  if [[ -n "$BUILD_ARCH" ]]; then
+    show_usage "Don't specify a target CPU with the Android build"
+  fi
+  if ! grep "^Android NDK" <"$ANDROID_NDK/README.md" >/dev/null; then
+    show_usage "Invalid Android NDK directory: $ANDROID_NDK"
+  fi
+fi
+
 BUILD_DIR="$BUILD_SYSTEM-$BUILD_TYPE"
-if [[ ! -z "$BUILD_ARCH" ]]; then
+if [[ -n "$ANDROID_NDK" ]]; then
+  BUILD_DIR+="-$ANDROID_ABI"
+elif [[ ! -z "$BUILD_ARCH" ]]; then
   BUILD_DIR+="-$BUILD_ARCH"
 fi
 if [[ ! -z "$BUILD_FUZZER" ]]; then
@@ -275,17 +303,26 @@ case $BUILD_SYSTEM in
         show_usage "invalid build type '$BUILD_TYPE'"
       ;;
     esac
-    case $BUILD_ARCH in
-      "")
-      ;;
-      "x86")
-        CMAKE_FLAGS+=("-DCMAKE_CXX_FLAGS=-m32")
-        CMAKE_FLAGS+=("-DCMAKE_C_FLAGS=-m32")
-      ;;
-      *)
-        show_usage "invalid build architecture '$BUILD_ARCH'"
-      ;;
-    esac
+    if [[ -n "$ANDROID_NDK" ]]; then
+      CMAKE_FLAGS+="-DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake"
+      CMAKE_FLAGS+="-DANDROID_ABI=$ANDROID_ABI"
+      CMAKE_FLAGS+="-DANDROID_PLATFORM=$ANDROID_PLATFORM"
+      CMAKE_FLAGS+="-DDAWN_USE_X11=OFF"
+      CMAKE_FLAGS+="-DDAWN_ENABLE_VULKAN=ON"
+      CMAKE_FLAGS+="-DDAWN_ENABLE_OPENGLES=ON"
+    else
+      case $BUILD_ARCH in
+        "")
+        ;;
+        "x86")
+          CMAKE_FLAGS+=("-DCMAKE_CXX_FLAGS=-m32")
+          CMAKE_FLAGS+=("-DCMAKE_C_FLAGS=-m32")
+        ;;
+        *)
+          show_usage "invalid build architecture '$BUILD_ARCH'"
+        ;;
+      esac
+    fi
     if [[ -n "$UBSAN" ]]; then
       CMAKE_FLAGS+=("-DDAWN_ENABLE_UBSAN=ON")
     fi

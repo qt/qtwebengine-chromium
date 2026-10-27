@@ -108,6 +108,7 @@ class DummyFrameOwner final : public GarbageCollected<DummyFrameOwner>,
   void AddResourceTiming(mojom::blink::ResourceTimingInfoPtr) override {}
   void DispatchLoad() override {}
   void NaturalSizingInfoChanged() override {}
+  void ClearLastNaturalSizingInfo() override {}
   void SetNeedsOcclusionTracking(bool) override {}
   AtomicString BrowsingContextContainerName() const override {
     return AtomicString();
@@ -169,6 +170,21 @@ class FixedPolicySubresourceFilter : public WebDocumentSubresourceFilter {
   LoadPolicy GetLoadPolicyForWebTransportConnect(const WebURL&) override {
     return policy_;
   }
+
+  void GetDomainSelectors(
+      std::vector<std::string_view>& out_selectors) override {}
+  bool MaybeHasStyleRule(uint32_t hash) override { return false; }
+  void GetSelectorsByClass(
+      std::string_view class_name,
+      uint32_t hash,
+      std::vector<std::string_view>& out_selectors) override {}
+  void GetSelectorsById(std::string_view id_name,
+                        uint32_t hash,
+                        std::vector<std::string_view>& out_selectors) override {
+  }
+  bool IsDryRun() override { return false; }
+  uint64_t GetRulesetId() const override { return 0; }
+
   void ReportDisallowedLoad() override { ++*filtered_load_counter_; }
 
   bool ShouldLogToConsole() override { return false; }
@@ -2084,7 +2100,7 @@ class FrameFetchContextNetworkGuardrailsTest
     custom_response.SetExpectedContentLength(image_size);
 
     url_test_helpers::RegisterMockedURLLoadWithCustomResponse(
-        kImageUrl, WebString::FromUTF8(temp_file_path.AsUTF8Unsafe()),
+        kImageUrl, WebString::FromUtf8(temp_file_path.AsUTF8Unsafe()),
         custom_response, chunk_size);
 
     ResourceFetcher* fetcher = document->Fetcher();
@@ -2210,7 +2226,7 @@ TEST_F(FrameFetchContextNetworkGuardrailsTest, ChunkedLoading) {
   response.SetMimeType("text/plain");
   response.SetExpectedContentLength(kTotalSize);
   url_test_helpers::RegisterMockedURLLoadWithCustomResponse(
-      test_url, WebString::FromUTF8(temp_file.AsUTF8Unsafe()), response,
+      test_url, WebString::FromUtf8(temp_file.AsUTF8Unsafe()), response,
       kChunkSize);
 
   auto* mock_client = MakeGarbageCollected<MockRawResourceClient>();

@@ -41,6 +41,11 @@
 #include "url/gurl.h"
 #include "url/origin.h"
 
+#if BUILDFLAG(IS_ANDROID)
+#include "components/webauthn/android/cred_man_support.h"
+#include "components/webauthn/android/webauthn_cred_man_delegate.h"
+#endif  // BUILDFLAG(IS_ANDROID)
+
 namespace actor_login {
 
 using autofill::FormData;
@@ -217,6 +222,10 @@ class ActorLoginCredentialFillerTest : public ::testing::TestWithParam<bool> {
         .WillByDefault(Return(false));
     ON_CALL(mock_client_, GetAffiliationService)
         .WillByDefault(Return(&mock_affiliation_service_));
+#if BUILDFLAG(IS_ANDROID)
+    webauthn::WebAuthnCredManDelegate::override_cred_man_support_for_testing(
+        webauthn::CredManSupport::DISABLED);
+#endif  // BUILDFLAG(IS_ANDROID)
   }
 
   base::WeakPtr<MockActorLoginQualityLogger> mqls_logger() {
@@ -310,6 +319,36 @@ TEST_P(ActorLoginCredentialFillerTest, NoSigninForm_NoManagers) {
   EXPECT_CALL(
       mock_mqls_logger_,
       AddAttemptLoginDetails(EqualsAttemptLoginDetails(expected_details)));
+  // Destroy the filler, because it sends logs in the destructor.
+  filler.reset();
+}
+
+TEST_P(ActorLoginCredentialFillerTest, PrimaryPageChanged) {
+  url::Origin origin = url::Origin::Create(GURL(kLoginUrl));
+  Credential credential =
+      CreateTestCredential(kTestUsername, origin.GetURL(), origin);
+
+  base::test::TestFuture<LoginStatusResultOrError> future;
+  auto filler = std::make_unique<ActorLoginCredentialFiller>(
+      origin, credential, should_store_permission(), &mock_client_,
+      mqls_logger(), base::TimeTicks::Now(), mock_is_task_in_focus_.Get(),
+      future.GetCallback());
+
+  AttemptLoginDetails expected_details;
+  expected_details.set_outcome(
+      optimization_guide::proto::
+          ActorLoginQuality_AttemptLoginDetails_AttemptLoginOutcome_FILLING_INTERRUPTED_BY_PAGE_CHANGE);
+  expected_details.set_attempt_login_time_ms(0);
+  EXPECT_CALL(
+      mock_mqls_logger_,
+      AddAttemptLoginDetails(EqualsAttemptLoginDetails(expected_details)));
+
+  filler->OnPrimaryPageChanged();
+
+  ASSERT_TRUE(future.Get().has_value());
+  EXPECT_EQ(future.Get().value(),
+            LoginStatusResult::kErrorPageChangedDuringFilling);
+
   // Destroy the filler, because it sends logs in the destructor.
   filler.reset();
 }
@@ -518,6 +557,47 @@ TEST_P(ActorLoginCredentialFillerTest, DontFillGroupedMatch) {
   EXPECT_EQ(future.Get().value(), LoginStatusResult::kErrorInvalidCredential);
 }
 
+TEST_P(ActorLoginCredentialFillerTest, FillsAndroidAppCredentialMatch) {
+  const url::Origin origin =
+      url::Origin::Create(GURL("https://example.com/login"));
+  Credential credential = CreateTestCredential(kTestUsername, GURL(), origin);
+  credential.signon_realm = "android://hash@com.example.android";
+
+  const FormData form_data = CreateSigninFormData(origin.GetURL());
+
+  std::vector<password_manager::PasswordForm> saved_forms;
+  PasswordForm form = CreateSavedPasswordForm(GURL(), kTestUsername);
+  form.signon_realm = "android://hash@com.example.android";
+  saved_forms.push_back(std::move(form));
+  form_fetcher_.SetBestMatches(saved_forms);
+
+  std::vector<std::unique_ptr<PasswordFormManager>> form_managers;
+  form_managers.push_back(CreateFormManagerWithParsedForm(origin, form_data));
+  const PasswordForm* parsed_form = form_managers[0]->GetParsedObservedForm();
+
+  base::test::TestFuture<LoginStatusResultOrError> future;
+  ActorLoginCredentialFiller filler(
+      origin, credential, should_store_permission(), &mock_client_,
+      mqls_logger(), base::TimeTicks::Now(), mock_is_task_in_focus_.Get(),
+      future.GetCallback());
+
+  EXPECT_CALL(mock_form_cache_, GetFormManagers)
+      .WillRepeatedly(Return(base::span(form_managers)));
+
+  EXPECT_CALL(mock_driver_,
+              FillField(parsed_form->username_element_renderer_id, _, _, _))
+      .WillOnce(RunOnceCallback<3>(true));
+  EXPECT_CALL(mock_driver_,
+              FillField(parsed_form->password_element_renderer_id, _, _, _))
+      .WillOnce(RunOnceCallback<3>(true));
+
+  filler.AttemptLogin(&mock_password_manager_);
+  const LoginStatusResultOrError& result = future.Get();
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(result.value(),
+            LoginStatusResult::kSuccessUsernameAndPasswordFilled);
+}
+
 TEST_P(ActorLoginCredentialFillerTest,
        InvalidCredential_SuppliedCredentialRequestOriginDiffers) {
   const url::Origin main_frame_origin =
@@ -689,10 +769,6 @@ TEST_P(ActorLoginCredentialFillerTest, FillsNestedFrameWithSameOrigin) {
 
 TEST_P(ActorLoginCredentialFillerTest,
        FillsSameSiteDirectChildOfPrimaryMainFrame) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeatures(
-      {password_manager::features::kActorLoginSameSiteIframeSupport}, {});
-
   const url::Origin main_frame_origin =
       url::Origin::Create(GURL("https://example.com"));
   const url::Origin form_origin =
@@ -738,56 +814,9 @@ TEST_P(ActorLoginCredentialFillerTest,
             LoginStatusResult::kSuccessUsernameAndPasswordFilled);
 }
 
-TEST_P(ActorLoginCredentialFillerTest,
-       DoesntFillSameSiteDirectChildOfPrimaryMainFrame_FeatureOff) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeatures(
-      {}, {password_manager::features::kActorLoginSameSiteIframeSupport});
 
-  const url::Origin main_frame_origin =
-      url::Origin::Create(GURL("https://example.com"));
-  const url::Origin form_origin =
-      url::Origin::Create(GURL("https://login.example.com"));
-  const Credential credential = CreateTestCredential(
-      kTestUsername, form_origin.GetURL(), main_frame_origin);
-  const FormData form_data = CreateSigninFormData(form_origin.GetURL());
-  SetSavedCredential(&form_fetcher_, form_origin.GetURL(), kTestUsername,
-                     kTestPassword);
-
-  ON_CALL(mock_driver_, GetLastCommittedOrigin)
-      .WillByDefault(ReturnRef(form_origin));
-  // Form is not in the main frame, but in a frame that is the direct child
-  // of the main frame.
-  ON_CALL(mock_driver_, IsInPrimaryMainFrame).WillByDefault(Return(false));
-  EXPECT_CALL(mock_driver_, IsDirectChildOfPrimaryMainFrame)
-      .WillRepeatedly(Return(true));
-
-  std::vector<std::unique_ptr<PasswordFormManager>> form_managers;
-  form_managers.push_back(
-      CreateFormManagerWithParsedForm(form_origin, form_data, mock_driver_));
-  const PasswordForm* parsed_form = form_managers[0]->GetParsedObservedForm();
-
-  base::test::TestFuture<LoginStatusResultOrError> future;
-  ActorLoginCredentialFiller filler(
-      main_frame_origin, credential, should_store_permission(), &mock_client_,
-      mqls_logger(), base::TimeTicks::Now(), mock_is_task_in_focus_.Get(),
-      future.GetCallback());
-  EXPECT_CALL(mock_form_cache_, GetFormManagers)
-      .WillOnce(Return(base::span(form_managers)));
-
-  EXPECT_FALSE(parsed_form->username_element_renderer_id.is_null());
-  EXPECT_FALSE(parsed_form->password_element_renderer_id.is_null());
-
-  filler.AttemptLogin(&mock_password_manager_);
-  const LoginStatusResultOrError& result = future.Get();
-  ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result.value(), LoginStatusResult::kErrorNoSigninForm);
-}
 
 TEST_P(ActorLoginCredentialFillerTest, DoesntFillSameSiteNestedIframe) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeatures(
-      {password_manager::features::kActorLoginSameSiteIframeSupport}, {});
   const url::Origin origin = url::Origin::Create(GURL("https://example.com/"));
   const url::Origin same_site_origin =
       url::Origin::Create(GURL("https://login.example.com"));
@@ -939,10 +968,6 @@ TEST_P(ActorLoginCredentialFillerTest,
 
 TEST_P(ActorLoginCredentialFillerTest,
        FillUsernameAndPasswordInAllEligibleFieldsAcrossSameSiteIframes) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      password_manager::features::kActorLoginSameSiteIframeSupport);
-
   const url::Origin origin = url::Origin::Create(GURL("https://example.com"));
   const url::Origin same_site_origin_1 =
       url::Origin::Create(GURL("https://login.example.com"));
@@ -1389,39 +1414,46 @@ TEST_P(
             LoginStatusResult::kSuccessUsernameAndPasswordFilled);
 }
 
-// The main frame is always preferred for filling.
+// The primary main frame form is preferred for filling if both the main frame
+// and iframe forms only have PSL matches.
 TEST_P(ActorLoginCredentialFillerTest,
-       FillMainFrameFormEvenIfIframeHasExactMatch) {
+       PreferMainFrameOverIframeIfBothArePSLMatches) {
   const url::Origin origin = url::Origin::Create(GURL("https://example.com"));
   const url::Origin iframe_origin =
       url::Origin::Create(GURL("https://login.example.com"));
-  // The credential request origin is the iframe origin, where it matches
-  // exactly.
+  const url::Origin saved_origin =
+      url::Origin::Create(GURL("https://login2.example.com"));
+
+  // The credential request origin is the saved origin.
   const Credential credential =
-      CreateTestCredential(kTestUsername, iframe_origin.GetURL(), origin);
+      CreateTestCredential(kTestUsername, saved_origin.GetURL(), origin);
   const FormData main_frame_form_data = CreateSigninFormData(origin.GetURL());
   const FormData iframe_form_data =
       CreateSigninFormData(iframe_origin.GetURL());
 
-  // Saved credential is an exact match for the iframe.
-  SetSavedCredential(&form_fetcher_, iframe_origin.GetURL(), kTestUsername,
-                     kTestPassword);
-
-  // Main frame form manager uses a separate fetcher where this credential is a
-  // PSL match (since iframe_origin same-site with main frame origin).
+  // Main frame form manager uses a fetcher where this credential is a PSL
+  // match.
   FakeFormFetcher main_frame_fetcher;
   PasswordForm main_frame_psl_match = CreateSavedPasswordForm(
-      iframe_origin.GetURL(), kTestUsername, kTestPassword);
+      saved_origin.GetURL(), kTestUsername, kTestPassword);
   main_frame_psl_match.match_type =
       password_manager::PasswordForm::MatchType::kPSL;
   main_frame_fetcher.SetBestMatches({main_frame_psl_match});
+
+  // Iframe form manager also uses a fetcher where this credential is a PSL
+  // match.
+  FakeFormFetcher iframe_fetcher;
+  PasswordForm iframe_psl_match = CreateSavedPasswordForm(
+      saved_origin.GetURL(), kTestUsername, kTestPassword);
+  iframe_psl_match.match_type = password_manager::PasswordForm::MatchType::kPSL;
+  iframe_fetcher.SetBestMatches({iframe_psl_match});
 
   std::vector<std::unique_ptr<PasswordFormManager>> form_managers;
   MockStubPasswordManagerDriver iframe_driver;
   form_managers.push_back(CreateFormManagerWithParsedForm(
       origin, main_frame_form_data, mock_driver_, main_frame_fetcher));
   form_managers.push_back(CreateFormManagerWithParsedForm(
-      iframe_origin, iframe_form_data, iframe_driver, form_fetcher_));
+      iframe_origin, iframe_form_data, iframe_driver, iframe_fetcher));
 
   const PasswordForm* parsed_form_main =
       form_managers[0]->GetParsedObservedForm();
@@ -1443,10 +1475,12 @@ TEST_P(ActorLoginCredentialFillerTest,
   ON_CALL(iframe_driver, IsNestedWithinFencedFrame)
       .WillByDefault(Return(false));
 
+  ON_CALL(mock_driver_, CheckViewAreaVisible)
+      .WillByDefault(WithArg<1>(&PostResponse<true>));
   ON_CALL(iframe_driver, CheckViewAreaVisible)
       .WillByDefault(WithArg<1>(&PostResponse<true>));
 
-  // Main frame form is filled (even though it is only a PSL match).
+  // The main frame form (with PSL match) is filled because it is preferred.
   EXPECT_CALL(
       mock_driver_,
       FillField(parsed_form_main->username_element_renderer_id,
@@ -1460,8 +1494,7 @@ TEST_P(ActorLoginCredentialFillerTest,
                 autofill::FieldPropertiesFlags::kAutofilledActorLogin, _))
       .WillOnce(RunOnceCallback<3>(true));
 
-  // Iframe form (with the exact match) should NOT be filled because the primary
-  // main frame form is prioritized and we skip iframes.
+  // The iframe form (also with PSL match) should NOT be filled.
   EXPECT_CALL(iframe_driver, FillField).Times(0);
 
   filler->AttemptLogin(&mock_password_manager_);
@@ -1473,9 +1506,6 @@ TEST_P(ActorLoginCredentialFillerTest,
 
 TEST_P(ActorLoginCredentialFillerTest,
        DoesntFillUsernameAndPasswordThatAreNotBestMatch) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      password_manager::features::kActorLoginSameSiteIframeSupport);
   const url::Origin origin = url::Origin::Create(GURL("https://example.com"));
   main_frame_origin_ = origin;
   const url::Origin same_site_origin_1 =
@@ -1569,9 +1599,6 @@ TEST_P(ActorLoginCredentialFillerTest,
 
 TEST_P(ActorLoginCredentialFillerTest,
        FillUsernameAndPasswordInAllEligibleFieldsPreferMainframe) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      password_manager::features::kActorLoginSameSiteIframeSupport);
   const url::Origin origin = url::Origin::Create(GURL("https://example.com"));
   const url::Origin same_site_origin_1 =
       url::Origin::Create(GURL("https://login.example.com"));
@@ -1789,11 +1816,6 @@ TEST_P(ActorLoginCredentialFillerTest, StoresPermissionWhenFillingAllFields) {
 }
 
 TEST_P(ActorLoginCredentialFillerTest, FillOnlyUsernameInAllEligibleFields) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeatures(
-      /*enabled_features=*/{},
-      /*disabled_features=*/{
-          password_manager::features::kActorLoginFieldVisibilityCheck});
   const url::Origin origin = url::Origin::Create(GURL(kLoginUrl));
   const Credential credential =
       CreateTestCredential(kTestUsername, origin.GetURL(), origin);
@@ -1878,14 +1900,14 @@ TEST_P(ActorLoginCredentialFillerTest, FillOnlyUsernameInAllEligibleFields) {
           ActorLoginQuality_AttemptLoginDetails_AttemptLoginOutcome_SUCCESS);
   expected_details.set_attempt_login_time_ms(attempt_login_time);
 
-  // The async check is not executed, so there are only details
-  // about the form data.
-  *expected_details.add_parsed_form_details()->mutable_form_data() =
-      CreateExpectedFormData(*parsed_form);
-  *expected_details.add_parsed_form_details()->mutable_form_data() =
-      CreateExpectedFormData(*username_only_parsed_form);
-  *expected_details.add_parsed_form_details()->mutable_form_data() =
-      CreateExpectedFormData(*password_only_parsed_form);
+  *expected_details.add_parsed_form_details() = CreateExpectedLoginFormDetails(
+      *parsed_form, /*is_username_visible=*/true, /*is_password_visible=*/true);
+  *expected_details.add_parsed_form_details() = CreateExpectedLoginFormDetails(
+      *username_only_parsed_form, /*is_username_visible=*/true,
+      /*is_password_visible=*/false);
+  *expected_details.add_parsed_form_details() = CreateExpectedLoginFormDetails(
+      *password_only_parsed_form, /*is_username_visible=*/false,
+      /*is_password_visible=*/true);
 
   FillingFormResult* form_result1 = expected_details.add_filling_form_result();
   *form_result1->mutable_form_data() = CreateExpectedFormData(*parsed_form);
@@ -2149,7 +2171,7 @@ TEST_P(ActorLoginCredentialFillerTest, FillingIsDisabled) {
   AttemptLoginDetails expected_details;
   expected_details.set_outcome(
       optimization_guide::proto::
-          ActorLoginQuality_AttemptLoginDetails_AttemptLoginOutcome_UNSPECIFIED);
+          ActorLoginQuality_AttemptLoginDetails_AttemptLoginOutcome_FILLING_NOT_ALLOWED);
   expected_details.set_attempt_login_time_ms(0);
   EXPECT_CALL(
       mock_mqls_logger_,
@@ -2211,9 +2233,6 @@ TEST_P(ActorLoginCredentialFillerTest, RequestsReauthBeforeFillingAllFields) {
 
 TEST_P(ActorLoginCredentialFillerTest,
        FillAllFields_OnlyUsernamesVisible_AsyncVisibilityCheck) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      password_manager::features::kActorLoginFieldVisibilityCheck);
   const url::Origin origin = url::Origin::Create(GURL(kLoginUrl));
   const Credential credential =
       CreateTestCredential(kTestUsername, origin.GetURL(), origin);
@@ -2329,10 +2348,6 @@ TEST_P(ActorLoginCredentialFillerTest,
 
 TEST_P(ActorLoginCredentialFillerTest,
        FillAllFields_OnlyPasswordsVisible_AsyncVisibilityCheck) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      password_manager::features::kActorLoginFieldVisibilityCheck);
-
   const url::Origin origin = url::Origin::Create(GURL(kLoginUrl));
   const Credential credential =
       CreateTestCredential(kTestUsername, origin.GetURL(), origin);
@@ -2446,9 +2461,6 @@ TEST_P(ActorLoginCredentialFillerTest,
 
 TEST_P(ActorLoginCredentialFillerTest,
        UsernameAndPasswordFieldAreNotVisible_AsyncCheck) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      password_manager::features::kActorLoginFieldVisibilityCheck);
   const url::Origin origin = url::Origin::Create(GURL(kLoginUrl));
   const Credential credential =
       CreateTestCredential(kTestUsername, origin.GetURL(), origin);
@@ -2498,9 +2510,6 @@ TEST_P(ActorLoginCredentialFillerTest,
 
 TEST_P(ActorLoginCredentialFillerTest,
        TaskNotInFocus_ReturnsErrorBeforeReauth) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      password_manager::features::kActorLoginReauthTaskRefocus);
   const url::Origin origin = url::Origin::Create(GURL(kLoginUrl));
   const Credential credential =
       CreateTestCredential(kTestUsername, origin.GetURL(), origin);
@@ -2544,60 +2553,6 @@ TEST_P(ActorLoginCredentialFillerTest,
   filler.reset();
 }
 
-TEST_P(ActorLoginCredentialFillerTest,
-       TaskNotFocused_NoErrorBeforeReauthIfFlagDisabled) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndDisableFeature(
-      password_manager::features::kActorLoginReauthTaskRefocus);
-  const url::Origin origin = url::Origin::Create(GURL(kLoginUrl));
-  const Credential credential =
-      CreateTestCredential(kTestUsername, origin.GetURL(), origin);
-  const FormData form_data = CreateSigninFormData(origin.GetURL());
-
-  // Make sure a saved credential with a matching username exists.
-  SetSavedCredential(&form_fetcher_, origin.GetURL(), kTestUsername,
-                     kTestPassword);
-
-  // Simulate a signin form existing on the page.
-  std::vector<std::unique_ptr<PasswordFormManager>> form_managers;
-  form_managers.push_back(CreateFormManagerWithParsedForm(origin, form_data));
-
-  base::test::TestFuture<LoginStatusResultOrError> future;
-  ON_CALL(mock_is_task_in_focus_, Run).WillByDefault(Return(false));
-  auto filler = std::make_unique<ActorLoginCredentialFiller>(
-      origin, credential, should_store_permission(), &mock_client_,
-      mqls_logger(), base::TimeTicks::Now(), mock_is_task_in_focus_.Get(),
-      future.GetCallback());
-  EXPECT_CALL(mock_form_cache_, GetFormManagers)
-      .WillRepeatedly(Return(base::span(form_managers)));
-
-  MockDeviceAuthenticator* weak_device_authenticator =
-      SetUpDeviceAuthenticatorToRequireReauth(mock_client_);
-
-  // Check that the authenticator is invoked before filling.
-  // Simulate a failed re-auth since we're not interested in the rest of
-  // the flow.
-  EXPECT_CALL(*weak_device_authenticator, AuthenticateWithMessage)
-      .WillOnce(RunOnceCallback<1>(false));
-
-  filler->AttemptLogin(&mock_password_manager_);
-  const LoginStatusResultOrError& result = future.Get();
-  ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result.value(), LoginStatusResult::kErrorDeviceReauthFailed);
-  AttemptLoginDetails expected_details;
-  expected_details.set_outcome(
-      optimization_guide::proto::
-          ActorLoginQuality_AttemptLoginDetails_AttemptLoginOutcome_REAUTH_FAILED);
-  expected_details.set_attempt_login_time_ms(0);
-  *expected_details.add_parsed_form_details() = CreateExpectedLoginFormDetails(
-      *form_managers[0]->GetParsedObservedForm(), /*is_username_visible=*/true,
-      /*is_password_visible=*/true);
-  EXPECT_CALL(
-      mock_mqls_logger_,
-      AddAttemptLoginDetails(EqualsAttemptLoginDetails(expected_details)));
-  // Destroy the filler, because it sends logs in the destructor.
-  filler.reset();
-}
 
 TEST_P(ActorLoginCredentialFillerTest, DoesntFillIfReauthFails) {
   const url::Origin origin = url::Origin::Create(GURL(kLoginUrl));
@@ -2716,9 +2671,6 @@ TEST_P(ActorLoginCredentialFillerTest, AffiliatedOrigin_FillSuccess) {
 
 TEST_P(ActorLoginCredentialFillerTest,
        UsesChosenAffiliatedCredentialOverExactMatch) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      password_manager::features::kActorLoginPermissionsUseStrongAffiliations);
 
   // The origin where the credential is being filled.
   url::Origin current_origin = url::Origin::Create(GURL("https://example.com"));
@@ -2782,13 +2734,6 @@ TEST_P(ActorLoginCredentialFillerTest,
 
 TEST_P(ActorLoginCredentialFillerTest,
        UsesChosenAffiliatedCredentialOverExactMatch_InIframe) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeatures(
-      /*enabled_features=*/
-      {password_manager::features::kActorLoginSameSiteIframeSupport,
-       password_manager::features::kActorLoginPermissionsUseStrongAffiliations},
-      /*disabled_features=*/{});
-
   // The origin where the credential is being filled.
   url::Origin current_origin = url::Origin::Create(GURL("https://example.com"));
   // The origin where the form is in.
@@ -2883,6 +2828,64 @@ TEST_P(ActorLoginCredentialFillerTest, UnrelatedOrigin_FillFails) {
   EXPECT_CALL(mock_form_cache_, GetFormManagers).Times(0);
   filler->AttemptLogin(&mock_password_manager_);
   const LoginStatusResultOrError& result = future.Get();
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(result.value(), LoginStatusResult::kErrorInvalidCredential);
+}
+
+// Test that the filler doesn't fill the main frame if there is a PSL match.
+// This might happen if the page changes in between the call to
+// `GetCredentials` and `AttemptLogin`.
+TEST_P(ActorLoginCredentialFillerTest,
+       DoesntFillMainFramePSLMatchIfPersistentPermissionIsSet) {
+  const url::Origin main_frame_origin =
+      url::Origin::Create(GURL("https://bad.example.com"));
+  const url::Origin saved_origin =
+      url::Origin::Create(GURL("https://login.example.com"));
+
+  // The credential being passed has persistent permission, meaning it was
+  // automatically selected because the user permanently allowed it for the
+  // exact/affiliated origin (login.example.com).
+  Credential credential = CreateTestCredential(
+      kTestUsername, saved_origin.GetURL(), main_frame_origin);
+  credential.has_persistent_permission = true;
+
+  const FormData form_data = CreateSigninFormData(main_frame_origin.GetURL());
+
+  // Create a saved credential that matches the main frame origin ONLY via PSL.
+  // The credential was saved on login.example.com.
+  password_manager::PasswordForm saved_form = CreateSavedPasswordForm(
+      saved_origin.GetURL(), kTestUsername, kTestPassword);
+  saved_form.match_type = password_manager::PasswordForm::MatchType::kPSL;
+  form_fetcher_.SetBestMatches({saved_form});
+
+  ON_CALL(mock_driver_, GetLastCommittedOrigin)
+      .WillByDefault(ReturnRef(main_frame_origin));
+  // Set IsInPrimaryMainFrame to return true, otherwise IsLoginFormAsync won't
+  // run.
+  ON_CALL(mock_driver_, IsInPrimaryMainFrame).WillByDefault(Return(true));
+
+  std::vector<std::unique_ptr<PasswordFormManager>> form_managers;
+  form_managers.push_back(CreateFormManagerWithParsedForm(
+      main_frame_origin, form_data, mock_driver_));
+
+  EXPECT_CALL(mock_driver_,
+              CheckViewAreaVisible(form_data.fields()[0].renderer_id(), _))
+      .WillOnce(WithArg<1>(&PostResponse<true>));
+  EXPECT_CALL(mock_driver_,
+              CheckViewAreaVisible(form_data.fields()[1].renderer_id(), _))
+      .WillOnce(WithArg<1>(&PostResponse<true>));
+
+  base::test::TestFuture<LoginStatusResultOrError> future;
+  ActorLoginCredentialFiller filler(
+      main_frame_origin, credential, should_store_permission(), &mock_client_,
+      mqls_logger(), base::TimeTicks::Now(), mock_is_task_in_focus_.Get(),
+      future.GetCallback());
+  EXPECT_CALL(mock_form_cache_, GetFormManagers)
+      .WillRepeatedly(Return(base::span(form_managers)));
+
+  filler.AttemptLogin(&mock_password_manager_);
+  const LoginStatusResultOrError& result = future.Get();
+
   ASSERT_TRUE(result.has_value());
   EXPECT_EQ(result.value(), LoginStatusResult::kErrorInvalidCredential);
 }

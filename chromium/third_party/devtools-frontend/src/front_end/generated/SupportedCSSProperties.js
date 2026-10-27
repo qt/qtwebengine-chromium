@@ -420,10 +420,10 @@ export const generatedProperties = [
    "column-height",
    "column-rule-break",
    "column-rule-color",
-   "column-rule-edge-inset-end",
-   "column-rule-edge-inset-start",
-   "column-rule-interior-inset-end",
-   "column-rule-interior-inset-start",
+   "column-rule-inset-cap-end",
+   "column-rule-inset-cap-start",
+   "column-rule-inset-junction-end",
+   "column-rule-inset-junction-start",
    "column-rule-style",
    "column-rule-visibility-items",
    "column-rule-width",
@@ -469,6 +469,7 @@ export const generatedProperties = [
    "flex-basis",
    "flex-direction",
    "flex-grow",
+   "flex-line-count",
    "flex-shrink",
    "flex-wrap",
    "float",
@@ -512,6 +513,7 @@ export const generatedProperties = [
    "grid-template-areas",
    "grid-template-columns",
    "grid-template-rows",
+   "hanging-punctuation",
    "hash",
    "height",
    "hostname",
@@ -651,10 +653,10 @@ export const generatedProperties = [
    "row-gap",
    "row-rule-break",
    "row-rule-color",
-   "row-rule-edge-inset-end",
-   "row-rule-edge-inset-start",
-   "row-rule-interior-inset-end",
-   "row-rule-interior-inset-start",
+   "row-rule-inset-cap-end",
+   "row-rule-inset-cap-start",
+   "row-rule-inset-junction-end",
+   "row-rule-inset-junction-start",
    "row-rule-style",
    "row-rule-visibility-items",
    "row-rule-width",
@@ -665,6 +667,7 @@ export const generatedProperties = [
    "rx",
    "ry",
    "scale",
+   "scroll-axis-lock",
    "scroll-behavior",
    "scroll-initial-target",
    "scroll-margin-block-end",
@@ -729,6 +732,7 @@ export const generatedProperties = [
    "text-decoration-color",
    "text-decoration-line",
    "text-decoration-skip-ink",
+   "text-decoration-skip-spaces",
    "text-decoration-style",
    "text-decoration-thickness",
    "text-emphasis-color",
@@ -1073,7 +1077,7 @@ export const generatedProperties = [
  {
   "inherited": true,
   "keywords": [
-   "auto",
+   "ellipsis",
    "no-ellipsis"
   ],
   "name": "block-ellipsis"
@@ -1741,68 +1745,68 @@ export const generatedProperties = [
  },
  {
   "longhands": [
-   "column-rule-edge-inset-start",
-   "column-rule-edge-inset-end"
-  ],
-  "name": "column-rule-edge-inset"
- },
- {
-  "inherited": false,
-  "keywords": [
-   "overlap-join"
-  ],
-  "name": "column-rule-edge-inset-end"
- },
- {
-  "inherited": false,
-  "keywords": [
-   "overlap-join"
-  ],
-  "name": "column-rule-edge-inset-start"
- },
- {
-  "longhands": [
-   "column-rule-edge-inset-start",
-   "column-rule-edge-inset-end",
-   "column-rule-interior-inset-start",
-   "column-rule-interior-inset-end"
+   "column-rule-inset-cap-start",
+   "column-rule-inset-cap-end",
+   "column-rule-inset-junction-start",
+   "column-rule-inset-junction-end"
   ],
   "name": "column-rule-inset"
  },
  {
   "longhands": [
-   "column-rule-edge-inset-end",
-   "column-rule-interior-inset-end"
+   "column-rule-inset-cap-start",
+   "column-rule-inset-cap-end"
+  ],
+  "name": "column-rule-inset-cap"
+ },
+ {
+  "inherited": false,
+  "keywords": [
+   "overlap-join"
+  ],
+  "name": "column-rule-inset-cap-end"
+ },
+ {
+  "inherited": false,
+  "keywords": [
+   "overlap-join"
+  ],
+  "name": "column-rule-inset-cap-start"
+ },
+ {
+  "longhands": [
+   "column-rule-inset-cap-end",
+   "column-rule-inset-junction-end"
   ],
   "name": "column-rule-inset-end"
  },
  {
   "longhands": [
-   "column-rule-edge-inset-start",
-   "column-rule-interior-inset-start"
+   "column-rule-inset-junction-start",
+   "column-rule-inset-junction-end"
   ],
-  "name": "column-rule-inset-start"
+  "name": "column-rule-inset-junction"
+ },
+ {
+  "inherited": false,
+  "keywords": [
+   "overlap-join"
+  ],
+  "name": "column-rule-inset-junction-end"
+ },
+ {
+  "inherited": false,
+  "keywords": [
+   "overlap-join"
+  ],
+  "name": "column-rule-inset-junction-start"
  },
  {
   "longhands": [
-   "column-rule-interior-inset-start",
-   "column-rule-interior-inset-end"
+   "column-rule-inset-cap-start",
+   "column-rule-inset-junction-start"
   ],
-  "name": "column-rule-interior-inset"
- },
- {
-  "inherited": false,
-  "keywords": [
-   "overlap-join"
-  ],
-  "name": "column-rule-interior-inset-end"
- },
- {
-  "inherited": false,
-  "keywords": [
-   "overlap-join"
-  ],
-  "name": "column-rule-interior-inset-start"
+  "name": "column-rule-inset-start"
  },
  {
   "keywords": [
@@ -1823,7 +1827,7 @@ export const generatedProperties = [
   "inherited": false,
   "keywords": [
    "all",
-   "auto",
+   "normal",
    "around",
    "between"
   ],
@@ -1942,11 +1946,39 @@ export const generatedProperties = [
  },
  {
   "keywords": [
-   "auto",
+   "normal",
    "collapse",
    "-webkit-legacy"
   ],
   "name": "continue"
+ },
+ {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-top-left-radius",
+   "corner-top-left-shape",
+   "border-top-right-radius",
+   "corner-top-right-shape",
+   "border-bottom-right-radius",
+   "corner-bottom-right-shape",
+   "border-bottom-left-radius",
+   "corner-bottom-left-shape"
+  ],
+  "name": "corner"
+ },
+ {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-end-start-radius",
+   "corner-end-start-shape",
+   "border-end-end-radius",
+   "corner-end-end-shape"
+  ],
+  "name": "corner-block-end"
  },
  {
   "longhands": [
@@ -1956,11 +1988,45 @@ export const generatedProperties = [
   "name": "corner-block-end-shape"
  },
  {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-start-start-radius",
+   "corner-start-start-shape",
+   "border-start-end-radius",
+   "corner-start-end-shape"
+  ],
+  "name": "corner-block-start"
+ },
+ {
   "longhands": [
    "corner-start-start-shape",
    "corner-start-end-shape"
   ],
   "name": "corner-block-start-shape"
+ },
+ {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-bottom-left-radius",
+   "corner-bottom-left-shape",
+   "border-bottom-right-radius",
+   "corner-bottom-right-shape"
+  ],
+  "name": "corner-bottom"
+ },
+ {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-bottom-left-radius",
+   "corner-bottom-left-shape"
+  ],
+  "name": "corner-bottom-left"
  },
  {
   "keywords": [
@@ -1972,6 +2038,16 @@ export const generatedProperties = [
    "square"
   ],
   "name": "corner-bottom-left-shape"
+ },
+ {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-bottom-right-radius",
+   "corner-bottom-right-shape"
+  ],
+  "name": "corner-bottom-right"
  },
  {
   "keywords": [
@@ -1992,10 +2068,42 @@ export const generatedProperties = [
   "name": "corner-bottom-shape"
  },
  {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-end-end-radius",
+   "corner-end-end-shape"
+  ],
+  "name": "corner-end-end"
+ },
+ {
   "name": "corner-end-end-shape"
  },
  {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-end-start-radius",
+   "corner-end-start-shape"
+  ],
+  "name": "corner-end-start"
+ },
+ {
   "name": "corner-end-start-shape"
+ },
+ {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-start-end-radius",
+   "corner-start-end-shape",
+   "border-end-end-radius",
+   "corner-end-end-shape"
+  ],
+  "name": "corner-inline-end"
  },
  {
   "longhands": [
@@ -2005,6 +2113,18 @@ export const generatedProperties = [
   "name": "corner-inline-end-shape"
  },
  {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-start-start-radius",
+   "corner-start-start-shape",
+   "border-end-start-radius",
+   "corner-end-start-shape"
+  ],
+  "name": "corner-inline-start"
+ },
+ {
   "longhands": [
    "corner-start-start-shape",
    "corner-end-start-shape"
@@ -2012,11 +2132,35 @@ export const generatedProperties = [
   "name": "corner-inline-start-shape"
  },
  {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-top-left-radius",
+   "corner-top-left-shape",
+   "border-bottom-left-radius",
+   "corner-bottom-left-shape"
+  ],
+  "name": "corner-left"
+ },
+ {
   "longhands": [
    "corner-top-left-shape",
    "corner-bottom-left-shape"
   ],
   "name": "corner-left-shape"
+ },
+ {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-top-right-radius",
+   "corner-top-right-shape",
+   "border-bottom-right-radius",
+   "corner-bottom-right-shape"
+  ],
+  "name": "corner-right"
  },
  {
   "longhands": [
@@ -2035,10 +2179,52 @@ export const generatedProperties = [
   "name": "corner-shape"
  },
  {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-start-end-radius",
+   "corner-start-end-shape"
+  ],
+  "name": "corner-start-end"
+ },
+ {
   "name": "corner-start-end-shape"
  },
  {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-start-start-radius",
+   "corner-start-start-shape"
+  ],
+  "name": "corner-start-start"
+ },
+ {
   "name": "corner-start-start-shape"
+ },
+ {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-top-left-radius",
+   "corner-top-left-shape",
+   "border-top-right-radius",
+   "corner-top-right-shape"
+  ],
+  "name": "corner-top"
+ },
+ {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-top-left-radius",
+   "corner-top-left-shape"
+  ],
+  "name": "corner-top-left"
  },
  {
   "keywords": [
@@ -2050,6 +2236,16 @@ export const generatedProperties = [
    "square"
   ],
   "name": "corner-top-left-shape"
+ },
+ {
+  "keywords": [
+   "normal"
+  ],
+  "longhands": [
+   "border-top-right-radius",
+   "corner-top-right-shape"
+  ],
+  "name": "corner-top-right"
  },
  {
   "keywords": [
@@ -2068,22 +2264,6 @@ export const generatedProperties = [
    "corner-top-right-shape"
   ],
   "name": "corner-top-shape"
- },
- {
-  "keywords": [
-   "normal"
-  ],
-  "longhands": [
-   "border-top-left-radius",
-   "corner-top-left-shape",
-   "border-top-right-radius",
-   "corner-top-right-shape",
-   "border-bottom-right-radius",
-   "corner-bottom-right-shape",
-   "border-bottom-left-radius",
-   "corner-bottom-left-shape"
-  ],
-  "name": "corners"
  },
  {
   "keywords": [
@@ -2305,6 +2485,9 @@ export const generatedProperties = [
  },
  {
   "name": "flex-grow"
+ },
+ {
+  "name": "flex-line-count"
  },
  {
   "name": "flex-shrink"
@@ -2779,6 +2962,16 @@ export const generatedProperties = [
   "name": "grid-template-rows"
  },
  {
+  "inherited": true,
+  "keywords": [
+   "none",
+   "first",
+   "last",
+   "allow-end"
+  ],
+  "name": "hanging-punctuation"
+ },
+ {
   "name": "hash"
  },
  {
@@ -3230,7 +3423,7 @@ export const generatedProperties = [
  },
  {
   "keywords": [
-   "none"
+   "auto"
   ],
   "name": "max-lines"
  },
@@ -3482,6 +3675,7 @@ export const generatedProperties = [
  {
   "keywords": [
    "auto",
+   "chain",
    "contain",
    "none"
   ],
@@ -3490,6 +3684,7 @@ export const generatedProperties = [
  {
   "keywords": [
    "auto",
+   "chain",
    "contain",
    "none"
   ],
@@ -3822,68 +4017,68 @@ export const generatedProperties = [
  },
  {
   "longhands": [
-   "row-rule-edge-inset-start",
-   "row-rule-edge-inset-end"
-  ],
-  "name": "row-rule-edge-inset"
- },
- {
-  "inherited": false,
-  "keywords": [
-   "overlap-join"
-  ],
-  "name": "row-rule-edge-inset-end"
- },
- {
-  "inherited": false,
-  "keywords": [
-   "overlap-join"
-  ],
-  "name": "row-rule-edge-inset-start"
- },
- {
-  "longhands": [
-   "row-rule-edge-inset-start",
-   "row-rule-edge-inset-end",
-   "row-rule-interior-inset-start",
-   "row-rule-interior-inset-end"
+   "row-rule-inset-cap-start",
+   "row-rule-inset-cap-end",
+   "row-rule-inset-junction-start",
+   "row-rule-inset-junction-end"
   ],
   "name": "row-rule-inset"
  },
  {
   "longhands": [
-   "row-rule-edge-inset-end",
-   "row-rule-interior-inset-end"
+   "row-rule-inset-cap-start",
+   "row-rule-inset-cap-end"
+  ],
+  "name": "row-rule-inset-cap"
+ },
+ {
+  "inherited": false,
+  "keywords": [
+   "overlap-join"
+  ],
+  "name": "row-rule-inset-cap-end"
+ },
+ {
+  "inherited": false,
+  "keywords": [
+   "overlap-join"
+  ],
+  "name": "row-rule-inset-cap-start"
+ },
+ {
+  "longhands": [
+   "row-rule-inset-cap-end",
+   "row-rule-inset-junction-end"
   ],
   "name": "row-rule-inset-end"
  },
  {
   "longhands": [
-   "row-rule-edge-inset-start",
-   "row-rule-interior-inset-start"
+   "row-rule-inset-junction-start",
+   "row-rule-inset-junction-end"
   ],
-  "name": "row-rule-inset-start"
+  "name": "row-rule-inset-junction"
+ },
+ {
+  "inherited": false,
+  "keywords": [
+   "overlap-join"
+  ],
+  "name": "row-rule-inset-junction-end"
+ },
+ {
+  "inherited": false,
+  "keywords": [
+   "overlap-join"
+  ],
+  "name": "row-rule-inset-junction-start"
  },
  {
   "longhands": [
-   "row-rule-interior-inset-start",
-   "row-rule-interior-inset-end"
+   "row-rule-inset-cap-start",
+   "row-rule-inset-junction-start"
   ],
-  "name": "row-rule-interior-inset"
- },
- {
-  "inherited": false,
-  "keywords": [
-   "overlap-join"
-  ],
-  "name": "row-rule-interior-inset-end"
- },
- {
-  "inherited": false,
-  "keywords": [
-   "overlap-join"
-  ],
-  "name": "row-rule-interior-inset-start"
+  "name": "row-rule-inset-start"
  },
  {
   "keywords": [
@@ -3904,7 +4099,7 @@ export const generatedProperties = [
   "inherited": false,
   "keywords": [
    "all",
-   "auto",
+   "normal",
    "around",
    "between"
   ],
@@ -3932,7 +4127,7 @@ export const generatedProperties = [
   "inherited": true,
   "keywords": [
    "auto",
-   "none"
+   "spaces"
   ],
   "name": "ruby-overhang"
  },
@@ -3971,52 +4166,52 @@ export const generatedProperties = [
  },
  {
   "longhands": [
-   "row-rule-edge-inset-start",
-   "row-rule-edge-inset-end",
-   "column-rule-edge-inset-start",
-   "column-rule-edge-inset-end"
-  ],
-  "name": "rule-edge-inset"
- },
- {
-  "longhands": [
-   "row-rule-edge-inset-start",
-   "row-rule-edge-inset-end",
-   "row-rule-interior-inset-start",
-   "row-rule-interior-inset-end",
-   "column-rule-edge-inset-start",
-   "column-rule-edge-inset-end",
-   "column-rule-interior-inset-start",
-   "column-rule-interior-inset-end"
+   "row-rule-inset-cap-start",
+   "row-rule-inset-cap-end",
+   "row-rule-inset-junction-start",
+   "row-rule-inset-junction-end",
+   "column-rule-inset-cap-start",
+   "column-rule-inset-cap-end",
+   "column-rule-inset-junction-start",
+   "column-rule-inset-junction-end"
   ],
   "name": "rule-inset"
  },
  {
   "longhands": [
-   "column-rule-edge-inset-end",
-   "column-rule-interior-inset-end",
-   "row-rule-edge-inset-end",
-   "row-rule-interior-inset-end"
+   "row-rule-inset-cap-start",
+   "row-rule-inset-cap-end",
+   "column-rule-inset-cap-start",
+   "column-rule-inset-cap-end"
+  ],
+  "name": "rule-inset-cap"
+ },
+ {
+  "longhands": [
+   "column-rule-inset-cap-end",
+   "column-rule-inset-junction-end",
+   "row-rule-inset-cap-end",
+   "row-rule-inset-junction-end"
   ],
   "name": "rule-inset-end"
  },
  {
   "longhands": [
-   "column-rule-edge-inset-start",
-   "column-rule-interior-inset-start",
-   "row-rule-edge-inset-start",
-   "row-rule-interior-inset-start"
+   "row-rule-inset-junction-start",
+   "row-rule-inset-junction-end",
+   "column-rule-inset-junction-start",
+   "column-rule-inset-junction-end"
   ],
-  "name": "rule-inset-start"
+  "name": "rule-inset-junction"
  },
  {
   "longhands": [
-   "row-rule-interior-inset-start",
-   "row-rule-interior-inset-end",
-   "column-rule-interior-inset-start",
-   "column-rule-interior-inset-end"
+   "column-rule-inset-cap-start",
+   "column-rule-inset-junction-start",
+   "row-rule-inset-cap-start",
+   "row-rule-inset-junction-start"
   ],
-  "name": "rule-interior-inset"
+  "name": "rule-inset-start"
  },
  {
   "inherited": false,
@@ -4061,6 +4256,13 @@ export const generatedProperties = [
  },
  {
   "name": "scale"
+ },
+ {
+  "keywords": [
+   "auto",
+   "none"
+  ],
+  "name": "scroll-axis-lock"
  },
  {
   "keywords": [
@@ -4512,6 +4714,16 @@ export const generatedProperties = [
   "name": "text-decoration-skip-ink"
  },
  {
+  "inherited": true,
+  "keywords": [
+   "none",
+   "start",
+   "end",
+   "all"
+  ],
+  "name": "text-decoration-skip-spaces"
+ },
+ {
   "keywords": [
    "solid",
    "double",
@@ -4553,6 +4765,7 @@ export const generatedProperties = [
   "name": "text-emphasis-style"
  },
  {
+  "inherited": true,
   "name": "text-fit"
  },
  {
@@ -5296,7 +5509,7 @@ export const generatedPropertyValues = {
  },
  "block-ellipsis": {
   "values": [
-   "auto",
+   "ellipsis",
    "no-ellipsis"
   ]
  },
@@ -5626,22 +5839,22 @@ export const generatedPropertyValues = {
    "currentcolor"
   ]
  },
- "column-rule-edge-inset-end": {
+ "column-rule-inset-cap-end": {
   "values": [
    "overlap-join"
   ]
  },
- "column-rule-edge-inset-start": {
+ "column-rule-inset-cap-start": {
   "values": [
    "overlap-join"
   ]
  },
- "column-rule-interior-inset-end": {
+ "column-rule-inset-junction-end": {
   "values": [
    "overlap-join"
   ]
  },
- "column-rule-interior-inset-start": {
+ "column-rule-inset-junction-start": {
   "values": [
    "overlap-join"
   ]
@@ -5663,7 +5876,7 @@ export const generatedPropertyValues = {
  "column-rule-visibility-items": {
   "values": [
    "all",
-   "auto",
+   "normal",
    "around",
    "between"
   ]
@@ -5739,9 +5952,34 @@ export const generatedPropertyValues = {
  },
  "continue": {
   "values": [
-   "auto",
+   "normal",
    "collapse",
    "-webkit-legacy"
+  ]
+ },
+ "corner": {
+  "values": [
+   "normal"
+  ]
+ },
+ "corner-block-end": {
+  "values": [
+   "normal"
+  ]
+ },
+ "corner-block-start": {
+  "values": [
+   "normal"
+  ]
+ },
+ "corner-bottom": {
+  "values": [
+   "normal"
+  ]
+ },
+ "corner-bottom-left": {
+  "values": [
+   "normal"
   ]
  },
  "corner-bottom-left-shape": {
@@ -5754,6 +5992,11 @@ export const generatedPropertyValues = {
    "square"
   ]
  },
+ "corner-bottom-right": {
+  "values": [
+   "normal"
+  ]
+ },
  "corner-bottom-right-shape": {
   "values": [
    "notch",
@@ -5762,6 +6005,56 @@ export const generatedPropertyValues = {
    "round",
    "squircle",
    "square"
+  ]
+ },
+ "corner-end-end": {
+  "values": [
+   "normal"
+  ]
+ },
+ "corner-end-start": {
+  "values": [
+   "normal"
+  ]
+ },
+ "corner-inline-end": {
+  "values": [
+   "normal"
+  ]
+ },
+ "corner-inline-start": {
+  "values": [
+   "normal"
+  ]
+ },
+ "corner-left": {
+  "values": [
+   "normal"
+  ]
+ },
+ "corner-right": {
+  "values": [
+   "normal"
+  ]
+ },
+ "corner-start-end": {
+  "values": [
+   "normal"
+  ]
+ },
+ "corner-start-start": {
+  "values": [
+   "normal"
+  ]
+ },
+ "corner-top": {
+  "values": [
+   "normal"
+  ]
+ },
+ "corner-top-left": {
+  "values": [
+   "normal"
   ]
  },
  "corner-top-left-shape": {
@@ -5774,6 +6067,11 @@ export const generatedPropertyValues = {
    "square"
   ]
  },
+ "corner-top-right": {
+  "values": [
+   "normal"
+  ]
+ },
  "corner-top-right-shape": {
   "values": [
    "notch",
@@ -5782,11 +6080,6 @@ export const generatedPropertyValues = {
    "round",
    "squircle",
    "square"
-  ]
- },
- "corners": {
-  "values": [
-   "normal"
   ]
  },
  "counter-increment": {
@@ -6244,6 +6537,14 @@ export const generatedPropertyValues = {
    "none"
   ]
  },
+ "hanging-punctuation": {
+  "values": [
+   "none",
+   "first",
+   "last",
+   "allow-end"
+  ]
+ },
  "height": {
   "values": [
    "auto",
@@ -6469,7 +6770,7 @@ export const generatedPropertyValues = {
  },
  "max-lines": {
   "values": [
-   "none"
+   "auto"
   ]
  },
  "max-width": {
@@ -6616,6 +6917,7 @@ export const generatedPropertyValues = {
  "overscroll-behavior-x": {
   "values": [
    "auto",
+   "chain",
    "contain",
    "none"
   ]
@@ -6623,6 +6925,7 @@ export const generatedPropertyValues = {
  "overscroll-behavior-y": {
   "values": [
    "auto",
+   "chain",
    "contain",
    "none"
   ]
@@ -6787,22 +7090,22 @@ export const generatedPropertyValues = {
    "currentcolor"
   ]
  },
- "row-rule-edge-inset-end": {
+ "row-rule-inset-cap-end": {
   "values": [
    "overlap-join"
   ]
  },
- "row-rule-edge-inset-start": {
+ "row-rule-inset-cap-start": {
   "values": [
    "overlap-join"
   ]
  },
- "row-rule-interior-inset-end": {
+ "row-rule-inset-junction-end": {
   "values": [
    "overlap-join"
   ]
  },
- "row-rule-interior-inset-start": {
+ "row-rule-inset-junction-start": {
   "values": [
    "overlap-join"
   ]
@@ -6824,7 +7127,7 @@ export const generatedPropertyValues = {
  "row-rule-visibility-items": {
   "values": [
    "all",
-   "auto",
+   "normal",
    "around",
    "between"
   ]
@@ -6847,7 +7150,7 @@ export const generatedPropertyValues = {
  "ruby-overhang": {
   "values": [
    "auto",
-   "none"
+   "spaces"
   ]
  },
  "ruby-position": {
@@ -6870,6 +7173,12 @@ export const generatedPropertyValues = {
  "ry": {
   "values": [
    "auto"
+  ]
+ },
+ "scroll-axis-lock": {
+  "values": [
+   "auto",
+   "none"
   ]
  },
  "scroll-behavior": {
@@ -7106,6 +7415,14 @@ export const generatedPropertyValues = {
   "values": [
    "none",
    "auto",
+   "all"
+  ]
+ },
+ "text-decoration-skip-spaces": {
+  "values": [
+   "none",
+   "start",
+   "end",
    "all"
   ]
  },

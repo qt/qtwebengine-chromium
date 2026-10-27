@@ -8,6 +8,7 @@
 
 #include "base/containers/span_reader.h"
 #include "base/functional/callback_helpers.h"
+#include "base/rand_util.h"
 #include "base/test/null_task_runner.h"
 #include "components/viz/test/test_context_provider.h"
 #include "components/viz/test/test_raster_interface.h"
@@ -480,7 +481,7 @@ TEST_F(VideoFrameTest, VideoFrameFromGPUImageBitmap) {
 
   scoped_refptr<StaticBitmapImage> bitmap =
       AcceleratedStaticBitmapImage::CreateFromCanvasSharedImage(
-          std::move(client_si), token, kPremul_SkAlphaType,
+          std::move(client_si), token, kPremul_SkAlphaType, gfx::HDRMetadata(),
           SharedGpuContext::ContextProviderWrapper(),
           base::PlatformThread::CurrentRef(),
           base::MakeRefCounted<base::NullTaskRunner>(), base::DoNothing());

@@ -191,13 +191,6 @@ Matcher<BrushBehavior::Node> BrushBehaviorNodeEqMatcher(
 }
 
 Matcher<BrushBehavior::Node> BrushBehaviorNodeEqMatcher(
-    const BrushBehavior::FallbackFilterNode& expected) {
-  return VariantWith<BrushBehavior::FallbackFilterNode>(Field(
-      "is_fallback_for", &BrushBehavior::FallbackFilterNode::is_fallback_for,
-      Eq(expected.is_fallback_for)));
-}
-
-Matcher<BrushBehavior::Node> BrushBehaviorNodeEqMatcher(
     const BrushBehavior::ToolTypeFilterNode& expected) {
   return VariantWith<BrushBehavior::ToolTypeFilterNode>(
       Field("enabled_tool_types",
@@ -219,6 +212,19 @@ Matcher<BrushBehavior::Node> BrushBehaviorNodeEqMatcher(
   return VariantWith<BrushBehavior::ResponseNode>(
       Field("response_curve", &BrushBehavior::ResponseNode::response_curve,
             EasingFunctionEqMatcher(expected.response_curve)));
+}
+
+Matcher<BrushBehavior::Node> BrushBehaviorNodeEqMatcher(
+    const BrushBehavior::IntegralNode& expected) {
+  return VariantWith<BrushBehavior::IntegralNode>(AllOf(
+      Field("integrate_over", &BrushBehavior::IntegralNode::integrate_over,
+            Eq(expected.integrate_over)),
+      Field("integral_out_of_range_behavior",
+            &BrushBehavior::IntegralNode::integral_out_of_range_behavior,
+            Eq(expected.integral_out_of_range_behavior)),
+      Field("integral_value_range",
+            &BrushBehavior::IntegralNode::integral_value_range,
+            ContainerEq(expected.integral_value_range))));
 }
 
 Matcher<BrushBehavior::Node> BrushBehaviorNodeEqMatcher(
@@ -265,8 +271,10 @@ MATCHER_P(BrushBehaviorEqMatcher, expected,
                        " BrushBehavior (expected: ",
                        ::testing::PrintToString(expected), ")")) {
   return ExplainMatchResult(
-      Field("nodes", &BrushBehavior::nodes,
-            Pointwise(BrushBehaviorNodeEq(), expected.nodes)),
+      AllOf(Field("nodes", &BrushBehavior::nodes,
+                  Pointwise(BrushBehaviorNodeEq(), expected.nodes)),
+            Field("developer_comment", &BrushBehavior::developer_comment,
+                  Eq(expected.developer_comment))),
       arg, result_listener);
 }
 
@@ -301,48 +309,42 @@ MATCHER(BrushTipPointwiseEqMatcher, "") {
                             result_listener);
 }
 
-MATCHER(BrushPaintTextureKeyframeEqMatcher, "") {
-  return ExplainMatchResult(AllOf(Field(&BrushPaint::TextureKeyframe::progress,
-                                        Eq(std::get<1>(arg).progress)),
-                                  Field(&BrushPaint::TextureKeyframe::size,
-                                        Eq(std::get<1>(arg).size)),
-                                  Field(&BrushPaint::TextureKeyframe::offset,
-                                        Eq(std::get<1>(arg).offset)),
-                                  Field(&BrushPaint::TextureKeyframe::rotation,
-                                        Eq(std::get<1>(arg).rotation)),
-                                  Field(&BrushPaint::TextureKeyframe::opacity,
-                                        Eq(std::get<1>(arg).opacity))),
-                            std::get<0>(arg), result_listener);
+Matcher<BrushPaint::TextureLayer> BrushPaintTextureLayerEqMatcher(
+    const BrushPaint::TilingTexture& expected) {
+  return VariantWith<BrushPaint::TilingTexture>(AllOf(
+      Field("client_texture_id", &BrushPaint::TilingTexture::client_texture_id,
+            Eq(expected.client_texture_id)),
+      Field("origin", &BrushPaint::TilingTexture::origin, Eq(expected.origin)),
+      Field("size_unit", &BrushPaint::TilingTexture::size_unit,
+            Eq(expected.size_unit)),
+      Field("wrap_x", &BrushPaint::TilingTexture::wrap_x, Eq(expected.wrap_x)),
+      Field("wrap_y", &BrushPaint::TilingTexture::wrap_y, Eq(expected.wrap_y)),
+      Field("size", &BrushPaint::TilingTexture::size, Eq(expected.size)),
+      Field("offset", &BrushPaint::TilingTexture::offset, Eq(expected.offset)),
+      Field("rotation", &BrushPaint::TilingTexture::rotation,
+            Eq(expected.rotation)),
+      Field("blend_mode", &BrushPaint::TilingTexture::blend_mode,
+            Eq(expected.blend_mode))));
 }
 
-MATCHER_P(BrushPaintTextureLayerEqMatcher, expected,
-          absl::StrCat(negation ? "doesn't equal" : "equals",
-                       " BrushPaintTextureLayer (expected: ",
-                       ::testing::PrintToString(expected), ")")) {
-  return ExplainMatchResult(
-      AllOf(Field(&BrushPaint::TextureLayer::client_texture_id,
-                  Eq(expected.client_texture_id)),
-            Field(&BrushPaint::TextureLayer::mapping, Eq(expected.mapping)),
-            Field(&BrushPaint::TextureLayer::origin, Eq(expected.origin)),
-            Field(&BrushPaint::TextureLayer::size_unit, Eq(expected.size_unit)),
-            Field(&BrushPaint::TextureLayer::wrap_x, Eq(expected.wrap_x)),
-            Field(&BrushPaint::TextureLayer::wrap_y, Eq(expected.wrap_y)),
-            Field(&BrushPaint::TextureLayer::size, Eq(expected.size)),
-            Field(&BrushPaint::TextureLayer::offset, Eq(expected.offset)),
-            Field(&BrushPaint::TextureLayer::rotation, Eq(expected.rotation)),
-            Field(&BrushPaint::TextureLayer::size_jitter,
-                  Eq(expected.size_jitter)),
-            Field(&BrushPaint::TextureLayer::offset_jitter,
-                  Eq(expected.offset_jitter)),
-            Field(&BrushPaint::TextureLayer::rotation_jitter,
-                  Eq(expected.rotation_jitter)),
-            Field(&BrushPaint::TextureLayer::opacity, Eq(expected.opacity)),
-            Field("keyframes", &BrushPaint::TextureLayer::keyframes,
-                  Pointwise(BrushPaintTextureKeyframeEqMatcher(),
-                            expected.keyframes)),
-            Field(&BrushPaint::TextureLayer::blend_mode,
-                  Eq(expected.blend_mode))),
-      arg, result_listener);
+Matcher<BrushPaint::TextureLayer> BrushPaintTextureLayerEqMatcher(
+    const BrushPaint::StampingTexture& expected) {
+  return VariantWith<BrushPaint::StampingTexture>(AllOf(
+      Field("client_texture_id",
+            &BrushPaint::StampingTexture::client_texture_id,
+            Eq(expected.client_texture_id)),
+      Field("animation_frames", &BrushPaint::StampingTexture::animation_frames,
+            Eq(expected.animation_frames)),
+      Field("animation_rows", &BrushPaint::StampingTexture::animation_rows,
+            Eq(expected.animation_rows)),
+      Field("animation_columns",
+            &BrushPaint::StampingTexture::animation_columns,
+            Eq(expected.animation_columns)),
+      Field("animation_duration",
+            &BrushPaint::StampingTexture::animation_duration,
+            Eq(expected.animation_duration)),
+      Field("blend_mode", &BrushPaint::StampingTexture::blend_mode,
+            Eq(expected.blend_mode))));
 }
 
 MATCHER(BrushPaintTextureLayerPointwiseEqMatcher, "") {
@@ -390,15 +392,10 @@ Matcher<BrushFamily::InputModel> BrushFamilyInputModelEqMatcher(
     const BrushFamily::InputModel& expected) {
   return std::visit(
       absl::Overload(
-          [](const BrushFamily::SpringModel& input_model)
+          [](const BrushFamily::PassthroughModel& input_model)
               -> Matcher<BrushFamily::InputModel> {
             // no fields to match
-            return VariantWith<BrushFamily::SpringModel>(_);
-          },
-          [](const BrushFamily::ExperimentalNaiveModel& input_model)
-              -> Matcher<BrushFamily::InputModel> {
-            // no fields to match
-            return VariantWith<BrushFamily::ExperimentalNaiveModel>(_);
+            return VariantWith<BrushFamily::PassthroughModel>(_);
           },
           [](const BrushFamily::SlidingWindowModel& input_model)
               -> Matcher<BrushFamily::InputModel> {
@@ -418,12 +415,12 @@ MATCHER_P(BrushFamilyEqMatcher, expected,
                        " BrushFamily (expected: ",
                        ::testing::PrintToString(expected), ")")) {
   return ExplainMatchResult(
-      AllOf(Property(&BrushFamily::GetCoats,
+      AllOf(Property("GetCoats", &BrushFamily::GetCoats,
                      Pointwise(BrushCoatEq(), expected.GetCoats())),
-            Property(&BrushFamily::GetClientBrushFamilyId,
-                     Eq(expected.GetClientBrushFamilyId())),
-            Property(&BrushFamily::GetInputModel,
-                     BrushFamilyInputModelEq(expected.GetInputModel()))),
+            Property("GetInputModel", &BrushFamily::GetInputModel,
+                     BrushFamilyInputModelEq(expected.GetInputModel())),
+            Property("GetMetadata", &BrushFamily::GetMetadata,
+                     Eq(expected.GetMetadata()))),
       arg, result_listener);
 }
 
@@ -432,10 +429,12 @@ MATCHER_P(BrushEqMatcher, expected,
                        " Brush (expected: ", ::testing::PrintToString(expected),
                        ")")) {
   return ExplainMatchResult(
-      AllOf(Property(&Brush::GetFamily, BrushFamilyEq(expected.GetFamily())),
-            Property(&Brush::GetColor, Eq(expected.GetColor())),
-            Property(&Brush::GetSize, Eq(expected.GetSize())),
-            Property(&Brush::GetEpsilon, Eq(expected.GetEpsilon()))),
+      AllOf(Property("GetFamily", &Brush::GetFamily,
+                     BrushFamilyEq(expected.GetFamily())),
+            Property("GetColor", &Brush::GetColor, Eq(expected.GetColor())),
+            Property("GetSize", &Brush::GetSize, Eq(expected.GetSize())),
+            Property("GetEpsilon", &Brush::GetEpsilon,
+                     Eq(expected.GetEpsilon()))),
       arg, result_listener);
 }
 
@@ -479,7 +478,11 @@ Matcher<std::tuple<BrushPaint, BrushPaint>> BrushPaintEq() {
 
 Matcher<BrushPaint::TextureLayer> BrushPaintTextureLayerEq(
     const BrushPaint::TextureLayer& expected) {
-  return BrushPaintTextureLayerEqMatcher(expected);
+  return std::visit(
+      [](const auto& expected) {
+        return BrushPaintTextureLayerEqMatcher(expected);
+      },
+      expected);
 }
 
 Matcher<std::tuple<BrushPaint::TextureLayer, BrushPaint::TextureLayer>>

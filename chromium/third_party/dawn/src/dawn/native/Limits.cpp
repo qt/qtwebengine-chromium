@@ -25,16 +25,16 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/Limits.h"
+#include "src/dawn/native/Limits.h"
 
 #include <algorithm>
 #include <array>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/Constants.h"
-#include "dawn/common/Log.h"
-#include "dawn/common/Math.h"
-#include "dawn/native/Instance.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/Constants.h"
+#include "src/dawn/common/Log.h"
+#include "src/dawn/common/Math.h"
+#include "src/dawn/native/Instance.h"
 
 // clang-format off
 // TODO(crbug.com/dawn/685):
@@ -180,64 +180,6 @@ constexpr uint32_t ReduceSameValue(std::integer_sequence<uint32_t, I, Is...>) {
     return I;
 }
 
-enum class LimitClass {
-    Alignment,
-    Maximum,
-};
-
-template <LimitClass C>
-struct CheckLimit;
-
-template <>
-struct CheckLimit<LimitClass::Alignment> {
-    template <typename T>
-    static bool IsBetter(T lhs, T rhs) {
-        return lhs < rhs;
-    }
-
-    template <typename T>
-    static MaybeError Validate(T supported, T required) {
-        DAWN_INVALID_IF(IsBetter(required, supported),
-                        "Required limit (%u) is lower than the supported limit (%u).", required,
-                        supported);
-        DAWN_INVALID_IF(!IsPowerOfTwo(required), "Required limit (%u) is not a power of two.",
-                        required);
-        return {};
-    }
-};
-
-template <>
-struct CheckLimit<LimitClass::Maximum> {
-    template <typename T>
-    static bool IsBetter(T lhs, T rhs) {
-        return lhs > rhs;
-    }
-
-    template <typename T>
-    static MaybeError Validate(T supported, T required) {
-        DAWN_INVALID_IF(IsBetter(required, supported),
-                        "Required limit (%u) is greater than the supported limit (%u).", required,
-                        supported);
-        return {};
-    }
-};
-
-template <typename T>
-bool IsLimitUndefined(T value) {
-    static_assert(sizeof(T) != sizeof(T), "IsLimitUndefined not implemented for this type");
-    return false;
-}
-
-template <>
-bool IsLimitUndefined<uint32_t>(uint32_t value) {
-    return value == wgpu::kLimitU32Undefined;
-}
-
-template <>
-bool IsLimitUndefined<uint64_t>(uint64_t value) {
-    return value == wgpu::kLimitU64Undefined;
-}
-
 }  // namespace
 
 void GetDefaultLimits(CombinedLimits* limits, wgpu::FeatureLevel featureLevel) {
@@ -250,17 +192,18 @@ void GetDefaultLimits(CombinedLimits* limits, wgpu::FeatureLevel featureLevel) {
 
 CombinedLimits ReifyDefaultLimits(const CombinedLimits& limits, wgpu::FeatureLevel featureLevel) {
     CombinedLimits out;
-#define X(Scope, Class, limitName, compat, base, ...)                                        \
-    {                                                                                        \
-        const auto defaultLimit = static_cast<decltype(limits.Scope.limitName)>(             \
-            featureLevel == wgpu::FeatureLevel::Compatibility ? compat : base);              \
-        if (IsLimitUndefined(limits.Scope.limitName) ||                                      \
-            CheckLimit<LimitClass::Class>::IsBetter(defaultLimit, limits.Scope.limitName)) { \
-            /* If the limit is undefined or the default is better, use the default */        \
-            out.Scope.limitName = defaultLimit;                                              \
-        } else {                                                                             \
-            out.Scope.limitName = limits.Scope.limitName;                                    \
-        }                                                                                    \
+#define X(Scope, Class, limitName, compat, base, ...)                                          \
+    {                                                                                          \
+        const auto defaultLimit = static_cast<decltype(limits.Scope.limitName)>(               \
+            featureLevel == wgpu::FeatureLevel::Compatibility ? compat : base);                \
+        if (detail::IsLimitUndefined(limits.Scope.limitName) ||                                \
+            detail::CheckLimit<detail::LimitClass::Class>::IsBetter(defaultLimit,              \
+                                                                    limits.Scope.limitName)) { \
+            /* If the limit is undefined or the default is better, use the default */          \
+            out.Scope.limitName = defaultLimit;                                                \
+        } else {                                                                               \
+            out.Scope.limitName = limits.Scope.limitName;                                      \
+        }                                                                                      \
     }
     LIMITS(X)
 #undef X
@@ -320,11 +263,11 @@ void UnpackLimitsIn(const Limits* chainedLimits, CombinedLimits* out) {
 
 MaybeError ValidateLimits(const CombinedLimits& supportedLimits,
                           const CombinedLimits& requiredLimits) {
-#define X(Scope, Class, limitName, ...)                                                           \
-    if (!IsLimitUndefined(requiredLimits.Scope.limitName)) {                                      \
-        DAWN_TRY_CONTEXT(CheckLimit<LimitClass::Class>::Validate(supportedLimits.Scope.limitName, \
-                                                                 requiredLimits.Scope.limitName), \
-                         "validating " #limitName);                                               \
+#define X(Scope, Class, limitName, ...)                                                        \
+    if (!detail::IsLimitUndefined(requiredLimits.Scope.limitName)) {                           \
+        DAWN_TRY_CONTEXT(detail::CheckLimit<detail::LimitClass::Class>::Validate(              \
+                             supportedLimits.Scope.limitName, requiredLimits.Scope.limitName), \
+                         "validating " #limitName);                                            \
     }
     LIMITS(X)
 #undef X
@@ -358,7 +301,8 @@ void ApplyLimitTiers(CombinedLimits* limits) {
     {                                                                                           \
         constexpr std::array<decltype(limits->Scope.limitName), kTierCount> tiers{__VA_ARGS__}; \
         auto tierValue = tiers[i - 1];                                                          \
-        if (CheckLimit<LimitClass::Class>::IsBetter(tierValue, limits->Scope.limitName)) {      \
+        if (detail::CheckLimit<detail::LimitClass::Class>::IsBetter(tierValue,                  \
+                                                                    limits->Scope.limitName)) { \
             /* The tier is better. Go to the next tier. */                                      \
             continue;                                                                           \
         } else if (tierValue != limits->Scope.limitName) {                                      \

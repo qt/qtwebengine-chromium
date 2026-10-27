@@ -44,6 +44,7 @@
 #include "content/public/browser/permission_controller.h"
 #include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/service_worker_context.h"
+#include "content/public/browser/site_isolation_policy.h"
 #include "content/public/common/child_process_id_util.h"
 #include "content/public/common/content_client.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
@@ -79,7 +80,7 @@ DedicatedWorkerHost::DedicatedWorkerHost(
     RenderProcessHost* worker_process_host,
     DedicatedWorkerCreator creator,
     GlobalRenderFrameHostId ancestor_render_frame_host_id,
-    const blink::StorageKey& creator_storage_key,
+    const url::Origin& creator_origin,
     const blink::StorageKey& worker_storage_key,
     const url::Origin& renderer_origin,
     const net::IsolationInfo& isolation_info,
@@ -95,9 +96,9 @@ DedicatedWorkerHost::DedicatedWorkerHost(
       worker_process_host_(worker_process_host),
       creator_(creator),
       ancestor_render_frame_host_id_(ancestor_render_frame_host_id),
-      creator_origin_(creator_storage_key.origin()),
-      renderer_origin_(renderer_origin),
+      creator_origin_(creator_origin),
       worker_storage_key_(worker_storage_key),
+      renderer_origin_(renderer_origin),
       isolation_info_(isolation_info),
       reporting_source_(base::UnguessableToken::Create()),
       creator_client_security_state_(std::move(creator_client_security_state)),
@@ -172,7 +173,7 @@ DedicatedWorkerHost::~DedicatedWorkerHost() {
     lock_manager->RemoveLockObserver(GetToken().value());
   }
 
-  GetStoragePartitionImpl()->ClearNoncesInNetworkContextAfterDelay({
+  GetStoragePartitionImpl()->ClearNetworkRestrictionsAfterDelay({
       network_restrictions_id_,
   });
 
@@ -220,18 +221,20 @@ void DedicatedWorkerHost::CreateLockManager(
                                                             this);
 }
 
-void DedicatedWorkerHost::OnLockContention() {
+bool DedicatedWorkerHost::OnLockContention() {
   RenderFrameHostImpl* ancestor_render_frame_host =
       RenderFrameHostImpl::FromID(ancestor_render_frame_host_id_);
   if (!ancestor_render_frame_host) {
     // The frame may have already been closed.
-    return;
+    return false;
   }
   if (ancestor_render_frame_host->IsInBackForwardCache()) {
     // Evict the frame from the back-forward cache to avoid deadlock.
     ancestor_render_frame_host->EvictFromBackForwardCacheWithReason(
         BackForwardCacheMetrics::NotRestoredReason::kWebLocksContention);
+    return true;
   }
+  return false;
 }
 
 void DedicatedWorkerHost::OnMojoDisconnect() {
@@ -395,6 +398,7 @@ void DedicatedWorkerHost::StartScriptLoad(
   WorkerScriptFetcher::CreateAndStart(
       worker_process_host_->GetDeprecatedID(), token_, script_url,
       *nearest_ancestor_render_frame_host, creator_render_frame_host,
+      creator_worker,
       nearest_ancestor_render_frame_host->ComputeSiteForCookies(),
       creator_origin_, worker_storage_key_,
       nearest_ancestor_render_frame_host->GetIsolationInfoForSubresources(),
@@ -458,6 +462,16 @@ void DedicatedWorkerHost::DidStartScriptLoad(
     CHECK(result->main_script_load_params);
     DCHECK(result->main_script_load_params->response_head);
     DCHECK(result->main_script_load_params->response_head->parsed_headers);
+
+    if (SiteIsolationPolicy::ShouldUrlUseApplicationIsolationLevel(
+            ancestor_render_frame_host->GetBrowserContext(),
+            result->final_response_url)) {
+      GetContentClient()->browser()->EnsureRequiredHeadersForIsolatedApp(
+          ancestor_render_frame_host->GetBrowserContext(),
+          result->final_response_url,
+          result->main_script_load_params->response_head.get(),
+          /*frame_tree_node=*/std::nullopt);
+    }
 
     worker_client_security_state_ = network::mojom::ClientSecurityState::New();
     worker_client_security_state_->ip_address_space = CalculateIPAddressSpace(
@@ -916,8 +930,10 @@ void DedicatedWorkerHost::CreateBlobUrlStoreProvider(
           weak_factory_.GetWeakPtr()),
       !(GetContentClient()->browser()->IsBlobUrlPartitioningEnabled(
           GetProcessHost()->GetBrowserContext())),
-      storage::BlobURLValidityCheckBehavior::
-          ALLOW_OPAQUE_ORIGIN_STORAGE_KEY_MISMATCH);
+      base::FeatureList::IsEnabled(blink::features::kDataUrlWorkerOpaqueOrigin)
+          ? storage::BlobURLValidityCheckBehavior::DEFAULT
+          : storage::BlobURLValidityCheckBehavior::
+                ALLOW_OPAQUE_ORIGIN_STORAGE_KEY_MISMATCH);
 }
 
 void DedicatedWorkerHost::CreateCodeCacheHost(
@@ -1081,7 +1097,7 @@ void DedicatedWorkerHost::UpdateSubresourceLoaderFactories() {
           worker_process_host_->GetDeprecatedID(), storage_partition_impl,
           partition_domain, file_url_support_,
           /*filesystem_url_support=*/true, creator_render_frame_host,
-          worker_storage_key_);
+          worker_storage_key_, network::mojom::RequestDestination::kWorker);
 
   bool bypass_redirect_checks = false;
   subresource_loader_factories->pending_default_factory() =

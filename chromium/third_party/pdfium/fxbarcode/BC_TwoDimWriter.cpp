@@ -7,6 +7,7 @@
 #include "fxbarcode/BC_TwoDimWriter.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "core/fxcrt/check.h"
 #include "core/fxcrt/fx_safe_types.h"
@@ -21,15 +22,13 @@ CBC_TwoDimWriter::CBC_TwoDimWriter(bool bFixedSize) : fixed_size_(bFixedSize) {}
 
 CBC_TwoDimWriter::~CBC_TwoDimWriter() = default;
 
-bool CBC_TwoDimWriter::RenderResult(pdfium::span<const uint8_t> code,
-                                    int32_t codeWidth,
-                                    int32_t codeHeight) {
-  if (code.empty()) {
+bool CBC_TwoDimWriter::RenderResult(const EncodeResult& result) {
+  if (result.code.empty()) {
     return false;
   }
 
-  input_width_ = codeWidth;
-  input_height_ = codeHeight;
+  input_width_ = result.width;
+  input_height_ = result.height;
   int32_t tempWidth = input_width_ + 2;
   int32_t tempHeight = input_height_ + 2;
   const float module_size =
@@ -73,7 +72,7 @@ bool CBC_TwoDimWriter::RenderResult(pdfium::span<const uint8_t> code,
   output_ = std::make_unique<CBC_CommonBitMatrix>(input_width_, input_height_);
   for (int32_t y = 0; y < input_height_; ++y) {
     for (int32_t x = 0; x < input_width_; ++x) {
-      if (code[x + y * input_width_] == 1) {
+      if (result.code[x + y * input_width_] == 1) {
         output_->Set(x, y);
       }
     }
@@ -124,3 +123,12 @@ void CBC_TwoDimWriter::RenderDeviceResult(CFX_RenderDevice* device,
     }
   }
 }
+
+CBC_TwoDimWriter::EncodeResult::EncodeResult() = default;
+
+CBC_TwoDimWriter::EncodeResult::EncodeResult(DataVector<uint8_t> code,
+                                             int32_t width,
+                                             int32_t height)
+    : code(std::move(code)), width(width), height(height) {}
+
+CBC_TwoDimWriter::EncodeResult::~EncodeResult() = default;

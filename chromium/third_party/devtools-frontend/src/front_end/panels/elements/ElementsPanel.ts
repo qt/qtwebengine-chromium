@@ -544,16 +544,15 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     }
 
     if (selectedNode) {
-      const activeNode = ElementsComponents.Helper.legacyNodeToElementsComponentsNode(selectedNode);
-      const crumbs = [activeNode];
+      const crumbs = [selectedNode];
 
       for (let current: (SDK.DOMModel.DOMNode|null) = selectedNode.parentNode; current; current = current.parentNode) {
-        crumbs.push(ElementsComponents.Helper.legacyNodeToElementsComponentsNode(current));
+        crumbs.push(current);
       }
 
       this.breadcrumbs.data = {
         crumbs,
-        selectedNode: ElementsComponents.Helper.legacyNodeToElementsComponentsNode(selectedNode),
+        selectedNode,
       };
 
       if (this.accessibilityTreeView) {
@@ -938,16 +937,14 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
      */
 
     // Get the current set of active crumbs
-    const activeNode = ElementsComponents.Helper.legacyNodeToElementsComponentsNode(selectedNode);
-    const existingCrumbs = [activeNode];
+    const existingCrumbs = [selectedNode];
     for (let current: (SDK.DOMModel.DOMNode|null) = selectedNode.parentNode; current; current = current.parentNode) {
-      existingCrumbs.push(ElementsComponents.Helper.legacyNodeToElementsComponentsNode(current));
+      existingCrumbs.push(current);
     }
 
     /* Get the change nodes from the event & convert them to breadcrumb nodes */
-    const newNodes = nodes.map(ElementsComponents.Helper.legacyNodeToElementsComponentsNode);
-    const nodesThatHaveChangedMap = new Map<number, ElementsComponents.Helper.DOMNode>();
-    newNodes.forEach(crumb => nodesThatHaveChangedMap.set(crumb.id, crumb));
+    const nodesThatHaveChangedMap = new Map<Protocol.DOM.NodeId, SDK.DOMModel.DOMNode>();
+    nodes.forEach(crumb => nodesThatHaveChangedMap.set(crumb.id, crumb));
 
     /* Loop over our existing crumbs, and if any have an ID that matches an ID from the new nodes
      * that we have, use the new node, rather than the one we had, because it's changed.
@@ -959,12 +956,12 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
     this.breadcrumbs.data = {
       crumbs: newSetOfCrumbs,
-      selectedNode: activeNode,
+      selectedNode,
     };
   }
 
   private crumbNodeSelected(event: ElementsComponents.ElementsBreadcrumbs.NodeSelectedEvent): void {
-    this.selectDOMNode(event.legacyDomNode, true);
+    this.selectDOMNode(event.node, true);
   }
 
   private leaveUserAgentShadowDOM(node: SDK.DOMModel.DOMNode): SDK.DOMModel.DOMNode {

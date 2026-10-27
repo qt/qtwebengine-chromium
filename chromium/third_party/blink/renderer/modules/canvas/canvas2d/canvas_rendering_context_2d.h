@@ -64,8 +64,6 @@
 
 // IWYU pragma: no_include "third_party/blink/renderer/platform/heap/visitor.h"
 
-struct SkIRect;
-
 namespace base {
 struct PendingTask;
 }  // namespace base
@@ -181,7 +179,7 @@ class MODULES_EXPORT CanvasRenderingContext2D final
   scoped_refptr<CanvasResource> PaintRenderingResultsToResource(
       SourceDrawingBuffer source_buffer,
       FlushReason reason) override;
-  const std::optional<cc::PaintRecord>& GetLastRecordingForCanvas2D() override;
+  const std::optional<cc::PaintRecord>& GetLastRecording() override;
 
   int Width() const final;
   int Height() const final;
@@ -198,7 +196,7 @@ class MODULES_EXPORT CanvasRenderingContext2D final
   const MemoryManagedPaintRecorder* Recorder() const override;
   MemoryManagedPaintRecorder* Recorder();
 
-  void WillDraw(const SkIRect& dirty_rect,
+  void WillDraw(const gfx::Rect& dirty_rect,
                 CanvasPerformanceMonitor::DrawType) final;
 
   scoped_refptr<StaticBitmapImage> GetImage() final;

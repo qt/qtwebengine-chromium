@@ -229,35 +229,42 @@ const CSSSyntaxDefinition* FindOrNull(
 // The `container_tree_scope` is the tree scope holding the @container
 // rule being evaluated. For @container rules within @function, this is
 // the same tree scope as the enclosing @function is defined in.
-bool EvaluateContainerQuery(Element& element,
-                            PseudoId pseudo_id,
-                            const ContainerQuery& query,
-                            const TreeScope* container_tree_scope,
-                            Element* nearest_size_container,
-                            MatchResult& match_result) {
-  const ContainerSelector& selector = query.Selector();
-  if (!selector.SelectsAnyContainer()) {
-    return false;
-  }
-  // TODO(crbug.com/394500600): Calling SetDependencyFlags here works,
-  // but it's arguably a bit late when considering that MatchResult
-  // is supposed to be the output of ElementRuleCollector.
-  // Consider refactoring.
-  ContainerQueryEvaluator::SetDependencyFlags(query, match_result);
+bool EvaluateContainerQueries(Element& element,
+                              PseudoId pseudo_id,
+                              const ContainerQuerySet& queries,
+                              const TreeScope* container_tree_scope,
+                              Element* nearest_size_container,
+                              MatchResult& match_result) {
+  for (const ContainerQuery* query : queries.Queries()) {
+    const ContainerSelector& selector = query->Selector();
+    if (!selector.SelectsAnyContainer()) {
+      continue;
+    }
+    // TODO(crbug.com/394500600): Calling SetDependencyFlags here works,
+    // but it's arguably a bit late when considering that MatchResult
+    // is supposed to be the output of ElementRuleCollector.
+    // Consider refactoring.
+    ContainerQueryEvaluator::SetDependencyFlags(*query, match_result);
 
-  Element* starting_element = ContainerQueryEvaluator::DetermineStartingElement(
-      element, pseudo_id, selector, nearest_size_container);
-  Element* container = ContainerQueryEvaluator::FindContainer(
-      starting_element, selector, container_tree_scope);
-  if (!container) {
-    return false;
+    Element* starting_element =
+        ContainerQueryEvaluator::DetermineStartingElement(
+            element, pseudo_id, selector, nearest_size_container);
+    Element* container = ContainerQueryEvaluator::FindContainer(
+        starting_element, selector, container_tree_scope);
+    if (!container) {
+      continue;
+    }
+    ContainerQueryEvaluator& evaluator =
+        container->EnsureContainerQueryEvaluator();
+    using Change = ContainerQueryEvaluator::Change;
+    Change change = starting_element == container
+                        ? Change::kNearestContainer
+                        : Change::kDescendantContainers;
+    if (evaluator.EvalAndAdd(*query, change, match_result)) {
+      return true;
+    }
   }
-  ContainerQueryEvaluator& evaluator =
-      container->EnsureContainerQueryEvaluator();
-  using Change = ContainerQueryEvaluator::Change;
-  Change change = starting_element == container ? Change::kNearestContainer
-                                                : Change::kDescendantContainers;
-  return evaluator.EvalAndAdd(query, change, match_result);
+  return false;
 }
 
 bool IsVariableNameOnly(StringView str) {
@@ -523,18 +530,33 @@ void StyleCascade::CollectFromInterpolations() {
   }
 }
 
-// The implicit defaulting behavior of inherited properties is to take
-// the value of the parent style [1]. However, we never reach
-// Longhand::ApplyInherit for implicit defaults, which is needed to adjust
-// Lengths with premultiplied zoom. Therefore, all inherited properties
-// are instead explicitly defaulted [2] when the effective zoom has changed
-// versus the parent zoom.
+// StyleCascade collects declarations before all cascade-affecting properties
+// have necessarily reached their final values. If CSS zoom changes the
+// effective zoom during cascade, implicit defaults [1] with premultiplied
+// lengths need to be explicitly defaulted [2] so their
+// ApplyInitial/ApplyInherit paths run with the element's new zoom.
 //
 // [1] https://drafts.csswg.org/css-cascade/#defaulting
 // [2] https://drafts.csswg.org/css-cascade/#defaulting-keywords
 void StyleCascade::AddExplicitDefaults() {
-  if (state_.GetDocument().StandardizedBrowserZoomEnabled() &&
-      effective_zoom_changed_) {
+  if (!effective_zoom_changed_) {
+    return;
+  }
+
+  // These non-inherited initial values are stored zoomed in `ComputedStyle`.
+  // The document initial style only accounts for `InitialZoom`, so recompute
+  // them when CSS zoom changes this element's effective zoom during cascade.
+  map_.Add(CSSPropertyID::kBorderTopWidth,
+           CascadePriority(CascadeOrigin::kNone));
+  map_.Add(CSSPropertyID::kBorderRightWidth,
+           CascadePriority(CascadeOrigin::kNone));
+  map_.Add(CSSPropertyID::kBorderBottomWidth,
+           CascadePriority(CascadeOrigin::kNone));
+  map_.Add(CSSPropertyID::kBorderLeftWidth,
+           CascadePriority(CascadeOrigin::kNone));
+  map_.Add(CSSPropertyID::kOutlineWidth, CascadePriority(CascadeOrigin::kNone));
+
+  if (state_.GetDocument().StandardizedBrowserZoomEnabled()) {
     // These inherited properties can contain lengths:
     //
     //   -webkit-border-horizontal-spacing
@@ -1248,10 +1270,10 @@ StyleCascade::MakeFunctionContextFromMixinAndResolveSubstitutions(
     // and apply it.
     for (const MixinParameterBindings::CQDependentValue& candidate :
          base::Reversed(candidates)) {
-      if (EvaluateContainerQuery(state_.GetElement(), state_.GetPseudoId(),
-                                 *candidate.container_query, tree_scope,
-                                 state_.NearestSizeContainer(),
-                                 match_result_)) {
+      if (EvaluateContainerQueries(state_.GetElement(), state_.GetPseudoId(),
+                                   *candidate.container_queries, tree_scope,
+                                   state_.NearestSizeContainer(),
+                                   match_result_)) {
         locals_after_cq.Set(name, candidate.data);
         break;
       }
@@ -1443,7 +1465,8 @@ const CSSValue* StyleCascade::ResolvePendingSubstitution(
 
     // NOTE: We don't actually need the original text to be comment-stripped,
     // since we're not storing it in a custom property anywhere.
-    CSSParserTokenStream stream2(sequence.OriginalText());
+    CSSParserTokenStream stream2(sequence.OriginalText(),
+                                 sequence.GetAttrTaintedRanges());
     if (!CSSPropertyParser::ParseValue(
             shorthand_property_id, /*allow_important_annotation=*/false,
             stream2, shorthand_value->ParserContext(), parsed_properties,
@@ -2276,9 +2299,9 @@ void StyleCascade::FlattenFunctionBody(
     } else if (auto* container_rule =
                    DynamicTo<StyleRuleContainer>(child.Get())) {
       state_.StyleBuilder().SetHasContainerRelativeValue();
-      if (EvaluateContainerQuery(
+      if (EvaluateContainerQueries(
               state_.GetElement(), state_.GetPseudoId(),
-              container_rule->GetContainerQuery(), function_tree_scope,
+              container_rule->GetContainerQuerySet(), function_tree_scope,
               state_.NearestSizeContainer(), match_result_)) {
         FlattenFunctionBody(*container_rule, function_tree_scope, result,
                             locals);

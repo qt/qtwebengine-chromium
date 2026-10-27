@@ -129,11 +129,11 @@ class MaglevCompilationInfo final {
   static std::unique_ptr<MaglevCompilationInfo> NewForTurbolev(
       Isolate* isolate, compiler::JSHeapBroker* broker,
       IndirectHandle<JSFunction> function, BytecodeOffset osr_offset,
-      bool specialize_to_function_context) {
+      bool specialize_to_function_context, std::string function_name) {
     // Doesn't use make_unique due to the private ctor.
     return std::unique_ptr<MaglevCompilationInfo>(new MaglevCompilationInfo(
         isolate, function, osr_offset, broker, specialize_to_function_context,
-        /*is_turbolev*/ true));
+        /*is_turbolev*/ true, std::move(function_name)));
   }
   static std::unique_ptr<MaglevCompilationInfo> New(
       Isolate* isolate, IndirectHandle<JSFunction> function,
@@ -152,6 +152,7 @@ class MaglevCompilationInfo final {
   IndirectHandle<JSFunction> toplevel_function() const {
     return toplevel_function_;
   }
+  const std::string& function_name() const { return function_name_; }
   BytecodeOffset toplevel_osr_offset() const { return osr_offset_; }
   bool toplevel_is_osr() const { return osr_offset_ != BytecodeOffset::None(); }
   void set_code(IndirectHandle<Code> code) {
@@ -200,6 +201,9 @@ class MaglevCompilationInfo final {
 
   uint16_t trace_id() const { return trace_id_; }
 
+  int optimization_id() const { return optimization_id_; }
+  void set_optimization_id(int id) { optimization_id_ = id; }
+
   bool could_not_inline_all_candidates() {
     return could_not_inline_all_candidates_;
   }
@@ -213,7 +217,7 @@ class MaglevCompilationInfo final {
       BytecodeOffset osr_offset,
       std::optional<compiler::JSHeapBroker*> broker = std::nullopt,
       std::optional<bool> specialize_to_function_context = std::nullopt,
-      bool is_turbolev = false);
+      bool is_turbolev = false, std::string function_name = "");
 
   // Storing the raw pointer to the CanonicalHandlesMap is generally not safe.
   // Use DetachCanonicalHandles() to transfer ownership instead.
@@ -228,9 +232,11 @@ class MaglevCompilationInfo final {
   // Must be initialized late since it requires an initialized heap broker.
   MaglevCompilationUnit* toplevel_compilation_unit_ = nullptr;
   IndirectHandle<JSFunction> toplevel_function_;
+  std::string function_name_;
   IndirectHandle<Code> code_;
   BytecodeOffset osr_offset_;
   const uint16_t trace_id_;
+  int optimization_id_ = -1;
 
   // True if this MaglevCompilationInfo owns its broker and false otherwise. In
   // particular, when used as Turboshaft front-end, this will use Turboshaft's

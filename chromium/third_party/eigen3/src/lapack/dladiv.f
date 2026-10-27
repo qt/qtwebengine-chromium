@@ -88,6 +88,8 @@
 *> \ingroup auxOTHERauxiliary
 *
 *  =====================================================================
+*> SPDX-FileCopyrightText: The Eigen Authors
+*> SPDX-License-Identifier: BSD-3-Clause
       SUBROUTINE DLADIV( A, B, C, D, P, Q )
 *
 *  -- LAPACK auxiliary routine (version 3.4.0) --

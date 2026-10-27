@@ -5,7 +5,13 @@
 #include "components/autofill/core/browser/filling/form_autofill_history.h"
 
 #include <algorithm>
+#include <list>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "base/containers/span.h"
 #include "base/types/pass_key.h"
 #include "base/types/zip.h"
 #include "components/autofill/core/browser/autofill_field.h"
@@ -75,8 +81,7 @@ void FormAutofillHistory::AddFormFillingEntry(
                 FieldFillingEntry(
                     field->value(),
                     field->is_autofilled_according_to_renderer(),
-                    autofill_field->field_modifiers(
-                        base::PassKey<FormAutofillHistory>()),
+                    autofill_field->field_modifiers(/*pass_key=*/{}),
                     autofill_field->autofill_source_profile_guid(),
                     autofill_field->autofilled_type(),
                     autofill_field->filling_product(),
@@ -95,12 +100,14 @@ void FormAutofillHistory::AddFormFillingEntry(
   }
 }
 
-void FormAutofillHistory::EraseFieldFillingEntry(
-    std::list<FormFillingEntry>::iterator fill_operation,
-    FieldGlobalId field_id) {
-  fill_operation->erase(field_id);
-  if (fill_operation->empty()) {
-    EraseFormFillEntry(fill_operation);
+void FormAutofillHistory::EraseFieldFillingEntries(
+    std::list<FormFillingEntry>::iterator filling_entry,
+    base::span<const FieldGlobalId> field_ids) {
+  for (const FieldGlobalId& field_id : field_ids) {
+    size_ -= filling_entry->erase(field_id);
+  }
+  if (filling_entry->empty()) {
+    EraseFormFillEntry(filling_entry);
   }
 }
 

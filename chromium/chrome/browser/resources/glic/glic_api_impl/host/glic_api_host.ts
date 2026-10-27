@@ -9,21 +9,25 @@ import {assert} from '//resources/js/assert.js';
 import {loadTimeData} from '//resources/js/load_time_data.js';
 
 import type {BrowserProxy} from '../../browser_proxy.js';
-import type {WebClientInitialState} from '../../glic.mojom-webui.js';
-import {WebClientHandlerRemote} from '../../glic.mojom-webui.js';
+import {ActorClientReceiver, ActorHandlerRemote, WebClientHandlerRemote} from '../../glic.mojom-webui.js';
+import type {ExperimentalTriggeringUpdatesHandlerRemote, WebClientInitialState} from '../../glic.mojom-webui.js';
+import type {ClientCapabilities} from '../../glic_api/glic_api.js';
 import {ObservableValue} from '../../observable.js';
 import type {ObservableValueReadOnly} from '../../observable.js';
+import {TaskQueue} from '../../task_queue.js';
 import {OneShotTimer} from '../../timer.js';
+import {ActorHostMessageHandler} from '../actor/actor_host.js';
+import type {ResponseExtras} from '../transport/messaging.js';
+import type {PendingReceiver, PendingRemote, PostMessageHandler, PostMessageLifecycleObserver, PostMessageReceiver, PostMessageRemote, PostMessageRequestReceiver, PostMessageRequestSender, PostMessageRouter} from '../transport/post_message_transport.js';
+import {createBidirectionalPostMessageTransport} from '../transport/post_message_transport.js';
 
-import type {PostMessageRequestHandler, PostMessageRouter, ResponseExtras} from './../post_message_transport.js';
-import {createBidirectionalPostMessageTransport, newSenderId} from './../post_message_transport.js';
-import type {PostMessageRequestReceiver, PostMessageRequestSender} from './../post_message_transport.js';
-import {HOST_REQUEST_TYPES, requestTypeToHistogramSuffix} from './../request_types.js';
+import {ERROR_CODEC, getHostRequestHistogramInfo, HOST_REQUEST_TYPES} from './../request_types.js';
+import type {ActorClient, ActorHost, WebClient, WebClientHost} from './../request_types.js';
 import {urlFromClient} from './conversions.js';
 import {GatedSender} from './gated_sender.js';
 import {HostMessageHandler, TabDataHandlerSet, TabFaviconHandlerSet} from './host_from_client.js';
 import type {CaptureRegionObserverImpl, PinCandidatesObserverImpl} from './host_from_client.js';
-import {TaskQueue} from './task_queue.js';
+import {ActorClientImpl} from './host_to_client.js';
 import type {HostBackgroundResponse, HostBackgroundResponseDoes, HostBackgroundResponseReturns} from './types.js';
 import {BACKGROUND_RESPONSES} from './types.js';
 
@@ -53,16 +57,15 @@ export enum DetailedWebClientState {
   RESPONSIVE = 6,
   RESPONSIVE_INACTIVE = 7,
   UNRESPONSIVE_INACTIVE = 8,
-  MOJO_PIPE_CLOSED_UNEXPECTEDLY = 9,
-  MAX_VALUE = MOJO_PIPE_CLOSED_UNEXPECTEDLY,
+  // OBSOLETE: MOJO_PIPE_CLOSED_UNEXPECTEDLY = 9,
+  MOJO_PIPE_CLOSED_UNEXPECTEDLY_BEFORE_INITIALIZE = 10,
+  MOJO_PIPE_CLOSED_UNEXPECTEDLY_AFTER_INITIALIZE = 11,
+  MAX_VALUE = MOJO_PIPE_CLOSED_UNEXPECTEDLY_AFTER_INITIALIZE,
 }
 // LINT.ThenChange(//tools/metrics/histograms/metadata/glic/enums.xml:GlicDetailedWebClientState)
 
 // Implemented by the embedder of GlicApiHost.
 export interface ApiHostEmbedder {
-  // Called when the guest requests resize.
-  onGuestResizeRequest(size: {width: number, height: number}): void;
-
   // Called when the guest requests to enable manual drag resize.
   enableDragResize(enabled: boolean): void;
 
@@ -73,26 +76,35 @@ export interface ApiHostEmbedder {
 
   // Returns the current zoom level of the webview.
   getZoom(): Promise<number>;
+
+  // Called when the user completes the onboarding flow.
+  onboardingCompleted?(): void;
 }
 
 
 // Sets up communication with the client.
 // This is separate from GlicApiHost to allow us to detect the client page
 // before our host is really ready to connect.
-export class GlicApiCommunicator implements PostMessageRequestHandler {
-  private senderId = newSenderId();
+export class GlicApiCommunicator implements PostMessageLifecycleObserver {
   readonly postMessageReceiver: PostMessageRequestReceiver;
   readonly postMessageSender: PostMessageRequestSender;
+  readonly pmRemote: PostMessageRemote<WebClient>;
   readonly router: PostMessageRouter;
   private bootstrapPingIntervalId: number|undefined;
   private loggingEnabled = loadTimeData.getBoolean('loggingEnabled');
   private host?: GlicApiHost;
   private hostPromise = Promise.withResolvers<GlicApiHost>();
+  private rootReceiver: PostMessageReceiver;
 
   constructor(
       private embeddedOrigin: string, private windowProxy: WindowProxy) {
-    const {router, sender, receiver} = createBidirectionalPostMessageTransport(
-        embeddedOrigin, this.senderId, windowProxy, this, 'glic_api_host');
+    const {router, sender, receiver, rootRemote, rootReceiver} =
+        createBidirectionalPostMessageTransport<WebClient, WebClientHost>(
+            embeddedOrigin, windowProxy, this,
+            this as unknown as PostMessageHandler<WebClientHost>,
+            'glic_api_host', true, ERROR_CODEC);
+    this.rootReceiver = rootReceiver;
+    this.pmRemote = rootRemote;
     this.router = router;
     this.postMessageReceiver = receiver;
     this.postMessageSender = sender;
@@ -127,21 +139,22 @@ export class GlicApiCommunicator implements PostMessageRequestHandler {
     this.stopBootstrapPing();
   }
 
-  // PostMessageRequestHandler impl.
-  handleRawRequest(type: string, payload: any, extras: ResponseExtras):
-      Promise<{payload: any}|undefined> {
+  // Intercept initial handshake on pipe 0.
+  async glicBrowserWebClientCreated(
+      payload: {clientCapabilities: ClientCapabilities[]},
+      extras: ResponseExtras) {
     this.stopBootstrapPing();
-
-    if (type === 'glicBrowserWebClientCreated') {
-      return this.hostPromise.promise.then(h => {
-        // Pass message handling to the host, only after bootstrapping
-        // is done.
-        this.postMessageReceiver.handler = h;
-        return h.handleRawRequest(type, payload, extras);
-      });
-    } else {
-      return Promise.resolve(undefined);
+    const h = await this.hostPromise.promise;
+    this.postMessageReceiver.requestObserver = h;
+    this.postMessageReceiver.setHandlerWrapper(h.handlerWrapper.bind(h));
+    this.rootReceiver.setMessageHandler<WebClientHost>(h.hostMessageHandler);
+    const handleFn =
+        (h.hostMessageHandler as unknown as
+         Record<string, HandlerFunction>)['glicBrowserWebClientCreated'];
+    if (!handleFn) {
+      return undefined;
     }
+    return await handleFn.call(h.hostMessageHandler, payload, extras);
   }
   // Just ignore message callbacks before the host is connected.
   onRequestReceived(_type: string): void {}
@@ -173,17 +186,24 @@ export class GlicApiCommunicator implements PostMessageRequestHandler {
   }
 }
 
+
+type HandlerFunction = (payload: unknown, extras: ResponseExtras) =>
+    Promise<unknown>;
+
 /**
  * The host side of the Glic API.
  *
  * Its primary job is to route calls between the client (over postMessage) and
  * the browser (over Mojo).
  */
-export class GlicApiHost implements PostMessageRequestHandler {
-  private messageHandler: HostMessageHandler;
-  sender: GatedSender;
+export class GlicApiHost implements PostMessageLifecycleObserver {
+  hostMessageHandler: HostMessageHandler;
+  sender: GatedSender<WebClient>;
+  actorSender?: GatedSender<ActorClient>;
+  private readonly apiGatingOn = ObservableValue.withValue(false);
   private enableApiActivationGating = true;
   panelIsActive = false;
+  private isInvoking = false;
   private handler: WebClientHandlerRemote;
   private webClientErrorTimer: OneShotTimer;
   private webClientState =
@@ -206,29 +226,40 @@ export class GlicApiHost implements PostMessageRequestHandler {
   captureRegionObserver?: CaptureRegionObserverImpl;
   tabDataHandlerSet: TabDataHandlerSet;
   tabFaviconHandlerSet: TabFaviconHandlerSet;
+
+  actorHandler?: ActorHandlerRemote;
   private isSubscribedToZoomLevel = false;
+  private experimentalTriggeringUpdatesHandler =
+      new Map<number, ExperimentalTriggeringUpdatesHandlerRemote>();
+  private nextExperimentalTriggeringUpdateHandlerId = 0;
 
   constructor(
-      private browserProxy: BrowserProxy, communicator: GlicApiCommunicator,
+      private browserProxy: BrowserProxy,
+      public readonly communicator: GlicApiCommunicator,
       private embedder: ApiHostEmbedder) {
-    this.sender = new GatedSender(communicator.postMessageSender);
+    this.sender = new GatedSender(communicator.pmRemote, this.apiGatingOn);
     this.handler = new WebClientHandlerRemote();
     this.handler.onConnectionError.addListener(() => {
       if (this.webClientState.getCurrentValue() !== WebClientState.ERROR) {
         console.warn(`Mojo connection error in glic host`);
-        this.detailedWebClientState =
-            DetailedWebClientState.MOJO_PIPE_CLOSED_UNEXPECTEDLY;
+        this.detailedWebClientState = this.detailedWebClientState ===
+                DetailedWebClientState.BOOTSTRAP_PENDING ?
+            DetailedWebClientState
+                .MOJO_PIPE_CLOSED_UNEXPECTEDLY_BEFORE_INITIALIZE :
+            DetailedWebClientState
+                .MOJO_PIPE_CLOSED_UNEXPECTEDLY_AFTER_INITIALIZE;
         this.webClientState.assignAndSignal(WebClientState.ERROR);
       }
     });
     this.handler.$.close();
     this.tabDataHandlerSet =
-        new TabDataHandlerSet(communicator.postMessageSender, this.handler);
+        new TabDataHandlerSet(communicator.pmRemote, this.handler);
     this.tabFaviconHandlerSet =
-        new TabFaviconHandlerSet(communicator.postMessageSender, this.handler);
+        new TabFaviconHandlerSet(communicator.pmRemote, this.handler);
+
     this.browserProxy.pageHandler.createWebClient(
         this.handler.$.bindNewPipeAndPassReceiver());
-    this.messageHandler =
+    this.hostMessageHandler =
         new HostMessageHandler(this.handler, this.sender, embedder, this);
     this.webClientErrorTimer = new OneShotTimer(
         loadTimeData.getInteger('clientUnresponsiveUiMaxTimeMs'));
@@ -240,15 +271,51 @@ export class GlicApiHost implements PostMessageRequestHandler {
     this.webClientState = ObservableValue.withValue<WebClientState>(
         WebClientState.ERROR);  // Final state
     this.webClientErrorTimer.reset();
-    this.messageHandler.destroy();
+    this.hostMessageHandler.destroy();
     this.pinCandidatesObserver?.disconnectFromSource();
     this.captureRegionObserver?.disconnectFromSource();
+    if (this.actorHandler) {
+      this.actorHandler.$.close();
+      this.actorHandler = undefined;
+    }
+    for (const handler of this.experimentalTriggeringUpdatesHandler.values()) {
+      handler.$.close();
+    }
+    this.experimentalTriggeringUpdatesHandler.clear();
   }
 
-  setInitialState(initialState: WebClientInitialState) {
+  setInitialState(initialState: WebClientInitialState): {
+    actorRemote?: PendingRemote<ActorHost>,
+    actorReceiver?: PendingReceiver<ActorClient>,
+  } {
     this.enableApiActivationGating = initialState.enableApiActivationGating;
     this.panelIsActive = initialState.panelIsActive;
+
     this.updateSenderActive();
+
+    if (!initialState.enableActInFocusedTab) {
+      return {};
+    }
+    this.actorHandler = new ActorHandlerRemote();
+    const {remote: clientRemote, receiver: actorReceiver} =
+        this.communicator.router.newPipeWithRemote<ActorClient>();
+    this.actorSender =
+        new GatedSender<ActorClient>(clientRemote, this.apiGatingOn);
+    const actorClientReceiver =
+        new ActorClientReceiver(new ActorClientImpl(this.actorSender));
+    this.handler.createActorHandler(
+        this.actorHandler.$.bindNewPipeAndPassReceiver(),
+        actorClientReceiver.$.bindNewPipeAndPassRemote());
+    const actorHostMessageHandler =
+        new ActorHostMessageHandler(this.actorHandler);
+    const {remote: actorRemote /* receiver never closed */} =
+        this.communicator.router.newPipeWithReceiver<ActorHost>(
+            actorHostMessageHandler);
+
+    return {
+      actorRemote,
+      actorReceiver,
+    };
   }
 
   updateSenderActive() {
@@ -256,10 +323,13 @@ export class GlicApiHost implements PostMessageRequestHandler {
     if (this.sender.isGating() === shouldGate) {
       return;
     }
-    this.sender.setGating(shouldGate);
+    this.apiGatingOn.assignAndSignal(shouldGate);
   }
 
   shouldGateRequests(): boolean {
+    if (this.isInvoking) {
+      return false;
+    }
     return !this.panelIsActive && this.enableApiActivationGating;
   }
 
@@ -283,6 +353,11 @@ export class GlicApiHost implements PostMessageRequestHandler {
       this.sender.sendLatestWhenActive(
           'glicWebClientNotifyZoomLevelChanged', {zoomFactor});
     }
+  }
+
+  setIsInvoking(isInvoking: boolean) {
+    this.isInvoking = isInvoking;
+    this.updateSenderActive();
   }
 
   waitingOnPanelWillOpen() {
@@ -374,8 +449,8 @@ export class GlicApiHost implements PostMessageRequestHandler {
       }
       const SMALL_QUEUE_SIZE = 50;
       const hostSendMessageQueueLength =
-          this.sender.getRawSender().messageQueueLength() +
-          this.sender.getRawSender().inFlightRequestCount();
+          this.sender.getRawSender().rawSender().messageQueueLength() +
+          this.sender.getRawSender().rawSender().inFlightRequestCount();
       if (hostSendMessageQueueLength >= SMALL_QUEUE_SIZE) {
         chrome.histograms.recordMediumCount(
             'Glic.Host.HostSendMessageQueueLength', hostSendMessageQueueLength);
@@ -477,15 +552,9 @@ export class GlicApiHost implements PostMessageRequestHandler {
         .isAllowed;
   }
 
-  // PostMessageRequestHandler implementation.
-  async handleRawRequest(type: string, payload: any, extras: ResponseExtras):
-      Promise<{payload: any}|undefined> {
-    const handlerFunction = (this.messageHandler as any)[type];
-    if (typeof handlerFunction !== 'function') {
-      console.warn(`GlicApiHost: Unknown message type ${type}`);
-      return;
-    }
-
+  async handlerWrapper(
+      type: string, payload: unknown, extras: ResponseExtras,
+      handlerFunction: HandlerFunction): Promise<unknown> {
     if (this.detailedWebClientState ===
         DetailedWebClientState.BOOTSTRAP_PENDING) {
       this.detailedWebClientState =
@@ -497,7 +566,7 @@ export class GlicApiHost implements PostMessageRequestHandler {
         Object.hasOwn(BACKGROUND_RESPONSES, type)) {
       const backgroundResponse =
           BACKGROUND_RESPONSES[type as keyof typeof BACKGROUND_RESPONSES] as
-          HostBackgroundResponse<any>;
+          HostBackgroundResponse<unknown>;
       if (Object.hasOwn(backgroundResponse, 'throws')) {
         const friendlyName =
             type.replaceAll(/^glicBrowser|^glicWebClient/g, '');
@@ -507,28 +576,33 @@ export class GlicApiHost implements PostMessageRequestHandler {
         console.warn(`Using background request behavior for ${type}`);
       }
       if (Object.hasOwn(backgroundResponse, 'does')) {
-        response = await (backgroundResponse as HostBackgroundResponseDoes<any>)
-                       .does();
+        response =
+            await (backgroundResponse as HostBackgroundResponseDoes<unknown>)
+                .does();
       } else {
         response =
-            (backgroundResponse as HostBackgroundResponseReturns<any>).returns;
+            (backgroundResponse as HostBackgroundResponseReturns<unknown>)
+                .returns;
       }
     } else {
-      response =
-          await handlerFunction.call(this.messageHandler, payload, extras);
+      // Request is not gated, so call the handler directly.
+      const startTime = performance.now();
+      response = await handlerFunction(payload, extras);
+      if (response) {
+        // Report latency metric for handled requests that return a response.
+        const latency = performance.now() - startTime;
+        this.reportLatency(type, latency);
+      }
     }
-    if (!response) {
-      // Not all request types require a return value.
-      return;
-    }
-    return {payload: response};
+    // Not all request types require a return value.
+    return response;
   }
 
   onRequestReceived(type: string): void {
     this.reportRequestCountEvent(type, GlicRequestEvent.REQUEST_RECEIVED);
-    if (document.visibilityState === 'hidden') {
+    if (!this.panelIsActive) {
       this.reportRequestCountEvent(
-          type, GlicRequestEvent.REQUEST_RECEIVED_WHILE_HIDDEN);
+          type, GlicRequestEvent.REQUEST_RECEIVED_WHILE_INACTIVE);
     }
   }
 
@@ -542,40 +616,59 @@ export class GlicApiHost implements PostMessageRequestHandler {
   }
 
   reportRequestCountEvent(requestType: string, event: GlicRequestEvent) {
-    const histogramSuffix = requestTypeToHistogramSuffix(requestType);
-    if (histogramSuffix === undefined) {
-      return;
-    }
-    const requestTypeNumber: number|undefined =
-        (HOST_REQUEST_TYPES as any)[histogramSuffix];
-    if (!requestTypeNumber) {
-      console.warn(
-          `reportRequestCountEvent: invalid requestType ${histogramSuffix}`);
+    const histogramInfo = getHostRequestHistogramInfo(requestType);
+    if (histogramInfo === undefined) {
       return;
     }
     chrome.histograms.recordEnumerationValue(
-        `Glic.Api.RequestCounts.${histogramSuffix}`, event,
+        `Glic.Api.RequestCounts.${histogramInfo.name}`, event,
         GlicRequestEvent.MAX_VALUE + 1);
 
     switch (event) {
       case GlicRequestEvent.REQUEST_HANDLER_EXCEPTION:
         chrome.histograms.recordEnumerationValue(
-            `Glic.Api.RequestCounts.Error`, requestTypeNumber,
+            `Glic.Api.StatusCounts.Error`, histogramInfo.id,
             HOST_REQUEST_TYPES.MAX_VALUE + 1);
         break;
-      case GlicRequestEvent.REQUEST_RECEIVED_WHILE_HIDDEN:
+      case GlicRequestEvent.REQUEST_RECEIVED_WHILE_INACTIVE:
         chrome.histograms.recordEnumerationValue(
-            `Glic.Api.RequestCounts.Hidden`, requestTypeNumber,
+            `Glic.Api.StatusCounts.Inactive`, histogramInfo.id,
             HOST_REQUEST_TYPES.MAX_VALUE + 1);
         break;
       case GlicRequestEvent.REQUEST_RECEIVED:
         chrome.histograms.recordEnumerationValue(
-            `Glic.Api.RequestCounts.Received`, requestTypeNumber,
+            `Glic.Api.StatusCounts.Received`, histogramInfo.id,
             HOST_REQUEST_TYPES.MAX_VALUE + 1);
         break;
       default:
         break;
     }
+  }
+
+  addExperimentalTriggeringUpdatesHandler(
+      handler: ExperimentalTriggeringUpdatesHandlerRemote): number {
+    const id = this.nextExperimentalTriggeringUpdateHandlerId++;
+    this.experimentalTriggeringUpdatesHandler.set(id, handler);
+    return id;
+  }
+
+  getExperimentalTriggeringUpdatesHandler(observationId: number):
+      ExperimentalTriggeringUpdatesHandlerRemote|undefined {
+    return this.experimentalTriggeringUpdatesHandler.get(observationId);
+  }
+
+  deleteExperimentalTriggeringUpdatesHandler(observationId: number): void {
+    this.experimentalTriggeringUpdatesHandler.delete(observationId);
+  }
+
+  reportLatency(requestType: string, latencyMs: number) {
+    const histogramInfo = getHostRequestHistogramInfo(requestType);
+    if (histogramInfo === undefined) {
+      return;
+    }
+    chrome.histograms.recordTime(
+        `Glic.Api.RequestHostLatency.${histogramInfo.name}`,
+        Math.round(latencyMs));
   }
 }
 
@@ -584,8 +677,9 @@ enum GlicRequestEvent {
   REQUEST_RECEIVED = 0,
   RESPONSE_SENT = 1,
   REQUEST_HANDLER_EXCEPTION = 2,
-  REQUEST_RECEIVED_WHILE_HIDDEN = 3,
-  MAX_VALUE = REQUEST_RECEIVED_WHILE_HIDDEN,
+  // Deprecated: REQUEST_RECEIVED_WHILE_HIDDEN = 3,
+  REQUEST_RECEIVED_WHILE_INACTIVE = 4,
+  MAX_VALUE = REQUEST_RECEIVED_WHILE_INACTIVE,
 }
 // LINT.ThenChange(//tools/metrics/histograms/metadata/glic/enums.xml:GlicRequestEvent)
 

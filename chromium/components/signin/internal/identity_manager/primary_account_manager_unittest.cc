@@ -23,9 +23,7 @@
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
 #include "components/prefs/testing_pref_service.h"
-#include "components/signin/internal/identity_manager/account_fetcher_service.h"
 #include "components/signin/internal/identity_manager/account_tracker_service.h"
-#include "components/signin/internal/identity_manager/fake_account_fetcher_factory.h"
 #include "components/signin/internal/identity_manager/fake_profile_oauth2_token_service_delegate.h"
 #include "components/signin/internal/identity_manager/profile_oauth2_token_service.h"
 #include "components/signin/public/base/gaia_id_hash.h"
@@ -67,23 +65,15 @@ class PrimaryAccountManagerTest : public testing::Test,
     // initialization.
     signin::SetUpFakeAccountManagerFacade();
 #endif
-    AccountFetcherService::RegisterPrefs(user_prefs_.registry());
     AccountTrackerService::RegisterPrefs(user_prefs_.registry());
     ProfileOAuth2TokenService::RegisterProfilePrefs(user_prefs_.registry());
     PrimaryAccountManager::RegisterProfilePrefs(user_prefs_.registry());
     SigninPrefs::RegisterProfilePrefs(user_prefs_.registry());
-    account_tracker_ = std::make_unique<AccountTrackerService>();
-    account_tracker_->Initialize(&user_prefs_, base::FilePath());
+    account_tracker_ =
+        std::make_unique<AccountTrackerService>(&user_prefs_, base::FilePath());
     token_service_ = std::make_unique<ProfileOAuth2TokenService>(
         &user_prefs_,
         std::make_unique<FakeProfileOAuth2TokenServiceDelegate>());
-    account_fetcher_ = std::make_unique<AccountFetcherService>();
-    auto account_fetcher_factory = std::make_unique<FakeAccountFetcherFactory>(
-        *token_service_.get(), *signin_client());
-    account_fetcher_->Initialize(
-        &test_signin_client_, token_service_.get(), account_tracker_.get(),
-        std::make_unique<image_fetcher::FakeImageDecoder>(),
-        std::move(account_fetcher_factory));
   }
 
   ~PrimaryAccountManagerTest() override {
@@ -96,7 +86,6 @@ class PrimaryAccountManagerTest : public testing::Test,
   TestSigninClient* signin_client() { return &test_signin_client_; }
 
   AccountTrackerService* account_tracker() { return account_tracker_.get(); }
-  AccountFetcherService* account_fetcher() { return account_fetcher_.get(); }
   PrefService* prefs() { return &user_prefs_; }
 
   // Seed the account tracker with information from logged in user.  Normally
@@ -201,7 +190,6 @@ class PrimaryAccountManagerTest : public testing::Test,
   std::unique_ptr<metrics::ProfileMetricsService> profile_metrics_service_;
   std::unique_ptr<AccountTrackerService> account_tracker_;
   std::unique_ptr<ProfileOAuth2TokenService> token_service_;
-  std::unique_ptr<AccountFetcherService> account_fetcher_;
   std::unique_ptr<PrimaryAccountManager> manager_;
   std::vector<std::string> oauth_tokens_fetched_;
   std::vector<std::string> cookies_;
@@ -498,7 +486,9 @@ TEST_F(PrimaryAccountManagerTest, GaiaIdMigration) {
   dict.Set("gaia", gaia_id.ToString());
   update->Append(std::move(dict));
 
-  account_tracker()->ResetForTesting();
+  // Re-create account tracker to trigger migration.
+  account_tracker_ =
+      std::make_unique<AccountTrackerService>(&user_prefs_, base::FilePath());
 
   client_prefs->SetString(prefs::kGoogleServicesAccountId, email);
   client_prefs->SetBoolean(prefs::kGoogleServicesConsentedToSync, true);
@@ -528,7 +518,9 @@ TEST_F(PrimaryAccountManagerTest, GaiaIdMigrationCrashInTheMiddle) {
   dict.Set("gaia", gaia_id.ToString());
   update->Append(std::move(dict));
 
-  account_tracker()->ResetForTesting();
+  // Re-create account tracker to trigger migration.
+  account_tracker_ =
+      std::make_unique<AccountTrackerService>(&user_prefs_, base::FilePath());
 
   client_prefs->SetString(prefs::kGoogleServicesAccountId, gaia_id.ToString());
   client_prefs->SetBoolean(prefs::kGoogleServicesConsentedToSync, true);
@@ -605,8 +597,10 @@ TEST_F(PrimaryAccountManagerTest, SetPrimaryAccountInfoWithSigninConsent) {
             manager_->GetPrimaryAccountInfo(ConsentLevel::kSync));
   EXPECT_EQ(user_prefs_.GetString(prefs::kGoogleServicesLastSignedInUsername),
             "user@gmail.com");
+#if !BUILDFLAG(IS_IOS)
   EXPECT_EQ(user_prefs_.GetString(prefs::kGoogleServicesLastSyncingUsername),
             std::string());
+#endif  // !BUILDFLAG(IS_IOS)
   CheckSigninMetrics({.sign_in = AccessPoint::kSettings});
 
   // The primary account info and metrics should be changed synchronously, only
@@ -669,8 +663,10 @@ TEST_F(PrimaryAccountManagerTest, SetPrimaryAccountInfoWithSyncConsent) {
   EXPECT_EQ(account_info, manager_->GetPrimaryAccountInfo(ConsentLevel::kSync));
   EXPECT_EQ(user_prefs_.GetString(prefs::kGoogleServicesLastSignedInUsername),
             "user@gmail.com");
+#if !BUILDFLAG(IS_IOS)
   EXPECT_EQ(user_prefs_.GetString(prefs::kGoogleServicesLastSyncingUsername),
             "user@gmail.com");
+#endif  // !BUILDFLAG(IS_IOS)
   CheckSigninMetrics({.sign_in = AccessPoint::kSettings,
                       .sync_opt_in = AccessPoint::kSettings});
 
@@ -739,6 +735,7 @@ TEST_F(PrimaryAccountManagerTest, ClearPrimaryAccount) {
 }
 #endif  // !BUILDFLAG(IS_CHROMEOS)
 
+#if !BUILDFLAG(IS_IOS)
 TEST_F(PrimaryAccountManagerTest, RestoreSyncAccountInfo) {
   user_prefs_.SetString(prefs::kGoogleServicesLastSyncingUsername,
                         "user@gmail.com");
@@ -796,6 +793,7 @@ TEST_F(PrimaryAccountManagerTest, RestoreFailedLastSyncEmailMissing) {
       PrimaryAccountManager::InitializeAccountInfoState::
           kEmptyAccountInfo_RestoreFailedNoLastSyncEmail);
 }
+#endif  // !BUILDFLAG(IS_IOS)
 
 TEST_F(PrimaryAccountManagerTest, RestoreFailedNotSyncing) {
   CoreAccountId account_id = account_tracker()->PickAccountIdForAccount(
@@ -1196,9 +1194,8 @@ class PrimaryAccountManagerExplicitSigninNewFeatureTest
   base::test::ScopedFeatureList scoped_feature_list_;
 };
 
-// Test that the extensions explicit signin pref is set if
-// `switches::IsExtensionsExplicitBrowserSigninEnabled()` is enabled and the
-// user signs in through the extension install bubble.
+// Test that the extensions explicit signin pref is set if the user signs in
+// through the extension install bubble.
 TEST_P(PrimaryAccountManagerExplicitSigninNewFeatureTest,
        ExplicitSigninExtensionPref) {
   CreatePrimaryAccountManager();

@@ -14,7 +14,7 @@
 #include "core/fdrm/fx_crypt_sha.h"
 #include "core/fxcrt/span.h"
 
-struct CRYPT_rc4_context {
+struct CryptRc4Context {
   static constexpr int32_t kPermutationLength = 256;
 
   int32_t x;
@@ -22,24 +22,22 @@ struct CRYPT_rc4_context {
   std::array<int32_t, kPermutationLength> m;
 };
 
-struct CRYPT_md5_context {
+struct CryptMd5Context {
   std::array<uint32_t, 2> total;
   std::array<uint32_t, 4> state;
   uint8_t buffer[64];
 };
 
-void CRYPT_ArcFourCryptBlock(pdfium::span<uint8_t> data,
-                             pdfium::span<const uint8_t> key);
-void CRYPT_ArcFourSetup(CRYPT_rc4_context* context,
-                        pdfium::span<const uint8_t> key);
-void CRYPT_ArcFourCrypt(CRYPT_rc4_context* context, pdfium::span<uint8_t> data);
+void CryptArcFourCryptBlock(pdfium::span<uint8_t> data,
+                            pdfium::span<const uint8_t> key);
+void CryptArcFourSetup(CryptRc4Context* context,
+                       pdfium::span<const uint8_t> key);
+void CryptArcFourCrypt(CryptRc4Context* context, pdfium::span<uint8_t> data);
 
-CRYPT_md5_context CRYPT_MD5Start();
-void CRYPT_MD5Update(CRYPT_md5_context* context,
-                     pdfium::span<const uint8_t> data);
-void CRYPT_MD5Finish(CRYPT_md5_context* context,
-                     pdfium::span<uint8_t, 16> digest);
-void CRYPT_MD5Generate(pdfium::span<const uint8_t> data,
-                       pdfium::span<uint8_t, 16> digest);
+CryptMd5Context CryptMd5Start();
+void CryptMd5Update(CryptMd5Context* context, pdfium::span<const uint8_t> data);
+void CryptMd5Finish(CryptMd5Context* context, pdfium::span<uint8_t, 16> digest);
+void CryptMd5Generate(pdfium::span<const uint8_t> data,
+                      pdfium::span<uint8_t, 16> digest);
 
 #endif  // CORE_FDRM_FX_CRYPT_H_

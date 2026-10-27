@@ -56,7 +56,7 @@ class ClipboardNonBackedTestBase : public testing::Test {
     base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
     command_line->AppendSwitchASCII(::switches::kOzonePlatform,
                                     switches::kHeadless);
-    ui::OzonePlatform::PreEarlyInitialization();
+    ui::OzonePlatform::PreSandboxStartup();
 #endif  // BUILDFLAG(IS_OZONE)
 
     // Clipboard needs to be instantiated after Ozone is initialized so that
@@ -130,6 +130,28 @@ TEST_F(ClipboardNonBackedTest, AdminWriteDoesNotRecordHistograms) {
 
   histogram_tester.ExpectTotalCount("Clipboard.Read", 0);
   histogram_tester.ExpectTotalCount("Clipboard.Write", 0);
+}
+
+TEST_F(ClipboardNonBackedTest, WriteTextRecordsWordAndCharacterCount) {
+  base::HistogramTester histogram_tester;
+
+  // Write text with multiple words.
+  {
+    ScopedClipboardWriter writer(ClipboardBuffer::kCopyPaste);
+    writer.WriteText(u"hello world this is a test");
+  }
+  histogram_tester.ExpectUniqueSample("Clipboard.Write.Text.WordCount", 6, 1);
+  histogram_tester.ExpectUniqueSample("Clipboard.Write.Text.CharacterCount", 26,
+                                      1);
+
+  // Write text containing no words or only whitespace.
+  {
+    ScopedClipboardWriter writer(ClipboardBuffer::kCopyPaste);
+    writer.WriteText(u"   ");
+  }
+  histogram_tester.ExpectBucketCount("Clipboard.Write.Text.WordCount", 0, 1);
+  histogram_tester.ExpectBucketCount("Clipboard.Write.Text.CharacterCount", 3,
+                                     1);
 }
 
 // Tests that text data uses 'text/plain' mime type.

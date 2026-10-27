@@ -823,6 +823,7 @@ class ParserBase {
       case ClassLiteralProperty::Kind::AUTO_ACCESSOR:
         return VariableMode::kPrivateGetterAndSetter;
     }
+    UNREACHABLE();
   }
 
   const AstRawString* ClassFieldVariableName(AstValueFactory* ast_value_factory,
@@ -1184,7 +1185,7 @@ class ParserBase {
                 original_scope_) &&
             IsModule(function_state_->kind())));
     return IsAsyncFunction(kind) ||
-           kind == FunctionKind::kClassStaticInitializerFunction;
+           IsClassStaticInitializerFunction(kind);
   }
   bool is_using_allowed() const {
     // UsingDeclaration and AwaitUsingDeclaration are Syntax Errors if the goal
@@ -1303,7 +1304,7 @@ class ParserBase {
   V8_INLINE void UseThis() {
     Scope* scope = this->scope();
     DeclarationScope* closure_scope = scope->GetClosureScope();
-    if (closure_scope->is_reparsed()) return;
+    if (closure_scope->from_scope_info()) return;
     DeclarationScope* receiver_scope = closure_scope->GetReceiverScope();
     Variable* var = receiver_scope->receiver();
     var->set_is_used();
@@ -3276,8 +3277,9 @@ ParserBase<Impl>::ParseConditionalChainAssignmentExpressionCoverGrammar() {
 
   Token::Value op = peek();
 
-  if (!Token::IsArrowOrAssignmentOp(op) || peek() == Token::kConditional)
+  if (!Token::IsArrowOrAssignmentOp(op) || peek() == Token::kConditional) {
     return expression;
+  }
 
   return ParseAssignmentExpressionCoverGrammarContinuation(lhs_beg_pos,
                                                            expression);
@@ -4455,8 +4457,9 @@ void ParserBase<Impl>::ParseFormalParameter(FormalParametersT* parameters) {
     // (x = 1, y = (x = 2)) => {}
     // and even:
     // (x = (x = 2)) => {}.
-    if (var->initializer_position() == kNoSourcePosition)
+    if (var->initializer_position() == kNoSourcePosition) {
       var->clear_maybe_assigned();
+    }
     var->set_initializer_position(initializer_end);
   }
 
@@ -6316,8 +6319,8 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseReturnStatement() {
     case BLOCK_SCOPE:
       // Class static blocks disallow return. They are their own var scopes and
       // have a varblock scope.
-      if (function_state_->kind() ==
-          FunctionKind::kClassStaticInitializerFunction) {
+      if (IsClassStaticInitializerFunction(
+              function_state_->kind())) {
         impl()->ReportMessageAt(loc, MessageTemplate::kIllegalReturn);
         return impl()->NullStatement();
       }
@@ -6522,6 +6525,11 @@ typename ParserBase<Impl>::StatementT ParserBase<Impl>::ParseSwitchStatement(
     impl()->RecordSwitchStatementSourceRange(switch_statement, end_pos);
     Scope* switch_scope = scope()->FinalizeBlockScope();
     if (switch_scope != nullptr) {
+      // Switch scopes are nonlinear, so we need to set the initializer position
+      // to kMaxInt to prevent hole checks from being elided.
+      for (Variable* var : *switch_scope->locals()) {
+        var->set_initializer_position(kMaxInt);
+      }
       return impl()->RewriteSwitchStatement(switch_statement, switch_scope);
     }
     return switch_statement;

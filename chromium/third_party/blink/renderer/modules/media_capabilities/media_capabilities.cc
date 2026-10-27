@@ -544,17 +544,19 @@ void ParseDynamicRangeConfigurations(
     *hdr_metadata = gfx::HdrMetadataType::kNone;
   }
 
+  auto primaries = color_space->primaries();
+  auto transfer = color_space->transfer();
+
   if (video_config->hasColorGamut()) {
     switch (video_config->colorGamut().AsEnum()) {
       case V8ColorGamut::Enum::kSRGB:
-        color_space->primaries = media::VideoColorSpace::PrimaryID::BT709;
+        primaries = media::VideoColorSpace::PrimaryID::BT709;
         break;
       case V8ColorGamut::Enum::kP3:
-        color_space->primaries =
-            media::VideoColorSpace::PrimaryID::SMPTEST431_2;
+        primaries = media::VideoColorSpace::PrimaryID::SMPTEST431_2;
         break;
       case V8ColorGamut::Enum::kRec2020:
-        color_space->primaries = media::VideoColorSpace::PrimaryID::BT2020;
+        primaries = media::VideoColorSpace::PrimaryID::BT2020;
         break;
     }
   }
@@ -562,17 +564,19 @@ void ParseDynamicRangeConfigurations(
   if (video_config->hasTransferFunction()) {
     switch (video_config->transferFunction().AsEnum()) {
       case V8TransferFunction::Enum::kSRGB:
-        color_space->transfer = media::VideoColorSpace::TransferID::BT709;
+        transfer = media::VideoColorSpace::TransferID::BT709;
         break;
       case V8TransferFunction::Enum::kPq:
-        color_space->transfer = media::VideoColorSpace::TransferID::SMPTEST2084;
+        transfer = media::VideoColorSpace::TransferID::SMPTEST2084;
         break;
       case V8TransferFunction::Enum::kHlg:
-        color_space->transfer =
-            media::VideoColorSpace::TransferID::ARIB_STD_B67;
+        transfer = media::VideoColorSpace::TransferID::ARIB_STD_B67;
         break;
     }
   }
+
+  *color_space = media::VideoColorSpace(
+      primaries, transfer, color_space->matrix(), color_space->range());
 }
 
 // Returns whether the audio codec associated with the audio configuration is
@@ -676,8 +680,8 @@ bool IsVideoConfigurationSupported(const String& mime_type,
   if (video_color_space.IsSpecified() &&
       codec_string_has_non_default_color_space) {
     // Per spec, report unsupported if color space information is mismatched.
-    if (video_color_space.transfer != result->color_space.transfer ||
-        video_color_space.primaries != result->color_space.primaries) {
+    if (video_color_space.transfer() != result->color_space.transfer() ||
+        video_color_space.primaries() != result->color_space.primaries()) {
       DLOG(ERROR) << "Mismatched color spaces between config and codec string.";
       return false;
     }
@@ -838,6 +842,7 @@ ScriptPromise<MediaCapabilitiesDecodingInfo> MediaCapabilities::decodingInfo(
           media::VIDEO_CODEC_PROFILE_UNKNOWN;
       int video_pixels = 0;
       int frames_per_second = 0;
+      std::optional<gfx::Size> video_resolution;
       if (config->hasVideo()) {
         sdp_video_format =
             std::make_optional(ToSdpVideoFormat(config->video()));
@@ -848,8 +853,10 @@ ScriptPromise<MediaCapabilitiesDecodingInfo> MediaCapabilities::decodingInfo(
         // Additional information needed for lookup in WebrtcVideoPerfHistory.
         codec_profile =
             WebRtcVideoFormatToMediaVideoCodecProfile(*sdp_video_format);
-        video_pixels = config->video()->width() * config->video()->height();
         frames_per_second = base::ClampRound(config->video()->framerate());
+        video_resolution =
+            gfx::Size(config->video()->width(), config->video()->height());
+        video_pixels = video_resolution->GetCheckedArea().ValueOrDefault(0);
       }
       media::mojom::blink::WebrtcPredictionFeaturesPtr features =
           media::mojom::blink::WebrtcPredictionFeatures::New(
@@ -858,6 +865,7 @@ ScriptPromise<MediaCapabilitiesDecodingInfo> MediaCapabilities::decodingInfo(
 
       handler->DecodingInfo(
           sdp_audio_format, sdp_video_format, spatial_scalability,
+          video_resolution,
           BindOnce(&MediaCapabilities::OnWebrtcSupportInfo,
                    WrapPersistent(this), callback_id, std::move(features),
                    frames_per_second, OperationType::kDecoding));
@@ -934,9 +942,11 @@ ScriptPromise<MediaCapabilitiesDecodingInfo> MediaCapabilities::decodingInfo(
   // Fill in values for range, matrix since `VideoConfiguration` doesn't have
   // such concepts; these aren't used, but ensure VideoColorSpace.IsSpecified()
   // works as expected downstream.
-  media::VideoColorSpace video_color_space;
-  video_color_space.range = gfx::ColorSpace::RangeID::DERIVED;
-  video_color_space.matrix = media::VideoColorSpace::MatrixID::BT709;
+  media::VideoColorSpace video_color_space(
+      media::VideoColorSpace::PrimaryID::UNSPECIFIED,
+      media::VideoColorSpace::TransferID::UNSPECIFIED,
+      media::VideoColorSpace::MatrixID::BT709,
+      gfx::ColorSpace::RangeID::DERIVED);
 
   gfx::HdrMetadataType hdr_metadata_type = gfx::HdrMetadataType::kNone;
   if (config->hasVideo()) {
@@ -1068,6 +1078,7 @@ ScriptPromise<MediaCapabilitiesInfo> MediaCapabilities::encodingInfo(
           media::VIDEO_CODEC_PROFILE_UNKNOWN;
       int video_pixels = 0;
       int frames_per_second = 0;
+      std::optional<gfx::Size> video_resolution;
       if (config->hasVideo()) {
         sdp_video_format =
             std::make_optional(ToSdpVideoFormat(config->video()));
@@ -1080,6 +1091,8 @@ ScriptPromise<MediaCapabilitiesInfo> MediaCapabilities::encodingInfo(
             WebRtcVideoFormatToMediaVideoCodecProfile(*sdp_video_format);
         video_pixels = config->video()->width() * config->video()->height();
         frames_per_second = base::ClampRound(config->video()->framerate());
+        video_resolution =
+            gfx::Size(config->video()->width(), config->video()->height());
       }
       media::mojom::blink::WebrtcPredictionFeaturesPtr features =
           media::mojom::blink::WebrtcPredictionFeatures::New(
@@ -1088,6 +1101,7 @@ ScriptPromise<MediaCapabilitiesInfo> MediaCapabilities::encodingInfo(
 
       handler->EncodingInfo(
           sdp_audio_format, sdp_video_format, scalability_mode,
+          video_resolution,
           BindOnce(&MediaCapabilities::OnWebrtcSupportInfo,
                    WrapPersistent(this), callback_id, std::move(features),
                    frames_per_second, OperationType::kEncoding));

@@ -7,7 +7,7 @@ import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
-import type * as StackTrace from '../stack_trace/stack_trace.js';
+import * as StackTrace from '../stack_trace/stack_trace.js';
 // eslint-disable-next-line @devtools/es-modules-import
 import * as StackTraceImpl from '../stack_trace/stack_trace_impl.js';
 import type * as TextUtils from '../text_utils/text_utils.js';
@@ -20,6 +20,13 @@ import {type LiveLocation, type LiveLocationPool, LiveLocationWithPool} from './
 import {NetworkProject} from './NetworkProject.js';
 import type {ResourceMapping} from './ResourceMapping.js';
 import {type ResourceScriptFile, ResourceScriptMapping} from './ResourceScriptMapping.js';
+import {
+  isErrorLike,
+  type SymbolizedError,
+  SymbolizedErrorObject,
+  SymbolizedSyntaxError,
+  UnparsableError,
+} from './SymbolizedError.js';
 
 export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObserver<SDK.DebuggerModel.DebuggerModel> {
   readonly resourceMapping: ResourceMapping;
@@ -201,6 +208,70 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
     const stackTracePromise = model.createFromDebuggerPaused(pausedDetails, this.#translateRawFrames.bind(this));
     this.recordLiveLocationChange(stackTracePromise);
     return await stackTracePromise;
+  }
+
+  async createStackTraceFromErrorStackLikeString(
+      target: SDK.Target.Target, stack: string,
+      exceptionDetails?: Protocol.Runtime.ExceptionDetails): Promise<StackTrace.StackTrace.ParsedErrorStackTrace|null> {
+    const model =
+        target.model(StackTraceImpl.StackTraceModel.StackTraceModel) as StackTraceImpl.StackTraceModel.StackTraceModel;
+    const stackTracePromise =
+        model.createFromErrorStackLikeString(stack, this.#translateRawFrames.bind(this), exceptionDetails);
+    this.recordLiveLocationChange(stackTracePromise);
+    return await stackTracePromise;
+  }
+
+  async createSymbolizedError(
+      remoteObject: SDK.RemoteObject.RemoteObject,
+      exceptionDetails?: Protocol.Runtime.ExceptionDetails): Promise<SymbolizedError|null> {
+    let errorStack = '';
+    let causeRemoteObject: SDK.RemoteObject.RemoteObject|undefined;
+    let fetchedExceptionDetails = exceptionDetails;
+
+    if (remoteObject.subtype === 'error') {
+      const remoteError = SDK.RemoteObject.RemoteError.objectAsError(remoteObject);
+      errorStack = remoteError.errorStack;
+
+      const [details, causeRemote] = await Promise.all([
+        exceptionDetails ? Promise.resolve(exceptionDetails) : remoteError.exceptionDetails(),
+        remoteError.cause(),
+      ]);
+      fetchedExceptionDetails = details;
+      causeRemoteObject = causeRemote;
+
+      if (remoteObject.className === 'SyntaxError' && fetchedExceptionDetails) {
+        const syntaxError = await SymbolizedSyntaxError.fromExceptionDetails(
+            remoteObject.runtimeModel().target(), this, fetchedExceptionDetails);
+        if (syntaxError) {
+          return syntaxError;
+        }
+      }
+    } else if (remoteObject.type === 'string') {
+      errorStack = remoteObject.description || '';
+      if (!isErrorLike(errorStack)) {
+        return null;
+      }
+    } else {
+      return null;
+    }
+
+    const [stackTrace, cause] = await Promise.all([
+      this.createStackTraceFromErrorStackLikeString(
+          remoteObject.runtimeModel().target(), errorStack, fetchedExceptionDetails),
+      causeRemoteObject ? this.createSymbolizedError(causeRemoteObject) : Promise.resolve(null),
+    ]);
+
+    const issueSummary = fetchedExceptionDetails?.exceptionMetaData?.issueSummary;
+    if (typeof issueSummary === 'string') {
+      errorStack = StackTrace.ErrorStackParser.concatErrorDescriptionAndIssueSummary(errorStack, issueSummary);
+    }
+
+    if (!stackTrace) {
+      return new UnparsableError(errorStack, cause);
+    }
+
+    const message = StackTraceImpl.DetailedErrorStackParser.parseMessage(errorStack);
+    return new SymbolizedErrorObject(message, stackTrace, cause);
   }
 
   async createLiveLocation(

@@ -61,7 +61,7 @@ static_assert(sizeof(void*) != 8, "");
 // Too expensive for official builds, as it adds cache misses to all
 // allocations. On the other hand, we want wide metrics coverage to get
 // realistic profiles.
-#if PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC) && !defined(OFFICIAL_BUILD)
+#if PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC) && !PA_BUILDFLAG(OFFICIAL)
 #define PA_CONFIG_THREAD_CACHE_ALLOC_STATS() 1
 #else
 #define PA_CONFIG_THREAD_CACHE_ALLOC_STATS() 0
@@ -120,8 +120,8 @@ static_assert(sizeof(void*) == 8);
 //
 // Regardless, the "normal" TLS access is fast on x86_64 (see partition_tls.h),
 // so don't bother with thread_local anywhere.
-#if !(PA_BUILDFLAG(IS_WIN) && defined(COMPONENT_BUILD)) && \
-    !PA_BUILDFLAG(IS_APPLE) && !PA_BUILDFLAG(IS_LINUX) &&  \
+#if !(PA_BUILDFLAG(IS_WIN) && PA_BUILDFLAG(IS_COMPONENT_BUILD)) && \
+    !PA_BUILDFLAG(IS_APPLE) && !PA_BUILDFLAG(IS_LINUX) &&          \
     !PA_BUILDFLAG(IS_CHROMEOS)
 #define PA_CONFIG_THREAD_LOCAL_TLS() 1
 #else
@@ -259,5 +259,13 @@ constexpr bool kUseFewerMemoryRegions =
 #else
 #define PA_CONFIG_IS_NONCLANG_MSVC() 0
 #endif
+
+// Enables Zero Segment maintained by PA.
+#define PA_CONFIG_ENABLE_USER_SPACE_ZERO_SEGMENT() \
+  PA_BUILDFLAG(ENABLE_USER_SPACE_ZERO_SEGMENT)
+
+// Size of the Zero Segment in MB.
+#define PA_CONFIG_USER_SPACE_ZERO_SEGMENT_SIZE_MB() \
+  PA_BUILDFLAG(USER_SPACE_ZERO_SEGMENT_SIZE_MB)
 
 #endif  // PARTITION_ALLOC_PARTITION_ALLOC_CONFIG_H_

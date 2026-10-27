@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Common from '../../../core/common/common.js';
 import * as Host from '../../../core/host/host.js';
 import * as Platform from '../../../core/platform/platform.js';
@@ -221,6 +223,58 @@ describeWithMockConnection('ContextSelectionAgent', function() {
       ]);
     });
 
+    it('fails to list network requests for opaque origins', async () => {
+      const agent = new ContextSelectionAgent.ContextSelectionAgent({
+        aidaClient: mockAidaClient([
+          [{
+            functionCalls: [{
+              name: 'listNetworkRequests',
+              args: {},
+            }],
+            explanation: '',
+          }],
+          [{explanation: 'Done'}],
+        ]),
+        allowedOrigin: () => ({origin: 'null'}),
+      });
+
+      await Array.fromAsync(agent.run('test', {selected: null}));
+
+      const requestToAida = agent.buildRequest({text: ''}, Host.AidaClient.Role.USER);
+      const part = requestToAida.historical_contexts?.[2].parts[0];
+      assert(part && 'functionResponse' in part);
+      assert.deepEqual(part.functionResponse.response, {
+        error: 'No requests recorded by DevTools',
+        widgets: undefined,
+      });
+    });
+
+    it('fails to select network request for opaque origins', async () => {
+      const agent = new ContextSelectionAgent.ContextSelectionAgent({
+        aidaClient: mockAidaClient([
+          [{
+            functionCalls: [{
+              name: 'selectNetworkRequest',
+              args: {id: 'req-1'},
+            }],
+            explanation: '',
+          }],
+          [{explanation: 'Done'}],
+        ]),
+        allowedOrigin: () => ({origin: 'data:'}),
+      });
+
+      await Array.fromAsync(agent.run('test', {selected: null}));
+
+      const requestToAida = agent.buildRequest({text: ''}, Host.AidaClient.Role.USER);
+      const part = requestToAida.historical_contexts?.[2].parts[0];
+      assert(part && 'functionResponse' in part);
+      assert.deepEqual(part.functionResponse.response, {
+        error: 'No request found',
+        widgets: undefined,
+      });
+    });
+
     it('filters network requests by origin', async () => {
       const request1 = SDK.NetworkRequest.NetworkRequest.create(
           'requestId1' as Protocol.Network.RequestId,
@@ -259,7 +313,7 @@ describeWithMockConnection('ContextSelectionAgent', function() {
           }],
           [{explanation: 'Done'}],
         ]),
-        allowedOrigin: () => 'https://example.com',
+        allowedOrigin: () => ({origin: 'https://example.com'}),
       });
 
       await Array.fromAsync(agent.run('test', {selected: null}));
@@ -331,7 +385,7 @@ describeWithMockConnection('ContextSelectionAgent', function() {
           }],
           [{explanation: 'Done'}],
         ]),
-        allowedOrigin: () => 'https://example.com',
+        allowedOrigin: () => ({origin: 'https://example.com'}),
       });
 
       await Array.fromAsync(agent.run('test', {selected: null}));
@@ -385,7 +439,7 @@ describeWithMockConnection('ContextSelectionAgent', function() {
           }],
           [{explanation: 'Done'}],
         ]),
-        allowedOrigin: () => 'https://example.com',
+        allowedOrigin: () => ({origin: 'https://example.com'}),
       });
 
       await Array.fromAsync(agent.run('test', {selected: null}));
@@ -422,6 +476,123 @@ describeWithMockConnection('ContextSelectionAgent', function() {
           parts: [{text: 'Done'}],
         },
       ]);
+    });
+
+    it('handles invalid documentURL when listing network requests', async () => {
+      const request = SDK.NetworkRequest.NetworkRequest.create(
+          'requestId' as Protocol.Network.RequestId,
+          urlString`https://example.com/`,
+          urlString`invalid-url`,
+          null,
+          null,
+          null,
+      );
+      request.statusCode = 200;
+
+      const networkLog = Logs.NetworkLog.NetworkLog.instance();
+      sinon.stub(networkLog, 'requests').returns([request]);
+
+      const agent = new ContextSelectionAgent.ContextSelectionAgent({
+        aidaClient: mockAidaClient([
+          [{
+            functionCalls: [{
+              name: 'listNetworkRequests',
+              args: {},
+            }],
+            explanation: '',
+          }],
+          [{explanation: 'Done'}],
+        ]),
+        allowedOrigin: () => ({origin: 'https://example.com'}),
+      });
+
+      await Array.fromAsync(agent.run('test', {selected: null}));
+
+      const requestToAida = agent.buildRequest({text: ''}, Host.AidaClient.Role.USER);
+      assert.isOk(requestToAida.historical_contexts);
+      assert.isOk(requestToAida.historical_contexts[2].parts);
+      assert.deepEqual(requestToAida.historical_contexts[2].parts[0], {
+        functionResponse: {
+          name: 'listNetworkRequests',
+          response: {
+            error: 'No requests showing with origin https://example.com. Tell the user to start a new chat',
+            widgets: undefined,
+          },
+        },
+      });
+    });
+
+    it('lists network requests with different origins but same document origin', async () => {
+      const request1 = SDK.NetworkRequest.NetworkRequest.create(
+          'requestId1' as Protocol.Network.RequestId,
+          urlString`https://example.com/`,
+          urlString`https://example.com/`,
+          null,
+          null,
+          null,
+      );
+      request1.statusCode = 200;
+      request1.setIssueTime(0, 0);
+      request1.endTime = 1;
+
+      const request2 = SDK.NetworkRequest.NetworkRequest.create(
+          'requestId2' as Protocol.Network.RequestId,
+          urlString`https://another.com/script.js`,
+          urlString`https://example.com/`,
+          null,
+          null,
+          null,
+      );
+      request2.statusCode = 200;
+      request2.setIssueTime(0, 0);
+      request2.endTime = 1;
+
+      const networkLog = Logs.NetworkLog.NetworkLog.instance();
+      sinon.stub(networkLog, 'requests').returns([request1, request2]);
+
+      const agent = new ContextSelectionAgent.ContextSelectionAgent({
+        aidaClient: mockAidaClient([
+          [{
+            functionCalls: [{
+              name: 'listNetworkRequests',
+              args: {},
+            }],
+            explanation: '',
+          }],
+          [{explanation: 'Done'}],
+        ]),
+        allowedOrigin: () => ({origin: 'https://example.com'}),
+      });
+
+      await Array.fromAsync(agent.run('test', {selected: null}));
+
+      const requestToAida = agent.buildRequest({text: ''}, Host.AidaClient.Role.USER);
+      assert.isOk(requestToAida.historical_contexts);
+      assert.isOk(requestToAida.historical_contexts[2].parts);
+      assert.deepEqual(requestToAida.historical_contexts[2].parts[0], {
+        functionResponse: {
+          name: 'listNetworkRequests',
+          response: {
+            result: [
+              {
+                id: 'requestId1',
+                url: 'https://example.com/',
+                statusCode: 200,
+                duration: '1.00\xA0s',
+                transferSize: '0.0\xA0kB',
+              },
+              {
+                id: 'requestId2',
+                url: 'https://another.com/script.js',
+                statusCode: 200,
+                duration: '1.00\xA0s',
+                transferSize: '0.0\xA0kB',
+              },
+            ],
+            widgets: undefined,
+          },
+        },
+      });
     });
   });
 
@@ -492,6 +663,11 @@ describeWithMockConnection('ContextSelectionAgent', function() {
       assert.exists(contextChange);
       assert.instanceOf(contextChange.context, NetworkAgent.RequestContext);
       assert.strictEqual(contextChange.context.getItem(), request);
+      assert.exists(contextChange.widgets);
+      assert.lengthOf(contextChange.widgets, 1);
+      const widget = contextChange.widgets[0] as AiAgent.NetworkRequestGeneralHeadersAiWidget;
+      assert.strictEqual(widget.name, 'NETWORK_REQUEST_GENERAL_HEADERS');
+      assert.strictEqual(widget.data.request, request);
     });
 
     it('returns an error when selecting cross-origin network request', async () => {
@@ -521,7 +697,7 @@ describeWithMockConnection('ContextSelectionAgent', function() {
           }],
           [{explanation: 'Done'}],
         ]),
-        allowedOrigin: () => 'https://example.com',
+        allowedOrigin: () => ({origin: 'https://example.com'}),
       });
 
       const responses = await Array.fromAsync(agent.run('test', {selected: null}));
@@ -529,7 +705,56 @@ describeWithMockConnection('ContextSelectionAgent', function() {
       assert.isUndefined(responses.find(r => r.type === AiAgent.ResponseType.CONTEXT_CHANGE));
 
       const requestToAida = agent.buildRequest({text: ''}, Host.AidaClient.Role.USER);
-      assert.deepEqual(requestToAida.historical_contexts?.[2].parts?.[0], {
+      assert.isOk(requestToAida.historical_contexts);
+      assert.isOk(requestToAida.historical_contexts[2].parts);
+      assert.deepEqual(requestToAida.historical_contexts[2].parts[0], {
+        functionResponse: {
+          name: 'selectNetworkRequest',
+          response: {
+            error: 'No request found',
+            widgets: undefined,
+          },
+        },
+      });
+    });
+
+    it('handles invalid documentURL when selecting network request', async () => {
+      const request = SDK.NetworkRequest.NetworkRequest.create(
+          'requestId' as Protocol.Network.RequestId,
+          urlString`https://example.com/`,
+          urlString`invalid-url`,
+          null,
+          null,
+          null,
+      );
+      request.statusCode = 200;
+
+      const networkLog = Logs.NetworkLog.NetworkLog.instance();
+      sinon.stub(networkLog, 'requests').returns([request]);
+
+      const agent = new ContextSelectionAgent.ContextSelectionAgent({
+        aidaClient: mockAidaClient([
+          [{
+            functionCalls: [{
+              name: 'selectNetworkRequest',
+              args: {
+                id: 'requestId',
+              },
+            }],
+            explanation: '',
+          }],
+          [{explanation: 'Done'}],
+        ]),
+        allowedOrigin: () => ({origin: 'https://example.com'}),
+      });
+
+      const responses = await Array.fromAsync(agent.run('test', {selected: null}));
+      assert.isUndefined(responses.find(r => r.type === AiAgent.ResponseType.CONTEXT_CHANGE));
+
+      const requestToAida = agent.buildRequest({text: ''}, Host.AidaClient.Role.USER);
+      assert.isOk(requestToAida.historical_contexts);
+      assert.isOk(requestToAida.historical_contexts[2].parts);
+      assert.deepEqual(requestToAida.historical_contexts[2].parts[0], {
         functionResponse: {
           name: 'selectNetworkRequest',
           response: {
@@ -575,6 +800,157 @@ describeWithMockConnection('ContextSelectionAgent', function() {
       assert.exists(contextChange);
       assert.instanceOf(contextChange.context, FileAgent.FileContext);
       assert.strictEqual(contextChange.context.getItem(), file);
+      assert.exists(contextChange.widgets);
+      assert.lengthOf(contextChange.widgets, 1);
+      const widget = contextChange.widgets[0] as AiAgent.SourceFileAiWidget;
+      assert.strictEqual(widget.name, 'SOURCE_FILE');
+      assert.strictEqual(widget.data.uiSourceCode, file);
+    });
+
+    it('returns an error when selecting cross-origin source file', async () => {
+      const workspace = Workspace.Workspace.WorkspaceImpl.instance({forceNew: true});
+      const project = {
+        id: () => 'test-project',
+        type: () => Workspace.Workspace.projectTypes.Network,
+        uiSourceCodes: () => [file],
+        fullDisplayName: () => 'script.js',
+      } as unknown as Workspace.Workspace.Project;
+      const file = new Workspace.UISourceCode.UISourceCode(
+          project, urlString`https://another.com/script.js`, Common.ResourceType.resourceTypes.Script);
+      sinon.stub(workspace, 'projects').returns([project]);
+      ContextSelectionAgent.ContextSelectionAgent.uiSourceCodeId.set(file, 1);
+
+      const agent = new ContextSelectionAgent.ContextSelectionAgent({
+        aidaClient: mockAidaClient([
+          [{
+            functionCalls: [{
+              name: 'selectSourceFile',
+              args: {
+                id: 1,
+              },
+            }],
+            explanation: '',
+          }],
+          [{explanation: 'Done'}],
+        ]),
+        allowedOrigin: () => ({origin: 'https://example.com'}),
+      });
+
+      const responses = await Array.fromAsync(agent.run('test', {selected: null}));
+      assert.isUndefined(responses.find(r => r.type === AiAgent.ResponseType.CONTEXT_CHANGE));
+
+      const requestToAida = agent.buildRequest({text: ''}, Host.AidaClient.Role.USER);
+      assert.isOk(requestToAida.historical_contexts);
+      assert.isOk(requestToAida.historical_contexts[2].parts);
+      assert.deepEqual(requestToAida.historical_contexts[2].parts[0], {
+        functionResponse: {
+          name: 'selectSourceFile',
+          response: {
+            error: 'Unable to find file.',
+            widgets: undefined,
+          },
+        },
+      });
+    });
+  });
+
+  describe('listSourceFiles', () => {
+    it('lists source files', async () => {
+      const workspace = Workspace.Workspace.WorkspaceImpl.instance({forceNew: true});
+      const project = {
+        id: () => 'test-project',
+        type: () => Workspace.Workspace.projectTypes.Network,
+        uiSourceCodes: () => [file],
+        fullDisplayName: () => 'script.js',
+      } as unknown as Workspace.Workspace.Project;
+      const file = new Workspace.UISourceCode.UISourceCode(
+          project, urlString`https://example.com/script.js`, Common.ResourceType.resourceTypes.Script);
+      sinon.stub(workspace, 'projects').returns([project]);
+      ContextSelectionAgent.ContextSelectionAgent.uiSourceCodeId.set(file, 1);
+
+      const agent = new ContextSelectionAgent.ContextSelectionAgent({
+        aidaClient: mockAidaClient([
+          [{
+            functionCalls: [{
+              name: 'listSourceFiles',
+              args: {},
+            }],
+            explanation: '',
+          }],
+          [{explanation: 'Done'}],
+        ]),
+      });
+
+      await Array.fromAsync(agent.run('test', {selected: null}));
+
+      const requestToAida = agent.buildRequest({text: ''}, Host.AidaClient.Role.USER);
+      assert.isOk(requestToAida.historical_contexts);
+      assert.isOk(requestToAida.historical_contexts[2].parts);
+      assert.deepEqual(requestToAida.historical_contexts[2].parts[0], {
+        functionResponse: {
+          name: 'listSourceFiles',
+          response: {
+            result: [
+              {
+                file: 'script.js',
+                id: 1,
+              },
+            ],
+            widgets: undefined,
+          },
+        },
+      });
+    });
+
+    it('filters source files by origin', async () => {
+      const workspace = Workspace.Workspace.WorkspaceImpl.instance({forceNew: true});
+      const project = {
+        id: () => 'test-project',
+        type: () => Workspace.Workspace.projectTypes.Network,
+        uiSourceCodes: () => [file1, file2],
+        fullDisplayName: () => 'script.js',
+      } as unknown as Workspace.Workspace.Project;
+      const file1 = new Workspace.UISourceCode.UISourceCode(
+          project, urlString`https://example.com/script.js`, Common.ResourceType.resourceTypes.Script);
+      const file2 = new Workspace.UISourceCode.UISourceCode(
+          project, urlString`https://another.com/script.js`, Common.ResourceType.resourceTypes.Script);
+      sinon.stub(workspace, 'projects').returns([project]);
+      ContextSelectionAgent.ContextSelectionAgent.uiSourceCodeId.set(file1, 1);
+      ContextSelectionAgent.ContextSelectionAgent.uiSourceCodeId.set(file2, 2);
+
+      const agent = new ContextSelectionAgent.ContextSelectionAgent({
+        aidaClient: mockAidaClient([
+          [{
+            functionCalls: [{
+              name: 'listSourceFiles',
+              args: {},
+            }],
+            explanation: '',
+          }],
+          [{explanation: 'Done'}],
+        ]),
+        allowedOrigin: () => ({origin: 'https://example.com'}),
+      });
+
+      await Array.fromAsync(agent.run('test', {selected: null}));
+
+      const requestToAida = agent.buildRequest({text: ''}, Host.AidaClient.Role.USER);
+      assert.isOk(requestToAida.historical_contexts);
+      assert.isOk(requestToAida.historical_contexts[2].parts);
+      assert.deepEqual(requestToAida.historical_contexts[2].parts[0], {
+        functionResponse: {
+          name: 'listSourceFiles',
+          response: {
+            result: [
+              {
+                file: 'script.js',
+                id: 1,
+              },
+            ],
+            widgets: undefined,
+          },
+        },
+      });
     });
   });
 });

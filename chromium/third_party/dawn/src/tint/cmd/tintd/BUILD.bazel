@@ -34,30 +34,25 @@
 #                       Do not modify this file directly
 ################################################################################
 
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 load("//src/tint:flags.bzl", "COPTS")
 load("@bazel_skylib//lib:selects.bzl", "selects")
+
+exports_files(glob(["*.def", "*.tmpl"], allow_empty = True))
+
 cc_binary(
   name = "cmd",
   srcs = [
     "main.cc",
   ],
   deps = [
+    "//src/tint/lang/wgsl/ls",
     "//src/tint/utils",
     "//src/tint/utils/ice",
     "//src/tint/utils/macros",
     "//src/tint/utils/rtti",
     "//src/utils",
-  ] + select({
-    ":tint_build_tintd": [
-      
-    ],
-    "//conditions:default": [],
-  }) + select({
-    ":tint_build_tintd_and_tint_build_wgsl_reader": [
-      "//src/tint/lang/wgsl/ls",
-    ],
-    "//conditions:default": [],
-  }),
+  ],
   copts = COPTS,
   visibility = ["//visibility:public"],
 )

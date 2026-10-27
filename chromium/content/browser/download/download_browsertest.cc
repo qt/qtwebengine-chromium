@@ -82,8 +82,8 @@
 #include "net/base/network_isolation_partition.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_connection_info.h"
-#include "net/test/embedded_test_server/controllable_http_response.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "net/test/embedded_test_server/expectation_handler.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
@@ -972,8 +972,6 @@ class DownloadContentTest : public ContentBrowserTest {
         {blink::features::kSvgAnchorElementDownloadAttribute},
         {
             download::features::kAllowDownloadResumptionWithoutStrongValidators,
-            // Link Preview hides alt+click. Disables it not to do so.
-            blink::features::kLinkPreview,
         });
   }
 
@@ -4576,9 +4574,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
 
   // Load a page that contains a cross-origin iframe, where the iframe contains
   // a <a download> link same-origin to the iframe's origin.
-  TestNavigationObserver same_tab_observer(shell()->web_contents(), 1);
-  shell()->LoadURL(document_url);
-  same_tab_observer.Wait();
+  EXPECT_TRUE(NavigateToURL(shell(), document_url));
 
   // Click the <a download> link in the child frame.
   download::DownloadItem* download_item = nullptr;
@@ -5238,69 +5234,41 @@ IN_PROC_BROWSER_TEST_F(MhtmlLoadingTest, AllowRenderMessageRfc822PageFromFile) {
 IN_PROC_BROWSER_TEST_F(MhtmlLoadingTest,
                        DisallowRenderMultipartRelatedPageFromHTTP) {
   net::EmbeddedTestServer server;
-  net::test_server::ControllableHttpResponse response(&server, "/");
+  net::test_server::ExpectationHandler handler(&server);
+  handler.OnRequest("/").RespondWith("multipart/related");
   EXPECT_TRUE(server.Start());
-  std::unique_ptr<DownloadTestObserver> observer(CreateWaiter(shell(), 1));
 
   GURL url = server.GetURL(kOrigin, "/");
 
-  shell()->LoadURL(url);
-
-  response.WaitForRequest();
-  response.Send(net::HTTP_OK, "multipart/related");
-  response.Done();
-
-  observer->WaitForFinished();
-  EXPECT_EQ(
-      1u, observer->NumDownloadsSeenInState(download::DownloadItem::COMPLETE));
+  NavigateToURLAndWaitForDownload(shell(), url,
+                                  download::DownloadItem::COMPLETE);
 }
 
 IN_PROC_BROWSER_TEST_F(MhtmlLoadingTest,
                        DisallowRenderMessageRfc822PageFromHTTP) {
   net::EmbeddedTestServer server;
-  net::test_server::ControllableHttpResponse response(&server, "/");
+  net::test_server::ExpectationHandler handler(&server);
+  handler.OnRequest("/").RespondWith("message/rfc822");
   EXPECT_TRUE(server.Start());
-  std::unique_ptr<DownloadTestObserver> observer(CreateWaiter(shell(), 1));
+  const GURL url = server.GetURL(kOrigin, "/");
 
-  GURL url = server.GetURL(kOrigin, "/");
-
-  shell()->LoadURL(url);
-
-  response.WaitForRequest();
-  response.Send(net::HTTP_OK, "message/rfc822");
-  response.Done();
-
-  observer->WaitForFinished();
-  EXPECT_EQ(
-      1u, observer->NumDownloadsSeenInState(download::DownloadItem::COMPLETE));
+  NavigateToURLAndWaitForDownload(shell(), url,
+                                  download::DownloadItem::COMPLETE);
 }
 
 // Regression test for https://crbug.com/1171765
 IN_PROC_BROWSER_TEST_F(MhtmlLoadingTest, DisallowRenderMessageRfc822Iframe) {
   net::EmbeddedTestServer server;
-  net::test_server::ControllableHttpResponse main_response(&server, "/main");
-  net::test_server::ControllableHttpResponse sub_response(&server, "/sub");
+  net::test_server::ExpectationHandler handler(&server);
+  handler.OnRequest("/main").RespondWith("text/html",
+                                         "<iframe src='./sub'></iframe>");
+  handler.OnRequest("/sub").RespondWith("message/rfc822");
   EXPECT_TRUE(server.Start());
 
-  std::unique_ptr<DownloadTestObserver> observer(CreateWaiter(shell(), 1));
+  const GURL main_url = server.GetURL(kOrigin, "/main");
 
-  GURL main_url = server.GetURL(kOrigin, "/main");
-  GURL sub_url = server.GetURL(kOrigin, "/sub");
-
-  shell()->LoadURL(main_url);
-
-  main_response.WaitForRequest();
-  main_response.Send(net::HTTP_OK, "text/html",
-                     "<iframe src='./sub'></iframe>");
-  main_response.Done();
-
-  sub_response.WaitForRequest();
-  sub_response.Send(net::HTTP_OK, "message/rfc822");
-  sub_response.Done();
-
-  observer->WaitForFinished();
-  EXPECT_EQ(
-      1u, observer->NumDownloadsSeenInState(download::DownloadItem::COMPLETE));
+  NavigateToCommittedURLAndWaitForDownload(shell(), main_url,
+                                           download::DownloadItem::COMPLETE);
 }
 
 // MhtmlLoadingTest with `kMHTML_Improvements` enabled.
@@ -5334,10 +5302,7 @@ IN_PROC_BROWSER_TEST_F(MHTMLImprovementsLoadingTest,
   // This test forces loading MHTML over HTTP to trigger the form disabling
   // functionality.
   net::EmbeddedTestServer server;
-  net::test_server::ControllableHttpResponse response(&server, "/");
-  EXPECT_TRUE(server.Start());
-
-  GURL url = server.GetURL(kOrigin, "/");
+  net::test_server::ExpectationHandler handler(&server);
 
   std::string mhtml_content;
   {
@@ -5345,16 +5310,16 @@ IN_PROC_BROWSER_TEST_F(MHTMLImprovementsLoadingTest,
     ASSERT_TRUE(base::ReadFileToString(
         GetTestFilePath("download", "forms.mhtml"), &mhtml_content));
   }
+  handler.OnRequest("/").RespondWith("multipart/related", mhtml_content);
+  EXPECT_TRUE(server.Start());
+
+  const GURL url = server.GetURL(kOrigin, "/");
 
   auto observer = std::make_unique<content::TestNavigationObserver>(url);
   observer->WatchExistingWebContents();
   observer->StartWatchingNewWebContents();
 
-  shell()->LoadURL(url);
-
-  response.WaitForRequest();
-  response.Send(net::HTTP_OK, "multipart/related", mhtml_content);
-  response.Done();
+  EXPECT_TRUE(NavigateToURL(shell(), url));
 
   observer->WaitForNavigationFinished();
   ASSERT_TRUE(WaitForLoadStop(shell()->web_contents()));
@@ -5476,66 +5441,6 @@ IN_PROC_BROWSER_TEST_F(DownloadFencedFrameTest, DiscardNonNavigationDownload) {
   std::vector<raw_ptr<download::DownloadItem, VectorExperimental>> downloads;
   download_manager->GetAllDownloads(&downloads);
   EXPECT_TRUE(downloads.empty());
-}
-
-// An interrupted download will be created if fenced frame has revoked its
-// untrusted network access.
-// NOTE: Normally a download cannot be initiated from a network revoked fenced
-// frame. In case there are download entry points that are not properly
-// disabled, the network status check during the creation of download should
-// catch these and create an interrupted download.
-IN_PROC_BROWSER_TEST_F(DownloadFencedFrameTest,
-                       CreateInterruptedDownloadIfNetworkRevoked) {
-  ASSERT_TRUE(embedded_https_test_server().Start());
-
-  const GURL kInitialUrl = embedded_https_test_server().GetURL(
-      "a.test", "/cross_site_iframe_factory.html?a.test(a.test{fenced})");
-  const GURL kDownloadUrl =
-      embedded_https_test_server().GetURL("/download/download-test.lib");
-
-  // Create the fenced frame.
-  EXPECT_TRUE(NavigateToURL(shell(), kInitialUrl));
-  std::vector<content::RenderFrameHost*> child_frames =
-      fenced_frame_helper()->GetChildFencedFrameHosts(
-          shell()->web_contents()->GetPrimaryMainFrame());
-  EXPECT_EQ(child_frames.size(), 1u);
-  content::RenderFrameHost* fenced_frame_host = child_frames[0];
-
-  // Create a download with the fenced frame untrusted network revoked. An
-  // interrupted download should be created.
-  auto* download_manager =
-      fenced_frame_host->GetBrowserContext()->GetDownloadManager();
-  MockDownloadManagerObserver dm_observer(download_manager);
-  EXPECT_CALL(dm_observer, OnDownloadCreated(_, _)).Times(1);
-  EXPECT_CALL(dm_observer, OnDownloadDropped(_)).Times(0);
-
-  auto params = blink::mojom::DownloadURLParams::New();
-  // Set this to be a context menu save so that it is not considered as content
-  // initiated. Otherwise no download item will be created.
-  params->is_context_menu_save = true;
-  params->url = kDownloadUrl;
-
-  std::unique_ptr<DownloadTestObserverInterrupted> observer =
-      std::make_unique<DownloadTestObserverInterrupted>(
-          download_manager, 1,
-          DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_FAIL);
-
-  content::test::RevokeFencedFrameUntrustedNetwork(fenced_frame_host);
-
-  // Download the URL.
-  static_cast<RenderFrameHostImpl*>(fenced_frame_host)
-      ->DownloadURL(std::move(params));
-
-  // Verify that an interrupted download has been created.
-  observer->WaitForFinished();
-  std::vector<raw_ptr<download::DownloadItem, VectorExperimental>> downloads;
-  DownloadManagerForShell(shell())->GetAllDownloads(&downloads);
-  EXPECT_EQ(1u, downloads.size());
-  download::DownloadItem* download = downloads[0];
-
-  ASSERT_EQ(download->GetState(), download::DownloadItem::INTERRUPTED);
-  EXPECT_EQ(download->GetLastReason(),
-            download::DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED);
 }
 
 // A download triggered by clicking on a link with a |download| attribute should

@@ -127,7 +127,7 @@ class UnorderedModuleSet
 Handle<SourceTextModule> SourceTextModule::GetCycleRoot(
     Isolate* isolate) const {
   CHECK_GE(status(), kEvaluatingAsync);
-  DCHECK(!IsTheHole(cycle_root(), isolate));
+  DCHECK(!IsTheHole(cycle_root()));
   Handle<SourceTextModule> root(Cast<SourceTextModule>(cycle_root()), isolate);
   return root;
 }
@@ -195,6 +195,13 @@ Tagged<UnionOf<Cell, Undefined>> Module::deferred_module_namespace() const {
 void Module::set_deferred_module_namespace(
     Tagged<UnionOf<Cell, Undefined>> value, WriteBarrierMode mode) {
   deferred_module_namespace_.store(this, value, mode);
+}
+
+Tagged<Module> JSModuleNamespace::module() const { return module_.load(); }
+
+void JSModuleNamespace::set_module(Tagged<Module> value,
+                                   WriteBarrierMode mode) {
+  module_.store(this, value, mode);
 }
 
 Tagged<Object> Module::exception() const { return exception_.load(); }

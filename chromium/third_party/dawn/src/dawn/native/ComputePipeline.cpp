@@ -25,12 +25,12 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/ComputePipeline.h"
+#include "src/dawn/native/ComputePipeline.h"
 
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/Device.h"
-#include "dawn/native/ObjectContentHasher.h"
 #include "dawn/native/ObjectType_autogen.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/Device.h"
+#include "src/dawn/native/ObjectContentHasher.h"
 
 namespace dawn::native {
 
@@ -89,17 +89,17 @@ void ComputePipelineBase::DestroyImpl(DestroyReason reason) {
 }
 
 Extent3D ComputePipelineBase::GetWorkgroupSize() const {
-    DAWN_ASSERT(!IsError());
+    DAWN_CHECK(!IsError());
     return mWorkgroupSize;
 }
 
 bool ComputePipelineBase::UsesLinearIndexing() const {
-    DAWN_ASSERT(!IsError());
+    DAWN_CHECK(!IsError());
     return mUsesLinearIndex;
 }
 
 bool ComputePipelineBase::UsesGlobalInvocationIndex() const {
-    DAWN_ASSERT(!IsError());
+    DAWN_CHECK(!IsError());
     return mUsesGlobalInvocationIndex;
 }
 

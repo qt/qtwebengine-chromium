@@ -79,6 +79,7 @@ struct Extensions
     {
         return (textureCubeMapArrayEXT || textureCubeMapArrayOES);
     }
+    bool textureLodBiasAny() const { return (textureLodBiasQCOM || textureLodBiasEXT); }
 
     // GLES 2.0+ extensions
     // --------------------
@@ -181,9 +182,6 @@ struct Extensions
 
     // GL_OES_depth32
     bool depth32OES = false;
-
-    // GL_NV_depth_buffer_float2
-    bool depthBufferFloat2NV = false;
 
     // GL_EXT_depth_clamp
     bool depthClampEXT = false;
@@ -593,6 +591,9 @@ struct Extensions
     // GL_OES_texture_half_float_linear
     bool textureHalfFloatLinearOES = false;
 
+    // GL_QCOM_texture_lod_bias
+    bool textureLodBiasQCOM = false;
+
     // GL_EXT_texture_mirror_clamp_to_edge
     bool textureMirrorClampToEdgeEXT = false;
 
@@ -850,6 +851,9 @@ struct Extensions
 
     // GL_OES_texture_cube_map
     bool textureCubeMapOES = false;
+
+    // GL_EXT_texture_lod_bias
+    bool textureLodBiasEXT = false;
 
     // GL_OES_texture_mirrored_repeat
     bool textureMirroredRepeatOES = false;

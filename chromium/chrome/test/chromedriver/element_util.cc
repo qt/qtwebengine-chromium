@@ -107,7 +107,7 @@ Status VerifyElementClickable(const Session* session,
       frame, web_view, webdriver::atoms::IS_ELEMENT_CLICKABLE, args, &result);
   if (status.IsError())
     return status;
-  std::optional<bool> is_clickable = std::nullopt;
+  std::optional<bool> is_clickable;
   if (result->is_dict())
     is_clickable = result->GetDict().FindBool("clickable");
   if (!is_clickable.has_value()) {
@@ -471,6 +471,21 @@ Status IsElementFocused(
   base::Value element_dict = CreateElement(element_id, session->w3c_compliant);
   *is_focused = *result == element_dict;
   return Status(kOk);
+}
+
+Status IsElementActive(Session* session,
+                       WebView* web_view,
+                       const std::string& element_id,
+                       bool* is_active) {
+  std::unique_ptr<base::Value> active;
+  Status status = GetActiveElement(session, web_view, &active);
+  if (status.IsError()) {
+    *is_active = false;
+    return status;
+  }
+  base::Value element_dict = CreateElement(element_id, session->w3c_compliant);
+  *is_active = *active == element_dict;
+  return status;
 }
 
 Status IsDocumentTypeXml(

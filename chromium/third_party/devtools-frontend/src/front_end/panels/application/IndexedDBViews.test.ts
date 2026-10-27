@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as SDK from '../../core/sdk/sdk.js';
 import {
   getCleanTextContentFromElements,
@@ -186,7 +188,7 @@ describe.skip('[crbug.com/1473557]: IDBDatabaseView', () => {
       'https://example.com',
       'Yes, because the storage key is opaque',
       'Yes',
-      'default',
+      'Default bucket',
       '1',
       '0',
     ]);

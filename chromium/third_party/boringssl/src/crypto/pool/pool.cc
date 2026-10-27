@@ -42,7 +42,7 @@ static int CRYPTO_BUFFER_cmp(const CryptoBuffer *a, const CryptoBuffer *b) {
   return a->span() == b->span() ? 0 : 1;
 }
 
-CryptoBufferPool::CryptoBufferPool() {
+CryptoBufferPool::CryptoBufferPool() : RefCounted(CheckSubClass()) {
   RAND_bytes(reinterpret_cast<uint8_t *>(&hash_key_), sizeof(hash_key_));
 }
 
@@ -85,10 +85,17 @@ CRYPTO_BUFFER_POOL *CRYPTO_BUFFER_POOL_new() {
 }
 
 void CRYPTO_BUFFER_POOL_free(CRYPTO_BUFFER_POOL *pool) {
-  Delete(FromOpaque(pool));
+  if (pool != nullptr) {
+    FromOpaque(pool)->DecRefInternal();
+  }
 }
 
-void CryptoBuffer::UpRefInternal() {
+int CRYPTO_BUFFER_POOL_up_ref(CRYPTO_BUFFER_POOL *pool) {
+  FromOpaque(pool)->UpRefInternal();
+  return 1;
+}
+
+void CryptoBuffer::UpRefInternal() const {
   // This is safe in the case that |buf->pool| is NULL because it's just
   // standard reference counting in that case.
   //
@@ -254,6 +261,12 @@ void CRYPTO_BUFFER_free(CRYPTO_BUFFER *buf) {
 int CRYPTO_BUFFER_up_ref(CRYPTO_BUFFER *buf) {
   FromOpaque(buf)->UpRefInternal();
   return 1;
+}
+
+CRYPTO_BUFFER *CRYPTO_BUFFER_dup_ref(const CRYPTO_BUFFER *buf) {
+  auto *buf_ = const_cast<CRYPTO_BUFFER *>(buf);
+  FromOpaque(buf_)->UpRefInternal();
+  return buf_;
 }
 
 const uint8_t *CRYPTO_BUFFER_data(const CRYPTO_BUFFER *buf) {

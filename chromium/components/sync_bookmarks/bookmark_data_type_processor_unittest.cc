@@ -149,10 +149,12 @@ sync_pb::BookmarkMetadata CreateNodeMetadata(
     const std::string& server_id,
     const syncer::UniquePosition& unique_position =
         syncer::UniquePosition::InitialPosition(
-            syncer::UniquePosition::RandomSuffix())) {
+            syncer::UniquePosition::RandomSuffix()),
+    int64_t server_version = 0) {
   sync_pb::BookmarkMetadata bookmark_metadata;
   bookmark_metadata.set_id(node->id());
   bookmark_metadata.mutable_metadata()->set_server_id(server_id);
+  bookmark_metadata.mutable_metadata()->set_server_version(server_version);
   bookmark_metadata.mutable_metadata()->set_client_tag_hash(
       syncer::ClientTagHash::FromUnhashed(syncer::BOOKMARKS,
                                           node->uuid().AsLowercaseString())
@@ -736,6 +738,50 @@ TEST_F(BookmarkDataTypeProcessorTest, ShouldApplyGcDirective) {
       UnorderedElementsAre(TrackedEntityCorrespondsToBookmarkNode(node4)));
 }
 
+TEST_F(BookmarkDataTypeProcessorTest, ShouldApplyGcDirectiveWithLocalDeletion) {
+  const std::string kTitle = "title";
+  const GURL kUrl("https://www.url.com");
+
+  const bookmarks::BookmarkNode* bookmark_bar =
+      bookmark_model()->bookmark_bar_node();
+
+  // Create a synced node.
+  const bookmarks::BookmarkNode* node = bookmark_model()->AddURL(
+      bookmark_bar, /*index=*/0, base::UTF8ToUTF16(kTitle), kUrl);
+
+  SimulateModelReadyToSyncWithInitialSyncDone();
+  SimulateOnSyncStarting();
+  SimulateConnectSync();
+
+  const SyncedBookmarkTrackerEntity* entity =
+      processor()->GetTrackerForTest()->GetEntityForBookmarkNode(node);
+  ASSERT_THAT(entity, NotNull());
+  ASSERT_FALSE(entity->IsUnsynced());
+
+  // Delete the node locally. It becomes a tombstone in the tracker.
+  bookmark_model()->underlying_model()->Remove(
+      node, bookmarks::metrics::BookmarkEditSource::kOther, FROM_HERE);
+  const std::string server_id = entity->metadata().server_id();
+  ASSERT_TRUE(entity->metadata().is_deleted());
+  ASSERT_EQ(entity->bookmark_node(), nullptr);
+  ASSERT_TRUE(entity->IsUnsynced());
+
+  // Process an update with a GC directive (version watermark).
+  // The update list is empty.
+  syncer::UpdateResponseDataList updates;
+  sync_pb::GarbageCollectionDirective garbage_collection_directive;
+  garbage_collection_directive.set_version_watermark(1);
+
+  // This should NOT crash (specifically it should not dereference null node).
+  processor()->OnUpdateReceived(CreateDataTypeState(), std::move(updates),
+                                garbage_collection_directive);
+
+  // The tombstone should be removed from tracker because it is also deleted on
+  // the server (not present in updates during GC directive).
+  EXPECT_EQ(processor()->GetTrackerForTest()->GetEntityForSyncId(server_id),
+            nullptr);
+}
+
 TEST_F(
     BookmarkDataTypeProcessorTest,
     ShouldScheduleSaveAfterRemoteUpdateWithOnlyMetadataChangeAndReflections) {
@@ -839,54 +885,7 @@ TEST_F(BookmarkDataTypeProcessorTest, ShouldDecodeEncodedSyncMetadata) {
   EXPECT_TRUE(new_processor.IsTrackingMetadata());
 }
 
-// Test suite with kSyncResetBookmarksInitialMergeLimitExceededError enabled.
-class BookmarkDataTypeProcessorWithResetErrorFeatureEnabledTest
-    : public BookmarkDataTypeProcessorTest {
- private:
-  base::test::ScopedFeatureList features_{
-      syncer::kSyncResetBookmarksInitialMergeLimitExceededError};
-};
-
-// Test suite with kSyncResetBookmarksInitialMergeLimitExceededError disabled.
-class BookmarkDataTypeProcessorWithResetErrorFeatureDisabledTest
-    : public BookmarkDataTypeProcessorTest {
- public:
-  BookmarkDataTypeProcessorWithResetErrorFeatureDisabledTest() {
-    features_.InitAndDisableFeature(
-        syncer::kSyncResetBookmarksInitialMergeLimitExceededError);
-  }
-
- private:
-  base::test::ScopedFeatureList features_;
-};
-
-TEST_F(BookmarkDataTypeProcessorWithResetErrorFeatureDisabledTest,
-       ShouldNotResetExceededLimitErrorWithTimestamp) {
-  sync_pb::BookmarkModelMetadata model_metadata =
-      CreateMetadataForPermanentNodes(bookmark_model());
-  model_metadata
-      .set_initial_merge_remote_updates_exceeded_limit_timestamp_windows_epoch_micros(
-          (base::Time::Now() - base::Days(31))
-              .ToDeltaSinceWindowsEpoch()
-              .InMicroseconds());
-
-  EXPECT_CALL(*schedule_save_closure(), Run()).Times(0);
-  processor()->ModelReadyToSync(model_metadata.SerializeAsString(),
-                                schedule_save_closure()->Get(),
-                                bookmark_model());
-
-  EXPECT_FALSE(processor()->GetTrackerForTest());
-  std::string new_metadata_str = processor()->EncodeSyncMetadata();
-  sync_pb::BookmarkModelMetadata new_model_metadata;
-  new_model_metadata.ParseFromString(new_metadata_str);
-  EXPECT_FALSE(
-      new_model_metadata.last_initial_merge_remote_updates_exceeded_limit());
-  EXPECT_TRUE(
-      new_model_metadata
-          .has_initial_merge_remote_updates_exceeded_limit_timestamp_windows_epoch_micros());
-}
-
-TEST_F(BookmarkDataTypeProcessorWithResetErrorFeatureEnabledTest,
+TEST_F(BookmarkDataTypeProcessorTest,
        ShouldSetTimestampForExceededLimitErrorForMigratingUsers) {
   sync_pb::BookmarkModelMetadata model_metadata =
       CreateMetadataForPermanentNodes(bookmark_model());
@@ -922,7 +921,7 @@ TEST_F(BookmarkDataTypeProcessorWithResetErrorFeatureEnabledTest,
   EXPECT_LE(time_since_limit_set, base::Days(30));
 }
 
-TEST_F(BookmarkDataTypeProcessorWithResetErrorFeatureEnabledTest,
+TEST_F(BookmarkDataTypeProcessorTest,
        ShouldResetExceededLimitErrorAfter30Days) {
   sync_pb::BookmarkModelMetadata model_metadata =
       CreateMetadataForPermanentNodes(bookmark_model());
@@ -950,7 +949,7 @@ TEST_F(BookmarkDataTypeProcessorWithResetErrorFeatureEnabledTest,
           .has_initial_merge_remote_updates_exceeded_limit_timestamp_windows_epoch_micros());
 }
 
-TEST_F(BookmarkDataTypeProcessorWithResetErrorFeatureEnabledTest,
+TEST_F(BookmarkDataTypeProcessorTest,
        ShouldNotResetExceededLimitErrorWithin30Days) {
   sync_pb::BookmarkModelMetadata model_metadata =
       CreateMetadataForPermanentNodes(bookmark_model());

@@ -6,6 +6,7 @@
 
 #include "base/check_deref.h"
 #include "base/types/optional_util.h"
+#include "chrome/browser/glic/public/glic_invoke_options.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/skills/skills_service_factory.h"
 #include "chrome/browser/skills/skills_ui_window_controller.h"
@@ -13,6 +14,7 @@
 #include "components/skills/public/skill.h"
 #include "components/skills/public/skill.mojom.h"
 #include "components/skills/public/skills_metrics.h"
+#include "components/skills/public/skills_prefs.h"
 #include "components/skills/public/skills_types.h"
 #include "components/sync/protocol/skill_specifics.pb.h"
 #include "components/tabs/public/tab_interface.h"
@@ -26,6 +28,11 @@ namespace {
 SkillCategoryToSkillMap Translate1PSkills(const SkillProtoList& skills_list) {
   SkillCategoryToSkillMap translated_map;
   for (const auto& skill : skills_list) {
+    // Skills belonging to the "Internal" category are used programmatically
+    // (e.g., by Indigo) and should be hidden from the WebUI browser.
+    if (skill.category() == "Internal") {
+      continue;
+    }
     Skill translated_skill;
     translated_skill.id = skill.id();
     translated_skill.name = skill.name();
@@ -86,6 +93,11 @@ SkillsPageHandler::SkillsPageHandler(
       web_contents_(CHECK_DEREF(web_contents)),
       profile_(CHECK_DEREF(
           Profile::FromBrowserContext(web_contents->GetBrowserContext()))) {
+  pref_registrar_.Init(profile_->GetPrefs());
+  pref_registrar_.Add(
+      skills::prefs::kChromeSkillsEnabled,
+      base::BindRepeating(&SkillsPageHandler::OnSkillsEnabledPrefChanged,
+                          base::Unretained(this)));
   if (auto* service =
           SkillsServiceFactory::GetForProfile(base::to_address(profile_))) {
     service_observation_.Observe(service);
@@ -105,7 +117,7 @@ void SkillsPageHandler::OpenSkillsDialog(
     tab_controller->ShowDialog(
         skill.value_or(skills::Skill()),
         ResolveEntryPointForManagementPage(base::OptionalToPtr(skill)),
-        dialog_type);
+        dialog_type, nullptr);
   } else {
     RecordSkillsManagementError(SkillsManagementError::kTabControllerDNE);
   }
@@ -217,10 +229,17 @@ void SkillsPageHandler::Request1PSkills() {
 void SkillsPageHandler::GetInitial1PSkills(
     GetInitial1PSkillsCallback callback) {
   auto scoped_callback = mojo::WrapCallbackWithDefaultInvokeIfNotRun(
-      std::move(callback), SkillCategoryToSkillMap());
+      std::move(callback), mojom::BrowseSkillsInitialState::New());
   auto* service =
       SkillsServiceFactory::GetForProfile(base::to_address(profile_));
-  std::move(scoped_callback).Run(Translate1PSkills(service->Get1PSkills()));
+  if (!service) {
+    std::move(scoped_callback).Run(mojom::BrowseSkillsInitialState::New());
+    return;
+  }
+  auto state = mojom::BrowseSkillsInitialState::New();
+  state->topics_info_list = service->Get1PTopicsInfo();
+  state->skill_map = Translate1PSkills(service->Get1PSkills());
+  std::move(scoped_callback).Run(std::move(state));
 }
 
 void SkillsPageHandler::OnDiscoverySkillsUpdated(
@@ -245,8 +264,10 @@ void SkillsPageHandler::OnDiscoverySkillsUpdated(
 
   // If the data exists that means we have an updated list of skills.
   if (first_party_skill_data) {
-    page_->Update1PMap(Translate1PSkills(first_party_skill_data->skills_list));
-    // TODO (crbug.com/503394871): Notify the UI about the topics list.
+    auto state = mojom::BrowseSkillsInitialState::New();
+    state->topics_info_list = first_party_skill_data->topics_info_list;
+    state->skill_map = Translate1PSkills(first_party_skill_data->skills_list);
+    page_->Update1PSkills(std::move(state));
   }
 }
 
@@ -272,6 +293,11 @@ void SkillsPageHandler::RecordSkillsManagementAction(
     skills::mojom::SkillsManagementPage page,
     skills::mojom::SkillsManagementAction action) {
   skills::RecordSkillsManagementAction(page, action);
+}
+
+void SkillsPageHandler::OnSkillsEnabledPrefChanged() {
+  page_->SetSkillsEnabled(SkillsServiceFactory::IsSkillsEnabledForProfile(
+      base::to_address(profile_)));
 }
 
 }  // namespace skills

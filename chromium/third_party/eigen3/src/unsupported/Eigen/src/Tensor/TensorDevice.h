@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_DEVICE_H
-#define EIGEN_CXX11_TENSOR_TENSOR_DEVICE_H
+#ifndef EIGEN_TENSOR_TENSOR_DEVICE_H
+#define EIGEN_TENSOR_TENSOR_DEVICE_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -16,7 +17,7 @@
 namespace Eigen {
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Pseudo expression providing an operator = that will evaluate its argument
  * on the specified computing 'device' (GPU, thread pool, ...)
@@ -70,7 +71,7 @@ class TensorDevice {
 };
 
 /** \class TensorAsyncDevice
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Pseudo expression providing an operator = that will evaluate its
  * argument asynchronously on the specified device. Currently only
@@ -135,4 +136,4 @@ class TensorAsyncDevice<ExpressionType, ThreadPoolDevice, DoneCallback> {
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_DEVICE_H
+#endif  // EIGEN_TENSOR_TENSOR_DEVICE_H

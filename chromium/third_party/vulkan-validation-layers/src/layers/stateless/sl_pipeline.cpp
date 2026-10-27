@@ -69,6 +69,13 @@ bool Device::manual_PreCallValidateCreatePipelineLayout(VkDevice device, const V
         }
     }
 
+    if (pCreateInfo->flags & VK_PIPELINE_LAYOUT_CREATE_NO_TASK_SHADER_BIT_KHR &&
+        !(pCreateInfo->flags & VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT)) {
+        skip |= LogError("VUID-VkPipelineLayoutCreateInfo-flags-13352", device, create_info_loc.dot(Field::flags),
+                         "is %s and does not include VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT.",
+                         string_VkPipelineLayoutCreateFlags(pCreateInfo->flags).c_str());
+    }
+
     skip |= ValidatePushConstantRange(pCreateInfo->pushConstantRangeCount, pCreateInfo->pPushConstantRanges, create_info_loc);
 
     return skip;
@@ -244,12 +251,14 @@ bool Device::ValidateShaderDescriptorSetAndBindingMappingInfo(const VkShaderDesc
                                  push_index.pushOffset, string_VkDescriptorMappingSourceEXT(mapping.source));
             }
             if (push_index.pushOffset > phys_dev_ext_props.descriptor_heap_props.maxPushDataSize - 4) {
-                skip |= LogError("VUID-VkDescriptorMappingSourcePushIndexEXT-pushOffset-11259", device,
-                                 data_loc.dot(Field::pushIndex).dot(Field::pushOffset),
-                                 "(%" PRIu32 ") is greater than maxPushDataSize (%" PRIu64
-                                 ") - 4\nVkDescriptorSetAndBindingMappingEXT::source = %s",
-                                 push_index.pushOffset, phys_dev_ext_props.descriptor_heap_props.maxPushDataSize,
-                                 string_VkDescriptorMappingSourceEXT(mapping.source));
+                skip |= LogError(
+                    "VUID-VkDescriptorMappingSourcePushIndexEXT-pushOffset-11259", device,
+                    data_loc.dot(Field::pushIndex).dot(Field::pushOffset),
+                    "(%" PRIu32 ") is greater than maxPushDataSize (%" PRIu64
+                    ") - 4\nVkDescriptorSetAndBindingMappingEXT::source = %s\nHint - pushOffset points to an uint32_t (4 bytes) "
+                    "inside the push data, this is currently going to access OOB.",
+                    push_index.pushOffset, phys_dev_ext_props.descriptor_heap_props.maxPushDataSize,
+                    string_VkDescriptorMappingSourceEXT(mapping.source));
             }
         }
         if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT) {
@@ -262,12 +271,14 @@ bool Device::ValidateShaderDescriptorSetAndBindingMappingInfo(const VkShaderDesc
                                  mapping.sourceData.indirectIndex.pushOffset, string_VkDescriptorMappingSourceEXT(mapping.source));
             }
             if (indirect_index.pushOffset > phys_dev_ext_props.descriptor_heap_props.maxPushDataSize - 8) {
-                skip |= LogError("VUID-VkDescriptorMappingSourceIndirectIndexEXT-pushOffset-11261", device,
-                                 data_loc.dot(Field::indirectIndex).dot(Field::pushOffset),
-                                 "(%" PRIu32 ") is greater than maxPushDataSize (%" PRIu64
-                                 ") - 8\nVkDescriptorSetAndBindingMappingEXT::source = %s",
-                                 indirect_index.pushOffset, phys_dev_ext_props.descriptor_heap_props.maxPushDataSize,
-                                 string_VkDescriptorMappingSourceEXT(mapping.source));
+                skip |= LogError(
+                    "VUID-VkDescriptorMappingSourceIndirectIndexEXT-pushOffset-11261", device,
+                    data_loc.dot(Field::indirectIndex).dot(Field::pushOffset),
+                    "(%" PRIu32 ") is greater than maxPushDataSize (%" PRIu64
+                    ") - 8\nVkDescriptorSetAndBindingMappingEXT::source = %s\nHint - pushOffset points to an address (8 bytes) "
+                    "inside the push data, this is currently going to access OOB.",
+                    indirect_index.pushOffset, phys_dev_ext_props.descriptor_heap_props.maxPushDataSize,
+                    string_VkDescriptorMappingSourceEXT(mapping.source));
             }
             if (!IsIntegerMultipleOf(indirect_index.addressOffset, 4)) {
                 skip |= LogError("VUID-VkDescriptorMappingSourceIndirectIndexEXT-addressOffset-11262", device,
@@ -293,12 +304,14 @@ bool Device::ValidateShaderDescriptorSetAndBindingMappingInfo(const VkShaderDesc
                                  heap_data.pushOffset, string_VkDescriptorMappingSourceEXT(mapping.source));
             }
             if (heap_data.pushOffset > phys_dev_ext_props.descriptor_heap_props.maxPushDataSize - 4) {
-                skip |= LogError("VUID-VkDescriptorMappingSourceHeapDataEXT-pushOffset-11265", device,
-                                 data_loc.dot(Field::heapData).dot(Field::pushOffset),
-                                 "(%" PRIu32 ") is greater than maxPushDataSize (%" PRIu64
-                                 ") - 4\nVkDescriptorSetAndBindingMappingEXT::source = %s",
-                                 heap_data.pushOffset, phys_dev_ext_props.descriptor_heap_props.maxPushDataSize,
-                                 string_VkDescriptorMappingSourceEXT(mapping.source));
+                skip |= LogError(
+                    "VUID-VkDescriptorMappingSourceHeapDataEXT-pushOffset-11265", device,
+                    data_loc.dot(Field::heapData).dot(Field::pushOffset),
+                    "(%" PRIu32 ") is greater than maxPushDataSize (%" PRIu64
+                    ") - 4\nVkDescriptorSetAndBindingMappingEXT::source = %s\nHint - pushOffset points to an uint32_t (4 bytes) "
+                    "inside the push data, this is currently going to access OOB.",
+                    heap_data.pushOffset, phys_dev_ext_props.descriptor_heap_props.maxPushDataSize,
+                    string_VkDescriptorMappingSourceEXT(mapping.source));
             }
         }
         if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_INDIRECT_ADDRESS_EXT) {
@@ -310,12 +323,14 @@ bool Device::ValidateShaderDescriptorSetAndBindingMappingInfo(const VkShaderDesc
                                  indirect_address.pushOffset, string_VkDescriptorMappingSourceEXT(mapping.source));
             }
             if (indirect_address.pushOffset > phys_dev_ext_props.descriptor_heap_props.maxPushDataSize - 8) {
-                skip |= LogError("VUID-VkDescriptorMappingSourceIndirectAddressEXT-pushOffset-11267", device,
-                                 data_loc.dot(Field::indirectAddress).dot(Field::pushOffset),
-                                 "(%" PRIu32 ") is greater than maxPushDataSize (%" PRIu64
-                                 ") - 8\nVkDescriptorSetAndBindingMappingEXT::source = %s",
-                                 indirect_address.pushOffset, phys_dev_ext_props.descriptor_heap_props.maxPushDataSize,
-                                 string_VkDescriptorMappingSourceEXT(mapping.source));
+                skip |= LogError(
+                    "VUID-VkDescriptorMappingSourceIndirectAddressEXT-pushOffset-11267", device,
+                    data_loc.dot(Field::indirectAddress).dot(Field::pushOffset),
+                    "(%" PRIu32 ") is greater than maxPushDataSize (%" PRIu64
+                    ") - 8\nVkDescriptorSetAndBindingMappingEXT::source = %s\nHint - pushOffset points to an address (8 bytes) "
+                    "inside the push data, this is currently going to access OOB.",
+                    indirect_address.pushOffset, phys_dev_ext_props.descriptor_heap_props.maxPushDataSize,
+                    string_VkDescriptorMappingSourceEXT(mapping.source));
             }
             if (!IsIntegerMultipleOf(indirect_address.addressOffset, 8)) {
                 skip |= LogError("VUID-VkDescriptorMappingSourceIndirectAddressEXT-addressOffset-11268", device,
@@ -353,12 +368,14 @@ bool Device::ValidateShaderDescriptorSetAndBindingMappingInfo(const VkShaderDesc
                                  indirect_index_array.pushOffset, string_VkDescriptorMappingSourceEXT(mapping.source));
             }
             if (indirect_index_array.pushOffset > phys_dev_ext_props.descriptor_heap_props.maxPushDataSize - 8) {
-                skip |= LogError("VUID-VkDescriptorMappingSourceIndirectIndexArrayEXT-pushOffset-11360", device,
-                                 data_loc.dot(Field::indirectIndexArray).dot(Field::pushOffset),
-                                 "(%" PRIu32 ") is greater than maxPushDataSize (%" PRIu64
-                                 ") - 8.\nVkDescriptorSetAndBindingMappingEXT::source = %s",
-                                 indirect_index_array.pushOffset, phys_dev_ext_props.descriptor_heap_props.maxPushDataSize,
-                                 string_VkDescriptorMappingSourceEXT(mapping.source));
+                skip |= LogError(
+                    "VUID-VkDescriptorMappingSourceIndirectIndexArrayEXT-pushOffset-11360", device,
+                    data_loc.dot(Field::indirectIndexArray).dot(Field::pushOffset),
+                    "(%" PRIu32 ") is greater than maxPushDataSize (%" PRIu64
+                    ") - 8.\nVkDescriptorSetAndBindingMappingEXT::source = %s\nHint - pushOffset points to an address (8 bytes) "
+                    "inside the push data, this is currently going to access OOB.",
+                    indirect_index_array.pushOffset, phys_dev_ext_props.descriptor_heap_props.maxPushDataSize,
+                    string_VkDescriptorMappingSourceEXT(mapping.source));
             }
             if (!IsIntegerMultipleOf(indirect_index_array.addressOffset, 4)) {
                 skip |= LogError("VUID-VkDescriptorMappingSourceIndirectIndexArrayEXT-addressOffset-11361", device,
@@ -869,11 +886,11 @@ bool Device::manual_PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPi
             }
         }
 
+        const auto rendering_struct = vku::FindStructInPNextChain<VkPipelineRenderingCreateInfo>(create_info.pNext);
         if (!create_info.renderPass) {
             // Pipeline has fragment output state
             if ((flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR) == 0 ||
                 (create_info.pColorBlendState && create_info.pMultisampleState)) {
-                const auto rendering_struct = vku::FindStructInPNextChain<VkPipelineRenderingCreateInfo>(create_info.pNext);
                 if (rendering_struct) {
                     skip |= ValidatePipelineRenderingCreateInfo(context, *rendering_struct, create_info_loc);
                 }
@@ -890,6 +907,13 @@ bool Device::manual_PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPi
                     }
                 }
             }
+        } else if (rendering_struct) {
+            skip |= LogError("VUID-VkGraphicsPipelineCreateInfo-pNext-12427", device, create_info_loc.dot(Field::renderPass),
+                             "(%s) is not VK_NULL_HANDLE, but the pNext chain includes VkPipelineRenderingCreateInfo. It is "
+                             "invalid to mix legacy RenderPass wit Dynamic Rendering as its ambiguous for an implementation to use "
+                             "the legacy RenderPass or the VkPipelineRenderingCreateInfo struct, so only one can be set.\n%s",
+                             FormatHandle(create_info.renderPass).c_str(),
+                             PrintPNextChain(Struct::VkGraphicsPipelineCreateInfo, create_info.pNext).c_str());
         }
 
         if (!IsExtEnabled(extensions.vk_ext_graphics_pipeline_library)) {
@@ -1322,7 +1346,7 @@ bool Device::manual_PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPi
                     if (!IsExtEnabled(extensions.vk_ext_extended_dynamic_state) ||
                         (!has_dynamic_viewport_with_count && !has_dynamic_scissor_with_count)) {
                         skip |= LogError("VUID-VkPipelineViewportStateCreateInfo-scissorCount-04134", device, viewport_loc,
-                                         "scissorCount (%" PRIu32 ") is different to viewportCount (%" PRIu32 ").",
+                                         "scissorCount (%" PRIu32 ") is different from viewportCount (%" PRIu32 ").",
                                          viewport_state.scissorCount, viewport_state.viewportCount);
                     }
                 }

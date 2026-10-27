@@ -66,6 +66,7 @@ openscreen_source_set("common") {
     "public/protobuf_messenger.h",
     "public/receiver_message.h",
     "public/rpc_messenger.h",
+    "public/session_config.h",
     "public/session_messenger.h",
     "rtp_time.h",  # FIXME
     "sender_message.h",  # FIXME: Remove Chromium #include and make private
@@ -88,8 +89,6 @@ openscreen_source_set("common") {
     "impl/rtcp_session.h",
     "impl/rtp_defines.cc",
     "impl/rtp_defines.h",
-    "impl/session_config.cc",
-    "impl/session_config.h",
     "impl/statistics_collector.cc",
     "impl/statistics_collector.h",
     "impl/statistics_common.cc",
@@ -104,6 +103,7 @@ openscreen_source_set("common") {
     "public/offer_messages.cc",
     "public/receiver_message.cc",
     "public/rpc_messenger.cc",
+    "public/session_config.cc",
     "public/session_messenger.cc",
     "rtp_time.cc",
     "sender_message.cc",
@@ -153,8 +153,8 @@ openscreen_source_set("receiver") {
     "impl/frame_collector.h",
     "impl/packet_receive_stats_tracker.cc",
     "impl/packet_receive_stats_tracker.h",
-    "impl/receiver_base.cc",
-    "impl/receiver_base.h",
+    "impl/receiver_impl.cc",
+    "impl/receiver_impl.h",
     "impl/receiver_packet_router.cc",
     "impl/receiver_packet_router.h",
     "impl/rtp_packet_parser.cc",
@@ -197,6 +197,8 @@ openscreen_source_set("sender") {
     "impl/compound_rtcp_parser.cc",
     "impl/rtp_packetizer.cc",
     "impl/rtp_packetizer.h",
+    "impl/sender_impl.cc",
+    "impl/sender_impl.h",
     "impl/sender_report_builder.cc",
     "impl/sender_report_builder.h",
     "impl/statistics_analyzer.cc",
@@ -215,10 +217,6 @@ openscreen_source_set("sender") {
     ":unittests",
     ":compound_rtcp_parser_fuzzer",
   ]
-
-  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
-  # enable the diagnostic by removing this line.
-  configs = [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 openscreen_source_set("testing") {
@@ -267,16 +265,17 @@ openscreen_source_set("unittests") {
     "impl/packet_util_unittest.cc",
     "impl/protobuf_messenger_unittest.cc",
     "impl/receiver_constraints_unittest.cc",
+    "impl/receiver_impl_unittest.cc",
     "impl/receiver_message_unittest.cc",
     "impl/receiver_session_unittest.cc",
-    "impl/receiver_unittest.cc",
     "impl/rpc_messenger_unittest.cc",
     "impl/rtcp_common_unittest.cc",
     "impl/rtp_packet_parser_unittest.cc",
     "impl/rtp_packetizer_unittest.cc",
+    "impl/sender_impl_unittest.cc",
+    "impl/sender_message_unittest.cc",
     "impl/sender_report_unittest.cc",
     "impl/sender_session_unittest.cc",
-    "impl/sender_unittest.cc",
     "impl/session_messenger_unittest.cc",
     "impl/statistics_analyzer_unittest.cc",
     "impl/statistics_collector_unittest.cc",
@@ -302,10 +301,6 @@ openscreen_source_set("unittests") {
     ":sender",
     ":receiver",
   ]
-
-  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
-  # enable the diagnostic by removing this line.
-  configs = [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 openscreen_fuzzer_test("compound_rtcp_parser_fuzzer") {

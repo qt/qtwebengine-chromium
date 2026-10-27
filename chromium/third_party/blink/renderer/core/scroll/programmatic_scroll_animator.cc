@@ -19,9 +19,12 @@ ProgrammaticScrollAnimator::ProgrammaticScrollAnimator(
     ScrollableArea* scrollable_area)
     : scrollable_area_(scrollable_area) {}
 
-ProgrammaticScrollAnimator::~ProgrammaticScrollAnimator() {
-  if (on_finish_)
+ProgrammaticScrollAnimator::~ProgrammaticScrollAnimator() = default;
+
+void ProgrammaticScrollAnimator::Dispose() {
+  if (on_finish_) {
     std::move(on_finish_).Run(ScrollableArea::ScrollCompletionMode::kFinished);
+  }
 }
 
 void ProgrammaticScrollAnimator::ResetAnimationState() {
@@ -39,6 +42,10 @@ mojom::blink::ScrollType ProgrammaticScrollAnimator::GetScrollType() const {
 void ProgrammaticScrollAnimator::ScrollToOffsetWithoutAnimation(
     const ScrollOffset& offset,
     cc::ScrollSourceType source_type) {
+  if (on_finish_) {
+    std::move(on_finish_)
+        .Run(ScrollableArea::ScrollCompletionMode::kInterruptedByScroll);
+  }
   CancelAnimation();
   source_type_ = source_type;
   ScrollOffsetChanged(offset, GetScrollType(), source_type);
@@ -48,8 +55,9 @@ void ProgrammaticScrollAnimator::AnimateToOffset(
     const ScrollOffset& offset,
     cc::ScrollSourceType source_type,
     ScrollableArea::ScrollCallback on_finish) {
-  if (run_state_ == RunState::kPostAnimationCleanup)
+  if (run_state_ == RunState::kPostAnimationCleanup) {
     ResetAnimationState();
+  }
 
   if (on_finish_) {
     std::move(on_finish_)
@@ -85,8 +93,10 @@ void ProgrammaticScrollAnimator::AnimateToOffset(
 void ProgrammaticScrollAnimator::CancelAnimation() {
   DCHECK_NE(run_state_, RunState::kRunningOnCompositorButNeedsUpdate);
   ScrollAnimatorCompositorCoordinator::CancelAnimation();
-  if (on_finish_)
-    std::move(on_finish_).Run(ScrollableArea::ScrollCompletionMode::kFinished);
+  if (on_finish_) {
+    std::move(on_finish_)
+        .Run(ScrollableArea::ScrollCompletionMode::kInterruptedByScroll);
+  }
 }
 
 void ProgrammaticScrollAnimator::TickAnimation(base::TimeTicks monotonic_time) {

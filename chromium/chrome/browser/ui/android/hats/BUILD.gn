@@ -7,7 +7,10 @@ import("//chrome/android/features/android_library_factory_tmpl.gni")
 import("//third_party/jni_zero/jni_zero.gni")
 
 android_library("java") {
-  srcjar_deps = [ ":jni_headers" ]
+  srcjar_deps = [
+    ":jni_headers",
+    "//chrome/browser/ui/hats:hats_enums",
+  ]
   sources = [
     "java/src/org/chromium/chrome/browser/ui/hats/SurveyClient.java",
     "java/src/org/chromium/chrome/browser/ui/hats/SurveyConfig.java",
@@ -127,7 +130,6 @@ source_set("impl") {
   deps = [
     ":hats",
     "//base",
-    "//chrome/app:generated_resources",
     "//chrome/browser/prefs",
     "//chrome/browser/profiles",
     "//chrome/browser/profiles:profile",

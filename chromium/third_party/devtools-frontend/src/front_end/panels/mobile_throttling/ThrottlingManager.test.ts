@@ -2,10 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as SDK from '../../core/sdk/sdk.js';
+import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import {spyCall} from '../../testing/ExpectStubCall.js';
 import {describeWithMockConnection, setMockConnectionResponseHandler} from '../../testing/MockConnection.js';
+import * as UI from '../../ui/legacy/legacy.js';
 
 import * as MobileThrottling from './mobile_throttling.js';
 
@@ -95,24 +99,26 @@ describeWithMockConnection('ThrottlingManager', () => {
           SDK.TargetManager.TargetManager.instance().models(SDK.EmulationModel.EmulationModel)[0], emulationModel);
       const select = MobileThrottling.ThrottlingManager.ThrottlingManager.instance({forceNew: true})
                          .createSaveDataOverrideSelector();
-      const options = select.options();
+      renderElementIntoDOM(select);
+      await UI.Widget.Widget.allUpdatesComplete;
+      const options = Array.from(select.options);
       assert.deepEqual(
           options.map(option => option.textContent),
           ['\'Save-Data\': default', '\'Save-Data\': on', '\'Save-Data\': off']);
 
       let emulationModelSpy = spyCall(emulationModel, 'setDataSaverOverride');
-      select.select(options[0]);
-      select.element.dispatchEvent(new Event('change'));
+      select.selectedIndex = 0;
+      select.dispatchEvent(new Event('change'));
       assert.strictEqual((await emulationModelSpy).args[0], SDK.EmulationModel.DataSaverOverride.UNSET);
 
       emulationModelSpy = spyCall(emulationModel, 'setDataSaverOverride');
-      select.select(options[1]);
-      select.element.dispatchEvent(new Event('change'));
+      select.selectedIndex = 1;
+      select.dispatchEvent(new Event('change'));
       assert.strictEqual((await emulationModelSpy).args[0], SDK.EmulationModel.DataSaverOverride.ENABLED);
 
       emulationModelSpy = spyCall(emulationModel, 'setDataSaverOverride');
-      select.select(options[2]);
-      select.element.dispatchEvent(new Event('change'));
+      select.selectedIndex = 2;
+      select.dispatchEvent(new Event('change'));
       assert.strictEqual((await emulationModelSpy).args[0], SDK.EmulationModel.DataSaverOverride.DISABLED);
     });
   });

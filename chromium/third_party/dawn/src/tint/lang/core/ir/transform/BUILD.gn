@@ -45,10 +45,8 @@ if (tint_build_unittests || tint_build_benchmarks) {
 
 libtint_source_set("transform") {
   sources = [
-    "array_length_from_immediate.cc",
-    "array_length_from_immediate.h",
-    "array_length_from_uniform.cc",
-    "array_length_from_uniform.h",
+    "array_length_from.cc",
+    "array_length_from.h",
     "bgra8unorm_polyfill.cc",
     "bgra8unorm_polyfill.h",
     "binary_polyfill.cc",
@@ -138,6 +136,7 @@ libtint_source_set("transform") {
     "${tint_src_dir}/utils/macros",
     "${tint_src_dir}/utils/math",
     "${tint_src_dir}/utils/memory",
+    "${tint_src_dir}/utils/reflection",
     "${tint_src_dir}/utils/rtti",
     "${tint_src_dir}/utils/symbol",
     "${tint_src_dir}/utils/text",
@@ -201,6 +200,7 @@ if (tint_build_unittests) {
       "${tint_src_dir}/utils/macros",
       "${tint_src_dir}/utils/math",
       "${tint_src_dir}/utils/memory",
+      "${tint_src_dir}/utils/reflection",
       "${tint_src_dir}/utils/rtti",
       "${tint_src_dir}/utils/symbol",
       "${tint_src_dir}/utils/text",
@@ -236,7 +236,7 @@ tint_fuzz_source_set("fuzz") {
   deps = [
     "${dawn_root}/src/utils",
     "${tint_src_dir}/api/common",
-    "${tint_src_dir}/cmd/fuzz/ir:fuzz",
+    "${tint_src_dir}/cmd/fuzz/common",
     "${tint_src_dir}/lang/core",
     "${tint_src_dir}/lang/core/constant",
     "${tint_src_dir}/lang/core/ir",
@@ -250,6 +250,7 @@ tint_fuzz_source_set("fuzz") {
     "${tint_src_dir}/utils/macros",
     "${tint_src_dir}/utils/math",
     "${tint_src_dir}/utils/memory",
+    "${tint_src_dir}/utils/reflection",
     "${tint_src_dir}/utils/rtti",
     "${tint_src_dir}/utils/symbol",
     "${tint_src_dir}/utils/text",

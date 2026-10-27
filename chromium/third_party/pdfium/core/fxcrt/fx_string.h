@@ -45,7 +45,7 @@ std::vector<StrType> Split(const StrType& that, typename StrType::CharType ch) {
       break;
     }
     result.emplace_back(remaining.First(index.value()));
-    remaining = remaining.Last(remaining.GetLength() - index.value() - 1);
+    remaining = remaining.Substr(index.value() + 1);
   }
   result.emplace_back(remaining);
   return result;

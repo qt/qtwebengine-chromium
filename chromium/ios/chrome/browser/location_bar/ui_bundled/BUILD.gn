@@ -26,6 +26,7 @@ source_set("ui_bundled") {
     ":location_bar_model_delegate",
     ":metrics",
     ":protocols",
+    ":utils",
     "//base",
     "//components/feature_engagement/public",
     "//components/lens",
@@ -37,6 +38,7 @@ source_set("ui_bundled") {
     "//components/strings",
     "//ios/chrome/app/strings",
     "//ios/chrome/app/theme",
+    "//ios/chrome/browser/aim/model:aim_availability",
     "//ios/chrome/browser/autocomplete/model",
     "//ios/chrome/browser/badges/ui_bundled",
     "//ios/chrome/browser/badges/ui_bundled:public",
@@ -48,13 +50,14 @@ source_set("ui_bundled") {
     "//ios/chrome/browser/default_browser/model:default_browser_interest_signals",
     "//ios/chrome/browser/drag_and_drop/model",
     "//ios/chrome/browser/feature_engagement/model",
+    "//ios/chrome/browser/fullscreen/model",
     "//ios/chrome/browser/fullscreen/ui_bundled",
     "//ios/chrome/browser/fullscreen/ui_bundled:ui",
     "//ios/chrome/browser/geolocation/model",
     "//ios/chrome/browser/infobars/model:badge",
     "//ios/chrome/browser/infobars/model:public",
     "//ios/chrome/browser/intelligence/bwg/metrics",
-    "//ios/chrome/browser/intelligence/bwg/model:bwg_service",
+    "//ios/chrome/browser/intelligence/bwg/model:gemini_service",
     "//ios/chrome/browser/intelligence/bwg/model:gemini_service_factory",
     "//ios/chrome/browser/intelligence/bwg/model:tab_helper",
     "//ios/chrome/browser/intelligence/bwg/utils:constants",
@@ -144,6 +147,7 @@ source_set("badges") {
   deps = [
     ":constants",
     ":metrics",
+    ":utils",
     "//ios/chrome/app/strings",
     "//ios/chrome/browser/badges/ui_bundled",
     "//ios/chrome/browser/contextual_panel/entrypoint/ui",
@@ -157,6 +161,18 @@ source_set("badges") {
     "//ios/chrome/browser/shared/ui/symbols",
     "//ios/chrome/common/ui/colors",
     "//ios/chrome/common/ui/util",
+  ]
+}
+
+source_set("utils") {
+  sources = [
+    "highlight_utils.h",
+    "highlight_utils.mm",
+  ]
+  deps = [
+    "//base",
+    "//ios/chrome/browser/shared/ui/elements/gradient",
+    "//ios/chrome/common/ui/colors",
   ]
 }
 
@@ -227,22 +243,31 @@ source_set("unit_tests") {
   sources = [
     "location_bar_coordinator_unittest.mm",
     "location_bar_mediator_unittest.mm",
+    "location_bar_model_delegate_ios_unittest.mm",
     "location_bar_steady_view_mediator_unittest.mm",
   ]
   deps = [
+    ":location_bar_model_delegate",
     ":ui_bundled",
     "//base",
     "//base/test:test_support",
+    "//components/feature_engagement/public",
+    "//components/feature_engagement/public:feature_constants",
+    "//components/feature_engagement/test:test_support",
     "//components/omnibox/browser:test_support",
     "//components/search_engines",
+    "//components/strings",
     "//components/variations",
     "//components/variations:test_support",
     "//ios/chrome/app/strings",
     "//ios/chrome/browser/autocomplete/model",
     "//ios/chrome/browser/favicon/model",
     "//ios/chrome/browser/favicon/model:test_support",
+    "//ios/chrome/browser/feature_engagement/model",
     "//ios/chrome/browser/fullscreen/ui_bundled",
     "//ios/chrome/browser/history/model",
+    "//ios/chrome/browser/intelligence/bwg/model:gemini_service_factory",
+    "//ios/chrome/browser/intelligence/features",
     "//ios/chrome/browser/location_bar/badge/coordinator",
     "//ios/chrome/browser/location_bar/ui_bundled/test",
     "//ios/chrome/browser/omnibox/model/placeholder_service",
@@ -251,6 +276,8 @@ source_set("unit_tests") {
     "//ios/chrome/browser/overlays/model/public/web_content_area",
     "//ios/chrome/browser/overlays/model/test",
     "//ios/chrome/browser/search_engines/model",
+    "//ios/chrome/browser/shared/coordinator/layout_guide:layout_guide_scene_agent",
+    "//ios/chrome/browser/shared/coordinator/scene:scene_state_header",
     "//ios/chrome/browser/shared/model/browser/test:test_support",
     "//ios/chrome/browser/shared/model/profile/test",
     "//ios/chrome/browser/shared/model/web_state_list",

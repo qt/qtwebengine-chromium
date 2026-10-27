@@ -716,13 +716,7 @@ pub unsafe extern "C" fn crabby_avifImagePlaneWidth(
             | PixelFormat::AndroidNv12
             | PixelFormat::AndroidNv21 => 0,
         },
-        3 => {
-            if !image.alphaPlane.is_null() {
-                image.width
-            } else {
-                0
-            }
-        }
+        3 if !image.alphaPlane.is_null() => image.width,
         _ => 0,
     }
 }
@@ -749,13 +743,7 @@ pub unsafe extern "C" fn crabby_avifImagePlaneHeight(
                 (image.height + shift_y) >> shift_y
             }
         }
-        3 => {
-            if !image.alphaPlane.is_null() {
-                image.height
-            } else {
-                0
-            }
-        }
+        3 if !image.alphaPlane.is_null() => image.height,
         _ => 0,
     }
 }

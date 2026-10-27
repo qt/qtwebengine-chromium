@@ -103,6 +103,7 @@ class PreloadHelper final {
 
   static std::optional<ResourceType> GetResourceTypeFromAsAttribute(
       const String& as);
+
 };
 
 }  // namespace blink

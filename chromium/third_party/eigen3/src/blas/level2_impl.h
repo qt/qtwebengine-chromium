@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #include "common.h"
 
@@ -303,61 +304,158 @@ EIGEN_BLAS_FUNC(gbmv)
   if (actual_y != y) delete[] copy_back(actual_y, y, actual_m, *incy);
 }
 
-#if 0
 /**  TBMV  performs one of the matrix-vector operations
-  *
-  *     x := A*x,   or   x := A'*x,
-  *
-  *  where x is an n element vector and  A is an n by n unit, or non-unit,
-  *  upper or lower triangular band matrix, with ( k + 1 ) diagonals.
-  */
-EIGEN_BLAS_FUNC(tbmv)(char *uplo, char *opa, char *diag, int *n, int *k, RealScalar *pa, int *lda, RealScalar *px, int *incx)
-{
-  Scalar* a = reinterpret_cast<Scalar*>(pa);
-  Scalar* x = reinterpret_cast<Scalar*>(px);
-  int coeff_rows = *k + 1;
+ *
+ *     x := A*x,   or   x := A'*x,   or   x := conjg(A')*x,
+ *
+ *  where x is an n element vector and A is an n by n unit, or non-unit,
+ *  upper or lower triangular band matrix, with ( k + 1 ) diagonals.
+ *
+ *  Band storage: upper triangle stores A[i,j] at a[(k+i-j) + j*lda],
+ *  lower triangle stores A[i,j] at a[(i-j) + j*lda].
+ */
+EIGEN_BLAS_FUNC(tbmv)
+(char *uplo, char *opa, char *diag, int *n, int *k, RealScalar *pa, int *lda, RealScalar *px, int *incx) {
+  Scalar *a = reinterpret_cast<Scalar *>(pa);
+  Scalar *x = reinterpret_cast<Scalar *>(px);
 
   int info = 0;
-       if(UPLO(*uplo)==INVALID)                                       info = 1;
-  else if(OP(*opa)==INVALID)                                          info = 2;
-  else if(DIAG(*diag)==INVALID)                                       info = 3;
-  else if(*n<0)                                                       info = 4;
-  else if(*k<0)                                                       info = 5;
-  else if(*lda<coeff_rows)                                            info = 7;
-  else if(*incx==0)                                                   info = 9;
-  if(info)
-    return xerbla_(SCALAR_SUFFIX_UP"TBMV ",&info,6);
+  if (UPLO(*uplo) == INVALID)
+    info = 1;
+  else if (OP(*opa) == INVALID)
+    info = 2;
+  else if (DIAG(*diag) == INVALID)
+    info = 3;
+  else if (*n < 0)
+    info = 4;
+  else if (*k < 0)
+    info = 5;
+  else if (*lda < *k + 1)
+    info = 7;
+  else if (*incx == 0)
+    info = 9;
+  if (info) return xerbla_(SCALAR_SUFFIX_UP "TBMV ", &info);
 
-  if(*n==0) return;
+  if (*n == 0) return;
 
-  int actual_n = *n;
+  Scalar *actual_x = get_compact_vector(x, *n, *incx);
 
-  Scalar* actual_x = get_compact_vector(x,actual_n,*incx);
+  bool upper = (UPLO(*uplo) == UP);
+  int op = OP(*opa);
+  bool unit = (DIAG(*diag) == UNIT);
 
-  MatrixType mat_coeffs(a,coeff_rows,*n,*lda);
-
-  int ku = UPLO(*uplo)==UPPER ? *k : 0;
-  int kl = UPLO(*uplo)==LOWER ? *k : 0;
-
-  for(int j=0; j<*n; ++j)
-  {
-    int start = std::max(0,j - ku);
-    int end = std::min((*m)-1,j + kl);
-    int len = end - start + 1;
-    int offset = (ku) - j + start;
-
-    if(OP(*trans)==NOTR)
-      make_vector(actual_y+start,len) += (alpha*actual_x[j]) * mat_coeffs.col(j).segment(offset,len);
-    else if(OP(*trans)==TR)
-      actual_y[j] += alpha * ( mat_coeffs.col(j).segment(offset,len).transpose() * make_vector(actual_x+start,len) ).value();
-    else
-      actual_y[j] += alpha * ( mat_coeffs.col(j).segment(offset,len).adjoint()   * make_vector(actual_x+start,len) ).value();
+  if (*k >= 8) {
+    // Vectorized path: use Eigen Map segments for the inner band operations.
+    ConstMatrixType band(a, *k + 1, *n, *lda);
+    if (op == NOTR) {
+      if (upper) {
+        for (int j = 0; j < *n; ++j) {
+          if (actual_x[j] != Scalar(0)) {
+            int start = std::max(0, j - *k);
+            int len = j - start;
+            int offset = *k - (j - start);
+            Scalar temp = actual_x[j];
+            if (len > 0) make_vector(actual_x + start, len) += temp * band.col(j).segment(offset, len);
+            if (!unit) actual_x[j] = temp * band(*k, j);
+          }
+        }
+      } else {
+        for (int j = *n - 1; j >= 0; --j) {
+          if (actual_x[j] != Scalar(0)) {
+            int len = std::min(*n - 1, j + *k) - j;
+            Scalar temp = actual_x[j];
+            if (len > 0) make_vector(actual_x + j + 1, len) += temp * band.col(j).segment(1, len);
+            if (!unit) actual_x[j] = temp * band(0, j);
+          }
+        }
+      }
+    } else if (op == TR) {
+      if (upper) {
+        for (int j = *n - 1; j >= 0; --j) {
+          int start = std::max(0, j - *k);
+          int len = j - start;
+          int offset = *k - (j - start);
+          Scalar temp = actual_x[j];
+          if (!unit) temp *= band(*k, j);
+          if (len > 0)
+            temp += (band.col(j).segment(offset, len).cwiseProduct(make_vector(actual_x + start, len))).sum();
+          actual_x[j] = temp;
+        }
+      } else {
+        for (int j = 0; j < *n; ++j) {
+          int len = std::min(*n - 1, j + *k) - j;
+          Scalar temp = actual_x[j];
+          if (!unit) temp *= band(0, j);
+          if (len > 0) temp += (band.col(j).segment(1, len).cwiseProduct(make_vector(actual_x + j + 1, len))).sum();
+          actual_x[j] = temp;
+        }
+      }
+    } else {
+      // Conjugate transpose: .dot() computes conj(lhs) . rhs.
+      if (upper) {
+        for (int j = *n - 1; j >= 0; --j) {
+          int start = std::max(0, j - *k);
+          int len = j - start;
+          int offset = *k - (j - start);
+          Scalar temp = actual_x[j];
+          if (!unit) temp *= Eigen::numext::conj(band(*k, j));
+          if (len > 0) temp += band.col(j).segment(offset, len).dot(make_vector(actual_x + start, len));
+          actual_x[j] = temp;
+        }
+      } else {
+        for (int j = 0; j < *n; ++j) {
+          int len = std::min(*n - 1, j + *k) - j;
+          Scalar temp = actual_x[j];
+          if (!unit) temp *= Eigen::numext::conj(band(0, j));
+          if (len > 0) temp += band.col(j).segment(1, len).dot(make_vector(actual_x + j + 1, len));
+          actual_x[j] = temp;
+        }
+      }
+    }
+  } else {
+    // Scalar path: for narrow bandwidth, avoid Map overhead.
+    if (op == NOTR) {
+      if (upper) {
+        for (int j = 0; j < *n; ++j) {
+          if (actual_x[j] != Scalar(0)) {
+            Scalar temp = actual_x[j];
+            for (int i = std::max(0, j - *k); i < j; ++i) actual_x[i] += temp * a[(*k + i - j) + j * *lda];
+            if (!unit) actual_x[j] = temp * a[*k + j * *lda];
+          }
+        }
+      } else {
+        for (int j = *n - 1; j >= 0; --j) {
+          if (actual_x[j] != Scalar(0)) {
+            Scalar temp = actual_x[j];
+            for (int i = j + 1; i <= std::min(*n - 1, j + *k); ++i) actual_x[i] += temp * a[(i - j) + j * *lda];
+            if (!unit) actual_x[j] = temp * a[j * *lda];
+          }
+        }
+      }
+    } else {
+      // Transpose or conjugate transpose.
+      auto maybe_conj = [op](Scalar val) -> Scalar { return op == ADJ ? Eigen::numext::conj(val) : val; };
+      if (upper) {
+        for (int j = *n - 1; j >= 0; --j) {
+          Scalar temp = actual_x[j];
+          if (!unit) temp *= maybe_conj(a[*k + j * *lda]);
+          for (int i = std::max(0, j - *k); i < j; ++i) temp += maybe_conj(a[(*k + i - j) + j * *lda]) * actual_x[i];
+          actual_x[j] = temp;
+        }
+      } else {
+        for (int j = 0; j < *n; ++j) {
+          Scalar temp = actual_x[j];
+          if (!unit) temp *= maybe_conj(a[j * *lda]);
+          for (int i = j + 1; i <= std::min(*n - 1, j + *k); ++i)
+            temp += maybe_conj(a[(i - j) + j * *lda]) * actual_x[i];
+          actual_x[j] = temp;
+        }
+      }
+    }
   }
 
-  if(actual_x!=x) delete[] actual_x;
-  if(actual_y!=y) delete[] copy_back(actual_y,y,actual_m,*incy);
+  if (actual_x != x) delete[] copy_back(actual_x, x, *n, *incx);
 }
-#endif
 
 /**  DTBSV  solves one of the systems of equations
  *

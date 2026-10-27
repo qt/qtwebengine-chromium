@@ -667,46 +667,36 @@ angle::Result FramebufferVk::clearImpl(const gl::Context *context,
     gl::DrawBuffersArray<VkClearColorValue> adjustedClearColorValues;
     const gl::DrawBufferMask colorAttachmentMask = mState.getColorAttachmentsMask();
     const auto &colorRenderTargets               = mRenderTargetCache.getColors();
-    bool anyAttachmentWithColorspaceOverride     = false;
-    for (size_t colorIndexGL = 0; colorIndexGL < colorAttachmentMask.size(); ++colorIndexGL)
+    for (size_t colorIndexGL : colorAttachmentMask)
     {
-        if (colorAttachmentMask[colorIndexGL])
+        adjustedClearColorValues[colorIndexGL] = clearColorValue;
+
+        RenderTargetVk *colorRenderTarget = colorRenderTargets[colorIndexGL];
+        ASSERT(colorRenderTarget);
+
+        if (colorRenderTarget->isYuvResolve())
         {
-            adjustedClearColorValues[colorIndexGL] = clearColorValue;
-
-            RenderTargetVk *colorRenderTarget = colorRenderTargets[colorIndexGL];
-            ASSERT(colorRenderTarget);
-
-            // If a rendertarget has colorspace overrides, we need to clear with a draw
-            // to make sure the colorspace override is honored.
-            anyAttachmentWithColorspaceOverride =
-                anyAttachmentWithColorspaceOverride ||
-                colorRenderTarget->hasColorspaceOverrideForWrite();
-
-            if (colorRenderTarget->isYuvResolve())
+            // OpenGLES spec says "clear color should be defined in yuv color space and so
+            // floating point r, g, and b value will be mapped to corresponding y, u and v
+            // value" https://registry.khronos.org/OpenGL/extensions/EXT/EXT_YUV_target.txt.
+            // But vulkan spec says "Values in the G, B, and R channels of the color
+            // attachment will be written to the Y, CB, and CR channels of the external
+            // format image, respectively." So we have to adjust the component mapping from
+            // GL order to vulkan order.
+            adjustedClearColorValues[colorIndexGL].float32[0] = clearColorValue.float32[2];
+            adjustedClearColorValues[colorIndexGL].float32[1] = clearColorValue.float32[0];
+            adjustedClearColorValues[colorIndexGL].float32[2] = clearColorValue.float32[1];
+        }
+        else if (contextVk->getFeatures().adjustClearColorPrecision.enabled)
+        {
+            const angle::FormatID colorRenderTargetFormat =
+                colorRenderTarget->getImageForRenderPass().getActualFormatID();
+            if (colorRenderTargetFormat == angle::FormatID::R5G5B5A1_UNORM)
             {
-                // OpenGLES spec says "clear color should be defined in yuv color space and so
-                // floating point r, g, and b value will be mapped to corresponding y, u and v
-                // value" https://registry.khronos.org/OpenGL/extensions/EXT/EXT_YUV_target.txt.
-                // But vulkan spec says "Values in the G, B, and R channels of the color
-                // attachment will be written to the Y, CB, and CR channels of the external
-                // format image, respectively." So we have to adjust the component mapping from
-                // GL order to vulkan order.
-                adjustedClearColorValues[colorIndexGL].float32[0] = clearColorValue.float32[2];
-                adjustedClearColorValues[colorIndexGL].float32[1] = clearColorValue.float32[0];
-                adjustedClearColorValues[colorIndexGL].float32[2] = clearColorValue.float32[1];
-            }
-            else if (contextVk->getFeatures().adjustClearColorPrecision.enabled)
-            {
-                const angle::FormatID colorRenderTargetFormat =
-                    colorRenderTarget->getImageForRenderPass().getActualFormatID();
-                if (colorRenderTargetFormat == angle::FormatID::R5G5B5A1_UNORM)
-                {
-                    // Temporary workaround for https://issuetracker.google.com/292282210 to avoid
-                    // dithering being automatically applied
-                    adjustedClearColorValues[colorIndexGL] = adjustFloatClearColorPrecision(
-                        clearColorValue, angle::Format::Get(colorRenderTargetFormat));
-                }
+                // Temporary workaround for https://issuetracker.google.com/292282210 to avoid
+                // dithering being automatically applied
+                adjustedClearColorValues[colorIndexGL] = adjustFloatClearColorPrecision(
+                    clearColorValue, angle::Format::Get(colorRenderTargetFormat));
             }
         }
     }
@@ -739,8 +729,10 @@ angle::Result FramebufferVk::clearImpl(const gl::Context *context,
                                                     mActiveColorComponentMasksForClear;
     const bool maskedClearStencil = clearStencil && stencilMask != 0xFF;
 
-    bool clearColorWithDraw =
-        clearColor && (maskedClearColor || scissoredClear || anyAttachmentWithColorspaceOverride);
+    // If a rendertarget has colorspace overrides, we need to clear with a draw
+    // to make sure the colorspace override is honored.
+    bool clearColorWithDraw   = clearColor && (maskedClearColor || scissoredClear ||
+                                             mAttachmentWithColorSpaceOverrideMask.any());
     bool clearDepthWithDraw   = clearDepth && scissoredClear;
     bool clearStencilWithDraw = clearStencil && (maskedClearStencil || scissoredClear);
 
@@ -766,7 +758,9 @@ angle::Result FramebufferVk::clearImpl(const gl::Context *context,
         contextVk->getFeatures().preferDrawClearOverVkCmdClearAttachments.enabled;
 
     // https://issuetracker.google.com/490503954. Temporary workaround the driver bug.
-    if (contextVk->getFeatures().supportsTileMemoryHeap.enabled && (clearDepth || clearStencil) &&
+    if ((contextVk->getFeatures().supportsTileMemoryHeap.enabled ||
+         contextVk->getFeatures().simulateTileMemoryForTesting.enabled) &&
+        (clearDepth || clearStencil) &&
         getDepthStencilRenderTarget()->getImageForRenderPass().useTileMemory())
     {
         preferDrawOverClearAttachments = true;
@@ -898,7 +892,7 @@ angle::Result FramebufferVk::clearImpl(const gl::Context *context,
     // revert to vkCmdClearAttachments.  This is not currently deemed necessary.
     if (((clearColorBuffers.any() && !mEmulatedAlphaAttachmentMask.any() && !maskedClearColor) ||
          clearDepthWithDraw || (clearStencilWithDraw && !maskedClearStencil)) &&
-        !preferDrawOverClearAttachments && !anyAttachmentWithColorspaceOverride)
+        !preferDrawOverClearAttachments && mAttachmentWithColorSpaceOverrideMask.none())
     {
         if (!contextVk->hasActiveRenderPass())
         {
@@ -1494,9 +1488,11 @@ angle::Result FramebufferVk::blit(const gl::Context *context,
                                   HasSrcBlitFeature(renderer, readRenderTarget) &&
                                   rotation == SurfaceRotation::Identity;
 
-        // If we need to reinterpret the colorspace of the read RenderTarget then the blit must be
-        // done through a shader
-        bool reinterpretsColorspace      = readRenderTarget->hasColorspaceOverrideForRead();
+        // If we need to reinterpret the colorspace of the read RenderTarget or the draw
+        // RenderTarget then the blit must be done through a shader
+        bool reinterpretsColorspace =
+            readRenderTarget->hasColorspaceOverrideForRead() ||
+            (mAttachmentWithColorSpaceOverrideMask & mState.getEnabledDrawBuffers()).any();
         bool areChannelsBlitCompatible   = true;
         bool areFormatsIdentical         = true;
         bool colorAttachmentAlreadyInUse = false;
@@ -1516,11 +1512,6 @@ angle::Result FramebufferVk::blit(const gl::Context *context,
             colorAttachmentAlreadyInUse =
                 colorAttachmentAlreadyInUse || contextVk->isRenderPassStartedAndUsesImage(
                                                    drawRenderTarget->getImageForRenderPass());
-
-            // If we need to reinterpret the colorspace of the draw RenderTarget then the blit must
-            // be done through a shader
-            reinterpretsColorspace =
-                reinterpretsColorspace || drawRenderTarget->hasColorspaceOverrideForWrite();
         }
 
         // Now that all flipping is done, adjust the offsets for resolve and prerotation
@@ -1586,6 +1577,20 @@ angle::Result FramebufferVk::blit(const gl::Context *context,
                     blitArea == renderPassCommands.getRenderArea() &&
                     !renderPassDesc.hasColorResolveAttachment(readColorIndexGL) &&
                     AllowAddingResolveAttachmentsToSubpass(renderPassDesc);
+            }
+
+            // Additionally, if not using dynamic rendering, the framebuffer attachments must
+            // all be at least as large as the framebuffer extent.  So the resolve attachment
+            // cannot be smaller even if it matches the (scissored) render area.
+            if (canResolveWithSubpass && !contextVk->getFeatures().preferDynamicRendering.enabled)
+            {
+                uint32_t drawColorIndexGL =
+                    static_cast<uint32_t>(*mState.getEnabledDrawBuffers().begin());
+                RenderTargetVk *drawRenderTarget = mRenderTargetCache.getColors()[drawColorIndexGL];
+                const gl::Extents drawExtents    = drawRenderTarget->getExtents();
+                const gl::Extents readExtents    = readRenderTarget->getExtents();
+                canResolveWithSubpass            = drawExtents.width >= readExtents.width &&
+                                        drawExtents.height >= readExtents.height;
             }
 
             if (canResolveWithSubpass)
@@ -2517,6 +2522,8 @@ void FramebufferVk::updateColorAttachmentColorspace(gl::SrgbWriteControlMode srg
         RenderTargetVk *colorRenderTarget = colorRenderTargets[colorIndexGL];
         ASSERT(colorRenderTarget);
         colorRenderTarget->updateWriteColorspace(srgbWriteControlMode);
+        mAttachmentWithColorSpaceOverrideMask.set(
+            colorIndexGL, colorRenderTarget->hasColorspaceOverrideForWrite());
     }
 }
 
@@ -2871,43 +2878,35 @@ void FramebufferVk::updateRenderPassDesc(ContextVk *contextVk)
     // Color attachments.
     const auto &colorRenderTargets               = mRenderTargetCache.getColors();
     const gl::DrawBufferMask colorAttachmentMask = mState.getColorAttachmentsMask();
-    for (size_t colorIndexGL = 0; colorIndexGL < colorAttachmentMask.size(); ++colorIndexGL)
+    for (size_t colorIndexGL : colorAttachmentMask)
     {
-        if (colorAttachmentMask[colorIndexGL])
+        RenderTargetVk *colorRenderTarget = colorRenderTargets[colorIndexGL];
+        ASSERT(colorRenderTarget);
+
+        if (colorRenderTarget->isYuvResolve())
         {
-            RenderTargetVk *colorRenderTarget = colorRenderTargets[colorIndexGL];
-            ASSERT(colorRenderTarget);
-
-            if (colorRenderTarget->isYuvResolve())
-            {
-                // If this is YUV resolve target, we use resolveImage's format since image maybe
-                // nullptr
-                auto const &resolveImage = colorRenderTarget->getResolveImageForRenderPass();
-                mRenderPassDesc.packColorAttachment(colorIndexGL, resolveImage.getActualFormatID());
-                mRenderPassDesc.packYUVResolveAttachment(colorIndexGL);
-            }
-            else
-            {
-                // Account for attachments with colorspace override
-                angle::FormatID actualFormat =
-                    colorRenderTarget->getImageForRenderPass().getActualFormatID();
-                if (colorRenderTarget->hasColorspaceOverrideForWrite())
-                {
-                    actualFormat =
-                        colorRenderTarget->getColorspaceOverrideFormatForWrite(actualFormat);
-                }
-
-                mRenderPassDesc.packColorAttachment(colorIndexGL, actualFormat);
-                // Add the resolve attachment, if any.
-                if (colorRenderTarget->hasResolveAttachment())
-                {
-                    mRenderPassDesc.packColorResolveAttachment(colorIndexGL);
-                }
-            }
+            // If this is YUV resolve target, we use resolveImage's format since image maybe
+            // nullptr
+            auto const &resolveImage = colorRenderTarget->getResolveImageForRenderPass();
+            mRenderPassDesc.packColorAttachment(colorIndexGL, resolveImage.getActualFormatID());
+            mRenderPassDesc.packYUVResolveAttachment(colorIndexGL);
         }
         else
         {
-            mRenderPassDesc.packColorAttachmentGap(colorIndexGL);
+            // Account for attachments with colorspace override
+            angle::FormatID actualFormat =
+                colorRenderTarget->getImageForRenderPass().getActualFormatID();
+            if (mAttachmentWithColorSpaceOverrideMask[colorIndexGL])
+            {
+                actualFormat = colorRenderTarget->getColorspaceOverrideFormatForWrite(actualFormat);
+            }
+
+            mRenderPassDesc.packColorAttachment(colorIndexGL, actualFormat);
+            // Add the resolve attachment, if any.
+            if (colorRenderTarget->hasResolveAttachment())
+            {
+                mRenderPassDesc.packColorResolveAttachment(colorIndexGL);
+            }
         }
     }
 
@@ -4228,5 +4227,31 @@ bool FramebufferVk::updateLegacyDither(ContextVk *contextVk)
     }
 
     return false;
+}
+
+const vk::ImageHelper *FramebufferVk::getImageWithTileMemory() const
+{
+    RenderTargetVk *depthStencilRenderTarget = getDepthStencilRenderTarget();
+    if (!depthStencilRenderTarget)
+    {
+        return nullptr;
+    }
+
+    const vk::ImageHelper *image = nullptr;
+    if (depthStencilRenderTarget->hasResolveAttachment())
+    {
+        image = &depthStencilRenderTarget->getResolveImageForRenderPass();
+    }
+    else
+    {
+        image = &depthStencilRenderTarget->getImageForRenderPass();
+    }
+
+    if (image->useTileMemory())
+    {
+        return image;
+    }
+
+    return nullptr;
 }
 }  // namespace rx

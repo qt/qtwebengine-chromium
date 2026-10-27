@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_MAP_H
-#define EIGEN_CXX11_TENSOR_TENSOR_MAP_H
+#ifndef EIGEN_TENSOR_TENSOR_MAP_H
+#define EIGEN_TENSOR_TENSOR_MAP_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -18,7 +19,7 @@ namespace Eigen {
 // FIXME: Use proper doxygen documentation (e.g. \tparam MakePointer_).
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief A tensor expression mapping an existing array of data.
  *
@@ -104,10 +105,11 @@ class TensorMap : public TensorBase<TensorMap<PlainObjectType, Options_, MakePoi
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE StoragePointerType data() const { return m_data; }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE StorageRefType operator()(const array<Index, NumIndices>& indices) const {
-    if (PlainObjectType::Options & RowMajor) {
+    EIGEN_IF_CONSTEXPR(PlainObjectType::Options & RowMajor) {
       const Index index = m_dimensions.IndexOfRowMajor(indices);
       return m_data[index];
-    } else {
+    }
+    else {
       const Index index = m_dimensions.IndexOfColMajor(indices);
       return m_data[index];
     }
@@ -128,11 +130,12 @@ class TensorMap : public TensorBase<TensorMap<PlainObjectType, Options_, MakePoi
                                                                   IndexTypes... otherIndices) const {
     EIGEN_STATIC_ASSERT(sizeof...(otherIndices) + 2 == NumIndices, YOU_MADE_A_PROGRAMMING_MISTAKE)
     eigen_assert(internal::all((Eigen::NumTraits<Index>::highest() >= otherIndices)...));
-    if (PlainObjectType::Options & RowMajor) {
+    EIGEN_IF_CONSTEXPR(PlainObjectType::Options & RowMajor) {
       const Index index =
           m_dimensions.IndexOfRowMajor(array<Index, NumIndices>{{firstIndex, secondIndex, otherIndices...}});
       return m_data[index];
-    } else {
+    }
+    else {
       const Index index =
           m_dimensions.IndexOfColMajor(array<Index, NumIndices>{{firstIndex, secondIndex, otherIndices...}});
       return m_data[index];
@@ -140,10 +143,11 @@ class TensorMap : public TensorBase<TensorMap<PlainObjectType, Options_, MakePoi
   }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE StorageRefType operator()(const array<Index, NumIndices>& indices) {
-    if (PlainObjectType::Options & RowMajor) {
+    EIGEN_IF_CONSTEXPR(PlainObjectType::Options & RowMajor) {
       const Index index = m_dimensions.IndexOfRowMajor(indices);
       return m_data[index];
-    } else {
+    }
+    else {
       const Index index = m_dimensions.IndexOfColMajor(indices);
       return m_data[index];
     }
@@ -166,11 +170,12 @@ class TensorMap : public TensorBase<TensorMap<PlainObjectType, Options_, MakePoi
                   "Number of indices used to access a tensor coefficient must be equal to the rank of the tensor.");
     eigen_assert(internal::all((Eigen::NumTraits<Index>::highest() >= otherIndices)...));
     const std::size_t NumDims = sizeof...(otherIndices) + 2;
-    if (PlainObjectType::Options & RowMajor) {
+    EIGEN_IF_CONSTEXPR(PlainObjectType::Options & RowMajor) {
       const Index index =
           m_dimensions.IndexOfRowMajor(array<Index, NumDims>{{firstIndex, secondIndex, otherIndices...}});
       return m_data[index];
-    } else {
+    }
+    else {
       const Index index =
           m_dimensions.IndexOfColMajor(array<Index, NumDims>{{firstIndex, secondIndex, otherIndices...}});
       return m_data[index];
@@ -186,4 +191,4 @@ class TensorMap : public TensorBase<TensorMap<PlainObjectType, Options_, MakePoi
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_MAP_H
+#endif  // EIGEN_TENSOR_TENSOR_MAP_H

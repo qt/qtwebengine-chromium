@@ -11,7 +11,7 @@ import("../../../scripts/build/typescript/typescript.gni")
 
 import("//$devtools_root_location/config/gni/i18n.gni")
 
-devtools_module("i18n") {
+devtools_foundation_module("i18n") {
   sources = [
     "ByteUtilities.ts",
     "DevToolsLocale.ts",
@@ -26,7 +26,6 @@ devtools_module("i18n") {
     "../../core/platform:bundle",
     "../../core/root:bundle",
     "../../third_party/i18n:bundle",
-    "../../third_party/intl-messageformat:bundle",
   ]
 }
 
@@ -61,7 +60,8 @@ devtools_entrypoint("bundle") {
     "../../models/trace/*",
     "../../models/workspace/*",
 
-    # TODO(crbug/452597733): testing should be split up for UI/non-UI testing utilities.
+    # TODO(crbug/452597733): testing should be split up for UI/non-UI testing
+    # utilities.
     "../../testing/*",
   ]
 }
@@ -113,17 +113,6 @@ devtools_pre_built("locales_js") {
   deps = [ ":generate_locales_js" ]
 }
 
-ts_library("unittests") {
-  testonly = true
-
-  sources = [ "i18nImpl.test.ts" ]
-
-  deps = [
-    ":bundle",
-    "../../testing",
-  ]
-}
-
 devtools_foundation_module("foundation_unittests") {
   testonly = true
 
@@ -132,11 +121,14 @@ devtools_foundation_module("foundation_unittests") {
     "DevToolsLocale.test.ts",
     "NumberFormatter.test.ts",
     "i18n.test.ts",
+    "i18nImpl.test.ts",
     "time-utilities.test.ts",
   ]
 
   deps = [
     ":bundle",
     "../../testing",
+    "../../third_party/i18n:bundle",
+    "../platform:bundle",
   ]
 }

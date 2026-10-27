@@ -5,10 +5,18 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_METRICS_PROFILE_IMPORT_METRICS_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_METRICS_PROFILE_IMPORT_METRICS_H_
 
+#include <stddef.h>
+
+#include <optional>
+#include <string_view>
+#include <vector>
+
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_import/addresses/autofill_profile_import_process.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
+#include "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
+#include "services/metrics/public/cpp/ukm_source_id.h"
 
 namespace autofill::autofill_metrics {
 
@@ -209,13 +217,6 @@ void LogHomeAndWorkSupersetAffectedType(FieldType affected_type);
 // Logs that a type was edited manually for a specified import type.
 void LogProfileImportTypeEditedType(AutofillProfileImportType type,
                                     FieldType edited_type);
-
-// Logs if at least one setting-inaccessible field was removed on import.
-void LogRemovedSettingInaccessibleFields(bool did_remove);
-
-// Logs that `field` was removed from a profile on import, because it is
-// setting-inaccessible in the profile's country.
-void LogRemovedSettingInaccessibleField(FieldType field);
 
 // Logs whether a phone number was parsed successfully on profile import.
 // Contrary to the profile import requirement metrics, the parsing result is

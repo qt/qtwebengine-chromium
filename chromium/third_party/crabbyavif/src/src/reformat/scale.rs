@@ -19,7 +19,148 @@ use crate::*;
 
 use libyuv_sys::bindings::*;
 
+fn fixed_div(num: u32, div: u32) -> u32 {
+    (((num as u64) << 16) / div as u64) as u32
+}
+
+fn scale_slope(
+    src_width: u32,
+    src_height: u32,
+    dst_width: u32,
+    dst_height: u32,
+) -> (u32, u32, u32, u32) {
+    let dx = fixed_div(src_width, dst_width);
+    let dy = fixed_div(src_height, dst_height);
+    let x = dx >> 1;
+    let y = dy >> 1;
+    (x, y, dx, dy)
+}
+
+fn scale_cols(dst: &mut [u8], src: &[u8], dst_width: u32, mut x: u32, dx: u32) {
+    let mut j = 0;
+    let mut dst_idx = 0;
+    while j < dst_width - 1 {
+        dst[dst_idx] = src[(x >> 16) as usize];
+        x += dx;
+        dst[dst_idx + 1] = src[(x >> 16) as usize];
+        x += dx;
+        dst_idx += 2;
+        j += 2;
+    }
+    if (dst_width & 1) != 0 {
+        dst[dst_idx] = src[(x >> 16) as usize];
+    }
+}
+
+fn scale_cols16(dst: &mut [u16], src: &[u16], dst_width: u32, mut x: u32, dx: u32) {
+    let mut j = 0;
+    let mut dst_idx = 0;
+    while j < dst_width - 1 {
+        dst[dst_idx] = src[(x >> 16) as usize];
+        x += dx;
+        dst[dst_idx + 1] = src[(x >> 16) as usize];
+        x += dx;
+        dst_idx += 2;
+        j += 2;
+    }
+    if (dst_width & 1) != 0 {
+        dst[dst_idx] = src[(x >> 16) as usize];
+    }
+}
+
+fn scale_uv_cols(dst: &mut [u8], src: &[u8], dst_width: u32, mut x: u64, dx: u32) {
+    let mut j = 0;
+    let mut dst_idx = 0;
+    while j < dst_width - 1 {
+        let src_idx = ((x >> 16) as usize) * 2;
+        dst[dst_idx] = src[src_idx];
+        dst[dst_idx + 1] = src[src_idx + 1];
+        x += dx as u64;
+
+        let src_idx = ((x >> 16) as usize) * 2;
+        dst[dst_idx + 2] = src[src_idx];
+        dst[dst_idx + 3] = src[src_idx + 1];
+        x += dx as u64;
+
+        dst_idx += 4;
+        j += 2;
+    }
+    if (dst_width & 1) != 0 {
+        let src_idx = ((x >> 16) as usize) * 2;
+        dst[dst_idx] = src[src_idx];
+        dst[dst_idx + 1] = src[src_idx + 1];
+    }
+}
+
 impl Image {
+    fn scale_plane_impl(&mut self, src: &Image, plane: Plane) -> AvifResult<()> {
+        let dst_width = self.width(plane);
+        let dst_height = self.height(plane);
+        let (x, mut y, dx, dy) = scale_slope(
+            src.width(plane) as u32,
+            src.height(plane) as u32,
+            dst_width as u32,
+            dst_height as u32,
+        );
+        if src.depth > 8 {
+            for i in 0..dst_height as u32 {
+                let src_row = src.row16(plane, y >> 16)?;
+                let dst_row = self.row16_mut(plane, i)?;
+                scale_cols16(dst_row, src_row, dst_width as u32, x, dx);
+                y += dy;
+            }
+        } else {
+            for i in 0..dst_height as u32 {
+                let src_row = src.row(plane, y >> 16)?;
+                let dst_row = self.row_mut(plane, i)?;
+                scale_cols(dst_row, src_row, dst_width as u32, x, dx);
+                y += dy;
+            }
+        }
+        Ok(())
+    }
+
+    fn scale_impl(&mut self, src: &Image, category: Category) -> AvifResult<()> {
+        if src.width < self.width || src.height < self.height {
+            // This function only supports scaling down.
+            return Err(AvifError::NotImplemented);
+        }
+        if category != Category::Alpha
+            && (self.yuv_format == PixelFormat::AndroidNv12
+                || self.yuv_format == PixelFormat::AndroidNv21)
+        {
+            if self.width < 2 || self.height < 2 {
+                return Err(AvifError::NotImplemented);
+            }
+            self.scale_plane_impl(src, Plane::Y)?;
+            let plane = Plane::U;
+            // scale_slope and scale_uv_cols expect the width of one chroma plane whereas
+            // self.width(plane) will return the width of the interleaved chrome planes in case of
+            // Nv12/Nv21. So divide width by 2 when calling these functions.
+            let dst_width = self.width(plane) / 2;
+            let dst_height = self.height(plane);
+            let (x, mut y, dx, dy) = scale_slope(
+                src.width(plane) as u32 / 2,
+                src.height(plane) as u32,
+                dst_width as u32,
+                dst_height as u32,
+            );
+            for i in 0..dst_height as u32 {
+                let src_row = src.row(plane, y >> 16)?;
+                let dst_row = self.row_mut(plane, i)?;
+                scale_uv_cols(dst_row, src_row, dst_width as u32, x as u64, dx);
+                y += dy;
+            }
+            return Ok(());
+        }
+        for plane in category.planes() {
+            if !src.has_plane(*plane) || !self.has_plane(*plane) {
+                continue;
+            }
+            self.scale_plane_impl(src, *plane)?;
+        }
+        Ok(())
+    }
     pub(crate) fn scale(&mut self, width: u32, height: u32, category: Category) -> AvifResult<()> {
         if self.width == width && self.height == height {
             return Ok(());
@@ -98,8 +239,10 @@ impl Image {
         self.height = height;
         self.depth = src.depth;
         self.yuv_format = src.yuv_format;
+        const LIBYUV_LIMIT: u32 = 16384;
+        const LIMIT: u32 = 65536;
         if src.has_plane(Plane::Y) || src.has_plane(Plane::A) {
-            if src.width > 16384 || src.height > 16384 {
+            if src.width > LIMIT || src.height > LIMIT {
                 return AvifError::not_implemented();
             }
             if src.has_plane(Plane::Y) && category != Category::Alpha {
@@ -109,7 +252,9 @@ impl Image {
                 self.allocate_planes(Category::Alpha)?;
             }
         }
-
+        if src.width > LIBYUV_LIMIT || src.height > LIBYUV_LIMIT {
+            return self.scale_impl(&src, category);
+        }
         if category != Category::Alpha
             && (self.yuv_format == PixelFormat::AndroidNv12
                 || self.yuv_format == PixelFormat::AndroidNv21)

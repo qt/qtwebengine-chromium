@@ -37,8 +37,9 @@ struct StatisticsEvent {
 
     // Receiver side packet events.
     kPacketReceived = 11,
+    kFrameDroppedByEncoder = 15,
 
-    kNumOfEvents = kPacketReceived + 1
+    kNumOfEvents = kFrameDroppedByEncoder + 1
   };
 
   // Serialized values for the statistics events for use by the RTCP builder

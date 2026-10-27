@@ -94,7 +94,7 @@ ReceiverError::~ReceiverError() = default;
 
 // static
 ErrorOr<ReceiverError> ReceiverError::Parse(const Json::Value& value) {
-  if (!value) {
+  if (!value.isObject()) {
     return Error(Error::Code::kParameterInvalid,
                  "Empty JSON in receiver error parsing");
   }
@@ -131,7 +131,7 @@ Error ReceiverError::ToError() const {
 // static
 ErrorOr<ReceiverCapability> ReceiverCapability::Parse(
     const Json::Value& value) {
-  if (!value) {
+  if (!value.isObject()) {
     return Error(Error::Code::kParameterInvalid,
                  "Empty JSON in capabilities parsing");
   }
@@ -165,7 +165,7 @@ Json::Value ReceiverCapability::ToJson() const {
 // static
 ErrorOr<ReceiverMessage> ReceiverMessage::Parse(const Json::Value& value) {
   ReceiverMessage message;
-  if (!value) {
+  if (!value.isObject()) {
     return Error(Error::Code::kJsonParseError, "Invalid message body");
   }
 

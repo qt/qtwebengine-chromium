@@ -20,6 +20,19 @@ package(
 )
 
 cc_library(
+    name = "fuzz_domains",
+    testonly = 1,
+    srcs = ["fuzz_domains.cc"],
+    hdrs = ["fuzz_domains.h"],
+    deps = [
+        ":brush_tip_state",
+        "//ink/geometry:angle",
+        "//ink/geometry:fuzz_domains",
+        "@com_google_fuzztest//fuzztest",
+    ],
+)
+
+cc_library(
     name = "mutable_multi_mesh",
     srcs = ["mutable_multi_mesh.cc"],
     hdrs = ["mutable_multi_mesh.h"],
@@ -74,16 +87,30 @@ cc_test(
 
 cc_library(
     name = "modeled_stroke_input",
-    hdrs = [
-        "modeled_stroke_input.h",
-    ],
+    srcs = ["modeled_stroke_input.cc"],
+    hdrs = ["modeled_stroke_input.h"],
     deps = [
         "//ink/geometry:angle",
         "//ink/geometry:point",
         "//ink/geometry:vec",
+        "//ink/geometry/internal:lerp",
         "//ink/strokes/input:stroke_input",
         "//ink/types:duration",
         "//ink/types:physical_distance",
+    ],
+)
+
+cc_test(
+    name = "modeled_stroke_input_test",
+    srcs = ["modeled_stroke_input_test.cc"],
+    deps = [
+        ":modeled_stroke_input",
+        ":type_matchers",
+        "//ink/geometry:angle",
+        "//ink/geometry:type_matchers",
+        "//ink/types:duration",
+        "//ink/types:type_matchers",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -96,9 +123,8 @@ cc_library(
         "//ink/brush:brush_family",
         "//ink/strokes/input:stroke_input_batch",
         "//ink/strokes/internal/stroke_input_modeler:input_model_impl",
-        "//ink/strokes/internal/stroke_input_modeler:naive_input_modeler",
+        "//ink/strokes/internal/stroke_input_modeler:passthrough_input_modeler",
         "//ink/strokes/internal/stroke_input_modeler:sliding_window_input_modeler",
-        "//ink/strokes/internal/stroke_input_modeler:spring_based_input_modeler",
         "//ink/types:duration",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/log:absl_check",
@@ -124,6 +150,7 @@ cc_test(
         "//ink/types:type_matchers",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_fuzztest//fuzztest",
         "@com_google_googletest//:gtest_main",
     ],
@@ -136,7 +163,7 @@ cc_library(
     deps = [
         "//ink/geometry:angle",
         "//ink/geometry:point",
-        "//ink/geometry/internal:algorithms",
+        "//ink/geometry/internal:lerp",
     ],
 )
 
@@ -145,9 +172,11 @@ cc_test(
     srcs = ["brush_tip_state_test.cc"],
     deps = [
         ":brush_tip_state",
+        ":fuzz_domains",
         ":type_matchers",
         "//ink/geometry:angle",
         "//ink/geometry:type_matchers",
+        "@com_google_fuzztest//fuzztest",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -166,7 +195,7 @@ cc_library(
         "//ink/geometry:angle",
         "//ink/geometry:point",
         "//ink/geometry:vec",
-        "//ink/geometry/internal:algorithms",
+        "//ink/geometry/internal:lerp",
         "//ink/geometry/internal:modulo",
         "//ink/strokes/input:stroke_input",
         "//ink/types:duration",
@@ -210,6 +239,7 @@ cc_library(
         ":brush_tip_state",
         ":easing_implementation",
         ":modeled_stroke_input",
+        ":noise_generator",
         "//ink/brush:brush_behavior",
         "//ink/brush:brush_tip",
         "//ink/geometry:angle",
@@ -230,14 +260,42 @@ cc_test(
         ":brush_tip_modeler",
         ":brush_tip_state",
         ":modeled_stroke_input",
+        ":stroke_input_modeler",
+        ":type_matchers",
         "//ink/brush:brush_behavior",
+        "//ink/brush:brush_family",
         "//ink/brush:brush_tip",
         "//ink/brush:easing_function",
+        "//ink/brush:fuzz_domains",
         "//ink/geometry:angle",
         "//ink/geometry:point",
         "//ink/geometry:type_matchers",
+        "//ink/strokes/input:fuzz_domains",
         "//ink/strokes/input:stroke_input",
+        "//ink/strokes/input:stroke_input_batch",
         "//ink/types:duration",
+        "@com_google_fuzztest//fuzztest",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "brush_tip_modeler_benchmark",
+    testonly = 1,
+    srcs = ["brush_tip_modeler_benchmark.cc"],
+    deps = [
+        ":brush_tip_modeler",
+        ":stroke_input_modeler",
+        "//ink/brush",
+        "//ink/brush:brush_family",
+        "//ink/brush:stock_brushes_test_params",
+        "//ink/color",
+        "//ink/strokes/input:recorded_test_inputs",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_benchmark//:benchmark",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -250,7 +308,7 @@ cc_library(
         "//ink/brush:easing_function",
         "//ink/geometry:point",
         "//ink/geometry:vec",
-        "//ink/geometry/internal:algorithms",
+        "//ink/geometry/internal:lerp",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/functional:overload",
         "@com_google_absl//absl/log:absl_check",
@@ -277,7 +335,7 @@ cc_library(
     srcs = ["noise_generator.cc"],
     hdrs = ["noise_generator.h"],
     deps = [
-        "//ink/geometry/internal:algorithms",
+        "//ink/geometry/internal:lerp",
         "@com_google_absl//absl/log:absl_check",
     ],
 )
@@ -358,12 +416,14 @@ cc_test(
         ":brush_tip_shape",
         ":brush_tip_state",
         ":extrusion_points",
+        ":fuzz_domains",
         "//ink/geometry:angle",
         "//ink/geometry:type_matchers",
         "//ink/geometry/internal:circle",
         "//ink/geometry/internal:test_matchers",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
+        "@com_google_fuzztest//fuzztest",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -452,7 +512,7 @@ cc_library(
         "//ink/geometry:mutable_mesh",
         "//ink/geometry:point",
         "//ink/geometry:vec",
-        "//ink/geometry/internal:algorithms",
+        "//ink/geometry/internal:lerp",
         "//ink/types:small_array",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/log:absl_check",
@@ -532,17 +592,20 @@ cc_test(
         ":stroke_shape_builder",
         ":stroke_shape_update",
         ":stroke_vertex",
+        "//ink/brush:brush_behavior",
         "//ink/brush:brush_coat",
         "//ink/brush:brush_family",
         "//ink/brush:brush_paint",
         "//ink/brush:brush_tip",
         "//ink/geometry:envelope",
         "//ink/geometry:mutable_mesh",
+        "//ink/geometry:rect",
         "//ink/geometry:type_matchers",
         "//ink/geometry/internal:algorithms",
         "//ink/strokes/input:stroke_input_batch",
         "//ink/types:duration",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_googletest//:gtest_main",
     ],
@@ -554,24 +617,17 @@ cc_test(
     deps = [
         ":stroke_input_modeler",
         ":stroke_shape_builder",
-        ":stroke_shape_update",
         "//ink/brush",
-        "//ink/brush:brush_behavior",
         "//ink/brush:brush_family",
-        "//ink/brush:brush_paint",
-        "//ink/brush:brush_tip",
-        "//ink/brush:easing_function",
+        "//ink/brush:stock_brushes_test_params",
         "//ink/color",
-        "//ink/geometry:angle",
-        "//ink/geometry:rect",
         "//ink/strokes/input:recorded_test_inputs",
-        "//ink/strokes/input:stroke_input",
-        "//ink/strokes/input:stroke_input_batch",
-        "//ink/types:duration",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
-        "@com_google_benchmark//:benchmark_main",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_benchmark//:benchmark",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -620,7 +676,7 @@ cc_library(
         ":brush_tip_extrusion",
         ":brush_tip_state",
         "//ink/geometry:distance",
-        "//ink/geometry/internal:algorithms",
+        "//ink/geometry/internal:lerp",
         "@com_google_absl//absl/log:absl_check",
     ],
 )
@@ -648,10 +704,61 @@ cc_library(
         ":brush_tip_state",
         ":modeled_stroke_input",
         "//:gtest_for_library_testonly",
+        "//ink/geometry:angle",
         "//ink/geometry:type_matchers",
         "//ink/geometry/internal:circle",
         "//ink/geometry/internal:test_matchers",
         "//ink/types:type_matchers",
         "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_test(
+    name = "stroke_input_modeler_benchmark",
+    testonly = 1,
+    srcs = ["stroke_input_modeler_benchmark.cc"],
+    deps = [
+        ":stroke_input_modeler",
+        "//ink/brush:brush_family",
+        "//ink/strokes/input:recorded_test_inputs",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_benchmark//:benchmark",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "stroke_subtraction",
+    srcs = ["stroke_subtraction.cc"],
+    hdrs = ["stroke_subtraction.h"],
+    deps = [
+        ":stroke_vertex",
+        "//ink/geometry:affine_transform",
+        "//ink/geometry:intersects",
+        "//ink/geometry:mesh",
+        "//ink/geometry:mesh_format",
+        "//ink/geometry:mutable_mesh",
+        "//ink/geometry:partitioned_mesh",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+    ],
+)
+
+cc_test(
+    name = "stroke_subtraction_test",
+    srcs = ["stroke_subtraction_test.cc"],
+    deps = [
+        ":stroke_subtraction",
+        "//ink/geometry:affine_transform",
+        "//ink/geometry:mesh_format",
+        "//ink/geometry:mutable_mesh",
+        "//ink/geometry:partitioned_mesh",
+        "//ink/geometry:point",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_googletest//:gtest_main",
     ],
 )

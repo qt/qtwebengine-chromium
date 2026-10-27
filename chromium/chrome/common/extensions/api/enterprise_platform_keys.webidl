@@ -5,13 +5,13 @@
 [instanceOf=SubtleCrypto]
 typedef object SubtleCrypto;
 
-dictionary Token {
+[nocompile] dictionary Token {
   // Uniquely identifies this <code>Token</code>.
   // <p>Static IDs are <code>"user"</code> and <code>"system"</code>,
   // referring to the platform's user-specific and the system-wide hardware
   // token, respectively. Any other tokens (with other identifiers) might be
   // returned by $(ref:enterprise.platformKeys.getTokens).</p>
-  [nocompile] required DOMString id;
+  required DOMString id;
 
   // Implements the WebCrypto's
   // <a href="http://www.w3.org/TR/WebCryptoAPI/#subtlecrypto-interface">SubtleCrypto</a>
@@ -28,7 +28,7 @@ dictionary Token {
   // <code>window.crypto.subtle</code>. Equally, <code>Key</code> objects
   // created with <code>window.crypto.subtle</code> cannot be used with this
   // interface.</p>
-  [nocompile] required SubtleCrypto subtleCrypto;
+  required SubtleCrypto subtleCrypto;
 
   // Implements the WebCrypto's
   // <a href="http://www.w3.org/TR/WebCryptoAPI/#subtlecrypto-interface">SubtleCrypto</a>
@@ -47,7 +47,7 @@ dictionary Token {
   // <code>window.crypto.subtle</code>. Equally, <code>Key</code> objects
   // created with <code>window.crypto.subtle</code> cannot be used with this
   // interface.</p>
-  [nocompile] required SubtleCrypto softwareBackedSubtleCrypto;
+  required SubtleCrypto softwareBackedSubtleCrypto;
 };
 
 // Whether to use the Enterprise User Key or the Enterprise Machine Key.
@@ -89,7 +89,7 @@ interface EnterprisePlatformKeys {
   // |Returns|: Invoked by <code>getTokens</code> with the list of available
   // Tokens.
   // |PromiseValue|: tokens: The list of available tokens.
-  [nocompile, requiredCallback] static Promise<sequence<Token>> getTokens();
+  [nocompile] static Promise<sequence<Token>> getTokens();
 
   // Returns the list of all client certificates available from the given
   // token. Can be used to check for the existence and expiration of client
@@ -99,7 +99,6 @@ interface EnterprisePlatformKeys {
   // available certificates.
   // |PromiseValue|: certificates: The list of certificates, each in DER
   // encoding of a X.509     certificate.
-  [requiredCallback]
   static Promise<sequence<ArrayBuffer>> getCertificates(DOMString tokenId);
 
   // Imports <code>certificate</code> to the given token if the certified key
@@ -152,7 +151,6 @@ interface EnterprisePlatformKeys {
   //            $(ref:ChallengeKeyOptions).
   // |Returns|: Returns a Promise which resolves with the challenge response.
   // |PromiseValue|: response: The challenge response.
-  [requiredCallback]
   static Promise<ArrayBuffer> challengeKey(ChallengeKeyOptions options);
 
   // Challenges a hardware-backed Enterprise Machine Key and emits the
@@ -185,7 +183,7 @@ interface EnterprisePlatformKeys {
   //                Machine Key.
   // |Returns|: Returns a Promise which resolves with the challenge response.
   // |PromiseValue|: response: The challenge response.
-  [deprecated="Use $(ref:challengeKey) instead.", requiredCallback]
+  [deprecated="Use $(ref:challengeKey) instead."]
   static Promise<ArrayBuffer> challengeMachineKey(ArrayBuffer challenge,
                                                   optional boolean registerKey);
 
@@ -218,7 +216,7 @@ interface EnterprisePlatformKeys {
   //                function will then generate a new Enterprise User Key.
   // |Returns|: Returns a Promise which resolves with the challenge response.
   // |PromiseValue|: response: The challenge response.
-  [deprecated="Use $(ref:challengeKey) instead.", requiredCallback]
+  [deprecated="Use $(ref:challengeKey) instead."]
   static Promise<ArrayBuffer> challengeUserKey(ArrayBuffer challenge,
                                                boolean registerKey);
 };

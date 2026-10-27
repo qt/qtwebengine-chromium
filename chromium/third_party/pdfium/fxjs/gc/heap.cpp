@@ -41,6 +41,14 @@ class CFXGC_Platform final : public cppgc::Platform {
     return g_platform->GetForegroundTaskRunner(g_isolate);
   }
 
+  std::shared_ptr<cppgc::TaskRunner> GetForegroundTaskRunner(
+      cppgc::TaskPriority priority) override {
+    // V8's default platform creates a new task runner when passed the
+    // v8::Isolate pointer the first time. For non-default platforms this will
+    // require getting the appropriate task runner.
+    return g_platform->GetForegroundTaskRunner(g_isolate, priority);
+  }
+
   std::unique_ptr<cppgc::JobHandle> PostJob(
       cppgc::TaskPriority priority,
       std::unique_ptr<cppgc::JobTask> job_task) override {

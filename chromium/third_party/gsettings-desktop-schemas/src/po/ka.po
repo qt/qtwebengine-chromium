@@ -1,0 +1,3860 @@
+# Georgian translation for gsettings-desktop-schemas.
+# Copyright (C) 2025, gsettings-desktop-schemas authors
+# This file is distributed under the same license as the gsettings-desktop-schemas package.
+# Ekaterine Papava <papava.e@gtu.ge>, 2023-2025.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: gsettings-desktop-schemas\n"
+"Report-Msgid-Bugs-To: https://gitlab.gnome.org/GNOME/gsettings-desktop-"
+"schemas/issues/\n"
+"POT-Creation-Date: 2025-02-19 19:23+0000\n"
+"PO-Revision-Date: 2025-02-23 07:44+0100\n"
+"Last-Translator: Ekaterine Papava <papava.e@gtu.ge>\n"
+"Language-Team: Georgian <(nothing)>\n"
+"Language: ka\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"X-Generator: Poedit 3.5\n"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:6
+msgid "On-screen keyboard"
+msgstr "ეკრანის კლავიატურა"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:7
+msgid "Whether the on-screen keyboard is turned on."
+msgstr "ჩართულია თუ არა ეკრანის კლავიატურა."
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:11
+msgid "Screen magnifier"
+msgstr "ეკრანის გამადიდებელი"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:12
+msgid "Whether the screen magnifier is turned on."
+msgstr "ჩართულია თუ არა ეკრანის გამადიდებელი."
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:16
+msgid "Screen reader"
+msgstr "ეკრანის მკითხველი"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:17
+msgid "Whether the screen reader is turned on."
+msgstr "ჩართულია თუ არა ეკრანის წამკითხველი."
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:6
+msgid "Always show the Universal Access status icon"
+msgstr "უნივერსალური წვდომის სტატუსის ხატულის ყოველთვის ჩვენება"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:7
+msgid ""
+"This key overrides the automatic hiding of the Universal Access status icon "
+"when no accessibility features are enabled."
+msgstr ""
+"ეს პარამეტრი გადაფარავს უნივერსალური წვდომის სტატუსის ხატულის ავტომატურ "
+"დამალვას მაშინ, როცა წვდომადობის ფუნქციები ჩართული არაა."
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:14
+msgid "Always show the text caret"
+msgstr "ტექსტის კარეტა ყოველთვის ნაჩვენები იქნება"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:15
+msgid ""
+"This key overrides the hiding of the text caret in noneditable text in "
+"applications."
+msgstr ""
+"ეს პარამეტრი გადაფარავს ტექსტის კარეტის დამალვის პარამეტრს აპლიკაციის "
+"არაჩასწორებად ტექსტში."
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:6
+msgid "High contrast"
+msgstr "მაღალი კონტრასტი"
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:7
+msgid "Whether to use the high contrast style."
+msgstr "გამოვიყენო თუ არა მაღალი კონტრასტის სტილი."
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:13
+msgid "Show status shapes"
+msgstr "სტატუსის მოხაზულობების ჩვენება"
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:14
+msgid ""
+"Whether to use shapes to indicate status in addition or instead of color."
+msgstr ""
+"გამოვიყენო თუ არა მოხაზულობები სტატუსებს მაჩვენებლად ფერის მაგიერ თუ ფერთან "
+"ერთად."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:6
+msgid "Enable accessibility keyboard shortcuts"
+msgstr "წვდომადობის კლავიატურის მალსახმობების ჩართვა"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:10
+msgid "Beep when a keyboard accessibility feature changes"
+msgstr "პიპინი, როცა კლავიატურის წვდომადობის თვისება შეცვლება"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:11
+msgid ""
+"Whether to beep when a keyboard accessibility feature is enabled or disabled."
+msgstr ""
+"დავაპიპინო თუ არა, როცა კლავიატურის წვდომადობის ფუნქცია ჩაირთვება ან "
+"გამოირთვება."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:15
+msgid "Disable keyboard accessibility after a timeout"
+msgstr "ვადის ამოწურვის შემდეგ კლავიატურის წვდომადობის გამორთვა"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:16
+msgid ""
+"Whether to disable keyboard accessibility after a timeout, useful for shared "
+"machines."
+msgstr ""
+"კლავიატურის წვდომადობის გამორთვა გარკვეული ვადის შემდეგ. სასარგებლოა "
+"გაზიარებული მანქანებისთვის."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:20
+msgid "Duration of the disabling timeout"
+msgstr "გამორთვის ვადის ხანგრძლივობა"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:21
+msgid "Duration of the timeout before disabling the keyboard accessibility."
+msgstr "ხანგრძლივობა, რომლის შემდეგაც კლავიატურის წვდომადობა გაითიშება."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:25
+msgid "Enable “Bounce Keys”"
+msgstr "\"მხტუნავი ღილაკების\" ჩართვა"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:26
+msgid "Whether the “Bounce Keys” keyboard accessibility feature is turned on."
+msgstr "ჩართულია თუ არა კლავიატურის წვდომადობის ფუნქცია \"მხტუნავი ღილაკები\"."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:30
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:65
+msgid "Minimum interval in milliseconds"
+msgstr "მინიმალური ინტერვალი მილიწამებში"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:31
+msgid "Ignore multiple presses of the same key within this many milliseconds."
+msgstr ""
+"მითითებული რაოდენობის მილიწამების განმავლობაში იგივე ღილაკის ერთზე მეტი "
+"დაწოლის იგნორი."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:35
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:80
+msgid "Beep when a key is rejected"
+msgstr "პიპინი ღილაკის უარყოფის შემთხვევაში"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:36
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:81
+msgid "Whether to beep when a key is rejected."
+msgstr "პიპინი ღილაკის უარყოფის შემთხვევაში."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:40
+msgid "Enable “Mouse Keys”"
+msgstr "\"თაგუნას ღილაკების\" ჩართვა"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:41
+msgid "Whether the “Mouse Keys” accessibility feature is turned on."
+msgstr "ჩართულია თუ არა კლავიატურის წვდომადობის ფუნქცია \"თაგუნას ღილაკები\"."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:45
+msgid "Pixels per seconds"
+msgstr "პიქსელი წამში"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:46
+msgid "How many pixels per second to move at the maximum speed."
+msgstr "მაქსიმუმ რამდენი პიქსელით წამში ვიმოძრაო."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:50
+msgid "How long to accelerate in milliseconds"
+msgstr "რამდენ ხანს აჩქარდება. მილიწამებში"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:51
+msgid "How many milliseconds it takes to go from 0 to maximum speed."
+msgstr "რამდენ მილიწამში ავა 0-დან მაქსიმალურ სიჩქარემდე."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:55
+msgid "Initial delay in milliseconds"
+msgstr "საწყისი დაყოვნება, მილიწამებში"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:56
+msgid ""
+"How many milliseconds to wait before mouse movement keys start to operate."
+msgstr ""
+"რამდენი მილიწამი მოვიცადო, სანამ თაგუნას მოძრაობის ღილაკები ამუშავდება."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:60
+msgid "Enable “Slow Keys”"
+msgstr "ნელი ღილაკების ჩაართვა"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:61
+msgid "Whether the “Slow Keys” accessibility feature is turned on."
+msgstr "ჩართულია თუ არა კლავიატურის წვდომადობის ფუნქცია \"ნელი ღილაკები\"."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:66
+msgid ""
+"Do not accept a key as being pressed unless held for this many milliseconds."
+msgstr ""
+"არ მივიღო ღილაკი, თუ მითითებული რაოდენობა მილიწამის განმავლობაში არ "
+"დააწვებით."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:70
+msgid "Beep when a key is first pressed"
+msgstr "პიპინი, როცა ღილაკს პირველად დააწვებით"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:71
+msgid "Whether to beep when a key is first pressed."
+msgstr "პიპინი, როცა ღილაკს პირველად დააწვებით."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:75
+msgid "Beep when a key is accepted"
+msgstr "პიპინი,როდესაც ღილაკი მიღებულია"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:76
+msgid "Whether to beep when a key is accepted."
+msgstr "პიპინი, თუ არა, როცა ღილაკი მიღებულია."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:85
+msgid "Enable sticky keys"
+msgstr "წებოვანი ღილაკების ჩართვა"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:86
+msgid "Whether the sticky keys accessibility feature is turned on."
+msgstr "ჩართულია თუ არა კლავიატურის წვდომადობის ფუნქცია \"წებოვანი ღილაკები\"."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:90
+msgid "Disable when two keys are pressed at the same time"
+msgstr "ორი ღილაკის ერთდროული დაწოლის გათიშვა"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:91
+msgid ""
+"Whether to disable sticky keys if two keys are pressed at the same time."
+msgstr "გამოვრთო თუ არა წებოვანი ღილაკები, თუ ორ ღილაკს ერთდროულად დააწვებით."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:95
+msgid "Beep when a modifier is pressed."
+msgstr "პიპინი, თუ მართვის ღილაკი დაჭერილია."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:96
+msgid "Whether to beep when a modifier key is pressed."
+msgstr "პიპინი თუ არა, როცა მართვის ღილაკი დაჭერილია."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:100
+msgid "Enable “Toggle Keys”"
+msgstr "\"გადასართველი ღილაკების\" ჩართვა"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:101
+msgid "Whether the “Toggle Keys” accessibility feature is turned on."
+msgstr ""
+"ჩართულია თუ არა კლავიატურის წვდომადობის ფუნქცია \"ღილაკების გადართვა\"."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:8
+msgid "Mouse Tracking Mode"
+msgstr "თაგუნას ტრეკინგის რეჟიმი"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:9
+msgid ""
+"Determines the position of the magnified mouse image within the magnified "
+"view and how it reacts to system mouse movement. The values are • none: no "
+"mouse tracking; • centered: the mouse image is displayed at the center of "
+"the zoom region (which also represents the point under the system mouse) and "
+"the magnified contents are scrolled as the system mouse moves; • "
+"proportional: the position of the magnified mouse in the zoom region is "
+"proportionally the same as the position of the system mouse on screen; • "
+"push: when the magnified mouse intersects a boundary of the zoom region, the "
+"contents are scrolled into view."
+msgstr ""
+"განსაზღვრავს გადიდებული თაგუნას გამოსახულების მდებარეობას გადიდებული ხედის "
+"შიგნით და როგორ რეაგირებს სისტემური თაგუნას გადაადგილებაზე. მნიშვნელობებია • "
+"არაფერი: თაგუნას ტრეკინგის გარეშე. • ცენტრში: თაგუნას გამოსახულება "
+"გამოჩნდება გადიდების რეგიონის ცენტრში (რომელიც ასევე წარმოდგენს წერტილს "
+"სისტემური თაგუნას ქვეშ) და გადიდებული შემცველობა გადაიხვევა, როცა სისტემა "
+"თაგუნას გაამოძრავებს. • პროპორციული: გადიდებული თაგუნას მდებარეობა გადიდების "
+"რეგიონში პროპორციულია სისტემური თაგუნასი ეკრანზე. • მიწოლა: როცა გადიდებული "
+"თაგუნა კვეთს გაიდებული რეგიონის საზღვარს, შემცველობა გადაიხვევა ხედში."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:26
+msgid "Focus Tracking Mode"
+msgstr "ფოკუსის ტრეკინგის რეჟიმი"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:27
+msgid ""
+"Determines the position of the focused widget within magnified view. The "
+"values are: • none: no focus tracking • centered: the focused image is "
+"displayed at the center of the zoom region (which also represents the point "
+"under the system focus) and the magnified contents are scrolled as the "
+"system focus moves • proportional: the position of the magnified focus in "
+"the zoom region is proportionally the same as the position of the system "
+"focus on screen • push: when the magnified focus intersects a boundary of "
+"the zoom region, the contents are scrolled into view"
+msgstr ""
+"განსაზღვრავს ფოკუსის მქონე ვიჯეტის მდებარეობას გადიდებული ხედის შიგნით. "
+"მნიშვნელობებია • არაფერი: ფოკუსის ტრეკინგის გარეშე. • ცენტრში: ფოკუსის მქონე "
+"გამოსახულება გამოჩნდება გადიდების რეგიონის ცენტრში (რომელიც ასევე წარმოდგენს "
+"წერტილს სისტემური ფოკუსის ქვეშ) და გადიდებული შემცველობა გადაიხვევა, როცა "
+"სისტემა თაგუნას გაამოძრავებს. • პროპორციული: გადიდებული დოკუსის მდებარეობა "
+"გადიდების რეგიონში პროპორციულია სისტემური თაგუნასი ეკრანზე. • მიწოლა: როცა "
+"გადიდებული ფოკუსი კვეთს გაიდებული რეგიონის საზღვარს, შემცველობა გადაიხვევა "
+"ხედში"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:46
+msgid "Caret Tracking Mode"
+msgstr "კარეტის ტრეკინგის რეჟიმი"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:47
+msgid ""
+"Determines the position of the caret within magnified view. The values are: "
+"• none: no caret tracking • centered: the image of the caret is displayed at "
+"the center of the zoom region (which also represents the point under the "
+"system caret) and the magnified contents are scrolled as the system caret "
+"moves • proportional: the position of the magnified caret in the zoom region "
+"is proportionally the same as the position of the system caret on screen • "
+"push: when the magnified caret intersects a boundary of the zoom region, the "
+"contents are scrolled into view"
+msgstr ""
+"განსაზღვრავს კარეტის მდებარეობას გადიდებული ხედის შიგნით მნიშვნელობებია • "
+"არაფერი: კარეტის ტრეკინგის გარეშე. • ცენტრში: კარეტის გამოსახულება "
+"გამოჩნდება გადიდების რეგიონის ცენტრში (რომელიც ასევე წარმოდგენს წერტილს "
+"სისტემური კარეტის ქვეშ) და გადიდებული შემცველობა გადაიხვევა, როცა სისტემა "
+"კარეტას გაამოძრავებს. • პროპორციული: გადიდებული კარეტის მდებარეობა გადიდების "
+"რეგიონში პროპორციულია სისტემური კარეტის ეკრანზე. • მიწოლა: როცა გადიდებული "
+"კარეტა კვეთს გაიდებული რეგიონის საზღვარს, შემცველობა გადაიხვევა ხედში"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:64
+msgid "Screen position"
+msgstr "ეკრანის მდებარეობა"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:65
+msgid ""
+"The magnified view either fills the entire screen, or occupies the top-half, "
+"bottom-half, left-half, or right-half of the screen."
+msgstr ""
+"გადიდებული ადგილი ან მთელ ეკრანს შეავსებს, ან დაიკავებს ეკრანის ზედა "
+"ნახევარს, ქვედა ნახევარს, მარცხენა ნახევარს ან მარჯვენა ნახევარს."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:73
+msgid "Magnification factor"
+msgstr "გადიდების კოეფიციენტი"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:74
+msgid ""
+"The power of the magnification. A value of 1.0 means no magnification. A "
+"value of 2.0 doubles the size."
+msgstr ""
+"გადიდების სიძლიერე. 1.0 ნიშნავს გადიდების გამორთვას. 2.0 - ზომის გაორმაგებას."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:81
+msgid "Enable lens mode"
+msgstr "ლინზის რეჟიმის ჩართვა"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:82
+msgid ""
+"Whether the magnified view should be centered over the location of the "
+"system mouse and move with it."
+msgstr ""
+"უნდა მოთავსდეს გადიდებული ხედი ცენტრში და უნდა გაყვეს თუ არა სისტემურ "
+"თაგუნას, თუ არა."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:89
+msgid "Scroll magnified contents beyond the edges of the desktop"
+msgstr "გადიდებული ადგილების გადახვევა ეკრანის წიბოებს მიღმა"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:92
+msgid ""
+"For centered mouse tracking, when the system pointer is at or near the edge "
+"of the screen, the magnified contents continue to scroll such that the "
+"screen edge moves into the magnified view."
+msgstr ""
+"დაცენტრებული თაგუნას ტრეკინგისთვის, როცა სისტემური კურსორი ეკრანის წიბოსთან "
+"ახლოსაა, გადიდებული შემცველობის გადახვევა გააგრძელებს ამას ისე, რომ ეკრანის "
+"წიბო გადიდებული ხედისკენ წავა."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:102
+msgid "Show or hide crosshairs"
+msgstr "გადაჯვარედინებების ჩვენება ან დამალვა"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:103
+msgid ""
+"Enables/disables display of crosshairs centered on the magnified mouse "
+"sprite."
+msgstr "ჩართავს/გამორთავს გადიდებულ თაგუნას სპრაიტზე ჯვარედინის ჩვენებას."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:110
+msgid "Thickness of the crosshairs in pixels"
+msgstr "გადაჯვარედინებების სისქე, პიქსელებში"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:111
+msgid ""
+"Width in pixels of the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr ""
+"სიგანე პიქსელებში ვერტიკალური და ჰორიზონტალური ხაზებისთვის, რომლებიც კვეთას "
+"ქმნიან."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:117
+msgid "Color of the crosshairs"
+msgstr "გადაჯვარედინებების ფერი"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:118
+msgid ""
+"The color of the the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr ""
+"ფერიი ვერტიკალური და ჰორიზონტალური ხაზებისთვის, რომლებიც კვეთას ქმნიან."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:126
+msgid "Opacity of the crosshairs"
+msgstr "გადაჯვარედინებების სიმღვრიე"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:127
+msgid ""
+"Determines the transparency of the crosshairs, from fully opaque to fully "
+"transparent."
+msgstr ""
+"განსაზღვრავს კვეთების გამჭვირვალობას. სრულად დაბინდულიდან სრულად "
+"გამჭვირვალემდე."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:135
+msgid "Length of the crosshairs in pixels"
+msgstr "გადაჯვარედინებების სიგრძე, პიქსელებში"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:136
+msgid ""
+"Determines the length in pixels of the vertical and horizontal lines that "
+"make up the crosshairs."
+msgstr ""
+"სიგრძე პიქსელებში ვერტიკალური და ჰორიზონტალური ხაზებისთვის, რომლებიც კვეთას "
+"ქმნიან."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:143
+msgid "Clip the crosshairs at the center"
+msgstr "გადაჯვარედინების ამოჭრა ცენტრში"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:144
+msgid ""
+"Determines whether the crosshairs intersect the magnified mouse sprite, or "
+"are clipped such that the ends of the horizontal and vertical lines surround "
+"the mouse image."
+msgstr ""
+"განსაზღრავს, კვეთს თუ არა ჯვარედინა გადიდებული თაგუნას სპრაიტს, ან არიან თუ "
+"არა მოკვეთილი ისე, რომ ისინი თაგუნას გამოსახულების გარშემო ჰორიზონტალური და "
+"ვერტიკალური ხაზებს ასრულებენ."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:152
+msgid "Inverse lightness"
+msgstr "განათების ინვერსია"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:153
+msgid ""
+"Determines whether the lightness values are inverted: darker colors become "
+"lighter and vice versa, and white and black are interchanged."
+msgstr ""
+"განსაზღვრავს, ხდება თუ არა სინათლის მნიშვნელობების ინვერსია: ბნელი ფერები "
+"გაღიავდება და პირიქით და შავი და თეთრი ადგილებს გაცვლიან."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:161
+msgid "Color Saturation"
+msgstr "ფერის გაჯერებულობა"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:162
+msgid ""
+"Represents a change to the color saturation, from 0.0 (grayscale) to 1.0 "
+"(full color)."
+msgstr ""
+"წარმოადგენს ფერის გაჯერებულობის ცვლილებას 0.0-დან (ნაცრისფერი) 1.0-მდე(სრული "
+"ფერები)."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:170
+msgid "Change brightness of red"
+msgstr "წითლის სიკაშკაშის შეცვლა"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:171
+msgid ""
+"Represents a change to the default brightness of the red component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"წარმოადგენს წითელი კომპონენტის ნაგულისხმევი სიკაშკაშის ცვლილებას. ნული "
+"ნიშნავს, რომ ცვლილებები არ მომხდარა. ნულზე მცირე მნიშვნელობები ნიშნავს "
+"შემცირებას, მეტი კი გაზრდას."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:180
+msgid "Change brightness of green"
+msgstr "მწვანის სიკაშკაშის შეცვლა"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:181
+msgid ""
+"Represents a change to the default brightness for the green component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"წარმოადგენს მწვანე კომპონენტის ნაგულისხმევი სიკაშკაშის ცვლილებას. ნული "
+"ნიშნავს, რომ ცვლილებები არ მომხდარა. ნულზე მცირე მნიშვნელობები ნიშნავს "
+"შემცირებას, მეტი კი გაზრდას."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:190
+msgid "Change brightness of blue"
+msgstr "ლურჯის სიკაშკაშის შეცვლა"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:191
+msgid ""
+"Represents a change to the default brightness for the blue component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"წარმოადგენს ლურჯი კომპონენტის ნაგულისხმევი სიკაშკაშის ცვლილებას. ნული "
+"ნიშნავს, რომ ცვლილებები არ მომხდარა. ნულზე მცირე მნიშვნელობები ნიშნავს "
+"შემცირებას, მეტი კი გაზრდას."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:200
+msgid "Change contrast of red"
+msgstr "წითლის კონტრასტის შეცვლა"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:201
+msgid ""
+"Represents a change to the default contrast of the red component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"წარმოადგენს წითელი კომპონენტის ნაგულისხმევი კონტრასტის ცვლილებას. ნული "
+"ნიშნავს, რომ ცვლილებები არ მომხდარა. ნულზე მცირე მნიშვნელობები ნიშნავს "
+"შემცირებას, მეტი კი გაზრდას."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:210
+msgid "Change contrast of green"
+msgstr "მწვანის კონტრასტის შეცვლა"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:211
+msgid ""
+"Represents a change to the default contrast of the green component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"წარმოადგენს მწვანე კომპონენტის ნაგულისხმევი კონტრასტის ცვლილებას. ნული "
+"ნიშნავს, რომ ცვლილებები არ მომხდარა. ნულზე მცირე მნიშვნელობები ნიშნავს "
+"შემცირებას, მეტი კი გაზრდას."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:220
+msgid "Change contrast of blue"
+msgstr "ლურჯის კონტრასტის შეცვლა"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:221
+msgid ""
+"Represents a change to the default contrast of the blue component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"წარმოადგენს ლურჯი კომპონენტის ნაგულისხმევი კონტრასტის ცვლილებას. ნული "
+"ნიშნავს, რომ ცვლილებები არ მომხდარა. ნულზე მცირე მნიშვნელობები ნიშნავს "
+"შემცირებას, მეტი კი გაზრდას."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:6
+msgid "Dwell click time"
+msgstr "მიტანით წკაპის დრო"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:7
+msgid "Time in seconds before a click is triggered."
+msgstr "დრო წამებში, სანამ დაწკაპუნება დატრიგერდება."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:11
+msgid "Movement threshold"
+msgstr "გადაადგილების ზღვარი"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:12
+msgid "Distance in pixels before movement will be recognized."
+msgstr "დაშორება პიქსელებში, სანამ მოძრაობას ამოვიცნობთ."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:16
+msgid "Gesture single click"
+msgstr "ერთი წკაპის ჟესტი"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:17
+msgid "Direction to perform a single click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"მიმართულება ერთი წკაპის შესასრულებლად (\"მარცხნივ\", \"მარჯვნივ\", "
+"\"ზემოთ\", \"ქვემოთ\")."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:21
+msgid "Gesture double click"
+msgstr "ორი წკაპის ჟესტი"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:22
+msgid "Direction to perform a double click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"მიმართულება ორი წკაპის შესასრულებლად (\"მარცხნივ\", \"მარჯვნივ\", \"ზემოთ\", "
+"\"ქვემოთ\")."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:26
+msgid "Gesture drag click"
+msgstr "გადათრევის ჟესტი"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:27
+msgid "Direction to perform dragging (“left”, “right”, “up”, “down”)."
+msgstr ""
+"მიმართულება გადათრევის შესასრულებლად (\"მარცხნივ\", \"მარჯვნივ\", \"ზემოთ\", "
+"\"ქვემოთ\")."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:31
+msgid "Gesture secondary click"
+msgstr "მეორადი წკაპის ჟესტი"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:32
+msgid "Direction to perform a secondary click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"მიმართულება მეორე წკაპის შესასრულებლად (\"მარცხნივ\", \"მარჯვნივ\", "
+"\"ზემოთ\", \"ქვემოთ\")."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:36
+msgid "Dwell click mode"
+msgstr "მიტანით წკაპის რეჟიმი"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:37
+msgid ""
+"The active dwell click mode. Possible values are “window” and “gesture”."
+msgstr ""
+"თაგუნას აქტიური დაწკაპუნების რეჟიმი. შესაძლო მნიშვნელობებია "
+"\"window\"(ფანჯარა) და \"gesture\" (ჟესტი)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:41
+msgid "Show click type window"
+msgstr "აირჩიეთ წკაპის ტიპის ფანჯარა"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:42
+msgid "Show click type window."
+msgstr "აირჩიეთ წკაპის ტიპის ფანჯარა."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:46
+msgid "Enable dwell clicks"
+msgstr "მიტანით დაწკაპუნების ჩართვა"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:47
+msgid "Enable dwell clicks."
+msgstr "მიტანით დაწკაპუნების ჩართვა."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:51
+msgid "Secondary click enabled"
+msgstr "დამატებით წკაპი ჩართულია"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:52
+msgid "Enable simulated secondary clicks"
+msgstr "სიმულირებული მეორადი წკაპების ჩართვა"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:56
+msgid "Secondary click time"
+msgstr "დამატებით წკაპის დრო"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:57
+msgid "Time in seconds before a simulated secondary click is triggered."
+msgstr "დრო წამებში, სანამ სიმულირებული მეორადი დაწკაპუნება დატრიგერდება."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:6
+msgid "Folder children"
+msgstr "საქაღალდის შვილები"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:7
+msgid ""
+"List of relative settings paths at which app-folders are stored. Each folder "
+"uses the org.gnome.desktop.app-folders.folder schema."
+msgstr ""
+"შეფარდებითი პარამეტრების ბილიკების ჩამონათვალი, სადაც აპლიკაციის "
+"საქაღალდეებია დამახსოვრებული. თითოეული საქაღალდე org.gnome.desktop.app-"
+"folders.folder სქემას იყენებს."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:15
+msgid "Folder name"
+msgstr "საქაღალდის სახელი"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:16
+msgid "The name of the application folder."
+msgstr "აპლიკაციის საქაღალდის სახელი."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:20
+msgid "Translate the name"
+msgstr "თარგმნეთ სახელი"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:21
+msgid ""
+"Whether the name key is a filename to be looked up in /usr/share/desktop-"
+"directories."
+msgstr ""
+"არის თუ არა სახელის პარამეტრი ფაილის სახელი, რომელიც /usr/share/desktop "
+"საქაღალდეებში უნდა მოიძებნოს."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:26
+msgid "Applications"
+msgstr "პროგრამები"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:27
+msgid ""
+"The list of IDs of applications that are explicitly included in this folder."
+msgstr ""
+"აპლიკაციების ID-ების სია, რომლებიც ნაძალადევადაა ჩასმული ამ საქაღალდეში."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:32
+msgid "Categories"
+msgstr "კატეგორიები"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:33
+msgid ""
+"A list of categories for which apps will be placed into this folder by "
+"default, in addition to the apps that are listed in the apps key."
+msgstr ""
+"კატეგორიების სია, რომლებისთვისაც აპები ამ საქაღალდეში ნაგულისხმევად "
+"მოთავსდება, იმ აპებთან ერთად, რომლებიც აპის გასაღებშია ჩამოთვლილი."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:39
+msgid "Excluded applications"
+msgstr "გამორიცხული აპლიკაციები"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:40
+msgid ""
+"A list of IDs of applications that are excluded from this folder. This can "
+"be used to remove applications that would otherwise be included by category."
+msgstr ""
+"აპლიკაციების ID-ების სია, რომლებიც ამოღებულია ამ საქაღალდიდან. შეგიძლიათ "
+"გამოიყენოთ აპლიკაციების წასაშლელად, რომლებიც სხვაგვარად ამ კატეგორიაში "
+"აღმოჩნდებოდა."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:6
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:90
+msgid "Picture Options"
+msgstr "სურათის მორგება"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:7
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:91
+msgid ""
+"Determines how the image set by wallpaper_filename is rendered. Possible "
+"values are “none”, “wallpaper”, “centered”, “scaled”, “stretched”, “zoom”, "
+"“spanned”."
+msgstr ""
+"განსაზღვრავს, როგორ ხდება wallpaper_filename-ში მითითებული გამოსახულების "
+"რენდერი. შესაძლო მნიშვნელობებია \"none\" (არაფერი), \"wallpaper\" (ფონის "
+"სურათი), \"centered\" (ცენტრში), \"streched\" (გაწელილი) , \"zoom\" "
+"(გადიდება) ან \"spanned\"."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:15
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:99
+msgid "Picture URI"
+msgstr "სურათის URI"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:16
+#: schemas/org.gnome.desktop.background.gschema.xml.in:24
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:100
+msgid ""
+"URI to use for the background image. Note that the backend only supports "
+"local (file://) URIs."
+msgstr ""
+"ფონის სურათისთვის გამოსაყენებელი გამოსახულების URI. დაიმახსოვრეთ, რომ ამ "
+"უკანაბოლოს, მხოლოდ, ლოკალური (file://) URI-ების მხარდაჭერა გააჩნია."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:23
+msgid "Picture URI (dark)"
+msgstr "სურათის URI (მუქი)"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:32
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:108
+msgid "Picture Opacity"
+msgstr "სურათის გაუმჭვირვალობა"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:33
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:109
+msgid "Opacity with which to draw the background picture."
+msgstr "გაუმჭვირვალობა, რომლითაც ფონის სურათი დახატება."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:39
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:115
+msgid "Primary Color"
+msgstr "ძირითადი ფერი"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:40
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:116
+msgid "Left or Top color when drawing gradients, or the solid color."
+msgstr "მარცხენა ან ზედა ფერი გრადიენტების დახატვისას. ან მყარი ფერი."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:46
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:122
+msgid "Secondary Color"
+msgstr "დამხმარე ფერი"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:47
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:123
+msgid "Right or Bottom color when drawing gradients, not used for solid color."
+msgstr ""
+"მარჯვენა ან ქვედა ფერი გრადიენტების დახატვისას. არ გამოიყენება მყარი "
+"ფერისთვის."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:53
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:129
+msgid "Color Shading Type"
+msgstr "ფერის დაჩრდილვის ტიპი"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:54
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:130
+msgid ""
+"How to shade the background color. Possible values are “horizontal”, "
+"“vertical”, and “solid”."
+msgstr ""
+"როგორ დავჩრდილო ფონის ფერი. შესაძლო მნიშვნელობებია "
+"\"horizontal\"(ჰორიზონტალური), \"vertical\"(ვერტიკალური) და \"solid\" (ერთი "
+"ფერის)."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:61
+msgid "Have file manager handle the desktop"
+msgstr "როგორ მართავს ფაილების მმართველი სამუშაო მაგიდას"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:62
+msgid "If set to true, then file manager will draw the icons on the desktop."
+msgstr ""
+"თუ დაყენებულია ჭეშმარიტზე, ფაილების მმართველი სამუშაო მაგიდაზე ხატულებს "
+"დახატავს."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:10
+msgid "List of breaks that are currently enabled"
+msgstr "დასვენებების სია, რომელიც ახლა ჩართულია"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:22
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:87
+msgid "Time between breaks"
+msgstr "დრო შესვენებებს შორის"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:23
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:88
+msgid "The time between rest breaks, in seconds."
+msgstr "დრო შესვენებებს შორის, წამებში."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:29
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:94
+msgid "Duration of each break"
+msgstr "შესვენების ხანგრძლივობა"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:30
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:95
+msgid "The duration of each rest break, in seconds."
+msgstr "თითოეული დასვენების ხანგრძლივობა, წამებში."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:36
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:101
+msgid "Amount to delay break if requested"
+msgstr "შესვენების შეყოვნების რაოდენობა, თუ მოთხოვნილია"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:37
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:102
+msgid ""
+"The amount to delay taking the break by, if the user requests a delay, in "
+"seconds."
+msgstr ""
+"შესვენების შეყოვნების რაოდენობა, თუ მომხმარებელი დაყოვნებას მოითხოვს, "
+"წამებში."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:43
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:108
+msgid "Fade screen during breaks"
+msgstr "ეკრანის მინავლება შესვენებისას"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:44
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:109
+msgid "True to fade the screen during rest breaks."
+msgstr "ჭეშმარიტი, თუ გნებავთ ეკრანის მინავლება შესვენებისას."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:49
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:114
+msgid "Lock screen during breaks"
+msgstr "ეკრანის დაბლოკვა შესვენებისას"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:50
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:115
+msgid "True to lock the screen during rest breaks."
+msgstr "ჭეშმარიტი, თუ გნებავთ ეკრანის დაბლოკვა შესვენებისას."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:55
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:120
+msgid "Play sound when a break finishes"
+msgstr "ხმის დაკვრა, როცა შესვენება დასრულდება"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:56
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:121
+msgid "True to play a sound when a break finishes."
+msgstr "ჭეშმარიტი, თუ გნებავთ ხმის დაკვრა, როცა შესვენება დასრულდება."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:61
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:79
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:126
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:144
+msgid "Notify when a break is due"
+msgstr "გაფრთხილება, როცა შესვენების დროა"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:62
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:127
+msgid "True to emit a notification when a break is due to start."
+msgstr "ჭეშმარიტი, თუ გნებავთ გაფრთხილება, როცა შესვენების დროა."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:67
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:132
+msgid "Notify when a break is upcoming"
+msgstr "გაფრთხილება, როცა შესვენება ახლოვდება"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:68
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:133
+msgid "True to emit a notification a few minutes before a break is due."
+msgstr "ჭეშმარიტი, თუ გნებავთ გაფრთხილება, როცა შესვენება ახლოვდება."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:73
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:138
+msgid "Notify when a break is overdue"
+msgstr "გაფრთხილება, როცა შესვენების დრო გადაცილებულია"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:74
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:139
+msgid "True to emit a notification when a break is overdue."
+msgstr "ჭეშმარიტი, თუ გნებავთ გაფრთხილება, როცა შესვენება გადაცილებულია."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:80
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:145
+msgid "True to show a prominent countdown shortly before a break is due."
+msgstr "ჭეშმარიტი, თუ გნებავთ დაინახოთ ათვლა, სანამ შესვენების დრო დადგება."
+
+#: schemas/org.gnome.desktop.calendar.gschema.xml.in:6
+msgid "Show the week date in the calendar"
+msgstr "კალენდარში კვირის რიცხვის ჩვენება"
+
+#: schemas/org.gnome.desktop.calendar.gschema.xml.in:7
+msgid "If true, display the ISO week date in the calendar."
+msgstr "თუ ჭეშმარიტია, კალენდარში ISO კვირის თარიღის ჩვენება."
+
+#: schemas/org.gnome.desktop.datetime.gschema.xml.in:6
+msgid "Automatically update timezone"
+msgstr "დროის სარტყლის ავტომატური განახლება"
+
+#: schemas/org.gnome.desktop.datetime.gschema.xml.in:7
+msgid "Whether to automatically update the timezone using geolocation."
+msgstr "განახლდება დროის სარტყელი გეოლოკაციის მიხედვით, თუ არა."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:14
+msgid "Default calendar"
+msgstr "ნაგულისხმევი კალენდარი"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:15
+msgid ""
+"Default calendar application DEPRECATED: This key is deprecated and ignored. "
+"The preferred calendar application is the application handling the text/"
+"calendar mime type."
+msgstr ""
+"ნაგულისხმევი კალენდრის აპლიკაცია მოძველებულია: ეს პარამეტრი მოძველებული და "
+"გამოტოვებულია. გამოიყენება ის კალენდრის აპლიკაცია, რომელიც mime ტიპის text/"
+"calendar გახსნაზე აგებს პასუხს."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:24
+msgid "Calendar needs terminal"
+msgstr "კალენდარს ტერმინალი სჭირდება"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:25
+msgid ""
+"Whether the default calendar application needs a terminal to run. "
+"DEPRECATED: This key is deprecated and ignored. The preferred calendar "
+"application is the application handling the text/calendar mime type, whether "
+"it needs a terminal is taken from its desktop file."
+msgstr ""
+"სჭირდება თუ არა ნაგულისხმევი კალენდრის აპლიკაციას ტერმინალი, რომ გაეშვას. "
+"მოძველებულია: ეს პარამეტრი მოძველებული და გამოტოვებულია. რჩეული კალენდრის "
+"აპლიკაცია ის აპლიკაციაა, რომელიც text/calenar ტიპის დასამუშავებლადაა "
+"დაყენებული. სჭირდება თუ არა მას ტერმინალი, მის .desktop ფაილშია მითითებული."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:37
+msgid "Default tasks"
+msgstr "ნაგულისხმევი ამოცანები"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:38
+msgid "Default tasks application."
+msgstr "ნაგულისხმევი ამოცანების აპლიკაცია."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:44
+msgid "Tasks needs terminal"
+msgstr "ამოცანებს ტერმინალი სჭირდებათ"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:45
+msgid "Whether the default tasks application needs a terminal to run."
+msgstr ""
+"სჭირდება თუ არა ნაგულისხმევ ამოცანების აპლიკაციას გასაშვებად ტერმინალი."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:53
+msgid "Terminal application"
+msgstr "ტერმინალის აპლიკაცია"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:54
+msgid ""
+"Terminal program to use when starting applications that require one. "
+"DEPRECATED: This key is deprecated and ignored. The default terminal is "
+"handled in GIO."
+msgstr ""
+"ტერმინალის პროგრამა, რომელიც გამოიყენება, როცა აპლიკაცია მას მოითხოვს. "
+"მოძველებულია: ეს პარამეტრი მოძველებული და გამოტოვებულია. ნაგულისხმევი "
+"ტერმინალი GIO-ში მუშავდება."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:63
+msgid "Exec Arguments"
+msgstr "გაშვების არგუმენტები"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:64
+msgid ""
+"Argument used to execute programs in the terminal defined by the “exec” key. "
+"DEPRECATED: This key is deprecated and ignored. The default terminal and how "
+"to invoke it is handled in GIO."
+msgstr ""
+"\"exec\" პარამეტრის მიერ აღწერილი პროგრამების გაშვებისას გამოყენებული "
+"არგუმენტი. მოძველებულია: ეს პარამეტრი მოძველებული და გამოტოვებულია. "
+"ნაგულისხმევი ტერმინალი და გზა, როგორ უნდა გაეშვას ის, GIO-ში მუშავდება."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:7
+msgid "Current input source"
+msgstr "მიმდინარე შეყვანის წყარო"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:8
+msgid ""
+"The zero-based index into the input sources list specifying the current one "
+"in effect. The value is automatically capped to remain in the range [0, "
+"sources_length) as long as the sources list isn’t empty. DEPRECATED: This "
+"key is deprecated and ignored."
+msgstr ""
+"ნულზე დაფუძნებული ინდექსი შემოყვანის წყაროებში, რომელიც მიუთითებს, რომელია "
+"ახლა აქტიური. მნიშვნელობის მაქსიმუმი ავტომატურად იზღუდება, რომ შუალედში [0, "
+"წყაროების_სიგრძე] დარჩეს, სანამ წყაროების სია ცარიელი არაა. მოძველებულია: ეს "
+"პარამეტრი მოძველებული და გამოტოვებულია."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:19
+msgid "List of input sources"
+msgstr "შეყვანის წყაროების სია"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:20
+msgid ""
+"List of input source identifiers available. Each source is specified as a "
+"tuple of 2 strings. The first string is the type and can be one of “xkb” or "
+"“ibus”. For “xkb” sources the second string is “xkb_layout+xkb_variant” or "
+"just “xkb_layout” if a XKB variant isn’t needed. For “ibus” sources the "
+"second string is the IBus engine name. An empty list means that the X "
+"server’s current XKB layout and variant won’t be touched and IBus won’t be "
+"used."
+msgstr ""
+"ხელმისაწვდომი შეყვანის წყაროს იდენტიფიკატორების სია. თითოეული წყარო "
+"მითითებულია ორი სტრიქონის კორტეჟით. პირველი სტრიქონი ტიპია და შეიძლება იყოს "
+"ერთ-ერთი მნიშვნელობებიდან \"xkb\" ან \"ibus\". \"xkb\"-სთვის მეორე სტრიქონია "
+"\"xkb_layout+xkb_variant\" ან, უბრალოდ \"xkb_layout\", თუ XKB-ის ვარიანტი "
+"საჭირო არაა. \"ibus\" წყაროებისთვის მეორე სტრიქონი IBUS ძრავის სახელია. "
+"ცარიელი სია ნიშნავს, რომ X სერვერის მიმდინარე XKB განლაგება და ვარიანტს არ "
+"შევეხებით და IBus გამოყენებული არ იქნება."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:33
+msgid "List of most recently used input sources"
+msgstr "ახლახანს გამოყენებული შეყვანის წყაროების სია"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:34
+msgid ""
+"List of most recently used input sources. The value is in the same format as "
+"the available sources list."
+msgstr ""
+"ახლახანს გამოყენებული შეყვანის წყაროების სია. მნიშვნელობა იგივე ფორმატშია, "
+"რომელშიც ხელმისაწვდომი წყაროების სია."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:41
+msgid "List of XKB options"
+msgstr "XKB-ის პარამეტრების სია"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:42
+msgid ""
+"List of XKB options. Each option is an XKB option string as defined by "
+"xkeyboard-config’s rules files."
+msgstr ""
+"XKB-ის პარამეტრების სია. თითოეული პარამეტრი XKB-ის პარამეტრის სტრიქონია, "
+"როგორც ეს xkeyboard-config-ის წესების ფაილებში აღიწერება."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:49
+msgid "XKB model to use"
+msgstr "გამოსაყენებელი XKB მოდელი"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:50
+msgid ""
+"The XKB model to use. The value is the same identifier as defined by "
+"xkeyboard-config’s geometry files."
+msgstr ""
+"XKB მოდელი გამოსაყენებლად. მნიშვნელობა იგივე იდენტიფიკატორია, როგორც ის "
+"xkeyboard-config-ის გეომეტრიის ფაილებშია მითითებული."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:57
+msgid "Show all installed input sources"
+msgstr "დაყენებული შეყვანის წყაროების ჩვენება"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:58
+msgid ""
+"Makes all installed input sources available for choosing in System Settings."
+msgstr ""
+"ყველა დაყენებული შეყვანის საშუალების ასარჩევად ხელმისაწვდომობა სისტემის "
+"მორგები ფანჯრიდან."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:65
+msgid "Use different input sources for each window"
+msgstr "ყოველი ფანჯრისთვის განსხვავებული შეყვანის წყაროს გამოყენება"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:66
+msgid ""
+"When enabled, input sources get attached to the currently focused window "
+"when activated."
+msgstr ""
+"როცა ჩართულია, ამჟამად ფოკუსის მქონე ფანჯარას, როცა გააქტიურდება, შეყვანის "
+"წყაროები მიემაგრება."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:6
+msgid "Enable Toolkit Accessibility"
+msgstr "ხელსაწყოს ბიბლიოთეკის წვდომადობის ჩართვა"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:7
+msgid "Whether toolkits should load accessibility related modules."
+msgstr "ჩაიტვირთება თუ არა წვდომადობის მოდულები ხელსაწყოს პანელებთან ერთად."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:13
+msgid "Enable Animations"
+msgstr "ანიმაციების ჩართვა"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:14
+msgid ""
+"Whether animations should be displayed. Note: This is a global key, it "
+"changes the behaviour of the window manager, the panel etc."
+msgstr ""
+"გამოჩნდება თუ არა ანიმაციები. დაიმახსოვრეთ: ეს გლობალური პარამეტრია. ის "
+"ცვლის ფანჯრების მმართველის, პანელის და ა.შ. ქცევას."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:21
+msgid "Menus Have Tearoff"
+msgstr "მოხსნადი მენიუები"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:22
+msgid "Whether menus should have a tearoff."
+msgstr "აქვს თუ არა მენიუებს მოსახსნელი."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:28
+msgid "Can Change Accels"
+msgstr "შეუძლია ამაჩქარებლების შეცვლა"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:29
+msgid ""
+"Whether the user can dynamically type a new accelerator when positioned over "
+"an active menuitem."
+msgstr ""
+"შეუძლია თუ არა მომხმარებელს დინამიკურად დააყენოს ახალი ამაჩქარებელი ღილაკი "
+"მასზე დაწოლით შესაბამის მენიუს პუნქტზე ფოკუსის ქონისას."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:36
+msgid "Toolbar Style"
+msgstr "ხელსაწყოების ზოლის სტილი"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:37
+msgid ""
+"Toolbar Style. Valid values are “both”, “both-horiz”, “icons”, and “text”."
+msgstr ""
+"ხელსაწყოების პანელის სტილი. მისაღები მნიშვნელობებია “both” (ორივე), “both-"
+"horiz” (ორივე ჰორიზ), “icons” (ხატულები), და “text” (ტექსტი)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:44
+msgid "Menubar Detachable"
+msgstr "მენიუს ზოლი მოხსნადია"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:45
+msgid "Whether the user can detach menubars and move them around."
+msgstr "შეუძლია თუ არა მომხმარებელს მენიუს ზოლების მოხსნა და გადატანა."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:51
+msgid "Toolbar Detachable"
+msgstr "ხელსაწყოების ზოლი მოხსნადია"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:52
+msgid "Whether the user can detach toolbars and move them around."
+msgstr "შეუძლია თუ არა მომხმარებელს ხელსაწყოს ზოლების მოხსნა და გადატანა."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:58
+msgid "Toolbar Icon Size"
+msgstr "ხელსაწყოების ზოლის ხატულის ზომა"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:59
+msgid "Size of icons in toolbars, either “small” or “large”."
+msgstr "პანელის ხატულების ზომა. ან \"პატარა\", ან \"დიდი\"."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:65
+msgid "Cursor Blink"
+msgstr "კურსორის ციმციმი"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:66
+msgid "Whether the cursor should blink."
+msgstr "უნდა იციმციმოს კურსორმა, თუ არა."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:73
+msgid "Cursor Blink Time"
+msgstr "კურსორის ციმციმის დრო"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:74
+msgid "Length of the cursor blink cycle, in milliseconds."
+msgstr "კურსორის ციმციმის ციკლის სიგრძე, მილიწამებში."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:81
+msgid "Cursor Blink Timeout"
+msgstr "კურსორის ციმციმის ვადა"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:82
+msgid "Time after which the cursor stops blinking, in seconds."
+msgstr "დრო, რომლის შემდეგაც კურსორი ციმციმს შეწყვეტს. წამებში."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:88
+msgid "Icon Theme"
+msgstr "ხატულების თემა"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:89
+msgid "Icon theme to use for the panel, nautilus etc."
+msgstr "პანელის, Nautilus-ის და ა.შ. გამოყენებული ხატულის თემა."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:95
+msgid "Gtk+ Theme"
+msgstr "GTK-ის თემა"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:96
+msgid "Basename of the default theme used by gtk+."
+msgstr "GTK+-ის მიერ ნაგულისხმევად გამოყენებული თემის საბაზისო სახელი."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:102
+msgid "Gtk+ Keybinding Theme"
+msgstr "Gtk+ ღილაკების მიბმის თემა"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:103
+msgid "Basename of the default keybinding theme used by gtk+."
+msgstr ""
+"GTK+-ის მიერ ნაგულისხმევად გამოყენებული კლავიატურის მალსახმობების თემის "
+"საბაზისო სახელი."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:109
+msgid "Default font"
+msgstr "ნაგულისხმები ფონტი"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:110
+msgid "Name of the default font used by gtk+."
+msgstr "GTK+-ის მიერ ნაგულისხმევად გამოყენებული ფონტის სახელი."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:116
+msgid "Directories with avatar faces"
+msgstr "საქაღალდეები ავატარებით"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:117
+msgid ""
+"Directories to override the default avatar faces installed by gnome-control-"
+"center."
+msgstr ""
+"საქაღალდეები gnome-control-center-ის მიერ დაყენებული ნაგულისხმევი ავატარის "
+"სახეების გადასაფარად."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:124
+msgid "Text scaling factor"
+msgstr "ტექსტის სკალირების ფაქტორი"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:125
+msgid ""
+"Factor used to enlarge or reduce text display, without changing font size."
+msgstr ""
+"კოეფიციენტი, რომლითაც ნაჩვენები ტექსტი გადიდდება ან დაპატარავება, ფონტის "
+"ზომის ცვლილების გარეშე."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:131
+msgid "Window scaling factor"
+msgstr "ფანჯრის მასშტაბის კოეფიციენტი"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:132
+msgid ""
+"Integer factor used to scale windows by. For use on high-dpi screens. 0 "
+"means pick automatically based on monitor."
+msgstr ""
+"მთელი რიცხვის ფაქტორი, რომლითაც ფანჯრების დამასშტაბება მოხდება. მაღალი DPI-"
+"ის მქონე ეკრანებისთვის. 0 ნიშნავს მონიტორის მოდელის შესაბამისი მნიშვნელობის "
+"დაყენებას."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:139
+msgid "GTK IM Preedit Style"
+msgstr "GTK IM წინასწარ მითითებული სტილი"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:140
+msgid "Name of the GTK+ input method Preedit Style used by gtk+."
+msgstr ""
+"GTK+-ის მიერ გამოყენებული GTK+ შეყვანის მეთოდის წინაწარი ჩასწორების სტილი."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:146
+msgid "GTK IM Status Style"
+msgstr "GTK IM სტატუსის სტილი"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:147
+msgid "Name of the GTK+ input method Status Style used by gtk+."
+msgstr "GTK+-ის მიერ გამოყენებული შეყვანის მეთოდის სტატუსის სტილი."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:153
+msgid "GTK IM Module"
+msgstr "GTK IM მოდული"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:154
+msgid "Name of the input method module used by GTK+."
+msgstr "GTK+-ის მიერ გამოყენებული შეყვანის მეთოდის სახელი."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:160
+msgid "Document font"
+msgstr "დოკუმენტის ფონტი"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:161
+msgid "Name of the default font used for reading documents."
+msgstr "დოკუმენტების კითხვისთვის გამოყენებული ნაგულისხმევი ფონტის სახელი."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:167
+msgid "Monospace font"
+msgstr "ერთსიგანიან ფონტი"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:168
+msgid ""
+"Name of a monospaced (fixed-width) font for use in locations like terminals."
+msgstr ""
+"ტერმინალების მსგავს ადგილებში გამოყენებული უცვლელზომიანი (ფიქსირებული "
+"სიგანის) ფონტის სახელი."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:175
+msgid "Menubar accelerator"
+msgstr "მენიუს ზოლის ამაჩქარებელი"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:176
+msgid "Keyboard shortcut to open the menu bars."
+msgstr "კლავიატურის მალსახმობი მენიუს ძირითადი ზოლის საჩვენებლად."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:182
+msgid "Cursor theme"
+msgstr "კურსორის თემა"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:183
+msgid ""
+"Cursor theme name. Used only by Xservers that support the Xcursor extension."
+msgstr ""
+"კურსორის თემის სახელი. გამოიყენება, მხოლოდ, Xcursor-ის გაფართოების მქონე "
+"Xserver-ების მიერ."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:187
+msgid "Cursor size"
+msgstr "კურსორის ზომა"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:188
+msgid "Size of the cursor used as cursor theme."
+msgstr "კურსორის თემად გამოყენებული კურსორის ზომა."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:192
+msgid "Timeout before click repeat"
+msgstr "მოლოდინის დრო წკაპის გამეორებამდე"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:193
+msgid ""
+"Timeout in milliseconds before a click starts repeating (on spinner buttons "
+"for example)."
+msgstr ""
+"დაყოვნება მილიწამებში, სანა წკაპი გამეორებას დაიწყებს (მაგ: ტრიალა "
+"ღილაკებზე)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:197
+msgid "Timeout between click repeats"
+msgstr "ვადა წკაპის გამეორებებს შორის"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:198
+msgid ""
+"Timeout in milliseconds between repeated clicks when a button is left "
+"pressed."
+msgstr ""
+"დაყოვნება მილიწამებში განმეორებად დაწკაპუნებებს შორის, როცა ღილაკზე მარცხენა "
+"მხარეს დააჭერთ."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:202
+msgid "Palette used in the color selector"
+msgstr "ამ ფერის ამრჩევში გამოყენებული პალიტრა"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:203
+msgid ""
+"Palette used in the color selector as defined by the “gtk-color-palette” "
+"setting"
+msgstr ""
+"ფერის ამრჩევში გამოყენებული პალიტრა \"gtk-color-pallete\" პარამეტრის "
+"თავსებადი სახელით"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:207
+msgid "List of symbolic names and color equivalents"
+msgstr "სიმბოლური სახელებისა და შესაბამისი ფერებისსია"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:208
+msgid ""
+"A “\\n” separated list of “name:color” as defined by the “gtk-color-scheme” "
+"setting"
+msgstr ""
+"\"\\n\"-ით გამოყოფილი სია \"სახელი:ფერი\" წყვილების, როგორც ამას \"gtk-color-"
+"scheme\" პარამეტრი აღწერს"
+
+#. TRANSLATORS: select your locale's default clock format, this should be '12h' or '24h' (with the quotes!)
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:212
+msgid "'24h'"
+msgstr "'24სთ'"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:213
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:214
+msgid "Whether the clock displays in 24h or 12h format"
+msgstr "საათი აჩვენებს 24სთ ფორმატით, თუ 12სთ"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:220
+msgid "Whether the clock shows seconds"
+msgstr "თუ ჩართულია, საათზე წამებიც გამოჩნდება"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:221
+msgid "If true, display seconds in the clock."
+msgstr "თუ ჩართულია, საათზე წამებიც გამოჩნდება."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:227
+msgid "Show date in clock"
+msgstr "საათზე თარიღის ჩვენება"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:228
+msgid "If true, display date in the clock, in addition to time."
+msgstr "თუ ჩართულია, საათში დროსთან ერთად თარიღიც გამოჩნდება."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:234
+msgid "Show weekday in clock"
+msgstr "საათზე კვირის დღის ჩვენება"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:235
+msgid "If true, display weekday in the clock, in addition to time."
+msgstr "თუ ჩართულია, საათში დროსთან ერთად კვირის დღეც გამოჩნდება."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:241
+msgid "Enable hot corners"
+msgstr "ცხელი კუთხეების ჩართვა"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:242
+msgid ""
+"If true, the activities overview can be accessed by moving the mouse to the "
+"top-left corner."
+msgstr ""
+"თუ ჭეშმარიტია, აქტივობების გადახედვასთან წვდომა თაგუნას ზედა მარცხენა "
+"კუთხეში მიტანით შეგიძლიათ."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:249
+msgid "Show battery percentage"
+msgstr "მაჩვენე კვების წყაროს პროცენტული მაჩვენებელი"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:250
+msgid ""
+"If true, display battery percentage in the status menu, in addition to the "
+"icon."
+msgstr ""
+"თუ ჭეშმარიტია, სტატუს მენიუში ხატულასთან ერთად ელემენტის მუხტის პროცენტებიც "
+"გამოჩნდება."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:256
+msgid "Enable the primary paste selection"
+msgstr "პირველადი ჩასმის არჩევანის ჩართვა"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:257
+msgid ""
+"If true, gtk+ uses the primary paste selection, usually triggered by a "
+"middle mouse button click."
+msgstr ""
+"თუ ჭეშმარიტია, GTK+ ძირითადი ჩასმის არჩევანს იყენებს, რომელიც, ჩვეულებრივ, "
+"თაგუნას შუა ღილაკზე დაწკაპუნებით ხდება."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:263
+msgid "Allow overlay scrolling"
+msgstr "განლაგების გადახვევის დაშვება"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:264
+msgid ""
+"Whether scrollbars should be overlayed as indicators. Depending on input "
+"devices in use, permanent scrollbars may still be displayed."
+msgstr ""
+"გამოჩნდება თუ არა ჩოჩიები ინდიკატორებად. გამოყენებული შეყვანის მოწყობილობაზე "
+"დამოკიდებულებით, შეიძლება, მუდმივი ჩოჩიები გაჩვენოთ."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:272
+msgid "Highlights the current location of the pointer."
+msgstr "მაჩვენებლის მიმდინარე მდებარეობის გამოკვეთა."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:273
+msgid ""
+"If true, pressing a key will highlight the current pointer location on "
+"screen."
+msgstr ""
+"თუ ჭეშმარიტია, ღილაკის დაჭერა ეკრანზე კურსორის მიმდინარე მდებარეობას "
+"გამოკვეთს."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:279
+msgid "Antialiasing"
+msgstr "მომრგვალება"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:280
+msgid ""
+"The type of antialiasing to use when rendering fonts. Possible values are: "
+"“none” for no antialiasing, “grayscale” for standard grayscale antialiasing, "
+"and “rgba” for subpixel antialiasing (LCD screens only)."
+msgstr ""
+"მომრგვალების ტიპი ფონტების რენდერისთვის. შესაძლო მნიშვნელობებია: \"none\" "
+"მომრგვალების გამოსართავად. \"ნაცრისფერი\" სტანდარტული ნაცრისფერი "
+"მომრგვალებისთვის და \"rgba\" ქვეპიქსელის მომრგვალებისთვის (მხოლოდ LCD "
+"ეკრანებზე)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:286
+msgid "Hinting"
+msgstr "მომრგვალება"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:287
+msgid ""
+"The type of hinting to use when rendering fonts. Possible values are: “none” "
+"for no hinting and “slight” for fitting only to the Y-axis like Microsoft’s "
+"ClearType, DirectWrite and Adobe’s proprietary font rendering engine. "
+"Ignores native hinting within the font, generates hints algorithmically. "
+"Used on Ubuntu by default. Recommended. The meaning of “medium” and “full” "
+"depends on the font format (.ttf, .otf, .pfa/.pfb) and the installed version "
+"of FreeType. They usually try to fit glyphs to both the X and the Y axis "
+"(except for .otf: Y-only). This can lead to distortion and/or inconsistent "
+"rendering depending on the quality of the font, the font format and the "
+"state of FreeType’s font engines."
+msgstr ""
+"ჰინტინგის ტიპი ფონტების რენდერისას. შესაძლო მნიშვნელობებია: \"არაფერი\" "
+"ჰინტინგის გამოსართველად და \"ოდნავ\", მხოლოდ, Y ღერძზე ჰინტინგისთვის, როგორც "
+"ამას Microsoft-ის ClearType, DirectWrite და Adobe-ის კომერციული ფონტების "
+"რენდერის ძრავა აკეთებს. აიგნორებს ფონტის შიგნით მითითებულ ჰინტინგს, "
+"ალგორითმულად აგენერირებს ჰინტებს. Ubuntu-ზე ნაგულისხმევად გამოიყენება. "
+"რეკომენდებულია. \"საშუალოს\" და \"სრულის\" მნიშვნელობა დამოკიდებულია ფონტის "
+"ფორმატზე (.ttf, .otf, .pfa/.pfb) და FreeType-ის დაყენებულ ვერსიაზე. ისინი, "
+"ჩვეულებრივ, ცდილობენ გლიფები ორივე, X და Y ღერძში ჩაატიონ (.otf-ის გარდა, "
+"მხოლოდ Y). ამან დამახინჯებამდე და არამდგრად რენდერამდე შეიძლება, მიგიყვანოთ, "
+"ფონტის ფორმატზე, ხარისხზე და FreeType-ის ფონტის ძრავების მდგომარეობაზე "
+"დამოკიდებულებით."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:293
+msgid "RGBA order"
+msgstr "RGBA მიმდევრობა"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:294
+msgid ""
+"The order of subpixel elements on an LCD screen; only used when antialiasing "
+"is set to “rgba”. Possible values are: “rgb” for red on left (most common), "
+"“bgr” for blue on left, “vrgb” for red on top, “vbgr” for red on bottom."
+msgstr ""
+"ქვეპიქსელის ელემენტების მიმდევრობა LCD ეკრანზე. მხოლოდ გამოიყენება, როცა "
+"მოგლუვება \"rgba\"-ზე აყენია. შესაძლო მნიშვნელობებია: \"rgb\" წითლით "
+"მარცხნივ (ყველაზე გავრცელებული), \"bgr\" ლურჯით მარცხნივ, \"vrgb\" წითლით "
+"ზემოთ, \"vbgr\" წითლით ქვემოთ."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:300
+msgid "Color scheme"
+msgstr "ფერების სქემა"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:301
+msgid ""
+"The preferred color scheme for the user interface. Valid values are "
+"“default”, “prefer-dark”, “prefer-light”."
+msgstr ""
+"მომხმარებლის ინტერფეისის რჩეული ფერის სქემა. მისაღები მნიშვნელობაა "
+"\"default\", \"prefer-dark\" და \"prefer-light\"."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:307
+msgid "Font rendering"
+msgstr "ფონტის რენდერი"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:308
+msgid ""
+"Preference to indicate whether font rendering should follow the low-level "
+"`font-hinting` and `font-antialiasing` and `font-rgba-order` settings, or "
+"take environmental factors such as screen resolution and scaling into "
+"account. Possible values are: \"manual\" for respecting the low-level "
+"settings, or \"automatic\" for letting the toolkit make its own decisions."
+msgstr ""
+"არჩევანი, რომელიც მიუთითებს, უნდა მიჰყვეს თუ არა ფონტის რენდერი დაბალი დონის "
+"'font-hinting' da 'font-antialiasing' და 'font-rgba-order' პარამეტრებს, თუ "
+"უნდა გაითვალისწინოს გარემოს ფაქტორები, როგორიცაა ეკრანის გაფართოება და მისი "
+"მასშტაბი. შესაძლო მნიშვნელობებია: \"manual\" დაბალი დონის პარამეტრებისთვის, "
+"ან \"automatic\", რომ ბიბლიოთეკამ გადაწყვეტილებები თვითონ მიიღოს."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:316
+msgid "Accent color"
+msgstr "აქცენტის ფერი"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:317
+msgid ""
+"The preferred accent color for the user interface. Valid values are "
+"\"blue\", \"teal\", \"green\", \"yellow\", \"orange\", \"red\", \"pink\", "
+"\"purple\", \"slate\"."
+msgstr ""
+"რჩეული აქცენტის ფერი მომხმარებლის ინტერფეისისთვის. სწორი მნიშვნელობებია "
+"\"blue\", \"teal\", \"green\", \"yellow\", \"orange\", \"red\", \"pink\", "
+"\"purple\", \"slate\"."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:6
+msgid "Disable command line"
+msgstr "ბრძანებების სტრიქონის გამორთვა"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:7
+msgid ""
+"Prevent the user from accessing the terminal or specifying a command line to "
+"be executed. For example, this would disable access to the panel’s “Run "
+"Application” dialog."
+msgstr ""
+"მომხმარებლისთვის ტერმინალთან წვდომის ან გასაშვები ბრძანების სტრიქონის "
+"მითითების აკრძალვა. ეს, მაგალითად, პანელის \"აპლიკაციის გაშვების\" დიალოგთან "
+"წვდომას აკრძალავს."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:15
+msgid "Disable saving files to disk"
+msgstr "ფაილების დისკზე შენახვის გამორთვა"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:16
+msgid ""
+"Prevent the user from saving files to disk. For example, this would disable "
+"access to all applications’ “Save as” dialogs."
+msgstr ""
+"მომხმარებლისთვის ფაილების დისკზე შენახვის აკრძალვა. ამას, მაგალითად, ყველა "
+"აპლიკაციისთვის \"შენახვა, როგორც\" დიალოგებთან წვდომის აკრძალვა შეუძლია."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:23
+msgid "Disable printing"
+msgstr "დაბეჭდვის გამორთვა"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:24
+msgid ""
+"Prevent the user from printing. For example, this would disable access to "
+"all applications’ “Print” dialogs."
+msgstr ""
+"მომხმარებლისთვის დაბეჭდვის აკრძალვა. ამას, მაგალითად, ყველა აპლიკაციისთვის "
+"\"დაბეჭდვის\" დიალოგებთან წვდომის აკრძალვა შეუძლია."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:31
+msgid "Disable print setup"
+msgstr "ბეჭდვის მორგების გამორთვა"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:32
+msgid ""
+"Prevent the user from modifying print settings. For example, this would "
+"disable access to all applications’ “Print Setup” dialogs."
+msgstr ""
+"მომხმარებლისთვის ბეჭდვის პარამეტრების შეცვლის აკრძალვა. ამას, მაგალითად, "
+"შეუძლია ყველა აპლიკაციას \"პრინტერის მორგების\" დიალოგებთან წვდომა აუკრძალოს."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:39
+msgid "Disable user switching"
+msgstr "მომხმარებლების გადართვის გამორთვა"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:40
+msgid ""
+"Prevent the user from switching to another account while their session is "
+"active."
+msgstr ""
+"მომხმარებლისთვის სხვა ანგარიშზე გადართვის აკრძალვა, სანამ მისი სესია "
+"აქტიურია."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:47
+msgid "Disable lock screen"
+msgstr "ეკრანის დაბლოკვის გამორთვა"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:48
+msgid "Prevent the user from locking their screen."
+msgstr "მომხმარებლისთვის მისი ეკრანის დაბლოკვის აკრძალვა."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:54
+msgid "Disable URL and MIME type handlers"
+msgstr "URL-ის და Mimetype-ის დამმუშავებლების აკრძალვა"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:55
+msgid "Prevent running any URL or MIME type handler applications."
+msgstr ""
+"ყველა URL-ის ან MIME ტიპის დამმუშავებელი აპლიკაციების გაშვების აკრძალვა."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:61
+msgid "Disable log out"
+msgstr "გასვლის გამორთვა"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:62
+msgid "Prevent the user from logging out."
+msgstr "მომხმარებლისთვის გასვლის უფლების აკრძალვა."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:68
+msgid "Disable user administration"
+msgstr "მომხმარებლის ადმინისტრირების გამორთვა"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:69
+msgid ""
+"Stop the user from modifying user accounts. By default, we allow adding and "
+"removing users, as well as changing other users settings."
+msgstr ""
+"მომხმარებლისთვის სხვა მომხმარებლის ანგარიშების შეცვლის აკრძალვა. "
+"ნაგულისხმევად ჩვენ ვუშვებთ მომხმარებლის დამატებას, წაშლას და სხვა "
+"მომხმარებლის პარამეტრების შეცვლას."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:76
+msgid "Mount removable storage devices as read-only"
+msgstr "მოხსნადი საცავის მოწყობლობების მხოლოდ-კითხვის რეჟიმში მიმაგრება"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:77
+msgid ""
+"Prevent users from writing or modifying files on removable storage devices "
+"(i.e. flash disks, mobile phones, cameras)."
+msgstr ""
+"მომხმარებლებისთვის მოხსნადი საცავის მოწყობილობებზე (მაგ: USB დისკები, "
+"მობილური ტელეფონები, კამერები) ჩაწერის აკრძალვა."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:84
+msgid "Disable password showing"
+msgstr "პაროლის ჩვენების გამორთვა"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:85
+msgid "Disable the \"Show Password\" menu item in password entries."
+msgstr "პაროლის ველებში \"პაროლის ჩვენების\" მენიუს პუნქტის გამორთვა."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:6
+msgid "Whether to automatically mount media"
+msgstr "გარე მედიის ავტო მიერთების შესაძლებლობა"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:7
+msgid ""
+"If set to true, then Nautilus will automatically mount media such as user-"
+"visible hard disks and removable media on start-up and media insertion."
+msgstr ""
+"თუ მონიშნულია, Nautilus ავტომატურად მიამაგრებს ისეთ მოწყობილობებს, როგორიცაა "
+"მომხმარებლისთვის ხილული გარე მყარი დისკები და მოხსნადი მედია გაშვებისას და "
+"მედიის შეერთებისას."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:11
+msgid "Whether to automatically open a folder for automounted media"
+msgstr "გაიხსნას თუ არა ახლად მიერთებული მოწყობილობის დასტა"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:12
+msgid ""
+"If set to true, then Nautilus will automatically open a folder when media is "
+"automounted. This only applies to media where no known x-content/* type was "
+"detected; for media where a known x-content type is detected, the user "
+"configurable action will be taken instead."
+msgstr ""
+"თუ ჩართულია, Nautilus მედიის ავტომიმაგრების შემდეგ ამ საქაღალდეს ავტომატურად "
+"გახსნის. ეს მხოლოდ ეხება მედიას, სადაც ცნობილი x-content/* ტიპი აღმოჩენილი "
+"არ იყო. იქ, სადაც ცნობილი x-content/* ტიპი აღმოჩენილი იქნება, შესრულდება "
+"მომხმარებლის მიერ მითითებული ქმედება."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:16
+msgid "Never prompt or autorun/autostart programs when media are inserted"
+msgstr ""
+"არასდროს მკითხო autorun/autostart-ის პროგრამების შესახებ, როცა მედიას ჩავდებ"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:17
+msgid ""
+"If set to true, then Nautilus will never prompt nor autorun/autostart "
+"programs when a medium is inserted."
+msgstr ""
+"თუ მონიშნულია, ნაუტილუსი აღარ მოგთხოვთ დისკიდან ავტო-გაშვებადი პროგრამების "
+"ჩართვას."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:21
+msgid ""
+"List of x-content/* types where the preferred application will be launched"
+msgstr "სია x-content/* ტიპების, სადაც რჩეული აპლიკაცია გაეშვება"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:22
+msgid ""
+"List of x-content/* types for which the user have chosen to start an "
+"application in the preference capplet. The preferred application for the "
+"given type will be started on insertion on media matching these types."
+msgstr ""
+"'x-content/*' ტიპების სია, რომელიც მომხმარებელმა აირჩია, რომ გაუშვას "
+"აპლიკაციით, რომელიც მორგების აპლეტშია მითითებული. არჩეული აპლიკაცია "
+"მითითებული ტიპისთვის გაეშვება, როცა ჩადებთ მედიას, რომელიც ამ ტიპებს "
+"ემთხვევა."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:26
+msgid "List of x-content/* types set to “Do Nothing”"
+msgstr ""
+"'x-contant/*' ტიპების სია, რომელიც აყენია მნიშვნელობაზე \"არაფერი ქნა\""
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:27
+msgid ""
+"List of x-content/* types for which the user have chosen “Do Nothing” in the "
+"preference capplet. No prompt will be shown nor will any matching "
+"application be started on insertion of media matching these types."
+msgstr ""
+"'x-content/*' ტიპების სია, რომლებისთვისაც მომხმარებელმა აირჩია \"არაფერი "
+"გააკეთო\" პარამეტრების აპლეტში. არაფერს გკითხავთ და არც აპლიკაცია გაეშვება, "
+"როცა ჩადებთ მედია, რომელიც ამ ტიპების ფაილებს შეიცავს."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:31
+msgid "List of x-content/* types set to “Open Folder”"
+msgstr ""
+"'x-contant/*' ტიპების სია, რომელიც აყენია მნიშვნელობაზე \"საქაღალდის გახსნა\""
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:32
+msgid ""
+"List of x-content/* types for which the user have chosen “Open Folder” in "
+"the preferences capplet. A folder window will be opened on insertion of "
+"media matching these types."
+msgstr ""
+"'x-content/*' ტიპების სია, რომლებისთვისაც მომხმარებელმა აირჩია \"საქაღალდის "
+"გახსნა\" პარამეტრების აპლეტში. ამ ტიპების შემცველი მედიის ჩადებისას "
+"საქაღალდის ფანჯარა გაიხსნება."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:6
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:55
+msgid "Show notification banners"
+msgstr "გაფრთხილების ბანერების ჩვენება"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:7
+msgid "Whether notification banners are visible for application notifications."
+msgstr "ხილულია თუ არა გაფრთხილების ბანერები აპლიკაციის გაფრთხილებებისთვის."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:14
+msgid "Show notifications in the lock screen"
+msgstr "გაფრთხილებების ჩვენება დაბლოკილ ეკრანზე"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:15
+msgid "Whether notifications are shown in the lock screen or not."
+msgstr "გაფრთხილებები დაბლოკილ ეკრანზე ნაჩვენები იქნება, თუ არა."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:31
+msgid "Application ID"
+msgstr "აპლიკაციის ID"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:32
+msgid "The application that this policy is for."
+msgstr "აპლიკაცია, რომლისთვისაც ეს პოლიტიკაა განკუთვნილი."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:39
+msgid "Enable notifications"
+msgstr "გაფრთხილებების ჩართვა"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:40
+msgid "Whether notifications are globally enabled for this application."
+msgstr "უნდა იყოს თუ არა გაფრთხილებები გლობალურად ჩართული ამ აპლიკაციისთვის."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:47
+msgid "Enable sound alerts"
+msgstr "ხმოვანი განგაშების ჩვენება"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:48
+msgid "Whether notifications should be accompanied by sound alerts."
+msgstr "უნდა ჰქონდეს თუ არა გაფრთხილებებს ხმა."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:56
+msgid ""
+"Whether notification banners for this application are shown or not. Does not "
+"affect clicking on message tray buttons."
+msgstr ""
+"იქნება თუ არა ნაჩვენები გაფრთხილების ბანერები ამ აპლიკაციისთვის. არ ეხება "
+"შეტყობინების ღილაკებზე დაწკაპუნებას."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:64
+msgid "Force automatic expanding of banners"
+msgstr "ბანერების ავტომატურად გაწელვის ნაძალადევი გამოყენება"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:65
+msgid ""
+"Whether notifications from this application are expanded automatically when "
+"in banner mode."
+msgstr ""
+"ხდება თუ არა ამ აპლიკაციის გაფრთხილებების ავტომატური გადიდება ბანერის "
+"რეჟიმში."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:72
+msgid "Show in the lock screen"
+msgstr "ბლოკის ეკრანზე ჩვენება"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:73
+msgid ""
+"Whether notifications from this application are shown when the screen is "
+"locked."
+msgstr ""
+"ნაჩვენებია თუ არა შეტყობინებები ამ აპლიკაციიდან, როცა ეკრანი დაბლოკილია."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:80
+msgid "Show details in the lock screen"
+msgstr "დეტალების ჩვენება დაბლოკილ ეკრანზე"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:81
+msgid ""
+"Whether the summary and body of notifications from this application will be "
+"visible in the locked screen."
+msgstr ""
+"იქნება თუ არა ამ აპლიკაციის გაფრთხილებების შეჯამება და სხეული ხილული "
+"დაბლოკილ ეკრანზე."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:15
+msgid "Whether edge scrolling is enabled"
+msgstr "ჩართულია თუ არა კიდით ჩაწევა/ამოწევა"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:16
+msgid ""
+"When enabled, touchpads that support edge scrolling will have that feature "
+"enabled."
+msgstr ""
+"როცა ჩრთულია, თაჩპედებს, რომლებსაც წიბოთი გადახვევის მხარდაჭერა აქვს, ეს "
+"ფუნქცია ჩაერთვება."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:20
+msgid "Whether two-finger scrolling is enabled"
+msgstr "ჩართულია თუ არა ორი თითით აწევ-ჩამოწევა"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:21
+msgid ""
+"When enabled, touchpads that support two-finger scrolling will have that "
+"feature enabled."
+msgstr ""
+"როცა ჩრთულია, თაჩპედებს, რომლებსაც ორი თითით გადახვევის მხარდაჭერა აქვს, ეს "
+"ფუნქცია ჩაერთვება."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:25
+msgid "Whether to disable the touchpad while typing"
+msgstr "ითიშება თუ არა თაჩპედი კრეფისას"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:26
+msgid "When enabled, touchpads will be disabled while typing on the keyboard."
+msgstr "როცა ჩართულია, თაჩპედები გაითიშება კლავიატურაზე კრეფისას."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:30
+msgid "Enable mouse clicks with touchpad"
+msgstr "თაჩპედით თაგუნას დაწკაპუნების ჩართვა"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:31
+msgid ""
+"Set this to TRUE to be able to send mouse clicks by tapping on the touchpad."
+msgstr ""
+"დააყენეთ ეს ჭეშმარიტზე, რომ გქონდეთ საშუალება, მაუსის წკაპები თაჩპედზე "
+"დატყაპუნებით მოახდინოთ."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:35
+msgid "Tap Button Map"
+msgstr "დასატყაპუნებელი ღილაკების რუკა"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:36
+msgid ""
+"Defines the mapping between the number of fingers and touchpad buttons. The "
+"default is to have a 1, 2 and 3 finger tap to map to the left, right and "
+"middle button (\"lrm\"), respectively."
+msgstr ""
+"აღწერს ასახვას თითების რაოდენობასა და თაჩპედის ღილაკებს შორის. "
+"ნაგულისხმევია, რომ გქონდეთ 1, 2 და 3 თითიანი ტრაპები მარცხენა, მარჯვენა და "
+"შუა ღილაკზე (\"lrm\") შესაბამისად."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:40
+msgid "Enable tap-and-drag with touchpad"
+msgstr "თაჩპედით დატყაპუნების-და-გადათრევის ჩართვა"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:41
+msgid ""
+"Set this to TRUE to be able to start a drag by tapping and immediately "
+"moving the finger that’s now pressed on the touchpad."
+msgstr ""
+"დააყენეთ ეს ჭეშმარიტზე, რომ შეგეძლოთ გადათრევა დატყაპუნებით და ეგრევე იმ "
+"თითის გადათრევით, რომელიც თაჩპედს დააჭირეთ."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:45
+msgid "Enable tap-and-drag-lock with touchpad"
+msgstr "თაჩპედით დატყაპუნების-და-გადათრევა-ჩაკეტვა ჩართვა"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:46
+msgid ""
+"Set this to TRUE to lock the dragging process within a short timeout when "
+"the finger is lifted on the touchpad and the tap-and-drag setting is enabled."
+msgstr ""
+"დააყენეთ ეს ჭეშმარიტზე, რომ დაბლოკოთ გადათრევის მომენტი მოკლე დაყოვნებაში, "
+"როცა თითს აიღებთ თაჩპედიდან და პარამეტრი tap-and-drag ჩართულია."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:50
+msgid "Touchpad enabled"
+msgstr "თაჩპედი ჩართულია"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:51
+msgid "Defines the situations in which the touchpad is enabled."
+msgstr "აღწერს სიტუაციებს, როცა თაჩპედი ჩართულია."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:55
+msgid "Touchpad button orientation"
+msgstr "თაჩპედის ღილაკის ორიენტაცია"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:56
+msgid ""
+"Swap left and right mouse buttons for left-handed mice with “left”, “right” "
+"for right-handed, “mouse” to follow the mouse setting."
+msgstr "თაგუნას მარცხენა და მარჯვენა ღილაკების მიმოცვლა."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:60
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:131
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:261
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:279
+msgid "Acceleration profile"
+msgstr "აჩქარების პროფილი"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:61
+msgid ""
+"Acceleration profile used for connected touchpads. The acceleration profile "
+"can be set to either default (“default”) which uses the default acceleration "
+"profile for each device, flat (“flat”), which accelerates by a device "
+"specific constant factor derived from the configured pointer speed, or "
+"adaptive (“adaptive”) which adapts the acceleration depending on the mouse "
+"movement. If a touchpad doesn’t support the configured profile, “default” "
+"will be used."
+msgstr ""
+"მიერთებული თაჩპედებისთვის გამოყენებული აჩქარების პროფილი. აჩქარების პროფილი, "
+"შეგიძლიათ დააყენოთ მათ ნაგულისხმევ ('default') მნიშვნელობაზე, რომელიც "
+"ნაგულისხმევ აჩქარების პროფილს იყენებს თითოეული მოწყობილობისთვის. ბრტყელი "
+"('flat'), რომელიც მოწყობილობის სპეციფიკური მუდმივი მამრავლით ააჩქარებს, "
+"რომელიც თაგუნას მოძრაობსი მითითებული სიჩქარიდან მიიღება ან მორგებადი "
+"(\"adaptive\") რომელიც არგებს აჩქარებას თაგუნას მოძრაობაზე დამოკიდებულებით. "
+"თუ თაჩპედს მითითებული პროფილის მხარდაჭერა რა გააჩნია, გამოყენებული იქნება "
+"'ნაგულისხმევი'."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:65
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:120
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:273
+msgid "Pointer speed"
+msgstr "მაჩვენებლის სიჩქარე"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:66
+msgid ""
+"Pointer speed for the touchpad. Accepted values are in the [-1..1] range "
+"(from “unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"კურსორის სიჩქარე თაჩპედისთვის. მისაღები მნიშვნელობებია [-1..1] შუალედი "
+"('აჩქარების გარეშედან' 'ჩქარამდე). ნულოვანი მნიშვნელობა სისტემის "
+"ნაგულისხმევია."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:71
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:126
+msgid "Natural scrolling"
+msgstr "ჩვეულებრივი გადახვევა"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:72
+msgid "Set this to TRUE to enable natural (reverse) scrolling for touchpads."
+msgstr ""
+"დააყენეთ ეს ჭეშმარიტზე, თაჩპედისთვის რათა ნატურალური (უკუღმა) გადახვევა "
+"ჩართოთ."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:76
+msgid "Click method"
+msgstr "დაწკაპუნების მეთოდი"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:77
+msgid ""
+"How to generate software-emulated buttons, either disabled (“none”), through "
+"specific areas (“areas”), number of fingers (“fingers”) or left as hardware "
+"default (“default”)."
+msgstr ""
+"როგორ მოხდება პროგრამული ემულაციით შექმნილი ღილაკების გენერაცია. ან გათიშული "
+"(\"არაფერი\"), მითითებული ადგილებით (\"ადგილები\"), თითების რაოდენობა "
+"(\"თითები\") ან დატოვეთ აპარატურის ნაგულისხმევ მნიშვნელობაზე "
+"(\"ნაგულისხმევი\")."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:81
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:136
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:266
+msgid "Emulate middle click"
+msgstr "თაგუნას შუა ღილაკის ემულაცია"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:82
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:137
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:267
+msgid ""
+"Set this to TRUE to enable middle click during simultaneous left and right "
+"click."
+msgstr ""
+"დააყენეთ ეს ჭეშმარიტზე, რათა ჩართოთ შუა ღილაკის ემულაცია მარცხენა და "
+"მარჯვენა ღილაკის ერთდროული წკაპით."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:88
+msgid "Keyboard repeat"
+msgstr "კლავიატურის გამეორება"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:89
+msgid "Set this to TRUE to enable keyboard repeat."
+msgstr "ააყენეთ ეს ჭეშმარიტზე, რათა კლავიატურის გამეორება ჩართოთ."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:93
+msgid "Key Repeat Interval"
+msgstr "ღილაკის გამეორების ინტერვალი"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:94
+msgid "Delay between repeats in milliseconds."
+msgstr "დაყოვნება გამეორებებს შორის, მილიწამებში."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:98
+msgid "Initial Key Repeat Delay"
+msgstr "საწყისი ღილაკის გამეორების დაყოვნება"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:99
+msgid "Initial key repeat delay in milliseconds."
+msgstr "საწყისი ღილაკის გამეორების დაყოვნება, მილიწამებში."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:103
+msgid "Remember NumLock state"
+msgstr "NumLock-ის მდგომარეობის დამახსოვრება"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:104
+msgid ""
+"When set to true, GNOME will remember the state of the NumLock LED between "
+"sessions."
+msgstr ""
+"როცა დაყენებულია ჭეშმარიტზე, GNOME სესიებს შორის დაიმახსოვრებს NumLock LED-"
+"ის მდგომარეობას."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:108
+msgid "NumLock state"
+msgstr "NumLock-ის მდგომარეობა"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:109
+msgid "The remembered state of the NumLock LED."
+msgstr "NumLock-ის LED-ის დამახსოვრებული მდგომარეობა."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:115
+msgid "Mouse button orientation"
+msgstr "თაგუნას ღილაკის ორიენტაცია"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:116
+msgid "Swap left and right mouse buttons for left-handed mice."
+msgstr "თაგუნას მარცხენა და მარჯვენა ღილაკების მიმოცვლა ცაციებისთვის."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:121
+msgid ""
+"Pointer speed for mice. Accepted values are in the [-1..1] range (from "
+"“unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"კურსორის სიჩქარე თაგუნებისთვის. მისაღები მნიშვნელობებია [-1..1] შუალედი "
+"('აჩქარების გარეშედან' 'ჩქარამდე). ნულოვანი მნიშვნელობა სისტემის "
+"ნაგულისხმევია."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:127
+msgid "Set this to TRUE to enable natural (reverse) scrolling for mice."
+msgstr ""
+"დააყენეთ ეს ჭეშმარიტზე თაგუნებისთვის, რათა ნატურალური (უკუღმა) გადახვევა "
+"ჩართოთ."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:132
+msgid ""
+"Acceleration profile used for connected mice. The acceleration profile can "
+"be set to either default (“default”) which uses the default acceleration "
+"profile for each device, flat (“flat”), which accelerates by a device "
+"specific constant factor derived from the configured pointer speed, or "
+"adaptive (“adaptive”) which adapts the acceleration depending on the mouse "
+"movement. If a mouse doesn’t support the configured profile, “default” will "
+"be used."
+msgstr ""
+"მიერთებული თაგუნებისთვის გამოყენებული აჩქარების პროფილი. აჩქარების პროფილი, "
+"შეგიძლიათ დააყენოთ მათ ნაგულისხმევ ('default') მნიშვნელობაზე, რომელიც "
+"ნაგულისხმევ აჩქარების პროფილს იყენებს თითოეული მოწყობილობისთვის. ბრტყელი "
+"('flat'), რომელიც მოწყობილობის სპეციფიკური მუდმივი მამრავლით ააჩქარებს, "
+"რომელიც თაგუნას მოძრაობის მითითებული სიჩქარიდან მიიღება ან მორგებადი "
+"(\"adaptive\") რომელიც არგებს აჩქარებას თაგუნას მოძრაობაზე დამოკიდებულებით. "
+"თუ თაგუნას მითითებული პროფილის მხარდაჭერა რა გააჩნია, გამოყენებული იქნება "
+"'ნაგულისხმევი'."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:141
+msgid "Double click time"
+msgstr "ორმაგი წკაპის დრო"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:142
+msgid "Length of a double click in milliseconds."
+msgstr "ორმაგი წკაპის ხანგრძლივობა მილიწამებში."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:146
+msgid "Drag threshold"
+msgstr "გადათრევის ზღვარი"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:147
+msgid "Distance before a drag is started."
+msgstr "მანძილი, სანამ გადათრევა დაიწყება."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:153
+msgid "Drawing tablet mapping"
+msgstr "ტაბლეტის ასახვის დახატვა"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:154
+msgid ""
+"EDID information of the output the tablet is mapped to. Must be in the "
+"format [vendor, product, serial]. [\"\",\"\",\"\"] relies on automatic "
+"mapping."
+msgstr ""
+"EDID ინფორმაცია, რომელზეც ტაბლეტის გამოტანა აისახება. უნდა იყოს ფორმატით "
+"[მომწოდებელი, პროდუქტი, სერიული]. [\"\",\"\",\"\"\"] ავტომატურ ასახვას "
+"ეყრდნობა."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:158
+msgid "Tablet mapping"
+msgstr "ტაბლეტის ასახვა"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:159
+msgid "How input affects the pointer on the screen"
+msgstr "როგორ მოქმედებს შეყვანა კურსორზე"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:163
+msgid "Tablet area"
+msgstr "ტაბლეტის რეგიონი"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:164
+msgid ""
+"Dead area padding around the active area, in percentages. Respectively "
+"applied to left,right,top and bottom sides."
+msgstr ""
+"მკვდარი ადგილის შევსება აქტიური ადგილის გარშემო, პროცენტებში. შესაბამისად "
+"გადატარდება მარცხენა, მარჯვენა, ზედა და ქვედა მხარეებზე."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:168
+msgid "Tablet aspect ratio"
+msgstr "ტაბლეტის ასპექტის ფარდობა"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:169
+msgid ""
+"Enable this to restrict the tablet area to match the aspect ratio of the "
+"output."
+msgstr ""
+"ჩართეთ, რომ შეზღუდოთ ტაბლეტის ადგილი ისე, რომ გამოტანის ზომის ფარდობას "
+"ემთხვეოდეს."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:173
+msgid "Tablet left-handed mode"
+msgstr "ტაბლეტის ცაცია რეჟიმი"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:174
+msgid ""
+"Enable this to allow physically rotating the tablet for left-handed setups"
+msgstr "ჩართეთ, რომ დაუშვათ ტაბლეტის ფიზიკურად მობრუნება ცაციებისთვის"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:180
+msgid "Stylus pressure curve"
+msgstr "სტილუსის დაწოლის მრუდი"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:181
+msgid ""
+"Set this to x1, y1 and x2, y2 of the pressure curve applied to the stylus."
+msgstr ""
+"დააყენეთ ეს x1, y1 და x2, y2-ზე დაწოლის მრუდისა, რომელიც სტილუსზე მოქმედებს."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:185
+msgid "Stylus pressure range"
+msgstr "სტილუსის დაწოლის შუალედი"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:186
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:196
+msgid ""
+"Set this to the percentage of the physical pressure range that should map to "
+"the logical range."
+msgstr ""
+"დააყენეთ ეს ფიზიკური დაწყოლის პროცენტულ ნაწილზე, რომელიც ლოგიკურ შუალედზე "
+"გნებავთ, აისახოს."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:190
+msgid "Eraser pressure curve"
+msgstr "საშლელის დაწოლის მრუდი"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:191
+msgid ""
+"Set this to x1, y1 and x2, y2 of the pressure curve applied to the eraser."
+msgstr ""
+"დააყენეთ ეს x1, y1 და x2,y2-ზე დაწოლის მრუდისა, რომელიც საშლელზე მოქმედებს."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:195
+msgid "Eraser pressure range"
+msgstr "საშლელის დაწოლის შუალედი"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:200
+msgid "Button action"
+msgstr "ღილაკის ქმედება"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:201
+msgid "Stylus button action, this button is located along the pen handle."
+msgstr "სტილუსის ღილაკის ქმედება. ეს ღილაკი კალმის სახელურზეა მოთავსებული."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:205
+msgid "Secondary button action"
+msgstr "დამხმარე ღილაკის ქმედება"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:206
+msgid ""
+"Secondary stylus button action, this button is located along the pen handle "
+"on some styli like the Grip Pen. Other styli like the Airbrush Pen or the "
+"Inking Pen only have one button, this setting is ineffective on those."
+msgstr ""
+"დამხმარე სტილუსის ღილაკის ქმედება. ეს ღილაკი მოთავსებულია ფანქრის სახელურის "
+"გასწვრივ ზოგიერთ სტილუსზე, როგორიცაა Grip Pen. სხვა სტილუსებს როგორიცაა, "
+"მაგალითად Airbrush Pen ან Inking Pen ან Inking Pen, მხოლოდ, ერთი ღილაკი აქვთ "
+"და ეს პარამეტრი, მათზე, ეფექტური არაა."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:210
+msgid "Tertiary button action"
+msgstr "მესამე ღილაკის ქმედება"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:211
+msgid ""
+"Tertiary stylus button action, this button is located along the pen handle "
+"on some styli like the 3D Pen. Other styli like the Grip Pen only have two "
+"buttons, this setting is ineffective on those."
+msgstr ""
+"მესამეული სტილუსის ღილაკის ქმედება. ეს ღილაკი მოთავსებულია სტილუსის "
+"სახელურის გასწვრივ ზოგიერთ სტილურზე, როგორიცაა 3D Pen. სხვა სტილუსებს, "
+"მაგალითად Grip Pen, მხოლოდ ორი ღილაკი აქვთ და მათზე ეს პარამეტრი არ "
+"მოქმედებს."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:215
+msgid "Key combination for the primary button"
+msgstr "ღილაკების მიმდევრობა ძირითადი ღილაკისთვის"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:216
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:221
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:226
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:238
+msgid ""
+"The keyboard shortcut generated when the button is pressed for custom "
+"actions."
+msgstr ""
+"კლავიატურის მალსახმობი, რომელიც შეიქმნა, როცა მომხმარებლის ქმედებისთვის "
+"ღილაკს დააწექით."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:220
+msgid "Key combination for the secondary button"
+msgstr "ღილაკების მიმდევრობა დამხმარე ღილაკისთვის"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:225
+msgid "Key combination for the tertiary button"
+msgstr "ღილაკების მიმდევრობა მესამეული ღილაკისთვის"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:232
+msgid "Pad button action type"
+msgstr "პანელის ღილაკის მოქმედების ტიპი"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:233
+msgid "The type of action triggered by the button being pressed."
+msgstr "იმ ქმედების ტიპი, რომელიც ამ ღილაკის დაწოლით დატრიგერდა."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:237
+msgid "Key combination for the custom action"
+msgstr "ღილაკების მიმდევრობა მომხმარებლის ქმედებისთვის"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:244
+msgid "Touchscreen output mapping"
+msgstr "სენსორული ეკრანის გამოტანის ასახვა"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:245
+msgid ""
+"EDID information of the output the touchscreen is mapped to. Must be in the "
+"format [vendor, product, serial]. [\"\",\"\",\"\"] relies on automatic "
+"mapping."
+msgstr ""
+"EDID ინფორმაცია, რომელზეც სენსორული ეკრანის გამოტანა აისახება. უნდა იყოს "
+"ფორმატით [მომწოდებელი, პროდუქტი, სერიული]. [\"\",\"\",\"\"\"] ავტომატურ "
+"ასახვას ეყრდნობა."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:252
+msgid "Mouse wheel emulation button. 0 to disable the feature."
+msgstr "თაგუნას ბორბლის ემულაცის ღილაკი. 0 ამ ფუნქციის გასათიშად."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:256
+msgid "Mouse wheel emulation button lock"
+msgstr "თაგუნას ბორბლის ემულაციის ღილაკის ჩაკეტვა"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:257
+msgid ""
+"Set this to TRUE to enable button locking for the wheel emulation button. If "
+"enabled, the first click of the button enables scrolling, the second click "
+"disables scrolling again."
+msgstr ""
+"დააყენეთ ეს ჭეშმარიტზე, რომ ჩართოთ ღილაკის ჩაკეტვა ბორბლის ემულაციის "
+"ღილაკისთვის. თუ ჩართულია, ღილაკზე პირველი წკაპი ჩართავს გადახვევას, მეორე კი "
+"გამორთავს მას."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:262
+msgid ""
+"Acceleration profile used for the trackball. The acceleration profile can be "
+"set to either default (“default”) which uses the default acceleration "
+"profile, flat (“flat”), which accelerates by a device specific constant "
+"factor derived from the configured speed, or adaptive (“adaptive”) which "
+"adapts the acceleration depending on the movement. If the trackball doesn’t "
+"support the configured profile, “default” will be used."
+msgstr ""
+"ტრეკბოლისთვის გამოყენებული აჩქარების პროფილი. აჩქარების პროფილი, შეიძლება, "
+"დააყენოთ ან ნაგულისხმევზე (\"ნაგულისხმევი\") რომელიც ნაგულისხმევ აჩქარების "
+"პროფილს იყენებს, ბრტყელზე (\"ბრტყელი\") რომელიც ააჩქარებს მოწყობილობის "
+"სპეციფიკური მუდმივი რიცხვით, რომელიც მორგებული სიჩქარიდან მიიღება, ან "
+"ადაპტიური (\"ადაპტიური\") რომელიც აჩქარებას მოძრაობას არგებს. თუ ტრეკბოლს "
+"მითითებული პროფილის მხარდაჭერა არ გააჩნია, გამოყენებული იქნება "
+"\"ნაგულისხმევი\"."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:274
+msgid ""
+"Pointer speed for pointing sticks. Accepted values are in the [-1..1] range "
+"(from “unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"კურსორის სიჩქარე მაჩვენებელი ჩხირებისთვის. მისაღები მნიშვნელობებია [-1..1] "
+"შუალედი ('აჩქარების გარეშედან' 'ჩქარამდე). ნულოვანი მნიშვნელობა სისტემის "
+"ნაგულისხმევია."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:280
+msgid ""
+"Acceleration profile used for the pointing stick. The acceleration profile "
+"can be set to either default (“default”) which uses the default acceleration "
+"profile, flat (“flat”), which accelerates by a device specific constant "
+"factor derived from the configured speed, or adaptive (“adaptive”) which "
+"adapts the acceleration depending on the movement. If the pointing stick "
+"doesn’t support the configured profile, “default” will be used."
+msgstr ""
+"მაჩვენებელი ჯოხისთვის გამოყენებული აჩქარების პროფილი. აჩქარების პროფილი, "
+"შეიძლება, დააყენოთ ან ნაგულისხმევზე (\"ნაგულისხმევი\") რომელიც ნაგულისხმევ "
+"აჩქარების პროფილს იყენებს, ბრტყელზე (\"ბრტყელი\") რომელიც ააჩქარებს "
+"მოწყობილობის სპეციფიკური მუდმივი რიცხვით, რომელიც მორგებული სიჩქარიდან "
+"მიიღება, ან ადაპტიური (\"ადაპტიური\") რომელიც აჩქარებას მოძრაობას არგებს. თუ "
+"მაჩვენებელ ჯოხს მითითებული პროფილის მხარდაჭერა არ გააჩნია, გამოყენებული "
+"იქნება \"ნაგულისხმევი\"."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:284
+msgid "Scrolling method"
+msgstr "გადახვევის მეთოდი"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:285
+msgid ""
+"Scrolling method used for pointing sticks. The scrolling method can be set "
+"to either default (“default”) which uses the default method, none (“none”), "
+"which disables scrolling, or middle-button (“on-button-down”) which enables "
+"scrolling whilst the middle button is held down."
+msgstr ""
+"გადახვევის მეთოდი მაჩვენებელი პასტებისთვის. გადახვევის მეთოდი შეიძლება "
+"დააყენოთ ნაგულისხმევზე (\"default\"), რომელიც ნაგულისხმევ მეთოდს იყენებს. "
+"არაფერზე (\"none\"), რომელიც გადახვევას გათიშავს ან შუა ღილაკზე (\"on-button-"
+"down\"), რომელიც ჩართავს გადახვევას, როცა შუა ღილაკზე გეჭირებათ."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:6
+msgid "Controls visibility of personal information"
+msgstr "აკონტროლებს პირადი ინფორმაციის ხილვადობას"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:7
+msgid ""
+"If set to true, the system will make an effort to not divulge the user’s "
+"identity on screen or on the network."
+msgstr ""
+"თუ დაყენებულია ჭეშმარიტზე, სისტემა სცდის, რომ მომხმარებლის იდენტიფიკატორი "
+"ქსელში არ გამოავლინოს."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:12
+msgid "Show full name in the user menu"
+msgstr "მომხმარებლის მენიუში სრული სახელის ჩვენება"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:13
+msgid "Whether the users full name is shown in the user menu or not."
+msgstr "არის თუ არა მომხმარებლის სრული სახელი ნაჩვენები მომხმარებლის მენიუში."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:17
+msgid "Whether to remove old files from the trash automatically"
+msgstr "წავშალო თუ არა ძველი ფაილები ნაგვის ყუთიდან, ავტომატურად"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:18
+msgid ""
+"If TRUE, automatically remove files from the trash when they are older than "
+"“old-files-age” days."
+msgstr ""
+"თუ ჭეშმარიტია, ნაგვის ყუთიდან ფაილები ავტომატურად წაიშლება, როცა ისინი \"old-"
+"files-age\" დღეზე ძველია."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:23
+msgid "Whether to remove old temporary files automatically"
+msgstr "წავშალო თუ არა ძველი დროებითი ფაილები, ავტომატურად"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:24
+msgid ""
+"If TRUE, automatically remove temporary files when they are older than “old-"
+"files-age” days."
+msgstr ""
+"თუ ჭეშმარიტია, დროებითი ფაილები ავტომატურად წაიშლება, როცა ისინი \"old-files-"
+"age\" დღეზე ძველია."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:29
+msgid "Number of days to keep trash and temporary files"
+msgstr "ნაგვის ყუთში და დროებითი ფაილების შენარჩუნების დრო, დღეებში"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:30
+msgid "Consider trash and temporary files old after this many days."
+msgstr ""
+"ნაგვის ყუთში და დროებით საქაღალდეში არსებული ფაილების ამ რაოდენობა დღეების "
+"შემდეგ მოძველებულად ჩათვლა."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:35
+msgid "Whether to remember recently used files"
+msgstr "ახლახანს გამოყენებული ფაილების სიის დამახსოვრება"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:36
+msgid "If FALSE, applications will not remember recently used files."
+msgstr "თუ ცრუა, აპლიკაია ახლახანს გამოყენებულ ფაილებს არ დაიმახსოვრებს."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:41
+msgid "Number of days to remember recently used files for"
+msgstr "ახლახანს გამოყენებული ფაილების სიის დამახსოვრების დრო, დღეებში"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:42
+msgid ""
+"Recently used files will be remembered for this many days. If set to 0, "
+"recent files will not be remembered; if set to -1, they will be retained "
+"indefinitely."
+msgstr ""
+"ახლახან გამოყენებული ფაილებს ამდენი დღით დავიმახსოვრებ. თუ მნიშვნელობაა 0, "
+"ფაილები დამახსოვრებული არ იქნება. თუ -1, მათ სამუდამოდ დავიმახსოვრებთ."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:48
+msgid "Whether to remember application usage"
+msgstr "დავიმახსოვრო აპლიკაციის გამოყენება თუ არა"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:49
+msgid "If FALSE, application usage will not be monitored and recorded."
+msgstr ""
+"თუ ცრუა, აპლიკაციის გამოყენებას ყურადღება არ მიექცევა და ის არ ჩაიწერება."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:54
+msgid "Send statistics when applications are removed or installed"
+msgstr "სტატისტიკის გაგზავნა, როცა აპლიკაციებს შლით ან აყენებთ"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:55
+msgid ""
+"If FALSE, no anonymous installation or removal information will be sent to "
+"the vendor."
+msgstr ""
+"თუ გამორთულია, პროგრამების დაყენებისა და წაშლის შესახებ ინფორმაცია "
+"მომწოდებელს არ გადაეგზავნება."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:59
+msgid "Send reports of technical problems to the vendor"
+msgstr "ტექნიკური პრობლემის ანგარიშების გაგზავნა ამ მომწოდებლისთვის"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:60
+msgid "If TRUE, anonymized reports will be sent automatically to the vendor."
+msgstr ""
+"თუ ჭეშმარიტია, ანონიმიზებული ანგარიშები მომწოდებელს ავტომატურად "
+"გადაეგზავნება."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:64
+msgid "Don’t allow applications to access the microphone"
+msgstr "აპლიკაციებისთვის მიკროფონთან წვდომის აკრძალვა"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:65
+msgid "If TRUE, applications should not use the microphone."
+msgstr "თუ ჩართულია, აპლიკაციები კამერას ვერ გამოიყენებენ."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:69
+msgid "Don’t allow applications to access the camera"
+msgstr "აპლიკაციებისთვის კამერასთან წვდომის აკრძალვა"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:70
+msgid "If TRUE, applications should not use the camera."
+msgstr "თუ ჩართულია, აპლიკაციები კამერას ვერ გამოიყენებენ."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:74
+msgid "Don’t allow applications to output sound"
+msgstr "აპლიკაციებისთვის ხმის ამოღების უფლების წართმევა"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:75
+msgid "If TRUE, applications should not make sound."
+msgstr "თუ ჭეშმარიტია, აპლიკაცია ხმას ვერ ამოიღებს."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:79
+msgid "Whether to protect USB devices"
+msgstr "დავიცვა USB მოწყობილობები, თუ არა"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:80
+msgid ""
+"If the USBGuard service is present and this setting is enabled, USB devices "
+"will be protected as configured in the usb-protection-level setting."
+msgstr ""
+"თუ სერვისი USBGuard დაყენებულია, ეს პარამეტრი კი - ჩართული, USB "
+"მოწყობილობები დაცული იქნება, როგორც ამას usb-protection-level პარამეტრში "
+"მიუთითებთ."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:87
+msgid "When USB devices should be rejected"
+msgstr "როდის მოხდება USB მოწყობილობების უარყოფა"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:88
+msgid ""
+"If set to “lockscreen”, only when the lock screen is present new USB devices "
+"will be rejected; if set to “always”, all new USB devices will always be "
+"rejected."
+msgstr ""
+"თუ დაყენებულია მნიშვნელობაზე \"lockscreen\", USB მოწყობილობები უარყოფილია, "
+"როცა ეკრანი დაბლოკილია. თუ დაყენებულია \"always\", ახალი USB მოწყობილობები "
+"ყოველთვის უარყოფილია."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:95
+msgid "Whether the privacy screen is enabled"
+msgstr "კონფიდენციალური ეკრანი ჩართულია, თუ არა"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:96
+msgid ""
+"If the underlying hardware has privacy screen support and this setting is "
+"enabled, the panels supporting this technology will be obscured from lateral "
+"view."
+msgstr ""
+"თუ გამოყენებულ აპარატურას აქვს პირადი ეკრანის მხარდაჭერა და ეს პარამეტრი "
+"ჩართულია, პანელები, რომლებსაც ამ ტექნოლოგიის მხარდაჭერა ჩართული აქვთ, არ "
+"გამოჩნდება გვერდითი ხედიდან."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:6
+msgid "Activate when idle"
+msgstr "გააქტიურება, როცა სისტემა უქმადაა"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:7
+msgid ""
+"Set this to TRUE to activate the screensaver when the session is idle. "
+"DEPRECATED: This key is deprecated and ignored. Set org.gnome.desktop."
+"session idle-delay to 0 if you do not want to activate the screensaver."
+msgstr ""
+"დააყენეთ ჭეშმარიტზე, რომ გაააქტიუროთ ეკრანის შემნახველი, როცა სესია უქმედაა. "
+"მოძველებულია: ეს პარამეტრი მოძველებული და გამოტოვებულია. თუ არ გნებავთ, "
+"ეკრანის შემნახველი გააქტიურდეს, დააყენეთ org.gnome.desktop.session-ის "
+"მნიშვნელობა idle-delay ნულზე."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:16
+msgid "Lock on activation"
+msgstr "ჩაკეტვა აქტივაციისას"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:17
+msgid "Set this to TRUE to lock the screen when the screensaver goes active."
+msgstr ""
+"დააყენეთ ჭეშმარიტზე, რომ დაბლოკოთ ეკრანი, როცა ეკრანის შემნახველი "
+"გააქტიურება."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:21
+msgid "Time before locking"
+msgstr "დრო დაბლოკვამდე"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:22
+msgid ""
+"The number of seconds after screensaver activation before locking the screen."
+msgstr ""
+"წამების რაოდენობა ეკრანის შემნახველის აქტივაციის შემდეგ ეკრანის დაბლოკვამდე."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:26
+msgid "Show full name in the lock screen"
+msgstr "დაბლოკვის ეკრანზე სრული სახელის ჩვენება"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:27
+msgid ""
+"Whether the user’s full name is shown in the lock screen or not. This only "
+"affects the screen shield, the name is always shown in the unlock dialog."
+msgstr ""
+"არის თუ არა ნაჩვენები მომხმარებლის სრული სახელი დაბლოკვის ეკრანზე. ეს, "
+"მხოლოდ, ეკრანის დამცავს ეხება. სახელი განბლოკვის დიალოგზე ყოველთვისაა "
+"ნაჩვენები."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:31
+msgid "Allow embedding a keyboard into the window"
+msgstr "კლავიატურის ფანჯარაში ჩაშენების დაშვება"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:32
+msgid ""
+"Set this to TRUE to allow embedding a keyboard into the window when trying "
+"to unlock. The “keyboard_command” key must be set with the appropriate "
+"command. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"დააყენეთ ჭეშმარიტზე, რომ დაუშვათ კლავიატურის ჩაშენება ფანჯარაში, როცა "
+"განბლოკვას ცდილობთ. პარამეტრი \"keyboard_command\" შესაბამის ბრძანებაზე უნდა "
+"იყოს დაყენებული. მოძველებულია: ეს პარამეტრი მოძველებული და გამოტოვებულია."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:40
+msgid "Embedded keyboard command"
+msgstr "ჩაშენებული კლავიატურის ბრძანება"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:41
+msgid ""
+"The command that will be run, if the “embedded_keyboard_enabled” key is set "
+"to TRUE, to embed a keyboard widget into the window. This command should "
+"implement an XEMBED plug interface and output a window XID on the standard "
+"output. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"ბრძანება, რომელიც გაეშვება, თუ პარამეტრი \"embedded_keyboard_enabled\" "
+"დაყენებულია ჭეშმარიტზე, რომ კლავიატურის ვიჯეტი ფანჯარაში ჩააშენოთ. ეს "
+"ბრძანება უნდა ახორციელებდეს XEMBED დამატების ინტერფეისს და გამოჰქონდეს "
+"ფანჯრის XID სტანდარტულ გამოტანაზე. მოძველებულია: ეს პარამეტრი მოძველებული და "
+"გამოტოვებულია."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:49
+msgid "Allow logout"
+msgstr "გასვლის ნების დართვა"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:50
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to allow logging "
+"out after a delay. The delay is specified in the “logout_delay” key. "
+"DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"დააყენეთ ეს ჭეშმარიტზე, რომ შემოგთავაზოთ განბლოკვის დიალოგში შესაძლებლობა, "
+"რომ გახვიდეთ დაყოვნების შემდეგ. დაყოვნება მითითებულია პარამეტრით "
+"\"logout_delay\". მოძველებულია: ეს პარამეტრი მოძველებული და გამოტოვებულია."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:58
+msgid "Time before logout option"
+msgstr "დრო გასვლის არჩევნამდე"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:59
+msgid ""
+"The number of seconds after the screensaver activation before a logout "
+"option will appear in the unlock dialog. This key has effect only if the "
+"“logout_enable” key is set to TRUE. DEPRECATED: This key is deprecated and "
+"ignored"
+msgstr ""
+"წამების რაოდენობა ეკრანის შემნახველის აქტივაციის შემდეგ, სანამ გასვლის "
+"ვარიანტი გამოჩნდება განბლოკვის დიალოგში. ამ პარამეტრს გავლენა, მხოლოდ, მაშინ "
+"აქვს, როცა პარამეტრი \"logout_enable\" ჭეშმარიტზეა დაყენებული. მოძველებულია: "
+"ეს პარამეტრი მოძველებული და გამოტოვებულია"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:67
+msgid "Logout command"
+msgstr "გასვლის ბრძანება"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:68
+msgid ""
+"The command to invoke when the logout button is clicked. This command should "
+"simply log the user out without any interaction. This key has effect only if "
+"the “logout_enable” key is set to TRUE. DEPRECATED: This key is deprecated "
+"and ignored."
+msgstr ""
+"ბრძანება, რომელიც გაეშვება, როცა გასვლის ღილაკზე დააწკაპუნებთ. ამ ბრძანებამ "
+"მომხმარებელი თავისი სესიიდან კითხვების გარეშე უნდა გაიყვანოს. ამ პარამეტრს "
+"გავლენა, მხოლოდ, მაშინ აქვს, როცა \"logout_enable\" პარამეტრი ჭეშმარიტზეა "
+"დაყენებული. მოძველებულია: ეს პარამეტრი მოძველებული და გამოტოვებულია."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:76
+msgid "Allow user switching"
+msgstr "მომხმარებლების გადართვის ჩართვა"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:77
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to switch to a "
+"different user account."
+msgstr ""
+"დააყენეთ ეს ჭეშმარიტზე, თუ გნებავთ, განბლოკვის დიალოგზე სხვა მომხმარებელზე "
+"გადართვის შესაძლებლობაც გამოჩნდეს."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:81
+msgid "Allow the session status message to be displayed"
+msgstr "სესიის სტატუსის შეტყობინების ჩვენების დაშვება"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:82
+msgid ""
+"Allow the session status message to be displayed when the screen is locked. "
+"DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"სესიის სტატუსის შეტყობინების ჩვენების დაშვება, როცა ეკრანი ჩაკეტილია. "
+"მოძველებულია: ეს პარამეტრი მოძველებული და გამოტოვებულია."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:9
+msgid "Enable screen time history"
+msgstr "ეკრანის დროის ისტორიის ჩართვა"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:10
+msgid ""
+"Enable basic screen time functionality, recording usage data for viewing "
+"history."
+msgstr ""
+"საბაზისო ეკრანის დროის ფუნქციონალის ჩართვა. გამოყენების ჩაწერა ნახვის "
+"ისტორიისთვის."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:17
+msgid "Enable daily screen time limit"
+msgstr "ეკრანის ყოველდღიური დროის ლიმიტის ჩართვა"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:18
+msgid ""
+"Enable imposing a screen time limit on the user, as set in daily-limit-"
+"seconds."
+msgstr "მომხმარებელზე ეკრანის დროის შეზღუდვის დაწესება დღეში-წამებით."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:23
+msgid "Daily screen time limit"
+msgstr "ეკრანის ყოველდღიური დროის ლიმიტი"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:24
+msgid ""
+"The limit on the amount of daily screen time the user is allowed, in seconds."
+msgstr "ზღვარი, რამდენი ხანი აქვს მომხმარებელს ეკრანის დრო დღეში. წამები."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:30
+msgid "Grayscale once limit is reached"
+msgstr "ნაცრისფერი ტონებით, როცა ლიმიტი მიღწეულია"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:31
+msgid ""
+"Whether to make the screen grayscale once the user’s screen time limit is "
+"reached."
+msgstr ""
+"გახდება თუ არა ეკრანი ნაცრისფერი, როცა მიღწეული იქნება მომხმარებლის ეკრანის "
+"დროის ზღვარი."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:7
+msgid "Disable all external search providers"
+msgstr "ყველა გარე საძიებო სისტემის გამორთვა"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:8
+msgid ""
+"Set to true to disable all external search provider programs, whether or not "
+"they are independently disabled or enabled. External search providers are "
+"installed by applications in $XDG_DATA_DIR/gnome-shell/search-providers."
+msgstr ""
+"დააყენეთ შეშმარიტზე, რომ გამორთოთ ყველა გარეთ ძებნის მომწოდებლის პროგრამა "
+"იმის მიუხედავად, გამორთულია ისინი ცალ-ცალკე, თუ არა. გარე ძებნის "
+"მომწოდებლები დაყენებულია აპლიკაციების მიერ საქაღალდეში $XDG_DATA_DIR/gnome-"
+"sell/search-providers."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:18
+msgid ""
+"List of desktop file IDs for which the associated default-enabled search "
+"provider should be disabled"
+msgstr ""
+"სამუშაო მაგიდის ფაილების ID-ების სია, რომელისთვისაც ასოცირებული "
+"ნაგულისხმევად-ჩართული ძებნის მომწოდებელი უნდა გაითიშოს"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:22
+msgid ""
+"Results for applications contained in this list will not be displayed when "
+"searching."
+msgstr "ამ სიაში ჩამოთვლილი აპლიკაციები ძებნისას არ გამოჩნდება."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:30
+msgid ""
+"List of desktop file IDs for which the associated default-disabled search "
+"provider should be enabled"
+msgstr ""
+"სამუშაო მაგიდის ფაილების ID-ების სია, რომელისთვისაც ასოცირებული "
+"ნაგულისხმევად-გათიშული ძებნის მომწოდებელი უნდა ჩაირთოს"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:34
+msgid ""
+"Results for applications contained in this list will be displayed when "
+"searching."
+msgstr "ამ სიაში ჩამოთვლილი აპლიკაციები ძებნისას არ გამოჩნდება."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:42
+msgid "List of desktop file IDs for search providers sort order"
+msgstr ""
+"სამუშაო მაგიდის ფაილების ID-ების სია ძებნის მომწოდებლის დალაგების "
+"მიმდევრობისთვის"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:43
+msgid ""
+"Results for applications contained in this list will be displayed in the "
+"specified order. Results for applications not specified in this list will be "
+"displayed last, sorted alphabetically."
+msgstr ""
+"შედეგები აპლიკაციებისთვის, რომლებიც ამ სიაშია, მითითებული მიმდევრობით "
+"გამოჩნდება. შედეგები, აპლიკაციებისთვის, რომლებიც ამ სიაში არაა, ბოლოს "
+"გამოჩნდება, დალაგებული ანბანის მიხედვით."
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:6
+msgid "Time before session is considered idle"
+msgstr "დრო, სანამ სესია უქმედ გამოცხადდება"
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:7
+msgid ""
+"The number of seconds of inactivity before the session is considered idle."
+msgstr "უქმეობის დრო წამებში, სანამ სესია უქმედ ჩაითვლება."
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:11
+msgid "Session type"
+msgstr "სესიის ტიპი"
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:12
+msgid "The name of the session to use. Known value is “gnome”."
+msgstr "გამოსაყენებელი სესიის სახელი. ცნობილი მნიშვნელობაა \"gnome\"."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:6
+msgid "Sounds for events"
+msgstr "ხმები მოვლენებისთვის"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:7
+msgid "Whether to play sounds on user events."
+msgstr "იკვრება თუ არა ხმა მომხმარებლის მოვლენებისთვის."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:11
+msgid "Sound theme name"
+msgstr "ხმების თემის სახელი"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:12
+msgid "The XDG sound theme to use for event sounds."
+msgstr "ხმოვანი მოვლენებისთვის გამოყენებული XDG ხმის თემა."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:16
+msgid "Input feedback sounds"
+msgstr "შეყვანის უკუკავშირის ხმები"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:17
+msgid "Whether to play sounds on input events."
+msgstr "იკვრება თუ არა ხმა შეყვანს მოვლენებისთვის."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:21
+msgid "Allow volume above 100%"
+msgstr "ხმის 100%-ზე მეტად აწევის დაშვება"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:22
+msgid "Whether volume can be set above 100%, using software amplification."
+msgstr ""
+"როცა ხმის დონე 100%-ზე მეტზეა დაყენებული, ხმის პროგრამული გაძლიერების "
+"გამოყენება."
+
+#: schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in:6
+msgid ""
+"Maximum age for thumbnails in the cache, in days. Set to -1 to disable "
+"cleaning."
+msgstr ""
+"მაქსიმალური ასაკი დაკეშილი მინიატურებისთვის, დღეებში. დააყენეთ -1, რომ "
+"გასუფთავება გამორთოთ."
+
+#: schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in:10
+msgid ""
+"Maximum size of the thumbnail cache, in megabytes. Set to -1 to disable "
+"cleaning."
+msgstr ""
+"დაკეშილი მინიატურის მაქსიმალური ზომა, მეგაბაიტებში. დააყენეთ -1, რომ "
+"გასუფთავება გათიშოთ."
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:6
+msgid "Disable all external thumbnailers"
+msgstr "ყველა გარე მინიატურის პროგრამების გამორთვა"
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:7
+msgid ""
+"Set to true to disable all external thumbnailer programs, independent on "
+"whether they are independently disabled/enabled."
+msgstr ""
+"დააყენეთ ჭეშმარიტზე, რომ გამორთოთ მინიატურის შემქმნელი ყველა გარე პროგრამა. "
+"ისინი ცალ-ცალკე უნდა გამორთოთ/ჩართოთ."
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:15
+msgid ""
+"List of mime-types for which external thumbnailer programs will be disabled"
+msgstr ""
+"Mime ტიპების სია, რომლებისთვისაც მინიატურების გარე პროგრამები გაითიშება"
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:19
+msgid ""
+"Thumbnails will not be created for files whose mime-type is contained in the "
+"list."
+msgstr "მინიატურები არ შეიქმნება ფაილებისთვის, რომლის ტიპებსაც ეს სია შეიცავს."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:8
+msgid "Switch to workspace 1"
+msgstr "სამუშაო სივრცე 1-ზე გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:12
+msgid "Switch to workspace 2"
+msgstr "სამუშაო სივრცე 2-ზე გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:16
+msgid "Switch to workspace 3"
+msgstr "სამუშაო სივრცე 3-ზე გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:20
+msgid "Switch to workspace 4"
+msgstr "სამუშაო სივრცე 4-ზე გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:24
+msgid "Switch to workspace 5"
+msgstr "სამუშაო სივრცე 5-ზე გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:28
+msgid "Switch to workspace 6"
+msgstr "სამუშაო სივრცე 6-ზე გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:32
+msgid "Switch to workspace 7"
+msgstr "სამუშაო სივრცე 7-ზე გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:36
+msgid "Switch to workspace 8"
+msgstr "სამუშაო სივრცე 8-ზე გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:40
+msgid "Switch to workspace 9"
+msgstr "სამუშაო სივრცე 9-ზე გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:44
+msgid "Switch to workspace 10"
+msgstr "გადართვა სამუშაო სივრცეზე 10"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:48
+msgid "Switch to workspace 11"
+msgstr "გადართვა სამუშაო სივრცეზე 11"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:52
+msgid "Switch to workspace 12"
+msgstr "გადართვა სამუშაო სივრცეზე 12"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:56
+msgid "Switch to workspace left"
+msgstr "გადართვა სამუშაო სივრცეზე მარცხნივ"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:60
+msgid "Switch to workspace right"
+msgstr "გადართვა სამუშაო სივრცეზე მარჯვნივ"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:64
+msgid "Switch to workspace above"
+msgstr "გადართვა სამუშაო სივრცეზე ზემოთ"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:68
+msgid "Switch to workspace below"
+msgstr "გადართვა სამუშაო სივრცეზე ქვემოთ"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:72
+msgid "Switch to last workspace"
+msgstr "ბოლო სამუშაო სივრცეზე გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:76
+msgid "Switch windows of an application"
+msgstr "აპლიკაციის ფანჯრების გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:80
+msgid "Reverse switch windows of an application"
+msgstr "აპლიკაციის ფანჯრების გადართვის შებრუნება"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:84
+msgid "Switch applications"
+msgstr "აპლიკაციის გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:88
+msgid "Reverse switch applications"
+msgstr "აპლიკაციების გადართვის შებრუნება"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:92
+msgid "Switch windows"
+msgstr "ფანჯრის გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:96
+msgid "Reverse switch windows"
+msgstr "ფანჯრების გადართვის შებრუნება"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:100
+msgid "Switch system controls"
+msgstr "სისტემური კონტროლის გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:104
+msgid "Reverse switch system controls"
+msgstr "სისტემის კონტროლების გადართვის შებრუნება"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:108
+msgid "Switch windows of an app directly"
+msgstr "აპლიკაციის ფანჯრებზე პირდაპირ გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:112
+msgid "Reverse switch windows of an app directly"
+msgstr "აპის ფანჯრების პირდაპირ გადართვის შებრუნება"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:116
+msgid "Switch windows directly"
+msgstr "პირდაპირ ფანჯარაზე გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:120
+msgid "Reverse switch windows directly"
+msgstr "ფანჯრების პირდაპირ გადართვის შებრუნება"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:124
+msgid "Switch system controls directly"
+msgstr "სისტემურ კონტროლზე პირდაპირ გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:128
+msgid "Reverse switch system controls directly"
+msgstr "სისტემის კონტროლის პირდაპირ გადართვის შებრუნება"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:132
+msgid "Hide all normal windows"
+msgstr "ყველა ნორმალური ფანჯრის დამალვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:136
+msgid "DEPRECATED: This key is deprecated and ignored."
+msgstr "მოძველებულია: ეს ღილაკი მოძველებული და გამოტოვებულია."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:140
+msgid "Show the run command prompt"
+msgstr "გაშვების ბრძანების სტრიქონის ჩვენება"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:144
+msgid "Don’t use"
+msgstr "არ გამოიყენოთ"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:148
+msgid "Activate the window menu"
+msgstr "ფანჯრის მენიუს გააქტიურება"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:152
+msgid "Toggle fullscreen mode"
+msgstr "სრული ეკრანის რეჟიმზე გადასვლა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:156
+msgid "Toggle maximization state"
+msgstr "მთელ ეკრანზე განშლადობის შესაძლებლობის გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:160
+msgid "Toggle window always appearing on top"
+msgstr "გადართვა, რომ ფანჯარა ყოველთვის ყველაზე ზემოთ იყოს"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:164
+msgid "Maximize window"
+msgstr "ფანჯრის გადიდება"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:168
+msgid "Restore window"
+msgstr "ფანჯრის აღდგენა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:172
+msgid "Minimize window"
+msgstr "ფანჯრის ჩაკეცვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:176
+msgid "Close window"
+msgstr "ფანჯრის დახურვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:180
+msgid "Move window"
+msgstr "ფანჯრის გადაადგილება"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:184
+msgid "Resize window"
+msgstr "ფანჯრის ზომის შეცვლა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:188
+msgid "Toggle window on all workspaces or one"
+msgstr "ფანჯრის ერთ ან ყველა სამუშაო გარემოში ჩვენების ჩართ/გამორთ"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:192
+msgid "Move window to workspace 1"
+msgstr "ფანჯრის სამუშაო სივრცე 1-ზე გადატანა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:196
+msgid "Move window to workspace 2"
+msgstr "ფანჯრის სამუშაო სივრცე 2-ზე გადატანა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:200
+msgid "Move window to workspace 3"
+msgstr "ფანჯრის სამუშაო სივრცე 3-ზე გადატანა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:204
+msgid "Move window to workspace 4"
+msgstr "ფანჯრის სამუშაო სივრცე 4-ზე გადატანა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:208
+msgid "Move window to workspace 5"
+msgstr "ფანჯრის გადატანა სამუშაო სივრცე 5-ზე"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:212
+msgid "Move window to workspace 6"
+msgstr "ფანჯრის გადატანა სამუშაო სივრცე 6-ზე"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:216
+msgid "Move window to workspace 7"
+msgstr "ფანჯრის გადატანა სამუშაო სივრცე 7-ზე"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:220
+msgid "Move window to workspace 8"
+msgstr "ფანჯრის გადატანა სამუშაო სივრცე 8-ზე"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:224
+msgid "Move window to workspace 9"
+msgstr "ფანჯრის გადატანა სამუშაო სივრცე 9-ზე"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:228
+msgid "Move window to workspace 10"
+msgstr "ფანჯრის გადატანა სამუშაო სივრცე 10-ზე"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:232
+msgid "Move window to workspace 11"
+msgstr "ფანჯრის გადატანა სამუშაო სივრცე 11-ზე"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:236
+msgid "Move window to workspace 12"
+msgstr "ფანჯრის გადატანა სამუშაო სივრცე 12-ზე"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:240
+msgid "Move window to last workspace"
+msgstr "ფანჯრის ბოლო სამუშაო სივრცეზე გადატანა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:244
+msgid "Move window one workspace to the left"
+msgstr "ფანჯრის ერთი სამუშაო სივრცით მარცხნივ გადატანა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:248
+msgid "Move window one workspace to the right"
+msgstr "ფანჯრის ერთი სამუშაო სივრცით მარჯვნივ გადატანა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:252
+msgid "Move window one workspace up"
+msgstr "ფანჯრის ერთი სამუშაო სივრცით მაღლა გადატანა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:256
+msgid "Move window one workspace down"
+msgstr "ფანჯრის ერთი სამუშაო სივრცით ქვემოთ ჩამოტანა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:260
+msgid "Move window to the next monitor on the left"
+msgstr "ფანჯრის მარცხნივ შემდეგ ეკრანზე გადატანა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:264
+msgid "Move window to the next monitor on the right"
+msgstr "ფანჯრის მარჯვნივ შემდეგ ეკრანზე გადატანა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:268
+msgid "Move window to the next monitor above"
+msgstr "ფანჯრის ზემოთ შემდეგ ეკრანზე გადატანა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:272
+msgid "Move window to the next monitor below"
+msgstr "ფანჯრის ქვემოთ შემდეგ ეკრანზე გადატანა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:276
+msgid "Raise window if covered, otherwise lower it"
+msgstr "ფანჯრის აწევა, თუ დაფარულია. არადა დაწევა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:280
+msgid "Raise window above other windows"
+msgstr "ფანჯრის სხვა ფანჯრებზე ზემოთ აწევა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:284
+msgid "Lower window below other windows"
+msgstr "ჩაწევა ფანჯარა სხვა ფანჯრებს ქვემოთ"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:288
+msgid "Maximize window vertically"
+msgstr "ფანჯრის ვერტიკალურად მაქსიმიზაცია"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:292
+msgid "Maximize window horizontally"
+msgstr "ფანჯრის ჰორიზონტალურად გაშლა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:296
+msgid "Move window to top left corner"
+msgstr "ფანჯრის გადატანა ზედა მარცხენა კუთხეში"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:300
+msgid "Move window to top right corner"
+msgstr "ფანჯრის გადატანა ზედა მარჯვენა კუთხეში"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:304
+msgid "Move window to bottom left corner"
+msgstr "ფანჯრის გადატანა ქვედა მარცხენა კუთხეში"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:308
+msgid "Move window to bottom right corner"
+msgstr "ფანჯრის გადატანა ქვედა მარჯვენა კუთხეში"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:312
+msgid "Move window to top edge of screen"
+msgstr "ფანჯრის გადატანა ეკრანის ზედა წიბოზე"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:316
+msgid "Move window to bottom edge of screen"
+msgstr "ფანჯრის გადატანა ეკრანის ქვედა წიბოზე"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:320
+msgid "Move window to right side of screen"
+msgstr "ფანჯრის ეკრანის მარჯვენა მხარეს გადატანა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:324
+msgid "Move window to left side of screen"
+msgstr "ფანჯრის ეკრანის მარცხენა მხარეს გადატანა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:328
+msgid "Move window to center of screen"
+msgstr "ფანჯრის გადატანა ეკრანის ცენტრში"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:332
+msgid "Switch input source"
+msgstr "შეყვანის წყაროს გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:333
+msgid "Binding to select the next input source"
+msgstr "შემოტანის შემდეგ წყაროზე მიბმა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:337
+msgid "Switch input source backward"
+msgstr "შემოტანის წინა წყაროზე გადართვა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:338
+msgid "Binding to select the previous input source"
+msgstr "შემოტანის წინა წყაროზე მიბმა"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:342
+msgid "Toggle window to be always on top"
+msgstr "გადართვა, რომ ფანჯარა ყოველთვის ყველაზე ზემოთ იყოს"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:343
+msgid "Set or unset window to appear always on top"
+msgstr "დააყენეთ ან გამორთეთ, რომ ფანჯარა ყოველთვის ყველაზე ზემოთ იყოს"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:8
+msgid "Modifier to use for modified window click actions"
+msgstr "გამოვიყენო თუ არა შეცვლილი ფანჯრის დაწკაპუნების ქმედებები"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:9
+msgid ""
+"Clicking a window while holding down this modifier key will move the window "
+"(left click), resize the window (middle click), or show the window menu "
+"(right click). The middle and right click operations may be swapped using "
+"the “resize-with-right-button” key. Modifier is expressed as “<Alt>” or "
+"“<Super>” for example."
+msgstr ""
+"ფანჯარაზე დაწკაპუნება იმ დროს, როცა ამ მოდიფიკატორ ღილაკზე გიჭირავთ, "
+"ფანჯარას გადაიტანს (მარჯვენა წკაპი), ზომას შეუცვლის (შუა წკაპი) ან გაჩვენებთ "
+"ფანჯრის მენიუს (მარჯვენა წკაპი). შუა და მარჯვენა წკაპის ოპერაციების "
+"ადგილების შეცვლა შესაძლებელია \"resize-with-right-button\" პარამეტრით. "
+"მოდიფიკაორი გამოხატულია, როგორც, მაგალითად \"<Alt>\" ან \"<Super>\"."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:19
+msgid "Whether to resize with the right button"
+msgstr "ზომის მარჯვენა ღილაკით შეცვლა"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:20
+msgid ""
+"Set this to true to resize with the right button and show a menu with the "
+"middle button while holding down the key given in “mouse-button-modifier”; "
+"set it to false to make it work the opposite way around."
+msgstr ""
+"დააყენეთ ეს ჭეშმარიტზე, რომ ზომის შეცვლა მარჯვენა ღილაკით შეგეძლოთ და "
+"გაჩვენოთ მენიუ შუა ღილაკით, როცა \"mouse-button-modifier\" პარამეტრში "
+"მითითებულ ღილაკზე გეჭირებათ. დააყენეთ ცრუზე, რომ ეს პირიქით მოხდეს."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:29
+msgid "Arrangement of buttons on the titlebar"
+msgstr "სათაურის ზოლზე ღილაკების განლაგება"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:30
+msgid ""
+"Arrangement of buttons on the titlebar. The value should be a string, such "
+"as “menu:minimize,maximize,spacer,close”; the colon separates the left "
+"corner of the window from the right corner, and the button names are comma-"
+"separated. Duplicate buttons are not allowed. Unknown button names are "
+"silently ignored so that buttons can be added in future metacity versions "
+"without breaking older versions. A special spacer tag can be used to insert "
+"some space between two adjacent buttons."
+msgstr ""
+"ღილაკების განლაგება სათაურის ზოლზე. მნიშვნელობა უნდა წარმოადგენდეს სტრიქონს, "
+"როგორიცაა “menu:minimize,maximize,spacer,close” ორიწერტილი გამოყოფს პანელის "
+"მარცხენა მხარეს მარჯვენასგან და ღილაკის სახელები მძიმეებით გამოიყოფა. "
+"დუბლირებული ღილაკები დაშვებული არაა. უცნობი ღილაკის სახელები ჩუმადა "
+"გამოტოვებული, ასე რომ, ღილაკები, რომლებსაც metacity-ის მომავალ ვერსიებში "
+"დავამატებთ, ძველ ვერსიებში შეცდომებს არ გამოიწვევს. ორ უახლოს ღილაკს შორის "
+"ადგილის გასაზრდელად სპეციალური ჭდე შეგიძლათ, გამოიყენოთ."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:43
+msgid "Window focus mode"
+msgstr "ფანჯრის ფოკუსის რეჟიმი"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:44
+msgid ""
+"The window focus mode indicates how windows are activated. It has three "
+"possible values; “click” means windows must be clicked in order to focus "
+"them, “sloppy” means windows are focused when the mouse enters the window, "
+"and “mouse” means windows are focused when the mouse enters the window and "
+"unfocused when the mouse leaves the window."
+msgstr ""
+"ფანჯრის ფოკუსის რეჟიმი მიუთითებს, როგორ ხდება ფანჯრების აქტივაცია. მას სამი "
+"შესაძლო მნიშვნელობა გააჩნია. \"წკაპი\" ნიშნავს, რომ ფანჯარაზე უნდა "
+"დააწკაპუნოთ, რომ მან ფოკუსი აიღოს. \"უწესრიგო\" ნიშნავს, რომ ფანჯარა ფოკუსს "
+"აიღებს, როცა თაგუნას ფანჯარაში შეიყვანთ და \"თაგუნა\" ნიშნავს, რომ ფანჯარა "
+"ფოკუსს მაშინ აიღებს, როცა თაგუნა შევა ფანჯარაში და დაკარგავს, როცა გამოვა."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:55
+msgid "Control how new windows get focus"
+msgstr "მართეთ, როგორ იღებს ახალი ფანჯარა ფოკუსს"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:56
+msgid ""
+"This option provides additional control over how newly created windows get "
+"focus. It has two possible values; “smart” applies the user’s normal focus "
+"mode, and “strict” results in new windows not being given focus "
+"automatically."
+msgstr ""
+"ეს პარამეტრი გაძლევთ დამატებით მართვას, თუ როგორ იღებს ახლადშექმნილი ფანჯარა "
+"ფოკუსს. მას აქვს ორი შესაძლო მნიშვნელობა. \"ჭკვიანი\" ეხება მომხმარებლის "
+"ნორმალურ ფოკუსის რეჟიმს და \"მკაცრი\" ნიშნავს, რომ ახალი ფანჯრები "
+"ავტომატურად ფოკუსს არ აიღებენ."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:65
+msgid "Whether windows should be raised when their client area is clicked"
+msgstr "უნდა ამოიწიოს თუ არა ფანჯრები, როცა მათი კლიენტის ადგილას დააწკაპუნებთ"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:68
+msgid ""
+"The default, true, indicates that a window will be raised whenever its "
+"client area or its frame is clicked. Setting this to false means that a "
+"window will not be raised if it is clicked on the client area. To raise it, "
+"one can click anywhere in the window’s frame, or Super-click on any part of "
+"the window. This mode is useful if one uses many overlapping windows."
+msgstr ""
+"ნაგულისხმევი, ანუ ჭეშმარიტი, მიუთითებს, რომ ფანჯარა ამოიწევა, როცა მისი "
+"კლიენტის არეალზე ან მის ჩარჩოზე დააწკაპუნებთ. ამის ცრუზე დაყენება ნიშნავს, "
+"რომ ფანჯარა არ ამოიწევა, თუ კლიენტის ფართობზე დააწკაპუნებთ. მის ამოსაწევად, "
+"შეგიძლიათ, ფანჯრის ჩარჩოს ნებისმიერ ადგილას დააწკაპუნოთ, ან ზე-წკაპი ფანჯრის "
+"ნებისმიერ ადგილას. ეს რეჟიმი სასარგებლოა, თუ მომხმარებელი ბევრ "
+"ურთიერთგადაფარვად ფანჯარას იყენებს."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:82
+msgid "Action on title bar double-click"
+msgstr "ქმედება სათაურის ზოლზე ორჯერ-წკაპისას"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:83
+msgid ""
+"This option determines the effects of double-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"ეს პარამეტრი სათაურის ზოლზე ორმაგი წკაპის ეფექტს განსაზღვრავს. ამჟამად სწორი "
+"პარამეტრებია \"toggle-maximize\", რომელიც ფანჯარას მთელ ეკრანზე გაშლის/"
+"დააბრუნებს, \"toggle-maximize-horizontally\" და \"toggle-maximize-"
+"vertically\", რომელიც ფანჯარას მხოლოდ ერთი მიმართულებით გაადიდებს. "
+"\"minimize\", რომელიც ფანჯარას დააპატარავებს, \"menu\", რომელიც ფანჯრის "
+"მენიუს გაჩვენებთ, \"lower\", რომელიც ფანჯარას სხვა ფანჯრების უკან გადადებს "
+"და \"none\", რომელიც არაფერსაც არ იზამს."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:105
+msgid "Action on title bar middle-click"
+msgstr "ქმედება სათაურის ზოლზე შუა წკაპისას"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:106
+msgid ""
+"This option determines the effects of middle-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"ეს პარამეტრი სათაურის ზოლზე შუა წკაპის ეფექტს განსაზღვრავს. ამჟამად სწორი "
+"პარამეტრებია \"toggle-maximize\", რომელიც ფანჯარას მთელ ეკრანზე გაშლის/"
+"დააბრუნებს, \"toggle-maximize-horizontally\" და \"toggle-maximize-"
+"vertically\", რომელიც ფანჯარას მხოლოდ ერთი მიმართულებით გაადიდებს. "
+"\"minimize\", რომელიც ფანჯარას დააპატარავებს, \"menu\", რომელიც ფანჯრის "
+"მენიუს გაჩვენებთ, \"lower\", რომელიც ფანჯარას სხვა ფანჯრების უკან გადადებს "
+"და \"none\", რომელიც არაფერსაც არ იზამს."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:129
+msgid "Action on title bar right-click"
+msgstr "ქმედება სათაურის ზოლზე მარჯვენა წკაპისას"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:130
+msgid ""
+"This option determines the effects of right-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"ეს პარამეტრი სათაურის ზოლზე მარჯვენა წკაპის ეფექტს განსაზღვრავს. ამჟამად "
+"სწორი პარამეტრებია \"toggle-maximize\", რომელიც ფანჯარას მთელ ეკრანზე გაშლის/"
+"დააბრუნებს, \"toggle-maximize-horizontally\" და \"toggle-maximize-"
+"vertically\", რომელიც ფანჯარას მხოლოდ ერთი მიმართულებით გაადიდებს. "
+"\"minimize\", რომელიც ფანჯარას დააპატარავებს, \"menu\", რომელიც ფანჯრის "
+"მენიუს გაჩვენებთ, \"lower\", რომელიც ფანჯარას სხვა ფანჯრების უკან გადადებს "
+"და \"none\", რომელიც არაფერსაც არ იზამს."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:152
+msgid "Automatically raises the focused window"
+msgstr "ფოკუსის მქონე ფანჯრის ავტომატური ამოწევა"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:153
+msgid ""
+"If set to true, and the focus mode is either “sloppy” or “mouse” then the "
+"focused window will be automatically raised after a delay specified by the "
+"auto-raise-delay key. This is not related to clicking on a window to raise "
+"it, nor to entering a window during drag-and-drop."
+msgstr ""
+"თუ დაყენებულია ჭეშმარიტზე და ფოკუსის რეჟიმია ან \"უწესრიგო\", ან \"თაგუნა\", "
+"მაშინ ფოკუსის მქონე ფანჯარა ავტომატურად ამოიწევა auto-raise-delay პარამეტრში "
+"მითითებული დაყოვნების შემდეგ. ეს არ ეხება ფანჯარაზე დაწკაპუნებას, რომ "
+"ამოსწიოთ ის, არც ფანჯარაზე შესვლისას, როცა რამეს ზედ დასაგდებად მიათრევთ."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:163
+msgid "Delay in milliseconds for the auto raise option"
+msgstr "ავტომატური ამოწევის პატარამეტრის დაყოვნება მილიწამებში"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:164
+msgid ""
+"The time delay before raising a window if auto-raise is set to true. The "
+"delay is given in thousandths of a second."
+msgstr ""
+"დროის დაყოვნება, სანამ ფანჯარა ავტომატურად ამოიწევა, თუ მისი ავტომატური "
+"ამოწევა ჩართულია. დაყოვნება მითითებულია წამის მეათასედებში."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:171
+msgid "Current theme"
+msgstr "მიმდინარე თემა"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:172
+msgid ""
+"The theme determines the appearance of window borders, titlebar, and so "
+"forth. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"თემა განსაზღვრავს ფანჯრის საზღვრების, სათაურის პანელის და ა.შ. გარეგნობას. "
+"მოძველებული. ეს პარამეტრი მოძველებული და გამოტოვებულია."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:181
+msgid "Use standard system font in window titles"
+msgstr "სტანდარტული სისტემური ფონტი ფანჯრის სათაურებში"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:182
+msgid ""
+"If true, ignore the titlebar-font option, and use the standard application "
+"font for window titles."
+msgstr ""
+"თუ ჩართულია, პარამეტრი titlebar-font გამოტოვებული იქნება და გამოყენებული "
+"იქნება სტანდარტული აპლიკაციის ფონტი ფანჯრის სათაურებისთვის."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:189
+msgid "Window title font"
+msgstr "ფანჯრის სათაურის ფონტი"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:190
+msgid ""
+"A font description string describing a font for window titlebars. The size "
+"from the description will only be used if the titlebar-font-size option is "
+"set to 0. Also, this option is disabled if the titlebar-uses-desktop-font "
+"option is set to true."
+msgstr ""
+"ფონტის აღწერის სტრიქონი, რომელიც ფანჯრის სათაურებში გამოყენებულ ფონტს "
+"აღწერს. აღწერიდან ზომა, მხოლოდ, მაშინ გამოიყენება, თუ titlebar-font-size "
+"პარამეტრ 0-ის ტოლია. ასევე, ეს პარამეტრი გათიშულია, თუ titlebar-uses-desktop-"
+"font პარამეტრი ჭეშმარიტია."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:200
+msgid "Number of workspaces"
+msgstr "სამუშაო სივრცეების რაოდენობა"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:201
+msgid ""
+"Number of workspaces. Must be more than zero, and has a fixed maximum to "
+"prevent making the desktop unusable by accidentally asking for too many "
+"workspaces."
+msgstr ""
+"სამუშაო სივრცეების რაოდენობა. აუცილებლად ნულზე მეტი უნდა იყოს და გააჩნია "
+"მაქსიმალური მნიშვნელობა, რათა სამუშაო მაგიდა ჯერ კიდევ გამოყენებადი იყოს, თუ "
+"შემთხვევით მეტისმეტად ბევრ სამუშაო სივრცის შექმნას მოითხოვთ."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:209
+msgid "System Bell is Audible"
+msgstr "სისტემური ზარი გასაგონია"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:210
+msgid ""
+"Determines whether applications or the system can generate audible “beeps”; "
+"may be used in conjunction with “visual bell” to allow silent “beeps”."
+msgstr ""
+"განსაზღვრავს, შეუძლია თუ არა აპლიკაციას ან სისტემას, ხმოვანი \"პიპინი\" "
+"გამოსცეს. გამოყენებული იქნება \"ვიზუალური ზართან\" ერთად, რომ ჩუმი "
+"\"პიპინი\" შესაძლებელი იყოს."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:218
+msgid "Enable Visual Bell"
+msgstr "ვიზუალური ზარის ჩართვა"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:219
+msgid ""
+"Turns on a visual indication when an application or the system issues a "
+"“bell” or “beep”; useful for the hard-of-hearing and for use in noisy "
+"environments."
+msgstr ""
+"ჩართავს ვიზუალურ მაჩვენებელს, როცა აპლიკაცია ან სისტემა გამოსცემს \"ზარს\" "
+"ან \"პიპინს\". სასარგებლოა ადამიანებისთვის, რომლებსაც ყურთ აკლიათ და "
+"ხმაურიანი გარემოებისთვის."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:228
+msgid "Visual Bell Type"
+msgstr "ვიზუალური ზარის ტიპი"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:229
+msgid ""
+"Tells the WM how to implement the visual indication that the system bell or "
+"another application “bell” indicator has been rung. Currently there are two "
+"valid values, “fullscreen-flash”, which causes a fullscreen white-black "
+"flash, and “frame-flash” which causes the titlebar of the application which "
+"sent the bell signal to flash. If the application which sent the bell is "
+"unknown (as is usually the case for the default “system beep”), the "
+"currently focused window’s titlebar is flashed."
+msgstr ""
+"ეტყვის ფანჯრების მმართველს, როგორ განახორციელოს ვიზუალური ჩვენება სისტემური "
+"ზარის, ან სხვა აპლიკაციის \"ზარის\" დარეკვის. ამჟამად გაქვთ ორი მისაღები "
+"მნიშვნელობა \"fullscreen-flash\", რომელიც სრული ეკრანის შავთეთრ ციმციმს "
+"გამოიწვევს და \"frame-flash\", რომელიც აპლიკაციის, რომელმაც ზარი "
+"გამოაგზავნა, სათაურის ზოლს გააციმციმებს. თუ აპლიკაცია, რომელმაც ზარი "
+"გამოაგზავნა, უცნობია (როგორც ეს ხდება ნაგულისხმევი 'სისტემური პიპინისას'), "
+"გაციმციმდება ამჟამად ფოკუსის მქონე ფანჯრის სათაურის ზოლი."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:250
+msgid "Disable misfeatures that are required by old or broken applications"
+msgstr ""
+"გაფუჭებული ფუნქციების, რომლებიც ძველი ან შეცდომებიანი აპლიკაციები იყენებენ, "
+"გათიშვა"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:253
+msgid ""
+"Some applications disregard specifications in ways that result in window "
+"manager misfeatures. This option puts the WM in a rigorously correct mode, "
+"which gives a more consistent user interface, provided one does not need to "
+"run any misbehaving applications."
+msgstr ""
+"ზოგიერთი აპლიკაცია არ ითვალისწინებს სპეციფიკაციებს ისე, რომ ფანჯრების "
+"მმართველს ხელს უშლიან მუშაობაში. ეს პარამეტრი ფანჯრების მმართველს მკაცრად "
+"სწორ რეჟიმში გადართავს, რაც უფრო მდგრად მომხმარებლის ინტერფეისამდე "
+"მიგვიყვანს იმის გათვალისწინებით, რომ მომხმარებელს ცუდი აპლიკაციების გაშვება "
+"არ სჭირდება."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:263
+msgid "The names of the workspaces"
+msgstr "სამუშაო სივრცის სახელები"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:264
+msgid ""
+"Defines the names that should be assigned to workspaces. If the list is too "
+"long for the current number of workspaces, names in excess will be ignored. "
+"If the list is too short, or includes empty names, missing values will be "
+"replaced with the default (“Workspace N”)."
+msgstr ""
+"აღწერს სახელებს, რომლებიც სამუშაო სივრცეებს უნდა მიენიჭოს. თუ ეს სია "
+"მეტისმეტად დიდია სამუშაო სივრცეების ამჟამინდელი რაოდენობისთვის, ზედმეტი "
+"სახელები გამოტოვებული იქნება. თუ სია მეტისმეტად მოკლეა, ან შეიცავს ცარიელ "
+"სახელებს, ნაკლული მნიშვნელობები ნაგულისხმევით (\"სამუშაო სივრცე N\") "
+"ჩანაცვლდება."
+
+#: schemas/org.gnome.system.locale.gschema.xml.in:6
+msgid "The locale to use for dates / numbers formats"
+msgstr "ლოკალი თარიღისთვის / რიცხვის ფორმატებისთვის"
+
+#: schemas/org.gnome.system.locale.gschema.xml.in:7
+msgid ""
+"Specify the locale to be used for displaying dates, times and numbers "
+"formats."
+msgstr ""
+"მიუთითეთ ლოკალი, რომელიც გამოყენებული იქნება თარიღების, დროისა და რიცხვის "
+"ფორმატების საჩვენებლად."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:7
+msgid "Geolocation services are enabled."
+msgstr "გეოლოკაციის სერვისები ჩართულია."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:8
+msgid "If true, applications are allowed to access location information."
+msgstr "თუ ჩართულია, აპლიკაციებს გეოლოკაციასთან დაშვება გააჩნიათ."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:14
+msgid "The maximum accuracy level of location."
+msgstr "მდებარეობის მაქსიმალური სიზუსტე."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:15
+msgid ""
+"Configures the maximum level of location accuracy applications are allowed "
+"to see. Valid options are “country”, “city”, “neighborhood”, “street”, and "
+"“exact” (typically requires GPS receiver). Please keep in mind that this "
+"only controls what GeoClue will allow applications to see and they can find "
+"user’s location on their own using network resources (albeit with street-"
+"level accuracy at best)."
+msgstr ""
+"მიუთითებს მდებარეობის სიზუსტეს, რომელიც აპლიკაციებს შეუძლიათ, მიაღწიონ. "
+"სწორი მნიშვნელობებია \"ქვეყანა\", \"ქალაქი\", \"მეზობლები\", \"ქუჩა\" და "
+"\"ზუსტი (ჩვეულებრივ, GPS მიმღებს მოითხოვს). დაიმახსოვრეთ, რომ ეს, მხოლოდ, "
+"იმას აკონტროლებს, GeoClue რისი დანახვის უფლებას მისცემს აპლიკაციებს და მათ "
+"შეუძლიათ, მომხმარებლის მდებარეობა თვითონ იპოვონ, ქსელური რესურსებით "
+"გამოყენებით (მაქსიმუმ, ქუჩის დონის სიზუსტით)."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:10
+msgid "Proxy configuration mode"
+msgstr "პროქსის მორგების რეჟიმი"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:11
+msgid ""
+"Select the proxy configuration mode. Supported values are “none”, “manual”, "
+"“auto”. If this is “none”, then proxies are not used. If it is “auto”, the "
+"autoconfiguration URL described by the “autoconfig-url” key is used. If it "
+"is “manual”, then the proxies described by “/system/proxy/http”, “/system/"
+"proxy/https”, “/system/proxy/ftp” and “/system/proxy/socks” will be used. "
+"Each of the 4 proxy types is enabled if its “host” key is non-empty and its "
+"“port” key is non-0. If an http proxy is configured, but an https proxy is "
+"not, then the http proxy is also used for https. If a SOCKS proxy is "
+"configured, it is used for all protocols, except that the http, https, and "
+"ftp proxy settings override it for those protocols only."
+msgstr ""
+"აირჩევს პროქსის კონფიგურაციის რეჟიმს. ხელმისაწვდომი მნიშვნელობებია "
+"\"არაფერი\", \"ხელით\" და \"ავტო\". თუ დაყენებულია \"არაფერზე\", პროქსი არ "
+"გამოიყენება. თუ დაყენებულია \"ავტოზე\", გამოიყენება ავტომორგების ბმული, "
+"რომელიც \"autoconfig-url\" პარამეტრშია მითითებული. თუ დაყენებულია "
+"მნიშვნელობაზე \"ხელით\", გამოიყენება პროქსიები, რომლებიც აღწერილია \"/system/"
+"proxy/http\". \"/system/proxy/https\", \"/system/proxy/ftp\" და \"/system/"
+"proxy/socks\"-ში მითითებული. პროქსი ჩაირთვება, თუ მისი პარამეტრი \"host\" "
+"ცარიელი არაა და პარამეტრი \"port\" ნულს არ უდრის. თუ მორგებულია http პროქსი, "
+"https კი - არა, მაშინ http პროქსი https-სთვისაც იქნება გამოყენებული. თუ "
+"მორგებულია SOCKS პროქსი, ის ყველა პროტოკოლისთვის გამოიყენება http, https და "
+"ftp პროქსის პარამეტრების გარდა, თუ მათ თავიანთი პროქსი აქვთ მითითებული."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:36
+msgid "Automatic proxy configuration URL"
+msgstr "ავტომატური პროქსის კონფიგურაციის ბმული"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:37
+msgid ""
+"URL that provides proxy configuration values. When mode is “auto”, this URL "
+"is used to look up proxy information for all protocols."
+msgstr ""
+"URL, რომელიც პროქსის მორგების მნიშვნელობებს გადმოგვცემს. როცა რეჟიმია "
+"\"ავტო\", ეს URL პროქსის ინფორმაციის ყველა პროტოკოლისთვის გამოსათხოვად "
+"იქნება გამოყენებული."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:45
+msgid "Non-proxy hosts"
+msgstr "არა-პროქსი ჰოსტები"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:46
+msgid ""
+"This key contains a list of hosts which are connected to directly, rather "
+"than via the proxy (if it is active). The values can be hostnames, domains "
+"(using an initial wildcard like *.foo.com), IP host addresses (both IPv4 and "
+"IPv6) and network addresses with a netmask (something like 192.168.0.0/24)."
+msgstr ""
+"ეს პარამეტრი შეიცავს ჰოსტების სია, რომლებსაც პირდაპირ, პროქსის გარეშე (თუ ის "
+"აქტიურია) გნებავთ, დაუკავშირდეთ. მნიშვნელობები შეიძლება იყოს ჰოსტის "
+"სახელები, დომენები (ვაილდკარდის ჩათვლით, მაგ: *.foo.com), IP მისამართები "
+"(ორივე, IPv4 და IPv6) და ქსელის მისამართები ქსელური ნიღბით (მაგ: "
+"192.168.0.0/24)."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:56
+msgid "Use HTTP proxy for all protocols"
+msgstr "ყველა პროტოკოლისთვის HTTP პროქსის გამოყენება"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:57
+msgid "Whether to use the HTTP proxy for all protocols or not."
+msgstr "გამოვიყენო თუ არა HTTP პროქსი ყველა პროტოკოლისთვის."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:65
+msgid "Unused; ignore"
+msgstr "არ გამოიყენება. გამოტოვეთ"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:66
+msgid ""
+"This key is not used; HTTP proxying is enabled when the host key is non-"
+"empty and the port is non-0."
+msgstr ""
+"ეს პარამეტრი არ გამოიყენება. HTTP პროქსის გამოყენება ჩართულია, როცა ჰოსტის "
+"პარამეტრი ცარიელი არაა და პორტი ნულს არ უდრის."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:73
+msgid "HTTP proxy host name"
+msgstr "HTTP პროქსის ჰოსტის სახელი"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:74
+msgid "The machine name to proxy HTTP through."
+msgstr "HTTP მოთხოვნების გასაგზავნი პროქსის სერვერის მანქანის სახელი."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:81
+msgid "HTTP proxy port"
+msgstr "H_TTP პროქსის პორტი"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:82
+msgid ""
+"The port on the machine defined by “/system/proxy/http/host” that you proxy "
+"through."
+msgstr ""
+"პორტი მანქანაზე, რომელიც აღწერილია \"/system/proxy/http/host\"-ის მიერ, "
+"რომელიც თქვენს პროქსიზე მიუთითებს."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:89
+msgid "Authenticate proxy server connections"
+msgstr "პროქსი სერვერთან მიერთების ავთენტიკაცია"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:90
+msgid ""
+"If true, then connections to the proxy server require authentication. The "
+"username/password combo is defined by “/system/proxy/http/authentication-"
+"user” and “/system/proxy/http/authentication-password”. This applies only to "
+"the http proxy; when using a separate https proxy, there is currently no way "
+"to specify that it should use authentication."
+msgstr ""
+"თუ ჭეშმარიტია, პროქსი სერვერთან მიერთებას ავთენტიკაცია სჭირდება. "
+"მომხმარებელი/პაროლის კომბო აღიწერება \"/system/proxy/http/authentication-"
+"user\" და \"/system/proxy/http/authentication-password\" წყვილით. ეს, "
+"მხოლოდ, http პროქსის ეხება. თუ იყენებთ განსხვავებულ https პროქსის, "
+"ჯერჯერობით გზა, რომ მიუთითოთ, რომ ავთენტიკაციას ისიც იყენებს, არ არსებობს."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:103
+msgid "HTTP proxy username"
+msgstr "HTTP პროქსის მომხმარებლის სახელი"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:104
+msgid "User name to pass as authentication when doing HTTP proxying."
+msgstr "HTTP პროქსის გამოყენებისას გადაცემული მომხმარებლის სახელი."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:110
+msgid "HTTP proxy password"
+msgstr "HTTP პროქსის პაროლი"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:111
+msgid "Password to pass as authentication when doing HTTP proxying."
+msgstr "HTTP პროქსის გამოყენებისას გადაცემული პაროლი."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:119
+msgid "Secure HTTP proxy host name"
+msgstr "დაცული HTTP პროქსის ჰოსტის სახელი"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:120
+msgid "The machine name to proxy secure HTTP through."
+msgstr "დაცული HTTP პროქსის მანქანის სახელი."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:127
+msgid "Secure HTTP proxy port"
+msgstr "დაცული HTTP პროქსის პორტი"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:128
+msgid ""
+"The port on the machine defined by “/system/proxy/https/host” that you proxy "
+"through."
+msgstr ""
+"პორტი მანქანაზე, რომელიც აღწერილია \"/system/proxy/https/host\"-ის მიერ, "
+"რომელიც თქვენს პროქსიზე მიუთითებს."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:137
+msgid "FTP proxy host name"
+msgstr "FTP პროქსის ჰოსტის სახელი"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:138
+msgid "The machine name to proxy FTP through."
+msgstr "FTP პროქსის მანქანის სახელი."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:145
+msgid "FTP proxy port"
+msgstr "_FTP პროქსის პორტი"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:146
+msgid ""
+"The port on the machine defined by “/system/proxy/ftp/host” that you proxy "
+"through."
+msgstr ""
+"პორტი მანქანაზე, რომელიც აღწერილია \"/system/proxy/ftp/host\"-ის მიერ, "
+"რომელიც თქვენს პროქსიზე მიუთითებს."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:155
+msgid "SOCKS proxy host name"
+msgstr "SOCKS პროქსის ჰოსტის სახელი"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:156
+msgid "The machine name to use as a SOCKS proxy."
+msgstr "SOCKS პროქსის მანქანის სახელი."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:163
+msgid "SOCKS proxy port"
+msgstr "SOCKS პროქსის პორტი"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:164
+msgid ""
+"The port on the machine defined by “/system/proxy/socks/host” that you proxy "
+"through."
+msgstr ""
+"პორტი მანქანაზე, რომელიც აღწერილია \"/system/proxy/socks/host\"-ის მიერ, "
+"რომელიც თქვენს პროქსიზე მიუთითებს."
+
+#~ msgid "Enable overall screen time functionality."
+#~ msgstr "ეკრანის საერთო დროის ფუნქციონალის ჩართვა."
+
+#~ msgid "'12h'"
+#~ msgstr "'12h'"

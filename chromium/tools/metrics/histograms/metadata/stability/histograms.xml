@@ -84,7 +84,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="ChildProcess.Launched.UtilityProcessHash"
-    enum="UtilityProcessNameHash" expires_after="2026-09-06">
+    enum="UtilityProcessNameHash" expires_after="2026-11-15">
   <owner>wfh@chromium.org</owner>
   <summary>
     Count of child utility process launches, bucketed by the hash of their
@@ -311,7 +311,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Stability.Android.KillSpareRendererAvailability.{KillType}"
-    enum="SpareRendererAvailabilityWhenKilled" expires_after="2026-08-09">
+    enum="SpareRendererAvailabilityWhenKilled" expires_after="2026-10-11">
   <owner>gjc@google.com</owner>
   <owner>chrome-loading@google.com</owner>
   <summary>
@@ -371,7 +371,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Stability.Android.RendererCrash" enum="Boolean"
-    expires_after="2026-09-06">
+    expires_after="2026-11-15">
   <owner>wnwen@chromium.org</owner>
   <summary>
     Counts renderer crashes including OOMs. Android only. Mirrors old stability
@@ -489,7 +489,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Stability.ChildFrameCrash.PageEligibleToDiscard"
-    enum="Boolean" expires_after="2026-09-06">
+    enum="Boolean" expires_after="2026-11-08">
   <owner>kawasin@google.com</owner>
   <owner>boliu@chromium.org</owner>
   <summary>
@@ -500,7 +500,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Stability.ChildFrameCrash.PageWillReload" enum="Boolean"
-    expires_after="2026-09-13">
+    expires_after="2026-11-15">
   <owner>kawasin@google.com</owner>
   <owner>boliu@chromium.org</owner>
   <summary>
@@ -526,7 +526,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Stability.ChildFrameCrash.TabMarkedForReload"
-    enum="BooleanMarkedForReload" expires_after="2026-08-23">
+    enum="BooleanMarkedForReload" expires_after="2026-10-25">
   <owner>alexmos@chromium.org</owner>
   <owner>boliu@chromium.org</owner>
   <summary>
@@ -536,7 +536,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Stability.ChildFrameCrash.TabMarkedForReload.Visibility"
-    enum="FrameVisibility" expires_after="2026-08-23">
+    enum="FrameVisibility" expires_after="2026-11-01">
   <owner>alexmos@chromium.org</owner>
   <owner>boliu@chromium.org</owner>
   <summary>
@@ -547,7 +547,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Stability.ChildFrameCrash.Visibility" enum="CrashVisibility"
-    expires_after="2026-09-06">
+    expires_after="2026-11-15">
   <owner>alexmos@chromium.org</owner>
   <owner>boliu@chromium.org</owner>
   <owner>lukasza@chromium.org</owner>
@@ -568,8 +568,12 @@ chromium-metrics-reviews@google.com.
   <owner>chrome-analysis-team@google.com</owner>
   <improvement direction="LOWER_IS_BETTER"/>
   <summary>
-    Collects various counters related to stability. The majority of them are
-    crash types.
+    Collects various counters related to stability. For the crash-related
+    buckets, see
+    https://chromium.googlesource.com/chromium/src/+/main/docs/stability.md for
+    details on what aspects of stability are being measured and how, how the
+    measured aspects reflect (or don't reflect) crashes, and how they relate to
+    crash reports in the Crash database.
 
     In M129 we are more accurately tracking renderer process launch failures,
     and expect to find a significant spike in volume for this bucket.
@@ -652,7 +656,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Stability.IOS.Crashpad.Initialized" enum="BooleanSuccess"
-    expires_after="2026-05-01">
+    expires_after="2027-04-26">
   <owner>justincohen@chromium.org</owner>
   <owner>olivierrobin@chromium.org</owner>
   <summary>
@@ -823,7 +827,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Stability.iOS.UTE.TimeBetweenUTEAndNextLaunch" units="ms"
-    expires_after="2026-08-02">
+    expires_after="2026-10-04">
   <owner>michaeldo@chromium.org</owner>
   <owner>olivierrobin@chromium.org</owner>
   <summary>
@@ -883,7 +887,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Stability.MobileSessionShutdownType"
-    enum="MobileSessionShutdownType" expires_after="2026-08-16">
+    enum="MobileSessionShutdownType" expires_after="2026-10-18">
   <owner>michaeldo@chromium.org</owner>
   <owner>olivierrobin@chromium.org</owner>
   <summary>

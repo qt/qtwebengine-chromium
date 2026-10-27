@@ -74,7 +74,6 @@ class OpenScreenSessionBase : public quic::QuicSession {
     return crypto_stream_.get();
   }
   quic::QuicStream* CreateIncomingStream(quic::QuicStreamId id) override;
-  quic::QuicStream* CreateIncomingStream(quic::PendingStream* pending) override;
   bool ShouldKeepConnectionAlive() const override;
 
   std::unique_ptr<quic::QuicConnection> connection_;

@@ -68,30 +68,21 @@ bool PostProcessDescriptorIndexingPass::RequiresInstrumentation(const Function& 
 
     const Instruction* var_inst = nullptr;
     if (IsValueIn(opcode, {spv::OpLoad, spv::OpStore, spv::OpCooperativeMatrixLoadKHR, spv::OpCooperativeMatrixStoreKHR})) {
-        const Variable* variable = nullptr;
-        const Instruction* access_chain_inst = function.FindInstruction(inst.Operand(0));
-        // We need to walk down possibly multiple chained OpAccessChains or OpCopyObject to get the variable
-        while (access_chain_inst && access_chain_inst->IsNonPtrAccessChain()) {
-            const uint32_t access_chain_base_id = access_chain_inst->Operand(0);
-            variable = type_manager_.FindVariableById(access_chain_base_id);
-            if (variable) {
-                break;  // found
-            }
-            access_chain_inst = function.FindInstruction(access_chain_base_id);
-        }
-        if (!variable) {
+        const AccessPath access_path = type_manager_.BuildAccessPath(function, inst);
+        if (!access_path.IsValid()) {
             return false;
         }
-        var_inst = &variable->inst_;
 
-        const uint32_t storage_class = variable->StorageClass();
+        var_inst = &access_path.variable->inst_;
+
+        const uint32_t storage_class = access_path.variable->StorageClass();
         if (storage_class != spv::StorageClassUniform && storage_class != spv::StorageClassStorageBuffer) {
             return false;
         }
 
-        const Type* pointer_type = variable->PointerType(type_manager_);
+        const Type* pointer_type = access_path.variable->PointerType(type_manager_);
         if (pointer_type->IsArray()) {
-            meta.descriptor_index_id = access_chain_inst->Operand(1);
+            meta.descriptor_index_id = access_path.DescriptorIndexId();
         } else {
             // There is no array of this descriptor, so we essentially have an array of 1
             meta.descriptor_index_id = type_manager_.GetConstantZeroUint32().Id();
@@ -147,15 +138,8 @@ bool PostProcessDescriptorIndexingPass::RequiresInstrumentation(const Function& 
 
     assert(var_inst);
     meta.variable_id = var_inst->ResultId();
-    for (const auto& annotation : module_.annotations_) {
-        if (annotation->Opcode() == spv::OpDecorate && annotation->Word(1) == meta.variable_id) {
-            if (annotation->Word(2) == spv::DecorationDescriptorSet) {
-                meta.descriptor_set = annotation->Word(3);
-            } else if (annotation->Word(2) == spv::DecorationBinding) {
-                meta.descriptor_binding = annotation->Word(3);
-            }
-        }
-    }
+
+    GetDescriptorSetAndBinding(meta.variable_id, meta.descriptor_set, meta.descriptor_binding);
 
     if (meta.descriptor_set >= glsl::kDebugInputBindlessMaxDescSets) {
         module_.InternalWarning(Name(), "Tried to use a descriptor slot over the current max limit");

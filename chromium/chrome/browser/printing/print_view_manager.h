@@ -5,6 +5,9 @@
 #ifndef CHROME_BROWSER_PRINTING_PRINT_VIEW_MANAGER_H_
 #define CHROME_BROWSER_PRINTING_PRINT_VIEW_MANAGER_H_
 
+#include <memory>
+
+#include "base/containers/queue.h"
 #include "base/memory/raw_ptr.h"
 #include "build/build_config.h"
 #include "chrome/browser/printing/print_view_manager_base.h"
@@ -68,11 +71,15 @@ class PrintViewManager : public PrintViewManagerBase,
   // renderer in the case of scripted print preview if needed.
   void PrintPreviewDone();
 
+  void AppendPrintPreviewSettings(base::DictValue settings, bool is_pdf);
+  void ClearPrintPreviewSettings();
+
   // mojom::PrintManagerHost:
   void DidShowPrintDialog() override;
+  void GetPrintPreviewParams(GetPrintPreviewParamsCallback callback) override;
   void SetupScriptedPrintPreview(
       SetupScriptedPrintPreviewCallback callback) override;
-  void ShowScriptedPrintPreview(bool source_is_modifiable) override;
+  void ShowScriptedPrintPreview() override;
   void RequestPrintPreview(mojom::RequestPrintPreviewParamsPtr params) override;
   void CheckForCancel(int32_t preview_ui_id,
                       int32_t request_id,
@@ -117,8 +124,7 @@ class PrintViewManager : public PrintViewManagerBase,
   // Helper method for ShowScriptedPrintPreview(), called from
   // RejectPrintPreviewRequestIfRestricted(). Based on value of
   // `should_proceed`, continues to show the print preview or cancels it.
-  void OnScriptedPrintPreviewCallback(bool source_is_modifiable,
-                                      content::GlobalRenderFrameHostId rfh_id,
+  void OnScriptedPrintPreviewCallback(content::GlobalRenderFrameHostId rfh_id,
                                       bool should_proceed);
 
   // Helper method for RequestPrintPreview(), called from
@@ -151,6 +157,19 @@ class PrintViewManager : public PrintViewManagerBase,
   // displaying a system print dialog.
   virtual void PrintForSystemDialogImpl();
 
+  // Helpers for GetPrintPreviewParams().
+#if BUILDFLAG(IS_WIN)
+  void OnDidUpdatePrintableArea(std::unique_ptr<PrinterQuery> printer_query,
+                                base::DictValue job_settings,
+                                std::unique_ptr<PrintSettings> print_settings,
+                                GetPrintPreviewParamsCallback callback,
+                                bool success);
+#endif
+  void CompleteGetPrintPreviewParams(
+      base::DictValue job_settings,
+      std::unique_ptr<PrintSettings> print_settings,
+      GetPrintPreviewParamsCallback callback);
+
   // Virtual method to be overridden in tests, in order to be notified whether
   // the print preview is shown or not due to policies or user actions.
   virtual void PrintPreviewRejectedForTesting();
@@ -176,6 +195,8 @@ class PrintViewManager : public PrintViewManagerBase,
   // Indicates whether we're switching from print preview to system dialog. This
   // flag is true between PrintForSystemDialogNow() and PrintPreviewDone().
   bool is_switching_to_system_dialog_ = false;
+
+  base::queue<base::DictValue> print_preview_settings_;
 
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 

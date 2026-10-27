@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import type * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -340,12 +342,12 @@ describeWithMockConnection('ApplicationPanelSidebar', () => {
          Application.InterestGroupStorageModel.InterestGroupStorageModel, 'interestGroupTreeElement.addEvent', false));
   it('adds DOM storage on in scope event',
      testUiUpdate(
-         Application.DOMStorageModel.Events.DOM_STORAGE_ADDED, Application.DOMStorageModel.DOMStorageModel,
+         SDK.DOMStorageModel.Events.DOM_STORAGE_ADDED, SDK.DOMStorageModel.DOMStorageModel,
          'sessionStorageListTreeElement.appendChild', true));
 
   it('does not add DOM storage on out of scope event',
      testUiUpdate(
-         Application.DOMStorageModel.Events.DOM_STORAGE_ADDED, Application.DOMStorageModel.DOMStorageModel,
+         SDK.DOMStorageModel.Events.DOM_STORAGE_ADDED, SDK.DOMStorageModel.DOMStorageModel,
          'sessionStorageListTreeElement.appendChild', false));
 
   it('adds indexed DB on in scope event',
@@ -387,7 +389,7 @@ describeWithMockConnection('ApplicationPanelSidebar', () => {
 
   it('adds DOM storage element after scope change',
      testUiUpdateOnScopeChange(
-         Application.DOMStorageModel.DOMStorageModel, 'storages', 'sessionStorageListTreeElement.appendChild'));
+         SDK.DOMStorageModel.DOMStorageModel, 'storages', 'sessionStorageListTreeElement.appendChild'));
 
   it('adds shared storage after scope change',
      testUiUpdateOnScopeChange(

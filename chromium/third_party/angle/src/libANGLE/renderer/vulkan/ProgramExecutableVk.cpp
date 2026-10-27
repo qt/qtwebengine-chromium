@@ -233,14 +233,6 @@ void GetPipelineCacheData(ContextVk *contextVk,
     }
 }
 
-vk::SpecializationConstants MakeSpecConsts(ProgramTransformOptions transformOptions,
-                                           const vk::GraphicsPipelineDesc &desc)
-{
-    vk::SpecializationConstants specConsts;
-    specConsts.dither          = desc.getEmulatedDitherControl();
-    return specConsts;
-}
-
 vk::GraphicsPipelineSubset GetWarmUpSubset(const angle::FeaturesVk &features)
 {
     // Only build the shaders subset of the pipeline if VK_EXT_graphics_pipeline_library is
@@ -486,12 +478,18 @@ class ProgramExecutableVk::WarmUpGraphicsTask : public WarmUpTaskCommon
                        vk::PipelineProtectedAccess pipelineProtectedAccess,
                        vk::GraphicsPipelineSubset subset,
                        const vk::GraphicsPipelineDesc &graphicsPipelineDesc,
+                       ProgramInfo &programInfo,
+                       CompleteGraphicsPipelineCache &completePipelines,
+                       ShadersGraphicsPipelineCache &shadersPipelines,
                        SharedRenderPass *compatibleRenderPass,
                        vk::PipelineHelper *placeholderPipelineHelper)
         : WarmUpTaskCommon(renderer, executableVk, pipelineRobustness, pipelineProtectedAccess),
           mPipelineSubset(subset),
           mGraphicsPipelineDesc(graphicsPipelineDesc),
           mWarmUpPipelineHelper(placeholderPipelineHelper),
+          mProgramInfo(programInfo),
+          mCompletePipelines(completePipelines),
+          mShadersPipelines(shadersPipelines),
           mCompatibleRenderPass(compatibleRenderPass)
     {
         ASSERT(mCompatibleRenderPass);
@@ -503,7 +501,8 @@ class ProgramExecutableVk::WarmUpGraphicsTask : public WarmUpTaskCommon
     {
         angle::Result result = mExecutableVk->warmUpGraphicsPipelineCache(
             this, mPipelineRobustness, mPipelineProtectedAccess, mPipelineSubset,
-            mGraphicsPipelineDesc, mCompatibleRenderPass->get(), mWarmUpPipelineHelper);
+            mGraphicsPipelineDesc, mProgramInfo, mCompletePipelines, mShadersPipelines,
+            mCompatibleRenderPass->get(), mWarmUpPipelineHelper);
         ASSERT((result == angle::Result::Continue) == (mErrorCode == VK_SUCCESS));
 
         // Release reference to shared renderpass. If this is the last reference -
@@ -526,6 +525,9 @@ class ProgramExecutableVk::WarmUpGraphicsTask : public WarmUpTaskCommon
     vk::GraphicsPipelineSubset mPipelineSubset;
     vk::GraphicsPipelineDesc mGraphicsPipelineDesc;
     vk::PipelineHelper *mWarmUpPipelineHelper;
+    ProgramInfo &mProgramInfo;
+    CompleteGraphicsPipelineCache &mCompletePipelines;
+    ShadersGraphicsPipelineCache &mShadersPipelines;
 
     // Temporary objects to clean up at the end
     SharedRenderPass *mCompatibleRenderPass;
@@ -631,11 +633,16 @@ angle::Result ProgramInfo::initProgram(vk::ErrorContext *context,
     options.isMultisampledFramebufferFetch =
         optionBits.multiSampleFramebufferFetch && shaderType == gl::ShaderType::Fragment;
     options.enableSampleShading = optionBits.enableSampleShading;
-    options.removeDepthStencilInput =
-        optionBits.removeDepthStencilInput && shaderType == gl::ShaderType::Fragment;
+    options.removeDepthInput =
+        optionBits.removeDepthInput && shaderType == gl::ShaderType::Fragment;
+    options.removeStencilInput =
+        optionBits.removeStencilInput && shaderType == gl::ShaderType::Fragment;
 
     options.useSpirvVaryingPrecisionFixer =
         context->getFeatures().varyingsRequireMatchingPrecisionInSpirv.enabled;
+
+    options.ditherControl = (shaderType == gl::ShaderType::Fragment) ? optionBits.ditherControl : 0;
+    options.roundOutputAfterDithering = context->getFeatures().roundOutputAfterDithering.enabled;
 
     ANGLE_TRY(
         SpvTransformSpirvCode(options, variableInfoMap, originalSpirvBlob, &transformedSpirvBlob));
@@ -662,7 +669,6 @@ ProgramExecutableVk::ProgramExecutableVk(const gl::ProgramExecutable *executable
       mImmutableSamplersMaxDescriptorCount(1),
       mUniformBufferDescriptorType(VK_DESCRIPTOR_TYPE_MAX_ENUM),
       mDefaultUniformDynamicDescriptorOffsets{},
-      mValidGraphicsPermutations{},
       mValidComputePermutations{}
 {
     for (std::shared_ptr<BufferAndLayout> &defaultBlock : mDefaultUniformBlocks)
@@ -685,7 +691,7 @@ void ProgramExecutableVk::resetLayout(ContextVk *contextVk)
 {
     if (!mPipelineLayout)
     {
-        ASSERT(mValidGraphicsPermutations.none());
+        ASSERT(mGraphicsProgramInfos.empty());
         ASSERT(mValidComputePermutations.none());
         return;
     }
@@ -713,16 +719,23 @@ void ProgramExecutableVk::resetLayout(ContextVk *contextVk)
     // Initialize with an invalid BufferSerial
     mCurrentDefaultUniformBufferSerial = vk::BufferSerial();
 
-    for (size_t index : mValidGraphicsPermutations)
+    for (auto &completeGraphicsPipeline : mCompleteGraphicsPipelines)
     {
-        mCompleteGraphicsPipelines[index].release(contextVk);
-        mShadersGraphicsPipelines[index].release(contextVk);
-
+        completeGraphicsPipeline.second.release(contextVk);
+    }
+    for (auto &shadersGraphicsPipeline : mShadersGraphicsPipelines)
+    {
+        shadersGraphicsPipeline.second.release(contextVk);
+    }
+    for (auto &graphicsProgramInfo : mGraphicsProgramInfos)
+    {
         // Program infos and pipeline layout must be released after pipelines are; they might be
         // having pending jobs that are referencing them.
-        mGraphicsProgramInfos[index].release(contextVk);
+        graphicsProgramInfo.second.release(contextVk);
     }
-    mValidGraphicsPermutations.reset();
+    mCompleteGraphicsPipelines.clear();
+    mShadersGraphicsPipelines.clear();
+    mGraphicsProgramInfos.clear();
 
     mComputePipelines.release(contextVk);
     mComputeProgramInfo.release(contextVk);
@@ -921,7 +934,7 @@ angle::Result ProgramExecutableVk::getPipelineCacheWarmUpTasks(
         SharedRenderPass *sharedRenderPass = new SharedRenderPass(std::move(compatibleRenderPass));
 
         // Add a placeholder entry in GraphicsPipelineCache
-        const uint8_t programIndex         = transformOptions.permutationIndex;
+        const uint32_t programIndex        = transformOptions.permutationIndex;
         vk::PipelineHelper *pipelineHelper = nullptr;
         if (subset == vk::GraphicsPipelineSubset::Complete)
         {
@@ -937,7 +950,9 @@ angle::Result ProgramExecutableVk::getPipelineCacheWarmUpTasks(
 
         warmUpSubTasks.push_back(std::make_shared<WarmUpGraphicsTask>(
             renderer, this, pipelineRobustness, pipelineProtectedAccess, subset,
-            *graphicsPipelineDesc, sharedRenderPass, pipelineHelper));
+            *graphicsPipelineDesc, mGraphicsProgramInfos[programIndex],
+            mCompleteGraphicsPipelines[programIndex], mShadersGraphicsPipelines[programIndex],
+            sharedRenderPass, pipelineHelper));
     }
 
     // If the caller hasn't provided a valid async task container, inline the warmUp tasks.
@@ -1073,6 +1088,9 @@ angle::Result ProgramExecutableVk::warmUpGraphicsPipelineCache(
     vk::PipelineProtectedAccess pipelineProtectedAccess,
     vk::GraphicsPipelineSubset subset,
     const vk::GraphicsPipelineDesc &graphicsPipelineDesc,
+    ProgramInfo &programInfo,
+    CompleteGraphicsPipelineCache &completePipelines,
+    ShadersGraphicsPipelineCache &shadersPipelines,
     const vk::RenderPass &renderPass,
     vk::PipelineHelper *placeholderPipelineHelper)
 {
@@ -1093,11 +1111,11 @@ angle::Result ProgramExecutableVk::warmUpGraphicsPipelineCache(
     }
 
     const vk::GraphicsPipelineDesc *descPtr  = nullptr;
-    ProgramTransformOptions transformOptions = {};
 
-    ANGLE_TRY(createGraphicsPipelineImpl(context, transformOptions, subset, &pipelineCache,
-                                         PipelineSource::WarmUp, graphicsPipelineDesc, renderPass,
-                                         &descPtr, &placeholderPipelineHelper));
+    ANGLE_TRY(createGraphicsPipelineImpl(context, programInfo, completePipelines, shadersPipelines,
+                                         subset, &pipelineCache, PipelineSource::WarmUp,
+                                         graphicsPipelineDesc, renderPass, &descPtr,
+                                         &placeholderPipelineHelper));
 
     ASSERT(placeholderPipelineHelper->valid());
     return angle::Result::Continue;
@@ -1438,8 +1456,13 @@ void ProgramExecutableVk::initializeWriteDescriptorDesc(vk::ErrorContext *contex
     mShaderResourceWriteDescriptorDescs.updateAtomicCounters(
         mVariableInfoMap, mExecutable->getAtomicCounterBuffers());
     mShaderResourceWriteDescriptorDescs.updateImages(*mExecutable, mVariableInfoMap);
+
+    mShaderResourceWriteDescriptorDescs.initInputAttachments(
+        *mExecutable, mVariableInfoMap, context->getRenderer()->getMaxColorInputAttachmentCount());
     mShaderResourceDescriptorDescBuilder.resize(
         mShaderResourceWriteDescriptorDescs.getTotalDescriptorCount());
+
+    mCurrentInputAttachmentsMask.reset();
 
     // Update mTextureWriteDescriptors and its builder
     mTextureWriteDescriptorDescs.reset();
@@ -1484,9 +1507,16 @@ ProgramTransformOptions ProgramExecutableVk::getTransformOptions(
     transformOptions.multiSampleFramebufferFetch = hasFramebufferFetch && isMultisampled;
     transformOptions.enableSampleShading =
         contextVk->getState().isSampleShadingEnabled() && isMultisampled;
-    transformOptions.removeDepthStencilInput =
-        hasDepthStencilFramebufferFetch &&
-        drawFrameBuffer->getDepthStencilRenderTarget() == nullptr;
+    transformOptions.removeDepthInput =
+        mExecutable->usesDepthFramebufferFetch() &&
+        (drawFrameBuffer->getDepthStencilRenderTarget() == nullptr ||
+         drawFrameBuffer->getDepthStencilRenderTarget()->getImageActualFormat().depthBits == 0);
+    transformOptions.removeStencilInput =
+        mExecutable->usesStencilFramebufferFetch() &&
+        (drawFrameBuffer->getDepthStencilRenderTarget() == nullptr ||
+         drawFrameBuffer->getDepthStencilRenderTarget()->getImageActualFormat().stencilBits == 0);
+
+    transformOptions.ditherControl = static_cast<uint16_t>(desc.getEmulatedDitherControl());
 
     return transformOptions;
 }
@@ -1497,7 +1527,7 @@ angle::Result ProgramExecutableVk::initGraphicsShaderPrograms(
 {
     ASSERT(mExecutable->hasLinkedShaderStage(gl::ShaderType::Vertex));
 
-    const uint8_t programIndex                = transformOptions.permutationIndex;
+    const uint32_t programIndex               = transformOptions.permutationIndex;
     ProgramInfo &programInfo                  = mGraphicsProgramInfos[programIndex];
     const gl::ShaderBitSet linkedShaderStages = mExecutable->getLinkedShaderStages();
     gl::ShaderType lastPreFragmentStage       = gl::GetLastPreFragmentStage(linkedShaderStages);
@@ -1528,13 +1558,18 @@ angle::Result ProgramExecutableVk::initProgramThenCreateGraphicsPipeline(
 {
     ANGLE_TRY(initGraphicsShaderPrograms(context, transformOptions));
 
-    return createGraphicsPipelineImpl(context, transformOptions, pipelineSubset, pipelineCache,
-                                      source, desc, compatibleRenderPass, descPtrOut, pipelineOut);
+    const uint32_t programIndex = transformOptions.permutationIndex;
+    return createGraphicsPipelineImpl(
+        context, mGraphicsProgramInfos[programIndex], mCompleteGraphicsPipelines[programIndex],
+        mShadersGraphicsPipelines[programIndex], pipelineSubset, pipelineCache, source, desc,
+        compatibleRenderPass, descPtrOut, pipelineOut);
 }
 
 angle::Result ProgramExecutableVk::createGraphicsPipelineImpl(
     vk::ErrorContext *context,
-    ProgramTransformOptions transformOptions,
+    ProgramInfo &programInfo,
+    CompleteGraphicsPipelineCache &completePipelines,
+    ShadersGraphicsPipelineCache &shadersPipelines,
     vk::GraphicsPipelineSubset pipelineSubset,
     vk::PipelineCacheAccess *pipelineCache,
     PipelineSource source,
@@ -1547,27 +1582,18 @@ angle::Result ProgramExecutableVk::createGraphicsPipelineImpl(
     // been setup by the caller. Assert that all required state is valid so all that is left will
     // be the call to `vkCreateGraphicsPipelines`
 
-    // Make sure program index is within range
-    const uint8_t programIndex = transformOptions.permutationIndex;
-    ASSERT(programIndex >= 0 && programIndex < ProgramTransformOptions::kPermutationCount);
-
     // Make sure the shader modules for all linked shader stages are valid.
-    ProgramInfo &programInfo = mGraphicsProgramInfos[programIndex];
     for (gl::ShaderType shaderType : mExecutable->getLinkedShaderStages())
     {
         ASSERT(programInfo.valid(shaderType));
     }
 
-    // Generate spec consts, a change in which results in a new pipeline.
-    vk::SpecializationConstants specConsts = MakeSpecConsts(transformOptions, desc);
-
     // Choose appropriate pipeline cache based on pipeline subset
     if (pipelineSubset == vk::GraphicsPipelineSubset::Complete)
     {
-        CompleteGraphicsPipelineCache &pipelines = mCompleteGraphicsPipelines[programIndex];
         return programInfo.getShaderProgram().createGraphicsPipeline(
-            context, &pipelines, pipelineCache, compatibleRenderPass, getPipelineLayout(), source,
-            desc, specConsts, descPtrOut, pipelineOut);
+            context, &completePipelines, pipelineCache, compatibleRenderPass, getPipelineLayout(),
+            source, desc, descPtrOut, pipelineOut);
     }
     else
     {
@@ -1575,10 +1601,9 @@ angle::Result ProgramExecutableVk::createGraphicsPipelineImpl(
         // through the program executable.
         ASSERT(pipelineSubset == vk::GraphicsPipelineSubset::Shaders);
 
-        ShadersGraphicsPipelineCache &pipelines = mShadersGraphicsPipelines[programIndex];
         return programInfo.getShaderProgram().createGraphicsPipeline(
-            context, &pipelines, pipelineCache, compatibleRenderPass, getPipelineLayout(), source,
-            desc, specConsts, descPtrOut, pipelineOut);
+            context, &shadersPipelines, pipelineCache, compatibleRenderPass, getPipelineLayout(),
+            source, desc, descPtrOut, pipelineOut);
     }
 }
 
@@ -1592,7 +1617,7 @@ angle::Result ProgramExecutableVk::getGraphicsPipeline(ContextVk *contextVk,
 
     ANGLE_TRY(initGraphicsShaderPrograms(contextVk, transformOptions));
 
-    const uint8_t programIndex = transformOptions.permutationIndex;
+    const uint32_t programIndex = transformOptions.permutationIndex;
 
     *descPtrOut  = nullptr;
     *pipelineOut = nullptr;
@@ -1665,7 +1690,7 @@ angle::Result ProgramExecutableVk::createLinkedGraphicsPipeline(
     vk::PipelineHelper **pipelineOut)
 {
     ProgramTransformOptions transformOptions = getTransformOptions(contextVk, desc);
-    const uint8_t programIndex               = transformOptions.permutationIndex;
+    const uint32_t programIndex              = transformOptions.permutationIndex;
 
     // When linking libraries, use the program's own pipeline cache if monolithic pipelines are not
     // to be created, otherwise there is effectively a merge to global pipeline cache happening.
@@ -1691,10 +1716,8 @@ angle::Result ProgramExecutableVk::createLinkedGraphicsPipeline(
     // asynchronously.
     if (contextVk->getFeatures().preferMonolithicPipelinesOverLibraries.enabled)
     {
-        vk::SpecializationConstants specConsts = MakeSpecConsts(transformOptions, desc);
-
         mGraphicsProgramInfos[programIndex].getShaderProgram().createMonolithicPipelineCreationTask(
-            contextVk, pipelineCache, desc, getPipelineLayout(), specConsts, *pipelineOut);
+            contextVk, pipelineCache, desc, getPipelineLayout(), *pipelineOut);
     }
 
     return angle::Result::Continue;
@@ -2242,18 +2265,9 @@ angle::Result ProgramExecutableVk::updateShaderResourcesDescInfo(
     // Update input attachments first since it could change descriptor counts
     if (hasFramebufferFetch)
     {
-        // Update writeDescriptorDescs with inputAttachments
-        mShaderResourceWriteDescriptorDescs.updateInputAttachments(*executable, mVariableInfoMap,
-                                                                   framebufferVk);
-
-        // Total descriptor count could have changed, resize DescriptorSetDescBuilder
-        mShaderResourceDescriptorDescBuilder.resize(
-            mShaderResourceWriteDescriptorDescs.getTotalDescriptorCount());
-
-        // Update DescriptorSetDescBuilder with inputAttachments
         ANGLE_TRY(mShaderResourceDescriptorDescBuilder.updateInputAttachments(
             contextVk, *executable, mVariableInfoMap, framebufferVk,
-            mShaderResourceWriteDescriptorDescs));
+            mShaderResourceWriteDescriptorDescs, &mCurrentInputAttachmentsMask));
     }
 
     if (hasStorageBuffers)

@@ -202,7 +202,7 @@ RetainPtr<CFX_DIBitmap> CPDF_RenderTiling::Draw(
   }
 
   if (options.ColorModeIs(CPDF_RenderOptions::kGray)) {
-    pPatternBitmap->ConvertColorScale(0, 0xffffff);
+    pPatternBitmap->ConvertColorScale(/*is_white_on_black=*/false);
   }
 
   FX_ARGB fill_argb = pRenderStatus->GetFillArgb(pPageObj);

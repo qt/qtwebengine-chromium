@@ -1,13 +1,13 @@
 Name: cpu_features
 Short Name: cpu_features
 URL: https://github.com/google/cpu_features
-Version: v0.8.0
-Revision: 936b9ab5515dead115606559502e3864958f7f6e
-Date: 2023-05-17
-Update Mechanism: Manual
+Version: v0.11.0
+Revision: 81d13c49649f0714dd41fb56bb246398b6584085
+Date: 2026-06-01
+Update Mechanism: Autoroll
 License: BSD-2-Clause, Apache-2.0
 License File: src/LICENSE
-Security Critical: Yes
+Security Critical: yes
 Shipped: yes
 
 Description:

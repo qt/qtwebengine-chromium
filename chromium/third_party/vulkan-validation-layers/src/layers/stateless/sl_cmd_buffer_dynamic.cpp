@@ -118,6 +118,8 @@ bool Device::manual_PreCallValidateCmdSetVertexInputEXT(VkCommandBuffer commandB
     const auto& error_obj = context.error_obj;
 
     if (vertexBindingDescriptionCount > phys_dev_props.limits.maxVertexInputBindings) {
+        // This VU is redundant, but decided in WG to leave it
+        // https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/8229
         skip |= LogError("VUID-vkCmdSetVertexInputEXT-vertexBindingDescriptionCount-04791", commandBuffer,
                          error_obj.location.dot(Field::vertexBindingDescriptionCount),
                          "(%" PRIu32 ") is greater than the maxVertexInputBindings limit (%" PRIu32 ").",
@@ -177,10 +179,11 @@ bool Device::manual_PreCallValidateCmdSetVertexInputEXT(VkCommandBuffer commandB
 
     for (uint32_t binding = 0; binding < vertexBindingDescriptionCount; ++binding) {
         const Location binding_loc = error_obj.location.dot(Field::pVertexBindingDescriptions, binding);
-        if (pVertexBindingDescriptions[binding].binding > phys_dev_props.limits.maxVertexInputBindings) {
-            skip |= LogError("VUID-VkVertexInputBindingDescription2EXT-binding-04796", commandBuffer,
-                             binding_loc.dot(Field::binding), "(%" PRIu32 ") is greater than maxVertexInputBindings (%" PRIu32 ").",
-                             pVertexBindingDescriptions[binding].binding, phys_dev_props.limits.maxVertexInputBindings);
+        if (pVertexBindingDescriptions[binding].binding >= phys_dev_props.limits.maxVertexInputBindings) {
+            skip |=
+                LogError("VUID-VkVertexInputBindingDescription2EXT-binding-04796", commandBuffer, binding_loc.dot(Field::binding),
+                         "(%" PRIu32 ") is not less than maxVertexInputBindings (%" PRIu32 ").",
+                         pVertexBindingDescriptions[binding].binding, phys_dev_props.limits.maxVertexInputBindings);
         }
 
         if (pVertexBindingDescriptions[binding].stride > phys_dev_props.limits.maxVertexInputBindingStride) {

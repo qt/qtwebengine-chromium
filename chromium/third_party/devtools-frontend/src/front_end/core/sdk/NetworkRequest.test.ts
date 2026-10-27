@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Protocol from '../../generated/protocol.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import {expectCookie} from '../../testing/Cookies.js';
@@ -410,7 +412,7 @@ data: bar\n\n`;
         dataLength: 1,
         encodedDataLength: 1,
         timestamp: time++,
-        data: window.btoa(c),
+        data: globalThis.btoa(c),
       });
     }
 

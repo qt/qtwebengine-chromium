@@ -78,6 +78,23 @@ class SigninPrefs {
   ChromeSigninUserChoice GetChromeSigninInterceptionUserChoice(
       const GaiaId& gaia_id) const;
 
+  // Sets the stable account ID for the given account.
+  void SetAccountMetricsId(const GaiaId& gaia_id, int id);
+  // Returns the stable account ID for the given account, or std::nullopt if not
+  // set.
+  std::optional<int> GetAccountMetricsId(const GaiaId& gaia_id) const;
+
+  // Sets that the account is capped for metrics ID allocation.
+  // Being capped means no new IDs will be allocated because the limit of 100
+  // accounts has been reached.
+  void SetAccountMetricsIdCapped(const GaiaId& gaia_id);
+  bool IsAccountMetricsIdCapped(const GaiaId& gaia_id) const;
+
+  // Gets the next unassigned account metrics ID.
+  int GetNextAccountMetricsUnassignedId() const;
+  // Sets the next unassigned account metrics ID.
+  void SetNextAccountMetricsUnassignedId(int id);
+
   // Last signout time.
   void SetChromeLastSignoutTime(const GaiaId& gaia_id,
                                 base::Time last_signout_time);
@@ -116,6 +133,9 @@ class SigninPrefs {
   void IncrementBookmarkSigninPromoImpressionCount(const GaiaId& gaia_id);
   int GetBookmarkSigninPromoImpressionCount(const GaiaId& gaia_id) const;
 
+  void IncrementSearchAIModeSigninPromoImpressionCount(const GaiaId& gaia_id);
+  int GetSearchAIModeSigninPromoImpressionCount(const GaiaId& gaia_id) const;
+
   void IncrementAutofillSigninPromoDismissCount(const GaiaId& gaia_id);
   int GetAutofillSigninPromoDismissCount(const GaiaId& gaia_id) const;
 
@@ -128,6 +148,9 @@ class SigninPrefs {
   void IncrementPasswordSigninPromoDismissCount(const GaiaId& gaia_id);
   int GetPasswordSigninPromoDismissCount(const GaiaId& gaia_id) const;
 
+  void IncrementSearchAIModeSigninPromoDismissCount(const GaiaId& gaia_id);
+  int GetSearchAIModeSigninPromoDismissCount(const GaiaId& gaia_id) const;
+
   void SetExtensionsExplicitBrowserSignin(const GaiaId& gaia_id, bool enabled);
   bool GetExtensionsExplicitBrowserSignin(const GaiaId& gaia_id) const;
 
@@ -139,6 +162,12 @@ class SigninPrefs {
       base::Time last_registration_failure_time);
   void ClearPolicyDisclaimerLastRegistrationFailureTime(const GaiaId& gaia_id);
   std::optional<base::Time> GetPolicyDisclaimerLastRegistrationFailureTime(
+      const GaiaId& gaia_id) const;
+
+  void SetSearchAIModeSigninPromoLastImpressionTime(
+      const GaiaId& gaia_id,
+      base::Time last_impression_time);
+  std::optional<base::Time> GetSearchAIModeSigninPromoLastImpressionTime(
       const GaiaId& gaia_id) const;
 
   // Sync promo on the avatar button.
@@ -206,6 +235,11 @@ class SigninPrefs {
   // Gets any specified `pref` of type int for the given `gaia_id`.
   // Returns 0 if the corresponding `pref` doesn't exist for `gaia_id`.
   int GetIntPrefForAccount(const GaiaId& gaia_id, std::string_view pref) const;
+
+  // Sets any specified `pref` of type int for the given `gaia_id` to `value`.
+  void SetIntPrefForAccount(const GaiaId& gaia_id,
+                            std::string_view pref,
+                            int value);
 
   // Sets any specified `pref` of type bool for the given `gaia_id` to
   // `enabled`.

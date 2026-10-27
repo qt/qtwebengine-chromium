@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -121,7 +121,7 @@ bool BestPractices::ValidateBindBufferMemory(VkBuffer buffer, VkDeviceMemory mem
     auto memory_state = Get<vvl::DeviceMemory>(memory);
     ASSERT_AND_RETURN_SKIP(memory_state && buffer_state);
 
-    if (memory_state->allocate_info.allocationSize == buffer_state->create_info.size &&
+    if (memory_state->allocate_info.allocationSize == buffer_state->GetSize() &&
         memory_state->allocate_info.allocationSize < kMinDedicatedAllocationSize) {
         skip |= LogPerformanceWarning("BestPractices-vkBindBufferMemory-small-dedicated-allocation", device, loc,
                                       "Trying to bind %s to a memory block which is fully consumed by the buffer. "
@@ -184,7 +184,7 @@ bool BestPractices::ValidateBindImageMemory(VkImage image, VkDeviceMemory memory
     // make sure this type is actually used.
     // This warning will only trigger if this layer is run on a platform that supports LAZILY_ALLOCATED_BIT
     // (i.e.most tile - based renderers)
-    if (image_state->create_info.usage & VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT) {
+    if (image_state->usage & VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT) {
         bool supports_lazy = false;
         uint32_t suggested_type = 0;
 

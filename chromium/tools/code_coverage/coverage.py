@@ -97,6 +97,7 @@ sys.path.append(
 from collections import defaultdict
 
 import coverage_utils
+import telemetry_utils
 
 # Absolute path to the code coverage tools binary. These paths can be
 # overwritten by user specified coverage tool paths.
@@ -326,6 +327,8 @@ def _GetLcovFilePath():
       LCOV_FILE_NAME)
 
 
+@telemetry_utils.tracer.start_as_current_span(
+    'coverage.py._CreateCoverageProfileDataForTargets')
 def _CreateCoverageProfileDataForTargets(targets,
                                          commands,
                                          jobs_count=None,
@@ -344,7 +347,7 @@ def _CreateCoverageProfileDataForTargets(targets,
     A relative path to the generated profdata file.
   """
   if not no_compile:
-    _BuildTargets(targets, jobs_count, no_compile)
+    _BuildTargets(targets, jobs_count)
   target_profdata_file_paths = _GetTargetProfDataPathsByExecutingCommands(
       targets, commands)
   coverage_profdata_file_path = (
@@ -789,6 +792,11 @@ def _VerifyTargetExecutablesAreInBuildDirectory(commands):
 
 def _ValidateBuildingWithClangCoverage():
   """Asserts that targets are built with Clang coverage enabled."""
+  if not _GetBuildArgsPath():
+    logging.warning(
+        'Assuming targets are built with coverage instrumentation enabled.')
+    return
+
   build_args = _GetBuildArgs()
 
   if (CLANG_COVERAGE_BUILD_ARG not in build_args or
@@ -811,6 +819,20 @@ def _ValidateCurrentPlatformIsSupported():
                                                    supported_platforms)
 
 
+def _GetBuildArgsPath():
+  """Returns the path to the args.gn file in the build directory.
+
+  Return:
+    A string containing a path to the file if exists, otherwise None.
+  """
+  build_args_path = os.path.join(BUILD_DIR, 'args.gn')
+  if not os.path.exists(build_args_path):
+    logging.warning('"%s" is missing args.gn file. Assuming non-GN build.',
+                    BUILD_DIR)
+    return None
+  return build_args_path
+
+
 def _GetBuildArgs():
   """Parses args.gn file and returns results as a dictionary.
 
@@ -822,9 +844,10 @@ def _GetBuildArgs():
     return _BUILD_ARGS
 
   _BUILD_ARGS = {}
-  build_args_path = os.path.join(BUILD_DIR, 'args.gn')
-  assert os.path.exists(build_args_path), ('"%s" is not a build directory, '
-                                           'missing args.gn file.' % BUILD_DIR)
+  build_args_path = _GetBuildArgsPath()
+  if not build_args_path:
+    return _BUILD_ARGS
+
   with open(build_args_path) as build_args_file:
     build_args_lines = build_args_file.readlines()
 
@@ -939,6 +962,8 @@ def _GetBinaryPathForWebTests():
     assert False, 'This platform is not supported for web tests.'
 
 
+@telemetry_utils.tracer.start_as_current_span(
+    'coverage.py._GenerateCoverageReport')
 def _GenerateCoverageReport(args, binary_paths, profdata_file_path,
                             absolute_filter_paths):
   """Generate the coverage report in the supported format."""
@@ -1154,8 +1179,10 @@ def _ParseCommandArguments():
   return args
 
 
+@telemetry_utils.tracer.start_as_current_span('coverage.py')
 def Main():
   """Execute tool commands."""
+  telemetry_utils.Initialize()
 
   # Change directory to source root to aid in relative paths calculations.
   os.chdir(SRC_ROOT_PATH)
@@ -1171,6 +1198,7 @@ def Main():
     return
 
   args = _ParseCommandArguments()
+  telemetry_utils.RecordMainAttributes(args.targets, args.build_dir)
   coverage_utils.ConfigureLogging(verbose=args.verbose, log_file=args.log_file)
   _ConfigureLLVMCoverageTools(args)
 

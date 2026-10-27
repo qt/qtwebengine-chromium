@@ -29,6 +29,7 @@
  *    Real Schur needed to real unsymmetrical eigenvalues/eigenvectors.
  ********************************************************************************
 */
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef EIGEN_REAL_SCHUR_LAPACKE_H
 #define EIGEN_REAL_SCHUR_LAPACKE_H

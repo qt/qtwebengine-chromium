@@ -22,18 +22,20 @@ import "fcp/protos/confidentialcompute/confidential_transform.proto";
 // API for the TEE to read and write data.
 // Note that the requests are from the TEE and the responses are to the TEE.
 service DataReadWrite {
-  // Read data from a URI.
+  // Read data from storage.
   rpc Read(ReadRequest) returns (stream ReadResponse) {}
   // Write data out from the TEE.
   rpc Write(stream WriteRequest) returns (WriteResponse) {}
 }
 
-// Request to read data from a URI.
+// Request to read data.
 message ReadRequest {
-  // Data URI to be resolved.
+  // The filepath to resolve.
   string uri = 1;
-  // A nonce to prevent replay attacks.
-  bytes nonce = 2;
+  // The blob id to resolve.
+  bytes blob_id = 3;
+
+  reserved 2;
 }
 
 // Read response with the data resolved from the URI.
@@ -45,33 +47,51 @@ message ReadResponse {
   bool finish_read = 2;
   // A chunk of data resolved from the URI in ReadRequest, encrypted with the
   // public key of the requestor TEE.
-  bytes data = 3
-      ;
+  bytes data = 3 [ctype = CORD];
 }
 
 // Request to write data out from the TEE. This can be used to release data.
 message WriteRequest {
-  // Release Token signed by the TEE's application signing key, sent with the
-  // first WriteRequest for a blob. This is provided to untrusted space so it
-  // can use it to request KMS to release the final unencrypted results.
-  bytes release_token = 4;
-  // A key that should be used to construct the file path when writing the
-  // data, sent with the first WriteRequest for a blob.
-  string key = 5;
   // Metadata about the blob being written out by the TEE, sent with the
   // first WriteRequest for a blob.
   BlobMetadata first_request_metadata = 1;
+  // A key that should be used to construct the file path when writing the
+  // data, sent with the first WriteRequest for a blob.
+  string key = 5;
+  // Optional. A release token should be provided if and only if the intent is
+  // to perform an unencrypted release of the data. The release token should be
+  // signed by the TEE's application signing key and sent with the first
+  // WriteRequest for a blob. Untrusted space will use it to communicate with
+  // KMS to obtain the key material needed to obtain the final unencrypted
+  // results.
+  optional bytes release_token = 4;
+  // Optional. If set, the signature of the data being written out by the TEE,
+  // sent with the first WriteRequest for a blob. Typically this is used for
+  // intermediate results whose provenance needs to be verified by a future TEE,
+  // but final unencrypted results may also be signed, if desired.
+  optional bytes signature = 6;
   // Indicates that this is the final WriteRequest for a given blob.
   bool commit = 2;
-  // A chunk of data to be written out by the TEE.
-  bytes data = 3
-      ;
+  // A chunk of data being written out by the TEE.
+  bytes data = 3 [ctype = CORD];
 }
 
 // Write response.
 message WriteResponse {
-  // Deprecated.
-  google.protobuf.Any reply = 1 [deprecated = true];
   // The URI of the written data.
   string file_uri = 2;
+
+  reserved 1;
+}
+
+// Message format for storing intermediate results received via WriteRequest.
+message IntermediateResult {
+  // Metadata that can be used at a later time within a TEE to decrypt the data.
+  BlobMetadata metadata = 1;
+  // The encrypted data.
+  bytes data = 2 [ctype = CORD];
+  // The generating TEE's signature for the data.
+  bytes signature = 3;
+  // The generating TEE's signing key endorsement.
+  bytes signing_key_endorsement = 4;
 }

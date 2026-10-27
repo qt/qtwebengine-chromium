@@ -145,12 +145,12 @@ class CORE_EXPORT InspectorTraceEvents
 // event (e.g. "MyEvent"), function name for writing event metadata (usually
 // my_event::Data) and the parameters to pass to the function (except the first
 // perfetto::TracedValue param, which will be appended by this macro.
-#define DEVTOOLS_TIMELINE_TRACE_EVENT_INSTANT_WITH_CATEGORIES(           \
-    categories, event_name, function_name, ...)                          \
-  TRACE_EVENT_INSTANT1(categories, event_name, TRACE_EVENT_SCOPE_THREAD, \
-                       "data", [&](perfetto::TracedValue ctx) {          \
-                         function_name(std::move(ctx), __VA_ARGS__);     \
-                       })
+#define DEVTOOLS_TIMELINE_TRACE_EVENT_INSTANT_WITH_CATEGORIES(      \
+    categories, event_name, function_name, ...)                     \
+  TRACE_EVENT_INSTANT(categories, event_name, "data",               \
+                      [&](perfetto::TracedValue ctx) {              \
+                        function_name(std::move(ctx), __VA_ARGS__); \
+                      })
 
 #define DEVTOOLS_TIMELINE_TRACE_EVENT_WITH_CATEGORIES(categories, event_name, \
                                                       function_name, ...)     \
@@ -473,18 +473,42 @@ struct V8ConsumeCacheResult {
   bool full;
 };
 
+template <typename T>
+int ScriptId(v8::MaybeLocal<T> maybeScriptOrModule) {
+  v8::Local<T> scriptOrModule;
+  if (maybeScriptOrModule.ToLocal(&scriptOrModule)) {
+    return scriptOrModule->ScriptId();
+  }
+  return v8::UnboundScript::kNoScriptId;
+}
+
 void Data(perfetto::TracedValue context,
           const String& url,
+          int script_id,
           const TextPosition&,
           std::optional<V8ConsumeCacheResult>,
           bool eager,
           bool streamed,
           ScriptStreamer::NotStreamingReason);
+
+template <typename T>
+void Data(perfetto::TracedValue context,
+          const String& url,
+          v8::MaybeLocal<T> script_or_module,
+          const TextPosition& text_position,
+          std::optional<V8ConsumeCacheResult> consume_cache_result,
+          bool eager,
+          bool streamed,
+          ScriptStreamer::NotStreamingReason not_streaming_reason) {
+  Data(std::move(context), url, ScriptId(script_or_module), text_position,
+       consume_cache_result, eager, streamed, not_streaming_reason);
+}
 }  // namespace inspector_compile_script_event
 
 namespace inspector_produce_script_cache_event {
 void Data(perfetto::TracedValue context,
           const String& url,
+          int script_id,
           const TextPosition&,
           int cache_size);
 }

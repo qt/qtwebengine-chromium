@@ -1,11 +1,13 @@
 // Benchmarks for Eigen Tensor reductions (sum, maximum, mean).
 // Tests full and partial reductions, inner vs outer dimension, DefaultDevice and ThreadPoolDevice.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #define EIGEN_USE_THREADS
 
 #include <benchmark/benchmark.h>
-#include <unsupported/Eigen/CXX11/Tensor>
-#include <unsupported/Eigen/CXX11/ThreadPool>
+#include <unsupported/Eigen/Tensor>
+#include <unsupported/Eigen/ThreadPool>
 
 using namespace Eigen;
 
@@ -125,34 +127,22 @@ static void BM_MaxReduction(benchmark::State& state) {
   state.SetBytesProcessed(state.iterations() * M * N * sizeof(Scalar));
 }
 
-static void ReductionSizes(::benchmark::Benchmark* b) {
-  for (int size : {64, 256, 1024}) {
-    b->Args({size, size});
-  }
-}
+// clang-format off
+#define REDUCTION_SIZES \
+  ->Args({64, 64})->Args({256, 256})->Args({1024, 1024})
 
-static void ThreadPoolReductionSizes(::benchmark::Benchmark* b) {
-  for (int size : {256, 1024}) {
-    for (int threads : {2, 4, 8}) {
-      b->Args({size, size, threads});
-    }
-  }
-}
+#define THREADPOOL_REDUCTION_SIZES \
+  ->Args({256, 256, 2})->Args({256, 256, 4})->Args({256, 256, 8}) \
+  ->Args({1024, 1024, 2})->Args({1024, 1024, 4})->Args({1024, 1024, 8})
 
-static void SpatialSizes(::benchmark::Benchmark* b) {
-  for (int batch : {1, 8, 32}) {
-    for (int c : {64, 128}) {
-      for (int h : {16, 32}) {
-        b->Args({batch, c, h});
-      }
-    }
-  }
-}
+// {batch, channels, h}: pure Cartesian product.
+#define SPATIAL_SIZES ->ArgsProduct({{1, 8, 32}, {64, 128}, {16, 32}})
+// clang-format on
 
-BENCHMARK(BM_FullReduction<internal::SumReducer<Scalar>>)->Apply(ReductionSizes)->Name("SumReduction");
-BENCHMARK(BM_FullReduction<internal::MaxReducer<Scalar>>)->Apply(ReductionSizes)->Name("MaxReduction_Full");
-BENCHMARK(BM_MaxReduction)->Apply(ReductionSizes);
-BENCHMARK(BM_ReduceInner)->Apply(ReductionSizes);
-BENCHMARK(BM_ReduceOuter)->Apply(ReductionSizes);
-BENCHMARK(BM_ReduceSpatial)->Apply(SpatialSizes);
-BENCHMARK(BM_FullReduction_ThreadPool)->Apply(ThreadPoolReductionSizes);
+BENCHMARK(BM_FullReduction<internal::SumReducer<Scalar>>) REDUCTION_SIZES->Name("SumReduction");
+BENCHMARK(BM_FullReduction<internal::MaxReducer<Scalar>>) REDUCTION_SIZES->Name("MaxReduction_Full");
+BENCHMARK(BM_MaxReduction) REDUCTION_SIZES;
+BENCHMARK(BM_ReduceInner) REDUCTION_SIZES;
+BENCHMARK(BM_ReduceOuter) REDUCTION_SIZES;
+BENCHMARK(BM_ReduceSpatial) SPATIAL_SIZES;
+BENCHMARK(BM_FullReduction_ThreadPool) THREADPOOL_REDUCTION_SIZES;

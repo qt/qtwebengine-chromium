@@ -257,6 +257,11 @@ angle::Result TextureGL::setImageHelper(const gl::Context *context,
     StateManagerGL *stateManager      = GetStateManagerGL(context);
     const angle::FeaturesGL &features = GetFeaturesGL(context);
 
+    if (features.reattachFboDepthStencilOnReallocation.enabled)
+    {
+        onStateChange(angle::SubjectMessage::ObjectReallocated);
+    }
+
     const gl::InternalFormat &originalInternalFormatInfo =
         gl::GetInternalFormatInfo(internalFormat, type);
     nativegl::TexImageFormat texImageFormat =
@@ -443,17 +448,15 @@ angle::Result TextureGL::setSubImageRowByRowWorkaround(const gl::Context *contex
     ANGLE_TRY(stateManager->setPixelUnpackBuffer(context, unpackBuffer));
 
     const gl::InternalFormat &glFormat = gl::GetInternalFormatInfo(format, type);
-    GLuint rowBytes                    = 0;
-    ANGLE_CHECK_GL_MATH(contextGL, glFormat.computeRowPitch(type, area.width, unpack.alignment,
-                                                            unpack.rowLength, &rowBytes));
-    GLuint imageBytes = 0;
-    ANGLE_CHECK_GL_MATH(contextGL, glFormat.computeDepthPitch(area.height, unpack.imageHeight,
-                                                              rowBytes, &imageBytes));
 
-    bool useTexImage3D = nativegl::UseTexImage3D(getType());
+    GLuint rowBytes    = 0;
+    GLuint imageBytes  = 0;
     GLuint skipBytes   = 0;
-    ANGLE_CHECK_GL_MATH(contextGL, glFormat.computeSkipBytes(type, rowBytes, imageBytes, unpack,
-                                                             useTexImage3D, &skipBytes));
+    bool useTexImage3D = nativegl::UseTexImage3D(getType());
+
+    ANGLE_CHECK_GL_MATH(contextGL, glFormat.computeRowDepthSkipBytes(
+                                       type, area.width, area.height, unpack, useTexImage3D,
+                                       &rowBytes, &imageBytes, &skipBytes));
 
     GLint rowsPerChunk =
         std::min(std::max(static_cast<GLint>(maxBytesUploadedPerChunk / rowBytes), 1), area.height);
@@ -518,15 +521,13 @@ angle::Result TextureGL::setSubImagePaddingWorkaround(const gl::Context *context
 
     const gl::InternalFormat &glFormat = gl::GetInternalFormatInfo(format, type);
     GLuint rowBytes                    = 0;
-    ANGLE_CHECK_GL_MATH(contextGL, glFormat.computeRowPitch(type, area.width, unpack.alignment,
-                                                            unpack.rowLength, &rowBytes));
-    GLuint imageBytes = 0;
-    ANGLE_CHECK_GL_MATH(contextGL, glFormat.computeDepthPitch(area.height, unpack.imageHeight,
-                                                              rowBytes, &imageBytes));
+    GLuint imageBytes                  = 0;
     bool useTexImage3D = nativegl::UseTexImage3D(getType());
     GLuint skipBytes   = 0;
-    ANGLE_CHECK_GL_MATH(contextGL, glFormat.computeSkipBytes(type, rowBytes, imageBytes, unpack,
-                                                             useTexImage3D, &skipBytes));
+
+    ANGLE_CHECK_GL_MATH(contextGL, glFormat.computeRowDepthSkipBytes(
+                                       type, area.width, area.height, unpack, useTexImage3D,
+                                       &rowBytes, &imageBytes, &skipBytes));
 
     ANGLE_TRY(stateManager->setPixelUnpackState(context, unpack));
     ANGLE_TRY(stateManager->setPixelUnpackBuffer(context, unpackBuffer));
@@ -857,7 +858,7 @@ angle::Result TextureGL::copyImage(const gl::Context *context,
         angle::CheckedNumeric<size_t> checkedBufferSize = angle::base::CheckMul(
             angle::base::CheckMul(sourceArea.width, sourceArea.height), pixelBytes);
         ANGLE_CHECK_GL_MATH(contextGL, checkedBufferSize.IsValid());
-        angle::MemoryBuffer *zero;
+        const angle::MemoryBuffer *zero;
         ANGLE_CHECK_GL_ALLOC(contextGL,
                              context->getZeroFilledBuffer(checkedBufferSize.ValueOrDie(), &zero));
 
@@ -1193,6 +1194,11 @@ angle::Result TextureGL::setStorage(const gl::Context *context,
     StateManagerGL *stateManager      = GetStateManagerGL(context);
     const angle::FeaturesGL &features = GetFeaturesGL(context);
 
+    if (features.reattachFboDepthStencilOnReallocation.enabled)
+    {
+        onStateChange(angle::SubjectMessage::ObjectReallocated);
+    }
+
     const gl::InternalFormat &originalInternalFormatInfo =
         gl::GetSizedInternalFormatInfo(internalFormat);
     nativegl::TexStorageFormat texStorageFormat =
@@ -1397,6 +1403,11 @@ angle::Result TextureGL::setStorageMultisample(const gl::Context *context,
     const FunctionsGL *functions      = GetFunctionsGL(context);
     StateManagerGL *stateManager      = GetStateManagerGL(context);
     const angle::FeaturesGL &features = GetFeaturesGL(context);
+
+    if (features.reattachFboDepthStencilOnReallocation.enabled)
+    {
+        onStateChange(angle::SubjectMessage::ObjectReallocated);
+    }
 
     const gl::InternalFormat &originalInternalFormatInfo =
         gl::GetSizedInternalFormatInfo(internalformat);
@@ -2534,7 +2545,7 @@ angle::Result TextureGL::initializeContents(const gl::Context *context,
         ANGLE_CHECK_GL_MATH(contextGL,
                             internalFormatInfo.computeCompressedImageSize(desc.size, &imageSize));
 
-        angle::MemoryBuffer *zero;
+        const angle::MemoryBuffer *zero;
         ANGLE_CHECK_GL_ALLOC(contextGL, context->getZeroFilledBuffer(imageSize, &zero));
 
         // WebGL spec requires that zero data is uploaded to compressed textures even if it might
@@ -2565,7 +2576,7 @@ angle::Result TextureGL::initializeContents(const gl::Context *context,
                                            nativeSubImageFormat.type, desc.size, unpackState,
                                            nativegl::UseTexImage3D(getType()), &imageSize));
 
-        angle::MemoryBuffer *zero;
+        const angle::MemoryBuffer *zero;
         ANGLE_CHECK_GL_ALLOC(contextGL, context->getZeroFilledBuffer(imageSize, &zero));
 
         if (nativegl::UseTexImage2D(getType()))

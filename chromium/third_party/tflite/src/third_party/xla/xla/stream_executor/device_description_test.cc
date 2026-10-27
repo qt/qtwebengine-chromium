@@ -21,9 +21,11 @@ limitations under the License.
 #include "absl/status/status_matchers.h"
 #include "xla/backends/gpu/target_config/target_config.h"
 #include "xla/stream_executor/cuda/cuda_compute_capability.h"
+#include "xla/stream_executor/device_description.pb.h"
 #include "xla/stream_executor/rocm/rocm_compute_capability.h"
 #include "xla/stream_executor/semantic_version.h"
 #include "xla/tsl/platform/statusor.h"
+#include "xla/xla_data.pb.h"
 
 namespace stream_executor {
 namespace {
@@ -71,6 +73,7 @@ TEST(RocmComputeCapability, IsSupportedGfxVersion) {
   ASSERT_TRUE(RocmComputeCapability{"gfx900"}.is_supported_gfx_version());
   ASSERT_TRUE(RocmComputeCapability{"gfx1201"}.is_supported_gfx_version());
   ASSERT_TRUE(RocmComputeCapability{"gfx942"}.is_supported_gfx_version());
+  ASSERT_TRUE(RocmComputeCapability{"gfx1250"}.is_supported_gfx_version());
   ASSERT_FALSE(RocmComputeCapability{"some_string"}.is_supported_gfx_version());
 }
 
@@ -125,6 +128,21 @@ TEST(RocmComputeCapability, Accessors) {
   EXPECT_TRUE(RocmComputeCapability{"gfx1200"}.has_hipblaslt());
   EXPECT_TRUE(RocmComputeCapability{"gfx1100"}.has_hipblaslt());
   EXPECT_TRUE(RocmComputeCapability{"gfx1103"}.has_hipblaslt());
+  EXPECT_TRUE(RocmComputeCapability{"gfx1250"}.has_hipblaslt());
+
+  EXPECT_FALSE(RocmComputeCapability{"gfx1250"}.has_nhwc_layout_support());
+  EXPECT_TRUE(RocmComputeCapability{"gfx1250"}.has_fast_fp16_support());
+  EXPECT_FALSE(RocmComputeCapability{"gfx1250"}.has_mfma_instr_support());
+  EXPECT_TRUE(
+      RocmComputeCapability{"gfx1250"}.has_packed_fp16_atomics_support());
+  EXPECT_TRUE(
+      RocmComputeCapability{"gfx1250"}.has_packed_bf16_atomics_support());
+  EXPECT_TRUE(RocmComputeCapability{"gfx1250"}.has_ocp_fp8_support());
+  EXPECT_TRUE(RocmComputeCapability{"gfx1250"}.has_mx_type_support());
+
+  EXPECT_TRUE(RocmComputeCapability{"gfx1250"}.has_tdm_support());
+  EXPECT_FALSE(RocmComputeCapability{"gfx942"}.has_tdm_support());
+  EXPECT_FALSE(RocmComputeCapability{"gfx1201"}.has_tdm_support());
 }
 
 TEST(GpuComputeCapability, ProtoConversion) {
@@ -217,11 +235,19 @@ TEST(DeviceDescription, EqualsToPortable) {
       /*clique_id=*/"clique_id"});
 
   EXPECT_FALSE(device_description.EqualsTo(other, {}));
-  EXPECT_TRUE(device_description.EqualsTo(
+
+  // The number of active links is not ignored in kPortable.
+  EXPECT_FALSE(device_description.EqualsTo(
       other, {DeviceDescription::CompareOptions::kPortable}));
   EXPECT_FALSE(device_description.EqualsTo(
       other, {DeviceDescription::CompareOptions::kIgnoreVersionNumbers}));
   EXPECT_NE(device_description, other);
+
+  other.set_device_interconnect_info(DeviceInterconnectInfo{
+      /*active_links=*/0, /*cluster_uuid=*/"cluster_uuid",
+      /*clique_id=*/"clique_id"});
+  EXPECT_TRUE(device_description.EqualsTo(
+      other, {DeviceDescription::CompareOptions::kPortable}));
 }
 
 TEST(DeviceInterconnectInfo, ProtoConversion) {
@@ -232,6 +258,22 @@ TEST(DeviceInterconnectInfo, ProtoConversion) {
 
   EXPECT_THAT(DeviceInterconnectInfo::FromProto(info.ToProto()),
               IsOkAndHolds(Eq(info)));
+}
+
+TEST(DeviceDescription, DeviceSpecificFieldsCleared) {
+  ASSERT_OK_AND_ASSIGN(
+      stream_executor::GpuTargetConfigProto gpu_target_config_proto,
+      xla::gpu::GetGpuTargetConfig(xla::gpu::GpuModel::H100_SXM));
+  ASSERT_OK_AND_ASSIGN(
+      DeviceDescription device_description,
+      DeviceDescription::FromProto(gpu_target_config_proto.gpu_device_info()));
+  DeviceDescription cleared = device_description.DeviceSpecificFieldsCleared();
+  EXPECT_NE(cleared, device_description);
+  EXPECT_TRUE(cleared.EqualsTo(device_description,
+                               {DeviceDescription::CompareOptions::kPortable}));
+  EXPECT_EQ(cleared.pci_bus_id(), "<undefined>");
+  EXPECT_EQ(cleared.numa_node(), -1);
+  EXPECT_EQ(cleared.device_interconnect_info(), DeviceInterconnectInfo{});
 }
 
 }  // namespace

@@ -6,6 +6,7 @@
 
 import type {Protocol} from 'devtools-protocol';
 
+import {URLPattern} from '../../third_party/urlpattern-polyfill/urlpattern-polyfill.js';
 import type {TargetFilterCallback} from '../api/Browser.js';
 import type {CDPSession} from '../api/CDPSession.js';
 import {CDPSessionEvent} from '../api/CDPSession.js';
@@ -106,18 +107,29 @@ export class TargetManager
   // done. It indicates whethere we are running the initial auto-attach step or
   // if we are handling targets after that.
   #initialAttachDone = false;
+  #blocklist: Array<{pattern: URLPattern; rule: string}> = [];
+  #allowlist: Array<{pattern: URLPattern; rule: string}> = [];
 
   constructor(
     connection: Connection,
     targetFactory: TargetFactory,
     targetFilterCallback?: TargetFilterCallback,
     waitForInitiallyDiscoveredTargets = true,
+    blocklist?: string[],
+    allowlist?: string[],
   ) {
     super();
+    if (blocklist && allowlist) {
+      throw new Error('Cannot specify both blockList and allowList');
+    }
+
     this.#connection = connection;
     this.#targetFilterCallback = targetFilterCallback;
     this.#targetFactory = targetFactory;
     this.#waitForInitiallyDiscoveredTargets = waitForInitiallyDiscoveredTargets;
+
+    this.#blocklist = this.#mapPatterns(blocklist);
+    this.#allowlist = this.#mapPatterns(allowlist);
 
     this.#connection.on('Target.targetCreated', this.#onTargetCreated);
     this.#connection.on('Target.targetDestroyed', this.#onTargetDestroyed);
@@ -152,6 +164,10 @@ export class TargetManager
     await this.#initializeDeferred.valueOrThrow();
   }
 
+  addToIgnoreTarget(targetId: string): void {
+    this.#ignoredTargets.add(targetId);
+  }
+
   getChildTargets(target: CdpTarget): ReadonlySet<CdpTarget> {
     return target._childTargets();
   }
@@ -170,6 +186,10 @@ export class TargetManager
 
   getAvailableTargets(): ReadonlyMap<string, CdpTarget> {
     return this.#attachedTargetsByTargetId;
+  }
+
+  getDiscoveredTargetInfos(): ReadonlyMap<string, Protocol.Target.TargetInfo> {
+    return this.#discoveredTargetsByTargetId;
   }
 
   #setupAttachmentListeners(session: CDPSession | Connection): void {
@@ -256,6 +276,7 @@ export class TargetManager
     const targetInfo = this.#discoveredTargetsByTargetId.get(event.targetId);
     this.#discoveredTargetsByTargetId.delete(event.targetId);
     this.#finishInitializationIfReady(event.targetId);
+
     if (targetInfo?.type === 'service_worker') {
       // Special case for service workers: report TargetGone event when
       // the worker is destroyed.
@@ -324,6 +345,13 @@ export class TargetManager
       return;
     }
 
+    // If we connect to a browser that is already open,
+    // immediately detach from any tab that is on the blocklist.
+    if (!this.#initialAttachDone && !this.isUrlAllowed(targetInfo.url)) {
+      await this.#silentDetach(session, parentSession);
+      return;
+    }
+
     // Special case for service workers: being attached to service workers will
     // prevent them from ever being destroyed. Therefore, we silently detach
     // from service workers unless the connection was manually created via
@@ -333,7 +361,11 @@ export class TargetManager
     // CDP.
     if (targetInfo.type === 'service_worker') {
       await this.#silentDetach(session, parentSession);
-      if (this.#attachedTargetsByTargetId.has(targetInfo.targetId)) {
+      if (
+        this.#attachedTargetsByTargetId.has(targetInfo.targetId) ||
+        this.#ignoredTargets.has(targetInfo.targetId) ||
+        !this.#discoveredTargetsByTargetId.has(targetInfo.targetId)
+      ) {
         return;
       }
       const target = this.#targetFactory(targetInfo);
@@ -404,6 +436,7 @@ export class TargetManager
         autoAttach: true,
         filter: this.#discoveryFilter,
       }),
+      this.#maybeSetupNetworkConditions(session),
       session.send('Runtime.runIfWaitingForDebugger'),
     ]).catch(debugError);
   };
@@ -438,5 +471,85 @@ export class TargetManager
     }
     this.#attachedTargetsByTargetId.delete(target._targetId);
     this.emit(TargetManagerEvent.TargetGone, target);
+  };
+
+  /**
+   * Helper to validate URL against blocklist patterns
+   */
+  isUrlAllowed = (url: string): boolean => {
+    if (this.#blocklist.length === 0 && this.#allowlist.length === 0) {
+      return true;
+    }
+
+    // Always allow internal or setup pages
+    if (!url || url === 'about:blank') {
+      return true;
+    }
+
+    for (const item of this.#blocklist) {
+      if (item.pattern.test(url)) {
+        return false;
+      }
+    }
+
+    if (this.#allowlist.length > 0) {
+      for (const item of this.#allowlist) {
+        if (item.pattern.test(url)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    return true;
+  };
+
+  #mapPatterns(rules?: string[]): Array<{pattern: URLPattern; rule: string}> {
+    const result: Array<{pattern: URLPattern; rule: string}> = [];
+    for (const rule of rules ?? []) {
+      result.push({pattern: new URLPattern(rule), rule});
+    }
+    return result;
+  }
+
+  #maybeSetupNetworkConditions = async (session: CDPSession): Promise<void> => {
+    if (this.#blocklist.length === 0 && this.#allowlist.length === 0) {
+      return;
+    }
+
+    const matchedNetworkConditions = [];
+    for (const item of this.#blocklist) {
+      matchedNetworkConditions.push({
+        urlPattern: item.rule,
+        offline: true,
+        latency: 0,
+        downloadThroughput: -1,
+        uploadThroughput: -1,
+      });
+    }
+
+    if (this.#allowlist.length > 0) {
+      for (const item of this.#allowlist) {
+        matchedNetworkConditions.push({
+          urlPattern: item.rule,
+          offline: false,
+          latency: 0,
+          downloadThroughput: -1,
+          uploadThroughput: -1,
+        });
+      }
+      matchedNetworkConditions.push({
+        urlPattern: '',
+        offline: true,
+        latency: 0,
+        downloadThroughput: -1,
+        uploadThroughput: -1,
+      });
+    }
+
+    await session.send('Network.emulateNetworkConditionsByRule', {
+      offline: this.#blocklist.length > 0 ? true : undefined,
+      matchedNetworkConditions,
+    });
   };
 }

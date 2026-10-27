@@ -219,7 +219,7 @@ V8_OBJECT class SourceTextModule : public Module {
   static V8_WARN_UNUSED_RESULT bool FinishInstantiate(
       Isolate* isolate, Handle<SourceTextModule> module,
       ZoneForwardList<Handle<SourceTextModule>>* stack, unsigned* dfs_index,
-      Zone* zone);
+      Zone* zone, unsigned depth, unsigned* max_depth);
   static V8_WARN_UNUSED_RESULT bool RunInitializationCode(
       Isolate* isolate, DirectHandle<SourceTextModule> module);
 
@@ -337,7 +337,7 @@ class SourceTextModuleInfo : public FixedArray {
   };
 };
 
-V8_OBJECT class ModuleRequest : public StructLayout {
+V8_OBJECT class ModuleRequest : public Struct {
  public:
   inline Tagged<String> specifier() const;
   inline void set_specifier(Tagged<String> value,
@@ -379,7 +379,7 @@ V8_OBJECT class ModuleRequest : public StructLayout {
   TaggedMember<Smi> flags_;
 } V8_OBJECT_END;
 
-V8_OBJECT class SourceTextModuleInfoEntry : public StructLayout {
+V8_OBJECT class SourceTextModuleInfoEntry : public Struct {
  public:
   inline Tagged<UnionOf<String, Undefined>> export_name() const;
   inline void set_export_name(Tagged<UnionOf<String, Undefined>> value,

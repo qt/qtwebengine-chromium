@@ -25,24 +25,24 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/BlitBufferToTexture.h"
+#include "src/dawn/native/BlitBufferToTexture.h"
 
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/Strings.h"
-#include "dawn/native/BindGroup.h"
-#include "dawn/native/CommandBuffer.h"
-#include "dawn/native/CommandEncoder.h"
-#include "dawn/native/Device.h"
-#include "dawn/native/InternalPipelineStore.h"
-#include "dawn/native/Queue.h"
-#include "dawn/native/RenderPassEncoder.h"
-#include "dawn/native/RenderPipeline.h"
-#include "dawn/native/utils/WGPUHelpers.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/Strings.h"
+#include "src/dawn/native/BindGroup.h"
+#include "src/dawn/native/CommandBuffer.h"
+#include "src/dawn/native/CommandEncoder.h"
+#include "src/dawn/native/Device.h"
+#include "src/dawn/native/InternalPipelineStore.h"
+#include "src/dawn/native/Queue.h"
+#include "src/dawn/native/RenderPassEncoder.h"
+#include "src/dawn/native/RenderPipeline.h"
+#include "src/dawn/native/utils/WGPUHelpers.h"
 
 namespace dawn::native {
 
@@ -406,12 +406,12 @@ MaybeError BlitBufferToTexture(DeviceBase* device,
     // bytesPerRow is aligned to 256. However some backends might enable
     // DawnTexelCopyBufferRowAlignment feature to relax the alignment. Currently only D3D11 backend
     // enables this feature, and the relaxed alignment there is 4.
-    DAWN_ASSERT((src.bytesPerRow % 4) == 0);
+    DAWN_CHECK((src.bytesPerRow % 4) == 0);
 
     DAWN_ASSERT(buffer->GetInternalUsage() &
                 (kReadOnlyStorageBuffer | kInternalStorageBuffer | wgpu::BufferUsage::Storage));
 
-    DAWN_ASSERT(!copyExtent.IsEmpty());
+    DAWN_CHECK(!copyExtent.IsEmpty());
 
     // Allow internal usages since we need to use the destination
     // as a render attachment.

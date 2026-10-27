@@ -5,14 +5,18 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_UI_PAYMENTS_SELECT_BNPL_ISSUER_DIALOG_CONTROLLER_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_UI_PAYMENTS_SELECT_BNPL_ISSUER_DIALOG_CONTROLLER_H_
 
+#include <string>
 #include <vector>
 
 #include "components/autofill/core/browser/data_model/payments/bnpl_issuer.h"
 
+namespace autofill {
+class PaymentsDataManager;
+}  // namespace autofill
+
 namespace autofill::payments {
 
 struct BnplIssuerContext;
-struct TextWithLink;
 
 // Interface that exposes controller functionality to the
 // SelectBnplIssuerDialogView.
@@ -28,15 +32,13 @@ class SelectBnplIssuerDialogController {
   virtual void OnIssuerSelected(BnplIssuer issuer) = 0;
   virtual void OnUserCancelled() = 0;
   virtual void Dismiss() = 0;
-  virtual TextWithLink GetLinkText() const = 0;
   virtual std::u16string GetTitle() const = 0;
-  virtual std::u16string GetSelectionOptionText(
-      autofill::BnplIssuer::IssuerId issuer_id) const = 0;
 
   // List of issuers with their corresponding contexts to be displayed on the
   // Select BNPL issuer dialog.
   virtual const std::vector<BnplIssuerContext>& GetIssuerContexts() const = 0;
   virtual const std::string& GetAppLocale() const = 0;
+  virtual const PaymentsDataManager& GetPaymentsDataManager() const = 0;
 
  protected:
   virtual ~SelectBnplIssuerDialogController() = default;

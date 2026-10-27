@@ -36,8 +36,8 @@
 #include "build/build_config.h"
 #include "components/input/timeout_monitor.h"
 #include "components/viz/common/features.h"
+#include "content/browser/back_forward_cache/back_forward_cache_impl.h"
 #include "content/browser/browser_main_loop.h"
-#include "content/browser/renderer_host/back_forward_cache_impl.h"
 #include "content/browser/renderer_host/navigation_request.h"
 #include "content/browser/renderer_host/origin_trial_state_host_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
@@ -97,6 +97,7 @@
 #include "net/test/embedded_test_server/controllable_http_response.h"
 #include "net/test/embedded_test_server/default_handlers.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "net/test/embedded_test_server/expectation_handler.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/request_handler_util.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
@@ -175,12 +176,14 @@ class FirstPartySchemeContentBrowserClient
 
   ~FirstPartySchemeContentBrowserClient() override = default;
 
-  bool ShouldTreatURLSchemeAsFirstPartyWhenTopLevel(
-      std::string_view scheme,
+  bool ShouldTreatAsFirstPartyWhenTopLevel(
+      const url::Origin& top_frame_origin,
       bool is_embedded_origin_secure) override {
-    if (is_embedded_origin_secure && scheme == "trustmeifembeddingsecure")
+    if (is_embedded_origin_secure &&
+        top_frame_origin.scheme() == "trustmeifembeddingsecure") {
       return true;
-    return scheme == "trustme";
+    }
+    return top_frame_origin.scheme() == "trustme";
   }
 
   mojo::PendingRemote<network::mojom::URLLoaderFactory>
@@ -213,7 +216,7 @@ class FirstPartySchemeContentBrowserClient
 }  // namespace
 
 // TODO(mlamouri): part of these tests were removed because they were dependent
-// on an environment were focus is guaranteed. This is only for
+// on an environment where focus is guaranteed. This is only for
 // interactive_ui_tests so these bits need to move there.
 // See https://crbug.com/491535
 class RenderFrameHostImplBrowserTest : public ContentBrowserTest {
@@ -509,7 +512,8 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest, IsFocused_Change) {
         ExecJs(web_contents()->GetPrimaryMainFrame(), "focus" + frame + "()"));
 
     // The main frame is not the focused frame in the frame tree but the main
-    // frame is focused per RFHI rules because one of its descendant is focused.
+    // frame is focused per RFHI rules because one of its descendants is
+    // focused.
     // TODO(mlamouri): we should check the frame focus state per RFHI, see the
     // general comment at the beginning of this test file.
     EXPECT_NE(web_contents()->GetPrimaryMainFrame(),
@@ -921,6 +925,105 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
   // there should be no beforeunload dialog.
   shell()->LoadURL(GURL("about:blank"));
   EXPECT_TRUE(WaitForLoadStop(web_contents()));
+
+  web_contents()->SetDelegate(nullptr);
+}
+
+// Tests that CouldDisplayBeforeUnloadDialog() correctly tracks both the
+// presence of a beforeunload handler and sticky user activation.
+IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
+                       CouldDisplayBeforeUnloadDialog) {
+  EXPECT_TRUE(
+      NavigateToURL(shell(), embedded_test_server()->GetURL("/title1.html")));
+  RenderFrameHostImpl* rfh = root_frame_host();
+
+  // Disable the hang monitor to avoid races, but do not trigger user activation
+  // yet as we need to test the state without activation first.
+  PrepContentsForBeforeUnloadTest(web_contents(),
+                                  /*trigger_user_activation=*/false);
+
+  // 1. Initially false (no handler, no activation).
+  EXPECT_FALSE(rfh->CouldDisplayBeforeUnloadDialog());
+
+  // 2. Add handler without user gesture, still false (no activation).
+  ASSERT_TRUE(ExecJs(rfh, "window.onbeforeunload = () => 'x';",
+                     EXECUTE_SCRIPT_NO_USER_GESTURE));
+  EXPECT_FALSE(rfh->CouldDisplayBeforeUnloadDialog());
+
+  // 3. Provide user activation, should be true.
+  rfh->ActivateUserActivation(
+      blink::mojom::UserActivationNotificationType::kTest);
+  EXPECT_TRUE(rfh->CouldDisplayBeforeUnloadDialog());
+
+  // 4. Remove handler, should be false again.
+  ASSERT_TRUE(ExecJs(rfh, "window.onbeforeunload = null;",
+                     EXECUTE_SCRIPT_NO_USER_GESTURE));
+  EXPECT_FALSE(rfh->CouldDisplayBeforeUnloadDialog());
+
+  // 5. Re-add handler, should be true (activation is sticky).
+  ASSERT_TRUE(ExecJs(rfh, "window.onbeforeunload = () => 'x';",
+                     EXECUTE_SCRIPT_NO_USER_GESTURE));
+  EXPECT_TRUE(rfh->CouldDisplayBeforeUnloadDialog());
+
+  // 6. Cleanup: Remove handler to allow navigation without a dialog.
+  ASSERT_TRUE(ExecJs(rfh, "window.onbeforeunload = null;",
+                     EXECUTE_SCRIPT_NO_USER_GESTURE));
+
+  // 7. Navigate away, should be false (activation reset for new document).
+  EXPECT_TRUE(
+      NavigateToURL(shell(), embedded_test_server()->GetURL("/title2.html")));
+  rfh = root_frame_host();
+
+  // Disable the hang monitor for the new document as well.
+  PrepContentsForBeforeUnloadTest(web_contents(),
+                                  /*trigger_user_activation=*/false);
+  EXPECT_FALSE(rfh->CouldDisplayBeforeUnloadDialog());
+}
+
+class RenderFrameHostImplUserActivationBeforeUnloadBrowserTest
+    : public RenderFrameHostImplBrowserTest {
+ public:
+  RenderFrameHostImplUserActivationBeforeUnloadBrowserTest() {
+    feature_list_.InitAndEnableFeature(
+        features::kEnforceUserActivationForBeforeUnload);
+  }
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+};
+
+// Tests that the browser process blocks a beforeunload dialog if the frame
+// does not have user activation, even if requested by the renderer.
+IN_PROC_BROWSER_TEST_F(RenderFrameHostImplUserActivationBeforeUnloadBrowserTest,
+                       BeforeUnloadDialogBlockedByBrowserActivationCheck) {
+  TestJavaScriptDialogManager dialog_manager;
+  web_contents()->SetDelegate(&dialog_manager);
+
+  EXPECT_TRUE(
+      NavigateToURL(shell(), embedded_test_server()->GetURL("/title1.html")));
+  RenderFrameHostImpl* rfh = root_frame_host();
+
+  // Disable the hang monitor to avoid races.
+  PrepContentsForBeforeUnloadTest(web_contents(),
+                                  /*trigger_user_activation=*/false);
+
+  // Add handler without user gesture.
+  ASSERT_TRUE(ExecJs(rfh, "window.onbeforeunload = () => 'x';",
+                     EXECUTE_SCRIPT_NO_USER_GESTURE));
+
+  // Call RunBeforeUnloadConfirm directly, bypassing renderer checks.
+  bool callback_ran = false;
+  rfh->RunBeforeUnloadConfirm(true,
+                              base::BindLambdaForTesting([&](bool success) {
+                                EXPECT_TRUE(success);
+                                callback_ran = true;
+                              }));
+
+  // Verify the callback was called synchronously.
+  EXPECT_TRUE(callback_ran);
+
+  // Verify no dialog was shown because browser-side check blocked it.
+  EXPECT_EQ(0, dialog_manager.num_beforeunload_dialogs_seen());
 
   web_contents()->SetDelegate(nullptr);
 }
@@ -2243,12 +2346,13 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBeforeUnloadBrowserTest,
 }
 
 // During a complex WebContents destruction, test resuming a navigation, due to
-// of a beforeunloader. This is a regersion test for: https://crbug.com/1147567.
+// of a beforeunloader. This is a regression test for:
+// https://crbug.com/1147567.
 // - Start from A(B(C))
 // - C adds a beforeunload handler.
 // - B starts a navigation, waiting for C.
 // - The WebContents is closed, which deletes C, then B, then A.
-// When deleting C, the navigations in B can begin, but this happen while B was
+// When deleting C, the navigations in B can begin, but this happens while B was
 // destructing itself.
 //
 // Note: This needs 3 nested documents instead of 2, because deletion of the
@@ -5814,8 +5918,9 @@ IN_PROC_BROWSER_TEST_F(ContentBrowserTest, LoadingStateResetOnNavigation) {
 
 IN_PROC_BROWSER_TEST_F(ContentBrowserTest,
                        LoadingStateIsNotResetOnFailedNavigation) {
-  net::test_server::ControllableHttpResponse document2_response(
-      embedded_test_server(), "/document2");
+  net::test_server::ExpectationHandler handler(embedded_test_server());
+  handler.OnRequest("/document2")
+      .RespondWith(net::HTTP_NO_CONTENT, "text/html; charset=utf-8", "");
 
   EXPECT_TRUE(embedded_test_server()->Start());
   GURL url1(embedded_test_server()->GetURL("/title1.html"));
@@ -5841,12 +5946,6 @@ IN_PROC_BROWSER_TEST_F(ContentBrowserTest,
   shell()->LoadURL(url2);
   EXPECT_TRUE(navigation_manager.WaitForRequestStart());
   navigation_manager.ResumeNavigation();
-  document2_response.WaitForRequest();
-
-  document2_response.Send(
-      "HTTP/1.1 204 No Content\r\n"
-      "Content-Type: text/html; charset=utf-8\r\n"
-      "\r\n");
   ASSERT_TRUE(navigation_manager.WaitForNavigationFinished());
 
   EXPECT_TRUE(rfhi->IsDOMContentLoaded());
@@ -8083,6 +8182,90 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_FALSE(delegate->did_show_loading_ui_values()[1]);
 }
 
+IN_PROC_BROWSER_TEST_F(
+    RenderFrameHostImplBrowserTest,
+    NavigationApiInterceptsRendererInitiatedSameDocumentRepeated) {
+  GURL main_url = embedded_test_server()->GetURL("a.com", "/title1.html");
+  ASSERT_TRUE(NavigateToURL(shell(), main_url));
+
+  std::unique_ptr<ShouldShowLoadingUIDelegate> delegate =
+      std::make_unique<ShouldShowLoadingUIDelegate>();
+  web_contents()->SetDelegate(delegate.get());
+
+  EXPECT_TRUE(ExecJs(web_contents(), R"(
+      (async () => {
+        navigation.onnavigate = e =>
+            e.intercept({handler: () => new Promise(r => setTimeout(r, 100))});
+        await navigation.navigate('#one').finished;
+        await navigation.navigate('#two').finished;
+      })();
+  )"));
+
+  EXPECT_THAT(delegate->is_loading_values(),
+              testing::ElementsAre(
+                  // First navigation: '#one'.
+                  true,   // Start renderer-initiated same-document navigation.
+                  true,   // Delayed commit requests visible loading UI.
+                  false,  // Navigation completes.
+
+                  // Second navigation: '#two'.
+                  true,  // Start renderer-initiated same-document navigation.
+                  true,  // Delayed commit requests visible loading UI.
+                  false  // Navigation completes.
+                  ));
+
+  EXPECT_THAT(delegate->did_show_loading_ui_values(),
+              testing::ElementsAre(
+                  // First navigation: '#one'.
+                  false,  // Start renderer-initiated same-document navigation.
+                  true,   // Delayed commit requests visible loading UI.
+                  false,  // Navigation completes.
+
+                  // Second navigation: '#two'.
+                  false,  // Start renderer-initiated same-document navigation.
+                  true,   // Delayed commit requests visible loading UI.
+                  false   // Navigation completes.
+                  ));
+}
+
+IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
+                       NavigationApiInterceptedPushStateAbortStopsLoading) {
+  GURL main_url = embedded_test_server()->GetURL("a.com", "/title1.html");
+  ASSERT_TRUE(NavigateToURL(shell(), main_url));
+
+  std::unique_ptr<ShouldShowLoadingUIDelegate> delegate =
+      std::make_unique<ShouldShowLoadingUIDelegate>();
+  web_contents()->SetDelegate(delegate.get());
+
+  EXPECT_TRUE(ExecJs(web_contents(), R"(
+      window.onunhandledrejection = e => e.preventDefault();
+      navigation.addEventListener('navigate', event => {
+        event.intercept({
+          precommitHandler() {
+            return new Promise((resolve, reject) => {
+              const timer = setTimeout(resolve, 1000);
+              event.signal.addEventListener('abort', () => {
+                clearTimeout(timer);
+                reject(event.signal.reason);
+              });
+            });
+          },
+        });
+      }, {once: true});
+
+      history.pushState(null, null, '?p=1');
+      setTimeout(() => history.pushState(null, null, '?p=2'), 100);
+      new Promise(resolve => setTimeout(resolve, 200));
+  )"));
+
+  EXPECT_FALSE(web_contents()->IsLoading());
+  EXPECT_EQ(main_url.Resolve("/title1.html?p=2"),
+            web_contents()->GetLastCommittedURL());
+  ASSERT_FALSE(delegate->is_loading_values().empty());
+  EXPECT_FALSE(delegate->is_loading_values().back());
+  EXPECT_FALSE(delegate->did_show_loading_ui_values().back());
+}
+
 // Ensure that navigating with a frame tree of A(B(A)) results in the right
 // number of beforeunload messages sent.
 IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBeforeUnloadBrowserTest,
@@ -8103,7 +8286,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBeforeUnloadBrowserTest,
   GURL new_url(embedded_test_server()->GetURL("c.com", "/title1.html"));
   EXPECT_TRUE(NavigateToURL(shell(), new_url));
 
-  // We should have received one pings (for the grandchild 'a').
+  // We should have received one ping (for the grandchild 'a').
   EXPECT_EQ(1, RetrievePingsFromMessageQueue(&msg_queue));
 
   // We shouldn't have seen any beforeunload dialogs.
@@ -10216,9 +10399,9 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplConnectionAllowlistBrowserTest,
   EXPECT_TRUE(iframe->IsRenderFrameLive());
   std::optional<base::UnguessableToken> iframe_network_restrictions_id =
       iframe->GetNetworkRestrictionsID();
-  // We never navigated this frame, so it does not have a network restrictions
-  // ID set.
-  EXPECT_FALSE(iframe_network_restrictions_id.has_value());
+  // We never navigated this frame, so it inherits the network restrictions
+  // ID from its creator.
+  EXPECT_TRUE(iframe_network_restrictions_id.has_value());
 
   // Inject JavaScript into the iframe to fetch a cross-origin resource.
   GURL d_url = https_server()->GetURL("d.com", "/cors-ok.txt");
@@ -10609,6 +10792,104 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplConnectionAllowlistBrowserTest,
   navigation_observer.Wait();
   EXPECT_FALSE(navigation_observer.last_navigation_succeeded());
   EXPECT_EQ(allowlist_url, web_contents()->GetLastCommittedURL());
+}
+
+IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
+                       DeferredPopupNavigationPreservesInitiatorPolicies) {
+  // 1. Force WebContents in a new Shell to defer new navigations until the
+  // delegate is set.
+  shell()->set_delay_popup_contents_delegate_for_testing(true);
+
+  // 2. Load a page with an iframe.
+  GURL url(embedded_test_server()->GetURL("a.com", "/title1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), url));
+
+  // 3. Navigate the iframe to a page with CSP form-action 'none'.
+  GURL iframe_url = embedded_test_server()->GetURL(
+      "a.com", "/set-header?Content-Security-Policy: form-action 'none'");
+  EXPECT_TRUE(ExecJs(shell(), JsReplace(R"(
+    let iframe = document.createElement('iframe');
+    iframe.id = 'initiator_iframe';
+    iframe.src = $1;
+    document.body.appendChild(iframe);
+  )",
+                                        iframe_url)));
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+
+  RenderFrameHostImpl* iframe_rfh = static_cast<RenderFrameHostImpl*>(
+      ChildFrameAt(shell()->web_contents()->GetPrimaryMainFrame(), 0));
+  ASSERT_TRUE(iframe_rfh);
+
+  // 4. From the iframe, open a popup that will navigate to a same-site URL.
+  // The navigation should be deferred because of step 1.
+  GURL popup_url = embedded_test_server()->GetURL("a.com", "/title2.html");
+  ShellAddedObserver new_shell_observer;
+  EXPECT_TRUE(ExecJs(iframe_rfh, JsReplace("window.open($1);", popup_url)));
+  Shell* new_shell = new_shell_observer.GetShell();
+  WebContentsImpl* new_contents =
+      static_cast<WebContentsImpl*>(new_shell->web_contents());
+
+  // The navigation in the new popup should be deferred.
+  EXPECT_TRUE(WaitForLoadStop(new_contents));
+  EXPECT_TRUE(new_contents->GetController().IsInitialBlankNavigation());
+
+  // 5. Detach the initiator iframe.
+  EXPECT_TRUE(ExecJs(shell(), R"(
+    let iframe = document.getElementById('initiator_iframe');
+    iframe.remove();
+  )"));
+
+  // 6. Resume the deferred navigation.
+  new_contents->SetDelegate(new_shell);
+  new_contents->ResumeLoadingCreatedWebContents();
+
+  // 7. Verify that the navigation in the popup inherits the initiator's CSP.
+  // Since form-action is 'none', a form submission should be blocked.
+  EXPECT_TRUE(WaitForLoadStop(new_contents));
+  EXPECT_EQ(popup_url, new_contents->GetLastCommittedURL());
+
+  // Try to submit a form. It should be blocked by CSP if policies were
+  // preserved.
+  EXPECT_TRUE(ExecJs(new_contents, R"(
+    let form = document.createElement('form');
+    form.action = '/title3.html';
+    document.body.appendChild(form);
+    form.submit();
+  )"));
+
+  // If CSP form-action 'none' was preserved, the navigation to title3.html
+  // should not happen, and we should still be on popup_url (or about:blank if
+  // blocked early).
+  EXPECT_EQ(popup_url, new_contents->GetLastCommittedURL());
+}
+
+// Verify that window.open() to a non-allowlisted origin is blocked by
+// Connection-Allowlist. The opened window should not successfully navigate
+// to the non-allowlisted origin.
+// Bug: crbug.com/496096540, crbug.com/496907108
+IN_PROC_BROWSER_TEST_F(RenderFrameHostImplConnectionAllowlistBrowserTest,
+                       ConnectionAllowlistWindowOpenBlocked) {
+  GURL url(https_server()->GetURL("a.com", "/connection_allowlist.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), url));
+
+  GURL blocked_url(https_server()->GetURL("b.com", "/title2.html"));
+
+  WebContentsAddedObserver new_tab_observer;
+  TestNavigationObserver nav_observer(blocked_url);
+  nav_observer.StartWatchingNewWebContents();
+
+  EXPECT_TRUE(ExecJs(web_contents()->GetPrimaryMainFrame(),
+                     JsReplace("window.open($1);", blocked_url)));
+
+  WebContents* new_contents = new_tab_observer.GetWebContents();
+  ASSERT_TRUE(new_contents);
+  nav_observer.Wait();
+
+  EXPECT_FALSE(nav_observer.last_navigation_succeeded());
+  EXPECT_EQ(net::ERR_NETWORK_ACCESS_REVOKED,
+            nav_observer.last_net_error_code());
+  EXPECT_TRUE(
+      new_contents->GetPrimaryMainFrame()->GetLastCommittedOrigin().opaque());
 }
 
 }  // namespace content

@@ -32,6 +32,7 @@
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/html/track/audio_track_list.h"
 #include "third_party/blink/renderer/core/html/track/video_track_list.h"
+#include "third_party/blink/renderer/core/keywords.h"
 #include "third_party/blink/renderer/modules/mediasource/attachment_creation_pass_key_provider.h"
 #include "third_party/blink/renderer/modules/mediasource/cross_thread_media_source_attachment.h"
 #include "third_party/blink/renderer/modules/mediasource/handle_attachment_provider.h"
@@ -50,7 +51,6 @@
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/network/mime/content_type.h"
 #include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/perfetto/include/perfetto/tracing/track.h"
@@ -95,10 +95,10 @@ static AtomicString ReadyStateToString(MediaSource::ReadyState state) {
   AtomicString result;
   switch (state) {
     case MediaSource::ReadyState::kOpen:
-      result = AtomicString("open");
+      result = keywords::kOpen;
       break;
     case MediaSource::ReadyState::kClosed:
-      result = AtomicString("closed");
+      result = keywords::kClosed;
       break;
     case MediaSource::ReadyState::kEnded:
       result = AtomicString("ended");

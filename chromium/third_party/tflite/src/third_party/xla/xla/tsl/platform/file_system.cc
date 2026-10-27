@@ -18,14 +18,21 @@ limitations under the License.
 #include <sys/stat.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <initializer_list>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/status/status.h"
+#include "absl/strings/match.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "xla/tsl/platform/file_statistics.h"
+#include "xla/tsl/platform/logging.h"
 #include "xla/tsl/platform/status.h"
 
 #if defined(PLATFORM_POSIX) || defined(IS_MOBILE_PLATFORM) || \
@@ -40,8 +47,6 @@ limitations under the License.
 #include "xla/tsl/platform/errors.h"
 #include "tsl/platform/platform.h"
 #include "tsl/platform/scanner.h"
-#include "tsl/platform/str_util.h"
-#include "tsl/platform/strcat.h"
 
 namespace tsl {
 
@@ -82,10 +87,8 @@ std::string FileSystem::TranslateName(absl::string_view name) const {
   return this->CleanPath(path);
 }
 
-absl::Status FileSystem::IsDirectory(const std::string& name,
-                                     TransactionToken* token) {
+absl::Status FileSystem::IsDirectory(const std::string& name) {
   // Check if path exists.
-  // TODO(sami):Forward token to other methods once migration is complete.
   TF_RETURN_IF_ERROR(FileExists(name));
   FileStatistics stat;
   TF_RETURN_IF_ERROR(Stat(name, &stat));
@@ -101,10 +104,9 @@ absl::Status FileSystem::HasAtomicMove(const std::string& path,
   return absl::OkStatus();
 }
 
-void FileSystem::FlushCaches(TransactionToken* token) {}
+void FileSystem::FlushCaches() {}
 
 bool FileSystem::FilesExist(const std::vector<std::string>& files,
-                            TransactionToken* token,
                             std::vector<absl::Status>* status) {
   bool result = true;
   for (const auto& file : files) {
@@ -121,7 +123,6 @@ bool FileSystem::FilesExist(const std::vector<std::string>& files,
 }
 
 absl::Status FileSystem::DeleteRecursively(const std::string& dirname,
-                                           TransactionToken* token,
                                            int64_t* undeleted_files,
                                            int64_t* undeleted_dirs) {
   CHECK_NOTNULL(undeleted_files);
@@ -193,13 +194,11 @@ absl::Status FileSystem::DeleteRecursively(const std::string& dirname,
   return ret;
 }
 
-absl::Status FileSystem::RecursivelyCreateDir(const std::string& dirname,
-                                              TransactionToken* token) {
-  return RecursivelyCreateDir(dirname, token, kDefaultMode);
+absl::Status FileSystem::RecursivelyCreateDir(const std::string& dirname) {
+  return RecursivelyCreateDir(dirname, kDefaultMode);
 }
 
 absl::Status FileSystem::RecursivelyCreateDir(absl::string_view dirname,
-                                              TransactionToken* token,
                                               uint32_t mode) {
   absl::string_view scheme, host, remaining_dir;
   this->ParseURI(dirname, &scheme, &host, &remaining_dir);
@@ -248,8 +247,7 @@ absl::Status FileSystem::RecursivelyCreateDir(absl::string_view dirname,
 }
 
 absl::Status FileSystem::CopyFile(const std::string& src,
-                                  const std::string& target,
-                                  TransactionToken* token) {
+                                  const std::string& target) {
   return FileSystemCopyFile(this, src, this, target);
 }
 
@@ -502,16 +500,6 @@ std::string FileSystem::CreateURI(absl::string_view scheme,
     return std::string(path);
   }
   return absl::StrCat(scheme, "://", host, path);
-}
-
-std::string FileSystem::DecodeTransaction(const TransactionToken* token) {
-  // TODO(sami): Switch using StrCat when void* is supported
-  if (token) {
-    std::stringstream oss;
-    oss << "Token= " << token->token << ", Owner=" << token->owner;
-    return oss.str();
-  }
-  return "No Transaction";
 }
 
 }  // namespace tsl

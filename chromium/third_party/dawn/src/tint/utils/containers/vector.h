@@ -270,7 +270,8 @@ class VectorIterator {
     }
 
     /// @return the element this iterator currently points at
-    operator T*() const { return ptr_; }
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    operator T*() const { return ptr_; }  // NOLINT(runtime/explicit)
 
     /// @return the element this iterator currently points at
     T& operator*() const { return *ptr_; }
@@ -431,6 +432,7 @@ class Vector {
     Vector() = default;
 
     /// Constructor
+    // NOLINTNEXTLINE(google-explicit-constructor)
     Vector(EmptyType) {}  // NOLINT(runtime/explicit)
 
     /// Constructor
@@ -453,24 +455,25 @@ class Vector {
     /// Copy constructor (differing N length)
     /// @param other the vector to copy
     template <size_t N2>
-    Vector(const Vector<T, N2>& other) {
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    Vector(const Vector<T, N2>& other) {  // NOLINT(runtime/explicit)
         Copy(other.impl_.slice);
     }
 
     /// Move constructor (differing N length)
     /// @param other the vector to move
     template <size_t N2>
-    Vector(Vector<T, N2>&& other) {
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    Vector(Vector<T, N2>&& other) {  // NOLINT(runtime/explicit)
         Move(std::move(other));
     }
 
     /// Copy constructor with covariance / const conversion
     /// @param other the vector to copy
     /// @see CanReinterpretSlice for rules about conversion
-    template <typename U,
-              size_t N2,
-              ReinterpretMode MODE,
-              typename = std::enable_if_t<CanReinterpretSlice<MODE, T, U>>>
+    template <typename U, size_t N2, ReinterpretMode MODE>
+        requires(CanReinterpretSlice<MODE, T, U>)
+    // NOLINTNEXTLINE(google-explicit-constructor)
     Vector(const Vector<U, N2>& other) {  // NOLINT(runtime/explicit)
         Copy(other.impl_.slice);
     }
@@ -478,24 +481,26 @@ class Vector {
     /// Move constructor with covariance / const conversion
     /// @param other the vector to move
     /// @see CanReinterpretSlice for rules about conversion
-    template <typename U,
-              size_t N2,
-              ReinterpretMode MODE,
-              typename = std::enable_if_t<CanReinterpretSlice<MODE, T, U>>>
+    template <typename U, size_t N2, ReinterpretMode MODE>
+        requires(CanReinterpretSlice<MODE, T, U>)
+    // NOLINTNEXTLINE(google-explicit-constructor)
     Vector(Vector<U, N2>&& other) {  // NOLINT(runtime/explicit)
         Move(std::move(other));
     }
 
     /// Move constructor from a mutable vector reference
     /// @param other the vector reference to move
+    // NOLINTNEXTLINE(google-explicit-constructor)
     Vector(VectorRef<T>&& other) { MoveOrCopy(std::move(other)); }  // NOLINT(runtime/explicit)
 
     /// Copy constructor from an immutable vector reference
     /// @param other the vector reference to copy
+    // NOLINTNEXTLINE(google-explicit-constructor)
     Vector(const VectorRef<T>& other) { Copy(*other.slice_); }  // NOLINT(runtime/explicit)
 
     /// Copy constructor from a span
     /// @param span the span to copy
+    // NOLINTNEXTLINE(google-explicit-constructor)
     Vector(std::span<T> span) {  // NOLINT(runtime/explicit)
         Copy(internal::Slice<T>{span, span.size()});
     }
@@ -503,6 +508,7 @@ class Vector {
     /// Copy constructor from a span
     /// @param span the span to copy
     template <typename U>
+    // NOLINTNEXTLINE(google-explicit-constructor)
     Vector(std::span<U> span) {  // NOLINT(runtime/explicit)
         Copy(internal::Slice<U>{span, span.size()});
     }
@@ -1193,10 +1199,12 @@ class VectorRef {
     VectorRef() : slice_(&local_slice_) {}
 
     /// Constructor
+    // NOLINTNEXTLINE(google-explicit-constructor)
     VectorRef(EmptyType) : slice_(&local_slice_) {}  // NOLINT(runtime/explicit)
 
     /// Constructor from a span
     /// @param span the span
+    // NOLINTNEXTLINE(google-explicit-constructor)
     VectorRef(std::span<T> span)  // NOLINT(runtime/explicit)
         : local_slice_{span}, slice_(&local_slice_) {}
 
@@ -1205,6 +1213,7 @@ class VectorRef {
     /// Constructor from a span
     /// @param span the span
     template <typename U>
+    // NOLINTNEXTLINE(google-explicit-constructor)
     VectorRef(std::span<U> span)  // NOLINT(runtime/explicit)
         : local_slice_{std::span<T>{Bitcast<T*>(span.data()), span.size()}, span.size()},
           slice_(&local_slice_) {}
@@ -1212,24 +1221,28 @@ class VectorRef {
 
     /// Constructor from an internal::Slice
     /// @param slice the internal slice
+    // NOLINTNEXTLINE(google-explicit-constructor)
     VectorRef(const internal::Slice<T>& slice)  // NOLINT(runtime/explicit)
         : local_slice_(slice), slice_(&local_slice_) {}
 
     /// Constructor from a Vector
     /// @param vector the vector to create a reference of
     template <size_t N>
+    // NOLINTNEXTLINE(google-explicit-constructor)
     VectorRef(Vector<T, N>& vector)  // NOLINT(runtime/explicit)
         : slice_(&vector.impl_.slice) {}
 
     /// Constructor from a const Vector
     /// @param vector the vector to create a reference of
     template <size_t N>
+    // NOLINTNEXTLINE(google-explicit-constructor)
     VectorRef(const Vector<T, N>& vector)  // NOLINT(runtime/explicit)
         : slice_(const_cast<internal::Slice<T>*>(&vector.impl_.slice)) {}
 
     /// Constructor from a moved Vector
     /// @param vector the vector being moved
     template <size_t N>
+    // NOLINTNEXTLINE(google-explicit-constructor)
     VectorRef(Vector<T, N>&& vector)  // NOLINT(runtime/explicit)
         : slice_(&vector.impl_.slice), can_move_(vector.impl_.CanMove()) {}
 
@@ -1252,8 +1265,9 @@ class VectorRef {
     TINT_BEGIN_DISABLE_WARNING(UNSAFE_BUFFER_USAGE_IN_CONTAINER);
     /// Copy constructor with covariance / const conversion
     /// @param other the other vector reference
-    template <typename U,
-              typename = std::enable_if_t<CanReinterpretSlice<ReinterpretMode::kSafe, T, U>>>
+    template <typename U>
+        requires(CanReinterpretSlice<ReinterpretMode::kSafe, T, U>)
+    // NOLINTNEXTLINE(google-explicit-constructor)
     VectorRef(const VectorRef<U>& other)  // NOLINT(runtime/explicit)
         : local_slice_{std::span<T>{Bitcast<T*>(other.begin()), other.Capacity()}, other.Length()},
           slice_(other.slice_ == &other.local_slice_ ? &local_slice_
@@ -1265,8 +1279,9 @@ class VectorRef {
     TINT_BEGIN_DISABLE_WARNING(UNSAFE_BUFFER_USAGE_IN_CONTAINER);
     /// Move constructor with covariance / const conversion
     /// @param other the vector reference
-    template <typename U,
-              typename = std::enable_if_t<CanReinterpretSlice<ReinterpretMode::kSafe, T, U>>>
+    template <typename U>
+        requires(CanReinterpretSlice<ReinterpretMode::kSafe, T, U>)
+    // NOLINTNEXTLINE(google-explicit-constructor)
     VectorRef(VectorRef<U>&& other)  // NOLINT(runtime/explicit)
         : local_slice_{std::span<T>{Bitcast<T*>(other.begin()), other.Capacity()}, other.Length()},
           slice_(other.slice_ == &other.local_slice_ ? &local_slice_
@@ -1279,9 +1294,9 @@ class VectorRef {
     /// Constructor from a Vector with covariance / const conversion
     /// @param vector the vector to create a reference of
     /// @see CanReinterpretSlice for rules about conversion
-    template <typename U,
-              size_t N,
-              typename = std::enable_if_t<CanReinterpretSlice<ReinterpretMode::kSafe, T, U>>>
+    template <typename U, size_t N>
+        requires(CanReinterpretSlice<ReinterpretMode::kSafe, T, U>)
+    // NOLINTNEXTLINE(google-explicit-constructor)
     VectorRef(const Vector<U, N>& vector)  // NOLINT(runtime/explicit)
         : slice_(reinterpret_cast<internal::Slice<T>*>(
               const_cast<internal::Slice<U>*>(&vector.impl_.slice))) {}
@@ -1289,9 +1304,9 @@ class VectorRef {
     /// Constructor from a moved Vector with covariance / const conversion
     /// @param vector the vector to create a reference of
     /// @see CanReinterpretSlice for rules about conversion
-    template <typename U,
-              size_t N,
-              typename = std::enable_if_t<CanReinterpretSlice<ReinterpretMode::kSafe, T, U>>>
+    template <typename U, size_t N>
+        requires(CanReinterpretSlice<ReinterpretMode::kSafe, T, U>)
+    // NOLINTNEXTLINE(google-explicit-constructor)
     VectorRef(Vector<U, N>&& vector)  // NOLINT(runtime/explicit)
         : slice_(reinterpret_cast<internal::Slice<T>*>(&vector.impl_.slice)),
           can_move_(vector.impl_.CanMove()) {}

@@ -7,11 +7,12 @@ import type * as SDK from '../../core/sdk/sdk.js';
 import type * as Workspace from '../workspace/workspace.js';
 
 import type * as StackTrace from './stack_trace.js';
-import type {FrameNode} from './Trie.js';
+import type {EvalOrigin, FrameNode, ParsedFrameInfo} from './Trie.js';
 
-export type AnyStackTraceImpl = StackTraceImpl<FragmentImpl|DebuggableFragmentImpl>;
+export type AnyStackTraceImpl = StackTraceImpl<FragmentImpl|DebuggableFragmentImpl|ParsedErrorStackFragmentImpl>;
 
-export class StackTraceImpl<SyncFragmentT extends FragmentImpl|DebuggableFragmentImpl = FragmentImpl> extends
+export class StackTraceImpl<SyncFragmentT extends FragmentImpl|DebuggableFragmentImpl|ParsedErrorStackFragmentImpl =
+                                                      FragmentImpl> extends
     Common.ObjectWrapper.ObjectWrapper<StackTrace.StackTrace.EventTypes> implements
         StackTrace.StackTrace.BaseStackTrace<SyncFragmentT> {
   readonly syncFragment: SyncFragmentT;
@@ -23,7 +24,9 @@ export class StackTraceImpl<SyncFragmentT extends FragmentImpl|DebuggableFragmen
     this.asyncFragments = asyncFragments;
 
     const fragment =
-        syncFragment instanceof DebuggableFragmentImpl ? syncFragment.fragment : syncFragment as FragmentImpl;
+        (syncFragment instanceof DebuggableFragmentImpl || syncFragment instanceof ParsedErrorStackFragmentImpl) ?
+        syncFragment.fragment :
+        syncFragment as FragmentImpl;
     fragment.stackTraces.add(this);
 
     this.asyncFragments.forEach(asyncFragment => asyncFragment.fragment.stackTraces.add(this));
@@ -96,6 +99,115 @@ export class FrameImpl implements StackTrace.StackTrace.Frame {
     this.column = column;
     this.missingDebugInfo = missingDebugInfo;
     this.rawName = rawName;
+  }
+}
+
+/**
+ * Converts the internal recursive `EvalOrigin` trie representation into the public-facing
+ * linear `ParsedErrorStackFrameImpl` representation.
+ *
+ * NOTE: The V8 Error#stack format only allows serializing a single location descriptor
+ * per nested eval origin level (e.g. `eval at functionName (location)`). Therefore, the
+ * public-facing API only surfaces the top-most logical frame (`evalOrigin.frames[0]`) at each
+ * eval level. Any other inlined caller frames at that specific level are technically dropped
+ * in the public API, but they are fully preserved in the internal trie representation for
+ * debugging, navigation, and ignore list correlation.
+ */
+function createParsedErrorStackFrameImplFromEvalOrigin(
+    evalOrigin: EvalOrigin|undefined, parsedFrameInfo?: ParsedFrameInfo): ParsedErrorStackFrameImpl|undefined {
+  if (!evalOrigin || evalOrigin.frames.length === 0) {
+    return undefined;
+  }
+  const frame = evalOrigin.frames[0];
+  const nestedOrigin = createParsedErrorStackFrameImplFromEvalOrigin(
+      evalOrigin.evalOrigin, parsedFrameInfo?.evalOrigin?.parsedFrameInfo);
+  return new ParsedErrorStackFrameImpl(frame, parsedFrameInfo?.evalOrigin?.parsedFrameInfo, nestedOrigin);
+}
+
+export class ParsedErrorStackFragmentImpl implements StackTrace.StackTrace.ParsedErrorStackFragment {
+  constructor(readonly fragment: FragmentImpl) {
+  }
+
+  get frames(): ParsedErrorStackFrameImpl[] {
+    if (!this.fragment.node) {
+      return [];
+    }
+
+    const frames: ParsedErrorStackFrameImpl[] = [];
+
+    for (const node of this.fragment.node.getCallStack()) {
+      const evalOrigin = createParsedErrorStackFrameImplFromEvalOrigin(node.evalOrigin, node.parsedFrameInfo);
+      for (const frame of node.frames) {
+        frames.push(new ParsedErrorStackFrameImpl(frame, node.parsedFrameInfo, evalOrigin));
+      }
+    }
+
+    return frames;
+  }
+}
+
+export class ParsedErrorStackFrameImpl implements StackTrace.StackTrace.ParsedErrorStackFrame {
+  readonly #frame: FrameImpl;
+  readonly #parsedFrameInfo?: ParsedFrameInfo;
+  readonly #evalOrigin?: ParsedErrorStackFrameImpl;
+
+  constructor(frame: FrameImpl, parsedFrameInfo?: ParsedFrameInfo, evalOrigin?: ParsedErrorStackFrameImpl) {
+    this.#frame = frame;
+    this.#parsedFrameInfo = parsedFrameInfo;
+    this.#evalOrigin = evalOrigin;
+  }
+
+  get url(): string|undefined {
+    return this.#frame.url;
+  }
+  get uiSourceCode(): Workspace.UISourceCode.UISourceCode|undefined {
+    return this.#frame.uiSourceCode;
+  }
+  get name(): string|undefined {
+    return this.#frame.name;
+  }
+  get line(): number {
+    return this.#frame.line;
+  }
+  get column(): number {
+    return this.#frame.column;
+  }
+  get missingDebugInfo(): StackTrace.StackTrace.MissingDebugInfo|undefined {
+    return this.#frame.missingDebugInfo;
+  }
+  get rawName(): string|undefined {
+    return this.#frame.rawName;
+  }
+
+  get isAsync(): boolean|undefined {
+    return this.#parsedFrameInfo?.isAsync;
+  }
+  get isConstructor(): boolean|undefined {
+    return this.#parsedFrameInfo?.isConstructor;
+  }
+  get isEval(): boolean|undefined {
+    return this.#parsedFrameInfo?.isEval;
+  }
+  get evalOrigin(): ParsedErrorStackFrameImpl|undefined {
+    return this.#evalOrigin;
+  }
+  get isWasm(): boolean|undefined {
+    return this.#parsedFrameInfo?.isWasm;
+  }
+  get wasmModuleName(): string|undefined {
+    return this.#parsedFrameInfo?.wasmModuleName;
+  }
+  get wasmFunctionIndex(): number|undefined {
+    return this.#parsedFrameInfo?.wasmFunctionIndex;
+  }
+  get typeName(): string|undefined {
+    return this.#parsedFrameInfo?.typeName;
+  }
+  get methodName(): string|undefined {
+    return this.#parsedFrameInfo?.methodName;
+  }
+  get promiseIndex(): number|undefined {
+    return this.#parsedFrameInfo?.promiseIndex;
   }
 }
 

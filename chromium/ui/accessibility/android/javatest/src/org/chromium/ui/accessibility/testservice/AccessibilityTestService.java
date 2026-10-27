@@ -5,6 +5,7 @@
 package org.chromium.ui.accessibility.testservice;
 
 import android.accessibilityservice.AccessibilityService;
+import android.content.Intent;
 import android.text.TextUtils;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -191,6 +192,20 @@ public class AccessibilityTestService extends AccessibilityService {
                 return "Error: Root node is null";
             }
 
+            AccessibilityNodeInfoCompat a11yFocusNode = null;
+            AccessibilityNodeInfo a11yFocus =
+                    instance.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY);
+            if (a11yFocus != null) {
+                a11yFocusNode = AccessibilityNodeInfoCompat.wrap(a11yFocus);
+            }
+
+            AccessibilityNodeInfoCompat inputFocusNode = null;
+            AccessibilityNodeInfo inputFocus =
+                    instance.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+            if (inputFocus != null) {
+                inputFocusNode = AccessibilityNodeInfoCompat.wrap(inputFocus);
+            }
+
             // Find the WebView node.
             AccessibilityNodeInfo webViewNode =
                     findNodeRecursive(root, "android.webkit.WebView", null);
@@ -200,16 +215,31 @@ public class AccessibilityTestService extends AccessibilityService {
             }
 
             // Use the dumper utility to serialize the tree.
-            return dumpSubtreeRecursive(AccessibilityNodeInfoCompat.wrap(webViewNode), "");
+            return dumpSubtreeRecursive(
+                    AccessibilityNodeInfoCompat.wrap(webViewNode),
+                    "",
+                    a11yFocusNode,
+                    inputFocusNode);
         }
     }
 
-    private static String dumpSubtreeRecursive(AccessibilityNodeInfoCompat node, String indent) {
+    private static String dumpSubtreeRecursive(
+            AccessibilityNodeInfoCompat node,
+            String indent,
+            AccessibilityNodeInfoCompat a11yFocusNode,
+            AccessibilityNodeInfoCompat inputFocusNode) {
         if (node == null) return "";
 
         StringBuilder builder = new StringBuilder();
         builder.append(indent);
         builder.append(AccessibilityNodeInfoCompatDumper.toString(node));
+
+        if (a11yFocusNode != null && node.equals(a11yFocusNode)) {
+            builder.append(" isAccessibilityFocusedViaFindFocus");
+        }
+        if (inputFocusNode != null && node.equals(inputFocusNode)) {
+            builder.append(" isInputFocusedViaFindFocus");
+        }
 
         // Append extended selection information if available by checking ancestors.
         // Note that we can't stop at the first found selection, as content editables that are
@@ -257,7 +287,7 @@ public class AccessibilityTestService extends AccessibilityService {
         String childIndent = indent + "  ";
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfoCompat child = node.getChild(i);
-            builder.append(dumpSubtreeRecursive(child, childIndent));
+            builder.append(dumpSubtreeRecursive(child, childIndent, a11yFocusNode, inputFocusNode));
         }
 
         return builder.toString();
@@ -265,6 +295,15 @@ public class AccessibilityTestService extends AccessibilityService {
 
     static boolean eventMatches(AccessibilityEvent event, WaitForEventParams params) {
         if (event.getEventType() != params.eventType) return false;
+
+        // contentChangeTypes is a bitmask: when a non-zero value is provided, only match events
+        // whose getContentChangeTypes() includes all requested flags. Other flags set by Android
+        // are tolerated.
+        if (params.contentChangeTypes != 0
+                && (event.getContentChangeTypes() & params.contentChangeTypes)
+                        != params.contentChangeTypes) {
+            return false;
+        }
 
         AccessibilityNodeInfo source = event.getSource();
         CharSequence sourceClassName = source != null ? source.getClassName() : "";
@@ -289,7 +328,7 @@ public class AccessibilityTestService extends AccessibilityService {
     }
 
     @Override
-    public boolean onUnbind(android.content.Intent intent) {
+    public boolean onUnbind(Intent intent) {
         Log.d(TAG, "onUnbind");
         sInstance = null;
         synchronized (sLock) {

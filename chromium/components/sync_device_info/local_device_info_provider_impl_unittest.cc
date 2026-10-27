@@ -73,6 +73,14 @@ class MockDeviceInfoSyncClient : public DeviceInfoSyncClient {
               GetDesktopToIOSPromoReceivingTypes,
               (),
               (const override));
+  MOCK_METHOD(DeviceInfo::GlicExperimentalTriggeringState,
+              GetGlicExperimentalTriggeringState,
+              (),
+              (const override));
+  MOCK_METHOD(std::optional<int>,
+              GetGlicExperimentalTriggeringVersion,
+              (),
+              (const override));
 };
 
 class LocalDeviceInfoProviderImplTest : public testing::Test {
@@ -250,6 +258,56 @@ TEST_F(LocalDeviceInfoProviderImplTest, DesktopToIOSPromoReceivingEnabled) {
                   .empty());
 }
 
+TEST_F(LocalDeviceInfoProviderImplTest, ExperimentalTriggeringState) {
+  ON_CALL(device_info_sync_client_, GetGlicExperimentalTriggeringState())
+      .WillByDefault(
+          Return(DeviceInfo::GlicExperimentalTriggeringState::kReady));
+
+  InitializeProvider();
+
+  ASSERT_THAT(provider_->GetLocalDeviceInfo(), NotNull());
+  EXPECT_EQ(
+      provider_->GetLocalDeviceInfo()->glic_experimental_triggering_state(),
+      DeviceInfo::GlicExperimentalTriggeringState::kReady);
+
+  ON_CALL(device_info_sync_client_, GetGlicExperimentalTriggeringState())
+      .WillByDefault(
+          Return(DeviceInfo::GlicExperimentalTriggeringState::kNeedsOptIn));
+
+  ASSERT_THAT(provider_->GetLocalDeviceInfo(), NotNull());
+  EXPECT_EQ(
+      provider_->GetLocalDeviceInfo()->glic_experimental_triggering_state(),
+      DeviceInfo::GlicExperimentalTriggeringState::kNeedsOptIn);
+
+  ON_CALL(device_info_sync_client_, GetGlicExperimentalTriggeringState())
+      .WillByDefault(
+          Return(DeviceInfo::GlicExperimentalTriggeringState::kUnavailable));
+
+  ASSERT_THAT(provider_->GetLocalDeviceInfo(), NotNull());
+  EXPECT_EQ(
+      provider_->GetLocalDeviceInfo()->glic_experimental_triggering_state(),
+      DeviceInfo::GlicExperimentalTriggeringState::kUnavailable);
+}
+TEST_F(LocalDeviceInfoProviderImplTest, ExperimentalTriggeringVersion) {
+  ON_CALL(device_info_sync_client_, GetGlicExperimentalTriggeringVersion())
+      .WillByDefault(Return(std::nullopt));
+
+  InitializeProvider();
+
+  ASSERT_THAT(provider_->GetLocalDeviceInfo(), NotNull());
+  EXPECT_EQ(
+      provider_->GetLocalDeviceInfo()->glic_experimental_triggering_version(),
+      std::nullopt);
+
+  ON_CALL(device_info_sync_client_, GetGlicExperimentalTriggeringVersion())
+      .WillByDefault(Return(std::optional<int>(42)));
+
+  ASSERT_THAT(provider_->GetLocalDeviceInfo(), NotNull());
+  EXPECT_EQ(
+      provider_->GetLocalDeviceInfo()->glic_experimental_triggering_version(),
+      std::optional<int>(42));
+}
+
 TEST_F(LocalDeviceInfoProviderImplTest, SharingInfo) {
   ON_CALL(device_info_sync_client_, GetLocalSharingInfo())
       .WillByDefault(Return(std::nullopt));
@@ -329,7 +387,13 @@ TEST_F(LocalDeviceInfoProviderImplTest, ShouldKeepStoredInvalidationFields) {
       /*sharing_info=*/std::nullopt, paask_info, kFCMRegistrationToken,
       kInterestedDataTypes,
       /*auto_sign_out_last_signin_timestamp=*/std::nullopt,
-      /*desktop_to_ios_promo_receiving_enabled=*/false);
+      /*desktop_to_ios_promo_receiving_enabled=*/false,
+      /*desktop_to_ios_promo_receiving_types=*/
+      MobilePromoOnDesktopPromoTypeSet{},
+      /*glic_experimental_triggering_state=*/
+      DeviceInfo::GlicExperimentalTriggeringState::kUnavailable,
+      /*glic_experimental_triggering_version=*/
+      std::nullopt);
 
   // |kFCMRegistrationToken|, |kInterestedDataTypes|,
   // and |paask_info| should be taken from |device_info_restored_from_store|

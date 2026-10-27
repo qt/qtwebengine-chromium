@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_PARALLELIZER_H
 #define EIGEN_PARALLELIZER_H
@@ -141,7 +142,7 @@ inline void manage_multi_threading(Action action, int* v) {
     // for OpenMP.
     eigen_internal_assert(*v >= 0);
     int omp_threads = omp_get_max_threads();
-    m_maxThreads = (*v == 0 ? omp_threads : std::min(*v, omp_threads));
+    m_maxThreads = (*v == 0 ? omp_threads : std::min<int>(*v, omp_threads));
 #elif defined(EIGEN_GEMM_THREADPOOL)
     // Calling action == SetAction and *v = 0 means
     // restoring m_maxThreads to the number of threads in the ThreadPool,

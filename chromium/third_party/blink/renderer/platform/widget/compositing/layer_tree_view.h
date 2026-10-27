@@ -14,8 +14,8 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "cc/input/browser_controls_state.h"
-#include "cc/trees/layer_tree_host_client.h"
-#include "cc/trees/layer_tree_host_single_thread_client.h"
+#include "cc/trees/layer_tree_host_delegate.h"
+#include "cc/trees/layer_tree_host_single_thread_delegate.h"
 #include "cc/trees/paint_holding_reason.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/widget/compositing/layer_tree_view_delegate.h"
@@ -38,9 +38,9 @@ class WidgetScheduler;
 }  // namespace scheduler
 
 class PLATFORM_EXPORT LayerTreeView
-    : public cc::LayerTreeHostClient,
-      public cc::LayerTreeHostSingleThreadClient,
-      public cc::LayerTreeHostSchedulingClient {
+    : public cc::LayerTreeHostDelegate,
+      public cc::LayerTreeHostSingleThreadDelegate,
+      public cc::LayerTreeHostSchedulingDelegate {
  public:
   LayerTreeView(LayerTreeViewDelegate* delegate,
                 scoped_refptr<scheduler::WidgetScheduler> scheduler);
@@ -74,7 +74,7 @@ class PLATFORM_EXPORT LayerTreeView
   void SetVisible(bool visible);
   void SetShouldWarmUp();
 
-  // cc::LayerTreeHostClient implementation.
+  // cc::LayerTreeHostDelegate implementation.
   // NOTE: LayerTreeView allows re-attaching itself to a different delegate.
   // Since the compositor is threaded, we could receive callbacks from the host
   // which are tied to content committed by the previous delegate.
@@ -87,10 +87,8 @@ class PLATFORM_EXPORT LayerTreeView
   void DidUpdateLayers() override;
   void BeginMainFrame(const viz::BeginFrameArgs& args) override;
   void OnDeferMainFrameUpdatesChanged(bool) override;
-  void OnDeferCommitsChanged(
-      bool defer_status,
-      cc::PaintHoldingReason reason,
-      std::optional<cc::PaintHoldingCommitTrigger> trigger) override;
+  void OnDeferCommitsChanged(bool defer_status,
+                             cc::PaintHoldingReason reason) override;
   void OnCommitRequested() override;
   void BeginMainFrameNotExpectedSoon() override;
   void BeginMainFrameNotExpectedUntil(base::TimeTicks time) override;
@@ -126,12 +124,12 @@ class PLATFORM_EXPORT LayerTreeView
                          cc::PaintBenchmarkResult& result) override;
   std::string GetPausedDebuggerLocalizedMessage() override;
 
-  // cc::LayerTreeHostSingleThreadClient implementation.
+  // cc::LayerTreeHostSingleThreadDelegate implementation.
   void DidSubmitCompositorFrame() override;
   void DidLoseLayerTreeFrameSink() override;
   void ScheduleAnimationForWebTests() override;
 
-  // cc::LayerTreeHostSchedulingClient implementation.
+  // cc::LayerTreeHostSchedulingDelegate implementation.
   void DidRunBeginMainFrame() override;
 
   // Registers a callback that will be run on the first successful presentation

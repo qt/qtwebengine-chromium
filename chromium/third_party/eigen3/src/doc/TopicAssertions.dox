@@ -25,7 +25,7 @@ Assertions cost run time and can be turned off. You can suppress eigen_assert by
 
 \section StaticAssert Static assertions
 
-Static assertions are not standardized until C++11. However, in the Eigen library, there are many conditions can and should be detectedat compile time. For instance, we use static assertions to prevent the code below from compiling.
+In the Eigen library, there are many conditions that can and should be detected at compile time. For instance, we use static assertions to prevent the code below from compiling.
 
 \code
 Matrix3d()  + Matrix4d();   // adding matrices of different sizes

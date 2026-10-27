@@ -48,8 +48,6 @@ static_library("test_stubs") {
   ]
 }
 
-# We should move chrome_result_codes.h to another target which does not bring
-# in the world.
 shared_library("chrome_elf") {
   sources = [
     "chrome_elf.def",
@@ -60,15 +58,12 @@ shared_library("chrome_elf") {
   deps = [
     ":chrome_elf_manifest",
     ":chrome_elf_resources",
-    ":constants",
     ":crash",
-    ":nt_registry",
     ":security",
     ":third_party_dlls",
     "//chrome/install_static:install_static_util",
     "//chrome/install_static:primary_module",
     "//components/crash/core/app:crash_export_thunks",
-    "//sandbox/policy:win_hook_util",
   ]
 
   configs += [ "//build/config/win:windowed" ]
@@ -102,19 +97,16 @@ static_library("crash") {
   sources = [
     "../app/chrome_crash_reporter_client_win.cc",
     "../app/chrome_crash_reporter_client_win.h",
-    "../common/chrome_result_codes.h",
     "crash/crash_helper.cc",
     "crash/crash_helper.h",
   ]
   deps = [
     ":constants",
     "//base",  # This needs to go.  DEP of app, crash_keys, client.
-    "//base:base_static",  # pe_image
     "//chrome/install_static:install_static_util",
     "//components/crash/core/app",
     "//components/crash/core/common",  # crash_keys
     "//components/version_info:channel",
-    "//content/public/common:result_codes",
     "//sandbox/policy:win_hook_util",
     "//third_party/crashpad/crashpad/client",  # DumpWithoutCrash
   ]
@@ -180,9 +172,17 @@ source_set("sha1") {
 
 source_set("third_party_dlls") {
   visibility = [ ":*" ]  # Only targets in this file can depend on this.
+  friend = [
+    ":chrome_elf",
+    ":chrome_elf_unittests",
+    ":third_party_dlls_test_exe",
+  ]
+  public = [
+    "third_party_dlls/beacon.h",
+    "third_party_dlls/main.h",
+  ]
   sources = [
     "third_party_dlls/beacon.cc",
-    "third_party_dlls/beacon.h",
     "third_party_dlls/hardcoded_blocklist.cc",
     "third_party_dlls/hardcoded_blocklist.h",
     "third_party_dlls/hook.cc",
@@ -190,24 +190,21 @@ source_set("third_party_dlls") {
     "third_party_dlls/logs.cc",
     "third_party_dlls/logs.h",
     "third_party_dlls/main.cc",
-    "third_party_dlls/main.h",
     "third_party_dlls/packed_list_file.cc",
     "third_party_dlls/packed_list_file.h",
   ]
   deps = [
-    "//base:base_static",
-    "//sandbox/win:service_resolver",
-  ]
-  public_deps = [
     ":constants",
     ":crash",
     ":nt_registry",
     ":pe_image_safe",
     ":sha1",
-    ":third_party_shared_defines",
+    "//base:base_static",
     "//chrome/install_static:install_static_util",
     "//sandbox/policy:win_hook_util",
+    "//sandbox/win:service_resolver",
   ]
+  public_deps = [ ":third_party_shared_defines" ]
 }
 
 # This source_set defines third-party-related structures and APIs used from

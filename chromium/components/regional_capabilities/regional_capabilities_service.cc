@@ -406,8 +406,15 @@ bool RegionalCapabilitiesService::IsInSearchEngineChoiceScreenRegion() {
   return GetChoiceScreenEligibilityConfig().has_value();
 }
 
+bool RegionalCapabilitiesService::IsInCurrentSearchEngineChoiceScreenRegion(
+    const country_codes::CountryId& tested_country_id) {
+  return IsInSearchEngineChoiceScreenRegion() &&
+         std::ranges::contains(GetActiveProgramSettings().associated_countries,
+                               tested_country_id);
+}
+
 // static
-bool RegionalCapabilitiesService::IsInSearchEngineChoiceScreenRegion(
+bool RegionalCapabilitiesService::IsInAnySearchEngineChoiceScreenRegion(
     const country_codes::CountryId& tested_country_id) {
   return GetSettingsForProgram(CountryIdToProgram(tested_country_id))
       .choice_screen_eligibility_config.has_value();
@@ -415,22 +422,23 @@ bool RegionalCapabilitiesService::IsInSearchEngineChoiceScreenRegion(
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 // static
-bool RegionalCapabilitiesService::IsInSearchEngineChoiceScreenRegion(
+bool RegionalCapabilitiesService::IsInAnySearchEngineChoiceScreenRegion(
     Client& client) {
   const GetCountryIdResult country_id_result =
       GetCountryIdFromClient(client, Client::CountryIdCallback());
-  return IsInSearchEngineChoiceScreenRegion(country_id_result.country_id);
+  return GetSettingsForProgram(CountryIdToProgram(country_id_result.country_id))
+      .choice_screen_eligibility_config.has_value();
 }
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 
-bool RegionalCapabilitiesService::
-    IsChoiceScreenCompatibleWithCurrentLocation() {
+RegionalCapabilitiesService::LocationCompatibility
+RegionalCapabilitiesService::IsChoiceScreenCompatibleWithCurrentLocation() {
   CHECK(GetChoiceScreenEligibilityConfig().has_value())
       << "No choice screen config is present so it won't be shown. "
          "Checking the compatibility with the current location in "
          "this context is irrelevant and should not have happened.";
   if (!GetChoiceScreenEligibilityConfig()->restrict_to_associated_countries) {
-    return true;
+    return LocationCompatibility::kCompatible;
   }
 
   if (const auto override = GetSearchEngineCountryOverride();
@@ -441,20 +449,26 @@ bool RegionalCapabilitiesService::
     // This is a testing situation where we are manually overriding regional
     // settings, the region checks are not relevant as the current country gets
     // overridden too.
-    return true;
+    return LocationCompatibility::kCompatible;
+  }
+
+  if (!client_->GetVariationsLatestCountryId().IsValid()) {
+    // Don't decide here on whether the location is compatible or not. Let the
+    // caller do it based on the context.
+    return LocationCompatibility::kLocationUnknown;
   }
 
   if (!std::ranges::contains(GetActiveProgramSettings().associated_countries,
                              client_->GetVariationsLatestCountryId())) {
-    return false;
+    return LocationCompatibility::kIncompatible;
   }
 
   if (base::FeatureList::IsEnabled(switches::kStrictAssociatedCountriesCheck) &&
       GetCountryIdInternal() != client_->GetVariationsLatestCountryId()) {
-    return false;
+    return LocationCompatibility::kIncompatible;
   }
 
-  return true;
+  return LocationCompatibility::kCompatible;
 }
 
 bool RegionalCapabilitiesService::CanRecordDisplayStateForCountry(
@@ -619,24 +633,20 @@ void RegionalCapabilitiesService::EnsureRegionalScopeCacheInitialized() {
   Program program;
 
 #if BUILDFLAG(IS_ANDROID)
-  if (base::FeatureList::IsEnabled(
-          switches::kResolveRegionalCapabilitiesFromDevice)) {
-    program = client_->GetDeviceProgram();
+  program = client_->GetDeviceProgram();
 
-    if (IsInProgramRegion(program, country_id_cache_.value())) {
-      RecordAndroidProgramResolution(AndroidProgramResolution::kSuccess);
-    } else {
-      // Interim program inconsistencies originate from asynchronous nature of
-      // their resolution. For the time being, use a reasonable default.
-      program = Program::kDefault;
-      RecordAndroidProgramResolution(
-          AndroidProgramResolution::kDefaultForOutOfProgramCountry);
-    }
-  } else
-#endif  // BUILDFLAG(IS_ANDROID)
-  {
-    program = CountryIdToProgram(country_id_cache_.value());
+  if (IsInProgramRegion(program, country_id_cache_.value())) {
+    RecordAndroidProgramResolution(AndroidProgramResolution::kSuccess);
+  } else {
+    // Interim program inconsistencies originate from asynchronous nature of
+    // their resolution. For the time being, use a reasonable default.
+    program = Program::kDefault;
+    RecordAndroidProgramResolution(
+        AndroidProgramResolution::kDefaultForOutOfProgramCountry);
   }
+#else
+  program = CountryIdToProgram(country_id_cache_.value());
+#endif  // BUILDFLAG(IS_ANDROID)
 
   program_settings_cache_ = GetSettingsForProgram(program);
 
@@ -741,6 +751,11 @@ bool RegionalCapabilitiesService::IsInEeaCountry(JNIEnv* env) {
   return IsInEeaCountry();
 }
 #endif
+
+Program CountryIdToProgramForTesting(
+    const country_codes::CountryId& country_id) {
+  return CountryIdToProgram(country_id);
+}
 
 }  // namespace regional_capabilities
 

@@ -26,7 +26,9 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "gmock/gmock.h"
+#include "src/tint/lang/core/type/struct.h"
 #include "src/tint/lang/spirv/writer/common/helper_test.h"
+#include "src/tint/utils/internal_limits.h"
 
 namespace tint::spirv::writer {
 namespace {
@@ -77,6 +79,34 @@ TEST_F(SpirvWriterTest, CanGenerate_SubgroupMatrixRequiresVulkanMemoryModel) {
     ASSERT_NE(result, Success);
     EXPECT_THAT(result.Failure().reason,
                 testing::HasSubstr("using subgroup matrices requires the Vulkan Memory Model"));
+}
+
+TEST_F(SpirvWriterTest, EntryPoint_InputLocation_ExceedsMax) {
+    auto* f = b.FragmentFunction("my_func", ty.void_());
+    auto* p = b.FunctionParam("p", ty.f32());
+    p->SetLocation(4096);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    Options options;
+    options.entry_point_name = "my_func";
+    auto res = Generate(options);
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason, "location(4096) exceeds the maximum allowed value of '4095'");
+}
+
+TEST_F(SpirvWriterTest, EntryPoint_OutputLocation_ExceedsMax) {
+    auto* f = b.FragmentFunction("my_func", ty.f32());
+    f->SetReturnLocation(4096);
+
+    b.Append(f->Block(), [&] { b.Return(f, 1.0_f); });
+
+    Options options;
+    options.entry_point_name = "my_func";
+    auto res = Generate(options);
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason, "location(4096) exceeds the maximum allowed value of '4095'");
 }
 
 TEST_F(SpirvWriterTest, Unreachable) {
@@ -392,6 +422,61 @@ TEST_F(SpirvWriterTest, WorkgroupStorageSize_OverflowAfterAlign) {
     auto result = Generate();
     ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_EQ(workgroup_info.storage_size, 0x100000000ull);
+}
+
+TEST_F(SpirvWriterTest, CanGenerate_StructMemberPadding_TooLarge) {
+    ty.Get<core::type::Struct>(
+        mod.symbols.New("S"),
+        tint::Vector{ty.Get<core::type::StructMember>(mod.symbols.New("a"), ty.i32(), 0u, 0u, 4u,
+                                                      4u, core::IOAttributes{}),
+                     ty.Get<core::type::StructMember>(
+                         mod.symbols.New("b"), ty.i32(), 1u,
+                         static_cast<uint32_t>(tint::internal_limits::kMaxStructMemberPadding + 4),
+                         4u, 4u, core::IOAttributes{})},
+        8u /* size */);
+
+    auto* ep = b.ComputeFunction("main");
+    b.Append(ep->Block(), [&] { b.Return(ep); });
+
+    Options options;
+    auto result = Generate(options);
+    ASSERT_NE(result, Success);
+    EXPECT_THAT(result.Failure().reason, testing::HasSubstr("is larger than the maximum"));
+}
+
+TEST_F(SpirvWriterTest, PolyfillPixelCenter) {
+    auto* position = b.FunctionParam("position", ty.vec4f());
+    position->SetBuiltin(core::BuiltinValue::kPosition);
+
+    auto* ep = b.FragmentFunction("main", ty.void_());
+    ep->SetParams({position});
+
+    b.Append(ep->Block(), [&] {
+        b.Let("p", position);
+        b.Return(ep);
+    });
+
+    Options options;
+    options.polyfill_pixel_center = 0;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
+    EXPECT_INST(R"(
+       %main = OpFunction %void None %12
+         %13 = OpLabel
+         %14 = OpLoad %v4float %main_position_Input None
+         %15 = OpVectorShuffle %v2float %14 %14 0 1
+         %17 = OpExtInst %v2float %18 Floor %15
+         %19 = OpFAdd %v2float %17 %20
+         %22 = OpExtInst %v4float %18 InterpolateAtOffset %main_loc0_Input %23
+         %24 = OpCompositeExtract %float %22 2
+         %25 = OpCompositeExtract %float %22 3
+         %26 = OpFDiv %float %24 %25
+         %27 = OpFDiv %float %float_1 %25
+         %29 = OpCompositeConstruct %v4float %19 %26 %27
+         %30 = OpFunctionCall %void %main_inner %29
+               OpReturn
+               OpFunctionEnd
+)");
 }
 
 }  // namespace

@@ -9,6 +9,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/rand_util.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/time/time.h"
 #include "components/crash/core/common/crash_key.h"
 #include "gpu/command_buffer/common/shm_count.h"
 #include "third_party/skia/include/core/SkColorSpace.h"
@@ -133,6 +134,22 @@ static void ReadPixelsCallbackThreadSafe(
       .Run(context->old_context, std::move(async_result));
 }
 
+class AutoReset {
+  STACK_ALLOCATED();
+
+ public:
+  explicit AutoReset(std::atomic<bool>& var) : var_(var) {
+    var_.store(true, std::memory_order_relaxed);
+  }
+  ~AutoReset() { var_.store(false, std::memory_order_relaxed); }
+
+  AutoReset(const AutoReset&) = delete;
+  AutoReset& operator=(const AutoReset&) = delete;
+
+ private:
+  std::atomic<bool>& var_;
+};
+
 }  // namespace
 
 // Helper class used by subclasses to acquire |lock_| if it exists.
@@ -176,11 +193,35 @@ GraphiteSharedContext::AutoLock::AutoLock(const GraphiteSharedContext* context)
     : context_(context) {
   base::PlatformThreadId current_thread_id = base::PlatformThread::CurrentId();
 
+  bool was_in_submit =
+      context->locked_thread_in_submit_.load(std::memory_order_relaxed);
+  bool was_in_insert = context->locked_thread_in_insert_recording_.load(
+      std::memory_order_relaxed);
+
   if (!context->lock_ || current_thread_id == context->locked_thread_id_.load(
                                                   std::memory_order_relaxed)) {
     // Skip if is_thread_safe is disabled or it's a recursive lock.
   } else {
+    base::TimeTicks start_time = base::TimeTicks::Now();
     auto_lock_.emplace(&context->lock_.value());
+    base::TimeDelta wait_time = base::TimeTicks::Now() - start_time;
+
+    if (base::ShouldRecordSubsampledMetric(0.01)) {
+      UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
+          "Gpu.GraphiteSharedContext.LockAcquireTimeUs", wait_time,
+          base::Microseconds(1), base::Seconds(1), 50);
+      if (was_in_submit) {
+        UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
+            "Gpu.GraphiteSharedContext.LockAcquireTimeUs.LockedThreadInSubmit",
+            wait_time, base::Microseconds(1), base::Seconds(1), 50);
+      }
+      if (was_in_insert) {
+        UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
+            "Gpu.GraphiteSharedContext.LockAcquireTimeUs."
+            "LockedThreadInInsertRecording",
+            wait_time, base::Microseconds(1), base::Seconds(1), 50);
+      }
+    }
 
     // |locked_thread_id_| must be kInvalid after the lock is acquired.
     CHECK_EQ(context_->locked_thread_id_.load(std::memory_order_relaxed),
@@ -239,6 +280,7 @@ GraphiteSharedContext::makePrecompileContext() {
 bool GraphiteSharedContext::insertRecording(
     const skgpu::graphite::InsertRecordingInfo& info) {
   AutoLock auto_lock(this);
+  AutoReset auto_reset(locked_thread_in_insert_recording_);
   if (!InsertRecordingImpl(info)) {
     return false;
   }
@@ -322,6 +364,7 @@ bool GraphiteSharedContext::InsertRecordingImpl(
 
 void GraphiteSharedContext::submit(skgpu::graphite::SubmitInfo submit_info) {
   AutoLock auto_lock(this);
+  AutoReset auto_reset(locked_thread_in_submit_);
   CHECK(SubmitImpl(submit_info));
 }
 
@@ -360,6 +403,7 @@ bool GraphiteSharedContext::SubmitImpl(
 void GraphiteSharedContext::submitAndFlushBackend(
     skgpu::graphite::SubmitInfo submit_info) {
   AutoLock auto_lock(this);
+  AutoReset auto_reset(locked_thread_in_submit_);
   SubmitAndFlushBackendImpl(submit_info);
 }
 
@@ -487,6 +531,48 @@ void GraphiteSharedContext::asyncRescaleAndReadPixelsYUV420(
       rescaleMode, &ReadPixelsCallbackThreadSafe, new_callbackContext);
 }
 
+bool GraphiteSharedContext::asyncRescaleAndReadPixelsYUV420AndSubmit(
+    const SkImage* src,
+    SkYUVColorSpace yuvColorSpace,
+    sk_sp<SkColorSpace> dstColorSpace,
+    const SkIRect& srcRect,
+    const SkISize& dstSize,
+    SkImage::RescaleGamma rescaleGamma,
+    SkImage::RescaleMode rescaleMode,
+    SkImageReadPixelsCallback callback,
+    SkImage::ReadPixelsContext callbackContext) {
+  AutoLock auto_lock(this);
+  auto* new_callbackContext = CreateAsyncReadContextThreadSafe(
+      std::move(callback), callbackContext, IsThreadSafe());
+
+  graphite_context_->asyncRescaleAndReadPixelsYUV420(
+      src, yuvColorSpace, dstColorSpace, srcRect, dstSize, rescaleGamma,
+      rescaleMode, &ReadPixelsCallbackThreadSafe, new_callbackContext);
+
+  return SubmitImpl(skgpu::graphite::SyncToCpu::kYes);
+}
+
+bool GraphiteSharedContext::asyncRescaleAndReadPixelsYUV420AndSubmit(
+    const SkSurface* src,
+    SkYUVColorSpace yuvColorSpace,
+    sk_sp<SkColorSpace> dstColorSpace,
+    const SkIRect& srcRect,
+    const SkISize& dstSize,
+    SkImage::RescaleGamma rescaleGamma,
+    SkImage::RescaleMode rescaleMode,
+    SkImageReadPixelsCallback callback,
+    SkImage::ReadPixelsContext callbackContext) {
+  AutoLock auto_lock(this);
+  auto* new_callbackContext = CreateAsyncReadContextThreadSafe(
+      std::move(callback), callbackContext, IsThreadSafe());
+
+  graphite_context_->asyncRescaleAndReadPixelsYUV420(
+      src, yuvColorSpace, dstColorSpace, srcRect, dstSize, rescaleGamma,
+      rescaleMode, &ReadPixelsCallbackThreadSafe, new_callbackContext);
+
+  return SubmitImpl(skgpu::graphite::SyncToCpu::kYes);
+}
+
 void GraphiteSharedContext::asyncRescaleAndReadPixelsYUVA420(
     const SkImage* src,
     SkYUVColorSpace yuvColorSpace,
@@ -523,6 +609,48 @@ void GraphiteSharedContext::asyncRescaleAndReadPixelsYUVA420(
   return graphite_context_->asyncRescaleAndReadPixelsYUVA420(
       src, yuvColorSpace, dstColorSpace, srcRect, dstSize, rescaleGamma,
       rescaleMode, &ReadPixelsCallbackThreadSafe, new_callbackContext);
+}
+
+bool GraphiteSharedContext::asyncRescaleAndReadPixelsYUVA420AndSubmit(
+    const SkImage* src,
+    SkYUVColorSpace yuvColorSpace,
+    sk_sp<SkColorSpace> dstColorSpace,
+    const SkIRect& srcRect,
+    const SkISize& dstSize,
+    SkImage::RescaleGamma rescaleGamma,
+    SkImage::RescaleMode rescaleMode,
+    SkImageReadPixelsCallback callback,
+    SkImage::ReadPixelsContext callbackContext) {
+  AutoLock auto_lock(this);
+  auto* new_callbackContext = CreateAsyncReadContextThreadSafe(
+      std::move(callback), callbackContext, IsThreadSafe());
+
+  graphite_context_->asyncRescaleAndReadPixelsYUVA420(
+      src, yuvColorSpace, dstColorSpace, srcRect, dstSize, rescaleGamma,
+      rescaleMode, &ReadPixelsCallbackThreadSafe, new_callbackContext);
+
+  return SubmitImpl(skgpu::graphite::SyncToCpu::kYes);
+}
+
+bool GraphiteSharedContext::asyncRescaleAndReadPixelsYUVA420AndSubmit(
+    const SkSurface* src,
+    SkYUVColorSpace yuvColorSpace,
+    sk_sp<SkColorSpace> dstColorSpace,
+    const SkIRect& srcRect,
+    const SkISize& dstSize,
+    SkImage::RescaleGamma rescaleGamma,
+    SkImage::RescaleMode rescaleMode,
+    SkImageReadPixelsCallback callback,
+    SkImage::ReadPixelsContext callbackContext) {
+  AutoLock auto_lock(this);
+  auto* new_callbackContext = CreateAsyncReadContextThreadSafe(
+      std::move(callback), callbackContext, IsThreadSafe());
+
+  graphite_context_->asyncRescaleAndReadPixelsYUVA420(
+      src, yuvColorSpace, dstColorSpace, srcRect, dstSize, rescaleGamma,
+      rescaleMode, &ReadPixelsCallbackThreadSafe, new_callbackContext);
+
+  return SubmitImpl(skgpu::graphite::SyncToCpu::kYes);
 }
 
 void GraphiteSharedContext::checkAsyncWorkCompletion() {

@@ -71,7 +71,7 @@ pub type GenericIO = Box<dyn IO>;
 pub(crate) type Codec = Box<dyn crate::codecs::Decoder>;
 
 impl CodecChoice {
-    fn get_decoder_codec(&self, compression_format: CompressionFormat) -> Option<Codec> {
+    pub(crate) fn get_decoder_codec(&self, compression_format: CompressionFormat) -> Option<Codec> {
         match compression_format {
             CompressionFormat::Avif => {
                 if matches!(self, CodecChoice::Aom) {
@@ -886,6 +886,13 @@ impl Decoder {
             if !source_items.iter().all(|item| item.is_image_codec_item()) {
                 return AvifError::invalid_image_grid("invalid overlay items");
             }
+        } else if item.is_identity_item() {
+            if source_items.len() != 1 {
+                return AvifError::bmff_parse_failed(format!(
+                    "invalid dimg items found for iden (expected 1 found {})",
+                    source_items.len()
+                ));
+            }
         } else if item.is_tone_mapped_item() {
             if source_items.len() != 2 {
                 return AvifError::invalid_tone_mapped_image("expected tmap to have 2 dimg items");
@@ -1130,12 +1137,25 @@ impl Decoder {
                 let mut item_ids: [u32; DecodingItem::COUNT] = [0; DecodingItem::COUNT];
 
                 // Mandatory color item (primary item).
-                let primary_item_id = self.find_and_parse_item(
+                let mut primary_item_id = self.find_and_parse_item(
                     avif_boxes.meta.primary_item_id,
                     DecodingItem::COLOR,
                     &avif_boxes.ftyp,
                     &avif_boxes.meta,
                 )?;
+                loop {
+                    let primary_item = self.items.get(&primary_item_id).unwrap();
+                    if !primary_item.is_identity_item() {
+                        break;
+                    }
+                    let properties = primary_item.properties.clone();
+                    // Set the primary item to that of the derived item and copy over the
+                    // transformative properties.
+                    primary_item_id = primary_item.source_item_ids[0];
+                    let primary_item = self.items.get_mut(&primary_item_id).unwrap();
+                    primary_item.replace_transformative_properties_from(&properties)?;
+                }
+
                 item_ids[DecodingItem::COLOR.usize()] = primary_item_id;
 
                 let primary_item = self.items.get(&primary_item_id).unwrap();
@@ -1491,7 +1511,23 @@ impl Decoder {
             self.settings.image_size_limit,
             self.settings.image_dimension_limit,
         )?;
-        self.validate_source_items(item_id, &self.tile_info[decoding_item.usize()])
+        self.validate_source_items(item_id, &self.tile_info[decoding_item.usize()])?;
+        let mut item = self.items.get(&item_id).unwrap();
+        let mut parsed_item_ids = vec![item_id];
+        loop {
+            if !item.is_identity_item() {
+                break;
+            }
+            let sub_item_id = item.source_item_ids[0];
+            if parsed_item_ids.contains(&sub_item_id) {
+                return AvifError::invalid_image_grid("found a cycle in identity derived items");
+            }
+            self.populate_source_item_ids(sub_item_id)?;
+            self.validate_source_items(sub_item_id, &self.tile_info[decoding_item.usize()])?;
+            parsed_item_ids.push(sub_item_id);
+            item = self.items.get(&sub_item_id).unwrap();
+        }
+        Ok(())
     }
 
     fn can_use_single_codec(&self) -> AvifResult<bool> {
@@ -1692,15 +1728,16 @@ impl Decoder {
         decoding_item: DecodingItem,
         tile_index: usize,
     ) -> AvifResult<()> {
-        #[cfg(feature = "android_mediacodec")]
-        let signal_eos = if self.image.image_sequence_track_present {
-            // Never signal EOS for sequences as nth_image can be used to get any frame.
-            false
-        } else {
-            // For non sequence images, signal EOS only if this is the last tile in the
-            // category.
-            tile_index == self.tiles[decoding_item.usize()].len() - 1
-        };
+        let signal_eos =
+            if !cfg!(feature = "android_mediacodec") || self.image.image_sequence_track_present {
+                // signal_eos is used only by Android MediaCodec. Never signal EOS for sequences as
+                // nth_image can be used to get any frame.
+                false
+            } else {
+                // For non sequence images, signal EOS only if this is the last tile in the
+                // category.
+                tile_index == self.tiles[decoding_item.usize()].len() - 1
+            };
         // Split the tiles array into two mutable arrays so that we can validate the
         // properties of tiles with index > 0 with that of the first tile.
         let (tiles_slice1, tiles_slice2) =
@@ -1729,7 +1766,6 @@ impl Decoder {
             &mut tile.image,
             category,
             item,
-            #[cfg(feature = "android_mediacodec")]
             signal_eos,
         );
         if next_image_result.is_err() {
@@ -1874,18 +1910,20 @@ impl Decoder {
             for plane in category.planes() {
                 let plane = plane.as_usize();
                 if let Some(src_plane) = &tile.image.planes[plane] {
-                    dst_image.planes[plane] = Some(match src_plane {
-                        Pixels::Pointer(p) => Pixels::Pointer(*p),
-                        Pixels::Pointer16(p) => Pixels::Pointer16(*p),
+                    dst_image.planes[plane] = match src_plane {
+                        Pixels::Pointer(p) => Some(Pixels::Pointer(*p)),
+                        Pixels::Pointer16(p) => Some(Pixels::Pointer16(*p)),
+                        Pixels::Buffer(b) if b.is_empty() => None,
                         // SAFETY: Bounded lifetime and read-only access.
-                        Pixels::Buffer(b) => Pixels::Pointer(unsafe {
+                        Pixels::Buffer(b) => Some(Pixels::Pointer(unsafe {
                             PointerSlice::create(b.as_ptr() as *mut _, b.len())?
-                        }),
+                        })),
+                        Pixels::Buffer16(b) if b.is_empty() => None,
                         // SAFETY: Bounded lifetime and read-only access.
-                        Pixels::Buffer16(b) => Pixels::Pointer16(unsafe {
+                        Pixels::Buffer16(b) => Some(Pixels::Pointer16(unsafe {
                             PointerSlice::create(b.as_ptr() as *mut _, b.len())?
-                        }),
-                    });
+                        })),
+                    };
                     dst_image.row_bytes[plane] = tile.image.row_bytes[plane];
                 } else {
                     dst_image.planes[plane] = None;
@@ -2002,6 +2040,12 @@ impl Decoder {
                 .all(|x| x.codec_index == first_tile.codec_index)
     }
 
+    fn can_use_decode_until(&self) -> bool {
+        self.image.image_sequence_track_present
+            && self.source == Source::Tracks
+            && cfg!(feature = "dav1d")
+    }
+
     fn decode_tiles(&mut self, image_index: usize) -> AvifResult<()> {
         let mut decoded_something = false;
         for decoding_item in self.settings.image_content_to_decode.decoding_items() {
@@ -2086,7 +2130,7 @@ impl Decoder {
 
             self.tile_info[DecodingItem::COLOR.usize()]
                 .sample_transform
-                .allocate_planes_and_apply(&self.extra_inputs, &mut self.image)?;
+                .allocate_planes_and_apply(&self.extra_inputs.each_ref(), &mut self.image)?;
         }
 
         self.image_index = next_image_index;
@@ -2128,12 +2172,69 @@ impl Decoder {
             // Start decoding from the nearest keyframe.
             self.image_index = nearest_keyframe - 1;
         }
+        if self.can_use_decode_until() {
+            match self.decode_until(requested_index) {
+                Ok(_) => return Ok(()),
+                Err(AvifError::NotImplemented) => {
+                    // If decode_until is not implemented, fallback to the next_image loop.
+                }
+                Err(err) => return Err(err),
+            }
+        }
         loop {
             self.next_image()?;
             if requested_index == self.image_index {
                 break;
             }
         }
+        Ok(())
+    }
+
+    fn decode_until(&mut self, requested_index: i32) -> AvifResult<()> {
+        if self.io.is_none() {
+            return AvifError::io_not_set();
+        }
+        self.create_codecs()?;
+        for decoding_item in DecodingItem::ALL_USIZE {
+            self.tile_info[decoding_item].decoded_tile_count = 0;
+        }
+        for decoding_item in self.settings.image_content_to_decode.decoding_items() {
+            if self.tiles[decoding_item.usize()].is_empty() {
+                continue;
+            }
+            let mut payloads = vec![];
+            let mut spatial_id: Option<u8> = None;
+            for image_index in (self.image_index + 1)..=requested_index {
+                let tile_index = 0;
+                let tile = &self.tiles[decoding_item.usize()][tile_index];
+                let sample = &tile.input.samples[image_index as usize];
+                if spatial_id.is_none() {
+                    spatial_id = Some(sample.spatial_id);
+                }
+                let item_data_buffer = if sample.item_id == 0 {
+                    &None
+                } else {
+                    &self.items.get(&sample.item_id).unwrap().data_buffer
+                };
+                let io = &mut self.io.unwrap_mut();
+                let data = sample.data(io, item_data_buffer)?;
+                payloads.push(data.to_vec());
+            }
+            if payloads.is_empty() {
+                continue;
+            }
+            let first_tile = &self.tiles[decoding_item.usize()][0];
+            let codec = &mut self.codecs[first_tile.codec_index];
+            codec.get_last_image(
+                &payloads,
+                spatial_id.unwrap(),
+                &mut self.image,
+                decoding_item.category,
+            )?;
+            checked_incr!(self.tile_info[decoding_item.usize()].decoded_tile_count, 1);
+        }
+        self.image_index = requested_index;
+        self.image_timing = self.nth_image_timing(self.image_index as u32)?;
         Ok(())
     }
 

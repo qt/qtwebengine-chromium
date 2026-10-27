@@ -5,7 +5,8 @@
 import {assert} from '//resources/js/assert.js';
 
 import type {AncestorNode, ReadAloudNode} from '../read_aloud/read_aloud_types.js';
-import {getWordCount, isDistilledByReadability, isRectMostlyVisible} from '../shared/common.js';
+import {getWordCount, isDistilledByReadability} from '../shared/common.js';
+import {isRectMostlyVisible} from '../shared/rect_calculations.js';
 
 // A two-way map where each key is unique and each value is unique. The keys are
 // DOM nodes and the values are numbers, representing AXNodeIDs.
@@ -79,6 +80,12 @@ export class NodeStore {
   // index down the pipeline, so we store that info here.
   private textNodeToAncestor_: Map<Node, AncestorNode> = new Map();
 
+  // Key: a DOM node in the reading mode panel
+  // Value: the character offset where this node's text begins within its
+  // source AXNode. This is used to synchronize AX node character offsets
+  // between the main panel and the side panel.
+  private axNodeOffset_: Map<Node, number> = new Map();
+
   clear() {
     this.hiddenImageNodesIds_.clear();
     this.imageNodeIdsToFetch_.clear();
@@ -87,6 +94,7 @@ export class NodeStore {
 
   clearDomNodes() {
     this.domNodeToAxNodeIdMap_.clear();
+    this.axNodeOffset_.clear();
     this.textNodesSeen_.clear();
     this.wordsSeenLastSavedTime_ = Date.now();
     clearTimeout(this.countWordsTimer_);
@@ -200,6 +208,7 @@ export class NodeStore {
 
   removeDomNode(domNode: Node): void {
     this.domNodeToAxNodeIdMap_.delete(domNode);
+    this.axNodeOffset_.delete(domNode);
   }
 
   getAxId(domNode: Node): number|undefined {
@@ -228,12 +237,28 @@ export class NodeStore {
     }
 
     if (nodeId !== undefined) {
+      const offset = this.getAxNodeOffset(current);
+
       // Update map.
       this.removeDomNode(current);
       this.setDomNode(replacer, nodeId);
+
+      // Transfer the offset if it exists.
+      if (offset > 0) {
+        this.setAxNodeOffset(replacer, offset);
+        this.axNodeOffset_.delete(current);
+      }
     }
     // Replace element in DOM.
     current.replaceWith(replacer);
+  }
+
+  setAxNodeOffset(node: Node, offset: number) {
+    this.axNodeOffset_.set(node, offset);
+  }
+
+  getAxNodeOffset(node: Node): number {
+    return this.axNodeOffset_.get(node) || 0;
   }
 
   hideImageNode(nodeId: number): void {

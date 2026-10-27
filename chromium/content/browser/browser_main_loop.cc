@@ -97,8 +97,6 @@
 #include "content/browser/speech/tts_controller_impl.h"
 #include "content/browser/startup_data_impl.h"
 #include "content/browser/startup_task_runner.h"
-#include "content/browser/tracing/background_tracing_manager_impl.h"
-#include "content/browser/tracing/startup_tracing_controller.h"
 #include "content/browser/tracing/tracing_controller_impl.h"
 #include "content/browser/webrtc/webrtc_internals.h"
 #include "content/browser/webui/content_web_ui_configs.h"
@@ -109,7 +107,7 @@
 #include "content/common/skia_utils.h"
 #include "content/common/thread_pool_util.h"
 #include "content/public/browser/audio_service.h"
-#include "content/public/browser/background_tracing_manager.h"
+#include "content/public/browser/background_tracing.h"
 #include "content/public/browser/browser_main_parts.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -148,9 +146,13 @@
 #include "services/audio/service.h"
 #include "services/data_decoder/public/cpp/service_provider.h"
 #include "services/data_decoder/public/mojom/data_decoder_service.mojom.h"
+#include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/network_switches.h"
+#include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "services/network/transitional_url_loader_factory_owner.h"
+#include "services/tracing/public/cpp/background_tracing/background_tracing_manager.h"
+#include "services/tracing/public/cpp/startup_tracing_controller.h"
 #include "services/tracing/public/cpp/trace_startup_config.h"
 #include "services/video_capture/public/cpp/features.h"
 #include "skia/ext/event_tracer_impl.h"
@@ -746,9 +748,7 @@ void BrowserMainLoop::PostCreateMainMessageLoop() {
     InitializeSkia();
   } else {
     // Just enable memory-infra dump providers
-    InitSkiaEventTracer();
-    base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
-        skia::SkiaMemoryDumpProvider::GetInstance(), "Skia", nullptr);
+    InitializeSkiaLite();
   }
 
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
@@ -770,8 +770,8 @@ int BrowserMainLoop::PreCreateThreads() {
   // ChromeBrowserMainParts::PreCreateThreads() because it's used in
   // BackgroundTracingMetricsProvider.
   tracing_controller_ = std::make_unique<TracingControllerImpl>();
-  background_tracing_manager_ = BackgroundTracingManagerImpl::CreateInstance(
-      tracing_controller_->tracing_delegate());
+  background_tracing_manager_ =
+      CreateBackgroundTracingManager(tracing_controller_->tracing_delegate());
 
   // Make sure no accidental call to initialize GpuDataManager earlier.
   DCHECK(!GpuDataManagerImpl::Initialized());
@@ -826,6 +826,24 @@ int BrowserMainLoop::PreCreateThreads() {
   if (parsed_command_line_->HasSwitch(switches::kSingleProcess))
     RenderProcessHost::SetRunRendererInProcess(true);
 #endif
+
+  // Set up the callbacks used by the network layer to track and validate
+  // file access for browser-initiated uploads.
+  if (base::FeatureList::IsEnabled(
+          network::features::kBrowserInitiatedFileUploadValidation)) {
+    network::SimpleURLLoader::FileUploadEventCallbacks callbacks;
+    callbacks.register_callback = base::BindRepeating(
+        [](const base::UnguessableToken& token, const base::FilePath& path) {
+          ChildProcessSecurityPolicyImpl::GetInstance()
+              ->GrantFileForBrowserUpload(token, path);
+        });
+    callbacks.revoke_callback =
+        base::BindRepeating([](const base::UnguessableToken& token) {
+          ChildProcessSecurityPolicyImpl::GetInstance()
+              ->RevokeFileForBrowserUpload(token);
+        });
+    network::SimpleURLLoader::SetFileUploadEventCallbacks(callbacks);
+  }
 
   // Initialize origins that require process isolation.  Must be done
   // after base::FeatureList is initialized, but before any navigations can
@@ -1128,6 +1146,10 @@ void BrowserMainLoop::PreShutdown() {
   idle_callback_subscription_ = {};
 
   ui::Clipboard::OnPreShutdownForCurrentThread();
+
+  if (startup_tracing_controller_) {
+    startup_tracing_controller_->ShutdownAndWaitForStopIfNeeded();
+  }
 }
 
 void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
@@ -1444,8 +1466,7 @@ void BrowserMainLoop::PostCreateThreadsImpl() {
   bool should_post_task_to_launch_gpu_process =
       always_uses_gpu && !establish_gpu_channel;
   if (should_post_task_to_launch_gpu_process) {
-    TRACE_EVENT_INSTANT0("gpu", "Post task to launch GPU process",
-                         TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT("gpu", "Post task to launch GPU process");
     GpuProcessHost::Get(GPU_PROCESS_KIND_SANDBOXED, true /* force_create */);
   }
 
@@ -1467,9 +1488,7 @@ void BrowserMainLoop::PostCreateThreadsImpl() {
   // all CDMs are part of the OS, so no file checks are involved.
   CdmRegistry::GetInstance()->Init();
 
-  if (base::FeatureList::IsEnabled(features::kFontSrcLocalMatching)) {
-    FontUniqueNameLookup::GetInstance();
-  }
+  FontUniqueNameLookup::GetInstance();
 #endif
 
 #if defined(ENABLE_IPC_FUZZER)
@@ -1541,7 +1560,15 @@ void BrowserMainLoop::InitializeMojo() {
   // need to start tracing for all other tracing agents, which require threads.
   // We can only do this after starting the main message loop to avoid calling
   // MessagePumpForUI::ScheduleWork() before MessagePumpForUI::Start().
-  StartupTracingController::GetInstance().StartIfNeeded();
+  startup_tracing_controller_ =
+      std::make_unique<tracing::StartupTracingController>(
+#if BUILDFLAG(IS_ANDROID)
+          base::BindRepeating(
+              &content::TracingControllerAndroid::GenerateTracingFilePath),
+#endif
+          content::GetIOThreadTaskRunner({}));
+
+  startup_tracing_controller_->StartIfNeeded();
 
 #if BUILDFLAG(MOJO_RANDOM_DELAYS_ENABLED)
   mojo::BeginRandomMojoDelays();
@@ -1570,8 +1597,7 @@ void BrowserMainLoop::InitializeAudio() {
   // Iff |audio_manager_| is instantiated, the audio service will run
   // in-process. Complete the setup for that:
   if (audio_manager_) {
-    TRACE_EVENT_INSTANT0("startup", "Starting Audio service task runner",
-                         TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT("startup", "Starting Audio service task runner");
 #if BUILDFLAG(IS_MAC)
     // On Mac, the audio task runner must belong to the main thread.
     // See audio_thread_impl.cc and https://crbug.com/158170.

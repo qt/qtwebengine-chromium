@@ -25,29 +25,30 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/vulkan/SharedTextureMemoryVk.h"
+#include "src/dawn/native/vulkan/SharedTextureMemoryVk.h"
 
 #include <algorithm>
 #include <utility>
 #include <vector>
 
-#include "dawn/native/ChainUtils.h"
-#include "dawn/native/Instance.h"
-#include "dawn/native/vulkan/DeviceVk.h"
-#include "dawn/native/vulkan/FencedDeleter.h"
-#include "dawn/native/vulkan/PhysicalDeviceVk.h"
-#include "dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
-#include "dawn/native/vulkan/SharedFenceVk.h"
-#include "dawn/native/vulkan/TextureVk.h"
-#include "dawn/native/vulkan/UtilsVulkan.h"
-#include "dawn/native/vulkan/VulkanError.h"
 #include "dawn/native/wgpu_structs_autogen.h"
-#include "dawn/utils/SystemHandle.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/Instance.h"
+#include "src/dawn/native/vulkan/DeviceVk.h"
+#include "src/dawn/native/vulkan/FencedDeleter.h"
+#include "src/dawn/native/vulkan/PhysicalDeviceVk.h"
+#include "src/dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
+#include "src/dawn/native/vulkan/SharedFenceVk.h"
+#include "src/dawn/native/vulkan/TextureVk.h"
+#include "src/dawn/native/vulkan/UtilsVulkan.h"
+#include "src/dawn/native/vulkan/VulkanError.h"
+#include "src/dawn/utils/SystemHandle.h"
+#include "src/utils/compiler.h"
 
 #if DAWN_PLATFORM_IS(ANDROID)
 #include <android/hardware_buffer.h>
 
-#include "dawn/native/AHBFunctions.h"
+#include "src/dawn/native/AHBFunctions.h"
 #endif  // DAWN_PLATFORM_IS(ANDROID)
 
 namespace dawn::native::vulkan {
@@ -260,8 +261,10 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
 
     VkFormat vkFormat = VulkanImageFormat(device, properties.format);
 
-    // Usage flags to create the image with.
+    // Usage and create flags to create the image with.
     VkImageUsageFlags vkUsageFlags = VulkanImageUsage(device, properties.usage, *internalFormat);
+    VkImageCreateFlags vkCreateFlags =
+        VulkanImageCreateFlags(device, properties.usage, *internalFormat, /*sampleCount=*/1);
 
     // Number of memory planes in the image which will be queried from the DRM modifier.
     uint32_t memoryPlaneCount;
@@ -270,7 +273,7 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     // perform the actual VkImage creation.
     VkPhysicalDeviceImageFormatInfo2 imageFormatInfo = {};
     // List of view formats the image can be created.
-    std::array<VkFormat, 3> viewFormats;
+    std::array<VkFormat, 3> viewFormats{};
     VkImageFormatListCreateInfo imageFormatListInfo = {};
     imageFormatListInfo.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO;
 
@@ -319,7 +322,7 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
         imageFormatInfo.type = VK_IMAGE_TYPE_2D;
         imageFormatInfo.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
         imageFormatInfo.usage = vkUsageFlags;
-        imageFormatInfo.flags = 0;
+        imageFormatInfo.flags = vkCreateFlags;
 
         VkPhysicalDeviceImageDrmFormatModifierInfoEXT drmModifierInfo = {};
         drmModifierInfo.sType =
@@ -387,10 +390,11 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     // support use of VK_IMAGE_CREATE_DISJOINT_BIT currently. See crbug.com/42240514.
     int fd = descriptor->planes[0].fd;
     for (uint32_t i = 1; i < descriptor->planeCount; ++i) {
-        DAWN_INVALID_IF(descriptor->planes[i].fd != fd,
-                        "descriptor->planes[%u].fd (%i) does not match other plane fd (%i). All "
-                        "fds must be the same.",
-                        i, descriptor->planes[i].fd, fd);
+        DAWN_UNSAFE_TODO(DAWN_INVALID_IF(
+            descriptor->planes[i].fd != fd,
+            "descriptor->planes[%u].fd (%i) does not match other plane fd (%i). All "
+            "fds must be the same.",
+            i, descriptor->planes[i].fd, fd));
     }
 
     // Don't add the view format if backend validation is enabled, otherwise most image creations
@@ -404,11 +408,11 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
 
     // Create the VkImage for the import.
     {
-        std::array<VkSubresourceLayout, kMaxPlanesPerFormat> planeLayouts;
+        std::array<VkSubresourceLayout, kMaxPlanesPerFormat> planeLayouts{};
         for (uint32_t plane = 0u; plane < memoryPlaneCount; ++plane) {
-            planeLayouts[plane].offset = descriptor->planes[plane].offset;
+            planeLayouts[plane].offset = DAWN_UNSAFE_TODO(descriptor->planes[plane]).offset;
             planeLayouts[plane].size = 0;  // VK_EXT_image_drm_format_modifier mandates size = 0.
-            planeLayouts[plane].rowPitch = descriptor->planes[plane].stride;
+            planeLayouts[plane].rowPitch = DAWN_UNSAFE_TODO(descriptor->planes[plane]).stride;
             planeLayouts[plane].arrayPitch = 0;  // Not an array texture
             planeLayouts[plane].depthPitch = 0;  // Not a depth texture
         }
@@ -502,6 +506,17 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     SharedTextureMemoryProperties properties =
         GetAHBSharedTextureMemoryProperties(ahbFunctions, aHardwareBuffer);
 
+    const CombinedLimits& limits = device->GetLimits();
+    DAWN_INVALID_IF(properties.size.width > limits.v1.maxTextureDimension2D,
+                    "Resource width (%u) exceeds maxTextureDimension2D (%u).",
+                    properties.size.width, limits.v1.maxTextureDimension2D);
+    DAWN_INVALID_IF(properties.size.height > limits.v1.maxTextureDimension2D,
+                    "Resource weight (%u) exceeds maxTextureDimension2D (%u).",
+                    properties.size.height, limits.v1.maxTextureDimension2D);
+    DAWN_INVALID_IF(properties.size.depthOrArrayLayers > limits.v1.maxTextureArrayLayers,
+                    "Resource layers (%d) exceeds maxTextureArrayLayers (%u).",
+                    properties.size.depthOrArrayLayers, limits.v1.maxTextureArrayLayers);
+
     bool usesExternalFormat = properties.format == wgpu::TextureFormat::OpaqueYCbCrAndroid;
     if (usesExternalFormat) {
         // When using the opaque YUV texture formats, only the TextureBinding usage is valid.
@@ -584,8 +599,10 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     // Reflect properties to reify them.
     sharedTextureMemory->APIGetProperties(&properties);
 
-    // Compute the Vulkan usage flags to create the image with.
+    // Compute the Vulkan usage and create flags to create the image with.
     VkImageUsageFlags vkUsageFlags = VulkanImageUsage(device, properties.usage, *internalFormat);
+    VkImageCreateFlags vkCreateFlags =
+        VulkanImageCreateFlags(device, properties.usage, *internalFormat, /*sampleCount=*/1);
 
     const auto& compatibleViewFormats = device->GetCompatibleViewFormats(*internalFormat);
 
@@ -593,7 +610,7 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     // perform the actual VkImage creation.
     VkPhysicalDeviceImageFormatInfo2 imageFormatInfo = {};
     // List of view formats the image can be created.
-    std::array<VkFormat, 2> viewFormats;
+    std::array<VkFormat, 2> viewFormats{};
     VkImageFormatListCreateInfo imageFormatListInfo = {};
     imageFormatListInfo.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO;
 
@@ -606,7 +623,7 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
         imageFormatInfo.type = VK_IMAGE_TYPE_2D;
         imageFormatInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
         imageFormatInfo.usage = vkUsageFlags;
-        imageFormatInfo.flags = 0;
+        imageFormatInfo.flags = vkCreateFlags;
 
         if (!usesExternalFormat) {
             constexpr wgpu::TextureUsage kUsageRequiringView =
@@ -842,8 +859,8 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
 
     if (imageFormatListInfo && mayNeedViewReinterpretation) {
         auto viewFormatsBegin = imageFormatListInfo->pViewFormats;
-        auto viewFormatsEnd =
-            imageFormatListInfo->pViewFormats + imageFormatListInfo->viewFormatCount;
+        auto viewFormatsEnd = DAWN_UNSAFE_TODO(imageFormatListInfo->pViewFormats +
+                                               imageFormatListInfo->viewFormatCount);
         VkFormat baseVkFormat = VulkanImageFormat(device, properties.format);
 
         DAWN_INVALID_IF(
@@ -1015,8 +1032,9 @@ MaybeError SharedTextureMemory::BeginAccessImpl(
 
     for (size_t i = 0; i < descriptor->fenceCount; ++i) {
         // All fences are backed by binary semaphores.
-        DAWN_INVALID_IF(descriptor->signaledValues[i] != 1, "%s signaled value (%u) was not 1.",
-                        descriptor->fences[i], descriptor->signaledValues[i]);
+        DAWN_UNSAFE_TODO(DAWN_INVALID_IF(descriptor->signaledValues[i] != 1,
+                                         "%s signaled value (%u) was not 1.", descriptor->fences[i],
+                                         descriptor->signaledValues[i]));
     }
     static_cast<SharedTexture*>(texture)->SetPendingAcquire(
         static_cast<VkImageLayout>(vkLayoutBeginState->oldLayout),

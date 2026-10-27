@@ -44,6 +44,7 @@ Result<SuccessType> ValidateBindingOptions(const Options& options) {
     PointToPointMap seen_glsl_uniform_bindings{};
     PointToPointMap seen_glsl_storage_bindings{};
     PointToPointMap seen_glsl_storage_texture_bindings{};
+    PointToPointMap seen_glsl_texel_buffer_bindings{};
 
     // Both wgsl_seen and glsl_seen check to see if the pair of [src, dst] are unique. If
     // we have multiple entries that map the same [src, dst] pair, that's fine. We treat it as valid
@@ -101,6 +102,9 @@ Result<SuccessType> ValidateBindingOptions(const Options& options) {
         return Failure{diagnostics.Str()};
     }
     if (!valid(options.bindings.storage_texture, seen_glsl_storage_texture_bindings)) {
+        return Failure{diagnostics.Str()};
+    }
+    if (!valid(options.bindings.texel_buffer, seen_glsl_texel_buffer_bindings)) {
         return Failure{diagnostics.Str()};
     }
 
@@ -179,6 +183,7 @@ void PopulateBindingInfo(const Options& options,
     create_remappings(options.bindings.storage);
     create_remappings(options.bindings.texture);
     create_remappings(options.bindings.storage_texture);
+    create_remappings(options.bindings.texel_buffer);
     create_remappings(options.bindings.sampler);
 
     // External textures are re-bound to their plane0 location

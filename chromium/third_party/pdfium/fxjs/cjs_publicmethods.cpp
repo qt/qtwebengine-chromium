@@ -130,7 +130,7 @@ WideString CalcMergedString(const CJS_EventContext* event,
   WideString postfix;
   int end = event->SelEnd();
   if (end >= 0 && static_cast<size_t>(end) < value.GetLength()) {
-    postfix = value.Last(value.GetLength() - static_cast<size_t>(end));
+    postfix = value.Substr(static_cast<size_t>(end));
   }
   return prefix + change + postfix;
 }
@@ -331,11 +331,11 @@ v8::Local<v8::Array> CJS_PublicMethods::AF_MakeArrayFromList(
     v8::Local<v8::Value> val) {
   DCHECK(!val.IsEmpty());
   if (val->IsArray()) {
-    return pRuntime->ToArray(val);
+    return pRuntime->ToArrayReentrant(val);
   }
 
   DCHECK(val->IsString());
-  ByteString bsVal = pRuntime->ToByteString(val);
+  ByteString bsVal = pRuntime->ToByteStringReentrant(val);
   const char* p = bsVal.c_str();
 
   int nIndex = 0;
@@ -345,13 +345,13 @@ v8::Local<v8::Array> CJS_PublicMethods::AF_MakeArrayFromList(
     while (*p) {
       const char* pTemp = strchr(p, ',');
       if (!pTemp) {
-        pRuntime->PutArrayElement(
+        pRuntime->PutArrayElementReentrant(
             StrArray, nIndex,
             pRuntime->NewString(StrTrim(ByteString(p)).AsStringView()));
         break;
       }
 
-      pRuntime->PutArrayElement(
+      pRuntime->PutArrayElementReentrant(
           StrArray, nIndex,
           pRuntime->NewString(
               StrTrim(ByteString(p, pTemp - p)).AsStringView()));
@@ -630,12 +630,12 @@ CJS_Result CJS_PublicMethods::AFNumber_Format(
     return CJS_Result::Success();
   }
 
-  int iDec = abs(pRuntime->ToInt32(params[0]));
-  int iSepStyle = ValidStyleOrZero(pRuntime->ToInt32(params[1]));
-  int iNegStyle = ValidStyleOrZero(pRuntime->ToInt32(params[2]));
+  int iDec = abs(pRuntime->ToInt32Reentrant(params[0]));
+  int iSepStyle = ValidStyleOrZero(pRuntime->ToInt32Reentrant(params[1]));
+  int iNegStyle = ValidStyleOrZero(pRuntime->ToInt32Reentrant(params[2]));
   // params[3] is iCurrStyle, it's not used.
-  WideString wstrCurrency = pRuntime->ToWideString(params[4]);
-  bool bCurrencyPrepend = pRuntime->ToBoolean(params[5]);
+  WideString wstrCurrency = pRuntime->ToWideStringReentrant(params[4]);
+  bool bCurrencyPrepend = pRuntime->ToBooleanReentrant(params[5]);
 
   // Processing decimal places
   NormalizeDecimalMark(&strValue);
@@ -695,10 +695,11 @@ CJS_Result CJS_PublicMethods::AFNumber_Format(
     if (iNegStyle == 1 || iNegStyle == 3) {
       if (CJS_Field* fTarget = pEventContext->TargetField()) {
         v8::Local<v8::Array> arColor = pRuntime->NewArray();
-        pRuntime->PutArrayElement(arColor, 0, pRuntime->NewString("RGB"));
-        pRuntime->PutArrayElement(arColor, 1, pRuntime->NewNumber(1));
-        pRuntime->PutArrayElement(arColor, 2, pRuntime->NewNumber(0));
-        pRuntime->PutArrayElement(arColor, 3, pRuntime->NewNumber(0));
+        pRuntime->PutArrayElementReentrant(arColor, 0,
+                                           pRuntime->NewString("RGB"));
+        pRuntime->PutArrayElementReentrant(arColor, 1, pRuntime->NewNumber(1));
+        pRuntime->PutArrayElementReentrant(arColor, 2, pRuntime->NewNumber(0));
+        pRuntime->PutArrayElementReentrant(arColor, 3, pRuntime->NewNumber(0));
         fTarget->set_text_color(pRuntime, arColor);
       }
     }
@@ -706,14 +707,15 @@ CJS_Result CJS_PublicMethods::AFNumber_Format(
     if (iNegStyle == 1 || iNegStyle == 3) {
       if (CJS_Field* fTarget = pEventContext->TargetField()) {
         v8::Local<v8::Array> arColor = pRuntime->NewArray();
-        pRuntime->PutArrayElement(arColor, 0, pRuntime->NewString("RGB"));
-        pRuntime->PutArrayElement(arColor, 1, pRuntime->NewNumber(0));
-        pRuntime->PutArrayElement(arColor, 2, pRuntime->NewNumber(0));
-        pRuntime->PutArrayElement(arColor, 3, pRuntime->NewNumber(0));
+        pRuntime->PutArrayElementReentrant(arColor, 0,
+                                           pRuntime->NewString("RGB"));
+        pRuntime->PutArrayElementReentrant(arColor, 1, pRuntime->NewNumber(0));
+        pRuntime->PutArrayElementReentrant(arColor, 2, pRuntime->NewNumber(0));
+        pRuntime->PutArrayElementReentrant(arColor, 3, pRuntime->NewNumber(0));
 
         CJS_Result result = fTarget->get_text_color(pRuntime);
         CFX_Color crProp = CJS_Color::ConvertArrayToPWLColor(
-            pRuntime, pRuntime->ToArray(result.Return()));
+            pRuntime, pRuntime->ToArrayReentrant(result.Return()));
         CFX_Color crColor =
             CJS_Color::ConvertArrayToPWLColor(pRuntime, arColor);
         if (crColor != crProp) {
@@ -777,7 +779,7 @@ CJS_Result CJS_PublicMethods::AFNumber_Keystroke(
     }
   }
 
-  int iSepStyle = ValidStyleOrZero(pRuntime->ToInt32(params[1]));
+  int iSepStyle = ValidStyleOrZero(pRuntime->ToInt32Reentrant(params[1]));
   const wchar_t cSep = DecimalMarkForStyle(iSepStyle);
 
   bool bHasSep = wstrValue.Contains(cSep);
@@ -835,10 +837,11 @@ CJS_Result CJS_PublicMethods::AFPercent_Format(
   // Acrobat will accept this. Anything larger causes it to throw an error.
   static constexpr int kMaxSepStyle = 49;
 
-  int iDec = pRuntime->ToInt32(params[0]);
-  int iSepStyle = pRuntime->ToInt32(params[1]);
+  int iDec = pRuntime->ToInt32Reentrant(params[0]);
+  int iSepStyle = pRuntime->ToInt32Reentrant(params[1]);
   // TODO(thestig): How do we handle negative raw |bPercentPrepend| values?
-  bool bPercentPrepend = params.size() > 2 && pRuntime->ToBoolean(params[2]);
+  bool bPercentPrepend =
+      params.size() > 2 && pRuntime->ToBooleanReentrant(params[2]);
   if (iDec < 0 || iSepStyle < 0 || iSepStyle > kMaxSepStyle) {
     return CJS_Result::Failure(JSMessage::kValueError);
   }
@@ -939,7 +942,7 @@ CJS_Result CJS_PublicMethods::AFDate_FormatEx(
     return CJS_Result::Success();
   }
 
-  WideString sFormat = pRuntime->ToWideString(params[0]);
+  WideString sFormat = pRuntime->ToWideStringReentrant(params[0]);
   double dDate;
   if (strValue.Contains(L"GMT")) {
     // e.g. "Tue Aug 11 14:24:16 GMT+08002009"
@@ -1023,7 +1026,7 @@ CJS_Result CJS_PublicMethods::AFDate_KeystrokeEx(
   }
 
   bool bWrongFormat = false;
-  WideString sFormat = pRuntime->ToWideString(params[0]);
+  WideString sFormat = pRuntime->ToWideStringReentrant(params[0]);
   double dRet = ParseDateUsingFormat(pRuntime->GetIsolate(), strValue, sFormat,
                                      &bWrongFormat);
   if (bWrongFormat || isnan(dRet)) {
@@ -1042,8 +1045,8 @@ CJS_Result CJS_PublicMethods::AFDate_Format(
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  int index =
-      WithinBoundsOrZero(pRuntime->ToInt32(params[0]), std::size(kDateFormats));
+  int index = WithinBoundsOrZero(pRuntime->ToInt32Reentrant(params[0]),
+                                 std::size(kDateFormats));
   v8::LocalVector<v8::Value> newParams(pRuntime->GetIsolate());
   newParams.push_back(pRuntime->NewString(kDateFormats[index]));
   return AFDate_FormatEx(pRuntime, newParams);
@@ -1057,8 +1060,8 @@ CJS_Result CJS_PublicMethods::AFDate_Keystroke(
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  int index =
-      WithinBoundsOrZero(pRuntime->ToInt32(params[0]), std::size(kDateFormats));
+  int index = WithinBoundsOrZero(pRuntime->ToInt32Reentrant(params[0]),
+                                 std::size(kDateFormats));
   v8::LocalVector<v8::Value> newParams(pRuntime->GetIsolate());
   newParams.push_back(pRuntime->NewString(kDateFormats[index]));
   return AFDate_KeystrokeEx(pRuntime, newParams);
@@ -1072,8 +1075,8 @@ CJS_Result CJS_PublicMethods::AFTime_Format(
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  int index =
-      WithinBoundsOrZero(pRuntime->ToInt32(params[0]), std::size(kTimeFormats));
+  int index = WithinBoundsOrZero(pRuntime->ToInt32Reentrant(params[0]),
+                                 std::size(kTimeFormats));
   v8::LocalVector<v8::Value> newParams(pRuntime->GetIsolate());
   newParams.push_back(pRuntime->NewString(kTimeFormats[index]));
   return AFDate_FormatEx(pRuntime, newParams);
@@ -1086,8 +1089,8 @@ CJS_Result CJS_PublicMethods::AFTime_Keystroke(
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  int index =
-      WithinBoundsOrZero(pRuntime->ToInt32(params[0]), std::size(kTimeFormats));
+  int index = WithinBoundsOrZero(pRuntime->ToInt32Reentrant(params[0]),
+                                 std::size(kTimeFormats));
   v8::LocalVector<v8::Value> newParams(pRuntime->GetIsolate());
   newParams.push_back(pRuntime->NewString(kTimeFormats[index]));
   return AFDate_KeystrokeEx(pRuntime, newParams);
@@ -1120,7 +1123,7 @@ CJS_Result CJS_PublicMethods::AFSpecial_Format(
 
   const WideString& wsSource = pEvent->Value();
   WideString wsFormat;
-  switch (pRuntime->ToInt32(params[0])) {
+  switch (pRuntime->ToInt32Reentrant(params[0])) {
     case 0:
       wsFormat = WideString::FromASCII("99999");
       break;
@@ -1157,7 +1160,7 @@ CJS_Result CJS_PublicMethods::AFSpecial_KeystrokeEx(
   }
 
   const WideString& valEvent = pEvent->Value();
-  WideString wstrMask = pRuntime->ToWideString(params[0]);
+  WideString wstrMask = pRuntime->ToWideStringReentrant(params[0]);
   if (wstrMask.IsEmpty()) {
     return CJS_Result::Success();
   }
@@ -1247,7 +1250,7 @@ CJS_Result CJS_PublicMethods::AFSpecial_Keystroke(
   }
 
   const char* cFormat = "";
-  switch (pRuntime->ToInt32(params[0])) {
+  switch (pRuntime->ToInt32Reentrant(params[0])) {
     case 0:
       cFormat = "99999";
       break;
@@ -1300,8 +1303,8 @@ CJS_Result CJS_PublicMethods::AFParseDateEx(
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  WideString sValue = pRuntime->ToWideString(params[0]);
-  WideString sFormat = pRuntime->ToWideString(params[1]);
+  WideString sValue = pRuntime->ToWideStringReentrant(params[0]);
+  WideString sFormat = pRuntime->ToWideStringReentrant(params[1]);
   double dDate =
       ParseDateUsingFormat(pRuntime->GetIsolate(), sValue, sFormat, nullptr);
   if (isnan(dDate)) {
@@ -1321,9 +1324,9 @@ CJS_Result CJS_PublicMethods::AFSimple(
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  WideString sFunction = pRuntime->ToWideString(params[0]);
-  double arg1 = pRuntime->ToDouble(params[1]);
-  double arg2 = pRuntime->ToDouble(params[2]);
+  WideString sFunction = pRuntime->ToWideStringReentrant(params[0]);
+  double arg1 = pRuntime->ToDoubleReentrant(params[1]);
+  double arg2 = pRuntime->ToDoubleReentrant(params[2]);
   if (isnan(arg1) || isnan(arg2)) {
     return CJS_Result::Failure(JSMessage::kValueError);
   }
@@ -1347,7 +1350,7 @@ CJS_Result CJS_PublicMethods::AFMakeNumber(
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  WideString ws = pRuntime->ToWideString(params[0]);
+  WideString ws = pRuntime->ToWideStringReentrant(params[0]);
   NormalizeDecimalMarkW(&ws);
 
   v8::Local<v8::Value> val =
@@ -1371,19 +1374,23 @@ CJS_Result CJS_PublicMethods::AFSimple_Calculate(
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  WideString sFunction = pRuntime->ToWideString(params[0]);
+  WideString sFunction = pRuntime->ToWideStringReentrant(params[0]);
   v8::Local<v8::Array> FieldNameArray =
       AF_MakeArrayFromList(pRuntime, params[1]);
 
-  CPDFSDK_InteractiveForm* pReaderForm =
-      pRuntime->GetFormFillEnv()->GetInteractiveForm();
+  CPDFSDK_FormFillEnvironment* form_fill_env = pRuntime->GetFormFillEnv();
+  if (!form_fill_env) {
+    return CJS_Result::Failure(JSMessage::kBadObjectError);
+  }
+
+  CPDFSDK_InteractiveForm* pReaderForm = form_fill_env->GetInteractiveForm();
   CPDF_InteractiveForm* pForm = pReaderForm->GetInteractiveForm();
 
   double dValue = sFunction.EqualsASCII("PRD") ? 1.0 : 0.0;
   int nFieldsCount = 0;
   for (size_t i = 0; i < pRuntime->GetArrayLength(FieldNameArray); ++i) {
-    WideString wsFieldName =
-        pRuntime->ToWideString(pRuntime->GetArrayElement(FieldNameArray, i));
+    WideString wsFieldName = pRuntime->ToWideStringReentrant(
+        pRuntime->GetArrayElementReentrant(FieldNameArray, i));
 
     for (size_t j = 0; j < pForm->CountFields(wsFieldName); ++j) {
       CPDF_FormField* pFormField = pForm->GetField(j, wsFieldName);
@@ -1452,7 +1459,8 @@ CJS_Result CJS_PublicMethods::AFSimple_Calculate(
 
   CJS_EventContext* context = pRuntime->GetCurrentEventContext();
   if (context->HasValue()) {
-    context->Value() = pRuntime->ToWideString(pRuntime->NewNumber(dValue));
+    context->Value() =
+        pRuntime->ToWideStringReentrant(pRuntime->NewNumber(dValue));
   }
 
   return CJS_Result::Success();
@@ -1477,30 +1485,30 @@ CJS_Result CJS_PublicMethods::AFRange_Validate(
   }
 
   double dEventValue = atof(pEvent->Value().ToUTF8().c_str());
-  bool bGreaterThan = pRuntime->ToBoolean(params[0]);
-  double dGreaterThan = pRuntime->ToDouble(params[1]);
-  bool bLessThan = pRuntime->ToBoolean(params[2]);
-  double dLessThan = pRuntime->ToDouble(params[3]);
+  bool bGreaterThan = pRuntime->ToBooleanReentrant(params[0]);
+  double dGreaterThan = pRuntime->ToDoubleReentrant(params[1]);
+  bool bLessThan = pRuntime->ToBooleanReentrant(params[2]);
+  double dLessThan = pRuntime->ToDoubleReentrant(params[3]);
   WideString swMsg;
 
   if (bGreaterThan && bLessThan) {
     if (dEventValue < dGreaterThan || dEventValue > dLessThan) {
       swMsg = WideString::Format(
           JSGetStringFromID(JSMessage::kRangeBetweenError).c_str(),
-          pRuntime->ToWideString(params[1]).c_str(),
-          pRuntime->ToWideString(params[3]).c_str());
+          pRuntime->ToWideStringReentrant(params[1]).c_str(),
+          pRuntime->ToWideStringReentrant(params[3]).c_str());
     }
   } else if (bGreaterThan) {
     if (dEventValue < dGreaterThan) {
       swMsg = WideString::Format(
           JSGetStringFromID(JSMessage::kRangeGreaterError).c_str(),
-          pRuntime->ToWideString(params[1]).c_str());
+          pRuntime->ToWideStringReentrant(params[1]).c_str());
     }
   } else if (bLessThan) {
     if (dEventValue > dLessThan) {
       swMsg = WideString::Format(
           JSGetStringFromID(JSMessage::kRangeLessError).c_str(),
-          pRuntime->ToWideString(params[3]).c_str());
+          pRuntime->ToWideStringReentrant(params[3]).c_str());
     }
   }
 
@@ -1518,8 +1526,8 @@ CJS_Result CJS_PublicMethods::AFExtractNums(
     return CJS_Result::Failure(JSMessage::kParamError);
   }
 
-  WideString str = pRuntime->ToWideString(params[0]);
-  if (str.GetLength() > 0 && IsDigitSeparatorOrDecimalMark(str[0])) {
+  WideString str = pRuntime->ToWideStringReentrant(params[0]);
+  if (IsDigitSeparatorOrDecimalMark(str.Front())) {  // Front() safe when emtpy.
     str.InsertAtFront(L'0');
   }
 
@@ -1530,15 +1538,15 @@ CJS_Result CJS_PublicMethods::AFExtractNums(
     if (FXSYS_IsDecimalDigit(wc)) {
       sPart += wc;
     } else if (sPart.GetLength() > 0) {
-      pRuntime->PutArrayElement(nums, nIndex,
-                                pRuntime->NewString(sPart.AsStringView()));
+      pRuntime->PutArrayElementReentrant(
+          nums, nIndex, pRuntime->NewString(sPart.AsStringView()));
       sPart.clear();
       nIndex++;
     }
   }
   if (sPart.GetLength() > 0) {
-    pRuntime->PutArrayElement(nums, nIndex,
-                              pRuntime->NewString(sPart.AsStringView()));
+    pRuntime->PutArrayElementReentrant(
+        nums, nIndex, pRuntime->NewString(sPart.AsStringView()));
   }
   if (pRuntime->GetArrayLength(nums) > 0) {
     return CJS_Result::Success(nums);

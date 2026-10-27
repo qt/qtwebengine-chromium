@@ -110,7 +110,17 @@ absl::Status InProgressStroke::EnqueueInputs(
       predicted_inputs, GetFirstValidInput(predicted_inputs),
       predicted_inputs.Size()));
 
+  queued_inputs_since_last_update_shape_ = true;
+
   return absl::OkStatus();
+}
+
+bool InProgressStroke::HasQueuedInputs() const {
+  return !queued_real_inputs_.IsEmpty() ||
+         !queued_predicted_inputs_.IsEmpty() ||
+         // The only thing queued was empty, but a previous prediction was
+         // cleared as a result.
+         (queued_inputs_since_last_update_shape_ && PredictedInputCount() > 0);
 }
 
 absl::Status InProgressStroke::UpdateShape(Duration32 current_elapsed_time) {
@@ -124,10 +134,14 @@ absl::Status InProgressStroke::UpdateShape(Duration32 current_elapsed_time) {
       !status.ok()) {
     return status;
   }
-  if (inputs_are_finished_ || !queued_real_inputs_.IsEmpty() ||
-      !queued_predicted_inputs_.IsEmpty()) {
+  current_elapsed_time_ = current_elapsed_time;
+
+  if (HasQueuedInputs()) {
     // Erase any old predicted inputs.
     processed_inputs_.Erase(real_input_count_);
+  } else if (!ChangesWithTime()) {
+    // Exit early if no change is needed.
+    return absl::OkStatus();
   }
 
   if (absl::Status status = processed_inputs_.Append(queued_real_inputs_);
@@ -149,10 +163,11 @@ absl::Status InProgressStroke::UpdateShape(Duration32 current_elapsed_time) {
     return status;
   }
 
-  current_elapsed_time_ = current_elapsed_time;
-
   input_modeler_.ExtendStroke(queued_real_inputs_, queued_predicted_inputs_,
                               current_elapsed_time);
+  if (inputs_are_finished_) {
+    input_modeler_.FinishStrokeInputs();
+  }
   uint32_t num_coats = BrushCoatCount();
   for (uint32_t i = 0; i < num_coats; ++i) {
     StrokeShapeUpdate update = shape_builders_[i].ExtendStroke(input_modeler_);
@@ -164,14 +179,12 @@ absl::Status InProgressStroke::UpdateShape(Duration32 current_elapsed_time) {
 
   queued_real_inputs_.Clear();
   queued_predicted_inputs_.Clear();
+  queued_inputs_since_last_update_shape_ = false;
   return absl::OkStatus();
 }
 
 bool InProgressStroke::NeedsUpdate() const {
-  if (!queued_real_inputs_.IsEmpty() || !queued_predicted_inputs_.IsEmpty()) {
-    return true;
-  }
-  return ChangesWithTime();
+  return HasQueuedInputs() || ChangesWithTime();
 }
 
 bool InProgressStroke::ChangesWithTime() const {

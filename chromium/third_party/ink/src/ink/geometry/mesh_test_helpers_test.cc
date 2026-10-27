@@ -19,12 +19,14 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
+#include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/substitute.h"
 #include "ink/geometry/affine_transform.h"
 #include "ink/geometry/angle.h"
+#include "ink/geometry/mesh.h"
 #include "ink/geometry/mesh_format.h"
 #include "ink/geometry/mutable_mesh.h"
 #include "ink/geometry/point.h"
@@ -34,6 +36,7 @@
 namespace ink {
 namespace {
 
+using ::absl_testing::IsOk;
 using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::ExplainMatchResult;
@@ -132,7 +135,7 @@ TEST(MeshTestHelpersTest, MakeStraightLineMutableMeshWithAlternateFormat) {
        {AttrType::kFloat2PackedInOneFloat, AttrId::kPosition},
        {AttrType::kFloat3PackedInTwoFloats, AttrId::kCustom0}},
       MeshFormat::IndexFormat::k16BitUnpacked16BitPacked);
-  ASSERT_EQ(format.status(), absl::OkStatus());
+  ASSERT_THAT(format, IsOk());
 
   MutableMesh m = MakeStraightLineMutableMesh(2, *format);
 
@@ -235,7 +238,7 @@ TEST(MeshTestHelpersTest, MakeCoiledRingMutableMeshWithAlternateFormat) {
        {AttrType::kFloat2PackedInOneFloat, AttrId::kPosition},
        {AttrType::kFloat3PackedInTwoFloats, AttrId::kCustom0}},
       MeshFormat::IndexFormat::k16BitUnpacked16BitPacked);
-  ASSERT_EQ(format.status(), absl::OkStatus());
+  ASSERT_THAT(format, IsOk());
 
   MutableMesh m = MakeCoiledRingMutableMesh(12, 3, *format);
 
@@ -356,7 +359,7 @@ TEST(MeshTestHelpersTest, MakeStarMutableMeshWithAlternateFormat) {
        {AttrType::kFloat2PackedInOneFloat, AttrId::kPosition},
        {AttrType::kFloat3PackedInTwoFloats, AttrId::kCustom0}},
       MeshFormat::IndexFormat::k16BitUnpacked16BitPacked);
-  ASSERT_EQ(format.status(), absl::OkStatus());
+  ASSERT_THAT(format, IsOk());
 
   MutableMesh m = MakeStarMutableMesh(10, *format);
 
@@ -392,6 +395,14 @@ TEST(MeshTestHelpersTest, MakeStarMutableMeshWithTransform) {
   EXPECT_THAT(m.TriangleIndices(0), ElementsAre(0, 1, 2));
   EXPECT_THAT(m.TriangleIndices(1), ElementsAre(2, 3, 4));
   EXPECT_THAT(m.TriangleIndices(2), ElementsAre(4, 5, 6));
+}
+
+TEST(MeshTestHelpersTest, LoadedMeshesHaveTriangles) {
+  for (const auto& filename : kTestMeshFiles) {
+    absl::StatusOr<Mesh> mesh = LoadMesh(filename);
+    ASSERT_THAT(mesh, IsOk());
+    EXPECT_GT(mesh->TriangleCount(), 0);
+  }
 }
 
 }  // namespace

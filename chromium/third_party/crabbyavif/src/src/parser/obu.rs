@@ -320,7 +320,7 @@ impl Av1SequenceHeader {
 #[cfg(feature = "avm")]
 #[derive(Debug, Default)]
 pub struct Av2SequenceHeader {
-    single_picture_header_flag: bool,
+    reduced_still_picture_header: bool,
     max_width: u32,
     max_height: u32,
     pub color_primaries: ColorPrimaries,
@@ -333,27 +333,21 @@ pub struct Av2SequenceHeader {
 #[cfg(feature = "avm")]
 impl Av2SequenceHeader {
     fn parse_profile(&mut self, stream: &mut IStream) -> AvifResult<()> {
-        self.config.seq_profile = stream.read_bits(3)? as u8;
-        if self.config.seq_profile > 2 {
+        self.config.seq_profile = stream.read_bits(5)? as u8;
+        if self.config.seq_profile >= 32 {
             return AvifError::bmff_parse_failed(format!(
                 "invalid seq_profile {}",
                 self.config.seq_profile
             ));
         }
-        self.single_picture_header_flag = stream.read_bool()?;
-        if !self.single_picture_header_flag {
-            stream.skip_bits(3)?; // seq_lcr_id
-            stream.skip_bits(1)?; // still_picture
-            return AvifError::not_implemented();
-        }
+        self.reduced_still_picture_header = stream.read_bool()?;
         self.config.seq_level_idx0 = stream.read_bits(5)? as u8;
         self.config.seq_tier_0 =
-            if self.config.seq_level_idx0 > 7 && !self.single_picture_header_flag {
-                // TODO: b/437292541 - Check if single_tier_0 is seq_tier_0.
-                stream.read_bits(1)? // single_tier_0
+            if self.config.seq_level_idx0 >= 4 && !self.reduced_still_picture_header {
+                stream.read_bits(1)? as u8
             } else {
                 0
-            } as u8;
+            };
         Ok(())
     }
 
@@ -364,14 +358,6 @@ impl Av2SequenceHeader {
         let max_frame_height_minus_1 = stream.read_bits(frame_height_bits_minus_1 as usize + 1)?;
         self.max_width = checked_add!(max_frame_width_minus_1, 1)?;
         self.max_height = checked_add!(max_frame_height_minus_1, 1)?;
-        if stream.read_bool()? {
-            // conf_window_flag
-            stream.skip_uvlc()?; // conf_win_left_offset
-            stream.skip_uvlc()?; // conf_win_right_offset
-            stream.skip_uvlc()?; // conf_win_top_offset
-            stream.skip_uvlc()?; // conf_win_bottom_offset
-        }
-
         Ok(())
     }
 
@@ -401,6 +387,21 @@ impl Av2SequenceHeader {
                 "invalid bitdepth_idx {}",
                 self.config.bitdepth_idx
             ));
+        }
+        Ok(())
+    }
+
+    fn parse_non_reduced_still_picture_header(&self, stream: &mut IStream) -> AvifResult<()> {
+        if !self.reduced_still_picture_header {
+            stream.skip_bits(3)?; // seq_lcr_id
+            stream.skip_bits(1)?; // still_picture
+            stream.skip_bits(2)?; // max_tlayer_id
+            let max_mlayer_id = stream.read_bits(2)?;
+            if max_mlayer_id > 0 {
+                let n = (max_mlayer_id as f32 + 1.).log2().ceil() as usize;
+                stream.skip_bits(n)?; // seq_max_mlayer_cnt_minus_1
+            }
+            stream.skip_bits(1)?; // monotonic_output_order_flag
         }
         Ok(())
     }
@@ -541,8 +542,9 @@ impl Av2SequenceHeader {
                         ));
                     }
                     sequence_header.parse_profile(&mut stream)?;
-                    sequence_header.parse_frame_max_dimensions(&mut stream)?;
                     sequence_header.parse_chroma_format_bitdepth(&mut stream)?;
+                    sequence_header.parse_non_reduced_still_picture_header(&mut stream)?;
+                    sequence_header.parse_frame_max_dimensions(&mut stream)?;
                     sequence_header.color_primaries = ColorPrimaries::Unspecified;
                     sequence_header.transfer_characteristics = TransferCharacteristics::Unspecified;
                     sequence_header.matrix_coefficients = MatrixCoefficients::Unspecified;

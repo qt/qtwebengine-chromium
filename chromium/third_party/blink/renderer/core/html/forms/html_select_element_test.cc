@@ -70,6 +70,10 @@ class HTMLSelectElementTest : public PageTestBase {
     auto* select = To<HTMLSelectElement>(GetDocument().body()->firstChild());
     return select->InnerElement().textContent();
   }
+
+  bool HasDescendantsObserver(const HTMLSelectElement& select) const {
+    return select.descendants_observer_ != nullptr;
+  }
 };
 
 void HTMLSelectElementTest::SetUp() {
@@ -1107,6 +1111,64 @@ TEST_F(HTMLSelectElementTest, InnerElementOverflow) {
   EXPECT_EQ(inner_element.GetComputedStyle()->OverflowY(), EOverflow::kHidden);
 }
 
+TEST_F(HTMLSelectElementTest, DescendantCounters) {
+  CHECK(RuntimeEnabledFeatures::FilterableSelectEnabled());
+  CHECK(RuntimeEnabledFeatures::InputInSelectEnabled());
+  SetHtmlInnerHTML(R"HTML(
+    <select id=select>
+      <!-- <input id=c1> -->
+      <div id=c2>
+        <input>
+      </div>
+      <div id=c3>
+        <input id=c3i>
+        <option id=c3o>option</option>
+      </div>
+      <option id=c4>option</option>
+      <div id=c5></div>
+    </select>
+  )HTML");
+
+  HTMLSelectElement* select = To<HTMLSelectElement>(GetElementById("select"));
+  Element* c2 = GetElementById("c2");
+  Element* c3 = GetElementById("c3");
+  Element* c4 = GetElementById("c4");
+  Element* c5 = GetElementById("c5");
+  HTMLInputElement* c1 = MakeGarbageCollected<HTMLInputElement>(GetDocument());
+  select->insertBefore(c1, c2);
+
+  EXPECT_EQ(select->ChildrenDescendantCounts().at(c1).num_options, 0);
+  EXPECT_EQ(select->ChildrenDescendantCounts().at(c1).num_inputs, 1);
+  EXPECT_EQ(select->ChildrenDescendantCounts().at(c2).num_options, 0);
+  EXPECT_EQ(select->ChildrenDescendantCounts().at(c2).num_inputs, 1);
+  EXPECT_EQ(select->ChildrenDescendantCounts().at(c3).num_options, 1);
+  EXPECT_EQ(select->ChildrenDescendantCounts().at(c3).num_inputs, 1);
+  EXPECT_EQ(select->ChildrenDescendantCounts().at(c4).num_options, 1);
+  EXPECT_EQ(select->ChildrenDescendantCounts().at(c4).num_inputs, 0);
+  EXPECT_FALSE(select->ChildrenDescendantCounts().Contains(c5));
+  EXPECT_EQ(select->NumDescendantInputs(), 3);
+
+  c1->remove();
+  EXPECT_FALSE(select->ChildrenDescendantCounts().Contains(c1));
+  EXPECT_EQ(select->NumDescendantInputs(), 2);
+
+  c2->remove();
+  EXPECT_FALSE(select->ChildrenDescendantCounts().Contains(c2));
+  EXPECT_EQ(select->NumDescendantInputs(), 1);
+
+  GetElementById("c3o")->remove();
+  EXPECT_EQ(select->ChildrenDescendantCounts().at(c3).num_options, 0);
+  EXPECT_EQ(select->ChildrenDescendantCounts().at(c3).num_inputs, 1);
+  EXPECT_EQ(select->NumDescendantInputs(), 1);
+  GetElementById("c3i")->remove();
+  EXPECT_FALSE(select->ChildrenDescendantCounts().Contains(c3));
+  EXPECT_EQ(select->NumDescendantInputs(), 0);
+
+  c4->remove();
+  EXPECT_FALSE(select->ChildrenDescendantCounts().Contains(c4));
+  EXPECT_EQ(select->NumDescendantInputs(), 0);
+}
+
 class HTMLSelectElementSimTest : public SimTest {};
 
 TEST_F(HTMLSelectElementSimTest, DialogModeBaseSelectAddAllowedButton) {
@@ -1227,6 +1289,29 @@ TEST_F(HTMLSelectElementSimTest, DialogModeBaseSelectNestedButton) {
   Compositor().BeginFrame();
 
   ASSERT_FALSE(select->IsInDialogMode());
+}
+
+TEST_F(HTMLSelectElementTest,
+       RemovedFromDocumentDisconnectsDescendantsObserver) {
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+    <style>
+      select, ::picker(select) { appearance: base-select; }
+    </style>
+    <select id=select>
+      <option>one</option>
+    </select>
+  )HTML");
+  auto* select = To<HTMLSelectElement>(
+      GetDocument().getElementById(AtomicString("select")));
+  GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
+  ASSERT_TRUE(HasDescendantsObserver(*select));
+
+  select->appendChild(MakeGarbageCollected<HTMLInputElement>(GetDocument()));
+
+  select->remove();
+  EXPECT_FALSE(HasDescendantsObserver(*select));
+
+  test::RunPendingTasks();
 }
 
 }  // namespace blink

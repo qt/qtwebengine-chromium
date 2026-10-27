@@ -25,7 +25,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/utils/WGPUHelpers.h"
+#include "src/dawn/utils/WGPUHelpers.h"
 
 #include <algorithm>
 #include <cstring>
@@ -35,12 +35,12 @@
 #include <sstream>
 
 #include "absl/container/flat_hash_map.h"
-#include "dawn/common/Constants.h"
-#include "dawn/common/Log.h"
-#include "dawn/common/Numeric.h"
+#include "src/dawn/common/Constants.h"
+#include "src/dawn/common/Log.h"
+#include "src/dawn/common/Numeric.h"
 
 #ifndef __EMSCRIPTEN__
-#include "dawn/common/ExternalTextureParams.h"
+#include "src/dawn/common/ExternalTextureParams.h"
 #endif  // __EMSCRIPTEN__
 //
 namespace dawn::utils {
@@ -146,12 +146,7 @@ void ComboRenderPassDescriptor::UnsetDepthStencilLoadStoreOpsForFormat(wgpu::Tex
     }
 }
 
-BasicRenderPass::BasicRenderPass()
-    : width(0),
-      height(0),
-      color(nullptr),
-      colorFormat(wgpu::TextureFormat::RGBA8Unorm),
-      renderPassInfo() {}
+BasicRenderPass::BasicRenderPass() = default;
 
 BasicRenderPass::BasicRenderPass(uint32_t texWidth,
                                  uint32_t texHeight,
@@ -464,8 +459,7 @@ const absl::flat_hash_map<wgpu::FeatureName, absl::flat_hash_set<wgpu::FeatureNa
 
 // Below are experimental features that are not supported by Emscripten.
 #ifndef __EMSCRIPTEN__
-        {wgpu::FeatureName::ChromiumExperimentalSubgroupSizeControl,
-         {wgpu::FeatureName::Subgroups}},
+        {wgpu::FeatureName::SubgroupSizeControl, {wgpu::FeatureName::Subgroups}},
 #endif
 
         // Add other implicit enabling rules here

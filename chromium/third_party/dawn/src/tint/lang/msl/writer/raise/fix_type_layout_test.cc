@@ -31,6 +31,7 @@
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/transform/helper_test.h"
 #include "src/tint/lang/core/number.h"
+#include "src/tint/lang/msl/ir/builtin_call.h"
 
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
@@ -4354,6 +4355,246 @@ $B1: {  # root
 )";
 
     options.replace_bool_with_u32 = false;
+    Run();
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(MslWriter_FixTypeLayoutTest, BufferView_Vec3) {
+    auto* S = ty.Struct(mod.symbols.New("S"), {
+                                                  {mod.symbols.New("a"), ty.vec3u()},
+                                                  {mod.symbols.New("b"), ty.u32()},
+                                              });
+    auto* v = b.Var("v", ty.ptr(storage, ty.unsized_buffer()));
+    v->SetBindingPoint(0, 0);
+    mod.root_block->Append(v);
+
+    auto* foo = b.Function("foo", ty.void_());
+    b.Append(foo->Block(), [&] {
+        auto* p =
+            b.CallExplicit(ty.ptr(storage, S), core::BuiltinFn::kBufferView, Vector{S}, v, 0_u);
+        b.Load(p);
+        b.Return(foo);
+    });
+
+    auto* src = R"(
+S = struct @align(16) {
+  a:vec3<u32> @offset(0)
+  b:u32 @offset(12)
+}
+
+$B1: {  # root
+  %v:ptr<storage, buffer, read_write> = var undef @binding_point(0, 0)
+}
+
+%foo = func():void {
+  $B2: {
+    %3:ptr<storage, S, read_write> = bufferView<S> %v, 0u
+    %4:S = load %3
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+S = struct @align(16) {
+  a:vec3<u32> @offset(0)
+  b:u32 @offset(12)
+}
+
+S_packed_vec3 = struct @align(16) {
+  a:__packed_vec3<u32> @offset(0)
+  b:u32 @offset(12)
+}
+
+$B1: {  # root
+  %v:ptr<storage, buffer, read_write> = var undef @binding_point(0, 0)
+}
+
+%foo = func():void {
+  $B2: {
+    %3:ptr<storage, S_packed_vec3, read_write> = bufferView<S_packed_vec3> %v, 0u
+    %4:S = call %tint_load_struct_packed_vec3, %3
+    ret
+  }
+}
+%tint_load_struct_packed_vec3 = func(%from:ptr<storage, S_packed_vec3, read_write>):S {
+  $B3: {
+    %7:ptr<storage, __packed_vec3<u32>, read_write> = access %from, 0u
+    %8:__packed_vec3<u32> = load %7
+    %9:vec3<u32> = msl.convert %8
+    %10:ptr<storage, u32, read_write> = access %from, 1u
+    %11:u32 = load %10
+    %12:S = construct %9, %11
+    ret %12
+  }
+}
+)";
+
+    Run();
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(MslWriter_FixTypeLayoutTest, BufferArrayView_Vec3) {
+    auto* S = ty.Struct(mod.symbols.New("S"), {
+                                                  {mod.symbols.New("a"), ty.vec3u()},
+                                                  {mod.symbols.New("b"), ty.u32()},
+                                              });
+    auto* v = b.Var("v", ty.ptr(storage, ty.unsized_buffer()));
+    v->SetBindingPoint(0, 0);
+    mod.root_block->Append(v);
+
+    auto* foo = b.Function("foo", ty.void_());
+    b.Append(foo->Block(), [&] {
+        auto* p =
+            b.CallExplicit(ty.ptr(storage, ty.runtime_array(S)), core::BuiltinFn::kBufferArrayView,
+                           Vector{ty.runtime_array(S)}, v, 0_u, 128_u);
+        auto* a = b.Access(ty.ptr(storage, S), p, 0_u);
+        b.Load(a);
+        b.Return(foo);
+    });
+
+    auto* src = R"(
+S = struct @align(16) {
+  a:vec3<u32> @offset(0)
+  b:u32 @offset(12)
+}
+
+$B1: {  # root
+  %v:ptr<storage, buffer, read_write> = var undef @binding_point(0, 0)
+}
+
+%foo = func():void {
+  $B2: {
+    %3:ptr<storage, array<S>, read_write> = bufferArrayView<array<S>> %v, 0u, 128u
+    %4:ptr<storage, S, read_write> = access %3, 0u
+    %5:S = load %4
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+S = struct @align(16) {
+  a:vec3<u32> @offset(0)
+  b:u32 @offset(12)
+}
+
+S_packed_vec3 = struct @align(16) {
+  a:__packed_vec3<u32> @offset(0)
+  b:u32 @offset(12)
+}
+
+$B1: {  # root
+  %v:ptr<storage, buffer, read_write> = var undef @binding_point(0, 0)
+}
+
+%foo = func():void {
+  $B2: {
+    %3:ptr<storage, array<S_packed_vec3>, read_write> = bufferArrayView<array<S_packed_vec3>> %v, 0u, 128u
+    %4:ptr<storage, S_packed_vec3, read_write> = access %3, 0u
+    %5:S = call %tint_load_struct_packed_vec3, %4
+    ret
+  }
+}
+%tint_load_struct_packed_vec3 = func(%from:ptr<storage, S_packed_vec3, read_write>):S {
+  $B3: {
+    %8:ptr<storage, __packed_vec3<u32>, read_write> = access %from, 0u
+    %9:__packed_vec3<u32> = load %8
+    %10:vec3<u32> = msl.convert %9
+    %11:ptr<storage, u32, read_write> = access %from, 1u
+    %12:u32 = load %11
+    %13:S = construct %10, %12
+    ret %13
+  }
+}
+)";
+
+    Run();
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(MslWriter_FixTypeLayoutTest, PointerOffset_Vec3) {
+    capabilities.Add(core::ir::Capability::kAllow8BitIntegers);
+
+    auto* S = ty.Struct(mod.symbols.New("S"), {
+                                                  {mod.symbols.New("a"), ty.vec3u()},
+                                                  {mod.symbols.New("b"), ty.u32()},
+                                              });
+    auto* v = b.Var("v", ty.ptr(storage, ty.runtime_array(ty.u8())));
+    v->SetBindingPoint(0, 0);
+    mod.root_block->Append(v);
+
+    auto* foo = b.Function("foo", ty.void_());
+    b.Append(foo->Block(), [&] {
+        auto* p = b.CallExplicit<ir::BuiltinCall>(ty.ptr(storage, S), BuiltinFn::kPointerOffset,
+                                                  Vector{S}, v, 0_u);
+        b.Load(p);
+        b.Return(foo);
+    });
+
+    auto* src = R"(
+S = struct @align(16) {
+  a:vec3<u32> @offset(0)
+  b:u32 @offset(12)
+}
+
+$B1: {  # root
+  %v:ptr<storage, array<u8>, read_write> = var undef @binding_point(0, 0)
+}
+
+%foo = func():void {
+  $B2: {
+    %3:ptr<storage, S, read_write> = msl.pointer_offset<S> %v, 0u
+    %4:S = load %3
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+S = struct @align(16) {
+  a:vec3<u32> @offset(0)
+  b:u32 @offset(12)
+}
+
+S_packed_vec3 = struct @align(16) {
+  a:__packed_vec3<u32> @offset(0)
+  b:u32 @offset(12)
+}
+
+$B1: {  # root
+  %v:ptr<storage, array<u8>, read_write> = var undef @binding_point(0, 0)
+}
+
+%foo = func():void {
+  $B2: {
+    %3:ptr<storage, S_packed_vec3, read_write> = msl.pointer_offset<S_packed_vec3> %v, 0u
+    %4:S = call %tint_load_struct_packed_vec3, %3
+    ret
+  }
+}
+%tint_load_struct_packed_vec3 = func(%from:ptr<storage, S_packed_vec3, read_write>):S {
+  $B3: {
+    %7:ptr<storage, __packed_vec3<u32>, read_write> = access %from, 0u
+    %8:__packed_vec3<u32> = load %7
+    %9:vec3<u32> = msl.convert %8
+    %10:ptr<storage, u32, read_write> = access %from, 1u
+    %11:u32 = load %10
+    %12:S = construct %9, %11
+    ret %12
+  }
+}
+)";
+
     Run();
 
     EXPECT_EQ(expect, str());

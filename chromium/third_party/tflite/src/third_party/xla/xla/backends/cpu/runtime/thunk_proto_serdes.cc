@@ -21,19 +21,16 @@ limitations under the License.
 #include <memory>
 #include <optional>
 #include <string>
-#include <tuple>
 #include <utility>
 #include <vector>
 
 #include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
-#include "absl/functional/any_invocable.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
@@ -467,51 +464,51 @@ absl::StatusOr<ThunkProto> ThunkSerDesProtobuf::ToProto(
   switch (thunk.kind()) {
     case Thunk::Kind::kConditional:
       TF_RETURN_IF_ERROR(::xla::cpu::ToProto(
-          tsl::down_cast<const ConditionalThunk&>(thunk), proto));
+          absl::down_cast<const ConditionalThunk&>(thunk), proto));
       break;
     case Thunk::Kind::kRngGetAndUpdateState:
       TF_RETURN_IF_ERROR(::xla::cpu::ToProto(
-          tsl::down_cast<const RngGetAndUpdateStateThunk&>(thunk), proto));
+          absl::down_cast<const RngGetAndUpdateStateThunk&>(thunk), proto));
       break;
     case Thunk::Kind::kKernel:
       TF_RETURN_IF_ERROR(::xla::cpu::ToProto(
-          tsl::down_cast<const KernelThunkBase&>(thunk), proto));
+          absl::down_cast<const KernelThunkBase&>(thunk), proto));
       break;
     case Thunk::Kind::kCall:
       TF_RETURN_IF_ERROR(
-          ::xla::cpu::ToProto(tsl::down_cast<const CallThunk&>(thunk), proto));
+          ::xla::cpu::ToProto(absl::down_cast<const CallThunk&>(thunk), proto));
       break;
     case Thunk::Kind::kInfeed:
       TF_RETURN_IF_ERROR(::xla::cpu::ToProto(
-          tsl::down_cast<const InfeedThunk&>(thunk), proto));
+          absl::down_cast<const InfeedThunk&>(thunk), proto));
       break;
     case Thunk::Kind::kOutfeed:
       TF_RETURN_IF_ERROR(::xla::cpu::ToProto(
-          tsl::down_cast<const OutfeedThunk&>(thunk), proto));
+          absl::down_cast<const OutfeedThunk&>(thunk), proto));
       break;
     case Thunk::Kind::kSort:
       TF_RETURN_IF_ERROR(
-          ::xla::cpu::ToProto(tsl::down_cast<const SortThunk&>(thunk), proto));
+          ::xla::cpu::ToProto(absl::down_cast<const SortThunk&>(thunk), proto));
       break;
     case Thunk::Kind::kTopK:
       TF_RETURN_IF_ERROR(
-          ::xla::cpu::ToProto(tsl::down_cast<const TopKThunk&>(thunk), proto));
+          ::xla::cpu::ToProto(absl::down_cast<const TopKThunk&>(thunk), proto));
       break;
     case Thunk::Kind::kWhile:
-      TF_RETURN_IF_ERROR(
-          ::xla::cpu::ToProto(tsl::down_cast<const WhileThunk&>(thunk), proto));
+      TF_RETURN_IF_ERROR(::xla::cpu::ToProto(
+          absl::down_cast<const WhileThunk&>(thunk), proto));
       break;
     case Thunk::Kind::kPartitionId:
       TF_RETURN_IF_ERROR(::xla::cpu::ToProto(
           static_cast<const PartitionIdThunk&>(
-              tsl::down_cast<const internal::LogicalIdThunk<
+              absl::down_cast<const internal::LogicalIdThunk<
                   internal::LogicalIdKind::kPartitionId>&>(thunk)),
           proto));
       break;
     case Thunk::Kind::kReplicaId:
       TF_RETURN_IF_ERROR(::xla::cpu::ToProto(
           static_cast<const ReplicaIdThunk&>(
-              tsl::down_cast<const internal::LogicalIdThunk<
+              absl::down_cast<const internal::LogicalIdThunk<
                   internal::LogicalIdKind::kReplicaId>&>(thunk)),
           proto));
       break;

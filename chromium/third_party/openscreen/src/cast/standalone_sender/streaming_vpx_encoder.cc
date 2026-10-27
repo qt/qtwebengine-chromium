@@ -96,7 +96,7 @@ StreamingVpxEncoder::StreamingVpxEncoder(const Parameters& params,
 
 StreamingVpxEncoder::~StreamingVpxEncoder() {
   {
-    std::unique_lock<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     target_bitrate_ = 0;
     cv_.notify_one();
   }
@@ -104,8 +104,7 @@ StreamingVpxEncoder::~StreamingVpxEncoder() {
 }
 
 int StreamingVpxEncoder::GetTargetBitrate() const {
-  // Note: No need to lock the `mutex_` since this method should be called on
-  // the same thread as SetTargetBitrate().
+  std::lock_guard<std::mutex> lock(mutex_);
   return target_bitrate_;
 }
 
@@ -114,7 +113,7 @@ void StreamingVpxEncoder::SetTargetBitrate(int new_bitrate) {
   // bitrate will not be zero.
   new_bitrate = std::max(new_bitrate, kBytesPerKilobyte);
 
-  std::unique_lock<std::mutex> lock(mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   // Only assign the new target bitrate if `target_bitrate_` has not yet been
   // used to signal the `encode_thread_` to end.
   if (target_bitrate_ > 0) {
@@ -139,9 +138,9 @@ void StreamingVpxEncoder::EncodeAndSend(
     work_unit.rtp_timestamp = RtpTimeTicks();
   } else {
     work_unit.rtp_timestamp = RtpTimeTicks::FromTimeSinceOrigin(
-        reference_time - start_time_, sender_->rtp_timebase());
+        reference_time - start_time_, sender_->config().rtp_timebase);
     if (work_unit.rtp_timestamp <= last_enqueued_rtp_timestamp_) {
-      OSP_LOG_WARN << "VIDEO[" << sender_->ssrc()
+      OSP_LOG_WARN << "VIDEO[" << sender_->config().sender_ssrc
                    << "] Dropping: RTP timestamp is not monotonically "
                       "increasing from last frame.";
       return;
@@ -149,7 +148,7 @@ void StreamingVpxEncoder::EncodeAndSend(
   }
   if (sender_->GetInFlightMediaDuration(work_unit.rtp_timestamp) >
       sender_->GetMaxInFlightMediaDuration()) {
-    OSP_LOG_WARN << "VIDEO[" << sender_->ssrc()
+    OSP_LOG_WARN << "VIDEO[" << sender_->config().sender_ssrc
                  << "] Dropping: In-flight media duration would be too high.";
     return;
   }
@@ -166,7 +165,7 @@ void StreamingVpxEncoder::EncodeAndSend(
       // a prediction for the next frame's duration.
       frame_duration =
           (work_unit.rtp_timestamp - last_enqueued_rtp_timestamp_)
-              .ToDuration<Clock::duration>(sender_->rtp_timebase());
+              .ToDuration<Clock::duration>(sender_->config().rtp_timebase);
     }
   }
   work_unit.duration =
@@ -179,7 +178,7 @@ void StreamingVpxEncoder::EncodeAndSend(
   work_unit.stats_callback = std::move(stats_callback);
   const bool force_key_frame = sender_->NeedsKeyFrame();
   {
-    std::unique_lock<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     needs_key_frame_ |= force_key_frame;
     encode_queue_.push(std::move(work_unit));
     cv_.notify_one();
@@ -411,7 +410,7 @@ void StreamingVpxEncoder::SendEncodedFrame(WorkUnitWithResults results) {
   if (sender_->EnqueueFrame(frame) != Sender::OK) {
     // Since the frame will not be sent, the encoder's frame dependency chain
     // has been broken. Force a key frame for the next frame.
-    std::unique_lock<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     needs_key_frame_ = true;
   }
 

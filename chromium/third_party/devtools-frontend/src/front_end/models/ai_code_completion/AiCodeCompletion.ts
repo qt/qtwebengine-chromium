@@ -14,7 +14,6 @@ import {debugLog} from './debug.js';
 interface AgentOptions {
   aidaClient: Host.AidaClient.AidaClient;
   serverSideLoggingEnabled?: boolean;
-  confirmSideEffectForTest?: typeof Promise.withResolvers;
 }
 
 interface RequestOptions {
@@ -134,6 +133,9 @@ const console = {
 };`;
 /* clang-format on */
 
+const MIN_CHARACTER_THRESHOLD = 5;
+const EMPTY_RESPONSE_DIFF_THRESHOLD = 3;
+
 /**
  * The AiCodeCompletion class is responsible for fetching code completion suggestions
  * from the AIDA backend.
@@ -142,6 +144,7 @@ export class AiCodeCompletion {
   #stopSequences: string[];
   #renderingTimeout?: number;
   #aidaRequestCache?: CachedRequest;
+  #lastEmptyResponseText?: string;
   // TODO(b/445394511): Remove panel from the class
   #panel: ContextFlavor;
   #callbacks?: Callbacks;
@@ -270,7 +273,7 @@ export class AiCodeCompletion {
 
     void this.#aidaClient.registerClientEvent({
       corresponding_aida_rpc_global_id: rpcGlobalId,
-      disable_user_content_logging: true,
+      disable_user_content_logging: !(this.#serverSideLoggingEnabled ?? false),
       complete_code_client_event: {
         user_impression: {
           sample: {
@@ -292,7 +295,7 @@ export class AiCodeCompletion {
   registerUserAcceptance(rpcGlobalId: Host.AidaClient.RpcGlobalId, sampleId?: number): void {
     void this.#aidaClient.registerClientEvent({
       corresponding_aida_rpc_global_id: rpcGlobalId,
-      disable_user_content_logging: true,
+      disable_user_content_logging: !(this.#serverSideLoggingEnabled ?? false),
       complete_code_client_event: {
         user_acceptance: {
           sample: {
@@ -316,13 +319,27 @@ export class AiCodeCompletion {
     response: Host.AidaClient.CompletionResponse | null,
     fromCache: boolean,
   }> {
+    const combinedText = prefix + suffix;
+    if (combinedText.length < MIN_CHARACTER_THRESHOLD) {
+      return {response: null, fromCache: false};
+    }
+    if (this.#lastEmptyResponseText) {
+      if (Math.abs(combinedText.length - this.#lastEmptyResponseText.length) < EMPTY_RESPONSE_DIFF_THRESHOLD) {
+        return {response: null, fromCache: false};
+      }
+    }
+
     const request = this.#buildRequest(prefix, suffix, inferenceLanguage, additionalFiles);
     const {response, fromCache} = await this.#completeCodeCached(request);
 
     debugLog('At cursor position', cursorPositionAtRequest, {request, response, fromCache});
-    if (!response) {
+    if (!response || response.generatedSamples.length === 0) {
+      this.#lastEmptyResponseText = combinedText;
       return {response: null, fromCache: false};
     }
+
+    // Clear on successful response
+    this.#lastEmptyResponseText = undefined;
 
     return {response, fromCache};
   }
@@ -335,6 +352,10 @@ export class AiCodeCompletion {
     this.#callbacks?.setAiAutoCompletion(null);
   }
 
+  static isAiCodeCompletionAvailable(): boolean {
+    return Root.Runtime.hostConfig.devToolsAiCodeCompletion?.enabled ?? false;
+  }
+
   static isAiCodeCompletionEnabled(locale: string): boolean {
     if (!locale.startsWith('en-')) {
       return false;
@@ -344,7 +365,11 @@ export class AiCodeCompletion {
         aidaAvailability.blockedByEnterprisePolicy) {
       return false;
     }
-    return Boolean(aidaAvailability.enabled && Root.Runtime.hostConfig.devToolsAiCodeCompletion?.enabled);
+    return Boolean(aidaAvailability.enabled && AiCodeCompletion.isAiCodeCompletionAvailable());
+  }
+
+  static isAiCodeCompletionStylesAvailable(): boolean {
+    return Root.Runtime.hostConfig.devToolsAiCodeCompletionStyles?.enabled ?? false;
   }
 
   static isAiCodeCompletionStylesEnabled(locale: string): boolean {
@@ -356,7 +381,7 @@ export class AiCodeCompletion {
         aidaAvailability.blockedByEnterprisePolicy) {
       return false;
     }
-    return Boolean(aidaAvailability.enabled && Root.Runtime.hostConfig.devToolsAiCodeCompletionStyles?.enabled);
+    return Boolean(aidaAvailability.enabled && AiCodeCompletion.isAiCodeCompletionStylesAvailable());
   }
 }
 

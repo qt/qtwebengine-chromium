@@ -9,6 +9,7 @@
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/trace_event.h"
 #include "media/base/audio_bus.h"
 #include "media/base/audio_parameters.h"
@@ -18,6 +19,8 @@
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/renderer/modules/mediastream/processed_local_audio_source.h"
 #include "third_party/blink/renderer/modules/webrtc/webrtc_audio_renderer.h"
+#include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
+#include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 
 using media::AudioParameters;
 using media::ChannelLayout;
@@ -212,11 +215,29 @@ int32_t WebRtcAudioDeviceImpl::Terminate() {
   StopRecording();
   StopPlayout();
 
+  // Temporarily hold the audio renderer so that we can disconnect the source
+  // from it after we have released the lock, avoiding a deadlock.
+  scoped_refptr<blink::WebRtcAudioRenderer> renderer_to_disconnect;
   {
     base::AutoLock auto_lock(lock_);
-    DCHECK(!renderer_ || !renderer_->IsStarted())
-        << "The shared audio renderer shouldn't be running";
+    renderer_to_disconnect = renderer_;
     capturers_.clear();
+  }
+
+  if (renderer_to_disconnect) {
+    renderer_to_disconnect->DisconnectSource();
+
+    // WebRtcAudioRenderer holds strictly main-thread Oilpan handles and asserts
+    // its destruction sequence. If the main thread drops its reference while
+    // we hold this local reference, the off-thread destruction causes memory
+    // corruption. Bounce the final reference to the main thread using the
+    // renderer's own frame-associated task runner to safely die.
+    if (scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+            renderer_to_disconnect->GetTaskRunner()) {
+      // ReleaseSoon is required over PostCrossThreadTask to handle task queue
+      // shutdown safely during iframe detachment.
+      task_runner->ReleaseSoon(FROM_HERE, std::move(renderer_to_disconnect));
+    }
   }
 
   initialized_ = false;

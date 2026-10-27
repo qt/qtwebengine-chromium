@@ -298,6 +298,32 @@ TEST_F(StatisticsAnalyzerTest, FramePlayedOut) {
                    (kDefaultStatIntervalMs * kDefaultNumEvents)));
 }
 
+TEST_F(StatisticsAnalyzerTest, FrameDroppedByEncoder) {
+  analyzer_->ScheduleAnalysis();
+
+  RtpTimeTicks rtp_timestamp;
+
+  for (int i = 0; i < kDefaultNumEvents; i++) {
+    FrameEvent event = MakeFrameEvent(i, rtp_timestamp);
+    event.type = StatisticsEvent::Type::kFrameDroppedByEncoder;
+    collector_->CollectFrameEvent(event);
+
+    fake_clock_.Advance(milliseconds(kDefaultStatIntervalMs));
+    rtp_timestamp += RtpTimeDelta::FromTicks(90);
+  }
+
+  EXPECT_CALL(stats_client_, OnStatisticsUpdated(_))
+      .WillOnce([&](const SenderStats& stats) {
+        ExpectStatEq(stats.video_statistics,
+                     StatisticType::kNumFramesDroppedByEncoder,
+                     kDefaultNumEvents);
+      });
+
+  fake_clock_.Advance(
+      milliseconds(kDefaultStatsAnalysisIntervalMs -
+                   (kDefaultStatIntervalMs * kDefaultNumEvents)));
+}
+
 TEST_F(StatisticsAnalyzerTest, AllFrameEvents) {
   constexpr std::array<StatisticsEvent::Type, 5> kEventsToReport{
       StatisticsEvent::Type::kFrameCaptureBegin,

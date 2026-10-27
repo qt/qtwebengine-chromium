@@ -8,7 +8,6 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/fonts/font_variant_emoji.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -50,7 +49,7 @@ class SymbolsIteratorTest : public testing::Test {
                   const Vector<FallbackExpectedRun>& expect) {
     unsigned limit;
     FontFallbackPriority font_fallback_priority;
-    size_t run_count = 0;
+    wtf_size_t run_count = 0;
     while (symbols_iterator->Consume(&limit, &font_fallback_priority)) {
       ASSERT_LT(run_count, expect.size());
       ASSERT_EQ(expect[run_count].limit, limit);

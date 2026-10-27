@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Common from '../core/common/common.js';
 import * as Host from '../core/host/host.js';
-import type * as Platform from '../core/platform/platform.js';
+import * as Platform from '../core/platform/platform.js';
 import * as Root from '../core/root/root.js';
 import * as SDK from '../core/sdk/sdk.js';
 import * as Bindings from '../models/bindings/bindings.js';
@@ -206,15 +208,15 @@ export function expectConsoleLogs(expectedLogs: {warn?: string[], log?: string[]
   });
 }
 
-let originalUserAgent: string;
+let userAgentStub: sinon.SinonStub|undefined;
 
 export function setUserAgentForTesting(): void {
-  originalUserAgent = window.navigator.userAgent;
-  Object.defineProperty(window.navigator, 'userAgent', {value: 'Chrome/unit_test', configurable: true});
+  userAgentStub = sinon.stub(Platform.HostRuntime.HOST_RUNTIME, 'getUserAgent').returns('Chrome/unit_test');
 }
 
 export function restoreUserAgentForTesting(): void {
-  Object.defineProperty(window.navigator, 'userAgent', {value: originalUserAgent});
+  userAgentStub?.restore();
+  userAgentStub = undefined;
 }
 
 export function resetHostConfig() {

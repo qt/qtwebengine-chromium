@@ -1,8 +1,10 @@
 // This file is part of Eigen, a lightweight C++ template library
 // for linear algebra.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_VOLUME_PATCH_H
-#define EIGEN_CXX11_TENSOR_TENSOR_VOLUME_PATCH_H
+#ifndef EIGEN_TENSOR_TENSOR_VOLUME_PATCH_H
+#define EIGEN_TENSOR_TENSOR_VOLUME_PATCH_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -38,7 +40,7 @@ struct nested<TensorVolumePatchOp<Planes, Rows, Cols, XprType>, 1,
 }  // end namespace internal
 
 /**
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  *
  * \brief Patch extraction specialized for processing of volumetric data.
  * This assumes that the input has a least 4 dimensions ordered as follows:
@@ -207,12 +209,13 @@ struct TensorEvaluator<const TensorVolumePatchOp<Planes, Rows, Cols, ArgType>, D
     const typename TensorEvaluator<ArgType, Device>::Dimensions& input_dims = m_impl.dimensions();
 
     // Cache a few variables.
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_inputDepth = input_dims[0];
       m_inputPlanes = input_dims[1];
       m_inputRows = input_dims[2];
       m_inputCols = input_dims[3];
-    } else {
+    }
+    else {
       m_inputDepth = input_dims[NumInputDims - 1];
       m_inputPlanes = input_dims[NumInputDims - 2];
       m_inputRows = input_dims[NumInputDims - 3];
@@ -285,7 +288,7 @@ struct TensorEvaluator<const TensorVolumePatchOp<Planes, Rows, Cols, ArgType>, D
     eigen_assert(m_outputPlanes > 0);
 
     // Dimensions for result of extraction.
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       // ColMajor
       // 0: depth
       // 1: patch_planes
@@ -301,7 +304,8 @@ struct TensorEvaluator<const TensorVolumePatchOp<Planes, Rows, Cols, ArgType>, D
       for (int i = 5; i < NumDims; ++i) {
         m_dimensions[i] = input_dims[i - 1];
       }
-    } else {
+    }
+    else {
       // RowMajor
       // NumDims-1: depth
       // NumDims-2: patch_planes
@@ -320,12 +324,13 @@ struct TensorEvaluator<const TensorVolumePatchOp<Planes, Rows, Cols, ArgType>, D
     }
 
     // Strides for the output tensor.
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_rowStride = m_dimensions[1];
       m_colStride = m_dimensions[2] * m_rowStride;
       m_patchStride = m_colStride * m_dimensions[3] * m_dimensions[0];
       m_otherStride = m_patchStride * m_dimensions[4];
-    } else {
+    }
+    else {
       m_rowStride = m_dimensions[NumDims - 2];
       m_colStride = m_dimensions[NumDims - 3] * m_rowStride;
       m_patchStride = m_colStride * m_dimensions[NumDims - 4] * m_dimensions[NumDims - 1];
@@ -353,9 +358,10 @@ struct TensorEvaluator<const TensorVolumePatchOp<Planes, Rows, Cols, ArgType>, D
     m_fastOutputPlanes = internal::TensorIntDivisor<Index>(m_outputPlanes);
     m_fastOutputPlanesRows = internal::TensorIntDivisor<Index>(m_outputPlanesRows);
 
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_fastOutputDepth = internal::TensorIntDivisor<Index>(m_dimensions[0]);
-    } else {
+    }
+    else {
       m_fastOutputDepth = internal::TensorIntDivisor<Index>(m_dimensions[NumDims - 1]);
     }
   }
@@ -421,7 +427,7 @@ struct TensorEvaluator<const TensorVolumePatchOp<Planes, Rows, Cols, ArgType>, D
       return Scalar(m_paddingValue);
     }
 
-    const int depth_index = static_cast<int>(Layout) == static_cast<int>(ColMajor) ? 0 : NumDims - 1;
+    constexpr int depth_index = static_cast<int>(Layout) == static_cast<int>(ColMajor) ? 0 : NumDims - 1;
     const Index depth = index - (index / m_fastOutputDepth) * m_dimensions[depth_index];
 
     const Index inputIndex = depth + origInputRow * m_rowInputStride + origInputCol * m_colInputStride +
@@ -500,7 +506,7 @@ struct TensorEvaluator<const TensorVolumePatchOp<Planes, Rows, Cols, ArgType>, D
 
     if (inputPlanes[0] >= 0 && inputPlanes[1] < m_inputPlanes) {
       // no padding
-      const int depth_index = static_cast<int>(Layout) == static_cast<int>(ColMajor) ? 0 : NumDims - 1;
+      constexpr int depth_index = static_cast<int>(Layout) == static_cast<int>(ColMajor) ? 0 : NumDims - 1;
       const Index depth = index - (index / m_fastOutputDepth) * m_dimensions[depth_index];
       const Index inputIndex = depth + inputRows[0] * m_rowInputStride + inputCols[0] * m_colInputStride +
                                m_planeInputStride * inputPlanes[0] + otherIndex * m_otherInputStride;
@@ -618,4 +624,4 @@ struct TensorEvaluator<const TensorVolumePatchOp<Planes, Rows, Cols, ArgType>, D
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_VOLUME_PATCH_H
+#endif  // EIGEN_TENSOR_TENSOR_VOLUME_PATCH_H

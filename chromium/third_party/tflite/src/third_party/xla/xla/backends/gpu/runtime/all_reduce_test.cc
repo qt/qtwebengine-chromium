@@ -65,6 +65,7 @@ limitations under the License.
 namespace xla::gpu {
 namespace {
 
+using ::absl_testing::StatusIs;
 using ::stream_executor::gpu::AllReduceStrategy;
 using ::testing::HasSubstr;
 
@@ -153,13 +154,13 @@ class AllReduceKernelTest : public ::testing::Test,
           2 * aligned_input_size, aligned_input_size));
       TF_RET_CHECK(!output_buffers[i].is_null());
       TF_RETURN_IF_ERROR(
-          executor->SynchronousMemZero(&output_buffers[i], aligned_input_size));
+          streams[i]->MemZero(&output_buffers[i], aligned_input_size));
 
       signal_flags_buffers.emplace_back(allocated_buffers[i].GetByteSlice(
           3 * aligned_input_size, aligned_signal_size));
       TF_RET_CHECK(!signal_flags_buffers[i].is_null());
-      TF_RETURN_IF_ERROR(executor->SynchronousMemZero(&signal_flags_buffers[i],
-                                                      aligned_signal_size));
+      TF_RETURN_IF_ERROR(
+          streams[i]->MemZero(&signal_flags_buffers[i], aligned_signal_size));
       TF_RETURN_IF_ERROR(streams[i]->Memcpy(&input_buffers[i],
                                             input_data[i].data(), input_size));
       XLA_VLOG_DEVICE(1, i)
@@ -433,10 +434,9 @@ TEST_P(AllReduceKernelTest, KernelTestAddPred_Unsupported) {
   std::vector<Array<bool>> inputs(kNumRanks, Array<bool>({num_elements()}));
 
   auto results = RunKernel<bool>(executors, inputs, ReductionKind::SUM);
-  EXPECT_THAT(results.status(),
-              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(results.status(), StatusIs(absl::StatusCode::kUnimplemented));
   EXPECT_THAT(results.status().message(),
-              ::testing::HasSubstr("AllReduce kernel is not supported"));
+              HasSubstr("combination is not supported"));
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -479,10 +479,9 @@ TEST_F(AllReduceHloTest, DefaultDeviceAssnWithHloRunner) {
   Literal input = LiteralUtil::CreateR1<float>(std::vector<float>(1, 2));
 
   EXPECT_THAT(test_runner().Execute(std::move(module), {std::move(input)}),
-              absl_testing::StatusIs(
-                  absl::StatusCode::kInvalidArgument,
-                  HasSubstr("Mismatched number of replicas for device "
-                            "assignment and computation (1 vs 2).")));
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Mismatched number of replicas for device "
+                                 "assignment and computation (1 vs 2).")));
 }
 
 }  // namespace

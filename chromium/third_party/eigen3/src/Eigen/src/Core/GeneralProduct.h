@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_GENERAL_PRODUCT_H
 #define EIGEN_GENERAL_PRODUCT_H
@@ -72,7 +73,7 @@ struct product_type {
   typedef product_type_selector<rows_select, cols_select, depth_select> selector;
 
  public:
-  enum { value = selector::ret, ret = selector::ret };
+  static constexpr int value = selector::value;
 #ifdef EIGEN_DEBUG_PRODUCT
   static void debug() {
     EIGEN_DEBUG_VAR(Rows);
@@ -91,101 +92,53 @@ struct product_type {
  * This is a compile time mapping from {1,Small,Large}^3 -> {product types} */
 // FIXME: the current compile-time product-type mapping may not be optimal.
 template <int M, int N>
-struct product_type_selector<M, N, 1> {
-  enum { ret = OuterProduct };
-};
+struct product_type_selector<M, N, 1> : std::integral_constant<int, OuterProduct> {};
 template <int M>
-struct product_type_selector<M, 1, 1> {
-  enum { ret = LazyCoeffBasedProductMode };
-};
+struct product_type_selector<M, 1, 1> : std::integral_constant<int, LazyCoeffBasedProductMode> {};
 template <int N>
-struct product_type_selector<1, N, 1> {
-  enum { ret = LazyCoeffBasedProductMode };
-};
+struct product_type_selector<1, N, 1> : std::integral_constant<int, LazyCoeffBasedProductMode> {};
 template <int Depth>
-struct product_type_selector<1, 1, Depth> {
-  enum { ret = InnerProduct };
-};
+struct product_type_selector<1, 1, Depth> : std::integral_constant<int, InnerProduct> {};
 template <>
-struct product_type_selector<1, 1, 1> {
-  enum { ret = InnerProduct };
-};
+struct product_type_selector<1, 1, 1> : std::integral_constant<int, InnerProduct> {};
 template <>
-struct product_type_selector<Small, 1, Small> {
-  enum { ret = CoeffBasedProductMode };
-};
+struct product_type_selector<Small, 1, Small> : std::integral_constant<int, CoeffBasedProductMode> {};
 template <>
-struct product_type_selector<1, Small, Small> {
-  enum { ret = CoeffBasedProductMode };
-};
+struct product_type_selector<1, Small, Small> : std::integral_constant<int, CoeffBasedProductMode> {};
 template <>
-struct product_type_selector<Small, Small, Small> {
-  enum { ret = CoeffBasedProductMode };
-};
+struct product_type_selector<Small, Small, Small> : std::integral_constant<int, CoeffBasedProductMode> {};
 template <>
-struct product_type_selector<Small, Small, 1> {
-  enum { ret = LazyCoeffBasedProductMode };
-};
+struct product_type_selector<Small, Small, 1> : std::integral_constant<int, LazyCoeffBasedProductMode> {};
 template <>
-struct product_type_selector<Small, Large, 1> {
-  enum { ret = LazyCoeffBasedProductMode };
-};
+struct product_type_selector<Small, Large, 1> : std::integral_constant<int, LazyCoeffBasedProductMode> {};
 template <>
-struct product_type_selector<Large, Small, 1> {
-  enum { ret = LazyCoeffBasedProductMode };
-};
+struct product_type_selector<Large, Small, 1> : std::integral_constant<int, LazyCoeffBasedProductMode> {};
 template <>
-struct product_type_selector<1, Large, Small> {
-  enum { ret = CoeffBasedProductMode };
-};
+struct product_type_selector<1, Large, Small> : std::integral_constant<int, CoeffBasedProductMode> {};
 template <>
-struct product_type_selector<1, Large, Large> {
-  enum { ret = GemvProduct };
-};
+struct product_type_selector<1, Large, Large> : std::integral_constant<int, GemvProduct> {};
 template <>
-struct product_type_selector<1, Small, Large> {
-  enum { ret = CoeffBasedProductMode };
-};
+struct product_type_selector<1, Small, Large> : std::integral_constant<int, CoeffBasedProductMode> {};
 template <>
-struct product_type_selector<Large, 1, Small> {
-  enum { ret = CoeffBasedProductMode };
-};
+struct product_type_selector<Large, 1, Small> : std::integral_constant<int, CoeffBasedProductMode> {};
 template <>
-struct product_type_selector<Large, 1, Large> {
-  enum { ret = GemvProduct };
-};
+struct product_type_selector<Large, 1, Large> : std::integral_constant<int, GemvProduct> {};
 template <>
-struct product_type_selector<Small, 1, Large> {
-  enum { ret = CoeffBasedProductMode };
-};
+struct product_type_selector<Small, 1, Large> : std::integral_constant<int, CoeffBasedProductMode> {};
 template <>
-struct product_type_selector<Small, Small, Large> {
-  enum { ret = GemmProduct };
-};
+struct product_type_selector<Small, Small, Large> : std::integral_constant<int, GemmProduct> {};
 template <>
-struct product_type_selector<Large, Small, Large> {
-  enum { ret = GemmProduct };
-};
+struct product_type_selector<Large, Small, Large> : std::integral_constant<int, GemmProduct> {};
 template <>
-struct product_type_selector<Small, Large, Large> {
-  enum { ret = GemmProduct };
-};
+struct product_type_selector<Small, Large, Large> : std::integral_constant<int, GemmProduct> {};
 template <>
-struct product_type_selector<Large, Large, Large> {
-  enum { ret = GemmProduct };
-};
+struct product_type_selector<Large, Large, Large> : std::integral_constant<int, GemmProduct> {};
 template <>
-struct product_type_selector<Large, Small, Small> {
-  enum { ret = CoeffBasedProductMode };
-};
+struct product_type_selector<Large, Small, Small> : std::integral_constant<int, CoeffBasedProductMode> {};
 template <>
-struct product_type_selector<Small, Large, Small> {
-  enum { ret = CoeffBasedProductMode };
-};
+struct product_type_selector<Small, Large, Small> : std::integral_constant<int, CoeffBasedProductMode> {};
 template <>
-struct product_type_selector<Large, Large, Small> {
-  enum { ret = GemmProduct };
-};
+struct product_type_selector<Large, Large, Small> : std::integral_constant<int, GemmProduct> {};
 
 }  // end namespace internal
 
@@ -515,4 +468,4 @@ MatrixBase<Derived>::lazyProduct(const MatrixBase<OtherDerived>& other) const {
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_PRODUCT_H
+#endif  // EIGEN_GENERAL_PRODUCT_H

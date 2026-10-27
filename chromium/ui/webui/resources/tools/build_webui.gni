@@ -234,15 +234,14 @@ template("build_webui") {
       # ":html_wrapper_files".
       inline_sourcemaps = true
 
-      sources = filter_include(
-              get_target_outputs(":preprocess_ts_files"),
-              [
-                "*.ts",
+      sources = filter_include(get_target_outputs(":preprocess_ts_files"),
+                               [
+                                 "*.ts",
 
-                # TODO(crbug.com/40167175): Remove once we no longer pass JS
-                # files to build_webui.
-                "*.js",
-              ])
+                                 # TODO(crbug.com/40167175): Remove once we no
+                                 # longer pass JS files to build_webui.
+                                 "*.js",
+                               ])
       originals = []
       outputs = []
 
@@ -563,6 +562,7 @@ template("build_webui") {
         "//chrome/browser/resources/certificate_manager",
         "//chrome/browser/resources/certificate_viewer",
         "//chrome/browser/resources/components",
+        "//chrome/browser/resources/conflicts",
         "//chrome/browser/resources/device_log",
         "//chrome/browser/resources/downloads",
         "//chrome/browser/resources/family_link_user_internals",
@@ -615,6 +615,29 @@ template("build_webui") {
       if (filter_include([ get_label_info(":lint_ts", "dir") ],
                          legacy_chrome_send_users) == [] && !is_ash_webui) {
         enable_no_chrome_send = true
+      }
+
+      no_explicit_any_exceptions = [
+        # Note: DO NOT add new entries to the list below.
+        # TODO(crbug.com/494464740): Fix all violations below and turn on this
+        # check by default.
+        "//chrome/browser/resources/print_preview",
+        "//chrome/browser/resources/tab_search",
+        "//ui/webui/resources/cr_elements",
+        "//ui/webui/resources/js",
+      ]
+
+      if (is_android) {
+        no_explicit_any_exceptions +=
+            [ "//chrome/browser/resources/contextual_tasks" ]
+      }
+
+      if (!is_ash_webui && filter_include([ get_label_info(":lint_ts", "dir") ],
+                                          no_explicit_any_exceptions) == []) {
+        enable_no_explicit_any = true
+      } else {
+        # Prevent GN from throwing an error.
+        not_needed([ "no_explicit_any_exceptions" ])
       }
     }
   }

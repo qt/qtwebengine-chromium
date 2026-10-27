@@ -148,6 +148,12 @@ H265Decoder::~H265Decoder() = default;
 void H265Decoder::SetStream(int32_t id,
                             scoped_refptr<DecoderBuffer> decoder_buffer) {
   CHECK(decoder_buffer);
+  curr_nalu_.reset();
+  curr_slice_hdr_.reset();
+  last_slice_hdr_.reset();
+  // Keep the old buffer alive until the end of this function to ensure
+  // that any active spans in the parser are cleared before the memory is freed.
+  auto outgoing_decoder_buffer = std::move(decoder_buffer_);
   decoder_buffer_ = std::move(decoder_buffer);
   const DecryptConfig* decrypt_config = decoder_buffer_->decrypt_config();
 
@@ -620,7 +626,7 @@ bool H265Decoder::ProcessPPS(int pps_id, bool* need_new_buffers) {
     new_color_space = container_color_space_;
   }
 
-  if (new_color_space.matrix == VideoColorSpace::MatrixID::RGB &&
+  if (new_color_space.matrix() == VideoColorSpace::MatrixID::RGB &&
       new_chroma_sampling != VideoChromaSampling::k444) {
     // Some H.265 videos contain a VUI that specifies a color matrix of GBR,
     // when they are actually ordinary YUV. Default to BT.709 if the format is

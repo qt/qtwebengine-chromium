@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_REAL_SCHUR_H
 #define EIGEN_REAL_SCHUR_H
@@ -343,9 +344,9 @@ RealSchur<MatrixType>& RealSchur<MatrixType>::computeFromHessenberg(const HessMa
 template <typename MatrixType>
 inline typename MatrixType::Scalar RealSchur<MatrixType>::computeNormOfT() {
   const Index size = m_matT.cols();
-  // FIXME: a triangular reduction would be more efficient here.
-  // Scalar norm = m_matT.upper().cwiseAbs().sum()
-  //               + m_matT.bottomLeftCorner(size-1,size-1).diagonal().cwiseAbs().sum();
+  // m_matT is upper-Hessenberg, so per column only rows [0, j+1] are nonzero.
+  // The column-wise loop touches ~n^2/2 entries; scanning the full matrix
+  // would double that, and TriangularView has no direct cwiseAbs().sum().
   Scalar norm(0);
   for (Index j = 0; j < size; ++j) norm += m_matT.col(j).segment(0, (std::min)(size, j + 2)).cwiseAbs().sum();
   return norm;

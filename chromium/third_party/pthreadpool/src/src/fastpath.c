@@ -31,7 +31,7 @@
 #include "threadpool-object.h"
 #include "threadpool-utils.h"
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_1d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_1d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -68,8 +68,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_1d_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void
-pthreadpool_thread_parallelize_1d_with_thread_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_1d_with_thread_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -107,7 +106,7 @@ pthreadpool_thread_parallelize_1d_with_thread_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_1d_with_uarch_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_1d_with_uarch_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -157,7 +156,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_1d_with_uarch_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_1d_tile_1d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_1d_tile_1d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -202,7 +201,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_1d_tile_1d_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_2d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_2d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -253,8 +252,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_2d_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void
-pthreadpool_thread_parallelize_2d_with_thread_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_2d_with_thread_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -306,7 +304,7 @@ pthreadpool_thread_parallelize_2d_with_thread_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_2d_tile_1d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_2d_tile_1d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -363,8 +361,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_2d_tile_1d_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void
-pthreadpool_thread_parallelize_2d_tile_1d_with_uarch_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_2d_tile_1d_with_uarch_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -435,8 +432,7 @@ pthreadpool_thread_parallelize_2d_tile_1d_with_uarch_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void
-pthreadpool_thread_parallelize_2d_tile_1d_with_uarch_with_thread_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_2d_tile_1d_with_uarch_with_thread_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -508,7 +504,7 @@ pthreadpool_thread_parallelize_2d_tile_1d_with_uarch_with_thread_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_2d_tile_2d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_2d_tile_2d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -569,8 +565,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_2d_tile_2d_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void
-pthreadpool_thread_parallelize_2d_tile_2d_with_uarch_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_2d_tile_2d_with_uarch_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -647,7 +642,7 @@ pthreadpool_thread_parallelize_2d_tile_2d_with_uarch_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_3d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_3d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -709,7 +704,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_3d_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_3d_tile_1d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_3d_tile_1d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -776,8 +771,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_3d_tile_1d_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void
-pthreadpool_thread_parallelize_3d_tile_1d_with_thread_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_3d_tile_1d_with_thread_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -845,8 +839,7 @@ pthreadpool_thread_parallelize_3d_tile_1d_with_thread_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void
-pthreadpool_thread_parallelize_3d_tile_1d_with_uarch_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_3d_tile_1d_with_uarch_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -927,8 +920,7 @@ pthreadpool_thread_parallelize_3d_tile_1d_with_uarch_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void
-pthreadpool_thread_parallelize_3d_tile_1d_with_uarch_with_thread_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_3d_tile_1d_with_uarch_with_thread_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -1010,7 +1002,7 @@ pthreadpool_thread_parallelize_3d_tile_1d_with_uarch_with_thread_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_3d_tile_2d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_3d_tile_2d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -1082,8 +1074,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_3d_tile_2d_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void
-pthreadpool_thread_parallelize_3d_tile_2d_with_uarch_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_3d_tile_2d_with_uarch_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -1171,7 +1162,7 @@ pthreadpool_thread_parallelize_3d_tile_2d_with_uarch_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_4d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_4d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -1244,7 +1235,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_4d_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_4d_tile_1d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_4d_tile_1d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -1322,7 +1313,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_4d_tile_1d_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_4d_tile_2d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_4d_tile_2d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -1404,8 +1395,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_4d_tile_2d_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void
-pthreadpool_thread_parallelize_4d_tile_2d_with_uarch_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_4d_tile_2d_with_uarch_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -1504,7 +1494,7 @@ pthreadpool_thread_parallelize_4d_tile_2d_with_uarch_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_5d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_5d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -1587,7 +1577,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_5d_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_5d_tile_1d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_5d_tile_1d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -1676,7 +1666,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_5d_tile_1d_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_5d_tile_2d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_5d_tile_2d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -1769,7 +1759,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_5d_tile_2d_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_6d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_6d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -1863,7 +1853,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_6d_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_6d_tile_1d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_6d_tile_1d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);
@@ -1962,7 +1952,7 @@ PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_6d_tile_1d_fastpath(
   pthreadpool_fence_release();
 }
 
-PTHREADPOOL_INTERNAL void pthreadpool_thread_parallelize_6d_tile_2d_fastpath(
+PTHREADPOOL_INTERNAL PTHREADPOOL_NO_SANITIZE_FUNCTION void pthreadpool_thread_parallelize_6d_tile_2d_fastpath(
     struct pthreadpool* threadpool, struct thread_info* thread) {
   assert(threadpool != NULL);
   assert(thread != NULL);

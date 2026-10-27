@@ -103,11 +103,15 @@ void RunPreMultiplyTest(
 
 }  // namespace
 
+namespace fxge {
+
 inline bool operator==(const FX_BGRA_STRUCT<uint8_t>& lhs,
                        const FX_BGRA_STRUCT<uint8_t>& rhs) {
   return lhs.blue == rhs.blue && lhs.green == rhs.green && lhs.red == rhs.red &&
          lhs.alpha == rhs.alpha;
 }
+
+}  // namespace fxge
 
 TEST(ScanlineCompositorTest, CompositeRgbBitmapLineBgraNormal) {
   CFX_ScanlineCompositor compositor;

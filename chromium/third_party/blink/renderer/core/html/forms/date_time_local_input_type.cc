@@ -37,6 +37,7 @@
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/input_type_names.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/date_components.h"
 #include "third_party/blink/renderer/platform/text/platform_locale.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_names.h"
@@ -176,8 +177,7 @@ void DateTimeLocalInputType::SetupLayoutParameters(
 
   // Workaround for an Arabic date-time format issue.
   // TODO(crbug.com/40153320): Support ARABIC COMMA.
-  if (RuntimeEnabledFeatures::DateTimeLocalArabicCommaWorkaroundEnabled() &&
-      layout_parameters.locale.IsRTL()) {
+  if (layout_parameters.locale.IsRtl()) {
     layout_parameters.date_time_format =
         layout_parameters.date_time_format.RemoveCharacters(
             [](UChar ch) -> bool { return ch == uchar::kArabicComma; });

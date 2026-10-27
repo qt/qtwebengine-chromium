@@ -25,18 +25,21 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/webgpu/PhysicalDeviceWGPU.h"
+#include "src/dawn/native/webgpu/PhysicalDeviceWGPU.h"
 
 #include <string>
 #include <utility>
 
-#include "dawn/common/StringViewUtils.h"
-#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Features_autogen.h"
-#include "dawn/native/Instance.h"
-#include "dawn/native/Toggles.h"
-#include "dawn/native/webgpu/BackendWGPU.h"
-#include "dawn/native/webgpu/DeviceWGPU.h"
+#include "src/dawn/common/StringViewUtils.h"
+#include "src/dawn/native/ChainUtils.h"
+#include "src/dawn/native/Instance.h"
+#include "src/dawn/native/Surface.h"
+#include "src/dawn/native/Toggles.h"
+#include "src/dawn/native/webgpu/BackendWGPU.h"
+#include "src/dawn/native/webgpu/DeviceWGPU.h"
+#include "src/dawn/native/webgpu/SwapChainWGPU.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native::webgpu {
 
@@ -53,16 +56,6 @@ PhysicalDevice::PhysicalDevice(Backend* backend, WGPUAdapter innerAdapter)
       mInnerAdapter(innerAdapter) {
     WGPUAdapterInfo info = {};
 
-    const bool supportsSubgroupSizeControl = GetFunctions().adapterHasFeature(
-        mInnerAdapter, WGPUFeatureName_ChromiumExperimentalSubgroupSizeControl);
-
-    WGPUAdapterPropertiesExplicitComputeSubgroupSizeConfigs explicitComputeSubgroupSizeConfigs = {};
-    explicitComputeSubgroupSizeConfigs.chain.sType =
-        WGPUSType_AdapterPropertiesExplicitComputeSubgroupSizeConfigs;
-    if (supportsSubgroupSizeControl) {
-        info.nextInChain = &explicitComputeSubgroupSizeConfigs.chain;
-    }
-
     WGPUStatus status = GetFunctions().adapterGetInfo(mInnerAdapter, &info);
     DAWN_ASSERT(status == WGPUStatus_Success);
     DAWN_ASSERT(info.backendType != WGPUBackendType_WebGPU);
@@ -78,15 +71,6 @@ PhysicalDevice::PhysicalDevice(Backend* backend, WGPUAdapter innerAdapter)
     mSubgroupMinSize = info.subgroupMinSize;
     mSubgroupMaxSize = info.subgroupMaxSize;
     mInnerBackendType = info.backendType;
-
-    if (supportsSubgroupSizeControl) {
-        mMinExplicitComputeSubgroupSize =
-            explicitComputeSubgroupSizeConfigs.minExplicitComputeSubgroupSize;
-        mMaxExplicitComputeSubgroupSize =
-            explicitComputeSubgroupSizeConfigs.maxExplicitComputeSubgroupSize;
-        mMaxComputeWorkgroupSubgroups =
-            explicitComputeSubgroupSizeConfigs.maxComputeWorkgroupSubgroups;
-    }
 
     GetFunctions().adapterInfoFreeMembers(info);
 }
@@ -119,12 +103,38 @@ bool PhysicalDevice::SupportsFeatureLevel(wgpu::FeatureLevel featureLevel,
 ResultOrError<PhysicalDeviceSurfaceCapabilities> PhysicalDevice::GetSurfaceCapabilities(
     InstanceBase* instance,
     const Surface* surface) const {
-    // TODO(crbug.com/413053623): revisit when implementing Surface.
+    // Create a inner surface to query the surface capabilities.
+    WGPUSurface innerSurface;
+    DAWN_TRY_ASSIGN(innerSurface, CreateWGPUSurface(mBackend->GetFunctions(),
+                                                    mBackend->GetInnerInstance(), surface));
+    DAWN_ASSERT(innerSurface);
+
+    WGPUSurfaceCapabilities innerCapabilities = WGPU_SURFACE_CAPABILITIES_INIT;
+    WGPUStatus status = mBackend->GetFunctions().surfaceGetCapabilities(innerSurface, mInnerAdapter,
+                                                                        &innerCapabilities);
+
+    if (status != WGPUStatus_Success) {
+        mBackend->GetFunctions().surfaceRelease(innerSurface);
+        return DAWN_VALIDATION_ERROR("Failed to get inner surface capabilities");
+    }
+
     PhysicalDeviceSurfaceCapabilities capabilities;
-    capabilities.usages = wgpu::TextureUsage::RenderAttachment;
-    capabilities.formats = {wgpu::TextureFormat::BGRA8Unorm};
-    capabilities.presentModes = {wgpu::PresentMode::Fifo};
-    capabilities.alphaModes = {wgpu::CompositeAlphaMode::Opaque};
+    capabilities.usages = static_cast<wgpu::TextureUsage>(innerCapabilities.usages);
+    for (size_t i = 0; i < innerCapabilities.formatCount; ++i) {
+        capabilities.formats.push_back(FromAPI(DAWN_UNSAFE_TODO(innerCapabilities.formats[i])));
+    }
+    for (size_t i = 0; i < innerCapabilities.presentModeCount; ++i) {
+        capabilities.presentModes.push_back(
+            FromAPI(DAWN_UNSAFE_TODO(innerCapabilities.presentModes[i])));
+    }
+    for (size_t i = 0; i < innerCapabilities.alphaModeCount; ++i) {
+        capabilities.alphaModes.push_back(
+            FromAPI(DAWN_UNSAFE_TODO(innerCapabilities.alphaModes[i])));
+    }
+
+    mBackend->GetFunctions().surfaceCapabilitiesFreeMembers(innerCapabilities);
+    mBackend->GetFunctions().surfaceRelease(innerSurface);
+
     return capabilities;
 }
 
@@ -174,14 +184,6 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
     // TODO(crbug.com/413053623): Populate other AdapterInfo Chained extensions when necessary.
     if (auto* wgpuProperties = info.Get<AdapterPropertiesWGPU>()) {
         wgpuProperties->backendType = FromAPI(mInnerBackendType);
-    }
-    if (auto* explicitSubgroupSizeConfigs =
-            info.Get<AdapterPropertiesExplicitComputeSubgroupSizeConfigs>()) {
-        explicitSubgroupSizeConfigs->minExplicitComputeSubgroupSize =
-            mMinExplicitComputeSubgroupSize;
-        explicitSubgroupSizeConfigs->maxExplicitComputeSubgroupSize =
-            mMaxExplicitComputeSubgroupSize;
-        explicitSubgroupSizeConfigs->maxComputeWorkgroupSubgroups = mMaxComputeWorkgroupSubgroups;
     }
 }
 

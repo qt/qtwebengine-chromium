@@ -6,7 +6,9 @@
 
 #include <memory>
 
+#include "base/memory/raw_ptr.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/with_feature_override.h"
 #include "build/buildflag.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/enterprise/util/managed_browser_utils.h"
@@ -14,15 +16,16 @@
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/testing_profile_manager.h"
 #include "components/policy/core/browser/signin/profile_separation_policies.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/testing_pref_service.h"
 #include "components/signin/public/base/signin_pref_names.h"
 #include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
+#include "components/sync/base/features.h"
 #include "components/sync/base/user_selectable_type.h"
 #include "components/sync/service/sync_prefs.h"
 #include "components/sync/test/test_sync_service.h"
@@ -47,17 +50,19 @@ const GaiaId kSignedInGaiaId("signed_in_gaia_id");
 
 }  // namespace
 
-class SigninUtilTest : public BrowserWithTestWindowTest {
+class SigninUtilTest : public testing::Test {
  public:
   void SetUp() override {
-    BrowserWithTestWindowTest::SetUp();
+    ASSERT_TRUE(profile_manager_.SetUp());
+    profile_ = profile_manager_.CreateTestingProfile("TestProfile");
     signin_util::ResetForceSigninForTesting();
   }
 
   void TearDown() override {
     signin_util::ResetForceSigninForTesting();
-    BrowserWithTestWindowTest::TearDown();
   }
+
+  TestingProfile* profile() { return profile_; }
 
   bool SeparationEnforcedByExistingProfileExpected(
       const std::string& local_policy) {
@@ -83,6 +88,10 @@ class SigninUtilTest : public BrowserWithTestWindowTest {
   }
 
  protected:
+  content::BrowserTaskEnvironment task_environment_;
+  TestingProfileManager profile_manager_{TestingBrowserProcess::GetGlobal()};
+  raw_ptr<TestingProfile> profile_ = nullptr;
+
   std::array<std::string, 6> all_policies{
       kLegacyPolicyEmpty,
       kLegacyPolicyNone,
@@ -711,7 +720,15 @@ INSTANTIATE_TEST_SUITE_P(All,
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
-TEST(SignedInStatesTest, SignedInStates) {
+class SignedInStatesTest : public base::test::WithFeatureOverride,
+                           public ::testing::Test {
+ public:
+  SignedInStatesTest()
+      : base::test::WithFeatureOverride(
+            syncer::kReplaceSyncPromosWithSignInPromos) {}
+};
+
+TEST_P(SignedInStatesTest, SignedInStates) {
   base::test::SingleThreadTaskEnvironment task_environment;
   signin::IdentityTestEnvironment identity_test_env;
   signin::IdentityManager* identity_manager =
@@ -728,14 +745,19 @@ TEST(SignedInStatesTest, SignedInStates) {
             signin_util::GetSignedInState(identity_manager));
 
   // Syncing.
+  const signin::ConsentLevel consent_level = IsParamFeatureEnabled()
+                                                 ? signin::ConsentLevel::kSignin
+                                                 : signin::ConsentLevel::kSync;
   AccountInfo info = identity_test_env.MakePrimaryAccountAvailable(
-      "test@email.com", signin::ConsentLevel::kSync);
-  EXPECT_EQ(SignedInState::kSyncing,
+      "test@email.com", consent_level);
+  EXPECT_EQ(IsParamFeatureEnabled() ? SignedInState::kSignedIn
+                                    : SignedInState::kSyncing,
             signin_util::GetSignedInState(identity_manager));
 
   // Sync paused state.
   identity_test_env.SetInvalidRefreshTokenForPrimaryAccount();
-  EXPECT_EQ(SignedInState::kSyncPaused,
+  EXPECT_EQ(IsParamFeatureEnabled() ? SignedInState::kSignInPending
+                                    : SignedInState::kSyncPaused,
             signin_util::GetSignedInState(identity_manager));
 
   // Remove account.
@@ -758,4 +780,6 @@ TEST(SignedInStatesTest, SignedInStates) {
   EXPECT_EQ(SignedInState::kSignInPending,
             signin_util::GetSignedInState(identity_manager));
 }
+
+INSTANTIATE_FEATURE_OVERRIDE_TEST_SUITE(SignedInStatesTest);
 #endif  // !BUILDFLAG(ENABLE_DICE_SUPPORT)

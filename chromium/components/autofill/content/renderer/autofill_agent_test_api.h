@@ -46,14 +46,33 @@ class AutofillAgentTestApi {
     agent_->ContentEditableDidChange(element);
   }
 
+  void TextFieldValueChanged(const blink::WebFormControlElement& element) {
+    agent_->TextFieldValueChanged(element);
+  }
+
+  void SelectFieldOptionsChanged(const blink::WebFormControlElement& element) {
+    agent_->SelectFieldOptionsChanged(element);
+  }
+
+  void DidChangeScrollOffset() { agent_->DidChangeScrollOffset(); }
+
+  void set_focus_requires_scroll(bool focus_requires_scroll) {
+    const_cast<AutofillAgent::Config&>(agent_->config_).focus_requires_scroll =
+        AutofillAgent::FocusRequiresScroll(focus_requires_scroll);
+  }
+
   const FormCache& form_cache() { return agent_->form_cache_; }
 
-  PasswordAutofillAgent& password_autofill_agent() {
-    return *agent_->password_autofill_agent_;
+  PasswordAutofillAgent* password_autofill_agent() {
+    return agent_->password_autofill_agent_.get();
   }
 
   const base::OneShotTimer& process_forms_after_dynamic_change_timer() {
     return agent_->process_forms_after_dynamic_change_timer_;
+  }
+
+  AutofillAgent::EmailVerificationObserver& email_verification_observer() {
+    return agent_->email_verification_observer_;
   }
 
  private:

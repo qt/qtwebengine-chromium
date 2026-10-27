@@ -286,64 +286,14 @@ def angle_builder(name, cpu):
                 location_filters = location_filters,
             )
 
-luci.builder(
-    name = "presubmit",
-    bucket = "try",
-    executable = "recipe:run_presubmit",
-    experiments = build_experiments,
-    service_account = "angle-try-builder@chops-service-accounts.iam.gserviceaccount.com",
-    build_numbers = True,
-    dimensions = {
-        "os": os.LINUX.dimension,
-    },
-    properties = {
-        "repo_name": "angle",
-        "runhooks": True,
-    },
-    resultdb_settings = resultdb.settings(enable = True),
-    test_presentation = resultdb.test_presentation(
-        column_keys = ["v.gpu"],
-        grouping_keys = ["status", "v.test_suite"],
-    ),
-)
-
 # name, clang, debug, cpu, uwp, trace_tests
-angle_builder("android-arm-compile", cpu = "arm")
-angle_builder("android-arm-dbg-compile", cpu = "arm")
-angle_builder("android-arm64-dbg-compile", cpu = "arm64")
-angle_builder("android-arm64-exp-pixel10-test", cpu = "arm64")
-angle_builder("android-arm64-exp-s24-test", cpu = "arm64")
-angle_builder("android-arm64-exp-test", cpu = "arm64")
-angle_builder("android-arm64-ir-test", cpu = "arm64")
-angle_builder("android-arm64-test", cpu = "arm64")
-angle_builder("linux-asan-test", cpu = "x64")
-angle_builder("linux-exp-asan-test", cpu = "x64")
-angle_builder("linux-exp-tsan-test", cpu = "x64")
-angle_builder("linux-tsan-test", cpu = "x64")
-angle_builder("linux-dbg-compile", cpu = "x64")
-angle_builder("linux-ir-test", cpu = "x64")
-angle_builder("mac-dbg-compile", cpu = "x64")
-angle_builder("mac-ir-test", cpu = "x64")
 angle_builder("win-asan-test", cpu = "x64")
-angle_builder("win-dbg-compile", cpu = "x64")
 angle_builder("win-msvc-compile", cpu = "x64")
 angle_builder("win-msvc-dbg-compile", cpu = "x64")
 angle_builder("win-msvc-x86-compile", cpu = "x86")
 angle_builder("win-msvc-x86-dbg-compile", cpu = "x86")
-angle_builder("win-ir-test", cpu = "x64")
-angle_builder("win-x86-dbg-compile", cpu = "x86")
-angle_builder("win-x86-test", cpu = "x86")
 angle_builder("winuwp-compile", cpu = "x64")
 angle_builder("winuwp-dbg-compile", cpu = "x64")
-
-angle_builder("win-trace", cpu = "x64")
-
-angle_builder("android-pixel4-perf", cpu = "arm64")
-angle_builder("android-pixel6-perf", cpu = "arm64")
-angle_builder("linux-intel-uhd630-perf", cpu = "x64")
-angle_builder("linux-nvidia-gtx1660-perf", cpu = "x64")
-angle_builder("win10-intel-uhd630-perf", cpu = "x64")
-angle_builder("win10-nvidia-gtx1660-perf", cpu = "x64")
 
 # CQ
 
@@ -370,10 +320,6 @@ luci.cq_group(
         ),
     ],
     verifiers = [
-        luci.cq_tryjob_verifier(
-            builder = "angle:try/presubmit",
-            disable_reuse = True,
-        ),
         luci.cq_tryjob_verifier(
             builder = "chromium:try/android-angle-chromium-try",
         ),

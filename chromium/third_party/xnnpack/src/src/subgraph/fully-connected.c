@@ -1509,7 +1509,8 @@ static inline bool validate_datatypes_with_bias(
                  output_datatype == xnn_datatype_fp16) {
         return true;
       } else if (input_datatype == xnn_datatype_qint8 &&
-                 bias_datatype == xnn_datatype_qcint32 &&
+                 (bias_datatype == xnn_datatype_qcint32 ||
+                  bias_datatype == xnn_datatype_qint32) &&
                  output_datatype == xnn_datatype_qint8) {
         return true;
       }
@@ -1532,7 +1533,8 @@ static inline bool validate_datatypes_with_bias(
                  output_datatype == xnn_datatype_fp16) {
         return true;
       } else if (input_datatype == xnn_datatype_qint8 &&
-                 bias_datatype == xnn_datatype_qcint32 &&
+                 (bias_datatype == xnn_datatype_qcint32 ||
+                  bias_datatype == xnn_datatype_qint32) &&
                  output_datatype == xnn_datatype_qint8) {
         return true;
       }
@@ -1570,7 +1572,8 @@ static inline bool validate_datatypes_with_bias(
                  output_datatype == xnn_datatype_fp16) {
         return true;
       } else if (input_datatype == xnn_datatype_qint8 &&
-                 bias_datatype == xnn_datatype_qcint32 &&
+                 (bias_datatype == xnn_datatype_qcint32 ||
+                  bias_datatype == xnn_datatype_qint32) &&
                  output_datatype == xnn_datatype_qint8) {
         return true;
       }
@@ -1835,6 +1838,7 @@ enum xnn_status xnn_define_fully_connected(xnn_subgraph_t subgraph,
                       xnn_node_type_to_string(xnn_node_type_fully_connected),
                       filter_id, kernel_value->quantization.zero_point,
                       xnn_datatype_to_string(kernel_value->datatype));
+        return xnn_status_invalid_parameter;
       }
       break;
     case xnn_datatype_quint8:

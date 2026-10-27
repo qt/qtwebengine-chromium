@@ -757,7 +757,8 @@ void RenderWidgetHostInputEventRouter::DispatchMouseWheelEvent(
     const std::optional<gfx::PointF>& target_location) {
   TRACE_EVENT("input",
               "RenderWidgetHostInputEventRouter::DispatchMouseWheelEvent",
-              "phase", PhaseToString(mouse_wheel_event.phase), "target",
+              "phase", PhaseToString(mouse_wheel_event.phase), "momentum_phase",
+              PhaseToString(mouse_wheel_event.momentum_phase), "target",
               static_cast<void*>(target), "wheel_target_",
               static_cast<void*>(wheel_target_));
   if (!root_view->IsPointerLocked()) {
@@ -1235,8 +1236,7 @@ bool RenderWidgetHostInputEventRouter::BubbleScrollEvent(
     // ongoing bubbling.
     if (bubbling_gesture_scroll_target_ &&
         bubbling_gesture_scroll_target_ != resending_view) {
-      TRACE_EVENT_INSTANT0("input", "EarlyOut-Reentry",
-                           TRACE_EVENT_SCOPE_THREAD);
+      TRACE_EVENT_INSTANT("input", "EarlyOut-Reentry");
       return false;
     }
 
@@ -1264,8 +1264,7 @@ bool RenderWidgetHostInputEventRouter::BubbleScrollEvent(
       // TODO(mcnee): If we inform |bubbling_gesture_scroll_origin_| and the
       // intermediate views of the end of bubbling, we could presumably DCHECK
       // that we have a target.
-      TRACE_EVENT_INSTANT0("input", "Drop_Event_Target_Gone",
-                           TRACE_EVENT_SCOPE_THREAD);
+      TRACE_EVENT_INSTANT("input", "Drop_Event_Target_Gone");
       return false;
     }
 
@@ -1273,9 +1272,8 @@ bool RenderWidgetHostInputEventRouter::BubbleScrollEvent(
     // bubbling targets.
     if (event.GetType() == blink::WebInputEvent::Type::kGestureScrollEnd &&
         resending_view != bubbling_gesture_scroll_origin_) {
-      TRACE_EVENT_INSTANT0("input",
-                           "Dont_Bubble_GestureScrollEnd_Intermediate_Sender",
-                           TRACE_EVENT_SCOPE_THREAD);
+      TRACE_EVENT_INSTANT("input",
+                          "Dont_Bubble_GestureScrollEnd_Intermediate_Sender");
       return true;
     }
   }
@@ -1290,8 +1288,7 @@ bool RenderWidgetHostInputEventRouter::BubbleScrollEvent(
   if (resending_view == bubbling_gesture_scroll_target_) {
     ReportBubblingScrollToSameView(event, resending_view);
     CancelScrollBubbling();
-    TRACE_EVENT_INSTANT0("input", "EarlyOut-SameView",
-                         TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT("input", "EarlyOut-SameView");
     return false;
   }
 
@@ -1307,8 +1304,7 @@ bool RenderWidgetHostInputEventRouter::BubbleScrollEvent(
       // bubbled to the root, a wrapping scroll begin will have already been
       // sent to the root.
       if (touchscreen_pinch_state_.IsInPinch()) {
-        TRACE_EVENT_INSTANT0("input", "EarlyOut-IsInPinch",
-                             TRACE_EVENT_SCOPE_THREAD);
+        TRACE_EVENT_INSTANT("input", "EarlyOut-IsInPinch");
         return true;
       }
     } else if (event.GetType() ==
@@ -1317,8 +1313,7 @@ bool RenderWidgetHostInputEventRouter::BubbleScrollEvent(
     }
   }
 
-  TRACE_EVENT_INSTANT0("input", "Did_Bubble_Scroll_Event_To_Target",
-                       TRACE_EVENT_SCOPE_THREAD);
+  TRACE_EVENT_INSTANT("input", "Did_Bubble_Scroll_Event_To_Target");
   bubbling_gesture_scroll_target_->ProcessGestureEvent(
       GestureEventInTarget(event, bubbling_gesture_scroll_target_),
       latency_info);
@@ -1899,7 +1894,11 @@ RenderWidgetHostInputEventRouter::FindViewFromFrameSinkId(
       iter == owner_map_.end() ? nullptr : iter->second.get();
 
   if (view && ancestor_to_verify && view != ancestor_to_verify &&
-      !RenderWidgetHostViewInput::IsAncestorView(view, ancestor_to_verify)) {
+      view->GetParentViewInput() != ancestor_to_verify) {
+    // We restrict targeting verification strictly to immediate direct children
+    // (parent-child relationship) rather than allowing any-depth descendants
+    // (IsAncestorView), which prevents a compromised renderer from bypassing
+    // intermediate frames to target nested grandchildren.
     return nullptr;
   }
 

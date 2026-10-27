@@ -29,6 +29,9 @@ BASE_DECLARE_FEATURE(kAutofillCountFormSubmissionInRenderer);
 // prevented.
 BASE_DECLARE_FEATURE(kAutofillDedupeFormSubmission);
 
+// Enables Email Verification Protocol on iOS.
+BASE_DECLARE_FEATURE(kAutofillEmailVerification);
+
 // Fix for XHR form submission detection when autofill across iframes is
 // enabled.
 BASE_DECLARE_FEATURE(kAutofillFixXhrForXframe);
@@ -59,10 +62,6 @@ BASE_DECLARE_FEATURE(kAutofillPaymentsSheetV2Ios);
 // directly pick the Autofill suggestions provider instead of intermediating via
 // the FormSuggestionController.
 BASE_DECLARE_FEATURE(kAutofillPaymentsSheetV3Ios);
-
-// Enables the refill functionality to allow autofilling of dynamically
-// expanding forms.
-BASE_DECLARE_FEATURE(kAutofillRefillForFormsIos);
 
 // Enables Undo for Autofill operations on iOS. This will replace the Clear form
 // button with the Undo autofill button in the keyboard accessory.

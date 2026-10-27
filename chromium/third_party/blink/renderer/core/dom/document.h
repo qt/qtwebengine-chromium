@@ -85,6 +85,7 @@
 #include "third_party/blink/renderer/core/frame/widget_creation_observer.h"
 #include "third_party/blink/renderer/core/html/forms/listed_element.h"
 #include "third_party/blink/renderer/core/html/parser/parser_synchronization_policy.h"
+#include "third_party/blink/renderer/core/probe/async_task_context.h"
 #include "third_party/blink/renderer/platform/geometry/physical_offset.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_counted_set.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
@@ -93,6 +94,7 @@
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap_observer_list.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cancellable_task.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/timer.h"
@@ -230,6 +232,7 @@ class MenuSafeTriangle;
 class NodeIterator;
 class NthIndexCache;
 class Page;
+class ParseHTMLUnsafeOptions;
 class PendingAnimations;
 class PendingLinkPreload;
 class ProcessingInstruction;
@@ -255,14 +258,13 @@ class SecurityOrigin;
 class SelectorQueryCache;
 class SerializedScriptValue;
 class SetHTMLOptions;
-class SetHTMLUnsafeOptions;
 class Settings;
 class SlotAssignmentEngine;
+class StreamingSanitizer;
 class StyleEngine;
 class StylePropertyMapReadOnly;
 class StyleResolver;
 class Text;
-class TextAutosizer;
 class TransformSource;
 class TreeWalker;
 class TrustedHTML;
@@ -542,7 +544,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   AtomicString EncodingName() const;
 
-  void SetContent(const String&);
+  void SetContent(const String&, StreamingSanitizer* sanitizer = nullptr);
 
   // DOMParser::parseFromString() calls to this. Does the same thing as
   // `setContent()`, but may use the fast path parser.
@@ -690,6 +692,11 @@ class CORE_EXPORT Document : public ContainerNode,
   // the field is set to true when initializing `this` instance and set to false
   // only once (upon activation).
   bool IsScriptBlockedUntilPrerenderActivation() const;
+
+  // Called when a prerender-until-script page is upgraded to a full prerender.
+  // Similar to UnblockScriptExecutionForPrerenderActivation(), but the page
+  // remains in prerendering state (document.prerendering stays true).
+  void UnblockScriptExecutionForPrerenderUpgrade();
 
   bool IsForExternalHandler() const { return is_for_external_handler_; }
 
@@ -1185,7 +1192,6 @@ class CORE_EXPORT Document : public ContainerNode,
   // Updates for :target (CSS3 selector).
   void SetCSSTarget(Element*);
   Element* CssTarget() const { return css_target_.Get(); }
-  void SetSelectorFragmentAnchorCSSTarget(Element*);
 
   void ScheduleLayoutTreeUpdateIfNeeded();
   bool HasPendingForcedStyleRecalc() const;
@@ -1620,7 +1626,7 @@ class CORE_EXPORT Document : public ContainerNode,
   void EnqueueOverscrollEvent(const AtomicString& type,
                               Node* target,
                               Element* overscroll_target,
-                              bool overscrolling = false);
+                              bool overscrolling);
 
   void DispatchMediaQueryListEvents();
 
@@ -1661,9 +1667,6 @@ class CORE_EXPORT Document : public ContainerNode,
   void InitDNSPrefetch();
 
   bool IsInDocumentWrite() const { return write_recursion_depth_ > 0; }
-
-  TextAutosizer* GetTextAutosizer();
-
   ScriptValue registerElement(ScriptState*,
                               const AtomicString& name,
                               const ElementRegistrationOptions*,
@@ -1724,9 +1727,26 @@ class CORE_EXPORT Document : public ContainerNode,
   const PopoverStack& PopoverHintStack() const { return popover_hint_stack_; }
   PopoverStack& PopoverHintStack() { return popover_hint_stack_; }
   bool PopoverHintShowing() const { return !popover_hint_stack_.empty(); }
+  HTMLElement* PopoverHintStackParent() const {
+    return popover_hint_stack_parent_.Get();
+  }
+  void SetPopoverHintStackParent(HTMLElement* parent) {
+    popover_hint_stack_parent_ = parent;
+  }
   PopoverStack& PopoverAutoStack() { return popover_auto_stack_; }
   const PopoverStack& PopoverAutoStack() const { return popover_auto_stack_; }
   bool PopoverAutoShowing() const { return !popover_auto_stack_.empty(); }
+  bool PopoverShowing() const { return popover_showing_; }
+  void SetPopoverShowing(bool showing) { popover_showing_ = showing; }
+  uint32_t PopoverHidingNestingCount() const {
+    return popover_hiding_nesting_count_;
+  }
+  void IncrementPopoverHidingNestingCount() { ++popover_hiding_nesting_count_; }
+  void DecrementPopoverHidingNestingCount() {
+    CHECK(popover_hiding_nesting_count_);
+    --popover_hiding_nesting_count_;
+  }
+
   HeapHashSet<Member<HTMLElement>>& AllOpenPopovers() {
     return all_open_popovers_;
   }
@@ -1963,7 +1983,8 @@ class CORE_EXPORT Document : public ContainerNode,
   }
 
   bool IsVerticalScrollEnforced() const { return is_vertical_scroll_enforced_; }
-  bool IsFocusAllowed(FocusTrigger trigger) const;
+  bool IsFocusAllowed(FocusTrigger trigger,
+                      const LocalFrame& initiator_frame) const;
 
   LazyLoadMediaObserver& EnsureLazyLoadMediaObserver();
 
@@ -1985,6 +2006,10 @@ class CORE_EXPORT Document : public ContainerNode,
   // Manifest. If the document doesn't run in a context of a Web App or has no
   // associated Web App Manifest, it will return false.
   bool IsInWebAppScope() const;
+
+  // Returns whether this document is associated with the browser's initial
+  // ("Default") profile.
+  bool IsInitialProfile() const;
 
   void DispatchHandleLoadStart();
   void DispatchHandleLoadComplete();
@@ -2012,9 +2037,9 @@ class CORE_EXPORT Document : public ContainerNode,
 
   void RequestResizeResponsiveIframe(ExceptionState* = nullptr);
 
-  // A META element with name=responsive-embedded-sizing was added, removed, or
-  // modified. Re-collect the META values.
-  void ResponsiveEmbeddedSizingChanged();
+  // A META element with name=responsive-embedded-sizing sets this flag.
+  // This flag is immutable once set.
+  // https://drafts.csswg.org/css-sizing-4/#document-responsive-embedded-sizing-flag
   void SetResponsiveEmbeddedSizing() { responsive_embedded_sizing_ = true; }
 
   // A META element with name=text-scale was added, removed, or
@@ -2128,6 +2153,7 @@ class CORE_EXPORT Document : public ContainerNode,
   };
   DeclarativeShadowRootAllowState GetDeclarativeShadowRootAllowState() const;
   void setAllowDeclarativeShadowRoots(bool val);
+  void setSanitizer(StreamingSanitizer*);
 
   void SetFindInPageActiveMatchNode(Node*);
   const Node* GetFindInPageActiveMatchNode() const;
@@ -2230,7 +2256,11 @@ class CORE_EXPORT Document : public ContainerNode,
   // should be merged.
   static Document* parseHTMLUnsafe(ExecutionContext* context,
                                    const V8UnionStringOrTrustedHTML* html,
-                                   SetHTMLUnsafeOptions* options,
+                                   ParseHTMLUnsafeOptions* options,
+                                   ExceptionState& exception_state);
+  static Document* parseHTMLUnsafe(ExecutionContext* context,
+                                   const V8UnionStringOrTrustedHTML* html,
+                                   TrustedParserOptions* options,
                                    ExceptionState& exception_state);
   static Document* parseHTML(ExecutionContext* context,
                              const String& html,
@@ -2626,6 +2656,7 @@ class CORE_EXPORT Document : public ContainerNode,
   // Common implementation for parseHTML and parseHTMLUnsafe.
   static Document* parseHTMLInternal(ExecutionContext* context,
                                      const String& html,
+                                     StreamingSanitizer* sanitizer,
                                      ExceptionState& exception_state);
 
   bool CanThrottleFrameRate();
@@ -2634,6 +2665,10 @@ class CORE_EXPORT Document : public ContainerNode,
   // Note that not all prerendering pages block script execution; prerendering
   // pages' triggers can determine whether or not to block scripts.
   void UnblockScriptExecutionForPrerenderActivation();
+
+  // Resume script execution after either prerender activation or
+  // prerender-until-script upgrade.
+  void ResumeBlockedScriptExecution();
 
   // Slow path for GetViewTransitions() when view_transitions_ does not already
   // exist.
@@ -2691,6 +2726,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   Member<ResourceFetcher> fetcher_;
   Member<DocumentParser> parser_;
+  Member<StreamingSanitizer> sanitizer_;
   Member<HttpRefreshScheduler> http_refresh_scheduler_;
 
   bool well_formed_ = false;
@@ -2745,7 +2781,9 @@ class CORE_EXPORT Document : public ContainerNode,
   class PendingJavascriptUrl final
       : public GarbageCollected<PendingJavascriptUrl> {
    public:
-    PendingJavascriptUrl(const KURL& input_url, const DOMWrapperWorld* world);
+    PendingJavascriptUrl(ExecutionContext*,
+                         const KURL& input_url,
+                         const DOMWrapperWorld* world);
     ~PendingJavascriptUrl();
 
     void Trace(Visitor* visitor) const;
@@ -2753,6 +2791,8 @@ class CORE_EXPORT Document : public ContainerNode,
     KURL url;
     // The world in which the navigation to |url| initiated. Non-null.
     Member<const DOMWrapperWorld> world;
+
+    probe::AsyncTaskContext async_task_context;
   };
   HeapVector<Member<PendingJavascriptUrl>> pending_javascript_urls_;
 
@@ -2852,7 +2892,6 @@ class CORE_EXPORT Document : public ContainerNode,
   bool should_update_selection_after_layout_ = false;
 
   WeakMember<Element> css_target_;
-  bool css_target_is_selector_fragment_ = false;
 
   bool was_discarded_ = false;
 
@@ -2976,6 +3015,10 @@ class CORE_EXPORT Document : public ContainerNode,
   // stack is the same as for `popover_auto_stack_`. This stack will only ever
   // contain `popover=hint` elements, and nothing else.
   HeapVector<Member<HTMLElement>> popover_hint_stack_;
+  // Tracks the auto popover (if any) that serves as the root/parent for the
+  // current hint popover stack. Null if the hint stack is empty or not anchored
+  // to an auto popover.
+  Member<HTMLElement> popover_hint_stack_parent_;
   // The popover (if any) that received the most recent pointerdown event.
   Member<const HTMLElement> popover_pointerdown_target_;
   // The dialog (if any) that received the most recent pointerdown event. This
@@ -2991,6 +3034,10 @@ class CORE_EXPORT Document : public ContainerNode,
   HeapHashSet<Member<HTMLElement>> popovers_waiting_to_hide_;
   // A set of all open popovers, of all types.
   HeapHashSet<Member<HTMLElement>> all_open_popovers_;
+
+  // Used during the popover show/hide process to avoid reentrant show/hide.
+  bool popover_showing_ = false;
+  uint32_t popover_hiding_nesting_count_ = 0;
 
   // The ordered list of currently-open dialogs, in order they were opened.
   HeapLinkedHashSet<Member<HTMLDialogElement>> all_open_dialogs_;
@@ -3030,8 +3077,6 @@ class CORE_EXPORT Document : public ContainerNode,
   unsigned write_recursion_depth_ = 0;
 
   Member<ScriptedAnimationController> scripted_animation_controller_;
-  Member<TextAutosizer> text_autosizer_;
-
   void ElementDataCacheClearTimerFired(TimerBase*);
   HeapTaskRunnerTimer<Document> element_data_cache_clear_timer_;
 

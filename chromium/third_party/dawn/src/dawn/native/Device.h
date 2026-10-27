@@ -37,36 +37,37 @@
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
-#include "dawn/common/ContentLessObjectCache.h"
-#include "dawn/common/Defer.h"
-#include "dawn/common/Mutex.h"
-#include "dawn/common/NonMovable.h"
-#include "dawn/common/RefCountedWithExternalCount.h"
-#include "dawn/common/StackAllocated.h"
-#include "dawn/common/ThreadLocal.h"
-#include "dawn/common/WGPUDeviceCallbackInfos.h"
-#include "dawn/native/AsyncTask.h"
-#include "dawn/native/CacheKey.h"
-#include "dawn/native/Commands.h"
-#include "dawn/native/ComputePipeline.h"
-#include "dawn/native/CreatePipelineAsyncEvent.h"
 #include "dawn/native/DawnNative.h"
-#include "dawn/native/DeviceGuard.h"
-#include "dawn/native/Error.h"
-#include "dawn/native/ErrorSink.h"
-#include "dawn/native/ExecutionQueue.h"
-#include "dawn/native/Features.h"
-#include "dawn/native/Format.h"
-#include "dawn/native/Forward.h"
-#include "dawn/native/Limits.h"
-#include "dawn/native/LogEmitter.h"
-#include "dawn/native/ObjectBase.h"
 #include "dawn/native/ObjectType_autogen.h"
-#include "dawn/native/Toggles.h"
-#include "dawn/native/UsageValidationMode.h"
-#include "dawn/native/dawn_platform.h"
 #include "partition_alloc/pointers/raw_ptr.h"
 #include "partition_alloc/pointers/raw_ptr_exclusion.h"
+#include "src/dawn/common/ContentLessObjectCache.h"
+#include "src/dawn/common/Defer.h"
+#include "src/dawn/common/Mutex.h"
+#include "src/dawn/common/MutexProtected.h"
+#include "src/dawn/common/RefCountedWithExternalCount.h"
+#include "src/dawn/common/StackAllocated.h"
+#include "src/dawn/common/ThreadLocal.h"
+#include "src/dawn/common/WGPUDeviceCallbackInfos.h"
+#include "src/dawn/native/AsyncTask.h"
+#include "src/dawn/native/CacheKey.h"
+#include "src/dawn/native/Commands.h"
+#include "src/dawn/native/ComputePipeline.h"
+#include "src/dawn/native/CreatePipelineAsyncEvent.h"
+#include "src/dawn/native/DeviceGuard.h"
+#include "src/dawn/native/Error.h"
+#include "src/dawn/native/ErrorSink.h"
+#include "src/dawn/native/ExecutionQueue.h"
+#include "src/dawn/native/Features.h"
+#include "src/dawn/native/Format.h"
+#include "src/dawn/native/Forward.h"
+#include "src/dawn/native/Limits.h"
+#include "src/dawn/native/LogEmitter.h"
+#include "src/dawn/native/ObjectBase.h"
+#include "src/dawn/native/Toggles.h"
+#include "src/dawn/native/UsageValidationMode.h"
+#include "src/dawn/native/dawn_platform.h"
+#include "src/utils/non_movable.h"
 
 namespace dawn::platform {
 class WorkerTaskPool;
@@ -116,12 +117,12 @@ class DeviceBase : public ErrorSink,
 
         void Complete(EventCompletionType completionType) override;
 
-        wgpu::DeviceLostReason mReason;
-        std::string mMessage;
+        wgpu::DeviceLostReason mReason = wgpu::DeviceLostReason::Unknown;
+        std::string mMessage = "";
 
         WGPUDeviceLostCallback mCallback = nullptr;
-        raw_ptr<void> mUserdata1;
-        raw_ptr<void> mUserdata2;
+        raw_ptr<void> mUserdata1 = nullptr;
+        raw_ptr<void> mUserdata2 = nullptr;
     };
 
     DeviceBase(AdapterBase* adapter,
@@ -290,7 +291,7 @@ class DeviceBase : public ErrorSink,
     TextureBase* APICreateTexture(const TextureDescriptor* descriptor);
 
     InternalPipelineStore* GetInternalPipelineStore();
-    ResourceTableDefaultResources* GetResourceTableDefaultResources();
+    ResultOrError<ResourceTableDefaultResources*> GetOrCreateResourceTableDefaultsResource();
 
     // For Dawn Wire
     BufferBase* APICreateErrorBuffer(const BufferDescriptor* desc);
@@ -307,7 +308,7 @@ class DeviceBase : public ErrorSink,
     void APIGetFeatures(wgpu::SupportedFeatures* features) const;
     void APIGetFeatures(SupportedFeatures* features) const;
     wgpu::Status APIGetAdapterInfo(AdapterInfo* adapterInfo) const;
-    Future APIGetLostFuture() const;
+    Future APIGetLostFuture();
     void APIInjectError(wgpu::ErrorType type, StringView message);
     bool APITick();
     void APIValidateTextureDescriptor(const TextureDescriptor* desc);
@@ -391,6 +392,7 @@ class DeviceBase : public ErrorSink,
     virtual uint64_t GetBufferCopyOffsetAlignmentForDepthStencil() const;
 
     virtual float GetTimestampPeriodInNS() const = 0;
+    virtual bool AreTimestampsQuantized() const;
 
     virtual bool ShouldDuplicateNumWorkgroupsForDispatchIndirect(
         ComputePipelineBase* computePipeline) const;
@@ -489,15 +491,7 @@ class DeviceBase : public ErrorSink,
 
     tint::InternalCompilerErrorCallbackInfo GetTintInternalCompilerErrorCallback();
 
-    // During adapter's creation of devices, if device initialization fails, adapter will trigger
-    // the device lost event. After that, adapter should reset the lost event to avoid double
-    // triggering it when the device object get destructed.
-    void ResetLostEvent();
-
   protected:
-    // Constructor used only for mocking and testing.
-    DeviceBase();
-
     void ForceEnableFeatureForTesting(Feature feature);
 
     MaybeError Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor,
@@ -510,12 +504,6 @@ class DeviceBase : public ErrorSink,
         AHardwareBufferProperties* properties) const {
         DAWN_UNREACHABLE();
     }
-
-    // Device lost event needs to be protected for now because mock device needs it.
-    // TODO(dawn:1702) Make this private and move the class in the implementation file when we mock
-    // the adapter.
-    Ref<DeviceLostEvent> mLostEvent = nullptr;
-    Future mLostFuture = {kNullFutureID};
 
     // Returns a pair of a filename and a boolean indicating whether to start tracing
     // and if so, what filename to save the trace under.
@@ -632,6 +620,9 @@ class DeviceBase : public ErrorSink,
                                                     const TextureCopy& dst,
                                                     const Extent3D& copySizePixels) = 0;
 
+    Ref<DeviceLostEvent> mLostEvent = nullptr;
+    Future mLostFuture = {kNullFutureID};
+
     WGPUDeviceCallbackInfos mCallbackInfos;
 
     // Error scopes need to be thread local, but also need to be cleaned up when the device is
@@ -639,7 +630,8 @@ class DeviceBase : public ErrorSink,
     // clean up stacks on threads aside from the thread that dropped the last reference. By using a
     // unique ThreadUniqueId here, and tracking the stacks as a member, we can reclaim all memory
     // when the Device is destroyed.
-    absl::flat_hash_map<ThreadUniqueId, std::unique_ptr<ErrorScopeStack>> mErrorScopeStacks;
+    MutexProtected<absl::flat_hash_map<ThreadUniqueId, std::unique_ptr<ErrorScopeStack>>>
+        mErrorScopeStacks;
 
     Ref<AdapterBase> mAdapter;
 
@@ -691,8 +683,9 @@ class DeviceBase : public ErrorSink,
     std::string mIsolatedEntryPointName;
     std::unique_ptr<BlobCache> mBlobCache;
 
-    // We cache this toggle so that we can check it without locking the device.
+    // We cache these toggles so that we can check them without locking the device.
     bool mIsImmediateErrorHandlingEnabled = false;
+    std::atomic<bool> mIsValidationEnabled{true};
 
     // This pointer is non-null if Feature::ImplicitDeviceSynchronization is turned on. Note that
     // this is a currently a recursive lock, but should only really be used recursively for error
@@ -718,8 +711,8 @@ class IgnoreLazyClearCountScope : public NonMovable, public StackAllocated {
     ~IgnoreLazyClearCountScope();
 
   private:
-    raw_ptr<DeviceBase> mDevice;
-    size_t mLazyClearCountForTesting;
+    raw_ptr<DeviceBase> mDevice = nullptr;
+    size_t mLazyClearCountForTesting = 0;
 };
 
 }  // namespace dawn::native

@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_IO_H
-#define EIGEN_CXX11_TENSOR_TENSOR_IO_H
+#ifndef EIGEN_TENSOR_TENSOR_IO_H
+#define EIGEN_TENSOR_TENSOR_IO_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -220,13 +221,14 @@ struct TensorPrinter {
     typedef typename Tensor::Index IndexType;
 
     eigen_assert(Tensor::Layout == RowMajor);
-    typedef std::conditional_t<is_same<Scalar, char>::value || is_same<Scalar, unsigned char>::value ||
-                                   is_same<Scalar, numext::int8_t>::value || is_same<Scalar, numext::uint8_t>::value,
+    typedef std::conditional_t<std::is_same<Scalar, char>::value || std::is_same<Scalar, unsigned char>::value ||
+                                   std::is_same<Scalar, numext::int8_t>::value ||
+                                   std::is_same<Scalar, numext::uint8_t>::value,
                                int,
-                               std::conditional_t<is_same<Scalar, std::complex<char>>::value ||
-                                                      is_same<Scalar, std::complex<unsigned char>>::value ||
-                                                      is_same<Scalar, std::complex<numext::int8_t>>::value ||
-                                                      is_same<Scalar, std::complex<numext::uint8_t>>::value,
+                               std::conditional_t<std::is_same<Scalar, std::complex<char>>::value ||
+                                                      std::is_same<Scalar, std::complex<unsigned char>>::value ||
+                                                      std::is_same<Scalar, std::complex<numext::int8_t>>::value ||
+                                                      std::is_same<Scalar, std::complex<numext::uint8_t>>::value,
                                                   std::complex<int>, const Scalar&>>
         PrintType;
 
@@ -236,9 +238,8 @@ struct TensorPrinter {
     if (fmt.precision == StreamPrecision) {
       explicit_precision = 0;
     } else if (fmt.precision == FullPrecision) {
-      if (NumTraits<Scalar>::IsInteger) {
-        explicit_precision = 0;
-      } else {
+      EIGEN_IF_CONSTEXPR(NumTraits<Scalar>::IsInteger) { explicit_precision = 0; }
+      else {
         explicit_precision = significant_decimals_impl<Scalar>::run();
       }
     } else {
@@ -384,9 +385,8 @@ struct TensorPrinter<Tensor, 0, Format> {
     if (fmt.precision == StreamPrecision) {
       explicit_precision = 0;
     } else if (fmt.precision == FullPrecision) {
-      if (NumTraits<Scalar>::IsInteger) {
-        explicit_precision = 0;
-      } else {
+      EIGEN_IF_CONSTEXPR(NumTraits<Scalar>::IsInteger) { explicit_precision = 0; }
+      else {
         explicit_precision = significant_decimals_impl<Scalar>::run();
       }
     } else {
@@ -410,4 +410,4 @@ std::ostream& operator<<(std::ostream& s, const TensorBase<T, ReadOnlyAccessors>
 }
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_IO_H
+#endif  // EIGEN_TENSOR_TENSOR_IO_H

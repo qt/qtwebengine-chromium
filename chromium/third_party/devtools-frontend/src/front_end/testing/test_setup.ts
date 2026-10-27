@@ -24,6 +24,19 @@ import {
 
 const LOADING_TIMEOUT = 5_000;
 
+declare global {
+  namespace Mocha {
+    interface Suite {
+      hasOnly?: () => boolean;
+    }
+
+    interface Test {
+      // Custom extension: attached in beforeEach to signal to Karma that exclusive tests (e.g. it.only) are being run.
+      hasExclusiveTests?: boolean;
+    }
+  }
+}
+
 async function setupTestFont() {
   document.documentElement.classList.add('platform-screenshot-test');
 
@@ -79,7 +92,11 @@ before(async function() {
   });
 });
 
-beforeEach(async () => {
+beforeEach(async function(this: Mocha.Context) {
+  if (this.currentTest) {
+    this.currentTest.hasExclusiveTests = this.currentTest.parent?.hasOnly?.();
+  }
+
   stopTrackingAsyncActivity();
   resetHostConfig();
   // Clear out any Sinon stubs or spies between individual tests.

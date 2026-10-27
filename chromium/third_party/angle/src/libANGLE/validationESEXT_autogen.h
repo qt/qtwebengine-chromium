@@ -1927,6 +1927,8 @@ bool ValidateTexBufferRangeEXT(const Context *context,
 
 // GL_EXT_texture_format_sRGB_override
 
+// GL_EXT_texture_lod_bias
+
 // GL_EXT_texture_mirror_clamp_to_edge
 
 // GL_EXT_texture_norm16
@@ -2818,6 +2820,8 @@ bool ValidateTextureFoveationParametersQCOM(const Context *context,
                                             GLfloat gainX,
                                             GLfloat gainY,
                                             GLfloat foveaArea);
+
+// GL_QCOM_texture_lod_bias
 
 // GL_QCOM_tiled_rendering
 bool ValidateEndTilingQCOM(const Context *context,

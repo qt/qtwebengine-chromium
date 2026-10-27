@@ -13,6 +13,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/byte_size.h"
 #include "base/containers/flat_set.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -63,6 +64,7 @@
 #include "net/socket/socket_tag.h"
 #include "net/storage_access_api/status.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
+#include "net/url_request/device_bound_session_mode.h"
 #include "net/url_request/redirect_info.h"
 #include "net/url_request/referrer_policy.h"
 #include "net/url_request/storage_access_status_cache.h"
@@ -211,6 +213,14 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
                                        const SSLInfo& ssl_info,
                                        bool fatal);
 
+    // Called when a request is blocked because the platform local network
+    // permission is required. The delegate should call
+    // SetPlatformLocalNetworkAccessGranted() or
+    // CancelPlatformLocalNetworkAccessRequest() to continue or cancel the
+    // request.
+    virtual void OnPlatformLocalNetworkAccessPermissionRequired(
+        URLRequest* request);
+
     // After calling Start(), the delegate will receive an OnResponseStarted
     // callback when the request has completed. |net_error| will be set to OK
     // or an actual net error. On success, all redirects have been
@@ -329,15 +339,6 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
 
   const std::optional<CookiePartitionKey>& cookie_partition_key() const {
     return cookie_partition_key_;
-  }
-
-  // Indicate whether SameSite cookies should be attached even though the
-  // request is cross-site.
-  bool force_ignore_site_for_cookies() const {
-    return force_ignore_site_for_cookies_;
-  }
-  void set_force_ignore_site_for_cookies(bool attach) {
-    force_ignore_site_for_cookies_ = attach;
   }
 
   // Force allow SameSite=Lax cookies, even when they normally wouldn't be
@@ -485,19 +486,19 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
   // proxy handling. Pertains only to the last URLRequestJob issued by this
   // URLRequest, i.e., reset on redirects, but not reset when multiple round
   // trips are used for range requests or auth.
-  int64_t GetTotalReceivedBytes() const;
+  base::ByteSize GetTotalReceivedBytes() const;
 
   // Gets the total amount of data sent over the network before SSL encoding and
   // proxy handling. Pertains only to the last URLRequestJob issued by this
   // URLRequest, i.e., reset on redirects, but not reset when multiple round
   // trips are used for range requests or auth.
-  int64_t GetTotalSentBytes() const;
+  base::ByteSize GetTotalSentBytes() const;
 
   // The size of the response body before removing any content encodings.
   // Does not include redirects or sub-requests issued at lower levels (range
   // requests or auth). Only includes bytes which have been read so far,
   // including bytes from the cache.
-  int64_t GetRawBodyBytes() const;
+  base::ByteSize GetRawBodyBytes() const;
 
   // Returns the current load state for the request. The returned value's
   // |param| field is an optional parameter describing details related to the
@@ -741,6 +742,14 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
   void ContinueWithCertificate(scoped_refptr<X509Certificate> client_cert,
                                scoped_refptr<SSLPrivateKey> client_private_key);
 
+  // Instructs this URLRequest to continue with the request because the local
+  // network access permission has been granted.
+  void SetPlatformLocalNetworkAccessGranted();
+
+  // Instructs this URLRequest to cancel the request because the local
+  // network access permission has been denied.
+  void CancelPlatformLocalNetworkAccessRequest();
+
   // This method can be called after some error notifications to instruct this
   // URLRequest to ignore the current error and continue with the request. To
   // cancel the request instead, call Cancel().
@@ -964,11 +973,11 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
   // Whether this request is allowed to belong to a device bound session. This
   // includes registering a new session, accepting challenges, or deferring the
   // request until a session is refreshed.
-  bool allows_device_bound_sessions() const {
-    return allows_device_bound_sessions_;
+  DeviceBoundSessionMode device_bound_session_mode() const {
+    return device_bound_session_mode_;
   }
-  void set_allows_device_bound_sessions(bool allows_device_bound_sessions) {
-    allows_device_bound_sessions_ = allows_device_bound_sessions;
+  void set_device_bound_session_mode(DeviceBoundSessionMode mode) {
+    device_bound_session_mode_ = mode;
   }
 
   // Whether this request was in the scope of any device-bound session for this
@@ -1070,6 +1079,7 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
                       CompletionOnceCallback callback);
   void NotifyAuthRequired(std::unique_ptr<AuthChallengeInfo> auth_info);
   void NotifyCertificateRequested(SSLCertRequestInfo* cert_request_info);
+  void NotifyPlatformLocalNetworkAccessPermissionRequired();
   void NotifySSLCertificateError(int net_error,
                                  const SSLInfo& ssl_info,
                                  bool fatal);
@@ -1129,7 +1139,6 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
   // Unpartitioned cookies are unaffected by this field.
   std::optional<CookiePartitionKey> cookie_partition_key_ = std::nullopt;
 
-  bool force_ignore_site_for_cookies_ = false;
   bool ignore_unsafe_method_for_same_site_lax_ = false;
   bool force_main_frame_for_same_site_cookies_ = false;
   bool is_shared_resource_ = false;
@@ -1291,8 +1300,9 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
   base::RepeatingCallback<void(const device_bound_sessions::SessionAccess&)>
       device_bound_session_access_callback_;
 
-  // Whether the request is allowed to belong to a device bound session.
-  bool allows_device_bound_sessions_ = true;
+  // The mode for device bound sessions.
+  DeviceBoundSessionMode device_bound_session_mode_ =
+      DeviceBoundSessionMode::kAllowed;
   // How existing device-bound sessions for the request's site interacted with
   // this request.
   base::flat_map<device_bound_sessions::SessionKey,

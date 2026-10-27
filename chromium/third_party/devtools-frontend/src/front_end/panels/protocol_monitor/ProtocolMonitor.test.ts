@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Host from '../../core/host/host.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as ProtocolClient from '../../core/protocol_client/protocol_client.js';
@@ -488,6 +490,7 @@ describeWithEnvironment('ProtocolMonitor', () => {
         onFilterChanged: (_: string) => {},
         onTargetChange: (_: string) => {},
         onToggleSidebar: () => {},
+        onEditorSubmit: () => {},
         targets: [],
         selectedTargetId: 'main',
       };
@@ -542,6 +545,7 @@ describeWithEnvironment('ProtocolMonitor', () => {
         onFilterChanged: (_: string) => {},
         onTargetChange: (_: string) => {},
         onToggleSidebar: () => {},
+        onEditorSubmit: () => {},
         targets: [
           {id: () => 'main', name: () => 'Main', inspectedURL: () => 'www.example.com'},
           {id: () => 'prerender', name: () => 'Prerender', inspectedURL: () => 'www.example.com/prerender'}

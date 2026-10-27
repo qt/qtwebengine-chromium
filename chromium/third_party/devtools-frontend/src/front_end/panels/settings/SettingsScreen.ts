@@ -206,11 +206,11 @@ export class SettingsScreen extends UI.Widget.VBox implements UI.View.ViewLocati
 
   private reportSettingsPanelShown(tabId: string): void {
     if (tabId === i18nString(UIStrings.shortcuts)) {
-      Host.userMetrics.settingsPanelShown('shortcuts');
+      UI.UIUserMetrics.UIUserMetrics.instance().settingsPanelShown('shortcuts');
       return;
     }
 
-    Host.userMetrics.settingsPanelShown(tabId);
+    UI.UIUserMetrics.UIUserMetrics.instance().settingsPanelShown(tabId);
   }
 
   private onEscapeKeyPressed(event: KeyboardEvent): void {
@@ -636,7 +636,7 @@ const GREENDEV_VIEW: View = (input, _output, target) => {
               <span>${i18nString(UIStrings.greenDevUnstable)}</span>
              </div>
              <div class="settings-experiments-block">
-               ${renderPrototypeCheckboxes(input.settings, ['aiAnnotations', 'copyToGemini', 'breakpointDebuggerAgent', 'emulationCapabilities'])}
+               ${renderPrototypeCheckboxes(input.settings, ['aiAnnotations', 'beyondStylingGemini', 'beyondStylingAntigravity', 'emulationCapabilities'])}
              </div>
            </devtools-card>
          </div>
@@ -646,8 +646,8 @@ const GREENDEV_VIEW: View = (input, _output, target) => {
 
 const GREENDEV_PROTOTYPE_NAMES: Record<keyof GreenDev.GreenDevSettings, string> = {
   aiAnnotations: 'AI auto-annotations',
-  copyToGemini: 'Copy changes to AI Prompt',
-  breakpointDebuggerAgent: 'Breakpoint Debugger Agent',
+  beyondStylingGemini: 'Beyond Styling (Gemini CLI)',
+  beyondStylingAntigravity: 'Beyond Styling (Antigravity CLI)',
   emulationCapabilities: 'Emulation Capabilities',
 };
 

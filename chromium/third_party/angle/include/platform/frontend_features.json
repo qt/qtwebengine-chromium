@@ -249,6 +249,34 @@
                 "Force every context into debug mode as if EGL_CONTEXT_OPENGL_DEBUG_BIT_KHR was used."
             ],
             "issue": "https://anglebug.com/423956139"
+        },
+        {
+            "name": "limit_max_buffer_bytes_to_1MB",
+            "category": "Features",
+            "description": [
+                "Force a max buffer size of 1MB for testing."
+            ]
+        },
+        {
+            "name": "limit_max_texture_bytes_to_1MB",
+            "category": "Features",
+            "description": [
+                "Force a max image size of 1MB for testing."
+            ]
+        },
+        {
+            "name": "allow_extension_disable_after_non_pp_tokens",
+            "category": "Features",
+            "description": [
+                "Allow #extension ... : disable after non preprocessor tokens in WebGL."
+            ]
+        },
+        {
+            "name": "set_need_init_on_invalidation",
+            "category": "Features",
+            "description": [
+                "Set Texture's InitState to MayNeedInit inside invalidateFramebuffer or discardFramebuffer."
+            ]
         }
     ]
 }

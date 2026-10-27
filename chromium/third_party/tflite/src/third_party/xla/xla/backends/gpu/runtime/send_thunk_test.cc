@@ -34,11 +34,27 @@ using ::tsl::proto_testing::EqualsProto;
 TEST(CollectiveThunkTest, ProtoRoundTrip) {
   ThunkProto proto = tsl::proto_testing::ParseTextProtoOrDie<ThunkProto>(
       R"pb(
-        thunk_info {
-          profile_annotation: "partition_id_profile_annotation"
-          execution_stream_id: 2
-        }
+        thunk_info { profile_annotation: "partition_id_profile_annotation" }
         send_thunk {
+          buffer {
+            element_count: 64
+            source_buffer {
+              slice { offset: 128 size: 256 buffer_allocation_index: 0 }
+              shape {
+                dimensions: 64
+                element_type: S32
+                is_dynamic_dimension: false
+              }
+            }
+            destination_buffer {
+              slice { offset: 0 size: 256 buffer_allocation_index: 1 }
+              shape {
+                dimensions: 64
+                element_type: S32
+                is_dynamic_dimension: false
+              }
+            }
+          }
           collective_config {}
           source_target_pairs: { source: 1 target: 2 }
         }
@@ -46,12 +62,10 @@ TEST(CollectiveThunkTest, ProtoRoundTrip) {
 
   Thunk::ThunkInfo thunk_info;
   thunk_info.profile_annotation = proto.thunk_info().profile_annotation();
-  thunk_info.execution_stream_id = xla::gpu::ExecutionStreamId{
-      static_cast<xla::gpu::ExecutionStreamId::ValueType>(
-          proto.thunk_info().execution_stream_id())};
 
   std::vector<BufferAllocation> buffer_allocations = {
-      BufferAllocation(/*index=*/0, /*size=*/4, /*color=*/0)};
+      BufferAllocation(/*index=*/0, /*size=*/1024, /*color=*/0),
+      BufferAllocation(/*index=*/1, /*size=*/1024, /*color=*/0)};
 
   ASSERT_OK_AND_ASSIGN(
       std::unique_ptr<SendThunk> thunk,

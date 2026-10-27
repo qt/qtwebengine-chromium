@@ -16,23 +16,25 @@
 #define INK_STROKES_BRUSH_BRUSH_BEHAVIOR_H_
 
 #include <array>
-#include <cstdint>
 #include <string>
 #include <variant>
 #include <vector>
 
 #include "absl/status/status.h"
 #include "ink/brush/easing_function.h"
+#include "ink/brush/version.h"
 
 namespace ink {
 
 // A behavior describing how stroke input properties should affect the shape and
 // color of the brush tip.
 //
-// The behavior is conceptually a graph made from the various node types defined
-// below. Each edge of the graph represents passing a nullable floating point
-// value between nodes, and each node in the graph fits into one of the
-// following categories:
+// The behavior is conceptually a tree made from the various node types defined
+// below. Each edge of the tree graph represents passing a nullable finite
+// floating point value (with "null" representing an undefined value) from a
+// node to its parent, and each node in the tree fits into one of the following
+// categories:
+//
 //   1. Leaf nodes generate an output value without graph inputs. For example,
 //      they can create a value from properties of stroke input.
 //   2. Filter nodes can conditionally toggle branches of the graph "on" by
@@ -53,7 +55,7 @@ namespace ink {
 // This behavior would be represented by the list {Source, Target}. An example
 // of such a behavior defined in C++ would be:
 //
-//    BrushBeahvior behavior = {
+//    BrushBehavior behavior = {
 //        .nodes = {
 //            BrushBehavior::SourceNode{
 //                .source = BrushBehavior::Source::kPressure,
@@ -104,9 +106,6 @@ namespace ink {
 struct BrushBehavior {
   // List of input properties along with their units that can act as sources for
   // a `BrushBehavior`.
-  //
-  // This should match the enum in BrushBehavior.kt and
-  // BrushFamilyExtensions.kt.
   //
   // Behaviors that consider properties of the stroke input do not consider
   // alterations to the visible position of that point in the stroke by brush
@@ -165,7 +164,9 @@ struct BrushBehavior {
     // input. The value remains fixed for any given part of the stroke once
     // drawn.
     kTimeOfInputInSeconds,
-    kTimeOfInputInMillis,
+    // Time elapsed from the current modeled stroke input until the last input
+    // in the stroke.
+    kTimeFromInputToStrokeEndInSeconds,
     // Distance traveled by the inputs of the current prediction, starting at 0
     // at the last non-predicted input, in multiples of the brush size. Zero for
     // inputs before the predicted portion of the stroke.
@@ -173,18 +174,22 @@ struct BrushBehavior {
     // Elapsed time of the prediction, starting at 0 at the last non-predicted
     // input. Zero for inputs before the predicted portion of the stroke.
     kPredictedTimeElapsedInSeconds,
-    kPredictedTimeElapsedInMillis,
     // The distance left to be traveled from a given modeled input to the
     // current last modeled input of the stroke in multiples of the brush size.
     // This value changes for each input as the stroke is drawn.
     kDistanceRemainingInMultiplesOfBrushSize,
     // Time elapsed since the modeled stroke input. This continues to increase
     // even after all stroke inputs have completed, and can be used to drive
-    // stroke animations. These enumerators are only compatible with a
+    // wet-layer stroke animations. This source is only compatible with a
     // `source_out_of_range_behavior` of `kClamp`, to ensure that the animation
     // will eventually end.
     kTimeSinceInputInSeconds,
-    kTimeSinceInputInMillis,
+    // Time elapsed since the final input of the stroke, or zero if the final
+    // input hasn't arrived yet. This can be used to drive wet-layer stroke
+    // animations that should occur after the final input. This source is only
+    // compatible with a `source_out_of_range_behavior` of `kClamp`, to ensure
+    // that the animation will eventually end.
+    kTimeSinceStrokeEndInSeconds,
     // Absolute acceleration of the modeled stroke input in multiples of the
     // brush size per second squared. Note that this value doesn't take into
     // account brush behaviors that offset the position of that visible point in
@@ -210,55 +215,52 @@ struct BrushBehavior {
     kAccelerationLateralInMultiplesOfBrushSizePerSecondSquared,
     // Absolute speed of the modeled stroke input pointer in centimeters per
     // second.
-    kInputSpeedInCentimetersPerSecond,
+    kSpeedInCentimetersPerSecond,
     // Signed x and y components of the modeled stroke input pointer velocity
     // in centimeters per second.
-    kInputVelocityXInCentimetersPerSecond,
-    kInputVelocityYInCentimetersPerSecond,
+    kVelocityXInCentimetersPerSecond,
+    kVelocityYInCentimetersPerSecond,
     // Distance in centimeters traveled by the modeled stroke input pointer
     // along the input path from the start of the stroke.
-    kInputDistanceTraveledInCentimeters,
+    kDistanceTraveledInCentimeters,
     // Distance in centimeters alonge the input path from the real portion of
     // the modeled stroke to this input. Zero for inputs before the predicted
     // portion of the stroke.
-    kPredictedInputDistanceTraveledInCentimeters,
+    kPredictedDistanceTraveledInCentimeters,
     // Absolute acceleration of the modeled stroke input pointer in centimeters
     // per second squared.
-    kInputAccelerationInCentimetersPerSecondSquared,
+    kAccelerationInCentimetersPerSecondSquared,
     // Signed x and y components of the acceleration of the modeled stroke input
     // pointer in centimeters per second squared.
-    kInputAccelerationXInCentimetersPerSecondSquared,
-    kInputAccelerationYInCentimetersPerSecondSquared,
+    kAccelerationXInCentimetersPerSecondSquared,
+    kAccelerationYInCentimetersPerSecondSquared,
     // Signed component of acceleration of the modeled stroke input pointer in
     // the direction of its velocity in centimeters per second squared.
-    kInputAccelerationForwardInCentimetersPerSecondSquared,
+    kAccelerationForwardInCentimetersPerSecondSquared,
     // Signed component of acceleration of the modeled stroke input pointer
     // perpendicular to its velocity, rotated 90 degrees in the direction from
     // the positive x-axis towards the positive y-axis, in centimeters per
     // second squared.
-    kInputAccelerationLateralInCentimetersPerSecondSquared,
+    kAccelerationLateralInCentimetersPerSecondSquared,
     // Distance from the current modeled input to the end of the stroke along
     // the input path, as a fraction of the current total length of the stroke.
     // This value changes for each input as inputs are added.
     kDistanceRemainingAsFractionOfStrokeLength,
-    // TODO: b/336565152 - Add kInputDistanceRemainingInCentimeters (this will
+    // TODO: b/336565152 - Add kDistanceRemainingInCentimeters (this will
     // require some refactoring for the code that calculates
     // BrushTipModeler::distance_remaining_behavior_upper_bound_).
   };
 
   // List of tip properties that can be modified by a `BrushBehavior`.
   //
-  // This should match the enums in BrushBehavior.kt and
-  // BrushFamilyExtensions.kt.
   enum class Target : int8_t {
     // `kWidthMultiplier` and `kHeightMultiplier` scale the brush-tip size along
     // one dimension, starting from the values calculated using
     // `BrushTip::scale`, while `kSizeMultiplier` is a convenience target that
-    // affects both width and height at once. The final brush size is clamped to
-    // a maximum of twice the base size along each dimension. If multiple
-    // behaviors have one of these targets, they stack multiplicatively (thus
-    // allowing one behavior to scale the size down to zero over time, "winning"
-    // over all other size-modifying behaviors).
+    // affects both width and height at once. If multiple behaviors have one of
+    // these targets, they stack multiplicatively (thus allowing one behavior to
+    // scale the size down to zero over time, "winning" over all other
+    // size-modifying behaviors).
     kWidthMultiplier,
     kHeightMultiplier,
     kSizeMultiplier,
@@ -300,9 +302,6 @@ struct BrushBehavior {
     // The following are targets for tip color adjustments, including opacity.
     // Renderers can apply them to the brush color when a stroke is drawn to
     // contribute to the local color of each part of the stroke.
-    //
-    // TODO: b/344839538 - Rename and re-document kLuminosity once we decide how
-    // that target should stack.
 
     // Shifts the hue of the base brush color.  A positive offset shifts around
     // the hue wheel from red towards orange, while a negative offset shifts the
@@ -314,9 +313,11 @@ struct BrushBehavior {
     // have one of these targets, they stack multiplicatively.  The final
     // saturation multiplier is clamped to [0, 2].
     kSaturationMultiplier,
-    // Target the luminosity of the color. An offset of +/-100% corresponds to
-    // changing the luminosity by up to +/-100%.
-    kLuminosity,
+    // Shifts the luminosity of the base brush color. An offset of ±1.0
+    // corresponds to changing the luminosity by up to ±100%. If multiple
+    // behaviors have this target, they stack additively.  The final luminosity
+    // offset is clamped to [-1, 1].
+    kLuminosityOffset,
     // Scales the opacity of the base brush color.  If multiple behaviors have
     // one of these targets, they stack multiplicatively.  The final opacity
     // multiplier is clamped to [0, 2].
@@ -325,8 +326,6 @@ struct BrushBehavior {
 
   // List of vector tip properties that can be modified by a `BrushBehavior`.
   //
-  // This should match the enums in BrushBehavior.kt and
-  // BrushFamilyExtensions.kt.
   enum class PolarTarget : int8_t {
     // Adds the vector to the brush tip's absolute x/y position in stroke space,
     // where the angle input is measured in radians and the magnitude input is
@@ -350,8 +349,6 @@ struct BrushBehavior {
   // The desired behavior when an input value is outside the bounds of
   // `source_value_range`.
   //
-  // This should match the enum in BrushBehavior.kt and
-  // BrushFamilyExtensions.kt.
   enum class OutOfRange : int8_t {
     // Values outside the range will be clamped to not exceed the bounds.
     kClamp,
@@ -386,50 +383,46 @@ struct BrushBehavior {
   static constexpr EnabledToolTypes kAllToolTypes = {
       .unknown = true, .mouse = true, .touch = true, .stylus = true};
 
-  // List of input properties that might not be reported by `StrokeInput`.
+  // A binary operation for combining two values in a `BinaryOpNode`. Unless
+  // otherwise specified for a particular operator, the result will be null
+  // (i.e. undefined) if either input value is null.
   //
-  // This should match the enums in BrushBehavior.kt and
-  // BrushFamilyExtensions.kt.
-  enum OptionalInputProperty : int8_t {
-    kPressure,
-    kTilt,
-    kOrientation,
-    // Tilt-x and tilt-y require both tilt and orientation to be reported.
-    kTiltXAndY,
-  };
-
-  // A binary operation for combining two values in a `BinaryOpNode`.
   // LINT.IfChange(binary_op)
   enum class BinaryOp {
-    kProduct,  // A * B, or null if either is null
-    kSum,      // A + B, or null if either is null
+    kProduct,  // A * B
+    kSum,      // A + B
+    kMin,      // min(A, B)
+    kMax,      // max(A, B)
+    kAndThen,  // returns null if A is null, otherwise returns B
+    kOrElse,   // returns A if A isn't null, otherwise returns B
+    kXorElse,  // if exactly one input isn't null, returns it, otherwise null
   };
   // LINT.ThenChange(
   //   fuzz_domains.cc:binary_op,
   //   ../storage/proto/brush_family.proto:binary_op,
   // )
 
-  // Dimensions/units for measuring the `damping_gap` field of a
-  // `DampingNode`.
-  // LINT.IfChange(damping_source)
-  enum class DampingSource {
-    // Value damping occurs over distance traveled by the input pointer, and the
-    // `damping_gap` is measured in centimeters. If the input data does not
-    // indicate the relationship between stroke units and physical units
-    // (e.g. as may be the case for programmatically-generated inputs), then no
-    // damping will be performed (i.e. the `damping_gap` will be treated as
-    // zero).
+  // Dimensions and units for measuring distance/time along the length/duration
+  // of a stroke.
+  // LINT.IfChange(progress_domain)
+  enum class ProgressDomain {
+    // Progress in input distance traveled since the start of the stroke,
+    // measured in centimeters. If the stroke input data does not indicate the
+    // relationship between stroke units and physical units (e.g. as may be the
+    // case for programmatically-generated inputs), then any node relying on
+    // this domain will emit null.
     kDistanceInCentimeters,
-    // Value damping occurs over distance traveled by the input pointer, and the
-    // `damping_gap` is measured in multiples of the brush size.
+    // Progress in input distance traveled since the start of the stroke,
+    // measured in multiples of the brush size.
     kDistanceInMultiplesOfBrushSize,
-    // Value damping occurs over time, and the `damping_gap` is measured in
+    // Progress in input time since the start of the stroke, measured in
     // seconds.
     kTimeInSeconds,
   };
   // LINT.ThenChange(
-  //   fuzz_domains.cc:damping_source,
-  //   ../storage/proto/brush_family.proto:damping_source,
+  //   fuzz_domains.cc:progress_domain,
+  //   ../storage/proto/brush_family.proto:progress_domain,
+  //   ../../../third_party/java/androidx/ink/brush/main/behavior/ProgressDomain.kt:progress_domain,
   // )
 
   // An interpolation function for combining three values in an
@@ -481,15 +474,21 @@ struct BrushBehavior {
   };
 
   // Value node for producing a continuous random noise function with values
-  // between 0 to 1.
+  // between 0 to 1. A new random value will be generated every `base_period`
+  // units along the `vary_over` domain, with the output of this node shifting
+  // smoothly between successive random values.
   // Inputs: 0
-  // Output: The current random value.
+  // Output: The current random value. If `vary_over` is
+  //     `kDistanceInCentimeters` and the stroke input data does not indicate
+  //     the relationship between stroke units and physical units (e.g. as may
+  //     be the case for programmatically-generated inputs), then the output
+  //     value will be null.
   // To be valid:
-  //   - `vary_over` must be a valid `DampingSource` enumerator.
+  //   - `vary_over` must be a valid `ProgressDomain` enumerator.
   //   - `base_period` must be finite and strictly positive.
   struct NoiseNode {
     uint32_t seed;
-    DampingSource vary_over;
+    ProgressDomain vary_over;
     float base_period;
 
     friend bool operator==(const NoiseNode&, const NoiseNode&) = default;
@@ -498,20 +497,6 @@ struct BrushBehavior {
   //////////////////////////
   /// FILTER VALUE NODES ///
   //////////////////////////
-
-  // Value node for filtering out a branch of a behavior graph unless a
-  // particular stroke input property is missing.
-  // Inputs: 1
-  // Output: Null if the specified property is present in the stroke input
-  //     batch, otherwise the input value.
-  // To be valid:
-  //   - `is_fallback_for` must be a valid `OptionalInputProperty` enumerator.
-  struct FallbackFilterNode {
-    OptionalInputProperty is_fallback_for;
-
-    friend bool operator==(const FallbackFilterNode&,
-                           const FallbackFilterNode&) = default;
-  };
 
   // Value node for filtering out a branch of a behavior graph unless this
   // stroke's tool type is in the specified set.
@@ -535,13 +520,17 @@ struct BrushBehavior {
   // distance.
   // Inputs: 1
   // Output: The damped input value. If the input value becomes null, this node
-  //     continues to emit its previous output value.  If the input value starts
-  //     out null, the output value is null until the first non-null input.
+  //     continues to emit its previous output value. If the input value starts
+  //     out null, the output value is null until the first non-null input. If
+  //     `damping_source` is `kDistanceInCentimeters` and the stroke input data
+  //     does not indicate the relationship between stroke units and physical
+  //     units (e.g. as may be the case for programmatically-generated inputs),
+  //     then the output value will be null regardless of the input.
   // To be valid:
-  //   - `damping_source` must be a valid `DampingSource` enumerator.
+  //   - `damping_source` must be a valid `ProgressDomain` enumerator.
   //   - `damping_gap` must be finite and non-negative.
   struct DampingNode {
-    DampingSource damping_source;
+    ProgressDomain damping_source;
     float damping_gap;
 
     friend bool operator==(const DampingNode&, const DampingNode&) = default;
@@ -557,6 +546,31 @@ struct BrushBehavior {
     EasingFunction response_curve;
 
     friend bool operator==(const ResponseNode&, const ResponseNode&) = default;
+  };
+
+  // Value node for integrating an input value over time or distance.
+  // Inputs: 1
+  // Output: The integral of the input value since the start of the stroke,
+  //     after inverse-lerping from the specified value range and applying the
+  //     specified out-of-range behavior. If the input value ever becomes null,
+  //     this node acts as though the input value were still equal to its most
+  //     recent non-null value. If the input value starts out null, it is
+  //     treated as zero until the first non-null input. If `integrate_over` is
+  //     `kDistanceInCentimeters` and the stroke input data does not indicate
+  //     the relationship between stroke units and physical units (e.g. as may
+  //     be the case for programmatically-generated inputs), then the output
+  //     value will be null.
+  // To be valid:
+  //   - `integrate_over` must be a valid `ProgressDomain` enumerator.
+  //   - `integral_out_of_range_behavior` must be a valid `OutOfRange`
+  //     enumerator.
+  //   - The endpoints of `integral_value_range` must be finite and distinct.
+  struct IntegralNode {
+    ProgressDomain integrate_over;
+    OutOfRange integral_out_of_range_behavior;
+    std::array<float, 2> integral_value_range;
+
+    friend bool operator==(const IntegralNode&, const IntegralNode&) = default;
   };
 
   // Value node for combining two other values with a binary operation.
@@ -632,11 +646,17 @@ struct BrushBehavior {
   // applies some effect to the brush tip (but does not produce any output
   // value).
   using Node =
-      std::variant<SourceNode, ConstantNode, NoiseNode, FallbackFilterNode,
-                   ToolTypeFilterNode, DampingNode, ResponseNode, BinaryOpNode,
+      std::variant<SourceNode, ConstantNode, NoiseNode, ToolTypeFilterNode,
+                   DampingNode, ResponseNode, IntegralNode, BinaryOpNode,
                    InterpolationNode, TargetNode, PolarTargetNode>;
 
+  // A post-order traversal of this behavior's node graph.
   std::vector<Node> nodes;
+  // A multi-line, human-readable string with a description of this brush
+  // behavior and its purpose within the brush, with the intended audience being
+  // designers/developers who are editing the brush definition. This string is
+  // not generally intended to be displayed to end users.
+  std::string developer_comment;
 
   friend bool operator==(const BrushBehavior&, const BrushBehavior&) = default;
 };
@@ -655,14 +675,17 @@ absl::Status ValidateBrushBehaviorTopLevel(const BrushBehavior& behavior);
 
 absl::Status ValidateBrushBehaviorNode(const BrushBehavior::Node& node);
 
+// Calculates the minimum version of the Ink library that is required to use
+// this brush behavior.
+Version CalculateMinimumRequiredVersion(const BrushBehavior& behavior);
+
 std::string ToFormattedString(BrushBehavior::Source source);
 std::string ToFormattedString(BrushBehavior::Target target);
 std::string ToFormattedString(BrushBehavior::PolarTarget target);
 std::string ToFormattedString(BrushBehavior::OutOfRange out_of_range);
 std::string ToFormattedString(BrushBehavior::EnabledToolTypes enabled);
-std::string ToFormattedString(BrushBehavior::OptionalInputProperty input);
 std::string ToFormattedString(BrushBehavior::BinaryOp operation);
-std::string ToFormattedString(BrushBehavior::DampingSource damping_source);
+std::string ToFormattedString(BrushBehavior::ProgressDomain progress_domain);
 std::string ToFormattedString(BrushBehavior::Interpolation interpolation);
 std::string ToFormattedString(const BrushBehavior::Node& node);
 std::string ToFormattedString(const BrushBehavior& behavior);
@@ -695,18 +718,13 @@ void AbslStringify(Sink& sink, BrushBehavior::EnabledToolTypes enabled) {
 }
 
 template <typename Sink>
-void AbslStringify(Sink& sink, BrushBehavior::OptionalInputProperty input) {
-  sink.Append(brush_internal::ToFormattedString(input));
-}
-
-template <typename Sink>
 void AbslStringify(Sink& sink, BrushBehavior::BinaryOp operation) {
   sink.Append(brush_internal::ToFormattedString(operation));
 }
 
 template <typename Sink>
-void AbslStringify(Sink& sink, BrushBehavior::DampingSource damping_source) {
-  sink.Append(brush_internal::ToFormattedString(damping_source));
+void AbslStringify(Sink& sink, BrushBehavior::ProgressDomain progress_domain) {
+  sink.Append(brush_internal::ToFormattedString(progress_domain));
 }
 
 template <typename Sink>

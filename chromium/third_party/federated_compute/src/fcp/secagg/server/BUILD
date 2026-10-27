@@ -15,14 +15,18 @@
 # Description:
 #   SecAgg server-specific components.
 
+load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@com_google_protobuf//bazel:java_proto_library.bzl", "java_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//fcp:config.bzl", "FCP_COPTS")
 load("//fcp/tracing:build_defs.bzl", "tracing_schema_cc_library")
 
 package(
+    default_applicable_licenses = ["//fcp:license"],
     default_visibility = ["//fcp:internal"],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 tracing_schema_cc_library(
@@ -209,7 +213,11 @@ cc_library(
     hdrs = [
         "distribution_utilities.h",
     ],
-    deps = ["//fcp/base"],
+    deps = [
+        "//fcp/base",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+    ],
 )
 
 cc_test(
@@ -241,7 +249,6 @@ cc_test(
         "//fcp/secagg/testing/server:experiments",
         "//fcp/secagg/testing/server:server_mocks",
         "//fcp/testing",
-        "//fcp/testing:parse_text_proto",
         "//fcp/tracing:test_tracing_recorder",
         "@com_google_googletest//:gtest_main",
     ],

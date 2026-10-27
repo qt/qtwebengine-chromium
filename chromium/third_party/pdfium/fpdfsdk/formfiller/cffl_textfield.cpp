@@ -33,7 +33,7 @@ CFFL_TextField::CFFL_TextField(CFFL_InteractiveFormFiller* pFormFiller,
     : CFFL_TextObject(pFormFiller, pWidget) {}
 
 CFFL_TextField::~CFFL_TextField() {
-  // See comment in cffl_formfiller.h.
+  // See comment in cffl_formfield.h.
   // The font map should be stored somewhere more appropriate so it will live
   // until the PWL_Edit is done with it. pdfium:566
   DestroyWindows();
@@ -43,41 +43,44 @@ CPWL_Wnd::CreateParams CFFL_TextField::GetCreateParam() {
   CPWL_Wnd::CreateParams cp = CFFL_TextObject::GetCreateParam();
   int nFlags = widget_->GetFieldFlags();
   if (nFlags & pdfium::form_flags::kTextPassword) {
-    cp.dwFlags |= PES_PASSWORD;
+    cp.dwFlags |= CPWL_Wnd::Styles::kEditPassword;
   }
 
   if (nFlags & pdfium::form_flags::kTextMultiline) {
-    cp.dwFlags |= PES_MULTILINE | PES_AUTORETURN | PES_TOP;
+    cp.dwFlags |=
+        {CPWL_Wnd::Styles::kEditMultiline, CPWL_Wnd::Styles::kEditAutoReturn,
+         CPWL_Wnd::Styles::kEditTop};
     if (!(nFlags & pdfium::form_flags::kTextDoNotScroll)) {
-      cp.dwFlags |= PWS_VSCROLL | PES_AUTOSCROLL;
+      cp.dwFlags |=
+          {CPWL_Wnd::Styles::kWindowVScroll, CPWL_Wnd::Styles::kEditAutoScroll};
     }
   } else {
-    cp.dwFlags |= PES_CENTER;
+    cp.dwFlags |= CPWL_Wnd::Styles::kEditCenter;
     if (!(nFlags & pdfium::form_flags::kTextDoNotScroll)) {
-      cp.dwFlags |= PES_AUTOSCROLL;
+      cp.dwFlags |= CPWL_Wnd::Styles::kEditAutoScroll;
     }
   }
 
   if (nFlags & pdfium::form_flags::kTextComb) {
-    cp.dwFlags |= PES_CHARARRAY;
+    cp.dwFlags |= CPWL_Wnd::Styles::kEditCharArray;
   }
 
   if (nFlags & pdfium::form_flags::kTextRichText) {
-    cp.dwFlags |= PES_RICH;
+    cp.dwFlags |= CPWL_Wnd::Styles::kEditRich;
   }
 
-  cp.dwFlags |= PES_UNDO;
+  cp.dwFlags |= CPWL_Wnd::Styles::kEditUndo;
 
   switch (widget_->GetAlignment()) {
     default:
     case kLeft:
-      cp.dwFlags |= PES_LEFT;
+      cp.dwFlags |= CPWL_Wnd::Styles::kEditLeft;
       break;
     case kCenter:
-      cp.dwFlags |= PES_MIDDLE;
+      cp.dwFlags |= CPWL_Wnd::Styles::kEditMiddle;
       break;
     case kRight:
-      cp.dwFlags |= PES_RIGHT;
+      cp.dwFlags |= CPWL_Wnd::Styles::kEditRight;
       break;
   }
   cp.font_map = GetOrCreateFontMap();
@@ -94,7 +97,7 @@ std::unique_ptr<CPWL_Wnd> CFFL_TextField::NewPWLWindow(
   int32_t nMaxLen = widget_->GetMaxLen();
   WideString swValue = widget_->GetValue();
   if (nMaxLen > 0) {
-    if (pWnd->HasFlag(PES_CHARARRAY)) {
+    if (pWnd->HasFlag(CPWL_Wnd::Styles::kEditCharArray)) {
       pWnd->SetCharArray(nMaxLen);
       pWnd->SetAlignFormatVerticalCenter();
     } else {

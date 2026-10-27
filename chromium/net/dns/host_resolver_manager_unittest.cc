@@ -68,6 +68,8 @@
 #include "net/dns/host_resolver_cache.h"
 #include "net/dns/host_resolver_internal_result.h"
 #include "net/dns/host_resolver_internal_result_test_util.h"
+#include "net/dns/host_resolver_manager.h"
+#include "net/dns/host_resolver_manager_job.h"
 #include "net/dns/host_resolver_results_test_util.h"
 #include "net/dns/host_resolver_system_task.h"
 #include "net/dns/mock_host_resolver.h"
@@ -4299,9 +4301,17 @@ void HostResolverManagerDnsTest::CreateResolverWithOptionsAndParams(
       std::make_unique<MockDnsClient>(DnsConfig(), CreateDefaultDnsRules());
   mock_dns_client_ = dns_client.get();
   resolver_->SetDnsClientForTesting(std::move(dns_client));
+  HostResolverManager::InsecureDnsMode mode;
+  if (options.insecure_dns_client_enabled &&
+      options.insecure_dns_via_platform_apis_enabled) {
+    mode = HostResolverManager::InsecureDnsMode::kEnabledPlatform;
+  } else if (options.insecure_dns_client_enabled) {
+    mode = HostResolverManager::InsecureDnsMode::kEnabledBuiltIn;
+  } else {
+    mode = HostResolverManager::InsecureDnsMode::kDisabled;
+  }
   resolver_->SetInsecureDnsClientEnabled(
-      options.insecure_dns_client_enabled,
-      options.additional_types_via_insecure_dns_enabled);
+      mode, options.additional_types_via_insecure_dns_enabled);
   resolver_->set_host_resolver_system_params_for_test(params);
   resolver_->RegisterResolveContext(resolve_context_.get());
 }
@@ -4315,7 +4325,7 @@ void HostResolverManagerDnsTest::UseMockDnsClient(const DnsConfig& config,
   mock_dns_client_ = dns_client.get();
   resolver_->SetDnsClientForTesting(std::move(dns_client));
   resolver_->SetInsecureDnsClientEnabled(
-      /*enabled=*/true,
+      HostResolverManager::InsecureDnsMode::kEnabledBuiltIn,
       /*additional_dns_types_enabled=*/true);
   if (!config.Equals(DnsConfig())) {
     ChangeDnsConfig(config);
@@ -4578,7 +4588,7 @@ TEST_F(HostResolverManagerDnsTest, DisableAndEnableInsecureDnsClient) {
   proc_->SignalMultiple(1u);
 
   resolver_->SetInsecureDnsClientEnabled(
-      /*enabled=*/false,
+      HostResolverManager::InsecureDnsMode::kDisabled,
       /*additional_dns_types_enabled*/ false);
   ResolveHostResponseHelper response_system(resolver_->CreateRequest(
       HostPortPair("nx_succeed", 1212), NetworkAnonymizationKey(),
@@ -4590,8 +4600,9 @@ TEST_F(HostResolverManagerDnsTest, DisableAndEnableInsecureDnsClient) {
               testing::ElementsAre(ExpectEndpointResult(
                   testing::ElementsAre(CreateExpected("192.168.2.47", 1212)))));
 
-  resolver_->SetInsecureDnsClientEnabled(/*enabled*/ true,
-                                         /*additional_dns_types_enabled=*/true);
+  resolver_->SetInsecureDnsClientEnabled(
+      HostResolverManager::InsecureDnsMode::kEnabledBuiltIn,
+      /*additional_dns_types_enabled=*/true);
   ResolveHostResponseHelper response_dns_client(resolver_->CreateRequest(
       HostPortPair("ok_fail", 1212), NetworkAnonymizationKey(),
       NetLogWithSource(), std::nullopt, resolve_context_.get()));
@@ -4936,7 +4947,7 @@ TEST_F(HostResolverManagerDnsTest, FallbackOnAbortBySource_Any) {
   // Simulate the case when the preference or policy has disabled the insecure
   // DNS client causing AbortInsecureDnsTasks.
   resolver_->SetInsecureDnsClientEnabled(
-      /*enabled=*/false,
+      HostResolverManager::InsecureDnsMode::kDisabled,
       /*additional_dns_types_enabled=*/false);
 
   // All requests should fallback to system resolver.
@@ -4974,7 +4985,7 @@ TEST_F(HostResolverManagerDnsTest, FallbackOnAbortBySource_Dns) {
   // Simulate the case when the preference or policy has disabled the insecure
   // DNS client causing AbortInsecureDnsTasks.
   resolver_->SetInsecureDnsClientEnabled(
-      /*enabled=*/false,
+      HostResolverManager::InsecureDnsMode::kDisabled,
       /*additional_dns_types_enabled=*/false);
 
   // No fallback expected.  All requests should fail.
@@ -5005,7 +5016,7 @@ TEST_F(HostResolverManagerDnsTest,
   // Simulate the case when the preference or policy has disabled the insecure
   // DNS client causing AbortInsecureDnsTasks.
   resolver_->SetInsecureDnsClientEnabled(
-      /*enabled=*/false,
+      HostResolverManager::InsecureDnsMode::kDisabled,
       /*additional_dns_types_enabled*/ false);
 
   EXPECT_THAT(response_secure.result_error(), IsOk());
@@ -5137,6 +5148,8 @@ TEST_F(HostResolverManagerDnsTest, ServeFromHosts) {
       HostPortPair("nx_ipv4", 80), NetworkAnonymizationKey(),
       NetLogWithSource(), std::nullopt, resolve_context_.get()));
   EXPECT_THAT(response_ipv4.result_error(), IsOk());
+  EXPECT_EQ(response_ipv4.request()->GetResolutionDetails()->source,
+            ResolutionSource::kLocal);
   EXPECT_THAT(response_ipv4.request()->GetAddressResults(),
               testing::ElementsAre(CreateExpected("127.0.0.1", 80)));
   EXPECT_THAT(response_ipv4.request()->GetEndpointResults(),
@@ -5149,6 +5162,8 @@ TEST_F(HostResolverManagerDnsTest, ServeFromHosts) {
       HostPortPair("nx_ipv6", 80), NetworkAnonymizationKey(),
       NetLogWithSource(), std::nullopt, resolve_context_.get()));
   EXPECT_THAT(response_ipv6.result_error(), IsOk());
+  EXPECT_EQ(response_ipv6.request()->GetResolutionDetails()->source,
+            ResolutionSource::kLocal);
   EXPECT_THAT(response_ipv6.request()->GetAddressResults(),
               testing::ElementsAre(CreateExpected("::1", 80)));
   EXPECT_THAT(response_ipv6.request()->GetEndpointResults(),
@@ -5161,6 +5176,8 @@ TEST_F(HostResolverManagerDnsTest, ServeFromHosts) {
       HostPortPair("nx_both", 80), NetworkAnonymizationKey(),
       NetLogWithSource(), std::nullopt, resolve_context_.get()));
   EXPECT_THAT(response_both.result_error(), IsOk());
+  EXPECT_EQ(response_both.request()->GetResolutionDetails()->source,
+            ResolutionSource::kLocal);
   EXPECT_THAT(response_both.request()->GetAddressResults(),
               testing::UnorderedElementsAre(CreateExpected("127.0.0.1", 80),
                                             CreateExpected("::1", 80)));
@@ -5294,7 +5311,7 @@ TEST_F(HostResolverManagerDnsTest,
        SkipHostsWithUpcomingHostResolverSystemTask) {
   // Disable the DnsClient.
   resolver_->SetInsecureDnsClientEnabled(
-      /*enabled=*/false,
+      HostResolverManager::InsecureDnsMode::kDisabled,
       /*additional_dns_types_enabled=*/false);
 
   proc_->AddRuleForAllFamilies(std::string(),
@@ -5626,7 +5643,7 @@ TEST_F(HostResolverManagerDnsTest, Ipv6Unreachable_Localhost) {
 
   // Try without DnsClient.
   resolver_->SetInsecureDnsClientEnabled(
-      /*enabled=*/false,
+      HostResolverManager::InsecureDnsMode::kDisabled,
       /*additional_dns_types_enabled=*/false);
   ResolveHostResponseHelper system_response(resolver_->CreateRequest(
       HostPortPair("localhost", 80), NetworkAnonymizationKey(),
@@ -6490,7 +6507,7 @@ TEST_F(HostResolverManagerDnsTest,
   proc_->AddRuleForAllFamilies("insecure_automatic", "192.168.1.100");
   ChangeDnsConfig(CreateValidDnsConfig());
   resolver_->SetInsecureDnsClientEnabled(
-      /*enabled=*/false,
+      HostResolverManager::InsecureDnsMode::kDisabled,
       /*additional_dns_types_enabled=*/false);
   DnsConfigOverrides overrides;
   overrides.secure_dns_mode = SecureDnsMode::kAutomatic;
@@ -6676,11 +6693,56 @@ TEST_F(HostResolverManagerDnsTest, SecureDnsMode_Secure) {
       response_system.request()->GetResolveErrorInfo().is_secure_network_error);
 }
 
+TEST_F(HostResolverManagerDnsTest, SecureDnsMode_Secure_ResolutionDetails) {
+  constexpr char kName[] = "secure.test";
+
+  MockDnsClientRuleList rules;
+  rules.emplace_back(
+      kName, dns_protocol::kTypeA, /*secure=*/true,
+      MockDnsClientRule::Result(
+          MockDnsClientRule::ResultType::kOk,
+          BuildTestDnsAddressResponse(kName, IPAddress(192, 168, 1, 103)),
+          std::nullopt,
+          DohResolutionDetails{SessionSource::kNew,
+                               HttpConnectionInfoCoarse::kHTTP2}),
+      /*delay=*/false);
+  rules.emplace_back(
+      kName, dns_protocol::kTypeAAAA, /*secure=*/true,
+      MockDnsClientRule::Result(
+          MockDnsClientRule::ResultType::kOk,
+          BuildTestDnsAddressResponse(kName, IPAddress::IPv6Localhost()),
+          std::nullopt,
+          DohResolutionDetails{SessionSource::kNew,
+                               HttpConnectionInfoCoarse::kHTTP2}),
+      /*delay=*/false);
+
+  DnsConfig config = CreateValidDnsConfig();
+  CreateResolver();
+  UseMockDnsClient(config, std::move(rules));
+  DnsConfigOverrides overrides;
+  overrides.secure_dns_mode = SecureDnsMode::kSecure;
+  resolver_->SetDnsConfigOverrides(overrides);
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      url::SchemeHostPort(url::kHttpsScheme, kName, 443),
+      NetworkAnonymizationKey(), NetLogWithSource(),
+      /*optional_parameters=*/std::nullopt, resolve_context_.get()));
+  EXPECT_THAT(response.result_error(), IsOk());
+
+  const std::optional<ResolutionDetails>& details =
+      response.request()->GetResolutionDetails();
+  ASSERT_TRUE(details.has_value());
+  ASSERT_TRUE(details->doh_details.has_value());
+  EXPECT_EQ(details->doh_details->session_source, SessionSource::kNew);
+  EXPECT_EQ(details->doh_details->connection_info,
+            HttpConnectionInfoCoarse::kHTTP2);
+}
+
 TEST_F(HostResolverManagerDnsTest, SecureDnsMode_Secure_InsecureAsyncDisabled) {
   proc_->AddRuleForAllFamilies("nx_succeed", "192.168.1.100");
   set_allow_fallback_to_systemtask(true);
   resolver_->SetInsecureDnsClientEnabled(
-      /*enabled=*/false,
+      HostResolverManager::InsecureDnsMode::kDisabled,
       /*additional_dns_types_enabled=*/false);
 
   ChangeDnsConfig(CreateValidDnsConfig());
@@ -7264,7 +7326,7 @@ TEST_F(HostResolverManagerDnsTest,
   // HostResolverSystemTask, and the next one should be started with a
   // HostResolverSystemTask.
   resolver_->SetInsecureDnsClientEnabled(
-      /*enabled=*/false,
+      HostResolverManager::InsecureDnsMode::kDisabled,
       /*additional_dns_types_enabled=*/false);
 
   // All three in-progress requests should now be running a
@@ -7297,7 +7359,7 @@ TEST_F(HostResolverManagerDnsTest,
 TEST_F(HostResolverManagerDnsTest, DnsCallsWithDisabledDnsClient) {
   ChangeDnsConfig(CreateValidDnsConfig());
   resolver_->SetInsecureDnsClientEnabled(
-      /*enabled=*/false,
+      HostResolverManager::InsecureDnsMode::kDisabled,
       /*additional_dns_types_enabled=*/false);
 
   HostResolver::ResolveHostParameters params;
@@ -9212,7 +9274,7 @@ TEST_F(HostResolverManagerDnsTest,
   overrides.secure_dns_mode = SecureDnsMode::kOff;
   resolver_->SetDnsConfigOverrides(overrides);
   resolver_->SetInsecureDnsClientEnabled(
-      /*enabled=*/true,
+      HostResolverManager::InsecureDnsMode::kEnabledBuiltIn,
       /*additional_dns_types_enabled=*/false);
 
   HostResolver::ResolveHostParameters parameters;
@@ -9534,7 +9596,7 @@ TEST_F(HostResolverManagerDnsTest,
   overrides.secure_dns_mode = SecureDnsMode::kOff;
   resolver_->SetDnsConfigOverrides(overrides);
   resolver_->SetInsecureDnsClientEnabled(
-      /*enabled=*/true,
+      HostResolverManager::InsecureDnsMode::kEnabledBuiltIn,
       /*additional_dns_types_enabled=*/false);
 
   HostResolver::ResolveHostParameters parameters;
@@ -9847,7 +9909,7 @@ TEST_F(HostResolverManagerDnsTest,
   overrides.secure_dns_mode = SecureDnsMode::kOff;
   resolver_->SetDnsConfigOverrides(overrides);
   resolver_->SetInsecureDnsClientEnabled(
-      /*enabled=*/true,
+      HostResolverManager::InsecureDnsMode::kEnabledBuiltIn,
       /*additional_dns_types_enabled=*/false);
 
   HostResolver::ResolveHostParameters parameters;
@@ -14510,6 +14572,174 @@ TEST_F(HostResolverManagerTest,
 TEST_F(HostResolverManagerTest,
        IPv4AddressLiteralInIPv6OnlyNetworkBadAddressSync) {
   IPv4AddressLiteralInIPv6OnlyNetworkBadAddressTest(false);
+}
+
+TEST_F(HostResolverManagerDnsTest, ResolutionDetails_InsecureDnsSuccess) {
+  ChangeDnsConfig(CreateValidDnsConfig());
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("4slow_ok", 80), NetworkAnonymizationKey(),
+      NetLogWithSource(), std::nullopt, resolve_context_.get()));
+
+  // Fast forward time by exactly 100ms.
+  FastForwardBy(base::Milliseconds(100));
+  mock_dns_client_->CompleteDelayedTransactions();
+
+  EXPECT_THAT(response.result_error(), IsOk());
+  const auto& details = response.request()->GetResolutionDetails();
+  ASSERT_TRUE(details.has_value());
+  EXPECT_EQ(ResolutionSource::kInsecure, details->source);
+  ASSERT_TRUE(details->task_completion_delay.has_value());
+  EXPECT_EQ(base::Milliseconds(100), details->task_completion_delay.value());
+  EXPECT_FALSE(details->secure_dns_attempted);
+}
+
+TEST_F(HostResolverManagerDnsTest,
+       ResolutionDetails_SecureDnsFallbackToInsecure) {
+  MockDnsClientRuleList rules;
+  rules.emplace_back(
+      "secure_slow_nx_insecure_4slow_ok", dns_protocol::kTypeA,
+      /*secure=*/true,
+      MockDnsClientRule::Result(MockDnsClientRule::ResultType::kFail),
+      /*delay=*/true);
+  rules.emplace_back(
+      "secure_slow_nx_insecure_4slow_ok", dns_protocol::kTypeA,
+      /*secure=*/false,
+      MockDnsClientRule::Result(MockDnsClientRule::ResultType::kOk),
+      /*delay=*/true);
+  DnsConfigOverrides overrides;
+  overrides.secure_dns_mode = SecureDnsMode::kAutomatic;
+  resolver_->SetDnsConfigOverrides(overrides);
+
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::A;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("secure_slow_nx_insecure_4slow_ok", 80),
+      NetworkAnonymizationKey(), NetLogWithSource(), parameters,
+      resolve_context_.get()));
+
+  // Advance time for the secure attempt.
+  FastForwardBy(base::Milliseconds(50));
+  mock_dns_client_->CompleteDelayedTransactions();
+
+  // Advance time for the insecure attempt.
+  FastForwardBy(base::Milliseconds(100));
+  mock_dns_client_->CompleteDelayedTransactions();
+
+  EXPECT_THAT(response.result_error(), IsOk());
+  const auto& details = response.request()->GetResolutionDetails();
+  ASSERT_TRUE(details.has_value());
+  EXPECT_EQ(ResolutionSource::kInsecure, details->source);
+  ASSERT_TRUE(details->task_completion_delay.has_value());
+  EXPECT_EQ(base::Milliseconds(100), details->task_completion_delay.value());
+  EXPECT_TRUE(details->secure_dns_attempted);
+}
+
+TEST_F(HostResolverManagerTest, CalculateResolvePath) {
+  using ResolveFallbackPath = HostResolverManager::Job::ResolveFallbackPath;
+
+  struct TestCase {
+    std::string_view summary;
+    TaskType task_type;
+    bool secure_dns_failed;
+    bool classic_dns_failed;
+    bool platform_dns_failed;
+    std::optional<ResolveFallbackPath> expected;
+  };
+
+  const TestCase kTestCases[] = {
+      {.summary = "kSecureSuccess",
+       .task_type = TaskType::SECURE_DNS,
+       .secure_dns_failed = false,
+       .classic_dns_failed = false,
+       .platform_dns_failed = false,
+       .expected = ResolveFallbackPath::kSecureSuccess},
+      {.summary = "kSecureFallbackToClassicSuccess",
+       .task_type = TaskType::DNS,
+       .secure_dns_failed = true,
+       .classic_dns_failed = false,
+       .platform_dns_failed = false,
+       .expected = ResolveFallbackPath::kSecureFallbackToClassicSuccess},
+      {.summary = "kClassicSuccess",
+       .task_type = TaskType::DNS,
+       .secure_dns_failed = false,
+       .classic_dns_failed = false,
+       .platform_dns_failed = false,
+       .expected = ResolveFallbackPath::kClassicSuccess},
+      {.summary = "kSecureFallbackToPlatformSuccess",
+       .task_type = TaskType::DNS_PLATFORM,
+       .secure_dns_failed = true,
+       .classic_dns_failed = false,
+       .platform_dns_failed = false,
+       .expected = ResolveFallbackPath::kSecureFallbackToPlatformSuccess},
+      {.summary = "kPlatformSuccess",
+       .task_type = TaskType::DNS_PLATFORM,
+       .secure_dns_failed = false,
+       .classic_dns_failed = false,
+       .platform_dns_failed = false,
+       .expected = ResolveFallbackPath::kPlatformSuccess},
+      {.summary = "kSecureFallbackToClassicFallbackToSystemSuccess",
+       .task_type = TaskType::SYSTEM,
+       .secure_dns_failed = true,
+       .classic_dns_failed = true,
+       .platform_dns_failed = false,
+       .expected = ResolveFallbackPath::
+           kSecureFallbackToClassicFallbackToSystemSuccess},
+      {.summary = "kSecureFallbackToPlatformFallbackToSystemSuccess",
+       .task_type = TaskType::SYSTEM,
+       .secure_dns_failed = true,
+       .classic_dns_failed = false,
+       .platform_dns_failed = true,
+       .expected = ResolveFallbackPath::
+           kSecureFallbackToPlatformFallbackToSystemSuccess},
+      {.summary = "kSecureFallbackToSystemSuccess",
+       .task_type = TaskType::SYSTEM,
+       .secure_dns_failed = true,
+       .classic_dns_failed = false,
+       .platform_dns_failed = false,
+       .expected = ResolveFallbackPath::kSecureFallbackToSystemSuccess},
+      {.summary = "kClassicFallbackToSystemSuccess",
+       .task_type = TaskType::SYSTEM,
+       .secure_dns_failed = false,
+       .classic_dns_failed = true,
+       .platform_dns_failed = false,
+       .expected = ResolveFallbackPath::kClassicFallbackToSystemSuccess},
+      {.summary = "kPlatformFallbackToSystemSuccess",
+       .task_type = TaskType::SYSTEM,
+       .secure_dns_failed = false,
+       .classic_dns_failed = false,
+       .platform_dns_failed = true,
+       .expected = ResolveFallbackPath::kPlatformFallbackToSystemSuccess},
+      {.summary = "kSystemSuccess",
+       .task_type = TaskType::SYSTEM,
+       .secure_dns_failed = false,
+       .classic_dns_failed = false,
+       .platform_dns_failed = false,
+       .expected = ResolveFallbackPath::kSystemSuccess},
+      {.summary = "nullopt MDNS",
+       .task_type = TaskType::MDNS,
+       .secure_dns_failed = false,
+       .classic_dns_failed = false,
+       .platform_dns_failed = false,
+       .expected = std::nullopt},
+      {.summary = "nullopt NAT64",
+       .task_type = TaskType::NAT64,
+       .secure_dns_failed = false,
+       .classic_dns_failed = false,
+       .platform_dns_failed = false,
+       .expected = std::nullopt},
+  };
+
+  for (const auto& test_case : kTestCases) {
+    SCOPED_TRACE(test_case.summary);
+    EXPECT_EQ(test_case.expected,
+              HostResolverManager::Job::CalculateResolvePath(
+                  test_case.task_type, test_case.secure_dns_failed,
+                  test_case.classic_dns_failed, test_case.platform_dns_failed));
+  }
 }
 
 }  // namespace net

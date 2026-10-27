@@ -21,6 +21,7 @@
 #include "services/media_session/public/cpp/util.h"
 #include "services/media_session/public/mojom/media_controller.mojom.h"
 #include "services/media_session/public/mojom/media_session.mojom.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/image/image.h"
 
@@ -36,9 +37,6 @@ media_message_center::Source GetSourceFromName(const std::string& name) {
 
   if (name == "arc")
     return media_message_center::Source::kArc;
-
-  if (name == "assistant")
-    return media_message_center::Source::kAssistant;
 
   return media_message_center::Source::kUnknown;
 }
@@ -149,7 +147,10 @@ void MediaSessionNotificationItem::UpdateDeviceName(
   if (view_ && !frozen_) {
     view_->UpdateWithMediaMetadata(GetSessionMetadata());
     view_->UpdateWithVectorIcon(
-        device_name_ ? &vector_icons::kMediaRouterIdleIcon : nullptr);
+        device_name_ ? &(features::IsRoundedIconsEnabled()
+                             ? vector_icons::kCastIcon
+                             : vector_icons::kMediaRouterIdleOldIcon)
+                     : nullptr);
   }
 }
 
@@ -572,8 +573,11 @@ void MediaSessionNotificationItem::UpdateViewCommon() {
   view_->UpdateWithMediaMetadata(GetSessionMetadata());
   view_->UpdateWithMediaActions(GetMediaSessionActions());
   view_->UpdateWithMuteStatus(session_info_->muted);
-  view_->UpdateWithVectorIcon(device_name_ ? &vector_icons::kMediaRouterIdleIcon
-                                           : nullptr);
+  view_->UpdateWithVectorIcon(
+      device_name_ ? &(features::IsRoundedIconsEnabled()
+                           ? vector_icons::kCastIcon
+                           : vector_icons::kMediaRouterIdleOldIcon)
+                   : nullptr);
 }
 
 bool MediaSessionNotificationItem::FrozenWithChapterArtwork() {

@@ -28,6 +28,7 @@
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_id.h"
+#include "google_apis/gaia/google_service_auth_error.h"
 #include "google_apis/gaia/oauth2_access_token_consumer.h"
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
 #include "services/network/test/test_url_loader_factory.h"
@@ -70,14 +71,14 @@ class AccessTokenFetcherTest
         token_service_(&pref_service_),
         access_token_info_("access token",
                            base::Time::Now() + base::Hours(1),
-                           std::string(kIdTokenEmptyServices)),
-        account_tracker_(CreateAccountTrackerService()) {
+                           std::string(kIdTokenEmptyServices)) {
     AccountTrackerService::RegisterPrefs(pref_service_.registry());
+    account_tracker_ = CreateAccountTrackerService();
+
     ProfileOAuth2TokenService::RegisterProfilePrefs(pref_service_.registry());
     PrimaryAccountManager::RegisterProfilePrefs(pref_service_.registry());
     SigninPrefs::RegisterProfilePrefs(pref_service_.registry());
 
-    account_tracker_->Initialize(&pref_service_, base::FilePath());
     primary_account_manager_ = std::make_unique<PrimaryAccountManager>(
         &signin_client_, &token_service_, account_tracker_.get(),
         &profile_metrics_service_);
@@ -203,7 +204,8 @@ class AccessTokenFetcherTest
 #if BUILDFLAG(IS_ANDROID)
     SetUpFakeAccountManagerFacade();
 #endif
-    return std::make_unique<AccountTrackerService>();
+    return std::make_unique<AccountTrackerService>(&pref_service_,
+                                                   base::FilePath());
   }
 
   // OAuth2AccessTokenManager::DiagnosticsObserver:
@@ -238,10 +240,8 @@ TEST_F(AccessTokenFetcherTest, EmptyAccountFailsButDoesNotCrash) {
 
   // Fetching access tokens for an empty account id should respond with
   // ACCOUNT_NOT_FOUND error.
-  EXPECT_CALL(callback,
-              Run(GoogleServiceAuthError(
-                      GoogleServiceAuthError::State::ACCOUNT_NOT_FOUND),
-                  AccessTokenInfo()))
+  EXPECT_CALL(callback, Run(GoogleServiceAuthError::CreateAccountNotFound(),
+                            AccessTokenInfo()))
       .WillOnce(testing::InvokeWithoutArgs(&run_loop, &base::RunLoop::Quit));
 
   run_loop.Run();
@@ -416,10 +416,8 @@ TEST_F(AccessTokenFetcherTest, ReturnsErrorWhenAccountHasNoRefreshToken) {
   auto fetcher = CreateFetcher(account_id, callback.Get(),
                                AccessTokenFetcher::Mode::kImmediate);
 
-  EXPECT_CALL(callback,
-              Run(GoogleServiceAuthError(
-                      GoogleServiceAuthError::State::ACCOUNT_NOT_FOUND),
-                  AccessTokenInfo()))
+  EXPECT_CALL(callback, Run(GoogleServiceAuthError::CreateAccountNotFound(),
+                            AccessTokenInfo()))
       .WillOnce(testing::InvokeWithoutArgs(&run_loop, &base::RunLoop::Quit));
 
   run_loop.Run();
@@ -441,16 +439,12 @@ TEST_F(AccessTokenFetcherTest, CanceledAccessTokenRequest) {
   run_loop.Run();
 
   base::RunLoop run_loop2;
-  EXPECT_CALL(
-      callback,
-      Run(GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED),
-          AccessTokenInfo()))
+  auto error = GoogleServiceAuthError::CreateRequestCanceled();
+  EXPECT_CALL(callback, Run(error, AccessTokenInfo()))
       .WillOnce(testing::InvokeWithoutArgs(&run_loop2, &base::RunLoop::Quit));
 
   // A canceled access token request should result in a callback.
-  token_service()->IssueErrorForAllPendingRequestsForAccount(
-      account_id,
-      GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED));
+  token_service()->IssueErrorForAllPendingRequestsForAccount(account_id, error);
 
   run_loop2.Run();
 }
@@ -472,10 +466,8 @@ TEST_F(AccessTokenFetcherTest, RefreshTokenRevoked) {
 
   // Revoke the refresh token, which should cancel all pending requests. The
   // fetcher should *not* retry.
-  EXPECT_CALL(
-      callback,
-      Run(GoogleServiceAuthError(GoogleServiceAuthError::ACCOUNT_NOT_FOUND),
-          AccessTokenInfo()));
+  EXPECT_CALL(callback, Run(GoogleServiceAuthError::CreateAccountNotFound(),
+                            AccessTokenInfo()));
   token_service()->RevokeCredentials(account_id);
 }
 
@@ -496,13 +488,9 @@ TEST_F(AccessTokenFetcherTest, FailedAccessTokenRequest) {
   run_loop.Run();
 
   // We should immediately get called back with an empty access token.
-  EXPECT_CALL(
-      callback,
-      Run(GoogleServiceAuthError(GoogleServiceAuthError::SERVICE_UNAVAILABLE),
-          AccessTokenInfo()));
-  token_service()->IssueErrorForAllPendingRequestsForAccount(
-      account_id,
-      GoogleServiceAuthError(GoogleServiceAuthError::SERVICE_UNAVAILABLE));
+  auto error = GoogleServiceAuthError::FromServiceUnavailable("");
+  EXPECT_CALL(callback, Run(error, AccessTokenInfo()));
+  token_service()->IssueErrorForAllPendingRequestsForAccount(account_id, error);
 }
 
 TEST_F(AccessTokenFetcherTest, MultipleRequestsForSameAccountFulfilled) {
@@ -625,15 +613,11 @@ TEST_F(AccessTokenFetcherTest,
   // Cancel the first access token request: This should result in a callback
   // for the first fetcher.
   base::RunLoop run_loop3;
-  EXPECT_CALL(
-      callback,
-      Run(GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED),
-          AccessTokenInfo()))
+  auto error = GoogleServiceAuthError::CreateRequestCanceled();
+  EXPECT_CALL(callback, Run(error, AccessTokenInfo()))
       .WillOnce(testing::InvokeWithoutArgs(&run_loop3, &base::RunLoop::Quit));
 
-  token_service()->IssueErrorForAllPendingRequestsForAccount(
-      account_id,
-      GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED));
+  token_service()->IssueErrorForAllPendingRequestsForAccount(account_id, error);
 
   run_loop3.Run();
 
@@ -774,6 +758,57 @@ TEST_F(AccessTokenFetcherTest, FetcherWithSignedInClientAccessToPrivilegedAPI) {
           account_id, OAuthConsumerId::kTokenHandleService,
           GetOAuthConsumerFromId(OAuthConsumerId::kExtensionsIdentityAPI)),
       "You are attempting to access a privileged scope");
+}
+
+// Tests that a request with an allowlisted consumer accessing an OAuth2 API
+// that requires sign-in is fulfilled even if the user is not signed in as
+// primary.
+TEST_F(AccessTokenFetcherTest,
+       FetcherWithAllowlistedConsumerAccessToSignedInAPI) {
+  CoreAccountInfo account = AddAccount(kTestGaiaId, kTestEmail);
+  ASSERT_FALSE(primary_account_manager().HasPrimaryAccount(
+      signin::ConsentLevel::kSignin));
+  VerifyScopeAccess(account.account_id,
+                    OAuthConsumerId::kSyncDeviceStatisticsMetrics);
+
+  EXPECT_CHECK_DEATH_WITH(
+      VerifyScopeAccess(account.account_id,
+                        OAuthConsumerId::kSyncDeviceStatisticsMetrics,
+                        OAuthConsumer("kSyncDeviceStatisticsMetrics",
+                                      {GaiaConstants::kOAuth1LoginScope})),
+      "requires user to be signed in to the browser");
+
+  EXPECT_CHECK_DEATH_WITH(
+      VerifyScopeAccess(account.account_id,
+                        OAuthConsumerId::kOptimizationGuideGetHints,
+                        GetOAuthConsumerFromId(
+                            OAuthConsumerId::kSyncDeviceStatisticsMetrics)),
+      "requires user to be signed in to the browser");
+}
+
+// Tests that a request with an allowlisted consumer accessing a mix of
+// allowlisted and unrestricted scopes is fulfilled, but failing if any
+// forbidden scope is requested.
+TEST_F(AccessTokenFetcherTest, FetcherWithMixedScopes) {
+  CoreAccountInfo account = AddAccount(kTestGaiaId, kTestEmail);
+  ASSERT_FALSE(primary_account_manager().HasPrimaryAccount(
+      signin::ConsentLevel::kSignin));
+
+  // Scenario 1: Allowlisted + Public scope. Should succeed.
+  VerifyScopeAccess(account.account_id,
+                    OAuthConsumerId::kSyncDeviceStatisticsMetrics,
+                    OAuthConsumer("kSyncDeviceStatisticsMetrics",
+                                  {GaiaConstants::kChromeSyncOAuth2Scope,
+                                   GaiaConstants::kGoogleUserInfoEmail}));
+
+  // Scenario 2: Allowlisted + Forbidden scope. Should fail/crash.
+  EXPECT_CHECK_DEATH_WITH(
+      VerifyScopeAccess(account.account_id,
+                        OAuthConsumerId::kSyncDeviceStatisticsMetrics,
+                        OAuthConsumer("kSyncDeviceStatisticsMetrics",
+                                      {GaiaConstants::kChromeSyncOAuth2Scope,
+                                       GaiaConstants::kOAuth1LoginScope})),
+      "requires user to be signed in to the browser");
 }
 
 }  // namespace signin

@@ -20,9 +20,9 @@ source_set("test") {
   deps = [
     "//base",
     "//ios/chrome/browser/broadcaster/ui_bundled",
+    "//ios/chrome/browser/fullscreen/public:metrics",
     "//ios/chrome/browser/fullscreen/ui_bundled",
     "//ios/chrome/browser/fullscreen/ui_bundled:internal",
-    "//ios/chrome/browser/fullscreen/ui_bundled:metrics",
     "//ios/chrome/browser/fullscreen/ui_bundled:ui",
     "//ios/chrome/browser/toolbar/legacy/ui_bundled/fullscreen",
     "//testing/gtest",
@@ -36,9 +36,11 @@ source_set("eg_app_support+eg2") {
     "fullscreen_app_interface.mm",
   ]
   deps = [
+    "//ios/chrome/browser/fullscreen/model",
     "//ios/chrome/browser/fullscreen/ui_bundled",
     "//ios/chrome/browser/shared/model/browser",
     "//ios/chrome/browser/shared/model/profile",
+    "//ios/chrome/browser/shared/public/features",
     "//ios/chrome/test/app:test_support",
     "//ios/web/common:uikit",
     "//ios/web/public",

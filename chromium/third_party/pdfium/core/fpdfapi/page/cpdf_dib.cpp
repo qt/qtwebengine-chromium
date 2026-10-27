@@ -689,11 +689,16 @@ RetainPtr<CFX_DIBitmap> CPDF_DIB::ConvertArgbJpxBitmapToRgb(
       auto dest =
           rgb_bitmap->GetWritableScanlineAs<FX_BGR_STRUCT<uint8_t>>(row);
       for (auto [input, output] : fxcrt::Zip(src, dest)) {
-        jpx_inline_data_.data.push_back(input.alpha);
-        const uint8_t na = 255 - input.alpha;
-        output.blue = (input.blue * input.alpha + 255 * na) / 255;
-        output.green = (input.green * input.alpha + 255 * na) / 255;
-        output.red = (input.red * input.alpha + 255 * na) / 255;
+        // Compiler can't conclude src/dest don't overlap.
+        const uint8_t blue = input.blue;
+        const uint8_t green = input.green;
+        const uint8_t red = input.red;
+        const uint8_t alpha = input.alpha;
+        const uint8_t na = 255 - alpha;
+        jpx_inline_data_.data.push_back(alpha);
+        output.blue = (blue * alpha + 255 * na) / 255;
+        output.green = (green * alpha + 255 * na) / 255;
+        output.red = (red * alpha + 255 * na) / 255;
       }
     }
     return rgb_bitmap;
@@ -705,9 +710,13 @@ RetainPtr<CFX_DIBitmap> CPDF_DIB::ConvertArgbJpxBitmapToRgb(
         argb_bitmap->GetScanlineAs<FX_BGRA_STRUCT<uint8_t>>(row).first(width);
     auto dest = rgb_bitmap->GetWritableScanlineAs<FX_BGR_STRUCT<uint8_t>>(row);
     for (auto [input, output] : fxcrt::Zip(src, dest)) {
-      output.green = input.green;
-      output.red = input.red;
-      output.blue = input.blue;
+      // Compiler can't conclude src/dest don't overlap.
+      const uint8_t blue = input.blue;
+      const uint8_t green = input.green;
+      const uint8_t red = input.red;
+      output.blue = blue;
+      output.green = green;
+      output.red = red;
     }
   }
   return rgb_bitmap;

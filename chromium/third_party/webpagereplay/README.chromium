@@ -10,7 +10,3 @@ License Android Compatible: no
 Description:
 - Web Page Replay (WprGo) is a performance testing tool written in Golang for
   recording and replaying web pages.
-Local Modifications:
-- Make binaries to be in Google Cloud bucket so that 'gclient sync' could download them.
-How To Update:
-  scripts/upload_new_binaries.py

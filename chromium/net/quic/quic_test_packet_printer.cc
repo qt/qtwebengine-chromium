@@ -203,6 +203,9 @@ class QuicPacketPrinter : public QuicFramerVisitorInterface {
   void OnDecryptedFirstPacketInKeyPhase() override {
     *output_ << "OnDecryptedFirstPacketInKeyPhase\n";
   }
+  void OnSconePacket(uint8_t signal) override {
+    *output_ << "OnSconePacket: " << signal << "\n";
+  }
   std::unique_ptr<QuicDecrypter> AdvanceKeysAndCreateCurrentOneRttDecrypter()
       override {
     *output_ << "AdvanceKeysAndCreateCurrentOneRttDecrypter\n";
@@ -250,8 +253,7 @@ class QuicPacketPrinter : public QuicFramerVisitorInterface {
     *output_ << "IsValidStatelessResetToken\n";
     return false;
   }
-  void OnAuthenticatedIetfStatelessResetPacket(
-      const QuicIetfStatelessResetPacket& packet) override {
+  void OnAuthenticatedIetfStatelessResetPacket() override {
     *output_ << "OnAuthenticatedIetfStatelessResetPacket\n";
   }
 

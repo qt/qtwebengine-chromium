@@ -117,20 +117,21 @@ bool Code::IsIsolateIndependent(Isolate* isolate) {
                  RelocInfo::ModeMask(RelocInfo::WASM_STUB_CALL)));
 
 #if defined(V8_TARGET_ARCH_PPC64) || defined(V8_TARGET_ARCH_MIPS64)
-  return RelocIterator(*this, kModeMask).done();
+  return RelocIterator(this, kModeMask).done();
 #elif defined(V8_TARGET_ARCH_X64) || defined(V8_TARGET_ARCH_ARM64) ||  \
     defined(V8_TARGET_ARCH_ARM) || defined(V8_TARGET_ARCH_S390X) ||    \
     defined(V8_TARGET_ARCH_IA32) || defined(V8_TARGET_ARCH_RISCV64) || \
     defined(V8_TARGET_ARCH_LOONG64) || defined(V8_TARGET_ARCH_RISCV32)
-  for (RelocIterator it(*this, kModeMask); !it.done(); it.next()) {
+  for (RelocIterator it(this, kModeMask); !it.done(); it.next()) {
     // On these platforms we emit relative builtin-to-builtin
     // jumps for isolate independent builtins in the snapshot. They are later
     // rewritten as pc-relative jumps to the off-heap instruction stream and are
     // thus process-independent. See also: FinalizeEmbeddedCodeTargets.
     if (RelocInfo::IsCodeTargetMode(it.rinfo()->rmode())) {
       Address target_address = it.rinfo()->target_address();
-      if (OffHeapInstructionStream::PcIsOffHeap(isolate, target_address))
+      if (OffHeapInstructionStream::PcIsOffHeap(isolate, target_address)) {
         continue;
+      }
 
       Tagged<Code> target = Code::FromTargetAddress(target_address);
       if (Builtins::IsIsolateIndependentBuiltin(target)) {
@@ -162,6 +163,8 @@ bool Code::Inlines(Tagged<SharedFunctionInfo> sfi) {
 
 void Code::SetMarkedForDeoptimization(Isolate* isolate,
                                       LazyDeoptimizeReason reason) {
+  // We've already marked for deoptimization, return.
+  if (marked_for_deoptimization()) return;
   set_marked_for_deoptimization(true);
   // Eager deopts are already logged by the deoptimizer.
   if (reason != LazyDeoptimizeReason::kEagerDeopt &&
@@ -172,7 +175,7 @@ void Code::SetMarkedForDeoptimization(Isolate* isolate,
   if (handle != kNullJSDispatchHandle) {
     JSDispatchTable& jdt = isolate->js_dispatch_table();
     Tagged<Code> cur = jdt.GetCode(handle);
-    if (SafeEquals(cur)) {
+    if (Tagged{this}.SafeEquals(cur)) {
       if (v8_flags.reopt_after_lazy_deopts &&
           isolate->concurrent_recompilation_enabled()) {
         jdt.SetCodeNoWriteBarrier(
@@ -371,20 +374,20 @@ void Disassemble(const char* name, std::ostream& os, Isolate* isolate,
 
 void Code::Disassemble(const char* name, std::ostream& os, Isolate* isolate,
                        Address current_pc) {
-  i::Disassemble(name, os, isolate, *this, current_pc);
+  i::Disassemble(name, os, isolate, this, current_pc);
 }
 
 void Code::DisassembleOnlyCode(const char* name, std::ostream& os,
                                Isolate* isolate, Address current_pc,
                                size_t range_limit) {
-  i::DisassembleOnlyCode(name, os, isolate, *this, current_pc, range_limit);
+  i::DisassembleOnlyCode(name, os, isolate, this, current_pc, range_limit);
 }
 
 #endif  // ENABLE_DISASSEMBLER
 
 void Code::TraceMarkForDeoptimization(Isolate* isolate,
                                       LazyDeoptimizeReason reason) {
-  Deoptimizer::TraceMarkForDeoptimization(isolate, *this, reason);
+  Deoptimizer::TraceMarkForDeoptimization(isolate, this, reason);
 }
 
 #if V8_ENABLE_GEARBOX

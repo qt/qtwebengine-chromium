@@ -28,7 +28,7 @@ TriggeringField::TriggeringField(const FormFieldData& field,
                                  const std::u16string& typed_username,
                                  const gfx::RectF& bounds)
     : TriggeringField(
-          field.renderer_id(),
+          field.global_id(),
           trigger_source,
           field.text_direction(),
           typed_username,
@@ -37,7 +37,7 @@ TriggeringField::TriggeringField(const FormFieldData& field,
               field.parsed_autocomplete()->webidentity,
           bounds) {}
 
-TriggeringField::TriggeringField(FieldRendererId element_id,
+TriggeringField::TriggeringField(FieldGlobalId element_id,
                                  AutofillSuggestionTriggerSource trigger_source,
                                  base::i18n::TextDirection text_direction,
                                  const std::u16string& typed_username,
@@ -61,12 +61,12 @@ TriggeringField::~TriggeringField() = default;
 PasswordSuggestionRequest::PasswordSuggestionRequest(
     TriggeringField field,
     const FormData& form_data,
-    uint64_t username_field_index,
-    uint64_t password_field_index)
+    FieldGlobalId username_field_id,
+    FieldGlobalId password_field_id)
     : field(field),
       form_data(form_data),
-      username_field_index(username_field_index),
-      password_field_index(password_field_index) {}
+      username_field_id(std::move(username_field_id)),
+      password_field_id(std::move(password_field_id)) {}
 
 PasswordSuggestionRequest::PasswordSuggestionRequest() = default;
 PasswordSuggestionRequest::PasswordSuggestionRequest(
@@ -95,14 +95,19 @@ PasswordFormFillData MaybeClearPasswordValues(
   // field), credentials from |additional_logins| could be used for filling
   // on load. So in case of filling on load nor |password_field| nor
   // |additional_logins| can't be cleared
-  bool is_fallback = data.password_element_renderer_id.is_null();
-  if (!data.wait_for_username && !is_fallback) {
-    return data;
-  }
+  bool no_fill_on_page_load =
+      data.wait_for_username || data.password_element_renderer_id.is_null();
   PasswordFormFillData result(data);
-  result.preferred_login.password_value.clear();
+  if (no_fill_on_page_load) {
+    result.preferred_login.password_value.clear();
+  }
   for (auto& credentials : result.additional_logins) {
-    credentials.password_value.clear();
+    // Realm is only set for credentials initially associated with a different
+    // domain. For security reasons, such credentials are never filled on page
+    // load and should not be passed to the renderer.
+    if (!credentials.realm.empty() || no_fill_on_page_load) {
+      credentials.password_value.clear();
+    }
   }
   return result;
 }

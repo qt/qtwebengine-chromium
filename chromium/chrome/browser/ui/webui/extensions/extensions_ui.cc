@@ -16,21 +16,20 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/extensions/manifest_v2_experiment_manager.h"
-#include "chrome/browser/extensions/mv2_experiment_stage.h"
 #include "chrome/browser/extensions/permissions_url_constants.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/managed_ui_handler.h"
 #include "chrome/browser/ui/webui/metrics_handler.h"
 #include "chrome/browser/ui/webui/page_not_available_for_guest/page_not_available_for_guest_ui.h"
 #include "chrome/browser/ui/webui/plural_string_handler.h"
+#include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/branded_strings.h"
-#include "chrome/grit/browser_resources.h"
 #include "chrome/grit/extensions_resources.h"
 #include "chrome/grit/extensions_resources_map.h"
 #include "chrome/grit/generated_resources.h"
@@ -43,6 +42,7 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/manifest_v2_experiment_manager.h"
 #include "extensions/common/extension_features.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/grit/extensions_browser_resources.h"
@@ -355,9 +355,6 @@ content::WebUIDataSource* CreateAndAddExtensionsSource(Profile* profile,
        IDS_EXTENSIONS_MV2_DEPRECATION_PANEL_FIND_ALTERNATIVE_BUTTON_ACC_LABEL},
       {"mv2DeprecationPanelRemoveButtonAccLabel",
        IDS_EXTENSIONS_MV2_DEPRECATION_PANEL_REMOVE_BUTTON_ACC_LABEL},
-      {"mv2DeprecationPanelKeepForNowButton",
-       IDS_EXTENSIONS_MV2_DEPRECATION_PANEL_KEEP_FOR_NOW_BUTTON},
-      {"mv2DeprecationPanelRemoveExtensionButton", IDS_EXTENSIONS_UNINSTALL},
       {"mv2DeprecationMessageDisabledHeader",
        IDS_EXTENSIONS_MV2_DEPRECATION_MESSAGE_DISABLED_HEADER},
       {"mv2DeprecationMessageDisabledSubtitle",
@@ -494,9 +491,6 @@ content::WebUIDataSource* CreateAndAddExtensionsSource(Profile* profile,
 
   // MV2 deprecation.
   auto* mv2_experiment_manager = ManifestV2ExperimentManager::Get(profile);
-  MV2ExperimentStage experiment_stage =
-      mv2_experiment_manager->GetCurrentExperimentStage();
-  source->AddInteger("MV2ExperimentStage", static_cast<int>(experiment_stage));
   source->AddBoolean(
       "MV2DeprecationNoticeDismissed",
       mv2_experiment_manager->DidUserAcknowledgeNoticeGlobally());
@@ -513,6 +507,10 @@ content::WebUIDataSource* CreateAndAddExtensionsSource(Profile* profile,
           IDS_EXTENSIONS_KIOSK_DISABLE_BAILOUT_SHORTCUT_WARNING_BODY,
           l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_OS_NAME)));
 #endif  // BUILDFLAG(IS_CHROMEOS)
+
+  source->AddString("webuiRefresh2026", features::IsWebuiRefresh2026Enabled()
+                                            ? "webui-refresh-2026"
+                                            : "");
 
   return source;
 }
@@ -535,7 +533,8 @@ ExtensionsUIConfig::CreateWebUIController(content::WebUI* web_ui,
   return std::make_unique<ExtensionsUI>(web_ui);
 }
 
-ExtensionsUI::ExtensionsUI(content::WebUI* web_ui) : WebUIController(web_ui) {
+ExtensionsUI::ExtensionsUI(content::WebUI* web_ui)
+    : ui::MojoWebUIController(web_ui, /*enable_chrome_send=*/true) {
   Profile* profile = Profile::FromWebUI(web_ui);
   content::WebUIDataSource* source = nullptr;
 
@@ -554,6 +553,8 @@ ExtensionsUI::ExtensionsUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   content::URLDataSource::Add(
       profile, std::make_unique<FaviconSource>(
                    profile, chrome::FaviconUrlFormat::kFavicon2));
+
+  content::URLDataSource::Add(profile, std::make_unique<ThemeSource>(profile));
 
   // Add a handler to provide pluralized strings.
   auto plural_string_handler = std::make_unique<PluralStringHandler>();

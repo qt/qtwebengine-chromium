@@ -96,23 +96,23 @@ bool HasNonTrivialSpellingGrammarStyles(const FragmentItem& fragment_item,
     // or ‘-webkit-text-stroke-width’ differs from the originating style.
     Color pseudo_color = HighlightStyleUtils::ResolveColor(
         document, originating_style, pseudo_style, pseudo,
-        GetCSSPropertyColor(), {}, SearchTextIsActiveMatch::kNo);
+        GetCSSPropertyColor(), {}, false, SearchTextIsActiveMatch::kNo);
     if (pseudo_color !=
         originating_style.VisitedDependentColor(GetCSSPropertyColor())) {
       return true;
     }
-    if (HighlightStyleUtils::ResolveColor(document, originating_style,
-                                          pseudo_style, pseudo,
-                                          GetCSSPropertyWebkitTextFillColor(),
-                                          {}, SearchTextIsActiveMatch::kNo) !=
+    if (HighlightStyleUtils::ResolveColor(
+            document, originating_style, pseudo_style, pseudo,
+            GetCSSPropertyWebkitTextFillColor(), {}, false,
+            SearchTextIsActiveMatch::kNo) !=
         originating_style.VisitedDependentColor(
             GetCSSPropertyWebkitTextFillColor())) {
       return true;
     }
-    if (HighlightStyleUtils::ResolveColor(document, originating_style,
-                                          pseudo_style, pseudo,
-                                          GetCSSPropertyWebkitTextStrokeColor(),
-                                          {}, SearchTextIsActiveMatch::kNo) !=
+    if (HighlightStyleUtils::ResolveColor(
+            document, originating_style, pseudo_style, pseudo,
+            GetCSSPropertyWebkitTextStrokeColor(), {}, false,
+            SearchTextIsActiveMatch::kNo) !=
         originating_style.VisitedDependentColor(
             GetCSSPropertyWebkitTextStrokeColor())) {
       return true;
@@ -120,9 +120,10 @@ bool HasNonTrivialSpellingGrammarStyles(const FragmentItem& fragment_item,
     if (pseudo_style->TextStrokeWidth() != originating_style.TextStrokeWidth())
       return true;
     // If there is a background color.
-    if (!HighlightStyleUtils::ResolveColor(
-             document, originating_style, pseudo_style, pseudo,
-             GetCSSPropertyBackgroundColor(), {}, SearchTextIsActiveMatch::kNo)
+    if (!HighlightStyleUtils::ResolveColor(document, originating_style,
+                                           pseudo_style, pseudo,
+                                           GetCSSPropertyBackgroundColor(), {},
+                                           false, SearchTextIsActiveMatch::kNo)
              .IsFullyTransparent()) {
       return true;
     }
@@ -154,10 +155,10 @@ bool HasNonTrivialSpellingGrammarStyles(const FragmentItem& fragment_item,
     // TODO(crbug.com/1147859) clean up when spec issue is resolved again
     // https://github.com/w3c/csswg-drafts/issues/7101
     if (originating_style.GetTextEmphasisMark() != TextEmphasisMark::kNone &&
-        HighlightStyleUtils::ResolveColor(document, originating_style,
-                                          pseudo_style, pseudo,
-                                          GetCSSPropertyTextEmphasisColor(), {},
-                                          SearchTextIsActiveMatch::kNo) !=
+        HighlightStyleUtils::ResolveColor(
+            document, originating_style, pseudo_style, pseudo,
+            GetCSSPropertyTextEmphasisColor(), {}, false,
+            SearchTextIsActiveMatch::kNo) !=
             originating_style.VisitedDependentColor(
                 GetCSSPropertyTextEmphasisColor())) {
       return true;
@@ -199,7 +200,7 @@ TextPaintStyle TextPaintStyleForTextMatch(const TextMatchMarker& marker,
       LayoutTheme::GetTheme().PlatformTextSearchColor(
           marker.IsActiveMatch(), document.InForcedColorsMode(), color_scheme,
           document.GetColorProviderForPainting(color_scheme),
-          document.IsInWebAppScope());
+          document.IsInWebAppScope() && document.IsInitialProfile());
   // Comparing against the value of the 'color' property doesn't always make
   // sense (for example for SVG <text> which paints using 'fill' and 'stroke').
   if (!ignore_current_color) {
@@ -343,10 +344,12 @@ void HighlightPainter::SelectionPaintState::PaintSelectionBackground(
     Node* node,
     const Document& document,
     const ComputedStyle& style,
+    const PaintInfo& paint_info,
     const std::optional<AffineTransform>& rotation) {
   const Color color = HighlightStyleUtils::HighlightBackgroundColor(
       document, style, node, selection_style_.style.current_color,
-      kPseudoIdSelection, SearchTextIsActiveMatch::kNo);
+      kPseudoIdSelection, paint_info.IsPrivacyPreserving(),
+      SearchTextIsActiveMatch::kNo);
   HighlightPainter::PaintHighlightBackground(context, style, color,
                                              PhysicalSelectionRect(), rotation);
 }
@@ -358,6 +361,8 @@ void HighlightPainter::SelectionPaintState::PaintSelectedText(
     const TextPaintStyle& text_style,
     DOMNodeId node_id,
     const AutoDarkMode& auto_dark_mode) {
+  std::optional<GraphicsContextStateSaver> fit_text_state_saver;
+  text_painter.ApplyTextFitScale(fragment_paint_info, &fit_text_state_saver);
   text_painter.PaintSelectedText(
       fragment_paint_info, selection_status_.start, selection_status_.end,
       text_style, selection_style_.style, LineRelativeSelectionRect(), node_id,
@@ -373,6 +378,8 @@ void HighlightPainter::SelectionPaintState::
         const TextPaintStyle& text_style,
         DOMNodeId node_id,
         const AutoDarkMode& auto_dark_mode) {
+  std::optional<GraphicsContextStateSaver> fit_text_state_saver;
+  text_painter.ApplyTextFitScale(fragment_paint_info, &fit_text_state_saver);
   // First paint the shadows for the whole range.
   if (text_style.shadow) {
     text_painter.Paint(fragment_paint_info, text_style, node_id, auto_dark_mode,
@@ -568,7 +575,7 @@ void HighlightPainter::PaintNonCssMarkers(Phase phase) {
                   originating_style_.UsedColorScheme(),
                   document.GetColorProviderForPainting(
                       originating_style_.UsedColorScheme()),
-                  document.IsInWebAppScope());
+                  document.IsInWebAppScope() && document.IsInitialProfile());
           PaintRect(
               paint_info_.context,
               ComputeBackgroundRect(text, paint_start_offset, paint_end_offset),
@@ -584,6 +591,9 @@ void HighlightPainter::PaintNonCssMarkers(Phase phase) {
               *To<LayoutSVGInlineText>(fragment_item_->GetLayoutObject()),
               originating_style_, text_style.fill_color);
         }
+
+        std::optional<GraphicsContextStateSaver> state_saver;
+        text_painter_.ApplyTextFitScale(fragment_paint_info_, &state_saver);
         text_painter_.Paint(
             fragment_paint_info_.Slice(paint_start_offset, paint_end_offset),
             text_style, kInvalidDOMNodeId, foreground_auto_dark_mode_);
@@ -800,6 +810,8 @@ void HighlightPainter::PaintOriginatingShadow(const TextPaintStyle& text_style,
                                               DOMNodeId node_id) {
   // Paint the shadows for the whole range.
   if (text_style.shadow) {
+    std::optional<GraphicsContextStateSaver> state_saver;
+    text_painter_.ApplyTextFitScale(fragment_paint_info_, &state_saver);
     text_painter_.Paint(fragment_paint_info_, text_style, node_id,
                         foreground_auto_dark_mode_, TextPainter::kShadowsOnly);
   }
@@ -903,6 +915,9 @@ void HighlightPainter::PaintHighlightOverlays(
           TextPaintStyle text_shadow_style{};
           text_shadow_style.shadow = layer.text_style.style.shadow;
           text_shadow_style.current_color = merged.inner.current_color;
+
+          std::optional<GraphicsContextStateSaver> state_saver;
+          text_painter_.ApplyTextFitScale(fragment_paint_info_, &state_saver);
           text_painter_.Paint(
               fragment_paint_info_.Slice(merged.from, merged.to),
               text_shadow_style, node_id, foreground_auto_dark_mode_,
@@ -934,6 +949,7 @@ void HighlightPainter::PaintHighlightOverlays(
     if (fragment_paint_info_.shape_result) {
       std::optional<base::AutoReset<bool>> is_painting_selection_reset;
       GraphicsContextStateSaver state_saver(paint_info_.context);
+      text_painter_.ApplyTextFitScale(fragment_paint_info_, nullptr);
       // SVG text may have transforms that defeat clipping. The clipping
       // is only required for ligatures, so we will accept potential
       // double painting of ligatures for SVG so as to correctly handle
@@ -1090,7 +1106,19 @@ void HighlightPainter::ClipToPartRect(const LineRelativeRect& part_rect) {
   if (fragment_item_.IsSvgText()) [[unlikely]] {
     clip_rect = TextDecorationPainter::ExpandRectForSVGDecorations(part_rect);
   } else {
-    clip_rect.Offset(0, fragment_item_.InkOverflowRect().Y());
+    const auto used_font = fragment_item_.GetUsedFont();
+    float scale = used_font.ScalingFactor();
+    if (scale != 1.0f) {
+      float unscaled_ascent =
+          used_font.PrimaryFont()->GetFontMetrics().FloatAscent();
+      float local_y_scaled = fragment_item_.InkOverflowRect().Y().ToFloat();
+      float offset_y =
+          local_y_scaled / scale - unscaled_ascent * (1.0f - scale);
+      clip_rect.set_y(clip_rect.y() + offset_y);
+      clip_rect.set_height(clip_rect.height() / scale);
+    } else {
+      clip_rect.Offset(0, fragment_item_.InkOverflowRect().Y());
+    }
   }
   paint_info_.context.Clip(clip_rect);
 }
@@ -1136,7 +1164,10 @@ void HighlightPainter::PaintDecorationsExceptLineThrough(
     // Paint the decoration over the range of the originating fragment or active
     // highlight, but clip it to the range of the part.
     const LineRelativeRect decoration_rect =
-        LineRelativeWorldRect(decoration.range);
+        (decoration.type == HighlightLayerType::kOriginating &&
+         originating_decoration_rect_)
+            ? *originating_decoration_rect_
+            : LineRelativeWorldRect(decoration.range);
 
     std::optional<TextDecorationInfo> decoration_info{};
     decoration_painter_.UpdateDecorationInfo(decoration_info, fragment_item_,
@@ -1192,7 +1223,10 @@ void HighlightPainter::PaintDecorationsOnlyLineThrough(
     // Paint the decoration over the range of the originating fragment or active
     // highlight, but clip it to the range of the part.
     const LineRelativeRect decoration_rect =
-        LineRelativeWorldRect(decoration.range);
+        (decoration.type == HighlightLayerType::kOriginating &&
+         originating_decoration_rect_)
+            ? *originating_decoration_rect_
+            : LineRelativeWorldRect(decoration.range);
 
     std::optional<TextDecorationInfo> decoration_info{};
     decoration_painter_.UpdateDecorationInfo(decoration_info, fragment_item_,

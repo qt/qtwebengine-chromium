@@ -30,6 +30,7 @@ class MockAutofillManager : public AutofillManager {
   ~MockAutofillManager() override;
 
   MOCK_METHOD(bool, ShouldClearPreviewedForm, (), (override));
+  MOCK_METHOD(void, ReparseKnownForms, (), (override));
   MOCK_METHOD(void, OnFocusOnNonFormFieldImpl, (), (override));
   MOCK_METHOD(void, OnDidAutofillFormImpl, (const FormData& form), (override));
   MOCK_METHOD(void,
@@ -106,7 +107,7 @@ class MockAutofillManager : public AutofillManager {
                const FormData& form,
                const FormFieldData& field,
                const std::u16string& value,
-               SuggestionType type,
+               FillingProduct filling_product,
                std::optional<FieldType> field_type_used),
               (override));
   MOCK_METHOD(CreditCardAccessManager*,

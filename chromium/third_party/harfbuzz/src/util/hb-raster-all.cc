@@ -142,11 +142,7 @@ main (int argc, char **argv)
 
   bool has_color = hb_ot_color_has_paint (face) ||
 		   hb_ot_color_has_layers (face) ||
-#ifndef HB_NO_SVG
-		   hb_ot_color_has_svg (face);
-#else
-		   false;
-#endif
+		   hb_ot_color_has_png (face);
 
   hb_raster_draw_t  *rdr = hb_raster_draw_create_or_fail ();
   hb_raster_paint_t *pnt = has_color ? hb_raster_paint_create_or_fail () : nullptr;
@@ -165,8 +161,7 @@ main (int argc, char **argv)
 	    hb_raster_paint_set_glyph_extents (pnt, &gext))
 	{
 	  hb_raster_paint_set_transform (pnt, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f);
-	  hb_bool_t painted = hb_raster_paint_glyph (pnt, font, gid, 0.f, 0.f,
-							     0, HB_COLOR (0, 0, 0, 255));
+	  hb_bool_t painted = hb_raster_paint_glyph_or_fail (pnt, font, gid);
 	  if (painted)
 	    img = hb_raster_paint_render (pnt);
 	}
@@ -181,7 +176,7 @@ main (int argc, char **argv)
       }
 
       hb_raster_draw_set_transform (rdr, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f);
-      hb_raster_draw_glyph (rdr, font, gid, 0.f, 0.f);
+      hb_raster_draw_glyph (rdr, font, gid);
 
       img = hb_raster_draw_render (rdr);
       if (img)

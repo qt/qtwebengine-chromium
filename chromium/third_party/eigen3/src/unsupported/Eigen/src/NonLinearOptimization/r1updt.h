@@ -1,4 +1,10 @@
 // IWYU pragma: private
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
+#ifndef EIGEN_NONLINEAROPTIMIZATION_R1UPDT_H
+#define EIGEN_NONLINEAROPTIMIZATION_R1UPDT_H
+
 #include "./InternalHeaderCheck.h"
 
 namespace Eigen {
@@ -94,3 +100,5 @@ void r1updt(Matrix<Scalar, Dynamic, Dynamic> &s, const Matrix<Scalar, Dynamic, 1
 }  // end namespace internal
 
 }  // end namespace Eigen
+
+#endif  // EIGEN_NONLINEAROPTIMIZATION_R1UPDT_H

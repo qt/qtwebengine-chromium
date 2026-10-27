@@ -60,8 +60,11 @@ StyleColor ToStyleColor(const RGBATuple& tuple) {
 }
 
 Color FallbackColorForCurrentColor(const SVGElement& target_element) {
+  // As a workaround, always use the unvisited 'color' when resolving a
+  // potential 'currentcolor' value to prevent leaking :visited state.
   if (const ComputedStyle* target_style = target_element.GetComputedStyle()) {
-    return target_style->VisitedDependentColor(GetCSSPropertyColor());
+    return GetCSSPropertyColor().ColorIncludingFallback(
+        /*visited_link=*/false, *target_style, /*is_current_color=*/nullptr);
   }
   return Color::kTransparent;
 }
@@ -106,7 +109,7 @@ SVGParsingError SVGColorProperty::SetValueAsString(const String& value) {
   return SVGParseStatus::kParsingFailed;
 }
 
-void SVGColorProperty::Add(const SVGPropertyBase* other,
+bool SVGColorProperty::Add(const SVGPropertyBase* other,
                            const SVGElement* context_element) {
   DCHECK(context_element);
 
@@ -118,6 +121,7 @@ void SVGColorProperty::Add(const SVGPropertyBase* other,
   const auto addend = ToRGBATuple(style_color_, fallback_color, color_scheme);
   Accumulate(base, addend);
   style_color_ = ToStyleColor(base);
+  return true;
 }
 
 void SVGColorProperty::CalculateAnimatedValue(

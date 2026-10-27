@@ -12,28 +12,44 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core::{ffi::c_int, marker::PhantomData, ptr::null_mut};
+use core::{
+    ffi::c_int,
+    marker::PhantomData,
+    ptr::null_mut, //
+};
 
 use once_cell::sync::Lazy;
 
 use crate::{
     Methods,
-    context::{QuicMode, TlsMode},
-    methods::drop_box_rust_methods,
+    VerifyCertificateMethods,
+    context::{
+        DtlsMode,
+        QuicMode,
+        TlsMode, //
+    },
+    credentials::VerifyCertificate,
+    methods::drop_box_rust_methods, //
 };
 
-pub(crate) struct RustContextMethods<M>(PhantomData<fn() -> M>);
+pub(crate) struct RustContextMethods<M> {
+    pub(crate) verify_certificate_methods: Option<Box<dyn VerifyCertificate>>,
+    _p: PhantomData<fn() -> M>,
+}
 
 // NOTE(@xfding): the reason we do not use `register_ex_data` for this type is because we need to
 // look up the associated SSL_CTX first.
 impl<M> RustContextMethods<M> {
     pub fn new() -> Self {
-        Self(PhantomData)
+        Self {
+            verify_certificate_methods: None,
+            _p: PhantomData,
+        }
     }
 }
 
 impl<M: HasTlsContextMethod> Methods for RustContextMethods<M> {
-    unsafe extern "C" fn from_ssl<'a>(ssl: *mut bssl_sys::SSL) -> Option<&'a mut Self> {
+    unsafe extern "C" fn from_ssl<'a>(ssl: *mut bssl_sys::SSL) -> Option<&'a Self> {
         unsafe {
             // Safety: `ssl` must be still valid by BoringSSL invariant.
             let ctx = bssl_sys::SSL_get_SSL_CTX(ssl);
@@ -45,6 +61,12 @@ impl<M: HasTlsContextMethod> Methods for RustContextMethods<M> {
             // Safety: `ctx` is originated from `Box::into_raw`
             Some(&mut *(methods as *mut RustContextMethods<_>))
         }
+    }
+}
+
+impl<M: HasTlsContextMethod> VerifyCertificateMethods for RustContextMethods<M> {
+    fn verify_certificate_methods(&self) -> Option<&dyn VerifyCertificate> {
+        self.verify_certificate_methods.as_deref()
     }
 }
 
@@ -74,6 +96,14 @@ impl HasTlsContextMethod for TlsMode {
     #[inline(always)]
     fn registration() -> c_int {
         static TLS_CONTEXT_METHOD: Lazy<c_int> = Lazy::new(register_tls_context_vtable::<TlsMode>);
+        *TLS_CONTEXT_METHOD
+    }
+}
+
+impl HasTlsContextMethod for DtlsMode {
+    #[inline(always)]
+    fn registration() -> c_int {
+        static TLS_CONTEXT_METHOD: Lazy<c_int> = Lazy::new(register_tls_context_vtable::<DtlsMode>);
         *TLS_CONTEXT_METHOD
     }
 }

@@ -57,6 +57,10 @@ class TestMetricsRenderFrameObserver : public MetricsRenderFrameObserver,
                                             base::Milliseconds(100));
   }
 
+  mojom::FontLoadingMetricsPtr GetFontLoadingMetrics() const override {
+    return nullptr;
+  }
+
   bool HasNoRenderFrame() const override { return false; }
 
   bool IsMainFrame() const override { return true; }
@@ -110,7 +114,7 @@ TEST_F(MetricsRenderFrameObserverTest,
        MainFrameIntersectionUpdateBeforeMetricsSenderCreated) {
   base::Time nav_start = base::Time::FromSecondsSinceUnixEpoch(10);
 
-  observer_.OnMainFrameIntersectionChanged(gfx::Rect(1, 2, 3, 4));
+  observer_.OnMainFrameRectangleChanged(gfx::Rect(1, 2, 3, 4));
 
   mojom::PageLoadTiming timing;
   page_load_metrics::InitPageLoadTimingForTest(&timing);
@@ -120,7 +124,7 @@ TEST_F(MetricsRenderFrameObserverTest,
   observer_.DidStartNavigation(GURL(), std::nullopt);
   observer_.ReadyToCommitNavigation(nullptr);
   observer_.DidCommitProvisionalLoad(ui::PAGE_TRANSITION_LINK);
-  validator_.UpdateExpectedMainFrameIntersectionRect(gfx::Rect(1, 2, 3, 4));
+  validator_.UpdateExpectedMainFrameRect(gfx::Rect(1, 2, 3, 4));
 
   observer_.GetMockTimer()->Fire();
 }

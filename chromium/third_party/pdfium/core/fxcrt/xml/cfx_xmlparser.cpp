@@ -501,7 +501,7 @@ void CFX_XMLParser::ProcessTextChar(wchar_t character) {
 
     size_t iLen = csEntity.GetLength();
     if (iLen > 0) {
-      if (csEntity[0] == L'#') {
+      if (csEntity.Front() == L'#') {
         uint32_t ch = 0;
         if (iLen > 1 && csEntity[1] == L'x') {
           for (size_t i = 2; i < iLen; i++) {

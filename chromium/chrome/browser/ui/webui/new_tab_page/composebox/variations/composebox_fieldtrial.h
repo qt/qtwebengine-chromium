@@ -52,12 +52,10 @@ extern const base::FeatureParam<bool> kCloseComposeboxByClickOutside;
 extern const base::FeatureParam<bool> kEnableThreadsRail;
 // Whether to show the AIM threads rail Google logo.
 extern const base::FeatureParam<bool> kEnableThreadsRailLogo;
+// Whether to use ntp-composebox instead of cr-composebox.
+extern const base::FeatureParam<bool> kUseNtpComposeboxFork;
 
 bool IsNtpComposeboxEnabled(Profile* profile);
-
-bool IsDeepSearchEnabled(Profile* profile);
-
-bool IsCreateImagesEnabled(Profile* profile);
 
 // Helper to create a QueryControllerConfigParams object from the feature
 // params.
@@ -106,6 +104,9 @@ BASE_DECLARE_FEATURE(kNtpRealboxCyclingPlaceholders);
 
 // Whether to enable multi-line input in the searchbox.
 extern const base::FeatureParam<bool> kMultiLineEnabled;
+
+// Whether to enable the dynamic version of the AI Mode button in the realbox.
+BASE_DECLARE_FEATURE(kNtpRealboxDynamicAiModeButton);
 
 bool IsNtpRealboxNextEnabled(Profile* profile);
 

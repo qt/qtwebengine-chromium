@@ -24,6 +24,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/status/status_matchers.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "fcp/base/time_util.h"
@@ -68,7 +69,7 @@ class OpStatsLoggerImplTest : public testing::Test {
     auto db = PdsBackedOpStatsDb::Create(
         base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
         mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-    ASSERT_OK(db);
+    ABSL_ASSERT_OK(db);
     EXPECT_CALL(
         mock_log_manager_,
         LogToLongHistogram(OPSTATS_DB_SIZE_BYTES, /*execution_index=*/0,
@@ -80,7 +81,7 @@ class OpStatsLoggerImplTest : public testing::Test {
                            /*execution_index=*/0, /*epoch_index=*/0,
                            engine::DataSourceType::DATASET, /*value=*/0));
     EXPECT_THAT((*db)->Transform([](OpStatsSequence& data) { data.Clear(); }),
-                IsOk());
+                absl_testing::IsOk());
   }
 
   // Checks that the expected and actual protos are equivalent, ignoring the
@@ -210,8 +211,8 @@ TEST_F(OpStatsLoggerImplTest, NewRunAfterCorruption) {
     protostore::FileStorage file_storage;
     std::unique_ptr<protostore::OutputStream> ostream =
         file_storage.OpenForWrite(db_path).value();
-    EXPECT_THAT(ostream->Append("not a proto"), IsOk());
-    EXPECT_THAT(ostream->Close(), IsOk());
+    EXPECT_THAT(ostream->Append("not a proto"), absl_testing::IsOk());
+    EXPECT_THAT(ostream->Close(), absl_testing::IsOk());
   }
 
   EXPECT_CALL(mock_log_manager_, LogDiag(ProdDiagCode::OPSTATS_READ_FAILED));
@@ -228,9 +229,9 @@ TEST_F(OpStatsLoggerImplTest, NewRunAfterCorruption) {
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   // Expect only the second run to be represented in the db.
   OpStatsSequence expected;
@@ -270,9 +271,9 @@ TEST_F(OpStatsLoggerImplTest, AddInitializationEventWithoutStartPhaseLogging) {
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   auto new_opstats = expected.add_opstats();
@@ -313,7 +314,7 @@ TEST_F(OpStatsLoggerImplTest, AddEventAfterTtl) {
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   // Expect the db to contain only data associated with the second run. The
   // second run should be complete, however.
@@ -363,9 +364,9 @@ TEST_F(OpStatsLoggerImplTest, SetMinSepPolicyIndex) {
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   auto new_opstats = expected.add_opstats();
@@ -431,7 +432,7 @@ TEST_F(OpStatsLoggerImplTest, RecordCollectionFirstAccessTime) {
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   auto new_opstats = expected.add_opstats();
@@ -470,9 +471,9 @@ TEST_F(OpStatsLoggerImplTest, SetRetryWindow) {
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   auto new_opstats = expected.add_opstats();
@@ -504,11 +505,11 @@ TEST_F(OpStatsLoggerImplTest, AddEventCommitAddMoreEvents) {
       OperationalStats::PhaseStats::ELIGIBILITY_EVAL_CHECKIN);
   opstats_logger_no_population->AddEvent(
       OperationalStats::Event::EVENT_KIND_ELIGIBILITY_CHECKIN_STARTED);
-  ASSERT_OK(opstats_logger_no_population->CommitToStorage());
+  ABSL_ASSERT_OK(opstats_logger_no_population->CommitToStorage());
   opstats_logger_no_population->AddEvent(
       OperationalStats::Event::EVENT_KIND_ELIGIBILITY_REJECTED);
   opstats_logger_no_population->StopLoggingForTheCurrentPhase();
-  ASSERT_OK(opstats_logger_no_population->CommitToStorage());
+  ABSL_ASSERT_OK(opstats_logger_no_population->CommitToStorage());
   opstats_logger_no_population->StartLoggingForPhase(
       OperationalStats::PhaseStats::COMPUTATION);
   opstats_logger_no_population->AddEvent(
@@ -518,9 +519,9 @@ TEST_F(OpStatsLoggerImplTest, AddEventCommitAddMoreEvents) {
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   // Add the first run
@@ -564,10 +565,10 @@ TEST_F(OpStatsLoggerImplTest, MisconfiguredTtlMultipleCommit) {
       OperationalStats::PhaseStats::ELIGIBILITY_EVAL_CHECKIN);
   opstats_logger->AddEvent(
       OperationalStats::Event::EVENT_KIND_ELIGIBILITY_CHECKIN_STARTED);
-  ASSERT_OK(opstats_logger->CommitToStorage());
+  ABSL_ASSERT_OK(opstats_logger->CommitToStorage());
   opstats_logger->AddEvent(
       OperationalStats::Event::EVENT_KIND_ELIGIBILITY_REJECTED);
-  ASSERT_OK(opstats_logger->CommitToStorage());
+  ABSL_ASSERT_OK(opstats_logger->CommitToStorage());
   opstats_logger->StopLoggingForTheCurrentPhase();
   opstats_logger->StartLoggingForPhase(
       OperationalStats::PhaseStats::COMPUTATION);
@@ -578,9 +579,9 @@ TEST_F(OpStatsLoggerImplTest, MisconfiguredTtlMultipleCommit) {
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   // Even though we had corruption in the middle of the run, it should be ok
   // because we committed the entire history successfully at the end.
@@ -615,17 +616,14 @@ TEST_F(OpStatsLoggerImplTest, PhaseStatsAddEventAndSetTaskName) {
   opstats_logger->AddEventAndSetTaskName(
       kTaskName, OperationalStats::Event::EVENT_KIND_COMPUTATION_STARTED);
   opstats_logger->StopLoggingForTheCurrentPhase();
-
-  ASSERT_EQ(opstats_logger->GetCurrentTaskName(), kTaskName);
-
   opstats_logger.reset();
 
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   auto expected_stats = expected.add_opstats();
@@ -656,9 +654,9 @@ TEST_F(OpStatsLoggerImplTest, PhaseStatsAddEventStartLoggingNotCalled) {
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   auto expected_stats = expected.add_opstats();
@@ -702,17 +700,14 @@ TEST_F(OpStatsLoggerImplTest, PhaseStatsAddEvent) {
   opstats_logger->AddEvent(
       OperationalStats::Event::EVENT_KIND_COMPUTATION_CLIENT_INTERRUPTED);
   opstats_logger->StopLoggingForTheCurrentPhase();
-
-  ASSERT_EQ(opstats_logger->GetCurrentTaskName(), task_2);
-
   opstats_logger.reset();
 
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   auto expected_stats = expected.add_opstats();
@@ -764,17 +759,14 @@ TEST_F(OpStatsLoggerImplTest, PhaseStatsAddEventWithErrorMessage) {
       OperationalStats::Event::EVENT_KIND_COMPUTATION_ERROR_TENSORFLOW,
       error_message);
   opstats_logger->StopLoggingForTheCurrentPhase();
-
-  ASSERT_EQ(opstats_logger->GetCurrentTaskName(), kTaskName);
-
   opstats_logger.reset();
 
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   auto expected_stats = expected.add_opstats();
@@ -812,9 +804,9 @@ TEST_F(OpStatsLoggerImplTest,
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   auto expected_stats = expected.add_opstats();
@@ -857,17 +849,14 @@ TEST_F(OpStatsLoggerImplTest, PhaseStatsUpdateDatasetStats) {
                                      example_size_3);
 
   opstats_logger->StopLoggingForTheCurrentPhase();
-
-  ASSERT_EQ(opstats_logger->GetCurrentTaskName(), kTaskName);
-
   opstats_logger.reset();
 
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   auto expected_stats = expected.add_opstats();
@@ -936,9 +925,9 @@ TEST_F(OpStatsLoggerImplTest, PhaseStatsSetNetworkStats) {
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   auto expected_stats = expected.add_opstats();
@@ -987,7 +976,7 @@ TEST_F(OpStatsLoggerImplTest, PhaseStatsCommitToStorage) {
   opstats_logger->StartLoggingForPhase(OperationalStats::PhaseStats::UPLOAD);
   opstats_logger->AddEvent(
       OperationalStats::Event::EVENT_KIND_RESULT_UPLOAD_STARTED);
-  ASSERT_OK(opstats_logger->CommitToStorage());
+  ABSL_ASSERT_OK(opstats_logger->CommitToStorage());
   opstats_logger->AddEvent(
       OperationalStats::Event::EVENT_KIND_RESULT_UPLOAD_FINISHED);
 
@@ -996,9 +985,9 @@ TEST_F(OpStatsLoggerImplTest, PhaseStatsCommitToStorage) {
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   auto expected_stats = expected.add_opstats();
@@ -1043,7 +1032,7 @@ TEST_F(OpStatsLoggerImplTest, PhaseStatsLogCommitLogCommitKeepsAllEntries) {
   opstats_logger->AddEvent(
       OperationalStats::Event::EVENT_KIND_RESULT_UPLOAD_STARTED);
   // FL runner always triggers a commit after upload started for hardened swor
-  ASSERT_OK(opstats_logger->CommitToStorage());
+  ABSL_ASSERT_OK(opstats_logger->CommitToStorage());
   opstats_logger->AddEvent(
       OperationalStats::Event::EVENT_KIND_RESULT_UPLOAD_FINISHED);
   opstats_logger->StopLoggingForTheCurrentPhase();
@@ -1065,7 +1054,7 @@ TEST_F(OpStatsLoggerImplTest, PhaseStatsLogCommitLogCommitKeepsAllEntries) {
   opstats_logger2->AddEvent(
       OperationalStats::Event::EVENT_KIND_RESULT_UPLOAD_STARTED);
   // FL runner always triggers a commit after upload started for hardened swor
-  ASSERT_OK(opstats_logger2->CommitToStorage());
+  ABSL_ASSERT_OK(opstats_logger2->CommitToStorage());
   opstats_logger2->AddEvent(
       OperationalStats::Event::EVENT_KIND_RESULT_UPLOAD_FINISHED);
   opstats_logger2.reset();
@@ -1073,9 +1062,9 @@ TEST_F(OpStatsLoggerImplTest, PhaseStatsLogCommitLogCommitKeepsAllEntries) {
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   auto expected_stats = expected.add_opstats();
@@ -1120,38 +1109,6 @@ TEST_F(OpStatsLoggerImplTest, PhaseStatsLogCommitLogCommitKeepsAllEntries) {
   CheckEqualProtosAndIncreasingTimestamps(start_time, expected, *data);
 }
 
-TEST_F(OpStatsLoggerImplTest, PhaseStatsGetCurrentTaskName) {
-  auto start_time = TimeUtil::GetCurrentTime();
-  ExpectOpstatsEnabledEvents(/*num_opstats_loggers=*/1,
-                             /*num_opstats_commits*/ 1);
-
-  auto opstats_logger =
-      CreateOpStatsLogger(base_dir_, &mock_flags_, &mock_log_manager_,
-                          kSessionName, kPopulationName);
-  opstats_logger->StartLoggingForPhase(
-      OperationalStats::PhaseStats::COMPUTATION);
-  opstats_logger->AddEventAndSetTaskName(
-      kTaskName, OperationalStats::Event::EVENT_KIND_COMPUTATION_STARTED);
-  opstats_logger->AddEvent(
-      OperationalStats::Event::EVENT_KIND_COMPUTATION_FINISHED);
-  ASSERT_EQ(opstats_logger->GetCurrentTaskName(), kTaskName);
-  opstats_logger->StopLoggingForTheCurrentPhase();
-  ASSERT_EQ(opstats_logger->GetCurrentTaskName(), kTaskName);
-
-  opstats_logger->StartLoggingForPhase(
-      OperationalStats::PhaseStats::COMPUTATION);
-  const std::string task_name_2 = "task_name_2";
-  opstats_logger->AddEventAndSetTaskName(
-      task_name_2, OperationalStats::Event::EVENT_KIND_COMPUTATION_STARTED);
-  ASSERT_EQ(opstats_logger->GetCurrentTaskName(), task_name_2);
-  opstats_logger->AddEvent(
-      OperationalStats::Event::EVENT_KIND_COMPUTATION_FINISHED);
-  opstats_logger->StopLoggingForTheCurrentPhase();
-
-  ASSERT_EQ(opstats_logger->GetCurrentTaskName(), task_name_2);
-  opstats_logger.reset();
-}
-
 TEST_F(OpStatsLoggerImplTest, PhaseStatsStopCurrentPhaseLoggingNotCalled) {
   auto start_time = TimeUtil::GetCurrentTime();
   ExpectOpstatsEnabledEvents(/*num_opstats_loggers=*/1,
@@ -1175,9 +1132,9 @@ TEST_F(OpStatsLoggerImplTest, PhaseStatsStopCurrentPhaseLoggingNotCalled) {
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   auto expected_stats = expected.add_opstats();
@@ -1217,9 +1174,9 @@ TEST_F(OpStatsLoggerImplTest, PhaseStatsStopCurrentPhaseLoggingCalled) {
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   auto expected_stats = expected.add_opstats();
@@ -1249,17 +1206,14 @@ TEST_F(OpStatsLoggerImplTest, PhaseStatsSetMinSepPolicyIndex) {
       kTaskName, OperationalStats::Event::EVENT_KIND_CHECKIN_ACCEPTED);
   opstats_logger->SetMinSepPolicyIndex(1);
   opstats_logger->StopLoggingForTheCurrentPhase();
-
-  ASSERT_EQ(opstats_logger->GetCurrentTaskName(), kTaskName);
-
   opstats_logger.reset();
 
   auto db = PdsBackedOpStatsDb::Create(
       base_dir_, mock_flags_.opstats_ttl_days() * absl::Hours(24),
       mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes());
-  ASSERT_OK(db);
+  ABSL_ASSERT_OK(db);
   auto data = (*db)->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
 
   OpStatsSequence expected;
   auto expected_stats = expected.add_opstats();
@@ -1290,7 +1244,7 @@ class CreateOpstatsTest : public testing::Test {
                   mock_log_manager_, mock_flags_.opstats_db_size_limit_bytes())
                   .value();
     EXPECT_THAT(db->Transform([](OpStatsSequence& data) { data.Clear(); }),
-                IsOk());
+                absl_testing::IsOk());
   }
 
   std::string base_dir_;
@@ -1309,7 +1263,7 @@ TEST_F(CreateOpstatsTest, CreateOpStatsLoggerOpStatsEnabledDbFails) {
 
   // The database should initially be empty.
   auto data = opstats_logger->GetOpStatsDb()->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
   EXPECT_THAT(data.value(), EqualsProto(OpStatsSequence()));
   opstats_logger.reset();
 
@@ -1321,7 +1275,7 @@ TEST_F(CreateOpstatsTest, CreateOpStatsLoggerOpStatsEnabledDbFails) {
       CreateOpStatsLogger(bad_base_dir, &mock_flags_, &mock_log_manager_,
                           kSessionName, kPopulationName);
   data = opstats_logger_again->GetOpStatsDb()->Read();
-  ASSERT_OK(data);
+  ABSL_ASSERT_OK(data);
   EXPECT_THAT(data.value(), EqualsProto(OpStatsSequence()));
 }
 

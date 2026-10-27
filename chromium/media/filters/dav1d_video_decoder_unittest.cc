@@ -22,8 +22,6 @@
 #include "media/base/test_data_util.h"
 #include "media/base/test_helpers.h"
 #include "media/base/video_frame.h"
-#include "media/ffmpeg/ffmpeg_common.h"
-#include "media/filters/in_memory_url_protocol.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "ui/gfx/switches.h"
@@ -281,6 +279,31 @@ TEST_F(Dav1dVideoDecoderTest, DecodeFrame_AgtmMetadata) {
   const auto& frame = output_frames_.front();
   ASSERT_TRUE(frame->hdr_metadata().HasAgtm());
   EXPECT_EQ(frame->hdr_metadata().GetAgtm().fHdrReferenceWhite, 203.0101f);
+}
+
+TEST_F(Dav1dVideoDecoderTest, DecodeFrame_SideDataHdrMetadata) {
+  Initialize();
+
+  scoped_refptr<DecoderBuffer> buffer = i_frame_buffer_;
+  skhdr::MasteringDisplayColorVolume mdcv;
+  mdcv.fDisplayPrimaries.fRX = 0.1f;
+  mdcv.fMaximumDisplayMasteringLuminance = 1000.0f;
+  buffer->WritableSideData().hdr_metadata.SetMDCV(mdcv);
+
+  // Simulate decoding a single frame with side data.
+  EXPECT_TRUE(DecodeSingleFrame(buffer).is_ok());
+  ASSERT_EQ(1U, output_frames_.size());
+
+  const auto& frame = output_frames_.front();
+  ASSERT_TRUE(frame->hdr_metadata().HasMDCV());
+  EXPECT_EQ(frame->hdr_metadata().GetMDCV().fDisplayPrimaries.fRX, 0.1f);
+  EXPECT_EQ(frame->hdr_metadata().GetMDCV().fMaximumDisplayMasteringLuminance,
+            1000.0f);
+
+  // Now decode an EOS buffer. This should not crash and should correctly drain
+  // any remaining frames.
+  output_frames_.clear();
+  EXPECT_TRUE(DecodeSingleFrame(DecoderBuffer::CreateEOSBuffer()).is_ok());
 }
 
 // Decode |i_frame_buffer_| and then a frame with a larger width and verify

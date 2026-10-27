@@ -6,13 +6,14 @@
 #ifndef XNNPACK_YNNPACK_BASE_ARITHMETIC_H_
 #define XNNPACK_YNNPACK_BASE_ARITHMETIC_H_
 
-#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 
+#include "ynnpack/base/bfloat16.h"
+#include "ynnpack/base/half.h"
 #include "ynnpack/base/type.h"
 
 namespace ynn {
@@ -27,8 +28,8 @@ float clamp_float_to_int(float x) {
   // determined a constant that when added to the min/max float values, results
   // in the upper bound of the integer range.
   constexpr int half_mantissa = sizeof(Unwrapped) * 8 > 23 ? 127 : 0;
-  x = std::max<float>(x, std::numeric_limits<Unwrapped>::min());
-  x = std::min<float>(x, std::numeric_limits<Unwrapped>::max() - half_mantissa);
+  x = std::max<float>(x, type_info<Unwrapped>::min());
+  x = std::min<float>(x, type_info<Unwrapped>::max() - half_mantissa);
   return x;
 }
 
@@ -36,27 +37,66 @@ float clamp_float_to_int(float x) {
 // - Rounds to nearest integer
 // - Replaces NaN with 0
 // - Saturates to the bounds of the result type
-template <typename Result>
-Result round_float_to_int(float x) {
-  using Unwrapped = typename unwrap_quantized<Result>::type;
-  x = std::isnan(x) ? 0.0f : x;
-  x = std::nearbyint(x);
-  x = clamp_float_to_int<Result>(x);
-  return static_cast<Unwrapped>(x);
+template <typename To>
+auto cast(float x) {
+  using ToInfo = type_info<To>;
+  using Element = typename ToInfo::element_type;
+  using Unwrapped = typename unwrap_quantized<Element>::type;
+  if constexpr (is_integral<Unwrapped>::value) {
+    x = std::isnan(x) ? 0.0f : x;
+    x = std::nearbyint(x);
+    constexpr int half_mantissa = sizeof(Unwrapped) * 8 > 23 ? 127 : 0;
+    if (x > type_info<Unwrapped>::max() - half_mantissa) {
+      return static_cast<Element>(type_info<Unwrapped>::max());
+    }
+    if (x < type_info<Unwrapped>::min()) {
+      return static_cast<Element>(type_info<Unwrapped>::min());
+    }
+    return static_cast<Element>(
+        static_cast<typename unwrap_quantized<Element>::type>(x));
+  } else {
+    return static_cast<Element>(x);
+  }
+}
+
+template <typename To>
+auto cast(half x) {
+  return cast<To>(static_cast<float>(x));
+}
+
+template <typename To>
+auto cast(bfloat16 x) {
+  return cast<To>(static_cast<float>(x));
+}
+
+// std::saturate_cast is C++26
+template <typename T, typename U>
+constexpr T cast(U x) noexcept {
+  if constexpr (is_integral<T>::value) {
+    if (x > type_info<T>::max()) return type_info<T>::max();
+    if (x < type_info<T>::min()) return type_info<T>::min();
+  }
+  return static_cast<T>(x);
 }
 
 template <typename T>
 float dequantize(T x, float scale, float zero_point) {
   return (static_cast<float>(x) - zero_point) * scale;
 }
+inline double dequantize(double x, float scale, float zero_point) {
+  return (x - zero_point) * scale;
+}
 template <typename T>
-float dequantize(T x, const quantization_params& params) {
+auto dequantize(T x, const quantization_params& params) {
   return dequantize(x, params.scale, params.zero_point);
 }
 
 template <typename T>
 T quantize(float x, float inv_scale, float zero_point) {
-  return round_float_to_int<T>(x * inv_scale + zero_point);
+  return cast<T>(x * inv_scale + zero_point);
+}
+inline double quantize(double x, double inv_scale, double zero_point) {
+  return std::nearbyint(x * inv_scale + zero_point);
 }
 template <typename T>
 T quantize(float x, const quantization_params& params) {
@@ -82,8 +122,14 @@ void quantize(const float* in, T* out, size_t n,
 inline float fake_quantize(float x, float inv_scale, float zero_point) {
   return std::nearbyint(x * inv_scale + zero_point);
 }
+inline double fake_quantize(double x, double inv_scale, double zero_point) {
+  return std::nearbyint(x * inv_scale + zero_point);
+}
 inline float fake_quantize(float x, const quantization_params& params) {
   return fake_quantize(x, 1.0f / params.scale, params.zero_point);
+}
+inline double fake_quantize(double x, const quantization_params& params) {
+  return fake_quantize(x, 1.0 / params.scale, params.zero_point);
 }
 
 // These help to implement integer arithmetic without signed integer overflow.
@@ -189,30 +235,59 @@ const T* offset_bytes(const T* ptr, ptrdiff_t offset) {
 // std::sub_sat is in C++26, we can use that in a few decades maybe.
 inline size_t sub_sat(size_t a, size_t b) { return a > b ? a - b : 0; }
 
-// std::saturate_cast is C++26
-template <typename T, typename U>
-constexpr T saturate_cast(U x) noexcept {
-  // Using `std::min`/`std::max`/`std::clamp` here requires choosing a type to
-  // use, which is tricky. Writing it this way is basically using comparisons of
-  // `constexpr` values, hopefully the compiler can choose a reasonable type for
-  // the comparison.
-  if (x > std::numeric_limits<T>::max()) {
-    return std::numeric_limits<T>::max();
-  }
-  if (x < std::numeric_limits<T>::lowest()) {
-    return std::numeric_limits<T>::lowest();
-  }
-  return static_cast<T>(x);
-}
-
 template <typename T>
 T add_sat(T a, T b) {
-  return saturate_cast<T>(static_cast<int64_t>(a) + static_cast<int64_t>(b));
+  return cast<T>(static_cast<int64_t>(a) + static_cast<int64_t>(b));
 }
 
 template <typename T>
 T sub_sat(T a, T b) {
-  return saturate_cast<T>(static_cast<int64_t>(a) - static_cast<int64_t>(b));
+  return cast<T>(static_cast<int64_t>(a) - static_cast<int64_t>(b));
+}
+
+template <typename T>
+T floor_log2(T a) {
+  if (a == 0.0) return -std::numeric_limits<T>::infinity();
+  // This is true if a is NaN.
+  if (!(a >= 0.0)) return std::numeric_limits<T>::quiet_NaN();
+  int exp;
+  T significand = std::frexp(a, &exp);
+  if (std::isinf(significand)) return significand;
+  return static_cast<T>(exp - 1);
+}
+
+template <typename T>
+T exp2_round(T a) {
+  return std::ldexp(static_cast<T>(1.0), static_cast<int>(std::nearbyint(a)));
+}
+
+// Kinda like std::copysign, but copies NaN-ness instead.
+template <typename T>
+T copynan(T x, T nan) {
+  return std::isnan(nan) ? nan : x;
+}
+
+template <typename T>
+void kahan_sum(T a, T& acc, T& error) {
+  T y = a - error;
+  T t = acc + y;
+  error = (t - acc) - y;
+  if (!std::isfinite(error)) {
+    // If the error is infinity or NaN, we don't want to know about it. The
+    // accumulator will be infinity anyways, and we might corrupt the result
+    // to be NaN.
+    error = static_cast<T>(0);
+  }
+  acc = t;
+}
+
+inline void kahan_sum(int a, int& acc, int&) {
+  // Provide a silly integer overload for template code to use.
+  acc += a;
+}
+
+constexpr size_t pow(size_t base, size_t exp) {
+  return (exp == 0) ? 1 : base * pow(base, exp - 1);
 }
 
 }  // namespace ynn

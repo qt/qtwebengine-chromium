@@ -63,7 +63,7 @@ CJS_Result CJS_Event::set_change(CJS_Runtime* pRuntime,
                                  v8::Local<v8::Value> vp) {
   if (vp->IsString()) {
     CJS_EventContext* pEvent = pRuntime->GetCurrentEventContext();
-    pEvent->Change() = pRuntime->ToWideString(vp);
+    pEvent->Change() = pRuntime->ToWideStringReentrant(vp);
   }
   return CJS_Result::Success();
 }
@@ -138,7 +138,7 @@ CJS_Result CJS_Event::get_rc(CJS_Runtime* pRuntime) {
 
 CJS_Result CJS_Event::set_rc(CJS_Runtime* pRuntime, v8::Local<v8::Value> vp) {
   CJS_EventContext* pEvent = pRuntime->GetCurrentEventContext();
-  pEvent->Rc() = pRuntime->ToBoolean(vp);
+  pEvent->Rc() = pRuntime->ToBooleanReentrant(vp);
   return CJS_Result::Success();
 }
 
@@ -182,7 +182,7 @@ CJS_Result CJS_Event::set_sel_end(CJS_Runtime* pRuntime,
                                   v8::Local<v8::Value> vp) {
   CJS_EventContext* pEvent = pRuntime->GetCurrentEventContext();
   if (pEvent->Name() == "Keystroke") {
-    pEvent->SetSelEnd(pRuntime->ToInt32(vp));
+    pEvent->SetSelEnd(pRuntime->ToInt32Reentrant(vp));
   }
 
   return CJS_Result::Success();
@@ -201,7 +201,7 @@ CJS_Result CJS_Event::set_sel_start(CJS_Runtime* pRuntime,
                                     v8::Local<v8::Value> vp) {
   CJS_EventContext* pEvent = pRuntime->GetCurrentEventContext();
   if (pEvent->Name() == "Keystroke") {
-    pEvent->SetSelStart(pRuntime->ToInt32(vp));
+    pEvent->SetSelStart(pRuntime->ToInt32Reentrant(vp));
   }
 
   return CJS_Result::Success();
@@ -290,7 +290,7 @@ CJS_Result CJS_Event::set_value(CJS_Runtime* pRuntime,
   if (vp->IsNullOrUndefined() || vp->IsBoolean()) {
     return CJS_Result::Failure(JSMessage::kInvalidSetError);
   }
-  pEvent->Value() = pRuntime->ToWideString(vp);
+  pEvent->Value() = pRuntime->ToWideStringReentrant(vp);
   return CJS_Result::Success();
 }
 

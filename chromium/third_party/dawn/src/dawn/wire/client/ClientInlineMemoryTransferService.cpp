@@ -25,19 +25,15 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/439062058): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include <cstring>
 #include <memory>
 #include <utility>
 
-#include "dawn/common/Alloc.h"
-#include "dawn/common/Assert.h"
 #include "dawn/wire/WireClient.h"
-#include "dawn/wire/client/Client.h"
+#include "src/dawn/common/Alloc.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/wire/client/Client.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::wire::client {
 
@@ -55,20 +51,14 @@ class InlineMemoryTransferService : public MemoryTransferService {
 
         const void* GetData() override { return mStagingData.get(); }
 
-        bool DeserializeDataUpdate(const void* deserializePointer,
-                                   size_t deserializeSize,
-                                   size_t offset,
-                                   size_t size) override {
-            if (deserializeSize != size || deserializePointer == nullptr) {
+        bool DeserializeDataUpdate(std::span<const uint8_t> deserializeData,
+                                   size_t offset) override {
+            if (offset > mSize || deserializeData.size() > mSize - offset) {
                 return false;
             }
 
-            if (offset > mSize || size > mSize - offset) {
-                return false;
-            }
-
-            void* start = static_cast<uint8_t*>(mStagingData.get()) + offset;
-            memcpy(start, deserializePointer, size);
+            void* start = DAWN_UNSAFE_TODO(static_cast<uint8_t*>(mStagingData.get()) + offset);
+            DAWN_UNSAFE_TODO(memcpy(start, deserializeData.data(), deserializeData.size()));
             return true;
         }
 
@@ -96,12 +86,14 @@ class InlineMemoryTransferService : public MemoryTransferService {
             return size;
         }
 
-        void SerializeDataUpdate(void* serializePointer, size_t offset, size_t size) override {
+        void SerializeDataUpdate(std::span<char> serializeData, size_t offset) override {
             DAWN_ASSERT(mStagingData != nullptr);
-            DAWN_ASSERT(serializePointer != nullptr);
+            DAWN_ASSERT(serializeData.data() != nullptr);
             DAWN_ASSERT(offset <= mSize);
-            DAWN_ASSERT(size <= mSize - offset);
-            memcpy(serializePointer, static_cast<uint8_t*>(mStagingData.get()) + offset, size);
+            DAWN_ASSERT(serializeData.size() <= mSize - offset);
+            DAWN_UNSAFE_TODO(memcpy(serializeData.data(),
+                                    static_cast<uint8_t*>(mStagingData.get()) + offset,
+                                    serializeData.size()));
         }
 
       private:
@@ -124,7 +116,7 @@ class InlineMemoryTransferService : public MemoryTransferService {
     WriteHandle* CreateWriteHandle(size_t size) override {
         auto stagingData = std::unique_ptr<uint8_t[]>(AllocNoThrow<uint8_t>(size));
         if (stagingData) {
-            memset(stagingData.get(), 0, size);
+            DAWN_UNSAFE_TODO(memset(stagingData.get(), 0, size));
             return new WriteHandleImpl(std::move(stagingData), size);
         }
         return nullptr;

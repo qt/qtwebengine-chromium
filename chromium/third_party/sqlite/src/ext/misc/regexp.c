@@ -32,7 +32,7 @@
 **     ^X      X occurring at the beginning of the string
 **     X$      X occurring at the end of the string
 **     .       Match any single character
-**     \c      Character c where c is one of \{}()[]|*+?.
+**     \c      Character c where c is one of \{}()[]|*+?-.
 **     \c      C-language escapes for c in afnrtv.  ex: \t or \n
 **     \uXXXX  Where XXXX is exactly 4 hex digits, unicode value XXXX
 **     \xXX    Where XX is exactly 2 hex digits, unicode value XX
@@ -417,7 +417,7 @@ static int re_hex(int c, int *pV){
 ** return its interpretation.
 */
 static unsigned re_esc_char(ReCompiled *p){
-  static const char zEsc[] = "afnrtv\\()*.+?[$^{|}]";
+  static const char zEsc[] = "afnrtv\\()*.+?[$^{|}]-";
   static const char zTrans[] = "\a\f\n\r\t\v";
   int i, v = 0;
   char c;
@@ -676,7 +676,7 @@ static const char *re_compile(
   int i, j;
 
   *ppRe = 0;
-  pRe = sqlite3_malloc( sizeof(*pRe) );
+  pRe = sqlite3_malloc64( sizeof(*pRe) );
   if( pRe==0 ){
     return "out of memory";
   }
@@ -740,11 +740,18 @@ static const char *re_compile(
 }
 
 /*
-** Compute a reasonable limit on the length of the REGEXP NFA.
+** The value of LIMIT_MAX_PATTERN_LENGTH.
 */
 static int re_maxlen(sqlite3_context *context){
   sqlite3 *db = sqlite3_context_db_handle(context);
-  return 75 + sqlite3_limit(db, SQLITE_LIMIT_LIKE_PATTERN_LENGTH,-1)/2;
+  return sqlite3_limit(db, SQLITE_LIMIT_LIKE_PATTERN_LENGTH,-1);
+}
+
+/*
+** Maximum NFA size given a maximum pattern length.
+*/
+static int re_maxnfa(int mxlen){
+  return 75+mxlen/2;
 }
 
 /*
@@ -770,10 +777,17 @@ static void re_sql_func(
   (void)argc;  /* Unused */
   pRe = sqlite3_get_auxdata(context, 0);
   if( pRe==0 ){
+    int mxLen = re_maxlen(context);
+    int nPattern;
     zPattern = (const char*)sqlite3_value_text(argv[0]);
     if( zPattern==0 ) return;
-    zErr = re_compile(&pRe, zPattern, re_maxlen(context),
-                      sqlite3_user_data(context)!=0);
+    nPattern = sqlite3_value_bytes(argv[0]);
+    if( nPattern>mxLen ){
+      zErr = "REGEXP pattern too big";
+    }else{
+      zErr = re_compile(&pRe, zPattern, re_maxnfa(mxLen),
+                        sqlite3_user_data(context)!=0);
+    }
     if( zErr ){
       re_free(pRe);
       sqlite3_result_error(context, zErr, -1);
@@ -814,7 +828,6 @@ static void re_bytecode_func(
   int i;
   int n;
   char *z;
-  (void)argc;
   static const char *ReOpName[] = {
     "EOF",
     "MATCH",
@@ -837,9 +850,10 @@ static void re_bytecode_func(
     "ATSTART",
   };
 
+  (void)argc;
   zPattern = (const char*)sqlite3_value_text(argv[0]);
   if( zPattern==0 ) return;
-  zErr = re_compile(&pRe, zPattern, re_maxlen(context),
+  zErr = re_compile(&pRe, zPattern, re_maxnfa(re_maxlen(context)),
                     sqlite3_user_data(context)!=0);
   if( zErr ){
     re_free(pRe);

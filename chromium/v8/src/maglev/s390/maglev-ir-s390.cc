@@ -439,8 +439,8 @@ void Int32DivideWithOverflow::GenerateCode(MaglevAssembler* masm,
   // TODO(leszeks): peephole optimise division by a constant.
 
   // Pre-check for overflow, since idiv throws a division exception on overflow
-  // rather than setting the overflow flag. Logic copied from
-  // effect-control-linearizer.cc
+  // rather than setting the overflow flag. Logic is identical to
+  // REDUCE(WordBinopDeoptOnOverflow) in machine-lowering-reducer-inl.h
 
   // Check if {right} is positive (and not zero).
   __ CmpS32(right, Operand(0));
@@ -496,7 +496,7 @@ void Int32ModulusWithOverflow::GenerateCode(MaglevAssembler* masm,
   //   deopt if lhs < 0  // Minus zero.
   //   0
 
-  // Using same algorithm as in EffectControlLinearizer:
+  // Using same algorithm as in MachineLoweringReducer:
   //   if rhs <= 0 then
   //     rhs = -rhs
   //     deopt if rhs == 0
@@ -738,6 +738,14 @@ void Float64Abs::GenerateCode(MaglevAssembler* masm,
   __ lpdbr(out, in);
 }
 
+void Float64RoundToFloat32::GenerateCode(MaglevAssembler* masm,
+                                         const ProcessingState& state) {
+  DoubleRegister input = ToDoubleRegister(ValueInput());
+  DoubleRegister result = ToDoubleRegister(this->result());
+  __ ledbr(result, input);
+  __ ldebr(result, result);
+}
+
 void Float64Round::GenerateCode(MaglevAssembler* masm,
                                 const ProcessingState& state) {
   DoubleRegister in = ToDoubleRegister(ValueInput());
@@ -760,6 +768,8 @@ void Float64Round::GenerateCode(MaglevAssembler* masm,
     __ CeilF64(out, in);
   } else if (kind_ == Kind::kFloor) {
     __ FloorF64(out, in);
+  } else if (kind_ == Kind::kTrunc) {
+    __ TruncF64(out, in);
   }
 }
 
@@ -879,7 +889,7 @@ void LoadTypedArrayLength::GenerateCode(MaglevAssembler* masm,
   }
 
   __ LoadBoundedSizeFromObject(result_register, object,
-                               JSTypedArray::kRawByteLengthOffset);
+                               offsetof(JSArrayBufferView, raw_byte_length_));
   int shift_size = ElementsKindToShiftSize(elements_kind_);
   if (shift_size > 0) {
     // TODO(leszeks): Merge this shift with the one in LoadBoundedSize.

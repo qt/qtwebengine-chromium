@@ -204,68 +204,6 @@ bool GetCodecSpecificDataForAudio(const AudioDecoderConfig& config,
   return true;
 }
 
-// Given |status|, return the appropriate MediaCodecResult::Codes for it. This
-// is needed so that the actual MediaCodecResult object is created next to the
-// call that so that the call stack points at a usable line number, not
-// somewhere in this function.
-MediaCodecResult::Codes ConvertToMediaCodecEnum(MediaCodecStatus status) {
-  switch (status) {
-    case MEDIA_CODEC_OK:
-      return MediaCodecResult::Codes::kOk;
-    case MEDIA_CODEC_TRY_AGAIN_LATER:
-      return MediaCodecResult::Codes::kTryAgainLater;
-    case MEDIA_CODEC_OUTPUT_BUFFERS_CHANGED:
-      return MediaCodecResult::Codes::kOutputBuffersChanged;
-    case MEDIA_CODEC_OUTPUT_FORMAT_CHANGED:
-      return MediaCodecResult::Codes::kOutputFormatChanged;
-    case MEDIA_CODEC_NO_KEY:
-      return MediaCodecResult::Codes::kNoKey;
-    case MEDIA_CODEC_ERROR:
-    case MEDIA_CODEC_KEY_EXPIRED:
-    case MEDIA_CODEC_RESOURCE_BUSY:
-    case MEDIA_CODEC_INSUFFICIENT_OUTPUT_PROTECTION:
-    case MEDIA_CODEC_SESSION_NOT_OPENED:
-    case MEDIA_CODEC_UNSUPPORTED_OPERATION:
-    case MEDIA_CODEC_INSUFFICIENT_SECURITY:
-    case MEDIA_CODEC_FRAME_TOO_LARGE:
-    case MEDIA_CODEC_LOST_STATE:
-    case MEDIA_CODEC_GENERIC_OEM:
-    case MEDIA_CODEC_GENERIC_PLUGIN:
-    case MEDIA_CODEC_LICENSE_PARSE:
-    case MEDIA_CODEC_MEDIA_FRAMEWORK:
-    case MEDIA_CODEC_ZERO_SUBSAMPLES:
-    case MEDIA_CODEC_UNKNOWN_CIPHER_MODE:
-    case MEDIA_CODEC_PATTERN_ENCRYPTION_NOT_SUPPORTED:
-    case MEDIA_CODEC_INSUFFICIENT_RESOURCE:
-    case MEDIA_CODEC_RECLAIMED:
-    case MEDIA_CODEC_INPUT_SLOT_UNAVAILABLE:
-    case MEDIA_CODEC_ILLEGAL_STATE:
-    case MEDIA_CODEC_UNKNOWN_CRYPTO_EXCEPTION:
-    case MEDIA_CODEC_UNKNOWN_MEDIADRM_EXCEPTION:
-    case MEDIA_CODEC_UNKNOWN_CODEC_EXCEPTION:
-    case MEDIA_CODEC_LINEAR_BLOCK_EXCEPTION:
-    case MEDIA_CODEC_CERTIFICATE_MALFORMED:
-    case MEDIA_CODEC_CERTIFICATE_MISSING:
-    case MEDIA_CODEC_CRYPTO_LIBRARY:
-    case MEDIA_CODEC_INIT_DATA:
-    case MEDIA_CODEC_KEY_NOT_LOADED:
-    case MEDIA_CODEC_LICENSE_POLICY:
-    case MEDIA_CODEC_LICENSE_RELEASE:
-    case MEDIA_CODEC_LICENSE_REQUEST_REJECTED:
-    case MEDIA_CODEC_LICENSE_RESTORE:
-    case MEDIA_CODEC_LICENSE_STATE:
-    case MEDIA_CODEC_PROVISIONING_CERTIFICATE:
-    case MEDIA_CODEC_PROVISIONING_CONFIG:
-    case MEDIA_CODEC_PROVISIONING_PARSE:
-    case MEDIA_CODEC_PROVISIONING_REQUEST_REJECTED:
-    case MEDIA_CODEC_PROVISIONING_RETRY:
-    case MEDIA_CODEC_SECURE_STOP_RELEASE:
-    case MEDIA_CODEC_STORAGE_READ:
-    case MEDIA_CODEC_STORAGE_WRITE:
-      return MediaCodecResult::Codes::kError;
-  }
-}
-
 // Given |status|, return an appropriate error message to be included in
 // MediaCodecResult.
 std::string ApplyDescriptiveMessage(MediaCodecStatus status) {
@@ -382,6 +320,87 @@ std::string ApplyDescriptiveMessage(MediaCodecStatus status) {
   }
 }
 
+bool IsFatalError(MediaCodecStatus status) {
+  switch (status) {
+    case MEDIA_CODEC_OK:
+    case MEDIA_CODEC_TRY_AGAIN_LATER:
+    case MEDIA_CODEC_OUTPUT_BUFFERS_CHANGED:
+    case MEDIA_CODEC_OUTPUT_FORMAT_CHANGED:
+    case MEDIA_CODEC_NO_KEY:
+      return false;
+    default:
+      return true;
+  }
+}
+
+// Given |status|, return the appropriate MediaCodecResult for it.
+MediaCodecResult FromMediaCodecStatus(
+    MediaCodecStatus status,
+    const base::Location& location = FROM_HERE) {
+  switch (status) {
+    case MEDIA_CODEC_OK:
+      return OkStatus();
+    case MEDIA_CODEC_TRY_AGAIN_LATER:
+      return {MediaCodecResult::Codes::kTryAgainLater,
+              ApplyDescriptiveMessage(status), location};
+    case MEDIA_CODEC_OUTPUT_BUFFERS_CHANGED:
+      return {MediaCodecResult::Codes::kOutputBuffersChanged,
+              ApplyDescriptiveMessage(status), location};
+    case MEDIA_CODEC_OUTPUT_FORMAT_CHANGED:
+      return {MediaCodecResult::Codes::kOutputFormatChanged,
+              ApplyDescriptiveMessage(status), location};
+    case MEDIA_CODEC_NO_KEY:
+      return {MediaCodecResult::Codes::kNoKey, ApplyDescriptiveMessage(status),
+              location};
+    case MEDIA_CODEC_ERROR:
+    case MEDIA_CODEC_KEY_EXPIRED:
+    case MEDIA_CODEC_RESOURCE_BUSY:
+    case MEDIA_CODEC_INSUFFICIENT_OUTPUT_PROTECTION:
+    case MEDIA_CODEC_SESSION_NOT_OPENED:
+    case MEDIA_CODEC_UNSUPPORTED_OPERATION:
+    case MEDIA_CODEC_INSUFFICIENT_SECURITY:
+    case MEDIA_CODEC_FRAME_TOO_LARGE:
+    case MEDIA_CODEC_LOST_STATE:
+    case MEDIA_CODEC_GENERIC_OEM:
+    case MEDIA_CODEC_GENERIC_PLUGIN:
+    case MEDIA_CODEC_LICENSE_PARSE:
+    case MEDIA_CODEC_MEDIA_FRAMEWORK:
+    case MEDIA_CODEC_ZERO_SUBSAMPLES:
+    case MEDIA_CODEC_UNKNOWN_CIPHER_MODE:
+    case MEDIA_CODEC_PATTERN_ENCRYPTION_NOT_SUPPORTED:
+    case MEDIA_CODEC_INSUFFICIENT_RESOURCE:
+    case MEDIA_CODEC_RECLAIMED:
+    case MEDIA_CODEC_INPUT_SLOT_UNAVAILABLE:
+    case MEDIA_CODEC_ILLEGAL_STATE:
+    case MEDIA_CODEC_UNKNOWN_CRYPTO_EXCEPTION:
+    case MEDIA_CODEC_UNKNOWN_MEDIADRM_EXCEPTION:
+    case MEDIA_CODEC_UNKNOWN_CODEC_EXCEPTION:
+    case MEDIA_CODEC_LINEAR_BLOCK_EXCEPTION:
+    case MEDIA_CODEC_CERTIFICATE_MALFORMED:
+    case MEDIA_CODEC_CERTIFICATE_MISSING:
+    case MEDIA_CODEC_CRYPTO_LIBRARY:
+    case MEDIA_CODEC_INIT_DATA:
+    case MEDIA_CODEC_KEY_NOT_LOADED:
+    case MEDIA_CODEC_LICENSE_POLICY:
+    case MEDIA_CODEC_LICENSE_RELEASE:
+    case MEDIA_CODEC_LICENSE_REQUEST_REJECTED:
+    case MEDIA_CODEC_LICENSE_RESTORE:
+    case MEDIA_CODEC_LICENSE_STATE:
+    case MEDIA_CODEC_PROVISIONING_CERTIFICATE:
+    case MEDIA_CODEC_PROVISIONING_CONFIG:
+    case MEDIA_CODEC_PROVISIONING_PARSE:
+    case MEDIA_CODEC_PROVISIONING_REQUEST_REJECTED:
+    case MEDIA_CODEC_PROVISIONING_RETRY:
+    case MEDIA_CODEC_SECURE_STOP_RELEASE:
+    case MEDIA_CODEC_STORAGE_READ:
+    case MEDIA_CODEC_STORAGE_WRITE:
+      return {MediaCodecResult::Codes::kError, ApplyDescriptiveMessage(status),
+              location};
+    default:
+      return {MediaCodecResult::Codes::kError, "Invalid JNI Error code"};
+  }
+}
+
 }  // namespace
 
 VideoCodecConfig::VideoCodecConfig() = default;
@@ -446,10 +465,8 @@ std::unique_ptr<MediaCodecBridge> MediaCodecBridgeImpl::CreateVideoDecoder(
   auto j_csd0 = ToJavaByteArray(env, config.csd0);
   auto j_csd1 = ToJavaByteArray(env, config.csd1);
 
-  MediaFormatColorSpace color_space;
   std::unique_ptr<JniHdrMetadata> jni_hdr_metadata;
   if (!config.hdr_metadata.IsEmpty()) {
-    color_space = MediaFormatColorSpace(config.container_color_space);
     jni_hdr_metadata = std::make_unique<JniHdrMetadata>(config.hdr_metadata);
   }
   auto j_hdr_metadata = jni_hdr_metadata ? jni_hdr_metadata->obj() : nullptr;
@@ -460,8 +477,9 @@ std::unique_ptr<MediaCodecBridge> MediaCodecBridgeImpl::CreateVideoDecoder(
           env, j_mime, static_cast<int>(config.codec_type), config.media_crypto,
           config.initial_expected_coded_size.width(),
           config.initial_expected_coded_size.height(), config.surface, j_csd0,
-          j_csd1, color_space.standard, color_space.transfer, color_space.range,
-          j_hdr_metadata,
+          j_csd1, config.container_color_space.standard,
+          config.container_color_space.transfer,
+          config.container_color_space.range, j_hdr_metadata,
           /*allowAdaptivePlayback=*/true,
           /*useAsyncApi=*/!config.on_buffers_available_cb.is_null(),
           /*useBlockModel=*/config.use_block_model,
@@ -522,7 +540,7 @@ MediaCodecResult MediaCodecBridgeImpl::Flush() {
   MediaCodecStatus status = static_cast<MediaCodecStatus>(
       Java_MediaCodecBridge_flush(env, j_bridge_));
   ReportAnyErrorToUMA(status);
-  return {ConvertToMediaCodecEnum(status), ApplyDescriptiveMessage(status)};
+  return FromMediaCodecStatus(status);
 }
 
 MediaCodecResult MediaCodecBridgeImpl::GetOutputSize(gfx::Size* size) {
@@ -565,7 +583,7 @@ MediaCodecResult MediaCodecBridgeImpl::GetOutputChannelCount(
 }
 
 MediaCodecResult MediaCodecBridgeImpl::GetOutputColorSpace(
-    gfx::ColorSpace* color_space) {
+    MediaFormatColorSpace* color_space) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> result =
       Java_MediaCodecBridge_getOutputFormat(env, j_bridge_);
@@ -575,21 +593,9 @@ MediaCodecResult MediaCodecBridgeImpl::GetOutputColorSpace(
 
   // TODO(liberato): Consider consolidating these to save JNI hops.  However,
   // since this is called only rarely, it's clearer this way.
-  MediaFormatColorSpace mf_color_space;
-  mf_color_space.standard = Java_MediaFormatWrapper_colorStandard(env, result);
-  mf_color_space.range = Java_MediaFormatWrapper_colorRange(env, result);
-  mf_color_space.transfer = Java_MediaFormatWrapper_colorTransfer(env, result);
-
-  auto gfx_color_space = mf_color_space.ToGfxColorSpace();
-  if (!gfx_color_space.IsValid()) {
-    DVLOG(3) << __func__ << ": unsupported media format:"
-             << " s:" << mf_color_space.standard
-             << " r: " << mf_color_space.range
-             << " t: " << mf_color_space.transfer;
-    return {MediaCodecResult::Codes::kError,
-            "Unexpected MediaFormat specified."};
-  }
-  *color_space = gfx_color_space;
+  color_space->standard = Java_MediaFormatWrapper_colorStandard(env, result);
+  color_space->range = Java_MediaFormatWrapper_colorRange(env, result);
+  color_space->transfer = Java_MediaFormatWrapper_colorTransfer(env, result);
 
   return OkStatus();
 }
@@ -621,7 +627,7 @@ MediaCodecResult MediaCodecBridgeImpl::QueueFilledInputBuffer(
           env, j_bridge_, index, 0, data_size,
           presentation_time.InMicroseconds(), 0));
   ReportAnyErrorToUMA(status);
-  return {ConvertToMediaCodecEnum(status), ApplyDescriptiveMessage(status)};
+  return FromMediaCodecStatus(status);
 }
 
 MediaCodecResult MediaCodecBridgeImpl::QueueSecureInputBuffer(
@@ -695,7 +701,7 @@ MediaCodecResult MediaCodecBridgeImpl::QueueSecureInputBuffer(
 
     Java_ObtainBlockResult_recycle(env, j_result);
     ReportAnyErrorToUMA(status);
-    return {ConvertToMediaCodecEnum(status), ApplyDescriptiveMessage(status)};
+    return FromMediaCodecStatus(status);
   }
 
   if (!FillInputBuffer(index, data)) {
@@ -719,7 +725,7 @@ MediaCodecResult MediaCodecBridgeImpl::QueueSecureInputBuffer(
               : 0,
           presentation_time.InMicroseconds()));
   ReportAnyErrorToUMA(status);
-  return {ConvertToMediaCodecEnum(status), ApplyDescriptiveMessage(status)};
+  return FromMediaCodecStatus(status);
 }
 
 MediaCodecResult MediaCodecBridgeImpl::QueueEOS(int input_buffer_index) {
@@ -752,7 +758,7 @@ MediaCodecResult MediaCodecBridgeImpl::QueueEOS(int input_buffer_index) {
            << ", index: " << input_buffer_index;
 
   ReportAnyErrorToUMA(status);
-  return {ConvertToMediaCodecEnum(status), ApplyDescriptiveMessage(status)};
+  return FromMediaCodecStatus(status);
 }
 
 MediaCodecResult MediaCodecBridgeImpl::DequeueInputBuffer(
@@ -766,7 +772,7 @@ MediaCodecResult MediaCodecBridgeImpl::DequeueInputBuffer(
       Java_DequeueInputResult_status(env, result));
   DVLOG(3) << __func__ << ": status: " << status << ", index: " << *index;
   ReportAnyErrorToUMA(status);
-  return {ConvertToMediaCodecEnum(status), ApplyDescriptiveMessage(status)};
+  return FromMediaCodecStatus(status);
 }
 
 MediaCodecResult MediaCodecBridgeImpl::DequeueOutputBuffer(
@@ -803,7 +809,7 @@ MediaCodecResult MediaCodecBridgeImpl::DequeueOutputBuffer(
            << ", offset: " << *offset << ", size: " << *size
            << ", flags: " << flags;
   ReportAnyErrorToUMA(status);
-  return {ConvertToMediaCodecEnum(status), ApplyDescriptiveMessage(status)};
+  return FromMediaCodecStatus(status);
 }
 
 void MediaCodecBridgeImpl::ReleaseOutputBuffer(int index, bool render) {
@@ -916,7 +922,7 @@ MediaCodecResult MediaCodecBridgeImpl::QueueInputBlock(
           presentation_time.InMicroseconds(), 0));
   Java_ObtainBlockResult_recycle(env, j_result);
   ReportAnyErrorToUMA(status);
-  return {ConvertToMediaCodecEnum(status), ApplyDescriptiveMessage(status)};
+  return FromMediaCodecStatus(status);
 }
 
 void MediaCodecBridgeImpl::ReportAnyErrorToUMA(MediaCodecStatus status) {
@@ -927,7 +933,7 @@ void MediaCodecBridgeImpl::ReportAnyErrorToUMA(MediaCodecStatus status) {
   }
 
   // Don't bother reporting `status` if it's not a error that stops playback.
-  if (ConvertToMediaCodecEnum(status) != MediaCodecResult::Codes::kError) {
+  if (!IsFatalError(status)) {
     return;
   }
 

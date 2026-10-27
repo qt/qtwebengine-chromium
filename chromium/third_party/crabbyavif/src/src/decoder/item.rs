@@ -403,9 +403,14 @@ impl Item {
         self.item_type == "sato"
     }
 
+    pub(crate) fn is_identity_item(&self) -> bool {
+        self.item_type == "iden"
+    }
+
     pub(crate) fn is_derived_image_item(&self) -> bool {
         self.is_grid_item()
             || self.is_overlay_item()
+            || self.is_identity_item()
             || self.is_tone_mapped_item()
             || self.is_sample_transform_item()
     }
@@ -417,13 +422,11 @@ impl Item {
     pub(crate) fn should_skip(&self) -> bool {
         // The item has no payload in idat or mdat. It cannot be a coded image item, a
         // non-identity derived image item, or Exif/XMP metadata.
-        self.size == 0
+        (!self.is_identity_item() && self.size == 0)
             // An essential property isn't supported by libavif. Ignore the whole item.
             || self.has_unsupported_essential_property
             // Probably Exif/XMP or some other data.
             || !self.is_image_item()
-            // libavif does not support thumbnails.
-            || self.thumbnail_for_id != 0
     }
 
     fn is_metadata(&self, item_type: &str, color_id: Option<u32>) -> bool {
@@ -490,6 +493,32 @@ impl Item {
             offset: min_offset,
             size: usize_from_u64(checked_sub!(max_offset, min_offset)?)?,
         })
+    }
+
+    pub(crate) fn replace_transformative_properties_from(
+        &mut self,
+        properties: &[ItemProperty],
+    ) -> AvifResult<()> {
+        // Clear existing transformative properties.
+        self.properties.retain(|p| {
+            !matches!(
+                p,
+                ItemProperty::ImageRotation(_)
+                    | ItemProperty::ImageMirror(_)
+                    | ItemProperty::CleanAperture(_)
+            )
+        });
+        // Copy new ones (if any).
+        if let Some(irot) = find_property!(properties, ImageRotation) {
+            self.properties.push(ItemProperty::ImageRotation(*irot));
+        }
+        if let Some(imir) = find_property!(properties, ImageMirror) {
+            self.properties.push(ItemProperty::ImageMirror(*imir));
+        }
+        if let Some(clap) = find_property!(properties, CleanAperture) {
+            self.properties.push(ItemProperty::CleanAperture(*clap));
+        }
+        Ok(())
     }
 }
 

@@ -25,8 +25,10 @@ limitations under the License.
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/strings/match.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "xla/tsl/platform/types.h"
 #include "xla/tsl/profiler/utils/math_utils.h"
@@ -228,6 +230,44 @@ std::vector<XPlane*> FindMutablePlanesWithPrefix(XSpace* space,
   });
 }
 
+void SetXSpacePidIfNotSet(XSpace& space, int32_t pid) {
+  for (XPlane& plane : *space.mutable_planes()) {
+    SetXPlanePidIfNotSet(plane, pid);
+  }
+}
+
+void SetXPlanePidIfNotSet(XPlane& plane, int32_t pid) {
+  XPlaneBuilder builder(&plane);
+  XStatMetadata* pid_stat_metadata =
+      builder.GetOrCreateStatMetadata(GetStatTypeStr(StatType::kProcessId));
+  if (!builder.GetStat(*pid_stat_metadata)) {
+    builder.SetOrAddStatValue(*pid_stat_metadata, pid);
+  }
+}
+
+void MergeSubprocessXSpace(XSpace& dst, const XSpace& src) {
+  for (const XPlane& plane : src.planes()) {
+    VLOG(3) << "Merging plane: " << plane.name();
+    XPlaneVisitor visitor = CreateTfXPlaneVisitor(&plane);
+    auto pid_stat = visitor.GetStat(StatType::kProcessId);
+    if (!pid_stat.has_value()) {
+      LOG(WARNING) << "No PID found in XPlane: " << plane.name()
+                   << ". Skipping merging plane.";
+      continue;
+    }
+    int32_t pid = pid_stat->IntOrUintValue();
+    XPlane& copied_plane = *dst.add_planes();
+    copied_plane = plane;
+    copied_plane.set_name(absl::StrCat(plane.name(), " [", pid, "]"));
+  }
+  for (const auto& warning : src.warnings()) {
+    dst.add_warnings(warning);
+  }
+  for (const auto& error : src.errors()) {
+    dst.add_errors(error);
+  }
+}
+
 const XLine* FindLineWithId(const XPlane& plane, int64_t id) {
   int i =
       Find(plane.lines(), [id](const XLine* line) { return line->id() == id; });
@@ -299,16 +339,22 @@ bool XEventsComparator::operator()(const XEvent* a, const XEvent* b) const {
   return XEventTimespan(*a) < XEventTimespan(*b);
 }
 
+void SortXLine(XLine* line) {
+  auto& events = *line->mutable_events();
+  std::stable_sort(events.pointer_begin(), events.pointer_end(),
+                   XEventsComparator());
+}
+
 void SortXPlane(XPlane* plane) {
   for (XLine& line : *plane->mutable_lines()) {
-    auto& events = *line.mutable_events();
-    std::sort(events.pointer_begin(), events.pointer_end(),
-              XEventsComparator());
+    SortXLine(&line);
   }
 }
 
 void SortXSpace(XSpace* space) {
-  for (XPlane& plane : *space->mutable_planes()) SortXPlane(&plane);
+  for (XPlane& plane : *space->mutable_planes()) {
+    SortXPlane(&plane);
+  }
 }
 
 // Normalize the line's timestamp in this XPlane.
@@ -691,14 +737,17 @@ bool IsCustomPlane(const XPlane& plane) {
 }
 
 bool IsHostPlane(const XPlane& plane) {
-  return plane.name() == kHostThreadsPlaneName ||
-         plane.name() == kHostCpusPlaneName ||
-         plane.name() == kTFStreamzPlaneName ||
-         plane.name() == kMetadataPlaneName ||
-         plane.name() == kSyscallsPlaneName ||
-         plane.name() == kPythonTracerPlaneName ||
-         plane.name() == kCuptiDriverApiPlaneName ||
-         plane.name() == kScopeRangeIdTreePlaneName;
+  static const absl::string_view kHostPlanePrefixes[] = {
+      kHostThreadsPlaneName,    kHostCpusPlaneName,
+      kTFStreamzPlaneName,      kMetadataPlaneName,
+      kSyscallsPlaneName,       kPythonTracerPlaneName,
+      kCuptiDriverApiPlaneName, kScopeRangeIdTreePlaneName};
+  for (absl::string_view prefix : kHostPlanePrefixes) {
+    if (absl::StartsWith(plane.name(), prefix)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool IsDevicePlane(const XPlane& plane) {

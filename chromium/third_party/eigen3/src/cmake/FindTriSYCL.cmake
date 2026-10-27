@@ -3,6 +3,7 @@
 #---------------
 #
 # TODO : insert Copyright and licence
+# SPDX-License-Identifier: MPL-2.0
 
 #########################
 #  FindTriSYCL.cmake

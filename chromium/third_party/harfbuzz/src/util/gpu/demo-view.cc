@@ -1,0 +1,846 @@
+/*
+ * Copyright 2012 Google, Inc. All Rights Reserved.
+ * Copyright 2026 Behdad Esfahbod. All Rights Reserved.
+ */
+
+#ifdef _WIN32
+#define _USE_MATH_DEFINES
+#endif
+
+#include "demo-view.h"
+
+/* Global: when set, LOGI is suppressed.  Set by hb-gpu's
+ * --output-file path to keep stderr clean for scripted use. */
+int hb_gpu_demo_quiet = 0;
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#elif defined(_WIN32)
+#include <windows.h>
+#endif
+
+#include "trackball.hh"
+#include "matrix4x4.hh"
+
+struct demo_view_t {
+  demo_renderer_t *renderer;
+#ifndef HB_GPU_NO_GLFW
+  GLFWwindow *window;
+#endif
+
+  /* Cached window/framebuffer dimensions */
+  int fb_width, fb_height;
+  int win_width, win_height;
+
+  /* Output */
+  bool vsync;
+  bool fullscreen;
+  bool dark_mode;
+  bool debug;
+  bool stem_darkening = true;
+  double screen_angle; /* 2D screen-space rotation from pinch */
+
+  /* Mouse handling */
+  int buttons;
+  int modifiers;
+  bool dragged;
+  bool click_handled;
+  double cursorx, cursory;
+  double beginx, beginy;
+  double lastx, lasty, lastt;
+  double last_click_time;
+  double dx,dy, dt;
+
+  /* Transformation */
+  float quat[4];
+  double scalex;
+  double scaley;
+  demo_point_t translate;
+  double perspective;
+
+  /* Animation */
+  float rot_axis[3];
+  double rot_speed;
+  bool animate;
+  int num_frames;
+  double fps_start_time;
+  double last_frame_time;
+  bool has_fps_timer;
+  double fps_timer_interval;
+  double fps_timer_last;
+  int fps_quit_after; /* quit after N fps prints; 0 = disabled */
+
+  /* Vim-style repeat count */
+  unsigned int repeat_count;
+
+  /* Dirty flag for redraw */
+  bool needs_redraw;
+
+  /* Window geometry just before going fullscreen */
+  int x;
+  int y;
+  int width;
+  int height;
+};
+
+#ifndef HB_GPU_NO_GLFW
+demo_view_t *
+demo_view_create (demo_renderer_t *renderer, GLFWwindow *window)
+{
+  demo_view_t *vu = (demo_view_t *) calloc (1, sizeof (demo_view_t));
+
+  vu->renderer = renderer;
+  vu->window = window;
+  vu->needs_redraw = true;
+  demo_view_reset (vu);
+
+  return vu;
+}
+#endif
+
+demo_view_t *
+demo_view_create_headless (demo_renderer_t *renderer,
+			   int fb_width, int fb_height,
+			   int win_width, int win_height)
+{
+  demo_view_t *vu = (demo_view_t *) calloc (1, sizeof (demo_view_t));
+
+  vu->renderer = renderer;
+  vu->fb_width = fb_width;
+  vu->fb_height = fb_height;
+  vu->win_width = win_width;
+  vu->win_height = win_height;
+  vu->needs_redraw = true;
+  demo_view_reset (vu);
+
+  return vu;
+}
+
+void
+demo_view_destroy (demo_view_t *vu)
+{
+  if (!vu)
+    return;
+
+  free (vu);
+}
+
+
+#define ANIMATION_SPEED 1.
+void
+demo_view_reset (demo_view_t *vu)
+{
+  vu->perspective = 16;
+  vu->scalex = vu->scaley = 1;
+  vu->translate.x = vu->translate.y = 0;
+  vu->screen_angle = 0;
+  trackball (vu->quat , 0.0, 0.0, 0.0, 0.0);
+  vset (vu->rot_axis, 0., 0., 1.);
+  vu->rot_speed = ANIMATION_SPEED;
+  vu->needs_redraw = true;
+}
+
+
+static void
+demo_view_scale_perspective (demo_view_t *vu, double factor)
+{
+  vu->perspective = clamp (vu->perspective * factor, .01, 100.);
+}
+
+static void
+demo_view_scalex (demo_view_t *vu, double factor)
+{
+  vu->scalex *= factor;
+}
+
+static void
+demo_view_scaley (demo_view_t *vu, double factor)
+{
+  vu->scaley *= factor;
+}
+
+
+static void
+demo_view_scale (demo_view_t *vu, double sx, double sy)
+{
+  vu->scalex *= sx;
+  vu->scaley *= sy;
+}
+
+static void
+demo_view_translate (demo_view_t *vu, double dx, double dy)
+{
+  vu->translate.x += dx / vu->scalex;
+  vu->translate.y += dy / vu->scaley;
+}
+
+static void
+demo_view_apply_transform (demo_view_t *vu, float *mat, int width, int height)
+{
+
+  m4Scale (mat, vu->scalex, vu->scaley, 1);
+  m4Translate (mat, vu->translate.x, vu->translate.y, 0);
+
+  {
+    double d = hb_max (width, height);
+    double znear = d / vu->perspective;
+    double zfar = znear + d;
+    double factor = znear / (2 * znear + d);
+    m4Frustum (mat, -width * factor, width * factor, -height * factor, height * factor, znear, zfar);
+    m4Translate (mat, 0, 0, -(znear + d * .5));
+  }
+
+  float m[4][4];
+  build_rotmatrix (m, vu->quat);
+  m4MultMatrix(mat, &m[0][0]);
+
+  m4Scale (mat, 1, -1, 1);
+}
+
+
+static double
+current_time (void)
+{
+#ifdef __EMSCRIPTEN__
+  return emscripten_get_now () / 1000.0;
+#elif defined(_WIN32)
+  static LARGE_INTEGER freq;
+  if (!freq.QuadPart) QueryPerformanceFrequency (&freq);
+  LARGE_INTEGER t;
+  QueryPerformanceCounter (&t);
+  return (double) t.QuadPart / (double) freq.QuadPart;
+#else
+  return glfwGetTime ();
+#endif
+}
+
+static void
+start_animation (demo_view_t *vu)
+{
+  vu->num_frames = 0;
+  vu->last_frame_time = vu->fps_start_time = current_time ();
+  vu->fps_timer_interval = 2.0;
+  vu->fps_timer_last = current_time ();
+  vu->has_fps_timer = true;
+}
+
+static void
+demo_view_toggle_animation (demo_view_t *vu)
+{
+  vu->animate = !vu->animate;
+  LOGI ("Setting animation %s.\n", vu->animate ? "on" : "off");
+  if (vu->animate)
+    start_animation (vu);
+}
+
+
+static void
+demo_view_toggle_vsync (demo_view_t *vu)
+{
+  vu->renderer->toggle_vsync (vu->vsync);
+  LOGI ("Setting vsync %s.\n", vu->vsync ? "on" : "off");
+}
+
+/* Gamma 2.2 coverage correction: the exponent flips in dark mode
+ * so thin strokes don't over-darken against the light-on-dark
+ * contrast. */
+static void
+demo_view_update_gamma (demo_view_t *vu)
+{
+  vu->renderer->set_gamma (vu->dark_mode ? 1.f / 2.2f : 2.2f);
+}
+
+#define LIGHT_FG 0.f, 0.f, 0.f, 1.f
+#define LIGHT_BG 1.f, 1.f, 1.f, 1.f
+#define DARK_FG  1.f, 1.f, 1.f, 1.f
+#define DARK_BG  0.f, 0.f, 0.f, 1.f
+
+static void
+demo_view_toggle_dark (demo_view_t *vu)
+{
+  vu->dark_mode = !vu->dark_mode;
+  LOGI ("Setting %s mode.\n", vu->dark_mode ? "dark" : "light");
+  if (vu->dark_mode)
+  {
+    vu->renderer->set_foreground (DARK_FG);
+    vu->renderer->set_background (DARK_BG);
+  }
+  else
+  {
+    vu->renderer->set_foreground (LIGHT_FG);
+    vu->renderer->set_background (LIGHT_BG);
+  }
+  demo_view_update_gamma (vu);
+  vu->needs_redraw = true;
+}
+
+#ifndef HB_GPU_NO_GLFW
+static void
+demo_view_toggle_fullscreen (demo_view_t *vu)
+{
+  if (!vu->window) return;
+  vu->fullscreen = !vu->fullscreen;
+  if (vu->fullscreen) {
+    glfwGetWindowPos (vu->window, &vu->x, &vu->y);
+    glfwGetWindowSize (vu->window, &vu->width, &vu->height);
+    GLFWmonitor *monitor = glfwGetPrimaryMonitor ();
+    const GLFWvidmode *mode = glfwGetVideoMode (monitor);
+    glfwSetWindowMonitor (vu->window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+  } else {
+    glfwSetWindowMonitor (vu->window, NULL, vu->x, vu->y, vu->width, vu->height, 0);
+  }
+}
+#endif
+
+
+
+void
+demo_view_reshape_func (demo_view_t *vu, int width, int height)
+{
+  vu->fb_width = width;
+  vu->fb_height = height;
+  vu->win_width = width;
+  vu->win_height = height;
+  vu->needs_redraw = true;
+}
+
+#define STEP 1.05
+void
+demo_view_char_func (demo_view_t *vu, unsigned int codepoint)
+{
+  if (codepoint >= '0' && codepoint <= '9') {
+    vu->repeat_count = vu->repeat_count * 10 + (codepoint - '0');
+    return;
+  }
+
+  unsigned int count = vu->repeat_count ? vu->repeat_count : 1;
+  vu->repeat_count = 0;
+
+  for (unsigned int i = 0; i < count; i++) {
+    switch (codepoint)
+    {
+      case '=':
+	demo_view_scale (vu, STEP, STEP);
+	break;
+      case '-':
+	demo_view_scale (vu, 1. / STEP, 1. / STEP);
+	break;
+
+      case '[':
+	demo_view_scalex (vu, STEP);
+	break;
+      case ']':
+	demo_view_scalex (vu, 1. / STEP);
+	break;
+
+      case '{':
+	demo_view_scaley (vu, STEP);
+	break;
+      case '}':
+	demo_view_scaley (vu, 1. / STEP);
+	break;
+
+      case 'k':
+	demo_view_translate (vu, 0, -.1);
+	break;
+      case 'j':
+	demo_view_translate (vu, 0, +.1);
+	break;
+      case 'h':
+	demo_view_translate (vu, +.1, 0);
+	break;
+      case 'l':
+	demo_view_translate (vu, -.1, 0);
+	break;
+
+      default:
+	return;
+    }
+  }
+  vu->needs_redraw = true;
+}
+
+void
+demo_view_key_func (demo_view_t *vu, int key, int scancode, int action, int mods)
+{
+  if (action != GLFW_PRESS)
+    return;
+
+  switch (key)
+  {
+    case GLFW_KEY_ESCAPE:
+#ifndef HB_GPU_NO_GLFW
+      if (vu->fullscreen)
+      {
+	demo_view_toggle_fullscreen (vu);
+	break;
+      }
+#endif
+      /* fallthrough */
+    case GLFW_KEY_Q:
+#ifndef HB_GPU_NO_GLFW
+      if (vu->window)
+	glfwSetWindowShouldClose (vu->window, GLFW_TRUE);
+#endif
+      break;
+
+    case GLFW_KEY_SPACE:
+      demo_view_toggle_animation (vu);
+      break;
+    case GLFW_KEY_SLASH:
+      demo_view_print_help (vu);
+      break;
+    case GLFW_KEY_B:
+      demo_view_toggle_dark (vu);
+      break;
+    case GLFW_KEY_D:
+      vu->debug = !vu->debug;
+      vu->renderer->set_debug (vu->debug);
+      LOGI ("Debug mode: %s.\n", vu->debug ? "on" : "off");
+      break;
+    case GLFW_KEY_S:
+      vu->stem_darkening = !vu->stem_darkening;
+      vu->renderer->set_stem_darkening (vu->stem_darkening);
+      LOGI ("Stem darkening: %s.\n", vu->stem_darkening ? "on" : "off");
+      break;
+    case GLFW_KEY_V:
+      demo_view_toggle_vsync (vu);
+      break;
+
+#ifndef HB_GPU_NO_GLFW
+    case GLFW_KEY_F:
+      demo_view_toggle_fullscreen (vu);
+      break;
+#endif
+
+    case GLFW_KEY_R:
+    case GLFW_KEY_BACKSPACE:
+      demo_view_reset (vu);
+      break;
+
+    case GLFW_KEY_UP:
+      demo_view_translate (vu, 0, -.1);
+      break;
+    case GLFW_KEY_DOWN:
+      demo_view_translate (vu, 0, +.1);
+      break;
+    case GLFW_KEY_LEFT:
+      demo_view_translate (vu, +.1, 0);
+      break;
+    case GLFW_KEY_RIGHT:
+      demo_view_translate (vu, -.1, 0);
+      break;
+
+    default:
+      return;
+  }
+  vu->needs_redraw = true;
+}
+
+void
+demo_view_mouse_func (demo_view_t *vu, int button, int action, int mods)
+{
+  if (action == GLFW_PRESS) {
+    vu->buttons |= (1 << button);
+    vu->click_handled = false;
+  } else
+    vu->buttons &= ~(1 << button);
+  vu->modifiers = mods;
+
+#ifndef HB_GPU_NO_GLFW
+  if (vu->window)
+    glfwGetCursorPos (vu->window, &vu->cursorx, &vu->cursory);
+#endif
+  double x = vu->cursorx, y = vu->cursory;
+
+  switch (button)
+  {
+    case GLFW_MOUSE_BUTTON_LEFT:
+      if (action == GLFW_RELEASE && !vu->dragged && !vu->click_handled)
+      {
+	double now = current_time ();
+	if (now - vu->last_click_time < 0.3)
+	{
+	  /* Double-click: undo first click's animation toggle + reset */
+	  demo_view_toggle_animation (vu);
+	  demo_view_reset (vu);
+	  vu->last_click_time = 0;
+	}
+	else
+	{
+	  demo_view_toggle_animation (vu);
+	  vu->last_click_time = now;
+	}
+      }
+      break;
+    case GLFW_MOUSE_BUTTON_RIGHT:
+      switch (action) {
+	case GLFW_PRESS:
+	  if (vu->animate) {
+	    demo_view_toggle_animation (vu);
+	    vu->click_handled = true;
+	  }
+	  break;
+	case GLFW_RELEASE:
+	  if (!vu->animate)
+	    {
+	      if (!vu->dragged && !vu->click_handled)
+	      {
+		double now = current_time ();
+		if (now - vu->last_click_time < 0.3)
+		{
+		  demo_view_reset (vu);
+		  vu->last_click_time = 0;
+		}
+		else
+		{
+		  demo_view_toggle_animation (vu);
+		  vu->last_click_time = now;
+		}
+	      }
+	      else if (vu->dt) {
+		double speed = hypot (vu->dx, vu->dy) / vu->dt;
+		if (speed > 0.1)
+		  demo_view_toggle_animation (vu);
+	      }
+	      vu->dx = vu->dy = vu->dt = 0;
+	    }
+	  break;
+      }
+      break;
+    case GLFW_MOUSE_BUTTON_MIDDLE:
+      if (action == GLFW_RELEASE && !vu->dragged)
+	demo_view_reset (vu);
+      break;
+  }
+
+  vu->beginx = vu->lastx = x;
+  vu->beginy = vu->lasty = y;
+  vu->dragged = false;
+
+  vu->needs_redraw = true;
+}
+
+void
+demo_view_cancel_gesture (demo_view_t *vu)
+{
+  vu->click_handled = true;
+  vu->dragged = true;
+  vu->dx = vu->dy = vu->dt = 0;
+}
+
+void
+demo_view_scroll_func (demo_view_t *vu, double xoffset, double yoffset)
+{
+  double factor = pow (STEP, yoffset);
+  demo_view_scale (vu, factor, factor);
+  vu->needs_redraw = true;
+}
+
+void
+demo_view_zoom_around (demo_view_t *vu, double factor,
+		       double cx, double cy,
+		       int width, int height)
+{
+  demo_view_scale (vu, factor, factor);
+  demo_view_translate (vu,
+		       +(2. * cx / width  - 1) * (1 - factor),
+		       -(2. * cy / height - 1) * (1 - factor));
+  vu->needs_redraw = true;
+}
+
+void
+demo_view_rotate_z (demo_view_t *vu, double angle)
+{
+  float dquat[4];
+  float axis[3] = {0, 0, 1};
+  axis_to_quat (axis, (float) angle, dquat);
+  add_quats (dquat, vu->quat, vu->quat);
+  vu->needs_redraw = true;
+}
+
+void
+demo_view_rotate_z_around (demo_view_t *vu, double angle,
+			   double cx, double cy,
+			   int width, int height)
+{
+  demo_view_rotate_z (vu, angle);
+}
+
+void
+demo_view_pinch (demo_view_t *vu,
+		 double pan_dx, double pan_dy,
+		 double zoom_factor,
+		 double angle_delta,
+		 double cx, double cy,
+		 int width, int height)
+{
+  /* A natural pinch maps the previous finger frame to the current one:
+   *
+   *   x' = current_center + A * (x - previous_center)
+   *
+   * where A combines the scale and rotation deltas.  So scale / rotate
+   * around the previous centroid first, then apply the centroid drift
+   * as pan.  Using the current centroid as the pivot makes the content
+   * visibly orbit during pinch-rotate. */
+  double anchor_cx = cx - pan_dx;
+  double anchor_cy = cy - pan_dy;
+
+  /* Zoom around the previous centroid. */
+  if (zoom_factor != 1.0)
+  {
+    demo_view_scale (vu, zoom_factor, zoom_factor);
+    demo_view_translate (vu,
+			 +(2. * anchor_cx / width  - 1) * (1 - zoom_factor),
+			 -(2. * anchor_cy / height - 1) * (1 - zoom_factor));
+  }
+
+  /* Screen-space Z rotation around the previous centroid.
+   * Since screen_angle is in the same space as scale/translate,
+   * centering works the same way as zoom. */
+  if (angle_delta != 0.0)
+  {
+    vu->screen_angle += angle_delta;
+    double c = cos (-angle_delta), s = sin (-angle_delta);
+    double px = +(2. * anchor_cx / width  - 1);
+    double py = -(2. * anchor_cy / height - 1);
+    demo_view_translate (vu,
+			 px * (1 - c) + py * s,
+			 -(px * s - py * (1 - c)));
+  }
+
+  /* Pan from centroid movement after applying the pinch transform. */
+  demo_view_translate (vu,
+		       +2. * pan_dx / width,
+		       -2. * pan_dy / height);
+
+  vu->needs_redraw = true;
+}
+
+void
+demo_view_motion_func (demo_view_t *vu, double x, double y)
+{
+  vu->cursorx = x;
+  vu->cursory = y;
+
+  if (!vu->buttons)
+    return;
+
+  /* Only count as dragged if moved more than a few pixels (helps touch). */
+  if (!vu->dragged)
+  {
+    double dx = x - vu->beginx;
+    double dy = y - vu->beginy;
+    if (dx * dx + dy * dy > 25)
+      vu->dragged = true;
+    else
+      return;
+  }
+
+  int width = vu->win_width, height = vu->win_height;
+#ifndef HB_GPU_NO_GLFW
+  if (vu->window)
+    glfwGetWindowSize (vu->window, &width, &height);
+#endif
+
+  if (vu->buttons & (1 << GLFW_MOUSE_BUTTON_LEFT))
+  {
+    demo_view_translate (vu,
+			 +2 * (x - vu->lastx) / width,
+			 -2 * (y - vu->lasty) / height);
+  }
+
+  if (vu->buttons & (1 << GLFW_MOUSE_BUTTON_RIGHT))
+  {
+    if (vu->modifiers & GLFW_MOD_SHIFT) {
+      demo_view_scale_perspective (vu, 1 - ((y - vu->lasty) / height) * 5);
+    } else {
+      float dquat[4];
+      trackball (dquat,
+		 (2.0*vu->lastx -         width) / width,
+		 (       height - 2.0*vu->lasty) / height,
+		 (        2.0*x -         width) / width,
+		 (       height -         2.0*y) / height );
+
+      vu->dx = x - vu->lastx;
+      vu->dy = y - vu->lasty;
+      vu->dt = current_time () - vu->lastt;
+
+      add_quats (dquat, vu->quat, vu->quat);
+
+      if (vu->dt) {
+	vcopy (dquat, vu->rot_axis);
+	vnormal (vu->rot_axis);
+	double w = clamp ((double) dquat[3], -1.0, 1.0);
+	vu->rot_speed = 2 * acos (w) / vu->dt;
+      }
+    }
+  }
+
+  if (vu->buttons & (1 << GLFW_MOUSE_BUTTON_MIDDLE))
+  {
+    double factor = 1 - ((y - vu->lasty) / height) * 5;
+    demo_view_scale (vu, factor, factor);
+    demo_view_translate (vu,
+			 +(2. * vu->beginx / width  - 1) * (1 - factor),
+			 -(2. * vu->beginy / height - 1) * (1 - factor));
+  }
+
+  vu->lastx = x;
+  vu->lasty = y;
+  vu->lastt = current_time ();
+
+  vu->needs_redraw = true;
+}
+
+void
+demo_view_print_help (demo_view_t *vu)
+{
+  (void) vu;
+
+  LOGI ("hb-gpu-demo controls\n");
+  LOGI ("Keyboard:\n");
+  LOGI ("  Esc, q                    Quit\n");
+  LOGI ("  ?                         This help\n");
+  LOGI ("  Space                     Toggle animation\n");
+  LOGI ("  f                         Toggle fullscreen\n");
+  LOGI ("  b                         Toggle dark mode\n");
+  LOGI ("  s                         Toggle stem darkening\n");
+  LOGI ("  d                         Toggle debug heatmap\n");
+  LOGI ("  v                         Toggle vsync\n");
+  LOGI ("  =, -                      Zoom in/out\n");
+  LOGI ("  [, ]                      Stretch/shrink horizontally\n");
+  LOGI ("  {, }                      Stretch/shrink vertically\n");
+  LOGI ("  h, j, k, l                Pan (vim-style)\n");
+  LOGI ("  Arrow keys                Pan\n");
+  LOGI ("  r, Backspace              Reset view\n");
+  LOGI ("  <N><key>                  Repeat key N times (e.g. 30=)\n");
+  LOGI ("Mouse:\n");
+  LOGI ("  Left drag                 Pan\n");
+  LOGI ("  Middle drag / wheel       Zoom\n");
+  LOGI ("  Middle click              Reset view\n");
+  LOGI ("  Right drag                Rotate\n");
+  LOGI ("  Shift + right drag        Adjust perspective\n");
+  LOGI ("  Right drag and release    Spin animation\n");
+  LOGI ("  Click / tap               Toggle animation\n");
+  LOGI ("\n");
+}
+
+
+static void
+advance_frame (demo_view_t *vu, double dtime)
+{
+  if (vu->animate) {
+    float dquat[4];
+    axis_to_quat (vu->rot_axis, vu->rot_speed * dtime, dquat);
+    add_quats (dquat, vu->quat, vu->quat);
+    vu->num_frames++;
+  }
+}
+
+void
+demo_view_display (demo_view_t *vu, demo_buffer_t *buffer)
+{
+  double new_time = current_time ();
+  advance_frame (vu, new_time - vu->last_frame_time);
+  vu->last_frame_time = new_time;
+
+  if (vu->animate && vu->has_fps_timer) {
+    double now = current_time ();
+    if (now - vu->fps_timer_last >= vu->fps_timer_interval) {
+      LOGI ("%gfps\n", vu->num_frames / (now - vu->fps_start_time));
+      vu->num_frames = 0;
+      vu->fps_start_time = now;
+      vu->fps_timer_last = now;
+#ifndef HB_GPU_NO_GLFW
+      if (vu->fps_quit_after && --vu->fps_quit_after == 0 && vu->window)
+	glfwSetWindowShouldClose (vu->window, GLFW_TRUE);
+#endif
+    }
+  }
+
+  int width = vu->fb_width, height = vu->fb_height;
+#ifndef HB_GPU_NO_GLFW
+  if (vu->window)
+    glfwGetFramebufferSize (vu->window, &width, &height);
+#endif
+
+  float mat[16];
+
+  m4LoadIdentity (mat);
+
+  demo_view_apply_transform (vu, mat, width, height);
+
+  /* Apply 2D screen-space rotation from pinch (left-multiply). */
+  if (vu->screen_angle != 0.0)
+  {
+    float rot[16];
+    m4LoadIdentity (rot);
+    m4Rotate (rot, (float) (-vu->screen_angle * 180.0 / M_PI), 0, 0, 1);
+    m4MultMatrix (mat, rot);
+  }
+
+  demo_extents_t ink, logical;
+  demo_buffer_extents (buffer, &ink, &logical);
+  demo_extents_t extents = {
+    hb_min (ink.min_x, logical.min_x),
+    hb_min (ink.min_y, logical.min_y),
+    hb_max (ink.max_x, logical.max_x),
+    hb_max (ink.max_y, logical.max_y),
+  };
+  double content_scale = .9 * hb_min (width  / (extents.max_x - extents.min_x),
+					height / (extents.max_y - extents.min_y));
+  m4Scale (mat, content_scale, content_scale, 1);
+  m4Translate (mat,
+	       -(extents.max_x + extents.min_x) / 2.,
+	       -(extents.max_y + extents.min_y) / 2., 0);
+
+  unsigned int count;
+  glyph_vertex_t *verts = demo_buffer_get_vertices (buffer, &count);
+  unsigned generation = demo_buffer_get_generation (buffer);
+  vu->renderer->display (verts, count, generation, width, height, mat);
+
+  vu->needs_redraw = false;
+}
+
+void
+demo_view_setup (demo_view_t *vu)
+{
+  if (!vu->vsync)
+    demo_view_toggle_vsync (vu);
+  vu->renderer->setup ();
+  vu->renderer->set_foreground (LIGHT_FG);
+  vu->renderer->set_background (LIGHT_BG);
+  demo_view_update_gamma (vu);
+  vu->stem_darkening = true;
+  vu->renderer->set_stem_darkening (true);
+}
+
+void
+demo_view_type (demo_view_t *vu, const char *keys)
+{
+  for (const char *p = keys; *p; p++)
+  {
+    int key = (unsigned char) *p;
+    demo_view_key_func (vu, key >= 'a' && key <= 'z' ? key - 32 : key, 0, GLFW_PRESS, 0);
+    demo_view_char_func (vu, key);
+  }
+}
+
+void
+demo_view_set_fps_quit (demo_view_t *vu, int count)
+{
+  vu->fps_quit_after = count;
+}
+
+void
+demo_view_request_redraw (demo_view_t *vu)
+{
+  vu->needs_redraw = true;
+}
+
+bool
+demo_view_should_redraw (demo_view_t *vu)
+{
+  return vu->needs_redraw || vu->animate;
+}

@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SIMPLICIAL_CHOLESKY_H
 #define EIGEN_SIMPLICIAL_CHOLESKY_H
@@ -31,6 +32,37 @@ template <typename MatrixType>
 struct simplicial_cholesky_grab_input<MatrixType, MatrixType> {
   typedef MatrixType const* ConstMatrixPtr;
   static void run(const MatrixType& input, ConstMatrixPtr& pmat, MatrixType& /*tmp*/) { pmat = &input; }
+};
+
+// Compute a fill-reducing permutation for SimplicialCholesky. The generic path
+// builds the full Scalar-valued symmetric matrix that the user's OrderingType
+// expects. The AMDOrdering specialization below skips that copy: AMD reads
+// only the sparsity pattern, so we can hand it a SparseSelfAdjointView<UpLo>
+// whose pattern-only overload materializes the underlying triangle as
+// SparseMatrix<signed char> and expands once.
+template <bool UseAMDFastPath>
+struct simplicial_cholesky_amd_dispatch {
+  template <int UpLo_, bool NonHermitian, typename Ordering, typename MatrixType, typename CholMatrixType,
+            typename Perm>
+  static void run(const MatrixType& a, CholMatrixType& C, Perm& perm) {
+    permute_symm_to_fullsymm<UpLo_, NonHermitian>(a, C, NULL);
+    Ordering ordering;
+    ordering(C, perm);
+  }
+};
+
+template <>
+struct simplicial_cholesky_amd_dispatch<true> {
+  template <int UpLo_, bool /*NonHermitian*/, typename Ordering, typename MatrixType, typename CholMatrixType,
+            typename Perm>
+  static void run(const MatrixType& a, CholMatrixType& /*C*/, Perm& perm) {
+    // Pattern-only: works for both Hermitian and NonHermitian variants because
+    // AMD's selfadjointView overload never reads scalar values, so the
+    // selfadjoint-vs-symmetric distinction (which only affects value
+    // expansion) is irrelevant.
+    Ordering ordering;
+    ordering(a.template selfadjointView<UpLo_>(), perm);
+  }
 };
 }  // end namespace internal
 
@@ -835,13 +867,12 @@ void SimplicialCholeskyBase<Derived>::ordering(const MatrixType& a, ConstCholMat
   const Index size = a.rows();
   pmat = &ap;
   // Note that ordering methods compute the inverse permutation
-  if (!internal::is_same<OrderingType, NaturalOrdering<StorageIndex> >::value) {
+  EIGEN_IF_CONSTEXPR((!std::is_same<OrderingType, NaturalOrdering<StorageIndex> >::value)) {
     {
       CholMatrixType C;
-      internal::permute_symm_to_fullsymm<UpLo, NonHermitian>(a, C, NULL);
-
-      OrderingType ordering;
-      ordering(C, m_Pinv);
+      constexpr bool kUseAMDFastPath = std::is_same<OrderingType, AMDOrdering<StorageIndex> >::value;
+      internal::simplicial_cholesky_amd_dispatch<kUseAMDFastPath>::template run<UpLo, NonHermitian, OrderingType>(
+          a, C, m_Pinv);
     }
 
     if (m_Pinv.size() > 0)
@@ -851,15 +882,16 @@ void SimplicialCholeskyBase<Derived>::ordering(const MatrixType& a, ConstCholMat
 
     ap.resize(size, size);
     internal::permute_symm_to_symm<UpLo, Upper, NonHermitian>(a, ap, m_P.indices().data());
-  } else {
+  }
+  else {
     m_Pinv.resize(0);
     m_P.resize(0);
-    if (int(UpLo) == int(Lower) || MatrixType::IsRowMajor) {
+    EIGEN_IF_CONSTEXPR(int(UpLo) == int(Lower) || MatrixType::IsRowMajor) {
       // we have to transpose the lower part to to the upper one
       ap.resize(size, size);
       internal::permute_symm_to_symm<UpLo, Upper, NonHermitian>(a, ap, NULL);
-    } else
-      internal::simplicial_cholesky_grab_input<CholMatrixType, MatrixType>::run(a, pmat, ap);
+    }
+    else internal::simplicial_cholesky_grab_input<CholMatrixType, MatrixType>::run(a, pmat, ap);
   }
 }
 

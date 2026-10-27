@@ -206,7 +206,6 @@ mojom("mojom_platform") {
     "renderer_preference_watcher.mojom",
     "renderer_preferences.mojom",
     "reporting/reporting.mojom",
-    "rtc_logging/rtc_logging.mojom",
     "safe_url_pattern.mojom",
     "scheduler/web_scheduler_tracked_feature.mojom",
     "script_source_location.mojom",
@@ -251,8 +250,10 @@ mojom("mojom_platform") {
     "web_launch/web_launch.mojom",
     "webaudio/audio_context_manager.mojom",
     "webid/digital_identity_request.mojom",
+    "webid/email_verification_request.mojom",
     "webid/federated_auth_request.mojom",
     "webpreferences/web_preferences.mojom",
+    "webrtc/rtc_logging.mojom",
     "websockets/websocket_connector.mojom",
     "webtransport/web_transport_connector.mojom",
     "widget/device_emulation_params.mojom",
@@ -481,7 +482,7 @@ mojom("mojom_platform") {
           cpp = "::blink::VisibleTimeEvent"
         },
       ]
-      traits_headers = [ "//third_party/blink/public/common/page/content_to_visible_time_request_mojom_traits.h" ]
+      traits_headers = [ "//third_party/blink/public/common/page/record_content_to_visible_time_request_mojom_traits.h" ]
       traits_public_deps = [ "//third_party/blink/public/common:headers" ]
     },
     {
@@ -1062,6 +1063,17 @@ mojom("mojom_platform") {
       traits_sources =
           [ "//third_party/blink/common/user_agent/user_agent_mojom_traits.cc" ]
     },
+    {
+      types = [
+        {
+          mojom = "blink.mojom.RTCMetadata"
+          cpp = "::base::flat_map<::std::string, ::std::string>"
+        },
+      ]
+      traits_headers = [
+        "//third_party/blink/public/common/webrtc/rtc_logging_mojom_traits.h",
+      ]
+    },
   ]
   if (is_chromeos && use_cups) {
     cpp_typemaps += [
@@ -1112,6 +1124,8 @@ mojom("mojom_platform") {
       traits_headers =
           [ "//third_party/blink/renderer/platform/mojo/drag_mojom_traits.h" ]
     },
+  ]
+  blink_cpp_typemaps += [
     {
       types = [
         {
@@ -1132,7 +1146,7 @@ mojom("mojom_platform") {
       types = [
         {
           mojom = "blink.mojom.FetchAPIRequestHeaders"
-          cpp = "::blink::HashMap<::blink::String, ::blink::String, ::blink::CaseFoldingHashTraits<::blink::String>>"
+          cpp = "::blink::HashMap<::blink::String, ::blink::String, ::blink::DeprecatedCaseFoldingHashTraits<::blink::String>>"
           move_only = true
         },
       ]
@@ -1142,7 +1156,8 @@ mojom("mojom_platform") {
     {
       # Note: This Locale typemap is intentionally duplicated in both
       # cpp_typemaps and blink_cpp_typemaps. The Blink variant includes
-      # icu_locale_hash_traits.h to enable using icu::Locale as a WTF::HashMap key.
+      # icu_locale_hash_traits.h to enable using icu::Locale as a WTF::HashMap
+      # key.
       types = [
         {
           mojom = "blink.mojom.Locale"
@@ -1154,6 +1169,15 @@ mojom("mojom_platform") {
         "//third_party/blink/public/common/manifest/manifest_mojom_traits.h",
       ]
       traits_public_deps = [ "//third_party/icu" ]
+    },
+    {
+      types = [
+        {
+          mojom = "blink.mojom.RTCMetadata"
+          cpp = "::blink::HashMap<::blink::String, ::blink::String>"
+        },
+      ]
+      traits_headers = [ "//third_party/blink/renderer/platform/webrtc/rtc_logging_mojom_traits.h" ]
     },
   ]
   cpp_typemaps += shared_cpp_typemaps
@@ -1196,6 +1220,7 @@ mojom("android_mojo_bindings") {
     "installedapp/installed_app_provider.mojom",
     "installedapp/related_application.mojom",
     "mediasession/media_session.mojom",
+    "payments/payment_app_events.mojom",
     "payments/payment_handler_host.mojom",
     "payments/payment_request.mojom",
     "payments/secure_payment_confirmation_service.mojom",
@@ -1222,7 +1247,8 @@ mojom("android_mojo_bindings") {
   # from) for the case of generating the v8 context snapshot for android. When
   # generating the snapshot for android, blink is compiled with
   # current_os="linux" and target_os="android". Using target_os is necessary as
-  # we need to compile in the same way as would happen when current_os="android".
+  # we need to compile in the same way as would happen when
+  # current_os="android".
   if (target_os_is_android) {
     sources += [ "remote_objects/remote_objects.mojom" ]
 
@@ -1304,7 +1330,6 @@ mojom("mojom_core") {
     "frame/remote_frame.mojom",
     "frame/reporting_observer.mojom",
     "frame/sudden_termination_disabler_type.mojom",
-    "frame/text_autosizer_page_info.mojom",
     "frame/tree_scope_type.mojom",
     "frame/triggering_event_info.mojom",
     "frame/user_activation_notification_type.mojom",

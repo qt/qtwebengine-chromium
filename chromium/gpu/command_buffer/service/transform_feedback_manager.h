@@ -59,6 +59,8 @@ class GPU_GLES2_EXPORT TransformFeedback : public IndexedBufferBindingHost {
     return paused_;
   }
 
+  bool AttachedBuffersAreLocked() const override;
+
   void SetActiveProgram(Program* program);
   void ClearActiveProgram();
 
@@ -104,6 +106,22 @@ class GPU_GLES2_EXPORT TransformFeedback : public IndexedBufferBindingHost {
   GLsizei vertices_drawn_;
 
   scoped_refptr<Program> active_program_;
+};
+
+class GPU_GLES2_EXPORT ScopedPauseResumeTransformFeedback {
+ public:
+  explicit ScopedPauseResumeTransformFeedback(
+      TransformFeedback* transform_feedback);
+
+  ScopedPauseResumeTransformFeedback(
+      const ScopedPauseResumeTransformFeedback&) = delete;
+  ScopedPauseResumeTransformFeedback& operator=(
+      const ScopedPauseResumeTransformFeedback&) = delete;
+
+  ~ScopedPauseResumeTransformFeedback();
+
+ private:
+  raw_ptr<TransformFeedback> transform_feedback_;
 };
 
 // This class keeps tracks of the transform feedbacks and their states.

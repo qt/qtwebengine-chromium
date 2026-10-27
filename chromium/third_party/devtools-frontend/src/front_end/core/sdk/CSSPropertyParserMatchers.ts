@@ -739,8 +739,10 @@ export const enum LinkableNameProperties {
   ANIMATION = 'animation',
   ANIMATION_NAME = 'animation-name',
   FONT_PALETTE = 'font-palette',
-  POSITION_TRY_FALLBACKS = 'position-try-fallbacks',
+  LIST_STYLE = 'list-style',
+  LIST_STYLE_TYPE = 'list-style-type',
   POSITION_TRY = 'position-try',
+  POSITION_TRY_FALLBACKS = 'position-try-fallbacks',
 }
 
 const enum AnimationLonghandPart {
@@ -765,8 +767,10 @@ export class LinkableNameMatcher extends matcherBase(LinkableNameMatch) {
       LinkableNameProperties.ANIMATION,
       LinkableNameProperties.ANIMATION_NAME,
       LinkableNameProperties.FONT_PALETTE,
-      LinkableNameProperties.POSITION_TRY_FALLBACKS,
+      LinkableNameProperties.LIST_STYLE,
+      LinkableNameProperties.LIST_STYLE_TYPE,
       LinkableNameProperties.POSITION_TRY,
+      LinkableNameProperties.POSITION_TRY_FALLBACKS,
     ];
     return names.includes(propertyName);
   }
@@ -867,6 +871,11 @@ export class LinkableNameMatcher extends matcherBase(LinkableNameMatch) {
       return null;
     }
 
+    // If it is a builtin keyword value, it is not linkable.
+    if (cssMetadata().getPropertyValues(propertyName).includes(text)) {
+      return null;
+    }
+
     if (propertyName === 'animation') {
       return this.matchAnimationNameInShorthand(node, matching);
     }
@@ -942,36 +951,6 @@ export class ShadowMatcher extends matcherBase(ShadowMatch) {
     const valueText = matching.ast.textRange(valueNodes[0], valueNodes[valueNodes.length - 1]);
     return new ShadowMatch(
         valueText, node, matching.ast.propertyName === 'text-shadow' ? ShadowType.TEXT_SHADOW : ShadowType.BOX_SHADOW);
-  }
-}
-
-export class FontMatch implements Match {
-  constructor(readonly text: string, readonly node: CodeMirror.SyntaxNode) {
-  }
-}
-
-// clang-format off
-export class FontMatcher extends matcherBase(FontMatch) {
-  // clang-format on
-  override accepts(propertyName: string): boolean {
-    return cssMetadata().isFontAwareProperty(propertyName);
-  }
-  override matches(node: CodeMirror.SyntaxNode, matching: BottomUpTreeMatching): Match|null {
-    if (node.name !== 'Declaration') {
-      return null;
-    }
-    const valueNodes = ASTUtils.siblings(ASTUtils.declValue(node));
-    if (valueNodes.length === 0) {
-      return null;
-    }
-    const validNodes = matching.ast.propertyName === 'font-family' ? ['ValueName', 'StringLiteral', 'Comment', ','] :
-                                                                     ['Comment', 'ValueName', 'NumberLiteral'];
-
-    if (valueNodes.some(node => !validNodes.includes(node.name))) {
-      return null;
-    }
-    const valueText = matching.ast.textRange(valueNodes[0], valueNodes[valueNodes.length - 1]);
-    return new FontMatch(valueText, node);
   }
 }
 

@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_COMPANION_H
 #define EIGEN_COMPANION_H
@@ -24,9 +25,7 @@ namespace internal {
 #ifndef EIGEN_PARSED_BY_DOXYGEN
 
 template <int Size>
-struct decrement_if_fixed_size {
-  enum { ret = (Size == Dynamic) ? Dynamic : Size - 1 };
-};
+struct decrement_if_fixed_size : std::integral_constant<int, (Size == Dynamic) ? Dynamic : Size - 1> {};
 
 #endif
 
@@ -35,7 +34,7 @@ class companion {
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW_IF_VECTORIZABLE_FIXED_SIZE(Scalar_, Deg_ == Dynamic ? Dynamic : Deg_)
 
-  enum { Deg = Deg_, Deg_1 = decrement_if_fixed_size<Deg>::ret };
+  enum { Deg = Deg_, Deg_1 = decrement_if_fixed_size<Deg>::value };
 
   typedef Scalar_ Scalar;
   typedef typename NumTraits<Scalar>::Real RealScalar;

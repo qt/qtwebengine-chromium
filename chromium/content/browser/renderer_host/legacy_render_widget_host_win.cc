@@ -4,8 +4,9 @@
 
 #include "content/browser/renderer_host/legacy_render_widget_host_win.h"
 
-#include <windows.h>
 #include <objbase.h>
+
+#include <windows.h>
 
 #include <memory>
 #include <utility>
@@ -16,7 +17,10 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/trace_event/typed_macros.h"
+#include "base/tracing/protos/chrome_track_event.pbzero.h"
 #include "base/win/win_util.h"
+#include "base/win/windowsx_shim.h"
 #include "base/win/wrapped_window_proc.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/renderer_host/direct_manipulation_helper_win.h"
@@ -294,6 +298,13 @@ bool LegacyRenderWidgetHostHWND::InitOrDeleteSelf(HWND parent) {
   ui::AXMode mode =
       BrowserAccessibilityStateImpl::GetInstance()->GetAccessibilityMode();
   if (!mode.has_mode(ui::AXMode::kWebContents)) {
+    TRACE_EVENT(
+        "accessibility", "NotifyWinEvent", [&](perfetto::EventContext ctx) {
+          auto* event = ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>();
+          auto* accessibility_event =
+              event->set_chrome_accessibility_win_notify_win_event();
+          accessibility_event->set_native_event(EVENT_SYSTEM_ALERT);
+        });
     // Attempt to detect screen readers or other clients who want full
     // accessibility support, by seeing if they respond to this event.
     NotifyWinEvent(EVENT_SYSTEM_ALERT, hwnd(), kIdScreenReaderHoneyPot,
@@ -372,6 +383,7 @@ LRESULT LegacyRenderWidgetHostHWND::OnGetObject(UINT message,
 
   switch (obj_id) {
     case UiaRootObjectId:
+      ui::AXPlatform::GetInstance().SetUiaRequested();
       if (ui::AXPlatform::GetInstance().IsUiaProviderEnabled()) {
         // Return the IRawElementProviderSimple for the window's client area to
         // a UI Automation client.
@@ -389,6 +401,7 @@ LRESULT LegacyRenderWidgetHostHWND::OnGetObject(UINT message,
       break;
 
     case OBJID_CLIENT:
+      ui::AXPlatform::GetInstance().SetMsaaRequested();
       // Return the IAccessible for the web content to an MSAA client.
       if (IAccessible* root =
               GetOrCreateWindowRootAccessible(/*is_uia_request=*/false)) {
@@ -702,6 +715,14 @@ LRESULT LegacyRenderWidgetHostHWND::OnNCHitTest(UINT message,
     // If the parent returns HTNOWHERE which can happen for popup windows, etc,
     // return HTCLIENT.
     return HTCLIENT;
+  }
+  if (hit_test == HTMAXBUTTON) {
+    // If the legacy HWND geometrically overlaps the caption buttons, which
+    // happens when the client area extends to the top of the window (e.g. PWAs
+    // with Window Controls Overlay enabled), return HTTRANSPARENT so
+    // Windows passes messages through to the parent HWND, enabling proper hover
+    // highlighting on the maximize/restore buttons with Win11 snap layouts.
+    return HTTRANSPARENT;
   }
   return hit_test;
 }

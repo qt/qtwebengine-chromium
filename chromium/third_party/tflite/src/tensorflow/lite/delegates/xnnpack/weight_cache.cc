@@ -16,8 +16,6 @@ limitations under the License.
 
 #include <fcntl.h>
 
-#include "tensorflow/lite/logger.h"
-#include "tensorflow/lite/minimal_logging.h"
 #if defined(_MSC_VER)
 #include <io.h>
 #define F_OK 0
@@ -33,6 +31,7 @@ limitations under the License.
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -47,6 +46,8 @@ limitations under the License.
 #include "tensorflow/lite/delegates/xnnpack/macros.h"
 #include "tensorflow/lite/delegates/xnnpack/mmap_handle.h"
 #include "tensorflow/lite/delegates/xnnpack/weight_cache_schema_generated.h"
+#include "tensorflow/lite/logger.h"
+#include "tensorflow/lite/minimal_logging.h"
 
 namespace tflite::xnnpack {
 
@@ -94,7 +95,8 @@ bool CheckFingerprints(const cache::schema::BufferList* buffer_list) {
       std::memcpy(&fingerprint, &cache_fingerprint, sizeof(fingerprint));
       XNNPACK_RETURN_CHECK(
           xnn_check_fingerprint(fingerprint) == xnn_status_success,
-          "fingerprint (id: 0x%x) could not be matched", fingerprint.id);
+          "fingerprint %s could not be matched",
+          xnn_fingerprint_id_to_string_u32(fingerprint.id));
     }
   }
   return true;
@@ -158,7 +160,7 @@ bool WeightCacheBuilder::Start(const char* path, const FileDescriptor& fd) {
 
 bool WeightCacheBuilder::StartBuildStep() {
   XNNPACK_RETURN_CHECK(IsStarted(),
-                       "Trying to start a build step in an invalid builder.")
+                       "Trying to start a build step in an invalid builder.");
   XNNPACK_RETURN_CHECK(!is_build_step_.exchange(true),
                        "Failed to start build step: already started. This may "
                        "be a concurrency issue.");
@@ -241,8 +243,8 @@ BufferLocation WeightCacheBuilder::Append(PackIdentifier pack_id,
   const xnn_fingerprint* fingerprint = xnn_get_fingerprint(fingerprint_id);
   XNNPACK_ABORT_CHECK(fingerprint,
                       "XNNPack weight cache: could not find a fingerprint with "
-                      "id 0x%x when appending a buffer to the cache file.",
-                      fingerprint_id);
+                      "id %s when appending a buffer to the cache file.",
+                      xnn_fingerprint_id_to_string_u32(fingerprint_id));
   uint64_t fingerprint_value;
   static_assert(sizeof(fingerprint_value) == sizeof(*fingerprint));
   std::memcpy(&fingerprint_value, fingerprint, sizeof(*fingerprint));
@@ -331,9 +333,9 @@ void* CacheMissHandler::Reserve(size_t size) {
   return buffers_.back().ptr;
 }
 
-BufferLocation CacheMissHandler::Append(PackIdentifier pack_id,
-                                        const void* data, uint64_t size,
-                                        int fingerprint_id) {
+BufferLocation CacheMissHandler::Append(
+    PackIdentifier pack_id, const void* data, uint64_t size, int fingerprint_id,
+    std::map<size_t, void*>& offset_to_addr) {
   auto buf_it =
       std::find_if(buffers_.rbegin(), buffers_.rend(),
                    [data](const auto& buf) { return buf.ptr == data; });
@@ -344,6 +346,7 @@ BufferLocation CacheMissHandler::Append(PackIdentifier pack_id,
   }
   buf_it->used = true;
   ++append_count_;
+  offset_to_addr.insert({buf_it->loc.offset, static_cast<void*>(buf_it->ptr)});
   return buf_it->loc;
 }
 
@@ -715,8 +718,8 @@ size_t MMapWeightCacheProvider::LookUpOrInsert(
   const BufferLocation location =
       builder_.IsBuilding()
           ? builder_.Append(pack_id, ptr, size, cache_key->fingerprint_id)
-          : cache_miss_handler_.Append(pack_id, ptr, size,
-                                       cache_key->fingerprint_id);
+          : cache_miss_handler_.Append(
+                pack_id, ptr, size, cache_key->fingerprint_id, offset_to_addr_);
   XNNPACK_ABORT_CHECK(!location.IsInvalid(),
                       "Inserting data in the cache failed.");
   cache_key_to_offset_.emplace(pack_id, location);
@@ -740,8 +743,9 @@ void* MMapWeightCacheProvider::OffsetToAddr(const size_t offset) {
   // reallocated so we cannot ensure pointer stability.
   auto it = offset_to_addr_.find(offset);
   XNNPACK_ABORT_CHECK(it != offset_to_addr_.end(),
-                      "Cannot get the address of a buffer in a cache before "
-                      "the build step that introduces it has finished.");
+                      "No address is mapped to the given offset. This is a "
+                      "critical error that should not happen. Check that the "
+                      "model hasn't changed since the cache was created.");
   return it->second;
 }
 

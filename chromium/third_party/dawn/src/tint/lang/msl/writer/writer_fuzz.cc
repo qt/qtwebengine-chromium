@@ -28,7 +28,7 @@
 #include <iostream>
 
 #include "src/tint/api/helpers/generate_bindings.h"
-#include "src/tint/cmd/fuzz/ir/fuzz.h"
+#include "src/tint/cmd/fuzz/common/ir_fuzzer.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/var.h"
 #include "src/tint/lang/msl/writer/printer/printer.h"
@@ -62,7 +62,9 @@ struct FuzzedOptions {
     SubstituteOverridesConfig substitute_overrides_config;
     bool polyfill_tanh_f16;
     bool replace_workgroup_bool_with_u32;
+    bool polyfill_sample_mask;
     bool collapse_subgroup_min_max;
+    bool fix_u32_div_mod;
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
     TINT_REFLECT(FuzzedOptions,
@@ -85,7 +87,9 @@ struct FuzzedOptions {
                  substitute_overrides_config,
                  polyfill_tanh_f16,
                  replace_workgroup_bool_with_u32,
-                 collapse_subgroup_min_max);
+                 polyfill_sample_mask,
+                 collapse_subgroup_min_max,
+                 fix_u32_div_mod);
     TINT_REFLECT_HASH_CODE(FuzzedOptions);
 };
 
@@ -133,12 +137,14 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
     options.workarounds.polyfill_tanh_f16 = fuzzed_options.polyfill_tanh_f16;
     options.workarounds.replace_workgroup_bool_with_u32 =
         fuzzed_options.replace_workgroup_bool_with_u32;
+    options.polyfill_sample_mask = fuzzed_options.polyfill_sample_mask;
     options.workarounds.collapse_subgroup_min_max = fuzzed_options.collapse_subgroup_min_max;
     options.fixed_sample_mask = fuzzed_options.fixed_sample_mask;
     options.pixel_local_attachments = fuzzed_options.pixel_local_attachments;
     options.vertex_pulling_config = fuzzed_options.vertex_pulling_config;
     options.group_to_argument_buffer_info = fuzzed_options.group_to_argument_buffer_info;
     options.substitute_overrides_config = fuzzed_options.substitute_overrides_config;
+    options.workarounds.fix_u32_div_mod = fuzzed_options.fix_u32_div_mod;
 
     options.bindings = GenerateBindings(module, ep_name, false, false);
     options.immediate_binding_point = BindingPoint(0, 30);
@@ -169,6 +175,10 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
 }  // namespace
 }  // namespace tint::msl::writer
 
+constexpr auto kUnsupportedProperties = tint::core::ir::Properties{
+    tint::core::ir::Property::kAllowOverrides,
+};
 TINT_IR_MODULE_FUZZER(tint::msl::writer::IRFuzzer,
                       tint::core::ir::Capabilities{},
-                      tint::msl::writer::kPrinterCapabilities);
+                      tint::msl::writer::kPrinterCapabilities,
+                      kUnsupportedProperties);

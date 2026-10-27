@@ -31,15 +31,15 @@
 #include <bitset>
 #include <string>
 
-#include "dawn/common/Constants.h"
-#include "dawn/native/AttachmentState.h"
-#include "dawn/native/CommandAllocator.h"
-#include "dawn/native/Error.h"
-#include "dawn/native/Forward.h"
-#include "dawn/native/IndirectDrawMetadata.h"
-#include "dawn/native/ObjectBase.h"
-#include "dawn/native/PassResourceUsage.h"
-#include "dawn/native/dawn_platform.h"
+#include "src/dawn/common/Constants.h"
+#include "src/dawn/native/AttachmentState.h"
+#include "src/dawn/native/CommandAllocator.h"
+#include "src/dawn/native/Error.h"
+#include "src/dawn/native/Forward.h"
+#include "src/dawn/native/IndirectDrawMetadata.h"
+#include "src/dawn/native/ObjectBase.h"
+#include "src/dawn/native/PassResourceUsage.h"
+#include "src/dawn/native/dawn_platform.h"
 
 namespace dawn::native {
 
@@ -82,9 +82,9 @@ class RenderBundleBase : public ApiObjectBase {
     CommandIterator mCommands;
     IndirectDrawMetadata mIndirectDrawMetadata;
     Ref<AttachmentState> mAttachmentState;
-    bool mDepthReadOnly;
-    bool mStencilReadOnly;
-    uint64_t mDrawCount;
+    bool mDepthReadOnly = false;
+    bool mStencilReadOnly = false;
+    uint64_t mDrawCount = 0;
     RenderPassResourceUsage mResourceUsage;
     std::string mEncoderLabel;
 };

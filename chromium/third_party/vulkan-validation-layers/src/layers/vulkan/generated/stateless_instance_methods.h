@@ -383,6 +383,10 @@ bool PreCallValidateGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropert
     const VkPhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM* pQueueFamilyDataGraphProcessingEngineInfo,
     VkQueueFamilyDataGraphProcessingEnginePropertiesARM* pQueueFamilyDataGraphProcessingEngineProperties,
     const ErrorObject& error_obj) const override;
+bool PreCallValidateGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+    const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, VkBaseOutStructure* pProperties,
+    const ErrorObject& error_obj) const override;
 #ifdef VK_USE_PLATFORM_OHOS
 bool PreCallValidateCreateSurfaceOHOS(VkInstance instance, const VkSurfaceCreateInfoOHOS* pCreateInfo,
                                       const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
@@ -397,6 +401,11 @@ bool PreCallValidateEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegio
 bool PreCallValidateEnumeratePhysicalDeviceShaderInstrumentationMetricsARM(
     VkPhysicalDevice physicalDevice, uint32_t* pDescriptionCount, VkShaderInstrumentationMetricDescriptionARM* pDescriptions,
     const ErrorObject& error_obj) const override;
+bool PreCallValidateGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+    const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties,
+    const VkDataGraphOpticalFlowImageFormatInfoARM* pOpticalFlowImageFormatInfo, uint32_t* pFormatCount,
+    VkDataGraphOpticalFlowImageFormatPropertiesARM* pImageFormatProperties, const ErrorObject& error_obj) const override;
 #ifdef VK_USE_PLATFORM_UBM_SEC
 bool PreCallValidateCreateUbmSurfaceSEC(VkInstance instance, const VkUbmSurfaceCreateInfoSEC* pCreateInfo,
                                         const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,

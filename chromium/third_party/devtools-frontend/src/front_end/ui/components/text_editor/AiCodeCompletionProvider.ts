@@ -5,6 +5,7 @@
 import * as Common from '../../../core/common/common.js';
 import * as Host from '../../../core/host/host.js';
 import * as i18n from '../../../core/i18n/i18n.js';
+import * as Root from '../../../core/root/root.js';
 import * as AiCodeCompletion from '../../../models/ai_code_completion/ai_code_completion.js';
 import * as AiCodeGeneration from '../../../models/ai_code_generation/ai_code_generation.js';
 import * as PanelCommon from '../../../panels/common/common.js';
@@ -80,12 +81,11 @@ export class AiCodeCompletionProvider {
   #boundOnUpdateAiCodeCompletionState = this.#updateAiCodeCompletionState.bind(this);
 
   private constructor(aiCodeCompletionConfig: AiCodeCompletionConfig) {
-    const devtoolsLocale = i18n.DevToolsLocale.DevToolsLocale.instance();
-    if (!AiCodeCompletion.AiCodeCompletion.AiCodeCompletion.isAiCodeCompletionEnabled(devtoolsLocale.locale)) {
-      throw new Error('AI code completion feature is not enabled.');
+    if (!AiCodeCompletion.AiCodeCompletion.AiCodeCompletion.isAiCodeCompletionAvailable()) {
+      throw new Error('AI code completion feature is not available.');
     }
     this.#aiCodeCompletionConfig = aiCodeCompletionConfig;
-    if (AiCodeGeneration.AiCodeGeneration.AiCodeGeneration.isAiCodeGenerationEnabled(devtoolsLocale.locale)) {
+    if (AiCodeGeneration.AiCodeGeneration.AiCodeGeneration.isAiCodeGenerationAvailable()) {
       this.#aiCodeGenerationConfig = {
         generationContext: {
           inferenceLanguage: this.#aiCodeCompletionConfig.completionContext.inferenceLanguage,
@@ -134,6 +134,7 @@ export class AiCodeCompletionProvider {
     if (!this.#aiCodeCompletionSetting.get() && !this.#aiCodeCompletionTeaserDismissedSetting.get()) {
       this.#teaser = new PanelCommon.AiCodeCompletionTeaser({
         onDetach: () => this.#detachTeaser.bind(this),
+        panel: this.#aiCodeCompletionConfig?.panel,
       });
       this.#editor.editor.dispatch(
           {effects: this.#teaserCompartment.reconfigure([aiCodeCompletionTeaserExtension(this.#teaser)])});
@@ -158,8 +159,11 @@ export class AiCodeCompletionProvider {
       return;
     }
     this.#aiCodeCompletion = new AiCodeCompletion.AiCodeCompletion.AiCodeCompletion(
-        {aidaClient: this.#aidaClient}, this.#aiCodeCompletionConfig.panel, undefined,
-        this.#aiCodeCompletionConfig.completionContext.stopSequences);
+        {
+          aidaClient: this.#aidaClient,
+          serverSideLoggingEnabled: !Root.Runtime.hostConfig.aidaAvailability?.disallowLogging,
+        },
+        this.#aiCodeCompletionConfig.panel, undefined, this.#aiCodeCompletionConfig.completionContext.stopSequences);
     this.#aiCodeCompletionConfig.onFeatureEnabled();
   }
 
@@ -182,17 +186,23 @@ export class AiCodeCompletionProvider {
   async #updateAiCodeCompletionState(): Promise<void> {
     const aidaAvailability = await Host.AidaClient.AidaClient.checkAccessPreconditions();
     const isAvailable = aidaAvailability === Host.AidaClient.AidaAccessPreconditions.AVAILABLE;
-    const isEnabled = this.#aiCodeCompletionSetting.get();
-    if (isAvailable && isEnabled) {
-      this.#detachTeaser();
-      this.#setupAiCodeCompletion();
-    } else if (isAvailable && !isEnabled) {
-      if (this.#teaser && !this.#aiCodeCompletionTeaserDismissedSetting.get()) {
-        this.#editor?.editor.dispatch(
-            {effects: this.#teaserCompartment.reconfigure([aiCodeCompletionTeaserExtension(this.#teaser)])});
+    const devtoolsLocale = i18n.DevToolsLocale.DevToolsLocale.instance().locale;
+    const aiCodeCompletionEnabled =
+        AiCodeCompletion.AiCodeCompletion.AiCodeCompletion.isAiCodeCompletionEnabled(devtoolsLocale);
+    const isSettingEnabled = this.#aiCodeCompletionSetting.get();
+
+    if (isAvailable && aiCodeCompletionEnabled) {
+      if (isSettingEnabled) {
+        this.#detachTeaser();
+        this.#setupAiCodeCompletion();
+      } else {
+        if (this.#teaser && !this.#aiCodeCompletionTeaserDismissedSetting.get()) {
+          this.#editor?.editor.dispatch(
+              {effects: this.#teaserCompartment.reconfigure([aiCodeCompletionTeaserExtension(this.#teaser)])});
+        }
+        this.#cleanupAiCodeCompletion();
       }
-      this.#cleanupAiCodeCompletion();
-    } else if (!isAvailable) {
+    } else {
       this.#detachTeaser();
       this.#cleanupAiCodeCompletion();
     }
@@ -311,7 +321,12 @@ export class AiCodeCompletionProvider {
     const startTime = performance.now();
     this.#aiCodeCompletionConfig?.onRequestTriggered();
     // Registering AiCodeCompletionRequestTriggered metric even if the request is served from cache
-    Host.userMetrics.actionTaken(Host.UserMetrics.Action.AiCodeCompletionRequestTriggered);
+    const panel = this.#aiCodeCompletionConfig?.panel;
+    if (panel === AiCodeCompletion.AiCodeCompletion.ContextFlavor.CONSOLE) {
+      Host.userMetrics.actionTaken(Host.UserMetrics.Action.AiCodeCompletionRequestTriggeredFromConsole);
+    } else if (panel === AiCodeCompletion.AiCodeCompletion.ContextFlavor.SOURCES) {
+      Host.userMetrics.actionTaken(Host.UserMetrics.Action.AiCodeCompletionRequestTriggeredFromSources);
+    }
 
     try {
       const completionResponse = await this.#aiCodeCompletion.completeCode(

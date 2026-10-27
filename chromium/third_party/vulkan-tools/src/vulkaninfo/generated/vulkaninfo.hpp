@@ -1178,6 +1178,8 @@ std::string VkDriverIdString(VkDriverId value) {
             return "DRIVER_ID_VULKAN_SC_EMULATION_ON_VULKAN";
         case (VK_DRIVER_ID_MESA_KOSMICKRISP):
             return "DRIVER_ID_MESA_KOSMICKRISP";
+        case (VK_DRIVER_ID_MESA_GFXSTREAM):
+            return "DRIVER_ID_MESA_GFXSTREAM";
         default:
             return std::string("UNKNOWN_VkDriverId_value") + std::to_string(value);
     }
@@ -2509,6 +2511,7 @@ std::vector<const char *> VkFormatFeatureFlagBits2GetStrings(VkFormatFeatureFlag
         strings.push_back("FORMAT_FEATURE_2_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR");
     if (VK_FORMAT_FEATURE_2_VIDEO_ENCODE_INPUT_BIT_KHR & value) strings.push_back("FORMAT_FEATURE_2_VIDEO_ENCODE_INPUT_BIT_KHR");
     if (VK_FORMAT_FEATURE_2_VIDEO_ENCODE_DPB_BIT_KHR & value) strings.push_back("FORMAT_FEATURE_2_VIDEO_ENCODE_DPB_BIT_KHR");
+    if (VK_FORMAT_FEATURE_2_BLOCK_MATCHING_SXD_BIT_QCOM & value) strings.push_back("FORMAT_FEATURE_2_BLOCK_MATCHING_SXD_BIT_QCOM");
     if (VK_FORMAT_FEATURE_2_ACCELERATION_STRUCTURE_RADIUS_BUFFER_BIT_NV & value)
         strings.push_back("FORMAT_FEATURE_2_ACCELERATION_STRUCTURE_RADIUS_BUFFER_BIT_NV");
     if (VK_FORMAT_FEATURE_2_LINEAR_COLOR_ATTACHMENT_BIT_NV & value)
@@ -2539,6 +2542,12 @@ std::vector<const char *> VkFormatFeatureFlagBits2GetStrings(VkFormatFeatureFlag
         strings.push_back("FORMAT_FEATURE_2_STENCIL_COPY_ON_COMPUTE_QUEUE_BIT_KHR");
     if (VK_FORMAT_FEATURE_2_STENCIL_COPY_ON_TRANSFER_QUEUE_BIT_KHR & value)
         strings.push_back("FORMAT_FEATURE_2_STENCIL_COPY_ON_TRANSFER_QUEUE_BIT_KHR");
+    if (VK_FORMAT_FEATURE_2_DATA_GRAPH_OPTICAL_FLOW_IMAGE_BIT_ARM & value)
+        strings.push_back("FORMAT_FEATURE_2_DATA_GRAPH_OPTICAL_FLOW_IMAGE_BIT_ARM");
+    if (VK_FORMAT_FEATURE_2_DATA_GRAPH_OPTICAL_FLOW_VECTOR_BIT_ARM & value)
+        strings.push_back("FORMAT_FEATURE_2_DATA_GRAPH_OPTICAL_FLOW_VECTOR_BIT_ARM");
+    if (VK_FORMAT_FEATURE_2_DATA_GRAPH_OPTICAL_FLOW_COST_BIT_ARM & value)
+        strings.push_back("FORMAT_FEATURE_2_DATA_GRAPH_OPTICAL_FLOW_COST_BIT_ARM");
     return strings;
 }
 void DumpVkFormatFeatureFlags2(Printer &p, std::string name, VkFormatFeatureFlags2 value) {
@@ -2597,6 +2606,8 @@ std::vector<const char *> VkImageCreateFlagBitsGetStrings(VkImageCreateFlagBits 
         strings.push_back("IMAGE_CREATE_VIDEO_PROFILE_INDEPENDENT_BIT_KHR");
     if (VK_IMAGE_CREATE_FRAGMENT_DENSITY_MAP_OFFSET_BIT_EXT & value)
         strings.push_back("IMAGE_CREATE_FRAGMENT_DENSITY_MAP_OFFSET_BIT_EXT");
+    if (VK_IMAGE_CREATE_ALIAS_SINGLE_LAYER_DESCRIPTOR_BIT_KHR & value)
+        strings.push_back("IMAGE_CREATE_ALIAS_SINGLE_LAYER_DESCRIPTOR_BIT_KHR");
     return strings;
 }
 void DumpVkImageCreateFlags(Printer &p, std::string name, VkImageCreateFlags value) {
@@ -4630,6 +4641,8 @@ void DumpVkPhysicalDeviceMaintenance10FeaturesKHR(Printer &p, std::string name,
                                                   const VkPhysicalDeviceMaintenance10FeaturesKHR &obj);
 void DumpVkPhysicalDeviceMaintenance10PropertiesKHR(Printer &p, std::string name,
                                                     const VkPhysicalDeviceMaintenance10PropertiesKHR &obj);
+void DumpVkPhysicalDeviceMaintenance11FeaturesKHR(Printer &p, std::string name,
+                                                  const VkPhysicalDeviceMaintenance11FeaturesKHR &obj);
 void DumpVkPhysicalDeviceMaintenance3Properties(Printer &p, std::string name, const VkPhysicalDeviceMaintenance3Properties &obj);
 void DumpVkPhysicalDeviceMaintenance4Features(Printer &p, std::string name, const VkPhysicalDeviceMaintenance4Features &obj);
 void DumpVkPhysicalDeviceMaintenance4Properties(Printer &p, std::string name, const VkPhysicalDeviceMaintenance4Properties &obj);
@@ -4674,8 +4687,12 @@ void DumpVkPhysicalDeviceNonSeamlessCubeMapFeaturesEXT(Printer &p, std::string n
                                                        const VkPhysicalDeviceNonSeamlessCubeMapFeaturesEXT &obj);
 void DumpVkPhysicalDeviceOpacityMicromapFeaturesEXT(Printer &p, std::string name,
                                                     const VkPhysicalDeviceOpacityMicromapFeaturesEXT &obj);
+void DumpVkPhysicalDeviceOpacityMicromapFeaturesKHR(Printer &p, std::string name,
+                                                    const VkPhysicalDeviceOpacityMicromapFeaturesKHR &obj);
 void DumpVkPhysicalDeviceOpacityMicromapPropertiesEXT(Printer &p, std::string name,
                                                       const VkPhysicalDeviceOpacityMicromapPropertiesEXT &obj);
+void DumpVkPhysicalDeviceOpacityMicromapPropertiesKHR(Printer &p, std::string name,
+                                                      const VkPhysicalDeviceOpacityMicromapPropertiesKHR &obj);
 void DumpVkPhysicalDevicePCIBusInfoPropertiesEXT(Printer &p, std::string name, const VkPhysicalDevicePCIBusInfoPropertiesEXT &obj);
 void DumpVkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT(Printer &p, std::string name,
                                                               const VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT &obj);
@@ -4718,6 +4735,8 @@ void DumpVkPhysicalDevicePresentTimingFeaturesEXT(Printer &p, std::string name,
                                                   const VkPhysicalDevicePresentTimingFeaturesEXT &obj);
 void DumpVkPhysicalDevicePresentWait2FeaturesKHR(Printer &p, std::string name, const VkPhysicalDevicePresentWait2FeaturesKHR &obj);
 void DumpVkPhysicalDevicePresentWaitFeaturesKHR(Printer &p, std::string name, const VkPhysicalDevicePresentWaitFeaturesKHR &obj);
+void DumpVkPhysicalDevicePrimitiveRestartIndexFeaturesEXT(Printer &p, std::string name,
+                                                          const VkPhysicalDevicePrimitiveRestartIndexFeaturesEXT &obj);
 void DumpVkPhysicalDevicePrimitiveTopologyListRestartFeaturesEXT(
     Printer &p, std::string name, const VkPhysicalDevicePrimitiveTopologyListRestartFeaturesEXT &obj);
 void DumpVkPhysicalDevicePrimitivesGeneratedQueryFeaturesEXT(Printer &p, std::string name,
@@ -4815,6 +4834,10 @@ void DumpVkPhysicalDeviceShaderRelaxedExtendedInstructionFeaturesKHR(
     Printer &p, std::string name, const VkPhysicalDeviceShaderRelaxedExtendedInstructionFeaturesKHR &obj);
 void DumpVkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT(Printer &p, std::string name,
                                                                const VkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT &obj);
+void DumpVkPhysicalDeviceShaderSplitBarrierFeaturesEXT(Printer &p, std::string name,
+                                                       const VkPhysicalDeviceShaderSplitBarrierFeaturesEXT &obj);
+void DumpVkPhysicalDeviceShaderSplitBarrierPropertiesEXT(Printer &p, std::string name,
+                                                         const VkPhysicalDeviceShaderSplitBarrierPropertiesEXT &obj);
 void DumpVkPhysicalDeviceShaderSubgroupExtendedTypesFeatures(Printer &p, std::string name,
                                                              const VkPhysicalDeviceShaderSubgroupExtendedTypesFeatures &obj);
 void DumpVkPhysicalDeviceShaderSubgroupPartitionedFeaturesEXT(Printer &p, std::string name,
@@ -4912,6 +4935,8 @@ void DumpVkPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures(Printer &p, std::
                                                                const VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures &obj);
 void DumpVkPresentTimingSurfaceCapabilitiesEXT(Printer &p, std::string name, const VkPresentTimingSurfaceCapabilitiesEXT &obj);
 void DumpVkQueueFamilyGlobalPriorityProperties(Printer &p, std::string name, const VkQueueFamilyGlobalPriorityProperties &obj);
+void DumpVkQueueFamilyOptimalImageTransferGranularityPropertiesKHR(
+    Printer &p, std::string name, const VkQueueFamilyOptimalImageTransferGranularityPropertiesKHR &obj);
 void DumpVkQueueFamilyOwnershipTransferPropertiesKHR(Printer &p, std::string name,
                                                      const VkQueueFamilyOwnershipTransferPropertiesKHR &obj);
 void DumpVkQueueFamilyQueryResultStatusPropertiesKHR(Printer &p, std::string name,
@@ -6220,6 +6245,12 @@ void DumpVkPhysicalDeviceMaintenance10PropertiesKHR(Printer &p, std::string name
     p.PrintKeyBool("resolveSrgbFormatSupportsTransferFunctionControl",
                    static_cast<bool>(obj.resolveSrgbFormatSupportsTransferFunctionControl));
 }
+void DumpVkPhysicalDeviceMaintenance11FeaturesKHR(Printer &p, std::string name,
+                                                  const VkPhysicalDeviceMaintenance11FeaturesKHR &obj) {
+    ObjectWrapper object{p, name};
+    p.SetMinKeyWidth(13);
+    p.PrintKeyBool("maintenance11", static_cast<bool>(obj.maintenance11));
+}
 void DumpVkPhysicalDeviceMaintenance3Properties(Printer &p, std::string name, const VkPhysicalDeviceMaintenance3Properties &obj) {
     ObjectWrapper object{p, name};
     p.SetMinKeyWidth(23);
@@ -6476,12 +6507,27 @@ void DumpVkPhysicalDeviceOpacityMicromapFeaturesEXT(Printer &p, std::string name
     p.PrintKeyBool("micromapCaptureReplay", static_cast<bool>(obj.micromapCaptureReplay));
     p.PrintKeyBool("micromapHostCommands", static_cast<bool>(obj.micromapHostCommands));
 }
+void DumpVkPhysicalDeviceOpacityMicromapFeaturesKHR(Printer &p, std::string name,
+                                                    const VkPhysicalDeviceOpacityMicromapFeaturesKHR &obj) {
+    ObjectWrapper object{p, name};
+    p.SetMinKeyWidth(8);
+    p.PrintKeyBool("micromap", static_cast<bool>(obj.micromap));
+}
 void DumpVkPhysicalDeviceOpacityMicromapPropertiesEXT(Printer &p, std::string name,
                                                       const VkPhysicalDeviceOpacityMicromapPropertiesEXT &obj) {
     ObjectWrapper object{p, name};
     p.SetMinKeyWidth(32);
     p.PrintKeyValue("maxOpacity2StateSubdivisionLevel", obj.maxOpacity2StateSubdivisionLevel);
     p.PrintKeyValue("maxOpacity4StateSubdivisionLevel", obj.maxOpacity4StateSubdivisionLevel);
+}
+void DumpVkPhysicalDeviceOpacityMicromapPropertiesKHR(Printer &p, std::string name,
+                                                      const VkPhysicalDeviceOpacityMicromapPropertiesKHR &obj) {
+    ObjectWrapper object{p, name};
+    p.SetMinKeyWidth(37);
+    p.PrintKeyValue("maxOpacity2StateSubdivisionLevel", obj.maxOpacity2StateSubdivisionLevel);
+    p.PrintKeyValue("maxOpacity4StateSubdivisionLevel", obj.maxOpacity4StateSubdivisionLevel);
+    p.PrintKeyValue("maxOpacityLossy4StateSubdivisionLevel", obj.maxOpacityLossy4StateSubdivisionLevel);
+    p.PrintKeyValue("maxMicromapTriangles", obj.maxMicromapTriangles);
 }
 void DumpVkPhysicalDevicePCIBusInfoPropertiesEXT(Printer &p, std::string name, const VkPhysicalDevicePCIBusInfoPropertiesEXT &obj) {
     ObjectWrapper object{p, name};
@@ -6637,6 +6683,12 @@ void DumpVkPhysicalDevicePresentWaitFeaturesKHR(Printer &p, std::string name, co
     ObjectWrapper object{p, name};
     p.SetMinKeyWidth(11);
     p.PrintKeyBool("presentWait", static_cast<bool>(obj.presentWait));
+}
+void DumpVkPhysicalDevicePrimitiveRestartIndexFeaturesEXT(Printer &p, std::string name,
+                                                          const VkPhysicalDevicePrimitiveRestartIndexFeaturesEXT &obj) {
+    ObjectWrapper object{p, name};
+    p.SetMinKeyWidth(21);
+    p.PrintKeyBool("primitiveRestartIndex", static_cast<bool>(obj.primitiveRestartIndex));
 }
 void DumpVkPhysicalDevicePrimitiveTopologyListRestartFeaturesEXT(
     Printer &p, std::string name, const VkPhysicalDevicePrimitiveTopologyListRestartFeaturesEXT &obj) {
@@ -7067,6 +7119,18 @@ void DumpVkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT(Printer &p, std::
     ObjectWrapper object{p, name};
     p.SetMinKeyWidth(26);
     p.PrintKeyBool("shaderReplicatedComposites", static_cast<bool>(obj.shaderReplicatedComposites));
+}
+void DumpVkPhysicalDeviceShaderSplitBarrierFeaturesEXT(Printer &p, std::string name,
+                                                       const VkPhysicalDeviceShaderSplitBarrierFeaturesEXT &obj) {
+    ObjectWrapper object{p, name};
+    p.SetMinKeyWidth(18);
+    p.PrintKeyBool("shaderSplitBarrier", static_cast<bool>(obj.shaderSplitBarrier));
+}
+void DumpVkPhysicalDeviceShaderSplitBarrierPropertiesEXT(Printer &p, std::string name,
+                                                         const VkPhysicalDeviceShaderSplitBarrierPropertiesEXT &obj) {
+    ObjectWrapper object{p, name};
+    p.SetMinKeyWidth(32);
+    p.PrintKeyValue("splitBarrierReservedSharedMemory", obj.splitBarrierReservedSharedMemory);
 }
 void DumpVkPhysicalDeviceShaderSubgroupExtendedTypesFeatures(Printer &p, std::string name,
                                                              const VkPhysicalDeviceShaderSubgroupExtendedTypesFeatures &obj) {
@@ -7737,6 +7801,11 @@ void DumpVkQueueFamilyGlobalPriorityProperties(Printer &p, std::string name, con
             p.PrintString(VkQueueGlobalPriorityString(obj.priorities[i]));
     }
 }
+void DumpVkQueueFamilyOptimalImageTransferGranularityPropertiesKHR(
+    Printer &p, std::string name, const VkQueueFamilyOptimalImageTransferGranularityPropertiesKHR &obj) {
+    ObjectWrapper object{p, name};
+    DumpVkExtent3D(p, "optimalImageTransferGranularity", obj.optimalImageTransferGranularity);
+}
 void DumpVkQueueFamilyOwnershipTransferPropertiesKHR(Printer &p, std::string name,
                                                      const VkQueueFamilyOwnershipTransferPropertiesKHR &obj) {
     ObjectWrapper object{p, name};
@@ -8114,6 +8183,7 @@ struct phys_device_props2_chain {
     VkPhysicalDeviceMultiviewProperties PhysicalDeviceMultiviewProperties{};
     VkPhysicalDeviceNestedCommandBufferPropertiesEXT PhysicalDeviceNestedCommandBufferPropertiesEXT{};
     VkPhysicalDeviceOpacityMicromapPropertiesEXT PhysicalDeviceOpacityMicromapPropertiesEXT{};
+    VkPhysicalDeviceOpacityMicromapPropertiesKHR PhysicalDeviceOpacityMicromapPropertiesKHR{};
     VkPhysicalDevicePCIBusInfoPropertiesEXT PhysicalDevicePCIBusInfoPropertiesEXT{};
     VkPhysicalDevicePerformanceQueryPropertiesKHR PhysicalDevicePerformanceQueryPropertiesKHR{};
     VkPhysicalDevicePipelineBinaryPropertiesKHR PhysicalDevicePipelineBinaryPropertiesKHR{};
@@ -8135,6 +8205,7 @@ struct phys_device_props2_chain {
     VkPhysicalDeviceShaderLongVectorPropertiesEXT PhysicalDeviceShaderLongVectorPropertiesEXT{};
     VkPhysicalDeviceShaderModuleIdentifierPropertiesEXT PhysicalDeviceShaderModuleIdentifierPropertiesEXT{};
     VkPhysicalDeviceShaderObjectPropertiesEXT PhysicalDeviceShaderObjectPropertiesEXT{};
+    VkPhysicalDeviceShaderSplitBarrierPropertiesEXT PhysicalDeviceShaderSplitBarrierPropertiesEXT{};
     VkPhysicalDeviceShaderTileImagePropertiesEXT PhysicalDeviceShaderTileImagePropertiesEXT{};
     VkPhysicalDeviceSubgroupProperties PhysicalDeviceSubgroupProperties{};
     VkPhysicalDeviceSubgroupSizeControlProperties PhysicalDeviceSubgroupSizeControlProperties{};
@@ -8213,6 +8284,7 @@ struct phys_device_props2_chain {
         PhysicalDeviceNestedCommandBufferPropertiesEXT.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NESTED_COMMAND_BUFFER_PROPERTIES_EXT;
         PhysicalDeviceOpacityMicromapPropertiesEXT.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_PROPERTIES_EXT;
+        PhysicalDeviceOpacityMicromapPropertiesKHR.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_PROPERTIES_KHR;
         PhysicalDevicePCIBusInfoPropertiesEXT.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT;
         PhysicalDevicePerformanceQueryPropertiesKHR.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PERFORMANCE_QUERY_PROPERTIES_KHR;
         PhysicalDevicePipelineBinaryPropertiesKHR.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_BINARY_PROPERTIES_KHR;
@@ -8237,6 +8309,7 @@ struct phys_device_props2_chain {
         PhysicalDeviceShaderModuleIdentifierPropertiesEXT.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MODULE_IDENTIFIER_PROPERTIES_EXT;
         PhysicalDeviceShaderObjectPropertiesEXT.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_PROPERTIES_EXT;
+        PhysicalDeviceShaderSplitBarrierPropertiesEXT.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SPLIT_BARRIER_PROPERTIES_EXT;
         PhysicalDeviceShaderTileImagePropertiesEXT.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_TILE_IMAGE_PROPERTIES_EXT;
         PhysicalDeviceSubgroupProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES;
         PhysicalDeviceSubgroupSizeControlProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES;
@@ -8365,6 +8438,8 @@ struct phys_device_props2_chain {
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceNestedCommandBufferPropertiesEXT));
         if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_EXT_OPACITY_MICROMAP_EXTENSION_NAME))
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceOpacityMicromapPropertiesEXT));
+        if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_KHR_OPACITY_MICROMAP_EXTENSION_NAME))
+            chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceOpacityMicromapPropertiesKHR));
         if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_EXT_PCI_BUS_INFO_EXTENSION_NAME))
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDevicePCIBusInfoPropertiesEXT));
         if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_KHR_PERFORMANCE_QUERY_EXTENSION_NAME))
@@ -8412,6 +8487,8 @@ struct phys_device_props2_chain {
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceShaderModuleIdentifierPropertiesEXT));
         if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_EXT_SHADER_OBJECT_EXTENSION_NAME))
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceShaderObjectPropertiesEXT));
+        if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_EXT_SHADER_SPLIT_BARRIER_EXTENSION_NAME))
+            chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceShaderSplitBarrierPropertiesEXT));
         if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_EXT_SHADER_TILE_IMAGE_EXTENSION_NAME))
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceShaderTileImagePropertiesEXT));
         if (gpu.api_version == VK_API_VERSION_1_1 || show_promoted_structs)
@@ -8898,6 +8975,13 @@ void chain_iterator_phys_device_props2(Printer &p, AppInstance &inst, AppGpu &gp
             DumpVkPhysicalDeviceOpacityMicromapPropertiesEXT(p, name, *props);
             p.AddNewline();
         }
+        if (structure->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_PROPERTIES_KHR) {
+            const VkPhysicalDeviceOpacityMicromapPropertiesKHR *props =
+                (const VkPhysicalDeviceOpacityMicromapPropertiesKHR *)structure;
+            const char *name = "VkPhysicalDeviceOpacityMicromapPropertiesKHR";
+            DumpVkPhysicalDeviceOpacityMicromapPropertiesKHR(p, name, *props);
+            p.AddNewline();
+        }
         if (structure->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT) {
             const VkPhysicalDevicePCIBusInfoPropertiesEXT *props = (const VkPhysicalDevicePCIBusInfoPropertiesEXT *)structure;
             const char *name = "VkPhysicalDevicePCIBusInfoPropertiesEXT";
@@ -9069,6 +9153,13 @@ void chain_iterator_phys_device_props2(Printer &p, AppInstance &inst, AppGpu &gp
             const VkPhysicalDeviceShaderObjectPropertiesEXT *props = (const VkPhysicalDeviceShaderObjectPropertiesEXT *)structure;
             const char *name = "VkPhysicalDeviceShaderObjectPropertiesEXT";
             DumpVkPhysicalDeviceShaderObjectPropertiesEXT(p, name, *props);
+            p.AddNewline();
+        }
+        if (structure->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SPLIT_BARRIER_PROPERTIES_EXT) {
+            const VkPhysicalDeviceShaderSplitBarrierPropertiesEXT *props =
+                (const VkPhysicalDeviceShaderSplitBarrierPropertiesEXT *)structure;
+            const char *name = "VkPhysicalDeviceShaderSplitBarrierPropertiesEXT";
+            DumpVkPhysicalDeviceShaderSplitBarrierPropertiesEXT(p, name, *props);
             p.AddNewline();
         }
         if (structure->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_TILE_IMAGE_PROPERTIES_EXT) {
@@ -9306,6 +9397,7 @@ struct phys_device_features2_chain {
     VkPhysicalDeviceLegacyVertexAttributesFeaturesEXT PhysicalDeviceLegacyVertexAttributesFeaturesEXT{};
     VkPhysicalDeviceLineRasterizationFeatures PhysicalDeviceLineRasterizationFeatures{};
     VkPhysicalDeviceMaintenance10FeaturesKHR PhysicalDeviceMaintenance10FeaturesKHR{};
+    VkPhysicalDeviceMaintenance11FeaturesKHR PhysicalDeviceMaintenance11FeaturesKHR{};
     VkPhysicalDeviceMaintenance4Features PhysicalDeviceMaintenance4Features{};
     VkPhysicalDeviceMaintenance5Features PhysicalDeviceMaintenance5Features{};
     VkPhysicalDeviceMaintenance6Features PhysicalDeviceMaintenance6Features{};
@@ -9323,6 +9415,7 @@ struct phys_device_features2_chain {
     VkPhysicalDeviceNestedCommandBufferFeaturesEXT PhysicalDeviceNestedCommandBufferFeaturesEXT{};
     VkPhysicalDeviceNonSeamlessCubeMapFeaturesEXT PhysicalDeviceNonSeamlessCubeMapFeaturesEXT{};
     VkPhysicalDeviceOpacityMicromapFeaturesEXT PhysicalDeviceOpacityMicromapFeaturesEXT{};
+    VkPhysicalDeviceOpacityMicromapFeaturesKHR PhysicalDeviceOpacityMicromapFeaturesKHR{};
     VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT PhysicalDevicePageableDeviceLocalMemoryFeaturesEXT{};
     VkPhysicalDevicePerformanceQueryFeaturesKHR PhysicalDevicePerformanceQueryFeaturesKHR{};
     VkPhysicalDevicePipelineBinaryFeaturesKHR PhysicalDevicePipelineBinaryFeaturesKHR{};
@@ -9341,6 +9434,7 @@ struct phys_device_features2_chain {
     VkPhysicalDevicePresentTimingFeaturesEXT PhysicalDevicePresentTimingFeaturesEXT{};
     VkPhysicalDevicePresentWait2FeaturesKHR PhysicalDevicePresentWait2FeaturesKHR{};
     VkPhysicalDevicePresentWaitFeaturesKHR PhysicalDevicePresentWaitFeaturesKHR{};
+    VkPhysicalDevicePrimitiveRestartIndexFeaturesEXT PhysicalDevicePrimitiveRestartIndexFeaturesEXT{};
     VkPhysicalDevicePrimitiveTopologyListRestartFeaturesEXT PhysicalDevicePrimitiveTopologyListRestartFeaturesEXT{};
     VkPhysicalDevicePrimitivesGeneratedQueryFeaturesEXT PhysicalDevicePrimitivesGeneratedQueryFeaturesEXT{};
     VkPhysicalDevicePrivateDataFeatures PhysicalDevicePrivateDataFeatures{};
@@ -9382,6 +9476,7 @@ struct phys_device_features2_chain {
     VkPhysicalDeviceShaderQuadControlFeaturesKHR PhysicalDeviceShaderQuadControlFeaturesKHR{};
     VkPhysicalDeviceShaderRelaxedExtendedInstructionFeaturesKHR PhysicalDeviceShaderRelaxedExtendedInstructionFeaturesKHR{};
     VkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT PhysicalDeviceShaderReplicatedCompositesFeaturesEXT{};
+    VkPhysicalDeviceShaderSplitBarrierFeaturesEXT PhysicalDeviceShaderSplitBarrierFeaturesEXT{};
     VkPhysicalDeviceShaderSubgroupExtendedTypesFeatures PhysicalDeviceShaderSubgroupExtendedTypesFeatures{};
     VkPhysicalDeviceShaderSubgroupPartitionedFeaturesEXT PhysicalDeviceShaderSubgroupPartitionedFeaturesEXT{};
     VkPhysicalDeviceShaderSubgroupRotateFeatures PhysicalDeviceShaderSubgroupRotateFeatures{};
@@ -9504,6 +9599,7 @@ struct phys_device_features2_chain {
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LEGACY_VERTEX_ATTRIBUTES_FEATURES_EXT;
         PhysicalDeviceLineRasterizationFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES;
         PhysicalDeviceMaintenance10FeaturesKHR.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_10_FEATURES_KHR;
+        PhysicalDeviceMaintenance11FeaturesKHR.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_11_FEATURES_KHR;
         PhysicalDeviceMaintenance4Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES;
         PhysicalDeviceMaintenance5Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES;
         PhysicalDeviceMaintenance6Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_6_FEATURES;
@@ -9523,6 +9619,7 @@ struct phys_device_features2_chain {
         PhysicalDeviceNestedCommandBufferFeaturesEXT.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NESTED_COMMAND_BUFFER_FEATURES_EXT;
         PhysicalDeviceNonSeamlessCubeMapFeaturesEXT.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NON_SEAMLESS_CUBE_MAP_FEATURES_EXT;
         PhysicalDeviceOpacityMicromapFeaturesEXT.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_EXT;
+        PhysicalDeviceOpacityMicromapFeaturesKHR.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_KHR;
         PhysicalDevicePageableDeviceLocalMemoryFeaturesEXT.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PAGEABLE_DEVICE_LOCAL_MEMORY_FEATURES_EXT;
         PhysicalDevicePerformanceQueryFeaturesKHR.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PERFORMANCE_QUERY_FEATURES_KHR;
@@ -9546,6 +9643,8 @@ struct phys_device_features2_chain {
         PhysicalDevicePresentTimingFeaturesEXT.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_TIMING_FEATURES_EXT;
         PhysicalDevicePresentWait2FeaturesKHR.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_2_FEATURES_KHR;
         PhysicalDevicePresentWaitFeaturesKHR.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR;
+        PhysicalDevicePrimitiveRestartIndexFeaturesEXT.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIMITIVE_RESTART_INDEX_FEATURES_EXT;
         PhysicalDevicePrimitiveTopologyListRestartFeaturesEXT.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIMITIVE_TOPOLOGY_LIST_RESTART_FEATURES_EXT;
         PhysicalDevicePrimitivesGeneratedQueryFeaturesEXT.sType =
@@ -9599,6 +9698,7 @@ struct phys_device_features2_chain {
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_RELAXED_EXTENDED_INSTRUCTION_FEATURES_KHR;
         PhysicalDeviceShaderReplicatedCompositesFeaturesEXT.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_REPLICATED_COMPOSITES_FEATURES_EXT;
+        PhysicalDeviceShaderSplitBarrierFeaturesEXT.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SPLIT_BARRIER_FEATURES_EXT;
         PhysicalDeviceShaderSubgroupExtendedTypesFeatures.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES;
         PhysicalDeviceShaderSubgroupPartitionedFeaturesEXT.sType =
@@ -9807,6 +9907,8 @@ struct phys_device_features2_chain {
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceLineRasterizationFeatures));
         if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_KHR_MAINTENANCE_10_EXTENSION_NAME))
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceMaintenance10FeaturesKHR));
+        if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_KHR_MAINTENANCE_11_EXTENSION_NAME))
+            chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceMaintenance11FeaturesKHR));
         if ((gpu.CheckPhysicalDeviceExtensionIncluded(VK_KHR_MAINTENANCE_4_EXTENSION_NAME)) &&
             (gpu.api_version < VK_API_VERSION_1_3 || show_promoted_structs))
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceMaintenance4Features));
@@ -9848,6 +9950,8 @@ struct phys_device_features2_chain {
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceNonSeamlessCubeMapFeaturesEXT));
         if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_EXT_OPACITY_MICROMAP_EXTENSION_NAME))
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceOpacityMicromapFeaturesEXT));
+        if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_KHR_OPACITY_MICROMAP_EXTENSION_NAME))
+            chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceOpacityMicromapFeaturesKHR));
         if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME))
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDevicePageableDeviceLocalMemoryFeaturesEXT));
         if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_KHR_PERFORMANCE_QUERY_EXTENSION_NAME))
@@ -9886,6 +9990,8 @@ struct phys_device_features2_chain {
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDevicePresentWait2FeaturesKHR));
         if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_KHR_PRESENT_WAIT_EXTENSION_NAME))
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDevicePresentWaitFeaturesKHR));
+        if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_EXT_PRIMITIVE_RESTART_INDEX_EXTENSION_NAME))
+            chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDevicePrimitiveRestartIndexFeaturesEXT));
         if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_EXT_PRIMITIVE_TOPOLOGY_LIST_RESTART_EXTENSION_NAME))
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDevicePrimitiveTopologyListRestartFeaturesEXT));
         if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_EXT_PRIMITIVES_GENERATED_QUERY_EXTENSION_NAME))
@@ -9980,6 +10086,8 @@ struct phys_device_features2_chain {
                 reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceShaderRelaxedExtendedInstructionFeaturesKHR));
         if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_EXT_SHADER_REPLICATED_COMPOSITES_EXTENSION_NAME))
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceShaderReplicatedCompositesFeaturesEXT));
+        if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_EXT_SHADER_SPLIT_BARRIER_EXTENSION_NAME))
+            chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceShaderSplitBarrierFeaturesEXT));
         if ((gpu.CheckPhysicalDeviceExtensionIncluded(VK_KHR_SHADER_SUBGROUP_EXTENDED_TYPES_EXTENSION_NAME)) &&
             (gpu.api_version < VK_API_VERSION_1_2 || show_promoted_structs))
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&PhysicalDeviceShaderSubgroupExtendedTypesFeatures));
@@ -10683,6 +10791,12 @@ void chain_iterator_phys_device_features2(Printer &p, AppGpu &gpu, bool show_pro
             DumpVkPhysicalDeviceMaintenance10FeaturesKHR(p, name, *props);
             p.AddNewline();
         }
+        if (structure->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_11_FEATURES_KHR) {
+            const VkPhysicalDeviceMaintenance11FeaturesKHR *props = (const VkPhysicalDeviceMaintenance11FeaturesKHR *)structure;
+            const char *name = "VkPhysicalDeviceMaintenance11FeaturesKHR";
+            DumpVkPhysicalDeviceMaintenance11FeaturesKHR(p, name, *props);
+            p.AddNewline();
+        }
         if (structure->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES) {
             const VkPhysicalDeviceMaintenance4Features *props = (const VkPhysicalDeviceMaintenance4Features *)structure;
             const char *name = gpu.api_version >= VK_API_VERSION_1_3 ? "VkPhysicalDeviceMaintenance4Features"
@@ -10835,6 +10949,12 @@ void chain_iterator_phys_device_features2(Printer &p, AppGpu &gpu, bool show_pro
             DumpVkPhysicalDeviceOpacityMicromapFeaturesEXT(p, name, *props);
             p.AddNewline();
         }
+        if (structure->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_KHR) {
+            const VkPhysicalDeviceOpacityMicromapFeaturesKHR *props = (const VkPhysicalDeviceOpacityMicromapFeaturesKHR *)structure;
+            const char *name = "VkPhysicalDeviceOpacityMicromapFeaturesKHR";
+            DumpVkPhysicalDeviceOpacityMicromapFeaturesKHR(p, name, *props);
+            p.AddNewline();
+        }
         if (structure->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PAGEABLE_DEVICE_LOCAL_MEMORY_FEATURES_EXT) {
             const VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT *props =
                 (const VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT *)structure;
@@ -10972,6 +11092,13 @@ void chain_iterator_phys_device_features2(Printer &p, AppGpu &gpu, bool show_pro
             const VkPhysicalDevicePresentWaitFeaturesKHR *props = (const VkPhysicalDevicePresentWaitFeaturesKHR *)structure;
             const char *name = "VkPhysicalDevicePresentWaitFeaturesKHR";
             DumpVkPhysicalDevicePresentWaitFeaturesKHR(p, name, *props);
+            p.AddNewline();
+        }
+        if (structure->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIMITIVE_RESTART_INDEX_FEATURES_EXT) {
+            const VkPhysicalDevicePrimitiveRestartIndexFeaturesEXT *props =
+                (const VkPhysicalDevicePrimitiveRestartIndexFeaturesEXT *)structure;
+            const char *name = "VkPhysicalDevicePrimitiveRestartIndexFeaturesEXT";
+            DumpVkPhysicalDevicePrimitiveRestartIndexFeaturesEXT(p, name, *props);
             p.AddNewline();
         }
         if (structure->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIMITIVE_TOPOLOGY_LIST_RESTART_FEATURES_EXT) {
@@ -11336,6 +11463,13 @@ void chain_iterator_phys_device_features2(Printer &p, AppGpu &gpu, bool show_pro
                 (const VkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT *)structure;
             const char *name = "VkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT";
             DumpVkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT(p, name, *props);
+            p.AddNewline();
+        }
+        if (structure->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SPLIT_BARRIER_FEATURES_EXT) {
+            const VkPhysicalDeviceShaderSplitBarrierFeaturesEXT *props =
+                (const VkPhysicalDeviceShaderSplitBarrierFeaturesEXT *)structure;
+            const char *name = "VkPhysicalDeviceShaderSplitBarrierFeaturesEXT";
+            DumpVkPhysicalDeviceShaderSplitBarrierFeaturesEXT(p, name, *props);
             p.AddNewline();
         }
         if (structure->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES) {
@@ -11894,11 +12028,14 @@ struct queue_properties2_chain {
     queue_properties2_chain &operator=(queue_properties2_chain &&) = delete;
     void *start_of_chain = nullptr;
     VkQueueFamilyGlobalPriorityProperties QueueFamilyGlobalPriorityProperties{};
+    VkQueueFamilyOptimalImageTransferGranularityPropertiesKHR QueueFamilyOptimalImageTransferGranularityPropertiesKHR{};
     VkQueueFamilyOwnershipTransferPropertiesKHR QueueFamilyOwnershipTransferPropertiesKHR{};
     VkQueueFamilyQueryResultStatusPropertiesKHR QueueFamilyQueryResultStatusPropertiesKHR{};
     VkQueueFamilyVideoPropertiesKHR QueueFamilyVideoPropertiesKHR{};
     void initialize_chain(AppGpu &gpu) noexcept {
         QueueFamilyGlobalPriorityProperties.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_GLOBAL_PRIORITY_PROPERTIES;
+        QueueFamilyOptimalImageTransferGranularityPropertiesKHR.sType =
+            VK_STRUCTURE_TYPE_QUEUE_FAMILY_OPTIMAL_IMAGE_TRANSFER_GRANULARITY_PROPERTIES_KHR;
         QueueFamilyOwnershipTransferPropertiesKHR.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_OWNERSHIP_TRANSFER_PROPERTIES_KHR;
         QueueFamilyQueryResultStatusPropertiesKHR.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_QUERY_RESULT_STATUS_PROPERTIES_KHR;
         QueueFamilyVideoPropertiesKHR.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_VIDEO_PROPERTIES_KHR;
@@ -11907,6 +12044,9 @@ struct queue_properties2_chain {
              gpu.CheckPhysicalDeviceExtensionIncluded(VK_EXT_GLOBAL_PRIORITY_QUERY_EXTENSION_NAME)) &&
             (gpu.api_version < VK_API_VERSION_1_4))
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&QueueFamilyGlobalPriorityProperties));
+        if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_KHR_MAINTENANCE_11_EXTENSION_NAME))
+            chain_members.push_back(
+                reinterpret_cast<VkBaseOutStructure *>(&QueueFamilyOptimalImageTransferGranularityPropertiesKHR));
         if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_KHR_MAINTENANCE_9_EXTENSION_NAME))
             chain_members.push_back(reinterpret_cast<VkBaseOutStructure *>(&QueueFamilyOwnershipTransferPropertiesKHR));
         if (gpu.CheckPhysicalDeviceExtensionIncluded(VK_KHR_VIDEO_QUEUE_EXTENSION_NAME))
@@ -11940,6 +12080,13 @@ void chain_iterator_queue_properties2(Printer &p, AppGpu &gpu, const void *place
                                           ? "VkQueueFamilyGlobalPriorityPropertiesKHR"
                                           : ("VkQueueFamilyGlobalPriorityPropertiesEXT"));
             DumpVkQueueFamilyGlobalPriorityProperties(p, name, *props);
+            p.AddNewline();
+        }
+        if (structure->sType == VK_STRUCTURE_TYPE_QUEUE_FAMILY_OPTIMAL_IMAGE_TRANSFER_GRANULARITY_PROPERTIES_KHR) {
+            const VkQueueFamilyOptimalImageTransferGranularityPropertiesKHR *props =
+                (const VkQueueFamilyOptimalImageTransferGranularityPropertiesKHR *)structure;
+            const char *name = "VkQueueFamilyOptimalImageTransferGranularityPropertiesKHR";
+            DumpVkQueueFamilyOptimalImageTransferGranularityPropertiesKHR(p, name, *props);
             p.AddNewline();
         }
         if (structure->sType == VK_STRUCTURE_TYPE_QUEUE_FAMILY_OWNERSHIP_TRANSFER_PROPERTIES_KHR) {

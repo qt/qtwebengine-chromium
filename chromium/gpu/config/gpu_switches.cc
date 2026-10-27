@@ -44,6 +44,11 @@ const char kGpuDiskCacheSizeKB[] = "gpu-disk-cache-size-kb";
 const char kDisableGpuProcessForDX12InfoCollection[] =
     "disable-gpu-process-for-dx12-info-collection";
 
+// Enables WebGL draft extensions (not yet approved by the
+// community). This has side-effects in the GPU process, so the flag
+// is here so that code in both gpu/ and content/ can access it.
+const char kEnableWebGLDraftExtensions[] = "enable-webgl-draft-extensions";
+
 const char kEnableUnsafeWebGPU[] = "enable-unsafe-webgpu";
 
 const char kForceHighPerformanceGPU[] = "force-high-performance-gpu";
@@ -156,12 +161,6 @@ const char kDisableSkiaGraphitePrecompilation[] =
     "disable-skia-graphite-precompilation";
 const char kEnableSkiaGraphitePrecompilation[] =
     "enable-skia-graphite-precompilation";
-
-// Try to use a redistributable DirectML.dll. Used for testing WebNN
-// against newer DirectML release before it is integrated into Windows OS.
-// Please see more info about DirectML releases at:
-// https://learn.microsoft.com/en-us/windows/ai/directml/dml-version-history
-const char kUseRedistributableDirectML[] = "use-redist-dml";
 
 // Enables ThreadControllerWithMessagePumpImpl's TimeKeeper UMA metrics using
 // CrGpuMain as suffix.

@@ -5,8 +5,10 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_XR_XR_GRAPHICS_BINDING_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_XR_XR_GRAPHICS_BINDING_H_
 
+#include "gpu/command_buffer/common/sync_token.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
+#include "third_party/blink/renderer/platform/heap/prefinalizer.h"
 
 namespace gfx {
 class Rect;
@@ -22,11 +24,15 @@ class XRFrameTransportDelegate;
 // Base class for XRWebGLBinding and XRGPUBinding, which helps facilitate type
 // checking when layers are passed in to get sub images.
 class XRGraphicsBinding : public GarbageCollectedMixin {
+  USING_PRE_FINALIZER(XRGraphicsBinding, PreFinalize);
+
  public:
   enum class Api { kWebGL, kWebGPU };
 
   explicit XRGraphicsBinding(XRSession*);
   virtual ~XRGraphicsBinding() = default;
+
+  void PreFinalize();
 
   XRSession* session() const { return session_.Get(); }
 
@@ -34,6 +40,8 @@ class XRGraphicsBinding : public GarbageCollectedMixin {
 
   virtual gfx::Rect GetViewportForView(XRProjectionLayer* layer,
                                        XRViewData* view) = 0;
+
+  virtual gpu::SyncToken OnFrameEnd() { return gpu::SyncToken(); }
 
   virtual XRFrameTransportDelegate* GetTransportDelegate() = 0;
 

@@ -4,6 +4,8 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SPECIALFUNCTIONS_BFLOAT16_H
 #define EIGEN_SPECIALFUNCTIONS_BFLOAT16_H
@@ -14,7 +16,6 @@
 namespace Eigen {
 namespace numext {
 
-#if EIGEN_HAS_C99_MATH
 template <>
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::bfloat16 lgamma(const Eigen::bfloat16& a) {
   return Eigen::bfloat16(Eigen::numext::lgamma(static_cast<float>(a)));
@@ -65,7 +66,6 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::bfloat16 betainc(const Eigen::bfloa
                                                               const Eigen::bfloat16& x) {
   return Eigen::bfloat16(Eigen::numext::betainc(static_cast<float>(a), static_cast<float>(b), static_cast<float>(x)));
 }
-#endif
 
 }  // end namespace numext
 }  // end namespace Eigen

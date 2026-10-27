@@ -7,6 +7,7 @@
 #include <optional>
 
 #include "base/memory/raw_ptr.h"
+#include "gpu/command_buffer/common/shared_image_info.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "gpu/command_buffer/service/shared_context_state.h"
@@ -111,7 +112,7 @@ class EGLImageBacking::GLRepresentationShared {
     mode_ = RepresentationAccessMode::kNone;
   }
 
-  const scoped_refptr<TextureHolder>& texture_holder(int plane_index) const {
+  const scoped_refptr<TextureHolder>& texture_holder(size_t plane_index) const {
     return texture_holders_[plane_index];
   }
 
@@ -143,7 +144,7 @@ class EGLImageBacking::GLTextureEGLImageRepresentation
 
   void EndAccess() override { shared_.EndAccess(); }
 
-  gles2::Texture* GetTexture(int plane_index) override {
+  gles2::Texture* GetTexture(size_t plane_index) override {
     CHECK(format().IsValidPlaneIndex(plane_index));
     return shared_.texture_holder(plane_index)->texture();
   }
@@ -177,7 +178,7 @@ class EGLImageBacking::GLTexturePassthroughEGLImageRepresentation
   void EndAccess() override { shared_.EndAccess(); }
 
   const scoped_refptr<gles2::TexturePassthrough>& GetTexturePassthrough(
-      int plane_index) override {
+      size_t plane_index) override {
     CHECK(format().IsValidPlaneIndex(plane_index));
     // TODO(crbug.com/40166788): Remove this CHECK.
     CHECK(shared_.texture_holder(plane_index)->texture_passthrough());
@@ -192,26 +193,14 @@ class EGLImageBacking::GLTexturePassthroughEGLImageRepresentation
 
 EGLImageBacking::EGLImageBacking(
     const Mailbox& mailbox,
-    viz::SharedImageFormat format,
-    const gfx::Size& size,
-    const gfx::ColorSpace& color_space,
-    GrSurfaceOrigin surface_origin,
-    SkAlphaType alpha_type,
-    SharedImageUsageSet usage,
-    std::string debug_label,
+    const SharedImageInfo& si_info,
     size_t estimated_size,
     const std::vector<GLCommonImageBackingFactory::FormatInfo>& format_info,
     const GpuDriverBugWorkarounds& workarounds,
     bool use_passthrough,
     base::span<const uint8_t> pixel_data)
     : ClearTrackingSharedImageBacking(mailbox,
-                                      format,
-                                      size,
-                                      color_space,
-                                      surface_origin,
-                                      alpha_type,
-                                      usage,
-                                      std::move(debug_label),
+                                      si_info,
                                       estimated_size,
                                       true /*is_thread_safe*/),
       format_info_(format_info),
@@ -456,6 +445,17 @@ gl::ScopedEGLImage EGLImageBacking::GenEGLImageSibling(
                         format_info.adjusted_format, format_info.gl_type, data);
   }
 
+  // The storage allocation of the sibling texture allocates undefined-content
+  // storage on a context without robust-resource-init. If the following upload
+  // upload failed (e.g. GL_OUT_OF_MEMORY) the storage is still uninitialized.
+  // Return an invalid image so that we don't call SetCleared() on the backing.
+  const GLenum error = api->glGetErrorFn();
+  if (error != GL_NO_ERROR) {
+    LOG(ERROR) << "EGLImageBacking: initial pixel upload failed (GL error 0x"
+               << std::hex << error << ")";
+    return gl::ScopedEGLImage();
+  }
+
   // Use service id of the texture as a source to create the EGLImage.
   const EGLint egl_attrib_list[] = {
       EGL_GL_TEXTURE_LEVEL_KHR, 0, EGL_IMAGE_PRESERVED_KHR, EGL_TRUE, EGL_NONE};
@@ -482,6 +482,12 @@ EGLImageBacking::GenEGLImageSiblings(base::span<const uint8_t> pixel_data) {
     AutoLock auto_lock(this);
     create_egl_images = egl_images_.empty();
     if (create_egl_images) {
+      // Drain any pre-existing GL errors so the post-allocation check below in
+      // GenEGLImageSibling is attributable to the storage call. Silently
+      // squelching these errors is unfortunate, but is done in order to mirror
+      // other allocation checks done in the command decoder.
+      while (api->glGetErrorFn() != GL_NO_ERROR) {
+      }
       for (int plane = 0; plane < num_planes; plane++) {
         gl::ScopedEGLImage egl_image =
             GenEGLImageSibling(pixel_data, service_ids, plane);

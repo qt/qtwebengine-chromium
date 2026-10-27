@@ -25,6 +25,9 @@
 #include "fcp/testing/testing.h"
 
 ABSL_FLAG(std::string, codegen_tool_path, "", "Path to codegen tool script");
+ABSL_FLAG(std::string, flatc_path, "", "Path to flatc tool");
+ABSL_FLAG(std::string, tracing_traits_generator_path, "",
+          "Path to tracing traits generator tool");
 
 namespace fcp {
 namespace {
@@ -55,8 +58,8 @@ void DoTest() {
       GetTestDataPath(ConcatPath(kBaselineDir, source_file));
 
   // Read fsb source file derived from the test name:
-  StatusOr<std::string> source_s = ReadFileToString(source_path);
-  ASSERT_THAT(source_s, IsOk()) << "Can't read " << source_path;
+  absl::StatusOr<std::string> source_s = ReadFileToString(source_path);
+  ASSERT_THAT(source_s, absl_testing::IsOk()) << "Can't read " << source_path;
   std::string source = source_s.value();
 
   std::string out_file =
@@ -66,9 +69,12 @@ void DoTest() {
 
   // Run codegen script, redirecting stdout to out_file and stderr to err_file
   int exit_code = system(
-      absl::StrCat(GetTestDataPath(absl::GetFlag(FLAGS_codegen_tool_path)), " ",
-                   source_path, " ", testing::TempDir(), " ", kBaselineDir,
-                   " 1> ", out_file, " 2> ", err_file)
+      absl::StrCat(
+          GetTestDataPath(absl::GetFlag(FLAGS_codegen_tool_path)), " ",
+          GetTestDataPath(absl::GetFlag(FLAGS_flatc_path)), " ",
+          GetTestDataPath(absl::GetFlag(FLAGS_tracing_traits_generator_path)),
+          " ", source_path, " ", testing::TempDir(), " ", kBaselineDir, " 1> ",
+          out_file, " 2> ", err_file)
           .c_str());
 
   // Reading error and out files

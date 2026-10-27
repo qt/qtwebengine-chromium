@@ -16,6 +16,7 @@
 #include "src/ic/handler-configuration-inl.h"
 #include "src/ic/ic-inl.h"
 #include "src/objects/data-handler-inl.h"
+#include "src/objects/feedback-cell.h"
 #include "src/objects/feedback-vector-inl.h"
 #include "src/objects/hash-table-inl.h"
 #include "src/objects/map-inl.h"
@@ -236,7 +237,8 @@ DirectHandle<ClosureFeedbackCellArray> ClosureFeedbackCellArray::New(
         shared->feedback_metadata()->GetCreateClosureParameterCount(i);
     auto initial_code = BUILTIN_CODE(isolate, CompileLazy);
     HeapObject::AllocateAndInstallJSDispatchHandle(
-        cell, &cell->dispatch_handle_, isolate, parameter_count, initial_code);
+        cell, offsetof(FeedbackCell, dispatch_handle_), isolate,
+        parameter_count, initial_code);
     cells.push_back(cell);
   }
 
@@ -429,7 +431,7 @@ bool FeedbackVector::ClearSlots(Isolate* isolate, ClearBehavior behavior) {
 
     Tagged<MaybeObject> obj = Get(slot);
     if (obj != uninitialized_sentinel) {
-      FeedbackNexus nexus(isolate, *this, slot);
+      FeedbackNexus nexus(isolate, this, slot);
       feedback_updated |= nexus.Clear(behavior);
     }
   }
@@ -678,7 +680,7 @@ Tagged<Map> FeedbackNexus::GetFirstMap() const {
     return it.map();
   }
 
-  return Map();
+  return {};
 }
 
 InlineCacheState FeedbackNexus::ic_state() const {
@@ -752,6 +754,7 @@ InlineCacheState FeedbackNexus::ic_state() const {
       // TODO(1393773): Remove once the issue is solved.
       Address vector_ptr = vector().ptr();
       config_.isolate()->PushParamsAndDie(
+          "unexpected feedback vector IC state",
           reinterpret_cast<void*>(feedback.ptr()),
           reinterpret_cast<void*>(extra.ptr()),
           reinterpret_cast<void*>(vector_ptr),
@@ -920,17 +923,17 @@ void FeedbackNexus::ConfigurePropertyCellMode(DirectHandle<PropertyCell> cell) {
 
 #if DEBUG
 namespace {
-bool shouldStressLexicalIC(int script_context_index, int context_slot_index) {
+bool shouldStressLexicalIC(uint32_t script_context_index,
+                           int context_slot_index) {
   return (script_context_index + context_slot_index) % 100 == 0;
 }
 }  // namespace
 #endif
 
-bool FeedbackNexus::ConfigureLexicalVarMode(int script_context_index,
+bool FeedbackNexus::ConfigureLexicalVarMode(uint32_t script_context_index,
                                             int context_slot_index,
                                             bool immutable) {
   DCHECK(IsGlobalICKind(kind()));
-  DCHECK_LE(0, script_context_index);
   DCHECK_LE(0, context_slot_index);
 #if DEBUG
   if (v8_flags.stress_ic &&
@@ -1016,8 +1019,9 @@ void FeedbackNexus::ConfigureCloneObject(
         DirectHandle<Map> cached_map(Cast<Map>(feedback_map.GetHeapObject()),
                                      isolate);
         if (cached_map.is_identical_to(source_map) ||
-            cached_map->is_deprecated())
+            cached_map->is_deprecated()) {
           break;
+        }
       }
 
       if (i >= array_len) {

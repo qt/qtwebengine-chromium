@@ -13,6 +13,7 @@
 :host {
   display: flex;
   flex-direction: column;
+  position: var(--cr-composebox-input-position, static);
   width: 100%;
 }
 
@@ -43,6 +44,16 @@
 
 :host-context([searchbox-next-enabled][searchbox-layout-mode='Compact']) #iconContainer {
   display: none;
+}
+
+:host-context([searchbox-next-enabled][searchbox-layout-mode='Compact']):host(.has-tabs:not([entrypoint-name='Omnibox'])) #iconContainer {
+  display: flex;
+  margin-inline-start: -24px;
+}
+
+:host-context([searchbox-next-enabled][searchbox-layout-mode='Compact']):host(.has-tabs:not([entrypoint-name='Omnibox'])) #aimIcon {
+  width: 24px;
+  height: 24px;
 }
 
 :host-context([searchbox-next-enabled]) #iconContainer {
@@ -83,7 +94,7 @@
   font-family: inherit;
   font-size: var(--cr-composebox-font-size, inherit);
   line-height: 24px;
-  padding-block: var(--text-input-top-spacing) 0;
+  padding-block: var(--text-input-top-spacing) 4px;
   padding-inline: 12px var(--text-input-inline-end-spacing);
   width: 100%;
 }
@@ -117,7 +128,6 @@
   border: none;
   color: var(--color-composebox-font-light);
   field-sizing: content;
-  padding-bottom: 4px;
   outline: none;
   position: relative;
   resize: none;
@@ -135,15 +145,30 @@
   background-color: var(--google-blue-500);
   display: none;
   height: 24px;
+  left: anchor(end);
   pointer-events: none;
   position: absolute;
-  top: -2px;
+  position-anchor: --cursor-char;
+  top: calc(anchor(top) - 2px);
   width: 2px;
+  z-index: 1;
+}
+
+#caret.at-start {
+  left: anchor(start);
+}
+
+:host-context([dir='rtl']) #caret {
+  left: anchor(left);
+}
+
+:host-context([dir='rtl']) #caret.at-start {
+  left: anchor(right);
 }
 
 :host([entrypoint-name='Omnibox']) #caret {
   height: 18px;
-  top: 0;
+  top: anchor(top);
 }
 
 #caret.animating {
@@ -200,9 +225,7 @@
   left: 0;
 }
 
-/* Fallback for when smartComposeInlineHint is empty or not set. Note that the
-   html checks this, but we keep this css logic just in case. */
-:host(:not([smart-compose-inline-hint])) #smartCompose {
+:host(:not([smart-compose-enabled])) #smartCompose {
   display: none;
 }
 
@@ -218,15 +241,17 @@
 
 #tabChip {
   align-items: center;
-  border: 1px solid var(--color-composebox-type-ahead-chip);
-  border-radius: 8px;
-  box-sizing: border-box;
-  color: var(--color-composebox-type-ahead-chip);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 24px;
-  margin-left: 4px;
-  padding: 6px 8px;
+  background-color: var(--color-composebox-type-ahead-chip);
+  border-radius: 4px;
+  color: var(--color-composebox-type-ahead);
+  display: inline-flex;
+  font-size: 8px;
+  font-weight: 500;
+  height: 14px;
+  justify-content: center;
+  margin-inline-start: 4px;
+  vertical-align: middle;
+  width: 24px;
 }
 
 :host-context([expanding_]) #input,
@@ -264,7 +289,7 @@
   --cr-icon-button-icon-size: 20px;
   position: absolute;
   top: var(--composebox-cancel-button-top);
-  inset-inline-end: 12px;
+  inset-inline-end: var(--composebox-cancel-button-inline-end, 12px);
   /* Uses the same transitions as the submit button so they are in sync. */
   transition: var(--submit-enabled-transition);
 }

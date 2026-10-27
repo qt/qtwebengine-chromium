@@ -9,7 +9,6 @@
 
 #include "src/common/checks.h"
 #include "src/execution/isolate.h"
-#include "src/objects/descriptor-array.h"
 #include "src/objects/elements-kind.h"
 #include "src/objects/map.h"
 #include "src/objects/maybe-object.h"
@@ -341,7 +340,7 @@ class TransitionArray : public WeakFixedArray {
   V8_EXPORT_PRIVATE bool IsSortedNoDuplicates();
 #endif
 
-  V8_EXPORT_PRIVATE void Sort();
+  V8_EXPORT_PRIVATE void Sort(bool force = false);
 
   void PrintInternal(std::ostream& os);
 

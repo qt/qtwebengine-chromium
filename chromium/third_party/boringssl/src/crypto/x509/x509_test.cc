@@ -20,6 +20,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -35,6 +36,7 @@
 #include <openssl/evp.h>
 #include <openssl/mldsa.h>
 #include <openssl/nid.h>
+#include <openssl/obj.h>
 #include <openssl/pem.h>
 #include <openssl/pool.h>
 #include <openssl/span.h>
@@ -2184,6 +2186,17 @@ static bool AddAuthorityKeyIdentifier(X509_CRL *crl,
 }
 
 TEST(X509Test, NameConstraints) {
+  enum class SpecialCase {
+    // The constraint as excludedSubtrees is the opposite of permittedSubtrees.
+    kNormal,
+
+    // The constraint always fails as excludedSubtrees.
+    kExcludedViolation,
+
+    // The constraint fails as excludedSubtrees when the name is a DN attribute.
+    kExcludedViolationIfDNAttribute,
+  };
+
   UniquePtr<EVP_PKEY> key = PrivateKeyFromPEM(kP256Key);
   ASSERT_TRUE(key);
 
@@ -2192,206 +2205,311 @@ TEST(X509Test, NameConstraints) {
     std::string name;
     std::string constraint;
     int permit_result;
-    int exclude_result;
+    SpecialCase special_case = SpecialCase::kNormal;
   } kTests[] = {
       // Empty string matches everything.
-      {GEN_DNS, "foo.example.com", "", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
+      {GEN_DNS, "foo.example.com", "", X509_V_OK},
       // Name constraints match the entire subtree.
-      {GEN_DNS, "foo.example.com", "example.com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
-      {GEN_DNS, "foo.example.com", "EXAMPLE.COM", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
-      {GEN_DNS, "foo.example.com", "xample.com", X509_V_ERR_PERMITTED_VIOLATION,
-       X509_V_OK},
+      {GEN_DNS, "foo.example.com", "example.com", X509_V_OK},
+      {GEN_DNS, "foo.example.com", "EXAMPLE.COM", X509_V_OK},
+      {GEN_DNS, "foo.example.com", "xample.com",
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_DNS, "foo.example.com", "unrelated.much.longer.name.example",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       // A leading dot means at least one component must be added.
-      {GEN_DNS, "foo.example.com", ".example.com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
-      {GEN_DNS, "foo.example.com", "foo.example.com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
+      {GEN_DNS, "foo.example.com", ".example.com", X509_V_OK},
+      {GEN_DNS, "foo.example.com", "foo.example.com", X509_V_OK},
       {GEN_DNS, "foo.example.com", ".foo.example.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_DNS, "foo.example.com", ".xample.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_DNS, "foo.example.com", ".unrelated.much.longer.name.example",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       // Trailing dot is ignored.
-      {GEN_DNS, "foo.example.com.", "example.com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
-      {GEN_DNS, "foo.example.com", "example.com.", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
+      {GEN_DNS, "foo.example.com.", "example.com", X509_V_OK},
+      {GEN_DNS, "foo.example.com", "example.com.", X509_V_OK},
       // NUL bytes, if not rejected, should not confuse the matching logic.
       {GEN_DNS, std::string({'a', '\0', 'a'}), std::string({'a', '\0', 'b'}),
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
 
       // Wildcard CN matching.
-      {GEN_DNS, "*.com", "foo.example.com", X509_V_ERR_PERMITTED_VIOLATION,
-       X509_V_OK},
+      {GEN_DNS, "*.com", "foo.example.com", X509_V_ERR_PERMITTED_VIOLATION},
       // A foo.example.com permitted subtree does not permit *.example.com.
       // However, a foo.example.com excluded subtree does exclude *.example.com
       // because there is a partial overlap between the two.
       {GEN_DNS, "*.example.com", "foo.example.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_ERR_EXCLUDED_VIOLATION},
-      {GEN_DNS, "*.foo.example.com", "foo.example.com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
-      {GEN_DNS, "*.sub.foo.example.com", "foo.example.com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
+       X509_V_ERR_PERMITTED_VIOLATION, SpecialCase::kExcludedViolation},
+      {GEN_DNS, "*.foo.example.com", "foo.example.com", X509_V_OK},
+      {GEN_DNS, "*.sub.foo.example.com", "foo.example.com", X509_V_OK},
       {GEN_DNS, "*.bar.example.com", "foo.example.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
-      {GEN_DNS, "*.example.com", "net", X509_V_ERR_PERMITTED_VIOLATION,
-       X509_V_OK},
-      {GEN_DNS, "*.example.com", "com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
+       X509_V_ERR_PERMITTED_VIOLATION},
+      {GEN_DNS, "*.example.com", "net", X509_V_ERR_PERMITTED_VIOLATION},
+      {GEN_DNS, "*.example.com", "com", X509_V_OK},
 
       // Names must be emails.
       {GEN_EMAIL, "not-an-email.example", "not-an-email.example",
-       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX, X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
-      // A leading dot matches all local names and all subdomains
-      {GEN_EMAIL, "foo@bar.example.com", ".example.com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
-      {GEN_EMAIL, "foo@bar.example.com", ".EXAMPLE.COM", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_EMAIL, "not@an@email.example", "an@email.example",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_EMAIL, "not@an@email.example", "email.example",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_EMAIL, "not-an-email.example@", "not-an-email.example@",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_EMAIL, "not-an-email.example@", "@",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_EMAIL, "not-an-email.example@", "",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      // Only ASCII emails are supported.
+      {GEN_EMAIL, "bäd-chäräcter@not-an-email.example", "not-an-email.example",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      // Quoting is not supported.
+      {GEN_EMAIL, "\"foo\"@not-an-email.example", "foo@not-an-email.example",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_EMAIL, "foo@not-an-email.example", "\"foo\"@not-an-email.example",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+
+      // A leading dot matches all local names and all subdomains, but not the
+      // domain itself.
+      {GEN_EMAIL, "foo@bar.example.com", ".example.com", X509_V_OK},
+      {GEN_EMAIL, "foo@bar.example.com", ".EXAMPLE.COM", X509_V_OK},
       {GEN_EMAIL, "foo@bar.example.com", ".bar.example.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
+      {GEN_EMAIL, "foo@bar.example.com", "foo@.example.com",
+       X509_V_ERR_PERMITTED_VIOLATION},
+      {GEN_EMAIL, "foo@bar.example.com", "foo@.bar.example.com",
+       X509_V_ERR_PERMITTED_VIOLATION},
       // Without a leading dot, the host must match exactly.
-      {GEN_EMAIL, "foo@example.com", "example.com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
-      {GEN_EMAIL, "foo@example.com", "EXAMPLE.COM", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
+      {GEN_EMAIL, "foo@example.com", "example.com", X509_V_OK},
+      {GEN_EMAIL, "foo@example.com", "EXAMPLE.COM", X509_V_OK},
       {GEN_EMAIL, "foo@bar.example.com", "example.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       // If the constraint specifies a mailbox, it specifies the whole thing.
-      // The halves are compared insensitively.
-      {GEN_EMAIL, "foo@example.com", "foo@example.com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
-      {GEN_EMAIL, "foo@example.com", "foo@EXAMPLE.COM", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
+      // The localpart is usually handled case-sensitively, the domainpart
+      // case-insensitively.
+      {GEN_EMAIL, "foo@example.com", "foo@example.com", X509_V_OK},
+      {GEN_EMAIL, "foo@example.com", "foo@EXAMPLE.COM", X509_V_OK},
+      // In the special case of the email being supplied as a DN attribute,
+      // compare the localpart case-insensitively too, but for exclusions only.
       {GEN_EMAIL, "foo@example.com", "FOO@example.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION,
+       SpecialCase::kExcludedViolationIfDNAttribute},
       {GEN_EMAIL, "foo@example.com", "bar@example.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
-      // OpenSSL ignores a stray leading @.
-      {GEN_EMAIL, "foo@example.com", "@example.com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
-      {GEN_EMAIL, "foo@example.com", "@EXAMPLE.COM", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
+       X509_V_ERR_PERMITTED_VIOLATION},
+      // OpenSSL ignores a stray leading @. BoringSSL does not.
+      {GEN_EMAIL, "foo@example.com", "@example.com",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_EMAIL, "foo@example.com", "@EXAMPLE.COM",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
       {GEN_EMAIL, "foo@bar.example.com", "@example.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
 
       // Basic syntax check.
-      {GEN_URI, "not-a-url", "not-a-url", X509_V_ERR_UNSUPPORTED_NAME_SYNTAX,
-       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_URI, "not-a-url", "not-a-url", X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
       {GEN_URI, "foo:not-a-url", "not-a-url",
-       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX, X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
       {GEN_URI, "foo:/not-a-url", "not-a-url",
-       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX, X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
       {GEN_URI, "foo:///not-a-url", "not-a-url",
-       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX, X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
       {GEN_URI, "foo://:not-a-url", "not-a-url",
-       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX, X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
-      {GEN_URI, "foo://", "not-a-url", X509_V_ERR_UNSUPPORTED_NAME_SYNTAX,
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_URI, "foo://", "not-a-url", X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      // Reject URIs with userinfo.
+      {GEN_URI, "foo://username:password@example.com/whatever", "example.com",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_URI, "foo://username@example.com/whatever", "example.com",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_URI, "foo://@example.com/whatever", "example.com",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_URI, "foo://misleading.com:443@example.com/whatever",
+       "misleading.com", X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_URI, "foo://misleading.com:443@", "example.com",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      // Reject IP addresses.
+      {GEN_URI, "foo://123.45.67.89", "example.com",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_URI, "foo://0xde.0xad.0xbe.0xef", "example.com",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_URI, "foo://example.com.0x", "example.com",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_URI, "foo://example.com.0xca", "example.com",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_URI, "foo://[1234:5678:90ab::1]", "example.com",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      // Don't reject domain names whose final component consists of hex digits.
+      {GEN_URI, "foo://0xde.0xad.0xbe.ef", ".0xbe.ef", X509_V_OK},
+      // Port number, if present, must contain only digits.
+      {GEN_URI, "foo://example.com:a443", "example.com",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      // Empty host is a syntax error.
+      {GEN_URI, "foo://", "example.com", X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_URI, "foo:///whatever", "example.com",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_URI, "foo://:443", "example.com",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_URI, "foo://.:443", "example.com",
        X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
       // Hosts are an exact match.
-      {GEN_URI, "foo://example.com", "example.com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
-      {GEN_URI, "foo://example.com:443", "example.com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
-      {GEN_URI, "foo://example.com/whatever", "example.com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
+      {GEN_URI, "foo://example.com", "example.com", X509_V_OK},
+      {GEN_URI, "foo://example.com:443", "example.com", X509_V_OK},
+      {GEN_URI, "foo://example.com/whatever", "example.com", X509_V_OK},
+      {GEN_URI, "foo://example.com?query", "example.com", X509_V_OK},
+      {GEN_URI, "foo://example.com#fragment", "example.com", X509_V_OK},
       {GEN_URI, "foo://bar.example.com", "example.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_URI, "foo://bar.example.com:443", "example.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_URI, "foo://bar.example.com/whatever", "example.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_URI, "foo://bar.example.com", "xample.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_URI, "foo://bar.example.com:443", "xample.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_URI, "foo://bar.example.com/whatever", "xample.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_URI, "foo://example.com", "some-other-name.example",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_URI, "foo://example.com:443", "some-other-name.example",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_URI, "foo://example.com/whatever", "some-other-name.example",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       // A leading dot allows components to be added.
       {GEN_URI, "foo://example.com", ".example.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_URI, "foo://example.com:443", ".example.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_URI, "foo://example.com/whatever", ".example.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
-      {GEN_URI, "foo://bar.example.com", ".example.com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
-      {GEN_URI, "foo://bar.example.com:443", ".example.com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
-      {GEN_URI, "foo://bar.example.com/whatever", ".example.com", X509_V_OK,
-       X509_V_ERR_EXCLUDED_VIOLATION},
+       X509_V_ERR_PERMITTED_VIOLATION},
+      {GEN_URI, "foo://bar.example.com", ".example.com", X509_V_OK},
+      {GEN_URI, "foo://bar.example.com:443", ".example.com", X509_V_OK},
+      {GEN_URI, "foo://bar.example.com/whatever", ".example.com", X509_V_OK},
       {GEN_URI, "foo://example.com", ".some-other-name.example",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_URI, "foo://example.com:443", ".some-other-name.example",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_URI, "foo://example.com/whatever", ".some-other-name.example",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_URI, "foo://example.com", ".xample.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_URI, "foo://example.com:443", ".xample.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
       {GEN_URI, "foo://example.com/whatever", ".xample.com",
-       X509_V_ERR_PERMITTED_VIOLATION, X509_V_OK},
+       X509_V_ERR_PERMITTED_VIOLATION},
+      // Allow a single trailing dot representing the DNS common root.
+      {GEN_URI, "foo://bar.example.com.", ".example.com", X509_V_OK},
+      {GEN_URI, "foo://bar.example.com.", ".example.com.", X509_V_OK},
+      {GEN_URI, "foo://bar.example.com", ".example.com.", X509_V_OK},
+      {GEN_URI, "foo://bar.example.com.:443", ".example.com.", X509_V_OK},
+      {GEN_URI, "foo://bar.example.com", "bar.example.com.", X509_V_OK},
+      // Multiple trailing dots, or empty labels, are not allowed.
+      {GEN_URI, "foo://bar.example.com..", ".example.com.",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_URI, "foo://bar..example.com.", ".example.com.",
+       X509_V_ERR_UNSUPPORTED_NAME_SYNTAX},
+      {GEN_URI, "foo://bar.example.com.", ".example.com..",
+       X509_V_ERR_UNSUPPORTED_CONSTRAINT_SYNTAX},
+      {GEN_URI, "foo://bar.example.com.", ".example..com.",
+       X509_V_ERR_UNSUPPORTED_CONSTRAINT_SYNTAX},
+      // Test name constraint parsing. The URI name constraint should be a valid
+      // FQDN.
+      {GEN_URI, "foo://example.com", "..example.com",
+       X509_V_ERR_UNSUPPORTED_CONSTRAINT_SYNTAX},
+      {GEN_URI, "foo://example.com:443", "example.com:443",
+       X509_V_ERR_UNSUPPORTED_CONSTRAINT_SYNTAX},
   };
   for (const auto &t : kTests) {
     SCOPED_TRACE(t.type);
     SCOPED_TRACE(t.name);
     SCOPED_TRACE(t.constraint);
 
-    for (bool exclude : {false, true}) {
-      SCOPED_TRACE(exclude);
+    for (bool use_attr : {false, true}) {
+      SCOPED_TRACE(use_attr);
+      if (use_attr) {
+        if (t.type != GEN_EMAIL) {
+          // DN attribute is only supported for emails.
+          continue;
+        }
+      }
+      for (bool exclude : {false, true}) {
+        SCOPED_TRACE(exclude);
 
-      UniquePtr<GENERAL_NAME> name = MakeGeneralName(t.type, t.name);
-      ASSERT_TRUE(name);
-      UniquePtr<GENERAL_NAMES> names(GENERAL_NAMES_new());
-      ASSERT_TRUE(names);
-      ASSERT_TRUE(PushToStack(names.get(), std::move(name)));
+        UniquePtr<GENERAL_NAME> name = MakeGeneralName(t.type, t.name);
+        ASSERT_TRUE(name);
+        UniquePtr<GENERAL_NAMES> names(GENERAL_NAMES_new());
+        ASSERT_TRUE(names);
+        ASSERT_TRUE(PushToStack(names.get(), std::move(name)));
 
-      UniquePtr<NAME_CONSTRAINTS> nc(NAME_CONSTRAINTS_new());
-      ASSERT_TRUE(nc);
-      STACK_OF(GENERAL_SUBTREE) **rule =
-          exclude ? &nc->excludedSubtrees : &nc->permittedSubtrees;
-      *rule = sk_GENERAL_SUBTREE_new_null();
-      ASSERT_TRUE(*rule);
-      UniquePtr<GENERAL_SUBTREE> subtree(GENERAL_SUBTREE_new());
-      ASSERT_TRUE(subtree);
-      GENERAL_NAME_free(subtree->base);
-      subtree->base = MakeGeneralName(t.type, t.constraint).release();
-      ASSERT_TRUE(subtree->base);
-      ASSERT_TRUE(PushToStack(*rule, std::move(subtree)));
+        UniquePtr<NAME_CONSTRAINTS> nc(NAME_CONSTRAINTS_new());
+        ASSERT_TRUE(nc);
+        STACK_OF(GENERAL_SUBTREE) **rule =
+            exclude ? &nc->excludedSubtrees : &nc->permittedSubtrees;
+        *rule = sk_GENERAL_SUBTREE_new_null();
+        ASSERT_TRUE(*rule);
+        UniquePtr<GENERAL_SUBTREE> subtree(GENERAL_SUBTREE_new());
+        ASSERT_TRUE(subtree);
+        GENERAL_NAME_free(subtree->base);
+        subtree->base = MakeGeneralName(t.type, t.constraint).release();
+        ASSERT_TRUE(subtree->base);
+        ASSERT_TRUE(PushToStack(*rule, std::move(subtree)));
 
-      UniquePtr<X509> root =
-          MakeTestCert("Root", "Root", key.get(), /*is_ca=*/true);
-      ASSERT_TRUE(root);
-      ASSERT_TRUE(X509_add1_ext_i2d(root.get(), NID_name_constraints, nc.get(),
-                                    /*crit=*/1, /*flags=*/0));
-      ASSERT_TRUE(X509_sign(root.get(), key.get(), EVP_sha256()));
+        UniquePtr<X509> root =
+            MakeTestCert("Root", "Root", key.get(), /*is_ca=*/true);
+        ASSERT_TRUE(root);
+        ASSERT_TRUE(X509_add1_ext_i2d(root.get(), NID_name_constraints,
+                                      nc.get(),
+                                      /*crit=*/1, /*flags=*/0));
+        ASSERT_TRUE(X509_sign(root.get(), key.get(), EVP_sha256()));
 
-      UniquePtr<X509> leaf =
-          MakeTestCert("Root", "Leaf", key.get(), /*is_ca=*/false);
-      ASSERT_TRUE(leaf);
-      ASSERT_TRUE(X509_add1_ext_i2d(leaf.get(), NID_subject_alt_name,
-                                    names.get(),
-                                    /*crit=*/0, /*flags=*/0));
-      ASSERT_TRUE(X509_sign(leaf.get(), key.get(), EVP_sha256()));
+        UniquePtr<X509> leaf =
+            MakeTestCert("Root", "Leaf", key.get(), /*is_ca=*/false);
+        ASSERT_TRUE(leaf);
+        if (use_attr) {
+          UniquePtr<X509_NAME> subject(X509_NAME_new());
+          ASSERT_TRUE(subject);
+          ASSERT_TRUE(X509_NAME_add_entry_by_NID(
+              subject.get(), NID_pkcs9_emailAddress, V_ASN1_IA5STRING,
+              reinterpret_cast<const unsigned char *>(t.name.data()),
+              t.name.size(), /*loc=*/-1, /*set=*/0));
+          ASSERT_TRUE(X509_set_subject_name(leaf.get(), subject.get()));
+        } else {
+          ASSERT_TRUE(X509_add1_ext_i2d(leaf.get(), NID_subject_alt_name,
+                                        names.get(),
+                                        /*crit=*/0, /*flags=*/0));
+        }
+        ASSERT_TRUE(X509_sign(leaf.get(), key.get(), EVP_sha256()));
 
-      int got_result = Verify(leaf.get(), {root.get()}, {}, {}, 0);
-      int want_result = exclude ? t.exclude_result : t.permit_result;
-      EXPECT_EQ(want_result, got_result)
-          << "got \"" << X509_verify_cert_error_string(got_result)
-          << "\", want \"" << X509_verify_cert_error_string(want_result)
-          << "\"";
+        int got_result = Verify(leaf.get(), {root.get()}, {}, {}, 0);
+
+        int want_result = t.permit_result;
+        if (exclude) {
+          // By default, invert the sense when excluding.
+          switch (t.permit_result) {
+            case X509_V_OK:
+              want_result = X509_V_ERR_EXCLUDED_VIOLATION;
+              break;
+            case X509_V_ERR_PERMITTED_VIOLATION:
+              want_result = X509_V_OK;
+              break;
+          }
+
+          // Handle special cases.
+          switch (t.special_case) {
+            case SpecialCase::kExcludedViolation:
+              want_result = X509_V_ERR_EXCLUDED_VIOLATION;
+              break;
+            case SpecialCase::kExcludedViolationIfDNAttribute:
+              if (use_attr) {
+                want_result = X509_V_ERR_EXCLUDED_VIOLATION;
+              }
+              break;
+            default:;
+          }
+        }
+        EXPECT_EQ(want_result, got_result)
+            << "got \"" << X509_verify_cert_error_string(got_result)
+            << "\", want \"" << X509_verify_cert_error_string(want_result)
+            << "\"";
+      }
     }
   }
 }
@@ -2722,7 +2840,7 @@ TEST(X509Test, SignCertificate) {
         // Fill in the signature algorithm.
         ASSERT_TRUE(X509_set1_signature_algo(cert.get(), algor.get()));
 
-        // Extract the TBSCertificiate.
+        // Extract the TBSCertificate.
         uint8_t *tbs_cert = nullptr;
         int tbs_cert_len = i2d_re_X509_tbs(cert.get(), &tbs_cert);
         UniquePtr<uint8_t> free_tbs_cert(tbs_cert);
@@ -3179,9 +3297,9 @@ TEST(X509Test, TestFromBufferModified) {
   UniquePtr<X509> root(X509_parse_from_buffer(buf.get()));
   ASSERT_TRUE(root);
 
-  UniquePtr<ASN1_INTEGER> fourty_two(ASN1_INTEGER_new());
-  ASN1_INTEGER_set_int64(fourty_two.get(), 42);
-  X509_set_serialNumber(root.get(), fourty_two.get());
+  UniquePtr<ASN1_INTEGER> forty_two(ASN1_INTEGER_new());
+  ASN1_INTEGER_set_int64(forty_two.get(), 42);
+  X509_set_serialNumber(root.get(), forty_two.get());
 
   ASSERT_EQ(static_cast<long>(data_len), i2d_X509(root.get(), nullptr));
 
@@ -3803,6 +3921,51 @@ TEST(X509Test, CommonNameFallback) {
   EXPECT_EQ(X509_V_ERR_HOSTNAME_MISMATCH,
             verify_cert(with_ip.get(), X509_CHECK_FLAG_NEVER_CHECK_SUBJECT,
                         "foo.host1.test"));
+}
+
+// Test that it is possible to set host flags on the store and hosts on the
+// individual verify operation.
+TEST(X509Test, SeparateHostFlagsAndHosts) {
+  UniquePtr<X509> root = CertFromPEM(kSANTypesRoot);
+  ASSERT_TRUE(root);
+  UniquePtr<X509> without_sans = CertFromPEM(kCommonNameWithoutSANs);
+  ASSERT_TRUE(without_sans);
+  std::string_view host = "foo.host1.test";
+
+  UniquePtr<X509_STORE> store(X509_STORE_new());
+  ASSERT_TRUE(store);
+  ASSERT_TRUE(X509_STORE_add_cert(store.get(), root.get()));
+
+  // By default, we allow the common name fallback. This is just to establish a
+  // baseline. If this fails (e.g. if we turn off the common name fallback by
+  // default), this test will need to be updated with a different flag.
+  {
+    UniquePtr<X509_STORE_CTX> ctx(X509_STORE_CTX_new());
+    ASSERT_TRUE(ctx);
+    ASSERT_TRUE(X509_STORE_CTX_init(ctx.get(), store.get(), without_sans.get(),
+                                    nullptr));
+    ASSERT_TRUE(X509_VERIFY_PARAM_set1_host(
+        X509_STORE_CTX_get0_param(ctx.get()), host.data(), host.size()));
+    X509_STORE_CTX_set_time_posix(ctx.get(), /*flags=*/0, kReferenceTime);
+    EXPECT_EQ(1, X509_verify_cert(ctx.get()));
+    EXPECT_EQ(X509_V_OK, X509_STORE_CTX_get_error(ctx.get()));
+  }
+
+  // Disabling the common name fallback on the store should work.
+  X509_VERIFY_PARAM_set_hostflags(X509_STORE_get0_param(store.get()),
+                                  X509_CHECK_FLAG_NEVER_CHECK_SUBJECT);
+  {
+    UniquePtr<X509_STORE_CTX> ctx(X509_STORE_CTX_new());
+    ASSERT_TRUE(ctx);
+    ASSERT_TRUE(X509_STORE_CTX_init(ctx.get(), store.get(), without_sans.get(),
+                                    nullptr));
+    ASSERT_TRUE(X509_VERIFY_PARAM_set1_host(
+        X509_STORE_CTX_get0_param(ctx.get()), host.data(), host.size()));
+    X509_STORE_CTX_set_time_posix(ctx.get(), /*flags=*/0, kReferenceTime);
+    EXPECT_EQ(0, X509_verify_cert(ctx.get()));
+    EXPECT_EQ(X509_V_ERR_HOSTNAME_MISMATCH,
+              X509_STORE_CTX_get_error(ctx.get()));
+  }
 }
 
 TEST(X509Test, LooksLikeDNSName) {
@@ -5785,6 +5948,11 @@ TEST(X509Test, BytesToHex) {
 }
 
 TEST(X509Test, NamePrint) {
+  // Registering one of the test OIDs as a nameless OID should not impact
+  // printing. Note this impacts global state.
+  ASSERT_NE(OBJ_create("1.2.840.113554.4.1.72585.3", nullptr, nullptr),
+            NID_undef);
+
   // kTestName is a DER-encoded X.509 that covers many cases.
   //
   // SEQUENCE {
@@ -7226,6 +7394,48 @@ CN = Test)",
         0x73, 0x2d, 0x61, 0x6c, 0x6c, 0x6f, 0x77, 0x65, 0x64, 0x2e, 0x74, 0x65,
         0x73, 0x74}},
 
+      // nameConstraints puts a "permitted" or "excluded" prefix on the key
+      // name.
+      {"nameConstraints",
+       "permitted.DNS:example.com",
+       nullptr,
+       {0x30, 0x1a, 0x06, 0x03, 0x55, 0x1d, 0x1e, 0x04, 0x13, 0x30,
+        0x11, 0xa0, 0x0f, 0x30, 0x0d, 0x82, 0x0b, 0x65, 0x78, 0x61,
+        0x6d, 0x70, 0x6c, 0x65, 0x2e, 0x63, 0x6f, 0x6d}},
+      {"nameConstraints",
+       "permitted_DNS:example.com",
+       nullptr,
+       {0x30, 0x1a, 0x06, 0x03, 0x55, 0x1d, 0x1e, 0x04, 0x13, 0x30,
+        0x11, 0xa0, 0x0f, 0x30, 0x0d, 0x82, 0x0b, 0x65, 0x78, 0x61,
+        0x6d, 0x70, 0x6c, 0x65, 0x2e, 0x63, 0x6f, 0x6d}},
+      {"nameConstraints",
+       "excluded.DNS:example.com, excluded.email:example.com",
+       nullptr,
+       {0x30, 0x29, 0x06, 0x03, 0x55, 0x1d, 0x1e, 0x04, 0x22, 0x30, 0x20,
+        0xa1, 0x1e, 0x30, 0x0d, 0x82, 0x0b, 0x65, 0x78, 0x61, 0x6d, 0x70,
+        0x6c, 0x65, 0x2e, 0x63, 0x6f, 0x6d, 0x30, 0x0d, 0x81, 0x0b, 0x65,
+        0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x2e, 0x63, 0x6f, 0x6d}},
+      {"nameConstraints",
+       "permitted.DNS.1:example.com, permitted.DNS.2:example.net, "
+       "excluded.DNS.1:nope.example.com, excluded.DNS.2:also-nope.example.com",
+       nullptr,
+       {0x30, 0x58, 0x06, 0x03, 0x55, 0x1d, 0x1e, 0x04, 0x51, 0x30, 0x4f, 0xa0,
+        0x1e, 0x30, 0x0d, 0x82, 0x0b, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65,
+        0x2e, 0x63, 0x6f, 0x6d, 0x30, 0x0d, 0x82, 0x0b, 0x65, 0x78, 0x61, 0x6d,
+        0x70, 0x6c, 0x65, 0x2e, 0x6e, 0x65, 0x74, 0xa1, 0x2d, 0x30, 0x12, 0x82,
+        0x10, 0x6e, 0x6f, 0x70, 0x65, 0x2e, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c,
+        0x65, 0x2e, 0x63, 0x6f, 0x6d, 0x30, 0x17, 0x82, 0x15, 0x61, 0x6c, 0x73,
+        0x6f, 0x2d, 0x6e, 0x6f, 0x70, 0x65, 0x2e, 0x65, 0x78, 0x61, 0x6d, 0x70,
+        0x6c, 0x65, 0x2e, 0x63, 0x6f, 0x6d}},
+
+      // Invalid prefixes.
+      {"nameConstraints", "permit:example.com", nullptr, {}},
+      {"nameConstraints", "permitted:example.com", nullptr, {}},
+      {"nameConstraints", "permitted.nope:example.com", nullptr, {}},
+      {"nameConstraints", "exclude:example.com", nullptr, {}},
+      {"nameConstraints", "excluded:example.com", nullptr, {}},
+      {"nameConstraints", "excluded.nope:example.com", nullptr, {}},
+
       // The "DER:" prefix just specifies an arbitrary byte string. Colons
       // separators are ignored.
       {kTestOID, "DER:0001020304", nullptr, {0x30, 0x15, 0x06, 0x0c, 0x2a, 0x86,
@@ -7538,7 +7748,7 @@ CN = Test)",
         0x01, 0x84, 0xb7, 0x09, 0x02, 0x04, 0x04, 0x03, 0x02, 0x02, 0x44}},
 
       {kTestOID, "ASN1:FORMAT:BITLIST,BITSTR:1,invalid,5", nullptr, {}},
-      // Negative bit inidices are not allowed.
+      // Negative bit indices are not allowed.
       {kTestOID, "ASN1:FORMAT:BITLIST,BITSTR:-1", nullptr, {}},
       // We cap bit indices at 256.
       {kTestOID, "ASN1:FORMAT:BITLIST,BITSTR:257", nullptr, {}},
@@ -8223,6 +8433,36 @@ TEST(X509Test, ParamInheritance) {
     ASSERT_TRUE(X509_VERIFY_PARAM_set1(dest.get(), src.get()));
     // The new value is used.
     EXPECT_EQ(X509_VERIFY_PARAM_get_depth(dest.get()), 10);
+  }
+
+  // |X509_VERIFY_PARAM_inherit| and |X509_VERIFY_PARAM_set1| must fail if the
+  // source parameter is poisoned.
+  {
+    UniquePtr<X509_VERIFY_PARAM> dest(X509_VERIFY_PARAM_new());
+    ASSERT_TRUE(dest);
+    UniquePtr<X509_VERIFY_PARAM> src(X509_VERIFY_PARAM_new());
+    ASSERT_TRUE(src);
+
+    // Poison the source parameter (using an embedded NUL in hostname).
+    ASSERT_FALSE(X509_VERIFY_PARAM_set1_host(src.get(), "a", 2));
+
+    EXPECT_FALSE(X509_VERIFY_PARAM_inherit(dest.get(), src.get()));
+    EXPECT_FALSE(X509_VERIFY_PARAM_set1(dest.get(), src.get()));
+  }
+
+  // |X509_VERIFY_PARAM_inherit| and |X509_VERIFY_PARAM_set1| must fail if the
+  // destination parameter is poisoned.
+  {
+    UniquePtr<X509_VERIFY_PARAM> dest(X509_VERIFY_PARAM_new());
+    ASSERT_TRUE(dest);
+    UniquePtr<X509_VERIFY_PARAM> src(X509_VERIFY_PARAM_new());
+    ASSERT_TRUE(src);
+
+    // Poison the destination parameter (using an embedded NUL in hostname).
+    ASSERT_FALSE(X509_VERIFY_PARAM_set1_host(dest.get(), "a", 2));
+
+    EXPECT_FALSE(X509_VERIFY_PARAM_inherit(dest.get(), src.get()));
+    EXPECT_FALSE(X509_VERIFY_PARAM_set1(dest.get(), src.get()));
   }
 }
 
@@ -9059,40 +9299,53 @@ TEST(X509Test, DirHashSeparator) {
   ASSERT_TRUE(X509_sign(ca2.get(), key.get(), EVP_sha256()));
   ASSERT_TRUE(dir1.AddCert(ca2.get(), kNewHash));
 
-  // Make an |X509_STORE| that gets CAs from |dir1| and |dir2|.
-  UniquePtr<X509_STORE> store(X509_STORE_new());
-  ASSERT_TRUE(store);
-  std::string paths = dir1.path() + kSeparator + dir2.path();
-  ASSERT_TRUE(
-      X509_STORE_load_locations(store.get(), /*file=*/nullptr, paths.c_str()));
+  for (bool duplicates : {false, true}) {
+    SCOPED_TRACE(duplicates);
 
-  // Both CAs should work.
-  {
-    UniquePtr<X509> cert =
-        MakeTestCert("Test CA 1", "Leaf", key.get(), /*is_ca=*/false);
-    ASSERT_TRUE(cert);
-    ASSERT_TRUE(X509_sign(cert.get(), key.get(), EVP_sha256()));
-    UniquePtr<X509_STORE_CTX> ctx(X509_STORE_CTX_new());
-    ASSERT_TRUE(ctx);
-    ASSERT_TRUE(X509_STORE_CTX_init(ctx.get(), store.get(), cert.get(),
-                                    /*chain=*/nullptr));
-    X509_STORE_CTX_set_time_posix(ctx.get(), /*flags=*/0, kReferenceTime);
-    EXPECT_TRUE(X509_verify_cert(ctx.get()))
-        << X509_verify_cert_error_string(X509_STORE_CTX_get_error(ctx.get()));
-  }
+    // Make an |X509_STORE| that gets CAs from |dir1| and |dir2|.
+    UniquePtr<X509_STORE> store(X509_STORE_new());
+    ASSERT_TRUE(store);
+    std::string paths = dir1.path() + kSeparator + dir2.path();
+    if (duplicates) {
+      // Within a path, duplicates are silently ignored.
+      paths += kSeparator + paths;
+    }
+    ASSERT_TRUE(X509_STORE_load_locations(store.get(), /*file=*/nullptr,
+                                          paths.c_str()));
+    if (duplicates) {
+      // Across calls, duplicates are silently ignored.
+      ASSERT_TRUE(X509_STORE_load_locations(store.get(), /*file=*/nullptr,
+                                            paths.c_str()));
+    }
 
-  {
-    UniquePtr<X509> cert =
-        MakeTestCert("Test CA 2", "Leaf", key.get(), /*is_ca=*/false);
-    ASSERT_TRUE(cert);
-    ASSERT_TRUE(X509_sign(cert.get(), key.get(), EVP_sha256()));
-    UniquePtr<X509_STORE_CTX> ctx(X509_STORE_CTX_new());
-    ASSERT_TRUE(ctx);
-    ASSERT_TRUE(X509_STORE_CTX_init(ctx.get(), store.get(), cert.get(),
-                                    /*chain=*/nullptr));
-    X509_STORE_CTX_set_time_posix(ctx.get(), /*flags=*/0, kReferenceTime);
-    EXPECT_TRUE(X509_verify_cert(ctx.get()))
-        << X509_verify_cert_error_string(X509_STORE_CTX_get_error(ctx.get()));
+    // Both CAs should work.
+    {
+      UniquePtr<X509> cert =
+          MakeTestCert("Test CA 1", "Leaf", key.get(), /*is_ca=*/false);
+      ASSERT_TRUE(cert);
+      ASSERT_TRUE(X509_sign(cert.get(), key.get(), EVP_sha256()));
+      UniquePtr<X509_STORE_CTX> ctx(X509_STORE_CTX_new());
+      ASSERT_TRUE(ctx);
+      ASSERT_TRUE(X509_STORE_CTX_init(ctx.get(), store.get(), cert.get(),
+                                      /*chain=*/nullptr));
+      X509_STORE_CTX_set_time_posix(ctx.get(), /*flags=*/0, kReferenceTime);
+      EXPECT_TRUE(X509_verify_cert(ctx.get()))
+          << X509_verify_cert_error_string(X509_STORE_CTX_get_error(ctx.get()));
+    }
+
+    {
+      UniquePtr<X509> cert =
+          MakeTestCert("Test CA 2", "Leaf", key.get(), /*is_ca=*/false);
+      ASSERT_TRUE(cert);
+      ASSERT_TRUE(X509_sign(cert.get(), key.get(), EVP_sha256()));
+      UniquePtr<X509_STORE_CTX> ctx(X509_STORE_CTX_new());
+      ASSERT_TRUE(ctx);
+      ASSERT_TRUE(X509_STORE_CTX_init(ctx.get(), store.get(), cert.get(),
+                                      /*chain=*/nullptr));
+      X509_STORE_CTX_set_time_posix(ctx.get(), /*flags=*/0, kReferenceTime);
+      EXPECT_TRUE(X509_verify_cert(ctx.get()))
+          << X509_verify_cert_error_string(X509_STORE_CTX_get_error(ctx.get()));
+    }
   }
 }
 
@@ -9780,7 +10033,8 @@ TEST(X509Test, X509StoreGet1IssuerMultipleMatches) {
     ASSERT_TRUE(X509_STORE_add_cert(store.get(), issuer_wrong.get()));
   }
 
-  // Verify a certificate using the store. It should find the correct issuer.
+  // Verify a certificate using the store. It should find the correct issuer by
+  // matching SKID.
   UniquePtr<X509_STORE_CTX> ctx(X509_STORE_CTX_new());
   ASSERT_TRUE(ctx);
   ASSERT_TRUE(X509_STORE_CTX_init(ctx.get(), store.get(), cert.get(), nullptr));
@@ -9789,20 +10043,8 @@ TEST(X509Test, X509StoreGet1IssuerMultipleMatches) {
       << "Certificate verification failed: "
       << X509_STORE_CTX_get_error(ctx.get());
 
-  // Validate that a lookup by issuer name will not return |issuer_ok|,
-  // otherwise the test may flakily fail to flag a regression. It is not
-  // well-defined which issuer should be returned, but we use a stable sort, so
-  // this is currently reliable. If we ever change this, we can remove this
-  // check and rely on there being several bad certificates.
-  X509_OBJECT obj;
-  ASSERT_EQ(
-      1, X509_STORE_CTX_get_by_subject(ctx.get(), X509_LU_X509,
-                                       X509_get_issuer_name(cert.get()), &obj));
-  EXPECT_NE(0, X509_cmp(X509_OBJECT_get0_X509(&obj), issuer_ok.get()));
-  X509_OBJECT_free_contents(&obj);
-
-  // Check that by actually looking up using the certificate and not just its
-  // issuer name, we can do better and get |issuer_ok|.
+  // X509_STORE_CTX_get1_issuer, which takes the certificate and not just the
+  // issuer name, should also find the one with a matching SKID.
   X509 *found_issuer = nullptr;
   int get1_ret =
       X509_STORE_CTX_get1_issuer(&found_issuer, ctx.get(), cert.get());
@@ -9852,6 +10094,166 @@ TEST(X509Test, CheckPrivateKey) {
   EXPECT_EQ(X509_REQ_check_private_key(csr.get(), rsa.get()), 0);
   EXPECT_TRUE(
       ErrorEquals(ERR_get_error(), ERR_LIB_X509, X509_R_KEY_TYPE_MISMATCH));
+}
+
+TEST(X509Test, GetEmail) {
+  // A certificate with no emails.
+  UniquePtr<EVP_PKEY> p256(EVP_PKEY_generate_from_alg(EVP_pkey_ec_p256()));
+  ASSERT_TRUE(p256);
+  UniquePtr<X509> cert = MakeTestCert("Issuer", "Subject", p256.get(), false);
+  ASSERT_TRUE(cert);
+  ASSERT_TRUE(X509_sign(cert.get(), p256.get(), EVP_sha256()));
+  EXPECT_EQ(nullptr, X509_get1_email(cert.get()));
+
+  // A CSR with no emails.
+  UniquePtr<X509_REQ> req(X509_REQ_new());
+  ASSERT_TRUE(req);
+  ASSERT_TRUE(X509_REQ_set_pubkey(req.get(), p256.get()));
+  ASSERT_TRUE(X509_REQ_sign(req.get(), p256.get(), EVP_sha256()));
+  EXPECT_EQ(nullptr, X509_REQ_get1_email(req.get()));
+
+  // Prepare many emails.
+  constexpr size_t kCount = 5000;
+  UniquePtr<X509_NAME> subject(X509_NAME_new());
+  ASSERT_TRUE(subject);
+  UniquePtr<GENERAL_NAMES> sans(GENERAL_NAMES_new());
+  ASSERT_TRUE(sans);
+  std::vector<std::string> expected;
+  for (size_t i = 0; i < kCount; i++) {
+    bool duplicate = i % 3 == 0;
+    bool add_to_both = i % 5 == 0;
+    bool add_to_subject = add_to_both || i % 2 == 0;
+    bool add_to_sans = add_to_both || i % 2 == 1;
+
+    char email[256];
+    snprintf(email, sizeof(email), "test%zu@example.com", i);
+    std::string_view email_sv = email;
+    Span<const uint8_t> email_bytes = StringAsBytes(email);
+    if (i == 0) {
+      // Test with an embedded NUL. This string should be discarded.
+      email[4] = '\0';
+    } else {
+      expected.push_back(email);
+    }
+
+    for (int dup = 0; dup < (duplicate ? 1 : 2); dup++) {
+      if (add_to_subject) {
+        ASSERT_TRUE(X509_NAME_add_entry_by_NID(
+            subject.get(), NID_pkcs9_emailAddress, MBSTRING_UTF8,
+            email_bytes.data(), email_bytes.size(), /*loc=*/-1, /*set=*/-1));
+      }
+      if (add_to_sans) {
+        UniquePtr<GENERAL_NAME> san = MakeGeneralName(GEN_EMAIL, email_sv);
+        ASSERT_TRUE(san);
+        ASSERT_TRUE(PushToStack(sans.get(), std::move(san)));
+      }
+    }
+  }
+
+  // A certificate with many emails.
+  {
+    cert = MakeTestCert("Issuer", "Subject", p256.get(), false);
+    ASSERT_TRUE(cert);
+    ASSERT_TRUE(X509_set_subject_name(cert.get(), subject.get()));
+    ASSERT_TRUE(X509_add1_ext_i2d(cert.get(), NID_subject_alt_name, sans.get(),
+                                  /*crit=*/0, /*flags=*/0));
+    ASSERT_TRUE(X509_sign(cert.get(), p256.get(), EVP_sha256()));
+
+    UniquePtr<STACK_OF(OPENSSL_STRING)> emails(X509_get1_email(cert.get()));
+    ASSERT_TRUE(emails);
+    std::vector<std::string> actual;
+    for (const char *email : emails.get()) {
+      actual.push_back(email);
+    }
+
+    // The output order is undefined.
+    std::sort(expected.begin(), expected.end());
+    std::sort(actual.begin(), actual.end());
+    EXPECT_EQ(actual, expected);
+  }
+
+  // A CSR with many emails.
+  {
+    req.reset(X509_REQ_new());
+    ASSERT_TRUE(req);
+    ASSERT_TRUE(X509_REQ_set_subject_name(req.get(), subject.get()));
+    ASSERT_TRUE(X509_REQ_set_pubkey(req.get(), p256.get()));
+    STACK_OF(X509_EXTENSION) *exts_raw = nullptr;
+    ASSERT_TRUE(X509V3_add1_i2d(&exts_raw, NID_subject_alt_name, sans.get(),
+                                /*crit=*/0, X509V3_ADD_APPEND));
+    UniquePtr<STACK_OF(X509_EXTENSION)> exts(exts_raw);
+    ASSERT_TRUE(X509_REQ_add_extensions(req.get(), exts.get()));
+    ASSERT_TRUE(X509_REQ_sign(req.get(), p256.get(), EVP_sha256()));
+
+    UniquePtr<STACK_OF(OPENSSL_STRING)> emails(X509_REQ_get1_email(req.get()));
+    ASSERT_TRUE(emails);
+    std::vector<std::string> actual;
+    for (const char *email : emails.get()) {
+      actual.push_back(email);
+    }
+
+    // The output order is undefined.
+    std::sort(expected.begin(), expected.end());
+    std::sort(actual.begin(), actual.end());
+    EXPECT_EQ(actual, expected);
+  }
+}
+
+TEST(X509Test, GetOCSP) {
+  // A certificate with no OCSP URIs.
+  UniquePtr<EVP_PKEY> p256(EVP_PKEY_generate_from_alg(EVP_pkey_ec_p256()));
+  ASSERT_TRUE(p256);
+  UniquePtr<X509> cert = MakeTestCert("Issuer", "Subject", p256.get(), false);
+  ASSERT_TRUE(cert);
+  ASSERT_TRUE(X509_sign(cert.get(), p256.get(), EVP_sha256()));
+  EXPECT_EQ(nullptr, X509_get1_ocsp(cert.get()));
+
+  // Make a certificate with many OCSP URIs.
+  constexpr size_t kCount = 5000;
+  UniquePtr<AUTHORITY_INFO_ACCESS> aia(AUTHORITY_INFO_ACCESS_new());
+  ASSERT_TRUE(aia);
+  std::vector<std::string> expected;
+  for (size_t i = 0; i < kCount; i++) {
+    bool duplicate = i % 3 == 0;
+    bool is_ocsp = i % 5 != 0;
+    char uri[256];
+    snprintf(uri, sizeof(uri), "http://test%zu.example.com/", i);
+    std::string_view uri_sv = uri;
+    if (i == 0) {
+      // Test with an embedded NUL. This string should be discarded.
+      uri[11] = '\0';
+    } else if (is_ocsp) {
+      expected.push_back(uri);
+    }
+
+    for (int dup = 0; dup < (duplicate ? 1 : 2); dup++) {
+      UniquePtr<ACCESS_DESCRIPTION> ad(ACCESS_DESCRIPTION_new());
+      ASSERT_TRUE(ad);
+      ad->method = OBJ_nid2obj(is_ocsp ? NID_ad_OCSP : NID_ad_ca_issuers);
+      GENERAL_NAME_free(ad->location);
+      ad->location = MakeGeneralName(GEN_URI, uri_sv).release();
+      ASSERT_TRUE(ad->location);
+      ASSERT_TRUE(PushToStack(aia.get(), std::move(ad)));
+    }
+  }
+
+  cert = MakeTestCert("Issuer", "Subject", p256.get(), false);
+  ASSERT_TRUE(cert);
+  ASSERT_TRUE(X509_add1_ext_i2d(cert.get(), NID_info_access, aia.get(),
+                                /*crit=*/0, /*flags=*/0));
+  ASSERT_TRUE(X509_sign(cert.get(), p256.get(), EVP_sha256()));
+
+  UniquePtr<STACK_OF(OPENSSL_STRING)> ocsps(X509_get1_ocsp(cert.get()));
+  ASSERT_TRUE(ocsps);
+  std::vector<std::string> actual;
+  for (const char *ocsp : ocsps.get()) {
+    actual.push_back(ocsp);
+  }
+
+  // The output order is undefined.
+  std::sort(expected.begin(), expected.end());
+  std::sort(actual.begin(), actual.end());
+  EXPECT_EQ(actual, expected);
 }
 
 }  // namespace

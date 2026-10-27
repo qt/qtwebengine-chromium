@@ -25,17 +25,13 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/439062058): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include <cstring>
 #include <memory>
 
-#include "dawn/common/Assert.h"
 #include "dawn/wire/WireServer.h"
-#include "dawn/wire/server/Server.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/wire/server/Server.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::wire::server {
 
@@ -48,14 +44,13 @@ class InlineMemoryTransferService : public MemoryTransferService {
 
         size_t SizeOfSerializeDataUpdate(size_t offset, size_t size) override { return size; }
 
-        void SerializeDataUpdate(const void* data,
+        void SerializeDataUpdate(std::span<const uint8_t> data,
                                  size_t offset,
-                                 size_t size,
-                                 void* serializePointer) override {
-            if (size > 0) {
-                DAWN_ASSERT(data != nullptr);
-                DAWN_ASSERT(serializePointer != nullptr);
-                memcpy(serializePointer, data, size);
+                                 std::span<char> serializeData) override {
+            if (!data.empty()) {
+                DAWN_ASSERT(data.data() != nullptr);
+                DAWN_ASSERT(serializeData.data() != nullptr);
+                DAWN_UNSAFE_TODO(memcpy(serializeData.data(), data.data(), data.size()));
             }
         }
     };
@@ -65,30 +60,13 @@ class InlineMemoryTransferService : public MemoryTransferService {
         WriteHandleImpl() {}
         ~WriteHandleImpl() override = default;
 
-        // TODO(492456046): Remove this overload once it has been removed in Chromium.
-        bool DeserializeDataUpdate(const void* deserializePointer,
-                                   size_t deserializeSize,
-                                   size_t offset,
-                                   size_t size) override {
-            auto target = GetTarget();
-            if (deserializeSize != size || target.data() == nullptr ||
-                deserializePointer == nullptr) {
-                return false;
-            }
-            if (offset > target.size() || size > target.size() - offset) {
-                return false;
-            }
-            memcpy(target.data() + offset, deserializePointer, size);
-            return true;
-        }
-
         bool DeserializeDataUpdate(std::span<const uint8_t> deserializeData,
                                    std::span<uint8_t> target,
                                    size_t offset) override {
             if (deserializeData.size() != target.size()) {
                 return false;
             }
-            memcpy(target.data(), deserializeData.data(), deserializeData.size());
+            DAWN_UNSAFE_TODO(memcpy(target.data(), deserializeData.data(), deserializeData.size()));
             return true;
         }
     };

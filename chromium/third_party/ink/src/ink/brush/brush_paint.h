@@ -15,14 +15,15 @@
 #ifndef INK_STROKES_BRUSH_BRUSH_PAINT_H_
 #define INK_STROKES_BRUSH_BRUSH_PAINT_H_
 
-#include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/time/time.h"
 #include "ink/brush/color_function.h"
+#include "ink/brush/version.h"
 #include "ink/geometry/angle.h"
 #include "ink/geometry/mesh_format.h"
 #include "ink/geometry/vec.h"
@@ -32,31 +33,6 @@ namespace ink {
 // A `BrushPaint` consists of parameters that describe how a stroke mesh should
 // be rendered.
 struct BrushPaint {
-  // Specification of how the texture should be applied to the stroke.
-  //
-  // This should match the platform enum in BrushPaint.kt.
-  enum class TextureMapping {
-    // The texture will repeat according to a 2D affine transformation of
-    // vertex positions. Each copy of the texture will have the same size
-    // and shape, modulo reflections.
-    //
-    // This mode does not support texture animations, so it ignores the
-    // `animation_frames`, `animation_rows`, `animation_columns`, and
-    // `animation_duration` fields.
-    kTiling,
-    // This mode is intended for use with particle brush coats (i.e. with a
-    // brush tip with a nonzero particle gap). A copy of the texture (or one
-    // animation frame thereof) will be "stamped" onto each particle of the
-    // stroke, scaled or rotated appropriately to cover the whole particle.
-    //
-    // Since the whole texture (or animation frame) is always scaled to the size
-    // of each particle and positioned atop each one, this mode ignores the
-    // `origin`, `size_unit`, `wrap_x`, `wrap_y`, and `size` fields.
-    kStamping,
-    // TODO: b/271837965 - Add kWinding mode to support winding-textured
-    // continuous (non-particle) strokes.
-  };
-
   // Specification of the origin point to use for the texture.
   //
   // This should match the platform enum in BrushPaint.kt.
@@ -78,17 +54,6 @@ struct BrushPaint {
   enum class TextureSizeUnit {
     // As multiples of brush size.
     kBrushSize,
-    // As multiples of the stroke "size".
-    //
-    // This has different meanings depending on the value of `TextureMapping`
-    // for the given texture.
-    //   * For `kTiling` textures, the stroke size is equal to the dimensions of
-    //     the XY bounding rectangle of the mesh.
-    //   * For `kWinding` textures, the stroke size components are given by
-    //       x: stroke width, which may change over the course of the stroke if
-    //          behaviors affect the tip geometry.
-    //       y: the total distance traveled by the stroke.
-    kStrokeSize,
     // In the same units as the provided `StrokeInput` position.
     kStrokeCoordinates,
   };
@@ -214,31 +179,13 @@ struct BrushPaint {
   //   fuzz_domains.cc:blend_mode,
   // )
 
-  // Keyframe values used by `TextureLayer` below.
-  struct TextureKeyframe {
-    // Percentage value in the range [0, 1] indicating animation progress.
-    float progress;
-
-    // Values of texture transform attributes to apply for this keyframe. If not
-    // `nullopt`, these will override `TextureLayer::size`, `::offset`, and
-    // `::rotation`.
-    std::optional<Vec> size;
-    std::optional<Vec> offset;
-    std::optional<Angle> rotation;
-
-    // Value of texture layer opacity to apply for this keyframe. This value
-    // will override `TextureLayer::opacity`.
-    std::optional<float> opacity;
-
-    friend bool operator==(const TextureKeyframe&,
-                           const TextureKeyframe&) = default;
-  };
-
-  struct TextureLayer {
+  // A texture that will repeat according to a 2D affine transformation of
+  // vertex positions. Each copy of the texture will have the same size and
+  // shape, modulo reflections.
+  struct TilingTexture {
     // String id that will be used by renderers to retrieve the color texture.
     std::string client_texture_id;
 
-    TextureMapping mapping = TextureMapping::kTiling;
     TextureOrigin origin = TextureOrigin::kStrokeSpaceOrigin;
     TextureSizeUnit size_unit = TextureSizeUnit::kStrokeCoordinates;
     TextureWrap wrap_x = TextureWrap::kRepeat;
@@ -249,21 +196,30 @@ struct BrushPaint {
     Vec size = {1, 1};
     // An offset into the texture, specified as fractions of the texture size.
     Vec offset = {0, 0};
-    // Angle in radians specifying the rotation of the texture. The rotation is
-    // carried out about the center of the texture's first repetition along both
-    // axes.
+    // Angle specifying the rotation of the texture. The rotation is carried out
+    // about the center of the texture's first repetition along both axes.
     Angle rotation = Angle();
 
-    // Transform "jitter" properties below specify the magnitude of random
-    // offset that is applied to `size`, `offset`, and `rotation` on a
-    // per-stroke basis. Each component of `size_jitter` must be less than or
-    // equal to that of `size`.
-    Vec size_jitter = {0, 0};
-    Vec offset_jitter = {0, 0};
-    Angle rotation_jitter = Angle();
+    // The rule by which the texture layers up to and including this one are
+    // combined with the subsequent layer.
+    //
+    // I.e. `BrushPaint::texture_layers[index].blend_mode` will be used to
+    // combine "src", which is the result of blending layers [0..index], with
+    // "dst", which is the layer at index + 1. If index refers to the last
+    // texture layer, then the layer at "index + 1" is the brush color layer.
+    BlendMode blend_mode = BlendMode::kModulate;
 
-    // Overall layer opacity.
-    float opacity = 1;
+    friend bool operator==(const TilingTexture&,
+                           const TilingTexture&) = default;
+  };
+
+  // A texture intended for use with particle brush coats (i.e. with a brush tip
+  // with a nonzero particle gap). A copy of the texture (or one animation frame
+  // thereof) will be "stamped" onto each particle of the stroke, scaled or
+  // rotated appropriately to cover the whole particle.
+  struct StampingTexture {
+    // String id that will be used by renderers to retrieve the color texture.
+    std::string client_texture_id;
 
     // The number of animation frames in this texture. Must be between 1 and
     // 2^24 (inclusive). If 1 (the default), then animation is effectively
@@ -281,30 +237,34 @@ struct BrushPaint {
     int animation_columns = 1;
 
     // The length of time that it takes to loop through all of the
-    // `animation_frames` frames in the texture. This means that each frame will
-    // be displayed (on average) for `animation_duration / animation_frames`.
-    // Defaults to 1000 milliseconds, but ignored if `animation_frames` is 1
-    // (its default value) because that indicates that animation is disabled.
-    // Must be a whole number of milliseconds between 1 and 2^24 (inclusive).
+    // `animation_frames` frames in the texture (in which case each frame will
+    // be displayed for `animation_duration / animation_frames` on average), or
+    // zero to disable looping animations (in which case the animation frame is
+    // controlled solely by any `kTextureAnimationProgressOffset` behavior
+    // targets). If nonzero, this duration must be a whole number of
+    // milliseconds between 1 and 2^24 (inclusive).
+    //
+    // Note that this duration is ignored if `animation_frames` is 1 (its
+    // default value), because that indicates that animation is disabled.
     absl::Duration animation_duration = absl::Seconds(1);
 
-    // Animation keyframes; currently unused.
-    //
-    // TODO: b/373649343 - Decide if/how this should coexist with
-    // `animation_frames` above.
-    std::vector<TextureKeyframe> keyframes;
-
     // The rule by which the texture layers up to and including this one are
-    // combined with the subsequent layer.
-    //
-    // I.e. `BrushPaint::texture_layers[index].blend_mode` will be used to
-    // combine "src", which is the result of blending layers [0..index], with
-    // "dst", which is the layer at index + 1. If index refers to the last
-    // texture layer, then the layer at "index + 1" is the brush color layer.
+    // combined with the subsequent layer.  See `TilingTexture::blend_mode` for
+    // further details.
     BlendMode blend_mode = BlendMode::kModulate;
 
-    friend bool operator==(const TextureLayer&, const TextureLayer&) = default;
+    friend bool operator==(const StampingTexture&,
+                           const StampingTexture&) = default;
   };
+
+  // TODO: b/271837965 - Add `WindingTexture` mode to support winding-textured
+  // continuous (non-particle) strokes.
+
+  // Specification of how the texture should be applied to the stroke.
+  //
+  // The order of the variants should match the `MAPPING_*` constants in
+  // BrushPaint.kt.
+  using TextureLayer = std::variant<TilingTexture, StampingTexture>;
 
   // Specifies how parts of the stroke that intersect itself should be treated
   // during the rendering process. The simplest example of this is with
@@ -314,7 +274,7 @@ struct BrushPaint {
   // (self overlap is discarded). More complex examples may involve color or
   // opacity variations (e.g. with
   // BrushBehavior::Target::HUE_OFFSET_IN_RADIANS`), or complex textures (e.g.
-  // with `TextureMapping::kStamping`).
+  // with `StampingTexture`).
   //
   enum class SelfOverlap {
     // Any of the options listed below may be used, depending on what would be
@@ -332,9 +292,8 @@ struct BrushPaint {
     // Self overlap will be drawn in a way that discards the overlapping
     // content. This can be used to make the stroke appear as if it's drawn as a
     // PDF page object or annotation, where a stroke can be filled only with a
-    // solid color or textures using `TextureMapping::kTiling`. This is the
-    // default behavior for renderers that use the stroke outline rather than
-    // its mesh.
+    // solid color or textures using `TilingTexture`. This is the default
+    // behavior for renderers that use the stroke outline rather than its mesh.
     kDiscard,
   };
 
@@ -361,6 +320,10 @@ absl::Status ValidateBrushPaintTopLevel(const BrushPaint& paint);
 absl::Status ValidateBrushPaintTextureLayer(
     const BrushPaint::TextureLayer& layer);
 
+// Calculates the minimum version of the Ink library that is required to use
+// this brush paint.
+Version CalculateMinimumRequiredVersion(const BrushPaint& paint);
+
 // Adds the mesh attribute IDs that are required to properly render a mesh
 // with this brush paint to the given `attribute_ids` set. Note that other
 // attributes may also be required - either for core functionality (see
@@ -376,22 +339,17 @@ void AddAttributeIdsRequiredByPaint(
 bool AllowsSelfOverlapMode(const BrushPaint& paint,
                            BrushPaint::SelfOverlap self_overlap);
 
-std::string ToFormattedString(BrushPaint::TextureMapping texture_mapping);
 std::string ToFormattedString(BrushPaint::TextureOrigin texture_origin);
 std::string ToFormattedString(BrushPaint::TextureSizeUnit texture_size_unit);
 std::string ToFormattedString(BrushPaint::TextureWrap texture_wrap);
 std::string ToFormattedString(BrushPaint::BlendMode blend_mode);
-std::string ToFormattedString(const BrushPaint::TextureKeyframe& keyframe);
-std::string ToFormattedString(const BrushPaint::TextureLayer& texture_layer);
+std::string ToFormattedString(const BrushPaint::TilingTexture& layer);
+std::string ToFormattedString(const BrushPaint::StampingTexture& layer);
+std::string ToFormattedString(const BrushPaint::TextureLayer& layer);
 std::string ToFormattedString(BrushPaint::SelfOverlap self_overlap);
 std::string ToFormattedString(const BrushPaint& paint);
 
 }  // namespace brush_internal
-
-template <typename Sink>
-void AbslStringify(Sink& sink, BrushPaint::TextureMapping texture_mapping) {
-  sink.Append(brush_internal::ToFormattedString(texture_mapping));
-}
 
 template <typename Sink>
 void AbslStringify(Sink& sink, BrushPaint::TextureOrigin texture_origin) {
@@ -414,11 +372,6 @@ void AbslStringify(Sink& sink, BrushPaint::BlendMode blend_mode) {
 }
 
 template <typename Sink>
-void AbslStringify(Sink& sink, const BrushPaint::TextureKeyframe& key_frame) {
-  sink.Append(brush_internal::ToFormattedString(key_frame));
-}
-
-template <typename Sink>
 void AbslStringify(Sink& sink, const BrushPaint::TextureLayer& texture_layer) {
   sink.Append(brush_internal::ToFormattedString(texture_layer));
 }
@@ -434,18 +387,18 @@ void AbslStringify(Sink& sink, const BrushPaint& paint) {
 }
 
 template <typename H>
-H AbslHashValue(H h, const BrushPaint::TextureKeyframe& keyframe) {
-  return H::combine(std::move(h), keyframe.progress, keyframe.size,
-                    keyframe.offset, keyframe.rotation, keyframe.opacity);
+H AbslHashValue(H h, const BrushPaint::TilingTexture& layer) {
+  return H::combine(std::move(h), layer.client_texture_id, layer.origin,
+                    layer.size_unit, layer.wrap_x, layer.wrap_y, layer.size,
+                    layer.offset, layer.rotation, layer.blend_mode);
 }
 
 template <typename H>
-H AbslHashValue(H h, const BrushPaint::TextureLayer& layer) {
-  return H::combine(std::move(h), layer.client_texture_id, layer.mapping,
-                    layer.origin, layer.size_unit, layer.wrap_x, layer.wrap_y,
-                    layer.size, layer.offset, layer.rotation, layer.size_jitter,
-                    layer.offset_jitter, layer.rotation_jitter, layer.opacity,
-                    layer.keyframes, layer.blend_mode);
+H AbslHashValue(H h, const BrushPaint::StampingTexture& layer) {
+  return H::combine(std::move(h), layer.client_texture_id,
+                    layer.animation_frames, layer.animation_rows,
+                    layer.animation_columns, layer.animation_duration,
+                    layer.blend_mode);
 }
 
 template <typename H>

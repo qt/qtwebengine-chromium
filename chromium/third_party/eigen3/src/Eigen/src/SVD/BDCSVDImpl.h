@@ -16,6 +16,7 @@
 // Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_BDCSVD_IMPL_H
 #define EIGEN_BDCSVD_IMPL_H
@@ -86,6 +87,10 @@ class bdcsvd_impl {
   MatrixXr m_computed;
   ArrayXr m_workspace;
   ArrayXi m_workspaceI;
+  // Reused base-case JacobiSVDs (one per option set) so that recursive divide()
+  // calls don't reallocate JacobiSVD's internal U/V/sigma buffers each time.
+  JacobiSVD<MatrixXr, ComputeFullU> m_baseSvdU;
+  JacobiSVD<MatrixXr, ComputeFullU | ComputeFullV> m_baseSvdUV;
   int m_algoswap;
   bool m_compU, m_compV;
   int m_numIters;
@@ -201,13 +206,10 @@ void bdcsvd_impl<RealScalar_>::divide(Index firstCol, Index lastCol, Index first
   // We use the other algorithm which is more efficient for small
   // matrices.
   if (n < m_algoswap) {
-    // FIXME: this block involves temporaries.
     if (m_compV) {
-      JacobiSVD<MatrixXr, ComputeFullU | ComputeFullV> baseSvd;
-      computeBaseCase(baseSvd, n, firstCol, firstRowW, firstColW, shift);
+      computeBaseCase(m_baseSvdUV, n, firstCol, firstRowW, firstColW, shift);
     } else {
-      JacobiSVD<MatrixXr, ComputeFullU> baseSvd;
-      computeBaseCase(baseSvd, n, firstCol, firstRowW, firstColW, shift);
+      computeBaseCase(m_baseSvdU, n, firstCol, firstRowW, firstColW, shift);
     }
     return;
   }
@@ -306,11 +308,6 @@ void bdcsvd_impl<RealScalar_>::divide(Index firstCol, Index lastCol, Index first
 // the first column and on the diagonal and has undergone deflation, so diagonal is in increasing
 // order except for possibly the (0,0) entry. The computed SVD is stored U, singVals and V, except
 // that if m_compV is false, then V is not computed. Singular values are sorted in decreasing order.
-//
-// TODO: opportunities for optimization: better root-finding algorithm, better stopping criterion,
-// better handling of round-off errors, and consistent ordering.
-// For instance, to solve the secular equation using FMM, see
-// http://www.stat.uchicago.edu/~lekheng/courses/302/classics/greengard-rokhlin.pdf
 template <typename RealScalar_>
 void bdcsvd_impl<RealScalar_>::computeSVDofM(Index firstCol, Index n, MatrixXr& U, VectorType& singVals, MatrixXr& V) {
   const RealScalar considerZero = (std::numeric_limits<RealScalar>::min)();
@@ -580,7 +577,14 @@ void bdcsvd_impl<RealScalar_>::perturbCol0(const ArrayRef& col0, const ArrayRef&
       for (Index l = 0; l < m; ++l) {
         Index i = perm(l);
         if (i != k) {
-          Index j = i < k ? i : l > 0 ? perm(l - 1) : i;
+          // There is no valid predecessor when the first active index is already on the
+          // right of k. Treat this as a numerical issue and zero the product.
+          if (i >= k && l == 0) {
+            m_info = NumericalIssue;
+            prod = Literal(0);
+            break;
+          }
+          Index j = i < k ? i : perm(l - 1);
           prod *= ((singVals(j) + dk) / ((diag(i) + dk))) * ((mus(j) + (shifts(j) - dk)) / ((diag(i) - dk)));
         }
       }

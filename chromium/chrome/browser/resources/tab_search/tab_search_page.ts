@@ -8,6 +8,7 @@ import './selectable_lazy_list.js';
 import '/strings.m.js';
 import './tab_search_group_item.js';
 import './tab_search_item.js';
+import './tab_search_split_item.js';
 import './title_item.js';
 
 import {ColorChangeUpdater} from '//resources/cr_components/color_change_listener/colors_css_updater.js';
@@ -26,7 +27,7 @@ import type {SearchOptions} from './search.js';
 import {search} from './search.js';
 import type {SelectableLazyListElement} from './selectable_lazy_list.js';
 import {NO_SELECTION, selectorNavigationKeys} from './selectable_lazy_list.js';
-import {ariaLabel, getDisplayHostnameForUrl, getHostname, getTabGroupTitle, getTitle, normalizeURL, TabData, TabGroupData, TabItemType, tokenEquals, tokenToString} from './tab_data.js';
+import {ariaLabel, getDisplayHostnameForUrl, getHostname, getTabGroupTitle, getTitle, normalizeURL, SplitViewData, TabData, TabGroupData, TabItemType, tokenEquals, tokenToString} from './tab_data.js';
 import type {ItemData} from './tab_data.js';
 import type {ProfileData, RecentlyClosedTab, Tab, TabGroup, TabsRemovedInfo, TabUpdateInfo} from './tab_search.mojom-webui.js';
 import type {TabSearchApiProxy} from './tab_search_api_proxy.js';
@@ -35,6 +36,7 @@ import type {TabSearchGroupItemElement} from './tab_search_group_item.js';
 import type {TabSearchItemElement} from './tab_search_item.js';
 import {getCss} from './tab_search_page.css.js';
 import {getHtml} from './tab_search_page.html.js';
+import type {TabSearchSplitItemElement} from './tab_search_split_item.js';
 import {tabHasMediaAlerts} from './tab_search_utils.js';
 import {TitleItem} from './title_item.js';
 
@@ -63,7 +65,7 @@ export interface TabSearchPageElement {
     searchField: HTMLElement,
     searchInput: HTMLInputElement,
     searchWrapper: HTMLElement,
-    tabsList: SelectableLazyListElement,
+    tabsList: SelectableLazyListElement<TitleItem|TabData|TabGroupData>,
   };
 }
 
@@ -98,6 +100,7 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
        */
       searchOptions_: {type: Object},
       recentlyClosedDefaultItemDisplayCount_: {type: Number},
+      activeSelectionId_: {type: String},
     };
   }
 
@@ -106,7 +109,8 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
   protected accessor listMaxHeight_: number|undefined;
   protected accessor listItemSize_: number|undefined;
   protected accessor searchQueryMaxLength_: number = SEARCH_QUERY_MAX_LENGTH;
-  protected accessor filteredItems_: Array<TitleItem|TabData|TabGroupData> = [];
+  protected accessor filteredItems_:
+      Array<TitleItem|TabData|TabGroupData|SplitViewData> = [];
   private accessor searchOptions_: SearchOptions = {
     includeScore: true,
     includeMatches: true,
@@ -135,7 +139,7 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
   private accessor recentlyClosedDefaultItemDisplayCount_: number =
       loadTimeData.getValue('recentlyClosedDefaultItemDisplayCount');
   protected accessor searchResultText_: string = '';
-  protected activeSelectionId_?: string;
+  protected accessor activeSelectionId_: string|undefined;
   protected accessor shortcut_: string = loadTimeData.getString('shortcutText');
   override autofocus: boolean = false;
 
@@ -144,8 +148,8 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
   private listenerIds_: number[] = [];
   private tabGroupsMap_: Map<string, TabGroup> = new Map();
   private recentlyClosedTabGroups_: TabGroupData[] = [];
-  private openTabs_: TabData[] = [];
-  private recentlyClosedTabs_: TabData[] = [];
+  private openTabs_: Array<TabData|SplitViewData> = [];
+  private recentlyClosedTabs_: Array<TabData|SplitViewData> = [];
   private windowShownTimestamp_: number = Date.now();
   private mediaTabsTitleItem_: TitleItem;
   private openTabsTitleItem_: TitleItem;
@@ -255,7 +259,7 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
 
     this.updateFilteredTabs_();
 
-    // http://crbug.com/1481787: Dispatch the search event to update the
+    // http://crbug.com/40072096: Dispatch the search event to update the
     // internal value to make CrSearchFieldMixin function correctly.
     this.getSearchInput().dispatchEvent(
         new CustomEvent('search', {composed: true, detail: this.searchText_}));
@@ -320,10 +324,23 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
     // Replace the tab with the same tabId and trigger rerender.
     let foundTab = false;
     for (let i = 0; i < this.openTabs_.length && !foundTab; ++i) {
-      if (this.openTabs_[i]!.tab.tabId === tab.tabId) {
+      const item = this.openTabs_[i]!;
+      if (item instanceof TabData && item.tab.tabId === tab.tabId) {
         this.openTabs_[i] = tabData;
         this.updateFilteredTabs_();
         foundTab = true;
+      } else if (item instanceof SplitViewData && item.tabs) {
+        const tabIndex = item.tabs.findIndex(t => t.tabId === tab.tabId);
+        if (tabIndex !== -1) {
+          const tabs: [Tab, Tab] = [item.tabs[0], item.tabs[1]];
+          tabs[tabIndex] = tab;
+          const newSplitViewData = new SplitViewData({tabs});
+          newSplitViewData.inActiveWindow = item.inActiveWindow;
+          this.updateSplitViewTabGroup_(newSplitViewData, this.tabGroupsMap_);
+          this.openTabs_[i] = newSplitViewData;
+          this.updateFilteredTabs_();
+          foundTab = true;
+        }
       }
     }
 
@@ -332,6 +349,34 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
     if (!foundTab) {
       this.openTabs_.push(tabData);
       this.updateFilteredTabs_();
+    }
+
+    // Check if we need to group any tabs into a new SplitViewData locally.
+    if (loadTimeData.getBoolean('splitViewTabRestoreEnabled') && tab.splitId) {
+      const matchingIndices: number[] = [];
+      for (let i = 0; i < this.openTabs_.length; ++i) {
+        const item = this.openTabs_[i]!;
+        if (item instanceof TabData && item.tab.splitId &&
+            tokenEquals(item.tab.splitId, tab.splitId)) {
+          matchingIndices.push(i);
+        }
+      }
+
+      if (matchingIndices.length === 2) {
+        const splitViewData = new SplitViewData({
+          tabs: [
+            (this.openTabs_[matchingIndices[0]!] as TabData).tab as Tab,
+            (this.openTabs_[matchingIndices[1]!] as TabData).tab as Tab,
+          ],
+        });
+        const idx0 = matchingIndices[0]!;
+        const idx1 = matchingIndices[1]!;
+        splitViewData.inActiveWindow = this.openTabs_[idx0]!.inActiveWindow;
+        this.updateSplitViewTabGroup_(splitViewData, this.tabGroupsMap_);
+        this.openTabs_[idx0] = splitViewData;
+        this.openTabs_.splice(idx1, 1);
+        this.updateFilteredTabs_();
+      }
     }
 
     this.metricsReporter.measure('TabUpdated')
@@ -349,11 +394,27 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
     }
 
     const ids = new Set(tabsRemovedInfo.tabIds);
+
     // Splicing in descending index order to avoid affecting preceding indices
     // that are to be removed.
     for (let i = this.openTabs_.length - 1; i >= 0; i--) {
-      if (ids.has(this.openTabs_[i]!.tab.tabId)) {
+      const item = this.openTabs_[i]!;
+      if (item instanceof TabData && ids.has(item.tab.tabId)) {
         this.openTabs_.splice(i, 1);
+      } else if (item instanceof SplitViewData && item.tabs) {
+        const tab0Closed = ids.has(item.tabs[0].tabId);
+        const tab1Closed = ids.has(item.tabs[1].tabId);
+        if (tab0Closed && tab1Closed) {
+          // Both tabs in split closed, remove entire row.
+          this.openTabs_.splice(i, 1);
+        } else if (tab0Closed || tab1Closed) {
+          // One tab closed. Convert the remaining tab into standard TabData.
+          const survivingTab = tab0Closed ? item.tabs[1] : item.tabs[0];
+          const tabData = this.tabData_(
+              survivingTab, item.inActiveWindow, TabItemType.OPEN_TAB,
+              this.tabGroupsMap_);
+          this.openTabs_[i] = tabData;
+        }
       }
     }
 
@@ -457,6 +518,13 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
         this.apiProxy_.switchToTab({tabId: (itemData as TabData).tab.tabId});
         action = 'SwitchTab';
         break;
+      case TabItemType.OPEN_SPLIT:
+        this.recordMetricsForAction('SwitchTab', tabIndex);
+        this.apiProxy_.switchToTab({
+          tabId: (itemData as SplitViewData).tabs![0].tabId,
+        });
+        action = 'SwitchTab';
+        break;
       case TabItemType.RECENTLY_CLOSED_TAB:
         this.apiProxy_.openRecentlyClosedEntry(
             (itemData as TabData).tab.tabId, !!this.searchText_, true,
@@ -469,6 +537,12 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
             false, tabIndex - this.filteredOpenTabsCount_);
         action = 'OpenRecentlyClosedEntry';
         break;
+      case TabItemType.RECENTLY_CLOSED_SPLIT:
+        this.apiProxy_.openRecentlyClosedEntry(
+            (itemData as SplitViewData).sessionId, !!this.searchText_, false,
+            tabIndex - this.filteredOpenTabsCount_);
+        action = 'OpenRecentlyClosedEntry';
+        break;
       default:
         throw new Error('ItemData is of invalid type.');
     }
@@ -479,13 +553,18 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
 
   protected onItemClose_(e: Event) {
     performance.mark('tab_search:close_tab:metric_begin');
-    const target = e.currentTarget as TabSearchItemElement;
+    const target =
+        e.currentTarget as TabSearchItemElement | TabSearchSplitItemElement;
     const tabItem = target.data;
     const tabIndex = this.itemIndexToTabIndex_(Number(target.dataset['index']));
-    const tabId = tabItem.tab.tabId;
     this.recordMetricsForAction('CloseTab', tabIndex);
-    this.apiProxy_.closeTab(tabId);
-    this.announceA11y_(loadTimeData.getString('a11yTabClosed'));
+    if (tabItem instanceof SplitViewData && tabItem.tabs) {
+      this.apiProxy_.closeTabs([tabItem.tabs[0].tabId, tabItem.tabs[1].tabId]);
+      this.announceA11y_(loadTimeData.getString('a11ySplitViewClosed'));
+    } else if (tabItem instanceof TabData) {
+      this.apiProxy_.closeTab(tabItem.tab.tabId);
+      this.announceA11y_(loadTimeData.getString('a11yTabClosed'));
+    }
     listenOnce(this.$.tabsList, 'rendered-items-changed', () => {
       performance.mark('tab_search:close_tab:metric_end');
     });
@@ -511,14 +590,69 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
       map.set(tokenToString(tabGroup.id), tabGroup);
       return map;
     }, new Map());
-    this.openTabs_ = profileData.windows.reduce(
-        (acc, {active, tabs}) => acc.concat(tabs.map(
-            tab => this.tabData_(
-                tab, active, TabItemType.OPEN_TAB, this.tabGroupsMap_))),
-        [] as TabData[]);
-    this.recentlyClosedTabs_ = profileData.recentlyClosedTabs.map(
-        tab => this.tabData_(
-            tab, false, TabItemType.RECENTLY_CLOSED_TAB, this.tabGroupsMap_));
+
+    const openTabsList: Array<TabData|SplitViewData> = [];
+    for (const window of profileData.windows) {
+      const splitTabsMap = new Map<string, Tab[]>();
+      const nonSplitTabs: Tab[] = [];
+
+      for (const tab of window.tabs) {
+        if (loadTimeData.getBoolean('splitViewTabRestoreEnabled') &&
+            tab.splitId) {
+          const splitIdStr = tokenToString(tab.splitId);
+          if (!splitTabsMap.has(splitIdStr)) {
+            splitTabsMap.set(splitIdStr, []);
+          }
+          splitTabsMap.get(splitIdStr)!.push(tab);
+        } else {
+          nonSplitTabs.push(tab);
+        }
+      }
+
+      for (const [_, tabs] of splitTabsMap) {
+        if (tabs.length === 2) {
+          const splitViewData = new SplitViewData({
+            tabs: [tabs[0]!, tabs[1]!],
+          });
+          splitViewData.inActiveWindow = window.active;
+          this.updateSplitViewTabGroup_(splitViewData, this.tabGroupsMap_);
+          openTabsList.push(splitViewData);
+        } else {
+          for (const tab of tabs) {
+            nonSplitTabs.push(tab);
+          }
+        }
+      }
+
+      for (const tab of nonSplitTabs) {
+        openTabsList.push(this.tabData_(
+            tab, window.active, TabItemType.OPEN_TAB, this.tabGroupsMap_));
+      }
+    }
+    this.openTabs_ = openTabsList;
+
+    const splitViewTabRestoreEnabled =
+        loadTimeData.getBoolean('splitViewTabRestoreEnabled');
+
+    const recentlyClosedSplitViews = splitViewTabRestoreEnabled ?
+        (profileData.recentlyClosedSplitViews || []).map(splitView => {
+          const splitViewData = new SplitViewData({splitView});
+          this.updateSplitViewTabGroup_(splitViewData, this.tabGroupsMap_);
+          return splitViewData;
+        }) :
+        [];
+
+    const recentlyClosedTabsFiltered = splitViewTabRestoreEnabled ?
+        profileData.recentlyClosedTabs.filter(tab => !tab.splitId) :
+        profileData.recentlyClosedTabs;
+
+    this.recentlyClosedTabs_ = [
+      ...recentlyClosedTabsFiltered.map(
+          tab => this.tabData_(
+              tab, false, TabItemType.RECENTLY_CLOSED_TAB, this.tabGroupsMap_)),
+      ...recentlyClosedSplitViews,
+    ];
+
     this.recentlyClosedTabGroups_ =
         profileData.recentlyClosedTabGroups.map(tabGroup => {
           const tabGroupData = new TabGroupData(tabGroup);
@@ -610,6 +744,19 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
       return;
     }
 
+    // <if expr="is_macosx">
+    const lowerKey = e.key.toLowerCase();
+
+    if (e.ctrlKey && (lowerKey === 'n' || lowerKey === 'p')) {
+      const mappedKey = lowerKey === 'n' ? 'ArrowDown' : 'ArrowUp';
+      this.$.tabsList.navigate(mappedKey);
+
+      e.stopPropagation();
+      e.preventDefault();
+      return;
+    }
+    // </if>
+
     if (selectorNavigationKeys.includes(e.key)) {
       this.$.tabsList.navigate(e.key);
 
@@ -631,7 +778,7 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
     getAnnouncerInstance().announce(text);
   }
 
-  protected ariaLabel_(tabData: TabData|TabGroupData): string {
+  protected ariaLabel_(tabData: TabData|TabGroupData|SplitViewData): string {
     return ariaLabel(tabData);
   }
 
@@ -655,7 +802,27 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
     return tabData;
   }
 
+  private updateSplitViewTabGroup_(
+      splitViewData: SplitViewData, tabGroupsMap: Map<string, TabGroup>) {
+    let groupId = null;
+    if (splitViewData.tabs) {
+      groupId = splitViewData.tabs[0].groupId || splitViewData.tabs[1].groupId;
+    } else if (splitViewData.splitView) {
+      groupId = splitViewData.splitView.groupId;
+    }
+    if (groupId) {
+      splitViewData.tabGroup = tabGroupsMap.get(tokenToString(groupId));
+    } else {
+      splitViewData.tabGroup = undefined;
+    }
+  }
+
   private getRecentlyClosedItemLastActiveTime_(itemData: ItemData) {
+    if (itemData instanceof SplitViewData &&
+        itemData.type === TabItemType.RECENTLY_CLOSED_SPLIT) {
+      return itemData.splitView!.lastActiveTime;
+    }
+
     if (itemData.type === TabItemType.RECENTLY_CLOSED_TAB &&
         itemData instanceof TabData) {
       return (itemData.tab as RecentlyClosedTab).lastActiveTime;
@@ -671,8 +838,8 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
 
   private async updateFilteredTabs_() {
     this.openTabs_.sort((a, b) => {
-      const tabA = a.tab as Tab;
-      const tabB = b.tab as Tab;
+      const tabA = (a instanceof TabData ? a.tab : a.tabs![0]) as Tab;
+      const tabB = (b instanceof TabData ? b.tab : b.tabs![0]) as Tab;
       // Move the visible tab(s) to the bottom of the list
       // because it's not likely users want to click on it.
       if (a.inActiveWindow && tabA.visible) {
@@ -688,40 +855,63 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
           0;
     });
 
-    let mediaTabs: TabData[] = [];
+    let mediaTabs: Array<TabData|SplitViewData> = [];
     // Audio & Video section will not be added when search criteria is applied.
     // Show media tabs in Open Tabs.
     if (this.searchText_.length === 0) {
-      mediaTabs = this.openTabs_.filter(
-          tabData => tabHasMediaAlerts(tabData.tab as Tab));
+      mediaTabs = this.openTabs_.filter(tabData => {
+        if (tabData instanceof TabData) {
+          return tabHasMediaAlerts(tabData.tab as Tab);
+        }
+        if (tabData instanceof SplitViewData && tabData.tabs) {
+          return tabHasMediaAlerts(tabData.tabs[0]) ||
+              tabHasMediaAlerts(tabData.tabs[1]);
+        }
+        return false;
+      });
     }
 
-    const filteredMediaTabs =
-        search<TabData>(this.searchText_, mediaTabs, this.searchOptions_);
+    const filteredMediaTabs = search<TabData|SplitViewData>(
+        this.searchText_, mediaTabs, this.searchOptions_);
 
-    let filteredOpenTabs =
-        search<TabData>(this.searchText_, this.openTabs_, this.searchOptions_);
+    let filteredOpenTabs = search<TabData|SplitViewData>(
+        this.searchText_, this.openTabs_, this.searchOptions_);
 
     // The MRU tab that is not the active tab is either the first tab in the
     // Audio and Video section (if it exists) or the first tab in the Open Tabs
     // section.
     if (filteredOpenTabs.length > 0) {
+      const firstTab = filteredOpenTabs[0]!;
+      const isMedia = firstTab instanceof TabData ?
+          tabHasMediaAlerts(firstTab.tab as Tab) :
+          (firstTab instanceof SplitViewData && firstTab.tabs ?
+               (tabHasMediaAlerts(firstTab.tabs[0]) ||
+                tabHasMediaAlerts(firstTab.tabs[1])) :
+               false);
       this.initiallySelectedIndex_ =
-          (tabHasMediaAlerts(filteredOpenTabs[0]!.tab as Tab) ||
-           filteredMediaTabs.length === 0) ?
+          (isMedia || filteredMediaTabs.length === 0) ?
           1 :
           filteredMediaTabs.length + 2;
     }
 
     if (this.searchText_.length === 0) {
-      filteredOpenTabs = filteredOpenTabs.filter(
-          tabData => !tabHasMediaAlerts(tabData.tab as Tab));
+      filteredOpenTabs = filteredOpenTabs.filter(tabData => {
+        if (tabData instanceof TabData) {
+          return !tabHasMediaAlerts(tabData.tab as Tab);
+        }
+        if (tabData instanceof SplitViewData && tabData.tabs) {
+          return !(
+              tabHasMediaAlerts(tabData.tabs[0]) ||
+              tabHasMediaAlerts(tabData.tabs[1]));
+        }
+        return true;
+      });
     }
 
     this.filteredOpenTabsCount_ =
         filteredOpenTabs.length + filteredMediaTabs.length;
 
-    const recentlyClosedItems: Array<TabData|TabGroupData> =
+    const recentlyClosedItems: Array<TabData|TabGroupData|SplitViewData> =
         [...this.recentlyClosedTabs_, ...this.recentlyClosedTabGroups_];
     recentlyClosedItems.sort((a, b) => {
       const aTime = this.getRecentlyClosedItemLastActiveTime_(a);
@@ -731,8 +921,9 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
           Number(bTime.internalValue - aTime.internalValue) :
           0;
     });
-    let filteredRecentlyClosedItems = search<TabData|TabGroupData>(
-        this.searchText_, recentlyClosedItems, this.searchOptions_);
+    let filteredRecentlyClosedItems =
+        search<TabData|TabGroupData|SplitViewData>(
+            this.searchText_, recentlyClosedItems, this.searchOptions_);
 
     // Limit the number of recently closed items to the default display count
     // when no search text has been specified. Filter out recently closed tabs
@@ -747,9 +938,11 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
                 if (recentlyClosedItem instanceof TabGroupData) {
                   return true;
                 }
+                if (recentlyClosedItem instanceof SplitViewData) {
+                  return true;
+                }
 
-                const recentlyClosedTab =
-                    (recentlyClosedItem).tab as RecentlyClosedTab;
+                const recentlyClosedTab = recentlyClosedItem.tab;
                 return (
                     !recentlyClosedTab.groupId ||
                     !recentlyClosedTabGroupIds.some(
@@ -774,7 +967,7 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
           [this.mediaTabsTitleItem_, filteredMediaTabs],
           [this.openTabsTitleItem_, filteredOpenTabs],
           [this.recentlyClosedTitleItem_, filteredRecentlyClosedItems],
-        ] as Array<[TitleItem, Array<TabData|TabGroupData>]>)
+        ] as Array<[TitleItem, Array<TabData|TabGroupData|SplitViewData>]>)
             .reduce((acc, [sectionTitle, sectionItems]) => {
               if (sectionItems.length !== 0) {
                 acc.push(sectionTitle);
@@ -784,7 +977,7 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
                 }
               }
               return acc;
-            }, [] as Array<TitleItem|TabData|TabGroupData>);
+            }, [] as Array<TitleItem|TabData|TabGroupData|SplitViewData>);
     this.searchResultText_ = this.getA11ySearchResultText_();
 
     // If there was no previously selected index, set the selected index to be
@@ -818,19 +1011,28 @@ export class TabSearchPageElement extends TabSearchSearchFieldBase {
         undefined;
   }
 
-  protected assertIsTitleItem_(item: TitleItem|TabData|TabGroupData):
-      asserts item is TitleItem {
+  protected assertIsTitleItem_(
+      item: TitleItem|TabData|TabGroupData|
+      SplitViewData): asserts item is TitleItem {
     assert(item instanceof TitleItem);
   }
 
-  protected assertIsTabData_(item: TitleItem|TabData|TabGroupData):
-      asserts item is TabData {
+  protected assertIsTabData_(
+      item: TitleItem|TabData|TabGroupData|
+      SplitViewData): asserts item is TabData {
     assert(item instanceof TabData);
   }
 
-  protected assertIsTabGroupData_(item: TitleItem|TabData|TabGroupData):
-      asserts item is TabGroupData {
+  protected assertIsTabGroupData_(
+      item: TitleItem|TabData|TabGroupData|
+      SplitViewData): asserts item is TabGroupData {
     assert(item instanceof TabGroupData);
+  }
+
+  protected assertIsSplitViewData_(
+      item: TitleItem|TabData|TabGroupData|
+      SplitViewData): asserts item is SplitViewData {
+    assert(item instanceof SplitViewData);
   }
 }
 

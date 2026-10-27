@@ -33,6 +33,7 @@ class HostContentSettingsMap;
 
 namespace content {
 class BrowserContext;
+class RenderFrameHost;
 class WebContents;
 }  // namespace content
 
@@ -65,6 +66,11 @@ class PermissionsClient {
 
   // Return the permissions client.
   static PermissionsClient* Get();
+
+  // It returns whether the embedded permission prompt is enabled
+  // allowlisted surfaces, such as new tab page, contextual tasks, and omnibox
+  // popup.
+  static bool AllowEmbeddedPermissionPromptForAllowlistedSurfaces();
 
   // Retrieves the HostContentSettingsMap for this context. The returned pointer
   // has the same lifetime as |browser_context|.
@@ -211,23 +217,62 @@ class PermissionsClient {
   // Allows the embedder to bypass checking the embedding origin when performing
   // permission availability checks. This is used for example when a permission
   // should only be available on secure origins. Return true to bypass embedding
-  // origin checks for the passed in origins.
+  // origin checks for the passed in origins. Less strict ID checks than
+  // `GetCanonicalOriginOverride`.
   virtual bool CanBypassEmbeddingOriginCheck(const GURL& requesting_origin,
                                              const GURL& embedding_origin);
 
   // Allows embedder to override the canonical origin for a permission request.
   // This is the origin that will be used for requesting/storing/displaying
-  // permissions.
+  // permissions. Stricter ID checks than `GetEmbeddingOriginOverride` and
+  // `CanBypassEmbeddingOriginCheck` since `embedding_origin` outside of
+  // `WebContents` is expected to follow the new tab -> new tab page hierarchy.
   virtual std::optional<GURL> GetCanonicalOriginOverride(
       const GURL& requesting_origin,
       const GURL& embedding_origin);
 
-  // Returns the WebContents' GetLastCommittedURL() to use as the embedding
-  // origin when special handling is needed, or std::nullopt to use the default
-  // main frame origin.
+  // Returns the GURL to use as the embedding origin when special handling is
+  // needed, or std::nullopt to use the default main frame origin. Less strict
+  // ID checks than `GetCanonicalOriginOverride` since the embedding origin
+  // does not follow the new tab -> new tab page hierarchy.
+  // `render_frame_host` is the frame that issued the permission request;
+  // embedders that key the embedding origin on frame-tree position (e.g. a
+  // MIME handler OOPIF subtree) must consult it directly rather than inferring
+  // the frame from `requesting_origin`, which two distinct frames can share.
   virtual std::optional<GURL> GetEmbeddingOriginOverride(
       const GURL& requesting_origin,
+      content::RenderFrameHost* render_frame_host);
+
+  // Only verifies that WebUI is internal (chrome://) and trusted enough to skip
+  // tab interface usage and use embedded permission prompt. Its identity is
+  // determined by just `embedded_origin` instead of both `embedded_origin` and
+  // `requester_origin`.
+  virtual bool IsPrivilegedInternalWebUIForUIRouting(
       content::WebContents* web_contents);
+
+  // Returns if the permission request is from a WebUI or New Tab Page based on
+  // the `embedded_origin` and `requester_origin`. This check is less strict
+  // than the canonical origin check (which has different inputs) since
+  // `WebContents` does not follow the new tab -> new tab page hierarchy.
+  // Therefore, any combination of `new tab page` and `new tab` requester and
+  // embedders counts as being "from" a new tab page according to this function.
+  virtual bool IsFromNewTabPage(content::WebContents* web_contents,
+                                const GURL& requester,
+                                bool already_overrode_requester);
+
+  // Returns if the permission request is from a WebUI (contextual tasks,
+  // omnibox popup) based on its `embedded_origin` and `requester_origin`.
+  virtual bool IsPrivilegedInternalWebUI(content::WebContents* web_contents,
+                                         const GURL& requester,
+                                         bool already_overrode_requester);
+
+  // Returns if the permission request is from a WebUI (that is allowlisted for
+  // embedded permission prompts) or the new tab page based on the
+  // `embedded_origin` and `requester_origin`.
+  // This function calls `IsPrivilegedInternalWebUI` and `IsFromNewTabPage`.
+  bool IsPrivilegedInternalWebUIOrNewTabPage(content::WebContents* web_contents,
+                                             const GURL& requester,
+                                             bool already_overrode_requester);
 
   // Determines the reason why a prompt was ignored.
   virtual permissions::PermissionIgnoredReason DetermineIgnoreReason(
@@ -242,10 +287,10 @@ class PermissionsClient {
   // Allows the embedder to create a message UI to use as the
   // permission prompt. Returns the pointer to the message UI if the
   // message UI is successfully created, nullptr otherwise, e.g. if
-  // the messages-prompt is not supported for `type`.
+  // the messages-prompt is not supported for `request`.
   virtual std::unique_ptr<PermissionMessageDelegate> MaybeCreateMessageUI(
       content::WebContents* web_contents,
-      ContentSettingsType type,
+      const PermissionRequest& request,
       base::WeakPtr<PermissionPromptAndroid> prompt);
 
   using PermissionsUpdatedCallback = base::OnceCallback<void(bool)>;

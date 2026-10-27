@@ -26,6 +26,7 @@
 #include "core/fxge/cfx_face.h"
 #include "core/fxge/fx_font.h"
 
+class CFX_CTTGSUBTable;
 class CFX_GlyphBitmap;
 class CFX_GlyphCache;
 class CFX_Path;
@@ -97,11 +98,14 @@ class CFX_Font {
   const CFX_Path* LoadGlyphPath(uint32_t glyph_index, int dest_width) const;
 
   bool HasAnyGlyphs() const;
+  int GetCharIndex(uint32_t code) const;
+  int GetNameIndex(const char* name) const;
   int GetGlyphWidth(uint32_t glyph_index) const;
   int GetGlyphWidth(uint32_t glyph_index, int dest_width, int weight) const;
   int GetAscent() const;
   int GetDescent() const;
   std::optional<FX_RECT> GetGlyphBBox(uint32_t glyph_index);
+  std::optional<FX_RECT> GetCharBBox(uint32_t code, uint32_t glyph_index);
   bool IsItalic() const;
   bool IsBold() const;
   bool IsFixedWidth() const;
@@ -110,6 +114,7 @@ class CFX_Font {
   ByteString GetFamilyName() const;
   ByteString GetBaseFontName() const;
   bool IsTTFont() const;
+  std::unique_ptr<CFX_CTTGSUBTable> ParseGSUBTable() const;
 
   // Raw bounding box.
   std::optional<FX_RECT> GetRawBBox() const;

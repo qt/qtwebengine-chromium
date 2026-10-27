@@ -17,7 +17,7 @@
 #include "cc/input/browser_controls_offset_tag_modifications.h"
 #include "cc/scheduler/scheduler.h"
 #include "cc/trees/layer_tree_host_impl.h"
-#include "cc/trees/layer_tree_host_impl_client.h"
+#include "cc/trees/layer_tree_host_impl_delegate.h"
 #include "cc/trees/paint_holding_reason.h"
 #include "cc/trees/proxy.h"
 #include "cc/trees/task_runner_provider.h"
@@ -32,17 +32,18 @@ class FrameTimingDetails;
 
 namespace cc {
 
+class ClientLayerTreeHostImpl;
 class LayerTreeHost;
-class LayerTreeHostSingleThreadClient;
+class LayerTreeHostSingleThreadDelegate;
 class RenderFrameMetadataObserver;
 
 class CC_EXPORT SingleThreadProxy : public Proxy,
-                                    LayerTreeHostImplClient,
+                                    LayerTreeHostImplDelegate,
                                     public SchedulerClient {
  public:
   static std::unique_ptr<Proxy> Create(
       LayerTreeHost* layer_tree_host,
-      LayerTreeHostSingleThreadClient* client,
+      LayerTreeHostSingleThreadDelegate* delegate,
       TaskRunnerProvider* task_runner_provider);
   SingleThreadProxy(const SingleThreadProxy&) = delete;
   ~SingleThreadProxy() override;
@@ -56,7 +57,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void ReleaseLayerTreeFrameSink() override;
   void SetVisible(bool visible) override;
   void SetShouldWarmUp() override;
-  void SetNeedsAnimate(bool urgent) override;
+  void SetNeedsAnimate(BeginMainFrameReason, bool urgent) override;
   void SetNeedsUpdateLayers() override;
   void SetNeedsCommit() override;
   void SetNeedsRedraw(const gfx::Rect& damage_rect) override;
@@ -65,11 +66,12 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void DetachInputDelegateAndRenderFrameObserver() override;
   bool RequestedAnimatePending() override;
   void SetDeferMainFrameUpdate(bool defer_main_frame_update) override;
-  void SetPauseRendering(bool pause_rendering) override;
+  void SetPauseRendering(bool pause_rendering,
+                         bool delay_until_visibility_change) override;
   void SetInputResponsePending() override;
   bool StartDeferringCommits(base::TimeDelta timeout,
                              PaintHoldingReason reason) override;
-  void StopDeferringCommits(PaintHoldingCommitTrigger) override;
+  void StopDeferringCommits() override;
   bool IsDeferringCommits() const override;
   void SetShouldThrottleFrameRate(bool flag) override;
   bool CommitRequested() const override;
@@ -119,7 +121,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void FrameIntervalUpdated(base::TimeDelta interval) override;
   void OnBeginImplFrameDeadline() override;
 
-  // LayerTreeHostImplClient implementation
+  // LayerTreeHostImplDelegate implementation
   void DidLoseLayerTreeFrameSinkOnImplThread() override;
   void SetBeginFrameSource(viz::BeginFrameSource* source) override;
   void DidReceiveCompositorFrameAckOnImplThread() override;
@@ -130,7 +132,8 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void SetNeedsRedrawOnImplThread() override;
   void SetNeedsOneBeginImplFrameOnImplThread() override;
   void SetNeedsPrepareTilesOnImplThread() override;
-  void SetNeedsCommitOnImplThread(bool urgent) override;
+  void SetNeedsCommitOnImplThread(BeginMainFrameReason reason,
+                                  bool urgent) override;
   void SetVideoNeedsBeginFrames(bool needs_begin_frames) override;
   void DidChangeBeginFrameSourcePaused(bool paused) override;
   void SetDeferBeginMainFrameFromImpl(bool defer_begin_main_frame) override {}
@@ -180,7 +183,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
       base::TimeDelta first_scroll_delay,
       base::TimeTicks first_scroll_timestamp) override;
 
-  LayerTreeHostImpl* LayerTreeHostImplForTesting() const {
+  ClientLayerTreeHostImpl* LayerTreeHostImplForTesting() const {
     return host_impl_.get();
   }
 
@@ -188,7 +191,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
 
  protected:
   SingleThreadProxy(LayerTreeHost* layer_tree_host,
-                    LayerTreeHostSingleThreadClient* client,
+                    LayerTreeHostSingleThreadDelegate* delegate,
                     TaskRunnerProvider* task_runner_provider);
 
  private:
@@ -211,13 +214,13 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
 
   // Accessed on main thread only.
   raw_ptr<LayerTreeHost> layer_tree_host_;
-  raw_ptr<LayerTreeHostSingleThreadClient> single_thread_client_;
+  raw_ptr<LayerTreeHostSingleThreadDelegate> single_thread_delegate_;
 
   raw_ptr<TaskRunnerProvider> task_runner_provider_;
 
   // Used on the Thread, but checked on main thread during
   // initialization/shutdown.
-  std::unique_ptr<LayerTreeHostImpl> host_impl_;
+  std::unique_ptr<ClientLayerTreeHostImpl> host_impl_;
 
   // Accessed from both threads.
   std::unique_ptr<Scheduler> scheduler_on_impl_thread_;
@@ -241,7 +244,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   bool inside_synchronous_composite_;
   bool needs_impl_frame_;
 
-  // True if a request to the LayerTreeHostClient to create an output surface
+  // True if a request to the LayerTreeHostDelegate to create an output surface
   // is still outstanding.
   bool layer_tree_frame_sink_creation_requested_;
   // When output surface is lost, is set to true until a new output surface is

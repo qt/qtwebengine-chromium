@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 Matrix2f m = Matrix2f::Random();
 m = (m + m.adjoint()).eval();
 JacobiRotation<float> J;

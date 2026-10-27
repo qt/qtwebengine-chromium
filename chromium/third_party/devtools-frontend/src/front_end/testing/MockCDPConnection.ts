@@ -12,6 +12,14 @@ export type CommandHandler<C extends ProtocolClient.CDPConnection.Command> =
     (params: ProtocolClient.CDPConnection.CommandParams<C>, sessionId: string|undefined) =>
         Promise<CommandHandlerResponse<C>>|CommandHandlerResponse<C>;
 
+export type CommandSuccessHandler<C extends ProtocolClient.CDPConnection.Command> =
+    (params: ProtocolClient.CDPConnection.CommandParams<C>, sessionId: string|undefined) =>
+        ProtocolClient.CDPConnection.CommandResult<C>|Promise<ProtocolClient.CDPConnection.CommandResult<C>>;
+
+export type CommandFailureHandler<C extends ProtocolClient.CDPConnection.Command> =
+    (params: ProtocolClient.CDPConnection.CommandParams<C>, sessionId: string|undefined) =>
+        ProtocolClient.CDPConnection.CDPError|Promise<ProtocolClient.CDPConnection.CDPError>;
+
 export type CommandAndHandler<C extends ProtocolClient.CDPConnection.Command> = [C, CommandHandler<C>];
 
 /**
@@ -37,6 +45,9 @@ export class MockCDPConnection implements ProtocolClient.CDPConnection.CDPConnec
    * Sets the provided handler or clears an existing handler when passing `null`.
    *
    * Throws if a set would overwrite an existing handler.
+   *
+   * If the handler only ever returns a success result, consider using {@link setSuccessHandler}.
+   * If the handler only ever returns a failure, consider using {@link setFailureHandler}.
    */
   setHandler<T extends ProtocolClient.CDPConnection.Command>(method: T, handler: CommandHandler<T>|null): void {
     if (handler && this.#handlers.has(method)) {
@@ -48,6 +59,38 @@ export class MockCDPConnection implements ProtocolClient.CDPConnection.CDPConnec
     } else {
       this.#handlers.delete(method);
     }
+  }
+
+  /**
+   * A more ergonomic version of {@link setHandler} for handlers that only return
+   * a successful result.
+   */
+  setSuccessHandler<T extends ProtocolClient.CDPConnection.Command>(method: T, handler: CommandSuccessHandler<T>):
+      void {
+    const wrappedHandler: CommandHandler<T> = (params, sessionId) => {
+      const result = handler(params, sessionId);
+      if (result && typeof result === 'object' && 'then' in result) {
+        return (result as Promise<ProtocolClient.CDPConnection.CommandResult<T>>).then(result => ({result}));
+      }
+      return {result};
+    };
+    this.setHandler(method, wrappedHandler);
+  }
+
+  /**
+   * A more ergonomic version of {@link setHandler} for handlers that only return
+   * a failure.
+   */
+  setFailureHandler<T extends ProtocolClient.CDPConnection.Command>(method: T, handler: CommandFailureHandler<T>):
+      void {
+    const wrappedHandler: CommandHandler<T> = (params, sessionId) => {
+      const error = handler(params, sessionId);
+      if (error && typeof error === 'object' && 'then' in error) {
+        return (error as Promise<ProtocolClient.CDPConnection.CDPError>).then(error => ({error}));
+      }
+      return {error};
+    };
+    this.setHandler(method, wrappedHandler);
   }
 
   send<T extends ProtocolClient.CDPConnection.Command>(

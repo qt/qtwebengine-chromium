@@ -45,7 +45,11 @@ enum PolicyDomain {
   // signin profile. |component_id| must be equal to the extension ID.
   POLICY_DOMAIN_SIGNIN_EXTENSIONS = 2;
 
-  // Next ID to use: 3
+  // Domain for policies for Chrome extensions install. |component_id| must be
+  // empty.
+  POLICY_DOMAIN_EXTENSION_INSTALL = 3;
+
+  // Next ID to use: 4
 };
 
 // Descriptor for policy blobs to give SessionManager's StorePolicy*Ex and

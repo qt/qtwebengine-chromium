@@ -14,9 +14,8 @@
 #include "src/heap/heap-inl.h"
 #include "src/heap/large-page-inl.h"
 #include "src/heap/local-factory-inl.h"
-#include "src/heap/mutable-page.h"
+#include "src/heap/local-heap-inl.h"
 #include "src/heap/read-only-heap.h"
-#include "src/logging/local-logger.h"
 #include "src/logging/log.h"
 #include "src/objects/arguments-inl.h"
 #include "src/objects/instance-type.h"
@@ -88,6 +87,10 @@ Handle<Code> FactoryBase<Impl>::NewCode(const NewCodeOptions& options) {
   Tagged<Code> code = TrustedCast<Code>(
       AllocateRawWithImmortalMap(size, AllocationType::kTrusted, map));
   DisallowGarbageCollection no_gc;
+  // Allocates the Code object's self-indirect pointer directly inside the
+  // Code Pointer Table (CPT). This does not actually publish the JIT entrypoint
+  // yet as the CPT entry is natively initialized with
+  // kUninitializedEntrypointTag.
   code->InitAndPublish(isolate());
   code->initialize_flags(options.kind, options.is_context_specialized,
                          options.is_turbofanned);
@@ -109,7 +112,7 @@ Handle<Code> FactoryBase<Impl>::NewCode(const NewCodeOptions& options) {
   // Set bytecode/interpreter data or deoptimization data.
   if (CodeKindUsesBytecodeOrInterpreterData(options.kind)) {
     DCHECK(options.deoptimization_data.is_null());
-    Tagged<TrustedObject> data =
+    Tagged<UnionOf<BytecodeArray, InterpreterData>> data =
         *options.bytecode_or_interpreter_data.ToHandleChecked();
     DCHECK(IsBytecodeArray(data) || IsInterpreterData(data));
     code->set_bytecode_or_interpreter_data(data);
@@ -146,17 +149,18 @@ Handle<Code> FactoryBase<Impl>::NewCode(const NewCodeOptions& options) {
   Handle<InstructionStream> istream;
   if (options.instruction_stream.ToHandle(&istream)) {
     DCHECK_EQ(options.instruction_start, kNullAddress);
-    code->SetInstructionStreamAndInstructionStart(isolate(), *istream);
+    // This avoids setting the instruction stream start which would publish the
+    // object. See `InstructionStream::Finalize()` for the actual finalization
+    // sequence.
+    code->set_raw_instruction_stream(*istream);
   } else {
     DCHECK_NE(options.instruction_start, kNullAddress);
     code->set_raw_instruction_stream(Smi::zero(), SKIP_WRITE_BARRIER);
     code->SetInstructionStartForOffHeapBuiltin(isolate(),
                                                options.instruction_start);
   }
-
   wrapper->set_code(code);
   code->set_wrapper(*wrapper);
-
   code->clear_padding();
   return handle(code, isolate());
 }
@@ -228,6 +232,9 @@ Handle<FixedArray> FactoryBase<Impl>::NewFixedArrayWithFiller(
   result->set_map_after_allocation(isolate(), *map, SKIP_WRITE_BARRIER);
   Tagged<FixedArray> array = Cast<FixedArray>(result);
   array->set_length(length);
+#if TAGGED_SIZE_8_BYTES
+  array->clear_optional_padding();
+#endif  // TAGGED_SIZE_8_BYTES
   MemsetTagged(array->RawFieldOfFirstElement(), *filler, length);
   return handle(array, isolate());
 }
@@ -245,6 +252,9 @@ DirectHandle<FixedArray> FactoryBase<Impl>::NewFixedArrayWithZeroes(
       isolate(), read_only_roots().fixed_array_map(), SKIP_WRITE_BARRIER);
   Tagged<FixedArray> array = Cast<FixedArray>(result);
   array->set_length(length);
+#if TAGGED_SIZE_8_BYTES
+  array->clear_optional_padding();
+#endif  // TAGGED_SIZE_8_BYTES
   MemsetTagged(array->RawFieldOfFirstElement(), Smi::zero(), length);
   return direct_handle(array, isolate());
 }
@@ -268,6 +278,9 @@ Handle<WeakFixedArray> FactoryBase<Impl>::NewWeakFixedArrayWithMap(
   DisallowGarbageCollection no_gc;
   Tagged<WeakFixedArray> array = Cast<WeakFixedArray>(result);
   array->set_length(length);
+#if TAGGED_SIZE_8_BYTES
+  array->clear_optional_padding();
+#endif  // TAGGED_SIZE_8_BYTES
   MemsetTagged(ObjectSlot(array->RawFieldOfFirstElement()),
                read_only_roots().undefined_value(), length);
 
@@ -442,6 +455,9 @@ FactoryBase<Impl>::NewSloppyArgumentsElements(
                                             ? SKIP_WRITE_BARRIER
                                             : UPDATE_WRITE_BARRIER;
   result->set_length(length);
+#if TAGGED_SIZE_8_BYTES
+  result->clear_optional_padding();
+#endif  // TAGGED_SIZE_8_BYTES
   result->set_context(*context, write_barrier_mode);
   result->set_arguments(*arguments, write_barrier_mode);
   return direct_handle(result, isolate());
@@ -524,10 +540,10 @@ FactoryBase<Impl>::NewUncompiledDataWithoutPreparseData(
       TrustedCast<UncompiledDataWithoutPreparseData>(
           AllocateRawWithImmortalMap(size, AllocationType::kTrusted, map));
   DisallowGarbageCollection no_gc;
-  result->InitAndPublish(isolate());
   result->set_inferred_name(*inferred_name);
   result->set_start_position(start_position);
   result->set_end_position(end_position);
+  result->InitAndPublish(isolate());
   return direct_handle(result, isolate());
 }
 
@@ -542,11 +558,11 @@ FactoryBase<Impl>::NewUncompiledDataWithPreparseData(
       TrustedCast<UncompiledDataWithPreparseData>(
           AllocateRawWithImmortalMap(size, AllocationType::kTrusted, map));
   DisallowGarbageCollection no_gc;
-  result->InitAndPublish(isolate());
   result->set_inferred_name(*inferred_name);
   result->set_start_position(start_position);
   result->set_end_position(end_position);
   result->set_preparse_data(*preparse_data);
+  result->InitAndPublish(isolate());
   return direct_handle(result, isolate());
 }
 
@@ -562,11 +578,11 @@ FactoryBase<Impl>::NewUncompiledDataWithoutPreparseDataWithJob(
       TrustedCast<UncompiledDataWithoutPreparseDataWithJob>(
           AllocateRawWithImmortalMap(size, AllocationType::kTrusted, map));
   DisallowGarbageCollection no_gc;
-  result->InitAndPublish(isolate());
   result->set_inferred_name(*inferred_name);
   result->set_start_position(start_position);
   result->set_end_position(end_position);
   result->set_job(kNullAddress);
+  result->InitAndPublish(isolate());
   return direct_handle(result, isolate());
 }
 
@@ -582,12 +598,12 @@ FactoryBase<Impl>::NewUncompiledDataWithPreparseDataAndJob(
       TrustedCast<UncompiledDataWithPreparseDataAndJob>(
           AllocateRawWithImmortalMap(size, AllocationType::kTrusted, map));
   DisallowGarbageCollection no_gc;
-  result->InitAndPublish(isolate());
   result->set_inferred_name(*inferred_name);
   result->set_start_position(start_position);
   result->set_end_position(end_position);
   result->set_preparse_data(*preparse_data);
   result->set_job(kNullAddress);
+  result->InitAndPublish(isolate());
   return direct_handle(result, isolate());
 }
 
@@ -1096,7 +1112,7 @@ Handle<String> FactoryBase<Impl>::DoubleToString(double value,
     if (mode == NumberCacheMode::kBoth) {
       Handle<Object> cached =
           DoubleStringCache::Get(isolate(), entry, value_bits);
-      if (!IsUndefined(*cached, isolate())) return Cast<String>(cached);
+      if (!IsUndefined(*cached)) return Cast<String>(cached);
     }
   }
 
@@ -1146,7 +1162,7 @@ inline Handle<String> FactoryBase<Impl>::SmiToString(Tagged<Smi> number,
     }
     if (mode == NumberCacheMode::kBoth) {
       Handle<Object> cached = SmiStringCache::Get(isolate(), entry, number);
-      if (!IsUndefined(*cached, isolate())) return Cast<String>(cached);
+      if (!IsUndefined(*cached)) return Cast<String>(cached);
     }
   }
 
@@ -1204,10 +1220,10 @@ Handle<ScopeInfo> FactoryBase<Impl>::NewScopeInfo(int length,
   Tagged<HeapObject> obj = AllocateRawWithImmortalMap(
       size, type, read_only_roots().scope_info_map());
   Tagged<ScopeInfo> scope_info = Cast<ScopeInfo>(obj);
-  MemsetTagged(scope_info->data_start(), read_only_roots().undefined_value(),
-               length);
+  scope_info->InitializeTaggedMembers(read_only_roots().undefined_value(),
+                                      length);
 #if TAGGED_SIZE_8_BYTES
-  scope_info->set_optional_padding(0);
+  scope_info->optional_padding_ = 0;
 #endif
   return handle(scope_info, isolate());
 }

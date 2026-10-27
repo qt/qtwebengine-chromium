@@ -233,11 +233,22 @@ CtapGetAssertionRequest SpecializeRequestForAuthenticator(
   }
   if (preselected_credential &&
       preselected_credential->source == authenticator.GetType()) {
+    base::flat_set<FidoTransportProtocol> transports;
+    if (!preselected_credential->transports.empty()) {
+      transports = preselected_credential->transports;
+    } else if (preselected_credential->source ==
+               device::AuthenticatorType::kPhone) {
+      transports = {FidoTransportProtocol::kHybrid};
+    } else {
+      transports = {FidoTransportProtocol::kInternal};
+    }
     specialized_request.allow_list = {PublicKeyCredentialDescriptor(
         CredentialType::kPublicKey, preselected_credential->cred_id,
-        {preselected_credential->source == device::AuthenticatorType::kPhone
-             ? FidoTransportProtocol::kHybrid
-             : FidoTransportProtocol::kInternal})};
+        std::move(transports))};
+  }
+  if (authenticator.AuthenticatorTransport() !=
+      FidoTransportProtocol::kHybrid) {
+    specialized_request.cross_device_fallback_url = std::nullopt;
   }
   return specialized_request;
 }
@@ -333,26 +344,9 @@ void GetAssertionRequestHandler::PreselectAccount(
   preselected_credential_ = std::move(credential);
 }
 
-void GetAssertionRequestHandler::ProvideClientDataJson(
-    std::string client_data_json) {
-  CHECK(!client_data_json.empty());
-  request_.SetClientDataJson(std::move(client_data_json));
-  RequestReady();
-}
-
 base::WeakPtr<GetAssertionRequestHandler>
 GetAssertionRequestHandler::GetWeakPtr() {
   return weak_factory_.GetWeakPtr();
-}
-
-void GetAssertionRequestHandler::RequestReady() {
-  std::vector<base::WeakPtr<FidoAuthenticator>> pending_requests;
-  pending_requests.swap(pending_authenticator_requests_);
-  for (auto& authenticator : pending_requests) {
-    if (authenticator) {
-      DispatchRequest(authenticator.get());
-    }
-  }
 }
 
 void GetAssertionRequestHandler::OnBluetoothAdapterEnumerated(
@@ -360,15 +354,6 @@ void GetAssertionRequestHandler::OnBluetoothAdapterEnumerated(
     BleStatus ble_status,
     bool can_power_on,
     bool is_peripheral_role_supported) {
-  if (!is_peripheral_role_supported && request_.cable_extension) {
-    // caBLEv1 relies on the client being able to broadcast Bluetooth
-    // advertisements. |is_peripheral_role_supported| supposedly indicates
-    // whether the adapter supports advertising, but there appear to be false
-    // negatives (crbug/1074692). So we can't really do anything about it
-    // besides log it to aid diagnostics.
-    FIDO_LOG(ERROR)
-        << "caBLEv1 request, but BLE adapter does not support peripheral role";
-  }
   FidoRequestHandlerBase::OnBluetoothAdapterEnumerated(
       is_present, ble_status, can_power_on, is_peripheral_role_supported);
 }
@@ -376,13 +361,6 @@ void GetAssertionRequestHandler::OnBluetoothAdapterEnumerated(
 void GetAssertionRequestHandler::DispatchRequest(
     FidoAuthenticator* authenticator) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(my_sequence_checker_);
-  if (request_.client_data_json.empty()) {
-    // ChallengeUrl can asynchronously retrieve the challenge for ClientData, in
-    // which case the request has to be held pending.
-    pending_authenticator_requests_.push_back(authenticator->GetWeakPtr());
-    return;
-  }
-
   if (state_ != State::kWaitingForTouch) {
     FIDO_LOG(DEBUG) << "Not dispatching request to "
                     << authenticator->GetDisplayName()

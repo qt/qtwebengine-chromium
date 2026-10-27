@@ -28,7 +28,7 @@
     // existing data should get a new version. Otherwise, existing data may
     // continue to be used and updates made here will not always appear.
     // Also then run tools/search_engine_choice/generate_search_engine_icons.py.
-    "kCurrentDataVersion": 197
+    "kCurrentDataVersion": 206
   },
 
   // The following engines are included in country lists and are added to the
@@ -52,7 +52,7 @@
     "bing": {
       "name": "Microsoft Bing",
       "keyword": "bing.com",
-      "favicon_url": "https://www.bing.com/sa/simg/bing_p_rr_teal_min.ico",
+      "favicon_url": "https://www.bing.com/favicon.ico",
       "base_builtin_resource_id": "SEARCH_ENGINE_BING",
       "logo_url": "https://cdn.sapphire.microsoftapp.net/icons/bing_144.png",
       "search_url": "https://www.bing.com/search?q={searchTerms}",
@@ -61,6 +61,7 @@
       "new_tab_url": "https://www.bing.com/chrome/newtab",
       "image_url_post_params": "imageBin={google:imageThumbnailBase64}",
       "type": "SEARCH_ENGINE_BING",
+      "preconnect_to_search_url": "ALLOWED",
       "id": 3,
       "regulatory_extensions": [
         {
@@ -175,8 +176,8 @@
       "keyword": "google.com",
       "favicon_url": "https://www.google.com/images/branding/product/ico/googleg_alldp.ico",
       "base_builtin_resource_id": "SEARCH_ENGINE_GOOGLE",
-      "search_url": "{google:baseURL}search?q={searchTerms}&{google:RLZ}{google:originalQueryForSuggestion}{google:assistedQueryStats}{google:searchFieldtrialParameter}{google:language}{google:prefetchSource}{google:searchClient}{google:sourceId}{google:contextualSearchVersion}ie={inputEncoding}",
-      "suggest_url": "{google:baseSuggestURL}search?{google:searchFieldtrialParameter}client={google:suggestClient}&gs_ri={google:suggestRid}&xssi=t&q={searchTerms}&{google:inputType}{google:omniboxFocusType}{google:cursorPosition}{google:currentPageUrl}{google:pageClassification}{google:clientCacheTimeToLive}{google:searchVersion}{google:sessionToken}{google:prefetchQuery}sugkey={google:suggestAPIKeyParameter}",
+      "search_url": "{google:baseURL}search?q={searchTerms}&{google:RLZ}{google:originalQueryForSuggestion}{google:assistedQueryStats}{google:searchFieldtrialParameter}{google:language}{google:prefetchSource}{google:searchClient}{google:sourceId}{google:searchSource}{google:contextualSearchVersion}ie={inputEncoding}",
+      "suggest_url": "{google:baseSuggestURL}{google:suggestPath}?{google:searchFieldtrialParameter}client={google:suggestClient}&gs_ri={google:suggestRid}&xssi=t&q={searchTerms}&{google:inputType}{google:omniboxFocusType}{google:cursorPosition}{google:currentPageUrl}{google:pageClassification}{google:clientCacheTimeToLive}{google:searchVersion}{google:sessionToken}{google:prefetchQuery}sugkey={google:suggestAPIKeyParameter}",
       "image_url": "{google:baseSearchByImageURL}upload",
       "image_translate_url": "{google:baseSearchByImageURL}upload?filtertype=tr&{imageTranslateSourceLocale}{imageTranslateTargetLocale}",
       "contextual_search_url": "{google:baseURL}_/contextualsearch?{google:contextualSearchVersion}{google:contextualSearchContextData}",
@@ -194,6 +195,7 @@
       "type": "SEARCH_ENGINE_GOOGLE",
       "preconnect_to_search_url" : "ALLOWED",
       "prefetch_likely_navigations" : "ALLOWED",
+      "send_x_geo_header": true,
       "id": 1
     },
 
@@ -953,21 +955,6 @@
       ]
     },
 
-    "yandex_by": {
-      "name": "\u042f\u043d\u0434\u0435\u043a\u0441",
-      "keyword": "yandex.by",
-      "favicon_url": "https://yastatic.net/s3/web4static/_/v2/v9YNE_BX0evwMHbDyd0NZv8ReK0.png",
-      "base_builtin_resource_id": "SEARCH_ENGINE_YANDEX",
-      "logo_url": "https://storage.ape.yandex.net/get/browser/Doodles/chrome_ru/logo.png",
-      "search_url": "https://yandex.by/{yandex:searchPath}?text={searchTerms}",
-      "suggest_url": "https://suggest.yandex.by/suggest-ff.cgi?part={searchTerms}&{google:cursorPosition}",
-      "image_url": "https://yandex.by/images/search/?rpt=imageview",
-      "image_url_post_params": "upfile={google:imageThumbnail},original_width={google:imageOriginalWidth},original_height={google:imageOriginalHeight},prg=1",
-      "new_tab_url": "https://yandex.by/chrome/newtab",
-      "type": "SEARCH_ENGINE_YANDEX",
-      "id": 15
-    },
-
     "yandex_com": {
       "name": "Yandex",
       "keyword": "yandex.com",
@@ -992,6 +979,21 @@
           "suggest_params": "uil=en"
         }
       ]
+    },
+
+    "yandex_by": {
+      "name": "\u042f\u043d\u0434\u0435\u043a\u0441",
+      "keyword": "yandex.by",
+      "favicon_url": "https://yastatic.net/s3/web4static/_/v2/v9YNE_BX0evwMHbDyd0NZv8ReK0.png",
+      "base_builtin_resource_id": "SEARCH_ENGINE_YANDEX",
+      "logo_url": "https://storage.ape.yandex.net/get/browser/Doodles/chrome_ru/logo.png",
+      "search_url": "https://yandex.by/{yandex:searchPath}?text={searchTerms}",
+      "suggest_url": "https://suggest.yandex.by/suggest-ff.cgi?part={searchTerms}&{google:cursorPosition}",
+      "image_url": "https://yandex.by/images/search/?rpt=imageview",
+      "image_url_post_params": "upfile={google:imageThumbnail},original_width={google:imageOriginalWidth},original_height={google:imageOriginalHeight},prg=1",
+      "new_tab_url": "https://yandex.by/chrome/newtab",
+      "type": "SEARCH_ENGINE_YANDEX",
+      "id": 15
     },
 
     "yandex_kz": {

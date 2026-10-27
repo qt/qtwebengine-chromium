@@ -622,8 +622,9 @@ H265Parser::Result H265Parser::ParseSPS(int* sps_id) {
   }
   READ_UE_OR_RETURN(&sps->pic_width_in_luma_samples);
   READ_UE_OR_RETURN(&sps->pic_height_in_luma_samples);
-  TRUE_OR_RETURN(sps->pic_width_in_luma_samples != 0);
-  TRUE_OR_RETURN(sps->pic_height_in_luma_samples != 0);
+  // H.265 Level 6.2 restricts max frame dimensions to 16888 luma samples.
+  IN_RANGE_OR_RETURN(sps->pic_width_in_luma_samples, 1, 16888);
+  IN_RANGE_OR_RETURN(sps->pic_height_in_luma_samples, 1, 16888);
 
   // Equation A-2: Calculate max_dpb_size.
   int max_luma_ps = sps->profile_tier_level.GetMaxLumaPs();
@@ -719,9 +720,8 @@ H265Parser::Result H265Parser::ParseSPS(int* sps_id) {
   }
 
   READ_UE_OR_RETURN(&sps->log2_min_luma_coding_block_size_minus3);
-  // This enforces that min_cb_log2_size_y below will be <= 30 and prevents
-  // integer overflow math there.
-  TRUE_OR_RETURN(sps->log2_min_luma_coding_block_size_minus3 <= 27);
+  IN_RANGE_IF_OR_RETURN(sps->log2_min_luma_coding_block_size_minus3, 0, 3,
+                        validate_extended_bitstream_);
   READ_UE_OR_RETURN(&sps->log2_diff_max_min_luma_coding_block_size);
 
   int min_cb_log2_size_y = sps->log2_min_luma_coding_block_size_minus3 + 3;
@@ -731,7 +731,8 @@ H265Parser::Result H265Parser::ParseSPS(int* sps_id) {
     return kInvalidStream;
 
   sps->ctb_log2_size_y = ctb_log2_size_y.ValueOrDefault(0);
-  TRUE_OR_RETURN(sps->ctb_log2_size_y <= 30);
+  IN_RANGE_IF_OR_RETURN(sps->ctb_log2_size_y, 4, 6,
+                        validate_extended_bitstream_);
   int min_cb_size_y = 1 << min_cb_log2_size_y;
   int ctb_size_y = 1 << sps->ctb_log2_size_y;
   sps->pic_width_in_ctbs_y = base::ClampCeil(
@@ -883,6 +884,18 @@ H265Parser::Result H265Parser::ParseSPS(int* sps_id) {
 
   // If an SPS with the same id already exists, replace it.
   *sps_id = sps->sps_seq_parameter_set_id;
+
+  if (validate_extended_bitstream_) {
+    auto it = active_sps_.find(*sps_id);
+    if (it == active_sps_.end() || *(it->second) != *sps) {
+      // Invalidate dependent PPSes since their validations against the old SPS
+      // are no longer guaranteed to hold under the new SPS.
+      base::EraseIf(active_pps_, [id = *sps_id](const auto& pair) {
+        return pair.second->pps_seq_parameter_set_id == id;
+      });
+    }
+  }
+
   active_sps_[*sps_id] = std::move(sps);
 
   return res;

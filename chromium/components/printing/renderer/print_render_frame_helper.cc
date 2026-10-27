@@ -179,7 +179,7 @@ void ExecuteScript(blink::WebLocalFrame* frame,
                    std::string_view suffix) {
   std::string json = base::WriteJson(parameters).value_or("");
   frame->ExecuteScript(blink::WebScriptSource(
-      blink::WebString::FromUTF8(base::StrCat({prefix, json, suffix}))));
+      blink::WebString::FromUtf8(base::StrCat({prefix, json, suffix}))));
 }
 
 int GetDPI(const mojom::PrintParams& print_params) {
@@ -2451,42 +2451,30 @@ PrintRenderFrameHelper::SetOptionsFromPdfDocument() {
 bool PrintRenderFrameHelper::UpdatePrintSettings(
     blink::WebLocalFrame* frame,
     const blink::WebNode& node,
-    base::DictValue passed_job_settings) {
-  CHECK(!passed_job_settings.empty());
-
-  base::DictValue modified_job_settings;
-  const base::DictValue* job_settings;
-  bool source_is_html = !IsPrintingPdfFrame(frame, node);
-  if (source_is_html) {
-    job_settings = &passed_job_settings;
-  } else {
-    modified_job_settings.Merge(std::move(passed_job_settings));
-    modified_job_settings.Set(kSettingHeaderFooterEnabled, false);
-    modified_job_settings.Set(kSettingMarginsType,
-                              static_cast<int>(mojom::MarginType::kNoMargins));
-    job_settings = &modified_job_settings;
-  }
+    const base::DictValue& job_settings) {
+  CHECK(!job_settings.empty());
 
   mojom::PrintPagesParamsPtr settings;
-  GetPrintManagerHost()->UpdatePrintSettings(job_settings->Clone(), &settings);
+  GetPrintManagerHost()->GetPrintPreviewParams(&settings);
   if (!settings) {
     print_preview_context_.set_error(
         PrintPreviewErrorBuckets::kEmptyPrinterSettings);
     return false;
   }
 
-  settings->params->preview_ui_id = job_settings->FindInt(kPreviewUIID).value();
+  settings->params->preview_ui_id = job_settings.FindInt(kPreviewUIID).value();
 
   // Validate expected print preview settings.
   settings->params->is_first_request =
-      job_settings->FindBool(kIsFirstRequest).value();
+      job_settings.FindBool(kIsFirstRequest).value();
   settings->params->preview_request_id =
-      job_settings->FindInt(kPreviewRequestID).value();
+      job_settings.FindInt(kPreviewRequestID).value();
 
-  settings->params->print_to_pdf = IsPrintToPdfRequested(*job_settings);
-  UpdateFrameMarginsCssInfo(*job_settings);
+  settings->params->print_to_pdf = IsPrintToPdfRequested(job_settings);
+  UpdateFrameMarginsCssInfo(job_settings);
+  const bool source_is_html = !IsPrintingPdfFrame(frame, node);
   settings->params->print_scaling_option = GetPrintScalingOption(
-      frame, node, source_is_html, *job_settings, *settings->params);
+      frame, node, source_is_html, job_settings, *settings->params);
 
   RecordDebugEvent(settings->params->printed_doc_type ==
                            mojom::SkiaDocumentType::kMSKP
@@ -2626,8 +2614,7 @@ void PrintRenderFrameHelper::SetupOnStopLoadingTimeout() {
 void PrintRenderFrameHelper::ShowScriptedPrintPreview() {
   if (is_scripted_preview_delayed_) {
     is_scripted_preview_delayed_ = false;
-    GetPrintManagerHost()->ShowScriptedPrintPreview(
-        print_preview_context_.IsModifiable());
+    GetPrintManagerHost()->ShowScriptedPrintPreview();
   }
 }
 

@@ -51,6 +51,7 @@
 #include "content/browser/devtools/protocol/system_info_handler.h"
 #include "content/browser/devtools/protocol/target_handler.h"
 #include "content/browser/devtools/protocol/tracing_handler.h"
+#include "content/browser/devtools/protocol/webmcp_handler.h"
 #include "content/browser/devtools/web_contents_devtools_agent_host.h"
 #include "content/browser/fenced_frame/fenced_frame.h"
 #include "content/browser/renderer_host/navigation_request.h"
@@ -76,6 +77,7 @@
 #include "content/public/common/content_features.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/mojom/devtools/devtools_agent.mojom.h"
 
 #if BUILDFLAG(IS_ANDROID)
@@ -264,7 +266,8 @@ void RenderFrameDevToolsAgentHost::AttachToWebContents(
 
 // static
 void RenderFrameDevToolsAgentHost::UpdateRawHeadersAccess(
-    RenderFrameHostImpl* rfh) {
+    RenderFrameHostImpl* rfh,
+    RenderFrameDevToolsAgentHost* force_include_host) {
   if (!rfh) {
     return;
   }
@@ -272,10 +275,10 @@ void RenderFrameDevToolsAgentHost::UpdateRawHeadersAccess(
   std::set<url::Origin> process_origins;
   for (const auto& entry : GetAgentHostInstances()) {
     RenderFrameHostImpl* frame_host = entry.second->frame_host_;
-    if (!frame_host)
+    if (!frame_host) {
       continue;
-    // Do not skip the nodes if they're about to get attached.
-    if (!entry.second->IsAttached() && entry.first != rfh->frame_tree_node()) {
+    }
+    if (!entry.second->IsAttached() && entry.second != force_include_host) {
       continue;
     }
     RenderProcessHost* process_host = frame_host->GetProcess();
@@ -396,13 +399,14 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
           base::Unretained(this)),
       session->GetClient());
   session->CreateAndAddHandler<protocol::FetchHandler>(
-      GetIOContext(), base::BindRepeating(
-                          [](RenderFrameDevToolsAgentHost* self,
-                             base::OnceClosure done_callback) {
-                            self->UpdateResourceLoaderFactories();
-                            std::move(done_callback).Run();
-                          },
-                          base::Unretained(this)));
+      GetIOContext(), session->GetRootSession()->GetClient(),
+      base::BindRepeating(
+          [](RenderFrameDevToolsAgentHost* self,
+             base::OnceClosure done_callback) {
+            self->UpdateResourceLoaderFactories();
+            std::move(done_callback).Run();
+          },
+          base::Unretained(this)));
   session->CreateAndAddHandler<protocol::SchemaHandler>();
   const bool may_attach_to_browser = session->GetClient()->IsTrusted();
   session->CreateAndAddHandler<protocol::ServiceWorkerHandler>();
@@ -430,6 +434,9 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
     session->CreateAndAddHandler<protocol::TracingHandler>(this, GetIOContext(),
                                                            root_session);
   }
+  if (base::FeatureList::IsEnabled(blink::features::kDevToolsWebMCPSupport)) {
+    session->CreateAndAddHandler<protocol::WebMCPHandler>();
+  }
   session->CreateAndAddHandler<protocol::LogHandler>();
   session->CreateAndAddHandler<protocol::FedCmHandler>();
 #if !BUILDFLAG(IS_ANDROID)
@@ -437,7 +444,7 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
 #endif  // !BUILDFLAG(IS_ANDROID)
 
   if (sessions().empty()) {
-    UpdateRawHeadersAccess(frame_host_);
+    UpdateRawHeadersAccess(frame_host_, this);
 #if BUILDFLAG(IS_ANDROID)
     GetWakeLock()->RequestWakeLock();
 #endif
@@ -448,7 +455,7 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
 void RenderFrameDevToolsAgentHost::DetachSession(DevToolsSession* session) {
   // Destroying session automatically detaches in renderer.
   if (sessions().empty()) {
-    UpdateRawHeadersAccess(frame_host_);
+    UpdateRawHeadersAccess(frame_host_, nullptr);
 #if BUILDFLAG(IS_ANDROID)
     GetWakeLock()->CancelWakeLock();
 #endif
@@ -527,7 +534,7 @@ void RenderFrameDevToolsAgentHost::DidFinishNavigation(
       NotifyNavigated();
 
     if (IsAttached()) {
-      UpdateRawHeadersAccess(frame_tree_node_->current_frame_host());
+      UpdateRawHeadersAccess(frame_tree_node_->current_frame_host(), nullptr);
     }
 
     // Same-document navigations don't get a new RFH, so there isn't really
@@ -563,14 +570,9 @@ void RenderFrameDevToolsAgentHost::UpdateFrameHost(
     return;
   }
 
-  RenderFrameHostImpl* old_host = frame_host_;
-  ChangeFrameHostAndObservedProcess(frame_host);
-  if (IsAttached())
-    UpdateRawHeadersAccess(old_host);
-
   std::vector<DevToolsSession*> restricted_sessions;
   for (DevToolsSession* session : sessions()) {
-    if (!ShouldAllowSession(frame_host_, session)) {
+    if (!ShouldAllowSession(frame_host, session)) {
       restricted_sessions.push_back(session);
     }
   }
@@ -578,6 +580,12 @@ void RenderFrameDevToolsAgentHost::UpdateFrameHost(
   if (!restricted_sessions.empty()) {
     protect = this;
     ForceDetachRestrictedSessions(restricted_sessions);
+  }
+
+  RenderFrameHostImpl* old_host = frame_host_;
+  ChangeFrameHostAndObservedProcess(frame_host);
+  if (IsAttached()) {
+    UpdateRawHeadersAccess(old_host, nullptr);
   }
 
   UpdateFrameAlive();
@@ -637,7 +645,7 @@ void RenderFrameDevToolsAgentHost::DestroyOnRenderFrameGone() {
   scoped_refptr<DevToolsAgentHost> retain_this;
   if (IsAttached()) {
     retain_this = ForceDetachAllSessionsImpl();
-    UpdateRawHeadersAccess(frame_host_);
+    UpdateRawHeadersAccess(frame_host_, nullptr);
   }
   WebContentsObserver::Observe(nullptr);
   ChangeFrameHostAndObservedProcess(nullptr);
@@ -837,6 +845,15 @@ std::string RenderFrameDevToolsAgentHost::GetType() {
     return kTypeFrame;
   if (frame_tree_node_ && frame_tree_node_->IsFencedFrameRoot())
     return kTypeFrame;
+  // Prerender pages should always be reported as "page" type, even when they
+  // live in a separate WebContents (target_hint="_blank") that may not be
+  // associated with a browser tab. Without this, the embedder's
+  // GetTargetType() could return "other" for the prerender's WebContents,
+  // preventing DevTools from inspecting the prerendered page.
+  if (frame_tree_node_ &&
+      frame_tree_node_->GetFrameType() == FrameType::kPrerenderMainFrame) {
+    return kTypePage;
+  }
   if (!base::FeatureList::IsEnabled(features::kGuestViewMPArch)) {
     if (web_contents() &&
         static_cast<WebContentsImpl*>(web_contents())->GetOuterWebContents()) {
@@ -1014,7 +1031,6 @@ void RenderFrameDevToolsAgentHost::MainThreadDebuggerPaused() {
   url::Origin our_origin =
       url::Origin::Create(GetWebContents()->GetLastCommittedURL());
 
-  bool is_same_origin_debugger_attached_in_another_renderer = false;
   bool is_same_origin_debugger_paused_in_another_renderer = false;
   for (const auto& entry : GetAgentHostInstances()) {
     RenderFrameDevToolsAgentHost* agent_host = entry.second;
@@ -1030,17 +1046,11 @@ void RenderFrameDevToolsAgentHost::MainThreadDebuggerPaused() {
       continue;
     }
 
-    if (agent_host->IsAttached()) {
-      is_same_origin_debugger_attached_in_another_renderer = true;
-    }
     if (agent_host->is_debugger_paused_) {
       is_same_origin_debugger_paused_in_another_renderer = true;
     }
   }
 
-  base::UmaHistogramBoolean(
-      "DevTools.IsSameOriginDebuggerAttachedInAnotherRenderer",
-      is_same_origin_debugger_attached_in_another_renderer);
   base::UmaHistogramBoolean(
       "DevTools.IsSameOriginDebuggerPausedInAnotherRenderer",
       is_same_origin_debugger_paused_in_another_renderer);

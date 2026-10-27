@@ -21,7 +21,7 @@
 
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
-#include "ink/geometry/internal/jni/partitioned_mesh_jni_helper.h"
+#include "ink/geometry/internal/jni/partitioned_mesh_native_helper.h"
 #include "ink/geometry/internal/polyline_processing.h"
 #include "ink/geometry/mesh.h"
 #include "ink/geometry/mesh_format.h"
@@ -29,9 +29,9 @@
 #include "ink/geometry/point.h"
 #include "ink/geometry/tessellator.h"
 #include "ink/jni/internal/jni_defines.h"
-#include "ink/jni/internal/jni_throw_util.h"
+#include "ink/jni/internal/status_jni_helper.h"
 #include "ink/strokes/input/stroke_input_batch.h"
-#include "ink/strokes/internal/jni/stroke_input_jni_helper.h"
+#include "ink/strokes/internal/jni/stroke_input_batch_native_helper.h"
 
 namespace {
 
@@ -39,9 +39,9 @@ using ::ink::Mesh;
 using ::ink::PartitionedMesh;
 using ::ink::Point;
 using ::ink::StrokeInputBatch;
-using ::ink::jni::CastToStrokeInputBatch;
-using ::ink::jni::NewNativePartitionedMesh;
 using ::ink::jni::ThrowExceptionFromStatus;
+using ::ink::native::CastToStrokeInputBatch;
+using ::ink::native::NewNativePartitionedMesh;
 
 // private method to calculate the slope of a line segment. If the slope is
 // infinite, return float::infinity.
@@ -100,7 +100,7 @@ JNI_METHOD(strokes, MeshCreationNative, jlong,
   } else {
     mesh = ink::CreateMeshFromPolyline(processed_points);
   }
-  if (!mesh.status().ok() && processed_points.size() >= 2) {
+  if (!mesh.ok() && processed_points.size() >= 2) {
     // determine if input points are colinear
     float min_x = std::min(processed_points[0].x, processed_points[1].x);
     float max_x = std::max(processed_points[0].x, processed_points[1].x);

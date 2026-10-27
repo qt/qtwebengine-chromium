@@ -14,7 +14,7 @@ devtools_module("autofill_manager") {
     "../../core/common:bundle",
     "../../core/platform:bundle",
     "../../core/sdk:bundle",
-    "../../generated:protocol",
+    "../../generated",
   ]
 }
 
@@ -39,8 +39,8 @@ ts_library("unittests") {
 
   deps = [
     ":bundle",
-    "../../core/common:bundle",
     "../../core/sdk:bundle",
+    "../../generated",
     "../../testing",
   ]
 }

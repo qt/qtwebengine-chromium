@@ -71,6 +71,8 @@ type CommonConfig struct {
 	noArchiveCertificates                    bool
 	constantMathRandomResult                 float64
 	skipCertLoadingForTesting                bool
+	htmlInjection                            bool
+	jsInjection                              bool
 
 	// Computed state.
 	rootCerts    []tls.Certificate
@@ -198,6 +200,18 @@ func (common *CommonConfig) Flags() []cli.Flag {
 				"reordered due to external factors.",
 			Destination: &common.constantMathRandomResult,
 		},
+		&cli.BoolFlag{
+			Name:        "html-injection",
+			Value:       true,
+			Usage:       "Inject scripts into HTML responses. Defaults to true.",
+			Destination: &common.htmlInjection,
+		},
+		&cli.BoolFlag{
+			Name:        "js-injection",
+			Value:       false,
+			Usage:       "Inject scripts into JavaScript responses. Defaults to false.",
+			Destination: &common.jsInjection,
+		},
 	)
 }
 
@@ -305,19 +319,48 @@ func (common *CommonConfig) ProcessInjectedScriptsForReplay(c *cli.Context,
 		constantMathRandomResult = flagValue
 	}
 
-	// Replay from archive (unless --inject-scripts specified).
-	if !isSet(c, "inject-scripts") && len(archive.InjectedScripts) > 0 {
+	injectArchiveScripts := c.String("inject-archive-scripts") == "true"
+
+	// If the user didn't explicitly request a script, and the archive already
+	// contains 'deterministic.js', we skip loading the default 'deterministic.js'
+	// from the file system. This avoids duplicate script errors and ensures we
+	// use the version stored in the archive, preserving replay fidelity.
+	if !isSet(c, "inject-scripts") && common.injectScripts == "deterministic.js" {
+		if _, ok := archive.InjectedScripts["deterministic.js"]; ok {
+			Log().Info("Archive contains deterministic.js, skipping default injection")
+			common.injectScripts = ""
+		}
+	}
+
+	scriptsMap := make(map[string]string)
+	if injectArchiveScripts && len(archive.InjectedScripts) > 0 {
 		for name, contents := range archive.InjectedScripts {
-			replacedContents := replaceConstantsIfDeterministicJs(
+			scriptsMap[name] = contents
+			replacedContents := replaceConstants(
 				name, []byte(contents), timeSeedMs, constantMathRandomResult)
 			if err := common.addScriptInjector(replacedContents, name); err != nil {
 				return fmt.Errorf("error processing injected script %s: %v", name, err)
 			}
 		}
-		return nil
 	}
 
-	return common.processScripts(nil, timeSeedMs, constantMathRandomResult)
+	// Process scripts that were added from the archive and/or from the command line using
+	// the --inject-scripts flag.
+	if err := common.processScripts(scriptsMap, timeSeedMs, constantMathRandomResult); err != nil {
+		return err
+	}
+
+	// Specified through --rules-file.
+	if err := common.processRulesFile(c); err != nil {
+		return err
+	}
+
+	// Specified through --inject-script-by-url.
+	if err := common.processInjectScriptsByUrl(c); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 var (
@@ -340,7 +383,7 @@ func (common *CommonConfig) processScripts(scripts map[string]string, timeSeedMs
 			}
 			scripts[name] = string(script)
 		}
-		script = replaceConstantsIfDeterministicJs(name, script, timeSeedMs, constantMathRandomResult)
+		script = replaceConstants(name, script, timeSeedMs, constantMathRandomResult)
 		if err := common.addScriptInjector(script, name); err != nil {
 			return fmt.Errorf("error processing injected script %s: %v", name, err)
 		}
@@ -348,11 +391,61 @@ func (common *CommonConfig) processScripts(scripts map[string]string, timeSeedMs
 	return nil
 }
 
-func replaceConstantsIfDeterministicJs(
-	filename string, script []byte, timeSeedMs int64, constantMathRandomResult *float64) []byte {
-	if filepath.Base(filename) != "deterministic.js" {
-		return script
+func (common *CommonConfig) processRulesFile(c *cli.Context) error {
+	rulesFile := c.String("rules-file")
+	if rulesFile == "" {
+		return nil
 	}
+	t, err := webpagereplay.NewRuleBasedTransformerFromFile(rulesFile)
+	if err != nil {
+		return err
+	}
+	common.transformers = append(common.transformers, t)
+	Log().Info("Loaded replay rules", "path", rulesFile)
+	return nil
+}
+
+func (common *CommonConfig) processInjectScriptsByUrl(c *cli.Context) error {
+	byUrl := c.StringSlice("inject-script-by-url")
+	if len(byUrl) == 0 {
+		return nil
+	}
+	rules, err := parseInjectScriptsByUrl(byUrl)
+	if err != nil {
+		return err
+	}
+	t, err := webpagereplay.NewRuleBasedTransformer(rules)
+	if err != nil {
+		return err
+	}
+	common.transformers = append(common.transformers, t)
+	return nil
+}
+
+func parseInjectScriptsByUrl(byUrl []string) ([]*webpagereplay.TransformerRule, error) {
+	var rules []*webpagereplay.TransformerRule
+	for _, s := range byUrl {
+		// Use "::" as separator. Why it could appear in some file-path,
+		// it's not very common, and the user can fix that issue by choosing
+		// another path.
+		parts := strings.SplitN(s, "::", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid inject-script-by-url format: %s", s)
+		}
+		scriptPath := parts[0] // Path validated later in the pipeline.
+		urlStr := parts[1]
+
+		rule := &webpagereplay.TransformerRule{
+			InjectedScript: scriptPath,
+		}
+		rule.URLPattern = urlStr
+		rules = append(rules, rule)
+	}
+	return rules, nil
+}
+
+func replaceConstants(
+	filename string, script []byte, timeSeedMs int64, constantMathRandomResult *float64) []byte {
 
 	randomResultStr := "null"
 	if constantMathRandomResult != nil {
@@ -374,7 +467,10 @@ func replaceConstantsIfDeterministicJs(
 
 func (common *CommonConfig) addScriptInjector(script []byte, scriptFile string) error {
 	Log().Info("Processing script", "path", scriptFile)
-	si, err := webpagereplay.NewScriptInjector(script)
+	si, err := webpagereplay.NewScriptInjector(script, webpagereplay.ScriptInjectorConfig{
+		HtmlInjection: common.htmlInjection,
+		JsInjection:   common.jsInjection,
+	})
 	if err != nil {
 		return fmt.Errorf("error creating script injector for %s: %v", scriptFile, err)
 	}
@@ -409,6 +505,15 @@ func (r *RecordCommand) CheckArgsAndSetLogLevel(c *cli.Context) error {
 
 func (r *ReplayCommand) Flags() []cli.Flag {
 	return append(r.common.Flags(),
+		&cli.StringFlag{
+			Name:  "inject-archive-scripts",
+			Value: "false",
+			Usage: "Inject scripts stored in the archive on replay. Defaults to false.",
+		},
+		&cli.StringSliceFlag{
+			Name:  "inject-script-by-url",
+			Usage: "Inject scripts by URL. Format: path/to/script::URL.",
+		},
 		&cli.StringFlag{
 			Name:        "rules-file",
 			Value:       "",
@@ -638,16 +743,6 @@ func (r *ReplayCommand) Run(c *cli.Context) error {
 	if err := r.common.ProcessInjectedScriptsForReplay(c, archive); err != nil {
 		Log().Error("Error processing injected scripts", "error", err)
 		os.Exit(1)
-	}
-
-	if r.rulesFile != "" {
-		t, err := webpagereplay.NewRuleBasedTransformer(r.rulesFile)
-		if err != nil {
-			Log().Error("Error opening rules file", "path", r.rulesFile, "error", err)
-			os.Exit(1)
-		}
-		r.common.transformers = append(r.common.transformers, t)
-		Log().Info("Loaded replay rules", "path", r.rulesFile)
 	}
 
 	// When recording, transformations are applied at request time, because that's

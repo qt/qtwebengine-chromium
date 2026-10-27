@@ -120,6 +120,7 @@ void CameraDeviceContext::SubmitCapturedImage(
   client->second->OnIncomingCapturedImage(
       std::move(shared_image), frame_format, GetCameraFrameRotation(),
       reference_time, timestamp, /*capture_begin_timestamp=*/std::nullopt,
+      frame_format.frame_size,
       /*metadata=*/std::nullopt);
 }
 
@@ -194,7 +195,7 @@ void CameraDeviceContext::OnGotHardwareInfo(
     base::SysInfo::HardwareInfo hardware_info) {
   base::AutoLock lock(client_lock_);
   if (hardware_info.model.starts_with("screebo")) {
-    color_space_override_ = gfx::ColorSpace::CreateSRGB();
+    color_space_override_ = gfx::ColorSpace::CreateJpeg();
   }
 }
 

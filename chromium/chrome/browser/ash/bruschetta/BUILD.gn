@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
-
 assert(is_chromeos)
 
 static_library("bruschetta") {
@@ -63,6 +61,7 @@ static_library("bruschetta") {
     "//chrome/browser/ash/guest_os/public",
     "//chrome/browser/ash/profiles",
     "//chrome/browser/extensions/api/terminal:startup_status",
+    "//chrome/browser/net",
     "//chrome/browser/profiles",
     "//chromeos/ash/components/dbus/attestation",
     "//chromeos/ash/components/dbus/dlcservice",
@@ -142,7 +141,6 @@ source_set("unit_tests") {
     "//ash/constants",
     "//base",
     "//base/test:test_support",
-    "//chrome/app:generated_resources",
     "//chrome/browser/ash/guest_os",
     "//chrome/browser/ash/guest_os:test_support",
     "//chrome/browser/ash/guest_os/public",

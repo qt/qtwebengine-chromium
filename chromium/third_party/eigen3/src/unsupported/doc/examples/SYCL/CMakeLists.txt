@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
+
 FILE(GLOB examples_SRCS "*.cpp")
 
 set(EIGEN_SYCL ON)

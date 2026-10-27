@@ -37,7 +37,7 @@ void LogExecution(Isolate* isolate, DirectHandle<JSFunction> function) {
   DisallowGarbageCollection no_gc;
   Tagged<SharedFunctionInfo> raw_sfi = *sfi;
   std::string event_name = "first-execution";
-  CodeKind kind = function->abstract_code(isolate)->kind(isolate);
+  CodeKind kind = function->abstract_code(isolate)->kind();
   // Not adding "-interpreter" for tooling backwards compatibility.
   if (kind != CodeKind::INTERPRETED_FUNCTION) {
     event_name += "-";
@@ -106,8 +106,6 @@ V8_INLINE void UpdateEmbeddedFeedback(Tagged<BytecodeArray> bytecode_array,
                                       int current_feedback) {
   feedback_offset -= BytecodeArray::kHeaderSize - kHeapObjectTag;
   bytecode_array->set(feedback_offset, static_cast<uint8_t>(current_feedback));
-  bytecode_array->set(feedback_offset + 1,
-                      (static_cast<uint8_t>(current_feedback >> 8)));
 }
 
 V8_INLINE void TryPatchBaselineCode(Isolate* isolate, int current_feedback) {
@@ -121,8 +119,10 @@ V8_INLINE void TryPatchBaselineCode(Isolate* isolate, int current_feedback) {
   // TODO(chromium:429351411): Consider using a cache.
   Builtin current_builtin =
       OffHeapInstructionStream::TryLookupCode(isolate, current);
-  Builtin target_builtin =
-      GetTypedBinaryOpBuiltin(current_feedback, current_builtin);
+  Builtin target_builtin = GetTypedBinaryOpBuiltin(
+      CompareOperationFeedback::DecodeTypeIndex(
+          static_cast<CompareOperationFeedback::TypeIndex>(current_feedback)),
+      current_builtin);
 
   if (target_builtin != Builtin::kNoBuiltinId) {
     Address target = Builtins::EntryOf(target_builtin, isolate);
@@ -562,7 +562,7 @@ RUNTIME_FUNCTION(Runtime_NotifyDeoptimized) {
   DCHECK(isolate->context().is_null());
 
   TimerEventScope<TimerEventDeoptimizeCode> timer(isolate);
-  TRACE_EVENT0("v8", "V8.DeoptimizeCode");
+  TRACE_EVENT("v8", "V8.DeoptimizeCode");
   DirectHandle<JSFunction> function = deoptimizer->function();
   // For OSR the optimized code isn't installed on the function, so get the
   // code object from deoptimizer.
@@ -835,7 +835,7 @@ static Tagged<Object> CompileGlobalEval(
   static const ParseRestriction restriction = NO_PARSE_RESTRICTION;
   DirectHandle<JSFunction> compiled;
   DirectHandle<Context> context(isolate->context(), isolate);
-  if (!Is<NativeContext>(*context) && v8_flags.reuse_scope_infos) {
+  if (!Is<NativeContext>(*context)) {
     Tagged<WeakFixedArray> array = Cast<Script>(outer_info->script())->infos();
     Tagged<ScopeInfo> stored_info;
     CHECK(array->get(eval_scope_info_index)
@@ -880,6 +880,7 @@ RUNTIME_FUNCTION(Runtime_PatchBaselineCode) {
 
   DirectHandle<Boolean> compare_result = args.at<Boolean>(1);
   int current_feedback = args.smi_value_at(0);
+  DCHECK_LE(current_feedback, std::numeric_limits<uint8_t>::max());
   UpdateEmbeddedFeedback(TrustedCast<BytecodeArray>(args[2]),
                          static_cast<int>(args.number_value_at(3)),
                          current_feedback);
@@ -894,6 +895,7 @@ RUNTIME_FUNCTION(Runtime_PatchBaselineCodeAndThrow) {
 
   DirectHandle<Object> exception = args.at<Object>(1);
   int current_feedback = args.smi_value_at(0);
+  DCHECK_LE(current_feedback, std::numeric_limits<uint8_t>::max());
   UpdateEmbeddedFeedback(TrustedCast<BytecodeArray>(args[2]),
                          static_cast<int>(args.number_value_at(3)),
                          current_feedback);

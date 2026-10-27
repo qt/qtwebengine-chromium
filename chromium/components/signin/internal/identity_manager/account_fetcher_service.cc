@@ -208,6 +208,9 @@ void AccountFetcherService::StartFetchingAccountCapabilities(
         account_info.capabilities.AreAnyCapabilitiesKnown()
             ? AccountCapabilitiesFetcher::FetchPriority::kBackground
             : AccountCapabilitiesFetcher::FetchPriority::kForeground,
+        base::BindRepeating(
+            &AccountFetcherService::OnSomeAccountCapabilitiesFetched,
+            base::Unretained(this)),
         base::BindOnce(
             &AccountFetcherService::OnAccountCapabilitiesFetchComplete,
             base::Unretained(this)));
@@ -228,8 +231,7 @@ void AccountFetcherService::RefreshAccountInfo(const CoreAccountId& account_id,
       account_tracker_service_->IsTrackingAccount(account_id));
   account_tracker_service_->StartTrackingAccount(account_id);
 
-  const AccountInfo& info =
-      account_tracker_service_->GetAccountInfo(account_id);
+  AccountInfo info = account_tracker_service_->GetAccountInfo(account_id);
 
   if (!only_fetch_if_invalid || !info.capabilities.AreAllCapabilitiesKnown()) {
     StartFetchingAccountCapabilities(info);
@@ -341,13 +343,15 @@ void AccountFetcherService::FetchAccountImage(const CoreAccountId& account_id) {
                                         std::move(callback), std::move(params));
 }
 
-void AccountFetcherService::OnAccountCapabilitiesFetchComplete(
+void AccountFetcherService::OnSomeAccountCapabilitiesFetched(
     const CoreAccountId& account_id,
-    const std::optional<AccountCapabilities>& account_capabilities) {
-  if (account_capabilities.has_value()) {
-    account_tracker_service_->SetAccountCapabilities(account_id,
-                                                     *account_capabilities);
-  }
+    const AccountCapabilities& account_capabilities) {
+  account_tracker_service_->SetAccountCapabilities(account_id,
+                                                   account_capabilities);
+}
+
+void AccountFetcherService::OnAccountCapabilitiesFetchComplete(
+    const CoreAccountId& account_id) {
   // |account_id| is owned by the request. Cannot be used after this line.
   account_capabilities_requests_.erase(account_id);
 }

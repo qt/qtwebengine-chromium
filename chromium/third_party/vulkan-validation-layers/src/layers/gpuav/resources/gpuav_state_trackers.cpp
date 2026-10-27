@@ -357,7 +357,7 @@ void CommandBufferSubState::OnCompletion(VkQueue queue, const std::vector<std::s
                         "GPUAV-Overflow-Unknown", queue, loc,
                         "An error was detected, but after internal limit of %" PRIu32
                         " draw/dispatch/traceRays commands in a command buffer, we are unable to track which validation error "
-                        "occured.\nThis can be adjusted setting env var VK_LAYER_GPUAV_MAX_INDICES_COUNT to a higher value.",
+                        "occurred.\nThis can be adjusted setting env var VK_LAYER_GPUAV_MAX_INDICES_COUNT to a higher value.",
                         gpuav_.gpuav_settings.invalid_index_command);
                     break;  // only report once
                 } else {
@@ -636,10 +636,17 @@ void AccelerationStructureNVSubState::NotifyInvalidate(const vvl::StateObject::N
     id_tracker.reset();
 }
 
-AccelerationStructureKHRSubState::AccelerationStructureKHRSubState(vvl::AccelerationStructureKHR& obj, DescriptorHeap& heap)
-    : vvl::AccelerationStructureKHRSubState(obj), id_tracker(std::in_place, heap, obj.Handle()) {}
+AccelerationStructureKHRSubState::AccelerationStructureKHRSubState(Validator& validator, vvl::AccelerationStructureKHR& obj,
+                                                                   DescriptorHeap& heap)
+    : vvl::AccelerationStructureKHRSubState(obj), id_tracker(std::in_place, heap, obj.Handle()), validator(validator) {
+    gpu_state = validator.gpu_resources_manager_.GetHostCoherentBufferRange(sizeof(uint32_t));
+    gpu_state.Clear();
+}
 
-void AccelerationStructureKHRSubState::Destroy() { id_tracker.reset(); }
+void AccelerationStructureKHRSubState::Destroy() {
+    id_tracker.reset();
+    validator.gpu_resources_manager_.ReturnHostCoherentBufferRange(gpu_state);
+}
 
 void AccelerationStructureKHRSubState::NotifyInvalidate(const vvl::StateObject::NodeList& invalid_nodes, bool unlink) {
     id_tracker.reset();

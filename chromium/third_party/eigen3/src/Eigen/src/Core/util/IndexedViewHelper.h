@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_INDEXED_VIEW_HELPER_H
 #define EIGEN_INDEXED_VIEW_HELPER_H
@@ -250,10 +251,10 @@ class SingleRange {
 };
 
 template <typename T>
-struct is_single_range : public std::false_type {};
+struct is_single_range : std::false_type {};
 
 template <Index ValueAtCompileTime>
-struct is_single_range<SingleRange<ValueAtCompileTime>> : public std::true_type {};
+struct is_single_range<SingleRange<ValueAtCompileTime>> : std::true_type {};
 
 template <typename SingleIndex, int NestedSizeAtCompileTime>
 struct IndexedViewHelperIndicesWrapper<
@@ -434,9 +435,8 @@ struct VectorIndexedViewSelector<
   using ColMajorReturnType = IndexedView<Derived, IvcType<Indices, Derived::SizeAtCompileTime>, ZeroIndex>;
   using ConstColMajorReturnType = IndexedView<const Derived, IvcType<Indices, Derived::SizeAtCompileTime>, ZeroIndex>;
 
-  using ReturnType = typename internal::conditional<IsRowMajor, RowMajorReturnType, ColMajorReturnType>::type;
-  using ConstReturnType =
-      typename internal::conditional<IsRowMajor, ConstRowMajorReturnType, ConstColMajorReturnType>::type;
+  using ReturnType = std::conditional_t<IsRowMajor, RowMajorReturnType, ColMajorReturnType>;
+  using ConstReturnType = std::conditional_t<IsRowMajor, ConstRowMajorReturnType, ConstColMajorReturnType>;
 
   template <bool UseRowMajor = IsRowMajor, std::enable_if_t<UseRowMajor, bool> = true>
   static inline RowMajorReturnType run(Derived& derived, const Indices& indices) {

@@ -44,13 +44,6 @@ feature kWebNNCoreMLExplicitGPUOrNPU {
   const bool default_state = false;
 };
 
-// Enables the DirectML backend for WebNN.
-[EnableIf=is_win]
-feature kWebNNDirectML {
-  const string name = "WebNNDirectML";
-  const bool default_state = false;
-};
-
 // Enables the ONNX Runtime backend for WebNN.
 [EnableIf=is_win]
 feature kWebNNOnnxRuntime {
@@ -61,5 +54,14 @@ feature kWebNNOnnxRuntime {
 // Enables the LiteRT Runtime backend for WebNN.
 feature kWebNNLiteRT {
   const string name = "WebNNLiteRT";
+  const bool default_state = false;
+};
+
+// Enables offloading graph construction/compilation to an out-of-process
+// WebNN Compiler process, isolated from the GPU process. When disabled,
+// graph construction runs in the GPU process as before.
+[EnableIf=is_win]
+feature kWebNNCompilerProcess {
+  const string name = "WebNNCompilerProcess";
   const bool default_state = false;
 };

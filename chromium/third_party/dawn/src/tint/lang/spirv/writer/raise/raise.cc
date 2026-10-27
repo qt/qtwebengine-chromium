@@ -44,6 +44,7 @@
 #include "src/tint/lang/core/ir/transform/prepare_immediate_data.h"
 #include "src/tint/lang/core/ir/transform/preserve_padding.h"
 #include "src/tint/lang/core/ir/transform/prevent_infinite_loops.h"
+#include "src/tint/lang/core/ir/transform/propagate_buffer_sizes.h"
 #include "src/tint/lang/core/ir/transform/remove_uniform_vector_component_loads.h"
 #include "src/tint/lang/core/ir/transform/resource_table.h"
 #include "src/tint/lang/core/ir/transform/robustness.h"
@@ -75,6 +76,9 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
 
     TINT_CHECK_RESULT(
         core::ir::transform::SubstituteOverrides(module, options.substitute_overrides_config));
+
+    // Must come before robustness.
+    TINT_CHECK_RESULT(core::ir::transform::PropagateBufferSizes(module));
 
     tint::transform::multiplanar::BindingsMap multiplanar_map{};
     RemapperData remapper_data{};
@@ -175,12 +179,14 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
 
     TINT_CHECK_RESULT(core::ir::transform::Bgra8UnormPolyfill(module));
 
-    if (!options.extensions.use_uniform_buffers) {
-        // DecomposeAccess must come before BlockDecoratedStructs, which will wrap the
-        // uniform variable in a structure.
-        core::ir::transform::DecomposeAccessOptions decompose_config{.uniform = true};
-        TINT_CHECK_RESULT(core::ir::transform::DecomposeAccess(module, decompose_config));
-    } else {
+    // DecomposeAccess must come before BlockDecoratedStructs, which will wrap
+    // buffer resource variables in a structure.
+    // Uniform buffers are only unconditionally decomposed if the implementation does not support
+    // uniform buffer standard layout. Otherwise, only buffer type variables are decomposed.
+    core::ir::transform::DecomposeAccessOptions decompose_config{
+        .uniform = !options.extensions.use_uniform_buffers};
+    TINT_CHECK_RESULT(core::ir::transform::DecomposeAccess(module, decompose_config));
+    if (options.extensions.use_uniform_buffers) {
         TINT_CHECK_RESULT(core::ir::transform::Std140(module));
     }
     TINT_CHECK_RESULT(core::ir::transform::BlockDecoratedStructs(module));
@@ -211,6 +217,8 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
         .subgroup_shuffle_clamped = options.workarounds.subgroup_shuffle_clamped,
         .texture_sample_compare_depth_cube_array =
             options.workarounds.texture_sample_compare_depth_cube_array,
+        .texture_sample_compare_2d_polyfill =
+            options.workarounds.texture_sample_compare_2d_polyfill,
         .cooperative_matrix_stride_is_matrix_elements =
             options.workarounds.cooperative_matrix_stride_is_matrix_elements,
     };
@@ -218,9 +226,8 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     TINT_CHECK_RESULT(raise::ExpandImplicitSplats(module));
 
     core::ir::transform::BuiltinScalarizeConfig scalarize_config{
-        .scalarize_clamp = options.workarounds.scalarize_max_min_clamp,
-        .scalarize_max = options.workarounds.scalarize_max_min_clamp,
-        .scalarize_min = options.workarounds.scalarize_max_min_clamp};
+        .scalarize_min_max_clamp = options.workarounds.scalarize_max_min_clamp,
+    };
     TINT_CHECK_RESULT(core::ir::transform::BuiltinScalarize(module, scalarize_config));
 
     core::ir::transform::SignedIntegerPolyfillConfig signed_integer_cfg{

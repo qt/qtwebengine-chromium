@@ -9,8 +9,8 @@ devtools_entrypoint("device_mode_emulation_frame") {
 
   deps = [
     "../../Images:optimize_images",
-    "../../core/dom_extension:bundle",
     "../../core/platform:bundle",
+    "../../ui/dom_extension:bundle",
   ]
 
   visibility = [ "../../../front_end" ]

@@ -43,8 +43,9 @@ bool StructTraits<viz::mojom::CompositorFrameMetadataDataView,
     return false;
   }
 
-  if (data.frame_token() == 0u)
+  if (data.frame_token() == viz::kInvalidFrameToken) {
     return false;
+  }
   out->frame_token = data.frame_token();
 
   if (!data.ReadContentColorUsage(&out->content_color_usage))
@@ -61,7 +62,6 @@ bool StructTraits<viz::mojom::CompositorFrameMetadataDataView,
   out->send_frame_token_to_embedder = data.send_frame_token_to_embedder();
   out->min_page_scale_factor = data.min_page_scale_factor();
   out->is_mobile_optimized = data.is_mobile_optimized();
-  out->prefer_efficient_scheduling = data.prefer_efficient_scheduling();
   out->is_software = data.is_software();
   out->top_controls_visible_height = data.top_controls_visible_height();
 

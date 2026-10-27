@@ -18,6 +18,7 @@
 #include "gpu/command_buffer/client/gpu_command_buffer_client_export.h"
 #include "gpu/command_buffer/client/internal/mappable_buffer.h"
 #include "gpu/command_buffer/common/mailbox.h"
+#include "gpu/command_buffer/common/shared_image_info.h"
 #include "gpu/command_buffer/common/shared_image_trace_utils.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
 #include "gpu/command_buffer/common/sync_token.h"
@@ -38,6 +39,10 @@ class ProcessMemoryDump;
 class MemoryAllocatorDumpGuid;
 }  // namespace base::trace_event
 
+namespace gfx {
+class GpuFence;
+}  // namespace gfx
+
 namespace media {
 class VideoFrame;
 }  // namespace media
@@ -57,6 +62,8 @@ struct BufferDescriptor;
 }  // namespace wgpu::dawn::wire::client
 
 namespace gpu {
+
+class ContextSupport;
 
 namespace gles2 {
 class GLES2Interface;
@@ -81,15 +88,6 @@ class WebGPUTextureScopedAccess;
 class WebGPUBufferScopedAccess;
 
 struct ExportedSharedImage;
-
-struct SharedImageMetadata {
-  viz::SharedImageFormat format;
-  gfx::Size size;
-  gfx::ColorSpace color_space;
-  GrSurfaceOrigin surface_origin;
-  SkAlphaType alpha_type;
-  SharedImageUsageSet usage;
-};
 
 class GPU_COMMAND_BUFFER_CLIENT_EXPORT SharedImageExportResult {
  public:
@@ -225,6 +223,12 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT ClientSharedImage
 
   bool HasHolder() { return sii_holder_ != nullptr; }
 
+  // The type of the underlying GpuMemoryBuffer backing this ClientSI.
+  gfx::GpuMemoryBufferType GetGpuMemoryBufferType() const;
+
+  // Whether the underlying buffer supports zero-copy import into WebGPU.
+  bool SupportsZeroCopyWebGPUImport() const;
+
   // Returns a clone of the GpuMemoryBufferHandle associated with this ClientSI.
   // Valid to call only if this instance was created with a non-null
   // GpuMemoryBuffer.
@@ -270,6 +274,13 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT ClientSharedImage
   // process even if original ClientSharedImage goes away.
   static scoped_refptr<ClientSharedImage> ImportUnowned(
       ExportedSharedImage exported_shared_image);
+
+  static void CreateGpuFenceForSyncTokens(
+      std::vector<scoped_refptr<ClientSharedImage>> shared_images,
+      std::vector<SyncToken> sync_tokens,
+      gles2::GLES2Interface* gl,
+      ContextSupport* context_support,
+      base::OnceCallback<void(std::unique_ptr<gfx::GpuFence>)> callback);
 
   void UpdateDestructionSyncToken(const gpu::SyncToken& sync_token) {
     destruction_sync_token_ = sync_token;
@@ -525,6 +536,11 @@ struct GPU_COMMAND_BUFFER_CLIENT_EXPORT ExportedSharedImage {
   friend struct mojo::StructTraits<gpu::mojom::ExportedSharedImageDataView,
                                    ExportedSharedImage>;
   FRIEND_TEST_ALL_PREFIXES(ClientSharedImageTest, ImportUnowned);
+  FRIEND_TEST_ALL_PREFIXES(
+      ClientSharedImageTest,
+      ExportedSharedImageMojoDeserialization_TextureTargetZero);
+  FRIEND_TEST_ALL_PREFIXES(ClientSharedImageTest,
+                           ExportedSharedImageMojoDeserialization_EmptyBuffer);
 
   ExportedSharedImage(const Mailbox& mailbox,
                       const SharedImageMetadata& metadata,

@@ -62,6 +62,8 @@
 *> \ingroup complexOTHERauxiliary
 *
 *  =====================================================================
+*> SPDX-FileCopyrightText: The Eigen Authors
+*> SPDX-License-Identifier: BSD-3-Clause
       COMPLEX FUNCTION CLADIV( X, Y )
 *
 *  -- LAPACK auxiliary routine (version 3.4.0) --

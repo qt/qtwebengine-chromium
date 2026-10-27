@@ -18,9 +18,10 @@ import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 import type {FilePath} from '//resources/mojo/mojo/public/mojom/base/file_path.mojom-webui.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 
-import {BrowserProxy} from './browser_proxy.js';
+import {browserProxyFactory} from './on_device_internals_page.mojom-webui.js';
+import type {BrowserProxy} from './on_device_internals_page.mojom-webui.js';
 import {InputSource, LoadModelResult, OnDeviceModelRemote, PerformanceClass, SessionRemote, StreamingResponderCallbackRouter, Token} from './on_device_model.mojom-webui.js';
-import type {AudioData, Capabilities, InputPiece, ResponseChunk, ResponseSummary} from './on_device_model.mojom-webui.js';
+import type {AudioData, Capabilities, InputPiece} from './on_device_model.mojom-webui.js';
 import {ModelPerformanceHint} from './on_device_model_service.mojom-webui.js';
 import {getCss} from './tools.css.js';
 import {getHtml} from './tools.html.js';
@@ -132,6 +133,7 @@ class OnDeviceInternalsToolsElement extends CrLitElement {
       audioError_: {type: String},
       performanceHint_: {type: String},
       loadedPerformanceHint_: {type: Number},
+      showPlatformModelCheckbox_: {type: Boolean},
     };
   }
 
@@ -147,7 +149,7 @@ class OnDeviceInternalsToolsElement extends CrLitElement {
   private accessor modelPath_: string = '';
   protected accessor model_: OnDeviceModelRemote|null = null;
   protected accessor performanceClassText_: string = 'Loading...';
-  protected showPlatformModelCheckbox_: boolean =
+  protected accessor showPlatformModelCheckbox_: boolean =
       loadTimeData.getBoolean('useChromeOSModelService');
   protected accessor usePlatformModel_: boolean = false;
   protected accessor responses_: Response[] = [];
@@ -161,7 +163,7 @@ class OnDeviceInternalsToolsElement extends CrLitElement {
   private accessor loadedPerformanceHint_: ModelPerformanceHint|null = null;
 
   private session_: SessionRemote|null = null;
-  private proxy_: BrowserProxy = BrowserProxy.getInstance();
+  private proxy_: BrowserProxy = browserProxyFactory.getInstance();
   private responseRouter_: StreamingResponderCallbackRouter =
       new StreamingResponderCallbackRouter();
   private sessionTemperature_: number = 0;
@@ -469,19 +471,17 @@ class OnDeviceInternalsToolsElement extends CrLitElement {
           addOutputTokensToContext: false,
         },
         this.responseRouter_.$.bindNewPipeAndPassRemote());
-    const onResponseId =
-        this.responseRouter_.onResponse.addListener((chunk: ResponseChunk) => {
-          assert(this.currentResponse_);
-          this.currentResponse_.response =
-              (this.currentResponse_?.response + chunk.text).trimStart();
-          this.requestUpdate();
-        });
-    const onCompleteId =
-        this.responseRouter_.onComplete.addListener((_: ResponseSummary) => {
-          this.addResponse_();
-          this.responseRouter_.removeListener(onResponseId);
-          this.responseRouter_.removeListener(onCompleteId);
-        });
+    const onResponseId = this.responseRouter_.onResponse.addListener(chunk => {
+      assert(this.currentResponse_);
+      this.currentResponse_.response =
+          (this.currentResponse_?.response + chunk.text).trimStart();
+      this.requestUpdate();
+    });
+    const onCompleteId = this.responseRouter_.onComplete.addListener(_ => {
+      this.addResponse_();
+      this.responseRouter_.removeListener(onResponseId);
+      this.responseRouter_.removeListener(onCompleteId);
+    });
     this.currentResponse_ = {
       text: this.text_,
       response: '',

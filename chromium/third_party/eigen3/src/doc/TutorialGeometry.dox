@@ -78,7 +78,10 @@ might still be interesting to write generic and efficient algorithms taking as i
 kind of transformations.
 
 Any of the above transformation types can be converted to any other types of the same nature,
-or to a more generic type. Here are some additional examples:
+or to a more generic type. Conversions use either assignment or direct
+initialization \c (T t(other);); copy initialization \c (T t = other;) does not
+compile because the conversion constructors on \c Transform are intentionally
+\c explicit. Here are some additional examples:
 <table class="manual">
 <tr><td>\code
 Rotation2Df r;  r  = Matrix2f(..);       // assumes a pure rotation matrix
@@ -88,6 +91,7 @@ Matrix2f m;     m  = Rotation2Df(..);
 Matrix3f m;     m  = Quaternionf(..);       Matrix3f m;   m = Scaling(..);
 Affine3f m;     m  = AngleAxis3f(..);       Affine3f m;   m = Scaling(..);
 Affine3f m;     m  = Translation3f(..);     Affine3f m;   m = Matrix3f(..);
+Affine3f m(Translation3f(..));           // direct initialization
 \endcode</td></tr>
 </table>
 

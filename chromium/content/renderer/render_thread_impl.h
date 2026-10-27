@@ -29,11 +29,11 @@
 #include "base/process/process.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
-#include "base/trace_event/trace_log.h"
 #include "base/trace_event/trace_session_observer.h"
 #include "base/trace_event/typed_macros.h"
 #include "base/types/pass_key.h"
 #include "build/build_config.h"
+#include "components/discardable_memory/client/client_discardable_shared_memory_manager.h"
 #include "content/child/child_thread_impl.h"
 #include "content/common/agent_scheduling_group.mojom.h"
 #include "content/common/content_export.h"
@@ -42,7 +42,6 @@
 #include "content/common/renderer_host.mojom.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/blink_isolates_pressure_listener.h"
-#include "content/renderer/discardable_memory_utils.h"
 #include "content/renderer/memory_reclaimer_pressure_listener.h"
 #include "content/renderer/skia_graphics_pressure_listener.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
@@ -120,8 +119,7 @@ class CONTENT_EXPORT RenderThreadImpl
     : public RenderThread,
       public ChildThreadImpl,
       public mojom::Renderer,
-      public viz::mojom::CompositingModeWatcher,
-      public base::MemoryPressureListener {
+      public viz::mojom::CompositingModeWatcher {
  public:
   static RenderThreadImpl* current();
 
@@ -414,6 +412,7 @@ class CONTENT_EXPORT RenderThreadImpl
   void UpdateScrollbarTheme(
       mojom::UpdateScrollbarThemeParamsPtr params) override;
   void OnSystemColorsChanged(int32_t aqua_color_variant) override;
+  void OnRegisteredFontsChanged() override;
 #endif
   void UpdateSystemColorInfo(
       mojom::UpdateSystemColorInfoParamsPtr params) override;
@@ -430,8 +429,6 @@ class CONTENT_EXPORT RenderThreadImpl
   void SetIsIsolatedContext(bool value) override;
   void SetWebUIResourceUrlToCodeCacheMap(
       const base::flat_map<GURL, int>& resource_map) override;
-  void OnMemoryPressure(
-      base::MemoryPressureLevel memory_pressure_level) override;
 
   bool RendererIsHidden() const;
   void OnRendererHidden();
@@ -537,9 +534,6 @@ class CONTENT_EXPORT RenderThreadImpl
   scoped_refptr<gpu::SharedImageInterface> shared_image_interface_;
 
   HistogramCustomizer histogram_customizer_;
-
-  std::unique_ptr<base::MemoryPressureListenerRegistration>
-      memory_pressure_listener_registration_;
 
   MemoryReclaimerPressureListener memory_reclaimer_pressure_listener_;
 

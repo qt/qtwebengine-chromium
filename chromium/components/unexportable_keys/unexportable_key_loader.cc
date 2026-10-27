@@ -45,10 +45,20 @@ std::unique_ptr<UnexportableKeyLoader> UnexportableKeyLoader::CreateWithNewKey(
   return loader;
 }
 
-UnexportableKeyLoader::~UnexportableKeyLoader() = default;
+UnexportableKeyLoader::~UnexportableKeyLoader() {
+  std::vector<
+      base::OnceCallback<void(ServiceErrorOr<UnexportableSigningKeyId>)>>
+      callbacks;
+  callbacks.swap(on_load_callbacks_);
+  for (auto& callback : callbacks) {
+    std::move(callback).Run(
+        base::unexpected(ServiceError::kOperationCancelled));
+  }
+}
 
 void UnexportableKeyLoader::InvokeCallbackAfterKeyLoaded(
-    base::OnceCallback<void(ServiceErrorOr<UnexportableKeyId>)> callback) {
+    base::OnceCallback<void(ServiceErrorOr<UnexportableSigningKeyId>)>
+        callback) {
   if (state_ == State::kReady) {
     // The key is ready, we can invoke the callback immediately.
     std::move(callback).Run(key_id_or_error_);
@@ -58,7 +68,8 @@ void UnexportableKeyLoader::InvokeCallbackAfterKeyLoaded(
   on_load_callbacks_.push_back(std::move(callback));
 }
 
-ServiceErrorOr<UnexportableKeyId> UnexportableKeyLoader::GetKeyIdOrError() {
+ServiceErrorOr<UnexportableSigningKeyId>
+UnexportableKeyLoader::GetKeyIdOrError() {
   return key_id_or_error_;
 }
 
@@ -93,12 +104,13 @@ void UnexportableKeyLoader::GenerateNewKey(
 }
 
 void UnexportableKeyLoader::OnKeyLoaded(
-    ServiceErrorOr<UnexportableKeyId> key_id_or_error) {
+    ServiceErrorOr<UnexportableSigningKeyId> key_id_or_error) {
   CHECK_EQ(state_, State::kLoading);
   state_ = State::kReady;
   key_id_or_error_ = key_id_or_error;
 
-  std::vector<base::OnceCallback<void(ServiceErrorOr<UnexportableKeyId>)>>
+  std::vector<
+      base::OnceCallback<void(ServiceErrorOr<UnexportableSigningKeyId>)>>
       callbacks;
   callbacks.swap(on_load_callbacks_);
   // `this` may be destroyed after invoking a callback.

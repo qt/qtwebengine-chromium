@@ -1,0 +1,3852 @@
+# Lithuanian translation for gsettings-desktop-schemas.
+# Copyright (C) 2012 gsettings-desktop-schemas's COPYRIGHT HOLDER
+# This file is distributed under the same license as the gsettings-desktop-schemas package.
+# Žygimantas Beručka <zygis@gnome.org>, 2012.
+# Aurimas Černius <aurisc4@gmail.com>, 2012-2022.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: gsettings-desktop-schemas master\n"
+"Report-Msgid-Bugs-To: https://gitlab.gnome.org/GNOME/gsettings-desktop-"
+"schemas/issues/\n"
+"POT-Creation-Date: 2025-02-19 19:23+0000\n"
+"PO-Revision-Date: 2025-02-28 23:24+0200\n"
+"Last-Translator: Aurimas Černius <aurisc4@gmail.com>\n"
+"Language-Team: Lietuvių <gnome-lt@lists.akl.lt>\n"
+"Language: lt\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
+"(n%100<10 || n%100>=20) ? 1 : 2);\n"
+"X-Generator: Poedit 3.5\n"
+"X-Project-Style: gnome\n"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:6
+msgid "On-screen keyboard"
+msgstr "Klaviatūra ekrane"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:7
+msgid "Whether the on-screen keyboard is turned on."
+msgstr "Ar klaviatūra ekrane įjungta."
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:11
+msgid "Screen magnifier"
+msgstr "Ekrano lupa"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:12
+msgid "Whether the screen magnifier is turned on."
+msgstr "Ar ekrano lupa įjungta."
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:16
+msgid "Screen reader"
+msgstr "Ekrano skaityklė"
+
+#: schemas/org.gnome.desktop.a11y.applications.gschema.xml.in:17
+msgid "Whether the screen reader is turned on."
+msgstr "Ar ekrano skaityklė įjungta."
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:6
+msgid "Always show the Universal Access status icon"
+msgstr "Visada rodyti universalios prieigos būsenos piktogramą"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:7
+msgid ""
+"This key overrides the automatic hiding of the Universal Access status icon "
+"when no accessibility features are enabled."
+msgstr ""
+"Šis raktas turi pirmenybę prieš automatinį universalios prieigos būsenos "
+"piktogramos slėpimą, kai prieigos funkcijos nėra įjungtos."
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:14
+msgid "Always show the text caret"
+msgstr "Visada rodyti teksto žymeklį"
+
+#: schemas/org.gnome.desktop.a11y.gschema.xml.in:15
+msgid ""
+"This key overrides the hiding of the text caret in noneditable text in "
+"applications."
+msgstr ""
+"Šis raktas nustelbia teksto žymeklio slėpimą programų neredaguojamame tekste."
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:6
+msgid "High contrast"
+msgstr "Didelis kontrastas"
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:7
+msgid "Whether to use the high contrast style."
+msgstr "Ar naudoti didelio kontrasto stilių."
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:13
+msgid "Show status shapes"
+msgstr "Rodyti būsenų figūras"
+
+#: schemas/org.gnome.desktop.a11y.interface.gschema.xml.in:14
+msgid ""
+"Whether to use shapes to indicate status in addition or instead of color."
+msgstr "Ar naudoti figūras būsenai nurodyti kartu su arba vietoje spalvos."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:6
+msgid "Enable accessibility keyboard shortcuts"
+msgstr "Įjungti pritaikymo neįgaliesiems trumpinius"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:10
+msgid "Beep when a keyboard accessibility feature changes"
+msgstr "Pyptelėti, kai klaviatūros pritaikymo neįgaliesiems savybė pasikeičia"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:11
+msgid ""
+"Whether to beep when a keyboard accessibility feature is enabled or disabled."
+msgstr ""
+"Ar pyptelėti, kai klaviatūros pritaikymo neįgaliesiems savybė įjungiama arba "
+"išjungiama."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:15
+msgid "Disable keyboard accessibility after a timeout"
+msgstr "Išjungti klaviatūros pritaikymą neįgaliesiems pasibaigus laikui"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:16
+msgid ""
+"Whether to disable keyboard accessibility after a timeout, useful for shared "
+"machines."
+msgstr ""
+"Ar išjungti klaviatūros pritaikymą neįgaliesiems pasibaigus laikui, naudinga "
+"bendro naudojimo kompiuteriams."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:20
+msgid "Duration of the disabling timeout"
+msgstr "Išjungimo delsa"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:21
+msgid "Duration of the timeout before disabling the keyboard accessibility."
+msgstr ""
+"Laikas, kuriam pasibaigus išjungiamas klaviatūros pritaikymas neįgaliemsiems."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:25
+msgid "Enable “Bounce Keys”"
+msgstr "Įjungti „pasikartojančius klavišus“"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:26
+msgid "Whether the “Bounce Keys” keyboard accessibility feature is turned on."
+msgstr "Ar klaviatūros „pasikartojančių klavišų“ prieigos savybė įjungta."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:30
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:65
+msgid "Minimum interval in milliseconds"
+msgstr "Mažiausia trukmė milisekundėmis"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:31
+msgid "Ignore multiple presses of the same key within this many milliseconds."
+msgstr ""
+"Nepaisyti pasikartojančių to paties klavišo paspaudimų tiek milisekundžių."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:35
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:80
+msgid "Beep when a key is rejected"
+msgstr "Pyptelėti, kai klavišas atmetamas"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:36
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:81
+msgid "Whether to beep when a key is rejected."
+msgstr "Ar pyptelėti, kai klavišas atmetamas."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:40
+msgid "Enable “Mouse Keys”"
+msgstr "Įjungti „pelės klavišus“"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:41
+msgid "Whether the “Mouse Keys” accessibility feature is turned on."
+msgstr "Ar „pelės klavišų“ pritaikymo neįgaliesiems savybė įjungta."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:45
+msgid "Pixels per seconds"
+msgstr "Pikselių per sekundę"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:46
+msgid "How many pixels per second to move at the maximum speed."
+msgstr "Kiek pikselių pasislinkti per sekundę didžiausiu greičiu."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:50
+msgid "How long to accelerate in milliseconds"
+msgstr "Kiek laiko spartėti milisekundėmis"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:51
+msgid "How many milliseconds it takes to go from 0 to maximum speed."
+msgstr "Kiek milisekundžių užtrunka nuo 0 iki didžiausio greičio."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:55
+msgid "Initial delay in milliseconds"
+msgstr "Pradinė delsa milisekundėmis"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:56
+msgid ""
+"How many milliseconds to wait before mouse movement keys start to operate."
+msgstr "Kiek milisekundžių laukti iki pelės judėjimo klavišai pradeda veikti."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:60
+msgid "Enable “Slow Keys”"
+msgstr "Įjungti „lėtuosius klavišus“"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:61
+msgid "Whether the “Slow Keys” accessibility feature is turned on."
+msgstr "Ar „lėtųjų klavišų“ pritaikymo neįgaliesiems funkcija įjungta."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:66
+msgid ""
+"Do not accept a key as being pressed unless held for this many milliseconds."
+msgstr "Nelaikyti klavišo nuspaustu, kol nelaikoma tiek milisekundžių."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:70
+msgid "Beep when a key is first pressed"
+msgstr "Pyptelėti, kai klavišas paspaudžiamas pirmą kartą"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:71
+msgid "Whether to beep when a key is first pressed."
+msgstr "Ar pyptelėti, kai klavišas paspaudžiamas pirmą kartą."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:75
+msgid "Beep when a key is accepted"
+msgstr "Pyptelėti, kai klavišas priimamas"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:76
+msgid "Whether to beep when a key is accepted."
+msgstr "Ar pyptelėti, kai klavišas priimamas."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:85
+msgid "Enable sticky keys"
+msgstr "Įjungti kibiuosius klavišus"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:86
+msgid "Whether the sticky keys accessibility feature is turned on."
+msgstr "Ar kibiųjų klavišų pritaikymo neįgaliesiems savybė įjungta."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:90
+msgid "Disable when two keys are pressed at the same time"
+msgstr "Išjungti, kai du klavišai paspaudžiama tuo pačiu metu"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:91
+msgid ""
+"Whether to disable sticky keys if two keys are pressed at the same time."
+msgstr ""
+"Ar išjungti kibiuosius klavišus, jei du klavišai paspaudžiami tuo pačiu metu."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:95
+msgid "Beep when a modifier is pressed."
+msgstr "Pyptelėti, kai paspaudžiamas modifikatorius."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:96
+msgid "Whether to beep when a modifier key is pressed."
+msgstr "Ar pyptelėti, kai paspaudžiamas modifikavimo klavišas."
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:100
+msgid "Enable “Toggle Keys”"
+msgstr "Įjungti „perjungiamus klavišus“"
+
+#: schemas/org.gnome.desktop.a11y.keyboard.gschema.xml.in:101
+msgid "Whether the “Toggle Keys” accessibility feature is turned on."
+msgstr "Ar „perjungiamų klavišų“ pritaikymo neįgaliesiems savybė įjungta."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:8
+msgid "Mouse Tracking Mode"
+msgstr "Pelės sekimo veiksena"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:9
+msgid ""
+"Determines the position of the magnified mouse image within the magnified "
+"view and how it reacts to system mouse movement. The values are • none: no "
+"mouse tracking; • centered: the mouse image is displayed at the center of "
+"the zoom region (which also represents the point under the system mouse) and "
+"the magnified contents are scrolled as the system mouse moves; • "
+"proportional: the position of the magnified mouse in the zoom region is "
+"proportionally the same as the position of the system mouse on screen; • "
+"push: when the magnified mouse intersects a boundary of the zoom region, the "
+"contents are scrolled into view."
+msgstr ""
+"Nurodo padidinto pelės paveikslėlio padėtį išdidintame rodinyje ir kaip jis "
+"atsako į pelės judinimą. Reikšmės yra: • none: pelė nesekama; • centered: "
+"pelės paveikslėlis rodomas padidintos srities centre (taip pat pristato "
+"tašką po sistemos pele) ir padidintas turinys yra slenkamas, kai pelė juda; "
+"• proportional: padidintos pelės padėtis didinamoje srityje yra proporcingai "
+"tokia pati, kaip sistemos pelės padėtis ekrane; • push: kai padidinta pelė "
+"kerta padidintos srities ribą, turinys paslenkamas į rodinį."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:26
+msgid "Focus Tracking Mode"
+msgstr "Pelės sekimo veiksena"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:27
+msgid ""
+"Determines the position of the focused widget within magnified view. The "
+"values are: • none: no focus tracking • centered: the focused image is "
+"displayed at the center of the zoom region (which also represents the point "
+"under the system focus) and the magnified contents are scrolled as the "
+"system focus moves • proportional: the position of the magnified focus in "
+"the zoom region is proportionally the same as the position of the system "
+"focus on screen • push: when the magnified focus intersects a boundary of "
+"the zoom region, the contents are scrolled into view"
+msgstr ""
+"Nurodo aktyvaus elemento padėtį išdidintame vaizde. Reikšmės yra: • none: "
+"fokusas nesekamas • centered: paveikslėlis rodomas padidintos srities centre "
+"(taip pat pristato tašką po sistemos fokusu) ir padidintas turinys yra "
+"slenkamas, kai fokusas juda • proportional: padidintos pelės padėtis "
+"didinamoje srityje yra proporcingai tokia pati, kaip sistemos fokuso padėtis "
+"ekrane • push: kai padidintas fokusas kerta padidintos srities ribą, turinys "
+"paslenkamas į vaizdą"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:46
+msgid "Caret Tracking Mode"
+msgstr "Klaviatūros žymeklio sekimo veiksena"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:47
+msgid ""
+"Determines the position of the caret within magnified view. The values are: "
+"• none: no caret tracking • centered: the image of the caret is displayed at "
+"the center of the zoom region (which also represents the point under the "
+"system caret) and the magnified contents are scrolled as the system caret "
+"moves • proportional: the position of the magnified caret in the zoom region "
+"is proportionally the same as the position of the system caret on screen • "
+"push: when the magnified caret intersects a boundary of the zoom region, the "
+"contents are scrolled into view"
+msgstr ""
+"Nurodo klaviatūros žymeklio padėtį išdidintame vaizde. Reikšmės yra: • none: "
+"žymeklis nesekamas • centered: žymekio paveikslėlis rodomas padidintos "
+"srities centre (taip pat pristato tašką po sistemos žymekliu) ir padidintas "
+"turinys yra slenkamas, kai žymeklis juda • proportional: padidinto žymeklio "
+"padėtis didinamoje srityje yra proporcingai tokia pati, kaip sistemos "
+"žymeklio padėtis ekrane • push: kai padidintas žymeklis kerta padidintos "
+"srities ribą, turinys paslenkamas į vaizdą"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:64
+msgid "Screen position"
+msgstr "Ekrano padėtis"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:65
+msgid ""
+"The magnified view either fills the entire screen, or occupies the top-half, "
+"bottom-half, left-half, or right-half of the screen."
+msgstr ""
+"Išdidinimo rodinys arba užpildo visą ekraną, arba užima viršutinę, apatinę, "
+"kairę arba dešinę ekrano pusę,."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:73
+msgid "Magnification factor"
+msgstr "Didinimo faktorius"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:74
+msgid ""
+"The power of the magnification. A value of 1.0 means no magnification. A "
+"value of 2.0 doubles the size."
+msgstr ""
+"Išdidinimo galingumas. 1.0 reiškia jokio didinimo. 2.0 padigubina dydį."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:81
+msgid "Enable lens mode"
+msgstr "Įjungti lęšio veikseną"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:82
+msgid ""
+"Whether the magnified view should be centered over the location of the "
+"system mouse and move with it."
+msgstr ""
+"Ar išdidintas rodinys turi būti centruotas virš sistemos pelės vietos ir "
+"judėti kartu."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:89
+msgid "Scroll magnified contents beyond the edges of the desktop"
+msgstr "Slinkti išdidintą turinį už darbalaukio ribų"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:92
+msgid ""
+"For centered mouse tracking, when the system pointer is at or near the edge "
+"of the screen, the magnified contents continue to scroll such that the "
+"screen edge moves into the magnified view."
+msgstr ""
+"Centruotam pelės sekimui, kai sistemos žymeklis yra šalia ekrano pakraščio, "
+"išdidintas turinys tęs slinkimą taip, kad ekrano pakraštys pateks į "
+"išdidintą rodinį."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:102
+msgid "Show or hide crosshairs"
+msgstr "Rodyti arba slėpti taikiklį"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:103
+msgid ""
+"Enables/disables display of crosshairs centered on the magnified mouse "
+"sprite."
+msgstr ""
+"Įjungia arba išjungia taikiklio rodymą, centruotą padidintos pelės srityje."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:110
+msgid "Thickness of the crosshairs in pixels"
+msgstr "Taikiklio storis pikseliais"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:111
+msgid ""
+"Width in pixels of the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr ""
+"Plotis pikseliais vertikaliai ir horizontaliai linijai, kurios sudaro "
+"taikiklį."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:117
+msgid "Color of the crosshairs"
+msgstr "Taikiklio spalva"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:118
+msgid ""
+"The color of the the vertical and horizontal lines that make up the "
+"crosshairs."
+msgstr "Vertikalios ir horizontalios linijų, sudarančių taikiklį, spalva."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:126
+msgid "Opacity of the crosshairs"
+msgstr "Taikiklio permatomumas"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:127
+msgid ""
+"Determines the transparency of the crosshairs, from fully opaque to fully "
+"transparent."
+msgstr ""
+"Nusako taikiklio permatomumą, nuo visiškai nepermatomo iki visiškai "
+"permatomo."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:135
+msgid "Length of the crosshairs in pixels"
+msgstr "Taikiklio diametras pikseliais"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:136
+msgid ""
+"Determines the length in pixels of the vertical and horizontal lines that "
+"make up the crosshairs."
+msgstr "Nusako horizontalios ir vertikalios linijų, sudarančių taikiklį, ilgį."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:143
+msgid "Clip the crosshairs at the center"
+msgstr "Iškirpti taikiklį centre"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:144
+msgid ""
+"Determines whether the crosshairs intersect the magnified mouse sprite, or "
+"are clipped such that the ends of the horizontal and vertical lines surround "
+"the mouse image."
+msgstr ""
+"Nusako, ar taikiklio linijos susikerta virš išdidinto pelės, ar yra "
+"apkirptos taip, kad jų galai supa pelės paveikslėlį."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:152
+msgid "Inverse lightness"
+msgstr "Apversti apšvietimą"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:153
+msgid ""
+"Determines whether the lightness values are inverted: darker colors become "
+"lighter and vice versa, and white and black are interchanged."
+msgstr ""
+"Nusako, ar apšvietimo reikšmės yra apverčiamos: tamsesnės spalvos tampa "
+"šviesesnėmis ir atvirkščiai, o balta ir juoda yra sukeičiamos."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:161
+msgid "Color Saturation"
+msgstr "Spalvų sodrumas"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:162
+msgid ""
+"Represents a change to the color saturation, from 0.0 (grayscale) to 1.0 "
+"(full color)."
+msgstr ""
+"Nusako spalvų sodrumo pakeitimą, nuo 0.0 (pilka skalė) iki 1.0 (visos "
+"spalvos)."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:170
+msgid "Change brightness of red"
+msgstr "Keisti raudonos ryškumą"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:171
+msgid ""
+"Represents a change to the default brightness of the red component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Nusako numatytą raudono komponento ryškumo pakeitimą. Nulis reiškia jokio "
+"pakeitimo, mažesnės už nulį reikšmės nurodo sumažinimą, o didesnės už nulį - "
+"padidinimą."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:180
+msgid "Change brightness of green"
+msgstr "Keisti žalios ryškumą"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:181
+msgid ""
+"Represents a change to the default brightness for the green component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Nusako numatytą žalio komponento ryškumo pakeitimą. Nulis reiškia jokio "
+"pakeitimo, mažesnės už nulį reikšmės nurodo sumažinimą, o didesnės už nulį - "
+"padidinimą."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:190
+msgid "Change brightness of blue"
+msgstr "Keisti mėlynos ryškumą"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:191
+msgid ""
+"Represents a change to the default brightness for the blue component. Zero "
+"indicates no change, values less than zero indicate a decrease, and values "
+"greater than zero indicate an increase."
+msgstr ""
+"Nusako numatytą mėlyno komponento ryškumo pakeitimą. Nulis reiškia jokio "
+"pakeitimo, mažesnės už nulį reikšmės nurodo sumažinimą, o didesnės už nulį - "
+"padidinimą."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:200
+msgid "Change contrast of red"
+msgstr "Keisti raudonos kontrastą"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:201
+msgid ""
+"Represents a change to the default contrast of the red component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Nusako numatyto raudono kontrasto pakeitimą. Nulis reiškia jokio kontrasto "
+"pakeitimo, mažesnės už nulį reikšmės nurodo sumažinimą, o didesnės - "
+"padidinimą."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:210
+msgid "Change contrast of green"
+msgstr "Keisti žalios kontrastą"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:211
+msgid ""
+"Represents a change to the default contrast of the green component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Nusako numatyto žalio kontrasto pakeitimą. Nulis reiškia jokio kontrasto "
+"pakeitimo, mažesnės už nulį reikšmės nurodo sumažinimą, o didesnės - "
+"padidinimą."
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:220
+msgid "Change contrast of blue"
+msgstr "Keisti mėlynos kontrastą"
+
+#: schemas/org.gnome.desktop.a11y.magnifier.gschema.xml.in:221
+msgid ""
+"Represents a change to the default contrast of the blue component. Zero "
+"indicates no change in contrast, values less than zero indicate a decrease, "
+"and values greater than zero indicate an increase."
+msgstr ""
+"Nusako numatyto mėlyno kontrasto pakeitimą. Nulis reiškia jokio kontrasto "
+"pakeitimo, mažesnės už nulį reikšmės nurodo sumažinimą, o didesnės - "
+"padidinimą."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:6
+msgid "Dwell click time"
+msgstr "Uždelsto spustelėjimo laikas"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:7
+msgid "Time in seconds before a click is triggered."
+msgstr "Laikas sekundėmis prieš suaktyvinant spustelėjimą."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:11
+msgid "Movement threshold"
+msgstr "Judėjimo slenkstis"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:12
+msgid "Distance in pixels before movement will be recognized."
+msgstr "Atstumas pikseliais prieš pastebint judesį."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:16
+msgid "Gesture single click"
+msgstr "Gestas viengubam spustelėjimui"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:17
+msgid "Direction to perform a single click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Kryptis viengubam paspaudimui įvykdyti („left“, „right“, „up“, „down“)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:21
+msgid "Gesture double click"
+msgstr "Gestas dvigubam spustelėjimui"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:22
+msgid "Direction to perform a double click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Kryptis dvigubam spustelėjimui įvykdyti („left“, „right“, „up“, „down“)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:26
+msgid "Gesture drag click"
+msgstr "Gestas vilkimui"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:27
+msgid "Direction to perform dragging (“left”, “right”, “up”, “down”)."
+msgstr "Kryptis vilkimui įvykdyti („left“, „right“, „up“, „down“)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:31
+msgid "Gesture secondary click"
+msgstr "Gestas antriniam spustelėjimui"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:32
+msgid "Direction to perform a secondary click (“left”, “right”, “up”, “down”)."
+msgstr ""
+"Kryptis antraeiliam spustelėjimui įvykdyti („left“, „right“, „up“, „down“)."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:36
+msgid "Dwell click mode"
+msgstr "Uždelsto paspaudimo veiksena"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:37
+msgid ""
+"The active dwell click mode. Possible values are “window” and “gesture”."
+msgstr ""
+"Aktyvi uždelsto paspaudimo veiksena. Galimos reikšmės yra „window“ ir "
+"„gesture“."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:41
+msgid "Show click type window"
+msgstr "Rodyti lango paspaudimo tipą"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:42
+msgid "Show click type window."
+msgstr "Rodyti lango paspaudimo tipą."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:46
+msgid "Enable dwell clicks"
+msgstr "Įjungti uždelstus paspaudimus"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:47
+msgid "Enable dwell clicks."
+msgstr "Įjungti uždelstus paspaudimus."
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:51
+msgid "Secondary click enabled"
+msgstr "Įjungtas antraeilis paspaudimas"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:52
+msgid "Enable simulated secondary clicks"
+msgstr "Įjungti simuliuojamas antraeilius paspaudimus"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:56
+msgid "Secondary click time"
+msgstr "Antraeilio paspaudimo laikas"
+
+#: schemas/org.gnome.desktop.a11y.mouse.gschema.xml.in:57
+msgid "Time in seconds before a simulated secondary click is triggered."
+msgstr "Laikas sekundėmis prie sukeliant simuliuotą antraeilį paspaudimą."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:6
+msgid "Folder children"
+msgstr "Aplanko vaikai"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:7
+msgid ""
+"List of relative settings paths at which app-folders are stored. Each folder "
+"uses the org.gnome.desktop.app-folders.folder schema."
+msgstr ""
+"Santykinių nustatymų kelių sąrašas, kur yra laikomi programų aplankai. "
+"Kiekvienas aplankas naudoja org.gnome.desktop.app-folders.folder schemą."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:15
+msgid "Folder name"
+msgstr "Aplanko pavadinimas"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:16
+msgid "The name of the application folder."
+msgstr "Programos aplanko pavadinimas."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:20
+msgid "Translate the name"
+msgstr "Išversti pavadinimą"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:21
+msgid ""
+"Whether the name key is a filename to be looked up in /usr/share/desktop-"
+"directories."
+msgstr ""
+"Ar pavadinimo raktas yra failo pavadinimas iš /usr/share/desktop-directories."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:26
+msgid "Applications"
+msgstr "Programos"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:27
+msgid ""
+"The list of IDs of applications that are explicitly included in this folder."
+msgstr "Išvardinti šiame aplanke išreikštinai įtrauktų programų ID."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:32
+msgid "Categories"
+msgstr "Kategorijos"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:33
+msgid ""
+"A list of categories for which apps will be placed into this folder by "
+"default, in addition to the apps that are listed in the apps key."
+msgstr ""
+"Kategorijų sąrašas, kurioms programos bus numatytai patalpintos šiame "
+"aplanke papildant apps rakte nurodytas programas."
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:39
+msgid "Excluded applications"
+msgstr "Išskirtos programos"
+
+#: schemas/org.gnome.desktop.app-folders.gschema.xml.in:40
+msgid ""
+"A list of IDs of applications that are excluded from this folder. This can "
+"be used to remove applications that would otherwise be included by category."
+msgstr ""
+"Į šį aplanką neįtraukiamos programos. Galima naudoti programų pašalinimui, "
+"kurios priešingu atveju būtų įtrauktos pagal kategoriją."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:6
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:90
+msgid "Picture Options"
+msgstr "Paveikslėlio parametrai"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:7
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:91
+msgid ""
+"Determines how the image set by wallpaper_filename is rendered. Possible "
+"values are “none”, “wallpaper”, “centered”, “scaled”, “stretched”, “zoom”, "
+"“spanned”."
+msgstr ""
+"Nusako, kaip piešiamas paveikslėlis, nustatytas raktu wallpaper_filename. "
+"Galimos reikšmės yra „none“, „wallpaper“, „centered“, „scaled“, „stretched“, "
+"„zoom“, „spanned“."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:15
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:99
+msgid "Picture URI"
+msgstr "Paveikslėlio URI"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:16
+#: schemas/org.gnome.desktop.background.gschema.xml.in:24
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:100
+msgid ""
+"URI to use for the background image. Note that the backend only supports "
+"local (file://) URIs."
+msgstr ""
+"Fono paveikslėlio URI. Pastebėtina, kad realizacija palaiko tik vietinius "
+"(file://) URI."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:23
+msgid "Picture URI (dark)"
+msgstr "Paveikslėlio URI (tamsus)"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:32
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:108
+msgid "Picture Opacity"
+msgstr "Paveikslėlio permatomumas"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:33
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:109
+msgid "Opacity with which to draw the background picture."
+msgstr "Permatomumas, su kuriuo piešiamas fono paveikslėlis."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:39
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:115
+msgid "Primary Color"
+msgstr "Pirminė spalva"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:40
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:116
+msgid "Left or Top color when drawing gradients, or the solid color."
+msgstr "Kairės arba apačios spalva piešiant gradientus, arba vientisa spalva."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:46
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:122
+msgid "Secondary Color"
+msgstr "Antrinė spalva"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:47
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:123
+msgid "Right or Bottom color when drawing gradients, not used for solid color."
+msgstr ""
+"Dešinės arba apačios spalva piešiant gradientą, nenaudojama su vientisa "
+"spalva."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:53
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:129
+msgid "Color Shading Type"
+msgstr "Spalvos šešėlio tipas"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:54
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:130
+msgid ""
+"How to shade the background color. Possible values are “horizontal”, "
+"“vertical”, and “solid”."
+msgstr ""
+"Kaip šešėliuoti fono spalvą. Galimos reikšmės yra „horizontal“, „vertical“ "
+"ir „solid“."
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:61
+msgid "Have file manager handle the desktop"
+msgstr "Leisti failų tvarkytuvei valdyti darbalaukį"
+
+#: schemas/org.gnome.desktop.background.gschema.xml.in:62
+msgid "If set to true, then file manager will draw the icons on the desktop."
+msgstr ""
+"Jei reikšmė teigiama, failų tvarkytuvė rodo piktogramas ant darbalaukio."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:10
+msgid "List of breaks that are currently enabled"
+msgstr "Šiuo metu įjungtų pertraukų sąrašas"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:22
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:87
+msgid "Time between breaks"
+msgstr "Laikas tarp pertraukų"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:23
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:88
+msgid "The time between rest breaks, in seconds."
+msgstr "Laiko tarpas tarp poilsio pertraukų sekundėmis."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:29
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:94
+msgid "Duration of each break"
+msgstr "Kiekvienos pertraukos laikas"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:30
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:95
+msgid "The duration of each rest break, in seconds."
+msgstr "Kiekvienos poilsio pertraukos laikas sekundėmis."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:36
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:101
+msgid "Amount to delay break if requested"
+msgstr "Pertraukos pavėlinimo laikas, jei prašomas"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:37
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:102
+msgid ""
+"The amount to delay taking the break by, if the user requests a delay, in "
+"seconds."
+msgstr "Kiek pavėlinti pertrauką, jei naudotojas to prašo, sekundėmis."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:43
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:108
+msgid "Fade screen during breaks"
+msgstr "Pritemdyti ekraną pertraukų metu"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:44
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:109
+msgid "True to fade the screen during rest breaks."
+msgstr "Teigiama, jei pertrauku metu ekranas pritemdomas."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:49
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:114
+msgid "Lock screen during breaks"
+msgstr "Pertraukų metu užrakinti ekraną"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:50
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:115
+msgid "True to lock the screen during rest breaks."
+msgstr "Teigiama, jei poilsio pertraukų metu ekranas užrakinimas."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:55
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:120
+msgid "Play sound when a break finishes"
+msgstr "Groti garsą kai pertrauka baigiasi"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:56
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:121
+msgid "True to play a sound when a break finishes."
+msgstr "Teigiama, jei pertraukai pasibaigus grojamas garsas."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:61
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:79
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:126
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:144
+msgid "Notify when a break is due"
+msgstr "Pranešti, kai baigsis pertrauka"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:62
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:127
+msgid "True to emit a notification when a break is due to start."
+msgstr "Teigiama, jei atsiunčiamas pranešimas, kada prasidės pertrauka."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:67
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:132
+msgid "Notify when a break is upcoming"
+msgstr "Pranešti, kai artėja pertrauka"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:68
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:133
+msgid "True to emit a notification a few minutes before a break is due."
+msgstr ""
+"Teigiama, jei atsiunčiamas pranešimas kelios minutės prie pertraukos laiką."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:73
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:138
+msgid "Notify when a break is overdue"
+msgstr "Pranešti, jei pertrauka praleista"
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:74
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:139
+msgid "True to emit a notification when a break is overdue."
+msgstr "Teigiama, jei atsiunčiamas pranešimas, kuomet pertrauka vėluoja."
+
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:80
+#: schemas/org.gnome.desktop.break-reminders.gschema.xml.in:145
+msgid "True to show a prominent countdown shortly before a break is due."
+msgstr "Teigiama, jei nuolat rodomas laikmatis tuoj po pertraukos pradžios."
+
+#: schemas/org.gnome.desktop.calendar.gschema.xml.in:6
+msgid "Show the week date in the calendar"
+msgstr "Kalendoriuje rodyti savaitės dieną"
+
+#: schemas/org.gnome.desktop.calendar.gschema.xml.in:7
+msgid "If true, display the ISO week date in the calendar."
+msgstr "Jei teigiama, rodyti ISO savaitės dieną kalendoriuje."
+
+#: schemas/org.gnome.desktop.datetime.gschema.xml.in:6
+msgid "Automatically update timezone"
+msgstr "Automatiškai atnaujinti laiko juostą"
+
+#: schemas/org.gnome.desktop.datetime.gschema.xml.in:7
+msgid "Whether to automatically update the timezone using geolocation."
+msgstr "Ar automatiškai atnaujinti laiko juostą naudojant geolokaciją."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:14
+msgid "Default calendar"
+msgstr "Numatytasis kalendorius"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:15
+msgid ""
+"Default calendar application DEPRECATED: This key is deprecated and ignored. "
+"The preferred calendar application is the application handling the text/"
+"calendar mime type."
+msgstr ""
+"Numatytoji kalendoriaus programa PASENĘS: šis raktas yra pasenęs ir jo "
+"nepaisoma. Pageidaujama kalendoriaus programa yra programa, apdorojanti text/"
+"calendar mime tipą."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:24
+msgid "Calendar needs terminal"
+msgstr "Kalendoriui naudojamas terminalas"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:25
+msgid ""
+"Whether the default calendar application needs a terminal to run. "
+"DEPRECATED: This key is deprecated and ignored. The preferred calendar "
+"application is the application handling the text/calendar mime type, whether "
+"it needs a terminal is taken from its desktop file."
+msgstr ""
+"Ar pageidaujamai kalendoriaus programai reikia terminalo vykdymui. PASENĘS: "
+"šis raktas yra pasenęs ir jo nepaisoma. Pageidaujama kalendoriaus programa "
+"yra programa, apdorojanti text/calendar mime tipą, ar jai reikia terminalo "
+"yra nustatoma pagal jos desktop failą."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:37
+msgid "Default tasks"
+msgstr "Numatytoji užduočių programa"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:38
+msgid "Default tasks application."
+msgstr "Numatytoji užduočių programa."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:44
+msgid "Tasks needs terminal"
+msgstr "Užduočių programai reikalingas terminalas"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:45
+msgid "Whether the default tasks application needs a terminal to run."
+msgstr "Ar numatytajai užduočių programai reikalingas terminalas."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:53
+msgid "Terminal application"
+msgstr "Terminalo programa"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:54
+msgid ""
+"Terminal program to use when starting applications that require one. "
+"DEPRECATED: This key is deprecated and ignored. The default terminal is "
+"handled in GIO."
+msgstr ""
+"Terminalo programa, naudojama paleidžiant programas, kurioms jo reikia. "
+"PASENĘS: šis raktas yra pasenęs ir jo nepaisoma. Numatytąjį terminą apdorojo "
+"GIO."
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:63
+msgid "Exec Arguments"
+msgstr "Vykdymo („exec“) argumentai"
+
+#: schemas/org.gnome.desktop.default-applications.gschema.xml.in:64
+msgid ""
+"Argument used to execute programs in the terminal defined by the “exec” key. "
+"DEPRECATED: This key is deprecated and ignored. The default terminal and how "
+"to invoke it is handled in GIO."
+msgstr ""
+"Argumentas, naudojamas programoms vykdyti „exec“ rakto nurodytame terminale. "
+"PASENĘS: šis raktas yra pasenęs ir jo nepaisoma. Numatytąjį terminalą ir jo "
+"iškvietimą apdoroja GIO."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:7
+msgid "Current input source"
+msgstr "Dabartinis įvesties šaltinis"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:8
+msgid ""
+"The zero-based index into the input sources list specifying the current one "
+"in effect. The value is automatically capped to remain in the range [0, "
+"sources_length) as long as the sources list isn’t empty. DEPRECATED: This "
+"key is deprecated and ignored."
+msgstr ""
+"Nulio pagrindo indeksas įvesties šaltinių sąrašui, nurodantis dabartinį. "
+"Reikšmė automatiškai pritaikoma likimui ribose [0, sources_length), kol "
+"šaltinių sąrašas yra netuščias. PASENĘS: šis raktas yra pasenęs ir jo "
+"nepaisoma."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:19
+msgid "List of input sources"
+msgstr "Įvesties šaltinių sąrašas"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:20
+msgid ""
+"List of input source identifiers available. Each source is specified as a "
+"tuple of 2 strings. The first string is the type and can be one of “xkb” or "
+"“ibus”. For “xkb” sources the second string is “xkb_layout+xkb_variant” or "
+"just “xkb_layout” if a XKB variant isn’t needed. For “ibus” sources the "
+"second string is the IBus engine name. An empty list means that the X "
+"server’s current XKB layout and variant won’t be touched and IBus won’t be "
+"used."
+msgstr ""
+"Galimų įvesties šaltinių identifikatorių sąrašas. Kiekvienas šaltinis  "
+"nurodomas kaip dviejų eilučių junginys. Pirmoji eilutė yra tipas, gali būti "
+"„xkb“ arba „ibus“. „xkb“ šaltiniams antroji eilutė yra "
+"„xkb_layout+xkb_variant“ arba tiesiog „xkb_layout“, jei nereikalingas XKB "
+"variantas. „ibus“ šaltiniams antroji eilutė yra IBus variklio pavadinimas. "
+"Tuščias sąrašas reiškia, kad dabartinis X serverio išdėstymas yra XKB ir "
+"variantas nebus paliestas bei IBus nebus naudojama."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:33
+msgid "List of most recently used input sources"
+msgstr "Neseniai naudotų įvesties šaltinių sąrašas"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:34
+msgid ""
+"List of most recently used input sources. The value is in the same format as "
+"the available sources list."
+msgstr ""
+"Neseniai naudotų įvesties šaltinių sąrašas. Vertė yra to paties formato kaip "
+"prieinamų šaltinių sąrašo."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:41
+msgid "List of XKB options"
+msgstr "XKB parametrų sąrašas"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:42
+msgid ""
+"List of XKB options. Each option is an XKB option string as defined by "
+"xkeyboard-config’s rules files."
+msgstr ""
+"XKB parametrų sąrašas. Kiekvienas parametras yra XKB parametro eilutė, kaip "
+"apibrėžia xkeyboard-config taisyklių failai."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:49
+msgid "XKB model to use"
+msgstr "Naudojamas XKB modelis"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:50
+msgid ""
+"The XKB model to use. The value is the same identifier as defined by "
+"xkeyboard-config’s geometry files."
+msgstr ""
+"Naudojamas XKB modelis. Vertė yra tas pats identifikatorius, kaip nurodyta "
+"xkeyboard-config geometrijos failuose."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:57
+msgid "Show all installed input sources"
+msgstr "Rodyti visus įvesties šaltinius"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:58
+msgid ""
+"Makes all installed input sources available for choosing in System Settings."
+msgstr ""
+"Paverčia visus įdiegtus įvesties šaltinius prieinamus pasirinkimui sistemos "
+"nustatymuose."
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:65
+msgid "Use different input sources for each window"
+msgstr "Naudoti skirtingus įvesties šaltinius kiekvienam langui"
+
+#: schemas/org.gnome.desktop.input-sources.gschema.xml.in:66
+msgid ""
+"When enabled, input sources get attached to the currently focused window "
+"when activated."
+msgstr ""
+"Kai įjungta, įvesties šaltiniai aktyvavimo metu susiejami su tuo metu "
+"aktyviu langu."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:6
+msgid "Enable Toolkit Accessibility"
+msgstr "Įjungti įrankinės pritaikymą neįgaliesiems"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:7
+msgid "Whether toolkits should load accessibility related modules."
+msgstr ""
+"Ar įrankinės turi įkelti su pritaikymu neįgaliesiems susijusius modulius."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:13
+msgid "Enable Animations"
+msgstr "Įjungti animacijas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:14
+msgid ""
+"Whether animations should be displayed. Note: This is a global key, it "
+"changes the behaviour of the window manager, the panel etc."
+msgstr ""
+"Ar animacijos turėtų būti rodomos. Pastaba: tai yra visuotinis raktas, jis "
+"paveikia langų tvarkytuvės, skydelio ir t.t. veikimą."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:21
+msgid "Menus Have Tearoff"
+msgstr "Meniu rodomi atkabinimo elementai"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:22
+msgid "Whether menus should have a tearoff."
+msgstr "Ar meniu turėtų būti rodomi atkabinimo elementai."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:28
+msgid "Can Change Accels"
+msgstr "Gali keisti sparčiuosius klavišus"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:29
+msgid ""
+"Whether the user can dynamically type a new accelerator when positioned over "
+"an active menuitem."
+msgstr ""
+"Ar naudotojas gali dinamiškai įvesti naują spartųjį klavišą, žymekliui esant "
+"virš suaktyvinto meniu elemento."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:36
+msgid "Toolbar Style"
+msgstr "Įrankių juostos stilius"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:37
+msgid ""
+"Toolbar Style. Valid values are “both”, “both-horiz”, “icons”, and “text”."
+msgstr ""
+"Įrankių juosto stilius. Galimos reikšmės yra „both“, „both-horiz“, „icons“, "
+"and „text“."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:44
+msgid "Menubar Detachable"
+msgstr "Meniu juosta atkabinama"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:45
+msgid "Whether the user can detach menubars and move them around."
+msgstr "Ar naudotojas gali atkabinti meniu juostas ir jas vilkti."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:51
+msgid "Toolbar Detachable"
+msgstr "Įrankių juosta atkabinama"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:52
+msgid "Whether the user can detach toolbars and move them around."
+msgstr "Ar naudotojas gali atkabinti įrankių juostas ir jas vilkti."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:58
+msgid "Toolbar Icon Size"
+msgstr "Įrankių juostos piktogramų dydis"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:59
+msgid "Size of icons in toolbars, either “small” or “large”."
+msgstr "Piktogramų dydis įrankių juostose, arba „small“, arba „large“."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:65
+msgid "Cursor Blink"
+msgstr "Mirksintis žymeklis"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:66
+msgid "Whether the cursor should blink."
+msgstr "Ar žymeklis turi mirksėti."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:73
+msgid "Cursor Blink Time"
+msgstr "Žymeklio mirksėjimo laikas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:74
+msgid "Length of the cursor blink cycle, in milliseconds."
+msgstr "Žymeklio mirksėjimo ciklo trukmė milisekundėmis."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:81
+msgid "Cursor Blink Timeout"
+msgstr "Žymeklio mirksėjimo pabaigos laikas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:82
+msgid "Time after which the cursor stops blinking, in seconds."
+msgstr "Laikas, po kurio žymeklis nustoja mirksėti (sekundėmis)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:88
+msgid "Icon Theme"
+msgstr "Piktogramų tema"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:89
+msgid "Icon theme to use for the panel, nautilus etc."
+msgstr "Piktogramų tema, naudojama skydeliui, failų naršyklei ir t.t."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:95
+msgid "Gtk+ Theme"
+msgstr "Gtk+ tema"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:96
+msgid "Basename of the default theme used by gtk+."
+msgstr "Numatytos gtk+ temos pavadinimas."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:102
+msgid "Gtk+ Keybinding Theme"
+msgstr "Gtk+ klavišų susiejimų tema"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:103
+msgid "Basename of the default keybinding theme used by gtk+."
+msgstr "Numatytosios gtk+ klavišų susiejimo temos pavadinimas."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:109
+msgid "Default font"
+msgstr "Numatytasis šriftas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:110
+msgid "Name of the default font used by gtk+."
+msgstr "Numatytojo gtk+ naudojamo šrifto pavadinimas."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:116
+msgid "Directories with avatar faces"
+msgstr "Aplankai su atvaizdų veidais"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:117
+msgid ""
+"Directories to override the default avatar faces installed by gnome-control-"
+"center."
+msgstr ""
+"Aplankai numatytiems su gnome-control-center įdiegtiems atvaizdams pakeisti."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:124
+msgid "Text scaling factor"
+msgstr "Teksto didinimo faktorius"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:125
+msgid ""
+"Factor used to enlarge or reduce text display, without changing font size."
+msgstr ""
+"Faktorius, naudojamas padidinti ar sumažinti rodomą tekstą, nekeičiant "
+"teksto dydžio."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:131
+msgid "Window scaling factor"
+msgstr "Lango didinimo faktorius"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:132
+msgid ""
+"Integer factor used to scale windows by. For use on high-dpi screens. 0 "
+"means pick automatically based on monitor."
+msgstr ""
+"Sveikasis skaičius, naudojamas langų didinimui. Naudojimui didelės raiškos "
+"ekranams. 0 reiškia automatinį parinkimą pagal monitorių."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:139
+msgid "GTK IM Preedit Style"
+msgstr "GTK IM išankstinio redagavimo stilius"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:140
+msgid "Name of the GTK+ input method Preedit Style used by gtk+."
+msgstr "GTK+ įvesties metodo išankstinio redagavimo stiliaus pavadinimas."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:146
+msgid "GTK IM Status Style"
+msgstr "GTK IM būsenos stilius"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:147
+msgid "Name of the GTK+ input method Status Style used by gtk+."
+msgstr "GTK+ įvesties metodo būsenos stiliaus pavadinimas."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:153
+msgid "GTK IM Module"
+msgstr "GTK IM modulis"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:154
+msgid "Name of the input method module used by GTK+."
+msgstr "GTK+ įvesties modulio pavadinimas."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:160
+msgid "Document font"
+msgstr "Dokumentų šriftas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:161
+msgid "Name of the default font used for reading documents."
+msgstr "Numatytojo šrifto, naudojamo dokumentams skaityti, pavadinimas."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:167
+msgid "Monospace font"
+msgstr "Lygiaplotis šriftas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:168
+msgid ""
+"Name of a monospaced (fixed-width) font for use in locations like terminals."
+msgstr "Lygiapločio šrifto pavadinimas naudojimui terminale ir kt."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:175
+msgid "Menubar accelerator"
+msgstr "Meniu juostos spartusis klavišas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:176
+msgid "Keyboard shortcut to open the menu bars."
+msgstr "Klaviatūros trumpinys meniu juostai atverti."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:182
+msgid "Cursor theme"
+msgstr "Žymeklio tema"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:183
+msgid ""
+"Cursor theme name. Used only by Xservers that support the Xcursor extension."
+msgstr ""
+"Žymeklio temos pavadinimas. Naudojamas tik Xserverių, kurie palaiko Xcursor "
+"plėtinį."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:187
+msgid "Cursor size"
+msgstr "Žymeklio dydis"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:188
+msgid "Size of the cursor used as cursor theme."
+msgstr "Žymeklio dydis naudojamas kaip žymeklio tema."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:192
+msgid "Timeout before click repeat"
+msgstr "Laikas prieš pakartojant paspaudimą"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:193
+msgid ""
+"Timeout in milliseconds before a click starts repeating (on spinner buttons "
+"for example)."
+msgstr ""
+"Laikas milisekundėmis iki paspaudimas pradeda kartotis (pavyzdžiui sukimo "
+"mygtukuose)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:197
+msgid "Timeout between click repeats"
+msgstr "Laikas tarp paspaudimų pasikartojimų"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:198
+msgid ""
+"Timeout in milliseconds between repeated clicks when a button is left "
+"pressed."
+msgstr ""
+"Laikas milisekundėmis tarp pasikartojančių paspaudimų, kai mygtukas yra "
+"nuspaustas."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:202
+msgid "Palette used in the color selector"
+msgstr "Paletė, naudojama spalvų pasirinkime"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:203
+msgid ""
+"Palette used in the color selector as defined by the “gtk-color-palette” "
+"setting"
+msgstr ""
+"Paletė, naudojama spalvų parinkiklio, kaip apibrėžta nustatymo „gtk-color-"
+"palette“"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:207
+msgid "List of symbolic names and color equivalents"
+msgstr "Simbolinių vardų ir spalvų ekvivalentai"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:208
+msgid ""
+"A “\\n” separated list of “name:color” as defined by the “gtk-color-scheme” "
+"setting"
+msgstr ""
+"„\\n“ skiriamas „pavadinimas:spalva“ elementų sąrašas, kaip apibrėžtas „gtk-"
+"color-palette“ nustatymo"
+
+#. TRANSLATORS: select your locale's default clock format, this should be '12h' or '24h' (with the quotes!)
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:212
+msgid "'24h'"
+msgstr "'24h'"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:213
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:214
+msgid "Whether the clock displays in 24h or 12h format"
+msgstr "Ar laikrodis rodo 24 val., ar 12 val. formatą"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:220
+msgid "Whether the clock shows seconds"
+msgstr "Ar laikrodis rodo sekundes"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:221
+msgid "If true, display seconds in the clock."
+msgstr "Jei teigiama, rodyti sekundes laikrodyje."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:227
+msgid "Show date in clock"
+msgstr "Rodyti datą laikrodyje"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:228
+msgid "If true, display date in the clock, in addition to time."
+msgstr "Jei teikiama, greta laiko laikrodyje rodyti datą."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:234
+msgid "Show weekday in clock"
+msgstr "Rodyti laikrodyje savaitės dieną"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:235
+msgid "If true, display weekday in the clock, in addition to time."
+msgstr "Jei teigiama, greta laiko laikrodyje rodyti savaitės dieną."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:241
+msgid "Enable hot corners"
+msgstr "Įjungti karštus kampus"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:242
+msgid ""
+"If true, the activities overview can be accessed by moving the mouse to the "
+"top-left corner."
+msgstr ""
+"Jei teigiama, veiklų apžvalgą galima pasiekti perkeliant pelę link "
+"viršutinio kairiojo kampo."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:249
+msgid "Show battery percentage"
+msgstr "Rodyti baterijos procentinę reikšmę"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:250
+msgid ""
+"If true, display battery percentage in the status menu, in addition to the "
+"icon."
+msgstr ""
+"Jei teigiama, būsenos meniu rodyti šalia piktogramos ir baterijos procentinę "
+"reikšmę."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:256
+msgid "Enable the primary paste selection"
+msgstr "Įjungti pirminio įdėjimo žymėjimas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:257
+msgid ""
+"If true, gtk+ uses the primary paste selection, usually triggered by a "
+"middle mouse button click."
+msgstr ""
+"Jei teigiama, gtk+ naudoja pirminio įdėjimo žymėjimą, dažniausiai "
+"panaudojamą viduriniuoju pelės paspaudimu."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:263
+msgid "Allow overlay scrolling"
+msgstr "Leisti dangalų slinktį"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:264
+msgid ""
+"Whether scrollbars should be overlayed as indicators. Depending on input "
+"devices in use, permanent scrollbars may still be displayed."
+msgstr ""
+"Ar slinkties juostos turi būti uždengtos kaip indikatoriai. Priklausomai nuo "
+"naudojamo įvesties įrenginio nuolatinės slinkties juostos vis tiek gali būti "
+"rodomos."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:272
+msgid "Highlights the current location of the pointer."
+msgstr "Paryškina dabartinę žymeklio vietą."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:273
+msgid ""
+"If true, pressing a key will highlight the current pointer location on "
+"screen."
+msgstr ""
+"Jei teigiama, klavišo paspaudimas paryškins dabartinę žymeklio vietą ekrane."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:279
+msgid "Antialiasing"
+msgstr "Glotninimas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:280
+msgid ""
+"The type of antialiasing to use when rendering fonts. Possible values are: "
+"“none” for no antialiasing, “grayscale” for standard grayscale antialiasing, "
+"and “rgba” for subpixel antialiasing (LCD screens only)."
+msgstr ""
+"Glotninimo tipas, naudojamas piešiant šriftus. Galimos vertės: „none“ "
+"glotninimui išjungti, „grayscale“ standartiniam pilkos skalės glotninimui "
+"bei „rgba“ subpikseliniam glotninimui (tik LCD ekranams)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:286
+msgid "Hinting"
+msgstr "Patarimai"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:287
+msgid ""
+"The type of hinting to use when rendering fonts. Possible values are: “none” "
+"for no hinting and “slight” for fitting only to the Y-axis like Microsoft’s "
+"ClearType, DirectWrite and Adobe’s proprietary font rendering engine. "
+"Ignores native hinting within the font, generates hints algorithmically. "
+"Used on Ubuntu by default. Recommended. The meaning of “medium” and “full” "
+"depends on the font format (.ttf, .otf, .pfa/.pfb) and the installed version "
+"of FreeType. They usually try to fit glyphs to both the X and the Y axis "
+"(except for .otf: Y-only). This can lead to distortion and/or inconsistent "
+"rendering depending on the quality of the font, the font format and the "
+"state of FreeType’s font engines."
+msgstr ""
+"Kokio tipo patarimus naudoti piešiant šriftus. Galimos vertės: „none“ "
+"patarimų nenaudojimui ir „slight“ talpinimui tik Y ašyje, kai Microsoft "
+"ClearType, DirectWrite bei Adobe nuosavybinis šriftų piešimo variklis. "
+"Nepaiso integruotų šrifto patarimų, generuoja patarimus algoritmiškai. "
+"Numatytai naudojama Ubuntu. Rekomenduojama. „medium“ ir „full“ prasmė "
+"priklauso nuo šrifto formato (.ttf, .otf, .pfa/.pfb) ir įdiegtos FreeType "
+"versijos. Dažniausiai bando sutalpinti paveikslėlius X ir Y ašyse (išskyrus ."
+"otf: tik Y). Dėl to gali būti iškraipymų arba piešiama nenuosekliai "
+"priklausomai nuo šrifto kokybės, šrifto formato ir FreeType šriftų variklių "
+"būsenos."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:293
+msgid "RGBA order"
+msgstr "RGBA tvarka"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:294
+msgid ""
+"The order of subpixel elements on an LCD screen; only used when antialiasing "
+"is set to “rgba”. Possible values are: “rgb” for red on left (most common), "
+"“bgr” for blue on left, “vrgb” for red on top, “vbgr” for red on bottom."
+msgstr ""
+"Subpikselinių elementų tvarka LCD ekrane; tik kai glotninimas nustatytas į "
+"„rgba“. Galimo vertės yra: „rgb“ raudonai kairėje (dažniausia), „bgr“ "
+"mėlynai kairėje, „vrgb“ raudonai viršuje, „vbgr“ raudonai apačioje."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:300
+msgid "Color scheme"
+msgstr "Spalvų schema"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:301
+msgid ""
+"The preferred color scheme for the user interface. Valid values are "
+"“default”, “prefer-dark”, “prefer-light”."
+msgstr ""
+"Pageidaujama naudotojo sąsajos spalvų schema. Galimo vertės yra „default“ "
+"(numatyta“, „prefer-dark“ (pageidauti tamsios), „prefer-light“ (pageidauti "
+"šviesios)."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:307
+msgid "Font rendering"
+msgstr "Šrifto piešimas"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:308
+msgid ""
+"Preference to indicate whether font rendering should follow the low-level "
+"`font-hinting` and `font-antialiasing` and `font-rgba-order` settings, or "
+"take environmental factors such as screen resolution and scaling into "
+"account. Possible values are: \"manual\" for respecting the low-level "
+"settings, or \"automatic\" for letting the toolkit make its own decisions."
+msgstr ""
+"Nuostata, nurodanti, ar šrifto piešimas turi sekti žemo lygio nuostatomis "
+"„font-hinting“, „font-antialiasing“ bei „font-rgba-order“, arba atsižvelgti "
+"į aplinkos faktorius, tokius kaip ekrano raiška bei didinimas. Galimos "
+"vertės yra: „manual“ (rankinė) žemo lygio nuostatų laikymuisi, arba "
+"„automatic“, leidžianti įrankinei nuspręsti."
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:316
+msgid "Accent color"
+msgstr "Akcento spalva"
+
+#: schemas/org.gnome.desktop.interface.gschema.xml.in:317
+msgid ""
+"The preferred accent color for the user interface. Valid values are "
+"\"blue\", \"teal\", \"green\", \"yellow\", \"orange\", \"red\", \"pink\", "
+"\"purple\", \"slate\"."
+msgstr ""
+"Pageidaujama naudotojo sąsajos akcento spalva. Galimo vertės yra „blue“, "
+"„teal“, „green“, „yellow“, „orange“, „red“, „pink“, „purple„, „slate“."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:6
+msgid "Disable command line"
+msgstr "Išjungti komandų eilutę"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:7
+msgid ""
+"Prevent the user from accessing the terminal or specifying a command line to "
+"be executed. For example, this would disable access to the panel’s “Run "
+"Application” dialog."
+msgstr ""
+"Neleisti naudotojui paleisti terminalo ar nurodyti vykdomos komandų eilutės. "
+"Pavyzdžiui, tai išjungia prieigą prie skydelio dialogo „Paleisti programą“."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:15
+msgid "Disable saving files to disk"
+msgstr "Išjungti failų saugojimą diske"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:16
+msgid ""
+"Prevent the user from saving files to disk. For example, this would disable "
+"access to all applications’ “Save as” dialogs."
+msgstr ""
+"Neleisti naudotojui saugoti failų diske. Pavyzdžiui, tai neleidžia pasiekti "
+"visų programų „Įrašyti kaip“ dialogų."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:23
+msgid "Disable printing"
+msgstr "Išjungti spausdinimą"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:24
+msgid ""
+"Prevent the user from printing. For example, this would disable access to "
+"all applications’ “Print” dialogs."
+msgstr ""
+"Neleisti naudotojui spausdinti. Pavyzdžiui, tai neleidžia visose programose "
+"pasiekti dialogų „Spausdinti“."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:31
+msgid "Disable print setup"
+msgstr "Išjungti spausdinimo nustatymą"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:32
+msgid ""
+"Prevent the user from modifying print settings. For example, this would "
+"disable access to all applications’ “Print Setup” dialogs."
+msgstr ""
+"Neleisti naudotojui keisti spausdinimo nustatymų. Pavyzdžiui, tai neleidžia "
+"visose programose pasiekti dialogų „Spausdinimo nustatymai“."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:39
+msgid "Disable user switching"
+msgstr "Išjungti naudojo keitimą"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:40
+msgid ""
+"Prevent the user from switching to another account while their session is "
+"active."
+msgstr ""
+"Neleisti naudotojui persijungti į kitą paskyrą, kol jo seansas aktyvus."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:47
+msgid "Disable lock screen"
+msgstr "Išjungti ekrano rakinimą"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:48
+msgid "Prevent the user from locking their screen."
+msgstr "Neleisti naudotojui užrakinti jo ekrano."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:54
+msgid "Disable URL and MIME type handlers"
+msgstr "Išjungti URL ir MIME tipo apdorojimus"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:55
+msgid "Prevent running any URL or MIME type handler applications."
+msgstr "Neleisti vykdyti jokio URL ar MIME tipo apdorojimo programose."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:61
+msgid "Disable log out"
+msgstr "Išjungti atsijungimą"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:62
+msgid "Prevent the user from logging out."
+msgstr "Neleisti naudotojui atsijungti."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:68
+msgid "Disable user administration"
+msgstr "Išjungti naudojų administravimą"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:69
+msgid ""
+"Stop the user from modifying user accounts. By default, we allow adding and "
+"removing users, as well as changing other users settings."
+msgstr ""
+"Neleisti naudotojams keisti naudotojų paskyrų. Pagal numatymą mes leidžiame "
+"pridėti ir šalinti naudotojus, taip pat keisti kitų naudotojų nustatymus."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:76
+msgid "Mount removable storage devices as read-only"
+msgstr "Prijungti išimamas saugyklos laikmenas tik skaitymui"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:77
+msgid ""
+"Prevent users from writing or modifying files on removable storage devices "
+"(i.e. flash disks, mobile phones, cameras)."
+msgstr ""
+"Neleisti naudotojams įrašyti ar keisti failų išimamose saugyklos laimenose "
+"(flash diskuose, mobiliuosiuose telefonuose, kamerose)."
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:84
+msgid "Disable password showing"
+msgstr "Išjungti slaptažodžio rodymą"
+
+#: schemas/org.gnome.desktop.lockdown.gschema.xml.in:85
+msgid "Disable the \"Show Password\" menu item in password entries."
+msgstr "Išjungti meniu elementą „rodyti slaptažodį“ slaptažodžio laukuose."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:6
+msgid "Whether to automatically mount media"
+msgstr "Ar automatiškai prijungti laikmenas"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:7
+msgid ""
+"If set to true, then Nautilus will automatically mount media such as user-"
+"visible hard disks and removable media on start-up and media insertion."
+msgstr ""
+"Jei teigiamas, Nautilus automatiškai prijungs laikmenas, tokias kaip "
+"naudotojo matomi kietieji diskai ir išimamas laikmenas, paleidimo ir "
+"laikmenos įdėjimo metu."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:11
+msgid "Whether to automatically open a folder for automounted media"
+msgstr "Ar automatiškai atverti aplanką automatiškai prijungta laikmenai"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:12
+msgid ""
+"If set to true, then Nautilus will automatically open a folder when media is "
+"automounted. This only applies to media where no known x-content/* type was "
+"detected; for media where a known x-content type is detected, the user "
+"configurable action will be taken instead."
+msgstr ""
+"Jei teigiama, Nautilus automatiškai atvers aplanką, kai prijungiama "
+"laikmena. Tai galioja tik laikmenoms, kuriose neaptinkamas joks žinomas x-"
+"content/*; laikmenoms su aptiktu žinomu x-content tipu bus vykdomas "
+"naudotojo nustatytas veiksmas."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:16
+msgid "Never prompt or autorun/autostart programs when media are inserted"
+msgstr ""
+"Niekada neklausti ir automatiškai nepaleisti programų, kai įterpiama laikmena"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:17
+msgid ""
+"If set to true, then Nautilus will never prompt nor autorun/autostart "
+"programs when a medium is inserted."
+msgstr ""
+"Jei teigiama, Nautilus niekada neklaus ir automatiškai nepaleis programų, "
+"kai įterpiama laikmena."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:21
+msgid ""
+"List of x-content/* types where the preferred application will be launched"
+msgstr "x-content/* tipų sąrašas, kur paleidžiama pageidaujama programa."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:22
+msgid ""
+"List of x-content/* types for which the user have chosen to start an "
+"application in the preference capplet. The preferred application for the "
+"given type will be started on insertion on media matching these types."
+msgstr ""
+"x-content/* tipų sąrašas, kuriems naudotojas pasirinko paleisti programą. "
+"Pageidaujama programa nurodytam tipui bus paleista laikmenos įdėjimo metu "
+"laikmenoms, atitinkančioms šiuos tipus."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:26
+msgid "List of x-content/* types set to “Do Nothing”"
+msgstr "x-content/* tipų sąrašas, nustatytų į „Nieko nedaryti“"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:27
+msgid ""
+"List of x-content/* types for which the user have chosen “Do Nothing” in the "
+"preference capplet. No prompt will be shown nor will any matching "
+"application be started on insertion of media matching these types."
+msgstr ""
+"x-content/* tipų sąrašas, kuriems naudotojas pasirinko paleisti „Nieko "
+"nedaryti“. Laikmenos įdėjimo metu, laikmenoms, atitinkančioms šiuos tipus, "
+"nebus rodomas joks klausimas ir nebus paleidžiama jokia programa."
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:31
+msgid "List of x-content/* types set to “Open Folder”"
+msgstr "x-content/* tipų sąrašas, nustatytų į „Atverti aplanką“"
+
+#: schemas/org.gnome.desktop.media-handling.gschema.xml.in:32
+msgid ""
+"List of x-content/* types for which the user have chosen “Open Folder” in "
+"the preferences capplet. A folder window will be opened on insertion of "
+"media matching these types."
+msgstr ""
+"x-content/* tipų sąrašas, kuriems naudotojas pasirinko „Atverti aplanką“. "
+"Aplanko langas bus atvertas laikmenos įdėjimo metu laikmenoms, "
+"atitinkančioms šiuos tipus."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:6
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:55
+msgid "Show notification banners"
+msgstr "Rodyti pranešimų laukus"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:7
+msgid "Whether notification banners are visible for application notifications."
+msgstr "Ar pranešimų laukai yra matomi programos pranešimams."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:14
+msgid "Show notifications in the lock screen"
+msgstr "Rodyti pranešimus užrakintame ekrane"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:15
+msgid "Whether notifications are shown in the lock screen or not."
+msgstr "Ar pranešimai yra rodomi užrakintame ekrane."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:31
+msgid "Application ID"
+msgstr "Programos ID"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:32
+msgid "The application that this policy is for."
+msgstr "Programa, kuriai taikomos šios taisyklės."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:39
+msgid "Enable notifications"
+msgstr "Įjungti pranešimus"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:40
+msgid "Whether notifications are globally enabled for this application."
+msgstr "Ar pranešimai yra visuotinai įjungti šiai programai."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:47
+msgid "Enable sound alerts"
+msgstr "Įjungti garsinius signalus"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:48
+msgid "Whether notifications should be accompanied by sound alerts."
+msgstr "Ar pranešimai turėtų būti palydimi garsiniai signalais."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:56
+msgid ""
+"Whether notification banners for this application are shown or not. Does not "
+"affect clicking on message tray buttons."
+msgstr ""
+"Ar pranešimų laukai rodomi šiai programai. Nesusiję su dėklo mygtukų "
+"paspaudimu."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:64
+msgid "Force automatic expanding of banners"
+msgstr "Priversti automatinius laukų išplėtimus"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:65
+msgid ""
+"Whether notifications from this application are expanded automatically when "
+"in banner mode."
+msgstr ""
+"Ar šios programos pranešimai yra automatiškai išplečiami laukų veiksenoje."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:72
+msgid "Show in the lock screen"
+msgstr "Rodyti užrakintame ekrane"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:73
+msgid ""
+"Whether notifications from this application are shown when the screen is "
+"locked."
+msgstr "Ar šios programos pranešimai yra rodomi, kai ekranas yra užrakintas."
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:80
+msgid "Show details in the lock screen"
+msgstr "Rodyti detales užrakinimo ekrane"
+
+#: schemas/org.gnome.desktop.notifications.gschema.xml.in:81
+msgid ""
+"Whether the summary and body of notifications from this application will be "
+"visible in the locked screen."
+msgstr ""
+"Ar šios programos pranešimų santraukos ir patys pranešimai yra rodomi, kai "
+"ekranas yra užrakintas."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:15
+msgid "Whether edge scrolling is enabled"
+msgstr "Ar slinkimas kraštuose yra įjungtas"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:16
+msgid ""
+"When enabled, touchpads that support edge scrolling will have that feature "
+"enabled."
+msgstr ""
+"Kai įjungta, tuose jutikliniuose kilimėliuose, kurie palaiko tik slinkimą "
+"kraštuose, ši ypatybė bus įjungta."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:20
+msgid "Whether two-finger scrolling is enabled"
+msgstr "Ar slinkimas dviem pirštais yra įjungtas"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:21
+msgid ""
+"When enabled, touchpads that support two-finger scrolling will have that "
+"feature enabled."
+msgstr ""
+"Kai įjungta, tuose jutikliniuose kilimėliuose, kurie palaiko tik slinkimą 2 "
+"pirštais, ši ypatybė bus įjungta."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:25
+msgid "Whether to disable the touchpad while typing"
+msgstr "Ar spausdinant klaviatūra išjungti jutiklinį kilimėlį"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:26
+msgid "When enabled, touchpads will be disabled while typing on the keyboard."
+msgstr ""
+"Kai įjungta, spaudinėjant klaviatūrą bus išjungti jutikliniai kilimėliai."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:30
+msgid "Enable mouse clicks with touchpad"
+msgstr "Įjungti pelės paspaudimus jutikliniu kilimėliu"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:31
+msgid ""
+"Set this to TRUE to be able to send mouse clicks by tapping on the touchpad."
+msgstr ""
+"Nustatykite TEIGIAMĄ, kad galėtumėt siųsti pelės paspaudimus tapštelėdami "
+"jutiklinį kilimėjį."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:35
+msgid "Tap Button Map"
+msgstr "Mygtukų susiejimas"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:36
+msgid ""
+"Defines the mapping between the number of fingers and touchpad buttons. The "
+"default is to have a 1, 2 and 3 finger tap to map to the left, right and "
+"middle button (\"lrm\"), respectively."
+msgstr ""
+"Nusako susiejimą tarp pirštų skaičiaus ir jutiklinio kilimėlio mygtukų. "
+"Numatyta paspaudimą 1, 2 arba 3 pirštais susieti su atitinkamai kairiu, "
+"dešinio bei viduriniu paspaudimais („lrm“)."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:40
+msgid "Enable tap-and-drag with touchpad"
+msgstr "Įjungti paspaudimą ir tempimą jutikliniu kilimėliu"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:41
+msgid ""
+"Set this to TRUE to be able to start a drag by tapping and immediately "
+"moving the finger that’s now pressed on the touchpad."
+msgstr ""
+"Nustatykite TEIGIAMĄ, kad galėtumėt pradėti tempimą paspausdami ir "
+"nedelsiant judindami nuspaustą pirštą jutikliniame kilimėlyje."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:45
+msgid "Enable tap-and-drag-lock with touchpad"
+msgstr "Įjungti paspaudimą ir tempimą užrakinant jutikliniu kilimėliu"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:46
+msgid ""
+"Set this to TRUE to lock the dragging process within a short timeout when "
+"the finger is lifted on the touchpad and the tap-and-drag setting is enabled."
+msgstr ""
+"Jei nustatyta TEIGIAMA, tempimo procesas užrakinamas su trumpa laiko trukme, "
+"kai pirštas yra pakeliamas nuo kilimėlio ir tap-and-drag nustatymas yra "
+"įjungtas."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:50
+msgid "Touchpad enabled"
+msgstr "Jutiklinis kilimėlis įjungtas"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:51
+msgid "Defines the situations in which the touchpad is enabled."
+msgstr "Aprašo situacijas, kada jutiklinis kilimėlis yra įjungtas."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:55
+msgid "Touchpad button orientation"
+msgstr "Jutiklinio kilimėlio mygtuko orientacija"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:56
+msgid ""
+"Swap left and right mouse buttons for left-handed mice with “left”, “right” "
+"for right-handed, “mouse” to follow the mouse setting."
+msgstr ""
+"Sukeiskite kairįjį ir dešinįjį pelės mygtukus kairiarankiui su „left“, "
+"„right“ naudojama dešiniarankiams, „mouse“ atkartoja pelės nustatymus."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:60
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:131
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:261
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:279
+msgid "Acceleration profile"
+msgstr "Spartinimo profilis"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:61
+msgid ""
+"Acceleration profile used for connected touchpads. The acceleration profile "
+"can be set to either default (“default”) which uses the default acceleration "
+"profile for each device, flat (“flat”), which accelerates by a device "
+"specific constant factor derived from the configured pointer speed, or "
+"adaptive (“adaptive”) which adapts the acceleration depending on the mouse "
+"movement. If a touchpad doesn’t support the configured profile, “default” "
+"will be used."
+msgstr ""
+"Spartinimo profilis prijungtiems jutikliniams kilimėliams. Spartinimo "
+"profilis gali būti nustatytas į numatytąjį („default“), kuris kiekvienam "
+"įrenginiui naudoja numatytąjį spartinimo profilį, plokščias („flat“), kuris "
+"spartina pagal įrenginiui atskirą konstantą priklausomai nuo žymeklio "
+"greičio, arba adaptyviai („adaptive“), kai spartinimas pritaikomas pagal "
+"pelės judėjimą. Jei jutiklinis kilimėlis nepalaiko nustatyto profilio, bus "
+"naudojama vertė „default“."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:65
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:120
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:273
+msgid "Pointer speed"
+msgstr "Rodyklės greitis"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:66
+msgid ""
+"Pointer speed for the touchpad. Accepted values are in the [-1..1] range "
+"(from “unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Rodyklės greitis jutikliniam kilimėliui. Galimos vertės yra rėžyje [-1..1] "
+"(nuo nespartinamo iki greito. Vertė 0 yra sistemos numatytoji."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:71
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:126
+msgid "Natural scrolling"
+msgstr "Natūrali slinktis"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:72
+msgid "Set this to TRUE to enable natural (reverse) scrolling for touchpads."
+msgstr ""
+"Nustatykite TEIGIAMĄ natūraliai (atvirkštinei) slinkčiai jutikliniams "
+"kilimėliams."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:76
+msgid "Click method"
+msgstr "Paspaudimo metodas"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:77
+msgid ""
+"How to generate software-emulated buttons, either disabled (“none”), through "
+"specific areas (“areas”), number of fingers (“fingers”) or left as hardware "
+"default (“default”)."
+msgstr ""
+"Kaip generuoti programiškai emuliuojamus mygtukus, gali būti išjungtas "
+"(„none“), per specifines sritis („areas“), pirštų skaičių („fingers“) arba "
+"aparatūros numatytą („default“)."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:81
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:136
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:266
+msgid "Emulate middle click"
+msgstr "Emuliuoti vidurinį paspaudimą"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:82
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:137
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:267
+msgid ""
+"Set this to TRUE to enable middle click during simultaneous left and right "
+"click."
+msgstr ""
+"Nustatyti į TEIGIAMĄ, kad būtų įjungtas vidurinis paspaudimas įvykus "
+"kairiajam ir dešiniajam tuo pat metu."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:88
+msgid "Keyboard repeat"
+msgstr "Klaviatūros pasikartojimai"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:89
+msgid "Set this to TRUE to enable keyboard repeat."
+msgstr "Nustatykite TEIGIAMĄ klaviatūros pasikartojimams įjungti."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:93
+msgid "Key Repeat Interval"
+msgstr "Klavišų pasikartojimo intervalas"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:94
+msgid "Delay between repeats in milliseconds."
+msgstr "Laiko tarpas tarp pasikartojimų milisekundėmis."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:98
+msgid "Initial Key Repeat Delay"
+msgstr "Pradinis klavišų pasikartojimo intervalas"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:99
+msgid "Initial key repeat delay in milliseconds."
+msgstr "Pradinis klavišų pasikartojimo intervalas milisekundėmis."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:103
+msgid "Remember NumLock state"
+msgstr "Įsiminti NumLock būseną"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:104
+msgid ""
+"When set to true, GNOME will remember the state of the NumLock LED between "
+"sessions."
+msgstr ""
+"Jei nustatyta teigiama, GNOME įsimins NumLock lemputės būseną tarp seansų."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:108
+msgid "NumLock state"
+msgstr "NumLock būsena"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:109
+msgid "The remembered state of the NumLock LED."
+msgstr "Įsiminta NumLock lemputės būsena."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:115
+msgid "Mouse button orientation"
+msgstr "Pelės mygtukų orientacija"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:116
+msgid "Swap left and right mouse buttons for left-handed mice."
+msgstr "Sukeisti kairįjį ir dešinįjį pelės mygtukus kairiarankio pelei."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:121
+msgid ""
+"Pointer speed for mice. Accepted values are in the [-1..1] range (from "
+"“unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Rodyklės greitis pelei. Galimo vertės yra rėžyje [-1..1] (nuo nespartinamo "
+"iki greito). Sistemos numatytoji vertė yra 0."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:127
+msgid "Set this to TRUE to enable natural (reverse) scrolling for mice."
+msgstr "Nustatyti TEIGIAMĄ natūraliai (atvirkštinei) slinkčiai pele."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:132
+msgid ""
+"Acceleration profile used for connected mice. The acceleration profile can "
+"be set to either default (“default”) which uses the default acceleration "
+"profile for each device, flat (“flat”), which accelerates by a device "
+"specific constant factor derived from the configured pointer speed, or "
+"adaptive (“adaptive”) which adapts the acceleration depending on the mouse "
+"movement. If a mouse doesn’t support the configured profile, “default” will "
+"be used."
+msgstr ""
+"Spartinimo profilis prijungtai pelei. Spartinimo profilis gali būti "
+"nustatytas į numatytąjį („default“), kuris kiekvienam įrenginiui naudoja "
+"numatytąjį spartinimo profilį, plokščias („flat“), kuris spartina pagal "
+"įrenginiui atskirą konstantą priklausomai nuo pelės rodyklės greičio, arba "
+"adaptyviai („adaptive“), kai spartinimas pritaikomas pagal pelės judėjimą. "
+"Jei pelė nepalaiko nustatyto profilio, bus naudojama vertė „default“."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:141
+msgid "Double click time"
+msgstr "Dvigubo spustelėjimo laikas"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:142
+msgid "Length of a double click in milliseconds."
+msgstr "Dvigubo spustelėjimo trukmė milisekundėmis."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:146
+msgid "Drag threshold"
+msgstr "Vilkimo slenkstis"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:147
+msgid "Distance before a drag is started."
+msgstr "Atstumas, po kurio pradedamas vilkimas."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:153
+msgid "Drawing tablet mapping"
+msgstr "Piešimo planšetės susiejimai"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:154
+msgid ""
+"EDID information of the output the tablet is mapped to. Must be in the "
+"format [vendor, product, serial]. [\"\",\"\",\"\"] relies on automatic "
+"mapping."
+msgstr ""
+"EDID informacija, su kuria susieta planšetė. Turi būti formato [tiekėjas, "
+"produktas, serija]. [\"\",\"\",\"\"] išjungia susiejimą."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:158
+msgid "Tablet mapping"
+msgstr "Planšetės susiejimai"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:159
+msgid "How input affects the pointer on the screen"
+msgstr "Kai įvestis paveikia rodyklę ekrane"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:163
+msgid "Tablet area"
+msgstr "Planšetės sritis"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:164
+msgid ""
+"Dead area padding around the active area, in percentages. Respectively "
+"applied to left,right,top and bottom sides."
+msgstr ""
+"Neveiksni sritis aplink aktyvią sritį procentais. Atitinkamai pritaikoma "
+"kairei, dešinei, viršutinei ir apatinei pusėms."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:168
+msgid "Tablet aspect ratio"
+msgstr "Planšetės proporcijos"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:169
+msgid ""
+"Enable this to restrict the tablet area to match the aspect ratio of the "
+"output."
+msgstr "Įjunkite planšetės sričiai apriboti iki išvesties proporcijų."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:173
+msgid "Tablet left-handed mode"
+msgstr "Planšetės kairiarankio veiksena"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:174
+msgid ""
+"Enable this to allow physically rotating the tablet for left-handed setups"
+msgstr ""
+"Įjunkite, kad galėtumės fiziškai pasukti planšetę kairiarankio nustatymams"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:180
+msgid "Stylus pressure curve"
+msgstr "Pieštuko spaudimo kreivė"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:181
+msgid ""
+"Set this to x1, y1 and x2, y2 of the pressure curve applied to the stylus."
+msgstr "Nustatykite į x1, y1 ir »č, y2 pieštukui taikomai spaudimo kreivei."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:185
+msgid "Stylus pressure range"
+msgstr "Pieštuko spaudimo rėžiai"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:186
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:196
+msgid ""
+"Set this to the percentage of the physical pressure range that should map to "
+"the logical range."
+msgstr ""
+"Nustatykite į procentą nuo fizinio paspaudimo, kuris turi atitikti loginį "
+"rėžį."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:190
+msgid "Eraser pressure curve"
+msgstr "Trintuko spaudimo kreivė"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:191
+msgid ""
+"Set this to x1, y1 and x2, y2 of the pressure curve applied to the eraser."
+msgstr "Nustatykite į x1, y1 ir »č, y2 trintukui taikomai spaudimo kreivei."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:195
+msgid "Eraser pressure range"
+msgstr "Trintuko spaudimo rėžiai"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:200
+msgid "Button action"
+msgstr "Mygtuko veiksmas"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:201
+msgid "Stylus button action, this button is located along the pen handle."
+msgstr "Pieštuko mygtuko veiksmas, šis mygtukas yra pieštuko šone."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:205
+msgid "Secondary button action"
+msgstr "Antrinio mygtuko veiksmas"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:206
+msgid ""
+"Secondary stylus button action, this button is located along the pen handle "
+"on some styli like the Grip Pen. Other styli like the Airbrush Pen or the "
+"Inking Pen only have one button, this setting is ineffective on those."
+msgstr ""
+"Antrinio pieštuko mygtuko veiksmas, šis mygtukas yra pieštuko šone kai "
+"kuriuose pieštukuose, pavyzdžiui Grip Pen. Kiti pieštukai, tokie kaip "
+"Airbrush Pen ar Inking Pen, turi tik vieną mygtuką, tad juos šis nustatymas "
+"neveikia."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:210
+msgid "Tertiary button action"
+msgstr "Trečiojo mygtuko veiksmas"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:211
+msgid ""
+"Tertiary stylus button action, this button is located along the pen handle "
+"on some styli like the 3D Pen. Other styli like the Grip Pen only have two "
+"buttons, this setting is ineffective on those."
+msgstr ""
+"Trečiojo pieštuko mygtuko veiksmas, šis mygtukas yra pieštuko šone kai "
+"kuriuose pieštukuose, pavyzdžiui 3D Pen. Kiti pieštukai, tokie kaip Grip "
+"Pen, turi tik du mygtukus, tad juos šis nustatymas neveikia."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:215
+msgid "Key combination for the primary button"
+msgstr "Klavišų kombinacija pirminiam mygtukui"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:216
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:221
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:226
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:238
+msgid ""
+"The keyboard shortcut generated when the button is pressed for custom "
+"actions."
+msgstr ""
+"Klaviatūros trumpinys, kuris yra sugeneruojamas paspaudus mygtuką "
+"pasirinktiniems veiksmams."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:220
+msgid "Key combination for the secondary button"
+msgstr "Klavišų kombinacija antriniam mygtukui"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:225
+msgid "Key combination for the tertiary button"
+msgstr "Klavišų kombinacija tretiniam mygtukui"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:232
+msgid "Pad button action type"
+msgstr "Jutiklinio kilimėlio veiksmo tipas"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:233
+msgid "The type of action triggered by the button being pressed."
+msgstr "Veiksmo tipas, kurį sukelia paspaustas mygtukas."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:237
+msgid "Key combination for the custom action"
+msgstr "Pasirinktinio veiksmo klavišų kombinacija"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:244
+msgid "Touchscreen output mapping"
+msgstr "Liečiamojo ekrano susiejimas"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:245
+msgid ""
+"EDID information of the output the touchscreen is mapped to. Must be in the "
+"format [vendor, product, serial]. [\"\",\"\",\"\"] relies on automatic "
+"mapping."
+msgstr ""
+"EDID informacija, su kuria susietas liečiamasis ekranas. Turi būti formato "
+"[tiekėjas, produktas, serija]. [\"\", \"\", \"\"] išjungia susiejimą."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:252
+msgid "Mouse wheel emulation button. 0 to disable the feature."
+msgstr "Pelės ratuko emuliacijos mygtukas. 0 savybei išjungti."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:256
+msgid "Mouse wheel emulation button lock"
+msgstr "Pelės ratuko emuliacijos mygtuko užrakinimas"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:257
+msgid ""
+"Set this to TRUE to enable button locking for the wheel emulation button. If "
+"enabled, the first click of the button enables scrolling, the second click "
+"disables scrolling again."
+msgstr ""
+"Nustačius TEIGIAMĄ įjungiamas pelės ratuko mygtuko emuliacijos užrakinimas. "
+"Jei įjungta, pirmasis paspaudimas leidžia slinkimą, antrasis paspaudimas vėl "
+"jį išjungia."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:262
+msgid ""
+"Acceleration profile used for the trackball. The acceleration profile can be "
+"set to either default (“default”) which uses the default acceleration "
+"profile, flat (“flat”), which accelerates by a device specific constant "
+"factor derived from the configured speed, or adaptive (“adaptive”) which "
+"adapts the acceleration depending on the movement. If the trackball doesn’t "
+"support the configured profile, “default” will be used."
+msgstr ""
+"Valdymo rutuliuko spartinimo profilis. Spartinimo profilis gali būti "
+"numatytasis („default“), kuris naudoja numatytąjį spartinimo profilį, "
+"plokščias („flat“), kuris spartina pagal įrenginiui atskirą konstantą "
+"priklausomai nuo greičio, arba adaptyvusis („adaptive“), kuris pritaiko "
+"spartinimą priklausomai nuo judėjimo. Jei valdymo rutuliukas nepalaiko "
+"nustatyto profilio, bus naudojama vertė „default“."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:274
+msgid ""
+"Pointer speed for pointing sticks. Accepted values are in the [-1..1] range "
+"(from “unaccelerated” to “fast”). A value of 0 is the system default."
+msgstr ""
+"Žymeklio greitis valdymo lazdelėms. Galimo vertės yra rėžyje [-1..1] (nuo "
+"nespartinamo iki greito). Sistemos numatytoji vertė yra 0."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:280
+msgid ""
+"Acceleration profile used for the pointing stick. The acceleration profile "
+"can be set to either default (“default”) which uses the default acceleration "
+"profile, flat (“flat”), which accelerates by a device specific constant "
+"factor derived from the configured speed, or adaptive (“adaptive”) which "
+"adapts the acceleration depending on the movement. If the pointing stick "
+"doesn’t support the configured profile, “default” will be used."
+msgstr ""
+"Valdymo lazdelės spartinimo profilis. Spartinimo profilis gali būti "
+"numatytasis („default“), kuris naudoja numatytąjį spartinimo profilį, "
+"plokščias („flat“), kuris spartina pagal įrenginiui atskirą konstantą "
+"priklausomai nuo greičio, arba adaptyvusis („adaptive“), kuris pritaiko "
+"spartinimą priklausomai nuo judėjimo. Jei valdymo lazdelė nepalaiko "
+"nustatyto profilio, bus naudojama vertė „default“."
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:284
+msgid "Scrolling method"
+msgstr "Slinkties metodas"
+
+#: schemas/org.gnome.desktop.peripherals.gschema.xml.in:285
+msgid ""
+"Scrolling method used for pointing sticks. The scrolling method can be set "
+"to either default (“default”) which uses the default method, none (“none”), "
+"which disables scrolling, or middle-button (“on-button-down”) which enables "
+"scrolling whilst the middle button is held down."
+msgstr ""
+"Slinkties metodas, naudojamas valdymo lazdelėms. Slinkties metodas gali būti "
+"nustatytas į numatytąjį („default“), jokį („none“), kuris išjungia slinktį, "
+"arba vidurinį mygtuką („on-button-down“), kuris įjungia slinktį, kol yra "
+"laikomas paspaustas vidurinysis mygtukas."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:6
+msgid "Controls visibility of personal information"
+msgstr "Valdiklių matomumas asmeninei informacijai"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:7
+msgid ""
+"If set to true, the system will make an effort to not divulge the user’s "
+"identity on screen or on the network."
+msgstr ""
+"Jei nustatyta teigiama, sistema mėgins neatskleisti naudotojo identiteto "
+"ekrane arba tinkle."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:12
+msgid "Show full name in the user menu"
+msgstr "Rodyti pilną vardą naudotojo meniu"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:13
+msgid "Whether the users full name is shown in the user menu or not."
+msgstr "Ar naudotojo pilnas vardas yra rodomas naudotojo meniu."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:17
+msgid "Whether to remove old files from the trash automatically"
+msgstr "Ar automatiškai pašalinti senus failus iš šiukšlinės"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:18
+msgid ""
+"If TRUE, automatically remove files from the trash when they are older than "
+"“old-files-age” days."
+msgstr ""
+"Jei TEIGIAMA, automatiškai pašalinti failus iš šiukšlinės, kai jie yra "
+"senesni nei „old-files-age“ dienų."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:23
+msgid "Whether to remove old temporary files automatically"
+msgstr "Ar automatiškai pašalinti senus laikinuosius failus"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:24
+msgid ""
+"If TRUE, automatically remove temporary files when they are older than “old-"
+"files-age” days."
+msgstr ""
+"Jei TEIGIAMA, automatiškai pašalinti laikinuosius failus, kai jie yra "
+"senesni nei „old-files-age“ dienų."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:29
+msgid "Number of days to keep trash and temporary files"
+msgstr "Dienų skaičius šiukšlinės ir laikiniesiems failams saugoti"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:30
+msgid "Consider trash and temporary files old after this many days."
+msgstr "Laikyti šiukšlinės ir laikinuosius failus senais po tiek dienų."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:35
+msgid "Whether to remember recently used files"
+msgstr "Ar atsiminti neseniai naudotus failus"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:36
+msgid "If FALSE, applications will not remember recently used files."
+msgstr "Jei NEIGIAMA, programos neatsimins neseniai naudotų failų."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:41
+msgid "Number of days to remember recently used files for"
+msgstr "Dienų skaičius neseniai naudotiems failams prisiminti"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:42
+msgid ""
+"Recently used files will be remembered for this many days. If set to 0, "
+"recent files will not be remembered; if set to -1, they will be retained "
+"indefinitely."
+msgstr ""
+"Neseniai naudoti failai bus prisimenami tiek dienų. Jei nustatyta į 0, "
+"neseniai naudoti failai nebus prisimenami; jei nustatyta į -1, jie bus "
+"išlaikomi visam laikui."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:48
+msgid "Whether to remember application usage"
+msgstr "Ar atsiminti programų naudojimą"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:49
+msgid "If FALSE, application usage will not be monitored and recorded."
+msgstr "Jei NEIGIAMA, programos naudojimas nebus stebimas ir įrašomas."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:54
+msgid "Send statistics when applications are removed or installed"
+msgstr "Siųsti statistiką, kai programos pašalinamos arba įdiegiamos"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:55
+msgid ""
+"If FALSE, no anonymous installation or removal information will be sent to "
+"the vendor."
+msgstr ""
+"Jei NEIGIAMA, jokia anoniminė programų įdiegimo ar šalinimo informacija "
+"nebus siunčiama tiekėjui."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:59
+msgid "Send reports of technical problems to the vendor"
+msgstr "Siųsti pranešimus apie technines problemas tiekėjui"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:60
+msgid "If TRUE, anonymized reports will be sent automatically to the vendor."
+msgstr ""
+"Jei TEIGIAMA, anoniminiai pranešimai bus automatiškai siunčiami tiekėjui."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:64
+msgid "Don’t allow applications to access the microphone"
+msgstr "Neleisti programoms naudoti mikrofono"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:65
+msgid "If TRUE, applications should not use the microphone."
+msgstr "Jei TEIGIAMA, programoms neleidžiama naudoti mikrofono."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:69
+msgid "Don’t allow applications to access the camera"
+msgstr "Neleisti programoms naudoti kameros"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:70
+msgid "If TRUE, applications should not use the camera."
+msgstr "Jei TEIGIAMA, programoms neleidžiama naudoti kameros."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:74
+msgid "Don’t allow applications to output sound"
+msgstr "Neleisti programoms groti garsų"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:75
+msgid "If TRUE, applications should not make sound."
+msgstr "Jei TEIGIAMA, programoms neleidžiama groti garsų."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:79
+msgid "Whether to protect USB devices"
+msgstr "Ar apsaugoti USB įrenginius"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:80
+msgid ""
+"If the USBGuard service is present and this setting is enabled, USB devices "
+"will be protected as configured in the usb-protection-level setting."
+msgstr ""
+"Jei yra USBGuard tarnyba ir šis nustatymas įjungtas, USB įrenginiai bus "
+"apsaugoti, kaip sukonfigūruota rakte usb-protection-level."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:87
+msgid "When USB devices should be rejected"
+msgstr "Kada USB įrenginiai turi būti atmesti"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:88
+msgid ""
+"If set to “lockscreen”, only when the lock screen is present new USB devices "
+"will be rejected; if set to “always”, all new USB devices will always be "
+"rejected."
+msgstr ""
+"Jei nustatyta „lockscreen“, tuomet tik kai ekranas užrakintas nauji USB "
+"įrenginiai bus atmetami; jei nustatyta „always“, visi nauji USB įrenginiai "
+"visada bus atmetami."
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:95
+msgid "Whether the privacy screen is enabled"
+msgstr "Ar įjungtas privatus ekranas"
+
+#: schemas/org.gnome.desktop.privacy.gschema.xml.in:96
+msgid ""
+"If the underlying hardware has privacy screen support and this setting is "
+"enabled, the panels supporting this technology will be obscured from lateral "
+"view."
+msgstr ""
+"Jei aparatūra turi privataus ekrano palaikymą ir ši nuostata yra įjungta, "
+"šią technologiją palaikantys skydeliai bus uždengti nuo žvilgsnio iš šono."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:6
+msgid "Activate when idle"
+msgstr "Suaktyvinti, kai naudotojo seansas neaktyvus"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:7
+msgid ""
+"Set this to TRUE to activate the screensaver when the session is idle. "
+"DEPRECATED: This key is deprecated and ignored. Set org.gnome.desktop."
+"session idle-delay to 0 if you do not want to activate the screensaver."
+msgstr ""
+"Nustatyti TEIGIAMAI ekrano užsklandai aktyvuoti, kai seansas yra laisvas. "
+"PASENĘS: šis raktas yra pasenęs ir jo nepaisoma. Nustatykite org.gnome."
+"desktop.session idle-delay į 0, jei nenorite aktyvinti ekrano užsklandos."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:16
+msgid "Lock on activation"
+msgstr "Užrakinti suaktyvinus"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:17
+msgid "Set this to TRUE to lock the screen when the screensaver goes active."
+msgstr ""
+"Nustatykite reikšmę į TEIGIAMĄ, jei norite užrakinti ekraną, kai "
+"suaktyvinama ekrano užsklanda."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:21
+msgid "Time before locking"
+msgstr "Laikas prieš užrakinant"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:22
+msgid ""
+"The number of seconds after screensaver activation before locking the screen."
+msgstr ""
+"Sekundžių skaičius po ekrano užsklandos aktyvavimo prieš užrakinant ekraną."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:26
+msgid "Show full name in the lock screen"
+msgstr "Rodyti pilną vardą užrakintame ekrane"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:27
+msgid ""
+"Whether the user’s full name is shown in the lock screen or not. This only "
+"affects the screen shield, the name is always shown in the unlock dialog."
+msgstr ""
+"Ar naudotojo pilnas vardas yra rodomas užrakintame ekrane. Tai paveikia tik "
+"ekrano užsklandą, vardas visada rodomas atrakinimo dialoge."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:31
+msgid "Allow embedding a keyboard into the window"
+msgstr "Leisti integruoti klaviatūrą į langą"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:32
+msgid ""
+"Set this to TRUE to allow embedding a keyboard into the window when trying "
+"to unlock. The “keyboard_command” key must be set with the appropriate "
+"command. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Nustatykite TEIGIAMĄ, jei norite leisti integruoti klaviatūrą į langą "
+"bandant atrakinti. „keyboard_command“ raktas turi būti nustatytas su "
+"atitinkama komanda. PASENĘS: šis raktas yra pasenęs ir jo nepaisoma."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:40
+msgid "Embedded keyboard command"
+msgstr "Integruotos klaviatūros komanda"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:41
+msgid ""
+"The command that will be run, if the “embedded_keyboard_enabled” key is set "
+"to TRUE, to embed a keyboard widget into the window. This command should "
+"implement an XEMBED plug interface and output a window XID on the standard "
+"output. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Komanda bus paleista, jei „embedded_keyboard_enabled“ raktas nustatytas "
+"TEIGIAMAI, klaviatūros elemento integravimui į langą. Ši komanda turi "
+"realizuoti XEMBED sąsają ir išvesti lango XID į standartinę išvestį. "
+"PASENĘS: šis raktas yra pasenęs ir jo nepaisoma."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:49
+msgid "Allow logout"
+msgstr "Leisti atsijungti"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:50
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to allow logging "
+"out after a delay. The delay is specified in the “logout_delay” key. "
+"DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Nustatykite TEIGIAMAI užrakinimo dialoge leisti atsijungti po uždelsimo. "
+"Uždelsimas nurodytas rakte „logout_delay“. PASENĘS: šis raktas yra pasenęs "
+"ir jo nepaisoma."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:58
+msgid "Time before logout option"
+msgstr "Laikas prieš atsijungimo parametrą"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:59
+msgid ""
+"The number of seconds after the screensaver activation before a logout "
+"option will appear in the unlock dialog. This key has effect only if the "
+"“logout_enable” key is set to TRUE. DEPRECATED: This key is deprecated and "
+"ignored"
+msgstr ""
+"Sekundžių skaičius po ekrano užsklandos aktyvavimo, prieš atsijungimo "
+"parametrui pasirodant atrakinimo dialoge. Šis raktas veikia tik jei "
+"„logout_enable“ raktas yra nustatytas TEIGIAMAI. PASENĘS: šis raktas yra "
+"pasenęs ir jo nepaisoma"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:67
+msgid "Logout command"
+msgstr "Atsijungimo komanda"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:68
+msgid ""
+"The command to invoke when the logout button is clicked. This command should "
+"simply log the user out without any interaction. This key has effect only if "
+"the “logout_enable” key is set to TRUE. DEPRECATED: This key is deprecated "
+"and ignored."
+msgstr ""
+"Komanda, vykdoma kai atsijungimo mygtukas yra paspaudžiamas. ši komanda turi "
+"paprasčiausiai atjungti naudotoją be jokių dialogų. Šis raktas turi prasmę "
+"tik jei „logout_enable“ raktas yra nustatytas TEIGIAMAI. PASENĘS: šis raktas "
+"yra pasenęs ir jo nepaisoma."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:76
+msgid "Allow user switching"
+msgstr "Leisti perjungti naudotoją"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:77
+msgid ""
+"Set this to TRUE to offer an option in the unlock dialog to switch to a "
+"different user account."
+msgstr ""
+"Nustatykite reikšmę į TEIGIAMĄ, jei norite, kad užrakinimo dialoge būtų "
+"galima persijungti į kitą naudotojo paskyrą."
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:81
+msgid "Allow the session status message to be displayed"
+msgstr "Leisti rodyti seanso būsenos pranešimą"
+
+#: schemas/org.gnome.desktop.screensaver.gschema.xml.in:82
+msgid ""
+"Allow the session status message to be displayed when the screen is locked. "
+"DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Leisti rodyti seanso būsenos pranešimą, kai ekranas yra užrakintas. PASENĘS: "
+"šis raktas yra pasenęs ir jo nepaisoma."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:9
+msgid "Enable screen time history"
+msgstr "Įjungti ekrano laiko istoriją"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:10
+msgid ""
+"Enable basic screen time functionality, recording usage data for viewing "
+"history."
+msgstr ""
+"Įjungti bazinį ekrano laiko funkcionalumą, įrašyti naudojimo laiką istorijos "
+"rodymui."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:17
+msgid "Enable daily screen time limit"
+msgstr "Įjungti kasdienį ekrano laiko ribojimą"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:18
+msgid ""
+"Enable imposing a screen time limit on the user, as set in daily-limit-"
+"seconds."
+msgstr ""
+"Leisti riboti ekrano laiką naudotojui, kaip nurodyta nuostatoje daily-limit-"
+"seconds."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:23
+msgid "Daily screen time limit"
+msgstr "Kasdienė ekrano laiko riba"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:24
+msgid ""
+"The limit on the amount of daily screen time the user is allowed, in seconds."
+msgstr "Kiek leidžiama kasdien naudoti ekraną sekundėmis."
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:30
+msgid "Grayscale once limit is reached"
+msgstr "Juodai balta, kai pasiekiama riba"
+
+#: schemas/org.gnome.desktop.screen-time-limits.gschema.xml.in:31
+msgid ""
+"Whether to make the screen grayscale once the user’s screen time limit is "
+"reached."
+msgstr ""
+"Ar padaryti ekraną juodai baltą pasiekus naudotojo nustatytą ekrano laiko "
+"ribą."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:7
+msgid "Disable all external search providers"
+msgstr "Išjungti visus išorinius paieškos tiekėjus"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:8
+msgid ""
+"Set to true to disable all external search provider programs, whether or not "
+"they are independently disabled or enabled. External search providers are "
+"installed by applications in $XDG_DATA_DIR/gnome-shell/search-providers."
+msgstr ""
+"Nustatykite teigiama visoms išorinėms paieškos teikimo programoms išjungti, "
+"nepriklausomai nuo to, ar jos pavieniui įjungtos, ar išjungtos. Išoriniai "
+"paieškos tiekėjai yra įdiegiami programų į $XDG_DATA_DIR/gnome-shell/search-"
+"providers."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:18
+msgid ""
+"List of desktop file IDs for which the associated default-enabled search "
+"provider should be disabled"
+msgstr ""
+"Desktop failų ID sąrašas, kuriems susietas numatytai įjungtas paieškos "
+"teikėjas turi būti išjungtas"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:22
+msgid ""
+"Results for applications contained in this list will not be displayed when "
+"searching."
+msgstr "Rezultatai programoms iš šio sąrašo nebus rodomi ieškant."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:30
+msgid ""
+"List of desktop file IDs for which the associated default-disabled search "
+"provider should be enabled"
+msgstr ""
+"Desktop failų ID sąrašas, kuriems susietas numatytai išjungtas paieškos "
+"teikėjas turi būti įjungtas"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:34
+msgid ""
+"Results for applications contained in this list will be displayed when "
+"searching."
+msgstr "Rezultatai programoms iš šio sąrašo nebus rodomi ieškant."
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:42
+msgid "List of desktop file IDs for search providers sort order"
+msgstr "Desktop failų ID sąrašas paieškos tiekėjų rikiavimo tvarkai"
+
+#: schemas/org.gnome.desktop.search-providers.gschema.xml.in:43
+msgid ""
+"Results for applications contained in this list will be displayed in the "
+"specified order. Results for applications not specified in this list will be "
+"displayed last, sorted alphabetically."
+msgstr ""
+"Rezultatai programoms iš šio sąrašo bus rodomi nurodyta tvarka. Šiame sąraše "
+"nenurodytoms programoms rezultatai bus rodomi pabaigoje rikiuojant abėcėlės "
+"tvarka."
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:6
+msgid "Time before session is considered idle"
+msgstr "Laikas iki kol seansas laikomas neaktyviu"
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:7
+msgid ""
+"The number of seconds of inactivity before the session is considered idle."
+msgstr "Neaktyvumo sekundžių skaičius iki kol seansas laikomas neaktyviu."
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:11
+msgid "Session type"
+msgstr "Seanso tipas"
+
+#: schemas/org.gnome.desktop.session.gschema.xml.in:12
+msgid "The name of the session to use. Known value is “gnome”."
+msgstr "Naudotinas seanso pavadinimas. Žinoma vertė yra „gnome“."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:6
+msgid "Sounds for events"
+msgstr "Įvykių garsai"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:7
+msgid "Whether to play sounds on user events."
+msgstr "Ar groti garsus naudotojo įvykiams."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:11
+msgid "Sound theme name"
+msgstr "Garsų temos pavadinimas"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:12
+msgid "The XDG sound theme to use for event sounds."
+msgstr "XDG garsų tema, naudojama įvykių garsams."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:16
+msgid "Input feedback sounds"
+msgstr "Įvesties garsai"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:17
+msgid "Whether to play sounds on input events."
+msgstr "Ar groti garsus įvesties įvykiams."
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:21
+msgid "Allow volume above 100%"
+msgstr "Leisti garsumą virš 100%"
+
+#: schemas/org.gnome.desktop.sound.gschema.xml.in:22
+msgid "Whether volume can be set above 100%, using software amplification."
+msgstr ""
+"Ar garsumas, naudojant programinės įrangos stiprinimą, galės būti nustatytas "
+"virš 100%."
+
+#: schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in:6
+msgid ""
+"Maximum age for thumbnails in the cache, in days. Set to -1 to disable "
+"cleaning."
+msgstr ""
+"Didžiausiais miniatiūrų amžius podėlyje, dienomis. Jei reikšmė – „-1“, "
+"nevaloma niekada."
+
+#: schemas/org.gnome.desktop.thumbnail-cache.gschema.xml.in:10
+msgid ""
+"Maximum size of the thumbnail cache, in megabytes. Set to -1 to disable "
+"cleaning."
+msgstr ""
+"Didžiausias miniatiūrų podėlio dydis, megabaitais. Jei reikšmė – „-1“ "
+"nevaloma niekada."
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:6
+msgid "Disable all external thumbnailers"
+msgstr "Išjungti visas išorines miniatiūrų programas"
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:7
+msgid ""
+"Set to true to disable all external thumbnailer programs, independent on "
+"whether they are independently disabled/enabled."
+msgstr ""
+"Nustatyti teigiamą visos išorinėms miniatiūrų programoms išjungti, "
+"nepriklausomai nuo to, ar jos nepriklausomai yra išjungtos/įjungtos."
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:15
+msgid ""
+"List of mime-types for which external thumbnailer programs will be disabled"
+msgstr "Išvardinti „MIME“ tipus, kuriems miniatiūrų programos bus išjungtos"
+
+#: schemas/org.gnome.desktop.thumbnailers.gschema.xml.in:19
+msgid ""
+"Thumbnails will not be created for files whose mime-type is contained in the "
+"list."
+msgstr ""
+"Miniatiūros nebus kuriamos failams, kurių „MIME“ tipai yra šiame sąraše."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:8
+msgid "Switch to workspace 1"
+msgstr "Persijungti į darbo sritį 1"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:12
+msgid "Switch to workspace 2"
+msgstr "Persijungti į darbo sritį 2"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:16
+msgid "Switch to workspace 3"
+msgstr "Persijungti į darbo sritį 3"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:20
+msgid "Switch to workspace 4"
+msgstr "Persijungti į darbo sritį 4"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:24
+msgid "Switch to workspace 5"
+msgstr "Persijungti į darbo sritį 5"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:28
+msgid "Switch to workspace 6"
+msgstr "Persijungti į darbo sritį 6"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:32
+msgid "Switch to workspace 7"
+msgstr "Persijungti į darbo sritį 7"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:36
+msgid "Switch to workspace 8"
+msgstr "Persijungti į darbo sritį 8"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:40
+msgid "Switch to workspace 9"
+msgstr "Persijungti į darbo sritį 9"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:44
+msgid "Switch to workspace 10"
+msgstr "Persijungti į darbo sritį 10"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:48
+msgid "Switch to workspace 11"
+msgstr "Persijungti į darbo sritį 11"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:52
+msgid "Switch to workspace 12"
+msgstr "Persijungti į darbo sritį 12"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:56
+msgid "Switch to workspace left"
+msgstr "Persijungti į darbo sritį kairėje"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:60
+msgid "Switch to workspace right"
+msgstr "Persijungti į darbo sritį dešinėje"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:64
+msgid "Switch to workspace above"
+msgstr "Persijungti į darbo sritį aukščiau"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:68
+msgid "Switch to workspace below"
+msgstr "Persijungti į darbo sritį žemiau"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:72
+msgid "Switch to last workspace"
+msgstr "Persijungti į pastarąją darbo sritį"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:76
+msgid "Switch windows of an application"
+msgstr "Perjungti programos langus"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:80
+msgid "Reverse switch windows of an application"
+msgstr "Atšaukti programos langų perjungimą"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:84
+msgid "Switch applications"
+msgstr "Perjungti programas"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:88
+msgid "Reverse switch applications"
+msgstr "Atšaukti programų perjungimą"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:92
+msgid "Switch windows"
+msgstr "Perjungti langus"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:96
+msgid "Reverse switch windows"
+msgstr "Atvirkštinis langų perjungimas"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:100
+msgid "Switch system controls"
+msgstr "Perjungti sistemos valdiklius"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:104
+msgid "Reverse switch system controls"
+msgstr "Atšaukti sistemos valdiklių perjungimą"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:108
+msgid "Switch windows of an app directly"
+msgstr "Tiesiogiai perjungti programos langus"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:112
+msgid "Reverse switch windows of an app directly"
+msgstr "Atšaukti tiesioginį programos langų perjungimą"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:116
+msgid "Switch windows directly"
+msgstr "Tiesiogiai perjungti langus"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:120
+msgid "Reverse switch windows directly"
+msgstr "Atšaukti tiesioginį langų perjungimą"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:124
+msgid "Switch system controls directly"
+msgstr "Tiesiogiai perjungti sistemos valdiklius"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:128
+msgid "Reverse switch system controls directly"
+msgstr "Atšaukti sistemos valdiklių tiesioginį perjungimą"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:132
+msgid "Hide all normal windows"
+msgstr "Slėpti visus normalius langus"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:136
+msgid "DEPRECATED: This key is deprecated and ignored."
+msgstr "PASENĘS: šis raktas yra pasenęs ir jo nepaisoma."
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:140
+msgid "Show the run command prompt"
+msgstr "Rodyti vykdomos komandos eilutę"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:144
+msgid "Don’t use"
+msgstr "Nenaudoti"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:148
+msgid "Activate the window menu"
+msgstr "Suaktyvinti lango meniu"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:152
+msgid "Toggle fullscreen mode"
+msgstr "Perjungti viso ekrano veikseną"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:156
+msgid "Toggle maximization state"
+msgstr "Perjungti išdidinimo būseną"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:160
+msgid "Toggle window always appearing on top"
+msgstr "Perjungti lango pasirodymą visuomet viršuje"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:164
+msgid "Maximize window"
+msgstr "Išdidinti langą"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:168
+msgid "Restore window"
+msgstr "Grąžinti langą iš išdidinimo"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:172
+msgid "Minimize window"
+msgstr "Sumažinti langą"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:176
+msgid "Close window"
+msgstr "Užverti langą"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:180
+msgid "Move window"
+msgstr "Perkelti langą"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:184
+msgid "Resize window"
+msgstr "Keisti lango dydį"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:188
+msgid "Toggle window on all workspaces or one"
+msgstr "Perjungti lango būvimą visose ar vienoje darbo srityje"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:192
+msgid "Move window to workspace 1"
+msgstr "Perkelti langą į darbo sritį 1"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:196
+msgid "Move window to workspace 2"
+msgstr "Perkelti langą į darbo sritį 2"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:200
+msgid "Move window to workspace 3"
+msgstr "Perkelti langą į darbo sritį 3"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:204
+msgid "Move window to workspace 4"
+msgstr "Perkelti langą į darbo sritį 4"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:208
+msgid "Move window to workspace 5"
+msgstr "Perkelti langą į darbo sritį 5"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:212
+msgid "Move window to workspace 6"
+msgstr "Perkelti langą į darbo sritį 6"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:216
+msgid "Move window to workspace 7"
+msgstr "Perkelti langą į darbo sritį 7"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:220
+msgid "Move window to workspace 8"
+msgstr "Perkelti langą į darbo sritį 8"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:224
+msgid "Move window to workspace 9"
+msgstr "Perkelti langą į darbo sritį 9"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:228
+msgid "Move window to workspace 10"
+msgstr "Perkelti langą į darbo sritį 10"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:232
+msgid "Move window to workspace 11"
+msgstr "Perkelti langą į darbo sritį 11"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:236
+msgid "Move window to workspace 12"
+msgstr "Perkelti langą į darbo sritį 12"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:240
+msgid "Move window to last workspace"
+msgstr "Perkelti langą į pastarąją darbo sritį"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:244
+msgid "Move window one workspace to the left"
+msgstr "Perkelti langą į darbo sritį kairėje"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:248
+msgid "Move window one workspace to the right"
+msgstr "Perkelti langą į darbo sritį dešinėje"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:252
+msgid "Move window one workspace up"
+msgstr "Perkelti langą į darbo sritį aukščiau"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:256
+msgid "Move window one workspace down"
+msgstr "Perkelti langą į darbo sritį žemiau"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:260
+msgid "Move window to the next monitor on the left"
+msgstr "Perkelti langą į kitą monitorių kairėje"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:264
+msgid "Move window to the next monitor on the right"
+msgstr "Perkelti langą į kitą monitorių dešinėje"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:268
+msgid "Move window to the next monitor above"
+msgstr "Perkelti langą į kitą monitorių viršuje"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:272
+msgid "Move window to the next monitor below"
+msgstr "Perkelti langą į kitą monitorių apačioje"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:276
+msgid "Raise window if covered, otherwise lower it"
+msgstr "Iškelti langą, jei uždengtas, priešingu atveju nuleisti jį"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:280
+msgid "Raise window above other windows"
+msgstr "Iškelti langą virš kitų langų"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:284
+msgid "Lower window below other windows"
+msgstr "Nuleisti langą žemiau kitų langų"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:288
+msgid "Maximize window vertically"
+msgstr "Išdidinti langą vertikaliai"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:292
+msgid "Maximize window horizontally"
+msgstr "Išdidinti langą horizontaliai"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:296
+msgid "Move window to top left corner"
+msgstr "Perkelti langą į viršutinį kairį kampą"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:300
+msgid "Move window to top right corner"
+msgstr "Perkelti langą į viršutinį dešinį kampą"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:304
+msgid "Move window to bottom left corner"
+msgstr "Perkelti langą į apatinį kairį kampą"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:308
+msgid "Move window to bottom right corner"
+msgstr "Perkelti langą į apatinį dešinį kampą"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:312
+msgid "Move window to top edge of screen"
+msgstr "Perkelti langą į į viršutinį ekrano pakraštį"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:316
+msgid "Move window to bottom edge of screen"
+msgstr "Perkelti langą į apatinį ekrano pakraštį"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:320
+msgid "Move window to right side of screen"
+msgstr "Perkelti langą į dešinę ekrano pusę"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:324
+msgid "Move window to left side of screen"
+msgstr "Perkelti langą į kairę ekrano pusę"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:328
+msgid "Move window to center of screen"
+msgstr "Perkelti langą į ekrano vidurį"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:332
+msgid "Switch input source"
+msgstr "Perjungti įvesties šaltinį"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:333
+msgid "Binding to select the next input source"
+msgstr "Susiejimas kitam įvesties šaltiniui pasirinkti"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:337
+msgid "Switch input source backward"
+msgstr "Perjungti įvesties šaltinį atgal"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:338
+msgid "Binding to select the previous input source"
+msgstr "Susiejimas ankstesniam įvesties šaltiniui"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:342
+msgid "Toggle window to be always on top"
+msgstr "Perjungti lango pasirodymą visuomet viršuje"
+
+#: schemas/org.gnome.desktop.wm.keybindings.gschema.xml.in:343
+msgid "Set or unset window to appear always on top"
+msgstr "Perjungti lango pasirodymą visuomet viršuje"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:8
+msgid "Modifier to use for modified window click actions"
+msgstr "Modifikatorius, naudotinas modifikuotiems lango paspaudimo veiksmams"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:9
+msgid ""
+"Clicking a window while holding down this modifier key will move the window "
+"(left click), resize the window (middle click), or show the window menu "
+"(right click). The middle and right click operations may be swapped using "
+"the “resize-with-right-button” key. Modifier is expressed as “<Alt>” or "
+"“<Super>” for example."
+msgstr ""
+"Paspaudus langą laikant nuspaustą šį modifikatoriaus klavišą perkels langą "
+"(kairysis paspaudimas), keis lango dydį (vidurinis paspaudimas) arba rodys "
+"lango meniu (dešinysis paspaudimas). Vidurinis ir dešinys paspaudimai gali "
+"būti sukeisti naudojant „resize-with-right-button“ raktą. Modifikatorius "
+"išreiškiamas kaip <Alt> arba <Super>."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:19
+msgid "Whether to resize with the right button"
+msgstr "Ar keisti dydį dešiniuoju klavišu"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:20
+msgid ""
+"Set this to true to resize with the right button and show a menu with the "
+"middle button while holding down the key given in “mouse-button-modifier”; "
+"set it to false to make it work the opposite way around."
+msgstr ""
+"Nustatykite teigiamai dydžio keitimui dešiniu mygtuku ir meniu rodymui "
+"viduriniu mygtuku, kai laikomas nuspaustas klavišas, nurodytas rakte „mouse-"
+"button-modifier“; nustatykite neigiamai priešingam veikimui."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:29
+msgid "Arrangement of buttons on the titlebar"
+msgstr "Mygtukų išdėstymas lango pavadinimo juostoje"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:30
+msgid ""
+"Arrangement of buttons on the titlebar. The value should be a string, such "
+"as “menu:minimize,maximize,spacer,close”; the colon separates the left "
+"corner of the window from the right corner, and the button names are comma-"
+"separated. Duplicate buttons are not allowed. Unknown button names are "
+"silently ignored so that buttons can be added in future metacity versions "
+"without breaking older versions. A special spacer tag can be used to insert "
+"some space between two adjacent buttons."
+msgstr ""
+"Mygtukų išdėstymas pavadinimo juostoje. Reikšmė turi būti eilutė, tokia kaip "
+"„menu:minimize,maximize,spacer,close“; dvitaškis skiria kairį lango kampą "
+"nuo dešinio, o mygtukų pavadinimai yra skiriami kableliais. Mygtukų "
+"dublikatai neleidžiami. Nežinomi mygtukų pavadinimai yra tyliai "
+"praleidžiami, kad būtų galima pridėti mygtukų ateities metacity versijoje "
+"nesugadinant senų. Speciali skirtuko žyma gali būti naudojama tarpo "
+"įterpimui tarp dviejų gretimų mygtukų."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:43
+msgid "Window focus mode"
+msgstr "Lango suaktyvinimo veiksena"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:44
+msgid ""
+"The window focus mode indicates how windows are activated. It has three "
+"possible values; “click” means windows must be clicked in order to focus "
+"them, “sloppy” means windows are focused when the mouse enters the window, "
+"and “mouse” means windows are focused when the mouse enters the window and "
+"unfocused when the mouse leaves the window."
+msgstr ""
+"Lango suaktyvinimo veiksena nurodo, kaip langas yra suaktyvinamas. Yra trys "
+"galimos reikšmės: „click“ reiškia, kad ant lango reikia paspausti, norint jį "
+"suaktyvinti; „sloppy“ – langai suaktyvinami, kai pelė patenka į lango sritį; "
+"„mouse“ – langai suaktyvinami, kai pelė patenka į lango sritį, ir "
+"deaktyvinami, kai pelė patraukiama iš lango srities."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:55
+msgid "Control how new windows get focus"
+msgstr "Nurodo, kaip suaktyvinami nauji langai"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:56
+msgid ""
+"This option provides additional control over how newly created windows get "
+"focus. It has two possible values; “smart” applies the user’s normal focus "
+"mode, and “strict” results in new windows not being given focus "
+"automatically."
+msgstr ""
+"Šis parametras suteikia papildomo valdymo naujai sukuriamiems langams "
+"aktyvuoti. Yra dvi galimos reikšmės: „smart“ taikoma normaliai naudotojo "
+"aktyvavimo veiksenai, o „strict“ reiškia automatiškai neaktyvius langus."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:65
+msgid "Whether windows should be raised when their client area is clicked"
+msgstr "Ar iškelti langus, kai paspaudžiama virš jų klientinės srities"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:68
+msgid ""
+"The default, true, indicates that a window will be raised whenever its "
+"client area or its frame is clicked. Setting this to false means that a "
+"window will not be raised if it is clicked on the client area. To raise it, "
+"one can click anywhere in the window’s frame, or Super-click on any part of "
+"the window. This mode is useful if one uses many overlapping windows."
+msgstr ""
+"Numatyta teigiama, nurodo, kad langas bus iškeltas į priekinį planą "
+"paspaudus virš jo klientinės srities arba rėmo. Nustačius neigiamai, langas "
+"nebus iškeltas paspaudus virš klientinės srities. Jam iškelti reikės "
+"paspausti bet kur lango rėme arba paspausti bet kurioje lango vietoje "
+"laikant nuspaudus Super. Ši veiksena naudinga, kai naudojama daug "
+"persidengiančių langų."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:82
+msgid "Action on title bar double-click"
+msgstr "Veiksmas dukart spustelėjus lango antraštę"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:83
+msgid ""
+"This option determines the effects of double-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Šis parametras nusako dvikarčio paspaudimo ant pavadinimo juostos efektą. "
+"Šiuo metu leistini parametrai yra „toggle-maximize“, kuris išdidina/atstato "
+"langą, „toggle-maximize-horizontally“ ir „toggle-maximize-vertically“, kurie "
+"išdidina/atstato langą nurodyta kryptimi, „minimize“, kuris sumažina langą, "
+"„meniu“, kuris parodo lango meniu, „lower“, kuris nuleidžia langą žemiau "
+"kitų, ir „none“, kuris nieko nedaro."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:105
+msgid "Action on title bar middle-click"
+msgstr "Veiksmas spustelėjus antraštės juostą viduriniuoju klavišu"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:106
+msgid ""
+"This option determines the effects of middle-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Šis parametras nusako vidurinio pelės mygtuko paspaudimo ant pavadinimo "
+"juostos efektą. Šiuo metu leistini parametrai yra „toggle-maximize“, kuris "
+"išdidina/atstato langą, „toggle-maximize-horizontally“ ir „toggle-maximize-"
+"vertically“, kurie išdidina/atstato langą nurodyta kryptimi, „minimize“, "
+"kuris sumažina langą, „meniu“, kuris parodo lango meniu, „lower“, kuris "
+"nuleidžia langą žemiau kitų, ir „none“, kuris nieko nedaro."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:129
+msgid "Action on title bar right-click"
+msgstr "Veiksmas spustelėjus antraštės juostą dešiniuoju klavišu"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:130
+msgid ""
+"This option determines the effects of right-clicking on the title bar. "
+"Current valid options are “toggle-maximize” which will maximize/unmaximize "
+"the window, “toggle-maximize-horizontally” and “toggle-maximize-vertically” "
+"which will maximize/unmaximize the window in that direction only, “minimize” "
+"which will minimize the window, “menu” which will display the window menu, "
+"“lower” which will put the window behind all the others, and “none” which "
+"will not do anything."
+msgstr ""
+"Šis parametras nusako dešinio pelės mygtuko paspaudimo ant pavadinimo "
+"juostos efektą. Šiuo metu leistini parametrai yra „toggle-maximize“, kuris "
+"išdidina/atstato langą, „toggle-maximize-horizontally“ ir „toggle-maximize-"
+"vertically“, kurie išdidina/atstato langą nurodyta kryptimi, „minimize“, "
+"kuris sumažina langą, „meniu“, kuris parodo lango meniu, „lower“, kuris "
+"nuleidžia langą žemiau kitų, ir „none“, kuris nieko nedaro."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:152
+msgid "Automatically raises the focused window"
+msgstr "Automatiškai iškelia suaktyvintą langą"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:153
+msgid ""
+"If set to true, and the focus mode is either “sloppy” or “mouse” then the "
+"focused window will be automatically raised after a delay specified by the "
+"auto-raise-delay key. This is not related to clicking on a window to raise "
+"it, nor to entering a window during drag-and-drop."
+msgstr ""
+"Jei nustatysite teigiamą ir aktyvavimo veiksena yra „sloppy“ arba „mouse“, "
+"tuomet aktyvus langas bus automatiškais iškeltas po uždelsimo, nurodyto auto-"
+"raise-delay rakte. Tai nesusiję paspaudimu ant lango jo iškėlimui nei su "
+"įėjimu į langą jį tempiant."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:163
+msgid "Delay in milliseconds for the auto raise option"
+msgstr "Uždelsimas milisekundėmis automatinio iškėlimo parametrui"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:164
+msgid ""
+"The time delay before raising a window if auto-raise is set to true. The "
+"delay is given in thousandths of a second."
+msgstr ""
+"Laiko uždelsimas prie iškeliant langą, jei auto-raise yra nustatyta "
+"teigiama. Uždelsimas nurodomas sekundės tūkstantosiomis dalimis."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:171
+msgid "Current theme"
+msgstr "Dabartinė tema"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:172
+msgid ""
+"The theme determines the appearance of window borders, titlebar, and so "
+"forth. DEPRECATED: This key is deprecated and ignored."
+msgstr ""
+"Tema nusako lango kraštinių, pavadinimo juostos ir kt.  išvaizdą. PASENĘS: "
+"šis raktas yra pasenęs ir jo nepaisoma."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:181
+msgid "Use standard system font in window titles"
+msgstr "Naudoti standartinį sistemos šriftą lango antraštėse"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:182
+msgid ""
+"If true, ignore the titlebar-font option, and use the standard application "
+"font for window titles."
+msgstr ""
+"Jei teigiama, nepaisyti titlebar-font parametro ir langų antraštėms naudoti "
+"standartinį programų šriftą."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:189
+msgid "Window title font"
+msgstr "Lango antraštės šriftas"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:190
+msgid ""
+"A font description string describing a font for window titlebars. The size "
+"from the description will only be used if the titlebar-font-size option is "
+"set to 0. Also, this option is disabled if the titlebar-uses-desktop-font "
+"option is set to true."
+msgstr ""
+"Šrifto parašymo eilutė, aprašanti lango antraštės šriftą. Dydis iš aprašymo "
+"bus naudojamas, jei titlebar-font-size parametras yra nustatytas į 0. Taip "
+"pat, šis parametras yra išjungtas, jei titlebar-uses-desktop-font parametras "
+"yra teigiamas."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:200
+msgid "Number of workspaces"
+msgstr "Darbo sričių skaičius"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:201
+msgid ""
+"Number of workspaces. Must be more than zero, and has a fixed maximum to "
+"prevent making the desktop unusable by accidentally asking for too many "
+"workspaces."
+msgstr ""
+"Darbo sričių skaičius. Turi būti daugiau nei nulis ir turi nustatytą "
+"didžiausią reikšmę, taip apsaugant nuo darbalaukio pavertimo nenaudojamu, "
+"atsitiktinai paprašius per daug darbo sričių."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:209
+msgid "System Bell is Audible"
+msgstr "Sistemos perspėjimas yra garsinis"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:210
+msgid ""
+"Determines whether applications or the system can generate audible “beeps”; "
+"may be used in conjunction with “visual bell” to allow silent “beeps”."
+msgstr ""
+"Nusako, ar programos ar sistema gali sugeneruoti garsinius „pyptelėjimus“; "
+"gali būti naudojama kartu su „vaizdiniu skambučiu“ tyliems „pyptelėjimams“."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:218
+msgid "Enable Visual Bell"
+msgstr "Įjungti vaizdinį perspėjimą"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:219
+msgid ""
+"Turns on a visual indication when an application or the system issues a "
+"“bell” or “beep”; useful for the hard-of-hearing and for use in noisy "
+"environments."
+msgstr ""
+"Įjungia vaizdinę indikaciją, kai programa arba sistema sukelia „bell“ arba "
+"„beep“; naudinga sunkiai girdintiems ir triukšmingose aplinkose."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:228
+msgid "Visual Bell Type"
+msgstr "Vaizdinio perspėjimo tipas"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:229
+msgid ""
+"Tells the WM how to implement the visual indication that the system bell or "
+"another application “bell” indicator has been rung. Currently there are two "
+"valid values, “fullscreen-flash”, which causes a fullscreen white-black "
+"flash, and “frame-flash” which causes the titlebar of the application which "
+"sent the bell signal to flash. If the application which sent the bell is "
+"unknown (as is usually the case for the default “system beep”), the "
+"currently focused window’s titlebar is flashed."
+msgstr ""
+"Pasako langų tvarkytuvei, kaip realizuoti vaizdinę sistemos skambučio "
+"indikaciją ar kad kitos programos „bell“ indikatorius suskambėjo. Šiuo metu "
+"yra dvi galimos reikšmės: „fullscreen-flash“, kuris sukelia viso ekrano "
+"juodai baltą mirktelėjimą, ir „frame-flash“, kuris sukelia programos, kuri "
+"siuntė skambėjimo signalą, antraštės mirksėjimą. Jei programa, kuri siuntė "
+"skambutį, yra nežinoma (kaip dažniausiai yra numatytajam „system beep“), "
+"šiuo metu aktyvaus lango antraštė mirksės."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:250
+msgid "Disable misfeatures that are required by old or broken applications"
+msgstr ""
+"Išjungti klaidingas veiksenas, kurios reikalingos senoms ar blogai "
+"veikiančioms programoms"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:253
+msgid ""
+"Some applications disregard specifications in ways that result in window "
+"manager misfeatures. This option puts the WM in a rigorously correct mode, "
+"which gives a more consistent user interface, provided one does not need to "
+"run any misbehaving applications."
+msgstr ""
+"Kai kurios programos nepaiso specifikacijų ir sukelia neteisingą langų "
+"tvarkytuvės veikimą. Šis parametras grąžina langų tvarkytuvę į teisingą "
+"veikseną, kuri suteikia vientisą naudotojo sąsają, su sąlyga, kad nevykdomos "
+"neteisingai veikiančios programos."
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:263
+msgid "The names of the workspaces"
+msgstr "Darbo sričių pavadinimai"
+
+#: schemas/org.gnome.desktop.wm.preferences.gschema.xml.in:264
+msgid ""
+"Defines the names that should be assigned to workspaces. If the list is too "
+"long for the current number of workspaces, names in excess will be ignored. "
+"If the list is too short, or includes empty names, missing values will be "
+"replaced with the default (“Workspace N”)."
+msgstr ""
+"Apibrėžia darbo sričių pavadinimus, kurie turi būti joms priskirti. Jei "
+"dabartiniam darbo sričių skaičiui sąrašas yra per ilgas, tuomet papildomų "
+"pavadinimų bus nepaisoma. Jei sąrašas per trumpas arba turi tuščius "
+"pavadinimus, tuomet trūkstamos reikšmės bus pakeistos numatytosiomis („Darbo "
+"sritis N“)."
+
+#: schemas/org.gnome.system.locale.gschema.xml.in:6
+msgid "The locale to use for dates / numbers formats"
+msgstr "Lokalė datos ir skaičių formatams"
+
+#: schemas/org.gnome.system.locale.gschema.xml.in:7
+msgid ""
+"Specify the locale to be used for displaying dates, times and numbers "
+"formats."
+msgstr "Nurodykite lokalę datos, laiko ir skaičių formatams."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:7
+msgid "Geolocation services are enabled."
+msgstr "Geolokacijos tarnybos įjungtos."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:8
+msgid "If true, applications are allowed to access location information."
+msgstr "Jei teigiama, programoms leidžiama prieiti prie vietos informacijos."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:14
+msgid "The maximum accuracy level of location."
+msgstr "Didžiausias vietos tikslumo lygis."
+
+#: schemas/org.gnome.system.location.gschema.xml.in:15
+msgid ""
+"Configures the maximum level of location accuracy applications are allowed "
+"to see. Valid options are “country”, “city”, “neighborhood”, “street”, and "
+"“exact” (typically requires GPS receiver). Please keep in mind that this "
+"only controls what GeoClue will allow applications to see and they can find "
+"user’s location on their own using network resources (albeit with street-"
+"level accuracy at best)."
+msgstr ""
+"Nustato didžiausią programoms leidžiamą matyti tikslumo lygį. Galimi "
+"parametrai yra „country“ (šalis), „city“ (miestas), „neighborhood“ "
+"(kvartalas), „street“ (gatvė) ir „exact“ (tiksli, paprastai reikalauja GPS "
+"imtuvo). Pažymėtina, kad tai nustato, ką GeoClue leis programoms matyti, o "
+"jos gali nustatyti jūsų vietą pačios, naudodamos tinklo išteklius (nors tai, "
+"geriausiu atveju, yra gatvės tikslumas)."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:10
+msgid "Proxy configuration mode"
+msgstr "Proxy konfigūracijos veiksena"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:11
+msgid ""
+"Select the proxy configuration mode. Supported values are “none”, “manual”, "
+"“auto”. If this is “none”, then proxies are not used. If it is “auto”, the "
+"autoconfiguration URL described by the “autoconfig-url” key is used. If it "
+"is “manual”, then the proxies described by “/system/proxy/http”, “/system/"
+"proxy/https”, “/system/proxy/ftp” and “/system/proxy/socks” will be used. "
+"Each of the 4 proxy types is enabled if its “host” key is non-empty and its "
+"“port” key is non-0. If an http proxy is configured, but an https proxy is "
+"not, then the http proxy is also used for https. If a SOCKS proxy is "
+"configured, it is used for all protocols, except that the http, https, and "
+"ftp proxy settings override it for those protocols only."
+msgstr ""
+"Pasirinkite proxy konfigūracijos veikseną. Palaikomos reikšmės yra „none“, "
+"„manual“, „auto“. Jei ši yra „none“, tuomet proxy nenaudojama. Jei „auto“, "
+"naudojamas automatinės konfigūracijos URL, nurodytas „autoconfig-url“ rakte. "
+"Jei „manual“, tuomet proxy yra aprašyta „/system/proxy/http“, „/system/proxy/"
+"https“, „/system/proxy/ftp“ ir „/system/proxy/socks“. Kiekvienas iš 4 proxy "
+"tipų yra įjungtas, jei „host“ raktas yra netuščias ir jo „port“ raktas yra "
+"ne 0. Jei http proxy yra sukonfigūruota, o https ne, tuomet http proxy taip "
+"pat naudojama https. Jei SOCKS proxy yra sukonfigūruota, ji naudojama "
+"visiems protokolams, išskyrus tai, kad http, https i rftp proxy nustatymai "
+"juos perrašo šiems protokolams."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:36
+msgid "Automatic proxy configuration URL"
+msgstr "Automatinės proxy konfigūracijos URL"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:37
+msgid ""
+"URL that provides proxy configuration values. When mode is “auto”, this URL "
+"is used to look up proxy information for all protocols."
+msgstr ""
+"URL, kuris pateikia proxy konfigūracijos reikšmes. Kai veiksena yra „auto“, "
+"šis URL yra naudojamas proxy informacijai visiems protokolams."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:45
+msgid "Non-proxy hosts"
+msgstr "Ne-proxy serveriai"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:46
+msgid ""
+"This key contains a list of hosts which are connected to directly, rather "
+"than via the proxy (if it is active). The values can be hostnames, domains "
+"(using an initial wildcard like *.foo.com), IP host addresses (both IPv4 and "
+"IPv6) and network addresses with a netmask (something like 192.168.0.0/24)."
+msgstr ""
+"Šis raktas nurodo serverius, prie kurių jungiamasi tiesiogiai, o ne per "
+"proxy (jei aktyvus). Reikšmės gali būti serverių pavadinimai, domenai "
+"(naudojant pradinį pakaitos simbolį kaip *.foo.com), IP adresus (abu IPv4 ir "
+"IPv6) ir tinklo adresus su tinklo kauke (pavyzdžiui 192.168.0.0/24)."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:56
+msgid "Use HTTP proxy for all protocols"
+msgstr "Naudoti HTTP tarpinį serverį visiems protokolams"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:57
+msgid "Whether to use the HTTP proxy for all protocols or not."
+msgstr "Ar naudoti HTTP tarpinį serverį visiems protokolams."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:65
+msgid "Unused; ignore"
+msgstr "Nenaudojamas, nepaisykite"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:66
+msgid ""
+"This key is not used; HTTP proxying is enabled when the host key is non-"
+"empty and the port is non-0."
+msgstr ""
+"Šis raktas nenaudojamas; HTTP proxy yra įjungtas, kai serverio raktas yra "
+"netuščias ir prievadas yra ne nulis."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:73
+msgid "HTTP proxy host name"
+msgstr "HTTP proxy serverio vardas"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:74
+msgid "The machine name to proxy HTTP through."
+msgstr "Kompiuterio vardas HTTP proxy."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:81
+msgid "HTTP proxy port"
+msgstr "HTTP proxy prievadas"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:82
+msgid ""
+"The port on the machine defined by “/system/proxy/http/host” that you proxy "
+"through."
+msgstr ""
+"Prievadas kompiuteryje, apibrėžtame „/system/proxy/http/host“, per kurį "
+"jungiamasi."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:89
+msgid "Authenticate proxy server connections"
+msgstr "Patikrinti proxy serverio ryšių tapatybę"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:90
+msgid ""
+"If true, then connections to the proxy server require authentication. The "
+"username/password combo is defined by “/system/proxy/http/authentication-"
+"user” and “/system/proxy/http/authentication-password”. This applies only to "
+"the http proxy; when using a separate https proxy, there is currently no way "
+"to specify that it should use authentication."
+msgstr ""
+"Jei teigiama, ryšiai per tarpinį serverį reikalauja tapatybės patvirtinimo. "
+"Naudotojo vardo/slaptažodžio kombinacija yra apibrėžta „/system/proxy/http/"
+"authentication-user“ ir „/system/proxy/http/authentication-password“. Tai "
+"taikoma tik http proxy; kai naudojamas atskiras https proxy, šiuo metu nėra "
+"būdo nurodyti, kad jis turi naudoti tapatybės patvirtinimą."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:103
+msgid "HTTP proxy username"
+msgstr "HTTP proxy naudotojo vardas"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:104
+msgid "User name to pass as authentication when doing HTTP proxying."
+msgstr ""
+"Naudotojo vardas, perduodamas patvirtinant tapatybę atliekant HTTP proxy."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:110
+msgid "HTTP proxy password"
+msgstr "HTTP proxy slaptažodis"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:111
+msgid "Password to pass as authentication when doing HTTP proxying."
+msgstr "Slaptažodis, perduodamas patvirtinant tapatybę atliekant HTTP proxy."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:119
+msgid "Secure HTTP proxy host name"
+msgstr "Saugaus HTTP proxy serverio vardas"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:120
+msgid "The machine name to proxy secure HTTP through."
+msgstr "Kompiuterio vardas saugiam HTTP proxy."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:127
+msgid "Secure HTTP proxy port"
+msgstr "Saugaus HTTP proxy prievadas"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:128
+msgid ""
+"The port on the machine defined by “/system/proxy/https/host” that you proxy "
+"through."
+msgstr ""
+"Prievadas kompiuteryje, aprašytame „/system/proxy/https/host“, per kurį "
+"jungiamasi."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:137
+msgid "FTP proxy host name"
+msgstr "FTP proxy serverio vardas"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:138
+msgid "The machine name to proxy FTP through."
+msgstr "Kompiuterio vardas, per kurį vykdomas FTP."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:145
+msgid "FTP proxy port"
+msgstr "FTP proxy prievadas"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:146
+msgid ""
+"The port on the machine defined by “/system/proxy/ftp/host” that you proxy "
+"through."
+msgstr ""
+"Prievadas kompiuteryje, aprašytame „/system/proxy/ftp/host“, per kurį "
+"jungiamasi."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:155
+msgid "SOCKS proxy host name"
+msgstr "SOCKS proxy kompiuterio vardas"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:156
+msgid "The machine name to use as a SOCKS proxy."
+msgstr "Kompiuterio, kuris naudojamas kaip SOCKS proxy vardas."
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:163
+msgid "SOCKS proxy port"
+msgstr "SOCKS proxy prievadas"
+
+#: schemas/org.gnome.system.proxy.gschema.xml.in:164
+msgid ""
+"The port on the machine defined by “/system/proxy/socks/host” that you proxy "
+"through."
+msgstr ""
+"Prievadas kompiuteryje, apibrėžtame „/system/proxy/socks/host“, per kurį "
+"jungiamasi."
+
+#~ msgid "'12h'"
+#~ msgstr "„12val“"
+
+#~ msgid "Toggle shaded state"
+#~ msgstr "Perjungti šešėliavimo būseną"
+
+#~ msgid "This key is not used, and should not be read or modified."
+#~ msgstr "Šis raktas nenaudojamas ir neturi būti skaitomas ar keičiamas."
+
+#~ msgid "Show the activities overview"
+#~ msgstr "Rodyti veiklų apžvalgą"
+
+#~ msgid "Select the touchpad scroll method"
+#~ msgstr "Pasirinkite jutiklinio kilimėlio slinkties metodą"
+
+#~ msgid ""
+#~ "Select the touchpad scroll method. Supported values are: \"disabled\", "
+#~ "\"edge-scrolling\", \"two-finger-scrolling\"."
+#~ msgstr ""
+#~ "Pasirinkite jutiklinio kilimėlio slinkties metodą. Palaikomos vertės yra: "
+#~ "„disabled“, „edge-scrolling“, „two-finger-scrolling“."
+
+#~ msgid ""
+#~ "URI to use for the background image. Not that the backend only supports "
+#~ "local (file://) URIs."
+#~ msgstr ""
+#~ "Fono paveikslėlio URI. Nereiškia, kad realizacija palaiko tik vietinius "
+#~ "(file://) URI."
+
+#~ msgid "Whether raising should be a side-effect of other user interactions"
+#~ msgstr "Ar iškėlimas turi būti pašalinis kitų naudotojo veiksmų poveikis"
+
+#~ msgid ""
+#~ "Setting this option to false can lead to buggy behavior, so users are "
+#~ "strongly discouraged from changing it from the default of true. Many "
+#~ "actions (e.g. clicking in the client area, moving or resizing the window) "
+#~ "normally raise the window as a side-effect. Setting this option to false, "
+#~ "which is strongly discouraged, will decouple raising from other user "
+#~ "actions, and ignore raise requests generated by applications. See http://"
+#~ "bugzilla.gnome.org/show_bug.cgi?id=445447#c6. Even when this option is "
+#~ "false, windows can still be raised by an alt-left-click anywhere on the "
+#~ "window, a normal click on the window decorations, or by special messages "
+#~ "from pagers, such as activation requests from tasklist applets. This "
+#~ "option is currently disabled in click-to-focus mode. Note that the list "
+#~ "of ways to raise windows when raise-on-click is false does not include "
+#~ "programmatic requests from applications to raise windows; such requests "
+#~ "will be ignored regardless of the reason for the request. If you are an "
+#~ "application developer and have a user complaining that your application "
+#~ "does not work with this setting disabled, tell them it is -their- fault "
+#~ "for breaking their window manager and that they need to change this "
+#~ "option back to true or live with the \"bug\" they requested."
+#~ msgstr ""
+#~ "Šios parinkties nustatymas į neigiamą gali sukelti klaidingą veikimą, "
+#~ "todėl naudotojams nerekomenduojama jos keisti iš numatytosios teigiamos. "
+#~ "Daugumas veiksmų (pvz. paspaudimas klientinėje srityje arba lango dydžio "
+#~ "pakeitimas) įprastai iškelia langą kaip pašalinį poveikį. Šios parinkties "
+#~ "nustatymas į neigiamą, kuris yra nerekomenduojamas, atskirs iškėlimą nuo "
+#~ "naudotojų veiksmų ir nepasys iškėlimo prašymų iš pačių programų. "
+#~ "Skaitykite http://bugzilla.gnome.org/show_bug.cgi?id=445447#c6. Net jei "
+#~ "ši parinktis yra neigiama, langai vis dar gali būti iškelti naudojant alt-"
+#~ "kairysis-paspaudimas bet kur lange, įprastu paspaudimu lango dekoracijose "
+#~ "arba specialiais pranešimais iš puslapiuotojų, tokiais, kaip aktyvavimo "
+#~ "užklausos iš užduočių sąrašo įtaisų. Ši parinktis šiuo metu išjungta "
+#~ "paspaudimo-aktyvavimo veiksenoje. Pastebėtina, kad lango iškėlimo būdų "
+#~ "sąrašas neįtraukia programinių lango iškėlimo užklausų iš programų; tokių "
+#~ "užklausų bus nepaisoma nepriklausomai nuo užklausos priežasties. Jei "
+#~ "esate programos kūrėjas ir naudotojas skundėsi, kad jūsų programa "
+#~ "neveikia su išjungta šia parinktimi, pasakykite jam, kad tai jo kaltė ir "
+#~ "kad jie turi pakeisti šią parinktį atgal į teigiamą arba susitaikyti su "
+#~ "„klaida“, kurios patys paprašė."

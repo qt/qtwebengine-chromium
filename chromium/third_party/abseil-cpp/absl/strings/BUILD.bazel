@@ -42,6 +42,7 @@ cc_library(
     deps = [
         "//absl/base:config",
         "//absl/base:core_headers",
+        "//absl/base:hardening",
         "//absl/base:nullability",
     ],
 )
@@ -106,6 +107,7 @@ cc_library(
         "//absl/base:config",
         "//absl/base:core_headers",
         "//absl/base:endian",
+        "//absl/base:hardening",
         "//absl/base:iterator_traits_internal",
         "//absl/base:nullability",
         "//absl/base:raw_logging_internal",
@@ -114,6 +116,7 @@ cc_library(
         "//absl/meta:type_traits",
         "//absl/numeric:bits",
         "//absl/numeric:int128",
+        "//absl/types:source_location",
     ],
 )
 
@@ -151,6 +154,7 @@ cc_library(
         "//absl/base:config",
         "//absl/base:core_headers",
         "//absl/base:dynamic_annotations",
+        "//absl/base:hardening",
         "//absl/base:throw_delegate",
     ],
 )
@@ -179,6 +183,7 @@ cc_library(
         ":resize_and_overwrite",
         "//absl/base:config",
         "//absl/base:core_headers",
+        "//absl/base:hardening",
         "//absl/base:throw_delegate",
     ],
 )
@@ -400,7 +405,6 @@ cc_test(
     visibility = ["//visibility:private"],
     deps = [
         ":strings",
-        "//absl/meta:type_traits",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],
@@ -418,6 +422,37 @@ cc_test(
         "//absl/base:core_headers",
         "//absl/base:dynamic_annotations",
         "//absl/meta:type_traits",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "stringify_stream",
+    hdrs = ["internal/stringify_stream.h"],
+    copts = ABSL_DEFAULT_COPTS,
+    linkopts = ABSL_DEFAULT_LINKOPTS,
+    visibility = [
+        "//absl:friends",
+        "//absl/status:__pkg__",
+        "//visibility:private",
+    ],
+    deps = [
+        ":string_view",
+        "//absl/base:config",
+    ],
+)
+
+cc_test(
+    name = "stringify_stream_test",
+    srcs = ["internal/stringify_stream_test.cc"],
+    copts = ABSL_TEST_COPTS,
+    linkopts = ABSL_DEFAULT_LINKOPTS,
+    deps = [
+        ":string_view",
+        ":stringify_stream",
+        "//absl/base:config",
+        "//absl/strings:str_format",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],
@@ -644,8 +679,10 @@ cc_library(
         "//absl/base:config",
         "//absl/base:core_headers",
         "//absl/base:endian",
+        "//absl/base:hardening",
         "//absl/base:nullability",
         "//absl/base:raw_logging_internal",
+        "//absl/cleanup",
         "//absl/container:inlined_vector",
         "//absl/crc:crc32c",
         "//absl/crc:crc_cord_state",
@@ -942,6 +979,7 @@ cc_test(
         ":cord_rep_test_util",
         ":string_view",
         "//absl/base:config",
+        "//absl/base:hardening",
         "//absl/types:span",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
@@ -977,6 +1015,7 @@ cc_test(
         "//absl/log:check",
         "//absl/random",
         "//absl/types:compare",
+        "//absl/types:span",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],
@@ -1084,6 +1123,7 @@ cc_test(
         "//absl/container:btree",
         "//absl/container:flat_hash_map",
         "//absl/container:node_hash_map",
+        "//absl/hash",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],

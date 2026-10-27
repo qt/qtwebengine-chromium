@@ -110,6 +110,10 @@ Result<SuccessType> ValidateBindingOptions(const Options& options) {
         diagnostics.AddNote(Source{}) << "when processing storage_texture";
         return Failure{diagnostics.Str()};
     }
+    if (!valid(seen_msl_texture_bindings, options.bindings.texel_buffer)) {
+        diagnostics.AddNote(Source{}) << "when processing texel_buffer";
+        return Failure{diagnostics.Str()};
+    }
 
     for (const auto& it : options.bindings.external_texture) {
         const auto& src_binding = it.first;
@@ -193,6 +197,7 @@ void PopulateBindingRelatedOptions(const Options& options,
     create_remappings(options.bindings.storage);
     create_remappings(options.bindings.texture);
     create_remappings(options.bindings.storage_texture);
+    create_remappings(options.bindings.texel_buffer);
     create_remappings(options.bindings.sampler);
 
     // External textures are re-bound to their plane0 location

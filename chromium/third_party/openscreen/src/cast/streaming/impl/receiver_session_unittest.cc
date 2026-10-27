@@ -1243,4 +1243,9 @@ TEST_F(ReceiverSessionTest, HandlesInputMessengerReceivesMessage) {
                                     ReceiverSession::Client::kEndOfSession));
 }
 
+TEST_F(ReceiverSessionTest, UnsubscribesFromEnvironmentOnDestruction) {
+  session_.reset();
+  environment_->SetSocketStateForTesting(Environment::SocketState::kReady);
+}
+
 }  // namespace openscreen::cast

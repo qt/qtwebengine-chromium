@@ -191,6 +191,48 @@ TEST_F(HlslWriterOptionHelpersTest, ExternalTextureYCBCRTextureOverlapsTexture) 
 note: when processing external_texture)");
 }
 
+TEST_F(HlslWriterOptionHelpersTest, TexelBufferOverlapsTexture) {
+    Options options;
+    options.bindings.texel_buffer.emplace(BindingPoint{0, 0}, BindingPoint{1, 1});
+    options.bindings.texture.emplace(BindingPoint{0, 1}, BindingPoint{1, 1});
+
+    mod.root_block = b.Block();
+    auto* tb = b.Var("tb", ty.ptr(core::AddressSpace::kHandle,
+                                  ty.Get<core::type::TexelBuffer>(core::TexelFormat::kR32Uint,
+                                                                  core::Access::kRead, ty.u32())));
+    tb->SetBindingPoint(0, 0);
+    mod.root_block->Append(tb);
+
+    auto res = ValidateBindingOptions(mod, options);
+    EXPECT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason, R"(error: found duplicate HLSL binding point: [binding: 1]
+note: when processing texel_buffer)");
+}
+
+TEST_F(HlslWriterOptionHelpersTest, ReadWriteTexelBufferOverlaps) {
+    Options options;
+    options.bindings.texel_buffer.emplace(BindingPoint{0, 0}, BindingPoint{1, 1});
+    options.bindings.storage.emplace(BindingPoint{0, 1}, BindingPoint{1, 1});
+
+    mod.root_block = b.Block();
+    auto* tb =
+        b.Var("tb", ty.ptr(core::AddressSpace::kHandle,
+                           ty.Get<core::type::TexelBuffer>(core::TexelFormat::kR32Uint,
+                                                           core::Access::kReadWrite, ty.u32())));
+    tb->SetBindingPoint(0, 0);
+    mod.root_block->Append(tb);
+
+    auto* rw_storage =
+        b.Var("rw", ty.ptr(core::AddressSpace::kStorage, ty.i32(), core::Access::kReadWrite));
+    rw_storage->SetBindingPoint(0, 1);
+    mod.root_block->Append(rw_storage);
+
+    auto res = ValidateBindingOptions(mod, options);
+    EXPECT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason, R"(error: found duplicate HLSL binding point: [binding: 1]
+note: when processing texel_buffer)");
+}
+
 TEST_F(HlslWriterOptionHelpersTest, ReadWriteStorageOverlaps) {
     Options options;
     options.bindings.storage.emplace(BindingPoint{0, 0}, BindingPoint{1, 1});

@@ -10,7 +10,7 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
-import * as HeapSnapshotModel from '../../models/heap_snapshot_model/heap_snapshot_model.js';
+import * as HeapSnapshotModel from '../../models/heap_snapshot/heap_snapshot.js';
 import {createIcon} from '../../ui/kit/kit.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -136,31 +136,23 @@ export class HeapSnapshotGridNode extends
     Common.ObjectWrapper.eventMixin<HeapSnapshotGridNode.EventTypes, typeof HeapSnapshotGridNodeBase>(
         HeapSnapshotGridNodeBase) {
   dataGridInternal: HeapSnapshotSortableDataGrid;
-  instanceCount: number;
-  readonly savedChildren: Map<number, HeapSnapshotGridNode>;
+  instanceCount = 0;
+  readonly savedChildren = new Map<number, HeapSnapshotGridNode>();
+  /**
+   * List of position ranges for all visible nodes: [startPos1, endPos1),...,[startPosN, endPosN)
+   * Position is an item position in the provider.
+   */
   retrievedChildrenRanges: Array<{
     from: number,
     to: number,
-  }>;
-  providerObject: HeapSnapshotModel.ChildrenProvider.ChildrenProvider|null;
-  reachableFromWindow: boolean;
+  }> = [];
+  providerObject: HeapSnapshotModel.ChildrenProvider.ChildrenProvider|null = null;
+  reachableFromWindow = false;
   populated?: boolean;
 
   constructor(tree: HeapSnapshotSortableDataGrid, hasChildren: boolean) {
     super(null, hasChildren);
     this.dataGridInternal = tree;
-    this.instanceCount = 0;
-
-    this.savedChildren = new Map();
-
-    /**
-     * List of position ranges for all visible nodes: [startPos1, endPos1),...,[startPosN, endPosN)
-     * Position is an item position in the provider.
-     */
-    this.retrievedChildrenRanges = [];
-
-    this.providerObject = null;
-    this.reachableFromWindow = false;
   }
 
   get name(): string|undefined {
@@ -277,11 +269,13 @@ export class HeapSnapshotGridNode extends
       const value = this.data[columnId];
       const percentColumn = columnId + '-percent';
       const percent = this.data[percentColumn];
+      const tooltipColumn = `${columnId}-tooltip`;
+      const tooltip = this.data[tooltipColumn];
       if (percent) {
         render(
             html`
           <div class="profile-multiple-values">
-            <span aria-hidden="true">${value}</span>
+            <span aria-hidden="true" title=${Directives.ifDefined(tooltip)}>${value}</span>
             <span class="percent-column" aria-hidden="true">${percent}</span>
           </div>`,
             cell);
@@ -291,7 +285,7 @@ export class HeapSnapshotGridNode extends
         render(
             html`
           <div>
-            <span>${value}</span>
+            <span title=${Directives.ifDefined(tooltip)}>${value}</span>
           </div>`,
             cell);
       }
@@ -568,6 +562,8 @@ export abstract class HeapSnapshotGenericObjectNode extends HeapSnapshotGridNode
       retainedSize: i18n.ByteUtilities.formatBytesToKb(this.retainedSize),
       'shallowSize-percent': this.toPercentString(shallowSizePercent),
       'retainedSize-percent': this.toPercentString(retainedSizePercent),
+      'shallowSize-tooltip': i18n.ByteUtilities.bytesToString(this.shallowSize),
+      'retainedSize-tooltip': i18n.ByteUtilities.bytesToString(this.retainedSize),
     };
   }
 
@@ -588,8 +584,7 @@ export abstract class HeapSnapshotGenericObjectNode extends HeapSnapshotGridNode
   }
 
   override createCell(columnId: string): HTMLElement {
-    const cell = columnId !== 'object' ? this.createValueCell(columnId) : this.createObjectCell();
-    return cell;
+    return columnId !== 'object' ? this.createValueCell(columnId) : this.createObjectCell();
   }
 
   createObjectCell(): HTMLElement {
@@ -1140,6 +1135,8 @@ export class HeapSnapshotConstructorNode extends HeapSnapshotGridNode {
       retainedSize: i18n.ByteUtilities.formatBytesToKb(this.retainedSize),
       'shallowSize-percent': this.toPercentString(shallowSizePercent),
       'retainedSize-percent': this.toPercentString(retainedSizePercent),
+      'shallowSize-tooltip': i18n.ByteUtilities.bytesToString(this.shallowSize),
+      'retainedSize-tooltip': i18n.ByteUtilities.bytesToString(this.retainedSize),
     };
   }
 

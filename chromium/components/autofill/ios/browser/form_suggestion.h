@@ -11,7 +11,9 @@
 #import "components/autofill/core/browser/field_types.h"
 #import "components/autofill/core/browser/suggestions/suggestion.h"
 #import "components/autofill/core/browser/suggestions/suggestion_type.h"
+#import "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
 #import "components/autofill/ios/form_util/form_activity_params.h"
+#include "components/password_manager/core/browser/password_ui_utils.h"
 
 @protocol FormSuggestionProvider;
 
@@ -23,6 +25,14 @@ struct FormSuggestionMetadata {
   // True if the field that triggered the suggestion was (1) obfuscated and (2)
   // determined to be likely a real password field based on a best guess.
   bool likely_from_real_password_field = false;
+  // Indicates if the form is safe to be automatically submitted after filling.
+  bool should_trigger_submission = false;
+  // Indicates the reason why auto-submission might not be triggered.
+  password_manager::SubmissionReadinessState submission_readiness =
+      password_manager::SubmissionReadinessState::kNoInformation;
+  // Indicates if the UI surface that uses the suggestion explicitly accepts
+  // auto-submission.
+  bool accepts_auto_submit = false;
 };
 
 // Enum class used to determine the feature for in-product help for the
@@ -32,12 +42,10 @@ enum class SuggestionFeatureForIPH {
   kUnknown = 0,
   // Denoting IPH for the external account profile suggestion.
   kAutofillExternalAccountProfile = 1,
-  // Denoting IPH for the plus address create suggestion.
-  kPlusAddressCreation = 2,
   // Denoting IPH for the home and work address suggestion.
-  kHomeAndWorkAddressSuggestion = 3,
+  kHomeAndWorkAddressSuggestion = 2,
   // Denoting IPH for the name and email suggestion.
-  kAccountNameEmailSuggestion = 4
+  kAccountNameEmailSuggestion = 3
 };
 
 // Enum class used to determine the icon for the suggestion.
@@ -70,9 +78,6 @@ enum class SuggestionIconType {
 // The suggestion icon; either a custom icon if available, or the network icon
 // otherwise.
 @property(copy, readonly, nonatomic) UIImage* icon;
-
-// Indicates whether the suggestion has a custom card art image.
-@property(assign, readonly, nonatomic) BOOL hasCustomCardArtImage;
 
 // Denotes the suggestion type.
 @property(assign, readonly, nonatomic) autofill::SuggestionType type;
@@ -112,19 +117,6 @@ enum class SuggestionIconType {
 
 // Returns FormSuggestion (immutable) with given values.
 + (FormSuggestion*)suggestionWithValue:(NSString*)value
-                            minorValue:(NSString*)minorValue
-                    displayDescription:(NSString*)displayDescription
-                                  icon:(UIImage*)icon
-                 hasCustomCardArtImage:(BOOL)hasCustomCardArtImage
-                                  type:(autofill::SuggestionType)type
-                               payload:(autofill::Suggestion::Payload)payload
-           fieldByFieldFillingTypeUsed:
-               (autofill::FieldType)fieldByFieldFillingTypeUsed
-                        requiresReauth:(BOOL)requiresReauth
-            acceptanceA11yAnnouncement:(NSString*)acceptanceA11yAnnouncement;
-
-// Returns FormSuggestion (immutable) with given values.
-+ (FormSuggestion*)suggestionWithValue:(NSString*)value
                     displayDescription:(NSString*)displayDescription
                                   icon:(UIImage*)icon
                                   type:(autofill::SuggestionType)type
@@ -158,6 +150,10 @@ enum class SuggestionIconType {
 + (FormSuggestion*)copy:(FormSuggestion*)formSuggestionToCopy
            andSetParams:(std::optional<autofill::FormActivityParams>)params
                provider:(id<FormSuggestionProvider>)provider;
+
+// Copies the contents of `formSuggestionToCopy` and overrides the metadata.
++ (FormSuggestion*)copy:(FormSuggestion*)formSuggestionToCopy
+           withMetadata:(FormSuggestionMetadata)metadata;
 
 @end
 

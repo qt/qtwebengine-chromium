@@ -117,7 +117,7 @@ class Base64TextDecoder {
   }
 
   async addBase64Chunk(chunk: Protocol.binary): Promise<void> {
-    const binString = window.atob(chunk);
+    const binString = globalThis.atob(chunk);
     const bytes = Uint8Array.from(binString, m => m.codePointAt(0) as number);
 
     await this.#writer.ready;

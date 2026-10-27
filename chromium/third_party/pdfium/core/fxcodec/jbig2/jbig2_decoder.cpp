@@ -8,8 +8,8 @@
 
 #include <algorithm>
 
-#include "core/fxcodec/jbig2/JBig2_Context.h"
-#include "core/fxcodec/jbig2/JBig2_DocumentContext.h"
+#include "core/fxcodec/jbig2/jbig2_context.h"
+#include "core/fxcodec/jbig2/jbig2_document_context.h"
 #include "core/fxcrt/fx_2d_size.h"
 #include "core/fxcrt/span_util.h"
 

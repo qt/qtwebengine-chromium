@@ -25,21 +25,22 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/RenderBundleEncoder.h"
+#include "src/dawn/native/RenderBundleEncoder.h"
 
 #include <string>
 #include <utility>
 
-#include "dawn/native/Adapter.h"
-#include "dawn/native/CommandValidation.h"
-#include "dawn/native/Commands.h"
-#include "dawn/native/Device.h"
-#include "dawn/native/Format.h"
 #include "dawn/native/ObjectType_autogen.h"
-#include "dawn/native/RenderPipeline.h"
 #include "dawn/native/ValidationUtils_autogen.h"
 #include "dawn/platform/DawnPlatform.h"
-#include "dawn/platform/tracing/TraceEvent.h"
+#include "src/dawn/native/Adapter.h"
+#include "src/dawn/native/CommandValidation.h"
+#include "src/dawn/native/Commands.h"
+#include "src/dawn/native/Device.h"
+#include "src/dawn/native/Format.h"
+#include "src/dawn/native/RenderPipeline.h"
+#include "src/dawn/platform/tracing/TraceEvent.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native {
 
@@ -80,7 +81,7 @@ MaybeError ValidateRenderBundleEncoderDescriptor(DeviceBase* device,
     bool allColorFormatsUndefined = true;
     ColorAttachmentFormats colorAttachmentFormats;
     for (uint32_t i = 0; i < descriptor->colorFormatCount; ++i) {
-        wgpu::TextureFormat format = descriptor->colorFormats[i];
+        wgpu::TextureFormat format = DAWN_UNSAFE_TODO(descriptor->colorFormats[i]);
         if (format != wgpu::TextureFormat::Undefined) {
             DAWN_TRY_CONTEXT(ValidateColorAttachmentFormat(device, format),
                              "validating colorFormats[%u]", i);

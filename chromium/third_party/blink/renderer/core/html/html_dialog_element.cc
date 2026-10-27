@@ -46,6 +46,7 @@
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/keywords.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
@@ -208,10 +209,11 @@ void HTMLDialogElement::close(const String& return_value,
     Element* previously_focused_element = previously_focused_element_;
     previously_focused_element_ = nullptr;
 
-    bool descendant_is_focused = GetDocument().FocusedElement() &&
-                                 FlatTreeTraversal::IsDescendantOf(
-                                     *GetDocument().FocusedElement(), *this);
-    if (previously_focused_element && (was_modal || descendant_is_focused)) {
+    bool descendant_or_self_is_focused =
+        GetDocument().FocusedElement() &&
+        FlatTreeTraversal::Contains(*this, *GetDocument().FocusedElement());
+    if (previously_focused_element &&
+        (was_modal || descendant_or_self_is_focused)) {
       FocusOptions* focus_options = FocusOptions::Create();
       focus_options->setPreventScroll(true);
       previously_focused_element->Focus(FocusParams(
@@ -471,10 +473,6 @@ void HTMLDialogElement::show(ExceptionState& exception_state) {
   }
   SetBooleanAttribute(html_names::kOpenAttr, true);
 
-  // The layout must be updated here because setFocusForDialog calls
-  // Element::isFocusable, which requires an up-to-date layout.
-  GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kJavaScript);
-
   // Top layer elements like dialogs and fullscreen elements can be nested
   // inside popovers.
   auto* hide_until = HTMLElement::TopLayerElementPopoverAncestor(
@@ -597,7 +595,6 @@ void HTMLDialogElement::showModal(ExceptionState& exception_state,
 
   // Refresh the AX cache first, because most of it is changing.
   InertSubtreesChanged(document, old_modal_dialog);
-  document.UpdateStyleAndLayout(DocumentUpdateReason::kJavaScript);
 
   // Setting the open attribute already created the close watcher.
   DCHECK(close_watcher_);
@@ -712,8 +709,8 @@ void HTMLDialogElement::SetFocusForDialog() {
 bool HTMLDialogElement::DispatchToggleEvents(bool opening,
                                              Element* source,
                                              bool asModal) {
-  String old_state = opening ? "closed" : "open";
-  String new_state = opening ? "open" : "closed";
+  String old_state = opening ? keywords::kClosed : keywords::kOpen;
+  String new_state = opening ? keywords::kOpen : keywords::kClosed;
 
   if (DispatchEvent(*ToggleEvent::Create(
           event_type_names::kBeforetoggle,

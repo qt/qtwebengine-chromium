@@ -6,9 +6,10 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
-#ifndef EIGEN_CXX11_TENSOR_TENSOR_BROADCASTING_H
-#define EIGEN_CXX11_TENSOR_TENSOR_BROADCASTING_H
+#ifndef EIGEN_TENSOR_TENSOR_BROADCASTING_H
+#define EIGEN_TENSOR_TENSOR_BROADCASTING_H
 
 // IWYU pragma: private
 #include "./InternalHeaderCheck.h"
@@ -45,22 +46,16 @@ struct nested<TensorBroadcastingOp<Broadcast, XprType>, 1,
 };
 
 template <typename Dims>
-struct is_input_scalar {
-  static constexpr bool value = false;
-};
+struct is_input_scalar : std::false_type {};
 template <>
-struct is_input_scalar<Sizes<>> {
-  static constexpr bool value = true;
-};
+struct is_input_scalar<Sizes<>> : std::true_type {};
 template <typename std::ptrdiff_t... Indices>
-struct is_input_scalar<Sizes<Indices...>> {
-  static constexpr bool value = (Sizes<Indices...>::total_size == 1);
-};
+struct is_input_scalar<Sizes<Indices...>> : std::integral_constant<bool, Sizes<Indices...>::total_size == 1> {};
 
 }  // end namespace internal
 
 /** Tensor broadcasting class.
- * \ingroup CXX11_Tensor_Module
+ * \ingroup Tensor_Module
  */
 template <typename Broadcast, typename XprType>
 class TensorBroadcastingOp : public TensorBase<TensorBroadcastingOp<Broadcast, XprType>, ReadOnlyAccessors> {
@@ -150,14 +145,15 @@ struct TensorEvaluator<const TensorBroadcastingOp<Broadcast, ArgType>, Device> {
       }
     }
 
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       m_inputStrides[0] = 1;
       m_outputStrides[0] = 1;
       for (int i = 1; i < NumDims; ++i) {
         m_inputStrides[i] = m_inputStrides[i - 1] * input_dims[i - 1];
         m_outputStrides[i] = m_outputStrides[i - 1] * m_dimensions[i - 1];
       }
-    } else {
+    }
+    else {
       m_inputStrides[NumDims - 1] = 1;
       m_outputStrides[NumDims - 1] = 1;
       for (int i = NumDims - 2; i >= 0; --i) {
@@ -222,13 +218,14 @@ struct TensorEvaluator<const TensorBroadcastingOp<Broadcast, ArgType>, Device> {
       return m_impl.coeff(0);
     }
 
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       if (isCopy) {
         return m_impl.coeff(index);
       } else {
         return coeffColMajor(index);
       }
-    } else {
+    }
+    else {
       if (isCopy) {
         return m_impl.coeff(index);
       } else {
@@ -237,7 +234,12 @@ struct TensorEvaluator<const TensorBroadcastingOp<Broadcast, ArgType>, Device> {
     }
   }
 
-  // TODO: attempt to speed this up. The integer divisions and modulo are slow
+  // The per-dim integer div/mod look expensive but amortize well: packet paths
+  // call this once per PacketSize outputs, and modern x86 hardware div is
+  // ~20 cycles. Prototyped replacing div/mod with TensorIntDivisor (the
+  // pattern used in TensorShuffling et al.); measured net-negative on Intel
+  // Raptor Lake across bench_broadcasting (more shapes regress 3-5% than
+  // improve). Left as hardware div.
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index indexColMajor(Index index) const {
     Index inputIndex = 0;
     EIGEN_UNROLL_LOOP
@@ -312,7 +314,7 @@ struct TensorEvaluator<const TensorBroadcastingOp<Broadcast, ArgType>, Device> {
       return internal::pset1<PacketReturnType>(m_impl.coeff(0));
     }
 
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       if (isCopy) {
 #ifdef EIGEN_GPU_COMPILE_PHASE
         // See PR 437: on NVIDIA P100 and K20m we observed a x3-4 speed up by enforcing
@@ -330,7 +332,8 @@ struct TensorEvaluator<const TensorBroadcastingOp<Broadcast, ArgType>, Device> {
       } else {
         return packetColMajor<LoadMode>(index);
       }
-    } else {
+    }
+    else {
       if (isCopy) {
 #ifdef EIGEN_GPU_COMPILE_PHASE
         // See above.
@@ -358,10 +361,11 @@ struct TensorEvaluator<const TensorBroadcastingOp<Broadcast, ArgType>, Device> {
     Index startDim, endDim;
     Index inputIndex, outputOffset, batchedIndex;
 
-    if (static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
+    EIGEN_IF_CONSTEXPR(static_cast<int>(Layout) == static_cast<int>(ColMajor)) {
       startDim = NumDims - 1;
       endDim = 1;
-    } else {
+    }
+    else {
       startDim = 0;
       endDim = NumDims - 2;
     }
@@ -583,8 +587,8 @@ struct TensorEvaluator<const TensorBroadcastingOp<Broadcast, ArgType>, Device> {
   }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE internal::TensorBlockResourceRequirements getResourceRequirements() const {
-    // TODO(wuke): Targeting L1 size is 30% faster than targeting L{-1} on large
-    // tensors. But this might need further tuning.
+    // Target the L1 cache: measured ~30% faster than targeting the last-level
+    // cache on large tensors.
     const size_t target_size = m_device.firstLevelCacheSize();
     return internal::TensorBlockResourceRequirements::merge(
         m_impl.getResourceRequirements(), internal::TensorBlockResourceRequirements::skewed<Scalar>(target_size));
@@ -998,4 +1002,4 @@ struct TensorEvaluator<const TensorBroadcastingOp<Broadcast, ArgType>, Device> {
 
 }  // end namespace Eigen
 
-#endif  // EIGEN_CXX11_TENSOR_TENSOR_BROADCASTING_H
+#endif  // EIGEN_TENSOR_TENSOR_BROADCASTING_H

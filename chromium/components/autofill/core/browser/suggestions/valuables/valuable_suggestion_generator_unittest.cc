@@ -141,8 +141,7 @@ class ValuableSuggestionGeneratorTest : public testing::Test {
   std::unique_ptr<FormStructure> form_structure_;
 };
 
-TEST_F(ValuableSuggestionGeneratorTest,
-       GetSuggestionsForLoyaltyCards_NoMatchingDomain) {
+TEST_F(ValuableSuggestionGeneratorTest, NoMatchingDomain) {
   test_autofill_client().set_last_committed_primary_main_frame_url(
       GURL("https://not-existing-domain.example/test"));
   EXPECT_THAT(GetSuggestionsForLoyaltyCards(
@@ -151,8 +150,7 @@ TEST_F(ValuableSuggestionGeneratorTest,
               testing::IsEmpty());
 }
 
-TEST_F(ValuableSuggestionGeneratorTest,
-       GetSuggestionsForLoyaltyCards_NoMatchingDomainAndFieldAutofilled) {
+TEST_F(ValuableSuggestionGeneratorTest, NoMatchingDomainAndFieldAutofilled) {
   test_autofill_client().set_last_committed_primary_main_frame_url(
       GURL("https://not-existing-domain.example/test"));
   field().AddFieldModifier(FieldModifier::kAutofill);
@@ -162,8 +160,7 @@ TEST_F(ValuableSuggestionGeneratorTest,
               testing::IsEmpty());
 }
 
-TEST_F(ValuableSuggestionGeneratorTest,
-       GetSuggestionsForLoyaltyCards_WithMatchingDomain) {
+TEST_F(ValuableSuggestionGeneratorTest, WithMatchingDomain) {
   test_autofill_client().set_last_committed_primary_main_frame_url(
       GURL("https://domain2.example/test"));
   std::vector<Suggestion> suggestions_with_matching_domain =
@@ -203,8 +200,7 @@ TEST_F(ValuableSuggestionGeneratorTest,
 #endif  // !BUILDFLAG(IS_ANDROID)
 }
 
-TEST_F(ValuableSuggestionGeneratorTest,
-       GetSuggestionsForLoyaltyCards_WithMatchingDomainAndFieldAutofilled) {
+TEST_F(ValuableSuggestionGeneratorTest, WithMatchingDomainAndFieldAutofilled) {
   test_autofill_client().set_last_committed_primary_main_frame_url(
       GURL("https://domain2.example/test"));
   field_data().set_is_autofilled_according_to_renderer(true);
@@ -246,8 +242,7 @@ TEST_F(ValuableSuggestionGeneratorTest,
 #endif  // !BUILDFLAG(IS_ANDROID)
 }
 
-TEST_F(ValuableSuggestionGeneratorTest,
-       GetSuggestionsForLoyaltyCards_AllMatchDomain) {
+TEST_F(ValuableSuggestionGeneratorTest, AllMatchDomain) {
   test_autofill_client().set_last_committed_primary_main_frame_url(
       GURL("https://common-domain.example/test"));
   EXPECT_THAT(
@@ -265,8 +260,7 @@ TEST_F(ValuableSuggestionGeneratorTest,
           EqualsManageLoyaltyCardsSuggestion()));
 }
 
-TEST_F(ValuableSuggestionGeneratorTest,
-       GetSuggestionsForLoyaltyCards_SuggestionsCustomIcon) {
+TEST_F(ValuableSuggestionGeneratorTest, SuggestionsCustomIcon) {
   test_api(valuables_data_manager()).ClearLoyaltyCards();
   const GURL program_logo = GURL("https://empty.url.com");
   gfx::Image fake_image = CustomIconForTest();
@@ -526,8 +520,7 @@ TEST_F(ValuableSuggestionGeneratorTest,
 // TODO(crbug.com/431155933): Remove this test when cleaning up the feature.
 // The test is subsumed by GetSuggestionsForLoyaltyCards_SuggestionsUpdatedIPH
 // right below, whose name should be updated when cleaning up the feature.
-TEST_F(ValuableSuggestionGeneratorTest,
-       GetSuggestionsForLoyaltyCards_SuggestionsIPH) {
+TEST_F(ValuableSuggestionGeneratorTest, SuggestionsIPH) {
   base::test::ScopedFeatureList scoped_feature_list_;
   scoped_feature_list_.InitWithFeatures(
       /*enabled_features=*/{},
@@ -555,8 +548,7 @@ TEST_F(ValuableSuggestionGeneratorTest,
                                    HasNoIphFeature(), HasNoIphFeature()));
 }
 
-TEST_F(ValuableSuggestionGeneratorTest,
-       GetSuggestionsForLoyaltyCards_SuggestionsUpdatedIPH) {
+TEST_F(ValuableSuggestionGeneratorTest, SuggestionsUpdatedIPH) {
   base::test::ScopedFeatureList scoped_feature_list_;
   scoped_feature_list_.InitWithFeatures(
       /*enabled_features=*/{features::kAutofillAiWalletVehicleRegistration,
@@ -590,31 +582,16 @@ TEST_F(ValuableSuggestionGeneratorTest, GeneratesLoyaltyCardSuggestions) {
   test_autofill_client().set_last_committed_primary_main_frame_url(
       GURL("https://common-domain.example/test"));
 
-  base::MockCallback<base::OnceCallback<void(
-      std::pair<SuggestionGenerator::SuggestionDataSource,
-                std::vector<SuggestionGenerator::SuggestionData>>)>>
-      suggestion_data_callback;
   base::MockCallback<
       base::OnceCallback<void(SuggestionGenerator::ReturnedSuggestions)>>
       suggestions_generated_callback;
 
   LoyaltyCardSuggestionGenerator generator((PasswordFormClassification()));
-  std::pair<SuggestionGenerator::SuggestionDataSource,
-            std::vector<SuggestionGenerator::SuggestionData>>
-      saved_callback_argument;
-
-  EXPECT_CALL(
-      suggestion_data_callback,
-      Run(testing::Pair(SuggestionGenerator::SuggestionDataSource::kLoyaltyCard,
-                        testing::SizeIs(3))))
-      .WillOnce(testing::SaveArg<0>(&saved_callback_argument));
-  generator.FetchSuggestionData(form().ToFormData(), field(), &form(), &field(),
-                                client(), suggestion_data_callback.Get());
 
   EXPECT_CALL(
       suggestions_generated_callback,
       Run(testing::Pair(
-          FillingProduct::kLoyaltyCard,
+          SuggestionGenerator::SuggestionDataSource::kLoyaltyCard,
           UnorderedElementsAre(
               EqualsLoyaltyCardSuggestion(u"987654321987654321",
                                           u"CVS Pharmacy", "loyalty_card_id_1"),
@@ -624,9 +601,9 @@ TEST_F(ValuableSuggestionGeneratorTest, GeneratesLoyaltyCardSuggestions) {
                                           "loyalty_card_id_3"),
               EqualsSuggestion(SuggestionType::kSeparator),
               EqualsManageLoyaltyCardsSuggestion()))));
-  generator.GenerateSuggestions(
-      form().ToFormData(), field(), &form(), &field(), test_autofill_client(),
-      {saved_callback_argument}, suggestions_generated_callback.Get());
+  generator.GenerateSuggestions(form().ToFormData(), field(), &form(), &field(),
+                                test_autofill_client(),
+                                suggestions_generated_callback.Get());
 }
 
 class ValuableSuggestionGeneratorWithNonAffiliationSupportTest
@@ -739,7 +716,7 @@ TEST_F(
 }
 
 TEST_F(ValuableSuggestionGeneratorWithNonAffiliationSupportTest,
-       GetSuggestionsForLoyaltyCards_WithMatchingDomain_OnPasswordForm) {
+       WithMatchingDomain_OnPasswordForm) {
   test_autofill_client().set_last_committed_primary_main_frame_url(
       GURL("https://domain2.example/test"));
   std::vector<Suggestion> suggestions_with_matching_domain =
@@ -790,7 +767,7 @@ TEST_F(ValuableSuggestionGeneratorWithNonAffiliationSupportTest,
 }
 
 TEST_F(ValuableSuggestionGeneratorWithNonAffiliationSupportTest,
-       GetSuggestionsForLoyaltyCards_NoMatchingDomain_OnPasswordForm) {
+       NoMatchingDomain_OnPasswordForm) {
   test_autofill_client().set_last_committed_primary_main_frame_url(
       GURL("https://not-existing-domain.example/test"));
   EXPECT_THAT(GetSuggestionsForLoyaltyCards(
@@ -799,6 +776,40 @@ TEST_F(ValuableSuggestionGeneratorWithNonAffiliationSupportTest,
                       .type = PasswordFormClassification::Type::kLoginForm},
                   client()),
               testing::IsEmpty());
+}
+
+// Tests that no loyalty card suggestions are shown when no data is available.
+TEST_F(ValuableSuggestionGeneratorTest, LoyaltyCardsEmpty) {
+  TestAutofillClient client;
+  EXPECT_THAT(GetSuggestionsForLoyaltyCards(
+                  form().ToFormData(), &form(), field(), &field(),
+                  PasswordFormClassification(), client),
+              testing::IsEmpty());
+}
+
+// Tests that passing an empty list of loyalty card suggestions to
+// `MergeLoyaltyCardsAndAddressSuggestions` does not modify the input list of
+// address suggestions.
+TEST_F(ValuableSuggestionGeneratorTest,
+       MergeEmailSuggestionsWithNoLoyaltyCardSuggestions) {
+  std::vector<Suggestion> email_suggestions = {
+      Suggestion(u"buddy@gmail.com", SuggestionType::kAddressEntry),
+      Suggestion(u"theking@gmail.com", SuggestionType::kAddressEntry),
+      Suggestion(SuggestionType::kSeparator),
+      Suggestion(l10n_util::GetStringUTF16(IDS_AUTOFILL_MANAGE_ADDRESSES),
+                 SuggestionType::kManageAddress)};
+
+  MergeLoyaltyCardsAndAddressSuggestions(email_suggestions, {});
+
+  EXPECT_THAT(
+      email_suggestions,
+      testing::ElementsAre(
+          EqualsSuggestion(SuggestionType::kAddressEntry, u"buddy@gmail.com"),
+          EqualsSuggestion(SuggestionType::kAddressEntry, u"theking@gmail.com"),
+          EqualsSuggestion(SuggestionType::kSeparator),
+          EqualsSuggestion(
+              SuggestionType::kManageAddress,
+              l10n_util::GetStringUTF16(IDS_AUTOFILL_MANAGE_ADDRESSES))));
 }
 
 }  // namespace

@@ -128,7 +128,7 @@ export const DEFAULT_COOKIE_PREVIEW_WIDGET_VIEW: CookiePreviewWidgetView = (inpu
     </div>
   `,
       // clang-format on
-      target);
+      target, {container: {attributes: {jslog: `${VisualLogging.pane('cookie-preview')}`}}});
 };
 
 class CookiePreviewWidget extends UI.Widget.VBox {
@@ -137,7 +137,7 @@ class CookiePreviewWidget extends UI.Widget.VBox {
   private showDecodedSetting: Common.Settings.Setting<boolean>;
 
   constructor(element?: HTMLElement, view: CookiePreviewWidgetView = DEFAULT_COOKIE_PREVIEW_WIDGET_VIEW) {
-    super(element, {jslog: `${VisualLogging.section('cookie-preview')}`});
+    super(element);
     this.view = view;
     this.setMinimumSize(230, 45);
     this.#cookie = null;
@@ -186,12 +186,11 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
   // clang-format off
   render(html`<style>${cookieItemsViewStyles}</style>
     <devtools-widget class="storage-view" ${widget(UI.Widget.VBox, {minimumSize: new Size(0, 50)})}>
-      <devtools-widget ${widget(StorageItemsToolbar, {
-          onDeleteSelectedCallback: input.onDeleteSelectedItems,
-          onDeleteAllCallback: input.onDeleteAllItems,
-          onRefreshCallback: input.onRefreshItems,
-        })}
+      <devtools-widget ${widget(StorageItemsToolbar, {filterRegex: null})}
         class=flex-none
+        @Refresh=${input.onRefreshItems}
+        @DeleteAll=${input.onDeleteAllItems}
+        @DeleteSelected=${input.onDeleteSelectedItems}
         ${UI.Widget.widgetRef(StorageItemsToolbar, toolbar => { output.toolbar = toolbar; })}
       ></devtools-widget>
       <devtools-split-view sidebar-position="second" name="cookie-items-split-view-state">
@@ -221,7 +220,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
     </devtools-widget>
   `,
       // clang-format on
-      target);
+      target, {container: {attributes: {jslog: `${VisualLogging.pane('cookies-data')}`}}});
 };
 
 export class CookieItemsView extends UI.Widget.VBox {
@@ -235,7 +234,7 @@ export class CookieItemsView extends UI.Widget.VBox {
   #toolbar?: StorageItemsToolbar;
 
   constructor(model: SDK.CookieModel.CookieModel, cookieDomain: string, view: View = DEFAULT_VIEW) {
-    super({jslog: `${VisualLogging.pane('cookies-data')}`});
+    super();
 
     this.view = view;
 

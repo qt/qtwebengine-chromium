@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/ui_mode.gni")
 import("//components/guest_view/buildflags/buildflags.gni")
 import("//extensions/buildflags/buildflags.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
@@ -314,7 +313,6 @@ static_library("common") {
     "command.h",
     "common_manifest_handlers.cc",
     "common_manifest_handlers.h",
-    "common_param_traits.h",
     "content_script_injection_url_getter.cc",
     "content_script_injection_url_getter.h",
     "context_data.h",
@@ -406,6 +404,8 @@ static_library("common") {
     "manifest_handler_registry.h",
     "manifest_handlers/app_display_info.cc",
     "manifest_handlers/app_display_info.h",
+    "manifest_handlers/app_urls_info.cc",
+    "manifest_handlers/app_urls_info.h",
     "manifest_handlers/automation.cc",
     "manifest_handlers/automation.h",
     "manifest_handlers/background_info.cc",
@@ -440,6 +440,8 @@ static_library("common") {
     "manifest_handlers/incognito_info.h",
     "manifest_handlers/kiosk_mode_info.cc",
     "manifest_handlers/kiosk_mode_info.h",
+    "manifest_handlers/manifest_url_handlers.cc",
+    "manifest_handlers/manifest_url_handlers.h",
     "manifest_handlers/message_serialization_info.cc",
     "manifest_handlers/message_serialization_info.h",
     "manifest_handlers/mime_types_handler.cc",
@@ -464,14 +466,14 @@ static_library("common") {
     "manifest_handlers/shared_module_info.h",
     "manifest_handlers/trial_tokens_handler.cc",
     "manifest_handlers/trial_tokens_handler.h",
+    "manifest_handlers/version_name_info.cc",
+    "manifest_handlers/version_name_info.h",
     "manifest_handlers/web_accessible_resources_info.cc",
     "manifest_handlers/web_accessible_resources_info.h",
     "manifest_handlers/web_file_handlers_info.cc",
     "manifest_handlers/web_file_handlers_info.h",
     "manifest_handlers/webview_info.cc",
     "manifest_handlers/webview_info.h",
-    "manifest_url_handlers.cc",
-    "manifest_url_handlers.h",
     "message_bundle.cc",
     "message_bundle.h",
     "permissions/api_permission.cc",
@@ -542,6 +544,8 @@ static_library("common") {
     "view_type_util.cc",
     "view_type_util.h",
     "web_file_handler_constants.h",
+    "webstore_override.cc",
+    "webstore_override.h",
   ]
 
   configs += [
@@ -715,6 +719,8 @@ source_set("unit_tests") {
     "manifest_handlers/shared_module_manifest_unittest.cc",
     "manifest_handlers/trial_tokens_unittest.cc",
     "manifest_handlers/update_url_unittest.cc",
+    "manifest_handlers/version_name_unittest.cc",
+    "manifest_handlers/web_urls_unittest.cc",
     "manifest_unittest.cc",
     "message_bundle_unittest.cc",
     "mojom/event_router_mojom_unittest.cc",
@@ -803,9 +809,6 @@ if (enable_extensions) {
       "//content/test:test_support",
       "//extensions:test_support",
     ]
-
-    # The fuzzed code needs more RAM that the default limit.
-    libfuzzer_options = [ "rss_limit_mb=4096" ]
   }
 
   fuzzer_test("extension_url_pattern_fuzzer") {
@@ -823,9 +826,6 @@ if (enable_extensions) {
       "//base",
       "//third_party/icu/fuzzers:fuzzer_support",
     ]
-
-    # The fuzzed code needs more RAM that the default limit.
-    libfuzzer_options = [ "rss_limit_mb=4096" ]
   }
 
   fuzzer_test("extension_api_scripts_internal_serialization_fuzzer") {
@@ -838,8 +838,5 @@ if (enable_extensions) {
       "//third_party/abseil-cpp:absl",
       "//third_party/icu/fuzzers:fuzzer_support",
     ]
-
-    # The fuzzed code needs more RAM that the default limit.
-    libfuzzer_options = [ "rss_limit_mb=4096" ]
   }
 }

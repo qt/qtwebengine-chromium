@@ -13,7 +13,7 @@ import * as ARIAUtils from './ARIAUtils.js';
 import {Events as ResizerWidgetEvents, type ResizeUpdatePositionEvent, SimpleResizerWidget} from './ResizerWidget.js';
 import splitWidgetStyles from './splitWidget.css.js';
 import {ToolbarButton} from './Toolbar.js';
-import {registerWidgetConfig, Widget, widgetConfig, WidgetElement} from './Widget.js';
+import {type AnyWidget, registerWidgetConfig, Widget, widgetConfig, WidgetElement} from './Widget.js';
 import {Events as ZoomManagerEvents, ZoomManager} from './ZoomManager.js';
 
 export class SplitWidget extends Common.ObjectWrapper.eventMixin<EventTypes, typeof Widget>(Widget) {
@@ -33,8 +33,8 @@ export class SplitWidget extends Common.ObjectWrapper.eventMixin<EventTypes, typ
   }>|null;
   #totalSizeCSS = 0;
   #totalSizeOtherDimensionCSS = 0;
-  #mainWidget: Widget|null = null;
-  #sidebarWidget: Widget|null = null;
+  #mainWidget: AnyWidget|null = null;
+  #sidebarWidget: AnyWidget|null = null;
   #animationFrameHandle = 0;
   #animationCallback: (() => void)|null = null;
   #showSidebarButtonTitle: Common.UIString.LocalizedString = Common.UIString.LocalizedEmptyString;
@@ -166,7 +166,7 @@ export class SplitWidget extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     this.#setSidebarSizeDIP(this.#preferredSidebarSizeDIP(), Boolean(animate));
   }
 
-  setMainWidget(widget: Widget): void {
+  setMainWidget(widget: AnyWidget): void {
     if (this.#mainWidget === widget) {
       return;
     }
@@ -184,7 +184,7 @@ export class SplitWidget extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     this.resumeInvalidations();
   }
 
-  setSidebarWidget(widget: Widget): void {
+  setSidebarWidget(widget: AnyWidget): void {
     if (this.#sidebarWidget === widget) {
       return;
     }
@@ -202,11 +202,11 @@ export class SplitWidget extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     this.resumeInvalidations();
   }
 
-  mainWidget(): Widget|null {
+  mainWidget(): AnyWidget|null {
     return this.#mainWidget;
   }
 
-  sidebarWidget(): Widget|null {
+  sidebarWidget(): AnyWidget|null {
     return this.#sidebarWidget;
   }
 
@@ -291,8 +291,8 @@ export class SplitWidget extends Common.ObjectWrapper.eventMixin<EventTypes, typ
   }
 
   #showOnly(
-      sideToShow: Widget|null,
-      sideToHide: Widget|null,
+      sideToShow: AnyWidget|null,
+      sideToHide: AnyWidget|null,
       shadowToShow: Element,
       shadowToHide: Element,
       animate?: boolean,
@@ -422,9 +422,9 @@ export class SplitWidget extends Common.ObjectWrapper.eventMixin<EventTypes, typ
    */
   #totalSizeDIP(): number {
     if (!this.#totalSizeCSS) {
-      this.#totalSizeCSS = this.#isVertical ? this.contentElement.offsetWidth : this.contentElement.offsetHeight;
-      this.#totalSizeOtherDimensionCSS =
-          this.#isVertical ? this.contentElement.offsetHeight : this.contentElement.offsetWidth;
+      const {width, height} = this.contentElement.getBoundingClientRect();
+      this.#totalSizeCSS = this.#isVertical ? width : height;
+      this.#totalSizeOtherDimensionCSS = this.#isVertical ? height : width;
     }
     return ZoomManager.instance().cssToDIP(this.#totalSizeCSS);
   }
@@ -457,9 +457,12 @@ export class SplitWidget extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     this.#removeAllLayoutProperties();
 
     // this.#totalSizeDIP is available below since we successfully applied constraints.
-    const roundSizeCSS = Math.round(ZoomManager.instance().dipToCSS(sizeDIP));
-    const sidebarSizeValue = roundSizeCSS + 'px';
-    const mainSizeValue = (this.#totalSizeCSS - roundSizeCSS) + 'px';
+    const sizeCSS = ZoomManager.instance().dipToCSS(sizeDIP);
+    const sidebarSizeValue = sizeCSS + 'px';
+    const mainSizeValue = (this.#totalSizeCSS - sizeCSS) + 'px';
+    // With `box-sizing: border-box` on the sidebar (set in splitWidget.css),
+    // flex-basis, width, and height all include the border, so the sidebar's
+    // border does not steal space from the main pane.
     this.#sidebarElement.style.flexBasis = sidebarSizeValue;
 
     // Make both sides relayout boundaries.

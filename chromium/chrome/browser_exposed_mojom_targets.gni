@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 #
 
-import("//components/surface_embed/buildflags/buildflags.gni")
+import("//ui/webui/webui_features.gni")
 
 # This file represents global knowledge about all the mojom targets building
 # browser-to-renderer exposed mojom interfaces. Developers are responsible for
@@ -29,25 +29,24 @@ browser_exposed_mojom_targets = [
   "//chrome/browser/resource_coordinator:mojo_bindings",
   "//chrome/browser/resources/certificate_manager:mojom",
   "//chrome/browser/ui/webui/access_code_cast:mojo_bindings",
-  "//chrome/browser/ui/webui/actor_internals:mojo_bindings",
   "//chrome/browser/ui/webui/app_home:mojo_bindings",
   "//chrome/browser/ui/webui/app_service_internals:mojo_bindings",
   "//chrome/browser/ui/webui/bluetooth_internals:mojo_bindings",
   "//chrome/browser/ui/webui/chrome_finds_internals:mojo_bindings",
+  "//chrome/browser/ui/webui/context_hub:mojo_bindings",
   "//chrome/browser/ui/webui/customize_buttons:mojo_bindings",
   "//chrome/browser/ui/webui/default_browser:modal_mojo_bindings",
   "//chrome/browser/ui/webui/discards:mojo_bindings",
   "//chrome/browser/ui/webui/downloads:mojo_bindings",
+  "//chrome/browser/ui/webui/drive_picker_host:mojo_bindings",
+  "//chrome/browser/ui/webui/drive_picker_host/untrusted:mojo_bindings",
   "//chrome/browser/ui/webui/extensions_zero_state_promo:mojo_bindings",
+  "//chrome/browser/ui/webui/indigo_internals:mojo_bindings",
   "//chrome/browser/ui/webui/infobar_internals:mojo_bindings",
+  "//chrome/browser/ui/webui/intro:mojo_bindings",
   "//chrome/browser/ui/webui/user_education_internals:mojo_bindings",
   "//chrome/browser/ui/webui/location_internals:mojo_bindings",
   "//chrome/browser/ui/webui/new_tab_footer:mojo_bindings",
-  "//chrome/browser/ui/webui/new_tab_page_third_party:mojo_bindings",
-  "//chrome/browser/ui/webui/new_tab_page:mojo_bindings",
-  "//chrome/browser/ui/webui/new_tab_page/action_chips:mojo_bindings",
-  "//chrome/browser/ui/webui/new_tab_page/ntp_promo:mojo_bindings",
-  "//chrome/browser/ui/webui/new_tab_page/foo:mojo_bindings",
   "//chrome/browser/ui/webui/omnibox:mojo_bindings",
   "//chrome/browser/ui/webui/omnibox/aim_eligibility:mojo_bindings",
   "//chrome/browser/ui/webui/omnibox/logging:mojo_bindings",
@@ -55,6 +54,8 @@ browser_exposed_mojom_targets = [
   "//chrome/browser/ui/webui/on_device_internals:mojom",
   "//chrome/browser/ui/webui/on_device_translation_internals:mojo_bindings",
   "//chrome/browser/ui/webui/password_manager:mojo_bindings",
+  "//chrome/browser/ui/webui/personal_context:mojo_bindings",
+  "//chrome/browser/ui/webui/personal_context_internals:mojo_bindings",
   "//chrome/browser/ui/webui/privacy_sandbox:mojo_bindings",
   "//chrome/browser/ui/webui/private_ai_internals:mojo_bindings",
   "//chrome/browser/ui/webui/reset_password:mojo_bindings",
@@ -64,13 +65,14 @@ browser_exposed_mojom_targets = [
   "//chrome/browser/ui/webui/side_panel/comments:mojo_bindings",
   "//chrome/browser/ui/webui/side_panel/customize_chrome:mojo_bindings",
   "//chrome/browser/ui/webui/side_panel/reading_list:mojo_bindings",
+  "//chrome/browser/ui/webui/feature_showcase:mojo_bindings",
   "//chrome/browser/ui/webui/signin/batch_upload:mojo_bindings",
   "//chrome/browser/ui/webui/signin/history_sync_optin:mojo_bindings",
   "//chrome/browser/ui/webui/signin/signout_confirmation:mojo_bindings",
   "//chrome/browser/ui/webui/skills:mojo_bindings",
+  "//chrome/browser/ui/webui/subresource_filter:mojo_bindings",
   "//chrome/browser/ui/webui/suggest_internals:mojo_bindings",
   "//chrome/browser/ui/webui/tab_search:mojo_bindings",
-  "//chrome/browser/ui/webui/tab_strip:mojo_bindings",
   "//chrome/browser/ui/webui/tab_strip_internals:mojo_bindings",
   "//chrome/browser/ui/webui/updater:mojo_bindings",
   "//chrome/browser/ui/webui/usb_internals:mojo_bindings",
@@ -85,13 +87,14 @@ browser_exposed_mojom_targets = [
   "//chrome/common/read_anything:mojo_bindings",
   "//chrome/common/compose:mojo_bindings",
   "//chrome/common/importer:interfaces",
-  "//chrome/common/record_replay:mojom",
+  "//components/record_replay/core/common:mojom",
   "//chrome/common/search:mojo_bindings",
   "//chrome/services/file_util/public/mojom:mojom",
   "//chrome/services/media_gallery_util/public/mojom:mojom",
   "//chrome/services/printing/public/mojom:mojom",
   "//chrome/services/removable_storage_writer/public/mojom:mojom",
   "//components/accessibility_annotator/core/logging:mojo_bindings",
+  "//components/actor/public/mojom:mojo_bindings",
   "//components/attribution_reporting:mojom",
   "//components/attribution_reporting:registration_header_error_mojom",
   "//components/attribution_reporting:registration_mojom",
@@ -120,7 +123,6 @@ browser_exposed_mojom_targets = [
   "//components/download/public/common:interfaces",
   "//components/enterprise/connectors:mojom",
   "//components/facilitated_payments/core/mojom:pix_code_validator_mojom",
-  "//components/feed/mojom:mojo_bindings",
   "//components/global_media_controls/public/mojom:device_service",
   "//components/guest_contents/common:mojom",
   "//components/guest_view/common:mojom",
@@ -181,6 +183,7 @@ browser_exposed_mojom_targets = [
   "//components/spellcheck/common:interfaces",
   "//components/subresource_filter/content/mojom:mojom",
   "//components/subresource_filter/core/mojom:mojom",
+  "//components/surface_embed/common:mojom",
   "//components/tab_groups/public/mojom:mojo_bindings",
   "//components/translate/content/common:common",
   "//components/variations:variations_mojom",
@@ -353,16 +356,23 @@ browser_exposed_mojom_targets = [
   "//ui/webui/resources/js/batch_upload_promo:mojo_bindings",
   "//ui/webui/resources/js/browser_command:mojo_bindings",
   "//ui/webui/resources/js/metrics_reporter:mojo_bindings",
+  "//ui/webui/resources/js/tracked_element:mojo_bindings",
   "//url/mojom:url_mojom_gurl",
   "//url/mojom:url_mojom_origin",
   "//url/mojom:url_mojom_scheme_host_port",
 ]
 
-if (enable_surface_embed) {
-  browser_exposed_mojom_targets += [ "//components/surface_embed/common:mojom" ]
-}
-
 if (!is_android) {
   browser_exposed_mojom_targets +=
       [ "//chrome/browser/ui/webui/feedback/report_unsafe_site:mojo_bindings" ]
+}
+
+if (enable_webui_ntp) {
+  browser_exposed_mojom_targets += [
+    "//chrome/browser/ui/webui/new_tab_page_third_party:mojo_bindings",
+    "//chrome/browser/ui/webui/new_tab_page:mojo_bindings",
+    "//chrome/browser/ui/webui/new_tab_page/action_chips:mojo_bindings",
+    "//chrome/browser/ui/webui/new_tab_page/ntp_promo:mojo_bindings",
+    "//chrome/browser/ui/webui/new_tab_page/foo:mojo_bindings",
+  ]
 }

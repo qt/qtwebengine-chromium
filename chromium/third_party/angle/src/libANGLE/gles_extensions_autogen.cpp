@@ -66,7 +66,6 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_EXT_debug_marker"] = esOnlyExtension(&Extensions::debugMarkerEXT);
         map["GL_OES_depth24"] = esOnlyExtension(&Extensions::depth24OES);
         map["GL_OES_depth32"] = esOnlyExtension(&Extensions::depth32OES);
-        map["GL_NV_depth_buffer_float2"] = enableableExtension(&Extensions::depthBufferFloat2NV);
         map["GL_EXT_depth_clamp"] = enableableExtension(&Extensions::depthClampEXT);
         map["GL_ANGLE_depth_texture"] = esOnlyExtension(&Extensions::depthTextureANGLE);
         map["GL_OES_depth_texture"] = esOnlyExtension(&Extensions::depthTextureOES);
@@ -203,6 +202,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_QCOM_texture_foveated"] = enableableExtension(&Extensions::textureFoveatedQCOM);
         map["GL_OES_texture_half_float"] = enableableExtension(&Extensions::textureHalfFloatOES);
         map["GL_OES_texture_half_float_linear"] = enableableExtension(&Extensions::textureHalfFloatLinearOES);
+        map["GL_QCOM_texture_lod_bias"] = enableableExtension(&Extensions::textureLodBiasQCOM);
         map["GL_EXT_texture_mirror_clamp_to_edge"] = enableableExtension(&Extensions::textureMirrorClampToEdgeEXT);
         map["GL_EXT_texture_norm16"] = enableableExtension(&Extensions::textureNorm16EXT);
         map["GL_OES_texture_npot"] = enableableExtension(&Extensions::textureNpotOES);
@@ -293,6 +293,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_OES_point_sprite"] = enableableExtension(&Extensions::pointSpriteOES);
         map["GL_OES_query_matrix"] = enableableExtension(&Extensions::queryMatrixOES);
         map["GL_OES_texture_cube_map"] = enableableExtension(&Extensions::textureCubeMapOES);
+        map["GL_EXT_texture_lod_bias"] = enableableExtension(&Extensions::textureLodBiasEXT);
         map["GL_OES_texture_mirrored_repeat"] = enableableExtension(&Extensions::textureMirroredRepeatOES);
         // clang-format on
 

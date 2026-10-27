@@ -28,9 +28,7 @@
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
 
-// TODO(b/488379014): Exclude the `enterprise_connectors/core` from compiling on
-// fuchsia.
-#if !BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_FUCHSIA)
+#if !BUILDFLAG(IS_IOS)
 #include "components/safe_browsing/content/browser/web_ui/web_ui_content_info_singleton.h"
 #endif
 
@@ -76,6 +74,12 @@ std::unique_ptr<ConnectorDataPipeGetter> CreateFileDataPipeGetterBlocking(
   // user clicking "Open Now" without causing download errors.
   base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ |
                             base::File::FLAG_WIN_SHARE_DELETE);
+#if BUILDFLAG(IS_CHROMEOS)
+  if (base::FilePath("/media/fuse/fusebox").IsParent(path)) {
+    return ConnectorDataPipeGetter::CreateFuseboxResumablePipeGetter(
+        std::move(file), is_obfuscated);
+  }
+#endif
 
   return ConnectorDataPipeGetter::CreateResumablePipeGetter(std::move(file),
                                                             is_obfuscated);
@@ -270,7 +274,7 @@ void ResumableUploadRequestBase::SendMetadataRequest() {
   resource_request->url = base_url_;
   resource_request->method = "POST";
   SetMetadataRequestHeaders(resource_request.get());
-#if !BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_FUCHSIA)
+#if !BUILDFLAG(IS_IOS)
   safe_browsing::WebUIContentInfoSingleton::GetInstance()
       ->AddHeadersToDeepScanRequests(request_token_, resource_request->headers);
 #endif

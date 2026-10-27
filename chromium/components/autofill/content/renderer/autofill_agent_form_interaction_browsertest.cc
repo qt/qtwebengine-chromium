@@ -105,7 +105,7 @@ class AutofillAgentFormInteractionTest : public test::AutofillRendererTest {
   FieldRendererId GetFieldRendererIdById(std::string_view id) {
     return form_util::GetFieldRendererId(
         GetMainFrame()->GetDocument().GetElementById(
-            blink::WebString::FromUTF8(id)));
+            blink::WebString::FromUtf8(id)));
   }
 
   // Makes sure the next AskForValuesToFill() event is not throttled in
@@ -385,7 +385,7 @@ TEST_F(AutofillAgentContentEditableInteractionTest, LeftClick) {
 // Tests that unfocusing a contenteditable triggers a call to
 // `AutofillDriver::HidePopup()`.
 TEST_F(AutofillAgentContentEditableInteractionTest,
-       LossOfFocusOfContentEditableTriggersHideAutofillSuggestions) {
+       LossOfFocusOfContentEditableTriggersHideSuggestions) {
   MockFunction<void()> check;
   {
     InSequence s;

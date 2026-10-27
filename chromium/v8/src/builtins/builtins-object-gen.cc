@@ -533,7 +533,7 @@ TF_BUILTIN(ObjectAssign, ObjectBuiltinsAssembler) {
     {
       // First check if we have a transition array.
       TNode<MaybeObject> maybe_transitions = LoadMaybeWeakObjectField(
-          from_map, Map::kTransitionsOrPrototypeInfoOffset);
+          from_map, offsetof(Map, transitions_or_prototype_info_));
       TNode<HeapObject> maybe_transitions2 =
           GetHeapObjectIfStrong(maybe_transitions, &runtime_map_lookup);
       GotoIfNot(IsTransitionArrayMap(LoadMap(maybe_transitions2)),
@@ -665,7 +665,7 @@ TF_BUILTIN(ObjectKeys, ObjectBuiltinsAssembler) {
     // The {object} has a usable enum cache, use that.
     TNode<DescriptorArray> object_descriptors = LoadMapDescriptors(object_map);
     TNode<EnumCache> object_enum_cache = LoadObjectField<EnumCache>(
-        object_descriptors, DescriptorArray::kEnumCacheOffset);
+        object_descriptors, offsetof(DescriptorArray, enum_cache_));
     auto object_enum_keys = LoadObjectField<FixedArrayBase>(
         object_enum_cache, offsetof(EnumCache, keys_));
 
@@ -698,7 +698,8 @@ TF_BUILTIN(ObjectKeys, ObjectBuiltinsAssembler) {
     // Let the runtime compute the elements.
     TNode<FixedArray> elements =
         CAST(CallRuntime(Runtime::kObjectKeys, context, object));
-    var_length = LoadObjectField<Smi>(elements, offsetof(FixedArray, length_));
+    var_length = Convert<Smi>(
+        LoadObjectField<Uint32T>(elements, offsetof(FixedArray, length_)));
     var_elements = elements;
     Goto(&if_join);
   }
@@ -795,7 +796,7 @@ TF_BUILTIN(ObjectGetOwnPropertyNames, ObjectBuiltinsAssembler) {
     // enumerable, use that.
     TNode<DescriptorArray> object_descriptors = LoadMapDescriptors(object_map);
     TNode<EnumCache> object_enum_cache = LoadObjectField<EnumCache>(
-        object_descriptors, DescriptorArray::kEnumCacheOffset);
+        object_descriptors, offsetof(DescriptorArray, enum_cache_));
     auto object_enum_keys = LoadObjectField<FixedArrayBase>(
         object_enum_cache, offsetof(EnumCache, keys_));
 
@@ -820,7 +821,8 @@ TF_BUILTIN(ObjectGetOwnPropertyNames, ObjectBuiltinsAssembler) {
     // Let the runtime compute the elements and try initializing enum cache.
     TNode<FixedArray> elements = CAST(CallRuntime(
         Runtime::kObjectGetOwnPropertyNamesTryFast, context, object));
-    var_length = LoadObjectField<Smi>(elements, offsetof(FixedArray, length_));
+    var_length = Convert<Smi>(
+        LoadObjectField<Uint32T>(elements, offsetof(FixedArray, length_)));
     var_elements = elements;
     Goto(&if_join);
   }
@@ -838,7 +840,8 @@ TF_BUILTIN(ObjectGetOwnPropertyNames, ObjectBuiltinsAssembler) {
     // Let the runtime compute the elements.
     TNode<FixedArray> elements =
         CAST(CallRuntime(Runtime::kObjectGetOwnPropertyNames, context, object));
-    var_length = LoadObjectField<Smi>(elements, offsetof(FixedArray, length_));
+    var_length = Convert<Smi>(
+        LoadObjectField<Uint32T>(elements, offsetof(FixedArray, length_)));
     var_elements = elements;
     Goto(&if_join);
   }
@@ -1171,8 +1174,8 @@ TF_BUILTIN(ObjectToString, ObjectBuiltinsAssembler) {
     receiver_map = var_holder_map.value();
     // Check if the proxy has been revoked.
     Label throw_proxy_handler_revoked(this, Label::kDeferred);
-    TNode<HeapObject> handler =
-        CAST(LoadObjectField(receiver_heap_object, JSProxy::kHandlerOffset));
+    TNode<HeapObject> handler = CAST(
+        LoadObjectField(receiver_heap_object, offsetof(JSProxy, handler_)));
     CSA_DCHECK(this, IsNullOrJSReceiver(handler));
     GotoIfNot(JSAnyIsNotPrimitive(handler), &throw_proxy_handler_revoked);
 
@@ -1412,7 +1415,7 @@ TF_BUILTIN(CreateGeneratorObject, ObjectBuiltinsAssembler) {
   TNode<Map> map = CAST(maybe_map);
 
   TNode<SharedFunctionInfo> shared = LoadObjectField<SharedFunctionInfo>(
-      closure, JSFunction::kSharedFunctionInfoOffset);
+      closure, offsetof(JSFunction, shared_function_info_));
   // TODO(40931165): load bytecode array from function's dispatch table entry
   // when available instead of shared function info.
   TNode<BytecodeArray> bytecode_array =
@@ -1421,8 +1424,8 @@ TF_BUILTIN(CreateGeneratorObject, ObjectBuiltinsAssembler) {
   TNode<IntPtrT> parameter_count = Signed(ChangeUint32ToWord(
       LoadBytecodeArrayParameterCountWithoutReceiver(bytecode_array)));
 
-  TNode<IntPtrT> frame_size = ChangeInt32ToIntPtr(
-      LoadObjectField<Int32T>(bytecode_array, BytecodeArray::kFrameSizeOffset));
+  TNode<IntPtrT> frame_size = ChangeInt32ToIntPtr(LoadObjectField<Int32T>(
+      bytecode_array, offsetof(BytecodeArray, frame_size_)));
   TNode<IntPtrT> length =
       IntPtrAdd(WordSar(frame_size, IntPtrConstant(kSystemPointerSizeLog2)),
                 parameter_count);
@@ -1435,26 +1438,26 @@ TF_BUILTIN(CreateGeneratorObject, ObjectBuiltinsAssembler) {
   TNode<JSObject> result =
       AllocateJSObjectFromMap(map, std::nullopt, std::nullopt,
                               AllocationFlag::kNone, kWithSlackTracking);
-  StoreObjectFieldNoWriteBarrier(result, JSGeneratorObject::kFunctionOffset,
+  StoreObjectFieldNoWriteBarrier(result, offsetof(JSGeneratorObject, function_),
                                  closure);
-  StoreObjectFieldNoWriteBarrier(result, JSGeneratorObject::kContextOffset,
+  StoreObjectFieldNoWriteBarrier(result, offsetof(JSGeneratorObject, context_),
                                  context);
-  StoreObjectFieldNoWriteBarrier(result, JSGeneratorObject::kReceiverOffset,
+  StoreObjectFieldNoWriteBarrier(result, offsetof(JSGeneratorObject, receiver_),
                                  receiver);
   StoreObjectFieldNoWriteBarrier(
-      result, JSGeneratorObject::kParametersAndRegistersOffset,
+      result, offsetof(JSGeneratorObject, parameters_and_registers_),
       parameters_and_registers);
   TNode<Smi> resume_mode = SmiConstant(JSGeneratorObject::ResumeMode::kNext);
-  StoreObjectFieldNoWriteBarrier(result, JSGeneratorObject::kResumeModeOffset,
-                                 resume_mode);
+  StoreObjectFieldNoWriteBarrier(
+      result, offsetof(JSGeneratorObject, resume_mode_), resume_mode);
   TNode<Smi> executing = SmiConstant(JSGeneratorObject::kGeneratorExecuting);
-  StoreObjectFieldNoWriteBarrier(result, JSGeneratorObject::kContinuationOffset,
-                                 executing);
+  StoreObjectFieldNoWriteBarrier(
+      result, offsetof(JSGeneratorObject, continuation_), executing);
   GotoIfNot(InstanceTypeEqual(LoadMapInstanceType(map),
                               JS_ASYNC_GENERATOR_OBJECT_TYPE),
             &done);
   StoreObjectFieldNoWriteBarrier(
-      result, JSAsyncGeneratorObject::kIsAwaitingOffset, SmiConstant(0));
+      result, offsetof(JSAsyncGeneratorObject, is_awaiting_), SmiConstant(0));
   Goto(&done);
 
   BIND(&done);

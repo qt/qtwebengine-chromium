@@ -40,7 +40,6 @@ import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
-import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as LegacyWrapper from '../../ui/components/legacy_wrapper/legacy_wrapper.js';
 import {createIcon} from '../../ui/kit/kit.js';
 import * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
@@ -54,7 +53,6 @@ import {BackgroundServiceView} from './BackgroundServiceView.js';
 import {BounceTrackingMitigationsTreeElement} from './BounceTrackingMitigationsTreeElement.js';
 import {DeviceBoundSessionsModel} from './DeviceBoundSessionsModel.js';
 import {RootTreeElement as DeviceBoundSessionsRootTreeElement} from './DeviceBoundSessionsTreeElement.js';
-import {type DOMStorage, DOMStorageModel, Events as DOMStorageModelEvents} from './DOMStorageModel.js';
 import {
   Events as ExtensionStorageModelEvents,
   type ExtensionStorage,
@@ -276,11 +274,6 @@ const UIStrings = {
    */
   applicationSidebarPanel: 'Application panel sidebar',
   /**
-   * @description Tooltip in Application Panel Sidebar of the Application panel
-   * @example {https://example.com} PH1
-   */
-  thirdPartyPhaseout: 'Cookies from {PH1} may have been blocked due to third-party cookie phaseout.',
-  /**
    * @description Description text in the Application Panel describing a frame's resources
    */
   resourceDescription: 'On this page you can view the frame\'s resources.'
@@ -352,7 +345,7 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
   deviceBoundSessionsModel: DeviceBoundSessionsModel|undefined;
   preloadingSummaryTreeElement: PreloadingSummaryTreeElement|undefined;
   private readonly resourcesSection: ResourcesSection;
-  private domStorageTreeElements: Map<DOMStorage, DOMStorageTreeElement>;
+  private domStorageTreeElements: Map<SDK.DOMStorageModel.DOMStorage, DOMStorageTreeElement>;
   private extensionIdToStorageTreeParentElement: Map<string, ExtensionStorageTreeParentElement>;
   private extensionStorageModels: ExtensionStorageModel[];
   private extensionStorageTreeElements: Map<string, ExtensionStorageTreeElement>;
@@ -524,9 +517,9 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
     }
 
     SDK.TargetManager.TargetManager.instance().observeModels(
-        DOMStorageModel, {
-          modelAdded: (model: DOMStorageModel) => this.domStorageModelAdded(model),
-          modelRemoved: (model: DOMStorageModel) => this.domStorageModelRemoved(model),
+        SDK.DOMStorageModel.DOMStorageModel, {
+          modelAdded: (model: SDK.DOMStorageModel.DOMStorageModel) => this.domStorageModelAdded(model),
+          modelRemoved: (model: SDK.DOMStorageModel.DOMStorageModel) => this.domStorageModelRemoved(model),
         },
         {scoped: true});
 
@@ -659,17 +652,17 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
     }
   }
 
-  private domStorageModelAdded(model: DOMStorageModel): void {
+  private domStorageModelAdded(model: SDK.DOMStorageModel.DOMStorageModel): void {
     model.enable();
     model.storages().forEach(this.addDOMStorage.bind(this));
-    model.addEventListener(DOMStorageModelEvents.DOM_STORAGE_ADDED, this.domStorageAdded, this);
-    model.addEventListener(DOMStorageModelEvents.DOM_STORAGE_REMOVED, this.domStorageRemoved, this);
+    model.addEventListener(SDK.DOMStorageModel.Events.DOM_STORAGE_ADDED, this.domStorageAdded, this);
+    model.addEventListener(SDK.DOMStorageModel.Events.DOM_STORAGE_REMOVED, this.domStorageRemoved, this);
   }
 
-  private domStorageModelRemoved(model: DOMStorageModel): void {
+  private domStorageModelRemoved(model: SDK.DOMStorageModel.DOMStorageModel): void {
     model.storages().forEach(this.removeDOMStorage.bind(this));
-    model.removeEventListener(DOMStorageModelEvents.DOM_STORAGE_ADDED, this.domStorageAdded, this);
-    model.removeEventListener(DOMStorageModelEvents.DOM_STORAGE_REMOVED, this.domStorageRemoved, this);
+    model.removeEventListener(SDK.DOMStorageModel.Events.DOM_STORAGE_ADDED, this.domStorageAdded, this);
+    model.removeEventListener(SDK.DOMStorageModel.Events.DOM_STORAGE_REMOVED, this.domStorageRemoved, this);
   }
 
   private extensionStorageModelAdded(model: ExtensionStorageModel): void {
@@ -829,12 +822,12 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
     }
   }
 
-  private domStorageAdded(event: Common.EventTarget.EventTargetEvent<DOMStorage>): void {
+  private domStorageAdded(event: Common.EventTarget.EventTargetEvent<SDK.DOMStorageModel.DOMStorage>): void {
     const domStorage = (event.data);
     this.addDOMStorage(domStorage);
   }
 
-  private addDOMStorage(domStorage: DOMStorage): void {
+  private addDOMStorage(domStorage: SDK.DOMStorageModel.DOMStorage): void {
     console.assert(!this.domStorageTreeElements.get(domStorage));
     console.assert(Boolean(domStorage.storageKey));
 
@@ -853,12 +846,12 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
     }
   }
 
-  private domStorageRemoved(event: Common.EventTarget.EventTargetEvent<DOMStorage>): void {
+  private domStorageRemoved(event: Common.EventTarget.EventTargetEvent<SDK.DOMStorageModel.DOMStorage>): void {
     const domStorage = (event.data);
     this.removeDOMStorage(domStorage);
   }
 
-  private removeDOMStorage(domStorage: DOMStorage): void {
+  private removeDOMStorage(domStorage: SDK.DOMStorageModel.DOMStorage): void {
     const treeElement = this.domStorageTreeElements.get(domStorage);
     if (!treeElement) {
       return;
@@ -1031,6 +1024,14 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
     }
   }
 
+  showStorageBucket(bucketInfo: Protocol.Storage.StorageBucketInfo): void {
+    const bucketsModel = SDK.TargetManager.TargetManager.instance().primaryPageTarget()?.model(
+        SDK.StorageBucketsModel.StorageBucketsModel);
+    if (bucketsModel) {
+      this.storageBucketsTreeElement?.getBucketTreeElement(bucketsModel, bucketInfo)?.revealAndSelect(true);
+    }
+  }
+
   private onmousemove(event: MouseEvent): void {
     const nodeUnderMouse = (event.target as Node);
     if (!nodeUnderMouse) {
@@ -1142,7 +1143,7 @@ export class BackgroundServiceTreeElement extends ApplicationPanelTreeElement {
     }
     this.showView(this.view);
     UI.Context.Context.instance().setFlavor(BackgroundServiceView, this.view);
-    Host.userMetrics.panelShown('background_service_' + this.serviceName);
+    UI.UIUserMetrics.UIUserMetrics.instance().panelShown('background_service_' + this.serviceName);
     return false;
   }
 }
@@ -1166,7 +1167,7 @@ export class ServiceWorkersTreeElement extends ApplicationPanelTreeElement {
       this.view = new ServiceWorkersView();
     }
     this.showView(this.view);
-    Host.userMetrics.panelShown('service-workers');
+    UI.UIUserMetrics.UIUserMetrics.instance().panelShown('service-workers');
     return false;
   }
 }
@@ -1193,7 +1194,7 @@ export class AppManifestTreeElement extends ApplicationPanelTreeElement {
   override onselect(selectedByUser?: boolean): boolean {
     super.onselect(selectedByUser);
     this.showView(this.view);
-    Host.userMetrics.panelShown('app-manifest');
+    UI.UIUserMetrics.UIUserMetrics.instance().panelShown('app-manifest');
     return false;
   }
 
@@ -1252,7 +1253,8 @@ export class ClearStorageTreeElement extends ApplicationPanelTreeElement {
       this.view = new StorageView();
     }
     this.showView(this.view);
-    Host.userMetrics.panelShown(Host.UserMetrics.PanelCodes[Host.UserMetrics.PanelCodes.storage]);
+    UI.UIUserMetrics.UIUserMetrics.instance().panelShown(
+        Host.UserMetrics.PanelCodes[Host.UserMetrics.PanelCodes.storage]);
     return false;
   }
 }
@@ -1497,7 +1499,7 @@ export class IDBDatabaseTreeElement extends ApplicationPanelTreeElement {
     }
 
     this.showView(this.view);
-    Host.userMetrics.panelShown('indexed-db');
+    UI.UIUserMetrics.UIUserMetrics.instance().panelShown('indexed-db');
     return false;
   }
 
@@ -1633,7 +1635,7 @@ export class IDBObjectStoreTreeElement extends ApplicationPanelTreeElement {
     }
 
     this.showView(this.view);
-    Host.userMetrics.panelShown('indexed-db');
+    UI.UIUserMetrics.UIUserMetrics.instance().panelShown('indexed-db');
     return false;
   }
 
@@ -1724,7 +1726,7 @@ export class IDBIndexTreeElement extends ApplicationPanelTreeElement {
     }
 
     this.showView(this.view);
-    Host.userMetrics.panelShown('indexed-db');
+    UI.UIUserMetrics.UIUserMetrics.instance().panelShown('indexed-db');
     return false;
   }
 
@@ -1736,8 +1738,8 @@ export class IDBIndexTreeElement extends ApplicationPanelTreeElement {
 }
 
 export class DOMStorageTreeElement extends ApplicationPanelTreeElement {
-  private readonly domStorage: DOMStorage;
-  constructor(storagePanel: ResourcesPanel, domStorage: DOMStorage) {
+  private readonly domStorage: SDK.DOMStorageModel.DOMStorage;
+  constructor(storagePanel: ResourcesPanel, domStorage: SDK.DOMStorageModel.DOMStorage) {
     super(
         storagePanel,
         domStorage.storageKey ? SDK.StorageKeyManager.parseStorageKey(domStorage.storageKey).origin :
@@ -1755,7 +1757,7 @@ export class DOMStorageTreeElement extends ApplicationPanelTreeElement {
 
   override onselect(selectedByUser?: boolean): boolean {
     super.onselect(selectedByUser);
-    Host.userMetrics.panelShown('dom-storage');
+    UI.UIUserMetrics.UIUserMetrics.instance().panelShown('dom-storage');
     this.resourcesPanel.showDOMStorage(this.domStorage);
     return false;
   }
@@ -1795,7 +1797,7 @@ export class ExtensionStorageTreeElement extends ApplicationPanelTreeElement {
   override onselect(selectedByUser?: boolean): boolean {
     super.onselect(selectedByUser);
     this.resourcesPanel.showExtensionStorage(this.extensionStorage);
-    Host.userMetrics.panelShown('extension-storage');
+    UI.UIUserMetrics.UIUserMetrics.instance().panelShown('extension-storage');
     return false;
   }
 
@@ -1838,11 +1840,6 @@ export class CookieTreeElement extends ApplicationPanelTreeElement {
     this.#cookieDomain = cookieUrl.securityOrigin();
     this.tooltip = i18nString(UIStrings.cookiesUsedByFramesFromS, {PH1: this.#cookieDomain});
     const icon = createIcon('cookie');
-    // Note that we cannot use `cookieDomainInternal` here since it contains scheme.
-    if (IssuesManager.RelatedIssue.hasThirdPartyPhaseoutCookieIssueForDomain(cookieUrl.domain())) {
-      icon.name = 'warning-filled';
-      this.tooltip = i18nString(UIStrings.thirdPartyPhaseout, {PH1: this.#cookieDomain});
-    }
     this.setLeadingIcons([icon]);
   }
 
@@ -1870,7 +1867,8 @@ export class CookieTreeElement extends ApplicationPanelTreeElement {
   override onselect(selectedByUser?: boolean): boolean {
     super.onselect(selectedByUser);
     this.resourcesPanel.showCookies(this.target, this.#cookieDomain);
-    Host.userMetrics.panelShown(Host.UserMetrics.PanelCodes[Host.UserMetrics.PanelCodes.cookies]);
+    UI.UIUserMetrics.UIUserMetrics.instance().panelShown(
+        Host.UserMetrics.PanelCodes[Host.UserMetrics.PanelCodes.cookies]);
     return false;
   }
 }
@@ -2223,7 +2221,7 @@ export class FrameTreeElement extends ApplicationPanelTreeElement {
       this.view = new FrameDetailsReportView();
       this.view.frame = this.frame;
     }
-    Host.userMetrics.panelShown('frame-details');
+    UI.UIUserMetrics.UIUserMetrics.instance().panelShown('frame-details');
     this.showView(this.view);
 
     this.listItemElement.classList.remove('hovered');
@@ -2397,7 +2395,7 @@ export class FrameResourceTreeElement extends ApplicationPanelTreeElement {
     } else {
       void this.panel.scheduleShowView(this.preparePreview());
     }
-    Host.userMetrics.panelShown('frame-resource');
+    UI.UIUserMetrics.UIUserMetrics.instance().panelShown('frame-resource');
     return false;
   }
 
@@ -2485,7 +2483,7 @@ class FrameWindowTreeElement extends ApplicationPanelTreeElement {
       this.view.requestUpdate();
     }
     this.showView(this.view);
-    Host.userMetrics.panelShown('frame-window');
+    UI.UIUserMetrics.UIUserMetrics.instance().panelShown('frame-window');
     return false;
   }
 
@@ -2514,7 +2512,7 @@ class WorkerTreeElement extends ApplicationPanelTreeElement {
       this.view.requestUpdate();
     }
     this.showView(this.view);
-    Host.userMetrics.panelShown('frame-worker');
+    UI.UIUserMetrics.UIUserMetrics.instance().panelShown('frame-worker');
     return false;
   }
 

@@ -14,9 +14,10 @@
 #include "core/fxcrt/check_op.h"
 #include "core/fxcrt/containers/contains.h"
 #include "core/fxcrt/fx_extension.h"
+#include "fxjs/fxv8.h"
 #include "fxjs/xfa/cfxjse_engine.h"
+#include "fxjs/xfa/cfxjse_isolatetracker.h"
 #include "fxjs/xfa/cfxjse_nodehelper.h"
-#include "fxjs/xfa/cfxjse_value.h"
 #include "fxjs/xfa/cjx_object.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_localemgr.h"
@@ -47,24 +48,22 @@ bool CFXJSE_ResolveProcessor::Resolve(v8::Isolate* pIsolate, NodeData& rnd) {
     return ResolveAnyChild(pIsolate, rnd);
   }
 
-  if (rnd.name_.GetLength()) {
-    wchar_t wch = rnd.name_[0];
-    switch (wch) {
-      case '$':
-        return ResolveDollar(pIsolate, rnd);
-      case '!':
-        return ResolveExcalmatory(pIsolate, rnd);
-      case '#':
-        return ResolveNumberSign(pIsolate, rnd);
-      case '*':
-        return ResolveAsterisk(rnd);
+  switch (rnd.name_.Front()) {  // Front() safe when emtpy.
+    case '$':
+      return ResolveDollar(pIsolate, rnd);
+    case '!':
+      return ResolveExcalmatory(pIsolate, rnd);
+    case '#':
+      return ResolveNumberSign(pIsolate, rnd);
+    case '*':
+      return ResolveAsterisk(rnd);
       // TODO(dsinclair): We could probably remove this.
-      case '.':
-        return ResolveAnyChild(pIsolate, rnd);
-      default:
-        break;
-    }
+    case '.':
+      return ResolveAnyChild(pIsolate, rnd);
+    default:
+      break;
   }
+
   if (rnd.hash_name_ == XFA_HASHCODE_This && rnd.level_ == 0) {
     rnd.result_.objects.emplace_back(engine_->GetThisObject());
     return true;
@@ -104,10 +103,9 @@ bool CFXJSE_ResolveProcessor::ResolveAnyChild(v8::Isolate* pIsolate,
   WideStringView wsName = rnd.name_.AsStringView();
   WideString wsCondition = rnd.condition_;
   const bool bClassName = !wsName.IsEmpty() && wsName[0] == '#';
-  CXFA_Node* const pChild =
-      bClassName
-          ? pParent->GetOneChildOfClass(wsName.Last(wsName.GetLength() - 1))
-          : pParent->GetOneChildNamed(wsName);
+  CXFA_Node* const pChild = bClassName
+                                ? pParent->GetOneChildOfClass(wsName.Substr(1))
+                                : pParent->GetOneChildNamed(wsName);
   if (!pChild) {
     return false;
   }
@@ -714,7 +712,7 @@ void CFXJSE_ResolveProcessor::FilterCondition(v8::Isolate* pIsolate,
     return;
   }
 
-  wchar_t wTypeChar = wsCondition[0];
+  wchar_t wTypeChar = wsCondition.Front();
   switch (wTypeChar) {
     case '[':
       ConditionArray(iCurIndex, wsCondition, iFoundCount, pRnd);
@@ -769,10 +767,17 @@ void CFXJSE_ResolveProcessor::DoPredicateFilter(v8::Isolate* pIsolate,
 
   WideString wsExpression = wsCondition.Substr(2, wsCondition.GetLength() - 3);
   for (size_t i = iFoundCount; i > 0; --i) {
+    bool bool_val = false;
     CFXJSE_Context::ExecutionResult exec_result =
         engine_->RunScript(eLangType, wsExpression.AsStringView(),
                            pRnd->result_.objects[i - 1].Get());
-    if (!exec_result.status || !exec_result.value->ToBoolean(pIsolate)) {
+    if (exec_result.status) {
+      CFXJSE_ScopeUtil_IsolateHandleRootContext scope(pIsolate);
+      v8::Local<v8::Value> local_val =
+          v8::Local<v8::Value>::New(pIsolate, exec_result.value);
+      bool_val = fxv8::ReentrantToBooleanHelper(pIsolate, local_val);
+    }
+    if (!bool_val) {
       pRnd->result_.objects.erase(pRnd->result_.objects.begin() + i - 1);
     }
   }

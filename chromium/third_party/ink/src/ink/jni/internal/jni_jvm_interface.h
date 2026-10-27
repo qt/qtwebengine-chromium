@@ -35,12 +35,8 @@ namespace ink::jni {
 // global references to the cached classes.
 void UnloadJvmInterface(JNIEnv* env);
 
-jclass ClassIllegalStateException(JNIEnv* env);
-jclass ClassIllegalArgumentException(JNIEnv* env);
-jclass ClassNoSuchElementException(JNIEnv* env);
-jclass ClassIndexOutOfBoundsException(JNIEnv* env);
-jclass ClassUnsupportedOperationException(JNIEnv* env);
-jclass ClassRuntimeException(JNIEnv* env);
+jclass ClassNativeExceptionHandling(JNIEnv* env);
+jmethodID MethodNativeExceptionHandlingThrowForNonOkStatus(JNIEnv* env);
 
 jclass ClassImmutableVec(JNIEnv* env);
 jmethodID MethodImmutableVecInitXY(JNIEnv* env);
@@ -69,8 +65,8 @@ jclass ClassMutableParallelogram(JNIEnv* env);
 jmethodID MethodMutableParallelogramSetCenterDimensionsRotationInDegreesAndSkew(
     JNIEnv* env);
 
-jclass ClassBrushNative(JNIEnv* env);
-jmethodID MethodBrushNativeComposeColorLongFromComponents(JNIEnv* env);
+jclass ClassColorCallbacks(JNIEnv* env);
+jmethodID MethodColorCallbacksComposeColorLongFromComponents(JNIEnv* env);
 
 jclass ClassInputToolType(JNIEnv* env);
 jmethodID MethodInputToolTypeFromInt(JNIEnv* env);

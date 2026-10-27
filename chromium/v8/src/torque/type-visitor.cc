@@ -281,28 +281,9 @@ const ClassType* TypeVisitor::ComputeType(
             " because superclass is neither @export or extern");
     }
   }
-  if ((flags & ClassFlag::kGenerateBodyDescriptor ||
-       flags & ClassFlag::kExport) &&
-      flags & ClassFlag::kUndefinedLayout) {
+  if ((flags & ClassFlag::kExport) && flags & ClassFlag::kUndefinedLayout) {
     Error("Class \"", decl->name->value,
           "\" requires a layout but doesn't have one");
-  }
-  if (flags & ClassFlag::kGenerateUniqueMap) {
-    if (!(flags & ClassFlag::kExtern)) {
-      Error("No need to specify ", ANNOTATION_GENERATE_UNIQUE_MAP,
-            ", non-extern classes always have a unique map.");
-    }
-    if (flags & ClassFlag::kAbstract) {
-      Error(ANNOTATION_ABSTRACT, " and ", ANNOTATION_GENERATE_UNIQUE_MAP,
-            " shouldn't be used together, because abstract classes are never "
-            "instantiated.");
-    }
-  }
-  if ((flags & ClassFlag::kGenerateFactoryFunction) &&
-      (flags & ClassFlag::kAbstract)) {
-    Error(ANNOTATION_ABSTRACT, " and ", ANNOTATION_GENERATE_FACTORY_FUNCTION,
-          " shouldn't be used together, because abstract classes are never "
-          "instantiated.");
   }
   if (flags & ClassFlag::kExtern) {
     if (decl->generates) {
@@ -399,8 +380,9 @@ Signature TypeVisitor::MakeSignature(const CallableDeclaration* declaration) {
     definition_vector.push_back(def);
   }
   std::optional<std::string> arguments_variable;
-  if (declaration->parameters.has_varargs)
+  if (declaration->parameters.has_varargs) {
     arguments_variable = declaration->parameters.arguments_variable;
+  }
   Signature result{declaration->parameters.names,
                    arguments_variable,
                    {ComputeTypeVector(declaration->parameters.types),

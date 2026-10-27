@@ -20,17 +20,10 @@ devtools_module("extensions") {
   deps = [
     "../../../extension-api",
     "../../core/common:bundle",
-    "../../core/host:bundle",
-    "../../core/i18n:bundle",
     "../../core/platform:bundle",
-    "../../core/protocol_client:bundle",
-    "../../core/root:bundle",
     "../../core/sdk:bundle",
     "../../models/bindings:bundle",
     "../../models/har:bundle",
-    "../../models/logs:bundle",
-    "../../models/text_utils:bundle",
-    "../../models/workspace:bundle",
   ]
 }
 
@@ -42,7 +35,7 @@ devtools_entrypoint("bundle") {
   visibility = [
     ":*",
     "../../entrypoints/main/*",
-    "../../panels/common",
+    "../../panels/common/*",
     "../../panels/elements/*",
     "../../panels/recorder/*",
     "../../panels/sources/*",
@@ -64,6 +57,8 @@ ts_library("unittests") {
 
   deps = [
     ":bundle",
-    "../../testing",
+    "../../core/platform:bundle",
+    "../../core/sdk:bundle",
+    "../../generated",
   ]
 }

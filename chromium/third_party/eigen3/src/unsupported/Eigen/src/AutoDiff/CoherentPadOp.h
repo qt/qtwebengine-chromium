@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_COHERENT_PAD_OP_H
 #define EIGEN_COHERENT_PAD_OP_H
@@ -22,9 +23,9 @@ struct CoherentPadOp;
 
 template <typename XprType, int SizeAtCompileTime_>
 struct traits<CoherentPadOp<XprType, SizeAtCompileTime_>> : public traits<XprType> {
-  typedef typename internal::remove_all<XprType>::type PlainXprType;
+  typedef internal::remove_all_t<XprType> PlainXprType;
   typedef typename internal::ref_selector<XprType>::type XprNested;
-  typedef typename std::remove_reference_t<XprNested> XprNested_;
+  typedef std::remove_reference_t<XprNested> XprNested_;
   enum : int {
     IsRowMajor = traits<PlainXprType>::Flags & RowMajorBit,
     SizeAtCompileTime = SizeAtCompileTime_,
@@ -76,7 +77,7 @@ template <typename ArgType, int SizeAtCompileTime>
 struct unary_evaluator<CoherentPadOp<ArgType, SizeAtCompileTime>>
     : evaluator_base<CoherentPadOp<ArgType, SizeAtCompileTime>> {
   typedef CoherentPadOp<ArgType, SizeAtCompileTime> XprType;
-  typedef typename internal::remove_all_t<typename XprType::CoeffReturnType> CoeffReturnType;
+  typedef internal::remove_all_t<typename XprType::CoeffReturnType> CoeffReturnType;
   typedef typename internal::nested_eval<ArgType, 1>::type ArgTypeNested;
   typedef internal::remove_all_t<ArgTypeNested> ArgTypeNestedCleaned;
 
@@ -140,7 +141,7 @@ struct unary_evaluator<CoherentPadOp<ArgType, SizeAtCompileTime>>
   }
 
  protected:
-  const ArgTypeNested m_arg;
+  ArgTypeNested m_arg;
   evaluator<ArgTypeNestedCleaned> m_argImpl;
   const variable_if_dynamic<Index, ArgTypeNestedCleaned::SizeAtCompileTime> m_size;
 };
@@ -149,4 +150,4 @@ struct unary_evaluator<CoherentPadOp<ArgType, SizeAtCompileTime>>
 
 }  // namespace Eigen
 
-#endif  // EIGEN_CWISE_BINARY_OP_H
+#endif  // EIGEN_COHERENT_PAD_OP_H

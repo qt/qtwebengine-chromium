@@ -66,7 +66,7 @@ StringView::~StringView() {
 
 // Helper to write a three-byte UTF-8 code point to the buffer, caller must
 // check room is available.
-static inline void PutUTF8Triple(base::span<uint8_t, 3u> buffer, UChar ch) {
+static inline void PutUtf8Triple(base::span<uint8_t, 3u> buffer, UChar ch) {
   DCHECK_GE(ch, 0x0800);
   buffer[0] = ((ch >> 12) & 0x0F) | 0xE0;
   buffer[1] = ((ch >> 6) & 0x3F) | 0x80;
@@ -117,12 +117,12 @@ std::string StringView::Utf8(Utf8ConversionMode mode) const {
         // Conversion fails when there is an unpaired surrogate.  Put
         // replacement character (U+FFFD) instead of the unpaired
         // surrogate.
-        if (result.status != ConversionStatus::kConversionOK) {
+        if (!result.IsSuccess()) {
           DCHECK_LE(0xD800, characters[result.consumed]);
           DCHECK_LE(characters[result.consumed], 0xDFFF);
           // There should be room left, since one UChar hasn't been
           // converted.
-          PutUTF8Triple(buffer.take_first<3u>(), uchar::kReplacementCharacter);
+          PutUtf8Triple(buffer.take_first<3u>(), uchar::kReplacementCharacter);
           result.consumed++;
         }
         characters = characters.subspan(result.consumed);
@@ -158,7 +158,7 @@ std::string StringView::Utf8(Utf8ConversionMode mode) const {
         // There should be room left, since one UChar hasn't been
         // converted.
         auto unpaired_surrogate_buffer = buffer.first<3u>();
-        PutUTF8Triple(unpaired_surrogate_buffer, characters[result.consumed]);
+        PutUtf8Triple(unpaired_surrogate_buffer, characters[result.consumed]);
         buffer_written = unpaired_surrogate_buffer.size();
       }
       buffer_written += result.converted.size();
@@ -234,8 +234,10 @@ StringView::size_type StringView::rfind(const StringView& value,
   }
   return VisitCharacters(*this, [&](auto chars) {
     if (value_length == 1u) {
-      // SAFETY: length of one means first element valid.
-      return internal::ReverseFind(chars, UNSAFE_TODO(value[0]), start);
+      return internal::ReverseFind(
+          chars,
+          value.Is8Bit() ? value.Span8().front() : value.Span16().front(),
+          start);
     }
     return VisitCharacters(value, [&](auto value_chars) {
       return internal::ReverseFind(chars, value_chars, start);
@@ -297,36 +299,35 @@ String StringView::EncodeForDebugging() const {
 
   StringBuilder builder;
   builder.Append('"');
-  for (size_type index = 0; index < length(); ++index) {
-    // Print shorthands for select cases.
-    // SAFETY: index checked against length in loop body.
-    UChar character = UNSAFE_BUFFERS((*this)[index]);
-    switch (character) {
-      case '\t':
-        builder.Append("\\t");
-        break;
-      case '\n':
-        builder.Append("\\n");
-        break;
-      case '\r':
-        builder.Append("\\r");
-        break;
-      case '"':
-        builder.Append("\\\"");
-        break;
-      case '\\':
-        builder.Append("\\\\");
-        break;
-      default:
-        if (IsAsciiPrintable(character)) {
-          builder.Append(static_cast<char>(character));
-        } else {
-          // Print "\uXXXX" for control or non-ASCII characters.
-          builder.AppendFormat("\\u%04X", character);
-        }
-        break;
+  VisitCharacters(*this, [&](auto chars) {
+    for (auto character : chars) {
+      switch (character) {
+        case '\t':
+          builder.Append("\\t");
+          break;
+        case '\n':
+          builder.Append("\\n");
+          break;
+        case '\r':
+          builder.Append("\\r");
+          break;
+        case '"':
+          builder.Append("\\\"");
+          break;
+        case '\\':
+          builder.Append("\\\\");
+          break;
+        default:
+          if (IsAsciiPrintable(character)) {
+            builder.Append(static_cast<char>(character));
+          } else {
+            // Print "\uXXXX" for control or non-ASCII characters.
+            builder.AppendFormat("\\u%04X", character);
+          }
+          break;
+      }
     }
-  }
+  });
   builder.Append('"');
   return builder.ToString();
 }
@@ -392,8 +393,9 @@ int CodeUnitCompareIgnoringAsciiCase(const StringView& a, const StringView& b) {
 
 UChar32 StringView::CodePointAt(size_type i) const {
   SECURITY_DCHECK(i < length());
-  if (Is8Bit())
-    return UNSAFE_TODO((*this)[i]);
+  if (Is8Bit()) {
+    return Span8()[i];
+  }
   return blink::CodePointAt(Span16(), i);
 }
 
@@ -411,7 +413,7 @@ StringView::size_type StringView::NextCodePointOffset(size_type i) const {
 
 UChar32 StringView::CodePointAtAndNext(size_type& i) const {
   if (Is8Bit()) {
-    return UNSAFE_TODO((*this)[i++]);
+    return Span8()[i++];
   }
   return blink::CodePointAtAndNext(Span16(), i);
 }

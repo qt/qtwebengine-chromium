@@ -265,6 +265,9 @@ void PassthroughTouchEventQueue::FlushQueue() {
           blink::mojom::InputEventResultState::kNoConsumerExists);
     }
     AckTouchEventToClient(event, event.ack_source(), event.ack_state());
+    if (!weak_this) {
+      return;  // Object was destroyed during the ACK, bail out safely.
+    }
   }
 }
 

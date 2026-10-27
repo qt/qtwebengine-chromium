@@ -22,22 +22,6 @@ namespace internal {
 
 class JSProxy;
 
-enum class WasmValueType {
-  kI8,
-  kI16,
-  kI32,
-  kU32,  // Used only for loading WasmArray length.
-  kI64,
-  kF32,
-  kF64,
-  kS128,
-
-  kRef,
-  kRefNull,
-
-  kNumTypes
-};
-
 // A set of bit fields representing Smi handlers for loads and a HeapObject
 // that represents load handlers that can't be encoded in a Smi.
 // TODO(ishell): move to load-handler.h
@@ -100,22 +84,20 @@ V8_OBJECT class LoadHandler final : public DataHandler {
   // Encoding when KindBits contains kNormal.
   //
 
+  // Indicates whether the property is a data property.
+  using IsDataPropertyBits = LookupOnLookupStartObjectBits::Next<bool, 1>;
   // Index of a value entry in the dictionary.
-  using DictionaryIndexBits = LookupOnLookupStartObjectBits::Next<unsigned, 24>;
+  using DictionaryIndexBits = IsDataPropertyBits::Next<unsigned, 23>;
   // Make sure we don't overflow the smi.
   static_assert(DictionaryIndexBits::kLastUsedBit < kSmiValueSize);
 
   //
   // Encoding when KindBits contains kField.
   //
-  using IsWasmStructBits = LookupOnLookupStartObjectBits::Next<bool, 1>;
-
-  //
-  // Encoding when KindBits contains kField and IsWasmStructBits is 0.
-  //
   // +1 here is to cover all possible JSObject header sizes.
   using StorageOffsetInWordsBits =
-      IsWasmStructBits::Next<unsigned, kDescriptorIndexBitCount + 1>;
+      LookupOnLookupStartObjectBits::Next<unsigned,
+                                          kDescriptorIndexBitCount + 1>;
   using IsInobjectBits = StorageOffsetInWordsBits::Next<bool, 1>;
   using IsDoubleBits = IsInobjectBits::Next<bool, 1>;
   using DescriptorIndexBits =
@@ -124,21 +106,11 @@ V8_OBJECT class LoadHandler final : public DataHandler {
   static_assert(DescriptorIndexBits::kLastUsedBit < kSmiValueSize);
 
   // Fake descriptor indices for kField access to the magic length field on
-  // primitive strings and arrays.
+  // arrays.
   // TODO(leszeks): This is a bit hacky, maybe we should just have a different
   // handler for these.
-  static constexpr unsigned kStringLengthFieldDescriptorIndex =
-      DescriptorIndexBits::kMax;
   static constexpr unsigned kArrayLengthFieldDescriptorIndex =
       DescriptorIndexBits::kMax - 1;
-
-  //
-  // Encoding when KindBits contains kField and IsWasmStructBits is 1.
-  //
-  using WasmFieldTypeBits = IsWasmStructBits::Next<WasmValueType, 4>;
-  using WasmFieldOffsetBits = WasmFieldTypeBits::Next<unsigned, 20>;
-  // Make sure we don't overflow the smi.
-  static_assert(WasmFieldOffsetBits::kLastUsedBit < kSmiValueSize);
 
   //
   // Encoding when KindBits contains kElement or kIndexedString.
@@ -148,23 +120,11 @@ V8_OBJECT class LoadHandler final : public DataHandler {
   //
   // Encoding when KindBits contains kElement.
   //
-  using IsWasmArrayBits = AllowOutOfBoundsBits::Next<bool, 1>;
-
-  //
-  // Encoding when KindBits contains kElement and IsWasmArrayBits is 0.
-  //
-  using IsJsArrayBits = IsWasmArrayBits::Next<bool, 1>;
+  using IsJsArrayBits = AllowOutOfBoundsBits::Next<bool, 1>;
   using AllowHandlingHole = IsJsArrayBits::Next<bool, 1>;
   using ElementsKindBits = AllowHandlingHole::Next<ElementsKind, 8>;
   // Make sure we don't overflow the smi.
   static_assert(ElementsKindBits::kLastUsedBit < kSmiValueSize);
-
-  //
-  // Encoding when KindBits contains kElement and IsWasmArrayBits is 1.
-  //
-  using WasmArrayTypeBits = IsWasmArrayBits::Next<WasmValueType, 4>;
-  // Make sure we don't overflow the smi.
-  static_assert(WasmArrayTypeBits::kLastUsedBit < kSmiValueSize);
 
   //
   // Encoding when KindBits contains kModuleExport.
@@ -177,8 +137,9 @@ V8_OBJECT class LoadHandler final : public DataHandler {
   // Decodes kind from Smi-handler.
   static inline Kind GetHandlerKind(Tagged<Smi> smi_handler);
 
-  // Creates a Smi-handler for loading a property from a slow object.
-  static inline Handle<Smi> LoadNormal(Isolate* isolate, InternalIndex entry);
+  // Creates a Smi-handler for loading a property from a dictionary.
+  static inline Handle<Smi> LoadNormal(Isolate* isolate, InternalIndex entry,
+                                       bool is_data_property);
 
   // Creates a Smi-handler for loading a property from a global object.
   static inline Handle<Smi> LoadGlobal(Isolate* isolate);
@@ -218,6 +179,25 @@ V8_OBJECT class LoadHandler final : public DataHandler {
   // Creates a Smi-handler for calling a getter on a proxy.
   static inline Handle<Smi> LoadProxy(Isolate* isolate);
 
+  static Handle<LoadHandler> LoadProxyFast(Isolate* isolate,
+                                           DirectHandle<Map> target_map,
+                                           DirectHandle<Map> handler_map,
+                                           DirectHandle<Smi> get_smi_handler,
+                                           DirectHandle<Object> trap_method);
+
+  static inline bool IsFastProxyHandler(Tagged<MaybeObject> handler);
+
+  // ProxyIC
+  static constexpr int kProxyTargetMapDataIndex = 1;
+  // Inner LoadIC
+  static constexpr int kProxyHandlerMapDataIndex = 2;
+  static constexpr int kProxyGetSmiHandlerDataIndex = 3;
+  // Inner CallIC
+  static constexpr int kProxyTrapMethodDataIndex = 4;
+  static constexpr int kProxyCounterDataIndex = 5;
+  // Size
+  static constexpr int kProxyDataFieldCount = 5;
+
   // Creates a Smi-handler for loading a native data property from fast object.
   static inline Handle<Smi> LoadNativeDataProperty(Isolate* isolate,
                                                    InternalIndex descriptor);
@@ -229,12 +209,6 @@ V8_OBJECT class LoadHandler final : public DataHandler {
   // |index| is the index to the "value" slot in the Module's "exports"
   // dictionary.
   static inline Handle<Smi> LoadModuleExport(Isolate* isolate, int index);
-
-  static inline DirectHandle<Smi> LoadWasmStructField(Isolate* isolate,
-                                                      WasmValueType type,
-                                                      int offset);
-  static inline DirectHandle<Smi> LoadWasmArrayElement(Isolate* isolate,
-                                                       WasmValueType type);
 
   // Creates a data handler that represents a prototype chain check followed
   // by given Smi-handler that encoded a load from the holder.
@@ -446,10 +420,6 @@ V8_OBJECT class StoreHandler final : public DataHandler {
                                        FieldIndex field_index,
                                        Representation representation);
 } V8_OBJECT_END;
-
-inline const char* WasmValueType2String(WasmValueType type);
-
-std::ostream& operator<<(std::ostream& os, WasmValueType type);
 
 }  // namespace internal
 }  // namespace v8

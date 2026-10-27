@@ -208,13 +208,31 @@ struct InternalFormat
 
     [[nodiscard]] bool computeCompressedImageSize(const Extents &size, GLuint *resultOut) const;
 
+    [[nodiscard]] bool computeImageSize(const Extents &size,
+                                        GLsizei samples,
+                                        GLuint *resultOut) const;
+
     [[nodiscard]] std::pair<GLuint, GLuint> getCompressedImageMinBlocks() const;
 
+    [[nodiscard]] bool computeRowDepthSkipBytes(GLenum formatType,
+                                                GLsizei width,
+                                                GLsizei height,
+                                                const gl::PixelStoreStateBase &unpack,
+                                                bool is3D,
+                                                GLuint *rowPitchOut,
+                                                GLuint *depthPitchOut,
+                                                GLuint *skipBytesOut) const;
+    [[nodiscard]] bool computeRowSkipBytes(GLenum formatType,
+                                           GLsizei width,
+                                           const gl::PixelPackState &pack,
+                                           GLuint *rowPitchOut,
+                                           GLuint *skipBytesOut) const;
     [[nodiscard]] bool computeSkipBytes(GLenum formatType,
                                         GLuint rowPitch,
                                         GLuint depthPitch,
-                                        const PixelStoreStateBase &state,
-                                        bool is3D,
+                                        GLuint skipRows,
+                                        GLuint skipPixels,
+                                        GLuint skipImages,
                                         GLuint *resultOut) const;
 
     [[nodiscard]] bool computePackUnpackEndByte(GLenum formatType,
@@ -552,6 +570,21 @@ ANGLE_INLINE bool IsBGRAFormat(const GLenum internalFormat)
         case GL_BGRX8_ANGLEX:
         case GL_BGR565_ANGLEX:
         case GL_BGR10_A2_ANGLEX:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+ANGLE_INLINE bool IsRGBXOrBGRXFormat(const GLenum internalFormat)
+{
+    switch (internalFormat)
+    {
+        case GL_RGBX8_ANGLE:
+        case GL_RGBX8_SRGB_ANGLEX:
+        case GL_BGRX8_ANGLEX:
+        case GL_BGRX8_SRGB_ANGLEX:
             return true;
 
         default:

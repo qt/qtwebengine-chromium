@@ -119,6 +119,16 @@ struct StatusTraitsHelper {
     }
   }
 
+  static constexpr bool HasOkEnumValue() {
+    if constexpr (requires { &T::OkEnumValue; }) {
+      return true;
+    } else if constexpr (requires { T::Codes::kOk; }) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
   static std::string RenderGroupAndCode(T::Codes code) {
     if constexpr (requires { &T::ReadableCodeName; }) {
       return base::StrCat({T::Group(), "::", T::ReadableCodeName(code)});
@@ -229,6 +239,17 @@ class MEDIA_EXPORT TypedStatus {
     AddCause(std::move(cause));
   }
 
+  template <typename D>
+  TypedStatus(Codes code,
+              std::string message,
+              std::string data_name,
+              const D& data,
+              const base::Location& location = FROM_HERE)
+      : TypedStatus(code, std::move(message), location) {
+    DCHECK(data_);
+    data_->data.GetDict().Set(std::move(data_name), MediaSerialize(data));
+  }
+
   // Constructor to create a new TypedStatus from a numeric code & message.
   // These are immutable; if you'd like to change them, then you likely should
   // create a new TypedStatus.
@@ -260,7 +281,11 @@ class MEDIA_EXPORT TypedStatus {
     return *this;
   }
 
-  bool is_ok() const { return !data_; }
+  bool is_ok() const
+    requires(internal::StatusTraitsHelper<Traits>::HasOkEnumValue())
+  {
+    return !data_;
+  }
 
   Codes code() const {
     if (!data_)
@@ -359,11 +384,17 @@ class MEDIA_EXPORT TypedStatus {
     // Create an Or type implicitly from a TypedStatus
     Or(TypedStatus<T>&& error) : error_(std::move(error)) {
       // `error_` must not be ok.
-      DCHECK(!error_->is_ok());
+      if constexpr (internal::StatusTraitsHelper<Traits>::HasOkEnumValue()) {
+        // `error_` must not be ok.
+        DCHECK(!error_->is_ok());
+      }
     }
 
     Or(const TypedStatus<T>& error) : error_(error) {
-      DCHECK(!error_->is_ok());
+      if constexpr (internal::StatusTraitsHelper<Traits>::HasOkEnumValue()) {
+        // `error_` must not be ok.
+        DCHECK(!error_->is_ok());
+      }
     }
 
     // Create an Or type implicitly from the alternate O.
@@ -373,7 +404,22 @@ class MEDIA_EXPORT TypedStatus {
     // Create an Or type explicitly from a code
     Or(typename T::Codes code, const base::Location& location = FROM_HERE)
         : error_(TypedStatus<T>(code, "", location)) {
-      DCHECK(!error_->is_ok());
+      if constexpr (internal::StatusTraitsHelper<Traits>::HasOkEnumValue()) {
+        // `error_` must not be ok.
+        DCHECK(!error_->is_ok());
+      }
+    }
+
+    // Create an Or type explicitly from a code and a cause
+    template <TypedStatusImplTraits C>
+    Or(typename T::Codes code,
+       TypedStatus<C>&& cause,
+       const ::base::Location& location = FROM_HERE)
+        : error_(TypedStatus<T>(code, std::move(cause), location)) {
+      if constexpr (internal::StatusTraitsHelper<Traits>::HasOkEnumValue()) {
+        // `error_` must not be ok.
+        CHECK(!error_->is_ok());
+      }
     }
 
     // Create an Or type implicitly from any brace-initializer list that could
@@ -384,7 +430,10 @@ class MEDIA_EXPORT TypedStatus {
        const Rest&... rest,
        const base::Location& location = FROM_HERE)
         : error_(TypedStatus<T>(code, first, rest..., location)) {
-      DCHECK(!error_->is_ok());
+      if constexpr (internal::StatusTraitsHelper<Traits>::HasOkEnumValue()) {
+        // `error_` must not be ok.
+        DCHECK(!error_->is_ok());
+      }
     }
 
     // Move- and copy- construction and assignment are okay.

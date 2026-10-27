@@ -15,7 +15,7 @@ if (media_use_symphonia) {
     sources = [ "symphonia_glue.rs" ]
     cxx_bindings = [ "symphonia_glue.rs" ]
     visibility = [ ":*" ]
-    deps = [ "//third_party/rust/symphonia/v0_5:lib" ]
+    deps = [ "//third_party/rust/symphonia/v0_6:lib" ]
   }
 }
 
@@ -58,6 +58,8 @@ source_set("filters") {
     "file_data_source.h",
     "frame_processor.cc",
     "frame_processor.h",
+    "h26x_annex_b_bitstream_builder.cc",
+    "h26x_annex_b_bitstream_builder.h",
     "memory_data_source.cc",
     "memory_data_source.h",
     "offloading_video_decoder.cc",
@@ -249,13 +251,6 @@ source_set("filters") {
     }
   }
 
-  if (is_win || use_vaapi || enable_hevc_parser_and_hw_decoder) {
-    sources += [
-      "h26x_annex_b_bitstream_builder.cc",
-      "h26x_annex_b_bitstream_builder.h",
-    ]
-  }
-
   if (enable_hls_demuxer) {
     sources += [
       "hls_data_source_provider.cc",
@@ -349,13 +344,14 @@ source_set("unit_tests") {
   ]
 
   if (is_android) {
-    sources += [ "android/video_frame_extractor_unittest.cc" ]
     sources -= [
       "decrypting_audio_decoder_unittest.cc",
       "decrypting_video_decoder_unittest.cc",
     ]
 
-    deps += [ "//ui/gl" ]
+    if (media_use_ffmpeg) {
+      sources += [ "android/video_frame_extractor_unittest.cc" ]
+    }
   }
 
   # libvpx for running vpx test on chromecast doesn't support high bit depth.
@@ -466,7 +462,7 @@ if (media_use_symphonia) {
       ":symphonia_glue",
       "//testing/rust_gtest_interop",
       "//third_party/rust/num_traits/v0_2:lib",
-      "//third_party/rust/symphonia/v0_5:lib",
+      "//third_party/rust/symphonia/v0_6:lib",
     ]
   }
 }

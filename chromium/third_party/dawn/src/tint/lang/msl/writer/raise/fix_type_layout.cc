@@ -31,6 +31,7 @@
 #include <utility>
 
 #include "src/tint/lang/core/ir/builder.h"
+#include "src/tint/lang/core/ir/traverse.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/type/manager.h"
 #include "src/tint/lang/msl/ir/builtin_call.h"
@@ -120,6 +121,62 @@ struct State {
                     });
                 }
             }
+
+            // Buffer view functions and their decompositions can contain vec3 types in a
+            // host-shareable address space. Look for those and update them to use packed_vec3.
+            // Note: bufferView, bufferArrayView, and msl.pointer_offset are handled here to avoid
+            // any unnecessary pass dependency issues.
+            Traverse(func->Block(), [&](core::ir::Instruction* inst) {
+                tint::Switch(
+                    inst,
+                    [&](core::ir::CoreBuiltinCall* core_call) {
+                        if (core_call->Func() != core::BuiltinFn::kBufferView &&
+                            core_call->Func() != core::BuiltinFn::kBufferArrayView) {
+                            return;
+                        }
+
+                        auto* ptr = core_call->Result()->Type()->As<core::type::Pointer>();
+                        if (!ptr || !AddressSpaceNeedsPacking(ptr->AddressSpace())) {
+                            return;
+                        }
+
+                        auto* packed_store_type = RewriteType(ptr->StoreType());
+                        if (packed_store_type == ptr->StoreType()) {
+                            return;
+                        }
+                        auto* new_ptr =
+                            ty.ptr(ptr->AddressSpace(), packed_store_type, ptr->Access());
+                        core_call->Result()->SetType(new_ptr);
+                        core_call->SetExplicitTemplateParams(Vector{packed_store_type});
+                        core_call->Result()->ForEachUseSorted([&](core::ir::Usage use) {
+                            UpdateUsage(use, ptr->StoreType(), packed_store_type);
+                        });
+                    },
+                    [&](msl::ir::BuiltinCall* msl_call) {
+                        if (msl_call->Func() != BuiltinFn::kPointerOffset) {
+                            return;
+                        }
+
+                        auto* ptr = msl_call->Result()->Type()->As<core::type::Pointer>();
+                        if (!ptr || !AddressSpaceNeedsPacking(ptr->AddressSpace())) {
+                            return;
+                        }
+
+                        auto* packed_store_type = RewriteType(ptr->StoreType());
+                        if (packed_store_type == ptr->StoreType()) {
+                            return;
+                        }
+                        auto* new_ptr =
+                            ty.ptr(ptr->AddressSpace(), packed_store_type, ptr->Access());
+                        msl_call->Result()->SetType(new_ptr);
+                        if (!msl_call->ExplicitTemplateParams().IsEmpty()) {
+                            msl_call->SetExplicitTemplateParams(Vector{packed_store_type});
+                        }
+                        msl_call->Result()->ForEachUseSorted([&](core::ir::Usage use) {
+                            UpdateUsage(use, ptr->StoreType(), packed_store_type);
+                        });
+                    });
+            });
         }
     }
 

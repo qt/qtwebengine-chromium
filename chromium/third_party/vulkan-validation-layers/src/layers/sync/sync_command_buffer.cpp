@@ -25,6 +25,7 @@
 #include "state_tracker/descriptor_sets.h"
 #include "state_tracker/image_state.h"
 #include "state_tracker/buffer_state.h"
+#include "state_tracker/event_state.h"
 #include "state_tracker/ray_tracing_state.h"
 #include "state_tracker/render_pass_state.h"
 #include "state_tracker/shader_module.h"
@@ -913,7 +914,9 @@ void CommandBufferAccessContext::RecordDrawVertexIndex(uint32_t indexCount, uint
     const auto& index_binding = cb_state_->index_buffer_binding;
     // TODO - Handle https://gitlab.khronos.org/vulkan/Vulkan-ValidationLayers/-/issues/45
     const auto index_buf_state = sync_state_.Get<vvl::Buffer>(index_binding.Buffer());
-    if (!index_buf_state) return;
+    if (!index_buf_state) {
+        return;
+    }
 
     const uint32_t index_size = IndexTypeByteSize(index_binding.index_type);
     const AccessRange range = MakeRangeForIndexData(index_binding.BufferOffset(), firstIndex, indexCount, index_size);
@@ -1009,7 +1012,9 @@ void CommandBufferAccessContext::RecordDrawAttachment(const ResourceUsageTag tag
 void CommandBufferAccessContext::RecordDrawDynamicRenderingAttachment(ResourceUsageTag tag) {
     const auto& last_bound_state = cb_state_->GetLastBoundGraphics();
     const auto* pipe = last_bound_state.pipeline_state;
-    if (!pipe || pipe->RasterizationDisabled()) return;
+    if (!pipe || pipe->RasterizationDisabled()) {
+        return;
+    }
 
     const auto& list = pipe->fs_writable_output_location_list;
     auto& access_context = *GetCurrentAccessContext();
@@ -1115,6 +1120,9 @@ std::optional<CommandBufferAccessContext::ClearAttachmentInfo> CommandBufferAcce
         attachment_view = current_renderpass_context_->GetClearAttachmentView(clear_attachment);
     } else if (dynamic_rendering_info_) {
         attachment_view = dynamic_rendering_info_->GetClearAttachmentView(clear_attachment);
+    }
+    if (!attachment_view) {
+        return {};
     }
 
     const bool separate_depth_stencil_attachment_access =

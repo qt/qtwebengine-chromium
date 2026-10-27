@@ -49,6 +49,11 @@ void CPDF_ContentMarks::AddMark(ByteString name) {
   mark_data_->AddMark(std::move(name));
 }
 
+void CPDF_ContentMarks::AddExistingMark(RetainPtr<CPDF_ContentMarkItem> mark) {
+  EnsureMarkDataExists();
+  mark_data_->AddExistingMark(std::move(mark));
+}
+
 void CPDF_ContentMarks::AddMarkWithDirectDict(ByteString name,
                                               RetainPtr<CPDF_Dictionary> dict) {
   EnsureMarkDataExists();
@@ -134,6 +139,11 @@ int CPDF_ContentMarks::MarkData::GetMarkedContentID() const {
 void CPDF_ContentMarks::MarkData::AddMark(ByteString name) {
   auto pItem = pdfium::MakeRetain<CPDF_ContentMarkItem>(std::move(name));
   marks_.push_back(pItem);
+}
+
+void CPDF_ContentMarks::MarkData::AddExistingMark(
+    RetainPtr<CPDF_ContentMarkItem> mark) {
+  marks_.push_back(std::move(mark));
 }
 
 void CPDF_ContentMarks::MarkData::AddMarkWithDirectDict(

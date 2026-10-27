@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_BINARY_FUNCTORS_H
 #define EIGEN_BINARY_FUNCTORS_H
@@ -53,8 +54,8 @@ template <typename LhsScalar, typename RhsScalar>
 struct functor_traits<scalar_sum_op<LhsScalar, RhsScalar>> {
   enum {
     Cost = (int(NumTraits<LhsScalar>::AddCost) + int(NumTraits<RhsScalar>::AddCost)) / 2,  // rough estimate!
-    PacketAccess =
-        is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasAdd && packet_traits<RhsScalar>::HasAdd
+    PacketAccess = std::is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasAdd &&
+                   packet_traits<RhsScalar>::HasAdd
     // TODO: vectorize mixed sum
   };
 };
@@ -93,8 +94,8 @@ template <typename LhsScalar, typename RhsScalar>
 struct functor_traits<scalar_product_op<LhsScalar, RhsScalar>> {
   enum {
     Cost = (int(NumTraits<LhsScalar>::MulCost) + int(NumTraits<RhsScalar>::MulCost)) / 2,  // rough estimate!
-    PacketAccess =
-        is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasMul && packet_traits<RhsScalar>::HasMul
+    PacketAccess = std::is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasMul &&
+                   packet_traits<RhsScalar>::HasMul
     // TODO: vectorize mixed product
   };
 };
@@ -130,7 +131,7 @@ template <typename LhsScalar, typename RhsScalar>
 struct functor_traits<scalar_conj_product_op<LhsScalar, RhsScalar>> {
   enum {
     Cost = NumTraits<LhsScalar>::MulCost,
-    PacketAccess = internal::is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasMul
+    PacketAccess = std::is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasMul
   };
 };
 
@@ -159,7 +160,7 @@ template <typename LhsScalar, typename RhsScalar, int NaNPropagation>
 struct functor_traits<scalar_min_op<LhsScalar, RhsScalar, NaNPropagation>> {
   enum {
     Cost = (NumTraits<LhsScalar>::AddCost + NumTraits<RhsScalar>::AddCost) / 2,
-    PacketAccess = internal::is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasMin
+    PacketAccess = std::is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasMin
   };
 };
 
@@ -188,7 +189,7 @@ template <typename LhsScalar, typename RhsScalar, int NaNPropagation>
 struct functor_traits<scalar_max_op<LhsScalar, RhsScalar, NaNPropagation>> {
   enum {
     Cost = (NumTraits<LhsScalar>::AddCost + NumTraits<RhsScalar>::AddCost) / 2,
-    PacketAccess = internal::is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasMax
+    PacketAccess = std::is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasMax
   };
 };
 
@@ -203,8 +204,8 @@ template <typename LhsScalar, typename RhsScalar, ComparisonName cmp, bool UseTy
 struct functor_traits<scalar_cmp_op<LhsScalar, RhsScalar, cmp, UseTypedComparators>> {
   enum {
     Cost = (NumTraits<LhsScalar>::AddCost + NumTraits<RhsScalar>::AddCost) / 2,
-    PacketAccess = (UseTypedComparators || is_same<LhsScalar, bool>::value) && is_same<LhsScalar, RhsScalar>::value &&
-                   packet_traits<LhsScalar>::HasCmp
+    PacketAccess = (UseTypedComparators || std::is_same<LhsScalar, bool>::value) &&
+                   std::is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasCmp
   };
 };
 
@@ -382,8 +383,8 @@ template <typename LhsScalar, typename RhsScalar>
 struct functor_traits<scalar_difference_op<LhsScalar, RhsScalar>> {
   enum {
     Cost = (int(NumTraits<LhsScalar>::AddCost) + int(NumTraits<RhsScalar>::AddCost)) / 2,
-    PacketAccess =
-        is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasSub && packet_traits<RhsScalar>::HasSub
+    PacketAccess = std::is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasSub &&
+                   packet_traits<RhsScalar>::HasSub
   };
 };
 
@@ -431,8 +432,8 @@ template <typename LhsScalar, typename RhsScalar>
 struct functor_traits<scalar_quotient_op<LhsScalar, RhsScalar>> {
   typedef typename scalar_quotient_op<LhsScalar, RhsScalar>::result_type result_type;
   enum {
-    PacketAccess =
-        is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasDiv && packet_traits<RhsScalar>::HasDiv,
+    PacketAccess = std::is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasDiv &&
+                   packet_traits<RhsScalar>::HasDiv,
     Cost = scalar_div_cost<result_type, PacketAccess>::value
   };
 };
@@ -573,7 +574,7 @@ template <typename Scalar>
 struct scalar_bitwise_and_op {
   EIGEN_STATIC_ASSERT(!NumTraits<Scalar>::RequireInitialization,
                       BITWISE OPERATIONS MAY ONLY BE PERFORMED ON PLAIN DATA TYPES)
-  EIGEN_STATIC_ASSERT((!internal::is_same<Scalar, bool>::value), DONT USE BITWISE OPS ON BOOLEAN TYPES)
+  EIGEN_STATIC_ASSERT((!std::is_same<Scalar, bool>::value), DONT USE BITWISE OPS ON BOOLEAN TYPES)
   using result_type = Scalar;
   EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE Scalar operator()(const Scalar& a, const Scalar& b) const {
     return bitwise_binary_impl<Scalar>::run_and(a, b);
@@ -597,7 +598,7 @@ template <typename Scalar>
 struct scalar_bitwise_or_op {
   EIGEN_STATIC_ASSERT(!NumTraits<Scalar>::RequireInitialization,
                       BITWISE OPERATIONS MAY ONLY BE PERFORMED ON PLAIN DATA TYPES)
-  EIGEN_STATIC_ASSERT((!internal::is_same<Scalar, bool>::value), DONT USE BITWISE OPS ON BOOLEAN TYPES)
+  EIGEN_STATIC_ASSERT((!std::is_same<Scalar, bool>::value), DONT USE BITWISE OPS ON BOOLEAN TYPES)
   using result_type = Scalar;
   EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE Scalar operator()(const Scalar& a, const Scalar& b) const {
     return bitwise_binary_impl<Scalar>::run_or(a, b);
@@ -621,7 +622,7 @@ template <typename Scalar>
 struct scalar_bitwise_xor_op {
   EIGEN_STATIC_ASSERT(!NumTraits<Scalar>::RequireInitialization,
                       BITWISE OPERATIONS MAY ONLY BE PERFORMED ON PLAIN DATA TYPES)
-  EIGEN_STATIC_ASSERT((!internal::is_same<Scalar, bool>::value), DONT USE BITWISE OPS ON BOOLEAN TYPES)
+  EIGEN_STATIC_ASSERT((!std::is_same<Scalar, bool>::value), DONT USE BITWISE OPS ON BOOLEAN TYPES)
   using result_type = Scalar;
   EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE Scalar operator()(const Scalar& a, const Scalar& b) const {
     return bitwise_binary_impl<Scalar>::run_xor(a, b);
@@ -660,7 +661,7 @@ template <typename LhsScalar, typename RhsScalar>
 struct functor_traits<scalar_absolute_difference_op<LhsScalar, RhsScalar>> {
   enum {
     Cost = (NumTraits<LhsScalar>::AddCost + NumTraits<RhsScalar>::AddCost) / 2,
-    PacketAccess = is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasAbsDiff
+    PacketAccess = std::is_same<LhsScalar, RhsScalar>::value && packet_traits<LhsScalar>::HasAbsDiff
   };
 };
 
@@ -669,7 +670,7 @@ struct scalar_atan2_op {
   using Scalar = LhsScalar;
 
   static constexpr bool Enable =
-      is_same<LhsScalar, RhsScalar>::value && !NumTraits<Scalar>::IsInteger && !NumTraits<Scalar>::IsComplex;
+      std::is_same<LhsScalar, RhsScalar>::value && !NumTraits<Scalar>::IsInteger && !NumTraits<Scalar>::IsComplex;
   EIGEN_STATIC_ASSERT(Enable, "LhsScalar and RhsScalar must be the same non-integer, non-complex type")
 
   EIGEN_DEVICE_FUNC constexpr EIGEN_STRONG_INLINE Scalar operator()(const Scalar& y, const Scalar& x) const {
@@ -685,7 +686,7 @@ template <typename LhsScalar, typename RhsScalar>
 struct functor_traits<scalar_atan2_op<LhsScalar, RhsScalar>> {
   using Scalar = LhsScalar;
   enum {
-    PacketAccess = is_same<LhsScalar, RhsScalar>::value && packet_traits<Scalar>::HasATan &&
+    PacketAccess = std::is_same<LhsScalar, RhsScalar>::value && packet_traits<Scalar>::HasATan &&
                    packet_traits<Scalar>::HasDiv && !NumTraits<Scalar>::IsInteger && !NumTraits<Scalar>::IsComplex,
     Cost = int(scalar_div_cost<Scalar, PacketAccess>::value) + int(functor_traits<scalar_atan_op<Scalar>>::Cost)
   };
@@ -694,9 +695,7 @@ struct functor_traits<scalar_atan2_op<LhsScalar, RhsScalar>> {
 //---------- binary functors bound to a constant, thus appearing as a unary functor ----------
 
 // The following two classes permits to turn any binary functor into a unary one with one argument bound to a constant
-// value. They are analogues to std::binder1st/binder2nd but with the following differences:
-//  - they are compatible with packetOp
-//  - they are portable across C++ versions (the std::binder* are deprecated in C++11)
+// value. They are analogues to the removed std::binder1st/binder2nd and are also compatible with packetOp.
 template <typename BinaryOp>
 struct bind1st_op : BinaryOp {
   typedef typename BinaryOp::first_argument_type first_argument_type;

@@ -67,7 +67,7 @@ func list(cfg *webpagereplay.HttpArchiveConfig, a *webpagereplay.Archive, printF
 }
 
 func readMetadata(a *webpagereplay.Archive) error {
-	fmt.Printf(a.Metadata)
+	fmt.Print(a.Metadata)
 	if a.Metadata != "" && !strings.HasSuffix(a.Metadata, "\n") {
 		fmt.Printf("\n")
 	}
@@ -542,6 +542,19 @@ func main() {
 			Before:    checkArgs(2),
 			Action: func(c *cli.Context) error {
 				return editMetadata(loadArchiveOrDie(c, 0), c.Args().Get(1))
+			},
+		},
+		&cli.Command{
+			Name:      "ls-scripts",
+			Usage:     "List scripts embedded in an archive by name",
+			ArgsUsage: "archive",
+			Before:    checkArgs(1),
+			Action: func(c *cli.Context) error {
+				archive := loadArchiveOrDie(c, 0)
+				for name := range archive.InjectedScripts {
+					fmt.Println(name)
+				}
+				return nil
 			},
 		},
 	}

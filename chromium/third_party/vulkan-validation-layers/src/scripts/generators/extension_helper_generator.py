@@ -28,7 +28,7 @@ from pyparsing import ParseResults
 # From the Vulkan-Headers
 from parse_dependency import dependencyBNF
 
-def parseExpr(expr): return dependencyBNF().parseString(expr, parseAll=True)
+def parseExpr(expr): return dependencyBNF().parse_string(expr, parseAll=True)
 
 def dependCheck(pr: ParseResults, token, op, start_group, end_group) -> None:
     """
@@ -352,7 +352,9 @@ class ExtensionHelperOutputGenerator(BaseGenerator):
             InstanceExtensions::InstanceExtensions(APIVersion requested_api_version, const VkInstanceCreateInfo* pCreateInfo) {
                 // Initialize struct data, robust to invalid pCreateInfo
                 api_version = NormalizeApiVersion(requested_api_version);
-                if (!api_version.Valid()) return;
+                if (!api_version.Valid()) {
+                    return;
+                }
 
                 const auto promotion_info_map = GetInstancePromotionInfoMap();
                 for (const auto& version_it : promotion_info_map) {
@@ -384,7 +386,9 @@ class ExtensionHelperOutputGenerator(BaseGenerator):
                 : InstanceExtensions(instance_ext) {
 
                 auto api_version = NormalizeApiVersion(requested_api_version);
-                if (!api_version.Valid()) return;
+                if (!api_version.Valid()) {
+                    return;
+                }
 
                 const auto promotion_info_map = GetDevicePromotionInfoMap();
                 for (const auto& version_it : promotion_info_map) {
@@ -440,7 +444,9 @@ class ExtensionHelperOutputGenerator(BaseGenerator):
                 : InstanceExtensions(instance_ext) {
 
                 auto api_version = NormalizeApiVersion(requested_api_version);
-                if (!api_version.Valid()) return;
+                if (!api_version.Valid()) {
+                    return;
+                }
 
                 const auto promotion_info_map = GetDevicePromotionInfoMap();
                 for (const auto& version_it : promotion_info_map) {

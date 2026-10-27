@@ -28,6 +28,7 @@
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/service/layers/layer_context_impl.h"
 #include "components/viz/service/layers/layer_context_impl_base_unittest.h"
+#include "components/viz/service/layers/viz_layer_tree_host_impl.h"
 #include "components/viz/test/fake_compositor_frame_sink_client.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "services/viz/public/mojom/compositing/layer_context.mojom.h"
@@ -173,11 +174,11 @@ class LayerContextImplUpdateDisplayTreeTransformNodeTest
                                        ->property_trees()
                                        ->transform_tree()
                                        .size())) {
-      return layer_context_impl_->host_impl()
-          ->active_tree()
-          ->property_trees()
-          ->transform_tree_mutable()
-          .Node(node_id);
+      return &layer_context_impl_->host_impl()
+                  ->active_tree()
+                  ->property_trees()
+                  ->transform_tree_mutable()
+                  .MutableNode(node_id);
     }
     return nullptr;
   }
@@ -620,6 +621,39 @@ TEST_F(LayerContextImplUpdateDisplayTreeTransformNodeTest,
 }
 
 TEST_F(LayerContextImplUpdateDisplayTreeTransformNodeTest,
+       UpdateTransformTreePropertiesInvalidNodeIds) {
+  {
+    auto update = CreateDefaultUpdate();
+    auto tree_props = mojom::TransformTreeUpdate::New();
+    tree_props->page_scale_factor = 1.5f;
+    tree_props->device_scale_factor = 2.0f;
+    tree_props->device_transform_scale_factor = 2.5f;
+    // An out-of-bounds node ID.
+    tree_props->nodes_affected_by_outer_viewport_bounds_delta = {999999};
+    update->transform_tree_update = std::move(tree_props);
+    update->page_scale_factor = 1.5f;
+
+    auto result = layer_context_impl_->DoUpdateDisplayTree(std::move(update));
+    EXPECT_FALSE(result.has_value());
+  }
+
+  {
+    auto update = CreateDefaultUpdate();
+    auto tree_props = mojom::TransformTreeUpdate::New();
+    tree_props->page_scale_factor = 1.5f;
+    tree_props->device_scale_factor = 2.0f;
+    tree_props->device_transform_scale_factor = 2.5f;
+    // An out-of-bounds node ID.
+    tree_props->nodes_affected_by_safe_area_bottom = {999999};
+    update->transform_tree_update = std::move(tree_props);
+    update->page_scale_factor = 1.5f;
+
+    auto result = layer_context_impl_->DoUpdateDisplayTree(std::move(update));
+    EXPECT_FALSE(result.has_value());
+  }
+}
+
+TEST_F(LayerContextImplUpdateDisplayTreeTransformNodeTest,
        UpdateDrawnElasticOverscroll) {
   cc::LayerTreeImpl* active_tree =
       layer_context_impl_->host_impl()->active_tree();
@@ -1022,11 +1056,11 @@ class LayerContextImplUpdateDisplayTreeClipNodeTest
                                        ->property_trees()
                                        ->clip_tree()
                                        .size())) {
-      return layer_context_impl_->host_impl()
-          ->active_tree()
-          ->property_trees()
-          ->clip_tree_mutable()
-          .Node(node_id);
+      return &layer_context_impl_->host_impl()
+                  ->active_tree()
+                  ->property_trees()
+                  ->clip_tree_mutable()
+                  .MutableNode(node_id);
     }
     return nullptr;
   }
@@ -1175,11 +1209,11 @@ class LayerContextImplUpdateDisplayTreeEffectNodeTest
                                        ->property_trees()
                                        ->effect_tree()
                                        .size())) {
-      return layer_context_impl_->host_impl()
-          ->active_tree()
-          ->property_trees()
-          ->effect_tree_mutable()
-          .Node(node_id);
+      return &layer_context_impl_->host_impl()
+                  ->active_tree()
+                  ->property_trees()
+                  ->effect_tree_mutable()
+                  .MutableNode(node_id);
     }
     return nullptr;
   }
@@ -2046,11 +2080,11 @@ class LayerContextImplUpdateDisplayTreeScrollNodeTest
                                        ->property_trees()
                                        ->scroll_tree()
                                        .size())) {
-      return layer_context_impl_->host_impl()
-          ->active_tree()
-          ->property_trees()
-          ->scroll_tree_mutable()
-          .Node(node_id);
+      return &layer_context_impl_->host_impl()
+                  ->active_tree()
+                  ->property_trees()
+                  ->scroll_tree_mutable()
+                  .MutableNode(node_id);
     }
     return nullptr;
   }
@@ -2832,6 +2866,57 @@ TEST_F(LayerContextImplViewportPropertyIdsTest,
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error(),
             "Cannot set outer_clip or outer_scroll without valid inner_scroll");
+}
+
+TEST_F(LayerContextImplPropertyTreesTestBase,
+       EffectSizeChangedDoesNotTriggerRedrawUnlessRenderSurfacesChanged) {
+  // 1. Initial setup: Add an effect node WITHOUT a render surface.
+  auto update1 = CreateDefaultUpdate();
+  int node_id = AddEffectNode(update1.get(), cc::kSecondaryRootPropertyNodeId);
+  // Default render_surface_reason is kNone.
+  EXPECT_TRUE(
+      layer_context_impl_->DoUpdateDisplayTree(std::move(update1)).has_value());
+
+  auto* active_tree = layer_context_impl_->host_impl()->active_tree();
+  EXPECT_TRUE(active_tree->needs_update_draw_properties());
+  active_tree->clear_needs_update_draw_properties_for_testing();
+  EXPECT_FALSE(active_tree->needs_update_draw_properties());
+
+  // 2. Remove the effect node. effect_size_changed will be true.
+  auto update2 = CreateDefaultUpdate();
+  update2->num_effect_nodes = node_id;  // Assuming node_id is the last node
+  update2->effect_nodes.clear();
+
+  EXPECT_TRUE(
+      layer_context_impl_->DoUpdateDisplayTree(std::move(update2)).has_value());
+
+  // Verify that needs_update_draw_properties is NOT set (the goal of the TODO).
+  EXPECT_FALSE(active_tree->needs_update_draw_properties());
+
+  // 3. Add an effect node WITH a render surface.
+  auto update3 = CreateDefaultUpdate();
+  int node_id2 = AddEffectNode(update3.get(), cc::kSecondaryRootPropertyNodeId);
+  update3->effect_nodes.back()->render_surface_reason =
+      cc::RenderSurfaceReason::kTest;
+  update3->effect_nodes.back()->element_id = cc::ElementId(1234);
+  EXPECT_TRUE(
+      layer_context_impl_->DoUpdateDisplayTree(std::move(update3)).has_value());
+
+  EXPECT_TRUE(active_tree->needs_update_draw_properties());
+  active_tree->clear_needs_update_draw_properties_for_testing();
+  EXPECT_FALSE(active_tree->needs_update_draw_properties());
+
+  // 4. Remove the effect node with a render surface.
+  auto update4 = CreateDefaultUpdate();
+  update4->num_effect_nodes = node_id2;
+  update4->effect_nodes.clear();
+
+  EXPECT_TRUE(
+      layer_context_impl_->DoUpdateDisplayTree(std::move(update4)).has_value());
+
+  // Verify that needs_update_draw_properties IS set because a render surface
+  // was removed.
+  EXPECT_TRUE(active_tree->needs_update_draw_properties());
 }
 
 }  // namespace

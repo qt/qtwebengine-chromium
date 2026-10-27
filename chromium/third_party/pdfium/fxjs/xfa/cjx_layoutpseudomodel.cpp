@@ -98,12 +98,12 @@ CJS_Result CJX_LayoutPseudoModel::DoHWXYInternal(
 
   WideString unit = WideString::FromASCII("pt");
   if (params.size() >= 2) {
-    WideString tmp_unit = runtime->ToWideString(params[1]);
+    WideString tmp_unit = runtime->ToWideStringReentrant(params[1]);
     if (!tmp_unit.IsEmpty()) {
       unit = std::move(tmp_unit);
     }
   }
-  int32_t index = params.size() >= 3 ? runtime->ToInt32(params[2]) : 0;
+  int32_t index = params.size() >= 3 ? runtime->ToInt32Reentrant(params[2]) : 0;
   auto* pDocLayout = CXFA_LayoutProcessor::FromDocument(GetDocument());
   CXFA_ContentLayoutItem* pLayoutItem =
       ToContentLayoutItem(pDocLayout->GetLayoutItem(pNode));
@@ -382,17 +382,17 @@ CJS_Result CJX_LayoutPseudoModel::pageContent(
 
   int32_t index = 0;
   if (params.size() >= 1) {
-    index = runtime->ToInt32(params[0]);
+    index = runtime->ToInt32Reentrant(params[0]);
   }
 
   WideString wsType;
   if (params.size() >= 2) {
-    wsType = runtime->ToWideString(params[1]);
+    wsType = runtime->ToWideStringReentrant(params[1]);
   }
 
   bool bOnPageArea = false;
   if (params.size() >= 3) {
-    bOnPageArea = runtime->ToBoolean(params[2]);
+    bOnPageArea = runtime->ToBooleanReentrant(params[2]);
   }
 
   CXFA_FFNotify* pNotify = GetDocument()->GetNotify();

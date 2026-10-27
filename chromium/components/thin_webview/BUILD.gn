@@ -20,10 +20,12 @@ android_library("java") {
   sources = [
     "java/src/org/chromium/components/thinwebview/CompositorView.java",
     "java/src/org/chromium/components/thinwebview/ThinWebView.java",
+    "java/src/org/chromium/components/thinwebview/ThinWebViewAttachParams.java",
     "java/src/org/chromium/components/thinwebview/ThinWebViewConstraints.java",
   ]
 
   deps = [
+    "//base:callback_java",
     "//components/embedder_support/android:context_menu_java",
     "//components/embedder_support/android:web_contents_delegate_java",
     "//content/public/android:content_java",

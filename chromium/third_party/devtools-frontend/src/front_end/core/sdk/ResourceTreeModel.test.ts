@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Protocol from '../../generated/protocol.js';
 import {createTarget} from '../../testing/EnvironmentHelpers.js';
 import {
@@ -129,6 +131,18 @@ describeWithMockConnection('ResourceTreeModel', () => {
     navigate(getMainFrame(subframeTarget), {parentId: 'parentId' as Protocol.Page.FrameId});
     assert.isTrue(getResourceTreeModel(mainFrameTarget).mainFrame!.isOutermostFrame());
     assert.isFalse(getResourceTreeModel(subframeTarget).mainFrame!.isOutermostFrame());
+  });
+
+  it('identifies primary frame', async () => {
+    const tabTarget = createTarget({type: SDK.Target.Type.TAB});
+    const mainFrameTarget = createTarget({parentTarget: tabTarget});
+    const subframeTarget = createTarget({parentTarget: mainFrameTarget});
+
+    navigate(getMainFrame(mainFrameTarget));
+    navigate(getMainFrame(subframeTarget), {parentId: MAIN_FRAME_ID, id: 'child' as Protocol.Page.FrameId});
+
+    assert.isTrue(getResourceTreeModel(mainFrameTarget).mainFrame!.isPrimaryFrame());
+    assert.isFalse(getResourceTreeModel(subframeTarget).mainFrame!.isPrimaryFrame());
   });
 
   it('emits PrimaryPageChanged event upon prerender activation', async () => {

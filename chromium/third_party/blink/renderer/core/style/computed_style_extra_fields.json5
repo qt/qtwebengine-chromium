@@ -410,16 +410,6 @@
       invalidate: ["reshape"],
     },
     {
-      name: "TextAutosizingMultiplier",
-      inherited: true,
-      field_template: "primitive",
-      type_name: "float",
-      field_group: "inherited",
-      default_value: "1.0",
-      computed_style_custom_functions: ["setter"],
-      invalidate: ["layout", "paint"],
-    },
-    {
       name: "CursorData",
       inherited: true,
       field_template: "external",
@@ -584,6 +574,33 @@
       wrapper_pointer_name: "std::unique_ptr",
       include_paths: ["third_party/blink/renderer/core/style/counter_directives.h"],
       computed_style_custom_functions: ["getter", "setter"],
+    },
+    {
+      name: "CounterIncrementList",
+      field_template: "pointer",
+      type_name: "CounterPropertyList",
+      field_group: "*",
+      default_value: "nullptr",
+      wrapper_pointer_name: "std::unique_ptr",
+      include_paths: ["third_party/blink/renderer/core/style/counter_directives.h"],
+    },
+    {
+      name: "CounterResetList",
+      field_template: "pointer",
+      type_name: "CounterPropertyList",
+      field_group: "*",
+      default_value: "nullptr",
+      wrapper_pointer_name: "std::unique_ptr",
+      include_paths: ["third_party/blink/renderer/core/style/counter_directives.h"],
+    },
+    {
+      name: "CounterSetList",
+      field_template: "pointer",
+      type_name: "CounterPropertyList",
+      field_group: "*",
+      default_value: "nullptr",
+      wrapper_pointer_name: "std::unique_ptr",
+      include_paths: ["third_party/blink/renderer/core/style/counter_directives.h"],
     },
     {
       name: "Animations",
@@ -847,6 +864,13 @@
       name: "ForcesStackingContext",
       field_template: "primitive",
       type_name: "bool",
+      default_value: "false",
+    },
+    // Should be set if we need our children blockified for non-display reasons.
+    {
+      name: "ForcesBlockifiesChildren",
+      field_template: "monotonic_flag",
+      field_group: "*",
       default_value: "false",
     },
     // Plugins require accelerated compositing for reasons external to blink.
@@ -1222,6 +1246,7 @@
       field_template: "primitive",
       type_name: "bool",
       default_value: "false",
+      invalidate: ["inert"],
     },
     {
       // https://drafts.csswg.org/css-ui-4/#inertness
@@ -1233,6 +1258,7 @@
       field_template: "primitive",
       type_name: "bool",
       default_value: "false",
+      invalidate: ["inert"],
     },
     {
       // We need to go through LayoutObject::SetStyle with

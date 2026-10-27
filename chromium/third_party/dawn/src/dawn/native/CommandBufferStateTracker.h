@@ -30,13 +30,13 @@
 
 #include <vector>
 
-#include "dawn/common/Constants.h"
-#include "dawn/common/ityp_array.h"
-#include "dawn/common/ityp_bitset.h"
-#include "dawn/native/BindingInfo.h"
-#include "dawn/native/Error.h"
-#include "dawn/native/Forward.h"
 #include "partition_alloc/pointers/raw_ptr_exclusion.h"
+#include "src/dawn/common/Constants.h"
+#include "src/dawn/common/ityp_array.h"
+#include "src/dawn/common/ityp_bitset.h"
+#include "src/dawn/native/BindingInfo.h"
+#include "src/dawn/native/Error.h"
+#include "src/dawn/native/Forward.h"
 
 namespace dawn::native {
 
@@ -106,7 +106,7 @@ class CommandBufferStateTracker {
     VertexBufferMask mVertexBuffersUsed;
     PerVertexBuffer<uint64_t> mVertexBufferSizes = {};
 
-    wgpu::IndexFormat mIndexFormat;
+    wgpu::IndexFormat mIndexFormat = wgpu::IndexFormat::Undefined;
     uint64_t mIndexBufferSize = 0;
     uint64_t mIndexBufferOffset = 0;
     RAW_PTR_EXCLUSION BufferBase* mIndexBuffer = nullptr;
@@ -122,7 +122,7 @@ class CommandBufferStateTracker {
     RAW_PTR_EXCLUSION PipelineBase* mLastPipeline = nullptr;
     RAW_PTR_EXCLUSION const RequiredBufferSizes* mMinBufferSizes = nullptr;
 
-    ImmediateConstantMask mImmediateDataMask;
+    ImmediateMask mImmediateDataMask;
 };
 
 }  // namespace dawn::native

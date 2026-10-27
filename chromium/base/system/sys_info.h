@@ -14,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "base/base_export.h"
 #include "base/byte_count.h"
@@ -118,13 +119,24 @@ class BASE_EXPORT SysInfo {
 
   // Return the available disk space in bytes on the volume containing |path|,
   // or nullopt on failure.
-  // TODO(crbug.com/429140103): Convert the return type to ByteSize.
+  // TODO(crbug.com/505771669): Use `AmountOfDiskSpace()` instead of this
+  // function.
   static std::optional<int64_t> AmountOfFreeDiskSpace(const FilePath& path);
 
   // Return the total disk space in bytes on the volume containing |path|, or
   // nullopt on failure.
-  // TODO(crbug.com/429140103): Convert the return type to ByteSize.
+  // TODO(crbug.com/505771669): Use `AmountOfDiskSpace()` instead of this
+  // function.
   static std::optional<int64_t> AmountOfTotalDiskSpace(const FilePath& path);
+
+  struct DiskSpaceInfo {
+    ByteSize total;
+    ByteSize available;
+  };
+
+  // Return the total and available disk space on the volume containing |path|,
+  // or nullopt on failure.
+  static std::optional<DiskSpaceInfo> AmountOfDiskSpace(const FilePath& path);
 
 #if BUILDFLAG(IS_FUCHSIA)
   // Sets the total amount of disk space to report under the specified |path|.
@@ -154,6 +166,13 @@ class BASE_EXPORT SysInfo {
   // e.g. "Google" on Pixel 8 Pro. Only implemented on Android, returns an
   // empty string on other platforms.
   static std::string SocManufacturer();
+
+#if BUILDFLAG(IS_ANDROID)
+  // Returns the hardware manufacturer name of the current machine
+  // synchronously. This is only supported on Android as Windows and Linux
+  // would require IO operations and other platforms are static.
+  static std::string HardwareManufacturer();
+#endif
 
 #if BUILDFLAG(IS_MAC)
   struct HardwareModelNameSplit {

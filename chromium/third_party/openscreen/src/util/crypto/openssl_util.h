@@ -29,6 +29,14 @@ void EnsureOpenSSLCleanup();
 // cases you should pass CURRENT_LOCATION as the `location`.
 void ClearOpenSSLERRStack(const Location& location);
 
+// May be called directly if you already have invoked SSL_get_error and just
+// want to convert the error code to an Error.
+Error SSLErrorCodeToError(int error_code);
+
+// Gets the most recent SSL error from the OpenSSL error stack, and converts it
+// to an Error. The `ssl` and `return_code` parameters are passed to
+// SSL_get_error to determine the SSL error code, which is then converted to an
+// Error using SSLErrorCodeToError().
 Error GetSSLError(const SSL* ssl, int return_code);
 
 // Place an instance of this class on the call stack to automatically clear

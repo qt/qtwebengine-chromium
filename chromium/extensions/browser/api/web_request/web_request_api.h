@@ -26,6 +26,7 @@
 #include "base/values.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/global_request_id.h"
+#include "content/public/common/child_process_id.h"
 #include "extensions/browser/api/declarative_webrequest/request_stage.h"
 #include "extensions/browser/api/web_request/extension_web_request_event_router.h"
 #include "extensions/browser/api/web_request/web_request_permissions.h"
@@ -208,6 +209,7 @@ class WebRequestAPI : public BrowserContextKeyedAPI,
   // EventRouter::Observer overrides:
   void OnListenerAdded(const EventListenerInfo& details) override;
   void OnListenerRemoved(const EventListenerInfo& details) override;
+  void OnListenerUpdated(const EventListenerInfo& details) override;
 
   // If any WebRequest event listeners are currently active for this
   // BrowserContext, |*factory_request| is swapped out for a new request which
@@ -319,8 +321,8 @@ class WebRequestAPI : public BrowserContextKeyedAPI,
   static const bool kServiceRedirectedInIncognito = true;
   static const bool kServiceIsNULLWhileTesting = true;
 
-  // Checks if |MayHaveProxies()| has changed from false to true, and resets
-  // URLLoaderFactories if so.
+  // Checks if |MayHaveProxies()| has changed, and resets URLLoaderFactories
+  // if so.
   void UpdateMayHaveProxies();
 
   void ResetURLLoaderFactories();
@@ -341,6 +343,7 @@ class WebRequestAPI : public BrowserContextKeyedAPI,
       WebRequestEventRouter::ListenerUpdateType update_type,
       const ExtensionId& extension_id,
       const std::string& sub_event_name,
+      content::ChildProcessId render_process_id,
       int worker_thread_id,
       int64_t service_worker_version_id);
 

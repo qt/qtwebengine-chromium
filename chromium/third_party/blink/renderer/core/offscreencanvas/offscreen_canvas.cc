@@ -7,9 +7,11 @@
 #include <memory>
 #include <utility>
 
+#include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/task/single_thread_task_runner.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/scheduler/web_agent_group_scheduler.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_element_elementimage.h"
@@ -55,6 +57,7 @@
 #include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/skia/include/core/SkSurface.h"
+#include "ui/gfx/geometry/skia_conversions.h"
 
 namespace blink {
 
@@ -177,7 +180,7 @@ void OffscreenCanvas::SetPlaceholderCanvasId(DOMNodeId canvas_id) {
     OffscreenCanvasRegistry::From(GetExecutionContext())
         .Register(canvas_id, this);
   }
-  if (GetTopExecutionContext() &&
+  if (HasPlaceholderCanvas() && GetTopExecutionContext() &&
       GetTopExecutionContext()->IsDedicatedWorkerGlobalScope()) {
     WorkerAnimationFrameProvider* animation_frame_provider =
         To<DedicatedWorkerGlobalScope>(GetTopExecutionContext())
@@ -208,7 +211,6 @@ void OffscreenCanvas::SetSize(gfx::Size size) {
   if (size == Size()) {
     if (context_ && context_->IsRenderingContext2D()) {
       context_->Reset();
-      dirty_rect_for_commit_ = SkIRect::MakeWH(Size().width(), Size().height());
       origin_clean_ = true;
       // We need to trigger the draw, because we did reset the context.
       context_->DidDraw(CanvasPerformanceMonitor::DrawType::kOther);
@@ -217,7 +219,6 @@ void OffscreenCanvas::SetSize(gfx::Size size) {
   }
 
   size_ = size;
-  current_frame_damage_rect_ = SkIRect::MakeWH(Size().width(), Size().height());
 
   if (context_ && context_->isContextLost()) {
     context_->RestoreFromInvalidSizeIfNeeded();
@@ -235,7 +236,6 @@ void OffscreenCanvas::SetSize(gfx::Size size) {
         origin_clean_ = true;
       }
     }
-    dirty_rect_for_commit_ = SkIRect::MakeWH(Size().width(), Size().height());
     context_->DidDraw(CanvasPerformanceMonitor::DrawType::kOther);
   }
 }
@@ -365,8 +365,17 @@ DOMMatrix* OffscreenCanvas::getElementTransform(
                                         "The ElementImage has been closed.");
       return nullptr;
     }
-    return MakeGarbageCollected<DOMMatrix>(GetElementTransform(
-        paint_record->paint_state, Size(), draw_transform->Matrix()));
+    if (paint_record->paint_state.canvas_node_id == kInvalidDOMNodeId ||
+        paint_record->paint_state.canvas_node_id != PlaceholderCanvasId()) {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kInvalidStateError,
+          "The ElementImage was captured from a different canvas.");
+      return nullptr;
+    }
+    gfx::Transform transform = GetElementTransform(
+        paint_record->paint_state, Size(), draw_transform->Matrix());
+    return MakeGarbageCollected<DOMMatrix>(transform,
+                                           transform.Is2dTransform());
   }
 
   return DOMMatrix::Create();
@@ -440,7 +449,7 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
 }
 
 bool OffscreenCanvas::IsOpaque() const {
-  return context_ && !context_->CreationAttributes().alpha;
+  return RenderingContext() && RenderingContext()->IsOpaque();
 }
 
 CanvasRenderingContext* OffscreenCanvas::GetCanvasRenderingContext(
@@ -484,7 +493,6 @@ CanvasRenderingContext* OffscreenCanvas::GetCanvasRenderingContext(
     }
 
     context_ = factory->Create(execution_context, this, recomputed_attributes);
-    dirty_rect_for_commit_.setEmpty();
     if (context_) {
       context_->RecordUKMCanvasRenderingAPI();
       context_->RecordUMACanvasRenderingAPI();
@@ -563,16 +571,18 @@ CanvasResourceDispatcher* OffscreenCanvas::GetOrCreateResourceDispatcher() {
   return frame_dispatcher_.get();
 }
 
-void OffscreenCanvas::DidDraw(const SkIRect& rect) {
-  if (rect.isEmpty())
+void OffscreenCanvas::DidDraw(const gfx::Rect& rect) {
+  if (rect.IsEmpty()) {
     return;
+  }
 
-  dirty_rect_for_commit_.join(rect);
+  current_frame_damage_rect_.Union(rect);
 
   if (HasPlaceholderCanvas()) {
     needs_push_frame_ = true;
-    if (!inside_worker_raf_)
+    if (!inside_worker_raf_) {
       GetOrCreateResourceDispatcher()->SetNeedsBeginFrame(true);
+    }
   }
 }
 
@@ -595,15 +605,14 @@ bool OffscreenCanvas::PushFrame(
   DCHECK(needs_push_frame_);
   needs_push_frame_ = false;
 
-  current_frame_damage_rect_.join(dirty_rect_for_commit_);
-  dirty_rect_for_commit_.setEmpty();
-
-  if (current_frame_damage_rect_.isEmpty() || !canvas_resource)
+  if (!canvas_resource) {
     return false;
+  }
   canvas_resource->SetOriginClean(OriginClean());
+  current_frame_damage_rect_.Intersect(gfx::Rect(Size()));
   GetOrCreateResourceDispatcher()->DispatchFrame(
       std::move(canvas_resource), current_frame_damage_rect_, IsOpaque());
-  current_frame_damage_rect_ = SkIRect::MakeEmpty();
+  current_frame_damage_rect_ = gfx::Rect();
 
   return true;
 }
@@ -673,6 +682,28 @@ UniqueFontSelector* OffscreenCanvas::GetFontSelector() {
       MakeGarbageCollected<UniqueFontSelector>(base_selector);
   unique_font_selector_ = unique_font_selector;
   return unique_font_selector;
+}
+
+bool OffscreenCanvas::IsPageVisible() const {
+  if (base::FeatureList::IsEnabled(
+          blink::features::kOffscreenCanvasPropagateVisibility)) {
+    return is_parent_visible_;
+  }
+  return true;
+}
+
+void OffscreenCanvas::SetParentVisibility(bool visible) {
+  if (!base::FeatureList::IsEnabled(
+          blink::features::kOffscreenCanvasPropagateVisibility)) {
+    return;
+  }
+  if (is_parent_visible_ == visible) {
+    return;
+  }
+  is_parent_visible_ = visible;
+  if (context_) {
+    context_->PageVisibilityChanged();
+  }
 }
 
 void OffscreenCanvas::Trace(Visitor* visitor) const {

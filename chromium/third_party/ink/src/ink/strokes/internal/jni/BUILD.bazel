@@ -20,28 +20,42 @@ package(
 )
 
 cc_library(
-    name = "native",
+    name = "jni",
+    tags = ["keep_dep"],
     visibility = ["//visibility:public"],
     deps = [
         ":in_progress_stroke_jni",
         ":mesh_creation_jni",
         ":stroke_input_batch_jni",
         ":stroke_jni",
-        "//ink/brush/internal/jni:native",
     ],
-    alwayslink = 1,
+)
+
+filegroup(
+    name = "cinterop_headers",
+    srcs = glob(["*_native.h"]),
+)
+
+cc_library(
+    name = "cinterop",
+    deps = [
+        ":stroke_input_batch_native",
+    ],
 )
 
 cc_library(
     name = "stroke_jni",
     srcs = ["stroke_jni.cc"],
+    tags = ["keep_dep"],
     deps = [
+        ":stroke_input_batch_native_helper",
         ":stroke_input_jni_helper",
         ":stroke_jni_helper",
         "//ink/brush",
-        "//ink/brush/internal/jni:brush_jni_helper",
+        "//ink/brush/internal/jni:brush_native_helper",
+        "//ink/geometry:affine_transform",
         "//ink/geometry:partitioned_mesh",
-        "//ink/geometry/internal/jni:partitioned_mesh_jni_helper",
+        "//ink/geometry/internal/jni:partitioned_mesh_native_helper",
         "//ink/jni/internal:jni_defines",
         "//ink/strokes:stroke",
         "//ink/strokes/input:stroke_input_batch",
@@ -73,21 +87,23 @@ cc_library(
 cc_library(
     name = "in_progress_stroke_jni",
     srcs = ["in_progress_stroke_jni.cc"],
+    tags = ["keep_dep"],
     deps = [
         ":in_progress_stroke_jni_helper",
+        ":stroke_input_batch_native_helper",
         ":stroke_input_jni_helper",
         ":stroke_jni_helper",
         "//ink/brush",
-        "//ink/brush/internal/jni:brush_jni_helper",
+        "//ink/brush/internal/jni:brush_native_helper",
         "//ink/geometry:envelope",
         "//ink/geometry:mesh_format",
         "//ink/geometry:mutable_mesh",
         "//ink/geometry:point",
         "//ink/geometry/internal/jni:box_accumulator_jni_helper",
-        "//ink/geometry/internal/jni:mesh_format_jni_helper",
+        "//ink/geometry/internal/jni:mesh_format_native_helper",
         "//ink/geometry/internal/jni:vec_jni_helper",
         "//ink/jni/internal:jni_defines",
-        "//ink/jni/internal:jni_throw_util",
+        "//ink/jni/internal:status_jni_helper",
         "//ink/strokes:in_progress_stroke",
         "//ink/strokes:stroke",
         "//ink/strokes/input:stroke_input",
@@ -150,16 +166,10 @@ cc_library(
     srcs = ["stroke_input_jni_helper.cc"],
     hdrs = ["stroke_input_jni_helper.h"],
     deps = [
-        "//ink/geometry:angle",
-        "//ink/jni/internal:jni_defines",
+        ":stroke_input_batch_native",
+        ":stroke_input_native_helper",
         "//ink/jni/internal:jni_jvm_interface",
         "//ink/strokes/input:stroke_input",
-        "//ink/strokes/input:stroke_input_batch",
-        "//ink/types:duration",
-        "//ink/types:physical_distance",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
     ] + select({
         "@platforms//os:android": [],
         "//conditions:default": [
@@ -169,19 +179,51 @@ cc_library(
 )
 
 cc_library(
-    name = "stroke_input_batch_jni",
-    srcs = ["stroke_input_batch_jni.cc"],
+    name = "stroke_input_native_helper",
+    srcs = ["stroke_input_native_helper.cc"],
+    hdrs = ["stroke_input_native_helper.h"],
     deps = [
-        ":stroke_input_jni_helper",
-        "//ink/geometry:angle",
-        "//ink/jni/internal:jni_defines",
-        "//ink/jni/internal:jni_throw_util",
         "//ink/strokes/input:stroke_input",
+    ],
+)
+
+cc_library(
+    name = "stroke_input_batch_native_helper",
+    hdrs = ["stroke_input_batch_native_helper.h"],
+    deps = [
         "//ink/strokes/input:stroke_input_batch",
+        "@com_google_absl//absl/log:absl_check",
+    ],
+)
+
+cc_library(
+    name = "stroke_input_batch_native",
+    srcs = ["stroke_input_batch_native.cc"],
+    hdrs = ["stroke_input_batch_native.h"],
+    deps = [
+        ":stroke_input_batch_native_helper",
+        ":stroke_input_native_helper",
+        "//ink/geometry:angle",
+        "//ink/strokes/input:stroke_input",
         "//ink/types:duration",
         "//ink/types:physical_distance",
-        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
+    ],
+)
+
+cc_library(
+    name = "stroke_input_batch_jni",
+    srcs = ["stroke_input_batch_jni.cc"],
+    tags = ["keep_dep"],
+    deps = [
+        ":stroke_input_batch_native",
+        ":stroke_input_batch_native_helper",
+        ":stroke_input_jni_helper",
+        "//ink/jni/internal:jni_defines",
+        "//ink/jni/internal:status_jni_helper",
+        "//ink/strokes/input:stroke_input",
+        "//ink/strokes/input:stroke_input_batch",
+        "@com_google_absl//absl/log:absl_check",
     ] + select({
         "@platforms//os:android": [],
         "//conditions:default": [
@@ -194,7 +236,9 @@ cc_library(
 cc_library(
     name = "mesh_creation_jni",
     srcs = ["mesh_creation_jni.cc"],
+    tags = ["keep_dep"],
     deps = [
+        ":stroke_input_batch_native_helper",
         ":stroke_input_jni_helper",
         "//ink/geometry:mesh",
         "//ink/geometry:mesh_format",
@@ -202,10 +246,10 @@ cc_library(
         "//ink/geometry:point",
         "//ink/geometry:tessellator",
         "//ink/geometry/internal:polyline_processing",
-        "//ink/geometry/internal/jni:partitioned_mesh_jni_helper",
+        "//ink/geometry/internal/jni:partitioned_mesh_native_helper",
         "//ink/geometry/internal/jni:vec_jni_helper",
         "//ink/jni/internal:jni_defines",
-        "//ink/jni/internal:jni_throw_util",
+        "//ink/jni/internal:status_jni_helper",
         "//ink/strokes/input:stroke_input_batch",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/types:span",

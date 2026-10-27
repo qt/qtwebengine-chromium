@@ -145,8 +145,13 @@ class Callspec(object):
       does_not_support_promises = self.node.GetProperty(
           'doesNotSupportPromises')
       if does_not_support_promises is not None:
-        returns_async['does_not_support_promises'] = does_not_support_promises
+        returns_async['does_not_support_promises'] = True
       else:
+        # Since all functions which support Promise based calls can inherently
+        # drop the callback to get a Promise returned, any optionality specified
+        # on the schema will actually be ignored, so we can just pop it off.
+        returns_async.pop('optional', None)
+
         assert return_type is None, (
             'Function "%s" cannot support promises and also have a '
             'return value.' % self.node.GetName())
@@ -358,6 +363,9 @@ class Typeref(object):
       properties['type'] = 'binary'
       # We force the APIs to specify instanceOf since ArrayBufferView isn't an
       # instantiable type, therefore we don't specify isInstanceOf here.
+      instance_of = self.parent.GetProperty('instanceOf')
+      if instance_of:
+        properties['isInstanceOf'] = instance_of
     elif self.parent.GetPropertyLocal('Union'):
       properties['choices'] = [
           Typeref(node.GetProperty('TYPEREF'), node,

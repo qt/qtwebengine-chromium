@@ -42,6 +42,17 @@ mojom::UkmEntryPtr BlankUkmEntry(SourceId source_id) {
                               base::flat_map<uint64_t, int64_t>());
 }
 
+std::vector<mojom::UkmEntry*> GetDocumentCreatedEntries(
+    const std::vector<mojom::UkmEntryPtr>& entries) {
+  std::vector<mojom::UkmEntry*> document_created_entries;
+  for (const auto& entry : entries) {
+    if (entry->event_hash == builders::DocumentCreated::kEntryNameHash) {
+      document_created_entries.push_back(entry.get());
+    }
+  }
+  return document_created_entries;
+}
+
 MATCHER_P2(MatchesDownsamplingRate,
            event_hash,
            standard_rate,
@@ -612,4 +623,250 @@ TEST(UkmRecorderImplTest, WebDXFeaturesSampling) {
                   downsampling_rate)));
 }
 
+TEST(UkmRecorderImplTest, GetDocumentToNavigationUrlsMap) {
+  base::test::TaskEnvironment task_environment;
+  UkmRecorderImpl impl;
+  impl.EnableRecording();
+  impl.UpdateRecording({MSBB});
+  impl.SetSamplingForTesting(1);  // Sample everything in.
+
+  SourceId subframe_id = ConvertToSourceId(1, SourceIdType::NAVIGATION_ID);
+  SourceId main_frame_navigation_id =
+      ConvertToSourceId(2, SourceIdType::NAVIGATION_ID);
+  GURL main_frame_url("https://example.com");
+
+  // Record the URL for the main frame's navigation ID.
+  impl.UpdateSourceURL(main_frame_navigation_id, main_frame_url);
+
+  // Record the URL for the subframe's navigation ID.
+  impl.UpdateSourceURL(subframe_id, GURL("https://subframe.com"));
+
+  // Record a subframe DocumentCreated event.
+  {
+    auto entry = mojom::UkmEntry::New();
+    entry->source_id = subframe_id;
+    entry->event_hash = builders::DocumentCreated::kEntryNameHash;
+    entry->metrics[builders::DocumentCreated::kIsMainFrameNameHash] = 0;
+    entry->metrics[builders::DocumentCreated::kNavigationSourceIdNameHash] =
+        main_frame_navigation_id;
+    impl.AddEntry(std::move(entry));
+  }
+
+  auto url_map = impl.GetDocumentToNavigationUrlsMap(
+      GetDocumentCreatedEntries(impl.entries()));
+  EXPECT_EQ(1u, url_map.size());
+  EXPECT_EQ(1u, url_map[subframe_id].size());
+  EXPECT_EQ(main_frame_url, url_map[subframe_id][0]);
+
+  // Record a dummy entry for the subframe so it's not discarded.
+  {
+    auto entry = mojom::UkmEntry::New();
+    entry->source_id = subframe_id;
+    entry->event_hash = builders::PageLoad::kEntryNameHash;
+    impl.AddEntry(std::move(entry));
+  }
+
+  // Verify that the Source in the report is included and has resolved_urls.
+  Report report;
+  impl.StoreRecordingsInReport(&report);
+
+  bool found_subframe_source = false;
+  for (const auto& source : report.sources()) {
+    if (source.id() == subframe_id) {
+      found_subframe_source = true;
+      EXPECT_EQ(1, source.resolved_urls_size());
+      EXPECT_EQ(main_frame_url.spec(), source.resolved_urls(0).url());
+    }
+  }
+  EXPECT_TRUE(found_subframe_source);
+}
+
+TEST(UkmRecorderImplTest,
+     GetDocumentToNavigationUrlsMap_MissingSubframeSource) {
+  base::test::TaskEnvironment task_environment;
+  UkmRecorderImpl impl;
+  impl.EnableRecording();
+  impl.UpdateRecording({MSBB});
+  impl.SetSamplingForTesting(1);  // Sample everything in.
+
+  SourceId subframe_id = ConvertToSourceId(1, SourceIdType::NAVIGATION_ID);
+  SourceId main_frame_navigation_id =
+      ConvertToSourceId(2, SourceIdType::NAVIGATION_ID);
+  GURL main_frame_url("https://example.com");
+
+  // Record the URL for the main frame's navigation ID.
+  impl.UpdateSourceURL(main_frame_navigation_id, main_frame_url);
+
+  // NOT recording the URL for the subframe's navigation ID.
+  // impl.UpdateSourceURL(subframe_id, GURL("https://subframe.com"));
+
+  // Record a subframe DocumentCreated event.
+  {
+    auto entry = mojom::UkmEntry::New();
+    entry->source_id = subframe_id;
+    entry->event_hash = builders::DocumentCreated::kEntryNameHash;
+    entry->metrics[builders::DocumentCreated::kIsMainFrameNameHash] = 0;
+    entry->metrics[builders::DocumentCreated::kNavigationSourceIdNameHash] =
+        main_frame_navigation_id;
+    impl.AddEntry(std::move(entry));
+  }
+
+  auto url_map = impl.GetDocumentToNavigationUrlsMap(
+      GetDocumentCreatedEntries(impl.entries()));
+  EXPECT_EQ(1u, url_map.size());
+  EXPECT_EQ(1u, url_map[subframe_id].size());
+  EXPECT_EQ(main_frame_url, url_map[subframe_id][0]);
+
+  // Record a dummy entry for the subframe so it's not discarded.
+  {
+    auto entry = mojom::UkmEntry::New();
+    entry->source_id = subframe_id;
+    entry->event_hash = builders::PageLoad::kEntryNameHash;
+    impl.AddEntry(std::move(entry));
+  }
+
+  // Verify that the Source in the report is included and has resolved_urls.
+  Report report;
+  impl.StoreRecordingsInReport(&report);
+
+  bool found_subframe_source = false;
+  for (const auto& source : report.sources()) {
+    if (source.id() == subframe_id) {
+      found_subframe_source = true;
+      EXPECT_EQ(0, source.urls_size());
+      EXPECT_EQ(1, source.resolved_urls_size());
+      EXPECT_EQ(main_frame_url.spec(), source.resolved_urls(0).url());
+    }
+  }
+  EXPECT_TRUE(found_subframe_source);
+}
+
+TEST(UkmRecorderImplTest, GetDocumentToNavigationUrlsMap_Redirect) {
+  base::test::TaskEnvironment task_environment;
+  UkmRecorderImpl impl;
+  impl.EnableRecording();
+  impl.UpdateRecording({MSBB});
+  impl.SetSamplingForTesting(1);  // Sample everything in.
+
+  SourceId subframe_id = ConvertToSourceId(1, SourceIdType::NAVIGATION_ID);
+  SourceId main_frame_navigation_id =
+      ConvertToSourceId(2, SourceIdType::NAVIGATION_ID);
+  GURL main_frame_url1("https://google.com");
+  GURL main_frame_url2("https://example.com");
+
+  // Record URLs for the main frame's navigation ID (redirect).
+  UkmSource::NavigationData data;
+  data.urls = {main_frame_url1, main_frame_url2};
+  impl.RecordNavigation(main_frame_navigation_id, data);
+
+  EXPECT_EQ(2u, impl.sources().at(main_frame_navigation_id)->urls().size());
+
+  // Record a subframe DocumentCreated event.
+  {
+    auto entry = mojom::UkmEntry::New();
+    entry->source_id = subframe_id;
+    entry->event_hash = builders::DocumentCreated::kEntryNameHash;
+    entry->metrics[builders::DocumentCreated::kNavigationSourceIdNameHash] =
+        main_frame_navigation_id;
+    impl.AddEntry(std::move(entry));
+  }
+
+  EXPECT_EQ(1u, impl.entries().size());
+
+  auto url_map = impl.GetDocumentToNavigationUrlsMap(
+      GetDocumentCreatedEntries(impl.entries()));
+  EXPECT_EQ(1u, url_map.size());
+  EXPECT_EQ(2u, url_map[subframe_id].size());
+  EXPECT_EQ(main_frame_url1, url_map[subframe_id][0]);
+  EXPECT_EQ(main_frame_url2, url_map[subframe_id][1]);
+
+  // Record a dummy entry for the subframe so it's not discarded.
+  {
+    auto entry = mojom::UkmEntry::New();
+    entry->source_id = subframe_id;
+    entry->event_hash = builders::PageLoad::kEntryNameHash;
+    impl.AddEntry(std::move(entry));
+  }
+
+  // Verify that the Source in the report is included and has multiple
+  // resolved_urls.
+  Report report;
+  impl.StoreRecordingsInReport(&report);
+
+  bool found_subframe_source = false;
+  for (const auto& source : report.sources()) {
+    if (source.id() == subframe_id) {
+      found_subframe_source = true;
+      EXPECT_EQ(0, source.urls_size());
+      EXPECT_EQ(2, source.resolved_urls_size());
+      EXPECT_EQ(main_frame_url1.spec(), source.resolved_urls(0).url());
+      EXPECT_EQ(main_frame_url2.spec(), source.resolved_urls(1).url());
+    }
+  }
+  EXPECT_TRUE(found_subframe_source);
+}
+
+TEST(UkmRecorderImplTest, StoreDownsamplingParametersInReport) {
+  struct TestUkmRecorder : public UkmRecorderImpl {
+    TestUkmRecorder() {
+      // Stub event names to pass HasUnknownMetrics check.
+      decode_map_ = {
+          {base::HashMetricName("My.Event"), {"My.Event", {}}},
+          {base::HashMetricName("My.OtherEvent"), {"My.OtherEvent", {}}},
+          {base::HashMetricName("My.UnusedEvent"), {"My.UnusedEvent", {}}},
+      };
+    }
+    const builders::DecodeMap& GetDecodeMap() const override {
+      return decode_map_;
+    }
+    builders::DecodeMap decode_map_;
+  };
+
+  TestUkmRecorder impl;
+  impl.EnableRecording();
+  impl.UpdateRecording({MSBB});
+
+  impl.SetSamplingForTesting(1);
+  impl.SetWebDXFeaturesSamplingForTesting(2);
+
+  // Record sample events.
+  SourceId source_id = ConvertToSourceId(1, SourceIdType::NAVIGATION_ID);
+
+  auto entry1 = mojom::UkmEntry::New();
+  entry1->event_hash = base::HashMetricName("My.Event");
+  entry1->source_id = source_id;
+  impl.AddEntry(std::move(entry1));
+
+  auto entry2 = mojom::UkmEntry::New();
+  entry2->event_hash = base::HashMetricName("My.OtherEvent");
+  entry2->source_id = source_id;
+  impl.AddEntry(std::move(entry2));
+
+  // Manually configure some rates to verify the rates in the report will match.
+  impl.event_sampling_rates_[base::HashMetricName("My.Event")] = 30;
+  impl.event_sampling_master_[base::HashMetricName("My.OtherEvent")] =
+      base::HashMetricName("My.Event");
+  impl.event_sampling_rates_[base::HashMetricName("My.UnusedEvent")] = 40;
+
+  Report report;
+  impl.StoreRecordingsInReport(&report);
+
+  // Expects 2 downsampling rates for the default and WebDX, which should always
+  // be present; and 2 more for the two recorded event types.
+  EXPECT_EQ(report.downsampling_rates().size(), 2 + 2);
+  EXPECT_THAT(report.downsampling_rates(),
+              testing::Contains(MatchesDownsamplingRate(
+                  base::HashMetricName("_default_sampling"), 1)));
+  EXPECT_THAT(report.downsampling_rates(),
+              testing::Contains(MatchesDownsamplingRate(
+                  base::HashMetricName(kWebFeatureSamplingKeyword), 2)));
+  // Rate for "My.UnusedEvent" is skipped since the report doesn't have any
+  // such event type.
+  EXPECT_THAT(report.downsampling_rates(),
+              testing::Contains(MatchesDownsamplingRate(
+                  base::HashMetricName("My.Event"), 30)));
+  EXPECT_THAT(report.downsampling_rates(),
+              testing::Contains(MatchesDownsamplingRate(
+                  base::HashMetricName("My.OtherEvent"), 30)));
+}
 }  // namespace ukm

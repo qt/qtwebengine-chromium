@@ -113,10 +113,6 @@ class CXFA_FFDoc : public cppgc::GarbageCollected<CXFA_FFDoc> {
     virtual RetainPtr<IFX_SeekableReadStream> OpenLinkedFile(
         CXFA_FFDoc* hDoc,
         const WideString& wsLink) = 0;
-
-#ifdef PDF_XFA_ELEMENT_SUBMIT_ENABLED
-    virtual bool Submit(CXFA_FFDoc* hDoc, CXFA_Submit* submit) = 0;
-#endif  // PDF_XFA_ELEMENT_SUBMIT_ENABLED
   };
 
   CONSTRUCT_VIA_MAKE_GARBAGE_COLLECTED;

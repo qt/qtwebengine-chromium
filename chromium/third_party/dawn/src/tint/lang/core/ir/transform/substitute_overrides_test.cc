@@ -44,7 +44,19 @@ namespace {
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
 
-using IR_SubstituteOverridesTest = TransformTest;
+class IR_SubstituteOverridesTest : public TransformTest {
+  protected:
+    void SetUp() override {
+        TransformTest::SetUp();
+        mod.properties.Add(core::ir::Property::kAllowOverrides);
+    }
+};
+
+TEST_F(IR_SubstituteOverridesTest, OverridePropertyRemoved) {
+    SubstituteOverridesConfig cfg{};
+    Run(SubstituteOverrides, cfg);
+    EXPECT_FALSE(mod.properties.Contains(Property::kAllowOverrides));
+}
 
 TEST_F(IR_SubstituteOverridesTest, NoOverridesNoChange) {
     auto* func = b.Function("foo", ty.void_());
@@ -444,6 +456,152 @@ $B1: {  # root
     auto result = RunWithFailure(SubstituteOverrides, cfg);
     ASSERT_NE(result, Success);
     EXPECT_EQ(result.Failure().reason, R"(error: value -65505.0 cannot be represented as 'f16')");
+}
+
+TEST_F(IR_SubstituteOverridesTest, Override_ShiftLeftAmountTooLarge_ConstLHS) {
+    core::ir::Override* rhs = nullptr;
+    b.Append(mod.root_block, [&] {
+        rhs = b.Override(Source{{1, 2}}, "rhs", ty.u32());
+        rhs->SetOverrideId({1});
+    });
+
+    auto* func = b.Function("foo", ty.u32());
+    b.Append(func->Block(), [&] {
+        auto* shift = b.ShiftLeft(1_u, rhs);
+        b.Return(func, shift->Result());
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %rhs:u32 = override undef @id(1)
+}
+
+%foo = func():u32 {
+  $B2: {
+    %3:u32 = shl 1u, %rhs
+    ret %3
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 125.0;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(result.Failure().reason,
+              R"(error: shift left value must be less than the bit width of the lhs, which is 32)");
+}
+
+TEST_F(IR_SubstituteOverridesTest, Override_ShiftLeftAmountTooLarge_RuntimeLHS) {
+    core::ir::Override* rhs = nullptr;
+    b.Append(mod.root_block, [&] {
+        rhs = b.Override(Source{{1, 2}}, "rhs", ty.u32());
+        rhs->SetOverrideId({1});
+    });
+
+    auto* func = b.Function("foo", ty.u32());
+    b.Append(func->Block(), [&] {
+        auto* lhs = b.Let("lhs", 1_u);
+        auto* shift = b.ShiftLeft(lhs, rhs);
+        b.Return(func, shift->Result());
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %rhs:u32 = override undef @id(1)
+}
+
+%foo = func():u32 {
+  $B2: {
+    %lhs:u32 = let 1u
+    %4:u32 = shl %lhs, %rhs
+    ret %4
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 125.0;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(result.Failure().reason,
+              R"(error: shift left value must be less than the bit width of the lhs, which is 32)");
+}
+
+TEST_F(IR_SubstituteOverridesTest, Override_ShiftRightAmountTooLarge_ConstLHS) {
+    core::ir::Override* rhs = nullptr;
+    b.Append(mod.root_block, [&] {
+        rhs = b.Override(Source{{1, 2}}, "rhs", ty.u32());
+        rhs->SetOverrideId({1});
+    });
+
+    auto* func = b.Function("foo", ty.u32());
+    b.Append(func->Block(), [&] {
+        auto* shift = b.ShiftRight(1_u, rhs);
+        b.Return(func, shift->Result());
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %rhs:u32 = override undef @id(1)
+}
+
+%foo = func():u32 {
+  $B2: {
+    %3:u32 = shr 1u, %rhs
+    ret %3
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 125.0;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(
+        result.Failure().reason,
+        R"(error: shift right value must be less than the bit width of the lhs, which is 32)");
+}
+
+TEST_F(IR_SubstituteOverridesTest, Override_ShiftRightAmountTooLarge_RuntimeLHS) {
+    core::ir::Override* rhs = nullptr;
+    b.Append(mod.root_block, [&] {
+        rhs = b.Override(Source{{1, 2}}, "rhs", ty.u32());
+        rhs->SetOverrideId({1});
+    });
+
+    auto* func = b.Function("foo", ty.u32());
+    b.Append(func->Block(), [&] {
+        auto* lhs = b.Let("lhs", 1_u);
+        auto* shift = b.ShiftRight(lhs, rhs);
+        b.Return(func, shift->Result());
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %rhs:u32 = override undef @id(1)
+}
+
+%foo = func():u32 {
+  $B2: {
+    %lhs:u32 = let 1u
+    %4:u32 = shr %lhs, %rhs
+    ret %4
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 125.0;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(
+        result.Failure().reason,
+        R"(error: shift right value must be less than the bit width of the lhs, which is 32)");
 }
 
 TEST_F(IR_SubstituteOverridesTest, OverrideWithComplexGenError) {
@@ -1990,6 +2148,774 @@ $B1: {  # root
     auto result = RunWithFailure(SubstituteOverrides, cfg);
     ASSERT_NE(result, Success);
     EXPECT_EQ(result.Failure().reason, R"(5:8 error: array size (4294967300) is too large)");
+}
+
+TEST_F(IR_SubstituteOverridesTest, OverrideSizedArrayParam) {
+    core::ir::Var* v = nullptr;
+    core::ir::Value* add = nullptr;
+    const core::ir::type::ValueArrayCount* c1 = nullptr;
+    const core::type::Type* a1 = nullptr;
+    b.Append(mod.root_block, [&] {
+        auto* o = b.Override("x", ty.i32());
+        o->SetOverrideId({0});
+        add = b.Add(o, 2_i)->Result();
+        c1 = ty.Get<core::ir::type::ValueArrayCount>(add);
+        a1 = ty.Get<core::type::Array>(ty.u32(), c1, 4u);
+        v = b.Var("v", ty.ptr(workgroup, a1));
+    });
+    auto* param = b.FunctionParam("param", ty.ptr(workgroup, a1));
+    auto* func = b.Function("foo", ty.void_());
+    func->SetParams({param});
+    b.Append(func->Block(), [&] { b.Return(func); });
+    auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
+    b.Append(ep->Block(), [&] {
+        b.Call(ty.void_(), func, v);
+        b.Return(ep);
+    });
+    auto* src = R"(
+$B1: {  # root
+  %x:i32 = override undef @id(0)
+  %2:i32 = add %x, 2i
+  %v:ptr<workgroup, array<u32, %2>, read_write> = var undef
+}
+
+%foo = func(%param:ptr<workgroup, array<u32, %2>, read_write>):void {
+  $B2: {
+    ret
+  }
+}
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B3: {
+    %7:void = call %foo, %v
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+$B1: {  # root
+  %v:ptr<workgroup, array<u32, 64>, read_write> = var undef
+}
+
+%foo = func(%param:ptr<workgroup, array<u32, 64>, read_write>):void {
+  $B2: {
+    ret
+  }
+}
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B3: {
+    %5:void = call %foo, %v
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{0}] = 62;
+    Run(SubstituteOverrides, cfg);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(IR_SubstituteOverridesTest, OverrideSizedBuffer) {
+    core::ir::Var* v = nullptr;
+    core::ir::Value* add = nullptr;
+    const core::ir::type::ValueArrayCount* c1 = nullptr;
+    const core::type::Type* b1 = nullptr;
+    b.Append(mod.root_block, [&] {
+        auto* o = b.Override("x", ty.i32());
+        o->SetOverrideId({0});
+        add = b.Add(o, 2_i)->Result();
+        c1 = ty.Get<core::ir::type::ValueArrayCount>(add);
+        b1 = ty.Get<core::type::Buffer>(c1);
+        v = b.Var("v", ty.ptr(workgroup, b1));
+    });
+    auto* param = b.FunctionParam("param", ty.ptr(workgroup, b1));
+    auto* func = b.Function("foo", ty.void_());
+    func->SetParams({param});
+    b.Append(func->Block(), [&] { b.Return(func); });
+    auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
+    b.Append(ep->Block(), [&] {
+        b.Call(ty.void_(), func, v);
+        b.Return(ep);
+    });
+    auto* src = R"(
+$B1: {  # root
+  %x:i32 = override undef @id(0)
+  %2:i32 = add %x, 2i
+  %v:ptr<workgroup, buffer<%2>, read_write> = var undef
+}
+
+%foo = func(%param:ptr<workgroup, buffer<%2>, read_write>):void {
+  $B2: {
+    ret
+  }
+}
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B3: {
+    %7:void = call %foo, %v
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+$B1: {  # root
+  %v:ptr<workgroup, buffer<64>, read_write> = var undef
+}
+
+%foo = func(%param:ptr<workgroup, buffer<64>, read_write>):void {
+  $B2: {
+    ret
+  }
+}
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B3: {
+    %5:void = call %foo, %v
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{0}] = 62;
+    Run(SubstituteOverrides, cfg);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(IR_SubstituteOverridesTest, OverrideSizedBuffer_BufferView_FixedSize) {
+    core::ir::Var* v = nullptr;
+    core::type::Type* buffer_ty = nullptr;
+    b.Append(mod.root_block, [&] {
+        auto* o = b.Override("x", ty.i32());
+        o->SetOverrideId({1});
+        auto* count = ty.Get<core::ir::type::ValueArrayCount>(o->Result());
+        buffer_ty = ty.Get<core::type::Buffer>(count);
+        v = b.Var("v", ty.ptr(workgroup, buffer_ty));
+    });
+
+    auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
+    b.Append(ep->Block(), [&] {
+        auto* let = b.Let("l", v);
+        b.CallExplicit(ty.ptr(workgroup, ty.array(ty.u32(), 4u)), BuiltinFn::kBufferView,
+                       Vector{ty.array(ty.u32(), 4u)}, let, 0_u);
+        b.Return(ep);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %x:i32 = override undef @id(1)
+  %v:ptr<workgroup, buffer<%x>, read_write> = var undef
+}
+
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %l:ptr<workgroup, buffer<%x>, read_write> = let %v
+    %5:ptr<workgroup, array<u32, 4>, read_write> = bufferView<array<u32, 4>> %l, 0u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 12;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(
+        result.Failure().reason,
+        R"(error: invalid buffer size (12 bytes) when used with bufferView (16 bytes required))");
+}
+
+TEST_F(IR_SubstituteOverridesTest, OverrideSizedBuffer_BufferView_FixedSize_ConstOffset) {
+    core::ir::Var* v = nullptr;
+    core::type::Type* buffer_ty = nullptr;
+    b.Append(mod.root_block, [&] {
+        auto* o = b.Override("x", ty.i32());
+        o->SetOverrideId({1});
+        auto* count = ty.Get<core::ir::type::ValueArrayCount>(o->Result());
+        buffer_ty = ty.Get<core::type::Buffer>(count);
+        v = b.Var("v", ty.ptr(workgroup, buffer_ty));
+    });
+
+    auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
+    b.Append(ep->Block(), [&] {
+        auto* let = b.Let("l", v);
+        b.CallExplicit(ty.ptr(workgroup, ty.array(ty.u32(), 4u)), BuiltinFn::kBufferView,
+                       Vector{ty.array(ty.u32(), 4u)}, let, 4_u);
+        b.Return(ep);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %x:i32 = override undef @id(1)
+  %v:ptr<workgroup, buffer<%x>, read_write> = var undef
+}
+
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %l:ptr<workgroup, buffer<%x>, read_write> = let %v
+    %5:ptr<workgroup, array<u32, 4>, read_write> = bufferView<array<u32, 4>> %l, 4u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 16;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(
+        result.Failure().reason,
+        R"(error: invalid buffer size (16 bytes) when used with bufferView (20 bytes required))");
+}
+
+TEST_F(IR_SubstituteOverridesTest, OverrideSizedBuffer_BufferView_RuntimeArray) {
+    core::ir::Var* v = nullptr;
+    core::type::Type* buffer_ty = nullptr;
+    b.Append(mod.root_block, [&] {
+        auto* o = b.Override("x", ty.i32());
+        o->SetOverrideId({1});
+        auto* count = ty.Get<core::ir::type::ValueArrayCount>(o->Result());
+        buffer_ty = ty.Get<core::type::Buffer>(count);
+        v = b.Var("v", ty.ptr(workgroup, buffer_ty));
+    });
+
+    auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
+    b.Append(ep->Block(), [&] {
+        auto* let = b.Let("l", v);
+        b.CallExplicit(ty.ptr(workgroup, ty.runtime_array(ty.vec4u())), BuiltinFn::kBufferView,
+                       Vector{ty.runtime_array(ty.vec4u())}, let, 0_u);
+        b.Return(ep);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %x:i32 = override undef @id(1)
+  %v:ptr<workgroup, buffer<%x>, read_write> = var undef
+}
+
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %l:ptr<workgroup, buffer<%x>, read_write> = let %v
+    %5:ptr<workgroup, array<vec4<u32>>, read_write> = bufferView<array<vec4<u32>>> %l, 0u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 12;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(
+        result.Failure().reason,
+        R"(error: invalid buffer size (12 bytes) when used with bufferView (16 bytes required))");
+}
+
+TEST_F(IR_SubstituteOverridesTest, OverrideSizedBuffer_BufferView_RuntimeArray_ConstOffset) {
+    core::ir::Var* v = nullptr;
+    core::type::Type* buffer_ty = nullptr;
+    b.Append(mod.root_block, [&] {
+        auto* o = b.Override("x", ty.i32());
+        o->SetOverrideId({1});
+        auto* count = ty.Get<core::ir::type::ValueArrayCount>(o->Result());
+        buffer_ty = ty.Get<core::type::Buffer>(count);
+        v = b.Var("v", ty.ptr(workgroup, buffer_ty));
+    });
+
+    auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
+    b.Append(ep->Block(), [&] {
+        auto* let = b.Let("l", v);
+        b.CallExplicit(ty.ptr(workgroup, ty.runtime_array(ty.vec4u())), BuiltinFn::kBufferView,
+                       Vector{ty.runtime_array(ty.vec4u())}, let, 4_u);
+        b.Return(ep);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %x:i32 = override undef @id(1)
+  %v:ptr<workgroup, buffer<%x>, read_write> = var undef
+}
+
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %l:ptr<workgroup, buffer<%x>, read_write> = let %v
+    %5:ptr<workgroup, array<vec4<u32>>, read_write> = bufferView<array<vec4<u32>>> %l, 4u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 16;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(
+        result.Failure().reason,
+        R"(error: invalid buffer size (16 bytes) when used with bufferView (20 bytes required))");
+}
+
+TEST_F(IR_SubstituteOverridesTest, OverrideSizedBuffer_BufferView_RuntimeStruct) {
+    auto* S =
+        ty.Struct(mod.symbols.New("S"), {
+                                            {mod.symbols.New("a"), ty.vec4u()},
+                                            {mod.symbols.New("b"), ty.runtime_array(ty.u32())},
+                                        });
+    core::ir::Var* v = nullptr;
+    core::type::Type* buffer_ty = nullptr;
+    b.Append(mod.root_block, [&] {
+        auto* o = b.Override("x", ty.i32());
+        o->SetOverrideId({1});
+        auto* count = ty.Get<core::ir::type::ValueArrayCount>(o->Result());
+        buffer_ty = ty.Get<core::type::Buffer>(count);
+        v = b.Var("v", ty.ptr(workgroup, buffer_ty));
+    });
+
+    auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
+    b.Append(ep->Block(), [&] {
+        auto* let = b.Let("l", v);
+        b.CallExplicit(ty.ptr(workgroup, S), BuiltinFn::kBufferView, Vector{S}, let, 0_u);
+        b.Return(ep);
+    });
+
+    auto* src = R"(
+S = struct @align(16) {
+  a:vec4<u32> @offset(0)
+  b:array<u32> @offset(16)
+}
+
+$B1: {  # root
+  %x:i32 = override undef @id(1)
+  %v:ptr<workgroup, buffer<%x>, read_write> = var undef
+}
+
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %l:ptr<workgroup, buffer<%x>, read_write> = let %v
+    %5:ptr<workgroup, S, read_write> = bufferView<S> %l, 0u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 16;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(
+        result.Failure().reason,
+        R"(error: invalid buffer size (16 bytes) when used with bufferView (20 bytes required))");
+}
+
+TEST_F(IR_SubstituteOverridesTest, OverrideSizedBuffer_BufferView_RuntimeStruct_ConstOffset) {
+    auto* S =
+        ty.Struct(mod.symbols.New("S"), {
+                                            {mod.symbols.New("a"), ty.vec4u()},
+                                            {mod.symbols.New("b"), ty.runtime_array(ty.u32())},
+                                        });
+    core::ir::Var* v = nullptr;
+    core::type::Type* buffer_ty = nullptr;
+    b.Append(mod.root_block, [&] {
+        auto* o = b.Override("x", ty.i32());
+        o->SetOverrideId({1});
+        auto* count = ty.Get<core::ir::type::ValueArrayCount>(o->Result());
+        buffer_ty = ty.Get<core::type::Buffer>(count);
+        v = b.Var("v", ty.ptr(workgroup, buffer_ty));
+    });
+
+    auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
+    b.Append(ep->Block(), [&] {
+        auto* let = b.Let("l", v);
+        b.CallExplicit(ty.ptr(workgroup, S), BuiltinFn::kBufferView, Vector{S}, let, 4_u);
+        b.Return(ep);
+    });
+
+    auto* src = R"(
+S = struct @align(16) {
+  a:vec4<u32> @offset(0)
+  b:array<u32> @offset(16)
+}
+
+$B1: {  # root
+  %x:i32 = override undef @id(1)
+  %v:ptr<workgroup, buffer<%x>, read_write> = var undef
+}
+
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %l:ptr<workgroup, buffer<%x>, read_write> = let %v
+    %5:ptr<workgroup, S, read_write> = bufferView<S> %l, 4u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 20;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(
+        result.Failure().reason,
+        R"(error: invalid buffer size (20 bytes) when used with bufferView (24 bytes required))");
+}
+
+TEST_F(IR_SubstituteOverridesTest, BufferView_OverrideSizedOffset) {
+    core::ir::Var* v = nullptr;
+    core::ir::Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("x", ty.u32());
+        o->SetOverrideId({1});
+        v = b.Var("v", ty.ptr(workgroup, ty.buffer(128)));
+    });
+
+    auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
+    b.Append(ep->Block(), [&] {
+        b.CallExplicit(ty.ptr(workgroup, ty.u32()), BuiltinFn::kBufferView, Vector{ty.u32()}, v, o);
+        b.Return(ep);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %x:u32 = override undef @id(1)
+  %v:ptr<workgroup, buffer<128>, read_write> = var undef
+}
+
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %4:ptr<workgroup, u32, read_write> = bufferView<u32> %v, %x
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 3;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(
+        result.Failure().reason,
+        R"(error: bufferView offset (3 bytes) must be a multiple of result alignment (4 bytes))");
+}
+
+TEST_F(IR_SubstituteOverridesTest, BufferArrayView_BufferSize) {
+    auto* S =
+        ty.Struct(mod.symbols.New("S"), {
+                                            {mod.symbols.New("a"), ty.vec4u()},
+                                            {mod.symbols.New("b"), ty.runtime_array(ty.u32())},
+                                        });
+    core::ir::Var* v = nullptr;
+    core::ir::Override* buf = nullptr;
+    core::ir::Override* s = nullptr;
+    core::ir::Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        buf = b.Override("b", ty.u32());
+        buf->SetOverrideId({1});
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({2});
+        s = b.Override("s", ty.u32());
+        s->SetOverrideId({3});
+        auto* count = ty.Get<core::ir::type::ValueArrayCount>(buf->Result());
+        auto* buffer_ty = ty.Get<core::type::Buffer>(count);
+        v = b.Var("v", ty.ptr(workgroup, buffer_ty));
+    });
+
+    auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
+    b.Append(ep->Block(), [&] {
+        b.CallExplicit(ty.ptr(workgroup, S), BuiltinFn::kBufferArrayView, Vector{S}, v, o, s);
+        b.Return(ep);
+    });
+
+    auto* src = R"(
+S = struct @align(16) {
+  a:vec4<u32> @offset(0)
+  b:array<u32> @offset(16)
+}
+
+$B1: {  # root
+  %b:u32 = override undef @id(1)
+  %o:u32 = override undef @id(2)
+  %s:u32 = override undef @id(3)
+  %v:ptr<workgroup, buffer<%b>, read_write> = var undef
+}
+
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %6:ptr<workgroup, S, read_write> = bufferArrayView<S> %v, %o, %s
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 24;
+    cfg.map[OverrideId{2}] = 16;
+    cfg.map[OverrideId{3}] = 24;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(
+        result.Failure().reason,
+        R"(error: invalid buffer size (24 bytes) when used with bufferArrayView (36 bytes required))");
+}
+
+TEST_F(IR_SubstituteOverridesTest, BufferArrayView_Size) {
+    auto* S =
+        ty.Struct(mod.symbols.New("S"), {
+                                            {mod.symbols.New("a"), ty.vec4u()},
+                                            {mod.symbols.New("b"), ty.runtime_array(ty.u32())},
+                                        });
+    core::ir::Var* v = nullptr;
+    core::ir::Override* buf = nullptr;
+    core::ir::Override* s = nullptr;
+    core::ir::Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        buf = b.Override("b", ty.u32());
+        buf->SetOverrideId({1});
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({2});
+        s = b.Override("s", ty.u32());
+        s->SetOverrideId({3});
+        auto* count = ty.Get<core::ir::type::ValueArrayCount>(buf->Result());
+        auto* buffer_ty = ty.Get<core::type::Buffer>(count);
+        v = b.Var("v", ty.ptr(workgroup, buffer_ty));
+    });
+
+    auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
+    b.Append(ep->Block(), [&] {
+        b.CallExplicit(ty.ptr(workgroup, S), BuiltinFn::kBufferArrayView, Vector{S}, v, o, s);
+        b.Return(ep);
+    });
+
+    auto* src = R"(
+S = struct @align(16) {
+  a:vec4<u32> @offset(0)
+  b:array<u32> @offset(16)
+}
+
+$B1: {  # root
+  %b:u32 = override undef @id(1)
+  %o:u32 = override undef @id(2)
+  %s:u32 = override undef @id(3)
+  %v:ptr<workgroup, buffer<%b>, read_write> = var undef
+}
+
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %6:ptr<workgroup, S, read_write> = bufferArrayView<S> %v, %o, %s
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 20;
+    cfg.map[OverrideId{2}] = 0;
+    cfg.map[OverrideId{3}] = 16;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(result.Failure().reason,
+              R"(error: bufferArrayView has invalid size (16 bytes, requires 20 bytes))");
+}
+
+TEST_F(IR_SubstituteOverridesTest, BufferArrayView_SizeMultiple) {
+    auto* S =
+        ty.Struct(mod.symbols.New("S"), {
+                                            {mod.symbols.New("a"), ty.vec4u()},
+                                            {mod.symbols.New("b"), ty.runtime_array(ty.u32())},
+                                        });
+    core::ir::Var* v = nullptr;
+    core::ir::Override* buf = nullptr;
+    core::ir::Override* s = nullptr;
+    core::ir::Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        buf = b.Override("b", ty.u32());
+        buf->SetOverrideId({1});
+        o = b.Override("o", ty.u32());
+        o->SetOverrideId({2});
+        s = b.Override("s", ty.u32());
+        s->SetOverrideId({3});
+        auto* count = ty.Get<core::ir::type::ValueArrayCount>(buf->Result());
+        auto* buffer_ty = ty.Get<core::type::Buffer>(count);
+        v = b.Var("v", ty.ptr(workgroup, buffer_ty));
+    });
+
+    auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
+    b.Append(ep->Block(), [&] {
+        b.CallExplicit(ty.ptr(workgroup, S), BuiltinFn::kBufferArrayView, Vector{S}, v, o, s);
+        b.Return(ep);
+    });
+
+    auto* src = R"(
+S = struct @align(16) {
+  a:vec4<u32> @offset(0)
+  b:array<u32> @offset(16)
+}
+
+$B1: {  # root
+  %b:u32 = override undef @id(1)
+  %o:u32 = override undef @id(2)
+  %s:u32 = override undef @id(3)
+  %v:ptr<workgroup, buffer<%b>, read_write> = var undef
+}
+
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B2: {
+    %6:ptr<workgroup, S, read_write> = bufferArrayView<S> %v, %o, %s
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 40;
+    cfg.map[OverrideId{2}] = 0;
+    cfg.map[OverrideId{3}] = 21;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(
+        result.Failure().reason,
+        R"(error: bufferArrayView size (21 bytes) minus type offset (16 bytes) must be a multiple of the type stride (4 bytes))");
+}
+
+TEST_F(IR_SubstituteOverridesTest, BufferView_ThroughCall_Unsized) {
+    core::ir::Var* v = nullptr;
+    core::ir::Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("x", ty.u32());
+        o->SetOverrideId({1});
+        auto* count = ty.Get<core::ir::type::ValueArrayCount>(o->Result());
+        auto* buffer_ty = ty.Get<core::type::Buffer>(count);
+        v = b.Var("v", ty.ptr(workgroup, buffer_ty));
+    });
+
+    auto* foo = b.Function("foo", ty.void_());
+    auto* p = b.FunctionParam("p", ty.ptr(workgroup, ty.unsized_buffer()));
+    foo->SetParams({p});
+    b.Append(foo->Block(), [&] {
+        b.CallExplicit(ty.ptr(workgroup, ty.vec4u()), BuiltinFn::kBufferView, Vector{ty.vec4u()}, p,
+                       0_u);
+        b.Return(foo);
+    });
+
+    auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
+    b.Append(ep->Block(), [&] {
+        b.Call(ty.void_(), foo, v);
+        b.Return(ep);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %x:u32 = override undef @id(1)
+  %v:ptr<workgroup, buffer<%x>, read_write> = var undef
+}
+
+%foo = func(%p:ptr<workgroup, buffer, read_write>):void {
+  $B2: {
+    %5:ptr<workgroup, vec4<u32>, read_write> = bufferView<vec4<u32>> %p, 0u
+    ret
+  }
+}
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B3: {
+    %7:void = call %foo, %v
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 12;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(
+        result.Failure().reason,
+        R"(error: invalid buffer size (12 bytes) when used with bufferView (16 bytes required))");
+}
+
+TEST_F(IR_SubstituteOverridesTest, BufferView_ThroughCall_SmallerSize) {
+    core::ir::Var* v = nullptr;
+    core::ir::Override* o = nullptr;
+    b.Append(mod.root_block, [&] {
+        o = b.Override("x", ty.u32());
+        o->SetOverrideId({1});
+        auto* buffer_ty = ty.buffer(128);
+        v = b.Var("v", ty.ptr(workgroup, buffer_ty));
+    });
+
+    auto* foo = b.Function("foo", ty.void_());
+    auto* p = b.FunctionParam("p", ty.ptr(workgroup, ty.buffer(16)));
+    foo->SetParams({p});
+    b.Append(foo->Block(), [&] {
+        b.CallExplicit(ty.ptr(workgroup, ty.vec4u()), BuiltinFn::kBufferView, Vector{ty.vec4u()}, p,
+                       o);
+        b.Return(foo);
+    });
+
+    auto* ep = b.ComputeFunction("ep", 1_u, 1_u, 1_u);
+    b.Append(ep->Block(), [&] {
+        b.Call(ty.void_(), foo, v);
+        b.Return(ep);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %x:u32 = override undef @id(1)
+  %v:ptr<workgroup, buffer<128>, read_write> = var undef
+}
+
+%foo = func(%p:ptr<workgroup, buffer<16>, read_write>):void {
+  $B2: {
+    %5:ptr<workgroup, vec4<u32>, read_write> = bufferView<vec4<u32>> %p, %x
+    ret
+  }
+}
+%ep = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B3: {
+    %7:void = call %foo, %v
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 4;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(
+        result.Failure().reason,
+        R"(error: invalid buffer size (16 bytes) when used with bufferView (20 bytes required))");
 }
 
 }  // namespace

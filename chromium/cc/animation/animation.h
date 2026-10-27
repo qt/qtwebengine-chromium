@@ -94,8 +94,10 @@ class CC_ANIMATION_EXPORT Animation : public base::RefCounted<Animation>,
   void DetachElement();
 
   void AddKeyframeModel(std::unique_ptr<KeyframeModel> keyframe_model);
-  void PauseKeyframeModel(int keyframe_model_id, base::TimeDelta time_offset);
-  void PauseKeyframeModels(base::TimeDelta time_offset);
+  void PauseKeyframeModelForTesting(int keyframe_model_id,
+                                    base::TimeDelta hold_time);
+  void Pause(base::TimeDelta hold_time,
+             KeyframeModel::RunState pause_run_state = KeyframeModel::PAUSED);
   virtual void RemoveKeyframeModel(int keyframe_model_id);
   void AbortKeyframeModel(int keyframe_model_id);
 
@@ -151,7 +153,25 @@ class CC_ANIMATION_EXPORT Animation : public base::RefCounted<Animation>,
 
   void set_is_replacement() { is_replacement_ = true; }
 
+  void SetStartTime(base::TimeTicks start_time);
   std::optional<base::TimeTicks> GetStartTime() const;
+
+  void SetHoldTime(std::optional<base::TimeDelta> hold_time);
+
+  base::TimeDelta CalculateCurrentTime(base::TimeTicks monotonic_time) const;
+
+  void SetRunState(KeyframeModel::RunState run_state);
+  KeyframeModel::RunState GetRunState() const;
+
+  bool IsPaused() const;
+  bool IsFinished() const;
+
+  // Controls whether to force the animation to start from the beginning.
+  // With kDisabled, Play only rewinds if the animation has already finished.
+  // With kEnabled, Play rewinds unconditionally.
+  enum class ForcePlayRewind { kDisabled, kEnabled };
+  void Play(base::TimeTicks monotonic_time,
+            ForcePlayRewind force_rewind = ForcePlayRewind::kDisabled);
 
   virtual bool IsWorkletAnimation() const;
 

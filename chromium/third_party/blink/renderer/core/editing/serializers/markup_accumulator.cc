@@ -649,6 +649,24 @@ std::pair<ShadowRoot*, HTMLTemplateElement*> MarkupAccumulator::GetShadowTree(
     template_element->SetBooleanAttribute(html_names::kShadowrootclonableAttr,
                                           true);
   }
+  if (RuntimeEnabledFeatures::ShadowRootReferenceTargetEnabled(
+          shadow_root->GetDocument().GetExecutionContext())) {
+    const AtomicString& reference_target = shadow_root->referenceTarget();
+    if (!reference_target.IsNull()) {
+      template_element->setAttribute(html_names::kShadowrootreferencetargetAttr,
+                                     reference_target);
+    }
+  }
+  if (RuntimeEnabledFeatures::ShadowRootAdoptedStyleSheetEnabled(
+          shadow_root->GetDocument().GetExecutionContext())) {
+    const AtomicString& adopted_stylesheets_value =
+        shadow_root->AdoptedStylesheetsAttributeValue();
+    if (!adopted_stylesheets_value.IsNull()) {
+      template_element->setAttribute(
+          html_names::kShadowrootadoptedstylesheetsAttr,
+          adopted_stylesheets_value);
+    }
+  }
   // https://html.spec.whatwg.org/#serialising-html-fragments
   // Step: 4.2.7
   // The shadowrootcustomelementregistryattribute should be added unless

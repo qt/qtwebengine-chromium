@@ -103,6 +103,21 @@ constexpr char kBookmarkSignInPromoDismissCount[] =
 constexpr char kPasswordSignInPromoDismissCount[] =
     "PasswordSignInPromoDismissCount";
 
+// Pref to store the number of times the Search AI Mode bubble signin promo
+// has been shown per account.
+constexpr char kSearchAIModeSignInPromoShownCount[] =
+    "SearchAIModeSignInPromoShownCount";
+
+// Pref to store the number of times the Search AI Mode bubble signin promo
+// has been dismissed per account.
+constexpr char kSearchAIModeSignInPromoDismissCount[] =
+    "SearchAIModeSignInPromoDismissCount";
+
+// Pref used to track the last time the Search AI Mode bubble signin promo was
+// shown.
+constexpr char kSearchAIModeSignInPromoLastImpressionTime[] =
+    "SearchAIModeSignInPromoLastImpressionTime";
+
 // Registers that the sign in occurred with an explicit user action from the
 // bubble that appears after installing an extension. False by default.
 constexpr char kExtensionsExplicitBrowserSigninEnabled[] =
@@ -154,6 +169,18 @@ constexpr std::string_view kHistorySyncPromoIdentityPillShownCount =
 constexpr std::string_view kHistorySyncPromoIdentityPillUsedCount =
     "ChromeSigninSyncPromoIdentityPillUsedCount";
 
+// The stable account ID for metrics.
+constexpr std::string_view kAccountMetricsId = "AccountMetricsId";
+// Boolean indicating if the account is capped for metrics ID allocation.
+// Being capped means no new IDs will be allocated because the limit of 100
+// accounts has been reached.
+constexpr std::string_view kAccountMetricsIdIsCapped =
+    "AccountMetricsIdIsCapped";
+
+// The next unassigned ID for account metrics.
+constexpr char kAccountMetricsNextUnassignedId[] =
+    "signin.account_metrics_next_unassigned_id";
+
 }  // namespace
 
 SigninPrefs::SigninPrefs(PrefService& pref_service)
@@ -165,6 +192,7 @@ void SigninPrefs::RegisterProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterDictionaryPref(kSigninAccountPrefs);
   registry->RegisterIntegerPref(prefs::kHistorySyncSuccessiveDeclineCount, 0);
   registry->RegisterInt64Pref(prefs::kHistorySyncLastDeclinedTimestamp, 0);
+  registry->RegisterIntegerPref(kAccountMetricsNextUnassignedId, 0);
 }
 
 void SigninPrefs::MigrateObsoleteSigninPrefs() {
@@ -240,6 +268,37 @@ ChromeSigninUserChoice SigninPrefs::GetChromeSigninInterceptionUserChoice(
   // No value default to 0 -> `ChromeSigninUserChoice::kNoChoice`.
   return static_cast<ChromeSigninUserChoice>(
       account_dict->FindInt(kChromeSigninInterceptionUserChoice).value_or(0));
+}
+
+void SigninPrefs::SetAccountMetricsId(const GaiaId& gaia_id, int id) {
+  SetIntPrefForAccount(gaia_id, kAccountMetricsId, id);
+}
+
+std::optional<int> SigninPrefs::GetAccountMetricsId(
+    const GaiaId& gaia_id) const {
+  CHECK(!gaia_id.empty());
+  const base::DictValue* account_dict =
+      pref_service_->GetDict(kSigninAccountPrefs).FindDict(gaia_id.ToString());
+  if (!account_dict) {
+    return std::nullopt;
+  }
+  return account_dict->FindInt(kAccountMetricsId);
+}
+
+void SigninPrefs::SetAccountMetricsIdCapped(const GaiaId& gaia_id) {
+  SetBooleanPrefForAccount(gaia_id, kAccountMetricsIdIsCapped, true);
+}
+
+bool SigninPrefs::IsAccountMetricsIdCapped(const GaiaId& gaia_id) const {
+  return GetBooleanPrefForAccount(gaia_id, kAccountMetricsIdIsCapped);
+}
+
+int SigninPrefs::GetNextAccountMetricsUnassignedId() const {
+  return pref_service_->GetInteger(kAccountMetricsNextUnassignedId);
+}
+
+void SigninPrefs::SetNextAccountMetricsUnassignedId(int id) {
+  pref_service_->SetInteger(kAccountMetricsNextUnassignedId, id);
 }
 
 void SigninPrefs::SetChromeLastSignoutTime(const GaiaId& gaia_id,
@@ -350,6 +409,16 @@ int SigninPrefs::GetBookmarkSigninPromoImpressionCount(
           : kBookmarkSignInPromoShownCount);
 }
 
+void SigninPrefs::IncrementSearchAIModeSigninPromoImpressionCount(
+    const GaiaId& gaia_id) {
+  IncrementIntPrefForAccount(gaia_id, kSearchAIModeSignInPromoShownCount);
+}
+
+int SigninPrefs::GetSearchAIModeSigninPromoImpressionCount(
+    const GaiaId& gaia_id) const {
+  return GetIntPrefForAccount(gaia_id, kSearchAIModeSignInPromoShownCount);
+}
+
 void SigninPrefs::IncrementAutofillSigninPromoDismissCount(
     const GaiaId& gaia_id) {
   IncrementIntPrefForAccount(gaia_id, kAutofillSignInPromoDismissCount);
@@ -390,6 +459,16 @@ int SigninPrefs::GetPasswordSigninPromoDismissCount(
   return GetIntPrefForAccount(gaia_id, kPasswordSignInPromoDismissCount);
 }
 
+void SigninPrefs::IncrementSearchAIModeSigninPromoDismissCount(
+    const GaiaId& gaia_id) {
+  IncrementIntPrefForAccount(gaia_id, kSearchAIModeSignInPromoDismissCount);
+}
+
+int SigninPrefs::GetSearchAIModeSigninPromoDismissCount(
+    const GaiaId& gaia_id) const {
+  return GetIntPrefForAccount(gaia_id, kSearchAIModeSignInPromoDismissCount);
+}
+
 void SigninPrefs::SetExtensionsExplicitBrowserSignin(const GaiaId& gaia_id,
                                                      bool enabled) {
   SetBooleanPrefForAccount(gaia_id, kExtensionsExplicitBrowserSigninEnabled,
@@ -424,6 +503,19 @@ void SigninPrefs::SetPolicyDisclaimerLastRegistrationFailureTime(
 void SigninPrefs::ClearPolicyDisclaimerLastRegistrationFailureTime(
     const GaiaId& gaia_id) {
   ClearPref(gaia_id, kPolicyDisclaimerLastRegistrationFailureTime);
+}
+
+void SigninPrefs::SetSearchAIModeSigninPromoLastImpressionTime(
+    const GaiaId& gaia_id,
+    base::Time last_impression_time) {
+  SetTimePref(last_impression_time, gaia_id,
+              kSearchAIModeSignInPromoLastImpressionTime);
+}
+
+std::optional<base::Time>
+SigninPrefs::GetSearchAIModeSigninPromoLastImpressionTime(
+    const GaiaId& gaia_id) const {
+  return GetTimePref(gaia_id, kSearchAIModeSignInPromoLastImpressionTime);
 }
 
 std::optional<base::Time>
@@ -541,6 +633,15 @@ int SigninPrefs::GetIntPrefForAccount(const GaiaId& gaia_id,
 
   // Return the pref value if it exists, otherwise return the default value.
   return account_dict->FindInt(pref).value_or(0);
+}
+
+void SigninPrefs::SetIntPrefForAccount(const GaiaId& gaia_id,
+                                       std::string_view pref,
+                                       int value) {
+  CHECK(!gaia_id.empty());
+  ScopedDictPrefUpdate scoped_update(&pref_service_.get(), kSigninAccountPrefs);
+  base::DictValue* account_dict = scoped_update->EnsureDict(gaia_id.ToString());
+  account_dict->Set(pref, value);
 }
 
 void SigninPrefs::SetBooleanPrefForAccount(const GaiaId& gaia_id,

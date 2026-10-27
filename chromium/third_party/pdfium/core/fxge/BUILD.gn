@@ -6,6 +6,19 @@ import("//build/config/freetype/freetype.gni")
 import("../../pdfium.gni")
 import("../../testing/test.gni")
 
+if (pdf_enable_fontations) {
+  import("//build/rust/rust_static_library.gni")
+}
+
+if (pdf_enable_fontations) {
+  config("skrifa_cxx_config") {
+    include_dirs = [
+      "//core/fxge/skrifa/src",
+      "$root_gen_dir/core/fxge/skrifa/src",
+    ]
+  }
+}
+
 source_set("fxge") {
   sources = [
     "calculate_pitch.cpp",
@@ -14,6 +27,8 @@ source_set("fxge") {
     "cfx_charmap_resolver.h",
     "cfx_color.cpp",
     "cfx_color.h",
+    "cfx_cttgsubtable.cpp",
+    "cfx_cttgsubtable.h",
     "cfx_defaultrenderdevice.cpp",
     "cfx_defaultrenderdevice.h",
     "cfx_drawutils.cpp",
@@ -102,9 +117,7 @@ source_set("fxge") {
     "../../:pdfium_strict_config",
     "../../:pdfium_noshorten_config",
   ]
-
   deps = [ "../fxcrt" ]
-
   public_deps = []
   defines = []
 
@@ -141,16 +154,21 @@ source_set("fxge") {
     }
   }
 
+  if (pdf_enable_fontations) {
+    configs += [ ":skrifa_cxx_config" ]
+    deps += [
+      ":skrifa_cxx",
+      ":skrifa_cxx_cpp",
+      "//build/rust:cxx_cppdeps",
+    ]
+  }
+
   if (is_android) {
     sources += [
-      "android/cfpf_skiadevicemodule.cpp",
-      "android/cfpf_skiadevicemodule.h",
       "android/cfpf_skiafont.cpp",
       "android/cfpf_skiafont.h",
       "android/cfpf_skiafontmgr.cpp",
       "android/cfpf_skiafontmgr.h",
-      "android/cfpf_skiapathfont.cpp",
-      "android/cfpf_skiapathfont.h",
       "android/cfx_androidfontinfo.cpp",
       "android/cfx_androidfontinfo.h",
       "android/fx_android_impl.cpp",
@@ -163,11 +181,11 @@ source_set("fxge") {
 
   if (is_mac) {
     sources += [
+      "apple/capple_platform.cpp",
+      "apple/capple_platform.h",
+      "apple/cquartz_2d.cpp",
+      "apple/cquartz_2d.h",
       "apple/fx_apple_impl.cpp",
-      "apple/fx_apple_platform.cpp",
-      "apple/fx_apple_platform.h",
-      "apple/fx_quartz_device.cpp",
-      "apple/fx_quartz_device.h",
     ]
     frameworks = [ "CoreGraphics.framework" ]
   }
@@ -200,13 +218,55 @@ source_set("fxge") {
     configs -= [ "//build/config/win:lean_and_mean" ]
   }
 
+  if (pdf_enable_xfa) {
+    sources += [
+      "cfx_cttnametable.cpp",
+      "cfx_cttnametable.h",
+    ]
+  }
+
   visibility = [ "../../*" ]
+}
+
+if (pdf_enable_fontations) {
+  rust_static_library("skrifa_cxx") {
+    crate_name = "skrifa_cxx"
+    allow_unsafe = true
+    crate_root = "skrifa/src/main.rs"
+    sources = [ crate_root ]
+    cxx_bindings = [ crate_root ]
+    features = [ "agl" ]
+    deps = [
+      "//build/rust:cxx_cppdeps",
+      "//third_party/rust/read_fonts/v0_39:lib",
+      "//third_party/rust/skrifa/v0_42:lib",
+    ]
+    configs += [ ":skrifa_cxx_config" ]
+  }
+
+  source_set("skrifa_cxx_cpp") {
+    sources = [
+      "skrifa/src/outlines.cpp",
+      "skrifa/src/outlines.h",
+    ]
+    deps = [
+      ":skrifa_cxx",
+      "//build/rust:cxx_cppdeps",
+    ]
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [
+      "//build/config/compiler:no_chromium_code",
+      ":skrifa_cxx_config",
+    ]
+    visibility = [ ":*" ]
+  }
 }
 
 pdfium_unittest_source_set("unittests") {
   sources = [
     "cfx_defaultrenderdevice_unittest.cpp",
     "cfx_folderfontinfo_unittest.cpp",
+    "cfx_font_unittest.cpp",
     "cfx_fontmapper_unittest.cpp",
     "cfx_path_unittest.cpp",
     "dib/blend_unittest.cpp",
@@ -223,10 +283,21 @@ pdfium_unittest_source_set("unittests") {
     "../fpdfapi/page",
     "../fpdfapi/parser",
   ]
+  configs = []
   pdfium_root_dir = "../../"
 
   if (is_win) {
     sources += [ "win32/cfx_psrenderer_unittest.cpp" ]
+  }
+
+  if (pdf_enable_fontations) {
+    sources += [ "skrifa/fx_skrifa_unittest.cpp" ]
+    deps += [
+      ":skrifa_cxx",
+      ":skrifa_cxx_cpp",
+      "//build/rust:cxx_cppdeps",
+    ]
+    configs += [ ":skrifa_cxx_config" ]
   }
 }
 

@@ -1,10 +1,12 @@
 // Benchmarks for Eigen Tensor convolution (1D and 2D).
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #define EIGEN_USE_THREADS
 
 #include <benchmark/benchmark.h>
-#include <unsupported/Eigen/CXX11/Tensor>
-#include <unsupported/Eigen/CXX11/ThreadPool>
+#include <unsupported/Eigen/Tensor>
+#include <unsupported/Eigen/ThreadPool>
 
 using namespace Eigen;
 
@@ -109,43 +111,21 @@ static void BM_Convolve2D_ThreadPool(benchmark::State& state) {
   state.counters["threads"] = threads;
 }
 
-static void Conv1DSizes(::benchmark::Benchmark* b) {
-  for (int input : {128, 512, 2048}) {
-    for (int kernel : {3, 5, 11}) {
-      b->Args({input, kernel});
-    }
-  }
-}
+// {input, kernel}, {channels, hw, k}, {hw, k, threads}: pure Cartesian products.
+#define CONV1D_SIZES ->ArgsProduct({{128, 512, 2048}, {3, 5, 11}})
+#define CONV2D_CHANNEL_SIZES ->ArgsProduct({{3, 64, 128}, {16, 32, 56}, {3, 5}})
+#define CONV2D_THREADPOOL_SIZES ->ArgsProduct({{64, 128, 224}, {3, 5}, {2, 4, 8}})
 
-static void Conv2DSizes(::benchmark::Benchmark* b) {
-  for (int hw : {32, 64, 128, 224}) {
-    for (int k : {3, 5, 7}) {
-      b->Args({hw, hw, k, k});
-    }
-  }
-}
+// {hw, hw, k, k}: explicit because hw and k are repeated.
+// clang-format off
+#define CONV2D_SIZES \
+  ->Args({32, 32, 3, 3})->Args({32, 32, 5, 5})->Args({32, 32, 7, 7}) \
+  ->Args({64, 64, 3, 3})->Args({64, 64, 5, 5})->Args({64, 64, 7, 7}) \
+  ->Args({128, 128, 3, 3})->Args({128, 128, 5, 5})->Args({128, 128, 7, 7}) \
+  ->Args({224, 224, 3, 3})->Args({224, 224, 5, 5})->Args({224, 224, 7, 7})
+// clang-format on
 
-static void Conv2DChannelSizes(::benchmark::Benchmark* b) {
-  for (int c : {3, 64, 128}) {
-    for (int hw : {16, 32, 56}) {
-      for (int k : {3, 5}) {
-        b->Args({c, hw, k});
-      }
-    }
-  }
-}
-
-static void Conv2DThreadPoolSizes(::benchmark::Benchmark* b) {
-  for (int hw : {64, 128, 224}) {
-    for (int k : {3, 5}) {
-      for (int threads : {2, 4, 8}) {
-        b->Args({hw, k, threads});
-      }
-    }
-  }
-}
-
-BENCHMARK(BM_Convolve1D)->Apply(Conv1DSizes);
-BENCHMARK(BM_Convolve2D)->Apply(Conv2DSizes);
-BENCHMARK(BM_Convolve2D_Channels)->Apply(Conv2DChannelSizes);
-BENCHMARK(BM_Convolve2D_ThreadPool)->Apply(Conv2DThreadPoolSizes);
+BENCHMARK(BM_Convolve1D) CONV1D_SIZES;
+BENCHMARK(BM_Convolve2D) CONV2D_SIZES;
+BENCHMARK(BM_Convolve2D_Channels) CONV2D_CHANNEL_SIZES;
+BENCHMARK(BM_Convolve2D_ThreadPool) CONV2D_THREADPOOL_SIZES;

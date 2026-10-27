@@ -15,7 +15,6 @@ import("//components/on_device_translation/buildflags/features.gni")
 import("//components/optimization_guide/features.gni")
 import("//components/safe_browsing/buildflags.gni")
 import("//components/supervised_user/buildflags.gni")
-import("//components/surface_embed/buildflags/buildflags.gni")
 import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
 import("//pdf/features.gni")
@@ -95,7 +94,6 @@ disallowed_extension_deps_ = [
   "//extensions/common:core_api_provider",
   "//extensions/common/api/*",
   "//extensions/renderer/*",
-  "//extensions/shell/*",
   "//extensions/components/*",
   "//extensions/strings/*",
 ]
@@ -190,6 +188,7 @@ test("components_unittests") {
     "//components/accessibility_annotator/core:unit_tests",
     "//components/account_settings:unit_tests",
     "//components/activity_reporter:unit_tests",
+    "//components/actor/core:unit_tests",
     "//components/affiliations/core/browser:unit_tests",
     "//components/aggregation_service:unit_tests",
     "//components/apdu:unit_tests",
@@ -223,6 +222,7 @@ test("components_unittests") {
     "//components/content_settings/core/browser:unit_tests",
     "//components/content_settings/core/common:unit_tests",
     "//components/contextual_search:unit_tests",
+    "//components/contextual_search/footprints:unit_tests",
     "//components/contextual_search/internal:unit_tests",
     "//components/contextual_tasks:unit_tests",
     "//components/country_codes:unit_tests",
@@ -281,10 +281,10 @@ test("components_unittests") {
     "//components/os_crypt/async/browser:unit_tests",
     "//components/os_crypt/async/common:unit_tests",
     "//components/os_crypt/common:unit_tests",
-    "//components/os_crypt/sync:unit_tests",
     "//components/page_image_service:unit_tests",
     "//components/page_info/core:unit_tests",
     "//components/password_manager/core/browser:unit_tests",
+    "//components/password_manager/core/browser/actor_login/internal:unit_tests",
     "//components/password_manager/core/browser/affiliation:affiliation_fetching_unittests",
     "//components/password_manager/core/browser/affiliation:unit_tests",
     "//components/password_manager/core/browser/export:unit_tests",
@@ -302,6 +302,7 @@ test("components_unittests") {
     "//components/password_manager/services/csv_password:unit_tests",
     "//components/payments/core:unit_tests",
     "//components/persistent_cache:unit_tests",
+    "//components/personal_context/core:unit_tests",
     "//components/plus_addresses/core/browser:unit_tests",
     "//components/plus_addresses/core/browser/metrics:unit_tests",
     "//components/plus_addresses/core/browser/settings:unit_tests",
@@ -313,6 +314,7 @@ test("components_unittests") {
     "//components/power_metrics:unit_tests",
     "//components/prefs:unit_tests",
     "//components/privacy_sandbox:unit_tests",
+    "//components/private_verification_tokens:unit_tests",
     "//components/profile_metrics:unit_tests",
     "//components/proto_extras:unit_tests",
     "//components/proxy_config:unit_tests",
@@ -349,6 +351,7 @@ test("components_unittests") {
     "//components/signin/public/browser:unit_tests",
     "//components/signin/public/identity_manager:unit_tests",
     "//components/signin/public/webdata:unit_tests",
+    "//components/site_cookie_provider:unit_tests",
     "//components/skills:unit_tests",
     "//components/speech:unit_tests",
     "//components/sqlite_proto:unit_tests",
@@ -369,8 +372,6 @@ test("components_unittests") {
     "//components/system_media_controls:unit_tests",
     "//components/test:run_all_unittests",
     "//components/themes:unit_tests",
-    "//components/tpcd/metadata/browser:unit_tests",
-    "//components/tpcd/metadata/common:unit_tests",
     "//components/translate/core/browser:unit_tests",
     "//components/translate/core/common:unit_tests",
     "//components/translate/core/language_detection:unit_tests",
@@ -406,9 +407,10 @@ test("components_unittests") {
     deps += [
       "//components/enterprise:unit_tests",
       "//components/enterprise/common:unit_tests",
-      "//components/enterprise/connectors/core:cloud_content_scanning_unittests",
+      "//components/enterprise/connectors/core:cloud_content_scanning_unit_tests",
       "//components/enterprise/connectors/core:unit_tests",
       "//components/enterprise/data_protection:unit_tests",
+      "//components/enterprise/isolated_mode:unit_tests",
       "//components/enterprise/obfuscation/core:unit_tests",
     ]
   }
@@ -421,7 +423,7 @@ test("components_unittests") {
     ]
   }
 
-  if (is_linux) {
+  if (is_linux || is_mac) {
     deps += [ "//components/gapis:unit_tests" ]
   }
 
@@ -479,6 +481,7 @@ test("components_unittests") {
       "//components/browsing_topics:unit_tests",
       "//components/browsing_topics/common:unit_tests",
       "//components/captive_portal/content:unit_tests",
+      "//components/capture_mode:unit_tests",
       "//components/cast_receiver:unit_tests",
       "//components/cast_streaming:unit_tests",
       "//components/certificate_transparency:unit_tests",
@@ -509,6 +512,7 @@ test("components_unittests") {
       "//components/history/content/browser:unit_tests",
       "//components/history_clusters/core:unit_tests",
       "//components/history_embeddings/core:unit_tests",
+      "//components/infobars/content:unit_tests",
       "//components/input:unit_tests",
       "//components/invalidation:legacy_topics_cleanup_unit_tests",
       "//components/invalidation:unit_tests",
@@ -548,8 +552,11 @@ test("components_unittests") {
       "//components/performance_manager:unit_tests",
       "//components/performance_manager/scenario_api:unit_tests",
       "//components/permissions:unit_tests",
+      "//components/personal_context/first_run:unit_tests",
       "//components/policy/content:unit_tests",
       "//components/push_messaging:unit_tests",
+      "//components/record_replay/content/browser:unit_tests",
+      "//components/record_replay/core/browser:unit_tests",
       "//components/reduce_accept_language/browser:unit_tests",
       "//components/reporting/resources:unit_tests",
       "//components/services/heap_profiling:unit_tests",
@@ -629,8 +636,7 @@ test("components_unittests") {
       "//components/autofill/content/renderer:unit_tests",
       "//components/background_sync:unit_tests",
       "//components/blocked_content:unit_tests",
-      "//components/browser_apis/browser_controls:unit_tests",
-      "//components/browser_apis/tab_strip:unit_tests",
+      "//components/browser_apis:unit_tests",
       "//components/content_settings/browser/ui:unit_tests",
       "//components/headless/test:unit_tests",
       "//components/media_router/browser:unit_tests",
@@ -679,12 +685,9 @@ test("components_unittests") {
       "//components/android_autofill/browser:unit_tests",
       "//components/browser_ui/accessibility/android:unit_tests",
       "//components/browser_ui/site_settings/android:unit_tests",
-      "//components/browser_ui/sms/android:unit_tests",
       "//components/cdm/browser:unit_tests",
       "//components/collaboration/internal:comments_native_java_unittests_java",
       "//components/collaboration/internal:messaging_native_java_unittests_java",
-      "//components/component_updater/android:embedded_component_loader_java",
-      "//components/component_updater/android:embedded_component_loader_unittests",
       "//components/crash/android:java",
       "//components/crash/android:unit_tests",
       "//components/credential_management:unit_tests",
@@ -708,6 +711,7 @@ test("components_unittests") {
       "//components/media_router/browser/android:test_support_java",
       "//components/messages/android:java",
       "//components/messages/android:unit_tests",
+      "//components/messages/android/test:test_support_java",
       "//components/metrics:metrics_java",
       "//components/offline_items_collection/core:native_java_unittests_java",
       "//components/one_time_tokens/android/backend/sms:java",
@@ -768,7 +772,6 @@ test("components_unittests") {
       "//components/live_caption:unit_tests",
 
       # TODO(crbug.com/470475787): Enable this test on Android.
-      "//components/password_manager/core/browser/actor_login/internal:unit_tests",
       "//components/soda:unit_tests",
       "//components/storage_monitor:unit_tests",
       "//components/web_modal:unit_tests",
@@ -779,12 +782,16 @@ test("components_unittests") {
   if (!is_android && !is_ios && !is_fuchsia && !is_castos) {
     deps += [
       "//components/accessibility_annotator/content/content_annotator:unit_tests",
+      "//components/accessibility_annotator/content/live_tab_context:unit_tests",
       "//components/accessibility_annotator/core/live_tab_context:unit_tests",
       "//components/private_ai:unit_tests",
     ]
   }
 
-  if (enable_guest_contents) {
+  if (use_blink) {
+    # guest_contents is a supporting component for any solution that embeds
+    # unowned inner WebContents. As it is for embedding WebContents, only
+    # add the deps when use_blink is true.
     deps += [ "//components/guest_contents/browser:unit_tests" ]
   }
 
@@ -891,8 +898,8 @@ test("components_unittests") {
 
   if (safe_browsing_mode != 0 && !is_ios) {
     deps += [
-      # TODO(chromium: 1169835) components / reporting / storage / resources: unit_tests
-      # can't be run on iOS until they are updated.
+      # TODO(chromium: 1169835) components / reporting / storage / resources:
+      # unit_tests can't be run on iOS until they are updated.
       "//components/safe_browsing/content/browser/password_protection:password_protection_unittest",
       "//components/safe_browsing/content/browser/triggers:unit_tests",
       "//components/safe_browsing/content/browser/web_ui:unit_tests",
@@ -1023,6 +1030,7 @@ test("components_unittests") {
     "PaymentCurrencyAmountFuzzTest.FromValueDictDoesNotCrash",
     "PrivacyMathTest.GetKCombinationAtIndexDoesNotCrash",
     "PrivacyMathTest.GetNumStatesDoesNotCrash",
+    "PrivacySandboxAttestationsParserFuzzTest.ParseAttestationsFromStringDoesNotCrash",
     "RegistrationInfoTest.Parses",
     "SourceRegistrationTest.Parses",
     "TranslateUtilFuzzTest.GetTranslateSecurityOriginDoesNotCrash",
@@ -1043,6 +1051,7 @@ repack("components_tests_pak") {
     "$root_gen_dir/components/strings/components_branded_strings_en-US.pak",
     "$root_gen_dir/components/strings/components_locale_settings_en-US.pak",
     "$root_gen_dir/components/strings/components_strings_en-US.pak",
+    "$root_gen_dir/components/strings/components_variant_strings_en-US.pak",
     "$root_gen_dir/third_party/libaddressinput/address_input_strings_en-US.pak",
   ]
 
@@ -1058,6 +1067,7 @@ repack("components_tests_pak") {
     "//components/plus_addresses/core/browser/resources/strings",
     "//components/resources",
     "//components/strings",
+    "//components/strings:components_variant_strings",
     "//third_party/libaddressinput:strings",
   ]
 }
@@ -1132,6 +1142,8 @@ if (use_blink) {
       "optimization_guide/content/browser/page_content_metadata_observer_browsertest.cc",
       "optimization_guide/content/browser/page_content_proto_provider_browsertest.cc",
       "optimization_guide/content/renderer/page_text_agent_browsertest.cc",
+      "page_content_annotations/content/browser/page_settled_monitor_browsertest.cc",
+      "page_content_annotations/content/renderer/paint_stability_monitor_browsertest.cc",
       "paint_preview/renderer/paint_preview_recorder_browsertest.cc",
       "password_manager/content/browser/bad_message_browsertest.cc",
       "ukm/content/source_url_recorder_browsertest.cc",
@@ -1182,6 +1194,11 @@ if (use_blink) {
       "//components/optimization_guide/content/browser",
       "//components/optimization_guide/content/browser:test_support",
       "//components/optimization_guide/content/renderer",
+      "//components/page_content_annotations/content",
+      "//components/page_content_annotations/content/browser",
+      "//components/page_content_annotations/content/mojom",
+      "//components/page_content_annotations/content/renderer",
+      "//components/page_content_annotations/core:features",
       "//components/paint_preview/renderer",
       "//components/password_manager/content/browser",
       "//components/performance_manager:browser_tests",
@@ -1189,6 +1206,7 @@ if (use_blink) {
       "//components/security_state/core",
       "//components/shared_highlighting/core/common",
       "//components/strings",
+      "//components/surface_embed/browser:browser_tests",
       "//components/ukm:test_support",
       "//components/ukm/content",
       "//components/url_rewrite/browser",
@@ -1273,10 +1291,6 @@ if (use_blink) {
       ]
     }
 
-    if (enable_surface_embed) {
-      deps += [ "//components/surface_embed/browser:browser_tests" ]
-    }
-
     if (is_android) {
       sources += [
         "browser_ui/client_certificate/android/ssl_client_certificate_request_browsertest.cc",
@@ -1303,8 +1317,8 @@ if (use_blink) {
     }
 
     if (is_linux || is_chromeos) {
-      # content_extractor_browsertest is a standalone content extraction tool built as
-      # a MANUAL component_browsertest.
+      # content_extractor_browsertest is a standalone content extraction tool
+      # built as a MANUAL component_browsertest.
       sources += [ "dom_distiller/standalone/content_extractor_browsertest.cc" ]
       deps += [
         "//components/leveldb_proto",
@@ -1398,6 +1412,7 @@ if (use_blink) {
       "//components/omnibox/browser",
       "//components/omnibox/browser:test_support",
       "//components/subresource_filter/core/common",
+      "//components/subresource_filter/core/common:test_support",
       "//components/subresource_filter/tools:tools_lib",
       "//components/test:test_support",
       "//components/visitedlink/browser",

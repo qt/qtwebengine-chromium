@@ -157,9 +157,9 @@ void InspectorTraceEvents::WillSendRequest(
     RenderBlockingBehavior render_blocking_behavior,
     base::TimeTicks timestamp) {
   LocalFrame* frame = loader ? loader->GetFrame() : nullptr;
-  TRACE_EVENT_INSTANT_WITH_TIMESTAMP1(
-      "devtools.timeline", "ResourceSendRequest", TRACE_EVENT_SCOPE_THREAD,
-      timestamp, "data", [&](perfetto::TracedValue ctx) {
+  TRACE_EVENT_INSTANT(
+      "devtools.timeline", "ResourceSendRequest", timestamp, "data",
+      [&](perfetto::TracedValue ctx) {
         inspector_send_request_event::Data(
             std::move(ctx), execution_context, loader, request.InspectorId(),
             frame, request, resource_type, render_blocking_behavior,
@@ -231,12 +231,12 @@ void InspectorTraceEvents::MarkResourceAsCached(DocumentLoader* loader,
 void InspectorTraceEvents::Will(const probe::ExecuteScript&) {}
 
 void InspectorTraceEvents::Did(const probe::ExecuteScript& probe) {
-  TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
-                       "UpdateCounters", TRACE_EVENT_SCOPE_THREAD, "data",
-                       [&](perfetto::TracedValue context) {
-                         inspector_update_counters_event::Data(
-                             std::move(context), probe.context->GetIsolate());
-                       });
+  TRACE_EVENT_INSTANT(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
+                      "UpdateCounters", "data",
+                      [&](perfetto::TracedValue context) {
+                        inspector_update_counters_event::Data(
+                            std::move(context), probe.context->GetIsolate());
+                      });
 }
 
 void InspectorTraceEvents::Will(const probe::ParseHTML& probe) {
@@ -256,9 +256,9 @@ void InspectorTraceEvents::Did(const probe::ParseHTML& probe) {
                          std::move(context),
                          probe.parser->LineNumber().ZeroBasedInt());
                    });
-  TRACE_EVENT_INSTANT1(
-      TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters",
-      TRACE_EVENT_SCOPE_THREAD, "data", [&](perfetto::TracedValue context) {
+  TRACE_EVENT_INSTANT(
+      TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data",
+      [&](perfetto::TracedValue context) {
         inspector_update_counters_event::Data(
             std::move(context), probe.document->GetAgent().isolate());
       });
@@ -269,12 +269,12 @@ void InspectorTraceEvents::Will(const probe::CallFunction& probe) {}
 void InspectorTraceEvents::Did(const probe::CallFunction& probe) {
   if (probe.depth)
     return;
-  TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
-                       "UpdateCounters", TRACE_EVENT_SCOPE_THREAD, "data",
-                       [&](perfetto::TracedValue context) {
-                         inspector_update_counters_event::Data(
-                             std::move(context), probe.context->GetIsolate());
-                       });
+  TRACE_EVENT_INSTANT(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
+                      "UpdateCounters", "data",
+                      [&](perfetto::TracedValue context) {
+                        inspector_update_counters_event::Data(
+                            std::move(context), probe.context->GetIsolate());
+                      });
 }
 
 void InspectorTraceEvents::PaintTiming(Document* document,
@@ -291,9 +291,8 @@ void InspectorTraceEvents::PaintTiming(Document* document,
 }
 
 void InspectorTraceEvents::FrameStartedLoading(LocalFrame* frame) {
-  TRACE_EVENT_INSTANT1("devtools.timeline", "FrameStartedLoading",
-                       TRACE_EVENT_SCOPE_THREAD, "frame",
-                       GetFrameIdForTracing(frame));
+  TRACE_EVENT_INSTANT("devtools.timeline", "FrameStartedLoading", "frame",
+                      GetFrameIdForTracing(frame));
 }
 
 namespace {
@@ -1176,8 +1175,10 @@ void inspector_scroll_layer_event::Data(perfetto::TracedValue context,
 namespace {
 void FillLocation(perfetto::TracedDictionary& dict,
                   const String& url,
+                  int script_id,
                   const TextPosition& text_position) {
   dict.Add("url", url);
+  dict.Add("scriptId", script_id);
   dict.Add("lineNumber", text_position.line_.OneBasedInt());
   dict.Add("columnNumber", text_position.column_.OneBasedInt());
 }
@@ -1189,7 +1190,7 @@ void inspector_evaluate_script_event::Data(perfetto::TracedValue context,
                                            const String& url,
                                            const TextPosition& text_position) {
   auto dict = std::move(context).WriteDictionary();
-  FillLocation(dict, url, text_position);
+  FillLocation(dict, url, v8::UnboundScript::kNoScriptId, text_position);
   dict.Add("frame", IdentifiersFactory::FrameId(frame));
   SetCallStack(isolate, dict);
 }
@@ -1271,13 +1272,14 @@ inspector_compile_script_event::V8ConsumeCacheResult::V8ConsumeCacheResult(
 void inspector_compile_script_event::Data(
     perfetto::TracedValue context,
     const String& url,
+    int script_id,
     const TextPosition& text_position,
     std::optional<V8ConsumeCacheResult> consume_cache_result,
     bool eager,
     bool streamed,
     ScriptStreamer::NotStreamingReason not_streaming_reason) {
   auto dict = std::move(context).WriteDictionary();
-  FillLocation(dict, url, text_position);
+  FillLocation(dict, url, script_id, text_position);
 
   if (consume_cache_result) {
     dict.Add("consumedCacheSize", consume_cache_result->cache_size);
@@ -1298,10 +1300,11 @@ void inspector_compile_script_event::Data(
 void inspector_produce_script_cache_event::Data(
     perfetto::TracedValue context,
     const String& url,
+    int script_id,
     const TextPosition& text_position,
     int cache_size) {
   auto dict = std::move(context).WriteDictionary();
-  FillLocation(dict, url, text_position);
+  FillLocation(dict, url, script_id, text_position);
   dict.Add("producedCacheSize", cache_size);
 }
 

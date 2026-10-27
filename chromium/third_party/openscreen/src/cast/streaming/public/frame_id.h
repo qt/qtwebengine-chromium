@@ -59,37 +59,37 @@ class FrameId : public ExpandedValueBase<int64_t, FrameId> {
   }
 
   // Operators to compute advancement by incremental amounts.
-  FrameId operator+(int64_t rhs) const {
+  constexpr FrameId operator+(int64_t rhs) const {
     OSP_CHECK(!is_null());
     return FrameId(value_ + rhs);
   }
-  FrameId operator-(int64_t rhs) const {
+  constexpr FrameId operator-(int64_t rhs) const {
     OSP_CHECK(!is_null());
     return FrameId(value_ - rhs);
   }
-  FrameId& operator+=(int64_t rhs) {
+  constexpr FrameId& operator+=(int64_t rhs) {
     OSP_CHECK(!is_null());
     return (*this = (*this + rhs));
   }
-  FrameId& operator-=(int64_t rhs) {
+  constexpr FrameId& operator-=(int64_t rhs) {
     OSP_CHECK(!is_null());
     return (*this = (*this - rhs));
   }
-  FrameId& operator++() {
+  constexpr FrameId& operator++() {
     OSP_CHECK(!is_null());
     ++value_;
     return *this;
   }
-  FrameId& operator--() {
+  constexpr FrameId& operator--() {
     OSP_CHECK(!is_null());
     --value_;
     return *this;
   }
-  FrameId operator++(int) {
+  constexpr FrameId operator++(int) {
     OSP_CHECK(!is_null());
     return FrameId(value_++);
   }
-  FrameId operator--(int) {
+  constexpr FrameId operator--(int) {
     OSP_CHECK(!is_null());
     return FrameId(value_--);
   }

@@ -8,6 +8,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
+#include "base/test/run_until.h"
 #include "base/test/task_environment.h"
 #include "build/build_config.h"
 #include "components/input/features.h"
@@ -135,6 +136,14 @@ class MockRootRenderWidgetHostView : public TestRenderWidgetHostView {
     return true;
   }
 
+  bool TransformPointToLocalCoordSpace(
+      const gfx::PointF& point,
+      const viz::FrameSinkId& original_frame_sink_id,
+      gfx::PointF* transformed_point) override {
+    *transformed_point = point + offset_;
+    return true;
+  }
+
   void SetOffset(const gfx::Vector2dF& offset) { offset_ = offset; }
 
   void ProcessGestureEvent(const blink::WebGestureEvent& event,
@@ -152,6 +161,15 @@ class MockRootRenderWidgetHostView : public TestRenderWidgetHostView {
 
   blink::WebInputEvent::Type last_gesture_seen() { return last_gesture_seen_; }
   uint32_t last_id_for_touch_ack() { return unique_id_for_last_touch_ack_; }
+
+  input::RenderInputRouter* GetViewRenderInputRouter() override {
+    if (force_null_rir_) {
+      return nullptr;
+    }
+    return TestRenderWidgetHostView::GetViewRenderInputRouter();
+  }
+
+  void set_force_null_rir(bool force) { force_null_rir_ = force; }
 
   void SetHittestResult(RenderWidgetHostViewBase* result_view,
                         bool query_renderer) {
@@ -171,6 +189,7 @@ class MockRootRenderWidgetHostView : public TestRenderWidgetHostView {
   blink::WebInputEvent::Type last_gesture_seen_ =
       blink::WebInputEvent::Type::kUndefined;
   uint32_t unique_id_for_last_touch_ack_ = 0;
+  bool force_null_rir_ = false;
   gfx::Vector2dF offset_;
 };
 
@@ -561,20 +580,102 @@ TEST_F(RenderWidgetHostInputEventRouterTest,
        FindViewFromFrameSinkIdWithAncestorVerification) {
   ChildViewState child1 = MakeChildView(view_root_.get());
   ChildViewState child2 = MakeChildView(view_root_.get());
+  ChildViewState grandchild = MakeChildView(child1.view.get());
 
-  // child2 is NOT a descendant of child1.
+  // child2 is NOT a direct child of child1.
   EXPECT_EQ(nullptr, rwhier()->FindViewFromFrameSinkId(
                          child2.view->GetFrameSinkId(), child1.view.get()));
 
-  // child2 IS a descendant of view_root_.
+  // child2 IS a direct child of view_root_.
   EXPECT_EQ(child2.view.get(),
             rwhier()->FindViewFromFrameSinkId(child2.view->GetFrameSinkId(),
                                               view_root_.get()));
 
-  // child1 IS a descendant of view_root_.
+  // child1 IS a direct child of view_root_.
   EXPECT_EQ(child1.view.get(),
             rwhier()->FindViewFromFrameSinkId(child1.view->GetFrameSinkId(),
                                               view_root_.get()));
+
+  // grandchild is a descendant of view_root_ but NOT a direct child.
+  // Under strict direct-child validation, it should return nullptr.
+  EXPECT_EQ(nullptr, rwhier()->FindViewFromFrameSinkId(
+                         grandchild.view->GetFrameSinkId(), view_root_.get()));
+
+  // grandchild IS a direct child of child1.
+  EXPECT_EQ(grandchild.view.get(),
+            rwhier()->FindViewFromFrameSinkId(grandchild.view->GetFrameSinkId(),
+                                              child1.view.get()));
+}
+
+// Verifies that during async hit testing, the browser validates that
+// coordinates returned by the renderer match the expected forward transform.
+// Confirms that honest coordinates are accepted and spoofed coordinates
+// (clickjacking attempts) are rejected and safely fall back.
+TEST_F(RenderWidgetHostInputEventRouterTest,
+       AsyncTargetingCoordinateValidation) {
+  ChildViewState child = MakeChildView(view_root_.get());
+
+  // Set child offset in the root view.
+  gfx::Vector2dF offset(10.f, 20.f);
+  view_root_->SetOffset(offset);
+
+  // Set root hit-test result to ask renderer (trigger async path).
+  view_root_->SetHittestResult(view_root_.get(), true);
+
+  // Case 1: Valid coordinate returned by renderer.
+  // Click at (100, 100) in root. Child local should be (90, 80).
+  gfx::PointF click_point(100.f, 100.f);
+  gfx::PointF valid_local_point(90.f, 80.f);
+
+  input_target_client_root_->forward_callback_ = base::BindOnce(
+      [](viz::FrameSinkId ret, gfx::PointF local_point,
+         MockInputTargetClient::FrameSinkIdAtCallback callback) {
+        if (callback) {
+          std::move(callback).Run(ret, local_point);
+        }
+      },
+      child.view->GetFrameSinkId(), valid_local_point);
+
+  // Simulate mouse event.
+  blink::WebMouseEvent mouse_event(
+      blink::WebInputEvent::Type::kMouseDown,
+      blink::WebInputEvent::kNoModifiers,
+      blink::WebInputEvent::GetStaticTimeStampForTests());
+  mouse_event.button = blink::WebPointerProperties::Button::kLeft;
+  mouse_event.SetPositionInWidget(click_point.x(), click_point.y());
+
+  // Route event. The targeter should query the client.
+  rwhier()->RouteMouseEvent(view_root_.get(), &mouse_event, ui::LatencyInfo());
+
+  // Wait for callback.
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return last_mouse_down_target() == child.view.get(); }));
+
+  // The event should be successfully dispatched to the child view.
+  EXPECT_EQ(child.view.get(), last_mouse_down_target());
+
+  // Case 2: Spoofed coordinate returned by renderer.
+  // Click at (100, 100). Child returns (50, 50) which is far outside epsilon
+  // (2.0).
+  gfx::PointF spoofed_local_point(50.f, 50.f);
+
+  input_target_client_root_->forward_callback_ = base::BindOnce(
+      [](viz::FrameSinkId ret, gfx::PointF local_point,
+         MockInputTargetClient::FrameSinkIdAtCallback callback) {
+        if (callback) {
+          std::move(callback).Run(ret, local_point);
+        }
+      },
+      child.view->GetFrameSinkId(), spoofed_local_point);
+
+  // Route event again.
+  rwhier()->RouteMouseEvent(view_root_.get(), &mouse_event, ui::LatencyInfo());
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return last_mouse_down_target() == view_root_.get(); }));
+
+  // Validation should fail, and we should fall back to targeting the parent
+  // (view_root_).
+  EXPECT_EQ(view_root_.get(), last_mouse_down_target());
 }
 
 TEST_F(RenderWidgetHostInputEventRouterTest, DoNotCoalesceTouchEvents) {
@@ -769,6 +870,43 @@ TEST_F(RenderWidgetHostInputEventRouterTest,
   EXPECT_EQ(view_root_.get(), bubbling_gesture_scroll_target());
   EXPECT_EQ(blink::WebInputEvent::Type::kGestureScrollBegin,
             view_root_->last_gesture_seen());
+}
+
+// Test that if a parent view is destroyed during browser-side page teardown
+// or frame detaches (where its RenderWidgetHostImpl is destroyed) while an
+// active child scroll bubbling ACK is in-flight, the defensive checks inside
+// BubbleScrollEvent catch the null parent RIR and return false cleanly,
+// preventing a Null Pointer Dereference crash.
+TEST_F(RenderWidgetHostInputEventRouterTest,
+       BubbleScrollEventNullSafetyDuringTeardown) {
+  gfx::Vector2dF delta(0.f, 10.f);
+  blink::WebGestureEvent scroll_begin =
+      blink::SyntheticWebGestureEventBuilder::BuildScrollBegin(
+          delta.x(), delta.y(), blink::WebGestureDevice::kTouchscreen);
+
+  ChildViewState child = MakeChildView(view_root_.get());
+
+  // Force parent view (view_root_) to return a null RenderInputRouter.
+  view_root_->set_force_null_rir(true);
+
+  // Simulate GestureEventAck on child view.
+  // In the buggy version, this would call BubbleScrollEvent(), dereference the
+  // null parent RIR, and crash the test runner. In the fixed version, it
+  // catches the null parent RIR, returns false, and cancels bubbling.
+  child.view->GestureEventAck(
+      scroll_begin, blink::mojom::InputEventResultSource::kCompositorThread,
+      blink::mojom::InputEventResultState::kNotConsumed);
+
+  // We should not crash, and scroll bubbling should not be active on the child
+  // view or RWHIER.
+  EXPECT_FALSE(child.view->input_helper_->IsScrollSequenceBubbling());
+  EXPECT_EQ(nullptr, bubbling_gesture_scroll_origin());
+  EXPECT_EQ(nullptr, bubbling_gesture_scroll_target());
+
+  view_root_->set_force_null_rir(false);
+
+  // Cleanup child view.
+  rwhier()->OnRenderWidgetHostViewInputDestroyed(child.view.get());
 }
 
 // Ensure filtered scroll events while a scroll bubble is in progress don't

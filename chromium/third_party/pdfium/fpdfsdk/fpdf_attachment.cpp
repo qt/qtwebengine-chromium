@@ -260,7 +260,7 @@ FPDFAttachment_SetFile(FPDF_ATTACHMENT attachment,
       UNSAFE_BUFFERS(pdfium::span(static_cast<const uint8_t*>(contents), len));
 
   std::array<uint8_t, 16> digest;
-  CRYPT_MD5Generate(contents_span, digest);
+  CryptMd5Generate(contents_span, digest);
 
   // Set the checksum of the new attachment in the dictionary.
   pParamsDict->SetNewFor<CPDF_String>(kChecksumKey, digest,

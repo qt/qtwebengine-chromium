@@ -45,6 +45,7 @@ namespace vvl {
 
 void DispatchInstance::InitValidationObjects() {
     // Note that this DEFINES THE ORDER IN WHICH THE LAYER VALIDATION OBJECTS ARE CALLED
+    // Anyone using state tracking (LayerObjectTypeStateTracker) must be called after and enable it
 
     if (!settings.disabled[thread_safety]) {
         object_dispatch.emplace_back(new threadsafety::Instance(this));
@@ -59,7 +60,7 @@ void DispatchInstance::InitValidationObjects() {
         object_dispatch.emplace_back(new object_lifetimes::Instance(this));
     }
     if (!settings.disabled[core_checks] || settings.enabled[best_practices] || settings.enabled[gpu_validation] ||
-        settings.enabled[debug_printf_validation] || settings.enabled[sync_validation]) {
+        settings.enabled[debug_printf_validation] || settings.enabled[sync_validation] || settings.enabled[gpu_dump]) {
         object_dispatch.emplace_back(new vvl::InstanceState(this));
     }
     if (!settings.disabled[core_checks]) {
@@ -81,6 +82,7 @@ void DispatchInstance::InitValidationObjects() {
 
 void DispatchDevice::InitValidationObjects() {
     // Note that this DEFINES THE ORDER IN WHICH THE LAYER VALIDATION OBJECTS ARE CALLED
+    // Anyone using state tracking (LayerObjectTypeStateTracker) must be called after and enable it
 
     if (!settings.disabled[thread_safety]) {
         object_dispatch.emplace_back(new threadsafety::Device(
@@ -99,7 +101,7 @@ void DispatchDevice::InitValidationObjects() {
             this, static_cast<object_lifetimes::Instance*>(dispatch_instance->GetValidationObject(LayerObjectTypeObjectTracker))));
     }
     if (!settings.disabled[core_checks] || settings.enabled[best_practices] || settings.enabled[gpu_validation] ||
-        settings.enabled[debug_printf_validation] || settings.enabled[sync_validation]) {
+        settings.enabled[debug_printf_validation] || settings.enabled[sync_validation] || settings.enabled[gpu_dump]) {
         object_dispatch.emplace_back(new vvl::DeviceState(
             this, static_cast<vvl::InstanceState*>(dispatch_instance->GetValidationObject(LayerObjectTypeStateTracker))));
     }
@@ -482,8 +484,11 @@ void HandleWrapper::UnwrapPnextChainHandles(const void* pNext) {
             case VK_STRUCTURE_TYPE_TENSOR_DEPENDENCY_INFO_ARM: {
                 auto* safe_struct = reinterpret_cast<vku::safe_VkTensorDependencyInfoARM*>(cur_pnext);
                 if (safe_struct->pTensorMemoryBarriers) {
-                    if (safe_struct->pTensorMemoryBarriers->tensor) {
-                        safe_struct->pTensorMemoryBarriers->tensor = Unwrap(safe_struct->pTensorMemoryBarriers->tensor);
+                    for (uint32_t index0 = 0; index0 < safe_struct->tensorMemoryBarrierCount; ++index0) {
+                        if (safe_struct->pTensorMemoryBarriers[index0].tensor) {
+                            safe_struct->pTensorMemoryBarriers[index0].tensor =
+                                Unwrap(safe_struct->pTensorMemoryBarriers[index0].tensor);
+                        }
                     }
                 }
             } break;
@@ -611,6 +616,13 @@ void HandleWrapper::UnwrapPnextChainHandles(const void* pNext) {
             } break;
             case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_TRIANGLES_OPACITY_MICROMAP_EXT: {
                 auto* safe_struct = reinterpret_cast<vku::safe_VkAccelerationStructureTrianglesOpacityMicromapEXT*>(cur_pnext);
+
+                if (safe_struct->micromap) {
+                    safe_struct->micromap = Unwrap(safe_struct->micromap);
+                }
+            } break;
+            case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_TRIANGLES_OPACITY_MICROMAP_KHR: {
+                auto* safe_struct = reinterpret_cast<vku::safe_VkAccelerationStructureTrianglesOpacityMicromapKHR*>(cur_pnext);
 
                 if (safe_struct->micromap) {
                     safe_struct->micromap = Unwrap(safe_struct->micromap);
@@ -6263,6 +6275,125 @@ VkResult DispatchDevice::GetMemoryAndroidHardwareBufferANDROID(VkDevice device,
     return result;
 }
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
+
+VkResult DispatchDevice::CreateGpaSessionAMD(VkDevice device, const VkGpaSessionCreateInfoAMD* pCreateInfo,
+                                             const VkAllocationCallbacks* pAllocator, VkGpaSessionAMD* pGpaSession) {
+    if (!wrap_handles) return device_dispatch_table.CreateGpaSessionAMD(device, pCreateInfo, pAllocator, pGpaSession);
+    vku::safe_VkGpaSessionCreateInfoAMD var_local_pCreateInfo;
+    vku::safe_VkGpaSessionCreateInfoAMD* local_pCreateInfo = nullptr;
+    {
+        if (pCreateInfo) {
+            local_pCreateInfo = &var_local_pCreateInfo;
+            local_pCreateInfo->initialize(pCreateInfo);
+
+            if (pCreateInfo->secondaryCopySource) {
+                local_pCreateInfo->secondaryCopySource = Unwrap(pCreateInfo->secondaryCopySource);
+            }
+        }
+    }
+    VkResult result = device_dispatch_table.CreateGpaSessionAMD(device, (const VkGpaSessionCreateInfoAMD*)local_pCreateInfo,
+                                                                pAllocator, pGpaSession);
+    if (result == VK_SUCCESS) {
+        *pGpaSession = WrapNew(*pGpaSession);
+    }
+    return result;
+}
+
+void DispatchDevice::DestroyGpaSessionAMD(VkDevice device, VkGpaSessionAMD gpaSession, const VkAllocationCallbacks* pAllocator) {
+    if (!wrap_handles) return device_dispatch_table.DestroyGpaSessionAMD(device, gpaSession, pAllocator);
+    gpaSession = Erase(gpaSession);
+    device_dispatch_table.DestroyGpaSessionAMD(device, gpaSession, pAllocator);
+}
+
+VkResult DispatchDevice::SetGpaDeviceClockModeAMD(VkDevice device, VkGpaDeviceClockModeInfoAMD* pInfo) {
+    VkResult result = device_dispatch_table.SetGpaDeviceClockModeAMD(device, pInfo);
+
+    return result;
+}
+
+VkResult DispatchDevice::GetGpaDeviceClockInfoAMD(VkDevice device, VkGpaDeviceGetClockInfoAMD* pInfo) {
+    VkResult result = device_dispatch_table.GetGpaDeviceClockInfoAMD(device, pInfo);
+
+    return result;
+}
+
+VkResult DispatchDevice::CmdBeginGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession) {
+    if (!wrap_handles) return device_dispatch_table.CmdBeginGpaSessionAMD(commandBuffer, gpaSession);
+    {
+        gpaSession = Unwrap(gpaSession);
+    }
+    VkResult result = device_dispatch_table.CmdBeginGpaSessionAMD(commandBuffer, gpaSession);
+
+    return result;
+}
+
+VkResult DispatchDevice::CmdEndGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession) {
+    if (!wrap_handles) return device_dispatch_table.CmdEndGpaSessionAMD(commandBuffer, gpaSession);
+    {
+        gpaSession = Unwrap(gpaSession);
+    }
+    VkResult result = device_dispatch_table.CmdEndGpaSessionAMD(commandBuffer, gpaSession);
+
+    return result;
+}
+
+VkResult DispatchDevice::CmdBeginGpaSampleAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                              const VkGpaSampleBeginInfoAMD* pGpaSampleBeginInfo, uint32_t* pSampleID) {
+    if (!wrap_handles) return device_dispatch_table.CmdBeginGpaSampleAMD(commandBuffer, gpaSession, pGpaSampleBeginInfo, pSampleID);
+    {
+        gpaSession = Unwrap(gpaSession);
+    }
+    VkResult result = device_dispatch_table.CmdBeginGpaSampleAMD(commandBuffer, gpaSession, pGpaSampleBeginInfo, pSampleID);
+
+    return result;
+}
+
+void DispatchDevice::CmdEndGpaSampleAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession, uint32_t sampleID) {
+    if (!wrap_handles) return device_dispatch_table.CmdEndGpaSampleAMD(commandBuffer, gpaSession, sampleID);
+    {
+        gpaSession = Unwrap(gpaSession);
+    }
+    device_dispatch_table.CmdEndGpaSampleAMD(commandBuffer, gpaSession, sampleID);
+}
+
+VkResult DispatchDevice::GetGpaSessionStatusAMD(VkDevice device, VkGpaSessionAMD gpaSession) {
+    if (!wrap_handles) return device_dispatch_table.GetGpaSessionStatusAMD(device, gpaSession);
+    {
+        gpaSession = Unwrap(gpaSession);
+    }
+    VkResult result = device_dispatch_table.GetGpaSessionStatusAMD(device, gpaSession);
+
+    return result;
+}
+
+VkResult DispatchDevice::GetGpaSessionResultsAMD(VkDevice device, VkGpaSessionAMD gpaSession, uint32_t sampleID,
+                                                 size_t* pSizeInBytes, void* pData) {
+    if (!wrap_handles) return device_dispatch_table.GetGpaSessionResultsAMD(device, gpaSession, sampleID, pSizeInBytes, pData);
+    {
+        gpaSession = Unwrap(gpaSession);
+    }
+    VkResult result = device_dispatch_table.GetGpaSessionResultsAMD(device, gpaSession, sampleID, pSizeInBytes, pData);
+
+    return result;
+}
+
+VkResult DispatchDevice::ResetGpaSessionAMD(VkDevice device, VkGpaSessionAMD gpaSession) {
+    if (!wrap_handles) return device_dispatch_table.ResetGpaSessionAMD(device, gpaSession);
+    {
+        gpaSession = Unwrap(gpaSession);
+    }
+    VkResult result = device_dispatch_table.ResetGpaSessionAMD(device, gpaSession);
+
+    return result;
+}
+
+void DispatchDevice::CmdCopyGpaSessionResultsAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession) {
+    if (!wrap_handles) return device_dispatch_table.CmdCopyGpaSessionResultsAMD(commandBuffer, gpaSession);
+    {
+        gpaSession = Unwrap(gpaSession);
+    }
+    device_dispatch_table.CmdCopyGpaSessionResultsAMD(commandBuffer, gpaSession);
+}
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 
 VkResult DispatchDevice::CreateExecutionGraphPipelinesAMDX(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
@@ -6598,7 +6729,7 @@ void DispatchDevice::DestroyAccelerationStructureNV(VkDevice device, VkAccelerat
 
 void DispatchDevice::GetAccelerationStructureMemoryRequirementsNV(VkDevice device,
                                                                   const VkAccelerationStructureMemoryRequirementsInfoNV* pInfo,
-                                                                  VkMemoryRequirements2KHR* pMemoryRequirements) {
+                                                                  VkMemoryRequirements2* pMemoryRequirements) {
     if (!wrap_handles)
         return device_dispatch_table.GetAccelerationStructureMemoryRequirementsNV(device, pInfo, pMemoryRequirements);
     vku::safe_VkAccelerationStructureMemoryRequirementsInfoNV var_local_pInfo;
@@ -7590,6 +7721,12 @@ void DispatchDevice::GetPrivateDataEXT(VkDevice device, VkObjectType objectType,
     }
     device_dispatch_table.GetPrivateDataEXT(device, objectType, objectHandle, privateDataSlot, pData);
 }
+
+VkResult DispatchDevice::QueueSetPerfHintQCOM(VkQueue queue, const VkPerfHintInfoQCOM* pPerfHintInfo) {
+    VkResult result = device_dispatch_table.QueueSetPerfHintQCOM(queue, pPerfHintInfo);
+
+    return result;
+}
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 
 VkResult DispatchDevice::CreateCudaModuleNV(VkDevice device, const VkCudaModuleCreateInfoNV* pCreateInfo,
@@ -8087,7 +8224,7 @@ VkResult DispatchDevice::GetMemoryRemoteAddressNV(VkDevice device,
     return result;
 }
 
-VkResult DispatchDevice::GetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoEXT* pPipelineInfo,
+VkResult DispatchDevice::GetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoKHR* pPipelineInfo,
                                                   VkBaseOutStructure* pPipelineProperties) {
     if (!wrap_handles) return device_dispatch_table.GetPipelinePropertiesEXT(device, pPipelineInfo, pPipelineProperties);
     vku::safe_VkPipelineInfoKHR var_local_pPipelineInfo;
@@ -8483,6 +8620,11 @@ void DispatchDevice::SetDeviceMemoryPriorityEXT(VkDevice device, VkDeviceMemory 
         memory = Unwrap(memory);
     }
     device_dispatch_table.SetDeviceMemoryPriorityEXT(device, memory, priority);
+}
+
+void DispatchDevice::CmdSetDispatchParametersARM(VkCommandBuffer commandBuffer,
+                                                 const VkDispatchParametersARM* pDispatchParameters) {
+    device_dispatch_table.CmdSetDispatchParametersARM(commandBuffer, pDispatchParameters);
 }
 
 void DispatchDevice::GetDescriptorSetLayoutHostMappingInfoVALVE(VkDevice device,
@@ -9360,6 +9502,15 @@ void DispatchInstance::GetPhysicalDeviceQueueFamilyDataGraphProcessingEngineProp
         physicalDevice, pQueueFamilyDataGraphProcessingEngineInfo, pQueueFamilyDataGraphProcessingEngineProperties);
 }
 
+VkResult DispatchInstance::GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+    const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, VkBaseOutStructure* pProperties) {
+    VkResult result = instance_dispatch_table.GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+        physicalDevice, queueFamilyIndex, pQueueFamilyDataGraphProperties, pProperties);
+
+    return result;
+}
+
 void DispatchDevice::CmdSetAttachmentFeedbackLoopEnableEXT(VkCommandBuffer commandBuffer, VkImageAspectFlags aspectMask) {
     device_dispatch_table.CmdSetAttachmentFeedbackLoopEnableEXT(commandBuffer, aspectMask);
 }
@@ -9745,6 +9896,18 @@ void DispatchDevice::CmdBeginCustomResolveEXT(VkCommandBuffer commandBuffer,
     device_dispatch_table.CmdBeginCustomResolveEXT(commandBuffer, pBeginCustomResolveInfo);
 }
 
+VkResult DispatchInstance::GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+    const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties,
+    const VkDataGraphOpticalFlowImageFormatInfoARM* pOpticalFlowImageFormatInfo, uint32_t* pFormatCount,
+    VkDataGraphOpticalFlowImageFormatPropertiesARM* pImageFormatProperties) {
+    VkResult result = instance_dispatch_table.GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+        physicalDevice, queueFamilyIndex, pQueueFamilyDataGraphProperties, pOpticalFlowImageFormatInfo, pFormatCount,
+        pImageFormatProperties);
+
+    return result;
+}
+
 void DispatchDevice::CmdSetComputeOccupancyPriorityNV(VkCommandBuffer commandBuffer,
                                                       const VkComputeOccupancyPriorityParametersNV* pParameters) {
     device_dispatch_table.CmdSetComputeOccupancyPriorityNV(commandBuffer, pParameters);
@@ -9769,6 +9932,10 @@ VkBool32 DispatchInstance::GetPhysicalDeviceUbmPresentationSupportSEC(VkPhysical
     return result;
 }
 #endif  // VK_USE_PLATFORM_UBM_SEC
+
+void DispatchDevice::CmdSetPrimitiveRestartIndexEXT(VkCommandBuffer commandBuffer, uint32_t primitiveRestartIndex) {
+    device_dispatch_table.CmdSetPrimitiveRestartIndexEXT(commandBuffer, primitiveRestartIndex);
+}
 
 VkResult DispatchDevice::CreateAccelerationStructureKHR(VkDevice device, const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
                                                         const VkAllocationCallbacks* pAllocator,

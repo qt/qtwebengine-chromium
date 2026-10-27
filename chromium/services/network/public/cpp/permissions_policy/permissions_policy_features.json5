@@ -356,7 +356,7 @@
     {
       name: "FocusWithoutUserActivation",
       permissions_policy_name: "focus-without-user-activation",
-      feature_default: "EnableForSelf",
+      feature_default: "EnableForAll",
       depends_on: ["BlockingFocusWithoutUserActivation"],
     },
     {
@@ -426,7 +426,6 @@
     {
       name: "LocalNetwork",
       permissions_policy_name: "local-network",
-      depends_on: [ "LocalNetworkAccessSplitPermissions" ],
       default_value_behind_switch: [
         ["LocalNetworkAccessPermissionsPolicyDefaultEnabled",
         "EnableForAll"]
@@ -444,7 +443,6 @@
     {
       name: "LoopbackNetwork",
       permissions_policy_name: "loopback-network",
-      depends_on: [ "LocalNetworkAccessSplitPermissions" ],
       default_value_behind_switch: [
         ["LocalNetworkAccessPermissionsPolicyDefaultEnabled",
          "EnableForAll"]
@@ -633,6 +631,12 @@
       name: "WebAppInstallation",
       permissions_policy_name: "web-app-installation",
       depends_on: ["WebAppInstallation"],
+    },
+    {
+      name: "Tools",
+      permissions_policy_name: "tools",
+      depends_on: ["WebMCP"],
+      feature_default: "EnableForSelf",
     },
     {
       name: "WebPrinting",

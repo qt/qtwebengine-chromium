@@ -31,6 +31,7 @@
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context_state_saver.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_controller.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -356,6 +357,16 @@ void DrawPaintOrderPasses(const OrderedPaints& ordered_paints,
   }
 }
 
+AffineTransform ComputeTextFitTransform(float scaling_factor,
+                                        const LineRelativeOffset& text_origin) {
+  return {scaling_factor,
+          0,
+          0,
+          scaling_factor,
+          text_origin.line_left - scaling_factor * text_origin.line_left,
+          text_origin.line_over - scaling_factor * text_origin.line_over};
+}
+
 }  // namespace
 
 void TextPainter::Paint(const TextFragmentPaintInfo& fragment_paint_info,
@@ -575,13 +586,14 @@ void TextPainter::ClipDecorationLine(
       fragment_paint_info, ink_skip_cjk_handling, graphics_context_.FillFlags(),
       std::make_tuple(upper, upper + stripe_width), text_intercepts);
 
+  const float scale = fragment_paint_info.text_fit_scaling_factor;
   const float dilation =
       std::min(geometry.Thickness(), kDecorationClipMaxDilation);
   for (auto intercept : text_intercepts) {
     gfx::PointF clip_origin(text_origin_);
     gfx::RectF clip_rect(
-        clip_origin + gfx::Vector2dF(intercept.begin_, upper),
-        gfx::SizeF(intercept.end_ - intercept.begin_, stripe_width));
+        clip_origin + gfx::Vector2dF(intercept.begin_ * scale, upper),
+        gfx::SizeF((intercept.end_ - intercept.begin_) * scale, stripe_width));
     // We need to ensure the clip rectangle is covering the full underline
     // extent. For horizontal drawing, using enclosingIntRect would be
     // sufficient, since we can clamp to full device pixels that way. However,
@@ -767,6 +779,22 @@ AffineTransform& TextPainter::SvgTextPaintState::EnsureShaderTransform() {
 const AffineTransform* TextPainter::SvgTextPaintState::GetShaderTransform()
     const {
   return base::OptionalToPtr(shader_transform_);
+}
+
+void TextPainter::ApplyTextFitScale(
+    const TextFragmentPaintInfo& paint_info,
+    std::optional<GraphicsContextStateSaver>* state_saver) {
+  if (!RuntimeEnabledFeatures::CssTextFitEnabled() ||
+      paint_info.text_fit_scaling_factor == 1.0f) {
+    return;
+  }
+
+  if (state_saver) {
+    state_saver->emplace(graphics_context_);
+  }
+
+  graphics_context_.ConcatCTM(ComputeTextFitTransform(
+      paint_info.text_fit_scaling_factor, text_origin_));
 }
 
 }  // namespace blink

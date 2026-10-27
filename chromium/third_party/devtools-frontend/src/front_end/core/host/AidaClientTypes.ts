@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import * as Platform from '../platform/platform.js';
+
 export enum Role {
   /** Provide this role when giving a function call response  */
   ROLE_UNSPECIFIED = 0,
@@ -30,10 +32,7 @@ export interface Content {
 export type Part = {
   text: string,
 }|{
-  functionCall: {
-    name: string,
-    args: Record<string, unknown>,
-  },
+  functionCall: AidaFunctionCall,
 }|{
   functionResponse: {
     name: string,
@@ -131,6 +130,8 @@ export enum ClientFeature {
   CHROME_ACCESSIBILITY_AGENT = 26,
   // Chrome AI Assistance Conversation Summary Agent.
   CHROME_CONVERSATION_SUMMARY_AGENT = 27,
+  // Chrome AI Assistance Storage Agent.
+  CHROME_STORAGE_AGENT = 28,
 }
 
 export enum UserTier {
@@ -371,9 +372,10 @@ export interface AttributionMetadata {
   citations: Citation[];
 }
 
-export interface AidaFunctionCallResponse {
+export interface AidaFunctionCall {
   name: string;
   args: Record<string, unknown>;
+  thoughtSignature?: string;
 }
 
 export interface FactualityFact {
@@ -384,16 +386,21 @@ export interface FactualityMetadata {
   facts: FactualityFact[];
 }
 
+export interface InferenceOptionMetadata {
+  modelId: string;
+}
+
 export interface ResponseMetadata {
   rpcGlobalId?: RpcGlobalId;
   attributionMetadata?: AttributionMetadata;
   factualityMetadata?: FactualityMetadata;
+  inferenceOptionMetadata?: InferenceOptionMetadata;
 }
 
 export interface DoConversationResponse {
   explanation: string;
   metadata: ResponseMetadata;
-  functionCalls?: [AidaFunctionCallResponse, ...AidaFunctionCallResponse[]];
+  functionCalls?: [AidaFunctionCall, ...AidaFunctionCall[]];
   completed: boolean;
 }
 
@@ -452,16 +459,13 @@ export interface AidaChunkResponse {
     inferenceLanguage: AidaInferenceLanguage,
   };
   functionCallChunk?: {
-    functionCall: {
-      name: string,
-      args: Record<string, unknown>,
-    },
+    functionCall: AidaFunctionCall,
   };
   error?: string;
 }
 
 export function debugLog(...log: unknown[]): void {
-  if (!Boolean(localStorage.getItem('debugAiServicesEnabled'))) {
+  if (!Boolean(Platform.HostRuntime.HOST_RUNTIME.getLocalStorage()?.getItem('debugAiServicesEnabled'))) {
     return;
   }
 

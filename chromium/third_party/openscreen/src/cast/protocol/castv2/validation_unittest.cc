@@ -25,6 +25,7 @@
 #include "json/value.h"
 #include "platform/base/error.h"
 #include "util/json/json_serialization.h"
+#include "util/no_destructor.h"
 #include "util/osp_logging.h"
 #include "util/std_util.h"
 #include "util/stringprintf.h"
@@ -81,14 +82,14 @@ bool TestValidate(std::string_view document, std::string_view schema) {
 }
 
 const std::string& GetEmptySchema() {
-  static const std::string kEmptySchema = BuildSchema("", "", "");
-  return kEmptySchema;
+  static const NoDestructor<std::string> kEmptySchema(BuildSchema("", "", ""));
+  return *kEmptySchema;
 }
 
 const std::string& GetAppSchema() {
-  static const std::string kAppIdSchema =
-      BuildSchema(kAppIdDefinition, kAppIdProperty, kAppIdName);
-  return kAppIdSchema;
+  static const NoDestructor<std::string> kAppIdSchema(
+      BuildSchema(kAppIdDefinition, kAppIdProperty, kAppIdName));
+  return *kAppIdSchema;
 }
 
 class StreamingValidationTest : public testing::TestWithParam<const char*> {};

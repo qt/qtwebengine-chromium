@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import './audio_wave.js';
+import './recording_wave.js';
 
 import {loadTimeData} from '//resources/js/load_time_data.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
@@ -57,6 +58,14 @@ export class SearchAnimatedGlowElement extends CrLitElement {
 
   static override get properties() {
     return {
+      coloredTicTacVoiceAnimationEnabled: {
+        type: Boolean,
+        reflect: true,
+      },
+      showingOnlyCarouselOnTopOfInput: {
+        type: Boolean,
+        reflect: true,
+      },
       animationState: {
         type: String,
         reflect: true,
@@ -73,6 +82,10 @@ export class SearchAnimatedGlowElement extends CrLitElement {
       },
       transcript: {type: String},
       receivedSpeech: {type: Boolean},
+      isListening: {
+        type: Boolean,
+        reflect: true,
+      },
       energyEffectAnimationEnabled: {
         type: Boolean,
         reflect: true,
@@ -80,6 +93,9 @@ export class SearchAnimatedGlowElement extends CrLitElement {
       isZeroState: {
         type: Boolean,
         reflect: true,
+      },
+      darkThemeColorsEnabled: {
+        type: Boolean,
       },
     };
   }
@@ -92,8 +108,14 @@ export class SearchAnimatedGlowElement extends CrLitElement {
   accessor isCollapsible: boolean = false;
   accessor transcript: string = '';
   accessor receivedSpeech: boolean = false;
+  // Source of truth for voice search (as not every parent has
+  // `animationState`).
+  accessor coloredTicTacVoiceAnimationEnabled: boolean = false;
+  accessor showingOnlyCarouselOnTopOfInput: boolean = false;
+  accessor isListening: boolean = false;
   accessor energyEffectAnimationEnabled: boolean = false;
   accessor isZeroState: boolean = false;
+  accessor darkThemeColorsEnabled: boolean = true;
 
   private targetAngle_: number = 0;
   private maskCurrAngle_: number = 0;

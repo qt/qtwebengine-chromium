@@ -46,8 +46,6 @@ absl_cc_library(
     hardening
   HDRS
     "internal/hardening.h"
-  SRCS
-    "internal/hardening.cc"
   DEPS
     absl::config
     absl::core_headers
@@ -425,6 +423,7 @@ absl_cc_test(
     ${ABSL_TEST_COPTS}
   DEPS
     absl::config
+    absl::core_headers
     absl::hardening
     GTest::gtest_main
 )

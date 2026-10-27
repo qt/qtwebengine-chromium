@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_SOLVERBASE_H
 #define EIGEN_SOLVERBASE_H
@@ -89,7 +90,7 @@ class SolverBase : public EigenBase<Derived> {
   enum {
     RowsAtCompileTime = internal::traits<Derived>::RowsAtCompileTime,
     ColsAtCompileTime = internal::traits<Derived>::ColsAtCompileTime,
-    SizeAtCompileTime = (internal::size_of_xpr_at_compile_time<Derived>::ret),
+    SizeAtCompileTime = (internal::size_of_xpr_at_compile_time<Derived>::value),
     MaxRowsAtCompileTime = internal::traits<Derived>::MaxRowsAtCompileTime,
     MaxColsAtCompileTime = internal::traits<Derived>::MaxColsAtCompileTime,
     MaxSizeAtCompileTime = internal::size_at_compile_time(internal::traits<Derived>::MaxRowsAtCompileTime,
@@ -102,9 +103,7 @@ class SolverBase : public EigenBase<Derived> {
   };
 
   /** Default constructor */
-  SolverBase() {}
-
-  ~SolverBase() {}
+  SolverBase() = default;
 
   using Base::derived;
 

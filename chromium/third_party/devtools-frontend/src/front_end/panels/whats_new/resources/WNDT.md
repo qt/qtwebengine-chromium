@@ -1,14 +1,15 @@
-### [Agentic extensions debugging](extension-debugging)
+### [DevTools for agents](devtools-for-agents)
 
-You can now debug extensions through a coding agent using new tools in DevTools for agents,
-available through the MCP server.
+DevTools for agents 1.4 and later bring new experimental memory debugging tools,
+experimental TOON support for structured content output, and improved skill discovery.
 
-### [Sort network requests](sort-network-requests)
+### [AI assistance](ai-assistance)
 
-The Network panel introduces a new Request # column, allowing you to sort requests by their
-absolute chronological order of occurrence, independent of priority or duration.
+The agent walkthrough in the updated AI assistance panel now renders rich widgets
+for performance network tracks, timeline event summaries, network requests,
+syntax-highlighted source code, and inspected file lists.
 
-### [Accessibility tree](accessibility-tree)
+### [@container and @function](css-container-function)
 
-To streamline the Elements panel, the Accessibility tree toggle has moved from the DOM tree
-to the Accessibility tab within the panel.
+You can now directly edit `@container` and `@function`
+rules within the Styles tab, allowing for seamless experimentation.

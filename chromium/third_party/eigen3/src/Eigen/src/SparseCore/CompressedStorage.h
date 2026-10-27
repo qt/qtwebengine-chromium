@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_COMPRESSED_STORAGE_H
 #define EIGEN_COMPRESSED_STORAGE_H
@@ -72,10 +73,9 @@ class CompressedStorage {
   void resize(Index size, double reserveSizeFactor = 0) {
     if (m_allocatedSize < size) {
       // Avoid underflow on the std::min<Index> call by choosing the smaller index type.
-      using SmallerIndexType =
-          typename std::conditional<static_cast<size_t>((std::numeric_limits<Index>::max)()) <
-                                        static_cast<size_t>((std::numeric_limits<StorageIndex>::max)()),
-                                    Index, StorageIndex>::type;
+      using SmallerIndexType = std::conditional_t<static_cast<size_t>((std::numeric_limits<Index>::max)()) <
+                                                      static_cast<size_t>((std::numeric_limits<StorageIndex>::max)()),
+                                                  Index, StorageIndex>;
       Index realloc_size =
           (std::min<Index>)(NumTraits<SmallerIndexType>::highest(), size + Index(reserveSizeFactor * double(size)));
       if (realloc_size < size) internal::throw_std_bad_alloc();

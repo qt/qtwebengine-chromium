@@ -98,8 +98,8 @@ BASE_EXPORT int64_t ComputeDirectorySize(const FilePath& root_path);
 // Returns true if successful, false otherwise. It is considered successful to
 // attempt to delete a file that does not exist.
 //
-// In POSIX environment and if |path| is a symbolic link, this deletes only
-// the symlink. (even if the symlink points to a non-existent file)
+// It does not traverse symlinks or Windows reparse points (e.g., directory
+// junctions), but instead deletes the link or reparse point itself.
 BASE_EXPORT bool DeleteFile(const FilePath& path);
 
 // Deletes the given path, whether it's a file or a directory.
@@ -108,8 +108,8 @@ BASE_EXPORT bool DeleteFile(const FilePath& path);
 // Returns true if successful, false otherwise. It is considered successful
 // to attempt to delete a file that does not exist.
 //
-// In POSIX environment and if |path| is a symbolic link, this deletes only
-// the symlink. (even if the symlink points to a non-existent file)
+// It does not traverse symlinks or Windows reparse points (e.g., directory
+// junctions), but instead deletes the link or reparse point itself.
 //
 // WARNING: USING THIS EQUIVALENT TO "rm -rf", SO USE WITH CAUTION.
 BASE_EXPORT bool DeletePathRecursively(const FilePath& path);
@@ -407,8 +407,12 @@ BASE_EXPORT FilePath GetHomeDir();
 // NOTE: Exclusivity is unique to Windows. On Windows, the returned file
 // supports File::DeleteOnClose. On other platforms, the caller is responsible
 // for deleting the file `temp_file` points to, if appropriate.
+//
+// On Windows, `additional_flags` will be combined with the default flags when
+// opening the file.
 BASE_EXPORT File CreateAndOpenTemporaryFileInDir(const FilePath& dir,
-                                                 FilePath* temp_file);
+                                                 FilePath* temp_file,
+                                                 uint32_t additional_flags = 0);
 
 // Creates a temporary file. The full path is placed in `path`, and the
 // function returns true if was successful in creating the file. The file will

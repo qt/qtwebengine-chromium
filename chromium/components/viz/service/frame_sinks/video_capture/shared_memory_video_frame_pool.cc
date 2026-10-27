@@ -6,9 +6,12 @@
 
 #include <algorithm>
 
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
+#include "components/viz/common/features.h"
+#include "media/base/video_types.h"
 
 using media::VideoFrame;
 using media::VideoPixelFormat;
@@ -98,7 +101,7 @@ scoped_refptr<VideoFrame> SharedMemoryVideoFramePool::WrapBuffer(
     VideoPixelFormat format,
     const gfx::Size& size) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  DCHECK(pooled_buffer.IsValid());
+  CHECK(pooled_buffer.IsValid());
 
   // Create the VideoFrame wrapper. The two components of |pooled_buffer| are
   // split: The shared memory handle is moved off to the side (in a
@@ -124,6 +127,19 @@ scoped_refptr<VideoFrame> SharedMemoryVideoFramePool::WrapBuffer(
       base::BindOnce(&SharedMemoryVideoFramePool::OnFrameWrapperDestroyed,
                      weak_factory_.GetWeakPtr(), base::Unretained(frame.get()),
                      std::move(pooled_buffer.mapping)));
+  if (base::FeatureList::IsEnabled(
+          features::kSharedMemoryVFPoolUseCorrectColorSpace)) {
+    if (format == media::PIXEL_FORMAT_I420 ||
+        format == media::PIXEL_FORMAT_NV12) {
+      frame->set_color_space(gfx::ColorSpace::CreateREC709());
+    } else if (format == media::PIXEL_FORMAT_ARGB) {
+      frame->set_color_space(gfx::ColorSpace::CreateSRGB());
+    } else if (format == media::PIXEL_FORMAT_RGBAF16) {
+      frame->set_color_space(gfx::ColorSpace::CreateSRGBLinear());
+    } else {
+      NOTREACHED() << "Unexpected pixel format: " << format;
+    }
+  }
   return frame;
 }
 
@@ -131,7 +147,7 @@ void SharedMemoryVideoFramePool::OnFrameWrapperDestroyed(
     const VideoFrame* frame,
     base::WritableSharedMemoryMapping mapping) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  DCHECK(mapping.IsValid());
+  CHECK(mapping.IsValid());
 
   // Return the buffer to the pool by moving the PooledBuffer back into
   // |available_buffers_|.
@@ -139,7 +155,7 @@ void SharedMemoryVideoFramePool::OnFrameWrapperDestroyed(
   CHECK(it != utilized_buffers_.end());
   available_buffers_.emplace_back(
       PooledBuffer{std::move(it->second), std::move(mapping)});
-  DCHECK(available_buffers_.back().IsValid());
+  CHECK(available_buffers_.back().IsValid());
   utilized_buffers_.erase(it);
   CHECK_LE(available_buffers_.size() + utilized_buffers_.size(), capacity());
 }

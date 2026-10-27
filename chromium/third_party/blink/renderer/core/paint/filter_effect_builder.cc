@@ -27,6 +27,7 @@
 #include "third_party/blink/renderer/core/paint/filter_effect_builder.h"
 
 #include <algorithm>
+
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_resource_container.h"
 #include "third_party/blink/renderer/core/style/filter_operations.h"
 #include "third_party/blink/renderer/core/svg/graphics/filters/svg_filter_builder.h"
@@ -46,6 +47,7 @@
 #include "third_party/blink/renderer/platform/graphics/filters/source_graphic.h"
 #include "third_party/blink/renderer/platform/graphics/interpolation_space.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
@@ -300,7 +302,7 @@ FilterEffect* FilterEffectBuilder::BuildFilterEffect(
             parent_filter, blur.width(), blur.height(), offset.x(), offset.y(),
             shadow.GetColor().Resolve(current_color_, color_scheme_),
             shadow.Opacity());
-        if (shadow.GetColor().IsCurrentColor()) {
+        if (filter_operation->UsesCurrentColor()) {
           effect->SetOriginTainted();
         }
         break;
@@ -377,8 +379,8 @@ CompositorFilterOperations FilterEffectBuilder::BuildFilterOperations(
     switch (op->GetType()) {
       case FilterOperation::OperationType::kReference: {
         auto& reference_operation = To<ReferenceFilterOperation>(*op);
-        Filter* reference_filter =
-            BuildReferenceFilter(reference_operation, nullptr);
+        Filter* reference_filter = BuildReferenceFilter(
+            reference_operation, nullptr, nullptr, filters.OriginTainted());
         if (reference_filter && reference_filter->LastEffect()) {
           // Set the interpolation space for the source of the (sub)filter to
           // match that of the previous primitive (or input).
@@ -476,6 +478,9 @@ CompositorFilterOperations FilterEffectBuilder::BuildFilterOperations(
         filters.AppendDropShadowFilter(
             floored_offset, radius,
             shadow.GetColor().Resolve(current_color_, color_scheme_));
+        if (op->UsesCurrentColor()) {
+          filters.SetOriginTainted();
+        }
         break;
       }
       case FilterOperation::OperationType::kBoxReflect: {
@@ -509,7 +514,8 @@ CompositorFilterOperations FilterEffectBuilder::BuildFilterOperations(
 Filter* FilterEffectBuilder::BuildReferenceFilter(
     const ReferenceFilterOperation& reference_operation,
     FilterEffect* previous_effect,
-    SVGFilterGraphNodeMap* node_map) const {
+    SVGFilterGraphNodeMap* node_map,
+    bool input_tainted) const {
   SVGResource* resource = reference_operation.Resource();
   auto* filter_element =
       DynamicTo<SVGFilterElement>(resource ? resource->Target() : nullptr);
@@ -543,11 +549,19 @@ Filter* FilterEffectBuilder::BuildReferenceFilter(
     return result;
   }
 
+  if (input_tainted || (previous_effect && previous_effect->OriginTainted())) {
+    result->GetSourceGraphic()->SetOriginTainted();
+  }
+
   if (!previous_effect)
     previous_effect = result->GetSourceGraphic();
   SVGFilterBuilder builder(previous_effect, node_map, fill_flags_,
                            stroke_flags_);
-  builder.BuildGraph(result, *filter_element, reference_box_);
+  builder.BuildGraph(
+      result, *filter_element, reference_box_,
+      RuntimeEnabledFeatures::SvgFilterUserSpaceViewportForSvgEnabled()
+          ? unzoomed_viewport
+          : std::nullopt);
   result->SetLastEffect(builder.LastEffect());
   return result;
 }

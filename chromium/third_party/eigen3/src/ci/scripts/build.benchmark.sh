@@ -6,6 +6,8 @@
 #   EIGEN_CI_CXX_COMPILER     - C++ compiler
 #   EIGEN_CI_C_COMPILER        - C compiler
 #   EIGEN_BENCH_ISA_FLAGS     - ISA-specific compiler flags (e.g. "-mavx2 -mfma")
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 set -ex
 
@@ -16,12 +18,16 @@ cd "${builddir}"
 
 # Install Google Benchmark from source if not already present.
 # The common before_script already installs cmake/ninja; we only need
-# git and ca-certificates for the clone.
+# git and ca-certificates for the clone. The CI image only ships
+# versioned compilers (e.g. g++-10), so unversioned c++/cc are absent
+# and we must pass CMAKE_*_COMPILER explicitly.
 if ! pkg-config --exists benchmark 2>/dev/null; then
   apt-get update -qq
   apt-get install -y --no-install-recommends git ca-certificates
   git clone --depth 1 --branch v1.9.1 https://github.com/google/benchmark.git /tmp/gbench
   cmake -G Ninja -S /tmp/gbench -B /tmp/gbench-build \
+    -DCMAKE_C_COMPILER="${EIGEN_CI_C_COMPILER}" \
+    -DCMAKE_CXX_COMPILER="${EIGEN_CI_CXX_COMPILER}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DBENCHMARK_ENABLE_TESTING=OFF \
     -DCMAKE_INSTALL_PREFIX=/usr/local

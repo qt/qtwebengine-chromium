@@ -17,6 +17,7 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "components/update_client/update_client.h"
+#include "extensions/browser/extension_management_client.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/safe_browsing_delegate.h"
 #include "extensions/browser/updater/extension_cache.h"
@@ -49,14 +50,18 @@ class TestExtensionsBrowserClient : public ExtensionsBrowserClient {
   void set_process_manager_delegate(ProcessManagerDelegate* delegate) {
     process_manager_delegate_ = delegate;
   }
+  void set_user_script_listener(UserScriptListener* listener) {
+    user_script_listener_ = listener;
+  }
   void set_extension_system_factory(ExtensionSystemProvider* factory) {
     extension_system_factory_ = factory;
   }
-  void set_pref_service(PrefService* pref_service) {
-    pref_service_ = pref_service;
-  }
   void set_extension_cache(std::unique_ptr<ExtensionCache> extension_cache) {
     extension_cache_ = std::move(extension_cache);
+  }
+  void set_extension_management_client(
+      std::unique_ptr<ExtensionManagementClient> client) {
+    extension_management_client_ = std::move(client);
   }
 
   // Sets a factory to respond to calls of the CreateUpdateClient method.
@@ -85,6 +90,8 @@ class TestExtensionsBrowserClient : public ExtensionsBrowserClient {
       content::BrowserContext* context) override;
   content::BrowserContext* GetContextRedirectedToOriginal(
       content::BrowserContext* context) override;
+  content::BrowserContext* GetContextRedirectedToOriginalWithoutAshInternals(
+      content::BrowserContext* context) override;
   content::BrowserContext* GetContextOwnInstance(
       content::BrowserContext* context) override;
   content::BrowserContext* GetContextForOriginalOnly(
@@ -99,6 +106,9 @@ class TestExtensionsBrowserClient : public ExtensionsBrowserClient {
   bool IsGuestSession(content::BrowserContext* context) const override;
   bool IsExtensionIncognitoEnabled(
       const ExtensionId& extension_id,
+      content::BrowserContext* context) const override;
+  bool IsExtensionIncognitoEnabled(
+      const Extension* extension,
       content::BrowserContext* context) const override;
   bool CanExtensionCrossIncognito(
       const extensions::Extension* extension,
@@ -118,14 +128,12 @@ class TestExtensionsBrowserClient : public ExtensionsBrowserClient {
       const network::ResourceRequest& request,
       network::mojom::RequestDestination destination,
       ui::PageTransition page_transition,
-      int child_id,
+      content::ChildProcessId child_id,
       bool is_incognito,
       const Extension* extension,
       const ExtensionSet& extensions,
       const ProcessMap& process_map,
       const GURL& upstream_url) override;
-  PrefService* GetPrefServiceForContext(
-      content::BrowserContext* context) override;
   void GetEarlyExtensionPrefsObservers(
       content::BrowserContext* context,
       std::vector<EarlyExtensionPrefsObserver*>* observers) const override;
@@ -166,11 +174,14 @@ class TestExtensionsBrowserClient : public ExtensionsBrowserClient {
       content::WebContents* web_contents) override;
   KioskDelegate* GetKioskDelegate() override;
   SafeBrowsingDelegate* GetSafeBrowsingDelegate() override;
+  UserScriptListener* GetUserScriptListener() override;
   scoped_refptr<update_client::UpdateClient> CreateUpdateClient(
       scoped_refptr<update_client::Configurator> configurator) override;
   scoped_refptr<update_client::Configurator> CreateUpdateClientConfigurator(
       content::BrowserContext* context) override;
   std::string GetApplicationLocale() override;
+  ExtensionManagementClient* GetExtensionManagementClient(
+      content::BrowserContext* context) override;
 
   bool IsTelemetryLoggingEnabled(content::BrowserContext* context) override;
   void SetTelemetryLoggingEnabled(bool enabled);
@@ -179,29 +190,12 @@ class TestExtensionsBrowserClient : public ExtensionsBrowserClient {
     return extension_system_factory_;
   }
 
-  void set_pref_service_for_context(content::BrowserContext* context,
-                                    PrefService* pref_service) {
-    set_pref_service_for_context_[context] = pref_service;
-  }
-
  private:
-  // Not owned.
   raw_ptr<content::BrowserContext> main_context_ = nullptr;
-  // Not owned.
   raw_ptr<content::BrowserContext> incognito_context_ = nullptr;
-
-  // Not owned.
   raw_ptr<ProcessManagerDelegate> process_manager_delegate_ = nullptr;
-
-  // Not owned.
+  raw_ptr<UserScriptListener> user_script_listener_ = nullptr;
   raw_ptr<ExtensionSystemProvider> extension_system_factory_ = nullptr;
-
-  // Not owned.
-  raw_ptr<PrefService> pref_service_ = nullptr;
-
-  // Not owned.
-  std::map<content::BrowserContext*, raw_ptr<PrefService>>
-      set_pref_service_for_context_;
 
   std::unique_ptr<ExtensionCache> extension_cache_;
 
@@ -211,6 +205,8 @@ class TestExtensionsBrowserClient : public ExtensionsBrowserClient {
       update_client_factory_;
 
   std::unique_ptr<SafeBrowsingDelegate> safe_browsing_delegate_;
+  std::unique_ptr<ExtensionManagementClient> extension_management_client_;
+  std::unique_ptr<KioskDelegate> kiosk_delegate_;
 };
 
 }  // namespace extensions

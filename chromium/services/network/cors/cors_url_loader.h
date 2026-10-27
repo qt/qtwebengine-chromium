@@ -102,9 +102,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoader
 
   // mojom::URLLoader overrides:
   void FollowRedirect(
-      const std::vector<std::string>& removed_headers,
-      const net::HttpRequestHeaders& modified_headers,
-      const net::HttpRequestHeaders& modified_cors_exempt_headers,
+      network::HttpRequestHeadersUpdateParams headers_update_params,
       const std::optional<GURL>& new_url) override;
   void SetPriority(net::RequestPriority priority,
                    int intra_priority_value) override;
@@ -122,11 +120,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoader
                         base::OnceCallback<void()> callback) override;
   void OnTransferSizeUpdated(int32_t transfer_size_diff) override;
   void OnComplete(const URLLoaderCompletionStatus& status) override;
-
-  // Cancel the request because network revocation was triggered.
-  void CancelRequestIfNonceMatchesAndUrlNotExempted(
-      const base::UnguessableToken& nonce,
-      const std::set<GURL>& exemptions);
 
   static network::mojom::FetchResponseType CalculateResponseTaintingForTesting(
       const GURL& url,

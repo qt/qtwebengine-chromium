@@ -16,9 +16,13 @@ namespace extensions_features {
 
 BASE_FEATURE(kApiActionOpenPopup, base::FEATURE_ENABLED_BY_DEFAULT);
 
+BASE_FEATURE(kApiAlarmsCreateLengthLimit, base::FEATURE_ENABLED_BY_DEFAULT);
+
 BASE_FEATURE(kApiContentSettingsClipboard, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kApiEnterpriseKioskInput, base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kApiMimeHandler, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kApiRuntimeActionData, base::FEATURE_DISABLED_BY_DEFAULT);
 
@@ -31,6 +35,8 @@ BASE_FEATURE(kApiUserScriptsMultipleWorlds, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kApiOdfsConfigPrivate, base::FEATURE_ENABLED_BY_DEFAULT);
 
+BASE_FEATURE(kApiContextualTasksPrivate, base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kApiGlicPrivate, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kApiEnterpriseReportingPrivateOnDataMaskingRulesTriggered,
@@ -38,6 +44,40 @@ BASE_FEATURE(kApiEnterpriseReportingPrivateOnDataMaskingRulesTriggered,
 
 BASE_FEATURE(kApiGlicAccessFromGoogleWebpage,
              base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kApiGlicAccessFromPromotionPage,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+const base::FeatureParam<std::string> kProdPromptEndpointUrlParam(
+    &kApiGlicAccessFromGoogleWebpage,
+    /*name=*/"prod_prompt_endpoint_url",
+    /*default_value=*/
+    "https://confection.pa.googleapis.com/v1:GetPromptForWebProperty");
+
+const base::FeatureParam<std::string> kGlicInvokeApiOAuth2ScopeParam(
+    &kApiGlicAccessFromGoogleWebpage,
+    /*name=*/"glic_invoke_api_oauth2_scope",
+    /*default_value=*/
+    "https://www.googleapis.com/auth/chrome.autobrowse.readprompts");
+
+const base::FeatureParam<bool> kGlicRequireConsentForInvokeParam(
+    &kApiGlicAccessFromGoogleWebpage,
+    "glic_require_consent_for_invoke",
+    false);
+
+const base::FeatureParam<GlicOpenNewTabDisposition>::Option
+    kGlicOpenNewTabDispositionOptions[] = {
+        {GlicOpenNewTabDisposition::kForeground,
+         kGlicOpenNewTabDispositionForeground},
+        {GlicOpenNewTabDisposition::kBackground,
+         kGlicOpenNewTabDispositionBackground},
+        {GlicOpenNewTabDisposition::kForegroundIfNotConsented,
+         kGlicOpenNewTabDispositionForegroundIfNotConsented}};
+
+const base::FeatureParam<GlicOpenNewTabDisposition>
+    kGlicOpenNewTabDispositionParam{
+        &kApiGlicAccessFromGoogleWebpage, "glic_open_new_tab_disposition",
+        GlicOpenNewTabDisposition::kForegroundIfNotConsented,
+        &kGlicOpenNewTabDispositionOptions};
 
 BASE_FEATURE(kApiProxyOverrideRulesPrivate, base::FEATURE_ENABLED_BY_DEFAULT);
 
@@ -57,6 +97,9 @@ BASE_FEATURE(kAllowWithholdingExtensionPermissionsOnInstall,
 
 BASE_FEATURE(kCheckingNoExtensionIdInExtensionIpcs,
              "EMF_NO_EXTENSION_ID_FOR_EXTENSION_SOURCE",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kComponentExtensionAllowWorkerChromeResources,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kEnableWebHidInWebView, base::FEATURE_ENABLED_BY_DEFAULT);
@@ -79,8 +122,6 @@ BASE_FEATURE(kExtensionManifestV2Unsupported, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kExtensionManifestV2ExceptionList,
              base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kExtensionManifestV2Disabled, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kExtensionsBackgroundCompilation,
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -112,6 +153,8 @@ BASE_FEATURE(kAllowLegacyMV2Extensions, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kExtensionProtocolHandlers, base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE(kExtensionTabContextMenu, base::FEATURE_ENABLED_BY_DEFAULT);
+
 BASE_FEATURE(kExtensionsManifestV3Only, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kExtensionsMenuAccessControl,
@@ -141,8 +184,15 @@ BASE_FEATURE(kSafeBrowsingCrxAllowlistAutoDisable,
 
 BASE_FEATURE(kStructuredCloningForMessaging, base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kTelemetryExtensionPendingApprovalApi,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+// TODO(https://crbug.com/328494022): Disable this on ChromeOS, too, and then
+// eventually remove it.
+BASE_FEATURE(kWebstoreHostedApp,
+#if BUILDFLAG(IS_CHROMEOS)
+             base::FEATURE_ENABLED_BY_DEFAULT
+#else
+             base::FEATURE_DISABLED_BY_DEFAULT
+#endif  // BUILDFLAG(IS_CHROMEOS)
+);
 
 // TODO(crbug.com/399447642): Clean up this feature after confirming the fix is
 // sufficient.
@@ -211,11 +261,14 @@ BASE_FEATURE_PARAM(bool,
                    "escapable",
                    false);
 
+BASE_FEATURE_PARAM(bool,
+                   kSearchEngineExplicitChoiceDialogUnlimitedShows,
+                   &kSearchEngineExplicitChoiceDialog,
+                   "unlimited_shows",
+                   true);
+
 BASE_FEATURE(kSearchEngineUnconditionalDialog,
              base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kWebRequestPersistFilteredEventsViaEventRouter,
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kOptimizeWebRequestProxy, base::FEATURE_DISABLED_BY_DEFAULT);
 

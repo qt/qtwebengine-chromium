@@ -254,9 +254,12 @@ RequestResult::RequestResult(RequestResult&&) = default;
 RequestResult& RequestResult::operator=(RequestResult&&) = default;
 
 WebUIContentsPreloadManager::WebUIContentsPreloadManager()
-    : memory_pressure_listener_registration_(
-          base::MemoryPressureListenerTag::kWebUIContentsPreloadManager,
-          this) {
+    : memory_consumer_registration_(
+          /*consumer_name=*/"WebUIContentsPreloadManager",
+          /*traits=*/std::nullopt,  // TODO(crbug.com/489671163): Fill traits.
+          this,
+          base::MemoryConsumerRegistration::CheckUnregister::kDisabled,
+          base::MemoryConsumerRegistration::CheckRegistryExists::kDisabled) {
   preload_mode_ =
       static_cast<PreloadMode>(features::kPreloadTopChromeWebUIMode.Get());
   webui_controller_embedder_stub_ =
@@ -466,7 +469,7 @@ RequestResult WebUIContentsPreloadManager::Request(
   preload_state->pending_request = false;
   // Non-preloaded WebUIs are logged by WebUIMainFrameObserver.
   if (preload_state->preloaded) {
-    webui::LogWebUIShown(web_contents_ret->GetSiteInstance()->GetSiteURL());
+    webui::LogWebUIShown(webui_url);
   }
 
   RequestResult result;
@@ -566,7 +569,7 @@ bool WebUIContentsPreloadManager::ShouldPreloadForBrowserContext(
   }
 
   // Don't preload if under heavy memory pressure.
-  if (GetMemoryLimit() <= base::kModerateMemoryPressureThreshold) {
+  if (memory_limit() <= base::kModerateMemoryPressureThreshold) {
     return false;
   }
 
@@ -620,8 +623,10 @@ void WebUIContentsPreloadManager::OnWebContentsPrimaryPageChanged(
     visible_url.Set(web_contents->GetVisibleURL().possibly_invalid_spec());
     static crash_reporter::CrashKeyString<1024> site_instance_url(
         "webui-preload-site-instance-url");
-    site_instance_url.Set(
-        web_contents->GetSiteInstance()->GetSiteURL().possibly_invalid_spec());
+    site_instance_url.Set(web_contents->GetSiteInstance()
+                              ->GetSecurityPrincipal()
+                              .GetDeprecatedSiteURL()
+                              .possibly_invalid_spec());
 
     const bool should_auto_reisze_host =
         TopChromeWebUIConfig::From(web_contents->GetBrowserContext(),

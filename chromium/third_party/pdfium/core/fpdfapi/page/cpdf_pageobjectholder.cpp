@@ -197,6 +197,18 @@ bool CPDF_PageObjectHolder::InsertPageObjectAtIndex(
     return false;
   }
 
+  // Adopt the neighbor's content stream so GenerateContent() rewrites it with
+  // `page_obj` at the requested position. Otherwise a streamless object is
+  // appended to /Contents in a new stream and `index` is lost on save.
+  if (index < page_object_list_.size() &&
+      page_obj->GetContentStream() == CPDF_PageObject::kNoContentStream) {
+    int32_t stream = page_object_list_[index]->GetContentStream();
+    if (stream != CPDF_PageObject::kNoContentStream) {
+      page_obj->SetContentStream(stream);
+      dirty_streams_.insert(stream);
+    }
+  }
+
   // Unsafe, but the compiler will not complain, because
   // std::deque::iterator::operator++() has not been marked as unsafe yet.
   page_object_list_.insert(UNSAFE_TODO(page_object_list_.begin() + index),

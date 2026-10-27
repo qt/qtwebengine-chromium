@@ -24,6 +24,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notimplemented.h"
@@ -644,12 +645,14 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
     gfx::NativeView parent_native_view,
     cc::slim::Layer* parent_layer)
     : RenderWidgetHostViewBase(widget_host),
-      is_showing_(!widget_host->IsHidden()),
       is_window_visible_(true),
       is_window_activity_started_(true),
+      page_visibility_(widget_host->IsHidden() ? PageVisibilityState::kHidden
+                                               : PageVisibilityState::kVisible),
+      view_visibility_(widget_host->IsHidden() ? Visibility::HIDDEN
+                                               : Visibility::VISIBLE),
       ime_adapter_android_(nullptr),
       selection_popup_controller_(nullptr),
-      text_suggestion_host_(nullptr),
       gesture_listener_manager_(nullptr),
       view_(ui::ViewAndroid::LayoutType::kMatchParent),
       gesture_provider_(
@@ -685,8 +688,9 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
 
   // If we're showing at creation time, we won't get a visibility change, so
   // generate our initial LocalSurfaceId here.
-  if (is_showing_)
+  if (view_visibility_ == Visibility::VISIBLE) {
     local_surface_id_allocator_.GenerateId();
+  }
 
   input_helper_ = std::make_unique<input::AndroidInputHelper>(this, this);
 
@@ -695,7 +699,7 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
   delegated_frame_host_ = std::make_unique<ui::DelegatedFrameHostAndroid>(
       &view_, GetHostFrameSinkManager(), delegated_frame_host_client_.get(),
       host()->GetFrameSinkId());
-  if (is_showing_) {
+  if (view_visibility_ == Visibility::VISIBLE) {
     delegated_frame_host_->WasShown(
         local_surface_id_allocator_.GetCurrentLocalSurfaceId(),
         GetCompositorViewportPixelSize(), host()->delegate()->IsFullscreen(),
@@ -964,10 +968,19 @@ void RenderWidgetHostViewAndroid::OnRenderFrameMetadataChangedBeforeActivation(
   if (!gesture_listener_manager_)
     return;
 
+  base::WeakPtr<RenderWidgetHostViewAndroid> weak_this =
+      weak_ptr_factory_.GetWeakPtr();
+
   UpdateTouchSelectionController(metadata.selection, metadata.page_scale_factor,
                                  metadata.top_controls_height,
                                  metadata.top_controls_shown_ratio,
                                  scrollable_viewport_size_dip);
+
+  // Abort if the view was destroyed during UpdateTouchSelectionController
+  // (e.g. via synchronous JNI callout to Java).
+  if (!weak_this) {
+    return;
+  }
 
   // ViewAndroid::content_offset() must be in dip.
   float top_content_offset_dip = top_content_offset / dip_scale;
@@ -1227,33 +1240,31 @@ bool RenderWidgetHostViewAndroid::IsSurfaceAvailableForCopy() {
 
 void RenderWidgetHostViewAndroid::ShowWithVisibility(
     PageVisibilityState page_visibility) {
-  // We can transition from `PageVisibilityState::kHiddenButPainting` to
-  // `PageVisibilityState::kVisible` while `is_showing_`. We only want to
-  // support updating visibility requests for this transition.
-  if (page_visibility_ == page_visibility) {
-    return;
+  TRACE_EVENT0("content", "RenderWidgetHostViewAndroid::ShowWithVisibility");
+  DCHECK_NE(page_visibility, PageVisibilityState::kHidden);
+  Visibility next_view_visibility = view_visibility_;
+  if (page_visibility == PageVisibilityState::kVisible) {
+    next_view_visibility = Visibility::VISIBLE;
+  } else if (page_visibility == PageVisibilityState::kHiddenButPainting &&
+             next_view_visibility == Visibility::VISIBLE) {
+    next_view_visibility = Visibility::HIDDEN;
   }
-
-  page_visibility_ = page_visibility;
-  is_showing_ = true;
-  view_.SetIsHitTestEligible(is_showing_);
-  ShowInternal();
+  TryUpdateVisibilities(next_view_visibility, page_visibility);
 }
 
 void RenderWidgetHostViewAndroid::Hide() {
-  if (!is_showing_)
-    return;
+  TRACE_EVENT0("content", "RenderWidgetHostViewAndroid::Hide");
+  TryUpdateVisibilities(Visibility::HIDDEN, PageVisibilityState::kHidden);
+}
 
-  page_visibility_ = PageVisibilityState::kHidden;
-  is_showing_ = false;
-  view_.SetIsHitTestEligible(is_showing_);
-  HideInternal();
+void RenderWidgetHostViewAndroid::WasOccluded() {
+  TryUpdateVisibilities(Visibility::OCCLUDED, PageVisibilityState::kHidden);
 }
 
 bool RenderWidgetHostViewAndroid::IsShowing() {
   // |view_.parent()| being NULL means that it is not attached
   // to the View system yet, so we treat this RWHVA as hidden.
-  return is_showing_ && view_.parent();
+  return (view_visibility_ == Visibility::VISIBLE) && view_.parent();
 }
 
 void RenderWidgetHostViewAndroid::SelectAroundCaretAck(
@@ -1578,8 +1589,13 @@ bool RenderWidgetHostViewAndroid::OnTouchEvent(
 
   // Receiving any other touch event before the double-tap timeout expires
   // cancels opening the spellcheck menu.
-  if (text_suggestion_host_)
-    text_suggestion_host_->StopSuggestionMenuTimer();
+  if (auto* focused_frame = host_->frame_tree()->GetFocusedFrame()) {
+    if (auto* suggestion_host =
+            TextSuggestionHostAndroid::GetForCurrentDocument(
+                focused_frame->current_frame_host())) {
+      suggestion_host->StopSuggestionMenuTimer();
+    }
+  }
 
   // If a browser-based widget consumes the touch event, it's critical that
   // touch event interception be disabled. This avoids issues with
@@ -1690,6 +1706,10 @@ int RenderWidgetHostViewAndroid::GetTouchHandleHeight() {
   if (!touch_selection_controller_)
     return 0;
   return static_cast<int>(touch_selection_controller_->GetTouchHandleHeight());
+}
+
+bool RenderWidgetHostViewAndroid::HasSavedCompositorFrame() const {
+  return delegated_frame_host_ && delegated_frame_host_->HasSavedFrame();
 }
 
 void RenderWidgetHostViewAndroid::ResetGestureDetection() {
@@ -2070,6 +2090,10 @@ void RenderWidgetHostViewAndroid::OnOverscrollRefreshHandlerAvailable() {
   CreateOverscrollControllerIfPossible();
 }
 
+void RenderWidgetHostViewAndroid::ResetOverscrollController() {
+  overscroll_controller_.reset();
+}
+
 bool RenderWidgetHostViewAndroid::SupportsAnimation() const {
   // The synchronous (WebView) compositor does not have a proper browser
   // compositor with which to drive animations.
@@ -2226,7 +2250,7 @@ void RenderWidgetHostViewAndroid::SynchronousCopyContents(
       (float)output_width / (float)input_size_in_pixel.width(),
       (float)output_height / (float)input_size_in_pixel.height());
   sync_compositor_->DemandDrawSw(&canvas, /*software_canvas=*/true);
-  std::move(callback).Run(viz::CopyOutputBitmapWithMetadata{.bitmap = bitmap});
+  std::move(callback).Run(viz::CopyOutputBitmapWithMetadata(bitmap));
 }
 
 WebContentsAccessibilityAndroid*
@@ -2346,15 +2370,62 @@ void RenderWidgetHostViewAndroid::OnFinishGetContentBitmap(
 }
 
 void RenderWidgetHostViewAndroid::ShowInternal() {
-  bool show = is_showing_ && is_window_activity_started_ && is_window_visible_;
-  if (!show)
-    return;
-
   OnShowWithPageVisibility(page_visibility_);
 }
 
+bool RenderWidgetHostViewAndroid::VisibilityNeedsDrawing() const {
+  return view_visibility_ == Visibility::VISIBLE ||
+         page_visibility_ == PageVisibilityState::kHiddenButPainting;
+}
+
+void RenderWidgetHostViewAndroid::UpdateVisibility() {
+  bool should_be_showing = VisibilityNeedsDrawing() &&
+                           is_window_activity_started_ && is_window_visible_;
+  if (should_be_showing) {
+    ShowInternal();
+  } else {
+    HideInternal();
+  }
+}
+
+void RenderWidgetHostViewAndroid::TryUpdateVisibilities(
+    Visibility new_view_visibility,
+    PageVisibilityState new_page_visibility) {
+#if DCHECK_IS_ON()
+  switch (new_view_visibility) {
+    case Visibility::VISIBLE:
+      // A visible view must have a visible page. It cannot be hidden or
+      // hidden-but-painting.
+      DCHECK_EQ(new_page_visibility, PageVisibilityState::kVisible);
+      break;
+    case Visibility::HIDDEN:
+    case Visibility::OCCLUDED:
+      // A hidden or occluded view cannot have a visible page. It must be hidden
+      // or hidden-but-painting.
+      DCHECK_NE(new_page_visibility, PageVisibilityState::kVisible);
+      break;
+  }
+#endif
+
+  if (view_visibility_ == new_view_visibility &&
+      page_visibility_ == new_page_visibility) {
+    return;
+  }
+
+  bool view_visibility_changed = (view_visibility_ != new_view_visibility);
+  view_visibility_ = new_view_visibility;
+  page_visibility_ = new_page_visibility;
+
+  if (view_visibility_changed) {
+    view_.SetIsHitTestEligible(view_visibility_ == Visibility::VISIBLE);
+  }
+
+  UpdateVisibility();
+}
+
 void RenderWidgetHostViewAndroid::HideInternal() {
-  DCHECK(!is_showing_ || !is_window_activity_started_ || !is_window_visible_)
+  DCHECK((view_visibility_ != Visibility::VISIBLE) ||
+         !is_window_activity_started_ || !is_window_visible_)
       << "Hide called when the widget should be shown.";
 
   // As we stop visual observations, we clear the current fullscreen state. Once
@@ -2373,12 +2444,15 @@ void RenderWidgetHostViewAndroid::HideInternal() {
   // Only preserve the frontbuffer if the activity was stopped while the
   // window is still visible. This avoids visual artifacts when transitioning
   // between activities.
-  bool hide_frontbuffer = is_window_activity_started_ || !is_window_visible_;
+  bool preserve_last_visible_state = (view_visibility_ == Visibility::OCCLUDED);
+  bool hide_frontbuffer = !preserve_last_visible_state &&
+                          (is_window_activity_started_ || !is_window_visible_);
 
   // Only stop observing the root window if the widget has been explicitly
   // hidden and the frontbuffer is being cleared. This allows window visibility
   // notifications to eventually clear the frontbuffer.
-  bool stop_observing_root_window = !is_showing_ && hide_frontbuffer;
+  bool stop_observing_root_window =
+      (view_visibility_ != Visibility::VISIBLE) && hide_frontbuffer;
 
   // Clear any tooltip to help avoid crashes due to android race condition for
   // tooltips on a backgrounded app. crbug.com/441235003.
@@ -2390,7 +2464,7 @@ void RenderWidgetHostViewAndroid::HideInternal() {
   }
 
   if (stop_observing_root_window) {
-    DCHECK(!is_showing_);
+    DCHECK(view_visibility_ != Visibility::VISIBLE);
     StopObservingRootWindow();
   }
 
@@ -2409,7 +2483,7 @@ void RenderWidgetHostViewAndroid::HideInternal() {
 void RenderWidgetHostViewAndroid::StartObservingRootWindow() {
   DCHECK(view_.parent());
   DCHECK(view_.GetWindowAndroid());
-  DCHECK(is_showing_);
+  DCHECK(VisibilityNeedsDrawing());
   if (observing_root_window_)
     return;
 
@@ -2634,10 +2708,6 @@ bool RenderWidgetHostViewAndroid::LockKeyboard(
     return true;
   }
 
-  if (!base::FeatureList::IsEnabled(features::kKeyboardLockApiOnAndroid)) {
-    return false;
-  }
-
   ui::WindowAndroid* window_android = view_.GetWindowAndroid();
   if (!window_android) {
     return false;
@@ -2654,7 +2724,6 @@ bool RenderWidgetHostViewAndroid::LockKeyboard(
 
 void RenderWidgetHostViewAndroid::UnlockKeyboard() {
   CHECK(keyboard_locked_);
-  CHECK(base::FeatureList::IsEnabled(features::kKeyboardLockApiOnAndroid));
   keyboard_locked_ = false;
   locked_keyboard_keys_.reset();
   if (ui::WindowAndroid* window_android = view_.GetWindowAndroid()) {
@@ -2680,8 +2749,14 @@ void RenderWidgetHostViewAndroid::SendKeyEvent(
 
   // Receiving a key event before the double-tap timeout expires cancels opening
   // the spellcheck menu. If the suggestion menu is open, we close the menu.
-  if (text_suggestion_host_)
-    text_suggestion_host_->OnKeyEvent();
+  if (auto* focused_frame = host_->frame_tree()->GetFocusedFrame()) {
+    if (auto* suggestion_host =
+            TextSuggestionHostAndroid::GetForCurrentDocument(
+                focused_frame->current_frame_host())) {
+      suggestion_host->StopSuggestionMenuTimer();
+      suggestion_host->HidePopups();
+    }
+  }
 
   // If the key has been reserved as part of the active KeyboardLock request,
   // then we want to mark it as such so it is not intercepted by the browser.
@@ -2866,8 +2941,9 @@ void RenderWidgetHostViewAndroid::DidOverscroll(
   if (sync_compositor_)
     sync_compositor_->DidOverscroll(params);
 
-  if (!view_.parent() || !is_showing_)
+  if (!view_.parent() || view_visibility_ != Visibility::VISIBLE) {
     return;
+  }
 
   if (overscroll_controller_) {
     overscroll_controller_->OnOverscrolled(params);
@@ -2942,8 +3018,9 @@ void RenderWidgetHostViewAndroid::UpdateNativeViewTree(
   // TODO(enne): figure out a more straightforward init path for screen infos.
   UpdateScreenInfo();
 
-  if (is_showing_ && view_.GetWindowAndroid())
+  if (VisibilityNeedsDrawing() && view_.GetWindowAndroid()) {
     StartObservingRootWindow();
+  }
 
   if (resize) {
     SynchronizeVisualProperties(
@@ -3100,10 +3177,7 @@ void RenderWidgetHostViewAndroid::OnRootWindowVisibilityChanged(bool visible) {
 
   is_window_visible_ = visible;
 
-  if (visible)
-    ShowInternal();
-  else
-    HideInternal();
+  UpdateVisibility();
 }
 
 void RenderWidgetHostViewAndroid::OnAttachedToWindow() {
@@ -3111,8 +3185,9 @@ void RenderWidgetHostViewAndroid::OnAttachedToWindow() {
     return;
 
   UpdateScreenInfo();
-  if (is_showing_)
+  if (VisibilityNeedsDrawing()) {
     StartObservingRootWindow();
+  }
   DCHECK(view_.GetWindowAndroid());
   if (view_.GetWindowAndroid()->GetCompositor())
     OnAttachCompositor();
@@ -3153,14 +3228,14 @@ void RenderWidgetHostViewAndroid::OnActivityStopped() {
   TRACE_EVENT0("browser", "RenderWidgetHostViewAndroid::OnActivityStopped");
   DCHECK(observing_root_window_);
   is_window_activity_started_ = false;
-  HideInternal();
+  UpdateVisibility();
 }
 
 void RenderWidgetHostViewAndroid::OnActivityStarted() {
   TRACE_EVENT0("browser", "RenderWidgetHostViewAndroid::OnActivityStarted");
   DCHECK(observing_root_window_);
   is_window_activity_started_ = true;
-  ShowInternal();
+  UpdateVisibility();
 }
 
 void RenderWidgetHostViewAndroid::SetTextHandlesHiddenForDropdownMenu(
@@ -3302,7 +3377,7 @@ void RenderWidgetHostViewAndroid::DidNavigate() {
     RenderWidgetHostViewBase::DidNavigate();
     return;
   }
-  if (!is_showing_) {
+  if (!VisibilityNeedsDrawing()) {
     // Navigating while hidden should not allocate a new LocalSurfaceID. Once
     // sizes are ready, or we begin to Show, we can then allocate the new
     // LocalSurfaceId.
@@ -3532,9 +3607,9 @@ void RenderWidgetHostViewAndroid::NotifyHostAndDelegateOnWasShown(
   // the browser-compositor.
   std::optional<blink::RecordContentToVisibleTimeRequest>
       delegated_visible_time_request;
-  if (visible_time_request && delegated_frame_host_->HasSavedFrame()) {
+  if (visible_time_request) {
     delegated_visible_time_request =
-        visible_time_request->ExtractTabSwitchEvents();
+        visible_time_request->ExtractTabSwitchEventsWithSavedFrame();
   }
 
   host()->WasShown(std::move(visible_time_request));
@@ -3588,13 +3663,11 @@ void RenderWidgetHostViewAndroid::
         blink::RecordContentToVisibleTimeRequest visible_time_request) {
   // If the frame for the renderer is already available, then the
   // tab-switching time is the presentation time for the browser-compositor.
-  if (delegated_frame_host_->HasSavedFrame()) {
-    if (std::optional<blink::RecordContentToVisibleTimeRequest>
-            delegated_visible_time_request =
-                visible_time_request.ExtractTabSwitchEvents()) {
-      delegated_frame_host_->RequestSuccessfulPresentationTimeForNextFrame(
-          std::move(*delegated_visible_time_request));
-    }
+  if (std::optional<blink::RecordContentToVisibleTimeRequest>
+          delegated_visible_time_request =
+              visible_time_request.ExtractTabSwitchEventsWithSavedFrame()) {
+    delegated_frame_host_->RequestSuccessfulPresentationTimeForNextFrame(
+        std::move(*delegated_visible_time_request));
   }
 
   if (!visible_time_request.events.empty()) {
@@ -3644,7 +3717,7 @@ void RenderWidgetHostViewAndroid::WasEvicted() {
   // upon creating RenderWidgetHostViewAndroid. When this occurs while visible
   // a new LocalSurfaceId should be generated. If eviction occurs while not
   // visible, then the new LocalSurfaceId can be allocated upon the next Show.
-  if (is_showing_) {
+  if (VisibilityNeedsDrawing()) {
     local_surface_id_allocator_.GenerateId();
     // Guarantee that the new LocalSurfaceId is propagated. Rather than relying
     // upon calls to Show() and OnDidUpdateVisualPropertiesComplete(). As there
@@ -3721,6 +3794,21 @@ void RenderWidgetHostViewAndroid::PassImeRenderWidgetHost(
   host()->PassImeRenderWidgetHost(std::move(pending_remote));
 }
 
+void RenderWidgetHostViewAndroid::SetInputTransferHandlerForTesting(  // IN-TEST
+    InputTransferHandlerAndroid* handler) {
+  // Remove the old handler's observer from the host before it is destroyed,
+  // to avoid leaving a dangling pointer in the host's observer list.
+  if (input_transfer_handler_) {
+    host()->RemoveInputEventObserver(
+        &input_transfer_handler_->GetInputObserver());
+  }
+  input_transfer_handler_ = base::WrapUnique(handler);
+  // Register the new handler's observer if it is valid.
+  if (input_transfer_handler_) {
+    host()->AddInputEventObserver(&input_transfer_handler_->GetInputObserver());
+  }
+}
+
 void RenderWidgetHostViewAndroid::BeginRotationBatching() {
   in_rotation_ = true;
   rotation_metrics_.emplace_back(
@@ -3731,7 +3819,7 @@ void RenderWidgetHostViewAndroid::BeginRotationBatching() {
   TRACE_EVENT_BEGIN("viz", "RenderWidgetHostViewAndroid::RotationBegin",
                     perfetto::NamedTrack("RenderWidgetHostViewAndroid",
                                          reinterpret_cast<uintptr_t>(this)),
-                    "visible", is_showing_);
+                    "visible", view_visibility_ == Visibility::VISIBLE);
 
   if (rotation_timeout_.IsRunning())
     rotation_timeout_.Stop();
@@ -3783,7 +3871,7 @@ void RenderWidgetHostViewAndroid::EndRotationAndSyncIfNecessary() {
     return;
   EndRotationBatching();
 
-  if (is_showing_) {
+  if (VisibilityNeedsDrawing()) {
     SynchronizeVisualProperties(cc::DeadlinePolicy::UseDefaultDeadline(),
                                 std::nullopt,
                                 /*reuse_current_local_surface_id=*/false,

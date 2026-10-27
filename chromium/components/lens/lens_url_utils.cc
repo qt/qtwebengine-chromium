@@ -12,6 +12,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "components/lens/lens_entrypoints.h"
 #include "components/lens/lens_features.h"
@@ -173,6 +174,25 @@ std::string VitQueryParamValueForMimeType(MimeType mime_type) {
   return vitValue;
 }
 
+std::string VitQueryParamValueForMimeTypeString(
+    const std::string& mime_type_string) {
+  // Default contextual visual input type.
+  std::string vitValue = kContextualVisualInputTypeQueryParameterValue;
+  if (base::StartsWith(mime_type_string, "application/pdf",
+                       base::CompareCase::INSENSITIVE_ASCII)) {
+    vitValue = kPdfVisualInputTypeQueryParameterValue;
+  } else if (base::StartsWith(mime_type_string, "text/html",
+                              base::CompareCase::INSENSITIVE_ASCII) ||
+             base::StartsWith(mime_type_string, "text/plain",
+                              base::CompareCase::INSENSITIVE_ASCII)) {
+    vitValue = kWebpageVisualInputTypeQueryParameterValue;
+  } else if (base::StartsWith(mime_type_string, "image/",
+                              base::CompareCase::INSENSITIVE_ASCII)) {
+    vitValue = kImageVisualInputTypeQueryParameterValue;
+  }
+  return vitValue;
+}
+
 std::string VitQueryParamValueForMediaType(
     LensOverlayRequestId_MediaType media_type) {
   switch (media_type) {
@@ -318,6 +338,12 @@ GURL AppendInvocationSourceParamToURL(
   }
   return net::AppendOrReplaceQueryParameter(
       url_to_modify, kInvocationSourceParameterKey, param_value);
+}
+
+const std::string ExtractTextQueryParameterValue(const GURL& url) {
+  std::string param_value = "";
+  net::GetValueForKeyInQuery(url, kTextQueryParameterKey, &param_value);
+  return param_value;
 }
 
 }  // namespace lens

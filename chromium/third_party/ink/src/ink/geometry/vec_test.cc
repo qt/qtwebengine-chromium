@@ -39,6 +39,8 @@ using ::testing::Not;
 
 constexpr float kInfinity = std::numeric_limits<float>::infinity();
 constexpr float kNan = std::numeric_limits<float>::quiet_NaN();
+constexpr float kFloatMax = std::numeric_limits<float>::max();
+constexpr float kFloatMin = std::numeric_limits<float>::denorm_min();
 
 TEST(VecTest, Stringify) {
   EXPECT_EQ(absl::StrCat(Vec()), "<0, 0>");
@@ -254,6 +256,14 @@ TEST(VecTest, AsUnitVec) {
   // Vec::UnitVecWithDirection(v.Direction()):
   EXPECT_THAT((Vec{+0.f, 0.f}).AsUnitVec(), VecEq({1, 0}));
   EXPECT_THAT((Vec{-0.f, 0.f}).AsUnitVec(), VecEq({-1, 0}));
+
+  // Avoid overflow:
+  EXPECT_THAT((Vec{kFloatMax, kFloatMax}).AsUnitVec(),
+              VecEq(Vec::UnitVecWithDirection(Angle::Degrees(45))));
+
+  // Avoid underflow:
+  EXPECT_THAT((Vec{kFloatMin, kFloatMin}).AsUnitVec(),
+              VecEq(Vec::UnitVecWithDirection(Angle::Degrees(45))));
 }
 
 void AsUnitVecMagnitudeIsOne(Vec vec) {
@@ -265,10 +275,14 @@ void AsUnitVecMagnitudeIsOne(Vec vec) {
 FUZZ_TEST(VecTest, AsUnitVecMagnitudeIsOne).WithDomains(NotNanVec());
 
 void AsUnitVecDirectionIsUnchanged(Vec vec) {
-  EXPECT_THAT(vec.AsUnitVec().Direction(), AngleEq(vec.Direction()))
+  // Subnormal vectors get scaled up by 2^20 before conversion, and there's
+  // some room for error due to floating-point quantization.
+  EXPECT_THAT(vec.AsUnitVec().Direction(), AngleNear(vec.Direction(), 1e-6f))
       << "Where vec is: " << testing::PrintToString(vec)
-      << "\nAnd vec.AsUnitVec() is: "
-      << testing::PrintToString(vec.AsUnitVec());
+      << "\nAnd vec.AsUnitVec() is: " << testing::PrintToString(vec.AsUnitVec())
+      << "\nDifference in radians: "
+      << testing::PrintToString(
+             (vec.AsUnitVec().Direction() - vec.Direction()).ValueInRadians());
 }
 FUZZ_TEST(VecTest, AsUnitVecDirectionIsUnchanged).WithDomains(NotNanVec());
 

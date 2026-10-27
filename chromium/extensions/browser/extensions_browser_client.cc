@@ -50,8 +50,9 @@ void ExtensionsBrowserClient::Set(ExtensionsBrowserClient* client) {
 
 void ExtensionsBrowserClient::RegisterExtensionFunctions(
     ExtensionFunctionRegistry* registry) {
-  for (const auto& provider : providers_)
+  for (const auto& provider : providers_) {
     provider->RegisterExtensionFunctions(registry);
+  }
 }
 
 void ExtensionsBrowserClient::AddAPIProvider(
@@ -134,6 +135,13 @@ void ExtensionsBrowserClient::SignalContentScriptsLoaded(
 
 bool ExtensionsBrowserClient::ShouldSchemeBypassNavigationChecks(
     const std::string& scheme) const {
+  return false;
+}
+
+bool ExtensionsBrowserClient::IsDefaultSearchEngineRedirect(
+    content::BrowserContext* context,
+    const GURL& request_url,
+    const GURL& redirect_url) const {
   return false;
 }
 
@@ -227,9 +235,9 @@ void ExtensionsBrowserClient::GetWebViewStoragePartitionConfig(
     bool in_memory,
     base::OnceCallback<void(std::optional<content::StoragePartitionConfig>)>
         callback) {
-  const GURL& owner_site_url = owner_site_instance->GetSiteURL();
   auto partition_config = content::StoragePartitionConfig::Create(
-      browser_context, owner_site_url.GetHost(), partition_name, in_memory);
+      browser_context, owner_site_instance->GetSecurityPrincipal().GetHost(),
+      partition_name, in_memory);
 
   if (owner_site_instance->GetSecurityPrincipal().SchemeIs(
           extensions::kExtensionScheme)) {
@@ -365,6 +373,24 @@ base::FilePath ExtensionsBrowserClient::GetUserDataDir() {
   base::FilePath temp_dir;
   base::PathService::Get(base::DIR_TEMP, &temp_dir);
   return temp_dir;
+}
+
+std::unique_ptr<image_fetcher::ImageDecoder>
+ExtensionsBrowserClient::CreateImageDecoder() {
+  return nullptr;
+}
+
+bool ExtensionsBrowserClient::CanUseNonComponentExtensions(
+    content::BrowserContext* context) {
+  return true;
+}
+
+void ExtensionsBrowserClient::CanInstallExtensionByPolicy(
+    content::BrowserContext* context,
+    const ExtensionId& extension_id,
+    const base::Version& extension_version,
+    base::OnceCallback<void(bool, std::u16string)> callback) {
+  std::move(callback).Run(/*can_install=*/true, std::u16string());
 }
 
 }  // namespace extensions

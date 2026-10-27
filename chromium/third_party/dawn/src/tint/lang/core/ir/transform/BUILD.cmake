@@ -39,10 +39,8 @@
 # Kind:      lib
 ################################################################################
 tint_add_target(tint_lang_core_ir_transform lib
-  lang/core/ir/transform/array_length_from_immediate.cc
-  lang/core/ir/transform/array_length_from_immediate.h
-  lang/core/ir/transform/array_length_from_uniform.cc
-  lang/core/ir/transform/array_length_from_uniform.h
+  lang/core/ir/transform/array_length_from.cc
+  lang/core/ir/transform/array_length_from.h
   lang/core/ir/transform/bgra8unorm_polyfill.cc
   lang/core/ir/transform/bgra8unorm_polyfill.h
   lang/core/ir/transform/binary_polyfill.cc
@@ -132,6 +130,7 @@ tint_target_add_dependencies(tint_lang_core_ir_transform lib
   tint_utils_macros
   tint_utils_math
   tint_utils_memory
+  tint_utils_reflection
   tint_utils_rtti
   tint_utils_symbol
   tint_utils_text
@@ -200,6 +199,7 @@ tint_target_add_dependencies(tint_lang_core_ir_transform_test test
   tint_utils_macros
   tint_utils_math
   tint_utils_memory
+  tint_utils_reflection
   tint_utils_rtti
   tint_utils_symbol
   tint_utils_text
@@ -241,7 +241,7 @@ tint_add_target(tint_lang_core_ir_transform_fuzz fuzz
 
 tint_target_add_dependencies(tint_lang_core_ir_transform_fuzz fuzz
   tint_api_common
-  tint_cmd_fuzz_ir_fuzz
+  tint_cmd_fuzz_common
   tint_lang_core
   tint_lang_core_constant
   tint_lang_core_ir
@@ -255,6 +255,7 @@ tint_target_add_dependencies(tint_lang_core_ir_transform_fuzz fuzz
   tint_utils_macros
   tint_utils_math
   tint_utils_memory
+  tint_utils_reflection
   tint_utils_rtti
   tint_utils_symbol
   tint_utils_text

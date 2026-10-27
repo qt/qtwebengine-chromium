@@ -20,10 +20,13 @@
 #include <vulkan/vulkan_core.h>
 #include <mutex>
 
+#include "generated/gpuav_offline_spirv.h"
 #include "gpuav/core/gpuav.h"
+#include "gpuav/core/gpuav_validation_pipeline.h"
 #include "gpuav/resources/gpuav_state_trackers.h"
 #include "gpuav/resources/gpuav_shader_resources.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
+#include "gpuav/shaders/setup/descriptor_encoding_update.h"
 #include "state_tracker/descriptor_sets.h"
 #include "containers/limits.h"
 #include "utils/image_utils.h"
@@ -33,11 +36,11 @@ using vvl::DescriptorClass;
 namespace gpuav {
 
 DescriptorSetSubState::DescriptorSetSubState(const vvl::DescriptorSet& set, Validator& state_data)
-    : vvl::DescriptorSetSubState(set), input_buffer_(state_data) {
+    : vvl::DescriptorSetSubState(set), descriptor_encodings_(state_data) {
     BuildBindingLayouts();
 }
 
-DescriptorSetSubState::~DescriptorSetSubState() { input_buffer_.Destroy(); }
+DescriptorSetSubState::~DescriptorSetSubState() { descriptor_encodings_.Destroy(); }
 
 void DescriptorSetSubState::BuildBindingLayouts() {
     const uint32_t binding_count = (base.GetBindingCount() > 0) ? base.GetLayout()->GetMaxBinding() + 1 : 0;
@@ -55,6 +58,21 @@ void DescriptorSetSubState::BuildBindingLayouts() {
     }
 }
 
+void DescriptorSetSubState::CreateDescriptorEncodingBuffer() {
+    VkBufferCreateInfo buffer_info = vku::InitStruct<VkBufferCreateInfo>();
+    buffer_info.size = base.GetNonInlineDescriptorCount() * sizeof(glsl::DescriptorEncoding);
+    buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+
+    // The descriptor state buffer can be very large (4mb+ in some games). Allocating it as HOST_CACHED
+    // and manually flushing it at the end of the state updates is faster than using HOST_COHERENT.
+    VmaAllocationCreateInfo alloc_info{};
+    alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+    const VkResult result = descriptor_encodings_.Create(&buffer_info, &alloc_info);
+    if (result != VK_SUCCESS) {
+        return;
+    }
+}
+
 template <typename StateObject>
 DescriptorId GetId(const StateObject* obj, bool allow_null = true) {
     if (!obj) {
@@ -64,52 +82,55 @@ DescriptorId GetId(const StateObject* obj, bool allow_null = true) {
     return sub_state.Id();
 }
 
-static glsl::DescriptorState GetInData(const vvl::BufferDescriptor& desc) {
-    return glsl::DescriptorState(DescriptorClass::GeneralBuffer, GetId(desc.GetBufferState()),
-                                 static_cast<uint32_t>(desc.GetEffectiveRange()));
+static glsl::DescriptorEncoding GetDescriptorEncoding(const vvl::BufferDescriptor& desc) {
+    return glsl::DescriptorEncoding(DescriptorClass::GeneralBuffer, GetId(desc.GetBufferState()),
+                                    static_cast<uint32_t>(desc.GetEffectiveRange()));
 }
 
-static glsl::DescriptorState GetInData(const vvl::TexelDescriptor& desc) {
+static glsl::DescriptorEncoding GetDescriptorEncoding(const vvl::TexelDescriptor& desc) {
     auto* buffer_view_state = desc.GetBufferViewState();
     uint32_t res_size = vvl::kNoIndex32;
     if (buffer_view_state) {
         auto view_size = buffer_view_state->Size();
         res_size = static_cast<uint32_t>(view_size / GetTexelBufferFormatSize(buffer_view_state->create_info.format));
     }
-    return glsl::DescriptorState(DescriptorClass::TexelBuffer, GetId(buffer_view_state), res_size);
+    return glsl::DescriptorEncoding(DescriptorClass::TexelBuffer, GetId(buffer_view_state), res_size);
 }
 
-static glsl::DescriptorState GetInData(const vvl::ImageDescriptor& desc) {
-    return glsl::DescriptorState(DescriptorClass::Image, GetId(desc.GetImageViewState()));
+static glsl::DescriptorEncoding GetDescriptorEncoding(const vvl::ImageDescriptor& desc) {
+    return glsl::DescriptorEncoding(DescriptorClass::Image, GetId(desc.GetImageViewState()));
 }
 
-static glsl::DescriptorState GetInData(const vvl::TensorDescriptor& desc) {
+static glsl::DescriptorEncoding GetDescriptorEncoding(const vvl::TensorDescriptor& desc) {
     auto tensor_view_state = static_cast<const vvl::TensorView*>(desc.GetTensorViewState());
-    return glsl::DescriptorState(DescriptorClass::Tensor, tensor_view_state ? tensor_view_state->GetId() : glsl::kNullDescriptor);
+    return glsl::DescriptorEncoding(DescriptorClass::Tensor,
+                                    tensor_view_state ? tensor_view_state->GetId() : glsl::kNullDescriptor);
 }
 
-static glsl::DescriptorState GetInData(const vvl::SamplerDescriptor& desc) {
-    return glsl::DescriptorState(DescriptorClass::PlainSampler, GetId(desc.GetSamplerState()));
+static glsl::DescriptorEncoding GetDescriptorEncoding(const vvl::SamplerDescriptor& desc) {
+    return glsl::DescriptorEncoding(DescriptorClass::PlainSampler, GetId(desc.GetSamplerState()));
 }
 
-static glsl::DescriptorState GetInData(const vvl::ImageSamplerDescriptor& desc) {
+static glsl::DescriptorEncoding GetDescriptorEncoding(const vvl::ImageSamplerDescriptor& desc) {
     // image can be null in some cases, but the sampler can't
-    return glsl::DescriptorState(DescriptorClass::ImageSampler, GetId(desc.GetImageViewState()),
-                                 GetId(desc.GetSamplerState(), false));
+    return glsl::DescriptorEncoding(DescriptorClass::ImageSampler, GetId(desc.GetImageViewState()),
+                                    GetId(desc.GetSamplerState(), false));
 }
 
-static glsl::DescriptorState GetInData(const vvl::AccelerationStructureDescriptor& ac) {
+static glsl::DescriptorEncoding GetDescriptorEncoding(const vvl::AccelerationStructureDescriptor& ac) {
     uint32_t id = ac.IsKHR() ? GetId(ac.GetAccelerationStructureStateKHR()) : GetId(ac.GetAccelerationStructureStateNV());
-    return glsl::DescriptorState(DescriptorClass::AccelerationStructure, id);
+    glsl::DescriptorEncoding encoding(DescriptorClass::AccelerationStructure, id);
+    encoding.dwords_1_2 = SubState(*ac.GetAccelerationStructureStateKHR()).gpu_state.offset_address;
+    return encoding;
 }
 
-static glsl::DescriptorState GetInData(const vvl::MutableDescriptor& desc) {
+static glsl::DescriptorEncoding GetDescriptorEncoding(const vvl::MutableDescriptor& desc) {
     auto desc_class = desc.ActiveClass();
     switch (desc_class) {
         case DescriptorClass::GeneralBuffer: {
             auto buffer_state = desc.GetSharedBufferState();
-            return glsl::DescriptorState(desc_class, GetId(buffer_state.get()),
-                                         buffer_state ? static_cast<uint32_t>(buffer_state->create_info.size) : vvl::kNoIndex32);
+            return glsl::DescriptorEncoding(desc_class, GetId(buffer_state.get()),
+                                            buffer_state ? static_cast<uint32_t>(buffer_state->GetSize()) : vvl::kNoIndex32);
         }
         case DescriptorClass::TexelBuffer: {
             auto buffer_view_state = desc.GetSharedBufferViewState();
@@ -118,27 +139,27 @@ static glsl::DescriptorState GetInData(const vvl::MutableDescriptor& desc) {
                 auto view_size = buffer_view_state->Size();
                 res_size = static_cast<uint32_t>(view_size / GetTexelBufferFormatSize(buffer_view_state->create_info.format));
             }
-            return glsl::DescriptorState(desc_class, GetId(buffer_view_state.get()), res_size);
+            return glsl::DescriptorEncoding(desc_class, GetId(buffer_view_state.get()), res_size);
         }
         case DescriptorClass::PlainSampler: {
-            return glsl::DescriptorState(desc_class, GetId(desc.GetSharedSamplerState().get()));
+            return glsl::DescriptorEncoding(desc_class, GetId(desc.GetSharedSamplerState().get()));
         }
         case DescriptorClass::ImageSampler: {
             // image can be null in some cases, but the sampler can't
-            return glsl::DescriptorState(desc_class, GetId(desc.GetSharedImageViewState().get()),
-                                         GetId(desc.GetSharedSamplerState().get(), false));
+            return glsl::DescriptorEncoding(desc_class, GetId(desc.GetSharedImageViewState().get()),
+                                            GetId(desc.GetSharedSamplerState().get(), false));
         }
         case DescriptorClass::Image: {
-            return glsl::DescriptorState(DescriptorClass::Image, GetId(desc.GetSharedImageViewState().get()));
+            return glsl::DescriptorEncoding(DescriptorClass::Image, GetId(desc.GetSharedImageViewState().get()));
         }
         case DescriptorClass::Tensor: {
             auto tensor_state = std::static_pointer_cast<const vvl::Tensor>(desc.GetSharedTensor());
-            return glsl::DescriptorState(desc_class, tensor_state ? tensor_state->GetId() : glsl::kNullDescriptor);
+            return glsl::DescriptorEncoding(desc_class, tensor_state ? tensor_state->GetId() : glsl::kNullDescriptor);
         }
         case DescriptorClass::AccelerationStructure: {
             uint32_t id =
                 desc.IsKHR() ? GetId(desc.GetAccelerationStructureStateKHR()) : GetId(desc.GetAccelerationStructureStateNV());
-            return glsl::DescriptorState(DescriptorClass::AccelerationStructure, id);
+            return glsl::DescriptorEncoding(DescriptorClass::AccelerationStructure, id);
         }
         case DescriptorClass::InlineUniform:
         case DescriptorClass::Mutable:
@@ -147,102 +168,193 @@ static glsl::DescriptorState GetInData(const vvl::MutableDescriptor& desc) {
             break;
     }
     // If unsupported descriptor, act as if it is null and skip
-    return glsl::DescriptorState(desc_class, glsl::kNullDescriptor, vvl::kNoIndex32);
+    return glsl::DescriptorEncoding(desc_class, glsl::kNullDescriptor, vvl::kNoIndex32);
 }
 
 template <typename Binding>
-void FillBindingInData(const Binding& binding, glsl::DescriptorState* data, uint32_t& index) {
+void GetBindingEncodings(const Binding& binding, glsl::DescriptorEncoding* descriptor_encodings, uint32_t& index) {
     for (uint32_t di = 0; di < binding.count; di++) {
         if (!binding.updated[di]) {
-            data[index++] = glsl::DescriptorState();
+            descriptor_encodings[index++] = glsl::DescriptorEncoding();
         } else {
-            data[index++] = GetInData(binding.descriptors[di]);
+            descriptor_encodings[index++] = GetDescriptorEncoding(binding.descriptors[di]);
         }
     }
 }
 
 // Inline Uniforms are currently treated as a single descriptor. Writes to any offsets cause the whole range to be valid.
 template <>
-void FillBindingInData(const vvl::InlineUniformBinding& binding, glsl::DescriptorState* data, uint32_t& index) {
+void GetBindingEncodings(const vvl::InlineUniformBinding& binding, glsl::DescriptorEncoding* descriptor_encodings,
+                         uint32_t& index) {
     // While not techincally a "null descriptor" we want to skip it as if it is one
-    data[index++] = glsl::DescriptorState(DescriptorClass::InlineUniform, glsl::kNullDescriptor, vvl::kNoIndex32);
+    descriptor_encodings[index++] =
+        glsl::DescriptorEncoding(DescriptorClass::InlineUniform, glsl::kNullDescriptor, vvl::kNoIndex32);
 }
 
-VkDeviceAddress DescriptorSetSubState::GetTypeAddress(Validator& gpuav) {
+static void GetBindingEncodingsHelper(const vvl::DescriptorBinding* binding, glsl::DescriptorEncoding* descriptor_encodings,
+                                      uint32_t& index) {
+    switch (binding->descriptor_class) {
+        case DescriptorClass::InlineUniform:
+            GetBindingEncodings(static_cast<const vvl::InlineUniformBinding&>(*binding), descriptor_encodings, index);
+            break;
+        case DescriptorClass::GeneralBuffer:
+            GetBindingEncodings(static_cast<const vvl::BufferBinding&>(*binding), descriptor_encodings, index);
+            break;
+        case DescriptorClass::TexelBuffer:
+            GetBindingEncodings(static_cast<const vvl::TexelBinding&>(*binding), descriptor_encodings, index);
+            break;
+        case DescriptorClass::Mutable:
+            GetBindingEncodings(static_cast<const vvl::MutableBinding&>(*binding), descriptor_encodings, index);
+            break;
+        case DescriptorClass::PlainSampler:
+            GetBindingEncodings(static_cast<const vvl::SamplerBinding&>(*binding), descriptor_encodings, index);
+            break;
+        case DescriptorClass::ImageSampler:
+            GetBindingEncodings(static_cast<const vvl::ImageSamplerBinding&>(*binding), descriptor_encodings, index);
+            break;
+        case DescriptorClass::Image:
+            GetBindingEncodings(static_cast<const vvl::ImageBinding&>(*binding), descriptor_encodings, index);
+            break;
+        case DescriptorClass::AccelerationStructure:
+            GetBindingEncodings(static_cast<const vvl::AccelerationStructureBinding&>(*binding), descriptor_encodings, index);
+            break;
+        case DescriptorClass::Tensor:
+            GetBindingEncodings(static_cast<const vvl::TensorBinding&>(*binding), descriptor_encodings, index);
+            break;
+        case DescriptorClass::Invalid:
+            assert(false);
+            break;
+    }
+}
+
+static std::tuple<uint32_t, uint32_t, vko::BufferRange> GetWriteDescriptorSetEncodings(
+    gpuav::CommandBufferSubState& cb_sub_state, const vvl::DescriptorSet& set, const VkWriteDescriptorSet& write_desc,
+    const std::vector<spirv::BindingLayout>& binding_layouts) {
+    const auto* binding = set.GetBinding(write_desc.dstBinding);
+    if (!binding) {
+        return {0, 0, vko::BufferRange{}};
+    }
+
+    vko::BufferRange desc_set_encodings =
+        cb_sub_state.gpu_resources_manager.GetHostCoherentBufferRange(binding->count * sizeof(glsl::DescriptorEncoding));
+
+    auto desc_set_encodings_ptr = (glsl::DescriptorEncoding*)desc_set_encodings.offset_mapped_ptr;
+    uint32_t index = 0;
+    GetBindingEncodingsHelper(binding, desc_set_encodings_ptr, index);
+
+    return {binding_layouts[write_desc.dstBinding].start, binding->count, desc_set_encodings};
+}
+
+struct DescriptorEncodingUpdateShader {
+    static size_t GetSpirvSize() { return setup_descriptor_encoding_update_comp_size * sizeof(uint32_t); }
+    static const uint32_t* GetSpirv() { return setup_descriptor_encoding_update_comp; }
+
+    glsl::DescriptorEncodingUpdateShaderPushData push_constants{};
+
+    static std::vector<VkDescriptorSetLayoutBinding> GetDescriptorSetLayoutBindings() { return {}; }
+
+    std::vector<VkWriteDescriptorSet> GetDescriptorWrites() const { return {}; }
+};
+
+void DescriptorSetSubState::PerformPushDescriptorsUpdate(vvl::CommandBuffer& cb, uint32_t write_count,
+                                                         const VkWriteDescriptorSet* write_descs) {
+    std::lock_guard guard(state_lock_);
+
+    gpuav::CommandBufferSubState& cb_sub_state = gpuav::SubState(cb);
+
+    valpipe::ComputePipeline<DescriptorEncodingUpdateShader>& descriptor_encoding_update_pipeline =
+        cb_sub_state.gpuav_.shared_resources_cache.GetOrCreate<valpipe::ComputePipeline<DescriptorEncodingUpdateShader>>(
+            cb_sub_state.gpuav_, Location(vvl::Func::Empty));
+
+    if (!descriptor_encoding_update_pipeline.valid) {
+        return;
+    }
+
+    valpipe::RestorablePipelineState restorable_state(cb_sub_state, VK_PIPELINE_BIND_POINT_COMPUTE);
+
+    DispatchCmdBindPipeline(cb.VkHandle(), VK_PIPELINE_BIND_POINT_COMPUTE, descriptor_encoding_update_pipeline.pipeline);
+
+    for (const VkWriteDescriptorSet& write_desc : vvl::make_span(write_descs, write_count)) {
+        const auto [start_binding, binding_count, desc_set_encodings] =
+            GetWriteDescriptorSetEncodings(cb_sub_state, base, write_desc, binding_layouts_);
+        if (binding_count == 0) {
+            continue;
+        }
+
+        DescriptorEncodingUpdateShader shader_resources;
+        // Create buffer just in time
+        if (descriptor_encodings_.IsDestroyed()) {
+            CreateDescriptorEncodingBuffer();
+        }
+        assert(descriptor_encodings_.Address());
+        shader_resources.push_constants.cb_desc_encodings_ptr = descriptor_encodings_.Address();
+        shader_resources.push_constants.staged_desc_encodings_ptr = desc_set_encodings.offset_address;
+        shader_resources.push_constants.start_binding = start_binding;
+
+        if (!descriptor_encoding_update_pipeline.BindShaderResources(cb_sub_state.gpuav_, cb_sub_state, shader_resources)) {
+            return;
+        }
+
+        {
+            VkBufferMemoryBarrier barrier_write_after_read = vku::InitStructHelper();
+            barrier_write_after_read.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            barrier_write_after_read.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            barrier_write_after_read.buffer = descriptor_encodings_.VkHandle();
+            barrier_write_after_read.offset = 0;
+            barrier_write_after_read.size = VK_WHOLE_SIZE;
+
+            DispatchCmdPipelineBarrier(cb.VkHandle(), VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
+                                       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 1, &barrier_write_after_read, 0,
+                                       nullptr);
+        }
+
+        DispatchCmdDispatch(cb.VkHandle(), binding_count, 1, 1);
+
+        {
+            VkBufferMemoryBarrier barrier_read_after_write = vku::InitStructHelper();
+            barrier_read_after_write.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            barrier_read_after_write.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            barrier_read_after_write.buffer = descriptor_encodings_.VkHandle();
+            barrier_read_after_write.offset = 0;
+            barrier_read_after_write.size = VK_WHOLE_SIZE;
+
+            DispatchCmdPipelineBarrier(cb.VkHandle(), VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, 0, 0, nullptr, 1,
+                                       &barrier_read_after_write, 0, nullptr);
+        }
+    }
+}
+
+VkDeviceAddress DescriptorSetSubState::GetDescriptorEncodingsAddress(Validator& gpuav) {
     std::lock_guard guard(state_lock_);
     const uint32_t current_version = current_version_.load();
 
-    // Will be empty on first time getting the state
-    if (input_buffer_.Address() != 0) {
-        if (last_used_version_ == current_version) {
-            return input_buffer_.Address();  // nothing has changed
-        } else {
-            // will replace (descriptor array size might have change, so need to resize buffer)
-            input_buffer_.Destroy();
-        }
-    }
-
-    last_used_version_ = current_version;
-
     if (base.GetNonInlineDescriptorCount() == 0) {
-        // no descriptors case, return a dummy state object
-        return input_buffer_.Address();
-    }
-
-    VkBufferCreateInfo buffer_info = vku::InitStruct<VkBufferCreateInfo>();
-    buffer_info.size = base.GetNonInlineDescriptorCount() * sizeof(glsl::DescriptorState);
-    buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-
-    // The descriptor state buffer can be very large (4mb+ in some games). Allocating it as HOST_CACHED
-    // and manually flushing it at the end of the state updates is faster than using HOST_COHERENT.
-    VmaAllocationCreateInfo alloc_info{};
-    alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-    const VkResult result = input_buffer_.Create(&buffer_info, &alloc_info);
-    if (result != VK_SUCCESS) {
+        // no descriptors
         return 0;
     }
 
-    auto data = (glsl::DescriptorState*)input_buffer_.GetMappedPtr();
+    // Create buffer just in time
+    if (descriptor_encodings_.IsDestroyed()) {
+        CreateDescriptorEncodingBuffer();
+    } else if (last_used_version_ == current_version) {
+        // nothing has changed
+        return descriptor_encodings_.Address();
+    }
+
+    auto desc_set_encodings_ptr = (glsl::DescriptorEncoding*)descriptor_encodings_.GetMappedPtr();
 
     uint32_t index = 0;
     for (const auto& binding : base) {
-        switch (binding->descriptor_class) {
-            case DescriptorClass::InlineUniform:
-                FillBindingInData(static_cast<const vvl::InlineUniformBinding&>(*binding), data, index);
-                break;
-            case DescriptorClass::GeneralBuffer:
-                FillBindingInData(static_cast<const vvl::BufferBinding&>(*binding), data, index);
-                break;
-            case DescriptorClass::TexelBuffer:
-                FillBindingInData(static_cast<const vvl::TexelBinding&>(*binding), data, index);
-                break;
-            case DescriptorClass::Mutable:
-                FillBindingInData(static_cast<const vvl::MutableBinding&>(*binding), data, index);
-                break;
-            case DescriptorClass::PlainSampler:
-                FillBindingInData(static_cast<const vvl::SamplerBinding&>(*binding), data, index);
-                break;
-            case DescriptorClass::ImageSampler:
-                FillBindingInData(static_cast<const vvl::ImageSamplerBinding&>(*binding), data, index);
-                break;
-            case DescriptorClass::Image:
-                FillBindingInData(static_cast<const vvl::ImageBinding&>(*binding), data, index);
-                break;
-            case DescriptorClass::AccelerationStructure:
-                FillBindingInData(static_cast<const vvl::AccelerationStructureBinding&>(*binding), data, index);
-                break;
-            case DescriptorClass::Tensor:
-                FillBindingInData(static_cast<const vvl::TensorBinding&>(*binding), data, index);
-                break;
-            case DescriptorClass::Invalid:
-                gpuav.InternalError(gpuav.device, Location(vvl::Func::Empty), "Unknown DescriptorClass");
-        }
+        GetBindingEncodingsHelper(binding.get(), desc_set_encodings_ptr, index);
     }
 
-    // Flush the descriptor state buffer before unmapping so that the new state is visible to the GPU
-    input_buffer_.FlushAllocation();
+    // Flush the descriptor encodings before unmapping so that they are visible to the GPU
+    descriptor_encodings_.FlushAllocation();
 
-    return input_buffer_.Address();
+    last_used_version_ = current_version;
+
+    return descriptor_encodings_.Address();
 }
 
 void DescriptorSetSubState::NotifyUpdate() { current_version_++; }

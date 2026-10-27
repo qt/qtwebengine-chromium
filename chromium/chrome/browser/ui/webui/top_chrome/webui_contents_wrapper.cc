@@ -4,6 +4,8 @@
 
 #include "chrome/browser/ui/webui/top_chrome/webui_contents_wrapper.h"
 
+#include "base/debug/crash_logging.h"
+#include "base/debug/dump_without_crashing.h"
 #include "chrome/browser/page_load_metrics/page_load_metrics_initialize.h"
 #include "chrome/browser/task_manager/web_contents_tags.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -11,6 +13,8 @@
 #include "chrome/browser/ui/webui/top_chrome/webui_contents_preload_manager.h"
 #include "chrome/common/chrome_render_frame.mojom.h"
 #include "components/input/native_web_keyboard_event.h"
+#include "components/performance_manager/embedder/performance_manager_registry.h"
+#include "components/performance_manager/public/graph/page_node.h"
 #include "components/site_engagement/content/site_engagement_helper.h"
 #include "components/site_engagement/content/site_engagement_service.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
@@ -107,6 +111,15 @@ WebUIContentsWrapper::WebUIContentsWrapper(const GURL& webui_url,
   web_contents_->SetIgnoreZoomGestures(true);
   web_contents_->SetDelegate(this);
   WebContentsObserver::Observe(web_contents_.get());
+
+  if (auto* pm_registry =
+          performance_manager::PerformanceManagerRegistry::GetInstance()) {
+    // Flagging this web contents as a Non Tab WebUI allows the
+    // PerformanceManager to opt it out of aggressive resource management
+    // strategies (such as freezing).
+    pm_registry->SetPageType(web_contents_.get(),
+                             performance_manager::PageType::kNonTabWebUI);
+  }
 
   web_modal::WebContentsModalDialogManager::CreateForWebContents(
       web_contents_.get());
@@ -228,6 +241,18 @@ void WebUIContentsWrapper::SetContentsBounds(content::WebContents* source,
   }
 }
 
+void WebUIContentsWrapper::FindReply(content::WebContents* web_contents,
+                                     int request_id,
+                                     int number_of_matches,
+                                     const gfx::Rect& selection_rect,
+                                     int active_match_ordinal,
+                                     bool final_update) {
+  if (host_) {
+    host_->FindReply(web_contents, request_id, number_of_matches,
+                     selection_rect, active_match_ordinal, final_update);
+  }
+}
+
 content::WebContents* WebUIContentsWrapper::AddNewContents(
     content::WebContents* source,
     std::unique_ptr<content::WebContents> new_contents,
@@ -303,21 +328,38 @@ base::WeakPtr<WebUIContentsWrapper::Host> WebUIContentsWrapper::GetHost() {
 
 void WebUIContentsWrapper::SetHost(
     base::WeakPtr<WebUIContentsWrapper::Host> host) {
-  DCHECK(!web_contents_->IsCrashed());
   host_ = std::move(host);
   if (!host_) {
+    return;
+  }
+
+  if (web_contents_->IsCrashed()) {
     return;
   }
 
   // Resize the host to the frame size. If there are new updates to the frame
   // size they will be capture by WebUIContentsWrapper::ResizeDueToAutoResize().
   content::RenderFrameHost* rfh = web_contents_->GetPrimaryMainFrame();
-  if (webui_resizes_host_ && rfh && rfh->GetFrameSize().has_value()) {
-    // RenderFrameHost::GetFrameSize() returns the actual frame size while
-    // the host view expects device-independent size.
-    const gfx::Size frame_dip_size = gfx::ScaleToCeiledSize(
-        *rfh->GetFrameSize(), 1.f / rfh->GetView()->GetDeviceScaleFactor());
-    host_->ResizeDueToAutoResize(web_contents_.get(), frame_dip_size);
+  if (webui_resizes_host_ && rfh) {
+    // TODO(crbug.com/376493192): RWHView is found to be sometimes null in the
+    // wild. This is suspected to happen when the render process is crashed.
+    // The code now early returns in that case, and hence we should not reach
+    // this point. If so, use a DumpWithoutCrashing to get more information on
+    // the state of the system.
+    if (!rfh->GetView()) {
+      SCOPED_CRASH_KEY_NUMBER("WebUIContentsWrapper", "lifecycle_state",
+                              static_cast<int>(rfh->GetLifecycleState()));
+      base::debug::DumpWithoutCrashing();
+      return;
+    }
+
+    if (rfh->GetFrameSize().has_value()) {
+      // RenderFrameHost::GetFrameSize() returns the actual frame size while
+      // the host view expects device-independent size.
+      const gfx::Size frame_dip_size = gfx::ScaleToCeiledSize(
+          *rfh->GetFrameSize(), 1.f / rfh->GetView()->GetDeviceScaleFactor());
+      host_->ResizeDueToAutoResize(web_contents_.get(), frame_dip_size);
+    }
   }
 
   if (supports_draggable_regions_ && draggable_regions_.has_value()) {

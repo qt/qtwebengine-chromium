@@ -29,7 +29,7 @@ bool ShouldSkipInvisibleTextAt(const Text& text,
   return layout_object->StyleRef().Visibility() != EVisibility::kVisible;
 }
 
-String TextIgnoringCSSTextTransforms(const LayoutText& layout_text,
+String TextIgnoringCssTextTransforms(const LayoutText& layout_text,
                                      const OffsetMappingUnit& unit) {
   // LayoutTextFragment represents text substring of the element that is split
   // because of first-letter css. In that case, OriginalText() returns only a
@@ -71,19 +71,22 @@ StringAndOffsetRange ComputeTextAndOffsetsForEmission(
   DCHECK(IsA<LayoutText>(unit.GetLayoutObject()));
   const LayoutText& layout_text = To<LayoutText>(unit.GetLayoutObject());
 
-  // |TextIgnoringCSSTextTransforms| gets |layout_text.OriginalText()|
+  // |TextIgnoringCssTextTransforms| gets |layout_text.OriginalText()|
   // which is not masked. This should not be allowed when
   // |-webkit-text-security| property is set.
-  if (behavior.IgnoresCSSTextTransforms() && layout_text.HasTextTransform() &&
+  if (behavior.IgnoresCssTextTransforms() && layout_text.HasTextTransform() &&
       !layout_text.IsSecure()) {
-    result.string = TextIgnoringCSSTextTransforms(layout_text, unit);
+    result.string = TextIgnoringCssTextTransforms(layout_text, unit);
     result.start = 0;
     result.end = result.string.length();
   }
 
   if (behavior.EmitsOriginalText()) {
-    result.string = layout_text.OriginalText().substr(
-        unit.DOMStart(), unit.DOMEnd() - unit.DOMStart());
+    String text = layout_text.IsTextFragment()
+                      ? To<LayoutTextFragment>(layout_text).CompleteText()
+                      : layout_text.OriginalText();
+    result.string =
+        text.substr(unit.DOMStart(), unit.DOMEnd() - unit.DOMStart());
     result.start = 0;
     result.end = result.string.length();
   }

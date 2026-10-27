@@ -2,20 +2,26 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-assert(is_win || is_mac || is_linux || is_chromeos)
+import("//ui/webui/webui_features.gni")
+
+assert(!is_ios || enable_webui_ntp)
 
 source_set("searchbox") {
   sources = [
     "contextual_searchbox_handler.h",
+    "contextual_searchbox_tab_favicon_helper.h",
     "searchbox_handler.h",
     "searchbox_omnibox_client.h",
     "searchbox_utils.h",
   ]
+  public_deps = [ "//components/tabs:public" ]
   deps = [
     "//base",
     "//chrome/browser/autocomplete",
     "//chrome/browser/tab_list",
     "//chrome/browser/ui/omnibox",
+    "//chrome/browser/ui/views/permissions",
+    "//chrome/browser/ui/views/permissions:permission_prompt_observer",
     "//components/contextual_search:prefs",
     "//components/contextual_search:public",
     "//components/contextual_tasks/public",
@@ -31,11 +37,18 @@ source_set("searchbox") {
     "//ui/gfx",
     "//ui/webui/resources/cr_components/composebox:mojo_bindings",
   ]
+  if (!is_android) {
+    deps += [
+      "//chrome/browser/ui/views/drive_picker_host:mojo_bindings",
+      "//chrome/browser/ui/webui/drive_picker_host",
+    ]
+  }
 }
 
 source_set("searchbox_impl") {
   sources = [
     "contextual_searchbox_handler.cc",
+    "contextual_searchbox_tab_favicon_helper.cc",
     "searchbox_handler.cc",
     "searchbox_omnibox_client.cc",
     "searchbox_utils.cc",
@@ -51,6 +64,7 @@ source_set("searchbox_impl") {
     "//chrome/browser/contextual_tasks",
     "//chrome/browser/contextual_tasks:ui",
     "//chrome/browser/contextual_tasks:user_data",
+    "//chrome/browser/feature_engagement",
     "//chrome/browser/omnibox",
     "//chrome/browser/predictors",
     "//chrome/browser/preloading",
@@ -60,19 +74,36 @@ source_set("searchbox_impl") {
     "//chrome/browser/safe_browsing",
     "//chrome/browser/search_engines",
     "//chrome/browser/tab_list",
-    "//chrome/browser/ui/bookmarks",
     "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/contextual_search",
-    "//chrome/browser/ui/lens",
     "//chrome/browser/ui/omnibox",
-    "//chrome/browser/ui/tabs",
+    "//chrome/browser/ui/views/permissions:permission_prompt_observer",
     "//chrome/browser/ui/webui",
     "//chrome/browser/ui/webui:webui_util",
     "//chrome/browser/ui/webui/new_tab_page/composebox/variations",
+    "//components/contextual_search:prefs",
     "//components/contextual_search:public",
+    "//components/contextual_tasks/public:query_contextualizer",
+    "//components/favicon/content",
+    "//components/favicon/core",
     "//components/google/core/common",
     "//components/omnibox/browser:vector_icons",
+    "//components/omnibox/common:features",
     "//components/search",
     "//components/sessions",
+    "//components/vector_icons",
+    "//components/contextual_search/footprints/public",
   ]
+  if (!is_android) {
+    deps += [
+      "//chrome/browser/new_tab_page",
+      "//chrome/browser/ui/bookmarks",
+      "//chrome/browser/ui/lens",
+      "//chrome/browser/ui/tabs",
+      "//chrome/browser/ui/views/drive_picker_host",
+      "//chrome/browser/ui/webui/drive_picker_host",
+      "//chrome/browser/ui/webui/drive_picker_host:drive_picker_host_request",
+      "//components/contextual_search/footprints/internal",
+    ]
+  }
 }

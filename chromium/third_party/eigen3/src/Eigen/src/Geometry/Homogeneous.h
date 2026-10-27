@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_HOMOGENEOUS_H
 #define EIGEN_HOMOGENEOUS_H
@@ -392,7 +393,6 @@ struct generic_product_impl<Lhs, Homogeneous<RhsArg, Vertical>, DenseShape, Homo
   }
 };
 
-// TODO: this specialization addresses a performance regression from 3.2 to 3.3; optimize this path.
 template <typename Lhs, typename RhsArg, int ProductTag>
 struct generic_product_impl<Lhs, Homogeneous<RhsArg, Vertical>, TriangularShape, HomogeneousShape, ProductTag> {
   template <typename Dest>

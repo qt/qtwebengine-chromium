@@ -101,6 +101,16 @@ bool BeginFrameArgsAreEquivalent(const BeginFrameArgs& first,
   return first.frame_id == second.frame_id;
 }
 
+class MockLayerContextClient : public mojom::LayerContextClient {
+ public:
+  MockLayerContextClient() = default;
+  ~MockLayerContextClient() override = default;
+
+  MOCK_METHOD1(OnRequestCommitForFrame, void(const BeginFrameArgs&));
+  MOCK_METHOD2(OnTilingsReadyForCleanup,
+               void(int32_t, const std::vector<float>&));
+};
+
 }  // namespace
 
 class MockFrameSinkManagerClient : public mojom::FrameSinkManagerClient {
@@ -2155,6 +2165,7 @@ TEST_P(CompositorFrameSinkSupportTest, BeginFrameIntervalAccess) {
 // been sent for a while.
 TEST_P(CompositorFrameSinkSupportTest, BeginFrameHandlingInteractionTimeout) {
   base::TimeTicks frame_time = base::TimeTicks::Now();
+  support_->SetNeedsBeginFrame(true);
   // Issue a BeginFrame.
   BeginFrameArgs args =
       CreateBeginFrameArgsForTesting(BEGINFRAME_FROM_HERE, 0, 1, frame_time);
@@ -2167,13 +2178,15 @@ TEST_P(CompositorFrameSinkSupportTest, BeginFrameHandlingInteractionTimeout) {
   BeginFrameAck ack(args, true);
   support_->SubmitCompositorFrame(local_surface_id_,
                                   MakeDefaultInteractiveCompositorFrame());
+  support_->SendCompositorFrameAck();
   EXPECT_TRUE(support_->is_handling_interaction());
   EXPECT_NE(support_->last_interaction_time(), base::TimeTicks());
   base::TimeTicks last_interaction_time = support_->last_interaction_time();
 
   // Issue another BeginFrame after kInteractionTimeout milliseconds.
-  args = CreateBeginFrameArgsForTesting(BEGINFRAME_FROM_HERE, 0, 2,
-                                        frame_time + base::Milliseconds(250));
+  args = CreateBeginFrameArgsForTesting(
+      BEGINFRAME_FROM_HERE, 0, 2,
+      last_interaction_time + base::Milliseconds(300));
   begin_frame_source_.TestOnBeginFrame(args);
 
   // This time, a frame is not produced and we detect the interaction timed out.
@@ -2393,6 +2406,30 @@ TEST_P(CompositorFrameSinkSupportTest,
   EXPECT_EQ(kDefaultSize, props_with_frame->root_render_pass_size);
   EXPECT_TRUE(props_with_frame->transform_to_root.IsIdentity());
 }
+
+#if BUILDFLAG(IS_ANDROID)
+TEST_P(CompositorFrameSinkSupportTest,
+       GetRequestRegionProperties_EntireTabOverriddenByAndroidViewport) {
+  const SurfaceId surface_id(support_->frame_sink_id(), local_surface_id_);
+  constexpr gfx::Rect kViewportRect{0, 0, 10, 10};
+
+  auto frame = CompositorFrameBuilder()
+                   .AddDefaultRenderPass()
+                   .SetReferencedSurfaces({SurfaceRange(surface_id)})
+                   .Build();
+  frame.metadata.visible_viewport_size = kViewportRect.size();
+
+  support_->SubmitCompositorFrame(local_surface_id_, std::move(frame));
+
+  // Passing in an empty sub-target triggers "Entire Tab Capture" logic.
+  const auto props =
+      support_->GetRequestRegionProperties(VideoCaptureSubTarget());
+
+  ASSERT_TRUE(props.has_value());
+  EXPECT_EQ(kViewportRect, props->render_pass_subrect);
+  EXPECT_EQ(kDefaultSize, props->root_render_pass_size);
+}
+#endif
 
 TEST_P(CompositorFrameSinkSupportTest,
        GetRequestRegionProperties_RenderPassWithSubtreeSize) {
@@ -2859,6 +2896,61 @@ TEST_F(CompositorFrameSinkSupportTestBase,
   // - Finally, we finish the cleanup for the original transition. If we were
   //   still using an outdated reference to the storage, we would crash here.
   OnSaveTransitionDirectiveProcessed(support_.get(), save_directive);
+}
+
+TEST_P(AckOnSurfaceActivationWhenInteractiveTest,
+       TreesInVizAcksCompositorFrames) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(features::kTreesInViz);
+  manager_->RegisterFrameSinkId(kAnotherArbitraryFrameSinkId,
+                                true /* report_activation */);
+  MockCompositorFrameSinkClient mock_client;
+  auto support = std::make_unique<CompositorFrameSinkSupport>(
+      &mock_client, manager_.get(), kAnotherArbitraryFrameSinkId, kIsRoot);
+
+  // Sets layer context, which is what happens in TreesInViz mode.
+  auto context = mojom::PendingLayerContext::New();
+  mojo::AssociatedRemote<mojom::LayerContext> layer_context;
+  context->receiver = layer_context.BindNewEndpointAndPassReceiver();
+  MockLayerContextClient mock_layer_context_client;
+  mojo::AssociatedReceiver<mojom::LayerContextClient>
+      layer_context_client_receiver(
+          &mock_layer_context_client,
+          context->client.InitWithNewEndpointAndPassReceiver());
+
+  auto settings = mojom::LayerContextSettings::New();
+  support->BindLayerContext(*context, std::move(settings));
+
+  LocalSurfaceId local_surface_id(6, kArbitraryToken);
+  support->SubmitCompositorFrame(
+      local_surface_id,
+      MakeDefaultInteractiveCompositorFrame(kBeginFrameSourceId));
+  EXPECT_CALL(mock_client, DidReceiveCompositorFrameAck(_));
+  support->SendCompositorFrameAck();
+}
+
+TEST_P(AckOnSurfaceActivationWhenInteractiveTest,
+       TreesInVizDisabledDoesNotBindLayerContext) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndDisableFeature(features::kTreesInViz);
+  manager_->RegisterFrameSinkId(kAnotherArbitraryFrameSinkId,
+                                true /* report_activation */);
+  MockCompositorFrameSinkClient mock_client;
+  auto support = std::make_unique<CompositorFrameSinkSupport>(
+      &mock_client, manager_.get(), kAnotherArbitraryFrameSinkId, kIsRoot);
+
+  auto context = mojom::PendingLayerContext::New();
+  mojo::AssociatedRemote<mojom::LayerContext> layer_context;
+  context->receiver = layer_context.BindNewEndpointAndPassReceiver();
+  MockLayerContextClient mock_layer_context_client;
+  mojo::AssociatedReceiver<mojom::LayerContextClient>
+      layer_context_client_receiver(
+          &mock_layer_context_client,
+          context->client.InitWithNewEndpointAndPassReceiver());
+
+  auto settings = mojom::LayerContextSettings::New();
+  support->BindLayerContext(*context, std::move(settings));
+  EXPECT_EQ(support->layer_context_for_testing(), nullptr);
 }
 
 }  // namespace viz

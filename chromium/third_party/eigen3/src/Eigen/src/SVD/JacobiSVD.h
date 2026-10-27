@@ -7,6 +7,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_JACOBISVD_H
 #define EIGEN_JACOBISVD_H
@@ -33,19 +34,18 @@ struct svd_precondition_2x2_block_to_be_real {};
 enum { PreconditionIfMoreColsThanRows, PreconditionIfMoreRowsThanCols };
 
 template <typename MatrixType, int QRPreconditioner, int Case>
-struct qr_preconditioner_should_do_anything {
-  enum {
-    a = MatrixType::RowsAtCompileTime != Dynamic && MatrixType::ColsAtCompileTime != Dynamic &&
-        MatrixType::ColsAtCompileTime <= MatrixType::RowsAtCompileTime,
-    b = MatrixType::RowsAtCompileTime != Dynamic && MatrixType::ColsAtCompileTime != Dynamic &&
-        MatrixType::RowsAtCompileTime <= MatrixType::ColsAtCompileTime,
-    ret = !((QRPreconditioner == NoQRPreconditioner) || (Case == PreconditionIfMoreColsThanRows && bool(a)) ||
-            (Case == PreconditionIfMoreRowsThanCols && bool(b)))
-  };
-};
+struct qr_preconditioner_should_do_anything
+    : std::integral_constant<bool,
+                             !((QRPreconditioner == NoQRPreconditioner) ||
+                               (Case == PreconditionIfMoreColsThanRows && MatrixType::RowsAtCompileTime != Dynamic &&
+                                MatrixType::ColsAtCompileTime != Dynamic &&
+                                MatrixType::ColsAtCompileTime <= MatrixType::RowsAtCompileTime) ||
+                               (Case == PreconditionIfMoreRowsThanCols && MatrixType::RowsAtCompileTime != Dynamic &&
+                                MatrixType::ColsAtCompileTime != Dynamic &&
+                                MatrixType::RowsAtCompileTime <= MatrixType::ColsAtCompileTime))> {};
 
 template <typename MatrixType, int Options, int QRPreconditioner, int Case,
-          bool DoAnything = qr_preconditioner_should_do_anything<MatrixType, QRPreconditioner, Case>::ret>
+          bool DoAnything = qr_preconditioner_should_do_anything<MatrixType, QRPreconditioner, Case>::value>
 struct qr_preconditioner_impl {};
 
 template <typename MatrixType, int Options, int QRPreconditioner, int Case>
@@ -591,8 +591,7 @@ class JacobiSVD : public SVDBase<JacobiSVD<MatrixType_, Options_>> {
   // EIGEN_DEPRECATED // TODO(cantonios): re-enable after fixing a few 3p libraries that error on deprecation warnings.
   template <typename Derived>
   JacobiSVD(const MatrixBase<Derived>& matrix, unsigned int computationOptions) {
-    internal::check_svd_options_assertions<MatrixBase<Derived>, Options>(computationOptions, matrix.rows(),
-                                                                         matrix.cols());
+    internal::check_svd_options_assertions<MatrixType, Options>(computationOptions, matrix.rows(), matrix.cols());
     compute_impl(matrix, computationOptions);
   }
 
@@ -623,8 +622,7 @@ class JacobiSVD : public SVDBase<JacobiSVD<MatrixType_, Options_>> {
   template <typename Derived>
   EIGEN_DEPRECATED_WITH_REASON("Options should be specified using the class template parameter.")
   JacobiSVD& compute(const MatrixBase<Derived>& matrix, unsigned int computationOptions) {
-    internal::check_svd_options_assertions<MatrixBase<Derived>, Options>(m_computationOptions, matrix.rows(),
-                                                                         matrix.cols());
+    internal::check_svd_options_assertions<MatrixType, Options>(m_computationOptions, matrix.rows(), matrix.cols());
     return compute_impl(matrix, computationOptions);
   }
 
@@ -841,7 +839,11 @@ JacobiSVD<MatrixType, Options>& JacobiSVD<MatrixType, Options>::compute_impl(con
     // For a complex matrix, some diagonal coefficients might note have been
     // treated by svd_precondition_2x2_block_to_be_real, and the imaginary part
     // of some diagonal entry might not be null.
-    if (NumTraits<Scalar>::IsComplex && abs(numext::imag(m_workMatrix.coeff(i, i))) > considerAsZero) {
+    bool diagonal_has_imaginary_part = false;
+    EIGEN_IF_CONSTEXPR(NumTraits<Scalar>::IsComplex) {
+      diagonal_has_imaginary_part = abs(numext::imag(m_workMatrix.coeff(i, i))) > considerAsZero;
+    }
+    if (diagonal_has_imaginary_part) {
       RealScalar a = abs(m_workMatrix.coeff(i, i));
       m_singularValues.coeffRef(i) = abs(a);
       if (computeU()) m_matrixU.col(i) *= m_workMatrix.coeff(i, i) / a;

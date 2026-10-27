@@ -1,0 +1,103 @@
+/* Copyright 2026 The Chromium Authors
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
+/* #css_wrapper_metadata_start
+* #type=style-lit
+* #scheme=relative
+* #css_wrapper_metadata_end */
+
+:host {
+  --bar-max-height: 40px;
+  --color-recording-wave: #c9d2ff;
+  --recording-wave-top-padding: 10px;
+
+  align-items: flex-start;
+
+  /* 100% is relative to height of 'cr-composebox' (or 'cr-searchbox')
+   * since 'animated_glow' (the immediate parent) is absolutely positioned.
+   * Height of 'cr-composebox' is determined by 'div' with id 'composebox'.
+   */
+  block-size: calc(100% - var(--recording-wave-top-padding));
+  display: flex;
+  inline-size: 100%;
+  justify-content: flex-start;
+  mask-image: linear-gradient(to right,
+                              transparent 0%,
+                              black 20%,
+                              black 90%,
+                              transparent 100%);
+  /* Do not let tic tacs rapidly change width of this component, as its parent
+   * will resize and affect others in its context. Cut the edge tic tacs
+   * off with this.
+   */
+  overflow-x: hidden;
+  padding-block-start: 10px;
+  position: relative;
+}
+
+.wave-wrapper {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  inline-size: calc(100% + 100px);
+  justify-content: flex-end;
+  min-block-size: var(--bar-max-height);
+  min-inline-size: 100%;
+  position: relative;
+  /* Translate it so can see the initial empty flat volume bars before they
+   * jump up. This 'run-way' should always be 100px to ensure that there are
+   * only 7 bars off screen rendered at once to create the "to left slide in"
+   * effect.
+   */
+  transform: translateX(-100px);
+}
+
+#barsContainer {
+  align-items: center;
+  display: flex;
+  flex-direction: row-reverse;
+  inline-size: 100%;
+  min-block-size: var(--bar-max-height);
+  min-inline-size: 100%;
+  will-change: transform;
+}
+
+.bar-pill {
+  background-color: var(--color-recording-wave);
+  border-radius: calc(var(--bar-width) / 2);
+  flex-shrink: 0;
+  inline-size: var(--bar-width, 12px);
+  min-block-size: 4px;
+  transform-origin: center;
+}
+
+/* If the size of the bar pill were changed when the bar pill is
+ * initialized with a volume value, there would be major layout
+ * recalculations that would cause lag. Having a larger bar pill just
+ * become visible again instead of grow is to ensure that
+ * that major layout recalculation does not occur. */
+.bar-pill.is-unspawned {
+  background: transparent;
+  block-size: 8px;  /* Minimum height as a bar. */
+  box-shadow: none;
+  min-block-size: 0;
+  transform: none;
+  transform-origin: center;
+  position: relative;
+}
+
+/* The uninitialized spheres that actually
+ * show in the UI.
+ */
+.bar-pill.is-unspawned::before {
+  border-radius: 50%;
+  background: var(--color-recording-wave);
+  block-size: 6px;  /* Initial minimum height as a ball. */
+  content: '';
+  inline-size: 6px;  /* Initial minimum width as a ball. */
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  transform: translate(-50%, -50%);
+  position: absolute;
+}

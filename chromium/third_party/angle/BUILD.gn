@@ -32,8 +32,9 @@ if (angle_has_build) {
 
 declare_args() {
   # Use the PCI lib to collect GPU information on Linux.
-  use_libpci = (is_linux || is_chromeos) && (angle_use_x11 || use_ozone) &&
-               angle_has_build
+  use_libpci =
+      (is_linux || is_chromeos) &&
+      (angle_use_x11 || angle_use_wayland || use_ozone) && angle_has_build
 
   # Enable using Vulkan to collect system info as a fallback.
   angle_enable_vulkan_system_info = is_chromeos
@@ -55,20 +56,24 @@ declare_args() {
   # http://crbug.com/1126524
   angle_enable_abseil = angle_has_build && is_clang
 
-  # Adds run-time checks to filter out EVENT() messages when the debug annotator is disabled.
+  # Adds run-time checks to filter out EVENT() messages when the debug annotator
+  # is disabled.
   angle_enable_annotator_run_time_checks = false
 
   # Enables non-conformant extensions and features
   angle_expose_non_conformant_extensions_and_versions = false
 
-  # Optional feature that forces dirty state whenever we use a new context regardless of thread.
+  # Optional feature that forces dirty state whenever we use a new context
+  # regardless of thread.
   angle_force_context_check_every_call = false
 
-  # Allow shared library custom name extensions for setting soname such as libEGL.so.1
+  # Allow shared library custom name extensions for setting soname such as
+  # libEGL.so.1
   angle_egl_extension = ""
   angle_glesv2_extension = ""
 
-  # Enable share context lock. If it is false, the client need to use gl calls in a threadsafe way.
+  # Enable share context lock. If it is false, the client need to use gl calls
+  # in a threadsafe way.
   angle_enable_share_context_lock =
       !build_with_chromium || build_angle_deqp_tests
 
@@ -80,8 +85,9 @@ declare_args() {
   angle_enable_global_mutex_recursion =
       is_android && angle_enable_vulkan && !build_with_chromium
 
-  # Potentially can be enabled for other platforms, but limiting to Android platform for now.
-  # Chromium may have problems (requires verification), disabled for safety.
+  # Potentially can be enabled for other platforms, but limiting to Android
+  # platform for now. Chromium may have problems (requires verification),
+  # disabled for safety.
   angle_enable_global_mutex_load_time_allocate =
       is_android && !build_with_chromium
 
@@ -94,12 +100,14 @@ declare_args() {
 }
 
 declare_args() {
-  # May need to enable to fix recursion when vkAcquireNextImageKHR() returns back to ANGLE from
-  # eglClientWaitSyncKHR(). May happen if Android Presentation Engine uses
-  # EGL_KHR_fence_sync instead of EGL_ANDROID_native_fence_sync for synchronization.
-  # To check call: adb shell "dumpsys SurfaceFlinger | grep 'Sync configuration'"
-  # The Android's "testDrawingHardwareBitmapNotLeaking" test may be used for testing.
-  # Disable this option to save performance on platforms that does not require recursion.
+  # May need to enable to fix recursion when vkAcquireNextImageKHR() returns
+  # back to ANGLE from eglClientWaitSyncKHR(). May happen if Android
+  # Presentation Engine uses EGL_KHR_fence_sync instead of
+  # EGL_ANDROID_native_fence_sync for synchronization. To check call: adb shell
+  # "dumpsys SurfaceFlinger | grep 'Sync configuration'" The Android's
+  # "testDrawingHardwareBitmapNotLeaking" test may be used for testing. Disable
+  # this option to save performance on platforms that does not require
+  # recursion.
   angle_enable_context_mutex_recursion = angle_enable_global_mutex_recursion
 }
 
@@ -210,25 +218,29 @@ config("internal_config") {
     defines += [ "ANGLE_ENABLE_CONTEXT_MUTEX_RECURSION=1" ]
   }
 
-  # Enables debug/trace-related functionality, including logging every GLES/EGL API command to the
-  # "angle_debug.txt" file on desktop.  Enables debug markers for AGI, but must also set
-  # angle_enable_annotator_run_time_checks to improve performance.
+  # Enables debug/trace-related functionality, including logging every GLES/EGL
+  # API command to the "angle_debug.txt" file on desktop. Enables debug markers
+  # for AGI, but must also set angle_enable_annotator_run_time_checks to improve
+  # performance.
   if (angle_enable_trace) {
     defines += [ "ANGLE_ENABLE_DEBUG_TRACE=1" ]
   }
 
-  # When used with angle_enable_trace, enables logging every GLES/EGL API command to Android logcat
-  # Enables debug markers for AGI regardless of run-time checks.
+  # When used with angle_enable_trace, enables logging every GLES/EGL API
+  # command to Android logcat Enables debug markers for AGI regardless of
+  # run-time checks.
   if (angle_enable_trace_android_logcat) {
     defines += [ "ANGLE_ENABLE_TRACE_ANDROID_LOGCAT=1" ]
   }
 
-  # When used with angle_enable_trace, enables logging every GLES/EGL API command to the terminal
+  # When used with angle_enable_trace, enables logging every GLES/EGL API
+  # command to the terminal
   if (angle_enable_trace_events) {
     defines += [ "ANGLE_ENABLE_TRACE_EVENTS=1" ]
   }
 
-  # Enables platform trace events (PlatformMethods::addTraceEvent) e.g. AGI/perfetto on Android
+  # Enables platform trace events (PlatformMethods::addTraceEvent) e.g.
+  # AGI/perfetto on Android
   if (angle_enable_platform_trace_events) {
     defines += [ "ANGLE_ENABLE_PLATFORM_TRACE_EVENTS=1" ]
   }
@@ -244,28 +256,30 @@ config("internal_config") {
     defines += [ "ANGLE_DUMP_PIPELINE_CACHE_GRAPH=1" ]
   }
 
-  # Checks that unwind backtrace support for Android is enabled only for debug mode.
+  # Checks that unwind backtrace support for Android is enabled only for debug
+  # mode.
   assert(is_debug || !angle_enable_unwind_backtrace_support)
 
   if (is_chromeos) {
     defines += [ "ANGLE_PLATFORM_CHROMEOS" ]
   }
 
+  # Enable system without X11.
+  if (!angle_use_x11) {
+    defines += [ "EGL_NO_X11" ]
+  }
+
+  # These two are needed here to correctly select OSWindow::New
+  if (angle_use_x11) {
+    defines += [ "ANGLE_USE_X11" ]
+  }
+  if (angle_use_wayland) {
+    defines += [ "ANGLE_USE_WAYLAND" ]
+  }
   if (angle_use_vulkan_null_display) {
     defines += [ "ANGLE_USE_VULKAN_NULL_DISPLAY" ]
   } else if (angle_use_vulkan_display) {
     defines += [ "ANGLE_USE_VULKAN_DISPLAY" ]
-    if (!angle_use_x11) {
-      defines += [ "EGL_NO_X11" ]
-    }
-
-    # These two are needed here to correctly select OSWindow::New
-    if (angle_use_x11) {
-      defines += [ "ANGLE_USE_X11" ]
-    }
-    if (angle_use_wayland) {
-      defines += [ "ANGLE_USE_WAYLAND" ]
-    }
 
     if (angle_vulkan_display_mode == "simple") {
       defines += [ "ANGLE_VULKAN_DISPLAY_MODE_SIMPLE" ]
@@ -351,9 +365,13 @@ config("extra_warnings") {
       "/we4312",  # Conversion: greater size.
       "/we4456",  # Variable shadowing.
       "/we4458",  # declaration hides class member.
-      "/we4715",  # not all control paths return a value
       "/we4800",  # forcing value to bool.
       "/we4838",  # narrowing conversion.
+    ]
+
+    # Explicitly disable some warnings
+    cflags += [
+      "/wd4715",  # not all control paths return a value.
     ]
   }
   if (is_clang) {
@@ -399,11 +417,11 @@ config("extra_warnings") {
   }
 }
 
-# This config adds build-ids to the associated library.
-# -Wl is a special option that indicates that clang should pass the associated
-# option --build-id to the linker. This will cause a build-id section to be added
-# to the associated library. The build-id makes it possible for a debugger to
-# find the right symbol file to use.
+# This config adds build-ids to the associated library. -Wl is a special option
+# that indicates that clang should pass the associated option --build-id to the
+# linker. This will cause a build-id section to be added to the associated
+# library. The build-id makes it possible for a debugger to find the right
+# symbol file to use.
 config("build_id_config") {
   ldflags = [ "-Wl,--build-id" ]
 }
@@ -477,8 +495,9 @@ config("debug_annotations_config") {
     defines += [ "ANGLE_ENABLE_DEBUG_ANNOTATIONS" ]
   }
   if (angle_enable_annotator_run_time_checks) {
-    # When used with angle_enable_trace, enables debug markers for AGI with run-time checks to
-    # filter out EVENT() messages when the debug annotator is disabled.
+    # When used with angle_enable_trace, enables debug markers for AGI with
+    # run-time checks to filter out EVENT() messages when the debug annotator is
+    # disabled.
     defines += [ "ANGLE_ENABLE_ANNOTATOR_RUN_TIME_CHECKS" ]
   }
 }
@@ -517,7 +536,8 @@ config("angle_no_cfi_icall") {
   }
 }
 
-# Silences the "cast from void* or another unrelated type to the wrong dynamic type" cfi error
+# Silences the "cast from void* or another unrelated type to the wrong dynamic
+# type" cfi error
 config("angle_no_cfi_unrelated_cast") {
   if (is_cfi && use_cfi_cast && current_toolchain == default_toolchain) {
     cflags = [ "-fno-sanitize=cfi-unrelated-cast" ]
@@ -1046,8 +1066,9 @@ config("libANGLE_config") {
 
   if (!is_android) {
     # b/283233503
-    # Only export the ANGLE platform methods on Android, the EGL loader depends on them for
-    # detecting ANGLE. Normally, users are expected to load them through eglGetProcAddress.
+    # Only export the ANGLE platform methods on Android, the EGL loader depends
+    # on them for detecting ANGLE. Normally, users are expected to load them
+    # through eglGetProcAddress.
     defines += [ "ANGLE_PLATFORM_EXPORT=" ]
   }
 }
@@ -1222,7 +1243,7 @@ if (angle_use_wayland) {
 
     include_dirs = [
       "$wayland_dir/egl",
-      "$wayland_dir/src",
+      "$wayland_dir",
     ]
   }
 
@@ -1256,9 +1277,10 @@ config("angle_abseil_config") {
 
 group("angle_abseil") {
   if (angle_enable_abseil) {
-    # When build_with_chromium=true we need to include "//third_party/abseil-cpp:absl" while
-    # we can be more specific when building standalone non-component ANGLE.
-    # Also build the combined target when building Dawn to avoid multiply defined globals.
+    # When build_with_chromium=true we need to include
+    # "//third_party/abseil-cpp:absl" while we can be more specific when
+    # building standalone non-component ANGLE. Also build the combined target
+    # when building Dawn to avoid multiply defined globals.
     if (build_with_chromium || angle_enable_wgpu || is_component_build) {
       public_deps = [ "$angle_abseil_cpp_dir:absl" ]
     } else {
@@ -1453,11 +1475,17 @@ template("angle_libGLESv2") {
   }
 }
 
-angle_libGLESv2("libGLESv2") {
-  if (angle_with_capture_by_default) {
-    deps = [ ":libANGLE_with_capture" ]
-  } else {
-    deps = [ ":libANGLE" ]
+if (angle_use_static_angle) {
+  group("libGLESv2") {
+    public_deps = [ ":libGLESv2_static" ]
+  }
+} else {
+  angle_libGLESv2("libGLESv2") {
+    if (angle_with_capture_by_default) {
+      deps = [ ":libANGLE_with_capture" ]
+    } else {
+      deps = [ ":libANGLE" ]
+    }
   }
 }
 
@@ -1502,26 +1530,31 @@ angle_static_library("libGLESv2_static") {
   public_deps = [ ":libGLESv2_thin_static" ]
 }
 
-angle_shared_library("libGLESv1_CM") {
-  sources = libglesv1_cm_sources
-  output_name = "libGLESv1_CM${angle_libs_suffix}"
+if (angle_use_static_angle) {
+  group("libGLESv1_CM") {
+  }
+} else {
+  angle_shared_library("libGLESv1_CM") {
+    sources = libglesv1_cm_sources
+    output_name = "libGLESv1_CM${angle_libs_suffix}"
 
-  configs += [
-    ":angle_gl_visibility_config",
-    ":debug_annotations_config",
-    ":gl_prototypes",
-  ]
+    configs += [
+      ":angle_gl_visibility_config",
+      ":debug_annotations_config",
+      ":gl_prototypes",
+    ]
 
-  defines = []
+    defines = []
 
-  deps = [
-    ":includes",
-    ":libGLESv2",
-  ]
+    deps = [
+      ":includes",
+      ":libGLESv2",
+    ]
 
-  if (is_win) {
-    sources += [ "src/libGLESv1_CM/libGLESv1_CM.def" ]
-    deps += [ ":angle_version" ]
+    if (is_win) {
+      sources += [ "src/libGLESv1_CM/libGLESv1_CM.def" ]
+      deps += [ ":angle_version" ]
+    }
   }
 }
 
@@ -1592,13 +1625,19 @@ template("libEGL_shared_template") {
   }
 }
 
-libEGL_shared_template("libEGL") {
-  defines = [ "ANGLE_DISPATCH_LIBRARY=\"${_angle_glesv2_library_name}\"" ]
-  output_name = "libEGL"
-  gles_library = "libGLESv2"
-  sources = []
-  if (is_win) {
-    sources += [ "src/libEGL/libEGL_autogen.def" ]
+if (angle_use_static_angle) {
+  group("libEGL") {
+    public_deps = [ ":libEGL_static" ]
+  }
+} else {
+  libEGL_shared_template("libEGL") {
+    defines = [ "ANGLE_DISPATCH_LIBRARY=\"${_angle_glesv2_library_name}\"" ]
+    output_name = "libEGL"
+    gles_library = "libGLESv2"
+    sources = []
+    if (is_win) {
+      sources += [ "src/libEGL/libEGL_autogen.def" ]
+    }
   }
 }
 
@@ -1700,8 +1739,7 @@ if (angle_enable_cgl) {
   }
 }
 
-if (is_android && symbol_level != 0 &&
-    (angle_standalone || build_with_chromium)) {
+if (angle_has_build && is_android && enable_compressed_symbols) {
   action_foreach("compressed_symbols") {
     sources = []
     foreach(_library, angle_libraries) {
@@ -1848,20 +1886,24 @@ if (install_prefix != "") {
 }
 
 group("angle") {
-  data_deps = [
-    ":libEGL",
-    ":libGLESv1_CM",
-    ":libGLESv2",
-  ]
-  if (angle_enable_vulkan) {
-    data_deps += [
-      ":libEGL_vulkan_secondaries",
-      ":libGLESv2_vulkan_secondaries",
+  if (defined(angle_use_static_angle) && angle_use_static_angle) {
+    public_deps = [ ":angle_static" ]
+  } else {
+    data_deps = [
+      ":libEGL",
+      ":libGLESv1_CM",
+      ":libGLESv2",
     ]
-  }
-  if (is_ios) {
-    # Need to bundle the libraries inside the .app.
-    deps = data_deps
+    if (angle_enable_vulkan) {
+      data_deps += [
+        ":libEGL_vulkan_secondaries",
+        ":libGLESv2_vulkan_secondaries",
+      ]
+    }
+    if (is_ios) {
+      # Need to bundle the libraries inside the .app.
+      deps = data_deps
+    }
   }
 }
 

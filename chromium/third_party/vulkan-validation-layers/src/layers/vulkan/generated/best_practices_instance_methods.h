@@ -336,6 +336,11 @@ void PostCallRecordGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
     VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, uint32_t* pQueueFamilyDataGraphPropertyCount,
     VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, const RecordObject& record_obj) override;
 
+void PostCallRecordGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+    const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, VkBaseOutStructure* pProperties,
+    const RecordObject& record_obj) override;
+
 #ifdef VK_USE_PLATFORM_OHOS
 void PostCallRecordCreateSurfaceOHOS(VkInstance instance, const VkSurfaceCreateInfoOHOS* pCreateInfo,
                                      const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
@@ -353,6 +358,12 @@ void PostCallRecordEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegion
 void PostCallRecordEnumeratePhysicalDeviceShaderInstrumentationMetricsARM(
     VkPhysicalDevice physicalDevice, uint32_t* pDescriptionCount, VkShaderInstrumentationMetricDescriptionARM* pDescriptions,
     const RecordObject& record_obj) override;
+
+void PostCallRecordGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+    const VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties,
+    const VkDataGraphOpticalFlowImageFormatInfoARM* pOpticalFlowImageFormatInfo, uint32_t* pFormatCount,
+    VkDataGraphOpticalFlowImageFormatPropertiesARM* pImageFormatProperties, const RecordObject& record_obj) override;
 
 #ifdef VK_USE_PLATFORM_UBM_SEC
 void PostCallRecordCreateUbmSurfaceSEC(VkInstance instance, const VkUbmSurfaceCreateInfoSEC* pCreateInfo,

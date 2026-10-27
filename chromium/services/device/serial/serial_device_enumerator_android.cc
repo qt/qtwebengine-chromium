@@ -12,7 +12,6 @@
 #include "base/feature_list.h"
 #include "base/no_destructor.h"
 #include "components/device_event_log/device_event_log.h"
-#include "device/base/features.h"
 #include "services/device/serial/serial_io_handler_android.h"
 
 // Must come after all headers that specialize FromJniType() / ToJniType().
@@ -25,9 +24,6 @@ SerialDeviceEnumeratorAndroid::SerialDeviceEnumeratorAndroid()
     : task_runner_(base::SequencedTaskRunner::GetCurrentDefault()) {}
 
 void SerialDeviceEnumeratorAndroid::Initialize() {
-  if (!base::FeatureList::IsEnabled(features::kWebSerialWiredDevicesAndroid)) {
-    return;
-  }
   JNIEnv* env = AttachCurrentThread();
   j_serial_manager_.Reset(
       Java_ChromeSerialManager_create(env, reinterpret_cast<int64_t>(this)));
@@ -56,6 +52,18 @@ scoped_refptr<SerialIoHandler> SerialDeviceEnumeratorAndroid::CreateIoHandler(
 void SerialDeviceEnumeratorAndroid::OpenPath(const base::FilePath& path,
                                              OpenPathCallback callback,
                                              ErrorCallback error_callback) {
+  task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&SerialDeviceEnumeratorAndroid::OpenPathInternal,
+                     base::Unretained(this), path, std::move(callback),
+                     std::move(error_callback)));
+}
+
+void SerialDeviceEnumeratorAndroid::OpenPathInternal(
+    const base::FilePath& path,
+    OpenPathCallback callback,
+    ErrorCallback error_callback) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (j_serial_manager_.is_null()) {
     std::move(error_callback)
         .Run("Android Serial Service is not available", path.value());
@@ -87,6 +95,16 @@ void SerialDeviceEnumeratorAndroid::OpenPathCallbackViaJni(
     JNIEnv* env,
     const std::string& port_name,
     int32_t fd) {
+  task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&SerialDeviceEnumeratorAndroid::OpenPathCallbackInternal,
+                     base::Unretained(this), port_name, fd));
+}
+
+void SerialDeviceEnumeratorAndroid::OpenPathCallbackInternal(
+    const std::string& port_name,
+    int32_t fd) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   auto node = callbacks_.extract(port_name);
   if (node.empty()) {
     return;
@@ -99,6 +117,17 @@ void SerialDeviceEnumeratorAndroid::ErrorCallbackViaJni(
     const std::string& port_name,
     const std::string& error_name,
     const std::string& message) {
+  task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&SerialDeviceEnumeratorAndroid::ErrorCallbackInternal,
+                     base::Unretained(this), port_name, error_name, message));
+}
+
+void SerialDeviceEnumeratorAndroid::ErrorCallbackInternal(
+    const std::string& port_name,
+    const std::string& error_name,
+    const std::string& message) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   auto node = callbacks_.extract(port_name);
   if (node.empty()) {
     return;

@@ -29,6 +29,7 @@
 
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/validator.h"
+#include "src/tint/lang/core/type/i32.h"
 
 namespace tint::hlsl::writer::raise {
 namespace {
@@ -120,9 +121,16 @@ struct State {
                              ->Result();
             }
             // Switch over dynamic index, emitting a case for all possible column indices
-            auto* switch_ = b.Switch(to_access->Indices().back());
+            auto* index_val = to_access->Indices().back();
+            auto* switch_ = b.Switch(index_val);
             for (uint32_t i = 0; i < mat_ty->Columns(); ++i) {
-                b.Append(b.Case(switch_, {b.Constant(u32(i))}), [&] {
+                core::ir::Constant* case_val = nullptr;
+                if (index_val->Type()->Is<core::type::I32>()) {
+                    case_val = b.Constant(i32(i));
+                } else {
+                    case_val = b.Constant(u32(i));
+                }
+                b.Append(b.Case(switch_, {case_val}), [&] {
                     auto* const vec_ty = to_ptr->StoreType();
                     auto* access = b.Access(ty.ptr(to_ptr->AddressSpace(), vec_ty), matrix, u32(i));
                     auto* new_store = Switch(

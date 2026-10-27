@@ -9,6 +9,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
+#include "components/device_signals/core/common/signals_features.h"
 #include "components/enterprise/connectors/core/reporting_constants.h"
 #include "crypto/sha2.h"
 
@@ -216,8 +217,8 @@ std::string GetSecuritySignalsInReport(
   }
 
   if (!chrome_profile_report_request.has_browser_report()) {
-    base::JSONWriter::WriteWithOptions(
-        signals_dict, base::JSONWriter::OPTIONS_PRETTY_PRINT, &signals_json);
+    base::JSONWriter::WriteWithOptions(signals_dict, /*options=*/0,
+                                       &signals_json);
     return signals_json;
   }
 
@@ -225,8 +226,8 @@ std::string GetSecuritySignalsInReport(
   signals_dict.Set("browser_version", browser_report.browser_version());
 
   if (browser_report.chrome_user_profile_infos_size() != 1) {
-    base::JSONWriter::WriteWithOptions(
-        signals_dict, base::JSONWriter::OPTIONS_PRETTY_PRINT, &signals_json);
+    base::JSONWriter::WriteWithOptions(signals_dict, /*options=*/0,
+                                       &signals_json);
     return signals_json;
   }
 
@@ -291,6 +292,11 @@ std::string GetSecuritySignalsInReport(
       signals_dict, base::JSONWriter::OPTIONS_PRETTY_PRINT, &signals_json);
 
   return signals_json;
+}
+
+
+int GetCurrentContentBindingsVersion() {
+  return 1;
 }
 
 void RecordReportGenerationErrorMetric(ReportGenerationError error) {

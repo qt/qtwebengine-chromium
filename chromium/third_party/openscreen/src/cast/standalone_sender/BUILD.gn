@@ -50,8 +50,6 @@ if (!build_with_chromium) {
     if (have_external_libs) {
       sources += [
         "connection_settings.h",
-        "ffmpeg_glue.cc",
-        "ffmpeg_glue.h",
         "looping_file_cast_agent.cc",
         "looping_file_cast_agent.h",
         "looping_file_sender.cc",
@@ -71,6 +69,7 @@ if (!build_with_chromium) {
         "streaming_vpx_encoder.cc",
         "streaming_vpx_encoder.h",
       ]
+      deps += [ "../standalone_common:ffmpeg_glue" ]
 
       include_dirs +=
           ffmpeg_include_dirs + libopus_include_dirs + libvpx_include_dirs

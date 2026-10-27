@@ -118,8 +118,8 @@ class TestPaymentsAutofillClient : public PaymentsAutofillClient {
       base::OnceClosure accept_virtual_card_callback,
       base::OnceClosure decline_virtual_card_callback) override;
   void VirtualCardEnrollCompleted(PaymentsRpcResult result) override;
-  void OnCardDataAvailable(
-      const FilledCardInformationBubbleOptions& options) override;
+  void OnCardDataAvailable(const FilledCardInformationBubbleOptions& options,
+                           const url::Origin& origin) override;
   void ConfirmSaveIbanLocally(
       const Iban& iban,
       bool should_show_prompt,
@@ -170,9 +170,6 @@ class TestPaymentsAutofillClient : public PaymentsAutofillClient {
   TestCreditCardRiskBasedAuthenticator* GetRiskBasedAuthenticator() override;
   bool IsRiskBasedAuthEffectivelyAvailable() const override;
   bool IsMandatoryReauthEnabled() override;
-#if BUILDFLAG(IS_IOS)
-  bool IsUsingCustomCardIconEnabled() const override;
-#endif  // BUILDFLAG(IS_IOS)
   void ShowMandatoryReauthOptInPrompt(
       base::OnceClosure accept_mandatory_reauth_callback,
       base::OnceClosure cancel_mandatory_reauth_callback,
@@ -241,6 +238,8 @@ class TestPaymentsAutofillClient : public PaymentsAutofillClient {
   BnplUiDelegate* GetBnplUiDelegate() override;
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
   OmniboxAutofillDelegate* GetOmniboxAutofillDelegate() override;
+  void ShowOmniboxAutofillChip() override;
+  void HideOmniboxAutofillChip() override;
 #endif
 
   // Begin TestPaymentsAutofillClient-specific section.
@@ -354,6 +353,12 @@ class TestPaymentsAutofillClient : public PaymentsAutofillClient {
     bnpl_ui_delegate_ = std::move(bnpl_ui_delegate);
   }
 
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+  bool omnibox_autofill_chip_shown() { return omnibox_autofill_chip_shown_; }
+
+  bool omnibox_autofill_chip_hidden() { return omnibox_autofill_chip_hidden_; }
+#endif
+
  private:
   const raw_ref<AutofillClient> client_;
 
@@ -433,7 +438,7 @@ class TestPaymentsAutofillClient : public PaymentsAutofillClient {
   bool credit_card_name_fix_flow_bubble_was_shown_ = false;
 #endif
 
-  ::testing::NiceMock<MockMerchantPromoCodeManager>
+  testing::NiceMock<MockMerchantPromoCodeManager>
       mock_merchant_promo_code_manager_;
   std::unique_ptr<AutofillOfferManager> autofill_offer_manager_;
   std::unique_ptr<MockMandatoryReauthManager>
@@ -453,6 +458,10 @@ class TestPaymentsAutofillClient : public PaymentsAutofillClient {
   // The OmniboxAutofillDelegate used to handle the logic flow and user
   // interactions when the user triggers Autofill from the Omnibox.
   std::unique_ptr<OmniboxAutofillDelegate> omnibox_autofill_delegate_;
+
+  bool omnibox_autofill_chip_shown_ = false;
+
+  bool omnibox_autofill_chip_hidden_ = false;
 #endif
 };
 

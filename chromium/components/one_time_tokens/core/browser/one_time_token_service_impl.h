@@ -11,10 +11,10 @@
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/one_time_tokens/core/browser/gmail_otp_backend.h"
 #include "components/one_time_tokens/core/browser/one_time_token.h"
-#include "components/one_time_tokens/core/browser/one_time_token_cache.h"
 #include "components/one_time_tokens/core/browser/one_time_token_retrieval_error.h"
 #include "components/one_time_tokens/core/browser/one_time_token_service.h"
 #include "components/one_time_tokens/core/browser/sms_otp_backend.h"
+#include "components/one_time_tokens/core/browser/util/expiring_cache.h"
 #include "components/one_time_tokens/core/browser/util/expiring_subscription_manager.h"
 
 namespace one_time_tokens {
@@ -44,7 +44,8 @@ class OneTimeTokenServiceImpl : public OneTimeTokenService,
 
   // OneTimeTokenService:
   void GetRecentOneTimeTokens(Callback callback) override;
-  [[nodiscard]] ExpiringSubscription Subscribe(base::Time expiration,
+  [[nodiscard]] ExpiringSubscription Subscribe(OneTimeTokenSource source,
+                                               base::Time expiration,
                                                Callback callback) override;
   std::vector<OneTimeToken> GetCachedOneTimeTokens() const override;
   void RequestOneTimeToken(
@@ -62,7 +63,8 @@ class OneTimeTokenServiceImpl : public OneTimeTokenService,
       base::expected<OneTimeToken, OneTimeTokenRetrievalError> reply);
 
   // Handles subscriptions to the `OneTimeTokenService`.
-  ExpiringSubscriptionManager<CallbackSignature> subscription_manager_;
+  ExpiringSubscriptionManager<CallbackSignature> sms_subscription_manager_;
+  ExpiringSubscriptionManager<CallbackSignature> gmail_subscription_manager_;
 
   // Handles requests of the `OneTimeTokenService` to the `SmsOtpBackend`.
   struct {
@@ -72,13 +74,13 @@ class OneTimeTokenServiceImpl : public OneTimeTokenService,
 
   // Handles requests of the `OneTimeTokenService` to the `GmailOtpBackend`.
   struct {
-    bool has_pending_request = false;
     raw_ptr<GmailOtpBackend> backend;
   } gmail_;
 
   ExpiringSubscription gmail_subscription_;
 
-  OneTimeTokenCache cache_;
+  ExpiringCache<OneTimeToken, decltype(&OneTimeToken::on_device_arrival_time)>
+      cache_;
 
   // Weak pointer factory (must be last member in class).
   base::WeakPtrFactory<OneTimeTokenServiceImpl> weakptr_factory_{this};

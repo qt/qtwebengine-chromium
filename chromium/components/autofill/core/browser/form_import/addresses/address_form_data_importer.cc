@@ -4,18 +4,24 @@
 
 #include "components/autofill/core/browser/form_import/addresses/address_form_data_importer.h"
 
+#include <stddef.h>
+
+#include <algorithm>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "base/check.h"
 #include "base/check_deref.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
+#include "base/feature_list.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/types/optional_ref.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/data_manager/addresses/address_data_manager.h"
@@ -32,14 +38,15 @@
 #include "components/autofill/core/browser/form_import/form_data_importer_utils.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
-#include "components/autofill/core/browser/integrators/plus_addresses/autofill_plus_address_delegate.h"
 #include "components/autofill/core/browser/logging/log_manager.h"
 #include "components/autofill/core/browser/metrics/profile_import_metrics.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_internals/log_message.h"
 #include "components/autofill/core/common/autofill_internals/logging_scope.h"
+#include "components/autofill/core/common/html_field_types.h"
 #include "components/autofill/core/common/logging/log_buffer.h"
 #include "components/autofill/core/common/logging/log_macros.h"
+#include "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -309,8 +316,6 @@ AddressFormDataImporter::GetAddressObservedFieldValues(
     bool& has_invalid_field_types,
     bool& has_multiple_distinct_email_addresses,
     bool& has_address_related_fields) const {
-  AutofillPlusAddressDelegate* plus_address_delegate =
-      client_->GetPlusAddressDelegate();
   base::flat_map<FieldType, ValueForImport> preceding_values;
 
   // Tracks if subsequent phone number fields should be ignored,
@@ -333,14 +338,6 @@ AddressFormDataImporter::GetAddressObservedFieldValues(
     if (field->WasAutofilledWithFallback()) {
       continue;
     }
-    // When the experimental plus addresses feature is enabled, and the value is
-    // a plus address, exclude it from the resulting address profile.
-    if (plus_address_delegate &&
-        (plus_address_delegate->IsPlusAddress(base::UTF16ToUTF8(value)) ||
-         plus_address_delegate->MatchesPlusAddressFormat(value))) {
-      continue;
-    }
-
     FieldType field_type = field->Type().GetAddressType();
     // Only address types are relevant in this function, other types are treated
     // in different flows.
@@ -563,7 +560,8 @@ bool AddressFormDataImporter::ExtractAddressProfileFromSection(
 
   // This relies on the profile's country code and must be done strictly after
   // `ComplementCountry()`.
-  RemoveInaccessibleProfileValues(candidate_profile);
+  candidate_profile.ClearFields(
+      candidate_profile.FindInaccessibleProfileValues());
 
   // Do not import a profile if any of the requirements is violated.
   // `IsMinimumAddress()` goes first, since it logs to autofill-internals.
@@ -612,18 +610,6 @@ bool AddressFormDataImporter::ExtractAddressProfileFromSection(
   extracted_address_profile.import_metadata = import_metadata;
   extracted_address_profiles->push_back(std::move(extracted_address_profile));
   return true;
-}
-
-void AddressFormDataImporter::RemoveInaccessibleProfileValues(
-    AutofillProfile& profile) {
-  const FieldTypeSet inaccessible_fields =
-      profile.FindInaccessibleProfileValues();
-  profile.ClearFields(inaccessible_fields);
-  autofill_metrics::LogRemovedSettingInaccessibleFields(
-      !inaccessible_fields.empty());
-  for (const FieldType inaccessible_field : inaccessible_fields) {
-    autofill_metrics::LogRemovedSettingInaccessibleField(inaccessible_field);
-  }
 }
 
 bool AddressFormDataImporter::ComplementCountry(AutofillProfile& profile,

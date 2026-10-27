@@ -64,7 +64,6 @@
 #include "extensions/common/extension_features.h"
 #include "extensions/common/features/feature.h"
 #include "extensions/common/features/feature_provider.h"
-#include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/mojom/context_type.mojom.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/url_pattern.h"
@@ -248,7 +247,7 @@ void WebRequestAPI::Proxy::HandleAuthRequest(
   // Default implementation cancels the request.
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), std::nullopt,
-                                false /* should_cancel */));
+                                /*should_cancel=*/false));
 }
 
 WebRequestAPI::ProxySet::ProxySet() {
@@ -322,7 +321,7 @@ void WebRequestAPI::ProxySet::MaybeProxyAuthRequest(
     // their auth credentials.
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), std::nullopt,
-                                  false /* should_cancel */));
+                                  /*should_cancel=*/false));
     return;
   }
 
@@ -416,12 +415,6 @@ WebRequestAPI::TestObserver::~TestObserver() = default;
 void WebRequestAPI::OnListenerAdded(const EventListenerInfo& details) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  if (!base::FeatureList::IsEnabled(
-          extensions_features::
-              kWebRequestPersistFilteredEventsViaEventRouter)) {
-    return;
-  }
-
   WebRequestEventRouter::RequestFilter filter;
   std::string error;
   // Failure + an empty error string means a fatal error.
@@ -473,7 +466,7 @@ void WebRequestAPI::OnListenerAdded(const EventListenerInfo& details) {
   // since they are not bound to a specific process. See crbug.com/513321171.
   if (extension && !details.is_lazy && process &&
       !ProcessMap::Get(details.browser_context)
-           ->Contains(extension->id(), process->GetDeprecatedID())) {
+           ->Contains(extension->id(), process->GetID())) {
     bad_message::ReceivedBadMessage(
         process, bad_message::WRA_INVALID_EXTENSION_ID_FOR_PROCESS);
     return;
@@ -636,7 +629,8 @@ void WebRequestAPI::OnListenerRemoved(const EventListenerInfo& details) {
         &WebRequestAPI::UpdateActiveListener, weak_factory_.GetWeakPtr(),
         base::UnsafeDanglingUntriaged(details.browser_context.get()),
         update_type, details.extension_id, sub_event_name,
-        details.worker_thread_id, details.service_worker_version_id);
+        details.render_process_id, details.worker_thread_id,
+        details.service_worker_version_id);
   }
 
   if (ExtensionRegistry::Get(details.browser_context)
@@ -657,6 +651,30 @@ void WebRequestAPI::OnListenerRemoved(const EventListenerInfo& details) {
     // cleanup.
     std::move(remove_listener).Run();
   }
+}
+
+void WebRequestAPI::OnListenerUpdated(const EventListenerInfo& details) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  // Only lazy listeners can be updated. See `EventListenerMap::UpdateFilter()`.
+  CHECK(details.is_lazy);
+
+  std::string event_name = EventRouter::GetBaseEventName(details.event_name);
+  auto* event_router = WebRequestEventRouter::Get(details.browser_context);
+
+  // A sub-event-named listener was re-registered with a different filter. This
+  // is neither an add nor a remove: firing `OnListenerRemoved()` here would
+  // post an async `RemoveLazyListener()` keyed only by sub-event name, which
+  // would tear down the just-registered replacement. Route through the add path
+  // instead: for a lazy listener `WebRequestEventRouter::AddEventListener()`
+  // replaces any inactive listener for the same sub-event name with the new
+  // filter, which is exactly the update we want.
+  const size_t inactive_count_before = event_router->GetInactiveListenerCount(
+      details.browser_context, event_name);
+  OnListenerAdded(details);
+  const size_t inactive_count_after = event_router->GetInactiveListenerCount(
+      details.browser_context, event_name);
+  // Ensure no listeners were added.
+  CHECK_EQ(inactive_count_before, inactive_count_after);
 }
 
 bool WebRequestAPI::MaybeProxyURLLoaderFactory(
@@ -1023,7 +1041,7 @@ void WebRequestAPI::ResetURLLoaderFactories() {
 
 void WebRequestAPI::UpdateMayHaveProxies() {
   bool may_have_proxies = MayHaveProxies();
-  if (!may_have_proxies_ && may_have_proxies) {
+  if (may_have_proxies_ != may_have_proxies) {
     ResetURLLoaderFactories();
   }
   may_have_proxies_ = may_have_proxies;
@@ -1036,10 +1054,6 @@ void WebRequestAPI::OnExtensionLoaded(content::BrowserContext* browser_context,
   if (HasAnyWebRequestPermissions(*extension)) {
     ++web_request_extension_count_;
     update_may_have_proxies = true;
-    if (BackgroundInfo::IsServiceWorkerBased(extension)) {
-      WebRequestEventRouter::Get(browser_context)
-          ->LoadPersistedLazyListeners(browser_context, extension->id());
-    }
   }
   if (HasAnyDeclarativeWebRequestPermissions(*extension)) {
     ++declarative_request_extension_count_;
@@ -1086,6 +1100,7 @@ void WebRequestAPI::UpdateActiveListener(
     WebRequestEventRouter::ListenerUpdateType update_type,
     const ExtensionId& extension_id,
     const std::string& sub_event_name,
+    content::ChildProcessId render_process_id,
     int worker_thread_id,
     int64_t service_worker_version_id) {
   if (!ExtensionsBrowserClient::Get()->IsValidContext(browser_context_id)) {
@@ -1096,8 +1111,8 @@ void WebRequestAPI::UpdateActiveListener(
       reinterpret_cast<content::BrowserContext*>(browser_context_id);
   WebRequestEventRouter::Get(browser_context)
       ->UpdateActiveListener(browser_context, update_type, extension_id,
-                             sub_event_name, worker_thread_id,
-                             service_worker_version_id);
+                             sub_event_name, render_process_id,
+                             worker_thread_id, service_worker_version_id);
 }
 
 void WebRequestAPI::RemoveLazyListener(content::BrowserContext* browser_context,

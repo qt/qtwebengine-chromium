@@ -435,7 +435,7 @@ std::unique_ptr<SystemFontInfoIface> CFX_FontMapper::TakeSystemFontInfo() {
 
 uint32_t CFX_FontMapper::GetChecksumFromTT(void* font_handle) {
   uint32_t buffer[256];
-  font_info_->GetFontData(font_handle, kTableTTCF,
+  font_info_->GetFontData(font_handle, SystemFontInfoIface::kTableTTCF,
                           pdfium::as_writable_byte_span(buffer));
 
   uint32_t checksum = 0;
@@ -446,13 +446,15 @@ uint32_t CFX_FontMapper::GetChecksumFromTT(void* font_handle) {
 }
 
 ByteString CFX_FontMapper::GetPSNameFromTT(void* font_handle) {
-  size_t size = font_info_->GetFontData(font_handle, kTableNAME, {});
+  size_t size =
+      font_info_->GetFontData(font_handle, SystemFontInfoIface::kTableNAME, {});
   if (!size) {
     return ByteString();
   }
 
   DataVector<uint8_t> buffer(size);
-  size_t bytes_read = font_info_->GetFontData(font_handle, kTableNAME, buffer);
+  size_t bytes_read = font_info_->GetFontData(
+      font_handle, SystemFontInfoIface::kTableNAME, buffer);
   return bytes_read == size ? GetNameFromTT(buffer, 6) : ByteString();
 }
 
@@ -580,8 +582,10 @@ RetainPtr<CFX_Face> CFX_FontMapper::UseExternalSubst(
   if (charset == FX_Charset::kDefault) {
     font_info_->GetFontCharset(font_handle, &charset);
   }
-  size_t ttc_size = font_info_->GetFontData(font_handle, kTableTTCF, {});
-  size_t font_size = font_info_->GetFontData(font_handle, 0, {});
+  size_t ttc_size =
+      font_info_->GetFontData(font_handle, SystemFontInfoIface::kTableTTCF, {});
+  size_t font_size =
+      font_info_->GetFontData(font_handle, SystemFontInfoIface::kTableNone, {});
   if (font_size == 0 && ttc_size == 0) {
     return nullptr;
   }
@@ -654,7 +658,7 @@ RetainPtr<CFX_Face> CFX_FontMapper::FindSubstFace(const ByteString& name,
     if (pos.has_value()) {
       family = subst_name.First(pos.value());
       GetStandardFontName(&family);
-      style = subst_name.Last(subst_name.GetLength() - (pos.value() + 1));
+      style = subst_name.Substr(pos.value() + 1);
       has_comma = true;
     } else {
       family = subst_name;
@@ -677,7 +681,7 @@ RetainPtr<CFX_Face> CFX_FontMapper::FindSubstFace(const ByteString& name,
     if (!has_comma) {
       std::optional<size_t> pos = family.ReverseFind('-');
       if (pos.has_value()) {
-        style = family.Last(family.GetLength() - (pos.value() + 1));
+        style = family.Substr(pos.value() + 1);
         family = family.First(pos.value());
         has_hyphen = true;
       }
@@ -879,12 +883,14 @@ FixedSizeDataVector<uint8_t> CFX_FontMapper::RawBytesForIndex(size_t index) {
     return FixedSizeDataVector<uint8_t>();
   }
   ScopedFontDeleter scoped_font(font_info_.get(), font_handle);
-  size_t required_size = font_info_->GetFontData(font_handle, 0, {});
+  size_t required_size =
+      font_info_->GetFontData(font_handle, SystemFontInfoIface::kTableNone, {});
   if (required_size == 0) {
     return FixedSizeDataVector<uint8_t>();
   }
   auto result = FixedSizeDataVector<uint8_t>::Uninit(required_size);
-  size_t actual_size = font_info_->GetFontData(font_handle, 0, result.span());
+  size_t actual_size = font_info_->GetFontData(
+      font_handle, SystemFontInfoIface::kTableNone, result.span());
   if (actual_size != required_size) {
     return FixedSizeDataVector<uint8_t>();
   }
@@ -902,8 +908,8 @@ RetainPtr<CFX_Face> CFX_FontMapper::GetCachedTTCFace(void* font_handle,
       font_mgr->GetTTCFontCacheEntry(ttc_size, checksum);
   if (!cache_entry) {
     auto font_data = FixedSizeDataVector<uint8_t>::Uninit(ttc_size);
-    size_t size =
-        font_info_->GetFontData(font_handle, kTableTTCF, font_data.span());
+    size_t size = font_info_->GetFontData(
+        font_handle, SystemFontInfoIface::kTableTTCF, font_data.span());
     if (size != ttc_size) {
       return nullptr;
     }
@@ -939,7 +945,8 @@ RetainPtr<CFX_Face> CFX_FontMapper::GetCachedFace(void* font_handle,
       font_mgr->GetFontCacheEntry(subst_name, weight, is_italic);
   if (!cache_entry) {
     auto font_data = FixedSizeDataVector<uint8_t>::Uninit(data_size);
-    size_t size = font_info_->GetFontData(font_handle, 0, font_data.span());
+    size_t size = font_info_->GetFontData(
+        font_handle, SystemFontInfoIface::kTableNone, font_data.span());
     if (size != data_size) {
       return nullptr;
     }

@@ -767,6 +767,10 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpMemberDecorateIdEXT";
         case spv::OpConstantSizeOfEXT:
             return "OpConstantSizeOfEXT";
+        case spv::OpConstantDataKHR:
+            return "OpConstantDataKHR";
+        case spv::OpSpecConstantDataKHR:
+            return "OpSpecConstantDataKHR";
         case spv::OpHitObjectRecordHitMotionNV:
             return "OpHitObjectRecordHitMotionNV";
         case spv::OpHitObjectRecordHitWithIndexMotionNV:
@@ -1131,6 +1135,10 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpRayQueryGetIntersectionWorldToObjectKHR";
         case spv::OpAtomicFAddEXT:
             return "OpAtomicFAddEXT";
+        case spv::OpControlBarrierArriveEXT:
+            return "OpControlBarrierArriveEXT";
+        case spv::OpControlBarrierWaitEXT:
+            return "OpControlBarrierWaitEXT";
         case spv::OpArithmeticFenceEXT:
             return "OpArithmeticFenceEXT";
         case spv::OpSubgroupBlockPrefetchINTEL:
@@ -1151,6 +1159,10 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpBitwiseFunctionINTEL";
         case spv::OpUntypedVariableLengthArrayINTEL:
             return "OpUntypedVariableLengthArrayINTEL";
+        case spv::OpPredicatedLoadINTEL:
+            return "OpPredicatedLoadINTEL";
+        case spv::OpPredicatedStoreINTEL:
+            return "OpPredicatedStoreINTEL";
         case spv::OpGroupIMulKHR:
             return "OpGroupIMulKHR";
         case spv::OpGroupFMulKHR:
@@ -1505,6 +1517,8 @@ const char* string_SpvExecutionMode(uint32_t execution_mode) {
             return "MaximallyReconvergesKHR";
         case spv::ExecutionModeFPFastMathDefault:
             return "FPFastMathDefault";
+        case spv::ExecutionModeOpacityMicromapIdKHR:
+            return "OpacityMicromapIdKHR";
         case spv::ExecutionModeStreamingInterfaceINTEL:
             return "StreamingInterfaceINTEL";
         case spv::ExecutionModeRegisterMapInterfaceINTEL:
@@ -1655,6 +1669,8 @@ const char* string_SpvDecoration(uint32_t decoration) {
             return "ArrayStrideIdEXT";
         case spv::DecorationOffsetIdEXT:
             return "OffsetIdEXT";
+        case spv::DecorationUTFEncodedKHR:
+            return "UTFEncodedKHR";
         case spv::DecorationOverrideCoverageNV:
             return "OverrideCoverageNV";
         case spv::DecorationPassthroughNV:
@@ -2199,8 +2215,8 @@ static const char* string_SpvRayFlagsBit(spv::RayFlagsMask mask) {
             return "SkipTrianglesKHR";
         case spv::RayFlagsSkipAABBsKHRMask:
             return "SkipAABBsKHR";
-        case spv::RayFlagsForceOpacityMicromap2StateEXTMask:
-            return "ForceOpacityMicromap2StateEXT";
+        case spv::RayFlagsForceOpacityMicromap2StateKHRMask:
+            return "ForceOpacityMicromap2StateKHR";
 
         default:
             return "Unknown RayFlagsMask";
@@ -2609,6 +2625,8 @@ const OperandInfo& GetOperandInfo(uint32_t opcode) {
         {spv::OpUntypedImageTexelPointerEXT, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpMemberDecorateIdEXT, {{OperandKind::Id, OperandKind::Literal, OperandKind::ValueEnum}}},
         {spv::OpConstantSizeOfEXT, {{OperandKind::Id}}},
+        {spv::OpConstantDataKHR, {{OperandKind::Literal}}},
+        {spv::OpSpecConstantDataKHR, {{OperandKind::Literal}}},
         {spv::OpHitObjectRecordHitMotionNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpHitObjectRecordHitWithIndexMotionNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpHitObjectRecordMissMotionNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
@@ -2657,7 +2675,7 @@ const OperandInfo& GetOperandInfo(uint32_t opcode) {
         {spv::OpFetchMicroTriangleVertexBarycentricNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpCooperativeVectorLoadNV, {{OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
         {spv::OpCooperativeVectorStoreNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
-        {spv::OpHitObjectRecordFromQueryEXT, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpHitObjectRecordFromQueryEXT, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpHitObjectRecordMissEXT, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpHitObjectRecordMissMotionEXT, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpHitObjectGetIntersectionTriangleVertexPositionsEXT, {{OperandKind::Id}}},
@@ -2791,6 +2809,8 @@ const OperandInfo& GetOperandInfo(uint32_t opcode) {
         {spv::OpRayQueryGetIntersectionObjectToWorldKHR, {{OperandKind::Id, OperandKind::Id}}},
         {spv::OpRayQueryGetIntersectionWorldToObjectKHR, {{OperandKind::Id, OperandKind::Id}}},
         {spv::OpAtomicFAddEXT, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpControlBarrierArriveEXT, {{OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpControlBarrierWaitEXT, {{OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpArithmeticFenceEXT, {{OperandKind::Id}}},
         {spv::OpSubgroupBlockPrefetchINTEL, {{OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
         {spv::OpSubgroup2DBlockLoadINTEL, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
@@ -2801,6 +2821,8 @@ const OperandInfo& GetOperandInfo(uint32_t opcode) {
         {spv::OpSubgroupMatrixMultiplyAccumulateINTEL, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
         {spv::OpBitwiseFunctionINTEL, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpUntypedVariableLengthArrayINTEL, {{OperandKind::Id, OperandKind::Id}}},
+        {spv::OpPredicatedLoadINTEL, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
+        {spv::OpPredicatedStoreINTEL, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
         {spv::OpGroupIMulKHR, {{OperandKind::Id, OperandKind::ValueEnum, OperandKind::Id}}},
         {spv::OpGroupFMulKHR, {{OperandKind::Id, OperandKind::ValueEnum, OperandKind::Id}}},
         {spv::OpGroupBitwiseAndKHR, {{OperandKind::Id, OperandKind::ValueEnum, OperandKind::Id}}},

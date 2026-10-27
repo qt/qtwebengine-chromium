@@ -33,6 +33,8 @@ import org.chromium.components.browser_ui.bottomsheet.BottomSheetController.Stat
 import org.chromium.components.browser_ui.widget.scrim.ScrimManager;
 import org.chromium.components.browser_ui.widget.scrim.ScrimManager.ScrimClient;
 import org.chromium.ui.KeyboardVisibilityDelegate;
+import org.chromium.ui.base.ImmutableWeakReference;
+import org.chromium.ui.insets.InsetObserver;
 import org.chromium.ui.test.util.BlankUiTestActivity;
 
 import java.util.concurrent.ExecutionException;
@@ -54,6 +56,9 @@ public class BottomSheetObserverTest {
         /** A {@link CallbackHelper} that can wait for the onOffsetChanged event. */
         public final CallbackHelper mOffsetChangedCallbackHelper = new CallbackHelper();
 
+        /** A {@link CallbackHelper} that can wait for the onContainerBottomMarginChanged event. */
+        public final CallbackHelper mBottomMarginChangedCallbackHelper = new CallbackHelper();
+
         /** A {@link CallbackHelper} that can wait for the onSheetContentChanged event. */
         public final CallbackHelper mContentChangedCallbackHelper = new CallbackHelper();
 
@@ -65,6 +70,8 @@ public class BottomSheetObserverTest {
 
         /** The last value that the onOffsetChanged event sent. */
         private float mLastOffsetChangedValue;
+
+        private int mLastBottomMargin;
 
         @Override
         public void onSheetOffsetChanged(float heightFraction, float offsetPx) {
@@ -100,6 +107,16 @@ public class BottomSheetObserverTest {
         public float getLastOffsetChangedValue() {
             return mLastOffsetChangedValue;
         }
+
+        @Override
+        public void onContainerBottomMarginChanged(int bottomMargin) {
+            mLastBottomMargin = bottomMargin;
+            mBottomMarginChangedCallbackHelper.notifyCalled();
+        }
+
+        public int getLastBottomMargin() {
+            return mLastBottomMargin;
+        }
     }
 
     @ClassRule
@@ -126,6 +143,20 @@ public class BottomSheetObserverTest {
         mBottomSheetController =
                 ThreadUtils.runOnUiThreadBlocking(
                         () -> {
+                            InsetObserver insetObserver =
+                                    new InsetObserver(
+                                            new ImmutableWeakReference<>(
+                                                    sTestRule
+                                                            .getActivity()
+                                                            .getWindow()
+                                                            .getDecorView()),
+                                            new ImmutableWeakReference<>(
+                                                    sTestRule
+                                                            .getActivity()
+                                                            .getApplicationContext()),
+                                            /* enableKeyboardOverlayMode= */ false,
+                                            /* enableExtraEdgeToEdgeLogging= */ false);
+
                             mScrimManager =
                                     new ScrimManager(
                                             sTestRule.getActivity(), rootView, ScrimClient.NONE);
@@ -138,7 +169,8 @@ public class BottomSheetObserverTest {
                                     () -> rootView,
                                     false,
                                     () -> 0,
-                                    /* desktopWindowStateManager= */ null);
+                                    /* desktopWindowStateManager= */ null,
+                                    insetObserver);
                         });
 
         mTestSupport = new BottomSheetTestSupport(mBottomSheetController);
@@ -436,5 +468,16 @@ public class BottomSheetObserverTest {
         // Check the offset.
         assertEquals(
                 wrappedContentHeight, mBottomSheetController.getCurrentOffset(), MathUtils.EPSILON);
+    }
+
+    @Test
+    @MediumTest
+    public void testBottomMarginChangedEvent() throws TimeoutException {
+        CallbackHelper callbackHelper = mObserver.mBottomMarginChangedCallbackHelper;
+        int callbackCount = callbackHelper.getCallCount();
+        int newMargin = 100;
+        ThreadUtils.runOnUiThreadBlocking(() -> mTestSupport.setBottomMargin(newMargin));
+        callbackHelper.waitForCallback(callbackCount, 1);
+        assertEquals(newMargin, mObserver.getLastBottomMargin());
     }
 }

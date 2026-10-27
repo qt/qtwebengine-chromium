@@ -10,13 +10,13 @@
 
 #include "partition_alloc/address_pool_manager.h"
 #include "partition_alloc/buildflags.h"
+#include "partition_alloc/internal/partition_root_internal.h"
 #include "partition_alloc/memory_reclaimer.h"
 #include "partition_alloc/partition_address_space.h"
 #include "partition_alloc/partition_alloc_hooks.h"
 #include "partition_alloc/partition_direct_map_extent.h"
 #include "partition_alloc/partition_oom.h"
 #include "partition_alloc/partition_page.h"
-#include "partition_alloc/partition_root.h"
 #include "partition_alloc/partition_stats.h"
 
 namespace partition_alloc {
@@ -111,7 +111,7 @@ PartitionAllocator::~PartitionAllocator() {
 void PartitionAllocator::init(PartitionOptions opts) {
 #if PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
   PA_CHECK(opts.thread_cache == PartitionOptions::kDisabled ||
-           opts.thread_cache_index >= kNumDefaultPartitions)
+           opts.thread_cache_index >= kNumPartitions)
       << "Cannot use a thread cache at indices used by default partitions when "
          "PartitionAlloc is malloc().";
 #endif

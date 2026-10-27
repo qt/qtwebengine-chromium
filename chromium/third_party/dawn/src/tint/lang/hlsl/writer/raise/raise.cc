@@ -32,8 +32,7 @@
 #include <utility>
 
 #include "src/tint/lang/core/ir/module.h"
-#include "src/tint/lang/core/ir/transform/array_length_from_immediate.h"
-#include "src/tint/lang/core/ir/transform/array_length_from_uniform.h"
+#include "src/tint/lang/core/ir/transform/array_length_from.h"
 #include "src/tint/lang/core/ir/transform/binary_polyfill.h"
 #include "src/tint/lang/core/ir/transform/binding_remapper.h"
 #include "src/tint/lang/core/ir/transform/builtin_polyfill.h"
@@ -46,6 +45,7 @@
 #include "src/tint/lang/core/ir/transform/direct_variable_access.h"
 #include "src/tint/lang/core/ir/transform/multiplanar_external_texture.h"
 #include "src/tint/lang/core/ir/transform/prevent_infinite_loops.h"
+#include "src/tint/lang/core/ir/transform/propagate_buffer_sizes.h"
 #include "src/tint/lang/core/ir/transform/remove_continue_in_switch.h"
 #include "src/tint/lang/core/ir/transform/remove_terminator_args.h"
 #include "src/tint/lang/core/ir/transform/rename_conflicts.h"
@@ -73,6 +73,7 @@
 #include "src/tint/lang/hlsl/writer/raise/promote_initializers.h"
 #include "src/tint/lang/hlsl/writer/raise/replace_default_only_switch.h"
 #include "src/tint/lang/hlsl/writer/raise/replace_non_indexable_mat_vec_stores.h"
+#include "src/tint/lang/hlsl/writer/raise/replace_subgroup_matrix_init.h"
 #include "src/tint/lang/hlsl/writer/raise/resource_table_helper.h"
 #include "src/tint/lang/hlsl/writer/raise/shader_io.h"
 
@@ -83,6 +84,8 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
 
     TINT_CHECK_RESULT(
         core::ir::transform::SubstituteOverrides(module, options.substitute_overrides_config));
+
+    TINT_CHECK_RESULT(core::ir::transform::PropagateBufferSizes(module));
 
     // PopulateBindingRelatedOptions must come before PrepareImmediateData so that
     // buffer_sizes_offset is available when configuring immediate data.
@@ -282,7 +285,7 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
             .first_index_offset = options.first_index_offset,
             .first_instance_offset = options.first_instance_offset,
             .num_workgroups_start_offset = options.num_workgroups_start_offset,
-        };
+            .polyfill_sample_mask = options.polyfill_sample_mask};
 
         TINT_CHECK_RESULT(raise::ShaderIO(module, config));
     }
@@ -298,6 +301,10 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
 
     // DecomposeStorageAccess must come after Robustness and DirectVariableAccess
     TINT_CHECK_RESULT(raise::DecomposeStorageAccess(module));
+
+    // DecomposeAccess must come after DecomposeStorageAccess. No address spaces enabled. Just
+    // decompose buffers.
+    TINT_CHECK_RESULT(core::ir::transform::DecomposeAccess(module, {}));
 
     // ArrayOffsetFrom* transforms must come after both DirectVariableAccess and
     // DecomposeStorageAccess, and BEFORE ChangeImmediateToUniform.
@@ -342,6 +349,7 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     // DecomposeAccess must come after DecomposeStorageAccess, ChangeImmediateToUniform, and
     // ArrayOffsetFrom* transforms
     core::ir::transform::DecomposeAccessOptions decompose_config{.uniform = true};
+    decompose_config.workgroup = options.workarounds.d3d12_decompose_workgroup_access;
     TINT_CHECK_RESULT(core::ir::transform::DecomposeAccess(module, decompose_config));
 
     // PixelLocal must run after DirectVariableAccess to avoid chasing pointer parameters.
@@ -364,7 +372,12 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
 
     // BuiltinPolyfill must come after BinaryPolyfill and DecomposeStorageAccess as they add
     // builtins
-    TINT_CHECK_RESULT(raise::BuiltinPolyfill(module));
+    {
+        raise::BuiltinPolyfillConfig config;
+        config.polyfill_trunc = (options.compiler == Options::Compiler::kFXC);
+        config.use_hlsl_2021_select = (options.compiler == Options::Compiler::kDXC_2021);
+        TINT_CHECK_RESULT(raise::BuiltinPolyfill(module, config));
+    }
     TINT_CHECK_RESULT(core::ir::transform::VectorizeScalarMatrixConstructors(module));
     TINT_CHECK_RESULT(core::ir::transform::RemoveContinueInSwitch(module));
 
@@ -372,10 +385,11 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     // ternary builtins.
     TINT_CHECK_RESULT(raise::ExtractTernaryValues(module));
 
+    TINT_CHECK_RESULT(raise::ReplaceSubgroupMatrixInit(module));
+
     core::ir::transform::BuiltinScalarizeConfig scalarize_config{
-        .scalarize_clamp = options.workarounds.scalarize_max_min_clamp,
-        .scalarize_max = options.workarounds.scalarize_max_min_clamp,
-        .scalarize_min = options.workarounds.scalarize_max_min_clamp};
+        .scalarize_min_max_clamp = options.workarounds.scalarize_max_min_clamp,
+    };
     TINT_CHECK_RESULT(core::ir::transform::BuiltinScalarize(module, scalarize_config));
 
     // These transforms need to be run last as various transforms introduce terminator arguments,

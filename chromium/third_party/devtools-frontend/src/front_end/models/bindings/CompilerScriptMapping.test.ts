@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -360,6 +362,42 @@ describe('CompilerScriptMapping', () => {
     const mappedLines = await debuggerWorkspaceBinding.getMappedLines(uiSourceCode);
     assert.deepEqual(mappedLines, new Set([0, 2, 4]));
   });
+
+  it('correctly maps to multiple raw locations if the source map has multiple entries for a single source line/column',
+     async () => {
+       const target = backend.createTarget();
+
+       const sourceRoot = 'http://example.com';
+       const scriptInfo = {
+         url: `${sourceRoot}/test.out.js`,
+         content: 'const f = x => x;\n',
+       };
+       const sourceMapInfo = {
+         url: `${scriptInfo.url}.map`,
+         content: encodeSourceMap(
+             [
+               '0:0 => test.ts:0:0',
+               '0:2 => test.ts:0:1',
+               '0:5 => test.ts:0:0',
+               '1:0 => test.ts:0:2',
+               '1:2 => test.ts:0:0',
+             ],
+             sourceRoot),
+       };
+
+       const [uiSourceCode, script] = await Promise.all([
+         waitForUISourceCodeAdded(`${sourceRoot}/test.ts`, target),
+         backend.addScript(target, scriptInfo, sourceMapInfo),
+       ]);
+
+       const rawLocations = await debuggerWorkspaceBinding.uiLocationToRawLocations(uiSourceCode, 0, 0);
+       assert.lengthOf(rawLocations, 3);
+       assert.deepEqual(rawLocations, [
+         script.debuggerModel.createRawLocation(script, 0, 0),
+         script.debuggerModel.createRawLocation(script, 0, 5),
+         script.debuggerModel.createRawLocation(script, 1, 2),
+       ]);
+     });
 
   describe('supports modern Web development workflows', () => {
     it('supports webpack code splitting', async () => {

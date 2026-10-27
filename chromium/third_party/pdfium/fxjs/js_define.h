@@ -52,7 +52,7 @@ static void JSConstructor(CFXJS_Engine* pEngine, v8::Local<v8::Object> obj) {
 void JSDestructor(v8::Local<v8::Object> obj);
 
 template <class C>
-UnownedPtr<C> JSGetObject(v8::Isolate* isolate, v8::Local<v8::Object> obj) {
+UnownedPtr<C> JSGetObject(v8::Local<v8::Object> obj) {
   CFXJS_PerObjectData* pData = CFXJS_PerObjectData::GetFromObject(obj);
   if (!pData) {
     return nullptr;
@@ -72,23 +72,20 @@ void JSPropGetter(const char* prop_name_string,
                   const char* class_name_string,
                   v8::Local<v8::Name> property,
                   const v8::PropertyCallbackInfo<v8::Value>& info) {
-  auto pObj = JSGetObject<C>(info.GetIsolate(), info.HolderV2());
+  auto pObj = JSGetObject<C>(info.HolderV2());
   if (!pObj) {
     return;
   }
-
   CJS_Runtime* pRuntime = pObj->GetRuntime();
   if (!pRuntime) {
     return;
   }
-
   CJS_Result result = (pObj.get()->*M)(pRuntime);
   if (result.HasError()) {
     pRuntime->Error(JSFormatErrorString(class_name_string, prop_name_string,
                                         result.Error()));
     return;
   }
-
   if (result.HasReturn()) {
     info.GetReturnValue().Set(result.Return());
   }
@@ -99,17 +96,15 @@ void JSPropSetter(const char* prop_name_string,
                   const char* class_name_string,
                   v8::Local<v8::Name> property,
                   v8::Local<v8::Value> value,
-                  const v8::PropertyCallbackInfo<void>& info) {
-  auto pObj = JSGetObject<C>(info.GetIsolate(), info.HolderV2());
+                  const v8::PropertyCallbackInfo<v8::Boolean>& info) {
+  auto pObj = JSGetObject<C>(info.HolderV2());
   if (!pObj) {
     return;
   }
-
   CJS_Runtime* pRuntime = pObj->GetRuntime();
   if (!pRuntime) {
     return;
   }
-
   CJS_Result result = (pObj.get()->*M)(pRuntime, value);
   if (result.HasError()) {
     pRuntime->Error(JSFormatErrorString(class_name_string, prop_name_string,
@@ -122,7 +117,7 @@ template <class C,
 void JSMethod(const char* method_name_string,
               const char* class_name_string,
               const v8::FunctionCallbackInfo<v8::Value>& info) {
-  auto pObj = JSGetObject<C>(info.GetIsolate(), info.This());
+  auto pObj = JSGetObject<C>(info.This());
   if (!pObj) {
     return;
   }
@@ -159,7 +154,7 @@ void JSMethod(const char* method_name_string,
   }                                                             \
   static void set_##prop_name##_static(                         \
       v8::Local<v8::Name> property, v8::Local<v8::Value> value, \
-      const v8::PropertyCallbackInfo<void>& info) {             \
+      const v8::PropertyCallbackInfo<v8::Boolean>& info) {      \
     JSPropSetter<class_name, &class_name::set_##prop_name>(     \
         #err_name, class_name::kName, property, value, info);   \
   }

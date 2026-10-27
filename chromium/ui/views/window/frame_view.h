@@ -34,11 +34,10 @@ class VIEWS_EXPORT FrameView : public View, public ViewTargeterDelegate {
   METADATA_HEADER(FrameView, View)
 
  public:
-  // Allows to compose additional non-client hit test rules. `std::nullopt`
+  // Allows to compose additional non-client hit test rules. `HTNOWHERE`
   // should be returned to tell the caller to do further processing to determine
   // where in the non-client area the tested point is (if present at all).
-  using HitTestCallback =
-      base::RepeatingCallback<std::optional<int>(const gfx::Point& point)>;
+  using HitTestCallback = base::RepeatingCallback<int(const gfx::Point& point)>;
 
   FrameView();
   FrameView(const FrameView&) = delete;
@@ -110,6 +109,10 @@ class VIEWS_EXPORT FrameView : public View, public ViewTargeterDelegate {
   // override this method to indicate a specific insertion spot for the client
   // view.
   virtual void InsertClientView(ClientView* client_view);
+
+  // Returns the non decorated client area bounds, as perceived by the user
+  // (including title bar and excluding shadows), in screen coordinates.
+  virtual gfx::Rect GetNonDecoratedClientAreaBoundsInScreen() const;
 
   // View:
   void OnThemeChanged() override;

@@ -8,7 +8,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <memory>
 #include <utility>
 #include <vector>
 
@@ -17,6 +16,7 @@
 #include "ynnpack/subgraph/runtime.h"
 #include "ynnpack/subgraph/slinky.h"
 #include "ynnpack/subgraph/subgraph.h"
+#include "slinky/base/arithmetic.h"
 #include "slinky/builder/pipeline.h"
 #include "slinky/builder/simplify.h"
 #include "slinky/runtime/expr.h"
@@ -29,6 +29,9 @@ using slice_info = ynn_node::static_slice::slice;
 
 std::pair<slinky::expr, slinky::expr> calc_begin_end(const slice_info& slice,
                                                      slinky::expr extent) {
+  if (!extent.defined()) {
+    extent = 1;
+  }
   slinky::expr begin_expr, end_expr;
 
   if (slice.begin < 0) {
@@ -51,6 +54,98 @@ std::pair<slinky::expr, slinky::expr> calc_begin_end(const slice_info& slice,
 
 }  // namespace
 
+void define_static_slice(ynn_subgraph& subgraph, ynn_node& node,
+                         uint32_t input_id, uint32_t* output_id,
+                         std::vector<ynn_node::static_slice::slice> slices,
+                         bool slice_dims) {
+  const ynn_value& input = subgraph.value(input_id);
+
+  std::reverse(slices.begin(), slices.end());
+
+  ynn_node::static_slice op;
+  op.slice_dims = slice_dims;
+  op.slices = std::move(slices);
+
+  // Propagate shape.
+  std::vector<slinky::expr> output_extents = input.extents;
+  if (op.slice_dims) {
+    for (const slice_info& slice : op.slices) {
+      assert(slice.axis < output_extents.size());
+      output_extents.erase(output_extents.begin() + slice.axis);
+    }
+  } else {
+    for (auto i = op.slices.begin(); i != op.slices.end();) {
+      const slice_info& slice = *i;
+      assert(slice.axis < output_extents.size());
+      auto begin_end = calc_begin_end(slice, output_extents[slice.axis]);
+      const slinky::expr& begin = begin_end.first;
+      const slinky::expr& end = begin_end.second;
+      if (slinky::prove_true(begin == 0 && end == output_extents[slice.axis]) &&
+          slice.stride == 1) {
+        i = op.slices.erase(i);
+      } else {
+        output_extents[slice.axis] = slinky::simplify(
+            slinky::ceil_div<slinky::expr>(max(end - begin, 0), slice.stride));
+        if (slinky::prove_true(output_extents[slice.axis] == 1)) {
+          output_extents[slice.axis] = {};
+        }
+        ++i;
+      }
+    }
+  }
+
+  if (op.slices.empty() && *output_id == YNN_INVALID_VALUE_ID) {
+    // Slice is a no-op.
+    *output_id = input_id;
+    return;
+  }
+
+  ynn_value& output = subgraph.get_output_value(output_id, input);
+  output.extents = std::move(output_extents);
+
+  node.inputs = {input_id};
+  node.outputs = {output.id};
+  node.op = std::move(op);
+  node.create = [](const ynn_node& node, ynn_runtime& runtime) {
+    const ynn_node::static_slice& op =
+        std::get<ynn_node::static_slice>(node.op);
+    const ynn_runtime_value& input = runtime.value(node.inputs[0]);
+    ynn_runtime_value& output = runtime.value(node.outputs[0]);
+
+    output.make_buffer(runtime, input.buffer->elem_size());
+
+    if (!slinky::prove_true(output.extent(0) == 1)) {
+      // Don't create output buffers where dimension 0 is not dense.
+      output.buffer->dim(0).stride = output.buffer->elem_size();
+    }
+
+    const int rank = input.rank();
+    std::vector<slinky::var> dims = runtime.globals.make_dims(rank);
+    slinky::func::input func_input{
+        input.buffer, make_elementwise_bounds(dims, input.physical_extents())};
+    if (!op.slice_dims) {
+      func_input.output_crop.resize(rank);
+    }
+    for (const slice_info& slice : op.slices) {
+      const int d = slice.axis;
+      auto begin_end = calc_begin_end(slice, input.physical_extent(d));
+      const slinky::expr& begin = begin_end.first;
+      if (op.slice_dims) {
+        dims.erase(dims.begin() + d);
+        func_input.bounds[d] = slinky::point(begin);
+      } else {
+        func_input.bounds[d] = func_input.bounds[d] * slice.stride + begin;
+        func_input.output_crop[d] = all_bounds(output.physical_extent(d));
+      }
+    }
+    auto func =
+        slinky::func::make_copy(std::move(func_input), {output.buffer, dims});
+
+    runtime.funcs.push_back(std::move(func));
+    return ynn_status_success;
+  };
+}
+
 extern "C" {
 
 ynn_status ynn_define_static_slice(ynn_subgraph_t subgraph, size_t num_axes,
@@ -64,9 +159,9 @@ ynn_status ynn_define_static_slice(ynn_subgraph_t subgraph, size_t num_axes,
   YNN_RETURN_IF_ERROR(validate_subgraph("static_slice", subgraph));
   YNN_RETURN_IF_ERROR(
       validate_input_tensor("static_slice", subgraph, "input_id", input_id));
-  if (!slice_dims && (ends == nullptr || strides == nullptr)) {
+  if (!slice_dims && ends == nullptr) {
     YNN_LOG_ERROR()
-        << "For node `static_slice`, ends and strides must be non-null when "
+        << "For node `static_slice`, ends must be non-null when "
            "YNN_NODE_FLAG_SLICE_DIMS is not set";
     return ynn_status_invalid_parameter;
   }
@@ -74,17 +169,16 @@ ynn_status ynn_define_static_slice(ynn_subgraph_t subgraph, size_t num_axes,
       validate_output_tensor("static_slice", subgraph, "output_id", output_id));
   const ynn_value& input = subgraph->value(input_id);
 
-  ynn_node::static_slice op;
-  op.slice_dims = (flags & YNN_NODE_FLAG_SLICE_DIMS) != 0;
-  op.slices.reserve(num_axes);
+  std::vector<slice_info> slices;
+  slices.reserve(num_axes);
   for (int d = 0; d < num_axes; ++d) {
     const int32_t dim = axis_to_slinky_dim(input.rank(), axes[d]);
     if (dim >= 0 && dim < input.rank()) {
-      op.slices.push_back({
+      slices.push_back({
           dim,
           begins[d],
           slice_dims ? 0 : ends[d],
-          slice_dims ? 0 : strides[d],
+          slice_dims ? 0 : (strides ? strides[d] : 1),
       });
     } else {
       // The implicit dimensions are broadcasts, slicing them is a no-op.
@@ -94,73 +188,12 @@ ynn_status ynn_define_static_slice(ynn_subgraph_t subgraph, size_t num_axes,
   }
 
   std::sort(
-      op.slices.begin(), op.slices.end(),
-      [](const slice_info& a, const slice_info& b) { return b.axis < a.axis; });
+      slices.begin(), slices.end(),
+      [](const slice_info& a, const slice_info& b) { return a.axis < b.axis; });
 
-  // Propagate rank.
-  ynn_value& output = subgraph->get_output_value(output_id, input);
-  output.extents = input.extents;
-  for (const slice_info& slice : op.slices) {
-    if (op.slice_dims) {
-      assert(slice.axis < output.extents.size());
-      output.extents.erase(output.extents.begin() + slice.axis);
-    } else {
-      auto begin_end = calc_begin_end(slice, output.extents[slice.axis]);
-      const slinky::expr& begin = begin_end.first;
-      const slinky::expr& end = begin_end.second;
-      output.extents[slice.axis] = end - begin;
-      if (slinky::prove_true(output.extents[slice.axis] == 1)) {
-        output.extents[slice.axis] = {};
-      }
-    }
-  }
-
-  // Make the node.
   ynn_node node;
-  node.inputs = {input_id};
-  node.outputs = {*output_id};
-  node.op = std::move(op);
-  node.create = [](const ynn_node& node, ynn_runtime& runtime) {
-    const ynn_node::static_slice& op =
-        std::get<ynn_node::static_slice>(node.op);
-    const ynn_runtime_value& input = runtime.value(node.inputs[0]);
-    ynn_runtime_value& output = runtime.value(node.outputs[0]);
-
-    output.make_buffer(runtime, input.buffer->elem_size());
-
-    const int rank = input.rank();
-    std::vector<slinky::var> dims = runtime.globals.make_dims(rank);
-    slinky::func::input func_input{
-        input.buffer, make_elementwise_bounds(dims, input.extents)};
-    if (!op.slice_dims) {
-      func_input.output_crop.resize(rank);
-    }
-    for (const slice_info& slice : op.slices) {
-      const int d = slice.axis;
-      auto begin_end = calc_begin_end(slice, input.extents[d]);
-      if (op.slice_dims) {
-        dims.erase(dims.begin() + d);
-        func_input.bounds[d] = slinky::point(begin_end.first);
-      } else {
-        const slinky::expr& begin = begin_end.first;
-        func_input.bounds[d] = func_input.bounds[d] + begin;
-        func_input.output_crop[d] = all_bounds(output.extents[d]);
-      }
-    }
-    auto func =
-        slinky::func::make_copy(std::move(func_input), {output.buffer, dims});
-
-    // TODO(dsharlet/vksnk): All copies probably need similar scheduling, we
-    // should have a unified way of doing this, or just make this the default.
-    auto sched = std::make_unique<scheduling_info>();
-    sched->scheduled_buffers.push_back({output.buffer, 0});
-    func.user_data() = sched.get();
-    runtime.scheduling_info_storage.push_back(std::move(sched));
-
-    runtime.funcs.push_back(std::move(func));
-    return ynn_status_success;
-  };
-
+  define_static_slice(*subgraph, node, input_id, output_id, std::move(slices),
+                      slice_dims);
   subgraph->add_node(std::move(node));
   return ynn_status_success;
 }

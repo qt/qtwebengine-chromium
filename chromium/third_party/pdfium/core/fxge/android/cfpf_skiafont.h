@@ -13,17 +13,11 @@
 #include "core/fxcrt/fx_codepage_forward.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/span.h"
-#include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_face.h"
-
-class CFPF_SkiaFontMgr;
-class CFPF_SkiaPathFont;
 
 class CFPF_SkiaFont {
  public:
-  CFPF_SkiaFont(CFPF_SkiaFontMgr* font_mgr,
-                const CFPF_SkiaPathFont* font,
-                FX_Charset uCharset);
+  CFPF_SkiaFont(RetainPtr<CFX_Face> face, FX_Charset uCharset);
   ~CFPF_SkiaFont();
 
   bool IsValid() const { return !!face_; }
@@ -33,8 +27,6 @@ class CFPF_SkiaFont {
   uint32_t GetFontData(uint32_t dwTable, pdfium::span<uint8_t> pBuffer);
 
  private:
-  UnownedPtr<CFPF_SkiaFontMgr> const font_mgr_;
-  UnownedPtr<const CFPF_SkiaPathFont> const font_;
   RetainPtr<CFX_Face> const face_;
   const FX_Charset charset_;
 };

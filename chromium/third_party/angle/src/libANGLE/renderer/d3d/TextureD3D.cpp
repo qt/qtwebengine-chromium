@@ -305,6 +305,13 @@ bool TextureD3D::shouldUseSetData(const ImageD3D *image) const
         return false;
     }
 
+    // Emulated RGBX/BGRX formats must always use the slow path to ensure the alpha channel is set
+    // to 1.0.
+    if (gl::IsRGBXOrBGRXFormat(internalFormat.sizedInternalFormat))
+    {
+        return false;
+    }
+
     // TODO(jmadill): Handle compressed internal formats
     return (mTexStorage && !internalFormat.compressed);
 }
@@ -970,7 +977,7 @@ angle::Result TextureD3D::initializeContents(const gl::Context *context,
     gl::PixelUnpackState zeroDataUnpackState;
     zeroDataUnpackState.alignment = 1;
 
-    angle::MemoryBuffer *zeroBuffer = nullptr;
+    const angle::MemoryBuffer *zeroBuffer = nullptr;
     ANGLE_CHECK_GL_ALLOC(contextD3D, context->getZeroFilledBuffer(imageBytes, &zeroBuffer));
 
     if (shouldUseSetData(image))

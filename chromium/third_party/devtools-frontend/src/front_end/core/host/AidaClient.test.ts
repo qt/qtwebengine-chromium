@@ -2,19 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert, expect} from 'chai';
+
 import {
-  describeWithEnvironment,
   restoreUserAgentForTesting,
   setUserAgentForTesting,
   updateHostConfig
 } from '../../testing/EnvironmentHelpers.js';
+import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
+import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
+import * as Platform from '../platform/platform.js';
 
 import * as Host from './host.js';
 import type {AidaCodeCompleteResult} from './InspectorFrontendHostAPI.js';
 
 const TEST_MODEL_ID = 'testModelId';
 
-describeWithEnvironment('AidaClient', () => {
+describe('AidaClient', () => {
+  setupLocaleHooks();
+  setupRuntimeHooks();
+
   beforeEach(() => {
     setUserAgentForTesting();
   });
@@ -28,6 +35,7 @@ describeWithEnvironment('AidaClient', () => {
       aidaAvailability: {
         disallowLogging: false,
       },
+      devToolsConsoleInsights: {}
     });
     const request = Host.AidaClient.AidaClient.buildConsoleInsightsRequest('foo');
     assert.deepEqual(request, {
@@ -518,9 +526,9 @@ describeWithEnvironment('AidaClient', () => {
     const provider = new Host.AidaClient.AidaClient();
     try {
       await getAllResults(provider);
-      expect.fail('provider.fetch did not throw');
+      assert.fail('provider.fetch did not throw');
     } catch (err) {
-      expect(err.message).equals('Server responded: permission denied');
+      assert.strictEqual((err as Error).message, 'Server responded: permission denied');
     }
   });
 
@@ -531,9 +539,9 @@ describeWithEnvironment('AidaClient', () => {
     const provider = new Host.AidaClient.AidaClient();
     try {
       await getAllResults(provider);
-      expect.fail('provider.fetch did not throw');
+      assert.fail('provider.fetch did not throw');
     } catch (err) {
-      expect(err.message).equals('doAidaConversation timed out');
+      assert.strictEqual((err as Error).message, 'doAidaConversation timed out');
     }
   });
 
@@ -544,9 +552,9 @@ describeWithEnvironment('AidaClient', () => {
     const provider = new Host.AidaClient.AidaClient();
     try {
       await getAllResults(provider);
-      expect.fail('provider.fetch did not throw');
+      assert.fail('provider.fetch did not throw');
     } catch (err) {
-      expect(err.message).equals('Request failed: {"statusCode":418}');
+      assert.strictEqual((err as Error).message, 'Request failed: {"statusCode":418}');
     }
   });
 
@@ -558,11 +566,11 @@ describeWithEnvironment('AidaClient', () => {
     const provider = new Host.AidaClient.AidaClient();
     try {
       await getAllResults(provider);
-      expect.fail('provider.fetch did not throw');
+      assert.fail('provider.fetch did not throw');
     } catch (err) {
-      expect(err.message)
-          .equals(
-              'Cannot send request: Cannot get OAuth credentials {\'@type\': \'type.googleapis.com/google.rpc.DebugInfo\', \'detail\': \'DETAILS\'}');
+      assert.strictEqual(
+          (err as Error).message,
+          'Cannot send request: Cannot get OAuth credentials {\'@type\': \'type.googleapis.com/google.rpc.DebugInfo\', \'detail\': \'DETAILS\'}');
     }
   });
 
@@ -574,19 +582,10 @@ describeWithEnvironment('AidaClient', () => {
     }
 
     it('should return NO_INTERNET when navigator is not online', async () => {
-      const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator')!;
-      Object.defineProperty(globalThis, 'navigator', {
-        get() {
-          return {onLine: false};
-        },
-      });
+      sinon.stub(Platform.HostRuntime.HOST_RUNTIME, 'getOnLine').returns(false);
 
-      try {
-        const result = await Host.AidaClient.AidaClient.checkAccessPreconditions();
-        assert.strictEqual(result, Host.AidaClient.AidaAccessPreconditions.NO_INTERNET);
-      } finally {
-        Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
-      }
+      const result = await Host.AidaClient.AidaClient.checkAccessPreconditions();
+      assert.strictEqual(result, Host.AidaClient.AidaAccessPreconditions.NO_INTERNET);
     });
 
     it('should return NO_ACCOUNT_EMAIL when the syncInfo doesn\'t contain accountEmail', async () => {
@@ -706,10 +705,11 @@ describeWithEnvironment('AidaClient', () => {
           },
         };
         await provider.completeCode(request);
+        assert.fail('should have thrown');
       } catch (err) {
-        expect(err.message)
-            .equals(
-                'Cannot send request: Cannot get OAuth credentials {\'@type\': \'type.googleapis.com/google.rpc.DebugInfo\', \'detail\': \'DETAILS\'}');
+        assert.strictEqual(
+            (err as Error).message,
+            'Cannot send request: Cannot get OAuth credentials {\'@type\': \'type.googleapis.com/google.rpc.DebugInfo\', \'detail\': \'DETAILS\'}');
       }
     });
 
@@ -729,9 +729,25 @@ describeWithEnvironment('AidaClient', () => {
       };
       try {
         await provider.completeCode(request);
+        assert.fail('should have thrown');
       } catch (err) {
-        expect(err.message).equals('Empty response');
+        assert.strictEqual((err as Error).message, 'Empty response');
       }
+    });
+  });
+
+  describe('getClientFeatureName', () => {
+    it('returns the name for a valid ClientFeature', () => {
+      assert.strictEqual(
+          Host.AidaClient.getClientFeatureName(Host.AidaClient.ClientFeature.CHROME_CONSOLE_INSIGHTS),
+          'CHROME_CONSOLE_INSIGHTS');
+      assert.strictEqual(
+          Host.AidaClient.getClientFeatureName(Host.AidaClient.ClientFeature.CLIENT_FEATURE_UNSPECIFIED),
+          'CLIENT_FEATURE_UNSPECIFIED');
+    });
+
+    it('throws for an invalid ClientFeature', () => {
+      assert.throws(() => Host.AidaClient.getClientFeatureName(1234 as Host.AidaClient.ClientFeature));
     });
   });
 });

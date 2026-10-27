@@ -1,0 +1,12 @@
+Name: googletest
+Short Name: googletest
+URL: https://github.com/google/googletest
+Version: 1.8.0
+Revision: eb2d85edd0bff7a712b6aff147cd9f789f0d7d0b
+License: BSD-3-Clause
+License File: src/LICENSE
+Security Critical: no
+Shipped: no
+
+Description:
+Google's framework for writing C++ tests on a variety of platforms.

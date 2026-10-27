@@ -27,7 +27,7 @@
 
 #include "dawn/wire/WireServer.h"
 
-#include "dawn/wire/server/Server.h"
+#include "src/dawn/wire/server/Server.h"
 
 namespace dawn::wire {
 
@@ -89,18 +89,6 @@ MemoryTransferService::ReadHandle::~ReadHandle() = default;
 MemoryTransferService::WriteHandle::WriteHandle() = default;
 
 MemoryTransferService::WriteHandle::~WriteHandle() = default;
-
-void MemoryTransferService::WriteHandle::SetTarget(void* data) {
-    mTargetData = static_cast<uint8_t*>(data);
-}
-void MemoryTransferService::WriteHandle::SetDataLength(size_t dataLength) {
-    mDataLength = dataLength;
-}
-std::span<uint8_t> MemoryTransferService::WriteHandle::GetTarget() const {
-    DAWN_ASSERT(mTargetData != nullptr);
-    return std::span<uint8_t>(mTargetData, mDataLength);
-}
-
 }  // namespace server
 
 }  // namespace dawn::wire

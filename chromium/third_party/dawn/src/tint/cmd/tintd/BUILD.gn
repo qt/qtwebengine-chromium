@@ -44,18 +44,12 @@ if (tint_build_tintd && tint_build_wgsl_reader) {
     sources = [ "main.cc" ]
     deps = [
       "${dawn_root}/src/utils",
+      "${tint_src_dir}:langsvr",
+      "${tint_src_dir}/lang/wgsl/ls",
       "${tint_src_dir}/utils",
       "${tint_src_dir}/utils/ice",
       "${tint_src_dir}/utils/macros",
       "${tint_src_dir}/utils/rtti",
     ]
-
-    if (tint_build_tintd) {
-      deps += [ "${tint_src_dir}:langsvr" ]
-    }
-
-    if (tint_build_tintd && tint_build_wgsl_reader) {
-      deps += [ "${tint_src_dir}/lang/wgsl/ls" ]
-    }
   }
 }

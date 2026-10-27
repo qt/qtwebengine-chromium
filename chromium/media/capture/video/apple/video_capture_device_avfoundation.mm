@@ -232,8 +232,6 @@ AVCaptureDeviceFormat* FindBestCaptureFormat(
   // Protects concurrent setting and using |frameReceiver_|. Note that the
   // GUARDED_BY decoration below does not have any effect.
   base::Lock _lock;
-  // Used to avoid UAF in -captureOutput.
-  base::Lock _destructionLock;
   base::Lock _metadataLock;
   raw_ptr<media::VideoCaptureDeviceAVFoundationFrameReceiver> _frameReceiver
       GUARDED_BY(_lock);  // weak.
@@ -271,7 +269,6 @@ AVCaptureDeviceFormat* FindBestCaptureFormat(
   // pending until we're ready to take another photo, which involves a PostTask
   // back to the main thread after the photo was taken.
   size_t _pendingTakePhotos;
-  SelfHolder _weakPtrHolderForTakePhoto;
 
   // For testing.
   base::RepeatingCallback<void()> _onPhotoOutputStopped;
@@ -325,7 +322,6 @@ AVCaptureDeviceFormat* FindBestCaptureFormat(
     _useGPUMemoryBuffer = true;
     _capturedFirstFrame = false;
     _weakPtrHolderForStallCheck.the_self = self;
-    _weakPtrHolderForTakePhoto.the_self = self;
     [self setFrameReceiver:frameReceiver];
     _captureSession = [[AVCaptureSession alloc] init];
     _sampleBufferTransformer = media::SampleBufferTransformer::Create();
@@ -365,45 +361,36 @@ AVCaptureDeviceFormat* FindBestCaptureFormat(
   // inside stopCapture() below which would deadlock, we ensure that the photo
   // output is already stopped before taking `_lock`.
   [self stopPhotoOutput];
-  {
-    // To avoid races with concurrent callbacks, grab the lock before stopping
-    // capture and clearing all the variables.
-    base::AutoLock lock(_lock);
 
-    // Cleanup AVCaptureSession
-    // 1. Stop the AVCaptureSession
-    [self stopCapture];
-    // 2. Remove AVCaptureInputs and AVCaptureOutputs
-    for (AVCaptureInput* input in _captureSession.inputs) {
-      [_captureSession removeInput:input];
-    }
-    for (AVCaptureOutput* output in _captureSession.outputs) {
-      [_captureSession removeOutput:output];
-    }
-    // 3. Set the AVCaptureSession to nil to remove strong references
-    _captureSession = nil;
+  // To avoid races with concurrent callbacks, grab the lock before stopping
+  // capture and clearing all the variables.
+  base::AutoLock lock(_lock);
 
-    // Cleanup AVCaptureDevice
-    // 1. Unlock any configuration (if locked)
-    [_captureDevice unlockForConfiguration];
-    // 2. Remove observer
-    [_captureDevice removeObserver:self forKeyPath:@"portraitEffectActive"];
-    // 3. Release and deallocate the capture device
-    _captureDevice = nil;
-
-    _frameReceiver = nullptr;
-    _sampleBufferTransformer.reset();
-    _mainThreadTaskRunner = nullptr;
-    _sampleQueue = nil;
+  // Cleanup AVCaptureSession
+  // 1. Stop the AVCaptureSession
+  [self stopCapture];
+  // 2. Remove AVCaptureInputs and AVCaptureOutputs
+  for (AVCaptureInput* input in _captureSession.inputs) {
+    [_captureSession removeInput:input];
   }
-  {
-    // Ensures -captureOutput has finished before we continue the destruction
-    // steps. If -captureOutput grabbed the destruction lock before us this
-    // prevents UAF. If -captureOutput grabbed the destruction lock after us
-    // it will exit early because |_frameReceiver| is already null at this
-    // point.
-    base::AutoLock destructionLock(_destructionLock);
+  for (AVCaptureOutput* output in _captureSession.outputs) {
+    [_captureSession removeOutput:output];
   }
+  // 3. Set the AVCaptureSession to nil to remove strong references
+  _captureSession = nil;
+
+  // Cleanup AVCaptureDevice
+  // 1. Unlock any configuration (if locked)
+  [_captureDevice unlockForConfiguration];
+  // 2. Remove observer
+  [_captureDevice removeObserver:self forKeyPath:@"portraitEffectActive"];
+  // 3. Release and deallocate the capture device
+  _captureDevice = nil;
+
+  _frameReceiver = nullptr;
+  _sampleBufferTransformer.reset();
+  _mainThreadTaskRunner = nullptr;
+  _sampleQueue = nil;
 }
 
 - (void)setFrameReceiver:
@@ -639,11 +626,6 @@ AVCaptureDeviceFormat* FindBestCaptureFormat(
     // the next takePhotoInternal(), so there is nothing more to do here.
     return;
   }
-  // `_pendingTakePhotos` just went from 0 to 1. In case the 60 second delayed
-  // task to perform stopPhotoOutput() is in-flight, invalidate weak ptrs to
-  // cancel any such operation.
-  _weakPtrHolderForTakePhoto.weak_ptr_factory.InvalidateWeakPtrs();
-
   // Ready to take a photo immediately?
   // Thread-safe because `_photoOutput` is only modified on the main thread.
   if (_photoOutput) {
@@ -675,16 +657,17 @@ AVCaptureDeviceFormat* FindBestCaptureFormat(
   }
   // A delay is needed before taking the photo or else the photo may be dark.
   // 2 seconds was enough in manual testing; we delay by 3 for good measure.
+  __weak VideoCaptureDeviceAVFoundation* weakSelf = self;
   _mainThreadTaskRunner->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(
-          [](base::WeakPtr<SelfHolder> weakSelf) {
-            if (!weakSelf.get()) {
-              return;
+          [](VideoCaptureDeviceAVFoundation* __weak wSelf) {
+            VideoCaptureDeviceAVFoundation* sSelf = wSelf;
+            if (sSelf) {
+              [sSelf takePhotoInternal];
             }
-            [weakSelf.get()->the_self takePhotoInternal];
           },
-          _weakPtrHolderForTakePhoto.weak_ptr_factory.GetWeakPtr()),
+          weakSelf),
       base::Seconds(3));
 }
 
@@ -747,19 +730,23 @@ AVCaptureDeviceFormat* FindBestCaptureFormat(
   }
   // Whether we succeeded or failed, we need to resolve the pending
   // takePhoto() operation.
+  __weak VideoCaptureDeviceAVFoundation* weakSelf = self;
   _mainThreadTaskRunner->PostTask(
       FROM_HERE, base::BindOnce(
-                     [](base::WeakPtr<SelfHolder> weakSelf) {
-                       if (!weakSelf.get()) {
-                         return;
+                     [](VideoCaptureDeviceAVFoundation* __weak wSelf) {
+                       VideoCaptureDeviceAVFoundation* sSelf = wSelf;
+                       if (sSelf) {
+                         [sSelf takePhotoResolved];
                        }
-                       [weakSelf.get()->the_self takePhotoResolved];
                      },
-                     _weakPtrHolderForTakePhoto.weak_ptr_factory.GetWeakPtr()));
+                     weakSelf));
 }
 
 - (void)takePhotoResolved {
   DCHECK(_mainThreadTaskRunner->BelongsToCurrentThread());
+  if (_pendingTakePhotos == 0) {
+    return;
+  }
   --_pendingTakePhotos;
   if (_pendingTakePhotos > 0u) {
     // Take another photo.
@@ -769,28 +756,31 @@ AVCaptureDeviceFormat* FindBestCaptureFormat(
   // All pending takePhoto()s have completed. If no more photos are taken
   // within 60 seconds, stop photo output to avoid expensive MJPEG conversions
   // going forward.
+  __weak VideoCaptureDeviceAVFoundation* weakSelf = self;
   _mainThreadTaskRunner->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(
-          [](base::WeakPtr<SelfHolder> weakSelf) {
-            if (!weakSelf.get()) {
-              return;
+          [](VideoCaptureDeviceAVFoundation* __weak wSelf) {
+            VideoCaptureDeviceAVFoundation* sSelf = wSelf;
+            if (sSelf) {
+              [sSelf stopPhotoOutput];
             }
-            [weakSelf.get()->the_self stopPhotoOutput];
           },
-          _weakPtrHolderForTakePhoto.weak_ptr_factory.GetWeakPtr()),
+          weakSelf),
       base::Seconds(kTimeToWaitBeforeStoppingPhotoOutputInSeconds));
 }
 
 - (void)stopPhotoOutput {
   DCHECK(_mainThreadTaskRunner->BelongsToCurrentThread());
+  if (_pendingTakePhotos > 0u) {
+    return;
+  }
   // Already stopped?
   // Thread-safe because `_photoOutput` is only modified on the main thread.
   if (!_photoOutput) {
     return;
   }
   // Cancel all in-flight operations.
-  _weakPtrHolderForTakePhoto.weak_ptr_factory.InvalidateWeakPtrs();
   {
     base::AutoLock lock(_lock);
     if (_captureSession) {
@@ -1082,10 +1072,6 @@ AVCaptureDeviceFormat* FindBestCaptureFormat(
            fromConnection:(AVCaptureConnection*)connection {
   VLOG(3) << __func__;
 
-  // Concurrent calls into |_frameReceiver| are not supported, so take |_lock|
-  // before any of the subsequent paths. The |_destructionLock| must be grabbed
-  // first to avoid races with -dealloc.
-  base::AutoLock destructionLock(_destructionLock);
   base::AutoLock lock(_lock);
   _capturedFrameSinceLastStallCheck = YES;
   if (!_frameReceiver || !_sampleBufferTransformer) {

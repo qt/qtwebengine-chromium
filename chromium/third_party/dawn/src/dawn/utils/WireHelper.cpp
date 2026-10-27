@@ -25,7 +25,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/utils/WireHelper.h"
+#include "src/dawn/utils/WireHelper.h"
 
 #include <algorithm>
 #include <cstring>
@@ -37,15 +37,15 @@
 #include <string>
 #include <system_error>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/Log.h"
-#include "dawn/common/SystemUtils.h"
 #include "dawn/dawn_proc.h"
 #include "dawn/native/DawnNative.h"
-#include "dawn/utils/TerribleCommandBuffer.h"
 #include "dawn/wire/WireClient.h"
 #include "dawn/wire/WireServer.h"
 #include "partition_alloc/pointers/raw_ptr.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/Log.h"
+#include "src/dawn/common/SystemUtils.h"
+#include "src/dawn/utils/TerribleCommandBuffer.h"
 
 namespace dawn::utils {
 
@@ -110,6 +110,8 @@ class WireHelperDirect : public WireHelper {
         return wgpu::Instance(backendInstance);
     }
 
+    WGPUDevice GetBackendDevice(const wgpu::Device& device) override { return device.Get(); }
+
     void BeginWireTrace(const char* name) override {}
 
     bool FlushClient() override { return true; }
@@ -159,6 +161,11 @@ class WireHelperProxy : public WireHelper {
         mWireServer->InjectInstance(backendInstance, reserved.handle);
 
         return wgpu::Instance::Acquire(reserved.instance);
+    }
+
+    WGPUDevice GetBackendDevice(const wgpu::Device& device) override {
+        auto handle = mWireClient->GetWireHandle(device.Get());
+        return mWireServer->GetDevice(handle.id, handle.generation);
     }
 
     void BeginWireTrace(const char* name) override {

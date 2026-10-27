@@ -22,27 +22,25 @@ if (build_with_chromium) {
 } else {
   config("gmock_config") {
     visibility = [ ":*" ]
+    include_dirs = [ "src/googlemock/include" ]
+  }
 
+  config("gmock_warnings") {
+    visibility = [ ":*" ]
     cflags_cc = []
     if (is_clang) {
-      cflags_cc += [
-        "-Wno-exit-time-destructors",
-        "-Wno-sign-compare",
-      ]
+      cflags_cc += [ "-Wno-sign-compare" ]
     }
-
-    include_dirs = [ "src/googlemock/include" ]
   }
 
   config("gtest_config") {
     visibility = [ ":*" ]
-
     include_dirs = [ "src/googletest/include" ]
+  }
 
+  config("gtest_warnings") {
+    visibility = [ ":*" ]
     cflags_cc = []
-    if (is_clang) {
-      cflags_cc += [ "-Wno-exit-time-destructors" ]
-    }
 
     if (is_win) {
       cflags_cc += [ "-Wno-sign-compare" ]
@@ -60,6 +58,10 @@ if (build_with_chromium) {
       ":gmock_config",
       ":gtest_config",
     ]
+    configs += [
+      ":gmock_warnings",
+      ":gtest_warnings",
+    ]
 
     public_deps = [ ":gtest" ]
     include_dirs = [ "src/googlemock" ]
@@ -73,6 +75,7 @@ if (build_with_chromium) {
     ]
 
     public_configs = [ ":gtest_config" ]
+    configs += [ ":gtest_warnings" ]
     include_dirs = [ "src/googletest" ]
   }
 

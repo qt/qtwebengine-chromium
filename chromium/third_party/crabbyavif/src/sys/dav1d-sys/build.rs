@@ -99,8 +99,8 @@ fn main() -> Result<(), String> {
     let allowlist_items = &[
         "DAV1D_MAX_THREADS",
         "dav1d_close",
+        "dav1d_data_create",
         "dav1d_data_unref",
-        "dav1d_data_wrap",
         "dav1d_default_settings",
         "dav1d_error",
         "dav1d_get_picture",

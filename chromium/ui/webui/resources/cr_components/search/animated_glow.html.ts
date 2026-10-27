@@ -20,13 +20,23 @@ export function getHtml(this: SearchAnimatedGlowElement) {
    * - DoubleGradientMask is a stencil that sits on top of DoubleGradient.
    * It has a solid background but is inset from the edge, creating a
    * transparent border that reveals the gradient animation of DoubleGradient,
-   * creating an opaque snake effect.
+   * creating an opaque snake effect. It is to help background cover the
+   * gradient better.
    * - Gradient is the gradient border and inner glow, depending
    * on the Background styling.
    * - Background and its ::before apply a frosted glass effect in drag and
    * drop mode, and act as overlay to help create the gradient border
-   * and background colorin composebox.
-   * - Audio wave provides the voice animation to show browser is listening
+   * and background color in the composebox/searchbox. It moves to create a shutter
+   * expanding glow effect.
+   * - Audio wave/recording wave provides the voice animation to show browser is listening.
+   * Its contents are absolutely positioned, so it is not in the full overlay div.
+   * - Double gradient mask is the secondary mask to support 'Background' div in covering up
+   *  the 2 background gradient colors (having 2 makes that gradient effect stronger, too).
+   * - 'fullContainerOverlay' is 100% of the size of the composebox/searchbox. This overlay goes over
+   * the background and gradient effects. It allows for any animated elements within it to be
+   * relatively positioned (in flexbox) throughout the composebox/searchbox anywhere within the whole
+   * composebox/searchbox. Only animations should go in here. Recording wave goes in here.
+   * NOTE: Voice search animations are not dependent on 'energyEffectAnimationEnabled' flag.
    */
 
   // clang-format off
@@ -34,7 +44,7 @@ export function getHtml(this: SearchAnimatedGlowElement) {
     ${this.energyEffectAnimationEnabled &&
       (this.animationState === GlowAnimationState.DRAGGING ||
        this.animationState === GlowAnimationState.SUBMITTING ||
-       this.isZeroState) ? html`
+      this.isZeroState || this.entrypointName === 'Realbox') ? html`
       <div class="gradient-blur-wrapper">
         <div class="gradient"></div>
       </div>
@@ -54,13 +64,32 @@ export function getHtml(this: SearchAnimatedGlowElement) {
           part="composebox-background">
       </div>
     `}
-    ${this.requiresVoice ? html`
-      <audio-wave
-          ?is-listening="${this.animationState === GlowAnimationState.LISTENING}"
-          .transcript="${this.transcript}"
-          .receivedSpeech="${this.receivedSpeech}">
-      </audio-wave>
-    ` : ''}
+
+    <div id="fullContainerOverlay">
+      ${this.requiresVoice && this.coloredTicTacVoiceAnimationEnabled ?
+          html`
+              ${this.isListening ?
+                  html`<slot name="carousel"></slot>`
+              : ''}
+              <recording-wave id='recordingWave'
+                  class='audio-animation'
+                  .darkThemeColorsEnabled="${this.darkThemeColorsEnabled}"
+                  .isListening="${this.isListening}"
+              ></recording-wave>
+              ${this.isListening ?
+                  html`<slot name="tool-chip"></slot>`
+              : ''}
+          `
+      : ''}
+    </div>
+
+    ${this.requiresVoice && !this.coloredTicTacVoiceAnimationEnabled ?
+      html`<audio-wave class='audio-animation'
+              .isListening="${this.isListening}"
+              .transcript="${this.transcript}"
+              .receivedSpeech="${this.receivedSpeech}">
+          </audio-wave>`
+    : ''}
   <!--_html_template_end_-->`;
   // clang-format on
 }

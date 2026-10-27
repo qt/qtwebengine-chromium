@@ -52,6 +52,7 @@
 #include "services/network/public/cpp/parsed_headers.h"
 #include "services/network/public/cpp/sri_message_signatures.h"
 #include "services/network/public/cpp/timing_allow_origin_parser.h"
+#include "services/network/public/cpp/unencoded_digests.h"
 #include "services/network/public/mojom/connection_allowlist.mojom-blink.h"
 #include "services/network/public/mojom/integrity_policy.mojom-blink.h"
 #include "services/network/public/mojom/no_vary_search.mojom-blink-forward.h"
@@ -60,6 +61,7 @@
 #include "services/network/public/mojom/sri_message_signature.mojom-blink.h"
 #include "services/network/public/mojom/supports_loading_mode.mojom-blink.h"
 #include "services/network/public/mojom/timing_allow_origin.mojom-blink.h"
+#include "services/network/public/mojom/unencoded_digest.mojom-blink.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/mime_util/mime_util.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
@@ -115,6 +117,10 @@ blink::LoadingMode ConvertToBlink(LoadingMode in) {
   return static_cast<blink::LoadingMode>(in);
 }
 
+blink::UnencodedDigestIssue ConvertToBlink(UnencodedDigestIssue in) {
+  return in;
+}
+
 // ===== Converters for other basic Blink types =====
 ::blink::String ConvertToBlink(const std::string& in) {
   return ::blink::String::FromUtf8(in);
@@ -131,6 +137,11 @@ blink::LoadingMode ConvertToBlink(LoadingMode in) {
 scoped_refptr<const ::blink::SecurityOrigin> ConvertToBlink(
     const url::Origin& in) {
   return ::blink::SecurityOrigin::CreateFromUrlOrigin(in);
+}
+
+network::IntegrityMetadata ConvertToBlink(
+    const network::IntegrityMetadata& in) {
+  return in;
 }
 
 // ====== Generic container converters =====
@@ -318,6 +329,12 @@ blink::SRIMessageSignatureError ConvertToBlink(SRIMessageSignatureError in) {
   return in;
 }
 
+blink::IntegrityMetadataPtr ConvertToBlink(const IntegrityMetadataPtr& in) {
+  CHECK(in);
+  return blink::IntegrityMetadata::New(in->algorithm,
+                                       ConvertToBlink(in->value));
+}
+
 std::optional<::blink::Vector<uint8_t>> ConvertToBlink(
     const std::optional<std::vector<uint8_t>>& in) {
   if (!in) {
@@ -365,6 +382,12 @@ blink::SRIMessageSignaturesPtr ConvertToBlink(
                                           ConvertToBlink(in->issues));
 }
 
+blink::UnencodedDigestsPtr ConvertToBlink(const UnencodedDigestsPtr& in) {
+  CHECK(in);
+  return blink::UnencodedDigests::New(ConvertToBlink(in->digests),
+                                      ConvertToBlink(in->issues));
+}
+
 blink::ParsedHeadersPtr ConvertToBlink(const ParsedHeadersPtr& in) {
   CHECK(in);
   return blink::ParsedHeaders::New(
@@ -395,7 +418,12 @@ blink::ParsedHeadersPtr ConvertToBlink(const ParsedHeadersPtr& in) {
           ? std::make_optional(ConvertToBlink(in->content_language.value()))
           : std::nullopt,
       ConvertToBlink(in->no_vary_search_with_parse_error),
-      in->observe_browsing_topics, in->allow_cross_origin_event_reporting);
+      in->observe_browsing_topics, in->allow_cross_origin_event_reporting,
+      /*declarative_performance_observer_policy=*/nullptr,
+      in->prefetch_activation_beacon_endpoint.has_value()
+          ? std::make_optional(
+                ConvertToBlink(in->prefetch_activation_beacon_endpoint.value()))
+          : std::nullopt);
 }
 
 }  // namespace mojom
@@ -1144,6 +1172,14 @@ ParseSRIMessageSignaturesFromHeaders(const String& raw_headers) {
       net::HttpUtil::AssembleRawHeaders(raw_headers.Latin1()));
   return network::mojom::ConvertToBlink(
       network::ParseSRIMessageSignaturesFromHeaders(*headers));
+}
+
+network::mojom::blink::UnencodedDigestsPtr ParseUnencodedDigestsFromHeaders(
+    const String& raw_headers) {
+  auto headers = base::MakeRefCounted<net::HttpResponseHeaders>(
+      net::HttpUtil::AssembleRawHeaders(raw_headers.Latin1()));
+  return network::mojom::ConvertToBlink(
+      network::ParseUnencodedDigestsFromHeaders(*headers));
 }
 
 network::mojom::blink::TimingAllowOriginPtr ParseTimingAllowOrigin(

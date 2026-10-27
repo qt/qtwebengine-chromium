@@ -3,9 +3,10 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
+#include "ynnpack/xnnpack/dynamic_quantization.h"
+
 #include <algorithm>
 #include <cassert>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -21,7 +22,6 @@
 #include "ynnpack/subgraph/runtime.h"
 #include "ynnpack/subgraph/slinky.h"
 #include "ynnpack/subgraph/subgraph.h"
-#include "ynnpack/xnnpack/utils.h"
 #include "slinky/builder/pipeline.h"
 #include "slinky/runtime/buffer.h"
 #include "slinky/runtime/expr.h"
@@ -90,22 +90,40 @@ std::pair<float, int32_t> compute_qd8_params(T min, T max) {
 // Call compute_qd8_params for each element.
 template <typename T>
 auto make_compute_qd8_params_impl(int32_t output_zero_point) {
-  return [=](const slinky::buffer<const T>& min_max,
-             const slinky::buffer<float>& scale,
-             const slinky::buffer<int32_t>& zero_point) -> index_t {
+  return [=](slinky::raw_buffer min_max, slinky::raw_buffer scale,
+             slinky::raw_buffer zero_point) -> index_t {
+    assert(min_max.rank > 0);
     const index_t index_stride_bytes =
         min_max.dim(min_max.rank - 1).stride();
     assert(index_stride_bytes % sizeof(T) == 0);
     const index_t index_stride = index_stride_bytes / sizeof(T);
-    slinky::for_each_contiguous_slice(scale,
-        [=](index_t n, float* scale, int32_t* zero_point, const T* min_max) {
+
+    slinky::dim scale_n[1];
+    slinky::dim zero_point_n[1];
+    slinky::dim min_max_n[1];
+
+    if (!fuse_and_slice_leading_dims<1>(scale_n, scale, zero_point_n,
+                                        zero_point, min_max_n, min_max)) {
+      return 0;
+    }
+
+    assert(is_contiguous(scale_n[0], scale.elem_size));
+    assert(is_contiguous(zero_point_n[0], zero_point.elem_size));
+    assert(is_contiguous(min_max_n[0], min_max.elem_size));
+    const index_t n = scale_n[0].extent();
+
+    slinky::for_each_element(
+        [&](void* scale, void* zero_point, const void* min_max) {
           for (index_t i = 0; i < n; ++i) {
-            std::tie(scale[i], zero_point[i]) =
-                compute_qd8_params(min_max[i], min_max[i + index_stride]);
-            zero_point[i] += output_zero_point;
+            float& scale_i = reinterpret_cast<float*>(scale)[i];
+            int32_t& zero_point_i = reinterpret_cast<int32_t*>(zero_point)[i];
+            const T* min_max_i = reinterpret_cast<const T*>(min_max) + i;
+            std::tie(scale_i, zero_point_i) =
+                compute_qd8_params(min_max_i[0], min_max_i[index_stride]);
+            zero_point_i += output_zero_point;
           }
         },
-        zero_point, min_max);
+        scale, zero_point, min_max);
     return 0;
   };
 }
@@ -170,7 +188,8 @@ ynn_status define_qd8_params(ynn_subgraph_t subgraph, size_t num_nonbatch_axes,
         YNN_UNREACHABLE;
     }
 
-    auto sched = runtime.make_schedule(dims, scale.buffer, node.outputs[0]);
+    auto sched =
+        runtime.make_schedule(dims, scale.extents, scale.buffer->elem_size());
 
     // `make_schedule` schedules the scale output buffer, but we
     // also need to schedule the zero point buffer too.
@@ -192,11 +211,12 @@ ynn_status define_qd8_params(ynn_subgraph_t subgraph, size_t num_nonbatch_axes,
 }  // namespace
 
 ynn_status compute_qd8_params(ynn_subgraph_t subgraph, size_t num_nonbatch_axes,
-                              uint32_t input_id, uint32_t output_id) {
+                              uint32_t input_id, uint32_t output_id,
+                              uint32_t scale_id, uint32_t zero_point_id) {
   ynn_value& output = subgraph->value(output_id);
 
-  const ynn_value& scale = subgraph->value(output.scale_id);
-  const ynn_value& zero_point = subgraph->value(output.zero_point_id);
+  const ynn_value& scale = subgraph->value(scale_id);
+  const ynn_value& zero_point = subgraph->value(zero_point_id);
   assert(scale.rank() == zero_point.rank());
   (void)scale;
   (void)zero_point;
@@ -230,9 +250,9 @@ ynn_status compute_qd8_params(ynn_subgraph_t subgraph, size_t num_nonbatch_axes,
     output_zero_point = 128;
   }
 
-  status = define_qd8_params(subgraph, num_nonbatch_axes, nonbatch_axes,
-                             output_zero_point, min_max_id, output.scale_id,
-                             output.zero_point_id);
+  status =
+      define_qd8_params(subgraph, num_nonbatch_axes, nonbatch_axes,
+                        output_zero_point, min_max_id, scale_id, zero_point_id);
   if (status != ynn_status_success) {
     return status;
   }

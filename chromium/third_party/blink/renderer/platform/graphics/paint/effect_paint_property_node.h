@@ -262,8 +262,10 @@ class PLATFORM_EXPORT EffectPaintPropertyNode final
   }
 
   bool HasReferenceFilter() const {
-    return state_.filter_info &&
-           state_.filter_info->operations.HasReferenceFilter();
+    return (state_.filter_info &&
+            state_.filter_info->operations.HasReferenceFilter()) ||
+           (state_.backdrop_filter_info &&
+            state_.backdrop_filter_info->operations.HasReferenceFilter());
   }
   bool HasFilterThatMovesPixels() const {
     return state_.filter_info &&
@@ -286,6 +288,10 @@ class PLATFORM_EXPORT EffectPaintPropertyNode final
 
   bool HasDirectCompositingReasons() const {
     return state_.direct_compositing_reasons != CompositingReason::kNone;
+  }
+  bool RequiresCompositingForUnboundedElement() const {
+    return state_.direct_compositing_reasons &
+           CompositingReason::kUnboundedElement;
   }
   bool RequiresCompositingForBackdropFilterMask() const {
     return state_.direct_compositing_reasons &

@@ -6,6 +6,7 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
 
 #ifndef EIGEN_COMPLEX_AVX_H
 #define EIGEN_COMPLEX_AVX_H
@@ -141,10 +142,13 @@ EIGEN_STRONG_INLINE Packet4cf pset1<Packet4cf>(const std::complex<float>& from) 
 
 template <>
 EIGEN_STRONG_INLINE Packet4cf ploaddup<Packet4cf>(const std::complex<float>* from) {
-  // FIXME The following might be optimized using _mm256_movedup_pd
-  Packet2cf a = ploaddup<Packet2cf>(from);
-  Packet2cf b = ploaddup<Packet2cf>(from + 1);
-  return Packet4cf(_mm256_insertf128_ps(_mm256_castps128_ps256(a.v), b.v, 1));
+  // vbroadcastf128 + vpermilpd, 2 uops: broadcast the 16 bytes holding two
+  // complex<float> into both 128-bit lanes, then duplicate each complex so
+  // the result is {c0, c0, c1, c1}. The load has no alignment requirement;
+  // we cast the source pointer through void* rather than through double*
+  // because alignof(std::complex<float>) == 4 < alignof(double).
+  __m256 bcast = _mm256_broadcast_ps(reinterpret_cast<const __m128*>(static_cast<const void*>(from)));
+  return Packet4cf(_mm256_castpd_ps(_mm256_permute_pd(_mm256_castps_pd(bcast), 3 << 2)));
 }
 
 template <>

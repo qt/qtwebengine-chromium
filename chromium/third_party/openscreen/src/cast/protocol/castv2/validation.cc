@@ -9,11 +9,23 @@
 
 #include "cast/protocol/castv2/receiver_schema_data.h"
 #include "cast/protocol/castv2/streaming_schema_data.h"
+
+// NOTE: this is preferred over a public_configs entry in the BUILD.gn so that
+// the rest of this file / component gets checked for exit time destructors.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wexit-time-destructors"
+#endif
+
 #include "third_party/valijson/src/include/valijson/adapters/jsoncpp_adapter.hpp"
 #include "third_party/valijson/src/include/valijson/schema.hpp"
 #include "third_party/valijson/src/include/valijson/schema_parser.hpp"
 #include "third_party/valijson/src/include/valijson/utils/jsoncpp_utils.hpp"
 #include "third_party/valijson/src/include/valijson/validator.hpp"
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 #include "util/json/json_serialization.h"
 #include "util/osp_logging.h"
 #include "util/std_util.h"
@@ -67,17 +79,17 @@ std::vector<Error> Validate(const Json::Value& document,
 }
 
 std::vector<Error> ValidateStreamingMessage(const Json::Value& message) {
-  static valijson::Schema schema;
+  static valijson::Schema* const schema = new valijson::Schema();
   static std::once_flag flag;
-  std::call_once(flag, [] { LoadSchema(kStreamingSchema, &schema); });
-  return Validate(message, schema);
+  std::call_once(flag, [] { LoadSchema(kStreamingSchema, schema); });
+  return Validate(message, *schema);
 }
 
 std::vector<Error> ValidateReceiverMessage(const Json::Value& message) {
-  static valijson::Schema schema;
+  static valijson::Schema* const schema = new valijson::Schema();
   static std::once_flag flag;
-  std::call_once(flag, [] { LoadSchema(kReceiverSchema, &schema); });
-  return Validate(message, schema);
+  std::call_once(flag, [] { LoadSchema(kReceiverSchema, schema); });
+  return Validate(message, *schema);
 }
 
 }  // namespace openscreen::cast

@@ -26,6 +26,10 @@ export function getInsight<InsightName extends keyof InsightModels>(
   return insightSet.model[insightName];
 }
 
+export function isInsightKey(key: string): key is InsightKeys {
+  return Object.values(InsightKeys).includes(key as InsightKeys);
+}
+
 export function getLCP(insightSet: InsightSet):
     {value: Types.Timing.Micro, event: Types.Events.AnyLargestContentfulPaintCandidate}|null {
   const insight = getInsight(InsightKeys.LCP_BREAKDOWN, insightSet);

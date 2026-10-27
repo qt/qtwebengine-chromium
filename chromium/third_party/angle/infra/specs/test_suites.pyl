@@ -1115,6 +1115,32 @@
       },
     },
 
+    'angle_end2end_novulkan_gtests': {
+      'angle_end2end_tests': {
+        'android_args': [
+          '--shard-timeout=180',
+          '-v',
+          # We use this argument to save test artifacts.
+          '--render-test-output-dir=${ISOLATED_OUTDIR}',
+        ],
+        'android_swarming': {
+          'shards': 8,
+        },
+        'args': [
+          '--gtest_filter=-*Vulkan*',
+        ],
+        # Linux has issues with creating too many windows at once.
+        'linux_args': [
+          '--max-processes=4',
+          '--no-xvfb',
+        ],
+        'swarming': {
+          'shards': 2,
+        },
+        'use_isolated_scripts_api': True,
+      },
+    },
+
     'angle_end2end_vulkan_gtests': {
       'angle_end2end_tests': {
         'android_args': [
@@ -1649,7 +1675,7 @@
           'angle_skia_gold_test',
         ],
         'swarming': {
-          'shards': 6,
+          'shards': 8,
         },
       },
     },
@@ -1690,6 +1716,14 @@
       'angle_unit_gtests',
     ],
 
+    'android_novulkan_gtests': [
+      'angle_deqp_egl_gles_gtests',
+      'angle_deqp_gles2_gles_gtests',
+      'angle_deqp_gles3_gles_gtests',
+      'angle_end2end_novulkan_gtests',
+      'angle_unit_gtests',
+    ],
+
     'android_vulkan_gtests': [
       'angle_deqp_egl_vulkan_gtests',
       'angle_deqp_gles2_vulkan_gtests',
@@ -1719,10 +1753,19 @@
       'angle_trace_perf_vulkan_smoke_isolated_scripts',
     ],
 
+    'isolated_scripts_group_common_notrace': [
+      'angle_capture_isolated_scripts',
+      'angle_perf_smoke_isolated_scripts',
+    ],
+
     'isolated_scripts_group_perf': [
       'angle_perf_isolated_scripts',
       'angle_trace_perf_native_isolated_scripts',
       'angle_trace_perf_vulkan_isolated_scripts',
+    ],
+
+    'isolated_scripts_group_perf_notrace': [
+      'angle_perf_isolated_scripts',
     ],
 
     'isolated_scripts_group_pixel6': [
@@ -1784,37 +1827,6 @@
       'angle_cl_multiples_gtests',
       'angle_cl_non_uniform_work_group_gtests',
       'angle_cl_profiling_gtests',
-    ],
-
-    'linux_nvidia_ir_gtests': [
-      'angle_deqp_egl_gl_gtests',
-      'angle_deqp_egl_vulkan_gtests',
-      'angle_deqp_gles2_gl_gtests',
-      'angle_deqp_gles2_vulkan_gtests',
-      'angle_deqp_gles2_webgpu_gtests',
-      'angle_deqp_gles31_gl_gtests',
-      'angle_deqp_gles31_multisample_vulkan_gtests',
-      'angle_deqp_gles31_vulkan_gtests',
-      'angle_deqp_gles31_vulkan_rotate180_gtests',
-      'angle_deqp_gles31_vulkan_rotate270_gtests',
-      'angle_deqp_gles31_vulkan_rotate90_gtests',
-      'angle_deqp_gles3_gl_gtests',
-      'angle_deqp_gles3_multisample_vulkan_gtests',
-      'angle_deqp_gles3_vulkan_gtests',
-      'angle_deqp_gles3_vulkan_rotate180_gtests',
-      'angle_deqp_gles3_vulkan_rotate270_gtests',
-      'angle_deqp_gles3_vulkan_rotate90_gtests',
-      'angle_deqp_khr_gles2_vulkan_gtests',
-      'angle_deqp_khr_gles31_vulkan_gtests',
-      'angle_deqp_khr_gles32_vulkan_gtests',
-      'angle_deqp_khr_gles3_vulkan_gtests',
-      'angle_deqp_khr_glesext_vulkan_gtests',
-      'angle_deqp_khr_noctx_gles2_vulkan_gtests',
-      'angle_deqp_khr_noctx_gles32_vulkan_gtests',
-      'angle_deqp_khr_single_gles32_vulkan_gtests',
-      'angle_end2end_gtests',
-      'angle_gles1_conformance_gtests',
-      'angle_white_box_gtests',
     ],
 
     'mac_amd_and_intel_gtests': [

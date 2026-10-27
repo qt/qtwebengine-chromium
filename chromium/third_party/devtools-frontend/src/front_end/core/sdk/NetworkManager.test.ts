@@ -2,14 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Persistence from '../../models/persistence/persistence.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
-import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
-import {describeWithMockConnection, setMockConnectionResponseHandler} from '../../testing/MockConnection.js';
+import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
+import {MockCDPConnection} from '../../testing/MockCDPConnection.js';
 import {createWorkspaceProject} from '../../testing/OverridesHelpers.js';
+import {setupRuntimeHooks} from '../../testing/RuntimeHelpers.js';
+import {setupSettingsHooks} from '../../testing/SettingsHelpers.js';
+import {TestUniverse} from '../../testing/TestUniverse.js';
 import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
 
@@ -19,11 +24,16 @@ const {urlString} = Platform.DevToolsPath;
 const LONG_URL_PART =
     'LoremIpsumDolorSitAmetConsecteturAdipiscingElitPhasellusVitaeOrciInAugueCondimentumTinciduntUtEgetDolorQuisqueEfficiturUltricesTinciduntVivamusVelitPurusCommodoQuisErosSitAmetTemporMalesuadaNislNullamTtempusVulputateAugueEgetScelerisqueLacusVestibulumNon/index.html';
 
-describeWithMockConnection('NetworkManager', () => {
+describe('NetworkManager', () => {
+  setupLocaleHooks();
+  setupSettingsHooks();
+  setupRuntimeHooks();
+
   describe('request post data', () => {
-    async function createPostRequestWithHeaders(headers: Protocol.Network.Headers):
-        Promise<SDK.NetworkRequest.NetworkRequest> {
-      const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+    async function createPostRequestWithHeaders(
+        headers: Protocol.Network.Headers, universe: TestUniverse,
+        connection: MockCDPConnection): Promise<SDK.NetworkRequest.NetworkRequest> {
+      const networkManager = new SDK.NetworkManager.NetworkManager(universe.createTarget({connection}));
       const requestStartedPromise = networkManager.once(SDK.NetworkManager.Events.RequestStarted);
 
       networkManager.dispatcher.requestWillBeSent({
@@ -47,18 +57,23 @@ describeWithMockConnection('NetworkManager', () => {
     }
 
     it('decodes gzip-compressed request form data', async () => {
+      const universe = new TestUniverse();
+      const connection = new MockCDPConnection();
+      SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true, targetManager: universe.targetManager});
       const expectedPostData = 'a=1&b=hello+world';
       const compressedPostData = await Common.Gzip.compress(expectedPostData);
-      const encodedPostData = await Common.Base64.encode(compressedPostData);
-      setMockConnectionResponseHandler('Network.getRequestPostData', () => ({
-                                                                       postData: encodedPostData,
-                                                                       base64Encoded: true,
-                                                                     }));
+      const encodedPostData = btoa(String.fromCharCode(...new Uint8Array(compressedPostData)));
+      connection.setSuccessHandler('Network.getRequestPostData', () => ({
+                                                                   postData: encodedPostData,
+                                                                   base64Encoded: true,
+                                                                 }));
 
-      const request = await createPostRequestWithHeaders({
-        'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
-        'Content-Encoding': 'gzip',
-      });
+      const request = await createPostRequestWithHeaders(
+          {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
+            'Content-Encoding': 'gzip',
+          },
+          universe, connection);
 
       const requestFormData = await request.requestFormData();
       assert.strictEqual(requestFormData, expectedPostData);
@@ -67,7 +82,7 @@ describeWithMockConnection('NetworkManager', () => {
 
   describe('Direct TCP socket handling', () => {
     it('on CDP created event creates request ', () => {
-      const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+      const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
       const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
       const startedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
       networkManager.addEventListener(SDK.NetworkManager.Events.RequestStarted, event => {
@@ -117,7 +132,7 @@ describeWithMockConnection('NetworkManager', () => {
 
     describe('on CDP opened event', () => {
       it('does nothing if no request exists', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const updatedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestUpdated, event => {
@@ -135,7 +150,7 @@ describeWithMockConnection('NetworkManager', () => {
       });
 
       it('does nothing if the request has no direct socket info', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const updatedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestUpdated, event => {
@@ -155,7 +170,7 @@ describeWithMockConnection('NetworkManager', () => {
       });
 
       it('updates request successfully', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const updatedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestUpdated, event => {
@@ -213,7 +228,7 @@ describeWithMockConnection('NetworkManager', () => {
 
     describe('on CDP event aborted', () => {
       it('does nothing if no request exists', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const finishedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestFinished, event => {
@@ -230,7 +245,7 @@ describeWithMockConnection('NetworkManager', () => {
       });
 
       it('does nothing if the request has no direct socket info', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const finishedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestFinished, event => {
@@ -249,7 +264,7 @@ describeWithMockConnection('NetworkManager', () => {
       });
 
       it('updates request successfully', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const finishedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestFinished, event => {
@@ -302,7 +317,7 @@ describeWithMockConnection('NetworkManager', () => {
 
     describe('on CDP event closed', () => {
       it('does nothing if no request exists', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const finishedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestFinished, event => {
@@ -318,7 +333,7 @@ describeWithMockConnection('NetworkManager', () => {
       });
 
       it('does nothing if the request has no direct socket info', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const finishedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestFinished, event => {
@@ -336,7 +351,7 @@ describeWithMockConnection('NetworkManager', () => {
       });
 
       it('updates request successfully', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const finishedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestFinished, event => {
@@ -393,7 +408,7 @@ describeWithMockConnection('NetworkManager', () => {
       const baseTimestamp = 1000;
 
       beforeEach(() => {
-        networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         updatedRequests = [];
         targetRequest = null;
@@ -484,7 +499,7 @@ describeWithMockConnection('NetworkManager', () => {
   describe('Direct UDP socket handling', () => {
     describe('on CDP created event', () => {
       it('creates request for connected UDP', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const startedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestStarted, event => {
@@ -537,7 +552,7 @@ describeWithMockConnection('NetworkManager', () => {
       });
 
       it('creates request for bound UDP', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const startedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestStarted, event => {
@@ -592,7 +607,7 @@ describeWithMockConnection('NetworkManager', () => {
       });
 
       it('does nothing if no localAddr for bound UDP', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const startedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestStarted, event => {
@@ -613,7 +628,7 @@ describeWithMockConnection('NetworkManager', () => {
 
     describe('on CDP opened event', () => {
       it('does nothing if no request exists', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const updatedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestUpdated, event => {
@@ -631,7 +646,7 @@ describeWithMockConnection('NetworkManager', () => {
       });
 
       it('does nothing if the request has no direct socket info', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const updatedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestUpdated, event => {
@@ -651,7 +666,7 @@ describeWithMockConnection('NetworkManager', () => {
       });
 
       it('updates request successfully for connected UDP', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const updatedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestUpdated, event => {
@@ -693,7 +708,7 @@ describeWithMockConnection('NetworkManager', () => {
       });
 
       it('updates request successfully for bound UDP', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const updatedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestUpdated, event => {
@@ -736,7 +751,7 @@ describeWithMockConnection('NetworkManager', () => {
 
     describe('on CDP event aborted', () => {
       it('does nothing if no request exists', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const finishedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestFinished, event => {
@@ -753,7 +768,7 @@ describeWithMockConnection('NetworkManager', () => {
       });
 
       it('does nothing if the request has no direct socket info', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const finishedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestFinished, event => {
@@ -772,7 +787,7 @@ describeWithMockConnection('NetworkManager', () => {
       });
 
       it('updates request successfully', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const finishedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestFinished, event => {
@@ -808,7 +823,7 @@ describeWithMockConnection('NetworkManager', () => {
 
     describe('on CDP event closed', () => {
       it('does nothing if no request exists', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const finishedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestFinished, event => {
@@ -824,7 +839,7 @@ describeWithMockConnection('NetworkManager', () => {
       });
 
       it('does nothing if the request has no direct socket info', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const finishedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestFinished, event => {
@@ -842,7 +857,7 @@ describeWithMockConnection('NetworkManager', () => {
       });
 
       it('updates request successfully', () => {
-        const networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        const networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         const networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         const finishedRequests: SDK.NetworkRequest.NetworkRequest[] = [];
         networkManager.addEventListener(SDK.NetworkManager.Events.RequestFinished, event => {
@@ -883,7 +898,7 @@ describeWithMockConnection('NetworkManager', () => {
       const baseTimestamp = 3000;
 
       beforeEach(() => {
-        networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         updatedRequests = [];
         targetRequest = null;
@@ -1016,7 +1031,7 @@ describeWithMockConnection('NetworkManager', () => {
       const mockIdentifier = 'mockUdpMulticastId' as Protocol.Network.RequestId;
 
       beforeEach(() => {
-        networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         updatedRequests = [];
 
@@ -1091,7 +1106,7 @@ describeWithMockConnection('NetworkManager', () => {
       const mockIdentifier = 'mockUdpMulticastId' as Protocol.Network.RequestId;
 
       beforeEach(() => {
-        networkManager = new SDK.NetworkManager.NetworkManager(createTarget());
+        networkManager = new SDK.NetworkManager.NetworkManager(new TestUniverse().createTarget({}));
         networkDispatcher = new SDK.NetworkManager.NetworkDispatcher(networkManager);
         updatedRequests = [];
 
@@ -1160,7 +1175,14 @@ describeWithMockConnection('NetworkManager', () => {
   });
 });
 
-describeWithMockConnection('MultitargetNetworkManager', () => {
+describe('MultitargetNetworkManager', () => {
+  let universe: TestUniverse;
+
+  beforeEach(() => {
+    universe = new TestUniverse();
+    SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true, targetManager: universe.targetManager});
+  });
+
   describe('Trust Token done event', () => {
     it('is not lost when arriving before the corresponding requestWillBeSent event', () => {
       // 1) Setup a NetworkManager and listen to "RequestStarted" events.
@@ -1185,8 +1207,8 @@ describeWithMockConnection('MultitargetNetworkManager', () => {
   });
 
   it('handles worker requests originating from the frame target', async () => {
-    const target = createTarget();
-    const workerTarget = createTarget({type: SDK.Target.Type.Worker});
+    const target = universe.createTarget({});
+    const workerTarget = universe.createTarget({type: SDK.Target.Type.Worker});
 
     const multiTargetNetworkManager = SDK.NetworkManager.MultitargetNetworkManager.instance();
     const initialNetworkManager = target.model(SDK.NetworkManager.NetworkManager)!;
@@ -1210,12 +1232,11 @@ describeWithMockConnection('MultitargetNetworkManager', () => {
   });
 
   it('uses main frame to get certificate', () => {
-    SDK.ChildTargetManager.ChildTargetManager.install();
-    const targetManager = SDK.TargetManager.TargetManager.instance();
-    const tabTarget = createTarget({type: SDK.Target.Type.TAB});
-    const mainFrameTarget = createTarget({parentTarget: tabTarget});
-    const prerenderTarget = createTarget({parentTarget: tabTarget, subtype: 'prerender'});
-    const subframeTarget = createTarget({parentTarget: mainFrameTarget, subtype: ''});
+    const targetManager = universe.targetManager;
+    const tabTarget = universe.createTarget({type: SDK.Target.Type.TAB});
+    const mainFrameTarget = universe.createTarget({parentTarget: tabTarget});
+    const prerenderTarget = universe.createTarget({parentTarget: tabTarget, subtype: 'prerender'});
+    const subframeTarget = universe.createTarget({parentTarget: mainFrameTarget, subtype: ''});
 
     const unexpectedCalls =
         [tabTarget, prerenderTarget, subframeTarget].map(t => sinon.spy(t.networkAgent(), 'invoke_getCertificate'));
@@ -1289,34 +1310,36 @@ describeWithMockConnection('MultitargetNetworkManager', () => {
   });
 
   it('applies global conditions if request conditions are disabled', () => {
-    createTarget();
-    const manager = SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
+    const connection = new MockCDPConnection();
+    universe.createTarget({connection});
+    const manager =
+        SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true, targetManager: universe.targetManager});
 
     const rules: Protocol.Network.EmulateNetworkConditionsByRuleRequest[] = [];
-    setMockConnectionResponseHandler('Network.emulateNetworkConditionsByRule', request => {
+    connection.setSuccessHandler('Network.emulateNetworkConditionsByRule', request => {
       rules.push(request);
       return {ruleIds: []};
     });
 
     manager.setNetworkConditions(SDK.NetworkManager.Slow4GConditions);
 
-    assert.deepEqual(rules, [{
-                       matchedNetworkConditions: [{
-                         connectionType: Protocol.Network.ConnectionType.Cellular4g,
-                         downloadThroughput: SDK.NetworkManager.Slow4GConditions.download,
-                         latency: SDK.NetworkManager.Slow4GConditions.latency,
-                         uploadThroughput: SDK.NetworkManager.Slow4GConditions.upload,
-                         urlPattern: '',
-                       }],
-                       offline: false
-                     }]);
+    assert.lengthOf(rules, 1);
+    sinon.assert.match(rules[0], sinon.match({
+      offline: false,
+      matchedNetworkConditions: [sinon.match({
+        downloadThroughput: SDK.NetworkManager.Slow4GConditions.download,
+        latency: SDK.NetworkManager.Slow4GConditions.latency,
+        uploadThroughput: SDK.NetworkManager.Slow4GConditions.upload,
+      })],
+    }));
   });
 
   it('calls the request conditions model for global throttling if individual request throttling is enabled', () => {
-    const manager = SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
+    const manager =
+        SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true, targetManager: universe.targetManager});
     manager.setNetworkConditions(SDK.NetworkManager.Slow4GConditions);
 
-    const targetManager = new SDK.NetworkManager.NetworkManager(createTarget());
+    const targetManager = new SDK.NetworkManager.NetworkManager(universe.createTarget({}));
     const emulateNetworkConditions =
         sinon.stub(targetManager.target().networkAgent(), 'invoke_emulateNetworkConditions');
     const stub = sinon.stub(manager.requestConditions, 'applyConditions');
@@ -1332,7 +1355,7 @@ describeWithMockConnection('MultitargetNetworkManager', () => {
   });
 
   it('can reorder the conditions', () => {
-    const requestConditions = new SDK.NetworkManager.RequestConditions(Common.Settings.Settings.instance());
+    const requestConditions = new SDK.NetworkManager.RequestConditions(universe.settings);
     const condition1 = SDK.NetworkManager.RequestCondition.createFromSetting({url: 'url1', enabled: true});
     const condition2 = SDK.NetworkManager.RequestCondition.createFromSetting({url: 'url2', enabled: true});
     const condition3 = SDK.NetworkManager.RequestCondition.createFromSetting({url: 'url3', enabled: true});
@@ -1446,7 +1469,10 @@ describe('RequestURLPattern', () => {
   });
 });
 
-describeWithEnvironment('RequestConditions', () => {
+describe('RequestConditions', () => {
+  setupLocaleHooks();
+  setupSettingsHooks();
+  setupRuntimeHooks();
   function getSetting(values: SDK.NetworkManager.RequestConditionsSetting[]) {
     Common.Settings.Settings.instance().clearAll();
     Common.Settings.Settings.instance().getRegistry().clear();
@@ -1521,9 +1547,10 @@ describeWithEnvironment('RequestConditions', () => {
     });
   });
 
-  describeWithMockConnection('applyConditions', () => {
+  describe('applyConditions', () => {
     function stubAgent() {
-      const target = createTarget();
+      const universe = new TestUniverse();
+      const target = universe.createTarget({url: urlString`http://example.com`});
       const agent = target.networkAgent();
 
       const setBlockedURLs = sinon.stub(agent, 'invoke_setBlockedURLs');
@@ -1531,7 +1558,7 @@ describeWithEnvironment('RequestConditions', () => {
       const emulateNetworkConditionsByRule = sinon.stub(agent, 'invoke_emulateNetworkConditionsByRule');
       emulateNetworkConditionsByRule.resolves({ruleIds: [], getError: () => undefined});
 
-      return {agent, setBlockedURLs, emulateNetworkConditions, emulateNetworkConditionsByRule};
+      return {universe, agent, setBlockedURLs, emulateNetworkConditions, emulateNetworkConditionsByRule};
     }
 
     it('applies blocking, global, and local throttling if individual request throttling is enabled', () => {
@@ -1637,8 +1664,10 @@ describeWithEnvironment('RequestConditions', () => {
     });
 
     it('disables throttling and blocking when the effect gets disabled globally', () => {
-      const conditions = SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true}).requestConditions;
-      const {setBlockedURLs, emulateNetworkConditions, emulateNetworkConditionsByRule} = stubAgent();
+      const {universe, setBlockedURLs, emulateNetworkConditions, emulateNetworkConditionsByRule} = stubAgent();
+      const conditions =
+          SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true, targetManager: universe.targetManager})
+              .requestConditions;
       conditions.conditionsEnabled = true;
       conditions.add(SDK.NetworkManager.RequestCondition.createFromSetting({url: 'foo', enabled: true}));
 
@@ -1686,9 +1715,10 @@ describeWithEnvironment('RequestConditions', () => {
     });
 
     it('correctly maps ruleIds to conditions', async () => {
-      const multitargetNetworkManager = SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
+      const {universe, agent, emulateNetworkConditionsByRule} = stubAgent();
+      const multitargetNetworkManager = SDK.NetworkManager.MultitargetNetworkManager.instance(
+          {forceNew: true, targetManager: universe.targetManager});
       const requestConditions = multitargetNetworkManager.requestConditions;
-      const {agent, emulateNetworkConditionsByRule} = stubAgent();
 
       const ruleId = 'mock-rule-id-1';
       emulateNetworkConditionsByRule.resolves({ruleIds: [ruleId], getError: () => undefined});
@@ -1749,7 +1779,7 @@ describe('NetworkDispatcher', () => {
 
   const loadingFinishedEvent = {requestId: 'mockId', timestamp: 42, encodedDataLength: 42} as
       Protocol.Network.LoadingFinishedEvent;
-  describeWithEnvironment('request', () => {
+  describe('request', () => {
     let networkDispatcher: SDK.NetworkManager.NetworkDispatcher;
 
     beforeEach(() => {
@@ -1983,7 +2013,10 @@ interface OverriddenResponse {
   responseHeaders: Protocol.Fetch.HeaderEntry[];
 }
 
-describeWithMockConnection('InterceptedRequest', () => {
+describe('InterceptedRequest', () => {
+  setupLocaleHooks();
+  setupSettingsHooks();
+  setupRuntimeHooks();
   let target: SDK.Target.Target;
   let fulfillRequestSpy: sinon.SinonSpy;
 
@@ -2045,10 +2078,21 @@ describeWithMockConnection('InterceptedRequest', () => {
         expectedPersistedSetCookieHeaders);
   }
 
+  let universe: TestUniverse;
+  let networkPersistenceManager: Persistence.NetworkPersistenceManager.NetworkPersistenceManager;
+
   beforeEach(async () => {
-    SDK.NetworkManager.MultitargetNetworkManager.dispose();
-    target = createTarget();
-    const networkPersistenceManager = await createWorkspaceProject(urlString`file:///path/to/overrides`, [
+    universe = new TestUniverse();
+    const {targetManager, workspace, settings} = universe;
+    sinon.stub(Workspace.Workspace.WorkspaceImpl, 'instance').returns(workspace);
+    sinon.stub(SDK.TargetManager.TargetManager, 'instance').returns(targetManager);
+    sinon.stub(Common.Settings.Settings, 'instance').returns(settings);
+    sinon.stub(SDK.NetworkManager.MultitargetNetworkManager, 'instance').returns(universe.multitargetNetworkManager);
+
+    settings.moduleSetting('persistence-network-overrides-enabled').set(true);
+
+    target = universe.createTarget({});
+    networkPersistenceManager = await createWorkspaceProject(urlString`file:///path/to/overrides`, [
       {
         name: '.headers',
         path: 'www.example.com/',
@@ -2293,9 +2337,8 @@ describeWithMockConnection('InterceptedRequest', () => {
       // Create a quick'n dirty network UISourceCode for the request manually. We need to establish a binding to the
       // overridden file system UISourceCode.
       const networkProject = new Bindings.ContentProviderBasedProject.ContentProviderBasedProject(
-          Workspace.Workspace.WorkspaceImpl.instance(), 'testing-network', Workspace.Workspace.projectTypes.Network,
-          'Override network project', false);
-      Workspace.Workspace.WorkspaceImpl.instance().addProject(networkProject);
+          universe.workspace, 'testing-network', Workspace.Workspace.projectTypes.Network, 'Override network project',
+          false);
       const uiSourceCode = networkProject.createUISourceCode(
           urlString`https://www.example.com/utf16.html`, Common.ResourceType.resourceTypes.Document);
       networkProject.addUISourceCode(uiSourceCode);
@@ -2310,9 +2353,8 @@ describeWithMockConnection('InterceptedRequest', () => {
             true, 'text/html', 'utf-16');
       };
 
-      await SDK.NetworkManager.MultitargetNetworkManager.instance().requestIntercepted(interceptedRequest);
-      const content = await Persistence.NetworkPersistenceManager.NetworkPersistenceManager.instance()
-                          .originalContentForUISourceCode(uiSourceCode);
+      await universe.multitargetNetworkManager.requestIntercepted(interceptedRequest);
+      const content = await networkPersistenceManager.originalContentForUISourceCode(uiSourceCode);
 
       assert.strictEqual(content, '<!DOCTYPE html>\n<p>Iñtërnâtiônàlizætiøn☃𝌆</p>\n');
     });

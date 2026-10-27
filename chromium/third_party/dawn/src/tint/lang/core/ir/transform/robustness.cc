@@ -585,17 +585,20 @@ struct State {
             bool const_size = false;
             if (auto* offset_cnst = offset->As<Constant>()) {
                 uint32_t offset_val = offset_cnst->Value()->ValueAs<uint32_t>();
-                TINT_IR_ASSERT(ir, offset_val == (offset_val & ~(store_ty->Align() - 1)));
                 required_size += offset_val;
                 const_offset = true;
+                if (!offset->Type()->Is<core::type::U32>()) {
+                    offset = b.Constant(u32(offset_val));
+                }
             }
             if (size) {
                 if (auto* size_cnst = size->As<Constant>()) {
                     auto size_val = size_cnst->Value()->ValueAs<uint32_t>();
-                    // Bad constant values should be caught in the frontend.
-                    TINT_IR_ASSERT(ir, ty_stride == 0 || (size_val - ty_offset) % ty_stride == 0);
                     required_size += size_val;
                     const_size = true;
+                    if (!size->Type()->Is<core::type::U32>()) {
+                        size = b.Constant(u32(size_val));
+                    }
                 }
             } else {
                 required_size += ty_required_size;
@@ -605,33 +608,29 @@ struct State {
                 required_size == 0 ? nullptr : b.Constant(u32(required_size));
             if (!const_offset) {
                 offset = b.InsertBitcastIfNeeded(ty.u32(), offset);
-                // Adjust to correct alignment.
-                offset = b.And(offset, b.Constant(u32(~(store_ty->Align() - 1))))->Result();
                 if (total_required_size) {
-                    total_required_size = b.Add(total_required_size, offset)->Result();
+                    total_required_size =
+                        b.Call(ty.u32(), BuiltinFn::kAddSat, total_required_size, offset)->Result();
                 } else {
+                    TINT_IR_ASSERT(ir, size && !const_size);
                     total_required_size = offset;
                 }
             }
             if (size && !const_size) {
-                size = b.InsertBitcastIfNeeded(ty.u32(), size);
-                if (ty_offset != 0) {
-                    // Remove the non-array size from the struct.
-                    size = b.Subtract(size, b.Constant(u32(ty_offset)))->Result();
-                }
-                if (ty_stride != 0) {
-                    // Round down to a multiple of stride.
-                    size = b.Divide(size, b.Constant(u32(ty_stride)))->Result();
-                    size = b.Multiply(size, b.Constant(u32(ty_stride)))->Result();
-                }
-                if (ty_offset != 0) {
-                    // Now, add back the non-array size after rounding the other part.
-                    size = b.Add(size, b.Constant(u32(ty_offset)))->Result();
-                }
                 // Use the larger of the size arg or the type required size.
+                // PropagateBufferSizes performed a round down on the argument which may have
+                // resulted in a 0 length array.
+                size = b.InsertBitcastIfNeeded(ty.u32(), size);
                 size = b.Call(ty.u32(), BuiltinFn::kMax, size, b.Constant(u32(ty_required_size)))
                            ->Result();
-                total_required_size = b.Add(total_required_size, size)->Result();
+                if (total_required_size) {
+                    total_required_size =
+                        b.Call(ty.u32(), BuiltinFn::kAddSat, total_required_size, size)->Result();
+                } else {
+                    // offset must have been 0.
+                    TINT_IR_ASSERT(ir, offset && const_offset);
+                    total_required_size = size;
+                }
             }
 
             // Now check if length < total_required_size
@@ -689,6 +688,14 @@ struct State {
                         [&](Var* var) {
                             result = var;
                             return nullptr;  // Done
+                        },
+                        [&](CoreBuiltinCall* call) {
+                            Value* call_value = nullptr;
+                            if (call->Func() == BuiltinFn::kBufferView ||
+                                call->Func() == BuiltinFn::kBufferArrayView) {
+                                call_value = call->Args()[0];
+                            }
+                            return call_value;
                         },
                         TINT_ICE_ON_NO_MATCH);
                 },

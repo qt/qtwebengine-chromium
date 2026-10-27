@@ -19,6 +19,8 @@ import type {SettingsPrefs} from '../content/read_anything_types.js';
 import {DEFAULT_SETTINGS, SettingsOption, ToolbarEvent} from '../content/read_anything_types.js';
 import {openMenu} from '../shared/common.js';
 import {isActivationKey, isBackwardArrow, isForwardArrow, isVerticalArrow} from '../shared/keyboard_util.js';
+import {ReadAnythingSettingsChange} from '../shared/metrics_browser_proxy.js';
+import {ReadAnythingLogger} from '../shared/read_anything_logger.js';
 
 import {getCss} from './settings_menu.css.js';
 import {getHtml} from './settings_menu.html.js';
@@ -159,6 +161,7 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
         state: true,
         type: String,
       },
+      options_: {type: Array},
     };
   }
 
@@ -167,7 +170,7 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
   accessor isSpeechActive: boolean = false;
   accessor settingsPrefs: SettingsPrefs = DEFAULT_SETTINGS;
 
-  protected options_: SettingsItem[] = [];
+  protected accessor options_: SettingsItem[] = [];
   protected accessor currentOpenId_: string|null = null;
 
   private interceptedEvents_: string[] =
@@ -179,6 +182,7 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
   private lastMenuOpenTime_: number = 0;
   private pointerEventCallback_: (e: Event) => void = () => {};
   private keyDownCallback_: (e: KeyboardEvent) => void = () => {};
+  private logger_: ReadAnythingLogger = ReadAnythingLogger.getInstance();
 
   // Used to check if focus is currently on the PreviewPlayButton of the
   // VOICE_SELECTION submenu.
@@ -209,7 +213,7 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
   }
 
   private initializeMenuOptions_() {
-    let optionIDs = [
+    const optionIDs = [
       SettingsOption.COLOR,
       SettingsOption.FONT,
       SettingsOption.LINE_SPACING,
@@ -223,13 +227,7 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
     }
 
     optionIDs.push(SettingsOption.PRESENTATION);
-
-    // If Readability is enabled but ReadabilityWithLinks is not enabled,
-    // don't show the links toggle.
-    if (!chrome.readingMode.isReadabilityEnabled ||
-        chrome.readingMode.isReadabilityWithLinksEnabled) {
-      optionIDs = optionIDs.concat([SettingsOption.LINKS]);
-    }
+    optionIDs.push(SettingsOption.LINKS);
 
     if (chrome.readingMode.imagesFeatureEnabled) {
       optionIDs.push(SettingsOption.IMAGES);
@@ -252,11 +250,12 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
         ariaLabel = this.getImageItemLabels();
       }
 
-      // TODO: crbug.com/494316323- Consider disabling the links toggle when
-      // read aloud is speaking, similar to what is done with the images toggle.
       if (id === SettingsOption.LINKS) {
         checked = chrome.readingMode.linksEnabled;
         ariaLabel = this.getLinkItemLabels();
+        // Since links are disabled when read aloud is playing, the links
+        // toggle should also be disabled.
+        disabled = this.isSpeechActive;
       }
 
       if (id === SettingsOption.PINNED_TO_TOOLBAR) {
@@ -351,11 +350,15 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
     }
 
     if (item.id === SettingsOption.LINKS) {
+      this.logger_.logTextSettingsChange(
+          ReadAnythingSettingsChange.LINKS_ENABLED_CHANGE);
       chrome.readingMode.onLinksEnabledToggled();
       this.fire(ToolbarEvent.LINKS);
       item.ariaLabel = this.getLinkItemLabels();
       item.checked = chrome.readingMode.linksEnabled;
     } else if (item.id === SettingsOption.IMAGES) {
+      this.logger_.logTextSettingsChange(
+          ReadAnythingSettingsChange.IMAGES_ENABLED_CHANGE);
       chrome.readingMode.onImagesEnabledToggled();
       this.fire(ToolbarEvent.IMAGES);
       item.ariaLabel = this.getImageItemLabels();

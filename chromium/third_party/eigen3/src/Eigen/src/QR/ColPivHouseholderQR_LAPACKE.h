@@ -30,6 +30,7 @@
  *    LAPACKE_?geqp3 function.
  ********************************************************************************
 */
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef EIGEN_COLPIVOTINGHOUSEHOLDERQR_LAPACKE_H
 #define EIGEN_COLPIVOTINGHOUSEHOLDERQR_LAPACKE_H

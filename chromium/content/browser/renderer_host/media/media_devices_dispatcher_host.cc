@@ -19,10 +19,10 @@
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
 #include "build/build_config.h"
+#include "content/browser/back_forward_cache/back_forward_cache_disable.h"
+#include "content/browser/back_forward_cache/back_forward_cache_impl.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/media/media_devices_permission_checker.h"
-#include "content/browser/renderer_host/back_forward_cache_disable.h"
-#include "content/browser/renderer_host/back_forward_cache_impl.h"
 #include "content/browser/renderer_host/media/audio_output_authorization_handler.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/browser/renderer_host/media/media_stream_ui_proxy.h"
@@ -88,20 +88,24 @@ void MediaDevicesDispatcherHost::Create(
     const GlobalRenderFrameHostToken& main_frame_host_token,
     GlobalRenderFrameHostId render_frame_host_id,
     MediaStreamManager* media_stream_manager,
+    bool is_outermost_main_frame,
     mojo::PendingReceiver<blink::mojom::MediaDevicesDispatcherHost> receiver) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   media_stream_manager->media_devices_manager()->RegisterDispatcherHost(
       std::make_unique<MediaDevicesDispatcherHost>(
-          main_frame_host_token, render_frame_host_id, media_stream_manager),
+          main_frame_host_token, render_frame_host_id, media_stream_manager,
+          is_outermost_main_frame),
       std::move(receiver));
 }
 
 MediaDevicesDispatcherHost::MediaDevicesDispatcherHost(
     const GlobalRenderFrameHostToken& main_frame_host_token,
     GlobalRenderFrameHostId render_frame_host_id,
-    MediaStreamManager* media_stream_manager)
+    MediaStreamManager* media_stream_manager,
+    bool is_outermost_main_frame)
     : main_frame_host_token_(main_frame_host_token),
       render_frame_host_id_(render_frame_host_id),
+      is_outermost_main_frame_(is_outermost_main_frame),
       media_stream_manager_(media_stream_manager),
       num_pending_audio_input_parameters_(0),
       authorization_handler_factory_callback_(base::BindRepeating(
@@ -149,7 +153,7 @@ void MediaDevicesDispatcherHost::EnumerateDevices(
   devices_to_enumerate[static_cast<size_t>(MediaDeviceType::kMediaAudioOutput)] =
       request_audio_output;
 
-  media_stream_manager_->media_devices_manager()->EnumerateAndRankDevices(
+  media_stream_manager_->media_devices_manager()->HandleEnumerateDevicesRequest(
       render_frame_host_id_, devices_to_enumerate,
       request_video_input_capabilities, request_audio_input_capabilities,
       std::move(client_callback));
@@ -304,7 +308,7 @@ void MediaDevicesDispatcherHost::SetCaptureHandleConfig(
                                               bad_message::MDDH_NOT_TOP_LEVEL);
               return;
             }
-            rfhi->delegate()->SetCaptureHandleConfig(std::move(config));
+            rfhi->GetPage().SetCaptureHandleConfig(std::move(config));
           },
           render_frame_host_id_, std::move(config)));
 }
@@ -351,6 +355,15 @@ void MediaDevicesDispatcherHost::SetPreferredSinkId(
     const std::string& hashed_sink_id,
     SetPreferredSinkIdCallback callback) {
   CHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  if (!is_outermost_main_frame_) {
+    mojo::ReportBadMessage(
+        "setPreferredSinkId can only be called from the top-level document.");
+    std::move(callback).Run(
+        media::OutputDeviceStatus::OUTPUT_DEVICE_STATUS_ERROR_NOT_AUTHORIZED);
+    return;
+  }
+
   if (!base::FeatureList::IsEnabled(
           blink::features::kPreferredAudioOutputDevices)) {
     ReceivedBadMessage(render_frame_host_id_.child_id,
@@ -507,8 +520,15 @@ void MediaDevicesDispatcherHost::OnAudioGotSaltAndOrigin(
   pending_audio_input_capabilities_requests_.push_back(
       AudioInputCapabilitiesRequest{salt_and_origin,
                                     std::move(client_callback)});
-  if (pending_audio_input_capabilities_requests_.size() > 1U)
+
+  MediaStreamManager::SendMessageToNativeLog(
+      base::StringPrintf("MDDH::OnAudioGotSaltAndOrigin: "
+                         "pending_audio_input_capabilities_requests_.size()=%d",
+                         pending_audio_input_capabilities_requests_.size()));
+
+  if (pending_audio_input_capabilities_requests_.size() > 1U) {
     return;
+  }
 
   DCHECK_GT(pending_audio_input_capabilities_requests_.size(), 0U);
   DCHECK(current_audio_input_capabilities_.empty());
@@ -766,6 +786,9 @@ void MediaDevicesDispatcherHost::GotAudioInputEnumeration(
   if (current_audio_input_capabilities_.empty() ||
       base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kUseFakeDeviceForMediaStream)) {
+    MediaStreamManager::SendMessageToNativeLog(base::StringPrintf(
+        "MDDH::%s: no devices found or fake device command flag is passed,",
+        __func__));
     FinalizeGetAudioInputCapabilities();
     return;
   }
@@ -791,14 +814,25 @@ void MediaDevicesDispatcherHost::GotAudioInputParameters(
   if (parameters)
     current_audio_input_capabilities_[index].parameters = *parameters;
   DCHECK(current_audio_input_capabilities_[index].parameters.IsValid());
-  if (--num_pending_audio_input_parameters_ == 0U)
+
+  num_pending_audio_input_parameters_ -= 1;
+  MediaStreamManager::SendMessageToNativeLog(base::StringPrintf(
+      "MDDH::%s: num_pending_audio_input_parameters_.size()= %d,", __func__,
+      num_pending_audio_input_parameters_));
+
+  if (num_pending_audio_input_parameters_ == 0U) {
     FinalizeGetAudioInputCapabilities();
+  }
 }
 
 void MediaDevicesDispatcherHost::FinalizeGetAudioInputCapabilities() {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK_GT(pending_audio_input_capabilities_requests_.size(), 0U);
   DCHECK_EQ(num_pending_audio_input_parameters_, 0U);
+
+  MediaStreamManager::SendMessageToNativeLog(base::StringPrintf(
+      "MDDH::%s: pending_audio_input_capabilities_requests_.size()= %d,",
+      __func__, pending_audio_input_capabilities_requests_.size()));
 
   for (auto& request : pending_audio_input_capabilities_requests_) {
     std::move(request.client_callback)

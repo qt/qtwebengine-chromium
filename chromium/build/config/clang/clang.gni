@@ -54,10 +54,12 @@ declare_args() {
   # coding guidelines, etc. Only used when compiling with Chromium's Clang.
   # Setting this enables all of the functionality of the plugin.
   clang_use_chrome_plugins = is_clang && current_os != "zos"
+}
 
+declare_args() {
   # Use this instead of clang_use_chrome_plugins to enable just the raw-ptr
   # functionality of the plugin.
-  clang_use_raw_ptr_plugin = false
+  clang_use_raw_ptr_plugin = clang_use_chrome_plugins
 
   enable_check_raw_ptr_fields =
       build_with_chromium && !is_official_build &&
@@ -73,12 +75,13 @@ declare_args() {
 
   # Use this instead of clang_use_chrome_plugins to enable just the unsafe
   # buffers functionality of the plugin
-  clang_use_unsafe_buffers_plugin = false
+  clang_use_unsafe_buffers_plugin =
+      clang_use_chrome_plugins && clang_unsafe_buffers_paths != ""
 
   clang_base_path = default_clang_base_path
 
-  # Specifies whether or not bitcode should be embedded during compilation.
-  # This is used for creating a MLGO corpus from Chromium in the non-ThinLTO case.
+  # Specifies whether or not bitcode should be embedded during compilation. This
+  # is used for creating a MLGO corpus from Chromium in the non-ThinLTO case.
   clang_embed_bitcode = false
 
   # Set to true to enable output of ThinLTO index and import files used for
@@ -86,7 +89,8 @@ declare_args() {
   lld_emit_indexes_and_imports = false
 }
 
-# We don't really need to collect a corpus for the host tools, just for the target.
+# We don't really need to collect a corpus for the host tools, just for the
+# target.
 lld_emit_indexes_and_imports =
     lld_emit_indexes_and_imports && is_a_target_toolchain
 

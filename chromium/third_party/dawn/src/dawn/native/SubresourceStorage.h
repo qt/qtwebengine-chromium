@@ -34,11 +34,11 @@
 #include <type_traits>
 #include <vector>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/TypeTraits.h"
-#include "dawn/native/EnumMaskIterator.h"
-#include "dawn/native/Error.h"
-#include "dawn/native/Subresource.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/TypeTraits.h"
+#include "src/dawn/native/EnumMaskIterator.h"
+#include "src/dawn/native/Error.h"
+#include "src/dawn/native/Subresource.h"
 
 namespace dawn::native {
 
@@ -228,15 +228,15 @@ class SubresourceStorage {
     const T& DataInline(uint32_t aspectIndex) const;
     const T& Data(uint32_t aspectIndex, uint32_t layer, uint32_t level = 0) const;
 
-    Aspect mAspects;
-    uint8_t mMipLevelCount;
-    uint16_t mArrayLayerCount;
+    Aspect mAspects = Aspect::None;
+    uint8_t mMipLevelCount = 0;
+    uint16_t mArrayLayerCount = 0;
 
     // Invariant: if an aspect is marked compressed, then all it's layers are marked as
     // compressed.
     static constexpr size_t kMaxAspects = 3;
-    std::array<bool, kMaxAspects> mAspectCompressed;
-    std::array<T, kMaxAspects> mInlineAspectData;
+    std::array<bool, kMaxAspects> mAspectCompressed = {};
+    std::array<T, kMaxAspects> mInlineAspectData = {};
 
     // Indexed as mLayerCompressed[aspectIndex * mArrayLayerCount + layer].
     std::unique_ptr<bool[]> mLayerCompressed;

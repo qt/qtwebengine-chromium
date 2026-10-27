@@ -25,7 +25,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/BlitTextureToBuffer.h"
+#include "src/dawn/native/BlitTextureToBuffer.h"
 
 #include <algorithm>
 #include <array>
@@ -33,21 +33,22 @@
 #include <string_view>
 #include <utility>
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/Strings.h"
-#include "dawn/native/BindGroup.h"
-#include "dawn/native/BlockInfo.h"
-#include "dawn/native/CommandBuffer.h"
-#include "dawn/native/CommandEncoder.h"
-#include "dawn/native/CommandValidation.h"
-#include "dawn/native/ComputePassEncoder.h"
-#include "dawn/native/ComputePipeline.h"
-#include "dawn/native/Device.h"
-#include "dawn/native/InternalPipelineStore.h"
-#include "dawn/native/PhysicalDevice.h"
-#include "dawn/native/Queue.h"
-#include "dawn/native/Sampler.h"
-#include "dawn/native/utils/WGPUHelpers.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/Strings.h"
+#include "src/dawn/native/BindGroup.h"
+#include "src/dawn/native/BlockInfo.h"
+#include "src/dawn/native/CommandBuffer.h"
+#include "src/dawn/native/CommandEncoder.h"
+#include "src/dawn/native/CommandValidation.h"
+#include "src/dawn/native/ComputePassEncoder.h"
+#include "src/dawn/native/ComputePipeline.h"
+#include "src/dawn/native/Device.h"
+#include "src/dawn/native/InternalPipelineStore.h"
+#include "src/dawn/native/PhysicalDevice.h"
+#include "src/dawn/native/Queue.h"
+#include "src/dawn/native/Sampler.h"
+#include "src/dawn/native/utils/WGPUHelpers.h"
+#include "src/utils/compiler.h"
 
 namespace dawn::native {
 
@@ -1255,38 +1256,40 @@ MaybeError BlitTextureToBuffer(DeviceBase* device,
             static_cast<uint32_t*>(uniformBuffer->GetMappedRange(0, bufferDesc.size));
         // srcOrigin: vec3u
         params[0] = static_cast<uint32_t>(src.origin.x);
-        params[1] = static_cast<uint32_t>(src.origin.y);
-        params[2] = static_cast<uint32_t>(src.origin.z);
+        DAWN_UNSAFE_TODO(params[1]) = static_cast<uint32_t>(src.origin.y);
+        DAWN_UNSAFE_TODO(params[2]) = static_cast<uint32_t>(src.origin.z);
 
         // packTexelCount: number of texel values (1, 2, or 4) one thread packs into the dst
         // buffer
-        params[3] = std::max(1u, 4 / bytesPerTexel);
+        DAWN_UNSAFE_TODO(params[3]) = std::max(1u, 4 / bytesPerTexel);
         // srcExtent: vec3u
-        params[4] = static_cast<uint32_t>(copyExtent.width);
-        params[5] = static_cast<uint32_t>(copyExtent.height);
-        params[6] = static_cast<uint32_t>(copyExtent.depthOrArrayLayers);
+        DAWN_UNSAFE_TODO(params[4]) = static_cast<uint32_t>(copyExtent.width);
+        DAWN_UNSAFE_TODO(params[5]) = static_cast<uint32_t>(copyExtent.height);
+        DAWN_UNSAFE_TODO(params[6]) = static_cast<uint32_t>(copyExtent.depthOrArrayLayers);
 
-        params[7] = src.mipLevel;
+        DAWN_UNSAFE_TODO(params[7]) = src.mipLevel;
 
-        params[8] = static_cast<uint32_t>(blockInfo.ToBytes(dst.blocksPerRow));
-        params[9] = static_cast<uint32_t>(dst.rowsPerImage);
-        params[10] = static_cast<uint32_t>(shaderStartOffset);
+        DAWN_UNSAFE_TODO(params[8]) = static_cast<uint32_t>(blockInfo.ToBytes(dst.blocksPerRow));
+        DAWN_UNSAFE_TODO(params[9]) = static_cast<uint32_t>(dst.rowsPerImage);
+        DAWN_UNSAFE_TODO(params[10]) = static_cast<uint32_t>(shaderStartOffset);
 
         // These params are only used for formats smaller than 4 bytes
-        params[11] = (static_cast<uint32_t>(shaderStartOffset) % 4) / bytesPerTexel;  // shift
+        DAWN_UNSAFE_TODO(params[11]) =
+            (static_cast<uint32_t>(shaderStartOffset) % 4) / bytesPerTexel;  // shift
 
-        params[16] = bytesPerTexel;
-        params[17] = numU32PerRowNeedsWriting;
-        params[18] = readPreviousRow ? 1 : 0;
-        params[19] = dst.rowsPerImage == copyExtent.height ? 1 : 0;  // isCompactImage
+        DAWN_UNSAFE_TODO(params[16]) = bytesPerTexel;
+        DAWN_UNSAFE_TODO(params[17]) = numU32PerRowNeedsWriting;
+        DAWN_UNSAFE_TODO(params[18]) = readPreviousRow ? 1 : 0;
+        DAWN_UNSAFE_TODO(params[19]) =
+            dst.rowsPerImage == copyExtent.height ? 1 : 0;  // isCompactImage
 
         if (textureViewDimension == wgpu::TextureViewDimension::Cube) {
             // cube need texture size to convert texel coord to sample location
             auto levelSize =
                 src.texture->GetMipLevelSingleSubresourceVirtualSize(src.mipLevel, Aspect::Color);
-            params[12] = levelSize.width;
-            params[13] = levelSize.height;
-            params[14] = levelSize.depthOrArrayLayers;
+            DAWN_UNSAFE_TODO(params[12]) = levelSize.width;
+            DAWN_UNSAFE_TODO(params[13]) = levelSize.height;
+            DAWN_UNSAFE_TODO(params[14]) = levelSize.depthOrArrayLayers;
         }
 
         DAWN_TRY(uniformBuffer->Unmap());
@@ -1351,8 +1354,11 @@ MaybeError BlitTextureToBuffer(DeviceBase* device,
                                                          UsageValidationMode::Internal));
     }
 
-    // Skip clearing the buffer if this is full size copy.
-    dst.buffer->SetInitialized(fullSizeCopy || dst.buffer->IsInitialized());
+    // TODO(b/513631768): Skip clearing the buffer if this is full size copy.
+    // dst.buffer->SetInitialized(fullSizeCopy || dst.buffer->IsInitialized());
+    //
+    // This optimization is temporarily removed because we cannot mark the buffer as initialized
+    // until the command buffer is submitted.
 
     Ref<ComputePassEncoder> pass = commandEncoder->BeginComputePass();
     pass->APISetPipeline(pipeline.Get());

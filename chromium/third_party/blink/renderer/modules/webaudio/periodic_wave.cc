@@ -103,10 +103,11 @@ PeriodicWave* PeriodicWave::Create(BaseAudioContext& context,
 
   PeriodicWave* periodic_wave =
       MakeGarbageCollected<PeriodicWave>(context.sampleRate());
-  periodic_wave->impl()->CreateBandLimitedTables(base::span<const float>(real),
-                                                 base::span<const float>(imag),
-                                                 disable_normalization);
-  return periodic_wave;
+  return periodic_wave->impl()->CreateBandLimitedTables(
+             base::span<const float>(real), base::span<const float>(imag),
+             disable_normalization)
+                 ? periodic_wave
+                 : nullptr;
 }
 
 PeriodicWave* PeriodicWave::Create(BaseAudioContext* context,
@@ -141,26 +142,32 @@ PeriodicWave* PeriodicWave::Create(BaseAudioContext* context,
 
 PeriodicWave* PeriodicWave::CreateSine(float sample_rate) {
   PeriodicWave* periodic_wave = MakeGarbageCollected<PeriodicWave>(sample_rate);
-  periodic_wave->impl()->GenerateBasicWaveform(OscillatorHandler::SINE);
-  return periodic_wave;
+  return periodic_wave->impl()->GenerateBasicWaveform(OscillatorHandler::SINE)
+             ? periodic_wave
+             : nullptr;
 }
 
 PeriodicWave* PeriodicWave::CreateSquare(float sample_rate) {
   PeriodicWave* periodic_wave = MakeGarbageCollected<PeriodicWave>(sample_rate);
-  periodic_wave->impl()->GenerateBasicWaveform(OscillatorHandler::SQUARE);
-  return periodic_wave;
+  return periodic_wave->impl()->GenerateBasicWaveform(OscillatorHandler::SQUARE)
+             ? periodic_wave
+             : nullptr;
 }
 
 PeriodicWave* PeriodicWave::CreateSawtooth(float sample_rate) {
   PeriodicWave* periodic_wave = MakeGarbageCollected<PeriodicWave>(sample_rate);
-  periodic_wave->impl()->GenerateBasicWaveform(OscillatorHandler::SAWTOOTH);
-  return periodic_wave;
+  return periodic_wave->impl()->GenerateBasicWaveform(
+             OscillatorHandler::SAWTOOTH)
+             ? periodic_wave
+             : nullptr;
 }
 
 PeriodicWave* PeriodicWave::CreateTriangle(float sample_rate) {
   PeriodicWave* periodic_wave = MakeGarbageCollected<PeriodicWave>(sample_rate);
-  periodic_wave->impl()->GenerateBasicWaveform(OscillatorHandler::TRIANGLE);
-  return periodic_wave;
+  return periodic_wave->impl()->GenerateBasicWaveform(
+             OscillatorHandler::TRIANGLE)
+             ? periodic_wave
+             : nullptr;
 }
 
 PeriodicWave::PeriodicWave(float sample_rate)
@@ -406,10 +413,7 @@ unsigned PeriodicWaveImpl::NumberOfPartialsForRange(
   return number_of_partials;
 }
 
-// Convert into time-domain wave buffers.  One table is created for each range
-// for non-aliasing playback at different playback rates.  Thus, higher ranges
-// have more high-frequency partials culled out.
-void PeriodicWaveImpl::CreateBandLimitedTables(
+bool PeriodicWaveImpl::CreateBandLimitedTables(
     base::span<const float> real_data,
     base::span<const float> imag_data,
     bool disable_normalization) {
@@ -439,11 +443,9 @@ void PeriodicWaveImpl::CreateBandLimitedTables(
     // arrays.  Need to scale the data by fftSize to remove the scaling that the
     // inverse IFFT would do.
     float scale = fft_size;
-    vector_math::Vsmul(real_data.data(), 1, &scale, real.Data(), 1,
-                       number_of_components);
+    vector_math::Vsmul(real_data, scale, real.as_span(), number_of_components);
     scale = -scale;
-    vector_math::Vsmul(imag_data.data(), 1, &scale, imag.Data(), 1,
-                       number_of_components);
+    vector_math::Vsmul(imag_data, scale, imag.as_span(), number_of_components);
 
     // Find the starting bin where we should start culling.  We need to clear
     // out the highest frequencies to band-limit the waveform.
@@ -464,22 +466,23 @@ void PeriodicWaveImpl::CreateBandLimitedTables(
 
     // Create the band-limited table.
     unsigned wave_size = PeriodicWaveSize();
-    std::unique_ptr<AudioFloatArray> table =
-        std::make_unique<AudioFloatArray>(wave_size);
+    auto table = std::make_unique<AudioFloatArray>();
+    if (!table->TryAllocate(wave_size)) {
+      return false;
+    }
     external_memory_accounter_.Increase(v8::Isolate::GetCurrent(),
                                         wave_size * sizeof(float));
     band_limited_tables_.push_back(std::move(table));
 
     // Apply an inverse FFT to generate the time-domain table data.
-    float* data = band_limited_tables_[range_index]->Data();
-    frame.DoInverseFFT(data);
+    base::span<float> data_span = band_limited_tables_[range_index]->as_span();
+    frame.DoInverseFFT(data_span);
 
     // For the first range (which has the highest power), calculate its peak
     // value then compute normalization scale.
     if (!disable_normalization) {
       if (!range_index) {
-        float max_value;
-        vector_math::Vmaxmgv(data, 1, &max_value, fft_size);
+        float max_value = vector_math::Vmaxmgv(data_span, fft_size);
 
         if (max_value) {
           normalization_scale = 1.0f / max_value;
@@ -488,11 +491,12 @@ void PeriodicWaveImpl::CreateBandLimitedTables(
     }
 
     // Apply normalization scale.
-    vector_math::Vsmul(data, 1, &normalization_scale, data, 1, fft_size);
+    vector_math::Vsmul(data_span, normalization_scale, data_span, fft_size);
   }
+  return true;
 }
 
-void PeriodicWaveImpl::GenerateBasicWaveform(int shape) {
+bool PeriodicWaveImpl::GenerateBasicWaveform(int shape) {
   unsigned fft_size = PeriodicWaveSize();
   unsigned half_size = fft_size / 2;
 
@@ -566,7 +570,7 @@ void PeriodicWaveImpl::GenerateBasicWaveform(int shape) {
     imag[n] = b;
   }
 
-  CreateBandLimitedTables(real.as_span(), imag.as_span(), false);
+  return CreateBandLimitedTables(real.as_span(), imag.as_span(), false);
 }
 
 }  // namespace blink

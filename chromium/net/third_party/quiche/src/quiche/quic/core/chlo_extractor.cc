@@ -4,6 +4,7 @@
 
 #include "quiche/quic/core/chlo_extractor.h"
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 
@@ -88,10 +89,10 @@ class ChloFramerVisitor : public QuicFramerVisitorInterface,
   void OnPacketComplete() override {}
   bool IsValidStatelessResetToken(
       const StatelessResetToken& token) const override;
-  void OnAuthenticatedIetfStatelessResetPacket(
-      const QuicIetfStatelessResetPacket& /*packet*/) override {}
+  void OnAuthenticatedIetfStatelessResetPacket() override {}
   void OnKeyUpdate(KeyUpdateReason /*reason*/) override;
   void OnDecryptedFirstPacketInKeyPhase() override;
+  void OnSconePacket(uint8_t /*signal*/) override {}
   std::unique_ptr<QuicDecrypter> AdvanceKeysAndCreateCurrentOneRttDecrypter()
       override;
   std::unique_ptr<QuicEncrypter> CreateCurrentOneRttEncrypter() override;

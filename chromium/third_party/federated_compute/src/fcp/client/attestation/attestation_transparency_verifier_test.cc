@@ -23,6 +23,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
+#include "absl/status/status_matchers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "fcp/client/attestation/log_attestation_records.h"
@@ -102,7 +103,7 @@ TEST(AttestationTransparencyVerifierTest,
   AttestationTransparencyVerifier verifier(AccessPolicyEndorsementOptions(),
                                            LogPrettyPrintedVerificationRecord);
   EXPECT_THAT(verifier.Verify({}, {}, {}),
-              IsCode(absl::StatusCode::kInvalidArgument));
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(AttestationTransparencyVerifierTest, Success) {
@@ -127,7 +128,7 @@ TEST(AttestationTransparencyVerifierTest, Success) {
   AttestationTransparencyVerifier verifier(std::move(options),
                                            LogPrettyPrintedVerificationRecord);
   auto result = verifier.Verify({}, signed_endorsements, encryption_config);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(result->public_key, VariantWith<Key>(EqualsProto(public_key)));
   EXPECT_EQ(result->key_id, public_key.key_id());
   EXPECT_EQ(result->access_policy_sha256, "access policy hash");
@@ -163,7 +164,7 @@ TEST(AttestationTransparencyVerifierTest, SuccessWithSignatureChain) {
   AttestationTransparencyVerifier verifier(std::move(options),
                                            LogPrettyPrintedVerificationRecord);
   auto result = verifier.Verify({}, signed_endorsements, encryption_config);
-  ASSERT_OK(result);
+  ABSL_ASSERT_OK(result);
   EXPECT_THAT(result->public_key, VariantWith<Key>(EqualsProto(public_key)));
   EXPECT_EQ(result->key_id, public_key.key_id());
   EXPECT_EQ(result->access_policy_sha256, "access policy hash");
@@ -193,7 +194,8 @@ TEST(AttestationTransparencyVerifierTest, RequireTransparencyLogEntry) {
   AttestationTransparencyVerifier verifier(std::move(options),
                                            LogPrettyPrintedVerificationRecord);
   auto result = verifier.Verify({}, signed_endorsements, encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(), HasSubstr("transparency log entry"));
 }
 
@@ -223,7 +225,8 @@ TEST(AttestationTransparencyVerifierTest, InvalidPipelineConfigSignature) {
   AttestationTransparencyVerifier verifier(std::move(options),
                                            LogPrettyPrintedVerificationRecord);
   auto result = verifier.Verify({}, signed_endorsements, encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(AttestationTransparencyVerifierTest, InvalidPipelineConfig) {
@@ -246,7 +249,8 @@ TEST(AttestationTransparencyVerifierTest, InvalidPipelineConfig) {
   AttestationTransparencyVerifier verifier(std::move(options),
                                            LogPrettyPrintedVerificationRecord);
   auto result = verifier.Verify({}, signed_endorsements, encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(),
               HasSubstr("failed to parse pipeline configuration"));
 }
@@ -273,7 +277,8 @@ TEST(AttestationTransparencyVerifierTest, MismatchedAccessPolicySha256) {
   AttestationTransparencyVerifier verifier(std::move(options),
                                            LogPrettyPrintedVerificationRecord);
   auto result = verifier.Verify({}, signed_endorsements, encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(),
               HasSubstr("access policy SHA-256 does not match"));
 }
@@ -304,7 +309,8 @@ TEST(AttestationTransparencyVerifierTest, InvalidEncryptionKeySignature) {
   AttestationTransparencyVerifier verifier(std::move(options),
                                            LogPrettyPrintedVerificationRecord);
   auto result = verifier.Verify({}, signed_endorsements, encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(AttestationTransparencyVerifierTest, InvalidEncryptionKey) {
@@ -326,7 +332,8 @@ TEST(AttestationTransparencyVerifierTest, InvalidEncryptionKey) {
   AttestationTransparencyVerifier verifier(std::move(options),
                                            LogPrettyPrintedVerificationRecord);
   auto result = verifier.Verify({}, signed_endorsements, encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(),
               HasSubstr("failed to parse encryption key"));
 }
@@ -356,7 +363,8 @@ TEST(AttestationTransparencyVerifierTest,
   AttestationTransparencyVerifier verifier(std::move(options),
                                            LogPrettyPrintedVerificationRecord);
   auto result = verifier.Verify({}, signed_endorsements, encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(),
               HasSubstr("failed to parse oak application signature headers"));
 }
@@ -385,7 +393,8 @@ TEST(AttestationTransparencyVerifierTest, MissingAccessPolicySha256) {
   AttestationTransparencyVerifier verifier(std::move(options),
                                            LogPrettyPrintedVerificationRecord);
   auto result = verifier.Verify({}, signed_endorsements, encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(
       result.status().message(),
       HasSubstr("encryption key headers missing access policy SHA-256"));
@@ -421,7 +430,8 @@ TEST(AttestationTransparencyVerifierTest,
   AttestationTransparencyVerifier verifier(std::move(options),
                                            LogPrettyPrintedVerificationRecord);
   auto result = verifier.Verify({}, signed_endorsements, encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(),
               HasSubstr("oak application signature headers missing endorsed "
                         "evidence SHA-256"));
@@ -451,7 +461,8 @@ TEST(AttestationTransparencyVerifierTest, MissingClaimsInEncryptionKeyHeaders) {
   AttestationTransparencyVerifier verifier(std::move(options),
                                            LogPrettyPrintedVerificationRecord);
   auto result = verifier.Verify({}, signed_endorsements, encryption_config);
-  EXPECT_THAT(result.status(), IsCode(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(result.status(),
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(result.status().message(), HasSubstr("missing required claims"));
 }
 
@@ -486,7 +497,7 @@ TEST(AttestationTransparencyVerifierTest,
           confidentialcompute::AttestationVerificationRecord record) {
         verification_record = record;
       });
-  ASSERT_OK(verifier.Verify({}, signed_endorsements, encryption_config));
+  ABSL_ASSERT_OK(verifier.Verify({}, signed_endorsements, encryption_config));
 
   // Ensure that the verification record logger was called and provided the
   // relevant information.

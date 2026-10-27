@@ -23,11 +23,11 @@
 class GURL;
 
 namespace net {
-class HttpRequestHeaders;
 struct RedirectInfo;
 }
 
 namespace network {
+struct HttpRequestHeadersUpdateParams;
 struct ResourceRequest;
 struct URLLoaderCompletionStatus;
 }  // namespace network
@@ -140,12 +140,9 @@ class BLINK_COMMON_EXPORT URLLoaderThrottle {
       net::RedirectInfo* redirect_info,
       const network::mojom::URLResponseHead& response_head,
       bool* defer,
-      std::vector<std::string>* to_be_removed_request_headers,
-      net::HttpRequestHeaders* modified_request_headers,
-      net::HttpRequestHeaders* modified_cors_exempt_request_headers);
+      network::HttpRequestHeadersUpdateParams* headers_update_params);
 
   // Called when the response headers and meta data are available.
-  // TODO(776312): Migrate this URL to URLResponseHead.
   virtual void WillProcessResponse(
       const GURL& response_url,
       network::mojom::URLResponseHead* response_head,
@@ -185,12 +182,9 @@ class BLINK_COMMON_EXPORT URLLoaderThrottle {
   // Note: restarting with the url reset triggers an internal redirect, which
   // will cause this to be run again. Ensure that this doesn't cause loops.
   virtual void BeforeWillRedirectRequest(
-      net::RedirectInfo* redirect_info,
+      const net::RedirectInfo& redirect_info,
       const network::mojom::URLResponseHead& response_head,
-      RestartWithURLReset* restart_with_url_reset,
-      std::vector<std::string>* to_be_removed_request_headers,
-      net::HttpRequestHeaders* modified_request_headers,
-      net::HttpRequestHeaders* modified_cors_exempt_request_headers);
+      RestartWithURLReset* restart_with_url_reset);
 
   // Called if there is a non-OK net::Error in the completion status.
   virtual void WillOnCompleteWithError(
@@ -201,7 +195,7 @@ class BLINK_COMMON_EXPORT URLLoaderThrottle {
  protected:
   URLLoaderThrottle();
 
-  raw_ptr<Delegate, DanglingUntriaged> delegate_ = nullptr;
+  raw_ptr<Delegate> delegate_ = nullptr;
 };
 
 }  // namespace blink

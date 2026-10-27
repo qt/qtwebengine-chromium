@@ -8,11 +8,6 @@
 //    clang-format -i -style=chromium filename
 // DO NOT EDIT!
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #ifndef UI_GL_GL_BINDINGS_AUTOGEN_EGL_H_
 #define UI_GL_GL_BINDINGS_AUTOGEN_EGL_H_
 
@@ -409,6 +404,7 @@ struct GL_EXPORT DisplayExtensionsEGL {
   bool b_EGL_ANGLE_context_virtualization;
   bool b_EGL_ANGLE_create_context_backwards_compatible;
   bool b_EGL_ANGLE_create_context_client_arrays;
+  bool b_EGL_ANGLE_create_context_extensions_enabled;
   bool b_EGL_ANGLE_create_context_passthrough_shaders;
   bool b_EGL_ANGLE_create_context_webgl_compatibility;
   bool b_EGL_ANGLE_d3d_share_handle_client_buffer;

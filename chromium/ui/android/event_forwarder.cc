@@ -231,7 +231,9 @@ void EventForwarder::OnDragEvent(JNIEnv* env,
                                  const JavaRef<jobjectArray>& j_filenames,
                                  const JavaRef<jstring>& j_text,
                                  const JavaRef<jstring>& j_html,
-                                 const JavaRef<jstring>& j_url) {
+                                 const JavaRef<jstring>& j_url,
+                                 const JavaRef<jstring>& j_customData,
+                                 const JavaRef<jstring>& j_effectAllowed) {
   float dip_scale = view_->GetDipScale();
   gfx::PointF location(x / dip_scale, y / dip_scale);
   gfx::PointF root_location(screen_x / dip_scale, screen_y / dip_scale);
@@ -239,7 +241,8 @@ void EventForwarder::OnDragEvent(JNIEnv* env,
   AppendJavaStringArrayToStringVector(env, j_mimeTypes, &mime_types);
 
   DragEventAndroid event(env, action, location, root_location, mime_types,
-                         j_content, j_filenames, j_text, j_html, j_url);
+                         j_content, j_filenames, j_text, j_html, j_url,
+                         j_customData, j_effectAllowed);
   view_->OnDragEvent(event);
 }
 
@@ -306,6 +309,7 @@ bool EventForwarder::OnGenericMotionEvent(JNIEnv* env,
 void EventForwarder::OnMouseWheelEvent(JNIEnv* env,
                                        const JavaRef<jobject>& motion_event,
                                        int64_t time_ns,
+                                       int32_t action,
                                        float x,
                                        float y,
                                        float raw_x,
@@ -328,7 +332,7 @@ void EventForwarder::OnMouseWheelEvent(JNIEnv* env,
       /*ticks_y=*/delta_y / pixels_per_tick,
       /*tick_multiplier=*/pixels_per_tick,
       /*oldest_event_time=*/base::TimeTicks::FromJavaNanoTime(time_ns),
-      /*android_action=*/0,
+      /*android_action=*/action,
       /*pointer_count=*/1, /*history_size=*/0, /*action_index=*/0,
       /*android_action_button=*/0, /*android_gesture_classification=*/0,
       /*android_button_state=*/0,

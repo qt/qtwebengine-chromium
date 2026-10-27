@@ -62,6 +62,18 @@ try_.builder(
     ],
     gn_args = "ci/mac-arm64-archive-rel",
     cpu = cpu.ARM64,
+    properties = {
+        # The format of these properties is defined at archive/properties.proto
+        "$build/archive": {
+            "source_side_spec_path": [
+                "src",
+                "infra",
+                "archive_config",
+                "mac-arm64-archive-rel.json",
+            ],
+            "verify_paths_only": True,
+        },
+    },
     siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
 )
 
@@ -88,6 +100,18 @@ try_.builder(
     ],
     gn_args = "ci/mac-archive-rel",
     cpu = cpu.ARM64,
+    properties = {
+        # The format of these properties is defined at archive/properties.proto
+        "$build/archive": {
+            "source_side_spec_path": [
+                "src",
+                "infra",
+                "archive_config",
+                "mac-archive-rel.json",
+            ],
+            "verify_paths_only": True,
+        },
+    },
     siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
 )
 
@@ -183,6 +207,9 @@ try_.orchestrator_builder(
     ),
     compilator = "mac-rel-compilator",
     coverage_test_types = ["overall", "unit"],
+    cq_settings = try_.cq_settings(
+        on_default_cq = True,
+    ),
     experiments = {
         # go/nplus1shardsproposal
         "chromium.add_one_test_shard": 10,
@@ -190,7 +217,6 @@ try_.orchestrator_builder(
         "chromium.enable_cleandead": 100,
     },
     main_list_view = "try",
-    tryjob = try_.job(),
     use_clang_coverage = True,
     # TODO (crbug.com/1372179): Use orchestrator pool once overloaded test pools
     # are addressed
@@ -201,6 +227,53 @@ try_.compilator_builder(
     name = "mac-rel-compilator",
     branch_selector = branches.selector.MAC_BRANCHES,
     cpu = cpu.ARM64,
+    main_list_view = "try",
+)
+
+try_.orchestrator_builder(
+    name = "mac-gpu-rel",
+    branch_selector = branches.selector.MAC_BRANCHES,
+    mirrors = [
+        "ci/GPU Mac Builder",
+        "ci/Mac Release (Intel)",
+        "ci/Mac Retina Release (AMD)",
+    ],
+    gn_args = gn_args.config(
+        configs = [
+            "gpu_tests",
+            "release_try_builder",
+            "remoteexec",
+            "no_symbols",
+            "use_clang_coverage",
+            "partial_code_coverage_instrumentation",
+            "enable_dangling_raw_ptr_feature_flag",
+            "enable_backup_ref_ptr_feature_flag",
+            "mac",
+            "x64",
+        ],
+    ),
+    compilator = "mac-gpu-rel-compilator",
+    contact_team_email = "chrome-gpu-infra@google.com",
+    coverage_test_types = ["overall", "unit"],
+    cq_settings = try_.cq_settings(
+        on_default_cq = True,
+    ),
+    experiments = {
+        # go/nplus1shardsproposal
+        "chromium.add_one_test_shard": 10,
+        # crbug.com/940930
+        "chromium.enable_cleandead": 100,
+    },
+    main_list_view = "try",
+    use_clang_coverage = True,
+)
+
+try_.compilator_builder(
+    name = "mac-gpu-rel-compilator",
+    branch_selector = branches.selector.MAC_BRANCHES,
+    description_html = "compilator for mac-gpu-rel.",
+    cpu = cpu.ARM64,
+    contact_team_email = "chrome-gpu-infra@google.com",
     main_list_view = "try",
 )
 
@@ -429,6 +502,24 @@ try_.builder(
 )
 
 try_.builder(
+    name = "mac-no-initial-webui-rel",
+    description_html = "Mirror of Mac No Initial WebUI CI builder",
+    mirrors = [
+        "ci/mac-arm64-rel",
+        "ci/mac-no-initial-webui-rel",
+    ],
+    gn_args = gn_args.config(
+        configs = [
+            "ci/mac-arm64-rel",
+            "release_try_builder",
+            "remoteexec",
+        ],
+    ),
+    cpu = cpu.ARM64,
+    contact_team_email = "chrome-webium-product-eng@google.com",
+)
+
+try_.builder(
     name = "mac_chromium_asan_rel_ng",
     mirrors = [
         "ci/Mac ASan 64 Builder",
@@ -464,13 +555,15 @@ try_.builder(
     ),
     cores = None,
     cpu = cpu.ARM64,
+    cq_settings = try_.cq_settings(
+        on_default_cq = True,
+    ),
     experiments = {
         # crbug.com/940930
         "chromium.enable_cleandead": 100,
     },
     main_list_view = "try",
     siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
-    tryjob = try_.job(),
 )
 
 try_.builder(
@@ -567,15 +660,15 @@ try_.builder(
     mirrors = ["ci/mac-code-coverage"],
     gn_args = "ci/mac-code-coverage",
     cpu = cpu.ARM64,
-    execution_timeout = 20 * time.hour,
+    execution_timeout = 10 * time.hour,
 )
 
 try_.builder(
-    name = "mac-treesinviz-enabled-rel",
+    name = "mac-treesinviz-disabled-rel",
     mirrors = [
-        "ci/mac-treesinviz-enabled-rel",
+        "ci/mac-treesinviz-disabled-rel",
     ],
-    gn_args = "ci/mac-treesinviz-enabled-rel",
+    gn_args = "ci/mac-treesinviz-disabled-rel",
     contact_team_email = "chrome-gpu-team@google.com",
 )
 
@@ -593,6 +686,9 @@ ios_builder(
     mirrors = [
         "ci/ios-blink-rel-fyi",
     ],
+    builder_config_settings = builder_config.try_settings(
+        retry_without_patch = False,
+    ),
     gn_args = "ci/ios-blink-rel-fyi",
     builderless = True,
     cpu = cpu.ARM64,
@@ -654,12 +750,14 @@ try_.orchestrator_builder(
     compilator = "ios-simulator-compilator",
     coverage_exclude_sources = "ios_test_files_and_test_utils",
     coverage_test_types = ["overall", "unit"],
+    cq_settings = try_.cq_settings(
+        on_default_cq = True,
+    ),
     experiments = {
         # go/nplus1shardsproposal
         "chromium.add_one_test_shard": 10,
     },
     main_list_view = "try",
-    tryjob = try_.job(),
     use_clang_coverage = True,
     xcode = xcode.xcode_default,
 )
@@ -686,6 +784,11 @@ ios_builder(
     contact_team_email = "chrome-build-team@google.com",
     coverage_exclude_sources = "ios_test_files_and_test_utils",
     coverage_test_types = ["overall", "unit"],
+    # TODO: crbug.com/336382863 - Comment out 'cq_settings' to not keep this bot running.
+    cq_settings = try_.cq_settings(
+        experiment_percentage = 5,
+        on_default_cq = True,
+    ),
     experiments = {
         # go/nplus1shardsproposal
         "chromium.add_one_test_shard": 10,
@@ -693,10 +796,6 @@ ios_builder(
         "chromium.enable_cleandead": 100,
     },
     main_list_view = "try",
-    # TODO: crbug.com/336382863 - Comment out 'tryjob' to not keep this bot running.
-    tryjob = try_.job(
-        experiment_percentage = 5,
-    ),
     use_clang_coverage = True,
 )
 
@@ -716,13 +815,13 @@ ios_builder(
     cpu = cpu.ARM64,
     coverage_exclude_sources = "ios_test_files_and_test_utils",
     coverage_test_types = ["overall", "unit"],
-    main_list_view = "try",
-    siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
-    tryjob = try_.job(
+    cq_settings = try_.cq_settings(
         location_filters = [
             "ios/.+",
         ],
     ),
+    main_list_view = "try",
+    siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
     use_clang_coverage = True,
 )
 
@@ -737,12 +836,12 @@ ios_builder(
         ],
     ),
     cpu = cpu.ARM64,
-    siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
-    tryjob = try_.job(
+    cq_settings = try_.cq_settings(
         location_filters = [
             "third_party/crashpad/crashpad/.+",
         ],
     ),
+    siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
 )
 
 ios_builder(
@@ -759,30 +858,13 @@ ios_builder(
 ios_builder(
     name = "tvos-rel-fyi",
     mirrors = ["ci/tvos-rel-fyi"],
+    builder_config_settings = builder_config.try_settings(
+        retry_without_patch = False,
+    ),
     gn_args = "ci/tvos-rel-fyi",
     builderless = True,
     cpu = cpu.ARM64,
     contact_team_email = "cobalt-appletv@google.com",
-    xcode = xcode.xcode_default,
-)
-
-ios_builder(
-    name = "ios-structured-test-ids-simulator-fyi",
-    mirrors = [
-        "ci/ios-structured-test-ids-simulator-fyi",
-    ],
-    gn_args = gn_args.config(
-        configs = [
-            "ci/ios-structured-test-ids-simulator-fyi",
-        ],
-    ),
-    builderless = True,
-    cpu = cpu.ARM64,
-    contact_team_email = "chrome-browser-infra-team@google.com",
-    experiments = {
-        "chromium_tests.resultdb_module": 100,
-    },
-    main_list_view = "try",
     xcode = xcode.xcode_default,
 )
 
@@ -819,7 +901,7 @@ ios_builder(
     ],
     gn_args = "ci/ios18-sdk-simulator",
     cpu = cpu.ARM64,
-    xcode = xcode.x26betabots,
+    xcode = xcode.xcode_beta,
 )
 
 ios_builder(
@@ -827,7 +909,7 @@ ios_builder(
     mirrors = ["ci/ios26-sdk-simulator"],
     gn_args = "ci/ios26-sdk-simulator",
     cpu = cpu.ARM64,
-    xcode = xcode.x26betabots,
+    xcode = xcode.xcode_beta,
 )
 
 ios_builder(
@@ -840,7 +922,7 @@ ios_builder(
     ),
     builderless = True,
     cpu = cpu.ARM64,
-    execution_timeout = 20 * time.hour,
+    execution_timeout = 10 * time.hour,
 )
 
 gpu.try_.optional_tests_builder(
@@ -891,11 +973,11 @@ gpu.try_.optional_tests_builder(
     free_space = None,
     alerts_enabled = False,
     contact_team_email = "chrome-gpu-infra@google.com",
-    main_list_view = "try",
-    max_concurrent_builds = 7,
-    tryjob = try_.job(
+    cq_settings = try_.cq_settings(
         location_filters = gpu.try_.optional_trybot_location_filters.MAC,
     ),
+    main_list_view = "try",
+    max_concurrent_builds = 7,
 )
 
 gpu.try_.optional_tests_builder(
@@ -918,9 +1000,9 @@ gpu.try_.optional_tests_builder(
     free_space = None,
     alerts_enabled = False,
     contact_team_email = "chrome-gpu-infra@google.com",
-    main_list_view = "try",
-    max_concurrent_builds = 7,
-    tryjob = try_.job(
+    cq_settings = try_.cq_settings(
         location_filters = gpu.try_.optional_trybot_location_filters.MAC,
     ),
+    main_list_view = "try",
+    max_concurrent_builds = 7,
 )

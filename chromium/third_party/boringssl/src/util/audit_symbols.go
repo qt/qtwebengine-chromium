@@ -69,6 +69,7 @@ var skipWeakSymbols = []*regexp.Regexp{
 	// Symbols on Windows.
 	regexp.MustCompile(`.*<lambda.*`),                                   // Lambda classes
 	regexp.MustCompile(`.*@std(@.*)?$`),                                 // std::
+	regexp.MustCompile(`.*@stdext(@.*)?$`),                              // stdext::
 	regexp.MustCompile(`^(.*\?\?)?__local_stdio_printf_options(@.*)?$`), // stdio
 	regexp.MustCompile(`^(.*\?\?)?gai_strerrorA(@.*)?$`),                // gai_strerrorA()
 	regexp.MustCompile(`^RtlSecureZeroMemory$`),                         // RtlSecureZeroMemory()
@@ -86,6 +87,8 @@ var skipWeakSymbols = []*regexp.Regexp{
 	regexp.MustCompile(`^snprintf$`),                                    // snprintf()
 	regexp.MustCompile(`^vsnprintf$`),                                   // vsnprintf()
 	regexp.MustCompile(`^\?\?_R[0-4].*$`),                               // RTTI
+	regexp.MustCompile(`^_Avx2WmemEnabledWeakValue$`),                   // MSVC 14.50+ CRT
+	regexp.MustCompile(`^time$`),                                        // MSVC 14.50+ CRT
 
 	// Symbols in the FIPS module.
 	// They are provided for tooling only and should not be read internally.

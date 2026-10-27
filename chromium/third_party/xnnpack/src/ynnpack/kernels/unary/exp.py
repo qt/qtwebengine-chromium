@@ -1,65 +1,60 @@
 """Definition of exp kernel."""
 
-import math
-
 # pylint: disable=undefined-variable
+# pylint: disable=missing-function-docstring
 from ynnpack.kernels.elementwise.compiler import *  # pylint: disable=wildcard-import
+from ynnpack.kernels.unary.util import *  # pylint: disable=wildcard-import
 
 
-def setexp_f32(x):
-  # If `x` is an floating point value in the range [-127, 128], then
-  # `(x + magic) << 23` will generate the floating point value corresponding
-  # to `2^round(x)` (2^-127 and 2^128 will flush to zero and infinity,
-  # respectively).
-  vmagic = 8388735.0
-  return reinterpret_cast(
-      Float(32),
-      logical_shift_left(reinterpret_cast(Int(32), x + vmagic), i32(23)),
-  )
-
-
-# Quick-and-dirty round to nearest, only works for floats in the range
-# `[2^-22, 2^22)`.
 def qd_round_f32(a):
   # If `x` is an floating point value in the range `[2^-22, 2^22)`, then
   # `(x + magic) - magic`` will generate the floating point value corresponding
   # to `round(x)`.
-  vmagic = 12582912.0
+  vmagic = 1.5*(2**23)
+  return (vmagic + a) - vmagic
+
+
+def qd_round_f64(a):
+  vmagic = 1.5*(2**52)
   return (vmagic + a) - vmagic
 
 
 @const_buffer("a", Float(32))
 @buffer("x", Float(32))
+@params(
+    Scalar("output_multiplier", Float(32)),
+    Scalar("input_multiplier", Float(32)),
+)
 @operator_name("exp")
-def exp_fp32(a, x):
-  # The monomial coefficients of the numerator polynomial (`valpha_0` = 1.0).
-  valpha_1 = 4.1594290733e-01
-  valpha_2 = 7.2068706155e-02
-  valpha_3 = 5.5380910635e-03
+def exp_fp32(a, x, output_multiplier, input_multiplier):
+  # Polynomial coefficients
+  p = [
+      2.7769648004e-03 * output_multiplier,
+      4.8084631562e-02 * output_multiplier,
+      3.4672188759e-01 * output_multiplier,
+      1.0000000000e00 * output_multiplier,
+  ]
+  q = [
+      -2.7651260607e-03,
+      4.7981843352e-02,
+      -3.4642529488e-01,
+      1.0000000000e00,
+  ]
 
-  # The monomial coefficients of the denominator polynomial (`vbeta_0 = 1.0).
-  vbeta_1 = -2.7720427513e-01
-  vbeta_2 = 2.3986088112e-02
-
-  va = load(a)
+  va = load(a) * input_multiplier
   # Clamp `vz_prime = x * log2(e)` to the maximum exponents [-127, 128].
-  vz_prime = min(max(va * f32(math.log2(math.e)), -127.0), 128.0)
+  vz_prime = min(max(va, -127.0), 128.0)
 
   # Decompose x * log2e into `z` (integer part) and `r` (remainder).
   vz = qd_round_f32(vz_prime)
   vr = vz_prime - vz
 
   # Compute 2^z.
-  v2z = setexp_f32(vz)
+  v2z = exp2_round(vz)
+  v2z = copynan(v2z, va)
 
-  # Evaluate the numerator polynomial p(f).
-  vp = multiply_add(vr, valpha_3, valpha_2)
-  vp = multiply_add(vr, vp, valpha_1)
-  vp = multiply_add(vr, vp, 1.0)
-
-  # Evaluate the denominator polynomial q(r).
-  vq = multiply_add(vr, vbeta_2, vbeta_1)
-  vq = multiply_add(vr, vq, 1.0)
+  vp = eval_polynomial(vr, p)
+  vq = eval_polynomial(vr, q)
 
   # Divide the numerator by the denominator, obtaining 2^r.
   v2r = vp / vq
@@ -70,52 +65,52 @@ def exp_fp32(a, x):
   return store(vx, x)
 
 
-@const_buffer("a", Float(32))
-@buffer("x", Float(32))
-@operator_name("erf")
-def erf_fp32(a, x):
-  # Cap the inputs to this value as `erf(x)` will always be `+/-1.0f`
-  # beyond this point. This value is chosen roughly as the first floating point
-  # number as of which the interpolation returns +/-1.0f.
-  vmax_abs_x = 3.8
+@const_buffer("a", Float(64))
+@buffer("x", Float(64))
+@params(
+    # These are actually fp32, but we convert them to fp64 when loading them.
+    Scalar("output_multiplier", Float(64)),
+    Scalar("input_multiplier", Float(64)),
+)
+@operator_name("exp")
+def exp_fp64(a, x, output_multiplier, input_multiplier):
+  # Polynomial coefficients
+  p = [
+      f64(3.430671987749682348e-06) * output_multiplier,
+      f64(1.754214714900316551e-04) * output_multiplier,
+      f64(3.930681642138933278e-03) * output_multiplier,
+      f64(4.871246780757146344e-02) * output_multiplier,
+      f64(3.331084219217221309e-01) * output_multiplier,
+      f64(9.999999999999998890e-01) * output_multiplier,
+  ]
+  q = [
+      f64(-7.126417699553038831e-06),
+      f64(2.821496207245147419e-04),
+      f64(-5.316864104706260294e-03),
+      f64(5.804581129084830649e-02),
+      f64(-3.600387586382234328e-01),
+      f64(1.000000000000000000e00),
+  ]
 
-  # The monomial coefficients of the numerator polynomial (`valpha_0` = 0.0).
-  valpha_1 = 1.1283791149e00
-  valpha_3 = 1.8942591284e-01
-  valpha_5 = 5.2645591597e-02
-  valpha_7 = 3.7304820991e-03
-  valpha_9 = 2.8532683811e-04
-  valpha_11 = 2.0742698573e-06
+  va = load(a) * input_multiplier
+  # Clamp `vz_prime = x * log2(e)` to the maximum exponents [-1023, 1024].
+  vz_prime = min(max(va, -1023.0), 1024.0)
 
-  # The monomial coefficients of the denominator polynomial (`vbeta_0 = 1.0).
-  vbeta_2 = 5.0120705366e-01
-  vbeta_4 = 1.1372791231e-01
-  vbeta_6 = 1.4898274094e-02
-  vbeta_8 = 1.1562824948e-03
-  vbeta_10 = 3.8364178182e-05
+  # Decompose x * log2e into `z` (integer part) and `r` (remainder).
+  vz = qd_round_f64(vz_prime)
+  vr = vz_prime - vz
 
-  # Clamp the inputs to the interpolation range.
-  vx = load(a)
-  vx = min(vmax_abs_x, vx)
-  vx = max(-vmax_abs_x, vx)
+  # Compute 2^z.
+  v2z = exp2_round(vz)
+  v2z = copynan(v2z, va)
 
-  # Since the polynomials are odd/even, we need x^2.
-  vx2 = vx * vx
+  vp = eval_polynomial(vr, p)
+  vq = eval_polynomial(vr, q)
 
-  # Evaluate the numerator polynomial p.
-  vp = multiply_add(vx2, valpha_11, valpha_9)
-  vp = multiply_add(vx2, vp, valpha_7)
-  vp = multiply_add(vx2, vp, valpha_5)
-  vp = multiply_add(vx2, vp, valpha_3)
-  vp = multiply_add(vx2, vp, valpha_1)
-  vp = vx * vp
+  # Divide the numerator by the denominator, obtaining 2^r.
+  v2r = vp / vq
 
-  # Evaluate the denominator polynomial q.
-  vq = multiply_add(vx2, vbeta_10, vbeta_8)
-  vq = multiply_add(vx2, vq, vbeta_6)
-  vq = multiply_add(vx2, vq, vbeta_4)
-  vq = multiply_add(vx2, vq, vbeta_2)
-  vq = multiply_add(vx2, vq, 1.0)
+  # Compute 2^z * 2^r.
+  vx = v2z * v2r
 
-  # Divide the numerator by the denominator.
-  return store(vp / vq, x)
+  return store(vx, x)

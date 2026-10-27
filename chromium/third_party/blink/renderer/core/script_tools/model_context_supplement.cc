@@ -6,6 +6,7 @@
 
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/navigator.h"
+#include "third_party/blink/renderer/core/inspector/console_message.h"
 
 namespace blink {
 
@@ -13,51 +14,67 @@ namespace blink {
 const char ModelContextSupplement::kSupplementName[] = "ModelContextSupplement";
 
 // static
-ModelContextSupplement& ModelContextSupplement::From(Navigator& navigator) {
+ModelContextSupplement& ModelContextSupplement::From(Document& document) {
   ModelContextSupplement* supplement =
-      Supplement<Navigator>::From<ModelContextSupplement>(navigator);
+      Supplement<Document>::From<ModelContextSupplement>(document);
   if (!supplement) {
-    supplement = MakeGarbageCollected<ModelContextSupplement>(navigator);
-    ProvideTo(navigator, supplement);
+    supplement = MakeGarbageCollected<ModelContextSupplement>(document);
+    ProvideTo(document, supplement);
   }
   return *supplement;
 }
 
 // static
-ModelContext* ModelContextSupplement::GetIfExists(Navigator& navigator) {
+ModelContext* ModelContextSupplement::GetIfExists(Document& document) {
   ModelContextSupplement* supplement =
-      Supplement<Navigator>::From<ModelContextSupplement>(navigator);
-  return supplement ? supplement->modelContext() : nullptr;
+      Supplement<Document>::From<ModelContextSupplement>(document);
+  return supplement ? supplement->model_context_.Get() : nullptr;
 }
 
 // static
 ModelContext* ModelContextSupplement::modelContext(Navigator& navigator) {
-  return From(navigator).modelContext();
+  auto* window = navigator.DomWindow();
+  if (!window || !window->document()) {
+    return nullptr;
+  }
+  window->AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
+                                mojom::blink::ConsoleMessageSource::kJavaScript,
+                                mojom::blink::ConsoleMessageLevel::kWarning,
+                                "navigator.modelContext is deprecated. Please "
+                                "use document.modelContext instead."),
+                            /*discard_duplicates=*/true);
+  return From(*window->document()).modelContext();
+}
+
+// static
+ModelContext* ModelContextSupplement::modelContext(Document& document) {
+  return From(document).modelContext();
 }
 
 // static
 ModelContextTesting* ModelContextSupplement::modelContextTesting(
     Navigator& navigator) {
-  return From(navigator).modelContextTesting();
+  auto* window = navigator.DomWindow();
+  if (!window || !window->document()) {
+    return nullptr;
+  }
+  return From(*window->document()).modelContextTesting();
 }
 
-ModelContextSupplement::ModelContextSupplement(Navigator& navigator)
-    : Supplement<Navigator>(navigator) {}
+ModelContextSupplement::ModelContextSupplement(Document& document)
+    : Supplement<Document>(document) {}
 
 void ModelContextSupplement::Trace(Visitor* visitor) const {
   visitor->Trace(model_context_);
   visitor->Trace(model_context_testing_);
-  Supplement<Navigator>::Trace(visitor);
+  Supplement<Document>::Trace(visitor);
 }
 
 ModelContext* ModelContextSupplement::modelContext() {
   if (!model_context_) {
-    auto* window = GetSupplementable()->DomWindow();
-    if (window && window->document()) {
-      model_context_ = MakeGarbageCollected<ModelContext>(
-          *window->document(),
-          window->GetTaskRunner(TaskType::kUserInteraction));
-    }
+    Document* document = GetSupplementable();
+    CHECK(document);
+    model_context_ = MakeGarbageCollected<ModelContext>(*document);
   }
   return model_context_.Get();
 }

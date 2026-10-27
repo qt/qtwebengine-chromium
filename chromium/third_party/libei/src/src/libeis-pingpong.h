@@ -1,0 +1,63 @@
+
+/* SPDX-License-Identifier: MIT */
+/*
+ * Copyright © 2020 Red Hat, Inc.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice (including the next
+ * paragraph) shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ */
+
+#pragma once
+
+#include "util-object.h"
+#include "brei-shared.h"
+
+struct eis;
+struct eis_client;
+struct eis_pingpong;
+
+typedef void (*eis_pingpong_func)(struct eis_pingpong *pingpong,
+				  void *pingpong_data,
+				  uint64_t proto_data);
+
+/* This is a protocol-only object, not exposed in the API */
+struct eis_pingpong {
+	struct object object;
+	struct brei_object proto_object;
+	void *user_data; /* Note: user-data is attached to the object */
+
+	struct list link; /* for use by the callers, if needed */
+
+	eis_pingpong_func func;
+	void *pingpong_data; /* Note: pingpong-data is attached to the pingpong */
+};
+
+OBJECT_DECLARE_GETTER(eis_pingpong, context, struct eis *);
+OBJECT_DECLARE_GETTER(eis_pingpong, client, struct eis_client *);
+OBJECT_DECLARE_GETTER(eis_pingpong, id, object_id_t);
+OBJECT_DECLARE_GETTER(eis_pingpong, version, uint32_t);
+OBJECT_DECLARE_GETTER(eis_pingpong, proto_object, const struct brei_object *);
+OBJECT_DECLARE_GETTER(eis_pingpong, interface, const struct eis_pingpong_interface *);
+OBJECT_DECLARE_GETTER(eis_pingpong, user_data, void*);
+OBJECT_DECLARE_SETTER(eis_pingpong, user_data, void*);
+OBJECT_DECLARE_REF(eis_pingpong);
+OBJECT_DECLARE_UNREF(eis_pingpong);
+
+struct eis_pingpong *
+eis_pingpong_new(struct eis_client *eis_client, eis_pingpong_func func, void *pingpong_data);

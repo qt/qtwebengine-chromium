@@ -26,6 +26,29 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ###############################################################################
+# Dawn version
+###############################################################################
+
+DawnGenerator(
+    SCRIPT "${Dawn_SOURCE_DIR}/generator/dawn_version_generator.py"
+    PRINT_NAME "Dawn version based utilities"
+    OUTPUT_HEADERS DAWN_VERSION_AUTOGEN_HEADERS
+    EXTRA_PARAMETERS "--dawn-dir"
+         "${Dawn_SOURCE_DIR}"
+)
+
+dawn_add_library(
+    dawn_version
+    HEADER_ONLY
+    ENABLE_EMSCRIPTEN
+    UTILITY_TARGET dawn_internal_config
+    HEADERS
+        ${DAWN_VERSION_AUTOGEN_HEADERS}
+    DEPENDS
+        dawn_public_config
+)
+
+###############################################################################
 # Dawn headers
 ###############################################################################
 

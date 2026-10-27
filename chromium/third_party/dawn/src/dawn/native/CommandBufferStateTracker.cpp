@@ -25,7 +25,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "dawn/native/CommandBufferStateTracker.h"
+#include "src/dawn/native/CommandBufferStateTracker.h"
 
 #include <bit>
 #include <limits>
@@ -36,15 +36,15 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/inlined_vector.h"
-#include "dawn/common/Assert.h"
-#include "dawn/common/Math.h"
-#include "dawn/native/BindGroup.h"
-#include "dawn/native/ComputePassEncoder.h"
-#include "dawn/native/ComputePipeline.h"
-#include "dawn/native/Forward.h"
-#include "dawn/native/ObjectType_autogen.h"
-#include "dawn/native/PipelineLayout.h"
-#include "dawn/native/RenderPipeline.h"
+#include "src/dawn/common/Assert.h"
+#include "src/dawn/common/Math.h"
+#include "src/dawn/native/BindGroup.h"
+#include "src/dawn/native/ComputePassEncoder.h"
+#include "src/dawn/native/ComputePipeline.h"
+#include "src/dawn/native/Forward.h"
+#include "src/dawn/native/PipelineLayout.h"
+#include "src/dawn/native/RenderPipeline.h"
+#include "src/utils/compiler.h"
 
 // TODO(dawn:563): None of the error messages in this file include the buffer objects they are
 // validating against. It would be nice to improve that, but difficult to do without incurring
@@ -60,7 +60,7 @@ namespace {
 std::optional<uint32_t> FindFirstUndersizedBuffer(
     const ityp::span<uint32_t, uint64_t> unverifiedBufferSizes,
     const std::vector<uint64_t>& pipelineMinBufferSizes) {
-    DAWN_ASSERT(unverifiedBufferSizes.size() == pipelineMinBufferSizes.size());
+    DAWN_CHECK(unverifiedBufferSizes.size() == pipelineMinBufferSizes.size());
 
     for (uint32_t i = 0; i < unverifiedBufferSizes.size(); ++i) {
         if (unverifiedBufferSizes[i] < pipelineMinBufferSizes[i]) {
@@ -230,7 +230,7 @@ Return FindStorageBufferBindingAliasing(const PipelineLayoutBase* pipelineLayout
     for (size_t i = 0; i < storageTextureViewsToCheck.size(); i++) {
         const TextureViewBase* textureView0 = storageTextureViewsToCheck[i];
 
-        DAWN_ASSERT(textureView0->GetAspects() == Aspect::Color);
+        DAWN_CHECK(textureView0->GetAspects() == Aspect::Color);
 
         uint32_t baseMipLevel0 = textureView0->GetBaseMipLevel();
         uint32_t mipLevelCount0 = textureView0->GetLevelCount();
@@ -244,7 +244,7 @@ Return FindStorageBufferBindingAliasing(const PipelineLayoutBase* pipelineLayout
                 continue;
             }
 
-            DAWN_ASSERT(textureView1->GetAspects() == Aspect::Color);
+            DAWN_CHECK(textureView1->GetAspects() == Aspect::Color);
 
             uint32_t baseMipLevel1 = textureView1->GetBaseMipLevel();
             uint32_t mipLevelCount1 = textureView1->GetLevelCount();
@@ -277,7 +277,7 @@ Return FindStorageBufferBindingAliasing(const PipelineLayoutBase* pipelineLayout
 }
 
 bool TextureViewsMatch(const TextureViewBase* a, const TextureViewBase* b) {
-    DAWN_ASSERT(a->GetTexture() == b->GetTexture());
+    DAWN_CHECK(a->GetTexture() == b->GetTexture());
     // If the texture format is multiplanar, the view formats are permitted to differ (e.g., R8
     // and RG8), referring to different planes of the same YUV texture. This cannot happen in
     // OpenGL that actually needs the validation of texture views matching so it's safe for
@@ -295,7 +295,7 @@ bool TextureViewsMatch(const TextureViewBase* a, const TextureViewBase* b) {
 using VectorOfTextureViews = absl::InlinedVector<const TextureViewBase*, 8>;
 
 bool TextureViewsAllMatch(const VectorOfTextureViews& views) {
-    DAWN_ASSERT(!views.empty());
+    DAWN_CHECK(!views.empty());
 
     const TextureViewBase* first = views[0];
     for (size_t i = 1; i < views.size(); ++i) {
@@ -425,7 +425,7 @@ MaybeError CommandBufferStateTracker::ValidateBufferInRangeForVertexBuffer(uint3
                             "is smaller than the required size for all attributes (%u)",
                             bufferSize, usedSlotVertex, vertexBuffer.usedBytesInStride);
         } else {
-            DAWN_ASSERT(strideCount != 0u);
+            DAWN_CHECK(strideCount != 0u);
             uint64_t requiredSize = (strideCount - 1u) * arrayStride + vertexBuffer.lastStride;
             // firstVertex and vertexCount are in uint32_t,
             // arrayStride must not be larger than kMaxVertexBufferArrayStride, which is
@@ -471,7 +471,7 @@ MaybeError CommandBufferStateTracker::ValidateBufferInRangeForInstanceBuffer(
                             "is smaller than the required size for all attributes (%u)",
                             bufferSize, usedSlotInstance, vertexBuffer.usedBytesInStride);
         } else {
-            DAWN_ASSERT(strideCount != 0u);
+            DAWN_CHECK(strideCount != 0u);
             uint64_t requiredSize = (strideCount - 1u) * arrayStride + vertexBuffer.lastStride;
             // firstInstance and instanceCount are in uint32_t,
             // arrayStride must not be larger than kMaxVertexBufferArrayStride, which is
@@ -529,8 +529,8 @@ MaybeError CommandBufferStateTracker::ValidateOperation(ValidationAspects requir
 }
 
 void CommandBufferStateTracker::RecomputeLazyAspects(ValidationAspects aspects) {
-    DAWN_ASSERT(mAspects[VALIDATION_ASPECT_PIPELINE]);
-    DAWN_ASSERT((aspects & ~kLazyAspects).none());
+    DAWN_CHECK(mAspects[VALIDATION_ASPECT_PIPELINE]);
+    DAWN_CHECK((aspects & ~kLazyAspects).none());
 
     if (aspects[VALIDATION_ASPECT_BIND_GROUPS]) {
         bool matches = true;
@@ -586,7 +586,7 @@ void CommandBufferStateTracker::RecomputeLazyAspects(ValidationAspects aspects) 
     }
 
     if (aspects[VALIDATION_ASPECT_IMMEDIATE_DATA]) {
-        ImmediateConstantMask requiredMask = mLastPipeline->GetUserImmediateSlots();
+        ImmediateMask requiredMask = mLastPipeline->GetUserImmediateSlots();
         if (IsSubset(requiredMask, mImmediateDataMask)) {
             mAspects.set(VALIDATION_ASPECT_IMMEDIATE_DATA);
         }
@@ -639,7 +639,7 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
         // Try to be helpful by finding one missing vertex buffer to surface in the error message.
         const auto missingVertexBuffers =
             GetRenderPipeline()->GetVertexBuffersUsed() & ~mVertexBuffersUsed;
-        DAWN_ASSERT(missingVertexBuffers.any());
+        DAWN_CHECK(missingVertexBuffers.any());
 
         VertexBufferSlot firstMissing = ityp::Sub(GetHighestBitIndexPlusOne(missingVertexBuffers),
                                                   VertexBufferSlot(uint8_t(1)));
@@ -648,12 +648,12 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
     }
 
     if (aspects[VALIDATION_ASPECT_IMMEDIATE_DATA]) {
-        ImmediateConstantMask requiredMask = mLastPipeline->GetUserImmediateSlots();
+        ImmediateMask requiredMask = mLastPipeline->GetUserImmediateSlots();
         if (!IsSubset(requiredMask, mImmediateDataMask)) {
-            ImmediateConstantMask missing = requiredMask & ~mImmediateDataMask;
+            ImmediateMask missing = requiredMask & ~mImmediateDataMask;
             size_t firstMissing = std::countr_zero(static_cast<uint64_t>(missing.to_ullong()));
             return DAWN_VALIDATION_ERROR("Required immediate data at offset %u was not set.",
-                                         firstMissing * kImmediateConstantElementByteSize);
+                                         firstMissing * kImmediateElementByteSize);
         }
     }
 
@@ -661,7 +661,7 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
         // TODO(crbug.com/dawn/2476): Validate TextureViewDescriptor YCbCrInfo matches with that in
         // SamplerDescriptor.
         for (BindGroupIndex i : mLastPipelineLayout->GetBindGroupLayoutsMask()) {
-            DAWN_ASSERT(HasPipeline());
+            DAWN_CHECK(HasPipeline());
 
             DAWN_INVALID_IF(mBindgroups[i] == nullptr, "No bind group set at group index %u.", i);
 
@@ -708,8 +708,8 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
                             bindingIndex = candidateBindingIndex;
                         }
                     });
-                DAWN_ASSERT(static_cast<uint32_t>(bindingIndex) !=
-                            std::numeric_limits<uint32_t>::max());
+                DAWN_CHECK(static_cast<uint32_t>(bindingIndex) !=
+                           std::numeric_limits<uint32_t>::max());
 
                 const auto& bindingInfo = mBindgroups[i]->GetLayout()->GetBindingInfo(bindingIndex);
                 const BufferBase* buffer = mBindgroups[i]->GetBindingAsBuffer(bindingIndex);
@@ -747,7 +747,7 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
                 a.e0.offset, a.e0.size, a.e1.offset, a.e1.size,
                 mBindgroups[a.e0.bindGroupIndex]->GetBindingAsBuffer(a.e0.bindingIndex));
         } else {
-            DAWN_ASSERT(std::holds_alternative<TextureAliasing>(result));
+            DAWN_CHECK(std::holds_alternative<TextureAliasing>(result));
             const auto& a = std::get<TextureAliasing>(result);
             return DAWN_VALIDATION_ERROR(
                 "Writable storage texture binding aliasing found between %s set at bind group "
@@ -792,7 +792,8 @@ void CommandBufferStateTracker::SetBindGroup(BindGroupIndex index,
                                              uint32_t dynamicOffsetCount,
                                              const uint32_t* dynamicOffsets) {
     mBindgroups[index] = bindgroup;
-    mDynamicOffsets[index].assign(dynamicOffsets, dynamicOffsets + dynamicOffsetCount);
+    mDynamicOffsets[index].assign(dynamicOffsets,
+                                  DAWN_UNSAFE_TODO(dynamicOffsets + dynamicOffsetCount));
     mAspects.reset(VALIDATION_ASPECT_BIND_GROUPS);
 }
 
@@ -809,6 +810,7 @@ void CommandBufferStateTracker::SetIndexBuffer(BufferBase* buffer,
     mIndexFormat = format;
     mIndexBufferSize = size;
     mIndexBufferOffset = offset;
+    mAspects.reset(VALIDATION_ASPECT_INDEX_BUFFER);
 }
 
 void CommandBufferStateTracker::UnsetVertexBuffer(VertexBufferSlot slot) {
@@ -823,11 +825,11 @@ void CommandBufferStateTracker::SetVertexBuffer(VertexBufferSlot slot, uint64_t 
 }
 
 void CommandBufferStateTracker::SetImmediateData(uint32_t offset, uint32_t size) {
-    static_assert(ImmediateConstantMask{}.size() <= 64);
-    uint64_t startSlot = offset / kImmediateConstantElementByteSize;
-    uint64_t slotCount = size / kImmediateConstantElementByteSize;
+    static_assert(ImmediateMask{}.size() <= 64);
+    uint64_t startSlot = offset / kImmediateElementByteSize;
+    uint64_t slotCount = size / kImmediateElementByteSize;
 
-    mImmediateDataMask |= ImmediateConstantMask(((1u << slotCount) - 1u) << startSlot);
+    mImmediateDataMask |= ImmediateMask(((1u << slotCount) - 1u) << startSlot);
 }
 
 void CommandBufferStateTracker::SetPipelineCommon(PipelineBase* pipeline) {
@@ -863,12 +865,12 @@ bool CommandBufferStateTracker::IndexBufferSet() const {
 }
 
 RenderPipelineBase* CommandBufferStateTracker::GetRenderPipeline() const {
-    DAWN_ASSERT(HasPipeline() && mLastPipeline->GetType() == ObjectType::RenderPipeline);
+    DAWN_RELEASE_ASSUME(HasPipeline() && mLastPipeline->GetType() == ObjectType::RenderPipeline);
     return static_cast<RenderPipelineBase*>(mLastPipeline);
 }
 
 ComputePipelineBase* CommandBufferStateTracker::GetComputePipeline() const {
-    DAWN_ASSERT(HasPipeline() && mLastPipeline->GetType() == ObjectType::ComputePipeline);
+    DAWN_RELEASE_ASSUME(HasPipeline() && mLastPipeline->GetType() == ObjectType::ComputePipeline);
     return static_cast<ComputePipelineBase*>(mLastPipeline);
 }
 

@@ -297,7 +297,7 @@ bool ParseLocaleDate(const WideString& wsDate,
     WideString symbol;
     symbol.Reserve(4);
     symbol += spDatePattern[ccf++];
-    while (ccf < spDatePattern.size() && spDatePattern[ccf] == symbol[0]) {
+    while (ccf < spDatePattern.size() && spDatePattern[ccf] == symbol.Front()) {
       symbol += spDatePattern[ccf++];
     }
     if (symbol.EqualsASCII("D") || symbol.EqualsASCII("DD")) {
@@ -426,7 +426,7 @@ bool ParseLocaleTime(const WideString& wsTime,
     WideString symbol;
     symbol.Reserve(4);
     symbol += spTimePattern[ccf++];
-    while (ccf < spTimePattern.size() && spTimePattern[ccf] == symbol[0]) {
+    while (ccf < spTimePattern.size() && spTimePattern[ccf] == symbol.Front()) {
       symbol += spTimePattern[ccf++];
     }
 
@@ -643,7 +643,7 @@ WideString DateFormat(const WideString& wsDatePattern,
     WideString symbol;
     symbol.Reserve(4);
     symbol += spDatePattern[ccf++];
-    while (ccf < spDatePattern.size() && spDatePattern[ccf] == symbol[0]) {
+    while (ccf < spDatePattern.size() && spDatePattern[ccf] == symbol.Front()) {
       symbol += spDatePattern[ccf++];
     }
 
@@ -714,7 +714,7 @@ WideString TimeFormat(const WideString& wsTimePattern,
     WideString symbol;
     symbol.Reserve(4);
     symbol += spTimePattern[ccf++];
-    while (ccf < spTimePattern.size() && spTimePattern[ccf] == symbol[0]) {
+    while (ccf < spTimePattern.size() && spTimePattern[ccf] == symbol.Front()) {
       symbol += spTimePattern[ccf++];
     }
 
@@ -1725,7 +1725,7 @@ CFGAS_StringFormatter::DateTimeType CFGAS_StringFormatter::GetDateTimeFormat(
              pattern_span_[ccf] != '.' && pattern_span_[ccf] != '(') {
         if (pattern_span_[ccf] == 'T') {
           *wsDatePattern = pattern_.First(ccf);
-          *wsTimePattern = pattern_.Last(pattern_.GetLength() - ccf);
+          *wsTimePattern = pattern_.Substr(ccf);
           wsTimePattern->SetAt(0, ' ');
           if (!*pLocale) {
             *pLocale = pLocaleMgr->GetDefLocale();
@@ -2018,7 +2018,7 @@ bool CFGAS_StringFormatter::FormatNum(LocaleMgrIface* pLocaleMgr,
   pdfium::span<const wchar_t> spNumFormat = wsNumFormat.span();
   WideString wsSrcNum = wsInputNum;
   wsSrcNum.TrimFront('0');
-  if (wsSrcNum.IsEmpty() || wsSrcNum[0] == '.') {
+  if (wsSrcNum.IsEmpty() || wsSrcNum.Front() == '.') {
     wsSrcNum.InsertAtFront('0');
   }
 
@@ -2091,7 +2091,7 @@ bool CFGAS_StringFormatter::FormatNum(LocaleMgrIface* pLocaleMgr,
 
   WideString wsGroupSymbol = pLocale->GetGroupingSymbol();
   bool bNeg = false;
-  if (wsSrcNum[0] == '-') {
+  if (wsSrcNum.Front() == '-') {
     bNeg = true;
     wsSrcNum.Delete(0, 1);
   }

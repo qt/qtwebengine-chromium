@@ -161,7 +161,8 @@ void ServiceVideoCaptureProvider::OpenNativeScreenCapturePicker(
     base::OnceCallback<void(DesktopMediaID::Id)> created_callback,
     base::OnceCallback<void(webrtc::DesktopCapturer::Source)> picker_callback,
     base::OnceCallback<void()> cancel_callback,
-    base::OnceCallback<void()> error_callback) {
+    base::OnceCallback<void()> error_callback,
+    base::OnceCallback<void(DesktopMediaID::Id)> stop_audio_callback) {
   NOTREACHED();
 }
 
@@ -169,6 +170,16 @@ void ServiceVideoCaptureProvider::CloseNativeScreenCapturePicker(
     DesktopMediaID device_id) {
   NOTREACHED();
 }
+
+#if BUILDFLAG(IS_MAC)
+void ServiceVideoCaptureProvider::GetApplicationAudioCaptureId(
+    DesktopMediaID::Id session_id,
+    base::OnceCallback<
+        void(const std::optional<desktop_capture::ApplicationAudioCaptureId>&)>
+        callback) {
+  std::move(callback).Run(std::nullopt);
+}
+#endif
 
 void ServiceVideoCaptureProvider::OnServiceStarted() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::IO);

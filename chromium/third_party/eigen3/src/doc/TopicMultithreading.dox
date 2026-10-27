@@ -50,7 +50,7 @@ This is simply because OpenMP does not allow to know the number of physical core
 \section TopicMultiThreading_UsingEigenWithMT Using Eigen in a multi-threaded application
 
 \warning Note that all functions generating random matrices are \b not re-entrant nor thread-safe. Those include DenseBase::Random(), and DenseBase::setRandom(). This is because these functions are based on \c std::rand which is not re-entrant.
-For thread-safe random generation, we recommend the use of C++11 random generators (\link DenseBase::NullaryExpr(Index, const CustomNullaryOp&) example \endlink).
+For thread-safe random generation, we recommend the use of the std random generators (\link DenseBase::NullaryExpr(Index, const CustomNullaryOp&) example \endlink).
 
 In the case your application is parallelized with OpenMP, you might want to disable %Eigen's own parallelization as detailed in the previous section.
 

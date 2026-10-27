@@ -23,6 +23,7 @@
 #include "core/fxge/cfx_face.h"
 
 class CFGAS_GEFont;
+class CFX_CTTNameTable;
 
 #if BUILDFLAG(IS_WIN)
 struct FX_FONTSIGNATURE {
@@ -76,7 +77,7 @@ class CFGAS_FontDescriptor {
   uint32_t font_styles_ = 0;
   WideString face_name_;
   RetainPtr<CFX_Face> face_;  // May be null until required.
-  std::vector<WideString> family_names_;
+  std::unique_ptr<CFX_CTTNameTable> family_names_;
   std::array<uint32_t, 4> usb_ = {};
   std::array<uint32_t, 2> csb_ = {};
 };

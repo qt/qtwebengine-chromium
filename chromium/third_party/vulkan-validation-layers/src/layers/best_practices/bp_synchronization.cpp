@@ -42,6 +42,15 @@ bool BestPractices::CheckDependencyInfo(const LogObjectList& objlist, const Loca
     return skip;
 }
 
+void BestPractices::PreCallRecordDestroyEvent(VkDevice device, VkEvent event, const VkAllocationCallbacks* pAllocator,
+                                              const RecordObject& record_obj) {
+    device_state->ForEachShared<vvl::CommandBuffer>([event](const std::shared_ptr<vvl::CommandBuffer>& command_buffer) {
+        auto guard = command_buffer->WriteLock();
+        auto& sub_state = bp_state::SubState(*command_buffer.get());
+        sub_state.event_signaling_state.erase(event);
+    });
+}
+
 bool BestPractices::CheckEventSignalingState(const bp_state::CommandBufferSubState& command_buffer, VkEvent event,
                                              const Location& cb_loc) const {
     bool skip = false;
@@ -227,25 +236,24 @@ bool BestPractices::ValidateImageMemoryBarrier(const Location& loc, VkCommandBuf
         const char* warning = enabled_features.maintenance9
                                   ? "is not required, because maintenance9 is enabled"
                                   : "could be omitted, if maintenance9 (which is supported by the physical device) were enabled";
-        if (image_state->create_info.tiling == VK_IMAGE_TILING_LINEAR) {
+        if (image_state->GetTiling() == VK_IMAGE_TILING_LINEAR) {
             skip |= LogPerformanceWarning("BestPractices-PipelineBarrier-unneeded-QFOT", image, loc,
                                           "A queue family ownership transfer is being performed on %s, but this %s. Image was "
                                           "created with VK_IMAGE_TILING_LINEAR.",
                                           FormatHandle(image).c_str(), warning);
-        } else if ((image_state->create_info.usage &
-                    (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-                     VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
-                     VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT | VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR)) ==
-                   0) {
+        } else if ((image_state->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                                          VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
+                                          VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT |
+                                          VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR)) == 0) {
+            // The list of image usages not allowed comes from
+            // https://registry.khronos.org/vulkan/specs/latest/man/html/VkSharingMode.html
             auto cb_state = Get<vvl::CommandBuffer>(commandBuffer);
             VkQueueFamilyOwnershipTransferPropertiesKHR qfot_props = vku::InitStructHelper();
             uint32_t qf_count = dstQueueFamilyIndex + 1;
             std::vector<VkQueueFamilyProperties2> qf_props(qf_count);
             qf_props.back().pNext = &qfot_props;
             DispatchGetPhysicalDeviceQueueFamilyProperties2(cb_state->dev_data.physical_device, &qf_count, qf_props.data());
-            // The list of image usages not allowed comes from
-            // https://registry.khronos.org/vulkan/specs/latest/man/html/VkSharingMode.html
-            if (qfot_props.optimalImageTransferToQueueFamilies) {
+            if (qfot_props.optimalImageTransferToQueueFamilies & (1 << dstQueueFamilyIndex)) {
                 skip |= LogPerformanceWarning(
                     "BestPractices-PipelineBarrier-unneeded-QFOT", image, loc,
                     "A queue family ownership transfer is being performed on %s, but this %s. Image was created with "
@@ -341,7 +349,7 @@ bool BestPractices::PreCallValidateCmdPipelineBarrier(
             // general with no storage
             if (VendorCheckEnabled(kBPVendorAMD) && image_barrier.newLayout == VK_IMAGE_LAYOUT_GENERAL) {
                 auto image_state = Get<vvl::Image>(pImageMemoryBarriers[i].image);
-                if (image_state && !(image_state->create_info.usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
+                if (image_state && !(image_state->usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
                     const LogObjectList objlist(commandBuffer, pImageMemoryBarriers[i].image);
                     skip |= LogPerformanceWarning("BestPractices-AMD-vkImage-AvoidGeneral", objlist,
                                                   error_obj.location.dot(Field::pImageMemoryBarriers, i).dot(Field::image),

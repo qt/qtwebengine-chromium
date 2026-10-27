@@ -425,13 +425,15 @@ const char kEnableVtune[]                   = "enable-vtune-support";
 const char kEnableWebGLDeveloperExtensions[] =
     "enable-webgl-developer-extensions";
 
-// Enables WebGL extensions not yet approved by the community.
-const char kEnableWebGLDraftExtensions[] = "enable-webgl-draft-extensions";
-
 // Define an alias root directory which is replaced with the replacement string
 // in file URLs. The format is "/alias=/replacement", which would turn
 // file:///alias/some/path.html into file:///replacement/some/path.html.
 const char kFileUrlPathAlias[] = "file-url-path-alias";
+
+// Forces recording of NavigationTimeline UKM.
+// Useful for testing NavigationTimeline UKM recording in browser tests.
+const char kForceNavigationTimelineUkmRecordingForTesting[] =
+    "force-navigation-timeline-ukm-recording-for-testing";
 
 // This forces pages to be loaded as presentation receivers.  Useful for testing
 // behavior specific to presentation receivers.
@@ -623,6 +625,11 @@ const char kRendererProcess[]               = "renderer";
 
 // Time the browser launched the renderer process (in TimeTicks).
 const char kRendererProcessLaunchTimeTicks[] = "launch-time-ticks";
+
+// Time the browser process requested the GPU channel for the renderer (in
+// TimeTicks).
+const char kGpuChannelRequestStartTimeTicks[] =
+    "gpu-channel-request-start-time-ticks";
 
 // Overrides the default/calculated limit to the number of renderer processes.
 // Very high values for this setting can lead to high memory/resource usage

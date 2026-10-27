@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assert} from 'chai';
+
 import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import {allThreadEntriesInTrace, getAllNetworkRequestsByHost} from '../../testing/TraceHelpers.js';
 import {TraceLoader} from '../../testing/TraceLoader.js';
@@ -42,6 +44,13 @@ describeWithEnvironment('EntityMapper', function() {
     // These would be the same object identity, if not for shallowClone
     assert.deepEqual(fromRenderer, fromNetwork);
     assert.deepEqual(fromRenderer, mappings.eventsByEntity);
+  });
+
+  it('caches mappers based on the parsed trace', async function() {
+    const parsedTrace = await TraceLoader.traceEngine(this, 'lantern/paul/trace.json.gz');
+    const mapper1 = Trace.EntityMapper.EntityMapper.getOrCreate(parsedTrace);
+    const mapper2 = Trace.EntityMapper.EntityMapper.getOrCreate(parsedTrace);
+    assert.strictEqual(mapper1, mapper2);
   });
 
   describe('entityForEvent', () => {

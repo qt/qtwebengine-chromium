@@ -1729,10 +1729,15 @@ export namespace ProtocolMapping {
     };
     /**
      * Modifies the expression of a container query.
+     * Deprecated. Use setContainerQueryConditionText instead.
      */
     'CSS.setContainerQueryText': {
       paramsType: [Protocol.CSS.SetContainerQueryTextRequest];
       returnType: Protocol.CSS.SetContainerQueryTextResponse;
+    };
+    'CSS.setContainerQueryConditionText': {
+      paramsType: [Protocol.CSS.SetContainerQueryConditionTextRequest];
+      returnType: Protocol.CSS.SetContainerQueryConditionTextResponse;
     };
     /**
      * Modifies the expression of a supports at-rule.
@@ -2655,22 +2660,12 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
-     * TODO: OBSOLETE: To remove when setPressureDataOverride is merged.
      * Provides a given pressure state that will be processed and eventually be
      * delivered to PressureObserver users. |source| must have been previously
      * overridden by setPressureSourceOverrideEnabled.
      */
     'Emulation.setPressureStateOverride': {
       paramsType: [Protocol.Emulation.SetPressureStateOverrideRequest];
-      returnType: void;
-    };
-    /**
-     * Provides a given pressure data set that will be processed and eventually be
-     * delivered to PressureObserver users. |source| must have been previously
-     * overridden by setPressureSourceOverrideEnabled.
-     */
-    'Emulation.setPressureDataOverride': {
-      paramsType: [Protocol.Emulation.SetPressureDataOverrideRequest];
       returnType: void;
     };
     /**
@@ -2846,8 +2841,6 @@ export namespace ProtocolMapping {
     };
     /**
      * Runs an extension default action.
-     * Available if the client is connected using the --remote-debugging-pipe
-     * flag and the --enable-unsafe-extension-debugging flag is set.
      */
     'Extensions.triggerAction': {
       paramsType: [Protocol.Extensions.TriggerActionRequest];
@@ -2856,9 +2849,7 @@ export namespace ProtocolMapping {
     /**
      * Installs an unpacked extension from the filesystem similar to
      * --load-extension CLI flags. Returns extension ID once the extension
-     * has been installed. Available if the client is connected using the
-     * --remote-debugging-pipe flag and the --enable-unsafe-extension-debugging
-     * flag is set.
+     * has been installed.
      */
     'Extensions.loadUnpacked': {
       paramsType: [Protocol.Extensions.LoadUnpackedRequest];
@@ -2866,8 +2857,6 @@ export namespace ProtocolMapping {
     };
     /**
      * Gets a list of all unpacked extensions.
-     * Available if the client is connected using the --remote-debugging-pipe flag
-     * and the --enable-unsafe-extension-debugging flag is set.
      */
     'Extensions.getExtensions': {
       paramsType: [];
@@ -2875,8 +2864,6 @@ export namespace ProtocolMapping {
     };
     /**
      * Uninstalls an unpacked extension (others not supported) from the profile.
-     * Available if the client is connected using the --remote-debugging-pipe flag
-     * and the --enable-unsafe-extension-debugging.
      */
     'Extensions.uninstall': {
       paramsType: [Protocol.Extensions.UninstallRequest];
@@ -3717,6 +3704,13 @@ export namespace ProtocolMapping {
      */
     'Network.enableDeviceBoundSessions': {
       paramsType: [Protocol.Network.EnableDeviceBoundSessionsRequest];
+      returnType: void;
+    };
+    /**
+     * Deletes a device bound session.
+     */
+    'Network.deleteDeviceBoundSession': {
+      paramsType: [Protocol.Network.DeleteDeviceBoundSessionRequest];
       returnType: void;
     };
     /**
@@ -5004,15 +4998,6 @@ export namespace ProtocolMapping {
       paramsType: [];
       returnType: Protocol.Storage.GetRelatedWebsiteSetsResponse;
     };
-    /**
-     * Returns the list of URLs from a page and its embedded resources that match
-     * existing grace period URL pattern rules.
-     * https://developers.google.com/privacy-sandbox/cookies/temporary-exceptions/grace-period
-     */
-    'Storage.getAffectedUrlsForThirdPartyCookieMetadata': {
-      paramsType: [Protocol.Storage.GetAffectedUrlsForThirdPartyCookieMetadataRequest];
-      returnType: Protocol.Storage.GetAffectedUrlsForThirdPartyCookieMetadataResponse;
-    };
     'Storage.setProtectedAudienceKAnonymity': {
       paramsType: [Protocol.Storage.SetProtectedAudienceKAnonymityRequest];
       returnType: void;
@@ -5382,6 +5367,20 @@ export namespace ProtocolMapping {
      */
     'WebMCP.disable': {
       paramsType: [];
+      returnType: void;
+    };
+    /**
+     * Invokes a registered tool.
+     */
+    'WebMCP.invokeTool': {
+      paramsType: [Protocol.WebMCP.InvokeToolRequest];
+      returnType: Protocol.WebMCP.InvokeToolResponse;
+    };
+    /**
+     * Cancels a pending tool invocation.
+     */
+    'WebMCP.cancelInvocation': {
+      paramsType: [Protocol.WebMCP.CancelInvocationRequest];
       returnType: void;
     };
     /**

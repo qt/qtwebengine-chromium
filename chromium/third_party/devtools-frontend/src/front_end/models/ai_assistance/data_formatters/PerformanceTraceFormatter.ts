@@ -35,15 +35,17 @@ export class PerformanceTraceFormatter {
   #insightSet: Trace.Insights.Types.InsightSet|null;
   #eventsSerializer: Trace.EventsSerializer.EventsSerializer;
   #formattedFunctionCodes = new Set<string>();
+  #deviceScope: CrUXManager.DeviceScope|null;
   resolveFunctionCode?:
       (url: Platform.DevToolsPath.UrlString, line: number,
        column: number) => Promise<SourceMapScopes.FunctionCodeResolver.FunctionCode|null>;
 
-  constructor(focus: AgentFocus) {
+  constructor(focus: AgentFocus, deviceScope: CrUXManager.DeviceScope|null = null) {
     this.#focus = focus;
     this.#parsedTrace = focus.parsedTrace;
     this.#insightSet = focus.primaryInsightSet;
     this.#eventsSerializer = focus.eventsSerializer;
+    this.#deviceScope = deviceScope;
   }
 
   serializeEvent(event: Trace.Types.Events.Event): string {
@@ -52,7 +54,7 @@ export class PerformanceTraceFormatter {
   }
 
   serializeBounds(bounds: Trace.Types.Timing.TraceWindowMicro): string {
-    return `{min: ${bounds.min}, max: ${bounds.max}}`;
+    return `{min: ${bounds.min}µs, max: ${bounds.max}µs}`;
   }
 
   /**
@@ -64,7 +66,8 @@ export class PerformanceTraceFormatter {
       return [];
     }
     try {
-      const cruxScope = CrUXManager.CrUXManager.instance().getSelectedScope();
+      const cruxScope: CrUXManager.Scope = this.#deviceScope ? {pageScope: 'url', deviceScope: this.#deviceScope} :
+                                                               CrUXManager.CrUXManager.instance().getSelectedScope();
       const parts: string[] = [];
       const fieldMetrics =
           Trace.Insights.Common.getFieldMetricsForInsightSet(insightSet, this.#parsedTrace.metadata, cruxScope);
@@ -902,6 +905,29 @@ The order of headers corresponds to an internal fixed list. If a header is not p
   }
 
   /**
+   * Formats only the first line of the function code to save space in summaries.
+   * The agent can use this information (url, line, column) to get the whole function source.
+   */
+  #formatFunctionCodeSummary(code: SourceMapScopes.FunctionCodeResolver.FunctionCode): string {
+    this.#formattedFunctionCodes.add(this.#functionCodeToKey(code));
+
+    const {startLine, startColumn} = code.range;
+    const name = code.functionBounds.name || '(anonymous)';
+    const url = code.functionBounds.uiSourceCode.url();
+
+    const lines = code.code.split('\n');
+    const firstLine = lines[0] || '';
+
+    const parts = [];
+    parts.push(`${name} @ ${url}:${startLine}:${startColumn}`);
+    parts.push('```');
+    parts.push(firstLine);
+    parts.push('```');
+
+    return parts.join('\n');
+  }
+
+  /**
    * Appends the code of each call frame's function, but only if the function was not
    * serialized previously.
    */
@@ -917,7 +943,7 @@ The order of headers corresponds to an internal fixed list. If a header is not p
             resolveFunctionCode(frame.url as Platform.DevToolsPath.UrlString, frame.lineNumber, frame.columnNumber)));
     for (const code of functionCodes) {
       if (code && !this.#hasFormattedFunctionCode(code)) {
-        functionCodeStrings.push(this.#formatFunctionCode(code));
+        functionCodeStrings.push(this.#formatFunctionCodeSummary(code));
       }
     }
 
@@ -927,8 +953,8 @@ The order of headers corresponds to an internal fixed list. If a header is not p
 
     return '\n' + [
       this.#getFormattedFunctionCodeExplainer(),
-      functionCodeStrings.length > 1 ? `Here are ${functionCodeStrings.length} relevant functions:` :
-                                       `Here is a relevant function:`,
+      functionCodeStrings.length > 1 ? `Here is the first line of ${functionCodeStrings.length} relevant functions:` :
+                                       `Here is the first line of a relevant function:`,
       ...functionCodeStrings,
     ].join('\n\n');
   }

@@ -22,7 +22,6 @@
 #include "chrome/browser/new_tab_page/promos/promo_service.h"
 #include "chrome/browser/new_tab_page/promos/promo_service_observer.h"
 #include "chrome/browser/search/background/ntp_custom_background_service.h"
-#include "chrome/browser/search/background/ntp_custom_background_service_observer.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_observer.h"
 #include "chrome/browser/ui/search/ntp_user_data_logger.h"
@@ -35,6 +34,7 @@
 #include "components/search_provider_logos/logo_common.h"
 #include "components/segmentation_platform/public/result.h"
 #include "components/themes/ntp_background_service_observer.h"
+#include "components/themes/ntp_custom_background_service_observer.h"
 #include "components/user_education/common/feature_promo/feature_promo_controller.h"
 #include "components/user_education/common/feature_promo/feature_promo_result.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -169,6 +169,9 @@ class NewTabPageHandler
   void OnPromoLinkClicked() override;
   void IncrementComposeButtonShownCount() override;
   void MaybeTriggerAutomaticCustomizeChromePromo() override;
+  void CanShowRealboxContextMenuAnimation(
+      CanShowRealboxContextMenuAnimationCallback callback) override;
+  void RecordRealboxContextMenuAnimationImpression() override;
 
  private:
   // ui::NativeThemeObserver:
@@ -202,6 +205,7 @@ class NewTabPageHandler
   void OnBrowserWindowInterfaceChanged();
 
   void LogEvent(NTPLoggingEventType event);
+  void LogEvent(NTPLoggingEventType event, base::TimeDelta delta);
 
   typedef base::OnceCallback<void(bool success,
                                   std::optional<std::string> body)>
@@ -227,6 +231,8 @@ class NewTabPageHandler
   void IncrementDictPrefKeyCount(const std::string& pref_name,
                                  const std::string& key);
 
+// TODO(b/502297163): Implement for Android.
+#if !BUILDFLAG(IS_ANDROID)
   // Returns a HaTS trigger id associated with the given combination of user
   // interaction and module id if one exists, or nullptr otherwise to indicate
   // that there is no configured survey trigger id for such combination. The
@@ -235,6 +241,7 @@ class NewTabPageHandler
   const std::string& GetSurveyTriggerIdForModuleAndInteraction(
       std::string_view interaction,
       const std::string& module_id);
+#endif
 
   void SetModuleHidden(const std::string& module_id, bool hidden);
 
@@ -244,12 +251,30 @@ class NewTabPageHandler
   void SetStaleModulesDisabled(const std::vector<std::string>& module_ids,
                                bool disabled);
 
+// TODO(b/502297163): Implement for Android.
+#if !BUILDFLAG(IS_ANDROID)
   void TryShowRealboxContextualMenuIPH(ui::TrackedElement* element);
+#endif
 
   // Synchronizes Microsoft module enablement with their current authentication
   // state. The return value indicates whether the modules should be considered
   // loadable.
   bool SyncMicrosoftModulesWithAuth();
+
+  NTPUserDataLogger logger_;
+#if !BUILDFLAG(IS_ANDROID)
+  base::ScopedObservation<ThemeService, ThemeServiceObserver>
+      theme_service_observation_{this};
+#endif
+  base::ScopedObservation<PromoService, PromoServiceObserver>
+      promo_service_observation_{this};
+  base::ScopedObservation<MicrosoftAuthService, MicrosoftAuthServiceObserver>
+      microsoft_auth_service_observation_{this};
+#if !BUILDFLAG(IS_ANDROID)
+  base::ScopedObservation<new_tab_footer::NewTabFooterController,
+                          new_tab_footer::NewTabFooterControllerObserver>
+      footer_controller_observation_{this};
+#endif
 
   raw_ptr<NtpCustomBackgroundService> const ntp_custom_background_service_;
   raw_ptr<search_provider_logos::LogoService> const logo_service_;
@@ -265,7 +290,6 @@ class NewTabPageHandler
   std::unique_ptr<NewTabPageFeaturePromoHelper> feature_promo_helper_;
   base::Time ntp_navigation_start_time_;
   raw_ptr<const std::vector<ntp::ModuleIdDetail>> const module_id_details_;
-  NTPUserDataLogger logger_;
   std::unordered_map<const network::SimpleURLLoader*,
                      std::unique_ptr<network::SimpleURLLoader>>
       loader_map_;
@@ -277,20 +301,14 @@ class NewTabPageHandler
       nullptr;
   base::ScopedObservation<ui::NativeTheme, ui::NativeThemeObserver>
       native_theme_observation_{this};
-  base::ScopedObservation<ThemeService, ThemeServiceObserver>
-      theme_service_observation_{this};
   base::ScopedObservation<NtpCustomBackgroundService,
                           NtpCustomBackgroundServiceObserver>
       ntp_custom_background_service_observation_{this};
-  base::ScopedObservation<PromoService, PromoServiceObserver>
-      promo_service_observation_{this};
-  base::ScopedObservation<MicrosoftAuthService, MicrosoftAuthServiceObserver>
-      microsoft_auth_service_observation_{this};
-  base::ScopedObservation<new_tab_footer::NewTabFooterController,
-                          new_tab_footer::NewTabFooterControllerObserver>
-      footer_controller_observation_{this};
   std::optional<base::TimeTicks> promo_load_start_time_;
+// TODO(b/502297163): Implement for Android.
+#if !BUILDFLAG(IS_ANDROID)
   base::DictValue interaction_module_id_trigger_dict_;
+#endif
   // Notifies this when the browser window context changes.
   base::CallbackListSubscription browser_window_changed_subscription_;
   // Triggered when the searchbox's contextual menu entrypoint is displayed.

@@ -97,7 +97,7 @@ export class BidiBrowserContext extends BrowserContext {
       this.#createPage(browsingContext);
     }
 
-    this.userContext.on('browsingcontext', ({browsingContext}) => {
+    this.userContext.on('browsingcontext', browsingContext => {
       const page = this.#createPage(browsingContext);
 
       // We need to wait for the DOMContentLoaded as the
@@ -185,6 +185,13 @@ export class BidiBrowserContext extends BrowserContext {
     return [...this.#targets.values()].flatMap(([target, frames]) => {
       return [target, ...frames.values()];
     });
+  }
+
+  /**
+   * @internal
+   */
+  getTargetForPage(page: BidiPage): BidiPageTarget | undefined {
+    return this.#targets.get(page)?.[0];
   }
 
   override async newPage(options?: CreatePageOptions): Promise<Page> {
@@ -378,7 +385,6 @@ export class BidiBrowserContext extends BrowserContext {
           // Chrome-specific properties.
           ...cdpSpecificCookiePropertiesFromPuppeteerToBidi(
             cookie,
-            'sameParty',
             'sourceScheme',
             'priority',
             'url',

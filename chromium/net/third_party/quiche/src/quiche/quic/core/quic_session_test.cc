@@ -222,7 +222,7 @@ class TestStream : public QuicStream {
              StreamType type)
       : QuicStream(id, session, is_static, type) {}
 
-  TestStream(PendingStream* pending, QuicSession* session)
+  TestStream(PendingStream& pending, QuicSession* session)
       : QuicStream(pending, session, /*is_static=*/false) {}
 
   using QuicStream::AddBytesConsumed;
@@ -305,7 +305,7 @@ class TestSession : public QuicSession {
     return stream;
   }
 
-  TestStream* CreateIncomingStream(PendingStream* pending) override {
+  TestStream* CreateIncomingStream(PendingStream& pending) {
     TestStream* stream = new TestStream(pending, this);
     ActivateStream(absl::WrapUnique(stream));
     ++num_incoming_streams_created_;
@@ -316,13 +316,13 @@ class TestSession : public QuicSession {
   // here to test that the session handles pending streams correctly in terms of
   // receiving stream frames.
   QuicStream* ProcessBidirectionalPendingStream(
-      PendingStream* pending) override {
+      PendingStream& pending) override {
     return CreateIncomingStream(pending);
   }
   QuicStream* ProcessReadUnidirectionalPendingStream(
-      PendingStream* pending) override {
+      PendingStream& pending) override {
     struct iovec iov;
-    if (pending->sequencer()->GetReadableRegion(&iov)) {
+    if (pending.sequencer()->GetReadableRegion(&iov)) {
       // Create TestStream once the first byte is received.
       return CreateIncomingStream(pending);
     }
@@ -3664,15 +3664,11 @@ TEST_P(QuicSessionTestServer, FlowControlFinalByteUnderflow) {
       /*control_frame_id=*/kInvalidControlFrameId, stream_id,
       QUIC_STREAM_CANCELLED,
       /*bytes_written=*/0);
-  if (GetQuicReloadableFlag(quic_close_connection_on_underflow)) {
-    EXPECT_CALL(
-        *connection_,
-        CloseConnection(QUIC_FLOW_CONTROL_FINAL_SIZE_CHANGED,
-                        "Invalid final byte offset",
-                        ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET));
-  } else {
-    EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
-  }
+  EXPECT_CALL(
+      *connection_,
+      CloseConnection(QUIC_FLOW_CONTROL_FINAL_SIZE_CHANGED,
+                      "Invalid final byte offset",
+                      ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET));
   session_.OnRstStream(malicious_rst);
 
   EXPECT_EQ(session_.flow_controller()->highest_received_byte_offset(),
@@ -3680,11 +3676,7 @@ TEST_P(QuicSessionTestServer, FlowControlFinalByteUnderflow) {
   const QuicByteCount bytes_consumed_after =
       session_.flow_controller()->bytes_consumed();
 
-  if (GetQuicReloadableFlag(quic_close_connection_on_underflow)) {
-    EXPECT_EQ(bytes_consumed_after, kDataSize);
-  } else {
-    EXPECT_NE(bytes_consumed_after, kDataSize);
-  }
+  EXPECT_EQ(bytes_consumed_after, kDataSize);
 }
 
 }  // namespace

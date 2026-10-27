@@ -28,8 +28,6 @@
 #include "chrome/browser/password_manager/factories/account_password_store_factory.h"
 #include "chrome/browser/password_manager/factories/profile_password_store_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/subscription_eligibility/subscription_eligibility_prefs.h"
-#include "chrome/browser/subscription_eligibility/subscription_eligibility_service.h"
 #include "chrome/browser/subscription_eligibility/subscription_eligibility_service_factory.h"
 #include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/browser/user_education/user_education_service.h"
@@ -40,6 +38,8 @@
 #include "components/password_manager/core/browser/password_store/password_store_interface.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
+#include "components/subscription_eligibility/subscription_eligibility_prefs.h"
+#include "components/subscription_eligibility/subscription_eligibility_service.h"
 #include "components/variations/service/variations_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -120,6 +120,22 @@ void GlicHandler::RegisterMessages() {
       "getWebActuationToggleVisibility",
       base::BindRepeating(&GlicHandler::HandleGetWebActuationToggleVisibility,
                           base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "getWebActuationEnabled",
+      base::BindRepeating(&GlicHandler::HandleGetWebActuationEnabled,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "setWebActuationEnabled",
+      base::BindRepeating(&GlicHandler::HandleSetWebActuationEnabled,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "getExperimentalTriggeringEnabled",
+      base::BindRepeating(&GlicHandler::HandleGetExperimentalTriggeringEnabled,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "setExperimentalTriggeringEnabled",
+      base::BindRepeating(&GlicHandler::HandleSetExperimentalTriggeringEnabled,
+                          base::Unretained(this)));
 }
 
 void GlicHandler::OnJavascriptAllowed() {
@@ -136,12 +152,17 @@ void GlicHandler::OnJavascriptAllowed() {
         base::BindRepeating(&GlicHandler::OnWebActuationCapabilityChanged,
                             base::Unretained(this)));
 
-    pref_change_registrar_.Init(profile->GetPrefs());
-    pref_change_registrar_.Add(
-        glic::prefs::kGlicUserEnabledActuationOnWeb,
-        base::BindRepeating(&GlicHandler::OnWebActuationPrefChanged,
-                            base::Unretained(this)));
+    web_actuation_pref_subscription_ =
+        service->enabling().RegisterOnUserEnabledActuationOnWebChanged(
+            base::BindRepeating(&GlicHandler::OnWebActuationPrefChanged,
+                                base::Unretained(this)));
+    experimental_triggering_pref_subscription_ =
+        service->enabling().RegisterOnExperimentalTriggeringEnabledChanged(
+            base::BindRepeating(
+                &GlicHandler::OnExperimentalTriggeringPrefChanged,
+                base::Unretained(this)));
 
+    pref_change_registrar_.Init(profile->GetPrefs());
     pref_change_registrar_.Add(
         ::subscription_eligibility::prefs::kAiSubscriptionTier,
         base::BindRepeating(&GlicHandler::OnWebActuationPrefChanged,
@@ -163,6 +184,8 @@ void GlicHandler::OnJavascriptAllowed() {
 void GlicHandler::OnJavascriptDisallowed() {
   glic_enabling_subscription_ = {};
   web_actuation_subscription_ = {};
+  web_actuation_pref_subscription_ = {};
+  experimental_triggering_pref_subscription_ = {};
   observation_.Reset();
   pref_change_registrar_.RemoveAll();
 }
@@ -222,7 +245,7 @@ void GlicHandler::HandleGetGlicFocusToggleShortcut(
   ResolveJavascriptCallback(
       callback_id,
       base::UTF16ToUTF8(glic::LocalHotkeyManager::GetConfigurableAccelerator(
-                            glic::LocalHotkeyManager::Hotkey::kFocusToggle)
+                            glic::LocalHotkeyManager::Command::kFocusToggle)
                             .GetShortcutText()));
 }
 
@@ -295,6 +318,26 @@ void GlicHandler::FireOnGlicDisallowedByAdminChanged() {
 
 void GlicHandler::OnWebActuationPrefChanged() {
   FireWebActuationToggleVisibilityChanged();
+
+  Profile* profile = Profile::FromWebUI(web_ui());
+  auto* glic_service =
+      glic::GlicKeyedServiceFactory::GetGlicKeyedService(profile);
+  if (glic_service) {
+    bool enabled = glic_service->enabling().GetUserEnabledActuationOnWeb();
+    FireWebUIListener("glic-web-actuation-enabled-changed",
+                      base::Value(enabled));
+  }
+}
+
+void GlicHandler::OnExperimentalTriggeringPrefChanged() {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  auto* glic_service =
+      glic::GlicKeyedServiceFactory::GetGlicKeyedService(profile);
+  if (glic_service) {
+    bool enabled = glic_service->enabling().GetExperimentalTriggeringEnabled();
+    FireWebUIListener("glic-experimental-triggering-enabled-changed",
+                      base::Value(enabled));
+  }
 }
 
 void GlicHandler::OnWebActuationCapabilityChanged(bool can_act_on_web) {
@@ -312,6 +355,65 @@ void GlicHandler::HandleGetWebActuationToggleVisibility(
       base::Value(ShouldShowWebActuationToggle(Profile::FromWebUI(web_ui()))));
 }
 
+void GlicHandler::HandleGetWebActuationEnabled(const base::ListValue& args) {
+  CHECK_EQ(1U, args.size());
+  const base::Value& callback_id = args[0];
+  AllowJavascript();
+
+  Profile* profile = Profile::FromWebUI(web_ui());
+  auto* glic_service =
+      glic::GlicKeyedServiceFactory::GetGlicKeyedService(profile);
+  bool enabled = false;
+  if (glic_service) {
+    enabled = glic_service->enabling().GetUserEnabledActuationOnWeb();
+  }
+  ResolveJavascriptCallback(callback_id, base::Value(enabled));
+}
+
+void GlicHandler::HandleSetWebActuationEnabled(const base::ListValue& args) {
+  CHECK_EQ(1U, args.size());
+  const bool enabled = args[0].GetBool();
+
+  Profile* profile = Profile::FromWebUI(web_ui());
+  auto* glic_service =
+      glic::GlicKeyedServiceFactory::GetGlicKeyedService(profile);
+  if (glic_service) {
+    glic_service->enabling().SetUserEnabledActuationOnWeb(enabled);
+    if (!enabled) {
+      glic_service->enabling().SetExperimentalTriggeringEnabled(false);
+    }
+  }
+}
+
+void GlicHandler::HandleGetExperimentalTriggeringEnabled(
+    const base::ListValue& args) {
+  CHECK_EQ(1U, args.size());
+  const base::Value& callback_id = args[0];
+  AllowJavascript();
+
+  Profile* profile = Profile::FromWebUI(web_ui());
+  auto* glic_service =
+      glic::GlicKeyedServiceFactory::GetGlicKeyedService(profile);
+  bool enabled = false;
+  if (glic_service) {
+    enabled = glic_service->enabling().GetExperimentalTriggeringEnabled();
+  }
+  ResolveJavascriptCallback(callback_id, base::Value(enabled));
+}
+
+void GlicHandler::HandleSetExperimentalTriggeringEnabled(
+    const base::ListValue& args) {
+  CHECK_EQ(1U, args.size());
+  const bool enabled = args[0].GetBool();
+
+  Profile* profile = Profile::FromWebUI(web_ui());
+  auto* glic_service =
+      glic::GlicKeyedServiceFactory::GetGlicKeyedService(profile);
+  if (glic_service) {
+    glic_service->enabling().SetExperimentalTriggeringEnabled(enabled);
+  }
+}
+
 void GlicHandler::FireWebActuationToggleVisibilityChanged() {
   bool is_visible =
       GlicHandler::ShouldShowWebActuationToggle(Profile::FromWebUI(web_ui()));
@@ -320,61 +422,28 @@ void GlicHandler::FireWebActuationToggleVisibilityChanged() {
 }
 
 bool GlicHandler::ShouldShowWebActuationToggle(Profile* profile) {
-  auto* command_line = base::CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(::switches::kGlicAlwaysShowWebActuationToggle)) {
-    return true;
-  }
-  if (!base::FeatureList::IsEnabled(features::kGlicWebActuationSetting)) {
+  auto* glic_service =
+      glic::GlicKeyedServiceFactory::GetGlicKeyedService(profile);
+  return glic_service &&
+         glic_service->enabling().ShouldShowWebActuationToggle();
+}
+
+bool GlicHandler::ShouldShowExperimentalTriggeringToggle(Profile* profile) {
+  if (!base::FeatureList::IsEnabled(features::kGlicExperimentalTriggering)) {
     return false;
   }
-
-  // If the account is ineligible, hide the toggle.
+  if (!ShouldShowWebActuationToggle(profile)) {
+    return false;
+  }
   auto* glic_service =
       glic::GlicKeyedServiceFactory::GetGlicKeyedService(profile);
   if (!glic_service) {
     return false;
   }
-  if (glic_service->actor_policy_checker().CannotActOnWebReason() ==
-      glic::GlicActorPolicyChecker::CannotActReason::
-          kAccountCapabilityIneligible) {
+  if (!glic_service->enabling().IsExperimentalTriggeringUserControlled()) {
     return false;
   }
-
-  // NOTE: kGlicWebActuationSettingsToggle controls toggle visibility based
-  // solely on subscription eligibility. If this feature is disabled, the
-  // toggle remains visible only if the user has previously accepted the
-  // consent card.
-
-  const base::flat_set<int32_t>& allowed_tiers =
-      glic::GlicActorPolicyChecker::GetActorEligibleTiers();
-  // If no tiers are allowed, the toggle should never be shown.
-  if (allowed_tiers.empty()) {
-    return false;
-  }
-  // If the toggle feature is on, enforce toggle visibility based on
-  // subscription eligibility.
-  if (base::FeatureList::IsEnabled(features::kGlicWebActuationSettingsToggle)) {
-    // Always show the toggle for internal dogfooders, mirroring the bypass in
-    // GlicActorPolicyChecker.
-    auto* variations_service = g_browser_process->variations_service();
-    if (variations_service && variations_service->IsLikelyDogfoodClient()) {
-      return true;
-    }
-    // Strict subscription check for external users.
-    auto* subscription_service = subscription_eligibility::
-        SubscriptionEligibilityServiceFactory::GetForProfile(profile);
-    CHECK(subscription_service);
-    return allowed_tiers.contains(
-        subscription_service->GetAiSubscriptionTier());
-  }
-  // Show the toggle if the user has explicitly modified the preference before
-  // (via accepting the consent card).
-  const auto* pref = profile->GetPrefs()->FindPreference(
-      glic::prefs::kGlicUserEnabledActuationOnWeb);
-  if (pref && !pref->IsDefaultValue()) {
-    return true;
-  }
-  return false;
+  return !glic_service->enabling().IsExperimentalTriggeringEnabledDefault();
 }
 
 void GlicHandler::HandleGetActorLoginPermissions(const base::ListValue& args) {

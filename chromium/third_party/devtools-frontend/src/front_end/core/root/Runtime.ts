@@ -12,12 +12,27 @@ let runtimeInstance: Runtime|undefined;
 let isNode: boolean|undefined;
 let isTraceAppEntry: boolean|undefined;
 
+interface Global {
+  location?: {
+    toString(): string,
+    pathname: string,
+    search: string,
+  };
+  navigator?: {
+    userAgent: string,
+  };
+  localStorage?: Storage;
+  self?: Global;
+}
+
+const globalObject = (globalThis as unknown as Global);
+
 /**
  * Returns the base URL (similar to `<base>`).
  * Used to resolve the relative URLs of any additional DevTools files (locale strings, etc) needed.
  * See: https://cs.chromium.org/remoteBase+f:devtools_window
  */
-export function getRemoteBase(location: string = self.location.toString()): {
+export function getRemoteBase(location: string = globalObject.self?.location?.toString() ?? ''): {
   base: string,
   version: string,
 }|null {
@@ -36,7 +51,7 @@ export function getRemoteBase(location: string = self.location.toString()): {
 }
 
 export function getPathName(): string {
-  return window.location.pathname;
+  return globalObject.location?.pathname ?? '';
 }
 
 export function isNodeEntry(pathname: string): boolean {
@@ -46,7 +61,8 @@ export function isNodeEntry(pathname: string): boolean {
 
 export const getChromeVersion = (): string => {
   const chromeRegex = /(?:^|\W)(?:Chrome|HeadlessChrome)\/(\S+)/;
-  const chromeMatch = navigator.userAgent.match(chromeRegex);
+  const userAgent = Platform.HostRuntime.HOST_RUNTIME.getUserAgent();
+  const chromeMatch = userAgent.match(chromeRegex);
   if (chromeMatch && chromeMatch.length > 1) {
     return chromeMatch[1];
   }
@@ -75,9 +91,8 @@ export class Runtime {
   static #queryParamsObject: URLSearchParams;
 
   static #getSearchParams(): URLSearchParams|null {
-    // TODO(crbug.com/451502260): Find a more explicit way to support running in Node.js
-    if (!Runtime.#queryParamsObject && 'location' in globalThis) {
-      Runtime.#queryParamsObject = new URLSearchParams(location.search);
+    if (!Runtime.#queryParamsObject && globalObject.location) {
+      Runtime.#queryParamsObject = new URLSearchParams(globalObject.location.search);
     }
     return Runtime.#queryParamsObject;
   }
@@ -297,18 +312,18 @@ export class ExperimentsSupport {
   }
 }
 
-/** Manages the 'experiments' dictionary in self.localStorage */
+/** Manages the 'experiments' dictionary in globalThis.localStorage */
 class ExperimentStorage {
   readonly #experiments: Record<string, boolean|undefined> = {};
 
   constructor() {
     try {
-      const storedExperiments = self.localStorage?.getItem('experiments');
+      const storedExperiments = Platform.HostRuntime.HOST_RUNTIME.getLocalStorage()?.getItem('experiments');
       if (storedExperiments) {
         this.#experiments = JSON.parse(storedExperiments);
       }
-    } catch {
-      console.error('Failed to parse localStorage[\'experiments\']');
+    } catch (err) {
+      console.error('Failed to parse localStorage[\'experiments\']: ' + err.message);
     }
   }
 
@@ -337,7 +352,7 @@ class ExperimentStorage {
   }
 
   #syncToLocalStorage(): void {
-    self.localStorage?.setItem('experiments', JSON.stringify(this.#experiments));
+    Platform.HostRuntime.HOST_RUNTIME.getLocalStorage()?.setItem('experiments', JSON.stringify(this.#experiments));
   }
 }
 
@@ -480,6 +495,10 @@ export interface HostConfigAiAssistanceAccessibilityAgent {
   enabled: boolean;
 }
 
+export interface HostConfigAiAssistanceStorageAgent {
+  enabled: boolean;
+}
+
 export interface HostConfigAiCodeCompletion {
   modelId: string;
   temperature: number;
@@ -606,11 +625,19 @@ interface UseGcaApi {
   enabled: boolean;
 }
 
+interface DevToolsAiV2Architecture {
+  enabled: boolean;
+}
+
 interface DevToolsProtocolMonitor {
   enabled: boolean;
 }
 
 interface DevToolsWebMCPSupport {
+  enabled: boolean;
+}
+
+interface DevToolsPlusButton {
   enabled: boolean;
 }
 
@@ -638,7 +665,9 @@ export type HostConfig = Platform.TypeScriptUtilities.RecursivePartial<{
   devToolsAiAssistanceFileAgent: HostConfigAiAssistanceFileAgent,
   devToolsAiAssistancePerformanceAgent: HostConfigAiAssistancePerformanceAgent,
   devToolsAiAssistanceAccessibilityAgent: HostConfigAiAssistanceAccessibilityAgent,
+  devToolsAiAssistanceStorageAgent: HostConfigAiAssistanceStorageAgent,
   devToolsAiAssistanceV2: HostConfigAiAssistanceV2,
+  devToolsAiV2Architecture: DevToolsAiV2Architecture,
   devToolsAiCodeCompletion: HostConfigAiCodeCompletion,
   devToolsAiCodeGeneration: HostConfigAiCodeGeneration,
   devToolsAiCodeCompletionStyles: HostConfigAiCodeCompletionStyles,
@@ -667,6 +696,7 @@ export type HostConfig = Platform.TypeScriptUtilities.RecursivePartial<{
   devToolsProtocolMonitor: DevToolsProtocolMonitor,
   devToolsWebMCPSupport: DevToolsWebMCPSupport,
   devToolsUseGcaApi: UseGcaApi,
+  devToolsPlusButton: DevToolsPlusButton,
 }>;
 
 /**

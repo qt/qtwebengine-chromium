@@ -48,7 +48,13 @@ using Capability = tint::core::ir::Capability;
 namespace tint::hlsl::writer::raise {
 namespace {
 
-using HlslWriter_BuiltinPolyfillTest = core::ir::transform::TransformTest;
+class HlslWriter_BuiltinPolyfillTest : public core::ir::transform::TransformTest {
+  public:
+    void SetUp() override {
+        capabilities.Add(core::ir::Capability::kAllow8BitIntegers,
+                         core::ir::Capability::kAllow16BitIntegers);
+    }
+};
 
 TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastIdentity) {
     auto* a = b.FunctionParam<i32>("a");
@@ -74,7 +80,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastIdentity) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -103,7 +109,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Asuint) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -132,7 +138,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Asint) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -161,7 +167,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Asfloat) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -190,7 +196,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, AsfloatVec) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -219,22 +225,21 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastFromF16) {
 }
 %tint_bitcast_from_f16 = func(%src:vec2<f16>):f32 {
   $B2: {
-    %6:vec2<f32> = convert %src
-    %7:vec2<u32> = hlsl.f32tof16 %6
-    %r:vec2<u32> = let %7
-    %9:u32 = swizzle %r, x
-    %10:u32 = and %9, 65535u
-    %11:u32 = swizzle %r, y
-    %12:u32 = and %11, 65535u
-    %13:u32 = shl %12, 16u
-    %14:u32 = or %10, %13
-    %15:f32 = hlsl.asfloat %14
-    ret %15
+    %6:vec2<u16> = hlsl.asuint16 %src
+    %7:vec2<u32> = convert %6
+    %8:vec2<u32> = and %7, vec2<u32>(65535u)
+    %9:vec2<u32> = construct 0u, 16u
+    %10:vec2<u32> = shl %8, %9
+    %11:u32 = access %10, 0u
+    %12:u32 = access %10, 1u
+    %13:u32 = or %11, %12
+    %14:f32 = hlsl.asfloat %13
+    ret %14
   }
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -265,22 +270,19 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastToF16) {
   $B2: {
     %6:u32 = hlsl.asuint %src
     %v:u32 = let %6
-    %8:u32 = and %v, 65535u
-    %9:f32 = hlsl.f16tof32 %8
-    %t_low:f32 = let %9
-    %11:u32 = shr %v, 16u
-    %12:u32 = and %11, 65535u
-    %13:f32 = hlsl.f16tof32 %12
-    %t_high:f32 = let %13
-    %15:f16 = convert %t_low
-    %16:f16 = convert %t_high
-    %17:vec2<f16> = construct %15, %16
-    ret %17
+    %8:vec2<u32> = construct %v, %v
+    %9:vec2<u32> = construct 0u, 16u
+    %10:vec2<u32> = shr %8, %9
+    %11:vec2<u32> = and %10, vec2<u32>(65535u)
+    %12:vec2<u16> = convert %11
+    %v16:vec2<u16> = let %12
+    %14:vec2<f16> = hlsl.asfloat16 %v16
+    ret %14
   }
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -320,22 +322,21 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastFromVec2F16) {
 }
 %tint_bitcast_from_f16 = func(%src:vec2<f16>):i32 {
   $B2: {
-    %9:vec2<f32> = convert %src
-    %10:vec2<u32> = hlsl.f32tof16 %9
-    %r:vec2<u32> = let %10
-    %12:u32 = swizzle %r, x
-    %13:u32 = and %12, 65535u
-    %14:u32 = swizzle %r, y
-    %15:u32 = and %14, 65535u
-    %16:u32 = shl %15, 16u
-    %17:u32 = or %13, %16
-    %18:i32 = hlsl.asint %17
-    ret %18
+    %9:vec2<u16> = hlsl.asuint16 %src
+    %10:vec2<u32> = convert %9
+    %11:vec2<u32> = and %10, vec2<u32>(65535u)
+    %12:vec2<u32> = construct 0u, 16u
+    %13:vec2<u32> = shl %11, %12
+    %14:u32 = access %13, 0u
+    %15:u32 = access %13, 1u
+    %16:u32 = or %14, %15
+    %17:i32 = hlsl.asint %16
+    ret %17
   }
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -376,30 +377,19 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastToVec4F16) {
   $B2: {
     %9:vec2<u32> = hlsl.asuint %src
     %v:vec2<u32> = let %9
-    %mask:vec2<u32> = let vec2<u32>(65535u)
-    %shift:vec2<u32> = let vec2<u32>(16u)
-    %13:vec2<u32> = and %v, %mask
-    %14:vec2<f32> = hlsl.f16tof32 %13
-    %t_low:vec2<f32> = let %14
-    %16:vec2<u32> = shr %v, %shift
-    %17:vec2<u32> = and %16, %mask
-    %18:vec2<f32> = hlsl.f16tof32 %17
-    %t_high:vec2<f32> = let %18
-    %20:f32 = swizzle %t_low, x
-    %21:f32 = swizzle %t_high, x
-    %22:f16 = convert %20
-    %23:f16 = convert %21
-    %24:f32 = swizzle %t_low, y
-    %25:f16 = convert %24
-    %26:f32 = swizzle %t_high, y
-    %27:f16 = convert %26
-    %28:vec4<f16> = construct %22, %23, %25, %27
-    ret %28
+    %11:vec4<u32> = swizzle %v, xxyy
+    %12:vec4<u32> = construct 0u, 16u, 0u, 16u
+    %13:vec4<u32> = shr %11, %12
+    %14:vec4<u32> = and %13, vec4<u32>(65535u)
+    %15:vec4<u16> = convert %14
+    %v16:vec4<u16> = let %15
+    %17:vec4<f16> = hlsl.asfloat16 %v16
+    ret %17
   }
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -430,7 +420,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastF16ToU16) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -461,7 +451,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastU16ToF16) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -491,7 +481,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastVec2U16ToVec2F16) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -521,22 +511,19 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastVec2U16ToU32) {
 }
 %tint_bitcast_from_u16 = func(%src:vec2<u16>):u32 {
   $B2: {
-    %6:vec2<f16> = hlsl.asfloat16 %src
-    %7:vec2<f32> = convert %6
-    %8:vec2<u32> = hlsl.f32tof16 %7
-    %r:vec2<u32> = let %8
-    %10:u32 = swizzle %r, x
-    %11:u32 = and %10, 65535u
-    %12:u32 = swizzle %r, y
-    %13:u32 = and %12, 65535u
-    %14:u32 = shl %13, 16u
-    %15:u32 = or %11, %14
-    ret %15
+    %6:vec2<u32> = convert %src
+    %7:vec2<u32> = and %6, vec2<u32>(65535u)
+    %8:vec2<u32> = construct 0u, 16u
+    %9:vec2<u32> = shl %7, %8
+    %10:u32 = access %9, 0u
+    %11:u32 = access %9, 1u
+    %12:u32 = or %10, %11
+    ret %12
   }
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -567,23 +554,18 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastU32ToVec2U16) {
 %tint_bitcast_to_u16 = func(%src:u32):vec2<u16> {
   $B2: {
     %v:u32 = let %src
-    %7:u32 = and %v, 65535u
-    %8:f32 = hlsl.f16tof32 %7
-    %t_low:f32 = let %8
-    %10:u32 = shr %v, 16u
-    %11:u32 = and %10, 65535u
-    %12:f32 = hlsl.f16tof32 %11
-    %t_high:f32 = let %12
-    %14:f16 = convert %t_low
-    %15:f16 = convert %t_high
-    %16:vec2<f16> = construct %14, %15
-    %17:vec2<u16> = hlsl.asuint16 %16
-    ret %17
+    %7:vec2<u32> = construct %v, %v
+    %8:vec2<u32> = construct 0u, 16u
+    %9:vec2<u32> = shr %7, %8
+    %10:vec2<u32> = and %9, vec2<u32>(65535u)
+    %11:vec2<u16> = convert %10
+    %v16:vec2<u16> = let %11
+    ret %v16
   }
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -616,7 +598,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Sign) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -649,7 +631,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, SignVec) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -687,7 +669,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, TextureNumLevels) {
 )";
 
     capabilities = core::ir::Capabilities{core::ir::Capability::kAllowVectorElementPointer};
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -727,7 +709,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, TextureNumLayers) {
 )";
 
     capabilities = core::ir::Capabilities{core::ir::Capability::kAllowVectorElementPointer};
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -768,7 +750,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, TextureNumSamples) {
 )";
 
     capabilities = core::ir::Capabilities{core::ir::Capability::kAllowVectorElementPointer};
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -804,7 +786,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, TextureDimensions_1d_WithoutLod) {
 )";
 
     capabilities = core::ir::Capabilities{core::ir::Capability::kAllowVectorElementPointer};
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -844,7 +826,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, TextureDimensions_1d_WithI32Lod) {
 )";
 
     capabilities = core::ir::Capabilities{core::ir::Capability::kAllowVectorElementPointer};
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -883,7 +865,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, TextureDimensions_1d_WithU32Lod) {
 )";
 
     capabilities = core::ir::Capabilities{core::ir::Capability::kAllowVectorElementPointer};
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -921,7 +903,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, TextureDimensions_2d_WithoutLod) {
 )";
 
     capabilities = core::ir::Capabilities{core::ir::Capability::kAllowVectorElementPointer};
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -962,7 +944,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, TextureDimensions_2d_WithI32Lod) {
 )";
 
     capabilities = core::ir::Capabilities{core::ir::Capability::kAllowVectorElementPointer};
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1001,7 +983,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, TextureDimensions_3d) {
 )";
 
     capabilities = core::ir::Capabilities{core::ir::Capability::kAllowVectorElementPointer};
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1038,7 +1020,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, TextureLoad_1DF32) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1074,7 +1056,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, TextureLoad_2DLevelI32) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1111,7 +1093,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, TextureLoad_3DLevelU32) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1148,7 +1130,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, TextureLoad_Multisampled2DI32) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1186,7 +1168,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, TextureLoad_Depth2DLevelF32) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1226,7 +1208,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, TextureLoad_Depth2DArrayLevelF32) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1264,7 +1246,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, TextureLoad_DepthMultisampledF32) {
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1313,7 +1295,7 @@ $B1: {  # root
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1362,7 +1344,7 @@ $B1: {  # root
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1413,7 +1395,7 @@ $B1: {  # root
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1478,7 +1460,7 @@ $B1: {  # root
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1544,7 +1526,7 @@ $B1: {  # root
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1612,7 +1594,7 @@ $B1: {  # root
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1681,7 +1663,7 @@ $B1: {  # root
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1745,7 +1727,7 @@ $B1: {  # root
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1809,7 +1791,7 @@ $B1: {  # root
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1876,7 +1858,7 @@ $B1: {  # root
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -1945,7 +1927,7 @@ $B1: {  # root
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -2008,7 +1990,7 @@ $B1: {  # root
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -2071,7 +2053,7 @@ $B1: {  # root
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -2136,7 +2118,7 @@ $B1: {  # root
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -2203,7 +2185,7 @@ $B1: {  # root
 }
 )";
 
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -2264,7 +2246,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -2326,7 +2308,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -2389,7 +2371,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -2454,7 +2436,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -2521,7 +2503,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -2583,7 +2565,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -2646,7 +2628,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -2708,7 +2690,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -2773,7 +2755,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -2835,7 +2817,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -2898,7 +2880,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -2963,7 +2945,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -3029,7 +3011,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -3094,7 +3076,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -3156,7 +3138,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -3220,7 +3202,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -3286,7 +3268,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -3353,7 +3335,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -3415,7 +3397,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -3479,7 +3461,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -3541,7 +3523,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -3607,7 +3589,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -3668,7 +3650,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -3730,7 +3712,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -3795,7 +3777,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -3861,7 +3843,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -3922,7 +3904,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -3987,7 +3969,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -4048,7 +4030,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -4111,7 +4093,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -4176,7 +4158,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -4242,7 +4224,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -4303,7 +4285,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -4368,7 +4350,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -4436,7 +4418,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -4506,7 +4488,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -4578,7 +4560,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -4651,7 +4633,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -4719,7 +4701,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -4789,7 +4771,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -4857,7 +4839,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -4929,7 +4911,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -4989,7 +4971,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -5051,7 +5033,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -5115,7 +5097,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -5181,7 +5163,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -5248,7 +5230,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -5310,7 +5292,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -5374,7 +5356,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -5436,7 +5418,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -5502,7 +5484,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -5565,7 +5547,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -5629,7 +5611,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -5695,7 +5677,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -5763,7 +5745,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -5829,7 +5811,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -5866,7 +5848,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, QuantizeToF16) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -5923,7 +5905,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -5997,7 +5979,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -6062,7 +6044,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -6139,7 +6121,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -6218,7 +6200,7 @@ $B1: {  # root
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -6259,7 +6241,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Pack2x16Float) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -6298,7 +6280,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Unpack2x16Float) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -6344,7 +6326,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Pack2x16Snorm) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -6387,7 +6369,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Unpack2x16snorm) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -6431,7 +6413,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Pack2x16unorm) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -6472,7 +6454,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Unpack2x16unorm) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -6524,7 +6506,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Pack4x8Snorm) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -6569,7 +6551,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Unpack4x8Snorm) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -6619,7 +6601,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Pack4x8Unorm) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -6664,7 +6646,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Unpack4x8Unorm) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -6706,7 +6688,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Pack4xI8) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -6748,7 +6730,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Unpack4xI8) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -6790,7 +6772,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Pack4xU8) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -6832,7 +6814,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Unpack4xU8) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -6869,7 +6851,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Dot4U8Packed) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -6907,7 +6889,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Dot4I8Packed) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
 
     EXPECT_EQ(expect, str());
 }
@@ -6949,7 +6931,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Pack4xI8Clamp) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -6989,7 +6971,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Asinh) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -7029,7 +7011,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Acosh) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -7069,7 +7051,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Atanh) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -7107,7 +7089,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, CountOneBits) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -7145,7 +7127,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, ReverseBits) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -7180,7 +7162,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupAndLiteralVec) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -7213,7 +7195,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupShuffleXor) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -7249,7 +7231,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupInclusiveAdd) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -7285,7 +7267,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupInclusiveMul) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -7318,7 +7300,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupShuffleUp) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -7351,7 +7333,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupShuffleDown) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -7403,7 +7385,7 @@ __modf_result_f32 = struct @align(4) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -7455,7 +7437,7 @@ __modf_result_vec3_f32 = struct @align(16) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -7511,7 +7493,7 @@ __frexp_result_f32 = struct @align(4) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
     EXPECT_EQ(expect, str());
 }
 
@@ -7567,7 +7549,813 @@ __frexp_result_vec3_f32 = struct @align(16) {
   }
 }
 )";
-    Run(BuiltinPolyfill);
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, Select_2018) {
+    auto* f = b.FunctionParam<f32>("f");
+    auto* t = b.FunctionParam<f32>("t");
+    auto* cond = b.FunctionParam<bool>("cond");
+    auto* func = b.Function("foo", ty.f32());
+    func->SetParams({f, t, cond});
+    b.Append(func->Block(), [&] {  //
+        b.Return(func, b.Call(ty.f32(), core::BuiltinFn::kSelect, f, t, cond));
+    });
+
+    auto* src = R"(
+%foo = func(%f:f32, %t:f32, %cond:bool):f32 {
+  $B1: {
+    %5:f32 = select %f, %t, %cond
+    ret %5
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%f:f32, %t:f32, %cond:bool):f32 {
+  $B1: {
+    %5:f32 = hlsl.ternary %f, %t, %cond
+    ret %5
+  }
+}
+)";
+
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{.use_hlsl_2021_select = false});
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, Select_2021) {
+    auto* f = b.FunctionParam<f32>("f");
+    auto* t = b.FunctionParam<f32>("t");
+    auto* cond = b.FunctionParam<bool>("cond");
+    auto* func = b.Function("foo", ty.f32());
+    func->SetParams({f, t, cond});
+    b.Append(func->Block(), [&] {  //
+        b.Return(func, b.Call(ty.f32(), core::BuiltinFn::kSelect, f, t, cond));
+    });
+
+    auto* src = R"(
+%foo = func(%f:f32, %t:f32, %cond:bool):f32 {
+  $B1: {
+    %5:f32 = select %f, %t, %cond
+    ret %5
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%f:f32, %t:f32, %cond:bool):f32 {
+  $B1: {
+    %5:f32 = hlsl.select %cond, %t, %f
+    ret %5
+  }
+}
+)";
+
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{.use_hlsl_2021_select = true});
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, Trunc) {
+    auto* a = b.FunctionParam<f32>("a");
+    auto* func = b.Function("foo", ty.f32());
+    func->SetParams({a});
+    b.Append(func->Block(), [&] { b.Return(func, b.Call(ty.f32(), core::BuiltinFn::kTrunc, a)); });
+
+    auto* src = R"(
+%foo = func(%a:f32):f32 {
+  $B1: {
+    %3:f32 = trunc %a
+    ret %3
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%a:f32):f32 {
+  $B1: {
+    %3:f32 = floor %a
+    %4:f32 = ceil %a
+    %5:bool = lt %a, 0.0f
+    %6:f32 = hlsl.ternary %3, %4, %5
+    ret %6
+  }
+}
+)";
+
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{.polyfill_trunc = true});
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, Trunc_NoPolyfill) {
+    auto* a = b.FunctionParam<f32>("a");
+    auto* func = b.Function("foo", ty.f32());
+    func->SetParams({a});
+    b.Append(func->Block(), [&] { b.Return(func, b.Call(ty.f32(), core::BuiltinFn::kTrunc, a)); });
+
+    auto* src = R"(
+%foo = func(%a:f32):f32 {
+  $B1: {
+    %3:f32 = trunc %a
+    ret %3
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%a:f32):f32 {
+  $B1: {
+    %3:f32 = trunc %a
+    ret %3
+  }
+}
+)";
+
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{.polyfill_trunc = false});
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupMatrixMultiply_F32) {
+    auto* left = b.FunctionParam("left", ty.subgroup_matrix_left(ty.f32(), 4, 8));
+    auto* right = b.FunctionParam("right", ty.subgroup_matrix_right(ty.f32(), 8, 4));
+    auto* result = ty.subgroup_matrix_result(ty.f32(), 8, 8);
+    auto* func = b.Function("foo", result);
+    func->SetParams({left, right});
+    b.Append(func->Block(), [&] {
+        auto* call = b.CallExplicit(result, core::BuiltinFn::kSubgroupMatrixMultiply,
+                                    Vector{ty.f32()}, left, right);
+        b.Return(func, call);
+    });
+
+    auto* src = R"(
+%foo = func(%left:subgroup_matrix_left<f32, 4, 8>, %right:subgroup_matrix_right<f32, 8, 4>):subgroup_matrix_result<f32, 8, 8> {
+  $B1: {
+    %4:subgroup_matrix_result<f32, 8, 8> = subgroupMatrixMultiply<f32> %left, %right
+    ret %4
+  }
+}
+)";
+    ASSERT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%left:subgroup_matrix_left<f32, 4, 8>, %right:subgroup_matrix_right<f32, 8, 4>):subgroup_matrix_result<f32, 8, 8> {
+  $B1: {
+    %4:subgroup_matrix_result<f32, 8, 8> = hlsl.Multiply<f32> %left, %right
+    ret %4
+  }
+}
+)";
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupMatrixScalarAdd_F32) {
+    auto* mat_ty = ty.subgroup_matrix_left(ty.f32(), 4, 4);
+    auto* func = b.Function("foo", mat_ty);
+    auto* m = b.FunctionParam("m", mat_ty);
+    auto* s = b.FunctionParam("s", ty.f32());
+    func->SetParams({m, s});
+
+    b.Append(func->Block(), [&] {
+        auto* call = b.Call(mat_ty, core::BuiltinFn::kSubgroupMatrixScalarAdd, m, s);
+        b.Return(func, call);
+    });
+
+    auto* src = R"(
+%foo = func(%m:subgroup_matrix_left<f32, 4, 4>, %s:f32):subgroup_matrix_left<f32, 4, 4> {
+  $B1: {
+    %4:subgroup_matrix_left<f32, 4, 4> = subgroupMatrixScalarAdd %m, %s
+    ret %4
+  }
+}
+)";
+    ASSERT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%m:subgroup_matrix_left<f32, 4, 4>, %s:f32):subgroup_matrix_left<f32, 4, 4> {
+  $B1: {
+    %4:subgroup_matrix_left<f32, 4, 4> = call %tint_subgroup_matrix_scalar_op, %m, %s
+    ret %4
+  }
+}
+%tint_subgroup_matrix_scalar_op = func(%m_1:subgroup_matrix_left<f32, 4, 4>, %s_1:f32):subgroup_matrix_left<f32, 4, 4> {  # %m_1: 'm', %s_1: 's'
+  $B2: {
+    %8:ptr<function, subgroup_matrix_left<f32, 4, 4>, read_write> = var undef
+    loop [i: $B3, b: $B4, c: $B5] {  # loop_1
+      $B3: {  # initializer
+        next_iteration 0u  # -> $B4
+      }
+      $B4 (%idx:u32): {  # body
+        %10:bool = gte %idx, 16u
+        if %10 [t: $B6] {  # if_1
+          $B6: {  # true
+            exit_loop  # loop_1
+          }
+        }
+        %11:f32 = %m_1.Get %idx
+        %12:f32 = add %11, %s_1
+        %13:void = %8.Set %idx, %12
+        continue  # -> $B5
+      }
+      $B5: {  # continuing
+        %14:u32 = add %idx, 1u
+        next_iteration %14  # -> $B4
+      }
+    }
+    %15:subgroup_matrix_left<f32, 4, 4> = load %8
+    ret %15
+  }
+}
+)";
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupMatrixScalarAdd_Deduplication) {
+    auto* mat_f32 = ty.subgroup_matrix_left(ty.f32(), 4, 4);
+    auto* mat_i32 = ty.subgroup_matrix_left(ty.i32(), 4, 4);
+
+    auto* func = b.Function("foo", ty.void_());
+    b.Append(func->Block(), [&] {
+        auto* m1 = b.Var(ty.ptr<function>(mat_f32));
+        auto* m2 = b.Var(ty.ptr<function>(mat_i32));
+
+        b.Call(mat_f32, core::BuiltinFn::kSubgroupMatrixScalarAdd, b.Load(m1), 1_f);
+        b.Call(mat_f32, core::BuiltinFn::kSubgroupMatrixScalarAdd, b.Load(m1), 2_f);
+
+        b.Call(mat_i32, core::BuiltinFn::kSubgroupMatrixScalarAdd, b.Load(m2), 1_i);
+        b.Call(mat_i32, core::BuiltinFn::kSubgroupMatrixScalarAdd, b.Load(m2), 2_i);
+
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%foo = func():void {
+  $B1: {
+    %2:ptr<function, subgroup_matrix_left<f32, 4, 4>, read_write> = var undef
+    %3:ptr<function, subgroup_matrix_left<i32, 4, 4>, read_write> = var undef
+    %4:subgroup_matrix_left<f32, 4, 4> = load %2
+    %5:subgroup_matrix_left<f32, 4, 4> = subgroupMatrixScalarAdd %4, 1.0f
+    %6:subgroup_matrix_left<f32, 4, 4> = load %2
+    %7:subgroup_matrix_left<f32, 4, 4> = subgroupMatrixScalarAdd %6, 2.0f
+    %8:subgroup_matrix_left<i32, 4, 4> = load %3
+    %9:subgroup_matrix_left<i32, 4, 4> = subgroupMatrixScalarAdd %8, 1i
+    %10:subgroup_matrix_left<i32, 4, 4> = load %3
+    %11:subgroup_matrix_left<i32, 4, 4> = subgroupMatrixScalarAdd %10, 2i
+    ret
+  }
+}
+)";
+    ASSERT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func():void {
+  $B1: {
+    %2:ptr<function, subgroup_matrix_left<f32, 4, 4>, read_write> = var undef
+    %3:ptr<function, subgroup_matrix_left<i32, 4, 4>, read_write> = var undef
+    %4:subgroup_matrix_left<f32, 4, 4> = load %2
+    %5:subgroup_matrix_left<f32, 4, 4> = call %tint_subgroup_matrix_scalar_op, %4, 1.0f
+    %7:subgroup_matrix_left<f32, 4, 4> = load %2
+    %8:subgroup_matrix_left<f32, 4, 4> = call %tint_subgroup_matrix_scalar_op, %7, 2.0f
+    %9:subgroup_matrix_left<i32, 4, 4> = load %3
+    %10:subgroup_matrix_left<i32, 4, 4> = call %tint_subgroup_matrix_scalar_op_1, %9, 1i
+    %12:subgroup_matrix_left<i32, 4, 4> = load %3
+    %13:subgroup_matrix_left<i32, 4, 4> = call %tint_subgroup_matrix_scalar_op_1, %12, 2i
+    ret
+  }
+}
+%tint_subgroup_matrix_scalar_op = func(%m:subgroup_matrix_left<f32, 4, 4>, %s:f32):subgroup_matrix_left<f32, 4, 4> {
+  $B2: {
+    %16:ptr<function, subgroup_matrix_left<f32, 4, 4>, read_write> = var undef
+    loop [i: $B3, b: $B4, c: $B5] {  # loop_1
+      $B3: {  # initializer
+        next_iteration 0u  # -> $B4
+      }
+      $B4 (%idx:u32): {  # body
+        %18:bool = gte %idx, 16u
+        if %18 [t: $B6] {  # if_1
+          $B6: {  # true
+            exit_loop  # loop_1
+          }
+        }
+        %19:f32 = %m.Get %idx
+        %20:f32 = add %19, %s
+        %21:void = %16.Set %idx, %20
+        continue  # -> $B5
+      }
+      $B5: {  # continuing
+        %22:u32 = add %idx, 1u
+        next_iteration %22  # -> $B4
+      }
+    }
+    %23:subgroup_matrix_left<f32, 4, 4> = load %16
+    ret %23
+  }
+}
+%tint_subgroup_matrix_scalar_op_1 = func(%m_1:subgroup_matrix_left<i32, 4, 4>, %s_1:i32):subgroup_matrix_left<i32, 4, 4> {  # %m_1: 'm', %s_1: 's'
+  $B7: {
+    %26:ptr<function, subgroup_matrix_left<i32, 4, 4>, read_write> = var undef
+    loop [i: $B8, b: $B9, c: $B10] {  # loop_2
+      $B8: {  # initializer
+        next_iteration 0u  # -> $B9
+      }
+      $B9 (%idx_1:u32): {  # body
+        %28:bool = gte %idx_1, 16u
+        if %28 [t: $B11] {  # if_2
+          $B11: {  # true
+            exit_loop  # loop_2
+          }
+        }
+        %29:i32 = %m_1.Get %idx_1
+        %30:i32 = add %29, %s_1
+        %31:void = %26.Set %idx_1, %30
+        continue  # -> $B10
+      }
+      $B10: {  # continuing
+        %32:u32 = add %idx_1, 1u
+        next_iteration %32  # -> $B9
+      }
+    }
+    %33:subgroup_matrix_left<i32, 4, 4> = load %26
+    ret %33
+  }
+}
+)";
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupMatrixScalarAdd_I8) {
+    capabilities = core::ir::Capabilities{
+        core::ir::Capability::kAllowNonCoreTypes,
+        core::ir::Capability::kAllow8BitIntegers,
+    };
+
+    auto* mat_ty = ty.subgroup_matrix_left(ty.i8(), 4, 4);
+    auto* func = b.Function("foo", mat_ty);
+    auto* m = b.FunctionParam("m", mat_ty);
+    auto* s = b.FunctionParam("s", ty.i32());
+    func->SetParams({m, s});
+
+    b.Append(func->Block(), [&] {
+        auto* call = b.Call(mat_ty, core::BuiltinFn::kSubgroupMatrixScalarAdd, m, s);
+        b.Return(func, call);
+    });
+
+    auto* src = R"(
+%foo = func(%m:subgroup_matrix_left<i8, 4, 4>, %s:i32):subgroup_matrix_left<i8, 4, 4> {
+  $B1: {
+    %4:subgroup_matrix_left<i8, 4, 4> = subgroupMatrixScalarAdd %m, %s
+    ret %4
+  }
+}
+)";
+    ASSERT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%m:subgroup_matrix_left<i8, 4, 4>, %s:i32):subgroup_matrix_left<i8, 4, 4> {
+  $B1: {
+    %4:subgroup_matrix_left<i8, 4, 4> = call %tint_subgroup_matrix_scalar_op, %m, %s
+    ret %4
+  }
+}
+%tint_subgroup_matrix_scalar_op = func(%m_1:subgroup_matrix_left<i8, 4, 4>, %s_1:i32):subgroup_matrix_left<i8, 4, 4> {  # %m_1: 'm', %s_1: 's'
+  $B2: {
+    %8:ptr<function, subgroup_matrix_left<i8, 4, 4>, read_write> = var undef
+    loop [i: $B3, b: $B4, c: $B5] {  # loop_1
+      $B3: {  # initializer
+        next_iteration 0u  # -> $B4
+      }
+      $B4 (%idx:u32): {  # body
+        %10:bool = gte %idx, 16u
+        if %10 [t: $B6] {  # if_1
+          $B6: {  # true
+            exit_loop  # loop_1
+          }
+        }
+        %11:i32 = %m_1.Get %idx
+        %12:i32 = add %11, %s_1
+        %13:void = %8.Set %idx, %12
+        continue  # -> $B5
+      }
+      $B5: {  # continuing
+        %14:u32 = add %idx, 1u
+        next_iteration %14  # -> $B4
+      }
+    }
+    %15:subgroup_matrix_left<i8, 4, 4> = load %8
+    ret %15
+  }
+}
+)";
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupMatrixScalarSubtract_F32) {
+    auto* mat_ty = ty.subgroup_matrix_left(ty.f32(), 4, 4);
+    auto* func = b.Function("foo", mat_ty);
+    auto* m = b.FunctionParam("m", mat_ty);
+    auto* s = b.FunctionParam("s", ty.f32());
+    func->SetParams({m, s});
+
+    b.Append(func->Block(), [&] {
+        auto* call = b.Call(mat_ty, core::BuiltinFn::kSubgroupMatrixScalarSubtract, m, s);
+        b.Return(func, call);
+    });
+
+    auto* src = R"(
+%foo = func(%m:subgroup_matrix_left<f32, 4, 4>, %s:f32):subgroup_matrix_left<f32, 4, 4> {
+  $B1: {
+    %4:subgroup_matrix_left<f32, 4, 4> = subgroupMatrixScalarSubtract %m, %s
+    ret %4
+  }
+}
+)";
+    ASSERT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%m:subgroup_matrix_left<f32, 4, 4>, %s:f32):subgroup_matrix_left<f32, 4, 4> {
+  $B1: {
+    %4:subgroup_matrix_left<f32, 4, 4> = call %tint_subgroup_matrix_scalar_op, %m, %s
+    ret %4
+  }
+}
+%tint_subgroup_matrix_scalar_op = func(%m_1:subgroup_matrix_left<f32, 4, 4>, %s_1:f32):subgroup_matrix_left<f32, 4, 4> {  # %m_1: 'm', %s_1: 's'
+  $B2: {
+    %8:ptr<function, subgroup_matrix_left<f32, 4, 4>, read_write> = var undef
+    loop [i: $B3, b: $B4, c: $B5] {  # loop_1
+      $B3: {  # initializer
+        next_iteration 0u  # -> $B4
+      }
+      $B4 (%idx:u32): {  # body
+        %10:bool = gte %idx, 16u
+        if %10 [t: $B6] {  # if_1
+          $B6: {  # true
+            exit_loop  # loop_1
+          }
+        }
+        %11:f32 = %m_1.Get %idx
+        %12:f32 = sub %11, %s_1
+        %13:void = %8.Set %idx, %12
+        continue  # -> $B5
+      }
+      $B5: {  # continuing
+        %14:u32 = add %idx, 1u
+        next_iteration %14  # -> $B4
+      }
+    }
+    %15:subgroup_matrix_left<f32, 4, 4> = load %8
+    ret %15
+  }
+}
+)";
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupMatrixScalarMultiply_F32) {
+    auto* mat_ty = ty.subgroup_matrix_left(ty.f32(), 4, 4);
+    auto* func = b.Function("foo", mat_ty);
+    auto* m = b.FunctionParam("m", mat_ty);
+    auto* s = b.FunctionParam("s", ty.f32());
+    func->SetParams({m, s});
+
+    b.Append(func->Block(), [&] {
+        auto* call = b.Call(mat_ty, core::BuiltinFn::kSubgroupMatrixScalarMultiply, m, s);
+        b.Return(func, call);
+    });
+
+    auto* src = R"(
+%foo = func(%m:subgroup_matrix_left<f32, 4, 4>, %s:f32):subgroup_matrix_left<f32, 4, 4> {
+  $B1: {
+    %4:subgroup_matrix_left<f32, 4, 4> = subgroupMatrixScalarMultiply %m, %s
+    ret %4
+  }
+}
+)";
+    ASSERT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%m:subgroup_matrix_left<f32, 4, 4>, %s:f32):subgroup_matrix_left<f32, 4, 4> {
+  $B1: {
+    %4:subgroup_matrix_left<f32, 4, 4> = call %tint_subgroup_matrix_scalar_op, %m, %s
+    ret %4
+  }
+}
+%tint_subgroup_matrix_scalar_op = func(%m_1:subgroup_matrix_left<f32, 4, 4>, %s_1:f32):subgroup_matrix_left<f32, 4, 4> {  # %m_1: 'm', %s_1: 's'
+  $B2: {
+    %8:ptr<function, subgroup_matrix_left<f32, 4, 4>, read_write> = var undef
+    loop [i: $B3, b: $B4, c: $B5] {  # loop_1
+      $B3: {  # initializer
+        next_iteration 0u  # -> $B4
+      }
+      $B4 (%idx:u32): {  # body
+        %10:bool = gte %idx, 16u
+        if %10 [t: $B6] {  # if_1
+          $B6: {  # true
+            exit_loop  # loop_1
+          }
+        }
+        %11:f32 = %m_1.Get %idx
+        %12:f32 = mul %11, %s_1
+        %13:void = %8.Set %idx, %12
+        continue  # -> $B5
+      }
+      $B5: {  # continuing
+        %14:u32 = add %idx, 1u
+        next_iteration %14  # -> $B4
+      }
+    }
+    %15:subgroup_matrix_left<f32, 4, 4> = load %8
+    ret %15
+  }
+}
+)";
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupMatrixMultiplyAccumulate_F32) {
+    auto* left = b.FunctionParam("left", ty.subgroup_matrix_left(ty.f32(), 4, 4));
+    auto* right = b.FunctionParam("right", ty.subgroup_matrix_right(ty.f32(), 4, 4));
+    auto* acc = b.FunctionParam("acc", ty.subgroup_matrix_result(ty.f32(), 4, 4));
+    auto* result = ty.subgroup_matrix_result(ty.f32(), 4, 4);
+    auto* func = b.Function("foo", result);
+    func->SetParams({left, right, acc});
+    b.Append(func->Block(), [&] {
+        auto* call =
+            b.Call(result, core::BuiltinFn::kSubgroupMatrixMultiplyAccumulate, left, right, acc);
+        b.Return(func, call);
+    });
+
+    auto* src = R"(
+%foo = func(%left:subgroup_matrix_left<f32, 4, 4>, %right:subgroup_matrix_right<f32, 4, 4>, %acc:subgroup_matrix_result<f32, 4, 4>):subgroup_matrix_result<f32, 4, 4> {
+  $B1: {
+    %5:subgroup_matrix_result<f32, 4, 4> = subgroupMatrixMultiplyAccumulate %left, %right, %acc
+    ret %5
+  }
+}
+)";
+    ASSERT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%left:subgroup_matrix_left<f32, 4, 4>, %right:subgroup_matrix_right<f32, 4, 4>, %acc:subgroup_matrix_result<f32, 4, 4>):subgroup_matrix_result<f32, 4, 4> {
+  $B1: {
+    %5:subgroup_matrix_result<f32, 4, 4> = call %tint_MatrixMultiplyAccumulate, %left, %right, %acc
+    ret %5
+  }
+}
+%tint_MatrixMultiplyAccumulate = func(%a:subgroup_matrix_left<f32, 4, 4>, %b:subgroup_matrix_right<f32, 4, 4>, %c:subgroup_matrix_result<f32, 4, 4>):subgroup_matrix_result<f32, 4, 4> {
+  $B2: {
+    %acc_1:ptr<function, subgroup_matrix_result<f32, 4, 4>, read_write> = var %c  # %acc_1: 'acc'
+    %11:void = %acc_1.MultiplyAccumulate %a, %b
+    %12:subgroup_matrix_result<f32, 4, 4> = load %acc_1
+    ret %12
+  }
+}
+)";
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupMatrixMultiplyAccumulate_Deduplication) {
+    auto* l1 = b.FunctionParam("l1", ty.subgroup_matrix_left(ty.f32(), 4, 4));
+    auto* r1 = b.FunctionParam("r1", ty.subgroup_matrix_right(ty.f32(), 4, 4));
+    auto* acc1 = b.FunctionParam("acc1", ty.subgroup_matrix_result(ty.f32(), 4, 4));
+    auto* l2 = b.FunctionParam("l2", ty.subgroup_matrix_left(ty.u8(), 4, 4));
+    auto* r2 = b.FunctionParam("r2", ty.subgroup_matrix_right(ty.u8(), 4, 4));
+    auto* acc2 = b.FunctionParam("acc2", ty.subgroup_matrix_result(ty.u32(), 4, 4));
+    auto* func = b.Function("foo", ty.void_());
+    func->SetParams({l1, r1, acc1, l2, r2, acc2});
+    b.Append(func->Block(), [&] {
+        b.Call(acc1->Type(), core::BuiltinFn::kSubgroupMatrixMultiplyAccumulate, l1, r1, acc1);
+        b.Call(acc1->Type(), core::BuiltinFn::kSubgroupMatrixMultiplyAccumulate, l1, r1, acc1);
+        b.Call(acc2->Type(), core::BuiltinFn::kSubgroupMatrixMultiplyAccumulate, l2, r2, acc2);
+        b.Call(acc2->Type(), core::BuiltinFn::kSubgroupMatrixMultiplyAccumulate, l2, r2, acc2);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%foo = func(%l1:subgroup_matrix_left<f32, 4, 4>, %r1:subgroup_matrix_right<f32, 4, 4>, %acc1:subgroup_matrix_result<f32, 4, 4>, %l2:subgroup_matrix_left<u8, 4, 4>, %r2:subgroup_matrix_right<u8, 4, 4>, %acc2:subgroup_matrix_result<u32, 4, 4>):void {
+  $B1: {
+    %8:subgroup_matrix_result<f32, 4, 4> = subgroupMatrixMultiplyAccumulate %l1, %r1, %acc1
+    %9:subgroup_matrix_result<f32, 4, 4> = subgroupMatrixMultiplyAccumulate %l1, %r1, %acc1
+    %10:subgroup_matrix_result<u32, 4, 4> = subgroupMatrixMultiplyAccumulate %l2, %r2, %acc2
+    %11:subgroup_matrix_result<u32, 4, 4> = subgroupMatrixMultiplyAccumulate %l2, %r2, %acc2
+    ret
+  }
+}
+)";
+    ASSERT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%l1:subgroup_matrix_left<f32, 4, 4>, %r1:subgroup_matrix_right<f32, 4, 4>, %acc1:subgroup_matrix_result<f32, 4, 4>, %l2:subgroup_matrix_left<u8, 4, 4>, %r2:subgroup_matrix_right<u8, 4, 4>, %acc2:subgroup_matrix_result<u32, 4, 4>):void {
+  $B1: {
+    %8:subgroup_matrix_result<f32, 4, 4> = call %tint_MatrixMultiplyAccumulate, %l1, %r1, %acc1
+    %10:subgroup_matrix_result<f32, 4, 4> = call %tint_MatrixMultiplyAccumulate, %l1, %r1, %acc1
+    %11:subgroup_matrix_result<u32, 4, 4> = call %tint_MatrixMultiplyAccumulate_1, %l2, %r2, %acc2
+    %13:subgroup_matrix_result<u32, 4, 4> = call %tint_MatrixMultiplyAccumulate_1, %l2, %r2, %acc2
+    ret
+  }
+}
+%tint_MatrixMultiplyAccumulate = func(%a:subgroup_matrix_left<f32, 4, 4>, %b:subgroup_matrix_right<f32, 4, 4>, %c:subgroup_matrix_result<f32, 4, 4>):subgroup_matrix_result<f32, 4, 4> {
+  $B2: {
+    %acc:ptr<function, subgroup_matrix_result<f32, 4, 4>, read_write> = var %c
+    %18:void = %acc.MultiplyAccumulate %a, %b
+    %19:subgroup_matrix_result<f32, 4, 4> = load %acc
+    ret %19
+  }
+}
+%tint_MatrixMultiplyAccumulate_1 = func(%a_1:subgroup_matrix_left<u8, 4, 4>, %b_1:subgroup_matrix_right<u8, 4, 4>, %c_1:subgroup_matrix_result<u32, 4, 4>):subgroup_matrix_result<u32, 4, 4> {  # %a_1: 'a', %b_1: 'b', %c_1: 'c'
+  $B3: {
+    %acc_1:ptr<function, subgroup_matrix_result<u32, 4, 4>, read_write> = var %c_1  # %acc_1: 'acc'
+    %24:void = %acc_1.MultiplyAccumulate %a_1, %b_1
+    %25:subgroup_matrix_result<u32, 4, 4> = load %acc_1
+    ret %25
+  }
+}
+)";
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupMatrixLoad_Workgroup) {
+    capabilities.Add(core::ir::Capability::kAllowNonCoreTypes);
+
+    auto* mat_ty = ty.subgroup_matrix_left(ty.f32(), 4, 4);
+    auto* wg_var = b.Var("wg", workgroup, ty.array<f32, 256>(), core::Access::kReadWrite);
+    b.ir.root_block->Append(wg_var);
+
+    auto* func = b.Function("foo", mat_ty);
+    b.Append(func->Block(), [&] {
+        auto* load = b.CallExplicit(mat_ty, core::BuiltinFn::kSubgroupMatrixLoad, Vector{mat_ty},
+                                    wg_var, 0_u, b.Constant(false), 4_u);
+        b.Return(func, load);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %wg:ptr<workgroup, array<f32, 256>, read_write> = var undef
+}
+
+%foo = func():subgroup_matrix_left<f32, 4, 4> {
+  $B2: {
+    %3:subgroup_matrix_left<f32, 4, 4> = subgroupMatrixLoad<subgroup_matrix_left<f32, 4, 4>> %wg, 0u, false, 4u
+    ret %3
+  }
+}
+)";
+    ASSERT_EQ(src, str());
+
+    auto* expect = R"(
+$B1: {  # root
+  %wg:ptr<workgroup, array<f32, 256>, read_write> = var undef
+}
+
+%foo = func():subgroup_matrix_left<f32, 4, 4> {
+  $B2: {
+    %3:subgroup_matrix_left<f32, 4, 4> = hlsl.Load<subgroup_matrix_left<f32, 4, 4>> %wg, 0u, 4u, 0u
+    ret %3
+  }
+}
+)";
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupMatrixStore_Workgroup) {
+    capabilities.Add(core::ir::Capability::kAllowNonCoreTypes);
+
+    auto* mat_ty = ty.subgroup_matrix_left(ty.f32(), 4, 4);
+    auto* wg_var = b.Var("wg", workgroup, ty.array<f32, 256>(), core::Access::kReadWrite);
+    b.ir.root_block->Append(wg_var);
+
+    auto* func = b.Function("foo", ty.void_());
+    auto* mat = b.FunctionParam("mat", mat_ty);
+    func->SetParams({mat});
+
+    b.Append(func->Block(), [&] {
+        b.Call(ty.void_(), core::BuiltinFn::kSubgroupMatrixStore, wg_var, 0_u, mat,
+               b.Constant(false), 4_u);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %wg:ptr<workgroup, array<f32, 256>, read_write> = var undef
+}
+
+%foo = func(%mat:subgroup_matrix_left<f32, 4, 4>):void {
+  $B2: {
+    %4:void = subgroupMatrixStore %wg, 0u, %mat, false, 4u
+    ret
+  }
+}
+)";
+    ASSERT_EQ(src, str());
+
+    auto* expect = R"(
+$B1: {  # root
+  %wg:ptr<workgroup, array<f32, 256>, read_write> = var undef
+}
+
+%foo = func(%mat:subgroup_matrix_left<f32, 4, 4>):void {
+  $B2: {
+    %4:void = %mat.Store %wg, 0u, 4u, 0u
+    ret
+  }
+}
+)";
+    Run(BuiltinPolyfill, BuiltinPolyfillConfig{});
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, AddSat_Scalar) {
+    auto* foo = b.Function("foo", ty.void_());
+    auto* lhs = b.FunctionParam("a", ty.u32());
+    auto* rhs = b.FunctionParam("b", ty.u32());
+    foo->SetParams({lhs, rhs});
+    b.Append(foo->Block(), [&] {
+        auto* call = b.Call(ty.u32(), core::BuiltinFn::kAddSat, lhs, rhs);
+        b.Let("res", call);
+        b.Return(foo);
+    });
+
+    auto* src = R"(
+%foo = func(%a:u32, %b:u32):void {
+  $B1: {
+    %4:u32 = addSat %a, %b
+    %res:u32 = let %4
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%a:u32, %b:u32):void {
+  $B1: {
+    %4:u32 = add %a, %b
+    %5:bool = lt %4, %a
+    %6:u32 = hlsl.ternary %4, 4294967295u, %5
+    %res:u32 = let %6
+    ret
+  }
+}
+)";
+
+    BuiltinPolyfillConfig config;
+    Run(BuiltinPolyfill, config);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, AddSat_Vector) {
+    auto* vec_ty = ty.vec2u();
+    auto* foo = b.Function("foo", ty.void_());
+    auto* lhs = b.FunctionParam("a", vec_ty);
+    auto* rhs = b.FunctionParam("b", vec_ty);
+    foo->SetParams({lhs, rhs});
+    b.Append(foo->Block(), [&] {
+        auto* call = b.Call(vec_ty, core::BuiltinFn::kAddSat, lhs, rhs);
+        b.Let("res", call);
+        b.Return(foo);
+    });
+
+    auto* src = R"(
+%foo = func(%a:vec2<u32>, %b:vec2<u32>):void {
+  $B1: {
+    %4:vec2<u32> = addSat %a, %b
+    %res:vec2<u32> = let %4
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%a:vec2<u32>, %b:vec2<u32>):void {
+  $B1: {
+    %4:vec2<u32> = add %a, %b
+    %5:vec2<bool> = lt %4, %a
+    %6:vec2<u32> = hlsl.select %5, vec2<u32>(4294967295u), %4
+    %res:vec2<u32> = let %6
+    ret
+  }
+}
+)";
+
+    BuiltinPolyfillConfig config{.use_hlsl_2021_select = true};
+    Run(BuiltinPolyfill, config);
+
     EXPECT_EQ(expect, str());
 }
 

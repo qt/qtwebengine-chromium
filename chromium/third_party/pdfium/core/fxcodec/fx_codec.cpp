@@ -10,6 +10,7 @@
 
 #include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/span_util.h"
+#include "core/fxcrt/zip.h"
 #include "core/fxge/dib/fx_dib.h"
 
 namespace fxcodec {
@@ -37,13 +38,15 @@ void ReverseRGB(pdfium::span<uint8_t> pDestBuf,
     }
     return;
   }
-
-  for (const auto& src_pix : src_span) {
-    auto& dst_pix = dst_span.front();
-    dst_pix.red = src_pix.blue;
-    dst_pix.green = src_pix.green;
-    dst_pix.blue = src_pix.red;
-    dst_span = dst_span.subspan<1u>();
+  for (auto [src_pix, dst_pix] : fxcrt::Zip(src_span, dst_span)) {
+    // Compiler can't prove `src_span` and `dst_span` aren't aliased, so use
+    // locals to avoid interleaved loads/stores.
+    const uint8_t blue = src_pix.blue;
+    const uint8_t green = src_pix.green;
+    const uint8_t red = src_pix.red;
+    dst_pix.red = blue;
+    dst_pix.green = green;
+    dst_pix.blue = red;
   }
 }
 

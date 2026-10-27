@@ -18,6 +18,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "platform/test/paths.h"
+#include "util/no_destructor.h"
 #include "util/read_file.h"
 
 namespace openscreen::cast {
@@ -32,8 +33,9 @@ using ::testing::_;
 using ::testing::ElementsAreArray;
 
 const std::string& GetSpecificTestDataPath() {
-  static std::string data_path = GetTestDataPath() + "cast/receiver/channel/";
-  return data_path;
+  static const NoDestructor<std::string> data_path(GetTestDataPath() +
+                                                   "cast/receiver/channel/");
+  return *data_path;
 }
 
 class DeviceAuthNamespaceHandlerTest : public ::testing::Test {

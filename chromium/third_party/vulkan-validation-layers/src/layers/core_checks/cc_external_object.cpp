@@ -110,6 +110,7 @@ bool CoreChecks::PreCallValidateGetSemaphoreFdKHR(VkDevice device, const VkSemap
 
     if (sem_state->ImportedHandleType().has_value() &&
         !CanSemaphoreExportFromImported(pGetFdInfo->handleType, sem_state->ImportedHandleType().value())) {
+        // See https://gitlab.khronos.org/vulkan/vulkan/-/issues/3670 for more details
         skip |= LogError("VUID-VkSemaphoreGetFdInfoKHR-semaphore-01133", sem_state->Handle(), info_loc.dot(Field::handleType),
                          "(%s) cannot be exported from semaphore with imported payload with handle type %s",
                          string_VkExternalSemaphoreHandleTypeFlagBits(pGetFdInfo->handleType),
@@ -396,7 +397,7 @@ bool CoreChecks::PreCallValidateExportMetalObjectsEXT(VkDevice device, VkExportM
                                 "VkImageCreateInfo structure",
                                 FormatHandle(metal_texture_ptr->image).c_str());
                         }
-                        auto format_plane_count = vkuFormatPlaneCount(image_info->create_info.format);
+                        auto format_plane_count = vkuFormatPlaneCount(image_info->GetFormat());
                         auto image_plane = metal_texture_ptr->plane;
                         if (!(format_plane_count > 1) && (image_plane != VK_IMAGE_ASPECT_PLANE_0_BIT)) {
                             skip |= LogError(
@@ -405,7 +406,7 @@ bool CoreChecks::PreCallValidateExportMetalObjectsEXT(VkDevice device, VkExportM
                                 "%s, and plane = %s, but image was created with format %s, which is not multiplaner and plane is "
                                 "required to be VK_IMAGE_ASPECT_PLANE_0_BIT",
                                 FormatHandle(metal_texture_ptr->image).c_str(), string_VkImageAspectFlags(image_plane).c_str(),
-                                string_VkFormat(image_info->create_info.format));
+                                string_VkFormat(image_info->GetFormat()));
                         }
                         if ((format_plane_count == 2) && (image_plane == VK_IMAGE_ASPECT_PLANE_2_BIT)) {
                             skip |= LogError(
@@ -415,7 +416,7 @@ bool CoreChecks::PreCallValidateExportMetalObjectsEXT(VkDevice device, VkExportM
                                 "cannot"
                                 "be VK_IMAGE_ASPECT_PLANE_2_BIT",
                                 FormatHandle(metal_texture_ptr->image).c_str(), string_VkImageAspectFlags(image_plane).c_str(),
-                                string_VkFormat(image_info->create_info.format));
+                                string_VkFormat(image_info->GetFormat()));
                         }
                     }
                 }
@@ -623,14 +624,10 @@ bool CoreChecks::ValidateAllocateMemoryMetal(const VkMemoryAllocateInfo& allocat
 
         // We can only validate images since we lack information to do the buffer call for the properties
         auto image_state_ptr = Get<vvl::Image>(dedicated_allocation_info->image);
-        VkFormat image_format = image_state_ptr->create_info.format;
+        VkFormat image_format = image_state_ptr->GetFormat();
         VkPhysicalDeviceExternalImageFormatInfo external_info = vku::InitStructHelper();
         external_info.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_MTLTEXTURE_BIT_EXT;
-        VkPhysicalDeviceImageFormatInfo2 format_info = vku::InitStructHelper(&external_info);
-        format_info.format = image_state_ptr->safe_create_info.format;
-        format_info.tiling = image_state_ptr->safe_create_info.tiling;
-        format_info.type = image_state_ptr->safe_create_info.imageType;
-        format_info.usage = image_state_ptr->safe_create_info.usage;
+        VkPhysicalDeviceImageFormatInfo2 format_info = image_state_ptr->GetImageFormatInfo2(&external_info);
         VkExternalImageFormatProperties external_image_format_properties = vku::InitStructHelper();
         VkImageFormatProperties2 format_properties = vku::InitStructHelper(&external_image_format_properties);
         DispatchGetPhysicalDeviceImageFormatProperties2Helper(api_version, physical_device, &format_info, &format_properties);

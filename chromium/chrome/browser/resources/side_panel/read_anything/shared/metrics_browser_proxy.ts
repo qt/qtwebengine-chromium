@@ -2,17 +2,30 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-enum UmaName {
+export enum UmaName {
   HIGHLIGHT_GRANULARITY =
       'Accessibility.ReadAnything.ReadAloud.HighlightGranularity',
   LANGUAGE = 'Accessibility.ReadAnything.ReadAloud.Language',
   LINE_FOCUS_TOGGLE = 'Accessibility.ReadAnything.LineFocusKeyboardToggle',
   NEW_PAGE = 'Accessibility.ReadAnything.NewPage',
+  NUMBER_PARAGRAPHS =
+      'Accessibility.ReadAnything.DistilledPageStructure.NumberParagraphs',
   SPEECH_ERROR = 'Accessibility.ReadAnything.SpeechError',
   SPEECH_PLAYBACK = 'Accessibility.ReadAnything.SpeechPlaybackSession',
+  PDF_HEADING_TO_PARAGRAPH_RATIO =
+      'Accessibility.ReadAnything.Pdf.HeadingToParagraphRatio',
+  PDF_NUMBER_PARAGRAPHS = 'Accessibility.ReadAnything.Pdf.NumberParagraphs',
   SPEECH_SETTINGS_CHANGE =
       'Accessibility.ReadAnything.ReadAloud.SettingsChange',
   TEXT_SETTINGS_CHANGE = 'Accessibility.ReadAnything.SettingsChange',
+  TOTAL_HEADER_COUNT =
+      'Accessibility.ReadAnything.DistilledPageStructure.TotalHeaderCount',
+  TOP_TWO_HEADERS_COUNT =
+      'Accessibility.ReadAnything.DistilledPageStructure.TopTwoHeadersCount',
+  TOP_TWO_HEADERS_HAVE_MINIMUM_TWO_ITEMS =
+      'Accessibility.ReadAnything.DistilledPageStructure.TopTwoHeadersHaveMinimumTwoItems',
+  UNIQUE_HEADER_TAGS =
+      'Accessibility.ReadAnything.DistilledPageStructure.UniqueHeaderTags',
   VOICE = 'Accessibility.ReadAnything.ReadAloud.Voice',
   VOICE_LANGUAGE_CHANGE =
       'Accessibility.ReadAnything.ReadAloud.VoiceLanguageChange',
@@ -139,7 +152,8 @@ export interface MetricsBrowserProxy {
   recordNewPage(): void;
   recordNewPageWithSpeech(): void;
   recordSpeechError(error: ReadAnythingSpeechError): void;
-  recordSpeechPlaybackLength(time: number): void;
+  recordSpeechPlaybackLength(umaName: string, time: number): void;
+  recordSpeechPlaybackLengthLegacy(time: number): void;
   recordSpeechSettingsChange(settingsChange: ReadAloudSettingsChange): void;
   recordSpeechStopSource(source: number): void;
   recordTextSettingsChange(settingsChange: ReadAnythingSettingsChange): void;
@@ -149,6 +163,7 @@ export interface MetricsBrowserProxy {
   recordVoiceLanguageChange(): void;
   recordExtensionState(): void;
   recordCount(umaName: string, count: number): void;
+  recordBoolean(umaName: string, value: boolean): void;
 }
 
 export class MetricsBrowserProxyImpl implements MetricsBrowserProxy {
@@ -229,7 +244,11 @@ export class MetricsBrowserProxyImpl implements MetricsBrowserProxy {
     chrome.metricsPrivate.recordSmallCount(UmaName.VOICE_SPEED, index);
   }
 
-  recordSpeechPlaybackLength(time: number) {
+  recordSpeechPlaybackLength(umaName: string, time: number) {
+    chrome.metricsPrivate.recordLongTime(umaName, time);
+  }
+
+  recordSpeechPlaybackLengthLegacy(time: number) {
     chrome.metricsPrivate.recordLongTime(UmaName.SPEECH_PLAYBACK, time);
   }
 
@@ -239,6 +258,10 @@ export class MetricsBrowserProxyImpl implements MetricsBrowserProxy {
 
   recordCount(umaName: string, count: number) {
     chrome.metricsPrivate.recordCount(umaName, count);
+  }
+
+  recordBoolean(umaName: string, value: boolean) {
+    chrome.metricsPrivate.recordBoolean(umaName, value);
   }
 
   static getInstance(): MetricsBrowserProxy {

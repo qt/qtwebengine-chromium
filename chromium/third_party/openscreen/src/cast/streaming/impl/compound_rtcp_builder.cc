@@ -371,7 +371,7 @@ void CompoundRtcpBuilder::AppendReceiverLogPacket(ByteBuffer& buffer) {
         delay_delta_or_packet_id = event_log.packet_id;
       } else {
         delay_delta_or_packet_id =
-            static_cast<uint16_t>(event_log.delay.count());
+            static_cast<uint16_t>(to_milliseconds(event_log.delay).count());
       }
       AppendField<uint16_t>(delay_delta_or_packet_id, buffer);
 

@@ -13,6 +13,11 @@ import utils.constants as const
 from utils.command_error import CommandError
 
 
+_DIR_SOURCE_ROOT = os.path.normpath(
+    os.path.join(os.path.basename(__file__), '../../..'))
+_COMMON_EXTENSIONS = ('.java', '.cc', '.mm', '.h', '.json')
+
+
 def _CodeSearchFiles(query_args: list[str]) -> list[str]:
   lines: list[str] = command.RunCommand([
       'cs',
@@ -122,6 +127,8 @@ def SearchForTestsByName(terms: list[str], quiet: bool,
 
   def GetPatternForTerm(term: str) -> str:
     ANY: str = '.' if not remote_search else r'[\s\S]'
+    # Ignore method name in Class#Method syntax for file search.
+    term = term.split('#')[0]
     slash_parts: list[str] = term.split('/')
     # These are the formats, for now, just ignore the prefix and suffix here.
     # Prefix/Test.Name/Suffix  -> \bTest\b.*\bName\b
@@ -134,6 +141,9 @@ def SearchForTestsByName(terms: list[str], quiet: bool,
     return f'{ANY}*'.join(r'\b' + re.escape(p) + r'\b' for p in dot_parts)
 
   def GetFilterForTerm(term: str) -> str:
+    # Precise filter for Class#Method syntax.
+    if '#' in term:
+      return term
     # If the user supplied a '/', assume they've included the full test name.
     if '/' in term:
       return term
@@ -181,14 +191,19 @@ def SearchForTestsByName(terms: list[str], quiet: bool,
 
   if files and not quiet:
     print('Found tests in files:')
-    print('\n'.join([f'  {f}' for f in files]))
+    limit = 50
+    print('\n'.join([f'  {f}' for f in files[:limit]]))
+    if len(files) > limit:
+      print(f'... ({len(files)} total)')
+
   return files, gtest_filter
 
 
 def IsProbablyFile(name: str) -> bool:
   # Returns whether the name is likely a test file name, path,
   # or directory path.
-  return bool(const.TEST_FILE_NAME_REGEX.match(name)) or os.path.exists(name)
+  return (name.endswith(_COMMON_EXTENSIONS) or os.path.exists(name)
+          or os.path.exists(os.path.join(_DIR_SOURCE_ROOT, name)))
 
 
 def _FindTestForFile(target: os.PathLike[str]) -> str | None:
@@ -221,7 +236,13 @@ def FindMatchingTestFiles(target: str,
                           remote_search: bool = False,
                           path_index: int | None = None) -> list[str]:
   # Return early if there's an exact file match.
-  if os.path.isfile(target):
+  exists = os.path.isfile(target)
+  if not exists:
+    src_rel_path = os.path.join(_DIR_SOURCE_ROOT, target)
+    exists = os.path.isfile(src_rel_path)
+    if exists:
+      target = src_rel_path
+  if exists:
     if test_file := _FindTestForFile(target):
       return [test_file]
     command.ExitWithMessage(f"{target} doesn't look like a test file")

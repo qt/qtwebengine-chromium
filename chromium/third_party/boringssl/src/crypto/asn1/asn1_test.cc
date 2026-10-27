@@ -15,8 +15,10 @@
 #include <limits.h>
 #include <stdio.h>
 
+#include <algorithm>
 #include <iterator>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -44,6 +46,14 @@
 
 
 BSSL_NAMESPACE_BEGIN
+
+static Span<const uint8_t> ASN1StringToBytes(const ASN1_STRING *str) {
+  return Span(ASN1_STRING_get0_data(str), ASN1_STRING_length(str));
+}
+
+static std::string_view ASN1StringToStringView(const ASN1_STRING *str) {
+  return BytesAsStringView(ASN1StringToBytes(str));
+}
 
 // |obj| and |i2d_func| require different template parameters because C++ may
 // deduce, say, |ASN1_STRING*| via |obj| and |const ASN1_STRING*| via
@@ -786,25 +796,29 @@ TEST(ASN1Test, ParseASN1Object) {
 }
 
 TEST(ASN1Test, BitString) {
-  const size_t kNotWholeBytes = static_cast<size_t>(-1);
   const struct {
     std::vector<uint8_t> in;
-    size_t num_bytes;
+    int num_bytes;
+    uint8_t unused_bits;
   } kValidInputs[] = {
       // Empty bit string
-      {{0x03, 0x01, 0x00}, 0},
+      {{0x03, 0x01, 0x00}, 0, 0},
       // 0b1
-      {{0x03, 0x02, 0x07, 0x80}, kNotWholeBytes},
+      {{0x03, 0x02, 0x07, 0x80}, 1, 7},
       // 0b1010
-      {{0x03, 0x02, 0x04, 0xa0}, kNotWholeBytes},
+      {{0x03, 0x02, 0x04, 0xa0}, 1, 4},
       // 0b1010101
-      {{0x03, 0x02, 0x01, 0xaa}, kNotWholeBytes},
+      {{0x03, 0x02, 0x01, 0xaa}, 1, 1},
       // 0b10101010
-      {{0x03, 0x02, 0x00, 0xaa}, 1},
+      {{0x03, 0x02, 0x00, 0xaa}, 1, 0},
       // Bits 0 and 63 are set
-      {{0x03, 0x09, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}, 8},
+      {{0x03, 0x09, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
+       8,
+       0},
       // 64 zero bits
-      {{0x03, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 8},
+      {{0x03, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+       8,
+       0},
   };
   for (const auto &test : kValidInputs) {
     SCOPED_TRACE(Bytes(test.in));
@@ -815,13 +829,16 @@ TEST(ASN1Test, BitString) {
     ASSERT_TRUE(val);
     TestSerialize(val.get(), i2d_ASN1_BIT_STRING, test.in);
 
+    EXPECT_EQ(ASN1_STRING_length(val.get()), test.num_bytes);
+    EXPECT_EQ(ASN1_BIT_STRING_unused_bits(val.get()), test.unused_bits);
+
     // Check the byte count.
     size_t num_bytes;
-    if (test.num_bytes == kNotWholeBytes) {
+    if (test.unused_bits != 0) {
       EXPECT_FALSE(ASN1_BIT_STRING_num_bytes(val.get(), &num_bytes));
     } else {
       ASSERT_TRUE(ASN1_BIT_STRING_num_bytes(val.get(), &num_bytes));
-      EXPECT_EQ(num_bytes, test.num_bytes);
+      EXPECT_EQ(num_bytes, static_cast<size_t>(test.num_bytes));
     }
   }
 
@@ -893,6 +910,11 @@ TEST(ASN1Test, SetBit) {
   ASSERT_TRUE(ASN1_BIT_STRING_set_bit(val.get(), 100, 0));
   TestSerialize(val.get(), i2d_ASN1_BIT_STRING, kBitString1);
 
+  // Negative bits do not exist.
+  EXPECT_FALSE(ASN1_BIT_STRING_set_bit(val.get(), -1, 0));
+  EXPECT_FALSE(ASN1_BIT_STRING_set_bit(val.get(), -1, 1));
+  ERR_clear_error();
+
   // Bits may be set beyond the end of the string.
   ASSERT_TRUE(ASN1_BIT_STRING_set_bit(val.get(), 63, 1));
   static const uint8_t kBitStringLong[] = {0x03, 0x09, 0x00, 0x80, 0x00, 0x00,
@@ -938,12 +960,70 @@ TEST(ASN1Test, SetBit) {
   EXPECT_EQ(0, ASN1_BIT_STRING_get_bit(val.get(), 63));
   EXPECT_EQ(0, ASN1_BIT_STRING_get_bit(val.get(), 64));
 
-  // By default, a BIT STRING implicitly truncates trailing zeros.
+  // A BIT STRING may be manually set with trailing zeros.
   val.reset(ASN1_BIT_STRING_new());
   ASSERT_TRUE(val);
-  static const uint8_t kZeros[64] = {0};
+  static const uint8_t kZeros[5] = {0};
   ASSERT_TRUE(ASN1_STRING_set(val.get(), kZeros, sizeof(kZeros)));
+  static const uint8_t kBitStringZeros[] = {0x03, 0x06, 0x00, 0x00,
+                                            0x00, 0x00, 0x00, 0x00};
+  TestSerialize(val.get(), i2d_ASN1_BIT_STRING, kBitStringZeros);
+}
+
+TEST(ASN1Test, SetBitString) {
+  // Creating an ASN1_BIT_STRING and then filling in a byte string should assign
+  // the byte string, not a silently truncated version.
+  UniquePtr<ASN1_BIT_STRING> val(ASN1_BIT_STRING_new());
+  ASSERT_TRUE(val);
+  const uint8_t kBytesf000[] = {0xf0, 0x00};
+  ASSERT_TRUE(
+      ASN1_STRING_set(val.get(), kBytesf000, sizeof(kBytesf000)));
+  static const uint8_t kBitStringf000[] = {0x03, 0x03, 0x00, 0xf0, 0x00};
+  TestSerialize(val.get(), i2d_ASN1_BIT_STRING, kBitStringf000);
+
+  // A thin wrapper to simplify getting pointer/length pairs to call the
+  // function.
+  auto set1 = [](ASN1_BIT_STRING *s, const std::vector<uint8_t> &data,
+                 int unused_bits) {
+    return ASN1_BIT_STRING_set1(s, data.data(), data.size(), unused_bits);
+  };
+
+  // Setting a count of unused bits works.
+  ASSERT_TRUE(set1(val.get(), {0xf0}, 4));
+  static const uint8_t kBitString1111[] = {0x03, 0x02, 0x04, 0xf0};
+  TestSerialize(val.get(), i2d_ASN1_BIT_STRING, kBitString1111);
+
+  ASSERT_TRUE(set1(val.get(), {0xf0}, 0));
+  static const uint8_t kBitString11110000[] = {0x03, 0x02, 0x00, 0xf0};
+  TestSerialize(val.get(), i2d_ASN1_BIT_STRING, kBitString11110000);
+
+  ASSERT_TRUE(set1(val.get(), {}, 0));
+  static const uint8_t kBitStringEmpty[] = {0x03, 0x01, 0x00};
   TestSerialize(val.get(), i2d_ASN1_BIT_STRING, kBitStringEmpty);
+
+  // All unused bits must be zero.
+  EXPECT_FALSE(set1(val.get(), {0xff}, 1));
+  EXPECT_FALSE(set1(val.get(), {0xf0}, 5));
+
+  // Invalid unused bit counts.
+  EXPECT_FALSE(set1(val.get(), {0x00, 0x00}, 8));
+  EXPECT_FALSE(set1(val.get(), {0x00, 0x00}, -1));
+  EXPECT_FALSE(set1(val.get(), {}, 1));
+
+  // |ASN1_STRING_set| and |ASN1_STRING_set0| should clear the count of unused
+  // bits, rather then carry it over.
+  ASSERT_TRUE(set1(val.get(), {0xf0}, 4));
+  static const uint8_t kBytes[] = {0x00, 0x01, 0x02};
+  ASSERT_TRUE(ASN1_STRING_set(val.get(), kBytes, sizeof(kBytes)));
+  EXPECT_EQ(ASN1_BIT_STRING_unused_bits(val.get()), 0);
+  EXPECT_EQ(Bytes(ASN1StringToBytes(val.get())), Bytes(kBytes));
+
+  ASSERT_TRUE(set1(val.get(), {0xf0}, 4));
+  void *copy = OPENSSL_memdup(kBytes, sizeof(kBytes));
+  ASSERT_NE(copy, nullptr);
+  ASN1_STRING_set0(val.get(), copy, sizeof(kBytes));
+  EXPECT_EQ(ASN1_BIT_STRING_unused_bits(val.get()), 0);
+  EXPECT_EQ(Bytes(ASN1StringToBytes(val.get())), Bytes(kBytes));
 }
 
 TEST(ASN1Test, StringToUTF8) {
@@ -1005,12 +1085,6 @@ TEST(ASN1Test, StringToUTF8) {
       ERR_clear_error();
     }
   }
-}
-
-static std::string_view ASN1StringToStringView(const ASN1_STRING *str) {
-  return std::string_view(
-      reinterpret_cast<const char *>(ASN1_STRING_get0_data(str)),
-      ASN1_STRING_length(str));
 }
 
 static bool ASN1Time_check_posix(const ASN1_TIME *s, int64_t t) {
@@ -1261,6 +1335,92 @@ TEST(ASN1Test, UTCTimeZoneOffsets) {
   EXPECT_TRUE(ASN1_TIME_diff(&days, &secs, s.get(), g.get()));
   EXPECT_EQ(days, 0);
   EXPECT_EQ(secs, 0);
+}
+
+TEST(ASN1Test, ToGeneralizedTime) {
+  static const struct {
+    int type;
+    std::string_view in;
+    std::optional<std::string_view> expected;
+  } kTests[] = {
+      // UTCTime is converted.
+      {V_ASN1_UTCTIME, "500101000000Z", "19500101000000Z"},
+      {V_ASN1_UTCTIME, "700101000000Z", "19700101000000Z"},
+      {V_ASN1_UTCTIME, "990101000000Z", "19990101000000Z"},
+      {V_ASN1_UTCTIME, "000101000000Z", "20000101000000Z"},
+      {V_ASN1_UTCTIME, "490101000000Z", "20490101000000Z"},
+
+      // GeneralizedTime is left as-is.
+      {V_ASN1_GENERALIZEDTIME, "00000101000000Z", "00000101000000Z"},
+      {V_ASN1_GENERALIZEDTIME, "19490101000000Z", "19490101000000Z"},
+      {V_ASN1_GENERALIZEDTIME, "19500101000000Z", "19500101000000Z"},
+      {V_ASN1_GENERALIZEDTIME, "19700101000000Z", "19700101000000Z"},
+      {V_ASN1_GENERALIZEDTIME, "19990101000000Z", "19990101000000Z"},
+      {V_ASN1_GENERALIZEDTIME, "20000101000000Z", "20000101000000Z"},
+      {V_ASN1_GENERALIZEDTIME, "20490101000000Z", "20490101000000Z"},
+      {V_ASN1_GENERALIZEDTIME, "20500101000000Z", "20500101000000Z"},
+      {V_ASN1_GENERALIZEDTIME, "99991231235959Z", "99991231235959Z"},
+
+      // For now, UTCTime with offsets are tolerated, but not GeneralizedTime.
+      {V_ASN1_UTCTIME, "000101000000-0400", "20000101000000-0400"},
+      {V_ASN1_GENERALIZEDTIME, "20000101000000-0400", std::nullopt},
+
+      // Invalid strings are rejected.
+      {V_ASN1_OCTET_STRING, "000101000000-0400", std::nullopt},
+      {V_ASN1_UTCTIME, "", std::nullopt},
+      {V_ASN1_UTCTIME, "not a time", std::nullopt},
+      {V_ASN1_UTCTIME, "000101000000", std::nullopt},
+      {V_ASN1_UTCTIME, "000101000000Znope", std::nullopt},
+      {V_ASN1_UTCTIME, "000101000000-040000", std::nullopt},
+      {V_ASN1_GENERALIZEDTIME, "", std::nullopt},
+      {V_ASN1_GENERALIZEDTIME, "not a time", std::nullopt},
+      {V_ASN1_GENERALIZEDTIME, "20000101000000", std::nullopt},
+      {V_ASN1_GENERALIZEDTIME, "20000101000000Znope", std::nullopt},
+  };
+  for (const auto &t : kTests) {
+    SCOPED_TRACE(t.type);
+    SCOPED_TRACE(t.in);
+
+    // Test the basic API.
+    UniquePtr<ASN1_STRING> str(ASN1_STRING_type_new(t.type));
+    ASSERT_TRUE(str);
+    ASSERT_TRUE(ASN1_STRING_set(str.get(), t.in.data(), t.in.size()));
+    UniquePtr<ASN1_GENERALIZEDTIME> gen(
+        ASN1_TIME_to_generalizedtime(str.get(), nullptr));
+    if (t.expected.has_value()) {
+      ASSERT_TRUE(gen);
+      EXPECT_EQ(ASN1_STRING_type(gen.get()), V_ASN1_GENERALIZEDTIME);
+      EXPECT_EQ(ASN1StringToStringView(gen.get()), *t.expected);
+    } else {
+      EXPECT_FALSE(gen);
+      return;
+    }
+
+    // Test returning a new value through the out parameter.
+    ASN1_GENERALIZEDTIME *out = nullptr;
+    gen.reset(ASN1_TIME_to_generalizedtime(str.get(), &out));
+    ASSERT_TRUE(gen);
+    EXPECT_EQ(gen.get(), out);
+    EXPECT_EQ(ASN1_STRING_type(gen.get()), V_ASN1_GENERALIZEDTIME);
+    EXPECT_EQ(ASN1StringToStringView(gen.get()), *t.expected);
+
+    // Test writing to a pre-existing object.
+    gen.reset(ASN1_GENERALIZEDTIME_new());
+    ASSERT_TRUE(ASN1_STRING_set(gen.get(), "test", -1));
+    out = gen.get();
+    ASSERT_EQ(gen.get(), ASN1_TIME_to_generalizedtime(str.get(), &out));
+    EXPECT_EQ(ASN1_STRING_type(gen.get()), V_ASN1_GENERALIZEDTIME);
+    EXPECT_EQ(ASN1StringToStringView(gen.get()), *t.expected);
+
+    // The function should not assume the input is NUL-terminated.
+    void *copy = OPENSSL_memdup(t.in.data(), t.in.size());
+    ASSERT_TRUE(t.in.empty() || copy != nullptr);
+    ASN1_STRING_set0(str.get(), copy, static_cast<int>(t.in.size()));
+    gen.reset(ASN1_TIME_to_generalizedtime(str.get(), nullptr));
+    ASSERT_TRUE(gen);
+    EXPECT_EQ(ASN1_STRING_type(gen.get()), V_ASN1_GENERALIZEDTIME);
+    EXPECT_EQ(ASN1StringToStringView(gen.get()), *t.expected);
+  }
 }
 
 TEST(ASN1Test, AdjTime) {
@@ -1561,6 +1721,11 @@ TEST(ASN1Test, StringPrintEx) {
        {0xff},
        0,
        ASN1_STRFLGS_ESC_MSB | ASN1_STRFLGS_UTF8_CONVERT},
+      // It is a caller error to place non-ASN1_STRING types in an ASN1_STRING.
+      // Still, we should gracefully detect this when we try to encode as DER.
+      {V_ASN1_NULL, {}, 0, ASN1_STRFLGS_DUMP_ALL | ASN1_STRFLGS_DUMP_DER},
+      {V_ASN1_BOOLEAN, {}, 0, ASN1_STRFLGS_DUMP_ALL | ASN1_STRFLGS_DUMP_DER},
+      {V_ASN1_OBJECT, {}, 0, ASN1_STRFLGS_DUMP_ALL | ASN1_STRFLGS_DUMP_DER},
   };
   for (const auto &t : kUnprintableTests) {
     SCOPED_TRACE(t.type);
@@ -2118,6 +2283,25 @@ TEST(ASN1Test, TypeMismatch) {
   // test is currently a no-op, but will not be if the above TODO is resolved.
   alg->parameter->value.asn1_string->type = V_ASN1_OCTET_STRING;
   TestSerialize(alg.get(), i2d_X509_ALGOR, kExpected);
+
+  // Repeat the test for a UTF8String parameter that, somehow, was constructed
+  // from an |ASN1_STRING| with the wrong type. This is much less likely than
+  // the |ASN1_item_pack| API flow for making a |V_ASN1_SEQUENCE|, but we should
+  // still be consistent about preferring the |ASN1_TYPE| or |ASN1_STRING| type
+  // value.
+  UniquePtr<ASN1_OCTET_STRING> utf8(ASN1_OCTET_STRING_new());
+  ASSERT_TRUE(utf8);
+  ASSERT_TRUE(X509_ALGOR_set0(alg.get(), OBJ_nid2obj(NID_rsassaPss),
+                              V_ASN1_UTF8STRING, utf8.release()));
+  // SEQUENCE {
+  //   # rsassa-pss
+  //   OBJECT_IDENTIFIER { 1.2.840.113549.1.1.10 }
+  //   UTF8String {}
+  // }
+  static const uint8_t kExpectedUTF8[] = {0x30, 0x0d, 0x06, 0x09, 0x2a,
+                                          0x86, 0x48, 0x86, 0xf7, 0x0d,
+                                          0x01, 0x01, 0x0a, 0x0c, 0x00};
+  TestSerialize(alg.get(), i2d_X509_ALGOR, kExpectedUTF8);
 }
 
 TEST(ASN1Test, StringTableSorted) {
@@ -2237,9 +2421,6 @@ TEST(ASN1Test, StringCmp) {
   const Input kInputs[] = {
       {V_ASN1_BIT_STRING, {}, ASN1_STRING_FLAG_BITS_LEFT | 0, false},
       {V_ASN1_BIT_STRING, {}, 0, true},
-      // When |ASN1_STRING_FLAG_BITS_LEFT| is unset, BIT STRINGs implicitly
-      // drop trailing zeros.
-      {V_ASN1_BIT_STRING, {0x00, 0x00, 0x00, 0x00}, 0, true},
 
       {V_ASN1_OCTET_STRING, {}, 0, false},
       {V_ASN1_UTF8STRING, {}, 0, false},
@@ -2257,8 +2438,6 @@ TEST(ASN1Test, StringCmp) {
       {V_ASN1_BIT_STRING, {0xe0}, ASN1_STRING_FLAG_BITS_LEFT | 5, false},
       // 4-bit inputs.
       {V_ASN1_BIT_STRING, {0xf0}, ASN1_STRING_FLAG_BITS_LEFT | 4, false},
-      {V_ASN1_BIT_STRING, {0xf0}, 0, true},        // 4 trailing zeros dropped.
-      {V_ASN1_BIT_STRING, {0xf0, 0x00}, 0, true},  // 12 trailing zeros dropped.
       // 5-bit inputs.
       {V_ASN1_BIT_STRING, {0x00}, ASN1_STRING_FLAG_BITS_LEFT | 3, false},
       {V_ASN1_BIT_STRING, {0xf0}, ASN1_STRING_FLAG_BITS_LEFT | 3, false},

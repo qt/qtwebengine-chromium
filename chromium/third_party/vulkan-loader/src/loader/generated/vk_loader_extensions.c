@@ -343,6 +343,9 @@ VKAPI_ATTR bool VKAPI_CALL loader_icd_init_entries(struct loader_instance* inst,
     // ---- VK_ARM_shader_instrumentation extension commands
     LOOKUP_GIPA(EnumeratePhysicalDeviceShaderInstrumentationMetricsARM);
 
+    // ---- VK_ARM_data_graph_optical_flow extension commands
+    LOOKUP_GIPA(GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM);
+
     // ---- VK_SEC_ubm_surface extension commands
 #if defined(VK_USE_PLATFORM_UBM_SEC)
     LOOKUP_GIPA(CreateUbmSurfaceSEC);
@@ -921,6 +924,20 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
     table->GetMemoryAndroidHardwareBufferANDROID = (PFN_vkGetMemoryAndroidHardwareBufferANDROID)gdpa(dev, "vkGetMemoryAndroidHardwareBufferANDROID");
 #endif // VK_USE_PLATFORM_ANDROID_KHR
+
+    // ---- VK_AMD_gpa_interface extension commands
+    table->CreateGpaSessionAMD = (PFN_vkCreateGpaSessionAMD)gdpa(dev, "vkCreateGpaSessionAMD");
+    table->DestroyGpaSessionAMD = (PFN_vkDestroyGpaSessionAMD)gdpa(dev, "vkDestroyGpaSessionAMD");
+    table->SetGpaDeviceClockModeAMD = (PFN_vkSetGpaDeviceClockModeAMD)gdpa(dev, "vkSetGpaDeviceClockModeAMD");
+    table->GetGpaDeviceClockInfoAMD = (PFN_vkGetGpaDeviceClockInfoAMD)gdpa(dev, "vkGetGpaDeviceClockInfoAMD");
+    table->CmdBeginGpaSessionAMD = (PFN_vkCmdBeginGpaSessionAMD)gdpa(dev, "vkCmdBeginGpaSessionAMD");
+    table->CmdEndGpaSessionAMD = (PFN_vkCmdEndGpaSessionAMD)gdpa(dev, "vkCmdEndGpaSessionAMD");
+    table->CmdBeginGpaSampleAMD = (PFN_vkCmdBeginGpaSampleAMD)gdpa(dev, "vkCmdBeginGpaSampleAMD");
+    table->CmdEndGpaSampleAMD = (PFN_vkCmdEndGpaSampleAMD)gdpa(dev, "vkCmdEndGpaSampleAMD");
+    table->GetGpaSessionStatusAMD = (PFN_vkGetGpaSessionStatusAMD)gdpa(dev, "vkGetGpaSessionStatusAMD");
+    table->GetGpaSessionResultsAMD = (PFN_vkGetGpaSessionResultsAMD)gdpa(dev, "vkGetGpaSessionResultsAMD");
+    table->ResetGpaSessionAMD = (PFN_vkResetGpaSessionAMD)gdpa(dev, "vkResetGpaSessionAMD");
+    table->CmdCopyGpaSessionResultsAMD = (PFN_vkCmdCopyGpaSessionResultsAMD)gdpa(dev, "vkCmdCopyGpaSessionResultsAMD");
 
     // ---- VK_AMDX_shader_enqueue extension commands
 #if defined(VK_ENABLE_BETA_EXTENSIONS)
@@ -1739,6 +1756,9 @@ VKAPI_ATTR void VKAPI_CALL loader_init_instance_extension_dispatch_table(VkLayer
 
     // ---- VK_ARM_shader_instrumentation extension commands
     table->EnumeratePhysicalDeviceShaderInstrumentationMetricsARM = (PFN_vkEnumeratePhysicalDeviceShaderInstrumentationMetricsARM)gpa(inst, "vkEnumeratePhysicalDeviceShaderInstrumentationMetricsARM");
+
+    // ---- VK_ARM_data_graph_optical_flow extension commands
+    table->GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM = (PFN_vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM)gpa(inst, "vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM");
 
     // ---- VK_SEC_ubm_surface extension commands
 #if defined(VK_USE_PLATFORM_UBM_SEC)
@@ -2992,6 +3012,20 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     if (!strcmp(name, "GetMemoryAndroidHardwareBufferANDROID")) return (void *)table->GetMemoryAndroidHardwareBufferANDROID;
 #endif // VK_USE_PLATFORM_ANDROID_KHR
 
+    // ---- VK_AMD_gpa_interface extension commands
+    if (!strcmp(name, "CreateGpaSessionAMD")) return (void *)table->CreateGpaSessionAMD;
+    if (!strcmp(name, "DestroyGpaSessionAMD")) return (void *)table->DestroyGpaSessionAMD;
+    if (!strcmp(name, "SetGpaDeviceClockModeAMD")) return (void *)table->SetGpaDeviceClockModeAMD;
+    if (!strcmp(name, "GetGpaDeviceClockInfoAMD")) return (void *)table->GetGpaDeviceClockInfoAMD;
+    if (!strcmp(name, "CmdBeginGpaSessionAMD")) return (void *)table->CmdBeginGpaSessionAMD;
+    if (!strcmp(name, "CmdEndGpaSessionAMD")) return (void *)table->CmdEndGpaSessionAMD;
+    if (!strcmp(name, "CmdBeginGpaSampleAMD")) return (void *)table->CmdBeginGpaSampleAMD;
+    if (!strcmp(name, "CmdEndGpaSampleAMD")) return (void *)table->CmdEndGpaSampleAMD;
+    if (!strcmp(name, "GetGpaSessionStatusAMD")) return (void *)table->GetGpaSessionStatusAMD;
+    if (!strcmp(name, "GetGpaSessionResultsAMD")) return (void *)table->GetGpaSessionResultsAMD;
+    if (!strcmp(name, "ResetGpaSessionAMD")) return (void *)table->ResetGpaSessionAMD;
+    if (!strcmp(name, "CmdCopyGpaSessionResultsAMD")) return (void *)table->CmdCopyGpaSessionResultsAMD;
+
     // ---- VK_AMDX_shader_enqueue extension commands
 #if defined(VK_ENABLE_BETA_EXTENSIONS)
     if (!strcmp(name, "CreateExecutionGraphPipelinesAMDX")) return (void *)table->CreateExecutionGraphPipelinesAMDX;
@@ -3814,6 +3848,9 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_instance_dispatch_table(const VkLayerI
 
     // ---- VK_ARM_shader_instrumentation extension commands
     if (!strcmp(name, "EnumeratePhysicalDeviceShaderInstrumentationMetricsARM")) return (void *)table->EnumeratePhysicalDeviceShaderInstrumentationMetricsARM;
+
+    // ---- VK_ARM_data_graph_optical_flow extension commands
+    if (!strcmp(name, "GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM")) return (void *)table->GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM;
 
     // ---- VK_SEC_ubm_surface extension commands
 #if defined(VK_USE_PLATFORM_UBM_SEC)
@@ -7114,6 +7151,174 @@ VKAPI_ATTR VkResult VKAPI_CALL GetMemoryAndroidHardwareBufferANDROID(
 }
 
 #endif // VK_USE_PLATFORM_ANDROID_KHR
+
+// ---- VK_AMD_gpa_interface extension trampoline/terminators
+
+VKAPI_ATTR VkResult VKAPI_CALL CreateGpaSessionAMD(
+    VkDevice                                    device,
+    const VkGpaSessionCreateInfoAMD*            pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkGpaSessionAMD*                            pGpaSession) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCreateGpaSessionAMD: Invalid device "
+                   "[VUID-vkCreateGpaSessionAMD-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->CreateGpaSessionAMD(device, pCreateInfo, pAllocator, pGpaSession);
+}
+
+VKAPI_ATTR void VKAPI_CALL DestroyGpaSessionAMD(
+    VkDevice                                    device,
+    VkGpaSessionAMD                             gpaSession,
+    const VkAllocationCallbacks*                pAllocator) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkDestroyGpaSessionAMD: Invalid device "
+                   "[VUID-vkDestroyGpaSessionAMD-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->DestroyGpaSessionAMD(device, gpaSession, pAllocator);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL SetGpaDeviceClockModeAMD(
+    VkDevice                                    device,
+    VkGpaDeviceClockModeInfoAMD*                pInfo) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkSetGpaDeviceClockModeAMD: Invalid device "
+                   "[VUID-vkSetGpaDeviceClockModeAMD-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->SetGpaDeviceClockModeAMD(device, pInfo);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetGpaDeviceClockInfoAMD(
+    VkDevice                                    device,
+    VkGpaDeviceGetClockInfoAMD*                 pInfo) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetGpaDeviceClockInfoAMD: Invalid device "
+                   "[VUID-vkGetGpaDeviceClockInfoAMD-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetGpaDeviceClockInfoAMD(device, pInfo);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL CmdBeginGpaSessionAMD(
+    VkCommandBuffer                             commandBuffer,
+    VkGpaSessionAMD                             gpaSession) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdBeginGpaSessionAMD: Invalid commandBuffer "
+                   "[VUID-vkCmdBeginGpaSessionAMD-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->CmdBeginGpaSessionAMD(commandBuffer, gpaSession);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL CmdEndGpaSessionAMD(
+    VkCommandBuffer                             commandBuffer,
+    VkGpaSessionAMD                             gpaSession) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdEndGpaSessionAMD: Invalid commandBuffer "
+                   "[VUID-vkCmdEndGpaSessionAMD-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->CmdEndGpaSessionAMD(commandBuffer, gpaSession);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL CmdBeginGpaSampleAMD(
+    VkCommandBuffer                             commandBuffer,
+    VkGpaSessionAMD                             gpaSession,
+    const VkGpaSampleBeginInfoAMD*              pGpaSampleBeginInfo,
+    uint32_t*                                   pSampleID) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdBeginGpaSampleAMD: Invalid commandBuffer "
+                   "[VUID-vkCmdBeginGpaSampleAMD-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->CmdBeginGpaSampleAMD(commandBuffer, gpaSession, pGpaSampleBeginInfo, pSampleID);
+}
+
+VKAPI_ATTR void VKAPI_CALL CmdEndGpaSampleAMD(
+    VkCommandBuffer                             commandBuffer,
+    VkGpaSessionAMD                             gpaSession,
+    uint32_t                                    sampleID) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdEndGpaSampleAMD: Invalid commandBuffer "
+                   "[VUID-vkCmdEndGpaSampleAMD-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->CmdEndGpaSampleAMD(commandBuffer, gpaSession, sampleID);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetGpaSessionStatusAMD(
+    VkDevice                                    device,
+    VkGpaSessionAMD                             gpaSession) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetGpaSessionStatusAMD: Invalid device "
+                   "[VUID-vkGetGpaSessionStatusAMD-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetGpaSessionStatusAMD(device, gpaSession);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetGpaSessionResultsAMD(
+    VkDevice                                    device,
+    VkGpaSessionAMD                             gpaSession,
+    uint32_t                                    sampleID,
+    size_t*                                     pSizeInBytes,
+    void*                                       pData) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetGpaSessionResultsAMD: Invalid device "
+                   "[VUID-vkGetGpaSessionResultsAMD-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetGpaSessionResultsAMD(device, gpaSession, sampleID, pSizeInBytes, pData);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL ResetGpaSessionAMD(
+    VkDevice                                    device,
+    VkGpaSessionAMD                             gpaSession) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkResetGpaSessionAMD: Invalid device "
+                   "[VUID-vkResetGpaSessionAMD-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->ResetGpaSessionAMD(device, gpaSession);
+}
+
+VKAPI_ATTR void VKAPI_CALL CmdCopyGpaSessionResultsAMD(
+    VkCommandBuffer                             commandBuffer,
+    VkGpaSessionAMD                             gpaSession) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(commandBuffer);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCmdCopyGpaSessionResultsAMD: Invalid commandBuffer "
+                   "[VUID-vkCmdCopyGpaSessionResultsAMD-commandBuffer-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->CmdCopyGpaSessionResultsAMD(commandBuffer, gpaSession);
+}
+
 
 // ---- VK_AMDX_shader_enqueue extension trampoline/terminators
 
@@ -11947,6 +12152,45 @@ VKAPI_ATTR void VKAPI_CALL CmdBeginCustomResolveEXT(
 }
 
 
+// ---- VK_ARM_data_graph_optical_flow extension trampoline/terminators
+
+VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+    VkPhysicalDevice                            physicalDevice,
+    uint32_t                                    queueFamilyIndex,
+    const VkQueueFamilyDataGraphPropertiesARM*  pQueueFamilyDataGraphProperties,
+    const VkDataGraphOpticalFlowImageFormatInfoARM* pOpticalFlowImageFormatInfo,
+    uint32_t*                                   pFormatCount,
+    VkDataGraphOpticalFlowImageFormatPropertiesARM* pImageFormatProperties) {
+    const VkLayerInstanceDispatchTable *disp;
+    VkPhysicalDevice unwrapped_phys_dev = loader_unwrap_physical_device(physicalDevice);
+    if (VK_NULL_HANDLE == unwrapped_phys_dev) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM: Invalid physicalDevice "
+                   "[VUID-vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM-physicalDevice-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp = loader_get_instance_layer_dispatch(physicalDevice);
+    return disp->GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(unwrapped_phys_dev, queueFamilyIndex, pQueueFamilyDataGraphProperties, pOpticalFlowImageFormatInfo, pFormatCount, pImageFormatProperties);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL terminator_GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+    VkPhysicalDevice                            physicalDevice,
+    uint32_t                                    queueFamilyIndex,
+    const VkQueueFamilyDataGraphPropertiesARM*  pQueueFamilyDataGraphProperties,
+    const VkDataGraphOpticalFlowImageFormatInfoARM* pOpticalFlowImageFormatInfo,
+    uint32_t*                                   pFormatCount,
+    VkDataGraphOpticalFlowImageFormatPropertiesARM* pImageFormatProperties) {
+    struct loader_physical_device_term *phys_dev_term = (struct loader_physical_device_term *)physicalDevice;
+    struct loader_icd_term *icd_term = phys_dev_term->this_icd_term;
+    if (NULL == icd_term->dispatch.GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM) {
+        loader_log(icd_term->this_instance, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT, 0,
+                   "ICD associated with VkPhysicalDevice does not support GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return icd_term->dispatch.GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(phys_dev_term->phys_dev, queueFamilyIndex, pQueueFamilyDataGraphProperties, pOpticalFlowImageFormatInfo, pFormatCount, pImageFormatProperties);
+}
+
+
 // ---- VK_NV_compute_occupancy_priority extension trampoline/terminators
 
 VKAPI_ATTR void VKAPI_CALL CmdSetComputeOccupancyPriorityNV(
@@ -13478,6 +13722,56 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
     }
 #endif // VK_USE_PLATFORM_ANDROID_KHR
 
+    // ---- VK_AMD_gpa_interface extension commands
+    if (!strcmp("vkCreateGpaSessionAMD", name)) {
+        *addr = (void *)CreateGpaSessionAMD;
+        return true;
+    }
+    if (!strcmp("vkDestroyGpaSessionAMD", name)) {
+        *addr = (void *)DestroyGpaSessionAMD;
+        return true;
+    }
+    if (!strcmp("vkSetGpaDeviceClockModeAMD", name)) {
+        *addr = (void *)SetGpaDeviceClockModeAMD;
+        return true;
+    }
+    if (!strcmp("vkGetGpaDeviceClockInfoAMD", name)) {
+        *addr = (void *)GetGpaDeviceClockInfoAMD;
+        return true;
+    }
+    if (!strcmp("vkCmdBeginGpaSessionAMD", name)) {
+        *addr = (void *)CmdBeginGpaSessionAMD;
+        return true;
+    }
+    if (!strcmp("vkCmdEndGpaSessionAMD", name)) {
+        *addr = (void *)CmdEndGpaSessionAMD;
+        return true;
+    }
+    if (!strcmp("vkCmdBeginGpaSampleAMD", name)) {
+        *addr = (void *)CmdBeginGpaSampleAMD;
+        return true;
+    }
+    if (!strcmp("vkCmdEndGpaSampleAMD", name)) {
+        *addr = (void *)CmdEndGpaSampleAMD;
+        return true;
+    }
+    if (!strcmp("vkGetGpaSessionStatusAMD", name)) {
+        *addr = (void *)GetGpaSessionStatusAMD;
+        return true;
+    }
+    if (!strcmp("vkGetGpaSessionResultsAMD", name)) {
+        *addr = (void *)GetGpaSessionResultsAMD;
+        return true;
+    }
+    if (!strcmp("vkResetGpaSessionAMD", name)) {
+        *addr = (void *)ResetGpaSessionAMD;
+        return true;
+    }
+    if (!strcmp("vkCmdCopyGpaSessionResultsAMD", name)) {
+        *addr = (void *)CmdCopyGpaSessionResultsAMD;
+        return true;
+    }
+
     // ---- VK_AMDX_shader_enqueue extension commands
 #if defined(VK_ENABLE_BETA_EXTENSIONS)
     if (!strcmp("vkCreateExecutionGraphPipelinesAMDX", name)) {
@@ -14918,6 +15212,12 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
         return true;
     }
 
+    // ---- VK_ARM_data_graph_optical_flow extension commands
+    if (!strcmp("vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM", name)) {
+        *addr = (void *)GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM;
+        return true;
+    }
+
     // ---- VK_NV_compute_occupancy_priority extension commands
     if (!strcmp("vkCmdSetComputeOccupancyPriorityNV", name)) {
         *addr = (void *)CmdSetComputeOccupancyPriorityNV;
@@ -15594,6 +15894,9 @@ const VkLayerInstanceDispatchTable instance_disp = {
 
     // ---- VK_ARM_shader_instrumentation extension commands
     .EnumeratePhysicalDeviceShaderInstrumentationMetricsARM = terminator_EnumeratePhysicalDeviceShaderInstrumentationMetricsARM,
+
+    // ---- VK_ARM_data_graph_optical_flow extension commands
+    .GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM = terminator_GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM,
 
     // ---- VK_SEC_ubm_surface extension commands
 #if defined(VK_USE_PLATFORM_UBM_SEC)

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
+
 #ifndef EIGEN_AVX512_BESSELFUNCTIONS_H
 #define EIGEN_AVX512_BESSELFUNCTIONS_H
 

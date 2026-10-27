@@ -34,6 +34,7 @@ enum class ServiceWorkerUpdateViaCache;
 namespace content {
 
 class BrowserContext;
+class ServiceWorkerContextCore;
 
 namespace service_worker_loader_helpers {
 
@@ -90,6 +91,12 @@ CONTENT_EXPORT bool IsPathRestrictionSatisfiedWithoutHeader(
     const GURL& script_url,
     std::string* error_message);
 
+// Validates a request for a service worker main script.
+// Returns the validation result.
+ServiceWorkerMainScriptRequestValidationResult ValidateMainScriptRequest(
+    const network::ResourceRequest& resource_request,
+    const ServiceWorkerVersion& version);
+
 // Returns the set of hash strings of fetch handlers which can be bypassed.
 const base::flat_set<std::string> FetchHandlerBypassedHashStrings();
 
@@ -113,7 +120,8 @@ bool IsEligibleForSyntheticResponseInternal(
 bool IsSyntheticResponseDryRunModeEnabled();
 
 CONTENT_EXPORT storage::mojom::ServiceWorkerFindRegistrationResultPtr
-GetOrCreateSyntheticRegistration(const GURL& client_url,
+GetOrCreateSyntheticRegistration(ServiceWorkerContextCore* context,
+                                 const GURL& client_url,
                                  const blink::StorageKey& key);
 }  // namespace service_worker_loader_helpers
 

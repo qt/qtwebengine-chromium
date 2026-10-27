@@ -19,6 +19,7 @@
 #include "ink/brush/brush.h"
 #include "ink/brush/brush_family.h"
 #include "ink/color/color.h"
+#include "ink/geometry/affine_transform.h"
 #include "ink/geometry/partitioned_mesh.h"
 #include "ink/strokes/input/stroke_input_batch.h"
 #include "ink/types/duration.h"
@@ -107,6 +108,22 @@ class Stroke {
   // Sets the `inputs` for the stroke, regenerating the shape, or clearing the
   // shape if `inputs` is empty.
   void SetInputs(const StrokeInputBatch& inputs);
+
+  // Erases the `eraser_shape` from this stroke geometry using the given
+  // `eraser_transform` and `stroke_transform` that map the eraser and stroke
+  // to common coordinates.
+  //
+  // The coordinate transformations are expected to be non-degenerate; otherwise
+  // the stroke is returned as is.
+  //
+  // Each resulting fragment retains the original brush and inputs, but has a
+  // newly computed shape representing the portion remaining after erasure. The
+  // order of the fragments in the returned vector is arbitrary and carries no
+  // guarantee.
+  std::vector<Stroke> PartialErase(
+      const PartitionedMesh& eraser_shape,
+      const AffineTransform& eraser_transform,
+      const AffineTransform& stroke_transform) const;
 
  private:
   // Regenerates the PartitionedMesh.

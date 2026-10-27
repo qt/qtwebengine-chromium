@@ -240,9 +240,7 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
       const std::vector<mojom::ResourceDataUpdatePtr>& resources) override;
   void UpdateFrameCpuTiming(content::RenderFrameHost* rfh,
                             const mojom::CpuTiming& timing) override;
-  void OnMainFrameIntersectionRectChanged(
-      content::RenderFrameHost* rfh,
-      const gfx::Rect& main_frame_intersection_rect) override;
+  void OnMainFrameRectChanged(const gfx::Rect& main_frame_rect) override;
   void OnMainFrameViewportRectChanged(
       const gfx::Rect& main_frame_viewport_rect) override;
   void OnMainFrameAdRectsChanged(
@@ -257,6 +255,7 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
   std::optional<base::TimeDelta> GetActivationStart() const override;
   const BackForwardCacheRestore& GetBackForwardCacheRestore(
       size_t index) const override;
+  size_t GetNumBackForwardCacheRestores() const override;
   bool StartedInForeground() const override;
   PageVisibility GetVisibilityAtActivation() const override;
   bool IsReloadAfterDiscard() const override;
@@ -284,6 +283,7 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
       const override;
   const std::optional<blink::SubresourceLoadMetrics>&
   GetSubresourceLoadMetrics() const override;
+  const mojom::FontLoadingMetricsPtr& GetFontLoadingMetrics() const override;
   const PageRenderData& GetMainFrameRenderData() const override;
   const ui::ScopedVisibilityTracker& GetVisibilityTracker() const override;
   const ResourceTracker& GetResourceTracker() const override;
@@ -469,7 +469,8 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
           subresource_load_metrics,
       std::vector<mojom::SoftNavigationMetricsPtr> soft_navigation_metrics,
       std::vector<mojom::LargestContentfulPaintTimingPtr>
-          soft_largest_contentful_paint);
+          soft_largest_contentful_paint,
+      mojom::FontLoadingMetricsPtr font_loading_metrics);
 
   void AddCustomUserTimings(
       std::vector<mojom::CustomUserTimingMarkPtr> custom_timings);

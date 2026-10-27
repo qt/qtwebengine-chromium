@@ -14,7 +14,7 @@
 */
 //#if target:es6-module
 const toExportForESM =
-//#endif
+//#/if
 (function(){
   //console.warn("this is extern-post-js");
   /**
@@ -26,7 +26,7 @@ const toExportForESM =
   */
   const originalInit = sqlite3InitModule;
   if(!originalInit){
-    throw new Error("Expecting globalThis.sqlite3InitModule to be defined by the Emscripten build.");
+    throw new Error("Expecting sqlite3InitModule to be defined by the Emscripten build.");
   }
   /**
      We need to add some state which our custom Module.locateFile()
@@ -73,6 +73,8 @@ const toExportForESM =
 
   const sIM = globalThis.sqlite3InitModule = function ff(...args){
     //console.warn("Using replaced sqlite3InitModule()",globalThis.location);
+    sIMS.emscriptenLocateFile = args[0]?.locateFile /* see pre-js.c-pp.js [tag:locateFile] */;
+    sIMS.emscriptenInstantiateWasm = args[0]?.instantiateWasm /* see pre-js.c-pp.js [tag:locateFile] */;
     return originalInit(...args).then((EmscriptenModule)=>{
       sIMS.debugModule("sqlite3InitModule() sIMS =",sIMS);
       sIMS.debugModule("sqlite3InitModule() EmscriptenModule =",EmscriptenModule);
@@ -95,7 +97,7 @@ const toExportForESM =
         //console.warn("sqlite3InitModule() returning E-module.",EmscriptenModule);
         return EmscriptenModule;
       }
-//#endif
+//#/if
       return s;
     }).catch((e)=>{
       console.error("Exception loading sqlite3 module:",e);
@@ -126,10 +128,10 @@ const toExportForESM =
   }
   /* AMD modules get injected in a way we cannot override,
      so we can't handle those here. */
-//#endif // !target:es6-module
+//#/if // !target:es6-module
   return sIM;
 })();
 //#if target:es6-module
 sqlite3InitModule = toExportForESM;
 export default sqlite3InitModule;
-//#endif
+//#/if

@@ -12,7 +12,6 @@
 #include <type_traits>
 
 #include "base/check.h"
-#include "base/debug/dump_without_crashing.h"
 #include "base/feature_list.h"
 #include "base/functional/callback_helpers.h"
 #include "base/notreached.h"
@@ -1571,8 +1570,7 @@ XrResult OpenXrApiWrapper::ProcessEvents() {
       DCHECK(session_ != XR_NULL_HANDLE);
       // TODO(https://crbug.com/1335240): Properly handle Instance Loss Pending.
       LOG(ERROR) << "Received Instance Loss Event";
-      TRACE_EVENT_INSTANT0("xr", "InstanceLossPendingEvent",
-                           TRACE_EVENT_SCOPE_THREAD);
+      TRACE_EVENT_INSTANT("xr", "InstanceLossPendingEvent");
       Uninitialize();
       return XR_ERROR_INSTANCE_LOST;
     } else if (event_data.type ==
@@ -1628,14 +1626,12 @@ XrResult OpenXrApiWrapper::ProcessEvents() {
       }
     } else {
       DVLOG(1) << __func__ << " Unhandled event type: " << event_data.type;
-      TRACE_EVENT_INSTANT1("xr", "UnandledXrEvent", TRACE_EVENT_SCOPE_THREAD,
-                           "type", event_data.type);
+      TRACE_EVENT_INSTANT("xr", "UnandledXrEvent", "type", event_data.type);
     }
 
     if (XR_FAILED(xr_result)) {
-      TRACE_EVENT_INSTANT2("xr", "EventProcessingFailed",
-                           TRACE_EVENT_SCOPE_THREAD, "type", event_data.type,
-                           "xr_result", xr_result);
+      TRACE_EVENT_INSTANT("xr", "EventProcessingFailed", "type",
+                          event_data.type, "xr_result", xr_result);
       Uninitialize();
       return xr_result;
     }
@@ -1646,8 +1642,7 @@ XrResult OpenXrApiWrapper::ProcessEvents() {
 
   // This catches the error where we failed to poll events only.
   if (XR_FAILED(xr_result)) {
-    TRACE_EVENT_INSTANT1("xr", "EventPollingFailed", TRACE_EVENT_SCOPE_THREAD,
-                         "xr_result", xr_result);
+    TRACE_EVENT_INSTANT("xr", "EventPollingFailed", "xr_result", xr_result);
     Uninitialize();
   }
   return xr_result;
@@ -1783,19 +1778,6 @@ std::optional<gfx::Transform> OpenXrApiWrapper::GetBaseSpaceFromSpace(
   gfx::Transform base_space_from_space =
       gfx::Transform::Compose(base_space_from_space_decomp);
 
-  // TODO(crbug.com/41495208): Check for crash dumps.
-  std::array<float, 16> transform_data;
-  base_space_from_space.GetColMajorF(transform_data);
-  bool contains_nan = std::ranges::any_of(
-      transform_data, [](const float f) { return std::isnan(f); });
-
-  if (contains_nan) {
-    // It's unclear if this could be tripping on every frame, but reporting once
-    // per day per user (the default throttling) should be sufficient for future
-    // investigation.
-    base::debug::DumpWithoutCrashing();
-    return std::nullopt;
-  }
   return base_space_from_space;
 }
 

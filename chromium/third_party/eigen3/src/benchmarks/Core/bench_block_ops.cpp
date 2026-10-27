@@ -2,6 +2,8 @@
 //
 // Tests sub-matrix views: block(), topRows(), leftCols(), middleCols().
 // Measures expression template overhead for read and write patterns.
+// SPDX-FileCopyrightText: The Eigen Authors
+// SPDX-License-Identifier: MPL-2.0
 
 #include <benchmark/benchmark.h>
 #include <Eigen/Core>

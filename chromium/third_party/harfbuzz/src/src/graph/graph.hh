@@ -814,6 +814,11 @@ struct graph_t
       if (unlikely (!check_success (!connected_roots.in_error ()))) break;
 
       unsigned next_space = this->next_space ();
+      if (next_space >= HB_REPACKER_MAX_SPACES)
+      {
+        check_success (false);
+        break;
+      }
       num_roots_for_space_.push (0);
       for (unsigned root : connected_roots)
       {
@@ -1062,6 +1067,12 @@ struct graph_t
    */
   unsigned duplicate (unsigned node_idx)
   {
+    if (vertices_.length >= HB_REPACKER_MAX_VERTICES)
+    {
+      check_success (false);
+      return -1;
+    }
+
     positions_invalid = true;
     distance_invalid = true;
 
@@ -1221,6 +1232,12 @@ struct graph_t
    */
   unsigned new_node (char* head, char* tail)
   {
+    if (vertices_.length >= HB_REPACKER_MAX_VERTICES)
+    {
+      check_success (false);
+      return -1;
+    }
+
     positions_invalid = true;
     distance_invalid = true;
 
@@ -1266,6 +1283,31 @@ struct graph_t
       reassign_link (l, parent_idx, new_child_idx, true);
     }
     return new_child_idx;
+  }
+
+  /*
+   * Creates a new child node and remap the old child at specified position to it.
+   *
+   * Returns the index of the newly created child.
+   *
+   */
+  unsigned remap_child_at_position (unsigned parent_idx, unsigned old_child_idx, const void* offset)
+  {
+    const auto& parent = object (parent_idx);
+    if (!offset || offset < parent.head || offset >= parent.tail) return -1;
+
+    for (auto& l : parent.real_links)
+    {
+      if (l.objidx != old_child_idx || offset != parent.head + l.position)
+        continue;
+      
+      unsigned new_child_idx = duplicate (old_child_idx);
+      if (new_child_idx == (unsigned) -1) return -1;
+      reassign_link (l, parent_idx, new_child_idx, false);
+      return new_child_idx;
+    }
+
+    return -1;
   }
 
   /*
@@ -1384,6 +1426,11 @@ struct graph_t
 
   void move_to_new_space (const hb_set_t& indices)
   {
+    if (num_roots_for_space_.length >= HB_REPACKER_MAX_SPACES)
+    {
+      check_success (false);
+      return;
+    }
     num_roots_for_space_.push (0);
     unsigned new_space = num_roots_for_space_.length - 1;
 

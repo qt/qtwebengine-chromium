@@ -82,8 +82,14 @@ export const DEFAULT_SETTING_REGISTRATIONS_FOR_TEST = [
   createSettingValue(Common.Settings.SettingCategory.ELEMENTS, 'show-detailed-inspect-tooltip', true),
   createSettingValue(Common.Settings.SettingCategory.ELEMENTS, 'show-html-comments', true),
   createSettingValue(Common.Settings.SettingCategory.ELEMENTS, 'show-ua-shadow-dom', false),
+  createSettingValue(Common.Settings.SettingCategory.ELEMENTS, 'css-animations-only-when-animations-tab-open', true),
+  createSettingValue(Common.Settings.SettingCategory.ELEMENTS, 'collapse-non-contributing-css-rules', false),
+  createSettingValue(Common.Settings.SettingCategory.ELEMENTS, 'show-metrics-rulers', false),
+  createSettingValue(Common.Settings.SettingCategory.ELEMENTS, 'apca', false),
   createSettingValue(Common.Settings.SettingCategory.PERFORMANCE, 'annotations-hidden', false),
   createSettingValue(Common.Settings.SettingCategory.PERFORMANCE, 'timeline-show-all-events', false),
+  createSettingValue(Common.Settings.SettingCategory.PERFORMANCE, 'timeline-debug-mode', false),
+  createSettingValue(Common.Settings.SettingCategory.PERFORMANCE, 'timeline-invalidation-tracking', false),
   createSettingValue(Common.Settings.SettingCategory.NETWORK, 'cache-disabled', false),
   createSettingValue(Common.Settings.SettingCategory.RENDERING, 'avif-format-disabled', false),
   createSettingValue(Common.Settings.SettingCategory.RENDERING, 'jpeg-xl-format-disabled', false),
@@ -228,6 +234,9 @@ export const DEFAULT_SETTING_REGISTRATIONS_FOR_TEST = [
       Common.Settings.SettingCategory.AI, 'ai-code-completion-enabled', false, Common.Settings.SettingType.BOOLEAN),
   createSettingValue(
       Common.Settings.SettingCategory.AI, 'ai-code-completion-teaser-dismissed', false,
+      Common.Settings.SettingType.BOOLEAN),
+  createSettingValue(
+      Common.Settings.SettingCategory.AI, 'ai-assistance-v2-opt-in-change-dialog-seen', false,
       Common.Settings.SettingType.BOOLEAN),
   createSettingValue(
       Common.Settings.SettingCategory.MOBILE, 'emulation.show-device-outline', false,

@@ -6,16 +6,21 @@
 
 #include <utility>
 
-#include "components/password_manager/core/browser/password_form.h"
+#include "components/password_manager/core/browser/password_store/stored_credential.h"
 
 namespace password_manager {
 
 PasswordStoreResultsObserver::PasswordStoreResultsObserver() = default;
 PasswordStoreResultsObserver::~PasswordStoreResultsObserver() = default;
 
-void PasswordStoreResultsObserver::OnGetPasswordStoreResults(
-    std::vector<std::unique_ptr<password_manager::PasswordForm>> results) {
-  results_ = std::move(results);
+void PasswordStoreResultsObserver::OnGetPasswordStoreResultsOrErrorFrom(
+    PasswordStoreInterface* store,
+    LoginsResultOrError results_or_error) {
+  if (std::holds_alternative<PasswordStoreBackendError>(results_or_error)) {
+    results_ = std::vector<StoredCredential>();
+  } else {
+    results_ = std::get<LoginsResult>(std::move(results_or_error));
+  }
   run_loop_.Quit();
 }
 
@@ -24,8 +29,7 @@ PasswordStoreResultsObserver::GetWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
 }
 
-std::vector<std::unique_ptr<password_manager::PasswordForm>>
-PasswordStoreResultsObserver::WaitForResults() {
+std::vector<StoredCredential> PasswordStoreResultsObserver::WaitForResults() {
   run_loop_.Run();
   return std::move(results_);
 }

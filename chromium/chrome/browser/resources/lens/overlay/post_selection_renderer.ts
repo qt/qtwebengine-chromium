@@ -59,6 +59,8 @@ export const MAX_CORNER_LENGTH_PX = 22;
 export const MAX_CORNER_RADIUS_PX = 14;
 // Cutout radius used with larger corner radii. Exported for testing.
 export const CUTOUT_RADIUS_PX = 5;
+const STATIC_REGION_RADIUS_PX = 24;
+
 // A cutout radius will only be used when the corner radius is above this
 // threshold.
 const CUTOUT_RADIUS_THRESHOLD_PX = 12;
@@ -330,9 +332,8 @@ export class PostSelectionRendererElement extends
       return;
     }
 
-    const elements =
-        this.shadowRoot!.elementsFromPoint(event.clientX, event.clientY) as
-        HTMLElement[];
+    const elements = this.shadowRoot!.elementsFromPoint(
+                         event.clientX, event.clientY) as HTMLElement[];
 
     // If we're hovering over the active region's controls (close button, corners),
     // don't switch focus.
@@ -376,7 +377,11 @@ export class PostSelectionRendererElement extends
 
   private onCloseActiveButtonClick(event: Event) {
     if (this.activeRegionId) {
-      this.baseHandler.deleteRegion(this.activeRegionId);
+      const source =
+          (event instanceof PointerEvent && event.pointerType === '') ?
+          RegionSource.KEYBOARD :
+          RegionSource.CLICK;
+      this.baseHandler.deleteRegion(this.activeRegionId, source);
     }
     event.stopPropagation();
   }
@@ -418,7 +423,7 @@ export class PostSelectionRendererElement extends
     const rightOffset = 100 - (leftPercent + widthPercent);
     const bottomOffset = 100 - (topPercent + heightPercent);
 
-    const cornerRadius = 'var(--post-selection-cutout-corner-radius, 8px)';
+    const cornerRadius = 'var(--static-region-corner-radius, 24px)';
 
     return {
       id: region.id,
@@ -578,12 +583,12 @@ export class PostSelectionRendererElement extends
     this.rerender();
   }
 
-  handleGestureEnd() {
+  handleGestureEnd(source: RegionSource = RegionSource.SELECTION_CHANGE) {
     if (this.areBoundsChanging()) {
       // Issue Lens request for new bounds
       this.baseHandler.adjustRegionSelected(
-          this.getNormalizedCenterRotatedBox().box,
-          RegionSource.SELECTION_CHANGE, this.activeRegionId);
+          this.getNormalizedCenterRotatedBox().box, source,
+          this.activeRegionId);
 
       // Check for selectable text
       this.dispatchEvent(new CustomEvent('detect-text-in-region', {
@@ -706,7 +711,7 @@ export class PostSelectionRendererElement extends
     }
     this.sliderChangedTimeoutID = setTimeout(() => {
       this.sliderChangedTimeoutID = -1;
-      this.handleGestureEnd();
+      this.handleGestureEnd(RegionSource.KEYBOARD);
     }, this.sliderChangedTimeout);
   }
 
@@ -855,9 +860,6 @@ export class PostSelectionRendererElement extends
     // Only update properties defined absolutely, i.e. corner dimensions.
     // Properties that are defined relatively do not need to be updated.
     this.updateCornerDimensions();
-    this.style.setProperty(
-        '--post-selection-show-gradient',
-        this.multiRegionSelectionEnabled ? '1' : '0');
     if (this.newBoxAnimation) {
       (this.newBoxAnimation.effect as KeyframeEffect)
           .setKeyframes(this.getNewBoxAnimationKeyframes());
@@ -907,6 +909,11 @@ export class PostSelectionRendererElement extends
     this.style.setProperty(
         '--post-selection-cutout-corner-radius',
         toPixels(cornerDimensions.cutoutRadius));
+
+    if (this.multiRegionSelectionEnabled) {
+      this.style.setProperty(
+          '--static-region-corner-radius', toPixels(STATIC_REGION_RADIUS_PX));
+    }
   }
 
   private triggerNewBoxAnimation() {
@@ -951,8 +958,10 @@ export class PostSelectionRendererElement extends
 
   private getCornerDimensions(): CornerDimensions {
     const imageBounds = this.selectionOverlayRect;
-    if (!imageBounds || imageBounds.width === 0 || imageBounds.height === 0) {
-      // Renderer has probably not been sized yet. Return default values.
+    if (!imageBounds || imageBounds.width === 0 || imageBounds.height === 0 ||
+        !this.hasSelection()) {
+      // Renderer has probably not been sized yet or there is no selection.
+      // Return default values.
       return {
         length: MAX_CORNER_LENGTH_PX,
         radius: MAX_CORNER_RADIUS_PX,

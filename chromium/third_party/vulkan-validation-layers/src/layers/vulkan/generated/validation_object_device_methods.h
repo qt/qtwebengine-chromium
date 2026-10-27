@@ -3713,6 +3713,103 @@ virtual void PostCallRecordGetMemoryAndroidHardwareBufferANDROID(VkDevice device
                                                                  struct AHardwareBuffer** pBuffer, const RecordObject& record_obj) {
 }
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
+virtual bool PreCallValidateCreateGpaSessionAMD(VkDevice device, const VkGpaSessionCreateInfoAMD* pCreateInfo,
+                                                const VkAllocationCallbacks* pAllocator, VkGpaSessionAMD* pGpaSession,
+                                                const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCreateGpaSessionAMD(VkDevice device, const VkGpaSessionCreateInfoAMD* pCreateInfo,
+                                              const VkAllocationCallbacks* pAllocator, VkGpaSessionAMD* pGpaSession,
+                                              const RecordObject& record_obj) {}
+virtual void PostCallRecordCreateGpaSessionAMD(VkDevice device, const VkGpaSessionCreateInfoAMD* pCreateInfo,
+                                               const VkAllocationCallbacks* pAllocator, VkGpaSessionAMD* pGpaSession,
+                                               const RecordObject& record_obj) {}
+virtual bool PreCallValidateDestroyGpaSessionAMD(VkDevice device, VkGpaSessionAMD gpaSession,
+                                                 const VkAllocationCallbacks* pAllocator, const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordDestroyGpaSessionAMD(VkDevice device, VkGpaSessionAMD gpaSession, const VkAllocationCallbacks* pAllocator,
+                                               const RecordObject& record_obj) {}
+virtual void PostCallRecordDestroyGpaSessionAMD(VkDevice device, VkGpaSessionAMD gpaSession,
+                                                const VkAllocationCallbacks* pAllocator, const RecordObject& record_obj) {}
+virtual bool PreCallValidateSetGpaDeviceClockModeAMD(VkDevice device, VkGpaDeviceClockModeInfoAMD* pInfo,
+                                                     const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordSetGpaDeviceClockModeAMD(VkDevice device, VkGpaDeviceClockModeInfoAMD* pInfo,
+                                                   const RecordObject& record_obj) {}
+virtual void PostCallRecordSetGpaDeviceClockModeAMD(VkDevice device, VkGpaDeviceClockModeInfoAMD* pInfo,
+                                                    const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetGpaDeviceClockInfoAMD(VkDevice device, VkGpaDeviceGetClockInfoAMD* pInfo,
+                                                     const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetGpaDeviceClockInfoAMD(VkDevice device, VkGpaDeviceGetClockInfoAMD* pInfo,
+                                                   const RecordObject& record_obj) {}
+virtual void PostCallRecordGetGpaDeviceClockInfoAMD(VkDevice device, VkGpaDeviceGetClockInfoAMD* pInfo,
+                                                    const RecordObject& record_obj) {}
+virtual bool PreCallValidateCmdBeginGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                                  const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdBeginGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                                const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdBeginGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                                 const RecordObject& record_obj) {}
+virtual bool PreCallValidateCmdEndGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                                const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdEndGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                              const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdEndGpaSessionAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                               const RecordObject& record_obj) {}
+virtual bool PreCallValidateCmdBeginGpaSampleAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                                 const VkGpaSampleBeginInfoAMD* pGpaSampleBeginInfo, uint32_t* pSampleID,
+                                                 const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdBeginGpaSampleAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                               const VkGpaSampleBeginInfoAMD* pGpaSampleBeginInfo, uint32_t* pSampleID,
+                                               const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdBeginGpaSampleAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                                const VkGpaSampleBeginInfoAMD* pGpaSampleBeginInfo, uint32_t* pSampleID,
+                                                const RecordObject& record_obj) {}
+virtual bool PreCallValidateCmdEndGpaSampleAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession, uint32_t sampleID,
+                                               const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdEndGpaSampleAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession, uint32_t sampleID,
+                                             const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdEndGpaSampleAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession, uint32_t sampleID,
+                                              const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetGpaSessionStatusAMD(VkDevice device, VkGpaSessionAMD gpaSession,
+                                                   const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetGpaSessionStatusAMD(VkDevice device, VkGpaSessionAMD gpaSession, const RecordObject& record_obj) {}
+virtual void PostCallRecordGetGpaSessionStatusAMD(VkDevice device, VkGpaSessionAMD gpaSession, const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetGpaSessionResultsAMD(VkDevice device, VkGpaSessionAMD gpaSession, uint32_t sampleID,
+                                                    size_t* pSizeInBytes, void* pData, const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetGpaSessionResultsAMD(VkDevice device, VkGpaSessionAMD gpaSession, uint32_t sampleID,
+                                                  size_t* pSizeInBytes, void* pData, const RecordObject& record_obj) {}
+virtual void PostCallRecordGetGpaSessionResultsAMD(VkDevice device, VkGpaSessionAMD gpaSession, uint32_t sampleID,
+                                                   size_t* pSizeInBytes, void* pData, const RecordObject& record_obj) {}
+virtual bool PreCallValidateResetGpaSessionAMD(VkDevice device, VkGpaSessionAMD gpaSession, const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordResetGpaSessionAMD(VkDevice device, VkGpaSessionAMD gpaSession, const RecordObject& record_obj) {}
+virtual void PostCallRecordResetGpaSessionAMD(VkDevice device, VkGpaSessionAMD gpaSession, const RecordObject& record_obj) {}
+virtual bool PreCallValidateCmdCopyGpaSessionResultsAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                                        const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdCopyGpaSessionResultsAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                                      const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdCopyGpaSessionResultsAMD(VkCommandBuffer commandBuffer, VkGpaSessionAMD gpaSession,
+                                                       const RecordObject& record_obj) {}
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 virtual bool PreCallValidateCreateExecutionGraphPipelinesAMDX(VkDevice device, VkPipelineCache pipelineCache,
                                                               uint32_t createInfoCount,
@@ -3956,16 +4053,16 @@ virtual void PostCallRecordDestroyAccelerationStructureNV(VkDevice device, VkAcc
                                                           const VkAllocationCallbacks* pAllocator, const RecordObject& record_obj) {
 }
 virtual bool PreCallValidateGetAccelerationStructureMemoryRequirementsNV(
-    VkDevice device, const VkAccelerationStructureMemoryRequirementsInfoNV* pInfo, VkMemoryRequirements2KHR* pMemoryRequirements,
+    VkDevice device, const VkAccelerationStructureMemoryRequirementsInfoNV* pInfo, VkMemoryRequirements2* pMemoryRequirements,
     const ErrorObject& error_obj) const {
     return false;
 }
 virtual void PreCallRecordGetAccelerationStructureMemoryRequirementsNV(VkDevice device,
                                                                        const VkAccelerationStructureMemoryRequirementsInfoNV* pInfo,
-                                                                       VkMemoryRequirements2KHR* pMemoryRequirements,
+                                                                       VkMemoryRequirements2* pMemoryRequirements,
                                                                        const RecordObject& record_obj) {}
 virtual void PostCallRecordGetAccelerationStructureMemoryRequirementsNV(
-    VkDevice device, const VkAccelerationStructureMemoryRequirementsInfoNV* pInfo, VkMemoryRequirements2KHR* pMemoryRequirements,
+    VkDevice device, const VkAccelerationStructureMemoryRequirementsInfoNV* pInfo, VkMemoryRequirements2* pMemoryRequirements,
     const RecordObject& record_obj) {}
 virtual bool PreCallValidateBindAccelerationStructureMemoryNV(VkDevice device, uint32_t bindInfoCount,
                                                               const VkBindAccelerationStructureMemoryInfoNV* pBindInfos,
@@ -4685,6 +4782,14 @@ virtual void PreCallRecordGetPrivateDataEXT(VkDevice device, VkObjectType object
                                             VkPrivateDataSlot privateDataSlot, uint64_t* pData, const RecordObject& record_obj) {}
 virtual void PostCallRecordGetPrivateDataEXT(VkDevice device, VkObjectType objectType, uint64_t objectHandle,
                                              VkPrivateDataSlot privateDataSlot, uint64_t* pData, const RecordObject& record_obj) {}
+virtual bool PreCallValidateQueueSetPerfHintQCOM(VkQueue queue, const VkPerfHintInfoQCOM* pPerfHintInfo,
+                                                 const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordQueueSetPerfHintQCOM(VkQueue queue, const VkPerfHintInfoQCOM* pPerfHintInfo,
+                                               const RecordObject& record_obj) {}
+virtual void PostCallRecordQueueSetPerfHintQCOM(VkQueue queue, const VkPerfHintInfoQCOM* pPerfHintInfo,
+                                                const RecordObject& record_obj) {}
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 virtual bool PreCallValidateCreateCudaModuleNV(VkDevice device, const VkCudaModuleCreateInfoNV* pCreateInfo,
                                                const VkAllocationCallbacks* pAllocator, VkCudaModuleNV* pModule,
@@ -5065,13 +5170,13 @@ virtual void PreCallRecordGetMemoryRemoteAddressNV(VkDevice device,
 virtual void PostCallRecordGetMemoryRemoteAddressNV(VkDevice device,
                                                     const VkMemoryGetRemoteAddressInfoNV* pMemoryGetRemoteAddressInfo,
                                                     VkRemoteAddressNV* pAddress, const RecordObject& record_obj) {}
-virtual bool PreCallValidateGetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoEXT* pPipelineInfo,
+virtual bool PreCallValidateGetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoKHR* pPipelineInfo,
                                                      VkBaseOutStructure* pPipelineProperties, const ErrorObject& error_obj) const {
     return false;
 }
-virtual void PreCallRecordGetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoEXT* pPipelineInfo,
+virtual void PreCallRecordGetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoKHR* pPipelineInfo,
                                                    VkBaseOutStructure* pPipelineProperties, const RecordObject& record_obj) {}
-virtual void PostCallRecordGetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoEXT* pPipelineInfo,
+virtual void PostCallRecordGetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoKHR* pPipelineInfo,
                                                     VkBaseOutStructure* pPipelineProperties, const RecordObject& record_obj) {}
 virtual bool PreCallValidateCmdSetPatchControlPointsEXT(VkCommandBuffer commandBuffer, uint32_t patchControlPoints,
                                                         const ErrorObject& error_obj) const {
@@ -5299,6 +5404,17 @@ virtual void PreCallRecordSetDeviceMemoryPriorityEXT(VkDevice device, VkDeviceMe
                                                      const RecordObject& record_obj) {}
 virtual void PostCallRecordSetDeviceMemoryPriorityEXT(VkDevice device, VkDeviceMemory memory, float priority,
                                                       const RecordObject& record_obj) {}
+virtual bool PreCallValidateCmdSetDispatchParametersARM(VkCommandBuffer commandBuffer,
+                                                        const VkDispatchParametersARM* pDispatchParameters,
+                                                        const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdSetDispatchParametersARM(VkCommandBuffer commandBuffer,
+                                                      const VkDispatchParametersARM* pDispatchParameters,
+                                                      const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdSetDispatchParametersARM(VkCommandBuffer commandBuffer,
+                                                       const VkDispatchParametersARM* pDispatchParameters,
+                                                       const RecordObject& record_obj) {}
 virtual bool PreCallValidateGetDescriptorSetLayoutHostMappingInfoVALVE(
     VkDevice device, const VkDescriptorSetBindingReferenceVALVE* pBindingReference,
     VkDescriptorSetLayoutHostMappingInfoVALVE* pHostMapping, const ErrorObject& error_obj) const {
@@ -6487,6 +6603,14 @@ virtual void PreCallRecordCmdSetComputeOccupancyPriorityNV(VkCommandBuffer comma
 virtual void PostCallRecordCmdSetComputeOccupancyPriorityNV(VkCommandBuffer commandBuffer,
                                                             const VkComputeOccupancyPriorityParametersNV* pParameters,
                                                             const RecordObject& record_obj) {}
+virtual bool PreCallValidateCmdSetPrimitiveRestartIndexEXT(VkCommandBuffer commandBuffer, uint32_t primitiveRestartIndex,
+                                                           const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdSetPrimitiveRestartIndexEXT(VkCommandBuffer commandBuffer, uint32_t primitiveRestartIndex,
+                                                         const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdSetPrimitiveRestartIndexEXT(VkCommandBuffer commandBuffer, uint32_t primitiveRestartIndex,
+                                                          const RecordObject& record_obj) {}
 virtual bool PreCallValidateCreateAccelerationStructureKHR(VkDevice device, const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
                                                            const VkAllocationCallbacks* pAllocator,
                                                            VkAccelerationStructureKHR* pAccelerationStructure,

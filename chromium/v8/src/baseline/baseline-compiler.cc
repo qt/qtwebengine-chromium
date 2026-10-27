@@ -9,6 +9,7 @@
 #include <type_traits>
 
 #include "src/base/bits.h"
+#include "src/base/logging.h"
 #include "src/baseline/baseline-assembler-inl.h"
 #include "src/baseline/baseline-assembler.h"
 #include "src/builtins/builtins-constructor.h"
@@ -23,6 +24,7 @@
 #include "src/execution/frame-constants.h"
 #include "src/execution/local-isolate-inl.h"
 #include "src/heap/local-factory-inl.h"
+#include "src/heap/local-heap-inl.h"
 #include "src/interpreter/bytecode-array-iterator.h"
 #include "src/interpreter/bytecode-flags-and-tokens.h"
 #include "src/logging/runtime-call-stats-scope.h"
@@ -271,12 +273,21 @@ const int kAverageBytecodeToInstructionRatio = 7;
 #endif
 std::unique_ptr<AssemblerBuffer> AllocateBuffer(
     DirectHandle<BytecodeArray> bytecodes) {
-  int estimated_size;
+  base::CheckedNumeric<int> estimated_size;
   {
     DisallowHeapAllocation no_gc;
     estimated_size = BaselineCompiler::EstimateInstructionSize(*bytecodes);
   }
-  return NewAssemblerBuffer(RoundUp(estimated_size, 4 * KB));
+  int raw_estimated_size;
+  if (!estimated_size.AssignIfValid(&raw_estimated_size) ||
+      raw_estimated_size > Assembler::kMaximalBufferSize) {
+    V8::FatalProcessOutOfMemory(nullptr, "BaselineCompiler::AllocateBuffer");
+  }
+  int rounded_size = RoundUp(raw_estimated_size, 4 * KB);
+  if (rounded_size > Assembler::kMaximalBufferSize) {
+    V8::FatalProcessOutOfMemory(nullptr, "BaselineCompiler::AllocateBuffer");
+  }
+  return NewAssemblerBuffer(rounded_size);
 }
 }  // namespace
 
@@ -363,8 +374,10 @@ MaybeHandle<Code> BaselineCompiler::Build() {
   return code_builder.TryBuild();
 }
 
-int BaselineCompiler::EstimateInstructionSize(Tagged<BytecodeArray> bytecode) {
-  return bytecode->length() * kAverageBytecodeToInstructionRatio;
+base::CheckedNumeric<int> BaselineCompiler::EstimateInstructionSize(
+    Tagged<BytecodeArray> bytecode) {
+  return base::CheckedNumeric<int>(bytecode->length()) *
+         kAverageBytecodeToInstructionRatio;
 }
 
 interpreter::Register BaselineCompiler::RegisterOperand(int operand_index) {
@@ -428,7 +441,7 @@ uint32_t BaselineCompiler::Flag8(int operand_index) {
 uint32_t BaselineCompiler::Flag16(int operand_index) {
   return iterator().GetFlag16Operand(operand_index);
 }
-uint32_t BaselineCompiler::EmbeddedFeedback(int operand_index) {
+uint8_t BaselineCompiler::EmbeddedFeedback(int operand_index) {
   return iterator().GetEmbeddedFeedback(operand_index);
 }
 uint32_t BaselineCompiler::RegisterCount(int operand_index) {
@@ -489,8 +502,9 @@ void BaselineCompiler::LoadFeedbackVector(Register output) {
 
 void BaselineCompiler::LoadClosureFeedbackArray(Register output) {
   LoadFeedbackVector(output);
-  __ LoadTaggedField(output, output,
-                     FeedbackVector::kClosureFeedbackCellArrayOffset);
+  __ LoadTaggedField(
+      output, output,
+      offsetof(::v8::internal::FeedbackVector, closure_feedback_cell_array_));
 }
 
 void BaselineCompiler::SelectBooleanConstant(
@@ -1450,6 +1464,7 @@ constexpr Builtin ConvertReceiverModeToCompactBuiltin(
     case ConvertReceiverMode::kNotNullOrUndefined:
       return Builtin::kCall_ReceiverIsNotNullOrUndefined_Baseline_Compact;
   }
+  UNREACHABLE();
 }
 constexpr Builtin ConvertReceiverModeToBuiltin(ConvertReceiverMode mode) {
   switch (mode) {
@@ -1460,6 +1475,7 @@ constexpr Builtin ConvertReceiverModeToBuiltin(ConvertReceiverMode mode) {
     case ConvertReceiverMode::kNotNullOrUndefined:
       return Builtin::kCall_ReceiverIsNotNullOrUndefined_Baseline;
   }
+  UNREACHABLE();
 }
 }  // namespace
 
@@ -1648,14 +1664,14 @@ void BaselineCompiler::VisitIntrinsicGeneratorGetResumeMode(
   __ LoadRegister(kInterpreterAccumulatorRegister, args[0]);
   __ LoadTaggedField(kInterpreterAccumulatorRegister,
                      kInterpreterAccumulatorRegister,
-                     JSGeneratorObject::kResumeModeOffset);
+                     offsetof(JSGeneratorObject, resume_mode_));
 }
 
 void BaselineCompiler::VisitIntrinsicGeneratorClose(
     interpreter::RegisterList args) {
   __ LoadRegister(kInterpreterAccumulatorRegister, args[0]);
   __ StoreTaggedSignedField(kInterpreterAccumulatorRegister,
-                            JSGeneratorObject::kContinuationOffset,
+                            offsetof(JSGeneratorObject, continuation_),
                             Smi::FromInt(JSGeneratorObject::kGeneratorClosed));
   __ LoadRoot(kInterpreterAccumulatorRegister, RootIndex::kUndefinedValue);
 }
@@ -1760,7 +1776,7 @@ void BaselineCompiler::VisitConstructForwardAllArgs() {
   case CompareOperationFeedback::Type::k##type:              \
     CallBuiltin<Builtin::k##name##_##type##_Baseline>(       \
         RegisterOperand(0), kInterpreterAccumulatorRegister, \
-        feedback_value_offset);                              \
+        feedback_index_offset);                              \
     break;
 
 #define Equal_CASE(type) TYPED_COMPARE_CASE(Equal, type)
@@ -1771,30 +1787,31 @@ void BaselineCompiler::VisitConstructForwardAllArgs() {
 #define GreaterThanOrEqual_CASE(type) \
   TYPED_COMPARE_CASE(GreaterThanOrEqual, type)
 
-#define VISIT_TYPED_COMPARE_OPERATION(TypedStubList, Name)                  \
-  auto feedback_value_offset =                                              \
-      iterator().GetEmbeddedFeedbackOffset(kEmbeddedFeedbackOperandIndex);  \
-  if (allow_sparkplug_plus_) {                                              \
-    switch (                                                                \
-        static_cast<CompareOperationFeedback::Type>(EmbeddedFeedback(1))) { \
-      TypedStubList(Name##_CASE) default                                    \
-          : CallBuiltin<Builtin::k##Name##_Generic_Baseline>(               \
-                RegisterOperand(0), kInterpreterAccumulatorRegister,        \
-                feedback_value_offset);                                     \
-      break;                                                                \
-    }                                                                       \
-  } else {                                                                  \
-    CallBuiltin<Builtin::k##Name##_Generic_Baseline>(                       \
-        RegisterOperand(0), kInterpreterAccumulatorRegister,                \
-        feedback_value_offset);                                             \
+#define VISIT_TYPED_COMPARE_OPERATION(TypedStubList, Name)                 \
+  using Feedback = CompareOperationFeedback;                               \
+  auto feedback_index_offset =                                             \
+      iterator().GetEmbeddedFeedbackOffset(kEmbeddedFeedbackOperandIndex); \
+  if (allow_sparkplug_plus_) {                                             \
+    switch (Feedback::DecodeTypeIndex(                                     \
+        static_cast<Feedback::TypeIndex>(EmbeddedFeedback(1)))) {          \
+      TypedStubList(Name##_CASE) default                                   \
+          : CallBuiltin<Builtin::k##Name##_Generic_Baseline>(              \
+                RegisterOperand(0), kInterpreterAccumulatorRegister,       \
+                feedback_index_offset);                                    \
+      break;                                                               \
+    }                                                                      \
+  } else {                                                                 \
+    CallBuiltin<Builtin::k##Name##_Generic_Baseline>(                      \
+        RegisterOperand(0), kInterpreterAccumulatorRegister,               \
+        feedback_index_offset);                                            \
   }
 #else
 #define VISIT_TYPED_COMPARE_OPERATION(TypedStubList, Name)                 \
-  auto feedback_value_offset =                                             \
+  auto feedback_index_offset =                                             \
       iterator().GetEmbeddedFeedbackOffset(kEmbeddedFeedbackOperandIndex); \
   CallBuiltin<Builtin::k##Name##_Generic_Baseline>(                        \
       RegisterOperand(0), kInterpreterAccumulatorRegister,                 \
-      feedback_value_offset);
+      feedback_index_offset);
 #endif  // V8_ENABLE_SPARKPLUG_PLUS
 
 void BaselineCompiler::VisitTestEqual() {
@@ -1866,7 +1883,7 @@ void BaselineCompiler::VisitTestUndetectable() {
 
   Register map_bit_field = kInterpreterAccumulatorRegister;
   __ LoadMap(map_bit_field, kInterpreterAccumulatorRegister);
-  __ LoadWord8Field(map_bit_field, map_bit_field, Map::kBitFieldOffset);
+  __ LoadWord8Field(map_bit_field, map_bit_field, offsetof(Map, bit_field_));
   __ TestAndBranch(map_bit_field, Map::Bits1::IsUndetectableBit::kMask, kZero,
                    &not_undetectable, Label::kNear);
 
@@ -1989,7 +2006,8 @@ void BaselineCompiler::VisitTestTypeOf() {
       // All other undetectable maps are typeof undefined.
       Register map_bit_field = kInterpreterAccumulatorRegister;
       __ LoadMap(map_bit_field, kInterpreterAccumulatorRegister);
-      __ LoadWord8Field(map_bit_field, map_bit_field, Map::kBitFieldOffset);
+      __ LoadWord8Field(map_bit_field, map_bit_field,
+                        offsetof(Map, bit_field_));
       __ TestAndBranch(map_bit_field, Map::Bits1::IsUndetectableBit::kMask,
                        kZero, &not_undetectable, Label::kNear);
 
@@ -2009,7 +2027,8 @@ void BaselineCompiler::VisitTestTypeOf() {
       // Check if the map is callable but not undetectable.
       Register map_bit_field = kInterpreterAccumulatorRegister;
       __ LoadMap(map_bit_field, kInterpreterAccumulatorRegister);
-      __ LoadWord8Field(map_bit_field, map_bit_field, Map::kBitFieldOffset);
+      __ LoadWord8Field(map_bit_field, map_bit_field,
+                        offsetof(Map, bit_field_));
       __ TestAndBranch(map_bit_field, Map::Bits1::IsCallableBit::kMask, kZero,
                        &not_callable, Label::kNear);
       __ TestAndBranch(map_bit_field, Map::Bits1::IsUndetectableBit::kMask,
@@ -2041,7 +2060,7 @@ void BaselineCompiler::VisitTestTypeOf() {
 
       // If the map is undetectable or callable, return false.
       Register map_bit_field = kInterpreterAccumulatorRegister;
-      __ LoadWord8Field(map_bit_field, map, Map::kBitFieldOffset);
+      __ LoadWord8Field(map_bit_field, map, offsetof(Map, bit_field_));
       __ TestAndBranch(map_bit_field,
                        Map::Bits1::IsUndetectableBit::kMask |
                            Map::Bits1::IsCallableBit::kMask,
@@ -2268,7 +2287,7 @@ void BaselineCompiler::VisitJumpLoop() {
     osr_state = temps.AcquireScratch();
     LoadFeedbackVector(feedback_vector);
     __ LoadWord8Field(osr_state, feedback_vector,
-                      FeedbackVector::kOsrStateOffset);
+                      offsetof(::v8::internal::FeedbackVector, osr_state_));
     static_assert(FeedbackVector::MaybeHasMaglevOsrCodeBit::encode(true) >
                   FeedbackVector::kMaxOsrUrgency);
     static_assert(FeedbackVector::MaybeHasTurbofanOsrCodeBit::encode(true) >
@@ -2566,7 +2585,7 @@ void BaselineCompiler::VisitThrowIfNotSuperConstructor() {
   LoadRegister(reg, 0);
   Register map_bit_field = scratch_scope.AcquireScratch();
   __ LoadMap(map_bit_field, reg);
-  __ LoadWord8Field(map_bit_field, map_bit_field, Map::kBitFieldOffset);
+  __ LoadWord8Field(map_bit_field, map_bit_field, offsetof(Map, bit_field_));
   __ TestAndBranch(map_bit_field, Map::Bits1::IsConstructorBit::kMask, kNotZero,
                    &done, Label::kNear);
 
@@ -2586,14 +2605,14 @@ void BaselineCompiler::VisitSwitchOnGeneratorState() {
 
   Register continuation = scratch_scope.AcquireScratch();
   __ LoadTaggedSignedFieldAndUntag(continuation, generator_object,
-                                   JSGeneratorObject::kContinuationOffset);
+                                   offsetof(JSGeneratorObject, continuation_));
   __ StoreTaggedSignedField(
-      generator_object, JSGeneratorObject::kContinuationOffset,
+      generator_object, offsetof(JSGeneratorObject, continuation_),
       Smi::FromInt(JSGeneratorObject::kGeneratorExecuting));
 
   Register context = scratch_scope.AcquireScratch();
   __ LoadTaggedField(context, generator_object,
-                     JSGeneratorObject::kContextOffset);
+                     offsetof(JSGeneratorObject, context_));
   __ StoreContext(context);
 
   interpreter::JumpTableTargetOffsets offsets =
@@ -2653,14 +2672,10 @@ void BaselineCompiler::VisitForOfNext() {
   Register next = scratch_scope.AcquireScratch();
   __ LoadRegister(object, RegisterOperand(0));
   __ LoadRegister(next, RegisterOperand(1));
-  // Pass the output register slot as an argument, so that the builtin
-  // is responsible for writing into the slots.
-  Register out_reg_address = scratch_scope.AcquireScratch();
-  basm_.RegisterFrameAddress(RegisterOperand(2), out_reg_address);
+
   CallBuiltin<Builtin::kForOfNextBaseline>(object,                 // object
                                            next,                   // next
-                                           out_reg_address,        // out_reg
-                                           FeedbackSlotAsSmi(3));  // call_slot
+                                           FeedbackSlotAsSmi(2));  // call_slot
 }
 
 void BaselineCompiler::VisitGetIterator() {

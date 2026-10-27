@@ -67,7 +67,7 @@ bool ValueSplitDateTime(const WideString& wsDateTime,
   }
 
   wsDate = wsDateTime.First(nSplitIndex.value());
-  wsTime = wsDateTime.Last(wsDateTime.GetLength() - nSplitIndex.value() - 1);
+  wsTime = wsDateTime.Substr(nSplitIndex.value() + 1);
   return true;
 }
 

@@ -13387,6 +13387,12 @@ const lottiejs = (function(window) {
 let currentAnimation = null;
 
 /**
+ * The segments currently being played.
+ * @type {Array<number>|null}
+ */
+let currentSegments = null;
+
+/**
  * Events sent back to the parent thread.
  */
 const events = {
@@ -13396,6 +13402,7 @@ const events = {
   PLAYING: 'playing',          // Send when the animation started playing.
   PAUSED: 'paused',            // Sent when the animation has paused.
   STOPPED: 'stopped',          // Sent when the animation has stopped.
+  COMPLETED: 'completed',      // Sent when the animation has completed.
 };
 
 /**
@@ -13426,7 +13433,7 @@ function sendResizeEvent() {
  * Informs the parent thread that the animation is playing.
  */
 function sendPlayEvent() {
-  postMessage({name: events.PLAYING});
+  postMessage({name: events.PLAYING, segments: currentSegments});
 }
 
 /**
@@ -13441,6 +13448,13 @@ function sendPauseEvent() {
  */
 function sendStopEvent() {
   postMessage({name: events.STOPPED});
+}
+
+/**
+ * Informs the parent thread that the animation has completed.
+ */
+function sendCompletedEvent() {
+  postMessage({name: events.COMPLETED});
 }
 
 /**
@@ -13481,6 +13495,13 @@ function initAnimation(animationData, initParams, canvas) {
       clearCanvas: true,
     },
   });
+
+  // Listen for the 'complete' event and send it back to the parent thread.
+  // If the animation is set to loop, the 'complete' event would be sent after
+  // each loop repetition, so we only listen for it if looping is disabled.
+  if (!initParams.loop) {
+    currentAnimation.addEventListener('complete', sendCompletedEvent);
+  }
 
   sendInitializedEvent();
 
@@ -13526,6 +13547,18 @@ function updateCanvasSize(canvas, size) {
  */
 function updateAnimationState(control, canvas) {
   if (!control || !currentAnimation) {
+    return;
+  }
+
+  if (control.playSegments) {
+    currentSegments = control.playSegments;
+    const wasPaused = currentAnimation.isPaused;
+    currentAnimation.playSegments(control.playSegments, /* forceFlag= */ true);
+
+    // Send event only when playSegments unpauses the animation.
+    if (wasPaused) {
+      sendPlayEvent();
+    }
     return;
   }
 

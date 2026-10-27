@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: The Eigen Authors
+# SPDX-License-Identifier: MPL-2.0
 
 set -x
 
@@ -15,18 +17,24 @@ export | grep EIGEN
 # Set noninteractive, otherwise tzdata may be installed and prompt for a
 # geographical region.
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -y > /dev/null
-apt-get install -y --no-install-recommends ninja-build cmake git > /dev/null
+if [[ "${EIGEN_CI_SKIP_APT}" != "true" ]]; then
+  apt-get update -y > /dev/null
+  apt-get install -y --no-install-recommends ninja-build cmake git xsltproc > /dev/null
+fi
 
 # Install required dependencies and set up compilers.
 # These are required even for testing to ensure that dynamic runtime libraries
 # are available.
 if [[ "$ARCH" == "${EIGEN_CI_TARGET_ARCH}" || "${EIGEN_CI_TARGET_ARCH}" == "any" ]]; then
-  apt-get install -y --no-install-recommends ${EIGEN_CI_INSTALL} > /dev/null;
+  if [[ "${EIGEN_CI_SKIP_APT}" != "true" ]]; then
+    apt-get install -y --no-install-recommends ${EIGEN_CI_INSTALL} > /dev/null;
+  fi
   export EIGEN_CI_CXX_IMPLICIT_INCLUDE_DIRECTORIES="";
   export EIGEN_CI_CXX_COMPILER_TARGET="";
 else
-  apt-get install -y --no-install-recommends ${EIGEN_CI_CROSS_INSTALL} > /dev/null;
+  if [[ "${EIGEN_CI_SKIP_APT}" != "true" ]]; then
+    apt-get install -y --no-install-recommends ${EIGEN_CI_CROSS_INSTALL} > /dev/null;
+  fi
   export EIGEN_CI_C_COMPILER=${EIGEN_CI_CROSS_C_COMPILER};
   export EIGEN_CI_CXX_COMPILER=${EIGEN_CI_CROSS_CXX_COMPILER};
   export EIGEN_CI_CXX_COMPILER_TARGET=${EIGEN_CI_CROSS_TARGET_TRIPLE};

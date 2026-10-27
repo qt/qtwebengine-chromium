@@ -1,0 +1,269 @@
+# CodeRabbit configuration for Eigen.
+# Schema: https://docs.coderabbit.ai/reference/configuration
+#
+# Eigen is a header-only C++14 template library, GitLab-hosted, with a strict
+# ABI policy and several major downstream consumers (notably TensorFlow). The
+# settings below favor signal over volume: chill profile, minimal noise on
+# auto-generated docs and vendored Fortran, and explicit guidance for the
+# template-heavy core.
+
+language: en-US
+
+# CodeRabbit caps tone_instructions at 250 chars. Keep the essential
+# focus areas here; the full reviewer guidance (provenance discipline,
+# numerical-tolerance policy, GPU caveats, etc.) lives in AGENTS.md
+# and is loaded via knowledge_base.code_guidelines.filePatterns below.
+tone_instructions: >-
+  Eigen, header-only C++14. Focus: correctness, numerical accuracy
+  (LAPACK-level; flag regressions), ABI, performance, template pitfalls,
+  missing tests, uncited published algorithms (LAPACK, LAWN, Higham,
+  Golub & van Loan). Skip style nits and C++17+.
+
+early_access: false
+enable_free_tier: true
+
+# Pull repo-level reviewer guidance from AGENTS.md (the agent-facing
+# condensation of CONTRIBUTING + wiki). Set explicitly because the
+# default filePatterns list may be inactive when no patterns are
+# specified by the user.
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  # Trim down the noise in the auto-posted comment: drop sections that don't
+  # carry weight on a numerics-heavy template library. Keep the walkthrough
+  # (file-by-file summary) but skip the high-level summary, the changed-files
+  # overview, and don't collapse the walkthrough so reviewers see it expanded.
+  high_level_summary: false
+  high_level_summary_in_walkthrough: false
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  changed_files_summary: false
+  enable_prompt_for_ai_agents: true
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  assess_linked_issues: false
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  suggested_reviewers: false
+  in_progress_fortune: false
+
+  pre_merge_checks:
+    # Eigen is a header-only template library where docstring coverage
+    # has limited value; the docstrings precheck adds noise without signal.
+    docstrings:
+      mode: off
+
+  auto_review:
+    enabled: true
+    drafts: false
+    # Eigen MRs often see many WIP pushes; reviewing every push burns the
+    # per-developer hourly rate limit on the free/OSS tier. Review the first
+    # diff only; further reviews can be requested with `@coderabbitai review`.
+    auto_incremental_review: false
+    base_branches:
+      - master
+
+  path_filters:
+    - "!doc/snippets/**"
+    - "!doc/examples/**"
+    - "!lapack/*.f"
+    - "!blas/testing/**"
+    - "!**/*.png"
+    - "!**/*.bin"
+    - "!**/*.svg"
+    - "!**/*.pdf"
+
+  path_instructions:
+    - path: "**"
+      instructions: |
+        Repo-wide conventions (apply across all paths):
+        - **SPDX / REUSE.** Every new source file (`.h`, `.cpp`, `.cu`,
+          `.inc`, `.cmake`, `CMakeLists.txt`, etc.) must carry the
+          standard Eigen MPL-2.0 SPDX + copyright header inline. The
+          `checkformat:reuse` CI job (`reuse lint`) blocks otherwise.
+          Files that can't carry inline headers (top-level docs,
+          generated/templated files, binary assets) are covered by
+          path-based annotations in `REUSE.toml` — add the path there
+          if creating one.
+        - **GitLab is upstream**; the GitHub mirror is read-only. Do
+          not suggest opening PRs / pushing to GitHub.
+        - **Commit messages** follow `Category: Short description`
+          (e.g. `GPU: Fix special-function test coverage`).
+    - path: "Eigen/src/**"
+      instructions: |
+        Eigen is a header-only C++14 template library with a strict ABI policy.
+        - **Numerical accuracy is a top priority.** Eigen targets accuracy
+          comparable to established numerical libraries such as LAPACK. Flag
+          any change that may degrade accuracy, condition handling, stability
+          under near-singular / ill-conditioned inputs, or behavior near
+          subnormals, infinities, NaNs, or extreme exponents. In general,
+          do not trade accuracy for speed.
+        - **Acceptable accuracy tradeoff on regular inputs only.** A faster
+          algorithm whose worst-case error on regular inputs is bounded to
+          a few ULPs by a principled analysis may be acceptable. Surface
+          the tradeoff and the bound clearly so a human reviewer can judge;
+          do not auto-approve or auto-reject these. **Special-value handling
+          is not subject to the few-ULP tradeoff** — IEEE-754 entities (NaN,
+          ±0, ±∞, subnormals) and standard-library edge cases (e.g. `log(0)`,
+          `pow(0, 0)`) must match the cppreference / IEEE 754 spec exactly.
+        - **Numerical changes require numerical tests.** Any new numerical
+          algorithm, kernel, or accuracy-sensitive change MUST come with
+          tests that exercise its accuracy claims: random ill-conditioned
+          inputs across a range of condition numbers, edge values, and
+          matrices structured for the algorithm (Hilbert, Vandermonde,
+          Pascal, Wilkinson's W, Frank, Lehmer, KMS / Toeplitz, banded,
+          rank-deficient, defective / near-defective Jordan blocks,
+          positive-definite-but-barely — MATLAB's `gallery()` is the
+          standard catalog; Higham's *Accuracy and Stability of Numerical
+          Algorithms* / *Functions of Matrices* and Golub & van Loan are
+          the references). For routines with a
+          LAPACK counterpart, match LAPACK's TESTING/ category coverage as
+          the bar. Quantify accuracy in ULPs against a scalar reference,
+          not just relative error. Sollya / MPFR are the standard tools
+          for ground-truth and polynomial generation; prefer in-C++ MPFR
+          verification over a Python reference. If such tests are missing,
+          request them.
+        - **Performance-sensitive changes ship with a benchmark** under
+          `benchmarks/` or `unsupported/benchmarks/`. Don't defer to a
+          follow-up MR.
+        - **Preserve `EIGEN_DEVICE_FUNC`.** It is pervasive on coefficient-
+          level methods so the same code compiles for host and CUDA / HIP /
+          SYCL device. Dropping it silently breaks GPU builds and is rarely
+          caught locally — flag any removal or omission on new methods.
+        - **Header-only contract.** Never include from `Eigen/src/...` (or
+          `unsupported/Eigen/src/...`) directly; reach implementation via
+          the umbrella module headers (`Eigen/Core`, `Eigen/Dense`, …).
+          `InternalHeaderCheck.h` makes direct internal includes a hard
+          error. Old internal headers do not get backward-compatibility
+          forwarding shims when moved/renamed; only the public umbrella
+          headers do.
+        - **Aliasing in fast paths.** Aliasing safety is not a uniform
+          invariant. The standard product path inserts an auto-temporary
+          so `mat = mat * mat` is safe, but optimized fast paths that
+          bypass the general assignment machinery have historically
+          introduced aliasing bugs. When a change modifies or adds such a
+          fast path, check whether LHS/RHS aliasing is handled and prefer
+          falling back to the general path when in doubt.
+        - Treat the public API surface as frozen: do not propose renames or
+          signature changes for non-internal types.
+        - Performance and inlining matter; flag possible regressions in hot
+          paths (products, packet kernels, evaluators, decompositions).
+        - Watch for accidental allocations in templates that should be
+          allocation-free.
+        - C++14 is the minimum; do not suggest C++17+ features. (A migration
+          to C++17 is planned on a separate branch; until it lands on master,
+          new code must compile under C++14.)
+        - **Skip "modernize" advice.** Do not propose `modernize-*` or
+          `cppcoreguidelines-*` clang-tidy fixes; do not suggest replacing
+          `EIGEN_STRONG_INLINE` with `inline`; do not propose reordering
+          internal includes (`SortIncludes: false` is intentional); and do
+          not "fix" Eigen's macro indentation (`.clang-format` registers
+          Eigen macros as `StatementMacros` / `AttributeMacros`).
+          Style is `clang-format-17` exactly — the CI diff is authoritative.
+        - **Assertions.** Prefer `eigen_assert` (and
+          `eigen_internal_assert` for internal-only invariants) over raw
+          `assert` for runtime preconditions; prefer `EIGEN_STATIC_ASSERT`
+          over plain `static_assert` for compile-time conditions.
+    - path: "Eigen/src/Core/arch/**"
+      instructions: |
+        Per-architecture packet math (SIMD vectorization) backends. In
+        addition to the general `Eigen/src/**` rules:
+        - **Guard intrinsics by ISA macro.** Each intrinsic must be wrapped
+          in its own `EIGEN_VECTORIZE_*` `#ifdef` — being inside `arch/AVX/`
+          does not imply AVX2 / FMA / AVX-512 are available. Wrap AVX2 in
+          `EIGEN_VECTORIZE_AVX2`, FMA in `EIGEN_VECTORIZE_FMA`, AVX-512DQ
+          in `EIGEN_VECTORIZE_AVX512DQ`, etc., and provide a fallback for
+          the un-guarded path. Same discipline applies on NEON
+          (`EIGEN_VECTORIZE_NEON_FP16`), VSX (`EIGEN_VECTORIZE_VSX`), etc.
+          Missing guards typically compile fine on the developer's machine
+          and break CI on narrower ISA targets — flag any unguarded
+          intrinsic.
+        - **Backend symmetry.** New packet operations should be specialized
+          across **every** backend that supports the type, with
+          `arch/Default/` providing scalar fallbacks. A missing or divergent
+          backend specialization usually shows up first in
+          `test/packetmath.cpp` or `unsupported/test/special_packetmath.cpp`
+          — flag PRs that add a packet op in one backend without the others.
+    - path: "{Eigen/ThreadPool,Eigen/src/ThreadPool/**}"
+      instructions: |
+        Eigen's work-stealing thread pool — umbrella header `Eigen/ThreadPool`
+        with sources under `Eigen/src/ThreadPool/` (`NonBlockingThreadPool`,
+        `RunQueue`, `EventCount`, `ForkJoin`, `CoreThreadPoolDevice`). Backs
+        `EIGEN_GEMM_THREADPOOL` and the Tensor module's `ThreadPoolDevice`.
+        Originally developed for TensorFlow and still depended on there —
+        signatures, semantics, and performance are load-bearing. Apply the
+        same caution as the Tensor module: prefer additive changes, keep
+        header layout stable, and call out behavior changes prominently.
+    - path: "test/**"
+      instructions: |
+        Tests use Eigen's custom framework defined in `test/main.h`:
+        `VERIFY_*` assertions, `CALL_SUBTEST_N` / `EIGEN_TEST_PART_N` to
+        split one `.cpp` into N per-shard executables, and
+        `EIGEN_DECLARE_TEST(<name>) { ... }` as the entry point.
+        `EIGEN_REPEAT` / `EIGEN_SEED` are runtime env vars, not the shard
+        mechanism. Do not suggest restructuring the harness, switching to
+        gtest assertions, or deduplicating shards. Numerical-tolerance
+        comparisons (`VERIFY_IS_APPROX`) are deliberate; do not push for
+        exact equality. Tests may be long and procedural.
+        **In-flight migration to Google Test:**
+        [MR 2159](https://gitlab.com/libeigen/eigen/-/merge_requests/2159)
+        replaces `EIGEN_DECLARE_TEST` / `CALL_SUBTEST_N` with gtest
+        `TEST` / `TYPED_TEST` while bridging `VERIFY_*` to gtest
+        expectations; once it lands, the "do not switch to gtest" rule
+        flips for new tests.
+    - path: "unsupported/Eigen/**"
+      instructions: |
+        "Unsupported" here means looser API-stability guarantees, **not**
+        low-traffic or low-stakes. The Tensor module
+        (`unsupported/Eigen/Tensor`, sources under
+        `unsupported/Eigen/src/Tensor/`) is TensorFlow's core compute
+        backend; treat its signatures, header layout, semantics, and
+        performance on contraction / reduction / morphing kernels as
+        load-bearing. Prefer additive changes, keep header paths stable,
+        and call out behavior changes prominently. Other modules
+        (`TensorSymmetry`, `AutoDiff`, `Polynomials`, `MatrixFunctions`,
+        `NNLS`, `FFT`, `GPU`, `Splines`, `NumericalDiff`,
+        `IterativeSolvers`) are genuinely more permissive but should still
+        preserve their public API. `unsupported/Eigen/CXX11/` is backward-
+        compatibility forwarding shims only — do not place new headers
+        there.
+    - path: "unsupported/Eigen/src/GPU/**"
+      instructions: |
+        Host-side dispatch to NVIDIA libraries (cuBLAS / cuSOLVER / cuFFT /
+        cuSPARSE / cuDSS) on device-resident operands (`gpu::DeviceMatrix`).
+        This is **not** an expression-template layer — every supported
+        expression maps to a single library call, and `DeviceMatrix` does
+        not inherit from `MatrixBase`. Do not suggest reshaping it into an
+        expression-template system. Tests are deliberately compiled as
+        `.cpp` (not `.cu`) so NVCC does not instantiate Eigen CPU packet
+        ops for CUDA vector types — do not propose moving them to `.cu`.
+    - path: "blas/**"
+      instructions: |
+        These are Reference BLAS API wrappers around Eigen. Match the BLAS
+        standard exactly; do not suggest deviating from netlib semantics.
+    - path: "lapack/**"
+      instructions: |
+        The .f sources are vendored netlib LAPACK reference; do not review
+        them. The C++ wrappers should faithfully implement the LAPACK
+        contract.
+    - path: "ci/**"
+      instructions: |
+        GitLab CI configuration. Be conservative -- do not suggest
+        restructuring the existing job graph or changing runner tags without
+        strong reason.
+    - path: "benchmarks/**"
+      instructions: |
+        Microbenchmarks built against Google Benchmark. Clarity matters less
+        than realistic measurement; flag only correctness or measurement
+        methodology issues, not style.
+
+chat:
+  auto_reply: true

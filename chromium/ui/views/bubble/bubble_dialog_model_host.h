@@ -42,7 +42,7 @@ class BubbleDialogModelHostContentsView;
 
 // BubbleDialogModelHost is a views implementation of ui::DialogModelHost which
 // hosts a ui::DialogModel as a BubbleDialogDelegate. This exposes such as
-// SetAnchorView(), SetArrow() and SetHighlightedButton(). For methods that are
+// SetAnchorView(), SetArrow() and SetHighlightedElement(). For methods that are
 // reflected in ui::DialogModelHost (such as ::Close()), prefer using the
 // ui::DialogModelHost to avoid platform-specific code (GetWidget()->Close())
 // where unnecessary. For those methods, note that this can be retrieved as a
@@ -82,10 +82,16 @@ class VIEWS_EXPORT BubbleDialogModelHost : public BubbleDialogDelegate,
 
   // Constructs a BubbleDialogModelHost, which for most purposes is to used as a
   // BubbleDialogDelegate. The BubbleDialogDelegate is nominally handed to
-  // BubbleDialogDelegate::CreateBubble() which returns a Widget that has taken
-  // ownership of the bubble. Widget::Show() finally shows the bubble.
+  // BubbleDialogDelegate::CreateBubbleDeprecated() which returns a Widget that
+  // has taken ownership of the bubble. Widget::Show() finally shows the bubble.
   BubbleDialogModelHost(std::unique_ptr<ui::DialogModel> model,
                         views::BubbleAnchor anchor,
+                        BubbleBorder::Arrow arrow,
+                        bool autosize = true);
+
+  // Compat alias for old type.
+  BubbleDialogModelHost(std::unique_ptr<ui::DialogModel> model,
+                        views::View* anchor_view,
                         BubbleBorder::Arrow arrow,
                         bool autosize = true);
 
@@ -111,10 +117,13 @@ class VIEWS_EXPORT BubbleDialogModelHost : public BubbleDialogDelegate,
   View* GetInitiallyFocusedView() override;
   void OnWidgetInitialized() override;
   bool OnCloseRequested(views::Widget::ClosedReason close_reason) override;
+  bool ShouldAllowKeyEventsDuringInputProtection() const override;
 
   // ui::DialogModelHost:
   void Close() override;
   void OnDialogButtonChanged() override;
+
+  ui::DialogModel* GetModelForTesting() { return model_.get(); }
 
  private:
   // This class observes the ContentsView theme to make sure that the window
@@ -153,6 +162,8 @@ class VIEWS_EXPORT BubbleDialogModelHost : public BubbleDialogDelegate,
   const raw_ptr<BubbleDialogModelHostContentsView> contents_view_;
   base::CallbackListSubscription on_contents_changed_subscription_;
   ThemeChangedObserver theme_observer_;
+
+  base::WeakPtrFactory<BubbleDialogModelHost> weak_ptr_factory_{this};
 };
 
 }  // namespace views

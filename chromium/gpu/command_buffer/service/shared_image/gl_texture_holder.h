@@ -7,6 +7,7 @@
 
 #include "gpu/command_buffer/service/shared_image/gl_common_image_backing_factory.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h"
+#include "gpu/gpu_gles2_export.h"
 #include "ui/gl/progress_reporter.h"
 
 class GrPromiseImageTexture;
@@ -17,7 +18,7 @@ class SharedContextState;
 
 // Helper class that holds a single GL texture, that works with either
 // validating or passthrough command decoder.
-class GLTextureHolder {
+class GPU_GLES2_EXPORT GLTextureHolder {
  public:
   // Returns the equivalent SharedImageFormat for plane specified by
   // `plane_index`.
@@ -81,6 +82,12 @@ class GLTextureHolder {
 
   raw_ptr<gles2::Texture> texture_ = nullptr;
   scoped_refptr<gles2::TexturePassthrough> passthrough_texture_;
+
+  // The GL context that was current when this holder was
+  // initialized. This is used to ensure the correct GL context is current
+  // during GL operations (e.g. UploadFromMemory, ReadbackToMemory).
+  scoped_refptr<gl::GLContext> context_;
+
   GLFormatDesc format_desc_;
   raw_ptr<gl::ProgressReporter> progress_reporter_ = nullptr;
 };

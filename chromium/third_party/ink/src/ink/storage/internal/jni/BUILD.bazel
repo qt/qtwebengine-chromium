@@ -15,29 +15,31 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
-    default_visibility = ["//visibility:private"],
+    default_visibility = ["//ink:__subpackages__"],
 )
 
 cc_library(
-    name = "native",
+    name = "jni",
+    tags = ["keep_dep"],
     visibility = ["//visibility:public"],
     deps = [
         ":brush_serialization_jni",
         ":stroke_input_batch_serialization_jni",
     ],
-    alwayslink = 1,
 )
 
 cc_library(
     name = "stroke_input_batch_serialization_jni",
     srcs = ["stroke_input_batch_serialization_jni.cc"],
+    tags = ["keep_dep"],
     deps = [
         "//ink/jni/internal:jni_defines",
         "//ink/jni/internal:jni_proto_util",
-        "//ink/jni/internal:jni_throw_util",
+        "//ink/jni/internal:status_jni_helper",
         "//ink/storage:stroke_input_batch",
         "//ink/storage/proto:stroke_input_batch_cc_proto",
         "//ink/strokes/input:stroke_input_batch",
+        "//ink/strokes/internal/jni:stroke_input_batch_native_helper",
         "//ink/strokes/internal/jni:stroke_input_jni_helper",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:check",
@@ -56,24 +58,30 @@ cc_library(
 cc_library(
     name = "brush_serialization_jni",
     srcs = ["brush_serialization_jni.cc"],
+    tags = ["keep_dep"],
     deps = [
         "//ink/brush",
+        "//ink/brush:brush_behavior",
         "//ink/brush:brush_coat",
         "//ink/brush:brush_family",
         "//ink/brush:brush_paint",
         "//ink/brush:brush_tip",
-        "//ink/brush/internal/jni:brush_jni_helper",
+        "//ink/brush:version",
+        "//ink/brush/internal/jni:brush_native_helper",
         "//ink/jni/internal:jni_defines",
         "//ink/jni/internal:jni_jvm_interface",
         "//ink/jni/internal:jni_proto_util",
         "//ink/jni/internal:jni_string_util",
-        "//ink/jni/internal:jni_throw_util",
+        "//ink/jni/internal:status_jni_helper",
         "//ink/storage:brush",
         "//ink/storage/proto:brush_cc_proto",
         "//ink/storage/proto:brush_family_cc_proto",
+        "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
     ] + select({
         "@platforms//os:android": [],
         "//conditions:default": [

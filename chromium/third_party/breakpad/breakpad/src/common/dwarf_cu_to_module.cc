@@ -1263,9 +1263,13 @@ void DwarfCUToModule::SetLanguage(DwarfLanguage language) {
     // DWARF data for C should never include namespaces or functions
     // nested in struct types, but if it ever does, then C++'s
     // notation is probably not a bad choice for that.
-    default:
     case DW_LANG_ObjC:
+      cu_context_->language = Language::ObjectiveC;
+      break;
     case DW_LANG_ObjC_plus_plus:
+      cu_context_->language = Language::ObjectiveCPlusPlus;
+      break;
+    default:
     case DW_LANG_C:
     case DW_LANG_C89:
     case DW_LANG_C99:

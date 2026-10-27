@@ -63,6 +63,7 @@ source_set("impl") {
     "//base",
     "//chrome/browser:browser_process",
     "//chrome/browser/content_settings:content_settings_factory",
+    "//chrome/browser/privacy_sandbox:headers",
     "//chrome/browser/profiles",
     "//chrome/browser/profiles:profile",
     "//components/content_settings/core/browser",
@@ -148,6 +149,9 @@ fuzzer_test("first_party_sets_overrides_policy_handler_fuzzer") {
     "//testing/libfuzzer/proto:json_proto_converter",
     "//third_party/libprotobuf-mutator",
   ]
+
+  # TODO(crbug.com/505034799): Migrate to FUZZ_TEST.
+  is_fuzztest_compatible = false
 
   if (is_chromeos) {
     deps += [ "//chromeos/ash/components/dbus/cros_disks" ]
